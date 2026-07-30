@@ -124,3 +124,59 @@ class TestWordCount:
         from inkflow.domain.services._word_count import count_words
 
         assert count_words("[点击](url)这里") == 4
+
+
+class TestVolumeORM:
+    """Volume ORM 集成测试."""
+
+    @pytest.mark.asyncio
+    async def test_create_volume(self, db_session, sample_project):
+        """创建卷 → 查询返回 title='第一卷'."""
+        from inkflow.infrastructure.database.models.chapter import VolumeORM
+
+        vol = VolumeORM(
+            project_id=sample_project.id,
+            title="第一卷",
+            order_index=1.0,
+        )
+        db_session.add(vol)
+        await db_session.commit()
+        await db_session.refresh(vol)
+
+        assert vol.id is not None
+        assert vol.title == "第一卷"
+        assert vol.order_index == 1.0
+
+
+class TestChapterORM:
+    """Chapter ORM 集成测试."""
+
+    @pytest.mark.asyncio
+    async def test_create_chapter(self, db_session, sample_project):
+        """创建章节 → 查询返回 title='第一章'."""
+        from inkflow.infrastructure.database.models.chapter import ChapterORM, VolumeORM
+
+        vol = VolumeORM(
+            project_id=sample_project.id,
+            title="卷A",
+            order_index=0.0,
+        )
+        db_session.add(vol)
+        await db_session.commit()
+        await db_session.refresh(vol)
+
+        ch = ChapterORM(
+            project_id=sample_project.id,
+            volume_id=vol.id,
+            title="第一章",
+            content="你好世界",
+            status="draft",
+            order_index=1.0,
+        )
+        db_session.add(ch)
+        await db_session.commit()
+        await db_session.refresh(ch)
+
+        assert ch.id is not None
+        assert ch.title == "第一章"
+        assert ch.status == "draft"

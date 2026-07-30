@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from inkflow.core.database import Base
 from inkflow.domain.models.project import Genre, ProjectCreate
+from inkflow.infrastructure.database.models.project import ProjectORM
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -48,6 +49,23 @@ def sample_project_data() -> ProjectCreate:
         language="zh-CN",
         target_words=100000,
     )
+
+
+@pytest_asyncio.fixture
+async def sample_project(db_session) -> ProjectORM:
+    """创建并持久化一个 ProjectORM 实例（用于需要真实数据库记录的测试）。"""
+    from inkflow.infrastructure.database.models.project import ProjectORM
+
+    project = ProjectORM(
+        name="测试小说",
+        genre="xuanhuan",
+        language="zh-CN",
+        target_words=100000,
+    )
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+    return project
 
 
 @pytest.fixture
