@@ -1,0 +1,40 @@
+# 项目根目录 gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.db
+.coverage
+coverage.xml
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Env
+.env
+.env.local
+
+# Logs
+logs/
+
+# Data
+data/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Hermes
+.hermes/
