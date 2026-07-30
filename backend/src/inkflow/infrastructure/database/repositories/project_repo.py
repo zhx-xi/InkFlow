@@ -195,7 +195,7 @@ class SQLiteProjectRepository:
         result = await self._session.execute(stmt)
         await self._session.commit()
 
-        if result.rowcount == 0:
+        if result.rowcount == 0:  # type: ignore[attr-defined]
             return None
 
         return await self.get(project_id)
