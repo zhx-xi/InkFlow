@@ -1,8 +1,11 @@
-# InkFlow — 架构分析与决策记录
+# InkFlow — 架构分析与决策记录（v2.0）
 
-**日期**: 2026-07-30
-**依据**: `docs/prd-inkflow-v2.1-2026-07-30.md` (v2.1 PRD)
+**日期**: 2026-07-31（v2.0 更新：引入 LangChain 全家桶）
+**前版**: v1.0（2026-07-30，LiteLLM + 自定义 Pipeline）
+**依据**: `docs/prd-inkflow-v2.1-2026-07-30.md` + 产品愿景扩展
 **作者**: 软件架构师
+
+> **v2.0 核心变更**：将 LLM Provider 抽象从裸 LiteLLM 迁移到 LangChain `ChatLiteLLM`，Agent 编排从自定义 Pipeline 迁移到 LangGraph `StateGraph`，RAG 层引入 LangChain Chroma + sentence-transformers。
 
 ---
 
@@ -80,9 +83,10 @@
 │   │            │                                            │   │
 │   │   ┌────────▼─────────────────────────────────────────┐  │   │
 │   │   │  Ports（出站接口 / Protocol 定义）                  │  │   │
-│   │   │  DatabaseProtocol │ LlmClientProtocol             │  │   │
-│   │   │  AuthProtocol │ StorageProtocol                   │  │   │
-│   │   │  MCPTransportProtocol │ ...                       │  │   │
+│   │   │  ProjectRepositoryProtocol                        │  │   │
+│   │   │  LLMClientProtocol │ AgentPipelineProtocol        │  │   │
+│   │   │  VectorStoreProtocol │ PromptTemplateProtocol      │  │   │
+│   │   │  AuthProtocol │ StorageProtocol (Phase 4+)         │  │   │
 │   │   └───────────────────────────────────────────────────┘  │   │
 │   └──────────────────────┬─────────────────────────────────┘   │
 │                          │                                      │
@@ -91,10 +95,15 @@
 │   │                 Infrastructure Layer                     │   │
 │   │                                                         │   │
 │   │   ┌────────────┐  ┌──────────┐  ┌────────────────┐    │   │
-│   │   │ SQLAlchemy  │  │ LLM      │  │ LocalFile      │    │   │
-│   │   │ Repository  │  │ Provider │  │ Storage        │    │   │
-│   │   │ (SQLite)    │  │ (OpenAI/ │  │                │    │   │
-│   │   │             │  │ DeepSeek)│  │                │    │   │
+│   │   │ SQLAlchemy  │  │ LangChain│  │ Chroma         │    │   │
+│   │   │ Repository  │  │ LLM      │  │ Vector Store   │    │   │
+│   │   │ (SQLite)    │  │ Client   │  │ (本地 RAG)     │    │   │
+│   │   └────────────┘  └──────────┘  └────────────────┘    │   │
+│   │                                                         │   │
+│   │   ┌────────────┐  ┌──────────┐  ┌────────────────┐    │   │
+│   │   │ LangGraph   │  │ Prompt   │  │ LocalFile      │    │   │
+│   │   │ Pipeline    │  │ Manager  │  │ Storage        │    │   │
+│   │   │ (Agent 编排)│  │ (模板)   │  │                │    │   │
 │   │   └────────────┘  └──────────┘  └────────────────┘    │   │
 │   │                                                         │   │
 │   │   ┌────────────┐  ┌──────────┐  ┌────────────────┐    │   │
@@ -103,6 +112,25 @@
 │   │   └────────────┘  └──────────┘  └────────────────┘    │   │
 │   └────────────────────────────────────────────────────────┘   │
 └────────────────────────────────────────────────────────────────┘
+```
+
+**层级职责**:
+
+| 层 | 目录 | 职责 | 依赖 |
+|---|------|------|------|
+| Presentation | `api/` `cli/` `mcp/` | HTTP 路由 / CLI 命令 / MCP 工具；DTO 转换 | → Application |
+| Application | (可选，当前并入 Domain) | 请求编排、事务边界 | → Domain |
+| Domain | `services/` `models/` `ports/` | 业务逻辑、领域模型、Protocol 定义 | **零框架依赖** |
+| Infrastructure | `infrastructure/` | SQLAlchemy Repository、LangChain LLM Client、LangGraph Pipeline、Chroma VectorStore | → Domain Ports |
+
+**关键规则**：
+
+```
+✅ 允许：所有层可以依赖 domain/models（纯数据对象）
+✅ 允许：infrastructure/ 导入 langchain_*
+❌ 禁止：domain/ 导入 FastAPI、Typer、SQLAlchemy、LangChain、任何框架
+❌ 禁止：domain/ 导入 infrastructure/
+❌ 禁止：两个 domain service 互相循环导入
 ```
 
 ---
@@ -147,18 +175,10 @@ Presentation → Application → Domain ←→ Infrastructure
                                Ports (Protocols)
 ```
 
-**层级职责**:
-
-| 层 | 目录 | 职责 | 依赖 |
-|---|------|------|------|
-| Presentation | `api/` `cli/` `mcp/` | HTTP 路由 / CLI 命令 / MCP 工具；DTO 转换 | → Application |
-| Application | (可选，当前并入 Domain) | 请求编排、事务边界 | → Domain |
-| Domain | `services/` `models/` | 业务逻辑、领域模型、Protocol 定义 | 无框架依赖 |
-| Infrastructure | `infrastructure/` | SQLAlchemy Repository、LLM Provider、文件存储 | → Domain Ports |
-
 **影响**:
 - ✅ 三界面共享 Service 层，业务逻辑不重复
-- ✅ Infrastructure 可替换（SQLite ↔ PG、LocalAuth ↔ JWT）
+- ✅ Infrastructure 可替换（SQLite ↔ PG、LangChain ↔ 其他、LocalAuth ↔ JWT）
+- ✅ 测试时可注入 Mock 实现，无需实际 LLM API 或数据库
 - ❗ 增加初始代码量（接口定义 + 依赖注入）
 - ❗ 单人开发下需克制"过度抽象"倾向（Rule of Three）
 
@@ -170,32 +190,16 @@ Presentation → Application → Domain ←→ Infrastructure
 
 **背景**: SQLAlchemy 2.0 async + SQLite 作为本地持久化方案。PRD 要求测试覆盖率 ≥ 70%，数据库层需可 mock。
 
-**决策**: 使用 Repository 模式封装 SQLAlchemy Session，Repository 实现 `DatabaseProtocol` 接口。
+**决策**: 使用 Repository 模式封装 SQLAlchemy Session，Repository 实现 `ProjectRepositoryProtocol` 接口。
 
 ```
-Service → DatabaseProtocol (Port) ← SQLAlchemyRepository (Adapter)
+Service → ProjectRepositoryProtocol (Port) ← SQLAlchemyRepository (Adapter)
 ```
 
-**关键设计原则**:
-1. Repository 接收和返回**领域模型**（Pydantic models），而非 ORM 模型
+**设计原则**:
+1. Repository 接收和返回领域模型（Pydantic models），而非 ORM 模型
 2. SQLAlchemy ORM 模型作为 Repository 内部实现细节，不泄漏到 Service 层
 3. CRUD + 自定义查询方法以 Protocol 定义类型签名
-
-```
-# 示例
-class DatabaseProtocol(Protocol):
-    async def get_project(self, project_id: int) -> Project | None: ...
-    async def save_project(self, project: Project) -> Project: ...
-    async def list_projects(self) -> list[Project]: ...
-
-class SQLiteRepository:
-    def __init__(self, session: AsyncSession):
-        self._session = session
-
-    async def get_project(self, project_id: int) -> Project | None:
-        row = await self._session.get(ProjectORM, project_id)
-        return Project.model_validate(row) if row else None
-```
 
 **影响**:
 - ✅ 测试时可注入 MockRepository，不依赖真实数据库
@@ -215,498 +219,456 @@ class SQLiteRepository:
 - **Domain Models**: 业务实体、值对象（Pydantic `BaseModel`）
 - **Request/Response DTOs**: API 输入输出（FastAPI 自动校验/序列化）
 - **CLI 参数**: Typer 自动从 Pydantic 字段生成 help/validation
-- **数据库 Schema 映射**: SQLAlchemy ORM 从 Pydantic schema 生成
 - **配置**: `pydantic-settings` 管理环境配置
-
-```
-Pydantic Domain Model
-    ├── FastAPI: 自动生成 OpenAPI Schema + 请求校验
-    ├── Typer: 自动生成 CLI args + help 文本
-    ├── MCP: JSON Schema 输出
-    └── SQLAlchemy: ORM 映射（可选项，或独立定义）
-```
 
 **影响**:
 - ✅ 一份模型定义，三界面自动生成校验/文档/序列化
 - ✅ Pydantic v2 性能大幅提升（Rust 内核）
 - ❗ SQLAlchemy ORM 与 Pydantic 模型之间存在映射代码
-- ❗ 需注意 Pydantic v2 与 FastAPI 版本兼容性（当前均已就绪）
 
 ---
 
-### ADR-005: LLM Provider — LiteLLM 统一对接（2026-07-30 更新）
+### ~~ADR-005: LLM Provider — LiteLLM 统一对接~~（v1.0，已被 ADR-005v2 取代）
 
-**状态**: 已接受（更新版）
+**状态**: 已弃用 · 被 ADR-005v2 取代 · 🟡 风险等级：低（未实现，无迁移成本）
 
-**背景**: PRD 要求 ≥ 3 个 Provider（OpenAI、DeepSeek、Ollama），不同任务路由不同模型。原方案计划手写适配器，评估后改用 **LiteLLM**（`litellm` 包），覆盖 100+ Provider。
+**v1.0 决策**: 薄 Protocol 包装 LiteLLM，~50 行代码覆盖 100+ Provider。
 
-**决策**: 薄 Protocol 包装 LiteLLM，Service 层只依赖 Protocol。
-
-```python
-# domain/ports/llm_client.py
-class LLMClient(Protocol):
-    async def chat(self, messages: list[dict], **kwargs) -> ChatResponse: ...
-    async def chat_stream(self, messages: list[dict], **kwargs) -> AsyncIterator[StreamEvent]: ...
-
-# infrastructure/llm/litellm_client.py
-class LiteLLMClient:
-    """封装 litellm，隔离第三方依赖"""
-    async def chat(self, messages, **kwargs):
-        resp = await litellm.acompletion(
-            model=kwargs.get("model", "gpt-4o"),
-            messages=messages,
-            **kwargs,
-        )
-        return ChatResponse.from_litellm(resp)
-```
-
-**与原始方案对比**:
-| 维度 | 手写适配器（原方案） | LiteLLM（新方案） |
-|------|-------------------|-------------------|
-| 代码量 | ~500 行 | ~50 行（薄封装） |
-| Provider 数量 | 3-4 个 | 100+ |
-| 流式支持 | 需自行封装 | 原生 async generator |
-| Token 计数 | tiktoken 手动调用 | 内置 |
-
-**模型路由**: 通过配置层指定 `task → model` 映射（如 `writing → gpt-4o`, `audit → claude-3-haiku`），LiteLLM 自动处理 Provider 差异。
-
-**影响**:
-- ✅ 100+ Provider 零代码添加，单人开发成本最低
-- ✅ 测试可注入 MockClient，不依赖实际 API
-- ✅ 内置流式、重试、Token 计数，省去 ~500 行适配器代码
-- ❗ litellm 是第三方依赖，升级可能有 breaking changes（通过薄 Protocol 隔离）
-- ❗ 极端场景（特殊 Provider 行为）可能需要绕过 litellm 直接调用 API
+**弃用原因**: LiteLLM 裸调方案虽然轻量，但缺乏 LangChain 生态的 callback 体系、LCEL 管道组合能力和 LangSmith 调试追踪，限制了复杂 Agent 管线的可观测性和可组合性。
 
 ---
 
-### ADR-006: Agent 编排 — 管道链模式（Pipeline Chain）
+### ADR-005v2: LLM Provider — LangChain ChatLiteLLM
 
-**状态**: 已接受（首版简化）
+**状态**: 已接受（替代 ADR-005 v1.0）· 🟢 风险等级：低-中
 
-**背景**: PRD 要求 Architect→Writer→Auditor→Reviser 链式执行（P0-05, 12-18 人天，高风险）。
+**背景**:
+1. PRD 要求 ≥ 3 个 Provider（OpenAI、DeepSeek、Ollama），不同任务路由不同模型
+2. 复杂 Agent 管线需要统一的 callback 体系和可观测性（LangSmith）
+3. ChatLiteLLM 同时继承 LiteLLM 的 Provider 覆盖和 LangChain 的 `BaseChatModel` 接口
 
-**决策**: Phase 1 实现**顺序管道链（Sequential Pipeline Chain）**：
+**决策**: 使用 LangChain `ChatLiteLLM` 作为 LLM 客户端实现，通过 `LLMClientProtocol` 隔离领域层。
 
 ```
-Input → [Architect] → Outline → [Writer] → Draft → [Auditor] → Feedback → [Reviser] → Final
-         ↑ Agent 角色：Prompt + Model + Temperature 配置
-         ↓ 每个阶段：可跳过、可重试（≤ 3 次）
+domain/ports/llm_client.py           ← LLMClientProtocol (纯 Python)
+infrastructure/llm/langchain_client.py  ← LangChainLLMClient (实现 Protocol，内部使用 ChatLiteLLM)
 ```
 
-**Phase 1 简化策略**（控制风险）:
-1. 角色配置为「Prompt 模板 + Model 映射 + Temperature」，不引入复杂 Agent 框架
-2. 执行流为「顺序链」，不支持并行/分支（Phase 2 再扩展）
-3. 每个阶段的 Prompt 模板从 `prompts/` 目录加载（YAML），不硬编码
-4. 输出是结构化数据（JSON），便于下一阶段消费和审计跟踪
+**为什么是 ChatLiteLLM 而不是 ChatOpenAI？**
+
+| 选项 | 优点 | 缺点 |
+|------|------|------|
+| **ChatLiteLLM（选定）** | 继承 LiteLLM 的 100+ Provider 覆盖 + 实现 LangChain `BaseChatModel` 接口，获得 callback 和 LangSmith | 多一层依赖 |
+| ChatOpenAI + ChatAnthropic 各自 | 原生 LangChain 集成 | 每个 Provider 一个类，切换模型需改代码 |
+| 裸 LiteLLM（v1.0 方案） | 最轻量 | 无法利用 LangChain 的 callback 和 LangSmith 生态 |
+
+**关键接口**：
 
 ```python
-class AgentChain:
-    """管道链编排引擎"""
+# domain/ports/llm_client.py — 零框架依赖
+class LLMClientProtocol(Protocol):
+    async def chat(self, messages: list[ChatMessage], *, model: str | None = None, ...) -> ChatResponse: ...
+    def chat_stream(self, messages: list[ChatMessage], *, model: str | None = None, ...) -> AsyncIterator[StreamEvent]: ...
+    async def count_tokens(self, messages: list[ChatMessage], *, model: str | None = None) -> int: ...
 
-    async def execute(
-        self,
-        context: WritingContext,
-        roles: list[AgentRole],  # [Architect, Writer, Auditor, Reviser]
-        max_retries: int = 3,
-    ) -> ChainResult:
-        ...
+# infrastructure/llm/langchain_client.py — LangChain 实现
+class LangChainLLMClient:
+    def _get_model(self, model: str) -> BaseChatModel:
+        return ChatLiteLLM(model=model, callbacks=self._callbacks)
 ```
 
 **影响**:
-- ✅ 首版 12-18 人天风险可控 → 简化后约 6-10 人天
-- ✅ 管线链可测试（Mock 每个 AgentRole 的 LLM 调用）
-- ❗ 不支持并行 Agent（Phase 2 加）
-- ❗ Prompt 模板质量直接影响输出，需要迭代优化
+- ✅ 保留 LiteLLM 100+ Provider 覆盖（ChatLiteLLM 底层仍是 litellm）
+- ✅ 获得 LangSmith 调试追踪、LCEL 管道、LangChain callback 体系
+- ✅ 测试时注入 Mock 实现，不依赖 LangChain
+- ❗ LangChain 版本升级可能有 breaking changes（pin minor 版本 + CI 检测）
+- ❗ 增加 ~5 个 LangChain 包的依赖体积（~数十 MB）
+- ❗ Domain `ChatMessage`/`ChatResponse` 需与 LangChain 的 `AIMessage` 做薄转换
 
 ---
 
-### ADR-007: 项目包结构
+### ~~ADR-006: Agent 编排 — 管道链模式（Pipeline Chain）~~（v1.0，已被 ADR-006v2 取代）
+
+**状态**: 已弃用 · 被 ADR-006v2 取代 · 🟡 风险等级：低（未实现，无迁移成本）
+
+---
+
+### ADR-006v2: Agent 编排 — LangGraph StateGraph
+
+**状态**: 已接受（替代 ADR-006 v1.0）· 🟡 风险等级：中
+
+**背景**:
+1. PRD 要求 Architect→Writer→Auditor→Reviser 链式执行（F4）
+2. 后续规划：用户自定义 Agent 管线（DAG + 条件分支）
+3. LangGraph 的 StateGraph 天然支持从顺序链到 DAG 的渐进式升级
+
+**决策**: 使用 LangGraph `StateGraph` 作为 Agent 管线引擎，通过 `AgentPipelineProtocol` 隔离领域层。
+
+```
+domain/ports/agent_pipeline.py          ← AgentPipelineProtocol (纯 Python)
+infrastructure/agent/langgraph_pipeline.py  ← LangGraphAgentPipeline (实现 Protocol)
+```
+
+**Phase 1: 固定顺序链（Architect → Writer → Auditor → Reviser）**
+```python
+# LangGraph 构建（内部）
+workflow = StateGraph(PipelineState)
+workflow.add_node("architect", architect_node)
+workflow.add_node("writer", writer_node)
+workflow.add_node("auditor", auditor_node)
+workflow.add_node("reviser", reviser_node)
+workflow.add_edge("architect", "writer")
+workflow.add_edge("writer", "auditor")
+workflow.add_edge("auditor", "reviser")
+workflow.add_edge("reviser", END)
+workflow.set_entry_point("architect")
+app = workflow.compile()
+```
+
+**Phase 2: 用户自定义 DAG（从 YAML 配置动态构建 StateGraph）**
+```yaml
+pipeline:
+  stages:
+    - id: world_building
+      agent: world_architect
+      output_to: [outline]
+    - id: outline
+      agent: outline_writer
+      output_to: [chapter_write, foreshadow_plant]  # 并行分支
+    - id: chapter_write
+      agent: chapter_writer
+      output_to: [style_review]
+    - id: foreshadow_plant
+      agent: foreshadow_agent
+      output_to: []  # 不阻塞主链
+```
+
+**与 v1.0 方案对比**:
+| 维度 | v1.0 自定义 Pipeline | v2.0 LangGraph |
+|------|---------------------|----------------|
+| Phase 1 复杂度 | ~200 行 | ~200 行（LangGraph 声明式更短） |
+| Phase 2 DAG 升级 | 需要重写拓扑排序、并行调度 | 只需改 `add_edge` → `add_conditional_edges` |
+| 可观测性 | 需自建日志/追踪 | LangSmith 内置追踪 |
+| Checkpointing | 需自己实现 | LangGraph 内置（管线中断可恢复） |
+| 错误处理 | 需自己实现重试逻辑 | LangGraph 内置 + 自定义 fallback |
+
+**影响**:
+- ✅ Phase 1 代码量与自定义方案相当，但 Phase 2 扩展成本大幅降低
+- ✅ LangGraph checkpointing → 管线中断可恢复（对 daemon 后台写作很重要）
+- ❗ LangGraph 处于快速迭代期（v0.2），API 可能变化（pin 版本 + 薄 Protocol 隔离）
+- ❗ 新手需要理解 StateGraph / Node / Edge 等概念，有上手成本
+
+---
+
+### ADR-007v2: 项目包结构（更新版）
 
 **状态**: 已接受
 
-**背景**: 需要清晰的模块边界，支持三界面复用，且为 SDD 工作流兼容。
-
-**决策**: Monorepo 结构：
+**v2.0 变更**: infrastructure 层新增 `llm/`、`agent/`、`rag/` 目录，domain/ports 新增 4 个 Protocol。
 
 ```
-backend/                         # Python 后端
-├── src/inkflow/                 # 主 Python 包
-│   ├── __init__.py
-│   ├── __main__.py              # Entry point: `inkflow` CLI
-│
+backend/src/inkflow/
+├── __init__.py
+├── __main__.py
+
 ├── api/                            # FastAPI 路由（Presentation）
-│   ├── __init__.py
-│   ├── app.py                      # FastAPI 应用创建
-│   ├── deps.py                     # 依赖注入（FastAPI Depends）
-│   ├── routers/
-│   │   ├── __init__.py
-│   │   ├── project.py
-│   │   ├── chapter.py
-│   │   ├── writing.py
-│   │   ├── agent.py
-│   │   ├── context.py
-│   │   └── health.py
-│   └── middleware.py               # 统一错误处理/日志
-│
+│   ├── app.py / deps.py
+│   └── routers/ (project, chapter, writing, agent, health)
+
 ├── cli/                            # Typer CLI（Presentation）
-│   ├── __init__.py
-│   ├── app.py                      # Typer app 创建
-│   ├── commands/
-│   │   ├── __init__.py
-│   │   ├── project.py
-│   │   ├── chapter.py
-│   │   ├── write.py
-│   │   ├── character.py
-│   │   ├── world.py
-│   │   ├── outline.py
-│   │   ├── audit.py
-│   │   ├── export.py
-│   │   └── serve.py
-│   └── output.py                   # JSON/Table 输出格式
-│
-├── mcp/                            # MCP Server（Presentation, Phase 3）
-│   ├── __init__.py
-│   ├── server.py                   # MCP Server 初始化
-│   └── tools/                      # ≥ 15 MCP 工具
-│
-├── domain/                         # Domain 层（业务逻辑 + 接口定义）
-│   ├── __init__.py
+│   └── commands/ (project, chapter, write, serve)
+
+├── mcp/                            # MCP Server（Phase 3）
+│   └── tools/
+
+├── domain/                         # Domain 层（零框架依赖）
 │   ├── models/                     # Pydantic 领域模型
-│   │   ├── __init__.py
-│   │   ├── project.py
-│   │   ├── chapter.py
-│   │   ├── character.py
-│   │   ├── world.py
-│   │   ├── outline.py
-│   │   ├── timeline.py
-│   │   ├── foreshadowing.py
-│   │   ├── agent.py
-│   │   └── context.py
+│   │   └── (project, chapter, character, agent, ...)
 │   ├── services/                   # 业务服务
-│   │   ├── __init__.py
-│   │   ├── project_service.py
-│   │   ├── chapter_service.py
-│   │   ├── writing_service.py
-│   │   ├── agent_service.py
-│   │   ├── context_service.py
-│   │   ├── character_service.py
-│   │   ├── world_service.py
-│   │   ├── outline_service.py
-│   │   ├── timeline_service.py
-│   │   ├── foreshadowing_service.py
-│   │   ├── audit_service.py
-│   │   ├── extraction_service.py
-│   │   ├── style_service.py
-│   │   ├── search_service.py
-│   │   └── output_service.py
+│   │   └── (project, chapter, writing, agent, context, ...)
 │   ├── ports/                      # 出站接口（Protocol 定义）
-│   │   ├── __init__.py
-│   │   ├── database.py             # DatabaseProtocol
-│   │   ├── llm_client.py           # LLMClientProtocol
-│   │   ├── auth.py                 # AuthProtocol
-│   │   ├── storage.py              # StorageProtocol
-│   │   └── user.py                 # UserProtocol
-│   └── exceptions.py               # 领域级异常
-│
+│   │   ├── project_repository.py   # F1 (已实现)
+│   │   ├── llm_client.py           # ADR-005v2 🆕
+│   │   ├── agent_pipeline.py       # ADR-006v2 🆕
+│   │   ├── vector_store.py         # ADR-013 🆕
+│   │   └── prompt_template.py      # ADR-014 🆕
+│   └── exceptions.py
+
 ├── infrastructure/                 # 基础设施（Adapter 实现）
-│   ├── __init__.py
 │   ├── database/                   # SQLAlchemy + SQLite
-│   │   ├── __init__.py
-│   │   ├── engine.py               # 引擎创建 + session 管理
-│   │   ├── models/                 # SQLAlchemy ORM 模型
-│   │   │   ├── __init__.py
-│   │   │   ├── project.py
-│   │   │   ├── chapter.py
-│   │   │   └── ...
+│   │   ├── models/                 # ORM 模型
 │   │   └── repositories/           # Repository 实现
-│   │       ├── __init__.py
-│   │       ├── project_repo.py
-│   │       ├── chapter_repo.py
-│   │       └── ...
-│   ├── llm/                        # LLM Provider 适配器
-│   │   ├── __init__.py
-│   │   ├── openai_client.py
-│   │   ├── deepseek_client.py
-│   │   ├── ollama_client.py
-│   │   └── base.py                 # 共享工具（HTTP client, retry, tokenize）
-│   ├── auth/                       # 本地免认证（Phase 1）/ JWT（Phase 4+）
-│   │   ├── __init__.py
-│   │   └── local_trust.py
-│   └── storage/                    # 本地文件存储
-│       ├── __init__.py
-│       └── local_file_storage.py
-│
-├── core/                           # 共享基础设施（Config/Log/DB session）
-│   ├── __init__.py
-│   ├── config.py                   # Pydantic Settings
-│   ├── logger.py                   # loguru 配置
-│   ├── database.py                 # 数据库 session 工厂
-│   └── dependencies.py             # 共享 DI 容器
-│
-├── prompts/                        # Agent Prompt 模板（YAML）
-│   ├── architect.yaml
-│   ├── writer.yaml
-│   ├── auditor.yaml
-│   └── reviser.yaml
-│
-└── __about__.py                    # 版本号、作者信息
+│   ├── llm/                        # LangChain LLM Client 🆕
+│   │   └── langchain_client.py     # ChatLiteLLM 封装
+│   ├── agent/                      # LangGraph Agent Pipeline 🆕
+│   │   └── langgraph_pipeline.py   # StateGraph 封装
+│   ├── rag/                        # RAG 检索 🆕
+│   │   └── langchain_vector_store.py  # Chroma + BGE Embedding
+│   ├── prompt/                     # Prompt 模板管理 🆕
+│   │   └── langchain_prompt_manager.py  # ChatPromptTemplate + YAML
+│   ├── auth/local_trust.py
+│   └── storage/local_file_storage.py
+
+├── core/                           # 共享基础设施
+│   ├── config.py                   # Pydantic Settings（LangChain 配置）
+│   ├── database.py / log.py
+
+└── prompts/                        # Agent Prompt 模板（YAML）
+    ├── architect.yaml
+    ├── writer.yaml
+    ├── auditor.yaml
+    └── reviser.yaml
 ```
 
 **影响**:
-- ✅ 三层（Presentation/Domain/Infrastructure）清晰分离
-- ✅ 模块按业务聚合（project/chapter/agent...），而非按技术层次
-- ❗ Phase 1 某些模块（character/world/timeline）只有占位接口
-- ❗ 文件数量较多（~60+ 文件），需 IDE 辅助导航
+- ✅ infrastructure 层按技术实现分目录（llm/agent/rag/prompt），业务模块在 domain 层
+- ✅ 每个 infrastructure 子模块可独立替换（如换 RAG 方案只需改 rag/ 目录）
+- ❗ 文件数量增加（~70+ 文件）
 
 ---
 
 ### ADR-008: 配置管理 — Pydantic Settings 分层配置
 
-**状态**: 已接受
+**状态**: 已接受（v2.0 扩展了 LLM/RAG 配置项）
 
-**背景**: PRD 需要多 Provider API Key 加密存储、任务模型路由、用户可配参数。
+**更新**: 新增以下配置分组：
+- **LangSmith**: API Key、项目名、启用开关
+- **Embedding**: 模型名（`BAAI/bge-small-zh-v1.5`）、推理设备
+- **向量库**: chromadb 持久化路径、collection 列表
+- **LLM 超时/重试**: 请求超时、最大重试次数
 
-**决策**: 使用 `pydantic-settings` 实现三层配置：
-
-```python
-# 1. 默认配置（硬编码）
-class DefaultSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="INKFLOW_")
-
-    # 数据库
-    database_url: str = "sqlite+aiosqlite:///inkflow.db"
-
-    # LLM Provider
-    openai_api_key: str | None = None
-    deepseek_api_key: str | None = None
-    ollama_base_url: str = "http://localhost:11434"
-
-    # 模型路由
-    model_routing: dict[str, str] = {
-        "writing": "gpt-4o",
-        "audit": "claude-3-haiku",
-        "outline": "deepseek-chat",
-    }
-
-    # Token 预算
-    context_token_budget: int = 128000
-    context_protected_ratio: float = 0.3
-    context_compressible_ratio: float = 0.5
-    context_dynamic_ratio: float = 0.2
-
-# 2. .env 文件（本地覆盖）
-# INKFLOW_OPENAI_API_KEY=sk-xxx
-
-# 3. 项目级配置（存储在 SQLite 中的 JSON 字段，每项目独立）
-# Project.config 覆盖全局默认值
-```
-
-**影响**:
-- ✅ 类型安全，IDE 自动补全
-- ✅ 环境变量支持，适合 Docker/云端部署
-- ✅ 项目级配置独立，支持每个项目不同模型路由
-- ❗ API Key 加密存储（cryptography）需要额外处理
+详见 `backend/src/inkflow/core/config.py`。
 
 ---
 
 ### ADR-009: 依赖注入策略
 
-**状态**: 已接受
-
-**背景**: Service 层依赖 Repository、LLM Client 等基础设施，需要可测试性。
-
-**决策**: 三套 DI 方案对应三个界面：
-
-| 界面 | DI 方案 | 说明 |
-|------|---------|------|
-| FastAPI API | `FastAPI Depends` | 原生支持，Request-scoped |
-| Typer CLI | 构造函数注入 + lazy factory | Typer 无 DI 容器，手动注入 |
-| MCP Server | 构造函数注入 | Server 启动时一次性注入 |
-
-**统一原则**: Service 类通过构造函数接受依赖，不直接引用全局变量。
-
-```python
-class ProjectService:
-    """构造注入，不依赖全局状态"""
-
-    def __init__(
-        self,
-        db: DatabaseProtocol,
-        llm: LLMClientProtocol | None = None,  # 可选依赖
-    ):
-        self._db = db
-        self._llm = llm
-
-# FastAPI: Depends 工厂
-async def get_project_service(
-    db: DatabaseProtocol = Depends(get_db),
-) -> ProjectService:
-    return ProjectService(db=db)
-
-# CLI: 手动传参
-def main():
-    db = create_sqlite_repository()
-    service = ProjectService(db=db)
-    ...
-```
-
-**影响**:
-- ✅ 测试时直接构造 `ProjectService(mock_db)`，无需框架
-- ✅ FastAPI Depends 做自动生命周期管理
-- ❗ CLI/MCP 需要手动管理依赖图（Service 数量增多时需 DI 容器，如 `lazy` 或简单的 `ServiceFactory`）
+**状态**: 已接受（不变）
 
 ---
 
-### ADR-010: 上下文管理 — 分层 Token 预算
+### ADR-010: 上下文管理 — 分层 Token 预算 → RAG 增强
 
-**状态**: 已接受
+**状态**: 已接受（Phase 1 仍用 Token 预算，Phase 2 引入 RAG）
 
-**背景**: PRD F6 要求 Token 预算管理、分层上下文（protected/compressible/dynamic）、角色注入、世界设定注入、前文摘要、伏笔追踪。
-
-**决策**: 实现三层 Token 预算分配模型：
-
-```
-上下文 Budget（100%）
-│
-├── Protected（30%）— 必须保留的内容
-│   ├── Project 设定（Genre/Language/Target Words）
-│   ├── 当前章节的 Agent 角色 Prompt
-│   └── 关键角色档案（按章节匹配 Top-K）
-│
-├── Compressible（50%）— 可摘要压缩的内容
-│   ├── 前 N 章摘要（自动生成，N 可配）
-│   ├── 世界设定（按 location 匹配）
-│   ├── 相关伏笔（未解决的）
-│   └── 时间线事件（最近 Top-M）
-│
-└── Dynamic（20%）— 按需注入，超预算截断
-    ├── 完整的上文（对话/情节）
-    ├── 额外角色档案
-    └── 额外世界设定
-```
-
-```python
-@dataclass
-class ContextBudget:
-    total: int
-    protected_limit: int      # total * protected_ratio
-    compressible_limit: int   # total * compressible_ratio
-    dynamic_limit: int        # total * dynamic_ratio
-
-class ContextService:
-    async def build_context(
-        self,
-        project_id: int,
-        chapter_id: int,
-        budget: ContextBudget,
-    ) -> WritingContext:
-        # 1. 计算 Token 预算
-        # 2. 收集 Protected 内容（精确匹配）
-        # 3. 生成 Compressible 摘要
-        # 4. 注入 Dynamic 内容（截断到预算）
-        # 5. 返回组装好的上下文
-        ...
-```
-
-**影响**:
-- ✅ 适配不同模型的上下文窗口（8K/32K/128K/200K）
-- ✅ 摘要策略使长篇小说管理成为可能
-- ❗ Token 计数精度在不同模型间不一致
-- ❗ 摘要质量直接影响 Agent 写作质量
+**v2.0 变更**: ADR-013（RAG）作为 Phase 2 的补充方案。Phase 1 先用 Token 预算模型保证基础可用，Phase 2 用 RAG 替换"Compressible"层的摘要注入，实现精确语义检索。
 
 ---
 
 ### ADR-011: 异步无阻塞架构
 
-**状态**: 已接受
-
-**背景**: PRD 要求流式输出（SSE）、LLM API 调用、后台 daemon 写作。
-
-**决策**: 全异步栈，所有 I/O 使用 `async/await`：
-
-```python
-# 全链路异步
-FastAPI (async) → Service (async) → Repository (async) → SQLAlchemy (async)
-                                   → LLM Client (async) → httpx (async)
-                                   → File Storage (async) → aiofiles
-```
-
-**同步例外**：
-- CLI 启动入口（`asyncio.run()` 包装）
-- Typer 命令本身同步，内部调用 `asyncio.run()` 或 `async` 命令
-- MCP Server 在事件循环中运行
-
-**影响**:
-- ✅ 流式输出：单连接支持 SSE，资源占用低
-- ✅ 并发 LLM 调用：多个 Provider 请求可并行
-- ❗ SQLite 虽然是单线程，但 aiosqlite 异步化避免阻塞事件循环
-- ❗ 调试异步代码比同步复杂（调用栈更复杂）
+**状态**: 已接受（不变）
 
 ---
 
 ### ADR-012: 错误处理策略
 
-**状态**: 已接受
+**状态**: 已接受（v2.0 扩展了 LLM/RAG 相关异常类型）
 
-**背景**: 三个界面需要统一的错误处理，避免重复代码。
+**v2.0 扩展**: 新增异常类型：
+- `LLMRequestError`: LLM API 调用失败（网络/超时/Provider 错误）
+- `ContextBudgetExceededError`: Token 预算超限
+- `AgentPipelineError`: Agent 管线执行失败
+- `VectorStoreError`: 向量库操作失败
+- `PromptRenderError`: Prompt 模板渲染失败
 
-**决策**: 领域级异常（Domain Exceptions）→ 统一错误处理中间件 → 界面适配
+---
 
+### ADR-013: RAG 检索 — LangChain Chroma + 本地 Embedding 🆕
+
+**状态**: 已接受 · 🟡 风险等级：中 · Phase 2 实现
+
+**背景**:
+1. 长篇小说的上下文管理不能只靠 Token 预算——写第 50 章时需要第 3 章埋的伏笔，但早已被挤出上下文窗口
+2. 角色一致性、世界设定连贯性、伏笔追踪需要精确的语义检索
+3. PRD F6 的"分层上下文"在 Token 预算模型下是粗粒度的，RAG 提供细粒度补充
+
+**决策**: 使用 **LangChain Chroma**（chromadb 的 LangChain 集成）+ **sentence-transformers** 本地 Embedding 模型。
+
+```
+domain/ports/vector_store.py              ← VectorStoreProtocol (纯 Python)
+infrastructure/rag/langchain_vector_store.py  ← LangChainVectorStore (实现 Protocol)
+```
+
+**为什么本地 Embedding 而不是 API？**
+| 方案 | 成本 | 延迟 | 隐私 | 中文效果 |
+|------|------|------|------|---------|
+| **BAAI/bge-small-zh-v1.5（选定）** | 免费 | < 10ms | ✅ 本地 | ⭐⭐⭐⭐⭐ MTEB 中文榜首 |
+| OpenAI text-embedding-3-small | ~$0.02/1M tokens | ~100ms | ❌ 数据离开本地 | ⭐⭐⭐⭐ |
+| 不做 RAG（纯 Token 预算） | — | — | — | 长篇小说一致性无法保证 |
+
+**RAG 实体类型**:
+| EntityType | 索引内容 | 检索触发时机 |
+|-----------|---------|------------|
+| `character` | 角色档案（姓名、外貌、性格、关系） | 该角色在当前章节出现时 |
+| `setting` | 世界设定（地点描述、规则、文化） | 当前章节场景切换时 |
+| `foreshadowing` | 伏笔（已埋设/已回收） | 每次写作调用时检索未回收伏笔 |
+| `timeline_event` | 时间线事件 | 写作涉及时间跳跃时 |
+| `chapter_chunk` | 章节文本块（~500 字/chunk） | 需要前文精确引用时 |
+
+**实现预览**:
 ```python
-# domain/exceptions.py
-class InkFlowError(Exception):
-    """所有领域异常的基类"""
-    code: str
-    detail: str
-    status_code: int = 500
+class LangChainVectorStore:
+    def __init__(self, persist_dir: Path):
+        self._embeddings = HuggingFaceBgeEmbeddings(
+            model_name="BAAI/bge-small-zh-v1.5",
+            model_kwargs={"device": "cpu"},
+            encode_kwargs={"normalize_embeddings": True},
+        )
+        self._stores: dict[str, Chroma] = {
+            "character": Chroma(
+                collection_name="characters",
+                embedding_function=self._embeddings,
+                persist_directory=str(persist_dir / "characters"),
+            ),
+            # ... 每种实体类型一个 collection
+        }
 
-class ProjectNotFoundError(InkFlowError):
-    code = "PROJECT_NOT_FOUND"
-    status_code = 404
-
-class LLMRequestError(InkFlowError):
-    code = "LLM_REQUEST_FAILED"
-    status_code = 502
-
-class ContextBudgetExceededError(InkFlowError):
-    code = "CONTEXT_BUDGET_EXCEEDED"
-    status_code = 400
-
-# API: FastAPI ExceptionHandler
-@app.exception_handler(InkFlowError)
-async def inkflow_error_handler(request, exc: InkFlowError):
-    return JSONResponse(status_code=exc.status_code, content={
-        "error": {"code": exc.code, "detail": exc.detail}
-    })
-
-# CLI: 捕获并输出
-try:
-    result = service.method()
-except InkFlowError as e:
-    console.print(f"[red]Error ({e.code}):[/] {e.detail}")
-    raise typer.Exit(code=1)
-
-# MCP: 返回错误 JSON-RPC
+    async def retrieve(self, query, *, project_id, entity_types, top_k=10):
+        # 多 collection 联合检索 → 按 relevance 排序 → 返回 top_k
+        ...
 ```
 
 **影响**:
-- ✅ 三界面复用同一套异常类
-- ✅ 错误信息统一，前端/CLI/Agent 解析一致
-- ❗ 需覆盖所有可能的错误场景（Phase 1 聚焦核心场景）
+- ✅ 长篇小说一致性保障，是竞品没有的差异化功能
+- ✅ 全本地运行，零额外 API 费用
+- ✅ 首次运行自动下载 Embedding 模型（~100MB，仅一次）
+- ✅ LangChain Chroma 提供统一的 VectorStore 接口
+- ❗ Embedding 模型首次下载需网络（首次安装时自动处理）
+- ❗ chromadb 持久化会增加磁盘占用（每项目 ~10-50MB）
+- ❗ RAG 检索延迟约 10-50ms（本地 + CPU），不影响 LLM 调用的大头延迟
+
+---
+
+### ADR-014: Prompt 模板管理 — LangChain ChatPromptTemplate 🆕
+
+**状态**: 已接受 · 🟢 风险等级：低 · Phase 1 实现
+
+**背景**: 项目有多个 Agent 角色（Architect/Writer/Auditor/Reviser）和后续用户自定义角色，每个角色有独立的 Prompt 模板。需要统一的模板加载、变量注入、验证机制。
+
+**决策**: 使用 LangChain `ChatPromptTemplate` 管理模板，通过 `PromptTemplateProtocol` 隔离领域层。
+
+```
+domain/ports/prompt_template.py              ← PromptTemplateProtocol
+infrastructure/prompt/langchain_prompt_manager.py  ← LangChainPromptManager
+prompts/*.yaml                                ← 模板文件
+```
+
+**模板格式（YAML）**:
+```yaml
+# prompts/writer.yaml
+name: writer
+description: 小说章节写手 — 根据大纲和上下文创作正文
+system_prompt: |
+  你是一位资深{genre}小说作家，笔名「墨流」。
+
+  ## 写作风格
+  {style_requirements}
+
+  ## 上下文
+  ### 相关角色
+  {character_context}
+
+  ### 世界设定
+  {world_context}
+
+  ### 前文摘要
+  {previous_summary}
+
+  ### 待回收伏笔
+  {pending_foreshadowing}
+
+human_prompt: |
+  请创作第{chapter_number}章：{chapter_title}
+
+  大纲：
+  {outline}
+variables:
+  - genre
+  - style_requirements
+  - character_context
+  - world_context
+  - previous_summary
+  - pending_foreshadowing
+  - chapter_number
+  - chapter_title
+  - outline
+```
+
+**优势**: `ChatPromptTemplate` 的类型安全 + `MessagesPlaceholder` 的动态消息插入，比手写 `str.format()` 健壮。
+
+**影响**:
+- ✅ 模板与代码分离，非技术人员可编辑 YAML
+- ✅ 变量验证，缺少变量时提前报错
+- ✅ 支持多语言 Prompt（中文/英文模板共存）
+- ❗ YAML 模板编辑需注意缩进和转义
+
+---
+
+### 🔴 ADR-015: 引入 LangChain 全家桶 — 决策理由与约束 🆕
+
+**状态**: 已接受 · 🔴 风险等级：中高（框架锁定）
+
+**背景**: 这个决策是所有 v2.0 变更的根因。需要明确记录"为什么"和"有什么代价"。
+
+**为什么引入 LangChain？**
+
+| 理由 | 权重 | 说明 |
+|------|------|------|
+| Provider 统一 | 🔴 决定性 | ChatLiteLLM 单一接口覆盖 100+ Provider，模型切换零代码 |
+| 可观测性 | 🔴 决定性 | LangSmith 提供 LLM 调用链的可视化调试，复杂 Agent 管线必备 |
+| 管线可组合性 | 🟡 支撑性 | LCEL 声明式管道 + LangGraph StateGraph 使 Agent 逻辑可测试、可扩展 |
+| 生态复用 | 🟡 支撑性 | ChatPromptTemplate、Chroma integration 减少重复造轮子 |
+| 社区标准 | 🟢 加分项 | LangChain 是 Python AI 开发领域最活跃的框架，问题容易找到方案 |
+
+**LangChain vs 自研的不可逆代价**:
+
+| 代价 | 严重程度 | 缓解措施 |
+|------|---------|---------|
+| 框架锁定 | 🔴 严重 | Protocol 接口隔离 → Domain 层不依赖 LangChain，最坏情况可替换 infrastructure |
+| 版本 churn | 🟡 中等 | `pyproject.toml` 锁定 minor 版本（`>=0.3.0,<0.4.0`），Renovate 自动 PR |
+| 上手成本 | 🟡 中等 | Phase 1 只用最稳定的子集（ChatLiteLLM + ChatPromptTemplate + StateGraph 顺序链） |
+| 依赖体积 | 🟢 轻微 | 本地部署，体积不是瓶颈 |
+| 调试复杂度 | 🟡 中等 | LangSmith 弥补（但不是银弹）；Protocol 层可在测试中 bypass LangChain |
+
+**防护规则**:
+
+```
+1. domain/ 下 zero 行 LangChain import — CI 强制检查
+2. 每个 Protocol 有至少一个 Mock 实现 — 测试不依赖 LangChain
+3. 新增 LangChain 子包需经过评估 — 不是所有 langchain_* 都要引入
+4. LangSmith 追踪默认关闭 — 仅开发/调试时通过环境变量开启
+```
+
+**备选方案**:
+| 方案 | Provider覆盖 | 可观测性 | 可组合性 | 维护成本 |
+|------|------------|---------|---------|---------|
+| LangChain 全家桶（选定） | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
+| LiteLLM + 自研（v1.0） | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ |
+| LlamaIndex（仅 RAG） | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ |
+
+**影响**:
+- ✅ ChatLiteLLM 统一 100+ Provider，LangSmith 提供全链路调试能力
+- ✅ LCEL + LangGraph 使 Agent 管线可测试、可渐进扩展
+- ✅ 生态复用减少代码量（Prompt、Chroma、Document loaders）
+- ❗ 框架锁定风险：如果 LangChain 方向发生根本性变化，需要替换 infrastructure 层
+- ❗ 版本升级成本：每个 minor 版本升级可能需要 1-2 天适配
+- ❗ CI 需增加 "domain 层无 LangChain import" 的强制检查
 
 ---
 
 ## 四、容量估算
 
-基于 PRD 单人开发 + 本地部署场景：
-
 | 指标 | 估值 | 说明 |
 |------|------|------|
 | 数据库大小 | ~10-50MB / 项目 | SQLite，纯文本为主 |
+| 向量库大小 | ~10-50MB / 项目 | chromadb 持久化 |
+| Embedding 模型 | ~100MB（一次下载） | BAAI/bge-small-zh-v1.5 |
 | Token 消耗 | ~5K-50K / 写作调用 | 取决于上下文长度和生成量 |
-| LLM API 延迟 | 5-30s / 调用 | 首版不支持并行 Agent |
-| 服务内存 | ~50-150MB | Python + FastAPI + SQLAlchemy |
-| 启动时间 | < 2s（冷启动） | FastAPI + uvloop |
+| LLM API 延迟 | 5-30s / 调用 | 取决于 Provider 和生成长度 |
+| RAG 检索延迟 | ~10-50ms | 本地 CPU 推理 |
+| 服务内存 | ~200-400MB | Python + FastAPI + SQLAlchemy + chromadb + Embedding 模型 |
+| 启动时间 | < 5s（冷启动，含模型加载） | BGE-small 加载 ~1s |
 
 ---
 
@@ -714,12 +676,12 @@ except InkFlowError as e:
 
 | 质量属性 | 目标 | 实现策略 |
 |---------|------|---------|
-| **可测试性** | 覆盖率 ≥ 70% | Repository Mock、LLM Mock、DI 注入 |
-| **可维护性** | 新人 1 周可上手 | 分层清晰、ADR 记录决策理由 |
-| **可扩展性** | 新增 Provider ≤ 1 天 | Protocol 接口 + Config 配置 |
-| **性能** | API 响应 ≤ 100ms（非 LLM） | 异步全链路、SQLite 索引 |
+| **可测试性** | 覆盖率 ≥ 70% | Repository/LLM/Pipeline/VectorStore 全部可 Mock |
+| **可维护性** | 新人 1 周可上手 | 分层清晰、ADR 记录决策理由、Protocol 隔离框架 |
+| **可扩展性** | 新增 Provider ≤ 1 天 | ChatLiteLLM 配置切换，无需改代码 |
+| **性能** | API 响应 ≤ 100ms（非 LLM） | 异步全链路、SQLite 索引、chromadb 本地 |
 | **安全性** | API Key 不落明文 | AES-256-GCM 加密存储 |
-| **可观测性** | 关键路径全链路日志 | loguru 结构化日志 + Request ID |
+| **可观测性** | 关键路径全链路日志 + LangSmith 调试追踪 | loguru 结构化日志 + LangSmith（可选） |
 
 ---
 
@@ -728,52 +690,82 @@ except InkFlowError as e:
 | 反模式 | InkFlow 的解药 |
 |--------|---------------|
 | 分布式单体 | 不上微服务，保持模块化单体 |
-| 金锤子 | PyPI 包名冲突 → 备选方案；对话类 UI 不强行用 React |
-| 简历驱动开发 | ADR 记录每个选型的业务理由 |
+| 金锤子 | 不是所有问题都用 LangChain——Phase 1 只用 ChatLiteLLM + StateGraph + ChatPromptTemplate |
+| 框架锁定 | Protocol 隔离 — LangChain 仅在 infrastructure 层，可替换 |
 | 过早抽象 | Rule of Three：等到第三个类似实现再抽象 |
 | 共享数据库 | Repository 模式隔离数据访问 |
 | 大泥球 | 模块按业务（project/chapter/agent）分层，非按技术 |
 | 贫血领域模型 | Service 包含业务逻辑，而非仅 CRUD |
+| LangChain 渗透领域层 | CI 强制检查：`grep -r "from langchain" src/inkflow/domain/ && exit 1` |
 
 ---
 
-## 七、演进路径
+## 七、演进路径与 UI 时间线
 
 ```
-Phase 1 (W1-W9): 模块化单体骨架
-  ├── FastAPI + SQLite + LLM × 3 + Agent 链 + CLI
-  └── 为 Phase 2 提供 REST API 契约
+Phase 1 (W1-W9) — 核心引擎（纯后端）
+  ├── W1-W2: F1-F2 项目/章节 CRUD                  ✅ 已完成
+  ├── W3-W4: F5 LLM Provider（LangChain ChatLiteLLM）  🔜 下一步
+  ├── W5-W7: F4 Agent 编排（LangGraph StateGraph）
+  ├── W5-W7: F3 AI 写作管道（LCEL 链）
+  ├── W5-W7: F6 上下文管理（Token 预算，Phase 1 版本）
+  ├── W8-W9: F7 CLI 完整命令
+  └── W9: Phase 1 Gate — CLI 可完成完整 AI 写作流程
 
-Phase 2 (W10-W16): 创作工具 + Web UI + 打包
-  ├── React 前端消费同一 REST API
-  ├── 新增 character/world/outline/timeline 模块
-  └── pywebview + PyInstaller 桌面端
+Phase 2 (W10-W16) — 创作工具 + RAG + 🖥️ Web UI
+  ├── F8-F11: 角色/世界/大纲/时间线管理
+  ├── 🆕 ADR-013 RAG 层：LangChain Chroma + BGE Embedding
+  ├── 🆕 自定义 Agent（YAML 配置驱动的顺序链）
+  ├── 🔴 F18: Web UI（React 19 + Vite 6 + shadcn/ui）
+  │     ├── W10-W12: 前端项目搭建 + 管理面板（项目/章节 CRUD）
+  │     ├── W13-W14: 写作界面 + SSE 流式渲染
+  │     └── W15-W16: Agent 配置界面 + RAG 检索演示
+  └── W16: Phase 2 Gate — Web UI 功能覆盖 ≥ 90%
 
-Phase 3 (W17-W24): Agent 集成 + 补全
-  ├── MCP Server 包装 Service 层
-  ├── SSE 流式输出
-  └── daemon 后台写作
+Phase 3 (W17-W24) — Agent 集成 + 扩展
+  ├── F12-F17: 伏笔/审计/风格/提取/会话/daemon
+  ├── 🆕 Agent 管线 DAG 版（用户自定义 DAG）
+  ├── F20: MCP Server（≥ 15 工具）
+  ├── F21: 导出服务（EPUB/Markdown/TXT/DOCX）
+  └── W24: Phase 3 Gate — 三平台打包可用
 
-Phase 4+ (未来): 云端迁移
-  ├── 实现 AuthProtocol → JWTAuth
-  ├── 实现 DatabaseProtocol → PostgreSQL
-  └── 单体拆分（如果需要多团队）
+Phase 4+ (未来) — 云端 + 游戏MVP + Agent 管线市场
+  ├── 云端部署（PostgreSQL / JWT / CloudSync）
+  ├── 🆕 文字游戏 MVP（设定→短篇，2-3 天探针验证）
+  └── Agent 管线模板社区分享
 ```
+
+### 🖥️ UI 时间线详细说明
+
+| 里程碑 | 时间 | 交付物 | 技术 |
+|--------|------|--------|------|
+| **Phase 1 占位页** | W8-W9 | `/health` 端点 + 简易状态页 | Jinja2 模板渲染（FastAPI 内置） |
+| **Phase 2 前端启动** | W10 | React 项目搭建 + API Client 自动生成 | Vite 6 + openapi-typescript |
+| **管理面板** | W11-W12 | 项目/章节/角色/世界 CRUD 界面 | React + Zustand + shadcn/ui |
+| **写作界面** | W13-W14 | 章节编辑器 + SSE 流式输出 + Agent 进度 | EventSource + 实时渲染 |
+| **Agent 配置 + RAG** | W15-W16 | 管线配置界面 + 检索调试 | LangGraph 状态视图 + RAG 检索测试 |
+| **Phase 3 打磨** | W17-W21 | 完善 UI、响应式、桌面端打包 | pywebview + PyInstaller |
+
+**关键决策**：Phase 1 **不做任何 Web UI**。原因：
+1. Phase 1 的重点是核心引擎可用（CLI 驱动）
+2. 前端在 API 契约稳定后再启动，避免返工
+3. 单人开发无法并行后端引擎 + 前端 UI
+4. Phase 1 末尾有一个 Jinja2 占位页用于冒烟测试
 
 ---
 
-## 八、待处理架构 TODO
+## 八、待处理事项
 
 | # | 事项 | 优先级 | 说明 |
 |---|------|--------|------|
-| 1 | PyPI 包名 `inkflow` 可用性检查 | 🔴 | 阻塞 pip install 发布 |
-| 2 | SDD 初始化 `specify init .` | 🔴 | 生成 .specify/ 和模板 |
-| 3 | 编写 Constitution（项目章程） | 🔴 | SDD 工作流起点 |
-| 4 | 编写 Phase 1 Spec（F1-F7） | 🔴 | 架构决策的落地基础 |
-| 5 | Node.js 版本确认 | 🟡 | Phase 2 前端需要 |
+| 1 | F3-F6 实现（写作管道 + Agent + LLM + 上下文） | 🔴 | Phase 1 核心，约 25-40 人天 |
+| 2 | LangSmith API Key 配置 | 🟡 | 调试复杂 Agent 管线需要 |
+| 3 | chromadb + BGE 模型集成测试 | 🟡 | Phase 2 RAG 的前置验证 |
+| 4 | PyPI 包名 `inkflow` 可用性检查 | 🟡 | 阻塞 pip install 发布 |
+| 5 | Node.js 环境确认 | 🟡 | Phase 2 前端需要 |
 | 6 | MCP SDK 调研 | 🟡 | Phase 3 需要 |
-| 7 | Model routing 默认配比确定 | 🟡 | 影响 Phase 1 F5 实现 |
+| 7 | 文字游戏 MVP 探针 | 🟢 | Phase 4+，先不排期 |
 
 ---
 
-*本文档是对 `docs/prd-inkflow-v2.1-2026-07-30.md` 的架构分析输出。每个 ADR 都可以作为 SDD 工作流中 Plan/Implement 阶段的输入。*
+*本文档是对 `docs/prd-inkflow-v2.1-2026-07-30.md` 的 v2.0 架构分析输出。v1.0（LiteLLM + 自定义 Pipeline 方案）已归档，v2.0（LangChain 全家桶）为当前有效版本。*

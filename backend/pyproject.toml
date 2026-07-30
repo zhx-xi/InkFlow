@@ -7,20 +7,36 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
+    # Web & CLI
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "typer>=0.12",
+    # Database
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.20",
     "alembic>=1.13",
+    # Data validation
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
+    # HTTP
     "httpx>=0.27",
     "httpx-sse>=0.4",
+    # LangChain 全家桶 — LLM 抽象 + Agent 编排 + RAG
+    "langchain-core>=1.0.0,<2.0.0",
+    "langchain-community>=0.4.0,<1.0.0",
+    "langchain-openai>=1.0.0,<2.0.0",
+    "langchain-chroma>=1.0.0,<2.0.0",
+    "langgraph>=1.0.0,<2.0.0",
+    # LLM Provider（ChatLiteLLM 底层依赖，覆盖 100+ Provider）
     "litellm>=1.50",
     "tiktoken>=0.7",
+    # RAG — 向量数据库 + 本地 Embedding
+    "chromadb>=1.0.0,<2.0.0",
+    "sentence-transformers>=3.0",
+    # Security & Logging
     "cryptography>=42.0",
     "loguru>=0.7",
+    # CLI
     "click>=8.1",
     "rich>=13.0",
 ]
@@ -36,6 +52,8 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
     "pre-commit>=3.0",
+    # LangSmith 追踪（开发/调试用）
+    "langsmith>=0.2.0",
 ]
 web = [
     "aiofiles>=23.0",

@@ -43,7 +43,11 @@
 | ORM | SQLAlchemy ≥ 2.0 (async) + aiosqlite ≥ 0.20 | **SQLite 本地**，未来切 PostgreSQL |
 | 迁移 | Alembic ≥ 1.13 | |
 | 数据验证 | Pydantic ≥ 2.0 + pydantic-settings ≥ 2.0 | `model_config = {"from_attributes": True}` |
-| LLM | litellm ≥ 1.50 + tiktoken ≥ 0.7 | 多 provider 统一适配 |
+| LLM Provider | langchain-core + langchain-community + langchain-openai | **ChatLiteLLM** 封装（底层 litellm，覆盖 100+ Provider） |
+| Agent 编排 | langgraph ≥ 0.2.0 | **StateGraph** — Phase 1 顺序链，Phase 2 用户自定义 DAG |
+| RAG | langchain-chroma + chromadb + sentence-transformers | 本地向量库 + BGE Embedding（Phase 2） |
+| Prompt 模板 | ChatPromptTemplate（langchain-core） | YAML 模板文件 + 变量验证 |
+| 追踪 | langsmith ≥ 0.2.0（可选） | LangSmith 追踪（开发/调试用，默认关闭） |
 | 加密 | cryptography ≥ 42.0 | API Key AES-256-GCM 加密 |
 | HTTP | httpx ≥ 0.27 + httpx-sse ≥ 0.4 | |
 | 日志 | Loguru ≥ 0.7 | |
@@ -123,12 +127,24 @@ D:\develop\projects\
 ```
 ✅ 正确：API/CLI → Domain Service → Port (Protocol) ← Infrastructure (实现)
 ✅ 正确：所有层都可以依赖 domain/models（纯数据对象）
+✅ 正确：infrastructure/ 可以导入 langchain_* 包
 
-❌ 禁止：domain/ 导入 FastAPI、Typer、SQLAlchemy、任何框架
+❌ 禁止：domain/ 导入 FastAPI、Typer、SQLAlchemy、LangChain、任何框架
 ❌ 禁止：domain/ 导入 infrastructure/
+❌ 禁止：domain 层出现 "from langchain" 或 "import langchain"
 ❌ 禁止：两个 domain service 互相循环导入
 ❌ 禁止：domain/ 导入 api/ 或 cli/
 ```
+
+**🔴 LangChain 隔离规则（CI 强制检查）**：
+
+```bash
+# domain 层不允许任何 LangChain import
+grep -r "from langchain" src/inkflow/domain/ && echo "VIOLATION: domain layer must not import LangChain" && exit 1
+grep -r "import langchain" src/inkflow/domain/ && echo "VIOLATION: domain layer must not import LangChain" && exit 1
+```
+
+如果 domain 层需要 LLM/Agent/RAG 能力，通过 `domain/ports/` 中的 Protocol 定义接口，infrastructure 层用 LangChain 实现。
 
 ### 4.3 Protocol 契约
 
@@ -152,9 +168,14 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 |-----|------|------|
 | 架构风格 | 模块化单体 | 单人团队，避免微服务运维负担；接口隔离保未来拆分 |
 | 数据库 | SQLite (async) | 本地优先，零配置；通过 Repository 接口隔离，未来切 PostgreSQL |
+| LLM Provider | **LangChain ChatLiteLLM**（v2.0） | 保留 100+ Provider 覆盖 + 获得 LangChain callback/LangSmith/LCEL 生态 |
+| Agent 编排 | **LangGraph StateGraph**（v2.0） | Phase 1 顺序链、Phase 2 DAG；LangSmith 可视化；内置 checkpointing |
+| RAG | **LangChain Chroma + BGE**（Phase 2） | 本地向量库 + 中文 SOTA Embedding；长篇小说一致性保障 |
+| Prompt | **ChatPromptTemplate + YAML**（v2.0） | 模板与代码分离；变量验证；非技术人员可编辑 |
 | 认证 | Phase 1-3 无需认证 | 本地运行，免认证；Phase 4+ 通过 AuthProtocol 扩展 |
 | ID 类型 | UUID v4 | 避免自增 ID 碰撞，支持未来分布式场景 |
 | 软删除 | is_deleted 标记 + 回收站 | Phase 1 保险策略，用户可恢复误删数据 |
+| **LangChain 隔离** | Protocol 模式 | Domain 零 LangChain 依赖 → 框架可替换性；CI 强制检查 |
 
 ---
 
@@ -417,9 +438,12 @@ AI 编码助手在开始任何工作前，应**按顺序**阅读以下文件：
 | # | 陷阱 | 解决 |
 |---|------|------|
 | 1 | **领域层引用了基础设施** | `domain/` 下绝不能出现 `import infrastructure` 或 SQLAlchemy/Starlette |
-| 2 | **CLI 测试用环境变量设置 DB** | 用 `monkeypatch.setattr` 直接替换 `engine` 和 `async_session_factory` |
-| 3 | **裸 `mypy` 命令在 Windows 上失败** | 使用 `python -m mypy`（uv trampoline 兼容） |
-| 4 | **Ruff UP042 报 StrEnum** | Python 3.11 native `StrEnum`，确保 `target-version = "py311"` |
-| 5 | **patch 只设源模块不设 CLI 模块** | Python `from X import Y` 在 import 时绑定，CLI 模块需要单独 patch |
-| 6 | **忘记 `from __future__ import annotations`** | 所有新文件必须加 |
-| 7 | **软删除后 get() 仍返回数据** | Repository.get() 必须过滤 `is_deleted=False` |
+| 2 | **领域层导入了 LangChain** | `domain/` 下出现 `from langchain` 会触发 CI 失败。用 `domain/ports/` Protocol 替代 |
+| 3 | **CLI 测试用环境变量设置 DB** | 用 `monkeypatch.setattr` 直接替换 `engine` 和 `async_session_factory` |
+| 4 | **裸 `mypy` 命令在 Windows 上失败** | 使用 `python -m mypy`（uv trampoline 兼容） |
+| 5 | **Ruff UP042 报 StrEnum** | Python 3.11 native `StrEnum`，确保 `target-version = "py311"` |
+| 6 | **patch 只设源模块不设 CLI 模块** | Python `from X import Y` 在 import 时绑定，CLI 模块需要单独 patch |
+| 7 | **忘记 `from __future__ import annotations`** | 所有新文件必须加 |
+| 8 | **软删除后 get() 仍返回数据** | Repository.get() 必须过滤 `is_deleted=False` |
+| 9 | **Protocol 中直接使用 LangChain 类型** | `domain/ports/` 的 Protocol 只能用 Python 标准类型 + 自定义 dataclass |
+| 10 | **LangChain 版本升级破坏兼容** | pip install 时 pyproject.toml 的 `<0.4.0` 上限保护；手动升级需跑全量测试 |
