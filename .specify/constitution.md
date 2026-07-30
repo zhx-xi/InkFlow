@@ -1,138 +1,191 @@
-# InkFlow 项目章程（Constitution）
+# InkFlow Constitution — 项目章程
 
-> 本文件为 InkFlow 项目的"宪法"，定义项目的根本原则、开发规范和决策框架。
-> 所有代码、架构和流程决策必须与此章程一致。
+> 版本 1.0 | 基于 ADR-001~012 | 依据 PRD v2.1
 
-## 1. 🎯 使命与定位
+---
 
-**使命**: 打造中国人自己的 AI 辅助小说创作工具，让创作者从重复性工作中解放，专注于故事本身。
+## 一、项目使命
 
-**定位**: 本地优先 + 前后端分离 + CLI/Web/MCP 三界面 + 多模型 BYOK 的小说创作工具。
+**Build the best local-first AI-assisted novel writing tool that works for both human authors and AI agents.**
 
-**目标用户**: 独立网文作者、同人写手、剧本创作者、AI Agent 调用方。
+InkFlow 是一个 AI 辅助小说创作工具。它的核心价值在于：让独立创作者从安装到完成第一章 AI 写作 ≤ 30 分钟，同时为 AI Agent（如 Hermes）提供一等公民的 MCP 集成。
 
-## 2. 🏗️ 架构原则
+---
 
-### 2.1 Protocol-First（接口优先）
-- 所有跨模块依赖必须通过 Python `Protocol` 抽象
-- 业务逻辑只依赖抽象，不依赖具体实现
-- 本地/云端通过 DI 容器切换，业务代码零修改
+## 二、核心原则（不可妥协）
 
-### 2.2 依赖注入
-- 所有 Service 的依赖通过构造函数注入
-- 禁止全局单例（`config` 模块为唯一例外）
-- 测试时轻松 Mock 替换
+### P1: 本地优先，零配置起步
+- 默认部署 = SQLite + 免认证 + 单进程
+- `pip install inkflow && inkflow serve` 三步骤即可启动
+- 云端部署仅在 Phase 4+ 实现，Phase 1-3 仅定义接口
 
-### 2.3 单一职责
-- 一个模块只做一件事
-- Service 不直接访问数据库（通过 Repository 层）
-- API 路由不包含业务逻辑（委派给 Service）
+### P2: 业务逻辑与界面解耦
+- Domain Service 层不能依赖 FastAPI / Typer / MCP 任何框架
+- 同一 Service 被 CLI + REST + MCP 三界面复用
+- 新界面只需新增 Presentation 层适配器
 
-### 2.4 模块边界清晰
-```python
-# ✅ 正确: 清晰分层（位于 backend/ 下）
-backend/
-├── src/inkflow/
-│   ├── api/       → 路由层（FastAPI router）
-│   ├── services/  → 业务逻辑层
-│   ├── models/    → 数据模型层（Pydantic + SQLAlchemy）
-│   ├── providers/ → 外部服务适配层（基于 LiteLLM）
-│   └── core/      → 基础设施层（配置/日志/DB）
-├── tests/         → 测试目录
-└── pyproject.toml  → Python 包配置
+### P3: 测试驱动开发（TDD）
+- **RED → GREEN → REFACTOR** 三步循环，严格执行
+- 先写失败测试 → 验证失败 → 最小实现 → 验证通过 → 重构
+- 测试覆盖率目标：Phase 1 ≥ 50%, Phase 2 ≥ 60%, Phase 3 ≥ 70%
+- Flaky test = 0 容忍
+
+### P4: 依赖方向单向
 ```
+Presentation → Domain ← Infrastructure
+                    ↑ (依赖倒置：Ports/Protocols)
+```
+- 领域层不能 import FastAPI、Typer、SQLAlchemy
+- 基础设施层实现 Domain Ports，不能反向依赖
+- 每层只依赖其直接下层或 Ports 接口
 
-## 3. 🧪 质量规范
+### P5: YAGNI — 等到第三次再抽象
+- Rule of Three：第一次写具体实现，第二次复制，第三次抽象
+- 不为"将来可能需要"写代码
+- Protocol 接口定义是例外——Phase 1 定义是为了云端迁移路线图
 
-### 3.1 TDD 强制（Red-Green-Refactor）
-- **生产代码必须由失败的测试驱动**
-- 每一行新代码都必须有对应的测试
-- 先在 `tests/` 写测试，验证失败，再实现，验证通过
-- 参见 `test-driven-development` skill
+### P6: 模块化单体，接口隔离
+- 单进程部署，模块间通过 Protocol 通信
+- 不做微服务（单人开发，运维负担不匹配）
+- 架构适应度函数防止模块间循环依赖
 
-### 3.2 测试覆盖标准
-| 阶段 | 覆盖率 | E2E 数 | Flaky |
-|------|--------|--------|-------|
-| Phase 1 | ≥ 50% | ≤ 20 | 0 |
-| Phase 2 | ≥ 60% | ≤ 40 | 0 |
-| Phase 3 | ≥ 70% | ≤ 50 | 0 |
+---
 
-### 3.3 CI 必须项
-- ✅ PR 自动运行全部测试
-- ✅ Ruff lint 检查
-- ✅ Mypy 类型检查（Phase 2 起）
-- ✅ 覆盖率检查
-- ✅ Flaky test = 0（发现即修复）
+## 三、技术约束
 
-## 4. 📝 代码规范
+| 约束 | 内容 |
+|------|------|
+| **语言** | Python 3.11+ |
+| **Web 框架** | FastAPI (async) |
+| **CLI 框架** | Typer |
+| **ORM** | SQLAlchemy 2.0 async |
+| **本地数据库** | SQLite + aiosqlite |
+| **数据验证** | Pydantic v2 |
+| **LLM 集成** | LiteLLM |
+| **测试** | pytest + pytest-asyncio + pytest-cov |
+| **Lint** | ruff |
+| **类型检查** | mypy |
+| **包管理** | uv + pip |
+| **代码风格** | 行宽 100，UTF-8，中文注释 |
+
+---
+
+## 四、代码质量标准
 
 ### 4.1 命名规范
-- `snake_case` — 变量/函数/方法/模块
-- `PascalCase` — 类/类型别名
-- `UPPER_CASE` — 常量
-- 私有成员以 `_` 开头
-- 避免单字母变量名
+- **模块/文件**：`snake_case`（如 `chapter_service.py`）
+- **类名**：`PascalCase`（如 `ChapterService`）
+- **函数/方法**：`snake_case`（如 `create_chapter`）
+- **常量**：`UPPER_SNAKE_CASE`（如 `MAX_RETRIES`）
+- **私有成员**：前缀 `_`（如 `self._repo`）
 
-### 4.2 类型注解
-- 所有函数必须有类型注解（返回值和参数）
-- 复杂类型使用 `type alias` 命名
-- `Optional[X]` 优先于 `X | None`（兼容性）
+### 4.2 文档字符串
+- 每个公开类和方法必须有中文 docstring
+- 使用 Google 风格（Args / Returns / Raises）
+- 私有方法可写简短注释
 
-### 4.3 错误处理
-- 自定义异常继承 `InkFlowError`
-- API 层统一异常处理，不暴露内部细节
-- CLI 层捕获所有异常并输出友好的错误信息
+### 4.3 类型注解
+- 所有公开函数/方法必须有完整类型注解
+- 使用 `from __future__ import annotations` 启用延迟求值
+- 可选类型使用 `X | None`（PEP 604），不用 `Optional[X]`
 
-## 5. 🔐 安全规范
-
-### 5.1 密钥管理
-- API Key 使用 AES-256-GCM 加密存储
-- 密钥通过环境变量 `INKFLOW_SECRET_KEY` 注入
-- 密钥绝不硬编码或提交到 Git
-
-### 5.2 数据安全
-- 本地模式：数据存用户指定的 `data_dir`
-- 所有用户数据本地存储，不外传
-- 无遥测/分析数据收集
-
-## 6. 🚀 提交规范
-
-### 6.1 Conventional Commits
+### 4.4 提交规范
 ```
-feat:    新功能
-fix:     Bug 修复
-refactor: 重构
-test:    测试添加/修改
-docs:    文档
-chore:   构建/CI/工具
-style:   代码格式
-perf:    性能优化
+feat: 新功能
+fix: 缺陷修复
+test: 添加/修改测试
+refactor: 重构（不改变行为）
+docs: 文档
+chore: 构建/工具/依赖
 ```
 
-### 6.2 提交粒度
-- 功能开发：每个完整的 TDD 循环一个提交
-- Bug 修复：修复测试 + 代码 + 验证在一个提交
-- 禁止：超过 200 行改动的单次提交（重构除外）
+---
 
-## 7. 📐 SDD 工作流
+## 五、测试规范
 
-### 7.1 开发流程
+### 5.1 测试金字塔
 ```
-Constitution → Spec → Clarify → Plan → Tasks → Implement → Converge
+        ┌──────┐
+        │ E2E  │  ≤ 5（Phase 1）
+        ├──────┤
+        │ API  │  关键端点集成测试
+        ├──────┤
+        │Service│ 业务逻辑（Mock 依赖）
+        ├──────┤
+        │ Unit  │  领域模型验证、工具函数
+        └──────┘
 ```
 
-### 7.2 关键规则
-- **Constitution**: 一次性建立，仅通过 PR 修改
-- **Spec**: 功能级规格，实现前必须 Review
-- **Plan**: 包含技术方案、文件列表、测试策略
-- **Tasks**: 每个任务 2-5 分钟，一个 TDD 循环
-- **Implement**: 严格按 Tasks 执行，不跳步
+### 5.2 TDD 三步法
+1. **RED**：写一个失败的测试，验证它确实因正确原因失败
+2. **GREEN**：写刚好让测试通过的最少代码
+3. **REFACTOR**：消除重复、改善设计，保持测试绿色
 
-## 8. 🔴 红线（禁止行为）
-1. ❌ 写生产代码不写测试
-2. ❌ 提交失败的测试到主分支
-3. ❌ 密钥/Token 提交到 Git
-4. ❌ 跨模块循环依赖
-5. ❌ 在 API 路由中直接操作数据库
-6. ❌ 在 Service 层使用 HTTP 细节（Request/Response）
-7. ❌ 全局 mutable 状态（config 只读字段除外）
+### 5.3 测试文件结构
+```
+tests/
+├── conftest.py          # 共享 fixtures
+├── test_{module}.py     # 对应 src/inkflow/{module}/
+└── test_{module}_api.py # 对应 api/routers/
+```
+
+### 5.4 Fixture 规范
+- 数据库测试使用 `sqlite+aiosqlite:///:memory:`
+- 每个测试函数独立 session（function scope）
+- `sample_*` fixture 提供预构建的测试数据
+
+---
+
+## 六、SDD 工作流
+
+```
+Constitution → Specify → Clarify → Plan → Tasks → Implement
+     ↑_____________ 所有步骤追溯回 Constitution _____________↓
+```
+
+### 6.1 规格文件结构
+```
+specs/
+└── {feature-name}/
+    ├── spec.md    # 什么（What）— 功能规格
+    └── plan.md    # 如何（How）— 实施计划
+```
+
+### 6.2 Spec 必须包含
+- 概述（1-2 句）
+- 数据模型（实体、字段、关系）
+- API 契约（方法、路径、请求/响应）
+- CLI 命令签名
+- 边界情况与错误处理
+- 测试策略（至少 3 个关键测试场景）
+- 不在范围内（Out of Scope）
+
+### 6.3 Plan 必须包含
+- 架构概述
+- 文件清单（新建/修改）
+- 逐任务分解（每个 2-5 分钟）
+- 每个任务包含完整 RED→GREEN→REFACTOR 三步
+- 验证命令与预期结果
+
+---
+
+## 七、治理
+
+### 7.1 修订流程
+1. 提出修订 PR，附带理由
+2. 引用受影响的 ADR
+3. 团队（或单人自我审查）确认无冲突
+
+### 7.2 版本策略
+- MAJOR：原则删除或重新定义
+- MINOR：新原则或约束添加
+- PATCH：措辞澄清、格式修正
+
+### 7.3 合规检查
+- 每个 PR 必须通过 ruff + mypy + pytest
+- 架构适应度函数检查依赖方向（CI 强制执行）
+- 所有 ADR 保持最新
+
+---
+
+*本 Constitution 是 InkFlow 所有架构决策和技术选择的最高依据。所有 Spec、Plan、ADR 必须与此保持一致。*

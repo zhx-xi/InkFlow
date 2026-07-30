@@ -54,7 +54,7 @@ async def create_project(
 @router.get("")
 async def list_projects(
     search: str | None = Query(None),
-    sort_by: str = Query("updated_by"),
+    sort_by: str = Query("updated_at"),
     sort_desc: bool = Query(True),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),

@@ -108,13 +108,15 @@ async def test_get_project(mock_get_service, client, mock_project):
 
 @patch("inkflow.api.routers.project.get_project_service")
 async def test_get_project_not_found(mock_get_service, client):
-    """GET /api/v1/projects/{id} — 不存在的项目返回 404。"""
+    """GET /api/v1/projects/{id} — 不存在的项目返回 404（有效 UUID 但无记录）。"""
     mock_service = AsyncMock()
     mock_service.get = AsyncMock(return_value=None)
     mock_get_service.return_value = mock_service
 
-    resp = client.get("/api/v1/projects/999")
+    nonexistent_id = uuid.uuid4()
+    resp = client.get(f"/api/v1/projects/{nonexistent_id}")
     assert resp.status_code == 404
+    mock_service.get.assert_awaited_once()
 
 
 # ── PATCH /api/v1/projects/{id} ──
@@ -167,3 +169,72 @@ async def test_restore_project(mock_get_service, client, mock_project):
     data = resp.json()
     assert data["name"] == "测试项目"
     assert "id" in data
+
+
+# ── DELETE /api/v1/projects/{id}?force=true (硬删除) ──
+
+
+@patch("inkflow.api.routers.project.get_project_service")
+async def test_hard_delete_project(mock_get_service, client, mock_project):
+    """DELETE /api/v1/projects/{id}?force=true — 硬删除返回 204。"""
+    mock_service = AsyncMock()
+    mock_service.hard_delete = AsyncMock(return_value=True)
+    mock_get_service.return_value = mock_service
+
+    resp = client.delete(f"/api/v1/projects/{mock_project.id}?force=true")
+    assert resp.status_code == 204
+    mock_service.hard_delete.assert_awaited_once()
+
+
+# ── 404 路径测试 ──
+
+
+@patch("inkflow.api.routers.project.get_project_service")
+async def test_update_project_not_found(mock_get_service, client):
+    """PATCH /api/v1/projects/{id} — 不存在的项目返回 404。"""
+    mock_service = AsyncMock()
+    mock_service.update = AsyncMock(return_value=None)
+    mock_get_service.return_value = mock_service
+
+    pid = uuid.uuid4()
+    resp = client.patch(f"/api/v1/projects/{pid}", json={"name": "新名称"})
+    assert resp.status_code == 404
+
+
+@patch("inkflow.api.routers.project.get_project_service")
+async def test_delete_project_not_found(mock_get_service, client):
+    """DELETE /api/v1/projects/{id} — 不存在的项目返回 404。"""
+    mock_service = AsyncMock()
+    mock_service.soft_delete = AsyncMock(return_value=False)
+    mock_get_service.return_value = mock_service
+
+    pid = uuid.uuid4()
+    resp = client.delete(f"/api/v1/projects/{pid}")
+    assert resp.status_code == 404
+
+
+@patch("inkflow.api.routers.project.get_project_service")
+async def test_restore_project_not_found(mock_get_service, client):
+    """POST /api/v1/projects/{id}/restore — 不存在的项目返回 404。"""
+    mock_service = AsyncMock()
+    mock_service.restore = AsyncMock(return_value=None)
+    mock_get_service.return_value = mock_service
+
+    pid = uuid.uuid4()
+    resp = client.post(f"/api/v1/projects/{pid}/restore")
+    assert resp.status_code == 404
+
+
+# ── 非法 UUID 格式 ──
+
+
+async def test_invalid_uuid_returns_404(client):
+    """所有含 {project_id} 路径参数的端点 — 非法 UUID 返回 404。"""
+    for method, path, body in [
+        ("GET", "/api/v1/projects/not-a-uuid", None),
+        ("PATCH", "/api/v1/projects/not-a-uuid", {"name": "test"}),
+        ("DELETE", "/api/v1/projects/not-a-uuid", None),
+        ("POST", "/api/v1/projects/not-a-uuid/restore", None),
+    ]:
+        resp = client.request(method, path, json=body)
+        assert resp.status_code == 404, f"{method} {path} should return 404, got {resp.status_code}"
