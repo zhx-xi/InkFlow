@@ -5,7 +5,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from inkflow.api.routers import project
 from inkflow.core.config import config
+from inkflow.core.database import create_tables
 from inkflow.core.log import setup_logging
 
 
@@ -13,8 +15,7 @@ from inkflow.core.log import setup_logging
 async def lifespan(app: FastAPI):
     """应用生命周期管理——启动/关闭钩子。"""
     setup_logging()
-    # TODO: 初始化数据库连接
-    # TODO: 注册路由
+    await create_tables()
     yield
     # TODO: 关闭数据库连接
 
@@ -39,6 +40,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---- 注册路由 ----
+app.include_router(project.router)
 
 
 # ---- 健康检查 ----

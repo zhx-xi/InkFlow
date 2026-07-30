@@ -18,6 +18,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -28,6 +30,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
+          pip install build
 
       - name: Lint with Ruff
         run: ruff check src/ tests/
@@ -37,6 +40,22 @@ jobs:
 
       - name: Test with pytest
         run: pytest tests/ -v --cov=inkflow --cov-report=xml
+
+      - name: Build wheel
+        run: |
+          if ('${{ github.event_name }}' -eq 'pull_request') {
+            $sha = '${{ github.event.pull_request.head.sha }}'.Substring(0, 7)
+            $devVersion = "0.1.0.dev0+g$sha"
+            (Get-Content pyproject.toml) -replace 'version = "0.1.0"', "version = `"$devVersion`"" | Set-Content pyproject.toml
+            Write-Host "PR build: version set to $devVersion"
+          }
+          python -m build --wheel
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: inkflow-wheel
+          path: backend/dist/*.whl
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
