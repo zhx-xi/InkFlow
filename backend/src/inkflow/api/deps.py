@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.core.database import get_session
+from inkflow.domain.services.chapter_service import ChapterService
 from inkflow.domain.services.project_service import ProjectService
 
 
@@ -19,3 +20,10 @@ def get_project_service(
 ) -> ProjectService:
     """获取 ProjectService 实例（注入数据库 session）."""
     return ProjectService(db)
+
+
+def get_chapter_service(
+    db: AsyncSession,
+) -> ChapterService:
+    """获取 ChapterService 实例（注入数据库 session）."""
+    return ChapterService(db)
