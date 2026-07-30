@@ -33,6 +33,12 @@ def main(
     pass
 
 
+# ---- 注册子命令 ----
+from inkflow.cli.commands import project  # noqa: E402
+
+app.add_typer(project.app, name="project")
+
+
 @app.command("serve")
 def serve_cmd(
     host: str = typer.Option("127.0.0.1", "--host", "-H", help="监听地址"),
