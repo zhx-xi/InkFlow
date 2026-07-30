@@ -47,7 +47,7 @@
 | Agent 编排 | langgraph ≥ 0.2.0 | **StateGraph** — Phase 1 顺序链，Phase 2 用户自定义 DAG |
 | RAG | langchain-chroma + chromadb + sentence-transformers | 本地向量库 + BGE Embedding（Phase 2） |
 | Prompt 模板 | ChatPromptTemplate（langchain-core） | YAML 模板文件 + 变量验证 |
-| 追踪 | langsmith ≥ 0.2.0（可选） | LangSmith 追踪（开发/Demo 用，默认关闭） |
+| 追踪 | langsmith ≥ 0.2.0（可选） | LangSmith 追踪（开发/调试用，默认关闭） |
 | 加密 | cryptography ≥ 42.0 | API Key AES-256-GCM 加密 |
 | HTTP | httpx ≥ 0.27 + httpx-sse ≥ 0.4 | |
 | 日志 | Loguru ≥ 0.7 | |

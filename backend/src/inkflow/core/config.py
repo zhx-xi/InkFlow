@@ -58,7 +58,7 @@ class InkFlowConfig(BaseSettings):
     }
     """不同 Agent 角色的默认模型映射。"""
 
-    # ---- LangSmith 追踪（Demo/调试用） ----
+    # ---- LangSmith 追踪（调试用） ----
     langsmith_api_key: str = ""
     """LangSmith API Key。为空时禁用追踪。"""
 
@@ -66,7 +66,7 @@ class InkFlowConfig(BaseSettings):
     """LangSmith 项目名称。"""
 
     langsmith_enabled: bool = False
-    """是否启用 LangSmith 追踪。需要 LANGCHAIN_TRACING_V2=true 环境变量配合。"""
+    """是否启用 LangSmith 追踪。"""
 
     # ---- Embedding 模型 ----
     embedding_model: str = "BAAI/bge-small-zh-v1.5"

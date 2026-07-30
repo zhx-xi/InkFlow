@@ -52,7 +52,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
     "pre-commit>=3.0",
-    # LangSmith 追踪（开发/Demo 用）
+    # LangSmith 追踪（开发/调试用）
     "langsmith>=0.2.0",
 ]
 web = [

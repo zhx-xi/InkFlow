@@ -5,7 +5,7 @@
 **依据**: `docs/prd-inkflow-v2.1-2026-07-30.md` + 产品愿景扩展
 **作者**: 软件架构师
 
-> **v2.0 核心变更**：将 LLM Provider 抽象从裸 LiteLLM 迁移到 LangChain `ChatLiteLLM`，Agent 编排从自定义 Pipeline 迁移到 LangGraph `StateGraph`，RAG 层引入 LangChain Chroma + sentence-transformers。变更理由：**项目定位包含学习与 Demo 目的**，LangChain 生态是学习目标和展示工具。
+> **v2.0 核心变更**：将 LLM Provider 抽象从裸 LiteLLM 迁移到 LangChain `ChatLiteLLM`，Agent 编排从自定义 Pipeline 迁移到 LangGraph `StateGraph`，RAG 层引入 LangChain Chroma + sentence-transformers。
 
 ---
 
@@ -234,7 +234,7 @@ Service → ProjectRepositoryProtocol (Port) ← SQLAlchemyRepository (Adapter)
 
 **v1.0 决策**: 薄 Protocol 包装 LiteLLM，~50 行代码覆盖 100+ Provider。
 
-**弃用原因**: 项目定位明确包含"学习 LangChain"和"Demo 展示"。LiteLLM 裸调方案虽然轻量，但不满足学习目标和展示需求。
+**弃用原因**: LiteLLM 裸调方案虽然轻量，但缺乏 LangChain 生态的 callback 体系、LCEL 管道组合能力和 LangSmith 调试追踪，限制了复杂 Agent 管线的可观测性和可组合性。
 
 ---
 
@@ -244,8 +244,8 @@ Service → ProjectRepositoryProtocol (Port) ← SQLAlchemyRepository (Adapter)
 
 **背景**:
 1. PRD 要求 ≥ 3 个 Provider（OpenAI、DeepSeek、Ollama），不同任务路由不同模型
-2. 项目定位包含"学习 LangChain"和"Demo 展示"
-3. 需要在 Demo 中展示 LangSmith 追踪、LCEL 管道组合
+2. 复杂 Agent 管线需要统一的 callback 体系和可观测性（LangSmith）
+3. ChatLiteLLM 同时继承 LiteLLM 的 Provider 覆盖和 LangChain 的 `BaseChatModel` 接口
 
 **决策**: 使用 LangChain `ChatLiteLLM` 作为 LLM 客户端实现，通过 `LLMClientProtocol` 隔离领域层。
 
@@ -258,9 +258,9 @@ infrastructure/llm/langchain_client.py  ← LangChainLLMClient (实现 Protocol�
 
 | 选项 | 优点 | 缺点 |
 |------|------|------|
-| **ChatLiteLLM（选定）** | 继承 LiteLLM 的 100+ Provider 覆盖 + 实现 LangChain `BaseChatModel` 接口 | 多一层依赖 |
+| **ChatLiteLLM（选定）** | 继承 LiteLLM 的 100+ Provider 覆盖 + 实现 LangChain `BaseChatModel` 接口，获得 callback 和 LangSmith | 多一层依赖 |
 | ChatOpenAI + ChatAnthropic 各自 | 原生 LangChain 集成 | 每个 Provider 一个类，切换模型需改代码 |
-| 裸 LiteLLM（v1.0 方案） | 最轻量 | 没有 LangChain callback 体系，无法 LangSmith 追踪，无法 LCEL 组合 |
+| 裸 LiteLLM（v1.0 方案） | 最轻量 | 无法利用 LangChain 的 callback 和 LangSmith 生态 |
 
 **关键接口**：
 
@@ -279,9 +279,8 @@ class LangChainLLMClient:
 
 **影响**:
 - ✅ 保留 LiteLLM 100+ Provider 覆盖（ChatLiteLLM 底层仍是 litellm）
-- ✅ 获得 LangSmith 追踪、LCEL 管道、LangChain callback 体系
+- ✅ 获得 LangSmith 调试追踪、LCEL 管道、LangChain callback 体系
 - ✅ 测试时注入 Mock 实现，不依赖 LangChain
-- ✅ Demo 时可以展示完整的 LLM 调用链路
 - ❗ LangChain 版本升级可能有 breaking changes（pin minor 版本 + CI 检测）
 - ❗ 增加 ~5 个 LangChain 包的依赖体积（~数十 MB）
 - ❗ Domain `ChatMessage`/`ChatResponse` 需与 LangChain 的 `AIMessage` 做薄转换
@@ -301,7 +300,7 @@ class LangChainLLMClient:
 **背景**:
 1. PRD 要求 Architect→Writer→Auditor→Reviser 链式执行（F4）
 2. 后续规划：用户自定义 Agent 管线（DAG + 条件分支）
-3. 项目学习目标：掌握 LangGraph 是 LangChain 生态最有价值的技能之一
+3. LangGraph 的 StateGraph 天然支持从顺序链到 DAG 的渐进式升级
 
 **决策**: 使用 LangGraph `StateGraph` 作为 Agent 管线引擎，通过 `AgentPipelineProtocol` 隔离领域层。
 
@@ -349,17 +348,15 @@ pipeline:
 |------|---------------------|----------------|
 | Phase 1 复杂度 | ~200 行 | ~200 行（LangGraph 声明式更短） |
 | Phase 2 DAG 升级 | 需要重写拓扑排序、并行调度 | 只需改 `add_edge` → `add_conditional_edges` |
-| 学习曲线 | 零（纯 Python） | 需要学 StateGraph / Node / Edge 概念 |
-| Demo 价值 | 低（看不出用了什么框架） | 高（LangGraph 可视化拓扑图） |
+| 可观测性 | 需自建日志/追踪 | LangSmith 内置追踪 |
 | Checkpointing | 需自己实现 | LangGraph 内置（管线中断可恢复） |
 | 错误处理 | 需自己实现重试逻辑 | LangGraph 内置 + 自定义 fallback |
 
 **影响**:
 - ✅ Phase 1 代码量与自定义方案相当，但 Phase 2 扩展成本大幅降低
 - ✅ LangGraph checkpointing → 管线中断可恢复（对 daemon 后台写作很重要）
-- ✅ Demo 时可以展示 LangGraph 的拓扑可视化
 - ❗ LangGraph 处于快速迭代期（v0.2），API 可能变化（pin 版本 + 薄 Protocol 隔离）
-- ❗ 学习成本：LangGraph 的状态管理（StateGraph + TypedDict + Node）需要时间掌握
+- ❗ 新手需要理解 StateGraph / Node / Edge 等概念，有上手成本
 
 ---
 
@@ -618,10 +615,11 @@ variables:
 
 | 理由 | 权重 | 说明 |
 |------|------|------|
-| 学习目标 | 🔴 决定性 | 项目定位之一就是学习和掌握 LangChain/LangGraph/LangSmith |
-| Demo 展示 | 🔴 决定性 | LangSmith 追踪、LangGraph 拓扑图是简历级别的展示素材 |
-| 生态复用 | 🟡 支撑性 | ChatPromptTemplate、Chroma integration、LCEL 管道减少重复造轮子 |
-| 社区标准 | 🟢 加分项 | LangChain 是 Python AI 开发的事实标准之一 |
+| Provider 统一 | 🔴 决定性 | ChatLiteLLM 单一接口覆盖 100+ Provider，模型切换零代码 |
+| 可观测性 | 🔴 决定性 | LangSmith 提供 LLM 调用链的可视化调试，复杂 Agent 管线必备 |
+| 管线可组合性 | 🟡 支撑性 | LCEL 声明式管道 + LangGraph StateGraph 使 Agent 逻辑可测试、可扩展 |
+| 生态复用 | 🟡 支撑性 | ChatPromptTemplate、Chroma integration 减少重复造轮子 |
+| 社区标准 | 🟢 加分项 | LangChain 是 Python AI 开发领域最活跃的框架，问题容易找到方案 |
 
 **LangChain vs 自研的不可逆代价**:
 
@@ -629,7 +627,7 @@ variables:
 |------|---------|---------|
 | 框架锁定 | 🔴 严重 | Protocol 接口隔离 → Domain 层不依赖 LangChain，最坏情况可替换 infrastructure |
 | 版本 churn | 🟡 中等 | `pyproject.toml` 锁定 minor 版本（`>=0.3.0,<0.4.0`），Renovate 自动 PR |
-| 学习曲线 | 🟡 中等 | Phase 1 只用最稳定的子集（ChatLiteLLM + ChatPromptTemplate + StateGraph 顺序链） |
+| 上手成本 | 🟡 中等 | Phase 1 只用最稳定的子集（ChatLiteLLM + ChatPromptTemplate + StateGraph 顺序链） |
 | 依赖体积 | 🟢 轻微 | 本地部署，体积不是瓶颈 |
 | 调试复杂度 | 🟡 中等 | LangSmith 弥补（但不是银弹）；Protocol 层可在测试中 bypass LangChain |
 
@@ -639,20 +637,20 @@ variables:
 1. domain/ 下 zero 行 LangChain import — CI 强制检查
 2. 每个 Protocol 有至少一个 Mock 实现 — 测试不依赖 LangChain
 3. 新增 LangChain 子包需经过评估 — 不是所有 langchain_* 都要引入
-4. LangSmith 追踪默认关闭 — 仅开发/Demo 时通过环境变量开启
+4. LangSmith 追踪默认关闭 — 仅开发/调试时通过环境变量开启
 ```
 
 **备选方案**:
-| 方案 | 学习价值 | Demo 价值 | 满足需求 | 维护成本 |
-|------|---------|----------|---------|---------|
+| 方案 | Provider覆盖 | 可观测性 | 可组合性 | 维护成本 |
+|------|------------|---------|---------|---------|
 | LangChain 全家桶（选定） | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
-| LiteLLM + 自研（v1.0） | ⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| LiteLLM + 自研（v1.0） | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ |
 | LlamaIndex（仅 RAG） | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ |
 
 **影响**:
-- ✅ 满足学习 LangChain/LangGraph/LangSmith 的目标
-- ✅ Demo 时有完整的 LLM 调用链路可视化
-- ✅ 生态复用减少代码量
+- ✅ ChatLiteLLM 统一 100+ Provider，LangSmith 提供全链路调试能力
+- ✅ LCEL + LangGraph 使 Agent 管线可测试、可渐进扩展
+- ✅ 生态复用减少代码量（Prompt、Chroma、Document loaders）
 - ❗ 框架锁定风险：如果 LangChain 方向发生根本性变化，需要替换 infrastructure 层
 - ❗ 版本升级成本：每个 minor 版本升级可能需要 1-2 天适配
 - ❗ CI 需增加 "domain 层无 LangChain import" 的强制检查
@@ -683,7 +681,7 @@ variables:
 | **可扩展性** | 新增 Provider ≤ 1 天 | ChatLiteLLM 配置切换，无需改代码 |
 | **性能** | API 响应 ≤ 100ms（非 LLM） | 异步全链路、SQLite 索引、chromadb 本地 |
 | **安全性** | API Key 不落明文 | AES-256-GCM 加密存储 |
-| **可观测性** | 关键路径全链路日志 + LangSmith 追踪 | loguru 结构化日志 + LangSmith（可选） |
+| **可观测性** | 关键路径全链路日志 + LangSmith 调试追踪 | loguru 结构化日志 + LangSmith（可选） |
 
 ---
 
@@ -693,7 +691,7 @@ variables:
 |--------|---------------|
 | 分布式单体 | 不上微服务，保持模块化单体 |
 | 金锤子 | 不是所有问题都用 LangChain——Phase 1 只用 ChatLiteLLM + StateGraph + ChatPromptTemplate |
-| 简历驱动开发 | **例外**：本项目定位包含学习和 Demo，LangChain 选型是审慎的 |
+| 框架锁定 | Protocol 隔离 — LangChain 仅在 infrastructure 层，可替换 |
 | 过早抽象 | Rule of Three：等到第三个类似实现再抽象 |
 | 共享数据库 | Repository 模式隔离数据访问 |
 | 大泥球 | 模块按业务（project/chapter/agent）分层，非按技术 |
@@ -745,7 +743,7 @@ Phase 4+ (未来) — 云端 + 游戏MVP + Agent 管线市场
 | **Phase 2 前端启动** | W10 | React 项目搭建 + API Client 自动生成 | Vite 6 + openapi-typescript |
 | **管理面板** | W11-W12 | 项目/章节/角色/世界 CRUD 界面 | React + Zustand + shadcn/ui |
 | **写作界面** | W13-W14 | 章节编辑器 + SSE 流式输出 + Agent 进度 | EventSource + 实时渲染 |
-| **Agent 配置 + RAG** | W15-W16 | 管线可视化配置 + 检索结果展示 | LangGraph 拓扑图 + RAG 演示 |
+| **Agent 配置 + RAG** | W15-W16 | 管线配置界面 + 检索调试 | LangGraph 状态视图 + RAG 检索测试 |
 | **Phase 3 打磨** | W17-W21 | 完善 UI、响应式、桌面端打包 | pywebview + PyInstaller |
 
 **关键决策**：Phase 1 **不做任何 Web UI**。原因：
@@ -761,7 +759,7 @@ Phase 4+ (未来) — 云端 + 游戏MVP + Agent 管线市场
 | # | 事项 | 优先级 | 说明 |
 |---|------|--------|------|
 | 1 | F3-F6 实现（写作管道 + Agent + LLM + 上下文） | 🔴 | Phase 1 核心，约 25-40 人天 |
-| 2 | LangSmith 账户注册 + 配置 | 🟡 | Demo 展示需要 |
+| 2 | LangSmith API Key 配置 | 🟡 | 调试复杂 Agent 管线需要 |
 | 3 | chromadb + BGE 模型集成测试 | 🟡 | Phase 2 RAG 的前置验证 |
 | 4 | PyPI 包名 `inkflow` 可用性检查 | 🟡 | 阻塞 pip install 发布 |
 | 5 | Node.js 环境确认 | 🟡 | Phase 2 前端需要 |
