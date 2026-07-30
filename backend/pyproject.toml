@@ -79,24 +79,6 @@ strict = false
 warn_unused_configs = true
 ignore_missing_imports = true
 
-# LangChain 生态的包类型标注不完整，按模块忽略
-[[tool.mypy.overrides]]
-module = [
-    "langchain_core.*",
-    "langchain_community.*",
-    "langchain_openai.*",
-    "langchain_chroma.*",
-    "langgraph.*",
-    "chromadb.*",
-    "sentence_transformers.*",
-]
-ignore_missing_imports = true
-
-# Domain 层强制约束：禁止导入 LangChain
-[[tool.mypy.overrides]]
-module = "inkflow.domain.*"
-disallow_untyped_defs = true
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

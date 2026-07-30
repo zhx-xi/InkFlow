@@ -7,7 +7,7 @@ LLM 客户端端口 — 定义领域层与 LLM Provider 之间的契约。
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -83,7 +83,7 @@ class LLMClientProtocol(Protocol):
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: object,
     ) -> ChatResponse:
         """发送聊天请求并获取完整响应。
 
@@ -102,15 +102,15 @@ class LLMClientProtocol(Protocol):
         """
         ...
 
-    def chat_stream(
+    def chat_stream(  # type: ignore[misc]
         self,
         messages: list[ChatMessage],
         *,
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
-        **kwargs,
-    ) -> AsyncIterator[StreamEvent]:
+        **kwargs: object,
+    ) -> AsyncGenerator[StreamEvent, None]:
         """流式聊天 — 逐 token 返回。
 
         Args:
@@ -124,7 +124,7 @@ class LLMClientProtocol(Protocol):
             StreamEvent: 流式事件（逐 chunk）。
         """
         ...
-        yield  # type: ignore[misc]  # Protocol 方法体提示
+        yield  # type: ignore[misc]
 
     async def count_tokens(
         self,
