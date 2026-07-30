@@ -79,3 +79,48 @@ class TestChapterUpdateValidation:
         assert u.content is None
         assert u.status is None
         assert u.volume_id is None
+
+
+class TestWordCount:
+    """字数统计工具测试."""
+
+    def test_chinese_only(self):
+        from inkflow.domain.services._word_count import count_words
+
+        assert count_words("测试内容") == 4
+
+    def test_english_only(self):
+        from inkflow.domain.services._word_count import count_words
+
+        assert count_words("hello world") == 2
+
+    def test_mixed_cn_en(self):
+        from inkflow.domain.services._word_count import count_words
+
+        assert count_words("你好world测试abc") == 6
+
+    def test_empty(self):
+        from inkflow.domain.services._word_count import count_words
+
+        assert count_words("") == 0
+
+    def test_markdown_heading(self):
+        from inkflow.domain.services._word_count import count_words
+
+        assert count_words("## 标题") == 2
+
+    def test_markdown_bold(self):
+        from inkflow.domain.services._word_count import count_words
+
+        assert count_words("**强调**文字") == 4
+
+    def test_markdown_code_block(self):
+        from inkflow.domain.services._word_count import count_words
+
+        text = "```python\nprint('hello')\n```\n正文"
+        assert count_words(text) == 2
+
+    def test_markdown_link(self):
+        from inkflow.domain.services._word_count import count_words
+
+        assert count_words("[点击](url)这里") == 4
