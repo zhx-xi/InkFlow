@@ -179,7 +179,7 @@ class SQLiteProjectRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        return result.rowcount > 0
+        return result.rowcount > 0  # type: ignore[attr-defined]
 
     async def restore(self, project_id: int) -> Project | None:
         """恢复软删除的项目（设置 is_deleted=False）.

@@ -1,12 +1,14 @@
 """FastAPI 依赖注入 — 数据库 session 和 Service 获取."""
 
+from collections.abc import AsyncGenerator
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.core.database import get_session
 from inkflow.domain.services.project_service import ProjectService
 
 
-async def get_db() -> AsyncSession:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """获取数据库 session（FastAPI 依赖）."""
     async for session in get_session():
         yield session
