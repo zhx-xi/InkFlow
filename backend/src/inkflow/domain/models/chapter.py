@@ -8,10 +8,14 @@ VolumeCreate/VolumeUpdate/ChapterCreate/ChapterUpdate 是请求 DTO。
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 class ChapterStatus(StrEnum):
@@ -92,8 +96,8 @@ class Chapter(BaseModel):
     word_count: int = 0
     order_index: float = 0.0
     status_history: list[StatusHistoryEntry] = Field(default_factory=list)
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 class ChapterCreate(BaseModel):
