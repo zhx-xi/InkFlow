@@ -46,7 +46,18 @@ def serve_cmd(
     open_browser: bool = typer.Option(True, "--open/--no-open", help="自动打开浏览器"),
 ) -> None:
     """启动 Web 服务"""
+    import uvicorn
+
+    if open_browser:
+        import threading
+        import webbrowser
+
+        url = f"http://{host}:{port}/docs"
+        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+
     typer.echo(f"🚀 InkFlow 服务启动于 http://{host}:{port}")
+    typer.echo(f"📖 API 文档: http://{host}:{port}/docs")
+    uvicorn.run("inkflow.api.app:app", host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":
