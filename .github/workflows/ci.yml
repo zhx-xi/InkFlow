@@ -12,6 +12,10 @@ jobs:
       matrix:
         python-version: ["3.11"]
 
+    defaults:
+      run:
+        working-directory: backend
+
     steps:
       - uses: actions/checkout@v4
 
@@ -37,5 +41,5 @@ jobs:
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
-          file: ./coverage.xml
+          file: backend/coverage.xml
           fail_ci_if_error: false

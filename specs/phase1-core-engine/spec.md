@@ -191,27 +191,38 @@ class WritingService:
 ## F5: LLM Provider 适配（llm_service）
 
 ### 概述
-统一接口对接多家 LLM 供应商。Phase 1 实现 OpenAI + DeepSeek + Ollama。
+使用 **LiteLLM**（`litellm`）统一对接多家 LLM 供应商。LiteLLM 提供 100+ Provider 的兼容接口（含 OpenAI / DeepSeek / Ollama / Anthropic / Groq 等），内置流式、重试和 Token 计数。
 
-### 接口定义
+### 封装策略
 ```python
+# domain/ports/llm_client.py — 薄 Protocol 包装
 class LLMClient(Protocol):
     async def chat(
         self, messages: list[dict], **kwargs
     ) -> ChatResponse: ...
-    async def stream(
+    async def chat_stream(
         self, messages: list[dict], **kwargs
-    ) -> AsyncIterator[str]: ...
-    async def count_tokens(self, text: str) -> int: ...
+    ) -> AsyncIterator[StreamEvent]: ...
+
+# infrastructure/llm/litellm_client.py — LiteLLM 适配
+class LiteLLMClient:
+    """基于 litellm 的统一 LLM 客户端"""
+    async def chat(self, messages, **kwargs):
+        # 调用 litellm.acompletion(...)
+        ...
+    async def chat_stream(self, messages, **kwargs):
+        # 调用 litellm.acompletion(stream=True, ...)
+        ...
 ```
 
-### 内置 Provider
-| Provider | 类名 | 验证状态 |
-|----------|------|---------|
-| OpenAI | OpenAIProvider | Phase 1 实现 |
-| DeepSeek | DeepSeekProvider | Phase 1 实现 |
-| Ollama | OllamaProvider | Phase 1 实现 |
-| Anthropic | AnthropicProvider | Phase 1 可选 |
+### 支持的 Provider
+| Provider | 使用方式 | 验证状态 |
+|----------|---------|---------|
+| OpenAI | `model="gpt-4o"` | Phase 1 可用 |
+| DeepSeek | `model="deepseek/deepseek-chat"` | Phase 1 可用 |
+| Ollama | `model="ollama/llama3"` | Phase 1 可用 |
+| Anthropic | `model="claude-3-5-sonnet-20241022"` | Phase 1 可选 |
+| Groq / Together / 100+ | `model="{provider}/{model_name}"` | 零代码添加 |
 
 ### 密钥管理
 - AES-256-GCM 加密存储（`cryptography` 库）
@@ -301,7 +312,8 @@ inkflow
 ## 文件结构
 
 ```
-src/inkflow/
+backend/
+├── src/inkflow/
 ├── __init__.py
 ├── __main__.py          # CLI 入口
 ├── api/

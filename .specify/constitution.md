@@ -30,12 +30,16 @@
 
 ### 2.4 模块边界清晰
 ```python
-# ✅ 正确: 清晰分层
-api/       → 路由层（FastAPI router）
-services/  → 业务逻辑层
-models/    → 数据模型层（Pydantic + SQLAlchemy）
-providers/ → 外部服务适配层
-core/      → 基础设施层（配置/日志/DB）
+# ✅ 正确: 清晰分层（位于 backend/ 下）
+backend/
+├── src/inkflow/
+│   ├── api/       → 路由层（FastAPI router）
+│   ├── services/  → 业务逻辑层
+│   ├── models/    → 数据模型层（Pydantic + SQLAlchemy）
+│   ├── providers/ → 外部服务适配层（基于 LiteLLM）
+│   └── core/      → 基础设施层（配置/日志/DB）
+├── tests/         → 测试目录
+└── pyproject.toml  → Python 包配置
 ```
 
 ## 3. 🧪 质量规范
