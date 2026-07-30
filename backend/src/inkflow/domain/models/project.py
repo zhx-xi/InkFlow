@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
 
-class Genre(str, Enum):
+class Genre(StrEnum):
     """中文网络小说分类枚举."""
 
     XUANHUAN = "玄幻"
