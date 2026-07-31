@@ -6,6 +6,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.core.database import get_session
+from inkflow.domain.ports.context_sources import ContextSourceProtocol
 from inkflow.domain.services.chapter_service import ChapterService
 from inkflow.domain.services.context_service import ContextService
 from inkflow.domain.services.project_service import ProjectService
@@ -74,7 +75,7 @@ def get_context_service(
     project_repo = SQLiteProjectRepository(db)
     summary_repo = SQLiteSummaryRepository(db)
 
-    sources = {
+    sources: dict[ContextSourceType, ContextSourceProtocol] = {
         ContextSourceType.OUTLINE: ProjectConfigOutlineSource(project_repo),
         ContextSourceType.CHARACTER_SETTING: CharacterSettingSource(),
         ContextSourceType.WORLD_SETTING: WorldSettingSource(),
