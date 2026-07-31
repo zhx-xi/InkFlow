@@ -34,11 +34,12 @@ def main(
 
 
 # ---- 注册子命令 ----
-from inkflow.cli.commands import chapter, project  # noqa: E402
+from inkflow.cli.commands import chapter, project, write  # noqa: E402
 
 app.add_typer(project.app, name="project")
 app.add_typer(chapter.volume_app, name="volume")
 app.add_typer(chapter.chapter_app, name="chapter")
+app.add_typer(write.app, name="write")
 
 
 @app.command("serve")
