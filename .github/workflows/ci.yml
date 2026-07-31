@@ -45,7 +45,7 @@ jobs:
           $ruffOutput = ruff check src/ tests/ --output-format=concise
           $ruffExit = $LASTEXITCODE
           if ($ruffOutput) {
-            $ruffOutput | reviewdog -efm='%f:%l:%c: %m' -reporter=github-pr-check -level=warning -name=ruff -tee
+            $ruffOutput -replace '^(src/|tests/)', 'backend/$1' | reviewdog -efm='%f:%l:%c: %m' -reporter=github-pr-check -level=warning -name=ruff -tee
           }
           if ($ruffExit -ne 0) { exit $ruffExit }
 
