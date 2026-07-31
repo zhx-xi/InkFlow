@@ -9,7 +9,8 @@ jobs:
   test:
     permissions:
       contents: read
-      checks: write        # reviewdog 需要写 Checks 来发布注解
+      checks: write
+      pull-requests: write   # reviewdog github-pr-review 需要写 PR 评论
     runs-on: windows-latest
     strategy:
       matrix:
@@ -45,7 +46,7 @@ jobs:
           $ruffOutput = ruff check src/ tests/ --output-format=concise
           $ruffExit = $LASTEXITCODE
           if ($ruffOutput) {
-            $ruffOutput -replace '^(src/|tests/)', 'backend/$1' | reviewdog -efm='%f:%l:%c: %m' -reporter=github-pr-check -level=warning -name=ruff -tee
+            $ruffOutput -replace '^(src/|tests/)', 'backend/$1' | reviewdog -efm='%f:%l:%c: %m' -reporter=github-pr-review -level=warning -name=ruff -tee
           }
           if ($ruffExit -ne 0) { exit $ruffExit }
 
