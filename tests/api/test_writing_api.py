@@ -25,7 +25,9 @@ def _preset_result(mode: str) -> WritingResult:
         format_valid=True,
         retry_count=1,
         model="deepseek/deepseek-chat",
-        token_usage=TokenUsage(prompt_tokens=1820, completion_tokens=2600, total_tokens=4420),
+        token_usage=TokenUsage(
+            prompt_tokens=1820, completion_tokens=2600, total_tokens=4420
+        ),
         warnings=[],
     )
 
@@ -119,7 +121,9 @@ async def test_revise_endpoint(override_writing_service):
 
 
 @pytest.mark.asyncio
-async def test_generate_project_not_found(override_writing_service, mock_writing_service):
+async def test_generate_project_not_found(
+    override_writing_service, mock_writing_service
+):
     """项目不存在 → 404 \"项目不存在\"。"""
     mock_writing_service.generate_chapter.side_effect = LLMRequestError("项目不存在")
     body = {**_payload(), "outline": "测试大纲"}
@@ -130,7 +134,9 @@ async def test_generate_project_not_found(override_writing_service, mock_writing
 
 
 @pytest.mark.asyncio
-async def test_generate_chapter_not_found(override_writing_service, mock_writing_service):
+async def test_generate_chapter_not_found(
+    override_writing_service, mock_writing_service
+):
     """章节不存在/不属于项目 → 404 \"章节不存在\"。"""
     mock_writing_service.generate_chapter.side_effect = LLMRequestError("章节不存在")
     body = {**_payload(), "outline": "测试大纲"}
@@ -154,7 +160,9 @@ async def test_generate_validation_error(override_writing_service):
 @pytest.mark.asyncio
 async def test_generate_llm_error_500(override_writing_service, mock_writing_service):
     """LLM 调用失败 → 500 + 通用消息（不泄漏内部细节，ADR-012）。"""
-    mock_writing_service.generate_chapter.side_effect = LLMRequestError("API key invalid")
+    mock_writing_service.generate_chapter.side_effect = LLMRequestError(
+        "API key invalid"
+    )
     body = {**_payload(), "outline": "测试大纲"}
     async with _client() as client:
         resp = await client.post("/api/v1/writing/generate", json=body)

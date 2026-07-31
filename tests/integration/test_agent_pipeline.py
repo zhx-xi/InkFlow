@@ -8,6 +8,8 @@ from pydantic import ValidationError
 from inkflow.domain.models import PipelineConfig, PipelineExecuteRequest, RoleOverride
 from inkflow.domain.ports import AgentRole, PipelineError, PipelineStage, StageStatus
 
+pytestmark = pytest.mark.asyncio  # 集成测试在 tests/ 下需显式 asyncio mark
+
 
 def _make_role(role_id: str = "architect", **kwargs) -> AgentRole:
     """构造一个合法的 AgentRole（默认值 + 覆盖项）。"""
@@ -179,7 +181,12 @@ class TestAgentExecutionORM:
                 "output": "大纲内容",
                 "duration_ms": 120,
             },
-            {"stage_id": "chapter_write", "status": "pending", "output": "", "duration_ms": 0},
+            {
+                "stage_id": "chapter_write",
+                "status": "pending",
+                "output": "",
+                "duration_ms": 0,
+            },
         ]
         execution = AgentExecutionORM(
             pipeline="builtin:write_chapter",
@@ -255,7 +262,9 @@ class TestAgentStageResultORM:
         await db_session.commit()
 
         result = await db_session.execute(
-            select(AgentStageResultORM).where(AgentStageResultORM.execution_id == execution.id)
+            select(AgentStageResultORM).where(
+                AgentStageResultORM.execution_id == execution.id
+            )
         )
         loaded = result.scalar_one()
         assert loaded.id == stage_result.id
@@ -295,7 +304,12 @@ class TestExecutionStore:
         )
 
         stages = [
-            {"stage_id": "outline", "status": "completed", "output": "大纲", "duration_ms": 100}
+            {
+                "stage_id": "outline",
+                "status": "completed",
+                "output": "大纲",
+                "duration_ms": 100,
+            }
         ]
         await store.update_stages(
             execution_id=execution.id,
@@ -320,8 +334,12 @@ class TestExecutionStore:
         project_id = str(uuid.uuid4())
         other_project_id = str(uuid.uuid4())
         for _ in range(3):
-            await store.create_execution(pipeline="builtin:write_chapter", project_id=project_id)
-        await store.create_execution(pipeline="builtin:write_chapter", project_id=other_project_id)
+            await store.create_execution(
+                pipeline="builtin:write_chapter", project_id=project_id
+            )
+        await store.create_execution(
+            pipeline="builtin:write_chapter", project_id=other_project_id
+        )
 
         executions, total = await store.list_executions(project_id=project_id, limit=2)
 

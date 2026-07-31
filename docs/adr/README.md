@@ -33,6 +33,7 @@
 | [ADR-015](ADR-015.md) | 引入 LangChain 全家桶 — 决策理由与约束 | ✅ 已接受 | 2026-07-31 |
 | [ADR-016](ADR-016.md) | 日志方案 — loguru 结构化日志 | ✅ 已接受 | 2026-07-31 |
 | [ADR-017](ADR-017.md) | CI 代码质量检查 — Reviewdog + Ruff 统一门禁 | ✅ 已接受 | 2026-07-31 |
+| [ADR-018](ADR-018.md) | 测试分层与 CI Job 并行化 — 三层目录 + 按功能链路拆分 job | ✅ 已接受 | 2026-07-31 |
 
 ## 当前有效决策速览
 
@@ -45,5 +46,6 @@
 - **Prompt**: ChatPromptTemplate + YAML（ADR-014）
 - **日志**: loguru 结构化（ADR-016）
 - **CI 代码质量**: Reviewdog + Ruff 统一门禁（ADR-017）
+- **CI 测试分层**: 三层目录 + 按功能链路并行 job（ADR-018）
 
 *来源：docs/architecture-analysis-2026-07-30.md §三（2026-07-31 提取为独立目录）*
