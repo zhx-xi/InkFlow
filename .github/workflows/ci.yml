@@ -42,10 +42,10 @@ jobs:
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $ruffResult = ruff check src/ tests/ 2>&1
+          $ruffOutput = ruff check src/ tests/ --output-format=concise
           $ruffExit = $LASTEXITCODE
-          if ($ruffResult) {
-            $ruffResult | reviewdog -f=ruff -reporter=github-pr-check -level=warning
+          if ($ruffOutput) {
+            $ruffOutput | reviewdog -efm='%f:%l:%c: %m' -reporter=github-pr-check -level=warning -name=ruff -tee
           }
           if ($ruffExit -ne 0) { exit $ruffExit }
 
