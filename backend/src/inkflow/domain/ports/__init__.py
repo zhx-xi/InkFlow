@@ -1,5 +1,4 @@
-"""
-出站端口接口（Protocol 定义） — 基础设施层实现这些接口。
+"""出站端口接口（Protocol 定义） — 基础设施层实现这些接口。
 
 依赖方向：Domain → Port (Protocol) ← Infrastructure
 领域层定义契约，基础设施层提供实现。测试时可注入 Mock。
@@ -11,6 +10,9 @@
     - vector_store: RAG 向量存储（Phase 2，LangChain Chroma 实现）
     - prompt_template: Prompt 模板管理（LangChain ChatPromptTemplate 实现）
     - llm_errors: LLM 领域异常类型
+    - context_sources: 上下文数据源（F6，Phase 1 部分空实现）
+    - context_errors: 上下文管理异常（F6）
+    - summary_repository: 前文摘要缓存仓储（F6）
 """
 
 from inkflow.domain.ports.agent_pipeline import (
@@ -23,7 +25,12 @@ from inkflow.domain.ports.agent_pipeline import (
     StageResult,
     StageStatus,
 )
+from inkflow.domain.ports.context_errors import (
+    ContextBudgetExceededError,
+    SummaryGenerationError,
+)
 from inkflow.domain.ports.context_provider import ContextProviderProtocol
+from inkflow.domain.ports.context_sources import ContextSourceProtocol
 from inkflow.domain.ports.llm_client import (
     ChatMessage,
     ChatResponse,
@@ -42,6 +49,7 @@ from inkflow.domain.ports.prompt_template import (
     PromptTemplateProtocol,
     RenderedPrompt,
 )
+from inkflow.domain.ports.summary_repository import SummaryRepositoryProtocol
 from inkflow.domain.ports.vector_store import (
     EntityType,
     IndexableEntity,
@@ -52,6 +60,11 @@ from inkflow.domain.ports.vector_store import (
 __all__ = [
     # ── context ──
     "ContextProviderProtocol",
+    "ContextSourceProtocol",
+    "ContextBudgetExceededError",
+    "SummaryGenerationError",
+    # ── summary ──
+    "SummaryRepositoryProtocol",
     # ── project ──
     "ProjectRepositoryProtocol",
     # ── llm ──

@@ -7,13 +7,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.core.database import get_session
 from inkflow.domain.services.chapter_service import ChapterService
+from inkflow.domain.services.context_service import ContextService
 from inkflow.domain.services.project_service import ProjectService
+from inkflow.domain.services.summary_service import SummaryService
 from inkflow.domain.services.writing_service import WritingService
 from inkflow.infrastructure.database.repositories.chapter_repo import (
     SQLiteChapterRepository,
 )
 from inkflow.infrastructure.database.repositories.project_repo import (
     SQLiteProjectRepository,
+)
+from inkflow.infrastructure.database.repositories.summary_repo import (
+    SQLiteSummaryRepository,
 )
 from inkflow.infrastructure.llm import LangChainLLMClient, LangChainPromptManager
 
@@ -47,4 +52,52 @@ def get_writing_service(
         prompt_manager=LangChainPromptManager(),
         project_repo=SQLiteProjectRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
+    )
+
+
+def get_context_service(
+    db: AsyncSession,
+) -> ContextService:
+    """获取 ContextService 实例.
+
+    Phase 1 空实现：Character/World/Foreshadowing 数据源为空。
+    使用 Mock count_tokens（生产环境由 F5 LLMClient.count_tokens 替换）。
+    """
+    from inkflow.domain.models.context import ContextSourceType
+    from inkflow.infrastructure.context.sources import (
+        CharacterSettingSource,
+        ForeshadowingSource,
+        ProjectConfigOutlineSource,
+        WorldSettingSource,
+    )
+
+    project_repo = SQLiteProjectRepository(db)
+    summary_repo = SQLiteSummaryRepository(db)
+
+    sources = {
+        ContextSourceType.OUTLINE: ProjectConfigOutlineSource(project_repo),
+        ContextSourceType.CHARACTER_SETTING: CharacterSettingSource(),
+        ContextSourceType.WORLD_SETTING: WorldSettingSource(),
+        ContextSourceType.FORESHADOWING: ForeshadowingSource(),
+    }
+
+    return ContextService(
+        sources=sources,
+        summary_repo=summary_repo,
+    )
+
+
+def get_summary_service(
+    db: AsyncSession,
+) -> SummaryService:
+    """获取 SummaryService 实例."""
+    from inkflow.infrastructure.database.repositories.chapter_repo import (
+        SQLiteChapterRepository,
+    )
+
+    return SummaryService(
+        summary_repo=SQLiteSummaryRepository(db),
+        llm_client=LangChainLLMClient(),
+        prompt_manager=LangChainPromptManager(),
+        chapter_reader=SQLiteChapterRepository(db),
     )

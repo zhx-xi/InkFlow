@@ -91,6 +91,13 @@ class InkFlowConfig(BaseSettings):
     retrieval_top_k: int = 10
     """RAG 检索默认返回的 top-K 结果数。"""
 
+    # ---- 上下文管理（F6） ----
+    context_default_window: int = 128_000
+    """默认上下文窗口大小（未知模型兜底用）."""
+
+    context_max_ratio: float = 0.8
+    """上下文预算比例上限 = 模型窗口 × ratio."""
+
     # ---- 密钥（AES-256-GCM，API Key 加密存储） ----
     secret_key: str = ""
     """API Key 本地加密密钥。通过环境变量注入。"""
