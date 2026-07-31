@@ -37,3 +37,21 @@ def main(
 ) -> None:
     """InkFlow — AI 长篇小说创作工具."""
     ctx.obj = CliContext(json_output=json_output)
+
+
+# ── 注册子命令 ──
+
+from inkflow.cli.commands import agent_cmd, chapter, project, write  # noqa: E402
+from inkflow.cli.commands.config_cmd import app as config_app  # noqa: E402
+from inkflow.cli.commands.llm import app as llm_app  # noqa: E402
+from inkflow.cli.commands.serve import serve as _serve_fn  # noqa: E402
+
+app.add_typer(project.app, name="project")
+app.add_typer(chapter.chapter_app, name="chapter")
+app.add_typer(chapter.volume_app, name="volume")
+app.add_typer(write.app, name="write")
+app.add_typer(llm_app, name="llm")
+app.add_typer(config_app, name="config")
+app.add_typer(agent_cmd.app, name="agent")
+# serve 用 command() 直接注册避免 inkflow serve serve 嵌套
+app.command(name="serve")(_serve_fn)

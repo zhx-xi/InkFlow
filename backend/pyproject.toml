@@ -42,7 +42,7 @@ dependencies = [
 ]
 
 [project.scripts]
-inkflow = "inkflow.__main__:app"
+inkflow = "inkflow.cli.app:app"
 
 [project.optional-dependencies]
 dev = [
