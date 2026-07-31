@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol
 
+from pydantic import BaseModel, Field
+
 
 class StageStatus(StrEnum):
     """管线阶段状态。"""
@@ -23,8 +25,7 @@ class StageStatus(StrEnum):
     SKIPPED = "skipped"
 
 
-@dataclass
-class AgentRole:
+class AgentRole(BaseModel):
     """Agent 角色定义 — 一个管线阶段中执行的 Agent。
 
     对应用户配置中的一个角色：
@@ -46,8 +47,8 @@ class AgentRole:
     model: str = "openai/gpt-4o"
     """LLM 模型（LiteLLM 格式：provider/model_name）。"""
 
-    temperature: float = 0.7
-    """LLM 温度参数。"""
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    """LLM 温度参数，范围 [0.0, 2.0]。"""
 
     max_tokens: int | None = None
     """最大输出 Token 数，None 表示不限制。"""
@@ -167,3 +168,9 @@ class AgentPipelineProtocol(Protocol):
             错误信息列表。空列表表示管线定义有效。
         """
         ...
+
+
+class PipelineError(Exception):
+    """管线执行错误 — 所有重试耗尽后抛出。"""
+
+    pass
