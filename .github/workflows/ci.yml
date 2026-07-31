@@ -6,16 +6,57 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  # ── Lint: ruff check + mypy type check ──
+  lint:
     permissions:
       contents: read
       checks: write
-      pull-requests: write   # reviewdog github-pr-review 需要写 PR 评论
+      pull-requests: write   # reviewdog github-pr-review
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - uses: reviewdog/action-setup@v1
+
+      - name: Ruff check + annotate (Reviewdog)
+        shell: pwsh
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ruffOutput = ruff check src/ tests/ --output-format=concise
+          $ruffExit = $LASTEXITCODE
+          if ($ruffOutput) {
+            $ruffOutput -replace '^(src/|tests/)', 'backend/$1' | reviewdog -efm='%f:%l:%c: %m' -reporter=github-pr-review -level=warning -name=ruff -tee
+          }
+          if ($ruffExit -ne 0) { exit $ruffExit }
+
+      - name: Type check with mypy
+        run: mypy src/ --ignore-missing-imports
+
+  # ── Test: pytest + coverage ──
+  test:
+    permissions:
+      contents: read
     runs-on: windows-latest
     strategy:
       matrix:
         python-version: ["3.11"]
-
     defaults:
       run:
         working-directory: backend
@@ -34,29 +75,43 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-          pip install build
-
-      - uses: reviewdog/action-setup@v1
-
-      - name: Lint + annotate (Ruff → Reviewdog)
-        shell: pwsh
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $ruffOutput = ruff check src/ tests/ --output-format=concise
-          $ruffExit = $LASTEXITCODE
-          if ($ruffOutput) {
-            $ruffOutput -replace '^(src/|tests/)', 'backend/$1' | reviewdog -efm='%f:%l:%c: %m' -reporter=github-pr-review -level=warning -name=ruff -tee
-          }
-          if ($ruffExit -ne 0) { exit $ruffExit }
-
-      - name: Type check with mypy
-        run: mypy src/ --ignore-missing-imports
 
       - name: Test with pytest
         run: pytest tests/ -v --cov=inkflow --cov-report=xml
 
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: backend/coverage.xml
+          fail_ci_if_error: false
+
+  # ── Build: wheel (lint + test 都通过才跑) ──
+  build:
+    needs: [lint, test]
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
       - name: Build wheel
+        shell: pwsh
         run: |
           if ('${{ github.event_name }}' -eq 'pull_request') {
             $sha = '${{ github.event.pull_request.head.sha }}'.Substring(0, 7)
@@ -71,9 +126,3 @@ jobs:
         with:
           name: inkflow-wheel
           path: backend/dist/*.whl
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          file: backend/coverage.xml
-          fail_ci_if_error: false
