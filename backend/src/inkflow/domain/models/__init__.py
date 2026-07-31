@@ -11,6 +11,14 @@ from inkflow.domain.models.chapter import (
     VolumeUpdate,
 )
 from inkflow.domain.models.project import Project, ProjectConfig, ProjectCreate, ProjectUpdate
+from inkflow.domain.models.writing import (
+    ContinueWritingRequest,
+    FormatValidationResult,
+    RevisionRequest,
+    WritingMode,
+    WritingRequest,
+    WritingResult,
+)
 
 __all__ = [
     "Project",
@@ -25,4 +33,10 @@ __all__ = [
     "Volume",
     "VolumeCreate",
     "VolumeUpdate",
+    "WritingMode",
+    "WritingRequest",
+    "ContinueWritingRequest",
+    "RevisionRequest",
+    "WritingResult",
+    "FormatValidationResult",
 ]

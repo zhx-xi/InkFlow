@@ -53,7 +53,8 @@ class TestLangChainLLMClient:
 
     # ── chat() 正常场景 ──
 
-    def test_chat_returns_response(self, mock_chat_model, chat_messages):
+    @pytest.mark.asyncio
+    async def test_chat_returns_response(self, mock_chat_model, chat_messages):
         """chat() 应返回 ChatResponse。"""
         from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 
@@ -63,12 +64,13 @@ class TestLangChainLLMClient:
             "inkflow.infrastructure.llm.langchain_client.get_provider_config",
             return_value=_fake_provider_config(),
         ):
-            response = client.chat(chat_messages, model="openai/gpt-4o")
+            response = await client.chat(chat_messages, model="openai/gpt-4o")
         assert isinstance(response, ChatResponse)
         assert response.content == "你好！有什么可以帮助你的？"
         assert response.model == "gpt-4o"
 
-    def test_chat_passes_temperature(self, mock_chat_model, chat_messages):
+    @pytest.mark.asyncio
+    async def test_chat_passes_temperature(self, mock_chat_model, chat_messages):
         """chat() 应将 temperature 传递给 ChatOpenAI。"""
         from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 
@@ -78,7 +80,7 @@ class TestLangChainLLMClient:
             "inkflow.infrastructure.llm.langchain_client.get_provider_config",
             return_value=_fake_provider_config(),
         ):
-            client.chat(chat_messages, temperature=0.9)
+            await client.chat(chat_messages, temperature=0.9)
         client._get_chat_model.assert_called_once()
         call_kwargs = client._get_chat_model.call_args[1]
         assert call_kwargs["temperature"] == 0.9
@@ -120,29 +122,32 @@ class TestLangChainLLMClient:
 
     # ── count_tokens() ──
 
-    def test_count_tokens_returns_int(self, chat_messages):
+    @pytest.mark.asyncio
+    async def test_count_tokens_returns_int(self, chat_messages):
         """count_tokens() 应返回正整数。"""
         from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 
         client = LangChainLLMClient()
-        count = client.count_tokens(chat_messages)
+        count = await client.count_tokens(chat_messages)
         assert isinstance(count, int)
         assert count > 0
 
-    def test_count_tokens_empty_messages(self):
+    @pytest.mark.asyncio
+    async def test_count_tokens_empty_messages(self):
         """空消息列表应返回 0。"""
         from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 
         client = LangChainLLMClient()
-        count = client.count_tokens([])
+        count = await client.count_tokens([])
         assert count == 0
 
     # ── 错误场景 ──
 
-    def test_chat_empty_messages_raises(self):
+    @pytest.mark.asyncio
+    async def test_chat_empty_messages_raises(self):
         """空消息应抛出 ValueError。"""
         from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 
         client = LangChainLLMClient()
         with pytest.raises(ValueError, match="messages cannot be empty"):
-            client.chat([])
+            await client.chat([])

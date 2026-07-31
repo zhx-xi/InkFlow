@@ -39,7 +39,7 @@ class LangChainLLMClient:
 
     # ── Public API ──
 
-    def chat(
+    async def chat(
         self,
         messages: list[ChatMessage],
         *,
@@ -48,14 +48,12 @@ class LangChainLLMClient:
         max_tokens: int | None = None,
         **kwargs: object,
     ) -> ChatResponse:
-        """发送聊天请求并获取完整响应（同步封装）。"""
+        """发送聊天请求并获取完整响应。"""
         if not messages:
             raise ValueError("messages cannot be empty")
 
-        import asyncio
-
-        return asyncio.run(
-            self._chat_async(messages, model=model, temperature=temperature, max_tokens=max_tokens)
+        return await self._chat_async(
+            messages, model=model, temperature=temperature, max_tokens=max_tokens
         )
 
     async def _chat_async(
@@ -138,7 +136,7 @@ class LangChainLLMClient:
         # Final event
         yield StreamEvent(content="", is_final=True)
 
-    def count_tokens(
+    async def count_tokens(
         self,
         messages: list[ChatMessage],
         *,
