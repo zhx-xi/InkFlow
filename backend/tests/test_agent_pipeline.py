@@ -125,3 +125,214 @@ def test_role_override_all_fields_optional():
     assert override.prompt is None
     assert override.model is None
     assert override.temperature is None
+
+
+# ── ORM + ExecutionStore ─────────────────────────────────────────────
+
+
+class TestAgentExecutionORM:
+    async def test_create_execution_record(self, db_session):
+        """创建 AgentExecutionORM 记录并持久化。"""
+        from inkflow.infrastructure.database.models.agent import AgentExecutionORM
+
+        execution = AgentExecutionORM(
+            pipeline="builtin:write_chapter",
+            project_id=str(uuid.uuid4()),
+            chapter_id=str(uuid.uuid4()),
+        )
+        db_session.add(execution)
+        await db_session.commit()
+        await db_session.refresh(execution)
+
+        assert execution.id is not None
+        assert execution.pipeline == "builtin:write_chapter"
+        assert execution.project_id is not None
+        assert execution.chapter_id is not None
+        assert execution.created_at is not None
+
+    async def test_execution_fields_default(self, db_session):
+        """默认字段: status=pending, final_output='', error=''。"""
+        from inkflow.infrastructure.database.models.agent import AgentExecutionORM
+
+        execution = AgentExecutionORM(
+            pipeline="builtin:write_chapter",
+            project_id=str(uuid.uuid4()),
+        )
+        db_session.add(execution)
+        await db_session.commit()
+        await db_session.refresh(execution)
+
+        assert execution.status == "pending"
+        assert execution.final_output == ""
+        assert execution.error == ""
+        assert execution.stages == []
+        assert execution.total_duration_ms == 0
+
+    async def test_execution_stages_json(self, db_session):
+        """stages 字段为 JSON 列表，存储各阶段快照。"""
+        from inkflow.infrastructure.database.models.agent import AgentExecutionORM
+
+        stages = [
+            {
+                "stage_id": "outline",
+                "status": "completed",
+                "output": "大纲内容",
+                "duration_ms": 120,
+            },
+            {"stage_id": "chapter_write", "status": "pending", "output": "", "duration_ms": 0},
+        ]
+        execution = AgentExecutionORM(
+            pipeline="builtin:write_chapter",
+            project_id=str(uuid.uuid4()),
+            stages=stages,
+        )
+        db_session.add(execution)
+        await db_session.commit()
+        await db_session.refresh(execution)
+
+        assert isinstance(execution.stages, list)
+        assert execution.stages == stages
+
+
+class TestAgentStageResultORM:
+    async def test_create_stage_result(self, db_session):
+        """创建 AgentStageResultORM 记录。"""
+        from inkflow.infrastructure.database.models.agent import (
+            AgentExecutionORM,
+            AgentStageResultORM,
+        )
+
+        execution = AgentExecutionORM(
+            pipeline="builtin:write_chapter",
+            project_id=str(uuid.uuid4()),
+        )
+        db_session.add(execution)
+        await db_session.commit()
+        await db_session.refresh(execution)
+
+        stage_result = AgentStageResultORM(
+            execution_id=execution.id,
+            stage_id="outline",
+            status="completed",
+            output="大纲内容",
+            duration_ms=120,
+        )
+        db_session.add(stage_result)
+        await db_session.commit()
+        await db_session.refresh(stage_result)
+
+        assert stage_result.id is not None
+        assert stage_result.execution_id == execution.id
+        assert stage_result.stage_id == "outline"
+        assert stage_result.status == "completed"
+        assert stage_result.output == "大纲内容"
+        assert stage_result.retry_count == 0
+        assert stage_result.duration_ms == 120
+
+    async def test_stage_result_fk_to_execution(self, db_session):
+        """stage result 的 execution_id 外键关联到 execution。"""
+        from sqlalchemy import select
+
+        from inkflow.infrastructure.database.models.agent import (
+            AgentExecutionORM,
+            AgentStageResultORM,
+        )
+
+        execution = AgentExecutionORM(
+            pipeline="builtin:write_chapter",
+            project_id=str(uuid.uuid4()),
+        )
+        db_session.add(execution)
+        await db_session.commit()
+        await db_session.refresh(execution)
+
+        stage_result = AgentStageResultORM(
+            execution_id=execution.id,
+            stage_id="style_review",
+            status="running",
+        )
+        db_session.add(stage_result)
+        await db_session.commit()
+
+        result = await db_session.execute(
+            select(AgentStageResultORM).where(AgentStageResultORM.execution_id == execution.id)
+        )
+        loaded = result.scalar_one()
+        assert loaded.id == stage_result.id
+        assert loaded.execution_id == execution.id
+        assert loaded.stage_id == "style_review"
+        assert loaded.status == "running"
+
+
+class TestExecutionStore:
+    async def test_create_and_get_execution(self, db_session):
+        """create_execution → get_execution 可查询。"""
+        from inkflow.infrastructure.agent import ExecutionStore
+
+        store = ExecutionStore(db_session)
+        chapter_id = str(uuid.uuid4())
+        execution = await store.create_execution(
+            pipeline="builtin:write_chapter",
+            project_id=str(uuid.uuid4()),
+            chapter_id=chapter_id,
+        )
+
+        loaded = await store.get_execution(execution.id)
+        assert loaded is not None
+        assert loaded.id == execution.id
+        assert loaded.pipeline == "builtin:write_chapter"
+        assert loaded.chapter_id == chapter_id
+        assert loaded.status == "pending"
+
+    async def test_update_stage_snapshot(self, db_session):
+        """update_stage 更新 stages JSON 字段。"""
+        from inkflow.infrastructure.agent import ExecutionStore
+
+        store = ExecutionStore(db_session)
+        execution = await store.create_execution(
+            pipeline="builtin:write_chapter",
+            project_id=str(uuid.uuid4()),
+        )
+
+        stages = [
+            {"stage_id": "outline", "status": "completed", "output": "大纲", "duration_ms": 100}
+        ]
+        await store.update_stages(
+            execution_id=execution.id,
+            stages=stages,
+            status="completed",
+            final_output="章节正文",
+            total_duration_ms=100,
+        )
+
+        loaded = await store.get_execution(execution.id)
+        assert loaded is not None
+        assert loaded.stages == stages
+        assert loaded.status == "completed"
+        assert loaded.final_output == "章节正文"
+        assert loaded.total_duration_ms == 100
+
+    async def test_list_executions_by_project(self, db_session):
+        """按 project_id 过滤 + 分页。"""
+        from inkflow.infrastructure.agent import ExecutionStore
+
+        store = ExecutionStore(db_session)
+        project_id = str(uuid.uuid4())
+        other_project_id = str(uuid.uuid4())
+        for _ in range(3):
+            await store.create_execution(pipeline="builtin:write_chapter", project_id=project_id)
+        await store.create_execution(pipeline="builtin:write_chapter", project_id=other_project_id)
+
+        executions, total = await store.list_executions(project_id=project_id, limit=2)
+
+        assert total == 3
+        assert len(executions) == 2
+        assert all(e.project_id == project_id for e in executions)
+
+    async def test_get_nonexistent_returns_none(self, db_session):
+        """查询不存在的 execution → None。"""
+        from inkflow.infrastructure.agent import ExecutionStore
+
+        store = ExecutionStore(db_session)
+        loaded = await store.get_execution(str(uuid.uuid4()))
+        assert loaded is None
