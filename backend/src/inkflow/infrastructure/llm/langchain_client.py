@@ -125,7 +125,8 @@ class LangChainLLMClient:
         langchain_messages = self._to_langchain_messages(messages)
         try:
             async for chunk in chat_model.astream(langchain_messages):
-                content = chunk.content if hasattr(chunk, "content") else str(chunk)
+                content_raw = chunk.content if hasattr(chunk, "content") else str(chunk)
+                content = content_raw if isinstance(content_raw, str) else str(content_raw)
                 yield StreamEvent(content=content, is_final=False)
         except Exception as e:
             raise LLMRequestError(
