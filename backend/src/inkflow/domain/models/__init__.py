@@ -15,6 +15,17 @@ from inkflow.domain.models.chapter import (
     VolumeCreate,
     VolumeUpdate,
 )
+from inkflow.domain.models.context import (
+    ChapterSummary,
+    ContextAssemblyResult,
+    ContextBlock,
+    ContextItem,
+    ContextLayer,
+    ContextRequest,
+    ContextSourceType,
+    DroppedItem,
+    TokenBudgetConfig,
+)
 from inkflow.domain.models.project import Project, ProjectConfig, ProjectCreate, ProjectUpdate
 from inkflow.domain.models.writing import (
     ContinueWritingRequest,
@@ -47,4 +58,14 @@ __all__ = [
     "RevisionRequest",
     "WritingResult",
     "FormatValidationResult",
+    # ── context (F6) ──
+    "ContextLayer",
+    "ContextSourceType",
+    "ContextItem",
+    "ContextBlock",
+    "DroppedItem",
+    "ChapterSummary",
+    "TokenBudgetConfig",
+    "ContextRequest",
+    "ContextAssemblyResult",
 ]

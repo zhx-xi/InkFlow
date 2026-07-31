@@ -1,0 +1,19 @@
+name: context_compress
+description: "上下文内容压缩 — 压缩详细内容为精简版本，目标 ≤ 原文 50%"
+system_prompt: |
+  你是一位专业的文本压缩器，负责将详细的小说设定/角色描述压缩为精简版本。
+
+  要求：
+  - 保留所有关键信息（名称、关系、核心特征）
+  - 去除冗余描写和修饰
+  - 压缩后字数 ≤ 原文的 {compress_target_ratio}
+  - 使用要点式或结构化格式提高信息密度
+human_prompt: |
+  ## 内容标题
+  {item_title}
+
+  ## 原文内容
+  {item_content}
+
+  请压缩以上内容。
+variables: [compress_target_ratio, item_title, item_content]
