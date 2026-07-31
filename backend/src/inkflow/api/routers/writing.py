@@ -1,0 +1,82 @@
+"""写作 REST API — generate / continue / revise 端点.
+
+三个端点均为动作型接口（不创建持久化资源），统一返回 200。
+错误映射遵循 ADR-012：领域异常 → 404/422，基础设施异常 → 500（不泄漏细节）。
+"""
+
+from __future__ import annotations
+
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from inkflow.api.deps import get_writing_service
+from inkflow.domain.models.writing import (
+    ContinueWritingRequest,
+    RevisionRequest,
+    WritingRequest,
+)
+from inkflow.domain.ports.llm_errors import LLMRequestError
+from inkflow.domain.services.writing_service import WritingService
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/v1/writing", tags=["写作"])
+
+#: 服务层以 LLMRequestError(message) 表达的领域不存在错误（spec §3.3）
+_NOT_FOUND_MESSAGES = ("项目不存在", "章节不存在")
+
+
+def _map_service_error(exc: Exception) -> HTTPException:
+    """将服务层异常映射为 HTTP 响应（ADR-012）。
+
+    - 项目/章节不存在 → 404（spec §3.3 异常映射表）
+    - LLM 调用失败 → 500 通用消息，记录原始异常，不泄漏内部细节
+    - 其他未知异常 → 500 通用消息
+    """
+    if isinstance(exc, LLMRequestError):
+        if exc.args and exc.args[0] in _NOT_FOUND_MESSAGES:
+            return HTTPException(status_code=404, detail=exc.args[0])
+        logger.exception("LLM 调用失败: %s", exc)
+        return HTTPException(status_code=500, detail="LLM 调用失败，请稍后重试")
+    logger.exception("写作服务未预期异常: %s", exc)
+    return HTTPException(status_code=500, detail="服务器内部错误，请稍后重试")
+
+
+@router.post("/generate")
+async def generate_chapter(
+    data: WritingRequest,
+    svc: WritingService = Depends(get_writing_service),
+) -> dict:
+    """生成章节 — 从大纲+上下文生成完整章节。"""
+    try:
+        result = await svc.generate_chapter(data)
+    except Exception as exc:
+        raise _map_service_error(exc) from exc
+    return result.model_dump(mode="json")
+
+
+@router.post("/continue")
+async def continue_writing(
+    data: ContinueWritingRequest,
+    svc: WritingService = Depends(get_writing_service),
+) -> dict:
+    """续写内容 — 接续已有内容继续写作。"""
+    try:
+        result = await svc.continue_writing(data)
+    except Exception as exc:
+        raise _map_service_error(exc) from exc
+    return result.model_dump(mode="json")
+
+
+@router.post("/revise")
+async def revise_content(
+    data: RevisionRequest,
+    svc: WritingService = Depends(get_writing_service),
+) -> dict:
+    """修改润色 — 基于反馈修订指定内容。"""
+    try:
+        result = await svc.revise_content(data)
+    except Exception as exc:
+        raise _map_service_error(exc) from exc
+    return result.model_dump(mode="json")
