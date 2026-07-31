@@ -7,7 +7,7 @@ on:
 
 jobs:
   # ── Lint: ruff check + mypy type check ──
-  lint:
+  lint-backend:
     permissions:
       contents: read
       checks: write
@@ -39,24 +39,25 @@ jobs:
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $ruffOutput = ruff check src/ tests/ --output-format=concise
+          $ruffOutput = ruff check src/ tests/unit/ ../tests/ --output-format=concise
           $ruffExit = $LASTEXITCODE
           if ($ruffOutput) {
-            $ruffOutput -replace '^(src/|tests/)', 'backend/$1' | reviewdog -efm='%f:%l:%c: %m' -reporter=github-pr-review -level=warning -name=ruff -tee
+            $fixed = $ruffOutput `
+              -replace '^src/', 'backend/src/' `
+              -replace '^tests/unit/', 'backend/tests/unit/' `
+              -replace '^\.\./tests/', 'tests/'
+            $fixed | reviewdog -efm='%f:%l:%c: %m' -reporter=github-pr-review -level=warning -name=ruff -tee
           }
           if ($ruffExit -ne 0) { exit $ruffExit }
 
       - name: Type check with mypy
         run: mypy src/ --ignore-missing-imports
 
-  # ── Test: pytest + coverage ──
-  test:
+  # ── Unit tests (fast, no DB, < 10s) ──
+  unit-test-backend:
     permissions:
       contents: read
     runs-on: windows-latest
-    strategy:
-      matrix:
-        python-version: ["3.11"]
     defaults:
       run:
         working-directory: backend
@@ -66,18 +67,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Test with pytest
-        run: pytest tests/ -v --cov=inkflow --cov-report=xml
+      - name: Run unit tests
+        run: pytest tests/unit/ -v --tb=short --cov=inkflow --cov-report=xml
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
@@ -85,9 +86,161 @@ jobs:
           file: backend/coverage.xml
           fail_ci_if_error: false
 
-  # ── Build: wheel (lint + test 都通过才跑) ──
-  build:
-    needs: [lint, test]
+  # ── Integration: Chapter (repo + service + API + CLI) ──
+  integration-chapter-backend:
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run chapter integration tests
+        run: |
+          pytest ../tests/integration/test_chapter_repository.py `
+                 ../tests/integration/test_chapter_service.py `
+                 ../tests/api/test_chapter_api.py `
+                 ../tests/cli/test_cli_chapter.py `
+                 -v --tb=short
+
+  # ── Integration: Project (repo + service + API + CLI) ──
+  integration-project-backend:
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run project integration tests
+        run: |
+          pytest ../tests/integration/test_project_repository.py `
+                 ../tests/integration/test_project_service.py `
+                 ../tests/api/test_project_api.py `
+                 ../tests/cli/test_cli_project.py `
+                 -v --tb=short
+
+  # ── Integration: Writing (API + CLI) ──
+  integration-writing-backend:
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run writing integration tests
+        run: |
+          pytest ../tests/api/test_writing_api.py `
+                 ../tests/cli/test_cli_writing.py `
+                 -v --tb=short
+
+  # ── Integration: Agent (pipeline + API + CLI) ──
+  integration-agent-backend:
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run agent integration tests
+        run: |
+          pytest ../tests/integration/test_agent_pipeline.py `
+                 ../tests/api/test_agent_api.py `
+                 ../tests/cli/test_cli_agent.py `
+                 -v --tb=short
+
+  # ── Smoke: health check (fastest) ──
+  smoke-backend:
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Health check
+        run: pytest ../tests/api/test_health.py -v --tb=short
+
+  # ── Build: wheel (all gates pass) ──
+  build-backend:
+    needs: [lint-backend, unit-test-backend, integration-chapter-backend, integration-project-backend, integration-writing-backend, integration-agent-backend, smoke-backend]
     permissions:
       contents: read
     runs-on: windows-latest
