@@ -1,4 +1,7 @@
-"""InkFlow 测试配置和共享 fixture — 包含异步数据库 fixture。"""
+"""InkFlow 集成测试共享 fixture — 异步数据库 + 项目样本。
+
+供 tests/integration/, tests/api/, tests/cli/ 使用。
+"""
 
 import asyncio
 import tempfile
@@ -37,7 +40,9 @@ async def test_engine():
 @pytest_asyncio.fixture
 async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
     """function-scoped async session bound to test_engine."""
-    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    factory = async_sessionmaker(
+        test_engine, class_=AsyncSession, expire_on_commit=False
+    )
     async with factory() as session:
         yield session
 

@@ -4,12 +4,15 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from inkflow.api.app import app
 
+pytestmark = pytest.mark.asyncio
 
-@pytest.fixture
+
+@pytest_asyncio.fixture
 async def client():
     """ASGI 测试客户端。"""
     transport = ASGITransport(app=app)
@@ -40,7 +43,9 @@ def mock_agent_service():
     # validate_pipeline / list_templates 是同步方法 — 用 MagicMock 而非 AsyncMock
     svc.validate_pipeline = MagicMock(return_value={"valid": True, "errors": []})
     svc.list_templates = MagicMock(
-        return_value={"items": [{"id": "builtin:write_chapter", "name": "章节写作 (4 阶段)"}]}
+        return_value={
+            "items": [{"id": "builtin:write_chapter", "name": "章节写作 (4 阶段)"}]
+        }
     )
     return svc
 

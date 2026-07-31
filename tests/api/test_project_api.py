@@ -18,6 +18,8 @@ from fastapi.testclient import TestClient
 from inkflow.api.app import app
 from inkflow.domain.models.project import Project, ProjectConfig
 
+pytestmark = pytest.mark.asyncio  # 模块内所有 async test 自动获得 asyncio mark
+
 # ── Fixtures ──
 
 
@@ -237,4 +239,6 @@ async def test_invalid_uuid_returns_404(client):
         ("POST", "/api/v1/projects/not-a-uuid/restore", None),
     ]:
         resp = client.request(method, path, json=body)
-        assert resp.status_code == 404, f"{method} {path} should return 404, got {resp.status_code}"
+        assert (
+            resp.status_code == 404
+        ), f"{method} {path} should return 404, got {resp.status_code}"

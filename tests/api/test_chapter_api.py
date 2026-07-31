@@ -3,28 +3,16 @@
 使用 ASGITransport + AsyncClient 进行真实 HTTP 请求测试，
 通过 app.dependency_overrides 将 get_db 替换为测试 db_session，
 确保测试与 API 共享同一内存数据库。
+
+fixture override_get_db 定义在 tests/api/conftest.py。
 """
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 
-@pytest.fixture
-def override_get_db(db_session):
-    """将 FastAPI 的 get_db 替换为测试的 db_session，实现同库访问。"""
-    from inkflow.api.deps import get_db
-
-    async def _get_db_override():
-        yield db_session
-
-    from inkflow.api.app import app
-
-    app.dependency_overrides[get_db] = _get_db_override
-    yield
-    app.dependency_overrides.clear()
-
-
 @pytest.mark.asyncio
+@pytest.mark.chapter
 async def test_create_and_list_volumes(db_session, sample_project, override_get_db):
     """创建卷 → 列表返回."""
     from inkflow.api.app import app
@@ -45,6 +33,7 @@ async def test_create_and_list_volumes(db_session, sample_project, override_get_
 
 
 @pytest.mark.asyncio
+@pytest.mark.chapter
 async def test_chapter_lifecycle(db_session, sample_project, override_get_db):
     """章节完整生命周期：创建 → 更新状态 → 删除."""
     from inkflow.api.app import app
@@ -73,6 +62,7 @@ async def test_chapter_lifecycle(db_session, sample_project, override_get_db):
 
 
 @pytest.mark.asyncio
+@pytest.mark.chapter
 async def test_move_chapter_api(db_session, sample_project, override_get_db):
     """跨卷移动 API."""
     from inkflow.api.app import app
@@ -96,6 +86,8 @@ async def test_move_chapter_api(db_session, sample_project, override_get_db):
         )
         ch_id = r3.json()["id"]
 
-        resp = await client.post(f"/api/v1/chapters/{ch_id}/move?target_volume_id={v2_id}")
+        resp = await client.post(
+            f"/api/v1/chapters/{ch_id}/move?target_volume_id={v2_id}"
+        )
         assert resp.status_code == 200
         assert resp.json()["volume_id"] == v2_id

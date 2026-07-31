@@ -62,9 +62,20 @@ web = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["tests/unit"]
 python_files = ["test_*.py"]
-addopts = "-v --tb=short --cov=inkflow --cov-report=term-missing"
+addopts = "-v --tb=short"
+markers = [
+    "unit: 单元测试 — 无 I/O，无数据库，快速（< 100ms/条）",
+    "integration: 集成测试 — 真实数据库（in-memory SQLite）",
+    "api: API 集成测试 — FastAPI TestClient/ASGITransport",
+    "cli: CLI 集成测试 — CliRunner + 临时 SQLite",
+    "e2e: 端到端测试 — 完整用户链路（未来）",
+    "chapter: 卷/章节功能相关测试",
+    "project: 项目管理功能相关测试",
+    "writing: AI 写作功能相关测试",
+    "agent: Agent 编排功能相关测试（未来）",
+]
 
 [tool.ruff]
 target-version = "py311"
