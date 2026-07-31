@@ -87,12 +87,42 @@ D:\develop\projects\
 │   │   │   │   └── routers\         #   路由 (project, chapter, ...)
 │   │   │   └── cli\                 # ★ 表现层：CLI
 │   │   │       └── commands\        #   命令实现 (project, chapter, ...)
-│   │   └── tests\                   # ★ 测试
-│   │       ├── conftest.py          #   async DB fixture
-│   │       ├── test_health.py       #   API 冒烟
-│   │       ├── test_project.py      #   领域服务测试
-│   │       ├── test_project_api.py  #   API 集成测试
-│   │       └── test_cli.py          #   CLI 集成测试
+│   │   └── tests\                   # ★ 单元测试（纯后端，无 I/O）
+│   │       └── unit\                #   纯函数 + Mock + DTO 校验
+│   │           ├── conftest.py       #   最小化 fixture（event_loop + temp_keys_dir）
+│   │           ├── test_chapter_dtos.py
+│   │           ├── test_project_dtos.py
+│   │           ├── test_writing_models.py
+│   │           ├── test_writing_service.py
+│   │           ├── test_format_validator.py
+│   │           ├── test_key_manager.py
+│   │           ├── test_prompt_manager.py
+│   │           ├── test_llm_client.py
+│   │           ├── test_agent_service.py
+│   │           ├── test_agent_templates.py
+│   │           └── test_langgraph_pipeline.py
+│   ├── tests\                        # ★ 集成 + E2E 测试（顶层，跨后端/前端）
+│   │   ├── conftest.py               #   共享 DB fixture（db_session, sample_project, ...）
+│   │   ├── integration\              #   仓储 + 服务层集成测试
+│   │   │   ├── test_chapter_repository.py
+│   │   │   ├── test_chapter_service.py
+│   │   │   ├── test_project_repository.py
+│   │   │   ├── test_project_service.py
+│   │   │   └── test_agent_pipeline.py
+│   │   ├── api\                      #   FastAPI HTTP 集成测试
+│   │   │   ├── conftest.py           #   override_get_db fixture
+│   │   │   ├── test_health.py
+│   │   │   ├── test_chapter_api.py
+│   │   │   ├── test_project_api.py
+│   │   │   ├── test_writing_api.py
+│   │   │   └── test_agent_api.py
+│   │   ├── cli\                      #   CLI 集成测试
+│   │   │   ├── conftest.py           #   isolated_db + _parse_json_output
+│   │   │   ├── test_cli_project.py
+│   │   │   ├── test_cli_chapter.py
+│   │   │   ├── test_cli_writing.py
+│   │   │   └── test_cli_agent.py
+│   │   └── e2e\                      #   全栈端到端（未来）
 │   ├── specs\                       # SDD 规格文件（每个 feature 一个目录）
 │   │   ├── f1-project-service\
 │   │   │   └── spec.md              # F1 项目/书籍管理规格
@@ -184,6 +214,8 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 | — | ID 类型：UUID v4 | 避免自增 ID 碰撞，支持未来分布式场景 |
 | — | 软删除：is_deleted 标记 + 回收站 | Phase 1 保险策略，用户可恢复误删数据 |
 | [ADR-015](docs/adr/ADR-015.md) | **LangChain 隔离**：Protocol 模式 | Domain 零 LangChain 依赖 → 框架可替换性；CI 强制检查 |
+| [ADR-017](docs/adr/ADR-017.md) | **CI 代码质量**：Reviewdog + Ruff | PR 内联注解；一次执行双重用途 |
+| [ADR-018](docs/adr/ADR-018.md) | **测试分层**：三层目录 + 按功能并行 CI | 单元/集成/API/CLI/E2E 分离；backend 后缀预留前端 |
 
 **🔴 ADR 治理规则（所有 AI 会话必须遵守）**：
 
@@ -254,10 +286,10 @@ chore:    构建/CI/工具 例: chore: configure ruff import sort
 
 ```powershell
 cd D:\develop\projects\InkFlow-ft\fX-xxx\backend
-.\.venv\Scripts\Activate.ps1
-python -m ruff check src/ tests/     # lint
-python -m mypy src/                  # 类型检查
-python -m pytest tests/ -q           # 测试
+python -m ruff check src/ tests/unit/ ..\\tests\\    # lint（覆盖 src + 单元 + 集成）
+python -m mypy src/                                   # 类型检查
+python -m pytest tests/unit/ -q                       # 单元测试（裸 pytest = 仅单元）
+python -m pytest ..\\tests\\integration\\ ..\\tests\\api\\ ..\\tests\\cli\\ -q  # 集成测试
 ```
 
 **注意：** 使用 `python -m mypy` 而非裸 `mypy`（Windows uv trampoline 兼容性问题）。
@@ -360,20 +392,32 @@ from inkflow.core.config import config
 
 ## 7. 测试
 
-### 7.1 测试基础设施
+### 7.1 测试分层（详见 ADR-018）
 
-```python
-# conftest.py 提供的关键 fixture：
-- test_engine      # function-scoped 内存 SQLite engine
-- db_session       # function-scoped async session
-- sample_project_data  # ProjectCreate 实例
 ```
+backend/tests/unit/          ← 纯单元测试（无 I/O，无 DB，最快）
+tests/integration/            ← 仓储 + 服务层集成测试（真实 in-memory SQLite）
+tests/api/                    ← FastAPI HTTP 集成测试（ASGITransport + dependency override）
+tests/cli/                    ← CLI 集成测试（CliRunner + 临时 SQLite）
+tests/e2e/                    ← 全栈端到端（未来，前端接入后启用）
+```
+
+### 7.2 关键 fixture
+
+| fixture | 位置 | 说明 |
+|---------|------|------|
+| `event_loop` | `backend/tests/unit/conftest.py` | session-scoped async event loop |
+| `temp_keys_dir` | `backend/tests/unit/conftest.py` | 临时密钥存储目录 |
+| `db_session` | `tests/conftest.py` | function-scoped in-memory SQLite session |
+| `sample_project` | `tests/conftest.py` | 预创建的 ProjectORM 实例 |
+| `override_get_db` | `tests/api/conftest.py` | FastAPI dependency override → 测试 DB |
+| `isolated_db` | `tests/cli/conftest.py` | 独立临时 SQLite + monkeypatch |
 
 - **数据库**：每个测试独立的 `sqlite+aiosqlite:///:memory:`，自动建表/销毁
 - **async**：`pytest-asyncio` + `asyncio_mode = "auto"`
 - **覆盖率**：`pytest-cov`，目标 ≥ 70%
 
-### 7.2 CLI 测试 isolated_db 模式 ⚠️ 重要
+### 7.3 CLI 测试 isolated_db 模式 ⚠️ 重要
 
 CLI 测试需要同时 patch **源模块** 和 **CLI 模块**（Python import 缓存问题）：
 
@@ -399,7 +443,7 @@ def isolated_db(monkeypatch, tmp_path):
 - ❌ `autouse=True` + `sys.modules` 清理 — 会污染其他测试
 - ❌ 只 patch `inkflow.core.database` 不 patch `inkflow.cli.commands.project`
 
-### 7.3 serve 冒烟测试
+### 7.4 serve 冒烟测试
 
 验证 `inkflow serve --no-open` 真正启动了服务器：
 
@@ -417,7 +461,7 @@ for _ in range(20):
 pytest.fail("server did not start")
 ```
 
-### 7.4 TDD 铁律：每层都要 RED
+### 7.5 TDD 铁律：每层都要 RED
 
 **所有产出代码的层必须有测试，无一例外。** CLI、API 路由、serve 命令都测。
 
@@ -446,7 +490,7 @@ AI 编码助手在开始任何工作前，应**按顺序**阅读以下文件：
 | P1 | `docs/architecture-analysis-2026-07-30.md` | 架构分析总览；ADR 索引表（决策详情在 `docs/adr/`） |
 | P1 | `docs/workflow.md` | git worktree + PR 流程详解 |
 | P1 | `backend/pyproject.toml` | 依赖版本、工具配置（Ruff、mypy、pytest） |
-| P1 | `backend/tests/conftest.py` | 测试 fixture（async DB、sample data） |
+| P1 | `tests/conftest.py` | 集成测试共享 fixture（db_session、sample_project） |
 | P2 | `docs/prd-inkflow-v2.1-2026-07-30.md` | 产品需求文档（想做什么、为什么做） |
 | P3 | `docs/env-readiness-2026-07-30.md` | 环境就绪检查清单 |
 
@@ -466,3 +510,6 @@ AI 编码助手在开始任何工作前，应**按顺序**阅读以下文件：
 | 8 | **软删除后 get() 仍返回数据** | Repository.get() 必须过滤 `is_deleted=False` |
 | 9 | **Protocol 中直接使用 LangChain 类型** | `domain/ports/` 的 Protocol 只能用 Python 标准类型 + 自定义 dataclass |
 | 10 | **LangChain 版本升级破坏兼容** | pip install 时 pyproject.toml 的 `<0.4.0` 上限保护；手动升级需跑全量测试 |
+| 11 | **单元 + 集成测试不能放在同一命令** | 两个 `tests/` 目录（backend 和顶层）有命名冲突，必须分开跑 |
+| 12 | **CI job 名带 `-backend` 后缀** | 前端接入后会有 `-frontend` 后缀，新增 job 时注意命名约定 |
+| 13 | **Issue/PR 完成后检查配置同步** | 每个 Issue 完成后检查 AGENTS.md、ADR、pyproject.toml 等文件是否过时 |
