@@ -10,6 +10,8 @@ D:\develop\projects\
 │   ├── specs\                       # SDD 规格文件
 │   ├── .github\                     # CI 配置
 │   └── docs\                        # 架构/产品文档
+│       ├── adr\                     # ★ ADR 决策记录（索引 + 编号规则见 adr/README.md）
+│       └── ...
 │
 ├── InkFlow-ft\                      # git worktree 工作目录（所有 feature 分支）
 │   ├── f1-project-model\            # 当前活跃分支的工作副本
@@ -102,6 +104,24 @@ Remove-Item -Recurse -Force ../InkFlow-ft/fX-xxx
 ### 7. 开始下一个功能
 
 回到 **步骤 2**。
+
+## 📐 ADR 决策记录
+
+所有架构决策记录在 `docs/adr/ADR-NNN.md`，索引见 `docs/adr/README.md`。
+
+**编号规则**：
+- 顺序递增，不复用编号（ADR-001, 002, ...）
+- 决策被取代时：旧 ADR 标记 `已弃用` 并指向新 ADR；新 ADR 标记 `已接受` 并注明替代关系（如 ADR-005 → ADR-005v2）
+
+**新增/修改流程**：
+1. 创建 `docs/adr/ADR-NNN.md`（Nygard 格式：状态 / 背景 / 决策 / 备选方案 / 影响）
+2. 更新 `docs/adr/README.md` 索引表
+3. 与代码变更同 PR 提交（决策先行：先改 ADR，再改代码）
+
+**使用纪律**：
+- 动手改代码前先查相关 ADR；PR 描述引用 ADR 编号
+- Constitution §7.3：所有 ADR 保持最新
+- 架构分析文档只保留 ADR 索引表，不维护内嵌副本
 
 ## ⚡ 单人开发简化规则
 

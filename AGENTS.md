@@ -93,10 +93,15 @@ D:\develop\projects\
 │   │       ├── test_project.py      #   领域服务测试
 │   │       ├── test_project_api.py  #   API 集成测试
 │   │       └── test_cli.py          #   CLI 集成测试
-│   ├── specs\                       # SDD 规格文件
-│   │   └── phase1-core-engine\
-│   │       └── spec.md              # Phase 1 完整规格
+│   ├── specs\                       # SDD 规格文件（每个 feature 一个目录）
+│   │   ├── f1-project-service\
+│   │   │   └── spec.md              # F1 项目/书籍管理规格
+│   │   └── f2-chapter-service\
+│   │       └── spec.md              # F2 卷/章节管理规格
 │   ├── docs\                        # 架构/产品文档
+│   │   ├── adr\                     # ★ ADR 决策记录（索引见 adr/README.md）
+│   │   │   ├── README.md            #   ADR 索引 + 编号规则
+│   │   │   └── ADR-NNN.md           #   单个决策记录（Nygard 格式）
 │   │   ├── architecture-analysis-2026-07-30.md
 │   │   ├── prd-inkflow-v2.1-2026-07-30.md
 │   │   └── workflow.md              # 开发工作流详解
@@ -166,16 +171,27 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 
 | ADR | 决策 | 理由 |
 |-----|------|------|
-| 架构风格 | 模块化单体 | 单人团队，避免微服务运维负担；接口隔离保未来拆分 |
-| 数据库 | SQLite (async) | 本地优先，零配置；通过 Repository 接口隔离，未来切 PostgreSQL |
-| LLM Provider | **LangChain ChatLiteLLM**（v2.0） | 保留 100+ Provider 覆盖 + 获得 LangChain callback/LangSmith/LCEL 生态 |
-| Agent 编排 | **LangGraph StateGraph**（v2.0） | Phase 1 顺序链、Phase 2 DAG；LangSmith 可视化；内置 checkpointing |
-| RAG | **LangChain Chroma + BGE**（Phase 2） | 本地向量库 + 中文 SOTA Embedding；长篇小说一致性保障 |
-| Prompt | **ChatPromptTemplate + YAML**（v2.0） | 模板与代码分离；变量验证；非技术人员可编辑 |
-| 认证 | Phase 1-3 无需认证 | 本地运行，免认证；Phase 4+ 通过 AuthProtocol 扩展 |
-| ID 类型 | UUID v4 | 避免自增 ID 碰撞，支持未来分布式场景 |
-| 软删除 | is_deleted 标记 + 回收站 | Phase 1 保险策略，用户可恢复误删数据 |
-| **LangChain 隔离** | Protocol 模式 | Domain 零 LangChain 依赖 → 框架可替换性；CI 强制检查 |
+| [ADR-001](docs/adr/ADR-001.md) | 架构风格：模块化单体 | 单人团队，避免微服务运维负担；接口隔离保未来拆分 |
+| [ADR-002](docs/adr/ADR-002.md) | 分层：Clean/Hexagonal | 三界面共享 Service；依赖方向指向 Domain |
+| [ADR-003](docs/adr/ADR-003.md) | 数据库：SQLite (async) + Repository | 本地优先，零配置；Repository 隔离，未来切 PostgreSQL |
+| [ADR-004](docs/adr/ADR-004.md) | 数据契约：Pydantic v2 全栈 | 一份模型三界面复用；类型安全 |
+| [ADR-005v2](docs/adr/ADR-005v2.md) | LLM Provider：**LangChain ChatLiteLLM**（v2.0） | 保留 100+ Provider 覆盖 + 获得 LangChain callback/LangSmith/LCEL 生态 |
+| [ADR-006v2](docs/adr/ADR-006v2.md) | Agent 编排：**LangGraph StateGraph**（v2.0） | Phase 1 顺序链、Phase 2 DAG；LangSmith 可视化；内置 checkpointing |
+| [ADR-013](docs/adr/ADR-013.md) | RAG：**LangChain Chroma + BGE**（Phase 2） | 本地向量库 + 中文 SOTA Embedding；长篇小说一致性保障 |
+| [ADR-014](docs/adr/ADR-014.md) | Prompt：**ChatPromptTemplate + YAML**（v2.0） | 模板与代码分离；变量验证；非技术人员可编辑 |
+| [ADR-016](docs/adr/ADR-016.md) | 日志：Loguru 结构化日志 | 双出口（stderr + 文件）、rotation/retention 内置 |
+| — | 认证：Phase 1-3 无需认证 | 本地运行，免认证；Phase 4+ 通过 AuthProtocol 扩展 |
+| — | ID 类型：UUID v4 | 避免自增 ID 碰撞，支持未来分布式场景 |
+| — | 软删除：is_deleted 标记 + 回收站 | Phase 1 保险策略，用户可恢复误删数据 |
+| [ADR-015](docs/adr/ADR-015.md) | **LangChain 隔离**：Protocol 模式 | Domain 零 LangChain 依赖 → 框架可替换性；CI 强制检查 |
+
+**🔴 ADR 治理规则（所有 AI 会话必须遵守）**：
+
+1. 动手改代码前，先查 `docs/adr/README.md` 索引确认相关决策
+2. 决策变更（技术选型、架构调整）必须**先写/改 ADR，再改代码**，PR 引用 ADR 编号
+3. 新增决策：创建 `docs/adr/ADR-NNN.md`（Nygard 格式：状态 / 背景 / 决策 / 备选方案 / 影响），然后在 `README.md` 索引登记
+4. 编号顺序递增不复用；决策被取代时旧 ADR 标记 `已弃用` 并指向新 ADR（如 ADR-005 → ADR-005v2）
+5. Constitution §7.3：所有 ADR 保持最新；架构分析文档只保留索引表，不维护内嵌副本
 
 ---
 
@@ -187,7 +203,8 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 
 **动手写代码前必须阅读对应的 spec 文件。**
 
-- `specs/phase1-core-engine/spec.md`：Phase 1 全部 7 个功能模块的完整规格
+- `specs/f1-project-service/spec.md`：F1 项目/书籍管理规格
+- `specs/f2-chapter-service/spec.md`：F2 卷/章节管理规格
 - 每个模块 spec 定义了：数据模型、API 契约、CLI 命令、边界情况、测试策略
 - spec 是开发的唯一真相来源。如果发现 spec 与实现矛盾，先更新 spec，再改代码
 
@@ -423,8 +440,10 @@ AI 编码助手在开始任何工作前，应**按顺序**阅读以下文件：
 | 优先级 | 文件 | 说明 |
 |--------|------|------|
 | P0 | `AGENTS.md` | 本文档，项目总约定 |
-| P0 | `specs/phase1-core-engine/spec.md` | Phase 1 完整功能规格（数据模型、API、CLI、边界条件） |
-| P0 | `docs/architecture-analysis-2026-07-30.md` | 架构决策记录（ADR）：为什么选模块化单体、Clean Architecture 分层、技术选型理由 |
+| P0 | `docs/adr/README.md` | ADR 索引 + 编号规则；改代码前先查相关决策 |
+| P0 | `specs/f1-project-service/spec.md` | F1 功能规格（数据模型、API、CLI、边界条件） |
+| P0 | `specs/f2-chapter-service/spec.md` | F2 功能规格（卷/章节、状态流转） |
+| P1 | `docs/architecture-analysis-2026-07-30.md` | 架构分析总览；ADR 索引表（决策详情在 `docs/adr/`） |
 | P1 | `docs/workflow.md` | git worktree + PR 流程详解 |
 | P1 | `backend/pyproject.toml` | 依赖版本、工具配置（Ruff、mypy、pytest） |
 | P1 | `backend/tests/conftest.py` | 测试 fixture（async DB、sample data） |
