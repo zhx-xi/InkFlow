@@ -10,6 +10,7 @@
     - agent_pipeline: Agent 管线编排（F4，LangGraph StateGraph 实现）
     - vector_store: RAG 向量存储（Phase 2，LangChain Chroma 实现）
     - prompt_template: Prompt 模板管理（LangChain ChatPromptTemplate 实现）
+    - llm_errors: LLM 领域异常类型
 """
 
 from inkflow.domain.ports.agent_pipeline import (
@@ -27,6 +28,11 @@ from inkflow.domain.ports.llm_client import (
     LLMClientProtocol,
     StreamEvent,
     TokenUsage,
+)
+from inkflow.domain.ports.llm_errors import (
+    LLMRequestError,
+    TemplateNotFoundError,
+    TemplateRenderError,
 )
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.prompt_template import (
@@ -50,6 +56,10 @@ __all__ = [
     "ChatResponse",
     "StreamEvent",
     "TokenUsage",
+    # ── llm errors ──
+    "LLMRequestError",
+    "TemplateNotFoundError",
+    "TemplateRenderError",
     # ── agent pipeline ──
     "AgentPipelineProtocol",
     "AgentRole",
