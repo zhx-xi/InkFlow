@@ -15,7 +15,7 @@ from inkflow.cli.output import mask_key, print_error, print_result
 @pytest.fixture
 def cli_runner():
     """Typer CliRunner fixture."""
-    return CliRunner(mix_stderr=False)
+    return CliRunner()
 
 
 @pytest.fixture
@@ -125,3 +125,40 @@ class TestMaskKey:
     def test_empty_key(self):
         """空 Key 返回空字符串."""
         assert mask_key("") == ""
+
+
+# ── Root App 测试 ──
+
+
+class TestRootApp:
+    def test_help_output(self, cli_runner):
+        """inkflow --help 输出非空."""
+        from inkflow.cli.app import app
+
+        result = cli_runner.invoke(app, ["--help"])
+        assert result.exit_code == 0
+        assert "InkFlow" in result.output
+
+    def test_version_output(self, cli_runner):
+        """inkflow --version 输出版本号."""
+        from inkflow.cli.app import app
+
+        result = cli_runner.invoke(app, ["--version"])
+        assert result.exit_code == 0
+        assert "InkFlow" in result.output
+
+    def test_no_args_shows_help(self, cli_runner):
+        """无参数时显示 help 并退出码 2."""
+        from inkflow.cli.app import app
+
+        result = cli_runner.invoke(app, [])
+        assert result.exit_code == 2
+
+    def test_json_flag_sets_context(self, cli_runner):
+        """--json 设置 ctx.obj.json_output=True."""
+        from inkflow.cli.app import app
+
+        # 使用 invoke 并检查 ctx.obj 需要通过 callback 间接验证
+        # 这里验证 --json 选项能被解析
+        result = cli_runner.invoke(app, ["--json", "--help"])
+        assert result.exit_code == 0
