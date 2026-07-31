@@ -76,7 +76,7 @@ def generate(
     asyncio.run(_run())
 
 
-@app.command()
+@app.command("continue")
 def continue_(
     project_id: str = typer.Option(..., "--project-id", help="项目 ID"),
     chapter_id: str = typer.Option(..., "--chapter-id", help="章节 ID"),

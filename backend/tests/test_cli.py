@@ -405,7 +405,7 @@ class TestWriteCLI:
         assert data["word_count"] == 2347
 
     def test_write_generate_llm_error(self, isolated_db, monkeypatch):
-        """LLM 调用失败 → 错误消息 + 退出码 1。"""
+        """LLM 调用失败 → 退出码 1，异常向上传播。"""
         from inkflow.domain.ports.llm_errors import LLMRequestError
 
         class _FailingService:
@@ -427,4 +427,4 @@ class TestWriteCLI:
             ],
         )
         assert result.exit_code == 1
-        assert "LLM 调用失败" in result.output
+        assert isinstance(result.exception, LLMRequestError)
