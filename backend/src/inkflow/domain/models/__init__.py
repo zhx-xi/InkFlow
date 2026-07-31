@@ -1,5 +1,10 @@
 """Pydantic 领域模型."""
 
+from inkflow.domain.models.agent_pipeline import (
+    PipelineConfig,
+    PipelineExecuteRequest,
+    RoleOverride,
+)
 from inkflow.domain.models.chapter import (
     Chapter,
     ChapterCreate,
@@ -21,6 +26,9 @@ from inkflow.domain.models.writing import (
 )
 
 __all__ = [
+    "PipelineConfig",
+    "PipelineExecuteRequest",
+    "RoleOverride",
     "Project",
     "ProjectConfig",
     "ProjectCreate",
