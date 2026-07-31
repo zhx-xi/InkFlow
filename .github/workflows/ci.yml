@@ -7,6 +7,9 @@ on:
 
 jobs:
   test:
+    permissions:
+      contents: read
+      checks: write        # reviewdog 需要写 Checks 来发布注解
     runs-on: windows-latest
     strategy:
       matrix:
@@ -32,8 +35,19 @@ jobs:
           pip install -e ".[dev]"
           pip install build
 
-      - name: Lint with Ruff
-        run: ruff check src/ tests/
+      - uses: reviewdog/action-setup@v1
+
+      - name: Lint + annotate (Ruff → Reviewdog)
+        shell: pwsh
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ruffResult = ruff check src/ tests/ 2>&1
+          $ruffExit = $LASTEXITCODE
+          if ($ruffResult) {
+            $ruffResult | reviewdog -f=ruff -reporter=github-pr-check -level=warning
+          }
+          if ($ruffExit -ne 0) { exit $ruffExit }
 
       - name: Type check with mypy
         run: mypy src/ --ignore-missing-imports
