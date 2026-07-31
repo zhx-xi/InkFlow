@@ -9,8 +9,6 @@ from __future__ import annotations
 import uuid
 from typing import Protocol
 
-from inkflow.domain.models.writing import WritingMode
-
 
 class ContextProviderProtocol(Protocol):
     """上下文注入端口 — 由 F6 (context_service) 实现。
@@ -24,7 +22,13 @@ class ContextProviderProtocol(Protocol):
         *,
         project_id: uuid.UUID,
         chapter_id: uuid.UUID | None = None,
-        mode: WritingMode,
+        mode: str,
     ) -> str:
-        """返回注入到写作 Prompt 的上下文文本（角色/设定/前文摘要/伏笔）。"""
+        """返回注入到写作 Prompt 的上下文文本（角色/设定/前文摘要/伏笔）。
+
+        Args:
+            project_id: 项目 ID。
+            chapter_id: 章节 ID（可选）。
+            mode: 写作模式 ("generate" / "continue" / "revise")。
+        """
         ...
