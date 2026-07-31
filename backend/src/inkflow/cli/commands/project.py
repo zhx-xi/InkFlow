@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import sys
 
 import typer
 
+from inkflow.cli.context import CliContext
+from inkflow.cli.output import print_error, print_result
 from inkflow.core.database import async_session_factory, create_tables
 from inkflow.domain.models.project import Genre
 from inkflow.domain.services.project_service import ProjectService
@@ -30,12 +30,6 @@ def _project_to_dict(project) -> dict:
     return project.model_dump(mode="json")
 
 
-def _print_json(data) -> None:
-    """Print data as formatted JSON to stdout."""
-    json.dump(data, sys.stdout, ensure_ascii=False, indent=2)
-    print()
-
-
 # ---------------------------------------------------------------------------
 # create  —  inkflow project create --name "xxx" --genre 玄幻
 # ---------------------------------------------------------------------------
@@ -43,13 +37,14 @@ def _print_json(data) -> None:
 
 @app.command()
 def create(
+    ctx: typer.Context,
     name: str = typer.Option(..., "--name", "-n", help="项目名称"),
     genre: str = typer.Option("其他", "--genre", "-g", help="小说分类"),
     language: str = typer.Option("zh-CN", "--language", "-l", help="写作语言"),
     target_words: int = typer.Option(0, "--target-words", "-w", help="目标字数"),
-    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
 ) -> None:
     """创建新项目"""
+    cli_ctx: CliContext = ctx.obj
     # Convert genre string to Genre enum
     genre_enum = Genre(genre)
 
@@ -65,26 +60,24 @@ def create(
             )
 
     project = _run_async(_impl())
-    if json_output:
-        _print_json(_project_to_dict(project))
-    else:
-        typer.echo(f"✅ 项目创建成功: [{project.name}] ({project.genre.value})")
+    print_result(cli_ctx, _project_to_dict(project))
 
 
 # ---------------------------------------------------------------------------
-# list  —  inkflow project list [--search xxx] [--sort name] [--json]
+# list  —  inkflow project list [--search xxx] [--sort name]
 # ---------------------------------------------------------------------------
 
 
 @app.command()
 def list(
+    ctx: typer.Context,
     search: str | None = typer.Option(None, "--search", "-s", help="按名称搜索"),
     sort: str = typer.Option(
         "updated_at", "--sort", help="排序字段 (name / updated_at / created_at)"
     ),
-    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
 ) -> None:
     """列出项目"""
+    cli_ctx: CliContext = ctx.obj
 
     async def _impl():
         await create_tables()
@@ -93,15 +86,12 @@ def list(
             return await svc.list_projects(search=search, sort_by=sort)
 
     projects, total = _run_async(_impl())
-    if json_output:
-        _print_json([_project_to_dict(p) for p in projects])
-    else:
-        if not projects:
-            typer.echo("📭 暂无项目")
-            return
-        typer.echo(f"共 {total} 个项目:\n")
-        for p in projects:
-            typer.echo(f"  [{p.id}] {p.name} ({p.genre.value}) — {p.target_words} 字")
+    if not projects and not cli_ctx.json_output:
+        print_result(cli_ctx, "📭 暂无项目")
+        return
+    if not cli_ctx.json_output and total:
+        print_result(cli_ctx, f"共 {total} 个项目")
+    print_result(cli_ctx, [_project_to_dict(p) for p in projects])
 
 
 # ---------------------------------------------------------------------------
@@ -111,10 +101,11 @@ def list(
 
 @app.command()
 def get(
+    ctx: typer.Context,
     project_id: int = typer.Option(..., "--id", "-i", help="项目 ID"),
-    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
 ) -> None:
     """查看项目详情"""
+    cli_ctx: CliContext = ctx.obj
 
     async def _impl():
         await create_tables()
@@ -124,18 +115,8 @@ def get(
 
     project = _run_async(_impl())
     if project is None:
-        typer.echo("❌ 项目不存在", err=True)
-        raise typer.Exit(code=1)
-    if json_output:
-        _print_json(_project_to_dict(project))
-    else:
-        typer.echo(f"ID:         {project.id}")
-        typer.echo(f"名称:       {project.name}")
-        typer.echo(f"分类:       {project.genre.value}")
-        typer.echo(f"语言:       {project.language}")
-        typer.echo(f"目标字数:   {project.target_words}")
-        typer.echo(f"创建时间:   {project.created_at}")
-        typer.echo(f"更新时间:   {project.updated_at}")
+        print_error(cli_ctx, "NOT_FOUND", "项目不存在")
+    print_result(cli_ctx, _project_to_dict(project))
 
 
 # ---------------------------------------------------------------------------
@@ -145,11 +126,13 @@ def get(
 
 @app.command()
 def delete(
+    ctx: typer.Context,
     project_id: int = typer.Option(..., "--id", "-i", help="项目 ID"),
     force: bool = typer.Option(False, "--force", "-f", help="跳过确认"),
     permanent: bool = typer.Option(False, "--permanent", "-p", help="硬删除（永久删除）"),
 ) -> None:
     """删除项目"""
+    cli_ctx: CliContext = ctx.obj
     if not force:
         label = "永久删除" if permanent else "删除"
         if not typer.confirm(f"确定要{label}项目 #{project_id} 吗？"):
@@ -168,10 +151,9 @@ def delete(
     ok = _run_async(_impl())
     if ok:
         label = "永久删除" if permanent else "已删除"
-        typer.echo(f"✅ 项目 #{project_id} {label}")
+        print_result(cli_ctx, f"✅ 项目 #{project_id} {label}")
     else:
-        typer.echo("❌ 项目不存在", err=True)
-        raise typer.Exit(code=1)
+        print_error(cli_ctx, "NOT_FOUND", "项目不存在")
 
 
 # ---------------------------------------------------------------------------
@@ -181,9 +163,11 @@ def delete(
 
 @app.command()
 def restore(
+    ctx: typer.Context,
     project_id: int = typer.Option(..., "--id", "-i", help="项目 ID"),
 ) -> None:
     """恢复已删除的项目"""
+    cli_ctx: CliContext = ctx.obj
 
     async def _impl():
         await create_tables()
@@ -193,6 +177,5 @@ def restore(
 
     project = _run_async(_impl())
     if project is None:
-        typer.echo("❌ 项目不存在", err=True)
-        raise typer.Exit(code=1)
-    typer.echo(f"✅ 项目已恢复: [{project.name}] ({project.genre.value})")
+        print_error(cli_ctx, "NOT_FOUND", "项目不存在")
+    print_result(cli_ctx, _project_to_dict(project))
