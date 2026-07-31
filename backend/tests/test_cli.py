@@ -428,3 +428,31 @@ class TestWriteCLI:
         )
         assert result.exit_code == 1
         assert isinstance(result.exception, LLMRequestError)
+
+
+class TestAgentCLI:
+    """Agent CLI 命令测试。"""
+
+    def test_agent_run_help(self):
+        """inkflow agent run --help 输出帮助信息。"""
+        result = runner.invoke(app, ["agent", "run", "--help"])
+        assert result.exit_code == 0
+        assert "--project-id" in result.stdout
+
+    def test_agent_status_help(self):
+        """inkflow agent status --help 输出帮助。"""
+        result = runner.invoke(app, ["agent", "status", "--help"])
+        assert result.exit_code == 0
+        assert "--run-id" in result.stdout
+
+    def test_agent_validate_help(self):
+        """inkflow agent validate --help 输出帮助。"""
+        result = runner.invoke(app, ["agent", "validate", "--help"])
+        assert result.exit_code == 0
+        assert "--file" in result.stdout
+
+    def test_agent_template_list_help(self):
+        """inkflow agent template list --help。"""
+        result = runner.invoke(app, ["agent", "template", "--help"])
+        assert result.exit_code == 0
+        assert "--json" in result.stdout
