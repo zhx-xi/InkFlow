@@ -22,6 +22,7 @@ from inkflow.domain.ports.agent_pipeline import (
     StageResult,
     StageStatus,
 )
+from inkflow.domain.ports.context_provider import ContextProviderProtocol
 from inkflow.domain.ports.llm_client import (
     ChatMessage,
     ChatResponse,
@@ -48,6 +49,8 @@ from inkflow.domain.ports.vector_store import (
 )
 
 __all__ = [
+    # ── context ──
+    "ContextProviderProtocol",
     # ── project ──
     "ProjectRepositoryProtocol",
     # ── llm ──
