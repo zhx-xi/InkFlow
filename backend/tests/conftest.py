@@ -1,7 +1,9 @@
 """InkFlow 测试配置和共享 fixture — 包含异步数据库 fixture。"""
 
 import asyncio
+import tempfile
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -77,3 +79,10 @@ def sample_project_data2() -> ProjectCreate:
         language="zh-CN",
         target_words=80000,
     )
+
+
+@pytest.fixture
+def temp_keys_dir():
+    """临时密钥存储目录，测试后自动清理。"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield Path(tmpdir)
