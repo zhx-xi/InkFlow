@@ -2,6 +2,7 @@
 
 from inkflow.infrastructure.database.models.agent import AgentExecutionORM, AgentStageResultORM
 from inkflow.infrastructure.database.models.chapter import ChapterORM, VolumeORM
+from inkflow.infrastructure.database.models.context import ChapterSummaryORM
 from inkflow.infrastructure.database.models.project import ProjectORM
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "ChapterORM",
     "AgentExecutionORM",
     "AgentStageResultORM",
+    "ChapterSummaryORM",
 ]

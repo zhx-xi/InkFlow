@@ -6,5 +6,8 @@ from inkflow.infrastructure.database.repositories.chapter_repo import (
 from inkflow.infrastructure.database.repositories.project_repo import (
     SQLiteProjectRepository,
 )
+from inkflow.infrastructure.database.repositories.summary_repo import (
+    SQLiteSummaryRepository,
+)
 
-__all__ = ["SQLiteProjectRepository", "SQLiteChapterRepository"]
+__all__ = ["SQLiteProjectRepository", "SQLiteChapterRepository", "SQLiteSummaryRepository"]
