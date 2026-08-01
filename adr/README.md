@@ -48,4 +48,4 @@
 - **CI 代码质量**: Reviewdog + Ruff 统一门禁（ADR-017）
 - **CI 测试分层**: 三层目录 + 按功能链路并行 job（ADR-018）
 
-*来源：docs/architecture-analysis-2026-07-30.md §三（2026-07-31 提取为独立目录）*
+*来源：design/architecture-analysis-2026-07-30.md §三（2026-07-31 提取为独立目录）*

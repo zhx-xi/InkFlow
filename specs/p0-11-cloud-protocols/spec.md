@@ -1,10 +1,10 @@
 # P0-11: 云端接口 Protocol 定义 — 功能规格
 
 > **Spec 版本**: 1.0 | **日期**: 2026-08-01 | **依据**: PRD v2.1 §6.5, Constitution P1-P6
-> **所属阶段**: Phase 1 补漏（Phase 1 Gate G4 拦截项 — 评审 `docs/phase1-gate-review-2026-08-01.md` §3.1）
+> **所属阶段**: Phase 1 补漏（Phase 1 Gate G4 拦截项 — 评审 `design/phase1-gate-review-2026-08-01.md` §3.1）
 > **关联 Issues**: [#34](https://github.com/zhx-xi/InkFlow/issues/34)（P0-11 云端接口 Protocol 定义）
 > **依赖**: 无（纯接口定义，不依赖任何已实现模块）
-> **参考 ADR**: [ADR-001](../../docs/adr/ADR-001.md)（模块化单体 + 接口隔离）, [ADR-002](../../docs/adr/ADR-002.md)（六边形分层）
+> **参考 ADR**: [ADR-001](../../adr/ADR-001.md)（模块化单体 + 接口隔离）, [ADR-002](../../adr/ADR-002.md)（六边形分层）
 > **状态**: 待实现 🔲
 
 ---

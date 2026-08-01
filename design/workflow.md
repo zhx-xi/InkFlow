@@ -107,15 +107,15 @@ Remove-Item -Recurse -Force ../InkFlow-ft/fX-xxx
 
 ## 📐 ADR 决策记录
 
-所有架构决策记录在 `docs/adr/ADR-NNN.md`，索引见 `docs/adr/README.md`。
+所有架构决策记录在 `adr/ADR-NNN.md`，索引见 `adr/README.md`。
 
 **编号规则**：
 - 顺序递增，不复用编号（ADR-001, 002, ...）
 - 决策被取代时：旧 ADR 标记 `已弃用` 并指向新 ADR；新 ADR 标记 `已接受` 并注明替代关系（如 ADR-005 → ADR-005v2）
 
 **新增/修改流程**：
-1. 创建 `docs/adr/ADR-NNN.md`（Nygard 格式：状态 / 背景 / 决策 / 备选方案 / 影响）
-2. 更新 `docs/adr/README.md` 索引表
+1. 创建 `adr/ADR-NNN.md`（Nygard 格式：状态 / 背景 / 决策 / 备选方案 / 影响）
+2. 更新 `adr/README.md` 索引表
 3. 与代码变更同 PR 提交（决策先行：先改 ADR，再改代码）
 
 **使用纪律**：

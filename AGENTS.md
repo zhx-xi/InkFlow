@@ -2,7 +2,7 @@
 
 > **给 AI 的一句话**：这是一个单人开发的 Python 后端项目，使用 Clean Architecture（模块化单体），
 > 严格遵循 SDD（Spec-Driven Development）+ TDD，所有代码必须在 `backend/` 目录下工作。
-> 动手写代码之前，先读 `specs/` 中的 spec 和 `docs/` 中的架构分析。
+> 动手写代码之前，先读 `specs/` 中的 spec 和 `design/` 中的架构分析。
 
 ---
 
@@ -201,27 +201,27 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 
 | ADR | 决策 | 理由 |
 |-----|------|------|
-| [ADR-001](docs/adr/ADR-001.md) | 架构风格：模块化单体 | 单人团队，避免微服务运维负担；接口隔离保未来拆分 |
-| [ADR-002](docs/adr/ADR-002.md) | 分层：Clean/Hexagonal | 三界面共享 Service；依赖方向指向 Domain |
-| [ADR-003](docs/adr/ADR-003.md) | 数据库：SQLite (async) + Repository | 本地优先，零配置；Repository 隔离，未来切 PostgreSQL |
-| [ADR-004](docs/adr/ADR-004.md) | 数据契约：Pydantic v2 全栈 | 一份模型三界面复用；类型安全 |
-| [ADR-005v2](docs/adr/ADR-005v2.md) | LLM Provider：**LangChain ChatLiteLLM**（v2.0） | 保留 100+ Provider 覆盖 + 获得 LangChain callback/LangSmith/LCEL 生态 |
-| [ADR-006v2](docs/adr/ADR-006v2.md) | Agent 编排：**LangGraph StateGraph**（v2.0） | Phase 1 顺序链、Phase 2 DAG；LangSmith 可视化；内置 checkpointing |
-| [ADR-013](docs/adr/ADR-013.md) | RAG：**LangChain Chroma + BGE**（Phase 2） | 本地向量库 + 中文 SOTA Embedding；长篇小说一致性保障 |
-| [ADR-014](docs/adr/ADR-014.md) | Prompt：**ChatPromptTemplate + YAML**（v2.0） | 模板与代码分离；变量验证；非技术人员可编辑 |
-| [ADR-016](docs/adr/ADR-016.md) | 日志：Loguru 结构化日志 | 双出口（stderr + 文件）、rotation/retention 内置 |
+| [ADR-001](adr/ADR-001.md) | 架构风格：模块化单体 | 单人团队，避免微服务运维负担；接口隔离保未来拆分 |
+| [ADR-002](adr/ADR-002.md) | 分层：Clean/Hexagonal | 三界面共享 Service；依赖方向指向 Domain |
+| [ADR-003](adr/ADR-003.md) | 数据库：SQLite (async) + Repository | 本地优先，零配置；Repository 隔离，未来切 PostgreSQL |
+| [ADR-004](adr/ADR-004.md) | 数据契约：Pydantic v2 全栈 | 一份模型三界面复用；类型安全 |
+| [ADR-005v2](adr/ADR-005v2.md) | LLM Provider：**LangChain ChatLiteLLM**（v2.0） | 保留 100+ Provider 覆盖 + 获得 LangChain callback/LangSmith/LCEL 生态 |
+| [ADR-006v2](adr/ADR-006v2.md) | Agent 编排：**LangGraph StateGraph**（v2.0） | Phase 1 顺序链、Phase 2 DAG；LangSmith 可视化；内置 checkpointing |
+| [ADR-013](adr/ADR-013.md) | RAG：**LangChain Chroma + BGE**（Phase 2） | 本地向量库 + 中文 SOTA Embedding；长篇小说一致性保障 |
+| [ADR-014](adr/ADR-014.md) | Prompt：**ChatPromptTemplate + YAML**（v2.0） | 模板与代码分离；变量验证；非技术人员可编辑 |
+| [ADR-016](adr/ADR-016.md) | 日志：Loguru 结构化日志 | 双出口（stderr + 文件）、rotation/retention 内置 |
 | — | 认证：Phase 1-3 无需认证 | 本地运行，免认证；Phase 4+ 通过 AuthProtocol 扩展 |
 | — | ID 类型：UUID v4 | 避免自增 ID 碰撞，支持未来分布式场景 |
 | — | 软删除：is_deleted 标记 + 回收站 | Phase 1 保险策略，用户可恢复误删数据 |
-| [ADR-015](docs/adr/ADR-015.md) | **LangChain 隔离**：Protocol 模式 | Domain 零 LangChain 依赖 → 框架可替换性；CI 强制检查 |
-| [ADR-017](docs/adr/ADR-017.md) | **CI 代码质量**：Reviewdog + Ruff | PR 内联注解；一次执行双重用途 |
-| [ADR-018](docs/adr/ADR-018.md) | **测试分层**：三层目录 + 按功能并行 CI | 单元/集成/API/CLI/E2E 分离；backend 后缀预留前端 |
+| [ADR-015](adr/ADR-015.md) | **LangChain 隔离**：Protocol 模式 | Domain 零 LangChain 依赖 → 框架可替换性；CI 强制检查 |
+| [ADR-017](adr/ADR-017.md) | **CI 代码质量**：Reviewdog + Ruff | PR 内联注解；一次执行双重用途 |
+| [ADR-018](adr/ADR-018.md) | **测试分层**：三层目录 + 按功能并行 CI | 单元/集成/API/CLI/E2E 分离；backend 后缀预留前端 |
 
 **🔴 ADR 治理规则（所有 AI 会话必须遵守）**：
 
-1. 动手改代码前，先查 `docs/adr/README.md` 索引确认相关决策
+1. 动手改代码前，先查 `adr/README.md` 索引确认相关决策
 2. 决策变更（技术选型、架构调整）必须**先写/改 ADR，再改代码**，PR 引用 ADR 编号
-3. 新增决策：创建 `docs/adr/ADR-NNN.md`（Nygard 格式：状态 / 背景 / 决策 / 备选方案 / 影响），然后在 `README.md` 索引登记
+3. 新增决策：创建 `adr/ADR-NNN.md`（Nygard 格式：状态 / 背景 / 决策 / 备选方案 / 影响），然后在 `README.md` 索引登记
 4. 编号顺序递增不复用；决策被取代时旧 ADR 标记 `已弃用` 并指向新 ADR（如 ADR-005 → ADR-005v2）
 5. Constitution §7.3：所有 ADR 保持最新；架构分析文档只保留索引表，不维护内嵌副本
 
@@ -484,15 +484,15 @@ AI 编码助手在开始任何工作前，应**按顺序**阅读以下文件：
 | 优先级 | 文件 | 说明 |
 |--------|------|------|
 | P0 | `AGENTS.md` | 本文档，项目总约定 |
-| P0 | `docs/adr/README.md` | ADR 索引 + 编号规则；改代码前先查相关决策 |
+| P0 | `adr/README.md` | ADR 索引 + 编号规则；改代码前先查相关决策 |
 | P0 | `specs/f1-project-service/spec.md` | F1 功能规格（数据模型、API、CLI、边界条件） |
 | P0 | `specs/f2-chapter-service/spec.md` | F2 功能规格（卷/章节、状态流转） |
-| P1 | `docs/architecture-analysis-2026-07-30.md` | 架构分析总览；ADR 索引表（决策详情在 `docs/adr/`） |
-| P1 | `docs/workflow.md` | git worktree + PR 流程详解 |
+| P1 | `design/architecture-analysis-2026-07-30.md` | 架构分析总览；ADR 索引表（决策详情在 `adr/`） |
+| P1 | `design/workflow.md` | git worktree + PR 流程详解 |
 | P1 | `backend/pyproject.toml` | 依赖版本、工具配置（Ruff、mypy、pytest） |
 | P1 | `tests/conftest.py` | 集成测试共享 fixture（db_session、sample_project） |
-| P2 | `docs/prd-inkflow-v2.1-2026-07-30.md` | 产品需求文档（想做什么、为什么做） |
-| P3 | `docs/env-readiness-2026-07-30.md` | 环境就绪检查清单 |
+| P2 | `design/prd-inkflow-v2.1-2026-07-30.md` | 产品需求文档（想做什么、为什么做） |
+| P3 | `design/env-readiness-2026-07-30.md` | 环境就绪检查清单 |
 
 ---
 

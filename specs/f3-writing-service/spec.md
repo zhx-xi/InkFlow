@@ -4,7 +4,7 @@
 > **所属阶段**: Phase 1 — Sprint 1.3 (W5-W7) 核心引擎（P0-06，预计 8-12 天）
 > **关联 Issues**: [#3](https://github.com/zhx-xi/InkFlow/issues/3)
 > **依赖**: F1 ✅, F2 ✅, F5 ✅（前置）；F6 ⏳（上下文注入，待实现）
-> **参考 ADR**: [ADR-012](../../docs/adr/ADR-012.md) (错误处理), [ADR-005v2](../../docs/adr/ADR-005v2.md) (ChatLiteLLM), [ADR-014](../../docs/adr/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../docs/adr/ADR-015.md) (LangChain 隔离规则)
+> **参考 ADR**: [ADR-012](../../adr/ADR-012.md) (错误处理), [ADR-005v2](../../adr/ADR-005v2.md) (ChatLiteLLM), [ADR-014](../../adr/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/ADR-015.md) (LangChain 隔离规则)
 > **状态**: 待实现
 
 ---
