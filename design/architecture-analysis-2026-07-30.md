@@ -2,7 +2,7 @@
 
 **日期**: 2026-07-31（v2.0 更新：引入 LangChain 全家桶）
 **前版**: v1.0（2026-07-30，LiteLLM + 自定义 Pipeline）
-**依据**: `docs/prd-inkflow-v2.1-2026-07-30.md` + 产品愿景扩展
+**依据**: `design/prd-inkflow-v2.1-2026-07-30.md` + 产品愿景扩展
 **作者**: 软件架构师
 
 > **v2.0 核心变更**：将 LLM Provider 抽象从裸 LiteLLM 迁移到 LangChain `ChatLiteLLM`，Agent 编排从自定义 Pipeline 迁移到 LangGraph `StateGraph`，RAG 层引入 LangChain Chroma + sentence-transformers。
@@ -137,8 +137,8 @@
 
 ## 三、架构决策记录（ADR）
 
-> **2026-07-31 更新**: 全部 ADR 已提取为独立文件，见 [`docs/adr/`](adr/README.md)（含索引）。
-> 本目录不再维护内嵌副本，避免双份漂移。新增决策请直接在 `docs/adr/` 创建 ADR-NNN.md 并在索引登记。
+> **2026-07-31 更新**: 全部 ADR 已提取为独立文件，见 [`adr/`](adr/README.md)（含索引）。
+> 本目录不再维护内嵌副本，避免双份漂移。新增决策请直接在 `adr/` 创建 ADR-NNN.md 并在索引登记。
 
 | 编号 | 标题 | 状态 |
 |------|------|------|
@@ -274,4 +274,4 @@ Phase 4+ (未来) — 云端 + 游戏MVP + Agent 管线市场
 
 ---
 
-*本文档是对 `docs/prd-inkflow-v2.1-2026-07-30.md` 的 v2.0 架构分析输出。v1.0（LiteLLM + 自定义 Pipeline 方案）已归档，v2.0（LangChain 全家桶）为当前有效版本。*
+*本文档是对 `design/prd-inkflow-v2.1-2026-07-30.md` 的 v2.0 架构分析输出。v1.0（LiteLLM + 自定义 Pipeline 方案）已归档，v2.0（LangChain 全家桶）为当前有效版本。*

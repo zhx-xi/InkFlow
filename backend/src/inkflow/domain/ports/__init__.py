@@ -13,6 +13,8 @@
     - context_sources: 上下文数据源（F6，Phase 1 部分空实现）
     - context_errors: 上下文管理异常（F6）
     - summary_repository: 前文摘要缓存仓储（F6）
+    - character_repository: 角色/分组/关系仓储（F9）
+    - character_errors: 角色管理异常（F9）
 """
 
 from inkflow.domain.ports.agent_pipeline import (
@@ -25,6 +27,19 @@ from inkflow.domain.ports.agent_pipeline import (
     StageResult,
     StageStatus,
 )
+from inkflow.domain.ports.character_errors import (
+    CharacterExtractionError,
+    CharacterNameConflictError,
+    CharacterNotFoundError,
+    CharacterServiceError,
+    CrossProjectRelationError,
+    GroupNameConflictError,
+    GroupNotInProjectError,
+    ProjectNotFoundError,
+    RelationConflictError,
+    SelfRelationError,
+)
+from inkflow.domain.ports.character_repository import CharacterRepositoryProtocol
 from inkflow.domain.ports.context_errors import (
     ContextBudgetExceededError,
     SummaryGenerationError,
@@ -65,6 +80,18 @@ __all__ = [
     "SummaryGenerationError",
     # ── summary ──
     "SummaryRepositoryProtocol",
+    # ── character (F9) ──
+    "CharacterRepositoryProtocol",
+    "CharacterExtractionError",
+    "CharacterServiceError",
+    "CharacterNotFoundError",
+    "ProjectNotFoundError",
+    "CharacterNameConflictError",
+    "GroupNameConflictError",
+    "GroupNotInProjectError",
+    "SelfRelationError",
+    "CrossProjectRelationError",
+    "RelationConflictError",
     # ── project ──
     "ProjectRepositoryProtocol",
     # ── llm ──

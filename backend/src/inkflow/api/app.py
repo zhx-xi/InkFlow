@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from inkflow.api.routers import agent, chapter, context, project, writing
+from inkflow.api.routers import agent, chapter, characters, context, project, writing
 from inkflow.core.config import config
 from inkflow.core.database import create_tables
 from inkflow.core.log import setup_logging
@@ -44,6 +44,7 @@ app.add_middleware(
 # ---- 注册路由 ----
 app.include_router(project.router)
 app.include_router(chapter.router)
+app.include_router(characters.router)
 app.include_router(writing.router)
 app.include_router(agent.router)
 app.include_router(context.router)

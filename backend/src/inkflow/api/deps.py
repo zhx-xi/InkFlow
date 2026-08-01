@@ -7,13 +7,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.core.database import get_session
 from inkflow.domain.ports.context_sources import ContextSourceProtocol
+from inkflow.domain.services._character_extractor import CharacterExtractor
 from inkflow.domain.services.chapter_service import ChapterService
+from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.context_service import ContextService
 from inkflow.domain.services.project_service import ProjectService
 from inkflow.domain.services.summary_service import SummaryService
 from inkflow.domain.services.writing_service import WritingService
 from inkflow.infrastructure.database.repositories.chapter_repo import (
     SQLiteChapterRepository,
+)
+from inkflow.infrastructure.database.repositories.character_repo import (
+    SQLiteCharacterRepository,
 )
 from inkflow.infrastructure.database.repositories.project_repo import (
     SQLiteProjectRepository,
@@ -101,4 +106,24 @@ def get_summary_service(
         llm_client=LangChainLLMClient(),
         prompt_manager=LangChainPromptManager(),
         chapter_reader=SQLiteChapterRepository(db),
+    )
+
+
+def get_character_service(
+    db: AsyncSession,
+) -> CharacterService:
+    """获取 CharacterService 实例（角色/分组/关系仓储 + AI 提取器）.
+
+    装配 CharacterExtractor（LLM 客户端 + Prompt 模板 + 同一仓储实例），
+    extract 入口的项目存在性校验使用 F1 项目仓储。
+    """
+    repo = SQLiteCharacterRepository(db)
+    return CharacterService(
+        repository=repo,
+        extractor=CharacterExtractor(
+            llm_client=LangChainLLMClient(),
+            prompt_manager=LangChainPromptManager(),
+            repository=repo,
+        ),
+        project_repo=SQLiteProjectRepository(db),
     )

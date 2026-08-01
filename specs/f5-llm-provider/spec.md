@@ -3,7 +3,7 @@
 > **Spec 版本**: 1.0 | **日期**: 2026-07-31 | **依据**: PRD v2.1 §6.1 F5, Constitution P1-P6
 > **所属阶段**: Phase 1 — Sprint 1.2（数据层+LLM 适配）
 > **依赖**: 无（F5 是 F3/F4/F6 的前置依赖）
-> **参考 ADR**: [ADR-005v2](../../docs/adr/ADR-005v2.md) (LangChain ChatLiteLLM), [ADR-014](../../docs/adr/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../docs/adr/ADR-015.md) (LangChain 隔离规则)
+> **参考 ADR**: [ADR-005v2](../../adr/ADR-005v2.md) (LangChain ChatLiteLLM), [ADR-014](../../adr/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/ADR-015.md) (LangChain 隔离规则)
 
 ---
 

@@ -4,7 +4,7 @@
 > **所属阶段**: Phase 1 — 核心引擎
 > **关联 Issues**: [#6](https://github.com/zhx-xi/InkFlow/issues/6)
 > **依赖**: F1 (project_service), F2 (chapter_service), F5 (llm_service)
-> **参考 ADR**: [ADR-010](../../docs/adr/ADR-010.md) (分层 Token 预算 → RAG 增强), [ADR-013](../../docs/adr/ADR-013.md) (Phase 2 RAG), [ADR-014](../../docs/adr/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../docs/adr/ADR-015.md) (LangChain 隔离), [ADR-007v2](../../docs/adr/ADR-007v2.md) (包结构)
+> **参考 ADR**: [ADR-010](../../adr/ADR-010.md) (分层 Token 预算 → RAG 增强), [ADR-013](../../adr/ADR-013.md) (Phase 2 RAG), [ADR-014](../../adr/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/ADR-015.md) (LangChain 隔离), [ADR-007v2](../../adr/ADR-007v2.md) (包结构)
 > **状态**: 待实现 🔲
 
 ---

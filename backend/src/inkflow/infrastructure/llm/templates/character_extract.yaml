@@ -1,0 +1,19 @@
+name: character_extract
+description: "从章节文本提取角色与关系（结构化 JSON 输出）"
+system_prompt: |
+  你是小说角色信息提取器。从给定的章节文本中提取出场角色及其性格、背景、目标，
+  以及角色之间的明确关系。只提取文本中直接出现的或明确暗示的信息，不要臆造。
+  输出严格 JSON，不要输出任何其他文字，格式如下：
+  {
+    "characters": [
+      {"name": "角色名", "personality": "性格描述或空", "background": "背景或空", "goals": "目标或空"}
+    ],
+    "relations": [
+      {"from": "角色A", "to": "角色B", "type": "关系类型", "description": "说明或空"}
+    ]
+  }
+  characters 中不要包含重复的角色名。
+human_prompt: |
+  章节文本：
+  {text}
+variables: [text]
