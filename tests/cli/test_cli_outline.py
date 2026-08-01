@@ -56,7 +56,9 @@ def cli_runner():
 @pytest.fixture
 def mock_outline_service():
     """Mock OutlineService，绕过数据库（ADR-015 依赖注入）."""
-    with patch("inkflow.cli.commands.outline.OutlineService", autospec=True) as mock_cls:
+    with patch(
+        "inkflow.cli.commands.outline.OutlineService", autospec=True
+    ) as mock_cls:
         mock_instance = AsyncMock()
         mock_cls.return_value = mock_instance
         yield mock_instance
@@ -137,9 +139,13 @@ def _make_generation_result(**overrides) -> OutlineGenerationResult:
 
 
 class TestOutlineCreate:
-    def test_create_json_envelope(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_create_json_envelope(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """create --json → 成功信封 + 参数透传（UUID 转换）."""
-        mock_outline_service.create_outline.return_value = _make_outline(name="第一卷大纲")
+        mock_outline_service.create_outline.return_value = _make_outline(
+            name="第一卷大纲"
+        )
         result = cli_runner.invoke(
             app,
             [
@@ -168,7 +174,9 @@ class TestOutlineCreate:
 
     def test_create_human(self, cli_runner, mock_outline_service, mock_create_tables):
         """create 人类模式 → 成功提示（含大纲名）."""
-        mock_outline_service.create_outline.return_value = _make_outline(name="第一卷大纲")
+        mock_outline_service.create_outline.return_value = _make_outline(
+            name="第一卷大纲"
+        )
         result = cli_runner.invoke(
             app,
             ["create", "--project-id", str(PID), "--name", "第一卷大纲"],
@@ -178,7 +186,9 @@ class TestOutlineCreate:
         assert "大纲创建成功" in result.output
         assert "第一卷大纲" in result.output
 
-    def test_create_name_conflict(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_create_name_conflict(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """同名大纲 → VALIDATION_ERROR 信封 + 退出码 1."""
         mock_outline_service.create_outline.side_effect = OutlineNameConflictError()
         result = cli_runner.invoke(
@@ -207,7 +217,9 @@ class TestOutlineList:
         assert isinstance(data["data"], list)
         assert data["data"][0]["name"] == "第一卷大纲"
 
-    def test_list_params_passthrough(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_list_params_passthrough(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """list 搜索/排序/分页参数透传."""
         mock_outline_service.list_outlines.return_value = ([], 0)
         result = cli_runner.invoke(
@@ -238,7 +250,9 @@ class TestOutlineList:
             limit=5,
         )
 
-    def test_list_human_empty(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_list_human_empty(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """空列表人类模式 → 暂无大纲."""
         mock_outline_service.list_outlines.return_value = ([], 0)
         result = cli_runner.invoke(
@@ -266,7 +280,9 @@ class TestOutlineGet:
         assert data["data"]["name"] == "第一卷大纲"
         mock_outline_service.get_outline.assert_awaited_once_with(outline_id=sid)
 
-    def test_get_not_found_json(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_get_not_found_json(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """大纲不存在 → NOT_FOUND 错误信封 + 退出码 1."""
         mock_outline_service.get_outline.return_value = None
         result = cli_runner.invoke(
@@ -280,7 +296,9 @@ class TestOutlineGet:
         assert data["error"]["code"] == "NOT_FOUND"
         assert "大纲不存在" in data["error"]["message"]
 
-    def test_get_invalid_uuid(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_get_invalid_uuid(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """无效 UUID → NOT_FOUND（spec §7: 无效 UUID 格式 → 404 语义）."""
         result = cli_runner.invoke(
             app,
@@ -297,10 +315,20 @@ class TestOutlineUpdate:
     def test_update_json(self, cli_runner, mock_outline_service, mock_create_tables):
         """update --json → 成功信封 + OutlineUpdate 透传（仅传入字段）."""
         sid = uuid.uuid4()
-        mock_outline_service.update_outline.return_value = _make_outline(name="第一卷大纲·改")
+        mock_outline_service.update_outline.return_value = _make_outline(
+            name="第一卷大纲·改"
+        )
         result = cli_runner.invoke(
             app,
-            ["update", "--id", str(sid), "--name", "第一卷大纲·改", "--sort-order", "3"],
+            [
+                "update",
+                "--id",
+                str(sid),
+                "--name",
+                "第一卷大纲·改",
+                "--sort-order",
+                "3",
+            ],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
@@ -314,7 +342,9 @@ class TestOutlineUpdate:
         assert upd.sort_order == 3
         assert "description" not in upd.model_fields_set
 
-    def test_update_not_found(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_update_not_found(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """大纲不存在 → NOT_FOUND 错误信封 + 退出码 1."""
         mock_outline_service.update_outline.return_value = None
         result = cli_runner.invoke(
@@ -329,7 +359,9 @@ class TestOutlineUpdate:
 
 
 class TestOutlineDelete:
-    def test_delete_force_json(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_delete_force_json(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """delete --force --json → 成功信封 + 软删除（force=False）."""
         sid = uuid.uuid4()
         mock_outline_service.delete_outline.return_value = True
@@ -342,7 +374,9 @@ class TestOutlineDelete:
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"]["deleted"] is True
-        mock_outline_service.delete_outline.assert_awaited_once_with(outline_id=sid, force=False)
+        mock_outline_service.delete_outline.assert_awaited_once_with(
+            outline_id=sid, force=False
+        )
 
     def test_delete_permanent_passes_force(
         self, cli_runner, mock_outline_service, mock_create_tables
@@ -356,9 +390,13 @@ class TestOutlineDelete:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
-        mock_outline_service.delete_outline.assert_awaited_once_with(outline_id=sid, force=True)
+        mock_outline_service.delete_outline.assert_awaited_once_with(
+            outline_id=sid, force=True
+        )
 
-    def test_delete_confirm_yes(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_delete_confirm_yes(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """无 --force 人类模式 → 交互确认，回答 y 继续删除."""
         sid = uuid.uuid4()
         mock_outline_service.delete_outline.return_value = True
@@ -370,9 +408,13 @@ class TestOutlineDelete:
         )
         assert result.exit_code == 0
         assert "已删除" in result.output
-        mock_outline_service.delete_outline.assert_awaited_once_with(outline_id=sid, force=False)
+        mock_outline_service.delete_outline.assert_awaited_once_with(
+            outline_id=sid, force=False
+        )
 
-    def test_delete_confirm_no(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_delete_confirm_no(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """无 --force 人类模式 → 回答 n 取消，不调用服务."""
         sid = uuid.uuid4()
         result = cli_runner.invoke(
@@ -385,7 +427,9 @@ class TestOutlineDelete:
         assert "取消" in result.output
         mock_outline_service.delete_outline.assert_not_awaited()
 
-    def test_delete_json_no_force(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_delete_json_no_force(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """--json 且无 --force → VALIDATION_ERROR + 退出码 1（F7 §7 约定）."""
         result = cli_runner.invoke(
             app,
@@ -398,7 +442,9 @@ class TestOutlineDelete:
         assert data["error"]["code"] == "VALIDATION_ERROR"
         mock_outline_service.delete_outline.assert_not_awaited()
 
-    def test_delete_not_found(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_delete_not_found(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """大纲不存在（服务返回 False）→ NOT_FOUND 错误信封."""
         mock_outline_service.delete_outline.return_value = False
         result = cli_runner.invoke(
@@ -415,7 +461,9 @@ class TestOutlineDelete:
 class TestOutlineRestore:
     def test_restore_json(self, cli_runner, mock_outline_service, mock_create_tables):
         """restore --json → 成功信封."""
-        mock_outline_service.restore_outline.return_value = _make_outline(name="第一卷大纲")
+        mock_outline_service.restore_outline.return_value = _make_outline(
+            name="第一卷大纲"
+        )
         result = cli_runner.invoke(
             app,
             ["restore", "--id", str(uuid.uuid4())],
@@ -426,7 +474,9 @@ class TestOutlineRestore:
         assert data["ok"] is True
         assert data["data"]["name"] == "第一卷大纲"
 
-    def test_restore_not_found(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_restore_not_found(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """大纲不存在 → NOT_FOUND 错误信封 + 退出码 1."""
         mock_outline_service.restore_outline.return_value = None
         result = cli_runner.invoke(
@@ -441,7 +491,9 @@ class TestOutlineRestore:
 
 
 class TestPointList:
-    def test_point_list_json(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_point_list_json(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """point list --json → 情节点数组信封."""
         mock_outline_service.list_points.return_value = [_make_point(name="主角登场")]
         result = cli_runner.invoke(
@@ -457,7 +509,9 @@ class TestPointList:
 
 
 class TestPointCreate:
-    def test_point_create_json(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_point_create_json(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """point create --json → 成功信封 + --position/--arc-id 透传."""
         mock_outline_service.create_point.return_value = _make_point(
             name="主角登场", type="开篇", position=3, arc_id=AID
@@ -495,12 +549,25 @@ class TestPointCreate:
             arc_id=AID,
         )
 
-    def test_point_create_human(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_point_create_human(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """point create 人类模式 → 成功提示（含名称与类型）."""
-        mock_outline_service.create_point.return_value = _make_point(name="主角登场", type="开篇")
+        mock_outline_service.create_point.return_value = _make_point(
+            name="主角登场", type="开篇"
+        )
         result = cli_runner.invoke(
             app,
-            ["point", "create", "--outline-id", str(OID), "--name", "主角登场", "--type", "开篇"],
+            [
+                "point",
+                "create",
+                "--outline-id",
+                str(OID),
+                "--name",
+                "主角登场",
+                "--type",
+                "开篇",
+            ],
             obj=CliContext(json_output=False),
         )
         assert result.exit_code == 0
@@ -525,7 +592,9 @@ class TestPointCreate:
 
 
 class TestPointUpdate:
-    def test_point_update_json(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_point_update_json(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """point update --json → PlotPointUpdate 透传（仅传入字段）."""
         pid = uuid.uuid4()
         mock_outline_service.update_point.return_value = _make_point(name="主角登场·改")
@@ -557,7 +626,9 @@ class TestPointUpdate:
         assert upd.position == 4
         assert "description" not in upd.model_fields_set
 
-    def test_point_update_clear_arc_id(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_point_update_clear_arc_id(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """point update --arc-id \"\" → 清除弧线归属（arc_id=\"\" 进入 update）."""
         pid = uuid.uuid4()
         mock_outline_service.update_point.return_value = _make_point(arc_id=None)
@@ -572,7 +643,9 @@ class TestPointUpdate:
         assert "arc_id" in upd.model_fields_set
         assert upd.arc_id == ""
 
-    def test_point_update_set_arc_id(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_point_update_set_arc_id(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """point update --arc-id <uuid> → arc_id 为 UUID 进入 update."""
         pid = uuid.uuid4()
         mock_outline_service.update_point.return_value = _make_point(arc_id=AID)
@@ -588,7 +661,9 @@ class TestPointUpdate:
 
 
 class TestPointDelete:
-    def test_point_delete_force_json(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_point_delete_force_json(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """point delete --force --json → 成功信封 + 软删除."""
         pid = uuid.uuid4()
         mock_outline_service.delete_point.return_value = True
@@ -601,9 +676,13 @@ class TestPointDelete:
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"]["deleted"] is True
-        mock_outline_service.delete_point.assert_awaited_once_with(point_id=pid, force=False)
+        mock_outline_service.delete_point.assert_awaited_once_with(
+            point_id=pid, force=False
+        )
 
-    def test_point_delete_json_no_force(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_point_delete_json_no_force(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """point delete --json 且无 --force → VALIDATION_ERROR."""
         result = cli_runner.invoke(
             app,
@@ -634,7 +713,9 @@ class TestArcList:
 
 
 class TestArcCreate:
-    def test_arc_create_json(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_arc_create_json(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """arc create --json → 成功信封 + 参数透传."""
         mock_outline_service.create_arc.return_value = _make_arc(name="主角成长线")
         result = cli_runner.invoke(
@@ -659,7 +740,9 @@ class TestArcCreate:
             project_id=PID, name="主角成长线", description="成长轨迹。"
         )
 
-    def test_arc_create_name_conflict(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_arc_create_name_conflict(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """同名弧线 → VALIDATION_ERROR 信封 + 退出码 1."""
         mock_outline_service.create_arc.side_effect = ArcNameConflictError()
         result = cli_runner.invoke(
@@ -674,7 +757,9 @@ class TestArcCreate:
 
 
 class TestArcUpdate:
-    def test_arc_update_json(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_arc_update_json(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """arc update --json → StoryArcUpdate 透传."""
         aid = uuid.uuid4()
         mock_outline_service.update_arc.return_value = _make_arc(name="主角成长线·改")
@@ -695,7 +780,9 @@ class TestArcUpdate:
 
 
 class TestArcDelete:
-    def test_arc_delete_force_json(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_arc_delete_force_json(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """arc delete --force --json → 成功信封 + 软删除."""
         aid = uuid.uuid4()
         mock_outline_service.delete_arc.return_value = True
@@ -708,9 +795,13 @@ class TestArcDelete:
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"]["deleted"] is True
-        mock_outline_service.delete_arc.assert_awaited_once_with(arc_id=aid, force=False)
+        mock_outline_service.delete_arc.assert_awaited_once_with(
+            arc_id=aid, force=False
+        )
 
-    def test_arc_delete_json_no_force(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_arc_delete_json_no_force(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """arc delete --json 且无 --force → VALIDATION_ERROR."""
         result = cli_runner.invoke(
             app,
@@ -725,7 +816,9 @@ class TestArcDelete:
 
 
 class TestGenerate:
-    def test_generate_save_json(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_generate_save_json(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """generate --json → 完整结果信封 + OutlineGenerateRequest 透传."""
         mock_outline_service.generate.return_value = _make_generation_result(
             plot_points=[
@@ -769,7 +862,9 @@ class TestGenerate:
         assert req.save is True
         assert req.model == "deepseek/deepseek-chat"
 
-    def test_generate_no_save_json(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_generate_no_save_json(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """generate --no-save --json → 预览结果信封（saved=False + preview）."""
         mock_outline_service.generate.return_value = _make_generation_result(
             saved=False,
@@ -879,15 +974,27 @@ class TestGenerate:
         """--prompt 与 --prompt-file 同时传入 → 用法错误退出码 2."""
         result = cli_runner.invoke(
             app,
-            ["generate", "--project-id", str(PID), "--prompt", "爽文", "--prompt-file", "p.txt"],
+            [
+                "generate",
+                "--project-id",
+                str(PID),
+                "--prompt",
+                "爽文",
+                "--prompt-file",
+                "p.txt",
+            ],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 2
         mock_outline_service.generate.assert_not_awaited()
 
-    def test_generate_llm_error(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_generate_llm_error(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """LLM 输出无法解析 → LLM_ERROR 错误信封 + 退出码 1."""
-        mock_outline_service.generate.side_effect = OutlineGenerationError(detail="非法 JSON")
+        mock_outline_service.generate.side_effect = OutlineGenerationError(
+            detail="非法 JSON"
+        )
         result = cli_runner.invoke(
             app,
             ["generate", "--project-id", str(PID), "--prompt", "爽文"],
@@ -898,7 +1005,9 @@ class TestGenerate:
         assert data["ok"] is False
         assert data["error"]["code"] == "LLM_ERROR"
 
-    def test_generate_project_not_found(self, cli_runner, mock_outline_service, mock_create_tables):
+    def test_generate_project_not_found(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
         """项目不存在 → NOT_FOUND 错误信封 + 退出码 1."""
         mock_outline_service.generate.side_effect = ProjectNotFoundError()
         result = cli_runner.invoke(

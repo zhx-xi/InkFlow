@@ -49,7 +49,9 @@ def cli_runner():
 @pytest.fixture
 def mock_character_service():
     """Mock CharacterService，绕过数据库（ADR-015 依赖注入）."""
-    with patch("inkflow.cli.commands.character.CharacterService", autospec=True) as mock_cls:
+    with patch(
+        "inkflow.cli.commands.character.CharacterService", autospec=True
+    ) as mock_cls:
         mock_instance = AsyncMock()
         mock_cls.return_value = mock_instance
         yield mock_instance
@@ -129,9 +131,13 @@ def _make_extraction_result(**overrides) -> CharacterExtractionResult:
 
 
 class TestCharacterCreate:
-    def test_create_json_envelope(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_create_json_envelope(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """create --json → 成功信封 + 参数透传（UUID 转换）."""
-        mock_character_service.create_character.return_value = _make_character(name="林尘")
+        mock_character_service.create_character.return_value = _make_character(
+            name="林尘"
+        )
         result = cli_runner.invoke(
             app,
             [
@@ -162,13 +168,25 @@ class TestCharacterCreate:
             group_id=None,
         )
 
-    def test_create_with_group_id(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_create_with_group_id(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """create --group-id → 透传 UUID."""
         gid = uuid.uuid4()
-        mock_character_service.create_character.return_value = _make_character(group_id=gid)
+        mock_character_service.create_character.return_value = _make_character(
+            group_id=gid
+        )
         result = cli_runner.invoke(
             app,
-            ["create", "--project-id", str(PID), "--name", "林尘", "--group-id", str(gid)],
+            [
+                "create",
+                "--project-id",
+                str(PID),
+                "--name",
+                "林尘",
+                "--group-id",
+                str(gid),
+            ],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
@@ -183,7 +201,9 @@ class TestCharacterCreate:
 
     def test_create_human(self, cli_runner, mock_character_service, mock_create_tables):
         """create 人类模式 → 成功提示."""
-        mock_character_service.create_character.return_value = _make_character(name="林尘")
+        mock_character_service.create_character.return_value = _make_character(
+            name="林尘"
+        )
         result = cli_runner.invoke(
             app,
             ["create", "--project-id", str(PID), "--name", "林尘"],
@@ -192,9 +212,13 @@ class TestCharacterCreate:
         assert result.exit_code == 0
         assert "角色创建成功" in result.output
 
-    def test_create_name_conflict(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_create_name_conflict(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """同名角色 → VALIDATION_ERROR 信封 + 退出码 1."""
-        mock_character_service.create_character.side_effect = CharacterNameConflictError()
+        mock_character_service.create_character.side_effect = (
+            CharacterNameConflictError()
+        )
         result = cli_runner.invoke(
             app,
             ["create", "--project-id", str(PID), "--name", "林尘"],
@@ -221,7 +245,9 @@ class TestCharacterList:
         assert isinstance(data["data"], list)
         assert data["data"][0]["name"] == "林尘"
 
-    def test_list_human_empty(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_list_human_empty(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """空列表人类模式 → 暂无角色."""
         mock_character_service.list_characters.return_value = ([], 0)
         result = cli_runner.invoke(
@@ -232,7 +258,9 @@ class TestCharacterList:
         assert result.exit_code == 0
         assert "暂无角色" in result.output
 
-    def test_list_params_passthrough(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_list_params_passthrough(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """list 搜索/分组/排序/分页参数透传."""
         gid = uuid.uuid4()
         mock_character_service.list_characters.return_value = ([], 0)
@@ -284,7 +312,9 @@ class TestCharacterGet:
         assert data["data"]["name"] == "林尘"
         mock_character_service.get_character.assert_awaited_once_with(character_id=cid)
 
-    def test_get_not_found_json(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_get_not_found_json(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """角色不存在 → NOT_FOUND 错误信封 + 退出码 1."""
         mock_character_service.get_character.return_value = None
         result = cli_runner.invoke(
@@ -298,7 +328,9 @@ class TestCharacterGet:
         assert data["error"]["code"] == "NOT_FOUND"
         assert "角色不存在" in data["error"]["message"]
 
-    def test_get_invalid_uuid(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_get_invalid_uuid(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """无效 UUID → NOT_FOUND（spec §7: 无效 UUID 格式 → 404 角色不存在）."""
         result = cli_runner.invoke(
             app,
@@ -315,7 +347,9 @@ class TestCharacterUpdate:
     def test_update_json(self, cli_runner, mock_character_service, mock_create_tables):
         """update --json → 成功信封 + CharacterUpdate 透传（仅传入字段）."""
         cid = uuid.uuid4()
-        mock_character_service.update_character.return_value = _make_character(name="林尘二世")
+        mock_character_service.update_character.return_value = _make_character(
+            name="林尘二世"
+        )
         result = cli_runner.invoke(
             app,
             ["update", "--id", str(cid), "--name", "林尘二世", "--personality", "沉稳"],
@@ -333,7 +367,9 @@ class TestCharacterUpdate:
         assert "background" not in upd.model_fields_set
         assert "goals" not in upd.model_fields_set
 
-    def test_update_clear_group(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_update_clear_group(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """update --group-id \"\" → 显式清除分组（group_id=None 进入 update）."""
         cid = uuid.uuid4()
         mock_character_service.update_character.return_value = _make_character()
@@ -348,7 +384,9 @@ class TestCharacterUpdate:
         assert "group_id" in upd.model_fields_set
         assert upd.group_id is None
 
-    def test_update_not_found(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_update_not_found(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """角色不存在 → NOT_FOUND 错误信封 + 退出码 1."""
         mock_character_service.update_character.return_value = None
         result = cli_runner.invoke(
@@ -363,7 +401,9 @@ class TestCharacterUpdate:
 
 
 class TestCharacterDelete:
-    def test_delete_force_json(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_delete_force_json(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """delete --force --json → 成功信封 + 软删除（force=False）."""
         cid = uuid.uuid4()
         mock_character_service.delete_character.return_value = True
@@ -396,7 +436,9 @@ class TestCharacterDelete:
             character_id=cid, force=True
         )
 
-    def test_delete_confirm_yes(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_delete_confirm_yes(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """无 --force 人类模式 → 交互确认，回答 y 继续删除."""
         cid = uuid.uuid4()
         mock_character_service.delete_character.return_value = True
@@ -412,7 +454,9 @@ class TestCharacterDelete:
             character_id=cid, force=False
         )
 
-    def test_delete_confirm_no(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_delete_confirm_no(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """无 --force 人类模式 → 回答 n 取消，不调用服务."""
         cid = uuid.uuid4()
         result = cli_runner.invoke(
@@ -425,7 +469,9 @@ class TestCharacterDelete:
         assert "取消" in result.output
         mock_character_service.delete_character.assert_not_awaited()
 
-    def test_delete_json_no_force(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_delete_json_no_force(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """--json 且无 --force → VALIDATION_ERROR + 退出码 1（F7 §7 约定）."""
         result = cli_runner.invoke(
             app,
@@ -438,7 +484,9 @@ class TestCharacterDelete:
         assert data["error"]["code"] == "VALIDATION_ERROR"
         mock_character_service.delete_character.assert_not_awaited()
 
-    def test_delete_not_found(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_delete_not_found(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """角色不存在（服务返回 False）→ NOT_FOUND 错误信封."""
         mock_character_service.delete_character.return_value = False
         result = cli_runner.invoke(
@@ -455,7 +503,9 @@ class TestCharacterDelete:
 class TestCharacterRestore:
     def test_restore_json(self, cli_runner, mock_character_service, mock_create_tables):
         """restore --json → 成功信封."""
-        mock_character_service.restore_character.return_value = _make_character(name="林尘")
+        mock_character_service.restore_character.return_value = _make_character(
+            name="林尘"
+        )
         result = cli_runner.invoke(
             app,
             ["restore", "--id", str(uuid.uuid4())],
@@ -466,7 +516,9 @@ class TestCharacterRestore:
         assert data["ok"] is True
         assert data["data"]["name"] == "林尘"
 
-    def test_restore_not_found(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_restore_not_found(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """角色不存在 → NOT_FOUND 错误信封 + 退出码 1."""
         mock_character_service.restore_character.return_value = None
         result = cli_runner.invoke(
@@ -484,7 +536,9 @@ class TestCharacterRelate:
     def test_relate_json(self, cli_runner, mock_character_service, mock_create_tables):
         """relate --json → 成功信封 + 参数透传."""
         cid, to = uuid.uuid4(), uuid.uuid4()
-        mock_character_service.create_relation.return_value = _make_relation(relation_type="师徒")
+        mock_character_service.create_relation.return_value = _make_relation(
+            relation_type="师徒"
+        )
         result = cli_runner.invoke(
             app,
             [
@@ -511,12 +565,22 @@ class TestCharacterRelate:
             description="亦师亦友",
         )
 
-    def test_relate_self_error(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_relate_self_error(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """自环关系 → VALIDATION_ERROR 错误信封 + 退出码 1."""
         mock_character_service.create_relation.side_effect = SelfRelationError()
         result = cli_runner.invoke(
             app,
-            ["relate", "--id", str(uuid.uuid4()), "--to", str(uuid.uuid4()), "--type", "师徒"],
+            [
+                "relate",
+                "--id",
+                str(uuid.uuid4()),
+                "--to",
+                str(uuid.uuid4()),
+                "--type",
+                "师徒",
+            ],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1
@@ -526,7 +590,9 @@ class TestCharacterRelate:
 
 
 class TestCharacterUnrelate:
-    def test_unrelate_force_json(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_unrelate_force_json(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """unrelate --force --json → 成功信封 + 参数透传."""
         cid, rid = uuid.uuid4(), uuid.uuid4()
         mock_character_service.delete_relation.return_value = True
@@ -543,7 +609,9 @@ class TestCharacterUnrelate:
             character_id=cid, relation_id=rid
         )
 
-    def test_unrelate_json_no_force(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_unrelate_json_no_force(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """unrelate --json 且无 --force → VALIDATION_ERROR."""
         result = cli_runner.invoke(
             app,
@@ -556,7 +624,9 @@ class TestCharacterUnrelate:
 
 
 class TestCharacterRelations:
-    def test_relations_json(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_relations_json(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """relations --json → 双向关系列表信封."""
         cid = uuid.uuid4()
         mock_character_service.list_relations.return_value = [_make_relation()]
@@ -602,7 +672,9 @@ class TestCharacterExtract:
         assert req.text == "林尘是主角，萧炎是他的师父。"
         assert req.model == "deepseek/deepseek-chat"
 
-    def test_extract_human_summary(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_extract_human_summary(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """extract 人类模式 → 可读摘要（新增/更新/关系/警告计数）."""
         mock_character_service.extract.return_value = _make_extraction_result(
             created=[_make_character(name="林尘"), _make_character(name="萧炎")],
@@ -645,15 +717,27 @@ class TestCharacterExtract:
         """--text 与 --text-file 同时传入 → 用法错误退出码 2."""
         result = cli_runner.invoke(
             app,
-            ["extract", "--project-id", str(PID), "--text", "正文", "--text-file", "ch3.txt"],
+            [
+                "extract",
+                "--project-id",
+                str(PID),
+                "--text",
+                "正文",
+                "--text-file",
+                "ch3.txt",
+            ],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 2
         mock_character_service.extract.assert_not_awaited()
 
-    def test_extract_llm_error(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_extract_llm_error(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """LLM 输出无法解析 → LLM_ERROR 错误信封 + 退出码 1."""
-        mock_character_service.extract.side_effect = CharacterExtractionError(detail="非法 JSON")
+        mock_character_service.extract.side_effect = CharacterExtractionError(
+            detail="非法 JSON"
+        )
         result = cli_runner.invoke(
             app,
             ["extract", "--project-id", str(PID), "--text", "林尘是主角。"],
@@ -681,12 +765,22 @@ class TestCharacterExtract:
 
 
 class TestGroupCommands:
-    def test_group_create_json(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_group_create_json(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """group create --json → 成功信封 + 参数透传."""
         mock_character_service.create_group.return_value = _make_group(name="主角团")
         result = cli_runner.invoke(
             group_app,
-            ["create", "--project-id", str(PID), "--name", "主角团", "--description", "核心小队"],
+            [
+                "create",
+                "--project-id",
+                str(PID),
+                "--name",
+                "主角团",
+                "--description",
+                "核心小队",
+            ],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
@@ -697,7 +791,9 @@ class TestGroupCommands:
             project_id=PID, name="主角团", description="核心小队"
         )
 
-    def test_group_list_json(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_group_list_json(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """group list --json → 分组列表信封."""
         mock_character_service.list_groups.return_value = [_make_group()]
         result = cli_runner.invoke(
@@ -711,7 +807,9 @@ class TestGroupCommands:
         assert data["data"][0]["name"] == "主角团"
         mock_character_service.list_groups.assert_awaited_once_with(project_id=PID)
 
-    def test_group_get_json(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_group_get_json(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """group get --json → 成功信封."""
         mock_character_service.get_group.return_value = _make_group()
         result = cli_runner.invoke(
@@ -724,7 +822,9 @@ class TestGroupCommands:
         assert data["ok"] is True
         assert data["data"]["name"] == "主角团"
 
-    def test_group_update_json(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_group_update_json(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """group update --json → 成功信封 + 参数透传."""
         gid = uuid.uuid4()
         mock_character_service.update_group.return_value = _make_group(name="新主角团")
@@ -741,7 +841,9 @@ class TestGroupCommands:
             group_id=gid, name="新主角团", description=None
         )
 
-    def test_group_delete_force_json(self, cli_runner, mock_character_service, mock_create_tables):
+    def test_group_delete_force_json(
+        self, cli_runner, mock_character_service, mock_create_tables
+    ):
         """group delete --force --json → 成功信封 + 软删除."""
         gid = uuid.uuid4()
         mock_character_service.delete_group.return_value = True
@@ -754,7 +856,9 @@ class TestGroupCommands:
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"]["deleted"] is True
-        mock_character_service.delete_group.assert_awaited_once_with(group_id=gid, force=False)
+        mock_character_service.delete_group.assert_awaited_once_with(
+            group_id=gid, force=False
+        )
 
     def test_group_delete_json_no_force(
         self, cli_runner, mock_character_service, mock_create_tables
