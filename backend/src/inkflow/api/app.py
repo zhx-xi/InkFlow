@@ -12,6 +12,7 @@ from inkflow.api.routers import (
     context,
     outlines,
     project,
+    timeline,
     world_settings,
     writing,
 )
@@ -59,6 +60,7 @@ app.include_router(agent.router)
 app.include_router(context.router)
 app.include_router(world_settings.router)
 app.include_router(outlines.router)
+app.include_router(timeline.router)
 
 
 # ---- 健康检查 ----

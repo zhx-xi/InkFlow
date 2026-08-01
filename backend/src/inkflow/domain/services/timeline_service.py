@@ -259,6 +259,19 @@ class TimelineService:
         logger.info("软删除时间线事件: event_id=%s", event_id)
         return await self._repo.soft_delete(eid)
 
+    async def hard_delete_event(self, event_id: int | uuid.UUID) -> bool:
+        """硬删除事件（spec §3.1/§7: ?force=true 物理删除；事件不存在 → False，router 转 404）.
+
+        Args:
+            event_id: 事件主键（支持 int 或 UUID）.
+
+        Returns:
+            True 表示删除成功；False 表示未找到记录.
+        """
+        eid = _to_int_id(event_id)
+        logger.info("硬删除时间线事件: event_id=%s", event_id)
+        return await self._repo.hard_delete(eid)
+
     async def restore_event(self, event_id: int | uuid.UUID) -> TimelineEvent | None:
         """恢复软删除事件（重复操作无毒，同 F1）.
 
