@@ -1,7 +1,7 @@
-# InkFlow — AI 辅助小说创作工具 · 产品规格书（v2.1 更新版）
+# InkFlow — AI 辅助小说创作工具 · 产品规格书（v2.2 更新版）
 
-**日期**: 2026-07-30（更新）
-**来源**: 基于 v2.0 PRD（InkChain）重命名 + 完善
+**日期**: 2026-08-02（v2.2 更新；基线 2026-07-30 v2.1）
+**来源**: 基于 v2.0 PRD（InkChain）重命名 + 完善；v2.2 = 2026-08-02 产品形态批量拍板（Issue #65）同步修订（§5.1/§6.3/§6.5/§7/§9/§11）
 **项目名称**: InkFlow（原 InkChain）
 **项目路径**: `D:\develop\projects\InkFlow`
 **远程仓库**: `https://github.com/zhx-xi/InkFlow.git`
@@ -13,9 +13,9 @@
 ## 📌 TL;DR（执行摘要）
 
 - **核心定位**: 全新 Python 后端 AI 辅助小说创作工具，前后端分离架构（Python FastAPI + React），从零设计每个功能
-- **部署策略**: **本地优先** — Phase 1-3 全力实现本地自部署；云端部署只设计接口（Python Protocol/ABC），实现延后至 Phase 4+
-- **打包目标**: `pip install` → PyInstaller exe → 安装包 → 桌面端（pywebview），逐步降低用户使用门槛
-- **技术选型**: FastAPI + Typer + SQLAlchemy 2.0 async + Pydantic v2 + SQLite（本地）/ PostgreSQL（云端接口预留）
+- **部署策略**: **本地优先** — Phase 1-3 全力实现本地自部署；云端部署只设计接口（Python Protocol/ABC），实现延后至 2.0.0 云端里程碑
+- **打包目标**: `pip install` → PyInstaller exe → 安装包 → 桌面端（Electron GUI），逐步降低用户使用门槛
+- **技术选型**: FastAPI + Typer + SQLAlchemy 2.0 async + Pydantic v2 + SQLite（本地）/ PostgreSQL（云端 2.0.0，RAG 用 pgvector）
 - **Agent 集成**: CLI `--json` + MCP Server（stdio），可被 Hermes 等 AI Agent 调用
 - **资源约束**: **单人开发**（非团队），时间线已据此调整，Phase 1-3 约 12-16 周（3-4 个月）
 - **SDD 工作流**: GitHub Spec-Kit SDD + TDD，规格驱动开发
@@ -30,7 +30,7 @@
 | 优先级 | P0（13 项，核心写作引擎）/ P1（16 项，创作工具+UI+打包+Agent）/ P2（云端接口+停车场） |
 | 资源约束 | 单人全栈开发（1 FTE），Phase 1-3 约 12-16 周（3-4 个月） |
 | 风险等级 | 🟡 中高（单人开发 = Web UI 和 Agent 编排并行工作受限） |
-| 打包方案 | pip → PyInstaller exe → Inno Setup 安装包 → pywebview 桌面端（均可行，分阶段实现） |
+| 打包方案 | pip → PyInstaller exe → NSIS 安装包 → Electron GUI 桌面端（均可行，分阶段实现） |
 
 ---
 
@@ -76,7 +76,7 @@
 | 画像 | 身份 | 核心诉求 | 关键痛点 |
 |------|------|---------|---------|
 | A — 独立创作者 | 网文作者/同人写手/编剧 | AI 辅助"写→审→修"循环，降低产能瓶颈 | 环境安装门槛、弱模型中断、长篇上下文管理 |
-| B — 团队/多用户（Phase 4+） | 3-10 人工作室 | 多人协作管理 IP 世界观 | 当前不支持多用户（云端延后实现） |
+| B — 团队/多用户（远期后移） | 3-10 人工作室 | 多人协作管理 IP 世界观 | 多人协作后移（非云端 1.0 范围，ADR-024） |
 | C — AI Agent 调用方 | Hermes/Claude Code 等 | 结构化 JSON I/O、低延迟、流式、工具发现 | 需要常驻服务、MCP 协议、流式输出 |
 
 ### 关键洞察
@@ -97,7 +97,7 @@
 | BYOK | ✅ 多 Provider 路由 | ✅ | ✅ | ✅ Model Router | ✅ 300+ | ❌ |
 | CLI/API | ✅ CLI+REST+MCP | ✅ REST | ❌ | ❌ | ✅ API | ❌ |
 | AI Agent 集成 | ✅ MCP Server | ❌ | ❌ | ❌ | ❌ | ❌ |
-| 桌面端 | ✅ pywebview | ❌ | ❌ | ❌ | ❌ | ✅ PyQt |
+| 桌面端 | ✅ Electron GUI | ❌ | ❌ | ❌ | ❌ | ✅ PyQt |
 | 开源 | ✅ | ✅ | ✅ (28K+) | ❌ | ❌ | ✅ |
 
 **差异化定位**: 本地自部署 + 桌面端体验 + CLI/MCP Agent 调用 + 完整创作工具链 + Python AI 生态原生 — 没有竞品同时实现以上五个维度。
@@ -112,8 +112,8 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                      客户端层                                 │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │ 桌面端    │  │ Web UI   │  │ CLI      │  │ MCP      │    │
-│  │ (pywebview)│  │ (React)  │  │ (Typer)  │  │ (Agent)  │    │
+│  │ 桌面端(GUI)│  │ Web UI   │  │ CLI      │  │ MCP      │    │
+│  │(Electron) │  │ 云专属    │  │ (Typer)  │  │ (Agent)  │    │
 │  └─────┬────┘  └─────┬────┘  └─────┬────┘  └─────┬────┘    │
 │        │ HTTP/REST+SSE     │ HTTP        │ stdio       │      │
 └────────┼──────────────────┼─────────────┼─────────────┼──────┘
@@ -140,17 +140,19 @@
 │  │  DatabaseProtocol │ AuthProtocol │ StorageProtocol   │    │
 │  │  UserProtocol │ SyncProtocol │ MCPTransport         │    │
 │  └───────┬───────────────────────────────┬─────────────┘    │
-│          │ Local Implementations          │ Cloud (Phase 4+) │
+│          │ Local Implementations          │ Cloud (2.0.0)    │
 │          ▼                                ▼                  │
 │  ┌──────────────┐                ┌──────────────┐           │
 │  │ SQLite       │                │ PostgreSQL   │           │
 │  │ LocalTrust   │                │ JWTAuth      │           │
 │  │ LocalFile    │                │ CloudStorage │           │
-│  │ SingleUser   │                │ MultiTenant  │           │
+│  │ SingleUser   │                │ 多用户隔离   │           │
 │  │ stdio MCP    │                │ HTTP MCP     │           │
 │  └──────────────┘                └──────────────┘           │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+> **注（v2.2）**: 桌面端 = **Electron GUI 壳 + 本地 REST 内核**（内嵌 React 构建产物，经本地 REST/SSE 连接后端；单机形态不再使用 pywebview）；**Web UI 定位为云端专属界面**（随 2.0.0 云端里程碑交付，本地不提供浏览器界面）；React 前端一套代码两用（云 Web 部署 + GUI 内嵌）；云端多用户隔离 = user_id 级（无租户/协作模型，见 ADR-024）。
 
 ### 5.2 后端技术栈
 
@@ -169,7 +171,7 @@
 | 覆盖率 | pytest-cov | — | ❌ 需安装 | 覆盖率报告 |
 | API 测试 | httpx (测试模式) | — | ✅ 0.28.1 | FastAPI TestClient 使用 httpx |
 | Agent 协议 | MCP | — | ❌ 需调研 | 行业标准、stdio 本地 |
-| 桌面窗口 | pywebview | 5+ | ❌ Phase 2 安装 | 原生 WebView |
+| 桌面窗口 | Electron | 最新 LTS | ❌ 0.3.0 引入 | Chromium + React 复用 |
 | 打包 | PyInstaller | 6+ | ❌ Phase 2 安装 | 成熟、跨平台 |
 | 包管理 | uv + pip | uv 0.11+ | ✅ uv 0.11.14 | 极速依赖解析、工具安装 |
 
@@ -191,7 +193,7 @@ pip install inkflow
 inkflow serve  # 启动 Web 服务，打开浏览器
 
 # 方式 2: 桌面端（普通用户）
-# 双击 InkFlow.exe → pywebview 窗口打开 → 后端自动启动
+# 双击 InkFlow.exe → Electron 窗口打开 → 本地内核自动启动
 
 # 方式 3: CLI 模式（Agent/脚本）
 inkflow project create --name "My Novel" --json
@@ -300,13 +302,18 @@ inkflow export --project-id N --format epub
 
 ### 6.3 用户界面（Phase 2-3）
 
-#### F18: Web UI（web_ui）
-**技术栈**: React 19 + Vite 6 + Zustand 5 + shadcn/ui + Tailwind 4
-**API 对接**: OpenAPI → openapi-typescript 自动生成
-**核心界面**: 章节编辑器、管理面板、Agent 配置、SSE 流式
+#### F18: 云端 Web 用户端（web_ui）— 随 2.0.0 云端里程碑（v2.2 重定义）
+**定位（v2.2）**: Web UI 由「单机本地部署界面」**重定义为云端专属用户端**——单机形态由 Electron GUI 承接，本地不再提供浏览器界面；随 2.0.0 云端里程碑交付（与本地 1.0.0 解耦）。
+**技术栈**: React 19 + Vite 6 + Zustand 5 + shadcn/ui + Tailwind 4（与 GUI 内嵌前端同一工程，一套代码两用：云 Web 部署 + GUI 内嵌）
+**API 对接**: OpenAPI → openapi-typescript 自动生成（/api/v1/* 用户端）
+**核心界面**: 章节编辑器、项目/创作资料管理、Agent 配置、SSE 流式、修订历史（回滚）、账号与设备管理
 
-#### F19: 打包与分发（packaging）
-详见第 8 节「打包方案设计」
+#### F19: 桌面 GUI 与打包分发（packaging）— v2.2 拆分：0.3.0 GUI 提前，0.4.0 打包完善
+- **0.3.0 — Electron GUI 壳（提前）**: 桌面端 = **Electron GUI 壳 + 本地 REST 内核**（内嵌 React 构建产物，经本地 REST/SSE 与后端通信；取代 pywebview）；核心写作界面 + 项目管理 + Agent 配置 + SSE 流式渲染
+- **0.4.0 — 打包完善**: PyInstaller 后端打包 + electron-builder 分发（NSIS 安装包 + 便携 ZIP）
+
+#### F23: SSE 流式输出（sse_streamer）— 提前至 0.3.0（v2.2）
+**提前（v2.2）**: 原计划 0.5.0（Phase 3 Agent 集成）交付，**提前至 0.3.0**——GUI 写作流式渲染的依赖项（P1-12）；逐 token 推送、首 token ≤ 2s；SSE 端点同时供云端 Web 用户端消费（2.0.0）。
 
 ### 6.4 Agent 集成（Phase 3）
 
@@ -319,30 +326,30 @@ EPUB / Markdown / TXT / DOCX（Phase 3 ≥ 3 种）
 #### F22: 全文搜索（search_service）
 跨内容类型搜索、类型筛选、搜索高亮
 
-### 6.5 云端接口设计（Phase 4+，仅定义接口不实现）
+### 6.5 云端接口设计（2.0.0 云端里程碑，仅定义接口不实现）
 
-| 接口 | 本地实现（Phase 1-3） | 云端实现（Phase 4+） |
+| 接口 | 本地实现（Phase 1-3） | 云端实现（2.0.0） |
 |------|---------------------|---------------------|
 | `AuthProtocol` | LocalTrust（免认证） | JWTAuth（OAuth 2.1） |
-| `DatabaseProtocol` | SQLiteAdapter | PostgreSQLAdapter |
-| `StorageProtocol` | LocalFileStorage | CloudObjectStorage |
-| `UserProtocol` | SingleUser（无用户概念） | MultiTenant（多租户） |
-| `SyncProtocol` | 无同步 | CloudSync（项目同步） |
-| `MCPTransport` | stdio（本地） | Streamable HTTP（云端） |
+| `DatabaseProtocol` | SQLiteAdapter | PostgreSQLAdapter（+pgvector） |
+| `StorageProtocol` | LocalFileStorage | CloudObjectStorage（S3 兼容） |
+| `UserProtocol` | SingleUser（无用户概念） | 多用户数据隔离（user_id 级，无组织/共享模型） |
+| `SyncProtocol` | 无同步 | 云存档/远程在线（LWW + 修订历史，双向离线同步可选） |
+| `MCPTransport` | stdio（本地） | Streamable HTTP（后移 P2+ 评估） |
 
 ---
 
-## 7. 打包方案设计
+## 7. 打包方案设计（v2.2 更新：Electron GUI + NSIS）
 
 ### 推荐实现路径
 
 ```
 Phase 1: pip install inkflow && inkflow serve
     ↓ (开发者/早期用户)
-Phase 2: PyInstaller --onedir + Inno Setup 安装包 + 便携 ZIP
+0.3.0: Electron GUI 壳（本地 REST 内核，内嵌 React 构建产物）
+    ↓ (桌面主形态)
+0.4.0: PyInstaller 后端打包 + electron-builder 分发（NSIS 安装包 + 便携 ZIP）
     ↓ (大众用户，Windows 优先)
-Phase 2-3: + pywebview 桌面窗口
-    ↓ (更好的桌面体验)
 ```
 
 ### 各方案对比
@@ -350,9 +357,10 @@ Phase 2-3: + pywebview 桌面窗口
 | 方案 | 形态 | 实现难度 | 体积 | 用户体验 | 实现阶段 |
 |------|------|---------|------|---------|---------|
 | pip install | Python 包 | 🟢 低 | 0（系统 Python） | 需 Python 环境 | Phase 1 |
-| PyInstaller --onedir | 文件夹 | 🟢 低 | ~60-80MB | 解压即用 | Phase 2 |
-| Inno Setup 安装包 | .exe 安装程序 | 🟢 低-中 | ~40-60MB | 安装到 Program Files | Phase 2 |
-| pywebview 桌面端 | 原生窗口 | 🟡 中 | ~70-90MB | 真正的桌面应用体验 | Phase 2-3 |
+| Electron GUI 壳 | 桌面应用（内嵌前端 + 本地 REST 内核） | 🟡 中 | ~80-120MB | 真正的桌面应用体验 | 0.3.0 |
+| PyInstaller --onedir | 后端文件夹 | 🟢 低 | ~60-80MB | 解压即用（配合 GUI） | 0.3.0-0.4.0 |
+| NSIS 安装包 | .exe 安装程序（electron-builder/NSIS） | 🟢 低-中 | ~60-90MB | 安装到 Program Files | 0.4.0 |
+| 便携 ZIP | 免安装压缩包 | 🟢 低 | ~80-120MB | 解压即用 | 0.4.0 |
 
 ---
 
@@ -364,7 +372,7 @@ Phase 2-3: + pywebview 桌面窗口
 |--------|------|---------|---------|
 | P0 | 13 | 55-80 | Phase 1 |
 | P1 | 16 | 45-70 | Phase 2-3 |
-| P2 | 云端+停车场 | — | Phase 4+ |
+| P2 | 云端+停车场 | — | 2.0.0 云端里程碑后 |
 | **合计** | **29+云端** | **100-150** | **3-4 个月（单人）** |
 
 ### P0 需求（Phase 1 — 核心写作引擎）
@@ -397,8 +405,8 @@ Phase 2-3: + pywebview 桌面窗口
 | P1-06 | 统一提取服务 | 6 种提取类型；统一接口；增量提取 | 4-6 |
 | P1-07 | 一致性审计 | 角色/时间线/世界/伏笔 4 维度检查 | 3-5 |
 | P1-08 | 风格检测 | 风格指纹/AI 痕迹检测/词汇分析 | 2-3 |
-| P1-09 | Web UI | 写作界面/管理面板/Agent 配置；SSE 流式 | 10-15 |
-| P1-10 | 打包分发 | PyInstaller + 安装包 + 便携 ZIP + pywebview 桌面端 | 4-6 |
+| P1-09 | Web UI（云端专属） | 写作界面/管理面板/Agent 配置；SSE 流式（随 2.0.0 云端里程碑，F18） | 10-15 |
+| P1-10 | 打包分发 | PyInstaller + NSIS 安装包 + 便携 ZIP + Electron GUI 壳（0.3.0-0.4.0） | 4-6 |
 
 ### P1 需求（Phase 3 — Agent 集成 + 补全）
 
@@ -411,7 +419,7 @@ Phase 2-3: + pywebview 桌面窗口
 | P1-15 | 导出服务 | EPUB/Markdown/TXT/DOCX ≥ 3 种 | 3-4 |
 | P1-16 | 全文搜索 | 跨内容类型/筛选/高亮 | 2-3 |
 
-### P2 停车场（Phase 4+）
+### P2 停车场（2.0.0 云端里程碑后）
 
 云端认证实现(JWT/OAuth)、PostgreSQL 适配器、多用户协作、MCP Streamable HTTP、Tauri 桌面端等
 
@@ -419,7 +427,22 @@ Phase 2-3: + pywebview 桌面窗口
 
 ## 9. 时间线与里程碑（单人开发版）
 
-### 整体路线图
+### 整体路线图（v2.2 同步 ADR-019 v2 里程碑表）
+
+> 里程碑管理口径以 **ADR-019 v2** 为准（SemVer 版本号）；下方 W 周计划仅作单人估算参考，不构成管理口径。
+
+| 版本 | 主题 | 关键交付 | 核心风险 |
+|------|------|---------|---------|
+| 0.1.0 ✅ | 核心引擎 | F1-F8 + P0-11 云端 Protocol（已交付，Phase 1 Gate 7/7） | — |
+| 0.2.0 🔄 | 创作工具链 | F9-F13 ✅ · F14-F16 待做（角色/世界观/大纲/时间线/伏笔/提取/审计/风格） | 🟡 中—提取准确率 |
+| 0.3.0 | 桌面 GUI | F19 GUI（内核进程化 + Electron 壳）+ **F23 SSE 流式（提前）** | 🟡 中—Electron 集成 |
+| 0.4.0 | skills 包 + 打包 | skills 包（随程序/源码分发）· F19 打包（PyInstaller + NSIS 安装包 + 便携 ZIP） | 🟡 中—兼容性 |
+| 0.5.0 | Agent 集成 | F20 MCP · F24 会话 · F25 daemon（本地 daemon + 云存档） | 🟡 中高—MCP 协议 |
+| 0.6.0 | 导出+搜索 | F21 导出 · F22 全文搜索 | 🟢 低 |
+| 1.0.0 🎉 | 本地完全可用 | CLI + GUI + skills + MCP 四界面齐备；跨平台打包 + 文档 + Phase 3 Gate 验收 | 🟢 中 |
+| 2.0.0 ☁️ | 云端里程碑 | F18 云 Web 用户端 · 用户 API · Admin 后台 · GUI 远程模式——云存档/异地写作（PostgreSQL+pgvector / MinIO / BYOK / owner_id 隔离 / 内容审核，无 CRDT） | 🔴 高—多用户隔离 + 安全红线 |
+
+### 周计划估算参考（W 里程碑，仅估算参考）
 
 | 时间窗口 | 主题 | Phase | 关键交付 | 核心风险 |
 |---------|------|-------|---------|---------|
@@ -428,9 +451,9 @@ Phase 2-3: + pywebview 桌面窗口
 | 第 5-7 周 (W5-W7) | ★ 核心引擎：Agent+写作管道 | P0 S3 | Agent 编排引擎、写作管道(生成/续写/修改)、上下文管理、格式校验+重试 | 🔴 高—Agent 编排复杂度 |
 | 第 8-9 周 (W8-W9) | CLI+收尾 | P0 S4 | Typer CLI 完整命令、--json 输出、`inkflow serve`、基础 Web 占位页、E2E 测试 | 🟡 中—集成测试 |
 | 第 10-12 周 (W10-W12) | 创作工具 | P1 S5-S6 | 角色/世界/大纲/时间线/伏笔管理、统一提取服务、一致性审计、风格检测 | 🟡 中—提取准确率 |
-| 第 13-15 周 (W13-W15) | ★ Web UI 开发 | P1 S7 | React 前端搭建、写作界面、管理面板、Agent 配置、SSE 流式 | 🔴 高—前端单人全栈 |
-| 第 15-16 周 (W15-W16) | 打包+桌面端 | P1 S8 | PyInstaller exe、安装包、便携 ZIP、pywebview 桌面端 | 🟡 中—兼容性 |
-| 第 17-19 周 (W17-W19) | ★ Agent 集成 | P1 S9 | MCP Server(≥15工具)、SSE 流式、会话管理、daemon 后台写作 | 🔴 中高—MCP 协议 |
+| 第 13-15 周 (W13-W15) | ★ GUI + Web 前端开发 | P1 S7 | React 前端搭建、Electron GUI 壳、写作界面、Agent 配置、SSE 流式 | 🔴 高—前端单人全栈 |
+| 第 15-16 周 (W15-W16) | 打包+桌面端 | P1 S8 | PyInstaller exe、NSIS 安装包、便携 ZIP、Electron 桌面端、skills 包 | 🟡 中—兼容性 |
+| 第 17-19 周 (W17-W19) | ★ Agent 集成 | P1 S9 | MCP Server(≥15工具)、会话管理、daemon 后台写作 | 🟡 中高—MCP 协议 |
 | 第 20-21 周 (W20-W21) | 导出+搜索+打磨 | P1 S10 | 导出服务(≥3格式)、全文搜索、Bug 修复、性能优化 | 🟢 低 |
 | 第 22-24 周 (W22-W24) | 跨平台+验收 | P1 S11-S12 | 跨平台打包(macOS/Linux)、文档完善、Phase 3 Gate 评审 | 🟢 中 |
 
@@ -480,7 +503,7 @@ Phase 2-3: + pywebview 桌面窗口
 7. ✅ 本地部署 ≤ 3 步（pip install → configure → serve）
 
 **Phase 2 Gate (W16)**:
-1. ✅ Web UI 功能覆盖 ≥ 90%
+1. ✅ GUI 功能覆盖 ≥ 90%（Electron GUI 壳 + 本地 REST 内核）
 2. ✅ 角色/世界/大纲/时间线/伏笔 全部可用
 3. ✅ 统一提取服务 ≥ 6 种类型
 4. ✅ 审计服务可生成报告
@@ -546,7 +569,7 @@ Phase 2-3: + pywebview 桌面窗口
 | cryptography | API Key 加密 | `pip install cryptography` | 🟡 Phase 1 推荐 |
 | httpx-sse | SSE 客户端 | 已安装 ✅ | 用于 SSE 测试 |
 | mcp | MCP SDK | 待 Phase 3 安装 | 🟢 Phase 3 安装 |
-| pywebview | 桌面端 | 待 Phase 2 安装 | 🟢 Phase 2 安装 |
+| Electron | 桌面 GUI 壳 | 待 0.3.0 引入 | 🟢 0.3.0 引入 |
 | PyInstaller | 打包 | 待 Phase 2 安装 | 🟢 Phase 2 安装 |
 | pre-commit | Git 钩子 | `pip install pre-commit` | 🟡 推荐 |
 
@@ -589,15 +612,21 @@ specify init . --integration openclaw
 ## 11. Non-goals（明确不做什么）
 
 1. **不做迁移工具** — 这是全新项目，不从任何旧项目迁移数据
-2. **不实现云端功能** — Phase 1-3 仅本地部署，云端只定义接口不实现
-3. **不支持实时协作编辑(CRDT)** — Phase 5+ 考虑
+2. **云端功能在 2.0.0 云端里程碑实现**（v2.2）— 云存档 + 异地写作（云 Web 用户端 + 管理后台）；1.0.0 之前仍仅本地部署、云端只定义接口不实现（本地优先策略不变）
+3. **不支持实时协作编辑（CRDT/OT）**（v2.2）— 多人协作（共享/邀请/组织/权限模型）后移独立立项；云存档冲突用 LWW + 修订历史解决，无需 CRDT
 4. **不实现自有 LLM 推理** — InkFlow 是 LLM 调用方，Ollama 通过 OpenAI 兼容 API 接入
 5. **不做移动端 App** — 响应式 Web UI 适配
-6. **不实现付费/订阅系统** — 云端商业化是独立项目
+6. **不实现付费/订阅系统**（v2.2）— 仅预留计量接口（用量明细数据模型），收费后移
 7. **不做影视化和开放世界** — P2 停车场
 8. **不做自动测试生成** — 测试手写
 9. **不追求与任何旧版本兼容** — 全部从零设计
 10. **不一启动就并行前后端** — 单人开发，Phase 1 纯后端，Phase 2 才开始前端
+
+### 云端安全红线（v2.2 新增，2.0.0 起生效，永不妥协）
+
+- **BYOK 云端零存储**（P0 红线）— 云端任何情况下不存储、不经手用户 LLM API Key（不落盘、不进口志、不进异常上报）；写作 LLM 调用由用户本机直连发起，云端只做任务编排与结果存档
+- **任意代码不上云**（P0 红线）— 自定义 skill 任意代码（Python 脚本等可执行体）本地专属，云端永不执行；同步层拒收可执行体，云上 skill 仅限 Prompt 模板 + 内置工具白名单
+- **内容审核** — 云端 skill 与 AI 生成内容经 AI 自动审查 + 人工抽检（审核队列进管理后台，P1），拦截涉黄/违规内容
 
 ---
 
