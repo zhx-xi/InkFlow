@@ -1,0 +1,63 @@
+"""世界观管理领域异常.
+
+F10 专属异常类型，继承自 Exception。
+依据: specs/f10-world-service/spec.md §5/§8。
+
+异常映射约定（spec §3.5 异常映射表）:
+- WorldServiceError 子类 = 业务校验失败，API 层映射为 422（消息即 detail）
+- WorldNotFoundError / ProjectNotFoundError = 资源不存在，API 层映射为 404
+- WorldExtractionError = LLM 输出解析失败，API 层映射为 500
+"""
+
+from __future__ import annotations
+
+
+class WorldExtractionError(Exception):
+    """世界观提取失败 — LLM 输出无法解析为合法条目 JSON.
+
+    修复重试耗尽后抛出，由调用方（API/CLI）映射为 LLM_ERROR 错误信封。
+
+    Attributes:
+        raw_output: LLM 原始输出片段（诊断用，可能被截断）.
+        detail: 失败原因描述.
+    """
+
+    def __init__(self, raw_output: str = "", detail: str = "") -> None:
+        self.raw_output = raw_output
+        self.detail = detail
+        msg = "世界观提取失败: LLM 输出无法解析为合法 JSON"
+        if detail:
+            msg += f" — {detail}"
+        super().__init__(msg)
+
+
+class WorldServiceError(Exception):
+    """世界观服务业务校验失败基类 — API 层映射为 422.
+
+    子类消息即 422 响应 detail（spec §3.5 中文文案）。
+    """
+
+
+class WorldNotFoundError(Exception):
+    """世界观条目不存在 — API 层映射为 404「世界观条目不存在」.
+
+    用于 create_relation 等返回非 Optional 的方法（路径条目缺失）；
+    其余 CRUD 方法以返回 None 表达不存在（router 层统一转 404）。
+    """
+
+    def __init__(self, message: str = "世界观条目不存在") -> None:
+        super().__init__(message)
+
+
+class ProjectNotFoundError(Exception):
+    """项目不存在 — extract 入口校验失败，API 层映射为 404「项目不存在」."""
+
+    def __init__(self, message: str = "项目不存在") -> None:
+        super().__init__(message)
+
+
+class WorldNameConflictError(WorldServiceError):
+    """同名世界观条目已存在（条目名在项目内必须唯一）— 422."""
+
+    def __init__(self, message: str = "同名世界观条目已存在（条目名在项目内必须唯一）") -> None:
+        super().__init__(message)

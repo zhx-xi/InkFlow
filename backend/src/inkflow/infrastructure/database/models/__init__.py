@@ -9,6 +9,7 @@ from inkflow.infrastructure.database.models.character import (
 )
 from inkflow.infrastructure.database.models.context import ChapterSummaryORM
 from inkflow.infrastructure.database.models.project import ProjectORM
+from inkflow.infrastructure.database.models.world import WorldSettingORM
 
 __all__ = [
     "ProjectORM",
@@ -20,4 +21,5 @@ __all__ = [
     "CharacterORM",
     "CharacterGroupORM",
     "CharacterRelationORM",
+    "WorldSettingORM",
 ]
