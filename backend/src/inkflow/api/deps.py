@@ -8,10 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from inkflow.core.database import get_session
 from inkflow.domain.ports.context_sources import ContextSourceProtocol
 from inkflow.domain.services._character_extractor import CharacterExtractor
+from inkflow.domain.services._outline_generator import OutlineGenerator
 from inkflow.domain.services._world_extractor import WorldExtractor
 from inkflow.domain.services.chapter_service import ChapterService
 from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.context_service import ContextService
+from inkflow.domain.services.outline_service import OutlineService
 from inkflow.domain.services.project_service import ProjectService
 from inkflow.domain.services.summary_service import SummaryService
 from inkflow.domain.services.world_service import WorldService
@@ -21,6 +23,9 @@ from inkflow.infrastructure.database.repositories.chapter_repo import (
 )
 from inkflow.infrastructure.database.repositories.character_repo import (
     SQLiteCharacterRepository,
+)
+from inkflow.infrastructure.database.repositories.outline_repo import (
+    SQLiteOutlineRepository,
 )
 from inkflow.infrastructure.database.repositories.project_repo import (
     SQLiteProjectRepository,
@@ -146,6 +151,26 @@ def get_world_service(
     return WorldService(
         repository=repo,
         extractor=WorldExtractor(
+            llm_client=LangChainLLMClient(),
+            prompt_manager=LangChainPromptManager(),
+            repository=repo,
+        ),
+        project_repo=SQLiteProjectRepository(db),
+    )
+
+
+def get_outline_service(
+    db: AsyncSession,
+) -> OutlineService:
+    """获取 OutlineService 实例（大纲/情节点/弧线仓储 + AI 生成器）.
+
+    装配 OutlineGenerator（LLM 客户端 + Prompt 模板 + 同一仓储实例），
+    generate 入口的项目存在性校验使用 F1 项目仓储。
+    """
+    repo = SQLiteOutlineRepository(db)
+    return OutlineService(
+        repository=repo,
+        generator=OutlineGenerator(
             llm_client=LangChainLLMClient(),
             prompt_manager=LangChainPromptManager(),
             repository=repo,

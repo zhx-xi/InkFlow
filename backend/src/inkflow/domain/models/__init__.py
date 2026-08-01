@@ -38,6 +38,22 @@ from inkflow.domain.models.context import (
     DroppedItem,
     TokenBudgetConfig,
 )
+from inkflow.domain.models.outline import (
+    GeneratedArc,
+    GeneratedOutline,
+    GeneratedPlotPoint,
+    Outline,
+    OutlineCreate,
+    OutlineGenerateRequest,
+    OutlineGenerationResult,
+    OutlineUpdate,
+    PlotPoint,
+    PlotPointCreate,
+    PlotPointUpdate,
+    StoryArc,
+    StoryArcCreate,
+    StoryArcUpdate,
+)
 from inkflow.domain.models.project import Project, ProjectConfig, ProjectCreate, ProjectUpdate
 from inkflow.domain.models.world import (
     ExtractedWorldSetting,
@@ -106,4 +122,19 @@ __all__ = [
     "ExtractedWorldSetting",
     "WorldExtractRequest",
     "WorldExtractionResult",
+    # ── outline (F11) ──
+    "Outline",
+    "OutlineCreate",
+    "OutlineUpdate",
+    "PlotPoint",
+    "PlotPointCreate",
+    "PlotPointUpdate",
+    "StoryArc",
+    "StoryArcCreate",
+    "StoryArcUpdate",
+    "GeneratedOutline",
+    "GeneratedPlotPoint",
+    "GeneratedArc",
+    "OutlineGenerateRequest",
+    "OutlineGenerationResult",
 ]

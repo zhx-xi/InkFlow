@@ -15,6 +15,8 @@
     - summary_repository: 前文摘要缓存仓储（F6）
     - character_repository: 角色/分组/关系仓储（F9）
     - character_errors: 角色管理异常（F9）
+    - outline_repository: 大纲/情节点/弧线仓储（F11）
+    - outline_errors: 大纲管理异常（F11）
 """
 
 from inkflow.domain.ports.agent_pipeline import (
@@ -58,6 +60,17 @@ from inkflow.domain.ports.llm_errors import (
     TemplateNotFoundError,
     TemplateRenderError,
 )
+from inkflow.domain.ports.outline_errors import (
+    ArcNameConflictError,
+    ArcNotInProjectError,
+    OutlineGenerationError,
+    OutlineNameConflictError,
+    OutlineNotFoundError,
+    OutlineServiceError,
+    PlotPointNotFoundError,
+    StoryArcNotFoundError,
+)
+from inkflow.domain.ports.outline_repository import OutlineRepositoryProtocol
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.prompt_template import (
     PromptTemplate,
@@ -135,4 +148,14 @@ __all__ = [
     "WorldServiceError",
     "WorldNotFoundError",
     "WorldNameConflictError",
+    # ── outline (F11) ──
+    "OutlineRepositoryProtocol",
+    "OutlineGenerationError",
+    "OutlineServiceError",
+    "OutlineNotFoundError",
+    "PlotPointNotFoundError",
+    "StoryArcNotFoundError",
+    "OutlineNameConflictError",
+    "ArcNameConflictError",
+    "ArcNotInProjectError",
 ]
