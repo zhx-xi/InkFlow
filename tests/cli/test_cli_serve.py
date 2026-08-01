@@ -43,7 +43,10 @@ class TestServe:
         from inkflow.cli.commands.serve import app
 
         with patch("uvicorn.run") as mock_run:
-            with patch("threading.Timer") as mock_timer, patch("webbrowser.open") as mock_wb:
+            with (
+                patch("threading.Timer") as mock_timer,
+                patch("webbrowser.open") as mock_wb,
+            ):
                 result = cli_runner.invoke(app, ["--open-browser"])
                 assert result.exit_code == 0
                 mock_run.assert_called_once()

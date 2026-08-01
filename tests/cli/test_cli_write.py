@@ -33,13 +33,19 @@ def cli_runner(monkeypatch):
 @pytest.fixture
 def mock_writing_service():
     """Mock WritingService + 相关依赖."""
-    with patch("inkflow.cli.commands.write.WritingService", autospec=True) as mock_svc_cls:
+    with patch(
+        "inkflow.cli.commands.write.WritingService", autospec=True
+    ) as mock_svc_cls:
         mock_svc = AsyncMock()
         mock_svc_cls.return_value = mock_svc
 
         with patch("inkflow.cli.commands.write.LangChainLLMClient", autospec=True):
-            with patch("inkflow.cli.commands.write.LangChainPromptManager", autospec=True):
-                with patch("inkflow.cli.commands.write.NullContextProvider", autospec=True):
+            with patch(
+                "inkflow.cli.commands.write.LangChainPromptManager", autospec=True
+            ):
+                with patch(
+                    "inkflow.cli.commands.write.NullContextProvider", autospec=True
+                ):
                     with patch(
                         "inkflow.cli.commands.write.SQLiteChapterRepository",
                         autospec=True,
@@ -84,7 +90,9 @@ class TestWriteNext:
 
     def test_next_count_param(self, cli_runner, mock_writing_service):
         """write next --count / --show-context 参数出现在 help."""
-        result = cli_runner.invoke(app, ["next", "--help"], obj=CliContext(json_output=False))
+        result = cli_runner.invoke(
+            app, ["next", "--help"], obj=CliContext(json_output=False)
+        )
         assert result.exit_code == 0
         assert "--count" in result.output
         assert "--show-context" in result.output
@@ -118,7 +126,9 @@ class TestWriteNext:
 
     def test_next_llm_error(self, cli_runner, mock_writing_service):
         """LLM 错误映射为 LLM_ERROR 信封."""
-        mock_writing_service.generate_chapter.side_effect = LLMRequestError("provider down")
+        mock_writing_service.generate_chapter.side_effect = LLMRequestError(
+            "provider down"
+        )
         result = cli_runner.invoke(
             app,
             [
@@ -139,7 +149,9 @@ class TestWriteNext:
 
     def test_generate_renamed_to_next(self, cli_runner):
         """generate 命令已移除（重命名为 next）."""
-        result = cli_runner.invoke(app, ["generate", "--help"], obj=CliContext(json_output=False))
+        result = cli_runner.invoke(
+            app, ["generate", "--help"], obj=CliContext(json_output=False)
+        )
         assert result.exit_code == 2
         assert "No such command" in result.stderr
 

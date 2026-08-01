@@ -88,7 +88,9 @@ def _make_extraction_result(**overrides) -> WorldExtractionResult:
 
 
 class TestWorldCreate:
-    def test_create_json_envelope(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_create_json_envelope(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
         """create --json → 成功信封 + 参数透传（UUID 转换）."""
         mock_world_service.create_setting.return_value = _make_setting(name="灵气复苏")
         result = cli_runner.invoke(
@@ -123,7 +125,15 @@ class TestWorldCreate:
         mock_world_service.create_setting.return_value = _make_setting(name="灵气复苏")
         result = cli_runner.invoke(
             app,
-            ["create", "--project-id", str(PID), "--name", "灵气复苏", "--category", "设定"],
+            [
+                "create",
+                "--project-id",
+                str(PID),
+                "--name",
+                "灵气复苏",
+                "--category",
+                "设定",
+            ],
             obj=CliContext(json_output=False),
         )
         assert result.exit_code == 0
@@ -131,7 +141,9 @@ class TestWorldCreate:
         assert "灵气复苏" in result.output
         assert "设定" in result.output
 
-    def test_create_name_conflict(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_create_name_conflict(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
         """同名条目 → VALIDATION_ERROR 信封 + 退出码 1."""
         mock_world_service.create_setting.side_effect = WorldNameConflictError()
         result = cli_runner.invoke(
@@ -171,7 +183,9 @@ class TestWorldList:
         assert result.exit_code == 0
         assert "暂无条目" in result.output
 
-    def test_list_params_passthrough(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_list_params_passthrough(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
         """list 搜索/类别/排序/分页参数透传."""
         mock_world_service.list_settings.return_value = ([], 0)
         result = cli_runner.invoke(
@@ -222,7 +236,9 @@ class TestWorldCategories:
         assert data["data"][1] == {"category": "地理", "count": 1}
         mock_world_service.list_categories.assert_awaited_once_with(project_id=PID)
 
-    def test_categories_human_empty(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_categories_human_empty(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
         """空类别人类模式 → 暂无类别."""
         mock_world_service.list_categories.return_value = []
         result = cli_runner.invoke(
@@ -250,7 +266,9 @@ class TestWorldGet:
         assert data["data"]["name"] == "灵气复苏"
         mock_world_service.get_setting.assert_awaited_once_with(setting_id=sid)
 
-    def test_get_not_found_json(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_get_not_found_json(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
         """条目不存在 → NOT_FOUND 错误信封 + 退出码 1."""
         mock_world_service.get_setting.return_value = None
         result = cli_runner.invoke(
@@ -281,10 +299,20 @@ class TestWorldUpdate:
     def test_update_json(self, cli_runner, mock_world_service, mock_create_tables):
         """update --json → 成功信封 + WorldUpdate 透传（仅传入字段）."""
         sid = uuid.uuid4()
-        mock_world_service.update_setting.return_value = _make_setting(name="灵气复苏·改")
+        mock_world_service.update_setting.return_value = _make_setting(
+            name="灵气复苏·改"
+        )
         result = cli_runner.invoke(
             app,
-            ["update", "--id", str(sid), "--name", "灵气复苏·改", "--content", "新内容"],
+            [
+                "update",
+                "--id",
+                str(sid),
+                "--name",
+                "灵气复苏·改",
+                "--content",
+                "新内容",
+            ],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
@@ -298,7 +326,9 @@ class TestWorldUpdate:
         assert upd.content == "新内容"
         assert "category" not in upd.model_fields_set
 
-    def test_update_clear_category(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_update_clear_category(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
         """update --category \"\" → 显式清除类别（category=\"\" 进入 update）."""
         sid = uuid.uuid4()
         mock_world_service.update_setting.return_value = _make_setting()
@@ -328,7 +358,9 @@ class TestWorldUpdate:
 
 
 class TestWorldDelete:
-    def test_delete_force_json(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_delete_force_json(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
         """delete --force --json → 成功信封 + 软删除（force=False）."""
         sid = uuid.uuid4()
         mock_world_service.delete_setting.return_value = True
@@ -341,7 +373,9 @@ class TestWorldDelete:
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"]["deleted"] is True
-        mock_world_service.delete_setting.assert_awaited_once_with(setting_id=sid, force=False)
+        mock_world_service.delete_setting.assert_awaited_once_with(
+            setting_id=sid, force=False
+        )
 
     def test_delete_permanent_passes_force(
         self, cli_runner, mock_world_service, mock_create_tables
@@ -355,9 +389,13 @@ class TestWorldDelete:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
-        mock_world_service.delete_setting.assert_awaited_once_with(setting_id=sid, force=True)
+        mock_world_service.delete_setting.assert_awaited_once_with(
+            setting_id=sid, force=True
+        )
 
-    def test_delete_confirm_yes(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_delete_confirm_yes(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
         """无 --force 人类模式 → 交互确认，回答 y 继续删除."""
         sid = uuid.uuid4()
         mock_world_service.delete_setting.return_value = True
@@ -369,9 +407,13 @@ class TestWorldDelete:
         )
         assert result.exit_code == 0
         assert "已删除" in result.output
-        mock_world_service.delete_setting.assert_awaited_once_with(setting_id=sid, force=False)
+        mock_world_service.delete_setting.assert_awaited_once_with(
+            setting_id=sid, force=False
+        )
 
-    def test_delete_confirm_no(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_delete_confirm_no(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
         """无 --force 人类模式 → 回答 n 取消，不调用服务."""
         sid = uuid.uuid4()
         result = cli_runner.invoke(
@@ -384,7 +426,9 @@ class TestWorldDelete:
         assert "取消" in result.output
         mock_world_service.delete_setting.assert_not_awaited()
 
-    def test_delete_json_no_force(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_delete_json_no_force(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
         """--json 且无 --force → VALIDATION_ERROR + 退出码 1（F7 §7 约定）."""
         result = cli_runner.invoke(
             app,
@@ -425,7 +469,9 @@ class TestWorldRestore:
         assert data["ok"] is True
         assert data["data"]["name"] == "灵气复苏"
 
-    def test_restore_not_found(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_restore_not_found(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
         """条目不存在 → NOT_FOUND 错误信封 + 退出码 1."""
         mock_world_service.restore_setting.return_value = None
         result = cli_runner.invoke(
@@ -467,7 +513,9 @@ class TestWorldExtract:
         assert req.text == "灵气复苏后，大陆进入修炼时代。"
         assert req.model == "deepseek/deepseek-chat"
 
-    def test_extract_human_summary(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_extract_human_summary(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
         """extract 人类模式 → 可读摘要（新增/更新/警告计数）."""
         mock_world_service.extract.return_value = _make_extraction_result(
             created=[_make_setting(name="灵气复苏"), _make_setting(name="修炼体系")],
@@ -485,7 +533,9 @@ class TestWorldExtract:
         assert "更新 1 个条目" in result.output
         assert "警告 2 条" in result.output
 
-    def test_extract_text_file(self, cli_runner, mock_world_service, mock_create_tables, tmp_path):
+    def test_extract_text_file(
+        self, cli_runner, mock_world_service, mock_create_tables, tmp_path
+    ):
         """extract --text-file → 读取文件内容作为提取文本."""
         text_file = tmp_path / "ch3.txt"
         text_file.write_text("灵气复苏后，大陆进入修炼时代。", encoding="utf-8")
@@ -507,15 +557,27 @@ class TestWorldExtract:
         """--text 与 --text-file 同时传入 → 用法错误退出码 2."""
         result = cli_runner.invoke(
             app,
-            ["extract", "--project-id", str(PID), "--text", "正文", "--text-file", "ch3.txt"],
+            [
+                "extract",
+                "--project-id",
+                str(PID),
+                "--text",
+                "正文",
+                "--text-file",
+                "ch3.txt",
+            ],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 2
         mock_world_service.extract.assert_not_awaited()
 
-    def test_extract_llm_error(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_extract_llm_error(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
         """LLM 输出无法解析 → LLM_ERROR 错误信封 + 退出码 1."""
-        mock_world_service.extract.side_effect = WorldExtractionError(detail="非法 JSON")
+        mock_world_service.extract.side_effect = WorldExtractionError(
+            detail="非法 JSON"
+        )
         result = cli_runner.invoke(
             app,
             ["extract", "--project-id", str(PID), "--text", "灵气复苏。"],
@@ -526,7 +588,9 @@ class TestWorldExtract:
         assert data["ok"] is False
         assert data["error"]["code"] == "LLM_ERROR"
 
-    def test_extract_project_not_found(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_extract_project_not_found(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
         """项目不存在 → NOT_FOUND 错误信封 + 退出码 1."""
         mock_world_service.extract.side_effect = ProjectNotFoundError()
         result = cli_runner.invoke(

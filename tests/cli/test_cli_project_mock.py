@@ -21,7 +21,9 @@ def cli_runner():
 @pytest.fixture
 def mock_project_service():
     """Mock ProjectService，绕过数据库."""
-    with patch("inkflow.cli.commands.project.ProjectService", autospec=True) as mock_cls:
+    with patch(
+        "inkflow.cli.commands.project.ProjectService", autospec=True
+    ) as mock_cls:
         mock_instance = AsyncMock()
         mock_cls.return_value = mock_instance
         yield mock_instance
@@ -51,7 +53,9 @@ def _make_project(**overrides) -> Project:
 
 
 class TestProjectCreate:
-    def test_create_json_envelope(self, cli_runner, mock_project_service, mock_create_tables):
+    def test_create_json_envelope(
+        self, cli_runner, mock_project_service, mock_create_tables
+    ):
         """--json 模式创建项目 → 信封."""
         from inkflow.cli.commands.project import app
 
@@ -65,7 +69,9 @@ class TestProjectCreate:
         assert data["data"]["name"] == "星辰变"
         assert data["data"]["genre"] == "玄幻"
 
-    def test_create_human_mode(self, cli_runner, mock_project_service, mock_create_tables):
+    def test_create_human_mode(
+        self, cli_runner, mock_project_service, mock_create_tables
+    ):
         """人类模式创建项目."""
         from inkflow.cli.commands.project import app
 
@@ -83,18 +89,24 @@ class TestProjectGet:
         from inkflow.cli.commands.project import app
 
         mock_project_service.get.return_value = _make_project()
-        result = cli_runner.invoke(app, ["get", "--id", "1"], obj=CliContext(json_output=True))
+        result = cli_runner.invoke(
+            app, ["get", "--id", "1"], obj=CliContext(json_output=True)
+        )
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"]["name"] == "星辰变"
 
-    def test_get_not_found_json(self, cli_runner, mock_project_service, mock_create_tables):
+    def test_get_not_found_json(
+        self, cli_runner, mock_project_service, mock_create_tables
+    ):
         """项目不存在 → 退出码 1 + 错误信封."""
         from inkflow.cli.commands.project import app
 
         mock_project_service.get.return_value = None
-        result = cli_runner.invoke(app, ["get", "--id", "999"], obj=CliContext(json_output=True))
+        result = cli_runner.invoke(
+            app, ["get", "--id", "999"], obj=CliContext(json_output=True)
+        )
         assert result.exit_code == 1
         data = json.loads(result.stdout)
         assert data["ok"] is False
@@ -114,7 +126,9 @@ class TestProjectList:
         assert isinstance(data["data"], list)
         assert data["data"][0]["name"] == "星辰变"
 
-    def test_list_human_empty(self, cli_runner, mock_project_service, mock_create_tables):
+    def test_list_human_empty(
+        self, cli_runner, mock_project_service, mock_create_tables
+    ):
         """空列表人类模式."""
         from inkflow.cli.commands.project import app
 

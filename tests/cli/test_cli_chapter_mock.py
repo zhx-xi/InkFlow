@@ -19,7 +19,9 @@ def cli_runner():
 
 @pytest.fixture
 def mock_chapter_service():
-    with patch("inkflow.cli.commands.chapter.ChapterService", autospec=True) as mock_cls:
+    with patch(
+        "inkflow.cli.commands.chapter.ChapterService", autospec=True
+    ) as mock_cls:
         mock_instance = AsyncMock()
         mock_cls.return_value = mock_instance
         yield mock_instance
@@ -111,7 +113,9 @@ class TestChapterGet:
 
 
 class TestVolumeCreate:
-    def test_create_volume_json(self, cli_runner, mock_chapter_service, mock_create_tables):
+    def test_create_volume_json(
+        self, cli_runner, mock_chapter_service, mock_create_tables
+    ):
         """volume create --json 输出 JSON 信封."""
         mock_chapter_service.create_volume.return_value = _make_volume()
         result = cli_runner.invoke(
