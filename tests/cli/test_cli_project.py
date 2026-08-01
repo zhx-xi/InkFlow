@@ -182,13 +182,13 @@ def test_serve_help(isolated_db):
     reason="serve smoke test requires local environment",
 )
 def test_serve_smoke(isolated_db, tmp_path):
-    """serve --no-open 启动后 /health 返回 200 — 仅本地运行."""
+    """serve 启动后 /health 返回 200 — 仅本地运行."""
     backend_dir = os.path.join(os.path.dirname(__file__), "..")
     env = os.environ.copy()
     env["INKFLOW_DATABASE_URL"] = f"sqlite+aiosqlite:///{tmp_path}/test.db"
 
     proc = subprocess.Popen(
-        [sys.executable, "-m", "inkflow", "serve", "--no-open", "--port", "18765"],
+        [sys.executable, "-m", "inkflow", "serve", "--port", "18765"],
         cwd=backend_dir,
         env=env,
         stdout=subprocess.PIPE,
