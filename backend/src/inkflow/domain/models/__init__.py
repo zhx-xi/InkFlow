@@ -55,6 +55,15 @@ from inkflow.domain.models.outline import (
     StoryArcUpdate,
 )
 from inkflow.domain.models.project import Project, ProjectConfig, ProjectCreate, ProjectUpdate
+from inkflow.domain.models.timeline import (
+    ConsistencyReport,
+    TimelineConflict,
+    TimelineEvent,
+    TimelineEventCreate,
+    TimelineEventRef,
+    TimelineEventUpdate,
+    TimelineView,
+)
 from inkflow.domain.models.world import (
     ExtractedWorldSetting,
     WorldCreate,
@@ -137,4 +146,12 @@ __all__ = [
     "GeneratedArc",
     "OutlineGenerateRequest",
     "OutlineGenerationResult",
+    # ── timeline (F12) ──
+    "TimelineEvent",
+    "TimelineEventCreate",
+    "TimelineEventUpdate",
+    "TimelineEventRef",
+    "TimelineConflict",
+    "ConsistencyReport",
+    "TimelineView",
 ]
