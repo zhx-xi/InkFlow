@@ -8,6 +8,7 @@ from inkflow.infrastructure.database.models.character import (
     CharacterRelationORM,
 )
 from inkflow.infrastructure.database.models.context import ChapterSummaryORM
+from inkflow.infrastructure.database.models.foreshadowing import ForeshadowingORM
 from inkflow.infrastructure.database.models.outline import (
     OutlineORM,
     PlotPointORM,
@@ -24,6 +25,7 @@ __all__ = [
     "AgentExecutionORM",
     "AgentStageResultORM",
     "ChapterSummaryORM",
+    "ForeshadowingORM",
     "CharacterORM",
     "CharacterGroupORM",
     "CharacterRelationORM",
