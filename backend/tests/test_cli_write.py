@@ -21,8 +21,13 @@ _EXISTING_CONTENT = (
 
 
 @pytest.fixture
-def cli_runner():
-    return CliRunner()
+def cli_runner(monkeypatch):
+    # CI 彩色环境（GITHUB_ACTIONS/FORCE_COLOR）下，Typer 0.27 在 import 时把
+    # rich_utils.FORCE_TERMINAL 固定为 True，help 渲染强制带样式，选项名
+    # "--count" 被高亮器拆成 ANSI span（"-count"），导致文本断言脆弱。
+    # 禁用强制终端渲染 + NO_COLOR，恢复无样式输出。
+    monkeypatch.setattr("typer.rich_utils.FORCE_TERMINAL", False)
+    return CliRunner(env={"NO_COLOR": "1"})
 
 
 @pytest.fixture
