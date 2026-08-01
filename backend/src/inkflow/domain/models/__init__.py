@@ -38,6 +38,12 @@ from inkflow.domain.models.context import (
     DroppedItem,
     TokenBudgetConfig,
 )
+from inkflow.domain.models.foreshadowing import (
+    Foreshadowing,
+    ForeshadowingCreate,
+    ForeshadowingStatus,
+    ForeshadowingUpdate,
+)
 from inkflow.domain.models.outline import (
     GeneratedArc,
     GeneratedOutline,
@@ -154,4 +160,9 @@ __all__ = [
     "TimelineConflict",
     "ConsistencyReport",
     "TimelineView",
+    # ── foreshadowing (F13) ──
+    "Foreshadowing",
+    "ForeshadowingCreate",
+    "ForeshadowingUpdate",
+    "ForeshadowingStatus",
 ]

@@ -10,6 +10,7 @@ from inkflow.api.routers import (
     chapter,
     characters,
     context,
+    foreshadowings,
     outlines,
     project,
     timeline,
@@ -61,6 +62,7 @@ app.include_router(context.router)
 app.include_router(world_settings.router)
 app.include_router(outlines.router)
 app.include_router(timeline.router)
+app.include_router(foreshadowings.router)
 
 
 # ---- 健康检查 ----

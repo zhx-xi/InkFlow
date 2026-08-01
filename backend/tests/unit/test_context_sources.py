@@ -2,7 +2,9 @@
 
 测试范围 (spec §3.2 / §4.3):
     - 大纲数据源: project.config.extra["outline"] 存在 / 缺失
-    - 角色 / 世界 / 伏笔数据源: Phase 1 返回空列表（F8/F9/F14 落地后替换）
+    - 角色 / 世界数据源: Phase 1 返回空列表（F9/F10 落地后替换，ADR-019 编号口径）
+    - 伏笔数据源: 已由 F13 实现（ForeshadowingSource），测试见
+      test_foreshadowing_source.py（spec §5.3/§9）
 """
 
 from __future__ import annotations
@@ -15,7 +17,6 @@ from inkflow.domain.models.context import ContextItem, ContextSourceType
 from inkflow.domain.models.project import Project, ProjectConfig
 from inkflow.infrastructure.context.sources import (
     CharacterSettingSource,
-    ForeshadowingSource,
     ProjectConfigOutlineSource,
     WorldSettingSource,
 )
@@ -72,7 +73,7 @@ class TestPhase1EmptySources:
     """Phase 1 空实现 — 返回空列表，机制与注入格式先行."""
 
     async def test_character_setting_returns_empty(self) -> None:
-        """角色设定数据源返回空列表（F8 Phase 2 落地）."""
+        """角色设定数据源返回空列表（F9 Phase 2 落地）."""
         source = CharacterSettingSource()
 
         items = await source.collect(uuid.UUID(int=1), uuid.UUID(int=2))
@@ -80,16 +81,8 @@ class TestPhase1EmptySources:
         assert items == []
 
     async def test_world_setting_returns_empty(self) -> None:
-        """世界设定数据源返回空列表（F9 Phase 2 落地）."""
+        """世界设定数据源返回空列表（F10 Phase 2 落地）."""
         source = WorldSettingSource()
-
-        items = await source.collect(uuid.UUID(int=1), uuid.UUID(int=2))
-
-        assert items == []
-
-    async def test_foreshadowing_returns_empty(self) -> None:
-        """伏笔管理数据源返回空列表（F14 Phase 2 落地）."""
-        source = ForeshadowingSource()
 
         items = await source.collect(uuid.UUID(int=1), uuid.UUID(int=2))
 

@@ -13,6 +13,7 @@ from inkflow.domain.services._world_extractor import WorldExtractor
 from inkflow.domain.services.chapter_service import ChapterService
 from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.context_service import ContextService
+from inkflow.domain.services.foreshadowing_service import ForeshadowingService
 from inkflow.domain.services.outline_service import OutlineService
 from inkflow.domain.services.project_service import ProjectService
 from inkflow.domain.services.summary_service import SummaryService
@@ -24,6 +25,9 @@ from inkflow.infrastructure.database.repositories.chapter_repo import (
 )
 from inkflow.infrastructure.database.repositories.character_repo import (
     SQLiteCharacterRepository,
+)
+from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
+    SQLiteForeshadowingRepository,
 )
 from inkflow.infrastructure.database.repositories.outline_repo import (
     SQLiteOutlineRepository,
@@ -90,6 +94,9 @@ def get_context_service(
         ProjectConfigOutlineSource,
         WorldSettingSource,
     )
+    from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
+        SQLiteForeshadowingRepository,
+    )
 
     project_repo = SQLiteProjectRepository(db)
     summary_repo = SQLiteSummaryRepository(db)
@@ -98,7 +105,7 @@ def get_context_service(
         ContextSourceType.OUTLINE: ProjectConfigOutlineSource(project_repo),
         ContextSourceType.CHARACTER_SETTING: CharacterSettingSource(),
         ContextSourceType.WORLD_SETTING: WorldSettingSource(),
-        ContextSourceType.FORESHADOWING: ForeshadowingSource(),
+        ContextSourceType.FORESHADOWING: ForeshadowingSource(SQLiteForeshadowingRepository(db)),
     }
 
     return ContextService(
@@ -194,4 +201,20 @@ def get_timeline_service(
     return TimelineService(
         repository=SQLiteTimelineRepository(db),
         project_repo=SQLiteProjectRepository(db),
+    )
+
+
+def get_foreshadowing_service(
+    db: AsyncSession,
+) -> ForeshadowingService:
+    """获取 ForeshadowingService 实例（伏笔仓储 + F1 项目仓储 + F12 时间线仓储）.
+
+    装配 SQLiteForeshadowingRepository（伏笔 CRUD + 状态机），项目存在性
+    校验使用 F1 项目仓储，event_id 事件锚点校验复用 F12 时间线事件仓储
+    （镜像 get_timeline_service 模式）。
+    """
+    return ForeshadowingService(
+        repository=SQLiteForeshadowingRepository(db),
+        project_repo=SQLiteProjectRepository(db),
+        timeline_repo=SQLiteTimelineRepository(db),
     )

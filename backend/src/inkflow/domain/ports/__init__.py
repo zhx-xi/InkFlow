@@ -19,6 +19,7 @@
     - outline_errors: 大纲管理异常（F11）
     - timeline_errors: 时间线管理异常（F12）
     - timeline_repository: 时间线事件仓储（F12）
+    - foreshadowing_errors: 伏笔管理异常（F13）
 """
 
 from inkflow.domain.ports.agent_pipeline import (
@@ -50,6 +51,14 @@ from inkflow.domain.ports.context_errors import (
 )
 from inkflow.domain.ports.context_provider import ContextProviderProtocol
 from inkflow.domain.ports.context_sources import ContextSourceProtocol
+from inkflow.domain.ports.foreshadowing_errors import (
+    EventNotFoundError,
+    EventNotInProjectError,
+    ForeshadowingNameConflictError,
+    ForeshadowingNotFoundError,
+    ForeshadowingServiceError,
+)
+from inkflow.domain.ports.foreshadowing_repository import ForeshadowingRepositoryProtocol
 from inkflow.domain.ports.llm_client import (
     ChatMessage,
     ChatResponse,
@@ -169,4 +178,11 @@ __all__ = [
     "TimelineRepositoryProtocol",
     "TimelineServiceError",
     "TimelineNotFoundError",
+    # ── foreshadowing (F13) ──
+    "ForeshadowingRepositoryProtocol",
+    "ForeshadowingServiceError",
+    "ForeshadowingNotFoundError",
+    "ForeshadowingNameConflictError",
+    "EventNotFoundError",
+    "EventNotInProjectError",
 ]
