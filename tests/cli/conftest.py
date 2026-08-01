@@ -40,9 +40,12 @@ def isolated_db(monkeypatch, tmp_path):
 
 
 def _parse_json_output(output: str):
-    """从 CliRunner 输出中提取 JSON."""
+    """从 CliRunner 输出中提取 JSON，信封格式时返回 data 部分."""
     text = output.strip()
     for i, ch in enumerate(text):
         if ch in ("[", "{"):
-            return json.loads(text[i:])
+            parsed = json.loads(text[i:])
+            if isinstance(parsed, dict) and "ok" in parsed and "data" in parsed:
+                return parsed["data"]
+            return parsed
     raise ValueError(f"No JSON found: {text[:100]!r}")

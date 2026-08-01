@@ -56,13 +56,14 @@ def set_config(
 
     # 类型转换与校验
     try:
+        parsed: float | int | str
         if field_name in ("llm_temperature", "context_max_ratio"):
             parsed = float(value)
         elif field_name in ("server_port", "context_default_window"):
             parsed = int(value)
         else:
             parsed = value
-        InkFlowConfig(**{field_name: parsed})
+        InkFlowConfig.model_validate({field_name: parsed})
     except (ValueError, ValidationError) as e:
         print_error(cli_ctx, "CONFIG_ERROR", f"值不合法: {e}")
         return

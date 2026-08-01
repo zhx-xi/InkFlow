@@ -60,7 +60,10 @@ def create(
             )
 
     project = _run_async(_impl())
-    print_result(cli_ctx, _project_to_dict(project))
+    if cli_ctx.json_output:
+        print_result(cli_ctx, _project_to_dict(project))
+    else:
+        typer.echo(f"✅ 项目创建成功: [{project.name}] ({project.genre.value})")
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +119,16 @@ def get(
     project = _run_async(_impl())
     if project is None:
         print_error(cli_ctx, "NOT_FOUND", "项目不存在")
-    print_result(cli_ctx, _project_to_dict(project))
+    if cli_ctx.json_output:
+        print_result(cli_ctx, _project_to_dict(project))
+    else:
+        typer.echo(f"ID:         {project.id}")
+        typer.echo(f"名称:       {project.name}")
+        typer.echo(f"分类:       {project.genre.value}")
+        typer.echo(f"语言:       {project.language}")
+        typer.echo(f"目标字数:   {project.target_words}")
+        typer.echo(f"创建时间:   {project.created_at}")
+        typer.echo(f"更新时间:   {project.updated_at}")
 
 
 # ---------------------------------------------------------------------------
@@ -178,4 +190,7 @@ def restore(
     project = _run_async(_impl())
     if project is None:
         print_error(cli_ctx, "NOT_FOUND", "项目不存在")
-    print_result(cli_ctx, _project_to_dict(project))
+    if cli_ctx.json_output:
+        print_result(cli_ctx, _project_to_dict(project))
+    else:
+        typer.echo(f"✅ 项目已恢复: [{project.name}] ({project.genre.value})")

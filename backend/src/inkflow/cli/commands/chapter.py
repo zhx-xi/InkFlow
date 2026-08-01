@@ -40,7 +40,10 @@ def create_vol(
             return await ChapterService(s).create_volume(uuid.UUID(project_id), title, order)
 
     vol = _run(_impl())
-    print_result(cli_ctx, vol.model_dump(mode="json"))
+    if cli_ctx.json_output:
+        print_result(cli_ctx, vol.model_dump(mode="json"))
+    else:
+        typer.echo(f"✅ 卷创建成功: [{vol.title}]")
 
 
 @volume_app.command("list")
@@ -107,7 +110,10 @@ def create_ch(
             )
 
     ch = _run(_impl())
-    print_result(cli_ctx, ch.model_dump(mode="json"))
+    if cli_ctx.json_output:
+        print_result(cli_ctx, ch.model_dump(mode="json"))
+    else:
+        typer.echo(f"✅ 章节创建: [{ch.title}] ({ch.word_count}字)")
 
 
 @chapter_app.command("list")

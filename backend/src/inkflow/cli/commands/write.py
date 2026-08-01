@@ -75,12 +75,20 @@ def next(
                     style_hint=style or None,
                 )
                 results = [await service.generate_chapter(request) for _ in range(count)]
-                data = (
-                    results[0].model_dump(mode="json")
-                    if count == 1
-                    else [r.model_dump(mode="json") for r in results]
-                )
-                print_result(cli_ctx, data)
+                if cli_ctx.json_output:
+                    data = (
+                        results[0].model_dump(mode="json")
+                        if count == 1
+                        else [r.model_dump(mode="json") for r in results]
+                    )
+                    print_result(cli_ctx, data)
+                else:
+                    r0 = results[0]
+                    status = "✅" if r0.format_valid else "⚠️"
+                    typer.echo(
+                        f"{status} 章节生成成功: {r0.word_count} 字 "
+                        f"(重试 {r0.retry_count} 次, {r0.model})"
+                    )
                 if show_context and not cli_ctx.json_output:
                     typer.echo(_SHOW_CONTEXT_NOTE)
         except LLMRequestError as exc:
@@ -120,7 +128,10 @@ def continue_(
                     context=context,
                 )
                 result = await service.continue_writing(request)
-                print_result(cli_ctx, result.model_dump(mode="json"))
+                if cli_ctx.json_output:
+                    print_result(cli_ctx, result.model_dump(mode="json"))
+                else:
+                    typer.echo(f"✅ 续写完成: {result.word_count} 字 ({result.model})")
         except LLMRequestError as exc:
             print_error(cli_ctx, "LLM_ERROR", f"LLM 调用失败: {exc}")
 
@@ -157,7 +168,10 @@ def revise(
                     target_range=range_,
                 )
                 result = await service.revise_content(request)
-                print_result(cli_ctx, result.model_dump(mode="json"))
+                if cli_ctx.json_output:
+                    print_result(cli_ctx, result.model_dump(mode="json"))
+                else:
+                    typer.echo(f"✅ 修订完成: {result.word_count} 字 ({result.model})")
         except LLMRequestError as exc:
             print_error(cli_ctx, "LLM_ERROR", f"LLM 调用失败: {exc}")
 
