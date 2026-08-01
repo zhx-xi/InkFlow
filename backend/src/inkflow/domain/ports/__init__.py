@@ -18,6 +18,7 @@
     - outline_repository: 大纲/情节点/弧线仓储（F11）
     - outline_errors: 大纲管理异常（F11）
     - timeline_errors: 时间线管理异常（F12）
+    - timeline_repository: 时间线事件仓储（F12）
 """
 
 from inkflow.domain.ports.agent_pipeline import (
@@ -83,6 +84,7 @@ from inkflow.domain.ports.timeline_errors import (
     TimelineNotFoundError,
     TimelineServiceError,
 )
+from inkflow.domain.ports.timeline_repository import TimelineRepositoryProtocol
 from inkflow.domain.ports.vector_store import (
     EntityType,
     IndexableEntity,
@@ -164,6 +166,7 @@ __all__ = [
     "ArcNameConflictError",
     "ArcNotInProjectError",
     # ── timeline (F12) ──
+    "TimelineRepositoryProtocol",
     "TimelineServiceError",
     "TimelineNotFoundError",
 ]
