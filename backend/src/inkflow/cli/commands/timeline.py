@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from typing import Any
 
 import typer
 from pydantic import ValidationError
@@ -360,7 +361,7 @@ def update_event_cmd(
     cli_ctx: CliContext = ctx.obj
     eid = _parse_uuid(cli_ctx, event_id, "事件不存在")
 
-    update_fields: dict[str, object] = {}
+    update_fields: dict[str, Any] = {}
     if title is not None:
         update_fields["title"] = title
     if description is not None:
