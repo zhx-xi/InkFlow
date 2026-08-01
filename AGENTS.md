@@ -13,11 +13,24 @@
 | 维度 | 说明 |
 |------|------|
 | **团队** | 单人开发 |
-| **时间线** | SemVer 版本里程碑（ADR-019）：0.1.0 ✅ → 0.2.0~0.6.0 → **1.0.0 = 本地完全可用**（后端+CLI+UI）；对应 PRD W10-W24 周计划 |
-| **部署模式** | 本地优先（SQLite，免认证），Phase 4+ 迁移云端 |
-| **三界面** | CLI（Typer）+ REST API（FastAPI）+ 未来 MCP Server |
+| **时间线** | SemVer 版本里程碑（ADR-019 v2）：0.1.0 ✅ → 0.2.0 🔄（F9-F13 已交付）→ 0.3.0 GUI（F19 提前 + F23 SSE 提前）→ 0.4.0 skills 包+打包 → 0.5.0 MCP+会话+daemon → 0.6.0 导出+搜索 → **1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）** → **2.0.0 = 云端**；对应 PRD W10-W24 周计划（明细见下方里程碑表） |
+| **部署模式** | 本地优先（SQLite，免认证）；**2.0.0 云端里程碑**：云存档/异地写作（PostgreSQL + JWT + BYOK，无 CRDT），GUI/CLI 远程模式连接云端 |
+| **多界面** | GUI（Electron，React 复用）+ CLI（Typer）+ REST API（FastAPI：本地内核通用通信契约，亦为云端用户 API 同一契约）+ MCP Server（stdio 直连 domain）（+ 云端 Web/Admin 后台） |
 | **工作流** | SDD + TDD：先写 spec → 再写测试（RED）→ 写代码（GREEN）→ 重构 |
 | **仓库** | `https://github.com/zhx-xi/InkFlow` |
+
+### 里程碑（ADR-019 v2，2026-08-02 产品形态决策重排，Issue #65）
+
+| 版本 | 内容 |
+|------|------|
+| 0.1.0 ✅ | F1-F8 + 云端 Protocol（Phase 1 Gate 7/7，已交付） |
+| 0.2.0 🔄 | F9-F16 创作工具链（F9-F13 ✅ 已交付，F14-F16 待做） |
+| 0.3.0 | F19 GUI（Electron 壳 + 内核进程化）· F23 SSE 流式（提前） |
+| 0.4.0 | skills 包（三通道分发）· F19 打包（exe / 安装包 / 便携 ZIP） |
+| 0.5.0 | F20 MCP（stdio 直连 domain）· F24 会话 · F25 daemon |
+| 0.6.0 | F21 导出 · F22 全文搜索 |
+| 1.0.0 🎉 | **本地完全可用 = CLI + GUI + skills + MCP** + 跨平台 + 文档 + 全量验收 |
+| 2.0.0 ☁️ | 云端：F18 云 Web（移出单机）· 用户 API · Admin 后台 · GUI 远程模式 |
 
 ### Phase 1 功能（F1-F8，已完成）
 
@@ -45,6 +58,21 @@
 | F16 | `style_service` | 风格检测（风格指纹/AI 痕迹/词汇分析） | 计划中 |
 
 > 模块类型谱系：F9/F10 提取型 → F11 生成型 → F12 确定性检查型（无 LLM）→ F13 状态追踪+F6 注入型（无 LLM，首个自带 F6 数据源替换）。F14-F16 实施时先对照对应变体样板（`specs/f12-timeline-service/spec.md` 为最新完整模板；F13 另含 F6 集成模式 `specs/f13-foreshadowing-service/spec.md` §5）。
+
+### Phase 3 功能（F18-F25，2026-08-02 形态决策后归属调整）
+
+| # | 模块 | 说明 | 里程碑 |
+|---|------|------|--------|
+| F18 | `web_ui` | Web UI（React，前端一套两用）— **云端专属界面**（移出单机；本地界面由 GUI 承接） | 2.0.0 |
+| F19 | `gui` + 打包 | GUI（Electron 壳 + 内核进程化，React 复用）+ 打包分发（PyInstaller exe / 安装包 / 便携 ZIP） | 0.3.0 GUI / 0.4.0 打包 |
+| F20 | `mcp_server` | MCP Server（stdio 直连 domain） | 0.5.0 |
+| F21 | `export_service` | 导出服务（EPUB/MD/TXT/DOCX ≥3 格式） | 0.6.0 |
+| F22 | `search_service` | 全文搜索 | 0.6.0 |
+| F23 | SSE 流式 | SSE 流式输出（**提前**：GUI 流式写作依赖，D3） | 0.3.0 |
+| F24 | `session_service` | 会话管理（写作会话/恢复） | 0.5.0 |
+| F25 | `daemon_service` | daemon 后台写作（本地；云端无常驻任务） | 0.5.0 |
+
+> F17 空置（PRD §6.2 标题残留编号）。F18-F25 版本归属以 ADR-019 v2 为准（PRD §6.3/6.4 原归属已被形态决策重排）。
 
 ---
 
@@ -219,9 +247,9 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 | ADR | 决策 | 理由 |
 |-----|------|------|
 | [ADR-001](adr/ADR-001.md) | 架构风格：模块化单体 | 单人团队，避免微服务运维负担；接口隔离保未来拆分 |
-| [ADR-002](adr/ADR-002.md) | 分层：Clean/Hexagonal | 三界面共享 Service；依赖方向指向 Domain |
+| [ADR-002](adr/ADR-002.md) | 分层：Clean/Hexagonal | 多界面共享 Service；依赖方向指向 Domain |
 | [ADR-003](adr/ADR-003.md) | 数据库：SQLite (async) + Repository | 本地优先，零配置；Repository 隔离，未来切 PostgreSQL |
-| [ADR-004](adr/ADR-004.md) | 数据契约：Pydantic v2 全栈 | 一份模型三界面复用；类型安全 |
+| [ADR-004](adr/ADR-004.md) | 数据契约：Pydantic v2 全栈 | 一份模型多界面复用；类型安全 |
 | [ADR-005v2](adr/ADR-005v2.md) | LLM Provider：**LangChain ChatLiteLLM**（v2.0） | 保留 100+ Provider 覆盖 + 获得 LangChain callback/LangSmith/LCEL 生态 |
 | [ADR-006v2](adr/ADR-006v2.md) | Agent 编排：**LangGraph StateGraph**（v2.0） | Phase 1 顺序链、Phase 2 DAG；LangSmith 可视化；内置 checkpointing |
 | [ADR-013](adr/ADR-013.md) | RAG：**LangChain Chroma + BGE**（Phase 2） | 本地向量库 + 中文 SOTA Embedding；长篇小说一致性保障 |
