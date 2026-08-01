@@ -7,6 +7,7 @@ from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.context_service import ContextService
 from inkflow.domain.services.outline_service import OutlineService
 from inkflow.domain.services.summary_service import SummaryService
+from inkflow.domain.services.timeline_service import TimelineService
 from inkflow.domain.services.world_service import WorldService
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "OutlineGenerator",
     "OutlineService",
     "SummaryService",
+    "TimelineService",
     "WorldExtractor",
     "WorldService",
 ]
