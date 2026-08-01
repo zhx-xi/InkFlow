@@ -16,6 +16,7 @@ from inkflow.domain.services.context_service import ContextService
 from inkflow.domain.services.outline_service import OutlineService
 from inkflow.domain.services.project_service import ProjectService
 from inkflow.domain.services.summary_service import SummaryService
+from inkflow.domain.services.timeline_service import TimelineService
 from inkflow.domain.services.world_service import WorldService
 from inkflow.domain.services.writing_service import WritingService
 from inkflow.infrastructure.database.repositories.chapter_repo import (
@@ -32,6 +33,9 @@ from inkflow.infrastructure.database.repositories.project_repo import (
 )
 from inkflow.infrastructure.database.repositories.summary_repo import (
     SQLiteSummaryRepository,
+)
+from inkflow.infrastructure.database.repositories.timeline_repo import (
+    SQLiteTimelineRepository,
 )
 from inkflow.infrastructure.database.repositories.world_repo import (
     SQLiteWorldRepository,
@@ -175,5 +179,19 @@ def get_outline_service(
             prompt_manager=LangChainPromptManager(),
             repository=repo,
         ),
+        project_repo=SQLiteProjectRepository(db),
+    )
+
+
+def get_timeline_service(
+    db: AsyncSession,
+) -> TimelineService:
+    """获取 TimelineService 实例（时间线事件仓储 + F1 项目仓储）.
+
+    装配 SQLiteTimelineRepository（事件 CRUD + 双线视图 + 一致性检查），
+    项目存在性校验使用 F1 项目仓储（同 F9/F10/F11 模式）。
+    """
+    return TimelineService(
+        repository=SQLiteTimelineRepository(db),
         project_repo=SQLiteProjectRepository(db),
     )

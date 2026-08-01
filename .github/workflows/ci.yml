@@ -261,6 +261,7 @@ jobs:
                  ../tests/cli/test_cli_character.py `
                  ../tests/cli/test_cli_world.py `
                  ../tests/cli/test_cli_outline.py `
+                 ../tests/cli/test_cli_timeline.py `
                  -v --tb=short
 
   # ── Smoke: health check (fastest) ──

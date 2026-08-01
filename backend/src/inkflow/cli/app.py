@@ -47,6 +47,7 @@ from inkflow.cli.commands import (  # noqa: E402
     character,
     outline,
     project,
+    timeline,
     world,
     write,
 )
@@ -58,6 +59,7 @@ app.add_typer(project.app, name="project")
 app.add_typer(character.app, name="character")
 app.add_typer(world.app, name="world")
 app.add_typer(outline.app, name="outline")
+app.add_typer(timeline.app, name="timeline")
 app.add_typer(chapter.chapter_app, name="chapter")
 app.add_typer(chapter.volume_app, name="volume")
 app.add_typer(write.app, name="write")

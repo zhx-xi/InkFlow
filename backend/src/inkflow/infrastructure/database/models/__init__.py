@@ -14,6 +14,7 @@ from inkflow.infrastructure.database.models.outline import (
     StoryArcORM,
 )
 from inkflow.infrastructure.database.models.project import ProjectORM
+from inkflow.infrastructure.database.models.timeline import TimelineEventORM
 from inkflow.infrastructure.database.models.world import WorldSettingORM
 
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     "OutlineORM",
     "PlotPointORM",
     "StoryArcORM",
+    "TimelineEventORM",
 ]
