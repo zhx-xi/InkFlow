@@ -26,13 +26,15 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: backend/pyproject.toml
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          cache-dependency-path: backend/uv.lock
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --frozen --extra dev
 
       - uses: reviewdog/action-setup@v1
 
@@ -41,7 +43,7 @@ jobs:
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $ruffOutput = ruff check src/ tests/unit/ ../tests/ --output-format=concise
+          $ruffOutput = uv run ruff check src/ tests/unit/ ../tests/ --output-format=concise
           $ruffExit = $LASTEXITCODE
           if ($ruffOutput) {
             $fixed = $ruffOutput `
@@ -53,7 +55,7 @@ jobs:
           if ($ruffExit -ne 0) { exit $ruffExit }
 
       - name: Type check with mypy
-        run: mypy src/ --ignore-missing-imports
+        run: uv run mypy src/ --ignore-missing-imports
 
   # ── Unit tests (fast, no DB, < 10s) ──
   unit-test-backend:
@@ -73,16 +75,18 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: backend/pyproject.toml
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          cache-dependency-path: backend/uv.lock
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --frozen --extra dev
 
       - name: Run unit tests
-        run: pytest tests/unit/ -v --tb=short --cov=inkflow --cov-report=xml
+        run: uv run pytest tests/unit/ -v --tb=short --cov=inkflow --cov-report=xml
 
       - name: Upload coverage
         uses: codecov/codecov-action@v7
@@ -108,17 +112,19 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: backend/pyproject.toml
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          cache-dependency-path: backend/uv.lock
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --frozen --extra dev
 
       - name: Run chapter integration tests
         run: |
-          pytest ../tests/integration/test_chapter_repository.py `
+          uv run pytest ../tests/integration/test_chapter_repository.py `
                  ../tests/integration/test_chapter_service.py `
                  ../tests/api/test_chapter_api.py `
                  ../tests/cli/test_cli_chapter.py `
@@ -142,17 +148,19 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: backend/pyproject.toml
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          cache-dependency-path: backend/uv.lock
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --frozen --extra dev
 
       - name: Run project integration tests
         run: |
-          pytest ../tests/integration/test_project_repository.py `
+          uv run pytest ../tests/integration/test_project_repository.py `
                  ../tests/integration/test_project_service.py `
                  ../tests/api/test_project_api.py `
                  ../tests/cli/test_cli_project.py `
@@ -176,17 +184,19 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: backend/pyproject.toml
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          cache-dependency-path: backend/uv.lock
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --frozen --extra dev
 
       - name: Run writing integration tests
         run: |
-          pytest ../tests/api/test_writing_api.py `
+          uv run pytest ../tests/api/test_writing_api.py `
                  ../tests/cli/test_cli_writing.py `
                  -v --tb=short
 
@@ -208,17 +218,19 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: backend/pyproject.toml
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          cache-dependency-path: backend/uv.lock
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --frozen --extra dev
 
       - name: Run agent integration tests
         run: |
-          pytest ../tests/integration/test_agent_pipeline.py `
+          uv run pytest ../tests/integration/test_agent_pipeline.py `
                  ../tests/api/test_agent_api.py `
                  ../tests/cli/test_cli_agent.py `
                  -v --tb=short
@@ -241,17 +253,19 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: backend/pyproject.toml
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          cache-dependency-path: backend/uv.lock
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --frozen --extra dev
 
       - name: Run CLI integration tests
         run: |
-          pytest ../tests/cli/test_cli_project_mock.py `
+          uv run pytest ../tests/cli/test_cli_project_mock.py `
                  ../tests/cli/test_cli_chapter_mock.py `
                  ../tests/cli/test_cli_write.py `
                  ../tests/cli/test_cli_output.py `
@@ -283,16 +297,18 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: backend/pyproject.toml
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          cache-dependency-path: backend/uv.lock
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --frozen --extra dev
 
       - name: Health check
-        run: pytest ../tests/api/test_health.py -v --tb=short
+        run: uv run pytest ../tests/api/test_health.py -v --tb=short
 
   # ── Build: wheel (all gates pass) ──
   build-backend:
@@ -313,13 +329,15 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: backend/pyproject.toml
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          cache-dependency-path: backend/uv.lock
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build
+        run: uv sync --frozen --extra dev
 
       - name: Build wheel
         shell: pwsh
@@ -330,7 +348,7 @@ jobs:
             (Get-Content pyproject.toml) -replace 'version = "0.1.0"', "version = `"$devVersion`"" | Set-Content pyproject.toml
             Write-Host "PR build: version set to $devVersion"
           }
-          python -m build --wheel
+          uv build --wheel
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v7

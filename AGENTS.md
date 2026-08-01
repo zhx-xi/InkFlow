@@ -267,6 +267,7 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 | [ADR-022](adr/ADR-022.md) | **skills 包**：源码单一真相 + 三通道分发 | CLI `--json` 为 agent 执行契约；零后端代码立即可交付 |
 | [ADR-023](adr/ADR-023.md) | **MCP Server**：stdio + SDK 直连 domain | 与 CLI 共享 service 不共享代码；≥15 工具（F20）；skills 先行、MCP 0.5.0 |
 | [ADR-024](adr/ADR-024.md) | **云架构**：双前缀（user/admin）+ owner_id 隔离 + 拆分预留 | BYOK 云端零存储；skill 白名单+内容审核；pgvector；Sync=云存档/远程在线 |
+| [ADR-025](adr/ADR-025.md) | **依赖锁定**：uv + uv.lock（Python）+ pnpm-lock.yaml 约定（前端） | 供应链加固：全传递依赖 sha256 锁定；CI `uv sync --frozen` 可复现构建 |
 
 **🔴 ADR 治理规则（所有 AI 会话必须遵守）**：
 
@@ -312,10 +313,14 @@ git push origin feat/fX-xxx
 # 4. 在 worktree 中工作
 cd D:\develop\projects\InkFlow-ft\fX-xxx
 
-# 5. 安装开发依赖
+# 5. 安装开发依赖（依赖锁定见 ADR-025：uv + uv.lock）
 cd backend
-pip install -e ".[dev]"
+uv sync --frozen
 ```
+
+**🔴 依赖锁定约定（ADR-025）**：
+- **Python 后端**：`backend/uv.lock` 是唯一真相（锁定全部传递依赖 + sha256）。日常安装/同步一律 `uv sync --frozen`；升级依赖 = 改 pyproject.toml → `uv lock` → 全量测试 → PR 附带 lock 变更。CI 用 `astral-sh/setup-uv@v5` + `uv sync --frozen` + `uv run <cmd>`。
+- **前端（F18/F19 建立时生效）**：必须提交 `pnpm-lock.yaml`（pnpm install 自动生成，锁定全部包 + integrity 哈希）；CI 必须 `pnpm install --frozen-lockfile`（否则 lock 被静默更新 = 没锁）；升级依赖 = 显式 `pnpm update` / 改 package.json 后重新生成 lock，PR 附带 lock 变更。
 
 ### 5.3 TDD 循环（RED-GREEN-REFACTOR）
 
@@ -566,7 +571,7 @@ AI 编码助手在开始任何工作前，应**按顺序**阅读以下文件：
 | 7 | **忘记 `from __future__ import annotations`** | 所有新文件必须加 |
 | 8 | **软删除后 get() 仍返回数据** | Repository.get() 必须过滤 `is_deleted=False` |
 | 9 | **Protocol 中直接使用 LangChain 类型** | `domain/ports/` 的 Protocol 只能用 Python 标准类型 + 自定义 dataclass |
-| 10 | **LangChain 版本升级破坏兼容** | pip install 时 pyproject.toml 的 `<0.4.0` 上限保护；手动升级需跑全量测试 |
+| 10 | **LangChain 版本升级破坏兼容** | `uv lock` 时 pyproject.toml 的 `<2.0.0` 上限保护；手动升级需显式 `uv lock` 重新解析 + 跑全量测试 |
 | 11 | **单元 + 集成测试不能放在同一命令** | 两个 `tests/` 目录（backend 和顶层）有命名冲突，必须分开跑 |
 | 12 | **CI job 名带 `-backend` 后缀** | 前端接入后会有 `-frontend` 后缀，新增 job 时注意命名约定 |
 | 13 | **Issue/PR 完成后检查配置同步** | 每个 Issue 完成后检查 AGENTS.md、ADR、pyproject.toml 等文件是否过时 |
