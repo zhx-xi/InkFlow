@@ -41,12 +41,13 @@ jobs:
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $ruffOutput = ruff check src/ tests/unit/ ../tests/ --output-format=concise
+          $ruffOutput = ruff check src/ tests/unit/ tests/test_cli_*.py ../tests/ --output-format=concise
           $ruffExit = $LASTEXITCODE
           if ($ruffOutput) {
             $fixed = $ruffOutput `
               -replace '^src/', 'backend/src/' `
               -replace '^tests/unit/', 'backend/tests/unit/' `
+              -replace '^tests/test_cli_', 'backend/tests/test_cli_' `
               -replace '^\.\./tests/', 'tests/'
             $fixed | reviewdog -efm='%f:%l:%c: %m' -reporter=github-pr-review -level=warning -name=ruff -tee
           }
@@ -223,6 +224,46 @@ jobs:
                  ../tests/cli/test_cli_agent.py `
                  -v --tb=short
 
+  # ── Integration: CLI（backend/tests/ 根目录全部 CLI 测试，F9-F11 覆盖盲区修复 #59）──
+  integration-cli-backend:
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run CLI integration tests
+        run: |
+          pytest tests/test_cli_project.py `
+                 tests/test_cli_chapter.py `
+                 tests/test_cli_write.py `
+                 tests/test_cli_output.py `
+                 tests/test_cli_serve.py `
+                 tests/test_cli_config.py `
+                 tests/test_cli_llm.py `
+                 tests/test_cli_character.py `
+                 tests/test_cli_world.py `
+                 tests/test_cli_outline.py `
+                 -v --tb=short
+
   # ── Smoke: health check (fastest) ──
   smoke-backend:
     permissions:
@@ -254,7 +295,7 @@ jobs:
 
   # ── Build: wheel (all gates pass) ──
   build-backend:
-    needs: [lint-backend, unit-test-backend, integration-chapter-backend, integration-project-backend, integration-writing-backend, integration-agent-backend, smoke-backend]
+    needs: [lint-backend, unit-test-backend, integration-chapter-backend, integration-project-backend, integration-writing-backend, integration-agent-backend, integration-cli-backend, smoke-backend]
     permissions:
       contents: read
     runs-on: windows-latest
