@@ -31,6 +31,21 @@
 | F6 | `context_service` | 上下文管理（角色/世界观/伏笔/时间线） |
 | F7 | `cli_interface` | CLI 命令行接口（`inkflow` 命令） |
 
+### Phase 2 功能（F9-F16，0.2.0 创作工具链）
+
+| # | 模块 | 说明 | 状态 |
+|---|------|------|------|
+| F9 | `character_service` | 角色管理（档案/关系图谱/分组 + AI 提取） | ✅ 已完成（PR #56） |
+| F10 | `world_service` | 世界观管理（条目/分类汇总 + AI 提取） | ✅ 已完成（PR #57） |
+| F11 | `outline_service` | 大纲管理（大纲/情节点/弧线 + AI 生成） | ✅ 已完成（PR #58） |
+| F12 | `timeline_service` | 时间线管理（事件/叙事双时间线 + 一致性检查，无 LLM） | ✅ 已完成（PR #63） |
+| F13 | `foreshadowing_service` | 伏笔管理（埋设/回收追踪；写作时注入） | 计划中（Issue #43） |
+| F14 | `extraction_service` | 统一提取服务（6 种提取类型；增量提取） | 计划中（Issue #44） |
+| F15 | `audit_service` | 一致性审计（角色/时间线/世界/伏笔 4 维度） | 计划中 |
+| F16 | `style_service` | 风格检测（风格指纹/AI 痕迹/词汇分析） | 计划中 |
+
+> 模块类型谱系：F9/F10 提取型 → F11 生成型 → F12 确定性检查型（无 LLM）。F13-F16 实施时先对照对应变体样板（`specs/f12-timeline-service/spec.md` 为最新完整模板）。
+
 ---
 
 ## 2. 技术栈
@@ -124,10 +139,11 @@ D:\develop\projects\
 │   │   │   └── test_cli_agent.py
 │   │   └── e2e\                      #   全栈端到端（未来）
 │   ├── specs\                       # SDD 规格文件（每个 feature 一个目录）
-│   │   ├── f1-project-service\
-│   │   │   └── spec.md              # F1 项目/书籍管理规格
-│   │   └── f2-chapter-service\
-│   │       └── spec.md              # F2 卷/章节管理规格
+│   │   ├── f1-project-service\      #   F1-F8 全部落地（Phase 1）
+│   │   ├── f9-character-service\    #   F9 角色管理 spec（提取型样板）
+│   │   ├── f10-world-service\       #   F10 世界观管理 spec
+│   │   ├── f11-outline-service\     #   F11 大纲管理 spec（生成型）
+│   │   └── f12-timeline-service\    #   F12 时间线管理 spec（最新模板）
 │   ├── docs\                        # 架构/产品文档
 │   │   ├── adr\                     # ★ ADR 决策记录（索引见 adr/README.md）
 │   │   │   ├── README.md            #   ADR 索引 + 编号规则
@@ -235,8 +251,11 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 
 **动手写代码前必须阅读对应的 spec 文件。**
 
-- `specs/f1-project-service/spec.md`：F1 项目/书籍管理规格
+- `specs/f1-project-service/spec.md`：F1 项目/书籍管理规格（Phase 1 样板）
 - `specs/f2-chapter-service/spec.md`：F2 卷/章节管理规格
+- `specs/f9-character-service/spec.md`：F9 角色管理规格（0.2.0 提取型样板）
+- `specs/f11-outline-service/spec.md`：F11 大纲管理规格（生成型）
+- `specs/f12-timeline-service/spec.md`：F12 时间线管理规格（确定性检查型，最新完整模板）
 - 每个模块 spec 定义了：数据模型、API 契约、CLI 命令、边界情况、测试策略
 - spec 是开发的唯一真相来源。如果发现 spec 与实现矛盾，先更新 spec，再改代码
 
@@ -487,6 +506,7 @@ AI 编码助手在开始任何工作前，应**按顺序**阅读以下文件：
 | P0 | `adr/README.md` | ADR 索引 + 编号规则；改代码前先查相关决策 |
 | P0 | `specs/f1-project-service/spec.md` | F1 功能规格（数据模型、API、CLI、边界条件） |
 | P0 | `specs/f2-chapter-service/spec.md` | F2 功能规格（卷/章节、状态流转） |
+| P0 | `specs/f12-timeline-service/spec.md` | F12 功能规格（0.2.0 最新完整模板：单实体 + 确定性算法） |
 | P1 | `design/architecture-analysis-2026-07-30.md` | 架构分析总览；ADR 索引表（决策详情在 `adr/`） |
 | P1 | `design/workflow.md` | git worktree + PR 流程详解 |
 | P1 | `backend/pyproject.toml` | 依赖版本、工具配置（Ruff、mypy、pytest） |
