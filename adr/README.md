@@ -40,6 +40,7 @@
 | [ADR-022](ADR-022.md) | skills 包形态 — 源码单一真相 + 三通道分发（D4） | ✅ 已接受 | 2026-08-02 |
 | [ADR-023](ADR-023.md) | MCP Server 设计 — 官方 SDK + stdio + 直连领域服务（skills 先行、MCP 后移 0.5.0，D5） | ✅ 已接受 | 2026-08-02 |
 | [ADR-024](ADR-024.md) | 云架构拓扑 — 同进程双前缀（user/admin）+ owner_id 隔离（D6） | ✅ 已接受 | 2026-08-02 |
+| [ADR-025](ADR-025.md) | 依赖锁定策略 — uv + uv.lock（Python）+ pnpm-lock.yaml 约定（前端） | ✅ 已接受 | 2026-08-02 |
 
 ## 当前有效决策速览
 
