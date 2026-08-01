@@ -39,6 +39,14 @@ from inkflow.domain.models.context import (
     TokenBudgetConfig,
 )
 from inkflow.domain.models.project import Project, ProjectConfig, ProjectCreate, ProjectUpdate
+from inkflow.domain.models.world import (
+    ExtractedWorldSetting,
+    WorldCreate,
+    WorldExtractionResult,
+    WorldExtractRequest,
+    WorldSetting,
+    WorldUpdate,
+)
 from inkflow.domain.models.writing import (
     ContinueWritingRequest,
     FormatValidationResult,
@@ -91,4 +99,11 @@ __all__ = [
     "TokenBudgetConfig",
     "ContextRequest",
     "ContextAssemblyResult",
+    # ── world (F10) ──
+    "WorldSetting",
+    "WorldCreate",
+    "WorldUpdate",
+    "ExtractedWorldSetting",
+    "WorldExtractRequest",
+    "WorldExtractionResult",
 ]

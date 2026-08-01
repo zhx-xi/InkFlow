@@ -8,11 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from inkflow.core.database import get_session
 from inkflow.domain.ports.context_sources import ContextSourceProtocol
 from inkflow.domain.services._character_extractor import CharacterExtractor
+from inkflow.domain.services._world_extractor import WorldExtractor
 from inkflow.domain.services.chapter_service import ChapterService
 from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.context_service import ContextService
 from inkflow.domain.services.project_service import ProjectService
 from inkflow.domain.services.summary_service import SummaryService
+from inkflow.domain.services.world_service import WorldService
 from inkflow.domain.services.writing_service import WritingService
 from inkflow.infrastructure.database.repositories.chapter_repo import (
     SQLiteChapterRepository,
@@ -25,6 +27,9 @@ from inkflow.infrastructure.database.repositories.project_repo import (
 )
 from inkflow.infrastructure.database.repositories.summary_repo import (
     SQLiteSummaryRepository,
+)
+from inkflow.infrastructure.database.repositories.world_repo import (
+    SQLiteWorldRepository,
 )
 from inkflow.infrastructure.llm import LangChainLLMClient, LangChainPromptManager
 
@@ -121,6 +126,26 @@ def get_character_service(
     return CharacterService(
         repository=repo,
         extractor=CharacterExtractor(
+            llm_client=LangChainLLMClient(),
+            prompt_manager=LangChainPromptManager(),
+            repository=repo,
+        ),
+        project_repo=SQLiteProjectRepository(db),
+    )
+
+
+def get_world_service(
+    db: AsyncSession,
+) -> WorldService:
+    """获取 WorldService 实例（世界观条目仓储 + AI 提取器）.
+
+    装配 WorldExtractor（LLM 客户端 + Prompt 模板 + 同一仓储实例），
+    extract 入口的项目存在性校验使用 F1 项目仓储。
+    """
+    repo = SQLiteWorldRepository(db)
+    return WorldService(
+        repository=repo,
+        extractor=WorldExtractor(
             llm_client=LangChainLLMClient(),
             prompt_manager=LangChainPromptManager(),
             repository=repo,

@@ -71,6 +71,13 @@ from inkflow.domain.ports.vector_store import (
     RetrievedEntity,
     VectorStoreProtocol,
 )
+from inkflow.domain.ports.world_errors import (
+    WorldExtractionError,
+    WorldNameConflictError,
+    WorldNotFoundError,
+    WorldServiceError,
+)
+from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
 
 __all__ = [
     # ── context ──
@@ -122,4 +129,10 @@ __all__ = [
     "PromptTemplateProtocol",
     "PromptTemplate",
     "RenderedPrompt",
+    # ── world (F10) ──
+    "WorldRepositoryProtocol",
+    "WorldExtractionError",
+    "WorldServiceError",
+    "WorldNotFoundError",
+    "WorldNameConflictError",
 ]

@@ -12,10 +12,14 @@ from inkflow.infrastructure.database.repositories.project_repo import (
 from inkflow.infrastructure.database.repositories.summary_repo import (
     SQLiteSummaryRepository,
 )
+from inkflow.infrastructure.database.repositories.world_repo import (
+    SQLiteWorldRepository,
+)
 
 __all__ = [
     "SQLiteProjectRepository",
     "SQLiteChapterRepository",
     "SQLiteSummaryRepository",
     "SQLiteCharacterRepository",
+    "SQLiteWorldRepository",
 ]
