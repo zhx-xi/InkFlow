@@ -6,6 +6,9 @@ from inkflow.infrastructure.database.repositories.chapter_repo import (
 from inkflow.infrastructure.database.repositories.character_repo import (
     SQLiteCharacterRepository,
 )
+from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
+    SQLiteForeshadowingRepository,
+)
 from inkflow.infrastructure.database.repositories.outline_repo import (
     SQLiteOutlineRepository,
 )
@@ -30,4 +33,5 @@ __all__ = [
     "SQLiteWorldRepository",
     "SQLiteOutlineRepository",
     "SQLiteTimelineRepository",
+    "SQLiteForeshadowingRepository",
 ]

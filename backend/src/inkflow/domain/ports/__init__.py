@@ -58,6 +58,7 @@ from inkflow.domain.ports.foreshadowing_errors import (
     ForeshadowingNotFoundError,
     ForeshadowingServiceError,
 )
+from inkflow.domain.ports.foreshadowing_repository import ForeshadowingRepositoryProtocol
 from inkflow.domain.ports.llm_client import (
     ChatMessage,
     ChatResponse,
@@ -178,6 +179,7 @@ __all__ = [
     "TimelineServiceError",
     "TimelineNotFoundError",
     # ── foreshadowing (F13) ──
+    "ForeshadowingRepositoryProtocol",
     "ForeshadowingServiceError",
     "ForeshadowingNotFoundError",
     "ForeshadowingNameConflictError",
