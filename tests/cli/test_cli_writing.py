@@ -1,6 +1,6 @@
 """CLI 写作命令集成测试 — CliRunner + Mock WritingService。
 
-测试范围：inkflow write generate/continue/revise。
+测试范围：inkflow write next/continue/revise。
 需 pytest marker: @pytest.mark.writing
 """
 
@@ -74,17 +74,17 @@ class TestWriteCLI:
         result = runner.invoke(app, ["write", "--help"])
         assert result.exit_code == 0
         assert "AI 写作" in result.stdout
-        assert all(cmd in result.stdout for cmd in ["generate", "continue", "revise"])
+        assert all(cmd in result.stdout for cmd in ["next", "continue", "revise"])
 
     @pytest.mark.writing
-    def test_write_generate_human(self, isolated_db, monkeypatch):
-        """generate 默认人类可读输出."""
+    def test_write_next_human(self, isolated_db, monkeypatch):
+        """next 默认人类可读输出."""
         self._patch_write_services(monkeypatch, _FakeWritingService())
         result = runner.invoke(
             app,
             [
                 "write",
-                "generate",
+                "next",
                 "--project-id",
                 "11111111-1111-1111-1111-111111111111",
                 "--chapter-id",
@@ -98,21 +98,21 @@ class TestWriteCLI:
         assert "2347 字" in result.output
 
     @pytest.mark.writing
-    def test_write_generate_json(self, isolated_db, monkeypatch):
-        """generate --json 输出 WritingResult JSON."""
+    def test_write_next_json(self, isolated_db, monkeypatch):
+        """next --json 输出 WritingResult JSON."""
         self._patch_write_services(monkeypatch, _FakeWritingService())
         result = runner.invoke(
             app,
             [
+                "--json",
                 "write",
-                "generate",
+                "next",
                 "--project-id",
                 "11111111-1111-1111-1111-111111111111",
                 "--chapter-id",
                 "22222222-2222-2222-2222-222222222222",
                 "--outline",
                 "主角踏入试炼场",
-                "--json",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -128,6 +128,7 @@ class TestWriteCLI:
         result = runner.invoke(
             app,
             [
+                "--json",
                 "write",
                 "continue",
                 "--project-id",
@@ -136,7 +137,6 @@ class TestWriteCLI:
                 "22222222-2222-2222-2222-222222222222",
                 "--target-words",
                 "3000",
-                "--json",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -151,17 +151,17 @@ class TestWriteCLI:
         result = runner.invoke(
             app,
             [
+                "--json",
                 "write",
                 "revise",
                 "--project-id",
                 "11111111-1111-1111-1111-111111111111",
                 "--chapter-id",
                 "22222222-2222-2222-2222-222222222222",
-                "--feedback",
+                "--instruction",
                 "节奏太慢，删减环境描写",
                 "--range",
                 "第 3 段",
-                "--json",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -170,8 +170,8 @@ class TestWriteCLI:
         assert data["word_count"] == 2347
 
     @pytest.mark.writing
-    def test_write_generate_llm_error(self, isolated_db, monkeypatch):
-        """LLM 调用失败 → 退出码 1."""
+    def test_write_next_llm_error(self, isolated_db, monkeypatch):
+        """LLM 调用失败 → 退出码 1，stderr 输出错误信息."""
         from inkflow.domain.ports.llm_errors import LLMRequestError
 
         class _FailingService:
@@ -183,7 +183,7 @@ class TestWriteCLI:
             app,
             [
                 "write",
-                "generate",
+                "next",
                 "--project-id",
                 "11111111-1111-1111-1111-111111111111",
                 "--chapter-id",
@@ -193,4 +193,4 @@ class TestWriteCLI:
             ],
         )
         assert result.exit_code == 1
-        assert isinstance(result.exception, LLMRequestError)
+        assert "LLM 调用失败" in result.stderr

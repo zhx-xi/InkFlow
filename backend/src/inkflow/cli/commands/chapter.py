@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import sys
 import uuid
 
 import typer
 
+from inkflow.cli.context import CliContext
+from inkflow.cli.output import print_error, print_result
 from inkflow.core.database import async_session_factory, create_tables
 from inkflow.domain.models.chapter import ChapterStatus
 from inkflow.domain.services.chapter_service import ChapterService
@@ -21,22 +21,18 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _json(data):
-    json.dump(data, sys.stdout, ensure_ascii=False, indent=2, default=str)
-    print()
-
-
 # -- Volume --
 
 
 @volume_app.command("create")
 def create_vol(
+    ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", "-p"),
     title: str = typer.Option(..., "--title", "-t"),
     order: float = typer.Option(None, "--order", "-o"),
-    json_output: bool = typer.Option(False, "--json"),
 ):
     """创建卷"""
+    cli_ctx: CliContext = ctx.obj
 
     async def _impl():
         await create_tables()
@@ -44,18 +40,19 @@ def create_vol(
             return await ChapterService(s).create_volume(uuid.UUID(project_id), title, order)
 
     vol = _run(_impl())
-    if json_output:
-        _json(vol.model_dump(mode="json"))
+    if cli_ctx.json_output:
+        print_result(cli_ctx, vol.model_dump(mode="json"))
     else:
         typer.echo(f"✅ 卷创建成功: [{vol.title}]")
 
 
 @volume_app.command("list")
 def list_vol(
+    ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", "-p"),
-    json_output: bool = typer.Option(False, "--json"),
 ):
     """列出卷"""
+    cli_ctx: CliContext = ctx.obj
 
     async def _impl():
         await create_tables()
@@ -63,21 +60,17 @@ def list_vol(
             return await ChapterService(s).list_volumes(uuid.UUID(project_id))
 
     volumes = _run(_impl())
-    if json_output:
-        _json([v.model_dump(mode="json") for v in volumes])
-    elif not volumes:
-        typer.echo("📭 暂无卷")
-    else:
-        for v in volumes:
-            typer.echo(f"  [{v.id}] {v.title}")
+    print_result(cli_ctx, [v.model_dump(mode="json") for v in volumes])
 
 
 @volume_app.command("delete")
 def delete_vol(
+    ctx: typer.Context,
     volume_id: str = typer.Option(..., "--id", "-i"),
     force: bool = typer.Option(False, "--force", "-f"),
 ):
     """删除卷"""
+    cli_ctx: CliContext = ctx.obj
     if not force and not typer.confirm("确定删除此卷？其下章节将变为未分类"):
         raise typer.Exit()
 
@@ -87,7 +80,9 @@ def delete_vol(
             return await ChapterService(s).delete_volume(uuid.UUID(volume_id))
 
     ok = _run(_impl())
-    typer.echo(f"{'✅ 已删除' if ok else '❌ 不存在'}")
+    if not ok:
+        print_error(cli_ctx, "NOT_FOUND", "卷不存在")
+    print_result(cli_ctx, {"deleted": True})
 
 
 # -- Chapter --
@@ -95,13 +90,14 @@ def delete_vol(
 
 @chapter_app.command("create")
 def create_ch(
+    ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", "-p"),
     title: str = typer.Option(..., "--title", "-t"),
     volume_id: str | None = typer.Option(None, "--volume-id", "-v"),
     content: str = typer.Option("", "--content", "-c"),
-    json_output: bool = typer.Option(False, "--json"),
 ):
     """创建章节"""
+    cli_ctx: CliContext = ctx.obj
 
     async def _impl():
         await create_tables()
@@ -114,20 +110,21 @@ def create_ch(
             )
 
     ch = _run(_impl())
-    if json_output:
-        _json(ch.model_dump(mode="json"))
+    if cli_ctx.json_output:
+        print_result(cli_ctx, ch.model_dump(mode="json"))
     else:
         typer.echo(f"✅ 章节创建: [{ch.title}] ({ch.word_count}字)")
 
 
 @chapter_app.command("list")
 def list_ch(
+    ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", "-p"),
     volume_id: str | None = typer.Option(None, "--volume-id", "-v"),
     status: str | None = typer.Option(None, "--status", "-s"),
-    json_output: bool = typer.Option(False, "--json"),
 ):
     """列出章节"""
+    cli_ctx: CliContext = ctx.obj
 
     async def _impl():
         await create_tables()
@@ -137,22 +134,19 @@ def list_ch(
             return await ChapterService(s).list_chapters(uuid.UUID(project_id), vid, se)
 
     chapters, total = _run(_impl())
-    if json_output:
-        _json([c.model_dump(mode="json") for c in chapters])
-    elif not chapters:
-        typer.echo("📭 暂无章节")
-    else:
-        typer.echo(f"共 {total} 章:")
-        for c in chapters:
-            typer.echo(f"  [{c.id}] {c.title} ({c.status.value}) — {c.word_count}字")
+    print_result(
+        cli_ctx,
+        {"total": total, "chapters": [c.model_dump(mode="json") for c in chapters]},
+    )
 
 
 @chapter_app.command()
 def get(
+    ctx: typer.Context,
     chapter_id: str = typer.Option(..., "--id", "-i"),
-    json_output: bool = typer.Option(False, "--json"),
 ):
     """查看章节详情"""
+    cli_ctx: CliContext = ctx.obj
 
     async def _impl():
         await create_tables()
@@ -161,23 +155,20 @@ def get(
 
     ch = _run(_impl())
     if ch is None:
-        typer.echo("❌ 章节不存在", err=True)
-        raise typer.Exit(1)
-    if json_output:
-        _json(ch.model_dump(mode="json"))
-    else:
-        typer.echo(f"标题: {ch.title}\n状态: {ch.status.value}\n字数: {ch.word_count}")
+        print_error(cli_ctx, "NOT_FOUND", "章节不存在")
+    print_result(cli_ctx, ch.model_dump(mode="json"))
 
 
 @chapter_app.command()
 def update(
+    ctx: typer.Context,
     chapter_id: str = typer.Option(..., "--id", "-i"),
     title: str | None = typer.Option(None, "--title", "-t"),
     content: str | None = typer.Option(None, "--content", "-c"),
     status: str | None = typer.Option(None, "--status", "-s"),
-    json_output: bool = typer.Option(False, "--json"),
 ):
     """更新章节"""
+    cli_ctx: CliContext = ctx.obj
 
     async def _impl():
         await create_tables()
@@ -193,21 +184,18 @@ def update(
 
     ch = _run(_impl())
     if ch is None:
-        typer.echo("❌ 章节不存在", err=True)
-        raise typer.Exit(1)
-    if json_output:
-        _json(ch.model_dump(mode="json"))
-    else:
-        typer.echo(f"✅ 已更新: [{ch.title}]")
+        print_error(cli_ctx, "NOT_FOUND", "章节不存在")
+    print_result(cli_ctx, ch.model_dump(mode="json"))
 
 
 @chapter_app.command()
 def move(
+    ctx: typer.Context,
     chapter_id: str = typer.Option(..., "--id", "-i"),
     to_volume: str | None = typer.Option(None, "--to-volume", "-v"),
-    json_output: bool = typer.Option(False, "--json"),
 ):
     """移动章节"""
+    cli_ctx: CliContext = ctx.obj
 
     async def _impl():
         await create_tables()
@@ -217,20 +205,18 @@ def move(
 
     ch = _run(_impl())
     if ch is None:
-        typer.echo("❌ 章节不存在", err=True)
-        raise typer.Exit(1)
-    if json_output:
-        _json(ch.model_dump(mode="json"))
-    else:
-        typer.echo(f"✅ 已移动至卷 {ch.volume_id or '未分类'}")
+        print_error(cli_ctx, "NOT_FOUND", "章节不存在")
+    print_result(cli_ctx, ch.model_dump(mode="json"))
 
 
 @chapter_app.command("delete")
 def delete_ch(
+    ctx: typer.Context,
     chapter_id: str = typer.Option(..., "--id", "-i"),
     force: bool = typer.Option(False, "--force", "-f"),
 ):
     """删除章节"""
+    cli_ctx: CliContext = ctx.obj
     if not force and not typer.confirm("确定删除此章节？"):
         raise typer.Exit()
 
@@ -240,4 +226,6 @@ def delete_ch(
             return await ChapterService(s).delete_chapter(uuid.UUID(chapter_id))
 
     ok = _run(_impl())
-    typer.echo(f"{'✅ 已删除' if ok else '❌ 不存在'}")
+    if not ok:
+        print_error(cli_ctx, "NOT_FOUND", "章节不存在")
+    print_result(cli_ctx, {"deleted": True})

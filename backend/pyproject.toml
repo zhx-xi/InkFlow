@@ -42,7 +42,7 @@ dependencies = [
 ]
 
 [project.scripts]
-inkflow = "inkflow.__main__:app"
+inkflow = "inkflow.cli.app:app"
 
 [project.optional-dependencies]
 dev = [
@@ -62,7 +62,7 @@ web = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests/unit"]
+testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --tb=short"
 markers = [

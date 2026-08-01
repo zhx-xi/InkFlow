@@ -1,8 +1,10 @@
 """InkFlow 全局配置 — 基于 Pydantic Settings，支持环境变量覆盖。"""
 
+import json as _json
 from pathlib import Path
 from typing import Literal
 
+from loguru import logger
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,6 +32,12 @@ class InkFlowConfig(BaseSettings):
 
     log_level: str = "INFO"
     """日志级别：DEBUG / INFO / WARNING / ERROR。"""
+
+    server_host: str = "127.0.0.1"
+    """serve 默认监听地址."""
+
+    server_port: int = 8000
+    """serve 默认监听端口."""
 
     # ---- LLM Provider ----
     llm_default_model: str = "openai/gpt-4o"
@@ -104,3 +112,50 @@ class InkFlowConfig(BaseSettings):
 
 
 config = InkFlowConfig()
+
+
+# Config key 白名单: CLI key → Pydantic field name
+CONFIG_WHITELIST: dict[str, str] = {
+    "default.model": "llm_default_model",
+    "default.temperature": "llm_temperature",
+    "context.max_ratio": "context_max_ratio",
+    "context.default_window": "context_default_window",
+    "server.host": "server_host",
+    "server.port": "server_port",
+}
+
+
+def load_config_json(data_dir: Path) -> dict:
+    """从 {data_dir}/config.json 加载配置.
+
+    Args:
+        data_dir: 数据目录路径.
+
+    Returns:
+        配置 dict，文件不存在时返回空 dict.
+    """
+    config_file = data_dir / "config.json"
+    if not config_file.exists():
+        return {}
+    try:
+        return _json.loads(config_file.read_text(encoding="utf-8"))
+    except (_json.JSONDecodeError, OSError):
+        logger.warning("config.json 解析失败，使用默认值")
+        return {}
+
+
+def save_config_json(data_dir: Path, updates: dict) -> None:
+    """合并更新到 config.json.
+
+    Args:
+        data_dir: 数据目录路径.
+        updates: 要更新的 key-value 对.
+    """
+    config_file = data_dir / "config.json"
+    current = load_config_json(data_dir)
+    current.update(updates)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(
+        _json.dumps(current, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )

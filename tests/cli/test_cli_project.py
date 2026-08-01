@@ -35,7 +35,7 @@ def test_create_output(isolated_db):
 @pytest.mark.project
 def test_create_json_output(isolated_db):
     result = runner.invoke(
-        app, ["project", "create", "--name", "星辰", "--genre", "科幻", "--json"]
+        app, ["--json", "project", "create", "--name", "星辰", "--genre", "科幻"]
     )
     assert result.exit_code == 0, result.output
     data = _parse_json_output(result.output)
@@ -45,7 +45,7 @@ def test_create_json_output(isolated_db):
 @pytest.mark.project
 def test_create_with_target_words(isolated_db):
     result = runner.invoke(
-        app, ["project", "create", "--name", "长篇", "-w", "300000", "--json"]
+        app, ["--json", "project", "create", "--name", "长篇", "-w", "300000"]
     )
     assert result.exit_code == 0
     data = _parse_json_output(result.output)
@@ -75,7 +75,7 @@ def test_list_with_projects(isolated_db):
 @pytest.mark.project
 def test_list_json_output(isolated_db):
     runner.invoke(app, ["project", "create", "--name", "唯一", "--genre", "悬疑"])
-    result = runner.invoke(app, ["project", "list", "--json"])
+    result = runner.invoke(app, ["--json", "project", "list"])
     assert result.exit_code == 0
     data = _parse_json_output(result.output)
     assert isinstance(data, list) and len(data) == 1
@@ -85,7 +85,7 @@ def test_list_json_output(isolated_db):
 def test_list_search(isolated_db):
     runner.invoke(app, ["project", "create", "--name", "玄幻大作", "--genre", "玄幻"])
     runner.invoke(app, ["project", "create", "--name", "科幻巨作", "--genre", "科幻"])
-    result = runner.invoke(app, ["project", "list", "--search", "科幻", "--json"])
+    result = runner.invoke(app, ["--json", "project", "list", "--search", "科幻"])
     data = _parse_json_output(result.output)
     assert len(data) == 1
     assert data[0]["name"] == "科幻巨作"
@@ -105,7 +105,7 @@ def test_get_existing(isolated_db):
 @pytest.mark.project
 def test_get_json_output(isolated_db):
     runner.invoke(app, ["project", "create", "--name", "JSON测试", "--genre", "都市"])
-    result = runner.invoke(app, ["project", "get", "--id", "1", "--json"])
+    result = runner.invoke(app, ["--json", "project", "get", "--id", "1"])
     assert result.exit_code == 0
     data = _parse_json_output(result.output)
     assert data["name"] == "JSON测试"
@@ -127,7 +127,7 @@ def test_delete_soft(isolated_db):
     result = runner.invoke(app, ["project", "delete", "--id", "1", "--force"])
     assert result.exit_code == 0, result.output
     assert "已删除" in result.output
-    lr = runner.invoke(app, ["project", "list", "--json"])
+    lr = runner.invoke(app, ["--json", "project", "list"])
     assert len(_parse_json_output(lr.output)) == 0
 
 
@@ -157,7 +157,7 @@ def test_restore_after_delete(isolated_db):
     result = runner.invoke(app, ["project", "restore", "--id", "1"])
     assert result.exit_code == 0, result.output
     assert "已恢复" in result.output
-    lr = runner.invoke(app, ["project", "list", "--json"])
+    lr = runner.invoke(app, ["--json", "project", "list"])
     assert len(_parse_json_output(lr.output)) == 1
 
 
@@ -182,13 +182,13 @@ def test_serve_help(isolated_db):
     reason="serve smoke test requires local environment",
 )
 def test_serve_smoke(isolated_db, tmp_path):
-    """serve --no-open 启动后 /health 返回 200 — 仅本地运行."""
+    """serve 启动后 /health 返回 200 — 仅本地运行."""
     backend_dir = os.path.join(os.path.dirname(__file__), "..")
     env = os.environ.copy()
     env["INKFLOW_DATABASE_URL"] = f"sqlite+aiosqlite:///{tmp_path}/test.db"
 
     proc = subprocess.Popen(
-        [sys.executable, "-m", "inkflow", "serve", "--no-open", "--port", "18765"],
+        [sys.executable, "-m", "inkflow", "serve", "--port", "18765"],
         cwd=backend_dir,
         env=env,
         stdout=subprocess.PIPE,
