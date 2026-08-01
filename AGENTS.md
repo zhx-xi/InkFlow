@@ -13,13 +13,13 @@
 | 维度 | 说明 |
 |------|------|
 | **团队** | 单人开发 |
-| **时间线** | 24 周（Phase 1-4），当前 Phase 1 |
+| **时间线** | 24 周（Phase 1-4），Phase 1 完成（Gate 有条件通过，2026-08-01），Phase 2 筹备中 |
 | **部署模式** | 本地优先（SQLite，免认证），Phase 4+ 迁移云端 |
 | **三界面** | CLI（Typer）+ REST API（FastAPI）+ 未来 MCP Server |
 | **工作流** | SDD + TDD：先写 spec → 再写测试（RED）→ 写代码（GREEN）→ 重构 |
 | **仓库** | `https://github.com/zhx-xi/InkFlow` |
 
-### Phase 1 功能（F1-F7，在研）
+### Phase 1 功能（F1-F8，已完成）
 
 | # | 模块 | 说明 |
 |---|------|------|
