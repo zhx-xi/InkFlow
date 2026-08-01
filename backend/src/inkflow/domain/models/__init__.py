@@ -15,6 +15,18 @@ from inkflow.domain.models.chapter import (
     VolumeCreate,
     VolumeUpdate,
 )
+from inkflow.domain.models.character import (
+    Character,
+    CharacterCreate,
+    CharacterExtractionResult,
+    CharacterExtractRequest,
+    CharacterGroup,
+    CharacterRelation,
+    CharacterRelationCreate,
+    CharacterUpdate,
+    ExtractedCharacter,
+    ExtractedRelation,
+)
 from inkflow.domain.models.context import (
     ChapterSummary,
     ContextAssemblyResult,
@@ -52,6 +64,17 @@ __all__ = [
     "Volume",
     "VolumeCreate",
     "VolumeUpdate",
+    # ── character (F9) ──
+    "Character",
+    "CharacterCreate",
+    "CharacterUpdate",
+    "CharacterGroup",
+    "CharacterRelation",
+    "CharacterRelationCreate",
+    "ExtractedCharacter",
+    "ExtractedRelation",
+    "CharacterExtractRequest",
+    "CharacterExtractionResult",
     "WritingMode",
     "WritingRequest",
     "ContinueWritingRequest",
