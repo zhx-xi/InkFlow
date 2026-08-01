@@ -44,17 +44,25 @@ def test_resolve_log_dir_is_absolute_and_package_based(monkeypatch, tmp_path):
     assert log_dir == _EXPECTED_LOG_DIR
 
 
-def test_setup_logging_creates_log_in_backend_logs_from_other_cwd(monkeypatch, tmp_path):
-    """从非 backend 的 cwd 调用 setup_logging，日志文件稳定落在 backend/logs/ 下。"""
-    before = _created_log_files(_EXPECTED_LOG_DIR)
+def test_setup_logging_creates_log_in_resolved_dir_from_other_cwd(monkeypatch, tmp_path):
+    """从非 backend 的 cwd 调用 setup_logging，文件落在解析出的日志目录（与 cwd 无关）。
+
+    隔离说明（Phase 1 Gate 评审 2026-08-01）：不触碰真实 backend/logs——
+    真实环境跑过 serve 后该目录已有当日日志文件，`after - before` 恒为空导致
+    测试误报。此处 monkeypatch resolve_log_dir 指向 tmp_path，保留
+    "cwd 无关 + 使用解析路径"的测试意图。
+    """
+    log_dir = tmp_path / "logs"
+    monkeypatch.setattr(log_module, "resolve_log_dir", lambda: log_dir)
+    before = _created_log_files(log_dir)
 
     monkeypatch.chdir(tmp_path)
     log_module.setup_logging()
     logger.info("issue-11-trigger")  # 强制文件 sink 落盘
 
-    created = _created_log_files(_EXPECTED_LOG_DIR) - before
+    created = _created_log_files(log_dir) - before
     try:
-        assert created, f"backend/logs 下未创建日志文件（cwd={tmp_path}）"
+        assert created, f"解析出的日志目录下未创建日志文件（log_dir={log_dir}）"
     finally:
         logger.remove()  # 先关闭文件句柄，Windows 下才能删除文件
         for p in created:

@@ -27,14 +27,16 @@ class LLMProviderConfig:
 _PROVIDER_BASE_URLS: dict[str, str] = {
     "deepseek": "https://api.deepseek.com/v1",
     "ollama": "http://localhost:11434/v1",
-    # OpenAI 和 Anthropic 使用各自 SDK 默认端点
+    # OpenAI 使用 SDK 默认端点
 }
 
 # 内建 Provider 注册表 — 从 config 对象读取 API Key
+# 注（ADR-005v2 更新，2026-08-01）：实现走 langchain_openai.ChatOpenAI + base_url，
+# 仅支持 OpenAI 兼容端点。anthropic 已从注册表移除——其原生 API 非 OpenAI 兼容，
+# 需独立 SDK 适配（config.anthropic_api_key 字段保留供未来实现）。
 _BUILTIN_PROVIDERS: dict[str, str | None] = {
     "openai": config.openai_api_key or None,
     "deepseek": config.deepseek_api_key or None,
-    "anthropic": config.anthropic_api_key or None,
     "ollama": "ollama",  # Ollama 本地运行，无需真实 API Key
 }
 
