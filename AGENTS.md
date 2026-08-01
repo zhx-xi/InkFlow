@@ -255,12 +255,18 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 | [ADR-013](adr/ADR-013.md) | RAG：**LangChain Chroma + BGE**（Phase 2） | 本地向量库 + 中文 SOTA Embedding；长篇小说一致性保障 |
 | [ADR-014](adr/ADR-014.md) | Prompt：**ChatPromptTemplate + YAML**（v2.0） | 模板与代码分离；变量验证；非技术人员可编辑 |
 | [ADR-016](adr/ADR-016.md) | 日志：Loguru 结构化日志 | 双出口（stderr + 文件）、rotation/retention 内置 |
-| — | 认证：Phase 1-3 无需认证 | 本地运行，免认证；Phase 4+ 通过 AuthProtocol 扩展 |
+| — | 认证：Phase 1-3 无需认证 | 本地运行，免认证；2.0.0 云端通过 AuthProtocol 扩展（BYOK，云端零存储 Key） |
 | — | ID 类型：UUID v4 | 避免自增 ID 碰撞，支持未来分布式场景 |
 | — | 软删除：is_deleted 标记 + 回收站 | Phase 1 保险策略，用户可恢复误删数据 |
 | [ADR-015](adr/ADR-015.md) | **LangChain 隔离**：Protocol 模式 | Domain 零 LangChain 依赖 → 框架可替换性；CI 强制检查 |
 | [ADR-017](adr/ADR-017.md) | **CI 代码质量**：Reviewdog + Ruff | PR 内联注解；一次执行双重用途 |
 | [ADR-018](adr/ADR-018.md) | **测试分层**：三层目录 + 按功能并行 CI | 单元/集成/API/CLI/E2E 分离；backend 后缀预留前端 |
+| [ADR-019](adr/ADR-019.md) | **版本里程碑**：SemVer + 1.0.0 = 本地完全可用（v2：+2.0.0 云端） | 版本号唯一里程碑口径；F18 移云端、F19 拆分、F23 SSE 提前（Issue #65） |
+| [ADR-020](adr/ADR-020.md) | 单机 GUI：**Electron** + 共享 React 渲染层 | 与云 Web 共享组件/API client；Tauri 远期优化方向 |
+| [ADR-021](adr/ADR-021.md) | **本地内核进程化**：localhost REST + SSE | 多客户端并发（GUI/CLI/MCP/agent）+ 与云端同一契约；GUI 远程连云 = 换 base URL |
+| [ADR-022](adr/ADR-022.md) | **skills 包**：源码单一真相 + 三通道分发 | CLI `--json` 为 agent 执行契约；零后端代码立即可交付 |
+| [ADR-023](adr/ADR-023.md) | **MCP Server**：stdio + SDK 直连 domain | 与 CLI 共享 service 不共享代码；≥15 工具（F20）；skills 先行、MCP 0.5.0 |
+| [ADR-024](adr/ADR-024.md) | **云架构**：双前缀（user/admin）+ owner_id 隔离 + 拆分预留 | BYOK 云端零存储；skill 白名单+内容审核；pgvector；Sync=云存档/远程在线 |
 
 **🔴 ADR 治理规则（所有 AI 会话必须遵守）**：
 
