@@ -106,86 +106,57 @@
 ```
 D:\develop\projects\
 ├── InkFlow\                         # 主仓库（main 分支，只读）
-│   ├── AGENTS.md                    # ← 本文件
+│   ├── AGENTS.md                    # ← 本文件（项目总约定 + ADR 治理）
 │   ├── README.md
+│   ├── LICENSE
+│   ├── adr\                         # ★ ADR 决策记录（索引见 adr/README.md）
+│   │   ├── README.md                #   ADR 索引 + 编号规则（25 条有效，2026-08-02）
+│   │   └── ADR-NNN.md               #   单个决策记录（Nygard 格式）
+│   ├── design\                      # ★ 产品/架构设计文档
+│   │   ├── prd-inkflow-v2.1-2026-07-30.md   #   PRD（文件名 v2.1，内容 v2.2 修订）
+│   │   ├── architecture-analysis-2026-07-30.md
+│   │   ├── workflow.md              #   开发工作流详解
+│   │   ├── phase1-gate-review-2026-08-01.md
+│   │   └── ...（product-positioning / security-analysis-cloud / env-readiness）
+│   ├── docs\                        # 用户使用说明（仅 README.md）
+│   ├── specs\                       # SDD 规格文件（每个 feature 一个目录）
+│   │   ├── f1-project-service\ ... f7-cli-interface\   #   Phase 1（F8 无 spec，见 ADR-018）
+│   │   ├── f9-character-service\ ... f14-extraction-service\  #   Phase 2 创作工具链
+│   │   └── p0-11-cloud-protocols\   #   云端接口 Protocol spec
+│   ├── frontend\                    # ★ 前端（0.3.0 F19 GUI 起；云 Web 一套两用，ADR-020）
+│   │   └── README.md                #   定位说明（React 19 + Vite 6 + pnpm-lock 约定）
 │   ├── backend\
 │   │   ├── pyproject.toml           # 项目配置、依赖、工具设置
+│   │   ├── uv.lock                   # 依赖锁定（ADR-025，唯一真相，CI --frozen）
 │   │   ├── src\inkflow\             # ★ 源码
 │   │   │   ├── __main__.py          # CLI 入口
-│   │   │   ├── core\                # 配置、数据库连接、日志（基础设施配置）
-│   │   │   │   ├── config.py        #   InkFlowConfig (pydantic-settings)
-│   │   │   │   ├── database.py      #   async engine + session factory
-│   │   │   │   └── log.py           #   Loguru 配置
+│   │   │   ├── core\                # 配置、数据库、日志（config / database / log / model_registry）
 │   │   │   ├── domain\              # ★ 领域层（核心，不依赖任何框架）
-│   │   │   │   ├── models\          #   聚合/实体/值对象 (Project, Chapter, ...)
-│   │   │   │   ├── services\        #   领域服务（业务编排）
-│   │   │   │   └── ports\           #   出站端口 (Protocol 定义)
+│   │   │   │   ├── models\          #   聚合/实体/值对象（Project, Chapter, ... 11 个）
+│   │   │   │   ├── services\        #   领域服务（业务编排，含 _*_extractor 私有实现）
+│   │   │   │   └── ports\           #   出站端口（Protocol；cloud\ 子目录 = P0-11 云端接口）
 │   │   │   ├── infrastructure\      # 基础设施层（实现 domain/ports）
-│   │   │   │   └── database\
-│   │   │   │       ├── models\      #   SQLAlchemy ORM 模型
-│   │   │   │       └── repositories\ #   仓储实现
-│   │   │   ├── api\                 # ★ 表现层：REST API
-│   │   │   │   ├── app.py           #   FastAPI 应用工厂
-│   │   │   │   ├── deps.py          #   依赖注入
-│   │   │   │   └── routers\         #   路由 (project, chapter, ...)
-│   │   │   └── cli\                 # ★ 表现层：CLI
-│   │   │       └── commands\        #   命令实现 (project, chapter, ...)
+│   │   │   │   ├── database\        #   SQLAlchemy + SQLite（models\ ORM + repositories\）
+│   │   │   │   ├── llm\             #   LangChain LLM（ChatLiteLLM + templates\）
+│   │   │   │   ├── agent\           #   LangGraph StateGraph 管道
+│   │   │   │   ├── rag\             #   RAG 检索（Chroma + BGE，F14 落地）
+│   │   │   │   └── context\         #   F6 上下文数据源（sources.py，F13 伏笔注入）
+│   │   │   ├── api\                 # ★ 表现层：REST API（app.py / deps.py / routers\）
+│   │   │   ├── cli\                 # ★ 表现层：CLI（app.py / context.py / output.py / commands\）
+│   │   │   └── mcp\                 # ★ 表现层：MCP Server（0.5.0 F20 建立，ADR-023）
 │   │   └── tests\                   # ★ 单元测试（纯后端，无 I/O）
-│   │       └── unit\                #   纯函数 + Mock + DTO 校验
-│   │           ├── conftest.py       #   最小化 fixture（event_loop + temp_keys_dir）
-│   │           ├── test_chapter_dtos.py
-│   │           ├── test_project_dtos.py
-│   │           ├── test_writing_models.py
-│   │           ├── test_writing_service.py
-│   │           ├── test_format_validator.py
-│   │           ├── test_key_manager.py
-│   │           ├── test_prompt_manager.py
-│   │           ├── test_llm_client.py
-│   │           ├── test_agent_service.py
-│   │           ├── test_agent_templates.py
-│   │           └── test_langgraph_pipeline.py
-│   ├── tests\                        # ★ 集成 + E2E 测试（顶层，跨后端/前端）
-│   │   ├── conftest.py               #   共享 DB fixture（db_session, sample_project, ...）
-│   │   ├── integration\              #   仓储 + 服务层集成测试
-│   │   │   ├── test_chapter_repository.py
-│   │   │   ├── test_chapter_service.py
-│   │   │   ├── test_project_repository.py
-│   │   │   ├── test_project_service.py
-│   │   │   └── test_agent_pipeline.py
-│   │   ├── api\                      #   FastAPI HTTP 集成测试
-│   │   │   ├── conftest.py           #   override_get_db fixture
-│   │   │   ├── test_health.py
-│   │   │   ├── test_chapter_api.py
-│   │   │   ├── test_project_api.py
-│   │   │   ├── test_writing_api.py
-│   │   │   └── test_agent_api.py
-│   │   ├── cli\                      #   CLI 集成测试
-│   │   │   ├── conftest.py           #   isolated_db + _parse_json_output
-│   │   │   ├── test_cli_project.py
-│   │   │   ├── test_cli_chapter.py
-│   │   │   ├── test_cli_writing.py
-│   │   │   └── test_cli_agent.py
-│   │   └── e2e\                      #   全栈端到端（未来）
-│   ├── specs\                       # SDD 规格文件（每个 feature 一个目录）
-│   │   ├── f1-project-service\      #   F1-F8 全部落地（Phase 1）
-│   │   ├── f9-character-service\    #   F9 角色管理 spec（提取型样板）
-│   │   ├── f10-world-service\       #   F10 世界观管理 spec
-│   │   ├── f11-outline-service\     #   F11 大纲管理 spec（生成型）
-│   │   └── f12-timeline-service\    #   F12 时间线管理 spec（最新模板）
-│   │   └── f13-foreshadowing-service\  #   F13 伏笔管理 spec（F6 注入集成模板）
-│   │   └── f14-extraction-service\  #   F14 统一提取服务 spec（横切收敛门面 + RAG 落地模板）
-│   ├── docs\                        # 架构/产品文档
-│   │   ├── adr\                     # ★ ADR 决策记录（索引见 adr/README.md）
-│   │   │   ├── README.md            #   ADR 索引 + 编号规则
-│   │   │   └── ADR-NNN.md           #   单个决策记录（Nygard 格式）
-│   │   ├── architecture-analysis-2026-07-30.md
-│   │   ├── prd-inkflow-v2.1-2026-07-30.md
-│   │   └── workflow.md              # 开发工作流详解
+│   │       └── unit\                #   54 个测试文件（纯函数 + Mock + DTO 校验）
+│   ├── tests\                       # ★ 集成 + E2E 测试（顶层，跨后端/前端）
+│   │   ├── conftest.py              #   共享 DB fixture（db_session, sample_project, ...）
+│   │   ├── integration\             #   仓储 + 服务层集成测试（5 个）
+│   │   ├── api\                     #   FastAPI HTTP 集成测试（6 个）
+│   │   ├── cli\                     #   CLI 集成测试（17 个，F1-F14 全覆盖）
+│   │   └── e2e\                     #   全栈端到端（未来）
 │   └── .github\                     # CI 配置
 │       └── workflows\
 │
 └── InkFlow-ft\                      # git worktree 工作目录（并行 feature）
-    └── f1-project-model\            # 当前活跃 feature 的工作副本
+    └── <feature>\                   # 每个 feature 一个工作副本（如 f14-extraction-service）
 ```
 
 ---

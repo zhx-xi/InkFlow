@@ -1,6 +1,6 @@
 # InkFlow Constitution — 项目章程
 
-> 版本 1.0 | 基于 ADR-001~012 | 依据 PRD v2.1
+> 版本 2.0 | 基于 ADR-001~025 | 依据 PRD v2.2 | 2026-08-02 结构同步修订（ADR-019 v2 里程碑 + ADR-025 依赖锁定）
 
 ---
 
@@ -59,13 +59,16 @@ Presentation → Domain ← Infrastructure
 | **Web 框架** | FastAPI (async) |
 | **CLI 框架** | Typer |
 | **ORM** | SQLAlchemy 2.0 async |
-| **本地数据库** | SQLite + aiosqlite |
+| **本地数据库** | SQLite + aiosqlite（2.0.0 云端 PostgreSQL + pgvector） |
 | **数据验证** | Pydantic v2 |
-| **LLM 集成** | LiteLLM |
+| **LLM 集成** | LangChain ChatLiteLLM（ADR-005v2，底层 litellm 覆盖 100+ Provider） |
+| **Agent 编排** | LangGraph StateGraph（ADR-006v2） |
+| **RAG** | langchain-chroma + chromadb + BGE（ADR-013，F14 落地） |
+| **Prompt 模板** | ChatPromptTemplate + YAML（ADR-014，模板在 infrastructure/llm/templates/） |
 | **测试** | pytest + pytest-asyncio + pytest-cov |
 | **Lint** | ruff |
 | **类型检查** | mypy |
-| **包管理** | uv + pip |
+| **包管理** | uv + uv.lock 锁定（ADR-025，CI `uv sync --frozen`）；前端 pnpm + pnpm-lock.yaml |
 | **代码风格** | 行宽 100，UTF-8，中文注释 |
 
 ---
@@ -121,12 +124,14 @@ chore: 构建/工具/依赖
 2. **GREEN**：写刚好让测试通过的最少代码
 3. **REFACTOR**：消除重复、改善设计，保持测试绿色
 
-### 5.3 测试文件结构
+### 5.3 测试文件结构（三层目录，ADR-018）
 ```
-tests/
-├── conftest.py          # 共享 fixtures
-├── test_{module}.py     # 对应 src/inkflow/{module}/
-└── test_{module}_api.py # 对应 api/routers/
+backend/tests/unit/       # 纯单元测试（无 I/O、无 DB）
+tests/integration/        # 仓储 + 服务层集成测试
+tests/api/                # FastAPI HTTP 集成测试
+tests/cli/                # CLI 端到端测试（新增文件须加入 ci.yml integration-cli-backend job）
+tests/e2e/                # 全栈端到端（未来，前端接入后启用）
+frontend/src/__tests__/   # 前端单元测试（未来，0.3.0 GUI 后）
 ```
 
 ### 5.4 Fixture 规范
