@@ -2,9 +2,10 @@
 
 测试范围 (spec §9 API 测试 + §3.4 异常映射表):
 - 4 端点成功路径（extract 全字段透传 / runs 分页 / reindex 缺省全部 /
-  retrieve 参数校验与透传）
+  retrieve 参数校验与透传；extract STYLE 成功路径——F16 已落地，
+  200 + ExtractionResult 信封含 detail=StyleReport）
 - 404 全路径（项目不存在、无效 UUID → 404）
-- 422 全路径（text+chapter_ids 互斥、STYLE 未实现、无效 type、
+- 422 全路径（text+chapter_ids 互斥、无效 type、
   top_k/min_score 越界、空白 query）
 - 500 透传（LLM 调用失败 / 管线解析失败 / RAG 不可用 / run 记录读写失败）
 - 信封序列化（ExtractionResult / ExtractionRun / ReindexResult /
@@ -41,7 +42,6 @@ from inkflow.domain.ports.extraction_errors import (
     ExtractionRunError,
     ExtractionValidationError,
     RAGUnavailableError,
-    StyleNotImplementedError,
     UnsupportedExtractionTypeError,
 )
 from inkflow.domain.ports.foreshadowing_errors import ForeshadowingExtractionError
@@ -323,17 +323,78 @@ class TestExtractAPI:
         assert response.status_code == 422
 
     @patch("inkflow.api.routers.extractions.get_extraction_service")
-    def test_extract_style_not_implemented_422(self, mock_get_svc: MagicMock) -> None:
-        """STYLE 类型未实现（F16 占位）返回 422「风格提取尚未实现…」."""
+    def test_extract_style_success(self, mock_get_svc: MagicMock) -> None:
+        """STYLE 成功路径（F16 已落地）：200 + ExtractionResult 信封含 detail=StyleReport。"""
         svc = _mock_svc(mock_get_svc)
-        svc.extract = AsyncMock(side_effect=StyleNotImplementedError())
+        svc.extract = AsyncMock(
+            return_value=_result(
+                type=ExtractionType.STYLE,
+                created=0,
+                updated=0,
+                model=None,
+                indexed=False,
+                warnings=["style 类型不支持自动索引"],
+                detail={
+                    "project_id": str(PID),
+                    "source": "manual",
+                    "generated_at": "2026-08-02T10:00:00Z",
+                    "fingerprint": {
+                        "char_count": 48,
+                        "sentence_count": 3,
+                        "avg_sentence_length": 16.0,
+                        "sentence_length_std": 9.9,
+                        "paragraph_count": 1,
+                        "avg_paragraph_length": 48.0,
+                        "punctuation_density": 0.1667,
+                        "exclamation_density": 0.0,
+                        "ellipsis_density": 0.0417,
+                        "dialogue_ratio": 0.2083,
+                        "vocabulary_richness": 0.8235,
+                        "top_words": [{"word": "林晚", "count": 1, "first_index": 0}],
+                    },
+                    "ai_trace": {
+                        "ai_score": 0.26,
+                        "verdict": "likely_human",
+                        "features": [],
+                        "evidence": [
+                            "各特征得分均低于 0.5，无明显 AI 特征（综合得分 0.26 → likely_human）"
+                        ],
+                    },
+                    "lexical": {
+                        "total_words": 17,
+                        "unique_words": 14,
+                        "top_words": [{"word": "林晚", "count": 1, "first_index": 0}],
+                        "avg_word_length": 2.1,
+                        "stopword_ratio": 0.0588,
+                        "jieba": None,
+                    },
+                    "llm_assessment": None,
+                    "warnings": [],
+                },
+            )
+        )
 
         response = client.post(
             "/api/v1/extract",
             json={"project_id": str(PID), "type": "style", "text": TEXT},
         )
-        assert response.status_code == 422
-        assert response.json()["detail"] == "风格提取尚未实现（依赖 F16 风格检测）"
+        assert response.status_code == 200
+        data = response.json()
+        assert data["type"] == "style"
+        assert data["status"] == "success"
+        assert data["created"] == 0
+        assert data["updated"] == 0
+        assert data["model"] is None
+        assert data["indexed"] is False
+        assert data["warnings"] == ["style 类型不支持自动索引"]
+        assert data["detail"]["fingerprint"]["char_count"] == 48
+        assert data["detail"]["ai_trace"]["verdict"] == "likely_human"
+        assert data["detail"]["lexical"]["total_words"] == 17
+        svc.extract.assert_awaited_once()
+        args, _ = svc.extract.await_args
+        req = args[0]
+        assert req.type is ExtractionType.STYLE
+        assert req.text == TEXT
 
     @patch("inkflow.api.routers.extractions.get_extraction_service")
     def test_extract_unsupported_type_422(self, mock_get_svc: MagicMock) -> None:

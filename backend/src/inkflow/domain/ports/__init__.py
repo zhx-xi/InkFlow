@@ -64,7 +64,6 @@ from inkflow.domain.ports.extraction_errors import (
     ExtractionServiceError,
     ExtractionValidationError,
     RAGUnavailableError,
-    StyleNotImplementedError,
     UnsupportedExtractionTypeError,
     VectorStoreError,
 )
@@ -208,7 +207,6 @@ __all__ = [
     "ExtractionServiceError",
     "ExtractionValidationError",
     "UnsupportedExtractionTypeError",
-    "StyleNotImplementedError",
     "ChapterNotFoundError",
     "ChapterNotInProjectError",
     "RAGUnavailableError",

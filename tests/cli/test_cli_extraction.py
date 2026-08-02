@@ -5,8 +5,8 @@
   --num-chapters、--no-save、--auto-extract/--no-auto-extract、--index、--force）
 - success/skipped 人类可读输出与 --json 信封
 - extract status 人类可读与 --json（含 --type 过滤透传）
-- 信封格式与退出码 0/1/2；STYLE → UNSUPPORTED_TYPE 信封（退出码 1）；
-  NOT_FOUND / RAG_ERROR / EXTRACTION_ERROR 信封
+- 信封格式与退出码 0/1/2；STYLE 正常执行（退出码 0 + ✅ 提取完成摘要，F16 落地，
+  spec §4.1/§8.2）；NOT_FOUND / RAG_ERROR / EXTRACTION_ERROR 信封
 - --text 与 --text-file 同时使用 → 退出码 2；--type 非法值 → 退出码 2
 """
 
@@ -354,13 +354,61 @@ class TestExtractRun:
             in result.output
         )
 
-    def test_run_style_unsupported(
+    def test_run_style_success(
         self, cli_runner, mock_extraction_service, mock_create_tables
     ):
-        """--type style → UNSUPPORTED_TYPE 错误信封 + 退出码 1（F16 占位）."""
-        from inkflow.domain.ports.extraction_errors import StyleNotImplementedError
+        """--type style → 正常执行：退出码 0 + ✅ 提取完成摘要（F16 落地，spec §4.1/§8.2）。
 
-        mock_extraction_service.extract.side_effect = StyleNotImplementedError()
+        门面结果归一（spec §8.2 表 #6）: created=0/updated=0/model=None、
+        detail 为 StyleReport JSON（不落实体）；STYLE 不再是 UNSUPPORTED_TYPE。
+        """
+        style_detail = {
+            "project_id": str(PID),
+            "source": "manual",
+            "generated_at": "2026-08-02T10:00:00",
+            "fingerprint": {
+                "char_count": 48,
+                "sentence_count": 3,
+                "avg_sentence_length": 16.0,
+                "sentence_length_std": 9.9,
+                "paragraph_count": 1,
+                "avg_paragraph_length": 48.0,
+                "punctuation_density": 0.1667,
+                "exclamation_density": 0.0,
+                "ellipsis_density": 0.0417,
+                "dialogue_ratio": 0.2083,
+                "vocabulary_richness": 0.8235,
+                "top_words": [{"word": "林晚", "count": 1, "first_index": 0}],
+            },
+            "ai_trace": {
+                "ai_score": 0.26,
+                "verdict": "likely_human",
+                "features": [],
+                "evidence": [],
+            },
+            "lexical": {
+                "total_words": 17,
+                "unique_words": 14,
+                "top_words": [],
+                "avg_word_length": 2.1,
+                "stopword_ratio": 0.0588,
+                "jieba": None,
+            },
+            "llm_assessment": None,
+            "warnings": [],
+        }
+        mock_extraction_service.extract.return_value = _make_result(
+            type=ExtractionType.STYLE,
+            status=ExtractionStatus.SUCCESS,
+            processed_sources=1,
+            skipped_sources=0,
+            created=0,
+            updated=0,
+            warnings=["style 类型不支持自动索引"],
+            model=None,
+            indexed=False,
+            detail=style_detail,
+        )
         result = cli_runner.invoke(
             app,
             [
@@ -372,13 +420,17 @@ class TestExtractRun:
                 "--text",
                 "林晚",
             ],
-            obj=CliContext(json_output=True),
+            obj=CliContext(json_output=False),
         )
-        assert result.exit_code == 1
-        data = json.loads(result.stdout)
-        assert data["ok"] is False
-        assert data["error"]["code"] == "UNSUPPORTED_TYPE"
-        assert "风格提取尚未实现" in data["error"]["message"]
+        assert result.exit_code == 0
+        assert (
+            "✅ 提取完成: style 处理 1 个源（跳过 0），新增 0 更新 0，警告 1 条"
+            in result.output
+        )
+        call = mock_extraction_service.extract.await_args
+        request = call.kwargs["request"]
+        assert request.type is ExtractionType.STYLE
+        assert request.text == "林晚"
 
     def test_run_project_not_found(
         self, cli_runner, mock_extraction_service, mock_create_tables

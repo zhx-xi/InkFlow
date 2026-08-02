@@ -6,10 +6,10 @@
 退出码 0/1/2/130。
 
 错误码映射（spec §4/§7）:
-- StyleNotImplementedError / UnsupportedExtractionTypeError → UNSUPPORTED_TYPE
-  （STYLE 占位 422，F16 未实现）
+- UnsupportedExtractionTypeError → UNSUPPORTED_TYPE
 - ProjectNotFoundError / 无效 UUID → NOT_FOUND
-- ExtractionServiceError 子类（类型参数约束/章节校验）→ VALIDATION_ERROR
+- ExtractionServiceError 子类（类型参数约束/章节校验）与 F16
+  StyleValidationError → VALIDATION_ERROR
 - RAGUnavailableError / VectorStoreError → RAG_ERROR
 - ForeshadowingExtractionError / TimelineExtractionError → EXTRACTION_ERROR
 - LLMRequestError → LLM_ERROR
@@ -45,21 +45,23 @@ from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.ports.extraction_errors import (
     ExtractionServiceError,
     RAGUnavailableError,
-    StyleNotImplementedError,
     UnsupportedExtractionTypeError,
     VectorStoreError,
 )
 from inkflow.domain.ports.foreshadowing_errors import ForeshadowingExtractionError
 from inkflow.domain.ports.llm_errors import LLMRequestError
+from inkflow.domain.ports.style_errors import StyleValidationError
 from inkflow.domain.ports.timeline_errors import TimelineExtractionError
 from inkflow.domain.services._character_extractor import CharacterExtractor
 from inkflow.domain.services._foreshadowing_extractor import ForeshadowingExtractor
 from inkflow.domain.services._outline_generator import OutlineGenerator
+from inkflow.domain.services._style_llm_analyzer import StyleLLMAnalyzer
 from inkflow.domain.services._timeline_extractor import TimelineExtractor
 from inkflow.domain.services._world_extractor import WorldExtractor
 from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.extraction_service import ExtractionService
 from inkflow.domain.services.outline_service import OutlineService
+from inkflow.domain.services.style_service import StyleService
 from inkflow.domain.services.timeline_service import TimelineService
 from inkflow.domain.services.world_service import WorldService
 from inkflow.infrastructure.database.repositories.chapter_repo import (
@@ -119,9 +121,11 @@ def _run(cli_ctx: CliContext, coro_fn) -> Any:
         raise
     except ProjectNotFoundError as e:
         print_error(cli_ctx, "NOT_FOUND", str(e))
-    except (StyleNotImplementedError, UnsupportedExtractionTypeError) as e:
+    except UnsupportedExtractionTypeError as e:
         print_error(cli_ctx, "UNSUPPORTED_TYPE", str(e))
     except ExtractionServiceError as e:
+        print_error(cli_ctx, "VALIDATION_ERROR", str(e))
+    except StyleValidationError as e:
         print_error(cli_ctx, "VALIDATION_ERROR", str(e))
     except (RAGUnavailableError, VectorStoreError) as e:
         print_error(cli_ctx, "RAG_ERROR", str(e))
@@ -141,8 +145,11 @@ def _make_service(session) -> ExtractionService:
 
     向量存储未装配（LangChainVectorStore 归 M6/M7）: vector_store=None，
     index=true / reindex / retrieve 时门面抛 RAGUnavailableError → RAG_ERROR。
+    STYLE 槽位装配 F16 StyleService（门面恒确定性——llm_analysis 恒 False，
+    LLM 深度分析器装配仅为对齐 get_style_service，spec §8.2）。
     """
     project_repo = SQLiteProjectRepository(session)
+    chapter_repo = SQLiteChapterRepository(session)
     character_repo = SQLiteCharacterRepository(session)
     world_repo = SQLiteWorldRepository(session)
     outline_repo = SQLiteOutlineRepository(session)
@@ -152,7 +159,7 @@ def _make_service(session) -> ExtractionService:
     prompt_manager = LangChainPromptManager()
     return ExtractionService(
         project_repo=project_repo,
-        chapter_repo=SQLiteChapterRepository(session),
+        chapter_repo=chapter_repo,
         run_repo=SQLExtractionRunRepository(session),
         character_service=CharacterService(
             repository=character_repo,
@@ -191,6 +198,14 @@ def _make_service(session) -> ExtractionService:
             llm_client=llm_client,
             prompt_manager=prompt_manager,
             timeline_repo=timeline_repo,
+        ),
+        style_service=StyleService(
+            project_repo=project_repo,
+            chapter_repo=chapter_repo,
+            llm_analyzer=StyleLLMAnalyzer(
+                llm_client=llm_client,
+                prompt_manager=prompt_manager,
+            ),
         ),
         character_repo=character_repo,
         world_repo=world_repo,

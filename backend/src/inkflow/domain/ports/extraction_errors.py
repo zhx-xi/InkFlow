@@ -37,22 +37,11 @@ class ExtractionValidationError(ExtractionServiceError):
 class UnsupportedExtractionTypeError(ExtractionServiceError):
     """不支持的提取类型 — 422.
 
-    用于 type 为合法字符串但不在 ExtractionType 6 种枚举内（如 F16 落地前
-    的未知类型扩展值）。
+    用于 type 为合法字符串但不在 ExtractionType 6 种枚举内（防御性，
+    如未来新增类型扩展值）。
     """
 
     def __init__(self, message: str = "不支持的提取类型") -> None:
-        super().__init__(message)
-
-
-class StyleNotImplementedError(ExtractionServiceError):
-    """STYLE 类型未实现（F16 风格检测未落地，注册占位）— 422「风格提取尚未实现」.
-
-    接口契约（枚举/API/CLI）全量支持，调用返回 422（§6.1；Q1 ✅ 已确认选项 A）；
-    F16 落地后仅需注册 handler。
-    """
-
-    def __init__(self, message: str = "风格提取尚未实现（依赖 F16 风格检测）") -> None:
         super().__init__(message)
 
 

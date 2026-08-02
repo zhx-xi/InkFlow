@@ -11,6 +11,7 @@ from inkflow.domain.ports.vector_store import VectorStoreProtocol
 from inkflow.domain.services._character_extractor import CharacterExtractor
 from inkflow.domain.services._foreshadowing_extractor import ForeshadowingExtractor
 from inkflow.domain.services._outline_generator import OutlineGenerator
+from inkflow.domain.services._style_llm_analyzer import StyleLLMAnalyzer
 from inkflow.domain.services._timeline_extractor import TimelineExtractor
 from inkflow.domain.services._world_extractor import WorldExtractor
 from inkflow.domain.services.audit_service import AuditService
@@ -21,6 +22,7 @@ from inkflow.domain.services.extraction_service import ExtractionService
 from inkflow.domain.services.foreshadowing_service import ForeshadowingService
 from inkflow.domain.services.outline_service import OutlineService
 from inkflow.domain.services.project_service import ProjectService
+from inkflow.domain.services.style_service import StyleService
 from inkflow.domain.services.summary_service import SummaryService
 from inkflow.domain.services.timeline_service import TimelineService
 from inkflow.domain.services.world_service import WorldService
@@ -238,7 +240,8 @@ def get_extraction_service(
 
     装配: 复用 F9/F10/F11/F12 Service（get_character_service 等）+ F14 两条
     新管线（ForeshadowingExtractor / TimelineExtractor，LLM 客户端 + Prompt
-    模板 + 对应仓储）+ SQLExtractionRunRepository（增量追踪）+ F1/F2 仓储 +
+    模板 + 对应仓储）+ F16 StyleService（get_style_service，STYLE 槽位，
+    §8.2）+ SQLExtractionRunRepository（增量追踪）+ F1/F2 仓储 +
     懒加载向量存储（get_vector_store，BGE 首次调用才下载 ~100MB，spec §8）。
     """
     return ExtractionService(
@@ -259,6 +262,7 @@ def get_extraction_service(
             prompt_manager=LangChainPromptManager(),
             timeline_repo=SQLiteTimelineRepository(db),
         ),
+        style_service=get_style_service(db),
         character_repo=SQLiteCharacterRepository(db),
         world_repo=SQLiteWorldRepository(db),
         timeline_repo=SQLiteTimelineRepository(db),
@@ -285,6 +289,26 @@ def get_audit_service(
         chapter_repo=SQLiteChapterRepository(db),
         run_repo=SQLExtractionRunRepository(db),
         audit_repo=SQLiteAuditRepository(db),
+    )
+
+
+def get_style_service(
+    db: AsyncSession,
+) -> StyleService:
+    """获取 StyleService 实例（F16 风格检测服务，spec §5.1/§8.1）.
+
+    装配: F1 SQLiteProjectRepository（项目校验）+ F2 SQLiteChapterRepository
+    （章节读取）+ 可选 LLM 深度分析器 StyleLLMAnalyzer（LangChainLLMClient +
+    LangChainPromptManager，模板 style_llm_analysis——镜像 F14
+    TimelineExtractor 装配模式，spec §5.6）。
+    """
+    return StyleService(
+        project_repo=SQLiteProjectRepository(db),
+        chapter_repo=SQLiteChapterRepository(db),
+        llm_analyzer=StyleLLMAnalyzer(
+            llm_client=LangChainLLMClient(),
+            prompt_manager=LangChainPromptManager(),
+        ),
     )
 
 

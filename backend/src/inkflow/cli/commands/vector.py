@@ -42,6 +42,7 @@ from inkflow.domain.services._world_extractor import WorldExtractor
 from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.extraction_service import ExtractionService
 from inkflow.domain.services.outline_service import OutlineService
+from inkflow.domain.services.style_service import StyleService
 from inkflow.domain.services.timeline_service import TimelineService
 from inkflow.domain.services.world_service import WorldService
 from inkflow.infrastructure.database.repositories.chapter_repo import (
@@ -112,6 +113,7 @@ def _make_service(session) -> ExtractionService:
     reindex / retrieve 时门面抛 RAGUnavailableError → RAG_ERROR。
     """
     project_repo = SQLiteProjectRepository(session)
+    chapter_repo = SQLiteChapterRepository(session)
     character_repo = SQLiteCharacterRepository(session)
     world_repo = SQLiteWorldRepository(session)
     outline_repo = SQLiteOutlineRepository(session)
@@ -121,7 +123,7 @@ def _make_service(session) -> ExtractionService:
     prompt_manager = LangChainPromptManager()
     return ExtractionService(
         project_repo=project_repo,
-        chapter_repo=SQLiteChapterRepository(session),
+        chapter_repo=chapter_repo,
         run_repo=SQLExtractionRunRepository(session),
         character_service=CharacterService(
             repository=character_repo,
@@ -160,6 +162,10 @@ def _make_service(session) -> ExtractionService:
             llm_client=llm_client,
             prompt_manager=prompt_manager,
             timeline_repo=timeline_repo,
+        ),
+        style_service=StyleService(
+            project_repo=project_repo,
+            chapter_repo=chapter_repo,
         ),
         character_repo=character_repo,
         world_repo=world_repo,
