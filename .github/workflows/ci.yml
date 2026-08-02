@@ -2,12 +2,64 @@ name: CI
 on:
   push:
     branches: [main, develop]
+    # 只有修改功能代码 / 测试代码 / CI 代码才触发；纯文档（*.md、design/、docs/、specs/、adr/ 等）不触发
+    paths:
+      - 'backend/src/**'
+      - 'backend/tests/**'
+      - 'tests/**'
+      - 'backend/pyproject.toml'
+      - 'backend/uv.lock'
+      - '.github/**'
   pull_request:
     branches: [main]
+    paths:
+      - 'backend/src/**'
+      - 'backend/tests/**'
+      - 'tests/**'
+      - 'backend/pyproject.toml'
+      - 'backend/uv.lock'
+      - '.github/**'
 
 jobs:
+  # ── 变更检测元 job：分层触发决策（dorny/paths-filter）──
+  # core   = 核心功能代码 + 依赖配置
+  # unit   = unit 测试代码（backend/tests/unit/）
+  # tests  = 全部测试代码（unit + 集成 + E2E/CLI）
+  # ci     = CI 配置本身（改 CI 全量重验）
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      core: ${{ steps.filter.outputs.core }}
+      unit: ${{ steps.filter.outputs.unit }}
+      tests: ${{ steps.filter.outputs.tests }}
+      ci: ${{ steps.filter.outputs.ci }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            core:
+              - 'backend/src/**'
+              - 'backend/pyproject.toml'
+              - 'backend/uv.lock'
+            unit:
+              - 'backend/tests/unit/**'
+            tests:
+              - 'backend/tests/**'
+              - 'tests/**'
+            ci:
+              - '.github/**'
+
   # ── Lint: ruff check + mypy type check ──
   lint-backend:
+    needs: [changes]
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
       checks: write
@@ -58,7 +110,10 @@ jobs:
         run: uv run mypy src/ --ignore-missing-imports
 
   # ── Unit tests (fast, no DB, < 10s) ──
+  # 只跑核心代码 + unit 测试代码变更；集成/E2E 测试变更不触发
   unit-test-backend:
+    needs: [changes]
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.unit == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
     runs-on: windows-latest
@@ -95,7 +150,10 @@ jobs:
           fail_ci_if_error: false
 
   # ── Integration: Chapter (repo + service + API + CLI) ──
+  # 只要修改代码（核心或测试）都触发
   integration-chapter-backend:
+    needs: [changes]
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
     runs-on: windows-latest
@@ -132,6 +190,8 @@ jobs:
 
   # ── Integration: Project (repo + service + API + CLI) ──
   integration-project-backend:
+    needs: [changes]
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
     runs-on: windows-latest
@@ -168,6 +228,8 @@ jobs:
 
   # ── Integration: Writing (API + CLI) ──
   integration-writing-backend:
+    needs: [changes]
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
     runs-on: windows-latest
@@ -202,6 +264,8 @@ jobs:
 
   # ── Integration: Agent (pipeline + API + CLI) ──
   integration-agent-backend:
+    needs: [changes]
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
     runs-on: windows-latest
@@ -237,6 +301,8 @@ jobs:
 
   # ── Integration: CLI（迁移后 tests/cli/ mock 式 CLI 测试，Issue #61 目录治理）──
   integration-cli-backend:
+    needs: [changes]
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
     runs-on: windows-latest
@@ -285,6 +351,8 @@ jobs:
 
   # ── Smoke: health check (fastest) ──
   smoke-backend:
+    needs: [changes]
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
     runs-on: windows-latest
