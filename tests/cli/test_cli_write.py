@@ -10,7 +10,6 @@ from typer.testing import CliRunner
 
 from inkflow.cli.commands.write import app
 from inkflow.cli.context import CliContext
-from inkflow.domain.models.writing import WritingMode, WritingResult
 from inkflow.domain.ports.llm_client import TokenUsage
 from inkflow.domain.ports.llm_errors import LLMRequestError
 
@@ -60,16 +59,8 @@ def mock_writing_service():
 
 
 class TestWriteNext:
-    def test_next_json(self, cli_runner, mock_writing_service):
-        """write next --json 成功."""
-        mock_writing_service.generate_chapter.return_value = WritingResult(
-            content="test content",
-            word_count=100,
-            mode=WritingMode.GENERATE,
-            format_valid=True,
-            retry_count=0,
-            model="test-model",
-        )
+    def test_next_json(self, cli_runner, mock_streaming_service):
+        """write next --json 成功（F23: 流式静默收集 → JSON 信封）."""
         result = cli_runner.invoke(
             app,
             [
@@ -86,8 +77,16 @@ class TestWriteNext:
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
         assert payload["ok"] is True
-        assert payload["data"]["content"] == "test content"
-        mock_writing_service.generate_chapter.assert_awaited_once()
+        # 流式契约（spec §4.2）: 信封 content == 全部 delta 拼接 == 全文
+        assert payload["data"]["content"] == "清晨薄雾"
+        assert payload["data"]["format_valid"] is True
+        assert payload["data"]["word_count"] == 4
+        assert payload["data"]["model"] == "test-model"
+        assert payload["data"]["mode"] == "generate"
+        assert payload["data"]["retry_count"] == 0
+        assert payload["data"]["token_usage"]["total_tokens"] == 30
+        # 流式路径佐证: 非流式 generate_chapter 未被调用
+        mock_streaming_service.generate_chapter.assert_not_awaited()
 
     def test_next_count_param(self, cli_runner, mock_writing_service):
         """write next --count / --show-context 参数出现在 help."""
@@ -98,16 +97,8 @@ class TestWriteNext:
         assert "--count" in result.output
         assert "--show-context" in result.output
 
-    def test_next_show_context_placeholder(self, cli_runner, mock_writing_service):
-        """--show-context 占位打印."""
-        mock_writing_service.generate_chapter.return_value = WritingResult(
-            content="test content",
-            word_count=100,
-            mode=WritingMode.GENERATE,
-            format_valid=True,
-            retry_count=0,
-            model="test-model",
-        )
+    def test_next_show_context_placeholder(self, cli_runner, mock_streaming_service):
+        """--show-context 占位打印（F23 流式: 仍在摘要行后 echo，spec §4.1）."""
         result = cli_runner.invoke(
             app,
             [
@@ -124,12 +115,20 @@ class TestWriteNext:
         )
         assert result.exit_code == 0
         assert "(--show-context 功能将在 F6 联调时启用)" in result.output
-
-    def test_next_llm_error(self, cli_runner, mock_writing_service):
-        """LLM 错误映射为 LLM_ERROR 信封."""
-        mock_writing_service.generate_chapter.side_effect = LLMRequestError(
-            "provider down"
+        # 流式摘要行先输出，占位提示在其后
+        assert result.output.index("✅ 章节生成成功: 4 字 (重试 0 次, test-model)") < (
+            result.output.index("(--show-context 功能将在 F6 联调时启用)")
         )
+
+    def test_next_llm_error(self, cli_runner, mock_streaming_service):
+        """LLM 错误映射为 LLM_ERROR 信封（F23 流式: 流中异常 → LLM_ERROR，spec §7 E3）."""
+        from inkflow.domain.models.writing import WritingStreamEvent
+
+        async def _stream_then_raise(*args, **kwargs):
+            yield WritingStreamEvent(delta="清晨")
+            raise LLMRequestError("provider down")
+
+        mock_streaming_service.stream_generate = _stream_then_raise
         result = cli_runner.invoke(
             app,
             [
@@ -158,16 +157,8 @@ class TestWriteNext:
 
 
 class TestWriteContinue:
-    def test_continue_json(self, cli_runner, mock_writing_service):
-        """write continue --json 成功."""
-        mock_writing_service.continue_writing.return_value = WritingResult(
-            content="continued",
-            word_count=50,
-            mode=WritingMode.CONTINUE,
-            format_valid=True,
-            retry_count=0,
-            model="test-model",
-        )
+    def test_continue_json(self, cli_runner, mock_streaming_service):
+        """write continue --json 成功（F23: 流式静默收集 → JSON 信封）."""
         result = cli_runner.invoke(
             app,
             [
@@ -182,20 +173,19 @@ class TestWriteContinue:
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
         assert payload["ok"] is True
-        assert payload["data"]["content"] == "continued"
+        # 流式契约（spec §4.2）: 信封 content == 全部 delta 拼接 == 全文
+        assert payload["data"]["content"] == "清晨薄雾"
+        assert payload["data"]["format_valid"] is True
+        assert payload["data"]["word_count"] == 4
+        assert payload["data"]["model"] == "test-model"
+        assert payload["data"]["mode"] == "continue"
+        assert payload["data"]["retry_count"] == 0
+        assert payload["data"]["token_usage"]["total_tokens"] == 30
 
 
 class TestWriteRevise:
-    def test_revise_json(self, cli_runner, mock_writing_service):
-        """write revise --instruction --json 成功."""
-        mock_writing_service.revise_content.return_value = WritingResult(
-            content="revised",
-            word_count=80,
-            mode=WritingMode.REVISE,
-            format_valid=True,
-            retry_count=0,
-            model="test-model",
-        )
+    def test_revise_json(self, cli_runner, mock_streaming_service):
+        """write revise --instruction --json 成功（F23: 流式静默收集 → JSON 信封）."""
         result = cli_runner.invoke(
             app,
             [
@@ -212,7 +202,14 @@ class TestWriteRevise:
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
         assert payload["ok"] is True
-        assert payload["data"]["content"] == "revised"
+        # 流式契约（spec §4.2）: 信封 content == 全部 delta 拼接 == 全文
+        assert payload["data"]["content"] == "清晨薄雾"
+        assert payload["data"]["format_valid"] is True
+        assert payload["data"]["word_count"] == 4
+        assert payload["data"]["model"] == "test-model"
+        assert payload["data"]["mode"] == "revise"
+        assert payload["data"]["retry_count"] == 0
+        assert payload["data"]["token_usage"]["total_tokens"] == 30
 
     def test_revise_feedback_removed(self, cli_runner):
         """--feedback 已改名为 --instruction."""

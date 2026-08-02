@@ -6,15 +6,21 @@
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import logging
+from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 from inkflow.api.deps import get_writing_service
 from inkflow.domain.models.writing import (
     ContinueWritingRequest,
     RevisionRequest,
+    StreamWritingRequest,
     WritingRequest,
+    WritingStreamEvent,
 )
 from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.services.writing_service import WritingService
@@ -80,3 +86,80 @@ async def revise_content(
     except Exception as exc:
         raise _map_service_error(exc) from exc
     return result.model_dump(mode="json")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# F23 SSE 流式端点（spec §3/§5.2/§6）— 统一端点 + mode 判别联合
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def _encode_sse(ev: WritingStreamEvent) -> str:
+    """WritingStreamEvent → SSE 帧字符串（data: <json> + 空行，spec §6.2）."""
+    payload: dict = {"done": ev.done}
+    if ev.delta:
+        payload["delta"] = ev.delta
+    if ev.error:
+        payload["error"] = ev.error
+    if ev.format_valid is not None:
+        payload["format_valid"] = ev.format_valid
+    if ev.warnings:
+        payload["warnings"] = ev.warnings
+    if ev.word_count is not None:
+        payload["word_count"] = ev.word_count
+    if ev.model:
+        payload["model"] = ev.model
+    if ev.token_usage:
+        payload["token_usage"] = dataclasses.asdict(ev.token_usage)
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+async def _event_generator(
+    request: Request,
+    events: AsyncGenerator[WritingStreamEvent, None],
+) -> AsyncGenerator[str, None]:
+    """包装 service 流 → SSE 帧字符串；客户端断开立即停止（spec §5.3）."""
+    try:
+        async for ev in events:
+            if await request.is_disconnected():
+                await events.aclose()  # 客户端断开 → 终止 service 生成器（不泄漏任务）
+                return
+            yield _encode_sse(ev)  # §6.2 帧编码
+    except LLMRequestError:
+        # 流中 LLM 失败 → SSE error 帧后流结束（§7 E3）
+        yield _encode_sse(WritingStreamEvent(done=True, error="LLM 调用失败，请稍后重试"))
+
+
+def _stream_response(
+    request: Request,
+    events: AsyncGenerator[WritingStreamEvent, None],
+) -> StreamingResponse:
+    """构造 SSE StreamingResponse（spec §3.1 响应头显式设置）."""
+    return StreamingResponse(
+        _event_generator(request, events),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/stream")
+async def stream_write(
+    data: StreamWritingRequest,
+    request: Request,
+    svc: WritingService = Depends(get_writing_service),
+) -> StreamingResponse:
+    """流式写作 — SSE 逐 token 推送（mode 判别分发，帧协议见 spec §6）."""
+    try:
+        if data.mode == "generate":
+            events = svc.stream_generate(data)
+        elif data.mode == "continue":
+            events = svc.stream_continue(data)
+        else:
+            events = svc.stream_revise(data)
+    except Exception as exc:
+        # 流开始前校验异常（项目/章节不存在等）→ HTTP 状态码（spec §3.2）
+        raise _map_service_error(exc) from exc
+    return _stream_response(request, events)

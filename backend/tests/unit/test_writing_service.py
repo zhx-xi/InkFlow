@@ -405,7 +405,7 @@ class TestStreamGenerate:
         content = _good_content()
         chunks = [content[:100], content[100:300], content[300:]]
         usage = TokenUsage(prompt_tokens=100, completion_tokens=2000, total_tokens=2100)
-        mock_llm.chat_stream = AsyncMock(return_value=_stream_events(chunks, token_usage=usage))
+        mock_llm.chat_stream = MagicMock(return_value=_stream_events(chunks, token_usage=usage))
         request = WritingRequest(
             project_id=proj_id,
             chapter_id=uuid.uuid4(),
@@ -422,7 +422,7 @@ class TestStreamGenerate:
         assert done.done is True
         assert done.delta == ""
         assert done.format_valid is True
-        assert done.word_count == 2000  # "# 第一章 试炼\n\n" + "正文内容。"*500 → 4 字/段 × 500
+        assert done.word_count == 2005  # 正文 2000 + 标题 5 字（count_words 保留标题）
         assert done.model == "openai/gpt-4o"
         assert done.token_usage == usage
         assert done.warnings == []
@@ -431,7 +431,7 @@ class TestStreamGenerate:
         self, service, mock_llm, proj_id
     ) -> None:
         bad = "```\n# 标题\n正文\n```"
-        mock_llm.chat_stream = AsyncMock(return_value=_stream_events([bad]))
+        mock_llm.chat_stream = MagicMock(return_value=_stream_events([bad]))
         request = WritingRequest(
             project_id=proj_id,
             chapter_id=uuid.uuid4(),
@@ -445,7 +445,7 @@ class TestStreamGenerate:
         mock_llm.chat_stream.assert_called_once()  # 不重试（Q2 拍板，spec §5.4）
 
     async def test_empty_stream_done_frame(self, service, mock_llm, proj_id) -> None:
-        mock_llm.chat_stream = AsyncMock(return_value=_stream_events([]))
+        mock_llm.chat_stream = MagicMock(return_value=_stream_events([]))
         request = WritingRequest(
             project_id=proj_id,
             chapter_id=uuid.uuid4(),
@@ -463,7 +463,7 @@ class TestStreamGenerate:
         assert done.word_count == 0
 
     async def test_chat_stream_messages_contract(self, service, mock_llm, proj_id) -> None:
-        mock_llm.chat_stream = AsyncMock(
+        mock_llm.chat_stream = MagicMock(
             return_value=_stream_events(["清晨", "的薄雾", "尚未散尽。"])
         )
         request = WritingRequest(
@@ -508,7 +508,7 @@ class TestStreamContinue:
         existing = "开头部分。" + "中间内容。" * 300  # 1505 字符，尾部 800 字为 tail
         tail = existing[-800:]
         assert "开头部分。" not in tail  # 头部确认被截掉
-        mock_llm.chat_stream = AsyncMock(return_value=_stream_events(["续写正文", "完成。"]))
+        mock_llm.chat_stream = MagicMock(return_value=_stream_events(["续写正文", "完成。"]))
         request = ContinueWritingRequest(
             project_id=proj_id,
             chapter_id=uuid.uuid4(),
@@ -525,9 +525,9 @@ class TestStreamContinue:
         assert events[-1].done is True
 
     async def test_continue_done_frame_semantics(self, service, mock_llm, proj_id) -> None:
-        content = "# 第一章 试炼\n\n" + "正文内容。" * 700  # 2800 字 ≥ target_words 2500
+        content = "# 第一章 试炼\n\n" + "正文内容。" * 700  # 2800 + 标题 5 = 2805 ≥ 2500
         usage = TokenUsage(prompt_tokens=100, completion_tokens=2800, total_tokens=2900)
-        mock_llm.chat_stream = AsyncMock(return_value=_stream_events([content], token_usage=usage))
+        mock_llm.chat_stream = MagicMock(return_value=_stream_events([content], token_usage=usage))
         request = ContinueWritingRequest(
             project_id=proj_id,
             chapter_id=uuid.uuid4(),
@@ -538,7 +538,7 @@ class TestStreamContinue:
         done = events[-1]
         assert done.done is True
         assert done.format_valid is True
-        assert done.word_count == 2800
+        assert done.word_count == 2805
         assert done.model == "openai/gpt-4o"
         assert done.token_usage == usage
 
@@ -563,7 +563,7 @@ class TestStreamRevise:
     async def test_revise_no_format_valid_and_messages(self, service, mock_llm, proj_id) -> None:
         content = "修订后的正文内容。" * 100  # 8 字/段 × 100 = 800 字
         chunks = [content[:200], content[200:]]
-        mock_llm.chat_stream = AsyncMock(return_value=_stream_events(chunks))
+        mock_llm.chat_stream = MagicMock(return_value=_stream_events(chunks))
         request = RevisionRequest(
             project_id=proj_id,
             chapter_id=uuid.uuid4(),
@@ -589,7 +589,7 @@ class TestStreamRevise:
         assert "修订意见：节奏太慢，删减环境描写" in messages[1].content
 
     async def test_revise_target_range_not_located_warns(self, service, mock_llm, proj_id) -> None:
-        mock_llm.chat_stream = AsyncMock(return_value=_stream_events(["修订后的内容"]))
+        mock_llm.chat_stream = MagicMock(return_value=_stream_events(["修订后的内容"]))
         request = RevisionRequest(
             project_id=proj_id,
             chapter_id=uuid.uuid4(),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncGenerator
 
 from inkflow.domain.models.writing import (
     ContinueWritingRequest,
@@ -10,8 +11,9 @@ from inkflow.domain.models.writing import (
     WritingMode,
     WritingRequest,
     WritingResult,
+    WritingStreamEvent,
 )
-from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
+from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol, TokenUsage
 from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.ports.prompt_template import PromptTemplateProtocol
 from inkflow.domain.services._format_validator import FormatValidator
@@ -167,18 +169,15 @@ class WritingService:
         if chapter is None or chapter.project_id != project_id:
             raise _NotFoundError("章节不存在")
 
-    async def _generate_with_retry(
+    def _build_generate_messages(
         self,
         *,
-        mode: WritingMode,
-        style: str,
         outline: str,
         context: str,
         min_words: int,
-        model: str,
-        temperature: float,
-    ) -> WritingResult:
-        """带格式修复重试的生成/续写管道."""
+        style: str,
+    ) -> list[ChatMessage]:
+        """组装生成/续写 prompt（system + user）— 流式与非流式共用（spec §5.1 设计要点）."""
         system_msg = ChatMessage(
             role="system",
             content=f"你是专业小说作者。{style}" if style else "你是专业小说作者。",
@@ -193,7 +192,26 @@ class WritingService:
                 "不要输出 JSON 或代码块标记。"
             ),
         )
-        messages: list[ChatMessage] = [system_msg, user_msg]
+        return [system_msg, user_msg]
+
+    async def _generate_with_retry(
+        self,
+        *,
+        mode: WritingMode,
+        style: str,
+        outline: str,
+        context: str,
+        min_words: int,
+        model: str,
+        temperature: float,
+    ) -> WritingResult:
+        """带格式修复重试的生成/续写管道."""
+        messages = self._build_generate_messages(
+            outline=outline,
+            context=context,
+            min_words=min_words,
+            style=style,
+        )
 
         retry_count = 0
         last_response = None
@@ -250,4 +268,201 @@ class WritingService:
                 f"格式校验未通过（{_MAX_RETRIES} 次重试后仍异常）",
                 *([f"字数不足: {wc}/{min_words}"] if wc < min_words else []),
             ],
+        )
+
+    # ── F23 SSE 流式（spec §5.1：校验 → prompt → chat_stream 透传 → done 帧）──
+
+    async def _stream_validate(self, project_id: uuid.UUID, chapter_id: uuid.UUID):
+        """流式前置校验 — 项目存在 + 章节归属；失败抛 LLMRequestError（spec §7 E1）."""
+        project = await self._project_repo.get(project_id)
+        if project is None:
+            raise LLMRequestError("项目不存在")
+        try:
+            await self._validate_chapter(project_id, chapter_id)
+        except _NotFoundError as exc:
+            raise LLMRequestError(str(exc)) from exc
+        return project
+
+    def _build_continue_messages(
+        self,
+        *,
+        tail: str,
+        context: str,
+        target_words: int,
+        style: str,
+    ) -> list[ChatMessage]:
+        """组装续写 prompt — outline 注入尾部锚点（镜像 continue_writing，spec §5.1）."""
+        return self._build_generate_messages(
+            outline=f"续写：{tail}",
+            context=context,
+            min_words=target_words,
+            style=style,
+        )
+
+    def _build_done_event(
+        self,
+        *,
+        content: str,
+        min_words: int,
+        model: str,
+        token_usage: TokenUsage | None,
+    ) -> WritingStreamEvent:
+        """构造 done 帧 — 拼接内容格式校验 + 字数统计（generate/continue 共用，spec §5.4）."""
+        if not content:
+            return WritingStreamEvent(
+                done=True,
+                format_valid=False,
+                warnings=["生成内容为空"],
+                word_count=0,
+                model=model,
+                token_usage=token_usage,
+            )
+        validation = FormatValidator.validate(content, min_words)
+        wc = count_words(content)
+        if validation.valid:
+            return WritingStreamEvent(
+                done=True,
+                format_valid=True,
+                warnings=[],
+                word_count=wc,
+                model=model,
+                token_usage=token_usage,
+            )
+        return WritingStreamEvent(
+            done=True,
+            format_valid=False,
+            warnings=["格式校验未通过（流式直通，未自动重试）", *validation.errors],
+            word_count=wc,
+            model=model,
+            token_usage=token_usage,
+        )
+
+    async def stream_generate(
+        self, request: WritingRequest
+    ) -> AsyncGenerator[WritingStreamEvent, None]:
+        """流式生成章节 — 校验 → 构建 prompt → chat_stream 逐事件 yield → done 帧（spec §5.1）."""
+        project = await self._stream_validate(request.project_id, request.chapter_id)
+
+        style = request.style_hint or project.config.writing_style or ""
+        model = request.model or project.config.model
+        temperature = (
+            request.temperature if request.temperature is not None else project.config.temperature
+        )
+
+        ctx = await self._context_provider.get_context(
+            project_id=request.project_id,
+            chapter_id=request.chapter_id,
+            mode="generate",
+        )
+        full_context = request.context or ctx or ""
+
+        messages = self._build_generate_messages(
+            outline=request.outline,
+            context=full_context,
+            min_words=request.min_words,
+            style=style,
+        )
+
+        content_parts: list[str] = []
+        token_usage: TokenUsage | None = None
+        async for ev in self._llm.chat_stream(
+            messages=messages, model=model, temperature=temperature
+        ):
+            content_parts.append(ev.content)
+            token_usage = ev.token_usage
+            yield WritingStreamEvent(delta=ev.content)
+
+        yield self._build_done_event(
+            content="".join(content_parts),
+            min_words=request.min_words,
+            model=model,
+            token_usage=token_usage,
+        )
+
+    async def stream_continue(
+        self, request: ContinueWritingRequest
+    ) -> AsyncGenerator[WritingStreamEvent, None]:
+        """流式续写 — 语义镜像 continue_writing（spec §5.1）."""
+        project = await self._stream_validate(request.project_id, request.chapter_id)
+
+        style = request.style_hint or project.config.writing_style or ""
+        model = request.model or project.config.model
+        temperature = (
+            request.temperature if request.temperature is not None else project.config.temperature
+        )
+        tail = request.existing_content[-800:]
+
+        ctx = await self._context_provider.get_context(
+            project_id=request.project_id,
+            chapter_id=request.chapter_id,
+            mode="continue",
+        )
+        full_context = request.context or ctx or ""
+
+        messages = self._build_continue_messages(
+            tail=tail,
+            context=full_context,
+            target_words=request.target_words,
+            style=style,
+        )
+
+        content_parts: list[str] = []
+        token_usage: TokenUsage | None = None
+        async for ev in self._llm.chat_stream(
+            messages=messages, model=model, temperature=temperature
+        ):
+            content_parts.append(ev.content)
+            token_usage = ev.token_usage
+            yield WritingStreamEvent(delta=ev.content)
+
+        yield self._build_done_event(
+            content="".join(content_parts),
+            min_words=request.target_words,
+            model=model,
+            token_usage=token_usage,
+        )
+
+    async def stream_revise(
+        self, request: RevisionRequest
+    ) -> AsyncGenerator[WritingStreamEvent, None]:
+        """流式修订 — 语义镜像 revise_content；无 FormatValidator（spec §5.1 注）."""
+        await self._stream_validate(request.project_id, request.chapter_id)
+
+        model = request.model or "openai/gpt-4o"
+        temperature = request.temperature if request.temperature is not None else 0.4
+
+        warnings: list[str] = []
+        if request.target_range and request.target_range not in request.content:
+            warnings.append(f"未能定位目标范围 '{request.target_range}'，已对全文执行修订")
+
+        system_msg = ChatMessage(
+            role="system",
+            content="你是专业小说修订助手。保留原文风格，仅修复指出的问题。",
+        )
+        user_msg = ChatMessage(
+            role="user",
+            content=(
+                f"原文：\n{request.content}\n\n"
+                f"修订意见：{request.feedback}\n"
+                + (f"目标范围：{request.target_range}\n" if request.target_range else "")
+                + "请输出修订后的完整内容，保持原有叙事风格与口吻。"
+            ),
+        )
+
+        content_parts: list[str] = []
+        token_usage: TokenUsage | None = None
+        async for ev in self._llm.chat_stream(
+            messages=[system_msg, user_msg], model=model, temperature=temperature
+        ):
+            content_parts.append(ev.content)
+            token_usage = ev.token_usage
+            yield WritingStreamEvent(delta=ev.content)
+
+        yield WritingStreamEvent(
+            done=True,
+            format_valid=None,
+            warnings=warnings,
+            word_count=count_words("".join(content_parts)),
+            model=model,
+            token_usage=token_usage,
         )

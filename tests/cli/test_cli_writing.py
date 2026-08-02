@@ -15,7 +15,11 @@ runner = CliRunner()
 
 
 class _FakeWritingService:
-    """CLI 测试用假 WritingService — 返回预设 WritingResult，不触发真实 LLM."""
+    """CLI 测试用假 WritingService — 返回预设 WritingStreamEvent，不触发真实 LLM.
+
+    F23（spec §4，Q3 拍板）: CLI 默认流式——只消费 stream_generate /
+    stream_continue / stream_revise；非流式三方法保留仅供对照（CLI 不再调用）。
+    """
 
     def __init__(self, *args, **kwargs):
         pass
@@ -28,6 +32,36 @@ class _FakeWritingService:
 
     async def revise_content(self, request):
         return _preset_writing_result("revise")
+
+    async def stream_generate(self, request):
+        for event in _preset_stream_events("generate"):
+            yield event
+
+    async def stream_continue(self, request):
+        for event in _preset_stream_events("continue"):
+            yield event
+
+    async def stream_revise(self, request):
+        for event in _preset_stream_events("revise"):
+            yield event
+
+
+def _preset_stream_events(mode: str):
+    """F23 流式事件序列 — delta（全文单帧）+ done 帧，镜像 _preset_writing_result 字段."""
+    from inkflow.domain.models.writing import WritingStreamEvent
+    from inkflow.domain.ports.llm_client import TokenUsage
+
+    yield WritingStreamEvent(delta="# 试炼场风波\n\n清晨的薄雾尚未散尽……")
+    yield WritingStreamEvent(
+        done=True,
+        format_valid=True,
+        word_count=2347,
+        model="deepseek/deepseek-chat",
+        token_usage=TokenUsage(
+            prompt_tokens=1820, completion_tokens=2600, total_tokens=4420
+        ),
+        warnings=[],
+    )
 
 
 def _preset_writing_result(mode: str):
@@ -171,12 +205,13 @@ class TestWriteCLI:
 
     @pytest.mark.writing
     def test_write_next_llm_error(self, isolated_db, monkeypatch):
-        """LLM 调用失败 → 退出码 1，stderr 输出错误信息."""
+        """LLM 调用失败 → 退出码 1，stderr 输出错误信息（F23: 流中异常 → LLM_ERROR）."""
         from inkflow.domain.ports.llm_errors import LLMRequestError
 
         class _FailingService:
-            async def generate_chapter(self, request):
+            async def stream_generate(self, request):
                 raise LLMRequestError("LLM 调用失败，请稍后重试")
+                yield  # pragma: no cover — 使函数为 async generator，首个 next() 即抛异常
 
         self._patch_write_services(monkeypatch, _FailingService())
         result = runner.invoke(
