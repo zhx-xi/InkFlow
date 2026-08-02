@@ -280,6 +280,7 @@ jobs:
                  ../tests/cli/test_cli_extraction.py `
                  ../tests/cli/test_cli_vector.py `
                  ../tests/cli/test_cli_audit.py `
+                 ../tests/cli/test_cli_style.py `
                  -v --tb=short
 
   # ── Smoke: health check (fastest) ──

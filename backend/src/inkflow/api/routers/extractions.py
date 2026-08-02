@@ -15,9 +15,9 @@
 - 无效 UUID（路径参数）→ 404（同 F1-F13 `_parse_id` 模式，detail=「项目不存在」）
 - ProjectNotFoundError → 404（消息即 detail）
 - ExtractionServiceError 子类（ExtractionValidationError /
-  UnsupportedExtractionTypeError / StyleNotImplementedError /
-  ChapterNotFoundError / ChapterNotInProjectError）与 F11
-  OutlineNameConflictError → 422（消息即 detail）
+  UnsupportedExtractionTypeError / ChapterNotFoundError /
+  ChapterNotInProjectError）与 F11 OutlineNameConflictError、F16
+  StyleValidationError → 422（消息即 detail）
 - LLMRequestError → 500（固定文案，同 F9-F11）
 - 提取/生成管线解析失败（CharacterExtractionError / WorldExtractionError /
   OutlineGenerationError / ForeshadowingExtractionError /
@@ -25,7 +25,8 @@
 - RAGUnavailableError / VectorStoreError / ExtractionRunError → 500
   （消息即 detail）
 
-依据: specs/f14-extraction-service/spec.md §3/§5/§7。
+依据: specs/f14-extraction-service/spec.md §3/§5/§7 +
+specs/f16-style-service/spec.md §3.3/§8.2（StyleValidationError 映射）。
 """
 
 from __future__ import annotations
@@ -57,6 +58,7 @@ from inkflow.domain.ports.outline_errors import (
     OutlineGenerationError,
     OutlineNameConflictError,
 )
+from inkflow.domain.ports.style_errors import StyleValidationError
 from inkflow.domain.ports.timeline_errors import TimelineExtractionError
 from inkflow.domain.ports.vector_store import EntityType
 from inkflow.domain.ports.world_errors import WorldExtractionError
@@ -88,6 +90,8 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
     except ProjectNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except ExtractionServiceError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except StyleValidationError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except OutlineNameConflictError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
@@ -158,8 +162,8 @@ async def extract(
     """统一提取（spec §3.2）— 6 种类型分发 + 增量判定 + 可选 RAG 索引。
 
     请求体即 ExtractionRequest（DTO 自带校验: text/chapter_ids 互斥、超限、
-    非法 UUID/type → Pydantic 422）；业务校验（STYLE 未实现、类型不匹配、
-    章节不存在/跨项目）由服务层抛 ExtractionServiceError 子类 → 422。
+    非法 UUID/type → Pydantic 422）；业务校验（类型不匹配、章节不存在/跨项目、
+    风格输入约束）由服务层抛错误子类 → 422。
     """
     svc = _get_svc(db)
     result = await _run_service(svc.extract(request))

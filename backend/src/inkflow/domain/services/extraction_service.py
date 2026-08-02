@@ -10,7 +10,7 @@ ExtractionService 是 F14 的横切收敛核心（spec §5）: 把 F9-F13 已存
 TimelineService.check_consistency / ForeshadowingExtractor /
 TimelineExtractor），本类只做:
 ① 项目存在性校验（统一 404 语义）
-② 类型注册表查 handler（STYLE 占位 422，§6.1）
+② 类型注册表查 handler（6 槽全注册，STYLE → StyleService 委托，§6.1/F16 §8.2）
 ③ 增量判定（_resolve_sources: hash 比对 run 表，skip 时不调用 LLM）
 ④ 逐源分发执行（_dispatch: 各类型请求构造 + 结果归一化，§5.3）
 ⑤ 每源成功后立即 upsert ExtractionRun（断点续跑基础，§6.2）
@@ -22,10 +22,16 @@ TIMELINE 双语义（§5.5）: 设置项判定在门面层——请求 auto_extr
 开启 = TimelineExtractor（LLM 提取，按源 hash 增量），关闭 =
 TimelineService.check_consistency（F12 确定性检查，每次执行，无 LLM）。
 
+STYLE（F16 落地，spec §8.2 修订表）: 注册 StyleService.analyze 委托——每次
+执行（固定 full 源，无增量 skip）、门面恒确定性（llm_analysis=False，F14
+ExtractionRequest 无该字段）、结果归一 created=0/updated=0/model=None、
+index=true 时恒 False + warning。
+
 遵循 ADR-002/015: 领域层零框架 import，依赖全部通过构造函数注入
 （Protocol 类型），测试注入 Mock。
 
-依据: specs/f14-extraction-service/spec.md §5.1-§5.6/§6/§7/§8。
+依据: specs/f14-extraction-service/spec.md §5.1-§5.6/§6/§7/§8 +
+specs/f16-style-service/spec.md §8.2（STYLE 槽位落地）。
 """
 
 from __future__ import annotations
@@ -74,7 +80,6 @@ from inkflow.domain.ports.extraction_errors import (
     ChapterNotInProjectError,
     ExtractionValidationError,
     RAGUnavailableError,
-    StyleNotImplementedError,
     UnsupportedExtractionTypeError,
 )
 from inkflow.domain.ports.extraction_run_repository import ExtractionRunRepositoryProtocol
@@ -93,6 +98,7 @@ from inkflow.domain.services._foreshadowing_extractor import ForeshadowingExtrac
 from inkflow.domain.services._timeline_extractor import TimelineExtractor
 from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.outline_service import OutlineService
+from inkflow.domain.services.style_service import StyleService
 from inkflow.domain.services.timeline_service import TimelineService
 from inkflow.domain.services.world_service import WorldService
 
@@ -303,6 +309,8 @@ class ExtractionService:
         timeline_service: F12 时间线服务（TIMELINE 关闭语义委托 check_consistency）.
         foreshadowing_extractor: F14 伏笔提取管线（FORESHADOWING 委托）.
         timeline_extractor: F14 时间线提取管线（TIMELINE 开启语义委托）.
+        style_service: F16 风格检测服务（STYLE 委托 analyze——每次执行 +
+            门面恒确定性 llm_analysis=False，spec §8.2）.
         character_repo / world_repo / timeline_repo / foreshadowing_repo:
             reindex 全量重建用档案仓储（§5.6）.
         vector_store: RAG 向量存储（ADR-013）；None = 未装配，
@@ -321,6 +329,7 @@ class ExtractionService:
         timeline_service: TimelineService,
         foreshadowing_extractor: ForeshadowingExtractor,
         timeline_extractor: TimelineExtractor,
+        style_service: StyleService,
         character_repo: CharacterRepositoryProtocol | None = None,
         world_repo: WorldRepositoryProtocol | None = None,
         timeline_repo: TimelineRepositoryProtocol | None = None,
@@ -336,22 +345,23 @@ class ExtractionService:
         self._timeline_service = timeline_service
         self._foreshadowing_extractor = foreshadowing_extractor
         self._timeline_extractor = timeline_extractor
+        self._style_service = style_service
         self._character_repo = character_repo
         self._world_repo = world_repo
         self._timeline_repo = timeline_repo
         self._foreshadowing_repo = foreshadowing_repo
         self._vector_store = vector_store
 
-        # 类型注册表（spec §6.1: 6 槽，5 实现 + 1 占位）。
+        # 类型注册表（spec §6.1: 6 槽全注册；F16 §8.2: STYLE → StyleService.analyze）。
         # TIMELINE 槽位为双 handler 选择器（§5.5: 设置项开启 → TimelineExtractor，
-        # 关闭 → TimelineService.check_consistency）；STYLE 槽位 handler=None → 422。
+        # 关闭 → TimelineService.check_consistency）。
         self._handlers: dict[ExtractionType, Callable[..., Any] | None] = {
             ExtractionType.CHARACTER: self._character_service.extract,
             ExtractionType.SETTING: self._world_service.extract,
             ExtractionType.OUTLINE: self._outline_service.generate,
             ExtractionType.TIMELINE: self._timeline_handler,
             ExtractionType.FORESHADOWING: self._foreshadowing_extractor.extract,
-            ExtractionType.STYLE: None,
+            ExtractionType.STYLE: self._style_service.analyze,
         }
 
     # ── 统一提取入口（spec §5.1 模式总览）────────────────────────
@@ -367,7 +377,6 @@ class ExtractionService:
 
         Raises:
             ProjectNotFoundError: 项目不存在（404 语义）.
-            StyleNotImplementedError: STYLE 类型未实现（422 占位）.
             UnsupportedExtractionTypeError: 未注册类型（422，防御性）.
             ExtractionValidationError: 类型相关参数不合法（422）.
             ChapterNotFoundError / ChapterNotInProjectError: 章节校验失败（422）.
@@ -379,11 +388,9 @@ class ExtractionService:
         if project is None:
             raise ProjectNotFoundError()
 
-        # ② 类型注册表查 handler（§6.1: STYLE 占位 → 422；未注册 → 422 防御）
+        # ② 类型注册表查 handler（§6.1: 6 槽全注册，未注册 → 422 防御）
         handler = self._handlers.get(request.type)
         if handler is None:
-            if request.type is ExtractionType.STYLE:
-                raise StyleNotImplementedError()
             raise UnsupportedExtractionTypeError()
 
         # ③ 类型相关输入约束（§6.4）+ 增量判定（§5.2: skip 时不调用 LLM）
@@ -393,7 +400,8 @@ class ExtractionService:
         # ④⑤ 逐源执行 + 每源成功后立即 upsert run（断点续跑基础，§6.2）
         result, executed = await self._run_sources(request, sources, project)
 
-        # ⑥ index=true → 索引本次产物（§5.6；outline/timeline 关闭时忽略 + warning）
+        # ⑥ index=true → 索引本次产物（§5.6；outline/timeline 关闭时与 STYLE
+        # 恒 False——忽略 + warning，§8.2 表 #7）
         if request.index:
             if self._indexing_enabled(request, project):
                 if result.status is ExtractionStatus.SUCCESS and executed:
@@ -404,7 +412,12 @@ class ExtractionService:
                         await self._vector_store.index_batch(entities)
                     result.indexed = True
             else:
-                result.warnings.append("outline/timeline 类型不支持自动索引")
+                unsupported = (
+                    "outline/timeline/style"
+                    if request.type is ExtractionType.STYLE
+                    else "outline/timeline"
+                )
+                result.warnings.append(f"{unsupported} 类型不支持自动索引")
 
         # ⑦ 汇总返回（result 由 _run_sources 构建）
         return result
@@ -432,6 +445,12 @@ class ExtractionService:
             if request.chapter_ids is None:
                 raise ExtractionValidationError("timeline 类型必须提供 text 或 chapter_ids")
             return
+        if request.type is ExtractionType.STYLE:
+            # F16 落地（§8.2 表 #3）: 同 character 语义——text 或 chapter_ids 必填其一
+            # （互斥由 ExtractionRequest model_validator 保证）；门面无 llm_analysis 字段
+            if not has_source:
+                raise ExtractionValidationError("style 类型必须提供 text 或 chapter_ids")
+            return
         if not has_source:
             raise ExtractionValidationError(
                 "character/setting/foreshadowing 类型必须提供 text 或 chapter_ids"
@@ -441,6 +460,8 @@ class ExtractionService:
         """计算待执行源列表（含 skip 判定，spec §5.2 伪代码）.
 
         outline 与 timeline（设置项关闭）固定单源 "full"、每次执行；
+        STYLE（F16 落地）同语义——固定单源 "full"、每次执行（不读 run 表 hash，
+        确定性只读计算廉价，无 skip 价值，§8.2 表 #4）；
         timeline（开启）与 character/setting/foreshadowing 按源 hash 增量:
         章节模式逐章读取校验（不存在/跨项目/超长 → 422），手动模式单源
         source_key="manual"。
@@ -448,6 +469,10 @@ class ExtractionService:
         if request.type is ExtractionType.OUTLINE:
             return [_Source(key="full", label="full", hash=_content_hash(""), skip=False)]
         if request.type is ExtractionType.TIMELINE and not self._auto_extract_on(request, project):
+            return [_Source(key="full", label="full", hash=_content_hash(""), skip=False)]
+        if request.type is ExtractionType.STYLE:
+            # F16（§8.2 表 #4）: 每次执行——不读 run 表 hash、恒 skip=False
+            # （确定性只读计算廉价，无增量价值）；章节读取在 StyleService 内（门面不读章节）
             return [_Source(key="full", label="full", hash=_content_hash(""), skip=False)]
 
         if request.text is not None:
@@ -644,6 +669,26 @@ class ExtractionService:
                 ),
                 default_model=project.config.model,
             )
+        elif request.type is ExtractionType.STYLE:
+            # F16 落地（§8.2 表 #6）: 委托 StyleService.analyze——门面恒确定性
+            # （llm_analysis=False，F14 ExtractionRequest 无该字段）；text/chapter_ids
+            # 原样透传（章节读取在 StyleService 内，门面不读章节）
+            result = await self._style_service.analyze(
+                project_id=request.project_id,
+                text=request.text,
+                chapter_ids=request.chapter_ids,
+                llm_analysis=False,
+            )
+            # 结果归一（§8.2 表 #6）: 无实体产物 → created=0/updated=0；无 LLM → model=None；
+            # detail=StyleReport.model_dump；warnings 透传顶层（镜像 timeline 关闭先例）
+            return _Normalized(
+                created=0,
+                updated=0,
+                warnings=list(result.warnings),
+                model=None,
+                detail=result.model_dump(mode="json"),
+                raw=result,
+            )
         else:
             raise UnsupportedExtractionTypeError()
         return _normalize_result(request.type, result)
@@ -682,7 +727,10 @@ class ExtractionService:
         return bool(project.config.extra.get("timeline_auto_extract", False))
 
     def _indexing_enabled(self, request: ExtractionRequest, project: Project) -> bool:
-        """类型是否支持自动索引（spec §5.3: outline/timeline 关闭时恒 False）。"""
+        """类型是否支持自动索引（spec §5.3: outline/timeline 关闭时与 STYLE 恒 False）。
+
+        STYLE 恒 False（§8.2 表 #7）: style 不在 RAG 范围（F14 §2.4 已声明）。
+        """
         if request.type in (
             ExtractionType.CHARACTER,
             ExtractionType.SETTING,
@@ -691,6 +739,8 @@ class ExtractionService:
             return True
         if request.type is ExtractionType.TIMELINE:
             return self._auto_extract_on(request, project)
+        if request.type is ExtractionType.STYLE:
+            return False
         return False
 
     # ── RAG 索引编排（spec §5.6）────────────────────────────────

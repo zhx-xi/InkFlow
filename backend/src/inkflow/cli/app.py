@@ -50,6 +50,7 @@ from inkflow.cli.commands import (  # noqa: E402
     foreshadowing,
     outline,
     project,
+    style,
     timeline,
     vector,
     world,
@@ -67,6 +68,7 @@ app.add_typer(timeline.app, name="timeline")
 app.add_typer(foreshadowing.app, name="foreshadowing")
 app.add_typer(extract.app, name="extract")
 app.add_typer(audit.app, name="audit")
+app.add_typer(style.app, name="style")
 app.add_typer(vector.app, name="vector")
 app.add_typer(chapter.chapter_app, name="chapter")
 app.add_typer(chapter.volume_app, name="volume")

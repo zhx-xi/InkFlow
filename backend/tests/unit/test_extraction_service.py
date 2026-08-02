@@ -1,13 +1,15 @@
 """F14 统一提取服务门面单元测试 — Mock 各模块 Service + Repo + VectorStore.
 
 覆盖 spec §9「服务（门面）」全部场景:
-分发正确性（5 类型委托 + 参数透传）/ 项目校验 / 增量判定（skip/force/
+分发正确性（6 类型委托 + 参数透传）/ 项目校验 / 增量判定（skip/force/
 手动模式/批量部分 skip/断点续跑）/ outline 每次执行与冲突透传 /
-timeline 双语义（设置项三级判定）/ STYLE 占位 422 / RAG 索引编排
+timeline 双语义（设置项三级判定）/ STYLE 委托 StyleService（F16 落地:
+每次执行 + 归一 created=0/updated=0/model=None）/ RAG 索引编排
 （index=true 实体投影 + chapter_chunk + 未装配报错）/ reindex 全量 /
 retrieve / list_runs / 结果归一（created/updated 口径 + detail 首源）。
 
-依据: specs/f14-extraction-service/spec.md §5.1-§5.6/§6/§7/§9。
+依据: specs/f14-extraction-service/spec.md §5.1-§5.6/§6/§7/§9 +
+specs/f16-style-service/spec.md §8.2/§9（STYLE 占位测试同步）。
 """
 
 from __future__ import annotations
@@ -61,7 +63,6 @@ from inkflow.domain.ports.extraction_errors import (
     ChapterNotInProjectError,
     ExtractionValidationError,
     RAGUnavailableError,
-    StyleNotImplementedError,
 )
 from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.ports.outline_errors import OutlineNameConflictError
@@ -288,6 +289,66 @@ def _consistency_report() -> ConsistencyReport:
     )
 
 
+def _style_report(**overrides: Any) -> Any:
+    """构造 F16 StyleReport（spec §2.6）— 惰性 import F16 模型。
+
+    模型未实现时（RED 阶段）仅 STYLE 用例失败，不影响本文件其他 F14 用例收集。
+    """
+    from inkflow.domain.models.style import (
+        AITraceAssessment,
+        AITraceFeature,
+        AITraceVerdict,
+        LexicalAnalysis,
+        StyleFingerprint,
+        StyleReport,
+        WordFrequency,
+    )
+
+    kwargs: dict[str, Any] = {
+        "project_id": PID,
+        "source": "manual",
+        "generated_at": TS,
+        "fingerprint": StyleFingerprint(
+            char_count=48,
+            sentence_count=3,
+            avg_sentence_length=16.0,
+            sentence_length_std=9.9,
+            paragraph_count=1,
+            avg_paragraph_length=48.0,
+            punctuation_density=0.1667,
+            exclamation_density=0.0,
+            ellipsis_density=0.0417,
+            dialogue_ratio=0.2083,
+            vocabulary_richness=0.8235,
+            top_words=[WordFrequency(word="林晚", count=1, first_index=0)],
+        ),
+        "ai_trace": AITraceAssessment(
+            ai_score=0.26,
+            verdict=AITraceVerdict.LIKELY_HUMAN,
+            features=[
+                AITraceFeature(
+                    feature="sentence_uniformity",
+                    value=0.62,
+                    score=0.38,
+                    note="句长变异系数 0.62——句式波动正常",
+                )
+            ],
+            evidence=["各特征得分均低于 0.5，无明显 AI 特征（综合得分 0.26 → likely_human）"],
+        ),
+        "lexical": LexicalAnalysis(
+            total_words=17,
+            unique_words=14,
+            top_words=[WordFrequency(word="林晚", count=1, first_index=0)],
+            avg_word_length=2.1,
+            stopword_ratio=0.0588,
+        ),
+        "llm_assessment": None,
+        "warnings": ["未检测到完整句子（句尾符不足）——句子统计仅供参考"],
+    }
+    kwargs.update(overrides)
+    return StyleReport(**kwargs)  # type: ignore[arg-type]
+
+
 def _req(type_: ExtractionType, **kw: Any) -> ExtractionRequest:
     """构造 ExtractionRequest（自动带 project_id=PID）。"""
     base: dict[str, Any] = {"project_id": PID, "type": type_}
@@ -329,6 +390,8 @@ class _Deps:
         self.foreshadowing_extractor.extract = AsyncMock()
         self.timeline_extractor = MagicMock()
         self.timeline_extractor.extract = AsyncMock()
+        self.style_service = MagicMock()
+        self.style_service.analyze = AsyncMock()
         self.character_repo = MagicMock()
         self.character_repo.list = AsyncMock(return_value=([], 0))
         self.world_repo = MagicMock()
@@ -354,6 +417,7 @@ class _Deps:
             timeline_service=self.timeline_service,
             foreshadowing_extractor=self.foreshadowing_extractor,
             timeline_extractor=self.timeline_extractor,
+            style_service=self.style_service,  # F16: STYLE 槽位 handler（spec §8.2）
             character_repo=self.character_repo,
             world_repo=self.world_repo,
             timeline_repo=self.timeline_repo,
@@ -909,25 +973,115 @@ async def test_timeline_on_incremental_skip() -> None:
     deps.timeline_extractor.extract.assert_not_awaited()
 
 
-# ── STYLE 占位 ──────────────────────────────────────────────────
+# ── STYLE 委托（F16 落地，spec §8.2）────────────────────────────
 
 
-async def test_style_raises_not_implemented() -> None:
-    """STYLE 类型 → StyleNotImplementedError（422 占位，handler 不调用）。"""
+async def test_style_dispatches_to_style_service() -> None:
+    """STYLE → 委托 StyleService.analyze（llm_analysis=False 恒确定性）+ 归一断言。
+
+    门面恒确定性（spec §2.8/§5.7）: F14 ExtractionRequest 无 llm_analysis 字段，
+    委托时显式传 False；结果归一 created=0/updated=0/model=None/detail=
+    StyleReport.model_dump/warnings 透传（§8.2 表 #6）；每次执行固定 full 源落 run。
+    """
+    deps = _Deps(_project())
+    report = _style_report()
+    deps.style_service.analyze = AsyncMock(return_value=report)
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.STYLE, text="第一章……"))
+
+    deps.style_service.analyze.assert_awaited_once_with(
+        project_id=PID, text="第一章……", chapter_ids=None, llm_analysis=False
+    )
+    assert result.status is ExtractionStatus.SUCCESS
+    assert result.processed_sources == 1
+    assert result.skipped_sources == 0
+    assert result.created == 0
+    assert result.updated == 0
+    assert result.model is None
+    assert result.warnings == report.warnings
+    assert result.detail == report.model_dump(mode="json")
+    runs = _upserted_runs(deps)
+    assert len(runs) == 1
+    assert runs[0].source_key == "full"  # 每次执行（§8.2 表 #4）
+    assert runs[0].content_hash == _sha("")
+    assert runs[0].status is ExtractionStatus.SUCCESS
+    assert runs[0].created_count == 0
+    assert runs[0].updated_count == 0
+    assert runs[0].model is None
+
+
+async def test_style_chapter_mode_passes_through() -> None:
+    """STYLE 章节模式 → chapter_ids 透传 StyleService（门面不读章节，固定 full 源）。"""
+    deps = _Deps(_project())
+    deps.stub_chapter(_chapter(CH1, CONTENT_1))
+    deps.style_service.analyze = AsyncMock(
+        return_value=_style_report(source=f"chapter:{CH1}", warnings=[])
+    )
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.STYLE, chapter_ids=[CH1]))
+
+    deps.style_service.analyze.assert_awaited_once_with(
+        project_id=PID, text=None, chapter_ids=[CH1], llm_analysis=False
+    )
+    deps.chapter_repo.get_chapter.assert_not_awaited()  # 章节读取在 StyleService 内（F16 §5.1）
+    assert result.status is ExtractionStatus.SUCCESS
+    runs = _upserted_runs(deps)
+    assert runs[0].source_key == "full"
+
+
+async def test_style_always_executes_with_existing_run() -> None:
+    """STYLE 每次执行：即使存在 full run 也重新分析（无增量 skip，spec §6.4/§8.2 #4）。"""
+    deps = _Deps(_project())
+    deps.stub_runs({"full": _run("full", _sha(""), type_=ExtractionType.STYLE)})
+    deps.style_service.analyze = AsyncMock(return_value=_style_report())
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.STYLE, text="第一章……"))
+
+    deps.style_service.analyze.assert_awaited_once()
+    assert result.status is ExtractionStatus.SUCCESS
+    assert result.processed_sources == 1
+    assert result.skipped_sources == 0
+
+
+async def test_style_missing_source_raises() -> None:
+    """STYLE 无 text 且无 chapter_ids → 422（_validate_input style 行，spec §8.2 表 #3）。"""
     deps = _Deps(_project())
     svc = deps.service()
 
-    with pytest.raises(StyleNotImplementedError, match="尚未实现"):
-        await svc.extract(_req(ExtractionType.STYLE, text="第一章……"))
+    with pytest.raises(ExtractionValidationError, match="必须提供 text 或 chapter_ids"):
+        await svc.extract(_req(ExtractionType.STYLE))
+
+    deps.style_service.analyze.assert_not_awaited()
+
+
+async def test_style_index_true_warning() -> None:
+    (
+        """STYLE + index=true → indexed=False + warning「outline/timeline/style"""
+        """ 类型不支持自动索引」。"""
+    )
+    deps = _Deps(_project())
+    deps.style_service.analyze = AsyncMock(return_value=_style_report())
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.STYLE, text="第一章……", index=True))
+
+    assert result.indexed is False
+    assert "outline/timeline/style 类型不支持自动索引" in result.warnings
+    deps.vector_store.index_batch.assert_not_awaited()
 
 
 async def test_style_project_not_found_first() -> None:
-    """项目校验先于 STYLE 占位：项目不存在 → ProjectNotFoundError。"""
+    """项目校验先于 STYLE handler：项目不存在 → ProjectNotFoundError（StyleService 不被调用）。"""
     deps = _Deps(project=None)
     svc = deps.service()
 
     with pytest.raises(ProjectNotFoundError):
         await svc.extract(_req(ExtractionType.STYLE, text="第一章……"))
+
+    deps.style_service.analyze.assert_not_awaited()
 
 
 # ── RAG 索引编排（index=true）───────────────────────────────────
