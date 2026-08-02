@@ -23,7 +23,10 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from typer.testing import CliRunner
+
 from inkflow.cli.commands.audit import app
+from inkflow.cli.context import CliContext
 from inkflow.domain.models.audit import (
     AuditDimension,
     AuditFinding,
@@ -32,15 +35,12 @@ from inkflow.domain.models.audit import (
     AuditSummary,
     DimensionSummary,
 )
-from inkflow.domain.ports.audit_errors import ProjectNotFoundError
-from typer.testing import CliRunner
-
-from inkflow.cli.context import CliContext
 from inkflow.domain.models.timeline import (
     ConsistencyReport,
     TimelineConflict,
     TimelineEventRef,
 )
+from inkflow.domain.ports.audit_errors import ProjectNotFoundError
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 TS = datetime(2026, 8, 2, 12, 0, 0, tzinfo=UTC)
