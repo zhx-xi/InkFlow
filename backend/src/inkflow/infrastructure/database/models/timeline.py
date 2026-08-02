@@ -11,9 +11,12 @@
 - 本表不设任何唯一约束（spec §2.4）: title / narrative_position /
   time_value 均允许重复——时间线事件是「实例」而非「档案」，
   无 partial unique index（区别于 F9/F10/F11 的同名唯一语义）
-- 三个非唯一索引: project_id / (project_id, narrative_position) /
-  (project_id, time_value)，支撑项目隔离、叙事排序与事件时间线排序
-- FK 级联: 项目硬删除 → 事件级联物理删除；无子实体、无级联软删
+- 四个非唯一索引: project_id / (project_id, narrative_position) /
+  (project_id, time_value) / source_chapter_id，支撑项目隔离、叙事排序、
+  事件时间线排序与 F14 按来源章拉取（list_by_chapter）
+- FK 级联: 项目硬删除 → 事件级联物理删除；章节硬删除 →
+  source_chapter_id 置 NULL（事件保留，spec §5.5 联动语义）；无子实体、
+  无级联软删
 - 本文件为纯 ORM 映射，不包含任何领域转换函数（转换在 repo 层）
 """
 
@@ -127,6 +130,14 @@ class TimelineEventORM(Base):
         default="",
     )
     """时间线标记 (≤ 20 字符，去空白；""=正叙 / flashback=倒叙 / flashforward=插叙)."""
+
+    source_chapter_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("chapters.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    """来源章节（F14 提取锚点；章节硬删 → 置 NULL 事件保留；索引支撑 list_by_chapter）."""
 
     extra: Mapped[dict] = mapped_column(
         JSON,
