@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from inkflow.api.routers import (
     agent,
+    audit,
     chapter,
     characters,
     context,
@@ -54,6 +55,7 @@ app.add_middleware(
 )
 
 # ---- 注册路由 ----
+app.include_router(audit.router)
 app.include_router(project.router)
 app.include_router(chapter.router)
 app.include_router(characters.router)

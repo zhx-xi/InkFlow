@@ -13,6 +13,7 @@ from inkflow.domain.services._foreshadowing_extractor import ForeshadowingExtrac
 from inkflow.domain.services._outline_generator import OutlineGenerator
 from inkflow.domain.services._timeline_extractor import TimelineExtractor
 from inkflow.domain.services._world_extractor import WorldExtractor
+from inkflow.domain.services.audit_service import AuditService
 from inkflow.domain.services.chapter_service import ChapterService
 from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.context_service import ContextService
@@ -24,6 +25,9 @@ from inkflow.domain.services.summary_service import SummaryService
 from inkflow.domain.services.timeline_service import TimelineService
 from inkflow.domain.services.world_service import WorldService
 from inkflow.domain.services.writing_service import WritingService
+from inkflow.infrastructure.database.repositories.audit_repo import (
+    SQLiteAuditRepository,
+)
 from inkflow.infrastructure.database.repositories.chapter_repo import (
     SQLiteChapterRepository,
 )
@@ -260,6 +264,27 @@ def get_extraction_service(
         timeline_repo=SQLiteTimelineRepository(db),
         foreshadowing_repo=SQLiteForeshadowingRepository(db),
         vector_store=get_vector_store(),
+    )
+
+
+def get_audit_service(
+    db: AsyncSession,
+) -> AuditService:
+    """获取 AuditService 实例（F15 审计服务，spec §5/§8）.
+
+    装配: 复用 F9/F10/F13/F14/F2/F1 各 SQLite 仓储 + F12 TimelineService
+    （get_timeline_service 先例）+ SQLiteAuditRepository（F15 自有软删集合
+    查询实现，§8.2）——除 audit_repo 外全部为既有实现。
+    """
+    return AuditService(
+        project_repo=SQLiteProjectRepository(db),
+        character_repo=SQLiteCharacterRepository(db),
+        world_repo=SQLiteWorldRepository(db),
+        timeline_service=get_timeline_service(db),
+        foreshadowing_repo=SQLiteForeshadowingRepository(db),
+        chapter_repo=SQLiteChapterRepository(db),
+        run_repo=SQLExtractionRunRepository(db),
+        audit_repo=SQLiteAuditRepository(db),
     )
 
 
