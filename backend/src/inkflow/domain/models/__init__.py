@@ -38,6 +38,14 @@ from inkflow.domain.models.context import (
     DroppedItem,
     TokenBudgetConfig,
 )
+from inkflow.domain.models.extraction import (
+    ExtractionRequest,
+    ExtractionResult,
+    ExtractionRun,
+    ExtractionStatus,
+    ExtractionType,
+    ReindexResult,
+)
 from inkflow.domain.models.foreshadowing import (
     Foreshadowing,
     ForeshadowingCreate,
@@ -130,6 +138,13 @@ __all__ = [
     "TokenBudgetConfig",
     "ContextRequest",
     "ContextAssemblyResult",
+    # ── extraction (F14) ──
+    "ExtractionType",
+    "ExtractionStatus",
+    "ExtractionRequest",
+    "ExtractionResult",
+    "ExtractionRun",
+    "ReindexResult",
     # ── world (F10) ──
     "WorldSetting",
     "WorldCreate",
