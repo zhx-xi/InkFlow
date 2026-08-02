@@ -129,22 +129,6 @@ async def _event_generator(
         yield _encode_sse(WritingStreamEvent(done=True, error="LLM 调用失败，请稍后重试"))
 
 
-def _stream_response(
-    request: Request,
-    events: AsyncGenerator[WritingStreamEvent, None],
-) -> StreamingResponse:
-    """构造 SSE StreamingResponse（spec §3.1 响应头显式设置）."""
-    return StreamingResponse(
-        _event_generator(request, events),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
 @router.post("/stream")
 async def stream_write(
     data: StreamWritingRequest,
@@ -159,7 +143,29 @@ async def stream_write(
             events = svc.stream_continue(data)
         else:
             events = svc.stream_revise(data)
+        # 预消费探针（惰性生成器陷阱，spec §3.2）：async generator 函数体在首次迭代
+        # 才执行——项目/章节校验异常在此抛出，须映射 HTTP 状态码而非流中 error 帧
+        first = await events.__anext__()
     except Exception as exc:
         # 流开始前校验异常（项目/章节不存在等）→ HTTP 状态码（spec §3.2）
         raise _map_service_error(exc) from exc
-    return _stream_response(request, events)
+
+    async def _prefetched_stream() -> AsyncGenerator[str, None]:
+        try:
+            # 首事件已被探针消费——先补发其编码帧，再消费余下事件
+            yield _encode_sse(first)
+            async for ev in _event_generator(request, events):
+                yield ev
+        finally:
+            # 探针已启动 events——客户端在首帧后断开时确保其被关闭（spec §5.3/E4）
+            await events.aclose()
+
+    return StreamingResponse(
+        _prefetched_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

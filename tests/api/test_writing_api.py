@@ -400,6 +400,24 @@ class TestStreamErrors:
         assert "text/event-stream" not in resp.headers.get("content-type", "")
 
     @pytest.mark.asyncio
+    async def test_stream_project_not_found_real_generator_http_404(
+        self, override_writing_service, mock_writing_service
+    ):
+        """真实 async generator 内部校验失败 → HTTP 404（探针路径，修正 mock side_effect 盲区）。"""
+
+        async def _gen(_request):
+            raise LLMRequestError("项目不存在")
+            yield  # pragma: no cover
+
+        mock_writing_service.stream_generate = _gen
+        body = {**_payload(), "mode": "generate", "outline": "测试大纲"}
+        async with _client() as client:
+            resp = await client.post("/api/v1/writing/stream", json=body)
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "项目不存在"
+        assert "text/event-stream" not in resp.headers.get("content-type", "")
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "body",
         [
@@ -447,6 +465,36 @@ class TestStreamErrors:
         assert frames[1]["done"] is True
         assert frames[1]["error"] == "LLM 调用失败，请稍后重试"
         assert "format_valid" not in frames[1]  # §6.1 不变量 4：error 帧省略结果字段
+
+    @pytest.mark.asyncio
+    async def test_stream_first_delta_then_llm_error_error_frame(
+        self, override_writing_service, mock_writing_service
+    ):
+        """探针消费首 delta 后流中 LLM 失败 → delta 帧 + error 帧（§7 E3，探针不破坏流中语义）。"""
+        from inkflow.domain.models.writing import WritingStreamEvent
+
+        async def _gen(_request):
+            yield WritingStreamEvent(delta="探针首帧")
+            yield WritingStreamEvent(delta="第二帧")
+            raise LLMRequestError("upstream provider timeout")
+
+        mock_writing_service.stream_generate = _gen
+        body = {**_payload(), "mode": "generate", "outline": "测试大纲"}
+        async with _stream_client() as client:
+            async with aconnect_sse(
+                client, "POST", "/api/v1/writing/stream", json=body
+            ) as sse:
+                frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
+                content_type = sse.response.headers["content-type"]
+        assert content_type.startswith("text/event-stream")
+        assert len(frames) == 3
+        assert frames[0]["delta"] == "探针首帧"
+        assert frames[0]["done"] is False
+        assert frames[1]["delta"] == "第二帧"
+        assert frames[1]["done"] is False
+        assert frames[2]["done"] is True
+        assert frames[2]["error"] == "LLM 调用失败，请稍后重试"
+        assert "format_valid" not in frames[2]  # §6.1 不变量 4：error 帧省略结果字段
 
     @pytest.mark.asyncio
     async def test_stream_client_disconnect_closes_generator(
