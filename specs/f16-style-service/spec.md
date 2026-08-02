@@ -6,7 +6,7 @@
 > **关联 Issues**: [#46](https://github.com/zhx-xi/InkFlow/issues/46)
 > **依赖**: F1 ✅（项目存在性校验）；F2 ✅（章节读取——chapter_ids 模式）；F14 ✅（**STYLE 槽位注册 handler**：接口零变更，F14 §12 已承诺「F16 落地后仅需注册 handler」——本 spec 兑现该承诺并同步修订 F14 spec 的 STYLE 占位表述，见 §8.2）；F5 ✅（LLM 深度分析装配——**可选依赖**：LLMClientProtocol + PromptManager 构造注入，仅 llm_analysis=true 时调用；主体确定性分析不依赖 F5）
 > **参考 ADR**: [ADR-001](../../adr/ADR-001.md) (模块化单体), [ADR-002](../../adr/ADR-002.md) (六边形分层), [ADR-003](../../adr/ADR-003.md) (Repository), [ADR-004](../../adr/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/ADR-007v2.md) (包结构), [ADR-012](../../adr/ADR-012.md) (错误处理), [ADR-015](../../adr/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/ADR-016.md) (loguru), [ADR-017](../../adr/ADR-017.md) (CI 门禁), [ADR-018](../../adr/ADR-018.md) (测试分层), [ADR-019](../../adr/ADR-019.md) (版本里程碑), [ADR-025](../../adr/ADR-025.md) (依赖锁定)
-> **状态**: 待实现 🔲
+> **状态**: ✅ 已实现（PR #75）
 
 ---
 
