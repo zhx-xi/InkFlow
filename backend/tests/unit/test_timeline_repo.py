@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from inkflow.core.database import Base
 from inkflow.domain.models.timeline import TimelineEvent
+from inkflow.infrastructure.database.models.chapter import ChapterORM
 from inkflow.infrastructure.database.models.project import ProjectORM
 from inkflow.infrastructure.database.models.timeline import TimelineEventORM
 from inkflow.infrastructure.database.repositories.timeline_repo import (
@@ -395,3 +396,108 @@ class TestTimelineRepository:
 
         count = await db_session.execute(select(func.count()).select_from(TimelineEventORM))
         assert count.scalar_one() == 0
+
+    # ── source_chapter_id（F14 跨模块 MODIFY F12）──
+
+    async def test_source_chapter_id_roundtrip_with_none_default(self, db_session, project):
+        """add 带 source_chapter_id → get 读回一致（UUID 映射）；手工事件缺省 None."""
+        repo = SQLiteTimelineRepository(db_session)
+        chapter = ChapterORM(project_id=project.id, title="第一章")
+        db_session.add(chapter)
+        await db_session.commit()
+        await db_session.refresh(chapter)
+
+        extracted = await repo.add(
+            _event(project, "觉醒", source_chapter_id=uuid.UUID(int=chapter.id))
+        )
+        assert extracted.source_chapter_id == uuid.UUID(int=chapter.id)
+
+        manual = await repo.add(_event(project, "手工建档"))
+        assert manual.source_chapter_id is None
+
+        # 持久化验证：直接查表（DB int 列）
+        row = await db_session.execute(
+            select(TimelineEventORM).where(TimelineEventORM.id == extracted.id.int)
+        )
+        assert row.scalar_one().source_chapter_id == chapter.id
+
+        got = await repo.get(extracted.id.int)
+        assert got is not None
+        assert got.source_chapter_id == uuid.UUID(int=chapter.id)
+
+        got_manual = await repo.get(manual.id.int)
+        assert got_manual is not None
+        assert got_manual.source_chapter_id is None
+
+    async def test_list_by_chapter_filters_active_events_sorted(self, db_session, project):
+        """list_by_chapter 按章过滤活动事件；(narrative_position, created_at)
+        ASC 排序；软删不入、跨章互不干扰."""
+        repo = SQLiteTimelineRepository(db_session)
+        ch1 = ChapterORM(project_id=project.id, title="第一章")
+        ch2 = ChapterORM(project_id=project.id, title="第二章")
+        db_session.add_all([ch1, ch2])
+        await db_session.commit()
+        await db_session.refresh(ch1)
+        await db_session.refresh(ch2)
+        c1 = uuid.UUID(int=ch1.id)
+        c2 = uuid.UUID(int=ch2.id)
+
+        late_first = await repo.add(
+            _event(project, "一章·后建", source_chapter_id=c1, narrative_position=1)
+        )
+        early = await repo.add(
+            _event(project, "一章·先建", source_chapter_id=c1, narrative_position=1)
+        )
+        other_ch = await repo.add(
+            _event(project, "二章事件", source_chapter_id=c2, narrative_position=5)
+        )
+        gone = await repo.add(
+            _event(project, "一章·软删", source_chapter_id=c1, narrative_position=0)
+        )
+        await repo.soft_delete(gone.id.int)
+
+        # 注入受控 created_at，使「同位置 → created_at ASC」排序可确定性断言
+        await db_session.execute(
+            sa_update(TimelineEventORM)
+            .where(TimelineEventORM.id == late_first.id.int)
+            .values(created_at=_dt(3))
+        )
+        await db_session.execute(
+            sa_update(TimelineEventORM)
+            .where(TimelineEventORM.id == early.id.int)
+            .values(created_at=_dt(1))
+        )
+        await db_session.commit()
+
+        events = await repo.list_by_chapter(project.id, ch1.id)
+        assert [e.id for e in events] == [early.id, late_first.id]
+        assert all(e.source_chapter_id == c1 for e in events)
+
+        # 跨章互不干扰（二章事件不进一章结果）
+        events2 = await repo.list_by_chapter(project.id, ch2.id)
+        assert [e.id for e in events2] == [other_ch.id]
+
+        # 无该章事件 → 空列表
+        assert await repo.list_by_chapter(project.id, 99999) == []
+
+    async def test_chapter_hard_delete_sets_source_chapter_id_null(self, db_session, project):
+        """章节硬删 → 事件 source_chapter_id 置 None（FK ON DELETE SET NULL，事件保留）."""
+        repo = SQLiteTimelineRepository(db_session)
+        chapter = ChapterORM(project_id=project.id, title="第一章")
+        db_session.add(chapter)
+        await db_session.commit()
+        await db_session.refresh(chapter)
+
+        e = await repo.add(_event(project, "觉醒", source_chapter_id=uuid.UUID(int=chapter.id)))
+        assert e.source_chapter_id == uuid.UUID(int=chapter.id)
+
+        ch_row = await db_session.execute(select(ChapterORM).where(ChapterORM.id == chapter.id))
+        await db_session.delete(ch_row.scalar_one())
+        await db_session.commit()
+
+        got = await repo.get(e.id.int)
+        assert got is not None
+        assert got.source_chapter_id is None
+        # 事件行保留（仅来源置空）
+        count = await db_session.execute(select(func.count()).select_from(TimelineEventORM))
+        assert count.scalar_one() == 1

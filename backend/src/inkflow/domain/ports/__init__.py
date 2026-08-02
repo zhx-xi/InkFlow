@@ -20,6 +20,8 @@
     - timeline_errors: 时间线管理异常（F12）
     - timeline_repository: 时间线事件仓储（F12）
     - foreshadowing_errors: 伏笔管理异常（F13）
+    - extraction_errors: 统一提取服务异常（F14）
+    - extraction_run_repository: 增量追踪记录仓储（F14）
 """
 
 from inkflow.domain.ports.agent_pipeline import (
@@ -51,6 +53,18 @@ from inkflow.domain.ports.context_errors import (
 )
 from inkflow.domain.ports.context_provider import ContextProviderProtocol
 from inkflow.domain.ports.context_sources import ContextSourceProtocol
+from inkflow.domain.ports.extraction_errors import (
+    ChapterNotFoundError,
+    ChapterNotInProjectError,
+    ExtractionRunError,
+    ExtractionServiceError,
+    ExtractionValidationError,
+    RAGUnavailableError,
+    StyleNotImplementedError,
+    UnsupportedExtractionTypeError,
+    VectorStoreError,
+)
+from inkflow.domain.ports.extraction_run_repository import ExtractionRunRepositoryProtocol
 from inkflow.domain.ports.foreshadowing_errors import (
     EventNotFoundError,
     EventNotInProjectError,
@@ -185,4 +199,15 @@ __all__ = [
     "ForeshadowingNameConflictError",
     "EventNotFoundError",
     "EventNotInProjectError",
+    # ── extraction (F14) ──
+    "ExtractionRunRepositoryProtocol",
+    "ExtractionServiceError",
+    "ExtractionValidationError",
+    "UnsupportedExtractionTypeError",
+    "StyleNotImplementedError",
+    "ChapterNotFoundError",
+    "ChapterNotInProjectError",
+    "RAGUnavailableError",
+    "VectorStoreError",
+    "ExtractionRunError",
 ]

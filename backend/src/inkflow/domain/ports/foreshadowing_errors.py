@@ -73,3 +73,23 @@ class EventNotInProjectError(ForeshadowingServiceError):
 
     def __init__(self, message: str = "事件不属于该项目") -> None:
         super().__init__(message)
+
+
+class ForeshadowingExtractionError(Exception):
+    """伏笔提取失败 — LLM 输出无法解析为合法伏笔 JSON（F14 §5.4）— 500.
+
+    修复重试耗尽后抛出，由调用方（API/CLI/门面）映射为 500。
+    依据: specs/f14-extraction-service/spec.md §5.4 + §7 异常映射表。
+
+    Attributes:
+        raw_output: LLM 原始输出片段（诊断用，可能被截断 ≤ 500 字符）.
+        detail: 失败原因描述.
+    """
+
+    def __init__(self, raw_output: str = "", detail: str = "") -> None:
+        self.raw_output = raw_output
+        self.detail = detail
+        msg = "伏笔提取失败: LLM 输出无法解析为合法 JSON"
+        if detail:
+            msg += f" — {detail}"
+        super().__init__(msg)

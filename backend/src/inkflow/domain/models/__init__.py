@@ -38,9 +38,20 @@ from inkflow.domain.models.context import (
     DroppedItem,
     TokenBudgetConfig,
 )
+from inkflow.domain.models.extraction import (
+    ExtractionRequest,
+    ExtractionResult,
+    ExtractionRun,
+    ExtractionStatus,
+    ExtractionType,
+    ReindexResult,
+)
 from inkflow.domain.models.foreshadowing import (
+    ExtractedForeshadowing,
     Foreshadowing,
     ForeshadowingCreate,
+    ForeshadowingExtractionResult,
+    ForeshadowingExtractRequest,
     ForeshadowingStatus,
     ForeshadowingUpdate,
 )
@@ -63,11 +74,14 @@ from inkflow.domain.models.outline import (
 from inkflow.domain.models.project import Project, ProjectConfig, ProjectCreate, ProjectUpdate
 from inkflow.domain.models.timeline import (
     ConsistencyReport,
+    ExtractedTimelineEvent,
     TimelineConflict,
     TimelineEvent,
     TimelineEventCreate,
     TimelineEventRef,
     TimelineEventUpdate,
+    TimelineExtractionResult,
+    TimelineExtractRequest,
     TimelineView,
 )
 from inkflow.domain.models.world import (
@@ -130,6 +144,13 @@ __all__ = [
     "TokenBudgetConfig",
     "ContextRequest",
     "ContextAssemblyResult",
+    # ── extraction (F14) ──
+    "ExtractionType",
+    "ExtractionStatus",
+    "ExtractionRequest",
+    "ExtractionResult",
+    "ExtractionRun",
+    "ReindexResult",
     # ── world (F10) ──
     "WorldSetting",
     "WorldCreate",
@@ -160,9 +181,16 @@ __all__ = [
     "TimelineConflict",
     "ConsistencyReport",
     "TimelineView",
+    # ── timeline 提取 (F14 §5.5) ──
+    "ExtractedTimelineEvent",
+    "TimelineExtractRequest",
+    "TimelineExtractionResult",
     # ── foreshadowing (F13) ──
     "Foreshadowing",
     "ForeshadowingCreate",
     "ForeshadowingUpdate",
     "ForeshadowingStatus",
+    "ExtractedForeshadowing",
+    "ForeshadowingExtractRequest",
+    "ForeshadowingExtractionResult",
 ]

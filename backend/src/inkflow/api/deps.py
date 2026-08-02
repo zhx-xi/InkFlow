@@ -7,12 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.core.database import get_session
 from inkflow.domain.ports.context_sources import ContextSourceProtocol
+from inkflow.domain.ports.vector_store import VectorStoreProtocol
 from inkflow.domain.services._character_extractor import CharacterExtractor
+from inkflow.domain.services._foreshadowing_extractor import ForeshadowingExtractor
 from inkflow.domain.services._outline_generator import OutlineGenerator
+from inkflow.domain.services._timeline_extractor import TimelineExtractor
 from inkflow.domain.services._world_extractor import WorldExtractor
 from inkflow.domain.services.chapter_service import ChapterService
 from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.context_service import ContextService
+from inkflow.domain.services.extraction_service import ExtractionService
 from inkflow.domain.services.foreshadowing_service import ForeshadowingService
 from inkflow.domain.services.outline_service import OutlineService
 from inkflow.domain.services.project_service import ProjectService
@@ -25,6 +29,9 @@ from inkflow.infrastructure.database.repositories.chapter_repo import (
 )
 from inkflow.infrastructure.database.repositories.character_repo import (
     SQLiteCharacterRepository,
+)
+from inkflow.infrastructure.database.repositories.extraction_run_repo import (
+    SQLExtractionRunRepository,
 )
 from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
     SQLiteForeshadowingRepository,
@@ -218,3 +225,74 @@ def get_foreshadowing_service(
         project_repo=SQLiteProjectRepository(db),
         timeline_repo=SQLiteTimelineRepository(db),
     )
+
+
+def get_extraction_service(
+    db: AsyncSession,
+) -> ExtractionService:
+    """获取 ExtractionService 实例（F14 统一提取门面，spec §5/§8）.
+
+    装配: 复用 F9/F10/F11/F12 Service（get_character_service 等）+ F14 两条
+    新管线（ForeshadowingExtractor / TimelineExtractor，LLM 客户端 + Prompt
+    模板 + 对应仓储）+ SQLExtractionRunRepository（增量追踪）+ F1/F2 仓储 +
+    懒加载向量存储（get_vector_store，BGE 首次调用才下载 ~100MB，spec §8）。
+    """
+    return ExtractionService(
+        project_repo=SQLiteProjectRepository(db),
+        chapter_repo=SQLiteChapterRepository(db),
+        run_repo=SQLExtractionRunRepository(db),
+        character_service=get_character_service(db),
+        world_service=get_world_service(db),
+        outline_service=get_outline_service(db),
+        timeline_service=get_timeline_service(db),
+        foreshadowing_extractor=ForeshadowingExtractor(
+            llm_client=LangChainLLMClient(),
+            prompt_manager=LangChainPromptManager(),
+            foreshadowing_repo=SQLiteForeshadowingRepository(db),
+        ),
+        timeline_extractor=TimelineExtractor(
+            llm_client=LangChainLLMClient(),
+            prompt_manager=LangChainPromptManager(),
+            timeline_repo=SQLiteTimelineRepository(db),
+        ),
+        character_repo=SQLiteCharacterRepository(db),
+        world_repo=SQLiteWorldRepository(db),
+        timeline_repo=SQLiteTimelineRepository(db),
+        foreshadowing_repo=SQLiteForeshadowingRepository(db),
+        vector_store=get_vector_store(),
+    )
+
+
+_vector_store: VectorStoreProtocol | None = None
+"""模块级向量存储单例 — 懒加载（首次调用才初始化，spec §8）。"""
+
+
+def get_vector_store() -> VectorStoreProtocol:
+    """获取 RAG 向量存储（模块级单例，懒加载，spec §8/§12）.
+
+    LangChainVectorStore（Chroma 持久化到 config.vector_store_dir）+ BGE
+    本地 Embedding（config.embedding_model / embedding_device）。BGE 模型
+    首次使用需联网下载 ~100MB，仅首次调用时初始化；初始化失败抛
+    RAGUnavailableError（spec §3.4: 500「RAG 向量库不可用」前缀）。
+    """
+    global _vector_store
+    if _vector_store is None:
+        from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+
+        from inkflow.core.config import config
+        from inkflow.domain.ports.extraction_errors import RAGUnavailableError
+        from inkflow.infrastructure.rag.langchain_vector_store import (  # type: ignore[import-untyped]  # M6 落地后自动消除（warn_unused_ignores 未开启）
+            LangChainVectorStore,
+        )
+
+        try:
+            _vector_store = LangChainVectorStore(
+                persist_dir=config.vector_store_dir,
+                embeddings=HuggingFaceBgeEmbeddings(
+                    model_name=config.embedding_model,
+                    device=config.embedding_device,
+                ),
+            )
+        except Exception as e:
+            raise RAGUnavailableError(f"RAG 向量库不可用: Embedding 模型加载失败（{e}）") from e
+    return _vector_store

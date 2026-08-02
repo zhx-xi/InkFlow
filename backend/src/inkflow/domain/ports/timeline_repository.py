@@ -89,6 +89,24 @@ class TimelineRepositoryProtocol(Protocol):
         """
         ...
 
+    async def list_by_chapter(
+        self, project_id: int, chapter_id: int
+    ) -> builtins.list[TimelineEvent]:
+        """列出项目内活动事件中 source_chapter_id 等于指定章的事件.
+
+        F14 提取合并用（spec §5.5 合并策略）: 按 title 比对由服务层完成，
+        本方法只负责按来源章拉取候选集。按 (narrative_position ASC,
+        created_at ASC) 排序；软删除事件不进入。
+
+        Args:
+            project_id: 项目主键（int）.
+            chapter_id: 来源章节主键（int，与 ORM 层一致）.
+
+        Returns:
+            指定来源章的活动事件列表.
+        """
+        ...
+
     async def next_position(self, project_id: int) -> int:
         """计算项目内下一个叙事位置：max(narrative_position)+1（无事件时 = 1）.
 

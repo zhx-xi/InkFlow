@@ -23,6 +23,26 @@ class TimelineServiceError(Exception):
     """
 
 
+class TimelineExtractionError(Exception):
+    """时间线提取失败 — LLM 输出无法解析为合法时间线事件 JSON.
+
+    F14 §5.5 修复重试耗尽后抛出，由调用方（API/CLI）映射为 500（同 F9
+    CharacterExtractionError 语义）。
+
+    Attributes:
+        raw_output: LLM 原始输出片段（诊断用，可能被截断）.
+        detail: 失败原因描述.
+    """
+
+    def __init__(self, raw_output: str = "", detail: str = "") -> None:
+        self.raw_output = raw_output
+        self.detail = detail
+        msg = "时间线提取失败: LLM 输出无法解析为合法 JSON"
+        if detail:
+            msg += f" — {detail}"
+        super().__init__(msg)
+
+
 class TimelineNotFoundError(Exception):
     """事件不存在 — API 层映射为 404「事件不存在」.
 

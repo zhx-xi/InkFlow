@@ -236,3 +236,74 @@ class ForeshadowingUpdate(BaseModel):
                 raise ValueError("解除事件挂接请传空字符串")
             return v
         return v
+
+
+class ExtractedForeshadowing(BaseModel):
+    """LLM 提取出的单个伏笔（schema 校验用，spec §5.4）.
+
+    title 非法（空/超长）时该条被跳过并记录 warning，不影响其余条目落库。
+    description / location 可空：空值（None/空串）在合并时表示「不覆盖」。
+    """
+
+    title: str
+    description: str | None = None
+    location: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v: str) -> str:
+        """验证伏笔名：去空白后非空且不超过 100 字符."""
+        return _validate_title(v)
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v: str | None) -> str | None:
+        """验证伏笔详情：None 合法；否则不超过 5000 字符."""
+        return _validate_description(v) if v is not None else None
+
+    @field_validator("location")
+    @classmethod
+    def validate_location(cls, v: str | None) -> str | None:
+        """验证埋设位置：None 合法；否则去空白且不超过 200 字符."""
+        return _validate_location(v) if v is not None else None
+
+
+class ForeshadowingExtractRequest(BaseModel):
+    """伏笔提取请求（spec §5.4）.
+
+    Attributes:
+        project_id: 所属项目 UUID.
+        text: 待提取文本，必填，去空白非空，≤ 50000 字符.
+        model: 覆盖项目默认模型（格式 provider/model_name）；None 用默认.
+    """
+
+    project_id: uuid.UUID
+    text: str
+    model: str | None = None
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, v: str) -> str:
+        """验证提取文本：去空白后非空且不超过 50000 字符."""
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("章节文本不能为空")
+        if len(stripped) > 50000:
+            raise ValueError("章节文本不能超过 50000 个字符")
+        return stripped
+
+
+class ForeshadowingExtractionResult(BaseModel):
+    """伏笔提取结果 — 合并落库后的报告（spec §5.4）.
+
+    Attributes:
+        created: 本次新建的伏笔列表.
+        updated: 本次更新（同名合并）的伏笔列表.
+        warnings: 提取/合并过程中的警告信息（跳过条目、软删同名新建等）.
+        model: 实际使用的模型.
+    """
+
+    created: list[Foreshadowing]
+    updated: list[Foreshadowing]
+    warnings: list[str]
+    model: str

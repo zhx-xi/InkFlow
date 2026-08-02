@@ -101,6 +101,26 @@ def _validate_time_value(v: float | None) -> float | None:
     return v
 
 
+def _validate_text(v: str) -> str:
+    """共享的提取文本校验：去空白后非空且不超过 50000 字符.
+
+    Args:
+        v: 原始输入文本.
+
+    Returns:
+        去空白后的文本.
+
+    Raises:
+        ValueError: 文本为空/纯空白，或超过 50000 字符.
+    """
+    stripped = v.strip()
+    if not stripped:
+        raise ValueError("提取文本不能为空")
+    if len(stripped) > 50000:
+        raise ValueError("提取文本不能超过 50000 个字符")
+    return stripped
+
+
 class TimelineEvent(BaseModel):
     """时间线事件领域实体 — 对应 timeline_events 表.
 
@@ -119,6 +139,8 @@ class TimelineEvent(BaseModel):
         narrative_position: 叙事位置（单一线性序号，小者在前 = 先被叙述）.
         timeline_flag: 时间线标记（"" = 正叙、flashback = 倒叙、
             flashforward = 插叙/预叙；自由文本，未在建议词表的值等同未标记）.
+        source_chapter_id: F14 提取来源章节（Q3 联动锚点）— 仅作来源追溯，
+            不参与业务规则校验；None = 手工事件（不参与提取合并匹配）.
         extra: 扩展属性字典（参与角色、地点、标签等 Phase 2+ 字段预留）.
         is_deleted: 软删除标记.
         created_at: 创建时间 (UTC).
@@ -136,6 +158,7 @@ class TimelineEvent(BaseModel):
     time_display: str = ""  # 原始时间表达（如「青元历 317 年秋」）
     narrative_position: int = 0
     timeline_flag: str = ""  # ""/flashback/flashforward（建议值，自由文本）
+    source_chapter_id: uuid.UUID | None = None  # F14 提取来源章节（Q3 联动）; None = 手工事件
     extra: dict[str, Any] = Field(default_factory=dict)
     is_deleted: bool = False
     created_at: datetime
@@ -154,6 +177,7 @@ class TimelineEventCreate(BaseModel):
         time_display: 原始时间表达，默认为空串，≤ 100 字符，去空白.
         narrative_position: 叙事位置；None = 追加到叙事末尾（max+1），≥ 0.
         timeline_flag: 时间线标记，默认为空串（正叙），≤ 20 字符，去空白.
+        source_chapter_id: F14 提取来源章节；None = 手工事件（不参与提取合并匹配）.
     """
 
     project_id: uuid.UUID
@@ -164,6 +188,7 @@ class TimelineEventCreate(BaseModel):
     time_display: str = ""
     narrative_position: int | None = None  # None = 追加到叙事末尾（max+1）
     timeline_flag: str = ""
+    source_chapter_id: uuid.UUID | None = None  # None = 手工事件（不参与提取合并匹配）
 
     @field_validator("title")
     @classmethod
@@ -216,6 +241,7 @@ class TimelineEventUpdate(BaseModel):
     time_value: None 表示不修改；"" 表示清除世界内时间（置为未知）.
     timeline_flag: None 表示不修改；"" 表示清除标记（置为正叙）.
     time_unit/time_display: None 表示不修改；"" 表示清除（置空串）.
+    source_chapter_id: None 表示不修改（同其他可空字段语义）.
     只有传入的字段会被更新，未传入的字段保持不变.
     """
 
@@ -226,6 +252,7 @@ class TimelineEventUpdate(BaseModel):
     time_display: str | None = None
     narrative_position: int | None = None
     timeline_flag: str | None = None
+    source_chapter_id: uuid.UUID | None = None  # None 不修改（同其他可空字段语义）
 
     @field_validator("title")
     @classmethod
@@ -349,3 +376,106 @@ class TimelineView(BaseModel):
     total: int
     event_timeline: list[TimelineEvent]  # 事件时间线（世界内时间升序，未知排末尾）
     narrative_order: list[TimelineEvent]  # 叙事时间线（叙事位置升序）
+
+
+class ExtractedTimelineEvent(BaseModel):
+    """LLM 提取出的时间线事件（F14 §5.5 schema 校验用；落库前合并）.
+
+    提取字段 None = 「未知/不覆盖」（合并时保留库中原值）；空字符串是
+    明确值（如 timeline_flag="" = 明确无标记），照常覆盖。title 是合并
+    匹配键 (project_id, title, source_chapter_id) 的一部分，不参与覆盖。
+
+    Attributes:
+        title: 事件标题，必填，1-100 字符，去空白.
+        description: 事件描述（该时刻发生了什么）；None = 不覆盖.
+        time_value: 世界内时间数值键（无法推断 → null）；None = 不覆盖；
+            校验同 F12：有限且 |v| ≤ 1e12.
+        time_unit: 时间单位标签（纪元/年/月/日/时）；None = 不覆盖.
+        narrative_position: 叙事位置（LLM 输出或 null——新建时 null = F12
+            追加语义）；None = 不覆盖.
+        timeline_flag: 时间线标记（""/flashback/flashforward）；None = 不覆盖.
+    """
+
+    title: str
+    description: str | None = None
+    time_value: float | None = None
+    time_unit: str | None = None
+    narrative_position: int | None = None
+    timeline_flag: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v: str) -> str:
+        """验证事件标题：去空白后非空且不超过 100 字符."""
+        return _validate_title(v)
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v: str | None) -> str | None:
+        """验证事件描述：None（不覆盖）直接返回；否则不超过 5000 字符."""
+        return _validate_description(v) if v is not None else None
+
+    @field_validator("time_value")
+    @classmethod
+    def validate_time_value(cls, v: float | None) -> float | None:
+        """验证世界内时间：None（不覆盖）直接返回；否则须有限且 |v| ≤ 1e12."""
+        return _validate_time_value(v)
+
+    @field_validator("time_unit")
+    @classmethod
+    def validate_time_unit(cls, v: str | None) -> str | None:
+        """验证时间单位：None（不覆盖）直接返回；否则去空白且不超过 20 字符."""
+        return _validate_short_text(v, "时间单位", 20) if v is not None else None
+
+    @field_validator("narrative_position")
+    @classmethod
+    def validate_narrative_position(cls, v: int | None) -> int | None:
+        """验证叙事位置：None（不覆盖）直接返回；否则须非负."""
+        if v is not None and v < 0:
+            raise ValueError("叙事位置不能为负数")
+        return v
+
+    @field_validator("timeline_flag")
+    @classmethod
+    def validate_timeline_flag(cls, v: str | None) -> str | None:
+        """验证时间线标记：None（不覆盖）直接返回；否则去空白且不超过 20 字符."""
+        return _validate_short_text(v, "时间线标记", 20) if v is not None else None
+
+
+class TimelineExtractRequest(BaseModel):
+    """时间线提取请求（F14 §5.5 管线入口 DTO）.
+
+    Attributes:
+        project_id: 所属项目 UUID.
+        chapter_id: 来源章节 UUID（合并匹配键 (project_id, title,
+            source_chapter_id) 的一部分；新建事件记录为 source_chapter_id）.
+        text: 待提取文本，必填，去空白非空，≤ 50000 字符.
+        model: 覆盖项目默认模型（格式 provider/model_name）；None 用默认.
+    """
+
+    project_id: uuid.UUID
+    chapter_id: uuid.UUID
+    text: str
+    model: str | None = None
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, v: str) -> str:
+        """验证提取文本：去空白后非空且不超过 50000 字符."""
+        return _validate_text(v)
+
+
+class TimelineExtractionResult(BaseModel):
+    """时间线提取结果 — 合并落库后的报告（F14 §5.5 步骤 ⑦）.
+
+    Attributes:
+        created: 本次新建的事件列表.
+        updated: 本次更新（同名同章合并）的事件列表.
+        warnings: 提取/合并过程中的警告信息（跳过条目、软删同名同章等）.
+        model: 实际使用的模型.
+    """
+
+    created: list[TimelineEvent]
+    updated: list[TimelineEvent]
+    warnings: list[str]
+    model: str

@@ -12,8 +12,12 @@
   sort_by=time_value 时未知时间始终排末尾（NULLS LAST，升/降序均适用）
 - list_all 按 (narrative_position ASC, created_at ASC) 稳定排序（叙事顺序），
   供双线视图/一致性检查消费
+- list_by_chapter 按来源章（source_chapter_id）拉取项目内活动事件候选集
+  （F14 提取合并用，spec §5.5）；同 list_all 稳定排序
+- source_chapter_id 映射: DB int ↔ 领域 uuid.UUID(int=...)（None 保持 None）
 - next_position = 项目内活动事件 max(narrative_position)+1（空项目 = 1）
-- FK 级联: 项目物理删除 → 事件级联物理删除（DB FK CASCADE）
+- FK 级联: 项目物理删除 → 事件级联物理删除（DB FK CASCADE）；
+  章节物理删除 → source_chapter_id 置 NULL（事件保留，DB FK SET NULL）
 
 注: 方法名 ``list`` 会遮蔽类作用域中的内置 ``list``，返回注解统一
 写作 ``builtins.list[...]``（与 domain/ports/timeline_repository.py 一致）。
@@ -62,6 +66,7 @@ def _orm_to_domain(orm: TimelineEventORM) -> TimelineEvent:
         time_display=orm.time_display,
         narrative_position=orm.narrative_position,
         timeline_flag=orm.timeline_flag,
+        source_chapter_id=_int_to_uuid(orm.source_chapter_id),
         extra=orm.extra or {},
         is_deleted=orm.is_deleted,
         created_at=orm.created_at,
@@ -80,6 +85,9 @@ def _domain_to_orm(domain: TimelineEvent) -> TimelineEventORM:
         time_display=domain.time_display,
         narrative_position=domain.narrative_position,
         timeline_flag=domain.timeline_flag,
+        source_chapter_id=(
+            _uuid_to_int(domain.source_chapter_id) if domain.source_chapter_id is not None else None
+        ),
         extra=domain.extra,
         is_deleted=domain.is_deleted,
     )
@@ -189,6 +197,38 @@ class SQLiteTimelineRepository:
         orms = result.scalars().all()
         return [_orm_to_domain(o) for o in orms]
 
+    async def list_by_chapter(
+        self, project_id: int, chapter_id: int
+    ) -> builtins.list[TimelineEvent]:
+        """列出项目内活动事件中 source_chapter_id 等于指定章的事件.
+
+        F14 提取合并用（spec §5.5 合并策略）: 按 title 比对由服务层完成，
+        本方法只负责按来源章拉取候选集。按 (narrative_position ASC,
+        created_at ASC) 排序；软删除事件不进入。
+
+        Args:
+            project_id: 项目主键（int）.
+            chapter_id: 来源章节主键（int，与 ORM 层一致）.
+
+        Returns:
+            指定来源章的活动事件列表.
+        """
+        stmt = (
+            select(TimelineEventORM)
+            .where(
+                TimelineEventORM.project_id == project_id,
+                TimelineEventORM.source_chapter_id == chapter_id,
+                ~TimelineEventORM.is_deleted,
+            )
+            .order_by(
+                TimelineEventORM.narrative_position.asc(),
+                TimelineEventORM.created_at.asc(),
+            )
+        )
+        result = await self._session.execute(stmt)
+        orms = result.scalars().all()
+        return [_orm_to_domain(o) for o in orms]
+
     async def next_position(self, project_id: int) -> int:
         """计算项目内下一个叙事位置: max(narrative_position)+1（无事件时 = 1）.
 
@@ -219,6 +259,11 @@ class SQLiteTimelineRepository:
                 time_display=event.time_display,
                 narrative_position=event.narrative_position,
                 timeline_flag=event.timeline_flag,
+                source_chapter_id=(
+                    _uuid_to_int(event.source_chapter_id)
+                    if event.source_chapter_id is not None
+                    else None
+                ),
                 extra=event.extra,
                 updated_at=_utcnow(),
             )
