@@ -5,6 +5,14 @@ from inkflow.domain.models.agent_pipeline import (
     PipelineExecuteRequest,
     RoleOverride,
 )
+from inkflow.domain.models.audit import (
+    AuditDimension,
+    AuditFinding,
+    AuditReport,
+    AuditSeverity,
+    AuditSummary,
+    DimensionSummary,
+)
 from inkflow.domain.models.chapter import (
     Chapter,
     ChapterCreate,
@@ -193,4 +201,11 @@ __all__ = [
     "ExtractedForeshadowing",
     "ForeshadowingExtractRequest",
     "ForeshadowingExtractionResult",
+    # ── audit (F15) ──
+    "AuditDimension",
+    "AuditSeverity",
+    "AuditFinding",
+    "DimensionSummary",
+    "AuditSummary",
+    "AuditReport",
 ]

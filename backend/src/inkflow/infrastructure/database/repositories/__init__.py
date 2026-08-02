@@ -1,5 +1,8 @@
 """仓储实现."""
 
+from inkflow.infrastructure.database.repositories.audit_repo import (
+    SQLiteAuditRepository,
+)
 from inkflow.infrastructure.database.repositories.chapter_repo import (
     SQLiteChapterRepository,
 )
@@ -38,4 +41,5 @@ __all__ = [
     "SQLiteOutlineRepository",
     "SQLiteTimelineRepository",
     "SQLiteForeshadowingRepository",
+    "SQLiteAuditRepository",
 ]

@@ -22,6 +22,8 @@
     - foreshadowing_errors: 伏笔管理异常（F13）
     - extraction_errors: 统一提取服务异常（F14）
     - extraction_run_repository: 增量追踪记录仓储（F14）
+    - audit_errors: 一致性审计异常（F15）
+    - audit_repository: 审计软删集合补充查询端口（F15）
 """
 
 from inkflow.domain.ports.agent_pipeline import (
@@ -34,6 +36,8 @@ from inkflow.domain.ports.agent_pipeline import (
     StageResult,
     StageStatus,
 )
+from inkflow.domain.ports.audit_errors import AuditServiceError
+from inkflow.domain.ports.audit_repository import AuditRepositoryProtocol
 from inkflow.domain.ports.character_errors import (
     CharacterExtractionError,
     CharacterNameConflictError,
@@ -210,4 +214,8 @@ __all__ = [
     "RAGUnavailableError",
     "VectorStoreError",
     "ExtractionRunError",
+    # ── audit (F15) ──
+    "AuditRepositoryProtocol",
+    "AuditServiceError",
+    "ProjectNotFoundError",
 ]
