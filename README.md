@@ -37,18 +37,18 @@ cd InkFlow/backend
 # 2. 安装依赖（开发环境）
 uv sync --extra dev
 
-# 3. 查看 CLI
-python -m inkflow --help
+# 3. 查看 CLI（用 uv run 自动使用项目 venv backend/.venv）
+uv run inkflow --help
 
 # 4. 建一个项目试试
-python -m inkflow project create "我的第一本小说"
+uv run inkflow project create "我的第一本小说"
 
 # 5. 启动 REST API（Swagger: http://127.0.0.1:8000/docs）
-python -m inkflow serve
+uv run inkflow serve
 ```
 
 > 不装 uv 也可以用 `pip install -e .`（在 `backend/` 目录下）。
-> Windows 用户请用 PowerShell；所有命令在 `backend/` 目录下执行。
+> **Windows 注意**：不要直接敲 `python -m inkflow`——PATH 里的 `python` 可能解析到系统或其他虚拟环境（报 `No module named inkflow`）。统一用 `uv run`，或先激活项目 venv（`.\.venv\Scripts\Activate.ps1`）再执行。
 
 ## 🗺️ 文档导航
 
