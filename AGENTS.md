@@ -54,10 +54,10 @@
 | F12 | `timeline_service` | 时间线管理（事件/叙事双时间线 + 一致性检查，无 LLM） | ✅ 已完成（PR #63） |
 | F13 | `foreshadowing_service` | 伏笔管理（埋设/回收追踪；写作时注入） | ✅ 已完成（PR #64） |
 | F14 | `extraction_service` | 统一提取服务（6 种提取类型；增量提取；RAG 落地 ADR-013） | ✅ 已完成（PR #72） |
-| F15 | `audit_service` | 一致性审计（角色/时间线/世界/伏笔 4 维度） | 计划中 |
+| F15 | `audit_service` | 一致性审计（角色/时间线/世界/伏笔 4 维度） | ✅ 已完成（PR #74） |
 | F16 | `style_service` | 风格检测（风格指纹/AI 痕迹/词汇分析） | 计划中 |
 
-> 模块类型谱系：F9/F10 提取型 → F11 生成型 → F12 确定性检查型（无 LLM）→ F13 状态追踪+F6 注入型（无 LLM，首个自带 F6 数据源替换）→ **F14 横切收敛型（门面：收敛 F9-F13 管线 + 增量提取 + RAG 首次落地 ADR-013）**。F15-F16 实施时先对照对应变体样板（`specs/f12-timeline-service/spec.md` 为最新完整模板；F13 另含 F6 集成模式 `specs/f13-foreshadowing-service/spec.md` §5）。
+> 模块类型谱系：F9/F10 提取型 → F11 生成型 → F12 确定性检查型（无 LLM）→ F13 状态追踪+F6 注入型（无 LLM，首个自带 F6 数据源替换）→ F14 横切收敛型（门面：收敛 F9-F13 管线 + 增量提取 + RAG 首次落地 ADR-013）→ **F15 横切审计型（纯消费者：只读聚合 4 维档案 + 跨模块引用，零跨模块 MODIFY）**。F16 实施时先对照对应变体样板（`specs/f14-extraction-service/spec.md` 为最新完整模板；F13 另含 F6 集成模式 `specs/f13-foreshadowing-service/spec.md` §5）。
 
 ### Phase 3 功能（F18-F25，2026-08-02 形态决策后归属调整）
 
@@ -121,7 +121,7 @@ D:\develop\projects\
 │   ├── docs\                        # 用户使用说明（仅 README.md）
 │   ├── specs\                       # SDD 规格文件（每个 feature 一个目录）
 │   │   ├── f1-project-service\ ... f7-cli-interface\   #   Phase 1（F8 无 spec，见 ADR-018）
-│   │   ├── f9-character-service\ ... f14-extraction-service\  #   Phase 2 创作工具链
+│   │   ├── f9-character-service\ ... f15-audit-service\  #   Phase 2 创作工具链
 │   │   └── p0-11-cloud-protocols\   #   云端接口 Protocol spec
 │   ├── frontend\                    # ★ 前端（0.3.0 F19 GUI 起；云 Web 一套两用，ADR-020）
 │   │   └── README.md                #   定位说明（React 19 + Vite 6 + pnpm-lock 约定）
@@ -266,6 +266,7 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 - `specs/f12-timeline-service/spec.md`：F12 时间线管理规格（确定性检查型，最新完整模板）
 - `specs/f13-foreshadowing-service/spec.md`：F13 伏笔管理规格（状态追踪 + F6 注入集成型）
 - `specs/f14-extraction-service/spec.md`：F14 统一提取服务规格（横切收敛门面 + 增量提取 + RAG 首次落地）
+- `specs/f15-audit-service/spec.md`：F15 一致性审计服务规格（横切审计型：只读聚合 + 8 规则引擎 + 零跨模块 MODIFY）
 - 每个模块 spec 定义了：数据模型、API 契约、CLI 命令、边界情况、测试策略
 - spec 是开发的唯一真相来源。如果发现 spec 与实现矛盾，先更新 spec，再改代码
 
@@ -523,6 +524,7 @@ AI 编码助手在开始任何工作前，应**按顺序**阅读以下文件：
 | P0 | `specs/f12-timeline-service/spec.md` | F12 功能规格（0.2.0 最新完整模板：单实体 + 确定性算法） |
 | P0 | `specs/f13-foreshadowing-service/spec.md` | F13 功能规格（状态机 + F6 注入集成：event_id 锚点 + ForeshadowingSource 替换） |
 | P0 | `specs/f14-extraction-service/spec.md` | F14 功能规格（横切收敛门面：6 类型统一接口 + 增量提取 + RAG 落地） |
+| P0 | `specs/f15-audit-service/spec.md` | F15 功能规格（横切审计型：4 维档案只读聚合 + 8 规则引擎 + 零跨模块 MODIFY） |
 | P1 | `design/architecture-analysis-2026-07-30.md` | 架构分析总览；ADR 索引表（决策详情在 `adr/`） |
 | P1 | `design/workflow.md` | git worktree + PR 流程详解 |
 | P1 | `backend/pyproject.toml` | 依赖版本、工具配置（Ruff、mypy、pytest） |
