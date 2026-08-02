@@ -299,8 +299,7 @@ class TestVectorRetrieve:
         mock_extraction_service.retrieve.return_value = [
             _make_retrieved(
                 content=(
-                    "伏笔：林晚的身世。林晚右肩的胎记与女主母亲的信物相同"
-                    "（埋设位置：第 5 章）"
+                    "伏笔：林晚的身世。林晚右肩的胎记与女主母亲的信物相同（埋设位置：第 5 章）"
                 )
             )
         ]

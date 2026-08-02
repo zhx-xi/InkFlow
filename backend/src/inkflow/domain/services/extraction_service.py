@@ -215,9 +215,7 @@ def _project_setting(setting: WorldSetting, project_id: str) -> IndexableEntity:
         id=str(setting.id),
         entity_type=EntityType.SETTING,
         project_id=project_id,
-        content=(
-            f"名称：{setting.name}\n" f"分类：{setting.category}\n" f"内容：{setting.content}"
-        ),
+        content=(f"名称：{setting.name}\n分类：{setting.category}\n内容：{setting.content}"),
         metadata={
             "name": setting.name,
             "category": setting.category,
