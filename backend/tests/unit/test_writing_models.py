@@ -5,16 +5,22 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from inkflow.domain.models.writing import (
     ContinueWritingRequest,
     FormatValidationResult,
     RevisionRequest,
+    StreamContinueRequest,
+    StreamGenerateRequest,
+    StreamReviseRequest,
+    StreamWritingRequest,
     WritingMode,
     WritingRequest,
     WritingResult,
+    WritingStreamEvent,
 )
+from inkflow.domain.ports.llm_client import TokenUsage
 
 
 class TestWritingModeEnum:
@@ -252,3 +258,172 @@ class TestFormatValidationResult:
         assert r.valid is False
         assert len(r.errors) == 2
         assert "R1" in r.errors[0]
+
+
+# ── F23 SSE 流式（spec §2/§9 M1；RED 阶段预期：顶部 import 收集期 ImportError）──
+
+
+class TestWritingStreamEvent:
+    """F23 §2.1 WritingStreamEvent — 流式事件 dataclass 默认值与帧构造.
+
+    设计假设（F16 契约，实现以测试为准）:
+    - 定义位置: inkflow.domain.models.writing（新增；dataclass 而非 Pydantic，
+      与 F5 StreamEvent 一致——事件是内部传输载体不进 OpenAPI，spec §2.1 注）
+    - 接口签名: WritingStreamEvent(
+          delta: str = "",
+          done: bool = False,
+          format_valid: bool | None = None,
+          warnings: list[str] = field(default_factory=list),
+          word_count: int | None = None,
+          model: str | None = None,
+          token_usage: TokenUsage | None = None,
+          error: str | None = None,
+      )
+    - warnings 必须 default_factory=list（实例间不共享，防可变默认值串扰）
+    - done 帧: done=True + 结果字段（format_valid/warnings/word_count/model/token_usage）
+    - error 帧: error 非空 + done=True，结果字段保持 None（spec §7 E3 帧后流结束）
+    """
+
+    def test_defaults(self) -> None:
+        ev = WritingStreamEvent()
+        assert ev.delta == ""
+        assert ev.done is False
+        assert ev.format_valid is None
+        assert ev.warnings == []
+        assert ev.word_count is None
+        assert ev.model is None
+        assert ev.token_usage is None
+        assert ev.error is None
+
+    def test_warnings_default_not_shared_between_instances(self) -> None:
+        ev1 = WritingStreamEvent()
+        ev2 = WritingStreamEvent()
+        ev1.warnings.append("字数不足: 500/2000")
+        assert ev2.warnings == []
+
+    def test_done_frame_fields(self) -> None:
+        usage = TokenUsage(prompt_tokens=1820, completion_tokens=2600, total_tokens=4420)
+        ev = WritingStreamEvent(
+            done=True,
+            format_valid=True,
+            warnings=["字数不足: 500/2000"],
+            word_count=2347,
+            model="deepseek/deepseek-chat",
+            token_usage=usage,
+        )
+        assert ev.done is True
+        assert ev.format_valid is True
+        assert ev.warnings == ["字数不足: 500/2000"]
+        assert ev.word_count == 2347
+        assert ev.model == "deepseek/deepseek-chat"
+        assert ev.token_usage == usage
+
+    def test_error_frame_fields(self) -> None:
+        ev = WritingStreamEvent(done=True, error="LLM 调用失败，请稍后重试")
+        assert ev.done is True
+        assert ev.error == "LLM 调用失败，请稍后重试"
+        assert ev.format_valid is None
+        assert ev.word_count is None
+
+
+class TestStreamWritingRequest:
+    """F23 §2.2 StreamWritingRequest 判别联合（Q1=C）— mode 分发/校验继承/序列化.
+
+    设计假设（F16 契约，实现以测试为准）:
+    - 定义位置: inkflow.domain.models.writing（三个包装模型继承 F3 DTO，既有模型零变更）
+    - StreamGenerateRequest(WritingRequest): mode: Literal["generate"] = "generate"
+    - StreamContinueRequest(ContinueWritingRequest): mode: Literal["continue"] = "continue"
+    - StreamReviseRequest(RevisionRequest): mode: Literal["revise"] = "revise"
+    - StreamWritingRequest = Annotated[Union[StreamGenerateRequest, StreamContinueRequest,
+      StreamReviseRequest], Field(discriminator="mode")]
+    - 判别解析: pydantic.TypeAdapter(StreamWritingRequest).validate_python(payload) → 正确分支实例
+    - mode 缺失/非法 → pydantic.ValidationError（FastAPI 422 语义，判别字段必填，spec §3.2 E2）
+    - 字段校验全继承 F3（精确文案）: outline 空 → "大纲不能为空"；existing_content < 50 字符 →
+      "已有内容太短，无法续写（至少需要 50 个字符）"；feedback 空 → "修订意见不能为空"
+    - 序列化: model_dump(mode="json") 含 mode 判别字段；直接构造（不带 mode）默认值为分支字面量
+    """
+
+    _adapter = TypeAdapter(StreamWritingRequest)
+
+    def _payload(self, **overrides: str) -> dict[str, str]:
+        base = {
+            "project_id": str(uuid.uuid4()),
+            "chapter_id": str(uuid.uuid4()),
+        }
+        base.update(overrides)
+        return base
+
+    def test_parse_generate_branch(self) -> None:
+        req = self._adapter.validate_python(
+            self._payload(mode="generate", outline="主角首次踏入宗门试炼场")
+        )
+        assert isinstance(req, StreamGenerateRequest)
+        assert req.mode == "generate"
+        assert req.outline == "主角首次踏入宗门试炼场"
+
+    def test_parse_continue_branch(self) -> None:
+        req = self._adapter.validate_python(
+            self._payload(
+                mode="continue",
+                existing_content="这是已有内容，至少需要五十个字符。" * 3,
+            )
+        )
+        assert isinstance(req, StreamContinueRequest)
+        assert req.mode == "continue"
+
+    def test_parse_revise_branch(self) -> None:
+        req = self._adapter.validate_python(
+            self._payload(
+                mode="revise",
+                content="待修订原文内容。" * 2,
+                feedback="节奏太慢，删减环境描写",
+            )
+        )
+        assert isinstance(req, StreamReviseRequest)
+        assert req.mode == "revise"
+
+    def test_missing_mode_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            self._adapter.validate_python(self._payload(outline="test"))
+
+    def test_invalid_mode_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            self._adapter.validate_python(self._payload(mode="translate", outline="test"))
+
+    def test_generate_inherits_outline_validation(self) -> None:
+        with pytest.raises(ValidationError, match="大纲不能为空"):
+            StreamGenerateRequest(
+                project_id=uuid.uuid4(),
+                chapter_id=uuid.uuid4(),
+                outline="",
+            )
+
+    def test_continue_inherits_existing_content_validation(self) -> None:
+        with pytest.raises(ValidationError, match="已有内容太短"):
+            StreamContinueRequest(
+                project_id=uuid.uuid4(),
+                chapter_id=uuid.uuid4(),
+                existing_content="ab",
+            )
+
+    def test_revise_inherits_feedback_validation(self) -> None:
+        with pytest.raises(ValidationError, match="修订意见不能为空"):
+            StreamReviseRequest(
+                project_id=uuid.uuid4(),
+                chapter_id=uuid.uuid4(),
+                content="待修订内容",
+                feedback="",
+            )
+
+    def test_serialize_contains_mode(self) -> None:
+        pid = uuid.uuid4()
+        req = StreamGenerateRequest(
+            project_id=pid,
+            chapter_id=uuid.uuid4(),
+            outline="test",
+        )
+        assert req.mode == "generate"  # 默认值 = 分支字面量
+        dumped = req.model_dump(mode="json")
+        assert dumped["mode"] == "generate"
+        assert dumped["project_id"] == str(pid)
+        assert dumped["min_words"] == 2000  # 继承 F3 默认值

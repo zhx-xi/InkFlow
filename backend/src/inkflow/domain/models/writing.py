@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -147,3 +148,63 @@ class FormatValidationResult:
 
     valid: bool
     errors: list[str] = field(default_factory=list)
+
+
+# ── F23 SSE 流式（spec §2；仅追加，既有模型零变更）──
+
+
+@dataclass
+class WritingStreamEvent:
+    """流式写作事件 — service 流式方法逐事件 yield，API 层序列化为 SSE 帧（spec §6）.
+
+    delta 帧: done=False，携带文本增量
+    done 帧:  done=True，携带完整写作结果（format_valid/warnings/word_count/model/token_usage）
+    """
+
+    delta: str = ""
+    """文本增量（当前 LLM chunk 内容；done 帧为空字符串）."""
+
+    done: bool = False
+    """是否为结束帧（LLM 流结束后发出，携带结果字段）."""
+
+    format_valid: bool | None = None
+    """done 帧: 最终内容是否通过 FormatValidator 校验（spec §5.4）."""
+
+    warnings: list[str] = field(default_factory=list)
+    """done 帧: 校验/重试警告列表（非流式路径 warnings 语义的流式镜像）."""
+
+    word_count: int | None = None
+    """done 帧: count_words(完整内容) 字数统计."""
+
+    model: str | None = None
+    """done 帧: 实际使用的模型名（provider/model_name）."""
+
+    token_usage: TokenUsage | None = None
+    """done 帧: Token 消耗统计（LLM 最终事件携带；可能为 None）."""
+
+    error: str | None = None
+    """error 帧: 非空表示流中错误（LLM 失败等），帧后流结束（spec §7 E3）."""
+
+
+class StreamGenerateRequest(WritingRequest):
+    """流式生成请求 — mode=generate 判别（spec §2.2 Q1=C）."""
+
+    mode: Literal["generate"] = "generate"
+
+
+class StreamContinueRequest(ContinueWritingRequest):
+    """流式续写请求 — mode=continue 判别."""
+
+    mode: Literal["continue"] = "continue"
+
+
+class StreamReviseRequest(RevisionRequest):
+    """流式修订请求 — mode=revise 判别."""
+
+    mode: Literal["revise"] = "revise"
+
+
+StreamWritingRequest = Annotated[
+    StreamGenerateRequest | StreamContinueRequest | StreamReviseRequest,
+    Field(discriminator="mode"),
+]
