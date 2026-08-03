@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="InkFlow">
+  <!--
+    InkFlow 品牌图标 — 墨滴 + 流动笔画
+    概念: Ink（墨滴，上圆下尖）→ Flow（底部两道流线，象征文字流出/写作流动）
+    浅色背景版本（墨蓝主色 #3B5B7C）
+    深色背景版本见 inkflow-icon-dark.svg
+  -->
+  <!-- 墨滴主体: 上圆（半径140 圆心 256,250）+ 下尖（尖端 256,480） -->
+  <path d="M256 110 A 140 140 0 0 1 396 250 C 396 338 316 438 256 480 C 196 438 116 338 116 250 A 140 140 0 0 1 256 110 Z"
+        fill="#3B5B7C"/>
+  <!-- 高光（左上，模拟墨滴光泽） -->
+  <ellipse cx="196" cy="238" rx="28" ry="46" fill="#FFFFFF" opacity="0.14" transform="rotate(-16 196 238)"/>
+  <!-- 流线 1（主，左下） -->
+  <path d="M256 480 C 178 508 108 506 72 452"
+        stroke="#3B5B7C" stroke-width="20" fill="none" stroke-linecap="round"/>
+  <!-- 流线 2（次，右下，浅一档） -->
+  <path d="M256 480 C 330 510 396 502 438 458"
+        stroke="#3B5B7C" stroke-width="14" fill="none" stroke-linecap="round" opacity="0.55"/>
+</svg>

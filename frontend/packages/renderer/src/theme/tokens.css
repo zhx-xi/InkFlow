@@ -1,0 +1,84 @@
+/* ============================================================
+   InkFlow 设计 Token — 三主题 × 背景变体
+   依据: design/gui-design-tokens-2026-08-03.md（评审通过）
+   机制: CSS 变量 + data-theme/data-bg 属性（html 与 body 同步持有，
+         原型踩坑：body 自带属性会覆盖继承值 → theme/index.ts 双写）
+   ============================================================ */
+
+:root {
+  /* 布局常量（所有主题共用） */
+  --radius-s: 4px;   /* 小控件 */
+  --radius-m: 6px;   /* 输入/按钮/开关 */
+  --radius-l: 8px;   /* 卡片/面板 */
+  --font-ui: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", sans-serif;
+  --font-serif: "Noto Serif SC", "Source Han Serif SC", "SimSun", "宋体", Georgia, serif;
+  --font-kai: "KaiTi", "STKaiti", "楷体", "PingFang SC", serif;
+  --dur: 180ms;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── 素笺 paper（默认）: 暖白纸张 + 墨蓝 ── */
+[data-theme="paper"] {
+  --bg: #FAF9F7;            /* 暖白（非纯白） */
+  --surface: #FFFFFF;       /* 主面板: 编辑器/卡片 */
+  --surface-2: #F3F1EC;     /* 次级面: 侧栏/表单底 */
+  --surface-3: #EBE8E1;     /* 悬停面 */
+  --ink: #2A2A28;           /* 主文字（暖黑） */
+  --ink-2: #6B6A66;         /* 次级文字 */
+  --ink-3: #A4A29B;         /* 弱文字/占位 */
+  --line: #E5E2DA;          /* 分隔线/边框 */
+  --accent: #3B5B7C;        /* 墨蓝（饱和度 < 80%） */
+  --accent-ink: #FFFFFF;
+  --accent-weak: rgba(59, 91, 124, 0.10);
+  --ok: #4A7C59; --warn: #B07A2E; --err: #B04A3A;
+  --shadow: 0 1px 2px rgba(42, 42, 40, 0.05), 0 4px 16px rgba(42, 42, 40, 0.05);
+}
+[data-theme="paper"][data-bg="parchment"] {  /* 变体: 羊皮纸 */
+  --bg: #F4EFE6; --surface: #FBF8F1; --surface-2: #EFE9DC; --surface-3: #E7E0D0;
+}
+
+/* ── 夜航 night: 暖灰黑 + 暖金（跟随系统深色偏好） ── */
+[data-theme="night"] {
+  --bg: #1A1A18;            /* 暖灰黑（非纯黑） */
+  --surface: #22221F;
+  --surface-2: #282823;
+  --surface-3: #32322C;
+  --ink: #E8E6E1;           /* 暖白文字 */
+  --ink-2: #9B988F;
+  --ink-3: #6E6B63;
+  --line: #34332E;
+  --accent: #C9A24B;        /* 暖金（低饱和） */
+  --accent-ink: #1A1A18;
+  --accent-weak: rgba(201, 162, 75, 0.13);
+  --ok: #8FAE8E; --warn: #C9A24B; --err: #C97B63;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+[data-theme="night"][data-bg="navy"] {  /* 变体: 墨蓝黑 */
+  --bg: #171A1E; --surface: #1E2228; --surface-2: #242A31; --surface-3: #2D343D;
+  --line: #2E3540;
+}
+
+/* ── 墨韵 ink: 宣纸 + 墨黑 + 朱砂点缀（手动选择） ── */
+[data-theme="ink"] {
+  --bg: #F3EEE2;            /* 宣纸米黄 */
+  --surface: #FAF6EC;
+  --surface-2: #EFE9DA;
+  --surface-3: #E6DFCC;
+  --ink: #2B2A26;           /* 墨黑 */
+  --ink-2: #6E6A5E;
+  --ink-3: #A49F90;
+  --line: #DED6C2;
+  --accent: #A6402E;        /* 朱砂（点缀用，不做大面） */
+  --accent-ink: #FAF6EC;
+  --accent-weak: rgba(166, 64, 46, 0.09);
+  --ok: #5A7A58; --warn: #9A7B3C; --err: #A6402E;
+  --shadow: 0 1px 2px rgba(43, 42, 38, 0.06), 0 4px 16px rgba(43, 42, 38, 0.06);
+}
+[data-theme="ink"][data-bg="ochre"] {  /* 变体: 深褐纸 */
+  --bg: #EDE6D6; --surface: #F6F1E5; --surface-2: #E9E1CE; --surface-3: #E0D6BF;
+}
+
+/* 动效降级 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

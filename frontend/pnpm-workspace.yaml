@@ -1,0 +1,9 @@
+packages:
+  - "packages/*"
+
+allowBuilds:
+  esbuild: set this to true or false
+
+# pnpm 10 安全策略：显式允许依赖的构建脚本（esbuild postinstall 下载二进制）
+onlyBuiltDependencies:
+  - esbuild

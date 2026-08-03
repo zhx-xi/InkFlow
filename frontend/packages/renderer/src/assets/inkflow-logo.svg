@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120" role="img" aria-label="InkFlow — AI 写作工具">
+  <!--
+    InkFlow 品牌横版字标 — 浅色背景版本
+    图标(墨滴+流线) + 衬线字标 "InkFlow"
+  -->
+  <g transform="translate(6 8) scale(0.2031)">
+    <!-- 墨滴（缩放自 512 设计稿） -->
+    <path d="M256 110 A 140 140 0 0 1 396 250 C 396 338 316 438 256 480 C 196 438 116 338 116 250 A 140 140 0 0 1 256 110 Z"
+          fill="#3B5B7C"/>
+    <ellipse cx="196" cy="238" rx="28" ry="46" fill="#FFFFFF" opacity="0.14" transform="rotate(-16 196 238)"/>
+    <path d="M256 480 C 178 508 108 506 72 452"
+          stroke="#3B5B7C" stroke-width="20" fill="none" stroke-linecap="round"/>
+    <path d="M256 480 C 330 510 396 502 438 458"
+          stroke="#3B5B7C" stroke-width="14" fill="none" stroke-linecap="round" opacity="0.55"/>
+  </g>
+  <!-- 字标: 衬线（书写感），大写 I + 常规 Flow -->
+  <text x="126" y="80" font-family="Georgia, 'Times New Roman', 'Noto Serif SC', 'SimSun', serif"
+        font-size="54" font-weight="600" letter-spacing="-1" fill="#2A2A28">InkFlow</text>
+  <!-- 副标: 小写说明（克制） -->
+  <text x="130" y="102" font-family="Georgia, 'Times New Roman', serif"
+        font-size="13" letter-spacing="3.2" fill="#6B6A66">AI WRITING STUDIO</text>
+</svg>
