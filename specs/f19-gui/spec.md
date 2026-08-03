@@ -5,7 +5,7 @@
 > **关联 Issues**: [#69](https://github.com/zhx-xi/InkFlow/issues/69)（父）· [#77](https://github.com/zhx-xi/InkFlow/issues/77)（子任务 A，本章）· [#78](https://github.com/zhx-xi/InkFlow/issues/78)（子任务 B）· [#79](https://github.com/zhx-xi/InkFlow/issues/79)（子任务 C）
 > **依赖**: 无（#77 可独立开发验证，不需要 GUI）；#78 依赖本章交付格式（端口文件/token 契约）；#79 依赖 #50 ✅（F23 SSE，PR #83）与 #78
 > **参考 ADR**: [ADR-003](../../adr/ADR-003.md)（SQLite WAL 基础）、[ADR-004](../../adr/ADR-004.md)（Pydantic 契约）、[ADR-011](../../adr/ADR-011.md)（异步无阻塞）、[ADR-019](../../adr/ADR-019.md)（版本里程碑 v2）、[ADR-020](../../adr/ADR-020.md)（单机 GUI Electron）、[ADR-021](../../adr/ADR-021.md)（本地内核进程化）、[ADR-025](../../adr/ADR-025.md)（依赖锁定）
-> **状态**: 待实现 🔲
+> **状态**: §2 内核进程化 ✅ 已实现（PR #85，#77）；§3/§4 待实现 🔲（#78/#79）
 
 ---
 
