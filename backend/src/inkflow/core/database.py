@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -18,6 +19,31 @@ engine = create_async_engine(
     config.database_url,
     echo=(config.log_level == "DEBUG"),
 )
+
+
+def apply_sqlite_pragma(dbapi_connection) -> None:
+    """Apply SQLite PRAGMAs on a new DBAPI connection (spec §2.4).
+
+    - ``PRAGMA journal_mode=WAL``: WAL 日志模式（文件级持久，跨连接生效）
+    - ``PRAGMA busy_timeout=<config.db_busy_timeout_ms>``: 多进程写并发锁等待
+      超时，数值在**调用时**从 config 单例读取（默认 5000）。
+
+    PRAGMA 不支持 ``?`` 参数占位，busy_timeout 为 config int，f-string 拼接安全。
+    cursor 用完即 close。对同一连接重复调用幂等；内存库 WAL 不生效但不抛错。
+    """
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute(f"PRAGMA busy_timeout={config.db_busy_timeout_ms}")
+    finally:
+        cursor.close()
+
+
+@event.listens_for(engine.sync_engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    """connect 事件委托：PRAGMA 逻辑收敛在 apply_sqlite_pragma 单一函数。"""
+    apply_sqlite_pragma(dbapi_connection)
+
 
 async_session_factory = async_sessionmaker(
     engine,

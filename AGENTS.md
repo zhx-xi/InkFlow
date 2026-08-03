@@ -25,7 +25,7 @@
 |------|------|
 | 0.1.0 ✅ | F1-F8 + 云端 Protocol（Phase 1 Gate 7/7，已交付） |
 | 0.2.0 ✅ | F9-F16 创作工具链（F9-F16 ✅ 已交付，PR #56/#57/#58/#63/#64/#72/#74/#75） |
-| 0.3.0 | F19 GUI（Electron 壳 + 内核进程化）· F23 SSE 流式 ✅（PR #83，已交付） |
+| 0.3.0 | F19 GUI（Electron 壳 + 内核进程化）· F23 SSE 流式 ✅（PR #83，已交付）——F19 子任务 A 内核进程化 ✅（PR #85，#77） |
 | 0.4.0 | skills 包（三通道分发）· F19 打包（exe / 安装包 / 便携 ZIP） |
 | 0.5.0 | F20 MCP（stdio 直连 domain）· F24 会话 · F25 daemon |
 | 0.6.0 | F21 导出 · F22 全文搜索 |
@@ -64,7 +64,7 @@
 | # | 模块 | 说明 | 里程碑 |
 |---|------|------|--------|
 | F18 | `web_ui` | Web UI（React，前端一套两用）— **云端专属界面**（移出单机；本地界面由 GUI 承接） | 2.0.0 |
-| F19 | `gui` + 打包 | GUI（Electron 壳 + 内核进程化，React 复用）+ 打包分发（PyInstaller exe / 安装包 / 便携 ZIP） | 0.3.0 GUI / 0.4.0 打包 |
+| F19 | `gui` + 打包 | GUI（Electron 壳 + 内核进程化，React 复用）+ 打包分发（PyInstaller exe / 安装包 / 便携 ZIP） | 0.3.0 GUI / 0.4.0 打包 ——子任务 A 内核进程化 ✅（PR #85，#77） |
 | F20 | `mcp_server` | MCP Server（stdio 直连 domain） | 0.5.0 |
 | F21 | `export_service` | 导出服务（EPUB/MD/TXT/DOCX ≥3 格式） | 0.6.0 |
 | F22 | `search_service` | 全文搜索 | 0.6.0 |
@@ -123,6 +123,7 @@ D:\develop\projects\
 │   │   ├── f1-project-service\ ... f7-cli-interface\   #   Phase 1（F8 无 spec，见 ADR-018）
 │   │   ├── f9-character-service\ ... f16-style-service\  #   Phase 2 创作工具链
 │   │   ├── f23-sse-stream\         #   0.3.0 传输增强（SSE 流式）
+│   │   ├── f19-gui\                #   0.3.0 GUI（内核进程化 §2 ✅ PR #85 / Electron 壳、渲染层占位）
 │   │   └── p0-11-cloud-protocols\   #   云端接口 Protocol spec
 │   ├── frontend\                    # ★ 前端（0.3.0 F19 GUI 起；云 Web 一套两用，ADR-020）
 │   │   └── README.md                #   定位说明（React 19 + Vite 6 + pnpm-lock 约定）

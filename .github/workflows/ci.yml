@@ -380,7 +380,7 @@ jobs:
         run: uv sync --frozen --extra dev
 
       - name: Health check
-        run: uv run pytest ../tests/api/test_health.py -v --tb=short
+        run: uv run pytest ../tests/api/test_health.py ../tests/api/test_token_auth.py -v --tb=short
 
   # ── Build: wheel (all gates pass) ──
   build-backend:
