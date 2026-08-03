@@ -205,7 +205,7 @@ class SQLiteWorldRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             raise ValueError(f"WorldSetting {setting_id} not found")
 
         stmt2 = select(WorldSettingORM).where(WorldSettingORM.id == setting_id)
@@ -228,7 +228,7 @@ class SQLiteWorldRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        return result.rowcount > 0  # type: ignore[attr-defined]
+        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
     async def restore(self, setting_id: int) -> WorldSetting | None:
         """恢复已软删除条目.
@@ -243,7 +243,7 @@ class SQLiteWorldRepository:
             .values(is_deleted=False, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             await self._session.commit()
             return None
         await self._session.commit()

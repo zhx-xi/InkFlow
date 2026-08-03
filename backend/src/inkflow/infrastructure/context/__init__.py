@@ -8,8 +8,8 @@ from inkflow.infrastructure.context.sources import (
 )
 
 __all__ = [
-    "ProjectConfigOutlineSource",
     "CharacterSettingSource",
-    "WorldSettingSource",
     "ForeshadowingSource",
+    "ProjectConfigOutlineSource",
+    "WorldSettingSource",
 ]

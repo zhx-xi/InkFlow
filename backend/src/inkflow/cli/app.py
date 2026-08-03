@@ -41,7 +41,7 @@ def main(
 
 # ── 注册子命令 ──
 
-from inkflow.cli.commands import (  # noqa: E402
+from inkflow.cli.commands import (  # noqa: E402  # app 定义后导入
     agent_cmd,
     audit,
     chapter,
@@ -56,9 +56,9 @@ from inkflow.cli.commands import (  # noqa: E402
     world,
     write,
 )
-from inkflow.cli.commands.config_cmd import app as config_app  # noqa: E402
-from inkflow.cli.commands.llm import app as llm_app  # noqa: E402
-from inkflow.cli.commands.serve import serve as _serve_fn  # noqa: E402
+from inkflow.cli.commands.config_cmd import app as config_app  # noqa: E402  # app 定义后导入
+from inkflow.cli.commands.llm import app as llm_app  # noqa: E402  # app 定义后导入
+from inkflow.cli.commands.serve import serve as _serve_fn  # noqa: E402  # app 定义后导入
 
 app.add_typer(project.app, name="project")
 app.add_typer(character.app, name="character")

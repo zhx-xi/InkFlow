@@ -72,7 +72,7 @@ def _custom_openapi():
 
 
 # 自定义 openapi 注入 HTTPBearer scheme（FastAPI 0.141+ 无 security= 参数）
-app.openapi = _custom_openapi  # type: ignore[method-assign]
+app.openapi = _custom_openapi  # type: ignore[method-assign]  # 运行时替换 FastAPI 实例方法，静态类型禁止对方法赋值
 
 # ---- CORS（白名单来自 config.server_cors_origins，spec §2.3.2） ----
 app.add_middleware(

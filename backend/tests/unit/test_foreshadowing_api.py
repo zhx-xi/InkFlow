@@ -58,7 +58,7 @@ def _foreshadowing(title: str, **overrides: object) -> Foreshadowing:
         "updated_at": TS,
     }
     kwargs.update(overrides)
-    return Foreshadowing(**kwargs)  # type: ignore[arg-type]
+    return Foreshadowing(**kwargs)  # type: ignore[arg-type]  # kwargs 为动态 dict，无法静态匹配构造器参数签名
 
 
 def _mock_svc(mock_get_svc: MagicMock) -> MagicMock:

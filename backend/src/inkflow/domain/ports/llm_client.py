@@ -102,7 +102,7 @@ class LLMClientProtocol(Protocol):
         """
         ...
 
-    def chat_stream(  # type: ignore[misc]
+    def chat_stream(  # type: ignore[misc]  # 生成器函数返回类型应为 Generator 而非 AsyncGenerator（Protocol 桩方法）
         self,
         messages: list[ChatMessage],
         *,
@@ -124,7 +124,7 @@ class LLMClientProtocol(Protocol):
             StreamEvent: 流式事件（逐 chunk）。
         """
         ...
-        yield  # type: ignore[misc]
+        yield  # type: ignore[misc]  # 空 yield 与 AsyncGenerator[StreamEvent] 产出类型不符（桩无需实际产出）
 
     async def count_tokens(
         self,

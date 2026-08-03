@@ -102,14 +102,16 @@ class LangGraphAgentPipeline:
         if errors:
             raise PipelineError(f"管线配置无效: {'; '.join(errors)}")
 
+        # 前置校验阶段类型（在 try 外：PipelineError 直接透传，不被自身 except 捕获）
+        for stage in stages:
+            if _NODE_MAP.get(stage.id) is None:
+                raise PipelineError(f"未知阶段类型: {stage.id}")
+
         try:
             # state 含动态的 {stage_id}_output/_status 等 key，无法用 TypedDict 静态表达
-            workflow = StateGraph(dict)  # type: ignore[type-var]
+            workflow = StateGraph(dict)  # type: ignore[type-var]  # StateGraph 泛型 StateT 不接受裸 dict（state 为动态 key 结构）
             for stage in stages:
-                node_fn = _NODE_MAP.get(stage.id)
-                if node_fn is None:
-                    raise PipelineError(f"未知阶段类型: {stage.id}")
-                workflow.add_node(stage.id, node_fn)  # type: ignore[type-var]
+                workflow.add_node(stage.id, _NODE_MAP[stage.id])  # type: ignore[type-var]  # add_node 节点输入泛型与动态 dict state 不匹配
 
             entry = next(s for s in stages if not s.input_from)
             workflow.set_entry_point(entry.id)
@@ -152,6 +154,6 @@ class LangGraphAgentPipeline:
         )
         if failed:
             error = PipelineError(f"管线执行失败: 阶段 '{failed[0].stage_id}' 重试耗尽")
-            error.result = result  # type: ignore[attr-defined]
+            error.result = result  # type: ignore[attr-defined]  # PipelineError 未声明 result 属性，运行时动态附加
             raise error
         return result

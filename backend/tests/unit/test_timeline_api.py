@@ -55,7 +55,7 @@ def _event(title: str, **overrides: object) -> TimelineEvent:
         "updated_at": TS,
     }
     kwargs.update(overrides)
-    return TimelineEvent(**kwargs)  # type: ignore[arg-type]
+    return TimelineEvent(**kwargs)  # type: ignore[arg-type]  # kwargs 为动态 dict，无法静态匹配构造器参数签名
 
 
 def _view() -> TimelineView:

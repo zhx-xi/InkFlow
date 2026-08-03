@@ -88,12 +88,12 @@ def mock_project_repo() -> MagicMock:
 def mock_chapter_repo(mock_project_repo) -> MagicMock:
     from inkflow.domain.models.chapter import Chapter, ChapterStatus
 
-    project = mock_project_repo.get.return_value  # noqa: F841 — used for project_id
+    project = mock_project_repo.get.return_value
 
     async def _get_chapter(chapter_id):
         return Chapter(
             id=chapter_id,
-            project_id=project.id,  # type: ignore[union-attr]
+            project_id=project.id,  # type: ignore[union-attr]  # MagicMock 返回值为联合类型，.id 访问无法静态确认
             volume_id=None,
             title="第一章",
             content="",
@@ -112,7 +112,7 @@ def mock_chapter_repo(mock_project_repo) -> MagicMock:
 
 @pytest.fixture
 def proj_id(mock_project_repo) -> uuid.UUID:
-    return mock_project_repo.get.return_value.id  # type: ignore[union-attr]
+    return mock_project_repo.get.return_value.id  # type: ignore[union-attr]  # MagicMock 返回值为联合类型，.id 访问无法静态确认
 
 
 @pytest.fixture
@@ -415,7 +415,7 @@ class TestStreamGenerate:
 
         # delta 帧: 每个 StreamEvent 对应一个（含 is_final 空 delta 事件），共 len(chunks)+1 个
         assert len(events) == len(chunks) + 2
-        assert [ev.delta for ev in events[:-1]] == chunks + [""]
+        assert [ev.delta for ev in events[:-1]] == [*chunks, ""]
         assert all(ev.done is False for ev in events[:-1])
 
         done = events[-1]

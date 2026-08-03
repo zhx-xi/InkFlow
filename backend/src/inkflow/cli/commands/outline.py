@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from pathlib import Path
+from typing import Any
 
 import typer
 from pydantic import ValidationError
@@ -109,7 +110,7 @@ def _run(cli_ctx: CliContext, coro_fn):
         print_error(cli_ctx, "VALIDATION_ERROR", messages or "参数校验失败")
     except FileNotFoundError as e:
         print_error(cli_ctx, "VALIDATION_ERROR", f"文本文件不存在: {e.filename}")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print_error(cli_ctx, "DB_ERROR", f"内部错误: {e}")
 
 
@@ -274,7 +275,7 @@ def update_outline_cmd(
     oid = _parse_uuid(cli_ctx, outline_id, "大纲不存在")
 
     async def _impl():
-        update_fields: dict[str, object] = {}
+        update_fields: dict[str, Any] = {}
         if name is not None:
             update_fields["name"] = name
         if description is not None:
@@ -512,7 +513,7 @@ def update_point_cmd(
     pid = _parse_uuid(cli_ctx, point_id, "情节点不存在")
 
     async def _impl():
-        update_fields: dict[str, object] = {}
+        update_fields: dict[str, Any] = {}
         if name is not None:
             update_fields["name"] = name
         if type is not None:
@@ -635,7 +636,7 @@ def update_arc_cmd(
     aid = _parse_uuid(cli_ctx, arc_id, "弧线不存在")
 
     async def _impl():
-        update_fields: dict[str, object] = {}
+        update_fields: dict[str, Any] = {}
         if name is not None:
             update_fields["name"] = name
         if description is not None:

@@ -97,7 +97,9 @@ class AgentService:
             chapter_id=str(request.chapter_id) if request.chapter_id else None,
             variables=request.variables,
         )
-        asyncio.create_task(self._run_pipeline(execution.id, stages, context))
+        task = asyncio.create_task(self._run_pipeline(execution.id, stages, context))
+        # fire-and-forget: 持有引用防止任务被 GC 提前回收；异常在 _run_pipeline 内部捕获
+        task.add_done_callback(lambda t: t.exception())
 
         return {
             "execution_id": execution.id,

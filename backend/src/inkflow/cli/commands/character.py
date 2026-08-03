@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from pathlib import Path
+from typing import Any
 
 import typer
 from pydantic import ValidationError
@@ -95,7 +96,7 @@ def _run(cli_ctx: CliContext, coro_fn):
         print_error(cli_ctx, "VALIDATION_ERROR", messages or "参数校验失败")
     except FileNotFoundError as e:
         print_error(cli_ctx, "VALIDATION_ERROR", f"文本文件不存在: {e.filename}")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print_error(cli_ctx, "DB_ERROR", f"内部错误: {e}")
 
 
@@ -111,7 +112,7 @@ def _group_to_dict(group: CharacterGroup) -> dict:
 
 def _relation_to_dict(relation) -> dict:
     """关系领域模型 → JSON-safe dict."""
-    return relation.model_dump(mode="json")
+    return dict(relation.model_dump(mode="json"))
 
 
 # ---------------------------------------------------------------------------
@@ -260,7 +261,7 @@ def update_character(
     cid = _parse_uuid(cli_ctx, character_id, "角色不存在")
 
     async def _impl():
-        update_fields: dict[str, object] = {}
+        update_fields: dict[str, Any] = {}
         if name is not None:
             update_fields["name"] = name
         if personality is not None:

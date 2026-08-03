@@ -19,8 +19,7 @@ def _strip_markdown(text: str) -> str:
     text = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", text)
     text = re.sub(r"^-{3,}|_{3,}|\*{3,}", "", text, flags=re.MULTILINE)
     text = re.sub(r"^[\s]*[-*+]\s+", "", text, flags=re.MULTILINE)
-    text = re.sub(r"^\d+\.\s+", "", text, flags=re.MULTILINE)
-    return text
+    return re.sub(r"^\d+\.\s+", "", text, flags=re.MULTILINE)
 
 
 def count_words(content: str) -> int:

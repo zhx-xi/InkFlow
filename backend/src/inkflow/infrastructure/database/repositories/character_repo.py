@@ -229,7 +229,7 @@ class SQLiteCharacterRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             raise ValueError(f"Character {char_id} not found")
 
         stmt2 = select(CharacterORM).where(CharacterORM.id == char_id)
@@ -251,12 +251,12 @@ class SQLiteCharacterRepository:
             .values(is_deleted=True, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)
-        if result.rowcount > 0:  # type: ignore[attr-defined]
+        if result.rowcount > 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             # 级联软删关系；该方法内部 commit，角色 UPDATE 一并提交（单事务）
             await self.soft_delete_relations_of(character_id)
         else:
             await self._session.commit()
-        return result.rowcount > 0  # type: ignore[attr-defined]
+        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
     async def restore(self, character_id: int) -> Character | None:
         """恢复已软删除角色（含级联恢复其双向关系）.
@@ -270,12 +270,12 @@ class SQLiteCharacterRepository:
             .values(is_deleted=False, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)
-        if result.rowcount > 0:  # type: ignore[attr-defined]
+        if result.rowcount > 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             # 级联恢复关系；该方法内部 commit，角色 UPDATE 一并提交（单事务）
             await self.restore_relations_of(character_id)
         else:
             await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             return None
         return await self.get(character_id)
 
@@ -339,7 +339,7 @@ class SQLiteCharacterRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             raise ValueError(f"CharacterGroup {group_id} not found")
 
         stmt2 = select(CharacterGroupORM).where(CharacterGroupORM.id == group_id)
@@ -357,14 +357,14 @@ class SQLiteCharacterRepository:
             .values(is_deleted=True, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)
-        if result.rowcount > 0:  # type: ignore[attr-defined]
+        if result.rowcount > 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             await self._session.execute(
                 sa_update(CharacterORM)
                 .where(CharacterORM.group_id == group_id)
                 .values(group_id=None, updated_at=_utcnow())
             )
         await self._session.commit()
-        return result.rowcount > 0  # type: ignore[attr-defined]
+        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
     async def hard_delete_group(self, group_id: int) -> bool:
         """物理删除分组，成员角色 group_id 置 NULL（角色本身保留）."""
@@ -455,7 +455,7 @@ class SQLiteCharacterRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             raise ValueError(f"CharacterRelation {rel_id} not found")
 
         stmt2 = select(CharacterRelationORM).where(CharacterRelationORM.id == rel_id)
@@ -474,7 +474,7 @@ class SQLiteCharacterRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        return result.rowcount > 0  # type: ignore[attr-defined]
+        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
     async def hard_delete_relation(self, relation_id: int) -> bool:
         """物理删除关系."""

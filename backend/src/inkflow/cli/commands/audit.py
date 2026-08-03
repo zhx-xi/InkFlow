@@ -127,7 +127,7 @@ def _run(cli_ctx: CliContext, coro_fn):
         raise
     except ProjectNotFoundError as e:
         print_error(cli_ctx, "NOT_FOUND", str(e))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print_error(cli_ctx, "DB_ERROR", f"内部错误: {e}")
 
 

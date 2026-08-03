@@ -96,7 +96,7 @@ class LangChainLLMClient:
 
         return self._to_chat_response(response)
 
-    async def chat_stream(  # type: ignore[misc]
+    async def chat_stream(
         self,
         messages: list[ChatMessage],
         *,
@@ -157,10 +157,11 @@ class LangChainLLMClient:
             for msg in messages:
                 total += 4
                 total += len(enc.encode(msg.content))
-            return total
         except Exception:
             total_chars = sum(len(m.content) for m in messages)
             return max(1, total_chars // 4)
+        else:
+            return total
 
     # ── Private helpers ──
 
@@ -188,7 +189,7 @@ class LangChainLLMClient:
         if max_tokens is not None:
             chat_kwargs["max_tokens"] = max_tokens
 
-        return ChatOpenAI(**chat_kwargs)  # type: ignore[arg-type]
+        return ChatOpenAI(**chat_kwargs)  # type: ignore[arg-type]  # chat_kwargs 为动态 dict[str, object]，无法静态匹配 ChatOpenAI 构造参数
 
     @staticmethod
     def _to_langchain_messages(messages: list[ChatMessage]) -> list:

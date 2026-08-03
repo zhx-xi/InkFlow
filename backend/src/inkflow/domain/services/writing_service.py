@@ -213,18 +213,15 @@ class WritingService:
             style=style,
         )
 
-        retry_count = 0
         last_response = None
 
-        for attempt in range(_MAX_RETRIES + 1):
-            try:
-                response = await self._llm.chat(
-                    messages=messages,
-                    model=model,
-                    temperature=temperature,
-                )
-            except LLMRequestError:
-                raise  # LLM 错误不消耗格式重试
+        for retry_count in range(_MAX_RETRIES + 1):
+            # LLM 错误不消耗格式重试（透传）
+            response = await self._llm.chat(
+                messages=messages,
+                model=model,
+                temperature=temperature,
+            )
 
             last_response = response
             validation = FormatValidator.validate(response.content, min_words)
@@ -241,8 +238,7 @@ class WritingService:
                     warnings=[],
                 )
 
-            retry_count += 1
-            if retry_count > _MAX_RETRIES:
+            if retry_count >= _MAX_RETRIES:
                 break
 
             # 构建修复 Prompt

@@ -15,3 +15,18 @@ repos:
       - id: check-added-large-files
         args: ['--maxkb=2048']   # uv.lock / pnpm-lock.yaml 依赖锁文件可能 >500KB（ADR-025）
       - id: check-merge-conflict
+
+  # 本地钩子：Conventional Commits + Conventional Branches（借鉴 LiteLLM .githooks）
+  # 安装: pre-commit install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push
+  - repo: local
+    hooks:
+      - id: conventional-commit-msg
+        name: conventional commit message
+        entry: python .githooks/check_commit_msg.py
+        language: system
+        stages: [commit-msg]
+      - id: conventional-branch
+        name: conventional branch name
+        entry: python .githooks/check_branch.py
+        language: system
+        stages: [pre-push]

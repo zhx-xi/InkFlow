@@ -221,7 +221,7 @@ class SQLiteOutlineRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             raise ValueError(f"Outline {outline_id} not found")
 
         stmt2 = select(OutlineORM).where(OutlineORM.id == outline_id)
@@ -243,12 +243,12 @@ class SQLiteOutlineRepository:
             .values(is_deleted=True, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)
-        if result.rowcount > 0:  # type: ignore[attr-defined]
+        if result.rowcount > 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             # 级联软删情节点；该方法内部 commit，大纲 UPDATE 一并提交（单事务）
             await self.soft_delete_points_of(outline_id)
         else:
             await self._session.commit()
-        return result.rowcount > 0  # type: ignore[attr-defined]
+        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
     async def restore(self, outline_id: int) -> Outline | None:
         """恢复已软删除大纲（含级联恢复其全部情节点）.
@@ -262,12 +262,12 @@ class SQLiteOutlineRepository:
             .values(is_deleted=False, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)
-        if result.rowcount > 0:  # type: ignore[attr-defined]
+        if result.rowcount > 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             # 级联恢复情节点；该方法内部 commit，大纲 UPDATE 一并提交（单事务）
             await self.restore_points_of(outline_id)
         else:
             await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             return None
         return await self.get(outline_id)
 
@@ -398,7 +398,7 @@ class SQLiteOutlineRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             raise ValueError(f"PlotPoint {point_id} not found")
 
         stmt2 = select(PlotPointORM).where(PlotPointORM.id == point_id)
@@ -417,7 +417,7 @@ class SQLiteOutlineRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        return result.rowcount > 0  # type: ignore[attr-defined]
+        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
     async def restore_point(self, point_id: int) -> PlotPoint | None:
         """恢复已软删除情节点.
@@ -432,7 +432,7 @@ class SQLiteOutlineRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             return None
         return await self.get_point(point_id)
 
@@ -518,7 +518,7 @@ class SQLiteOutlineRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             raise ValueError(f"StoryArc {arc_id} not found")
 
         stmt2 = select(StoryArcORM).where(StoryArcORM.id == arc_id)
@@ -540,12 +540,12 @@ class SQLiteOutlineRepository:
             .values(is_deleted=True, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)
-        if result.rowcount > 0:  # type: ignore[attr-defined]
+        if result.rowcount > 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             # 成员情节点 arc_id 置 NULL；该方法内部 commit，弧线 UPDATE 一并提交（单事务）
             await self.clear_arc_of_points(arc_id)
         else:
             await self._session.commit()
-        return result.rowcount > 0  # type: ignore[attr-defined]
+        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
     async def restore_arc(self, arc_id: int) -> StoryArc | None:
         """恢复已软删除故事弧线（仅恢复弧线本身，成员 arc_id 保持 NULL）.
@@ -560,7 +560,7 @@ class SQLiteOutlineRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             return None
         return await self.get_arc(arc_id)
 

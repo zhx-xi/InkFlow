@@ -6,6 +6,21 @@
 
 ---
 
+## 0. 文件体系（先读）
+
+**本文件是 AI 编码助手的唯一约束源**（Hermes 项目上下文 first-match-wins，只加载 AGENTS.md；CLAUDE.md 仅为其他工具的入口跳板）。
+
+| 文件 | 角色 |
+|------|------|
+| `AGENTS.md`（本文件） | 项目总约定 + AI 行为准则（§10）+ 核心纪律（SDD/TDD/ADR/编码） |
+| `ARCHITECTURE.md` | 架构导航：完整目录树、组件职责、模块类型谱系 → 样板 spec、加新模块步骤。**改架构/加模块前先读** |
+| `docs/ai-traps.md` | AI 编码常见陷阱完整清单（§9 只留高频 TOP） |
+| `FEATURES.md` | 功能清单唯一权威（已实现模块全表 + 规划 + 版本映射） |
+| `adr/README.md` | ADR 索引（改代码前先查；25 条有效） |
+| `CONTRIBUTING.md` | 人类贡献者指南 |
+
+---
+
 ## 1. 项目概览
 
 **InkFlow** 是一个 AI 辅助小说创作工具。帮助作者使用 AI 规划大纲、撰写章节、修订文本、审阅质量。
@@ -34,15 +49,7 @@
 
 ### Phase 1 功能（F1-F8，已完成）
 
-| # | 模块 | 说明 |
-|---|------|------|
-| F1 | `project_service` | 项目/书籍管理（CRUD + 软删除 + 回收站） |
-| F2 | `chapter_service` | 卷/章节管理（层级、状态流转） |
-| F3 | `writing_service` | AI 写作管道（生成→修订→审阅） |
-| F4 | `agent_service` | Agent 编排（架构师/写手/审阅/修订角色链） |
-| F5 | `llm_service` | LLM Provider 适配（OpenAI/DeepSeek/...） |
-| F6 | `context_service` | 上下文管理（角色/世界观/伏笔/时间线） |
-| F7 | `cli_interface` | CLI 命令行接口（`inkflow` 命令） |
+F1 项目/书籍 · F2 章节 · F3 写作管道 · F4 Agent 编排 · F5 LLM Provider · F6 上下文 · F7 CLI · F8 CI 分层（详情见 FEATURES.md）
 
 ### Phase 2 功能（F9-F16，0.2.0 创作工具链）
 
@@ -61,16 +68,7 @@
 
 ### Phase 3 功能（F18-F25，2026-08-02 形态决策后归属调整）
 
-| # | 模块 | 说明 | 里程碑 |
-|---|------|------|--------|
-| F18 | `web_ui` | Web UI（React，前端一套两用）— **云端专属界面**（移出单机；本地界面由 GUI 承接） | 2.0.0 |
-| F19 | `gui` + 打包 | GUI（Electron 壳 + 内核进程化，React 复用）+ 打包分发（PyInstaller exe / 安装包 / 便携 ZIP） | 0.3.0 GUI / 0.4.0 打包 ——子任务 A 内核进程化 ✅（PR #85，#77） |
-| F20 | `mcp_server` | MCP Server（stdio 直连 domain） | 0.5.0 |
-| F21 | `export_service` | 导出服务（EPUB/MD/TXT/DOCX ≥3 格式） | 0.6.0 |
-| F22 | `search_service` | 全文搜索 | 0.6.0 |
-| F23 | `sse_stream` | SSE 流式输出（**提前**：GUI 流式写作依赖，D3） | ✅ 已完成（PR #83） |
-| F24 | `session_service` | 会话管理（写作会话/恢复） | 0.5.0 |
-| F25 | `daemon_service` | daemon 后台写作（本地；云端无常驻任务） | 0.5.0 |
+F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI / 0.4.0 打包，子任务 A ✅ PR #85）· F20 MCP（0.5.0）· F21 导出（0.6.0）· F22 搜索（0.6.0）· F23 SSE ✅（PR #83）· F24 会话（0.5.0）· F25 daemon（0.5.0）
 
 > F17 空置（PRD §6.2 标题残留编号）。F18-F25 版本归属以 ADR-019 v2 为准（PRD §6.3/6.4 原归属已被形态决策重排）。
 
@@ -80,86 +78,42 @@
 
 | 层面 | 技术 | 备注 |
 |------|------|------|
-| 语言 | Python **3.11+** | 必须用 `from __future__ import annotations` |
+| 语言 | Python **3.11+** | 必须 `from __future__ import annotations` |
 | Web 框架 | FastAPI ≥ 0.110 + uvicorn[standard] | async 优先 |
 | CLI | Typer ≥ 0.12 + Rich ≥ 13.0 | `inkflow` 命令入口 |
-| ORM | SQLAlchemy ≥ 2.0 (async) + aiosqlite ≥ 0.20 | **SQLite 本地**，未来切 PostgreSQL |
+| ORM | SQLAlchemy ≥ 2.0 (async) + aiosqlite ≥ 0.20 | SQLite 本地，未来切 PostgreSQL |
 | 迁移 | Alembic ≥ 1.13 | |
 | 数据验证 | Pydantic ≥ 2.0 + pydantic-settings ≥ 2.0 | `model_config = {"from_attributes": True}` |
-| LLM Provider | langchain-core + langchain-community + langchain-openai | **ChatLiteLLM** 封装（底层 litellm，覆盖 100+ Provider） |
-| Agent 编排 | langgraph ≥ 0.2.0 | **StateGraph** — Phase 1 顺序链，Phase 2 用户自定义 DAG |
-| RAG | langchain-chroma + chromadb + sentence-transformers | 本地向量库 + BGE Embedding（Phase 2） |
-| Prompt 模板 | ChatPromptTemplate（langchain-core） | YAML 模板文件 + 变量验证 |
-| 追踪 | langsmith ≥ 0.2.0（可选） | LangSmith 追踪（开发/调试用，默认关闭） |
-| 加密 | cryptography ≥ 42.0 | API Key AES-256-GCM 加密 |
+| LLM Provider | langchain-core + langchain-community + langchain-openai | ChatLiteLLM（底层 litellm，100+ Provider） |
+| Agent 编排 | langgraph ≥ 0.2.0 | StateGraph：Phase 1 顺序链，Phase 2 自定义 DAG |
+| RAG | langchain-chroma + chromadb + sentence-transformers | 本地向量库 + BGE Embedding |
+| Prompt 模板 | ChatPromptTemplate（langchain-core） | YAML 模板 + 变量验证 |
+| 追踪 | langsmith ≥ 0.2.0（可选） | 开发/调试用，默认关闭 |
+| 加密 | cryptography ≥ 42.0 | API Key AES-256-GCM |
 | HTTP | httpx ≥ 0.27 + httpx-sse ≥ 0.4 | |
 | 日志 | Loguru ≥ 0.7 | |
-| 测试 | pytest ≥ 8.0 + pytest-asyncio + pytest-cov | 覆盖率目标 ≥ 70% |
-| Lint | Ruff ≥ 0.6 | 规则：E, F, I, N, W, UP；行宽 100 |
-| 类型检查 | mypy ≥ 1.10 | `ignore_missing_imports = true` |
+| 测试 | pytest ≥ 8.0 + pytest-asyncio + pytest-cov | 覆盖率 ≥ 70% |
+| Lint | Ruff ≥ 0.6 | 规则集见 backend/pyproject.toml；行宽 100 |
+| 类型检查 | mypy ≥ 1.10 | 严格化配置见 backend/pyproject.toml |
 | 构建 | hatchling | `[tool.hatch.build.targets.wheel]` |
 
 ---
 
-## 3. 目录结构
+## 3. 关键路径
 
-```
-D:\develop\projects\
-├── InkFlow\                         # 主仓库（main 分支，只读）
-│   ├── AGENTS.md                    # ← 本文件（项目总约定 + ADR 治理）
-│   ├── README.md
-│   ├── LICENSE
-│   ├── adr\                         # ★ ADR 决策记录（索引见 adr/README.md）
-│   │   ├── README.md                #   ADR 索引 + 编号规则（25 条有效，2026-08-02）
-│   │   └── ADR-NNN.md               #   单个决策记录（Nygard 格式）
-│   ├── design\                      # ★ 产品/架构设计文档
-│   │   ├── prd-inkflow-v2.1-2026-07-30.md   #   PRD（文件名 v2.1，内容 v2.2 修订）
-│   │   ├── architecture-analysis-2026-07-30.md
-│   │   ├── workflow.md              #   开发工作流详解
-│   │   ├── phase1-gate-review-2026-08-01.md
-│   │   └── ...（product-positioning / security-analysis-cloud / env-readiness）
-│   ├── docs\                        # 用户使用说明（仅 README.md）
-│   ├── specs\                       # SDD 规格文件（每个 feature 一个目录）
-│   │   ├── f1-project-service\ ... f7-cli-interface\   #   Phase 1（F8 无 spec，见 ADR-018）
-│   │   ├── f9-character-service\ ... f16-style-service\  #   Phase 2 创作工具链
-│   │   ├── f23-sse-stream\         #   0.3.0 传输增强（SSE 流式）
-│   │   ├── f19-gui\                #   0.3.0 GUI（内核进程化 §2 ✅ PR #85 / Electron 壳、渲染层占位）
-│   │   └── p0-11-cloud-protocols\   #   云端接口 Protocol spec
-│   ├── frontend\                    # ★ 前端（0.3.0 F19 GUI 起；云 Web 一套两用，ADR-020）
-│   │   └── README.md                #   定位说明（React 19 + Vite 6 + pnpm-lock 约定）
-│   ├── backend\
-│   │   ├── pyproject.toml           # 项目配置、依赖、工具设置
-│   │   ├── uv.lock                   # 依赖锁定（ADR-025，唯一真相，CI --frozen）
-│   │   ├── src\inkflow\             # ★ 源码
-│   │   │   ├── __main__.py          # CLI 入口
-│   │   │   ├── core\                # 配置、数据库、日志（config / database / log / model_registry）
-│   │   │   ├── domain\              # ★ 领域层（核心，不依赖任何框架）
-│   │   │   │   ├── models\          #   聚合/实体/值对象（Project, Chapter, ... 11 个）
-│   │   │   │   ├── services\        #   领域服务（业务编排，含 _*_extractor 私有实现）
-│   │   │   │   └── ports\           #   出站端口（Protocol；cloud\ 子目录 = P0-11 云端接口）
-│   │   │   ├── infrastructure\      # 基础设施层（实现 domain/ports）
-│   │   │   │   ├── database\        #   SQLAlchemy + SQLite（models\ ORM + repositories\）
-│   │   │   │   ├── llm\             #   LangChain LLM（ChatLiteLLM + templates\）
-│   │   │   │   ├── agent\           #   LangGraph StateGraph 管道
-│   │   │   │   ├── rag\             #   RAG 检索（Chroma + BGE，F14 落地）
-│   │   │   │   └── context\         #   F6 上下文数据源（sources.py，F13 伏笔注入）
-│   │   │   ├── api\                 # ★ 表现层：REST API（app.py / deps.py / routers\）
-│   │   │   ├── cli\                 # ★ 表现层：CLI（app.py / context.py / output.py / commands\）
-│   │   │   └── mcp\                 # ★ 表现层：MCP Server（0.5.0 F20 建立，ADR-023）
-│   │   └── tests\                   # ★ 单元测试（纯后端，无 I/O）
-│   │       └── unit\                #   54 个测试文件（纯函数 + Mock + DTO 校验）
-│   ├── tests\                       # ★ 集成 + E2E 测试（顶层，跨后端/前端）
-│   │   ├── conftest.py              #   共享 DB fixture（db_session, sample_project, ...）
-│   │   ├── integration\             #   仓储 + 服务层集成测试（5 个）
-│   │   ├── api\                     #   FastAPI HTTP 集成测试（6 个）
-│   │   ├── cli\                     #   CLI 集成测试（17 个，F1-F14 全覆盖）
-│   │   └── e2e\                     #   全栈端到端（未来）
-│   └── .github\                     # CI 配置
-│       └── workflows\
-│
-└── InkFlow-ft\                      # git worktree 工作目录（并行 feature）
-    └── <feature>\                   # 每个 feature 一个工作副本（如 f14-extraction-service）
-```
+| 路径 | 说明 |
+|------|------|
+| `backend/src/inkflow/` | 源码（core / domain / infrastructure / api / cli / mcp 分层；**完整目录树见 ARCHITECTURE.md §2**） |
+| `backend/tests/unit/` | 单元测试（纯后端，无 I/O） |
+| `tests/` | 集成 + API + CLI 测试（顶层；conftest.py 共享 fixture） |
+| `specs/f<X>-<name>/spec.md` | SDD 规格（每 feature 一个目录，**唯一真相**） |
+| `adr/` | ADR 决策记录（索引 `adr/README.md`，25 条有效） |
+| `design/` | PRD + 架构分析 + Gate 评审（文件名带日期） |
+| `docs/` | 用户使用说明 + `ai-traps.md` |
+| `frontend/` | 前端（pnpm workspace 双包：renderer + electron，0.3.0 F19 起） |
+| `ci_cd/` | CI 质量护栏脚本（file_length / noqa_reason） |
+| `.github/workflows/ci.yml` | CI（分层触发过滤，PR #82） |
+| `D:\develop\projects\InkFlow-ft\<feature>\` | git worktree（每个 feature 一个工作副本，只读主仓） |
 
 ---
 
@@ -218,29 +172,29 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 
 ### 4.4 关键设计决策
 
-| ADR | 决策 | 理由 |
-|-----|------|------|
-| [ADR-001](adr/ADR-001.md) | 架构风格：模块化单体 | 单人团队，避免微服务运维负担；接口隔离保未来拆分 |
-| [ADR-002](adr/ADR-002.md) | 分层：Clean/Hexagonal | 多界面共享 Service；依赖方向指向 Domain |
-| [ADR-003](adr/ADR-003.md) | 数据库：SQLite (async) + Repository | 本地优先，零配置；Repository 隔离，未来切 PostgreSQL |
-| [ADR-004](adr/ADR-004.md) | 数据契约：Pydantic v2 全栈 | 一份模型多界面复用；类型安全 |
-| [ADR-005v2](adr/ADR-005v2.md) | LLM Provider：**LangChain ChatLiteLLM**（v2.0） | 保留 100+ Provider 覆盖 + 获得 LangChain callback/LangSmith/LCEL 生态 |
-| [ADR-006v2](adr/ADR-006v2.md) | Agent 编排：**LangGraph StateGraph**（v2.0） | Phase 1 顺序链、Phase 2 DAG；LangSmith 可视化；内置 checkpointing |
-| [ADR-013](adr/ADR-013.md) | RAG：**LangChain Chroma + BGE**（Phase 2） | 本地向量库 + 中文 SOTA Embedding；长篇小说一致性保障 |
-| [ADR-014](adr/ADR-014.md) | Prompt：**ChatPromptTemplate + YAML**（v2.0） | 模板与代码分离；变量验证；非技术人员可编辑 |
-| [ADR-016](adr/ADR-016.md) | 日志：Loguru 结构化日志 | 双出口（stderr + 文件）、rotation/retention 内置 |
-| — | 认证：Phase 1-3 无需认证 | 本地运行，免认证；2.0.0 云端通过 AuthProtocol 扩展（BYOK，云端零存储 Key） |
-| — | ID 类型：UUID v4 | 避免自增 ID 碰撞，支持未来分布式场景 |
-| — | 软删除：is_deleted 标记 + 回收站 | Phase 1 保险策略，用户可恢复误删数据 |
-| [ADR-015](adr/ADR-015.md) | **LangChain 隔离**：Protocol 模式 | Domain 零 LangChain 依赖 → 框架可替换性；CI 强制检查 |
-| [ADR-017](adr/ADR-017.md) | **CI 代码质量**：Reviewdog + Ruff | PR 内联注解；一次执行双重用途 |
-| [ADR-018](adr/ADR-018.md) | **测试分层**：三层目录 + 按功能并行 CI | 单元/集成/API/CLI/E2E 分离；backend 后缀预留前端 |
-| [ADR-019](adr/ADR-019.md) | **版本里程碑**：SemVer + 1.0.0 = 本地完全可用（v2：+2.0.0 云端） | 版本号唯一里程碑口径；F18 移云端、F19 拆分、F23 SSE 提前（Issue #65） |
-| [ADR-020](adr/ADR-020.md) | 单机 GUI：**Electron** + 共享 React 渲染层 | 与云 Web 共享组件/API client；Tauri 远期优化方向 |
-| [ADR-021](adr/ADR-021.md) | **本地内核进程化**：localhost REST + SSE | 多客户端并发（GUI/CLI/MCP/agent）+ 与云端同一契约；GUI 远程连云 = 换 base URL |
-| [ADR-022](adr/ADR-022.md) | **skills 包**：源码单一真相 + 三通道分发 | CLI `--json` 为 agent 执行契约；零后端代码立即可交付 |
-| [ADR-023](adr/ADR-023.md) | **MCP Server**：stdio + SDK 直连 domain | 与 CLI 共享 service 不共享代码；≥15 工具（F20）；skills 先行、MCP 0.5.0 |
-| [ADR-024](adr/ADR-024.md) | **云架构**：双前缀（user/admin）+ owner_id 隔离 + 拆分预留 | BYOK 云端零存储；skill 白名单+内容审核；pgvector；Sync=云存档/远程在线 |
+| ADR | 决策 |
+|-----|------|
+| [ADR-001](adr/ADR-001.md) | 架构风格：模块化单体 |
+| [ADR-002](adr/ADR-002.md) | 分层：Clean/Hexagonal |
+| [ADR-003](adr/ADR-003.md) | 数据库：SQLite (async) + Repository |
+| [ADR-004](adr/ADR-004.md) | 数据契约：Pydantic v2 全栈 |
+| [ADR-005v2](adr/ADR-005v2.md) | LLM Provider：**LangChain ChatLiteLLM**（v2.0） |
+| [ADR-006v2](adr/ADR-006v2.md) | Agent 编排：**LangGraph StateGraph**（v2.0） |
+| [ADR-013](adr/ADR-013.md) | RAG：**LangChain Chroma + BGE**（Phase 2） |
+| [ADR-014](adr/ADR-014.md) | Prompt：**ChatPromptTemplate + YAML**（v2.0） |
+| [ADR-016](adr/ADR-016.md) | 日志：Loguru 结构化日志 |
+| — | 认证：Phase 1-3 无需认证 |
+| — | ID 类型：UUID v4 |
+| — | 软删除：is_deleted 标记 + 回收站 |
+| [ADR-015](adr/ADR-015.md) | **LangChain 隔离**：Protocol 模式 |
+| [ADR-017](adr/ADR-017.md) | **CI 代码质量**：Reviewdog + Ruff |
+| [ADR-018](adr/ADR-018.md) | **测试分层**：三层目录 + 按功能并行 CI |
+| [ADR-019](adr/ADR-019.md) | **版本里程碑**：SemVer + 1.0.0 = 本地完全可用（v2：+2.0.0 云端） |
+| [ADR-020](adr/ADR-020.md) | 单机 GUI：**Electron** + 共享 React 渲染层 |
+| [ADR-021](adr/ADR-021.md) | **本地内核进程化**：localhost REST + SSE |
+| [ADR-022](adr/ADR-022.md) | **skills 包**：源码单一真相 + 三通道分发 |
+| [ADR-023](adr/ADR-023.md) | **MCP Server**：stdio + SDK 直连 domain |
+| [ADR-024](adr/ADR-024.md) | **云架构**：双前缀（user/admin）+ owner_id 隔离 + 拆分预留 |
 | [ADR-025](adr/ADR-025.md) | **依赖锁定**：uv + uv.lock（Python）+ pnpm-lock.yaml 约定（前端） | 供应链加固：全传递依赖 sha256 锁定；CI `uv sync --frozen` 可复现构建 |
 
 **🔴 ADR 治理规则（所有 AI 会话必须遵守）**：
@@ -540,20 +494,52 @@ AI 编码助手在开始任何工作前，应**按顺序**阅读以下文件：
 
 ---
 
-## 9. 常见陷阱
+## 9. 常见陷阱（高频 TOP）
 
 | # | 陷阱 | 解决 |
 |---|------|------|
 | 1 | **领域层引用了基础设施** | `domain/` 下绝不能出现 `import infrastructure` 或 SQLAlchemy/Starlette |
 | 2 | **领域层导入了 LangChain** | `domain/` 下出现 `from langchain` 会触发 CI 失败。用 `domain/ports/` Protocol 替代 |
 | 3 | **CLI 测试用环境变量设置 DB** | 用 `monkeypatch.setattr` 直接替换 `engine` 和 `async_session_factory` |
-| 4 | **裸 `mypy` 命令在 Windows 上失败** | 使用 `python -m mypy`（uv trampoline 兼容） |
-| 5 | **Ruff UP042 报 StrEnum** | Python 3.11 native `StrEnum`，确保 `target-version = "py311"` |
-| 6 | **patch 只设源模块不设 CLI 模块** | Python `from X import Y` 在 import 时绑定，CLI 模块需要单独 patch |
-| 7 | **忘记 `from __future__ import annotations`** | 所有新文件必须加 |
-| 8 | **软删除后 get() 仍返回数据** | Repository.get() 必须过滤 `is_deleted=False` |
-| 9 | **Protocol 中直接使用 LangChain 类型** | `domain/ports/` 的 Protocol 只能用 Python 标准类型 + 自定义 dataclass |
-| 10 | **LangChain 版本升级破坏兼容** | `uv lock` 时 pyproject.toml 的 `<2.0.0` 上限保护；手动升级需显式 `uv lock` 重新解析 + 跑全量测试 |
 | 11 | **单元 + 集成测试不能放在同一命令** | 两个 `tests/` 目录（backend 和顶层）有命名冲突，必须分开跑 |
-| 12 | **CI job 名带 `-backend` 后缀** | 前端接入后会有 `-frontend` 后缀，新增 job 时注意命名约定 |
-| 13 | **Issue/PR 完成后检查配置同步** | 每个 Issue 完成后检查 AGENTS.md、ADR、pyproject.toml 等文件是否过时 |
+| 13 | **Issue/PR 完成后检查配置同步** | 每个 Issue 完成后检查 AGENTS.md、ADR、pyproject.toml、ci.yml、FEATURES.md 是否过时 |
+
+> 完整陷阱清单（25 条：UUID.int/跨模块遮蔽/CI 盲区/Windows 坑/流程治理）见 `docs/ai-traps.md`。
+
+---
+
+## 10. AI 行为准则（借鉴 LiteLLM，2026-08-03）
+
+### 10.1 Think Before Coding — 不假设，不藏困惑，显式化权衡
+
+- 动手前**陈述你的假设**；不确定就问
+- 存在多种解释时**全部呈现**，不要静默选一个
+- 有更简单的方案就说出来，**该推回就推回**
+- 哪里不清楚就停下，说出困惑点，再问
+
+### 10.2 Simplicity First — 解决问题的最小代码，零投机
+
+- 不做超出要求的功能；不为单次使用做抽象
+- 不添加未要求的「灵活性/可配置性」；不为不可能的场景写错误处理
+- 200 行能写成 50 行就重写。问自己：「资深工程师会觉得这过度复杂吗？」
+
+### 10.3 测试哲学 — 有意义测试胜过覆盖率数字
+
+- **不写无意义测试**：测试必须能在代码损坏时 FAIL（宁可无信号，不要假信号）
+- bug fix 必须防回归：让该 bug 永远不可能再出现而不破坏测试
+- **扩展既有测试文件**优于新建（命名 `test_<filename>.py`，与源码对应）；新 feature 才开新文件
+- 测试是契约：实现不得改测试（F15 铁律）
+
+### 10.4 抑制必须带理由
+
+- 每个 lint/type 抑制必须命名规则 + 理由：`# noqa: X  # <reason>`、`# mypy: ignore[...]  # <reason>`
+- 禁裸 `# type: ignore`（mypy `warn_unused_ignores` 已开启，失效抑制会被检出）
+
+### 10.5 工程惯例
+
+- 组合优于继承；early return 优于深层嵌套
+- 依赖注入优于 monkeypatch（测试时传 mock 依赖，而非 patch 类属性）
+- 标准库/SDK 优先，不手搓已有轮子；无官方实现时遵循行业标准
+- 无 monster files（>900 行会被 `ci_cd/check_file_length.py` 拦截）；文件/目录结构有意识设计
+- 新代码全类型化：避免裸 `Any`（存量 Any 渐进清理中——数量降至零后开启 `disallow_any_explicit` 预算门）；边界用 Pydantic 校验后传类型化变量
+- 提交信息与 PR 标题遵循 Conventional Commits（commit-msg 钩子 + CI 双重拦截）

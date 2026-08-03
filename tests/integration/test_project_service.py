@@ -48,7 +48,7 @@ class TestProjectService:
         p2 = await service.create_project(name="删除项目")
         await service.soft_delete(p2.id)
 
-        projects, total = await service.list_projects()
+        projects, _ = await service.list_projects()
         ids = [p.id for p in projects]
         assert p1.id in ids
         assert p2.id not in ids

@@ -18,20 +18,14 @@ from inkflow.domain.ports.cloud.sync import SyncProtocol, SyncResult
 from inkflow.domain.ports.cloud.user import UserProfile, UserProtocol
 
 __all__ = [
-    # auth
-    "AuthProtocol",
     "AuthCredentials",
-    "UserIdentity",
-    # database
+    "AuthProtocol",
     "DatabaseProtocol",
-    # storage
+    "MCPTransport",
     "StorageProtocol",
-    # user
-    "UserProtocol",
-    "UserProfile",
-    # sync
     "SyncProtocol",
     "SyncResult",
-    # mcp transport
-    "MCPTransport",
+    "UserIdentity",
+    "UserProfile",
+    "UserProtocol",
 ]

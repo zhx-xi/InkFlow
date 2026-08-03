@@ -119,10 +119,7 @@ class SQLiteProjectRepository:
 
         # Sorting
         sort_col = getattr(ProjectORM, sort_by, ProjectORM.updated_at)
-        if sort_desc:
-            base = base.order_by(sort_col.desc())
-        else:
-            base = base.order_by(sort_col.asc())
+        base = base.order_by(sort_col.desc()) if sort_desc else base.order_by(sort_col.asc())
 
         # Pagination
         base = base.offset(offset).limit(limit)
@@ -140,11 +137,8 @@ class SQLiteProjectRepository:
         """
         project_id = project.id
 
-        # Convert id to int if it's a UUID
-        if isinstance(project_id, uuid.UUID):
-            actual_id = project_id.int  # reverse the int→UUID mapping
-        else:
-            actual_id = project_id
+        # Convert id to int if it's a UUID (reverse the int→UUID mapping)
+        actual_id = project_id.int if isinstance(project_id, uuid.UUID) else project_id
 
         values: dict[str, Any] = {
             "name": project.name,
@@ -179,7 +173,7 @@ class SQLiteProjectRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        return result.rowcount > 0  # type: ignore[attr-defined]
+        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
     async def restore(self, project_id: int) -> Project | None:
         """恢复软删除的项目（设置 is_deleted=False）.
@@ -195,7 +189,7 @@ class SQLiteProjectRepository:
         result = await self._session.execute(stmt)
         await self._session.commit()
 
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             return None
 
         return await self.get(project_id)

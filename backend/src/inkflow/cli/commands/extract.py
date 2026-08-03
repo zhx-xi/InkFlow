@@ -136,7 +136,7 @@ def _run(cli_ctx: CliContext, coro_fn) -> Any:
     except ValidationError as e:
         messages = "; ".join(str(err.get("msg", "")) for err in e.errors())
         print_error(cli_ctx, "VALIDATION_ERROR", messages or "参数校验失败")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print_error(cli_ctx, "DB_ERROR", f"内部错误: {e}")
 
 

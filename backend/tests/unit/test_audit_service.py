@@ -894,7 +894,7 @@ async def test_rx2_chapter_without_run_info():
     findings = _findings_by_rule(report, "extraction.run_gap")
     assert len(findings) == 1
     f = findings[0]
-    assert f.id == f"extraction.run_gap:{str(CH_2)}"
+    assert f.id == f"extraction.run_gap:{CH_2!s}"
     assert f.severity == AuditSeverity.INFO
     assert f.entity_type == "chapter"
     assert f.entity_id == CH_2
@@ -1095,7 +1095,7 @@ async def test_findings_sorted_stable_order():
         f"timeline.dual_consistency:{EV_1}:{EV_2}",  # timeline · error
         f"world.entry_content:{setting.id}",  # world · info
         f"foreshadowing.event_anchor:{foreshadowing.id}",  # foreshadowing · warning
-        f"extraction.run_gap:{str(CH_1)}",  # cross · info（跨维度排最后）
+        f"extraction.run_gap:{CH_1!s}",  # cross · info（跨维度排最后）
     ]
     assert report.summary.total == 6
     assert report.summary.by_dimension[AuditDimension.CHARACTER].error == 1

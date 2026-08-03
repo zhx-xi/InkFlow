@@ -22,8 +22,8 @@ def _parse_project_id(project_id: str) -> uuid.UUID:
     """安全解析项目 ID，无效格式返回 404。"""
     try:
         return uuid.UUID(project_id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    except ValueError as err:
+        raise HTTPException(status_code=404, detail="项目不存在") from err
 
 
 def _get_svc(db: AsyncSession) -> ProjectService:

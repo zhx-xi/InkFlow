@@ -246,12 +246,11 @@ class TestStreamGenerate:
             "mode": "generate",
             "outline": "主角首次踏入宗门试炼场，遭遇同门挑衅",
         }
-        async with _stream_client() as client:
-            async with aconnect_sse(
-                client, "POST", "/api/v1/writing/stream", json=body
-            ) as sse:
-                frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
-                content_type = sse.response.headers["content-type"]
+        async with _stream_client() as client, aconnect_sse(
+            client, "POST", "/api/v1/writing/stream", json=body
+        ) as sse:
+            frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
+            content_type = sse.response.headers["content-type"]
         assert content_type.startswith("text/event-stream")
         assert len(frames) == 3
         assert frames[0]["done"] is False
@@ -304,12 +303,11 @@ class TestStreamContinue:
             "existing_content": "林尘深吸一口气，缓缓走向试炼台，全场寂静无声。"
             * 3,  # F3: ≥50 字
         }
-        async with _stream_client() as client:
-            async with aconnect_sse(
-                client, "POST", "/api/v1/writing/stream", json=body
-            ) as sse:
-                frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
-                content_type = sse.response.headers["content-type"]
+        async with _stream_client() as client, aconnect_sse(
+            client, "POST", "/api/v1/writing/stream", json=body
+        ) as sse:
+            frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
+            content_type = sse.response.headers["content-type"]
         assert content_type.startswith("text/event-stream")
         joined = "".join(f["delta"] for f in frames[:2])
         assert joined == "林尘的剑光划破夜色，试炼台上的欢呼声如潮水般涌来。"
@@ -354,12 +352,11 @@ class TestStreamRevise:
             "content": "……（原文段落内容，此处为待修订的完整段落文本，超过十个字符）",
             "feedback": "对话节奏太拖沓，删减无关寒暄",
         }
-        async with _stream_client() as client:
-            async with aconnect_sse(
-                client, "POST", "/api/v1/writing/stream", json=body
-            ) as sse:
-                frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
-                content_type = sse.response.headers["content-type"]
+        async with _stream_client() as client, aconnect_sse(
+            client, "POST", "/api/v1/writing/stream", json=body
+        ) as sse:
+            frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
+            content_type = sse.response.headers["content-type"]
         assert content_type.startswith("text/event-stream")
         joined = "".join(f["delta"] for f in frames[:2])
         assert joined == "修订后的段落：对话更紧凑，节奏明快。"
@@ -454,11 +451,10 @@ class TestStreamErrors:
 
         mock_writing_service.stream_generate = _gen_with_error
         body = {**_payload(), "mode": "generate", "outline": "测试大纲"}
-        async with _stream_client() as client:
-            async with aconnect_sse(
-                client, "POST", "/api/v1/writing/stream", json=body
-            ) as sse:
-                frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
+        async with _stream_client() as client, aconnect_sse(
+            client, "POST", "/api/v1/writing/stream", json=body
+        ) as sse:
+            frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
         assert len(frames) == 2
         assert frames[0]["delta"] == "清晨的薄雾尚未散尽"
         assert frames[0]["done"] is False
@@ -480,12 +476,11 @@ class TestStreamErrors:
 
         mock_writing_service.stream_generate = _gen
         body = {**_payload(), "mode": "generate", "outline": "测试大纲"}
-        async with _stream_client() as client:
-            async with aconnect_sse(
-                client, "POST", "/api/v1/writing/stream", json=body
-            ) as sse:
-                frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
-                content_type = sse.response.headers["content-type"]
+        async with _stream_client() as client, aconnect_sse(
+            client, "POST", "/api/v1/writing/stream", json=body
+        ) as sse:
+            frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
+            content_type = sse.response.headers["content-type"]
         assert content_type.startswith("text/event-stream")
         assert len(frames) == 3
         assert frames[0]["delta"] == "探针首帧"
@@ -515,10 +510,9 @@ class TestStreamErrors:
 
         mock_writing_service.stream_generate = _long_stream
         body = {**_payload(), "mode": "generate", "outline": "测试大纲"}
-        async with _stream_client() as client:
-            async with aconnect_sse(
-                client, "POST", "/api/v1/writing/stream", json=body
-            ) as sse:
-                async for _ev in sse.aiter_sse():
-                    break  # 消费首帧后立即退出 = 客户端断开
+        async with _stream_client() as client, aconnect_sse(
+            client, "POST", "/api/v1/writing/stream", json=body
+        ) as sse:
+            async for _ev in sse.aiter_sse():
+                break  # 消费首帧后立即退出 = 客户端断开
         assert closed is True

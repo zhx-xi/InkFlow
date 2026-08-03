@@ -74,8 +74,8 @@ def _parse_id(project_id: str) -> uuid.UUID:
     except ValueError:
         try:
             return uuid.UUID(int=int(project_id))
-        except (ValueError, OverflowError):
-            raise HTTPException(status_code=404, detail="项目不存在")
+        except (ValueError, OverflowError) as err:
+            raise HTTPException(status_code=404, detail="项目不存在") from err
 
 
 def _get_svc(db: AsyncSession) -> ExtractionService:
@@ -95,8 +95,8 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except OutlineNameConflictError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
-    except LLMRequestError:
-        raise HTTPException(status_code=500, detail="LLM 调用失败，请稍后重试")
+    except LLMRequestError as err:
+        raise HTTPException(status_code=500, detail="LLM 调用失败，请稍后重试") from err
     except (
         CharacterExtractionError,
         WorldExtractionError,

@@ -55,7 +55,6 @@ from inkflow.domain.models.outline import (
     StoryArc,
 )
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
-from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.ports.outline_errors import (
     OutlineGenerationError,
     OutlineNameConflictError,
@@ -284,25 +283,19 @@ class OutlineGenerator:
         ]
 
         # ③④⑤ 调用 LLM + 解析 + 修复式重试（≤ 2 次）
-        retry_count = 0
         last_raw = ""
         outcome = _ParseOutcome()
-        for _ in range(_MAX_PARSE_RETRIES + 1):
-            try:
-                # 传消息列表副本，避免客户端变异影响重试历史记录
-                response = await self._llm.chat(
-                    list(messages), model=model, temperature=_TEMPERATURE
-                )
-            except LLMRequestError:
-                raise  # LLM 调用失败透传，不消耗解析重试（§5.1 要点 4）
+        for retry_count in range(_MAX_PARSE_RETRIES + 1):
+            # 传消息列表副本，避免客户端变异影响重试历史记录
+            # LLM 调用失败透传，不消耗解析重试（§5.1 要点 4）
+            response = await self._llm.chat(list(messages), model=model, temperature=_TEMPERATURE)
 
             last_raw = response.content
             outcome = self._parse_output(last_raw)
             if outcome.ok:
                 break
 
-            retry_count += 1
-            if retry_count > _MAX_PARSE_RETRIES:
+            if retry_count >= _MAX_PARSE_RETRIES:
                 raise OutlineGenerationError(
                     raw_output=last_raw[:500],
                     detail=(

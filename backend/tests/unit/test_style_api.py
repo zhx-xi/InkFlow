@@ -110,7 +110,7 @@ def _report(**overrides: object) -> StyleReport:
         "warnings": ["未检测到完整句子（句尾符不足）——句子统计仅供参考"],
     }
     kwargs.update(overrides)
-    return StyleReport(**kwargs)  # type: ignore[arg-type]
+    return StyleReport(**kwargs)  # type: ignore[arg-type]  # kwargs 为动态 dict，无法静态匹配构造器参数签名
 
 
 def _llm_assessment() -> StyleLLMAssessment:
@@ -134,7 +134,9 @@ def _analyze_kwargs(svc: MagicMock) -> dict[str, object]:
     """提取 svc.analyze 最近一次调用的参数（按签名位置合并 args/kwargs，兼容两种调用风格）。"""
     args, kwargs = svc.analyze.await_args
     merged: dict[str, object] = dict(kwargs)
-    for name, value in zip(("project_id", "text", "chapter_ids", "llm_analysis"), args):
+    for name, value in zip(
+        ("project_id", "text", "chapter_ids", "llm_analysis"), args, strict=False
+    ):
         merged[name] = value
     return merged
 

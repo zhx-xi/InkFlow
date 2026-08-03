@@ -148,7 +148,7 @@ def _report(**overrides: object) -> StyleReport:
         "warnings": ["多章节合并分析（单章粒度分析归 Phase 2+）"],
     }
     kwargs.update(overrides)
-    return StyleReport(**kwargs)  # type: ignore[arg-type]
+    return StyleReport(**kwargs)  # type: ignore[arg-type]  # kwargs 为动态 dict，无法静态匹配构造器参数签名
 
 
 class TestStyleRegistration:

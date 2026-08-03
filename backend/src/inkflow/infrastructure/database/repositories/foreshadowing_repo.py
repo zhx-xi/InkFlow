@@ -246,7 +246,7 @@ class SQLiteForeshadowingRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             raise ValueError(f"Foreshadowing {foreshadowing_id} not found")
 
         stmt2 = select(ForeshadowingORM).where(ForeshadowingORM.id == foreshadowing_id)
@@ -269,7 +269,7 @@ class SQLiteForeshadowingRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        return result.rowcount > 0  # type: ignore[attr-defined]
+        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
     async def restore(self, foreshadowing_id: int) -> Foreshadowing | None:
         """恢复已软删除伏笔（原 status/resolved_at 原样保留，spec §2.4）.
@@ -283,7 +283,7 @@ class SQLiteForeshadowingRepository:
             .values(is_deleted=False, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             await self._session.commit()
             return None
         await self._session.commit()

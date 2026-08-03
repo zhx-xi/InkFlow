@@ -120,7 +120,7 @@ class APIKeyManager:
         path = self._key_path(provider, ".json")
         if not path.exists():
             raise FileNotFoundError(f"No key file for provider: {provider}")
-        return json.loads(path.read_text(encoding="utf-8"))
+        return dict(json.loads(path.read_text(encoding="utf-8")))
 
     def _write_plaintext(self, provider: str, api_key: str) -> None:
         path = self._key_path(provider, ".key")

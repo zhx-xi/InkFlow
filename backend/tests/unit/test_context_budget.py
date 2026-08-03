@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from inkflow.core.model_registry import (
     calculate_budget,
@@ -208,7 +209,7 @@ class TestTokenBudgetConfig:
 
     def test_max_ratio_clamp(self) -> None:
         """max_ratio 必须在 [0.1, 1.0] 内."""
-        with pytest.raises(Exception):  # Pydantic ValidationError
+        with pytest.raises(ValidationError):
             TokenBudgetConfig(max_ratio=1.5)
 
     def test_auto_normalize_layer_ratio(self) -> None:
@@ -224,9 +225,9 @@ class TestTokenBudgetConfig:
         assert s == pytest.approx(1.0)
 
     def test_compress_target_ratio_range(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             TokenBudgetConfig(compress_target_ratio=2.0)
 
     def test_summary_max_chapters_range(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             TokenBudgetConfig(summary_max_chapters=0)

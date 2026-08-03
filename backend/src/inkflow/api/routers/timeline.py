@@ -54,8 +54,8 @@ def _parse_id(id_str: str, detail: str = "资源不存在") -> uuid.UUID:
     except ValueError:
         try:
             return uuid.UUID(int=int(id_str))
-        except (ValueError, OverflowError):
-            raise HTTPException(status_code=404, detail=detail)
+        except (ValueError, OverflowError) as err:
+            raise HTTPException(status_code=404, detail=detail) from err
 
 
 def _get_svc(db: AsyncSession) -> TimelineService:
