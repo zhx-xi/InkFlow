@@ -4,9 +4,12 @@
 需 pytest marker: @pytest.mark.project
 """
 
+import json
 import os
+import queue
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
@@ -182,7 +185,9 @@ def test_serve_help(isolated_db):
     reason="serve smoke test requires local environment",
 )
 def test_serve_smoke(isolated_db, tmp_path):
-    """serve 启动后 /health 返回 200 — 仅本地运行."""
+    """serve 冒烟：读 INKFLOW_READY 拿 token → 带 token /health 200、无 token 401（仅本地）."""
+    import http.client
+
     backend_dir = os.path.join(os.path.dirname(__file__), "..")
     env = os.environ.copy()
     env["INKFLOW_DATABASE_URL"] = f"sqlite+aiosqlite:///{tmp_path}/test.db"
@@ -195,22 +200,66 @@ def test_serve_smoke(isolated_db, tmp_path):
         stderr=subprocess.PIPE,
     )
     try:
-        for _ in range(20):
-            time.sleep(0.3)
-            try:
-                import http.client
+        # stdout 逐行入队：Windows PIPE readline 阻塞，必须线程化避免卡死主线程轮询
+        ready_queue: queue.Queue[str] = queue.Queue()
 
-                conn = http.client.HTTPConnection("127.0.0.1", 18765, timeout=2)
-                conn.request("GET", "/health")
-                resp = conn.getresponse()
-                body = resp.read().decode()
-                conn.close()
-                if resp.status == 200:
-                    assert '"status":"ok"' in body
-                    return
+        def _read_stdout() -> None:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                ready_queue.put(line.decode(errors="replace"))
+
+        threading.Thread(target=_read_stdout, daemon=True).start()
+
+        # 1) 轮询 INKFLOW_READY 交付行（~6s 超时），解析 token（§2.7 M1 契约）
+        ready_line: str | None = None
+        deadline = time.monotonic() + 6.0
+        while time.monotonic() < deadline:
+            try:
+                line = ready_queue.get(timeout=0.3)
+            except queue.Empty:
+                continue
+            if line.startswith("INKFLOW_READY "):
+                ready_line = line
+                break
+        assert (
+            ready_line is not None
+        ), "server did not emit INKFLOW_READY within 6 seconds"
+        ready = json.loads(ready_line[len("INKFLOW_READY ") :].strip())
+        assert {"port", "token", "pid", "version"} <= set(ready)
+        assert ready["port"] == 18765
+        token = ready["token"]
+
+        def _health(token_to_send: str | None) -> tuple[int, str]:
+            conn = http.client.HTTPConnection("127.0.0.1", 18765, timeout=2)
+            headers = {"X-InkFlow-Token": token_to_send} if token_to_send else {}
+            conn.request("GET", "/health", headers=headers)
+            resp = conn.getresponse()
+            body = resp.read().decode()
+            conn.close()
+            return resp.status, body
+
+        # 2) 带 token 请求 /health → 200 且 body 含 "status":"ok"
+        #    （服务就绪可能稍晚于 READY 行，保留轮询）
+        status: int | None = None
+        body: str | None = None
+        deadline = time.monotonic() + 6.0
+        while time.monotonic() < deadline:
+            try:
+                status, body = _health(token)
+                if status == 200 and '"status":"ok"' in body:
+                    break
             except (ConnectionRefusedError, OSError):
                 pass
-        pytest.fail("server did not start within 6 seconds")
+            time.sleep(0.3)
+        assert (
+            status == 200 and '"status":"ok"' in body
+        ), f"health with token failed: status={status} body={body}"
+
+        # 3) 反向断言（Q2=B 核心语义）：无 token 请求 /health → 401
+        status_no_token, body_no_token = _health(None)
+        assert (
+            status_no_token == 401
+        ), f"expected 401 without token, got {status_no_token}: {body_no_token}"
     finally:
         proc.terminate()
         proc.wait(timeout=5)

@@ -39,6 +39,18 @@ class InkFlowConfig(BaseSettings):
     server_port: int = 8000
     """serve 默认监听端口."""
 
+    db_busy_timeout_ms: int = 5000
+    """SQLite busy_timeout（毫秒），多进程写并发时等待锁（ADR-021/003，spec §2.4）。"""
+
+    server_cors_origins: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8765",
+        "http://127.0.0.1:8765",
+        "null",  # Electron 生产模式 file:// 加载（#78 消费方，spec §2.3.2）
+    ]
+    """CORS 白名单（仅放行本地来源，ADR-021；spec §2.3.2）。"""
+
     # ---- LLM Provider ----
     llm_default_model: str = "openai/gpt-4o"
     """默认 LLM 模型（LiteLLM 格式：provider/model_name）。"""

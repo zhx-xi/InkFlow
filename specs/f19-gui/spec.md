@@ -111,8 +111,9 @@ inkflow serve [--host HOST] [--port PORT] [--port-file PATH] [--token TOKEN]
 ```
 
 - 中间件持有 token：从**环境变量 `INKFLOW_SERVER_TOKEN`** 读取（serve 启动时生成并注入进程环境；测试可设固定值）——避免 config 单例启动时序问题，也天然兼容 reload 子进程继承
+- **env 未设置时中间件直通（无 token 模式）**：token 校验是 `serve` 命令的职责（serve 必设 env），不是 app 内置认证——TestClient 直连 app（不经 serve）、云端 JWT 路径（2.0.0）不受影响；既有 1667 测试零破坏
 - 401 响应不携带内部细节（防探测）；无重定向、无 WWW-Authenticate 挑战（非 HTTP Basic 语义）
-- API 文档加**全局 HTTPBearer security scheme**（Swagger UI Authorize 按钮，开发调 API 用；同时是 ADR-024 云端 JWT 的前置）
+- API 文档加**全局 HTTPBearer security scheme**（Swagger UI Authorize 按钮，开发调 API 用；同时是 ADR-024 云端 JWT 前置）
 
 **2.3.2 CORS 白名单配置化**（api/app.py）
 
