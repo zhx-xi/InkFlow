@@ -330,7 +330,7 @@ def get_vector_store() -> VectorStoreProtocol:
 
         from inkflow.core.config import config
         from inkflow.domain.ports.extraction_errors import RAGUnavailableError
-        from inkflow.infrastructure.rag.langchain_vector_store import (  # type: ignore[import-untyped]  # M6 落地后自动消除（warn_unused_ignores 未开启）
+        from inkflow.infrastructure.rag.langchain_vector_store import (
             LangChainVectorStore,
         )
 

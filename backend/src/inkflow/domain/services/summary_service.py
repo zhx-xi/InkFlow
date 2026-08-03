@@ -128,10 +128,10 @@ class SummaryService:
             # 简单截断保证 ≤ 300 字（LLM 可能不遵守）
             if len(summary) > 300:
                 summary = summary[:297] + "..."
-
-            return summary
         except Exception as e:
             raise SummaryGenerationError(chapter_id=str(chapter.id), detail=str(e)) from e
+        else:
+            return summary
 
     async def list_recent(self, project_id: uuid.UUID, limit: int = 10) -> list[ChapterSummary]:
         """获取项目内按章节序号倒序的最新摘要列表.

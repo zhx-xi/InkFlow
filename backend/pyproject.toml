@@ -83,13 +83,24 @@ target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RET", "TRY", "RUF"]
+# B008: FastAPI Depends() 惯用法误报（LiteLLM 亦以 budget 放行）
+# TRY003: FastAPI HTTPException(detail=...) 惯用法误报（LiteLLM 未启用）
+# RUF001/002/003: 中文代码库歧义 Unicode 误报（CJK 字符全标记）
+ignore = ["B008", "TRY003", "RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = false
 warn_unused_configs = true
 ignore_missing_imports = true
+# 类型纪律强化（2026-08-03，借鉴 LiteLLM type-discipline）：禁裸 ignore，检查未标注 def
+# disallow_any_explicit 暂不开启：存量 Any 162 处（多为 FastAPI response_model/Depends 惯用法），
+# 遵循「存量预算 + 渐进」——新代码避免 Any，存量清理后开启
+warn_unused_ignores = true
+check_untyped_defs = true
+warn_return_any = true
+no_implicit_optional = true
 
 [build-system]
 requires = ["hatchling"]

@@ -62,8 +62,8 @@ async def get_chapter_summary(
     """查看章节摘要缓存."""
     try:
         cid = uuid.UUID(chapter_id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="章节不存在")
+    except ValueError as err:
+        raise HTTPException(status_code=404, detail="章节不存在") from err
 
     svc = get_summary_service(db)
     try:
@@ -84,8 +84,8 @@ async def refresh_chapter_summary(
     """强制重新生成章节摘要."""
     try:
         cid = uuid.UUID(chapter_id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="章节不存在")
+    except ValueError as err:
+        raise HTTPException(status_code=404, detail="章节不存在") from err
 
     svc = get_summary_service(db)
     try:

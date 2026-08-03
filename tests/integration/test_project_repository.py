@@ -63,7 +63,7 @@ class TestProjectRepository:
         db_session.add_all([p1, p2])
         await db_session.commit()
 
-        projects, total = await repo.list_all(search="科幻")
+        _, total = await repo.list_all(search="科幻")
         assert total == 1
 
     @pytest.mark.asyncio

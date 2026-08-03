@@ -39,23 +39,22 @@ def mock_writing_service():
         mock_svc = AsyncMock()
         mock_svc_cls.return_value = mock_svc
 
-        with patch("inkflow.cli.commands.write.LangChainLLMClient", autospec=True):
-            with patch(
-                "inkflow.cli.commands.write.LangChainPromptManager", autospec=True
-            ):
-                with patch(
-                    "inkflow.cli.commands.write.NullContextProvider", autospec=True
-                ):
-                    with patch(
-                        "inkflow.cli.commands.write.SQLiteChapterRepository",
-                        autospec=True,
-                    ) as mock_repo_cls:
-                        mock_repo = AsyncMock()
-                        mock_repo_cls.return_value = mock_repo
-                        mock_repo.get_chapter.return_value = types.SimpleNamespace(
-                            content=_EXISTING_CONTENT
-                        )
-                        yield mock_svc
+        with patch(
+            "inkflow.cli.commands.write.LangChainLLMClient", autospec=True
+        ), patch(
+            "inkflow.cli.commands.write.LangChainPromptManager", autospec=True
+        ), patch(
+            "inkflow.cli.commands.write.NullContextProvider", autospec=True
+        ), patch(
+            "inkflow.cli.commands.write.SQLiteChapterRepository",
+            autospec=True,
+        ) as mock_repo_cls:
+            mock_repo = AsyncMock()
+            mock_repo_cls.return_value = mock_repo
+            mock_repo.get_chapter.return_value = types.SimpleNamespace(
+                content=_EXISTING_CONTENT
+            )
+            yield mock_svc
 
 
 class TestWriteNext:

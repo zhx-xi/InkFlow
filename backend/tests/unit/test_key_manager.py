@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from cryptography.exceptions import InvalidTag
 
 from inkflow.infrastructure.llm.key_manager import APIKeyManager
 
@@ -89,5 +90,5 @@ class TestAPIKeyManager:
 
         other_key = "f" * 64
         mgr2 = APIKeyManager(secret_key=other_key, storage_dir=temp_keys_dir)
-        with pytest.raises(Exception):
+        with pytest.raises(InvalidTag):
             mgr2.decrypt("openai", encrypted_data=encrypted)

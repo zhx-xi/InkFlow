@@ -270,7 +270,7 @@ class SQLiteTimelineRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             raise ValueError(f"TimelineEvent {event_id} not found")
 
         stmt2 = select(TimelineEventORM).where(TimelineEventORM.id == event_id)
@@ -293,7 +293,7 @@ class SQLiteTimelineRepository:
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
-        return result.rowcount > 0  # type: ignore[attr-defined]
+        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
     async def restore(self, event_id: int) -> TimelineEvent | None:
         """恢复已软删除事件.
@@ -307,7 +307,7 @@ class SQLiteTimelineRepository:
             .values(is_deleted=False, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)
-        if result.rowcount == 0:  # type: ignore[attr-defined]
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             await self._session.commit()
             return None
         await self._session.commit()

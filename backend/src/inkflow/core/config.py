@@ -150,7 +150,7 @@ def load_config_json(data_dir: Path) -> dict:
     if not config_file.exists():
         return {}
     try:
-        return _json.loads(config_file.read_text(encoding="utf-8"))
+        return dict(_json.loads(config_file.read_text(encoding="utf-8")))
     except (_json.JSONDecodeError, OSError):
         logger.warning("config.json 解析失败，使用默认值")
         return {}

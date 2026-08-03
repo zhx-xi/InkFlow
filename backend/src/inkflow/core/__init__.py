@@ -9,4 +9,4 @@ from inkflow.core.database import (
     get_session,
 )
 
-__all__ = ["config", "Base", "async_session_factory", "create_tables", "drop_tables", "get_session"]
+__all__ = ["Base", "async_session_factory", "config", "create_tables", "drop_tables", "get_session"]

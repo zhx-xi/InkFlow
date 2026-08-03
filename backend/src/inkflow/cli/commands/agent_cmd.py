@@ -83,7 +83,7 @@ def run_pipeline(
         result = _run_async(_impl())
     except AgentServiceError as e:
         typer.echo(f"❌ {e}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
     if json_output:
         _print_json(result)

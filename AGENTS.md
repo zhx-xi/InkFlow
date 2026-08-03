@@ -541,5 +541,5 @@ AI 编码助手在开始任何工作前，应**按顺序**阅读以下文件：
 - 依赖注入优于 monkeypatch（测试时传 mock 依赖，而非 patch 类属性）
 - 标准库/SDK 优先，不手搓已有轮子；无官方实现时遵循行业标准
 - 无 monster files（>900 行会被 `ci_cd/check_file_length.py` 拦截）；文件/目录结构有意识设计
-- 新代码全类型化：无裸 `Any`（mypy `disallow_any_explicit` 已开启）；边界用 Pydantic 校验后传类型化变量
+- 新代码全类型化：避免裸 `Any`（存量 Any 渐进清理中——数量降至零后开启 `disallow_any_explicit` 预算门）；边界用 Pydantic 校验后传类型化变量
 - 提交信息与 PR 标题遵循 Conventional Commits（commit-msg 钩子 + CI 双重拦截）

@@ -109,6 +109,19 @@ jobs:
       - name: Type check with mypy
         run: uv run mypy src/ --ignore-missing-imports
 
+      # ── 质量护栏（借鉴 LiteLLM ci_cd/）：monster file 禁令 + noqa 带理由 ──
+      - name: "Guardrail: file length (monster file ban)"
+        shell: pwsh
+        run: |
+          uv run python ../ci_cd/check_file_length.py 900 src/ ../tests/ tests/unit/
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: "Guardrail: noqa must carry a reason"
+        shell: pwsh
+        run: |
+          uv run python ../ci_cd/check_noqa_reason.py src/ ../tests/ tests/unit/
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
   # ── Unit tests (fast, no DB, < 10s) ──
   # 只跑核心代码 + unit 测试代码变更；集成/E2E 测试变更不触发
   unit-test-backend:

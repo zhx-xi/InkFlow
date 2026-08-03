@@ -29,7 +29,6 @@ from typing import Any
 from inkflow.domain.models.project import Project
 from inkflow.domain.models.style import StyleLLMAssessment
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
-from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.ports.prompt_template import PromptTemplateProtocol
 from inkflow.domain.ports.style_errors import StyleLLMAnalysisError
 
@@ -171,25 +170,21 @@ class StyleLLMAnalyzer:
         messages = [ChatMessage(role=m["role"], content=m["content"]) for m in rendered.messages]
 
         # ③④⑤ 调用 LLM + 解析校验 + 修复式重试（≤ 2 次）
-        retry_count = 0
         last_raw = ""
         outcome = _ParseOutcome()
-        for _ in range(_MAX_PARSE_RETRIES + 1):
-            try:
-                # 传消息列表副本，避免客户端变异影响重试历史记录
-                response = await self._llm.chat(
-                    list(messages), model=resolved_model, temperature=_TEMPERATURE
-                )
-            except LLMRequestError:
-                raise  # LLM 调用失败透传，不消耗解析重试（spec §5.6 注）
+        for retry_count in range(_MAX_PARSE_RETRIES + 1):
+            # 传消息列表副本，避免客户端变异影响重试历史记录
+            # LLM 调用失败透传，不消耗解析重试（spec §5.6 注）
+            response = await self._llm.chat(
+                list(messages), model=resolved_model, temperature=_TEMPERATURE
+            )
 
             last_raw = response.content
             outcome = self._parse_output(last_raw)
             if outcome.ok:
                 break
 
-            retry_count += 1
-            if retry_count > _MAX_PARSE_RETRIES:
+            if retry_count >= _MAX_PARSE_RETRIES:
                 raise StyleLLMAnalysisError(
                     f"{_MAX_PARSE_RETRIES} 次修复重试后仍无法解析为合法判定 JSON"
                     f"（最后错误: {outcome.error}）"

@@ -27,7 +27,7 @@ def _run_async(coro):
 
 def _project_to_dict(project) -> dict:
     """Serialize a Project domain model to a JSON-safe dict."""
-    return project.model_dump(mode="json")
+    return dict(project.model_dump(mode="json"))
 
 
 # ---------------------------------------------------------------------------
@@ -157,8 +157,7 @@ def delete(
             svc = ProjectService(session)
             if permanent:
                 return await svc.hard_delete(project_id)
-            else:
-                return await svc.soft_delete(project_id)
+            return await svc.soft_delete(project_id)
 
     ok = _run_async(_impl())
     if ok:

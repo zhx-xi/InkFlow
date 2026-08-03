@@ -65,7 +65,7 @@ def _finding(**overrides: object) -> AuditFinding:
         },
     }
     kwargs.update(overrides)
-    return AuditFinding(**kwargs)  # type: ignore[arg-type]
+    return AuditFinding(**kwargs)  # type: ignore[arg-type]  # kwargs 为动态 dict，无法静态匹配构造器参数签名
 
 
 def _timeline_check() -> ConsistencyReport:
@@ -185,7 +185,7 @@ def _report(**overrides: object) -> AuditReport:
         "timeline_check": _timeline_check(),
     }
     kwargs.update(overrides)
-    return AuditReport(**kwargs)  # type: ignore[arg-type]
+    return AuditReport(**kwargs)  # type: ignore[arg-type]  # kwargs 为动态 dict，无法静态匹配构造器参数签名
 
 
 def _consistent_report() -> AuditReport:

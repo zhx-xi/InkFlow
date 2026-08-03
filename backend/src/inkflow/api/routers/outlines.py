@@ -69,8 +69,8 @@ def _parse_id(id_str: str, detail: str = "资源不存在") -> uuid.UUID:
     except ValueError:
         try:
             return uuid.UUID(int=int(id_str))
-        except (ValueError, OverflowError):
-            raise HTTPException(status_code=404, detail=detail)
+        except (ValueError, OverflowError) as err:
+            raise HTTPException(status_code=404, detail=detail) from err
 
 
 def _get_svc(db: AsyncSession) -> OutlineService:
@@ -92,10 +92,12 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except ProjectNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
-    except OutlineGenerationError:
-        raise HTTPException(status_code=500, detail="大纲生成失败: LLM 输出无法解析，请重试")
-    except LLMRequestError:
-        raise HTTPException(status_code=500, detail="LLM 调用失败，请稍后重试")
+    except OutlineGenerationError as err:
+        raise HTTPException(
+            status_code=500, detail="大纲生成失败: LLM 输出无法解析，请重试"
+        ) from err
+    except LLMRequestError as err:
+        raise HTTPException(status_code=500, detail="LLM 调用失败，请稍后重试") from err
 
 
 async def _point_payload(svc: OutlineService, point: PlotPoint) -> dict[str, Any]:

@@ -346,7 +346,7 @@ def _style_report(**overrides: Any) -> Any:
         "warnings": ["未检测到完整句子（句尾符不足）——句子统计仅供参考"],
     }
     kwargs.update(overrides)
-    return StyleReport(**kwargs)  # type: ignore[arg-type]
+    return StyleReport(**kwargs)  # type: ignore[arg-type]  # kwargs 为动态 dict，无法静态匹配构造器参数签名
 
 
 def _req(type_: ExtractionType, **kw: Any) -> ExtractionRequest:

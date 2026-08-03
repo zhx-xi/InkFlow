@@ -43,7 +43,6 @@ from inkflow.domain.models.foreshadowing import (
 from inkflow.domain.ports.foreshadowing_errors import ForeshadowingExtractionError
 from inkflow.domain.ports.foreshadowing_repository import ForeshadowingRepositoryProtocol
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
-from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.ports.prompt_template import PromptTemplateProtocol
 
 logger = logging.getLogger(__name__)
@@ -193,25 +192,19 @@ class ForeshadowingExtractor:
         messages = [ChatMessage(role=m["role"], content=m["content"]) for m in rendered.messages]
 
         # ③④⑤ 调用 LLM + 解析 + 修复式重试（≤ 2 次）
-        retry_count = 0
         last_raw = ""
         outcome = _ParseOutcome()
-        for _ in range(_MAX_PARSE_RETRIES + 1):
-            try:
-                # 传消息列表副本，避免客户端变异影响重试历史记录
-                response = await self._llm.chat(
-                    list(messages), model=model, temperature=_TEMPERATURE
-                )
-            except LLMRequestError:
-                raise  # LLM 调用失败透传，不消耗解析重试（§5.4 同 F9 模式要点）
+        for retry_count in range(_MAX_PARSE_RETRIES + 1):
+            # 传消息列表副本，避免客户端变异影响重试历史记录
+            # LLM 调用失败透传，不消耗解析重试（§5.4 同 F9 模式要点）
+            response = await self._llm.chat(list(messages), model=model, temperature=_TEMPERATURE)
 
             last_raw = response.content
             outcome = self._parse_output(last_raw)
             if outcome.ok:
                 break
 
-            retry_count += 1
-            if retry_count > _MAX_PARSE_RETRIES:
+            if retry_count >= _MAX_PARSE_RETRIES:
                 raise ForeshadowingExtractionError(
                     raw_output=last_raw[:500],
                     detail=(

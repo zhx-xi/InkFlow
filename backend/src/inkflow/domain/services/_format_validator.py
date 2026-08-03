@@ -50,9 +50,12 @@ class FormatValidator:
             errors.append("R2: 输出为 JSON 格式，请输出纯文本正文")
         except (json.JSONDecodeError, ValueError):
             pass
-        if re.search(r'"[^"]+"\s*:\s*', stripped) and not re.search(r"[#\n]", stripped[:50]):
-            if not errors or "R2" not in str(errors):
-                errors.append("R2: 检测到 JSON 键值对泄漏，请输出纯文本正文")
+        if (
+            re.search(r'"[^"]+"\s*:\s*', stripped)
+            and not re.search(r"[#\n]", stripped[:50])
+            and (not errors or "R2" not in str(errors))
+        ):
+            errors.append("R2: 检测到 JSON 键值对泄漏，请输出纯文本正文")
 
         # R4: 无占位符残留
         if FormatValidator._PLACEHOLDER_RE.search(content):

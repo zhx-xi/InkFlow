@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic import ValidationError
 
 from inkflow.domain.models.timeline import (
     ExtractedTimelineEvent,
@@ -469,19 +470,19 @@ class TestExtractedTimelineEventSchema:
 
     def test_title_required_and_stripped(self) -> None:
         """title 必填且去空白。"""
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             ExtractedTimelineEvent.model_validate({"time_value": 1.0})
         ev = ExtractedTimelineEvent.model_validate({"title": "  林晚入宫  "})
         assert ev.title == "林晚入宫"
 
     def test_title_too_long_invalid(self) -> None:
         """title 超 100 字符 → 非法。"""
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             ExtractedTimelineEvent.model_validate({"title": "长" * 101})
 
     def test_time_value_out_of_range_invalid(self) -> None:
         """time_value |v| > 1e12 → 非法；None 合法。"""
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             ExtractedTimelineEvent.model_validate({"title": "t", "time_value": 1e12 + 1})
         ev = ExtractedTimelineEvent.model_validate({"title": "t", "time_value": None})
         assert ev.time_value is None

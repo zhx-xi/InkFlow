@@ -87,8 +87,8 @@ def _parse_id(project_id: str) -> uuid.UUID:
     except ValueError:
         try:
             return uuid.UUID(int=int(project_id))
-        except (ValueError, OverflowError):
-            raise HTTPException(status_code=404, detail="项目不存在")
+        except (ValueError, OverflowError) as err:
+            raise HTTPException(status_code=404, detail="项目不存在") from err
 
 
 def _get_svc(db: AsyncSession) -> StyleService:

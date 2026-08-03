@@ -117,7 +117,7 @@ def _run(cli_ctx: CliContext, coro_fn) -> Any:
         print_error(cli_ctx, "VALIDATION_ERROR", str(e))
     except (StyleLLMUnavailableError, StyleLLMAnalysisError, LLMRequestError) as e:
         print_error(cli_ctx, "LLM_ERROR", str(e))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print_error(cli_ctx, "DB_ERROR", f"内部错误: {e}")
 
 

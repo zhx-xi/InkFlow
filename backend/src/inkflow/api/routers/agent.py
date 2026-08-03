@@ -20,8 +20,8 @@ def _parse_id(id_str: str, detail: str = "资源不存在") -> uuid.UUID:
     """安全解析 UUID。"""
     try:
         return uuid.UUID(id_str)
-    except ValueError:
-        raise HTTPException(status_code=404, detail=detail)
+    except ValueError as err:
+        raise HTTPException(status_code=404, detail=detail) from err
 
 
 def _svc(db: AsyncSession) -> AgentService:
@@ -42,8 +42,8 @@ async def execute_pipeline(
     except AgentServiceError as e:
         detail = str(e)
         if "项目不存在" in detail or "章节不存在" in detail:
-            raise HTTPException(status_code=404, detail=detail)
-        raise HTTPException(status_code=422, detail=detail)
+            raise HTTPException(status_code=404, detail=detail) from e
+        raise HTTPException(status_code=422, detail=detail) from e
 
 
 @router.get("/pipelines/executions/{execution_id}")

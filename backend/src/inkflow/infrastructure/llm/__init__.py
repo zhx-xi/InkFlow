@@ -11,7 +11,7 @@ from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 from inkflow.infrastructure.llm.prompt_manager import LangChainPromptManager
 
 __all__ = [
+    "APIKeyManager",
     "LangChainLLMClient",
     "LangChainPromptManager",
-    "APIKeyManager",
 ]

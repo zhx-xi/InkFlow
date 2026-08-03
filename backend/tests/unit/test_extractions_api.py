@@ -73,7 +73,7 @@ def _result(**overrides: object) -> ExtractionResult:
         "detail": {"created": [{"id": "c1", "name": "林晚"}], "updated": []},
     }
     kwargs.update(overrides)
-    return ExtractionResult(**kwargs)  # type: ignore[arg-type]
+    return ExtractionResult(**kwargs)  # type: ignore[arg-type]  # kwargs 为动态 dict，无法静态匹配构造器参数签名
 
 
 def _run(run_id: int = 1, **overrides: object) -> ExtractionRun:
@@ -94,7 +94,7 @@ def _run(run_id: int = 1, **overrides: object) -> ExtractionRun:
         "run_at": TS,
     }
     kwargs.update(overrides)
-    return ExtractionRun(**kwargs)  # type: ignore[arg-type]
+    return ExtractionRun(**kwargs)  # type: ignore[arg-type]  # kwargs 为动态 dict，无法静态匹配构造器参数签名
 
 
 def _reindex(**overrides: object) -> ReindexResult:
@@ -106,7 +106,7 @@ def _reindex(**overrides: object) -> ReindexResult:
         "warnings": [],
     }
     kwargs.update(overrides)
-    return ReindexResult(**kwargs)  # type: ignore[arg-type]
+    return ReindexResult(**kwargs)  # type: ignore[arg-type]  # kwargs 为动态 dict，无法静态匹配构造器参数签名
 
 
 def _retrieved(**overrides: object) -> RetrievedEntity:
@@ -119,7 +119,7 @@ def _retrieved(**overrides: object) -> RetrievedEntity:
         "metadata": {"project_id": str(PID), "name": "林晚的身世", "status": "open"},
     }
     kwargs.update(overrides)
-    return RetrievedEntity(**kwargs)  # type: ignore[arg-type]
+    return RetrievedEntity(**kwargs)  # type: ignore[arg-type]  # kwargs 为动态 dict，无法静态匹配构造器参数签名
 
 
 def _mock_svc(mock_get_svc: MagicMock) -> MagicMock:
