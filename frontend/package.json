@@ -1,0 +1,12 @@
+{
+  "name": "inkflow-frontend",
+  "private": true,
+  "version": "0.3.0",
+  "description": "InkFlow 前端 workspace（renderer 一套两用：本地 GUI + 云 Web，ADR-020）",
+  "scripts": {
+    "dev": "pnpm --filter renderer dev",
+    "build": "pnpm --filter renderer build",
+    "test": "pnpm --filter renderer test",
+    "lint": "pnpm --filter renderer lint"
+  }
+}

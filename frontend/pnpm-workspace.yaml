@@ -1,0 +1,8 @@
+packages:
+  - "packages/*"
+
+# pnpm 11 安全策略：显式允许依赖的构建脚本（esbuild postinstall 下载二进制）
+allowBuilds:
+  esbuild: true
+onlyBuiltDependencies:
+  - esbuild
