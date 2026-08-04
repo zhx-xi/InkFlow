@@ -209,7 +209,7 @@ Electron 主进程 (main.ts)
 - **frontend workspace 已初始化**（feat/f19-gui-ui 前置落盘，2026-08-04）：`frontend/package.json`（inkflow-frontend 0.3.0，scripts 已配 dev/build/test/lint → renderer）+ `pnpm-workspace.yaml`（`packages/*` 通配）+ `pnpm-lock.yaml`（已锁定）+ renderer 包（`packages/renderer/`，Vite 构建产物 `dist/` 已可产出）——**electron 包尚未创建，本章全量 CREATE**
 - `packages/` 通配符已覆盖 → 新增 `packages/electron/` **零 workspace 配置改动**
 - renderer 构建产物路径：`frontend/packages/renderer/dist/`（vite.config.ts `outDir: 'dist'`，base 需确认为相对路径——`base: './'`，否则 file:// 加载静态资源绝对路径失效，§3.4 决策）
-- CI 现状：ci.yml **无前端 job**（frontend-ci 技能约定 #79 交付时加 renderer job）；本章 E2E（Playwright `_electron`）按 electron-app-testing 技能**不进常规 CI**（Electron 启动重、拖慢 PR 门禁），本地/手动跑，0.4.0 再决定自动化节奏
+- CI 现状（2026-08-05 更新）：前端已拆 3 个独立并行 job——`frontend-unit`（renderer lint/typecheck + 双包 vitest）/ `frontend-integration`（renderer apiFetch ↔ 真实内核）/ `frontend-e2e`（本章 E2E 冒烟，Playwright `_electron`，独立并行；用户拍板推翻「E2E 不进常规 CI」旧约定，改独立 job 以降总时长，时长超标再拆细）
 
 **边界声明（本章）**：
 - **壳层零业务逻辑**：不 import renderer 代码、不代理 API 请求、不承载业务状态；只做进程管理与窗口
@@ -352,7 +352,7 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 | 手动冒烟（Windows） | 关闭窗口后 `Get-Process inkflow*` 为空；错误 token 请求 `/health` → 401（安全基线生效） |
 
 > 主进程测试钩子约定（electron-app-testing 技能）：`app.isPackaged === false` 时暴露 `globalThis.__kernelInfo = { pid, port, token }`——Playwright `app.evaluate` 断言必需，**写进实现**。
-> E2E 不进常规 CI（frontend-ci 技能）；本地 `pnpm --filter inkflow-electron test:e2e` 跑通为合入门禁。
+> E2E 已入常规 CI（2026-08-05 用户拍板：`frontend-e2e` 独立并行 job，与 unit/integration 并行；本地 `pnpm --filter inkflow-electron test:e2e` 仍为开发期快捷通道）。
 
 ### 3.7 验收标准（#78，Playwright `_electron` 冒烟闭环）
 

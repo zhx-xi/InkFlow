@@ -400,8 +400,8 @@ jobs:
       - name: Health check
         run: uv run pytest ../tests/api/test_health.py ../tests/api/test_token_auth.py -v --tb=short
 
-  # ── Frontend: lint + typecheck + unit (renderer) ──
-  frontend-renderer:
+  # ── Frontend unit: lint + typecheck + vitest（renderer + electron 双包）──
+  frontend-unit:
     needs: [changes]
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
@@ -429,19 +429,130 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint (ESLint)
+      - name: Lint (ESLint, renderer)
         run: pnpm --filter renderer lint
 
-      - name: Type check
-        run: pnpm --filter renderer typecheck
+      - name: Type check (renderer + electron)
+        run: |
+          pnpm --filter renderer typecheck
+          pnpm --filter inkflow-electron build
 
-      - name: Unit tests (Vitest)
-        run: pnpm --filter renderer test
+      - name: Unit tests (Vitest, renderer + electron)
+        run: |
+          pnpm --filter renderer test
+          pnpm --filter inkflow-electron test
+
+  # ── Frontend integration: renderer API client ↔ 真实内核往返（spec §4.7 集成层）──
+  frontend-integration:
+    needs: [changes]
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true'
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    env:
+      # Windows runner 默认 cp1252（charmap）：serve.py 启动横幅含 🚀/中文 → UnicodeEncodeError
+      # → 内核崩溃 exit 1。PYTHONUTF8=1 强制 UTF-8 模式（Python 3.7+），spawn 子进程继承
+      PYTHONUTF8: "1"
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          cache-dependency-path: backend/uv.lock
+
+      - name: Install backend deps (kernel venv)
+        working-directory: backend
+        run: uv sync --frozen --extra dev
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Integration tests (renderer apiFetch ↔ real kernel)
+        run: pnpm --filter renderer test:integration
+
+  # ── Frontend E2E: Playwright _electron 冒烟（独立并行，spec §3.6；时长超标再拆细）──
+  frontend-e2e:
+    needs: [changes]
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true'
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    env:
+      # 同 frontend-integration：内核 spawn 需 UTF-8（Windows runner cp1252 会 UnicodeEncodeError）
+      PYTHONUTF8: "1"
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          cache-dependency-path: backend/uv.lock
+
+      - name: Install backend deps (kernel venv)
+        working-directory: backend
+        run: uv sync --frozen --extra dev
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build renderer (dist/)
+        run: pnpm --filter renderer build
+
+      - name: Build electron main/preload (out/)
+        run: pnpm --filter inkflow-electron build
+
+      - name: E2E smoke (Playwright _electron launch/revive/recycle)
+        run: pnpm --filter inkflow-electron test:e2e
 
   # ── Build: wheel (all gates pass) ──
   build-backend:
-    needs: [lint-backend, unit-test-backend, integration-chapter-backend, integration-project-backend, integration-writing-backend, integration-agent-backend, integration-cli-backend, smoke-backend, frontend-renderer]
-    # 显式条件：needs 中任一 job 被 skip（如后端-only PR 时 frontend-renderer 不触发）时，
+    needs: [lint-backend, unit-test-backend, integration-chapter-backend, integration-project-backend, integration-writing-backend, integration-agent-backend, integration-cli-backend, smoke-backend, frontend-unit, frontend-integration, frontend-e2e]
+    # 显式条件：needs 中任一 job 被 skip（如后端-only PR 时 frontend-unit 不触发）时，
     # 默认语义会让 build 也被 skip——此处显式放行（skipped ≠ failure），仅 failure/cancelled 阻止
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
     permissions:
