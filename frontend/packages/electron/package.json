@@ -1,0 +1,20 @@
+{
+  "name": "inkflow-electron",
+  "private": true,
+  "version": "0.3.0",
+  "description": "InkFlow Electron 壳：内核进程生命周期管理 + BrowserWindow 加载 renderer 构建产物（ADR-020/021）",
+  "main": "out/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "electron out/main.js",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^20.0.0",
+    "electron": "^34.5.8",
+    "typescript": "~5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
