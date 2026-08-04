@@ -41,6 +41,7 @@
 | [ADR-023](ADR-023.md) | MCP Server 设计 — 官方 SDK + stdio + 直连领域服务（skills 先行、MCP 后移 0.5.0，D5） | ✅ 已接受 | 2026-08-02 |
 | [ADR-024](ADR-024.md) | 云架构拓扑 — 同进程双前缀（user/admin）+ owner_id 隔离（D6） | ✅ 已接受 | 2026-08-02 |
 | [ADR-025](ADR-025.md) | 依赖锁定策略 — uv + uv.lock（Python）+ pnpm-lock.yaml 约定（前端） | ✅ 已接受 | 2026-08-02 |
+| [ADR-026](ADR-026.md) | 真实 AI CI job — label 触发 + workflow_dispatch 兜底（e2e-ai-backend） | ✅ 已接受 | 2026-08-04 |
 
 ## 当前有效决策速览
 
@@ -54,6 +55,7 @@
 - **日志**: loguru 结构化（ADR-016）
 - **CI 代码质量**: Reviewdog + Ruff 统一门禁（ADR-017）
 - **CI 测试分层**: 三层目录 + 按功能链路并行 job（ADR-018）
+- **CI 真实 AI 验证**: label 触发 + workflow_dispatch 兜底，e2e-ai-backend job（ADR-026，0.3.1 实现）
 - **版本里程碑**: SemVer 版本号管理；1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）；2.0.0 = 云端（云 Web + 用户 API + Admin 后台 + GUI 远程模式）（ADR-019 v2，2026-08-02 重排）
 
 *来源：design/architecture-analysis-2026-07-30.md §三（2026-07-31 提取为独立目录）*
