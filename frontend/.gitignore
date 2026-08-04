@@ -1,7 +1,12 @@
 # 依赖与构建产物
 node_modules/
 dist/
+out/
 *.tsbuildinfo
+test-results/
+*.db
+*.db-shm
+*.db-wal
 
 # 编辑器/系统
 .DS_Store

@@ -2,6 +2,17 @@
 <html lang="zh-CN" data-theme="paper" data-bg="default">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      CSP（MAJOR-1，spec §3.3）：connect-src 仅放行本地内核（127.0.0.1 / localhost 任意端口）。
+      dev 模式（5173）下 Vite HMR 使用 WebSocket ws://localhost:5173，实测 'self' 不覆盖 ws 同源，
+      故在 connect-src 显式放行（生产 file:// 不涉及 ws，该放行仅 dev 生效）。
+      script-src 'self'：Vite dev 的 react-refresh preamble 内联脚本位于本 meta 之前、先于策略解析，
+      实测可正常执行；style-src 'unsafe-inline' 供 Vite/Tailwind 注入样式。
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; connect-src http://127.0.0.1:* http://localhost:* ws://localhost:5173 ws://127.0.0.1:5173; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>InkFlow</title>
   </head>

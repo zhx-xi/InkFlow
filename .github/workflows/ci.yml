@@ -36,6 +36,7 @@ jobs:
       core: ${{ steps.filter.outputs.core }}
       unit: ${{ steps.filter.outputs.unit }}
       tests: ${{ steps.filter.outputs.tests }}
+      frontend: ${{ steps.filter.outputs.frontend }}
       ci: ${{ steps.filter.outputs.ci }}
     steps:
       - uses: actions/checkout@v7
