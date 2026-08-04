@@ -533,6 +533,9 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
+      - name: Build renderer (dist/)
+        run: pnpm --filter renderer build
+
       - name: Build electron main/preload (out/)
         run: pnpm --filter inkflow-electron build
 

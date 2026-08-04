@@ -96,20 +96,23 @@ function startKernel(): Promise<ReadyPayload> {
     killKernel();
     return Promise.reject(new Error('内核子进程 stdout/stderr 管道不可用'));
   }
-  // drain stderr，防缓冲区满阻塞子进程
-  stderr.on('data', () => {});
+  // 收集 stderr（不丢弃）：失败时输出内核真实报错，便于 CI 诊断
+  let stderrBuf = '';
+  stderr.on('data', (chunk: Buffer) => {
+    stderrBuf += chunk.toString();
+  });
 
   const lines = createInterface({ input: stdout });
   return new Promise<ReadyPayload>((resolve, reject) => {
     const timer = setTimeout(() => {
       killKernel();
-      reject(new Error(`等待 INKFLOW_READY 超时（${READY_TIMEOUT_MS}ms）`));
+      reject(new Error(`等待 INKFLOW_READY 超时（${READY_TIMEOUT_MS}ms）\n--- 内核 stderr ---\n${stderrBuf}`));
     }, READY_TIMEOUT_MS);
 
     const fail = (err: Error): void => {
       clearTimeout(timer);
       killKernel();
-      reject(err);
+      reject(new Error(`${err.message}\n--- 内核 stderr ---\n${stderrBuf}`));
     };
 
     lines.on('line', (line) => {
