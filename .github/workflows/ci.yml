@@ -449,6 +449,10 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    env:
+      # Windows runner 默认 cp1252（charmap）：serve.py 启动横幅含 🚀/中文 → UnicodeEncodeError
+      # → 内核崩溃 exit 1。PYTHONUTF8=1 强制 UTF-8 模式（Python 3.7+），spawn 子进程继承
+      PYTHONUTF8: "1"
     defaults:
       run:
         working-directory: frontend
@@ -496,6 +500,9 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    env:
+      # 同 frontend-integration：内核 spawn 需 UTF-8（Windows runner cp1252 会 UnicodeEncodeError）
+      PYTHONUTF8: "1"
     defaults:
       run:
         working-directory: frontend
