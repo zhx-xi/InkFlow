@@ -16,7 +16,7 @@
 | `ARCHITECTURE.md` | 架构导航：完整目录树、组件职责、模块类型谱系 → 样板 spec、加新模块步骤。**改架构/加模块前先读** |
 | `docs/ai-traps.md` | AI 编码常见陷阱完整清单（§9 只留高频 TOP） |
 | `FEATURES.md` | 功能清单唯一权威（已实现模块全表 + 规划 + 版本映射） |
-| `adr/README.md` | ADR 索引（改代码前先查；25 条有效） |
+| `adr/README.md` | ADR 索引（改代码前先查；27 条有效） |
 | `CONTRIBUTING.md` | 人类贡献者指南 |
 
 ---
@@ -28,7 +28,7 @@
 | 维度 | 说明 |
 |------|------|
 | **团队** | 单人开发 |
-| **时间线** | SemVer 版本里程碑（ADR-019 v2）：0.1.0 ✅ → 0.2.0 ✅（F9-F16 已交付）→ 0.3.0 GUI（F19 提前 + F23 SSE 提前）→ 0.3.1 质量加固（#86 LLM 修复 ✅ / #87 状态重构 ✅ / #92 真实 AI CI ✅ / #104 覆盖率）→ 0.4.0 skills 包+打包 → 0.5.0 MCP+会话+daemon → 0.6.0 导出+搜索 → **1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）** → **2.0.0 = 云端**；对应 PRD W10-W24 周计划（明细见下方里程碑表） |
+| **时间线** | SemVer 版本里程碑（ADR-019 v2）：0.1.0 ✅ → 0.2.0 ✅（F9-F16 已交付）→ 0.3.0 GUI（F19 提前 + F23 SSE 提前）→ 0.3.1 质量加固（#86 LLM 修复 ✅ / #87 状态重构 ✅ / #92 真实 AI CI ✅ / #104 覆盖率 ✅）→ 0.4.0 skills 包+打包 → 0.5.0 MCP+会话+daemon → 0.6.0 导出+搜索 → **1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）** → **2.0.0 = 云端**；对应 PRD W10-W24 周计划（明细见下方里程碑表） |
 | **部署模式** | 本地优先（SQLite，免认证）；**2.0.0 云端里程碑**：云存档/异地写作（PostgreSQL + JWT + BYOK，无 CRDT），GUI/CLI 远程模式连接云端 |
 | **多界面** | GUI（Electron，React 复用）+ CLI（Typer）+ REST API（FastAPI：本地内核通用通信契约，亦为云端用户 API 同一契约）+ MCP Server（stdio 直连 domain）（+ 云端 Web/Admin 后台） |
 | **工作流** | SDD + TDD：先写 spec → 再写测试（RED）→ 写代码（GREEN）→ 重构 |
@@ -41,7 +41,7 @@
 | 0.1.0 ✅ | F1-F8 + 云端 Protocol（Phase 1 Gate 7/7，已交付） |
 | 0.2.0 ✅ | F9-F16 创作工具链（F9-F16 ✅ 已交付，PR #56/#57/#58/#63/#64/#72/#74/#75） |
 | 0.3.0 | F19 GUI（Electron 壳 + 内核进程化 + React 渲染层）· F23 SSE 流式 ✅（PR #83，已交付）——F19 子任务 A 内核进程化 ✅（PR #85，#77）· 子任务 B Electron 壳 ✅（PR #95，#78）· 子任务 C React 渲染层 ✅（PR #97，#79） |
-| 0.3.1 | 质量加固补丁（milestone #9）：#86 LLM 客户端修复 ✅（PR #108：timeout→request_timeout + zhipu 注册 + audit 路由）· #87 LangGraph 状态重构 ✅（PR #110：StateGraph(dict)→TypedDict+reducer，节点增量返回，type: ignore 清零）· #92 真实 AI CI job ✅（PR #111：e2e-ai-backend，label run-ai-tests 触发 + workflow_dispatch 兜底；tests/e2e/ T1+T2，缺 key 永远 skip；⚠️ 真实验证需先配 LLM_API_KEY secret）· #104 覆盖率补全 🔄 |
+| 0.3.1 | 质量加固补丁（milestone #9）：#86 LLM 客户端修复 ✅（PR #108：timeout→request_timeout + zhipu 注册 + audit 路由）· #87 LangGraph 状态重构 ✅（PR #110：StateGraph(dict)→TypedDict+reducer，节点增量返回，type: ignore 清零）· #92 真实 AI CI job ✅（PR #111：e2e-ai-backend，label run-ai-tests 触发 + workflow_dispatch 兜底；tests/e2e/ T1+T2，缺 key 永远 skip；⚠️ 真实验证需先配 LLM_API_KEY secret）· #104 覆盖率补全 ✅（PR #114/#115/#116/#117：三层补测至后端 98.90% 行/96.32% 分支、前端 99.11%/92.51%、API 端点 100%、E2E 三页；CI 门槛 98.5/95.0 常态化，口径见 ADR-027） |
 | 0.4.0 | skills 包（三通道分发）· F19 打包（exe / 安装包 / 便携 ZIP） |
 | 0.5.0 | F20 MCP（stdio 直连 domain）· F24 会话 · F25 daemon |
 | 0.6.0 | F21 导出 · F22 全文搜索 |
@@ -93,7 +93,7 @@ F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI / 0.4.0 打包，子任务 A 
 | 加密 | cryptography ≥ 42.0 | API Key AES-256-GCM |
 | HTTP | httpx ≥ 0.27 + httpx-sse ≥ 0.4 | |
 | 日志 | Loguru ≥ 0.7 | |
-| 测试 | pytest ≥ 8.0 + pytest-asyncio + pytest-cov | 覆盖率 ≥ 70% |
+| 测试 | pytest ≥ 8.0 + pytest-asyncio + pytest-cov + pytest-rerunfailures | CI 覆盖率门槛：后端 98.5% 行 / 95% 分支（coverage-backend job，口径 ADR-027）、前端 renderer/electron vitest thresholds（99.11%/92.51%） |
 | Lint | Ruff ≥ 0.6 | 规则集见 backend/pyproject.toml；行宽 100 |
 | 类型检查 | mypy ≥ 1.10 | 严格化配置见 backend/pyproject.toml |
 | 构建 | hatchling | `[tool.hatch.build.targets.wheel]` |
@@ -108,7 +108,7 @@ F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI / 0.4.0 打包，子任务 A 
 | `backend/tests/unit/` | 单元测试（纯后端，无 I/O） |
 | `tests/` | 集成 + API + CLI 测试（顶层；conftest.py 共享 fixture） |
 | `specs/f<X>-<name>/spec.md` | SDD 规格（每 feature 一个目录，**唯一真相**） |
-| `adr/` | ADR 决策记录（索引 `adr/README.md`，25 条有效） |
+| `adr/` | ADR 决策记录（索引 `adr/README.md`，27 条有效） |
 | `design/` | PRD + 架构分析 + Gate 评审（文件名带日期） |
 | `docs/` | 用户使用说明 + `ai-traps.md` |
 | `frontend/` | 前端（pnpm workspace 双包：renderer + electron，0.3.0 F19 起） |
