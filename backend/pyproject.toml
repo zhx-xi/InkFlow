@@ -96,6 +96,10 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "if __name__ == \"__main__\":",
     "raise NotImplementedError",
+    # #104 Phase 3 用户拍板 C 方案：Protocol 接口文件（domain/ports/）抽象方法体
+    # `...` 物理不可执行（129 行接口签名永远 0 命中）——排除出统计口径，
+    # 否则「行覆盖 99%」数学上不可能。errors/模型类（可执行逻辑）不受影响。
+    "^\\s*\\.\\.\\.\\s*$",
 ]
 
 [tool.ruff]

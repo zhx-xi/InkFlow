@@ -87,6 +87,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: 'uv'
+          cache-dependency-path: backend/uv.lock
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -152,6 +154,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: 'uv'
+          cache-dependency-path: backend/uv.lock
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -199,6 +203,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: 'uv'
+          cache-dependency-path: backend/uv.lock
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -237,6 +243,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: 'uv'
+          cache-dependency-path: backend/uv.lock
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -275,6 +283,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: 'uv'
+          cache-dependency-path: backend/uv.lock
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -311,6 +321,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: 'uv'
+          cache-dependency-path: backend/uv.lock
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -348,6 +360,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: 'uv'
+          cache-dependency-path: backend/uv.lock
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -398,6 +412,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: 'uv'
+          cache-dependency-path: backend/uv.lock
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -477,6 +493,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: 'uv'
+          cache-dependency-path: backend/uv.lock
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -527,6 +545,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: 'uv'
+          cache-dependency-path: backend/uv.lock
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -582,6 +602,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: 'uv'
+          cache-dependency-path: backend/uv.lock
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -673,6 +695,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: 'uv'
+          cache-dependency-path: backend/uv.lock
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -728,6 +752,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: 'uv'
+          cache-dependency-path: backend/uv.lock
 
       - uses: astral-sh/setup-uv@v5
         with:
