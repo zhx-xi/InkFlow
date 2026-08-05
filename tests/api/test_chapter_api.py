@@ -341,3 +341,123 @@ async def test_get_chapter_api(db_session, sample_project, override_get_db):
         )
         assert missing.status_code == 404
         assert missing.json()["detail"] == "章节不存在"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Issue #104 Phase 3 覆盖率补齐：_parse_id 非法格式 404 / None 路径 404 分支
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_parse_id_accepts_uuid_int_and_rejects_invalid():
+    """_parse_id：UUID 字符串 / 整数格式（非 hex 但 int 可解析）→ UUID；非法 → 404。"""
+    import uuid as uuid_module
+
+    from fastapi import HTTPException
+
+    from inkflow.api.routers.chapter import _parse_id
+
+    uid = uuid_module.uuid4()
+    assert _parse_id(str(uid)) == uid
+    assert _parse_id("+123") == uuid_module.UUID(int=123)
+
+    with pytest.raises(HTTPException) as exc_info:
+        _parse_id("xyz", detail="自定义详情")
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "自定义详情"
+
+
+@pytest.mark.asyncio
+@pytest.mark.chapter
+async def test_create_volume_invalid_project_id_404(db_session, override_get_db):
+    """POST volumes 项目 ID 非法格式 → 404「项目不存在」（_parse_id 错误分支）。"""
+    from inkflow.api.app import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/api/v1/projects/not-a-uuid/volumes", json={"title": "卷"}
+        )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "项目不存在"
+
+
+@pytest.mark.asyncio
+@pytest.mark.chapter
+async def test_get_chapter_invalid_id_404(db_session, override_get_db):
+    """GET chapter 非法 ID 格式 → 404「章节不存在」。"""
+    from inkflow.api.app import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/api/v1/chapters/not-a-uuid")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "章节不存在"
+
+
+@pytest.mark.asyncio
+@pytest.mark.chapter
+async def test_update_chapter_missing_404(db_session, override_get_db):
+    """PATCH 不存在的章节 → 404「章节不存在」（update_chapter None 路径）。"""
+    from inkflow.api.app import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.patch(
+            "/api/v1/chapters/00000000-0000-0000-0000-000000000000",
+            json={"title": "不存在"},
+        )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "章节不存在"
+
+
+@pytest.mark.asyncio
+@pytest.mark.chapter
+async def test_delete_chapter_missing_404(db_session, override_get_db):
+    """DELETE 不存在的章节 → 404「章节不存在」（delete_chapter False 路径）。"""
+    from inkflow.api.app import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.delete(
+            "/api/v1/chapters/00000000-0000-0000-0000-000000000000"
+        )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "章节不存在"
+
+
+@pytest.mark.asyncio
+@pytest.mark.chapter
+async def test_move_chapter_missing_404(db_session, override_get_db):
+    """move 不存在的章节 → 404「章节不存在」（move_chapter None 路径）。"""
+    from inkflow.api.app import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/api/v1/chapters/00000000-0000-0000-0000-000000000000/move"
+        )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "章节不存在"
+
+
+@pytest.mark.asyncio
+@pytest.mark.chapter
+async def test_move_chapter_invalid_target_volume_404(
+    db_session, sample_project, override_get_db
+):
+    """move 目标卷 ID 非法格式 → 404（_parse_id 默认 detail「资源不存在」）。"""
+    from inkflow.api.app import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        created = await client.post(
+            f"/api/v1/projects/{sample_project.id}/chapters",
+            json={"title": "第一章"},
+        )
+        assert created.status_code == 201
+        chapter_id = created.json()["id"]
+
+        resp = await client.post(
+            f"/api/v1/chapters/{chapter_id}/move?target_volume_id=bad-id"
+        )
+    assert resp.status_code == 404

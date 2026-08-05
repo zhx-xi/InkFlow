@@ -1370,3 +1370,193 @@ async def test_list_runs_passthrough() -> None:
     )
     assert items == runs
     assert total == 1
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Issue #104 Phase 3 覆盖率补齐：防御分支 / None 路径 / 未达投影 / reindex 缺口
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_to_int_id_int_passthrough() -> None:
+    """_to_int_id 输入已是 int → 原样返回（UUID 分支已覆盖）。"""
+    from inkflow.domain.services.extraction_service import _to_int_id
+
+    assert _to_int_id(42) == 42
+
+
+def test_project_timeline_event_without_chapter_anchor() -> None:
+    """_project_timeline_event 无 source_chapter_id → metadata 不含 chapter_id。"""
+    from inkflow.domain.services.extraction_service import _project_timeline_event
+
+    entity = _project_timeline_event(_event("无锚点事件", chapter_id=None), str(PID))
+    assert entity.entity_type is EntityType.TIMELINE_EVENT
+    assert entity.metadata["title"] == "无锚点事件"
+    assert "chapter_id" not in entity.metadata
+
+
+async def test_unregistered_handler_raises() -> None:
+    """类型注册表槽位为 None（防御）→ UnsupportedExtractionTypeError（422 语义）。"""
+    from inkflow.domain.ports.extraction_errors import UnsupportedExtractionTypeError
+
+    deps = _Deps(_project())
+    deps.character_service.extract = AsyncMock()
+    svc = deps.service()
+    svc._handlers[ExtractionType.CHARACTER] = None  # 模拟槽位未注册
+
+    with pytest.raises(UnsupportedExtractionTypeError):
+        await svc.extract(_req(ExtractionType.CHARACTER, text="文本"))
+
+    deps.character_service.extract.assert_not_awaited()
+
+
+async def test_index_true_all_skipped_not_indexed() -> None:
+    """index=true 但全源 skip（status=SKIPPED）→ 不索引、indexed 保持 False（407→423 分支）。"""
+    deps = _Deps(_project())
+    deps.stub_runs({"manual": _run("manual", _sha("文本"))})
+    deps.character_service.extract = AsyncMock(return_value=_character_result())
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.CHARACTER, text="文本", index=True))
+
+    assert result.status is ExtractionStatus.SKIPPED
+    assert result.indexed is False
+    deps.vector_store.index_batch.assert_not_awaited()
+    deps.character_service.extract.assert_not_awaited()
+
+
+async def test_index_true_no_entities_still_indexed() -> None:
+    """index=true 成功但产物为空 → 不调 index_batch，indexed 仍置 True（411→413 分支）。"""
+    deps = _Deps(_project())
+    deps.character_service.extract = AsyncMock(return_value=_character_result(created=0, updated=0))
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.CHARACTER, text="无实体文本", index=True))
+
+    assert result.status is ExtractionStatus.SUCCESS
+    assert result.indexed is True
+    deps.vector_store.index_batch.assert_not_awaited()
+
+
+async def test_timeline_on_missing_source_raises() -> None:
+    """timeline 开启但 text/chapter_ids 均缺 → 422「timeline 类型必须提供 text 或 chapter_ids」。"""
+    deps = _Deps(_project())
+    svc = deps.service()
+
+    with pytest.raises(ExtractionValidationError, match="timeline 类型必须提供"):
+        await svc.extract(_req(ExtractionType.TIMELINE, auto_extract=True))
+
+    deps.timeline_extractor.extract.assert_not_awaited()
+
+
+async def test_timeline_dispatch_none_result_defensive() -> None:
+    """check_consistency 返回 None（防御）→ 归一为空 _Normalized，不崩溃。"""
+    deps = _Deps(_project())
+    deps.timeline_service.check_consistency = AsyncMock(return_value=None)
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.TIMELINE))
+
+    assert result.status is ExtractionStatus.SUCCESS
+    assert result.created == 0
+    assert result.updated == 0
+    assert result.model is None
+    assert result.detail == {}
+
+
+async def test_dispatch_unknown_type_raises() -> None:
+    """_dispatch 直接分发未注册类型（绕过 handler 查表）→ UnsupportedExtractionTypeError。"""
+    from inkflow.domain.ports.extraction_errors import UnsupportedExtractionTypeError
+    from inkflow.domain.services.extraction_service import _Source
+
+    deps = _Deps(_project())
+    svc = deps.service()
+    # model_construct 跳过 Pydantic 枚举校验 → type 为非法字符串
+    req = ExtractionRequest.model_construct(project_id=PID, type="bogus", text="x")
+    source = _Source(key="manual", label="manual", hash="h", skip=False, text="x")
+
+    with pytest.raises(UnsupportedExtractionTypeError):
+        await svc._dispatch(req, source, _project())
+
+
+async def test_timeline_handler_auto_on_without_chapter_anchor_raises() -> None:
+    """_dispatch 直达：timeline 开启但源无 chapter_id 锚点 → 422（709 防御分支）。"""
+    from inkflow.domain.services.extraction_service import _Source
+
+    deps = _Deps(_project())
+    svc = deps.service()
+    req = _req(ExtractionType.TIMELINE, auto_extract=True)
+    source = _Source(key="manual", label="manual", hash="h", skip=False, text="x")
+
+    with pytest.raises(ExtractionValidationError, match="章节模式"):
+        await svc._dispatch(req, source, _project())
+
+    deps.timeline_extractor.extract.assert_not_awaited()
+
+
+async def test_index_setting_entities_projected() -> None:
+    """index=true + SETTING → 世界观条目投影为 SETTING 实体（770 分支）。"""
+    deps = _Deps(_project())
+    deps.world_service.extract = AsyncMock(return_value=_world_result(created=1, updated=1))
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.SETTING, text="设定文本", index=True))
+
+    assert result.indexed is True
+    entities = deps.vector_store.index_batch.await_args.args[0]
+    settings = [e for e in entities if e.entity_type is EntityType.SETTING]
+    assert len(settings) == 2
+    for e in settings:
+        assert e.content.startswith("名称：")
+        assert "分类：" in e.content and "内容：" in e.content
+        assert e.metadata["project_id"] == str(PID)
+
+
+async def test_index_foreshadowing_entities_projected() -> None:
+    """index=true + FORESHADOWING → 伏笔投影为 FORESHADOWING 实体（776 分支）。"""
+    deps = _Deps(_project())
+    deps.foreshadowing_extractor.extract = AsyncMock(return_value=_fs_result(created=1))
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.FORESHADOWING, text="伏笔文本", index=True))
+
+    assert result.indexed is True
+    entities = deps.vector_store.index_batch.await_args.args[0]
+    foreshadowings = [e for e in entities if e.entity_type is EntityType.FORESHADOWING]
+    assert len(foreshadowings) == 1
+    assert foreshadowings[0].content.startswith("伏笔：")
+    assert foreshadowings[0].metadata["status"] == ForeshadowingStatus.OPEN.value
+
+
+async def test_index_manual_source_skips_chunk_projection() -> None:
+    """index=true 手动模式（源无 chapter_id）→ 不投影 chapter_chunk（785→760 False 分支）。"""
+    deps = _Deps(_project())
+    deps.character_service.extract = AsyncMock(return_value=_character_result(created=1))
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.CHARACTER, text="手动文本", index=True))
+
+    assert result.indexed is True
+    entities = deps.vector_store.index_batch.await_args.args[0]
+    assert all(e.entity_type is EntityType.CHARACTER for e in entities)
+    assert not any(e.entity_type is EntityType.CHAPTER_CHUNK for e in entities)
+
+
+async def test_reindex_missing_repos_warns_and_skips() -> None:
+    """reindex 未配置档案仓储 → 对应类型跳过 + warning（820/826/832/838 分支）。"""
+    deps = _Deps(_project())
+    deps.chapter_repo.list_chapters = AsyncMock(return_value=([_chapter(CH1, CONTENT_1)], 1))
+    svc = deps.service()
+    svc._character_repo = None
+    svc._world_repo = None
+    svc._foreshadowing_repo = None
+    svc._timeline_repo = None
+
+    result = await svc.reindex(PID)
+
+    assert result.indexed == 1  # 仅 chapter_chunk 可索引
+    skipped = [w for w in result.warnings if "未配置仓储" in w]
+    assert len(skipped) == 4
+    assert any("character" in w for w in skipped)
+    assert any("setting" in w for w in skipped)
+    assert any("foreshadowing" in w for w in skipped)
+    assert any("timeline_event" in w for w in skipped)

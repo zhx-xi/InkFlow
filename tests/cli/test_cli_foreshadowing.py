@@ -16,6 +16,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from inkflow.cli.commands.foreshadowing import app
@@ -26,7 +27,10 @@ from inkflow.domain.models.foreshadowing import (
     ForeshadowingStatus,
     ForeshadowingUpdate,
 )
-from inkflow.domain.ports.foreshadowing_errors import ProjectNotFoundError
+from inkflow.domain.ports.foreshadowing_errors import (
+    ForeshadowingServiceError,
+    ProjectNotFoundError,
+)
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 
@@ -672,6 +676,207 @@ class TestForeshadowingReopen:
         result = cli_runner.invoke(
             app,
             ["reopen", "--id", str(uuid.uuid4())],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "NOT_FOUND"
+
+
+class TestForeshadowingErrorMapping:
+    """_run 异常映射补全：ServiceError / ValidationError / DB_ERROR."""
+
+    def test_create_service_error(
+        self, cli_runner, mock_foreshadowing_service, mock_create_tables
+    ):
+        """服务抛 ForeshadowingServiceError → VALIDATION_ERROR 信封 + 退出码 1."""
+        mock_foreshadowing_service.create.side_effect = ForeshadowingServiceError(
+            "同名伏笔已存在"
+        )
+        result = cli_runner.invoke(
+            app,
+            ["create", "--project-id", str(PID), "--title", "林晚的身世"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        assert "同名伏笔已存在" in data["error"]["message"]
+
+    def test_create_validation_error(
+        self, cli_runner, mock_foreshadowing_service, mock_create_tables
+    ):
+        """pydantic ValidationError → VALIDATION_ERROR 信封."""
+        mock_foreshadowing_service.create.side_effect = (
+            ValidationError.from_exception_data(
+                "ForeshadowingCreate",
+                [
+                    {
+                        "type": "string_type",
+                        "loc": ("title",),
+                        "msg": "Input should be a valid string",
+                        "input": 123,
+                    }
+                ],
+            )
+        )
+        result = cli_runner.invoke(
+            app,
+            ["create", "--project-id", str(PID), "--title", "林晚的身世"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+
+    def test_create_db_error(
+        self, cli_runner, mock_foreshadowing_service, mock_create_tables
+    ):
+        """服务抛未知异常 → DB_ERROR 信封 + 退出码 1."""
+        mock_foreshadowing_service.create.side_effect = RuntimeError("boom")
+        result = cli_runner.invoke(
+            app,
+            ["create", "--project-id", str(PID), "--title", "林晚的身世"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "DB_ERROR"
+        assert "boom" in data["error"]["message"]
+
+
+class TestForeshadowingHumanOutput:
+    """人类可读输出补全：已回收状态 / get 详情 / update / restore / delete 软删失败."""
+
+    def test_create_human_resolved_status(
+        self, cli_runner, mock_foreshadowing_service, mock_create_tables
+    ):
+        """create 人类模式返回已回收状态 → 状态标签为已回收."""
+        mock_foreshadowing_service.create.return_value = _make_foreshadowing(
+            status=ForeshadowingStatus.RESOLVED
+        )
+        result = cli_runner.invoke(
+            app,
+            ["create", "--project-id", str(PID), "--title", "林晚的身世"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "已回收" in result.output
+
+    def test_list_human_resolved_no_date(
+        self, cli_runner, mock_foreshadowing_service, mock_create_tables
+    ):
+        """已回收且无回收日期 → 列表项显示（已回收）."""
+        mock_foreshadowing_service.list.return_value = (
+            [
+                _make_foreshadowing(
+                    status=ForeshadowingStatus.RESOLVED, resolved_at=None
+                )
+            ],
+            1,
+        )
+        result = cli_runner.invoke(
+            app,
+            ["list", "--project-id", str(PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "已回收伏笔 1 条" in result.output
+        assert "[林晚的身世] (已回收)" in result.output
+
+    def test_get_human(
+        self, cli_runner, mock_foreshadowing_service, mock_create_tables
+    ):
+        """get 人类模式 → 全字段详情输出（含未挂接/未回收回退）."""
+        mock_foreshadowing_service.get.return_value = _make_foreshadowing()
+        result = cli_runner.invoke(
+            app,
+            ["get", "--id", str(uuid.uuid4())],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        for token in (
+            "标题:",
+            "林晚的身世",
+            "优先级:",
+            "状态:",
+            "未回收",
+            "埋设位置:",
+            "事件锚点:",
+            "（未挂接）",
+            "回收时间:",
+            "（未回收）",
+        ):
+            assert token in result.output
+
+    def test_update_priority_location(
+        self, cli_runner, mock_foreshadowing_service, mock_create_tables
+    ):
+        """update --priority/--location → 字段进入 ForeshadowingUpdate."""
+        eid = uuid.uuid4()
+        mock_foreshadowing_service.update.return_value = _make_foreshadowing()
+        result = cli_runner.invoke(
+            app,
+            [
+                "update",
+                "--id",
+                str(eid),
+                "--priority",
+                "90",
+                "--location",
+                "第 8 章",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        call = mock_foreshadowing_service.update.await_args
+        upd: ForeshadowingUpdate = call.kwargs["data"]
+        assert upd.priority == 90
+        assert upd.location == "第 8 章"
+        assert "title" not in upd.model_fields_set
+
+    def test_update_human(
+        self, cli_runner, mock_foreshadowing_service, mock_create_tables
+    ):
+        """update 人类模式 → 成功提示."""
+        mock_foreshadowing_service.update.return_value = _make_foreshadowing(
+            title="林晚的身世·改"
+        )
+        result = cli_runner.invoke(
+            app,
+            ["update", "--id", str(uuid.uuid4()), "--title", "林晚的身世·改"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "伏笔已更新: [林晚的身世·改]" in result.output
+
+    def test_restore_human(
+        self, cli_runner, mock_foreshadowing_service, mock_create_tables
+    ):
+        """restore 人类模式 → 成功提示."""
+        mock_foreshadowing_service.restore.return_value = _make_foreshadowing()
+        result = cli_runner.invoke(
+            app,
+            ["restore", "--id", str(uuid.uuid4())],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "伏笔已恢复: [林晚的身世]" in result.output
+
+    def test_delete_soft_delete_false(
+        self, cli_runner, mock_foreshadowing_service, mock_create_tables
+    ):
+        """delete 服务层 soft_delete 返回 False → NOT_FOUND 错误信封."""
+        eid = uuid.uuid4()
+        mock_foreshadowing_service.get.return_value = _make_foreshadowing()
+        mock_foreshadowing_service.soft_delete.return_value = False
+        result = cli_runner.invoke(
+            app,
+            ["delete", "--id", str(eid), "--force"],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1

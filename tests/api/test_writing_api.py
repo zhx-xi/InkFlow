@@ -174,6 +174,65 @@ async def test_generate_llm_error_500(override_writing_service, mock_writing_ser
     assert "API key invalid" not in resp.text
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Issue #104 Phase 3 覆盖率补齐：continue/revise 异常映射 + 断开分支
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.asyncio
+async def test_continue_llm_error_500(override_writing_service, mock_writing_service):
+    """continue 端点 LLM 调用失败 → 500 通用消息（_map_service_error 非 404 分支）。"""
+    mock_writing_service.continue_writing.side_effect = LLMRequestError(
+        "API key invalid"
+    )
+    body = {**_payload(), "existing_content": "林尘深吸一口气，缓缓走向试炼台……" * 3}
+    async with _client() as client:
+        resp = await client.post("/api/v1/writing/continue", json=body)
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "LLM 调用失败，请稍后重试"
+
+
+@pytest.mark.asyncio
+async def test_revise_unknown_error_500(override_writing_service, mock_writing_service):
+    """revise 端点未预期异常 → 500「服务器内部错误」（未知异常分支）。"""
+    mock_writing_service.revise_content.side_effect = RuntimeError("boom")
+    body = {
+        **_payload(),
+        "content": "……（原文段落内容，此处为待修订的完整段落文本，超过十个字符）",
+        "feedback": "对话节奏太拖沓",
+    }
+    async with _client() as client:
+        resp = await client.post("/api/v1/writing/revise", json=body)
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "服务器内部错误，请稍后重试"
+
+
+@pytest.mark.asyncio
+async def test_event_generator_disconnect_stops_and_closes():
+    """客户端已断开 → _event_generator 立即停止并关闭 service 生成器（不泄漏任务）。"""
+    from inkflow.api.routers.writing import _event_generator
+    from inkflow.domain.models.writing import WritingStreamEvent
+
+    closed = False
+
+    async def _events():
+        nonlocal closed
+        try:
+            yield WritingStreamEvent(delta="第一帧")
+            yield WritingStreamEvent(delta="第二帧")
+        finally:
+            closed = True
+
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=True)
+
+    frames = [f async for f in _event_generator(request, _events())]
+
+    assert frames == []  # 断开后不产出任何帧
+    request.is_disconnected.assert_awaited()
+    assert closed is True  # events.aclose() 已触发 finally
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # F23 SSE 流式端点（spec §3/§6/§9 M4/M5）— RED 阶段：/stream 未注册 + 模型未实现
 # ═══════════════════════════════════════════════════════════════════════
@@ -246,9 +305,10 @@ class TestStreamGenerate:
             "mode": "generate",
             "outline": "主角首次踏入宗门试炼场，遭遇同门挑衅",
         }
-        async with _stream_client() as client, aconnect_sse(
-            client, "POST", "/api/v1/writing/stream", json=body
-        ) as sse:
+        async with (
+            _stream_client() as client,
+            aconnect_sse(client, "POST", "/api/v1/writing/stream", json=body) as sse,
+        ):
             frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
             content_type = sse.response.headers["content-type"]
         assert content_type.startswith("text/event-stream")
@@ -303,9 +363,10 @@ class TestStreamContinue:
             "existing_content": "林尘深吸一口气，缓缓走向试炼台，全场寂静无声。"
             * 3,  # F3: ≥50 字
         }
-        async with _stream_client() as client, aconnect_sse(
-            client, "POST", "/api/v1/writing/stream", json=body
-        ) as sse:
+        async with (
+            _stream_client() as client,
+            aconnect_sse(client, "POST", "/api/v1/writing/stream", json=body) as sse,
+        ):
             frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
             content_type = sse.response.headers["content-type"]
         assert content_type.startswith("text/event-stream")
@@ -352,9 +413,10 @@ class TestStreamRevise:
             "content": "……（原文段落内容，此处为待修订的完整段落文本，超过十个字符）",
             "feedback": "对话节奏太拖沓，删减无关寒暄",
         }
-        async with _stream_client() as client, aconnect_sse(
-            client, "POST", "/api/v1/writing/stream", json=body
-        ) as sse:
+        async with (
+            _stream_client() as client,
+            aconnect_sse(client, "POST", "/api/v1/writing/stream", json=body) as sse,
+        ):
             frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
             content_type = sse.response.headers["content-type"]
         assert content_type.startswith("text/event-stream")
@@ -451,9 +513,10 @@ class TestStreamErrors:
 
         mock_writing_service.stream_generate = _gen_with_error
         body = {**_payload(), "mode": "generate", "outline": "测试大纲"}
-        async with _stream_client() as client, aconnect_sse(
-            client, "POST", "/api/v1/writing/stream", json=body
-        ) as sse:
+        async with (
+            _stream_client() as client,
+            aconnect_sse(client, "POST", "/api/v1/writing/stream", json=body) as sse,
+        ):
             frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
         assert len(frames) == 2
         assert frames[0]["delta"] == "清晨的薄雾尚未散尽"
@@ -476,9 +539,10 @@ class TestStreamErrors:
 
         mock_writing_service.stream_generate = _gen
         body = {**_payload(), "mode": "generate", "outline": "测试大纲"}
-        async with _stream_client() as client, aconnect_sse(
-            client, "POST", "/api/v1/writing/stream", json=body
-        ) as sse:
+        async with (
+            _stream_client() as client,
+            aconnect_sse(client, "POST", "/api/v1/writing/stream", json=body) as sse,
+        ):
             frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
             content_type = sse.response.headers["content-type"]
         assert content_type.startswith("text/event-stream")
@@ -510,9 +574,10 @@ class TestStreamErrors:
 
         mock_writing_service.stream_generate = _long_stream
         body = {**_payload(), "mode": "generate", "outline": "测试大纲"}
-        async with _stream_client() as client, aconnect_sse(
-            client, "POST", "/api/v1/writing/stream", json=body
-        ) as sse:
+        async with (
+            _stream_client() as client,
+            aconnect_sse(client, "POST", "/api/v1/writing/stream", json=body) as sse,
+        ):
             async for _ev in sse.aiter_sse():
                 break  # 消费首帧后立即退出 = 客户端断开
         assert closed is True

@@ -16,6 +16,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from inkflow.cli.commands.timeline import app
@@ -28,7 +29,11 @@ from inkflow.domain.models.timeline import (
     TimelineEventUpdate,
     TimelineView,
 )
-from inkflow.domain.ports.timeline_errors import ProjectNotFoundError
+from inkflow.domain.ports.timeline_errors import (
+    ProjectNotFoundError,
+    TimelineNotFoundError,
+    TimelineServiceError,
+)
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 
@@ -738,3 +743,205 @@ class TestTimelineRestore:
         data = json.loads(result.stdout)
         assert data["ok"] is False
         assert data["error"]["code"] == "NOT_FOUND"
+
+
+class TestTimelineErrorMapping:
+    """_run 异常映射补全：NotFound 抛异常 / ServiceError / ValidationError / DB_ERROR."""
+
+    def test_get_not_found_error_raised(
+        self, cli_runner, mock_timeline_service, mock_create_tables
+    ):
+        """服务抛 TimelineNotFoundError → NOT_FOUND 信封 + 退出码 1."""
+        mock_timeline_service.get_event.side_effect = TimelineNotFoundError()
+        result = cli_runner.invoke(
+            app,
+            ["get", "--id", str(uuid.uuid4())],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "NOT_FOUND"
+
+    def test_update_service_error(
+        self, cli_runner, mock_timeline_service, mock_create_tables
+    ):
+        """服务抛 TimelineServiceError → VALIDATION_ERROR 信封 + 退出码 1."""
+        mock_timeline_service.update_event.side_effect = TimelineServiceError(
+            "非法状态"
+        )
+        result = cli_runner.invoke(
+            app,
+            ["update", "--id", str(uuid.uuid4()), "--title", "新名"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        assert "非法状态" in data["error"]["message"]
+
+    def test_update_validation_error(
+        self, cli_runner, mock_timeline_service, mock_create_tables
+    ):
+        """pydantic ValidationError → VALIDATION_ERROR 信封."""
+        mock_timeline_service.update_event.side_effect = (
+            ValidationError.from_exception_data(
+                "TimelineEventUpdate",
+                [
+                    {
+                        "type": "string_type",
+                        "loc": ("title",),
+                        "msg": "Input should be a valid string",
+                        "input": 123,
+                    }
+                ],
+            )
+        )
+        result = cli_runner.invoke(
+            app,
+            ["update", "--id", str(uuid.uuid4()), "--title", "新名"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+
+    def test_update_db_error(
+        self, cli_runner, mock_timeline_service, mock_create_tables
+    ):
+        """服务抛未知异常 → DB_ERROR 信封 + 退出码 1."""
+        mock_timeline_service.update_event.side_effect = RuntimeError("boom")
+        result = cli_runner.invoke(
+            app,
+            ["update", "--id", str(uuid.uuid4()), "--title", "新名"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "DB_ERROR"
+        assert "boom" in data["error"]["message"]
+
+
+class TestTimelineHumanOutput:
+    """人类可读输出补全：时间未知 / list 非空 / view 空 / get 详情 / update / restore."""
+
+    def test_create_time_unknown_human(
+        self, cli_runner, mock_timeline_service, mock_create_tables
+    ):
+        """create 人类模式无时间信息 → 时间未知."""
+        mock_timeline_service.create_event.return_value = _make_event(
+            time_value=None, time_display=""
+        )
+        result = cli_runner.invoke(
+            app,
+            ["create", "--project-id", str(PID), "--title", "林尘觉醒金手指"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "时间未知" in result.output
+
+    def test_list_human_non_empty(
+        self, cli_runner, mock_timeline_service, mock_create_tables
+    ):
+        """list 人类模式非空 → 总数汇总 + 逐条事件输出."""
+        mock_timeline_service.list_events.return_value = ([_make_event()], 1)
+        result = cli_runner.invoke(
+            app,
+            ["list", "--project-id", str(PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "共 1 个事件" in result.output
+        assert "#3 [林尘觉醒金手指]（青元历 317 年秋）" in result.output
+
+    def test_view_human_empty(
+        self, cli_runner, mock_timeline_service, mock_create_tables
+    ):
+        """view 人类模式空时间线 → 暂无事件."""
+        mock_timeline_service.get_timeline_view.return_value = _make_view(total=0)
+        result = cli_runner.invoke(
+            app,
+            ["view", "--project-id", str(PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "暂无事件" in result.output
+
+    def test_get_human(self, cli_runner, mock_timeline_service, mock_create_tables):
+        """get 人类模式 → 全字段详情输出（含正叙标记回退）."""
+        mock_timeline_service.get_event.return_value = _make_event()
+        result = cli_runner.invoke(
+            app,
+            ["get", "--id", str(uuid.uuid4())],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        for token in (
+            "标题:",
+            "林尘觉醒金手指",
+            "世界内时间:",
+            "青元历 317 年秋",
+            "叙事位置:",
+            "时间线标记:",
+            "（正叙）",
+        ):
+            assert token in result.output
+
+    def test_update_all_fields(
+        self, cli_runner, mock_timeline_service, mock_create_tables
+    ):
+        """update 传全字段 → time_unit/time_display/narrative_position/timeline_flag 进入 DTO."""
+        eid = uuid.uuid4()
+        mock_timeline_service.update_event.return_value = _make_event()
+        result = cli_runner.invoke(
+            app,
+            [
+                "update",
+                "--id",
+                str(eid),
+                "--time-unit",
+                "月",
+                "--time-display",
+                "青元历 318 年春",
+                "--narrative-position",
+                "5",
+                "--timeline-flag",
+                "flashforward",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        call = mock_timeline_service.update_event.await_args
+        upd: TimelineEventUpdate = call.kwargs["update"]
+        assert upd.time_unit == "月"
+        assert upd.time_display == "青元历 318 年春"
+        assert upd.narrative_position == 5
+        assert upd.timeline_flag == "flashforward"
+        assert "title" not in upd.model_fields_set
+
+    def test_update_human(self, cli_runner, mock_timeline_service, mock_create_tables):
+        """update 人类模式 → 成功提示."""
+        mock_timeline_service.update_event.return_value = _make_event(
+            title="林尘觉醒金手指·改"
+        )
+        result = cli_runner.invoke(
+            app,
+            ["update", "--id", str(uuid.uuid4()), "--title", "林尘觉醒金手指·改"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "事件已更新: [林尘觉醒金手指·改]" in result.output
+
+    def test_restore_human(self, cli_runner, mock_timeline_service, mock_create_tables):
+        """restore 人类模式 → 成功提示."""
+        mock_timeline_service.restore_event.return_value = _make_event()
+        result = cli_runner.invoke(
+            app,
+            ["restore", "--id", str(uuid.uuid4())],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "事件已恢复: [林尘觉醒金手指]" in result.output

@@ -129,3 +129,92 @@ class TestAgentAPI:
         assert resp.status_code == 200
         data = resp.json()
         assert data["items"][0]["id"] == "builtin:write_chapter"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Issue #104 Phase 3 覆盖率补齐：_parse_id / _svc 装配 / execute 异常映射
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestAgentAPICoverageGaps:
+    """agent router 缺口分支（_parse_id 404 / _svc 装配 / AgentServiceError 映射）。"""
+
+    async def test_parse_id_accepts_uuid_and_rejects_invalid(self):
+        """_parse_id：合法 UUID → UUID；非法 → HTTPException 404。"""
+        import uuid as uuid_module
+
+        from fastapi import HTTPException
+
+        from inkflow.api.routers.agent import _parse_id
+
+        uid = uuid_module.uuid4()
+        assert _parse_id(str(uid)) == uid
+
+        with pytest.raises(HTTPException) as exc_info:
+            _parse_id("not-a-uuid", detail="执行记录不存在")
+        assert exc_info.value.status_code == 404
+        assert exc_info.value.detail == "执行记录不存在"
+
+    async def test_svc_constructs_agent_service(self):
+        """_svc：LangGraphAgentPipeline + LangChainLLMClient → AgentService（db_session 透传）。"""
+        from inkflow.api.routers.agent import _svc
+        from inkflow.domain.services.agent_service import AgentService
+
+        db = MagicMock()
+        with (
+            patch(
+                "inkflow.api.routers.agent.LangGraphAgentPipeline"
+            ) as mock_pipeline_cls,
+            patch("inkflow.api.routers.agent.LangChainLLMClient") as mock_llm_cls,
+        ):
+            svc = _svc(db)
+
+        assert isinstance(svc, AgentService)
+        mock_llm_cls.assert_called_once()
+        mock_pipeline_cls.assert_called_once_with(llm_client=mock_llm_cls.return_value)
+        assert svc._pipeline is mock_pipeline_cls.return_value
+        assert svc._store._session is db
+
+    async def test_execute_pipeline_project_not_found_404(
+        self, client, patch_svc, mock_agent_service
+    ):
+        """execute 抛 AgentServiceError「项目不存在」→ 404。"""
+        from inkflow.domain.services.agent_service import AgentServiceError
+
+        mock_agent_service.execute.side_effect = AgentServiceError("项目不存在")
+        resp = await client.post(
+            "/api/v1/agent/pipelines/execute",
+            json={"project_id": str(uuid.uuid4())},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "项目不存在"
+
+    async def test_execute_pipeline_chapter_not_found_404(
+        self, client, patch_svc, mock_agent_service
+    ):
+        """execute 抛 AgentServiceError「章节不存在」→ 404。"""
+        from inkflow.domain.services.agent_service import AgentServiceError
+
+        mock_agent_service.execute.side_effect = AgentServiceError("章节不存在")
+        resp = await client.post(
+            "/api/v1/agent/pipelines/execute",
+            json={"project_id": str(uuid.uuid4())},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "章节不存在"
+
+    async def test_execute_pipeline_other_error_422(
+        self, client, patch_svc, mock_agent_service
+    ):
+        """execute 抛其他 AgentServiceError → 422 + 原始消息。"""
+        from inkflow.domain.services.agent_service import AgentServiceError
+
+        mock_agent_service.execute.side_effect = AgentServiceError(
+            "配置错误: 非法 stage 引用"
+        )
+        resp = await client.post(
+            "/api/v1/agent/pipelines/execute",
+            json={"project_id": str(uuid.uuid4())},
+        )
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == "配置错误: 非法 stage 引用"

@@ -17,6 +17,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from inkflow.cli.commands.world import app
@@ -27,10 +28,12 @@ from inkflow.domain.models.world import (
     WorldSetting,
     WorldUpdate,
 )
+from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.ports.world_errors import (
     ProjectNotFoundError,
     WorldExtractionError,
     WorldNameConflictError,
+    WorldServiceError,
 )
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
@@ -602,3 +605,201 @@ class TestWorldExtract:
         data = json.loads(result.stdout)
         assert data["ok"] is False
         assert data["error"]["code"] == "NOT_FOUND"
+
+
+class TestWorldErrorMapping:
+    """_run 异常映射补全：LLMRequestError / ValidationError / 文件缺失 / DB_ERROR."""
+
+    def test_extract_llm_request_error(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
+        """LLMRequestError → LLM_ERROR 信封 + 退出码 1."""
+        mock_world_service.extract.side_effect = LLMRequestError("LLM 调用失败")
+        result = cli_runner.invoke(
+            app,
+            ["extract", "--project-id", str(PID), "--text", "灵气复苏。"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "LLM_ERROR"
+        assert "LLM 调用失败" in data["error"]["message"]
+
+    def test_extract_validation_error(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
+        """pydantic ValidationError → VALIDATION_ERROR 信封."""
+        mock_world_service.extract.side_effect = ValidationError.from_exception_data(
+            "WorldExtractRequest",
+            [
+                {
+                    "type": "string_type",
+                    "loc": ("text",),
+                    "msg": "Input should be a valid string",
+                    "input": 123,
+                }
+            ],
+        )
+        result = cli_runner.invoke(
+            app,
+            ["extract", "--project-id", str(PID), "--text", "灵气复苏。"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+
+    def test_extract_service_error(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
+        """服务抛 WorldServiceError → VALIDATION_ERROR 信封."""
+        mock_world_service.extract.side_effect = WorldServiceError("同名条目")
+        result = cli_runner.invoke(
+            app,
+            ["extract", "--project-id", str(PID), "--text", "灵气复苏。"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        assert "同名条目" in data["error"]["message"]
+
+    def test_extract_text_file_missing(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
+        """extract --text-file 指向不存在文件 → VALIDATION_ERROR（文本文件不存在）."""
+        result = cli_runner.invoke(
+            app,
+            ["extract", "--project-id", str(PID), "--text-file", "no_such_file.txt"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        assert "文本文件不存在" in data["error"]["message"]
+        mock_world_service.extract.assert_not_awaited()
+
+    def test_extract_db_error(self, cli_runner, mock_world_service, mock_create_tables):
+        """服务抛未知异常 → DB_ERROR 信封 + 退出码 1."""
+        mock_world_service.extract.side_effect = RuntimeError("boom")
+        result = cli_runner.invoke(
+            app,
+            ["extract", "--project-id", str(PID), "--text", "灵气复苏。"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "DB_ERROR"
+        assert "boom" in data["error"]["message"]
+
+
+class TestWorldHumanOutput:
+    """人类可读输出补全：无类别创建 / list 非空 / categories / get / update /
+    restore / extract 无警告。"""
+
+    def test_create_human_no_category(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
+        """create 人类模式无类别 → 提示不含类别括号."""
+        mock_world_service.create_setting.return_value = _make_setting(category="")
+        result = cli_runner.invoke(
+            app,
+            ["create", "--project-id", str(PID), "--name", "灵气复苏"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "世界观条目创建成功: [灵气复苏]" in result.output
+
+    def test_list_human_non_empty(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
+        """list 人类模式非空 → 总数汇总 + 条目列表."""
+        mock_world_service.list_settings.return_value = (
+            [_make_setting(name="灵气复苏")],
+            1,
+        )
+        result = cli_runner.invoke(
+            app,
+            ["list", "--project-id", str(PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "共 1 个条目" in result.output
+        assert "灵气复苏" in result.output
+
+    def test_categories_human(self, cli_runner, mock_world_service, mock_create_tables):
+        """categories 人类模式 → 逐类别输出（含条目数）."""
+        mock_world_service.list_categories.return_value = [("设定", 3), ("地理", 1)]
+        result = cli_runner.invoke(
+            app,
+            ["categories", "--project-id", str(PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "设定: 3 条" in result.output
+        assert "地理: 1 条" in result.output
+
+    def test_get_human(self, cli_runner, mock_world_service, mock_create_tables):
+        """get 人类模式 → 全字段详情输出."""
+        mock_world_service.get_setting.return_value = _make_setting(
+            name="灵气复苏", category="设定", content="天地灵气重新复苏。"
+        )
+        result = cli_runner.invoke(
+            app,
+            ["get", "--id", str(uuid.uuid4())],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        for token in (
+            "ID:",
+            "名称:",
+            "灵气复苏",
+            "类别:",
+            "设定",
+            "内容:",
+            "天地灵气重新复苏。",
+        ):
+            assert token in result.output
+
+    def test_update_human(self, cli_runner, mock_world_service, mock_create_tables):
+        """update 人类模式 → 成功提示."""
+        mock_world_service.update_setting.return_value = _make_setting(
+            name="灵气复苏·改"
+        )
+        result = cli_runner.invoke(
+            app,
+            ["update", "--id", str(uuid.uuid4()), "--name", "灵气复苏·改"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "条目已更新: [灵气复苏·改]" in result.output
+
+    def test_restore_human(self, cli_runner, mock_world_service, mock_create_tables):
+        """restore 人类模式 → 成功提示."""
+        mock_world_service.restore_setting.return_value = _make_setting(name="灵气复苏")
+        result = cli_runner.invoke(
+            app,
+            ["restore", "--id", str(uuid.uuid4())],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "条目已恢复: [灵气复苏]" in result.output
+
+    def test_extract_human_no_warnings(
+        self, cli_runner, mock_world_service, mock_create_tables
+    ):
+        """extract 人类模式无警告 → 不输出警告提示行."""
+        mock_world_service.extract.return_value = _make_extraction_result(warnings=[])
+        result = cli_runner.invoke(
+            app,
+            ["extract", "--project-id", str(PID), "--text", "灵气复苏。"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "提取完成" in result.output
+        assert "但有警告" not in result.output
