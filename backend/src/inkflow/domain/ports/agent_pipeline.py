@@ -173,4 +173,4 @@ class AgentPipelineProtocol(Protocol):
 class PipelineError(Exception):
     """管线执行错误 — 所有重试耗尽后抛出。"""
 
-    pass
+    result: PipelineResult | None = None
