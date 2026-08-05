@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n/useI18n';
 import { useProjectStore } from '../stores/project';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 const GENRES = ['玄幻', '科幻', '言情', '仙侠', '武侠', '都市', '历史', '游戏', '悬疑', '奇幻', '其他'];
 const LANGUAGES = ['zh-CN', 'en'];
@@ -46,13 +47,13 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
         role="dialog"
         aria-modal="true"
         aria-label={t('dlg.newTitle')}
-        className="w-[420px] rounded-lg border border-line bg-surface p-6 shadow"
+        className="w-[420px] rounded-lg border border-line bg-surface p-6 shadow-card"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="font-serif text-[18px] font-semibold">{t('dlg.newTitle')}</h2>
         <div className="mt-4 space-y-3">
-          <label htmlFor="new-project-name" className="block text-[13px]">
-            <span className="mb-1 block">{t('dlg.name')}</span>
+          <label htmlFor="new-project-name" className="flex flex-col gap-1.5 text-[13px]">
+            <span>{t('dlg.name')}</span>
             <input
               id="new-project-name"
               className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
@@ -62,38 +63,44 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
             />
           </label>
           {error && <div className="text-[13px] text-err">{error}</div>}
-          <label htmlFor="new-project-genre" className="block text-[13px]">
-            <span className="mb-1 block">{t('dlg.genre')}</span>
-            <select
-              id="new-project-genre"
-              className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm outline-none"
+          <div className="flex flex-col gap-1.5 text-[13px]">
+            <span>{t('dlg.genre')}</span>
+            <Select
               value={genre}
-              onChange={(e) => setGenre(e.target.value)}
+              onValueChange={(v) => setGenre(v)}
             >
-              {GENRES.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label htmlFor="new-project-lang" className="block text-[13px]">
-            <span className="mb-1 block">{t('dlg.lang')}</span>
-            <select
-              id="new-project-lang"
-              className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm outline-none"
+              <SelectTrigger aria-label={t('dlg.genre')} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {GENRES.map((g) => (
+                  <SelectItem key={g} value={g}>
+                    {g}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5 text-[13px]">
+            <span>{t('dlg.lang')}</span>
+            <Select
               value={language}
-              onChange={(e) => setLanguage(e.target.value)}
+              onValueChange={(v) => setLanguage(v)}
             >
-              {LANGUAGES.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label htmlFor="new-project-target" className="block text-[13px]">
-            <span className="mb-1 block">{t('dlg.targetWords')}</span>
+              <SelectTrigger aria-label={t('dlg.lang')} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LANGUAGES.map((l) => (
+                  <SelectItem key={l} value={l}>
+                    {l}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <label htmlFor="new-project-target" className="flex flex-col gap-1.5 text-[13px]">
+            <span>{t('dlg.targetWords')}</span>
             <input
               id="new-project-target"
               type="number"
@@ -107,14 +114,14 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
         <div className="mt-6 flex justify-end gap-2">
           <button
             type="button"
-            className="rounded-md border border-line px-4 py-1.5 text-sm text-ink-2 hover:bg-surface-2"
+            className="rounded-md border border-line px-4 py-1.5 text-sm text-ink-2 transition duration-180 hover:bg-surface-3"
             onClick={onClose}
           >
             {t('dlg.cancel')}
           </button>
           <button
             type="button"
-            className="rounded-md bg-accent px-4 py-1.5 text-sm text-accent-ink"
+            className="rounded-md bg-accent px-4 py-1.5 text-sm text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
             onClick={() => void handleCreate()}
           >
             {t('dlg.create')}

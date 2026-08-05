@@ -1,17 +1,27 @@
 /** 应用骨架：HashRouter 三路由（spec §4.2：file:// 与 Electron 生产兼容） */
 import { HashRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom';
+import inkflowIcon from './assets/inkflow-icon.svg';
+import inkflowIconDark from './assets/inkflow-icon-dark.svg';
+import inkflowIconInk from './assets/inkflow-icon-ink.svg';
 import { useI18n } from './i18n/useI18n';
 import { useThemeEffect } from './theme';
 import { useThemeStore } from './stores/theme';
+import type { ThemeName } from './theme';
 import { WritingPage } from './pages/writing';
 import { ProjectsPage } from './pages/projects';
 import { AgentsPage } from './pages/agents';
+
+/** 品牌图标按主题三版切换（spec §5.2.8：环流口，paper→素笺 / night→夜航 / ink→墨韵） */
+const LOGO_BY_THEME: Record<ThemeName, string> = {
+  paper: inkflowIcon,
+  night: inkflowIconDark,
+  ink: inkflowIconInk,
+};
 
 function AppLayout() {
   useThemeEffect();
   const { t } = useI18n();
   const theme = useThemeStore((s) => s.theme);
-  const lang = useThemeStore((s) => s.lang);
 
   const navCls = ({ isActive }: { isActive: boolean }) =>
     `rounded px-3 py-1 text-[13px] transition-colors duration-180 ${
@@ -21,6 +31,7 @@ function AppLayout() {
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-4 border-b border-line bg-surface px-4 py-2">
+        <img src={LOGO_BY_THEME[theme]} alt="" aria-hidden="true" className="h-6 w-6" />
         <span className="font-serif text-[15px] font-semibold">{t('app.brand')}</span>
         <nav className="flex gap-1">
           <NavLink to="/projects" className={navCls}>
@@ -33,9 +44,6 @@ function AppLayout() {
             {t('nav.agents')}
           </NavLink>
         </nav>
-        <span className="ml-auto text-[11px] text-ink-3">
-          {theme} / {lang}
-        </span>
       </header>
       <div className="min-h-0 flex-1">
         <Routes>

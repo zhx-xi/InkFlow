@@ -1,15 +1,17 @@
 /** 写作 Agent 链（spec §4.2.3）：Architect/Writer/Auditor/Reviser 四行开关 ↔ config.agent_* */
+import { ClipboardCheck, Network, PenLine, RefreshCw, type LucideIcon } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
 import { useAgentStore } from '../stores/agent';
 import type { ProjectConfig } from '../stores/project';
+import { Switch } from './ui/switch';
 
 type AgentField = 'agent_architect' | 'agent_writer' | 'agent_auditor' | 'agent_reviser';
 
-const AGENT_ROLES: Array<{ field: AgentField; nameKey: string; descKey: string; glyph: string }> = [
-  { field: 'agent_architect', nameKey: 'ag.architect', descKey: 'ag.architectDesc', glyph: 'A' },
-  { field: 'agent_writer', nameKey: 'ag.writer', descKey: 'ag.writerDesc', glyph: 'W' },
-  { field: 'agent_auditor', nameKey: 'ag.auditor', descKey: 'ag.auditorDesc', glyph: 'A' },
-  { field: 'agent_reviser', nameKey: 'ag.reviser', descKey: 'ag.reviserDesc', glyph: 'R' },
+const AGENT_ROLES: Array<{ field: AgentField; nameKey: string; descKey: string; icon: LucideIcon }> = [
+  { field: 'agent_architect', nameKey: 'ag.architect', descKey: 'ag.architectDesc', icon: Network },
+  { field: 'agent_writer', nameKey: 'ag.writer', descKey: 'ag.writerDesc', icon: PenLine },
+  { field: 'agent_auditor', nameKey: 'ag.auditor', descKey: 'ag.auditorDesc', icon: ClipboardCheck },
+  { field: 'agent_reviser', nameKey: 'ag.reviser', descKey: 'ag.reviserDesc', icon: RefreshCw },
 ];
 
 function agentPatch(field: AgentField, value: string | null | undefined): Partial<ProjectConfig> {
@@ -33,7 +35,7 @@ export function AgentChainCard() {
   const setConfig = useAgentStore((s) => s.setConfig);
 
   return (
-    <section data-testid="agent-chain-card" className="rounded-lg border border-line bg-surface p-6">
+    <section data-testid="agent-chain-card" className="rounded-lg border border-line bg-surface p-6 shadow-card">
       <h2 className="font-serif text-[17px] font-semibold">{t('ag.chainTitle')}</h2>
       <p className="mt-1 text-[12px] text-ink-3">{t('ag.chainDesc')}</p>
       <div className="mt-4 divide-y divide-line">
@@ -44,8 +46,8 @@ export function AgentChainCard() {
           const toggle = () => setConfig(agentPatch(role.field, checked ? undefined : null));
           return (
             <div key={role.field} className="flex items-center gap-3 py-3">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent font-serif text-[14px] text-accent-ink">
-                {role.glyph}
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-weak text-accent">
+                <role.icon className="h-4 w-4" aria-hidden="true" />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
@@ -54,13 +56,7 @@ export function AgentChainCard() {
                 </div>
                 <p className="mt-0.5 text-[12px] text-ink-3">{t(role.descKey)}</p>
               </div>
-              <input
-                type="checkbox"
-                role="switch"
-                aria-label={t(role.nameKey)}
-                checked={checked}
-                onChange={toggle}
-              />
+              <Switch checked={checked} onCheckedChange={toggle} aria-label={t(role.nameKey)} />
             </div>
           );
         })}

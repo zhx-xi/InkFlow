@@ -27,6 +27,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { WritingPage } from './writing';
 import { apiFetch } from '../api/client';
 import { useChapterStore } from '../stores/chapter';
@@ -291,5 +292,58 @@ describe('写作页 — SSE 流式区（§4.5）', () => {
     await user.click(screen.getByRole('button', { name: '停止' }));
     expect(screen.getByText('生成中断 · 已保留前文')).toBeInTheDocument();
     expect(screen.getByTestId('stream-area')).toHaveTextContent('部分生成内容');
+  });
+});
+
+/**
+ * #98 §5.2.6 空态设计：写作页无项目 / 无章节空态（本 describe 为增量契约，未改动上述既有断言）
+ *
+ * ⚠️ 契约：GREEN 实现 WritingPage 空态分支必须匹配：
+ * - 无项目（projects 为空且 currentProjectId 为 null）：
+ *   - 居中引导容器 data-testid="writing-empty"（图标 + 主文案 + 返回项目页按钮）
+ *   - 主文案「选择或新建项目开始写作」（i18n 新 key，GREEN 补）
+ *   - 「返回项目页」按钮（role=button）点击 → 跳转 /projects
+ *     （设计假设：按钮实现；若 GREEN 用 Link（role=link）需同步调整本契约）
+ * - 有项目无章节（chapters 为空）：
+ *   - 项目树「新建章节」引导保留（既有 write.newChapter 契约）
+ *   - 编辑器 textarea placeholder = 「还没有章节，点击左侧「新建章节」创建」
+ *     （i18n 新 key write.empty.noChapter，GREEN 补；现状复用 write.stream.idle → RED 缺口）
+ * - 回归：有章节时 placeholder 保持 write.stream.idle 语义不变
+ */
+describe('写作页 — 空态（#98 §5.2.6）', () => {
+  it('无项目 → 居中引导（「选择或新建项目开始写作」+ 返回项目页按钮跳转 /projects）', async () => {
+    useProjectStore.setState({ projects: [], currentProjectId: null, loading: false, error: null });
+    useChapterStore.setState({ volumes: [], chapters: [], currentChapterId: null, content: '', loading: false, error: null });
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/writing']}>
+        <Routes>
+          <Route path="/writing" element={<WritingPage />} />
+          <Route path="/projects" element={<div data-testid="projects-probe">项目页探针</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const empty = await screen.findByTestId('writing-empty');
+    expect(empty).toHaveTextContent('选择或新建项目开始写作');
+    await user.click(within(empty).getByRole('button', { name: '返回项目页' }));
+    expect(await screen.findByTestId('projects-probe')).toBeInTheDocument();
+  });
+
+  it('有项目无章节 → 项目树「新建章节」引导 + 编辑器 placeholder 增强文案', async () => {
+    useChapterStore.setState({ volumes: [], chapters: [], currentChapterId: null, content: '', loading: false, error: null });
+    render(<WritingPage />);
+    // 等挂载自动加载卷章树完成（消化异步 setState，避免 act 警告）
+    await waitFor(() => expect(useChapterStore.getState().loading).toBe(false));
+    // 项目树「新建章节」引导（既有契约保持）
+    expect(screen.getByRole('button', { name: /新建章节/ })).toBeInTheDocument();
+    // 无章节时 placeholder = 增强引导文案（新契约）
+    const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
+    expect(editor.placeholder).toBe('还没有章节，点击左侧「新建章节」创建');
+  });
+
+  it('回归：有章节时编辑器 placeholder 保持 write.stream.idle 语义', () => {
+    render(<WritingPage />);
+    const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
+    expect(editor.placeholder).toBe('点击「续写」或 Ctrl+Enter 开始 AI 续写');
   });
 });

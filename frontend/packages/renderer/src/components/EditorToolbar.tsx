@@ -1,4 +1,5 @@
 /** 编辑器工具栏（spec §4.2.1 Q2 拍板 C）：默认 opacity 0.35、hover 编辑器区域全显 + 快捷键 */
+import { Redo2, Save, Sparkles, Undo2, Wand2 } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
 
 export interface EditorToolbarProps {
@@ -9,6 +10,9 @@ export interface EditorToolbarProps {
   onContinue: () => void;
   onGenerate: () => void;
 }
+
+const ICON_BTN_CLS =
+  'rounded p-1.5 text-ink-2 transition duration-180 hover:bg-surface-3 hover:text-ink active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:opacity-40';
 
 export function EditorToolbar({
   disabled,
@@ -26,42 +30,47 @@ export function EditorToolbar({
     >
       <button
         type="button"
-        className="rounded px-2 py-1 text-[12px] text-ink-2 hover:bg-surface-2"
+        aria-label={t('write.toolbar.undo')}
+        className={ICON_BTN_CLS}
         onClick={onUndo}
       >
-        {t('write.toolbar.undo')}
+        <Undo2 className="h-4 w-4" aria-hidden="true" />
       </button>
       <button
         type="button"
-        className="rounded px-2 py-1 text-[12px] text-ink-2 hover:bg-surface-2"
+        aria-label={t('write.toolbar.redo')}
+        className={ICON_BTN_CLS}
         onClick={onRedo}
       >
-        {t('write.toolbar.redo')}
+        <Redo2 className="h-4 w-4" aria-hidden="true" />
       </button>
       <button
         type="button"
         data-testid="toolbar-save"
-        className="rounded px-2 py-1 text-[12px] text-ink-2 hover:bg-surface-2"
+        aria-label={t('write.toolbar.save')}
+        className={ICON_BTN_CLS}
         onClick={onSave}
       >
-        {t('write.toolbar.save')}
+        <Save className="h-4 w-4" aria-hidden="true" />
       </button>
       <span className="mx-1 h-4 w-px bg-line" />
       <button
         type="button"
-        className="rounded px-2 py-1 text-[12px] text-ink-2 hover:bg-surface-2 disabled:opacity-40"
+        aria-label={t('write.toolbar.continue')}
+        className={ICON_BTN_CLS}
         disabled={disabled}
         onClick={onContinue}
       >
-        {t('write.toolbar.continue')}
+        <Wand2 className="h-4 w-4" aria-hidden="true" />
       </button>
       <button
         type="button"
-        className="rounded px-2 py-1 text-[12px] text-ink-2 hover:bg-surface-2 disabled:opacity-40"
+        aria-label={t('write.toolbar.generate')}
+        className={ICON_BTN_CLS}
         disabled={disabled}
         onClick={onGenerate}
       >
-        {t('write.toolbar.generate')}
+        <Sparkles className="h-4 w-4" aria-hidden="true" />
       </button>
     </div>
   );

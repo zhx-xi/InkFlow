@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { useI18n } from '../i18n/useI18n';
 import { useAgentStore } from '../stores/agent';
 import { useProjectStore } from '../stores/project';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Slider } from './ui/slider';
 
 const PROVIDERS = ['openai', 'deepseek', 'ollama'];
 
@@ -35,27 +37,33 @@ export function AgentLlmCard() {
   };
 
   return (
-    <section data-testid="agent-llm-card" className="rounded-lg border border-line bg-surface p-6">
+    <section data-testid="agent-llm-card" className="rounded-lg border border-line bg-surface p-6 shadow-card">
       <h2 className="font-serif text-[17px] font-semibold">{t('ag.llmTitle')}</h2>
       <p className="mt-1 text-[12px] text-ink-3">{t('ag.llmDesc')}</p>
       <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-3">
-        <label className="block text-[12px] text-ink-2">
-          <span className="mb-1 block">{t('ag.provider')}</span>
-          <select
-            aria-label={t('ag.provider')}
-            className="w-full rounded-md border border-line bg-surface px-3 py-2 text-[13px] outline-none focus:border-accent"
+        <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
+          <span>{t('ag.provider')}</span>
+          <Select
             value={provider}
-            onChange={(e) => setProvider(e.target.value)}
+            onValueChange={(v) => setProvider(v)}
           >
-            {PROVIDERS.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block text-[12px] text-ink-2">
-          <span className="mb-1 block">{t('ag.model')}</span>
+            <SelectTrigger
+              aria-label={t('ag.provider')}
+              className="w-full"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PROVIDERS.map((p) => (
+                <SelectItem key={p} value={p}>
+                  {p}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <label className="flex flex-col gap-1.5 text-[12px] text-ink-2">
+          <span>{t('ag.model')}</span>
           <input
             aria-label={t('ag.model')}
             className="w-full rounded-md border border-line bg-surface px-3 py-2 text-[13px] outline-none focus:border-accent"
@@ -64,8 +72,8 @@ export function AgentLlmCard() {
             placeholder="gpt-4o / deepseek-chat"
           />
         </label>
-        <label className="block text-[12px] text-ink-2">
-          <span className="mb-1 block">{t('ag.apiKey')}</span>
+        <label className="flex flex-col gap-1.5 text-[12px] text-ink-2">
+          <span>{t('ag.apiKey')}</span>
           <input
             type="password"
             aria-label={t('ag.apiKey')}
@@ -76,24 +84,23 @@ export function AgentLlmCard() {
             autoComplete="off"
           />
         </label>
-        <label className="block text-[12px] text-ink-2">
-          <span className="mb-1 block">{t('ag.temperature')}</span>
+        <label className="flex flex-col gap-1.5 text-[12px] text-ink-2">
+          <span>{t('ag.temperature')}</span>
           <div className="flex items-center gap-2">
-            <input
-              type="range"
+            <Slider
               aria-label={t('ag.temperature')}
               min={0}
               max={2}
               step={0.1}
-              className="w-full accent-accent"
-              value={config.temperature ?? 0.7}
-              onChange={(e) => setConfig({ temperature: Number(e.target.value) })}
+              value={[config.temperature ?? 0.7]}
+              onValueChange={(values) => setConfig({ temperature: values[0] })}
+              className="flex-1"
             />
             <span className="w-8 text-right text-[13px]">{(config.temperature ?? 0.7).toFixed(1)}</span>
           </div>
         </label>
-        <label className="block text-[12px] text-ink-2">
-          <span className="mb-1 block">{t('ag.defaultWords')}</span>
+        <label className="flex flex-col gap-1.5 text-[12px] text-ink-2">
+          <span>{t('ag.defaultWords')}</span>
           <input
             type="number"
             min={0}
@@ -116,7 +123,7 @@ export function AgentLlmCard() {
       <div className="mt-5 flex gap-2">
         <button
           type="button"
-          className="rounded-md border border-line px-4 py-1.5 text-[13px] text-ink-2 hover:bg-surface-2 disabled:opacity-50"
+          className="rounded-md border border-line px-4 py-1.5 text-[13px] text-ink-2 transition duration-180 hover:bg-surface-3 disabled:opacity-50"
           disabled={testStatus === 'testing'}
           onClick={handleTest}
         >
@@ -124,7 +131,7 @@ export function AgentLlmCard() {
         </button>
         <button
           type="button"
-          className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink"
+          className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
           onClick={() => void handleSave()}
         >
           {t('ag.save')}

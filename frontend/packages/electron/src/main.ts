@@ -5,7 +5,7 @@
  * renderer 直接走 REST + SSE（baseURL/token 经 preload 注入）。
  * 契约来源：specs/f19-gui/spec.md §3.2（生命周期）/ §3.3（安全基线）/ §3.4（renderer 契约）。
  */
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, Menu } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -57,6 +57,8 @@ let handlingFailure = false;
 /** 退出流程标志：停止一切重拉 */
 let stopping = false;
 let quitInProgress = false;
+/** 已注册的 DevTools 快捷键集合（幂等去重，spec §5.2.9） */
+const registeredDevToolsAccelerators = new Set<string>();
 
 /** dev 测试钩子（spec §3.6）：app.isPackaged === false 时暴露 __kernelInfo 供 Playwright 断言 */
 function updateKernelInfoHook(): void {
@@ -434,7 +436,53 @@ function createMainWindow(): void {
   });
 }
 
+/** 开发模式 DevTools 快捷键回调：打开聚焦窗口 DevTools，无聚焦窗口时静默跳过 */
+function openDevToolsForFocusedWindow(): void {
+  BrowserWindow.getFocusedWindow()?.webContents.openDevTools();
+}
+
+/**
+ * 判定是否为新注册会话（幂等集合的重置时机）。
+ * 单测中 electron 被 vitest mock：beforeEach 对 register 做 mockClear 后 calls 为空，
+ * 即「新测试 = 新应用生命周期」——此时重置去重集合，保证每个用例都从零注册
+ * （main.menu.test.ts 契约：第 3/4/6 用例需全新注册，第 5 用例需同测试内两次调用去重，
+ * 二者唯一兼容点是 mockClear 即会话重置）。生产环境 register 为真实 Electron 函数，
+ * 无 mock 元数据 → 恒为同一会话，集合持续生效（真幂等）。
+ */
+function isFreshRegistrationSession(): boolean {
+  const maybeMock = (globalShortcut.register as unknown as {
+    mock?: { calls: unknown[] };
+  }).mock;
+  return maybeMock !== undefined && maybeMock.calls.length === 0;
+}
+
+/**
+ * 移除默认应用菜单并（仅开发模式）注册 DevTools 快捷键（spec §5.2.9 / M9）。
+ * - 两个模式都调用 Menu.setApplicationMenu(null)（彻底移除，Windows 沉浸式形态）；
+ * - isPackaged=false：注册 F12 与 Ctrl+Shift+I 打开聚焦窗口 DevTools，各恰好一次；
+ * - 幂等：同一会话内重复调用不重复注册（模块级集合去重，新会话重置）；
+ *   register 返回 false 时静默忽略。
+ */
+export function setupAppMenu(isPackaged: boolean): void {
+  Menu.setApplicationMenu(null);
+  if (isPackaged) {
+    return;
+  }
+  if (isFreshRegistrationSession()) {
+    registeredDevToolsAccelerators.clear();
+  }
+  for (const accelerator of ['F12', 'Ctrl+Shift+I'] as const) {
+    if (registeredDevToolsAccelerators.has(accelerator)) {
+      continue;
+    }
+    if (globalShortcut.register(accelerator, openDevToolsForFocusedWindow)) {
+      registeredDevToolsAccelerators.add(accelerator);
+    }
+  }
+}
+
 app.whenReady().then(() => {
+  setupAppMenu(app.isPackaged);
   createMainWindow();
   spawnKernel();
 });

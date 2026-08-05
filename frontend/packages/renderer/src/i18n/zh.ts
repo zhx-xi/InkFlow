@@ -13,6 +13,9 @@ export const zh = {
   'sb.autosave': '自动保存',
   // 写作页
   'write.newChapter': '新建章节',
+  'write.empty.title': '选择或新建项目开始写作',
+  'write.empty.back': '返回项目页',
+  'write.empty.noChapter': '还没有章节，点击左侧「新建章节」创建',
   'write.toolbar.undo': '撤销',
   'write.toolbar.redo': '重做',
   'write.toolbar.revise': '修订',
@@ -40,6 +43,8 @@ export const zh = {
   'pj.sub': '本地存储 · 自动存档 · 断网可用',
   'pj.new': '新建项目',
   'pj.newCard': '新建项目',
+  'pj.empty.title': '还没有项目',
+  'pj.empty.sub': '创建你的第一个故事，从书名开始。',
   'pj.writing': '写作中',
   'pj.genre': '题材',
   'pj.target': '目标',

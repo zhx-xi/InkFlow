@@ -153,16 +153,19 @@ describe('项目页 — 新建对话框', () => {
 
     const dlg = screen.getByRole('dialog');
     expect(within(dlg).getByLabelText('书名')).toBeInTheDocument();
-    const genre = within(dlg).getByLabelText('题材');
-    expect(genre.tagName).toBe('SELECT');
-    const options = within(dlg).getAllByRole('option');
-    // 11 种 Genre 枚举（+ 占位默认选项 0 或 11 全量 —— 契约：11 个题材枚举全量存在）
+    // Radix Select（#98 Q1=A 契约升级）：trigger 是 combobox，选项打开面板后 portal 渲染
+    const genre = within(dlg).getByRole('combobox', { name: '题材' });
+    expect(genre).toBeInTheDocument();
+    await user.click(genre);
+    // 11 种 Genre 枚举全量存在（打开的面板只渲染当前 select 的 option）
     for (const g of GENRES) {
-      expect(within(dlg).getByRole('option', { name: g })).toBeInTheDocument();
+      expect(await screen.findByRole('option', { name: g })).toBeInTheDocument();
     }
-    expect(options.length).toBeGreaterThanOrEqual(11);
+    await user.keyboard('{Escape}');
     expect(within(dlg).getByLabelText('语言')).toBeInTheDocument();
-    expect(within(dlg).getByRole('option', { name: 'zh-CN' })).toBeInTheDocument();
+    await user.click(within(dlg).getByRole('combobox', { name: '语言' }));
+    expect(await screen.findByRole('option', { name: 'zh-CN' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
     expect(within(dlg).getByLabelText('目标字数')).toHaveValue(800000);
   });
 
@@ -182,7 +185,8 @@ describe('项目页 — 新建对话框', () => {
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
       if (path === '/api/v1/projects' && init?.method === 'POST') return created;
       if (path === '/api/v1/projects' && (!init?.method || init.method === 'GET')) {
-        return { items: [created], total: 1, offset: 0, limit: 50 };
+        // 初始列表为空——避免 POST 创建（p9）与 GET 列表（p9）重复导致 React key 冲突
+        return { items: [], total: 0, offset: 0, limit: 50 };
       }
       if (path.startsWith('/api/v1/projects/p9/chapters')) return chapterPage(0, 0);
       return { items: [], total: 0, offset: 0, limit: 50 };
@@ -191,7 +195,8 @@ describe('项目页 — 新建对话框', () => {
     renderProjectsPage();
     await user.click(screen.getByTestId('new-project-btn'));
     await user.type(within(screen.getByRole('dialog')).getByLabelText('书名'), '青山入我怀');
-    await user.selectOptions(within(screen.getByRole('dialog')).getByLabelText('题材'), '言情');
+    await user.click(within(screen.getByRole('dialog')).getByRole('combobox', { name: '题材' }));
+    await user.click(await screen.findByRole('option', { name: '言情' }));
     await user.click(screen.getByRole('button', { name: '创建' }));
 
     await waitFor(() => {
@@ -203,5 +208,57 @@ describe('项目页 — 新建对话框', () => {
     // 201 后跳转写作页
     expect(await screen.findByTestId('writing-probe')).toBeInTheDocument();
     expect(useProjectStore.getState().currentProjectId).toBe('p9');
+  });
+});
+
+/**
+ * #98 §5.2.6 空态设计：空列表引导化分支（本 describe 为增量契约，未改动上述既有断言）
+ *
+ * ⚠️ 契约：GREEN 实现 ProjectsPage 空列表分支（projects.length===0 且 error===null 且加载完成）必须匹配：
+ * - 引导化空态容器 data-testid="projects-empty"（居中：图标 + 主文案 + 次文案 + CTA 按钮）
+ * - 主文案「还没有项目」、次文案「创建你的第一个故事，从书名开始」（i18n 新 key，GREEN 补）
+ * - 空态 CTA 按钮（名称「新建项目」，可复用 pj.new）点击 → 打开新建对话框（role=dialog）
+ * - 网格末位虚线卡片 data-testid="new-project-card" 保留条件 = 有项目时（空列表不渲染）
+ * - 与「加载失败」态区分：空态仅在 error===null 时出现（失败态渲染错误框，既有契约）
+ */
+describe('项目页 — 空列表引导化空态（#98 §5.2.6）', () => {
+  /** 空列表 mock：GET /projects 返回空 items（区别于加载失败态） */
+  function mockEmptyProjects() {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects') return { items: [], total: 0, offset: 0, limit: 50 };
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+  }
+
+  it('空列表（无项目、无错误）→ 引导化空态：主文案 + 次文案', async () => {
+    mockEmptyProjects();
+    renderProjectsPage();
+    const empty = await screen.findByTestId('projects-empty');
+    expect(empty).toHaveTextContent('还没有项目');
+    expect(empty).toHaveTextContent('创建你的第一个故事，从书名开始');
+  });
+
+  it('空态 CTA「新建项目」→ 打开新建对话框（role=dialog）', async () => {
+    const user = userEvent.setup();
+    mockEmptyProjects();
+    renderProjectsPage();
+    const empty = await screen.findByTestId('projects-empty');
+    await user.click(within(empty).getByRole('button', { name: '新建项目' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('空态下不渲染「+ 新建项目」虚线卡片（保留条件 = 有项目）', async () => {
+    mockEmptyProjects();
+    renderProjectsPage();
+    // 等 loadProjects 完成（loading 先 true 后 false）
+    await waitFor(() => expect(useProjectStore.getState().loading).toBe(false));
+    expect(screen.queryByTestId('new-project-card')).not.toBeInTheDocument();
+  });
+
+  it('回归：有项目时虚线卡片保留，空态不出现', async () => {
+    renderProjectsPage();
+    await screen.findAllByTestId('project-card');
+    expect(screen.getByTestId('new-project-card')).toBeInTheDocument();
+    expect(screen.queryByTestId('projects-empty')).not.toBeInTheDocument();
   });
 });
