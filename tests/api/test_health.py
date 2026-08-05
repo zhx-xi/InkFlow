@@ -35,12 +35,10 @@ class TestHealthCheck:
 class TestLifespan:
     def test_lifespan_startup_and_shutdown(self):
         """应用 lifespan：启动时执行 setup_logging + create_tables，健康检查可用"""
-        with patch("inkflow.api.app.setup_logging") as mock_setup_logging:
-            with patch(
-                "inkflow.api.app.create_tables", new=AsyncMock()
-            ) as mock_create_tables:
-                with TestClient(app) as lifespan_client:
-                    resp = lifespan_client.get("/health")
-                    assert resp.status_code == 200
+        with patch("inkflow.api.app.setup_logging") as mock_setup_logging, patch(
+            "inkflow.api.app.create_tables", new=AsyncMock()
+        ) as mock_create_tables, TestClient(app) as lifespan_client:
+            resp = lifespan_client.get("/health")
+            assert resp.status_code == 200
         mock_setup_logging.assert_called_once()
         mock_create_tables.assert_awaited_once()

@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+
 from inkflow.api.app import app
 from inkflow.domain.models.chapter import Chapter, ChapterStatus, Volume
 
@@ -371,6 +372,7 @@ def test_parse_id_accepts_uuid_int_and_rejects_invalid():
     import uuid as uuid_module
 
     from fastapi import HTTPException
+
     from inkflow.api.routers.chapter import _parse_id
 
     uid = uuid_module.uuid4()
