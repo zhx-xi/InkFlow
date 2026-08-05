@@ -606,6 +606,7 @@ jobs:
   # 信息性 check：不进 build-backend needs、不设 required——外部 LLM 服务抖动不卡 merge。
   # 守卫：secrets.LLM_API_KEY 为空（fork PR / 未配置）时 job 整体跳过（缺 key 永远 skip 不 fail）。
   e2e-ai-backend:
+    if: ${{ secrets.LLM_API_KEY != '' && (github.event_name == 'workflow_dispatch' || (github.event.action == 'labeled' && github.event.label.name == 'run-ai-tests')) }}
     permissions:
       contents: read
     runs-on: windows-latest
