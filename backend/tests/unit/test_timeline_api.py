@@ -21,9 +21,11 @@ import uuid
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from inkflow.api.app import app
+from inkflow.api.routers.timeline import TimelineEventCreateBody
 from inkflow.domain.models.timeline import (
     ConsistencyReport,
     TimelineConflict,
@@ -31,7 +33,11 @@ from inkflow.domain.models.timeline import (
     TimelineEventRef,
     TimelineView,
 )
-from inkflow.domain.ports.timeline_errors import ProjectNotFoundError
+from inkflow.domain.ports.timeline_errors import (
+    ProjectNotFoundError,
+    TimelineNotFoundError,
+    TimelineServiceError,
+)
 
 client = TestClient(app)
 
@@ -487,3 +493,56 @@ class TestTimelineEventCRUDAPI:
         response = client.post(f"/api/v1/timeline/events/{uuid.uuid4()}/restore")
         assert response.status_code == 404
         assert response.json()["detail"] == "事件不存在"
+
+
+class TestTimelineCoverageGaps:
+    """F12 覆盖率补齐：异常映射分支 / None 防御 / validator 直接调用."""
+
+    @patch("inkflow.api.routers.timeline.get_timeline_service")
+    def test_create_event_service_error_422(self, mock_get_svc: MagicMock) -> None:
+        """TimelineServiceError（业务校验）→ 422（消息即 detail）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.create_event = AsyncMock(side_effect=TimelineServiceError("时间线配置错误"))
+
+        response = client.post(
+            f"/api/v1/projects/{PID}/timeline/events", json={"title": "林尘觉醒金手指"}
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "时间线配置错误"
+
+    @patch("inkflow.api.routers.timeline.get_timeline_service")
+    def test_get_event_not_found_error_404(self, mock_get_svc: MagicMock) -> None:
+        """TimelineNotFoundError（服务层主动抛出）→ 404（消息即 detail）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.get_event = AsyncMock(side_effect=TimelineNotFoundError())
+
+        response = client.get(f"/api/v1/timeline/events/{uuid.uuid4()}")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "事件不存在"
+
+    def test_validate_narrative_position(self) -> None:
+        """TimelineEventCreateBody 叙事位置校验：None/非负放行、负数 ValueError（直接调用）."""
+        assert TimelineEventCreateBody.validate_narrative_position(None) is None
+        assert TimelineEventCreateBody.validate_narrative_position(5) == 5
+        with pytest.raises(ValueError, match="叙事位置不能为负数"):
+            TimelineEventCreateBody.validate_narrative_position(-1)
+
+    @patch("inkflow.api.routers.timeline.get_timeline_service")
+    def test_get_timeline_view_none_404(self, mock_get_svc: MagicMock) -> None:
+        """双线总览：项目不存在（服务返回 None）→ 404."""
+        svc = _mock_svc(mock_get_svc)
+        svc.get_timeline_view = AsyncMock(return_value=None)
+
+        response = client.get(f"/api/v1/projects/{PID}/timeline")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "项目不存在"
+
+    @patch("inkflow.api.routers.timeline.get_timeline_service")
+    def test_check_consistency_none_404(self, mock_get_svc: MagicMock) -> None:
+        """一致性检查：项目不存在（服务返回 None）→ 404."""
+        svc = _mock_svc(mock_get_svc)
+        svc.check_consistency = AsyncMock(return_value=None)
+
+        response = client.get(f"/api/v1/projects/{PID}/timeline/check")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "项目不存在"

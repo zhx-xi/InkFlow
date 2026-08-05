@@ -18,6 +18,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic import ValidationError
 
 from inkflow.domain.models.world import (
     WorldExtractionResult,
@@ -36,6 +37,8 @@ from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
 from inkflow.domain.services._world_extractor import (
     WorldExtractor,
     _extract_json_fragment,
+    _first_error,
+    _to_int_id,
 )
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
@@ -367,6 +370,32 @@ class TestWorldExtractor:
         assert result.model == "deepseek/deepseek-chat"
 
 
+class TestWorldExtractorHelpers:
+    """模块级纯函数测试（_to_int_id / _first_error）。"""
+
+    def test_to_int_id_passthrough_for_int(self) -> None:
+        """int 输入原样返回（非 UUID 分支）。"""
+        assert _to_int_id(42) == 42
+
+    def test_first_error_with_empty_errors_returns_str(self) -> None:
+        """errors() 为空 → 回退 str(err)。"""
+        err = ValidationError.from_exception_data("测试", line_errors=[])
+        assert _first_error(err) == str(err)
+
+    # ── _parse_output 结构级错误分支 ──────────────────────────────
+
+    def test_malformed_json_syntax_returns_syntax_error(self, extractor) -> None:
+        """括号平衡但语法非法 → JSON 语法错误（json.JSONDecodeError 分支）。"""
+        outcome = extractor._parse_output('{"world_settings": }')
+        assert not outcome.ok
+        assert "JSON 语法错误" in outcome.error
+
+    def test_world_settings_not_list_returns_structure_error(self, extractor) -> None:
+        """world_settings 字段非列表 → 结构错误。"""
+        outcome = extractor._parse_output('{"world_settings": "x"}')
+        assert outcome.error == "缺少 world_settings 列表"
+
+
 class TestExtractJsonFragment:
     """_extract_json_fragment 纯函数测试。"""
 
@@ -379,3 +408,8 @@ class TestExtractJsonFragment:
         """无花括号或括号不平衡 → None。"""
         assert _extract_json_fragment("纯文本输出") is None
         assert _extract_json_fragment('{"a": 1') is None
+
+    def test_escaped_quotes_inside_string(self) -> None:
+        """字符串字面量内的转义引号不提前闭合字符串（escaped 状态机分支）。"""
+        text = '{"msg": "他说 \\"你好\\""}'
+        assert _extract_json_fragment(text) == text

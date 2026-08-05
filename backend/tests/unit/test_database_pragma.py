@@ -52,8 +52,16 @@ ImportError，属预期 RED 信号；GREEN 实现后本文件即全绿。
 
 import sqlite3
 
+import sqlalchemy
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import create_async_engine
+
+from inkflow.core import database as db_module
 from inkflow.core.config import config
-from inkflow.core.database import apply_sqlite_pragma
+from inkflow.core.database import _set_sqlite_pragma, apply_sqlite_pragma
+from inkflow.infrastructure.database.models.project import (  # noqa: F401  # 注册表到 Base.metadata
+    ProjectORM,
+)
 
 
 def _journal_mode(conn: sqlite3.Connection) -> str:
@@ -163,3 +171,59 @@ def test_apply_sqlite_pragma_on_memory_db_no_raise():
         assert _journal_mode(conn) == "memory"
     finally:
         conn.close()
+
+
+# ── Phase 3 覆盖率补齐（#104）：connect 事件委托 + create/drop_tables ──
+
+
+async def test_connect_event_delegates_to_apply_sqlite_pragma(tmp_path, monkeypatch):
+    """engine connect 事件 → _set_sqlite_pragma 委托 apply_sqlite_pragma（45 行）。"""
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'event.db'}")
+    event.listen(engine.sync_engine, "connect", _set_sqlite_pragma)
+    calls: list = []
+    monkeypatch.setattr(db_module, "apply_sqlite_pragma", lambda conn: calls.append(conn))
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(sqlalchemy.text("SELECT 1"))
+    finally:
+        await engine.dispose()
+    assert len(calls) == 1
+
+
+async def test_connect_event_applies_real_pragma(tmp_path):
+    """真实委托链路：connect 事件后文件库 journal_mode 为 wal。"""
+    db_path = tmp_path / "event_pragma.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    event.listen(engine.sync_engine, "connect", _set_sqlite_pragma)
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(sqlalchemy.text("SELECT 1"))
+    finally:
+        await engine.dispose()
+    conn = sqlite3.connect(db_path)
+    try:
+        assert _journal_mode(conn) == "wal"
+    finally:
+        conn.close()
+
+
+async def test_create_tables_and_drop_tables(tmp_path, monkeypatch):
+    """create_tables/drop_tables 走模块级 engine（monkeypatch 为临时引擎）。"""
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'tables.db'}")
+    monkeypatch.setattr(db_module, "engine", engine)
+    try:
+        await db_module.create_tables()
+        async with engine.connect() as conn:
+            tables = await conn.run_sync(
+                lambda sync_conn: sqlalchemy.inspect(sync_conn).get_table_names()
+            )
+        assert "projects" in tables  # ProjectORM 已注册到 Base.metadata
+
+        await db_module.drop_tables()
+        async with engine.connect() as conn:
+            tables = await conn.run_sync(
+                lambda sync_conn: sqlalchemy.inspect(sync_conn).get_table_names()
+            )
+        assert tables == []
+    finally:
+        await engine.dispose()

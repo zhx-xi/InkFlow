@@ -33,6 +33,7 @@ from inkflow.domain.models.project import Project, ProjectConfig
 from inkflow.domain.ports.character_errors import (
     CharacterNameConflictError,
     CharacterNotFoundError,
+    CharacterServiceError,
     CrossProjectRelationError,
     GroupNameConflictError,
     GroupNotInProjectError,
@@ -592,3 +593,133 @@ class TestExtract:
         with pytest.raises(ProjectNotFoundError):
             await service.extract(CharacterExtractRequest(project_id=PID, text="第一章正文"))
         mock_extractor.extract.assert_not_awaited()
+
+
+# ── Phase 3 覆盖率补齐（#104）──────────────────────────────────
+
+
+class TestIntIdConversion:
+    """领域 UUID ↔ 仓储层 int 转换 — int 直传路径（_to_int_id 的 return value 分支）。"""
+
+    async def test_get_character_with_int_id(self, service, mock_repo) -> None:
+        """int id 直传仓储，不做 UUID 转换。"""
+        mock_repo.get = AsyncMock(return_value=None)
+        assert await service.get_character(12345) is None
+        mock_repo.get.assert_awaited_once_with(12345)
+
+
+class TestUpdateCharacterGroup:
+    """update_character 的 group_id 合法分支。"""
+
+    async def test_update_character_with_valid_group(self, service, mock_repo) -> None:
+        """group_id 指向同项目分组 → 校验通过，合并更新。"""
+        char = _char(name="林尘")
+        group = _group(name="主角团")
+        mock_repo.get = AsyncMock(return_value=char)
+        mock_repo.get_group = AsyncMock(return_value=group)
+        mock_repo.update = AsyncMock(side_effect=lambda c: c)
+
+        updated = await service.update_character(char.id, CharacterUpdate(group_id=group.id))
+
+        assert updated is not None
+        merged = mock_repo.update.await_args.args[0]
+        assert merged.group_id == group.id
+        mock_repo.get_group.assert_awaited_once_with(group.id.int)
+
+
+class TestUpdateRelationVariants:
+    """update_relation 的类型不变/冲突分支。"""
+
+    async def test_update_relation_same_type_skips_conflict_check(self, service, mock_repo) -> None:
+        """relation_type 与现状相同 → 不做冲突检查，仅合并 description。"""
+        a = _char(name="林尘")
+        b = _char(name="柳如烟")
+        rel = _rel(a, b, relation_type="师徒")
+        mock_repo.get_relation = AsyncMock(return_value=rel)
+        mock_repo.update_relation = AsyncMock(side_effect=lambda r: r)
+
+        updated = await service.update_relation(
+            a.id, rel.id, relation_type="师徒", description="亦师亦友"
+        )
+
+        assert updated is not None
+        merged = mock_repo.update_relation.await_args.args[0]
+        assert merged.description == "亦师亦友"
+        mock_repo.get_relation_by_key.assert_not_awaited()
+
+    async def test_update_relation_without_type_keeps_type(self, service, mock_repo) -> None:
+        """relation_type=None → 类型不变，也不做冲突检查。"""
+        a = _char(name="林尘")
+        b = _char(name="柳如烟")
+        rel = _rel(a, b, relation_type="师徒")
+        mock_repo.get_relation = AsyncMock(return_value=rel)
+        mock_repo.update_relation = AsyncMock(side_effect=lambda r: r)
+
+        updated = await service.update_relation(a.id, rel.id, description="新描述")
+
+        assert updated is not None
+        merged = mock_repo.update_relation.await_args.args[0]
+        assert merged.relation_type == "师徒"
+        mock_repo.get_relation_by_key.assert_not_awaited()
+
+    async def test_update_relation_type_conflict_raises(self, service, mock_repo) -> None:
+        """改类型撞同键活动关系 → RelationConflictError（422 语义）。"""
+        a = _char(name="林尘")
+        b = _char(name="柳如烟")
+        rel = _rel(a, b, relation_type="师徒")
+        dup = _rel(a, b, relation_type="宿敌")
+        mock_repo.get_relation = AsyncMock(return_value=rel)
+        mock_repo.get_relation_by_key = AsyncMock(return_value=dup)
+
+        with pytest.raises(RelationConflictError):
+            await service.update_relation(a.id, rel.id, relation_type="宿敌")
+
+
+class TestUpdateGroupPartial:
+    """update_group 的部分字段更新（None 字段不覆盖）。"""
+
+    async def test_update_group_description_only(self, service, mock_repo) -> None:
+        """只更新 description → name/sort_order 保持不变，无同名冲突检查。"""
+        group = _group(name="主角团")
+        mock_repo.get_group = AsyncMock(return_value=group)
+        mock_repo.update_group = AsyncMock(side_effect=lambda g: g)
+
+        updated = await service.update_group(group.id, description="核心成员")
+
+        assert updated is not None
+        merged = mock_repo.update_group.await_args.args[0]
+        assert merged.name == "主角团"
+        assert merged.description == "核心成员"
+        assert merged.sort_order == 0
+        mock_repo.list_groups.assert_not_awaited()
+
+    async def test_update_group_name_only(self, service, mock_repo) -> None:
+        """只更新 name → description/sort_order 保持不变（description=None 分支）。"""
+        group = _group(name="主角团")
+        mock_repo.get_group = AsyncMock(return_value=group)
+        mock_repo.list_groups = AsyncMock(return_value=[])
+        mock_repo.update_group = AsyncMock(side_effect=lambda g: g)
+
+        updated = await service.update_group(group.id, name="核心团队")
+
+        assert updated is not None
+        merged = mock_repo.update_group.await_args.args[0]
+        assert merged.name == "核心团队"
+        assert merged.description == ""
+        assert merged.sort_order == 0
+
+
+class TestExtractConfigErrors:
+    """extract 入口的依赖缺失保护（防静默降级）。"""
+
+    async def test_extract_without_extractor_raises(self, mock_repo) -> None:
+        """extractor 未注入 → CharacterServiceError（角色提取器未配置）。"""
+        svc = CharacterService(repository=mock_repo)
+        with pytest.raises(CharacterServiceError, match="角色提取器未配置"):
+            await svc.extract(CharacterExtractRequest(project_id=PID, text="x"))
+
+    async def test_extract_without_project_repo_raises(self, mock_repo, mock_extractor) -> None:
+        """project_repo 未注入 → CharacterServiceError（项目仓储未配置）。"""
+        svc = CharacterService(repository=mock_repo, extractor=mock_extractor)
+        with pytest.raises(CharacterServiceError, match="项目仓储未配置"):
+            await svc.extract(CharacterExtractRequest(project_id=PID, text="x"))

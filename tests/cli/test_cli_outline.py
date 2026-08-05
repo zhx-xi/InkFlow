@@ -20,6 +20,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from inkflow.cli.commands.outline import app
@@ -34,6 +35,7 @@ from inkflow.domain.models.outline import (
     PlotPoint,
     StoryArc,
 )
+from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.ports.outline_errors import (
     ArcNameConflictError,
     OutlineGenerationError,
@@ -1013,6 +1015,391 @@ class TestGenerate:
         result = cli_runner.invoke(
             app,
             ["generate", "--project-id", str(PID), "--prompt", "爽文"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "NOT_FOUND"
+
+
+class TestOutlineErrorMapping:
+    """_run 异常映射补全：LLMRequestError / ValidationError / 文件缺失 / DB_ERROR / 内部 UUID."""
+
+    def test_generate_llm_request_error(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """LLMRequestError → LLM_ERROR 信封 + 退出码 1."""
+        mock_outline_service.generate.side_effect = LLMRequestError("LLM 调用失败")
+        result = cli_runner.invoke(
+            app,
+            ["generate", "--project-id", str(PID), "--prompt", "爽文"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "LLM_ERROR"
+        assert "LLM 调用失败" in data["error"]["message"]
+
+    def test_generate_validation_error(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """pydantic ValidationError → VALIDATION_ERROR 信封."""
+        mock_outline_service.generate.side_effect = ValidationError.from_exception_data(
+            "OutlineGenerateRequest",
+            [
+                {
+                    "type": "string_type",
+                    "loc": ("prompt",),
+                    "msg": "Input should be a valid string",
+                    "input": 123,
+                }
+            ],
+        )
+        result = cli_runner.invoke(
+            app,
+            ["generate", "--project-id", str(PID), "--prompt", "爽文"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        assert "Input should be a valid string" in data["error"]["message"]
+
+    def test_generate_prompt_file_missing(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """generate --prompt-file 指向不存在文件 → VALIDATION_ERROR（文本文件不存在）."""
+        result = cli_runner.invoke(
+            app,
+            ["generate", "--project-id", str(PID), "--prompt-file", "no_such.txt"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        assert "文本文件不存在" in data["error"]["message"]
+        mock_outline_service.generate.assert_not_awaited()
+
+    def test_generate_db_error(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """服务抛未知异常 → DB_ERROR 信封 + 退出码 1."""
+        mock_outline_service.generate.side_effect = RuntimeError("boom")
+        result = cli_runner.invoke(
+            app,
+            ["generate", "--project-id", str(PID), "--prompt", "爽文"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "DB_ERROR"
+        assert "boom" in data["error"]["message"]
+
+    def test_point_update_internal_arc_id_parse_fail(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """_impl 内部 arc_id UUID 解析失败 → typer.Exit 原样重抛（退出码 1 + NOT_FOUND）."""
+        result = cli_runner.invoke(
+            app,
+            ["point", "update", "--id", str(uuid.uuid4()), "--arc-id", "not-a-uuid"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "NOT_FOUND"
+        assert "弧线不存在" in data["error"]["message"]
+        mock_outline_service.update_point.assert_not_awaited()
+
+    def test_list_human_non_empty(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """list 人类模式非空 → 总数汇总 + 大纲列表."""
+        mock_outline_service.list_outlines.return_value = (
+            [_make_outline(name="第一卷大纲")],
+            1,
+        )
+        result = cli_runner.invoke(
+            app,
+            ["list", "--project-id", str(PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "共 1 个大纲" in result.output
+        assert "第一卷大纲" in result.output
+
+    def test_get_human(self, cli_runner, mock_outline_service, mock_create_tables):
+        """get 人类模式 → 全字段详情输出."""
+        mock_outline_service.get_outline.return_value = _make_outline(
+            name="第一卷大纲", description="故事主线概述", sort_order=2
+        )
+        result = cli_runner.invoke(
+            app,
+            ["get", "--id", str(uuid.uuid4())],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        for token in ("ID:", "名称:", "第一卷大纲", "描述:", "故事主线概述", "排序:"):
+            assert token in result.output
+
+    def test_update_only_description(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """update 仅传 --description → 只 description 进入 OutlineUpdate."""
+        oid = uuid.uuid4()
+        mock_outline_service.update_outline.return_value = _make_outline()
+        result = cli_runner.invoke(
+            app,
+            ["update", "--id", str(oid), "--description", "新描述"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        call = mock_outline_service.update_outline.await_args
+        upd = call.kwargs["update"]
+        assert upd.description == "新描述"
+        assert "name" not in upd.model_fields_set
+
+    def test_update_human(self, cli_runner, mock_outline_service, mock_create_tables):
+        """update 人类模式 → 成功提示."""
+        mock_outline_service.update_outline.return_value = _make_outline(
+            name="第一卷大纲·改"
+        )
+        result = cli_runner.invoke(
+            app,
+            ["update", "--id", str(uuid.uuid4()), "--name", "第一卷大纲·改"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "大纲已更新: [第一卷大纲·改]" in result.output
+
+    def test_restore_human(self, cli_runner, mock_outline_service, mock_create_tables):
+        """restore 人类模式 → 成功提示."""
+        mock_outline_service.restore_outline.return_value = _make_outline(
+            name="第一卷大纲"
+        )
+        result = cli_runner.invoke(
+            app,
+            ["restore", "--id", str(uuid.uuid4())],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "大纲已恢复: [第一卷大纲]" in result.output
+
+    def test_point_list_human_empty(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """point list 人类模式空列表 → 暂无情节点."""
+        mock_outline_service.list_points.return_value = []
+        result = cli_runner.invoke(
+            app,
+            ["point", "list", "--outline-id", str(OID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "暂无情节点" in result.output
+
+    def test_point_update_description(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """point update --description → description 进入 PlotPointUpdate."""
+        pid = uuid.uuid4()
+        mock_outline_service.update_point.return_value = _make_point()
+        result = cli_runner.invoke(
+            app,
+            ["point", "update", "--id", str(pid), "--description", "新要点"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        call = mock_outline_service.update_point.await_args
+        upd = call.kwargs["update"]
+        assert upd.description == "新要点"
+        assert "name" not in upd.model_fields_set
+
+    def test_point_update_not_found(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """point update 情节点不存在 → NOT_FOUND 错误信封 + 退出码 1."""
+        mock_outline_service.update_point.return_value = None
+        result = cli_runner.invoke(
+            app,
+            ["point", "update", "--id", str(uuid.uuid4()), "--name", "新名"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "NOT_FOUND"
+
+    def test_point_update_human(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """point update 人类模式 → 成功提示."""
+        mock_outline_service.update_point.return_value = _make_point(name="主角登场·改")
+        result = cli_runner.invoke(
+            app,
+            ["point", "update", "--id", str(uuid.uuid4()), "--name", "主角登场·改"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "情节点已更新: [主角登场·改]" in result.output
+
+    def test_point_delete_confirm_no(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """point delete 无 --force 人类模式 → 回答 n 取消，不调用服务."""
+        result = cli_runner.invoke(
+            app,
+            ["point", "delete", "--id", str(uuid.uuid4())],
+            input="n\n",
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "已取消" in result.output
+        mock_outline_service.delete_point.assert_not_awaited()
+
+    def test_point_delete_human_yes(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """point delete 无 --force 人类模式 → 回答 y 删除成功."""
+        pid = uuid.uuid4()
+        mock_outline_service.delete_point.return_value = True
+        result = cli_runner.invoke(
+            app,
+            ["point", "delete", "--id", str(pid)],
+            input="y\n",
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert f"情节点 #{pid} 已删除" in result.output
+
+    def test_point_delete_not_found(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """point delete 情节点不存在（服务返回 False）→ NOT_FOUND 错误信封."""
+        mock_outline_service.delete_point.return_value = False
+        result = cli_runner.invoke(
+            app,
+            ["point", "delete", "--id", str(uuid.uuid4()), "--force"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "NOT_FOUND"
+
+    def test_arc_list_human_empty(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """arc list 人类模式空列表 → 暂无弧线."""
+        mock_outline_service.list_arcs.return_value = []
+        result = cli_runner.invoke(
+            app,
+            ["arc", "list", "--project-id", str(PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "暂无弧线" in result.output
+
+    def test_arc_create_human(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """arc create 人类模式 → 成功提示."""
+        mock_outline_service.create_arc.return_value = _make_arc(name="主角成长线")
+        result = cli_runner.invoke(
+            app,
+            ["arc", "create", "--project-id", str(PID), "--name", "主角成长线"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "弧线创建成功: [主角成长线]" in result.output
+
+    def test_arc_update_only_description(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """arc update 仅传 --description → 只 description 进入 StoryArcUpdate."""
+        aid = uuid.uuid4()
+        mock_outline_service.update_arc.return_value = _make_arc()
+        result = cli_runner.invoke(
+            app,
+            ["arc", "update", "--id", str(aid), "--description", "新说明"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        call = mock_outline_service.update_arc.await_args
+        upd = call.kwargs["update"]
+        assert upd.description == "新说明"
+        assert "name" not in upd.model_fields_set
+
+    def test_arc_update_not_found(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """arc update 弧线不存在 → NOT_FOUND 错误信封 + 退出码 1."""
+        mock_outline_service.update_arc.return_value = None
+        result = cli_runner.invoke(
+            app,
+            ["arc", "update", "--id", str(uuid.uuid4()), "--name", "新名"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "NOT_FOUND"
+
+    def test_arc_update_human(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """arc update 人类模式 → 成功提示."""
+        mock_outline_service.update_arc.return_value = _make_arc(name="主角成长线·改")
+        result = cli_runner.invoke(
+            app,
+            ["arc", "update", "--id", str(uuid.uuid4()), "--name", "主角成长线·改"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "弧线已更新: [主角成长线·改]" in result.output
+
+    def test_arc_delete_confirm_no(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """arc delete 无 --force 人类模式 → 回答 n 取消，不调用服务."""
+        result = cli_runner.invoke(
+            app,
+            ["arc", "delete", "--id", str(uuid.uuid4())],
+            input="n\n",
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "已取消" in result.output
+        mock_outline_service.delete_arc.assert_not_awaited()
+
+    def test_arc_delete_human_yes(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """arc delete 无 --force 人类模式 → 回答 y 删除成功."""
+        aid = uuid.uuid4()
+        mock_outline_service.delete_arc.return_value = True
+        result = cli_runner.invoke(
+            app,
+            ["arc", "delete", "--id", str(aid)],
+            input="y\n",
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert f"弧线 #{aid} 已删除" in result.output
+
+    def test_arc_delete_not_found(
+        self, cli_runner, mock_outline_service, mock_create_tables
+    ):
+        """arc delete 弧线不存在（服务返回 False）→ NOT_FOUND 错误信封."""
+        mock_outline_service.delete_arc.return_value = False
+        result = cli_runner.invoke(
+            app,
+            ["arc", "delete", "--id", str(uuid.uuid4()), "--force"],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1

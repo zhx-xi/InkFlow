@@ -28,7 +28,9 @@ from inkflow.domain.models.timeline import (
     TimelineEventUpdate,
     TimelineView,
 )
-from inkflow.domain.ports.timeline_errors import ProjectNotFoundError
+from inkflow.domain.ports.timeline_errors import (
+    ProjectNotFoundError,
+)
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 
@@ -601,137 +603,6 @@ class TestTimelineUpdate:
         result = cli_runner.invoke(
             app,
             ["update", "--id", str(uuid.uuid4()), "--title", "新名"],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 1
-        data = json.loads(result.stdout)
-        assert data["ok"] is False
-        assert data["error"]["code"] == "NOT_FOUND"
-
-
-class TestTimelineDelete:
-    def test_delete_force_json(
-        self, cli_runner, mock_timeline_service, mock_create_tables
-    ):
-        """delete --force --json → 成功信封 + 软删除（服务层 soft_delete）."""
-        eid = uuid.uuid4()
-        mock_timeline_service.soft_delete_event.return_value = True
-        result = cli_runner.invoke(
-            app,
-            ["delete", "--id", str(eid), "--force"],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 0
-        data = json.loads(result.stdout)
-        assert data["ok"] is True
-        assert data["data"]["deleted"] is True
-        assert data["data"]["id"] == str(eid)
-        mock_timeline_service.soft_delete_event.assert_awaited_once_with(event_id=eid)
-
-    def test_delete_permanent_hard_delete(
-        self, cli_runner, mock_timeline_service, mock_create_tables
-    ):
-        """delete --permanent → 服务层 hard_delete_event（物理删除）."""
-        eid = uuid.uuid4()
-        mock_timeline_service.hard_delete_event.return_value = True
-        result = cli_runner.invoke(
-            app,
-            ["delete", "--id", str(eid), "--force", "--permanent"],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 0
-        data = json.loads(result.stdout)
-        assert data["ok"] is True
-        assert data["data"]["deleted"] is True
-        mock_timeline_service.hard_delete_event.assert_awaited_once_with(event_id=eid)
-        mock_timeline_service.soft_delete_event.assert_not_awaited()
-
-    def test_delete_confirm_yes(
-        self, cli_runner, mock_timeline_service, mock_create_tables
-    ):
-        """无 --force 人类模式 → 交互确认，回答 y 继续删除."""
-        eid = uuid.uuid4()
-        mock_timeline_service.soft_delete_event.return_value = True
-        result = cli_runner.invoke(
-            app,
-            ["delete", "--id", str(eid)],
-            input="y\n",
-            obj=CliContext(json_output=False),
-        )
-        assert result.exit_code == 0
-        assert "已删除" in result.output
-        mock_timeline_service.soft_delete_event.assert_awaited_once_with(event_id=eid)
-
-    def test_delete_confirm_no(
-        self, cli_runner, mock_timeline_service, mock_create_tables
-    ):
-        """无 --force 人类模式 → 回答 n 取消，不调用服务."""
-        eid = uuid.uuid4()
-        result = cli_runner.invoke(
-            app,
-            ["delete", "--id", str(eid)],
-            input="n\n",
-            obj=CliContext(json_output=False),
-        )
-        assert result.exit_code == 0
-        assert "取消" in result.output
-        mock_timeline_service.soft_delete_event.assert_not_awaited()
-
-    def test_delete_json_no_force(
-        self, cli_runner, mock_timeline_service, mock_create_tables
-    ):
-        """--json 且无 --force → VALIDATION_ERROR + 退出码 1（F7 §7 约定）."""
-        result = cli_runner.invoke(
-            app,
-            ["delete", "--id", str(uuid.uuid4())],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 1
-        data = json.loads(result.stdout)
-        assert data["ok"] is False
-        assert data["error"]["code"] == "VALIDATION_ERROR"
-        mock_timeline_service.soft_delete_event.assert_not_awaited()
-
-    def test_delete_not_found(
-        self, cli_runner, mock_timeline_service, mock_create_tables
-    ):
-        """事件不存在（服务返回 False）→ NOT_FOUND 错误信封."""
-        mock_timeline_service.soft_delete_event.return_value = False
-        result = cli_runner.invoke(
-            app,
-            ["delete", "--id", str(uuid.uuid4()), "--force"],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 1
-        data = json.loads(result.stdout)
-        assert data["ok"] is False
-        assert data["error"]["code"] == "NOT_FOUND"
-
-
-class TestTimelineRestore:
-    def test_restore_json(self, cli_runner, mock_timeline_service, mock_create_tables):
-        """restore --json → 成功信封 + event_id 透传."""
-        eid = uuid.uuid4()
-        mock_timeline_service.restore_event.return_value = _make_event()
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(eid)],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 0
-        data = json.loads(result.stdout)
-        assert data["ok"] is True
-        assert data["data"]["title"] == "林尘觉醒金手指"
-        mock_timeline_service.restore_event.assert_awaited_once_with(event_id=eid)
-
-    def test_restore_not_found(
-        self, cli_runner, mock_timeline_service, mock_create_tables
-    ):
-        """事件不存在 → NOT_FOUND 错误信封 + 退出码 1."""
-        mock_timeline_service.restore_event.return_value = None
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(uuid.uuid4())],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1

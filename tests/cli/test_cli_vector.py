@@ -14,6 +14,7 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from inkflow.cli.commands.vector import app
@@ -395,3 +396,35 @@ class TestVectorRetrieve:
         )
         assert result.exit_code == 2
         mock_extraction_service.retrieve.assert_not_awaited()
+
+
+class TestVectorErrorBranches:
+    """补齐 miss 行：typer.Exit 透传（reindex）、DB_ERROR 兜底（retrieve）."""
+
+    def test_reindex_typer_exit_reraises(
+        self, cli_runner, mock_extraction_service, mock_create_tables
+    ):
+        """Service 抛 typer.Exit → _run 原样透传（退出码 3，不映射错误信封）."""
+        mock_extraction_service.reindex.side_effect = typer.Exit(3)
+        result = cli_runner.invoke(
+            app,
+            ["reindex", "--project-id", str(PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 3
+
+    def test_retrieve_db_error(
+        self, cli_runner, mock_extraction_service, mock_create_tables
+    ):
+        """其余异常 → DB_ERROR 错误信封 + 退出码 1."""
+        mock_extraction_service.retrieve.side_effect = RuntimeError("向量检索内部错误")
+        result = cli_runner.invoke(
+            app,
+            ["retrieve", "--project-id", str(PID), "--query", "林晚"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "DB_ERROR"
+        assert "向量检索内部错误" in data["error"]["message"]

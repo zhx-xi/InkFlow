@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from unittest import mock
 
 import pytest
 from sqlalchemy import event, func, select
@@ -28,7 +29,10 @@ from inkflow.core.database import Base
 from inkflow.domain.models.world import WorldSetting
 from inkflow.infrastructure.database.models.project import ProjectORM
 from inkflow.infrastructure.database.models.world import WorldSettingORM
-from inkflow.infrastructure.database.repositories.world_repo import SQLiteWorldRepository
+from inkflow.infrastructure.database.repositories.world_repo import (
+    SQLiteWorldRepository,
+    _int_to_uuid,
+)
 
 
 @pytest.fixture
@@ -342,3 +346,58 @@ class TestWorldRepository:
 
         count = await db_session.execute(select(func.count()).select_from(WorldSettingORM))
         assert count.scalar_one() == 0
+
+
+# ── Phase 3 覆盖率补齐（#104）：_int_to_uuid 辅助 + update 缺失/防御分支 ──
+
+
+def _patch_execute_returning_none_on_requery(session):
+    """把 session.execute 的第 2 次调用替换为「回查无行」假结果（模拟 UPDATE 生效后行被并发删除）.
+
+    返回原始 execute，供测试 finally 还原。
+    """
+    real_execute = session.execute
+    call_no = 0
+
+    async def _fake_execute(stmt, *args, **kwargs):
+        nonlocal call_no
+        call_no += 1
+        if call_no == 2:
+            fake_result = mock.MagicMock()
+            fake_result.scalar_one_or_none.return_value = None
+            return fake_result
+        return await real_execute(stmt, *args, **kwargs)
+
+    session.execute = _fake_execute  # type: ignore[method-assign]  # fake execute 覆盖 session 方法
+    return real_execute
+
+
+class TestWorldRepositoryCoverageGaps:
+    """world_repo 剩余未覆盖行（Issue #104 Phase 3）."""
+
+    def test_int_to_uuid_helper(self):
+        """_int_to_uuid：None 直通 / int→UUID / UUID 直通."""
+        assert _int_to_uuid(None) is None
+        assert _int_to_uuid(42) == uuid.UUID(int=42)
+        u = uuid.UUID(int=7)
+        assert _int_to_uuid(u) is u
+
+    async def test_update_setting_missing_raises_value_error(self, db_session, project):
+        """update 不存在的 id（rowcount=0）→ ValueError."""
+        repo = SQLiteWorldRepository(db_session)
+        ghost = _setting(project, "幽灵条目")
+        ghost.id = uuid.UUID(int=99999)  # 仓储层 int id：不存在但落在 SQLite 64 位范围内
+        with pytest.raises(ValueError, match="WorldSetting 99999 not found"):
+            await repo.update(ghost)
+
+    async def test_update_setting_missing_after_update_raises(self, db_session, project):
+        """UPDATE 生效（rowcount>0）但回查不到行 → ValueError「not found after update」."""
+        repo = SQLiteWorldRepository(db_session)
+        s = await repo.add(_setting(project, "灵气复苏"))
+
+        real_execute = _patch_execute_returning_none_on_requery(db_session)
+        try:
+            with pytest.raises(ValueError, match="not found after update"):
+                await repo.update(s.model_copy(update={"name": "改名"}))
+        finally:
+            db_session.execute = real_execute

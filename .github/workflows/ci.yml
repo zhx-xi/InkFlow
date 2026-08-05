@@ -367,12 +367,16 @@ jobs:
                  ../tests/cli/test_cli_serve.py `
                  ../tests/cli/test_cli_config.py `
                  ../tests/cli/test_cli_llm.py `
-                 ../tests/cli/test_cli_character.py `
+                 ../tests/cli/test_cli_character_crud.py `
+                 ../tests/cli/test_cli_character_relations.py `
+                 ../tests/cli/test_cli_character_errors.py `
                  ../tests/cli/test_cli_world.py `
                  ../tests/cli/test_cli_outline.py `
-                 ../tests/cli/test_cli_timeline.py `
+                 ../tests/cli/test_cli_timeline_crud.py `
+                 ../tests/cli/test_cli_timeline_ops.py `
                  ../tests/cli/test_cli_foreshadowing.py `
-                 ../tests/cli/test_cli_extraction.py `
+                 ../tests/cli/test_cli_extraction_crud.py `
+                 ../tests/cli/test_cli_extraction_errors.py `
                  ../tests/cli/test_cli_vector.py `
                  ../tests/cli/test_cli_audit.py `
                  ../tests/cli/test_cli_style.py `

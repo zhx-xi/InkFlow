@@ -39,7 +39,10 @@ from inkflow.domain.ports.prompt_template import (
     RenderedPrompt,
 )
 from inkflow.domain.ports.style_errors import StyleLLMAnalysisError
-from inkflow.domain.services._style_llm_analyzer import StyleLLMAnalyzer
+from inkflow.domain.services._style_llm_analyzer import (
+    StyleLLMAnalyzer,
+    _extract_json_fragment,
+)
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 TS = datetime(2026, 8, 1, 10, 0, 0, tzinfo=UTC)
@@ -274,3 +277,34 @@ class TestStyleLLMAnalyzer:
         msgs = mock_llm.chat.await_args.args[0]
         assert msgs[0].role == "system"
         assert msgs[-1].role == "user"
+
+    async def test_malformed_json_syntax_retries_then_succeeds(
+        self, analyzer: StyleLLMAnalyzer, mock_llm: MagicMock, project: Project
+    ) -> None:
+        """括号平衡但语法非法的 JSON → json.JSONDecodeError 分支 → 修复重试后成功。"""
+        mock_llm.chat.side_effect = [
+            _ok_response('{"a": }'),
+            _ok_response(_payload(verdict="likely_ai", reasoning="特征明显。")),
+        ]
+        result = await analyzer.analyze(project, TEXT)
+        assert result.llm_verdict == "likely_ai"
+        assert result.reasoning == "特征明显。"
+        assert mock_llm.chat.await_count == 2
+
+
+class TestExtractJsonFragment:
+    """_extract_json_fragment 纯函数测试（转义引号 / 嵌套继续扫描 / 不平衡）。"""
+
+    def test_escaped_quotes_inside_string(self) -> None:
+        """字符串字面量内的转义引号不提前闭合字符串（escaped 状态机分支）。"""
+        text = '{"msg": "他说 \\"你好\\""}'
+        assert _extract_json_fragment(text) == text
+
+    def test_nested_closing_brace_continues_scan(self) -> None:
+        """内层 } 未使深度归零 → 继续扫描（深度 2→1 分支）。"""
+        text = '{"a": {"b": 1}}'
+        assert _extract_json_fragment(text) == text
+
+    def test_unbalanced_returns_none(self) -> None:
+        """括号不平衡（无闭标签）→ None。"""
+        assert _extract_json_fragment('{"a": 1') is None

@@ -46,7 +46,7 @@ from inkflow.domain.ports.outline_errors import (
 from inkflow.domain.ports.outline_repository import OutlineRepositoryProtocol
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.services._outline_generator import OutlineGenerator
-from inkflow.domain.services.outline_service import OutlineService
+from inkflow.domain.services.outline_service import OutlineService, _build_project_info
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 PID_OTHER = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000002")
@@ -610,3 +610,86 @@ class TestGenerate:
         no_project_repo = OutlineService(repository=mock_repo, generator=MagicMock())
         with pytest.raises(OutlineServiceError):
             await no_project_repo.generate(OutlineGenerateRequest(project_id=PID))
+
+
+# ── Phase 3 覆盖率补齐（#104）──────────────────────────────────
+
+
+class TestCoverageGaps:
+    """int id 直传 / 部分更新跳过冲突检查 / project_info extra / get_point。"""
+
+    async def test_get_outline_with_int_id(self, service, mock_repo) -> None:
+        """int id 直传仓储，不做 UUID 转换。"""
+        mock_repo.get = AsyncMock(return_value=None)
+        assert await service.get_outline(7) is None
+        mock_repo.get.assert_awaited_once_with(7)
+
+    async def test_update_outline_without_name_skips_conflict_check(
+        self, service, mock_repo
+    ) -> None:
+        """不传 name → 跳过同名冲突检查，仅合并 description。"""
+        outline = _outline(name="第一卷大纲")
+        mock_repo.get = AsyncMock(return_value=outline)
+        mock_repo.update = AsyncMock(side_effect=lambda o: o)
+
+        updated = await service.update_outline(outline.id, OutlineUpdate(description="新描述"))
+
+        assert updated is not None
+        merged = mock_repo.update.await_args.args[0]
+        assert merged.description == "新描述"
+        assert merged.name == "第一卷大纲"
+        mock_repo.get_by_name.assert_not_awaited()
+
+    async def test_get_point(self, service, mock_repo) -> None:
+        """get_point → 委托 repo.get_point（int id）。"""
+        outline = _outline(name="第一卷大纲")
+        point = _point(name="觉醒", outline=outline, type="转折")
+        mock_repo.get_point = AsyncMock(return_value=point)
+
+        assert await service.get_point(point.id) == point
+
+        mock_repo.get_point.assert_awaited_once_with(point.id.int)
+
+    async def test_update_arc_without_name_skips_conflict_check(self, service, mock_repo) -> None:
+        """不传 name → 跳过同名冲突检查，仅合并 description。"""
+        arc = _arc(name="主线")
+        mock_repo.get_arc = AsyncMock(return_value=arc)
+        mock_repo.update_arc = AsyncMock(side_effect=lambda a: a)
+
+        updated = await service.update_arc(arc.id, StoryArcUpdate(description="新说明"))
+
+        assert updated is not None
+        merged = mock_repo.update_arc.await_args.args[0]
+        assert merged.description == "新说明"
+        assert merged.name == "主线"
+        mock_repo.get_arc_by_name.assert_not_awaited()
+
+    def test_build_project_info_includes_extra(self) -> None:
+        """project.config.extra 非空 → project_info 含 JSON 序列化的扩展配置。"""
+        project = Project(
+            id=PID,
+            name="测试项目",
+            config=ProjectConfig(extra={"基调": "热血"}),
+            created_at=TS,
+            updated_at=TS,
+        )
+
+        info = _build_project_info(project)
+
+        assert "项目名: 测试项目" in info
+        assert '扩展配置: {"基调": "热血"}' in info
+
+    def test_build_project_info_without_extra(self) -> None:
+        """project.config.extra 为空 → project_info 不含扩展配置段。"""
+        project = Project(
+            id=PID,
+            name="测试项目",
+            config=ProjectConfig(),
+            created_at=TS,
+            updated_at=TS,
+        )
+
+        info = _build_project_info(project)
+
+        assert "项目名: 测试项目" in info
+        assert "扩展配置" not in info

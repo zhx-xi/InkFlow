@@ -476,3 +476,92 @@ class TestCharCount:
 
     async def test_char_count_ignores_model_arg(self) -> None:
         assert await _char_count("x" * 40, "openai/gpt-4o") == 10
+
+
+# ── Phase 3 覆盖率补齐（#104）：DYNAMIC 层放得下 → 整块放入 ──────
+
+
+class TestDynamicLayerFit:
+    """Dynamic 层条目在 cap 内 → 直接放入 blocks（不裁剪、不压缩）。"""
+
+    @pytest.fixture
+    def svc(self) -> ContextService:
+        return ContextService(
+            sources={
+                ContextSourceType.CHAPTER_SUMMARY: MockSource(
+                    [
+                        _item(
+                            source=ContextSourceType.CHAPTER_SUMMARY,
+                            title="第1章摘要",
+                            content="x" * 40,  # 40 字符 → 10 tokens
+                            priority=5,
+                        )
+                    ]
+                ),
+            },
+            count_tokens=_mock_count_tokens,
+        )
+
+    async def test_dynamic_item_fits_within_cap(self, svc: ContextService) -> None:
+        """budget=80 → DYNAMIC cap=24；10 tokens ≤ 24 → 放入 blocks。"""
+        result = await svc.build_context(_req(model="openai/gpt-3.5-turbo", max_tokens=100))
+
+        dynamic_blocks = [b for b in result.blocks if b.layer == ContextLayer.DYNAMIC]
+        assert len(dynamic_blocks) == 1
+        assert dynamic_blocks[0].item.title == "第1章摘要"
+        assert dynamic_blocks[0].token_count == 10
+        assert dynamic_blocks[0].compressed is False
+        assert result.dropped == []
+
+    async def test_dynamic_partial_fit_drops_overflow(self) -> None:
+        """第二个条目放不下 → 裁剪记录 reason=over_budget。"""
+        svc = ContextService(
+            sources={
+                ContextSourceType.CHAPTER_SUMMARY: MockSource(
+                    [
+                        _item(
+                            source=ContextSourceType.CHAPTER_SUMMARY,
+                            title="小摘要",
+                            content="x" * 40,  # 10 tokens
+                            priority=10,
+                        ),
+                        _item(
+                            source=ContextSourceType.CHAPTER_SUMMARY,
+                            title="大摘要",
+                            content="x" * 400,  # 100 tokens
+                            priority=0,
+                        ),
+                    ]
+                ),
+            },
+            count_tokens=_mock_count_tokens,
+        )
+
+        result = await svc.build_context(_req(model="openai/gpt-3.5-turbo", max_tokens=100))
+
+        dynamic_titles = [b.item.title for b in result.blocks if b.layer == ContextLayer.DYNAMIC]
+        assert dynamic_titles == ["小摘要"]
+        dropped_dynamic = [
+            d for d in result.dropped if d.item.source == ContextSourceType.CHAPTER_SUMMARY
+        ]
+        assert len(dropped_dynamic) == 1
+        assert dropped_dynamic[0].item.title == "大摘要"
+        assert dropped_dynamic[0].reason == "over_budget"
+
+    async def test_allocate_with_empty_dynamic_layer(self) -> None:
+        """DYNAMIC 层无条目 → 不产出 block（探测 233 回边分支）。"""
+        svc = ContextService(sources={}, count_tokens=_mock_count_tokens)
+
+        result = await svc._allocate(
+            {
+                ContextLayer.PROTECTED: [],
+                ContextLayer.COMPRESSIBLE: [],
+                ContextLayer.DYNAMIC: [],
+            },
+            1000,
+            "openai/gpt-4o",
+        )
+
+        assert result.blocks == []
+        assert result.total_tokens == 0
+        assert result.dropped == []

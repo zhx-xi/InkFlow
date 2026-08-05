@@ -70,7 +70,7 @@
 
 import json
 import os
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -300,3 +300,205 @@ class TestServeOpenBrowser:
             assert result.exit_code == 0
             mock_timer.call_args.args[1]()
             mock_wb.assert_called_once_with("http://0.0.0.0:9999/docs")
+
+
+# =====================================================================
+# 装配缝内部实现（_run_server / _write_port_file）+ serve 尾部生命周期
+# =====================================================================
+
+
+class TestRunServerSeam:
+    """_run_server 内部实现：uvicorn 装配参数、--port 0 动态分配、reload 分支。
+
+    测试**不**真实启动 uvicorn：patch uvicorn.Config / uvicorn.Server 与
+    serve 模块的 threading.Thread（拦截后台线程创建），断言装配契约。
+    """
+
+    def test_non_reload_assembles_uvicorn_and_starts_thread(self):
+        """非 reload：Config 装配参数正确 + 后台线程(name/daemon/target=server.run)启动。"""
+        import inkflow.cli.commands.serve as serve_mod
+
+        fake_server = MagicMock()
+        fake_server.started = True  # 跳过 started 轮询等待
+        with (
+            patch("uvicorn.Config") as mock_config_cls,
+            patch("uvicorn.Server", return_value=fake_server) as mock_server_cls,
+            patch(f"{SERVE_MOD}.threading.Thread") as mock_thread_cls,
+            patch(f"{SERVE_MOD}._server_thread", None),
+            patch(f"{SERVE_MOD}._current_server", None),
+        ):
+            actual = serve_mod._run_server("127.0.0.1", 8000, False)
+            # 模块级运行状态记录（Ctrl+C 优雅关闭用）——须在 patch 生效内断言
+            assert serve_mod._current_server is fake_server
+            assert serve_mod._server_thread is mock_thread_cls.return_value
+
+        assert actual == 8000
+        mock_config_cls.assert_called_once_with(
+            "inkflow.api.app:app",
+            host="127.0.0.1",
+            port=8000,
+            reload=False,
+            log_level="info",
+        )
+        mock_server_cls.assert_called_once_with(mock_config_cls.return_value)
+        # 后台线程：target=server.run、name、daemon=False（保活线程，非守护）
+        mock_thread_cls.assert_called_once()
+        tcall = mock_thread_cls.call_args
+        assert _param(tcall, "target", 0) == fake_server.run
+        assert _param(tcall, "name", 1) == "inkflow-uvicorn"
+        assert _param(tcall, "daemon", 2) is False
+        mock_thread_cls.return_value.start.assert_called_once()
+
+    def test_port_zero_dynamic_allocation(self):
+        """--port 0：socket 预绑定取系统分配端口，Config 与实际端口装配。"""
+        from inkflow.cli.commands.serve import _run_server
+
+        fake_sock = MagicMock()
+        fake_sock.getsockname.return_value = ("127.0.0.1", 43210)
+        fake_server = MagicMock()
+        fake_server.started = True
+        with (
+            patch("socket.socket", return_value=fake_sock),
+            patch("uvicorn.Config") as mock_config_cls,
+            patch("uvicorn.Server", return_value=fake_server),
+            patch(f"{SERVE_MOD}.threading.Thread"),
+            patch(f"{SERVE_MOD}._server_thread", None),
+            patch(f"{SERVE_MOD}._current_server", None),
+        ):
+            actual = _run_server("0.0.0.0", 0, False)
+
+        assert actual == 43210
+        fake_sock.bind.assert_called_once_with(("0.0.0.0", 0))
+        fake_sock.close.assert_called_once()
+        assert _param(mock_config_cls.call_args, "port", 2) == 43210
+
+    def test_reload_blocks_without_thread(self):
+        """reload：直接阻塞调 server.run（supervisor 语义），不创建后台线程。"""
+        from inkflow.cli.commands.serve import _run_server
+
+        fake_server = MagicMock()
+        with (
+            patch("uvicorn.Config") as mock_config_cls,
+            patch("uvicorn.Server", return_value=fake_server) as _mock_server_cls,
+            patch(f"{SERVE_MOD}.threading.Thread") as mock_thread_cls,
+        ):
+            actual = _run_server("127.0.0.1", 8000, True)
+
+        assert actual == 8000
+        fake_server.run.assert_called_once()
+        mock_thread_cls.assert_not_called()
+        assert _param(mock_config_cls.call_args, "reload", 3) is True
+
+    def test_run_server_waits_for_started(self):
+        """非 reload：server.started 未就绪时轮询等待（while not server.started 循环体）。"""
+        import inkflow.cli.commands.serve as serve_mod
+
+        class _FakeServer(MagicMock):
+            """started 第一次读 False（进循环）、第二次 True（退出循环）。"""
+
+            _reads = 0
+
+            @property
+            def started(self):
+                self._reads += 1
+                return self._reads > 1
+
+        fake_server = _FakeServer()
+        with (
+            patch("uvicorn.Config"),
+            patch("uvicorn.Server", return_value=fake_server),
+            patch(f"{SERVE_MOD}.threading.Thread"),
+            patch(f"{SERVE_MOD}._server_thread", None),
+            patch(f"{SERVE_MOD}._current_server", None),
+            patch("time.sleep") as mock_sleep,
+        ):
+            actual = serve_mod._run_server("127.0.0.1", 8000, False)
+
+        assert actual == 8000
+        assert fake_server._reads == 2  # 循环体至少执行一次后才退出
+        mock_sleep.assert_called_once_with(0.02)
+
+
+class TestWritePortFileSeam:
+    """_write_port_file 真实执行：原子写入（tmp + os.replace）。"""
+
+    def test_write_port_file_atomic(self, tmp_path):
+        """端口文件真实写入：JSON 内容正确，无 .tmp 残留。"""
+        from inkflow.cli.commands.serve import _write_port_file
+
+        target = tmp_path / "serve.json"
+        payload = {"port": 8000, "token": "tok", "pid": 123, "version": "0.1.0"}
+        _write_port_file(target, payload)
+
+        assert target.exists()
+        assert json.loads(target.read_text(encoding="utf-8")) == payload
+        assert not (tmp_path / "serve.json.tmp").exists()
+
+    def test_serve_port_file_real_write(self, cli_runner, tmp_path):
+        """serve --port-file：真实调用交付缝写文件，内容与 INKFLOW_READY 行一致。"""
+        from inkflow.cli.commands.serve import app
+
+        port_file = tmp_path / "serve.json"
+        with patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT):
+            result = cli_runner.invoke(app, ["--port-file", str(port_file)])
+
+        assert result.exit_code == 0
+        assert port_file.exists()
+        assert json.loads(port_file.read_text(encoding="utf-8")) == _parse_ready(
+            result.output
+        )
+        assert not (tmp_path / "serve.json.tmp").exists()
+
+
+class TestServeShutdown:
+    """serve 尾部生命周期：线程 join + Ctrl+C 优雅关闭。"""
+
+    def test_serve_keyboard_interrupt_graceful(self, cli_runner):
+        """Ctrl+C：join 抛 KeyboardInterrupt → 置 should_exit → 再 join(timeout=5)。"""
+        from inkflow.cli.commands.serve import app
+
+        fake_thread = MagicMock()
+        fake_thread.join.side_effect = [KeyboardInterrupt, None]
+        fake_server = MagicMock()
+        with (
+            patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT),
+            patch(f"{SERVE_MOD}._server_thread", fake_thread),
+            patch(f"{SERVE_MOD}._current_server", fake_server),
+        ):
+            result = cli_runner.invoke(app, [])
+
+        assert result.exit_code == 0  # 内部捕获，不冒泡
+        assert fake_thread.join.call_count == 2
+        assert fake_thread.join.call_args_list[1].kwargs.get("timeout") == 5
+        assert fake_server.should_exit is True  # 通知 uvicorn 优雅退出
+        # 交付行在 join 之前已输出
+        assert _parse_ready(result.output)["port"] == FAKE_PORT
+
+    def test_serve_keyboard_interrupt_without_current_server(self, cli_runner):
+        """Ctrl+C 且 _current_server 为 None：跳过 should_exit，仍 join(timeout=5) 收尾。"""
+        from inkflow.cli.commands.serve import app
+
+        fake_thread = MagicMock()
+        fake_thread.join.side_effect = [KeyboardInterrupt, None]
+        with (
+            patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT),
+            patch(f"{SERVE_MOD}._server_thread", fake_thread),
+            patch(f"{SERVE_MOD}._current_server", None),
+        ):
+            result = cli_runner.invoke(app, [])
+
+        assert result.exit_code == 0
+        assert fake_thread.join.call_count == 2
+        assert fake_thread.join.call_args_list[1].kwargs.get("timeout") == 5
+        # _current_server 为 None → 不尝试置 should_exit
+        assert "INKFLOW_READY" in result.output
+
+    def test_serve_startup_line_shows_host_port(self, cli_runner):
+        """启动提示行展示请求的 --host/--port。"""
+        from inkflow.cli.commands.serve import app
+
+        with patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT):
+            result = cli_runner.invoke(app, ["--host", "0.0.0.0", "--port", "9999"])
+
+        assert result.exit_code == 0
+        assert "🚀 InkFlow 服务启动于 http://0.0.0.0:9999" in result.output

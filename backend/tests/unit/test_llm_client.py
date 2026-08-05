@@ -237,3 +237,159 @@ class TestLangChainLLMClient:
 
         client = LangChainLLMClient(max_retries=5)
         assert not hasattr(client, "_max_retries")
+
+
+class TestLangChainLLMClientErrorMapping:
+    """Issue #104 Phase 3：异常映射缺口（parse / provider / ainvoke / astream）。"""
+
+    @pytest.fixture
+    def chat_messages(self) -> list[ChatMessage]:
+        return [
+            ChatMessage(role="system", content="你是一个助手"),
+            ChatMessage(role="user", content="你好"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_chat_invalid_model_format_raises_llm_error(self, chat_messages):
+        """model 字符串无 '/' → LLMRequestError（provider 为空、model 原样保留）。"""
+        from inkflow.domain.ports.llm_errors import LLMRequestError
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        client = LangChainLLMClient()
+        with pytest.raises(LLMRequestError) as exc_info:
+            await client.chat(chat_messages, model="no-slash-model")
+        assert exc_info.value.provider == ""
+        assert exc_info.value.model == "no-slash-model"
+        assert "Invalid model format" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_chat_unknown_provider_raises_llm_error(self, chat_messages):
+        """get_provider_config 抛 ValueError（API key 未配置）→ LLMRequestError。"""
+        from inkflow.domain.ports.llm_errors import LLMRequestError
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        client = LangChainLLMClient()
+        with (
+            patch(
+                "inkflow.infrastructure.llm.langchain_client.get_provider_config",
+                side_effect=ValueError("API key not configured for provider: openai"),
+            ),
+            pytest.raises(LLMRequestError) as exc_info,
+        ):
+            await client.chat(chat_messages, model="openai/gpt-4o")
+        assert exc_info.value.provider == "openai"
+        assert exc_info.value.model == "gpt-4o"
+        assert "API key not configured" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_chat_ainvoke_failure_maps_to_llm_error(self, chat_messages):
+        """ainvoke 抛任意异常 → LLMRequestError（retries_exhausted=True）。"""
+        from inkflow.domain.ports.llm_errors import LLMRequestError
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        mock_chat_model = AsyncMock()
+        mock_chat_model.ainvoke = AsyncMock(side_effect=RuntimeError("upstream timeout"))
+        client = LangChainLLMClient()
+        client._get_chat_model = MagicMock(return_value=mock_chat_model)
+        with (
+            patch(
+                "inkflow.infrastructure.llm.langchain_client.get_provider_config",
+                return_value=_fake_provider_config(),
+            ),
+            pytest.raises(LLMRequestError) as exc_info,
+        ):
+            await client.chat(chat_messages, model="openai/gpt-4o")
+        assert exc_info.value.retries_exhausted is True
+        assert "LLM call failed" in str(exc_info.value)
+        assert exc_info.value.provider == "openai"
+
+    @pytest.mark.asyncio
+    async def test_chat_stream_empty_messages_raises(self):
+        """chat_stream 空消息 → ValueError（与 chat 一致）。"""
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        client = LangChainLLMClient()
+        with pytest.raises(ValueError, match="messages cannot be empty"):
+            async for _ in client.chat_stream([]):
+                pass  # pragma: no cover
+
+    @pytest.mark.asyncio
+    async def test_chat_stream_astream_failure_maps_to_llm_error(self, chat_messages):
+        """astream 中途抛异常 → LLMRequestError「LLM stream failed」。"""
+        from inkflow.domain.ports.llm_errors import LLMRequestError
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        async def _broken_stream(*args, **kwargs):
+            raise RuntimeError("stream broke")
+            yield  # pragma: no cover
+
+        mock_model = MagicMock()
+        mock_model.astream = _broken_stream
+        client = LangChainLLMClient()
+        client._get_chat_model = MagicMock(return_value=mock_model)
+        with (
+            patch(
+                "inkflow.infrastructure.llm.langchain_client.get_provider_config",
+                return_value=_fake_provider_config(),
+            ),
+            pytest.raises(LLMRequestError) as exc_info,
+        ):
+            async for _ in client.chat_stream(chat_messages):
+                pass  # pragma: no cover
+        assert "LLM stream failed" in str(exc_info.value)
+        assert exc_info.value.provider == "openai"
+
+    @pytest.mark.asyncio
+    async def test_count_tokens_invalid_model_uses_raw_string(self, chat_messages):
+        """count_tokens 无法解析 model 字符串 → 原样作为 model_name 传给 tiktoken。"""
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        client = LangChainLLMClient()
+        fake_enc = MagicMock()
+        fake_enc.encode.return_value = [1, 2, 3]
+        fake_tiktoken = MagicMock()
+        fake_tiktoken.encoding_for_model.return_value = fake_enc
+        with patch.dict("sys.modules", {"tiktoken": fake_tiktoken}):
+            count = await client.count_tokens(chat_messages, model="no-slash-model")
+
+        assert count > 0
+        assert fake_tiktoken.encoding_for_model.call_args[0][0] == "no-slash-model"
+
+    def test_get_chat_model_full_kwargs(self):
+        """_get_chat_model 携带 api_key/base_url/max_tokens → 全部写入 ChatOpenAI kwargs。"""
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        provider_cfg = LLMProviderConfig(
+            provider="deepseek",
+            api_key="ds-key",
+            base_url="https://api.deepseek.com/v1",
+            default_model="deepseek-chat",
+            max_retries=3,
+            timeout=30,
+        )
+        with patch("inkflow.infrastructure.llm.langchain_client.ChatOpenAI") as mock_chat:
+            LangChainLLMClient()._get_chat_model(
+                provider_cfg, model_name="deepseek-chat", temperature=0.7, max_tokens=100
+            )
+        kwargs = mock_chat.call_args[1]
+        assert kwargs["openai_api_key"] == "ds-key"
+        assert kwargs["openai_api_base"] == "https://api.deepseek.com/v1"
+        assert kwargs["max_tokens"] == 100
+        assert kwargs["temperature"] == 0.7
+        assert kwargs["request_timeout"] == float(30)
+
+    def test_get_chat_model_omits_empty_optional_kwargs(self):
+        """_get_chat_model 无 api_key/base_url/max_tokens → 对应 kwargs 不出现。"""
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        provider_cfg = LLMProviderConfig(
+            provider="ollama",
+            api_key="",  # 空字符串为假值 → 不写 openai_api_key
+            default_model="qwen2.5",
+        )
+        with patch("inkflow.infrastructure.llm.langchain_client.ChatOpenAI") as mock_chat:
+            LangChainLLMClient()._get_chat_model(provider_cfg)
+        kwargs = mock_chat.call_args[1]
+        assert "openai_api_key" not in kwargs
+        assert "openai_api_base" not in kwargs
+        assert "max_tokens" not in kwargs

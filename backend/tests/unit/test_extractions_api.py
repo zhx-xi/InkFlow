@@ -25,9 +25,11 @@ import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from inkflow.api.app import app
+from inkflow.api.routers.extractions import RetrieveBody
 from inkflow.domain.models.extraction import (
     ExtractionResult,
     ExtractionRun,
@@ -46,6 +48,8 @@ from inkflow.domain.ports.extraction_errors import (
 )
 from inkflow.domain.ports.foreshadowing_errors import ForeshadowingExtractionError
 from inkflow.domain.ports.llm_errors import LLMRequestError
+from inkflow.domain.ports.outline_errors import OutlineNameConflictError
+from inkflow.domain.ports.style_errors import StyleValidationError
 from inkflow.domain.ports.vector_store import EntityType, RetrievedEntity
 
 client = TestClient(app)
@@ -810,3 +814,44 @@ class TestVectorRetrieveAPI:
         )
         assert response.status_code == 500
         assert response.json()["detail"] == "向量检索服务不可用"
+
+
+class TestExtractionCoverageGaps:
+    """F14 覆盖率补齐：StyleValidationError / OutlineNameConflictError 映射 + 超长 query 校验."""
+
+    @patch("inkflow.api.routers.extractions.get_extraction_service")
+    def test_extract_style_validation_error_422(self, mock_get_svc: MagicMock) -> None:
+        """风格检测输入约束失败（StyleValidationError）→ 422（消息即 detail）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.extract = AsyncMock(side_effect=StyleValidationError("文本不能为空"))
+
+        response = client.post(
+            "/api/v1/extract",
+            json={"project_id": str(PID), "type": "style", "text": TEXT},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "文本不能为空"
+
+    @patch("inkflow.api.routers.extractions.get_extraction_service")
+    def test_extract_outline_name_conflict_422(self, mock_get_svc: MagicMock) -> None:
+        """大纲同名冲突（OutlineNameConflictError）→ 422（消息即 detail）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.extract = AsyncMock(side_effect=OutlineNameConflictError())
+
+        response = client.post(
+            "/api/v1/extract",
+            json={
+                "project_id": str(PID),
+                "type": "outline",
+                "prompt": "复仇与救赎双线并进",
+                "num_chapters": 30,
+            },
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "同名大纲已存在（大纲名在项目内必须唯一）"
+
+    def test_retrieve_query_too_long_422(self) -> None:
+        """RetrieveBody 查询文本超过 500 字符 → ValueError（直接调用，规避 pydantic-core 盲区）."""
+        with pytest.raises(ValueError, match="查询文本不能超过 500 个字符"):
+            RetrieveBody.validate_query("长" * 501)
+        assert RetrieveBody.validate_query("  检索词  ") == "检索词"

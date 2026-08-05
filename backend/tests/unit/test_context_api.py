@@ -176,3 +176,43 @@ class TestSummaryAPI:
         assert response.status_code == 200
         data = response.json()
         assert data["summary"] == "新摘要"
+
+
+class TestContextCoverageGaps:
+    """F6 覆盖率补齐：assemble ValueError 分支 / refresh 无效 UUID 与章节缺失."""
+
+    @patch("inkflow.api.routers.context.get_context_service")
+    async def test_assemble_value_error_400(self, mock_get_svc: MagicMock) -> None:
+        """build_context 抛 ValueError（参数校验失败）→ 400（消息即 detail）."""
+        mock_svc = MagicMock()
+        mock_svc.build_context = AsyncMock(side_effect=ValueError("写作要求超过预算"))
+        mock_get_svc.return_value = mock_svc
+
+        response = client.post(
+            "/api/v1/context/assemble",
+            json={
+                "project_id": str(uuid.uuid4()),
+                "chapter_id": str(uuid.uuid4()),
+                "model": "openai/gpt-4o",
+                "writing_requirements": "X" * 5000,
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "写作要求超过预算"
+
+    async def test_refresh_summary_invalid_uuid_404(self) -> None:
+        """强制刷新摘要：无效 UUID → 404「章节不存在」."""
+        response = client.post("/api/v1/context/chapters/not-a-uuid/summary/refresh")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "章节不存在"
+
+    @patch("inkflow.api.routers.context.get_summary_service")
+    async def test_refresh_summary_chapter_not_found_404(self, mock_get_svc: MagicMock) -> None:
+        """强制刷新摘要：章节不存在（ensure_summary 抛 ValueError）→ 404."""
+        mock_svc = MagicMock()
+        mock_svc.ensure_summary = AsyncMock(side_effect=ValueError("章节不存在"))
+        mock_get_svc.return_value = mock_svc
+
+        response = client.post(f"/api/v1/context/chapters/{uuid.uuid4()}/summary/refresh")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "章节不存在"

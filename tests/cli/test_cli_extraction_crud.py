@@ -1,13 +1,7 @@
-"""F14 提取 CLI 命令测试 — Mock ExtractionService 隔离数据库（spec §4/§9 CLI 测试）.
+"""F14 提取 CLI 命令测试（CRUD/status 部分）— Mock ExtractionService 隔离数据库。
 
-覆盖（依据 specs/f14-extraction-service/spec.md §4/§9）:
-- extract run 各类型参数透传（--text/--text-file/--chapters 三选一、--prompt、
-  --num-chapters、--no-save、--auto-extract/--no-auto-extract、--index、--force）
-- success/skipped 人类可读输出与 --json 信封
-- extract status 人类可读与 --json（含 --type 过滤透传）
-- 信封格式与退出码 0/1/2；STYLE 正常执行（退出码 0 + ✅ 提取完成摘要，F16 落地，
-  spec §4.1/§8.2）；NOT_FOUND / RAG_ERROR / EXTRACTION_ERROR 信封
-- --text 与 --text-file 同时使用 → 退出码 2；--type 非法值 → 退出码 2
+从 test_cli_extraction.py 拆分（monster-file 护栏）：
+TestExtractRegistration / TestExtractRun / TestExtractStatus。
 """
 
 from __future__ import annotations
@@ -29,7 +23,9 @@ from inkflow.domain.models.extraction import (
     ExtractionType,
 )
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
-from inkflow.domain.ports.extraction_errors import RAGUnavailableError
+from inkflow.domain.ports.extraction_errors import (
+    RAGUnavailableError,
+)
 from inkflow.domain.ports.foreshadowing_errors import ForeshadowingExtractionError
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")

@@ -267,3 +267,94 @@ async def test_pipeline_error_message():
         await LangGraphAgentPipeline(llm).execute(stages, _make_context())
 
     assert "architect" in str(exc_info.value)
+
+
+# ── Phase 3 覆盖率补齐（#104）──────────────────────────────────
+
+
+def test_validate_duplicate_stage_ids():
+    """两个阶段共用同一 id → 「阶段 id 不能重复」错误。"""
+    stages = [
+        _make_stage("a", "A", _make_role("architect"), input_from=[], output_to=[]),
+        _make_stage("a", "A2", _make_role("writer"), input_from=[], output_to=[]),
+    ]
+    errors = LangGraphAgentPipeline(MockLLMClient()).validate(stages)
+    assert any("重复" in e for e in errors)
+
+
+def test_validate_unknown_downstream_reference():
+    """output_to 引用不存在的阶段 → 环检测两处 indegree 分支均容忍（不报循环）。"""
+    stages = [
+        _make_stage("a", "A", _make_role("architect"), input_from=[], output_to=["b"]),
+        _make_stage("b", "B", _make_role("writer"), input_from=["a"], output_to=["ghost"]),
+    ]
+    errors = LangGraphAgentPipeline(MockLLMClient()).validate(stages)
+    # ghost 不在 ids 中：入度统计与拓扑遍历均跳过它，只报缺少终点
+    assert any("终点" in e for e in errors)
+    assert not any("循环" in e for e in errors)
+
+
+def test_validate_indegree_decrement_not_zero():
+    """c 有两个上游时，处理第一个上游后 indegree 2→1（非 0 分支）。"""
+    stages = [
+        _make_stage("a", "A", _make_role("architect"), input_from=[], output_to=["b", "c"]),
+        _make_stage("b", "B", _make_role("writer"), input_from=["a"], output_to=["c"]),
+        _make_stage("c", "C", _make_role("auditor"), input_from=["a", "b"], output_to=[]),
+    ]
+    assert LangGraphAgentPipeline(MockLLMClient()).validate(stages) == []
+
+
+async def test_execute_invalid_config_raises():
+    """execute 前 validate 失败 → PipelineError（管线配置无效）。"""
+    stages = [
+        _make_stage("a", "A", _make_role("architect"), input_from=[], output_to=[]),
+        _make_stage("b", "B", _make_role("writer"), input_from=[], output_to=[]),
+    ]
+    with pytest.raises(PipelineError, match="管线配置无效"):
+        await LangGraphAgentPipeline(MockLLMClient()).execute(stages, _make_context())
+
+
+async def test_execute_unknown_stage_type_raises():
+    """阶段 id 不在 _NODE_MAP → PipelineError（未知阶段类型）。"""
+    stages = [
+        _make_stage("unknown", "未知", _make_role("architect"), input_from=[], output_to=[]),
+    ]
+    with pytest.raises(PipelineError, match="未知阶段类型: unknown"):
+        await LangGraphAgentPipeline(MockLLMClient()).execute(stages, _make_context())
+
+
+async def test_execute_node_pipeline_error_propagates(monkeypatch):
+    """节点内抛 PipelineError → except PipelineError 原样透传（不包装）。"""
+
+    async def _boom_node(state):
+        raise PipelineError("node exploded")
+
+    stages = [
+        _make_stage("architect", "A", _make_role("architect"), input_from=[], output_to=["writer"]),
+        _make_stage("writer", "W", _make_role("writer"), input_from=["architect"], output_to=[]),
+    ]
+    monkeypatch.setattr(
+        "inkflow.infrastructure.agent.langgraph_pipeline._NODE_MAP",
+        {"architect": _boom_node, "writer": _boom_node},
+    )
+    with pytest.raises(PipelineError, match="node exploded"):
+        await LangGraphAgentPipeline(MockLLMClient()).execute(stages, _make_context())
+
+
+async def test_execute_node_generic_exception_wrapped(monkeypatch):
+    """节点内抛非 PipelineError 异常 → 包装为 PipelineError（管线执行失败），保留 cause。"""
+
+    async def _crash_node(state):
+        raise RuntimeError("node crashed")
+
+    stages = [
+        _make_stage("architect", "A", _make_role("architect"), input_from=[], output_to=["writer"]),
+        _make_stage("writer", "W", _make_role("writer"), input_from=["architect"], output_to=[]),
+    ]
+    monkeypatch.setattr(
+        "inkflow.infrastructure.agent.langgraph_pipeline._NODE_MAP",
+        {"architect": _crash_node, "writer": _crash_node},
+    )
+    with pytest.raises(PipelineError, match="管线执行失败") as exc_info:
+        await LangGraphAgentPipeline(MockLLMClient()).execute(stages, _make_context())
+    assert isinstance(exc_info.value.__cause__, RuntimeError)

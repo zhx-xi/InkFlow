@@ -23,9 +23,11 @@ import uuid
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from inkflow.api.app import app
+from inkflow.api.routers.outlines import OutlineCreateBody, PlotPointCreateBody
 from inkflow.domain.models.outline import (
     GeneratedArc,
     GeneratedOutline,
@@ -42,7 +44,9 @@ from inkflow.domain.ports.outline_errors import (
     OutlineGenerationError,
     OutlineNameConflictError,
     OutlineNotFoundError,
+    PlotPointNotFoundError,
     ProjectNotFoundError,
+    StoryArcNotFoundError,
 )
 
 client = TestClient(app)
@@ -717,3 +721,107 @@ class TestGenerateAPI:
         response = client.post("/api/v1/outlines/generate", json={"project_id": str(PID)})
         assert response.status_code == 500
         assert response.json()["detail"] == "大纲生成失败: LLM 输出无法解析，请重试"
+
+
+class TestOutlineCoverageGaps:
+    """F11 覆盖率补齐：异常映射分支 / None 防御 / 聚合过滤分支 / validator 直接调用."""
+
+    @patch("inkflow.api.routers.outlines.get_outline_service")
+    def test_get_arc_story_arc_not_found_404(self, mock_get_svc: MagicMock) -> None:
+        """StoryArcNotFoundError（服务层主动抛出）→ 404（消息即 detail）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.get_arc = AsyncMock(side_effect=StoryArcNotFoundError())
+
+        response = client.get(f"/api/v1/story-arcs/{uuid.uuid4()}")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "故事弧线不存在"
+
+    @patch("inkflow.api.routers.outlines.get_outline_service")
+    def test_get_point_not_found_error_404(self, mock_get_svc: MagicMock) -> None:
+        """PlotPointNotFoundError（服务层主动抛出）→ 404（消息即 detail）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.get_point = AsyncMock(side_effect=PlotPointNotFoundError())
+
+        response = client.get(f"/api/v1/plot-points/{uuid.uuid4()}")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "情节点不存在"
+
+    @patch("inkflow.api.routers.outlines.get_outline_service")
+    def test_get_arc_points_filters_other_arc(self, mock_get_svc: MagicMock) -> None:
+        """弧线详情 points 聚合只保留属于该弧线的成员（arc_id 不匹配的点被过滤）."""
+        svc = _mock_svc(mock_get_svc)
+        outline = _outline("第一卷大纲")
+        arc = _arc("主角成长线")
+        other_arc = _arc("配角支线")
+        member = _point("金手指觉醒", outline_id=outline.id, arc_id=arc.id)
+        foreign = _point("配角登场", outline_id=outline.id, arc_id=other_arc.id)
+        svc.get_arc = AsyncMock(return_value=arc)
+        svc.list_outlines = AsyncMock(return_value=([outline], 1))
+        svc.list_points = AsyncMock(return_value=[member, foreign])
+
+        response = client.get(f"/api/v1/story-arcs/{arc.id}")
+        assert response.status_code == 200
+        points = response.json()["points"]
+        assert [p["name"] for p in points] == ["金手指觉醒"]
+
+    @patch("inkflow.api.routers.outlines.get_outline_service")
+    def test_list_arcs_point_count_filters_other_arc(self, mock_get_svc: MagicMock) -> None:
+        """弧线列表 point_count 只统计属于该弧线的点（跨弧线点不计入）."""
+        svc = _mock_svc(mock_get_svc)
+        outline = _outline("第一卷大纲")
+        arc = _arc("主角成长线")
+        other_arc = _arc("配角支线")
+        member = _point("金手指觉醒", outline_id=outline.id, arc_id=arc.id)
+        foreign = _point("配角登场", outline_id=outline.id, arc_id=other_arc.id)
+        svc.list_arcs = AsyncMock(return_value=[arc])
+        svc.list_outlines = AsyncMock(return_value=([outline], 1))
+        svc.list_points = AsyncMock(return_value=[member, foreign])
+
+        response = client.get(f"/api/v1/projects/{PID}/story-arcs")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 1
+        assert data["items"][0]["point_count"] == 1
+
+    @patch("inkflow.api.routers.outlines.get_outline_service")
+    def test_update_outline_not_found_404(self, mock_get_svc: MagicMock) -> None:
+        """更新不存在的大纲返回 404."""
+        svc = _mock_svc(mock_get_svc)
+        svc.update_outline = AsyncMock(return_value=None)
+
+        response = client.patch(f"/api/v1/outlines/{uuid.uuid4()}", json={"name": "改名"})
+        assert response.status_code == 404
+        assert response.json()["detail"] == "大纲不存在"
+
+    @patch("inkflow.api.routers.outlines.get_outline_service")
+    def test_update_point_not_found_404(self, mock_get_svc: MagicMock) -> None:
+        """更新不存在的情节点返回 404."""
+        svc = _mock_svc(mock_get_svc)
+        svc.update_point = AsyncMock(return_value=None)
+
+        response = client.patch(f"/api/v1/plot-points/{uuid.uuid4()}", json={"name": "改名"})
+        assert response.status_code == 404
+        assert response.json()["detail"] == "情节点不存在"
+
+    @patch("inkflow.api.routers.outlines.get_outline_service")
+    def test_update_arc_not_found_404(self, mock_get_svc: MagicMock) -> None:
+        """更新不存在的弧线返回 404."""
+        svc = _mock_svc(mock_get_svc)
+        svc.update_arc = AsyncMock(return_value=None)
+
+        response = client.patch(f"/api/v1/story-arcs/{uuid.uuid4()}", json={"name": "改名"})
+        assert response.status_code == 404
+        assert response.json()["detail"] == "弧线不存在"
+
+    def test_validate_sort_order_negative(self) -> None:
+        """OutlineCreateBody 排序权重为负数 → ValueError（直接调用，规避 pydantic-core 盲区）."""
+        with pytest.raises(ValueError, match="排序权重不能为负数"):
+            OutlineCreateBody.validate_sort_order(-1)
+        assert OutlineCreateBody.validate_sort_order(0) == 0
+
+    def test_validate_position_negative(self) -> None:
+        """PlotPointCreateBody 排序位置为负数 → ValueError（直接调用）."""
+        with pytest.raises(ValueError, match="排序位置不能为负数"):
+            PlotPointCreateBody.validate_position(-1)
+        assert PlotPointCreateBody.validate_position(None) is None
+        assert PlotPointCreateBody.validate_position(2) == 2

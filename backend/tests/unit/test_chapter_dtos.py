@@ -83,6 +83,53 @@ class TestChapterUpdateValidation:
         assert u.status is None
         assert u.volume_id is None
 
+    def test_update_none_title_ok(self):
+        from inkflow.domain.models.chapter import ChapterUpdate
+
+        u = ChapterUpdate(title=None)
+        assert u.title is None
+
+    def test_update_empty_title_raises(self):
+        from inkflow.domain.models.chapter import ChapterUpdate
+
+        with pytest.raises(ValidationError, match="章节标题不能为空"):
+            ChapterUpdate(title="")
+
+    def test_update_title_too_long_raises(self):
+        from inkflow.domain.models.chapter import ChapterUpdate
+
+        with pytest.raises(ValidationError, match="章节标题不能超过 500 个字符"):
+            ChapterUpdate(title="长" * 501)
+
+
+class TestVolumeUpdateValidation:
+    """VolumeUpdate DTO 验证测试（None 直通 / 空标题 / 超长 / 合法）."""
+
+    def test_update_none_title_ok(self):
+        from inkflow.domain.models.chapter import VolumeUpdate
+
+        u = VolumeUpdate(title=None)
+        assert u.title is None
+        assert u.order_index is None
+
+    def test_update_valid_title_stripped(self):
+        from inkflow.domain.models.chapter import VolumeUpdate
+
+        u = VolumeUpdate(title="  第一卷  ")
+        assert u.title == "第一卷"
+
+    def test_update_empty_title_raises(self):
+        from inkflow.domain.models.chapter import VolumeUpdate
+
+        with pytest.raises(ValidationError, match="卷标题不能为空"):
+            VolumeUpdate(title="   ")
+
+    def test_update_title_too_long_raises(self):
+        from inkflow.domain.models.chapter import VolumeUpdate
+
+        with pytest.raises(ValidationError, match="卷标题不能超过 200 个字符"):
+            VolumeUpdate(title="长" * 201)
+
 
 class TestWordCount:
     """字数统计工具测试."""
