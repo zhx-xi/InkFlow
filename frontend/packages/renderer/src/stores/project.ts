@@ -19,6 +19,7 @@ export interface ProjectConfig {
   agent_auditor?: string | null;
   agent_reviser?: string | null;
   temperature?: number;
+  default_words?: number;
   writing_style?: string;
 }
 

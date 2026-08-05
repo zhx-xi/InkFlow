@@ -31,6 +31,7 @@ export function EditorToolbar({
       <button
         type="button"
         aria-label={t('write.toolbar.undo')}
+        title={`${t('write.toolbar.undo')} (Ctrl+Z)`}
         className={ICON_BTN_CLS}
         onClick={onUndo}
       >
@@ -39,6 +40,7 @@ export function EditorToolbar({
       <button
         type="button"
         aria-label={t('write.toolbar.redo')}
+        title={`${t('write.toolbar.redo')} (Ctrl+Y)`}
         className={ICON_BTN_CLS}
         onClick={onRedo}
       >
@@ -48,6 +50,7 @@ export function EditorToolbar({
         type="button"
         data-testid="toolbar-save"
         aria-label={t('write.toolbar.save')}
+        title={`${t('write.toolbar.save')} (Ctrl+S)`}
         className={ICON_BTN_CLS}
         onClick={onSave}
       >
@@ -57,6 +60,7 @@ export function EditorToolbar({
       <button
         type="button"
         aria-label={t('write.toolbar.continue')}
+        title={`${t('write.toolbar.continue')} (Ctrl+Enter)`}
         className={ICON_BTN_CLS}
         disabled={disabled}
         onClick={onContinue}
@@ -66,6 +70,7 @@ export function EditorToolbar({
       <button
         type="button"
         aria-label={t('write.toolbar.generate')}
+        title={`${t('write.toolbar.generate')} (Ctrl+Shift+Enter)`}
         className={ICON_BTN_CLS}
         disabled={disabled}
         onClick={onGenerate}

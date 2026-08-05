@@ -1,6 +1,7 @@
 /** 新建项目对话框（spec §4.2.2）：书名必填 1-100 / Genre 11 枚举 / 语言 / 目标字数默认 800000 */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { errorMessage } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import { useProjectStore } from '../stores/project';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -22,6 +23,25 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
   const [targetWords, setTargetWords] = useState(800000);
   const [error, setError] = useState<string | null>(null);
 
+  // §6.2③ 焦点归还：记录打开时 activeElement，任意关闭路径（ESC/遮罩/取消）卸载后归还触发按钮
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    return () => {
+      returnFocusRef.current?.focus();
+    };
+  }, []);
+
+  // §6.2③ ESC 键关闭：document 级监听覆盖对话框内任意焦点；
+  // 忽略 Radix Select 等已 preventDefault 的 Escape（如下拉面板开启时只关面板不关对话框）
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
   const handleCreate = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
@@ -33,8 +53,13 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
       return;
     }
     setError(null);
-    await createProject({ name: trimmed, genre, language, target_words: targetWords });
-    navigate('/writing');
+    try {
+      await createProject({ name: trimmed, genre, language, target_words: targetWords });
+      navigate('/writing');
+    } catch (err) {
+      // §6.3② 创建失败内联展示（复用既有 error 区域），对话框保持打开可修改重试
+      setError(t('dlg.createFailed', { reason: errorMessage(err) }));
+    }
   };
 
   return (

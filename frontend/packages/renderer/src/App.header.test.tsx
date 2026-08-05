@@ -1,19 +1,24 @@
 /**
- * App 顶栏视觉打磨契约（Issue #98 RED 阶段，spec §5.2.7 差距 #1 + §5.2.8 品牌接入）
+ * App 顶栏职责回归契约（Issue #105 RED 阶段，spec §7.2 顶栏：品牌 + 页面标题 + 主题/语言/内核状态，
+ * 不再承担导航；#98 既有契约保持）
  *
- * ⚠️ 本文件 = 契约。GREEN 实现 AppLayout 顶栏必须匹配：
+ * ⚠️ 本文件 = 契约。GREEN 实现 AppLayout 顶栏（role=banner）必须匹配：
  *
- * - 移除 `{theme} / {lang}` 调试文本：theme=paper/lang=zh 时「paper / zh」不得渲染
- *   （现状 App.tsx L36-38 渲染 → RED 缺口）
- * - 品牌接入（Q3=C 拍板：图标 + 文字）：
- *   - 顶栏（role=banner）内渲染品牌 logo <img>（评审 F7：图标为装饰性，alt="" + aria-hidden，
- *     品牌语义由相邻文字承载——断言 img 存在而非可访问名）
- *   - 顶栏仍渲染「InkFlow」文字（t('app.brand')，既有 App.test.tsx 冒烟契约保持）
- * - 设计假设：logo 为 <img>（react 静态资源），不要求特定 src/文件名；
- *   主题变体切换（paper/night/ink → 三版 svg）属视觉契约（§5.5 M4，vision 走查），不在此断言
+ * - 品牌保留（#98 契约不删）：装饰性 logo <img>（alt="" + aria-hidden="true"，
+ *   src 非 data: 且含 inkflow-icon-plain，主题三版切换属视觉契约）+ t('app.brand')「InkFlow」文字
+ * - 页面标题在顶栏：当前路由页面标题（默认 /projects → t('pj.title')「我的项目」）；
+ *   顶栏标题用**文本元素**（span/div，不用 heading 标签）——保持正文 h1 的 getByRole('heading') 契约唯一
+ * - 导航移出顶栏：banner 内无任何 role=link；导航在侧边栏（data-testid="app-nav"，
+ *   可访问名「写作/项目/设定库/设置」= t('nav.writing'|'nav.projects'|'nav.library'|'nav.settings')）
+ * - 全局状态控件在顶栏：
+ *   - 主题切换按钮 data-testid="header-theme-toggle"：点击触发 themeStore.setTheme（paper → 非 paper）
+ *   - 语言控件 data-testid="header-lang"：显示当前语言（lang=zh → t('lang.zh')「中文」）
+ *   - 内核状态：t('sb.kernel')「内核已连接」
+ * - 既有断言保持：无「paper / zh」调试文本
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import { apiFetch } from './api/client';
 import { useProjectStore } from './stores/project';
@@ -37,7 +42,7 @@ beforeEach(() => {
   apiFetchMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
 });
 
-describe('App 顶栏 — 调试残留清理 + 品牌 logo（#98 §5.2.7/5.2.8）', () => {
+describe('App 顶栏 — 职责回归：品牌 + 页面标题 + 全局状态（#105 §7.2）', () => {
   it('顶栏不渲染 {theme} / {lang} 调试文本（「paper / zh」不得出现）', async () => {
     render(<App />);
     // 等 loadProjects 完成（消化异步 setState，避免 act 警告）
@@ -60,5 +65,41 @@ describe('App 顶栏 — 调试残留清理 + 品牌 logo（#98 §5.2.7/5.2.8）
     expect(src).toMatch(/inkflow-icon-plain/);
     // Q3=C：图标 + 文字并存（t('app.brand') 保留）
     expect(within(banner).getByText('InkFlow')).toBeInTheDocument();
+  });
+
+  it('页面标题出现在顶栏（默认 /projects → 「我的项目」）', async () => {
+    render(<App />);
+    await waitFor(() => expect(useProjectStore.getState().loading).toBe(false));
+    const banner = screen.getByRole('banner');
+    // 顶栏标题 = t('pj.title')；文本元素（非 heading——正文 h1「我的项目」仍承担 heading 语义）
+    expect(within(banner).getByText('我的项目')).toBeInTheDocument();
+  });
+
+  it('导航链接不在顶栏：banner 内无 role=link，导航已移至侧边栏', async () => {
+    render(<App />);
+    await waitFor(() => expect(useProjectStore.getState().loading).toBe(false));
+    const banner = screen.getByRole('banner');
+    // 顶栏不再承担导航（spec §7.2 顶栏职责回归）
+    // queryAllByRole：RED 下 banner 含 3 个导航链接 → 长度断言失败（干净的结构缺失失败形态）
+    expect(within(banner).queryAllByRole('link')).toHaveLength(0);
+    // 导航在侧边栏 app-nav（四入口）
+    const nav = screen.getByTestId('app-nav');
+    expect(within(nav).getByRole('link', { name: '写作' })).toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: '设定库' })).toBeInTheDocument();
+  });
+
+  it('顶栏全局状态控件：主题切换触发 setTheme + 语言展示 + 内核状态', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() => expect(useProjectStore.getState().loading).toBe(false));
+    const banner = screen.getByRole('banner');
+    // 主题切换按钮：点击 → themeStore.setTheme（paper → 非 paper，循环/切换方向由实现定）
+    const toggle = within(banner).getByTestId('header-theme-toggle');
+    await user.click(toggle);
+    expect(useThemeStore.getState().theme).not.toBe('paper');
+    // 语言控件：显示当前语言（zh → t('lang.zh')「中文」）
+    expect(within(banner).getByTestId('header-lang')).toHaveTextContent('中文');
+    // 内核状态：t('sb.kernel')
+    expect(within(banner).getByText('内核已连接')).toBeInTheDocument();
   });
 });

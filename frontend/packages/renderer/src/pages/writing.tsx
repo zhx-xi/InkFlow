@@ -8,6 +8,7 @@ import { EditorToolbar } from '../components/EditorToolbar';
 import { ProjectTree } from '../components/ProjectTree';
 import { StatusBar } from '../components/StatusBar';
 import { StreamArea } from '../components/StreamArea';
+import { Skeleton } from '../components/ui/skeleton';
 import { useStream } from '../hooks/useStream';
 import { useI18n } from '../i18n/useI18n';
 import { useChapterStore } from '../stores/chapter';
@@ -45,6 +46,7 @@ export function WritingPage() {
   const saveContent = useChapterStore((s) => s.saveContent);
   const content = useChapterStore((s) => s.content);
   const chapters = useChapterStore((s) => s.chapters);
+  const chaptersLoading = useChapterStore((s) => s.loading);
 
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? projects[0];
   const effectiveProjectId = currentProjectId ?? currentProject?.id ?? '';
@@ -135,7 +137,25 @@ export function WritingPage() {
           data-testid="project-tree"
           className="flex w-[208px] shrink-0 flex-col border-r border-line bg-surface-2"
         >
-          <ProjectTree />
+          {chaptersLoading && chapters.length === 0 ? (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="flex items-center gap-2 border-b border-line p-3">
+                <Skeleton className="h-8 w-8 rounded-full" />
+                <div className="space-y-1.5">
+                  <Skeleton className="h-3 w-20" />
+                  <Skeleton className="h-2.5 w-14" />
+                </div>
+              </div>
+              <div className="flex-1 space-y-2 p-2">
+                <Skeleton className="h-5 w-16" />
+                {Array.from({ length: 6 }, (_, i) => (
+                  <Skeleton key={i} className="h-6 w-full" />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <ProjectTree />
+          )}
         </aside>
         <main data-testid="editor" className="group flex min-w-0 flex-1 flex-col bg-surface">
           <EditorToolbar

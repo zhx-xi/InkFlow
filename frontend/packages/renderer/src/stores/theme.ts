@@ -1,6 +1,6 @@
 /** 主题/背景/语言 store（spec §4.3：localStorage 持久化 + 默认策略） */
 import { create } from 'zustand';
-import type { Lang, ThemeBg, ThemeName } from '../theme';
+import { BG_BY_THEME, type Lang, type ThemeBg, type ThemeName } from '../theme';
 
 const STORAGE_KEY = 'inkflow.ui';
 
@@ -43,8 +43,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
   setTheme: (theme) => {
     // 背景变体随主题过滤（BG_BY_THEME 校验，非法组合回退 default）
-    const validBgs: ThemeBg[] =
-      theme === 'paper' ? ['default', 'parchment'] : theme === 'night' ? ['default', 'navy'] : ['default', 'ochre'];
+    const validBgs = BG_BY_THEME[theme];
     const bg = validBgs.includes(get().bg) ? get().bg : 'default';
     set({ theme, bg });
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme, bg, lang: get().lang }));
