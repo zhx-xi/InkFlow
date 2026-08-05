@@ -4,6 +4,7 @@ dist/
 out/
 *.tsbuildinfo
 test-results/
+coverage/
 *.db
 *.db-shm
 *.db-wal
