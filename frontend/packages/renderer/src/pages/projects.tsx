@@ -5,6 +5,7 @@ import { NewProjectDialog } from '../components/NewProjectDialog';
 import { ProjectCard } from '../components/ProjectCard';
 import { useI18n } from '../i18n/useI18n';
 import { useProjectStore } from '../stores/project';
+import { ensureApiReady } from '../api/client';
 
 export function ProjectsPage() {
   const { t } = useI18n();
@@ -17,7 +18,12 @@ export function ProjectsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
-    void loadProjects();
+    // #98 修复：Electron 下等待 preload 注入 INKFLOW_API（'inkflow:api-ready'）后再发首请求，
+    // 避免「React 挂载早于注入 → 首请求无 token → 401」时序竞态；非 Electron 立即通过。
+    void (async () => {
+      await ensureApiReady();
+      void loadProjects();
+    })();
   }, [loadProjects]);
 
   return (
