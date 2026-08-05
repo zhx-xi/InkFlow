@@ -2,7 +2,9 @@ name: CI
 on:
   push:
     branches: [main, develop]
-    # 只有修改功能代码 / 测试代码 / CI 代码才触发；纯文档（*.md、design/、docs/、specs/、adr/ 等）不触发
+    # 功能/测试/CI 变更触发；文档类变更（*.md、design/、docs/、specs/、adr/ 等）也触发
+    # （分支保护 required checks 需要结论；docs-only PR 若不触发 workflow 则 required
+    # checks 无报告 → BLOCKED 无法 merge，#119 实测）
     paths:
       - 'backend/src/**'
       - 'backend/tests/**'
@@ -11,6 +13,11 @@ on:
       - 'backend/uv.lock'
       - 'frontend/**'
       - '.github/**'
+      - '*.md'
+      - 'adr/**'
+      - 'docs/**'
+      - 'design/**'
+      - 'specs/**'
   pull_request:
     branches: [main]
     # labeled 为 e2e-ai-backend 的触发入口（ADR-026）；opened/synchronize/reopened 为默认类型，必须显式保留
@@ -23,6 +30,11 @@ on:
       - 'backend/uv.lock'
       - 'frontend/**'
       - '.github/**'
+      - '*.md'
+      - 'adr/**'
+      - 'docs/**'
+      - 'design/**'
+      - 'specs/**'
   # 手动触发 e2e-ai-backend（ADR-026 Q1=B 兜底）：任意分支/任意时间运行真实 AI 测试
   workflow_dispatch:
 
