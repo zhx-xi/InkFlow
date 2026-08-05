@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
@@ -33,6 +35,9 @@ def _validate_not_blank(v: str, field_name: str) -> str:
     return stripped
 
 
+_PROVIDER_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
+
+
 class LLMKeyStoreRequest(BaseModel):
     """POST /llm-keys 请求体 — provider/api_key 必填非空（多余字段忽略）。"""
 
@@ -42,7 +47,10 @@ class LLMKeyStoreRequest(BaseModel):
     @field_validator("provider")
     @classmethod
     def validate_provider(cls, v: str) -> str:
-        return _validate_not_blank(v, "provider")
+        stripped = _validate_not_blank(v, "provider")
+        if not _PROVIDER_RE.match(stripped):
+            raise ValueError("provider 仅允许小写字母/数字/下划线/连字符，1-32 字符")
+        return stripped
 
     @field_validator("api_key")
     @classmethod
@@ -60,7 +68,10 @@ class LLMTestRequest(BaseModel):
     @field_validator("provider")
     @classmethod
     def validate_provider(cls, v: str) -> str:
-        return _validate_not_blank(v, "provider")
+        stripped = _validate_not_blank(v, "provider")
+        if not _PROVIDER_RE.match(stripped):
+            raise ValueError("provider 仅允许小写字母/数字/下划线/连字符，1-32 字符")
+        return stripped
 
     @field_validator("model")
     @classmethod
@@ -83,7 +94,8 @@ def _get_key_manager() -> APIKeyManager:
 
 def _get_llm_client(provider: str, model: str, api_key: str) -> LLMClientProtocol:
     """按请求参数构造 LLM 客户端（连通探测用，api_key 仅内存本次使用）。"""
-    return LangChainLLMClient(default_model=model, api_key=api_key)
+    model_ref = model if "/" in model else f"{provider}/{model}"
+    return LangChainLLMClient(default_model=model_ref, api_key=api_key)
 
 
 @router.post("/llm-keys", status_code=201)
@@ -109,7 +121,10 @@ async def test_llm_connection(data: LLMTestRequest) -> dict:
     """
     try:
         client = _get_llm_client(data.provider, data.model, data.api_key)
-        await client.chat([ChatMessage(role="user", content="ping")])
+        probe = client.chat([ChatMessage(role="user", content="ping")])
+        # LLMClientProtocol.chat 为 async 协程；防御探测桩返回非 awaitable 的边界
+        if asyncio.iscoroutine(probe):
+            await probe
     except Exception:
         logger.warning("LLM 连通探测失败: provider=%s model=%s", data.provider, data.model)
         return {

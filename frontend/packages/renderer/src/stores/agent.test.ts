@@ -10,11 +10,11 @@
  * - testConnection(input: { provider: string; model: string; api_key: string }): Promise<void>
  *     POST /api/v1/settings/llm/test（LLMClient 最小探测）
  *     响应契约（后端端点随 #79 交付，设计假设）：成功 {ok: true} → testStatus 'ok' + '连接成功'；
- *     失败 {ok: false, error} → testStatus 'fail' + '连接失败: {error}'；网络/HTTP 错误同理置 fail
- * - saveConfig(projectId: string): Promise<void>
+ *     失败 {ok: false, message} → testStatus 'fail' + '连接失败: {message}'；网络/HTTP 错误同理置 fail
+ * - saveConfig(projectId: string, provider?: string): Promise<void>
  *     保存流程（Q3 拍板：测试通过→保存主路径 + 直接保存并存）：
  *     PATCH /api/v1/projects/{projectId}，body { config: 当前 config }
- *     若 apiKeyDraft 非空 → 先 POST /api/v1/settings/llm-keys（落 key）→ 清空 draft → 再 PATCH config
+ *     若 apiKeyDraft 非空 → 先 POST /api/v1/settings/llm-keys（落 key，provider 取参数）→ 清空 draft → 再 PATCH config
  *
  * 表单语义契约（spec §4.2.3）：
  * - config.agent_*: string | null | undefined —— null = 默认模型（启用），undefined = 字段缺失（从管线移除）
@@ -146,7 +146,7 @@ describe('agent store — REST actions', () => {
   });
 
   it('testConnection 失败：testStatus fail + 原因展示', async () => {
-    apiFetchMock.mockResolvedValue({ ok: false, error: '模型不可达' });
+    apiFetchMock.mockResolvedValue({ ok: false, message: '模型不可达' });
     await act(async () => {
       await useAgentStore.getState().testConnection({ provider: 'deepseek', model: 'deepseek-chat', api_key: '' });
     });
@@ -176,11 +176,11 @@ describe('agent store — REST actions', () => {
       useAgentStore.getState().setApiKeyDraft('sk-xyz');
     });
     await act(async () => {
-      await useAgentStore.getState().saveConfig('p1');
+      await useAgentStore.getState().saveConfig('p1', 'openai');
     });
     expect(apiFetchMock).toHaveBeenNthCalledWith(1, '/api/v1/settings/llm-keys', {
       method: 'POST',
-      body: { provider: '', model: 'gpt-4o', api_key: 'sk-xyz' },
+      body: { provider: 'openai', model: 'gpt-4o', api_key: 'sk-xyz' },
     });
     expect(apiFetchMock).toHaveBeenNthCalledWith(2, '/api/v1/projects/p1', {
       method: 'PATCH',

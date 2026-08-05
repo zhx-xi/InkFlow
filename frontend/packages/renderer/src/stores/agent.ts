@@ -11,6 +11,8 @@ export interface ApiKeyInput {
 
 interface LlmTestResponse {
   ok: boolean;
+  message?: string;
+  /** 兼容旧契约响应的原因字段（页面级测试仍 mock error） */
   error?: string;
 }
 
@@ -31,7 +33,7 @@ interface AgentState {
 
   submitApiKey: (input: ApiKeyInput) => Promise<void>;
   testConnection: (input: ApiKeyInput) => Promise<void>;
-  saveConfig: (projectId: string) => Promise<void>;
+  saveConfig: (projectId: string, provider?: string) => Promise<void>;
 }
 
 export const useAgentStore = create<AgentState>((set, get) => ({
@@ -60,20 +62,20 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       if (res.ok) {
         set({ testStatus: 'ok', testMessage: '连接成功' });
       } else {
-        set({ testStatus: 'fail', testMessage: `连接失败: ${res.error ?? '未知错误'}` });
+        set({ testStatus: 'fail', testMessage: `连接失败: ${res.message ?? res.error ?? '未知错误'}` });
       }
     } catch (err) {
       set({ testStatus: 'fail', testMessage: `连接失败: ${errorMessage(err)}` });
     }
   },
 
-  saveConfig: async (projectId) => {
+  saveConfig: async (projectId, provider) => {
     const { config, apiKeyDraft } = get();
     // Q3 主路径：先落 key（加密存储），清空 draft，再 PATCH config
     if (apiKeyDraft) {
       await apiFetch('/api/v1/settings/llm-keys', {
         method: 'POST',
-        body: { provider: '', model: config.model ?? '', api_key: apiKeyDraft },
+        body: { provider: provider ?? '', model: config.model ?? '', api_key: apiKeyDraft },
       });
       set({ apiKeyDraft: '' });
     }

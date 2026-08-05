@@ -5,7 +5,7 @@
  *
  * 新增 REST actions（当前骨架缺失 → RED）：
  * - loadChapterTree(projectId: string): Promise<void>
- *     GET /api/v1/projects/{projectId}/volumes → Volume[]
+ *     GET /api/v1/projects/{projectId}/volumes → {items: Volume[]}（后端统一分页/列表包装契约，2026-08-05 评审 L1 修正）
  *     GET /api/v1/projects/{projectId}/chapters → {items: Chapter[]}（含 word_count）
  *     → setTree(volumes, chapters)
  * - selectChapter(chapterId: string): Promise<void>
@@ -70,7 +70,7 @@ describe('chapter store — 卷章树与当前章', () => {
 
   it('loadChapterTree：拉取卷 + 章列表填充树', async () => {
     apiFetchMock.mockImplementation(async (path: string) => {
-      if (path === '/api/v1/projects/p1/volumes') return volumes;
+      if (path === '/api/v1/projects/p1/volumes') return { items: volumes };
       if (path === '/api/v1/projects/p1/chapters') return { items: chapters, total: 2, offset: 0, limit: 50 };
       throw new Error(`unexpected path: ${path}`);
     });

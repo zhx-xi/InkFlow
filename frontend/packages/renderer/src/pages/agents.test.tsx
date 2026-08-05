@@ -138,7 +138,7 @@ describe('Agent 页 — 模型接入卡片', () => {
 
   it('测试连接失败：原因展示 + 直接保存始终可用（PATCH 仍可执行）', async () => {
     apiFetchMock.mockImplementation(async (path: string) => {
-      if (path === '/api/v1/settings/llm/test') return { ok: false, error: '模型不可达' };
+      if (path === '/api/v1/settings/llm/test') return { ok: false, message: '模型不可达' };
       return { ok: true };
     });
     const user = userEvent.setup();

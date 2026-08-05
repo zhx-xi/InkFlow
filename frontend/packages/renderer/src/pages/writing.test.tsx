@@ -88,7 +88,7 @@ beforeEach(() => {
 
   // REST mock：自动加载/保存路径返回种子或空（防 GREEN 挂载自动加载覆盖）
   apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
-    if (path === '/api/v1/projects/p1/volumes') return seedVolumes;
+    if (path === '/api/v1/projects/p1/volumes') return { items: seedVolumes };
     if (path === '/api/v1/projects/p1/chapters') return { items: seedChapters, total: 2, offset: 0, limit: 50 };
     if (path.startsWith('/api/v1/chapters/') && init?.method === 'PATCH') return { ok: true };
     return { items: [], total: 0, offset: 0, limit: 50 };

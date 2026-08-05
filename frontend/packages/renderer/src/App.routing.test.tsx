@@ -52,7 +52,7 @@ beforeEach(() => {
       };
     }
     if (path === '/api/v1/projects/p1/chapters') return { items: seedChapters, total: 2, offset: 0, limit: 50 };
-    if (path === '/api/v1/projects/p1/volumes') return seedVolumes;
+    if (path === '/api/v1/projects/p1/volumes') return { items: seedVolumes };
     return { items: [], total: 0, offset: 0, limit: 50 };
   });
 });

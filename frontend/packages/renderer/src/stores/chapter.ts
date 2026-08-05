@@ -68,7 +68,7 @@ export const useChapterStore = create<ChapterState>((set, get) => ({
   loadChapterTree: async (projectId) => {
     set({ loading: true, error: null });
     try {
-      const volumes = await apiFetch<Volume[]>(`/api/v1/projects/${projectId}/volumes`);
+      const { items: volumes } = await apiFetch<{ items: Volume[] }>(`/api/v1/projects/${projectId}/volumes`);
       const chapterData = await apiFetch<ChapterListResponse>(
         `/api/v1/projects/${projectId}/chapters`,
       );

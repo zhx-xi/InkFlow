@@ -215,6 +215,10 @@ class TestLLMKeysStore:
             {},  # 全缺失
             {"provider": "   ", "api_key": TEST_API_KEY},  # provider 空白
             {"provider": TEST_PROVIDER, "api_key": "   "},  # api_key 空白
+            {
+                "provider": "../../x",
+                "api_key": TEST_API_KEY,
+            },  # 路径穿越字符（L5 白名单）
         ],
         ids=[
             "provider_missing",
@@ -222,6 +226,7 @@ class TestLLMKeysStore:
             "all_missing",
             "provider_blank",
             "api_key_blank",
+            "provider_path_traversal",
         ],
     )
     def test_validation_422(self, client, body):
@@ -336,6 +341,11 @@ class TestLLMTestProbe:
             {"provider": "   ", "model": TEST_MODEL, "api_key": TEST_API_KEY},
             {"provider": TEST_PROVIDER, "model": "   ", "api_key": TEST_API_KEY},
             {"provider": TEST_PROVIDER, "model": TEST_MODEL, "api_key": "   "},
+            {
+                "provider": "../../x",
+                "model": TEST_MODEL,
+                "api_key": TEST_API_KEY,
+            },  # 路径穿越（L5）
         ],
         ids=[
             "provider_missing",
@@ -344,6 +354,7 @@ class TestLLMTestProbe:
             "provider_blank",
             "model_blank",
             "api_key_blank",
+            "provider_path_traversal",
         ],
     )
     def test_validation_422(self, client, body):
@@ -414,3 +425,41 @@ class TestLLMTestProbe:
         assert resp.json()["ok"] is True
         mock_get_km.assert_not_called()
         mock_factory.assert_called_once_with(TEST_PROVIDER, TEST_MODEL, TEST_API_KEY)
+
+    def test_probe_real_factory_assembles_provider_model(self, client):
+        """真实工厂 + 纯模型名 → default_model 组装 provider/model（评审 L2）。
+
+        前端输入纯模型名（如 deepseek-chat），parse_model_string 要求 provider/model
+        格式（无 / 即 ValueError → 恒 ok:false）。工厂必须组装：model 不含 '/' 时
+        → f"{provider}/{model}"；已含 '/'（LiteLLM 格式）则原样透传。
+        """
+        with patch("inkflow.api.routers.settings.LangChainLLMClient") as mock_cls:
+            resp = client.post(
+                ENDPOINT_TEST,
+                json={
+                    "provider": "deepseek",
+                    "model": "deepseek-chat",
+                    "api_key": TEST_API_KEY,
+                },
+            )
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        mock_cls.assert_called_once_with(
+            default_model="deepseek/deepseek-chat", api_key=TEST_API_KEY
+        )
+
+    def test_probe_real_factory_passthrough_litellm_model(self, client):
+        """真实工厂 + 已含 '/' 的 LiteLLM 格式模型 → 原样透传（不重复组装）。"""
+        with patch("inkflow.api.routers.settings.LangChainLLMClient") as mock_cls:
+            resp = client.post(
+                ENDPOINT_TEST,
+                json={
+                    "provider": "deepseek",
+                    "model": "deepseek/deepseek-chat",
+                    "api_key": TEST_API_KEY,
+                },
+            )
+        assert resp.status_code == 200
+        mock_cls.assert_called_once_with(
+            default_model="deepseek/deepseek-chat", api_key=TEST_API_KEY
+        )
