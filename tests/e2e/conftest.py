@@ -27,12 +27,24 @@ def _require_llm_key():
 def llm_env(monkeypatch):
     """e2e LLM 环境配置。
 
-    - LLM_MODEL（可选）：provider/model 格式，默认 deepseek/deepseek-chat
+    - LLM_MODEL（可选）：支持 `provider/model` 或裸模型名（如 `deepseek-chat`）——
+      裸模型名自动挂 deepseek provider（LLM_BASE_URL 存在时覆盖其端点）
     - LLM_BASE_URL（可选）：覆盖对应 provider 的内置端点（不硬编码 provider）
     """
-    model = os.environ.get("LLM_MODEL", "deepseek/deepseek-chat")
-    provider = model.split("/", 1)[0]
+    raw = os.environ.get("LLM_MODEL", "deepseek-chat")
+    if "/" in raw:
+        provider, model_name = raw.split("/", 1)
+        model = raw
+    else:
+        # 裸模型名（ADR-026 默认值口径）：挂 deepseek provider 槽位，
+        # base_url 由 LLM_BASE_URL 覆盖（存在时）或走内置 deepseek 端点
+        provider, model_name, model = "deepseek", raw, f"deepseek/{raw}"
     base_url = os.environ.get("LLM_BASE_URL")
     if base_url:
         monkeypatch.setitem(provider_config._PROVIDER_BASE_URLS, provider, base_url)
-    return {"api_key": os.environ["LLM_API_KEY"], "model": model}
+    return {
+        "api_key": os.environ["LLM_API_KEY"],
+        "model": model,
+        "provider": provider,
+        "model_name": model_name,
+    }
