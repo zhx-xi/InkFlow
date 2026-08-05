@@ -52,8 +52,8 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
       >
         <h2 className="font-serif text-[18px] font-semibold">{t('dlg.newTitle')}</h2>
         <div className="mt-4 space-y-3">
-          <label htmlFor="new-project-name" className="block text-[13px]">
-            <span className="mb-1 block">{t('dlg.name')}</span>
+          <label htmlFor="new-project-name" className="flex flex-col gap-1.5 text-[13px]">
+            <span>{t('dlg.name')}</span>
             <input
               id="new-project-name"
               className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
@@ -63,8 +63,8 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
             />
           </label>
           {error && <div className="text-[13px] text-err">{error}</div>}
-          <div className="block text-[13px]">
-            <span className="mb-1 block">{t('dlg.genre')}</span>
+          <div className="flex flex-col gap-1.5 text-[13px]">
+            <span>{t('dlg.genre')}</span>
             <Select
               value={genre}
               onValueChange={(v) => setGenre(v)}
@@ -81,8 +81,8 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
               </SelectContent>
             </Select>
           </div>
-          <div className="block text-[13px]">
-            <span className="mb-1 block">{t('dlg.lang')}</span>
+          <div className="flex flex-col gap-1.5 text-[13px]">
+            <span>{t('dlg.lang')}</span>
             <Select
               value={language}
               onValueChange={(v) => setLanguage(v)}
@@ -99,8 +99,8 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
               </SelectContent>
             </Select>
           </div>
-          <label htmlFor="new-project-target" className="block text-[13px]">
-            <span className="mb-1 block">{t('dlg.targetWords')}</span>
+          <label htmlFor="new-project-target" className="flex flex-col gap-1.5 text-[13px]">
+            <span>{t('dlg.targetWords')}</span>
             <input
               id="new-project-target"
               type="number"
@@ -114,14 +114,14 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
         <div className="mt-6 flex justify-end gap-2">
           <button
             type="button"
-            className="rounded-md border border-line px-4 py-1.5 text-sm text-ink-2 hover:bg-surface-2"
+            className="rounded-md border border-line px-4 py-1.5 text-sm text-ink-2 transition duration-180 hover:bg-surface-3"
             onClick={onClose}
           >
             {t('dlg.cancel')}
           </button>
           <button
             type="button"
-            className="rounded-md bg-accent px-4 py-1.5 text-sm text-accent-ink"
+            className="rounded-md bg-accent px-4 py-1.5 text-sm text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
             onClick={() => void handleCreate()}
           >
             {t('dlg.create')}

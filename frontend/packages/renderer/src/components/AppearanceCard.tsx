@@ -26,8 +26,8 @@ export function AppearanceCard() {
     <section data-testid="agent-appearance-card" className="rounded-lg border border-line bg-surface p-6 shadow-card">
       <h2 className="font-serif text-[17px] font-semibold">{t('ap.title')}</h2>
       <div className="mt-4 space-y-4">
-        <div>
-          <div className="mb-1.5 text-[12px] text-ink-2">{t('ap.theme')}</div>
+        <div className="flex flex-col gap-1.5">
+          <div className="text-[12px] text-ink-2">{t('ap.theme')}</div>
           <RadioGroup
             value={theme}
             onValueChange={(v) => setTheme(v as ThemeName)}
@@ -44,8 +44,8 @@ export function AppearanceCard() {
             ))}
           </RadioGroup>
         </div>
-        <div className="block text-[12px] text-ink-2">
-          <span className="mb-1 block">{t('ap.bg')}</span>
+        <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
+          <span>{t('ap.bg')}</span>
           <Select
             value={bg}
             onValueChange={(v) => setBg(v as ThemeBg)}
@@ -65,8 +65,8 @@ export function AppearanceCard() {
             </SelectContent>
           </Select>
         </div>
-        <div className="block text-[12px] text-ink-2">
-          <span className="mb-1 block">{t('ap.lang')}</span>
+        <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
+          <span>{t('ap.lang')}</span>
           <Select
             value={lang}
             onValueChange={(v) => setLang(v as Lang)}

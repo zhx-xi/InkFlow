@@ -31,7 +31,7 @@ function AppLayout() {
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-4 border-b border-line bg-surface px-4 py-2">
-        <img src={LOGO_BY_THEME[theme]} alt="InkFlow" className="h-6 w-6" />
+        <img src={LOGO_BY_THEME[theme]} alt="" aria-hidden="true" className="h-6 w-6" />
         <span className="font-serif text-[15px] font-semibold">{t('app.brand')}</span>
         <nav className="flex gap-1">
           <NavLink to="/projects" className={navCls}>

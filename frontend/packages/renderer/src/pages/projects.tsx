@@ -30,7 +30,7 @@ export function ProjectsPage() {
         <button
           type="button"
           data-testid="new-project-btn"
-          className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink"
+          className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
           onClick={() => setDialogOpen(true)}
         >
           {t('pj.new')}
@@ -50,7 +50,7 @@ export function ProjectsPage() {
           <p className="mt-1 text-[13px] text-ink-3">{t('pj.empty.sub')}</p>
           <button
             type="button"
-            className="mt-5 rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink"
+            className="mt-5 rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
             onClick={() => setDialogOpen(true)}
           >
             {t('pj.new')}
@@ -69,7 +69,7 @@ export function ProjectsPage() {
           <button
             type="button"
             data-testid="new-project-card"
-            className="flex min-h-[168px] items-center justify-center rounded-lg border-2 border-dashed border-line text-[13px] text-ink-3 transition-colors hover:border-accent hover:text-accent"
+            className="flex min-h-[168px] items-center justify-center rounded-lg border-2 border-dashed border-line text-[13px] text-ink-3 transition duration-180 hover:border-accent hover:text-accent active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
             onClick={() => setDialogOpen(true)}
           >
             + {t('pj.newCard')}

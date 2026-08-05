@@ -33,7 +33,7 @@ export function ProjectCard({ project, progress, isCurrent }: ProjectCardProps) 
   return (
     <div
       data-testid="project-card"
-      className={`relative rounded-lg border bg-surface p-5 shadow-card transition-colors ${
+      className={`relative rounded-lg border bg-surface p-6 shadow-card transition duration-180 hover:shadow-card-hover ${
         isCurrent ? 'border-accent' : 'border-line'
       }`}
     >

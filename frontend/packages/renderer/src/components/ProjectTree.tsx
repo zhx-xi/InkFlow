@@ -1,5 +1,6 @@
 /** 项目树（spec §4.2.1）：卷/章 + 字数 + 当前章高亮 + 底部新建章节 */
 import { useState } from 'react';
+import { Check, X } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
 import type { ChapterMeta } from '../stores/chapter';
 import { useChapterStore } from '../stores/chapter';
@@ -69,7 +70,7 @@ export function ProjectTree() {
           <div className="flex gap-1">
             <input
               autoFocus
-              className="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1 text-[12px] outline-none"
+              className="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1 text-[13px] outline-none"
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               onKeyDown={(e) => {
@@ -81,18 +82,24 @@ export function ProjectTree() {
               }}
               placeholder={t('write.newChapter')}
             />
-            <button type="button" className="px-1.5 text-ok" onClick={() => void handleCreate()}>
-              ✓
+            <button
+              type="button"
+              aria-label={t('write.newChapter')}
+              className="rounded p-1.5 text-ok transition duration-180 hover:bg-surface-3 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              onClick={() => void handleCreate()}
+            >
+              <Check className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
               type="button"
-              className="px-1.5 text-ink-3"
+              aria-label={t('dlg.cancel')}
+              className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-ink active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
               onClick={() => {
                 setCreating(false);
                 setNewTitle('');
               }}
             >
-              ×
+              <X className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         ) : (
