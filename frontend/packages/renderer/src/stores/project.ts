@@ -31,28 +31,90 @@ export interface NewProjectInput {
 }
 
 import { create } from 'zustand';
+import { apiFetch, errorMessage } from '../api/client';
+
+/** 章节进度（written = 已有正文章节数，total = 章节总数） */
+export interface ChapterProgress {
+  written: number;
+  total: number;
+}
+
+interface ProjectListResponse {
+  items: Project[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+interface ChapterListResponse {
+  items: Array<{ id: string; word_count: number }>;
+  total: number;
+  offset: number;
+  limit: number;
+}
 
 interface ProjectState {
   projects: Project[];
   currentProjectId: string | null;
   loading: boolean;
   error: string | null;
+  chapterProgress: Record<string, ChapterProgress>;
 
   setProjects: (projects: Project[]) => void;
   setCurrentProject: (id: string | null) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+
+  loadProjects: () => Promise<void>;
+  createProject: (input: NewProjectInput) => Promise<Project>;
+  selectProject: (id: string | null) => void;
 }
 
-/** 骨架：状态与 action 签名已定，REST 逻辑与 TDD 测试在实现批次补全 */
-export const useProjectStore = create<ProjectState>((set) => ({
+export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   currentProjectId: null,
   loading: false,
   error: null,
+  chapterProgress: {},
 
   setProjects: (projects) => set({ projects }),
   setCurrentProject: (id) => set({ currentProjectId: id }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
+
+  loadProjects: async () => {
+    set({ loading: true, error: null });
+    try {
+      const data = await apiFetch<ProjectListResponse>('/api/v1/projects');
+      set({ projects: data.items });
+      // 进度按项目 N+1 拉取（本地 GUI 项目数少可接受）；单项目进度失败不阻塞列表
+      const chapterProgress: Record<string, ChapterProgress> = {};
+      await Promise.all(
+        data.items.map(async (project) => {
+          try {
+            const chapters = await apiFetch<ChapterListResponse>(
+              `/api/v1/projects/${project.id}/chapters`,
+            );
+            chapterProgress[project.id] = {
+              written: chapters.items.filter((c) => c.word_count > 0).length,
+              total: chapters.items.length,
+            };
+          } catch {
+            // 忽略：进度拉取失败仅缺卡片进度，列表仍可用
+          }
+        }),
+      );
+      set({ chapterProgress, loading: false });
+    } catch (err) {
+      set({ error: errorMessage(err), loading: false });
+    }
+  },
+
+  createProject: async (input) => {
+    const created = await apiFetch<Project>('/api/v1/projects', { method: 'POST', body: input });
+    set({ projects: [created, ...get().projects], currentProjectId: created.id });
+    return created;
+  },
+
+  selectProject: (id) => set({ currentProjectId: id }),
 }));

@@ -1,5 +1,5 @@
 /** 应用骨架：HashRouter 三路由（spec §4.2：file:// 与 Electron 生产兼容） */
-import { HashRouter, NavLink, Route, Routes } from 'react-router-dom';
+import { HashRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom';
 import { useI18n } from './i18n/useI18n';
 import { useThemeEffect } from './theme';
 import { useThemeStore } from './stores/theme';
@@ -43,6 +43,7 @@ function AppLayout() {
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/writing" element={<WritingPage />} />
           <Route path="/agents" element={<AgentsPage />} />
+          <Route path="*" element={<Navigate to="/projects" replace />} />
         </Routes>
       </div>
     </div>
