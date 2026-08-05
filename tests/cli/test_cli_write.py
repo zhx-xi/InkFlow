@@ -575,3 +575,200 @@ class TestWriteStreamErrors:
             obj=CliContext(json_output=False),
         )
         assert result.exit_code == 130
+
+
+class TestWriteCollectStreamFallback:
+    """_collect_stream 防御回退（spec §4.1 注释: 流异常终止无 done 帧——按空结果回退）."""
+
+    def test_next_stream_without_done_frame(self, cli_runner, mock_writing_service):
+        """流只含空 delta 帧（delta 为空且 done=False）且无 done 帧 → 空结果回退:
+        content 空 + 「生成内容为空」警告 + format_valid=False."""
+        from inkflow.domain.models.writing import WritingStreamEvent
+
+        async def _stream_no_done(*args, **kwargs):
+            yield WritingStreamEvent(delta="", done=False)
+
+        mock_writing_service.stream_generate = _stream_no_done
+        result = cli_runner.invoke(
+            app,
+            [
+                "next",
+                "--project-id",
+                str(uuid.uuid4()),
+                "--chapter-id",
+                str(uuid.uuid4()),
+                "--outline",
+                "test outline",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is True
+        assert payload["data"]["content"] == ""
+        assert payload["data"]["word_count"] == 0
+        assert payload["data"]["format_valid"] is False
+        assert payload["data"]["model"] == ""
+        assert payload["data"]["warnings"] == ["生成内容为空"]
+
+
+class TestWriteContinueErrors:
+    """write continue 错误分支（spec §7 E1/E3）：章节不存在 / LLM 前置校验失败消息 /
+    流中 LLM 异常."""
+
+    def test_continue_chapter_not_found(self, cli_runner, mock_writing_service):
+        """续写目标章节不存在 → NOT_FOUND 信封 + 退出码 1（CLI 层防御，service 未调用）."""
+        with patch("inkflow.cli.commands.write.SQLiteChapterRepository") as repo_cls:
+            repo = AsyncMock()
+            repo_cls.return_value = repo
+            repo.get_chapter.return_value = None
+            result = cli_runner.invoke(
+                app,
+                [
+                    "continue",
+                    "--project-id",
+                    str(uuid.uuid4()),
+                    "--chapter-id",
+                    str(uuid.uuid4()),
+                ],
+                obj=CliContext(json_output=True),
+            )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is False
+        assert payload["error"]["code"] == "NOT_FOUND"
+        assert payload["error"]["message"] == "章节不存在"
+        mock_writing_service.stream_continue.assert_not_awaited()
+
+    def test_continue_llm_not_found_message(self, cli_runner, mock_writing_service):
+        """service 前置校验失败消息（章节不存在）→ NOT_FOUND 语义（spec §7 E1）."""
+
+        async def _stream_raise(*args, **kwargs):
+            raise LLMRequestError("章节不存在")
+            yield  # pragma: no cover — 使函数为 async generator
+
+        mock_writing_service.stream_continue = _stream_raise
+        result = cli_runner.invoke(
+            app,
+            [
+                "continue",
+                "--project-id",
+                str(uuid.uuid4()),
+                "--chapter-id",
+                str(uuid.uuid4()),
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is False
+        assert payload["error"]["code"] == "NOT_FOUND"
+        assert "章节不存在" in payload["error"]["message"]
+
+    def test_continue_llm_error(self, cli_runner, mock_writing_service):
+        """流中 LLM 异常（非 NOT_FOUND 消息）→ LLM_ERROR 信封 + 退出码 1（spec §7 E3）."""
+
+        async def _stream_raise(*args, **kwargs):
+            raise LLMRequestError("provider down")
+            yield  # pragma: no cover — 使函数为 async generator
+
+        mock_writing_service.stream_continue = _stream_raise
+        result = cli_runner.invoke(
+            app,
+            [
+                "continue",
+                "--project-id",
+                str(uuid.uuid4()),
+                "--chapter-id",
+                str(uuid.uuid4()),
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is False
+        assert payload["error"]["code"] == "LLM_ERROR"
+        assert "provider down" in payload["error"]["message"]
+
+
+class TestWriteReviseErrors:
+    """write revise 错误分支（spec §7 E1/E3）：章节不存在 / LLM 前置校验失败消息 /
+    流中 LLM 异常."""
+
+    def test_revise_chapter_not_found(self, cli_runner, mock_writing_service):
+        """修订目标章节不存在 → NOT_FOUND 信封 + 退出码 1（CLI 层防御，service 未调用）."""
+        with patch("inkflow.cli.commands.write.SQLiteChapterRepository") as repo_cls:
+            repo = AsyncMock()
+            repo_cls.return_value = repo
+            repo.get_chapter.return_value = None
+            result = cli_runner.invoke(
+                app,
+                [
+                    "revise",
+                    "--project-id",
+                    str(uuid.uuid4()),
+                    "--chapter-id",
+                    str(uuid.uuid4()),
+                    "--instruction",
+                    "改短一点",
+                ],
+                obj=CliContext(json_output=True),
+            )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is False
+        assert payload["error"]["code"] == "NOT_FOUND"
+        assert payload["error"]["message"] == "章节不存在"
+        mock_writing_service.stream_revise.assert_not_awaited()
+
+    def test_revise_llm_not_found_message(self, cli_runner, mock_writing_service):
+        """service 前置校验失败消息（章节不存在）→ NOT_FOUND 语义（spec §7 E1）."""
+
+        async def _stream_raise(*args, **kwargs):
+            raise LLMRequestError("章节不存在")
+            yield  # pragma: no cover — 使函数为 async generator
+
+        mock_writing_service.stream_revise = _stream_raise
+        result = cli_runner.invoke(
+            app,
+            [
+                "revise",
+                "--project-id",
+                str(uuid.uuid4()),
+                "--chapter-id",
+                str(uuid.uuid4()),
+                "--instruction",
+                "改短一点",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is False
+        assert payload["error"]["code"] == "NOT_FOUND"
+
+    def test_revise_llm_error(self, cli_runner, mock_writing_service):
+        """流中 LLM 异常（非 NOT_FOUND 消息）→ LLM_ERROR 信封 + 退出码 1（spec §7 E3）."""
+
+        async def _stream_raise(*args, **kwargs):
+            raise LLMRequestError("provider down")
+            yield  # pragma: no cover — 使函数为 async generator
+
+        mock_writing_service.stream_revise = _stream_raise
+        result = cli_runner.invoke(
+            app,
+            [
+                "revise",
+                "--project-id",
+                str(uuid.uuid4()),
+                "--chapter-id",
+                str(uuid.uuid4()),
+                "--instruction",
+                "改短一点",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is False
+        assert payload["error"]["code"] == "LLM_ERROR"

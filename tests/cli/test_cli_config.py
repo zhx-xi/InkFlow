@@ -141,3 +141,49 @@ class TestConfigSet:
         # Pydantic 验证可能通过（取决于 Field 定义），也可能失败
         # 如果 Pydantic 不报错则保存成功，否则 exit 1
         assert result.exit_code in (0, 1)
+
+
+class TestConfigSetTypeBranches:
+    """config set 类型转换分支补全：int 字段 / str 字段 / 非法值（ValueError 路径）."""
+
+    def test_set_int_field(self, cli_runner, tmp_path, monkeypatch):
+        """server.port → int 转换分支 + 保存成功."""
+        from inkflow.cli.commands.config_cmd import app
+
+        monkeypatch.setattr(core_config_mod.config, "data_dir", tmp_path)
+        result = cli_runner.invoke(
+            app,
+            ["set", "server.port", "8080"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "✅ server.port = 8080" in result.output
+
+    def test_set_str_field(self, cli_runner, tmp_path, monkeypatch):
+        """default.model → str 直通分支 + 保存成功."""
+        from inkflow.cli.commands.config_cmd import app
+
+        monkeypatch.setattr(core_config_mod.config, "data_dir", tmp_path)
+        result = cli_runner.invoke(
+            app,
+            ["set", "default.model", "deepseek/deepseek-chat"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "✅ default.model = deepseek/deepseek-chat" in result.output
+
+    def test_set_int_field_invalid_value(self, cli_runner, tmp_path, monkeypatch):
+        """server.port 传非整数 → ValueError → CONFIG_ERROR 信封 + 退出码 1."""
+        from inkflow.cli.commands.config_cmd import app
+
+        monkeypatch.setattr(core_config_mod.config, "data_dir", tmp_path)
+        result = cli_runner.invoke(
+            app,
+            ["set", "server.port", "abc"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "CONFIG_ERROR"
+        assert "值不合法" in data["error"]["message"]

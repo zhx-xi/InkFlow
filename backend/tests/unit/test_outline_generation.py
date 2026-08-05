@@ -22,6 +22,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic import ValidationError
 
 from inkflow.domain.models.outline import (
     GeneratedOutline,
@@ -42,6 +43,9 @@ from inkflow.domain.ports.prompt_template import (
 from inkflow.domain.services._outline_generator import (
     OutlineGenerator,
     _extract_json_fragment,
+    _first_error,
+    _resolve_num_chapters_in_text,
+    _to_int_id,
 )
 from inkflow.infrastructure.llm.prompt_manager import LangChainPromptManager
 
@@ -526,6 +530,79 @@ class TestOutlineGenerator:
         assert "项目名：雾都谜案" in user
         assert "悬疑推理" in user
 
+    # ── _parse_output 结构级错误分支 ──────────────────────────────
+
+    def test_malformed_json_syntax_returns_syntax_error(self, generator) -> None:
+        """括号平衡但语法非法 → JSON 语法错误（json.JSONDecodeError 分支）。"""
+        outcome = generator._parse_output('{"a": }')
+        assert not outcome.ok
+        assert "JSON 语法错误" in outcome.error
+
+    def test_outline_missing_uses_empty_data(self, generator) -> None:
+        """payload 无 outline 键 → 空 outline_data（name/description 回退）。"""
+        outcome = generator._parse_output('{"arcs": [], "plot_points": []}')
+        assert outcome.ok
+        assert outcome.generated is not None
+        assert outcome.generated.name is None
+        assert outcome.generated.description is None
+
+    def test_outline_not_dict_returns_error(self, generator) -> None:
+        """outline 字段非对象 → 结构错误。"""
+        outcome = generator._parse_output('{"outline": "oops"}')
+        assert outcome.error == "outline 字段必须是对象"
+
+    def test_arcs_not_list_returns_error(self, generator) -> None:
+        """arcs 字段非列表 → 结构错误。"""
+        outcome = generator._parse_output('{"outline": {}, "arcs": "x", "plot_points": []}')
+        assert outcome.error == "arcs 字段必须是列表"
+
+    def test_plot_points_not_list_returns_error(self, generator) -> None:
+        """plot_points 字段非列表 → 结构错误。"""
+        outcome = generator._parse_output('{"outline": {}, "arcs": [], "plot_points": 3}')
+        assert outcome.error == "plot_points 字段必须是列表"
+
+    def test_outline_schema_invalid_returns_error(self, generator) -> None:
+        """大纲级 schema 校验失败（name 超长）→ 整体重试错误。"""
+        raw = '{"outline": {"name": "' + "长" * 51 + '"}}'
+        outcome = generator._parse_output(raw)
+        assert "大纲 schema 校验失败" in outcome.error
+
+    async def test_whitespace_arc_skips_link_silently(self, generator, mock_llm) -> None:
+        """情节点 arc 为纯空白 → 视为未指定：不尝试解析、无「无法解析」warning。"""
+        mock_llm.chat.return_value = _ok_response(
+            _payload(plot_points=[{"name": "开篇命案", "arc": "   "}])
+        )
+        result = await generator.generate(
+            OutlineGenerateRequest(project_id=PID),
+            project_info="项目名：雾都谜案",
+            default_model=DEFAULT_MODEL,
+        )
+        assert len(result.plot_points) == 1
+        assert result.plot_points[0].arc_id is None
+        assert not any("无法解析" in w for w in result.warnings)
+
+
+class TestOutlineGeneratorHelpers:
+    """模块级纯函数测试（_to_int_id / _first_error / _resolve_num_chapters_in_text）。"""
+
+    def test_to_int_id_passthrough_for_int(self) -> None:
+        """int 输入原样返回（非 UUID 分支）。"""
+        assert _to_int_id(42) == 42
+
+    def test_first_error_with_empty_errors_returns_str(self) -> None:
+        """errors() 为空 → 回退 str(err)。"""
+        err = ValidationError.from_exception_data("测试", line_errors=[])
+        assert _first_error(err) == str(err)
+
+    def test_resolve_num_chapters_removes_unclosed_if_tag(self) -> None:
+        """num_chapters=None 且模板缺 {% endif %} 闭标签 → 仅去除开标签防死循环。"""
+        text = "开头 {% if num_chapters %} 中间"
+        assert _resolve_num_chapters_in_text(text, None) == "开头  中间"
+
+
+class TestNumChaptersConditional:
+    """num_chapters 条件段解析（真实 PromptManager 渲染，镜像 F11 §5.6 差异）。"""
+
     async def test_num_chapters_none_removes_conditional(self, mock_llm, mock_repo) -> None:
         """num_chapters 缺省 → 整段条件移除，不注入章节数提示，无字面 Jinja 标记残留。"""
         mock_llm.chat.return_value = _ok_response(_payload(plot_points=[{"name": "开篇命案"}]))
@@ -544,6 +621,7 @@ class TestOutlineGenerator:
         assert "情节点数量控制在约" not in system
         assert "{%" not in system
         assert "{{" not in system
+        assert "}}" not in system
 
 
 class TestExtractJsonFragment:
@@ -558,3 +636,8 @@ class TestExtractJsonFragment:
         """无花括号或括号不平衡 → None。"""
         assert _extract_json_fragment("纯文本输出") is None
         assert _extract_json_fragment('{"a": 1') is None
+
+    def test_escaped_quotes_inside_string(self) -> None:
+        """字符串字面量内的转义引号不提前闭合字符串（escaped 状态机分支）。"""
+        text = '{"msg": "他说 \\"你好\\""}'
+        assert _extract_json_fragment(text) == text

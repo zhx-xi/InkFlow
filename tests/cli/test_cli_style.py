@@ -28,6 +28,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from inkflow.cli.commands.style import app
@@ -411,3 +412,160 @@ class TestStyleAnalyze:
         data = json.loads(result.stdout)
         assert data["ok"] is False
         assert data["error"]["code"] == "DB_ERROR"
+
+
+class TestStyleAnalyzeEdgeBranches:
+    """补齐 miss 行：无效 UUID、typer.Exit 透传、高频词超 5 省略号、jieba=None、
+    LLM 理由截断、--text/--chapters 与 --text-file/--chapters 互斥。"""
+
+    def test_analyze_invalid_uuid(
+        self, cli_runner, mock_style_service, mock_create_tables
+    ):
+        """无效 project-id UUID → NOT_FOUND 信封 + 退出码 1（spec §7: 无效 UUID → 404 语义）."""
+        result = cli_runner.invoke(
+            app,
+            ["analyze", "--project-id", "not-a-uuid", "--text", TEXT],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "NOT_FOUND"
+        mock_style_service.analyze.assert_not_awaited()
+
+    def test_analyze_typer_exit_reraises(
+        self, cli_runner, mock_style_service, mock_create_tables
+    ):
+        """Service 抛 typer.Exit → _run 原样透传（退出码 3，不映射错误信封）."""
+        mock_style_service.analyze.side_effect = typer.Exit(3)
+        result = cli_runner.invoke(
+            app,
+            ["analyze", "--project-id", str(PID), "--text", TEXT],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 3
+
+    def test_analyze_human_top_words_overflow(
+        self, cli_runner, mock_style_service, mock_create_tables
+    ):
+        """高频词超过 5 个 → 前 5 个 + 省略号（spec §4.3 _TOP_WORDS_LIMIT）."""
+        words = [
+            WordFrequency(word=f"词{i}", count=10 - i, first_index=i) for i in range(6)
+        ]
+        report = _report(
+            fingerprint=StyleFingerprint(
+                char_count=100,
+                sentence_count=5,
+                avg_sentence_length=20.0,
+                sentence_length_std=5.0,
+                paragraph_count=2,
+                avg_paragraph_length=50.0,
+                punctuation_density=0.1,
+                exclamation_density=0.0,
+                ellipsis_density=0.0,
+                dialogue_ratio=0.2,
+                vocabulary_richness=0.5,
+                top_words=words,
+            )
+        )
+        mock_style_service.analyze.return_value = report
+        result = cli_runner.invoke(
+            app,
+            ["analyze", "--project-id", str(PID), "--text", TEXT],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "词0(10) 词1(9) 词2(8) 词3(7) 词4(6) …" in result.output
+
+    def test_analyze_human_no_jieba(
+        self, cli_runner, mock_style_service, mock_create_tables
+    ):
+        """jieba 未装配（None）→ 不输出 jieba 增强行（spec §2.5 防御分支）."""
+        report = _report(
+            lexical=LexicalAnalysis(
+                total_words=10,
+                unique_words=8,
+                top_words=[],
+                avg_word_length=2.1,
+                stopword_ratio=0.1,
+                jieba=None,
+            ),
+            llm_assessment=None,
+        )
+        mock_style_service.analyze.return_value = report
+        result = cli_runner.invoke(
+            app,
+            ["analyze", "--project-id", str(PID), "--text", TEXT],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "【jieba 增强】" not in result.output
+        assert "【词汇分析】总词数 10" in result.output
+
+    def test_analyze_human_llm_reasoning_truncated(
+        self, cli_runner, mock_style_service, mock_create_tables
+    ):
+        """LLM 理由超 40 字符 → 截断 + 省略号（spec §4.3 _REASONING_MAX_CHARS）."""
+        long_reasoning = (
+            "这是一段特别长的分析理由，其长度远超四十个字符的限制，"
+            "因此人类可读摘要必须截断并追加省略号。"
+        )
+        report = _report(
+            llm_assessment=StyleLLMAssessment(
+                llm_verdict="likely_ai",
+                reasoning=long_reasoning,
+                model="gpt-4o",
+                generated_at=TS,
+            )
+        )
+        mock_style_service.analyze.return_value = report
+        result = cli_runner.invoke(
+            app,
+            ["analyze", "--project-id", str(PID), "--text", TEXT],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert (
+            f"【LLM 深度分析】⚠ 倾向 AI 生成（gpt-4o）——{long_reasoning[:40]}…"
+            in result.output
+        )
+
+    def test_analyze_text_and_chapters_exit_2(
+        self, cli_runner, mock_style_service, mock_create_tables
+    ):
+        """--text 与 --chapters 同时使用 → 退出码 2（三选一互斥第二分支）."""
+        result = cli_runner.invoke(
+            app,
+            [
+                "analyze",
+                "--project-id",
+                str(PID),
+                "--text",
+                TEXT,
+                "--chapters",
+                "7a4f2c91-0000-4000-8000-000000000011",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 2
+        mock_style_service.analyze.assert_not_awaited()
+
+    def test_analyze_text_file_and_chapters_exit_2(
+        self, cli_runner, mock_style_service, mock_create_tables
+    ):
+        """--text-file 与 --chapters 同时使用 → 退出码 2（三选一互斥第三分支）."""
+        result = cli_runner.invoke(
+            app,
+            [
+                "analyze",
+                "--project-id",
+                str(PID),
+                "--text-file",
+                "chapter.txt",
+                "--chapters",
+                "7a4f2c91-0000-4000-8000-000000000011",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 2
+        mock_style_service.analyze.assert_not_awaited()

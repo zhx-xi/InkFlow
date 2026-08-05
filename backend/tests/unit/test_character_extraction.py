@@ -16,6 +16,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic import ValidationError
 
 from inkflow.domain.models.character import (
     Character,
@@ -35,6 +36,9 @@ from inkflow.domain.ports.prompt_template import (
 from inkflow.domain.services._character_extractor import (
     CharacterExtractor,
     _extract_json_fragment,
+    _first_error,
+    _normalize_relation_item,
+    _to_int_id,
 )
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
@@ -486,6 +490,52 @@ class TestCharacterExtractor:
         assert mock_repo.add_relation.await_count == 0
         assert any("自环" in w for w in result.warnings)
 
+    # ── _parse_output 结构级错误分支 ──────────────────────────────
+
+    def test_malformed_json_syntax_returns_syntax_error(self, extractor) -> None:
+        """括号平衡但语法非法 → JSON 语法错误（json.JSONDecodeError 分支）。"""
+        outcome = extractor._parse_output('{"characters": }')
+        assert not outcome.ok
+        assert "JSON 语法错误" in outcome.error
+
+    def test_characters_not_list_returns_structure_error(self, extractor) -> None:
+        """characters 字段非列表 → 结构错误。"""
+        outcome = extractor._parse_output('{"characters": "x", "relations": []}')
+        assert outcome.error == "缺少 characters 列表"
+
+    def test_relations_not_list_returns_structure_error(self, extractor) -> None:
+        """relations 字段非列表 → 结构错误。"""
+        outcome = extractor._parse_output('{"characters": [], "relations": 5}')
+        assert outcome.error == "缺少 relations 列表"
+
+
+class TestCharacterExtractorHelpers:
+    """模块级纯函数测试（_to_int_id / _first_error / _normalize_relation_item）。"""
+
+    def test_to_int_id_passthrough_for_int(self) -> None:
+        """int 输入原样返回（非 UUID 分支）。"""
+        assert _to_int_id(42) == 42
+
+    def test_first_error_with_empty_errors_returns_str(self) -> None:
+        """errors() 为空 → 回退 str(err)。"""
+        err = ValidationError.from_exception_data("测试", line_errors=[])
+        assert _first_error(err) == str(err)
+
+    def test_normalize_relation_item_non_dict_passthrough(self) -> None:
+        """非 dict 条目原样返回（不尝试归一化）。"""
+        assert _normalize_relation_item("非法条目") == "非法条目"
+        assert _normalize_relation_item(5) == 5
+
+    def test_normalize_relation_item_keeps_existing_target_key(self) -> None:
+        """目标键已存在 → 不覆盖/不弹出（映射 False 分支）。"""
+        item = {"from": "A", "from_name": "B", "to": "C", "type": "t"}
+        assert _normalize_relation_item(item) == {
+            "from": "A",
+            "from_name": "B",
+            "to_name": "C",
+            "relation_type": "t",
+        }
+
 
 class TestExtractJsonFragment:
     """_extract_json_fragment 纯函数测试。"""
@@ -499,3 +549,8 @@ class TestExtractJsonFragment:
         """无花括号或括号不平衡 → None。"""
         assert _extract_json_fragment("纯文本输出") is None
         assert _extract_json_fragment('{"a": 1') is None
+
+    def test_escaped_quotes_inside_string(self) -> None:
+        """字符串字面量内的转义引号不提前闭合字符串（escaped 状态机分支）。"""
+        text = '{"msg": "他说 \\"你好\\""}'
+        assert _extract_json_fragment(text) == text

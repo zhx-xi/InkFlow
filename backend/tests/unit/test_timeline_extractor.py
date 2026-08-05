@@ -40,6 +40,8 @@ from inkflow.domain.ports.timeline_repository import TimelineRepositoryProtocol
 from inkflow.domain.services._timeline_extractor import (
     TimelineExtractor,
     _extract_json_fragment,
+    _first_error,
+    _to_int_id,
 )
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
@@ -464,6 +466,49 @@ class TestTimelineExtractor:
         assert mock_llm.chat.await_args.kwargs["model"] == "deepseek/deepseek-chat"
         assert result.model == "deepseek/deepseek-chat"
 
+    # ── _parse_output 结构级错误分支 ──────────────────────────────
+
+    def test_malformed_json_syntax_returns_syntax_error(self, extractor) -> None:
+        """括号平衡但语法非法 → JSON 语法错误（json.JSONDecodeError 分支）。"""
+        outcome = extractor._parse_output('{"events": }')
+        assert not outcome.ok
+        assert "JSON 语法错误" in outcome.error
+
+    def test_events_not_list_returns_structure_error(self, extractor) -> None:
+        """events 字段非列表 → 结构错误。"""
+        outcome = extractor._parse_output('{"events": 3}')
+        assert outcome.error == "缺少 events 列表"
+
+    async def test_no_title_match_in_chapter_creates_new(
+        self, extractor, mock_llm, mock_repo
+    ) -> None:
+        """同章候选集非空但 title 均不匹配 → 遍历结束仍判不存在 → 新建（匹配 False 分支）。"""
+        mock_repo.list_by_chapter.return_value = [_event("另一事件", description="旧描述")]
+        mock_llm.chat.return_value = _ok_response(
+            _payload(events=[{"title": "林晚入宫", "time_value": 2.0}])
+        )
+        result = await extractor.extract(
+            TimelineExtractRequest(project_id=PID, chapter_id=CID, text="t"),
+            default_model=DEFAULT_MODEL,
+        )
+        assert len(result.created) == 1
+        assert result.created[0].title == "林晚入宫"
+        assert result.updated == []
+        mock_repo.add.assert_awaited_once()
+
+
+class TestTimelineExtractorHelpers:
+    """模块级纯函数测试（_to_int_id / _first_error）。"""
+
+    def test_to_int_id_passthrough_for_int(self) -> None:
+        """int 输入原样返回（非 UUID 分支）。"""
+        assert _to_int_id(42) == 42
+
+    def test_first_error_with_empty_errors_returns_str(self) -> None:
+        """errors() 为空 → 回退 str(err)。"""
+        err = ValidationError.from_exception_data("测试", line_errors=[])
+        assert _first_error(err) == str(err)
+
 
 class TestExtractedTimelineEventSchema:
     """ExtractedTimelineEvent schema 校验（§5.5 字段级规则）。"""
@@ -509,3 +554,8 @@ class TestExtractJsonFragment:
         """无花括号或括号不平衡 → None。"""
         assert _extract_json_fragment("纯文本输出") is None
         assert _extract_json_fragment('{"a": 1') is None
+
+    def test_escaped_quotes_inside_string(self) -> None:
+        """字符串字面量内的转义引号不提前闭合字符串（escaped 状态机分支）。"""
+        text = '{"msg": "他说 \\"你好\\""}'
+        assert _extract_json_fragment(text) == text

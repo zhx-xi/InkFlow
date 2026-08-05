@@ -18,6 +18,8 @@ from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import typer
+from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from inkflow.cli.commands.extract import app
@@ -29,8 +31,14 @@ from inkflow.domain.models.extraction import (
     ExtractionType,
 )
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
-from inkflow.domain.ports.extraction_errors import RAGUnavailableError
+from inkflow.domain.ports.extraction_errors import (
+    ExtractionServiceError,
+    RAGUnavailableError,
+    UnsupportedExtractionTypeError,
+)
 from inkflow.domain.ports.foreshadowing_errors import ForeshadowingExtractionError
+from inkflow.domain.ports.llm_errors import LLMRequestError
+from inkflow.domain.ports.style_errors import StyleValidationError
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 CH1 = uuid.UUID("7a4f2c91-0000-4000-8000-000000000001")
@@ -680,3 +688,292 @@ class TestExtractStatus:
         )
         assert result.exit_code == 2
         mock_extraction_service.list_runs.assert_not_awaited()
+
+
+class TestExtractRunErrorMapping:
+    """错误码映射补全（spec §4/§7）：UNSUPPORTED_TYPE / VALIDATION_ERROR（服务/风格/参数
+    校验）/ LLM_ERROR / DB_ERROR / typer.Exit 透传；人类模式无警告分支。"""
+
+    def test_run_unsupported_type_error(
+        self, cli_runner, mock_extraction_service, mock_create_tables
+    ):
+        """Service 抛 UnsupportedExtractionTypeError → UNSUPPORTED_TYPE 信封 + 退出码 1."""
+        mock_extraction_service.extract.side_effect = UnsupportedExtractionTypeError(
+            "不支持的提取类型: novel"
+        )
+        result = cli_runner.invoke(
+            app,
+            [
+                "run",
+                "--project-id",
+                str(PID),
+                "--type",
+                "character",
+                "--text",
+                "林晚",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "UNSUPPORTED_TYPE"
+
+    def test_run_extraction_service_error(
+        self, cli_runner, mock_extraction_service, mock_create_tables
+    ):
+        """Service 抛 ExtractionServiceError（类型参数约束）→ VALIDATION_ERROR + 退出码 1."""
+        mock_extraction_service.extract.side_effect = ExtractionServiceError(
+            "类型参数约束不满足"
+        )
+        result = cli_runner.invoke(
+            app,
+            [
+                "run",
+                "--project-id",
+                str(PID),
+                "--type",
+                "character",
+                "--text",
+                "林晚",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        assert "类型参数约束不满足" in data["error"]["message"]
+
+    def test_run_style_validation_error(
+        self, cli_runner, mock_extraction_service, mock_create_tables
+    ):
+        """Service 抛 StyleValidationError（F16 章节校验）→ VALIDATION_ERROR + 退出码 1."""
+        mock_extraction_service.extract.side_effect = StyleValidationError(
+            "文本不能为空"
+        )
+        result = cli_runner.invoke(
+            app,
+            [
+                "run",
+                "--project-id",
+                str(PID),
+                "--type",
+                "style",
+                "--text",
+                "林晚",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+
+    def test_run_llm_error(
+        self, cli_runner, mock_extraction_service, mock_create_tables
+    ):
+        """Service 抛 LLMRequestError → LLM_ERROR 信封 + 退出码 1."""
+        mock_extraction_service.extract.side_effect = LLMRequestError("LLM 调用失败")
+        result = cli_runner.invoke(
+            app,
+            [
+                "run",
+                "--project-id",
+                str(PID),
+                "--type",
+                "character",
+                "--text",
+                "林晚",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "LLM_ERROR"
+
+    def test_run_pydantic_validation_error(
+        self, cli_runner, mock_extraction_service, mock_create_tables
+    ):
+        """ExtractionRequest 校验失败（pydantic ValidationError）→ VALIDATION_ERROR，
+        多条消息以 '; ' 连接."""
+        mock_extraction_service.extract.side_effect = (
+            ValidationError.from_exception_data(
+                "ExtractionRequest",
+                [
+                    {
+                        "type": "string_type",
+                        "loc": ("text",),
+                        "msg": "Input should be a valid string",
+                        "input": 123,
+                    },
+                    {
+                        "type": "int_type",
+                        "loc": ("num_chapters",),
+                        "msg": "Input should be a valid integer",
+                        "input": "x",
+                    },
+                ],
+            )
+        )
+        result = cli_runner.invoke(
+            app,
+            [
+                "run",
+                "--project-id",
+                str(PID),
+                "--type",
+                "character",
+                "--text",
+                "林晚",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        assert (
+            "Input should be a valid string; Input should be a valid integer"
+            in data["error"]["message"]
+        )
+
+    def test_run_pydantic_validation_error_empty_messages(
+        self, cli_runner, mock_extraction_service, mock_create_tables
+    ):
+        """pydantic 错误消息为空 → 兜底文案「参数校验失败」."""
+        mock_extraction_service.extract.side_effect = (
+            ValidationError.from_exception_data("ExtractionRequest", [])
+        )
+        result = cli_runner.invoke(
+            app,
+            [
+                "run",
+                "--project-id",
+                str(PID),
+                "--type",
+                "character",
+                "--text",
+                "林晚",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        assert data["error"]["message"] == "参数校验失败"
+
+    def test_run_db_error(
+        self, cli_runner, mock_extraction_service, mock_create_tables
+    ):
+        """其余异常 → DB_ERROR 错误信封 + 退出码 1."""
+        mock_extraction_service.extract.side_effect = RuntimeError("数据库连接失败")
+        result = cli_runner.invoke(
+            app,
+            [
+                "run",
+                "--project-id",
+                str(PID),
+                "--type",
+                "character",
+                "--text",
+                "林晚",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "DB_ERROR"
+        assert "数据库连接失败" in data["error"]["message"]
+
+    def test_run_typer_exit_reraises(
+        self, cli_runner, mock_extraction_service, mock_create_tables
+    ):
+        """Service 抛 typer.Exit → _run 原样透传（退出码 3，不映射错误信封）."""
+        mock_extraction_service.extract.side_effect = typer.Exit(3)
+        result = cli_runner.invoke(
+            app,
+            [
+                "run",
+                "--project-id",
+                str(PID),
+                "--type",
+                "character",
+                "--text",
+                "林晚",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 3
+
+    def test_run_human_no_warnings(
+        self, cli_runner, mock_extraction_service, mock_create_tables
+    ):
+        """人类模式 result.warnings 为空 → 摘要不含警告计数（spec §4.3 条件行）."""
+        mock_extraction_service.extract.return_value = _make_result(warnings=[])
+        result = cli_runner.invoke(
+            app,
+            [
+                "run",
+                "--project-id",
+                str(PID),
+                "--type",
+                "character",
+                "--text",
+                "林晚",
+            ],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert (
+            "✅ 提取完成: character 处理 2 个源（跳过 0），新增 3 更新 2"
+            in result.output
+        )
+        assert "警告" not in result.output
+
+    def test_run_text_file_and_chapters_exit_2(
+        self, cli_runner, mock_extraction_service, mock_create_tables
+    ):
+        """--text-file 与 --chapters 同时使用 → 退出码 2（三选一互斥第三分支）."""
+        result = cli_runner.invoke(
+            app,
+            [
+                "run",
+                "--project-id",
+                str(PID),
+                "--type",
+                "character",
+                "--text-file",
+                "chapter.txt",
+                "--chapters",
+                str(CH1),
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 2
+        mock_extraction_service.extract.assert_not_awaited()
+
+
+class TestExtractStatusEdgeBranches:
+    def test_status_human_unindexed_run(
+        self, cli_runner, mock_extraction_service, mock_create_tables
+    ):
+        """status 人类模式 indexed=False 的 success run → 不输出「已索引」."""
+        mock_extraction_service.list_runs.return_value = (
+            [_make_run(indexed=False)],
+            1,
+        )
+        result = cli_runner.invoke(
+            app,
+            ["status", "--project-id", str(PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert (
+            f"  [character] {CH1} — ✅ success (2026-08-02 10:00, 新增 2 更新 1)"
+            in (result.output)
+        )
+        assert "已索引" not in result.output

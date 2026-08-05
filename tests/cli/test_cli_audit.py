@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from inkflow.cli.commands.audit import app
@@ -409,3 +410,49 @@ class TestAuditCheck:
         """缺 --project-id → 退出码 2（Typer 必填参数，spec §4/§9）。"""
         result = cli_runner.invoke(app, ["check"], obj=CliContext(json_output=False))
         assert result.exit_code == 2
+
+
+class TestAuditCheckEdgeBranches:
+    """补齐 miss 行：无效 UUID、typer.Exit 透传、无 findings 人类模式（不提示 --json）."""
+
+    def test_check_invalid_uuid(
+        self, cli_runner, mock_audit_service, mock_create_tables
+    ):
+        """无效 project-id UUID → NOT_FOUND 信封 + 退出码 1（spec §7: 无效 UUID → 404 语义）."""
+        result = cli_runner.invoke(
+            app,
+            ["check", "--project-id", "not-a-uuid"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "NOT_FOUND"
+        mock_audit_service.run_audit.assert_not_awaited()
+
+    def test_check_typer_exit_reraises(
+        self, cli_runner, mock_audit_service, mock_create_tables
+    ):
+        """Service 抛 typer.Exit → _run 原样透传（退出码 3，不映射错误信封）."""
+        mock_audit_service.run_audit.side_effect = typer.Exit(3)
+        result = cli_runner.invoke(
+            app,
+            ["check", "--project-id", str(PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 3
+
+    def test_check_human_no_findings(
+        self, cli_runner, mock_audit_service, mock_create_tables
+    ):
+        """无 findings 人类模式 → ❌ 摘要 + 0/0/0 计数，不提示 --json 完整报告."""
+        mock_audit_service.run_audit.return_value = _make_report(findings=[])
+        result = cli_runner.invoke(
+            app,
+            ["check", "--project-id", str(PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "❌ 不一致" in result.output
+        assert "0 error / 0 warning / 0 info" in result.output
+        assert "完整报告见 inkflow audit check --json" not in result.output

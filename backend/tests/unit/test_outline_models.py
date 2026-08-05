@@ -116,11 +116,21 @@ class TestOutlineUpdate:
         assert update.model_fields_set == {"name"}
 
     def test_update_explicit_none_in_fields_set(self):
-        """显式传 None 与不传可区分（None 进 model_fields_set）."""
+        """显式传 None 与不传可区分（None 进 model_fields_set）。"""
         none_update = OutlineUpdate(description=None)
         assert none_update.description is None
         assert "description" in none_update.model_fields_set
         assert OutlineUpdate().model_fields_set == set()
+
+    def test_update_explicit_none_name_and_sort_order(self):
+        """name/sort_order 显式传 None → validator None 分支直接返回。"""
+        assert OutlineUpdate(name=None).name is None
+        assert OutlineUpdate(sort_order=None).sort_order is None
+
+    def test_update_negative_sort_order_raises(self):
+        """负的 sort_order 应抛出 ValidationError。"""
+        with pytest.raises(ValidationError, match="排序权重不能为负数"):
+            OutlineUpdate(sort_order=-1)
 
 
 class TestPlotPointModel:
@@ -224,6 +234,23 @@ class TestPlotPointUpdate:
         assert clear_update.arc_id == ""
         assert "arc_id" in clear_update.model_fields_set
 
+    def test_update_explicit_none_all_fields(self):
+        """四个可选字段显式传 None → validator None 分支直接返回."""
+        assert PlotPointUpdate(name=None).name is None
+        assert PlotPointUpdate(type=None).type is None
+        assert PlotPointUpdate(description=None).description is None
+        assert PlotPointUpdate(position=None).position is None
+
+    def test_update_non_none_values_validated(self):
+        """非 None 值走共享校验：description 校验与 position 非负分支."""
+        assert PlotPointUpdate(description="新描述").description == "新描述"
+        assert PlotPointUpdate(position=3).position == 3
+
+    def test_update_negative_position_raises(self):
+        """负的 position 应抛出 ValidationError."""
+        with pytest.raises(ValidationError, match="排序位置不能为负数"):
+            PlotPointUpdate(position=-1)
+
 
 class TestStoryArcModel:
     """StoryArc 领域实体测试."""
@@ -293,6 +320,11 @@ class TestStoryArcUpdate:
         assert update.model_fields_set == {"name"}
         assert StoryArcUpdate().model_fields_set == set()
 
+    def test_update_explicit_none_fields(self):
+        """name/description 显式传 None → validator None 分支直接返回."""
+        assert StoryArcUpdate(name=None).name is None
+        assert StoryArcUpdate(description=None).description is None
+
 
 class TestOutlineGenerateRequest:
     """OutlineGenerateRequest 生成请求验证测试."""
@@ -340,6 +372,19 @@ class TestOutlineGenerateRequest:
         """save=False 表示只预览不落库."""
         req = OutlineGenerateRequest(project_id=PID, save=False)
         assert req.save is False
+
+    def test_generate_request_explicit_none_prompt(self):
+        """prompt 显式传 None → validator None 分支直接返回."""
+        assert OutlineGenerateRequest(project_id=PID, prompt=None).prompt is None
+
+    def test_generate_request_explicit_none_name(self):
+        """name 显式传 None → validator None 分支直接返回（缺省语义）。"""
+        assert OutlineGenerateRequest(project_id=PID, name=None).name is None
+
+    def test_generate_request_valid_name_uses_shared_validation(self):
+        """name 非 None → 复用共享校验（去空白后返回）。"""
+        req = OutlineGenerateRequest(project_id=PID, name="  第一卷规划  ")
+        assert req.name == "第一卷规划"
 
 
 class TestGeneratedModels:
@@ -391,6 +436,16 @@ class TestGeneratedModels:
         """GeneratedOutline description 超过 5000 字符应抛出 ValidationError."""
         with pytest.raises(ValidationError, match="大纲描述不能超过 5000 个字符"):
             GeneratedOutline(description="文" * 5001)
+
+    def test_generated_arc_explicit_none_description(self):
+        """GeneratedArc description 显式传 None → validator None 分支直接返回."""
+        assert GeneratedArc(name="主角成长线", description=None).description is None
+
+    def test_generated_plot_point_explicit_none_fields(self):
+        """GeneratedPlotPoint type/description 显式传 None → validator None 分支."""
+        point = GeneratedPlotPoint(name="转折点", type=None, description=None)
+        assert point.type is None
+        assert point.description is None
 
 
 class TestOutlineGenerationResult:
