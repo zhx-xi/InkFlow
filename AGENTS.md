@@ -28,7 +28,7 @@
 | 维度 | 说明 |
 |------|------|
 | **团队** | 单人开发 |
-| **时间线** | SemVer 版本里程碑（ADR-019 v2）：0.1.0 ✅ → 0.2.0 ✅（F9-F16 已交付）→ 0.3.0 GUI（F19 提前 + F23 SSE 提前）→ 0.4.0 skills 包+打包 → 0.5.0 MCP+会话+daemon → 0.6.0 导出+搜索 → **1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）** → **2.0.0 = 云端**；对应 PRD W10-W24 周计划（明细见下方里程碑表） |
+| **时间线** | SemVer 版本里程碑（ADR-019 v2）：0.1.0 ✅ → 0.2.0 ✅（F9-F16 已交付）→ 0.3.0 GUI（F19 提前 + F23 SSE 提前）→ 0.3.1 质量加固（#86 LLM 修复 ✅ / #87 状态重构 / #92 真实 AI CI / #104 覆盖率）→ 0.4.0 skills 包+打包 → 0.5.0 MCP+会话+daemon → 0.6.0 导出+搜索 → **1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）** → **2.0.0 = 云端**；对应 PRD W10-W24 周计划（明细见下方里程碑表） |
 | **部署模式** | 本地优先（SQLite，免认证）；**2.0.0 云端里程碑**：云存档/异地写作（PostgreSQL + JWT + BYOK，无 CRDT），GUI/CLI 远程模式连接云端 |
 | **多界面** | GUI（Electron，React 复用）+ CLI（Typer）+ REST API（FastAPI：本地内核通用通信契约，亦为云端用户 API 同一契约）+ MCP Server（stdio 直连 domain）（+ 云端 Web/Admin 后台） |
 | **工作流** | SDD + TDD：先写 spec → 再写测试（RED）→ 写代码（GREEN）→ 重构 |
@@ -41,6 +41,7 @@
 | 0.1.0 ✅ | F1-F8 + 云端 Protocol（Phase 1 Gate 7/7，已交付） |
 | 0.2.0 ✅ | F9-F16 创作工具链（F9-F16 ✅ 已交付，PR #56/#57/#58/#63/#64/#72/#74/#75） |
 | 0.3.0 | F19 GUI（Electron 壳 + 内核进程化 + React 渲染层）· F23 SSE 流式 ✅（PR #83，已交付）——F19 子任务 A 内核进程化 ✅（PR #85，#77）· 子任务 B Electron 壳 ✅（PR #95，#78）· 子任务 C React 渲染层 ✅（PR #97，#79） |
+| 0.3.1 | 质量加固补丁（milestone #9）：#86 LLM 客户端修复 ✅（PR #108：timeout→request_timeout + zhipu 注册 + audit 路由）· #87 LangGraph 状态重构 🔄 · #92 真实 AI CI job 🔄 · #104 覆盖率补全 🔄 |
 | 0.4.0 | skills 包（三通道分发）· F19 打包（exe / 安装包 / 便携 ZIP） |
 | 0.5.0 | F20 MCP（stdio 直连 domain）· F24 会话 · F25 daemon |
 | 0.6.0 | F21 导出 · F22 全文搜索 |
