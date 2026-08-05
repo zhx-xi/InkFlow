@@ -42,6 +42,7 @@
 | [ADR-024](ADR-024.md) | 云架构拓扑 — 同进程双前缀（user/admin）+ owner_id 隔离（D6） | ✅ 已接受 | 2026-08-02 |
 | [ADR-025](ADR-025.md) | 依赖锁定策略 — uv + uv.lock（Python）+ pnpm-lock.yaml 约定（前端） | ✅ 已接受 | 2026-08-02 |
 | [ADR-026](ADR-026.md) | 真实 AI CI job — label 触发 + workflow_dispatch 兜底（e2e-ai-backend） | ✅ 已接受 | 2026-08-04 |
+| [ADR-027](ADR-027.md) | 测试覆盖率门禁 — 三层全覆盖（#104：后端 98.5/95.0 + 前端 vitest thresholds + 口径修正） | ✅ 已接受 | 2026-08-06 |
 
 ## 当前有效决策速览
 
@@ -56,6 +57,7 @@
 - **CI 代码质量**: Reviewdog + Ruff 统一门禁（ADR-017）
 - **CI 测试分层**: 三层目录 + 按功能链路并行 job（ADR-018）
 - **CI 真实 AI 验证**: label 触发 + workflow_dispatch 兜底，e2e-ai-backend job（ADR-026，0.3.1 实现）
+- **CI 覆盖率门禁**: 后端 98.5% 行 / 95% 分支（coverage-backend job + check_coverage.py）+ 前端 vitest thresholds；口径 = XML 权威 + RAG 排除 + Protocol 方法体排除（ADR-027，0.3.1 实现）
 - **版本里程碑**: SemVer 版本号管理；1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）；2.0.0 = 云端（云 Web + 用户 API + Admin 后台 + GUI 远程模式）（ADR-019 v2，2026-08-02 重排）
 
 *来源：design/architecture-analysis-2026-07-30.md §三（2026-07-31 提取为独立目录）*
