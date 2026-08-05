@@ -22,21 +22,6 @@ export function applyTheme(theme: ThemeName, bg: ThemeBg = 'default'): void {
   document.body.dataset.bg = bg;
 }
 
-/** 解析初始主题（spec §4.3 默认策略：首次素笺；未手动选择且系统深色 → 夜航；手动选择以 localStorage 为准） */
-export function resolveInitialTheme(): { theme: ThemeName; bg: ThemeBg } {
-  const saved = localStorage.getItem('inkflow.ui');
-  if (saved) {
-    try {
-      const parsed = JSON.parse(saved) as { theme?: ThemeName; bg?: ThemeBg };
-      if (parsed.theme) return { theme: parsed.theme, bg: parsed.bg ?? 'default' };
-    } catch {
-      /* 损坏的持久化数据回退默认 */
-    }
-  }
-  const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
-  return { theme: prefersDark ? 'night' : 'paper', bg: 'default' };
-}
-
 /** React hook：挂载时应用主题；语言变化时更新 html lang */
 export function useThemeEffect(): void {
   const theme = useThemeStore((s) => s.theme);

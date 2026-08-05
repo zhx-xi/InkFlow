@@ -161,3 +161,48 @@ describe('project store — 状态与状态转换', () => {
     expect(useProjectStore.getState().currentProjectId).toBeNull();
   });
 });
+
+/**
+ * #105 Coverage-Gap 补测（非 RED）：单项目进度拉取失败 catch 分支（L103-105，
+ * 忽略不阻塞列表）+ 四个基础 setter 函数调用面
+ * （setProjects/setCurrentProject/setLoading/setError）。
+ */
+describe('project store — 进度失败兜底与 setter 组（#105 补测）', () => {
+  it('loadProjects：单项目进度拉取失败 → 忽略（列表仍可用，仅缺该进度）', async () => {
+    const projects = [makeProject({ id: 'p1', name: '青云志' }), makeProject({ id: 'p2', name: '山海经' })];
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects') return { items: projects, total: 2, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/chapters') throw new Error('进度获取失败');
+      if (path === '/api/v1/projects/p2/chapters') {
+        return { items: [makeChapter({ id: 'c1', word_count: 500 })], total: 1, offset: 0, limit: 50 };
+      }
+      throw new Error(`unexpected path: ${path}`);
+    });
+
+    await act(async () => {
+      await useProjectStore.getState().loadProjects();
+    });
+
+    const s = useProjectStore.getState();
+    expect(s.projects).toHaveLength(2);
+    expect(s.error).toBeNull();
+    expect(s.loading).toBe(false);
+    expect(s.chapterProgress).toEqual({ p2: { written: 1, total: 1 } });
+  });
+
+  it('setter 组：setProjects / setCurrentProject / setLoading / setError 同步状态', () => {
+    const p = makeProject();
+    act(() => {
+      const s = useProjectStore.getState();
+      s.setProjects([p]);
+      s.setCurrentProject('p1');
+      s.setLoading(true);
+      s.setError('临时错误');
+    });
+    const s = useProjectStore.getState();
+    expect(s.projects).toEqual([p]);
+    expect(s.currentProjectId).toBe('p1');
+    expect(s.loading).toBe(true);
+    expect(s.error).toBe('临时错误');
+  });
+});

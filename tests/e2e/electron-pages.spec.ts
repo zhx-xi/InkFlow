@@ -1,5 +1,5 @@
 /**
- * Electron 渲染层页面流程 E2E（Issue #104 Phase 2：项目页 / 写作页 / Agent 页三页关键流程）
+ * Electron 渲染层页面流程 E2E（#105 导航重构后契约：项目页 / 写作页 / 设定库 / 设置四页 + 侧边栏导航）
  *
  * 运行方式（与 electron-smoke.spec.ts 相同）：
  *   cd frontend
@@ -12,9 +12,15 @@
  * - 真实内核 + 真实渲染：创建项目 = 真实 POST 落库；用例间用唯一书名 `E2E-<场景>-<ts>` 隔离数据
  * - 每个用例独立 launch app（workers=1，串行）
  *
- * 元素契约来源：renderer 源码 testid（projects.tsx / writing.tsx / agents.tsx /
- * NewProjectDialog / ProjectTree / EditorToolbar / ChapterEditor / AgentChainCard /
- * AgentLlmCard / AppearanceCard）与 i18n/zh.ts 文案。
+ * #105 导航重构契约（spec §7.2/§7.4，Q1=A）：
+ * - 顶栏三页导航 → 左侧可折叠侧边栏 AppNav（nav-item-<key> testid；写作/项目/设定库/设置 +
+ *   Agent 快捷入口 Link 直达 /settings?cat=agent）；agents 页面已删除
+ * - AgentChainCard 迁移至设置页 Agent 分类（settings-cat-agent）；AppearanceCard 行为并入
+ *   设置页常规分类（主题 radio 三选）；AgentLlmCard 待 #106 挂载，本期不断言
+ *
+ * 元素契约来源：renderer 源码 testid（AppNav / projects.tsx / writing.tsx / library.tsx /
+ * settings.tsx / NewProjectDialog / ProjectTree / EditorToolbar / ChapterEditor /
+ * AgentChainCard）与 i18n/zh.ts 文案。
  */
 import path from 'node:path';
 import {
@@ -81,7 +87,7 @@ async function launchApp(): Promise<{ app: ElectronApplication; window: Page; ke
   return { app, window, kernel };
 }
 
-/** 侧边栏导航（NavLink 文本：项目 / 写作 / Agent 配置） */
+/** 侧边栏导航（AppNav 链接文本：项目 / 写作 / 设定库 / 设置；NavLink 与 Agent 快捷 Link 均为 role=link） */
 async function gotoNav(window: Page, name: string): Promise<void> {
   await window.getByRole('link', { name }).click();
 }
@@ -259,78 +265,110 @@ test('写作页：新建章节 → 输入正文 → 工具栏保存 → 内核�
 });
 
 // ────────────────────────────────────────────────────────────────
-// 5. Agent 页：Agent 链卡片 + 模型接入卡片渲染
+// 5. 设置页：Agent 分类渲染（迁移自 Agent 页；agents 路由已删，spec §7.10 Q1=A）
 // ────────────────────────────────────────────────────────────────
-test('Agent 页：链卡片（四角色+四开关）与模型卡片（服务商/模型/Key/温度）渲染', async () => {
+test('设置页：Agent 分类 → AgentChainCard（四角色+四开关）与默认模型下拉渲染', async () => {
   const { app, window } = await launchApp();
   try {
-    await gotoNav(window, 'Agent 配置');
-    expect(await window.evaluate(() => location.hash)).toContain('/agents');
+    // 侧边栏「设置」→ 默认落在常规分类（无 cat 参数）
+    await gotoNav(window, '设置');
+    expect(await window.evaluate(() => location.hash)).toContain('/settings');
+    await expect(window.getByTestId('settings-cat-general')).toHaveAttribute('aria-current', 'page');
 
-    // 三卡片齐备
-    await expect(window.getByTestId('agent-llm-card')).toBeVisible();
-    await expect(window.getByTestId('agent-chain-card')).toBeVisible();
-    await expect(window.getByTestId('agent-appearance-card')).toBeVisible();
+    // 点设置导航「Agent」分类 → 面板切换（URL cat=agent）
+    await window.getByTestId('settings-cat-agent').click();
+    expect(await window.evaluate(() => location.hash)).toContain('cat=agent');
+    await expect(window.getByTestId('settings-agent-panel')).toBeVisible();
 
-    // 链卡片：四角色行 + 四个 switch
+    // AgentChainCard（迁移自旧 agents 页，testid 不变）
     const chain = window.getByTestId('agent-chain-card');
+    await expect(chain).toBeVisible();
     await expect(chain.getByRole('switch')).toHaveCount(4);
     await expect(chain).toContainText('Architect 大纲架构师');
     await expect(chain).toContainText('Writer 执笔');
     await expect(chain).toContainText('Auditor 审校');
     await expect(chain).toContainText('Reviser 修订');
 
-    // 模型卡片：服务商 combobox / 模型 / API Key / 温度滑杆（0-2 步进 0.1）
-    const llm = window.getByTestId('agent-llm-card');
-    await expect(llm.getByRole('combobox', { name: '服务商' })).toBeVisible();
-    await expect(window.getByLabel('模型')).toBeVisible();
-    await expect(window.getByLabel('API Key')).toBeVisible();
-    const slider = llm.getByRole('slider', { name: '温度' });
-    await expect(slider).toHaveAttribute('aria-valuemin', '0');
-    await expect(slider).toHaveAttribute('aria-valuemax', '2');
-  } finally {
-    await app.close();
-  }
-});
+    // 默认模型下拉（#106 前 AgentLlmCard 不挂载，不做断言）
+    await expect(window.getByRole('combobox', { name: '默认模型' })).toBeVisible();
 
-// ────────────────────────────────────────────────────────────────
-// 6. Agent 页：主题切换 + 链开关交互
-// ────────────────────────────────────────────────────────────────
-test('Agent 页：主题 radio 切换生效（html data-theme）+ 链开关可切换', async () => {
-  const { app, window } = await launchApp();
-  try {
-    await gotoNav(window, 'Agent 配置');
-    const appearance = window.getByTestId('agent-appearance-card');
-
-    // 主题三选 radio
-    const radios = appearance.getByRole('radio');
-    await expect(radios).toHaveCount(3);
-    // 初始主题受系统深色偏好影响，不硬编码；只断言切换后生效
-    const initial = await window.evaluate(() => document.documentElement.dataset.theme);
-
-    // 点「夜航 · 深色」→ html data-theme=night + radio checked
-    await appearance.getByRole('radio', { name: /夜航/ }).click();
-    await expect
-      .poll(() => window.evaluate(() => document.documentElement.dataset.theme))
-      .toBe('night');
-    await expect(appearance.getByRole('radio', { name: /夜航/ })).toBeChecked();
-    expect(initial).not.toBe('night');
-
-    // 点「墨韵 · 东方」→ data-theme=ink
-    await appearance.getByRole('radio', { name: /墨韵/ }).click();
-    await expect
-      .poll(() => window.evaluate(() => document.documentElement.dataset.theme))
-      .toBe('ink');
-    await expect(appearance.getByRole('radio', { name: /墨韵/ })).toBeChecked();
-
-    // 链开关：config 为空 → 初始全 off；点 Architect 开关 → on；再点 → off
-    const chain = window.getByTestId('agent-chain-card');
+    // 链开关交互：config 为空 → 初始全 off；点 Architect 开关 → on；再点 → off
     const firstSwitch = chain.getByRole('switch').nth(0);
     await expect(firstSwitch).not.toBeChecked();
     await firstSwitch.click();
     await expect(firstSwitch).toBeChecked();
     await firstSwitch.click();
     await expect(firstSwitch).not.toBeChecked();
+  } finally {
+    await app.close();
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// 6. 设置页：常规分类主题切换（AppearanceCard 行为并入常规，spec §7.4）
+// ────────────────────────────────────────────────────────────────
+test('设置页：常规分类主题 radio 切换生效（html data-theme）', async () => {
+  const { app, window } = await launchApp();
+  try {
+    // 侧边栏「设置」→ 默认常规分类（主题三选 radio 即在此面板）
+    await gotoNav(window, '设置');
+    expect(await window.evaluate(() => location.hash)).toContain('/settings');
+    await expect(window.getByTestId('settings-panel')).toBeVisible();
+
+    // 主题三选 radio（素笺/夜航/墨韵）
+    const radios = window.getByRole('radio');
+    await expect(radios).toHaveCount(3);
+    await expect(window.getByRole('radio', { name: /素笺/ })).toBeVisible();
+    await expect(window.getByRole('radio', { name: /夜航/ })).toBeVisible();
+    await expect(window.getByRole('radio', { name: /墨韵/ })).toBeVisible();
+    // 初始主题受系统深色偏好 + localStorage（inkflow.ui）持久化影响，不硬编码也不断言初始值
+
+    // 点「夜航 · 深色」→ html data-theme=night + radio checked
+    await window.getByRole('radio', { name: /夜航/ }).click();
+    await expect
+      .poll(() => window.evaluate(() => document.documentElement.dataset.theme))
+      .toBe('night');
+    await expect(window.getByRole('radio', { name: /夜航/ })).toBeChecked();
+
+    // 点「墨韵 · 东方」→ data-theme=ink
+    await window.getByRole('radio', { name: /墨韵/ }).click();
+    await expect
+      .poll(() => window.evaluate(() => document.documentElement.dataset.theme))
+      .toBe('ink');
+    await expect(window.getByRole('radio', { name: /墨韵/ })).toBeChecked();
+  } finally {
+    await app.close();
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// 7. 导航流闭环：写作 → 项目 → 设定库 → 设置（spec §7.7 E2E）
+// ────────────────────────────────────────────────────────────────
+test('导航流：创建项目 → 写作 → 项目 → 设定库 → 设置 侧边栏闭环', async () => {
+  const { app, window } = await launchApp();
+  try {
+    const name = `E2E-导航流-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    expect(await window.evaluate(() => location.hash)).toContain('/writing');
+    await expect(window.getByTestId('project-tree')).toBeVisible();
+
+    // 侧边「项目」→ 项目页
+    await gotoNav(window, '项目');
+    expect(await window.evaluate(() => location.hash)).toContain('/projects');
+    await expect(window.getByTestId('new-project-btn')).toBeVisible();
+
+    // 侧边「设定库」→ 设定库页（有当前项目 → 项目选择器与分类 tab 存在）
+    await gotoNav(window, '设定库');
+    expect(await window.evaluate(() => location.hash)).toContain('/library');
+    await expect(window.getByTestId('library-page')).toBeVisible();
+    await expect(window.getByTestId('library-project-select')).toBeVisible();
+    await expect(window.getByTestId('library-tabs')).toBeVisible();
+
+    // 侧边「设置」→ 设置页
+    await gotoNav(window, '设置');
+    expect(await window.evaluate(() => location.hash)).toContain('/settings');
+    await expect(window.getByTestId('settings-page')).toBeVisible();
+    await expect(window.getByTestId('settings-nav')).toBeVisible();
   } finally {
     await app.close();
   }

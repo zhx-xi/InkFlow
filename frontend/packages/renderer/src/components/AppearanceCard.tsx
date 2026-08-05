@@ -1,20 +1,22 @@
-/** 外观卡片（spec §4.2.3/§4.3）：主题三选 + 背景随主题过滤 + 语言切换，持久化走 theme store */
-import { useId } from 'react';
+/** 外观卡片（spec §4.2.3/§4.3 + §6.2⑤）：三主题缩略预览卡（底色 + accent 圆点 + 文字标签）
+ *  + 背景随主题过滤（BG_BY_THEME）+ 语言切换，持久化到 theme store */
 import { BG_BY_THEME, type Lang, type ThemeBg, type ThemeName } from '../theme';
 import { useI18n } from '../i18n/useI18n';
 import { useThemeStore } from '../stores/theme';
-import { RadioGroup, RadioGroupItem } from './ui/radio-group';
+import { cn } from '../lib/cn';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
-const THEMES: Array<{ value: ThemeName; labelKey: string }> = [
-  { value: 'paper', labelKey: 'theme.paper' },
-  { value: 'night', labelKey: 'theme.night' },
-  { value: 'ink', labelKey: 'theme.ink' },
-];
+/** 三主题缩略预览卡配色（对照 tokens.css data-theme 色板：surface 底色 + ink 文字 + accent 圆点） */
+const PREVIEWS: Record<ThemeName, { bg: string; fg: string; accent: string }> = {
+  paper: { bg: '#F3F1EC', fg: '#2A2A28', accent: '#3B5B7C' },
+  night: { bg: '#22221F', fg: '#E8E6E1', accent: '#C9A24B' },
+  ink: { bg: '#EFE9DA', fg: '#2B2A26', accent: '#A6402E' },
+};
+
+const THEMES: ThemeName[] = ['paper', 'night', 'ink'];
 
 export function AppearanceCard() {
   const { t } = useI18n();
-  const radioGroupId = useId();
   const theme = useThemeStore((s) => s.theme);
   const bg = useThemeStore((s) => s.bg);
   const lang = useThemeStore((s) => s.lang);
@@ -23,26 +25,47 @@ export function AppearanceCard() {
   const setLang = useThemeStore((s) => s.setLang);
 
   return (
-    <section data-testid="agent-appearance-card" className="rounded-lg border border-line bg-surface p-6 shadow-card">
+    <section data-testid="appearance-card" className="rounded-lg border border-line bg-surface p-6 shadow-card">
       <h2 className="font-serif text-[17px] font-semibold">{t('ap.title')}</h2>
       <div className="mt-4 space-y-4">
         <div className="flex flex-col gap-1.5">
           <div className="text-[12px] text-ink-2">{t('ap.theme')}</div>
-          <RadioGroup
-            value={theme}
-            onValueChange={(v) => setTheme(v as ThemeName)}
-            aria-label={t('ap.theme')}
-            className="flex gap-4"
-          >
-            {THEMES.map((th) => (
-              <div key={th.value} className="flex items-center gap-1.5 text-[13px]">
-                <RadioGroupItem value={th.value} id={`${radioGroupId}-${th.value}`} />
-                <label htmlFor={`${radioGroupId}-${th.value}`} className="cursor-pointer">
-                  {t(th.labelKey)}
-                </label>
-              </div>
-            ))}
-          </RadioGroup>
+          <div role="radiogroup" aria-label={t('ap.theme')} className="flex gap-3">
+            {THEMES.map((th) => {
+              const preview = PREVIEWS[th];
+              const selected = theme === th;
+              return (
+                <div
+                  key={th}
+                  data-testid={`theme-preview-${th}`}
+                  role="radio"
+                  aria-checked={selected}
+                  tabIndex={0}
+                  onClick={() => setTheme(th)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setTheme(th);
+                    }
+                  }}
+                  className={cn(
+                    'w-28 cursor-pointer rounded-md border bg-surface p-1.5 transition duration-180 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    selected ? 'border-accent ring-2 ring-ring/50' : 'border-line hover:border-accent/50',
+                  )}
+                >
+                  <div
+                    className="flex h-12 items-end justify-between rounded-sm px-1.5 pb-1"
+                    style={{ backgroundColor: preview.bg }}
+                  >
+                    <span className="text-[11px] font-medium" style={{ color: preview.fg }}>
+                      {t(`theme.${th}`).split(' · ')[0]}
+                    </span>
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: preview.accent }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
         <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
           <span>{t('ap.bg')}</span>

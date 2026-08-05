@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { BookOpen } from 'lucide-react';
 import { NewProjectDialog } from '../components/NewProjectDialog';
 import { ProjectCard } from '../components/ProjectCard';
+import { Skeleton } from '../components/ui/skeleton';
 import { useI18n } from '../i18n/useI18n';
 import { useProjectStore } from '../stores/project';
 import { ensureApiReady } from '../api/client';
@@ -45,7 +46,24 @@ export function ProjectsPage() {
       {error ? (
         <div className="rounded-lg border border-err/30 bg-surface p-6 text-sm text-err">{error}</div>
       ) : loading && projects.length === 0 ? (
-        <div className="text-sm text-ink-3">{t('common.loading')}</div>
+        <div
+          role="status"
+          aria-label={t('common.loading')}
+          className="grid grid-cols-3 gap-5"
+        >
+          {Array.from({ length: 3 }, (_, i) => (
+            <div key={i} className="rounded-lg border border-line bg-surface p-5 shadow-card">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="mt-3 h-3 w-16" />
+              <Skeleton className="mt-2 h-3 w-20" />
+              <Skeleton className="mt-5 h-2 w-full" />
+              <div className="mt-4 flex items-center justify-between">
+                <Skeleton className="h-6 w-16" />
+                <Skeleton className="h-6 w-10" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : projects.length === 0 ? (
         <div
           data-testid="projects-empty"

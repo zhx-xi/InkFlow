@@ -151,3 +151,36 @@ describe('chapter store — 卷章树与当前章', () => {
     expect(useChapterStore.getState().content).toBe('流式生成的完整正文');
   });
 });
+
+/**
+ * #105 Coverage-Gap 补测（非 RED）：selectChapter 失败 catch 分支（L87-88）
+ * + 四个基础 setter 函数调用面（setTree/setCurrentChapter/setLoading/setError）。
+ */
+describe('chapter store — 失败兜底与 setter 组（#105 补测）', () => {
+  it('selectChapter 失败：error 记录 + loading 复位（catch 分支）', async () => {
+    apiFetchMock.mockRejectedValue(new Error('章节详情获取失败'));
+    await act(async () => {
+      await useChapterStore.getState().selectChapter('c1');
+    });
+    const s = useChapterStore.getState();
+    expect(s.error).toContain('章节详情获取失败');
+    expect(s.loading).toBe(false);
+    expect(s.currentChapterId).toBeNull();
+  });
+
+  it('setter 组：setTree / setCurrentChapter / setLoading / setError 同步状态', () => {
+    act(() => {
+      const s = useChapterStore.getState();
+      s.setTree(volumes, chapters);
+      s.setCurrentChapter('c2');
+      s.setLoading(true);
+      s.setError('临时错误');
+    });
+    const s = useChapterStore.getState();
+    expect(s.volumes).toEqual(volumes);
+    expect(s.chapters).toEqual(chapters);
+    expect(s.currentChapterId).toBe('c2');
+    expect(s.loading).toBe(true);
+    expect(s.error).toBe('临时错误');
+  });
+});

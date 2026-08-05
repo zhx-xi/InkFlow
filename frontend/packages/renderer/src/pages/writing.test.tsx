@@ -347,3 +347,101 @@ describe('写作页 — 空态（#98 §5.2.6）', () => {
     expect(editor.placeholder).toBe('点击「续写」或 Ctrl+Enter 开始 AI 续写');
   });
 });
+
+/**
+ * #105 Coverage-Gap 补测（非 RED）：自动保存防抖定时器分支（L79-82）+
+ * 工具栏按钮 prop 分支（L163-167）+ 快捷键 switch default 兜底（L118）。
+ * 既有 testid 契约（toolbar-save / chapter-editor / editor-toolbar）保持不变。
+ */
+describe('写作页 — 自动保存与工具栏/快捷键兜底分支（#105 补测）', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** PATCH 调用计数（区分挂载期 loadChapterTree 的 GET 调用） */
+  function patchCalls() {
+    return apiFetchMock.mock.calls.filter((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH');
+  }
+
+  it('自动保存：编辑后 2s 防抖落盘（PATCH 携带最新正文）', async () => {
+    vi.useFakeTimers();
+    render(<WritingPage />);
+    const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: '防抖自动保存的正文' } });
+
+    // 2s 内未触发保存（防抖窗口内）
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(patchCalls()).toHaveLength(0);
+
+    // 满 2s → saveContent 落盘
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(patchCalls()).toHaveLength(1);
+    expect(patchCalls()[0][0]).toBe('/api/v1/chapters/c1');
+    expect(patchCalls()[0][1]).toEqual({ method: 'PATCH', body: { content: '防抖自动保存的正文' } });
+  });
+
+  it('自动保存防抖重置：2s 内再次编辑重置计时器（仅最后一次变更落盘）', async () => {
+    vi.useFakeTimers();
+    render(<WritingPage />);
+    const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
+
+    fireEvent.change(editor, { target: { value: '第一版' } });
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    fireEvent.change(editor, { target: { value: '第二版' } });
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(patchCalls()).toHaveLength(0); // 第一次计时器已被重置，未到 2s
+
+    await act(async () => {
+      vi.advanceTimersByTime(600); // 第二次变更后满 2s
+    });
+    expect(patchCalls()).toHaveLength(1);
+    expect(patchCalls()[0][1]).toEqual({ method: 'PATCH', body: { content: '第二版' } });
+  });
+
+  it('工具栏按钮：撤销/重做调用 execCommand，保存 PATCH，生成发起 generate 流', async () => {
+    const user = userEvent.setup();
+    const execMock = vi.fn(() => true);
+    Object.defineProperty(document, 'execCommand', { value: execMock, configurable: true, writable: true });
+    stubStreamFetch();
+    render(<WritingPage />);
+    const toolbar = screen.getByTestId('editor-toolbar');
+
+    await user.click(within(toolbar).getByRole('button', { name: '撤销' }));
+    expect(execMock).toHaveBeenCalledWith('undo');
+    await user.click(within(toolbar).getByRole('button', { name: '重做' }));
+    expect(execMock).toHaveBeenCalledWith('redo');
+
+    fireEvent.change(screen.getByTestId('chapter-editor'), { target: { value: '工具栏保存的正文' } });
+    await user.click(within(toolbar).getByTestId('toolbar-save'));
+    await waitFor(() => {
+      expect(patchCalls()).toHaveLength(1);
+      expect(patchCalls()[0][1]).toEqual({ method: 'PATCH', body: { content: '工具栏保存的正文' } });
+    });
+
+    await user.click(within(toolbar).getByRole('button', { name: '生成' }));
+    await waitFor(() => expect(screen.getByText('生成中')).toBeInTheDocument());
+    const [, init] = vi.mocked(globalThis.fetch).mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toMatchObject({ mode: 'generate' });
+    delete (document as { execCommand?: unknown }).execCommand;
+  });
+
+  it('快捷键兜底：Ctrl+未注册键（Ctrl+A）无副作用（不撤销/不保存/不发起流）', () => {
+    const execMock = vi.fn(() => true);
+    Object.defineProperty(document, 'execCommand', { value: execMock, configurable: true, writable: true });
+    stubStreamFetch();
+    render(<WritingPage />);
+    fireEvent.keyDown(screen.getByTestId('chapter-editor'), { key: 'a', ctrlKey: true });
+    expect(execMock).not.toHaveBeenCalled();
+    expect(patchCalls()).toHaveLength(0);
+    expect(vi.mocked(globalThis.fetch)).not.toHaveBeenCalled();
+    delete (document as { execCommand?: unknown }).execCommand;
+  });
+});

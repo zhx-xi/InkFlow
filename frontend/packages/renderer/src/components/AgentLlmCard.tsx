@@ -21,7 +21,8 @@ export function AgentLlmCard() {
   const saveConfig = useAgentStore((s) => s.saveConfig);
   const projectId = useProjectStore((s) => s.currentProjectId);
   const [provider, setProvider] = useState('openai');
-  const [defaultWords, setDefaultWords] = useState(800000);
+  // §6.3① defaultWords 落 ProjectConfig 字段：本地展示值来自 config，回读刷新不丢
+  const defaultWords = config.default_words ?? 800000;
 
   const handleTest = () => {
     void testConnection({ provider, model: config.model ?? '', api_key: apiKeyDraft });
@@ -29,6 +30,8 @@ export function AgentLlmCard() {
 
   const handleSave = async () => {
     if (projectId === null) return;
+    // 未手动改动的默认值也随 config 落字段（800000 基线）
+    setConfig({ default_words: config.default_words ?? 800000 });
     // Q3 主路径：draft 非空先落 key（加密存储）并清空，再由 saveConfig PATCH config
     if (apiKeyDraft) {
       await submitApiKey({ provider, model: config.model ?? '', api_key: apiKeyDraft });
@@ -107,7 +110,7 @@ export function AgentLlmCard() {
             aria-label={t('ag.defaultWords')}
             className="w-full rounded-md border border-line bg-surface px-3 py-2 text-[13px] outline-none focus:border-accent"
             value={defaultWords}
-            onChange={(e) => setDefaultWords(Number(e.target.value))}
+            onChange={(e) => setConfig({ default_words: Number(e.target.value) })}
           />
         </label>
       </div>

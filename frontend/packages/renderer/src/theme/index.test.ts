@@ -1,27 +1,20 @@
 /**
- * theme 模块薄弱分支补测（Issue #104 覆盖率：行 70.27% → 目标 ≥99%）
+ * theme 模块测试契约（Issue #105 §6.3⑥：resolveInitialTheme 死代码已删除）
+ *
+ * ⚠️ 本文件 = 契约。GREEN 实现 src/theme/index.ts 必须匹配：
+ * - resolveInitialTheme 已从模块中删除（全仓 0 引用，store 内 initialTheme() 为活实现）
+ *   → 本文件不再 import/测试该函数（其测试组随实现一并移除）
+ * - applyTheme 双写 html/body dataset（theme + bg，bg 缺省 default）
+ * - useThemeEffect：挂载应用主题 + html lang；theme/bg/lang 切换
  *
  * 覆盖点（对应 src/theme/index.ts）：
  * - applyTheme 双写 html/body dataset（theme + bg，bg 缺省 default）
- * - resolveInitialTheme：localStorage 有效值 / 有 theme 无 bg / 损坏 JSON /
- *   无值 + prefers-dark true / 无值 + prefers-dark false
  * - useThemeEffect：挂载应用主题 + html lang；theme/bg/lang 切换
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { applyTheme, resolveInitialTheme, useThemeEffect } from './index';
+import { applyTheme, useThemeEffect } from './index';
 import { useThemeStore } from '../stores/theme';
-
-function stubMatchMedia(matches: boolean): ReturnType<typeof vi.fn> {
-  const matchMediaMock = vi.fn().mockReturnValue({
-    matches,
-    media: '(prefers-color-scheme: dark)',
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-  });
-  vi.stubGlobal('matchMedia', matchMediaMock);
-  return matchMediaMock;
-}
 
 beforeEach(() => {
   localStorage.clear();
@@ -47,39 +40,6 @@ describe('applyTheme — html/body 双写', () => {
     expect(document.documentElement.dataset.theme).toBe('ink');
     expect(document.documentElement.dataset.bg).toBe('default');
     expect(document.body.dataset.bg).toBe('default');
-  });
-});
-
-describe('resolveInitialTheme — localStorage / 系统偏好', () => {
-  it('localStorage 有效值 → 原样返回（theme + bg）', () => {
-    localStorage.setItem('inkflow.ui', JSON.stringify({ theme: 'ink', bg: 'ochre' }));
-    expect(resolveInitialTheme()).toEqual({ theme: 'ink', bg: 'ochre' });
-  });
-
-  it('有 theme 无 bg → bg 回退 default', () => {
-    localStorage.setItem('inkflow.ui', JSON.stringify({ theme: 'night' }));
-    expect(resolveInitialTheme()).toEqual({ theme: 'night', bg: 'default' });
-  });
-
-  it('损坏 JSON → 回退系统偏好分支', () => {
-    localStorage.setItem('inkflow.ui', '{broken-json');
-    stubMatchMedia(false);
-    expect(resolveInitialTheme()).toEqual({ theme: 'paper', bg: 'default' });
-  });
-
-  it('无值 + 系统深色偏好 → night/default', () => {
-    stubMatchMedia(true);
-    expect(resolveInitialTheme()).toEqual({ theme: 'night', bg: 'default' });
-  });
-
-  it('无值 + 系统浅色偏好 → paper/default', () => {
-    stubMatchMedia(false);
-    expect(resolveInitialTheme()).toEqual({ theme: 'paper', bg: 'default' });
-  });
-
-  it('matchMedia 不存在 → 按浅色回退 paper', () => {
-    // beforeEach 已 unstubAllGlobals：jsdom 无 matchMedia → 可选链兜底
-    expect(resolveInitialTheme()).toEqual({ theme: 'paper', bg: 'default' });
   });
 });
 
