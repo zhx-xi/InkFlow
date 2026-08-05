@@ -41,11 +41,13 @@ _BUILTIN_PROVIDERS: dict[str, str | None] = {
 }
 
 
-def get_provider_config(provider: str) -> LLMProviderConfig:
+def get_provider_config(provider: str, api_key: str | None = None) -> LLMProviderConfig:
     """获取指定 Provider 的配置。
 
     Args:
         provider: Provider 名称（如 "openai", "deepseek"）。
+        api_key: 可选 API Key 覆盖值 — 为 None 时回退环境变量注入；连通探测
+            等按请求携带密钥的场景显式传入。
 
     Returns:
         LLMProviderConfig 实例。
@@ -53,8 +55,8 @@ def get_provider_config(provider: str) -> LLMProviderConfig:
     Raises:
         ValueError: Provider 的 API Key 未配置。
     """
-    api_key = _BUILTIN_PROVIDERS.get(provider)
-    if api_key is None:
+    resolved_key = api_key if api_key is not None else _BUILTIN_PROVIDERS.get(provider)
+    if resolved_key is None:
         raise ValueError(
             f"API key not configured for provider: {provider}. "
             f"Set INKFLOW_{provider.upper()}_API_KEY environment variable."
@@ -62,7 +64,7 @@ def get_provider_config(provider: str) -> LLMProviderConfig:
 
     return LLMProviderConfig(
         provider=provider,
-        api_key=api_key,
+        api_key=resolved_key,
         base_url=_PROVIDER_BASE_URLS.get(provider),
         default_model=config.model_routing.get(provider, config.llm_default_model),
         max_retries=config.llm_max_retries,

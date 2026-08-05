@@ -32,10 +32,13 @@ class LangChainLLMClient:
         default_model: str | None = None,
         temperature: float | None = None,
         max_retries: int | None = None,
+        api_key: str | None = None,
     ) -> None:
         self._default_model = default_model or config.llm_default_model
         self._temperature = temperature if temperature is not None else config.llm_temperature
         self._max_retries = max_retries if max_retries is not None else config.llm_max_retries
+        # 可选 API Key 覆盖值（连通探测按请求携带密钥，优先于环境变量注入）
+        self._api_key = api_key
 
     # ── Public API ──
 
@@ -72,7 +75,7 @@ class LangChainLLMClient:
             raise LLMRequestError(str(e), provider="", model=model_str) from e
 
         try:
-            provider_cfg = get_provider_config(provider)
+            provider_cfg = get_provider_config(provider, api_key=self._api_key)
         except ValueError as e:
             raise LLMRequestError(str(e), provider=provider, model=model_name) from e
 
@@ -111,7 +114,7 @@ class LangChainLLMClient:
 
         model_str = model or self._default_model
         provider, model_name = parse_model_string(model_str)
-        provider_cfg = get_provider_config(provider)
+        provider_cfg = get_provider_config(provider, api_key=self._api_key)
 
         chat_model = self._get_chat_model(
             provider_cfg,
