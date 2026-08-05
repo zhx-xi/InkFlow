@@ -23,6 +23,8 @@
   --radius-s: var(--radius-s);
   --radius-m: var(--radius-m);
   --radius-l: var(--radius-l);
+  --shadow-card: var(--shadow);  /* 卡片阴影随三主题切换 */
+  --color-ring: var(--ring);     /* focus ring 随三主题切换 */
 }
 
 body {

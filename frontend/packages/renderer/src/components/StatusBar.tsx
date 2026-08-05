@@ -5,15 +5,17 @@ export interface StatusBarProps {
   model: string | null;
   wordCount: number;
   savedAt: Date | null;
+  /** 内核连接状态（缺省视为已连接，spec §5.2.7 #8） */
+  kernelConnected?: boolean;
 }
 
-export function StatusBar({ model, wordCount, savedAt }: StatusBarProps) {
+export function StatusBar({ model, wordCount, savedAt, kernelConnected = true }: StatusBarProps) {
   const { t } = useI18n();
   return (
     <div className="flex items-center gap-5 border-t border-line bg-surface px-4 py-1.5 text-[11px] text-ink-3">
-      <span>{t('sb.kernel')}</span>
+      <span>{kernelConnected ? t('sb.kernel') : t('sb.kernelOffline')}</span>
       <span>
-        {t('sb.model')}: {model ?? '—'}
+        {t('sb.model')}: {model || '—'}
       </span>
       <span>
         {t('sb.words')}: {wordCount.toLocaleString()}

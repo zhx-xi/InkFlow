@@ -30,6 +30,7 @@
   --accent: #3B5B7C;        /* 墨蓝（饱和度 < 80%） */
   --accent-ink: #FFFFFF;
   --accent-weak: rgba(59, 91, 124, 0.10);
+  --ring: rgba(59, 91, 124, 0.38);   /* focus ring：按 accent 派生 */
   --ok: #4A7C59; --warn: #B07A2E; --err: #B04A3A;
   --shadow: 0 1px 2px rgba(42, 42, 40, 0.05), 0 4px 16px rgba(42, 42, 40, 0.05);
 }
@@ -50,6 +51,7 @@
   --accent: #C9A24B;        /* 暖金（低饱和） */
   --accent-ink: #1A1A18;
   --accent-weak: rgba(201, 162, 75, 0.13);
+  --ring: rgba(201, 162, 75, 0.45);  /* focus ring：按 accent 派生 */
   --ok: #8FAE8E; --warn: #C9A24B; --err: #C97B63;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
 }
@@ -71,6 +73,7 @@
   --accent: #A6402E;        /* 朱砂（点缀用，不做大面） */
   --accent-ink: #FAF6EC;
   --accent-weak: rgba(166, 64, 46, 0.09);
+  --ring: rgba(166, 64, 46, 0.38);   /* focus ring：按 accent 派生 */
   --ok: #5A7A58; --warn: #9A7B3C; --err: #A6402E;
   --shadow: 0 1px 2px rgba(43, 42, 38, 0.06), 0 4px 16px rgba(43, 42, 38, 0.06);
 }

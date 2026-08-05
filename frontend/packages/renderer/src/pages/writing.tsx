@@ -1,5 +1,7 @@
 /** 写作页（spec §4.2.1）：三栏 + 工具栏快捷键 + SSE 流式区 + 上下文折叠 + 印章常驻 + 状态栏 */
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { Compass } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { ChapterEditor } from '../components/ChapterEditor';
 import { ContextPanel } from '../components/ContextPanel';
 import { EditorToolbar } from '../components/EditorToolbar';
@@ -7,12 +9,36 @@ import { ProjectTree } from '../components/ProjectTree';
 import { StatusBar } from '../components/StatusBar';
 import { StreamArea } from '../components/StreamArea';
 import { useStream } from '../hooks/useStream';
+import { useI18n } from '../i18n/useI18n';
 import { useChapterStore } from '../stores/chapter';
 import { useProjectStore } from '../stores/project';
+
+/** 无项目引导态（仅挂载于无项目分支，避免无 Router 上下文的测试报错） */
+function WritingEmptyState() {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  return (
+    <div data-testid="writing-empty" className="flex h-full items-center justify-center">
+      <div className="text-center">
+        <Compass className="mx-auto h-10 w-10 text-ink-3" aria-hidden="true" />
+        <p className="mt-3 text-[15px] text-ink-2">{t('write.empty.title')}</p>
+        <button
+          type="button"
+          className="mt-5 rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink"
+          onClick={() => navigate('/projects')}
+        >
+          {t('write.empty.back')}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function WritingPage() {
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const projects = useProjectStore((s) => s.projects);
+  const projectsLoading = useProjectStore((s) => s.loading);
+  const projectsError = useProjectStore((s) => s.error);
   const selectProject = useProjectStore((s) => s.selectProject);
   const loadChapterTree = useChapterStore((s) => s.loadChapterTree);
   const currentChapterId = useChapterStore((s) => s.currentChapterId);
@@ -92,6 +118,10 @@ export function WritingPage() {
     },
     [start, save],
   );
+
+  if (effectiveProjectId === '' && !projectsLoading && !projectsError) {
+    return <WritingEmptyState />;
+  }
 
   const currentChapter = chapters.find((c) => c.id === currentChapterId);
   const displayWords = status === 'generating' ? wordCount : currentChapter?.word_count ?? 0;

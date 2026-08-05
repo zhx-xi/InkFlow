@@ -5,11 +5,12 @@
  *
  * 结构（data-testid）：agent-llm-card（模型接入）/ agent-chain-card（写作 Agent 链）/ agent-appearance-card（外观）
  *
- * 模型接入卡片（原生表单控件契约：select/input/range —— 渲染层当前无 radix 依赖）：
- * - 服务商 combobox：openai / deepseek / ollama（provider_config.py 内建注册表核实）
+ * 模型接入卡片（#98 Q1=A 契约升级：Radix Select/Slider 语义，2026-08-05）：
+ * - 服务商 combobox（role=combobox，aria-label「服务商」）：openai / deepseek / ollama ——
+ *   选项在打开面板后 portal 渲染（role=option，screen 级查询）；选择 = click trigger + click option
  * - 模型输入（label「模型」）、API Key 输入（label「API Key」）、温度滑杆
- *   （input type=range min=0 max=2 step=0.1，值对齐 config.temperature）、默认字数输入
- * - 温度滑杆变更 → agentStore.config.temperature
+ *   （role=slider，aria-valuemin=0 / aria-valuemax=2 / step=0.1 键盘步进，值对齐 config.temperature）、默认字数输入
+ * - 温度滑杆变更（ArrowRight +0.1）→ agentStore.config.temperature
  * - API Key 落点：保存时若 apiKeyDraft 非空 → POST /api/v1/settings/llm-keys（body {provider, model, api_key}）→ 清空输入
  * - 测试连接 = POST /api/v1/settings/llm/test：成功 → 「连接成功」+ 保存可用（主路径）；
  *   失败 → 「连接失败: {原因}」+ 直接保存始终可用（PATCH /api/v1/projects/{id} {config}）
@@ -60,39 +61,42 @@ describe('Agent 页 — 结构', () => {
 });
 
 describe('Agent 页 — 模型接入卡片', () => {
-  it('字段渲染：服务商（openai/deepseek/ollama）/ 模型 / API Key / 温度滑杆 / 默认字数', () => {
+  it('字段渲染：服务商（openai/deepseek/ollama）/ 模型 / API Key / 温度滑杆 / 默认字数', async () => {
+    const user = userEvent.setup();
     render(<AgentsPage />);
     const card = screen.getByTestId('agent-llm-card');
 
-    const provider = within(card).getByLabelText('服务商');
-    expect(provider.tagName).toBe('SELECT');
-    expect(within(provider).getByRole('option', { name: 'openai' })).toBeInTheDocument();
-    expect(within(provider).getByRole('option', { name: 'deepseek' })).toBeInTheDocument();
-    expect(within(provider).getByRole('option', { name: 'ollama' })).toBeInTheDocument();
+    const provider = screen.getByRole('combobox', { name: '服务商' });
+    expect(provider).toBeInTheDocument();
+    // Radix Select：选项在打开面板后 portal 渲染（role=option，screen 级查询）
+    await user.click(provider);
+    expect(await screen.findByRole('option', { name: 'openai' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'deepseek' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'ollama' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
 
     expect(within(card).getByLabelText('模型')).toBeInTheDocument();
     expect(within(card).getByLabelText('API Key')).toBeInTheDocument();
 
-    const slider = within(card).getByLabelText('温度') as HTMLInputElement;
-    expect(slider.type).toBe('range');
-    expect(slider.min).toBe('0');
-    expect(slider.max).toBe('2');
-    expect(slider.step).toBe('0.1');
+    const slider = screen.getByRole('slider', { name: '温度' });
+    expect(slider).toHaveAttribute('aria-valuemin', '0');
+    expect(slider).toHaveAttribute('aria-valuemax', '2');
 
     expect(within(card).getByLabelText('默认字数')).toBeInTheDocument();
   });
 
-  it('温度滑杆变更 → config.temperature（对齐 ProjectConfig.temperature 0-2.0）', () => {
+  it('温度滑杆变更 → config.temperature（对齐 ProjectConfig.temperature 0-2.0）', async () => {
     act(() => {
       useAgentStore.getState().setConfig({ temperature: 0.7 });
     });
     render(<AgentsPage />);
-    const slider = screen.getByLabelText('温度') as HTMLInputElement;
-    expect(slider.value).toBe('0.7');
+    const slider = screen.getByRole('slider', { name: '温度' });
+    expect(slider).toHaveAttribute('aria-valuenow', '0.7');
 
-    // range 输入用 fireEvent.change（userEvent.type 对 range 无效）
-    fireEvent.change(slider, { target: { value: '1.2' } });
-    expect(useAgentStore.getState().config.temperature).toBe(1.2);
+    // Radix Slider 键盘步进：ArrowRight +0.1（实现端 step=0.1，0.7 → 0.8）
+    slider.focus();
+    fireEvent.keyDown(slider, { key: 'ArrowRight' });
+    expect(useAgentStore.getState().config.temperature).toBeCloseTo(0.8);
   });
 
   it('保存：API Key 落点 POST /settings/llm-keys → 清空 draft → PATCH /projects/{id} config', async () => {
@@ -101,7 +105,8 @@ describe('Agent 页 — 模型接入卡片', () => {
     const card = screen.getByTestId('agent-llm-card');
 
     await user.type(within(card).getByLabelText('API Key'), 'sk-secret-123');
-    await user.selectOptions(within(card).getByLabelText('服务商'), 'openai');
+    await user.click(screen.getByRole('combobox', { name: '服务商' }));
+    await user.click(await screen.findByRole('option', { name: 'openai' }));
     await user.type(within(card).getByLabelText('模型'), 'gpt-4o');
     await user.click(screen.getByRole('button', { name: '保存' }));
 
@@ -216,24 +221,29 @@ describe('Agent 页 — 外观卡片', () => {
     render(<AgentsPage />);
     const card = screen.getByTestId('agent-appearance-card');
 
-    // 背景下拉选项（仅取背景 select 自身，避免混入服务商等其它 select 的 option）
-    const bgSelect = within(card).getByLabelText('背景') as HTMLSelectElement;
-    const bgNames = (): string[] => Array.from(bgSelect.options).map((o) => o.textContent ?? '');
+    // 背景下拉选项：打开面板后收集 portal option 文本（Radix Select 只渲染打开的面板）
+    const bgNames = async (): Promise<string[]> => {
+      await user.click(within(card).getByRole('combobox', { name: '背景' }));
+      const opts = await screen.findAllByRole('option');
+      const names = opts.map((o) => o.textContent ?? '');
+      await user.keyboard('{Escape}');
+      return names;
+    };
 
     // paper（默认主题）：默认 + 羊皮纸
-    const paperOptions = bgNames();
+    const paperOptions = await bgNames();
     expect(paperOptions).toContain('默认');
     expect(paperOptions).toContain('羊皮纸');
     expect(paperOptions).not.toContain('墨蓝黑');
 
     await user.click(within(card).getByRole('radio', { name: /夜航/ }));
-    const nightOptions = bgNames();
+    const nightOptions = await bgNames();
     expect(nightOptions).toContain('默认');
     expect(nightOptions).toContain('墨蓝黑');
     expect(nightOptions).not.toContain('羊皮纸');
 
     await user.click(within(card).getByRole('radio', { name: /墨韵/ }));
-    const inkOptions = bgNames();
+    const inkOptions = await bgNames();
     expect(inkOptions).toContain('默认');
     expect(inkOptions).toContain('深褐纸');
     expect(inkOptions).not.toContain('墨蓝黑');
@@ -245,8 +255,43 @@ describe('Agent 页 — 外观卡片', () => {
     const card = screen.getByTestId('agent-appearance-card');
 
     expect(screen.getByRole('heading', { name: 'Agent 与模型配置' })).toBeInTheDocument();
-    await user.selectOptions(within(card).getByLabelText('语言'), 'en');
+    await user.click(within(card).getByRole('combobox', { name: '语言' }));
+    await user.click(await screen.findByRole('option', { name: 'EN' }));
     expect(useThemeStore.getState().lang).toBe('en');
     expect(screen.getByRole('heading', { name: 'Agents & Model' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * #98 §5.2.5 图标资产：Agent 链字母方块 → lucide 角色图标（本 describe 为增量契约，未改动上述既有断言）
+ *
+ * ⚠️ 契约：GREEN 实现 AgentChainCard 必须匹配：
+ * - 移除字母方块 glyph（A/W/A/R 独立字母文本），改为 lucide 角色图标
+ * - 角色图标可访问性：图标为装饰性（svg aria-hidden="true"）或带语义 aria-label
+ *   （角色名与开关 aria-label 已由既有断言覆盖——四行 switch 语义保持）
+ * - 回归：getByRole('switch') 数量仍为 4（shadcn Switch 保持 role="switch" 语义）
+ */
+describe('Agent 页 — 角色图标化可访问性（#98 §5.2.5 差距 #3）', () => {
+  it('字母方块移除：卡片内无独立 A/W/R 字母文本（图标替代）', () => {
+    render(<AgentsPage />);
+    const card = screen.getByTestId('agent-chain-card');
+    // queryAllByText 精确匹配独立文本节点（角色名「Architect 大纲架构师」等长文本不受影响）
+    expect(within(card).queryAllByText('A')).toHaveLength(0);
+    expect(within(card).queryAllByText('W')).toHaveLength(0);
+    expect(within(card).queryAllByText('R')).toHaveLength(0);
+    // 回归：四行 switch 语义保持（既有断言同源）
+    expect(within(card).getAllByRole('switch')).toHaveLength(4);
+  });
+
+  it('角色图标可访问性：图标为装饰性（svg aria-hidden）或带语义 label（≥4 个）', () => {
+    render(<AgentsPage />);
+    const card = screen.getByTestId('agent-chain-card');
+    const icons = card.querySelectorAll('svg');
+    expect(icons.length).toBeGreaterThanOrEqual(4);
+    for (const icon of Array.from(icons)) {
+      const hidden = icon.getAttribute('aria-hidden') === 'true';
+      const labelled = icon.hasAttribute('aria-label');
+      expect(hidden || labelled).toBe(true);
+    }
   });
 });

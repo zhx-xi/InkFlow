@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n/useI18n';
 import { useProjectStore } from '../stores/project';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 const GENRES = ['玄幻', '科幻', '言情', '仙侠', '武侠', '都市', '历史', '游戏', '悬疑', '奇幻', '其他'];
 const LANGUAGES = ['zh-CN', 'en'];
@@ -46,7 +47,7 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
         role="dialog"
         aria-modal="true"
         aria-label={t('dlg.newTitle')}
-        className="w-[420px] rounded-lg border border-line bg-surface p-6 shadow"
+        className="w-[420px] rounded-lg border border-line bg-surface p-6 shadow-card"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="font-serif text-[18px] font-semibold">{t('dlg.newTitle')}</h2>
@@ -62,36 +63,42 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
             />
           </label>
           {error && <div className="text-[13px] text-err">{error}</div>}
-          <label htmlFor="new-project-genre" className="block text-[13px]">
+          <div className="block text-[13px]">
             <span className="mb-1 block">{t('dlg.genre')}</span>
-            <select
-              id="new-project-genre"
-              className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm outline-none"
+            <Select
               value={genre}
-              onChange={(e) => setGenre(e.target.value)}
+              onValueChange={(v) => setGenre(v)}
             >
-              {GENRES.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label htmlFor="new-project-lang" className="block text-[13px]">
+              <SelectTrigger aria-label={t('dlg.genre')} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {GENRES.map((g) => (
+                  <SelectItem key={g} value={g}>
+                    {g}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="block text-[13px]">
             <span className="mb-1 block">{t('dlg.lang')}</span>
-            <select
-              id="new-project-lang"
-              className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm outline-none"
+            <Select
               value={language}
-              onChange={(e) => setLanguage(e.target.value)}
+              onValueChange={(v) => setLanguage(v)}
             >
-              {LANGUAGES.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
-              ))}
-            </select>
-          </label>
+              <SelectTrigger aria-label={t('dlg.lang')} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LANGUAGES.map((l) => (
+                  <SelectItem key={l} value={l}>
+                    {l}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <label htmlFor="new-project-target" className="block text-[13px]">
             <span className="mb-1 block">{t('dlg.targetWords')}</span>
             <input
