@@ -27,6 +27,7 @@ class LLMProviderConfig:
 _PROVIDER_BASE_URLS: dict[str, str] = {
     "deepseek": "https://api.deepseek.com/v1",
     "ollama": "http://localhost:11434/v1",
+    "zhipu": "https://open.bigmodel.cn/api/paas/v4/",
     # OpenAI 使用 SDK 默认端点
 }
 
@@ -37,6 +38,7 @@ _PROVIDER_BASE_URLS: dict[str, str] = {
 _BUILTIN_PROVIDERS: dict[str, str | None] = {
     "openai": config.openai_api_key or None,
     "deepseek": config.deepseek_api_key or None,
+    "zhipu": config.zhipu_api_key or None,
     "ollama": "ollama",  # Ollama 本地运行，无需真实 API Key
 }
 

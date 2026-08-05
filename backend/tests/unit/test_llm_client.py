@@ -151,3 +151,89 @@ class TestLangChainLLMClient:
         client = LangChainLLMClient()
         with pytest.raises(ValueError, match="messages cannot be empty"):
             await client.chat([])
+
+    # ── Issue #86 契约 1（P0）：ChatOpenAI 超时参数名 timeout → request_timeout ──
+
+    def test_get_chat_model_uses_request_timeout(self):
+        """_get_chat_model 应传 request_timeout（langchain-openai 1.4.1 无 timeout 字段）。"""
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        provider_cfg = _fake_provider_config()
+        with patch("inkflow.infrastructure.llm.langchain_client.ChatOpenAI") as mock_chat:
+            LangChainLLMClient()._get_chat_model(provider_cfg)
+
+        mock_chat.assert_called_once()
+        call_kwargs = mock_chat.call_args[1]
+        assert call_kwargs["request_timeout"] == float(provider_cfg.timeout)
+        assert "timeout" not in call_kwargs
+
+    # ── Issue #86 契约 4（小修）：count_tokens 按模型选 encoding ──
+
+    @pytest.mark.asyncio
+    async def test_count_tokens_uses_model_specific_encoding(self, chat_messages):
+        """count_tokens 应按 model 调用 tiktoken.encoding_for_model，而非硬编码 cl100k_base。"""
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        client = LangChainLLMClient()
+        fake_enc = MagicMock()
+        fake_enc.encode.return_value = [1, 2]
+        fake_tiktoken = MagicMock()
+        fake_tiktoken.encoding_for_model.return_value = fake_enc
+        with patch.dict("sys.modules", {"tiktoken": fake_tiktoken}):
+            count = await client.count_tokens(chat_messages, model="deepseek/deepseek-chat")
+
+        fake_tiktoken.encoding_for_model.assert_called()
+        model_arg = fake_tiktoken.encoding_for_model.call_args[0][0]
+        assert isinstance(model_arg, str)
+        assert "deepseek" in model_arg
+        assert isinstance(count, int)
+        assert count > 0
+
+    @pytest.mark.asyncio
+    async def test_count_tokens_unknown_model_falls_back(self, chat_messages):
+        """未知模型导致 encoding_for_model 失败时应回退估算，不抛异常。"""
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        client = LangChainLLMClient()
+        fake_tiktoken = MagicMock()
+        fake_tiktoken.encoding_for_model.side_effect = KeyError("unknown model")
+        with patch.dict("sys.modules", {"tiktoken": fake_tiktoken}):
+            count = await client.count_tokens(chat_messages, model="unknown/foo")
+
+        assert isinstance(count, int)
+        assert count > 0
+
+    # ── Issue #86 契约 5（小修）：未知 role 显式报错 ──
+
+    def test_to_langchain_messages_unknown_role_raises(self):
+        """未知 role 应显式抛 ValueError，而非静默降级为 HumanMessage。"""
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        with pytest.raises(ValueError) as exc_info:
+            LangChainLLMClient._to_langchain_messages([ChatMessage(role="hacker", content="x")])
+        assert "hacker" in str(exc_info.value)
+        assert "role" in str(exc_info.value)
+
+    def test_to_langchain_messages_known_roles(self):
+        """已知 role（system/user/assistant）仍应正常转换。"""
+        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        result = LangChainLLMClient._to_langchain_messages(
+            [
+                ChatMessage(role="system", content="s"),
+                ChatMessage(role="user", content="u"),
+                ChatMessage(role="assistant", content="a"),
+            ]
+        )
+        assert [type(m) for m in result] == [SystemMessage, HumanMessage, AIMessage]
+
+    # ── Issue #86 契约 6（小修）：_max_retries 死代码删除 ──
+
+    def test_init_accepts_max_retries_but_does_not_store(self):
+        """__init__ 保留 max_retries 参数兼容调用方，但不应再存储死代码属性 _max_retries。"""
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        client = LangChainLLMClient(max_retries=5)
+        assert not hasattr(client, "_max_retries")

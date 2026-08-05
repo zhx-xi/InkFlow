@@ -16,6 +16,7 @@ app = typer.Typer(name="llm", help="LLM Provider 配置", no_args_is_help=True)
 _PROVIDER_MODELS = {
     "openai": "gpt-4o",
     "deepseek": "deepseek-chat",
+    "zhipu": "glm-4.5",
     "anthropic": "claude-3-haiku-20240307",
 }
 
