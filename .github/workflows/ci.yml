@@ -163,7 +163,12 @@ jobs:
         run: uv sync --frozen --extra dev
 
       - name: Run unit tests
-        run: uv run pytest tests/unit/ -v --tb=short --cov=inkflow --cov-report=xml
+        # RAG 测试文件与 coverage 同进程冲突（chromadb hnsw "Nothing found on disk"，F14 先例
+        # ImportError 同族；branch=true 后 CI 实测暴露）——从 --cov 排除，单独无 --cov 跑（覆盖率以
+        # coverage-backend job 的排除口径一致，docs/api-coverage.md 登记替代证据）
+        run: |
+          uv run pytest tests/unit/ --ignore=tests/unit/test_langchain_vector_store.py -v --tb=short --cov=inkflow --cov-report=xml
+          uv run pytest tests/unit/test_langchain_vector_store.py -v --tb=short
 
       - name: Upload coverage
         uses: codecov/codecov-action@v7
@@ -553,9 +558,100 @@ jobs:
       - name: E2E smoke (Playwright _electron launch/revive/recycle)
         run: pnpm --filter inkflow-electron test:e2e
 
+  # ── Coverage: 后端覆盖率门禁（unit + 顶层合并 --cov-append；RAG 文件 F14 先例排除）──
+  # 首轮门槛 = 当前基线（行 91.17% / 分支 81.25%，2026-08-05 实测 CI 等价命令），
+  # Phase 3 上调至目标（行 99% / 分支 90%）
+  coverage-backend:
+    needs: [changes]
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          cache-dependency-path: backend/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Coverage (unit + top-level merged)
+        # unit 与顶层 tests 不能同命令（conftest 命名冲突，0.2.0 收尾实测）——分两条 + --cov-append
+        # test_langchain_vector_store.py 与 coverage 同进程冲突（chromadb C 扩展）——F14 先例 --ignore
+        run: |
+          uv run pytest tests/unit/ --cov=inkflow --cov-append --ignore=tests/unit/test_langchain_vector_store.py -q
+          uv run pytest ../tests/api/ ../tests/integration/ ../tests/cli/ --cov=inkflow --cov-append -q
+          uv run coverage xml -o coverage.xml
+
+      - name: Coverage gate (line >= 91%, branch >= 81%)
+        run: uv run python ../ci_cd/check_coverage.py 91.0 81.0 coverage.xml
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+
+  # ── Coverage: 前端覆盖率门禁（renderer + electron；thresholds 内置于 vitest.config.ts）──
+  coverage-frontend:
+    needs: [changes]
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true'
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Coverage (renderer + electron)
+        run: |
+          pnpm --filter renderer test --coverage
+          pnpm --filter inkflow-electron test --coverage
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-coverage
+          path: |
+            frontend/packages/renderer/coverage/
+            frontend/packages/electron/coverage/
+
   # ── Build: wheel (all gates pass) ──
   build-backend:
-    needs: [lint-backend, unit-test-backend, integration-chapter-backend, integration-project-backend, integration-writing-backend, integration-agent-backend, integration-cli-backend, smoke-backend, frontend-unit, frontend-integration, frontend-e2e]
+    needs: [lint-backend, unit-test-backend, integration-chapter-backend, integration-project-backend, integration-writing-backend, integration-agent-backend, integration-cli-backend, smoke-backend, frontend-unit, frontend-integration, frontend-e2e, coverage-backend, coverage-frontend]
     # 显式条件：needs 中任一 job 被 skip（如后端-only PR 时 frontend-unit 不触发）时，
     # 默认语义会让 build 也被 skip——此处显式放行（skipped ≠ failure），仅 failure/cancelled 阻止
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
