@@ -53,16 +53,30 @@
 | 依赖锁定 | Python `uv.lock` 全量锁定（181 包 + sha256）；前端 `pnpm-lock.yaml` 约定 | ADR-025 |
 | 日志与错误体系 | Loguru；统一错误码 + JSON 信封（CLI） | ADR-016 / ADR-012 |
 
+### 1.4 GUI 桌面端 + SSE 流式（0.3.0，F19/F23 提前交付 ✅）
+
+| Feature | 核心能力 | 交付 | 状态 |
+|---------|---------|------|------|
+| F19-GUI 子任务 A：内核进程化 | `inkflow serve` 强化：`--port 0` + 端口文件/token 交付 + WAL/busy_timeout + 健康检查（ADR-021） | PR #85 | ✅ |
+| F19-GUI 子任务 B：Electron 壳 | 主进程：拉起内核 / 健康检查 / 崩溃拉起 / 回收防僵尸 | PR #95 | ✅ |
+| F19-GUI 子任务 C：React 渲染层 | 核心写作界面 + 项目管理 + Agent 配置 + SSE 流式渲染（React 19 + Vite 6 + shadcn/ui + Zustand + Tailwind 4） | PR #97 | ✅ |
+| F23 SSE 流式 | SSE 流式输出（GUI 流式写作依赖，首 token ≤2s） | PR #83 | ✅ |
+
+### 1.5 质量加固（0.3.1，milestone #9 ✅）
+
+| Issue | 内容 | 交付 | 状态 |
+|-------|------|------|------|
+| #86 | LLM 客户端修复：timeout→request_timeout + zhipu 注册 + audit 路由 | PR #108 | ✅ |
+| #87 | LangGraph 状态重构：StateGraph(dict)→TypedDict+reducer，节点增量返回 | PR #110 | ✅ |
+| #92 | 真实 AI CI job：e2e-ai-backend（label 触发 + workflow_dispatch 兜底） | PR #111 | ✅ |
+| #104 | 覆盖率补全：三层全覆盖（后端 98.90% 行/96.32% 分支、前端 99.11%/92.51%、API 端点 100%、E2E 三页）；CI 门槛 98.5/95.0 常态化（ADR-027） | PR #114/#115/#116/#117 | ✅ |
+
 ---
 
 ## 二、规划中功能
 
 | Feature | 版本 | 内容 | 依赖/前置 | Issue | 状态 |
 |---------|------|------|----------|-------|------|
-| F23 SSE 流式 | **0.3.0** | SSE 流式输出（GUI 流式写作依赖，首 token ≤2s） | 无 | [#50](https://github.com/zhx-xi/InkFlow/issues/50) | 🔄 已排期 |
-| F19-GUI 子任务 A：内核进程化 | **0.3.0** | `inkflow serve` 强化：`--port 0` + 端口文件/token 交付 + WAL/busy_timeout + 健康检查（ADR-021） | 无 | [#77](https://github.com/zhx-xi/InkFlow/issues/77) | 🔄 已排期 |
-| F19-GUI 子任务 B：Electron 壳 | **0.3.0** | 主进程：拉起内核 / 健康检查 / 崩溃拉起 / 回收防僵尸 | #77 交付格式 | [#78](https://github.com/zhx-xi/InkFlow/issues/78) | 🔄 已排期 |
-| F19-GUI 子任务 C：React 渲染层 | **0.3.0** | 核心写作界面 + 项目管理 + Agent 配置 + SSE 流式渲染（React 19 + Vite 6 + shadcn/ui + Zustand + Tailwind 4） | #50 + #78（Vite dev server 先行不阻塞） | [#79](https://github.com/zhx-xi/InkFlow/issues/79) | 🔄 已排期 |
 | skills 包 | **0.4.0** | 小说写作 skills（源码单一真相 + 三通道分发） | 无 | [#70](https://github.com/zhx-xi/InkFlow/issues/70) | 🔜 已建 issue |
 | F19 打包分发 | **0.4.0** | PyInstaller 后端内核 exe + electron-builder NSIS 安装包 + 便携 ZIP | #77/#78/#79 | [#48](https://github.com/zhx-xi/InkFlow/issues/48) | 🔜 已建 issue |
 | F20 MCP Server | **0.5.0** | MCP Server（stdio 直连 domain），≥15 工具（ADR-023） | 无 | [#49](https://github.com/zhx-xi/InkFlow/issues/49) | 🔜 已建 issue |
@@ -85,7 +99,8 @@
 |------|------|------|------|
 | 0.1.0 | 核心引擎 | F1-F8 + 云端 Protocol（Phase 1 Gate 7/7） | ✅ 已交付 |
 | 0.2.0 | 创作工具链 | F9-F16 全部（8 模块：角色/世界观/大纲/时间线/伏笔/提取+RAG/审计/风格） | ✅ 已交付（2026-08-02，1589 tests / 91%） |
-| 0.3.0 | GUI 桌面端（提前） | F19 GUI（内核进程化 + Electron 壳 + React 渲染层）· F23 SSE 流式（提前） | 🔄 进行中（#77/#78/#79/#50） |
+| 0.3.0 | GUI 桌面端（提前） | F19 GUI（内核进程化 + Electron 壳 + React 渲染层）· F23 SSE 流式（提前） | ✅ 已交付（PR #83/#85/#95/#97） |
+| 0.3.1 | 质量加固补丁 | #86 LLM 修复 · #87 LangGraph 重构 · #92 真实 AI CI · #104 覆盖率（后端 98.9%/96.3% 分支） | ✅ 已交付（PR #108/#110/#111/#114-#117，2026-08-06） |
 | 0.4.0 | skills 包 + 打包 | skills 包（三通道分发）· F19 打包（exe / 安装包 / 便携 ZIP） | 🔜 |
 | 0.5.0 | Agent 集成 | F20 MCP · F24 会话 · F25 daemon | 🔜 |
 | 0.6.0 | 导出 + 搜索 | F21 导出 · F22 全文搜索 | 🔜 |
@@ -100,7 +115,7 @@
 |------|------|------|
 | CLI（Typer） | ✅ 可用（64 命令 / 17 组） | `inkflow <group> <command>`；`--json` 输出 JSON 信封 |
 | REST API（FastAPI） | ✅ 可用（92 端点 / 12 router） | `inkflow serve` 启动，Swagger 见 `/docs`；本地内核通用通信契约 |
-| GUI（Electron + React） | 🔄 0.3.0 | 本地桌面端，渲染层不承载业务逻辑（ADR-020/021） |
+| GUI（Electron + React） | ✅ 0.3.0 可用 | 本地桌面端（项目/写作/Agent 三页），渲染层不承载业务逻辑（ADR-020/021） |
 | MCP Server | 🔜 0.5.0 | stdio 直连 domain（ADR-023） |
 | 云 Web / Admin | 🔜 2.0.0 | 与本地 GUI 共享 React 代码（一套两用） |
 
@@ -108,7 +123,7 @@
 
 ## 五、功能清单维护纪律
 
-1. **feature 合入后**（无论实现/文档）：同步更新 ① 本文件对应行（✅ + PR 编号）② [AGENTS.md](AGENTS.md) 功能表 ③ [ADR-019](adr/ADR-019.md) 版本表 ④ spec 头部状态行——四项缺一即视为收尾不完整。
+1. **feature 合入后**（无论实现/文档）：同步更新 ① 本文件对应行（✅ + PR 编号）② [AGENTS.md](AGENTS.md) 功能表 ③ [ADR-019](adr/ADR-019.md) 版本表 ④ spec 头部状态行 ⑤ [README.md](README.md) 里程碑表/功能列表——五项缺一即视为收尾不完整。
 2. **新拆 issue**：本文件「规划中功能」表回填 issue 编号与依赖。
 3. **范围变更**：里程碑内容变更必须用户拍板后才更新本文件（先例：2026-08-02 打包提前提案被否决，维持 ADR-019 v2）。
 4. **实施前必读**：agent 开始任何 feature 前先读本文件（+ AGENTS.md + 对应 spec），确认边界、状态与依赖。
