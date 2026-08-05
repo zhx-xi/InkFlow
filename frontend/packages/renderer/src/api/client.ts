@@ -23,6 +23,40 @@ export function getApiConfig(): ApiConfig {
   };
 }
 
+/**
+ * Electron 环境探测（#98 修复）：navigator.userAgent 含 'Electron'（大小写不敏感）。
+ * 渲染层据此区分 Electron（需等待 preload 注入）与浏览器 dev（无注入源，不等待）。
+ */
+export function isElectronEnv(): boolean {
+  return typeof navigator !== 'undefined' && /electron/i.test(navigator.userAgent);
+}
+
+/**
+ * 等待 API 注入就绪（#98 修复：Electron 生产 401 时序竞态）：
+ * - window.INKFLOW_API 已就绪 → 立即 resolve；
+ * - 非 Electron 环境 → 立即 resolve（浏览器 dev 无注入源，错误态由页面处理）；
+ * - Electron + 未就绪 → 监听 'inkflow:api-ready'（preload expose 后 dispatch）→ resolve，
+ *   timeoutMs 兜底 resolve（不挂起；事件在超时后到达不抛错）。
+ * 幂等：就绪判断在入口，已就绪后再次调用立即 resolve；多次调用各自监听互不干扰。
+ */
+export function ensureApiReady(timeoutMs = 15000): Promise<void> {
+  if (window.INKFLOW_API) return Promise.resolve();
+  if (!isElectronEnv()) return Promise.resolve();
+
+  return new Promise<void>((resolve) => {
+    const onReady = (): void => {
+      window.removeEventListener('inkflow:api-ready', onReady);
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      window.removeEventListener('inkflow:api-ready', onReady);
+      resolve();
+    }, timeoutMs);
+    window.addEventListener('inkflow:api-ready', onReady, { once: true });
+  });
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly detail: string;

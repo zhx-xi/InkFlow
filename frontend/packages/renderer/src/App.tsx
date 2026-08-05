@@ -1,8 +1,8 @@
 /** 应用骨架：HashRouter 三路由（spec §4.2：file:// 与 Electron 生产兼容） */
 import { HashRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom';
-import inkflowIcon from './assets/inkflow-icon.svg';
-import inkflowIconDark from './assets/inkflow-icon-dark.svg';
-import inkflowIconInk from './assets/inkflow-icon-ink.svg';
+import inkflowIcon from './assets/inkflow-icon-plain.svg';
+import inkflowIconDark from './assets/inkflow-icon-plain-dark.svg';
+import inkflowIconInk from './assets/inkflow-icon-plain-ink.svg';
 import { useI18n } from './i18n/useI18n';
 import { useThemeEffect } from './theme';
 import { useThemeStore } from './stores/theme';
