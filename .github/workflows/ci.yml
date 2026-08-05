@@ -42,6 +42,7 @@ jobs:
       tests: ${{ steps.filter.outputs.tests }}
       frontend: ${{ steps.filter.outputs.frontend }}
       ci: ${{ steps.filter.outputs.ci }}
+      docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -64,11 +65,24 @@ jobs:
               - 'frontend/**'
             ci:
               - '.github/**'
+            # 文档类变更：分支保护 required checks（lint/unit/build）在 docs-only PR 也必须
+            # 有结论（成功或跳过），否则 GitHub 视为 pending → BLOCKED 无法 merge
+            # （#118 实测：docs-only PR 全部 job skipped → merge 被 base branch policy 阻止）。
+            # docs 变化触发 required job 运行（AGENTS.md 变更跑 lint/unit/build 保守但可靠）
+            docs:
+              - 'AGENTS.md'
+              - 'ARCHITECTURE.md'
+              - 'FEATURES.md'
+              - 'CONTRIBUTING.md'
+              - 'adr/**'
+              - 'docs/**'
+              - 'design/**'
+              - 'specs/**'
 
   # ── Lint: ruff check + mypy type check ──
   lint-backend:
     needs: [changes]
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true' || needs.changes.outputs.docs == 'true'
     permissions:
       contents: read
       checks: write
@@ -135,7 +149,7 @@ jobs:
   # 只跑核心代码 + unit 测试代码变更；集成/E2E 测试变更不触发
   unit-test-backend:
     needs: [changes]
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.unit == 'true' || needs.changes.outputs.ci == 'true'
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.unit == 'true' || needs.changes.outputs.ci == 'true' || needs.changes.outputs.docs == 'true'
     permissions:
       contents: read
     runs-on: windows-latest
