@@ -75,6 +75,35 @@ test('启动闭环：窗口出现（title 含 InkFlow）+ 内核进程存在 + /
     const window = await app.firstWindow();
     await expect(window).toHaveTitle(/InkFlow/);
 
+    // 品牌 logo 真实加载断言（#98 修复回归：CSP default-src 'self' 阻止 data: 内联 svg →
+    // 破图（naturalWidth=0）。这是**真实 Chromium 渲染**验证——jsdom 单元测试无法覆盖。
+    // 契约：header 内 img 解码成功（naturalWidth > 0）且 src 为独立文件路径（非 data:）。
+    await expect
+      .poll(
+        () =>
+          window.evaluate(() => {
+            const img = document.querySelector('header img');
+            return img
+              ? { w: img.naturalWidth, src: img.getAttribute('src') ?? '' }
+              : null;
+          }),
+        { timeout: 10_000 }
+      )
+      .toMatchObject({
+        w: expect.any(Number),
+        src: expect.any(String),
+      });
+    const logo = await window.evaluate(() => {
+      const img = document.querySelector('header img');
+      return img
+        ? { w: img.naturalWidth, src: img.getAttribute('src') ?? '' }
+        : null;
+    });
+    expect(logo).not.toBeNull();
+    expect(logo!.w, '品牌 logo 必须真实解码（naturalWidth>0，破图=0）').toBeGreaterThan(0);
+    expect(logo!.src, 'CSP \'self\' 下 logo 必须为独立文件路径（data: 内联会被阻止）').not.toContain('data:');
+    expect(logo!.src).toMatch(/inkflow-icon-plain/);
+
     // 窗口加载完成 ≠ 内核就绪：INKFLOW_READY 需 python + uvicorn 启动时间，轮询等待注入
     const kernel = await waitKernelInfo(app);
     expect(kernel.pid).toBeGreaterThan(0);

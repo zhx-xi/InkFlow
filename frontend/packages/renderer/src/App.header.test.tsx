@@ -50,9 +50,14 @@ describe('App 顶栏 — 调试残留清理 + 品牌 logo（#98 §5.2.7/5.2.8）
     await waitFor(() => expect(useProjectStore.getState().loading).toBe(false));
     const banner = screen.getByRole('banner');
     // aria-hidden 元素不在可访问性树——用 DOM 查询断言存在性（评审 F7：装饰性图标）
-    const logo = banner.querySelector('img');
+    const logo = banner.querySelector('img')!;
     expect(logo).not.toBeNull();
     expect(logo).toHaveAttribute('aria-hidden', 'true');
+    // #98 修复回归契约：logo 必须为**独立文件引用**（`?url&no-inline` import）——CSP default-src 'self'
+    // 阻止 data: 内联 svg（生产破图，naturalWidth=0 三次实测）——src 不得为 data: 且含资产路径
+    const src = logo.getAttribute('src') ?? '';
+    expect(src).not.toContain('data:');
+    expect(src).toMatch(/inkflow-icon-plain/);
     // Q3=C：图标 + 文字并存（t('app.brand') 保留）
     expect(within(banner).getByText('InkFlow')).toBeInTheDocument();
   });
