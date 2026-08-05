@@ -396,6 +396,7 @@ function createMainWindow(): void {
     width: 1440,
     height: 900,
     title: 'InkFlow',
+    icon: path.join(__dirname, '..', 'favicon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -482,6 +483,7 @@ export function setupAppMenu(isPackaged: boolean): void {
 }
 
 app.whenReady().then(() => {
+  app.setAppUserModelId('InkFlow');
   setupAppMenu(app.isPackaged);
   createMainWindow();
   spawnKernel();
