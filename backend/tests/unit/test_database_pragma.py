@@ -59,7 +59,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from inkflow.core import database as db_module
 from inkflow.core.config import config
 from inkflow.core.database import _set_sqlite_pragma, apply_sqlite_pragma
-from inkflow.infrastructure.database.models.project import (  # noqa: F401 — 注册表到 Base.metadata
+from inkflow.infrastructure.database.models.project import (  # noqa: F401  # 注册表到 Base.metadata
     ProjectORM,
 )
 

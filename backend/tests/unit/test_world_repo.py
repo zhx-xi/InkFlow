@@ -368,7 +368,7 @@ def _patch_execute_returning_none_on_requery(session):
             return fake_result
         return await real_execute(stmt, *args, **kwargs)
 
-    session.execute = _fake_execute  # type: ignore[method-assign]
+    session.execute = _fake_execute  # type: ignore[method-assign]  # fake execute 覆盖 session 方法
     return real_execute
 
 
