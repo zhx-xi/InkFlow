@@ -641,6 +641,10 @@ jobs:
         run: uv sync --frozen --extra dev
 
       - name: Run real-AI e2e tests (T1 connectivity + T2 writing generate)
+        # 守卫（ADR-026）：LLM_API_KEY 为空（fork PR / 未配置）时跳过——缺 key 永远 skip 不 fail。
+        # ⚠️ GitHub 限制：if 条件不支持 secrets 上下文（实测 job/step 级引用均解析失败）——
+        #    secrets 经 job env 注入（合法），if 引用 env 上下文（合法）。
+        if: env.LLM_API_KEY != ''
         run: |
           uv run pytest ../tests/e2e/test_llm_connectivity.py `
                  ../tests/e2e/test_writing_generate.py `
