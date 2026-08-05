@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from cryptography.exceptions import InvalidTag
 
@@ -92,3 +94,41 @@ class TestAPIKeyManager:
         mgr2 = APIKeyManager(secret_key=other_key, storage_dir=temp_keys_dir)
         with pytest.raises(InvalidTag):
             mgr2.decrypt("openai", encrypted_data=encrypted)
+
+    # ── Phase 3 覆盖率补齐（#104）──────────────────────────────────
+
+    def test_decrypt_without_data_loads_from_file(self, key_manager):
+        """encrypted_data=None → 从本地文件读取密文后解密。"""
+        key_manager.store("openai", "file-key")
+        assert key_manager.decrypt("openai") == "file-key"
+
+    def test_delete_nonexistent_raises(self, key_manager):
+        """删除不存在的 Provider → FileNotFoundError。"""
+        with pytest.raises(FileNotFoundError):
+            key_manager.delete("ghost")
+
+    def test_list_providers_ignores_unrelated_files(self, key_manager, temp_keys_dir):
+        """目录中的非密钥文件（.txt 等）不参与 Provider 列表。"""
+        (Path(temp_keys_dir) / "notes.txt").write_text("not a key", encoding="utf-8")
+        key_manager.store("openai", "k1")
+        assert key_manager.list_providers() == ["openai"]
+
+    def test_plaintext_encrypt_decrypt_roundtrip(self, temp_keys_dir):
+        """空 secret_key 下 encrypt/decrypt 走占位零密钥（dev 模式防呆）。"""
+        mgr = APIKeyManager(secret_key="", storage_dir=temp_keys_dir)
+        encrypted = mgr.encrypt("openai", "dev-key")
+        assert "ciphertext_b64" in encrypted
+        assert "nonce_b64" in encrypted
+        assert mgr.decrypt("openai", encrypted_data=encrypted) == "dev-key"
+
+    def test_plaintext_load_strips_whitespace(self, temp_keys_dir):
+        """明文模式读取时去除首尾空白（.strip）。"""
+        mgr = APIKeyManager(secret_key="", storage_dir=temp_keys_dir)
+        mgr.store("openai", "  spaced-key  ")
+        assert mgr.load("openai") == "spaced-key"
+
+    def test_plaintext_load_missing_raises(self, temp_keys_dir):
+        """明文模式加载不存在的 Provider → FileNotFoundError。"""
+        mgr = APIKeyManager(secret_key="", storage_dir=temp_keys_dir)
+        with pytest.raises(FileNotFoundError):
+            mgr.load("ghost")

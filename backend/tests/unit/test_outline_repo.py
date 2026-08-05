@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from unittest import mock
 
 import pytest
 from sqlalchemy import event, func, select
@@ -630,3 +631,108 @@ class TestOutlineRepository:
         assert count_o.scalar_one() == 0
         assert count_p.scalar_one() == 0
         assert count_a.scalar_one() == 0
+
+
+# ── Phase 3 覆盖率补齐（#104）：update 缺失/防御分支 + ORM __repr__ ──
+
+
+def _patch_execute_returning_none_on_requery(session):
+    """把 session.execute 的第 2 次调用替换为「回查无行」假结果（模拟 UPDATE 生效后行被并发删除）.
+
+    返回原始 execute，供测试 finally 还原。
+    """
+    real_execute = session.execute
+    call_no = 0
+
+    async def _fake_execute(stmt, *args, **kwargs):
+        nonlocal call_no
+        call_no += 1
+        if call_no == 2:
+            fake_result = mock.MagicMock()
+            fake_result.scalar_one_or_none.return_value = None
+            return fake_result
+        return await real_execute(stmt, *args, **kwargs)
+
+    session.execute = _fake_execute  # type: ignore[method-assign]
+    return real_execute
+
+
+class TestOutlineRepositoryCoverageGaps:
+    """outline_repo 剩余未覆盖行（Issue #104 Phase 3）：update 类错误分支与 ORM repr."""
+
+    # ── update 不存在 → ValueError ──
+
+    async def test_update_outline_missing_raises_value_error(self, db_session, project):
+        """update 不存在的 id（rowcount=0）→ ValueError."""
+        repo = SQLiteOutlineRepository(db_session)
+        ghost = _outline(project, "幽灵大纲")
+        ghost.id = uuid.UUID(int=99999)  # 仓储层 int id：不存在但落在 SQLite 64 位范围内
+        with pytest.raises(ValueError, match="Outline 99999 not found"):
+            await repo.update(ghost)
+
+    async def test_update_point_missing_raises_value_error(self, db_session, project):
+        """update_point 不存在的 id（rowcount=0）→ ValueError."""
+        repo = SQLiteOutlineRepository(db_session)
+        o = await repo.add(_outline(project, "第一卷大纲"))
+        ghost = _point(o, project, "幽灵点")
+        ghost.id = uuid.UUID(int=99999)
+        with pytest.raises(ValueError, match="PlotPoint 99999 not found"):
+            await repo.update_point(ghost)
+
+    async def test_update_arc_missing_raises_value_error(self, db_session, project):
+        """update_arc 不存在的 id（rowcount=0）→ ValueError."""
+        repo = SQLiteOutlineRepository(db_session)
+        ghost = _arc(project, "幽灵弧线")
+        ghost.id = uuid.UUID(int=99999)
+        with pytest.raises(ValueError, match="StoryArc 99999 not found"):
+            await repo.update_arc(ghost)
+
+    # ── update 后回查无行 → ValueError（防御分支，模拟并发删除） ──
+
+    async def test_update_outline_missing_after_update_raises(self, db_session, project):
+        """UPDATE 生效（rowcount>0）但回查不到行 → ValueError「not found after update」."""
+        repo = SQLiteOutlineRepository(db_session)
+        o = await repo.add(_outline(project, "第一卷大纲"))
+
+        real_execute = _patch_execute_returning_none_on_requery(db_session)
+        try:
+            with pytest.raises(ValueError, match="not found after update"):
+                await repo.update(o.model_copy(update={"name": "改名"}))
+        finally:
+            db_session.execute = real_execute
+
+    async def test_update_point_missing_after_update_raises(self, db_session, project):
+        """update_point：UPDATE 生效但回查无行 → ValueError."""
+        repo = SQLiteOutlineRepository(db_session)
+        o = await repo.add(_outline(project, "第一卷大纲"))
+        p = await repo.add_point(_point(o, project, "主角登场"))
+
+        real_execute = _patch_execute_returning_none_on_requery(db_session)
+        try:
+            with pytest.raises(ValueError, match="not found after update"):
+                await repo.update_point(p.model_copy(update={"name": "改名"}))
+        finally:
+            db_session.execute = real_execute
+
+    async def test_update_arc_missing_after_update_raises(self, db_session, project):
+        """update_arc：UPDATE 生效但回查无行 → ValueError."""
+        repo = SQLiteOutlineRepository(db_session)
+        a = await repo.add_arc(_arc(project, "主角成长线"))
+
+        real_execute = _patch_execute_returning_none_on_requery(db_session)
+        try:
+            with pytest.raises(ValueError, match="not found after update"):
+                await repo.update_arc(a.model_copy(update={"name": "改名"}))
+        finally:
+            db_session.execute = real_execute
+
+    # ── ORM __repr__ ──
+
+    def test_orm_repr(self):
+        """三个 ORM 模型的 __repr__ 输出（无需落库）."""
+        o = OutlineORM(id=1, name="第一卷大纲")
+        assert repr(o) == "<OutlineORM id=1 name='第一卷大纲'>"
+        p = PlotPointORM(id=2, name="主角登场")
+        assert repr(p) == "<PlotPointORM id=2 name='主角登场'>"
+        a = StoryArcORM(id=3, name="主角成长线")
+        assert repr(a) == "<StoryArcORM id=3 name='主角成长线'>"

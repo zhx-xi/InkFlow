@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -17,6 +18,7 @@ from inkflow.domain.models.chapter import Chapter
 from inkflow.domain.models.project import Genre, Project, ProjectConfig
 from inkflow.domain.ports.agent_pipeline import (
     PipelineContext,
+    PipelineError,
     PipelineResult,
     PipelineStage,
     StageResult,
@@ -376,3 +378,112 @@ class TestValidateAndTemplates:
         item = next(t for t in result["items"] if t["id"] == "builtin:write_chapter")
         assert item["stages"] == ["architect", "writer", "auditor", "reviser"]
         assert item["source"] == "builtin"
+
+
+# ── Phase 3 覆盖率补齐（#104）──────────────────────────────────
+
+
+class TestExecuteChapterExists:
+    """execute 的章节存在校验分支。"""
+
+    async def test_execute_chapter_exists_proceeds(self):
+        """chapter_id 提供且章节存在 → 校验通过，创建执行记录并透传 chapter_id。"""
+        project = _make_project()
+        chapter = _make_chapter(project_id=project.id)
+        service, _, store, _, _ = _build_service(project=project, chapter=chapter)
+        request = PipelineExecuteRequest(
+            project_id=project.id,
+            pipeline="builtin:write_chapter",
+            chapter_id=chapter.id,
+        )
+
+        result = await service.execute(request)
+
+        assert result["status"] == "pending"
+        record = store.executions[result["execution_id"]]
+        assert record.chapter_id == str(chapter.id)
+        await asyncio.sleep(0.05)  # 等待后台任务收尾，避免事件循环悬挂
+
+
+class TestRoleOverridePartials:
+    """role_overrides 部分字段覆盖（prompt/model/temperature 各自独立）。"""
+
+    async def test_override_prompt_only_keeps_other_fields(self):
+        """只给 prompt → model/temperature 保持模板值（温度不触发项目默认替换条件 0.7）。"""
+        project = _make_project(config=ProjectConfig(temperature=0.9))
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+        template_stages = {s.id: s for s in get_template("builtin:write_chapter").stages}
+        request = PipelineExecuteRequest(
+            project_id=project.id,
+            pipeline="builtin:write_chapter",
+            role_overrides={"writer": RoleOverride(prompt="只改提示词")},
+        )
+
+        await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        writer = {s.id: s for s in pipeline.executed_stages}["writer"]
+        assert writer.agent.system_prompt == "只改提示词"
+        # model 未被覆盖；temperature 保持模板值（模板 writer=0.8，非 0.7 不触发项目替换）
+        assert writer.agent.model == template_stages["writer"].agent.model
+        assert writer.agent.temperature == template_stages["writer"].agent.temperature
+        assert writer.agent.temperature != 0.9
+
+    async def test_override_model_only_keeps_prompt(self):
+        """只给 model → prompt 保持模板值、temperature 不被覆盖。"""
+        project = _make_project()
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+        template_stages = {s.id: s for s in get_template("builtin:write_chapter").stages}
+        request = PipelineExecuteRequest(
+            project_id=project.id,
+            pipeline="builtin:write_chapter",
+            role_overrides={"writer": RoleOverride(model="override/model")},
+        )
+
+        await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        writer = {s.id: s for s in pipeline.executed_stages}["writer"]
+        assert writer.agent.model == "override/model"
+        assert writer.agent.system_prompt == template_stages["writer"].agent.system_prompt
+        assert writer.agent.temperature == template_stages["writer"].agent.temperature
+
+
+class TestRunPipelineFailures:
+    """_run_pipeline 后台任务的异常落库路径。"""
+
+    async def test_run_pipeline_pipeline_error_marks_failed(self):
+        """pipeline.execute 抛 PipelineError → 记录 status=failed + error 消息。"""
+        project = _make_project()
+        pipeline = MockPipeline()
+        pipeline.execute = AsyncMock(side_effect=PipelineError("管线爆炸"))
+        service, _, store, _, _ = _build_service(project=project, pipeline=pipeline)
+        execution = await store.create_execution(
+            pipeline="builtin:write_chapter", project_id=str(project.id)
+        )
+
+        await service._run_pipeline(execution.id, [], PipelineContext(project_id=str(project.id)))
+
+        record = store.executions[execution.id]
+        assert record.status == "failed"
+        assert record.error == "管线爆炸"
+        assert record.stages == []
+
+    async def test_run_pipeline_unexpected_error_marks_failed(self):
+        """pipeline.execute 抛非 PipelineError → status=failed + 「执行异常: …」。"""
+        project = _make_project()
+        pipeline = MockPipeline()
+        pipeline.execute = AsyncMock(side_effect=ValueError("boom"))
+        service, _, store, _, _ = _build_service(project=project, pipeline=pipeline)
+        execution = await store.create_execution(
+            pipeline="builtin:write_chapter", project_id=str(project.id)
+        )
+
+        await service._run_pipeline(execution.id, [], PipelineContext(project_id=str(project.id)))
+
+        record = store.executions[execution.id]
+        assert record.status == "failed"
+        assert record.error == "执行异常: boom"
+        assert record.stages == []

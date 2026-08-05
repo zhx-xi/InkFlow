@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from unittest import mock
 
 import pytest
 from sqlalchemy import event, func, select
@@ -529,3 +530,123 @@ class TestCharacterRepository:
         assert count_c.scalar_one() == 0
         assert count_g.scalar_one() == 0
         assert count_r.scalar_one() == 0
+
+
+# ── Phase 3 覆盖率补齐（#104）：update 缺失/防御分支 + 分组软删 None 分支 + ORM __repr__ ──
+
+
+def _patch_execute_returning_none_on_requery(session):
+    """把 session.execute 的第 2 次调用替换为「回查无行」假结果（模拟 UPDATE 生效后行被并发删除）.
+
+    返回原始 execute，供测试 finally 还原。
+    """
+    real_execute = session.execute
+    call_no = 0
+
+    async def _fake_execute(stmt, *args, **kwargs):
+        nonlocal call_no
+        call_no += 1
+        if call_no == 2:
+            fake_result = mock.MagicMock()
+            fake_result.scalar_one_or_none.return_value = None
+            return fake_result
+        return await real_execute(stmt, *args, **kwargs)
+
+    session.execute = _fake_execute  # type: ignore[method-assign]
+    return real_execute
+
+
+class TestCharacterRepositoryCoverageGaps:
+    """character_repo 剩余未覆盖行（Issue #104 Phase 3）."""
+
+    # ── update 不存在 → ValueError ──
+
+    async def test_update_character_missing_raises_value_error(self, db_session, project):
+        """update 不存在的 id（rowcount=0）→ ValueError."""
+        repo = SQLiteCharacterRepository(db_session)
+        ghost = _char(project, "幽灵")
+        ghost.id = uuid.UUID(int=99999)  # 仓储层 int id：不存在但落在 SQLite 64 位范围内
+        with pytest.raises(ValueError, match="Character 99999 not found"):
+            await repo.update(ghost)
+
+    async def test_update_group_missing_raises_value_error(self, db_session, project):
+        """update_group 不存在的 id（rowcount=0）→ ValueError."""
+        repo = SQLiteCharacterRepository(db_session)
+        ghost = _group(project, "幽灵组")
+        ghost.id = uuid.UUID(int=99999)
+        with pytest.raises(ValueError, match="CharacterGroup 99999 not found"):
+            await repo.update_group(ghost)
+
+    async def test_update_relation_missing_raises_value_error(self, db_session, project):
+        """update_relation 不存在的 id（rowcount=0）→ ValueError."""
+        repo = SQLiteCharacterRepository(db_session)
+        # from/to 用小整数 UUID（避免 128 位 int 超出 SQLite INTEGER 绑定范围）
+        ghost = CharacterRelation(
+            id=uuid.UUID(int=99999),
+            project_id=uuid.UUID(int=project.id),
+            from_character_id=uuid.UUID(int=1),
+            to_character_id=uuid.UUID(int=2),
+            relation_type="师徒",
+            created_at=_now(),
+            updated_at=_now(),
+        )
+        with pytest.raises(ValueError, match="CharacterRelation 99999 not found"):
+            await repo.update_relation(ghost)
+
+    # ── update 后回查无行 → ValueError（防御分支，模拟并发删除） ──
+
+    async def test_update_character_missing_after_update_raises(self, db_session, project):
+        """UPDATE 生效（rowcount>0）但回查不到行 → ValueError「not found after update」."""
+        repo = SQLiteCharacterRepository(db_session)
+        c = await repo.add(_char(project, "林尘"))
+
+        real_execute = _patch_execute_returning_none_on_requery(db_session)
+        try:
+            with pytest.raises(ValueError, match="not found after update"):
+                await repo.update(c.model_copy(update={"name": "改名"}))
+        finally:
+            db_session.execute = real_execute
+
+    async def test_update_group_missing_after_update_raises(self, db_session, project):
+        """update_group：UPDATE 生效但回查无行 → ValueError."""
+        repo = SQLiteCharacterRepository(db_session)
+        g = await repo.add_group(_group(project, "主角团"))
+
+        real_execute = _patch_execute_returning_none_on_requery(db_session)
+        try:
+            with pytest.raises(ValueError, match="not found after update"):
+                await repo.update_group(g.model_copy(update={"name": "改名"}))
+        finally:
+            db_session.execute = real_execute
+
+    async def test_update_relation_missing_after_update_raises(self, db_session, project):
+        """update_relation：UPDATE 生效但回查无行 → ValueError."""
+        repo = SQLiteCharacterRepository(db_session)
+        a = await repo.add(_char(project, "林尘"))
+        b = await repo.add(_char(project, "阿澈"))
+        rel = await repo.add_relation(_relation(project, a, b, "师徒"))
+
+        real_execute = _patch_execute_returning_none_on_requery(db_session)
+        try:
+            with pytest.raises(ValueError, match="not found after update"):
+                await repo.update_relation(rel.model_copy(update={"description": "新说明"}))
+        finally:
+            db_session.execute = real_execute
+
+    # ── soft_delete_group 不存在 → False（rowcount=0 分支） ──
+
+    async def test_soft_delete_group_missing_returns_false(self, db_session, project):
+        """soft_delete_group 不存在的分组 → False（不执行成员解绑 UPDATE）."""
+        repo = SQLiteCharacterRepository(db_session)
+        assert await repo.soft_delete_group(99999) is False
+
+    # ── ORM __repr__ ──
+
+    def test_orm_repr(self):
+        """三个 ORM 模型的 __repr__ 输出（无需落库）."""
+        c = CharacterORM(id=1, name="林尘")
+        assert repr(c) == "<CharacterORM id=1 name='林尘'>"
+        g = CharacterGroupORM(id=2, name="主角团")
+        assert repr(g) == "<CharacterGroupORM id=2 name='主角团'>"
+        r = CharacterRelationORM(id=3, from_character_id=1, to_character_id=2, relation_type="师徒")
+        assert repr(r) == "<CharacterRelationORM id=3 1->2 '师徒'>"

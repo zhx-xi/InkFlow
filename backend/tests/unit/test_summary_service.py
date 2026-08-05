@@ -17,6 +17,7 @@ import pytest
 
 from inkflow.domain.models.chapter import Chapter, ChapterStatus
 from inkflow.domain.models.context import ChapterSummary
+from inkflow.domain.ports.context_errors import SummaryGenerationError
 from inkflow.domain.ports.llm_client import ChatMessage, ChatResponse
 from inkflow.domain.ports.prompt_template import (
     PromptTemplate,
@@ -273,3 +274,66 @@ class TestSummaryService:
         results = await svc.list_recent(chapter.project_id)
         assert len(results) >= 1
         assert isinstance(results[0], ChapterSummary)
+
+    # ── Phase 3 覆盖率补齐（#104）──────────────────────────────────
+
+    async def test_summary_long_output_truncated_to_300(
+        self, chapter: Chapter, repo: MockSummaryRepo, prompts: MockPromptManager
+    ) -> None:
+        """LLM 输出 > 300 字 → 截断为 297 + '...'（≤ 300 字契约）。"""
+        long_llm = MockLLMClient(response_text="长" * 500)
+        reader = MockChapterReader({int(chapter.id): chapter})
+        svc = SummaryService(
+            summary_repo=repo,
+            llm_client=long_llm,
+            prompt_manager=prompts,
+            chapter_reader=reader,
+        )
+
+        result = await svc.ensure_summary(chapter.id, "openai/gpt-4o")
+
+        assert len(result) == 300
+        assert result.endswith("...")
+        assert result == "长" * 297 + "..."
+
+    async def test_summary_llm_failure_raises_summary_generation_error(
+        self, chapter: Chapter, repo: MockSummaryRepo, prompts: MockPromptManager
+    ) -> None:
+        """LLM 调用失败 → SummaryGenerationError（含 chapter_id 与 detail）。"""
+
+        class FailingLLM(MockLLMClient):
+            async def chat(
+                self, messages, *, model=None, temperature=None, max_tokens=None, **kwargs
+            ):
+                raise RuntimeError("llm down")
+
+        reader = MockChapterReader({int(chapter.id): chapter})
+        svc = SummaryService(
+            summary_repo=repo,
+            llm_client=FailingLLM(),
+            prompt_manager=prompts,
+            chapter_reader=reader,
+        )
+
+        with pytest.raises(SummaryGenerationError) as exc_info:
+            await svc.ensure_summary(chapter.id, "openai/gpt-4o")
+
+        assert str(chapter.id) in str(exc_info.value)
+        assert "llm down" in str(exc_info.value)
+
+    async def test_utcnow_helper_returns_iso_datetime(self) -> None:
+        """模块级 _utcnow() 返回可解析的 ISO 时间字符串（含 UTC 偏移）。"""
+        from inkflow.domain.services.summary_service import _utcnow
+
+        value = _utcnow()
+        assert datetime.fromisoformat(value)
+        assert value.endswith("+00:00")
+
+    async def test_chapter_reader_protocol_stub_returns_none(self) -> None:
+        """ChapterReaderProtocol.get_chapter 桩默认返回 None（结构类型可直接调用）。"""
+        from inkflow.domain.services.summary_service import ChapterReaderProtocol
+
+        class _BareReader:
+            pass
+
+        assert await ChapterReaderProtocol.get_chapter(_BareReader(), 1) is None

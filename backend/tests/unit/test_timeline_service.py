@@ -388,3 +388,76 @@ class TestViewCheck:
         svc = TimelineService(repository=mock_repo)
         with pytest.raises(TimelineServiceError):
             await svc.check_consistency(PID)
+
+
+# ── Phase 3 覆盖率补齐（#104）──────────────────────────────────
+
+
+class TestIntIdAndHardDelete:
+    """int id 直传路径 + 硬删除编排。"""
+
+    async def test_get_event_with_int_id(
+        self, service: TimelineService, mock_repo: MagicMock
+    ) -> None:
+        """int id 直传仓储，不做 UUID 转换。"""
+        mock_repo.get = AsyncMock(return_value=None)
+        assert await service.get_event(42) is None
+        mock_repo.get.assert_awaited_once_with(42)
+
+    async def test_hard_delete_event(self, service: TimelineService, mock_repo: MagicMock) -> None:
+        """hard_delete_event → 委托 repo.hard_delete（int id），返回结果透传。"""
+        assert await service.hard_delete_event(uuid.uuid4()) is True
+        mock_repo.hard_delete.assert_awaited_once()
+
+
+class TestConsistencyFlashbacksExcluded:
+    """include_flashbacks=False → 已声明倒叙/插叙的对不进入任何分类。"""
+
+    async def test_check_consistency_flashback_excluded(
+        self, service: TimelineService, mock_repo: MagicMock
+    ) -> None:
+        """后叙事件标记 flashback → 不收集、也不算冲突。"""
+        e1 = _event("事件一", time_value=5.0, narrative_position=1)
+        e2 = _event("事件二", time_value=3.0, narrative_position=2, timeline_flag="flashback")
+        mock_repo.list_all = AsyncMock(return_value=[e1, e2])
+
+        report = await service.check_consistency(PID, include_flashbacks=False)
+
+        assert report is not None
+        assert report.flashbacks == []
+        assert report.conflicts == []
+        assert report.consistent is True
+        assert report.checked == 2
+
+    async def test_check_consistency_flashforward_excluded(
+        self, service: TimelineService, mock_repo: MagicMock
+    ) -> None:
+        """前叙事件标记 flashforward → 不收集、也不算冲突。"""
+        e1 = _event("事件一", time_value=10.0, narrative_position=1, timeline_flag="flashforward")
+        e2 = _event("事件二", time_value=5.0, narrative_position=2)
+        mock_repo.list_all = AsyncMock(return_value=[e1, e2])
+
+        report = await service.check_consistency(PID, include_flashbacks=False)
+
+        assert report is not None
+        assert report.flashbacks == []
+        assert report.conflicts == []
+        assert report.consistent is True
+
+    async def test_check_consistency_flashforward_included(
+        self, service: TimelineService, mock_repo: MagicMock
+    ) -> None:
+        """include_flashbacks=True → 已声明插叙计入 flashbacks（合法），不影响 consistent。"""
+        e1 = _event("事件一", time_value=10.0, narrative_position=1, timeline_flag="flashforward")
+        e2 = _event("事件二", time_value=5.0, narrative_position=2)
+        mock_repo.list_all = AsyncMock(return_value=[e1, e2])
+
+        report = await service.check_consistency(PID, include_flashbacks=True)
+
+        assert report is not None
+        assert len(report.flashbacks) == 1
+        assert report.flashbacks[0].conflict_type == "flashforward"
+        assert report.flashbacks[0].prev.title == "事件一"
+        assert report.flashbacks[0].next.title == "事件二"
+        assert report.conflicts == []
+        assert report.consistent is True

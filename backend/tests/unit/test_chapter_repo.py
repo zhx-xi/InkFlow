@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from inkflow.core.database import Base
 from inkflow.domain.models.chapter import Chapter, ChapterStatus, Volume
-from inkflow.infrastructure.database.models.chapter import VolumeORM
+from inkflow.infrastructure.database.models.chapter import ChapterORM, VolumeORM
 from inkflow.infrastructure.database.models.project import ProjectORM
 from inkflow.infrastructure.database.repositories.chapter_repo import (
     SQLiteChapterRepository,
@@ -209,3 +209,12 @@ class TestChapterRepositoryGaps:
         # 无卷章节不计入
         await repo.add_chapter(_chapter(project, "无卷章"))
         assert await repo.get_volume_word_count(vol.id.int) == ch1.word_count + ch2.word_count
+
+    # ── ORM __repr__（database/models/chapter.py 补齐） ──
+
+    def test_orm_repr(self):
+        """VolumeORM / ChapterORM 的 __repr__ 输出（无需落库）."""
+        v = VolumeORM(id=1, title="第一卷")
+        assert repr(v) == "<VolumeORM id=1 title='第一卷'>"
+        c = ChapterORM(id=2, title="第一章")
+        assert repr(c) == "<ChapterORM id=2 title='第一章'>"

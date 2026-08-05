@@ -22,9 +22,15 @@ import uuid
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from inkflow.api.app import app
+from inkflow.api.routers.characters import (
+    CharacterGroupUpdateBody,
+    CharacterRelationUpdateBody,
+    _validate_group_name,
+)
 from inkflow.domain.models.character import (
     Character,
     CharacterExtractionResult,
@@ -612,3 +618,60 @@ class TestExtractAPI:
         )
         assert response.status_code == 500
         assert response.json()["detail"] == "角色提取失败: LLM 输出无法解析，请重试"
+
+
+class TestCharacterCoverageGaps:
+    """F9 覆盖率补齐：分组名校验 / validator None 分支 / None·False 防御."""
+
+    def test_validate_group_name_blank(self) -> None:
+        """空白分组名 → ValueError."""
+        with pytest.raises(ValueError, match="分组名不能为空"):
+            _validate_group_name("   ")
+
+    def test_validate_group_name_too_long(self) -> None:
+        """超过 50 字符的分组名 → ValueError."""
+        with pytest.raises(ValueError, match="分组名不能超过 50 个字符"):
+            _validate_group_name("长" * 51)
+
+    def test_validate_group_name_strips(self) -> None:
+        """合法分组名去空白后返回."""
+        assert _validate_group_name("  主角团  ") == "主角团"
+
+    def test_group_update_validate_name_none(self) -> None:
+        """CharacterGroupUpdateBody.validate_name(None) 直接放行（None = 不修改）."""
+        assert CharacterGroupUpdateBody.validate_name(None) is None
+
+    def test_relation_update_validate_relation_type(self) -> None:
+        """CharacterRelationUpdateBody.validate_relation_type：None 放行 + 合法值通过."""
+        assert CharacterRelationUpdateBody.validate_relation_type(None) is None
+        assert CharacterRelationUpdateBody.validate_relation_type("师徒") == "师徒"
+
+    @patch("inkflow.api.routers.characters.get_character_service")
+    def test_update_character_not_found_404(self, mock_get_svc: MagicMock) -> None:
+        """更新不存在的角色返回 404."""
+        svc = _mock_svc(mock_get_svc)
+        svc.update_character = AsyncMock(return_value=None)
+
+        response = client.patch(f"/api/v1/characters/{uuid.uuid4()}", json={"goals": "x"})
+        assert response.status_code == 404
+        assert response.json()["detail"] == "角色不存在"
+
+    @patch("inkflow.api.routers.characters.get_character_service")
+    def test_update_group_not_found_404(self, mock_get_svc: MagicMock) -> None:
+        """更新不存在的分组返回 404."""
+        svc = _mock_svc(mock_get_svc)
+        svc.update_group = AsyncMock(return_value=None)
+
+        response = client.patch(f"/api/v1/character-groups/{uuid.uuid4()}", json={"name": "改名"})
+        assert response.status_code == 404
+        assert response.json()["detail"] == "分组不存在"
+
+    @patch("inkflow.api.routers.characters.get_character_service")
+    def test_delete_group_not_found_404(self, mock_get_svc: MagicMock) -> None:
+        """删除不存在的分组返回 404."""
+        svc = _mock_svc(mock_get_svc)
+        svc.delete_group = AsyncMock(return_value=False)
+
+        response = client.delete(f"/api/v1/character-groups/{uuid.uuid4()}")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "分组不存在"
