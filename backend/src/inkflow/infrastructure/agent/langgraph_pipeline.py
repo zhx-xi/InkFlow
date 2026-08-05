@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Sequence
 
 from langgraph.graph import END, StateGraph
@@ -74,10 +75,10 @@ class LangGraphAgentPipeline:
                 if downstream_id in indegree:
                     indegree[downstream_id] += 1
         by_id = {s.id: s for s in stages}
-        queue = [sid for sid, d in indegree.items() if d == 0]
+        queue = deque(sid for sid, d in indegree.items() if d == 0)
         processed = 0
         while queue:
-            sid = queue.pop(0)
+            sid = queue.popleft()
             processed += 1
             for downstream_id in by_id[sid].output_to:
                 if downstream_id in indegree:

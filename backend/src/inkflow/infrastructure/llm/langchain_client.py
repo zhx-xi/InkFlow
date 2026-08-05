@@ -36,7 +36,6 @@ class LangChainLLMClient:
     ) -> None:
         self._default_model = default_model or config.llm_default_model
         self._temperature = temperature if temperature is not None else config.llm_temperature
-        self._max_retries = max_retries if max_retries is not None else config.llm_max_retries
         # 可选 API Key 覆盖值（连通探测按请求携带密钥，优先于环境变量注入）
         self._api_key = api_key
 
@@ -152,10 +151,16 @@ class LangChainLLMClient:
         if not messages:
             return 0
 
+        model_str = model or self._default_model
+        try:
+            _, model_name = parse_model_string(model_str)
+        except ValueError:
+            model_name = model_str
+
         try:
             import tiktoken
 
-            enc = tiktoken.get_encoding("cl100k_base")
+            enc = tiktoken.encoding_for_model(model_name)
             total = 0
             for msg in messages:
                 total += 4
@@ -183,7 +188,7 @@ class LangChainLLMClient:
             "model": model,
             "temperature": temp,
             "max_retries": provider_cfg.max_retries,
-            "timeout": float(provider_cfg.timeout),
+            "request_timeout": float(provider_cfg.timeout),
         }
         if provider_cfg.api_key:
             chat_kwargs["openai_api_key"] = provider_cfg.api_key
@@ -204,7 +209,9 @@ class LangChainLLMClient:
         }
         result: list = []
         for msg in messages:
-            msg_cls = role_map.get(msg.role, HumanMessage)
+            if msg.role not in role_map:
+                raise ValueError(f"未知消息角色: {msg.role} (unknown role)")
+            msg_cls = role_map[msg.role]
             result.append(msg_cls(content=msg.content))
         return result
 

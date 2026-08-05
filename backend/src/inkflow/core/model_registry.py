@@ -23,6 +23,7 @@ _BUILTIN_WINDOWS: dict[str, int] = {
     "openai/gpt-3.5-turbo": 16_384,
     "deepseek/deepseek-chat": 128_000,
     "deepseek/deepseek-reasoner": 128_000,
+    "zhipu/glm-4.5": 128_000,
     "anthropic/claude-3-5-sonnet-20241022": 200_000,
     "anthropic/claude-3-opus-20240229": 200_000,
     "anthropic/claude-3-haiku-20240307": 200_000,
@@ -33,6 +34,7 @@ _BUILTIN_WINDOWS: dict[str, int] = {
 _PROVIDER_DEFAULTS: dict[str, int] = {
     "openai": 128_000,
     "deepseek": 128_000,
+    "zhipu": 128_000,
     "anthropic": 200_000,
 }
 

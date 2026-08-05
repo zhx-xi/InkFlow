@@ -67,12 +67,14 @@ class InkFlowConfig(BaseSettings):
     # ---- LLM Provider API Keys（通过环境变量注入，不落盘） ----
     openai_api_key: str = ""
     deepseek_api_key: str = ""
+    zhipu_api_key: str = ""
+    """智谱（Zhipu）GLM API Key，通过环境变量 INKFLOW_ZHIPU_API_KEY 注入。"""
     anthropic_api_key: str = ""
 
     # ---- 模型路由（task → model，可在项目级配置覆盖） ----
     model_routing: dict[str, str] = {
         "writing": "openai/gpt-4o",
-        "audit": "anthropic/claude-3-haiku-20240307",
+        "audit": "deepseek/deepseek-chat",
         "outline": "deepseek/deepseek-chat",
         "revision": "openai/gpt-4o",
     }
