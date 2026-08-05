@@ -29,7 +29,7 @@ from inkflow.domain.models.context import (
     ContextSourceType,
 )
 from inkflow.domain.ports.context_errors import ContextBudgetExceededError
-from inkflow.domain.services.context_service import ContextService
+from inkflow.domain.services.context_service import ContextService, _char_count
 
 # ── 辅助工厂 ────────────────────────────────────────────────────
 
@@ -338,3 +338,141 @@ class TestEdgeCases:
     async def test_model_in_result(self, svc: ContextService) -> None:
         result = await svc.build_context(_req())
         assert result.model == "openai/gpt-4o"
+
+
+# ── Compressible 层压缩分支补测（#104 覆盖率） ───────────────────
+#
+# 直接驱动 _allocate：COMPRESSIBLE cap = budget × 0.4（TokenBudgetConfig 默认）,
+# count_tokens 用 len//4 估算。content 4000 字符 → 1000 tokens，选 budget=1600
+# → cap=640，必触发压缩分支。
+
+
+def _compress_fn_returns(content: str):
+    """构造 compress_fn：把任意 item 压缩为指定 content 的新条目。"""
+
+    async def _compress_fn(item: ContextItem, _ratio: float) -> ContextItem:
+        return ContextItem(
+            source=item.source,
+            title=item.title,
+            content=content,
+            priority=item.priority,
+            metadata=item.metadata,
+        )
+
+    return _compress_fn
+
+
+def _compressible_item(content: str = "X" * 4000) -> ContextItem:
+    return _item(
+        source=ContextSourceType.CHARACTER_SETTING,
+        title="角色：林晚",
+        content=content,
+        priority=10,
+    )
+
+
+class TestCompressibleCompression:
+    """Compressible 层压缩分支 — 压缩成功 / 压缩不足 / 压缩异常 / 无压缩函数。"""
+
+    async def _allocate(self, item: ContextItem, compress_fn=None, budget: int = 1600):
+        svc = ContextService(
+            sources={},
+            count_tokens=_mock_count_tokens,
+            compress_fn=compress_fn,
+        )
+        return await svc._allocate(
+            {ContextLayer.COMPRESSIBLE: [item]},
+            budget=budget,
+            model="test-model",
+        )
+
+    async def test_compress_success_puts_compressed_block(self) -> None:
+        """压缩后能放下 → 以 compressed=True 的 block 注入，不裁剪。"""
+        item = _compressible_item()
+        compress_calls: list[float] = []
+
+        async def compress_fn(item: ContextItem, ratio: float) -> ContextItem:
+            compress_calls.append(ratio)
+            return ContextItem(
+                source=item.source,
+                title=item.title,
+                content="压缩后的角色设定",  # 8 字符 → 2 tokens
+                priority=item.priority,
+                metadata=item.metadata,
+            )
+
+        result = await self._allocate(item, compress_fn=compress_fn)
+
+        assert compress_calls == [0.5]  # 压缩目标比例 0.5
+        assert len(result.blocks) == 1
+        block = result.blocks[0]
+        assert block.layer == ContextLayer.COMPRESSIBLE
+        assert block.compressed is True
+        assert block.item.content == "压缩后的角色设定"
+        assert block.token_count == 2
+        assert result.dropped == []
+        assert result.total_tokens == 2
+
+    async def test_compress_insufficient_drops(self) -> None:
+        """压缩后仍超预算 → DroppedItem(reason='compression_insufficient')。"""
+        item = _compressible_item()
+        result = await self._allocate(item, compress_fn=_compress_fn_returns("Y" * 8000))
+
+        assert result.blocks == []
+        assert len(result.dropped) == 1
+        assert result.dropped[0].reason == "compression_insufficient"
+        assert result.dropped[0].item is item
+
+    async def test_compress_exception_drops(self) -> None:
+        """compress_fn 抛异常 → 同 reason='compression_insufficient'，不阻断组装。"""
+
+        async def boom(_item: ContextItem, _ratio: float) -> ContextItem:
+            raise RuntimeError("LLM 不可用")
+
+        item = _compressible_item()
+        result = await self._allocate(item, compress_fn=boom)
+
+        assert result.blocks == []
+        assert len(result.dropped) == 1
+        assert result.dropped[0].reason == "compression_insufficient"
+        assert result.dropped[0].item is item
+
+    async def test_no_compress_fn_over_budget_drops(self) -> None:
+        """compress_fn 为 None 且超预算 → DroppedItem(reason='over_budget')。"""
+        item = _compressible_item()
+        result = await self._allocate(item, compress_fn=None)
+
+        assert result.blocks == []
+        assert len(result.dropped) == 1
+        assert result.dropped[0].reason == "over_budget"
+        assert result.dropped[0].item is item
+
+    async def test_no_compress_fn_within_budget_keeps(self) -> None:
+        """无压缩函数且未超预算 → 直接放入（对照场景，compressed=False）。"""
+        item = _compressible_item(content="短内容")  # 3 字符 → 1 token ≤ 640
+        result = await self._allocate(item, compress_fn=None)
+
+        assert len(result.blocks) == 1
+        assert result.blocks[0].compressed is False
+        assert result.blocks[0].token_count == 1
+        assert result.dropped == []
+
+
+class TestCharCount:
+    """_char_count 兜底 Token 估算 — max(1, len(text)//4)。"""
+
+    async def test_char_count_floor_division(self) -> None:
+        assert await _char_count("x" * 100) == 25
+        assert await _char_count("x" * 99) == 24
+        assert await _char_count("x" * 4) == 1
+
+    async def test_char_count_minimum_one(self) -> None:
+        assert await _char_count("") == 1
+        assert await _char_count("abc") == 1  # 3//4=0 → 保底 1
+
+    async def test_char_count_cjk_characters(self) -> None:
+        assert await _char_count("你好世界") == 1  # 4//4=1
+        assert await _char_count("一二三四五六七八") == 2  # 8//4=2
+
+    async def test_char_count_ignores_model_arg(self) -> None:
+        assert await _char_count("x" * 40, "openai/gpt-4o") == 10

@@ -23,7 +23,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act } from '@testing-library/react';
 import { useAgentStore } from './agent';
-import { apiFetch } from '../api/client';
+import { apiFetch, KernelOfflineError } from '../api/client';
 import type { ProjectConfig } from './project';
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -187,5 +187,93 @@ describe('agent store — REST actions', () => {
       body: { config: { model: 'gpt-4o' } },
     });
     expect(useAgentStore.getState().apiKeyDraft).toBe('');
+  });
+});
+
+describe('agent store — 薄弱分支补测（Issue #104）', () => {
+  it('testConnection：res.ok=false 且无 message → 回退 error 字段', async () => {
+    apiFetchMock.mockResolvedValue({ ok: false, error: '密钥无效' });
+    await act(async () => {
+      await useAgentStore.getState().testConnection({ provider: 'openai', model: 'gpt-4o', api_key: 'k' });
+    });
+    const s = useAgentStore.getState();
+    expect(s.testStatus).toBe('fail');
+    expect(s.testMessage).toBe('连接失败: 密钥无效');
+  });
+
+  it('testConnection：message/error 均缺失 → 回退「未知错误」', async () => {
+    apiFetchMock.mockResolvedValue({ ok: false });
+    await act(async () => {
+      await useAgentStore.getState().testConnection({ provider: 'openai', model: 'gpt-4o', api_key: 'k' });
+    });
+    const s = useAgentStore.getState();
+    expect(s.testStatus).toBe('fail');
+    expect(s.testMessage).toBe('连接失败: 未知错误');
+  });
+
+  it('testConnection：apiFetch reject → catch 分支 fail + errorMessage(err)', async () => {
+    apiFetchMock.mockRejectedValue(new KernelOfflineError('Kernel unreachable'));
+    await act(async () => {
+      await useAgentStore.getState().testConnection({ provider: 'openai', model: 'gpt-4o', api_key: 'k' });
+    });
+    const s = useAgentStore.getState();
+    expect(s.testStatus).toBe('fail');
+    // KernelOfflineError instanceof ApiError → errorMessage 取 detail
+    expect(s.testMessage).toBe('连接失败: Kernel unreachable');
+  });
+
+  it('testConnection：请求挂起期间 testStatus=testing，成功后复位 ok', async () => {
+    let resolveFetch!: (v: unknown) => void;
+    apiFetchMock.mockReturnValue(new Promise((resolve) => {
+      resolveFetch = resolve;
+    }));
+    let p!: Promise<void>;
+    act(() => {
+      p = useAgentStore.getState().testConnection({ provider: 'openai', model: 'gpt-4o', api_key: 'k' });
+    });
+    expect(useAgentStore.getState().testStatus).toBe('testing');
+    expect(useAgentStore.getState().testMessage).toBeNull();
+
+    resolveFetch({ ok: true });
+    await act(async () => {
+      await p;
+    });
+    expect(useAgentStore.getState().testStatus).toBe('ok');
+    expect(useAgentStore.getState().testMessage).toBe('连接成功');
+  });
+
+  it('saveConfig：有 draft 但未传 provider → provider 回退空串（先 POST 再 PATCH 并清空 draft）', async () => {
+    apiFetchMock.mockResolvedValue({ ok: true });
+    act(() => {
+      useAgentStore.getState().setConfig({ model: 'deepseek-chat' });
+      useAgentStore.getState().setApiKeyDraft('sk-xyz');
+    });
+    await act(async () => {
+      await useAgentStore.getState().saveConfig('p1');
+    });
+    expect(apiFetchMock).toHaveBeenNthCalledWith(1, '/api/v1/settings/llm-keys', {
+      method: 'POST',
+      body: { provider: '', model: 'deepseek-chat', api_key: 'sk-xyz' },
+    });
+    expect(apiFetchMock).toHaveBeenNthCalledWith(2, '/api/v1/projects/p1', {
+      method: 'PATCH',
+      body: { config: { model: 'deepseek-chat' } },
+    });
+    expect(useAgentStore.getState().apiKeyDraft).toBe('');
+  });
+
+  it('submitApiKey 成功：无论 draft 原值如何，成功后清空', async () => {
+    apiFetchMock.mockResolvedValue({ ok: true });
+    act(() => {
+      useAgentStore.getState().setApiKeyDraft('sk-old');
+    });
+    await act(async () => {
+      await useAgentStore.getState().submitApiKey({ provider: 'openai', model: 'gpt-4o', api_key: 'sk-new' });
+    });
+    expect(useAgentStore.getState().apiKeyDraft).toBe('');
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/settings/llm-keys', {
+      method: 'POST',
+      body: { provider: 'openai', model: 'gpt-4o', api_key: 'sk-new' },
+    });
   });
 });

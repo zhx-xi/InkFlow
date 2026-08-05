@@ -165,10 +165,12 @@ jobs:
       - name: Run unit tests
         # RAG 测试文件与 coverage 同进程冲突（chromadb hnsw "Nothing found on disk"，F14 先例
         # ImportError 同族；branch=true 后 CI 实测暴露）——从 --cov 排除，单独无 --cov 跑（覆盖率以
-        # coverage-backend job 的排除口径一致，docs/api-coverage.md 登记替代证据）
+        # coverage-backend job 的排除口径一致，docs/api-coverage.md 登记替代证据）。
+        # --reruns 2：chromadb 1.5.9 Windows CI 上 hnsw 段读取偶发竞态（写入后立即 retrieve，
+        # 本地稳定复现不了，CI 两次失败用例不同 = 非确定性）；pytest-rerunfailures 兜底重试
         run: |
           uv run pytest tests/unit/ --ignore=tests/unit/test_langchain_vector_store.py -v --tb=short --cov=inkflow --cov-report=xml
-          uv run pytest tests/unit/test_langchain_vector_store.py -v --tb=short
+          uv run pytest tests/unit/test_langchain_vector_store.py -v --tb=short --reruns 2 --reruns-delay 1
 
       - name: Upload coverage
         uses: codecov/codecov-action@v7

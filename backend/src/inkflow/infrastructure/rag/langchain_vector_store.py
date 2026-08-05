@@ -111,7 +111,12 @@ class LangChainVectorStore:
                 self._client = chromadb.PersistentClient(path=str(self._persist_dir))
             self._collections[entity_type] = self._client.get_or_create_collection(
                 name=f"inkflow_{entity_type.value}",
-                metadata={"hnsw:space": "cosine"},
+                # hnsw:sync_threshold=3：chromadb 1.x HNSW 默认 WAL-only（<1000 条不落盘），
+                # 小批量写入后 query 会走 rust from_disk 加载失败（"Nothing found on disk"，
+                # CI 慢磁盘偶发，issue #4212/#7463）。
+                # 阈值 3 = 写入即落盘（validator 要求 >2），本项目写入频率低，
+                # 性能影响可忽略；且崩溃恢复更安全。
+                metadata={"hnsw:space": "cosine", "hnsw:sync_threshold": 3},
             )
         return self._collections[entity_type]
 
