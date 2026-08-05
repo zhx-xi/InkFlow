@@ -640,12 +640,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra dev
 
-      - name: Notice — LLM_API_KEY not configured
-        if: ${{ secrets.LLM_API_KEY == '' }}
-        run: echo "LLM_API_KEY secret 未配置 — 跳过真实 AI 测试（fork PR 或未设置）"
-
       - name: Run real-AI e2e tests (T1 connectivity + T2 writing generate)
-        if: ${{ secrets.LLM_API_KEY != '' }}
         run: |
           uv run pytest ../tests/e2e/test_llm_connectivity.py `
                  ../tests/e2e/test_writing_generate.py `
