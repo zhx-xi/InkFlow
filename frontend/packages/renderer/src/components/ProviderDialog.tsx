@@ -23,12 +23,20 @@ export interface ProviderDialogProps {
   onSaved: (provider: ProviderConfig) => void;
 }
 
-/** 预置模板（后端 seed 4 个：openai/deepseek/zhipu/ollama） */
+/** 名称校验（与 settings.py LLMKeyStoreRequest.validate_provider 一致：^[a-z0-9_-]{1,32}$） */
+const NAME_RE = /^[a-z0-9_-]{1,32}$/;
+
+/**
+ * 预置模板（后端 seed 4 个：openai/deepseek/zhipu/ollama）。
+ * #106 F7：base_url 与 backend infrastructure/llm/provider_config.py
+ * _PROVIDER_BASE_URLS 对齐——deepseek /v1、ollama /v1、zhipu 尾斜杠、
+ * openai 空（SDK 默认端点）。
+ */
 const PRESET_TEMPLATES: Array<{ name: string; base_url: string }> = [
-  { name: 'openai', base_url: 'https://api.openai.com/v1' },
-  { name: 'deepseek', base_url: 'https://api.deepseek.com' },
-  { name: 'zhipu', base_url: 'https://open.bigmodel.cn/api/paas/v4' },
-  { name: 'ollama', base_url: 'http://127.0.0.1:11434' },
+  { name: 'openai', base_url: '' },
+  { name: 'deepseek', base_url: 'https://api.deepseek.com/v1' },
+  { name: 'zhipu', base_url: 'https://open.bigmodel.cn/api/paas/v4/' },
+  { name: 'ollama', base_url: 'http://localhost:11434/v1' },
 ];
 
 export function ProviderDialog({ open, onOpenChange, editing = null, onSaved }: ProviderDialogProps) {
@@ -61,7 +69,8 @@ export function ProviderDialog({ open, onOpenChange, editing = null, onSaved }: 
   if (!open) return null;
 
   const trimmedName = name.trim();
-  const saveDisabled = trimmedName === '' || saving;
+  const nameValid = NAME_RE.test(trimmedName);
+  const saveDisabled = !nameValid || saving;
 
   const handlePreset = (presetName: string) => {
     const preset = PRESET_TEMPLATES.find((p) => p.name === presetName);
@@ -79,12 +88,17 @@ export function ProviderDialog({ open, onOpenChange, editing = null, onSaved }: 
         body: { provider: trimmedName, base_url: baseUrl, api_key: apiKey },
       });
       if (res.ok) {
-        pushToast('ok', '连接成功');
+        pushToast('ok', t('m.dialog.testOk'));
       } else {
-        pushToast('err', `连接失败: ${res.message ?? res.error ?? '未知错误'}`);
+        pushToast(
+          'err',
+          t('m.dialog.testFail', {
+            reason: res.message ?? res.error ?? t('m.dialog.testUnknown'),
+          }),
+        );
       }
     } catch (err) {
-      pushToast('err', `连接失败: ${errorMessage(err)}`);
+      pushToast('err', t('m.dialog.testFail', { reason: errorMessage(err) }));
     } finally {
       setTesting(false);
     }
@@ -168,6 +182,9 @@ export function ProviderDialog({ open, onOpenChange, editing = null, onSaved }: 
               onChange={(e) => setName(e.target.value)}
               placeholder="openai"
             />
+            {trimmedName !== '' && !nameValid && (
+              <p className="text-[12px] text-err">{t('m.nameInvalid')}</p>
+            )}
           </label>
           <label className="flex flex-col gap-1.5 text-[13px]">
             <span>{t('m.baseUrl')}</span>

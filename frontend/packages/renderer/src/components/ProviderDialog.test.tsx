@@ -16,7 +16,8 @@
  *
  * 行为契约：
  * - 测试连接（「测试连接」按钮）→ POST /api/v1/settings/llm/test（§8.3 既有端点复用），
- *   body 含 provider / base_url / api_key（可附加模型字段，契约不约束）：
+ *   body 含 provider / base_url / api_key（F2 评审确认 2026-08-06：三键即完整契约——
+ *   不要求 model 字段；后端将兼容缺 model 的请求体）：
  *   成功 {ok:true} → toast ok「连接成功」；失败 {ok:false, message} → toast err「连接失败: {message}」
  *   （toast 断言 useToastStore 状态；文案与 agent store 测试连接一致）
  * - 保存（「保存」按钮）：
@@ -52,7 +53,7 @@ interface ProviderModel {
   roles: string[];
 }
 interface ProviderConfig {
-  id: string;
+  id: number;
   name: string;
   base_url: string;
   default_model: string;
@@ -65,7 +66,7 @@ interface ProviderConfig {
 }
 
 const createdProvider: ProviderConfig = {
-  id: 'openai', name: 'openai', base_url: 'https://api.openai.com/v1', default_model: '',
+  id: 1, name: 'openai', base_url: 'https://api.openai.com/v1', default_model: '',
   models: [], key_saved: false, max_retries: 3, timeout: 60,
   created_at: '2026-08-06T10:00:00Z', updated_at: '2026-08-06T10:00:00Z',
 };
@@ -174,7 +175,12 @@ describe('ProviderDialog — 测试连接（POST /settings/llm/test）', () => {
         '/api/v1/settings/llm/test',
         expect.objectContaining({
           method: 'POST',
-          body: expect.objectContaining({ provider: 'openai', api_key: 'sk-test-123' }),
+          // F2 评审确认：请求体契约 = {provider, base_url, api_key}（不要求 model，后端将兼容缺 model）
+          body: expect.objectContaining({
+            provider: 'openai',
+            base_url: 'https://api.openai.com/v1',
+            api_key: 'sk-test-123',
+          }),
         }),
       );
     });
@@ -233,7 +239,7 @@ describe('ProviderDialog — 保存（onSaved 回调）', () => {
   it('编辑模式：PATCH /api/v1/provider-configs/{id} → onSaved', async () => {
     const updated = { ...editingProvider, base_url: 'https://api.openai.com/v2' };
     apiFetchMock.mockImplementation(async (path: string) => {
-      if (path === '/api/v1/provider-configs/openai') return updated;
+      if (path === '/api/v1/provider-configs/1') return updated;
       return { ok: true };
     });
     const user = userEvent.setup();
@@ -244,7 +250,7 @@ describe('ProviderDialog — 保存（onSaved 回调）', () => {
 
     await waitFor(() => {
       expect(apiFetchMock).toHaveBeenCalledWith(
-        '/api/v1/provider-configs/openai',
+        '/api/v1/provider-configs/1',
         expect.objectContaining({ method: 'PATCH' }),
       );
     });

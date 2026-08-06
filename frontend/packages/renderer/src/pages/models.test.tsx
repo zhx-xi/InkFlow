@@ -9,7 +9,12 @@
  * - provider-card-<id>：Provider 卡片（id = provider id；名称文本渲染）
  * - provider-key-badge-<id>：key 徽标（key_saved=true →「Key 已存」，false →「未存 Key」）
  * - provider-model-count-<id>：模型数徽标（「N 个模型」）
+ * - provider-edit-<id>：Provider 卡片「编辑」按钮（F4 评审新增——models.tsx 曾硬编码
+ *   editing={null} 导致编辑入口缺失；点击 → ProviderDialog 编辑模式打开）
+ * - provider-delete-<id>：删除按钮（既有）
  * - add-provider-btn：添加 Provider 按钮
+ * - add-model-btn：「添加模型」按钮（F3 评审新增，spec §8.2③ L929 多选一次性添加入口；
+ *   点击 → 模型添加 UI 打开 = role=dialog +「添加模型」标题）
  * - model-table：模型表（行 data-testid="model-row-<modelId>"；类型标记文本 chat / embedding；
  *   角色用途徽标渲染 models[].roles 数组原文）
  * - role-binding：角色绑定区 —— 6 个 Radix Select trigger（aria-label = 主模型 / 大纲架构师 /
@@ -25,14 +30,20 @@
  * 行为：
  * - 挂载 → loadProviders()（GET /api/v1/provider-configs）
  * - 点击 add-provider-btn → ProviderDialog 打开（role=dialog +「添加 Provider」标题）
+ * - 点击 provider-edit-<id> → ProviderDialog 打开且处于编辑模式
+ *   （标题「编辑 Provider」+ 名称输入预填 provider name——证明 editing prop 传递，F4 评审新增）
+ * - 点击 add-model-btn → 模型添加 UI 打开（role=dialog +「添加模型」标题，F3 评审新增）
  *
  * 新增 i18n key（GREEN 补 zh.ts / en.ts；theme 系 / ap 系 / ag 系已有）：
  * m.title='模型管理' m.addProvider='添加 Provider' m.keySaved='Key 已存' m.keyMissing='未存 Key'
  * m.modelCount='{n} 个模型' m.role.main='主模型' m.role.architect='大纲架构师' m.role.writer='执笔'
  * m.role.auditor='审校' m.role.reviser='修订' m.role.embedding='RAG embedding'
  * m.role.saveNote='保存需 Agent 模板功能'
+ * m.editProvider='编辑 Provider'（F4；ProviderDialog 已用，复用）m.edit='编辑'（编辑按钮 aria-label）
+ * m.addModel='添加模型'（F3 新 key；模型添加 UI 标题）
  *
- * RED 预期：./models 与 ../stores/models 模块不存在 → module-not-found（类 1 契约缺口）。
+ * RED 预期（本批为评审修复契约，页面已实现）：F4 用例 FAIL 于 provider-edit-<id> 不存在
+ * （element-missing）；F3 用例 FAIL 于 add-model-btn 不存在（element-missing）；既有用例保持绿。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
@@ -157,6 +168,35 @@ describe('模型管理页 — Provider 列表（spec §8.2③）', () => {
     await user.click(screen.getByTestId('add-provider-btn'));
     const dlg = await screen.findByRole('dialog');
     expect(within(dlg).getByText('添加 Provider')).toBeInTheDocument();
+  });
+
+  it('F4：Provider 卡片「编辑」按钮 → ProviderDialog 编辑模式（「编辑 Provider」标题 + 名称预填）', async () => {
+    apiFetchMock.mockResolvedValue(PROVIDER_LIST);
+    const user = userEvent.setup();
+    renderModelsPage();
+    await waitFor(() => expect(useModelsStore.getState().loading).toBe(false));
+
+    // 编辑入口存在（F4：曾硬编码 editing={null}，编辑入口缺失）
+    await user.click(screen.getByTestId('provider-edit-openai'));
+    const dlg = await screen.findByRole('dialog');
+    // 编辑模式：标题 + editing prop 传递（名称输入预填 provider name）
+    expect(within(dlg).getByText('编辑 Provider')).toBeInTheDocument();
+    expect(within(dlg).getByLabelText('名称')).toHaveValue('openai');
+  });
+});
+
+describe('模型管理页 — 添加模型入口（F3 评审新增，spec §8.2③ L929 多选一次性添加）', () => {
+  it('「添加模型」按钮存在 → 点击打开模型添加 UI（role=dialog +「添加模型」标题）', async () => {
+    apiFetchMock.mockResolvedValue(PROVIDER_LIST);
+    const user = userEvent.setup();
+    renderModelsPage();
+    await waitFor(() => expect(useModelsStore.getState().loading).toBe(false));
+
+    const btn = screen.getByTestId('add-model-btn');
+    expect(btn).toHaveTextContent('添加模型');
+    await user.click(btn);
+    const dlg = await screen.findByRole('dialog');
+    expect(within(dlg).getByText('添加模型')).toBeInTheDocument();
   });
 });
 

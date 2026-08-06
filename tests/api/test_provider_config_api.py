@@ -67,8 +67,12 @@
    seed 时 total=0、items=[]。
 
 7. 【内置 seed（spec §8.2，2026-08-06 源码核实）】openai/deepseek/zhipu/
-   ollama 共 4 条，建表时插入。测试自行经 ORM 注入 seed 行（app lifespan
-   的建表 seed 写入真实 DB 文件，与 override 的测试内存库无关——
+   ollama 共 4 条。【#106 F1 评审拍板（2026-08-06）】seed 由 app
+   lifespan 显式调用 `ProviderConfigService.seed_builtin_providers()`
+   （幂等）——`create_tables()` 本身【不】seed；修复前 lifespan 仅
+   create_tables() → 全新安装注册表为空（TestSeedBuiltinProviders
+   RED 契约）。本文件其余用例仍自行经 ORM 注入 seed 行（lifespan
+   seed 写入真实 DB 文件，与 override 的测试内存库无关——
    test_settings_api.py 设计假设 #13 同款）。ORM 契约：
    `inkflow.infrastructure.database.models.provider_config.ProviderConfigORM`，
    构造 kwargs `name/base_url/default_model/models`（models 为 JSON 列
@@ -108,8 +112,20 @@
     决定（本文件不覆盖），但 4 内置名 seed 行的删除保护必须成立（#12）。
 
 15. 【lifespan/建表】ASGITransport 不触发 lifespan（test_chapter_api.py
-    同款），建表由 test_engine fixture（tests/conftest.py）完成；无
-    ./inkflow.db 副作用。
+    同款），建表由 test_engine fixture（tests/conftest.py）完成；常规
+    用例无 ./inkflow.db 副作用。【例外——#106 F1 lifespan 契约】
+    TestSeedBuiltinProviders.test_lifespan_startup_seeds_builtin_providers
+    使用 TestClient(app)（触发真实 lifespan）+ monkeypatch.chdir(tmp_path)
+    把真实 DB 文件（./inkflow.db）隔离到 tmp 目录（规避仓库根残留/
+    污染，测试结束自动清理），GET 与 lifespan 共享同一真实 DB。
+
+16. 【#106 F1 seed 接线契约（2026-08-06 评审修复）】lifespan 启动后
+    注册表必须含内置 4 provider（openai/deepseek/zhipu/ollama），且
+    seed 幂等：重复调用不报错、不重复插入（repo get_by_name 判重，
+    第二次返回插入数 0）。测试覆盖两路径：① 真实 lifespan 执行
+    （TestClient）+ GET 列表断言各内置名恰好 1 条（RED 形态：lifespan
+    未接线 → 列表空）；② 直接调 service seed 两次 + GET 列表断言
+    total=4（回归护栏，当前实现已满足）。
 
 ════════════════════════════════════════════════════════════════════
 RED 阶段预期：`inkflow.api.routers.provider_configs` 模块不存在 →
@@ -120,6 +136,10 @@ RED 阶段预期：`inkflow.api.routers.provider_configs` 模块不存在 →
 infrastructure/database/models/provider_config.py、
 infrastructure/database/repositories/provider_config_repo.py、
 api/routers/provider_configs.py）+ MODIFY app.py include_router 后全绿。
+
+#106 F1 补充契约（2026-08-06 评审修复批）：lifespan seed 接线契约见
+TestSeedBuiltinProviders —— 修复前 lifespan 未调 seed_builtin_providers
+→ test_lifespan_startup_seeds_builtin_providers RED（列表空）。
 ════════════════════════════════════════════════════════════════════
 """
 
@@ -131,6 +151,7 @@ from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
+from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
@@ -381,6 +402,76 @@ class TestListProviderConfigs:
         body = resp.json()
         assert body["items"] == []
         assert body["total"] == 0
+
+
+# ── #106 F1：lifespan 内置 seed 接线契约（2026-08-06 评审修复）──
+
+
+class TestSeedBuiltinProviders:
+    """#106 F1 契约：lifespan 启动即 seed 内置 4 provider + seed 幂等。
+
+    设计假设 #7/#16：seed 由 app lifespan 显式调用
+    ProviderConfigService.seed_builtin_providers()（幂等）。修复前
+    lifespan 仅 create_tables() 不 seed → 全新安装注册表为空 ——
+    test_lifespan_startup_seeds_builtin_providers 即 RED 形态（列表空）。
+    """
+
+    def test_lifespan_startup_seeds_builtin_providers(self, monkeypatch, tmp_path):
+        """真实 lifespan 执行后 GET 列表含内置 4 provider（各恰好 1 条）。
+
+        触发路径 = TestClient(app) 上下文（__enter__ 运行真实 lifespan：
+        create_tables +【GREEN】seed 真实 DB 文件）；monkeypatch.chdir
+        (tmp_path) 把 ./inkflow.db 隔离到 tmp 目录（设计假设 #15 例外，
+        规避仓库根 DB 残留/污染），GET 与 lifespan 共享同一真实 DB。
+        断言内置名各恰好 1 条（seed 幂等 → 不重复插入）；不做 total
+        全等（容忍真实 DB 残留自定义 provider 行）。
+        """
+        monkeypatch.delenv(ENV_TOKEN, raising=False)
+        monkeypatch.chdir(tmp_path)
+        with patch(
+            "inkflow.api.routers.provider_configs._get_key_manager",
+            return_value=FakeKeyManager(),
+        ):
+            with TestClient(app) as tc:
+                resp = tc.get(ENDPOINT)
+        assert resp.status_code == 200
+        names = [it["name"] for it in resp.json()["items"]]
+        for name in BUILTIN_NAMES:
+            assert names.count(name) == 1, (
+                f"lifespan 后内置 {name} 应恰好 1 条（seed 未接线 → 0 条，"
+                f"或重复插入 → >1 条），实际 {names.count(name)} 条"
+            )
+
+    @pytest.mark.asyncio
+    async def test_seed_builtin_providers_idempotent(
+        self, client, db_session, override_get_db, patch_key_manager
+    ):
+        """seed 幂等：重复调用不报错、不重复插入；GET 列表可见 4 条（#16）。
+
+        直接调 ProviderConfigService.seed_builtin_providers()（lifespan
+        的等价调用路径，注入测试 db_session）：第一次返回 4（实际插入
+        4 条），第二次返回 0（repo get_by_name 判重，不重复插入）；
+        随后 GET 列表 total=4 且内置名集合一致。
+        """
+        from inkflow.domain.services.provider_config_service import (
+            ProviderConfigService,
+        )
+        from inkflow.infrastructure.database.repositories.provider_config_repo import (
+            SQLiteProviderConfigRepository,
+        )
+
+        svc = ProviderConfigService(
+            repository=SQLiteProviderConfigRepository(db_session)
+        )
+        assert await svc.seed_builtin_providers() == 4
+        assert await svc.seed_builtin_providers() == 0  # 幂等：不重复插入
+
+        patch_key_manager([])
+        resp = await client.get(ENDPOINT)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 4
+        assert {it["name"] for it in body["items"]} == set(BUILTIN_NAMES)
 
 
 # ── POST /api/v1/provider-configs（spec §8.3 新建）──

@@ -172,15 +172,21 @@ def get_provider_config(provider: str, api_key: str | None = None) -> LLMProvide
         default_model = registry_entry.default_model or config.model_routing.get(
             provider, config.llm_default_model
         )
+        # #106 F6：注册表 models 传播（前端模型表展示）；getattr 兼容无 models
+        # 属性的鸭子类型替身（test_provider_config_resolution.py 契约）
+        registry_models = getattr(registry_entry, "models", None)
+        models = [m.id for m in registry_models] if registry_models else []
     else:
         base_url = _PROVIDER_BASE_URLS.get(provider)
         default_model = config.model_routing.get(provider, config.llm_default_model)
+        models = []
 
     return LLMProviderConfig(
         provider=provider,
         api_key=resolved_key,
         base_url=base_url,
         default_model=default_model,
+        models=models,
         max_retries=config.llm_max_retries,
         timeout=config.llm_request_timeout,
     )

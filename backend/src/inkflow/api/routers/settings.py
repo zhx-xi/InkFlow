@@ -14,9 +14,11 @@ import asyncio
 import logging
 import re
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from inkflow.api.deps import get_db, get_provider_config_service
 from inkflow.core.config import config
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
 from inkflow.infrastructure.llm.key_manager import APIKeyManager
@@ -59,10 +61,17 @@ class LLMKeyStoreRequest(BaseModel):
 
 
 class LLMTestRequest(BaseModel):
-    """POST /llm/test 请求体 — provider/model/api_key 必填非空。"""
+    """POST /llm/test 请求体 — provider/api_key 必填非空；model/base_url 可选。
+
+    #106 F2：model 缺省时回退链 = 注册表 default_model → config.llm_default_model
+    （前端 ProviderDialog 只发 {provider, base_url, api_key}）；model 提供但空白仍
+    拒绝（提供即校验）；base_url 非空时透传 LLM 客户端 openai_api_base（自定义
+    端点探测），空/缺失不传。
+    """
 
     provider: str
-    model: str
+    model: str | None = None
+    base_url: str | None = None
     api_key: str
 
     @field_validator("provider")
@@ -75,7 +84,9 @@ class LLMTestRequest(BaseModel):
 
     @field_validator("model")
     @classmethod
-    def validate_model(cls, v: str) -> str:
+    def validate_model(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
         return _validate_not_blank(v, "model")
 
     @field_validator("api_key")
@@ -92,10 +103,38 @@ def _get_key_manager() -> APIKeyManager:
     )
 
 
-def _get_llm_client(provider: str, model: str, api_key: str) -> LLMClientProtocol:
-    """按请求参数构造 LLM 客户端（连通探测用，api_key 仅内存本次使用）。"""
+def _get_llm_client(
+    provider: str,
+    model: str,
+    api_key: str,
+    *,
+    base_url: str | None = None,
+) -> LLMClientProtocol:
+    """按请求参数构造 LLM 客户端（连通探测用，api_key 仅内存本次使用）。
+
+    #106 F2：base_url 非空时透传 LangChainLLMClient openai_api_base
+    （自定义端点探测），空/缺失不传。
+    """
     model_ref = model if "/" in model else f"{provider}/{model}"
+    if base_url:
+        return LangChainLLMClient(
+            default_model=model_ref,
+            api_key=api_key,
+            openai_api_base=base_url,
+        )
     return LangChainLLMClient(default_model=model_ref, api_key=api_key)
+
+
+async def _resolve_probe_model(provider: str, db: AsyncSession) -> str:
+    """#106 F2 model 缺省回退链：注册表 default_model → config.llm_default_model."""
+    try:
+        entry = await get_provider_config_service(db).get_by_name(provider)
+        if entry is not None and entry.default_model:
+            return entry.default_model
+    except Exception:
+        # 注册表查询失败（DB 未初始化等）→ 回退全局默认，探测端点不因此 500
+        logger.warning("注册表查询失败，回退 config.llm_default_model: provider=%s", provider)
+    return config.llm_default_model
 
 
 @router.post("/llm-keys", status_code=201)
@@ -114,19 +153,26 @@ async def store_llm_key(data: LLMKeyStoreRequest) -> dict:
 
 
 @router.post("/llm/test")
-async def test_llm_connection(data: LLMTestRequest) -> dict:
+async def test_llm_connection(
+    data: LLMTestRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
     """LLM 连通探测 — 业务语义成功/失败 → 200 + {ok: ...}（spec §4.2.3 testStatus 消费语义）。
 
     失败（LLMRequestError/网络等）→ 200 + ok:false 通用文案，内部异常细节不泄漏。
     """
+    model = data.model or await _resolve_probe_model(data.provider, db)
     try:
-        client = _get_llm_client(data.provider, data.model, data.api_key)
+        if data.base_url:
+            client = _get_llm_client(data.provider, model, data.api_key, base_url=data.base_url)
+        else:
+            client = _get_llm_client(data.provider, model, data.api_key)
         probe = client.chat([ChatMessage(role="user", content="ping")])
         # LLMClientProtocol.chat 为 async 协程；防御探测桩返回非 awaitable 的边界
         if asyncio.iscoroutine(probe):
             await probe
     except Exception:
-        logger.warning("LLM 连通探测失败: provider=%s model=%s", data.provider, data.model)
+        logger.warning("LLM 连通探测失败: provider=%s model=%s", data.provider, model)
         return {
             "ok": False,
             "message": "LLM 连接失败，请检查 Provider / 模型 / API Key 配置",
@@ -134,6 +180,6 @@ async def test_llm_connection(data: LLMTestRequest) -> dict:
     return {
         "ok": True,
         "provider": data.provider,
-        "model": data.model,
+        "model": model,
         "message": "连接成功",
     }

@@ -32,7 +32,7 @@
  * nav.lib.timeline='时间线' nav.lib.foreshadow='伏笔' nav.lib.rag='知识库 RAG'
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { AppNav } from './AppNav';

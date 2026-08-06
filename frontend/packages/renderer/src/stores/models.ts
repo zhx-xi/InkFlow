@@ -12,7 +12,7 @@ export interface ProviderModel {
 }
 
 export interface ProviderConfig {
-  id: string;
+  id: number;
   name: string;
   base_url: string;
   default_model: string;
@@ -66,12 +66,13 @@ interface ModelsState {
 
   loadProviders: () => Promise<void>;
   addProvider: (input: AddProviderInput) => Promise<ProviderConfig>;
-  deleteProvider: (id: string) => Promise<void>;
+  addModel: (providerId: number, model: ProviderModel) => Promise<void>;
+  deleteProvider: (id: number) => Promise<void>;
   selectModel: (id: string | null) => void;
   setRoleBinding: (role: keyof RoleBindingDraft, modelId: string) => void;
 }
 
-export const useModelsStore = create<ModelsState>((set) => ({
+export const useModelsStore = create<ModelsState>((set, get) => ({
   providers: [],
   loading: false,
   error: null,
@@ -81,11 +82,10 @@ export const useModelsStore = create<ModelsState>((set) => ({
   loadProviders: async () => {
     set({ loading: true, error: null });
     try {
-      // 列表端点惯例：{ items, total } 信封；兼容裸数组响应（失败路径契约 mock）
-      const data = await apiFetch<ProviderListResponse | ProviderConfig[]>(
-        '/api/v1/provider-configs',
-      );
-      const providers = Array.isArray(data) ? data : data.items;
+      // 列表端点惯例：{ items, total } 信封（F10 评审：后端真实返回即信封，
+      // 裸数组兼容分支为死代码，已删除）
+      const data = await apiFetch<ProviderListResponse>('/api/v1/provider-configs');
+      const providers = data.items;
       set({ providers, loading: false, error: null });
     } catch (err) {
       // 失败不清空已加载列表
@@ -112,6 +112,29 @@ export const useModelsStore = create<ModelsState>((set) => ({
     } catch (err) {
       set({ error: errorMessage(err) });
       throw err;
+    }
+  },
+
+  addModel: async (providerId, model) => {
+    try {
+      const target = get().providers.find((p) => p.id === providerId);
+      if (!target) throw new Error('Provider 不存在');
+      const updated = await apiFetch<ProviderConfig>(
+        `/api/v1/provider-configs/${providerId}`,
+        {
+          method: 'PATCH',
+          // 后端 ProviderConfigUpdate.models 为 exclude_unset 整体替换：
+          // 必须携带「既有 models + 新模型」全量，只发新模型会覆盖丢失（F3 契约）
+          body: { models: [...target.models, model] },
+        },
+      );
+      set((s) => ({
+        providers: s.providers.map((p) => (p.id === providerId ? updated : p)),
+        error: null,
+      }));
+    } catch (err) {
+      // 失败：error 设置 + 列表不变（deleteProvider 同款语义）
+      set({ error: errorMessage(err) });
     }
   },
 

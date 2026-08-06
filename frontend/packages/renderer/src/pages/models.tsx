@@ -4,11 +4,12 @@
  * #107 未合入 → 角色绑定区仅只读展示（M4b 依赖声明）。
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { AddModelDialog } from '../components/AddModelDialog';
 import { ProviderDialog } from '../components/ProviderDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
-import type { ProviderConfig, RoleBindingDraft } from '../stores/models';
+import type { ProviderConfig, ProviderModel, RoleBindingDraft } from '../stores/models';
 import { useModelsStore } from '../stores/models';
 import { useToastStore } from '../stores/toast';
 
@@ -28,9 +29,12 @@ export function ModelsPage() {
   const loading = useModelsStore((s) => s.loading);
   const roleBinding = useModelsStore((s) => s.roleBinding);
   const loadProviders = useModelsStore((s) => s.loadProviders);
+  const addModel = useModelsStore((s) => s.addModel);
   const deleteProvider = useModelsStore((s) => s.deleteProvider);
   const pushToast = useToastStore((s) => s.pushToast);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<ProviderConfig | null>(null);
+  const [addModelOpen, setAddModelOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ProviderConfig | null>(null);
 
   useEffect(() => {
@@ -64,6 +68,16 @@ export function ModelsPage() {
     void loadProviders();
   };
 
+  const handleAddModel = async (providerId: number, model: ProviderModel) => {
+    await addModel(providerId, model);
+  };
+
+  const handleModelsAdded = () => {
+    const err = useModelsStore.getState().error;
+    if (err) pushToast('err', err);
+    else pushToast('ok', t('m.modelAdded'));
+  };
+
   const handleDelete = async () => {
     if (!pendingDelete) return;
     const target = pendingDelete;
@@ -83,7 +97,10 @@ export function ModelsPage() {
             type="button"
             data-testid="add-provider-btn"
             className="flex items-center gap-1.5 rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-            onClick={() => setDialogOpen(true)}
+            onClick={() => {
+              setEditing(null);
+              setDialogOpen(true);
+            }}
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
             {t('m.addProvider')}
@@ -128,6 +145,18 @@ export function ModelsPage() {
                 </div>
                 <button
                   type="button"
+                  data-testid={`provider-edit-${p.id}`}
+                  aria-label={`${t('m.edit')} ${p.name}`}
+                  className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => {
+                    setEditing(p);
+                    setDialogOpen(true);
+                  }}
+                >
+                  <Pencil className="h-4 w-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
                   data-testid={`provider-delete-${p.id}`}
                   aria-label={`${t('m.delete')} ${p.name}`}
                   className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -141,7 +170,18 @@ export function ModelsPage() {
         </section>
 
         <section className="mt-6 rounded-lg border border-line bg-surface p-5 shadow-card">
-          <h2 className="font-serif text-[17px] font-semibold">{t('m.modelTableTitle')}</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-serif text-[17px] font-semibold">{t('m.modelTableTitle')}</h2>
+            <button
+              type="button"
+              data-testid="add-model-btn"
+              className="flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-[13px] text-ink-2 transition duration-180 hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => setAddModelOpen(true)}
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              {t('m.addModel')}
+            </button>
+          </div>
           <table data-testid="model-table" className="mt-3 w-full text-left text-[13px]">
             <thead>
               <tr className="border-b border-line text-[12px] text-ink-3">
@@ -220,8 +260,16 @@ export function ModelsPage() {
       <ProviderDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        editing={null}
+        editing={editing}
         onSaved={handleSaved}
+      />
+
+      <AddModelDialog
+        open={addModelOpen}
+        providers={providers}
+        onOpenChange={setAddModelOpen}
+        onAdd={handleAddModel}
+        onDone={handleModelsAdded}
       />
 
       {pendingDelete && (
