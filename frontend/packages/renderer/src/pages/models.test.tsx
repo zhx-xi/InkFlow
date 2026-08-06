@@ -254,3 +254,176 @@ describe('模型管理页 — 角色绑定区（spec §8.2③ / §8.6 M4b，#107
     expect(within(binding).getByText('保存需 Agent 模板功能')).toBeInTheDocument();
   });
 });
+
+describe('模型管理页 — 删除 Provider（确认弹窗，spec §8.6 M4b）', () => {
+  it('点击删除按钮 → 确认弹窗（标题 + 确认文案含 provider 名与模型数 + 取消/删除按钮）', async () => {
+    apiFetchMock.mockResolvedValue(PROVIDER_LIST);
+    const user = userEvent.setup();
+    renderModelsPage();
+    await screen.findByTestId('provider-card-1');
+
+    await user.click(screen.getByTestId('provider-delete-1'));
+    const dlg = screen.getByRole('dialog', { name: '删除 Provider' });
+    expect(within(dlg).getByText('删除 Provider「openai」？该 Provider 有 2 个模型')).toBeInTheDocument();
+    expect(within(dlg).getByRole('button', { name: '取消' })).toBeInTheDocument();
+    expect(within(dlg).getByRole('button', { name: '删除' })).toBeInTheDocument();
+  });
+
+  it('取消 → 弹窗关闭 + DELETE 未调用 + Provider 卡片仍在', async () => {
+    apiFetchMock.mockResolvedValue(PROVIDER_LIST);
+    const user = userEvent.setup();
+    renderModelsPage();
+    await screen.findByTestId('provider-card-1');
+
+    await user.click(screen.getByTestId('provider-delete-1'));
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(apiFetchMock.mock.calls.some((c) => c[1]?.method === 'DELETE')).toBe(false);
+    expect(screen.getByTestId('provider-card-1')).toBeInTheDocument();
+  });
+
+  it('遮罩点击 → 弹窗关闭（不删除）', async () => {
+    apiFetchMock.mockResolvedValue(PROVIDER_LIST);
+    const user = userEvent.setup();
+    renderModelsPage();
+    await screen.findByTestId('provider-card-1');
+
+    await user.click(screen.getByTestId('provider-delete-1'));
+    await user.click(screen.getByRole('presentation'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(apiFetchMock.mock.calls.some((c) => c[1]?.method === 'DELETE')).toBe(false);
+    expect(screen.getByTestId('provider-card-1')).toBeInTheDocument();
+  });
+
+  it('确认删除 → DELETE /api/v1/provider-configs/{id} + 卡片移除 + toast ok「已删除」', async () => {
+    apiFetchMock.mockResolvedValue(PROVIDER_LIST);
+    const user = userEvent.setup();
+    renderModelsPage();
+    await screen.findByTestId('provider-card-1');
+
+    await user.click(screen.getByTestId('provider-delete-1'));
+    await user.click(screen.getByRole('button', { name: '删除' }));
+    await waitFor(() => expect(screen.queryByTestId('provider-card-1')).not.toBeInTheDocument());
+    expect(
+      apiFetchMock.mock.calls.some(
+        (c) => c[0] === '/api/v1/provider-configs/1' && c[1]?.method === 'DELETE',
+      ),
+    ).toBe(true);
+    await waitFor(() => {
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts[toasts.length - 1]).toMatchObject({ type: 'ok', message: '已删除' });
+    });
+  });
+
+  it('DELETE 失败 → toast err（错误文案）+ Provider 卡片仍在', async () => {
+    apiFetchMock.mockImplementation(async (_path: string, init?: { method?: string }) => {
+      if (init?.method === 'DELETE') throw new Error('内置 Provider 不可删除');
+      return PROVIDER_LIST;
+    });
+    const user = userEvent.setup();
+    renderModelsPage();
+    await screen.findByTestId('provider-card-1');
+
+    await user.click(screen.getByTestId('provider-delete-1'));
+    await user.click(screen.getByRole('button', { name: '删除' }));
+    await waitFor(() => {
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts[toasts.length - 1]).toMatchObject({ type: 'err', message: '内置 Provider 不可删除' });
+    });
+    expect(screen.getByTestId('provider-card-1')).toBeInTheDocument();
+  });
+});
+
+describe('模型管理页 — 添加模型保存（F3 全量 PATCH 语义 + toast 联动）', () => {
+  it('填写模型 → 保存 → PATCH（body 含既有+新模型全量）→ 新行入表 + toast ok「已添加模型」+ 弹窗关闭', async () => {
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+      if (path === '/api/v1/provider-configs/1' && init?.method === 'PATCH') {
+        return { ...PROVIDER_LIST.items[0], models: (init.body as { models: ProviderModel[] }).models };
+      }
+      return PROVIDER_LIST;
+    });
+    const user = userEvent.setup();
+    renderModelsPage();
+    await screen.findByTestId('provider-card-1');
+
+    await user.click(screen.getByTestId('add-model-btn'));
+    const dlg = await screen.findByTestId('add-model-dialog');
+    await user.type(within(dlg).getByLabelText('模型 ID 1'), 'gpt-4o-mini');
+    await user.type(within(dlg).getByLabelText('角色用途 1'), 'writing, audit');
+    await user.click(within(dlg).getByRole('button', { name: '保存' }));
+
+    // PATCH 全量语义：openai 既有 2 模型 + 新模型 = 3（后端 exclude_unset 整体替换，F3 契约）
+    await waitFor(() => {
+      const patch = apiFetchMock.mock.calls.find(
+        (c) => c[0] === '/api/v1/provider-configs/1' && c[1]?.method === 'PATCH',
+      );
+      expect(patch).toBeTruthy();
+      const models = (patch![1]!.body as { models: ProviderModel[] }).models;
+      expect(models).toHaveLength(3);
+      expect(models[models.length - 1]).toEqual({
+        id: 'gpt-4o-mini',
+        type: 'chat',
+        roles: ['writing', 'audit'],
+      });
+    });
+    // 弹窗关闭 + 表格新行（providerName 联动）+ toast ok
+    await waitFor(() => expect(screen.queryByTestId('add-model-dialog')).not.toBeInTheDocument());
+    const newRow = await screen.findByTestId('model-row-gpt-4o-mini');
+    expect(within(newRow).getByText('openai')).toBeInTheDocument();
+    expect(within(newRow).getByText('writing')).toBeInTheDocument();
+    expect(within(newRow).getByText('audit')).toBeInTheDocument();
+    await waitFor(() => {
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts[toasts.length - 1]).toMatchObject({ type: 'ok', message: '已添加模型' });
+    });
+  });
+
+  it('PATCH 失败（store 吞错不抛）→ toast err + onDone 照常（弹窗仍关闭）', async () => {
+    apiFetchMock.mockImplementation(async (_path: string, init?: { method?: string }) => {
+      if (init?.method === 'PATCH') throw new Error('内置 Provider 不可修改');
+      return PROVIDER_LIST;
+    });
+    const user = userEvent.setup();
+    renderModelsPage();
+    await screen.findByTestId('provider-card-1');
+
+    await user.click(screen.getByTestId('add-model-btn'));
+    const dlg = await screen.findByTestId('add-model-dialog');
+    await user.type(within(dlg).getByLabelText('模型 ID 1'), 'gpt-4o-mini');
+    await user.click(within(dlg).getByRole('button', { name: '保存' }));
+
+    await waitFor(() => {
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts[toasts.length - 1]).toMatchObject({ type: 'err', message: '内置 Provider 不可修改' });
+    });
+    await waitFor(() => expect(screen.queryByTestId('add-model-dialog')).not.toBeInTheDocument());
+  });
+});
+
+describe('模型管理页 — Provider 保存成功后重新拉取（handleSaved）', () => {
+  it('添加 Provider 保存成功 → POST → onSaved → loadProviders 再次 GET', async () => {
+    apiFetchMock.mockImplementation(async (_path: string, init?: { method?: string }) => {
+      if (init?.method === 'POST') return PROVIDER_LIST.items[0];
+      return PROVIDER_LIST;
+    });
+    const user = userEvent.setup();
+    renderModelsPage();
+    await screen.findByTestId('provider-card-1');
+    const getCountBefore = apiFetchMock.mock.calls.filter(
+      (c) => c[0] === '/api/v1/provider-configs' && !c[1]?.method,
+    ).length;
+
+    await user.click(screen.getByTestId('add-provider-btn'));
+    const dlg = await screen.findByRole('dialog');
+    await user.type(within(dlg).getByLabelText('名称'), 'openai');
+    await user.click(within(dlg).getByRole('button', { name: '保存' }));
+
+    // handleSaved → loadProviders：GET 次数比保存前多
+    await waitFor(() => {
+      const getCountAfter = apiFetchMock.mock.calls.filter(
+        (c) => c[0] === '/api/v1/provider-configs' && !c[1]?.method,
+      ).length;
+      expect(getCountAfter).toBeGreaterThan(getCountBefore);
+    });
+  });
+});

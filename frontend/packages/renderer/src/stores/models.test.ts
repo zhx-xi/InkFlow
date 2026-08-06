@@ -205,6 +205,65 @@ describe('models store — 添加 / 删除 provider', () => {
     expect(s.providers).toEqual([]);
   });
 
+  it('addProvider 带 api_key：先 POST /api/v1/settings/llm-keys 加密落盘，再注册 provider-configs', async () => {
+    const created: ProviderConfig = {
+      id: 4, name: 'ollama2', base_url: 'http://127.0.0.1:11435', default_model: '',
+      models: [], key_saved: false, max_retries: 3, timeout: 60,
+      created_at: '2026-08-06T10:00:00Z', updated_at: '2026-08-06T10:00:00Z',
+    };
+    apiFetchMock.mockResolvedValue(created);
+    await act(async () => {
+      await useModelsStore.getState().addProvider({
+        name: 'ollama2',
+        base_url: 'http://127.0.0.1:11435',
+        api_key: 'sk-test-123',
+      });
+    });
+    // Q3 主路径顺序：① llm-keys（provider + api_key）② provider-configs（name + base_url）
+    expect(apiFetchMock).toHaveBeenCalledTimes(2);
+    expect(apiFetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/settings/llm-keys',
+      expect.objectContaining({
+        method: 'POST',
+        body: { provider: 'ollama2', api_key: 'sk-test-123' },
+      }),
+    );
+    expect(apiFetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/provider-configs',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.objectContaining({ name: 'ollama2', base_url: 'http://127.0.0.1:11435' }),
+      }),
+    );
+    const providers = useModelsStore.getState().providers;
+    expect(providers.some((p) => p.id === 4)).toBe(true);
+    expect(useModelsStore.getState().error).toBeNull();
+  });
+
+  it('addProvider 带 api_key 但密钥落盘失败：error 设置 + 抛错 + 不注册 provider-configs', async () => {
+    apiFetchMock.mockRejectedValue(new ApiError(500, '密钥加密失败'));
+    await act(async () => {
+      await expect(
+        useModelsStore.getState().addProvider({
+          name: 'ollama2',
+          base_url: 'http://127.0.0.1:11435',
+          api_key: 'sk-test-123',
+        }),
+      ).rejects.toThrow('密钥加密失败');
+    });
+    const s = useModelsStore.getState();
+    expect(s.error).toContain('密钥加密失败');
+    // 只发了 llm-keys，未继续注册 provider-configs
+    expect(apiFetchMock).toHaveBeenCalledTimes(1);
+    expect(apiFetchMock).toHaveBeenCalledWith(
+      '/api/v1/settings/llm-keys',
+      expect.objectContaining({ method: 'POST', body: { provider: 'ollama2', api_key: 'sk-test-123' } }),
+    );
+    expect(s.providers).toEqual([]);
+  });
+
   it('deleteProvider 成功：DELETE /api/v1/provider-configs/{id} → 从列表移除', async () => {
     apiFetchMock.mockResolvedValue({ items: PROVIDERS, total: 2, offset: 0, limit: 50 });
     await act(async () => {
@@ -275,6 +334,37 @@ describe('models store — 添加模型（F3 评审新增，spec §8.2③ L929 �
     const openai = useModelsStore.getState().providers.find((p) => p.id === 1);
     expect(openai?.models.map((m) => m.id)).toEqual(['gpt-4o', 'text-embedding-3-small', 'gpt-4o-mini']);
     expect(useModelsStore.getState().error).toBeNull();
+  });
+
+  it('addModel 失败（PATCH reject）：error 设置 + 列表不变', async () => {
+    // 播种：openai provider 已加载（2 个既有模型）
+    apiFetchMock.mockResolvedValue({ items: PROVIDERS, total: 2, offset: 0, limit: 50 });
+    await act(async () => {
+      await useModelsStore.getState().loadProviders();
+    });
+    apiFetchMock.mockRejectedValue(new ApiError(500, '模型注册失败'));
+    const newModel: ProviderModel = { id: 'gpt-4o-mini', type: 'chat', roles: ['writer'] };
+    await act(async () => {
+      await stateWithAddModel().addModel(1, newModel);
+    });
+    const s = useModelsStore.getState();
+    expect(s.error).toContain('模型注册失败');
+    // 失败：列表不变（PATCH 响应未生效，models 保持既有 2 个）
+    const openai = s.providers.find((p) => p.id === 1);
+    expect(openai?.models.map((m) => m.id)).toEqual(['gpt-4o', 'text-embedding-3-small']);
+  });
+
+  it('addModel 目标 provider 不存在：error 设置 + 不发 PATCH 请求', async () => {
+    apiFetchMock.mockResolvedValue({ items: PROVIDERS, total: 2, offset: 0, limit: 50 });
+    await act(async () => {
+      await useModelsStore.getState().loadProviders();
+    });
+    apiFetchMock.mockClear(); // 清掉 loadProviders 的调用记录，聚焦 addModel
+    await act(async () => {
+      await stateWithAddModel().addModel(999, { id: 'x', type: 'chat', roles: ['main'] });
+    });
+    expect(apiFetchMock).not.toHaveBeenCalled(); // 未发 PATCH
+    expect(useModelsStore.getState().error).toContain('Provider 不存在');
   });
 });
 
