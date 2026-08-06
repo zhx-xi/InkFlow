@@ -60,6 +60,7 @@ class ProviderConfig(BaseModel):
     Attributes:
         id: 主键（None = 未落库；repo.add 后由 DB 自增分配）.
         name: provider 名，唯一.
+        builtin_key: 内置行稳定标识（openai/deepseek/zhipu/ollama；用户行 = None，seed 插入时设置）.
         base_url: OpenAI 兼容端点（None = 用 SDK/内置默认）.
         default_model: 默认模型字符串（provider/model 格式）.
         models: 模型条目列表（JSON 列存储）.
@@ -73,6 +74,7 @@ class ProviderConfig(BaseModel):
 
     id: int | None = None
     name: str
+    builtin_key: str | None = None
     base_url: str | None = None
     default_model: str | None = None
     models: list[ProviderModel] = Field(default_factory=list)

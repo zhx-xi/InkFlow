@@ -2,7 +2,7 @@
 
 from collections.abc import AsyncGenerator
 
-from sqlalchemy import event
+from sqlalchemy import Connection, event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -62,6 +62,22 @@ async def create_tables() -> None:
     """Create all tables (for dev/CLI startup)."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+def ensure_provider_builtin_key_column(conn: Connection) -> None:
+    """#126 A1：为既有库 provider_configs 表补充 builtin_key 列（幂等，配合 conn.run_sync 调用）.
+
+    项目无 alembic 基建（create_all 管理 schema）；SQLite ALTER TABLE ADD COLUMN 幂等，
+    先查 PRAGMA table_info 确认列缺失才执行。表不存在（全新环境）→ no-op 不抛错，
+    等 create_all 建新表（自动含 builtin_key 列）。迁移后内置行 key 由 seed 回填。
+    """
+    cols = conn.execute(text("PRAGMA table_info(provider_configs)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        # 表不存在（CI 全新 runner / 测试 mock create_tables 场景）→ 无列可补，no-op
+        return
+    if "builtin_key" not in names:
+        conn.execute(text("ALTER TABLE provider_configs ADD COLUMN builtin_key VARCHAR(50)"))
 
 
 async def drop_tables() -> None:

@@ -54,6 +54,31 @@ CRUD + 内置 seed」）:
 5. 错误类归属: repo 层不定义业务错误（update 不存在抛内置 ValueError）；
    ProviderConfigNotFoundError/NameConflictError 属 domain/ports（服务层用）。
 
+══════════════ #126 A1 builtin_key 契约（2026-08-06，方案已拍板）══════════════
+
+1. builtin_key 字段语义: ``ProviderConfig.builtin_key: str | None`` —
+   内置行稳定标识（openai/deepseek/zhipu/ollama，seed 插入时设置）；
+   用户行 = None。ORM 列 ``builtin_key VARCHAR(50) NULL``。
+   update 改名（name 变更）时 builtin_key 保持不变。
+
+2. seed 判重契约: 从 ``get_by_name(name)`` 改为 ``get_by_builtin_key(key)``:
+   - 存在同 key 行 → 跳过（改名后重启不复活：openai→myai 后重启 seed
+     不得重新插入 openai 行）
+   - 按 key 未命中但按 name 命中内置名（旧库回填场景）→ 回填
+     builtin_key = key（更新非插入，不计入返回插入数）
+
+3. Protocol 新增 ``get_by_builtin_key(builtin_key: str) -> ProviderConfig | None``
+   （按内置 key 精确查询；用户行 builtin_key=None 不命中）。
+
+4. 转换函数契约: ``_orm_to_domain`` / ``_domain_to_orm`` 携带 builtin_key。
+
+5. RED 预期失败形态（实现未写，以实测为准）:
+   - ``get_by_builtin_key`` 方法不存在 → AttributeError
+   - 领域模型/ORM 缺 builtin_key 字段 → ``ProviderConfig(builtin_key=...)``
+     构造 TypeError / 访问 ``.builtin_key`` AttributeError
+   - seed 仍按名判重 → 场景 A 断言失败（改名后再次 seed 返回 1、列表 5 行）
+   - 场景 B（回填）断言 ``openai.builtin_key == "openai"`` → AttributeError
+
 ⚠️ 本批为 RED：不写任何 src/ 实现；GREEN 按上述签名实现后本文件应全绿。
 """
 
@@ -307,3 +332,108 @@ class TestProviderConfigRepository:
         assert await repo.get(saved.id) is None
         assert await repo.delete(saved.id) is False
         assert await repo.delete(99999) is False
+
+
+# ═══════════════════ #126 A1 builtin_key 契约（2026-08-06）═══════════════════
+
+
+@pytest.mark.integration
+class TestBuiltinKeyContract:
+    """#126 A1 builtin_key — get_by_builtin_key / seed 按 key 判重 / 旧库回填.
+
+    RED 预期（实现未写，详见文件头部 docstring）:
+    - ``get_by_builtin_key`` 方法不存在 → AttributeError
+    - 领域模型/ORM 缺 builtin_key 字段 → 构造 TypeError / 访问 AttributeError
+    - seed 仍按名判重 → 场景 A 断言失败（改名后复活：插入数 1、列表 5 行）
+    - 场景 B 断言 ``openai.builtin_key == \"openai\"`` → AttributeError
+    - 场景 C（幂等保持）为既有行为护栏，RED 阶段即应通过
+    """
+
+    async def test_get_by_builtin_key_hit_and_miss(self, db_session):
+        """按内置 key 精确查询：seed 后命中；用户行（builtin_key=None）与
+        不存在的 key → None."""
+        repo = SQLiteProviderConfigRepository(db_session)
+        await repo.seed_builtin_providers()
+        await repo.add(_config("my-custom"))
+
+        hit = await repo.get_by_builtin_key("openai")
+        assert hit is not None
+        assert hit.name == "openai"
+        assert hit.builtin_key == "openai"
+        # 用户行 builtin_key=None → 按 key 不命中
+        assert await repo.get_by_builtin_key("my-custom") is None
+        assert await repo.get_by_builtin_key("ghost") is None
+
+    async def test_seed_sets_builtin_key_for_all_builtins(self, db_session):
+        """seed 插入时设置 builtin_key：全新库 seed 后 4 个内置 key 均命中."""
+        repo = SQLiteProviderConfigRepository(db_session)
+        assert await repo.seed_builtin_providers() == 4
+        for key in ("openai", "deepseek", "zhipu", "ollama"):
+            got = await repo.get_by_builtin_key(key)
+            assert got is not None, f"seed 后内置 key {key} 应可命中"
+            assert got.builtin_key == key
+
+    async def test_seed_after_rename_does_not_resurrect(self, db_session):
+        """场景 A（核心 RED）：seed → 改名 openai→myai（repo.update 保持
+        builtin_key='openai'）→ 再次 seed → 不复活 openai 行（插入 0、
+        列表仍 4 行、myai 行 builtin_key 仍 'openai'）."""
+        repo = SQLiteProviderConfigRepository(db_session)
+        assert await repo.seed_builtin_providers() == 4
+
+        openai = await repo.get_by_name("openai")
+        assert openai is not None
+        await repo.update(openai.model_copy(update={"name": "myai"}))
+
+        n = await repo.seed_builtin_providers()
+        assert n == 0  # RED: 当前按名判重 → 重新插入 openai → 实际 1
+
+        items = await repo.list()
+        assert len(items) == 4  # RED: 实际 5 行（openai 复活）
+        assert {p.name for p in items} == {"myai", "deepseek", "zhipu", "ollama"}
+
+        myai = await repo.get_by_name("myai")
+        assert myai is not None
+        assert myai.builtin_key == "openai"  # RED: 模型缺 builtin_key → AttributeError
+
+    async def test_seed_backfills_builtin_key_on_legacy_row(self, db_session):
+        """场景 B（旧库回填）：手工插入 name='openai' 且 builtin_key=NULL 的行
+        （模拟迁移前旧库）→ seed → 该行 builtin_key 回填 'openai'（更新非插入）、
+        返回插入数不含回填（= 3）、列表无重复."""
+        repo = SQLiteProviderConfigRepository(db_session)
+        legacy = ProviderConfigORM(name="openai", base_url="https://api.openai.com/v1")
+        db_session.add(legacy)
+        await db_session.commit()
+        await db_session.refresh(legacy)
+
+        n = await repo.seed_builtin_providers()
+        assert n == 3  # openai 回填不计数；插入 deepseek/zhipu/ollama
+
+        items = await repo.list()
+        assert len(items) == 4
+        assert {p.name for p in items} == {"openai", "deepseek", "zhipu", "ollama"}
+
+        openai = await repo.get_by_name("openai")
+        assert openai is not None
+        assert openai.builtin_key == "openai"  # RED: AttributeError（模型缺字段）
+        assert openai.id == legacy.id  # 回填是更新，不是新插入
+
+    async def test_seed_idempotent_fresh_then_reseed(self, db_session):
+        """场景 C（幂等保持，既有行为护栏）：全新库 seed → 4 行；再 seed → 0."""
+        repo = SQLiteProviderConfigRepository(db_session)
+        assert await repo.seed_builtin_providers() == 4
+        assert await repo.seed_builtin_providers() == 0
+        assert len(await repo.list()) == 4
+
+    async def test_conversion_functions_carry_builtin_key(self, db_session):
+        """转换函数契约：_domain_to_orm / _orm_to_domain 携带 builtin_key."""
+        from inkflow.infrastructure.database.repositories.provider_config_repo import (
+            _domain_to_orm,
+            _orm_to_domain,
+        )
+
+        domain = ProviderConfig(name="openai", builtin_key="openai")  # RED: TypeError
+        orm = _domain_to_orm(domain)
+        assert orm.builtin_key == "openai"
+
+        back = _orm_to_domain(orm)
+        assert back.builtin_key == "openai"
