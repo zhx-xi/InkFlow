@@ -252,7 +252,7 @@ uv sync --frozen
 ```
 
 **🔴 依赖锁定约定（ADR-025）**：
-- **Python 后端**：`backend/uv.lock` 是唯一真相（锁定全部传递依赖 + sha256）。日常安装/同步一律 `uv sync --frozen`；升级依赖 = 改 pyproject.toml → `uv lock` → 全量测试 → PR 附带 lock 变更。CI 用 `astral-sh/setup-uv@v5` + `uv sync --frozen` + `uv run <cmd>`。
+- **Python 后端**：`backend/uv.lock` 是唯一真相（锁定全部传递依赖 + sha256）。日常安装/同步一律 `uv sync --frozen`；升级依赖 = 改 pyproject.toml → `uv lock` → 全量测试 → PR 附带 lock 变更。CI 用 `astral-sh/setup-uv@v5` + `uv sync --frozen` + `uv run <cmd>`。**环境创建/重建一律 uv（`uv venv` / `uv sync`），禁止 `python -m venv` / `virtualenv`**——手工 venv 残缺后残留外壳（`.venv-broken-*`）会污染 git status（#123 实测，2026-08-06）。
 - **前端（F18/F19 建立时生效）**：必须提交 `pnpm-lock.yaml`（pnpm install 自动生成，锁定全部包 + integrity 哈希）；CI 必须 `pnpm install --frozen-lockfile`（否则 lock 被静默更新 = 没锁）；升级依赖 = 显式 `pnpm update` / 改 package.json 后重新生成 lock，PR 附带 lock 变更。
 
 ### 5.3 TDD 循环（RED-GREEN-REFACTOR）

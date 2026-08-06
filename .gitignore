@@ -8,6 +8,8 @@ dist/
 build/
 *.egg
 .venv/
+# venv 残缺残留外壳（.venv-broken-* 等，见 #123）
+.venv-*/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
