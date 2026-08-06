@@ -3,6 +3,7 @@
 from collections.abc import AsyncGenerator
 
 from fastapi import Depends
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.core.database import async_session_factory, get_session
@@ -376,8 +377,8 @@ async def get_vector_store() -> VectorStoreProtocol:
         ).load(provider_cfg.name)
         embeddings = OpenAIEmbeddings(
             model=model.id,
-            api_key=key,
-            **({"base_url": provider_cfg.base_url} if provider_cfg.base_url else {}),
+            api_key=SecretStr(key),
+            base_url=provider_cfg.base_url,
         )
         try:
             _vector_store = LangChainVectorStore(
