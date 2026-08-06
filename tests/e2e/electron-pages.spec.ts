@@ -18,6 +18,13 @@
  * - AgentChainCard 迁移至设置页 Agent 分类（settings-cat-agent）；AppearanceCard 行为并入
  *   设置页常规分类（主题 radio 三选）；AgentLlmCard 待 #106 挂载，本期不断言
  *
+ * #106 F5 契约增量（本文件用例 8/9，spec §8.4 L958 + §8.5 L968）：
+ * - 顶栏 Select（header-theme-select / header-lang-select，Radix combobox）：展开后选项
+ *   全可见 + 选择直达生效（html data-theme / 界面语言切换）；语言选择后切回中文避免
+ *   持久化（inkflow.ui）污染后续用例
+ * - nav-item-models 转正为 /models NavLink → 模型管理页（models-page / provider-list /
+ *   provider-card-<id>；lifespan seed 内置 4 provider）
+ *
  * 元素契约来源：renderer 源码 testid（AppNav / projects.tsx / writing.tsx / library.tsx /
  * settings.tsx / NewProjectDialog / ProjectTree / EditorToolbar / ChapterEditor /
  * AgentChainCard）与 i18n/zh.ts 文案。
@@ -369,6 +376,86 @@ test('导航流：创建项目 → 写作 → 项目 → 设定库 → 设置 �
     expect(await window.evaluate(() => location.hash)).toContain('/settings');
     await expect(window.getByTestId('settings-page')).toBeVisible();
     await expect(window.getByTestId('settings-nav')).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// 8. 顶栏：主题/语言 Select 选择直达生效（#106 F5，spec §8.4 L958）
+// ────────────────────────────────────────────────────────────────
+test('顶栏：主题/语言 Select 展开全选项可见 + 选择直达生效（data-theme / 界面语言）', async () => {
+  const { app, window } = await launchApp();
+  try {
+    // 清空持久化 UI 偏好（inkflow.ui）并重载：保证语言/主题初始确定性（zh / 默认），
+    // 避免上次运行残留影响断言（Radix 选项文案按当前语言渲染）
+    await window.evaluate(() => localStorage.clear());
+    await window.reload();
+    await expect(window.getByTestId('app-nav')).toBeVisible();
+
+    // ── 主题 Select（Radix combobox，testid=header-theme-select，aria-label=主题）──
+    const themeSelect = window.getByTestId('header-theme-select');
+    await expect(themeSelect).toBeVisible();
+    await expect(themeSelect).toHaveAttribute('role', 'combobox');
+    await themeSelect.click();
+    // 展开后三选项全可见（素笺 · 纸张 / 夜航 · 深色 / 墨韵 · 东方）
+    await expect(window.getByRole('option', { name: '素笺 · 纸张' })).toBeVisible();
+    await expect(window.getByRole('option', { name: '夜航 · 深色' })).toBeVisible();
+    await expect(window.getByRole('option', { name: '墨韵 · 东方' })).toBeVisible();
+    // 选「夜航 · 深色」→ html data-theme=night（主题直达生效）+ trigger 显示当前值
+    await window.getByRole('option', { name: '夜航 · 深色' }).click();
+    await expect
+      .poll(() => window.evaluate(() => document.documentElement.dataset.theme))
+      .toBe('night');
+    await expect(themeSelect).toContainText('夜航 · 深色');
+
+    // ── 语言 Select（testid=header-lang-select，aria-label=语言）──
+    const langSelect = window.getByTestId('header-lang-select');
+    await expect(langSelect).toHaveAttribute('role', 'combobox');
+    await langSelect.click();
+    // 选 EN → 界面语言切换（侧边栏 nav 文案变英文）
+    await window.getByRole('option', { name: 'EN', exact: true }).click();
+    await expect(window.getByTestId('nav-item-models')).toContainText('Model Manager');
+    await expect(window.getByTestId('nav-item-projects')).toContainText('Projects');
+
+    // 切回中文（zh），避免持久化语言影响后续用例（既有用例断言中文文案）
+    await langSelect.click();
+    await window.getByRole('option', { name: /中文|Chinese/ }).click();
+    await expect(window.getByTestId('nav-item-models')).toContainText('模型管理');
+  } finally {
+    await app.close();
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// 9. 模型管理页：侧边栏入口可达 + 页面渲染（#106 F5，spec §8.5 L968）
+// ────────────────────────────────────────────────────────────────
+test('模型管理页：侧边栏「模型管理」→ /models 渲染（标题 + Provider 列表）', async () => {
+  const { app, window } = await launchApp();
+  try {
+    // 同用例 8：清空持久化 UI 偏好保证中文文案确定性（zh）
+    await window.evaluate(() => localStorage.clear());
+    await window.reload();
+    await expect(window.getByTestId('app-nav')).toBeVisible();
+
+    // 侧边栏入口：nav-item-models（#106 已转正为 /models NavLink，spec §8.5 F5）
+    const navModels = window.getByTestId('nav-item-models');
+    await expect(navModels).toBeVisible();
+    await expect(navModels).toContainText('模型管理');
+    await navModels.click();
+
+    // 路由 + 页面骨架渲染（页标题 h1 = m.title）
+    expect(await window.evaluate(() => location.hash)).toContain('/models');
+    const page = window.getByTestId('models-page');
+    await expect(page).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('模型管理');
+
+    // Provider 列表区：lifespan seed 内置 4 provider（openai/deepseek/zhipu/ollama）
+    const list = window.getByTestId('provider-list');
+    await expect(list).toBeVisible();
+    await expect(window.locator('[data-testid^="provider-card-"]')).toHaveCount(4);
+    // 全新库 seed 按序插入 → openai 自增 id=1
+    await expect(window.getByTestId('provider-card-1')).toContainText('openai');
   } finally {
     await app.close();
   }
