@@ -469,7 +469,8 @@ class TestLLMTestProbe:
         mock_factory.assert_called_once_with(TEST_PROVIDER, TEST_MODEL, TEST_API_KEY)
 
     def test_probe_without_model_falls_back(self, client):
-        """不带 model → 200 + ok:true（#106 F2：回退注册表 default_model → config.llm_default_model）。
+        """不带 model → 200 + ok:true（#106 F2：回退注册表 default_model
+        → config.llm_default_model）。
 
         请求体仅 {provider, api_key}（前端 ProviderDialog 口径）——旧契约
         model 必填 → 422，本用例即 RED 形态（当前实现仍 422）。GREEN：

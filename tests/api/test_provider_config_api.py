@@ -431,9 +431,8 @@ class TestSeedBuiltinProviders:
         with patch(
             "inkflow.api.routers.provider_configs._get_key_manager",
             return_value=FakeKeyManager(),
-        ):
-            with TestClient(app) as tc:
-                resp = tc.get(ENDPOINT)
+        ), TestClient(app) as tc:
+            resp = tc.get(ENDPOINT)
         assert resp.status_code == 200
         names = [it["name"] for it in resp.json()["items"]]
         for name in BUILTIN_NAMES:
