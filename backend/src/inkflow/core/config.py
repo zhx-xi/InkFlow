@@ -1,11 +1,25 @@
 """InkFlow 全局配置 — 基于 Pydantic Settings，支持环境变量覆盖。"""
 
 import json as _json
+import os
+import sys
 from pathlib import Path
 from typing import Literal
 
 from loguru import logger
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _default_data_dir() -> Path:
+    """根据打包状态返回默认数据目录。
+
+    打包模式（PyInstaller sys.frozen=True）→ %APPDATA%/InkFlow（缺失时 Path.home() 兜底）；
+    dev 模式 → ./data（行为不变防回归，spec §2.1.1 方案 B）。
+    """
+    if getattr(sys, "frozen", False):
+        return Path(os.environ.get("APPDATA", Path.home())) / "InkFlow"
+    return Path("./data")
 
 
 class InkFlowConfig(BaseSettings):
@@ -27,7 +41,7 @@ class InkFlowConfig(BaseSettings):
     """部署模式：local（本地免认证） / cloud（需认证，Phase 4+）。"""
 
     # ---- 运行时 ----
-    data_dir: Path = Path("./data")
+    data_dir: Path = Field(default_factory=_default_data_dir)
     """用户数据目录。包含：SQLite DB、chromadb 向量库、项目配置备份。"""
 
     log_level: str = "INFO"
@@ -123,6 +137,20 @@ class InkFlowConfig(BaseSettings):
     # ---- 密钥（AES-256-GCM，API Key 加密存储） ----
     secret_key: str = ""
     """API Key 本地加密密钥。通过环境变量注入。"""
+
+    @model_validator(mode="after")
+    def _derive_paths(self) -> "InkFlowConfig":
+        """基于 data_dir 派生 database_url / vector_store_dir（spec §2.1.1）。
+
+        仅当字段未被显式设置（env 覆盖 / 构造参数）时才派生，保证显式值优先。
+        """
+        # data_dir 目录必须存在：SQLite 不自动创建父目录（实测 unable to open database file）
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        if "database_url" not in self.model_fields_set:
+            self.database_url = f"sqlite+aiosqlite:///{(self.data_dir / 'inkflow.db').as_posix()}"
+        if "vector_store_dir" not in self.model_fields_set:
+            self.vector_store_dir = self.data_dir / "chroma"
+        return self
 
 
 config = InkFlowConfig()

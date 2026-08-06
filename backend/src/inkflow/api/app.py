@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
+import inkflow
 from inkflow.api.deps import get_provider_config_service
 from inkflow.api.middleware.token_auth import TokenAuthMiddleware
 from inkflow.api.routers import (
@@ -126,4 +127,4 @@ app.include_router(settings.router)
 @app.get("/health", tags=["系统"])
 async def health_check():
     """服务健康检查端点。"""
-    return {"status": "ok", "version": "0.1.0", "mode": config.mode}
+    return {"status": "ok", "version": inkflow.__version__, "mode": config.mode}

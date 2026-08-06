@@ -4,7 +4,15 @@ packages:
 # pnpm 11 安全策略：显式允许依赖的构建脚本（esbuild postinstall 下载二进制）
 allowBuilds:
   electron: true
+  electron-winstaller: true
   esbuild: true
 onlyBuiltDependencies:
   - esbuild
   - electron
+  - electron-winstaller
+# ⚠️ electron-builder 26.15.x 的 app-builder-lib 声明 @electron/get ^3.0.0 但代码实际
+#    引用 5.x 才导出的 ElectronDownloadCacheMode（3.0.0 无此导出 → 打包崩
+#    "Cannot read properties of undefined (reading 'ReadWrite')"，#48 实测 2026-08-06）
+#    overrides 强制 5.1.0 修复（值 ReadWrite=0/ReadOnly=1/WriteOnly=2/Bypass=3）
+overrides:
+  "@electron/get": 5.1.0

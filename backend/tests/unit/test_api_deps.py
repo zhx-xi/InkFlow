@@ -12,7 +12,7 @@ HuggingFaceBgeEmbeddings 全程 mock，避免真实下载 BGE 模型（~100MB）
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -157,17 +157,21 @@ def test_get_foreshadowing_service_injects_repos(db) -> None:
     assert svc._timeline_repo._session is db
 
 
-def test_get_extraction_service_assembles_facade(db) -> None:
-    """get_extraction_service → ExtractionService（F14 门面全装配，vector_store mock）。"""
-    with patch.object(deps, "get_vector_store", return_value=MagicMock()) as mock_vs:
-        svc = deps.get_extraction_service(db)
+async def test_get_extraction_service_assembles_facade(db) -> None:
+    """get_extraction_service → ExtractionService（F14 门面全装配，vector_store mock）。
+
+    F19 B+ 改造（spec §5.2）：get_extraction_service 改 async（内部 await
+    get_vector_store）——同步 patch 升级为 AsyncMock 并 await。
+    """
+    with patch.object(deps, "get_vector_store", new=AsyncMock()) as mock_vs:
+        svc = await deps.get_extraction_service(db)
     assert isinstance(svc, ExtractionService)
     assert svc._project_repo._session is db
     assert svc._chapter_repo._session is db
     assert svc._run_repo._session is db
     assert isinstance(svc._character_service, CharacterService)
     assert isinstance(svc._style_service, StyleService)
-    mock_vs.assert_called_once()
+    mock_vs.assert_awaited_once()
     assert svc._vector_store is not None
 
 
@@ -193,38 +197,68 @@ def test_get_style_service_assembles_analyzer(db) -> None:
     assert isinstance(svc._llm_analyzer, StyleLLMAnalyzer)
 
 
-# ── get_vector_store 懒加载单例（spec §8）───────────────────────
+# ── get_vector_store 懒加载单例（spec §5.2，F19 B+ 改造后 async）──
 
 
-def test_get_vector_store_lazy_init_and_cached(db) -> None:
-    """首次调用初始化 LangChainVectorStore（BGE embeddings），再次调用返回同一实例。"""
+async def test_get_vector_store_lazy_init_and_cached(db) -> None:
+    """首次调用初始化 LangChainVectorStore（API embedding），再次调用返回同一实例。
+
+    F19 B+ 改造（spec §5.2/§5.3）：装配从 ProviderConfig 读 embedding 模型
+    （repo.list + APIKeyManager.load），不再用 HuggingFaceBgeEmbeddings；
+    get_vector_store 改 async。契约细节以 test_deps_embedding.py 为准。
+    """
+    from inkflow.domain.models.provider_config import ProviderConfig, ProviderModel
+
     fake_store = MagicMock()
+    repo = MagicMock()
+    repo.list = AsyncMock(
+        return_value=[
+            ProviderConfig(
+                name="openai",
+                builtin_key="openai",
+                base_url="https://api.test.example/v1",
+                models=[ProviderModel(id="text-embedding-3-small", type="embedding")],
+            )
+        ]
+    )
     with (
+        patch(
+            "inkflow.infrastructure.database.repositories.provider_config_repo.SQLiteProviderConfigRepository",
+            return_value=repo,
+        ),
+        patch(
+            "inkflow.infrastructure.llm.key_manager.APIKeyManager.load",
+            return_value="sk-test-123",
+        ),
         patch(
             "inkflow.infrastructure.rag.langchain_vector_store.LangChainVectorStore",
             return_value=fake_store,
         ) as mock_vs,
-        patch("langchain_community.embeddings.HuggingFaceBgeEmbeddings") as mock_emb,
     ):
-        first = deps.get_vector_store()
-        second = deps.get_vector_store()
+        first = await deps.get_vector_store()
+        second = await deps.get_vector_store()
 
     assert first is fake_store
     assert second is fake_store
     mock_vs.assert_called_once()
-    mock_emb.assert_called_once()
 
 
-def test_get_vector_store_init_failure_raises_rag_unavailable(db) -> None:
-    """LangChainVectorStore 初始化抛异常 → RAGUnavailableError（500 语义）。"""
+async def test_get_vector_store_init_failure_raises_rag_unavailable(db) -> None:
+    """LangChainVectorStore 初始化抛异常 → RAGUnavailableError（500 语义）。
+
+    F19 B+ 改造后：无 embedding 模型（空注册表）→ RAGUnavailableError（E1 契约），
+    单例保持 None 可重试。LangChainVectorStore 构造失败路径同 test_deps_embedding.py
+    的 E1/E4（未配置 → RAGUnavailableError）。
+    """
+    repo = MagicMock()
+    repo.list = AsyncMock(return_value=[])
     with (
         patch(
-            "inkflow.infrastructure.rag.langchain_vector_store.LangChainVectorStore",
-            side_effect=RuntimeError("model download failed"),
+            "inkflow.infrastructure.database.repositories.provider_config_repo.SQLiteProviderConfigRepository",
+            return_value=repo,
         ),
-        patch("langchain_community.embeddings.HuggingFaceBgeEmbeddings"),
-        pytest.raises(RAGUnavailableError, match="RAG 向量库不可用"),
+        pytest.raises(RAGUnavailableError, match="未配置 embedding 模型"),
     ):
-        deps.get_vector_store()
+        await deps.get_vector_store()
     # 初始化失败后单例仍为 None（下次调用重试）
     assert deps._vector_store is None

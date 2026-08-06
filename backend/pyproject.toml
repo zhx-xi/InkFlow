@@ -27,12 +27,9 @@ dependencies = [
     "langchain-openai>=1.0.0,<2.0.0",
     "langchain-chroma>=1.0.0,<2.0.0",
     "langgraph>=1.0.0,<2.0.0",
-    # LLM Provider 兼容（langchain-community ChatLiteLLM 类可选依赖；实际实现走 ChatOpenAI 路由，见 ADR-005v2）
-    "litellm>=1.50",
     "tiktoken>=0.7",
     # RAG — 向量数据库 + 本地 Embedding
     "chromadb>=1.0.0,<2.0.0",
-    "sentence-transformers>=3.0",
     # Security & Logging
     "cryptography>=42.0",
     "loguru>=0.7",
@@ -56,6 +53,9 @@ dev = [
     "pre-commit>=3.0",
     # LangSmith 追踪（开发/调试用）
     "langsmith>=0.2.0",
+]
+packaging = [
+    "pyinstaller>=6.0",
 ]
 web = [
     "aiofiles>=23.0",
