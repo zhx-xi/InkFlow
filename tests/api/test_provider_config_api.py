@@ -134,8 +134,8 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-from inkflow.api.app import app
 import inkflow.api.routers.provider_configs  # noqa: F401  # RED 收集断言：模块存在性契约（GREEN 实现后即被使用）
+from inkflow.api.app import app
 
 # ── 契约常量 ──
 
