@@ -117,7 +117,7 @@ export function AppNav({ showBrand = true }: { showBrand?: boolean }) {
         collapsed ? 'w-[52px]' : 'w-[216px]',
       )}
     >
-      {/* 品牌区：logo 装饰性（三主题变体）+ 文字（App 内由顶栏承载品牌，showBrand=false 隐藏文字避免重复） */}
+      {/* 品牌区：logo 装饰性（三主题变体）+ 文字（品牌由侧边栏承载；showBrand=false 或折叠态隐藏文字） */}
       <div className={cn('flex h-12 items-center gap-2 border-b border-line px-3', collapsed && 'justify-center px-0')}>
         <img src={LOGO_BY_THEME[theme]} alt="" aria-hidden="true" className="h-6 w-6 shrink-0" />
         {showBrand && !collapsed && (

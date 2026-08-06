@@ -59,12 +59,12 @@ describe('App 顶栏 — 职责回归：品牌 + 页面标题 + 全局状态（#
     expect(screen.queryByText('paper / zh')).not.toBeInTheDocument();
   });
 
-  it('品牌 logo 渲染：顶栏内 <img> 存在（装饰性 alt="" + aria-hidden，语义由文字承载）', async () => {
+  it('品牌 logo 渲染：位于侧边栏 app-nav 内 <img> 存在（装饰性 alt="" + aria-hidden，语义由文字承载；顶栏不再承载品牌）', async () => {
     render(<App />);
     await waitFor(() => expect(useProjectStore.getState().loading).toBe(false));
-    const banner = screen.getByRole('banner');
-    // aria-hidden 元素不在可访问性树——用 DOM 查询断言存在性（评审 F7：装饰性图标）
-    const logo = banner.querySelector('img')!;
+    // #106 用户反馈：品牌（logo + InkFlow 文字）移入左侧功能栏 AppNav 品牌区，顶栏只留页面标题
+    const nav = screen.getByTestId('app-nav');
+    const logo = nav.querySelector('img')!;
     expect(logo).not.toBeNull();
     expect(logo).toHaveAttribute('aria-hidden', 'true');
     // #98 修复回归契约：logo 必须为**独立文件引用**（`?url&no-inline` import）——CSP default-src 'self'
@@ -73,7 +73,11 @@ describe('App 顶栏 — 职责回归：品牌 + 页面标题 + 全局状态（#
     expect(src).not.toContain('data:');
     expect(src).toMatch(/inkflow-icon-plain/);
     // Q3=C：图标 + 文字并存（t('app.brand') 保留）
-    expect(within(banner).getByText('InkFlow')).toBeInTheDocument();
+    expect(within(nav).getByText('InkFlow')).toBeInTheDocument();
+    // 顶栏不再渲染品牌（移除后无 logo img / InkFlow 文字）
+    const banner = screen.getByRole('banner');
+    expect(banner.querySelector('img')).toBeNull();
+    expect(within(banner).queryByText('InkFlow')).not.toBeInTheDocument();
   });
 
   it('页面标题出现在顶栏（默认 /projects → 「我的项目」）', async () => {

@@ -1,8 +1,5 @@
-/** 应用骨架（spec §7.2：HashRouter 四路由 + 侧边导航 + 顶栏职责回归——品牌/页面标题/主题/语言/内核状态，不再承担导航） */
+/** 应用骨架（spec §7.2：HashRouter 四路由 + 侧边导航 + 顶栏职责回归——页面标题/主题/语言/内核状态（品牌由侧边栏品牌区承载），不再承担导航） */
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import inkflowIcon from './assets/inkflow-icon-plain.svg?url&no-inline';
-import inkflowIconDark from './assets/inkflow-icon-plain-dark.svg?url&no-inline';
-import inkflowIconInk from './assets/inkflow-icon-plain-ink.svg?url&no-inline';
 import { useI18n } from './i18n/useI18n';
 import { useThemeEffect } from './theme';
 import { useThemeStore } from './stores/theme';
@@ -15,13 +12,6 @@ import { ModelsPage } from './pages/models';
 import { ProjectsPage } from './pages/projects';
 import { LibraryPage } from './pages/library';
 import { SettingsPage } from './pages/settings';
-
-/** 品牌图标按主题三版切换（spec §5.2.8：环流口，paper→素笺/ night→夜航/ ink→墨韵） */
-const LOGO_BY_THEME: Record<ThemeName, string> = {
-  paper: inkflowIcon,
-  night: inkflowIconDark,
-  ink: inkflowIconInk,
-};
 
 /** 页面标题随路由变化（顶栏文本元素；正文 h1 承担 heading 语义） */
 const TITLE_BY_PATH: Record<string, string> = {
@@ -45,17 +35,15 @@ function AppLayout() {
 
   return (
     <div className="flex h-dvh overflow-hidden">
-      {/* 侧边导航（三分组/折叠；品牌文字由顶栏承载，避免重复） */}
-      <AppNav showBrand={false} />
+      {/* 侧边导航（三分组/折叠；品牌 logo + 文字由品牌区承载，顶栏不再重复） */}
+      <AppNav showBrand={true} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* 顶栏：品牌 + 页面标题 + 全局状态；不再承担导航（无 role=link） */}
+        {/* 顶栏：页面标题 + 全局状态；品牌已移至侧边栏品牌区，不再承担导航（无 role=link） */}
         <header
           role="banner"
           className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4 [-webkit-app-region:drag]"
         >
-          <img src={LOGO_BY_THEME[theme]} alt="" aria-hidden="true" className="h-6 w-6" />
-          <span className="font-serif text-[15px] font-semibold">{t('app.brand')}</span>
           <span className="text-[13px] text-ink-2">{t(pageTitleKey)}</span>
           {/* #106 修复：Windows overlay 窗口按钮区（约 138px）会覆盖语言选择器，预留右侧空间 */}
           <div className="ml-auto flex items-center gap-3 pr-[140px]">
