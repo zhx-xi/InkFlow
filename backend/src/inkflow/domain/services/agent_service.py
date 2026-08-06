@@ -12,6 +12,7 @@ from inkflow.domain.models.agent_pipeline import (
     PipelineExecuteRequest,
     RoleOverride,
 )
+from inkflow.domain.models.agent_template import RoleTemplate
 from inkflow.domain.models.project import ProjectConfig
 from inkflow.domain.ports.agent_pipeline import (
     AgentPipelineProtocol,
@@ -40,10 +41,14 @@ class AgentService:
         store: Any = None,
         project_repo: Any = None,
         chapter_repo: Any = None,
+        template_repo: Any = None,
     ):
         # 延迟导入避免循环依赖
         from inkflow.infrastructure.agent.execution_store import ExecutionStore
         from inkflow.infrastructure.agent.pipeline_templates import get_template, list_templates
+        from inkflow.infrastructure.database.repositories.agent_template_repo import (
+            SQLiteAgentTemplateRepository,
+        )
         from inkflow.infrastructure.database.repositories.chapter_repo import (
             SQLiteChapterRepository,
         )
@@ -55,6 +60,7 @@ class AgentService:
         self._store = store or ExecutionStore(db_session)
         self._project_repo = project_repo or SQLiteProjectRepository(db_session)
         self._chapter_repo = chapter_repo or SQLiteChapterRepository(db_session)
+        self._template_repo = template_repo or SQLiteAgentTemplateRepository(db_session)
         self._get_template = get_template
         self._list_templates = list_templates
 
@@ -81,8 +87,10 @@ class AgentService:
             if chapter is None:
                 raise AgentServiceError("章节不存在")
 
-        # 4. 合并角色配置
-        stages = self._merge_role_configs(template.stages, project.config, request.role_overrides)
+        # 4. 合并角色配置（引用式模板装配 + 每角色独立温度链）
+        stages = await self._merge_role_configs(
+            template.stages, project.config, request.role_overrides
+        )
 
         # 5. 创建执行记录
         execution = await self._store.create_execution(
@@ -151,20 +159,40 @@ class AgentService:
         """列出所有内置模板。"""
         return {"items": self._list_templates()}
 
-    def _merge_role_configs(
+    async def _merge_role_configs(
         self,
         stages: list[PipelineStage],
         project_config: ProjectConfig,
         role_overrides: dict[str, RoleOverride] | None,
     ) -> list[PipelineStage]:
-        """合并角色配置: 模板默认 < 项目配置 < role_overrides。
+        """合并角色配置: 引用式模板装配 + 每角色独立温度链 + role_overrides 最高优先级。
 
-        合并策略:
-        1. 模板中定义的 AgentRole 是基础
-        2. 项目配置中的 agent_architect/writer/auditor/reviser 覆盖对应角色的 model
-        3. project_config.temperature 作为默认温度（如果角色未自定义温度）
-        4. role_overrides 优先级最高，直接覆盖对应角色字段
+        合并策略（spec §9.2.3 引用式生成机制）:
+        1. 项目 config.template_id（str，JSON 存储）→ int 转换 → template_repo.get
+           运行时读取 AgentTemplate；转换失败 / 模板不存在 → 跳过装配（回退内置
+           管线模板，等价无 template_id 旧项目）
+        2. 温度解析链（每角色独立，首个非 None 即止）:
+           ① 项目 config 每角色温度字段 role_<role>_temperature（非 None 即覆盖）
+           ② 模板 roles[role].temperature（缺省 key → RoleTemplate()，temperature
+              None 不覆盖）
+           ③ 模板 default_temperature（非 None，全角色兜底）
+           ④ 内置管线模板 AgentRole.temperature（architect=None / writer=0.8 /
+              auditor=0.5 / reviser=0.6）
+           ⑤ 项目 config.temperature（保底；默认 0.7 恒非 None → 链 5 恒有值）
+        3. 模型装配: 模板 role 的 model 仅当 enabled=True 且 model 非 None 时覆盖；
+           随后项目 agent_* 非空仍覆盖（用户拍板 Q1=A，项目优先）；最后
+           role_overrides 覆盖（优先级最高，既有语义不变）
         """
+        # 引用式模板读取：template_id 为 str → int 转换；失败 / 不存在 → template=None
+        template = None
+        if project_config.template_id is not None:
+            try:
+                int_id = int(project_config.template_id)
+            except ValueError:
+                int_id = None
+            if int_id is not None:
+                template = await self._template_repo.get(int_id)
+
         # 项目配置的角色映射
         project_role_models = {
             "architect": project_config.agent_architect,
@@ -179,14 +207,31 @@ class AgentService:
             # 浅拷贝 AgentRole（Pydantic BaseModel，copy.copy 走 __copy__ → model_copy）
             new_agent = copy.copy(agent)
 
-            # 项目配置覆盖 model
+            # 模板角色子模型（缺省 key → RoleTemplate() 默认，model/temperature 均不覆盖）
+            role_template = RoleTemplate()
+            if template is not None:
+                role_template = template.roles.get(stage.id, RoleTemplate())
+
+            # 温度链（每角色独立，首个非 None 即止；0.7 哨兵已移除）
+            temperature = getattr(project_config, f"role_{stage.id}_temperature", None)
+            if temperature is None:
+                temperature = role_template.temperature
+            if temperature is None and template is not None:
+                temperature = template.default_temperature
+            if temperature is None:
+                temperature = agent.temperature
+            if temperature is None:
+                temperature = project_config.temperature
+            new_agent.temperature = temperature
+
+            # 模型装配：模板 role 仅 enabled=True 且 model 非 None 覆盖
+            if role_template.enabled and role_template.model is not None:
+                new_agent.model = role_template.model
+
+            # 项目配置覆盖 model（用户拍板 Q1=A：项目 agent_* 非空仍覆盖模板）
             project_model = project_role_models.get(stage.id)
             if project_model:
                 new_agent.model = project_model
-
-            # 项目默认 temperature（如果角色未设）
-            if agent.temperature == 0.7:  # 使用模板默认值时替换
-                new_agent.temperature = project_config.temperature
 
             # role_overrides 最高优先级
             if role_overrides and stage.id in role_overrides:

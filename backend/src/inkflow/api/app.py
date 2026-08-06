@@ -10,6 +10,7 @@ from inkflow.api.deps import get_provider_config_service
 from inkflow.api.middleware.token_auth import TokenAuthMiddleware
 from inkflow.api.routers import (
     agent,
+    agent_templates,
     audit,
     chapter,
     characters,
@@ -106,6 +107,7 @@ app.add_middleware(TokenAuthMiddleware)
 app.include_router(audit.router)
 app.include_router(project.router)
 app.include_router(provider_configs.router)
+app.include_router(agent_templates.router)
 app.include_router(style.router)
 app.include_router(chapter.router)
 app.include_router(characters.router)

@@ -29,6 +29,17 @@
  *   对话框 ESC 监听必须尊重 e.defaultPrevented，不得误关）
  *
  * RED 预期：ESC 关闭/焦点归还/错误展示缺失 → element-missing / 行为断言 FAIL。
+ *
+ * ⚠️ #107 Agent 模板下拉 RED 契约（2026-08-06，spec §9.2.5 / §9.5 / M5）：
+ * - 对话框内新增「Agent 模板」下拉（Radix Select，combobox aria-label「Agent 模板」，
+ *   新 i18n key：dlg.template='Agent 模板' dlg.templateDefault='默认模板'）：
+ *   选项 = 「默认模板」+ useTemplatesStore.templates 名称列表；默认选中「默认模板」（无模板）
+ * - 选择已建模板 → createProject body 携带 template_id（项目建立模板引用，创建即引用）；
+ *   选择「默认模板」→ body 不含 template_id
+ * - 模板数据源 = useTemplatesStore（GREEN 可在挂载时 loadTemplates，幂等守卫允许；
+ *   测试 seed store + mock GET 双兼容）
+ * - RED 阶段 mock：vi.mock('../stores/templates')（GREEN 才创建；测试内假 store 提供种子数据）→
+ *   本文件 RED 形态 = 新用例 element-missing（combobox「Agent 模板」不存在），既有用例保持绿。
  */
 import { useState } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -42,6 +53,42 @@ import { useProjectStore } from '../stores/project';
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
   return { ...actual, apiFetch: vi.fn() };
+});
+
+// ⚠️ #107 RED 阶段 mock：stores/templates 由 GREEN 创建，本文件以测试内假 store 提供
+// （loadTemplates 为 no-op——对话框用例只依赖 beforeEach 种子数据；其他 action 面板
+// 不需要，no-op 兜底防 GREEN 挂载调用缺失 action 崩溃）。GREEN 落地后此 mock 可删，
+// 改真实 import。真实 store 行为契约见 stores/templates.test.ts。
+const templatesStoreRef = vi.hoisted(() => ({ store: null as unknown }));
+vi.mock('../stores/templates', async () => {
+  const { create } = await import('zustand');
+  const useTemplatesStore = create<{
+    templates: unknown[];
+    loading: boolean;
+    error: string | null;
+    defaultTemplateId: number | null;
+    loadTemplates: () => Promise<void>;
+    createTemplate: () => Promise<unknown>;
+    updateTemplate: () => Promise<unknown>;
+    deleteTemplate: () => Promise<void>;
+    duplicateTemplate: () => Promise<unknown>;
+    setDefault: () => Promise<void>;
+    loadDefault: () => Promise<void>;
+  }>(() => ({
+    templates: [],
+    loading: false,
+    error: null,
+    defaultTemplateId: null,
+    loadTemplates: async () => {},
+    createTemplate: async () => ({}),
+    updateTemplate: async () => ({}),
+    deleteTemplate: async () => {},
+    duplicateTemplate: async () => ({}),
+    setDefault: async () => {},
+    loadDefault: async () => {},
+  }));
+  templatesStoreRef.store = useTemplatesStore;
+  return { useTemplatesStore };
 });
 
 const apiFetchMock = vi.mocked(apiFetch);
@@ -80,8 +127,89 @@ beforeEach(() => {
     error: null,
     chapterProgress: {},
   });
-  apiFetchMock.mockResolvedValue({ ok: true });
+  // #107 兼容：GREEN 对话框挂载时可能 loadTemplates（GET /api/v1/agent-templates），
+  // 路径感知 mock 防止既有用例被空列表覆盖 / {ok:true} 响应误解析
+  apiFetchMock.mockImplementation(async (path: string) => {
+    if (path === '/api/v1/agent-templates') return { items: [], total: 0, offset: 0, limit: 50 };
+    return { ok: true };
+  });
+  // RED 阶段假 store 工厂尚未运行（对话框尚未 import 模板 store）→ 空安全重置；
+  // GREEN 落地后工厂随 import 执行，store 引用就位，种子生效
+  (templatesStoreRef.store as { setState: (partial: unknown) => void } | null)?.setState({
+    templates: [],
+    loading: false,
+    error: null,
+    defaultTemplateId: null,
+  });
 });
+
+/** #107 模板下拉种子数据（与 stores/templates 契约一致的 AgentTemplate 形状） */
+interface DialogTemplate {
+  id: number;
+  name: string;
+  description: string;
+  main_model: string;
+  default_temperature: number;
+  roles: {
+    architect: { model: string | null; temperature: number | null; enabled: boolean };
+    writer: { model: string | null; temperature: number | null; enabled: boolean };
+    auditor: { model: string | null; temperature: number | null; enabled: boolean };
+    reviser: { model: string | null; temperature: number | null; enabled: boolean };
+  };
+  default_words: number;
+  is_default: boolean;
+  used_by?: Array<{ id: string; name: string }>;
+  created_at: string;
+  updated_at: string;
+}
+
+const DIALOG_TEMPLATES: DialogTemplate[] = [
+  {
+    id: 1,
+    name: '经典玄幻',
+    description: '标准玄幻创作模板',
+    main_model: 'gpt-4o',
+    default_temperature: 0.7,
+    roles: {
+      architect: { model: 'deepseek-chat', temperature: 0.4, enabled: true },
+      writer: { model: 'gpt-4o', temperature: 0.8, enabled: true },
+      auditor: { model: 'gpt-4o', temperature: 0.5, enabled: true },
+      reviser: { model: 'deepseek-chat', temperature: 0.6, enabled: true },
+    },
+    default_words: 800000,
+    is_default: true,
+    used_by: [{ id: 'p1', name: '青云志' }],
+    created_at: '2026-08-01T10:00:00Z',
+    updated_at: '2026-08-05T10:00:00Z',
+  },
+  {
+    id: 2,
+    name: '悬疑推理',
+    description: '悬疑推理创作模板',
+    main_model: 'deepseek-chat',
+    default_temperature: 0.6,
+    roles: {
+      architect: { model: null, temperature: null, enabled: true },
+      writer: { model: 'deepseek-chat', temperature: 0.9, enabled: true },
+      auditor: { model: null, temperature: null, enabled: true },
+      reviser: { model: null, temperature: null, enabled: true },
+    },
+    default_words: 600000,
+    is_default: false,
+    used_by: [],
+    created_at: '2026-08-01T10:00:00Z',
+    updated_at: '2026-08-05T10:00:00Z',
+  },
+];
+
+/** 种子测试内假模板 store（下拉选项数据源；loadTemplates 为 no-op 不覆盖） */
+function seedTemplatesStore(templates: DialogTemplate[]) {
+  (templatesStoreRef.store as { setState: (partial: unknown) => void } | null)?.setState({
+    templates,
+    loading: false,
+    error: null,
+  });
+}
 
 describe('新建项目对话框 — ESC 关闭 + 遮罩点击 + 焦点归还（Issue #105 §6.2③）', () => {
   it('ESC 键关闭对话框 + 焦点归还触发按钮', async () => {
@@ -266,6 +394,68 @@ describe('新建项目对话框 — 创建成功（既有行为保持）', () =>
 
     await user.click(screen.getByTestId('open-trigger'));
     await user.type(within(screen.getByRole('dialog')).getByLabelText('书名'), '青山入我怀');
+    await user.click(screen.getByRole('button', { name: '创建' }));
+
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects', {
+        method: 'POST',
+        body: { name: '青山入我怀', genre: '玄幻', language: 'zh-CN', target_words: 800000 },
+      });
+    });
+    expect(await screen.findByTestId('writing-probe')).toBeInTheDocument();
+  });
+});
+
+/**
+ * #107 Agent 模板下拉（2026-08-06，spec §9.2.5 / §9.5 / M5）。
+ * RED 预期：GREEN 前对话框无模板下拉 → 本 describe 全部 element-missing
+ * （combobox「Agent 模板」不存在）；既有用例保持绿。
+ */
+describe('新建项目对话框 — Agent 模板下拉（#107 RED 契约）', () => {
+  beforeEach(() => {
+    seedTemplatesStore(DIALOG_TEMPLATES);
+  });
+
+  it('下拉显示「默认模板」+ 已建模板列表；默认选中「默认模板」', async () => {
+    const user = userEvent.setup();
+    renderHarness();
+    await user.click(screen.getByTestId('open-trigger'));
+
+    const select = screen.getByRole('combobox', { name: 'Agent 模板' });
+    expect(select).toHaveTextContent('默认模板');
+    await user.click(select);
+    expect(await screen.findByRole('option', { name: '默认模板' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '经典玄幻' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '悬疑推理' })).toBeInTheDocument();
+  });
+
+  it('选择已建模板 → createProject body 携带 template_id（建立模板引用）', async () => {
+    const user = userEvent.setup();
+    renderHarness();
+    await user.click(screen.getByTestId('open-trigger'));
+    await user.type(within(screen.getByRole('dialog')).getByLabelText('书名'), '青山入我怀');
+
+    await user.click(screen.getByRole('combobox', { name: 'Agent 模板' }));
+    await user.click(await screen.findByRole('option', { name: '悬疑推理' }));
+    await user.click(screen.getByRole('button', { name: '创建' }));
+
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects', {
+        method: 'POST',
+        body: { name: '青山入我怀', genre: '玄幻', language: 'zh-CN', target_words: 800000, template_id: 2 },
+      });
+    });
+    expect(await screen.findByTestId('writing-probe')).toBeInTheDocument();
+  });
+
+  it('选择「默认模板」→ createProject body 不含 template_id', async () => {
+    const user = userEvent.setup();
+    renderHarness();
+    await user.click(screen.getByTestId('open-trigger'));
+    await user.type(within(screen.getByRole('dialog')).getByLabelText('书名'), '青山入我怀');
+
+    await user.click(screen.getByRole('combobox', { name: 'Agent 模板' }));
+    await user.click(await screen.findByRole('option', { name: '默认模板' }));
     await user.click(screen.getByRole('button', { name: '创建' }));
 
     await waitFor(() => {

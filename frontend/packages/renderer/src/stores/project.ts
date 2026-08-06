@@ -21,6 +21,8 @@ export interface ProjectConfig {
   temperature?: number;
   default_words?: number;
   writing_style?: string;
+  /** #107：项目内绑定 Agent 模板（config JSON 零迁移，null = 解除引用） */
+  template_id?: number | null;
 }
 
 export interface NewProjectInput {
@@ -29,6 +31,8 @@ export interface NewProjectInput {
   language?: string;
   target_words?: number;
   config?: ProjectConfig;
+  /** #107：新建项目选模板，POST body 透传（null/缺省 = 默认模板） */
+  template_id?: number | null;
 }
 
 import { create } from 'zustand';
@@ -68,6 +72,8 @@ interface ProjectState {
 
   loadProjects: () => Promise<void>;
   createProject: (input: NewProjectInput) => Promise<Project>;
+  /** #107：项目内切换模板（PATCH body { config: patch }，本地 config 合并更新） */
+  updateConfig: (id: string, patch: ProjectConfig) => Promise<void>;
   selectProject: (id: string | null) => void;
 }
 
@@ -115,6 +121,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const created = await apiFetch<Project>('/api/v1/projects', { method: 'POST', body: input });
     set({ projects: [created, ...get().projects], currentProjectId: created.id });
     return created;
+  },
+
+  updateConfig: async (id, patch) => {
+    await apiFetch(`/api/v1/projects/${id}`, { method: 'PATCH', body: { config: patch } });
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === id ? { ...p, config: { ...p.config, ...patch } } : p,
+      ),
+    }));
   },
 
   selectProject: (id) => set({ currentProjectId: id }),

@@ -32,7 +32,7 @@ class AgentRole(BaseModel):
         name: "架构师"
         system_prompt: "你是一位资深小说架构师..."
         model: "openai/gpt-4o"
-        temperature: 0.8
+        temperature: 0.8  # None = 跟随默认（装配层决定最终值）
     """
 
     id: str
@@ -47,8 +47,8 @@ class AgentRole(BaseModel):
     model: str = "openai/gpt-4o"
     """LLM 模型（LiteLLM 格式：provider/model_name）。"""
 
-    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    """LLM 温度参数，范围 [0.0, 2.0]。"""
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    """LLM 温度参数，范围 [0.0, 2.0]；None = 跟随默认（spec §9.2.3 温度链）。"""
 
     max_tokens: int | None = None
     """最大输出 Token 数，None 表示不限制。"""

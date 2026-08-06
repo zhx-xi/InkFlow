@@ -1,0 +1,167 @@
+/**
+ * Agent 模板 store（Issue #107，spec §9.2 / §9.3 / §9.5）：
+ * 模板列表加载/创建/更新/删除/复制 + 默认模板维护。
+ * 镜像 src/stores/models.ts 的 zustand 模式（apiFetch + errorMessage）。
+ */
+import { create } from 'zustand';
+import { apiFetch, errorMessage } from '../api/client';
+
+/** 角色槽位（Architect/Writer/Auditor/Reviser 四角色；model/temperature null = 跟随默认） */
+export interface AgentTemplateRole {
+  model: string | null;
+  temperature: number | null;
+  enabled: boolean;
+}
+
+/** Agent 模板实体（后端 AgentTemplate DTO；used_by 列表端点即完整实体） */
+export interface AgentTemplate {
+  id: number;
+  name: string;
+  description: string;
+  main_model: string;
+  default_temperature: number;
+  roles: {
+    architect: AgentTemplateRole;
+    writer: AgentTemplateRole;
+    auditor: AgentTemplateRole;
+    reviser: AgentTemplateRole;
+  };
+  default_words: number;
+  is_default: boolean;
+  used_by?: Array<{ id: string; name: string }>;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 创建/更新请求体（不含 id / is_default / used_by / 时间戳） */
+export interface AgentTemplateInput {
+  name: string;
+  description: string;
+  main_model: string;
+  default_temperature: number;
+  roles: {
+    architect: AgentTemplateRole;
+    writer: AgentTemplateRole;
+    auditor: AgentTemplateRole;
+    reviser: AgentTemplateRole;
+  };
+  default_words: number;
+}
+
+/** 列表端点响应信封（§4.4 惯例：{ items, total, offset, limit }） */
+interface AgentTemplateListResponse {
+  items: AgentTemplate[];
+  total: number;
+  offset?: number;
+  limit?: number;
+}
+
+interface TemplatesState {
+  templates: AgentTemplate[];
+  loading: boolean;
+  error: string | null;
+  defaultTemplateId: number | null;
+
+  loadTemplates: () => Promise<void>;
+  createTemplate: (input: AgentTemplateInput) => Promise<AgentTemplate>;
+  updateTemplate: (id: number, patch: Partial<AgentTemplateInput>) => Promise<AgentTemplate>;
+  deleteTemplate: (id: number) => Promise<void>;
+  duplicateTemplate: (id: number) => Promise<AgentTemplate>;
+  setDefault: (id: number) => Promise<void>;
+  loadDefault: () => Promise<void>;
+}
+
+export const useTemplatesStore = create<TemplatesState>((set) => ({
+  templates: [],
+  loading: false,
+  error: null,
+  defaultTemplateId: null,
+
+  loadTemplates: async () => {
+    set({ loading: true, error: null });
+    try {
+      const data = await apiFetch<AgentTemplateListResponse>('/api/v1/agent-templates');
+      set({ templates: data.items, loading: false, error: null });
+    } catch (err) {
+      // 失败不清空已加载列表
+      set({ error: errorMessage(err), loading: false });
+    }
+  },
+
+  createTemplate: async (input) => {
+    try {
+      const created = await apiFetch<AgentTemplate>('/api/v1/agent-templates', {
+        method: 'POST',
+        body: input,
+      });
+      set((s) => ({ templates: [...s.templates, created], error: null }));
+      return created;
+    } catch (err) {
+      set({ error: errorMessage(err) });
+      throw err;
+    }
+  },
+
+  updateTemplate: async (id, patch) => {
+    try {
+      const updated = await apiFetch<AgentTemplate>(`/api/v1/agent-templates/${id}`, {
+        method: 'PATCH',
+        body: patch,
+      });
+      set((s) => ({
+        templates: s.templates.map((t) => (t.id === id ? updated : t)),
+        error: null,
+      }));
+      return updated;
+    } catch (err) {
+      // 失败：error 设置 + 列表不变 + rethrow（保存流程需感知失败）
+      set({ error: errorMessage(err) });
+      throw err;
+    }
+  },
+
+  deleteTemplate: async (id) => {
+    try {
+      await apiFetch(`/api/v1/agent-templates/${id}`, { method: 'DELETE' });
+      set((s) => ({ templates: s.templates.filter((t) => t.id !== id), error: null }));
+    } catch (err) {
+      // 失败（409 被引用等）：列表不变，错误上抛到 error 状态
+      set({ error: errorMessage(err) });
+    }
+  },
+
+  duplicateTemplate: async (id) => {
+    try {
+      const dup = await apiFetch<AgentTemplate>(`/api/v1/agent-templates/${id}/duplicate`, {
+        method: 'POST',
+      });
+      set((s) => ({ templates: [...s.templates, dup], error: null }));
+      return dup;
+    } catch (err) {
+      set({ error: errorMessage(err) });
+      throw err;
+    }
+  },
+
+  setDefault: async (id) => {
+    try {
+      await apiFetch('/api/v1/agent-templates/default', { method: 'PATCH', body: { id } });
+      set((s) => ({
+        defaultTemplateId: id,
+        templates: s.templates.map((t) => ({ ...t, is_default: t.id === id })),
+        error: null,
+      }));
+    } catch (err) {
+      set({ error: errorMessage(err) });
+    }
+  },
+
+  loadDefault: async () => {
+    try {
+      const data = await apiFetch<AgentTemplate>('/api/v1/agent-templates/default');
+      set({ defaultTemplateId: data.id, error: null });
+    } catch (err) {
+      set({ error: errorMessage(err) });
+    }
+  },
+}));

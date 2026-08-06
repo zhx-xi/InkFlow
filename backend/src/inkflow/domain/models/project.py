@@ -42,6 +42,12 @@ class ProjectConfig(BaseModel):
         agent_auditor: 审阅 Agent 模型.
         agent_reviser: 修订 Agent 模型.
         temperature: 生成温度 (0.0 - 2.0).
+        role_architect_temperature: 架构师角色独立温度（None = 跟随默认）.
+        role_writer_temperature: 写手角色独立温度（None = 跟随默认）.
+        role_auditor_temperature: 审阅角色独立温度（None = 跟随默认）.
+        role_reviser_temperature: 修订角色独立温度（None = 跟随默认）.
+        template_id: 引用的 AgentTemplate id（str 存储于 config JSON；
+            None = 未引用，回退默认装配，spec §9.2）.
         writing_style: 写作风格描述.
         extra: 扩展配置字典.
     """
@@ -52,6 +58,11 @@ class ProjectConfig(BaseModel):
     agent_auditor: str | None = None
     agent_reviser: str | None = None
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    role_architect_temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    role_writer_temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    role_auditor_temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    role_reviser_temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    template_id: str | None = None
     writing_style: str = ""
     default_words: int = Field(default=800000, ge=1000, le=10_000_000, description="新章节默认字数")
     extra: dict[str, Any] = Field(default_factory=dict)
