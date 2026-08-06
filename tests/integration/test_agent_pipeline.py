@@ -29,10 +29,11 @@ def _make_stage(stage_id: str = "outline", **kwargs) -> PipelineStage:
 
 
 def test_agent_role_defaults():
-    """AgentRole 默认值: model='openai/gpt-4o', temperature=0.7, max_tokens=None."""
+    """AgentRole 默认值: model='openai/gpt-4o', temperature=None, max_tokens=None.
+    spec §9.2.3 温度链拍板：temperature 默认 None（跟随默认，装配层决定最终值）。"""
     role = _make_role()
     assert role.model == "openai/gpt-4o"
-    assert role.temperature == 0.7
+    assert role.temperature is None
     assert role.max_tokens is None
 
 
