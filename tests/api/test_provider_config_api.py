@@ -140,6 +140,28 @@ api/routers/provider_configs.py）+ MODIFY app.py include_router 后全绿。
 #106 F1 补充契约（2026-08-06 评审修复批）：lifespan seed 接线契约见
 TestSeedBuiltinProviders —— 修复前 lifespan 未调 seed_builtin_providers
 → test_lifespan_startup_seeds_builtin_providers RED（列表空）。
+
+══════════════ #126 A1 builtin_key 契约（2026-08-06，方案已拍板）══════════════
+
+17. 【builtin_key 响应字段】响应结构契约升级：全部端点响应新增
+    ``builtin_key: str | None`` 键 —— 内置行稳定标识（seed 行 = openai/
+    deepseek/zhipu/ollama 之一），用户行 = null。``_assert_response_contract``
+    键列表加 ``builtin_key``（GREEN 后全绿；RED 阶段既有 5 个调用点
+    因「响应缺少契约字段 builtin_key」失败，属预期契约升级）。
+
+18. 【PATCH 改名保持 builtin_key】内置行改名（openai→myai）→ 响应
+    builtin_key 保持 'openai'（exclude_unset 浅合并不触碰 DTO 外字段）。
+
+19. 【验收场景——改名后重启不复活】seed（service 直调，真实 repo）→
+    PATCH 改名 openai→myai → 再次 seed → 返回 0（按 builtin_key 判重，
+    不再按名判重）；GET 列表仅 4 行 {myai, deepseek, zhipu, ollama}、
+    无重复 openai 行、myai 行 builtin_key='openai'。RED 阶段 seed 仍按
+    名判重 → 改名后再次 seed 返回 1（复活 openai）→ 断言失败 + 列表 5 行。
+
+20. 【RED 预期失败形态】① 响应缺 builtin_key 键 → 5 个既有用例断言失败
+    （_assert_response_contract）+ 新用例 KeyError；② 验收场景 seed 返回
+    1 ≠ 0 断言失败（openai 复活）。
+
 ════════════════════════════════════════════════════════════════════
 """
 
@@ -319,7 +341,7 @@ def _assert_models_contract(models) -> None:
 
 
 def _assert_response_contract(data: dict) -> None:
-    """响应结构契约（设计假设 #4）：8 键存在 + 值语义，不做整 dict 全等。"""
+    """响应结构契约（设计假设 #4 + #126 A1 #17）：9 键存在 + 值语义，不做整 dict 全等。"""
     for key in (
         "id",
         "name",
@@ -327,6 +349,7 @@ def _assert_response_contract(data: dict) -> None:
         "default_model",
         "models",
         "key_saved",
+        "builtin_key",  # #126 A1：内置行稳定标识（seed 行=内置 key，用户行=null）
         "created_at",
         "updated_at",
     ):
@@ -780,3 +803,87 @@ class TestDeleteProviderConfig:
         resp = await client.delete(f"{ENDPOINT}/not-a-uuid")
         assert resp.status_code == 404
         assert resp.json()["detail"] == DETAIL_NOT_FOUND
+
+
+# ── #126 A1：builtin_key 契约（2026-08-06，方案已拍板）──
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+class TestBuiltinKeyContract:
+    """#126 A1 builtin_key — PATCH 改名保持 + seed 按 key 判重（改名重启不复活）。
+
+    RED 预期（实现未写，详见文件头部 docstring #17-#20）:
+    - 响应缺 builtin_key 键 → KeyError / _assert_response_contract 断言失败
+    - seed 仍按名判重 → 验收场景 seed 返回 1（复活 openai）→ 断言失败
+    """
+
+    @staticmethod
+    async def _seed_via_service(db_session):
+        """经真实 repo + service 触发 seed（与 lifespan 等价调用路径）。"""
+        from inkflow.domain.services.provider_config_service import (
+            ProviderConfigService,
+        )
+        from inkflow.infrastructure.database.repositories.provider_config_repo import (
+            SQLiteProviderConfigRepository,
+        )
+
+        return ProviderConfigService(
+            repository=SQLiteProviderConfigRepository(db_session)
+        )
+
+    @staticmethod
+    async def _get_orm_row(db_session, name: str):
+        """按 name 查 ORM 行（PATCH 目标 id 来源）。"""
+        from inkflow.infrastructure.database.models.provider_config import (
+            ProviderConfigORM,
+        )
+
+        return (
+            await db_session.execute(
+                select(ProviderConfigORM).where(ProviderConfigORM.name == name)
+            )
+        ).scalar_one()
+
+    async def test_patch_rename_preserves_builtin_key(
+        self, client, db_session, override_get_db, patch_key_manager
+    ):
+        """内置行改名（openai→myai）→ 响应 builtin_key 保持 'openai'（#18）。"""
+        svc = await self._seed_via_service(db_session)
+        assert await svc.seed_builtin_providers() == 4
+        row = await self._get_orm_row(db_session, "openai")
+        patch_key_manager([])
+
+        resp = await client.patch(f"{ENDPOINT}/{row.id}", json={"name": "myai"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["name"] == "myai"
+        assert data["builtin_key"] == "openai"  # RED: KeyError（响应缺 builtin_key 键）
+
+    async def test_seed_after_rename_does_not_resurrect(
+        self, client, db_session, override_get_db, patch_key_manager
+    ):
+        """验收场景（#19）：seed → PATCH 改名 openai→myai → 再 seed 返回 0
+        （不复活）；GET 列表仅 4 行、无重复 openai、myai 行 builtin_key='openai'。"""
+        svc = await self._seed_via_service(db_session)
+        assert await svc.seed_builtin_providers() == 4
+        row = await self._get_orm_row(db_session, "openai")
+
+        resp = await client.patch(f"{ENDPOINT}/{row.id}", json={"name": "myai"})
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "myai"
+
+        assert (
+            await svc.seed_builtin_providers() == 0
+        )  # RED: 按名判重 → 实际 1（openai 复活）
+
+        patch_key_manager([])
+        resp2 = await client.get(ENDPOINT)
+        assert resp2.status_code == 200
+        body = resp2.json()
+        assert body["total"] == 4  # RED: 实际 5 行
+        names = [it["name"] for it in body["items"]]
+        assert names.count("openai") == 0
+        assert set(names) == {"myai", "deepseek", "zhipu", "ollama"}
+        myai = next(it for it in body["items"] if it["name"] == "myai")
+        assert myai["builtin_key"] == "openai"

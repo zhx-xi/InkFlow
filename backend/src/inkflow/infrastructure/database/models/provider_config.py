@@ -44,6 +44,12 @@ class ProviderConfigORM(Base):
     )
     """provider 名（注册表唯一）."""
 
+    builtin_key: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+    """内置行稳定标识（openai/deepseek/zhipu/ollama；用户行 = None，seed 插入时设置）."""
+
     base_url: Mapped[str | None] = mapped_column(
         String(500),
         nullable=True,

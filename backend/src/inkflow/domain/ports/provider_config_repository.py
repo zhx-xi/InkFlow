@@ -34,6 +34,10 @@ class ProviderConfigRepositoryProtocol(Protocol):
         """按名称精确查询 Provider（同名唯一检查用）；不存在返回 None."""
         ...
 
+    async def get_by_builtin_key(self, builtin_key: str) -> ProviderConfig | None:
+        """按内置 key 精确查询 Provider（用户行 builtin_key=None 不命中）；不存在返回 None."""
+        ...
+
     async def list(self, search: str | None = None) -> builtins.list[ProviderConfig]:
         """列出全部 Provider，按 name 升序；search 对 name icontains 子串过滤."""
         ...

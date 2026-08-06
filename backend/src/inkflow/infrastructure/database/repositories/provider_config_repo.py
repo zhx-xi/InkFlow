@@ -46,6 +46,7 @@ def _orm_to_domain(orm: ProviderConfigORM) -> ProviderConfig:
     return ProviderConfig(
         id=orm.id,
         name=orm.name,
+        builtin_key=orm.builtin_key,
         base_url=orm.base_url,
         default_model=orm.default_model,
         models=[ProviderModel.model_validate(m) for m in (orm.models or [])],
@@ -60,6 +61,7 @@ def _domain_to_orm(domain: ProviderConfig) -> ProviderConfigORM:
     """Provider 领域实体 → ORM 行（id 由 DB 自增分配，时间戳由 ORM default 填充）."""
     return ProviderConfigORM(
         name=domain.name,
+        builtin_key=domain.builtin_key,
         base_url=domain.base_url,
         default_model=domain.default_model,
         models=[m.model_dump() for m in domain.models],
@@ -96,6 +98,13 @@ class SQLiteProviderConfigRepository:
         orm = result.scalar_one_or_none()
         return _orm_to_domain(orm) if orm else None
 
+    async def get_by_builtin_key(self, builtin_key: str) -> ProviderConfig | None:
+        """按内置 key 精确查询 Provider（#126 A1：seed 判重 / 回填依据）."""
+        stmt = select(ProviderConfigORM).where(ProviderConfigORM.builtin_key == builtin_key)
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
+        return _orm_to_domain(orm) if orm else None
+
     async def list(self, search: str | None = None) -> builtins.list[ProviderConfig]:
         """列出全部 Provider，按 name 升序；search 对 name icontains 子串过滤."""
         stmt = select(ProviderConfigORM).order_by(ProviderConfigORM.name.asc())
@@ -113,6 +122,7 @@ class SQLiteProviderConfigRepository:
         if orm is None:
             raise ValueError(f"Provider config not found: {pc.id}")
         orm.name = pc.name
+        orm.builtin_key = pc.builtin_key
         orm.base_url = pc.base_url
         orm.default_model = pc.default_model
         orm.models = [m.model_dump() for m in pc.models]
@@ -135,12 +145,27 @@ class SQLiteProviderConfigRepository:
     async def seed_builtin_providers(self) -> int:
         """幂等插入内置 4 provider（openai/deepseek/zhipu/ollama）.
 
-        已存在同名跳过；base_url 复用 _PROVIDER_BASE_URLS，models 初始为空。
+        #126 A1：按 builtin_key 判重（key = name）；内置改名后重启不复活。
+        按 key 未命中但按 name 命中内置名（旧库回填场景）→ 回填 builtin_key（更新非插入，
+        不计入返回的插入数）。base_url 复用 _PROVIDER_BASE_URLS；models 初始为空。
         返回本次实际插入条数。
         """
         inserted = 0
         for name in _BUILTIN_PROVIDERS:
-            if await self.get_by_name(name) is None:
-                await self.add(ProviderConfig(name=name, base_url=_PROVIDER_BASE_URLS.get(name)))
-                inserted += 1
+            key = name  # 内置 seed 的 builtin_key 恒等于 name
+            if await self.get_by_builtin_key(key) is not None:
+                continue
+            legacy = await self.get_by_name(name)  # 旧库回填：builtin_key NULL 但 name 命中内置名
+            if legacy is not None:
+                legacy.builtin_key = key
+                await self.update(legacy)  # 回填（更新非插入，inserted 不 +1）
+                continue
+            await self.add(
+                ProviderConfig(
+                    name=name,
+                    base_url=_PROVIDER_BASE_URLS.get(name),
+                    builtin_key=key,
+                )
+            )
+            inserted += 1
         return inserted

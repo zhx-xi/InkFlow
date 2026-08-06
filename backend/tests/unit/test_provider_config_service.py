@@ -55,6 +55,26 @@ test_foreshadowing_service.py 的 Mock 注入模式，ADR-015）:
    datetime（datetime.now(UTC)）；测试断言 tzinfo 非空 + created_at ==
    updated_at（create）/ created_at 保留（update）。
 
+══════════════ #126 A1 builtin_key 契约（2026-08-06，方案已拍板）══════════════
+
+1. ``ProviderConfig.builtin_key: str | None`` — 内置行稳定标识；用户行 = None。
+   ``ProviderConfigCreate/Update`` DTO 均无该字段（用户不可设置）。
+
+2. update 改名保持契约: 改名（openai→myai）走 exclude_unset 浅合并 —
+   builtin_key 不在 Update DTO 中 → merged 实体保留原值（'openai'）；
+   服务层无需新增逻辑，repo.update 落库 builtin_key。
+
+3. create 用户行契约: ``ProviderConfigCreate`` 无 builtin_key 字段 →
+   服务层构造的实体 builtin_key 为 None。
+
+4. mock_repo 显式补 ``get_by_builtin_key``（AsyncMock，GREEN 后
+   Protocol 新增方法时 spec 自动含，当前显式加以保持 fixture 完备）。
+
+5. RED 预期失败形态（实现未写，以实测为准）:
+   - ``_config(7, "openai", builtin_key="openai")`` → TypeError
+     （ProviderConfig 无 builtin_key 字段）
+   - ``pc.builtin_key`` 访问 → AttributeError
+
 ⚠️ 本批为 RED：不写任何 src/ 实现；GREEN 按上述签名实现后本文件应全绿。
 """
 
@@ -99,6 +119,7 @@ def mock_repo() -> MagicMock:
     repo.add = AsyncMock(side_effect=lambda pc: pc)
     repo.get = AsyncMock(return_value=None)
     repo.get_by_name = AsyncMock(return_value=None)
+    repo.get_by_builtin_key = AsyncMock(return_value=None)  # #126 A1：GREEN 后 Protocol 自动含
     repo.list = AsyncMock(return_value=[])
     repo.update = AsyncMock(side_effect=lambda pc: pc)
     repo.delete = AsyncMock(return_value=True)
@@ -147,6 +168,12 @@ class TestCreate:
         with pytest.raises(ProviderConfigNameConflictError, match="同名 Provider 已存在"):
             await service.create(ProviderConfigCreate(name="openai"))
         mock_repo.add.assert_not_called()
+
+    async def test_create_user_row_builtin_key_none(self, service, mock_repo):
+        """#126 A1：用户创建的行 builtin_key 必须为 None（Create DTO 无该字段）。"""
+        await service.create(ProviderConfigCreate(name="custom"))
+        pc = mock_repo.add.await_args.args[0]
+        assert pc.builtin_key is None  # RED: AttributeError（模型缺 builtin_key 字段）
 
 
 class TestGet:
@@ -236,6 +263,19 @@ class TestUpdate:
         await service.update(7, ProviderConfigUpdate(name="old"))
         mock_repo.get_by_name.assert_not_called()
         mock_repo.update.assert_awaited_once()
+
+    async def test_update_rename_keeps_builtin_key(self, service, mock_repo):
+        """#126 A1：改名（openai→myai）时 builtin_key 保持 'openai' 不变。
+
+        builtin_key 不在 Update DTO 中 → exclude_unset 浅合并不触碰；
+        repo.update 收到的 merged 实体 builtin_key 仍为原值。
+        """
+        existing = _config(7, "openai", builtin_key="openai")  # RED: TypeError
+        mock_repo.get.return_value = existing
+        await service.update(7, ProviderConfigUpdate(name="myai"))
+        updated = mock_repo.update.await_args.args[0]
+        assert updated.name == "myai"
+        assert updated.builtin_key == "openai"
 
 
 class TestDelete:

@@ -26,7 +26,12 @@ from inkflow.api.routers import (
     writing,
 )
 from inkflow.core.config import config
-from inkflow.core.database import async_session_factory, create_tables
+from inkflow.core.database import (
+    async_session_factory,
+    create_tables,
+    engine,
+    ensure_provider_builtin_key_column,
+)
 from inkflow.core.log import setup_logging
 
 
@@ -35,6 +40,10 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理——启动/关闭钩子。"""
     setup_logging()
     await create_tables()
+    # #126 A1：旧库轻量列迁移 —— create_tables 之后、seed 之前补 builtin_key 列，
+    # 新库 create_all 已含列（no-op）；旧库加列后由 seed 按 name 命中回填。
+    async with engine.begin() as conn:
+        await conn.run_sync(ensure_provider_builtin_key_column)
     # #106 F1：启动后幂等 seed 内置 4 provider（ProviderConfigService 同名跳过，
     # 全新安装注册表为空 → seed 补全；重复启动不重复插入）
     async with async_session_factory() as session:
