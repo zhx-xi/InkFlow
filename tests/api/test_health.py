@@ -34,7 +34,8 @@ class TestHealthCheck:
 
 class TestLifespan:
     def test_lifespan_startup_and_shutdown(self):
-        """应用 lifespan：启动时执行 setup_logging + create_tables + seed 内置 provider，健康检查可用"""
+        """应用 lifespan：启动时执行 setup_logging + create_tables + seed
+        内置 provider，健康检查可用"""
         fake_seed = AsyncMock()
         fake_svc = AsyncMock()
         fake_svc.seed_builtin_providers = fake_seed
