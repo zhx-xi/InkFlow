@@ -15,7 +15,6 @@ const BASE_BUTTON_CLASS =
   'flex h-full w-[46px] items-center justify-center text-ink-2 transition-colors [-webkit-app-region:no-drag]';
 
 export function WindowControls() {
-  const controls = window.INKFLOW_API?.windowControls;
   return (
     <div className="flex h-full items-stretch">
       <button
@@ -23,7 +22,7 @@ export function WindowControls() {
         data-testid="header-wc-min"
         aria-label="Minimize"
         className={cn(BASE_BUTTON_CLASS, 'hover:bg-surface-3 hover:text-ink')}
-        onClick={() => controls?.minimize()}
+        onClick={() => window.INKFLOW_API?.windowControls?.minimize()}
       >
         <Minus className="size-4" strokeWidth={1.5} />
       </button>
@@ -32,7 +31,7 @@ export function WindowControls() {
         data-testid="header-wc-max"
         aria-label="Maximize"
         className={cn(BASE_BUTTON_CLASS, 'hover:bg-surface-3 hover:text-ink')}
-        onClick={() => controls?.toggleMaximize()}
+        onClick={() => window.INKFLOW_API?.windowControls?.toggleMaximize()}
       >
         <Square className="size-3.5" strokeWidth={1.5} />
       </button>
@@ -44,7 +43,7 @@ export function WindowControls() {
           BASE_BUTTON_CLASS,
           'hover:bg-[color:var(--err)] hover:text-[color:var(--bg)]'
         )}
-        onClick={() => controls?.close()}
+        onClick={() => window.INKFLOW_API?.windowControls?.close()}
       >
         <X className="size-4" strokeWidth={1.5} />
       </button>
