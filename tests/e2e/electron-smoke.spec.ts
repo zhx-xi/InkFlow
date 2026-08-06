@@ -77,12 +77,12 @@ test('启动闭环：窗口出现（title 含 InkFlow）+ 内核进程存在 + /
 
     // 品牌 logo 真实加载断言（#98 修复回归：CSP default-src 'self' 阻止 data: 内联 svg →
     // 破图（naturalWidth=0）。这是**真实 Chromium 渲染**验证——jsdom 单元测试无法覆盖。
-    // 契约：header 内 img 解码成功（naturalWidth > 0）且 src 为独立文件路径（非 data:）。
+    // #106 用户反馈：品牌 logo 已从顶栏移入侧边栏 AppNav 品牌区（d372c13）——契约位置同步。
     await expect
       .poll(
         () =>
           window.evaluate(() => {
-            const img = document.querySelector('header img');
+            const img = document.querySelector('[data-testid="app-nav"] img');
             return img
               ? { w: img.naturalWidth, src: img.getAttribute('src') ?? '' }
               : null;
@@ -94,7 +94,7 @@ test('启动闭环：窗口出现（title 含 InkFlow）+ 内核进程存在 + /
         src: expect.any(String),
       });
     const logo = await window.evaluate(() => {
-      const img = document.querySelector('header img');
+      const img = document.querySelector('[data-testid="app-nav"] img');
       return img
         ? { w: img.naturalWidth, src: img.getAttribute('src') ?? '' }
         : null;
@@ -159,7 +159,8 @@ test('启动闭环：窗口出现（title 含 InkFlow）+ 内核进程存在 + /
       return w.INKFLOW_API;
     });
     expect(api).toBeTruthy();
-    expect(Object.keys(api!).sort()).toEqual(['baseURL', 'token']);
+    // #106 自绘窗口按钮后 INKFLOW_API 含 windowControls 第 3 键（preload 契约升级）
+    expect(Object.keys(api!).sort()).toEqual(['baseURL', 'token', 'windowControls']);
     expect(api!.baseURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
     expect(api!.token).toBeTruthy();
 
