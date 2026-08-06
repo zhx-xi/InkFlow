@@ -1,19 +1,20 @@
 /** 设置页（spec §7.4：五分类导航 + 右侧面板 + 即改即存；AgentChainCard 迁移、AppearanceCard 行为并入常规） */
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Bot, Cpu, FileText, SlidersHorizontal, UserRound } from 'lucide-react';
 import inkflowIcon from '../assets/inkflow-icon-plain.svg?url&no-inline';
 import inkflowIconDark from '../assets/inkflow-icon-plain-dark.svg?url&no-inline';
 import inkflowIconInk from '../assets/inkflow-icon-plain-ink.svg?url&no-inline';
 import { AgentChainCard } from '../components/AgentChainCard';
-import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
+import { AppearanceCard } from '../components/AppearanceCard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
 import { apiFetch, ensureApiReady } from '../api/client';
 import { useAgentStore } from '../stores/agent';
+import { useProjectStore } from '../stores/project';
 import { useThemeStore } from '../stores/theme';
 import { useToastStore } from '../stores/toast';
-import { BG_BY_THEME, type Lang, type ThemeBg, type ThemeName } from '../theme';
+import type { ThemeName } from '../theme';
 import { cn } from '../lib/cn';
 
 type CatKey = 'general' | 'models' | 'agent' | 'templates' | 'account';
@@ -39,132 +40,107 @@ function isCatKey(v: string | null): v is CatKey {
   return v !== null && (CAT_KEYS as string[]).includes(v);
 }
 
-/** 快捷键一览（spec §7.4：Ctrl+Z/Y/S/Enter/Shift+Enter 五组；动作文案复用写作工具栏既有 key） */
+/** 快捷键一览（spec §7.4：Ctrl+Z/Y/S/Enter 五组；#105 修复批：生成 = Ctrl+Shift+Enter 非 Shift+Enter） */
 const SHORTCUTS: Array<{ combo: string; labelKey: string }> = [
   { combo: 'Ctrl+Z', labelKey: 'write.toolbar.undo' },
   { combo: 'Ctrl+Y', labelKey: 'write.toolbar.redo' },
   { combo: 'Ctrl+S', labelKey: 'write.toolbar.save' },
   { combo: 'Ctrl+Enter', labelKey: 'write.toolbar.continue' },
-  { combo: 'Shift+Enter', labelKey: 'write.toolbar.generate' },
+  { combo: 'Ctrl+Shift+Enter', labelKey: 'write.toolbar.generate' },
 ];
 
-/** 常规分类：语言 / 主题三选 / 背景变体 / 编辑器字体 / 新章节默认字数 / 快捷键一览 */
+/** 常规分类：AppearanceCard（语言/主题/背景，#105 🔴-3）+ 编辑器字体 + 新章节默认字数（真实 PATCH）+ 快捷键一览 */
 function GeneralPanel() {
   const { t } = useI18n();
-  const radioGroupId = useId();
-  const theme = useThemeStore((s) => s.theme);
-  const bg = useThemeStore((s) => s.bg);
-  const lang = useThemeStore((s) => s.lang);
-  const setTheme = useThemeStore((s) => s.setTheme);
-  const setBg = useThemeStore((s) => s.setBg);
-  const setLang = useThemeStore((s) => s.setLang);
   const pushToast = useToastStore((s) => s.pushToast);
-  // 编辑器字体 / 新章节默认字数：#106 config 字段落定前为本地状态（数字项失焦即存 toast）
+  const setConfig = useAgentStore((s) => s.setConfig);
+  const currentProjectId = useProjectStore((s) => s.currentProjectId);
+  // #105 修复批二次迭代 🟡-D：默认字数值接当前项目 config（本地编辑态，失焦 setConfig + 真实 PATCH）
+  const [defaultWords, setDefaultWords] = useState<string>(() => {
+    const project = useProjectStore.getState().projects.find(
+      (p) => p.id === useProjectStore.getState().currentProjectId,
+    );
+    return String(project?.config.default_words ?? 800000);
+  });
   const [font, setFont] = useState<FontKey>('sans');
 
-  const THEMES: Array<{ value: ThemeName; labelKey: string }> = [
-    { value: 'paper', labelKey: 'theme.paper' },
-    { value: 'night', labelKey: 'theme.night' },
-    { value: 'ink', labelKey: 'theme.ink' },
-  ];
   const FONTS: Array<{ value: FontKey; labelKey: string }> = [
     { value: 'serif', labelKey: 'set.font.serif' },
     { value: 'sans', labelKey: 'set.font.sans' },
     { value: 'mono', labelKey: 'set.font.mono' },
   ];
 
+  const handleDefaultWordsBlur = () => {
+    const n = Number(defaultWords);
+    // 空值 / 非法值：无变更不弹 toast
+    if (defaultWords === '' || !Number.isFinite(n)) return;
+    // 与后端 ge=1000 对齐：低于下限不发 PATCH，直接 err toast
+    if (n < 1000) {
+      pushToast('err', t('toast.saveFailed'));
+      return;
+    }
+    // 合并源 = agent store 当前 config（含 agent_* 已配置字段），而非 project store 旧快照（🔴-B）
+    const current = useAgentStore.getState().config;
+    setConfig({ ...current, default_words: n });
+    const project = useProjectStore.getState().projects.find((p) => p.id === currentProjectId);
+    if (project) {
+      void apiFetch(`/api/v1/projects/${project.id}`, {
+        method: 'PATCH',
+        body: { config: { ...useAgentStore.getState().config, default_words: n } },
+      })
+        .then(() => pushToast('ok', t('toast.saved')))
+        .catch(() => pushToast('err', t('toast.saveFailed')));
+    }
+  };
+
   return (
-    <section className="space-y-5 rounded-lg border border-line bg-surface p-6 shadow-card">
-      <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
-        <span>{t('ap.lang')}</span>
-        <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
-          <SelectTrigger aria-label={t('ap.lang')} className="w-56">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="zh">{t('lang.zh')}</SelectItem>
-            <SelectItem value="en">{t('lang.en')}</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <div className="text-[12px] text-ink-2">{t('ap.theme')}</div>
-        <RadioGroup
-          value={theme}
-          onValueChange={(v) => setTheme(v as ThemeName)}
-          aria-label={t('ap.theme')}
-          className="flex gap-4"
-        >
-          {THEMES.map((th) => (
-            <div key={th.value} className="flex items-center gap-1.5 text-[13px]">
-              <RadioGroupItem value={th.value} id={`${radioGroupId}-${th.value}`} />
-              <label htmlFor={`${radioGroupId}-${th.value}`} className="cursor-pointer">
-                {t(th.labelKey)}
-              </label>
-            </div>
-          ))}
-        </RadioGroup>
-      </div>
-
-      <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
-        <span>{t('ap.bg')}</span>
-        <Select value={bg} onValueChange={(v) => setBg(v as ThemeBg)}>
-          <SelectTrigger aria-label={t('ap.bg')} className="w-56">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {BG_BY_THEME[theme].map((b) => (
-              <SelectItem key={b} value={b}>
-                {t(`bg.${b}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
-        <span>{t('set.font')}</span>
-        <Select value={font} onValueChange={(v) => setFont(v as FontKey)}>
-          <SelectTrigger aria-label={t('set.font')} className="w-56">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {FONTS.map((f) => (
-              <SelectItem key={f.value} value={f.value}>
-                {t(f.labelKey)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
-        <span>{t('set.defaultWords')}</span>
-        <input
-          type="number"
-          min={0}
-          aria-label={t('set.defaultWords')}
-          className="w-56 rounded-md border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
-          defaultValue={800000}
-          onBlur={() => pushToast('ok', t('toast.saved'))}
-        />
-      </div>
-
-      <div data-testid="settings-shortcuts" className="rounded-md border border-line p-4">
-        <div className="text-[12px] font-medium text-ink-2">{t('set.shortcuts.title')}</div>
-        <div className="mt-3 space-y-2">
-          {SHORTCUTS.map((s) => (
-            <div key={s.combo} className="flex items-center justify-between text-[13px]">
-              <span className="text-ink-2">{t(s.labelKey)}</span>
-              <kbd className="rounded border border-line bg-surface-3 px-2 py-0.5 font-mono text-[12px] text-ink">
-                {s.combo}
-              </kbd>
-            </div>
-          ))}
+    <div className="space-y-5">
+      <AppearanceCard />
+      <section className="space-y-5 rounded-lg border border-line bg-surface p-6 shadow-card">
+        <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
+          <span>{t('set.font')}</span>
+          <Select value={font} onValueChange={(v) => setFont(v as FontKey)}>
+            <SelectTrigger aria-label={t('set.font')} className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {FONTS.map((f) => (
+                <SelectItem key={f.value} value={f.value}>
+                  {t(f.labelKey)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-      </div>
-    </section>
+
+        <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
+          <span>{t('set.defaultWords')}</span>
+          <input
+            type="number"
+            min={0}
+            aria-label={t('set.defaultWords')}
+            className="w-56 rounded-md border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
+            value={defaultWords}
+            onChange={(e) => setDefaultWords(e.target.value)}
+            onBlur={handleDefaultWordsBlur}
+          />
+        </div>
+
+        <div data-testid="settings-shortcuts" className="rounded-md border border-line p-4">
+          <div className="text-[12px] font-medium text-ink-2">{t('set.shortcuts.title')}</div>
+          <div className="mt-3 space-y-2">
+            {SHORTCUTS.map((s) => (
+              <div key={s.combo} className="flex items-center justify-between text-[13px]">
+                <span className="text-ink-2">{t(s.labelKey)}</span>
+                <kbd className="rounded border border-line bg-surface-3 px-2 py-0.5 font-mono text-[12px] text-ink">
+                  {s.combo}
+                </kbd>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -179,20 +155,60 @@ function ModelsPanel() {
   );
 }
 
-/** Agent 分类：AgentChainCard（行为不变）+ 默认模型下拉 */
+/** Agent 分类：AgentChainCard（行为不变，开关即改即存 #105 🔴-2）+ 默认模型下拉 */
 function AgentPanel() {
   const { t } = useI18n();
+  const pushToast = useToastStore((s) => s.pushToast);
   const config = useAgentStore((s) => s.config);
   const setConfig = useAgentStore((s) => s.setConfig);
+  const currentProjectId = useProjectStore((s) => s.currentProjectId);
+
+  // #105 修复批二次迭代 🔴-A：播种守卫收紧——仅当 config 不含 model 且无任何 agent_* 字段时才播种
+  //（general 先改 default_words 的草稿不拦截，进入 Agent 分类仍按项目 config 重新播种）
+  useEffect(() => {
+    const c = useAgentStore.getState().config;
+    const hasAgentFields = Object.keys(c).some((k) => k.startsWith('agent_') || k === 'model');
+    if (hasAgentFields) return;
+    const state = useProjectStore.getState();
+    const project = state.projects.find((p) => p.id === state.currentProjectId);
+    if (project) useAgentStore.getState().loadFromProject(project.config);
+  }, [currentProjectId]);
+
+  // #105 修复批二次迭代 🟡-E：saveConfig 失败弹 err toast；in-flight 守卫防并发 PATCH，
+  // 期间再次变更挂起，待当前 PATCH 结束后以最新 config 补存（不丢最后一次 toggle）
+  const persistingRef = useRef(false);
+  const pendingRef = useRef(false);
+  const persist = () => {
+    if (!currentProjectId) return;
+    if (persistingRef.current) {
+      pendingRef.current = true;
+      return;
+    }
+    persistingRef.current = true;
+    void useAgentStore
+      .getState()
+      .saveConfig(currentProjectId)
+      .catch(() => pushToast('err', t('toast.saveFailed')))
+      .finally(() => {
+        persistingRef.current = false;
+        if (pendingRef.current) {
+          pendingRef.current = false;
+          persist();
+        }
+      });
+  };
 
   return (
     <div className="space-y-5">
-      <AgentChainCard />
+      <AgentChainCard onConfigChange={persist} />
       <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
         <span>{t('ag.defaultModel')}</span>
         <Select
           value={config.model ? config.model : undefined}
-          onValueChange={(v) => setConfig({ model: v })}
+          onValueChange={(v) => {
+            setConfig({ model: v });
+            persist();
+          }}
         >
           <SelectTrigger aria-label={t('ag.defaultModel')} className="w-56">
             <SelectValue />

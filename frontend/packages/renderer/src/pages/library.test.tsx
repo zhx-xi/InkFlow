@@ -30,6 +30,11 @@
  * 新增 i18n key（GREEN 补 zh.ts/en.ts；tab 标签复用 nav.lib.*）：
  * lib.title='设定库' lib.projectSelect='当前项目' lib.empty.noProject='选择或新建项目开始构建设定'
  * lib.empty.goProjects='前往项目页' lib.empty.tab='还没有{name}，去创建'（name=分类名参数）
+ *
+ * ⚠️ #105 修复批契约（评审 findings 驱动，2026-08-06）：
+ * - 分类端点失败 → error 态（不再误显示空态）：i18n 新 key lib.loadFailed='加载失败，请重试'
+ *   （Loading failed, please retry）+ 重试按钮 data-testid="library-retry" → 点击重新拉取当前分类端点
+ * - 空态 CTA（library-tab-empty-cta）可点：点击 → navigate('/writing')（空态引导去写作页创建）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
@@ -69,6 +74,7 @@ function renderLibrary(initialPath = '/library') {
       <LibraryPage />
       <Routes>
         <Route path="/projects" element={<LocationProbe />} />
+        <Route path="/writing" element={<LocationProbe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -226,6 +232,20 @@ describe('设定库页 — 项目上下文（spec §7.3）', () => {
     expect(within(empty).getByTestId('library-tab-empty-cta')).toBeInTheDocument();
   });
 
+  it('#105 修复批契约：空态 CTA 可点——点击「去创建」→ 路由 /writing', async () => {
+    act(() => {
+      useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
+    });
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await user.click(screen.getByRole('tab', { name: '世界观' }));
+    const empty = await screen.findByTestId('library-tab-empty');
+    // RED：当前 CTA 无 onClick（死按钮）→ 点击后不导航，location-probe 永不出现
+    await user.click(within(empty).getByTestId('library-tab-empty-cta'));
+    expect(await screen.findByTestId('location-probe')).toHaveTextContent('/writing');
+  });
+
   it('深链直达：/library?cat=outline → 初始 tab 大纲（侧边导航联动）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
@@ -241,7 +261,7 @@ describe('设定库页 — 项目上下文（spec §7.3）', () => {
 
 /**
  * #105 Coverage-Gap 补测（非 RED）：六分类 endpoint 函数全覆盖
- * （时间线 L25 / 伏笔 L26）+ 分类端点失败 catch 兜底分支（L86-88）。
+ * （时间线 L25 / 伏笔 L26）+ #105 修复批 error 态契约（失败不再落空态，改错误文案 + 重试）。
  */
 describe('设定库页 — 分类端点全覆盖与失败兜底（#105 补测）', () => {
   it('时间线/伏笔 tab：拉取对应端点（endpoint 分支全覆盖）', async () => {
@@ -262,7 +282,7 @@ describe('设定库页 — 分类端点全覆盖与失败兜底（#105 补测）
     });
   });
 
-  it('分类端点失败：items 清空 + 加载复位 → 分类空态引导（catch 兜底）', async () => {
+  it('分类端点失败 → error 态：不显示空态，展示 lib.loadFailed 文案 + library-retry 重试按钮', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
     });
@@ -272,9 +292,41 @@ describe('设定库页 — 分类端点全覆盖与失败兜底（#105 补测）
     });
     renderLibrary();
 
+    // #105 修复批契约：失败 ≠ 真空态——library-tab-empty 不得出现，改显示错误文案 + 重试按钮
     await waitFor(() => {
-      expect(screen.getByTestId('library-tab-empty')).toBeInTheDocument();
-      expect(screen.queryByTestId('library-list')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('library-tab-empty')).not.toBeInTheDocument();
+      expect(screen.getByText('加载失败，请重试')).toBeInTheDocument();
+      expect(screen.getByTestId('library-retry')).toBeInTheDocument();
+    });
+  });
+
+  it('点击 library-retry 重新拉取分类：失败一次后重试成功 → 列表恢复', async () => {
+    act(() => {
+      useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
+    });
+    let shouldFail = true;
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/characters') {
+        if (shouldFail) {
+          shouldFail = false;
+          throw new Error('分类数据获取失败');
+        }
+        return { items: [{ id: 'c1', name: '林晚' }], total: 1, offset: 0, limit: 50 };
+      }
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    const user = userEvent.setup();
+    renderLibrary();
+
+    const retry = await screen.findByTestId('library-retry');
+    await user.click(retry);
+
+    // 重试 = 再次请求同一分类端点（初始失败 1 次 + 重试 1 次 = 2 次）→ 成功后列表恢复
+    await waitFor(() => {
+      const charCalls = apiFetchMock.mock.calls.filter((c) => c[0] === '/api/v1/projects/p1/characters');
+      expect(charCalls.length).toBe(2);
+      expect(screen.getByTestId('library-list')).toHaveTextContent('林晚');
     });
   });
 });
