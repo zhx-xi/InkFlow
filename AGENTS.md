@@ -28,13 +28,13 @@
 | 维度 | 说明 |
 |------|------|
 | **团队** | 单人开发 |
-| **时间线** | SemVer 版本里程碑（ADR-019 v3）：0.1.0 ✅ → 0.2.0 ✅（F9-F16 已交付）→ 0.3.0 GUI（F19 提前 + F23 SSE 提前）→ 0.3.1 质量加固（#86 LLM 修复 ✅ / #87 状态重构 ✅ / #92 真实 AI CI ✅ / #104 覆盖率 ✅）→ 0.4.0 打包 → 0.5.0 MCP+会话+daemon → 0.6.0 导出+搜索 → **1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）** → **2.0.0 = 云端**；对应 PRD W10-W24 周计划（明细见下方里程碑表） |
+| **时间线** | SemVer 版本里程碑（ADR-019 v4）：0.1.0 ✅ → 0.2.0 ✅（F9-F16 已交付）→ 0.3.0 GUI（F19 提前 + F23 SSE 提前）→ 0.3.1 质量加固（#86 LLM 修复 ✅ / #87 状态重构 ✅ / #92 真实 AI CI ✅ / #104 覆盖率 ✅）→ 0.4.0 打包 → 0.5.0 会话+daemon → 0.6.0 导出+搜索 → **1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）** → **2.0.0 = 云端**；对应 PRD W10-W24 周计划（明细见下方里程碑表） |
 | **部署模式** | 本地优先（SQLite，免认证）；**2.0.0 云端里程碑**：云存档/异地写作（PostgreSQL + JWT + BYOK，无 CRDT），GUI/CLI 远程模式连接云端 |
 | **多界面** | GUI（Electron，React 复用）+ CLI（Typer）+ REST API（FastAPI：本地内核通用通信契约，亦为云端用户 API 同一契约）+ MCP Server（stdio 直连 domain）（+ 云端 Web/Admin 后台） |
 | **工作流** | SDD + TDD：先写 spec → 再写测试（RED）→ 写代码（GREEN）→ 重构 |
 | **仓库** | `https://github.com/zhx-xi/InkFlow` |
 
-### 里程碑（ADR-019 v3：2026-08-06 skills 包后移至 1.0.0，#70 拍板；v2 2026-08-02 产品形态决策重排，Issue #65）
+### 里程碑（ADR-019 v4：2026-08-06 skills + F20 MCP 后移至 1.0.0，#70/#49 拍板；v2 2026-08-02 产品形态决策重排，Issue #65）
 
 | 版本 | 内容 |
 |------|------|
@@ -43,7 +43,7 @@
 | 0.3.0 | F19 GUI（Electron 壳 + 内核进程化 + React 渲染层）· F23 SSE 流式 ✅（PR #83，已交付）——F19 子任务 A 内核进程化 ✅（PR #85，#77）· 子任务 B Electron 壳 ✅（PR #95，#78）· 子任务 C React 渲染层 ✅（PR #97，#79）· 子任务 D 导航重构+设置页框架 ✅（PR #120/#121，#105）· 子任务 E 模型管理页 ✅（PR #122，#106：ProviderConfig 注册表 + 模型管理页 + 角色绑定只读区 + 顶栏 Select + 自绘窗口按钮，覆盖率 99.27%）· 模型管理修复 ✅（PR #131/#132，#125/#126：addModel rethrow + 部分失败保留草稿 + builtin_key 判重防 seed 复活，2026-08-06）· 子任务 F Agent 模板 ✅（PR #135，#107：AgentTemplate 实体（引用式）+ 角色独立温度链（0.7 哨兵移除）+ 风险确认框 + 新建项目模板下拉，三层测试全绿） |
 | 0.3.1 | 质量加固补丁（milestone #9）：#86 LLM 客户端修复 ✅（PR #108：timeout→request_timeout + zhipu 注册 + audit 路由）· #87 LangGraph 状态重构 ✅（PR #110：StateGraph(dict)→TypedDict+reducer，节点增量返回，type: ignore 清零）· #92 真实 AI CI job ✅（PR #111：e2e-ai-backend，label run-ai-tests 触发 + workflow_dispatch 兜底；tests/e2e/ T1+T2，缺 key 永远 skip；⚠️ 真实验证需先配 LLM_API_KEY secret）· #104 覆盖率补全 ✅（PR #114/#115/#116/#117：三层补测至后端 98.90% 行/96.32% 分支、前端 99.11%/92.51%、API 端点 100%、E2E 三页；CI 门槛 98.5/95.0 常态化，口径见 ADR-027） |
 | 0.4.0 | F19 打包（exe / 安装包 / 便携 ZIP） |
-| 0.5.0 | F20 MCP（stdio 直连 domain）· F24 会话 · F25 daemon |
+| 0.5.0 | F24 会话 · F25 daemon |
 | 0.6.0 | F21 导出 · F22 全文搜索 |
 | 1.0.0 🎉 | **本地完全可用 = CLI + GUI + skills + MCP** + 跨平台 + 文档 + 全量验收 |
 | 2.0.0 ☁️ | 云端：F18 云 Web（移出单机）· 用户 API · Admin 后台 · GUI 远程模式 |
@@ -69,9 +69,9 @@ F1 项目/书籍 · F2 章节 · F3 写作管道 · F4 Agent 编排 · F5 LLM Pr
 
 ### Phase 3 功能（F18-F25，2026-08-02 形态决策后归属调整）
 
-F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI / 0.4.0 打包，子任务 A ✅ PR #85 / B ✅ PR #95 / C ✅ PR #97 / D ✅ PR #120/#121 / E ✅ PR #122）· F20 MCP（0.5.0）· F21 导出（0.6.0）· F22 搜索（0.6.0）· F23 SSE ✅（PR #83）· F24 会话（0.5.0）· F25 daemon（0.5.0）
+F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI / 0.4.0 打包，子任务 A ✅ PR #85 / B ✅ PR #95 / C ✅ PR #97 / D ✅ PR #120/#121 / E ✅ PR #122）· F20 MCP（1.0.0）· F21 导出（0.6.0）· F22 搜索（0.6.0）· F23 SSE ✅（PR #83）· F24 会话（0.5.0）· F25 daemon（0.5.0）
 
-> F17 空置（PRD §6.2 标题残留编号）。F18-F25 版本归属以 ADR-019 v2 为准（PRD §6.3/6.4 原归属已被形态决策重排）。
+> F17 空置（PRD §6.2 标题残留编号）。F18-F25 版本归属以 ADR-019 v4 为准（PRD §6.3/6.4 原归属已被形态决策重排）。
 
 ---
 

@@ -175,7 +175,7 @@
 | Stage 1 | F27 writer-agent | Writer Agent 闭环：ReAct 循环 + save_draft + 修改率基线 | F26 | 8-12 人天 | 0.4.0+ |
 | Stage 2 | F28 agent-memory | 项目记忆：diff 捕获 + 规则化偏好 + 注入 + 默认关闭 | F27（事件源）、F6 | 6-10 人天 | 0.5.0+ |
 | Stage 3 | F29 agent-supervisor | Supervisor 自主编排 + HITL（远期） | #87、F28 | 8-12 人天 | 待定 |
-| Stage 4 | 并入 F20 | MCP 工具同源 | F26/F27、F20 | 3-5 人天 | 0.5.0（F20） |
+| Stage 4 | 并入 F20 | MCP 工具同源 | F26/F27、F20 | 3-5 人天 | 1.0.0（F20） |
 
 - 核心路径（F26+F27+F28）合计 **17-27 人天**；编号口径：**F26 起**（F24=会话、F25=daemon 已占用，见 ADR-019 版本表）。
 - spec 遵循 13 节结构（inkflow-spec-authoring），spec 与实现同 PR（2026-08-01 用户决策）；新增 CLI 测试文件须手动加入 ci.yml `integration-cli-backend` job。

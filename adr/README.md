@@ -38,7 +38,7 @@
 | [ADR-020](ADR-020.md) | GUI 技术选型 — Electron + 共享 React 渲染层（单机主界面，D2） | ✅ 已接受 | 2026-08-02 |
 | [ADR-021](ADR-021.md) | 本地内核进程化 — 独立进程 + localhost REST + SSE 通信（GUI↔内核，D3） | ✅ 已接受 | 2026-08-02 |
 | [ADR-022](ADR-022.md) | skills 包形态 — 源码单一真相 + 三通道分发（D4） | ✅ 已接受 | 2026-08-02 |
-| [ADR-023](ADR-023.md) | MCP Server 设计 — 官方 SDK + stdio + 直连领域服务（skills 先行、MCP 后移 0.5.0，D5） | ✅ 已接受 | 2026-08-02 |
+| [ADR-023](ADR-023.md) | MCP Server 设计 — 官方 SDK + stdio + 直连领域服务（skills 先行、MCP 后移 1.0.0，D5 修订） | ✅ 已接受 | 2026-08-02 |
 | [ADR-024](ADR-024.md) | 云架构拓扑 — 同进程双前缀（user/admin）+ owner_id 隔离（D6） | ✅ 已接受 | 2026-08-02 |
 | [ADR-025](ADR-025.md) | 依赖锁定策略 — uv + uv.lock（Python）+ pnpm-lock.yaml 约定（前端） | ✅ 已接受 | 2026-08-02 |
 | [ADR-026](ADR-026.md) | 真实 AI CI job — label 触发 + workflow_dispatch 兜底（e2e-ai-backend） | ✅ 已接受 | 2026-08-04 |

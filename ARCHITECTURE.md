@@ -67,7 +67,7 @@ D:\develop\projects\
 │   │   │   │   └── context\         #   F6 上下文数据源（sources.py，F13 伏笔注入）
 │   │   │   ├── api\                 # ★ 表现层：REST API（app.py / deps.py / routers\）
 │   │   │   ├── cli\                 # ★ 表现层：CLI（app.py / context.py / output.py / commands\）
-│   │   │   └── mcp\                 # ★ 表现层：MCP Server（0.5.0 F20 建立，ADR-023）
+│   │   │   └── mcp\                 # ★ 表现层：MCP Server（1.0.0 F20 建立，ADR-023）
 │   │   └── tests\                   # ★ 单元测试（纯后端，无 I/O）
 │   │       └── unit\                #   54 个测试文件（纯函数 + Mock + DTO 校验）
 │   ├── tests\                       # ★ 集成 + E2E 测试（顶层，跨后端/前端）
@@ -98,7 +98,7 @@ D:\develop\projects\
 | **infrastructure/context** | `src/inkflow/infrastructure/context/` | F6 上下文数据源（sources.py：角色/世界观/伏笔/时间线注入） |
 | **api** | `src/inkflow/api/` | FastAPI app + deps 装配 + routers\（每模块一个 router） |
 | **cli** | `src/inkflow/cli/` | Typer app + commands\（每模块一组命令）；JSON 信封 + 退出码契约（F7 spec §5） |
-| **mcp** | `src/inkflow/mcp/` | MCP Server（0.5.0 F20 建立，当前未实现） |
+| **mcp** | `src/inkflow/mcp/` | MCP Server（1.0.0 F20 建立，当前未实现） |
 
 ## 4. 模块类型谱系（新模块落地导航）
 

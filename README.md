@@ -20,11 +20,11 @@
   - 风格检测（风格指纹 / AI 痕迹 / 词汇分析）
 - **GUI 桌面端（0.3.0）**：Electron 壳 + 内核进程化 + React 渲染层（项目页 / 写作页三栏 / Agent 配置页，SSE 流式输出）
 - **上下文智能装配**：写作时自动注入相关角色、世界观、伏笔，分层 Token 预算
-- **多界面战略**：CLI（Typer）✅ + REST API（FastAPI）✅ + GUI（Electron + React）✅ + MCP Server（0.5.0）🔜 + 云端 Web（2.0.0）🔜
+- **多界面战略**：CLI（Typer）✅ + REST API（FastAPI）✅ + GUI（Electron + React）✅ + MCP Server（1.0.0）🔜 + 云端 Web（2.0.0）🔜
 
 ### 规划中
 
-skills 包与打包分发（0.4.0）· MCP / 会话 / daemon（0.5.0）· 导出 / 全文搜索（0.6.0）· 云存档与异地写作（2.0.0）——明细见 [`FEATURES.md`](FEATURES.md)。
+打包分发（0.4.0）· 会话 / daemon（0.5.0）· skills 包 + MCP Server（1.0.0）· 导出 / 全文搜索（0.6.0）· 云存档与异地写作（2.0.0）——明细见 [`FEATURES.md`](FEATURES.md)。
 
 ## 🚀 快速开始
 
@@ -82,8 +82,8 @@ uv run inkflow serve
 | 0.2.0 | 创作工具链（F9-F16，1589 tests / 覆盖率 91%） | ✅ |
 | 0.3.0 | GUI 桌面端 + SSE 流式（F19/F23 提前） | ✅ |
 | 0.3.1 | 质量加固：LLM 客户端修复 · LangGraph 状态重构 · 真实 AI CI · 覆盖率补全（2200+ tests / 后端 98.9% 行 / 96.3% 分支 / 前端 99.1% / 92.5%） | ✅ |
-| 0.4.0 | skills 包 + 打包分发 | 🔜 |
-| 0.5.0 | MCP Server + 会话 + daemon | 🔜 |
+| 0.4.0 | 打包分发 | 🔜 |
+| 0.5.0 | 会话 + daemon | 🔜 |
 | 0.6.0 | 导出 + 全文搜索 | 🔜 |
 | 1.0.0 | 本地完全可用（CLI + GUI + skills + MCP） | 🔜 |
 | 2.0.0 | 云端（云存档 + 异地写作） | 🔜 |

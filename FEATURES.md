@@ -77,9 +77,9 @@
 
 | Feature | 版本 | 内容 | 依赖/前置 | Issue | 状态 |
 |---------|------|------|----------|-------|------|
-| skills 包 | **0.4.0** | 小说写作 skills（源码单一真相 + 三通道分发） | 无 | [#70](https://github.com/zhx-xi/InkFlow/issues/70) | 🔜 已建 issue |
+| skills 包 | **1.0.0** | 小说写作 skills（源码单一真相 + 三通道分发） | 无 | [#70](https://github.com/zhx-xi/InkFlow/issues/70) | 🔜 已建 issue |
 | F19 打包分发 | **0.4.0** | PyInstaller 后端内核 exe + electron-builder NSIS 安装包 + 便携 ZIP | #77/#78/#79 | [#48](https://github.com/zhx-xi/InkFlow/issues/48) | 🔜 已建 issue |
-| F20 MCP Server | **0.5.0** | MCP Server（stdio 直连 domain），≥15 工具（ADR-023） | 无 | [#49](https://github.com/zhx-xi/InkFlow/issues/49) | 🔜 已建 issue |
+| F20 MCP Server | **1.0.0** | MCP Server（stdio 直连 domain），≥15 工具（ADR-023） | 无 | [#49](https://github.com/zhx-xi/InkFlow/issues/49) | 🔜 已建 issue |
 | F24 会话管理 | **0.5.0** | 写作会话 / 恢复 | 无 | [#51](https://github.com/zhx-xi/InkFlow/issues/51) | 🔜 已建 issue |
 | F25 daemon | **0.5.0** | daemon 后台写作（本地；云端无常驻任务） | 无 | [#52](https://github.com/zhx-xi/InkFlow/issues/52) | 🔜 已建 issue |
 | F21 导出服务 | **0.6.0** | 导出 EPUB / MD / TXT / DOCX（≥3 格式） | 无 | [#53](https://github.com/zhx-xi/InkFlow/issues/53) | 🔜 已建 issue |
@@ -89,7 +89,7 @@
 | 云端总：云存档 + 异地写作 | **2.0.0** | 用户 API + Admin 后台 + GUI 远程模式（PostgreSQL + JWT + BYOK；无 CRDT，LWW + 修订历史） | P0-11 协议（已就绪） | [#71](https://github.com/zhx-xi/InkFlow/issues/71) | 🔜 已建 issue |
 
 > F17 空置（PRD §6.2 标题残留编号，不使用）。
-> 版本归属以 [ADR-019 v2](adr/ADR-019.md) 为准。
+> 版本归属以 [ADR-019 v4](adr/ADR-019.md) 为准。
 
 ---
 
@@ -101,8 +101,8 @@
 | 0.2.0 | 创作工具链 | F9-F16 全部（8 模块：角色/世界观/大纲/时间线/伏笔/提取+RAG/审计/风格） | ✅ 已交付（2026-08-02，1589 tests / 91%） |
 | 0.3.0 | GUI 桌面端（提前） | F19 GUI（内核进程化 + Electron 壳 + React 渲染层）· F23 SSE 流式（提前） | ✅ 已交付（PR #83/#85/#95/#97） |
 | 0.3.1 | 质量加固补丁 | #86 LLM 修复 · #87 LangGraph 重构 · #92 真实 AI CI · #104 覆盖率（后端 98.9%/96.3% 分支） | ✅ 已交付（PR #108/#110/#111/#114-#117，2026-08-06） |
-| 0.4.0 | skills 包 + 打包 | skills 包（三通道分发）· F19 打包（exe / 安装包 / 便携 ZIP） | 🔜 |
-| 0.5.0 | Agent 集成 | F20 MCP · F24 会话 · F25 daemon | 🔜 |
+| 0.4.0 | 打包 | F19 打包（exe / 安装包 / 便携 ZIP） | 🔜 |
+| 0.5.0 | Agent 集成 | F24 会话 · F25 daemon | 🔜 |
 | 0.6.0 | 导出 + 搜索 | F21 导出 · F22 全文搜索 | 🔜 |
 | 1.0.0 | 本地完全可用 | CLI + GUI + skills + MCP 四界面齐备 + 跨平台 + 文档 + Phase 3 Gate | 🔜 |
 | 2.0.0 | 云端 | F18 云 Web · 用户 API · Admin 后台 · GUI 远程模式（云存档/异地写作） | 🔜 |
@@ -116,7 +116,7 @@
 | CLI（Typer） | ✅ 可用（64 命令 / 17 组） | `inkflow <group> <command>`；`--json` 输出 JSON 信封 |
 | REST API（FastAPI） | ✅ 可用（92 端点 / 12 router） | `inkflow serve` 启动，Swagger 见 `/docs`；本地内核通用通信契约 |
 | GUI（Electron + React） | ✅ 0.3.0 可用 | 本地桌面端（项目/写作/Agent 三页），渲染层不承载业务逻辑（ADR-020/021） |
-| MCP Server | 🔜 0.5.0 | stdio 直连 domain（ADR-023） |
+| MCP Server | 🔜 1.0.0 | stdio 直连 domain（ADR-023） |
 | 云 Web / Admin | 🔜 2.0.0 | 与本地 GUI 共享 React 代码（一套两用） |
 
 ---
