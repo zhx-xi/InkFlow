@@ -4,7 +4,7 @@
 > **所属阶段**: 0.4.0 里程碑（Issue #48，估算 4-6 人天；体积评审后追加 T0 瘦身与 B+ 装配，见 §3/§5）
 > **关联 Issues**: [#48](https://github.com/zhx-xi/InkFlow/issues/48)（本任务）· [#70](https://github.com/zhx-xi/InkFlow/issues/70)（F19-skills，并行无关）· [#137](https://github.com/zhx-xi/InkFlow/issues/137)（Tauri 2 体积优化专项，2.0.0，本 spec §10 不在范围）
 > **依赖**: #69 ✅（F19-GUI 已合入——内核进程化 #77 PR #85 / Electron 壳 #78 PR #95 / 渲染层 #79 PR #97 及其后子任务 #105/#106/#107）；#50 ✅（F23 SSE，PR #83）；#70 ⏳（skills 包，并行 worktree 无代码依赖）
-> **参考 ADR**: [ADR-013](../../adr/ADR-013.md)（RAG 首次落地）· [ADR-019](../../adr/ADR-019.md)（版本里程碑 v2：0.4.0 = skills 包 + 打包）· [ADR-020](../../adr/ADR-020.md)（Electron 选型 + electron-builder 打包）· [ADR-021](../../adr/ADR-021.md)（内核进程化：resources/kernel/inkflow.exe 生命周期）· [ADR-025](../../adr/ADR-025.md)（依赖锁定 uv.lock/pnpm-lock）
+> **参考 ADR**: [ADR-013](../../adr/ADR-013.md)（RAG 首次落地）· [ADR-019](../../adr/ADR-019.md)（版本里程碑 v2：0.4.0 = 打包；skills 后移至 1.0.0，2026-08-06 拍板 #70）· [ADR-020](../../adr/ADR-020.md)（Electron 选型 + electron-builder 打包）· [ADR-021](../../adr/ADR-021.md)（内核进程化：resources/kernel/inkflow.exe 生命周期）· [ADR-025](../../adr/ADR-025.md)（依赖锁定 uv.lock/pnpm-lock）
 > **状态**: 待实现 🔲
 
 ---
@@ -596,7 +596,7 @@ git tag v0.4.0 && git push origin v0.4.0    # 触发 release.yml
 | 代码签名 | 1.0.0 发布事项（杀软误报缓解）；0.4.0 首次发布用户手动「仍要运行」 |
 | 自动更新（electron-updater） | 未立项；0.4.0 手动下载新版本 |
 | macOS/Linux 打包 | 1.0.0「跨平台打包」验收项（ADR-019 表）；本任务仅 Windows |
-| skills 包分发 | **#70**（ADR-022，0.4.0 并行 issue，独立 worktree） |
+| skills 包分发 | **#70**（ADR-022，1.0.0 issue，独立 worktree，2026-08-06 拍板后移） |
 | 业务功能/API/实体 | 内核进程化已交付（#77）；本任务不改业务面（§5 装配改造是唯一代码改动） |
 | RAG 向量数据迁移 | chroma.sqlite3 用户数据运行时生成，不进包、无迁移（§2.1） |
 | 云端远程模式打包 | 2.0.0（GUI 远程模式是云端里程碑项） |
@@ -617,13 +617,13 @@ git tag v0.4.0 && git push origin v0.4.0    # 触发 release.yml
 | #106 ProviderConfig | ✅ PR #122 | embedding 模型注册（§5 装配数据源） |
 | #50 F23 SSE | ✅ PR #83 | 写作流（E2E 冒烟链路） |
 | ADR-013/021 | ✅ | RAG 存储 / 进程化契约依据 |
-| #70 skills 包 | ⏳ 并行 | **无代码依赖**（独立 worktree，ADR-022 分发独立） |
+| #70 skills 包 | ⏳ 1.0.0 | **无代码依赖**（独立 worktree，ADR-022 分发独立） |
 
 ### 11.2 被依赖（下游）
 
 | 下游 | 依赖本任务的什么 |
 |------|------------------|
-| #70 skills 包 | 无（并行）；但 0.4.0 发布 tag 时两产物一起发布（ADR-019 0.4.0 口径） |
+| #70 skills 包 | 无；#70 已后移至 1.0.0（2026-08-06 拍板），0.4.0 发布不含 skills 包 |
 | #137 Tauri | 打包产物矩阵稳定（安装包/便携 ZIP/内核 exe 形态），Tauri 替换壳后保持同构 |
 | 1.0.0 跨平台 | 本任务建立的 release.yml 模式扩展到 mac/linux |
 
