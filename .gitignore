@@ -44,3 +44,7 @@ Thumbs.db
 .hermes/
 pr-body-phase2.md
 pr-body-*.md
+
+# F19 打包分发（#48）：本地组装的内核目录（release.yml 构建期组装，勿入库）
+frontend/packages/kernel/
+frontend/packages/electron/dist/
