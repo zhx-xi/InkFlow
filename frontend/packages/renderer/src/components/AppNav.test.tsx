@@ -160,9 +160,10 @@ describe('AppNav — 跳转', () => {
     expect(screen.getByTestId('location-probe')).toHaveTextContent('/library?cat=characters');
   });
 
-  it('模型管理占位：#106 前为禁用项，点击不导航', () => {
+  it('模型管理：#106 转正为导航，点击 → /models', async () => {
+    const user = userEvent.setup();
     renderNav();
-    fireEvent.click(screen.getByTestId('nav-item-models'));
-    expect(screen.getByTestId('location-probe')).toHaveTextContent('/writing');
+    await user.click(screen.getByTestId('nav-item-models'));
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/models');
   });
 });

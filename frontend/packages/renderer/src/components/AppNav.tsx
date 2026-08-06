@@ -56,9 +56,9 @@ const LIBRARY_ITEMS: NavItemDef[] = [
   { key: 'rag', href: '/library?cat=rag', labelKey: 'nav.lib.rag', icon: Database },
 ];
 
-/** models = #106 占位禁用项（无 href，点击不导航）；agent 快捷入口直达 /settings?cat=agent */
-const SYSTEM_ITEMS: Array<NavItemDef & { placeholder?: boolean }> = [
-  { key: 'models', labelKey: 'nav.models', icon: Cpu, placeholder: true },
+/** models = #106 模型管理页（普通页面导航）；agent 快捷入口直达 /settings?cat=agent */
+const SYSTEM_ITEMS: NavItemDef[] = [
+  { key: 'models', href: '/models', labelKey: 'nav.models', icon: Cpu },
   { key: 'agent', href: '/settings?cat=agent', labelKey: 'nav.agent', icon: Bot },
   { key: 'settings', href: '/settings', labelKey: 'nav.settings', icon: Settings },
 ];
@@ -151,20 +151,6 @@ export function AppNav({ showBrand = true }: { showBrand?: boolean }) {
 
         <NavGroup testKey="system" labelKey="nav.group.system" icon={Settings} collapsed={collapsed}>
           {SYSTEM_ITEMS.map((item) => {
-            if (item.placeholder) {
-              // #106 模型管理：占位禁用项，渲染但不导航
-              return (
-                <div
-                  key={item.key}
-                  data-testid={`nav-item-${item.key}`}
-                  aria-disabled="true"
-                  className={cn(navCls({ isActive: false }), 'cursor-not-allowed opacity-50')}
-                >
-                  <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  {!collapsed && <span className="truncate">{t(item.labelKey)}</span>}
-                </div>
-              );
-            }
             const isAgent = item.key === 'agent';
             const link = isAgent ? (
               // Agent 为快捷入口而非页面：用 Link 渲染，不产生 aria-current（页面归属为「设置」）
