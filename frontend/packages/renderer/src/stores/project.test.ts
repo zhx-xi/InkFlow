@@ -16,12 +16,23 @@
  * - selectProject(id: string | null): void —— currentProjectId（项目卡片「写作中」标记依据）
  *
  * 状态转换契约：loading true→false；失败 → error 文案 + loading false。
+ *
+ * ⚠️ #107 模板引用契约（2026-08-06，spec §9.2.2 / §9.3 / M5）：
+ * GREEN 需在 src/stores/project.ts 补：
+ * - NewProjectInput.template_id?: number | null（新建项目选模板，body 透传——现实现
+ *   body: input 已透传，仅类型缺字段）
+ * - ProjectConfig.template_id?: number | null（config JSON 零迁移，§9.2.2）
+ * - updateConfig(id: string, patch: ProjectConfig): Promise<void>
+ *     PATCH /api/v1/projects/{id} body { config: patch } → 成功 → 本地该项目 config 更新
+ *     （项目内切换模板，spec §9.2.5；宽容合并/替换语义，契约只钉 template_id 在场）
+ * RED 预期：createProject 透传用例为确认型（现实现 body: input 已透传 → 预期直接绿）；
+ * updateConfig 用例 FAIL 于 is-not-a-function（类 2 契约缺口）。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act } from '@testing-library/react';
 import { useProjectStore } from './project';
 import { apiFetch } from '../api/client';
-import type { Project, NewProjectInput } from './project';
+import type { Project, ProjectConfig, NewProjectInput } from './project';
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
@@ -204,5 +215,70 @@ describe('project store — 进度失败兜底与 setter 组（#105 补测）', 
     expect(s.currentProjectId).toBe('p1');
     expect(s.loading).toBe(true);
     expect(s.error).toBe('临时错误');
+  });
+});
+
+/**
+ * #107 Agent 模板引用（2026-08-06，spec §9.2.2 / §9.3 / M5）。
+ * RED 预期：updateConfig 未实现 → is-not-a-function；createProject 透传为确认型
+ * （现实现 body: input 已透传 → 本用例预期直接绿，非 RED）。
+ */
+describe('project store — #107 模板引用（template_id）', () => {
+  /** 契约增强类型：GREEN 补全 NewProjectInput.template_id 后此别名可删 */
+  type NewProjectInputWithTemplate = NewProjectInput & { template_id?: number | null };
+  /** 契约增强类型：GREEN 补全 ProjectConfig.template_id 后此别名可删 */
+  type ConfigWithTemplate = ProjectConfig & { template_id?: number | null };
+  type ProjectStateWithUpdateConfig = ReturnType<typeof useProjectStore.getState> & {
+    updateConfig: (id: string, patch: ConfigWithTemplate) => Promise<void>;
+  };
+  const stateWithUpdateConfig = () => useProjectStore.getState() as ProjectStateWithUpdateConfig;
+
+  it('契约面：updateConfig 是函数（GREEN 补 action；当前缺失 → is-not-a-function RED）', () => {
+    expect(typeof stateWithUpdateConfig().updateConfig).toBe('function');
+  });
+
+  it('createProject input 含 template_id → POST body 透传（确认型：现实现 body: input 已透传）', async () => {
+    const created = makeProject({ id: 'p9', name: '青山入我怀', config: { template_id: 2 } as ProjectConfig });
+    apiFetchMock.mockResolvedValue(created);
+    const input: NewProjectInputWithTemplate = {
+      name: '青山入我怀',
+      genre: '言情',
+      language: 'zh-CN',
+      target_words: 800000,
+      template_id: 2,
+    };
+
+    let returned!: Project;
+    await act(async () => {
+      returned = await useProjectStore.getState().createProject(input);
+    });
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects', {
+      method: 'POST',
+      body: { name: '青山入我怀', genre: '言情', language: 'zh-CN', target_words: 800000, template_id: 2 },
+    });
+    expect(returned.id).toBe('p9');
+    const s = useProjectStore.getState();
+    expect((s.projects[0].config as ConfigWithTemplate).template_id).toBe(2);
+    expect(s.currentProjectId).toBe('p9');
+  });
+
+  it('updateConfig：PATCH /api/v1/projects/{id} body {config} 含 template_id → 本地 config 更新（项目内切换模板）', async () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: '青云志' })],
+      currentProjectId: 'p1',
+    });
+    apiFetchMock.mockResolvedValue({ ok: true });
+
+    await act(async () => {
+      await stateWithUpdateConfig().updateConfig('p1', { template_id: 2 });
+    });
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects/p1', {
+      method: 'PATCH',
+      body: { config: expect.objectContaining({ template_id: 2 }) },
+    });
+    const project = useProjectStore.getState().projects.find((p) => p.id === 'p1');
+    expect((project?.config as ConfigWithTemplate).template_id).toBe(2);
   });
 });

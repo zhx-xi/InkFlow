@@ -7,11 +7,14 @@ import inkflowIconDark from '../assets/inkflow-icon-plain-dark.svg?url&no-inline
 import inkflowIconInk from '../assets/inkflow-icon-plain-ink.svg?url&no-inline';
 import { AgentChainCard } from '../components/AgentChainCard';
 import { AppearanceCard } from '../components/AppearanceCard';
+import { TemplateDialog } from '../components/TemplateDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
-import { apiFetch, ensureApiReady } from '../api/client';
+import { apiFetch, ensureApiReady, errorMessage } from '../api/client';
 import { useAgentStore } from '../stores/agent';
 import { useProjectStore } from '../stores/project';
+import type { AgentTemplate, AgentTemplateInput } from '../stores/templates';
+import { useTemplatesStore } from '../stores/templates';
 import { useThemeStore } from '../stores/theme';
 import { useToastStore } from '../stores/toast';
 import type { ThemeName } from '../theme';
@@ -226,13 +229,238 @@ function AgentPanel() {
   );
 }
 
-/** 模板分类：#107 落地前为占位 */
+/** 模板分类（#107 转正，spec §9.2.5 / §9.5 / M4）：列表卡片 + 新建/编辑/删除/设为默认 + 风险确认 */
 function TemplatesPanel() {
   const { t } = useI18n();
+  const pushToast = useToastStore((s) => s.pushToast);
+  const templates = useTemplatesStore((s) => s.templates);
+  const loading = useTemplatesStore((s) => s.loading);
+  const loadTemplates = useTemplatesStore((s) => s.loadTemplates);
+  const createTemplate = useTemplatesStore((s) => s.createTemplate);
+  const updateTemplate = useTemplatesStore((s) => s.updateTemplate);
+  const deleteTemplate = useTemplatesStore((s) => s.deleteTemplate);
+  const setDefault = useTemplatesStore((s) => s.setDefault);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<AgentTemplate | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<AgentTemplate | null>(null);
+  const [pendingSave, setPendingSave] = useState<{
+    id: number;
+    input: AgentTemplateInput;
+    template: AgentTemplate;
+  } | null>(null);
+
+  useEffect(() => {
+    void loadTemplates();
+  }, [loadTemplates]);
+
+  const handleCreate = async (input: AgentTemplateInput) => {
+    try {
+      await createTemplate(input);
+      setDialogOpen(false);
+    } catch (err) {
+      pushToast('err', errorMessage(err));
+    }
+  };
+
+  const handleUpdate = async (input: AgentTemplateInput) => {
+    if (!editing) return;
+    // 被引用模板保存 → 风险确认（spec §9.5）；无引用 → 直接保存
+    if ((editing.used_by?.length ?? 0) > 0) {
+      setPendingSave({ id: editing.id, input, template: editing });
+      return;
+    }
+    try {
+      await updateTemplate(editing.id, input);
+      setDialogOpen(false);
+    } catch (err) {
+      pushToast('err', errorMessage(err));
+    }
+  };
+
+  const confirmSave = async () => {
+    if (!pendingSave) return;
+    const { id, input } = pendingSave;
+    setPendingSave(null);
+    try {
+      await updateTemplate(id, input);
+      setDialogOpen(false);
+    } catch (err) {
+      pushToast('err', errorMessage(err));
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!pendingDelete) return;
+    const target = pendingDelete;
+    setPendingDelete(null);
+    await deleteTemplate(target.id);
+    const err = useTemplatesStore.getState().error;
+    if (err) pushToast('err', err);
+  };
+
+  const referencedNames = (tpl: AgentTemplate) =>
+    (tpl.used_by ?? []).map((p) => p.name).join('、');
+
+  // 风险确认框文案（删除：被引用列项目名 / 无引用通用；保存：影响项目 + Agent 配置同步提示）
+  const confirmMessage = pendingDelete
+    ? (pendingDelete.used_by?.length ?? 0) > 0
+      ? t('tpl.confirm.deleteReferenced', {
+          n: pendingDelete.used_by?.length ?? 0,
+          names: referencedNames(pendingDelete),
+        })
+      : t('tpl.confirm.delete', { name: pendingDelete.name })
+    : pendingSave
+      ? t('tpl.confirm.saveReferenced', {
+          n: pendingSave.template.used_by?.length ?? 0,
+          names: referencedNames(pendingSave.template),
+        })
+      : '';
+
   return (
-    <section className="rounded-lg border border-line bg-surface p-6 shadow-card">
-      <h2 className="font-serif text-[17px] font-semibold">{t('set.cat.templates')}</h2>
-      <p className="mt-1 text-[12px] text-ink-3">{t('set.templates.placeholder')}</p>
+    <section className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h2 className="font-serif text-[17px] font-semibold">{t('set.cat.templates')}</h2>
+        <button
+          type="button"
+          data-testid="template-add-btn"
+          className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+          onClick={() => {
+            setEditing(null);
+            setDialogOpen(true);
+          }}
+        >
+          {t('tpl.new')}
+        </button>
+      </div>
+
+      <div data-testid="template-list" className="space-y-3">
+        {loading && templates.length === 0 ? (
+          <div className="text-[13px] text-ink-3">{t('common.loading')}</div>
+        ) : (
+          templates.map((tpl) => (
+            <div
+              key={tpl.id}
+              data-testid={`template-card-${tpl.id}`}
+              className="flex items-start justify-between gap-3 rounded-lg border border-line bg-surface p-4 shadow-card"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-[14px] font-medium text-ink">{tpl.name}</span>
+                  {tpl.is_default && (
+                    <span
+                      data-testid={`template-default-badge-${tpl.id}`}
+                      className="rounded-full border border-ok/30 bg-ok/10 px-2 py-0.5 text-[11px] text-ok"
+                    >
+                      {t('tpl.defaultBadge')}
+                    </span>
+                  )}
+                </div>
+                {tpl.description && (
+                  <p className="mt-1 truncate text-[12px] text-ink-3">{tpl.description}</p>
+                )}
+                {(tpl.used_by?.length ?? 0) > 0 && (
+                  <span
+                    data-testid={`template-usedby-${tpl.id}`}
+                    className="mt-2 inline-block rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-2"
+                  >
+                    {t('tpl.usedBy', { n: tpl.used_by?.length ?? 0 })}
+                  </span>
+                )}
+              </div>
+              <div className="flex shrink-0 gap-1">
+                <button
+                  type="button"
+                  data-testid={`template-edit-${tpl.id}`}
+                  aria-label={`${t('tpl.edit')} ${tpl.name}`}
+                  className="rounded border border-line px-2.5 py-1 text-[12px] text-ink-2 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => {
+                    setEditing(tpl);
+                    setDialogOpen(true);
+                  }}
+                >
+                  {t('tpl.edit')}
+                </button>
+                <button
+                  type="button"
+                  data-testid={`template-set-default-${tpl.id}`}
+                  aria-label={`${t('tpl.setDefault')} ${tpl.name}`}
+                  className="rounded border border-line px-2.5 py-1 text-[12px] text-ink-2 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => void setDefault(tpl.id)}
+                >
+                  {t('tpl.setDefault')}
+                </button>
+                <button
+                  type="button"
+                  data-testid={`template-delete-${tpl.id}`}
+                  aria-label={`${t('tpl.delete')} ${tpl.name}`}
+                  className="rounded border border-line px-2.5 py-1 text-[12px] text-ink-2 transition duration-180 hover:bg-surface-3 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => setPendingDelete(tpl)}
+                >
+                  {t('tpl.delete')}
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* 关闭即卸载：重开时以当前 editing 重新初始化表单（编辑模式回显） */}
+      {dialogOpen && (
+        <TemplateDialog
+          open
+          onOpenChange={setDialogOpen}
+          editing={editing}
+          onCreate={(input) => void handleCreate(input)}
+          onUpdate={(input) => void handleUpdate(input)}
+        />
+      )}
+
+      {(pendingDelete || pendingSave) && (
+        <div
+          role="presentation"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+          onClick={() => {
+            setPendingDelete(null);
+            setPendingSave(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('tpl.confirm.title')}
+            data-testid="template-confirm-dialog"
+            className="w-[420px] rounded-lg border border-line bg-surface p-6 shadow-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="font-serif text-[18px] font-semibold">{t('tpl.confirm.title')}</h2>
+            <p className="mt-3 text-[13px] text-ink-2">{confirmMessage}</p>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                data-testid="template-confirm-cancel"
+                className="rounded-md border border-line px-4 py-1.5 text-sm text-ink-2 transition duration-180 hover:bg-surface-3"
+                onClick={() => {
+                  setPendingDelete(null);
+                  setPendingSave(null);
+                }}
+              >
+                {t('dlg.cancel')}
+              </button>
+              <button
+                type="button"
+                data-testid="template-confirm-ok"
+                className="rounded-md bg-accent px-4 py-1.5 text-sm text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                onClick={() => {
+                  if (pendingDelete) void handleDelete();
+                  if (pendingSave) void confirmSave();
+                }}
+              >
+                {t('tpl.confirm.ok')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

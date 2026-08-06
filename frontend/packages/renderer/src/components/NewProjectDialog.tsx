@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { errorMessage } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import { useProjectStore } from '../stores/project';
+import { useTemplatesStore } from '../stores/templates';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 const GENRES = ['玄幻', '科幻', '言情', '仙侠', '武侠', '都市', '历史', '游戏', '悬疑', '奇幻', '其他'];
@@ -17,10 +18,14 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const createProject = useProjectStore((s) => s.createProject);
+  const templates = useTemplatesStore((s) => s.templates);
+  const loadTemplates = useTemplatesStore((s) => s.loadTemplates);
   const [name, setName] = useState('');
   const [genre, setGenre] = useState(GENRES[0]);
   const [language, setLanguage] = useState('zh-CN');
   const [targetWords, setTargetWords] = useState(800000);
+  // #107：Agent 模板选择（null = 默认模板，POST body 不含 template_id）
+  const [templateId, setTemplateId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   // #105 修复批：submitting 防双重提交；in-flight 时 ESC/遮罩忽略关闭路径（防误关丢进度）
   const [submitting, setSubmitting] = useState(false);
@@ -33,6 +38,11 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
       returnFocusRef.current?.focus();
     };
   }, []);
+
+  // #107：挂载时拉取模板列表（测试内假 store loadTemplates no-op 兼容；幂等守卫允许）
+  useEffect(() => {
+    if (templates.length === 0) void loadTemplates();
+  }, [loadTemplates, templates.length]);
 
   // §6.2③ ESC 键关闭：document 级监听覆盖对话框内任意焦点；
   // 忽略 Radix Select 等已 preventDefault 的 Escape（如下拉面板开启时只关面板不关对话框）；
@@ -59,7 +69,13 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
     setError(null);
     setSubmitting(true);
     try {
-      await createProject({ name: trimmed, genre, language, target_words: targetWords });
+      await createProject({
+        name: trimmed,
+        genre,
+        language,
+        target_words: targetWords,
+        ...(templateId != null ? { template_id: templateId } : {}),
+      });
       navigate('/writing');
     } catch (err) {
       // §6.3② 创建失败内联展示（复用既有 error 区域），对话框保持打开可修改重试
@@ -128,6 +144,25 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
                 {LANGUAGES.map((l) => (
                   <SelectItem key={l} value={l}>
                     {l}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5 text-[13px]">
+            <span>{t('dlg.template')}</span>
+            <Select
+              value={templateId != null ? String(templateId) : 'default'}
+              onValueChange={(v) => setTemplateId(v === 'default' ? null : Number(v))}
+            >
+              <SelectTrigger aria-label={t('dlg.template')} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="default">{t('dlg.templateDefault')}</SelectItem>
+                {templates.map((tp) => (
+                  <SelectItem key={tp.id} value={String(tp.id)}>
+                    {tp.name}
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -112,7 +112,8 @@ async def test_chain_executes_in_order():
         assert stage_id in user_msg
     # 节点将 AgentRole 的 model/temperature 透传给 LLM
     assert llm.calls[0]["model"] == "openai/gpt-4o"
-    assert llm.calls[0]["temperature"] == 0.7
+    # spec §9.2.3 温度链拍板：AgentRole.temperature 默认 None（跟随默认，装配层决定最终值）
+    assert llm.calls[0]["temperature"] is None
 
 
 async def test_output_passes_downstream():

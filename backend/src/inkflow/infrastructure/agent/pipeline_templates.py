@@ -38,7 +38,7 @@ def _build_write_chapter_template() -> PipelineConfig:
         name="架构师",
         system_prompt=_ARCHITECT_PROMPT,
         model="openai/gpt-4o",
-        temperature=0.7,
+        temperature=None,  # None = 跟随默认 → 项目顶层温度（spec §9.2.3 温度链）
     )
     writer = AgentRole(
         id="writer",

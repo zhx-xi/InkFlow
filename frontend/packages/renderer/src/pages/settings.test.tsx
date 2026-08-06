@@ -21,7 +21,8 @@
  * - Agent：四角色开关（Architect/Writer/Auditor/Reviser，role=switch ↔ config.agent_*：
  *   关闭→undefined 从管线移除 / 重开→null 默认模型）+ 默认模型下拉
  *   （combobox aria-label「默认模型」ag.defaultModel 已有，选项 openai/deepseek/ollama）
- * - 模板：占位（#107 前不实现）
+ * - 模板：模板列表（名称/描述/应用项目数徽标/设为默认标记）+ 新建/编辑/删除/设为默认
+ *   + TemplateDialog（#107 契约，见下方 RED 段）
  * - 账户：数据目录 + 关于（版本/logo）
  *
  * 行为：
@@ -55,7 +56,29 @@
  * - 失败 PATCH 弹 err toast：defaultWords 失焦 PATCH reject → pushToast('err', ...)（现状 catch
  *   吞掉后无条件 pushToast('ok') → RED）。
  *
- * 新增 i18n key（GREEN 补 zh.ts/en.ts；theme 系 / ap 系 / ag 系 key 已有）：
+ * ⚠️ #107 模板分类转正 RED 契约（2026-08-06，spec §9.2.5 / §9.5 / M4；占位 → 真实面板）：
+ * - 占位用例（set.templates.placeholder 断言）删除；模板分类转正。data-testid 即契约：
+ *   template-list（列表容器）/ template-card-<id> / template-usedby-<id>（应用项目数徽标
+ *   「N 个项目使用」，无引用不渲染）/ template-default-badge-<id>（「默认」标记，is_default=true）/
+ *   template-add-btn / template-edit-<id> / template-delete-<id> / template-set-default-<id> /
+ *   template-confirm-dialog（风险确认框）/ template-confirm-ok / template-confirm-cancel
+ * - 进入模板分类 → 面板挂载 → loadTemplates()（GET /api/v1/agent-templates → {items}）；
+ *   列表项含 used_by（前端契约，见 stores/templates 契约）
+ * - 删除：被引用 → 风险确认「该模板正在被 {n} 个项目使用（{names}）」（tpl.confirm.deleteReferenced）
+ *   确认 → DELETE /api/v1/agent-templates/{id} + 列表移除；无引用 → 通用文案
+ *   「确定删除「{name}」？此操作不可撤销」（tpl.confirm.delete）；取消分支 → 不发 DELETE
+ * - 设为默认（template-set-default-<id>）→ PATCH /api/v1/agent-templates/default body {id}
+ *   → 默认徽标迁移（目标卡片出现「默认」，原默认卡片移除）
+ * - 编辑被引用模板保存 → 风险确认（tpl.confirm.saveReferenced「…保存将同步影响这些项目的
+ *   Agent 配置」）→ 确认 → PATCH /api/v1/agent-templates/{id}；取消 → 不发 PATCH（spec §9.5）
+ * - 新建/编辑按钮 → TemplateDialog 打开（编辑模式回显名称）
+ * - RED 阶段 mock：vi.mock('../stores/templates') + vi.mock('../components/TemplateDialog')
+ *   （两模块 GREEN 才创建；本文件以测试内假实现提供，保证既有用例可运行——
+ *   假 store 行为与 stores/templates.test.ts 契约一致，假 dialog 为受控表单壳）。
+ *   GREEN 落地后此两 mock 可删改真实 import。→ 本文件 RED 形态 = 新用例 element-missing
+ *   （template-list / template-add-btn 等不存在），既有用例保持绿。
+ *
+ * 新增 i18n key（GREEN 补 zh.ts / en.ts）：
  * set.title='设置' set.cat.general='常规' set.cat.models='模型' set.cat.agent='Agent'
  * set.cat.templates='模板' set.cat.account='账户' set.font='编辑器字体'
  * set.font.serif='衬线' set.font.sans='无衬线' set.font.mono='等宽'
@@ -63,6 +86,11 @@
  * set.models.placeholder='模型管理将在后续版本提供' set.templates.placeholder='模板功能将在后续版本提供'
  * set.account.dataDir='数据目录' set.account.about='关于' set.shortcuts.title='快捷键一览'
  * toast.saved='已保存'
+ * （#107 新增，GREEN 补 zh.ts / en.ts；set.templates.placeholder 不再使用，GREEN 可清理）：
+ * tpl.usedBy='{n} 个项目使用' tpl.defaultBadge='默认'
+ * tpl.confirm.delete='确定删除「{name}」？此操作不可撤销'
+ * tpl.confirm.deleteReferenced='该模板正在被 {n} 个项目使用（{names}）'
+ * tpl.confirm.saveReferenced='该模板正在被 {n} 个项目使用（{names}），保存将同步影响这些项目的 Agent 配置'
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
@@ -78,6 +106,144 @@ import { useToastStore } from '../stores/toast';
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
   return { ...actual, apiFetch: vi.fn() };
+});
+
+// ⚠️ #107 RED 阶段 mock：stores/templates 与 components/TemplateDialog 由 GREEN 创建，
+// 本文件以测试内假实现提供（保证既有用例可运行）。假 store 行为与 stores/templates.test.ts
+// 契约一致；假 dialog 为受控表单壳（open/editing 回显 + 保存走 onCreate/onUpdate 回调）。
+// GREEN 落地后此两 mock 可删，改真实 import。
+vi.mock('../stores/templates', async () => {
+  const { create } = await import('zustand');
+  const { apiFetch } = await import('../api/client');
+  interface FakeRole {
+    model: string | null;
+    temperature: number | null;
+    enabled: boolean;
+  }
+  interface FakeTemplate {
+    id: number;
+    name: string;
+    description: string;
+    main_model: string;
+    default_temperature: number;
+    roles: {
+      architect: FakeRole;
+      writer: FakeRole;
+      auditor: FakeRole;
+      reviser: FakeRole;
+    };
+    default_words: number;
+    is_default: boolean;
+    used_by?: Array<{ id: string; name: string }>;
+    created_at: string;
+    updated_at: string;
+  }
+  const useTemplatesStore = create<{
+    templates: FakeTemplate[];
+    loading: boolean;
+    error: string | null;
+    defaultTemplateId: number | null;
+    loadTemplates: () => Promise<void>;
+    createTemplate: (input: unknown) => Promise<FakeTemplate>;
+    updateTemplate: (id: number, patch: unknown) => Promise<FakeTemplate>;
+    deleteTemplate: (id: number) => Promise<void>;
+    duplicateTemplate: (id: number) => Promise<FakeTemplate>;
+    setDefault: (id: number) => Promise<void>;
+    loadDefault: () => Promise<void>;
+  }>((set) => ({
+    templates: [],
+    loading: false,
+    error: null,
+    defaultTemplateId: null,
+    loadTemplates: async () => {
+      set({ loading: true, error: null });
+      try {
+        const data = await apiFetch<{ items: FakeTemplate[] }>('/api/v1/agent-templates');
+        set({ templates: data.items, loading: false, error: null });
+      } catch (err) {
+        set({ error: err instanceof Error ? err.message : String(err), loading: false });
+      }
+    },
+    createTemplate: async (input) => {
+      const created = { ...(input as object), id: 999, is_default: false, used_by: [] } as unknown as FakeTemplate;
+      set((s) => ({ templates: [...s.templates, created], error: null }));
+      return created;
+    },
+    updateTemplate: async (id, patch) => {
+      const updated = await apiFetch<FakeTemplate>(`/api/v1/agent-templates/${id}`, {
+        method: 'PATCH',
+        body: patch,
+      });
+      set((s) => ({
+        templates: s.templates.map((t) => (t.id === id ? updated : t)),
+        error: null,
+      }));
+      return updated;
+    },
+    deleteTemplate: async (id) => {
+      await apiFetch(`/api/v1/agent-templates/${id}`, { method: 'DELETE' });
+      set((s) => ({ templates: s.templates.filter((t) => t.id !== id), error: null }));
+    },
+    duplicateTemplate: async (id) => {
+      const dup = await apiFetch<FakeTemplate>(`/api/v1/agent-templates/${id}/duplicate`, {
+        method: 'POST',
+      });
+      set((s) => ({ templates: [...s.templates, dup], error: null }));
+      return dup;
+    },
+    setDefault: async (id) => {
+      await apiFetch('/api/v1/agent-templates/default', { method: 'PATCH', body: { id } });
+      set((s) => ({
+        defaultTemplateId: id,
+        templates: s.templates.map((t) => ({ ...t, is_default: t.id === id })),
+        error: null,
+      }));
+    },
+    loadDefault: async () => {
+      try {
+        const data = await apiFetch<FakeTemplate>('/api/v1/agent-templates/default');
+        set({ defaultTemplateId: data.id, error: null });
+      } catch (err) {
+        set({ error: err instanceof Error ? err.message : String(err) });
+      }
+    },
+  }));
+  return { useTemplatesStore };
+});
+
+vi.mock('../components/TemplateDialog', async () => {
+  const React = await import('react');
+  function TemplateDialog(props: {
+    open?: boolean;
+    editing?: { name?: string } | null;
+    onCreate?: (input: unknown) => void;
+    onUpdate?: (input: unknown) => void;
+    onOpenChange?: (open: boolean) => void;
+  }) {
+    const [name, setName] = React.useState(props.editing?.name ?? '');
+    if (!props.open) return null;
+    const save = () => {
+      const input = props.editing ? { ...props.editing, name } : { name };
+      if (props.editing) props.onUpdate?.(input);
+      else props.onCreate?.(input);
+    };
+    return React.createElement(
+      'div',
+      { 'data-testid': 'template-dialog', role: 'dialog' },
+      React.createElement('input', {
+        'data-testid': 'template-name-input',
+        value: name,
+        onChange: (e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value),
+      }),
+      React.createElement('button', { 'data-testid': 'template-save', onClick: save }, '保存'),
+      React.createElement(
+        'button',
+        { 'data-testid': 'template-cancel', onClick: () => props.onOpenChange?.(false) },
+        '取消',
+      ),
+    );
+  }
+  return { TemplateDialog };
 });
 
 const apiFetchMock = vi.mocked(apiFetch);
@@ -316,7 +482,7 @@ describe('设置页 — Agent 分类（迁移自 AgentChainCard，spec §7.4/§7
   });
 });
 
-describe('设置页 — 模型/模板/账户分类（占位，spec §7.4）', () => {
+describe('设置页 — 模型/账户分类（占位，spec §7.4）', () => {
   it('模型分类：Provider 摘要 + 占位（#106 前不实现管理）', async () => {
     const user = userEvent.setup();
     renderSettings();
@@ -326,18 +492,250 @@ describe('设置页 — 模型/模板/账户分类（占位，spec §7.4）', ()
     expect(panel).toHaveTextContent('模型管理将在后续版本提供');
   });
 
-  it('模板分类：占位（#107 前不实现）；账户分类：数据目录 + 关于', async () => {
+  it('账户分类：数据目录 + 关于', async () => {
     const user = userEvent.setup();
     renderSettings();
-    const nav = screen.getByTestId('settings-nav');
-
-    await user.click(within(nav).getByRole('button', { name: '模板' }));
-    expect(screen.getByTestId('settings-panel')).toHaveTextContent('模板功能将在后续版本提供');
-
-    await user.click(within(nav).getByRole('button', { name: '账户' }));
+    await user.click(within(screen.getByTestId('settings-nav')).getByRole('button', { name: '账户' }));
     const panel = screen.getByTestId('settings-panel');
     expect(panel).toHaveTextContent('数据目录');
     expect(panel).toHaveTextContent('关于');
+  });
+});
+
+/**
+ * #107 模板分类转正（2026-08-06）：占位 → 真实面板契约（spec §9.2.5 / §9.5 / M4）。
+ * RED 预期：GREEN 前 TemplatesPanel 仍为占位 → 本 describe 全部 element-missing
+ * （template-list / template-add-btn 等 testid 不存在）；既有用例（其他分类）保持绿。
+ * 数据流：面板挂载 → loadTemplates()（GET /api/v1/agent-templates mock）→ 测试内假 store。
+ */
+describe('设置页 — 模板分类（#107 RED 契约）', () => {
+  interface FakeRole {
+    model: string | null;
+    temperature: number | null;
+    enabled: boolean;
+  }
+  interface FakeTemplate {
+    id: number;
+    name: string;
+    description: string;
+    main_model: string;
+    default_temperature: number;
+    roles: {
+      architect: FakeRole;
+      writer: FakeRole;
+      auditor: FakeRole;
+      reviser: FakeRole;
+    };
+    default_words: number;
+    is_default: boolean;
+    used_by?: Array<{ id: string; name: string }>;
+    created_at: string;
+    updated_at: string;
+  }
+  const ROLE = (model: string | null, temperature: number | null, enabled: boolean): FakeRole => ({
+    model,
+    temperature,
+    enabled,
+  });
+  /** 列表 fixture：t1 被 2 个项目引用 + 默认；t2 无引用 + 非默认 */
+  const TEMPLATES: FakeTemplate[] = [
+    {
+      id: 1,
+      name: '经典玄幻',
+      description: '标准玄幻创作模板',
+      main_model: 'gpt-4o',
+      default_temperature: 0.7,
+      roles: {
+        architect: ROLE('deepseek-chat', 0.4, true),
+        writer: ROLE('gpt-4o', 0.8, true),
+        auditor: ROLE('gpt-4o', 0.5, true),
+        reviser: ROLE('deepseek-chat', 0.6, true),
+      },
+      default_words: 800000,
+      is_default: true,
+      used_by: [
+        { id: 'p1', name: '青云志' },
+        { id: 'p2', name: '归墟记' },
+      ],
+      created_at: '2026-08-01T10:00:00Z',
+      updated_at: '2026-08-05T10:00:00Z',
+    },
+    {
+      id: 2,
+      name: '悬疑推理',
+      description: '悬疑推理创作模板',
+      main_model: 'deepseek-chat',
+      default_temperature: 0.6,
+      roles: {
+        architect: ROLE(null, null, true),
+        writer: ROLE('deepseek-chat', 0.9, true),
+        auditor: ROLE(null, null, true),
+        reviser: ROLE(null, null, true),
+      },
+      default_words: 600000,
+      is_default: false,
+      used_by: [],
+      created_at: '2026-08-01T10:00:00Z',
+      updated_at: '2026-08-05T10:00:00Z',
+    },
+  ];
+
+  /** 面板挂载 → loadTemplates（GET /api/v1/agent-templates）的数据源 mock；PATCH 回显供保存流程 */
+  function mockTemplateList() {
+    apiFetchMock.mockImplementation(
+      async (path: string, init?: { method?: string; body?: unknown }) => {
+        void init?.body;
+        if (path === '/api/v1/agent-templates' && !init?.method) {
+          return { items: TEMPLATES, total: 2, offset: 0, limit: 50 };
+        }
+        if (path === '/api/v1/agent-templates/1' && init?.method === 'PATCH') {
+          return { ...TEMPLATES[0], name: '经典玄幻改' };
+        }
+        return { ok: true };
+      },
+    );
+  }
+
+  beforeEach(() => {
+    mockTemplateList();
+  });
+
+  async function openTemplatesPanel() {
+    const user = userEvent.setup();
+    renderSettings();
+    await user.click(within(screen.getByTestId('settings-nav')).getByRole('button', { name: '模板' }));
+    return user;
+  }
+
+  it('点击「模板」分类 → 模板列表：名称/描述/应用项目数徽标/设为默认标记', async () => {
+    await openTemplatesPanel();
+    const list = await screen.findByTestId('template-list');
+    const card1 = within(list).getByTestId('template-card-1');
+    expect(within(card1).getByText('经典玄幻')).toBeInTheDocument();
+    expect(within(card1).getByText('标准玄幻创作模板')).toBeInTheDocument();
+    expect(within(card1).getByTestId('template-usedby-1')).toHaveTextContent('2 个项目使用');
+    expect(within(card1).getByTestId('template-default-badge-1')).toHaveTextContent('默认');
+    const card2 = within(list).getByTestId('template-card-2');
+    expect(within(card2).getByText('悬疑推理')).toBeInTheDocument();
+    expect(within(card2).queryByTestId('template-usedby-2')).not.toBeInTheDocument();
+    expect(within(card2).queryByTestId('template-default-badge-2')).not.toBeInTheDocument();
+  });
+
+  it('新建按钮 → TemplateDialog 打开（新建模式：名称空）', async () => {
+    const user = await openTemplatesPanel();
+    await user.click(screen.getByTestId('template-add-btn'));
+    const dlg = await screen.findByTestId('template-dialog');
+    expect(within(dlg).getByTestId('template-name-input')).toHaveValue('');
+  });
+
+  it('编辑按钮 → TemplateDialog 打开且回显模板名称', async () => {
+    const user = await openTemplatesPanel();
+    await user.click(within(await screen.findByTestId('template-card-1')).getByTestId('template-edit-1'));
+    const dlg = await screen.findByTestId('template-dialog');
+    expect(within(dlg).getByTestId('template-name-input')).toHaveValue('经典玄幻');
+  });
+
+  it('删除被引用模板 → 风险确认框（列出项目名）→ 确认 → DELETE + 列表移除', async () => {
+    const user = await openTemplatesPanel();
+    await user.click(within(await screen.findByTestId('template-card-1')).getByTestId('template-delete-1'));
+    const confirm = screen.getByTestId('template-confirm-dialog');
+    expect(confirm).toHaveTextContent('该模板正在被 2 个项目使用（青云志、归墟记）');
+    await user.click(within(confirm).getByTestId('template-confirm-ok'));
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/agent-templates/1',
+        expect.objectContaining({ method: 'DELETE' }),
+      );
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('template-card-1')).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId('template-card-2')).toBeInTheDocument();
+  });
+
+  it('删除被引用模板 → 取消 → 不发 DELETE、列表不变', async () => {
+    const user = await openTemplatesPanel();
+    await user.click(within(await screen.findByTestId('template-card-1')).getByTestId('template-delete-1'));
+    const confirm = screen.getByTestId('template-confirm-dialog');
+    await user.click(within(confirm).getByTestId('template-confirm-cancel'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('template-confirm-dialog')).not.toBeInTheDocument();
+    });
+    expect(
+      apiFetchMock.mock.calls.some(
+        (c) => c[0] === '/api/v1/agent-templates/1' && c[1]?.method === 'DELETE',
+      ),
+    ).toBe(false);
+    expect(screen.getByTestId('template-card-1')).toBeInTheDocument();
+  });
+
+  it('删除无引用模板 → 通用确认文案「确定删除「悬疑推理」？此操作不可撤销」→ 确认 → DELETE', async () => {
+    const user = await openTemplatesPanel();
+    await user.click(within(await screen.findByTestId('template-card-2')).getByTestId('template-delete-2'));
+    const confirm = screen.getByTestId('template-confirm-dialog');
+    expect(confirm).toHaveTextContent('确定删除「悬疑推理」？此操作不可撤销');
+    await user.click(within(confirm).getByTestId('template-confirm-ok'));
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/agent-templates/2',
+        expect.objectContaining({ method: 'DELETE' }),
+      );
+    });
+  });
+
+  it('设为默认 → PATCH /api/v1/agent-templates/default body {id} → 默认徽标迁移', async () => {
+    const user = await openTemplatesPanel();
+    await user.click(within(await screen.findByTestId('template-card-2')).getByTestId('template-set-default-2'));
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/agent-templates/default',
+        expect.objectContaining({ method: 'PATCH', body: expect.objectContaining({ id: 2 }) }),
+      );
+    });
+    // 徽标迁移：card2 出现「默认」，card1 移除（store is_default 翻转 → 重渲染）
+    await waitFor(() => {
+      expect(within(screen.getByTestId('template-card-2')).getByTestId('template-default-badge-2')).toBeInTheDocument();
+    });
+    expect(
+      within(screen.getByTestId('template-card-1')).queryByTestId('template-default-badge-1'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('编辑被引用模板保存 → 风险确认（列出影响项目）→ 确认 → PATCH /api/v1/agent-templates/1（spec §9.5 保存分支）', async () => {
+    const user = await openTemplatesPanel();
+    await user.click(within(await screen.findByTestId('template-card-1')).getByTestId('template-edit-1'));
+    const dlg = await screen.findByTestId('template-dialog');
+    await user.clear(within(dlg).getByTestId('template-name-input'));
+    await user.type(within(dlg).getByTestId('template-name-input'), '经典玄幻改');
+    await user.click(within(dlg).getByTestId('template-save'));
+    const confirm = await screen.findByTestId('template-confirm-dialog');
+    expect(confirm).toHaveTextContent('保存将同步影响这些项目的 Agent 配置');
+    await user.click(within(confirm).getByTestId('template-confirm-ok'));
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/agent-templates/1',
+        expect.objectContaining({ method: 'PATCH' }),
+      );
+    });
+  });
+
+  it('编辑被引用模板保存 → 取消 → 不发 PATCH', async () => {
+    const user = await openTemplatesPanel();
+    await user.click(within(await screen.findByTestId('template-card-1')).getByTestId('template-edit-1'));
+    const dlg = await screen.findByTestId('template-dialog');
+    await user.clear(within(dlg).getByTestId('template-name-input'));
+    await user.type(within(dlg).getByTestId('template-name-input'), '经典玄幻改');
+    await user.click(within(dlg).getByTestId('template-save'));
+    const confirm = await screen.findByTestId('template-confirm-dialog');
+    await user.click(within(confirm).getByTestId('template-confirm-cancel'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('template-confirm-dialog')).not.toBeInTheDocument();
+    });
+    expect(
+      apiFetchMock.mock.calls.some(
+        (c) => c[0] === '/api/v1/agent-templates/1' && c[1]?.method === 'PATCH',
+      ),
+    ).toBe(false);
   });
 });
 
