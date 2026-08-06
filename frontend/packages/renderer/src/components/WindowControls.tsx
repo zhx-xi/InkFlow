@@ -19,8 +19,17 @@ export function WindowControls() {
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = window.INKFLOW_API?.windowControls?.onMaximizedChange?.(setIsMaximized);
+    let unsubscribe: (() => void) | undefined;
+    // 立即尝试订阅（API 已注入时）
+    unsubscribe = window.INKFLOW_API?.windowControls?.onMaximizedChange?.(setIsMaximized);
+    // preload 注入晚于 React 挂载时补订：'inkflow:api-ready' 由 preload expose 后 dispatch（#98）
+    const onApiReady = (): void => {
+      unsubscribe?.(); // 防重复订阅
+      unsubscribe = window.INKFLOW_API?.windowControls?.onMaximizedChange?.(setIsMaximized);
+    };
+    window.addEventListener('inkflow:api-ready', onApiReady);
     return () => {
+      window.removeEventListener('inkflow:api-ready', onApiReady);
       unsubscribe?.();
     };
   }, []);
