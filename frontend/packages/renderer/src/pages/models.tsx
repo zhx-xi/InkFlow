@@ -5,7 +5,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
-import { AddModelDialog } from '../components/AddModelDialog';
+import { AddModelDialog, type AddModelsResult } from '../components/AddModelDialog';
 import { ProviderDialog } from '../components/ProviderDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
@@ -72,10 +72,13 @@ export function ModelsPage() {
     await addModel(providerId, model);
   };
 
-  const handleModelsAdded = () => {
-    const err = useModelsStore.getState().error;
-    if (err) pushToast('err', err);
-    else pushToast('ok', t('m.modelAdded'));
+  // #125：以 AddModelDialog 逐行结果为准（不再读 store.error 的「最后一次调用」）
+  const handleModelsAdded = (result: AddModelsResult) => {
+    if (result.failed > 0) {
+      pushToast('err', t('m.modelsFailed', { n: result.failed, reason: result.errors[0] ?? '' }));
+    } else {
+      pushToast('ok', t('m.modelAdded'));
+    }
   };
 
   const handleDelete = async () => {

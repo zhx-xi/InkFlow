@@ -88,6 +88,7 @@ export const zh = {
   'm.edit': '编辑',
   'm.addModel': '添加模型',
   'm.modelAdded': '已添加模型',
+  'm.modelsFailed': '{n} 行失败：{reason}',
   'm.modelId': '模型 ID',
   'm.addRow': '添加一行',
   'm.providerSelect': '选择 Provider',

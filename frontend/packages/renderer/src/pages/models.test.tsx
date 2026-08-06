@@ -44,6 +44,18 @@
  *
  * RED 预期（本批为评审修复契约，页面已实现）：F4 用例 FAIL 于 provider-edit-<id> 不存在
  * （element-missing）；F3 用例 FAIL 于 add-model-btn 不存在（element-missing）；既有用例保持绿。
+ *
+ * #125 契约升级（2026-08-06，多模型添加部分失败被掩盖）：
+ * - handleModelsAdded 契约：接收 AddModelsResult（{ succeeded, failed, errors }，
+ *   errors = errorMessage(err) 后的字符串数组）——页面不再从 store.error 读「最后一次调用」
+ *   的结果（bug 根源：多行添加时以最后一次为准）；result.failed > 0 →
+ *   pushToast('err', t('m.modelsFailed', { n: result.failed, reason: result.errors[0] ?? '' }))；
+ *   否则 pushToast('ok', t('m.modelAdded'))。
+ * - 新 i18n key（GREEN 补 zh.ts / en.ts）：m.modelsFailed = '{n} 行失败：{reason}'
+ *   （zh）/ '{n} rows failed: {reason}'（en）。
+ * - AddModelDialog 契约联动：有失败行 → 弹窗不关闭 + 草稿保留（模型 ID 输入值仍在 DOM）。
+ * - RED 预期失败形态：'PATCH 失败' 用例升级后 FAIL（当前实现 toast 无「N 行失败：」前缀
+ *   + 弹窗仍关闭）；成功路径用例（toast ok「已添加模型」+ 弹窗关闭）与其余用例保持绿。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
@@ -378,7 +390,7 @@ describe('模型管理页 — 添加模型保存（F3 全量 PATCH 语义 + toas
     });
   });
 
-  it('PATCH 失败（store 吞错不抛）→ toast err + onDone 照常（弹窗仍关闭）', async () => {
+  it('#125 PATCH 失败 → toast err「1 行失败：内置 Provider 不可修改」+ 弹窗不关闭 + 草稿保留', async () => {
     apiFetchMock.mockImplementation(async (_path: string, init?: { method?: string }) => {
       if (init?.method === 'PATCH') throw new Error('内置 Provider 不可修改');
       return PROVIDER_LIST;
@@ -392,11 +404,19 @@ describe('模型管理页 — 添加模型保存（F3 全量 PATCH 语义 + toas
     await user.type(within(dlg).getByLabelText('模型 ID 1'), 'gpt-4o-mini');
     await user.click(within(dlg).getByRole('button', { name: '保存' }));
 
+    // 失败行 toast：m.modelsFailed（'{n} 行失败：{reason}'）渲染结果（i18n key 由 GREEN 补；
+    // RED 阶段当前实现 toast 无前缀 → 本断言 FAIL）
     await waitFor(() => {
       const toasts = useToastStore.getState().toasts;
-      expect(toasts[toasts.length - 1]).toMatchObject({ type: 'err', message: '内置 Provider 不可修改' });
+      expect(toasts[toasts.length - 1]).toMatchObject({
+        type: 'err',
+        message: '1 行失败：内置 Provider 不可修改',
+      });
     });
-    await waitFor(() => expect(screen.queryByTestId('add-model-dialog')).not.toBeInTheDocument());
+    // #125 契约：有失败 → 弹窗不关闭 + 草稿保留（模型 ID 输入值仍在 DOM；RED 阶段当前实现
+    // 弹窗关闭 → 本断言 FAIL）
+    expect(screen.getByTestId('add-model-dialog')).toBeInTheDocument();
+    expect(within(dlg).getByLabelText('模型 ID 1')).toHaveValue('gpt-4o-mini');
   });
 });
 

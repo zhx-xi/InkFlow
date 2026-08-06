@@ -125,7 +125,7 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
           method: 'PATCH',
           // 后端 ProviderConfigUpdate.models 为 exclude_unset 整体替换：
           // 必须携带「既有 models + 新模型」全量，只发新模型会覆盖丢失（F3 契约）
-          body: { models: [...target.models, model] },
+          body: { models: [...target.models.filter((m) => m.id !== model.id), model] },
         },
       );
       set((s) => ({
@@ -133,8 +133,10 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
         error: null,
       }));
     } catch (err) {
-      // 失败：error 设置 + 列表不变（deleteProvider 同款语义）
+      // 失败：error 设置 + 列表不变（deleteProvider 同款语义）；
+      // #125 契约升级：rethrow（不吞）——AddModelDialog 批量保存依赖 reject 感知失败行
       set({ error: errorMessage(err) });
+      throw err;
     }
   },
 

@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
+import { errorMessage } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import type { ProviderConfig, ProviderModel } from '../stores/models';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -16,12 +17,19 @@ interface ModelDraftRow {
   roles: string;
 }
 
+/** #125 批量保存结果：逐行成功/失败计数 + errorMessage(err) 后的错误字符串数组 */
+export interface AddModelsResult {
+  succeeded: number;
+  failed: number;
+  errors: string[];
+}
+
 export interface AddModelDialogProps {
   open: boolean;
   providers: ProviderConfig[];
   onOpenChange: (open: boolean) => void;
   onAdd: (providerId: number, model: ProviderModel) => Promise<void>;
-  onDone: () => void;
+  onDone: (result: AddModelsResult) => void;
 }
 
 export function AddModelDialog({
@@ -73,11 +81,24 @@ export function AddModelDialog({
     if (models.length === 0) return;
     setSaving(true);
     try {
+      // #125 逐行 try/catch：失败行收集错误继续下一行，不中断（reject 不逸出）
+      let succeeded = 0;
+      const errors: string[] = [];
       for (const model of models) {
-        await onAdd(activeProviderId, model);
+        try {
+          await onAdd(activeProviderId, model);
+          succeeded += 1;
+        } catch (err) {
+          errors.push(errorMessage(err));
+        }
       }
-      onDone();
-      onOpenChange(false);
+      if (errors.length === 0) {
+        onDone({ succeeded, failed: 0, errors: [] });
+        onOpenChange(false);
+      } else {
+        // 有失败行：携带结果 + 弹窗不关闭 + 草稿保留（rows state 不清空，可修改重试）
+        onDone({ succeeded, failed: errors.length, errors });
+      }
     } finally {
       setSaving(false);
     }
