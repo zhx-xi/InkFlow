@@ -422,6 +422,14 @@ function createMainWindow(): void {
   });
   mainWindow = win;
 
+  // #106：最大化状态推送（自绘按钮图标切换：□ ↔ 还原）
+  const sendMaximizedState = (): void => {
+    win.webContents.send('window:maximized-changed', win.isMaximized());
+  };
+  win.on('maximize', sendMaximizedState);
+  win.on('unmaximize', sendMaximizedState);
+  win.on('ready-to-show', sendMaximizedState); // 初始状态
+
   // 固定窗口标题（E2E 断言 title 含 InkFlow）
   win.on('page-title-updated', (event) => {
     event.preventDefault();
@@ -440,6 +448,7 @@ function createMainWindow(): void {
     if (pendingReadyPayload) {
       win.webContents.send('inkflow:ready', pendingReadyPayload);
     }
+    sendMaximizedState(); // 初始状态补发（ready-to-show 早于 React 挂载订阅时兜底）
   });
 
   win.on('closed', () => {

@@ -55,6 +55,14 @@ ipcRenderer.on(
           minimize: () => ipcRenderer.send('window:minimize'),
           toggleMaximize: () => ipcRenderer.send('window:toggle-maximize'),
           close: () => ipcRenderer.send('window:close'),
+          // #106：最大化状态订阅（图标切换）。返回取消函数；回调在窗口最大化状态变化时触发
+          onMaximizedChange: (callback: (maximized: boolean) => void) => {
+            const listener = (_event: unknown, maximized: boolean): void => callback(maximized);
+            ipcRenderer.on('window:maximized-changed', listener);
+            return () => {
+              ipcRenderer.removeListener('window:maximized-changed', listener);
+            };
+          },
         }),
       })
     );

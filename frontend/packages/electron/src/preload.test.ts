@@ -54,6 +54,7 @@ describe('preload — inkflow:api-ready 就绪事件（#98 修复）', () => {
           minimize: expect.any(Function),
           toggleMaximize: expect.any(Function),
           close: expect.any(Function),
+          onMaximizedChange: expect.any(Function), // #106：最大化状态订阅（图标切换）
         },
       });
       expect(dispatchMock).toHaveBeenCalledTimes(1);

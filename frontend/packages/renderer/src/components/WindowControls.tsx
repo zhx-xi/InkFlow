@@ -7,7 +7,8 @@
  * - 必须 [-webkit-app-region:no-drag]，否则点击会被顶栏 drag 区域吞掉；
  * - 无 INKFLOW_API（浏览器 dev）时可选链吞掉调用，按钮 no-op 但可见。
  */
-import { Minus, Square, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Copy, Minus, Square, X } from 'lucide-react';
 import { cn } from '../lib/cn';
 
 /** 按钮通用尺寸/配色：宽 46px、顶栏 h-12 内撑满高度、flex 居中 */
@@ -15,6 +16,15 @@ const BASE_BUTTON_CLASS =
   'flex h-full w-[46px] items-center justify-center text-ink-2 transition-colors [-webkit-app-region:no-drag]';
 
 export function WindowControls() {
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = window.INKFLOW_API?.windowControls?.onMaximizedChange?.(setIsMaximized);
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
   return (
     <div className="flex h-full items-stretch">
       <button
@@ -29,11 +39,15 @@ export function WindowControls() {
       <button
         type="button"
         data-testid="header-wc-max"
-        aria-label="Maximize"
+        aria-label={isMaximized ? 'Restore' : 'Maximize'}
         className={cn(BASE_BUTTON_CLASS, 'hover:bg-surface-3 hover:text-ink')}
         onClick={() => window.INKFLOW_API?.windowControls?.toggleMaximize()}
       >
-        <Square className="size-3.5" strokeWidth={1.5} />
+        {isMaximized ? (
+          <Copy className="size-3.5" strokeWidth={1.5} />
+        ) : (
+          <Square className="size-3.5" strokeWidth={1.5} />
+        )}
       </button>
       <button
         type="button"
