@@ -577,6 +577,7 @@ describe('设置页 — AgentPanel persist 并发守卫（#105 补测）', () =>
     let hold = true;
     // 首个 PATCH 挂起（手动 resolve），后续 PATCH 立即成功
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      void path; // 参数契约保持（apiFetch 双参签名），仅使用 init
       if (init?.method === 'PATCH' && hold) {
         hold = false;
         return new Promise((resolve) => {
