@@ -40,7 +40,7 @@
 |------|------|
 | 0.1.0 ✅ | F1-F8 + 云端 Protocol（Phase 1 Gate 7/7，已交付） |
 | 0.2.0 ✅ | F9-F16 创作工具链（F9-F16 ✅ 已交付，PR #56/#57/#58/#63/#64/#72/#74/#75） |
-| 0.3.0 | F19 GUI（Electron 壳 + 内核进程化 + React 渲染层）· F23 SSE 流式 ✅（PR #83，已交付）——F19 子任务 A 内核进程化 ✅（PR #85，#77）· 子任务 B Electron 壳 ✅（PR #95，#78）· 子任务 C React 渲染层 ✅（PR #97，#79） |
+| 0.3.0 | F19 GUI（Electron 壳 + 内核进程化 + React 渲染层）· F23 SSE 流式 ✅（PR #83，已交付）——F19 子任务 A 内核进程化 ✅（PR #85，#77）· 子任务 B Electron 壳 ✅（PR #95，#78）· 子任务 C React 渲染层 ✅（PR #97，#79）· 子任务 D 导航重构+设置页框架 ✅（PR #120/#121，#105）· 子任务 E 模型管理页 ✅（PR #122，#106：ProviderConfig 注册表 + 模型管理页 + 角色绑定只读区 + 顶栏 Select + 自绘窗口按钮，覆盖率 99.27%） |
 | 0.3.1 | 质量加固补丁（milestone #9）：#86 LLM 客户端修复 ✅（PR #108：timeout→request_timeout + zhipu 注册 + audit 路由）· #87 LangGraph 状态重构 ✅（PR #110：StateGraph(dict)→TypedDict+reducer，节点增量返回，type: ignore 清零）· #92 真实 AI CI job ✅（PR #111：e2e-ai-backend，label run-ai-tests 触发 + workflow_dispatch 兜底；tests/e2e/ T1+T2，缺 key 永远 skip；⚠️ 真实验证需先配 LLM_API_KEY secret）· #104 覆盖率补全 ✅（PR #114/#115/#116/#117：三层补测至后端 98.90% 行/96.32% 分支、前端 99.11%/92.51%、API 端点 100%、E2E 三页；CI 门槛 98.5/95.0 常态化，口径见 ADR-027） |
 | 0.4.0 | skills 包（三通道分发）· F19 打包（exe / 安装包 / 便携 ZIP） |
 | 0.5.0 | F20 MCP（stdio 直连 domain）· F24 会话 · F25 daemon |
@@ -69,7 +69,7 @@ F1 项目/书籍 · F2 章节 · F3 写作管道 · F4 Agent 编排 · F5 LLM Pr
 
 ### Phase 3 功能（F18-F25，2026-08-02 形态决策后归属调整）
 
-F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI / 0.4.0 打包，子任务 A ✅ PR #85 / B ✅ PR #95 / C ✅ PR #97）· F20 MCP（0.5.0）· F21 导出（0.6.0）· F22 搜索（0.6.0）· F23 SSE ✅（PR #83）· F24 会话（0.5.0）· F25 daemon（0.5.0）
+F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI / 0.4.0 打包，子任务 A ✅ PR #85 / B ✅ PR #95 / C ✅ PR #97 / D ✅ PR #120/#121 / E ✅ PR #122）· F20 MCP（0.5.0）· F21 导出（0.6.0）· F22 搜索（0.6.0）· F23 SSE ✅（PR #83）· F24 会话（0.5.0）· F25 daemon（0.5.0）
 
 > F17 空置（PRD §6.2 标题残留编号）。F18-F25 版本归属以 ADR-019 v2 为准（PRD §6.3/6.4 原归属已被形态决策重排）。
 
