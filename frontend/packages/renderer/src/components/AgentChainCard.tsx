@@ -14,6 +14,11 @@ const AGENT_ROLES: Array<{ field: AgentField; nameKey: string; descKey: string; 
   { field: 'agent_reviser', nameKey: 'ag.reviser', descKey: 'ag.reviserDesc', icon: RefreshCw },
 ];
 
+export interface AgentChainCardProps {
+  /** 开关变更回调（#105 🔴-2：AgentPanel 即改即存 PATCH；不传则仅更新本地 store） */
+  onConfigChange?: () => void;
+}
+
 function agentPatch(field: AgentField, value: string | null | undefined): Partial<ProjectConfig> {
   switch (field) {
     case 'agent_architect':
@@ -29,7 +34,7 @@ function agentPatch(field: AgentField, value: string | null | undefined): Partia
   }
 }
 
-export function AgentChainCard() {
+export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
   const { t } = useI18n();
   const config = useAgentStore((s) => s.config);
   const setConfig = useAgentStore((s) => s.setConfig);
@@ -43,7 +48,10 @@ export function AgentChainCard() {
           const value = config[role.field];
           const checked = value !== undefined;
           const tag = value === null ? t('ag.defaultModel') : value === undefined ? t('ag.removed') : value;
-          const toggle = () => setConfig(agentPatch(role.field, checked ? undefined : null));
+          const toggle = () => {
+            setConfig(agentPatch(role.field, checked ? undefined : null));
+            onConfigChange?.();
+          };
           return (
             <div key={role.field} className="flex items-center gap-3 py-3">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-weak text-accent">

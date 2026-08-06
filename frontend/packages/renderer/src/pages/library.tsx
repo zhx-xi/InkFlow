@@ -70,6 +70,8 @@ export function LibraryPage() {
   );
   const [items, setItems] = useState<ListResponse['items']>([]);
   const [loading, setLoading] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const cat = CATS.find((c) => c.key === activeCat) ?? CATS[0];
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? null;
@@ -88,19 +90,23 @@ export function LibraryPage() {
     if (isCatKey(p) && p !== activeCat) setActiveCat(p);
   }, [searchParams, activeCat]);
 
-  // 当前项目 + 激活分类 → 拉取分类端点（统一响应 {items,...}；timeline 特例 {event_timeline:[...]}）
+  // 当前项目 + 激活分类 → 拉取分类端点（统一响应 {items,...}；timeline 特例 {event_timeline:[...]}；
+  // #105 修复批：依赖 activeCat 字符串而非 cat 对象；失败 → error 态（library-retry 可重试））
   useEffect(() => {
     if (!currentProjectId) {
       setItems([]);
       setLoading(false);
+      setLoadFailed(false);
       return;
     }
+    const current = CATS.find((c) => c.key === activeCat) ?? CATS[0];
     let cancelled = false;
     setLoading(true);
-    void apiFetch<CatResponse>(cat.endpoint(currentProjectId))
+    setLoadFailed(false);
+    void apiFetch<CatResponse>(current.endpoint(currentProjectId))
       .then((data) => {
         if (cancelled) return;
-        const list = cat.responsePath ? (data[cat.responsePath] ?? []) : data.items;
+        const list = current.responsePath ? (data[current.responsePath] ?? []) : data.items;
         setItems(list);
         setLoading(false);
       })
@@ -108,11 +114,12 @@ export function LibraryPage() {
         if (cancelled) return;
         setItems([]);
         setLoading(false);
+        setLoadFailed(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [currentProjectId, cat]);
+  }, [currentProjectId, activeCat, reloadKey]);
 
   const handleTabChange = (key: CatKey) => {
     setActiveCat(key);
@@ -199,6 +206,21 @@ export function LibraryPage() {
                 <Skeleton className="h-11 w-full" />
                 <Skeleton className="h-11 w-full" />
               </div>
+            ) : loadFailed ? (
+              <div
+                data-testid="library-error"
+                className="flex flex-col items-center justify-center rounded-lg border border-dashed border-line bg-surface px-6 py-14 text-center"
+              >
+                <p className="text-[13px] text-ink-2">{t('lib.loadFailed')}</p>
+                <button
+                  type="button"
+                  data-testid="library-retry"
+                  className="mt-4 rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                  onClick={() => setReloadKey((k) => k + 1)}
+                >
+                  {t('lib.retry')}
+                </button>
+              </div>
             ) : items.length === 0 ? (
               <div
                 data-testid="library-tab-empty"
@@ -209,6 +231,7 @@ export function LibraryPage() {
                   type="button"
                   data-testid="library-tab-empty-cta"
                   className="mt-4 rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                  onClick={() => navigate('/writing')}
                 >
                   {t('lib.empty.create')}
                 </button>

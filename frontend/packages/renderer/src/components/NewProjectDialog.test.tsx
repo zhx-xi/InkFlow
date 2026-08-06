@@ -19,6 +19,15 @@
  * - 创建成功 → POST /api/v1/projects（body {name, genre, language, target_words}）→ navigate('/writing')
  * - 书名空校验「书名不能为空」不发 POST（既有）
  *
+ * ⚠️ #105 修复批契约（评审 findings 驱动，2026-08-06）：
+ * - submitting 状态防双重提交：createProject in-flight 时「创建」按钮 disabled（aria-busy 可叠加，
+ *   但必须 disabled——否则用户仍可连点），双击/连点 → POST /api/v1/projects 仅 1 次
+ * - in-flight 时 ESC：关闭路径忽略——对话框保持打开（契约选「不关闭」方案；若实现选
+ *   「关闭但不 navigate」需同步改本断言）
+ * - ESC 与 Radix Select 交互：题材/语言下拉打开时按 ESC → 仅关闭下拉面板（option 消失），
+ *   对话框保留（Radix DismissableLayer 在 document capture 阶段对 Escape preventDefault →
+ *   对话框 ESC 监听必须尊重 e.defaultPrevented，不得误关）
+ *
  * RED 预期：ESC 关闭/焦点归还/错误展示缺失 → element-missing / 行为断言 FAIL。
  */
 import { useState } from 'react';
@@ -152,6 +161,87 @@ describe('新建项目对话框 — 创建失败错误展示（Issue #105 §6.3�
 
     expect(screen.getByText('书名不能为空')).toBeInTheDocument();
     expect(apiFetchMock).not.toHaveBeenCalledWith('/api/v1/projects', expect.objectContaining({ method: 'POST' }));
+  });
+});
+
+describe('新建项目对话框 — 提交中状态与 ESC 交互（#105 修复批契约）', () => {
+  const createdProject = {
+    id: 'p9',
+    name: '青山入我怀',
+    genre: '玄幻',
+    language: 'zh-CN',
+    target_words: 800000,
+    config: {},
+    created_at: '2026-08-06T10:00:00Z',
+    updated_at: '2026-08-06T10:00:00Z',
+  };
+
+  /** createProject 挂起：POST 返回手动控制的 pending promise（模拟 in-flight 请求）；返回 finish() 收尾 */
+  function mockPendingCreate() {
+    let resolveCreate!: (v: unknown) => void;
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects') {
+        return new Promise((resolve) => {
+          resolveCreate = resolve;
+        });
+      }
+      return { ok: true };
+    });
+    return () => resolveCreate(createdProject);
+  }
+
+  it('提交中防双重提交：双击「创建」→ POST 仅 1 次 + 按钮 disabled', async () => {
+    const finish = mockPendingCreate();
+    const user = userEvent.setup();
+    renderHarness();
+
+    await user.click(screen.getByTestId('open-trigger'));
+    await user.type(within(screen.getByRole('dialog')).getByLabelText('书名'), '青山入我怀');
+    const createBtn = screen.getByRole('button', { name: '创建' });
+    await user.click(createBtn);
+    // 第一击后立即第二击（双击场景；RED：无 submitting 保护 → 并发两次 POST + 按钮未禁用）
+    await user.click(createBtn);
+
+    expect(apiFetchMock).toHaveBeenCalledTimes(1);
+    expect(createBtn).toBeDisabled();
+
+    finish();
+    expect(await screen.findByTestId('writing-probe')).toBeInTheDocument();
+  });
+
+  it('提交中按 ESC：对话框保持打开（in-flight 关闭路径忽略，防误关丢进度）', async () => {
+    const finish = mockPendingCreate();
+    const user = userEvent.setup();
+    renderHarness();
+
+    await user.click(screen.getByTestId('open-trigger'));
+    await user.type(within(screen.getByRole('dialog')).getByLabelText('书名'), '青山入我怀');
+    await user.click(screen.getByRole('button', { name: '创建' }));
+
+    // in-flight 中按 ESC（RED：当前实现直接 onClose → 对话框卸载，本断言失败）
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    // 请求完成后照常跳转写作页
+    finish();
+    expect(await screen.findByTestId('writing-probe')).toBeInTheDocument();
+  });
+
+  it('题材下拉打开时按 ESC：仅关闭下拉面板，对话框保留', async () => {
+    const user = userEvent.setup();
+    renderHarness();
+
+    await user.click(screen.getByTestId('open-trigger'));
+    // 打开题材下拉（Radix Select，trigger aria-label=题材）
+    await user.click(screen.getByRole('combobox', { name: '题材' }));
+    expect(await screen.findByRole('option', { name: '玄幻' })).toBeInTheDocument();
+
+    // 按 ESC：Radix 面板关闭（capture 阶段 preventDefault → 对话框 ESC 监听应跳过，不得误关）
+    await user.keyboard('{Escape}');
+    await waitFor(() => {
+      expect(screen.queryByRole('option', { name: '玄幻' })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });
 

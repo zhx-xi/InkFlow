@@ -32,6 +32,8 @@ export const zh = {
   'lib.empty.goProjects': '前往项目页',
   'lib.empty.tab': '还没有{name}，去创建',
   'lib.empty.create': '去创建',
+  'lib.loadFailed': '加载失败，请重试',
+  'lib.retry': '重试',
   // 设置页
   'set.title': '设置',
   'set.cat.general': '常规',
@@ -144,6 +146,7 @@ export const zh = {
   'bg.ochre': '深褐纸',
   // Toast
   'toast.saved': '已保存',
+  'toast.saveFailed': '保存失败',
   'toast.close': '关闭',
   // 通用
   'common.loading': '加载中…',

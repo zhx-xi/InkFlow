@@ -22,6 +22,8 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
   const [language, setLanguage] = useState('zh-CN');
   const [targetWords, setTargetWords] = useState(800000);
   const [error, setError] = useState<string | null>(null);
+  // #105 修复批：submitting 防双重提交；in-flight 时 ESC/遮罩忽略关闭路径（防误关丢进度）
+  const [submitting, setSubmitting] = useState(false);
 
   // §6.2③ 焦点归还：记录打开时 activeElement，任意关闭路径（ESC/遮罩/取消）卸载后归还触发按钮
   const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -33,16 +35,18 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
   }, []);
 
   // §6.2③ ESC 键关闭：document 级监听覆盖对话框内任意焦点；
-  // 忽略 Radix Select 等已 preventDefault 的 Escape（如下拉面板开启时只关面板不关对话框）
+  // 忽略 Radix Select 等已 preventDefault 的 Escape（如下拉面板开启时只关面板不关对话框）；
+  // #105 修复批：in-flight（submitting）时按 ESC 保持打开
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !e.defaultPrevented) onClose();
+      if (e.key === 'Escape' && !e.defaultPrevented && !submitting) onClose();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  }, [onClose, submitting]);
 
   const handleCreate = async () => {
+    if (submitting) return;
     const trimmed = name.trim();
     if (!trimmed) {
       setError(t('dlg.nameRequired'));
@@ -53,12 +57,15 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
       return;
     }
     setError(null);
+    setSubmitting(true);
     try {
       await createProject({ name: trimmed, genre, language, target_words: targetWords });
       navigate('/writing');
     } catch (err) {
       // §6.3② 创建失败内联展示（复用既有 error 区域），对话框保持打开可修改重试
       setError(t('dlg.createFailed', { reason: errorMessage(err) }));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -66,7 +73,9 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
     <div
       role="presentation"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
-      onClick={onClose}
+      onClick={() => {
+        if (!submitting) onClose();
+      }}
     >
       <div
         role="dialog"
@@ -146,6 +155,7 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
           </button>
           <button
             type="button"
+            disabled={submitting}
             className="rounded-md bg-accent px-4 py-1.5 text-sm text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
             onClick={() => void handleCreate()}
           >

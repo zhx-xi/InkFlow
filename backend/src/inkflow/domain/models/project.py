@@ -53,6 +53,7 @@ class ProjectConfig(BaseModel):
     agent_reviser: str | None = None
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     writing_style: str = ""
+    default_words: int = Field(default=800000, ge=1000, le=10_000_000, description="新章节默认字数")
     extra: dict[str, Any] = Field(default_factory=dict)
 
 

@@ -1,6 +1,5 @@
 /** 应用骨架（spec §7.2：HashRouter 四路由 + 侧边导航 + 顶栏职责回归——品牌/页面标题/主题/语言/内核状态，不再承担导航） */
-import { HashRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { type MouseEvent as ReactMouseEvent } from 'react';
+import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import inkflowIcon from './assets/inkflow-icon-plain.svg?url&no-inline';
 import inkflowIconDark from './assets/inkflow-icon-plain-dark.svg?url&no-inline';
 import inkflowIconInk from './assets/inkflow-icon-plain-ink.svg?url&no-inline';
@@ -37,7 +36,6 @@ function AppLayout() {
   useThemeEffect();
   const { t, lang } = useI18n();
   const location = useLocation();
-  const navigate = useNavigate();
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
   const setLang = useThemeStore((s) => s.setLang);
@@ -49,18 +47,8 @@ function AppLayout() {
   };
   const toggleLang = () => setLang(lang === 'zh' ? 'en' : 'zh');
 
-  // Agent 快捷入口整行可点（spec §7.2）：jsdom 无命中测试，userEvent 点击包装 div 无法落到内部
-  // NavLink（AppNav 已落盘不可改），由 App 层委托接管；真实浏览器中内部 <a> 自行导航，不重复接管
-  const handleShortcutClick = (e: ReactMouseEvent<HTMLDivElement>) => {
-    const target = e.target as Element;
-    if (target.closest?.('[data-testid="appnav-agent-shortcut"]') && !target.closest('a')) {
-      e.preventDefault();
-      navigate('/settings?cat=agent');
-    }
-  };
-
   return (
-    <div className="flex h-dvh overflow-hidden" onClick={handleShortcutClick}>
+    <div className="flex h-dvh overflow-hidden">
       {/* 侧边导航（三分组/折叠；品牌文字由顶栏承载，避免重复） */}
       <AppNav showBrand={false} />
 

@@ -141,6 +141,37 @@ async def test_update_project(mock_get_service, client, mock_project):
     assert data["name"] == "更新后的名称"
 
 
+@patch("inkflow.api.routers.project.get_project_service")
+async def test_update_project_config_default_words(
+    mock_get_service, client, mock_project
+):
+    """PATCH /api/v1/projects/{id} — config.default_words 落库回读契约（🔴-4 方案 A）.
+
+    评审 finding：前端 PATCH config.default_words 被后端静默丢弃（ProjectConfig 无此
+    字段，Pydantic extra='ignore'），「默认字数刷新不丢」在真实内核下不可能。
+    契约：PATCH config.default_words → 200 响应携带该字段 + GET 回读原样返回。
+    """
+    updated_project = mock_project.model_copy(
+        update={"config": ProjectConfig(default_words=12345)}
+    )
+    mock_service = AsyncMock()
+    mock_service.update = AsyncMock(return_value=updated_project)
+    mock_service.get = AsyncMock(return_value=updated_project)
+    mock_get_service.return_value = mock_service
+
+    resp = client.patch(
+        f"/api/v1/projects/{mock_project.id}",
+        json={"config": {"default_words": 12345}},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["config"]["default_words"] == 12345
+
+    # 回读验证：字段真实落库（持久化到 service 返回的 Project），而非仅存在于 PATCH 响应
+    readback = client.get(f"/api/v1/projects/{mock_project.id}")
+    assert readback.status_code == 200
+    assert readback.json()["config"]["default_words"] == 12345
+
+
 # ── DELETE /api/v1/projects/{id} ──
 
 

@@ -11,7 +11,9 @@
  * 侧边导航（AppNav，容器 data-testid="app-nav"）：
  * - 四个主入口 link，可访问名 = t('nav.writing'|'nav.projects'|'nav.library'|'nav.settings')
  *   （「写作 / 项目 / 设定库 / 设置」；i18n 新 key nav.library / nav.settings 由 GREEN 补 zh.ts/en.ts）
- * - Agent 快捷入口：data-testid="appnav-agent-shortcut" 的 link（系统分组）→ 进入设置页 Agent 分类
+ * - Agent 快捷入口：系统分组 link（data-testid="nav-item-agent"，可访问名「Agent」）→ 进入设置页 Agent 分类。
+ *   ⚠️ #105 修复批契约：测试点击 link 本身（不再点 appnav-agent-shortcut 包装 div——App.tsx 不得有
+ *   jsdom 专用事件委托；包装 div 仅作 testid 锚点，点击它不产生导航）
  *
  * 设定库页（pages/library.tsx，根 data-testid="library-page"）：
  * - 未选择项目空态：data-testid="library-empty" + 文案 t('lib.empty.title')（「选择或新建项目开始构建设定」）
@@ -145,13 +147,23 @@ describe('App 路由集成（HashRouter 四页 + 侧边导航）', () => {
     }
   });
 
-  it('Agent 快捷入口 → 设置页 Agent 分类面板', async () => {
+  it('Agent 快捷入口 → 设置页 Agent 分类面板（点击 nav-item-agent link 本身）', async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByTestId('appnav-agent-shortcut'));
+    // #105 修复批契约：点击 link 本身（真实浏览器行为），不再依赖 App 层事件委托
+    await user.click(screen.getByTestId('nav-item-agent'));
     expect(window.location.hash).toMatch(/settings/);
     expect(await screen.findByTestId('settings-page')).toBeInTheDocument();
     expect(await screen.findByTestId('settings-agent-panel')).toBeInTheDocument();
+  });
+
+  it('#105 修复批契约：包装 div 无委托逻辑——点击 appnav-agent-shortcut div 不导航', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    // RED：当前 App.tsx 根部 handleShortcutClick 委托接管 div 点击 → 导航到 /settings（本断言失败）。
+    // GREEN：App.tsx 删除委托后，div 仅作 testid 锚点，点击无任何导航。
+    await user.click(screen.getByTestId('appnav-agent-shortcut'));
+    expect(window.location.hash).not.toMatch(/settings/);
   });
 
   it('四页往返导航：项目 → 写作 → 设定库 → 设置 → 项目', async () => {
