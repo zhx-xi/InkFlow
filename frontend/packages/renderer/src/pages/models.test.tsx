@@ -67,7 +67,7 @@ interface ProviderModel {
   roles: string[];
 }
 interface ProviderConfig {
-  id: string;
+  id: number;
   name: string;
   base_url: string;
   default_model: string;
@@ -79,11 +79,11 @@ interface ProviderConfig {
   updated_at: string;
 }
 
-/** 内置 seed 4 provider（openai/deepseek/zhipu/ollama，§8.2①）的列表 mock */
+/** 内置 seed 4 provider（openai/deepseek/zhipu/ollama，§8.2①）的列表 mock（id = 后端自增数字，与 E2E provider-card-1 契约一致） */
 const PROVIDER_LIST: { items: ProviderConfig[]; total: number; offset: number; limit: number } = {
   items: [
     {
-      id: 'openai', name: 'openai', base_url: 'https://api.openai.com/v1', default_model: 'gpt-4o',
+      id: 1, name: 'openai', base_url: 'https://api.openai.com/v1', default_model: 'gpt-4o',
       models: [
         { id: 'gpt-4o', type: 'chat', roles: ['main', 'writer'] },
         { id: 'text-embedding-3-small', type: 'embedding', roles: ['rag'] },
@@ -92,19 +92,19 @@ const PROVIDER_LIST: { items: ProviderConfig[]; total: number; offset: number; l
       created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
     },
     {
-      id: 'deepseek', name: 'deepseek', base_url: 'https://api.deepseek.com', default_model: 'deepseek-chat',
+      id: 2, name: 'deepseek', base_url: 'https://api.deepseek.com', default_model: 'deepseek-chat',
       models: [{ id: 'deepseek-chat', type: 'chat', roles: ['architect'] }],
       key_saved: false, max_retries: 3, timeout: 60,
       created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
     },
     {
-      id: 'zhipu', name: 'zhipu', base_url: 'https://open.bigmodel.cn/api/paas/v4', default_model: 'glm-4',
+      id: 3, name: 'zhipu', base_url: 'https://open.bigmodel.cn/api/paas/v4', default_model: 'glm-4',
       models: [{ id: 'glm-4', type: 'chat', roles: ['auditor'] }],
       key_saved: true, max_retries: 3, timeout: 60,
       created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
     },
     {
-      id: 'ollama', name: 'ollama', base_url: 'http://127.0.0.1:11434', default_model: '',
+      id: 4, name: 'ollama', base_url: 'http://127.0.0.1:11434', default_model: '',
       models: [],
       key_saved: false, max_retries: 3, timeout: 60,
       created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
@@ -151,12 +151,12 @@ describe('模型管理页 — Provider 列表（spec §8.2③）', () => {
     for (const name of ['openai', 'deepseek', 'zhipu', 'ollama']) {
       expect(within(list).getByText(name)).toBeInTheDocument();
     }
-    // 模型数徽标（openai 2 个模型 / ollama 0 个）
-    expect(screen.getByTestId('provider-model-count-openai')).toHaveTextContent('2 个模型');
-    expect(screen.getByTestId('provider-model-count-ollama')).toHaveTextContent('0 个模型');
+    // 模型数徽标（openai=id1 2 个模型 / ollama=id4 0 个模型）
+    expect(screen.getByTestId('provider-model-count-1')).toHaveTextContent('2 个模型');
+    expect(screen.getByTestId('provider-model-count-4')).toHaveTextContent('0 个模型');
     // key 徽标：key_saved=true →「Key 已存」；false →「未存 Key」
-    expect(screen.getByTestId('provider-key-badge-openai')).toHaveTextContent('Key 已存');
-    expect(screen.getByTestId('provider-key-badge-deepseek')).toHaveTextContent('未存 Key');
+    expect(screen.getByTestId('provider-key-badge-1')).toHaveTextContent('Key 已存');
+    expect(screen.getByTestId('provider-key-badge-2')).toHaveTextContent('未存 Key');
   });
 
   it('点击添加 Provider → ProviderDialog 打开（role=dialog +「添加 Provider」标题）', async () => {
@@ -177,7 +177,7 @@ describe('模型管理页 — Provider 列表（spec §8.2③）', () => {
     await waitFor(() => expect(useModelsStore.getState().loading).toBe(false));
 
     // 编辑入口存在（F4：曾硬编码 editing={null}，编辑入口缺失）
-    await user.click(screen.getByTestId('provider-edit-openai'));
+    await user.click(screen.getByTestId('provider-edit-1'));
     const dlg = await screen.findByRole('dialog');
     // 编辑模式：标题 + editing prop 传递（名称输入预填 provider name）
     expect(within(dlg).getByText('编辑 Provider')).toBeInTheDocument();
