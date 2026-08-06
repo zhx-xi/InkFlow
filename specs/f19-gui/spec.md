@@ -1,8 +1,11 @@
 # F19: GUI（内核进程化 + Electron 壳 + React 渲染层）— 功能规格
 
-> **Spec 版本**: 1.2（§2 内核进程化 ✅ 已合入 / §3 Electron 壳 ✅ 已合入 / §4 渲染层 ✅ 已合入 / §5 UI 打磨 已起草） | **日期**: 2026-08-05 | **依据**: PRD v2.1, Constitution P1-P6, ADR-003/004/011/019(v2)/020/021/025
+> **Spec 版本**: 1.5（§2-§5 ✅ / §6 交互反馈 ✅ 已合入 / §7 导航重构 ✅ 已合入 / §8 模型管理 ✅ 已起草 / §9 Agent 模板 ✅ 已起草） | **日期**: 2026-08-06 | **依据**: PRD v2.1, Constitution P1-P6, ADR-003/004/011/019(v2)/020/021/025
 > **Spec 变更**: 1.1（2026-08-04）：§3 占位 → 完整起草（#77 合入后条件满足；契约实测 serve.py 已交付 INKFLOW_READY 行 + 端口文件）
 > **Spec 变更**: 1.2（2026-08-05）：追加 §5 UI 打磨（#98，M8 补做）；原 §5-§8 顺延为 §6-§9；§3/§4 状态回写 ✅ 已合入
+> **Spec 变更**: 1.3（2026-08-05）：追加 §6 交互反馈（#99，用户拍板：spec 完成后关闭 #99，实现并入 #105）+ §7 导航重构（#105，0.4.0）；原 §6-§9 顺延为 §8-§11
+> **Spec 变更**: 1.4（2026-08-05）：追加 §8 模型管理（#106，前后端 Phase1=A+B 方案）+ §9 Agent 模板（#107，引用式）；原 §8-§11 顺延为 §10-§13
+> **Spec 变更**: 1.5（2026-08-06）：§8 追加顶栏主题/语言 Select 下拉改造（#106 Issue 追加，Q4 方案 A 拍板）；§6/§7 状态回写 ✅ 已合入（#105 PR #120/#121）；§8 待评审后实现
 > **所属阶段**: 0.3.0 里程碑（Issue #69 拆分 3 子任务：#77 内核进程化 / #78 Electron 壳 / #79 React 渲染层；#98 UI 打磨为 M8 补做）
 > **关联 Issues**: [#69](https://github.com/zhx-xi/InkFlow/issues/69)（父）· [#77](https://github.com/zhx-xi/InkFlow/issues/77)（子任务 A，本章）· [#78](https://github.com/zhx-xi/InkFlow/issues/78)（子任务 B）· [#79](https://github.com/zhx-xi/InkFlow/issues/79)（子任务 C）· [#98](https://github.com/zhx-xi/InkFlow/issues/98)（子任务 D，本章）
 > **依赖**: 无（#77 可独立开发验证，不需要 GUI）；#78 依赖本章交付格式（端口文件/token 契约）；#79 依赖 #50 ✅（F23 SSE，PR #83）与 #78；#98 依赖 #79 ✅（渲染层已合入，本任务在其上纯前端打磨）
@@ -21,6 +24,10 @@ F19 = 桌面 GUI（Electron 壳 + React 渲染层 + 本地内核进程化）。�
 | §3 Electron 壳 | #78 | 主进程生命周期管理：拉起/健康检查/崩溃拉起/回收 | 3-4 人天 | #77 交付格式 |
 | §4 渲染层 | #79 | React 界面：写作/项目管理/Agent 配置 + SSE 渲染 + 2 工具端点（key 管理/连通测试） | 5-7 人天 | #50 + #78 |
 | §5 UI 打磨 | #98 | 控件定制化 + 视觉层级 + 空态设计 + 品牌接入（M8 补做） | 2-3 人天 | #79 |
+| §6 交互反馈 | #99 | toast/骨架/空态/ESC/快捷键提示/主题预览 + 评审遗留清理（**设计基准，实现并入 #105**） | — | #98 |
+| §7 导航重构 | #105 | 侧边栏 + 设定库项目上下文 + 设置页框架 + 交互反馈实现 | 2-3 人天 | #99（spec） |
+| §8 模型管理 | #106 | ProviderConfig 注册表实体 + 模型管理页 + key 回退（用户拍板完整方案） | 5-7 人天 | #105；**角色绑定区依赖 #107**（C3） |
+| §9 Agent 模板 | #107 | AgentTemplate 实体（引用式）+ 角色独立温度 + 风险确认 | 3-5 人天 | #105 |
 
 **边界声明**：
 - F19 **不含打包分发**（PyInstaller exe / 安装包 / 便携 ZIP）——#48 留 0.4.0（用户拍板，ADR-019 v2）
@@ -537,7 +544,7 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 
 - **Q1 编辑器形态**：A. `textarea` 纯文本（样式可覆盖字体/行距，简单稳定，TDD 友好）；B. `contenteditable` 富文本（排版自由但光标/SSE 插入/格式清理复杂）；C. Markdown 双模式（编辑 textarea + 预览切换，自研轻量 md 渲染，为 0.6.0 F21 导出 MD 铺路，+0.5-1 人天）。**✅ 已确认（用户拍板：A 增强版——段落化纯文本，2026-08-03）**——按业界调查：中文网文平台（起点/阅文、晋江、番茄、飞卢）写作后台**高度一致为「纯文本段落」**（发布管线按段落解析，格式按钮基本被忽略），无 Markdown 分歧 → **不做切换功能**（用户预案「各网站不同则加切换」条件不成立，YAGNI；真遇差异后期可加，可逆）。落地 = textarea 增强：自动分段/首行缩进/字数统计/自动保存，**无格式按钮**。正文已按 A 修订（§4.2.1 工具栏移除加粗/链接）。
 - **Q2 工具栏交互形态**：A. hover 编辑器区域唤起（原型现状，沉浸优先）；B. 常驻显示（发现性最好但占写作空间）；C. 快捷键 + hover 双通道。**✅ 已确认（用户拍板：选项 C，2026-08-03）**——快捷键提升长写效率、hover 保发现性。快捷键表按纯文本能力定义：`Ctrl+Z` 撤销 / `Ctrl+Y` 重做 / `Ctrl+S` 保存（Electron 内 preventDefault 接管）/ `Ctrl+Enter` AI 续写 / `Ctrl+Shift+Enter` 生成；**无格式快捷键**（纯文本无加粗/斜体）。正文已按 C 修订（§4.2.1）。
-- **Q3 「测试连接」按钮语义**：A. 调用 `POST /api/v1/agent/pipelines/validate`（现有端点，但语义是管线配置校验而非 LLM 连通性）；B. 0.3.0 按钮禁用 + 提示「保存后于写作时验证」（无后端新增，语义诚实）；C. 新增后端连接测试端点（违背 F19「不新增业务端点」总声明）。**✅ 已确认（用户拍板：选项 A 修正——测试→保存主流程 + 保留直接保存，2026-08-03）**——评审翻转：设置页「先测试连接、通过后保存」是标准 UX（用户主路径），同时保留直接保存（用户自信场景）。原建议 B 存在认知偏差：「F19 不新增**业务**端点」≠「不新增任何端点」——key 管理与连通测试是**基础设施工具端点**（与 /health 同类，不落业务库/不建实体），不违背 F19 精神。前置事实（源码核实）：`APIKeyManager`（AES-256-GCM 加密，`data_dir/keys`）**唯一调用方为 CLI**（`cli/commands/llm.py`），后端无 key 管理端点、无 LLM 连通测试端点 → **#79 新增 2 个工具端点**（§4.4/§4.6）：`POST /api/v1/settings/llm-keys`（store）+ `POST /api/v1/settings/llm/test`（LLMClient 最小探测）。估算 4-6 → **5-7 人天**（+0.5-1）。正文已按 A 修正修订（§4.2.3/§4.4/§4.6/§4.8/§4.9/§6）。
+- **Q3 「测试连接」按钮语义**：A. 调用 `POST /api/v1/agent/pipelines/validate`（现有端点，但语义是管线配置校验而非 LLM 连通性）；B. 0.3.0 按钮禁用 + 提示「保存后于写作时验证」（无后端新增，语义诚实）；C. 新增后端连接测试端点（违背 F19「不新增业务端点」总声明）。**✅ 已确认（用户拍板：选项 A 修正——测试→保存主流程 + 保留直接保存，2026-08-03）**——评审翻转：设置页「先测试连接、通过后保存」是标准 UX（用户主路径），同时保留直接保存（用户自信场景）。原建议 B 存在认知偏差：「F19 不新增**业务**端点」≠「不新增任何端点」——key 管理与连通测试是**基础设施工具端点**（与 /health 同类，不落业务库/不建实体），不违背 F19 精神。前置事实（源码核实）：`APIKeyManager`（AES-256-GCM 加密，`data_dir/keys`）**唯一调用方为 CLI**（`cli/commands/llm.py`），后端无 key 管理端点、无 LLM 连通测试端点 → **#79 新增 2 个工具端点**（§4.4/§4.6）：`POST /api/v1/settings/llm-keys`（store）+ `POST /api/v1/settings/llm/test`（LLMClient 最小探测）。估算 4-6 → **5-7 人天**（+0.5-1）。正文已按 A 修正修订（§4.2.3/§4.4/§4.6/§4.8/§4.9/§8）。
 
 
 ---
@@ -716,7 +723,369 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 
 ---
 
-## 6. 不在范围内
+## 6. 交互反馈与产品化补全（#99）
+
+### 6.1 本章定位
+
+**状态：✅ 设计基准（2026-08-05 用户拍板：#99 spec 完成后关闭，实现并入 #105 §7）**
+
+- 背景：#99（0.3.0）定义渲染层交互反馈 6 大块；UI 原型（`prototypes/client-ui-v1/`，15 截图用户确认）评审期间全部交互已设计并验证
+- **2026-08-05 用户拍板**：完成本章 spec 后关闭 #99；toast/骨架/空态/ESC/快捷键提示/主题预览的**实现并入 #105**（§7 范围第 5 项）；评审遗留清理随 #105 文件结构落点
+- 本章 = 设计基准章节：验收标准并入 §7.8（#105 的 M 行），不单独验收
+
+### 6.2 工作分解（#99 范围 6 块 → 实现落点）
+
+| # | 范围项（#99） | 设计（原型已验证） | 实现落点 |
+|---|--------------|-------------------|---------|
+| 1 | 反馈体系 | 错误 toast（内核未就绪/保存失败/创建失败）+ 加载骨架屏；toast 三态（ok/err/warn）+ 2s 自动消失 + aria-live | §7.6（`stores/toast.ts` + `components/ui/toast.tsx` + skeleton 组件） |
+| 2 | 空态引导 | 新手指引（创建首个项目 → 写作路径）；设定库未选择项目引导（「选择或新建项目开始构建设定」+ 前往项目页） | §7.3（设定库项目上下文） |
+| 3 | 对话框交互 | ESC 关闭 + 遮罩点击关闭 + 过渡动效（≤180ms，reduced-motion 降级）+ 关闭后焦点归还触发按钮 | §7.6（NewProjectDialog 等模态） |
+| 4 | 快捷键提示 | 工具栏 hover 提示（Ctrl+Z/Y/S/Enter/Shift+Enter）+ 设置页快捷键一览表 | §7.6（EditorToolbar title/浮层） |
+| 5 | 主题可视化预览 | 外观卡片 radio → 三主题缩略预览卡片（纸张/深色/东方，accent ring 选中态） | §7.6（AppearanceCard → 设置页常规） |
+| 6 | 评审遗留 6 项 | 见 §6.3 | §7.6 |
+
+### 6.3 评审遗留清理（#97 non-load-bearing，实现并入 #105）
+
+| # | 项 | 现状（2026-08-05 源码核实） | 处理 |
+|---|-----|---------------------------|------|
+| ① | defaultWords 不落字段 | `AgentLlmCard.tsx` L24 `useState(800000)` 本地 state，刷新丢失 | 接入 store config 字段（ProjectConfig 对应字段）+ 回读 |
+| ② | 新建项目失败无错误展示 | `NewProjectDialog.tsx` `handleCreate` `await createProject` 无 try/catch | try/catch + 错误 toast/内联展示 |
+| ③ | Agent 链 glyph 重复 | **✅ #98 已修复**（AgentChainCard 用 lucide 图标 Network/PenLine/ClipboardCheck/RefreshCw） | 仅验证 + 测试断言防回归 |
+| ④ | i18n 冗余 key ×9 | zh.ts/en.ts 存在未用 key | 脚本定位删除 + lint 断言 |
+| ⑤ | validBgs 重复维护 | `stores/theme.ts` L46-47 内联数组与 `theme/index.ts` `BG_BY_THEME` 重复 | 单一来源：store 引用 `BG_BY_THEME[theme]` |
+| ⑥ | resolveInitialTheme 死代码 | `theme/index.ts` L26-38 全仓 0 引用（store 内 `initialTheme()` 为活实现） | 删除 + typecheck |
+
+### 6.4 测试策略（并入 §7.7）
+
+- toast store 行为（队列/自动消失）；ESC 关闭模态；快捷键提示可见性；主题预览 radio 选择行为不变
+- defaultWords 持久化回读；theme 单一来源（validBgs 引用 BG_BY_THEME）；resolveInitialTheme 删除后 typecheck 绿
+- i18n 冗余 key 清理后 lint 断言（无未用 key）
+
+### 6.5 关键决策记录（#99）
+
+| 决策 | 方案 | 理由 | 备选（否决） |
+|------|------|------|--------------|
+| #99 关闭方式 | spec 完成后关闭，实现并入 #105 | 原型阶段交互已设计验证；#105 承载实现避免 0.3.0 拖尾（用户拍板 2026-08-05） | #99 独立实现（0.3.0 再做一轮，与 #105 重复，否决） |
+| toast 形态 | 轻量自研（Zustand store + 挂载点） | 文案 <20 key、三态、低动效；与 i18n 同源 | 引入 Sonner/toastify（0.3.0 场景过重，YAGNI） |
+| 快捷键提示 | 工具栏 title/hover 浮层 + 设置页一览表 | 双通道发现性（#79 Q2 拍板延续） | 仅 hover 浮层（发现性不足） |
+| 主题预览 | 三主题缩略预览卡片（CSS 色块模拟） | 可视化对比优于文字 radio（原型验证） | 保持文字 radio（#98 现状，用户要求升级） |
+
+---
+
+## 7. 导航重构：侧边栏 + 设定库项目上下文 + 设置页框架（子任务 E，#105）
+
+### 7.1 本章定位
+
+**F19 渲染层上位演进（0.4.0，纯前端）**：3 页（项目/写作/Agent）→ 4 页 + 左侧可折叠导航（写作/项目/设定库/设置），模型管理页由 #106 承接。
+
+**关键事实（2026-08-05 原型评审定稿）**：
+
+- UI 设计基准 = `design/client-ui-interaction-requirements-2026-08-05.md`（PM 文档，信息架构方案 A）+ `prototypes/client-ui-v1/index.html`（15 张截图用户确认）
+- 现有 3 页组件齐备（pages/projects|writing|agents + components/*），`data-testid` 契约密集（91+ 用例全绿基线）
+- 设定库 6 模块后端全部按 project_id 隔离（F9-F13）——UI 必须项目上下文
+- 三主题 × 背景变体 × 中英双语机制已就位（tokens.css/theme store/i18n）；ci.yml 三前端 job 已就位（零 ci.yml 改动）
+
+**边界声明（本章）**：
+- 纯前端 `frontend/packages/renderer/`，零后端改动、零 API 契约变更
+- 模型管理页（#106）与 Agent 模板（#107）不在本章实现（设置页「模型/模板」分类先放摘要/占位面板）
+- 不改变现有交互语义（快捷键/折叠/SSE 流式/自动保存）；既有 data-testid 契约不删不改（新增锚点除外）
+
+### 7.2 信息架构（PM 方案 A，用户确认）
+
+```text
+┌────────────┬──────────────────────────────────┐
+│ [环流口]   │ 顶栏：页面标题 · 主题/语言 · 内核状态 │
+│ InkFlow    │                                  │
+├────────────┼──────────────────────────────────┤
+│ ✎ 写作     │                                  │
+│ ▦ 项目     │                                  │
+│ ─────────  │          页面内容区               │
+│ 设定库      │  写作 / 项目 / 设定库 / 设置       │
+│  角色/世界观/大纲/时间线/伏笔/知识库RAG          │
+│ ─────────  │                                  │
+│ ⚙ 设置     │                                  │
+│ ◈ Agent    │（Agent 快捷入口 → 设置-分类）      │
+└────────────┴──────────────────────────────────┘
+        ↕ 可折叠为 52px 图标窄条（写作沉浸）
+```
+
+- **侧边栏三分组**：写作区（写作/项目）/ 设定库（角色/世界观/大纲/时间线/伏笔/知识库 RAG）/ 系统（模型管理[#106 占位]/Agent 快捷入口/设置）
+- **顶栏职责回归**：品牌（环流口 logo 三变体随主题）+ 页面标题 + 主题/语言/内核状态；不再承担导航
+- **折叠**：52px 图标窄条 + 展开恢复（`prefers-reduced-motion` 降级）
+
+### 7.3 设定库项目上下文
+
+- **入口语义 = 当前项目的设定库**（数据按 project_id 隔离的事实驱动）
+- **项目选择器**（设定库页顶部）：当前项目下拉（青云志/归墟记/…），切换 → 内容重载；面包屑「设定库 · 项目名 / 分类」
+- **未选择项目空态**：「选择或新建项目开始构建设定」+ 前往项目页按钮（切换路由）
+- 六个 tab（角色/世界观/大纲/时间线/伏笔/知识库 RAG）：列表视图 + 空态引导（「还没有角色，去创建」+ CTA）；RAG 页索引状态列表（已提取/提取中/待提取）+ 检索测试占位
+- 写作页上下文面板「设定库速览」保留（与设定库页项目上下文一致）
+
+### 7.4 设置页框架
+
+- **左侧分类导航 + 右侧面板**：常规 / 模型 / Agent / 模板 / 账户 五分类（分类图标 + 文字，选中高亮）
+- **分类内容**：
+  - 常规：语言、主题（三 radio + 可视化预览卡片）、背景变体、编辑器字体、新章节默认字数、快捷键一览表
+  - 模型：已配置 Provider 摘要 + 前往模型管理入口（#106 落地后联动；本期摘要+占位）
+  - Agent：四角色开关 + 模型下拉（迁移自 AgentChainCard）
+  - 模板：模板列表占位 + 新建入口（#107 落地）
+  - 账户：数据目录 + 数据管理（导出/备份占位）+ 关于（版本/logo）
+- **交互**：即改即存 + 轻量「已保存」toast（数字项失焦即存）；所有设置项三主题 × 中英双语
+- **迁移**：`pages/agents.tsx` 拆分——AgentChainCard → 设置-Agent 分类；AppearanceCard → 设置-常规（含主题预览卡片）；AgentLlmCard 待 #106 迁移
+
+### 7.5 交互反馈承接（#99 并入，见 §6）
+
+toast 体系（三态/2s/aria-live）、骨架屏（项目列表/章节树加载态）、模态 ESC + 焦点归还、快捷键提示（工具栏 hover + 设置页一览）、主题可视化预览卡片、评审遗留 6 项清理——全部在本章实现（§6.2/§6.3 落点）。
+
+### 7.6 文件结构（#105 CREATE/MODIFY 清单，对照真实树 2026-08-05）
+
+| 操作 | 文件 | 内容 |
+|------|------|------|
+| MODIFY | `src/App.tsx` | 布局改造：顶栏（品牌/标题/全局状态）+ 侧边导航容器 + 路由出口；路由扩展（/writing /projects /library /settings，HashRouter） |
+| NEW | `src/components/AppNav.tsx` | 侧边导航（三分组/折叠 52px/Agent 快捷入口/active 态） |
+| NEW | `src/pages/settings.tsx` | 设置页（五分类导航 + 面板切换 + 即改即存） |
+| NEW | `src/pages/library.tsx` | 设定库页（项目选择器/面包屑/六 tab/空态/未选择引导） |
+| MODIFY | `src/pages/agents.tsx` | 拆分迁移：AgentChainCard → 设置-Agent；AppearanceCard → 设置-常规；页面删除或重定向 |
+| MODIFY | `src/pages/projects.tsx` `writing.tsx` | 导航适配（路由/跳转联动）+ 骨架屏 |
+| MODIFY | `src/components/NewProjectDialog.tsx` | ESC 关闭 + 过渡动效 + try/catch 错误展示（§6.3②）+ Agent 模板下拉占位（#107） |
+| MODIFY | `src/components/EditorToolbar.tsx` | 快捷键提示（title/hover 浮层，Ctrl+Z/Y/S/Enter/Shift+Enter） |
+| MODIFY | `src/components/AppearanceCard.tsx` | 主题可视化预览卡片（radio → 预览卡） |
+| MODIFY | `src/components/AgentChainCard.tsx` | 迁移至设置页（行为不变） |
+| MODIFY | `src/components/AgentLlmCard.tsx` | defaultWords 落字段（§6.3①，config 字段确认后） |
+| MODIFY | `src/stores/theme.ts` + `src/theme/index.ts` | validBgs 单一来源（引用 BG_BY_THEME）+ resolveInitialTheme 死代码删除（§6.3⑤⑥） |
+| NEW | `src/stores/toast.ts` + `src/components/ui/toast.tsx` | toast 体系（§6.2①） |
+| NEW | `src/components/ui/skeleton.tsx` | 骨架屏组件 |
+| MODIFY | `src/i18n/zh.ts` `en.ts` | 新增 key（导航/设置/空态/toast/快捷键）+ 冗余 key 清理（§6.3④） |
+
+### 7.7 测试策略
+
+| 层次 | 关键场景 |
+|------|----------|
+| 组件（vitest + RTL） | 侧边导航渲染/折叠/active 态；设定库项目选择器切换内容 + 未选择空态；设置页五分类切换 + 即改即存 toast；toast store 行为；ESC 关闭；快捷键提示可见；主题预览选择行为；defaultWords 持久化回读 |
+| 集成（真实内核） | `frontend-integration` 保持绿（API 面零回归——路由/组件改造不触 API） |
+| E2E | 导航流：写作 → 项目 → 设定库（选择项目）→ 设置（改主题/语言）闭环 |
+| 视觉走查 | vision-auxiliary 三主题 × 新页面截图 + 低动效确认 |
+
+> 零 ci.yml 改动（三前端 job 已就位）；既有 91+ 用例保持全绿（data-testid 契约不删不改）。
+
+### 7.8 验收标准（#105）
+
+- **M1**（自动）侧边导航：三分组入口齐全、折叠 52px 可恢复、active 态正确（vitest）
+- **M2**（自动）设定库项目上下文：项目选择器切换内容正确；未选择项目空态 + 前往项目页
+- **M3**（自动）设置页五分类切换 + 卡片迁移完成（AgentChainCard/AppearanceCard 行为不变断言）
+- **M4**（自动）交互反馈：toast 三态/骨架屏/ESC/快捷键提示/主题预览（§6 承接项）
+- **M5**（自动）评审遗留 6 项全部关闭（含 glyph 验证）
+- **M6**（自动）三层测试全绿：frontend-unit/integration/e2e + 既有 91+ 用例零回归
+- **M7**（手动 + vision）三主题 × 新页面截图走查（无模板感/对比度 AA/低动效）
+- **M8**（手动）Electron 生产模式（file://）导航/设置/设定库全流程可用（#78 壳已就位）
+
+### 7.9 关键架构决策记录（#105）
+
+| 决策 | 方案 | 理由 | 备选（否决） |
+|------|------|------|--------------|
+| 导航形态 = 左侧可折叠 | 三分组侧边栏 + 52px 折叠 | 10+ 入口层级需分组表达；桌面创作客户端惯例（Scrivener/Obsidian）；写作沉浸可折叠（PM 方案 A，用户确认） | 顶栏扩展（层级扁平，否决）；汉堡抽屉（多一步点击，否决） |
+| 设定库 = 项目上下文 | 项目选择器 + 面包屑 + 未选择空态 | F9-F13 数据按 project_id 隔离（用户反馈确认）；避免「全局设定库」误导 | 全局固定设定库（与数据模型矛盾，否决） |
+| 设置页 = 分类框架 | 五分类（常规/模型/Agent/模板/账户） | 主流客户端惯例；Agent 配置拆分后功能不丢（用户确认）；模板分类为 #107 预位 | 单页长表单（分类增长后不可扩展，否决） |
+| #99 并入 | 交互反馈在导航/设置框架中实现 | 原型已验证设计；避免 0.3.0 拖尾（用户拍板） | #99 独立实现（重复工作，否决） |
+| 即改即存 | 设置项即时生效 + 轻量 toast | 本地优先客户端、设置项少、低动效符合定位（Obsidian/VS Code 同模式）；数字项失焦即存 | 显式保存按钮（表单密集型场景才需要，否决） |
+| 设置页「模型/模板」分类 | 本期摘要/占位，#106/#107 落地后联动 | 依赖未实现时不做空壳交互（YAGNI） | 本期实现完整面板（依赖缺失，否决） |
+
+### 7.10 待澄清问题（≤3）
+
+- **Q1 旧路由 /agents 处理**：A. 删除（HashRouter 无刷新 404 问题，直接移除）；B. 保留重定向到 `/settings?cat=agent`（旧链接兼容）。**✅ 已确认（用户拍板：选项 A，2026-08-05）**——桌面应用无外部链接心智，YAGNI。正文已按 A 修订（§7.6 agents.tsx 删除或重定向 → 删除）。
+- **Q2 主题预览卡片形态**：A. 三色块抽象缩略（原型现状：底色 + accent 圆点 + 文字标签）；B. 微缩布局（迷你窗口/卡片结构示意，更直观但实现量略增）。**✅ 已确认（用户拍板：选项 A，2026-08-05）**——原型已验证，低动效原则。正文已按 A 修订（§7.4/§7.6）。
+- **Q3 toast 堆叠策略**：A. 单条替换（新 toast 顶替旧 toast）；B. 队列堆叠（最多 3 条，超出丢弃最早）。**✅ 已确认（用户拍板：选项 B，2026-08-05）**——失败/成功连续发生时用户需看到全部反馈；3 条上限防刷屏。正文已按 B 修订（§6.2/§7.6 stores/toast.ts 队列语义）。
+
+---
+
+## 8. 模型管理页：多 Provider/Model 注册 + 角色绑定 + embedding（子任务 F，#106）
+
+### 8.1 本章定位
+
+**F19 渲染层模型管理（0.4.0，前后端）**：多 Provider/Model 注册与配置界面 + 角色模型绑定 + embedding 模型管理。UI 设计基准 = PM 文档 §4.1 + 原型（`prototypes/client-ui-v1/` 模型管理页，用户确认）。
+
+**关键事实（2026-08-05 后端盘点，源码核实）**：
+
+- **多 provider = 模型字符串路由级**：`infrastructure/llm/provider_config.py` `LLMProviderConfig`（provider/api_key/base_url/default_model/models/max_retries/timeout）+ `_BUILTIN_PROVIDERS` 硬编码 3 个（openai/deepseek/ollama，anthropic 已按 ADR-005v2 移除）；`parse_model_string()` 统一 LiteLLM 格式 `provider/model`；**无持久化注册表、无 CRUD 端点**
+- **⚠️ key 存储与调用链脱节（#106 必补缺口）**：`APIKeyManager`（`infrastructure/llm/key_manager.py`，AES-256-GCM，`data_dir/keys/{provider}.json`）仅被 settings 端点（store/探测）使用；`api/deps.py` 全部 `LangChainLLMClient()` 无参构造，key 只走环境变量——**存了 key 但环境变量未设 → 调用仍报 "API key not configured"**
+- **每项目/每角色不同模型已天然支持**：model 为每次调用传入字符串（writing_service `request.model or project.config.model`；Agent 管线 `stage.agent.model` 每阶段独立）——唯一缺口是 api_key 来源
+- **embedding 全局硬编码**：`core/config.py` `embedding_model="BAAI/bge-small-zh-v1.5"` + `deps.py` `get_vector_store()` 模块级单例；无项目级/用户级配置
+- **PATCH 语义**：`PATCH /api/v1/projects/{project_id}`（`api/routers/project.py` L94）请求体 `ProjectUpdate`，config 字段整体替换（`project_service.update` `model_copy(update=exclude_unset)` 浅合并）
+
+### 8.2 范围与设计（注册表实体方案，用户拍板 2026-08-05）
+
+**用户拍板：Q1=B（完整注册表实体，不做轻量中间态）/ Q2=B（自定义 provider 持久化）/ Q3=A（embedding 本期仅注册展示）**——#106 直接落地持久化 ProviderConfig 注册表（原分级方案 C），与 §9 AgentTemplate 同为 0.4.0 配置域实体，架构一致。
+
+**本章范围**：
+
+1. **后端 ProviderConfig 实体**（按既有模块模式，7 NEW 文件 + 测试，参照 §9.2/§9.4 的 AgentTemplate 实体模式）：
+   - `domain/models/provider_config.py`：`ProviderConfig = { id, name, base_url, default_model, models: [{id, type: chat|embedding, roles}], max_retries, timeout, created_at, updated_at }`（models 存 JSON 列，仿 ProjectORM.config）
+   - `domain/ports/provider_config_repository.py` + `_errors.py` + `domain/services/provider_config_service.py` + `infrastructure/database/models/provider_config.py` + `infrastructure/database/repositories/provider_config_repo.py` + `api/routers/provider_configs.py`
+   - **内置 seed**：建表时插入内置 3 provider（openai/deepseek/ollama，值来自 `_BUILTIN_PROVIDERS`）——注册表列表统一，无「内置 vs 自定义」双轨
+   - MODIFY：`database/models/__init__.py`（导出）、`api/app.py`（注册 router）、`api/deps.py`（装配）
+2. **provider 解析改造 + key 回退**（MODIFY `infrastructure/llm/provider_config.py`）：
+   - `get_provider_config` 改为**先查注册表**（持久化 provider → base_url/default_model/models），注册表无则回退内置硬编码（兼容既有调用）
+   - **APIKeyManager 已存 key 回退**：构造 LLM 客户端时若无环境变量 key，则查 `data_dir/keys/{provider}.json` 已存 key（打通「注册 → 调用」链路，盘点风险 1）
+3. **前端模型管理页**（`pages/models.tsx`，原型落点）：Provider 列表（注册表数据 + 已存 key 徽标 + 模型数）；添加/编辑 Provider 弹窗（名称/预置模板/Base URL/API Key 加密存储/测试并保存）；删除（确认框，提示模型数）；模型表（ID/类型 chat-embedding/角色用途标记 + 多选一次性添加 + 行内/批量测试连接）；角色绑定区（默认模板：写作主模型 + 四角色 + RAG embedding）；设置页「模型」分类摘要 + 入口
+4. **embedding（本章边界，Q3=A）**：模型管理页可注册/展示 embedding 模型（持久化）；**生效机制（项目级 embedding 配置）不在本章**（现为全局单例，改造 `get_vector_store` 注入链需 RAG 侧联动，标注「下一迭代」）
+5. **顶栏主题/语言切换改造（2026-08-06 追加，方案 A 已拍板）**：右上角 `header-theme-toggle`/`header-lang` 循环按钮 → **Radix Select 下拉**（`header-theme-select`/`header-lang-select`，aria-label 沿用 `ap.theme`/`ap.lang`）。理由：循环按钮在选项增多时不可直达/不可扩展；下拉保留顶栏快捷切换能力（§7.2 顶栏职责不变），设置页常规分类 AppearanceCard 作为完整管理面（双通道）。**测试契约升级**：`App.header.test.tsx`（combobox 语义 + 选择触发 setTheme/setLang）+ E2E 顶栏断言检查（现有循环按钮断言升级为 Select 选择断言）
+
+> 估算：3-5 → **5-7 人天**（注册表实体全链路：7 文件 + 解析改造 + key 回退 + 前端页 + 顶栏下拉改造）。
+
+### 8.3 API 契约（新增）
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/provider-configs` | GET/POST | Provider 注册表列表（含 key_saved + models）/新建（内置 seed 不可删） |
+| `/api/v1/provider-configs/{id}` | GET/PATCH/DELETE | 详情（含 models）/更新/删除（删除确认由前端；被模型绑定引用时返回 used_by 提示） |
+| `/api/v1/settings/llm-keys` | POST | 既有（#79），存 key 按 provider 名（复用） |
+| `/api/v1/settings/llm/test` | POST | 既有（#79），连通探测（复用） |
+
+> 本章不新增业务实体、不新增业务端点（与 F19 总声明一致；settings 为基础设施工具端点，先例 §4.9 Q3）。
+
+### 8.4 文件结构（#106 CREATE/MODIFY）
+
+| 操作 | 文件 | 内容 |
+|------|------|------|
+| NEW ×7 | 后端 ProviderConfig 实体（§8.2① 清单） | model/ports/errors/service/ORM/repo/router + 测试 + 内置 seed |
+| MODIFY | `backend/src/inkflow/infrastructure/llm/provider_config.py` | `get_provider_config` 查注册表 + APIKeyManager 已存 key 回退 |
+| MODIFY | `backend/src/inkflow/infrastructure/database/models/__init__.py` `api/app.py` `api/deps.py` | 导出/注册/装配 |
+| NEW | `frontend/packages/renderer/src/pages/models.tsx` | 模型管理页（Provider 列表/模型表/角色绑定区） |
+| NEW | `frontend/packages/renderer/src/components/ProviderDialog.tsx` | 添加/编辑 Provider 弹窗（预置模板/Base URL/Key/测试并保存） |
+| MODIFY | `frontend/packages/renderer/src/stores/models.ts`（NEW）或 `stores/agent.ts` | provider/model 状态（内置列表 + 已存 key + 选中模型 + 角色绑定草稿） |
+| MODIFY | `frontend/packages/renderer/src/App.tsx` | 路由 + 侧边栏「模型管理」入口（#105 导航接入）+ **顶栏主题/语言循环按钮 → Radix Select 下拉**（`header-theme-select`/`header-lang-select`，§8.2⑤） |
+| MODIFY | `frontend/packages/renderer/src/App.header.test.tsx` | **测试契约升级**：循环按钮断言 → Select combobox 语义 + 选择触发 setTheme/setLang（§8.2⑤） |
+| MODIFY | `tests/e2e/electron-pages.spec.ts` | E2E 顶栏断言升级：主题/语言选择交互（§8.2⑤） |
+| MODIFY | `frontend/packages/renderer/src/i18n/zh.ts` `en.ts` | 模型管理文案（双语）+ 主题/语言选项 label（若 Select 需显式选项文案） |
+
+### 8.5 测试策略
+
+| 层次 | 关键场景 |
+|------|----------|
+| 后端单元 | ProviderConfig CRUD + 内置 seed；key 回退（环境变量缺失读 APIKeyManager）；`get_provider_config` 注册表优先 + 内置回退；被引用删除 used_by |
+| 前端组件 | Provider 列表/添加弹窗（校验/测试连接成败 toast/保存）；模型多选 + 类型/角色标记；删除确认框；角色绑定下拉从已配置模型联动；**顶栏主题/语言 Select：combobox 语义（getByRole('combobox')）+ 选择触发 setTheme/setLang** |
+| 集成（真实内核） | `POST /settings/llm-keys` 存 key → `GET /provider-configs` 回读 key_saved；`/settings/llm/test` 成败 |
+| E2E | 顶栏主题/语言选择交互（升级现有循环按钮断言）；模型管理页导航入口可达 |
+| 回归 | 既有前端 91+ 用例 + 后端全量测试零回归 |
+
+### 8.6 验收标准（#106）
+
+- **M1**（自动）后端：ProviderConfig CRUD + 内置 seed + key 回退链路（集成断言：无 env key 时 `LangChainLLMClient` 构造/调用解析 api_key == APIKeyManager 已存值，Fake LLMClient 注入，不依赖真实网络）+ `get_provider_config` 注册表优先
+- **M2**（自动）Provider 增删改 + 测试连接成败 toast + 删除确认框
+- **M3**（自动）模型多选保存 + chat/embedding 类型标记 + 角色用途去重徽标
+- **M4**（自动）角色绑定 6 下拉（主模型/四角色/RAG embedding）从已配置模型联动
+- **M4b**（依赖声明，评审 C3）角色绑定区保存依赖 #107 `PATCH /agent-templates/default`——**#107 先行或 #106/#107 同期合入**；若 #106 单独交付，绑定区只读展示 + 「保存需 Agent 模板功能」标注
+- **M5**（自动）三层测试全绿（unit/integration/e2e）+ 既有用例零回归
+- **M5b**（自动）顶栏主题/语言 Select：展开可见全部选项 + 选择直达生效 + 与设置页联动（改设置页后顶栏同步；combobox 语义断言 + setTheme/setLang 触发断言）
+- **M6**（手动 + vision）模型管理页三主题截图走查 + Electron 生产模式可用
+
+### 8.7 关键架构决策记录（#106）
+
+| 决策 | 方案 | 理由 | 备选（否决） |
+|------|------|------|--------------|
+| 注册表实体（用户拍板 Q1=B/Q2=B） | ProviderConfig 实体 + CRUD + seed + 解析改造 | 自定义 provider 持久化（Q2=B 需求）；与 §9 AgentTemplate 同为 0.4.0 配置域实体，架构一致；注册 = 配置真源，刷新不丢 | 轻量 A+B（key 回退 + 只读端点，不满足自定义持久化，用户否决） |
+| key 回退 = provider_config 层 | `get_provider_config` 无环境变量时查 APIKeyManager | 单一改造点覆盖全部调用链（deps 8 处无需改）；打通「注册→调用」链路 | 改 deps 每处构造（8+ 处散改，否决）；前端直持 key（安全红线，否决） |
+| embedding 生效不在本章（Q3=A） | 本期仅注册/展示（持久化） | 全局单例改造（`get_vector_store` 注入链）需 RAG 侧联动；不阻塞模型管理主体 | 本期做项目级 embedding（RAG 注入链改造，超范围，否决） |
+| 顶栏切换 = Select 下拉（2026-08-06 追加，方案 A 拍板） | `header-theme-toggle`/`header-lang` 循环按钮 → Radix Select（`header-theme-select`/`header-lang-select`） | 选项增多时循环按钮不可直达/不可扩展；下拉保留顶栏快捷切换（§7.2 顶栏职责不变）；设置页 AppearanceCard 为完整管理面（双通道）；Radix Select 已在 #98 引入（§5.6 Q1=A），零新依赖 | 保持循环按钮（现状，不可扩展）；顶栏只留指示、切换全移设置页（快捷能力丢失，否决） |
+
+### 8.8 待澄清问题（≤3）
+
+- **Q1 后端改动范围**：A. Phase 1 = key 回退 + GET /llm-providers（轻量，2 处小改）；B. 直接落地注册表实体（完整：ProviderConfig 表 + CRUD + 解析改造）。**✅ 已确认（用户拍板：选项 B，2026-08-05）**——完整注册表 = 自定义 provider 持久化（Q2）+ 模型管理闭环；与 §9 配置域实体架构一致；估算 5-7 人天。正文已按 B 修订（§8.2/§8.3/§8.4/§8.6/§8.7）。
+- **Q2 自定义 provider（非内置）持久化**：A. 仅存 key（base_url/模型列表前端本地，刷新丢失）；B. 自定义 provider 配置持久化（注册表实体）。**✅ 已确认（用户拍板：选项 B，2026-08-05）**——自定义 provider（如本地 vLLM/Ollama 自定义端点）是真实场景；注册表持久化后刷新不丢。正文已按 B 修订（§8.2）。
+- **Q3 embedding 模型来源**：A. 注册表可注册/展示 embedding 模型（本期不生效，标注「下一迭代接入」）；B. 本期打通项目级 embedding（RAG 注入链改造）。**✅ 已确认（用户拍板：选项 A，2026-08-05）**——注册持久化已包含；生效机制需 RAG 注入链联动，超本章。正文已按 A 修订（§8.2.4）。
+- **Q4 顶栏主题/语言切换形态（2026-08-06 追加）**：A. Radix Select 下拉（`header-theme-select`/`header-lang-select`，展开可见全部选项、选择直达生效、与设置页联动）；B. 保持循环按钮（现状）；C. 顶栏移除切换、仅设置页管理。**✅ 已确认（用户拍板：选项 A，2026-08-06）**——循环按钮选项增多不可直达；下拉保留顶栏快捷能力，设置页为完整管理面（双通道）。正文已按 A 修订（§8.2⑤/§8.4/§8.5/§8.6/§8.7）。
+
+---
+
+## 9. Agent 模板：引用式 + 角色独立温度 + 风险确认（子任务 G，#107）
+
+### 9.1 本章定位
+
+**Agent/模型模板（0.4.0，前后端）**：命名模板 = 模型选择 + Agent 编排集合，项目引用模板（**引用式：模板修改 → 项目同步生效**），各 Agent 角色独立温度，保存/删除风险确认框。用户拍板（2026-08-05）：引用式（非快照）+ 保存风险确认 + 删除统一确认。为 F26+ 自定义 agent 工作流铺路。
+
+**关键事实（2026-08-05 后端盘点，源码核实）**：
+
+- **管线已有「模板 + 项目覆盖」两层结构**：`agent_service._merge_role_configs`（L154-212）以 `AgentRole` 管线模板为基础，`project_role_models` 非空即覆盖对应 stage 的 model——**AgentTemplate 实体 = 管线的可命名快照集合，与现有装配天然契合（引用式零额外机制）**
+- `ProjectConfig.agent_*` 为 `str | None`（project.py L50-53）：null=未配置（用模板默认），字符串=模型名；**无「停用角色」语义**（管线固定 4 阶段不裁剪，前端开关只是 undefined/null 呈现差异）
+- **PATCH config 浅合并**：`project_service.update` `exclude_unset` 顶层浅合并，config 字段整体替换——模板应用 = 快照整体 PATCH 可行
+- **无 migration 工具**：`create_tables()` 仅 `Base.metadata.create_all`（新表直接建，旧表加列不 ALTER）→ **template_id 建议入 config JSON（零迁移）**
+- **⚠️ 温度 0.7 哨兵 hack**：`agent_service` L188 `if agent.temperature == 0.7` 才用项目温度覆盖——角色独立温度必须重写此逻辑（盘点风险 3）
+- **角色独立温度半具备**：`AgentRole.temperature`（`domain/ports/agent_pipeline.py` L50）已存在；缺口 = ProjectConfig 每角色温度字段 + 合并逻辑重写
+
+### 9.2 范围与设计
+
+1. **后端 AgentTemplate 实体**（按既有模块模式，7 NEW 文件 + 测试）：
+   - `domain/models/agent_template.py`：`AgentTemplate = { id, name, description, main_model, default_temperature, roles: {arch/writer/auditor/reviser: {model, temperature, enabled}}, default_words, created_at, updated_at }`（roles 可仿 ProjectORM.config 存 JSON 列）
+   - `domain/ports/agent_template_repository.py` + `_errors.py` + `domain/services/agent_template_service.py` + `infrastructure/database/models/agent_template.py` + `infrastructure/database/repositories/agent_template_repo.py` + `api/routers/agent_templates.py`
+   - MODIFY：`database/models/__init__.py`（导出 ORM）、`api/app.py`（注册 router）、`api/deps.py`（装配）
+2. **ProjectConfig 扩展**（MODIFY `domain/models/project.py`）：`template_id: str | None = None` + 每角色温度字段（`role_arch_temperature` 等或 `roles_temperature: dict`）——**入 config JSON，零迁移**
+3. **引用式生效机制**：`agent_service` 装配时读项目 `template_id` → load 模板 → 模板 roles/模型/温度为基础 + 项目覆盖字段（model/temperature 非空即覆盖）——**运行时读模板 = 天然引用式（模板修改即生效）**；重写 0.7 哨兵 hack（`_merge_role_configs` 显式温度语义：None=跟随默认，非 None=独立温度）。**温度优先级链（评审 C1 定稿）**：内置模板值（pipeline_templates.py：architect=0.7/writer=0.8/auditor=0.5/reviser=0.6）→ 模板 roles[].temperature（None=跳过）→ 模板 default_temperature → 项目每角色温度（config 字段，非空即覆盖）→ 项目顶层 temperature（保底）。**旧项目（无 template_id）行为等价**：architect=项目顶层温度、其余=内置模板值（0.8/0.5/0.6）——即 §9.6 M3 回归对照物。AgentRole.temperature 类型 float → **float|None**（None=跟随默认；字段类型变更影响面 = `_merge_role_configs` + 管线模板定义）
+4. **风险确认数据**：模板 CRUD 端点返回引用计数/项目列表（`GET /templates/{id}` 附 `used_by: [{id, name}]`，实现提示：SQLite `json_extract(config,'$.template_id')` 查询可行，§9.5 集成测试覆盖）；前端保存/删除被引用模板 → 确认框（原型已验证文案）。**删除落盘机制（评审 C2 定稿）**：删除被引用模板 = 确认后**级联清空引用项目 config.template_id**（一次写，回退默认模板装配）——不做 load 兜底（避免脏数据掩盖）
+5. **前端**（#105 设置页「模板」分类落地）：模板列表（名称/描述/应用项目数徽标/设为默认）+ 新建/复制/编辑/删除 + 编辑弹窗（名称/描述/主模型/四角色行=模型下拉+独立温度滑杆+开关/默认温度）+ 新建项目对话框「Agent 模板」下拉（默认模板/已建模板）+ 项目设置显示应用模板（可切换）。**enabled 语义（评审建议 1 定稿）**：Phase 1 `enabled=False` = 该角色 model 不覆盖（用默认模型，呈现差异），编辑弹窗开关旁注明「关闭 = 该角色使用默认模型」；管线阶段裁剪语义明确留 Phase 2（与 §4.2.3 #79 开关呈现兼容，不引入裁剪能力）
+
+### 9.3 API 契约（新增）
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/agent-templates` | GET/POST | 模板列表/新建 |
+| `/api/v1/agent-templates/{id}` | GET/PATCH/DELETE | 详情（含 `used_by` 引用列表）/更新/删除 |
+| `/api/v1/agent-templates/{id}/duplicate` | POST | 复制（或前端读后 POST 新建） |
+| `/api/v1/agent-templates/default` | GET/PATCH | 默认模板查询/设为默认 |
+
+> 业务实体端点（非基础设施），走完整实体模式（deps 装配）；模板 CRUD 不触碰 F4 既有管线端点。
+
+### 9.4 文件结构（#107 CREATE/MODIFY）
+
+| 操作 | 文件 | 内容 |
+|------|------|------|
+| NEW ×7 | 后端 AgentTemplate 实体（§9.2.1 清单） | model/ports/errors/service/ORM/repo/router + 测试 |
+| MODIFY | `domain/models/project.py` | ProjectConfig 加 `template_id` + 每角色温度字段（config JSON 零迁移） |
+| MODIFY | `agent_service.py` | `_merge_role_configs` 重写（引用式装配 + 显式温度语义，移除 0.7 哨兵） |
+| MODIFY | `database/models/__init__.py` `api/app.py` `api/deps.py` | 导出/注册/装配 |
+| MODIFY | `frontend/.../pages/settings.tsx` | 模板分类面板（#105 框架上实现） |
+| NEW | `frontend/.../components/TemplateDialog.tsx` | 模板编辑弹窗（角色独立温度滑杆等） |
+| MODIFY | `frontend/.../components/NewProjectDialog.tsx` | Agent 模板下拉（#105 占位落地） |
+| MODIFY | `frontend/.../stores/templates.ts`（NEW）+ `stores/project.ts` | 模板状态 + 项目 template_id 读写 |
+| MODIFY | `frontend/.../i18n/zh.ts` `en.ts` | 模板文案（双语） |
+
+### 9.5 测试策略
+
+| 层次 | 关键场景 |
+|------|----------|
+| 后端单元 | 模板 CRUD + 设为默认；引用式装配（项目引用模板 → 管线 roles 来自模板）；项目覆盖优先；每角色独立温度生效（非 0.7 不被项目温度覆盖）；删除被引用模板返回 used_by |
+| 前端组件 | 模板列表徽标/CRUD/弹窗（角色温度滑杆联动/保存）；被引用模板保存 → 风险确认框（列出项目名）确认/取消分支；删除确认统一；新建项目下拉 |
+| 集成（真实内核） | 模板 CRUD 端点 + 项目 config template_id 回读 + used_by 引用计数 |
+| 回归 | 既有后端全量（agent_service 重构影响面）+ 前端用例零回归 |
+
+### 9.6 验收标准（#107）
+
+- **M1**（自动）后端：模板 CRUD + 设为默认 + used_by 引用列表
+- **M2**（自动）引用式：项目 template_id → 管线装配读模板；模板修改 → 项目生效（集成断言）
+- **M3**（自动）角色独立温度：四角色各自温度生效；0.7 哨兵 hack 移除后无回归；**旧项目（无 template_id）装配行为等价**（architect=项目顶层温度、writer=0.8/auditor=0.5/reviser=0.6——评审建议 2）
+- **M4**（自动）前端：模板列表徽标 + CRUD + 编辑弹窗（角色温度滑杆）+ 风险确认框（被引用保存/删除）确认/取消分支
+- **M5**（自动）新建项目选模板 + 项目内切换
+- **M6**（自动）三层测试全绿 + 既有用例零回归（尤其 agent_service 重构）
+- **M7**（手动 + vision）设置-模板分类三主题截图走查
+
+### 9.7 关键架构决策记录（#107）
+
+| 决策 | 方案 | 理由 | 备选（否决） |
+|------|------|------|--------------|
+| 引用式（用户拍板） | 项目 config 存 template_id，运行时读模板装配 | 模板 = 配置真源，一次修改全局生效；为 F26+ 模板升级批量传播铺路；保存风险确认框显式暴露影响面 | 快照式（改模板不传播，与「配置真源」诉求不符，用户否决） |
+| 生效机制 = 运行时读 | agent_service 装配时 load template | 天然引用式（改模板即生效）、无写放大、与现有 `_merge_role_configs` 两层结构契合 | 保存时批量写回项目 config（写放大 + 并发风险，否决） |
+| template_id 入 config JSON | ProjectConfig.template_id 字段（JSON 列） | 无 migration 工具（create_all 不 ALTER 旧表），零迁移风险 | projects 表加列（需手工迁移，否决） |
+| 角色独立温度 = 显式字段 | roles 温度非 None 即独立生效，None 跟随默认；重写 0.7 哨兵 | 0.7 哨兵 hack 使「恰为 0.7 的角色」无法独立配置（盘点风险 3）；显式语义清晰 | 保留哨兵 + 约定（脆弱，否决） |
+| 默认模板 = 系统内置 | 内置模板不可删、可设为默认（跟随系统默认配置） | 新建项目零配置可用；防误删兜底 | 用户可删默认模板（新手路径风险，否决） |
+
+### 9.8 待澄清问题（≤3）
+
+- **Q1 项目级覆盖语义**：A. 模板应用后项目内仍可覆盖（model/temperature 非空即覆盖，灵活）；B. 引用后项目锁定模板（统一管理）。**✅ 已确认（用户拍板：选项 A，2026-08-05）**——与现有 `project_role_models` 覆盖结构一致，兼容既有 #79 行为。正文已按 A 修订（§9.2.3）。
+- **Q2 默认模板实体化**：A. 默认模板 = 系统内置模板记录（模板表首行，不可删）；B. 默认模板 = 虚拟概念（无 template_id 时回退当前全局默认配置，不落表）。**✅ 已确认（用户拍板：选项 A，2026-08-05）**——实体化后「设为默认/应用项目数」统计统一。正文已按 A 修订（§9.2.5）。
+- **Q3 模板删除被引用项目**：A. 允许删除但确认框提示（删除后项目回退默认模板）；B. 阻止删除（须先解除引用）。**✅ 已确认（用户拍板：选项 A，2026-08-05）**——提示 + 回退默认，避免死锁。正文已按 A 修订（§9.3 DELETE 语义）。
+
+---
+
+## 10. 不在范围内
 
 | 项 | 归属/原因 |
 |----|----------|
@@ -729,7 +1098,7 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 | LLM 连接测试端点 | ✅ #79 交付（Q3 拍板：settings/llm-keys + settings/llm/test 工具端点，§4.6） |
 | 业务 API 新增/修改 | 无（F19 不新增业务端点） |
 
-## 7. 依赖关系
+## 11. 依赖关系
 
 | 依赖 | 状态 | 说明 |
 |------|------|------|
@@ -742,7 +1111,7 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 
 **编号口径声明**：旧文档中指向「F19 桌面端」的 0.4.0 编号已按 ADR-019 v2 拆分为 0.3.0 GUI（#77/#78/#79）+ 0.4.0 打包（#48），本章以 ADR-019 v2 为准。
 
-## 8. 关键架构决策记录（#77）
+## 12. 关键架构决策记录（#77）
 
 | 决策 | 方案 | 理由 | 备选（否决） |
 |------|------|------|--------------|
@@ -752,8 +1121,8 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 | CORS = config 白名单 | `server_cors_origins` 默认本地源 + null | Electron file:// 生产模式 Origin=null；可配置化避免硬编码（现状 4 个硬编码） | 保持硬编码（Electron 生产模式会 CORS 失败） |
 | reload 与交付契约互斥、token 保持启用 | reload 不输出 INKFLOW_READY/端口文件；token 校验不降级（Q3 评审修正） | reload 子进程端口漂移 → 交付契约无法消费；token 经 env 继承零成本，开发模式不降级安全基线 | reload 禁用 token 校验（安全基线无谓降级，评审否决）；reload 与 --port-file 互斥报错（开发模式过约束） |
 
-## 9. 待澄清问题（≤3）
+## 13. 待澄清问题（≤3）
 
 - **Q1 端口文件路径默认值**：A. 仅显式 `--port-file`（缺省不写文件，stdout 唯一默认通道）——壳必须传路径，契约最明确；B. 缺省写 `{data_dir}/serve.json`——壳零参数，但 data_dir 权限/并发（多实例）需处理；C. 缺省写系统临时目录 `{tempdir}/inkflow-serve.json`。**✅ 已确认（用户拍板：选项 A，2026-08-03）**——消费方唯一性论证：端口文件唯一消费方是 #78 壳，而壳自身 spawn 内核并传参，显式传路径零额外成本；B/C 的缺省路径引入多实例冲突与轮询竞态，收益为零。正文已按 A 修订（§2.1.2 缺省不写文件、仅 stdout）。
-- **Q2 /health 是否豁免 token**：A. 豁免（健康检查无敏感数据，壳轮询/运维 curl 方便）；B. 全部强制（严格基线，壳先解析 INKFLOW_READY 拿 token 再轮询）。**✅ 已确认（用户拍板：选项 B，2026-08-03）**——原建议 A 存在认知偏差：「壳轮询方便」不成立——端口与 token 同在 INKFLOW_READY 行，壳解析该行是必经步骤，token 是免费副产品，轮询带 token 零成本；豁免收益仅剩「运维 curl 探测」（本地单机无真实运维场景），代价却是契约例外 + DNS rebinding 端口探测通道 + 测试双分支。/docs /redoc /openapi.json 为静态文档仍豁免，配全局 HTTPBearer scheme（Swagger UI Authorize 按钮，兼作 ADR-024 云端 JWT 前置）。正文已按 B 修订（§2.1.3/§2.3.1/§2.6/§2.7/§8）。
-- **Q3 --reload 与 token 交付**：A. reload 模式下禁用 token 校验 + 不输出 INKFLOW_READY（开发热重载仅本机，语义最简）；B. reload 时 env 注入 token 让子进程继承（token 跨 reload 稳定）；C. `--reload` 与 `--port-file/--token` 互斥报错。**✅ 已确认（用户拍板：选项 A 修正，2026-08-03）**——交付契约与 reload 互斥（不输出 INKFLOW_READY、不写端口文件，reload 子进程端口漂移无法消费）成立，但「禁用 token 校验」是安全基线无谓降级：token 经 env 注入、reload 子进程天然继承，校验保持启用零成本。最终语义：**reload 与交付契约互斥 + token 校验保持启用**（§2.2 表格与 §8 决策表已同步）。
+- **Q2 /health 是否豁免 token**：A. 豁免（健康检查无敏感数据，壳轮询/运维 curl 方便）；B. 全部强制（严格基线，壳先解析 INKFLOW_READY 拿 token 再轮询）。**✅ 已确认（用户拍板：选项 B，2026-08-03）**——原建议 A 存在认知偏差：「壳轮询方便」不成立——端口与 token 同在 INKFLOW_READY 行，壳解析该行是必经步骤，token 是免费副产品，轮询带 token 零成本；豁免收益仅剩「运维 curl 探测」（本地单机无真实运维场景），代价却是契约例外 + DNS rebinding 端口探测通道 + 测试双分支。/docs /redoc /openapi.json 为静态文档仍豁免，配全局 HTTPBearer scheme（Swagger UI Authorize 按钮，兼作 ADR-024 云端 JWT 前置）。正文已按 B 修订（§2.1.3/§2.3.1/§2.6/§2.7/§10）。
+- **Q3 --reload 与 token 交付**：A. reload 模式下禁用 token 校验 + 不输出 INKFLOW_READY（开发热重载仅本机，语义最简）；B. reload 时 env 注入 token 让子进程继承（token 跨 reload 稳定）；C. `--reload` 与 `--port-file/--token` 互斥报错。**✅ 已确认（用户拍板：选项 A 修正，2026-08-03）**——交付契约与 reload 互斥（不输出 INKFLOW_READY、不写端口文件，reload 子进程端口漂移无法消费）成立，但「禁用 token 校验」是安全基线无谓降级：token 经 env 注入、reload 子进程天然继承，校验保持启用零成本。最终语义：**reload 与交付契约互斥 + token 校验保持启用**（§2.2 表格与 §10 决策表已同步）。
