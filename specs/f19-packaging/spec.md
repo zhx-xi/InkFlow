@@ -290,6 +290,12 @@ dist\inkflow\inkflow.exe serve --port 0 --port-file smoke.json   # 期望输出 
 
 **结论记录**：spike 通过 → 排除清单定稿（§4.2）；S3 预期失败属**良性**（该函数路径在 InkFlow 中不可达，B+ 装配保证显式注入）——若 S3 意外成功或 S4 命中，回退排除项并更新 §3.3 体积预算。
 
+**✅ spike 实测结论（2026-08-06，已闭环）**：
+- S2 ✅ chromadb 写入+检索正常（显式 embeddings 数组路径）
+- S3 ✅ DefaultEmbeddingFunction 可构造（当前 venv 有 onnxruntime），但 **InkFlow 源码 0 命中**（S4）——排除后该路径不可达
+- **关键证据**：`import chromadb` 后顶层模块加载检查——**onnxruntime / kubernetes / tokenizers 均未加载**（excludes 安全）；**grpc 被加载**（opentelemetry exporter 依赖，~11.9MB）——**保留 grpc**（排除可能破坏 opentelemetry 初始化，风险 > 收益）
+- **排除清单定稿**：`excludes=['onnxruntime', 'kubernetes', 'tokenizers', 'litellm', 'torch', 'transformers', 'sentence_transformers']`（litellm/torch 族为 T0 兜底）
+
 ---
 
 ## 5. B+ 装配改造：API embedding（用户拍板 2026-08-06：P1=A 并入本任务）
