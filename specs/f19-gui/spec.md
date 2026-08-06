@@ -906,7 +906,7 @@ toast 体系（三态/2s/aria-live）、骨架屏（项目列表/章节树加载
 
 **关键事实（2026-08-05 后端盘点，源码核实）**：
 
-- **多 provider = 模型字符串路由级**：`infrastructure/llm/provider_config.py` `LLMProviderConfig`（provider/api_key/base_url/default_model/models/max_retries/timeout）+ `_BUILTIN_PROVIDERS` 硬编码 3 个（openai/deepseek/ollama，anthropic 已按 ADR-005v2 移除）；`parse_model_string()` 统一 LiteLLM 格式 `provider/model`；**无持久化注册表、无 CRUD 端点**
+- **多 provider = 模型字符串路由级**：`infrastructure/llm/provider_config.py` `LLMProviderConfig`（provider/api_key/base_url/default_model/models/max_retries/timeout）+ `_BUILTIN_PROVIDERS` 硬编码 4 个（**openai/deepseek/zhipu/ollama**——2026-08-06 源码核实，zhipu 仍在；anthropic 已按 ADR-005v2 移除）；`parse_model_string()` 统一 LiteLLM 格式 `provider/model`；**无持久化注册表、无 CRUD 端点**
 - **⚠️ key 存储与调用链脱节（#106 必补缺口）**：`APIKeyManager`（`infrastructure/llm/key_manager.py`，AES-256-GCM，`data_dir/keys/{provider}.json`）仅被 settings 端点（store/探测）使用；`api/deps.py` 全部 `LangChainLLMClient()` 无参构造，key 只走环境变量——**存了 key 但环境变量未设 → 调用仍报 "API key not configured"**
 - **每项目/每角色不同模型已天然支持**：model 为每次调用传入字符串（writing_service `request.model or project.config.model`；Agent 管线 `stage.agent.model` 每阶段独立）——唯一缺口是 api_key 来源
 - **embedding 全局硬编码**：`core/config.py` `embedding_model="BAAI/bge-small-zh-v1.5"` + `deps.py` `get_vector_store()` 模块级单例；无项目级/用户级配置
@@ -921,7 +921,7 @@ toast 体系（三态/2s/aria-live）、骨架屏（项目列表/章节树加载
 1. **后端 ProviderConfig 实体**（按既有模块模式，7 NEW 文件 + 测试，参照 §9.2/§9.4 的 AgentTemplate 实体模式）：
    - `domain/models/provider_config.py`：`ProviderConfig = { id, name, base_url, default_model, models: [{id, type: chat|embedding, roles}], max_retries, timeout, created_at, updated_at }`（models 存 JSON 列，仿 ProjectORM.config）
    - `domain/ports/provider_config_repository.py` + `_errors.py` + `domain/services/provider_config_service.py` + `infrastructure/database/models/provider_config.py` + `infrastructure/database/repositories/provider_config_repo.py` + `api/routers/provider_configs.py`
-   - **内置 seed**：建表时插入内置 3 provider（openai/deepseek/ollama，值来自 `_BUILTIN_PROVIDERS`）——注册表列表统一，无「内置 vs 自定义」双轨
+   - **内置 seed**：建表时插入内置 4 provider（openai/deepseek/zhipu/ollama——2026-08-06 源码核实 `_BUILTIN_PROVIDERS` 实际 4 个，zhipu 仍在注册表；值来自 `_BUILTIN_PROVIDERS`）——注册表列表统一，无「内置 vs 自定义」双轨
    - MODIFY：`database/models/__init__.py`（导出）、`api/app.py`（注册 router）、`api/deps.py`（装配）
 2. **provider 解析改造 + key 回退**（MODIFY `infrastructure/llm/provider_config.py`）：
    - `get_provider_config` 改为**先查注册表**（持久化 provider → base_url/default_model/models），注册表无则回退内置硬编码（兼容既有调用）
