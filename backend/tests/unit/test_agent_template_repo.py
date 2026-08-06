@@ -328,8 +328,8 @@ class TestAgentTemplateRepository:
 
         # 取消默认：B 置 False → 无默认行
         await repo.update(updated_b.model_copy(update={"is_default": False}))
-        assert (await repo.get(b.id)).is_default is False  # type: ignore[union-attr]
-        assert (await repo.get(a.id)).is_default is False  # type: ignore[union-attr]
+        assert (await repo.get(b.id)).is_default is False  # type: ignore[union-attr]  # repo.get 返回 Optional，测试上下文已知存在
+        assert (await repo.get(a.id)).is_default is False  # type: ignore[union-attr]  # repo.get 返回 Optional，测试上下文已知存在
 
     async def test_set_default_sets_singleton(self, db_session):
         """set_default(id)：目标行 is_default=True，其他行降级 False；
@@ -340,13 +340,13 @@ class TestAgentTemplateRepository:
 
         # 先设 A 默认，再切到 B → A 降级
         await repo.set_default(a.id)
-        assert (await repo.get(a.id)).is_default is True  # type: ignore[union-attr]
+        assert (await repo.get(a.id)).is_default is True  # type: ignore[union-attr]  # repo.get 返回 Optional，测试上下文已知存在
 
         got_b = await repo.set_default(b.id)
         assert got_b is not None
         assert got_b.id == b.id
         assert got_b.is_default is True
-        assert (await repo.get(a.id)).is_default is False  # type: ignore[union-attr]
+        assert (await repo.get(a.id)).is_default is False  # type: ignore[union-attr]  # repo.get 返回 Optional，测试上下文已知存在
 
         assert await repo.set_default(99999) is None
 
