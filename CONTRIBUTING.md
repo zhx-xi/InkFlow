@@ -21,7 +21,7 @@
 - 单元 + 集成测试全绿（覆盖率 ≥ 70%）
 - 新代码全类型化，无裸 `Any`；抑制必须带理由（`# noqa: X  # reason`）
 - 无 monster files（>900 行被 `ci_cd/check_file_length.py` 拦截）
-- 详细陷阱清单见 `docs/ai-traps.md`
+- 详细陷阱清单见 `ai-traps.md`
 
 ## 问题报告
 

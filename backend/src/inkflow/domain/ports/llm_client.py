@@ -1,7 +1,7 @@
 """
 LLM 客户端端口 — 定义领域层与 LLM Provider 之间的契约。
 
-基础设施层（LangChain ChatLiteLLM）实现此 Protocol。
+基础设施层（LangChain ChatOpenAI，ADR-005v2）实现此 Protocol。
 领域层只依赖此接口，不感知 LangChain。
 """
 
@@ -69,9 +69,9 @@ class ChatMessage:
 class LLMClientProtocol(Protocol):
     """LLM 客户端端口 — 统一 chat / stream / completion 接口。
 
-    基础设施层实现示例：
-        from langchain_community.chat_models import ChatLiteLLM
-        class LangChainLLMClient: ...
+    基础设施层实现示例（ADR-005v2）：
+        from langchain_openai import ChatOpenAI
+        class LangChainLLMClient: ...  # custom base_url 兼容多 Provider
 
     测试时可注入 Mock 实现，不依赖实际 LLM API。
     """

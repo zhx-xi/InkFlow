@@ -26,6 +26,7 @@ D:\develop\projects\
 │   ├── CLAUDE.md                    # 其他工具入口跳板（指向 AGENTS.md）
 │   ├── ARCHITECTURE.md              # ← 本文件（架构导航）
 │   ├── CONTRIBUTING.md              # 人类贡献者指南
+│   ├── ai-traps.md                  # AI 编码常见陷阱完整清单（AGENTS.md §9 引用）
 │   ├── README.md / FEATURES.md / LICENSE
 │   ├── adr\                         # ★ ADR 决策记录（索引见 adr/README.md）
 │   │   ├── README.md                #   ADR 索引 + 编号规则（25 条有效，2026-08-02）
@@ -36,9 +37,9 @@ D:\develop\projects\
 │   │   ├── workflow.md              #   开发工作流详解
 │   │   ├── phase1-gate-review-2026-08-01.md
 │   │   └── ...（product-positioning / security-analysis-cloud / env-readiness）
-│   ├── docs\                        # 用户使用说明 + AI 操作备忘
+│   ├── docs\                        # 用户使用说明（纯用户文档）
 │   │   ├── README.md
-│   │   └── ai-traps.md              #   AI 编码常见陷阱完整清单（AGENTS.md §9 引用）
+│   │   └── images\                  #   架构图 PNG（README 引用）
 │   ├── specs\                       # SDD 规格文件（每个 feature 一个目录）
 │   │   ├── f1-project-service\ ... f7-cli-interface\   #   Phase 1（F8 无 spec，见 ADR-018）
 │   │   ├── f9-character-service\ ... f16-style-service\  #   Phase 2 创作工具链
@@ -47,7 +48,7 @@ D:\develop\projects\
 │   │   └── p0-11-cloud-protocols\   #   云端接口 Protocol spec
 │   ├── frontend\                    # ★ 前端（0.3.0 F19 GUI 起；云 Web 一套两用，ADR-020）
 │   │   └── packages\                #   pnpm workspace 双包：renderer（React19+Vite6）+ electron（薄壳）
-│   ├── ci_cd\                       # ★ CI 质量护栏脚本（check_file_length / check_noqa_reason）
+│   ├── ci_cd\                       # ★ CI 质量护栏（check_file_length / check_noqa_reason / api-coverage.md）
 │   ├── backend\
 │   │   ├── pyproject.toml           # 项目配置、依赖、工具设置
 │   │   ├── uv.lock                   # 依赖锁定（ADR-025，唯一真相，CI --frozen）
@@ -60,7 +61,7 @@ D:\develop\projects\
 │   │   │   │   └── ports\           #   出站端口（Protocol；cloud\ 子目录 = P0-11 云端接口）
 │   │   │   ├── infrastructure\      # 基础设施层（实现 domain/ports）
 │   │   │   │   ├── database\        #   SQLAlchemy + SQLite（models\ ORM + repositories\）
-│   │   │   │   ├── llm\             #   LangChain LLM（ChatLiteLLM + templates\）
+│   │   │   │   ├── llm\             #   LangChain LLM（ChatOpenAI 路由 + templates\）
 │   │   │   │   ├── agent\           #   LangGraph StateGraph 管道
 │   │   │   │   ├── rag\             #   RAG 检索（Chroma + BGE，F14 落地）
 │   │   │   │   └── context\         #   F6 上下文数据源（sources.py，F13 伏笔注入）
@@ -91,7 +92,7 @@ D:\develop\projects\
 | **domain/services** | `src/inkflow/domain/services/` | 业务编排；`_*_extractor`/`_*_generator`/`_*_analyzer` 私有实现 |
 | **domain/ports** | `src/inkflow/domain/ports/` | 出站端口 Protocol（仓储/LLM/向量库/云接口）；`cloud/` = P0-11 |
 | **infrastructure/database** | `src/inkflow/infrastructure/database/` | SQLAlchemy ORM（models\）+ 仓储实现（repositories\） |
-| **infrastructure/llm** | `src/inkflow/infrastructure/llm/` | LangChain ChatLiteLLM + prompt_manager（str.replace 渲染，非 Jinja2）+ templates\ |
+| **infrastructure/llm** | `src/inkflow/infrastructure/llm/` | LangChain ChatOpenAI（custom base_url 兼容多 Provider，ADR-005v2）+ prompt_manager（str.replace 渲染，非 Jinja2）+ templates\ |
 | **infrastructure/agent** | `src/inkflow/infrastructure/agent/` | LangGraph StateGraph 管线（F4 角色链） |
 | **infrastructure/rag** | `src/inkflow/infrastructure/rag/` | Chroma + BGE 向量检索（F14，ADR-013） |
 | **infrastructure/context** | `src/inkflow/infrastructure/context/` | F6 上下文数据源（sources.py：角色/世界观/伏笔/时间线注入） |
@@ -140,7 +141,7 @@ flowchart LR
     end
     subgraph 基础设施
         DB[(SQLite / repos/)]
-        LLM[LangChain ChatLiteLLM]
+        LLM[LangChain ChatOpenAI]
         RAG[(Chroma + BGE)]
         CTX[context/sources.py]
     end

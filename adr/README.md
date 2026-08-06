@@ -19,7 +19,7 @@
 | [ADR-003](ADR-003.md) | Repository 模式封装 SQLAlchemy | ✅ 已接受 | 2026-07-30 |
 | [ADR-004](ADR-004.md) | Pydantic v2 作为统一数据契约 | ✅ 已接受 | 2026-07-30 |
 | [ADR-005](ADR-005.md) | LLM Provider — LiteLLM 统一对接 | ⛔ 已弃用（被 ADR-005v2 取代） | 2026-07-30 |
-| [ADR-005v2](ADR-005v2.md) | LLM Provider — LangChain ChatLiteLLM | ✅ 已接受 | 2026-07-31 |
+| [ADR-005v2](ADR-005v2.md) | LLM Provider — LangChain ChatOpenAI（OpenAI 兼容路由） | ✅ 已接受 | 2026-07-31 |
 | [ADR-006](ADR-006.md) | Agent 编排 — 管道链模式 | ⛔ 已弃用（被 ADR-006v2 取代） | 2026-07-30 |
 | [ADR-006v2](ADR-006v2.md) | Agent 编排 — LangGraph StateGraph | ✅ 已接受 | 2026-07-31 |
 | [ADR-007v2](ADR-007v2.md) | 项目包结构（infrastructure 按技术分目录） | ✅ 已接受 | 2026-07-31 |
@@ -49,7 +49,7 @@
 - **架构风格**: 模块化单体（ADR-001）+ 六边形分层（ADR-002）
 - **数据访问**: Repository 模式（ADR-003），SQLite + AsyncSQLAlchemy
 - **数据契约**: Pydantic v2 全栈（ADR-004）
-- **LLM**: LangChain ChatLiteLLM（ADR-005v2，替代 005）
+- **LLM**: LangChain ChatOpenAI 兼容路由（ADR-005v2，替代 005）
 - **Agent 编排**: LangGraph StateGraph（ADR-006v2，替代 006）
 - **RAG**: LangChain Chroma + BGE 本地 Embedding（ADR-013）
 - **Prompt**: ChatPromptTemplate + YAML（ADR-014）

@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InkFlow 系统架构图</title>
+<style>
+  :root {
+    --page-bg: #f4f5f7;
+    --card-bg: #ffffff;
+    --layer-front: #e8e8e8;
+    --layer-api: #e6f3ff;
+    --layer-domain: #e6ffe6;
+    --layer-infra-a: #fff0e6;
+    --layer-infra-b: #f0e6ff;
+    --text-main: #1a1a1a;
+    --text-sub: #555555;
+    --border: #d0d0d0;
+    --arrow: #7a7a7a;
+    --accent: #2b6cb0;
+    --legend-bg: rgba(255,255,255,0.85);
+  }
+  [data-theme="dark"] {
+    --page-bg: #020617;
+    --card-bg: #0f172a;
+    --layer-front: #082f3f;
+    --layer-api: #063a2e;
+    --layer-domain: #1a2f14;
+    --layer-infra-a: #3a2a10;
+    --layer-infra-b: #251a3f;
+    --text-main: #e2e8f0;
+    --text-sub: #94a3b8;
+    --border: #1e293b;
+    --arrow: #64748b;
+    --accent: #38bdf8;
+    --legend-bg: rgba(15,23,42,0.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    background: var(--page-bg);
+    min-height: 100vh;
+    padding: 2rem;
+    color: var(--text-main);
+    transition: background .3s, color .3s;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+
+  /* Header */
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
+  .header-left { display: flex; align-items: center; gap: .75rem; }
+  .logo-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+  h1 { font-size: 1.4rem; font-weight: 700; }
+  .subtitle { color: var(--text-sub); font-size: .85rem; margin-top: .3rem; }
+  .theme-btn {
+    background: var(--card-bg); border: 1px solid var(--border); color: var(--text-main);
+    padding: .45rem 1rem; border-radius: 8px; cursor: pointer; font-size: .8rem; font-family: inherit;
+    transition: all .2s;
+  }
+  .theme-btn:hover { border-color: var(--accent); }
+
+  /* Diagram card */
+  .diagram {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.8rem;
+    box-shadow: 0 4px 24px rgba(0,0,0,.06);
+    transition: background .3s, border-color .3s;
+  }
+
+  /* Layer */
+  .layer {
+    border-radius: 10px;
+    padding: 1rem 1.2rem 1.2rem;
+    position: relative;
+  }
+  .layer-front  { background: var(--layer-front); }
+  .layer-api    { background: var(--layer-api); }
+  .layer-domain { background: var(--layer-domain); }
+  .layer-split  { display: grid; grid-template-columns: 1.2fr 1fr; gap: 1rem; }
+  .layer-left   { background: var(--layer-infra-a); border-radius: 10px; padding: 1rem 1.2rem 1.2rem; }
+  .layer-right  { background: var(--layer-infra-b); border-radius: 10px; padding: 1rem 1.2rem 1.2rem; }
+
+  .layer-title {
+    display: flex; align-items: center; gap: .5rem;
+    font-size: .95rem; font-weight: 700; margin-bottom: .9rem;
+  }
+  .layer-title .tag {
+    font-size: .7rem; font-weight: 500;
+    color: var(--text-sub);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: .1rem .6rem;
+    background: var(--legend-bg);
+  }
+
+  /* Module boxes */
+  .boxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .8rem; }
+  .box {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: .7rem .6rem;
+    text-align: center;
+    font-size: .82rem;
+    line-height: 1.5;
+    transition: background .3s;
+  }
+  .box .name { font-weight: 600; }
+  .box .sub { color: var(--text-sub); font-size: .7rem; }
+
+  /* Arrows between layers */
+  .flow { display: flex; justify-content: center; padding: .65rem 0; }
+  .flow-line {
+    display: flex; flex-direction: column; align-items: center; gap: .2rem;
+    color: var(--arrow); font-size: .72rem;
+  }
+  .flow-line .bar {
+    width: 2px; height: 22px;
+    background: repeating-linear-gradient(to bottom, var(--arrow) 0 5px, transparent 5px 9px);
+    position: relative;
+  }
+  .flow-line .bar::after {
+    content: ""; position: absolute; bottom: -1px; left: 50%; transform: translateX(-50%);
+    border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--arrow);
+  }
+  .flow-inline { display: flex; align-items: center; justify-content: center; gap: .4rem; color: var(--arrow); font-size: .72rem; margin-top: .8rem; }
+  .flow-inline .bar-h {
+    width: 40px; height: 2px;
+    background: repeating-linear-gradient(to right, var(--arrow) 0 5px, transparent 5px 9px);
+    position: relative;
+  }
+  .flow-inline .bar-h::after {
+    content: ""; position: absolute; right: -1px; top: 50%; transform: translateY(-50%);
+    border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid var(--arrow);
+  }
+
+  /* Legend */
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 1.2rem; justify-content: center;
+    margin-top: 1.2rem; padding-top: 1rem;
+    border-top: 1px dashed var(--border);
+    color: var(--text-sub); font-size: .75rem;
+  }
+  .legend-item { display: flex; align-items: center; gap: .4rem; }
+  .swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--border); }
+
+  /* Info cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+  .card {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem 1.2rem;
+    transition: background .3s;
+  }
+  .card h3 { font-size: .9rem; margin-bottom: .6rem; display: flex; align-items: center; gap: .5rem; }
+  .card h3::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .card ul { list-style: none; color: var(--text-sub); font-size: .78rem; line-height: 1.8; }
+
+  .footer { text-align: center; margin-top: 1.5rem; color: var(--text-sub); font-size: .72rem; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <div class="header-left">
+      <div class="logo-dot"></div>
+      <div>
+        <h1>InkFlow 系统架构图</h1>
+        <div class="subtitle">AI 辅助小说创作工具 · 模块化单体（Clean Architecture）· 本地优先</div>
+      </div>
+    </div>
+    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">🌙 切换暗色</button>
+  </div>
+
+  <div class="diagram">
+
+    <!-- Layer 1: 前端 -->
+    <div class="layer layer-front">
+      <div class="layer-title">前端（Electron + React 19 + Vite）<span class="tag">frontend/packages/renderer</span></div>
+      <div class="boxes">
+        <div class="box"><div class="name">项目库界面</div><div class="sub">library · 项目管理</div></div>
+        <div class="box"><div class="name">写作台界面</div><div class="sub">writing · SSE 流式</div></div>
+        <div class="box"><div class="name">模型管理界面</div><div class="sub">models · Provider 绑定</div></div>
+        <div class="box"><div class="name">设置界面</div><div class="sub">settings · 通用/Agent</div></div>
+      </div>
+    </div>
+
+    <!-- Flow -->
+    <div class="flow"><div class="flow-line"><span>REST API / SSE</span><div class="bar"></div></div></div>
+
+    <!-- Layer 2: 表现层 API -->
+    <div class="layer layer-api">
+      <div class="layer-title">后端（FastAPI RESTful API + CLI + MCP）<span class="tag">src/inkflow/api + cli + mcp</span></div>
+      <div class="boxes">
+        <div class="box"><div class="name">项目/章节 API</div><div class="sub">project · chapter</div></div>
+        <div class="box"><div class="name">写作管道 API</div><div class="sub">writing · agent · context</div></div>
+        <div class="box"><div class="name">创作工具链 API</div><div class="sub">角色/世界观/大纲/时间线/伏笔/审计/风格</div></div>
+        <div class="box"><div class="name">模型配置 API</div><div class="sub">provider-configs · settings</div></div>
+        <div class="box"><div class="name">CLI / MCP</div><div class="sub">Typer · stdio 直连</div></div>
+      </div>
+    </div>
+
+    <!-- Flow -->
+    <div class="flow"><div class="flow-line"><span>Service 调用</span><div class="bar"></div></div></div>
+
+    <!-- Layer 3: 领域层 -->
+    <div class="layer layer-domain">
+      <div class="layer-title">领域层（Clean Architecture · 零框架依赖）<span class="tag">src/inkflow/domain</span></div>
+      <div class="boxes">
+        <div class="box"><div class="name">领域服务</div><div class="sub">services/ · 业务编排</div></div>
+        <div class="box"><div class="name">领域模型</div><div class="sub">models/ · 聚合/实体</div></div>
+        <div class="box"><div class="name">端口 Protocol</div><div class="sub">ports/ · 出站接口</div></div>
+        <div class="box"><div class="name">LangGraph 编排</div><div class="sub">infra/agent · 角色链</div></div>
+      </div>
+    </div>
+
+    <!-- Flow -->
+    <div class="flow"><div class="flow-line"><span>Port 实现</span><div class="bar"></div></div></div>
+
+    <!-- Layer 4: 基础设施 -->
+    <div class="layer-split">
+      <div class="layer-left">
+        <div class="layer-title">AI 服务</div>
+        <div class="boxes">
+          <div class="box"><div class="name">ChatOpenAI 路由</div><div class="sub">langchain-openai · custom base_url 兼容多 Provider（GLM / DeepSeek / OpenAI…）</div></div>
+          <div class="box"><div class="name">RAG 检索</div><div class="sub">Chroma + BGE Embedding</div></div>
+        </div>
+        <div class="flow-inline"><span>向量化/生成</span><div class="bar-h"></div></div>
+      </div>
+      <div class="layer-right">
+        <div class="layer-title">数据存储</div>
+        <div class="boxes">
+          <div class="box"><div class="name">SQLite 数据库</div><div class="sub">SQLAlchemy async · 本地优先</div></div>
+          <div class="box"><div class="name">静态文件/导出</div><div class="sub">写作产物 · 资产存储</div></div>
+        </div>
+        <div class="flow-inline"><span>持久化</span><div class="bar-h"></div></div>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#e8e8e8"></span>前端</div>
+      <div class="legend-item"><span class="swatch" style="background:#e6f3ff"></span>表现层</div>
+      <div class="legend-item"><span class="swatch" style="background:#e6ffe6"></span>领域层</div>
+      <div class="legend-item"><span class="swatch" style="background:#fff0e6"></span>AI 服务</div>
+      <div class="legend-item"><span class="swatch" style="background:#f0e6ff"></span>数据存储</div>
+      <div class="legend-item"><span style="color:var(--arrow)">┅┅▶</span>数据流向</div>
+    </div>
+  </div>
+
+  <!-- Info cards -->
+  <div class="cards">
+    <div class="card">
+      <h3>架构风格</h3>
+      <ul>
+        <li>• 模块化单体（ADR-001），非微服务</li>
+        <li>• 领域层零框架依赖（CI 强制，ADR-015）</li>
+        <li>• Protocol 端口隔离，为按需拆分预留</li>
+        <li>• 本地优先：SQLite + 免认证（Phase 1-3）</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>多表现层共享领域</h3>
+      <ul>
+        <li>• REST API = 本地内核通信契约（ADR-021）</li>
+        <li>• CLI / MCP 是同等地位的表现层适配器</li>
+        <li>• GUI（Electron）渲染层复用 React 云 Web</li>
+        <li>• SSE 一条代码路径两用（F23，ADR-021）</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>数据流</h3>
+      <ul>
+        <li>• GUI/CLI → API → 领域服务 → Port</li>
+        <li>• LLM：ChatOpenAI 路由（custom base_url 兼容多 Provider）</li>
+        <li>• 编排：LangGraph StateGraph 角色链</li>
+        <li>• 检索：Chroma + BGE（F14，ADR-013）</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="footer">InkFlow • 依据 ARCHITECTURE.md / AGENTS.md / 实际源码生成 • 2026-08-06<br>🔭 演进：2.0.0 云端目标架构（云存档 + 异地写作）另见图 <code>inkflow-cloud-architecture-2.0.0.html</code>（ADR-024）</p>
+</div>
+
+<script>
+  function toggleTheme() {
+    const root = document.documentElement;
+    const btn = document.getElementById('themeBtn');
+    if (root.getAttribute('data-theme') === 'dark') {
+      root.removeAttribute('data-theme');
+      btn.textContent = '🌙 切换暗色';
+    } else {
+      root.setAttribute('data-theme', 'dark');
+      btn.textContent = '☀️ 切换浅色';
+    }
+  }
+</script>
+</body>
+</html>

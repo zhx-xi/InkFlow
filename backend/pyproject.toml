@@ -27,7 +27,7 @@ dependencies = [
     "langchain-openai>=1.0.0,<2.0.0",
     "langchain-chroma>=1.0.0,<2.0.0",
     "langgraph>=1.0.0,<2.0.0",
-    # LLM Provider（ChatLiteLLM 底层依赖，覆盖 100+ Provider）
+    # LLM Provider 兼容（langchain-community ChatLiteLLM 类可选依赖；实际实现走 ChatOpenAI 路由，见 ADR-005v2）
     "litellm>=1.50",
     "tiktoken>=0.7",
     # RAG — 向量数据库 + 本地 Embedding
@@ -86,7 +86,7 @@ markers = [
 branch = true
 source = ["inkflow"]
 # RAG 文件与 coverage 同进程冲突（chromadb C 扩展，F14 先例）——由 pytest --ignore 排除，
-# 其覆盖率以「测试方法全覆盖」替代证据（docs/api-coverage.md 登记）
+# 其覆盖率以「测试方法全覆盖」替代证据（ci_cd/api-coverage.md 登记）
 omit = ["*/test_*.py", "*/tests/*"]
 
 [tool.coverage.report]
