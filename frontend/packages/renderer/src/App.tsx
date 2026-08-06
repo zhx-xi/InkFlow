@@ -57,7 +57,8 @@ function AppLayout() {
           <img src={LOGO_BY_THEME[theme]} alt="" aria-hidden="true" className="h-6 w-6" />
           <span className="font-serif text-[15px] font-semibold">{t('app.brand')}</span>
           <span className="text-[13px] text-ink-2">{t(pageTitleKey)}</span>
-          <div className="ml-auto flex items-center gap-3">
+          {/* #106 修复：Windows overlay 窗口按钮区（约 138px）会覆盖语言选择器，预留右侧空间 */}
+          <div className="ml-auto flex items-center gap-3 pr-[140px]">
             <Select value={theme} onValueChange={(v) => setTheme(v as ThemeName)}>
               <SelectTrigger
                 data-testid="header-theme-select"
