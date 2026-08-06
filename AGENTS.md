@@ -14,7 +14,7 @@
 |------|------|
 | `AGENTS.md`（本文件） | 项目总约定 + AI 行为准则（§10）+ 核心纪律（SDD/TDD/ADR/编码） |
 | `ARCHITECTURE.md` | 架构导航：完整目录树、组件职责、模块类型谱系 → 样板 spec、加新模块步骤。**改架构/加模块前先读** |
-| `docs/ai-traps.md` | AI 编码常见陷阱完整清单（§9 只留高频 TOP） |
+| `ai-traps.md` | AI 编码常见陷阱完整清单（§9 只留高频 TOP） |
 | `FEATURES.md` | 功能清单唯一权威（已实现模块全表 + 规划 + 版本映射） |
 | `adr/README.md` | ADR 索引（改代码前先查；27 条有效） |
 | `CONTRIBUTING.md` | 人类贡献者指南 |
@@ -85,7 +85,7 @@ F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI / 0.4.0 打包，子任务 A 
 | ORM | SQLAlchemy ≥ 2.0 (async) + aiosqlite ≥ 0.20 | SQLite 本地，未来切 PostgreSQL |
 | 迁移 | Alembic ≥ 1.13 | |
 | 数据验证 | Pydantic ≥ 2.0 + pydantic-settings ≥ 2.0 | `model_config = {"from_attributes": True}` |
-| LLM Provider | langchain-core + langchain-community + langchain-openai | ChatLiteLLM（底层 litellm，100+ Provider） |
+| LLM Provider | langchain-core + langchain-community + langchain-openai | ChatOpenAI（custom base_url 兼容多 Provider，ADR-005v2） |
 | Agent 编排 | langgraph ≥ 0.2.0 | StateGraph：Phase 1 顺序链，Phase 2 自定义 DAG |
 | RAG | langchain-chroma + chromadb + sentence-transformers | 本地向量库 + BGE Embedding |
 | Prompt 模板 | ChatPromptTemplate（langchain-core） | YAML 模板 + 变量验证 |
@@ -110,7 +110,7 @@ F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI / 0.4.0 打包，子任务 A 
 | `specs/f<X>-<name>/spec.md` | SDD 规格（每 feature 一个目录，**唯一真相**） |
 | `adr/` | ADR 决策记录（索引 `adr/README.md`，27 条有效） |
 | `design/` | PRD + 架构分析 + Gate 评审（文件名带日期） |
-| `docs/` | 用户使用说明 + `ai-traps.md` |
+| `docs/` | 用户使用说明（纯用户文档，README 见 `docs/README.md`） |
 | `frontend/` | 前端（pnpm workspace 双包：renderer + electron，0.3.0 F19 起） |
 | `ci_cd/` | CI 质量护栏脚本（file_length / noqa_reason） |
 | `.github/workflows/ci.yml` | CI（分层触发过滤，PR #82） |
@@ -179,7 +179,7 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 | [ADR-002](adr/ADR-002.md) | 分层：Clean/Hexagonal |
 | [ADR-003](adr/ADR-003.md) | 数据库：SQLite (async) + Repository |
 | [ADR-004](adr/ADR-004.md) | 数据契约：Pydantic v2 全栈 |
-| [ADR-005v2](adr/ADR-005v2.md) | LLM Provider：**LangChain ChatLiteLLM**（v2.0） |
+| [ADR-005v2](adr/ADR-005v2.md) | LLM Provider：**LangChain ChatOpenAI**（OpenAI 兼容路由） |
 | [ADR-006v2](adr/ADR-006v2.md) | Agent 编排：**LangGraph StateGraph**（v2.0） |
 | [ADR-013](adr/ADR-013.md) | RAG：**LangChain Chroma + BGE**（Phase 2） |
 | [ADR-014](adr/ADR-014.md) | Prompt：**ChatPromptTemplate + YAML**（v2.0） |
@@ -505,7 +505,7 @@ AI 编码助手在开始任何工作前，应**按顺序**阅读以下文件：
 | 11 | **单元 + 集成测试不能放在同一命令** | 两个 `tests/` 目录（backend 和顶层）有命名冲突，必须分开跑 |
 | 13 | **Issue/PR 完成后检查配置同步** | 每个 Issue 完成后检查 AGENTS.md、ADR、pyproject.toml、ci.yml、FEATURES.md 是否过时 |
 
-> 完整陷阱清单（25 条：UUID.int/跨模块遮蔽/CI 盲区/Windows 坑/流程治理）见 `docs/ai-traps.md`。
+> 完整陷阱清单（25 条：UUID.int/跨模块遮蔽/CI 盲区/Windows 坑/流程治理）见 `ai-traps.md`。
 
 ---
 

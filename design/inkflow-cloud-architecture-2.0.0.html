@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InkFlow 2.0.0 云端目标架构图（规划中）</title>
+<style>
+  :root {
+    --page-bg: #f4f5f7;
+    --card-bg: #ffffff;
+    --layer-front: #e8e8e8;
+    --layer-api: #e6f3ff;
+    --layer-domain: #e6ffe6;
+    --layer-cloud: #e8f7ee;
+    --layer-infra: #f0e6ff;
+    --text-main: #1a1a1a;
+    --text-sub: #555555;
+    --border: #d0d0d0;
+    --arrow: #7a7a7a;
+    --accent: #2b6cb0;
+    --red: #c53030;
+    --red-bg: #fdeaea;
+  }
+  [data-theme="dark"] {
+    --page-bg: #020617;
+    --card-bg: #0f172a;
+    --layer-front: #082f3f;
+    --layer-api: #063a2e;
+    --layer-domain: #1a2f14;
+    --layer-cloud: #10301f;
+    --layer-infra: #251a3f;
+    --text-main: #e2e8f0;
+    --text-sub: #94a3b8;
+    --border: #1e293b;
+    --arrow: #64748b;
+    --accent: #38bdf8;
+    --red: #fb7185;
+    --red-bg: rgba(136,19,55,.25);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    background: var(--page-bg);
+    min-height: 100vh;
+    padding: 2rem;
+    color: var(--text-main);
+    transition: background .3s, color .3s;
+  }
+  .container { max-width: 1180px; margin: 0 auto; }
+
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
+  .header-left { display: flex; align-items: center; gap: .75rem; }
+  .logo-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+  h1 { font-size: 1.35rem; font-weight: 700; }
+  .subtitle { color: var(--text-sub); font-size: .85rem; margin-top: .3rem; }
+  .badge {
+    display: inline-block; font-size: .72rem; font-weight: 600;
+    color: #b7791f; background: #fefcbf; border: 1px solid #f6e05e;
+    border-radius: 20px; padding: .12rem .7rem; margin-left: .5rem; vertical-align: middle;
+  }
+  [data-theme="dark"] .badge { color: #fbbf24; background: rgba(120,53,15,.35); border-color: #b45309; }
+  .theme-btn {
+    background: var(--card-bg); border: 1px solid var(--border); color: var(--text-main);
+    padding: .45rem 1rem; border-radius: 8px; cursor: pointer; font-size: .8rem; font-family: inherit;
+    transition: all .2s;
+  }
+  .theme-btn:hover { border-color: var(--accent); }
+
+  .diagram {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.8rem;
+    box-shadow: 0 4px 24px rgba(0,0,0,.06);
+    transition: background .3s, border-color .3s;
+  }
+
+  /* 3-column layout */
+  .cols { display: grid; grid-template-columns: 1fr .9fr 1.25fr; gap: 1rem; align-items: stretch; }
+  @media (max-width: 980px) { .cols { grid-template-columns: 1fr; } }
+
+  .col {
+    border-radius: 10px;
+    padding: 1rem 1.1rem 1.1rem;
+    display: flex; flex-direction: column;
+  }
+  .col-client { background: var(--layer-front); }
+  .col-proto  { background: var(--layer-api); }
+  .col-cloud  { background: var(--layer-cloud); }
+
+  .col-title {
+    display: flex; align-items: center; gap: .5rem;
+    font-size: .92rem; font-weight: 700; margin-bottom: .9rem;
+  }
+  .col-title .tag {
+    font-size: .68rem; font-weight: 500;
+    color: var(--text-sub);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: .08rem .55rem;
+    background: var(--legend-bg, rgba(255,255,255,.85));
+  }
+  [data-theme="dark"] .col-title .tag { background: rgba(15,23,42,.85); }
+
+  .boxes { display: flex; flex-direction: column; gap: .7rem; flex: 1; }
+  .box {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: .65rem .6rem;
+    text-align: center;
+    font-size: .8rem;
+    line-height: 1.5;
+    transition: background .3s;
+  }
+  .box .name { font-weight: 600; }
+  .box .sub { color: var(--text-sub); font-size: .7rem; }
+  .box.plain { border-style: dashed; }
+
+  /* Horizontal flow */
+  .flow-inline { display: flex; align-items: center; justify-content: center; gap: .4rem; color: var(--arrow); font-size: .72rem; margin: .7rem 0; }
+  .flow-inline .bar-h {
+    width: 44px; height: 2px;
+    background: repeating-linear-gradient(to right, var(--arrow) 0 5px, transparent 5px 9px);
+    position: relative;
+  }
+  .flow-inline .bar-h::after {
+    content: ""; position: absolute; right: -1px; top: 50%; transform: translateY(-50%);
+    border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid var(--arrow);
+  }
+  .flow-inline .bar-h.left::before {
+    content: ""; position: absolute; left: -1px; top: 50%; transform: translateY(-50%);
+    border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-right: 7px solid var(--arrow);
+  }
+  .flow-inline .bar-h.left::after { display: none; }
+
+  /* Cloud boundary */
+  .cloud-frame {
+    border: 2px dashed var(--accent);
+    border-radius: 12px;
+    padding: .8rem .9rem .9rem;
+    display: flex; flex-direction: column; flex: 1;
+  }
+  .cloud-frame .cloud-label {
+    font-size: .72rem; font-weight: 700; color: var(--accent);
+    margin-bottom: .6rem; text-align: center;
+  }
+  .cloud-frame .inner { display: flex; flex-direction: column; gap: .6rem; flex: 1; }
+
+  /* Red-line warnings */
+  .redline {
+    display: flex; align-items: flex-start; gap: .45rem;
+    background: var(--red-bg);
+    border: 1px solid var(--red);
+    border-radius: 8px;
+    color: var(--red);
+    font-size: .72rem;
+    line-height: 1.5;
+    padding: .5rem .6rem;
+  }
+  .redline .sym { font-weight: 700; flex-shrink: 0; }
+
+  /* Legend */
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 1.2rem; justify-content: center;
+    margin-top: 1.2rem; padding-top: 1rem;
+    border-top: 1px dashed var(--border);
+    color: var(--text-sub); font-size: .75rem;
+  }
+  .legend-item { display: flex; align-items: center; gap: .4rem; }
+  .swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--border); }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+  .card {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem 1.2rem;
+    transition: background .3s;
+  }
+  .card h3 { font-size: .9rem; margin-bottom: .6rem; display: flex; align-items: center; gap: .5rem; }
+  .card h3::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .card ul { list-style: none; color: var(--text-sub); font-size: .78rem; line-height: 1.8; }
+
+  .footer { text-align: center; margin-top: 1.5rem; color: var(--text-sub); font-size: .72rem; line-height: 1.8; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <div class="header-left">
+      <div class="logo-dot"></div>
+      <div>
+        <h1>InkFlow 2.0.0 云端目标架构图<span class="badge">规划中 · ADR-024</span></h1>
+        <div class="subtitle">云存档 + 异地写作（单机远程形态）· 双前缀单体 · BYOK · 本地路径零改动</div>
+      </div>
+    </div>
+    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">🌙 切换暗色</button>
+  </div>
+
+  <div class="diagram">
+
+    <div class="cols">
+
+      <!-- Column 1: 客户端/本地 -->
+      <div class="col col-client">
+        <div class="col-title">客户端 · 本机<span class="tag">现状保留</span></div>
+        <div class="boxes">
+          <div class="box"><div class="name">Electron GUI</div><div class="sub">远程模式 → 云端在线读写</div></div>
+          <div class="box"><div class="name">CLI / MCP</div><div class="sub">远程模式 · 同一套 domain</div></div>
+          <div class="box"><div class="name">daemon 定时写作</div><div class="sub">本地执行 + 结果云存档</div></div>
+          <div class="box plain"><div class="name">本地单机模式</div><div class="sub">SQLite + Chroma · 免认证</div></div>
+        </div>
+        <div class="redline"><span class="sym">🔒</span><span><b>BYOK 红线</b>：LLM API Key 只存本机，写作调用本机直连 Provider —— 云端零存储、不经手 Key 流量</span></div>
+      </div>
+
+      <!-- Column 2: 传输协议 -->
+      <div class="col col-proto">
+        <div class="col-title">传输层<span class="tag">P0-11 六协议</span></div>
+        <div class="boxes">
+          <div class="box"><div class="name">UserProtocol</div><div class="sub">user_id 级数据隔离（无组织）</div></div>
+          <div class="box"><div class="name">SyncProtocol</div><div class="sub">云存档 + 远程在线 · LWW + 修订历史</div></div>
+          <div class="box"><div class="name">StorageProtocol</div><div class="sub">对象存储 · 静态文件/录音</div></div>
+          <div class="box"><div class="name">DatabaseProtocol</div><div class="sub">云端仓储 · owner_id 强制过滤</div></div>
+          <div class="box"><div class="name">AuthProtocol</div><div class="sub">JWT 签发 · 无租户概念</div></div>
+          <div class="box plain"><div class="name">McpTransport</div><div class="sub">云端传输 · P2 后移</div></div>
+        </div>
+        <div class="flow-inline"><span>HTTPS</span><div class="bar-h"></div></div>
+        <div class="flow-inline"><div class="bar-h left"></div><span>HTTPS</span></div>
+      </div>
+
+      <!-- Column 3: 云端 -->
+      <div class="col col-cloud">
+        <div class="col-title">云端 · 单机 VPS<span class="tag">Docker Compose 一套部署</span></div>
+        <div class="cloud-frame">
+          <div class="cloud-label">┌─ nginx（TLS 终止 + 静态托管）─┐</div>
+          <div class="inner">
+            <div class="box"><div class="name">FastAPI 双前缀单体</div><div class="sub">/api/v1/* 用户端 + /admin/* 管理后台 · 独立认证依赖 · 独立 DI</div></div>
+            <div class="box"><div class="name">共享 domain / infrastructure</div><div class="sub">owner_id 仓储强制过滤 · 越权一律 404 · 拆分后路预留</div></div>
+            <div class="boxes" style="flex-direction:row; flex-wrap:wrap;">
+              <div class="box" style="flex:1; min-width:130px;"><div class="name">PostgreSQL + pgvector</div><div class="sub">业务数据 + 云端 RAG 同库</div></div>
+              <div class="box" style="flex:1; min-width:130px;"><div class="name">MinIO</div><div class="sub">S3 兼容对象存储</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="redline"><span class="sym">⛔</span><span><b>P0 红线</b>：自定义 skill 可执行体云端拒收 —— 仅 Prompt 模板 + 工具白名单上云（结构上消灭 RCE 面）</span></div>
+      </div>
+
+    </div>
+
+    <!-- Legend -->
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#e8e8e8"></span>客户端/本地</div>
+      <div class="legend-item"><span class="swatch" style="background:#e6f3ff"></span>传输协议（已定义，未实现）</div>
+      <div class="legend-item"><span class="swatch" style="background:#e8f7ee"></span>云端（2.0.0 规划）</div>
+      <div class="legend-item"><span style="border:2px dashed var(--accent); width:16px; height:12px; display:inline-block; border-radius:3px;"></span>部署边界（Compose）</div>
+      <div class="legend-item"><span style="color:var(--red); font-weight:700;">⛔</span>安全红线</div>
+      <div class="legend-item"><span style="color:var(--arrow)">──▶</span>数据流向</div>
+    </div>
+  </div>
+
+  <!-- Info cards -->
+  <div class="cards">
+    <div class="card">
+      <h3>云端拓扑（ADR-024）</h3>
+      <ul>
+        <li>• 同 FastAPI 双前缀：/api/v1 + /admin</li>
+        <li>• 共享 domain/infrastructure，差异仅在认证与路由</li>
+        <li>• 管理面与用户面认证完全隔离（不同 issuer/audience）</li>
+        <li>• 拆分后路：api/user/* 与 api/admin/* 独立包 + 独立 DI</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>安全边界</h3>
+      <ul>
+        <li>• owner_id + Repository 强制过滤（防水平越权）</li>
+        <li>• LLM API Key 云端零存储（BYOK 客户端直连）</li>
+        <li>• skill 可执行体拒收（仅 Prompt 白名单上云）</li>
+        <li>• 云端 1.0 Gate：越权矩阵 + RBAC + 审计 + MFA</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>部署与本地兼容</h3>
+      <ul>
+        <li>• nginx + API + 前端静态 + PostgreSQL(pgvector) + MinIO</li>
+        <li>• 不做微服务/K8s（与 ADR-001 一致）</li>
+        <li>• 本地路径零改动（SQLite/Chroma/免认证保持）</li>
+        <li>• 前端一套代码两用：云 Web + GUI 内嵌</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="footer">InkFlow 2.0.0 云端目标架构 · 依据 ADR-024 / P0-11 spec（v1.1）绘制 · 2026-08-06<br>当前实现图见 <code>inkflow-architecture.html</code></p>
+</div>
+
+<script>
+  function toggleTheme() {
+    const root = document.documentElement;
+    const btn = document.getElementById('themeBtn');
+    if (root.getAttribute('data-theme') === 'dark') {
+      root.removeAttribute('data-theme');
+      btn.textContent = '🌙 切换暗色';
+    } else {
+      root.setAttribute('data-theme', 'dark');
+      btn.textContent = '☀️ 切换浅色';
+    }
+  }
+</script>
+</body>
+</html>

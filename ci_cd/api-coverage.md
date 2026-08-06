@@ -192,4 +192,4 @@
 
 - **冲突**：`src/inkflow/rag/langchain_vector_store.py` 依赖 chromadb C 扩展，与 coverage 追踪器同进程运行时崩溃（F14 先例，2026-08 排查结论）。
 - **处理**：`backend/pyproject.toml` 的 `[tool.coverage.run]` 通过 `pytest --ignore` 排除该文件参与行覆盖统计；`omit = ["*/test_*.py", "*/tests/*"]` 排除测试代码自身。
-- **替代证据**：该文件的方法级覆盖以「测试方法全覆盖」替代——`backend/tests/unit/test_langchain_vector_store.py` 覆盖其全部公开方法；服务层调用链（`tests/integration/test_agent_pipeline.py` 等）亦间接验证。此登记即为 pyproject.toml 注释中「docs/api-coverage.md 登记」所指。
+- **替代证据**：该文件的方法级覆盖以「测试方法全覆盖」替代——`backend/tests/unit/test_langchain_vector_store.py` 覆盖其全部公开方法；服务层调用链（`tests/integration/test_agent_pipeline.py` 等）亦间接验证。此登记即为 pyproject.toml 注释中「ci_cd/api-coverage.md 登记」所指。

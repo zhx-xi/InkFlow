@@ -51,6 +51,18 @@ uv run inkflow serve
 > 不装 uv 也可以用 `pip install -e .`（在 `backend/` 目录下）。
 > **Windows 注意**：不要直接敲 `python -m inkflow`——PATH 里的 `python` 可能解析到系统或其他虚拟环境（报 `No module named inkflow`）。统一用 `uv run`，或先激活项目 venv（`.\\.venv\\Scripts\\Activate.ps1`）再执行。
 
+## 🏗️ 系统架构
+
+**现状架构（模块化单体 + Clean Architecture）**：
+
+![InkFlow 系统架构图](docs/images/inkflow-architecture.png)
+
+**2.0.0 云端目标架构（云存档 + 异地写作，规划中，[ADR-024](adr/ADR-024.md)）**：
+
+![InkFlow 2.0.0 云端目标架构图](docs/images/inkflow-cloud-architecture-2.0.0.png)
+
+> 交互版（浅色/暗色主题切换）见 [`design/inkflow-architecture.html`](design/inkflow-architecture.html) 与 [`design/inkflow-cloud-architecture-2.0.0.html`](design/inkflow-cloud-architecture-2.0.0.html)（浏览器打开）。
+
 ## 🗺️ 文档导航
 
 | 文档 | 内容 | 读者 |

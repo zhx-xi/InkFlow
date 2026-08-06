@@ -24,7 +24,7 @@
 | F2 `chapter_service` | 卷/章节管理：层级结构、章节移动、状态流转 | `inkflow volume create/list/delete` · `inkflow chapter create/list/get/update/delete` | `/api/v1/projects/{id}/volumes` · `/chapters` | [`specs/f2-chapter-service/`](specs/f2-chapter-service/spec.md) | ✅ PR #9 |
 | F3 `writing_service` | AI 写作管道：生成 → 续写 → 修订 | `inkflow write next/continue/revise` | `/api/v1/write/generate|continue|revise` | [`specs/f3-writing-service/`](specs/f3-writing-service/spec.md) | ✅ PR #21 |
 | F4 `agent_service` | Agent 编排：架构师/写手/审阅/修订角色链（LangGraph StateGraph） | `inkflow agent run/status/validate/template` | `/api/v1/pipelines/*` | [`specs/f4-agent-service/`](specs/f4-agent-service/spec.md) | ✅ PR #22 |
-| F5 `llm_service` | LLM Provider 适配（OpenAI/DeepSeek/…，ChatLiteLLM 封装）；API Key AES-256-GCM 加密存储 | `inkflow llm list/set-key` | 配置侧（无 REST 端点） | [`specs/f5-llm-provider/`](specs/f5-llm-provider/spec.md) | ✅ PR #16 |
+| F5 `llm_service` | LLM Provider 适配（OpenAI/DeepSeek/…，ChatOpenAI 兼容路由）；API Key AES-256-GCM 加密存储 | `inkflow llm list/set-key` | 配置侧（无 REST 端点） | [`specs/f5-llm-provider/`](specs/f5-llm-provider/spec.md) | ✅ PR #16 |
 | F6 `context_service` | 上下文管理：角色/世界观/伏笔/时间线注入 + 章节摘要（分层 Token 预算） | 经写作管道自动装配 | `/api/v1/context/assemble` · `/chapters/{id}/summary` | [`specs/f6-context-service/`](specs/f6-context-service/spec.md) | ✅ PR #27 |
 | F7 `cli_interface` | 全局 CLI 约定：JSON 信封 / 退出码 / 错误码（`--json` 全局选项） | 所有 `inkflow` 命令 | — | [`specs/f7-cli-interface/`](specs/f7-cli-interface/spec.md) | ✅ PR #28 |
 | F8 CI 治理 | 测试分层（unit / integration / CLI）+ CI 门禁（ruff + mypy + pytest + 覆盖率） | — | — | [ADR-018](adr/ADR-018.md)（无独立 spec） | ✅ PRs #24+#25 |

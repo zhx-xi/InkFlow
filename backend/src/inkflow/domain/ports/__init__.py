@@ -5,7 +5,7 @@
 
 端口列表：
     - project_repository: 项目仓储（F1，已实现）
-    - llm_client: LLM 客户端（F5，LangChain ChatLiteLLM 实现）
+    - llm_client: LLM 客户端（F5，LangChain ChatOpenAI 实现，ADR-005v2）
     - agent_pipeline: Agent 管线编排（F4，LangGraph StateGraph 实现）
     - vector_store: RAG 向量存储（Phase 2，LangChain Chroma 实现）
     - prompt_template: Prompt 模板管理（LangChain ChatPromptTemplate 实现）
