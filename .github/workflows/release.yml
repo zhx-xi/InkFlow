@@ -184,6 +184,10 @@ jobs:
 
       - name: Create GitHub Release
         shell: pwsh
+        # ⚠️ gh 在 Actions 中需显式 GH_TOKEN（实测 rc.2 失败 #145）——github.token 自动注入仅限
+        #    特定 action，CLI 必须显式传 env；contents: write 权限已在上方 permissions 声明
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $tag = '${{ github.ref_name }}'
           $assets = @(Get-ChildItem -Path packages/electron/dist -File | Where-Object { $_.Extension -in '.exe', '.zip' } | Select-Object -ExpandProperty FullName)
