@@ -61,21 +61,33 @@
    【不得】泄漏进响应（对齐 ADR-012 / test_writing_api.py 500 通用消息
    风格）。
 
-8. POST /api/v1/settings/llm/test 请求契约：body 为
-   `{provider: str, model: str, api_key: str}`，三字段均必填非空（空白
-   串拒绝）→ 422；model 为 LiteLLM 格式 `provider/model`（如
-   "deepseek/deepseek-chat"，parse_model_string 口径）。
+8. POST /api/v1/settings/llm/test 请求契约（#106 F2 评审拍板修订，
+   2026-08-06）：body 为 `{provider: str, model?: str, base_url?: str,
+   api_key: str}`。
+   - provider/api_key 必填非空（空白串拒绝）→ 422
+   - model【可选】（`str | None = None`）——【行为变更】旧契约
+     「model 必填 → 422」作废：缺失时回退链 = 注册表
+     ProviderConfigService.get_by_name(provider).default_model →
+     config.llm_default_model（前端 ProviderDialog 只发
+     {provider, base_url, api_key}，评审 #106 F2 拍板）
+   - model 提供但空白 → 仍 422（「提供即校验」：缺省回退仅对
+     【未提供】生效，空白非缺省）
+   - base_url【可选】（`str | None = None`）：非空时透传到 LLM
+     客户端构造（openai_api_base 探测），空/缺失不传
+   - model 为 LiteLLM 格式 `provider/model`（如
+     "deepseek/deepseek-chat"，parse_model_string 口径）
 
 9. 【llm/test 工厂契约】`_get_llm_client(provider, model, api_key) ->
-   LLMClientProtocol` 被端点调用且入参透传请求体三字段（assert
-   called_once_with）；测试 patch 该函数注入 FakeLLMClient（实现
-   LLMClientProtocol 的最小 fake：chat 记录 messages 并返回预置
-   ChatResponse / 抛预置异常）。
+   LLMClientProtocol` 被端点调用；model 入参 = 请求体 model 或回退
+   解析值（#8 回退链，2026-08-06 #106 F2）；测试 patch 该函数注入
+   FakeLLMClient（实现 LLMClientProtocol 的最小 fake：chat 记录
+   messages 并返回预置 ChatResponse / 抛预置异常）。
 
 10. llm/test 成功契约：Fake chat 返回
     ChatResponse(content="ok", model=<model>) → HTTP 200 + body
     `{"ok": true, "provider": <provider>, "model": <model>, "message": "连接成功"}`
-    （model 回显；provider 回显）。响应【禁止】包含 api_key 明文。
+    （provider 回显；model 回显 = 实际解析值——请求体 model 或回退值）。
+    响应【禁止】包含 api_key 明文。
 
 11. 【llm/test 失败语义决策——硬性契约】Fake chat 抛 LLMRequestError →
     HTTP 200（【不是】4xx/5xx）+ body
@@ -92,6 +104,13 @@
 13. lifespan/TestClient：TestClient(app) 触发 lifespan → create_tables()
     在 CWD 写 ./inkflow.db，与 tests/api 既有测试（test_health.py、
     test_token_auth.py 设计假设 #8）行为一致，已接受，不做规避。
+
+14. 【#106 F2 行为变更驱动（2026-08-06 评审）】llm/test 契约修订：
+    model 必填 → 可选（缺省回退注册表 default_model → config.
+    llm_default_model）、新增可选 base_url（非空透传 LLM 客户端
+    openai_api_base 探测）。对应旧用例「model 缺失 → 422」已删除
+    （改写为 test_probe_without_model_falls_back 的 200 契约）；
+    「model 空白 → 422」保留（提供即校验口径）。
 
 ════════════════════════════════════════════════════════════════════
 RED 阶段预期：`inkflow.api.routers.settings` 模块不存在 →
@@ -138,6 +157,9 @@ TEST_API_KEY = "sk-test-79-9f3aB7c2dE"
 TEST_SECRET_KEY = "5f4dcc3b5aa765d61d8327deb882cf99" * 2
 """测试 AES-256-GCM 密钥：64 hex 字符 = 32 字节（bytes.fromhex 要求）。"""
 
+TEST_BASE_URL = "https://custom.example.com/v1"
+"""测试 base_url（#106 F2：非空时透传 LLM 客户端 openai_api_base 探测）。"""
+
 
 # ── Fixtures ──
 
@@ -159,6 +181,21 @@ def _probe_payload(**overrides) -> dict:
     payload = {
         "provider": TEST_PROVIDER,
         "model": TEST_MODEL,
+        "api_key": TEST_API_KEY,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _probe_payload_without_model(**overrides) -> dict:
+    """llm/test 请求体工厂 — 不带 model（#106 F2：前端 ProviderDialog 口径）。
+
+    前端 ProviderDialog 只发 {provider, base_url, api_key}；model 缺失
+    时 GREEN 必须走回退链（注册表 default_model → config.llm_default_model），
+    不得 422。
+    """
+    payload = {
+        "provider": TEST_PROVIDER,
         "api_key": TEST_API_KEY,
     }
     payload.update(overrides)
@@ -336,7 +373,6 @@ class TestLLMTestProbe:
         "body",
         [
             {"model": TEST_MODEL, "api_key": TEST_API_KEY},  # provider 缺失
-            {"provider": TEST_PROVIDER, "api_key": TEST_API_KEY},  # model 缺失
             {"provider": TEST_PROVIDER, "model": TEST_MODEL},  # api_key 缺失
             {"provider": "   ", "model": TEST_MODEL, "api_key": TEST_API_KEY},
             {"provider": TEST_PROVIDER, "model": "   ", "api_key": TEST_API_KEY},
@@ -349,7 +385,6 @@ class TestLLMTestProbe:
         ],
         ids=[
             "provider_missing",
-            "model_missing",
             "api_key_missing",
             "provider_blank",
             "model_blank",
@@ -358,7 +393,14 @@ class TestLLMTestProbe:
         ],
     )
     def test_validation_422(self, client, body):
-        """provider/model/api_key 缺失或空白 → 422（设计假设 #8）。"""
+        """provider/api_key 缺失或空白、model 空白 → 422（设计假设 #8）。
+
+        【#106 F2 行为变更】model 缺失【不再】422（model 可选，缺省回退
+        注册表 default_model → config.llm_default_model）——原
+        model_missing 用例已从本表移除，改由
+        test_probe_without_model_falls_back 契约 200；model 提供但空白
+        仍 422（提供即校验：缺省回退仅对【未提供】生效）。
+        """
         resp = client.post(ENDPOINT_TEST, json=body)
         assert resp.status_code == 422
         assert isinstance(resp.json()["detail"], list)
@@ -425,6 +467,62 @@ class TestLLMTestProbe:
         assert resp.json()["ok"] is True
         mock_get_km.assert_not_called()
         mock_factory.assert_called_once_with(TEST_PROVIDER, TEST_MODEL, TEST_API_KEY)
+
+    def test_probe_without_model_falls_back(self, client):
+        """不带 model → 200 + ok:true（#106 F2：回退注册表 default_model
+        → config.llm_default_model）。
+
+        请求体仅 {provider, api_key}（前端 ProviderDialog 口径）——旧契约
+        model 必填 → 422，本用例即 RED 形态（当前实现仍 422）。GREEN：
+        端点经回退链解析 model 后仍走 `_get_llm_client` 工厂；断言工厂
+        收到非空 model、响应 model 回显与之一致（不契约回退链精确值——
+        依赖注册表查询 seam 与数据状态，只约束「回退结果非空且可消费」）。
+        """
+        fake = FakeLLMClient(
+            response=ChatResponse(content="ok", model="resolved/model")
+        )
+        with patch(
+            "inkflow.api.routers.settings._get_llm_client", return_value=fake
+        ) as mock_factory:
+            resp = client.post(ENDPOINT_TEST, json=_probe_payload_without_model())
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["message"] == "连接成功"
+        assert TEST_API_KEY not in resp.text
+        mock_factory.assert_called_once()
+        call = mock_factory.call_args
+        resolved_model = call.args[1] if call.args else call.kwargs.get("model")
+        assert (
+            isinstance(resolved_model, str) and resolved_model.strip()
+        ), "回退解析的 model 不得为空（注册表 default_model → config.llm_default_model）"
+        assert body["model"] == resolved_model, "响应 model 回显必须等于实际解析值"
+        assert fake.messages, "探测消息列表不得为空"
+
+    def test_probe_base_url_passthrough_to_client(self, client):
+        """base_url 非空 → 透传 LangChainLLMClient 构造（#106 F2：openai_api_base 探测）。
+
+        请求体带 base_url（前端 ProviderDialog 必发字段）→ 客户端构造
+        必须收到 openai_api_base=base_url。当前实现 LLMTestRequest 无
+        base_url 字段（多余字段被忽略）→ 客户端收不到 → 本用例 RED。
+        """
+        with patch("inkflow.api.routers.settings.LangChainLLMClient") as mock_cls:
+            resp = client.post(
+                ENDPOINT_TEST,
+                json={
+                    "provider": TEST_PROVIDER,
+                    "model": TEST_MODEL,
+                    "api_key": TEST_API_KEY,
+                    "base_url": TEST_BASE_URL,
+                },
+            )
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        mock_cls.assert_called_once_with(
+            default_model=TEST_MODEL,
+            api_key=TEST_API_KEY,
+            openai_api_base=TEST_BASE_URL,
+        )
 
     def test_probe_real_factory_assembles_provider_model(self, client):
         """真实工厂 + 纯模型名 → default_model 组装 provider/model（评审 L2）。

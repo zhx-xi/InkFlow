@@ -56,9 +56,9 @@ const LIBRARY_ITEMS: NavItemDef[] = [
   { key: 'rag', href: '/library?cat=rag', labelKey: 'nav.lib.rag', icon: Database },
 ];
 
-/** models = #106 占位禁用项（无 href，点击不导航）；agent 快捷入口直达 /settings?cat=agent */
-const SYSTEM_ITEMS: Array<NavItemDef & { placeholder?: boolean }> = [
-  { key: 'models', labelKey: 'nav.models', icon: Cpu, placeholder: true },
+/** models = #106 模型管理页（普通页面导航）；agent 快捷入口直达 /settings?cat=agent */
+const SYSTEM_ITEMS: NavItemDef[] = [
+  { key: 'models', href: '/models', labelKey: 'nav.models', icon: Cpu },
   { key: 'agent', href: '/settings?cat=agent', labelKey: 'nav.agent', icon: Bot },
   { key: 'settings', href: '/settings', labelKey: 'nav.settings', icon: Settings },
 ];
@@ -117,8 +117,8 @@ export function AppNav({ showBrand = true }: { showBrand?: boolean }) {
         collapsed ? 'w-[52px]' : 'w-[216px]',
       )}
     >
-      {/* 品牌区：logo 装饰性（三主题变体）+ 文字（App 内由顶栏承载品牌，showBrand=false 隐藏文字避免重复） */}
-      <div className={cn('flex items-center gap-2 border-b border-line px-3 py-2.5', collapsed && 'justify-center px-0')}>
+      {/* 品牌区：logo 装饰性（三主题变体）+ 文字（品牌由侧边栏承载；showBrand=false 或折叠态隐藏文字） */}
+      <div className={cn('flex h-12 items-center gap-2 border-b border-line px-3', collapsed && 'justify-center px-0')}>
         <img src={LOGO_BY_THEME[theme]} alt="" aria-hidden="true" className="h-6 w-6 shrink-0" />
         {showBrand && !collapsed && (
           <span className="truncate font-serif text-[15px] font-semibold text-ink">{t('app.brand')}</span>
@@ -151,20 +151,6 @@ export function AppNav({ showBrand = true }: { showBrand?: boolean }) {
 
         <NavGroup testKey="system" labelKey="nav.group.system" icon={Settings} collapsed={collapsed}>
           {SYSTEM_ITEMS.map((item) => {
-            if (item.placeholder) {
-              // #106 模型管理：占位禁用项，渲染但不导航
-              return (
-                <div
-                  key={item.key}
-                  data-testid={`nav-item-${item.key}`}
-                  aria-disabled="true"
-                  className={cn(navCls({ isActive: false }), 'cursor-not-allowed opacity-50')}
-                >
-                  <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  {!collapsed && <span className="truncate">{t(item.labelKey)}</span>}
-                </div>
-              );
-            }
             const isAgent = item.key === 'agent';
             const link = isAgent ? (
               // Agent 为快捷入口而非页面：用 Link 渲染，不产生 aria-current（页面归属为「设置」）

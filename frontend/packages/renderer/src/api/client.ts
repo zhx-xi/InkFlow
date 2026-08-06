@@ -4,9 +4,20 @@
  * - 统一错误模型: ApiError{status, detail}；401 → 内核未就绪
  */
 
+/** #106 用户拍板：自绘窗口控制按钮（preload 暴露的 IPC 通道） */
+export interface WindowControls {
+  minimize: () => void;
+  toggleMaximize: () => void;
+  close: () => void;
+  /** #106：最大化状态订阅（图标切换）。返回取消函数；回调在窗口最大化状态变化时触发 */
+  onMaximizedChange?: (callback: (maximized: boolean) => void) => () => void;
+}
+
 export interface ApiConfig {
   baseURL: string;
   token: string;
+  /** 浏览器环境/未注入时 undefined，组件侧可选链安全调用 */
+  windowControls?: WindowControls;
 }
 
 declare global {

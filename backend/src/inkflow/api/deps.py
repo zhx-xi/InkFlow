@@ -22,6 +22,7 @@ from inkflow.domain.services.extraction_service import ExtractionService
 from inkflow.domain.services.foreshadowing_service import ForeshadowingService
 from inkflow.domain.services.outline_service import OutlineService
 from inkflow.domain.services.project_service import ProjectService
+from inkflow.domain.services.provider_config_service import ProviderConfigService
 from inkflow.domain.services.style_service import StyleService
 from inkflow.domain.services.summary_service import SummaryService
 from inkflow.domain.services.timeline_service import TimelineService
@@ -47,6 +48,9 @@ from inkflow.infrastructure.database.repositories.outline_repo import (
 )
 from inkflow.infrastructure.database.repositories.project_repo import (
     SQLiteProjectRepository,
+)
+from inkflow.infrastructure.database.repositories.provider_config_repo import (
+    SQLiteProviderConfigRepository,
 )
 from inkflow.infrastructure.database.repositories.summary_repo import (
     SQLiteSummaryRepository,
@@ -230,6 +234,15 @@ def get_foreshadowing_service(
         repository=SQLiteForeshadowingRepository(db),
         project_repo=SQLiteProjectRepository(db),
         timeline_repo=SQLiteTimelineRepository(db),
+    )
+
+
+def get_provider_config_service(
+    db: AsyncSession,
+) -> ProviderConfigService:
+    """获取 ProviderConfigService 实例（Provider 注册表仓储）."""
+    return ProviderConfigService(
+        repository=SQLiteProviderConfigRepository(db),
     )
 
 

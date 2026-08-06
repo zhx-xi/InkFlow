@@ -16,6 +16,7 @@ from inkflow.infrastructure.database.models.outline import (
     StoryArcORM,
 )
 from inkflow.infrastructure.database.models.project import ProjectORM
+from inkflow.infrastructure.database.models.provider_config import ProviderConfigORM
 from inkflow.infrastructure.database.models.timeline import TimelineEventORM
 from inkflow.infrastructure.database.models.world import WorldSettingORM
 
@@ -32,6 +33,7 @@ __all__ = [
     "OutlineORM",
     "PlotPointORM",
     "ProjectORM",
+    "ProviderConfigORM",
     "StoryArcORM",
     "TimelineEventORM",
     "VolumeORM",

@@ -34,11 +34,20 @@ class TestHealthCheck:
 
 class TestLifespan:
     def test_lifespan_startup_and_shutdown(self):
-        """应用 lifespan：启动时执行 setup_logging + create_tables，健康检查可用"""
+        """应用 lifespan：启动时执行 setup_logging + create_tables + seed
+        内置 provider，健康检查可用"""
+        fake_seed = AsyncMock()
+        fake_svc = AsyncMock()
+        fake_svc.seed_builtin_providers = fake_seed
         with patch("inkflow.api.app.setup_logging") as mock_setup_logging, patch(
             "inkflow.api.app.create_tables", new=AsyncMock()
-        ) as mock_create_tables, TestClient(app) as lifespan_client:
+        ) as mock_create_tables, patch(
+            "inkflow.api.app.get_provider_config_service", return_value=fake_svc
+        ) as mock_svc_factory, TestClient(app) as lifespan_client:
             resp = lifespan_client.get("/health")
             assert resp.status_code == 200
         mock_setup_logging.assert_called_once()
         mock_create_tables.assert_awaited_once()
+        # #106 F1：lifespan 接线 seed（mock create_tables 后表不存在，seed 必须 mock 才可测）
+        mock_svc_factory.assert_called_once()
+        fake_seed.assert_awaited_once()

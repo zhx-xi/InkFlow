@@ -33,11 +33,14 @@ class LangChainLLMClient:
         temperature: float | None = None,
         max_retries: int | None = None,
         api_key: str | None = None,
+        openai_api_base: str | None = None,
     ) -> None:
         self._default_model = default_model or config.llm_default_model
         self._temperature = temperature if temperature is not None else config.llm_temperature
         # 可选 API Key 覆盖值（连通探测按请求携带密钥，优先于环境变量注入）
         self._api_key = api_key
+        # 可选自定义端点覆盖（连通探测 openai_api_base，优先于 provider 注册表 base_url）
+        self._openai_api_base = openai_api_base
 
     # ── Public API ──
 
@@ -192,8 +195,9 @@ class LangChainLLMClient:
         }
         if provider_cfg.api_key:
             chat_kwargs["openai_api_key"] = provider_cfg.api_key
-        if provider_cfg.base_url:
-            chat_kwargs["openai_api_base"] = provider_cfg.base_url
+        base_url = self._openai_api_base or provider_cfg.base_url
+        if base_url:
+            chat_kwargs["openai_api_base"] = base_url
         if max_tokens is not None:
             chat_kwargs["max_tokens"] = max_tokens
 

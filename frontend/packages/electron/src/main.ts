@@ -5,7 +5,7 @@
  * renderer 直接走 REST + SSE（baseURL/token 经 preload 注入）。
  * 契约来源：specs/f19-gui/spec.md §3.2（生命周期）/ §3.3（安全基线）/ §3.4（renderer 契约）。
  */
-import { app, BrowserWindow, dialog, globalShortcut, Menu } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -391,12 +391,28 @@ async function shutdown(): Promise<void> {
 }
 
 /** BrowserWindow：安全基线 webPreferences（§3.3）+ 加载 renderer 构建产物（§3.4） */
+/**
+ * #106 用户拍板：自绘窗口控制按钮（官方 titleBarOverlay 颜色联动不可靠）。
+ * 最小化/最大化/关闭三个 IPC 通道由 renderer 顶栏 WindowControls 组件调用；
+ * 颜色/大小完全走 CSS 变量，随主题 + 背景变体自然联动。
+ */
+function registerWindowControlsHandlers(): void {
+  ipcMain.on('window:minimize', () => mainWindow?.minimize());
+  ipcMain.on('window:toggle-maximize', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    else mainWindow.maximize();
+  });
+  ipcMain.on('window:close', () => mainWindow?.close());
+}
+
 function createMainWindow(): void {
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
     title: 'InkFlow',
     icon: path.join(__dirname, '..', 'favicon.ico'),
+    titleBarStyle: 'hidden',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -405,6 +421,14 @@ function createMainWindow(): void {
     },
   });
   mainWindow = win;
+
+  // #106：最大化状态推送（自绘按钮图标切换：□ ↔ 还原）
+  const sendMaximizedState = (): void => {
+    win.webContents.send('window:maximized-changed', win.isMaximized());
+  };
+  win.on('maximize', sendMaximizedState);
+  win.on('unmaximize', sendMaximizedState);
+  win.on('ready-to-show', sendMaximizedState); // 初始状态
 
   // 固定窗口标题（E2E 断言 title 含 InkFlow）
   win.on('page-title-updated', (event) => {
@@ -424,6 +448,7 @@ function createMainWindow(): void {
     if (pendingReadyPayload) {
       win.webContents.send('inkflow:ready', pendingReadyPayload);
     }
+    sendMaximizedState(); // 初始状态补发（ready-to-show 早于 React 挂载订阅时兜底）
   });
 
   win.on('closed', () => {
@@ -485,6 +510,7 @@ export function setupAppMenu(isPackaged: boolean): void {
 app.whenReady().then(() => {
   app.setAppUserModelId('InkFlow');
   setupAppMenu(app.isPackaged);
+  registerWindowControlsHandlers();
   createMainWindow();
   spawnKernel();
 });

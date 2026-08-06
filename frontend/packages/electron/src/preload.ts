@@ -47,7 +47,24 @@ ipcRenderer.on(
     exposed = true;
     contextBridge.exposeInMainWorld(
       'INKFLOW_API',
-      Object.freeze({ baseURL: payload.baseURL, token: payload.token })
+      Object.freeze({
+        baseURL: payload.baseURL,
+        token: payload.token,
+        // #106 用户拍板：自绘窗口控制按钮（官方 titleBarOverlay 颜色联动不可靠）
+        windowControls: Object.freeze({
+          minimize: () => ipcRenderer.send('window:minimize'),
+          toggleMaximize: () => ipcRenderer.send('window:toggle-maximize'),
+          close: () => ipcRenderer.send('window:close'),
+          // #106：最大化状态订阅（图标切换）。返回取消函数；回调在窗口最大化状态变化时触发
+          onMaximizedChange: (callback: (maximized: boolean) => void) => {
+            const listener = (_event: unknown, maximized: boolean): void => callback(maximized);
+            ipcRenderer.on('window:maximized-changed', listener);
+            return () => {
+              ipcRenderer.removeListener('window:maximized-changed', listener);
+            };
+          },
+        }),
+      })
     );
     dispatchApiReady();
   }

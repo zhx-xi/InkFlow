@@ -32,7 +32,7 @@
  * nav.lib.timeline='时间线' nav.lib.foreshadow='伏笔' nav.lib.rag='知识库 RAG'
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { AppNav } from './AppNav';
@@ -160,9 +160,10 @@ describe('AppNav — 跳转', () => {
     expect(screen.getByTestId('location-probe')).toHaveTextContent('/library?cat=characters');
   });
 
-  it('模型管理占位：#106 前为禁用项，点击不导航', () => {
+  it('模型管理：#106 转正为导航，点击 → /models', async () => {
+    const user = userEvent.setup();
     renderNav();
-    fireEvent.click(screen.getByTestId('nav-item-models'));
-    expect(screen.getByTestId('location-probe')).toHaveTextContent('/writing');
+    await user.click(screen.getByTestId('nav-item-models'));
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/models');
   });
 });
