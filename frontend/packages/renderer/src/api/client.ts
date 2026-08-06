@@ -4,11 +4,18 @@
  * - 统一错误模型: ApiError{status, detail}；401 → 内核未就绪
  */
 
+/** #106 用户拍板：自绘窗口控制按钮（preload 暴露的 IPC 通道） */
+export interface WindowControls {
+  minimize: () => void;
+  toggleMaximize: () => void;
+  close: () => void;
+}
+
 export interface ApiConfig {
   baseURL: string;
   token: string;
-  /** #106 方案 A：preload 暴露的主题 → 标题栏 overlay IPC（浏览器环境/未注入时 undefined） */
-  setTitleBarTheme?: (theme: string) => void;
+  /** 浏览器环境/未注入时 undefined，组件侧可选链安全调用 */
+  windowControls?: WindowControls;
 }
 
 declare global {

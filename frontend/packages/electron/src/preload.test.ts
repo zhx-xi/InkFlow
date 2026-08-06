@@ -49,7 +49,12 @@ describe('preload — inkflow:api-ready 就绪事件（#98 修复）', () => {
       expect(contextBridge.exposeInMainWorld).toHaveBeenCalledWith('INKFLOW_API', {
         baseURL: 'http://127.0.0.1:54321',
         token: 'tok-abc',
-        setTitleBarTheme: expect.any(Function), // #106 方案 A：标题栏 overlay 主题联动（IPC 通道）
+        // #106 用户拍板：自绘窗口控制按钮（官方 titleBarOverlay 颜色联动不可靠）
+        windowControls: {
+          minimize: expect.any(Function),
+          toggleMaximize: expect.any(Function),
+          close: expect.any(Function),
+        },
       });
       expect(dispatchMock).toHaveBeenCalledTimes(1);
       expect(dispatchMock.mock.calls[0][0].type).toBe('inkflow:api-ready');

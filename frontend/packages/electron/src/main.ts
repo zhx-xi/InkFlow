@@ -391,22 +391,19 @@ async function shutdown(): Promise<void> {
 }
 
 /** BrowserWindow：安全基线 webPreferences（§3.3）+ 加载 renderer 构建产物（§3.4） */
-/** 标题栏 overlay 三主题映射（值取自 renderer theme/tokens.css 的 --bg / --ink） */
-const TITLE_BAR_OVERLAY_BY_THEME: Record<string, { color: string; symbolColor: string }> = {
-  paper: { color: '#FAF9F7', symbolColor: '#2A2A28' },
-  night: { color: '#1A1A18', symbolColor: '#E8E6E1' },
-  ink: { color: '#F3EEE2', symbolColor: '#2A2A28' },
-};
-
 /**
- * #106 方案 A：渲染层主题切换 → 标题栏 overlay 联动（IPC 'theme:titlebar'）。
- * setTitleBarOverlay 为 Windows 专属，其他平台安全 no-op；未知主题回退 paper 映射。
+ * #106 用户拍板：自绘窗口控制按钮（官方 titleBarOverlay 颜色联动不可靠）。
+ * 最小化/最大化/关闭三个 IPC 通道由 renderer 顶栏 WindowControls 组件调用；
+ * 颜色/大小完全走 CSS 变量，随主题 + 背景变体自然联动。
  */
-function registerTitleBarThemeHandler(): void {
-  ipcMain.on('theme:titlebar', (_event, theme: string) => {
-    const overlay = TITLE_BAR_OVERLAY_BY_THEME[theme] ?? TITLE_BAR_OVERLAY_BY_THEME.paper;
-    mainWindow?.setTitleBarOverlay(overlay);
+function registerWindowControlsHandlers(): void {
+  ipcMain.on('window:minimize', () => mainWindow?.minimize());
+  ipcMain.on('window:toggle-maximize', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    else mainWindow.maximize();
   });
+  ipcMain.on('window:close', () => mainWindow?.close());
 }
 
 function createMainWindow(): void {
@@ -416,11 +413,6 @@ function createMainWindow(): void {
     title: 'InkFlow',
     icon: path.join(__dirname, '..', 'favicon.ico'),
     titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#FAF9F7', // 默认 paper 主题 --bg（初始值；随后 IPC 更新）
-      symbolColor: '#2A2A28', // paper 主题 --ink
-      height: 48, // 与顶栏 h-12 对齐
-    },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -509,7 +501,7 @@ export function setupAppMenu(isPackaged: boolean): void {
 app.whenReady().then(() => {
   app.setAppUserModelId('InkFlow');
   setupAppMenu(app.isPackaged);
-  registerTitleBarThemeHandler();
+  registerWindowControlsHandlers();
   createMainWindow();
   spawnKernel();
 });

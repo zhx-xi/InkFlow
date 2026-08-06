@@ -50,8 +50,12 @@ ipcRenderer.on(
       Object.freeze({
         baseURL: payload.baseURL,
         token: payload.token,
-        // #106 方案 A：渲染层主题切换 → 主进程标题栏 overlay（值拷贝内同字面量新增）
-        setTitleBarTheme: (theme: string) => ipcRenderer.send('theme:titlebar', theme),
+        // #106 用户拍板：自绘窗口控制按钮（官方 titleBarOverlay 颜色联动不可靠）
+        windowControls: Object.freeze({
+          minimize: () => ipcRenderer.send('window:minimize'),
+          toggleMaximize: () => ipcRenderer.send('window:toggle-maximize'),
+          close: () => ipcRenderer.send('window:close'),
+        }),
       })
     );
     dispatchApiReady();

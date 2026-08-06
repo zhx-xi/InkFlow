@@ -30,22 +30,7 @@ export function useThemeEffect(): void {
 
   useEffect(() => {
     applyTheme(theme, bg);
-    // #106 用户反馈：系统标题栏 overlay 跟随主题（Electron 方案 A）
-    window.INKFLOW_API?.setTitleBarTheme?.(theme);
   }, [theme, bg]);
-
-  // #106 修复：preload 注入晚于 React 挂载时，挂载期调用被可选链吞掉且主题不再变化，
-  // 永不补发。监听 'inkflow:api-ready'（preload expose 完成后 dispatch）后补发当前主题，
-  // 从 store getState 取最新值避免闭包过期；cleanup 移除监听防重复。
-  useEffect(() => {
-    const onApiReady = (): void => {
-      window.INKFLOW_API?.setTitleBarTheme?.(useThemeStore.getState().theme);
-    };
-    window.addEventListener('inkflow:api-ready', onApiReady);
-    return () => {
-      window.removeEventListener('inkflow:api-ready', onApiReady);
-    };
-  }, []);
 
   useEffect(() => {
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';

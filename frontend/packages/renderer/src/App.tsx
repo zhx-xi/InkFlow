@@ -5,6 +5,7 @@ import { useThemeEffect } from './theme';
 import { useThemeStore } from './stores/theme';
 import type { Lang, ThemeName } from './theme';
 import { AppNav } from './components/AppNav';
+import { WindowControls } from './components/WindowControls';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
 import { ToastHost } from './components/ui/toast';
 import { WritingPage } from './pages/writing';
@@ -45,8 +46,8 @@ function AppLayout() {
           className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4 [-webkit-app-region:drag]"
         >
           <span className="text-[13px] text-ink-2">{t(pageTitleKey)}</span>
-          {/* #106 修复：Windows overlay 窗口按钮区（约 138px）会覆盖语言选择器，预留右侧空间 */}
-          <div className="ml-auto flex items-center gap-3 pr-[140px]">
+          {/* #106 用户拍板：右侧末尾自绘窗口控制按钮（颜色随主题 + 背景变体） */}
+          <div className="ml-auto flex h-full items-center gap-3">
             <Select value={theme} onValueChange={(v) => setTheme(v as ThemeName)}>
               <SelectTrigger
                 data-testid="header-theme-select"
@@ -75,6 +76,7 @@ function AppLayout() {
               </SelectContent>
             </Select>
             <span className="text-[12px] text-ink-3 [-webkit-app-region:no-drag]">{t('sb.kernel')}</span>
+            <WindowControls />
           </div>
         </header>
 
