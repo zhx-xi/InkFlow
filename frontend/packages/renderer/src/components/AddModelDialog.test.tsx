@@ -4,6 +4,22 @@
  *
  * 组件为纯受控弹窗（不直接调 apiFetch）：onAdd / onDone / onOpenChange 以 vi.fn 注入断言。
  * store.addModel 的 PATCH 全量语义由 models.test.tsx 集成用例覆盖（本文件不重测 store 逻辑）。
+ *
+ * #125 契约升级（2026-08-06，多模型添加部分失败被掩盖）：
+ * - onDone 签名契约：onDone(result: AddModelsResult) => void，
+ *   AddModelsResult = { succeeded: number; failed: number; errors: string[] }
+ *   （errors = errorMessage(err) 后的字符串数组，逐失败行一条）。
+ * - onDone 携带结果语义：全部成功 → {n, 0, []} + onOpenChange(false) 关闭；
+ *   任一失败 → onDone({succeeded, failed, errors}) + 弹窗不关闭 + 草稿保留
+ *   （rows state 不清空，输入值仍在 DOM）+ 保存按钮恢复可用（可修改重试）。
+ * - 新 i18n key（GREEN 补 zh.ts / en.ts，本文件不直接断言）：m.modelsFailed =
+ *   '{n} 行失败：{reason}'（zh）/ '{n} rows failed: {reason}'（en）——页面 toast 用。
+ * - 失败路径不再需要 process.on('unhandledRejection') 包装：GREEN 的 handleSave 必须
+ *   catch 每行 reject（reject 不再逸出）。
+ * - RED 预期失败形态（当前实现无 catch + onDone 无参调用）：FAIL = 成功单行 / 多行成功 /
+ *   保存进行中完成（onDone 收到无参调用 vs 期望结果对象）、保存失败（onDone 不调用 +
+ *   unhandledRejection 逸出）、新增部分失败 / 多行全部失败（for 循环中断 + onDone 不调用）；
+ *   保持绿 = 渲染 / open=false / 行增删 / 空行 no-op / 无 provider no-op / 取消 / 遮罩。
  */
 import { describe, it, expect, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
@@ -26,12 +42,22 @@ const PROVIDERS: ProviderConfig[] = [
   },
 ];
 
+/**
+ * #125 onDone 结果契约（GREEN 组件 props 同步升级为 (result: AddModelsResult) => void；
+ * 测试本地声明该接口，RED 阶段组件类型尚未升级——函数参数多余可赋值，类型兼容）。
+ */
+interface AddModelsResult {
+  succeeded: number;
+  failed: number;
+  errors: string[];
+}
+
 function renderDialog(overrides: {
   open?: boolean;
   providers?: ProviderConfig[];
   onOpenChange?: (open: boolean) => void;
   onAdd?: (providerId: number, model: ProviderModel) => Promise<void>;
-  onDone?: () => void;
+  onDone?: (result: AddModelsResult) => void;
 } = {}) {
   const onOpenChange = overrides.onOpenChange ?? vi.fn();
   const onAdd = overrides.onAdd ?? vi.fn();
@@ -98,7 +124,8 @@ describe('AddModelDialog — 保存', () => {
     await waitFor(() => {
       expect(onAdd).toHaveBeenCalledWith(1, { id: 'gpt-4o-mini', type: 'chat', roles: ['writing', 'audit'] });
     });
-    expect(onDone).toHaveBeenCalledTimes(1);
+    // #125：onDone 携带结果（全部成功 → {succeeded:1, failed:0, errors:[]}）+ 关闭
+    expect(onDone).toHaveBeenCalledWith({ succeeded: 1, failed: 0, errors: [] });
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
@@ -122,7 +149,8 @@ describe('AddModelDialog — 保存', () => {
     });
     expect(onAdd).toHaveBeenNthCalledWith(1, 2, { id: 'a-chat', type: 'chat', roles: [] });
     expect(onAdd).toHaveBeenNthCalledWith(2, 2, { id: 'b-emb', type: 'embedding', roles: [] });
-    expect(onDone).toHaveBeenCalledTimes(1);
+    // #125：多行全部成功 → {succeeded:2, failed:0, errors:[]} + 关闭
+    expect(onDone).toHaveBeenCalledWith({ succeeded: 2, failed: 0, errors: [] });
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
@@ -136,29 +164,96 @@ describe('AddModelDialog — 保存', () => {
     expect(screen.getByTestId('add-model-dialog')).toBeInTheDocument();
   });
 
-  it('保存失败（onAdd reject）→ 弹窗不关闭 + onDone 不调用 + 保存按钮恢复可用', async () => {
-    // vitest 对 unhandledRejection：存在第二个监听器时视为用户代码已接管（execute catchError 检查 listeners.length > 1），
-    // 组件 handleSave 无 catch（onAdd reject 沿 void handleSave() 逸出），测试注册吞错监听避免污染套件
-    const swallow = () => {};
-    process.on('unhandledRejection', swallow);
-    try {
-      const onAdd = vi.fn().mockRejectedValue(new Error('网络错误'));
-      const { onOpenChange, onDone } = renderDialog({ onAdd });
-      const user = userEvent.setup();
-      await user.type(screen.getByLabelText('模型 ID 1'), 'gpt-4o-mini');
-      await user.click(screen.getByRole('button', { name: '保存' }));
+  it('#125 保存失败（onAdd reject）→ onDone 携带失败结果 + 弹窗不关闭 + 草稿保留 + 保存按钮恢复可用', async () => {
+    // #125 契约升级：GREEN 的 handleSave 必须 catch 每行 reject（reject 不再逸出），
+    // 故不再需要 process.on('unhandledRejection') 吞错包装；RED 阶段当前实现无 catch →
+    // onDone 不调用 + reject 逸出（unhandledRejection）= 预期 RED 证据。
+    const user = userEvent.setup();
+    const onAdd = vi.fn().mockRejectedValue(new Error('网络错误'));
+    const { onDone, onOpenChange } = renderDialog({ onAdd });
+    await user.type(screen.getByLabelText('模型 ID 1'), 'gpt-4o-mini');
+    await user.click(screen.getByRole('button', { name: '保存' }));
 
-      await waitFor(() => {
-        expect(onAdd).toHaveBeenCalledTimes(1);
-        expect(onDone).not.toHaveBeenCalled();
-        expect(onOpenChange).not.toHaveBeenCalled();
-        // finally 复位 saving → 按钮恢复可用（可重试）
-        expect(screen.getByRole('button', { name: '保存' })).toBeEnabled();
+    await waitFor(() => {
+      expect(onAdd).toHaveBeenCalledTimes(1);
+      // onDone 携带失败结果（errors = errorMessage(err) 字符串数组）
+      expect(onDone).toHaveBeenCalledWith({ succeeded: 0, failed: 1, errors: ['网络错误'] });
+      // 有失败 → 弹窗不关闭
+      expect(onOpenChange).not.toHaveBeenCalled();
+      // 草稿保留：输入值仍在 DOM（rows state 未清空）
+      expect(screen.getByLabelText('模型 ID 1')).toHaveValue('gpt-4o-mini');
+      // finally 复位 saving → 按钮恢复可用（可重试）
+      expect(screen.getByRole('button', { name: '保存' })).toBeEnabled();
+    });
+    expect(screen.getByTestId('add-model-dialog')).toBeInTheDocument();
+  });
+
+  it('#125 部分失败：第 1 行成功、第 2 行失败 → onDone({succeeded:1, failed:1, errors:[\'网络错误\']}) + 弹窗不关闭 + 草稿保留（第 2 行可修改重试）', async () => {
+    const user = userEvent.setup();
+    // 第 1 行 resolve、第 2 行 reject；重试路径（第 3 次起）全部成功
+    const onAdd = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('网络错误'))
+      .mockResolvedValue(undefined);
+    const { onDone, onOpenChange } = renderDialog({ onAdd });
+
+    await user.type(screen.getByLabelText('模型 ID 1'), 'a-chat');
+    await user.click(screen.getByRole('button', { name: '添加一行' }));
+    await user.type(screen.getByLabelText('模型 ID 2'), 'b-emb');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    // 逐行调用顺序 + 失败结果（succeeded 计数 = 已成功行数）
+    await waitFor(() => {
+      expect(onAdd).toHaveBeenCalledTimes(2);
+      expect(onDone).toHaveBeenCalledWith({ succeeded: 1, failed: 1, errors: ['网络错误'] });
+    });
+    expect(onAdd).toHaveBeenNthCalledWith(1, 1, { id: 'a-chat', type: 'chat', roles: [] });
+    expect(onAdd).toHaveBeenNthCalledWith(2, 1, { id: 'b-emb', type: 'chat', roles: [] });
+    // 有失败 → 弹窗不关闭 + 草稿保留（两行输入值仍在）+ 保存按钮恢复可用
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId('add-model-dialog')).toBeInTheDocument();
+    expect(screen.getByLabelText('模型 ID 1')).toHaveValue('a-chat');
+    expect(screen.getByLabelText('模型 ID 2')).toHaveValue('b-emb');
+    expect(screen.getByRole('button', { name: '保存' })).toBeEnabled();
+
+    // 第 2 行可修改重试：改 ID 后再次保存 → 全部成功 → onDone({2,0,[]}) + 关闭
+    await user.clear(screen.getByLabelText('模型 ID 2'));
+    await user.type(screen.getByLabelText('模型 ID 2'), 'b-emb-v2');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => {
+      expect(onDone).toHaveBeenLastCalledWith({ succeeded: 2, failed: 0, errors: [] });
+    });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('#125 多行全部失败 → onDone({succeeded:0, failed:2, errors:[...]}) + 弹窗不关闭（逐行收集全部失败）', async () => {
+    const user = userEvent.setup();
+    const onAdd = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('网络错误'))
+      .mockRejectedValueOnce(new Error('连接超时'));
+    const { onDone, onOpenChange } = renderDialog({ onAdd });
+
+    await user.type(screen.getByLabelText('模型 ID 1'), 'a-chat');
+    await user.click(screen.getByRole('button', { name: '添加一行' }));
+    await user.type(screen.getByLabelText('模型 ID 2'), 'b-emb');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    // 全部失败：errors 逐行收集（errorMessage(err) 字符串数组）
+    await waitFor(() => {
+      expect(onDone).toHaveBeenCalledWith({
+        succeeded: 0,
+        failed: 2,
+        errors: ['网络错误', '连接超时'],
       });
-      expect(screen.getByTestId('add-model-dialog')).toBeInTheDocument();
-    } finally {
-      process.removeListener('unhandledRejection', swallow);
-    }
+    });
+    expect(onAdd).toHaveBeenCalledTimes(2);
+    // 有失败 → 弹窗不关闭 + 草稿保留
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId('add-model-dialog')).toBeInTheDocument();
+    expect(screen.getByLabelText('模型 ID 1')).toHaveValue('a-chat');
+    expect(screen.getByLabelText('模型 ID 2')).toHaveValue('b-emb');
   });
 
   it('无 provider → 保存 no-op（activeProviderId 为 null 守卫）', async () => {
@@ -201,9 +296,9 @@ describe('AddModelDialog — 关闭路径', () => {
     await user.click(screen.getByRole('presentation'));
     expect(onOpenChange).not.toHaveBeenCalled();
 
-    // 完成保存 → onDone + 关闭
+    // 完成保存 → onDone（携带全部成功结果）+ 关闭
     await act(async () => { resolveAdd(); });
-    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledWith({ succeeded: 1, failed: 0, errors: [] });
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });

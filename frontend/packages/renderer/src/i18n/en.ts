@@ -83,6 +83,7 @@ export const en: Record<string, string> = {
   'm.edit': 'Edit',
   'm.addModel': 'Add model',
   'm.modelAdded': 'Models added',
+  'm.modelsFailed': '{n} rows failed: {reason}',
   'm.modelId': 'Model ID',
   'm.addRow': 'Add row',
   'm.providerSelect': 'Select provider',

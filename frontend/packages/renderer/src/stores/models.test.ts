@@ -1,4 +1,7 @@
 /**
+ * #125 评审修复（2026-08-06）：addModel 按 id 去重契约——重复添加同 id 模型
+ * （部分失败重试路径）时，PATCH body.models 与 store 更新必须按 id 去重，不得重复 append。
+ *
  * ⚠️ 契约文件（Issue #106 models store RED 阶段，spec §8.2③ / §8.3 / §8.6 M3/M4）
  *
  * GREEN 新建 src/stores/models.ts，必须匹配：
@@ -41,6 +44,19 @@
  *
  * RED 预期（本批为评审修复契约，实现已存在）：addModel 未实现 → is-not-a-function
  * （类 2 契约缺口）；其余既有用例保持绿（F10 mock 信封修正后仍绿——实现已按信封消费）。
+ *
+ * #125 契约升级（2026-08-06，多模型添加部分失败被掩盖）：
+ * - addModel 失败必须 rethrow（不吞）——现有实现只 set error 不 rethrow（bug 根源）；
+ *   rethrow 语义覆盖全部失败路径：PATCH reject 与本地「Provider 不存在」守卫
+ *   （同一 catch 语义，GREEN 统一 rethrow）。
+ * - 调用方（AddModelDialog 批量保存）依赖 reject 感知失败行；error 设置 + 列表不变语义不变。
+ * - RED 预期失败形态：'addModel 失败（PATCH reject）' 与 'addModel 目标 provider 不存在'
+ *   两用例升级为 rejects.toThrow → 当前实现下 FAIL（promise resolved / rejects 断言失败，
+ *   非 toThrow 消息不匹配）；其余 15 用例（成功路径 / provider 增删 / 列表加载 / 角色绑定等）保持绿。
+ * - #125 评审修复追加（2026-08-06）：'addModel 重复添加同 id 模型' 用例 → 当前实现
+ *   `[...target.models, model]` 不按 id 去重 → PATCH body.models 含重复 id（长度 3 / Set 去重后 2）→
+ *   去重/数量断言 FAIL（expected 2, received 3）；其余既有用例（含 addModel 成功/失败/守卫三用例）保持绿。
+ *   宽容契约只钉「结果无重复」，不钉 filter-append 或原地替换（顺序不约束）。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act } from '@testing-library/react';
@@ -55,12 +71,11 @@ vi.mock('../api/client', async (importOriginal) => {
 const apiFetchMock = vi.mocked(apiFetch);
 
 /**
- * F3 契约增强类型：addModel 尚未在 ModelsState 声明（GREEN 补全后此 cast 可删）。
- * RED 阶段测试直接引用未实现 action 会使 tsc 报属性不存在——cast 保持文件类型健全，
- * 运行时仍走真实 store（addModel 缺失 → TypeError = 预期 RED 证据）。
+ * F3 契约增强类型：addModel 现已在 ModelsState 声明（providerId: number），
+ * 此 cast 保留为类型别名（#125 升级签名与真实 store 一致），GREEN 后可删。
  */
 type ModelsStateWithAddModel = ReturnType<typeof useModelsStore.getState> & {
-  addModel: (providerId: string, model: ProviderModel) => Promise<void>;
+  addModel: (providerId: number, model: ProviderModel) => Promise<void>;
 };
 const stateWithAddModel = () => useModelsStore.getState() as ModelsStateWithAddModel;
 
@@ -336,7 +351,7 @@ describe('models store — 添加模型（F3 评审新增，spec §8.2③ L929 �
     expect(useModelsStore.getState().error).toBeNull();
   });
 
-  it('addModel 失败（PATCH reject）：error 设置 + 列表不变', async () => {
+  it('addModel 失败（PATCH reject）：rethrow + error 设置 + 列表不变', async () => {
     // 播种：openai provider 已加载（2 个既有模型）
     apiFetchMock.mockResolvedValue({ items: PROVIDERS, total: 2, offset: 0, limit: 50 });
     await act(async () => {
@@ -345,7 +360,9 @@ describe('models store — 添加模型（F3 评审新增，spec §8.2③ L929 �
     apiFetchMock.mockRejectedValue(new ApiError(500, '模型注册失败'));
     const newModel: ProviderModel = { id: 'gpt-4o-mini', type: 'chat', roles: ['writer'] };
     await act(async () => {
-      await stateWithAddModel().addModel(1, newModel);
+      // #125 契约升级：addModel 失败必须 rethrow（不吞）——批量保存（AddModelDialog）依赖
+      // reject 感知失败行；当前实现只 set error 不 rethrow → 本断言 RED（promise resolved）
+      await expect(stateWithAddModel().addModel(1, newModel)).rejects.toThrow('模型注册失败');
     });
     const s = useModelsStore.getState();
     expect(s.error).toContain('模型注册失败');
@@ -354,17 +371,61 @@ describe('models store — 添加模型（F3 评审新增，spec §8.2③ L929 �
     expect(openai?.models.map((m) => m.id)).toEqual(['gpt-4o', 'text-embedding-3-small']);
   });
 
-  it('addModel 目标 provider 不存在：error 设置 + 不发 PATCH 请求', async () => {
+  it('addModel 目标 provider 不存在：rethrow + error 设置 + 不发 PATCH 请求', async () => {
     apiFetchMock.mockResolvedValue({ items: PROVIDERS, total: 2, offset: 0, limit: 50 });
     await act(async () => {
       await useModelsStore.getState().loadProviders();
     });
     apiFetchMock.mockClear(); // 清掉 loadProviders 的调用记录，聚焦 addModel
     await act(async () => {
-      await stateWithAddModel().addModel(999, { id: 'x', type: 'chat', roles: ['main'] });
+      // #125 契约升级：本地守卫失败同样 rethrow（与 PATCH 失败同一 catch 语义）；
+      // 当前实现吞错 → 本断言 RED（promise resolved）
+      await expect(
+        stateWithAddModel().addModel(999, { id: 'x', type: 'chat', roles: ['main'] }),
+      ).rejects.toThrow('Provider 不存在');
     });
     expect(apiFetchMock).not.toHaveBeenCalled(); // 未发 PATCH
     expect(useModelsStore.getState().error).toContain('Provider 不存在');
+  });
+
+  it('addModel 重复添加同 id 模型：PATCH body.models 按 id 去重 → store 更新为去重后列表（#125 评审修复）', async () => {
+    // 播种：openai provider 已加载（2 个既有模型：gpt-4o + text-embedding-3-small）
+    apiFetchMock.mockResolvedValue({ items: PROVIDERS, total: 2, offset: 0, limit: 50 });
+    await act(async () => {
+      await useModelsStore.getState().loadProviders();
+    });
+
+    // 与既有 gpt-4o 同 id（roles 不同：体现「部分失败重试时用户可能改过 roles」）
+    const dupModel: ProviderModel = { id: 'gpt-4o', type: 'chat', roles: ['writer'] };
+    // PATCH 响应 = 后端整体替换后的 ProviderConfig：读请求 body.models 回显
+    // （模拟实现按「去重后数组」发送的 body 原样返回——实现若不去重，回显即含重复）
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+      if (path === '/api/v1/provider-configs/1' && init?.method === 'PATCH') {
+        return { ...PROVIDERS[0], models: (init.body as { models: ProviderModel[] }).models };
+      }
+      return { items: PROVIDERS, total: 2, offset: 0, limit: 50 };
+    });
+    await act(async () => {
+      await stateWithAddModel().addModel(1, dupModel);
+    });
+
+    // 契约：body.models 不得含重复 id（重复添加同 id = 部分失败重试的落库路径）；
+    // 宽容断言只钉「结果无重复」，不钉 filter-append 还是原地替换（顺序不约束）
+    const patchCall = apiFetchMock.mock.calls.find(
+      (c) => c[0] === '/api/v1/provider-configs/1' && c[1]?.method === 'PATCH',
+    );
+    expect(patchCall).toBeDefined();
+    const bodyModels = ((patchCall?.[1]?.body ?? {}) as { models: ProviderModel[] }).models;
+    expect([...new Set(bodyModels.map((m) => m.id))]).toHaveLength(bodyModels.length); // 无重复 id
+    expect(bodyModels).toHaveLength(2); // 数量 = 既有 2 个（同 id 模型不重复 append）
+    expect(bodyModels.map((m) => m.id)).toContain('gpt-4o');
+    expect(bodyModels.map((m) => m.id)).toContain('text-embedding-3-small');
+
+    // store 状态更新：openai.models 无重复 id、长度 2
+    const openai = useModelsStore.getState().providers.find((p) => p.id === 1);
+    expect(openai?.models).toHaveLength(2);
+    expect([...new Set(openai?.models.map((m) => m.id) ?? [])]).toHaveLength(2);
+    expect(useModelsStore.getState().error).toBeNull();
   });
 });
 
