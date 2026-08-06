@@ -78,9 +78,9 @@ def _parse_id(project_id: str) -> uuid.UUID:
             raise HTTPException(status_code=404, detail="项目不存在") from err
 
 
-def _get_svc(db: AsyncSession) -> ExtractionService:
+async def _get_svc(db: AsyncSession) -> ExtractionService:
     """获取 ExtractionService 实例（方便 mock）。"""
-    return get_extraction_service(db)
+    return await get_extraction_service(db)
 
 
 async def _run_service(coro: Awaitable[Any]) -> Any:
@@ -165,7 +165,7 @@ async def extract(
     非法 UUID/type → Pydantic 422）；业务校验（类型不匹配、章节不存在/跨项目、
     风格输入约束）由服务层抛错误子类 → 422。
     """
-    svc = _get_svc(db)
+    svc = await _get_svc(db)
     result = await _run_service(svc.extract(request))
     return result.model_dump(mode="json")
 
@@ -183,7 +183,7 @@ async def list_extraction_runs(
 ):
     """增量状态列表（spec §3.3）— 分页 + 可选类型过滤，按 run_at DESC。"""
     pid = _parse_id(project_id)
-    svc = _get_svc(db)
+    svc = await _get_svc(db)
     items, total = await _run_service(svc.list_runs(pid, type=type, offset=offset, limit=limit))
     return {
         "items": [r.model_dump(mode="json") for r in items],
@@ -201,7 +201,7 @@ async def reindex_project(
 ):
     """全量重建索引（spec §3.3）— entity_types 缺省 = 全部 5 种（幂等 upsert）。"""
     pid = _parse_id(project_id)
-    svc = _get_svc(db)
+    svc = await _get_svc(db)
     result = await _run_service(svc.reindex(pid, entity_types=data.entity_types if data else None))
     return result.model_dump(mode="json")
 
@@ -214,7 +214,7 @@ async def retrieve_entities(
 ):
     """语义检索（spec §3.3）— 参数透传 vector_store + {items} 信封。"""
     pid = _parse_id(project_id)
-    svc = _get_svc(db)
+    svc = await _get_svc(db)
     items = await _run_service(
         svc.retrieve(
             data.query,

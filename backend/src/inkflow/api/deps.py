@@ -5,7 +5,7 @@ from collections.abc import AsyncGenerator
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from inkflow.core.database import get_session
+from inkflow.core.database import async_session_factory, get_session
 from inkflow.domain.ports.context_sources import ContextSourceProtocol
 from inkflow.domain.ports.vector_store import VectorStoreProtocol
 from inkflow.domain.services._character_extractor import CharacterExtractor
@@ -246,7 +246,7 @@ def get_provider_config_service(
     )
 
 
-def get_extraction_service(
+async def get_extraction_service(
     db: AsyncSession,
 ) -> ExtractionService:
     """获取 ExtractionService 实例（F14 统一提取门面，spec §5/§8）.
@@ -255,7 +255,8 @@ def get_extraction_service(
     新管线（ForeshadowingExtractor / TimelineExtractor，LLM 客户端 + Prompt
     模板 + 对应仓储）+ F16 StyleService（get_style_service，STYLE 槽位，
     §8.2）+ SQLExtractionRunRepository（增量追踪）+ F1/F2 仓储 +
-    懒加载向量存储（get_vector_store，BGE 首次调用才下载 ~100MB，spec §8）。
+    懒加载向量存储（get_vector_store，API embedding——从 ProviderConfig
+    注册表读取 embedding 模型，首次调用才初始化，spec f19 §5）。
     """
     return ExtractionService(
         project_repo=SQLiteProjectRepository(db),
@@ -280,7 +281,7 @@ def get_extraction_service(
         world_repo=SQLiteWorldRepository(db),
         timeline_repo=SQLiteTimelineRepository(db),
         foreshadowing_repo=SQLiteForeshadowingRepository(db),
-        vector_store=get_vector_store(),
+        vector_store=await get_vector_store(),
     )
 
 
@@ -329,31 +330,59 @@ _vector_store: VectorStoreProtocol | None = None
 """模块级向量存储单例 — 懒加载（首次调用才初始化，spec §8）。"""
 
 
-def get_vector_store() -> VectorStoreProtocol:
-    """获取 RAG 向量存储（模块级单例，懒加载，spec §8/§12）.
+async def get_vector_store() -> VectorStoreProtocol:
+    """获取 RAG 向量存储（模块级单例，懒加载，spec f19 §5）.
 
-    LangChainVectorStore（Chroma 持久化到 config.vector_store_dir）+ BGE
-    本地 Embedding（config.embedding_model / embedding_device）。BGE 模型
-    首次使用需联网下载 ~100MB，仅首次调用时初始化；初始化失败抛
-    RAGUnavailableError（spec §3.4: 500「RAG 向量库不可用」前缀）。
+    LangChainVectorStore（Chroma 持久化到 config.vector_store_dir）+ API
+    embedding（spec f19 §5.2）：从 ProviderConfig 注册表读取首个
+    type="embedding" 模型（§5.4 选型规则），api_key 来自
+    APIKeyManager.load(provider.name)，base_url 非空时透传 OpenAI 兼容端点。
+    仅首次调用时初始化；未配置 embedding 模型抛 RAGUnavailableError
+    （spec §3.4: 500「RAG 向量库不可用」前缀，§5.5 B1/B6）。
     """
     global _vector_store
     if _vector_store is None:
-        from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+        from langchain_openai import OpenAIEmbeddings
 
         from inkflow.core.config import config
+        from inkflow.domain.models.provider_config import ProviderConfig, ProviderModel
         from inkflow.domain.ports.extraction_errors import RAGUnavailableError
+        from inkflow.infrastructure.database.repositories.provider_config_repo import (
+            SQLiteProviderConfigRepository,
+        )
+        from inkflow.infrastructure.llm.key_manager import APIKeyManager
         from inkflow.infrastructure.rag.langchain_vector_store import (
             LangChainVectorStore,
         )
 
+        # 读 ProviderConfig 注册表取首个 type="embedding" 模型（spec f19 §5.4）
+        found: tuple[ProviderConfig, ProviderModel] | None = None
+        async with async_session_factory() as session:
+            repo = SQLiteProviderConfigRepository(session)
+            for p in await repo.list():
+                for m in p.models:
+                    if m.type == "embedding":
+                        found = (p, m)
+                        break
+                if found:
+                    break
+        if found is None:
+            raise RAGUnavailableError("未配置 embedding 模型")
+        provider_cfg, model = found
+
+        key = APIKeyManager(
+            secret_key=config.secret_key,
+            storage_dir=config.data_dir / "keys",
+        ).load(provider_cfg.name)
+        embeddings = OpenAIEmbeddings(
+            model=model.id,
+            api_key=key,
+            **({"base_url": provider_cfg.base_url} if provider_cfg.base_url else {}),
+        )
         try:
             _vector_store = LangChainVectorStore(
                 persist_dir=config.vector_store_dir,
-                embeddings=HuggingFaceBgeEmbeddings(
-                    model_name=config.embedding_model,
-                    device=config.embedding_device,
-                ),
+                embeddings=embeddings,
             )
         except Exception as e:
             raise RAGUnavailableError(f"RAG 向量库不可用: Embedding 模型加载失败（{e}）") from e
