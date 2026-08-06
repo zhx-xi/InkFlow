@@ -52,14 +52,18 @@ function AppLayout() {
         {/* 顶栏：品牌 + 页面标题 + 全局状态；不再承担导航（无 role=link） */}
         <header
           role="banner"
-          className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4"
+          className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4 [-webkit-app-region:drag]"
         >
           <img src={LOGO_BY_THEME[theme]} alt="" aria-hidden="true" className="h-6 w-6" />
           <span className="font-serif text-[15px] font-semibold">{t('app.brand')}</span>
           <span className="text-[13px] text-ink-2">{t(pageTitleKey)}</span>
           <div className="ml-auto flex items-center gap-3">
             <Select value={theme} onValueChange={(v) => setTheme(v as ThemeName)}>
-              <SelectTrigger data-testid="header-theme-select" aria-label={t('ap.theme')} className="w-auto">
+              <SelectTrigger
+                data-testid="header-theme-select"
+                aria-label={t('ap.theme')}
+                className="w-auto [-webkit-app-region:no-drag]"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -69,7 +73,11 @@ function AppLayout() {
               </SelectContent>
             </Select>
             <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
-              <SelectTrigger data-testid="header-lang-select" aria-label={t('ap.lang')} className="w-auto">
+              <SelectTrigger
+                data-testid="header-lang-select"
+                aria-label={t('ap.lang')}
+                className="w-auto [-webkit-app-region:no-drag]"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -77,7 +85,7 @@ function AppLayout() {
                 <SelectItem value="en">{t('lang.en')}</SelectItem>
               </SelectContent>
             </Select>
-            <span className="text-[12px] text-ink-3">{t('sb.kernel')}</span>
+            <span className="text-[12px] text-ink-3 [-webkit-app-region:no-drag]">{t('sb.kernel')}</span>
           </div>
         </header>
 

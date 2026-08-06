@@ -47,7 +47,12 @@ ipcRenderer.on(
     exposed = true;
     contextBridge.exposeInMainWorld(
       'INKFLOW_API',
-      Object.freeze({ baseURL: payload.baseURL, token: payload.token })
+      Object.freeze({
+        baseURL: payload.baseURL,
+        token: payload.token,
+        // #106 方案 A：渲染层主题切换 → 主进程标题栏 overlay（值拷贝内同字面量新增）
+        setTitleBarTheme: (theme: string) => ipcRenderer.send('theme:titlebar', theme),
+      })
     );
     dispatchApiReady();
   }

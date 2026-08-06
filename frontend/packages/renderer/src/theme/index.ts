@@ -30,6 +30,8 @@ export function useThemeEffect(): void {
 
   useEffect(() => {
     applyTheme(theme, bg);
+    // #106 用户反馈：系统标题栏 overlay 跟随主题（Electron 方案 A）
+    window.INKFLOW_API?.setTitleBarTheme?.(theme);
   }, [theme, bg]);
 
   useEffect(() => {

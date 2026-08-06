@@ -5,7 +5,7 @@
  * renderer 直接走 REST + SSE（baseURL/token 经 preload 注入）。
  * 契约来源：specs/f19-gui/spec.md §3.2（生命周期）/ §3.3（安全基线）/ §3.4（renderer 契约）。
  */
-import { app, BrowserWindow, dialog, globalShortcut, Menu } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -391,12 +391,36 @@ async function shutdown(): Promise<void> {
 }
 
 /** BrowserWindow：安全基线 webPreferences（§3.3）+ 加载 renderer 构建产物（§3.4） */
+/** 标题栏 overlay 三主题映射（值取自 renderer theme/tokens.css 的 --bg / --ink） */
+const TITLE_BAR_OVERLAY_BY_THEME: Record<string, { color: string; symbolColor: string }> = {
+  paper: { color: '#FAF9F7', symbolColor: '#2A2A28' },
+  night: { color: '#1A1A18', symbolColor: '#E8E6E1' },
+  ink: { color: '#F3EEE2', symbolColor: '#2A2A28' },
+};
+
+/**
+ * #106 方案 A：渲染层主题切换 → 标题栏 overlay 联动（IPC 'theme:titlebar'）。
+ * setTitleBarOverlay 为 Windows 专属，其他平台安全 no-op；未知主题回退 paper 映射。
+ */
+function registerTitleBarThemeHandler(): void {
+  ipcMain.on('theme:titlebar', (_event, theme: string) => {
+    const overlay = TITLE_BAR_OVERLAY_BY_THEME[theme] ?? TITLE_BAR_OVERLAY_BY_THEME.paper;
+    mainWindow?.setTitleBarOverlay(overlay);
+  });
+}
+
 function createMainWindow(): void {
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
     title: 'InkFlow',
     icon: path.join(__dirname, '..', 'favicon.ico'),
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#FAF9F7', // 默认 paper 主题 --bg（初始值；随后 IPC 更新）
+      symbolColor: '#2A2A28', // paper 主题 --ink
+      height: 48, // 与顶栏 h-12 对齐
+    },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -485,6 +509,7 @@ export function setupAppMenu(isPackaged: boolean): void {
 app.whenReady().then(() => {
   app.setAppUserModelId('InkFlow');
   setupAppMenu(app.isPackaged);
+  registerTitleBarThemeHandler();
   createMainWindow();
   spawnKernel();
 });
