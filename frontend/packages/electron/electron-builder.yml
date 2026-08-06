@@ -1,5 +1,6 @@
-# electron-builder 占位配置（0.4.0 #48 打包启用；electron-shell-dev 技能模板）
-# 本文件仅在 0.4.0 打包里程碑生效（ADR-019 v2），当前仅作占位。
+# electron-builder 配置（F19 打包分发 0.4.0，Issue #48；spec f19-packaging §6.2）
+# 本地/CI 打包前需先把 PyInstaller 产物组装到 frontend/packages/kernel/：
+#   backend/dist/inkflow/ 整体 → frontend/packages/kernel/
 appId: com.inkflow.app
 productName: InkFlow
 directories:
@@ -7,11 +8,16 @@ directories:
 files:
   - out/**
   - ../renderer/dist/**
-# 0.4.0 打包时启用：将内核可执行目录作为额外资源打进安装包
-# extraResources:
-#   - from: ../kernel
-#     to: kernel
+# 内核可执行目录整体打进 resources/kernel/（kernel.ts isPackaged 分支定位）
+extraResources:
+  - from: ../kernel
+    to: kernel
 win:
   target:
     - nsis
-    - portable
+    - zip
+artifactName: InkFlow-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+compression: maximum

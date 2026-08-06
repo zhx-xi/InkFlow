@@ -1,0 +1,170 @@
+name: Release
+
+# F19 打包分发 0.4.0（Issue #48）：tag v* 触发，三 job 流水线
+# spec f19-packaging §7：R1 独立 workflow（触发/产物/权限与 ci.yml 不同）
+# R3 各 job 自带 cache（GitHub Actions cache 按 workflow 隔离，不能复用 ci.yml）
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # ── 内核 PyInstaller onedir ──
+  # R2：只装 packaging extra（pyinstaller），不装 dev——pytest 等大体积测试依赖
+  #     会被 PyInstaller 收集污染产物
+  package-backend:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          prune-cache: false
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install dependencies (packaging extra)
+        run: uv sync --frozen --extra packaging
+
+      # R4：版本单一来源 = tag（spec §2.4）；先 sync 再注入，避免 --frozen 锁校验失效
+      - name: Inject version from tag into pyproject.toml
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          (Get-Content pyproject.toml) -replace 'version = "([^"]+)"', "version = `"$version`"" | Set-Content pyproject.toml
+          Write-Host "pyproject.toml version set to $version"
+
+      - name: Build kernel (PyInstaller onedir)
+        run: uv run pyinstaller pyinstaller/inkflow.spec
+
+      - name: Upload kernel artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: kernel-onedir
+          path: backend/dist/inkflow
+
+  # ── renderer dist/ + electron out/（前端构建产物）──
+  build-renderer:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build renderer
+        run: pnpm --filter renderer build
+
+      - name: Build electron main/preload
+        run: pnpm --filter inkflow-electron build
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-dist
+          path: |
+            frontend/packages/renderer/dist
+            frontend/packages/electron/out
+
+  # ── 组装 + electron-builder（NSIS + 便携 ZIP）+ 发布 ──
+  # R5：gh release create 需要 contents: write（ci.yml 各 job 只 read）
+  package-electron:
+    needs: [package-backend, build-renderer]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download kernel artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: kernel-onedir
+          path: .
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: frontend-dist
+          path: .
+
+      # 组装 extraResources 源目录：内核 onedir 整体 → packages/kernel/
+      # （electron-builder.yml extraResources.from: ../kernel 相对 electron 包解析）
+      # ⚠️ download-artifact 的 path: . 下载到仓库根（不受 job working-directory 影响，
+      #     working-directory 只作用于 run step）——源路径必须用 $env:GITHUB_WORKSPACE 显式锚定
+      - name: Assemble kernel directory
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force packages/kernel | Out-Null
+          Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE/backend/dist/inkflow/*" packages/kernel/
+
+      # R4：package.json version ← tag（electron-builder 从 package.json 读版本）
+      - name: Inject version from tag into package.json
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          $pkgPath = 'packages/electron/package.json'
+          (Get-Content $pkgPath -Raw) -replace '"version": "[^"]*"', "`"version`": `"$version`"" | Set-Content $pkgPath -Encoding UTF8
+          Write-Host "electron package.json version set to $version"
+
+      - name: Package Windows artifacts (NSIS + ZIP)
+        run: pnpm --filter inkflow-electron dist:win
+
+      - name: Create GitHub Release
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $assets = @(Get-ChildItem -Path packages/electron/dist -File | Where-Object { $_.Extension -in '.exe', '.zip' } | Select-Object -ExpandProperty FullName)
+          if (-not $assets) { throw "No release assets found in packages/electron/dist" }
+          gh release create $tag $assets --generate-notes
