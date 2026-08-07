@@ -8,6 +8,7 @@ import inkflowIconInk from '../assets/inkflow-icon-plain-ink.svg?url&no-inline';
 import { AgentChainCard } from '../components/AgentChainCard';
 import { AppearanceCard } from '../components/AppearanceCard';
 import { TemplateDialog } from '../components/TemplateDialog';
+import { Switch } from '../components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import type { CloseBehavior } from '../api/client';
 import { apiFetch, ensureApiReady, errorMessage } from '../api/client';
@@ -18,11 +19,10 @@ import type { AgentTemplate, AgentTemplateInput } from '../stores/templates';
 import { useTemplatesStore } from '../stores/templates';
 import { useThemeStore } from '../stores/theme';
 import { useToastStore } from '../stores/toast';
-import type { ThemeName } from '../theme';
+import type { FontKey, ThemeName } from '../theme';
 import { cn } from '../lib/cn';
 
 type CatKey = 'general' | 'models' | 'agent' | 'templates' | 'account';
-type FontKey = 'serif' | 'sans' | 'mono';
 
 const LOGO_BY_THEME: Record<ThemeName, string> = {
   paper: inkflowIcon,
@@ -53,22 +53,32 @@ const SHORTCUTS: Array<{ combo: string; labelKey: string }> = [
   { combo: 'Ctrl+Shift+Enter', labelKey: 'write.toolbar.generate' },
 ];
 
-/** 常规分类：AppearanceCard（语言/主题/背景，#105 🔴-3）+ 编辑器字体 + 新章节默认字数（真实 PATCH）+ 快捷键一览 */
+/** 常规分类：AppearanceCard（语言/主题/背景，#105 🔴-3）+ 编辑器字体 + 关闭窗口时 + 首次托盘提示 + 新章节默认字数（真实 PATCH）+ 快捷键一览 */
 function GeneralPanel() {
   const { t } = useI18n();
   const pushToast = useToastStore((s) => s.pushToast);
-  const setConfig = useAgentStore((s) => s.setConfig);
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
-  // #105 修复批二次迭代 🟡-D：默认字数值接当前项目 config（本地编辑态，失焦 setConfig + 真实 PATCH）
-  const [defaultWords, setDefaultWords] = useState<string>(() => {
-    const project = useProjectStore.getState().projects.find(
-      (p) => p.id === useProjectStore.getState().currentProjectId,
-    );
-    return String(project?.config.default_words ?? 800000);
-  });
-  const [font, setFont] = useState<FontKey>('sans');
-  // #167 F31：关闭窗口行为（内存态，仅经 IPC 读写；无 API 时保持默认 'tray'）
-  const [closeBehavior, setCloseBehavior] = useState<CloseBehavior>('tray');
+  // F32（#152，spec §6.3 对照表）：font / closeBehavior / trayHintDismissed 从统一设置 store 读
+  //（组件本地 state 移除；行为 setter PATCH 成功才 IPC + 更新，失败回弹）
+  const font = useThemeStore((s) => s.font);
+  const setFont = useThemeStore((s) => s.setFont);
+  const closeBehavior = useThemeStore((s) => s.closeBehavior);
+  const setCloseBehavior = useThemeStore((s) => s.setCloseBehavior);
+  const trayHintDismissed = useThemeStore((s) => s.trayHintDismissed);
+  const setTrayHintDismissed = useThemeStore((s) => s.setTrayHintDismissed);
+
+  // F32（#152，spec §5.4 Q3=C）：default_words ref 镜像 + dirty 跟踪——
+  // 卸载 cleanup 闭包依赖 []，经 ref 读最新值（评审 🟡-7：防陈旧 state 捕获）
+  const valueRef = useRef<string>(
+    String(
+      useProjectStore
+        .getState()
+        .projects.find((p) => p.id === useProjectStore.getState().currentProjectId)?.config.default_words ?? 800000,
+    ),
+  );
+  const dirtyRef = useRef(false);
+  const [defaultWords, setDefaultWords] = useState<string>(valueRef.current);
+  const [, setDirty] = useState(false); // 渲染镜像：dirty 置位触发重渲染（值本身无 UI 消费）
 
   const FONTS: Array<{ value: FontKey; labelKey: string }> = [
     { value: 'serif', labelKey: 'set.font.serif' },
@@ -81,33 +91,73 @@ function GeneralPanel() {
     { value: 'quit', labelKey: 'set.closeBehavior.quit' },
   ];
 
-  // #167 F31：挂载时经 IPC 取当前行为；浏览器 dev 无 API 时可选链吞掉，保持默认 'tray'
+  // #167 F31：挂载时经 IPC 取当前行为（浏览器 dev 无 API 时可选链吞掉）；
+  // F32 后仅回填 store 不触发 PATCH——与 initFromBackend 两处并存幂等（spec §5.3）
   useEffect(() => {
-    void window.INKFLOW_API?.settings?.getCloseBehavior()?.then((v) => setCloseBehavior(v));
+    void window.INKFLOW_API?.settings?.getCloseBehavior()?.then((v) => {
+      useThemeStore.setState({ closeBehavior: v });
+    });
   }, []);
 
-  const handleDefaultWordsBlur = () => {
-    const n = Number(defaultWords);
-    // 空值 / 非法值：无变更不弹 toast
-    if (defaultWords === '' || !Number.isFinite(n)) return;
-    // 与后端 ge=1000 对齐：低于下限不发 PATCH，直接 err toast
+  const markDirty = (v: string) => {
+    valueRef.current = v;
+    dirtyRef.current = true;
+    setDefaultWords(v);
+    setDirty(true);
+  };
+
+  // F32（#152，spec §5.4 flushDefaultWords 契约）：空值/非法 → 静默不 PATCH；
+  // <1000 → err toast 不 PATCH（与后端 ge=1000 对齐）；合法 → updateConfig 单次 PATCH 完整 config
+  // + project store 本地合并（评审 🔴-2）；成功 → agent store setConfig + 清 dirty + ok toast；
+  // 失败 → err toast + agent store 不被污染（缺陷 #4）+ dirty 保持；无当前项目 → 不保存（评审 🟢）
+  const flushDefaultWords = () => {
+    const n = Number(valueRef.current);
+    if (valueRef.current === '' || !Number.isFinite(n)) return;
     if (n < 1000) {
       pushToast('err', t('toast.saveFailed'));
       return;
     }
-    // 合并源 = agent store 当前 config（含 agent_* 已配置字段），而非 project store 旧快照（🔴-B）
+    const project = useProjectStore
+      .getState()
+      .projects.find((p) => p.id === useProjectStore.getState().currentProjectId);
+    if (!project) return;
+    // 合并源 = agent store 当前 config（含 agent_* 已配置字段），而非 project store 旧快照（#105 🔴-B）
     const current = useAgentStore.getState().config;
-    setConfig({ ...current, default_words: n });
-    const project = useProjectStore.getState().projects.find((p) => p.id === currentProjectId);
-    if (project) {
-      void apiFetch(`/api/v1/projects/${project.id}`, {
-        method: 'PATCH',
-        body: { config: { ...useAgentStore.getState().config, default_words: n } },
+    void useProjectStore
+      .getState()
+      .updateConfig(project.id, { ...current, default_words: n })
+      .then(() => {
+        useAgentStore.getState().setConfig({ ...current, default_words: n });
+        valueRef.current = String(n);
+        dirtyRef.current = false;
+        setDirty(false);
+        pushToast('ok', t('toast.saved'));
       })
-        .then(() => pushToast('ok', t('toast.saved')))
-        .catch(() => pushToast('err', t('toast.saveFailed')));
-    }
+      .catch(() => pushToast('err', t('toast.saveFailed')));
   };
+
+  const handleDefaultWordsBlur = () => {
+    if (dirtyRef.current) flushDefaultWords();
+  };
+
+  // 切项目重读（缺陷 #2 修复）：currentProjectId 变化 → 重读新项目 config.default_words + 清 dirty
+  //（dirty 编辑被丢弃是有意行为——项目切换 = 上下文切换，跨项目保留草稿无场景）
+  useEffect(() => {
+    const p = useProjectStore
+      .getState()
+      .projects.find((x) => x.id === useProjectStore.getState().currentProjectId);
+    const v = String(p?.config.default_words ?? 800000);
+    valueRef.current = v;
+    dirtyRef.current = false;
+    setDefaultWords(v);
+    setDirty(false);
+  }, [currentProjectId]);
+
+  // 卸载守卫（缺陷 #1 修复）：跳页/切分类时若 dirty → flush（fire-and-forget）
+  useEffect(() => () => {
+    if (dirtyRef.current) flushDefaultWords();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 契约：依赖 [] 经 ref 读最新值（spec §5.4 实现注意）
+  }, []);
 
   return (
     <div className="space-y-5">
@@ -131,13 +181,7 @@ function GeneralPanel() {
 
         <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
           <span>{t('set.closeBehavior')}</span>
-          <Select
-            value={closeBehavior}
-            onValueChange={(v) => {
-              setCloseBehavior(v as CloseBehavior);
-              void window.INKFLOW_API?.settings?.setCloseBehavior(v as CloseBehavior);
-            }}
-          >
+          <Select value={closeBehavior} onValueChange={(v) => void setCloseBehavior(v as CloseBehavior)}>
             <SelectTrigger aria-label={t('set.closeBehavior')} className="w-56">
               <SelectValue />
             </SelectTrigger>
@@ -151,6 +195,21 @@ function GeneralPanel() {
           </Select>
         </div>
 
+        {/* F32（#152，spec §6.2）：首次托盘提示开关——默认开（提示）= !trayHintDismissed；
+            关闭 → setTrayHintDismissed(true)（PATCH + IPC dismiss 链路在 store） */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-[12px] text-ink-2">{t('set.trayHint')}</span>
+            <span className="text-[11px] text-ink-3">{t('set.trayHintDesc')}</span>
+          </div>
+          <Switch
+            data-testid="settings-tray-hint-switch"
+            checked={!trayHintDismissed}
+            onCheckedChange={(checked) => void setTrayHintDismissed(!checked)}
+            aria-label={t('set.trayHint')}
+          />
+        </div>
+
         <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
           <span>{t('set.defaultWords')}</span>
           <input
@@ -159,7 +218,7 @@ function GeneralPanel() {
             aria-label={t('set.defaultWords')}
             className="w-56 rounded-md border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
             value={defaultWords}
-            onChange={(e) => setDefaultWords(e.target.value)}
+            onChange={(e) => markDirty(e.target.value)}
             onBlur={handleDefaultWordsBlur}
           />
         </div>

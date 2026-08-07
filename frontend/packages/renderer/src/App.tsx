@@ -1,4 +1,5 @@
 /** 应用骨架（spec §7.2：HashRouter 四路由 + 侧边导航 + 顶栏职责回归——页面标题/主题/语言/内核状态（品牌由侧边栏品牌区承载），不再承担导航） */
+import { useEffect } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useI18n } from './i18n/useI18n';
 import { useThemeEffect } from './theme';
@@ -26,6 +27,10 @@ const TITLE_BY_PATH: Record<string, string> = {
 
 function AppLayout() {
   useThemeEffect();
+  // F32 设置持久化（#152，spec §5.2 步骤 ②）：挂载时双轨加载设置（localStorage 快照 → 后端覆盖），恰好一次
+  useEffect(() => {
+    void useThemeStore.getState().initFromBackend();
+  }, []);
   const { t, lang } = useI18n();
   const location = useLocation();
   const theme = useThemeStore((s) => s.theme);
