@@ -69,9 +69,11 @@ uv run inkflow serve
 | 文档 | 内容 | 读者 |
 |------|------|------|
 | [`FEATURES.md`](FEATURES.md) | **功能清单（当前 + 规划，唯一权威）** | 所有人 |
+| [`CHANGELOG.md`](CHANGELOG.md) | 版本变更日志（0.1.0 → 0.4.0） | 所有人 |
 | [`design/`](design/) | 产品规格（PRD）、架构分析、里程碑评审、开发工作流 | 开发者 |
 | [`specs/`](specs/) | 功能规格书（每 feature 一份，SDD 真相来源） | 开发者 |
 | [`adr/`](adr/README.md) | 架构决策记录（28 条 + 索引） | 开发者 |
+| [`backend/README.md`](backend/README.md) | 后端包说明（结构 / 开发环境 / 版本号机制） | 开发者 |
 | [`docs/`](docs/README.md) | 使用说明（用户手册 / CLI 参考 / API 文档，建设中） | 用户 |
 | [`AGENTS.md`](AGENTS.md) | AI 编码助手说明书（项目总约定 + 治理规则） | AI agent |
 

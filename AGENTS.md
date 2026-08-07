@@ -16,7 +16,7 @@
 | `ARCHITECTURE.md` | 架构导航：完整目录树、组件职责、模块类型谱系 → 样板 spec、加新模块步骤。**改架构/加模块前先读** |
 | `ai-traps.md` | AI 编码常见陷阱完整清单（§9 只留高频 TOP） |
 | `FEATURES.md` | 功能清单唯一权威（已实现模块全表 + 规划 + 版本映射） |
-| `adr/README.md` | ADR 索引（改代码前先查；27 条有效） |
+| `adr/README.md` | ADR 索引（改代码前先查；28 条有效） |
 | `CONTRIBUTING.md` | 人类贡献者指南 |
 
 ---
@@ -40,7 +40,7 @@
 |------|------|
 | 0.1.0 ✅ | F1-F8 + 云端 Protocol（Phase 1 Gate 7/7，已交付） |
 | 0.2.0 ✅ | F9-F16 创作工具链（F9-F16 ✅ 已交付，PR #56/#57/#58/#63/#64/#72/#74/#75） |
-| 0.3.0 ✅ | F19 GUI（Electron 壳 + 内核进程化 + React 渲染层）· F23 SSE 流式（PR #83，#50）——F19 子任务 A 内核进程化（PR #85，#77）· 子任务 B Electron 壳（PR #95，#78）· 子任务 C React 渲染层（PR #97，#79）· 子任务 D 视觉打磨（PR #98 直接实现，无独立 PR）· 交互反馈定稿（#99 spec §6，实现并入 0.4.0 #105）· Agent 约束体系（#88） |
+| 0.3.0 ✅ | F19 GUI（Electron 壳 + 内核进程化 + React 渲染层）· F23 SSE 流式（PR #83，#50）——F19 子任务 A 内核进程化（PR #85，#77）· 子任务 B Electron 壳（PR #95，#78）· 子任务 C React 渲染层（PR #97，#79）· 子任务 D 视觉打磨（PR #100-103，#98：Radix 控件 + 品牌接入 + 空态 + 菜单栏移除 + 顶栏 logo 修复链）· 交互反馈定稿（#99 spec §6，实现并入 0.4.0 #105）· Agent 约束体系（PR #89，#88） |
 | 0.3.1 ✅ | 质量加固补丁（milestone #9）：#86 LLM 客户端修复（PR #108：timeout→request_timeout + zhipu 注册 + audit 路由）· #87 LangGraph 状态重构（PR #110：StateGraph(dict)→TypedDict+reducer，节点增量返回，type: ignore 清零）· #92 真实 AI CI job（PR #111：e2e-ai-backend，label run-ai-tests 触发 + workflow_dispatch 兜底；tests/e2e/ T1+T2，缺 key 永远 skip；⚠️ 真实验证需先配 LLM_API_KEY secret）· #104 覆盖率补全（PR #114/#115/#116/#117：三层补测至后端 98.90% 行/96.32% 分支、前端 99.11%/92.51%、API 端点 100%、E2E 三页；CI 门槛 98.5/95.0 常态化，口径见 ADR-027） |
 | 0.4.0 ✅ | F19 打包分发（PR #144，#48：B+ chromadb 进包 + API embedding 装配 + 数据目录 sys.frozen→%APPDATA% + PyInstaller 内核 onedir 142MB + electron-builder NSIS 145.6MB/便携 ZIP 177.4MB + release.yml tag v* 自动发布；发布门禁 #145 ✅：rc.1-rc.6 迭代修复（artifact 结构/GH_TOKEN/版本注入/asar renderer 路径/品牌图标）后 **v0.4.0 正式发布 2026-08-07**（exe 144.3MB + zip 175.5MB））+ GUI 演进——子任务 D 导航重构+设置页框架（PR #120/#121，#105，承接 #99 交互反馈实现）· 子任务 E 模型管理页（PR #122，#106：ProviderConfig 注册表 + 模型管理页 + 角色绑定只读区 + 顶栏 Select + 自绘窗口按钮，覆盖率 99.27%）· 模型管理修复（PR #131/#132，#125/#126：addModel rethrow + 部分失败保留草稿 + builtin_key 判重防 seed 复活，2026-08-06）· 子任务 F Agent 模板（PR #135，#107：AgentTemplate 实体（引用式）+ 角色独立温度链（0.7 哨兵移除）+ 风险确认框 + 新建项目模板下拉，三层测试全绿）· 架构图 + ChatLiteLLM 残留清理（PR #134，#134 文档同步）· CI uv cache 修复 + job 分批（PR #128，#128）；遗留：设置持久化 #152（0.5.0） |
 | 0.5.0 | F24 会话 · F25 daemon |
@@ -83,7 +83,7 @@ F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI ✅ 子任务 A PR #85 / B PR
 | Web 框架 | FastAPI ≥ 0.110 + uvicorn[standard] | async 优先 |
 | CLI | Typer ≥ 0.12 + Rich ≥ 13.0 | `inkflow` 命令入口 |
 | ORM | SQLAlchemy ≥ 2.0 (async) + aiosqlite ≥ 0.20 | SQLite 本地，未来切 PostgreSQL |
-| 迁移 | Alembic ≥ 1.13 | |
+| 迁移 | Alembic ≥ 1.13（依赖已声明；**基建未启用**——schema 由 `Base.metadata.create_all` + 轻量幂等迁移（PRAGMA 判列 + ALTER）管理，见 `core/database.py`） | |
 | 数据验证 | Pydantic ≥ 2.0 + pydantic-settings ≥ 2.0 | `model_config = {"from_attributes": True}` |
 | LLM Provider | langchain-core + langchain-community + langchain-openai | ChatOpenAI（custom base_url 兼容多 Provider，ADR-005v2） |
 | Agent 编排 | langgraph ≥ 0.2.0 | StateGraph：Phase 1 顺序链，Phase 2 自定义 DAG |
@@ -108,7 +108,7 @@ F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI ✅ 子任务 A PR #85 / B PR
 | `backend/tests/unit/` | 单元测试（纯后端，无 I/O） |
 | `tests/` | 集成 + API + CLI 测试（顶层；conftest.py 共享 fixture） |
 | `specs/f<X>-<name>/spec.md` | SDD 规格（每 feature 一个目录，**唯一真相**） |
-| `adr/` | ADR 决策记录（索引 `adr/README.md`，27 条有效） |
+| `adr/` | ADR 决策记录（索引 `adr/README.md`，28 条有效） |
 | `design/` | PRD + 架构分析 + Gate 评审（文件名带日期） |
 | `docs/` | 用户使用说明（纯用户文档，README 见 `docs/README.md`） |
 | `frontend/` | 前端（pnpm workspace 双包：renderer + electron，0.3.0 F19 起） |
@@ -190,7 +190,7 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 | [ADR-015](adr/ADR-015.md) | **LangChain 隔离**：Protocol 模式 |
 | [ADR-017](adr/ADR-017.md) | **CI 代码质量**：Reviewdog + Ruff |
 | [ADR-018](adr/ADR-018.md) | **测试分层**：三层目录 + 按功能并行 CI |
-| [ADR-019](adr/ADR-019.md) | **版本里程碑**：SemVer + 1.0.0 = 本地完全可用（v2：+2.0.0 云端） |
+| [ADR-019](adr/ADR-019.md) | **版本里程碑**：SemVer + 1.0.0 = 本地完全可用（v4：v2 重排 +2.0.0 云端，v3 skills 后移 1.0.0，v4 F20 MCP 后移 1.0.0） |
 | [ADR-020](adr/ADR-020.md) | 单机 GUI：**Electron** + 共享 React 渲染层 |
 | [ADR-021](adr/ADR-021.md) | **本地内核进程化**：localhost REST + SSE |
 | [ADR-022](adr/ADR-022.md) | **skills 包**：源码单一真相 + 三通道分发 |
@@ -395,7 +395,7 @@ backend/tests/unit/          ← 纯单元测试（无 I/O，无 DB，最快）
 tests/integration/            ← 仓储 + 服务层集成测试（真实 in-memory SQLite）
 tests/api/                    ← FastAPI HTTP 集成测试（ASGITransport + dependency override）
 tests/cli/                    ← CLI 集成测试（CliRunner + 临时 SQLite）
-tests/e2e/                    ← 全栈端到端（未来，前端接入后启用）
+tests/e2e/                    ← 全栈端到端（Playwright Electron + 真实内核；AI 链路走 ADR-026/028 门禁）
 ```
 
 ### 7.2 关键 fixture
@@ -411,7 +411,7 @@ tests/e2e/                    ← 全栈端到端（未来，前端接入后启�
 
 - **数据库**：每个测试独立的 `sqlite+aiosqlite:///:memory:`，自动建表/销毁
 - **async**：`pytest-asyncio` + `asyncio_mode = "auto"`
-- **覆盖率**：`pytest-cov`，目标 ≥ 70%
+- **覆盖率**：CI 门槛后端 98.5% 行 / 95% 分支（ADR-027，check_coverage.py 门禁）；前端 vitest thresholds
 
 ### 7.3 CLI 测试 isolated_db 模式 ⚠️ 重要
 

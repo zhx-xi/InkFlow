@@ -1,6 +1,6 @@
 # InkFlow Constitution — 项目章程
 
-> 版本 2.0 | 基于 ADR-001~025 | 依据 PRD v2.2 | 2026-08-02 结构同步修订（ADR-019 v2 里程碑 + ADR-025 依赖锁定）
+> 版本 2.0 | 基于 ADR-001~028 | 依据 PRD v2.2 | 2026-08-02 结构同步修订（ADR-019 v2 里程碑 + ADR-025 依赖锁定）；2026-08-07 LLM 行对齐 ADR-005v2（ChatLiteLLM→ChatOpenAI）
 
 ---
 
@@ -27,7 +27,7 @@ InkFlow 是一个 AI 辅助小说创作工具。它的核心价值在于：让�
 ### P3: 测试驱动开发（TDD）
 - **RED → GREEN → REFACTOR** 三步循环，严格执行
 - 先写失败测试 → 验证失败 → 最小实现 → 验证通过 → 重构
-- 测试覆盖率目标：Phase 1 ≥ 50%, Phase 2 ≥ 60%, Phase 3 ≥ 70%
+- 测试覆盖率门禁：后端 98.5% 行 / 95% 分支 + 前端 vitest thresholds（ADR-027，check_coverage.py 门禁；覆盖口径 = XML 权威 + RAG 排除 + Protocol 方法体排除）
 - Flaky test = 0 容忍
 
 ### P4: 依赖方向单向
@@ -61,7 +61,7 @@ Presentation → Domain ← Infrastructure
 | **ORM** | SQLAlchemy 2.0 async |
 | **本地数据库** | SQLite + aiosqlite（2.0.0 云端 PostgreSQL + pgvector） |
 | **数据验证** | Pydantic v2 |
-| **LLM 集成** | LangChain ChatLiteLLM（ADR-005v2，底层 litellm 覆盖 100+ Provider） |
+| **LLM 集成** | LangChain ChatOpenAI（ADR-005v2，custom base_url 兼容多 Provider） |
 | **Agent 编排** | LangGraph StateGraph（ADR-006v2） |
 | **RAG** | langchain-chroma + chromadb + BGE（ADR-013，F14 落地） |
 | **Prompt 模板** | ChatPromptTemplate + YAML（ADR-014，模板在 infrastructure/llm/templates/） |

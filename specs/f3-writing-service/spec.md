@@ -391,8 +391,8 @@ backend/tests/
 class ContextProviderProtocol(Protocol):
     """上下文注入端口 — 由 F6 (context_service) 实现。
 
-    F6 未实现时，F3 使用 NullContextProvider（返回空字符串），
-    上下文由调用方通过请求中的 context 字段传入。
+    F6 (context_service) 未装配时，F3 使用 NullContextProvider（返回空字符串），
+    上下文由调用方通过请求中的 context 字段传入（F6 已实现后由 ContextProvider 注入）。
     """
 
     async def get_context(

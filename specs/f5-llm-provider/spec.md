@@ -10,7 +10,7 @@
 
 ## 1. 概述
 
-实现 LLM Provider 抽象层的**基础设施侧**：`LangChainLLMClient`（基于 ChatLiteLLM）、`LangChainPromptManager`（基于 ChatPromptTemplate + YAML）、和 `APIKeyManager`（AES-256-GCM 加密）。
+实现 LLM Provider 抽象层的**基础设施侧**：`LangChainLLMClient`（基于 ChatOpenAI + custom base_url，ADR-005v2）、`LangChainPromptManager`（基于 ChatPromptTemplate + YAML）、和 `APIKeyManager`（AES-256-GCM 加密）。
 
 **核心价值**: 领域层通过 `LLMClientProtocol` / `PromptTemplateProtocol` 使用 LLM，但不感知 LangChain。新增 Provider 只需环境变量注入 API Key，零代码改动。
 
@@ -25,7 +25,7 @@
                                         ↑ (依赖倒置)
                                  infrastructure/llm/LangChainLLMClient
                                         ↓ (内部使用)
-                                 langchain_community.ChatLiteLLM
+                                 langchain_openai.ChatOpenAI（custom base_url）
 
  domain/ 不 import langchain（CI 强制检查）
  domain/ 不 import infrastructure/
@@ -64,7 +64,7 @@
 
 ### 4.1 LangChainLLMClient (`infrastructure/llm/langchain_client.py`)
 
-实现 `LLMClientProtocol`，内部使用 `ChatLiteLLM`。
+实现 `LLMClientProtocol`，内部使用 `ChatOpenAI`（custom base_url 兼容多 Provider）。
 
 | 方法 | 说明 |
 |------|------|
@@ -72,9 +72,9 @@
 | `chat_stream(messages, *, model, temperature, max_tokens)` → `AsyncGenerator[StreamEvent]` | 流式逐 token |
 | `count_tokens(messages, *, model)` → `int` | tiktoken 估算，回退字符数/4 |
 
-**内部流程**: `ChatMessage(domain)` → `HumanMessage/SystemMessage(LangChain)` → `ChatLiteLLM.ainvoke` → `AIMessage` → `ChatResponse(domain)`
+**内部流程**: `ChatMessage(domain)` → `HumanMessage/SystemMessage(LangChain)` → `ChatOpenAI.ainvoke` → `AIMessage` → `ChatResponse(domain)`
 
-**Provider 路由**: `model` 参数格式 `provider/model_name`（如 `openai/gpt-4o`），解析 provider → 查 API Key → 注入 ChatLiteLLM。
+**Provider 路由**: `model` 参数格式 `provider/model_name`（如 `openai/gpt-4o`），解析 provider → 查 API Key → 注入 ChatOpenAI（base_url 按 Provider 配置覆盖）。
 
 **重试**: LangChain 内置 `with_retry()` + 指数退避，max_retries 默认 3，超时 120s。耗尽后抛出 `LLMRequestError`。401 认证错误不重试。
 
@@ -170,7 +170,7 @@ backend/tests/
 
 ```
 集成测试: langchain_client + real LLM (手动触发)  ≤ 1
-单元测试: Mock ChatLiteLLM → LangChainLLMClient      7 cases
+单元测试: Mock ChatOpenAI → LangChainLLMClient      7 cases
 单元测试: LangChainPromptManager (虚拟模板)           7 cases
 单元测试: APIKeyManager (加解密往返)                  10 cases
 ```
