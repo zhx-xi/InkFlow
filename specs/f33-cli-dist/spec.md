@@ -314,15 +314,18 @@ electron-builder 的 `nsis.include` 配置指向自定义 NSIS 脚本（默认�
   !macroend
 !endif
 
-; 安装末尾：写入 PATH（仅勾选时）
+; 安装末尾：写入 PATH（仅勾选时；$installMode 经宏体复制到 _f33InstallMode——
+; NSIS warning 6000 实测，见 Spec 变更记录 QA 修订）
 !macro customInstall
+  StrCpy $_f33InstallMode "$installMode"
   ${If} $addCliToPath == "1"
     Call AddKernelDirToPath
   ${EndIf}
 !macroend
 
-; 卸载开头：清理 PATH
+; 卸载开头：清理 PATH（$installMode 同样经宏体复制）
 !macro customUnInstall
+  StrCpy $_f33InstallMode "$installMode"
   Call un.RemoveKernelDirFromPath
 !macroend
 ```
@@ -637,4 +640,4 @@ F33 为打包基建增量模块：F30（#166 内核冷启动 ✅ PR #171）、F3
 
 ---
 
-> **Spec 变更记录**：v1.0（2026-08-08）初稿——打包/发布基建增量专项型 spec，镜像 f19-packaging 13 节映射（§5.5）；Q1-Q3 待拍板，正文 §4/§12 已含建议方案（D11 = Q2 建议 C），拍板后同步修订并留痕。v1.1（2026-08-08）——Q1=A / Q2=C / Q3=A 已确认（头部 Spec 变更行 + §1.4/§7/§10/§12 + 待澄清区同步留痕）。
+> **Spec 变更记录**：v1.0（2026-08-08）初稿——打包/发布基建增量专项型 spec，镜像 f19-packaging 13 节映射（§5.5）；Q1-Q3 待拍板，正文 §4/§12 已含建议方案（D11 = Q2 建议 C），拍板后同步修订并留痕。v1.1（2026-08-08）——Q1=A / Q2=C / Q3=A 已确认（头部 Spec 变更行 + §1.4/§7/§10/§12 + 待澄清区同步留痕）。**QA 修订（2026-08-08，实现后）**：installer.nsh 的 `$installMode` 引用改为宏内复制到自有变量 `_f33InstallMode`——NSIS 3.0.4.1 实测：本文件在 sharedHeader 被 include（先于模板 multiUser.nsh 的 `Var installMode`），函数体直接引用触发 warning 6000（unknown variable, ignoring）→ per-machine 安装写错注册表根；宏体（模板内展开）引用合法。§4.6 骨架同步更新为 `_f33InstallMode` 模式（实测驱动，非拍板）。
