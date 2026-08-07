@@ -89,7 +89,11 @@
 | Feature | 版本 | 内容 | 依赖/前置 | Issue | 状态 |
 |---------|------|------|----------|-------|------|
 | skills 包 | **1.0.0** | 小说写作 skills（源码单一真相 + 三通道分发） | 无 | [#70](https://github.com/zhx-xi/InkFlow/issues/70) | 🔜 已建 issue |
-| F20 MCP Server | **1.0.0** | MCP Server（stdio 直连 domain），≥15 工具（ADR-023） | 无 | [#49](https://github.com/zhx-xi/InkFlow/issues/49) | 🔜 已建 issue |
+| F20 MCP Server | **1.0.0** | MCP Server（stdio 薄客户端经 HTTP），≥15 工具（ADR-023 v2） | #166（内核冷启动基建） | [#49](https://github.com/zhx-xi/InkFlow/issues/49) | 🔜 已建 issue |
+| 本地内核冷启动基建 | **0.5.0** | kernel.json 发现协议 + ensure_kernel() 拉起器 + 互斥 + stale 清理（ADR-030 ②） | 无 | [#166](https://github.com/zhx-xi/InkFlow/issues/166) | 🔜 已建 issue |
+| GUI 托盘常驻 | **0.5.0** | 关闭→最小化托盘（内核保持）+ 关闭行为设置（ADR-030 ③） | #166 | [#167](https://github.com/zhx-xi/InkFlow/issues/167) | 🔜 已建 issue |
+| CLI 独立发布产物 | **0.5.0** | inkflow-cli.zip + NSIS PATH 安装（ADR-030 ⑤） | 无 | [#168](https://github.com/zhx-xi/InkFlow/issues/168) | 🔜 已建 issue |
+| CLI 恒经 HTTP | **0.6.0** | CLI 统一经 HTTP 访问内核（ADR-030 ② D1=A，实测热调用 ~214ms vs 直连 4.7s） | #166 | [#169](https://github.com/zhx-xi/InkFlow/issues/169) | 🔜 已建 issue |
 | F24 会话管理 | **0.5.0** | 写作会话 / 恢复 / 任务履历 | 无 | [#51](https://github.com/zhx-xi/InkFlow/issues/51) | ✅ 已实现（PR #157） |
 | ~~F25 daemon~~ | ~~0.5.0~~ | ~~daemon 后台写作~~（**已移除**，ADR-029：伪需求；真实意图=外部 agent 经 MCP/skills 调用，由 F19 serve + F20 MCP + skills 包覆盖） | 无 | [#52](https://github.com/zhx-xi/InkFlow/issues/52) | ❌ 已关闭（2026-08-07） |
 | F21 导出服务 | **0.6.0** | 导出 EPUB / MD / TXT / DOCX（≥3 格式） | 无 | [#53](https://github.com/zhx-xi/InkFlow/issues/53) | 🔜 已建 issue |
@@ -112,7 +116,7 @@
 | 0.3.0 | GUI 桌面端（提前） | F19 GUI（内核进程化 + Electron 壳 + React 渲染层 + 视觉打磨）· F23 SSE 流式（提前）· Agent 约束体系 | ✅ 已交付（PR #83/#85/#95/#97/#100-103/#89） |
 | 0.3.1 | 质量加固补丁 | #86 LLM 修复 · #87 LangGraph 重构 · #92 真实 AI CI · #104 覆盖率（后端 98.9%/96.3% 分支） | ✅ 已交付（PR #108/#110/#111/#114-#117，2026-08-06） |
 | 0.4.0 | 打包 + GUI 演进 | F19 打包（exe / 安装包 / 便携 ZIP）· 导航重构 · 模型管理 · Agent 模板 | ✅ 已交付（2026-08-07 v0.4.0 正式发布，PR #120/#121/#122/#131/#132/#135/#144/#145） |
-| 0.5.0 | Agent 集成 | F24 会话 · E2E 增强 · 设置持久化 | 🔜 |
+| 0.5.0 | Agent 集成 | F24 会话 · E2E 增强 · 设置持久化 · 本地内核服务化（冷启动基建 #166 / 托盘 #167 / CLI 产物 #168） | 🔜 |
 | 0.6.0 | 导出 + 搜索 | F21 导出 · F22 全文搜索 | 🔜 |
 | 1.0.0 | 本地完全可用 | CLI + GUI + skills + MCP 四界面齐备 + 跨平台 + 文档 + Phase 3 Gate | 🔜 |
 | 2.0.0 | 云端 | F18 云 Web · 用户 API · Admin 后台 · GUI 远程模式（云存档/异地写作） | 🔜 |
