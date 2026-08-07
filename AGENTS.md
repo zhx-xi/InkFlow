@@ -43,7 +43,7 @@
 | 0.3.0 ✅ | F19 GUI（Electron 壳 + 内核进程化 + React 渲染层）· F23 SSE 流式（PR #83，#50）——F19 子任务 A 内核进程化（PR #85，#77）· 子任务 B Electron 壳（PR #95，#78）· 子任务 C React 渲染层（PR #97，#79）· 子任务 D 视觉打磨（PR #100-103，#98：Radix 控件 + 品牌接入 + 空态 + 菜单栏移除 + 顶栏 logo 修复链）· 交互反馈定稿（#99 spec §6，实现并入 0.4.0 #105）· Agent 约束体系（PR #89，#88） |
 | 0.3.1 ✅ | 质量加固补丁（milestone #9）：#86 LLM 客户端修复（PR #108：timeout→request_timeout + zhipu 注册 + audit 路由）· #87 LangGraph 状态重构（PR #110：StateGraph(dict)→TypedDict+reducer，节点增量返回，type: ignore 清零）· #92 真实 AI CI job（PR #111：e2e-ai-backend，label run-ai-tests 触发 + workflow_dispatch 兜底；tests/e2e/ T1+T2，缺 key 永远 skip；⚠️ 真实验证需先配 LLM_API_KEY secret）· #104 覆盖率补全（PR #114/#115/#116/#117：三层补测至后端 98.90% 行/96.32% 分支、前端 99.11%/92.51%、API 端点 100%、E2E 三页；CI 门槛 98.5/95.0 常态化，口径见 ADR-027） |
 | 0.4.0 ✅ | F19 打包分发（PR #144，#48：B+ chromadb 进包 + API embedding 装配 + 数据目录 sys.frozen→%APPDATA% + PyInstaller 内核 onedir 142MB + electron-builder NSIS 145.6MB/便携 ZIP 177.4MB + release.yml tag v* 自动发布；发布门禁 #145 ✅：rc.1-rc.6 迭代修复（artifact 结构/GH_TOKEN/版本注入/asar renderer 路径/品牌图标）后 **v0.4.0 正式发布 2026-08-07**（exe 144.3MB + zip 175.5MB））+ GUI 演进——子任务 D 导航重构+设置页框架（PR #120/#121，#105，承接 #99 交互反馈实现）· 子任务 E 模型管理页（PR #122，#106：ProviderConfig 注册表 + 模型管理页 + 角色绑定只读区 + 顶栏 Select + 自绘窗口按钮，覆盖率 99.27%）· 模型管理修复（PR #131/#132，#125/#126：addModel rethrow + 部分失败保留草稿 + builtin_key 判重防 seed 复活，2026-08-06）· 子任务 F Agent 模板（PR #135，#107：AgentTemplate 实体（引用式）+ 角色独立温度链（0.7 哨兵移除）+ 风险确认框 + 新建项目模板下拉，三层测试全绿）· 架构图 + ChatLiteLLM 残留清理（PR #134，#134 文档同步）· CI uv cache 修复 + job 分批（PR #128，#128）；遗留：设置持久化 #152（0.5.0） |
-| 0.5.0 | Agent 集成：F24 会话 ✅（#51）· E2E 增强（#139/#140）· 设置持久化（#152）· 本地内核服务化（#166 ✅ PR #171 / #167 / #168） |
+| 0.5.0 | Agent 集成：F24 会话 ✅（#51）· E2E 增强（#139/#140）· 设置持久化（#152 ✅ PR #176）· 本地内核服务化（#166 ✅ PR #171 / #167 ✅ PR #172 / #168） |
 | 0.6.0 | F21 导出 · F22 全文搜索 |
 | 1.0.0 🎉 | **本地完全可用 = CLI + GUI + skills + MCP** + 跨平台 + 文档 + 全量验收 |
 | 2.0.0 ☁️ | 云端：F18 云 Web（移出单机）· 用户 API · Admin 后台 · GUI 远程模式 |
@@ -65,7 +65,7 @@ F1 项目/书籍 · F2 章节 · F3 写作管道 · F4 Agent 编排 · F5 LLM Pr
 | F15 | `audit_service` | 一致性审计（角色/时间线/世界/伏笔 4 维度） | ✅ 已完成（PR #74） |
 | F16 | `style_service` | 风格检测（风格指纹/AI 痕迹/词汇分析） | ✅ 已完成（PR #75） |
 
-> 模块类型谱系：F9/F10 提取型 → F11 生成型 → F12 确定性检查型（无 LLM）→ F13 状态追踪+F6 注入型（无 LLM，首个自带 F6 数据源替换）→ F14 横切收敛型（门面：收敛 F9-F13 管线 + 增量提取 + RAG 首次落地 ADR-013）→ F15 横切审计型（纯消费者：只读聚合 4 维档案 + 跨模块引用，零跨模块 MODIFY）→ F16 确定性文本分析型（无 LLM 主体 + LLM 深度分析可选 + jieba 增强：文本统计特征计算，StyleReport 瞬态输出，F14 STYLE 槽位注册 handler 接口零变更）→ **F23 传输增强型（零新实体：WritingStreamEvent 判别联合 DTO + service 流式方法 + API SSE 端点 + CLI 默认流式，SSE 一条代码路径两用 ADR-021）** → **F30 客户端发现型（第 13 变体：零实体零 API 端点，kernel.json 状态文件三态 + ensure_kernel 拉起器（复用/互斥拉起/秒退重试/版本校验）+ CreateMutexW 互斥 + stale 清理 + dev kernel status，ADR-030 ② 基建 #166 PR #171）**。后续模块实施时先对照对应变体样板（`specs/f14-extraction-service/spec.md` 为横切模板；`specs/f16-style-service/spec.md` 为确定性文本分析模板；`specs/f23-sse-stream/spec.md` 为传输增强模板；F13 另含 F6 集成模式 `specs/f13-foreshadowing-service/spec.md` §5）。
+> 模块类型谱系：F9/F10 提取型 → F11 生成型 → F12 确定性检查型（无 LLM）→ F13 状态追踪+F6 注入型（无 LLM，首个自带 F6 数据源替换）→ F14 横切收敛型（门面：收敛 F9-F13 管线 + 增量提取 + RAG 首次落地 ADR-013）→ F15 横切审计型（纯消费者：只读聚合 4 维档案 + 跨模块引用，零跨模块 MODIFY）→ F16 确定性文本分析型（无 LLM 主体 + LLM 深度分析可选 + jieba 增强：文本统计特征计算，StyleReport 瞬态输出，F14 STYLE 槽位注册 handler 接口零变更）→ **F23 传输增强型（零新实体：WritingStreamEvent 判别联合 DTO + service 流式方法 + API SSE 端点 + CLI 默认流式，SSE 一条代码路径两用 ADR-021）** → **F30 客户端发现型（第 13 变体：零实体零 API 端点，kernel.json 状态文件三态 + ensure_kernel 拉起器（复用/互斥拉起/秒退重试/版本校验）+ CreateMutexW 互斥 + stale 清理 + dev kernel status，ADR-030 ② 基建 #166 PR #171）** → **F32 设置域横切型（第 14 变体：新实体 app_settings 设置库（key-value 零迁移）+ GET/PATCH /settings（默认值补齐/未知字段 422）+ 前端双轨加载（localStorage 降级缓存层）+ Electron 主进程桥接（持久化权威=后端、运行时权威=主进程）+ 表单草稿守卫（Q3=C：卸载 flush 自动保存），#152 PR #176）**。后续模块实施时先对照对应变体样板（`specs/f14-extraction-service/spec.md` 为横切模板；`specs/f16-style-service/spec.md` 为确定性文本分析模板；`specs/f23-sse-stream/spec.md` 为传输增强模板；`specs/f32-settings-persistence/spec.md` 为设置域模板；F13 另含 F6 集成模式 `specs/f13-foreshadowing-service/spec.md` §5）。
 
 ### Phase 3 功能（F18-F24，2026-08-02 形态决策后归属调整）
 
@@ -230,6 +230,7 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 - `specs/f16-style-service/spec.md`：F16 风格检测服务规格（确定性文本分析型：风格指纹 12 项 + AI 痕迹 8 特征 + jieba 词汇增强 + LLM 深度分析可选 + F14 STYLE 槽位落地）
 - `specs/f23-sse-stream/spec.md`：F23 SSE 流式输出规格（传输增强型：统一 /stream 端点 + mode 判别联合 + SSE 帧协议 + CLI 默认流式）
 - `specs/f30-kernel-bootstrap/spec.md`：F30 内核冷启动基建规格（客户端发现型：kernel.json 三态读写 + ensure_kernel 复用/互斥拉起 + 版本校验 + dev 调试命令，ADR-030 ②）
+- `specs/f32-settings-persistence/spec.md`：F32 设置持久化规格（设置域横切型：key-value app_settings 设置库 + GET/PATCH /settings + 前端双轨加载 + 主进程桥接 + 表单草稿守卫，#152 PR #176）
 - 每个模块 spec 定义了：数据模型、API 契约、CLI 命令、边界情况、测试策略
 - spec 是开发的唯一真相来源。如果发现 spec 与实现矛盾，先更新 spec，再改代码
 
@@ -491,6 +492,7 @@ AI 编码助手在开始任何工作前，应**按顺序**阅读以下文件：
 | P0 | `specs/f16-style-service/spec.md` | F16 功能规格（确定性文本分析型：风格指纹/AI 痕迹/词汇分析 + LLM 深度分析可选 + F14 STYLE 槽位落地） |
 | P0 | `specs/f23-sse-stream/spec.md` | F23 功能规格（传输增强型：统一 /stream 端点 + mode 判别联合 + SSE 帧协议 + CLI 默认流式） |
 | P0 | `specs/f30-kernel-bootstrap/spec.md` | F30 功能规格（客户端发现型：kernel.json + ensure_kernel + 互斥 + stale，ADR-030 ②） |
+| P0 | `specs/f32-settings-persistence/spec.md` | F32 功能规格（设置域横切型：app_settings 设置库 + GET/PATCH /settings + 双轨加载 + IPC 桥接 + 表单守卫，#152 PR #176） |
 | P1 | `design/architecture-analysis-2026-07-30.md` | 架构分析总览；ADR 索引表（决策详情在 `adr/`） |
 | P1 | `design/workflow.md` | git worktree + PR 流程详解 |
 | P1 | `backend/pyproject.toml` | 依赖版本、工具配置（Ruff、mypy、pytest） |
