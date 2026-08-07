@@ -5,6 +5,8 @@ import { useThemeStore } from '../stores/theme';
 export type ThemeName = 'paper' | 'night' | 'ink';
 export type ThemeBg = 'default' | 'parchment' | 'navy' | 'ochre';
 export type Lang = 'zh' | 'en';
+/** 编辑器字体（F32 #152：从 settings.tsx 本地定义移入统一类型，入设置库持久化） */
+export type FontKey = 'serif' | 'sans' | 'mono';
 
 /** 各主题支持的背景变体（下拉随主题过滤） */
 export const BG_BY_THEME: Record<ThemeName, ThemeBg[]> = {

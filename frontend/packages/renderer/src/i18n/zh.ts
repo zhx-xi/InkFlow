@@ -48,6 +48,9 @@ export const zh = {
   'set.closeBehavior': '关闭窗口时',
   'set.closeBehavior.tray': '最小化到系统托盘',
   'set.closeBehavior.quit': '直接退出',
+  // F32（#152）：首次托盘提示开关（spec §6.2）
+  'set.trayHint': '首次托盘提示',
+  'set.trayHintDesc': '关闭窗口时在系统托盘显示首次提示',
   'set.defaultWords': '新章节默认字数',
   'set.models.summary': '已配置 Provider',
   'set.models.placeholder': '模型管理将在后续版本提供',

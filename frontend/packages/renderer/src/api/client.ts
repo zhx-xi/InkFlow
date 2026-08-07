@@ -13,13 +13,28 @@ export interface WindowControls {
   onMaximizedChange?: (callback: (maximized: boolean) => void) => () => void;
 }
 
-/** #167 F31 托盘常驻：关闭窗口行为（'tray' 最小化到系统托盘 | 'quit' 直接退出），内存态 */
+/** #167 F31 托盘常驻：关闭窗口行为（'tray' 最小化到系统托盘 | 'quit' 直接退出）；F32 起由后端持久化 */
 export type CloseBehavior = 'tray' | 'quit';
 
-/** #167 F31：preload settings 命名空间（B1/B2 已暴露 IPC 通道） */
+/** F32 设置持久化（#152）：全量设置对象，字段 snake_case 对齐后端 JSON（spec §2.1/§3.2） */
+export interface AppSettings {
+  theme: 'paper' | 'night' | 'ink';
+  bg: 'default' | 'parchment' | 'navy' | 'ochre';
+  lang: 'zh' | 'en';
+  font: 'serif' | 'sans' | 'mono';
+  close_behavior: CloseBehavior;
+  tray_hint_dismissed: boolean;
+}
+
+/** F32（#152）：PATCH /settings 请求体——部分更新，只发用户改动字段（响应恒为合并后全量） */
+export type AppSettingsUpdate = Partial<AppSettings>;
+
+/** #167 F31：preload settings 命名空间（B1/B2 已暴露 IPC 通道；F32 类型补全 dismissTrayHint） */
 export interface SettingsApi {
   getCloseBehavior: () => Promise<CloseBehavior>;
   setCloseBehavior: (value: CloseBehavior) => Promise<void>;
+  /** #167 F31 首次托盘提示「不再提示」（preload 运行时已有该通道，F32 补全类型） */
+  dismissTrayHint: () => Promise<void>;
 }
 
 export interface ApiConfig {
@@ -147,4 +162,14 @@ export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) return err.detail;
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+/** F32（#152）：GET /api/v1/settings——全量设置（缺失键后端默认值补齐，spec §3.2） */
+export async function fetchSettings(): Promise<AppSettings> {
+  return apiFetch<AppSettings>('/api/v1/settings');
+}
+
+/** F32（#152）：PATCH /api/v1/settings——部分更新；响应 = 合并后全量对象（免二次 GET，spec §3.3） */
+export async function patchSettings(patch: AppSettingsUpdate): Promise<AppSettings> {
+  return apiFetch<AppSettings>('/api/v1/settings', { method: 'PATCH', body: patch });
 }

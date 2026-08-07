@@ -1,8 +1,12 @@
-"""设置 REST API — 基础设施工具端点（API Key 存储 + LLM 连通探测）。
+"""设置 REST API — 基础设施工具端点 + 应用级设置持久化（F32 #152）。
 
 对应 F19 GUI 渲染层（spec §4.4/§4.6，Q3 拍板）的 2 个工具端点：
 - POST /api/v1/settings/llm-keys — APIKeyManager AES-256-GCM 加密存储 API Key
 - POST /api/v1/settings/llm/test — LLMClient 最小连通探测
+
+F32 设置持久化（specs/f32-settings-persistence/spec.md §3）新增 2 个端点：
+- GET  /api/v1/settings — 全量设置（缺失键默认值补齐，不落库）
+- PATCH /api/v1/settings — 部分更新（白名单 + JSON 编码落库）→ 合并后全量
 
 安全红线：响应体禁止回显明文 api_key；探测端点的 api_key 仅用于本次
 请求（内存构造客户端），不落盘。
@@ -18,9 +22,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from inkflow.api.deps import get_db, get_provider_config_service
+from inkflow.api.deps import get_db, get_provider_config_service, get_settings_service
 from inkflow.core.config import config
+from inkflow.domain.models.settings import AppSettings, AppSettingsUpdate
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
+from inkflow.domain.services.settings_service import SettingsService
 from inkflow.infrastructure.llm.key_manager import APIKeyManager
 from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 
@@ -183,3 +189,31 @@ async def test_llm_connection(
         "model": model,
         "message": "连接成功",
     }
+
+
+@router.get("", response_model=AppSettings)
+async def get_settings(
+    service: SettingsService = Depends(get_settings_service),
+) -> AppSettings:
+    """全量设置（缺失键默认值补齐，不落库，F32 spec §3.2）。"""
+    return await service.get_settings()
+
+
+@router.patch("", response_model=AppSettings)
+async def patch_settings(
+    updates: AppSettingsUpdate,
+    service: SettingsService = Depends(get_settings_service),
+) -> AppSettings:
+    """部分更新（白名单 + JSON 编码落库）→ 合并后全量（F32 spec §3.3）。
+
+    空 body 显式 422：全部字段为 None 的 PATCH 无意义，静默成功会掩盖
+    客户端 bug（spec §3.4 异常映射）。DB 异常 → 500 通用 detail
+    （ADR-012 风格，不泄漏内部细节，镜像 store_llm_key except 模式）。
+    """
+    if updates.model_dump(exclude_none=True) == {}:
+        raise HTTPException(status_code=422, detail="至少提供一个设置字段")
+    try:
+        return await service.update_settings(updates)
+    except Exception as exc:
+        logger.exception("设置持久化失败")
+        raise HTTPException(status_code=500, detail="设置保存失败，请稍后重试") from exc

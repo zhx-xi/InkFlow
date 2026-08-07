@@ -44,6 +44,8 @@ export const en: Record<string, string> = {
   'set.closeBehavior': 'On window close',
   'set.closeBehavior.tray': 'Minimize to system tray',
   'set.closeBehavior.quit': 'Quit directly',
+  'set.trayHint': 'First-time tray hint',
+  'set.trayHintDesc': 'Show a hint when closing to tray for the first time',
   'set.defaultWords': 'Default words per chapter',
   'set.models.summary': 'Configured Providers',
   'set.models.placeholder': 'Model management will be available in a later version',

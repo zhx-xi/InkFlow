@@ -118,6 +118,70 @@ RED 阶段预期：`inkflow.api.routers.settings` 模块不存在 →
 未注册，请求亦 404）。GREEN 阶段：按上述契约实现
 api/routers/settings.py + app.py include_router 后全绿。
 ════════════════════════════════════════════════════════════════════
+
+════════════════════════════════════════════════════════════════════
+F32 设置持久化追加段（Issue #152，specs/f32-settings-persistence/
+spec.md v1.1 §3 API 契约 + §3.4 异常映射 + §9.1/§9.4 测试策略）——
+下方设计假设 15-20 为 F32 段契约，与 F19 段（假设 1-14）并列，
+均为 GREEN 实现义务。
+════════════════════════════════════════════════════════════════════
+
+15. 【F32 端点契约（spec §3.1-§3.3）】本段追加契约 2 个端点（挂既有
+    settings router，app.py 零改动）：
+    - GET  /api/v1/settings — 全量设置对象（缺失键默认值补齐，不落库）
+    - PATCH /api/v1/settings — AppSettingsUpdate 部分更新 → 200 合并后全量
+    响应恒为 6 字段全量对象 {theme, bg, lang, font, close_behavior,
+    tray_hint_dismissed}；默认值（§2.1）：theme='paper' bg='default'
+    lang='zh' font='sans' close_behavior='tray' tray_hint_dismissed=false。
+    PATCH 为幂等 upsert（同 payload 重复提交结果一致）；多字段组合
+    任意；PATCH 响应即全量对象（客户端无需二次 GET，§3.3）。
+
+16. 【F32 DB 隔离——override_get_db（spec §9.1 追加段行）】F32 段用例
+    走真实 service/repo 落库语义，复用 tests/api/conftest.py 的
+    override_get_db fixture：get_db 被替换为测试 db_session
+    （tests/conftest.py 函数级内存 SQLite，每用例全新空表，用例间
+    自动隔离）。【契约前提】GREEN 的 deps.get_settings_service 必须经
+    Depends(get_db) 链获取 session（镜像 deps.get_writing_service /
+    provider_configs 路由形态），override 才生效；settings 路由
+    Depends(get_settings_service)（spec §3.5 骨架）。TestClient 请求
+    在其 portal loop 内完成全部 DB 操作，测试体不直接触碰 db_session
+    → 无跨 loop（sync TestClient + override_get_db 真实 DB 读写探针
+    实测通过）；落库断言 = PATCH 后 GET 跨请求回读一致（若未落库，
+    GET 不返回新值）。
+
+17. 【F32 422 三路（spec §3.4 异常映射）】未知字段（themee）→ 422 且
+    字段名在 body 中回显（extra='forbid'，#105 教训：静默吞字段必须
+    显式报错——设置接口是高频手写路径）；非法枚举（theme='dark'）→
+    422 且字段名回显（Pydantic Literal，detail 含允许值提示，文案不
+    钉死、随 pydantic 版本）；空 body {} → 422 + detail 精确等于
+    「至少提供一个设置字段」（路由层 HTTPException，detail 为 str
+    而非 Pydantic 错误列表，spec §3.5 骨架）。
+
+18. 【F32 401 契约（spec §3.1 全站契约行 + §9.4 对照用例）】env
+    INKFLOW_SERVER_TOKEN 已设置时，GET/PATCH /settings 无 token 头 →
+    401 + 精确 body {"detail": "Unauthorized"}（F19 token 中间件既有
+    实现，路由前短路，不触达 handler/DB）。401 用例单独使用
+    set_token_env fixture（test_token_auth.py 同款 env-set 模式）——
+    与文件头 client fixture 的 delenv 直通模式互斥，不可同用例共存；
+    fixture 求值顺序 client 先 delenv、set_token_env 后 setenv，
+    请求发出时 env 已设置。
+
+19. 【F32 DB 异常 → 500（spec §3.4 异常映射末行，评审 🟢 补齐）】
+    repo 落库失败（磁盘/锁）→ 500 + 通用 detail（ADR-012 风格，
+    不泄漏内部细节）。注入方式：monkeypatch db_session.commit 抛
+    OSError（GREEN repo.set_many 内 commit，spec §2.4 骨架）——规避
+    patch 未来命名空间（RED 阶段 get_settings_service 不存在，字符串
+    patch 路径 setup 即 AttributeError → ERROR 而非断言 FAIL）。detail
+    断言宽松：非空 str 且响应不含内部异常消息（GREEN 具体文案自由，
+    须为通用中文文案）。
+
+20. 【F32 RED 阶段预期】settings router 已存在（F19 GREEN）但无根
+    GET/PATCH 路由 → 本段用例除 401（中间件既有实现，预期 PASS）外
+    全部 FAIL（请求 404 Not Found）。GREEN 阶段：按 spec §3.5 骨架在
+    api/routers/settings.py 追加 get_settings + patch_settings 路由 +
+    deps.get_settings_service + settings 域 4 文件（models/ports/repo/
+    service）后全绿。
+════════════════════════════════════════════════════════════════════
 """
 
 from __future__ import annotations
@@ -561,3 +625,217 @@ class TestLLMTestProbe:
         mock_cls.assert_called_once_with(
             default_model="deepseek/deepseek-chat", api_key=TEST_API_KEY
         )
+
+
+# ── GET/PATCH /api/v1/settings（F32 设置持久化，spec v1.1 §3）──
+
+ENDPOINT_SETTINGS = "/api/v1/settings"
+"""设置库端点（spec §3.1：GET 全量 / PATCH 部分更新，挂既有 settings router）。"""
+
+TEST_TOKEN = "test-token-f32-settings"
+"""401 用例固定 token（test_token_auth.py set_token_env 同款 env-set 模式）。"""
+
+DEFAULT_SETTINGS = {
+    "theme": "paper",
+    "bg": "default",
+    "lang": "zh",
+    "font": "sans",
+    "close_behavior": "tray",
+    "tray_hint_dismissed": False,
+}
+"""6 字段默认值（spec §2.1 表 + §3.2 空表响应示例）。"""
+
+
+@pytest.fixture
+def set_token_env(monkeypatch):
+    """设置 INKFLOW_SERVER_TOKEN（test_token_auth.py 同款 env-set fixture）。
+
+    设计假设 #18：401 用例专用；与文件头 client fixture 的 delenv 直通
+    模式互斥（fixture 求值顺序 client 先 delenv、本 fixture 后 setenv
+    → 请求发出时 env 已设置，token 中间件进入校验分支）。
+    """
+    monkeypatch.setenv(ENV_TOKEN, TEST_TOKEN)
+    return TEST_TOKEN
+
+
+class TestSettingsGet:
+    """GET /api/v1/settings 契约（spec §3.2，设计假设 #15/#16）。"""
+
+    def test_get_empty_table_all_defaults(self, client, override_get_db):
+        """空表（无任何持久化键）→ 200 + 6 字段默认值（§3.2 首次调用响应）。
+
+        函数级内存库每用例全新 → 空表前提成立；GREEN 缺失键默认值
+        补齐且【不落库】（表行数 = 显式修改过的设置项数，§2.3 无 seed）。
+        """
+        resp = client.get(ENDPOINT_SETTINGS)
+        assert resp.status_code == 200
+        assert resp.json() == DEFAULT_SETTINGS
+
+    def test_get_merges_persisted_keys(self, client, override_get_db):
+        """已持久化部分键 → GET 合并：theme=night 其余默认（§3.2 第二响应）。
+
+        先 PATCH theme 落库 1 行 → GET 读全量合并。验证「读恒全量 +
+        默认补齐」语义（§5.1 规则 1/3）——GET 不得只返回持久化键。
+        """
+        patch_resp = client.patch(ENDPOINT_SETTINGS, json={"theme": "night"})
+        assert patch_resp.status_code == 200
+        resp = client.get(ENDPOINT_SETTINGS)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["theme"] == "night"
+        assert body["bg"] == "default"
+        assert body["lang"] == "zh"
+        assert body["font"] == "sans"
+        assert body["close_behavior"] == "tray"
+        assert body["tray_hint_dismissed"] is False
+
+
+class TestSettingsPatch:
+    """PATCH /api/v1/settings 契约（spec §3.3/§3.4，设计假设 #15-#17/#19）。"""
+
+    def test_patch_theme_full_object_and_roundtrip(self, client, override_get_db):
+        """PATCH {theme: night} → 200 全量对象（含新值）→ GET 回读一致。
+
+        落库断言 = PATCH 后 GET 跨请求回读一致（若未落库，GET 不返回
+        night）；重复 PATCH 同 payload 结果一致（§3.3 幂等 upsert）；
+        PATCH 响应恒为全量对象（客户端无需二次 GET）。
+        """
+        resp = client.patch(ENDPOINT_SETTINGS, json={"theme": "night"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["theme"] == "night"
+        assert body["bg"] == "default"
+        assert body["lang"] == "zh"
+        assert body["font"] == "sans"
+        assert body["close_behavior"] == "tray"
+        assert body["tray_hint_dismissed"] is False
+        # 幂等：同 payload 重复提交结果一致（§3.3）
+        resp2 = client.patch(ENDPOINT_SETTINGS, json={"theme": "night"})
+        assert resp2.status_code == 200
+        assert resp2.json() == body
+        # 回读闭环：GET 与 PATCH 响应一致
+        resp3 = client.get(ENDPOINT_SETTINGS)
+        assert resp3.status_code == 200
+        assert resp3.json() == body
+
+    def test_patch_multi_field_combination(self, client, override_get_db):
+        """PATCH {theme, font, close_behavior} → 200 全量含三新值（§3.3 示例）。
+
+        未涉及字段（bg/lang/tray_hint_dismissed）保持默认——「写只部分」
+        语义（§5.1 规则 2）；响应即合并后全量；GET 回读三新值全部落库。
+        """
+        resp = client.patch(
+            ENDPOINT_SETTINGS,
+            json={"theme": "night", "font": "serif", "close_behavior": "quit"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["theme"] == "night"
+        assert body["font"] == "serif"
+        assert body["close_behavior"] == "quit"
+        assert body["bg"] == "default"
+        assert body["lang"] == "zh"
+        assert body["tray_hint_dismissed"] is False
+        # 回读一致：三新值全部落库
+        resp2 = client.get(ENDPOINT_SETTINGS)
+        assert resp2.status_code == 200
+        assert resp2.json() == body
+
+    def test_patch_unknown_field_422(self, client, override_get_db):
+        """PATCH {themee: ...} → 422（extra='forbid'，§3.4 未知字段行）。
+
+        detail 为 Pydantic 校验错误列表，字段名在 body 中回显（themee）
+        ——#105 教训：extra='ignore' 静默吞字段 → 接口无感知，设置接口
+        是高频手写路径，必须显式报错（spec §2.2 AppSettingsUpdate）。
+        """
+        resp = client.patch(ENDPOINT_SETTINGS, json={"themee": "night"})
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        assert isinstance(detail, list)
+        assert "themee" in str(detail)
+        # 422 不得落库：GET 仍全默认
+        resp2 = client.get(ENDPOINT_SETTINGS)
+        assert resp2.status_code == 200
+        assert resp2.json() == DEFAULT_SETTINGS
+
+    def test_patch_invalid_enum_422(self, client, override_get_db):
+        """PATCH {theme: 'dark'} → 422（Pydantic Literal 枚举校验，§3.4 枚举行）。
+
+        detail 列表含字段名 theme（与允许值提示，如 "Input should be
+        'paper', 'night' or 'ink'"）——非法值必须在 DTO 层拦截，不得
+        到达 service/落库（detail 文案不钉死、随 pydantic 版本）。
+        """
+        resp = client.patch(ENDPOINT_SETTINGS, json={"theme": "dark"})
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        assert isinstance(detail, list)
+        assert "theme" in str(detail)
+        # 422 不得落库：GET 仍全默认
+        resp2 = client.get(ENDPOINT_SETTINGS)
+        assert resp2.status_code == 200
+        assert resp2.json() == DEFAULT_SETTINGS
+
+    def test_patch_empty_body_422(self, client, override_get_db):
+        """PATCH {} → 422 + detail 精确等于「至少提供一个设置字段」（§3.4 空 body 行）。
+
+        路由层显式校验（spec §3.5 骨架）：全 None 的 PATCH 无意义，
+        静默成功会掩盖客户端 bug；detail 为 HTTPException 字符串
+        （非 Pydantic 错误列表）。
+        """
+        resp = client.patch(ENDPOINT_SETTINGS, json={})
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == "至少提供一个设置字段"
+
+    def test_patch_db_error_500_generic_detail(self, client, db_session, monkeypatch):
+        """repo 落库失败 → 500 + 通用 detail，内部细节不泄漏（§3.4 DB 异常行）。
+
+        注入（设计假设 #19）：手工 override get_db → db_session（镜像
+        conftest override_get_db）+ monkeypatch db_session.commit 抛
+        OSError（GREEN repo.set_many 内 commit，spec §2.4 骨架）——
+        规避 patch 未来命名空间（RED 阶段 get_settings_service 不存在，
+        字符串 patch 路径 setup 即 AttributeError → ERROR 非 FAIL）。
+        detail 断言宽松：非空 str 且响应不含内部异常消息（ADR-012 风格）。
+        """
+        from unittest.mock import AsyncMock
+
+        from inkflow.api.deps import get_db
+
+        async def _get_db_override():
+            yield db_session
+
+        app.dependency_overrides[get_db] = _get_db_override
+        monkeypatch.setattr(
+            db_session, "commit", AsyncMock(side_effect=OSError("disk full"))
+        )
+        try:
+            resp = client.patch(ENDPOINT_SETTINGS, json={"theme": "night"})
+        finally:
+            app.dependency_overrides.clear()
+        assert resp.status_code == 500
+        detail = resp.json()["detail"]
+        assert isinstance(detail, str) and detail
+        assert "disk full" not in resp.text
+
+
+class TestSettingsTokenAuth:
+    """GET/PATCH /settings 401 契约（spec §3.1 全站 token 行，设计假设 #18）。"""
+
+    def test_get_without_token_401(self, client, set_token_env):
+        """env 已设置 + 无 token 头 → GET /settings 401 + 精确 body。
+
+        token 中间件（F19 既有实现）在路由前拦截——响应精确等于
+        {"detail": "Unauthorized"}（ADR-021 401 契约，与 test_token_auth.py
+        一致）；本用例不依赖路由实现（RED 阶段即 PASS）。
+        """
+        resp = client.get(ENDPOINT_SETTINGS)
+        assert resp.status_code == 401
+        assert resp.json() == {"detail": "Unauthorized"}
+
+    def test_patch_without_token_401(self, client, set_token_env):
+        """env 已设置 + 无 token 头 → PATCH /settings 401（spec §9.4 契约清单行）。
+
+        与 GET 同规则：全站 token 中间件覆盖（§3.1 全站契约行）。
+        """
+        resp = client.patch(ENDPOINT_SETTINGS, json={"theme": "night"})
+        assert resp.status_code == 401
+        assert resp.json() == {"detail": "Unauthorized"}

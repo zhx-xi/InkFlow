@@ -93,6 +93,11 @@ from inkflow.domain.models.session import (
     SessionUpdate,
     SessionView,
 )
+from inkflow.domain.models.settings import (
+    AppSettings,
+    AppSettingsUpdate,
+    SettingsKey,
+)
 from inkflow.domain.models.timeline import (
     ConsistencyReport,
     ExtractedTimelineEvent,
@@ -123,6 +128,8 @@ from inkflow.domain.models.writing import (
 )
 
 __all__ = [
+    "AppSettings",
+    "AppSettingsUpdate",
     "AuditDimension",
     "AuditFinding",
     "AuditReport",
@@ -199,6 +206,7 @@ __all__ = [
     "SessionType",
     "SessionUpdate",
     "SessionView",
+    "SettingsKey",
     "StatusHistoryEntry",
     "StoryArc",
     "StoryArcCreate",

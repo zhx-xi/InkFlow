@@ -102,6 +102,27 @@
  * - 无 window.INKFLOW_API（浏览器 dev）→ 可选链吞掉调用，Select 仍默认显示 tray 文案
  * 新增 i18n key（GREEN 补 zh.ts / en.ts）：set.closeBehavior / set.closeBehavior.tray /
  * set.closeBehavior.quit
+ *
+ * ⚠️ F32 设置持久化（#152，spec §5.4/§6.2/§6.3/§9.4）RED 段（2026-08-08）——设计假设清单：
+ * - settings.tsx GeneralPanel 改造：font / closeBehavior 从 theme store 读（组件本地 state
+ *   移除，§6.3 对照表）；新增「首次托盘提示」开关（data-testid 自定 = settings-tray-hint-switch，
+ *   docstring 注明，GREEN 必须匹配；i18n set.trayHint 由 GREEN 补 zh.ts/en.ts）；
+ *   default_words 用 ref 镜像（valueRef/dirtyRef，评审 🟡-7）+ 卸载 cleanup flush
+ *   （fire-and-forget，经 useProjectStore.updateConfig 单次 PATCH 完整 config，评审 🔴-2）+
+ *   切项目重读（currentProjectId 变化 → 重读新项目值 + 清 dirty，缺陷 #2）
+ * - flushDefaultWords 契约（§5.4）：空值/非法 → 静默不 PATCH；<1000 → err toast 不 PATCH；
+ *   合法 → PATCH /api/v1/projects/{id} body {config:{...}} → 成功：project store 本地合并同步
+ *   + agent store setConfig + 清 dirty；失败：err toast + agent store 不被污染（缺陷 #4）+
+ *   dirty 保持；无当前项目 → 不保存（评审 🟢）
+ * - 既有 F31 describe（#167）保持绿的前提：GREEN 保留挂载 getCloseBehavior 取初值
+ *   （spec §5.3 允许与 store 两处并存，幂等）——若 GREEN 迁移为纯 store 读，该用例由父 agent
+ *   裁定升级；F31「切换 → IPC setCloseBehavior」用例在 GREEN 下走 store 链路（PATCH 成功
+ *   → IPC 推送）保持绿
+ * - 文件级 beforeEach 已扩展重置 font/closeBehavior/trayHintDismissed（测试间隔离：防「上一
+ *   用例改 store 值 → 下一用例 Select 初值漂移」污染既有用例）
+ * - RED 预期：GREEN 前新用例 FAIL 于 element-missing（settings-tray-hint-switch 不存在）/
+ *   断言型缺口（font/closeBehavior 初值 = 本地 state 写死）/ waitFor 超时（卸载 flush 不存在、
+ *   project store 不合并）/ 污染断言（失败路径现状先 setConfig）；既有用例保持绿
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -115,9 +136,23 @@ import { useTemplatesStore } from '../stores/templates';
 import { useThemeStore } from '../stores/theme';
 import { useToastStore } from '../stores/toast';
 
+// 2026-08-08 父侧裁定（测试自身缺陷修复）：client.ts 模块内函数（patchSettings/fetchSettings）
+// 经 importOriginal 展开后函数体仍引用真实 apiFetch（模块作用域闭包）→ 只 mock apiFetch 时
+// 真实 patchSettings 会打网络 → KernelOfflineError → store 走 catch（F32 切换用例 IPC 零调用）。
+// 修法 = 与 theme.test.ts 同款：vi.hoisted 直接替换 patchSettings/fetchSettings 为 mock。
+const { fetchSettingsMock, patchSettingsMock } = vi.hoisted(() => ({
+  fetchSettingsMock: vi.fn(),
+  patchSettingsMock: vi.fn(),
+}));
+
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
-  return { ...actual, apiFetch: vi.fn() };
+  return {
+    ...actual,
+    apiFetch: vi.fn(),
+    fetchSettings: fetchSettingsMock,
+    patchSettings: patchSettingsMock,
+  };
 });
 
 // ⚠️ #107 RED 阶段 mock：stores/templates 与 components/TemplateDialog 由 GREEN 创建，
@@ -273,7 +308,32 @@ function renderSettings(initialPath = '/settings') {
 beforeEach(() => {
   apiFetchMock.mockReset();
   localStorage.clear();
-  useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
+  // F32（#152）：patchSettings/fetchSettings mock 默认成功（全默认设置对象，§3.2）；
+  // 各用例可按需 mockResolvedValueOnce 覆盖
+  patchSettingsMock.mockReset();
+  patchSettingsMock.mockResolvedValue({
+    theme: 'paper',
+    bg: 'default',
+    lang: 'zh',
+    font: 'sans',
+    close_behavior: 'tray',
+    tray_hint_dismissed: false,
+  });
+  fetchSettingsMock.mockReset();
+  fetchSettingsMock.mockResolvedValue({
+    theme: 'paper',
+    bg: 'default',
+    lang: 'zh',
+    font: 'sans',
+    close_behavior: 'tray',
+    tray_hint_dismissed: false,
+  });
+  // F32（#152）：扩展重置 font/closeBehavior/trayHintDismissed——测试间隔离，
+  // 防「上一用例改 store 值 → 下一用例 Select 初值漂移」污染既有用例（GREEN 后 cast 可删）
+  useThemeStore.setState({
+    theme: 'paper', bg: 'default', lang: 'zh',
+    font: 'sans', closeBehavior: 'tray', trayHintDismissed: false,
+  } as unknown as Partial<ThemeStoreF32>);
   useProjectStore.setState({
     projects: [{ id: 'p1', name: '青云志', genre: '玄幻', language: 'zh-CN', target_words: 800000, config: {}, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' }],
     currentProjectId: 'p1', loading: false, error: null,
@@ -1311,7 +1371,11 @@ describe('设置页 — 关闭窗口时设置（#167 F31 RED 契约）', () => {
     await user.click(select);
     await user.click(await screen.findByRole('option', { name: '直接退出' }));
     // GREEN 前无设置项 → 上方 getByRole 已抛 = RED；GREEN 后断言 IPC 调用 + UI 回显
-    expect(settingsApi.setCloseBehavior).toHaveBeenCalledWith('quit');
+    // F32 契约升级（2026-08-08 父侧裁定）：closeBehavior 走 store 链路——PATCH 成功后
+    // 才异步 IPC 推送（spec §5.3），故断言须 waitFor 等待 async 链完成
+    await waitFor(() => {
+      expect(settingsApi.setCloseBehavior).toHaveBeenCalledWith('quit');
+    });
     expect(select).toHaveTextContent('直接退出');
   });
 
@@ -1323,5 +1387,207 @@ describe('设置页 — 关闭窗口时设置（#167 F31 RED 契约）', () => {
     await waitFor(() => {
       expect(select).toHaveTextContent('最小化到系统托盘');
     });
+  });
+});
+
+// ⚠️ F32（#152）：theme store 扩展契约的测试侧类型（GREEN 补全 stores/theme.ts 后此段可删；
+// esbuild 不查类型但 RED 验证要求 tsc --noEmit 绿——运行时缺失方法 → TypeError = RED 证据）
+type FontKeyF32 = 'serif' | 'sans' | 'mono';
+type CloseBehaviorF32 = 'tray' | 'quit';
+type ThemeStoreF32 = ReturnType<typeof useThemeStore.getState> & {
+  font: FontKeyF32;
+  closeBehavior: CloseBehaviorF32;
+  trayHintDismissed: boolean;
+  setFont: (f: FontKeyF32) => void;
+  setCloseBehavior: (b: CloseBehaviorF32) => Promise<void>;
+  setTrayHintDismissed: (v: boolean) => Promise<void>;
+  initFromBackend: () => Promise<void>;
+};
+const themeStateF32 = () => useThemeStore.getState() as ThemeStoreF32;
+
+/**
+ * F32 设置持久化（#152，spec §6.2/§6.3 对照表）：font / closeBehavior 从 theme store 读取。
+ * RED 预期：现状为组件本地 state（font 写死 'sans'、closeBehavior 本地 'tray'）→
+ * 断言 FAIL（font：期望「衬线」实得「无衬线」；closeBehavior：期望「直接退出」实得
+ * 「最小化到系统托盘」）。
+ */
+describe('设置页 — F32 font / closeBehavior 读 store（spec §6.2）', () => {
+  it('编辑器字体 Select 渲染初值 = store.font（非本地 state 写死）', () => {
+    useThemeStore.setState({ font: 'serif' } as unknown as Partial<ThemeStoreF32>);
+    renderSettings();
+    // ⚠️ 锚定正则（2026-08-08 实测）：'无衬线' 含子串 '衬线' → toHaveTextContent('衬线')
+    // 在 RED 阶段误 PASS；/^衬线$/ 钉死精确文本。GREEN 前本地 state 恒 'sans'（无衬线）→ FAIL = RED
+    expect(screen.getByRole('combobox', { name: '编辑器字体' })).toHaveTextContent(/^衬线$/);
+  });
+
+  it('关闭窗口时 Select 渲染初值 = store.closeBehavior（非本地 state）', () => {
+    // 不注入 INKFLOW_API：挂载 IPC 读被可选链吞掉，展示值应完全来自 store
+    useThemeStore.setState({ closeBehavior: 'quit' } as unknown as Partial<ThemeStoreF32>);
+    renderSettings();
+    // GREEN 前本地 state 恒 'tray' → 期望「直接退出」FAIL = RED
+    expect(screen.getByRole('combobox', { name: '关闭窗口时' })).toHaveTextContent('直接退出');
+  });
+});
+
+/**
+ * F32 设置持久化（#152，spec §6.2 + §5.3 开关链路）：首次托盘提示开关。
+ * 开关 data-testid 自定：settings-tray-hint-switch（本文件 docstring 注明，GREEN 必须匹配）；
+ * i18n set.trayHint 由 GREEN 补 zh.ts/en.ts。语义：checked = 提示开（!trayHintDismissed，
+ * 默认开）；切换 → store.setTrayHintDismissed(v)（PATCH + IPC dismiss 链路由
+ * stores/theme.test.ts 契约覆盖，本用例只钉 action 调用）。
+ * RED 预期：开关不存在 → getByTestId 抛（element-missing）。
+ */
+describe('设置页 — 首次托盘提示开关（F32 §6.2 RED 契约）', () => {
+  it('开关渲染（默认开=提示）+ 切换 → store.setTrayHintDismissed 调用断言', async () => {
+    const original = themeStateF32().setTrayHintDismissed;
+    // 2026-08-08 父侧裁定（测试自身缺陷）：spy 必须同步更新 store 状态——
+    // 受控 Switch 的 checked={!trayHintDismissed} 依赖状态驱动，纯 vi.fn 不更新
+    // 状态会让第二次点击语义错位（checked 恒 true → 两次都触发 onCheckedChange(false)）
+    const setTrayHintMock = vi.fn(async (v: boolean) => {
+      useThemeStore.setState({ trayHintDismissed: v } as unknown as Partial<ThemeStoreF32>);
+    });
+    // 渲染前替换 store action（组件经 selector 读 state 对象 → 必须渲染前替换才生效）
+    useThemeStore.setState({ setTrayHintDismissed: setTrayHintMock } as unknown as Partial<ThemeStoreF32>);
+    try {
+      const user = userEvent.setup();
+      renderSettings();
+      const sw = screen.getByTestId('settings-tray-hint-switch');
+      expect(sw).toBeChecked(); // 默认开（提示）
+      await user.click(sw); // 关闭 → 不再提示
+      expect(setTrayHintMock).toHaveBeenCalledWith(true);
+      await user.click(sw); // 再切回 → 恢复提示
+      expect(setTrayHintMock).toHaveBeenCalledWith(false);
+    } finally {
+      useThemeStore.setState({ setTrayHintDismissed: original } as unknown as Partial<ThemeStoreF32>);
+    }
+  });
+});
+
+/**
+ * F32 设置持久化（#152，spec §5.4，Q3=C）：default_words 卸载 flush + dirty 跟踪。
+ * GREEN 契约（settings.tsx GeneralPanel）：
+ * - onChange → 本地 state + dirty 标记（ref 镜像 valueRef/dirtyRef，评审 🟡-7）
+ * - 卸载（切分类/跳页）cleanup → dirty 时 flushDefaultWords()（fire-and-forget）
+ * - flush 经 useProjectStore.updateConfig（PATCH /api/v1/projects/{id} body {config}，
+ *   单请求 + 双 store 同步闭环，评审 🔴-2）；成功 → agent setConfig + 清 dirty + ok toast；
+ *   失败 → err toast + agent store 不被污染（缺陷 #4）+ dirty 保持
+ * - currentProjectId 变化 → 重读新项目 config.default_words + 清 dirty（缺陷 #2）
+ * - 无当前项目 → 不保存（评审 🟢）
+ * RED 预期：GREEN 前无卸载 flush / 无 project store 同步 / 失败路径先 setConfig 污染 →
+ * waitFor 超时 + 断言 FAIL。
+ */
+describe('设置页 — default_words 卸载 flush（F32 §5.4 RED 契约）', () => {
+  /** 切到「模型」分类（静态占位面板，无额外 apiFetch）→ GeneralPanel 卸载 */
+  async function switchToModels(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(within(screen.getByTestId('settings-nav')).getByRole('button', { name: '模型' }));
+  }
+
+  it('输入 5000 → 切分类（GeneralPanel 卸载）→ PATCH 已发出 + 返回后输入框值保留（issue 验收 1 跳页不丢）', async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    const input = screen.getByLabelText('新章节默认字数');
+    await user.clear(input);
+    await user.type(input, '5000');
+    await switchToModels(user);
+    // RED：blur 路径的 PATCH 由现状实现发出（可过），但 project store 不合并 →
+    // 下方两个断言 FAIL = RED 证据
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/projects/p1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.objectContaining({ config: expect.objectContaining({ default_words: 5000 }) }),
+        }),
+      );
+    });
+    // flush 成功 → project store 本地合并（remount 懒初始化读新值前提，评审 🔴-2）
+    await waitFor(() => {
+      expect(useProjectStore.getState().projects[0].config.default_words).toBe(5000);
+    });
+    // 返回常规 → 输入框值保留（懒初始化读 project store）
+    await user.click(within(screen.getByTestId('settings-nav')).getByRole('button', { name: '常规' }));
+    expect(screen.getByLabelText('新章节默认字数')).toHaveValue(5000);
+  });
+
+  it('输入 5000 → 再改 6000 → 立即卸载 → flush PATCH 携带 6000（ref 镜像契约，评审 🟡-7）', async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderSettings();
+    const input = screen.getByLabelText('新章节默认字数');
+    await user.clear(input);
+    await user.type(input, '5000');
+    await user.clear(input);
+    await user.type(input, '6000');
+    // ⚠️ 与任务书「切分类」表述的偏差：切分类会先触发 blur（既存 onBlur 保存路径同样携带
+    // 最新 state 6000）→ 该用例在 RED 阶段可能即绿（确认型），钉不住「卸载路径」。
+    // 改用 unmount()（React 卸载不派发 blur/focusout → 卸载 cleanup 是唯一 PATCH 来源）：
+    // cleanup 闭包若捕获陈旧 state（5000）→ 末次 PATCH 为 5000 → FAIL（ref 镜像契约精确命中）。
+    unmount();
+    await waitFor(() => {
+      const patchCalls = apiFetchMock.mock.calls.filter((c) => c[1]?.method === 'PATCH');
+      expect(patchCalls.length).toBeGreaterThanOrEqual(1);
+      const lastBody = patchCalls[patchCalls.length - 1][1]?.body as { config: { default_words?: number } };
+      expect(lastBody.config.default_words).toBe(6000);
+    });
+  });
+
+  it('flush PATCH 成功 → project store 本地 config.default_words 已更新（评审 🔴-2：remount 懒初始化读新值前提）', async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    const input = screen.getByLabelText('新章节默认字数');
+    await user.clear(input);
+    await user.type(input, '7000');
+    await switchToModels(user);
+    // GREEN 前 updateConfig 无 flush 调用方 → project store 恒不合并 → waitFor 超时 = RED
+    await waitFor(() => {
+      expect(useProjectStore.getState().projects[0].config.default_words).toBe(7000);
+    });
+  });
+
+  it('卸载 flush PATCH reject → err toast + agent store.config.default_words 未被污染（缺陷 #4 修复）', async () => {
+    apiFetchMock.mockRejectedValue(new Error('network down'));
+    const user = userEvent.setup();
+    renderSettings();
+    const input = screen.getByLabelText('新章节默认字数');
+    await user.clear(input);
+    await user.type(input, '5000');
+    await switchToModels(user);
+    await waitFor(() => {
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts.some((t) => t.type === 'err')).toBe(true);
+    });
+    // 现状 blur 路径 PATCH 前先 setConfig → 污染（default_words=5000）→ toBeUndefined FAIL = RED
+    expect(useAgentStore.getState().config.default_words).toBeUndefined();
+  });
+
+  it('currentProjectId 变化 → 输入框重读新项目 config.default_words + 清 dirty（缺陷 #2 修复）', async () => {
+    useProjectStore.setState({
+      projects: [
+        { id: 'p1', name: '青云志', genre: '玄幻', language: 'zh-CN', target_words: 800000, config: { default_words: 30000 }, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' },
+        { id: 'p2', name: '归墟记', genre: '仙侠', language: 'zh-CN', target_words: 600000, config: { default_words: 60000 }, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' },
+      ],
+      currentProjectId: 'p1',
+    });
+    renderSettings();
+    const input = screen.getByLabelText('新章节默认字数');
+    expect(input).toHaveValue(30000);
+    act(() => {
+      useProjectStore.getState().selectProject('p2');
+    });
+    // GREEN 前 useState 惰性初始化只跑一次 → 输入框仍 30000 → waitFor 超时 = RED
+    await waitFor(() => expect(input).toHaveValue(60000));
+  });
+
+  it('无当前项目：输入 → 卸载 → PATCH 未发出（评审 🟢；确认型——现状 blur 路径已有无项目守卫，预期 RED 阶段即绿）', async () => {
+    useProjectStore.setState({ projects: [], currentProjectId: null });
+    const user = userEvent.setup();
+    renderSettings();
+    const input = screen.getByLabelText('新章节默认字数');
+    await user.clear(input);
+    await user.type(input, '5000');
+    await switchToModels(user);
+    const patchCalls = apiFetchMock.mock.calls.filter(
+      (c) => c[0] === '/api/v1/projects/p1' && c[1]?.method === 'PATCH',
+    );
+    expect(patchCalls).toHaveLength(0);
   });
 });
