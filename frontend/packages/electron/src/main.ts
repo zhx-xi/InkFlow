@@ -20,8 +20,15 @@ import {
 
 /** 仓库根：out/ 位于 frontend/packages/electron/out，向上 4 级 */
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
-/** renderer 构建产物（frontend/packages/renderer/dist，§3.4 file:// 加载） */
-const RENDERER_DIST = path.resolve(__dirname, '..', '..', 'renderer', 'dist');
+/**
+ * renderer 构建产物（§3.4 file:// 加载）。
+ * ⚠️ 打包模式路径差异（rc.4 实测空白 #145）：asar 内 __dirname = app.asar/out，
+ *    renderer 实际在 app.asar/renderer/dist（files: ../renderer/dist/** 打包后相对 asar 根）；
+ *    dev 模式 out/ 在 packages/electron/out，renderer 在 packages/renderer/dist。
+ */
+const RENDERER_DIST = app.isPackaged
+  ? path.join(__dirname, '..', 'renderer', 'dist')           // app.asar/out/../renderer/dist
+  : path.resolve(__dirname, '..', '..', 'renderer', 'dist'); // dev: packages/renderer/dist
 
 /** spawn 后未收到 INKFLOW_READY 的启动超时（§3.2.2） */
 const READY_TIMEOUT_MS = 15_000;

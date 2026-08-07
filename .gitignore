@@ -6,6 +6,9 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+# ⚠️ electron-builder 图标资源（#145 修复）：build/ 整体忽略但 exe 图标必须入库
+!frontend/packages/electron/build/
+!frontend/packages/electron/build/icon.ico
 *.egg
 .venv/
 # venv 残缺残留外壳（.venv-broken-* 等，见 #123）
