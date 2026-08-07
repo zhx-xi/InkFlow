@@ -5,7 +5,7 @@
 > **关联 Issues**: [#42](https://github.com/zhx-xi/InkFlow/issues/42)
 > **依赖**: F1 ✅（前置）；F2（边界声明，非硬依赖，见 §11）；F5 — **不依赖**（F12 无 LLM，见 §1/§5）
 > **参考 ADR**: [ADR-001](../../adr/ADR-001.md) (模块化单体), [ADR-002](../../adr/ADR-002.md) (六边形分层), [ADR-003](../../adr/ADR-003.md) (Repository), [ADR-004](../../adr/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/ADR-007v2.md) (包结构), [ADR-010](../../adr/ADR-010.md) (上下文分层), [ADR-012](../../adr/ADR-012.md) (错误处理), [ADR-016](../../adr/ADR-016.md) (loguru), [ADR-017](../../adr/ADR-017.md) (CI 门禁), [ADR-018](../../adr/ADR-018.md) (测试分层), [ADR-019](../../adr/ADR-019.md) (版本里程碑)
-> **状态**: 待实现 🔲
+> **状态**: ✅ 已实现（PR #63）
 
 ---
 

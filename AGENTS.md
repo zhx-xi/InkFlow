@@ -28,7 +28,7 @@
 | 维度 | 说明 |
 |------|------|
 | **团队** | 单人开发 |
-| **时间线** | SemVer 版本里程碑（ADR-019 v4）：0.1.0 ✅ → 0.2.0 ✅（F9-F16 已交付）→ 0.3.0 GUI（F19 提前 + F23 SSE 提前）→ 0.3.1 质量加固（#86 LLM 修复 ✅ / #87 状态重构 ✅ / #92 真实 AI CI ✅ / #104 覆盖率 ✅）→ 0.4.0 打包 → 0.5.0 会话+daemon → 0.6.0 导出+搜索 → **1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）** → **2.0.0 = 云端**；对应 PRD W10-W24 周计划（明细见下方里程碑表） |
+| **时间线** | SemVer 版本里程碑（ADR-019 v4）：0.1.0 ✅ → 0.2.0 ✅（F9-F16 已交付）→ 0.3.0 ✅ GUI（F19 提前 + F23 SSE 提前）→ 0.3.1 ✅ 质量加固（#86 LLM 修复 / #87 状态重构 / #92 真实 AI CI / #104 覆盖率）→ 0.4.0 ✅ 打包 + GUI 演进（v0.4.0 2026-08-07 发布）→ 0.5.0 会话+daemon → 0.6.0 导出+搜索 → **1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）** → **2.0.0 = 云端**；对应 PRD W10-W24 周计划（明细见下方里程碑表） |
 | **部署模式** | 本地优先（SQLite，免认证）；**2.0.0 云端里程碑**：云存档/异地写作（PostgreSQL + JWT + BYOK，无 CRDT），GUI/CLI 远程模式连接云端 |
 | **多界面** | GUI（Electron，React 复用）+ CLI（Typer）+ REST API（FastAPI：本地内核通用通信契约，亦为云端用户 API 同一契约）+ MCP Server（stdio 直连 domain）（+ 云端 Web/Admin 后台） |
 | **工作流** | SDD + TDD：先写 spec → 再写测试（RED）→ 写代码（GREEN）→ 重构 |
@@ -40,9 +40,9 @@
 |------|------|
 | 0.1.0 ✅ | F1-F8 + 云端 Protocol（Phase 1 Gate 7/7，已交付） |
 | 0.2.0 ✅ | F9-F16 创作工具链（F9-F16 ✅ 已交付，PR #56/#57/#58/#63/#64/#72/#74/#75） |
-| 0.3.0 | F19 GUI（Electron 壳 + 内核进程化 + React 渲染层）· F23 SSE 流式 ✅（PR #83，已交付）——F19 子任务 A 内核进程化 ✅（PR #85，#77）· 子任务 B Electron 壳 ✅（PR #95，#78）· 子任务 C React 渲染层 ✅（PR #97，#79）· 子任务 D 导航重构+设置页框架 ✅（PR #120/#121，#105）· 子任务 E 模型管理页 ✅（PR #122，#106：ProviderConfig 注册表 + 模型管理页 + 角色绑定只读区 + 顶栏 Select + 自绘窗口按钮，覆盖率 99.27%）· 模型管理修复 ✅（PR #131/#132，#125/#126：addModel rethrow + 部分失败保留草稿 + builtin_key 判重防 seed 复活，2026-08-06）· 子任务 F Agent 模板 ✅（PR #135，#107：AgentTemplate 实体（引用式）+ 角色独立温度链（0.7 哨兵移除）+ 风险确认框 + 新建项目模板下拉，三层测试全绿） |
-| 0.3.1 | 质量加固补丁（milestone #9）：#86 LLM 客户端修复 ✅（PR #108：timeout→request_timeout + zhipu 注册 + audit 路由）· #87 LangGraph 状态重构 ✅（PR #110：StateGraph(dict)→TypedDict+reducer，节点增量返回，type: ignore 清零）· #92 真实 AI CI job ✅（PR #111：e2e-ai-backend，label run-ai-tests 触发 + workflow_dispatch 兜底；tests/e2e/ T1+T2，缺 key 永远 skip；⚠️ 真实验证需先配 LLM_API_KEY secret）· #104 覆盖率补全 ✅（PR #114/#115/#116/#117：三层补测至后端 98.90% 行/96.32% 分支、前端 99.11%/92.51%、API 端点 100%、E2E 三页；CI 门槛 98.5/95.0 常态化，口径见 ADR-027） |
-| 0.4.0 ✅ | F19 打包分发 ✅（PR #144，#48：B+ chromadb 进包 + API embedding 装配 + 数据目录 sys.frozen→%APPDATA% + PyInstaller 内核 onedir 142MB + electron-builder NSIS 145.6MB/便携 ZIP 177.4MB + release.yml tag v* 自动发布；发布门禁 #145 ✅：rc.1-rc.6 迭代修复（artifact 结构/GH_TOKEN/版本注入/asar renderer 路径/品牌图标）后 **v0.4.0 正式发布 2026-08-07**（exe 144.3MB + zip 175.5MB）；遗留：设置持久化 #152（0.5.0）） |
+| 0.3.0 ✅ | F19 GUI（Electron 壳 + 内核进程化 + React 渲染层）· F23 SSE 流式（PR #83，#50）——F19 子任务 A 内核进程化（PR #85，#77）· 子任务 B Electron 壳（PR #95，#78）· 子任务 C React 渲染层（PR #97，#79）· 子任务 D 视觉打磨（PR #98 直接实现，无独立 PR）· 交互反馈定稿（#99 spec §6，实现并入 0.4.0 #105）· Agent 约束体系（#88） |
+| 0.3.1 ✅ | 质量加固补丁（milestone #9）：#86 LLM 客户端修复（PR #108：timeout→request_timeout + zhipu 注册 + audit 路由）· #87 LangGraph 状态重构（PR #110：StateGraph(dict)→TypedDict+reducer，节点增量返回，type: ignore 清零）· #92 真实 AI CI job（PR #111：e2e-ai-backend，label run-ai-tests 触发 + workflow_dispatch 兜底；tests/e2e/ T1+T2，缺 key 永远 skip；⚠️ 真实验证需先配 LLM_API_KEY secret）· #104 覆盖率补全（PR #114/#115/#116/#117：三层补测至后端 98.90% 行/96.32% 分支、前端 99.11%/92.51%、API 端点 100%、E2E 三页；CI 门槛 98.5/95.0 常态化，口径见 ADR-027） |
+| 0.4.0 ✅ | F19 打包分发（PR #144，#48：B+ chromadb 进包 + API embedding 装配 + 数据目录 sys.frozen→%APPDATA% + PyInstaller 内核 onedir 142MB + electron-builder NSIS 145.6MB/便携 ZIP 177.4MB + release.yml tag v* 自动发布；发布门禁 #145 ✅：rc.1-rc.6 迭代修复（artifact 结构/GH_TOKEN/版本注入/asar renderer 路径/品牌图标）后 **v0.4.0 正式发布 2026-08-07**（exe 144.3MB + zip 175.5MB））+ GUI 演进——子任务 D 导航重构+设置页框架（PR #120/#121，#105，承接 #99 交互反馈实现）· 子任务 E 模型管理页（PR #122，#106：ProviderConfig 注册表 + 模型管理页 + 角色绑定只读区 + 顶栏 Select + 自绘窗口按钮，覆盖率 99.27%）· 模型管理修复（PR #131/#132，#125/#126：addModel rethrow + 部分失败保留草稿 + builtin_key 判重防 seed 复活，2026-08-06）· 子任务 F Agent 模板（PR #135，#107：AgentTemplate 实体（引用式）+ 角色独立温度链（0.7 哨兵移除）+ 风险确认框 + 新建项目模板下拉，三层测试全绿）· 架构图 + ChatLiteLLM 残留清理（PR #134，#134 文档同步）· CI uv cache 修复 + job 分批（PR #128，#128）；遗留：设置持久化 #152（0.5.0） |
 | 0.5.0 | F24 会话 · F25 daemon |
 | 0.6.0 | F21 导出 · F22 全文搜索 |
 | 1.0.0 🎉 | **本地完全可用 = CLI + GUI + skills + MCP** + 跨平台 + 文档 + 全量验收 |
@@ -69,7 +69,7 @@ F1 项目/书籍 · F2 章节 · F3 写作管道 · F4 Agent 编排 · F5 LLM Pr
 
 ### Phase 3 功能（F18-F25，2026-08-02 形态决策后归属调整）
 
-F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI / 0.4.0 打包，子任务 A ✅ PR #85 / B ✅ PR #95 / C ✅ PR #97 / D ✅ PR #120/#121 / E ✅ PR #122）· F20 MCP（1.0.0）· F21 导出（0.6.0）· F22 搜索（0.6.0）· F23 SSE ✅（PR #83）· F24 会话（0.5.0）· F25 daemon（0.5.0）
+F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI ✅ 子任务 A PR #85 / B PR #95 / C PR #97；0.4.0 演进 ✅ 子任务 D 导航重构 PR #120/#121 / E 模型管理 PR #122 / F Agent 模板 PR #135 + 打包 PR #144）· F20 MCP（1.0.0）· F21 导出（0.6.0）· F22 搜索（0.6.0）· F23 SSE ✅（PR #83）· F24 会话（0.5.0）· F25 daemon（0.5.0）
 
 > F17 空置（PRD §6.2 标题残留编号）。F18-F25 版本归属以 ADR-019 v4 为准（PRD §6.3/6.4 原归属已被形态决策重排）。
 
@@ -197,6 +197,9 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 | [ADR-023](adr/ADR-023.md) | **MCP Server**：stdio + SDK 直连 domain |
 | [ADR-024](adr/ADR-024.md) | **云架构**：双前缀（user/admin）+ owner_id 隔离 + 拆分预留 |
 | [ADR-025](adr/ADR-025.md) | **依赖锁定**：uv + uv.lock（Python）+ pnpm-lock.yaml 约定（前端） | 供应链加固：全传递依赖 sha256 锁定；CI `uv sync --frozen` 可复现构建 |
+| [ADR-026](adr/ADR-026.md) | **真实 AI CI**：e2e-ai-backend（label 触发 + workflow_dispatch 兜底） | 0.3.1 已实现（PR #111）；需配 LLM_API_KEY secret |
+| [ADR-027](adr/ADR-027.md) | **测试覆盖率门禁**：三层全覆盖（后端 98.5/95.0 + 前端 vitest thresholds） | 0.3.1 已实现（PR #114-#117）；口径 = XML 权威 + RAG/Protocol 排除 |
+| [ADR-028](adr/ADR-028.md) | **E2E 按页面域拆分**：6 spec + 6 job（e2e-shell 提前 required） | 0.5.0 起实施（#139-#143） |
 
 **🔴 ADR 治理规则（所有 AI 会话必须遵守）**：
 

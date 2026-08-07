@@ -4,7 +4,7 @@
 > **所属阶段**: Phase 1 — 核心引擎
 > **关联 Issues**: [#4](https://github.com/zhx-xi/InkFlow/issues/4)
 > **依赖**: F1 (project_service) ✅, F3 (writing_service), F5 (llm_service)
-> **状态**: 待实现
+> **状态**: ✅ 已实现（PR #22）
 
 ---
 

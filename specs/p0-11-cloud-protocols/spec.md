@@ -6,7 +6,7 @@
 > **关联 Issues**: [#34](https://github.com/zhx-xi/InkFlow/issues/34)（P0-11 云端接口 Protocol 定义）；[#65](https://github.com/zhx-xi/InkFlow/issues/65)（2026-08-02 产品形态批量拍板，v1.1 语义修订依据）
 > **依赖**: 无（纯接口定义，不依赖任何已实现模块）
 > **参考 ADR**: [ADR-001](../../adr/ADR-001.md)（模块化单体 + 接口隔离）, [ADR-002](../../adr/ADR-002.md)（六边形分层）, [ADR-024](../../adr/ADR-024.md)（云架构拓扑）
-> **状态**: 待实现 🔲
+> **状态**: ✅ 已实现（PR #37）
 
 ---
 

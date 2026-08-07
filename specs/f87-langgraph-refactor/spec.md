@@ -6,6 +6,7 @@
 **类型**: 内部重构（无新用户功能，行为不变）
 **分支**: `feat/f87-langgraph-refactor`
 **依据**: AGENTS.md §5.1（spec 是唯一真相来源）· ADR-015（LangChain 全家桶，本重构不改变技术选型）· inkflow-dev `references/langchain-langgraph-stack.md` §6.2（方案已实测）
+**状态**: ✅ 已实现（PR #110）
 
 ## 1. 概述
 
