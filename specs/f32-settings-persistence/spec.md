@@ -2,7 +2,7 @@
 
 > **Spec 版本**: 1.1 | **日期**: 2026-08-08 | **依据**: Issue #152（2026-08-07 用户拍板范围 ①②③）+ #167 归口（2026-08-07 评论区：关闭行为设置持久化归口 + 首次托盘提示开关登记 #167 Q3=A）、ADR-030 ④、Constitution P1-P6（P2 解耦 / P5 YAGNI）
 >
-> **Spec 变更（v1.0 → v1.1）**: 评审有条件通过（2 🔴 + 4 🟡 已修订：theme 覆盖规则保留本地值 / flush 同步 project store / 测试文件 MODIFY 与路径修正 / F31 tray-hint 无消费端表述 / E2E 隔离 / ref 镜像）+ **用户拍板 Q1=A（theme 全局粒度）/ Q2=A（key-value app_settings 表）/ Q3=C（综合守卫：default_words 卸载 flush + 对话框显式语义）**（2026-08-08）
+> **Spec 变更（v1.0 → v1.1）**: 评审有条件通过（2 🔴 + 4 🟡 已修订：theme 覆盖规则保留本地值 / flush 同步 project store / 测试文件 MODIFY 与路径修正 / F31 tray-hint 无消费端表述 / E2E 隔离 / ref 镜像）+ **用户拍板 Q1=A（theme 全局粒度）/ Q2=A（key-value app_settings 表）/ Q3=C（综合守卫：default_words 卸载 flush + 对话框显式语义）**（2026-08-08）；**实现偏差回写（GREEN 2026-08-08）**：SettingsKey 改 StrEnum（仓库惯例 RUFF UP042）、_merge 单字段校验改 strict=True（Pydantic lax bool 强转防御）——见 §2.2/§2.5 代码块留痕
 >
 > **所属阶段**: 0.5.0（#152 设置持久化，路线图估算 3.5-5 人天；theme 后端化 +2 人天已含）
 >
@@ -109,7 +109,13 @@ CloseBehavior = Literal["tray", "quit"]
 
 
 class SettingsKey(str, Enum):
-    """设置键枚举 — app_settings 表 key 列的稳定标识（新增设置项在此扩展）。"""
+    """设置键枚举 — app_settings 表 key 列的稳定标识（新增设置项在此扩展）。
+
+    ⚠️ 实现偏差（Codex B1a 2026-08-08，父侧裁定）：GREEN 实现改为
+    `enum.StrEnum`（仓库惯例：AGENTS.md §6.1 + Ruff UP042 启用规则，
+    domain 层全部枚举均 StrEnum）——Python 3.11+ 下与 str, Enum 语义
+    完全等价，测试契约不依赖继承形态。spec 保留原样留痕。
+    """
 
     THEME = "theme"
     BG = "bg"
@@ -309,6 +315,11 @@ class SettingsService:
                 parsed = json.loads(raw)
                 # 评审 🟢 修订：合法 JSON 但类型不匹配（手改库 theme:'true'）也会使
                 # 最终 AppSettings 构造失败 → 单字段校验防御（与脏 JSON 同级忽略）
+                # ⚠️ 实现偏差（Codex B1a 2026-08-08，父侧裁定）：Pydantic v2 lax 模式
+                # 会把字符串 'yes' 强转 True（bool 宽松强制）→ 单字段校验改为
+                # `AppSettings.model_validate({key: parsed}, strict=True)`——strict 模式
+                # 禁止宽松转换，类型不匹配即忽略（测试契约 test_valid_json_wrong_type_ignored
+                # 强制此语义；spec 保留原样留痕）
                 AppSettings(**{key: parsed})
                 merged[key] = parsed
             except Exception:
