@@ -1,9 +1,5 @@
 /**
- * Electron 壳 E2E 冒烟契约（#78，spec §3.6/§3.7：启动闭环 / 崩溃拉起 / 退出回收）
- *
- * 【待 GREEN】RED 阶段仅编写：out/main.js 由 Codex 实现 src/main.ts 后产出，
- * 在此之前运行必然失败（electron 无法加载不存在的入口）。
- * 运行方式：pnpm --filter electron test:e2e（本地手动，不进常规 CI，spec §3.6）
+ * Electron 壳 E2E 冒烟契约（#78；ADR-028 E1 拆分：壳契约专用 spec，CI 第一批恒跑 required）
  */
 import path from 'node:path';
 import {
@@ -82,7 +78,7 @@ test('启动闭环：窗口出现（title 含 InkFlow）+ 内核进程存在 + /
       .poll(
         () =>
           window.evaluate(() => {
-            const img = document.querySelector('[data-testid="app-nav"] img');
+            const img = document.querySelector<HTMLImageElement>('[data-testid="app-nav"] img');
             return img
               ? { w: img.naturalWidth, src: img.getAttribute('src') ?? '' }
               : null;
@@ -94,7 +90,7 @@ test('启动闭环：窗口出现（title 含 InkFlow）+ 内核进程存在 + /
         src: expect.any(String),
       });
     const logo = await window.evaluate(() => {
-      const img = document.querySelector('[data-testid="app-nav"] img');
+      const img = document.querySelector<HTMLImageElement>('[data-testid="app-nav"] img');
       return img
         ? { w: img.naturalWidth, src: img.getAttribute('src') ?? '' }
         : null;
