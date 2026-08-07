@@ -43,7 +43,7 @@
 | 0.3.0 ✅ | F19 GUI（Electron 壳 + 内核进程化 + React 渲染层）· F23 SSE 流式（PR #83，#50）——F19 子任务 A 内核进程化（PR #85，#77）· 子任务 B Electron 壳（PR #95，#78）· 子任务 C React 渲染层（PR #97，#79）· 子任务 D 视觉打磨（PR #100-103，#98：Radix 控件 + 品牌接入 + 空态 + 菜单栏移除 + 顶栏 logo 修复链）· 交互反馈定稿（#99 spec §6，实现并入 0.4.0 #105）· Agent 约束体系（PR #89，#88） |
 | 0.3.1 ✅ | 质量加固补丁（milestone #9）：#86 LLM 客户端修复（PR #108：timeout→request_timeout + zhipu 注册 + audit 路由）· #87 LangGraph 状态重构（PR #110：StateGraph(dict)→TypedDict+reducer，节点增量返回，type: ignore 清零）· #92 真实 AI CI job（PR #111：e2e-ai-backend，label run-ai-tests 触发 + workflow_dispatch 兜底；tests/e2e/ T1+T2，缺 key 永远 skip；⚠️ 真实验证需先配 LLM_API_KEY secret）· #104 覆盖率补全（PR #114/#115/#116/#117：三层补测至后端 98.90% 行/96.32% 分支、前端 99.11%/92.51%、API 端点 100%、E2E 三页；CI 门槛 98.5/95.0 常态化，口径见 ADR-027） |
 | 0.4.0 ✅ | F19 打包分发（PR #144，#48：B+ chromadb 进包 + API embedding 装配 + 数据目录 sys.frozen→%APPDATA% + PyInstaller 内核 onedir 142MB + electron-builder NSIS 145.6MB/便携 ZIP 177.4MB + release.yml tag v* 自动发布；发布门禁 #145 ✅：rc.1-rc.6 迭代修复（artifact 结构/GH_TOKEN/版本注入/asar renderer 路径/品牌图标）后 **v0.4.0 正式发布 2026-08-07**（exe 144.3MB + zip 175.5MB））+ GUI 演进——子任务 D 导航重构+设置页框架（PR #120/#121，#105，承接 #99 交互反馈实现）· 子任务 E 模型管理页（PR #122，#106：ProviderConfig 注册表 + 模型管理页 + 角色绑定只读区 + 顶栏 Select + 自绘窗口按钮，覆盖率 99.27%）· 模型管理修复（PR #131/#132，#125/#126：addModel rethrow + 部分失败保留草稿 + builtin_key 判重防 seed 复活，2026-08-06）· 子任务 F Agent 模板（PR #135，#107：AgentTemplate 实体（引用式）+ 角色独立温度链（0.7 哨兵移除）+ 风险确认框 + 新建项目模板下拉，三层测试全绿）· 架构图 + ChatLiteLLM 残留清理（PR #134，#134 文档同步）· CI uv cache 修复 + job 分批（PR #128，#128）；遗留：设置持久化 #152（0.5.0） |
-| 0.5.0 | F24 会话 · F25 daemon |
+| 0.5.0 | F24 会话 · E2E 增强（#139/#140）· 设置持久化（#152） |
 | 0.6.0 | F21 导出 · F22 全文搜索 |
 | 1.0.0 🎉 | **本地完全可用 = CLI + GUI + skills + MCP** + 跨平台 + 文档 + 全量验收 |
 | 2.0.0 ☁️ | 云端：F18 云 Web（移出单机）· 用户 API · Admin 后台 · GUI 远程模式 |
@@ -67,11 +67,11 @@ F1 项目/书籍 · F2 章节 · F3 写作管道 · F4 Agent 编排 · F5 LLM Pr
 
 > 模块类型谱系：F9/F10 提取型 → F11 生成型 → F12 确定性检查型（无 LLM）→ F13 状态追踪+F6 注入型（无 LLM，首个自带 F6 数据源替换）→ F14 横切收敛型（门面：收敛 F9-F13 管线 + 增量提取 + RAG 首次落地 ADR-013）→ F15 横切审计型（纯消费者：只读聚合 4 维档案 + 跨模块引用，零跨模块 MODIFY）→ F16 确定性文本分析型（无 LLM 主体 + LLM 深度分析可选 + jieba 增强：文本统计特征计算，StyleReport 瞬态输出，F14 STYLE 槽位注册 handler 接口零变更）→ **F23 传输增强型（零新实体：WritingStreamEvent 判别联合 DTO + service 流式方法 + API SSE 端点 + CLI 默认流式，SSE 一条代码路径两用 ADR-021）**。后续模块实施时先对照对应变体样板（`specs/f14-extraction-service/spec.md` 为横切模板；`specs/f16-style-service/spec.md` 为确定性文本分析模板；`specs/f23-sse-stream/spec.md` 为传输增强模板；F13 另含 F6 集成模式 `specs/f13-foreshadowing-service/spec.md` §5）。
 
-### Phase 3 功能（F18-F25，2026-08-02 形态决策后归属调整）
+### Phase 3 功能（F18-F24，2026-08-02 形态决策后归属调整）
 
-F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI ✅ 子任务 A PR #85 / B PR #95 / C PR #97；0.4.0 演进 ✅ 子任务 D 导航重构 PR #120/#121 / E 模型管理 PR #122 / F Agent 模板 PR #135 + 打包 PR #144）· F20 MCP（1.0.0）· F21 导出（0.6.0）· F22 搜索（0.6.0）· F23 SSE ✅（PR #83）· F24 会话（0.5.0）· F25 daemon（0.5.0）
+F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI ✅ 子任务 A PR #85 / B PR #95 / C PR #97；0.4.0 演进 ✅ 子任务 D 导航重构 PR #120/#121 / E 模型管理 PR #122 / F Agent 模板 PR #135 + 打包 PR #144）· F20 MCP（1.0.0）· F21 导出（0.6.0）· F22 搜索（0.6.0）· F23 SSE ✅（PR #83）· F24 会话（0.5.0）· ~~F25 daemon~~（移除，ADR-029：伪需求，真实意图=外部 agent 经 MCP/skills 调用，由 F19/F20/ADR-022 覆盖）
 
-> F17 空置（PRD §6.2 标题残留编号）。F18-F25 版本归属以 ADR-019 v4 为准（PRD §6.3/6.4 原归属已被形态决策重排）。
+> F17 空置（PRD §6.2 标题残留编号）。F18-F24 版本归属以 ADR-019 v5 为准（PRD §6.3/6.4 原归属已被形态决策重排）。
 
 ---
 
