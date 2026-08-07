@@ -64,6 +64,14 @@ ipcRenderer.on(
             };
           },
         }),
+        // #167 F31：关闭行为设置（spec f31 §2.3）——托盘常驻设置通道
+        settings: Object.freeze({
+          getCloseBehavior: (): Promise<'tray' | 'quit'> =>
+            ipcRenderer.invoke('settings:get-close-behavior'),
+          setCloseBehavior: (value: 'tray' | 'quit'): Promise<void> =>
+            ipcRenderer.invoke('settings:set-close-behavior', value),
+          dismissTrayHint: (): Promise<void> => ipcRenderer.invoke('settings:dismiss-tray-hint'),
+        }),
       })
     );
     dispatchApiReady();

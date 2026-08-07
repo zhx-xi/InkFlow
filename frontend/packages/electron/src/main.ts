@@ -1,20 +1,34 @@
 /**
  * Electron 主进程（#78 Electron 壳）：内核进程生命周期管理 + BrowserWindow 加载 renderer 构建产物。
+ * F31 #167 扩展：托盘常驻（关闭拦截状态机 / Tray 菜单 / 单实例锁 / 内核复用 kernel.json 闭环）。
  *
  * 壳层保持薄（ADR-020/021 硬约束）：零业务逻辑、零业务 API 调用，一切业务通信由
  * renderer 直接走 REST + SSE（baseURL/token 经 preload 注入）。
  * 契约来源：specs/f19-gui/spec.md §3.2（生命周期）/ §3.3（安全基线）/ §3.4（renderer 契约）。
  */
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  nativeImage,
+  Tray,
+  type MenuItemConstructorOptions,
+} from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import {
+  formatKernelMenuLabel,
+  MAX_CONSECUTIVE_FAILURES,
+  nextBackoffDelayMs,
   parseReadyLine,
   resolveKernelCommand,
-  nextBackoffDelayMs,
-  MAX_CONSECUTIVE_FAILURES,
+  tryReuseKernel,
+  writeKernelStateFile,
   type KernelInfo,
 } from './kernel';
 
@@ -64,6 +78,17 @@ let handlingFailure = false;
 /** 退出流程标志：停止一切重拉 */
 let stopping = false;
 let quitInProgress = false;
+/** 关闭行为设置（spec f31 §2.2）：内存态，默认最小化到托盘；#152 合入后切换持久化 */
+type CloseBehavior = 'tray' | 'quit';
+let closeBehavior: CloseBehavior = 'tray';
+/** 首次托盘提示「不再提示」（内存态，重启恢复；spec f31 §5.2） */
+let trayHintDismissed = false;
+/** 托盘实例（模块级保存，退出时 destroy 防 Windows 托盘残留图标；spec f31 §5.6） */
+let tray: Tray | null = null;
+/** kernel.json 状态文件路径（spec f31 §5.4）：%APPDATA%\InkFlow\kernel.json；测试环境为 null 时跳过闭环 */
+let kernelStatePath: string | null = null;
+/** __trayInfo.windowVisible 数据源：hide/show 事件驱动维护（spec f31 §9） */
+let trayInfoWindowVisible = true;
 /** 已注册的 DevTools 快捷键集合（幂等去重，spec §5.2.9） */
 const registeredDevToolsAccelerators = new Set<string>();
 
@@ -77,6 +102,39 @@ function updateKernelInfoHook(): void {
     port: kernelInfo.port,
     token: kernelInfo.token,
   };
+}
+
+/** dev 测试钩子（spec f31 §9）：__trayInfo 跟随 hide/show/设置变更刷新 */
+function updateTrayInfoHook(): void {
+  if (app.isPackaged) {
+    return;
+  }
+  (globalThis as unknown as {
+    __trayInfo?: { created: boolean; closeBehavior: string; windowVisible: boolean };
+  }).__trayInfo = {
+    created: tray !== null,
+    closeBehavior,
+    windowVisible: trayInfoWindowVisible,
+  };
+}
+
+/**
+ * kernel.json 状态文件路径（spec f31 §5.4）。
+ * - 打包：%APPDATA%\InkFlow\kernel.json（与 Python frozen 侧 config.data_dir 一致）
+ * - dev：backend/data/kernel.json（与 Python dev 侧 data_dir=./data 对齐——项目惯例
+ *   CLI/内核从 backend 目录启动（inkflow-workflow），ensure_kernel 写 backend/data；
+ *   GUI 复用必须读同一文件，否则 CLI 拉起的常驻内核 GUI 发现不了（F30 dev 相对路径坑）
+ * 测试 mock 无 app.getPath → 返回 null（跳过双向闭环，确定性回落 spawnKernel）。
+ */
+function resolveKernelStatePath(): string | null {
+  try {
+    if (app.isPackaged) {
+      return path.join(app.getPath('appData'), 'InkFlow', 'kernel.json');
+    }
+    return path.join(REPO_ROOT, 'backend', 'data', 'kernel.json');
+  } catch {
+    return null;
+  }
 }
 
 /** INKFLOW_READY 后向 renderer 注入 {baseURL, token}（spec §3.4，preload 幂等重暴露） */
@@ -287,13 +345,23 @@ function spawnKernel(): void {
     }
     // 内核实际 pid 以 child.pid 为准（拿不到再用解析值）
     const effectivePid = child.pid ?? parsed.pid;
-    kernelInfo = { ...parsed, pid: effectivePid };
+    const readyInfo: KernelInfo = { ...parsed, pid: effectivePid };
+    kernelInfo = readyInfo;
     if (startupWatchdog) {
       clearTimeout(startupWatchdog);
       startupWatchdog = null;
     }
-    console.log(`[kernel] ready port=${kernelInfo.port} pid=${kernelInfo.pid}`);
+    console.log(`[kernel] ready port=${readyInfo.port} pid=${readyInfo.pid}`);
     updateKernelInfoHook();
+    // 双向闭环（spec f31 §5.4）：GUI 拉起的常驻内核写 kernel.json，供 CLI/MCP/skills 复用发现；
+    // 写入失败降级（%APPDATA% 只读等）→ 记录并继续（不影响 GUI 自用内核）
+    if (kernelStatePath) {
+      try {
+        writeKernelStateFile(kernelStatePath, readyInfo);
+      } catch (err) {
+        console.error('[kernel] write kernel.json failed:', err);
+      }
+    }
     sendReadyToRenderer();
     startHealthCheck();
   });
@@ -397,6 +465,24 @@ async function shutdown(): Promise<void> {
   app.exit(0);
 }
 
+/**
+ * 内核连接（spec f31 §5.1/§5.3）：先 tryReuseKernel（kernel.json + pid 存活 + /health 200），
+ * 成功 → 直接连接不 spawn；失败 → #78 既有 spawnKernel。
+ */
+async function connectKernel(): Promise<void> {
+  if (kernelStatePath) {
+    const reused = await tryReuseKernel(kernelStatePath);
+    if (reused) {
+      kernelInfo = reused;
+      updateKernelInfoHook();
+      sendReadyToRenderer();
+      startHealthCheck();
+      return;
+    }
+  }
+  spawnKernel();
+}
+
 /** BrowserWindow：安全基线 webPreferences（§3.3）+ 加载 renderer 构建产物（§3.4） */
 /**
  * #106 用户拍板：自绘窗口控制按钮（官方 titleBarOverlay 颜色联动不可靠）。
@@ -411,6 +497,21 @@ function registerWindowControlsHandlers(): void {
     else mainWindow.maximize();
   });
   ipcMain.on('window:close', () => mainWindow?.close());
+}
+
+/** 关闭行为设置 IPC（spec f31 §2.3）：get/set/dismiss 三通道，whenReady 内幂等注册一次 */
+function registerSettingsHandlers(): void {
+  ipcMain.handle('settings:get-close-behavior', () => closeBehavior);
+  ipcMain.handle('settings:set-close-behavior', (_event, value: unknown) => {
+    if (value !== 'tray' && value !== 'quit') {
+      throw new Error(`invalid close behavior: ${String(value)}`);
+    }
+    closeBehavior = value;
+    updateTrayInfoHook();
+  });
+  ipcMain.handle('settings:dismiss-tray-hint', () => {
+    trayHintDismissed = true;
+  });
 }
 
 function createMainWindow(): void {
@@ -464,9 +565,88 @@ function createMainWindow(): void {
     }
   });
 
+  // 关闭拦截状态机（spec f31 §5.2）：tray 模式 → preventDefault + hide（内核保持）+ 首次提示；
+  // quit 模式 → 放行（window-all-closed → shutdown，#78 路径）
+  win.on('close', (event) => {
+    if (closeBehavior === 'tray' && !quitInProgress) {
+      event.preventDefault();
+      win.hide();
+      trayInfoWindowVisible = false;
+      updateTrayInfoHook();
+      if (!trayHintDismissed) {
+        win.webContents.send('inkflow:tray-hint');
+      }
+    }
+  });
+
   void win.loadFile(path.join(RENDERER_DIST, 'index.html')).catch((err: unknown) => {
     console.error('[main] renderer load failed（请先构建 renderer：pnpm --filter renderer build）:', err);
   });
+}
+
+/** 托盘「打开主窗口」：窗口被销毁（异常）则重建（spec f31 §5.2 边界 #11） */
+function showWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createMainWindow();
+    return;
+  }
+  mainWindow.show();
+  mainWindow.focus();
+  trayInfoWindowVisible = true;
+  updateTrayInfoHook();
+}
+
+/** 托盘「退出」= 真退出：destroy 防托盘残留 → shutdown（stopKernel 完整回收 + app.exit(0)） */
+function quitFromTray(): void {
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
+  void shutdown();
+}
+
+/** Tray 创建 + 菜单（spec f31 §5.6）：dev/生产都创建；创建失败降级（不阻断窗口/内核） */
+function createTray(): void {
+  // 防御：异常环境（测试 mock 缺 Tray/buildFromTemplate 等）下托盘缺失不阻断启动
+  if (typeof Tray !== 'function' || typeof Menu.buildFromTemplate !== 'function') {
+    return;
+  }
+  try {
+    const iconPath = path.join(__dirname, '..', 'inkflow-icon-256.png');
+    const instance = new Tray(nativeImage.createFromPath(iconPath));
+    const template: MenuItemConstructorOptions[] = [
+      { label: '打开主窗口', click: showWindow },
+      { label: formatKernelMenuLabel(kernelInfo), enabled: false },
+      { type: 'separator' },
+      { label: '退出', click: quitFromTray },
+    ];
+    instance.setContextMenu(Menu.buildFromTemplate(template));
+    instance.on('click', showWindow); // Windows 惯例：点击托盘图标打开主窗口
+    tray = instance;
+    trayInfoWindowVisible = true;
+    updateTrayInfoHook();
+  } catch (err) {
+    console.error('[main] tray creation failed:', err);
+  }
+}
+
+/** dev 测试钩子（spec f31 §9）：__trayActions 直调主进程动作（CI 无真实托盘交互） */
+function exposeTrayDevHooks(): void {
+  updateTrayInfoHook();
+  (globalThis as unknown as {
+    __trayActions?: {
+      show: () => void;
+      quit: () => void;
+      setCloseBehavior: (value: CloseBehavior) => void;
+    };
+  }).__trayActions = {
+    show: showWindow,
+    quit: quitFromTray,
+    setCloseBehavior: (value: CloseBehavior) => {
+      closeBehavior = value;
+      updateTrayInfoHook();
+    },
+  };
 }
 
 /** 开发模式 DevTools 快捷键回调：打开聚焦窗口 DevTools，无聚焦窗口时静默跳过 */
@@ -514,16 +694,51 @@ export function setupAppMenu(isPackaged: boolean): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // 单实例锁最先执行（spec f31 §5.5）：失败 → 静默让位已有实例（不 spawn、不建窗、不弹错）
+  // （typeof 守卫：部分测试 mock 未提供该方法，视为单实例获取成功）
+  const gotLock =
+    typeof app.requestSingleInstanceLock === 'function' ? app.requestSingleInstanceLock() : true;
+  if (!gotLock) {
+    app.quit();
+    return;
+  }
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.focus();
+      trayInfoWindowVisible = true;
+      updateTrayInfoHook();
+    } else {
+      createMainWindow(); // 窗口被销毁但托盘仍在 → 重建（spec f31 §5.2 边界 #9）
+    }
+  });
+
   app.setAppUserModelId('InkFlow');
   setupAppMenu(app.isPackaged);
   registerWindowControlsHandlers();
+  registerSettingsHandlers();
   createMainWindow();
-  spawnKernel();
+  // 内核连接：先复用判定（kernel.json + pid 存活 + /health 200），失败回落 spawn（spec f31 §5.1）
+  kernelStatePath = resolveKernelStatePath();
+  await connectKernel();
+  createTray();
+  if (!app.isPackaged) {
+    exposeTrayDevHooks();
+  }
 });
 
-app.on('window-all-closed', () => {
-  void shutdown();
+app.on('window-all-closed', (event?: { preventDefault?: () => void }) => {
+  if (closeBehavior === 'quit' || quitInProgress) {
+    void shutdown();
+    return;
+  }
+  // 托盘模式（D5）：不退出——托盘仍在、内核保持；显式 preventDefault（真实 Electron 该事件
+  // 无 event 对象时，不调用 shutdown 即保持驻留）
+  event?.preventDefault?.();
 });
 
 app.on('before-quit', (event) => {

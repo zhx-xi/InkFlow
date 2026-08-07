@@ -91,15 +91,27 @@
  * tpl.confirm.delete='确定删除「{name}」？此操作不可撤销'
  * tpl.confirm.deleteReferenced='该模板正在被 {n} 个项目使用（{names}）'
  * tpl.confirm.saveReferenced='该模板正在被 {n} 个项目使用（{names}），保存将同步影响这些项目的 Agent 配置'
+ *
+ * ⚠️ #167 F31 GUI 托盘常驻 RED 契约（2026-08-08，spec §6.2 设置页 UI + §2.3 IPC 契约）：
+ * GeneralPanel 新增「关闭窗口时」设置项——设置项未实现 → 本批新用例全部 element-missing /
+ * 零 IPC 调用 FAIL（RED 证据），既有用例保持绿：
+ * - 渲染「关闭窗口时」标签（set.closeBehavior）+ Select（combobox aria-label「关闭窗口时」，
+ *   默认「最小化到系统托盘」set.closeBehavior.tray / 「直接退出」set.closeBehavior.quit）
+ * - 挂载时 window.INKFLOW_API.settings.getCloseBehavior() 取初值（mock 返回 'tray'）
+ * - 切换 quit → window.INKFLOW_API.settings.setCloseBehavior('quit')（选择即生效）
+ * - 无 window.INKFLOW_API（浏览器 dev）→ 可选链吞掉调用，Select 仍默认显示 tray 文案
+ * 新增 i18n key（GREEN 补 zh.ts / en.ts）：set.closeBehavior / set.closeBehavior.tray /
+ * set.closeBehavior.quit
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { SettingsPage } from './settings';
 import { apiFetch } from '../api/client';
 import { useAgentStore } from '../stores/agent';
 import { useProjectStore, type ProjectConfig } from '../stores/project';
+import { useTemplatesStore } from '../stores/templates';
 import { useThemeStore } from '../stores/theme';
 import { useToastStore } from '../stores/toast';
 
@@ -164,12 +176,14 @@ vi.mock('../stores/templates', async () => {
         set({ error: err instanceof Error ? err.message : String(err), loading: false });
       }
     },
-    createTemplate: async (input) => {
+    // Coverage-Gap 补测（#107 失败路径）：三个写操作包 vi.fn —— 默认实现不变
+    // （与 stores/templates.test.ts 契约一致），失败用例以 mockRejectedValueOnce 注入 reject
+    createTemplate: vi.fn(async (input: unknown) => {
       const created = { ...(input as object), id: 999, is_default: false, used_by: [] } as unknown as FakeTemplate;
       set((s) => ({ templates: [...s.templates, created], error: null }));
       return created;
-    },
-    updateTemplate: async (id, patch) => {
+    }),
+    updateTemplate: vi.fn(async (id: number, patch: unknown) => {
       const updated = await apiFetch<FakeTemplate>(`/api/v1/agent-templates/${id}`, {
         method: 'PATCH',
         body: patch,
@@ -179,11 +193,11 @@ vi.mock('../stores/templates', async () => {
         error: null,
       }));
       return updated;
-    },
-    deleteTemplate: async (id) => {
+    }),
+    deleteTemplate: vi.fn(async (id: number) => {
       await apiFetch(`/api/v1/agent-templates/${id}`, { method: 'DELETE' });
       set((s) => ({ templates: s.templates.filter((t) => t.id !== id), error: null }));
-    },
+    }),
     duplicateTemplate: async (id) => {
       const dup = await apiFetch<FakeTemplate>(`/api/v1/agent-templates/${id}/duplicate`, {
         method: 'POST',
@@ -737,6 +751,166 @@ describe('设置页 — 模板分类（#107 RED 契约）', () => {
       ),
     ).toBe(false);
   });
+
+  /**
+   * #107 Coverage-Gap 补测（非 RED，测试预期直接全绿）：模板分类失败路径 + 风险确认背景点击。
+   * 覆盖 settings.tsx TemplatesPanel 未覆盖语句（F31 合入前即存在的 #107 分支）：
+   * - handleCreate catch（createTemplate reject → err toast；成功 → 对话框关闭）
+   * - handleUpdate try/catch（无引用模板 updateTemplate 成功/失败两路径）
+   * - confirmSave catch（被引用模板确认保存 updateTemplate reject → err toast）
+   * - handleDelete error 分支（deleteTemplate 失败置位 store.error → err toast，不 rethrow）
+   * - 风险确认框背景点击（backdrop onClick 清空 pendingDelete/pendingSave）
+   */
+  describe('模板分类失败路径 + 风险确认背景点击（#107 Coverage-Gap 补测）', () => {
+    it('新建保存失败：createTemplate reject → err toast「create failed」+ 对话框不关闭（handleCreate catch）', async () => {
+      vi.mocked(useTemplatesStore.getState().createTemplate).mockRejectedValueOnce(
+        new Error('create failed'),
+      );
+      const user = await openTemplatesPanel();
+      await user.click(screen.getByTestId('template-add-btn'));
+      const dlg = await screen.findByTestId('template-dialog');
+      await user.type(within(dlg).getByTestId('template-name-input'), '新模板');
+      await user.click(within(dlg).getByTestId('template-save'));
+
+      await waitFor(() => {
+        const toasts = useToastStore.getState().toasts;
+        expect(toasts).toHaveLength(1);
+        expect(toasts[0]).toEqual(
+          expect.objectContaining({ type: 'err', message: 'create failed' }),
+        );
+      });
+      // catch 分支不执行 setDialogOpen(false) → 对话框保持打开
+      expect(screen.getByTestId('template-dialog')).toBeInTheDocument();
+    });
+
+    it('新建保存成功 → 对话框关闭（handleCreate 成功路径 setDialogOpen(false)）', async () => {
+      const user = await openTemplatesPanel();
+      await user.click(screen.getByTestId('template-add-btn'));
+      const dlg = await screen.findByTestId('template-dialog');
+      await user.type(within(dlg).getByTestId('template-name-input'), '新模板');
+      await user.click(within(dlg).getByTestId('template-save'));
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('template-dialog')).not.toBeInTheDocument();
+      });
+    });
+
+    it('编辑无引用模板保存失败：updateTemplate reject → err toast + 对话框不关闭（handleUpdate catch）', async () => {
+      vi.mocked(useTemplatesStore.getState().updateTemplate).mockRejectedValueOnce(
+        new Error('update failed'),
+      );
+      const user = await openTemplatesPanel();
+      await user.click(
+        within(await screen.findByTestId('template-card-2')).getByTestId('template-edit-2'),
+      );
+      const dlg = await screen.findByTestId('template-dialog');
+      await user.clear(within(dlg).getByTestId('template-name-input'));
+      await user.type(within(dlg).getByTestId('template-name-input'), '悬疑推理改');
+      await user.click(within(dlg).getByTestId('template-save'));
+
+      await waitFor(() => {
+        const toasts = useToastStore.getState().toasts;
+        expect(toasts).toHaveLength(1);
+        expect(toasts[0]).toEqual(
+          expect.objectContaining({ type: 'err', message: 'update failed' }),
+        );
+      });
+      // 无引用 → 不经风险确认；catch 不关对话框
+      expect(screen.queryByTestId('template-confirm-dialog')).not.toBeInTheDocument();
+      expect(screen.getByTestId('template-dialog')).toBeInTheDocument();
+    });
+
+    it('编辑无引用模板保存成功 → 对话框关闭 + 列表名称更新（handleUpdate 成功路径）', async () => {
+      const user = await openTemplatesPanel();
+      await user.click(
+        within(await screen.findByTestId('template-card-2')).getByTestId('template-edit-2'),
+      );
+      const dlg = await screen.findByTestId('template-dialog');
+      await user.clear(within(dlg).getByTestId('template-name-input'));
+      await user.type(within(dlg).getByTestId('template-name-input'), '悬疑推理改');
+      // PATCH /api/v1/agent-templates/2 返回更新后实体（mockTemplateList 仅处理 /1 的 PATCH）
+      apiFetchMock.mockResolvedValueOnce({ ...TEMPLATES[1], name: '悬疑推理改' });
+      await user.click(within(dlg).getByTestId('template-save'));
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('template-dialog')).not.toBeInTheDocument();
+      });
+      await waitFor(() => {
+        expect(
+          within(screen.getByTestId('template-card-2')).getByText('悬疑推理改'),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it('被引用模板确认保存失败：updateTemplate reject → err toast + 确认框关闭 + 编辑对话框仍开（confirmSave catch）', async () => {
+      vi.mocked(useTemplatesStore.getState().updateTemplate).mockRejectedValueOnce(
+        new Error('update failed'),
+      );
+      const user = await openTemplatesPanel();
+      await user.click(
+        within(await screen.findByTestId('template-card-1')).getByTestId('template-edit-1'),
+      );
+      const dlg = await screen.findByTestId('template-dialog');
+      await user.clear(within(dlg).getByTestId('template-name-input'));
+      await user.type(within(dlg).getByTestId('template-name-input'), '经典玄幻改');
+      await user.click(within(dlg).getByTestId('template-save'));
+      const confirm = await screen.findByTestId('template-confirm-dialog');
+      await user.click(within(confirm).getByTestId('template-confirm-ok'));
+
+      await waitFor(() => {
+        const toasts = useToastStore.getState().toasts;
+        expect(toasts).toHaveLength(1);
+        expect(toasts[0]).toEqual(
+          expect.objectContaining({ type: 'err', message: 'update failed' }),
+        );
+      });
+      // confirmSave 先清 pendingSave（确认框关闭），catch 不执行 setDialogOpen(false) → 编辑框仍开
+      expect(screen.queryByTestId('template-confirm-dialog')).not.toBeInTheDocument();
+      expect(screen.getByTestId('template-dialog')).toBeInTheDocument();
+    });
+
+    it('删除失败（store error 置位，不 rethrow）→ err toast（handleDelete error 分支）', async () => {
+      // 镜像真实 store 语义：deleteTemplate 失败 catch 内置位 error，不向上抛
+      vi.mocked(useTemplatesStore.getState().deleteTemplate).mockImplementationOnce(async () => {
+        useTemplatesStore.setState({ error: 'delete failed' });
+      });
+      const user = await openTemplatesPanel();
+      await user.click(
+        within(await screen.findByTestId('template-card-2')).getByTestId('template-delete-2'),
+      );
+      const confirm = screen.getByTestId('template-confirm-dialog');
+      await user.click(within(confirm).getByTestId('template-confirm-ok'));
+
+      await waitFor(() => {
+        const toasts = useToastStore.getState().toasts;
+        expect(toasts).toHaveLength(1);
+        expect(toasts[0]).toEqual(
+          expect.objectContaining({ type: 'err', message: 'delete failed' }),
+        );
+      });
+    });
+
+    it('风险确认框背景点击 → 关闭 + 不发 DELETE（backdrop onClick 清空 pendingDelete/pendingSave）', async () => {
+      const user = await openTemplatesPanel();
+      await user.click(
+        within(await screen.findByTestId('template-card-1')).getByTestId('template-delete-1'),
+      );
+      const confirm = screen.getByTestId('template-confirm-dialog');
+      // 背景 = 对话框外层 fixed 遮罩（role=presentation）。fireEvent 直接派发到遮罩元素：
+      // userEvent 按元素中心坐标点击会命中内层对话框 → stopPropagation 吞掉 backdrop onClick
+      const backdrop = confirm.parentElement as HTMLElement;
+      fireEvent.click(backdrop);
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('template-confirm-dialog')).not.toBeInTheDocument();
+      });
+      expect(
+        apiFetchMock.mock.calls.some(
+          (c) => c[0] === '/api/v1/agent-templates/1' && c[1]?.method === 'DELETE',
+        ),
+      ).toBe(false);
+    });
+  });
 });
 
 /**
@@ -1060,5 +1234,94 @@ describe('设置页 — 账户 /health 版本兜底分支（#105 补测）', () 
     await openAccountPanel();
     await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/health'));
     expect(await screen.findByText(/v1\.2\.3/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * #167 F31 GUI 托盘常驻 RED 契约（2026-08-08，spec §6.2 设置页 UI + §2.3 IPC 契约）。
+ * RED 预期：GREEN 前 GeneralPanel 无「关闭窗口时」设置项 → 本 describe 全部 FAIL
+ * （Unable to find combobox/getByText「关闭窗口时」= element-missing；
+ * getCloseBehavior 零调用 = expected number of calls: 1），既有用例保持绿。
+ *
+ * GREEN 契约（settings.tsx GeneralPanel + preload settings 命名空间 + i18n）：
+ * - 渲染「关闭窗口时」标签（t('set.closeBehavior')）+ Select：combobox aria-label
+ *   「关闭窗口时」，选项 = 最小化到系统托盘（t('set.closeBehavior.tray')，value 'tray'）/
+ *   直接退出（t('set.closeBehavior.quit')，value 'quit'）；初值 'tray'
+ * - 挂载 useEffect：window.INKFLOW_API?.settings?.getCloseBehavior() 取初值
+ * - onValueChange：window.INKFLOW_API?.settings?.setCloseBehavior(v)（选择即生效，可选链吞掉）
+ * - 无 window.INKFLOW_API（浏览器 dev）→ 渲染不崩，Select 仍默认显示 tray 文案
+ */
+describe('设置页 — 关闭窗口时设置（#167 F31 RED 契约）', () => {
+  /** window.INKFLOW_API.settings mock（spec §2.3：getCloseBehavior / setCloseBehavior / dismissTrayHint 三通道） */
+  function createSettingsApiMock() {
+    return {
+      getCloseBehavior: vi.fn().mockResolvedValue('tray'),
+      setCloseBehavior: vi.fn().mockResolvedValue(undefined),
+      dismissTrayHint: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  /**
+   * 注入 mock（settings 命名空间尚不在 ApiConfig 类型内 → unknown 透传 +
+   * Object.defineProperty，#106 WindowControls.test.tsx setInjected 先例；GREEN 扩展类型后此写法仍成立）
+   */
+  function setInjected(api: unknown): void {
+    Object.defineProperty(window, 'INKFLOW_API', {
+      configurable: true,
+      value: api,
+    });
+  }
+
+  let settingsApi: ReturnType<typeof createSettingsApiMock>;
+
+  beforeEach(() => {
+    settingsApi = createSettingsApiMock();
+    setInjected({ settings: settingsApi });
+  });
+
+  afterEach(() => {
+    setInjected(undefined);
+  });
+
+  it('渲染「关闭窗口时」标签 + Select（combobox aria-label），默认值「最小化到系统托盘」（set.closeBehavior.tray）', async () => {
+    renderSettings();
+    const panel = screen.getByTestId('settings-panel');
+    // GREEN 前设置项不存在 → getByText/getByRole 抛 = RED（element-missing）
+    expect(within(panel).getByText('关闭窗口时')).toBeInTheDocument();
+    const select = within(panel).getByRole('combobox', { name: '关闭窗口时' });
+    // 初值 'tray' 经异步 getCloseBehavior 落地 → waitFor
+    await waitFor(() => {
+      expect(select).toHaveTextContent('最小化到系统托盘');
+    });
+  });
+
+  it('挂载时调用 getCloseBehavior() 取初值（mock 返回 tray → Select 显示「最小化到系统托盘」）', async () => {
+    renderSettings();
+    // GREEN 前设置项未实现、零 IPC 调用 → toHaveBeenCalledTimes(1) FAIL = RED
+    expect(settingsApi.getCloseBehavior).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: '关闭窗口时' })).toHaveTextContent('最小化到系统托盘');
+    });
+  });
+
+  it('切换 Select 到「直接退出」→ settings.setCloseBehavior(quit) 被调用（选择即生效）', async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    const select = screen.getByRole('combobox', { name: '关闭窗口时' });
+    await user.click(select);
+    await user.click(await screen.findByRole('option', { name: '直接退出' }));
+    // GREEN 前无设置项 → 上方 getByRole 已抛 = RED；GREEN 后断言 IPC 调用 + UI 回显
+    expect(settingsApi.setCloseBehavior).toHaveBeenCalledWith('quit');
+    expect(select).toHaveTextContent('直接退出');
+  });
+
+  it('无 window.INKFLOW_API（浏览器 dev）→ 渲染不崩，Select 仍显示默认值「最小化到系统托盘」', async () => {
+    setInjected(undefined);
+    renderSettings();
+    // GREEN 前设置项不存在 → getByRole 抛 = RED；GREEN 后可选链吞掉调用、默认 tray 显示
+    const select = screen.getByRole('combobox', { name: '关闭窗口时' });
+    await waitFor(() => {
+      expect(select).toHaveTextContent('最小化到系统托盘');
+    });
   });
 });
