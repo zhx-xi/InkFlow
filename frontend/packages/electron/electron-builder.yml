@@ -24,4 +24,5 @@ artifactName: InkFlow-${version}-${arch}.${ext}
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  include: build/installer.nsh
 compression: maximum

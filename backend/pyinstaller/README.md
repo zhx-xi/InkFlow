@@ -45,6 +45,43 @@ dist\inkflow\inkflow.exe serve --port 0 --port-file smoke.json
 `inkflow.spec` 的 `hiddenimports`（hiddenimports 纪律见 spec §4.2），
 重新打包后重跑冒烟。
 
+## 3.5 CLI zip 独立产物（F33）
+
+> 对应 spec：`specs/f33-cli-dist/spec.md`（Issue #168）。CLI zip 与 GUI 三件套
+> 并行发布（Release 资产 `inkflow-cli-<version>.zip`），**零新增构建**——直接复用
+> §2 的 PyInstaller onedir 产物（`backend/dist/inkflow/`），同源同构。
+
+### 本地打包命令
+
+在 `backend` 目录下执行（`<version>` 替换为目标版本，与 GUI 版本对齐）：
+
+```powershell
+Compress-Archive -Path dist/inkflow -DestinationPath dist/inkflow-cli-<version>.zip -CompressionLevel Optimal
+```
+
+产物：`dist/inkflow-cli-<version>.zip` = 独立 CLI（完整内核，含 `serve` 能力），
+zip 根含 `inkflow/` 顶层目录（`inkflow.exe` + `_internal/`）。
+
+> Q1=A 拍板（spec §10）：CLI zip **不含 README**——使用说明放 Release Notes 与项目
+> README；CLI 自带 `--help` 完整命令帮助。版本与 GUI 对齐（tag 单一来源，spec §2.4）。
+
+### 解压冒烟三步
+
+```powershell
+# ① 解压到临时目录
+Expand-Archive dist\inkflow-cli-<version>.zip -DestinationPath $env:TEMP\inkflow-cli-smoke
+
+# ② 冒烟时设置 UTF-8（中文输出编码）
+$env:PYTHONUTF8 = "1"
+
+# ③ 命令冒烟：--help（退出码 0）→ project list --json（JSON 信封）
+& $env:TEMP\inkflow-cli-smoke\inkflow\inkflow.exe --help
+& $env:TEMP\inkflow-cli-smoke\inkflow\inkflow.exe project list --json
+
+# ④ serve 冒烟：看到 INKFLOW_READY 行后 Ctrl+C（INKFLOW_READY 交付契约，ADR-021）
+& $env:TEMP\inkflow-cli-smoke\inkflow\inkflow.exe serve --port 0 --port-file smoke.json
+```
+
 ## 4. Electron 壳打包（NSIS + 便携 ZIP）
 
 ### 4.1 国内镜像（必设）

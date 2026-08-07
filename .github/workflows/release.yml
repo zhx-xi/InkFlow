@@ -59,6 +59,22 @@ jobs:
       - name: Build kernel (PyInstaller onedir)
         run: uv run pyinstaller pyinstaller/inkflow.spec
 
+      # F33 CLI 独立发布产物（spec f33-cli-dist §3.2）：同一份 onedir 产物打 zip
+      # ⚠️ 必须先完成版本注入（上方 Inject version step）再打包——zip 内 exe 的
+      #    dist-info 版本 = tag（copy_metadata 机制）；zip 文件名版本也从此派生
+      - name: Package CLI zip
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          Compress-Archive -Path dist/inkflow -DestinationPath "dist/inkflow-cli-$version.zip" -CompressionLevel Optimal
+          Write-Host "CLI zip created: dist/inkflow-cli-$version.zip"
+
+      - name: Upload CLI zip artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-zip
+          path: backend/dist/inkflow-cli-*.zip
+
       - name: Upload kernel artifact
         uses: actions/upload-artifact@v7
         with:
@@ -191,6 +207,18 @@ jobs:
 
       - name: Package Windows artifacts (NSIS + ZIP)
         run: pnpm --filter inkflow-electron dist:win
+
+      - name: Download CLI zip artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: cli-zip
+          path: cli-zip
+
+      # CLI zip 并入发布资产目录（gh release create 资产收集的既有位置）
+      - name: Place CLI zip into release assets
+        shell: pwsh
+        run: |
+          Copy-Item -Force "$env:GITHUB_WORKSPACE/cli-zip/inkflow-cli-*.zip" packages/electron/dist/
 
       - name: Create GitHub Release
         shell: pwsh
