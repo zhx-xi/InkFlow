@@ -21,6 +21,7 @@ import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from inkflow.api.app import app
@@ -492,3 +493,32 @@ class TestForeshadowingAPI:
         response = client.post(f"/api/v1/foreshadowings/{uuid.uuid4()}/reopen")
         assert response.status_code == 404
         assert response.json()["detail"] == "伏笔不存在"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# #177 覆盖率盲区补测: 直接调用 _run_service（不经 TestClient）
+# coverage.py 对 TestClient（portal 线程）内异常传播路径的 except 块存在统计
+# 盲区——测试执行了分支但 coverage 不记录；直接调用 router 模块函数可正常记录。
+# ══════════════════════════════════════════════════════════════════════════
+
+
+async def _raise(exc: Exception) -> None:
+    """辅助: 抛异常（作为 _run_service 的 coro 参数）。"""
+    raise exc
+
+
+class TestRunServiceExceptBranch:
+    """直接调用 _run_service 触发 except 分支（#177 补测）。"""
+
+    async def test_run_service_foreshadowing_not_found_404(self) -> None:
+        """ForeshadowingNotFoundError → HTTPException 404，detail 透传消息
+        （foreshadowings.py L76）."""
+        from fastapi import HTTPException
+
+        from inkflow.api.routers.foreshadowings import _run_service
+        from inkflow.domain.ports.foreshadowing_errors import ForeshadowingNotFoundError
+
+        with pytest.raises(HTTPException) as ei:
+            await _run_service(_raise(ForeshadowingNotFoundError("x")))
+        assert ei.value.status_code == 404
+        assert "x" in ei.value.detail

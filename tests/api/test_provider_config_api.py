@@ -887,3 +887,54 @@ class TestBuiltinKeyContract:
         assert set(names) == {"myai", "deepseek", "zhipu", "ollama"}
         myai = next(it for it in body["items"] if it["name"] == "myai")
         assert myai["builtin_key"] == "openai"
+
+
+# ── #177 Coverage-Gap 补测：直接调用 _run_service（不经 TestClient）──
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+class TestCoverageGapRunServiceDirect:
+    """#177 覆盖率盲区补测 — 直接调用 router 模块 _run_service，让 except
+    分支可被 coverage 记录（coverage.py 对 TestClient portal 线程内异常
+    传播路径存在统计盲区；直接调用不经 TestClient，pytest 下可正常记录）。
+
+    补测非 TDD：被测源码已存在（provider_configs.py L71-74），
+    本类用例直接通过，不改动任何 src/ 文件。
+    """
+
+    async def test_run_service_service_error_maps_422(self):
+        """ProviderConfigServiceError → HTTPException 422（detail 含异常
+        消息，provider_configs.py L71-72）。"""
+        from fastapi import HTTPException
+
+        from inkflow.api.routers.provider_configs import _run_service
+        from inkflow.domain.ports.provider_config_errors import (
+            ProviderConfigServiceError,
+        )
+
+        async def _raise(exc):
+            raise exc
+
+        with pytest.raises(HTTPException) as ei:
+            await _run_service(_raise(ProviderConfigServiceError("x")))
+        assert ei.value.status_code == 422
+        assert "x" in ei.value.detail
+
+    async def test_run_service_not_found_maps_404(self):
+        """ProviderConfigNotFoundError → HTTPException 404（detail 含异常
+        消息，provider_configs.py L73-74）。"""
+        from fastapi import HTTPException
+
+        from inkflow.api.routers.provider_configs import _run_service
+        from inkflow.domain.ports.provider_config_errors import (
+            ProviderConfigNotFoundError,
+        )
+
+        async def _raise(exc):
+            raise exc
+
+        with pytest.raises(HTTPException) as ei:
+            await _run_service(_raise(ProviderConfigNotFoundError("x")))
+        assert ei.value.status_code == 404
+        assert "x" in ei.value.detail

@@ -839,3 +839,58 @@ class TestSettingsTokenAuth:
         resp = client.patch(ENDPOINT_SETTINGS, json={"theme": "night"})
         assert resp.status_code == 401
         assert resp.json() == {"detail": "Unauthorized"}
+
+
+# ── #177 Coverage-Gap 补测：直接调用 router 函数（不经 TestClient）──
+
+
+class TestCoverageGapDirectHandlerCalls:
+    """#177 覆盖率盲区补测 — 直接调用 router 模块函数，让 except 分支可被
+    coverage 记录（coverage.py 对 TestClient portal 线程内异常传播路径存在
+    统计盲区；直接调用不经 TestClient，pytest 下可正常记录）。
+
+    补测非 TDD：被测源码已存在（settings.py L140-142 / L215-219），
+    本类用例直接通过，不改动任何 src/ 文件。
+    """
+
+    def test_patch_settings_db_error_500_direct(self):
+        """直接调用 patch_settings：service.update_settings 抛 OSError →
+        HTTPException 500 + 通用 detail（settings.py L215-219 except 分支）。"""
+        import asyncio
+
+        from fastapi import HTTPException
+
+        from inkflow.api.routers.settings import patch_settings
+        from inkflow.domain.models.settings import AppSettingsUpdate
+
+        class BoomService:
+            """update_settings 恒抛 OSError（模拟落库磁盘/锁失败）。"""
+
+            async def update_settings(self, updates):
+                raise OSError("disk full")
+
+        async def _call():
+            return await patch_settings(AppSettingsUpdate(theme="night"), BoomService())
+
+        with pytest.raises(HTTPException) as ei:
+            asyncio.run(_call())
+        assert ei.value.status_code == 500
+        assert ei.value.detail == "设置保存失败，请稍后重试"
+
+    def test_resolve_probe_model_db_error_falls_back_direct(self):
+        """直接调用 _resolve_probe_model：注册表查询抛异常 → 回退
+        config.llm_default_model（settings.py L140-142 except 分支）。"""
+        import asyncio
+
+        from inkflow.api.routers.settings import _resolve_probe_model
+        from inkflow.core.config import config
+
+        class BoomDB:
+            """get_by_name 恒抛 RuntimeError（模拟注册表查询失败）。"""
+
+            async def get_by_name(self, provider):
+                raise RuntimeError("db boom")
+
+        result = asyncio.run(_resolve_probe_model("x", BoomDB()))
+        assert isinstance(result, str) and result.strip()
+        assert result == config.llm_default_model
