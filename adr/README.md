@@ -38,13 +38,14 @@
 | [ADR-020](ADR-020.md) | GUI 技术选型 — Electron + 共享 React 渲染层（单机主界面，D2） | ✅ 已接受 | 2026-08-02 |
 | [ADR-021](ADR-021.md) | 本地内核进程化 — 独立进程 + localhost REST + SSE 通信（GUI↔内核，D3） | ✅ 已接受 | 2026-08-02 |
 | [ADR-022](ADR-022.md) | skills 包形态 — 源码单一真相 + 三通道分发（D4） | ✅ 已接受 | 2026-08-02 |
-| [ADR-023](ADR-023.md) | MCP Server 设计 — 官方 SDK + stdio + 直连领域服务（skills 先行、MCP 后移 1.0.0，D5 修订） | ✅ 已接受 | 2026-08-02 |
+| [ADR-023](ADR-023.md) | MCP Server 设计 — 官方 SDK + stdio + **薄客户端经 HTTP（v2，2026-08-07 ADR-030 D3=A 修订）**（skills 先行、MCP 后移 1.0.0，D5 修订） | ✅ 已接受 | 2026-08-02（v2: 2026-08-07） |
 | [ADR-024](ADR-024.md) | 云架构拓扑 — 同进程双前缀（user/admin）+ owner_id 隔离（D6） | ✅ 已接受 | 2026-08-02 |
 | [ADR-025](ADR-025.md) | 依赖锁定策略 — uv + uv.lock（Python）+ pnpm-lock.yaml 约定（前端） | ✅ 已接受 | 2026-08-02 |
 | [ADR-026](ADR-026.md) | 真实 AI CI job — label 触发 + workflow_dispatch 兜底（e2e-ai-backend） | ✅ 已接受 | 2026-08-04 |
 | [ADR-027](ADR-027.md) | 测试覆盖率门禁 — 三层全覆盖（#104：后端 98.5/95.0 + 前端 vitest thresholds + 口径修正） | ✅ 已接受 | 2026-08-06 |
 | [ADR-028](ADR-028.md) | E2E 按页面域拆分 + 门禁口径（6 spec + 6 job；e2e-shell 提前第一批 required；AI 链路只测 UI 状态；1.0.0 全页面覆盖） | ✅ 已接受 | 2026-08-06 |
 | [ADR-029](ADR-029.md) | F25 daemon 移除 — 伪需求判定 + 意图已覆盖（外部 agent 经 MCP/skills 调用由 F19 serve + F20 MCP + skills 包承担；#52） | ✅ 已接受 | 2026-08-07 |
+| [ADR-030](ADR-030.md) | 本地内核服务化 — 冷启动协议（kernel.json + ensure_kernel）+ 常驻生命周期 + CLI 恒经 HTTP + GUI 托盘常驻 + MCP 薄客户端（D1-D4 拍板 2026-08-07） | ✅ 已接受 | 2026-08-07 |
 
 ## 当前有效决策速览
 
