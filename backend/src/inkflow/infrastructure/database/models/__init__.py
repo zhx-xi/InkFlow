@@ -17,6 +17,7 @@ from inkflow.infrastructure.database.models.outline import (
 )
 from inkflow.infrastructure.database.models.project import ProjectORM
 from inkflow.infrastructure.database.models.provider_config import ProviderConfigORM
+from inkflow.infrastructure.database.models.session import SessionLogORM, SessionORM
 from inkflow.infrastructure.database.models.timeline import TimelineEventORM
 from inkflow.infrastructure.database.models.world import WorldSettingORM
 
@@ -34,6 +35,8 @@ __all__ = [
     "PlotPointORM",
     "ProjectORM",
     "ProviderConfigORM",
+    "SessionLogORM",
+    "SessionORM",
     "StoryArcORM",
     "TimelineEventORM",
     "VolumeORM",

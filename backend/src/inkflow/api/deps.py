@@ -24,6 +24,7 @@ from inkflow.domain.services.foreshadowing_service import ForeshadowingService
 from inkflow.domain.services.outline_service import OutlineService
 from inkflow.domain.services.project_service import ProjectService
 from inkflow.domain.services.provider_config_service import ProviderConfigService
+from inkflow.domain.services.session_service import SessionService
 from inkflow.domain.services.style_service import StyleService
 from inkflow.domain.services.summary_service import SummaryService
 from inkflow.domain.services.timeline_service import TimelineService
@@ -52,6 +53,9 @@ from inkflow.infrastructure.database.repositories.project_repo import (
 )
 from inkflow.infrastructure.database.repositories.provider_config_repo import (
     SQLiteProviderConfigRepository,
+)
+from inkflow.infrastructure.database.repositories.session_repo import (
+    SQLiteSessionRepository,
 )
 from inkflow.infrastructure.database.repositories.summary_repo import (
     SQLiteSummaryRepository,
@@ -235,6 +239,20 @@ def get_foreshadowing_service(
         repository=SQLiteForeshadowingRepository(db),
         project_repo=SQLiteProjectRepository(db),
         timeline_repo=SQLiteTimelineRepository(db),
+    )
+
+
+def get_session_service(
+    db: AsyncSession,
+) -> SessionService:
+    """获取 SessionService 实例（会话仓储 + F1 项目仓储）.
+
+    装配 SQLiteSessionRepository（双实体 CRUD + 状态机 + 履历日志），项目
+    存在性校验复用 F1 SQLiteProjectRepository（同 F12/F13 模式）.
+    """
+    return SessionService(
+        repository=SQLiteSessionRepository(db),
+        project_repo=SQLiteProjectRepository(db),
     )
 
 

@@ -50,6 +50,7 @@ from inkflow.cli.commands import (  # noqa: E402  # app 定义后导入
     foreshadowing,
     outline,
     project,
+    session,
     style,
     timeline,
     vector,
@@ -76,5 +77,6 @@ app.add_typer(write.app, name="write")
 app.add_typer(llm_app, name="llm")
 app.add_typer(config_app, name="config")
 app.add_typer(agent_cmd.app, name="agent")
+app.add_typer(session.app, name="session")
 # serve 用 command() 直接注册避免 inkflow serve serve 嵌套
 app.command(name="serve")(_serve_fn)

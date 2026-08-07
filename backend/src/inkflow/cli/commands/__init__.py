@@ -4,6 +4,7 @@ from inkflow.cli.commands import (  # noqa: F401  # 作为包门面 re-export �
     audit,
     extract,
     foreshadowing,
+    session,
     timeline,
     vector,
 )

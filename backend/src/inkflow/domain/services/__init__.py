@@ -10,6 +10,7 @@ from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.context_service import ContextService
 from inkflow.domain.services.foreshadowing_service import ForeshadowingService
 from inkflow.domain.services.outline_service import OutlineService
+from inkflow.domain.services.session_service import SessionService
 from inkflow.domain.services.summary_service import SummaryService
 from inkflow.domain.services.timeline_service import TimelineService
 from inkflow.domain.services.world_service import WorldService
@@ -23,6 +24,7 @@ __all__ = [
     "ForeshadowingService",
     "OutlineGenerator",
     "OutlineService",
+    "SessionService",
     "SummaryService",
     "TimelineExtractor",
     "TimelineService",
