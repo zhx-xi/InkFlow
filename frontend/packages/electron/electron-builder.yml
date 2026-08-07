@@ -7,12 +7,14 @@ directories:
   output: dist
 files:
   - out/**
+  - favicon.ico
   - ../renderer/dist/**
 # 内核可执行目录整体打进 resources/kernel/（kernel.ts isPackaged 分支定位）
 extraResources:
   - from: ../kernel
     to: kernel
 win:
+  icon: build/icon.ico
   target:
     - nsis
     - zip
