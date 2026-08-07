@@ -78,9 +78,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from inkflow.cli.commands.kernel import app
 from typer.testing import CliRunner
 
+from inkflow.cli.commands.kernel import app
 from inkflow.cli.context import CliContext
 
 # inkflow.core 包把 config 属性重绑定为实例，`import a.b as x` 会取到实例而非模块，

@@ -147,6 +147,10 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+import inkflow
+from inkflow import __version__ as inkflow_version
+from inkflow.core.config import config
 from inkflow.infrastructure.kernel.bootstrap import (
     KernelHandle,
     _default_spawn_cmd,
@@ -154,10 +158,6 @@ from inkflow.infrastructure.kernel.bootstrap import (
 )
 from inkflow.infrastructure.kernel.kernel_errors import KernelStartupError
 from inkflow.infrastructure.kernel.state import KernelState
-
-import inkflow
-from inkflow import __version__ as inkflow_version
-from inkflow.core.config import config
 
 SPAWN_CMD = ["inkflow-dev.exe", "serve", "--port", "0"]
 
