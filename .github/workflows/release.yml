@@ -169,13 +169,15 @@ jobs:
           Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE/kernel-onedir/*" packages/kernel/
 
       # renderer dist + electron out 放回 electron-builder 期望的位置
-      # （electron-builder.yml files: out/** + ../renderer/dist/**）
+      # ⚠️ renderer dist 必须复制进 electron 包内（rc.5 实测空白 #145）：
+      #    electron-builder files 的 ../renderer/dist/** 越出包目录**不会打进 asar**
+      #    （asar 实测 0 命中 renderer → loadFile 失败 → 空白窗口）
       - name: Place renderer dist and electron out
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force packages/renderer/dist | Out-Null
+          New-Item -ItemType Directory -Force packages/electron/renderer-dist | Out-Null
           New-Item -ItemType Directory -Force packages/electron/out | Out-Null
-          Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE/renderer-dist/*" packages/renderer/dist/
+          Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE/renderer-dist/*" packages/electron/renderer-dist/
           Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE/electron-out/*" packages/electron/out/
 
       # R4：package.json version ← tag（electron-builder 从 package.json 读版本）
