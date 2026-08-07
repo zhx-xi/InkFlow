@@ -111,6 +111,7 @@ from inkflow.domain.ports.session_errors import (
     SessionTransitionError,
 )
 from inkflow.domain.ports.session_repository import SessionRepositoryProtocol
+from inkflow.domain.ports.settings_repository import SettingsRepositoryProtocol
 from inkflow.domain.ports.summary_repository import SummaryRepositoryProtocol
 from inkflow.domain.ports.timeline_errors import (
     TimelineNotFoundError,
@@ -190,6 +191,7 @@ __all__ = [
     "SessionRepositoryProtocol",
     "SessionServiceError",
     "SessionTransitionError",
+    "SettingsRepositoryProtocol",
     "StageResult",
     "StageStatus",
     "StoryArcNotFoundError",

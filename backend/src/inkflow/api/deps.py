@@ -25,6 +25,7 @@ from inkflow.domain.services.outline_service import OutlineService
 from inkflow.domain.services.project_service import ProjectService
 from inkflow.domain.services.provider_config_service import ProviderConfigService
 from inkflow.domain.services.session_service import SessionService
+from inkflow.domain.services.settings_service import SettingsService
 from inkflow.domain.services.style_service import StyleService
 from inkflow.domain.services.summary_service import SummaryService
 from inkflow.domain.services.timeline_service import TimelineService
@@ -56,6 +57,9 @@ from inkflow.infrastructure.database.repositories.provider_config_repo import (
 )
 from inkflow.infrastructure.database.repositories.session_repo import (
     SQLiteSessionRepository,
+)
+from inkflow.infrastructure.database.repositories.settings_repo import (
+    SQLiteSettingsRepository,
 )
 from inkflow.infrastructure.database.repositories.summary_repo import (
     SQLiteSummaryRepository,
@@ -262,6 +266,20 @@ def get_provider_config_service(
     """获取 ProviderConfigService 实例（Provider 注册表仓储）."""
     return ProviderConfigService(
         repository=SQLiteProviderConfigRepository(db),
+    )
+
+
+def get_settings_service(
+    db: AsyncSession = Depends(get_db),
+) -> SettingsService:
+    """获取 SettingsService 实例（app_settings 键值仓储，F32 #152）.
+
+    显式 Depends(get_db) 依赖链：测试经 app.dependency_overrides[get_db]
+    替换 session（tests/api/conftest.py override_get_db 生效前提），
+    镜像 get_writing_service 形态（spec §3.5 评审修订）。
+    """
+    return SettingsService(
+        repository=SQLiteSettingsRepository(db),
     )
 
 
