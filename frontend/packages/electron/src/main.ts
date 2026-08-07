@@ -22,12 +22,12 @@ import {
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 /**
  * renderer 构建产物（§3.4 file:// 加载）。
- * ⚠️ 打包模式路径差异（rc.4 实测空白 #145）：asar 内 __dirname = app.asar/out，
- *    renderer 实际在 app.asar/renderer/dist（files: ../renderer/dist/** 打包后相对 asar 根）；
- *    dev 模式 out/ 在 packages/electron/out，renderer 在 packages/renderer/dist。
+ * ⚠️ 打包模式路径（rc.5 实测空白 #145）：asar 内 __dirname = app.asar/out，
+ *    renderer 由组装步骤复制进 packages/electron/renderer-dist/ → asar 内 = app.asar/renderer-dist
+ *    （files: renderer-dist/**）；dev 模式 out/ 在 packages/electron/out，renderer 在 packages/renderer/dist。
  */
 const RENDERER_DIST = app.isPackaged
-  ? path.join(__dirname, '..', 'renderer', 'dist')           // app.asar/out/../renderer/dist
+  ? path.join(__dirname, '..', 'renderer-dist')            // app.asar/out/../renderer-dist
   : path.resolve(__dirname, '..', '..', 'renderer', 'dist'); // dev: packages/renderer/dist
 
 /** spawn 后未收到 INKFLOW_READY 的启动超时（§3.2.2） */

@@ -8,7 +8,9 @@ directories:
 files:
   - out/**
   - favicon.ico
-  - ../renderer/dist/**
+  - renderer-dist/**
+  # ⚠️ 不用 ../renderer/dist/**——越出包目录的 glob 不会打进 asar（rc.5 实测空白 #145）；
+  #    renderer dist 由 release.yml 组装步骤复制进 packages/electron/renderer-dist/
 # 内核可执行目录整体打进 resources/kernel/（kernel.ts isPackaged 分支定位）
 extraResources:
   - from: ../kernel
