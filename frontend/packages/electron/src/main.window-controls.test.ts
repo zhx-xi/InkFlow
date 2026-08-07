@@ -108,6 +108,11 @@ const electronMock = vi.hoisted(() => {
     kill: vi.fn(() => true),
   };
 
+  // #167 F31：main.ts 新增 Tray/nativeImage import（托盘常驻）——mock 必须提供对应导出，
+  // 否则 vitest 报 "No Tray export is defined on the electron mock"（B2 后 19 errors 实测）。
+  // 本文件不测托盘行为（main.tray.test.ts 专责），最小 stub 满足 import 即可。
+  const trayStub = { setContextMenu: vi.fn(), on: vi.fn(), destroy: vi.fn() };
+
   return {
     __win: win,
     __windowEventHandlers: windowEventHandlers,
@@ -122,15 +127,20 @@ const electronMock = vi.hoisted(() => {
         appEventHandlers[evt] = cb;
       }),
       exit: vi.fn(),
+      quit: vi.fn(),
+      // #167 F31：单实例锁（main.ts 启动回调最先调用；默认 true 走正常路径）
+      requestSingleInstanceLock: vi.fn(() => true),
       setAppUserModelId: vi.fn(),
     },
     BrowserWindow: Object.assign(vi.fn(() => win), {
       getFocusedWindow: vi.fn(() => null),
     }),
     ipcMain: { on: vi.fn(), handle: vi.fn() },
-    Menu: { setApplicationMenu: vi.fn() },
+    Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn(() => ({ popup: vi.fn() })) },
     globalShortcut: { register: vi.fn(() => true), unregisterAll: vi.fn() },
     dialog: { showMessageBox: vi.fn(() => Promise.resolve({ response: 0 })) },
+    Tray: vi.fn(() => trayStub),
+    nativeImage: { createFromPath: vi.fn(() => ({ isEmpty: () => false })) },
   };
 });
 

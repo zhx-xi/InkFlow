@@ -155,8 +155,8 @@ test('启动闭环：窗口出现（title 含 InkFlow）+ 内核进程存在 + /
       return w.INKFLOW_API;
     });
     expect(api).toBeTruthy();
-    // #106 自绘窗口按钮后 INKFLOW_API 含 windowControls 第 3 键（preload 契约升级）
-    expect(Object.keys(api!).sort()).toEqual(['baseURL', 'token', 'windowControls']);
+    // #106 自绘窗口按钮后 INKFLOW_API 含 windowControls 第 3 键；#167 F31 含 settings 第 4 键（preload 契约升级）
+    expect(Object.keys(api!).sort()).toEqual(['baseURL', 'settings', 'token', 'windowControls']);
     expect(api!.baseURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
     expect(api!.token).toBeTruthy();
 

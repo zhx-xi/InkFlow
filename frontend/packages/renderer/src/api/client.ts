@@ -13,11 +13,22 @@ export interface WindowControls {
   onMaximizedChange?: (callback: (maximized: boolean) => void) => () => void;
 }
 
+/** #167 F31 托盘常驻：关闭窗口行为（'tray' 最小化到系统托盘 | 'quit' 直接退出），内存态 */
+export type CloseBehavior = 'tray' | 'quit';
+
+/** #167 F31：preload settings 命名空间（B1/B2 已暴露 IPC 通道） */
+export interface SettingsApi {
+  getCloseBehavior: () => Promise<CloseBehavior>;
+  setCloseBehavior: (value: CloseBehavior) => Promise<void>;
+}
+
 export interface ApiConfig {
   baseURL: string;
   token: string;
   /** 浏览器环境/未注入时 undefined，组件侧可选链安全调用 */
   windowControls?: WindowControls;
+  /** #167 F31：关闭窗口行为设置（renderer 只经 IPC 读写，不持久化） */
+  settings?: SettingsApi;
 }
 
 declare global {

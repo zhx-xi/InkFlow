@@ -56,6 +56,12 @@ describe('preload — inkflow:api-ready 就绪事件（#98 修复）', () => {
           close: expect.any(Function),
           onMaximizedChange: expect.any(Function), // #106：最大化状态订阅（图标切换）
         },
+        // #167 F31：关闭行为设置 IPC 通道（托盘常驻，spec f31 §2.3）
+        settings: {
+          getCloseBehavior: expect.any(Function),
+          setCloseBehavior: expect.any(Function),
+          dismissTrayHint: expect.any(Function),
+        },
       });
       expect(dispatchMock).toHaveBeenCalledTimes(1);
       expect(dispatchMock.mock.calls[0][0].type).toBe('inkflow:api-ready');

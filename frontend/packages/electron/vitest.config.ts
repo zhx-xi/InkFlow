@@ -13,13 +13,14 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: [...configDefaults.exclude, 'src/**/*.test.ts'],
       thresholds: {
-        lines: 26.73,
-        // #106 main.window-controls.test.ts 全量覆盖后 branches 96.5% 为真实上限：
-        // 5 个数学死分支（kernel.ts L20 value===null 被 READY_LINE_PATTERN 正则排除、
-        // main.ts L77/L168/L208/L257 调用点恒非 null 或无可达路径），非测试缺口
-        branches: 96.5,
-        functions: 38.09,
-        statements: 26.73,
+        // #167 F31 新代码计入后基线提升（2026-08-08 实测 90.43/93.98/82.97/90.43）：
+        // kernel.state.test.ts 21 用例 + main.tray.test.ts 18 用例 + preload settings 通道。
+        // 留 2-3 点余量防 CI/本地 v8 覆盖率微差（#104 惯例：thresholds 随实现上调）
+        lines: 88,
+        // branches 96.5 → 93：main.ts 扩容后分支基数增大，实测 93.98（kernel.ts 96.49 / main.ts 92.9）
+        branches: 90,
+        functions: 80,
+        statements: 88,
       },
     },
   },

@@ -9,8 +9,9 @@ import { AgentChainCard } from '../components/AgentChainCard';
 import { AppearanceCard } from '../components/AppearanceCard';
 import { TemplateDialog } from '../components/TemplateDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { useI18n } from '../i18n/useI18n';
+import type { CloseBehavior } from '../api/client';
 import { apiFetch, ensureApiReady, errorMessage } from '../api/client';
+import { useI18n } from '../i18n/useI18n';
 import { useAgentStore } from '../stores/agent';
 import { useProjectStore } from '../stores/project';
 import type { AgentTemplate, AgentTemplateInput } from '../stores/templates';
@@ -66,12 +67,24 @@ function GeneralPanel() {
     return String(project?.config.default_words ?? 800000);
   });
   const [font, setFont] = useState<FontKey>('sans');
+  // #167 F31：关闭窗口行为（内存态，仅经 IPC 读写；无 API 时保持默认 'tray'）
+  const [closeBehavior, setCloseBehavior] = useState<CloseBehavior>('tray');
 
   const FONTS: Array<{ value: FontKey; labelKey: string }> = [
     { value: 'serif', labelKey: 'set.font.serif' },
     { value: 'sans', labelKey: 'set.font.sans' },
     { value: 'mono', labelKey: 'set.font.mono' },
   ];
+
+  const CLOSE_BEHAVIORS: Array<{ value: CloseBehavior; labelKey: string }> = [
+    { value: 'tray', labelKey: 'set.closeBehavior.tray' },
+    { value: 'quit', labelKey: 'set.closeBehavior.quit' },
+  ];
+
+  // #167 F31：挂载时经 IPC 取当前行为；浏览器 dev 无 API 时可选链吞掉，保持默认 'tray'
+  useEffect(() => {
+    void window.INKFLOW_API?.settings?.getCloseBehavior()?.then((v) => setCloseBehavior(v));
+  }, []);
 
   const handleDefaultWordsBlur = () => {
     const n = Number(defaultWords);
@@ -110,6 +123,28 @@ function GeneralPanel() {
               {FONTS.map((f) => (
                 <SelectItem key={f.value} value={f.value}>
                   {t(f.labelKey)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
+          <span>{t('set.closeBehavior')}</span>
+          <Select
+            value={closeBehavior}
+            onValueChange={(v) => {
+              setCloseBehavior(v as CloseBehavior);
+              void window.INKFLOW_API?.settings?.setCloseBehavior(v as CloseBehavior);
+            }}
+          >
+            <SelectTrigger aria-label={t('set.closeBehavior')} className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CLOSE_BEHAVIORS.map((b) => (
+                <SelectItem key={b.value} value={b.value}>
+                  {t(b.labelKey)}
                 </SelectItem>
               ))}
             </SelectContent>
