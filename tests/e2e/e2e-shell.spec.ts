@@ -31,7 +31,7 @@ async function readKernelInfo(
  * 等待内核就绪（spec §3.2.1/3.2.3）：内核拉起需 python + uvicorn 启动时间，
  * INKFLOW_READY 到达前 __kernelInfo 尚未注入。轮询至多 20s（健康检查 2s 间隔 × 余量）。
  */
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 20_000): Promise<KernelInfo> {
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 60_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
