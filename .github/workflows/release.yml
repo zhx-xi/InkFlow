@@ -37,16 +37,24 @@ jobs:
           prune-cache: false
           cache-dependency-glob: backend/uv.lock
 
-      - name: Install dependencies (packaging extra)
-        run: uv sync --frozen --extra packaging
-
-      # R4：版本单一来源 = tag（spec §2.4）；先 sync 再注入，避免 --frozen 锁校验失效
+      # R4：版本单一来源 = tag（spec §2.4）
+      # ⚠️ 顺序关键（M5 实测 rc.3 失败 #145）：必须**先注入版本再 uv sync**——
+      #    editable install 的 dist-info 在 sync 时生成并记录当时 pyproject 的 version；
+      #    sync 后再改 pyproject 不会更新已安装 dist-info → PyInstaller copy_metadata
+      #    复制旧版本（rc.3 实测 INKFLOW_READY.version=0.1.0）
       - name: Inject version from tag into pyproject.toml
         shell: pwsh
         run: |
           $version = '${{ github.ref_name }}'.TrimStart('v')
           (Get-Content pyproject.toml) -replace 'version = "([^"]+)"', "version = `"$version`"" | Set-Content pyproject.toml
           Write-Host "pyproject.toml version set to $version"
+
+      # version 变化需同步 uv.lock（uv.lock 含 inkflow 包 version 字段），否则 --frozen 校验失败
+      - name: Sync lockfile version
+        run: uv lock
+
+      - name: Install dependencies (packaging extra)
+        run: uv sync --frozen --extra packaging
 
       - name: Build kernel (PyInstaller onedir)
         run: uv run pyinstaller pyinstaller/inkflow.spec
