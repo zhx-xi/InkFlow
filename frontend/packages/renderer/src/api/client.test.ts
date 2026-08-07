@@ -94,6 +94,15 @@ describe('apiFetch — 成功路径', () => {
     const headers = init.headers as Headers;
     expect(headers.get('X-InkFlow-Token')).toBeNull();
   });
+
+  it('204 No Content（DELETE 等无响应体）→ 返回 undefined，不调 res.json()', async () => {
+    // #140 E2 实测：DELETE /provider-configs/{id} 返回 204 无 body，旧实现 res.json() 抛
+    // SyntaxError → store 不更新 → 前端删除 Provider 后卡片不消失（真实 bug，已修复）
+    const jsonSpy = vi.fn();
+    fetchMock.mockResolvedValue(jsonResponse(204, null, jsonSpy));
+    await expect(apiFetch('/items/1', { method: 'DELETE' })).resolves.toBeUndefined();
+    expect(jsonSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('apiFetch — 错误映射', () => {

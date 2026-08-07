@@ -113,3 +113,188 @@ test('导航流：创建项目 → 写作 → 项目 → 设定库 → 设置 �
     await app.close();
   }
 });
+
+// ────────────────────────────────────────────────────────────────
+// 基建：内核 API 直连（复制自 e2e-writing.spec.ts，spec 自包含不 import）
+// ────────────────────────────────────────────────────────────────
+
+/** 带 token 的内核 API 请求（JSON body 自动序列化） */
+async function kernelFetch(
+  info: KernelInfo,
+  pathname: string,
+  init?: { method?: string; body?: unknown }
+): Promise<Response> {
+  return fetch(`http://127.0.0.1:${info.port}${pathname}`, {
+    method: init?.method ?? 'GET',
+    headers: {
+      'X-InkFlow-Token': info.token,
+      'Content-Type': 'application/json',
+    },
+    body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+  });
+}
+
+/** 从内核项目列表按书名查 id（断言存在） */
+async function findProjectId(kernel: KernelInfo, name: string): Promise<string> {
+  const res = await kernelFetch(kernel, '/api/v1/projects');
+  expect(res.ok).toBe(true);
+  const data = (await res.json()) as { items: Array<{ id: string; name: string }> };
+  const project = data.items.find((p) => p.name === name);
+  expect(project, `项目「${name}」应已创建并持久化`).toBeTruthy();
+  return project!.id;
+}
+
+// ────────────────────────────────────────────────────────────────
+// 设定库页 E2E（Issue #140：空态 / 项目选择器 / 分类 tab / 列表 / 空态 CTA / 失败重试）
+// ────────────────────────────────────────────────────────────────
+
+test('设定库：无当前项目 → 空态 + 「前往项目页」CTA → 跳转 /projects', async () => {
+  const { app, window } = await launchApp();
+  try {
+    // 新启动 app 无当前项目（project store 不持久化）→ 直接进设定库即为空态
+    await gotoNav(window, '设定库');
+    await expect(window.getByTestId('library-page')).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByTestId('library-empty')).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByTestId('library-empty')).toContainText('选择或新建项目开始构建设定');
+    await expect(window.getByTestId('library-go-projects')).toBeVisible();
+    await window.getByTestId('library-go-projects').click();
+    await expect
+      .poll(async () => window.evaluate(() => location.hash), { timeout: 15_000 })
+      .toContain('/projects');
+  } finally {
+    await app.close();
+  }
+});
+
+test('设定库：项目选择器 → 面包屑显示「设定库 · 项目名 / 分类」', async () => {
+  const { app, window } = await launchApp();
+  try {
+    const name = `E2E-选择器-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    await gotoNav(window, '设定库');
+    await expect(window.getByTestId('library-page')).toBeVisible({ timeout: 15_000 });
+
+    // Radix Select：点击 trigger → 选项渲染于 portal（role=option 仅展开时存在）
+    const trigger = window.getByTestId('library-project-select');
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    await window.getByRole('option', { name }).click();
+
+    const crumb = window.getByTestId('library-breadcrumb');
+    await expect(crumb).toContainText('设定库', { timeout: 15_000 });
+    await expect(crumb).toContainText(name);
+  } finally {
+    await app.close();
+  }
+});
+
+test('设定库：六分类 tab 切换 → URL cat 参数 + aria-selected + 面包屑分类名', async () => {
+  const { app, window } = await launchApp();
+  try {
+    const name = `E2E-Tabs-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    await gotoNav(window, '设定库');
+
+    const tabs = window.getByTestId('library-tabs');
+    await expect(tabs).toBeVisible({ timeout: 15_000 });
+    await expect(tabs.getByRole('tab')).toHaveCount(6);
+    // 默认激活「角色」
+    await expect(tabs.getByRole('tab', { name: '角色' })).toHaveAttribute('aria-selected', 'true');
+
+    for (const [tabName, catKey] of [
+      ['世界观', 'world'],
+      ['时间线', 'timeline'],
+      ['伏笔', 'foreshadow'],
+    ] as const) {
+      await tabs.getByRole('tab', { name: tabName }).click();
+      await expect
+        .poll(async () => window.evaluate(() => location.hash), { timeout: 15_000 })
+        .toContain(`cat=${catKey}`);
+      await expect(tabs.getByRole('tab', { name: tabName })).toHaveAttribute('aria-selected', 'true');
+      await expect(window.getByTestId('library-breadcrumb')).toContainText(tabName);
+    }
+  } finally {
+    await app.close();
+  }
+});
+
+test('设定库：内核预置角色 → 角色分类列表渲染条目', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-列表-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    const pid = await findProjectId(kernel, name);
+
+    // 内核 API 预置 1 个角色（POST /characters；body 契约见 CharacterCreateBody）
+    const res = await kernelFetch(kernel, `/api/v1/projects/${pid}/characters`, {
+      method: 'POST',
+      body: { name: '角色甲', personality: 'E2E 测试' },
+    });
+    expect(res.status).toBe(201);
+
+    await gotoNav(window, '设定库');
+    await expect(window.getByTestId('library-page')).toBeVisible({ timeout: 15_000 });
+    // 默认角色 tab → 列表渲染角色名（列表项显示 title ?? name）
+    await expect(window.getByTestId('library-list')).toContainText('角色甲', { timeout: 15_000 });
+  } finally {
+    await app.close();
+  }
+});
+
+test('设定库：大纲分类无数据 → 空态引导 + 「去创建」→ /writing', async () => {
+  const { app, window } = await launchApp();
+  try {
+    const name = `E2E-空态-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    await gotoNav(window, '设定库');
+
+    const tabs = window.getByTestId('library-tabs');
+    await expect(tabs).toBeVisible({ timeout: 15_000 });
+    // 大纲分类无预置数据 → 分类空态
+    // ⚠️ 不用「知识库 RAG」分类：RAG 未配置 embedding 模型时 get_vector_store() 抛
+    //    RAGUnavailableError → 500 → 页面显示加载失败（正确产品行为），非空态
+    await tabs.getByRole('tab', { name: '大纲' }).click();
+    await expect(window.getByTestId('library-tab-empty')).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByTestId('library-tab-empty-cta')).toBeVisible();
+    await window.getByTestId('library-tab-empty-cta').click();
+    await expect
+      .poll(async () => window.evaluate(() => location.hash), { timeout: 15_000 })
+      .toContain('/writing');
+  } finally {
+    await app.close();
+  }
+});
+
+test('设定库：分类加载失败 → error + 重试 → 列表恢复', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-重试-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    const pid = await findProjectId(kernel, name);
+    const res = await kernelFetch(kernel, `/api/v1/projects/${pid}/characters`, {
+      method: 'POST',
+      body: { name: '角色甲', personality: 'E2E 测试' },
+    });
+    expect(res.status).toBe(201);
+
+    await gotoNav(window, '设定库');
+    await expect(window.getByTestId('library-list')).toContainText('角色甲', { timeout: 15_000 });
+
+    // 拦截角色端点使其失败（渲染进程 window.fetch 可被 page.route 拦截）
+    await window.route('**/api/v1/projects/*/characters', (route) => route.abort());
+    const tabs = window.getByTestId('library-tabs');
+    // 切换 tab 再切回角色 → 重新拉取角色端点 → 失败 → error 态
+    await tabs.getByRole('tab', { name: '世界观' }).click();
+    await tabs.getByRole('tab', { name: '角色' }).click();
+    await expect(window.getByTestId('library-error')).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByTestId('library-retry')).toBeVisible();
+
+    // 取消拦截 → 点重试 → 列表恢复
+    await window.unroute('**/api/v1/projects/*/characters');
+    await window.getByTestId('library-retry').click();
+    await expect(window.getByTestId('library-error')).not.toBeVisible();
+    await expect(window.getByTestId('library-list')).toContainText('角色甲', { timeout: 15_000 });
+  } finally {
+    await app.close();
+  }
+});
