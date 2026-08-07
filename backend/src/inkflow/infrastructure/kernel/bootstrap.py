@@ -7,7 +7,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from inkflow.infrastructure.kernel import state
@@ -101,17 +101,69 @@ def _probe_health(port: int, token: str, timeout: float) -> bool:
 
 
 def _poll_state_file(path: Path, timeout: float) -> state.KernelState | None:
-    """轮询 kernel.json（~0.2s 间隔）直至出现合法状态；超时 → None。"""
+    """轮询 kernel.json（~0.2s 间隔）直至出现合法状态；超时 → None。
+
+    容忍 F19 serve --port-file 四字段交付（缺 started_at 时补当前 UTC
+    时间，spec §5.2 双保险；QA 2026-08-07：五字段严格读会使真实冷启动
+    轮询永远超时）。
+    """
     import time
 
     deadline = time.monotonic() + timeout
     while True:
         st = state.read_kernel_state(path)
+        if st is None:
+            st = _read_lenient(path)
         if st is not None:
             return st
         if time.monotonic() >= deadline:
             return None
         time.sleep(0.2)
+
+
+def _read_lenient(path: Path) -> state.KernelState | None:
+    """宽松读：容忍四字段 port-file（F19 交付契约），started_at 补当前 UTC。
+
+    五字段完整文件由 read_kernel_state 优先处理（严格语义），本函数仅在
+    严格读失败时兜底——四字段（port/token/pid/version）必须齐全。
+    """
+    import json as _json
+
+    try:
+        data = _json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    try:
+        port = data["port"]
+        token = data["token"]
+        pid = data["pid"]
+        version = data["version"]
+    except (KeyError, TypeError):
+        return None
+    if not isinstance(port, int) or isinstance(port, bool):
+        return None
+    if not isinstance(token, str):
+        return None
+    if not isinstance(pid, int) or isinstance(pid, bool):
+        return None
+    if not isinstance(version, str):
+        return None
+    started_at = datetime.now(UTC)
+    raw_started = data.get("started_at")
+    if isinstance(raw_started, str):
+        try:
+            started_at = datetime.fromisoformat(raw_started)
+        except ValueError:
+            started_at = datetime.now(UTC)
+    return state.KernelState(
+        port=port,
+        token=token,
+        pid=pid,
+        version=version,
+        started_at=started_at,
+    )
 
 
 def _log_kernel_event(msg: str) -> None:

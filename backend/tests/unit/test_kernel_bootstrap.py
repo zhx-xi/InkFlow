@@ -140,8 +140,10 @@ bootstrap.py / state.py / kernel_errors.py 均未实现，模块级 from-import 
 
 import asyncio
 import dataclasses
+import json
 import os
 import sys
+import threading
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -154,6 +156,7 @@ from inkflow.core.config import config
 from inkflow.infrastructure.kernel.bootstrap import (
     KernelHandle,
     _default_spawn_cmd,
+    _poll_state_file,
     ensure_kernel,
 )
 from inkflow.infrastructure.kernel.kernel_errors import KernelStartupError
@@ -689,3 +692,94 @@ async def test_ensure_kernel_concurrent_calls_spawn_once(tmp_path, kernel_mocks)
     m.spawn.assert_called_once()
     m.write.assert_called_once()
     assert sorted(h.reused for h in results) == [False, True]
+
+
+# ── _poll_state_file 真实实现契约（QA 发现 #166 冷启动交付缝隙）────────────
+
+
+class TestPollStateFile:
+    """_poll_state_file 真实实现契约（不 mock 装配缝，直写状态文件）。
+
+    QA 发现（2026-08-07，M5 集成路径审查）：F19 serve 的 --port-file
+    payload 仅四字段（port/token/pid/version，serve.py 交付契约），而
+    kernel.json 五字段契约含 started_at（spec §2.1）——若 _poll_state_file
+    仅走 read_kernel_state（五字段严格），真实冷启动轮询将永远超时。
+    本组用例钉死：轮询层必须容忍四字段交付（started_at 缺失时补当前
+    UTC 时间），且保持五字段优先、超时返回 None、轮询等待语义。
+    """
+
+    def test_poll_state_file_reads_complete_five_field_state(self, tmp_path):
+        """五字段状态文件 → 直接返回 KernelState（正常路径）。"""
+        path = tmp_path / "kernel.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "port": 8123,
+                    "token": "tok",
+                    "pid": 12345,
+                    "version": "1.0.0",
+                    "started_at": "2026-08-07T10:00:00+00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
+        st = _poll_state_file(path, timeout=0.5)
+        assert st is not None
+        assert st.port == 8123 and st.token == "tok" and st.pid == 12345
+        assert st.version == "1.0.0"
+        assert st.started_at == datetime(2026, 8, 7, 10, 0, 0, tzinfo=UTC)
+
+    def test_poll_state_file_accepts_four_field_port_file(self, tmp_path):
+        """四字段交付（F19 serve --port-file，无 started_at）→ 容忍并补 started_at。
+
+        spec §5.2：--port-file 为主交付通道；内核交付四字段，客户端轮询层
+        补全 started_at（当前实现 read_kernel_state 五字段严格 → None，测试
+        预期 FAIL = RED 契约）。
+        """
+        path = tmp_path / "kernel.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "port": 8123,
+                    "token": "tok",
+                    "pid": 12345,
+                    "version": "1.0.0",
+                }
+            ),
+            encoding="utf-8",
+        )
+        st = _poll_state_file(path, timeout=0.5)
+        assert st is not None
+        assert st.port == 8123 and st.token == "tok" and st.pid == 12345
+        assert st.version == "1.0.0"
+        assert isinstance(st.started_at, datetime)  # 缺失字段被补全（非 None）
+
+    def test_poll_state_file_timeout_returns_none(self, tmp_path):
+        """文件一直不存在 → 超时返回 None（不抛错）。"""
+        assert _poll_state_file(tmp_path / "kernel.json", timeout=0.3) is None
+
+    def test_poll_state_file_waits_for_late_appearance(self, tmp_path):
+        """轮询语义：文件先缺失、后出现 → 在超时内捕获（间隔 0.2s）。"""
+        path = tmp_path / "kernel.json"
+
+        def _write_later() -> None:
+            import time
+
+            time.sleep(0.3)
+            path.write_text(
+                json.dumps(
+                    {
+                        "port": 8123,
+                        "token": "tok",
+                        "pid": 12345,
+                        "version": "1.0.0",
+                        "started_at": "2026-08-07T10:00:00+00:00",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        threading.Thread(target=_write_later, daemon=True).start()
+        st = _poll_state_file(path, timeout=2.0)
+        assert st is not None
+        assert st.port == 8123
