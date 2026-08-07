@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -92,9 +93,35 @@ def mark_stale(path: Path) -> Path:
 
 
 def is_process_alive(pid: int) -> bool:
-    """进程存活判定：pid <= 0 → False；os.kill(pid, 0) 成功 → True；OSError → False。"""
+    """进程存活判定：pid <= 0 → False。
+
+    Windows：OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION) +
+    GetExitCodeProcess == STILL_ACTIVE(259)——os.kill(pid, 0) 对 uv python
+    真身进程抛 WinError 87 不可靠（实测 2026-08-07，M5-3）；PROCESS_QUERY_
+    LIMITED_INFORMATION 是 Windows 7+ 最低查询权限，任何同用户进程可用。
+    其他平台：os.kill(pid, 0) try/except OSError（POSIX 语义正确）。
+    """
     if pid <= 0:
         return False
+    if sys.platform == "win32":
+        import ctypes
+
+        process_query_limited_information = 0x1000
+        still_active = 259
+        handle = ctypes.windll.kernel32.OpenProcess(
+            process_query_limited_information, False, pid
+        )
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            if not ctypes.windll.kernel32.GetExitCodeProcess(
+                handle, ctypes.byref(code)
+            ):
+                return False
+            return code.value == still_active
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
     except OSError:
