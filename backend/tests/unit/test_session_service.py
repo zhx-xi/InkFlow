@@ -364,7 +364,7 @@ class TestUpdate:
         mock_repo.get = AsyncMock(return_value=_session(status=SessionStatus.PAUSED))
         updated = await service.update(
             SID,
-            SessionUpdate(title="新标题", status="completed"),  # type: ignore[call-arg]
+            SessionUpdate(title="新标题", status="completed"),  # type: ignore[call-arg]  # 故意传非法值断言 Pydantic 校验
         )
         assert updated is not None
         assert updated.status == SessionStatus.PAUSED

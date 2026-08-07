@@ -76,7 +76,7 @@ def _session(**overrides: object) -> Session:
         "updated_at": TS,
     }
     kwargs.update(overrides)
-    return Session(**kwargs)  # type: ignore[arg-type]
+    return Session(**kwargs)  # type: ignore[arg-type]  # kwargs 覆盖字段类型由测试意图保证
 
 
 def _log_entry(**overrides: object) -> SessionLogEntry:
@@ -91,7 +91,7 @@ def _log_entry(**overrides: object) -> SessionLogEntry:
         "created_at": TS,
     }
     kwargs.update(overrides)
-    return SessionLogEntry(**kwargs)  # type: ignore[arg-type]
+    return SessionLogEntry(**kwargs)  # type: ignore[arg-type]  # kwargs 覆盖字段类型由测试意图保证
 
 
 class TestEnums:
@@ -247,7 +247,7 @@ class TestSessionCreateValidation:
     def test_create_invalid_session_type_raises(self) -> None:
         """session_type 非法值 → ValidationError."""
         with pytest.raises(ValidationError):
-            SessionCreate(session_type="bogus", title="标题")  # type: ignore[arg-type]
+            SessionCreate(session_type="bogus", title="标题")  # type: ignore[arg-type]  # kwargs 覆盖字段类型由测试意图保证
 
 
 class TestSessionUpdate:
@@ -288,7 +288,7 @@ class TestSessionUpdate:
 
         F13 v1.1 教训: 断言「被忽略」而非「422」——状态机走动作端点，PATCH 不许改 status.
         """
-        update = SessionUpdate(title="新标题", status="completed")  # type: ignore[call-arg]
+        update = SessionUpdate(title="新标题", status="completed")  # type: ignore[call-arg]  # 故意传非法值断言 Pydantic 校验
         assert update.title == "新标题"
         assert "status" not in update.model_fields_set
         # 构造不抛错（extra=ignore 而非 forbid）
@@ -356,7 +356,7 @@ class TestSessionLogCreateValidation:
     def test_log_create_invalid_level_raises(self) -> None:
         """level 非法值 → ValidationError."""
         with pytest.raises(ValidationError):
-            SessionLogCreate(level="debug", message="消息")  # type: ignore[arg-type]
+            SessionLogCreate(level="debug", message="消息")  # type: ignore[arg-type]  # kwargs 覆盖字段类型由测试意图保证
 
 
 class TestSessionCompleteFail:

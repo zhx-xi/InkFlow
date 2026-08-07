@@ -89,7 +89,7 @@ def _session(**overrides: object) -> Session:
         "updated_at": TS,
     }
     kwargs.update(overrides)
-    return Session(**kwargs)  # type: ignore[arg-type]
+    return Session(**kwargs)  # type: ignore[arg-type]  # kwargs 覆盖字段类型由测试意图保证
 
 
 def _log_entry(seq: int = 1, **overrides: object) -> SessionLogEntry:
@@ -104,14 +104,14 @@ def _log_entry(seq: int = 1, **overrides: object) -> SessionLogEntry:
         "created_at": TS,
     }
     kwargs.update(overrides)
-    return SessionLogEntry(**kwargs)  # type: ignore[arg-type]
+    return SessionLogEntry(**kwargs)  # type: ignore[arg-type]  # kwargs 覆盖字段类型由测试意图保证
 
 
 def _view(**overrides: object) -> SessionView:
     """构造会话详情/列表项视图."""
     kwargs: dict[str, object] = {"session": _session(), "log_count": 0, "last_log": None}
     kwargs.update(overrides)
-    return SessionView(**kwargs)  # type: ignore[arg-type]
+    return SessionView(**kwargs)  # type: ignore[arg-type]  # kwargs 覆盖字段类型由测试意图保证
 
 
 def _mock_svc(mock_get_svc: MagicMock) -> MagicMock:
