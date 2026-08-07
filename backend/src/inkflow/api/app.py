@@ -21,6 +21,7 @@ from inkflow.api.routers import (
     outlines,
     project,
     provider_configs,
+    sessions,
     settings,
     style,
     timeline,
@@ -120,6 +121,7 @@ app.include_router(outlines.router)
 app.include_router(timeline.router)
 app.include_router(foreshadowings.router)
 app.include_router(extractions.router)
+app.include_router(sessions.router)
 app.include_router(settings.router)
 
 

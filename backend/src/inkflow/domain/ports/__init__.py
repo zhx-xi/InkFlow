@@ -105,6 +105,12 @@ from inkflow.domain.ports.prompt_template import (
     PromptTemplateProtocol,
     RenderedPrompt,
 )
+from inkflow.domain.ports.session_errors import (
+    SessionNotFoundError,
+    SessionServiceError,
+    SessionTransitionError,
+)
+from inkflow.domain.ports.session_repository import SessionRepositoryProtocol
 from inkflow.domain.ports.summary_repository import SummaryRepositoryProtocol
 from inkflow.domain.ports.timeline_errors import (
     TimelineNotFoundError,
@@ -180,6 +186,10 @@ __all__ = [
     "RenderedPrompt",
     "RetrievedEntity",
     "SelfRelationError",
+    "SessionNotFoundError",
+    "SessionRepositoryProtocol",
+    "SessionServiceError",
+    "SessionTransitionError",
     "StageResult",
     "StageStatus",
     "StoryArcNotFoundError",
