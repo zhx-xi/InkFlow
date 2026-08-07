@@ -10,15 +10,20 @@
  * CI 无系统托盘交互能力 → 托盘菜单动作经 app.evaluate 直调主进程钩子（spec §12 D6）。
  * helper 复制自 e2e-shell.spec.ts（#78 同款 launch/waitKernelInfo/healthCheck/isAlive；Playwright
  * 单文件限制，不跨文件 import）。本文件只读，不修改 e2e-shell.spec.ts。
+ *
+ * F32 E2E 契约（#152，spec §9.1/§9.4）：关闭行为持久化重启保留（M6）——设置页 Select 切「直接退出」
+ * → 重启 → 关闭窗口仍完整退出。重启用例独立 userData 临时目录（spec §9.1 隔离策略）。
  */
 import path from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import {
   test,
   expect,
   _electron as electron,
   type ElectronApplication,
+  type Page,
 } from '@playwright/test';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
@@ -163,6 +168,36 @@ async function traySetCloseBehavior(app: ElectronApplication, value: 'tray' | 'q
     },
     value
   );
+}
+
+/** 启动应用（独立 userData 临时目录——F32 重启用例隔离策略，spec §9.1：launch 传 --user-data-dir） */
+async function launchAppWithUserData(userDataDir: string): Promise<ElectronApplication> {
+  return electron.launch({
+    args: [MAIN_JS, `--user-data-dir=${userDataDir}`],
+    cwd: FRONTEND_DIR,
+  });
+}
+
+/** 侧边栏导航（AppNav 链接文本：项目 / 写作 / 设定库 / 设置） */
+async function gotoNav(window: Page, name: string): Promise<void> {
+  await window.getByRole('link', { name }).click();
+}
+
+/** 轮询 __trayInfo.closeBehavior 直到等于期望值（IPC 推送后事件驱动刷新，spec f31 §9；应用退出时读钩子返回 undefined 继续轮询） */
+async function waitForCloseBehavior(
+  app: ElectronApplication,
+  expected: 'tray' | 'quit',
+  timeoutMs = 20_000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const info = await readTrayInfo(app);
+    if (info && info.closeBehavior === expected) {
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  throw new Error(`__trayInfo.closeBehavior 未在 ${timeoutMs}ms 内变为 ${expected}`);
 }
 
 // Electron 启动 + 内核拉起较慢，放宽整文件超时（M5 另设 300s：ensure_kernel 冷启动 + 复用等待）
@@ -360,4 +395,96 @@ test('托盘 M5（spec §13 M5）：GUI 复用 CLI 预拉起内核（pid 不变�
       // 已退出
     }
   }
+});
+
+// ────────────────────────────────────────────────────────────────
+// F32 设置持久化（#152，spec §9.1/§9.4 E2E 行；M6 验收）：关闭行为持久化重启保留
+// ────────────────────────────────────────────────────────────────
+test.describe('F32 关闭行为持久化（#152）', () => {
+  test('F32 M6（spec §9.4/M6）：关闭行为「直接退出」→ 重启 → 关闭窗口仍完整退出（持久化生效）', async () => {
+    // 重启用例 = 二次 launch + 二次内核冷启动，放宽单用例超时（文件级 180s 不足）
+    test.setTimeout(300_000);
+    // 设计假设（spec §5.3/§9.1）：close_behavior 持久化权威 = 后端 app_settings；
+    // 设置页 Select → setCloseBehavior = PATCH 成功 → IPC 推送主进程 → store 更新（D9）；
+    // 重启后 renderer initFromBackend GET → close_behavior != 'tray' → IPC 推送主进程（启动初始化⑤）。
+    // __trayInfo.closeBehavior 变 quit = 「PATCH 已落库 + 主进程内存已对齐」的确定性闸门。
+    const userDataDir = mkdtempSync(path.join(tmpdir(), 'inkflow-e2e-f32-tray-'));
+    let app1Exited = false;
+    let app2Exited = false;
+    try {
+      // ── 第一程：设置页切「直接退出」→ 关闭窗口 = 完整退出（内核回收 + 进程退出）──
+      const app1 = await launchAppWithUserData(userDataDir);
+      try {
+        const win1 = await app1.firstWindow();
+        const kernel1 = await waitKernelInfo(app1);
+        await waitForTrayCreated(app1);
+
+        // 设置页 → 常规分类 → 关闭窗口时 Select → 「直接退出」（真实 UI 路径，非 __trayActions 钩子）
+        await gotoNav(win1, '设置');
+        await expect(win1.getByTestId('settings-panel')).toBeVisible();
+        await win1.getByRole('combobox', { name: '关闭窗口时' }).click();
+        await win1.getByRole('option', { name: '直接退出', exact: true }).click();
+        await expect(win1.getByRole('combobox', { name: '关闭窗口时' })).toContainText('直接退出');
+
+        // 确定性闸门：PATCH 落库 + IPC 推送生效（spec §5.3：IPC 只在 PATCH 成功后推送）
+        await waitForCloseBehavior(app1, 'quit');
+
+        // 关闭窗口（自绘按钮真实路径，见 M1 注释：window.close() 不触发主进程 close 拦截）→
+        // quit 语义 → window-all-closed → shutdown() → 完整退出
+        await win1.evaluate(() => window.INKFLOW_API.windowControls.close());
+        await waitForAppExit(app1, 20_000);
+        app1Exited = true;
+        expect(isAlive(kernel1.pid), `第一程内核 pid=${kernel1.pid} 应回收`).toBe(false);
+      } finally {
+        if (!app1Exited) {
+          await app1.close().catch(() => {});
+        }
+      }
+
+      // ── 第二程：复用同一数据目录重启 → 持久化生效 → 关闭窗口仍完整退出 ──
+      const app2 = await launchAppWithUserData(userDataDir);
+      try {
+        const win2 = await app2.firstWindow();
+        const kernel2 = await waitKernelInfo(app2);
+        await waitForTrayCreated(app2);
+
+        // 持久化生效断言：initFromBackend 启动初始化⑤ 已把 quit 推回主进程（未回退默认 tray）
+        await waitForCloseBehavior(app2, 'quit');
+
+        // UI 层确认：设置页 Select 显示「直接退出」（store 值来自后端 GET）
+        await gotoNav(win2, '设置');
+        await expect(win2.getByTestId('settings-panel')).toBeVisible();
+        await expect(win2.getByRole('combobox', { name: '关闭窗口时' })).toContainText('直接退出');
+
+        // 清理（内核仍存活时执行）：恢复共享内核 DB close_behavior='tray'（spec §2.2 默认值），
+        // 避免持久化残留污染后续托盘用例（M1 断言默认 'tray'）。主进程内存仍为 quit，
+        // 不影响本程「关闭 → 完整退出」断言；直接 fetch 绕过 renderer，UI 无感知
+        const restore = await fetch(`http://127.0.0.1:${kernel2.port}/api/v1/settings`, {
+          method: 'PATCH',
+          headers: {
+            'X-InkFlow-Token': kernel2.token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ close_behavior: 'tray' }),
+        });
+        expect(restore.status, '恢复 close_behavior=tray 应 200').toBe(200);
+
+        // 关闭窗口 → 仍完整退出（重启后行为未回退默认）
+        await win2.evaluate(() => window.INKFLOW_API.windowControls.close());
+        await waitForAppExit(app2, 20_000);
+        app2Exited = true;
+        expect(isAlive(kernel2.pid), `第二程内核 pid=${kernel2.pid} 应回收`).toBe(false);
+      } finally {
+        if (!app2Exited) {
+          await app2.close().catch(() => {});
+        }
+      }
+    } finally {
+      try {
+        rmSync(userDataDir, { recursive: true, force: true });
+      } catch {
+        // 临时目录清理失败（Windows 文件锁）不阻塞用例
+      }
+    }
+  });
 });
