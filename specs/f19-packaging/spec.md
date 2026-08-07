@@ -5,7 +5,7 @@
 > **关联 Issues**: [#48](https://github.com/zhx-xi/InkFlow/issues/48)（本任务）· [#70](https://github.com/zhx-xi/InkFlow/issues/70)（F19-skills，并行无关）· [#137](https://github.com/zhx-xi/InkFlow/issues/137)（Tauri 2 体积优化专项，2.0.0，本 spec §10 不在范围）
 > **依赖**: #69 ✅（F19-GUI 已合入——内核进程化 #77 PR #85 / Electron 壳 #78 PR #95 / 渲染层 #79 PR #97 及其后子任务 #105/#106/#107）；#50 ✅（F23 SSE，PR #83）；#70 ⏳（skills 包，并行 worktree 无代码依赖）
 > **参考 ADR**: [ADR-013](../../adr/ADR-013.md)（RAG 首次落地）· [ADR-019](../../adr/ADR-019.md)（版本里程碑 v2：0.4.0 = 打包；skills 后移至 1.0.0，2026-08-06 拍板 #70）· [ADR-020](../../adr/ADR-020.md)（Electron 选型 + electron-builder 打包）· [ADR-021](../../adr/ADR-021.md)（内核进程化：resources/kernel/inkflow.exe 生命周期）· [ADR-025](../../adr/ADR-025.md)（依赖锁定 uv.lock/pnpm-lock）
-> **状态**: 待实现 🔲
+> **状态**: ✅ 已实现（PR #144 交付 + PR #145 发布门禁，v0.4.0 2026-08-07 正式发布）
 
 ---
 

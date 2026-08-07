@@ -3,9 +3,9 @@
 > **Spec 版本**: 1.0 | **日期**: 2026-07-31 | **依据**: PRD v2.1 §6.1 F3, Constitution P1-P6
 > **所属阶段**: Phase 1 — Sprint 1.3 (W5-W7) 核心引擎（P0-06，预计 8-12 天）
 > **关联 Issues**: [#3](https://github.com/zhx-xi/InkFlow/issues/3)
-> **依赖**: F1 ✅, F2 ✅, F5 ✅（前置）；F6 ⏳（上下文注入，待实现）
-> **参考 ADR**: [ADR-012](../../adr/ADR-012.md) (错误处理), [ADR-005v2](../../adr/ADR-005v2.md) (ChatLiteLLM), [ADR-014](../../adr/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/ADR-015.md) (LangChain 隔离规则)
-> **状态**: 待实现
+> **依赖**: F1 ✅, F2 ✅, F5 ✅（前置）；F6 ✅（上下文注入）
+> **参考 ADR**: [ADR-012](../../adr/ADR-012.md) (错误处理), [ADR-005v2](../../adr/ADR-005v2.md) (ChatOpenAI 兼容路由), [ADR-014](../../adr/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/ADR-015.md) (LangChain 隔离规则)
+> **状态**: ✅ 已实现（PR #21）
 
 ---
 

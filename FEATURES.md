@@ -71,6 +71,17 @@
 | #92 | 真实 AI CI job：e2e-ai-backend（label 触发 + workflow_dispatch 兜底） | PR #111 | ✅ |
 | #104 | 覆盖率补全：三层全覆盖（后端 98.90% 行/96.32% 分支、前端 99.11%/92.51%、API 端点 100%、E2E 三页）；CI 门槛 98.5/95.0 常态化（ADR-027） | PR #114/#115/#116/#117 | ✅ |
 
+### 1.6 本地产品完善（0.4.0，2026-08-07 正式发布 v0.4.0 ✅）
+
+| Issue | 内容 | 交付 | 状态 |
+|-------|------|------|------|
+| #48 | F19 打包分发：PyInstaller 内核 onedir + electron-builder NSIS 安装包 + 便携 ZIP + release.yml tag v* 自动发布（B+ 装配：chromadb 进包 + API embedding 接线；数据目录 sys.frozen→%APPDATA%） | PR #144（发布门禁 #145：rc.1-rc.6 迭代修复后 v0.4.0 正式发布，exe 144.3MB + zip 175.5MB） | ✅ |
+| #105 | F19-GUI 导航重构：侧边栏 + 设定库项目上下文 + 设置页框架（承接 #99 交互反馈实现） | PR #120/#121 | ✅ |
+| #106 | F19-GUI 模型管理页：ProviderConfig 注册表（内置 seed + key 回退链）+ 模型管理页 + 角色绑定只读区 + 顶栏 Select + 自绘窗口按钮 | PR #122 + 修复 PR #131/#132（#125/#126：addModel rethrow + 部分失败保留草稿 + builtin_key 判重防 seed 复活） | ✅ |
+| #107 | F19-GUI Agent 模板：AgentTemplate 实体（引用式运行时装配）+ 角色独立温度链（0.7 哨兵移除）+ 风险确认框 + 新建项目模板下拉 | PR #135 | ✅ |
+
+**0.4.0 遗留**：设置持久化缺陷 #152（default_words 跳页丢失 + theme 无后端持久化）→ 0.5.0（用户拍板，2026-08-07）。
+
 ---
 
 ## 二、规划中功能
@@ -78,7 +89,6 @@
 | Feature | 版本 | 内容 | 依赖/前置 | Issue | 状态 |
 |---------|------|------|----------|-------|------|
 | skills 包 | **1.0.0** | 小说写作 skills（源码单一真相 + 三通道分发） | 无 | [#70](https://github.com/zhx-xi/InkFlow/issues/70) | 🔜 已建 issue |
-| F19 打包分发 | **0.4.0** | PyInstaller 后端内核 exe + electron-builder NSIS 安装包 + 便携 ZIP | #77/#78/#79 | [#48](https://github.com/zhx-xi/InkFlow/issues/48) | 🔜 已建 issue |
 | F20 MCP Server | **1.0.0** | MCP Server（stdio 直连 domain），≥15 工具（ADR-023） | 无 | [#49](https://github.com/zhx-xi/InkFlow/issues/49) | 🔜 已建 issue |
 | F24 会话管理 | **0.5.0** | 写作会话 / 恢复 | 无 | [#51](https://github.com/zhx-xi/InkFlow/issues/51) | 🔜 已建 issue |
 | F25 daemon | **0.5.0** | daemon 后台写作（本地；云端无常驻任务） | 无 | [#52](https://github.com/zhx-xi/InkFlow/issues/52) | 🔜 已建 issue |
@@ -101,7 +111,7 @@
 | 0.2.0 | 创作工具链 | F9-F16 全部（8 模块：角色/世界观/大纲/时间线/伏笔/提取+RAG/审计/风格） | ✅ 已交付（2026-08-02，1589 tests / 91%） |
 | 0.3.0 | GUI 桌面端（提前） | F19 GUI（内核进程化 + Electron 壳 + React 渲染层）· F23 SSE 流式（提前） | ✅ 已交付（PR #83/#85/#95/#97） |
 | 0.3.1 | 质量加固补丁 | #86 LLM 修复 · #87 LangGraph 重构 · #92 真实 AI CI · #104 覆盖率（后端 98.9%/96.3% 分支） | ✅ 已交付（PR #108/#110/#111/#114-#117，2026-08-06） |
-| 0.4.0 | 打包 | F19 打包（exe / 安装包 / 便携 ZIP） | 🔜 |
+| 0.4.0 | 打包 + GUI 演进 | F19 打包（exe / 安装包 / 便携 ZIP）· 导航重构 · 模型管理 · Agent 模板 | ✅ 已交付（2026-08-07 v0.4.0 正式发布，PR #120/#121/#122/#131/#132/#135/#144/#145） |
 | 0.5.0 | Agent 集成 | F24 会话 · F25 daemon | 🔜 |
 | 0.6.0 | 导出 + 搜索 | F21 导出 · F22 全文搜索 | 🔜 |
 | 1.0.0 | 本地完全可用 | CLI + GUI + skills + MCP 四界面齐备 + 跨平台 + 文档 + Phase 3 Gate | 🔜 |

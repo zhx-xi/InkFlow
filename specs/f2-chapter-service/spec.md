@@ -4,6 +4,7 @@
 > **所属阶段**: Phase 1 — 核心引擎
 > **关联 Issues**: [#2](https://github.com/zhx-xi/InkFlow/issues/2)
 > **依赖**: F1 (project_service) 已完成 ✅
+> **状态**: ✅ 已实现（PR #9）
 
 ---
 

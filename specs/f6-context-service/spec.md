@@ -5,7 +5,7 @@
 > **关联 Issues**: [#6](https://github.com/zhx-xi/InkFlow/issues/6)
 > **依赖**: F1 (project_service), F2 (chapter_service), F5 (llm_service)
 > **参考 ADR**: [ADR-010](../../adr/ADR-010.md) (分层 Token 预算 → RAG 增强), [ADR-013](../../adr/ADR-013.md) (Phase 2 RAG), [ADR-014](../../adr/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/ADR-015.md) (LangChain 隔离), [ADR-007v2](../../adr/ADR-007v2.md) (包结构)
-> **状态**: 待实现 🔲
+> **状态**: ✅ 已实现（PR #27）
 
 ---
 
