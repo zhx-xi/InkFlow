@@ -44,6 +44,7 @@
 | [ADR-026](ADR-026.md) | 真实 AI CI job — label 触发 + workflow_dispatch 兜底（e2e-ai-backend） | ✅ 已接受 | 2026-08-04 |
 | [ADR-027](ADR-027.md) | 测试覆盖率门禁 — 三层全覆盖（#104：后端 98.5/95.0 + 前端 vitest thresholds + 口径修正） | ✅ 已接受 | 2026-08-06 |
 | [ADR-028](ADR-028.md) | E2E 按页面域拆分 + 门禁口径（6 spec + 6 job；e2e-shell 提前第一批 required；AI 链路只测 UI 状态；1.0.0 全页面覆盖） | ✅ 已接受 | 2026-08-06 |
+| [ADR-029](ADR-029.md) | F25 daemon 移除 — 伪需求判定 + 意图已覆盖（外部 agent 经 MCP/skills 调用由 F19 serve + F20 MCP + skills 包承担；#52） | ✅ 已接受 | 2026-08-07 |
 
 ## 当前有效决策速览
 

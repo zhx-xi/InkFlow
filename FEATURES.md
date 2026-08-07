@@ -90,8 +90,8 @@
 |---------|------|------|----------|-------|------|
 | skills 包 | **1.0.0** | 小说写作 skills（源码单一真相 + 三通道分发） | 无 | [#70](https://github.com/zhx-xi/InkFlow/issues/70) | 🔜 已建 issue |
 | F20 MCP Server | **1.0.0** | MCP Server（stdio 直连 domain），≥15 工具（ADR-023） | 无 | [#49](https://github.com/zhx-xi/InkFlow/issues/49) | 🔜 已建 issue |
-| F24 会话管理 | **0.5.0** | 写作会话 / 恢复 | 无 | [#51](https://github.com/zhx-xi/InkFlow/issues/51) | 🔜 已建 issue |
-| F25 daemon | **0.5.0** | daemon 后台写作（本地；云端无常驻任务） | 无 | [#52](https://github.com/zhx-xi/InkFlow/issues/52) | 🔜 已建 issue |
+| F24 会话管理 | **0.5.0** | 写作会话 / 恢复 / 任务履历 | 无 | [#51](https://github.com/zhx-xi/InkFlow/issues/51) | ✅ 已实现（PR #157） |
+| ~~F25 daemon~~ | ~~0.5.0~~ | ~~daemon 后台写作~~（**已移除**，ADR-029：伪需求；真实意图=外部 agent 经 MCP/skills 调用，由 F19 serve + F20 MCP + skills 包覆盖） | 无 | [#52](https://github.com/zhx-xi/InkFlow/issues/52) | ❌ 已关闭（2026-08-07） |
 | F21 导出服务 | **0.6.0** | 导出 EPUB / MD / TXT / DOCX（≥3 格式） | 无 | [#53](https://github.com/zhx-xi/InkFlow/issues/53) | 🔜 已建 issue |
 | F22 全文搜索 | **0.6.0** | 全文搜索 | 无 | [#54](https://github.com/zhx-xi/InkFlow/issues/54) | 🔜 已建 issue |
 | 1.0.0 发布验收 | **1.0.0** | CLI + GUI + skills + MCP 四界面齐备；跨平台打包（macOS/Linux）+ 文档完善 + Phase 3 Gate | 以上全部 | [#55](https://github.com/zhx-xi/InkFlow/issues/55) | 🔜 已建 issue |
@@ -99,7 +99,7 @@
 | 云端总：云存档 + 异地写作 | **2.0.0** | 用户 API + Admin 后台 + GUI 远程模式（PostgreSQL + JWT + BYOK；无 CRDT，LWW + 修订历史） | P0-11 协议（已就绪） | [#71](https://github.com/zhx-xi/InkFlow/issues/71) | 🔜 已建 issue |
 
 > F17 空置（PRD §6.2 标题残留编号，不使用）。
-> 版本归属以 [ADR-019 v4](adr/ADR-019.md) 为准。
+> 版本归属以 [ADR-019 v5](adr/ADR-019.md) 为准。
 
 ---
 
@@ -112,7 +112,7 @@
 | 0.3.0 | GUI 桌面端（提前） | F19 GUI（内核进程化 + Electron 壳 + React 渲染层 + 视觉打磨）· F23 SSE 流式（提前）· Agent 约束体系 | ✅ 已交付（PR #83/#85/#95/#97/#100-103/#89） |
 | 0.3.1 | 质量加固补丁 | #86 LLM 修复 · #87 LangGraph 重构 · #92 真实 AI CI · #104 覆盖率（后端 98.9%/96.3% 分支） | ✅ 已交付（PR #108/#110/#111/#114-#117，2026-08-06） |
 | 0.4.0 | 打包 + GUI 演进 | F19 打包（exe / 安装包 / 便携 ZIP）· 导航重构 · 模型管理 · Agent 模板 | ✅ 已交付（2026-08-07 v0.4.0 正式发布，PR #120/#121/#122/#131/#132/#135/#144/#145） |
-| 0.5.0 | Agent 集成 | F24 会话 · F25 daemon | 🔜 |
+| 0.5.0 | Agent 集成 | F24 会话 · E2E 增强 · 设置持久化 | 🔜 |
 | 0.6.0 | 导出 + 搜索 | F21 导出 · F22 全文搜索 | 🔜 |
 | 1.0.0 | 本地完全可用 | CLI + GUI + skills + MCP 四界面齐备 + 跨平台 + 文档 + Phase 3 Gate | 🔜 |
 | 2.0.0 | 云端 | F18 云 Web · 用户 API · Admin 后台 · GUI 远程模式（云存档/异地写作） | 🔜 |

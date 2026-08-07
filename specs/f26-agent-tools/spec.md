@@ -204,7 +204,7 @@ inkflow agent tools list [--json]
 
 - **依赖**: F5（LLM 客户端既有实现）、F9/F13/F6/F15/F3（工具包装的 service，均已合入）、#87（StateGraph 重构——建议先合：agent 循环的 state 增量语义受益，但非硬阻塞）
 - **被依赖**: F27（writer-agent 消费 chat_with_tools + 工具集）、F20（MCP 工具同源复用工具定义）
-- 编号口径声明: 以 ADR-019 版本表为准（F24=会话、F25=daemon、F26=本模块）；旧文档中指向 Agent 化升级的「F24-F28」编号已作废（升级路径 v1.1 Spec 变更行）。
+- 编号口径声明: 以 ADR-019 v5 版本表为准（F24=会话、F25=daemon 已移除不复用（ADR-029）、F26=本模块）；旧文档中指向 Agent 化升级的「F24-F28」编号已作废（升级路径 v1.1 Spec 变更行）。
 
 ---
 

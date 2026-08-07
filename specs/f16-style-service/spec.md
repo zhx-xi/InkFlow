@@ -955,7 +955,7 @@ async def _dispatch(self, request, source, project) -> _Normalized:
 
 ### 6.4 重复执行与幂等
 
-- 风格分析是**手动触发**的只读计算（API/CLI），无自动触发/定时任务（归 F25 daemon，§10）
+- 风格分析是**手动触发**的只读计算（API/CLI），无自动触发/定时任务（F25 daemon 已移除，ADR-029——自动触发由外部 agent 经 F20 MCP / skills 调用，§10）
 - **重复执行幂等**: 同一项目同一输入两次分析 → 报告**基础板块**（fingerprint/ai_trace/lexical，含 jieba）逐字段相等（快照断言可证）；文本变更后重跑即反映新状态（无增量状态需要维护——同 F12/F15 要点）。**LLM 板块（llm_assessment）不可快照断言**——LLM 输出非确定性，重复执行可能不同；确定性验收基线只覆盖基础板块（§5.6/§9/§13）
 - 分析**不感知** F14 的增量提取机制（`extraction_runs`）：STYLE 在门面中**每次执行**（同 timeline 关闭语义——确定性只读计算廉价，无 skip 价值，§8.2/F14 §5.2 先例）
 
@@ -1292,7 +1292,7 @@ CLI 测试: style 组（Mock StyleService）                        ~12 cases
 | 语言风格学派别分类（网文风/出版风/古风等风格类型识别） | Phase 2+——需风格类型标注数据与分类器；MVP 只输出结构性统计（§5.3） |
 | 跨章节风格漂移检测（卷间风格一致性、合作写作风格差异） | Phase 2+——需多报告对比基础设施（与「报告落库」同口径，§10 首行） |
 | 风格分析接入 F6 上下文 / F3 写作链路 | Phase 2+ 联调——分析是「作者主动体检」工具，不自动干预写作（同 F15 §10 先例） |
-| 分析定时任务 / daemon 自动分析 | F25 daemon（Phase 3）——MVP 手动触发（API/CLI，§6.4） |
+| 分析定时任务 / daemon 自动分析 | 已移除（F25 daemon，ADR-029）——自动触发由外部 agent 经 F20 MCP / skills 调用；MVP 手动触发（API/CLI，§6.4） |
 | 风格可视化（雷达图、趋势图、词云） | F18 Web UI（0.3.0）/ F19 GUI——MVP 报告为结构化 JSON + 人类可读摘要 |
 | 报告导出 / 分享 | F21 导出服务（0.6.0）——MVP 经 API/CLI 瞬态获取 |
 | F14 门面的 STYLE 增量提取（内容 hash skip） | 本 spec 决策：STYLE 每次执行（确定性只读计算廉价，无 skip 价值——同 timeline 关闭语义，F14 §5.2 先例，§8.2） |
