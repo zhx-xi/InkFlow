@@ -124,6 +124,10 @@ export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promis
     }
     throw new ApiError(res.status, detail);
   }
+  // 204 No Content（DELETE 等）无响应体：跳过 JSON 解析（res.json() 对空 body 抛 SyntaxError）
+  if (res.status === 204) {
+    return undefined as T;
+  }
   return (await res.json()) as T;
 }
 
