@@ -140,4 +140,4 @@ def is_version_compatible(kernel_version: str, client_version: str) -> bool:
         client = Version(client_version)
     except InvalidVersion:
         return False
-    return kernel.major == client.major
+    return bool(kernel.major == client.major)

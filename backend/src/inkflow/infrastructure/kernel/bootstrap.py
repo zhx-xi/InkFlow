@@ -51,7 +51,7 @@ def _acquire_mutex(name: str = "InkFlowKernelBootstrap") -> object | None:
         return object()
     import ctypes
 
-    handle = ctypes.windll.kernel32.CreateMutexW(None, False, name)
+    handle: object | None = ctypes.windll.kernel32.CreateMutexW(None, False, name)
     if not handle:
         return None
     if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
@@ -95,7 +95,7 @@ def _probe_health(port: int, token: str, timeout: float) -> bool:
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status == 200
+            return bool(resp.status == 200)
     except Exception:
         return False
 

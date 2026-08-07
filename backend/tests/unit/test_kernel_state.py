@@ -124,6 +124,34 @@ def test_read_kernel_state_type_mismatch_returns_none(tmp_path):
     assert read_kernel_state(path) is None
 
 
+@pytest.mark.parametrize(
+    "bad_key,bad_value",
+    [
+        ("port", "8765"),  # port 字符串（既有用例，参数化归并）
+        ("token", 123),  # token 非 str
+        ("pid", "12345"),  # pid 非 int
+        ("version", 1.0),  # version 非 str
+        ("started_at", 12345),  # started_at 非 str
+    ],
+)
+def test_read_kernel_state_any_field_type_mismatch_returns_none(
+    tmp_path, bad_key, bad_value
+):
+    """任一字段类型不符 → None（QA 补测 2026-08-07：覆盖全部五字段类型分支）。"""
+    path = tmp_path / "kernel.json"
+    payload = _valid_payload()
+    payload[bad_key] = bad_value
+    _write_fixture(path, payload)
+    assert read_kernel_state(path) is None
+
+
+def test_read_kernel_state_non_dict_json_returns_none(tmp_path):
+    """JSON 顶层非 dict（数组）→ None（QA 补测：isinstance(data, dict) 分支）。"""
+    path = tmp_path / "kernel.json"
+    path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+    assert read_kernel_state(path) is None
+
+
 def test_write_kernel_state_atomic_writes_valid_json_without_tmp_residue(tmp_path):
     """⑥ 原子写：目标文件 JSON 可解析且字段正确、无残留 .tmp 文件。"""
     path = tmp_path / "kernel.json"
