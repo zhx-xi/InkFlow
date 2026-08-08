@@ -40,6 +40,7 @@
  *   「首次提示 → dismiss → 退出」顺序不可调换（dismiss 会置 trayHintDismissed）。
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi, type Mock } from 'vitest';
+import path from 'node:path';
 import { app, ipcMain, Tray, nativeImage, Menu, BrowserWindow } from 'electron';
 import './main';
 
@@ -476,5 +477,47 @@ describe('window-all-closed 条件退出（spec §5.2 / §5.6 / D5）', () => {
     expect(fakeChild.kill).not.toHaveBeenCalled();
     // 冲刷 RED 旧实现（无条件 shutdown）可能挂起的 stopKernel 定时器，避免悬挂句柄
     await vi.advanceTimersByTimeAsync(5_000);
+  });
+});
+
+// ══ 回归防护：0.5.0 发布缺陷补测（#192，2026-08-08）═══════════════════════
+//  #192 F1 packagedKernelPath 曾用 app.getAppPath()（打包版返回 asar 路径 → ENOENT
+//  内核全灭）——本测试锁定修复后行为：process.resourcesPath 存在时 spawn 命令必须是
+//  resources/kernel 绝对路径 + cwd 兜底。
+//  #188 F2（ready → 菜单 label 刷新）的集成断言经实测无法在此文件（hoisted-mock ×
+//  resetModules 隔离）下稳定触发 readline 链——其防护由 kernel.state.test.ts 的
+//  formatKernelMenuLabel 契约 + window-controls.test.ts 的 ready 链 + rc 装机复验 M1' 组成。
+describe('回归防护：内核路径来源（#187/#192 F1）', () => {
+  it('#192 F1 packagedKernelPath 来源：process.resourcesPath 存在 → spawn command 为 resources/kernel 绝对路径', async () => {
+    fakeChild.removeAllListeners();
+    fakeChild.stdout.removeAllListeners();
+    fakeChild.stderr.removeAllListeners();
+    const prev = (process as { resourcesPath?: string }).resourcesPath;
+    Object.defineProperty(process, 'resourcesPath', {
+      value: 'C:/app/resources',
+      configurable: true,
+    });
+    try {
+      vi.resetModules();
+      spawnMock.mockClear(); // import 前清旧实例累计——之后 calls[0] 即本实例生产 spawn
+      appMock.isPackaged = true; // 先设再 import → boot 即走生产分支
+      await import('./main');
+      // boot 完成标志：spawn 已调用（生产模式 kernelStatePath=null → 无 fs/http 挂起）
+      await vi.waitFor(() => {
+        expect(spawnMock.mock.calls.length).toBeGreaterThan(0);
+      });
+      const command = spawnMock.mock.calls[0]?.[0] as string | undefined;
+      expect(command).toBe(path.join('C:/app/resources', 'kernel', 'inkflow.exe'));
+      // cwd 兜底：打包版 spawn cwd = exe 所在目录（#187 双保险）
+      const opts = spawnMock.mock.calls[0]?.[2] as { cwd?: string } | undefined;
+      expect(opts?.cwd).toBe(path.dirname(process.execPath));
+    } finally {
+      appMock.isPackaged = false;
+      if (prev === undefined) {
+        delete (process as { resourcesPath?: string }).resourcesPath;
+      } else {
+        Object.defineProperty(process, 'resourcesPath', { value: prev, configurable: true });
+      }
+    }
   });
 });
