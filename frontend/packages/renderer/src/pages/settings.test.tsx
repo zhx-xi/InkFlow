@@ -327,6 +327,8 @@ beforeEach(() => {
     font: 'sans',
     close_behavior: 'tray',
     tray_hint_dismissed: false,
+    // #198：默认补齐 default_words（后端 AppSettings 恒返回；无项目回显兜底源）
+    default_words: 800000,
   });
   // F32（#152）：扩展重置 font/closeBehavior/trayHintDismissed——测试间隔离，
   // 防「上一用例改 store 值 → 下一用例 Select 初值漂移」污染既有用例（GREEN 后 cast 可删）
@@ -525,6 +527,76 @@ describe('设置页 — 常规分类', () => {
       const indicator = screen.getByTestId('settings-save-indicator');
       expect(indicator.textContent).toBe('已保存');
     });
+  });
+
+  // ⚠️ #198（2026-08-09，rc4 复验缺陷）：default_words 全局值重启加载失败——
+  // 设置页初始值只从项目 config 读（无项目兜底 800000），不从 fetchSettings().default_words 读。
+  // 修复契约：初始值 = 项目 config.default_words 存在时优先，否则读全局 fetchSettings()；
+  // 保存路径维持 #189（有项目 → 项目 config；无项目 → 全局 settings）。GREEN 需在
+  // settings.tsx GeneralPanel 引入 fetchSettings 读取（经 fetchSettingsMock 断言 wire）。
+  it('#198 无项目 + 后端全局 default_words → 初始值显示全局值（重启回显，非 800000 兜底）', async () => {
+    useProjectStore.setState({ projects: [], currentProjectId: null, loading: false, error: null });
+    fetchSettingsMock.mockResolvedValueOnce({
+      theme: 'paper', bg: 'default', lang: 'zh', font: 'sans',
+      close_behavior: 'tray', tray_hint_dismissed: false, default_words: 123456,
+    });
+    renderSettings();
+    const input = screen.getByLabelText('新章节默认字数');
+    // GREEN 前初始值恒 800000 → toHaveValue(123456) FAIL = RED
+    await waitFor(() => {
+      expect(input).toHaveValue(123456);
+    });
+  });
+
+  it('#198 有项目 config.default_words=60000 → 项目级优先（fetchSettings 全局值不覆盖）', async () => {
+    useProjectStore.setState({
+      projects: [{
+        id: 'p1', name: '青云志', genre: '玄幻', language: 'zh-CN', target_words: 800000,
+        config: { default_words: 60000 },
+        created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
+      }],
+      currentProjectId: 'p1', loading: false, error: null,
+    });
+    fetchSettingsMock.mockResolvedValueOnce({
+      theme: 'paper', bg: 'default', lang: 'zh', font: 'sans',
+      close_behavior: 'tray', tray_hint_dismissed: false, default_words: 123456,
+    });
+    renderSettings();
+    const input = screen.getByLabelText('新章节默认字数');
+    await waitFor(() => {
+      expect(input).toHaveValue(60000);
+    });
+    // 异步全局值到达后也不得覆盖项目级值（给 fetch promise 足够时间 settle 再复核；
+    // 确认型：GREEN 若短路不 fetch（项目有级值）也绿，若 fetch 则不得覆盖）
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(input).toHaveValue(60000);
+  });
+
+  it('#198 有项目但 config 无 default_words → 读全局 fetchSettings 值（项目未设 → 全局兜底链）', async () => {
+    // beforeEach 项目 p1 config: {}（无 default_words）
+    fetchSettingsMock.mockResolvedValueOnce({
+      theme: 'paper', bg: 'default', lang: 'zh', font: 'sans',
+      close_behavior: 'tray', tray_hint_dismissed: false, default_words: 234567,
+    });
+    renderSettings();
+    const input = screen.getByLabelText('新章节默认字数');
+    // GREEN 前恒 800000 → toHaveValue(234567) FAIL = RED
+    await waitFor(() => {
+      expect(input).toHaveValue(234567);
+    });
+  });
+
+  it('#198 fetchSettings 失败 → 保持 800000 兜底（静默，无 toast 无错误态）', async () => {
+    useProjectStore.setState({ projects: [], currentProjectId: null, loading: false, error: null });
+    fetchSettingsMock.mockRejectedValueOnce(new Error('network down'));
+    renderSettings();
+    const input = screen.getByLabelText('新章节默认字数');
+    // 确认型守卫：RED 阶段现状即 800000（无 fetch 调用）——GREEN 后 fetch 失败也不得污染
+    await waitFor(() => {
+      expect(input).toHaveValue(800000);
+    });
+    const toasts = useToastStore.getState().toasts;
+    expect(toasts.length).toBe(0);
   });
 });
 
@@ -1483,9 +1555,10 @@ type ThemeStoreF32 = ReturnType<typeof useThemeStore.getState> & {
   font: FontKeyF32;
   closeBehavior: CloseBehaviorF32;
   trayHintDismissed: boolean;
-  setFont: (f: FontKeyF32) => void;
-  setCloseBehavior: (b: CloseBehaviorF32) => Promise<void>;
-  setTrayHintDismissed: (v: boolean) => Promise<void>;
+  // #199（2026-08-09）：setter 返回 Promise<boolean>（成功 true / 失败 false）——保存反馈信号
+  setFont: (f: FontKeyF32) => Promise<boolean>;
+  setCloseBehavior: (b: CloseBehaviorF32) => Promise<boolean>;
+  setTrayHintDismissed: (v: boolean) => Promise<boolean>;
   initFromBackend: () => Promise<void>;
 };
 const themeStateF32 = () => useThemeStore.getState() as ThemeStoreF32;
@@ -1545,6 +1618,68 @@ describe('设置页 — 首次托盘提示开关（F32 §6.2 RED 契约）', () 
     } finally {
       useThemeStore.setState({ setTrayHintDismissed: original } as unknown as Partial<ThemeStoreF32>);
     }
+  });
+});
+
+/**
+ * #199（2026-08-09，rc4 复验缺陷）：设置保存反馈统一化——设置页所有即改即存设置
+ * （首次托盘提示开关 / 关闭窗口时 Select / 编辑器字体 Select）保存成功后统一显示
+ * 顶部「已保存」（settings-save-indicator，与 default_words #189 同一指示器）；
+ * 失败 → err toast（store 内既有）+ 指示器回到隐藏。GREEN 契约：
+ * - GeneralPanel 三个控件调用处包「saving → await setter（Promise<boolean>）→ saved(2s)/idle」
+ * - store setter 返回 Promise<boolean>（成功 true / 失败 false，见 stores/theme.test.ts #199 组）
+ * RED 预期：现状切换无顶部提示（指示器恒空/隐藏）→ textContent 断言 FAIL = RED。
+ */
+describe('设置页 — #199 保存反馈统一化（顶部「已保存」）', () => {
+  it('编辑器字体 Select 切换「等宽」→ 顶部「已保存」（font 即改即存反馈）', async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    await user.click(screen.getByRole('combobox', { name: '编辑器字体' }));
+    await user.click(await screen.findByRole('option', { name: '等宽' }));
+    // GREEN 前 font 切换零顶部提示 → 恒空 → FAIL = RED
+    await waitFor(() => {
+      expect(screen.getByTestId('settings-save-indicator').textContent).toBe('已保存');
+    });
+    // store 已持久化（wire 佐证）
+    expect(useThemeStore.getState().font).toBe('mono');
+  });
+
+  it('关闭窗口时 Select 切换「直接退出」→ 顶部「已保存」（closeBehavior 即改即存反馈）', async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    await user.click(screen.getByRole('combobox', { name: '关闭窗口时' }));
+    await user.click(await screen.findByRole('option', { name: '直接退出' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('settings-save-indicator').textContent).toBe('已保存');
+    });
+    expect(useThemeStore.getState().closeBehavior).toBe('quit');
+  });
+
+  it('首次托盘提示开关切换 → 顶部「已保存」（trayHint 即改即存反馈）', async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    const sw = screen.getByTestId('settings-tray-hint-switch');
+    await user.click(sw); // 关闭提示 → setTrayHintDismissed(true)
+    await waitFor(() => {
+      expect(screen.getByTestId('settings-save-indicator').textContent).toBe('已保存');
+    });
+    expect(useThemeStore.getState().trayHintDismissed).toBe(true);
+  });
+
+  it('font 切换 PATCH 失败 → err toast + 顶部指示器不显示「已保存」（失败回隐藏，提示走 err toast）', async () => {
+    patchSettingsMock.mockRejectedValue(new Error('network down'));
+    const user = userEvent.setup();
+    renderSettings();
+    await user.click(screen.getByRole('combobox', { name: '编辑器字体' }));
+    await user.click(await screen.findByRole('option', { name: '等宽' }));
+    // err toast 出现（store 内 pushSaveFailed 既有行为）
+    await waitFor(() => {
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts.some((t) => t.type === 'err')).toBe(true);
+    });
+    // 指示器不得显示「已保存」（失败信号 = false → idle）
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.getByTestId('settings-save-indicator').textContent).not.toBe('已保存');
   });
 });
 
