@@ -34,7 +34,7 @@
 | [ADR-016](ADR-016.md) | 日志方案 — loguru 结构化日志 | ✅ 已接受 | 2026-07-31 |
 | [ADR-017](ADR-017.md) | CI 代码质量检查 — Reviewdog + Ruff 统一门禁 | ✅ 已接受 | 2026-07-31 |
 | [ADR-018](ADR-018.md) | 测试分层与 CI Job 并行化 — 三层目录 + 按功能链路拆分 job | ✅ 已接受 | 2026-07-31 |
-| [ADR-019](ADR-019.md) | 版本里程碑管理 — SemVer + 1.0.0 = 本地完全可用（v4：里程碑重排 v2 + skills 后移 v3 + F20 MCP 后移 v4） | ✅ 已接受（v4 修订） | 2026-08-01（v4 2026-08-06） |
+| [ADR-019](ADR-019.md) | 版本里程碑管理 — SemVer + 1.0.0 = 本地完全可用（v5：里程碑重排 v2 + skills 后移 v3 + F20 MCP 后移 v4 + F25 daemon 移除 v5） | ✅ 已接受（v5 修订） | 2026-08-01（v5 2026-08-07） |
 | [ADR-020](ADR-020.md) | GUI 技术选型 — Electron + 共享 React 渲染层（单机主界面，D2） | ✅ 已接受 | 2026-08-02 |
 | [ADR-021](ADR-021.md) | 本地内核进程化 — 独立进程 + localhost REST + SSE 通信（GUI↔内核，D3） | ✅ 已接受 | 2026-08-02 |
 | [ADR-022](ADR-022.md) | skills 包形态 — 源码单一真相 + 三通道分发（D4） | ✅ 已接受 | 2026-08-02 |
@@ -62,6 +62,6 @@
 - **CI 真实 AI 验证**: label 触发 + workflow_dispatch 兜底，e2e-ai-backend job（ADR-026，0.3.1 实现）
 - **CI 覆盖率门禁**: 后端 98.5% 行 / 95% 分支（coverage-backend job + check_coverage.py）+ 前端 vitest thresholds；口径 = XML 权威 + RAG 排除 + Protocol 方法体排除（ADR-027，0.3.1 实现）
 - **CI E2E 门禁**: 按页面域拆 6 job；e2e-shell 第一批恒跑 required、页面级第二批信息性；AI 链路只测 UI 状态（真实 AI 走 ADR-026）；1.0.0 全页面按钮可达（ADR-028，0.5.0 起实施）
-- **版本里程碑**: SemVer 版本号管理；1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）；2.0.0 = 云端（云 Web + 用户 API + Admin 后台 + GUI 远程模式）（ADR-019 v4，2026-08-06：v2 里程碑重排 + v3 skills 后移 1.0.0 + v4 F20 MCP 后移 1.0.0）
+- **版本里程碑**: SemVer 版本号管理；1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）；2.0.0 = 云端（云 Web + 用户 API + Admin 后台 + GUI 远程模式）（ADR-019 v5，2026-08-07：v2 里程碑重排 + v3 skills 后移 1.0.0 + v4 F20 MCP 后移 1.0.0 + v5 F25 daemon 移除）
 
 *来源：design/architecture-analysis-2026-07-30.md §三（2026-07-31 提取为独立目录）*

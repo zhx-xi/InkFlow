@@ -29,7 +29,7 @@ D:\develop\projects\
 │   ├── ai-traps.md                  # AI 编码常见陷阱完整清单（AGENTS.md §9 引用）
 │   ├── README.md / FEATURES.md / LICENSE
 │   ├── adr\                         # ★ ADR 决策记录（索引见 adr/README.md）
-│   │   ├── README.md                #   ADR 索引 + 编号规则（25 条有效，2026-08-02）
+│   │   ├── README.md                #   ADR 索引 + 编号规则（30 条有效，2026-08-08）
 │   │   └── ADR-NNN.md               #   单个决策记录（Nygard 格式）
 │   ├── design\                      # ★ 产品/架构设计文档
 │   │   ├── prd-inkflow-v2.1-2026-07-30.md   #   PRD（文件名 v2.1，内容 v2.2 修订）

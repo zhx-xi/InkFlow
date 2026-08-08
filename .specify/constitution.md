@@ -1,6 +1,6 @@
 # InkFlow Constitution — 项目章程
 
-> 版本 2.0 | 基于 ADR-001~028 | 依据 PRD v2.2 | 2026-08-02 结构同步修订（ADR-019 v2 里程碑 + ADR-025 依赖锁定）；2026-08-07 LLM 行对齐 ADR-005v2（ChatLiteLLM→ChatOpenAI）
+> 版本 2.0 | 基于 ADR-001~030 | 依据 PRD v2.2 | 2026-08-02 结构同步修订（ADR-019 v2 里程碑 + ADR-025 依赖锁定）；2026-08-07 LLM 行对齐 ADR-005v2（ChatLiteLLM→ChatOpenAI）；2026-08-08 ADR 范围 001~028→001~030（#201）
 
 ---
 
@@ -130,8 +130,8 @@ backend/tests/unit/       # 纯单元测试（无 I/O、无 DB）
 tests/integration/        # 仓储 + 服务层集成测试
 tests/api/                # FastAPI HTTP 集成测试
 tests/cli/                # CLI 端到端测试（新增文件须加入 ci.yml integration-cli-backend job）
-tests/e2e/                # 全栈端到端（未来，前端接入后启用）
-frontend/src/__tests__/   # 前端单元测试（未来，0.3.0 GUI 后）
+tests/e2e/                # 全栈端到端（Playwright Electron + 真实内核，ADR-028 已启用）
+frontend/src/__tests__/   # 前端单元测试（renderer/electron 双包，vitest，已启用）
 ```
 
 ### 5.4 Fixture 规范

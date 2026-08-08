@@ -2,7 +2,28 @@
 
 所有重要变更记录于此文件，格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-> 版本口径以 [ADR-019 v4](adr/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
+> 版本口径以 [ADR-019 v5](adr/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
+
+## [0.5.0] - 2026-08-08
+
+### 新增
+- **F24 会话管理（#51，PR #157）**：双实体（Session + SessionLogEntry）+ 四态状态机（active/paused/completed/failed）+ 两级删除（归档→真删，F24 拍板）
+- **本地内核服务化（ADR-030）**：
+  - 冷启动基建（#166，PR #171）：kernel.json 状态文件 + ensure_kernel() 三态（复用/互斥拉起/stale 清理）
+  - GUI 托盘常驻（#167，PR #172）：关闭→最小化托盘（内核保持）+ 托盘菜单（打开/内核状态/退出）+ 关闭行为设置
+  - CLI 独立发布产物（#168，PR #181）：inkflow-cli.zip 第 4 发布产物 + NSIS PATH 安装（F33）
+- **设置持久化（#152，PR #176 + #197）**：app_settings key-value 表 + GET/PATCH /settings + 前端双轨加载 + 主进程桥接 + 表单草稿守卫（F32；default_words 全局默认语义 + theme 后端化）
+- **E2E 按页面域拆分（#139/#140，PR #156）**：6 spec + CI 6 job 并行；e2e-shell 提前第一批 required（ADR-028）
+- **回归防护补测（PR #194）**：内核 spawn 路径来源（resourcesPath）+ 托盘图标源图居中完整性（#192）
+
+### 修复（发布修复链 rc1-rc4）
+- release.yml rc tag 自动标记 prerelease（#183，PR #184）
+- CLI zip 命名对齐 GUI 风格（#185，PR #186）
+- GUI 任意 cwd 启动：内核 spawn 改绝对路径（#187，PR #191）
+- 托盘品牌 logo + 内核状态菜单刷新（#188，PR #190）
+- default_words 全局化 + 顶部「已保存」提示（#189，PR #190/#197）
+- rc2 复验四缺陷：resourcesPath 回归/顶栏内核状态真实化/托盘 logo 源图（#192，PR #193）
+- 新建项目对话框目标字数 + 遮罩点击不关闭（#195，PR #197）
 
 ## [0.4.0] - 2026-08-07
 
@@ -77,6 +98,7 @@
   - F8 CI 测试分层（#23，PR #24/#25）
 - **P0-11 云端接口 Protocol（#34，PR #36/#37）**：Auth / Database / Storage / User / Sync / MCPTransport
 
+[0.5.0]: https://github.com/zhx-xi/InkFlow/releases/tag/v0.5.0
 [0.4.0]: https://github.com/zhx-xi/InkFlow/releases/tag/v0.4.0
 [0.3.1]: https://github.com/zhx-xi/InkFlow/milestone/9
 [0.3.0]: https://github.com/zhx-xi/InkFlow/milestone/3
