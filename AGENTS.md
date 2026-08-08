@@ -16,7 +16,7 @@
 | `ARCHITECTURE.md` | 架构导航：完整目录树、组件职责、模块类型谱系 → 样板 spec、加新模块步骤。**改架构/加模块前先读** |
 | `ai-traps.md` | AI 编码常见陷阱完整清单（§9 只留高频 TOP） |
 | `FEATURES.md` | 功能清单唯一权威（已实现模块全表 + 规划 + 版本映射） |
-| `adr/README.md` | ADR 索引（改代码前先查；28 条有效） |
+| `adr/README.md` | ADR 索引（改代码前先查；30 条有效） |
 | `CONTRIBUTING.md` | 人类贡献者指南 |
 
 ---
@@ -28,13 +28,13 @@
 | 维度 | 说明 |
 |------|------|
 | **团队** | 单人开发 |
-| **时间线** | SemVer 版本里程碑（ADR-019 v4）：0.1.0 ✅ → 0.2.0 ✅（F9-F16 已交付）→ 0.3.0 ✅ GUI（F19 提前 + F23 SSE 提前）→ 0.3.1 ✅ 质量加固（#86 LLM 修复 / #87 状态重构 / #92 真实 AI CI / #104 覆盖率）→ 0.4.0 ✅ 打包 + GUI 演进（v0.4.0 2026-08-07 发布）→ 0.5.0 ✅ Agent 集成 → 0.6.0 导出+搜索 → **1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）** → **2.0.0 = 云端**；对应 PRD W10-W24 周计划（明细见下方里程碑表） |
+| **时间线** | SemVer 版本里程碑（ADR-019 v5）：0.1.0 ✅ → 0.2.0 ✅（F9-F16 已交付）→ 0.3.0 ✅ GUI（F19 提前 + F23 SSE 提前）→ 0.3.1 ✅ 质量加固（#86 LLM 修复 / #87 状态重构 / #92 真实 AI CI / #104 覆盖率）→ 0.4.0 ✅ 打包 + GUI 演进（v0.4.0 2026-08-07 发布）→ 0.5.0 ✅ Agent 集成（v0.5.0 2026-08-08 发布）→ 0.6.0 导出+搜索+世界观 → **1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）** → **2.0.0 = 云端**；对应 PRD W10-W24 周计划（明细见下方里程碑表） |
 | **部署模式** | 本地优先（SQLite，免认证）；**2.0.0 云端里程碑**：云存档/异地写作（PostgreSQL + JWT + BYOK，无 CRDT），GUI/CLI 远程模式连接云端 |
 | **多界面** | GUI（Electron，React 复用）+ CLI（Typer）+ REST API（FastAPI：本地内核通用通信契约，亦为云端用户 API 同一契约）+ MCP Server（stdio 直连 domain）（+ 云端 Web/Admin 后台） |
 | **工作流** | SDD + TDD：先写 spec → 再写测试（RED）→ 写代码（GREEN）→ 重构 |
 | **仓库** | `https://github.com/zhx-xi/InkFlow` |
 
-### 里程碑（ADR-019 v4：2026-08-06 skills + F20 MCP 后移至 1.0.0，#70/#49 拍板；v2 2026-08-02 产品形态决策重排，Issue #65）
+### 里程碑（ADR-019 v5：2026-08-07 F25 daemon 移除，ADR-029；v4 2026-08-06 skills + F20 MCP 后移至 1.0.0，#70/#49 拍板；v2 2026-08-02 产品形态决策重排，Issue #65）
 
 | 版本 | 内容 |
 |------|------|
@@ -43,8 +43,8 @@
 | 0.3.0 ✅ | F19 GUI（Electron 壳 + 内核进程化 + React 渲染层）· F23 SSE 流式（PR #83，#50）——F19 子任务 A 内核进程化（PR #85，#77）· 子任务 B Electron 壳（PR #95，#78）· 子任务 C React 渲染层（PR #97，#79）· 子任务 D 视觉打磨（PR #100-103，#98：Radix 控件 + 品牌接入 + 空态 + 菜单栏移除 + 顶栏 logo 修复链）· 交互反馈定稿（#99 spec §6，实现并入 0.4.0 #105）· Agent 约束体系（PR #89，#88） |
 | 0.3.1 ✅ | 质量加固补丁（milestone #9）：#86 LLM 客户端修复（PR #108：timeout→request_timeout + zhipu 注册 + audit 路由）· #87 LangGraph 状态重构（PR #110：StateGraph(dict)→TypedDict+reducer，节点增量返回，type: ignore 清零）· #92 真实 AI CI job（PR #111：e2e-ai-backend，label run-ai-tests 触发 + workflow_dispatch 兜底；tests/e2e/ T1+T2，缺 key 永远 skip；⚠️ 真实验证需先配 LLM_API_KEY secret）· #104 覆盖率补全（PR #114/#115/#116/#117：三层补测至后端 98.90% 行/96.32% 分支、前端 99.11%/92.51%、API 端点 100%、E2E 三页；CI 门槛 98.5/95.0 常态化，口径见 ADR-027） |
 | 0.4.0 ✅ | F19 打包分发（PR #144，#48：B+ chromadb 进包 + API embedding 装配 + 数据目录 sys.frozen→%APPDATA% + PyInstaller 内核 onedir 142MB + electron-builder NSIS 145.6MB/便携 ZIP 177.4MB + release.yml tag v* 自动发布；发布门禁 #145 ✅：rc.1-rc.6 迭代修复（artifact 结构/GH_TOKEN/版本注入/asar renderer 路径/品牌图标）后 **v0.4.0 正式发布 2026-08-07**（exe 144.3MB + zip 175.5MB））+ GUI 演进——子任务 D 导航重构+设置页框架（PR #120/#121，#105，承接 #99 交互反馈实现）· 子任务 E 模型管理页（PR #122，#106：ProviderConfig 注册表 + 模型管理页 + 角色绑定只读区 + 顶栏 Select + 自绘窗口按钮，覆盖率 99.27%）· 模型管理修复（PR #131/#132，#125/#126：addModel rethrow + 部分失败保留草稿 + builtin_key 判重防 seed 复活，2026-08-06）· 子任务 F Agent 模板（PR #135，#107：AgentTemplate 实体（引用式）+ 角色独立温度链（0.7 哨兵移除）+ 风险确认框 + 新建项目模板下拉，三层测试全绿）· 架构图 + ChatLiteLLM 残留清理（PR #134，#134 文档同步）· CI uv cache 修复 + job 分批（PR #128，#128）；遗留：设置持久化 #152（0.5.0） |
-| 0.5.0 ✅ | Agent 集成：F24 会话 ✅（#51）· E2E 增强（#139/#140）· 设置持久化（#152 ✅ PR #176）· 本地内核服务化（#166 ✅ PR #171 / #167 ✅ PR #172 / **#168 ✅ PR #181**）——0.5.0 里程碑 2026-08-08 关闭。**发布修复链（rc1-rc4 迭代）**：prerelease 自动标记（#183 ✅ PR #184）· CLI zip 命名对齐（#185 ✅ PR #186）· GUI 任意 cwd 启动（#187 ✅ PR #191）· 托盘图标+内核状态菜单刷新（#188 ✅ PR #190）· 设置持久化全局化 default_words 方案 A + 顶部已保存（#189 ✅ PR #190/#197）· rc2 复验四缺陷：内核路径 resourcesPath/顶栏状态真实化/托盘 logo 源图（#192 ✅ PR #193）· 新建项目对话框目标字数+遮罩（#195 ✅ PR #197）· 回归防护补测（PR #194）——rc1→rc4 预发布迭代（v0.5.0-rc1 ~ rc4，正式版待 rc4 复验后发布） |
-| 0.6.0 | F21 导出 · F22 全文搜索 · 设定库分类实体创建（#196：角色/世界观等手动创建，当前占位跳写作页）· default_words 全局值重启加载（#198：设置页初始值读 fetchSettings）· 设置保存反馈统一化（#199：tray hint/close behavior 等切换顶部「已保存」） |
+| 0.5.0 ✅ | Agent 集成：F24 会话 ✅（#51）· E2E 增强（#139/#140）· 设置持久化（#152 ✅ PR #176）· 本地内核服务化（#166 ✅ PR #171 / #167 ✅ PR #172 / **#168 ✅ PR #181**）——0.5.0 里程碑 2026-08-08 关闭。**发布修复链（rc1-rc4 迭代）**：prerelease 自动标记（#183 ✅ PR #184）· CLI zip 命名对齐（#185 ✅ PR #186）· GUI 任意 cwd 启动（#187 ✅ PR #191）· 托盘图标+内核状态菜单刷新（#188 ✅ PR #190）· 设置持久化全局化 default_words 方案 A + 顶部已保存（#189 ✅ PR #190/#197）· rc2 复验四缺陷：内核路径 resourcesPath/顶栏状态真实化/托盘 logo 源图（#192 ✅ PR #193）· 新建项目对话框目标字数+遮罩（#195 ✅ PR #197）· 回归防护补测（PR #194）——rc1→rc4 预发布迭代后 **v0.5.0 正式发布 2026-08-08**（Latest） |
+| 0.6.0 | F21 导出 · F22 全文搜索 · 世界观三连（#173 地点树 / #174 地图视图 / #175 跨书复用）· CLI 恒经 HTTP（#169）· E2E 设置页补全（#141）· 设定库分类实体创建（#196：角色/世界观等手动创建，当前占位跳写作页）· default_words 全局值重启加载（#198：设置页初始值读 fetchSettings）· 设置保存反馈统一化（#199：tray hint/close behavior 等切换顶部「已保存」） |
 | 1.0.0 🎉 | **本地完全可用 = CLI + GUI + skills + MCP** + 跨平台 + 文档 + 全量验收 |
 | 2.0.0 ☁️ | 云端：F18 云 Web（移出单机）· 用户 API · Admin 后台 · GUI 远程模式 |
 
@@ -108,7 +108,7 @@ F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI ✅ 子任务 A PR #85 / B PR
 | `backend/tests/unit/` | 单元测试（纯后端，无 I/O） |
 | `tests/` | 集成 + API + CLI 测试（顶层；conftest.py 共享 fixture） |
 | `specs/f<X>-<name>/spec.md` | SDD 规格（每 feature 一个目录，**唯一真相**） |
-| `adr/` | ADR 决策记录（索引 `adr/README.md`，28 条有效） |
+| `adr/` | ADR 决策记录（索引 `adr/README.md`，30 条有效） |
 | `design/` | PRD + 架构分析 + Gate 评审（文件名带日期） |
 | `docs/` | 用户使用说明（纯用户文档，README 见 `docs/README.md`） |
 | `frontend/` | 前端（pnpm workspace 双包：renderer + electron，0.3.0 F19 起） |
@@ -190,7 +190,7 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 | [ADR-015](adr/ADR-015.md) | **LangChain 隔离**：Protocol 模式 |
 | [ADR-017](adr/ADR-017.md) | **CI 代码质量**：Reviewdog + Ruff |
 | [ADR-018](adr/ADR-018.md) | **测试分层**：三层目录 + 按功能并行 CI |
-| [ADR-019](adr/ADR-019.md) | **版本里程碑**：SemVer + 1.0.0 = 本地完全可用（v4：v2 重排 +2.0.0 云端，v3 skills 后移 1.0.0，v4 F20 MCP 后移 1.0.0） |
+| [ADR-019](adr/ADR-019.md) | **版本里程碑**：SemVer + 1.0.0 = 本地完全可用（v5：v2 重排 +2.0.0 云端，v3 skills 后移 1.0.0，v4 F20 MCP 后移 1.0.0，v5 F25 daemon 移除） |
 | [ADR-020](adr/ADR-020.md) | 单机 GUI：**Electron** + 共享 React 渲染层 |
 | [ADR-021](adr/ADR-021.md) | **本地内核进程化**：localhost REST + SSE |
 | [ADR-022](adr/ADR-022.md) | **skills 包**：源码单一真相 + 三通道分发 |
@@ -234,6 +234,7 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 - `specs/f33-cli-dist/spec.md`：F33 CLI 独立发布产物规格（打包/发布基建增量专项型：inkflow-cli-<version>.zip 第 4 发布产物 + NSIS PATH 勾选/清理 + release.yml 增量，ADR-030 ⑤，#168 PR #181）
 - 每个模块 spec 定义了：数据模型、API 契约、CLI 命令、边界情况、测试策略
 - spec 是开发的唯一真相来源。如果发现 spec 与实现矛盾，先更新 spec，再改代码
+- **Spec 篇幅纪律（2026-08-08 #201 立规）**：新 spec 默认单文件 ≤800 行；超过且章节内聚可拆时，允许 `specs/f<X>-<name>/references/` 子目录（tests/implementation/decisions 等），但 **spec.md 头部必须显式声明 references/ 清单**（防 agent 漏读）；已实现 spec 只加「快速导航」块（§N 标题 + 行号）不物理拆分
 
 ### 5.2 开始新功能
 
