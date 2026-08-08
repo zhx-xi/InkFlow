@@ -224,10 +224,14 @@ jobs:
         shell: pwsh
         # ⚠️ gh 在 Actions 中需显式 GH_TOKEN（实测 rc.2 失败 #145）——github.token 自动注入仅限
         #    特定 action，CLI 必须显式传 env；contents: write 权限已在上方 permissions 声明
+        # ⚠️ rc 预发布 tag 必须标 prerelease（#183）：gh 非交互不自动推断，不标会抢占正式版
+        #    Latest 标记（v0.5.0-rc1 预发布实测发现）；0.4.0 时代 rc.1-6 靠手动 edit，现固化
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = '${{ github.ref_name }}'
           $assets = @(Get-ChildItem -Path packages/electron/dist -File | Where-Object { $_.Extension -in '.exe', '.zip' } | Select-Object -ExpandProperty FullName)
           if (-not $assets) { throw "No release assets found in packages/electron/dist" }
-          gh release create $tag $assets --generate-notes
+          $releaseArgs = @('--generate-notes')
+          if ($tag -match '-rc') { $releaseArgs += '--prerelease' }
+          gh release create $tag $assets @releaseArgs
