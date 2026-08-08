@@ -441,6 +441,72 @@ describe('设置页 — 常规分类', () => {
       expect(toasts[toasts.length - 1].message).toBe('已保存');
     });
   });
+
+  // ⚠️ #189 rc1 发布缺陷（2026-08-08）：default_words 卸载 flush 在 Electron 托盘退出路径失效——
+  // 「改完不失去焦点直接关窗口」→ 窗口 hide（组件不卸载、无失焦）→ flush 不触发 → 重启丢失。
+  // RED 契约（GREEN 前 FAIL = 实现缺陷证据）：
+  // 1. 输入停止后 debounce 自动保存（不依赖失焦/卸载/visibility）
+  // 2. document visibilitychange(hidden) → flush（Electron 窗口隐藏到托盘触发 renderer 事件）
+  it('#189 输入停止自动保存：输入 1500 不失去焦点 → 自动 PATCH（不依赖失焦/卸载）', async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    const input = screen.getByLabelText('新章节默认字数');
+    await user.clear(input);
+    await user.type(input, '1500');
+    // 不 tab/blur——模拟「改完直接关窗口」的失焦缺失场景；输入停止后防抖到期应自动保存
+    await waitFor(
+      () => {
+        expect(apiFetchMock).toHaveBeenCalledWith(
+          '/api/v1/projects/p1',
+          expect.objectContaining({
+            method: 'PATCH',
+            body: expect.objectContaining({ config: expect.objectContaining({ default_words: 1500 }) }),
+          }),
+        );
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it('#189 窗口隐藏 flush：输入 2000 → visibilitychange(hidden) → PATCH（Electron 托盘 hide 路径）', async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    const input = screen.getByLabelText('新章节默认字数');
+    await user.clear(input);
+    await user.type(input, '2000');
+    // 模拟 Electron 关闭按钮 → 窗口隐藏到托盘（renderer 收到 visibilitychange hidden，组件不卸载）
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/projects/p1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.objectContaining({ config: expect.objectContaining({ default_words: 2000 }) }),
+        }),
+      );
+    });
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+  });
+
+  // ⚠️ #189 用户追加拍板（2026-08-08）：保存成功后页面正上方提示「已保存」
+  // （参考 Notion / Google Docs 顶部保存指示：顶部小字、成功显示约 2s 淡出）
+  // data-testid 契约：settings-save-indicator（页面正上方容器，文本 = 当前保存状态）
+  it('#189 保存成功 → 页面正上方提示「已保存」（settings-save-indicator）', async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    const input = screen.getByLabelText('新章节默认字数');
+    await user.clear(input);
+    await user.type(input, '3000');
+    await user.tab(); // 失焦触发保存
+    await waitFor(() => {
+      const indicator = screen.getByTestId('settings-save-indicator');
+      expect(indicator.textContent).toBe('已保存');
+    });
+  });
 });
 
 describe('设置页 — Agent 分类（迁移自 AgentChainCard，spec §7.4/§7.6）', () => {

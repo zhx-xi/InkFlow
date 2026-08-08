@@ -47,6 +47,9 @@ export const en: Record<string, string> = {
   'set.trayHint': 'First-time tray hint',
   'set.trayHintDesc': 'Show a hint when closing to tray for the first time',
   'set.defaultWords': 'Default words per chapter',
+  // #189（rc1 发布缺陷）：页面顶部保存指示
+  'set.saving': 'Saving…',
+  'set.saved': 'Saved',
   'set.models.summary': 'Configured Providers',
   'set.models.placeholder': 'Model management will be available in a later version',
   'set.templates.placeholder': 'Template management will be available in a later version',

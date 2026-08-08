@@ -241,6 +241,8 @@ function onKernelFailure(): void {
   // MINOR-2：失败即清空，防旧 INKFLOW_READY 的过期 baseURL/token 载荷残留（与 stopKernel 一致）
   kernelInfo = null;
   pendingReadyPayload = null;
+  // #188 F2：内核失败清理 → 托盘菜单内核状态 label 刷新为「未运行」
+  rebuildTrayMenu();
   if (failedChild) {
     killProcessTree(failedChild);
   }
@@ -353,6 +355,8 @@ function spawnKernel(): void {
     }
     console.log(`[kernel] ready port=${readyInfo.port} pid=${readyInfo.pid}`);
     updateKernelInfoHook();
+    // #188 F2：内核就绪 → 托盘菜单内核状态 label 刷新为「运行中」
+    rebuildTrayMenu();
     // 双向闭环（spec f31 §5.4）：GUI 拉起的常驻内核写 kernel.json，供 CLI/MCP/skills 复用发现；
     // 写入失败降级（%APPDATA% 只读等）→ 记录并继续（不影响 GUI 自用内核）
     if (kernelStatePath) {
@@ -605,6 +609,20 @@ function quitFromTray(): void {
   void shutdown();
 }
 
+/** 重建托盘菜单（#188 F2）：内核 ready / 失败清理时调用，label 跟随当前 kernelInfo 刷新 */
+function rebuildTrayMenu(): void {
+  if (!tray) {
+    return;
+  }
+  const template: MenuItemConstructorOptions[] = [
+    { label: '打开主窗口', click: showWindow },
+    { label: formatKernelMenuLabel(kernelInfo), enabled: false },
+    { type: 'separator' },
+    { label: '退出', click: quitFromTray },
+  ];
+  tray.setContextMenu(Menu.buildFromTemplate(template));
+}
+
 /** Tray 创建 + 菜单（spec f31 §5.6）：dev/生产都创建；创建失败降级（不阻断窗口/内核） */
 function createTray(): void {
   // 防御：异常环境（测试 mock 缺 Tray/buildFromTemplate 等）下托盘缺失不阻断启动
@@ -613,16 +631,15 @@ function createTray(): void {
   }
   try {
     const iconPath = path.join(__dirname, '..', 'inkflow-icon-256.png');
-    const instance = new Tray(nativeImage.createFromPath(iconPath));
-    const template: MenuItemConstructorOptions[] = [
-      { label: '打开主窗口', click: showWindow },
-      { label: formatKernelMenuLabel(kernelInfo), enabled: false },
-      { type: 'separator' },
-      { label: '退出', click: quitFromTray },
-    ];
-    instance.setContextMenu(Menu.buildFromTemplate(template));
+    // #188 F1 兜底：asar files 白名单漏包 png → createFromPath 空图像 → 回退 exe 自带图标（Windows）
+    let icon = nativeImage.createFromPath(iconPath);
+    if (icon.isEmpty()) {
+      icon = nativeImage.createFromPath(process.execPath);
+    }
+    const instance = new Tray(icon);
     instance.on('click', showWindow); // Windows 惯例：点击托盘图标打开主窗口
     tray = instance;
+    rebuildTrayMenu();
     trayInfoWindowVisible = true;
     updateTrayInfoHook();
   } catch (err) {

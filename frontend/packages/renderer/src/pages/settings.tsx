@@ -24,6 +24,14 @@ import { cn } from '../lib/cn';
 
 type CatKey = 'general' | 'models' | 'agent' | 'templates' | 'account';
 
+/** #189：页面顶部保存指示状态（隐藏 / 保存中 / 已保存，参考 Notion/Google Docs 顶部指示模式） */
+type SaveState = 'idle' | 'saving' | 'saved';
+
+/** #189：输入停止后自动保存的防抖间隔（ms） */
+const DEFAULT_WORDS_DEBOUNCE_MS = 800;
+/** #189：「已保存」指示自动隐藏间隔（ms） */
+const SAVE_INDICATOR_HIDE_MS = 2_000;
+
 const LOGO_BY_THEME: Record<ThemeName, string> = {
   paper: inkflowIcon,
   night: inkflowIconDark,
@@ -79,6 +87,10 @@ function GeneralPanel() {
   const dirtyRef = useRef(false);
   const [defaultWords, setDefaultWords] = useState<string>(valueRef.current);
   const [, setDirty] = useState(false); // 渲染镜像：dirty 置位触发重渲染（值本身无 UI 消费）
+  // #189：保存指示状态 + 计时器 ref（防抖 flush 与「已保存」自动隐藏各一）
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const saveHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const FONTS: Array<{ value: FontKey; labelKey: string }> = [
     { value: 'serif', labelKey: 'set.font.serif' },
@@ -104,6 +116,13 @@ function GeneralPanel() {
     dirtyRef.current = true;
     setDefaultWords(v);
     setDirty(true);
+    // #189：输入停止防抖自动保存——Electron 托盘关闭路径（hide 不卸载、无失焦）下 flush 兜底；
+    // 与失焦/卸载 flush 幂等（flush 成功清 dirty，重复触发自然跳过）
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      if (dirtyRef.current) flushDefaultWords();
+    }, DEFAULT_WORDS_DEBOUNCE_MS);
   };
 
   // F32（#152，spec §5.4 flushDefaultWords 契约）：空值/非法 → 静默不 PATCH；
@@ -121,6 +140,8 @@ function GeneralPanel() {
       .getState()
       .projects.find((p) => p.id === useProjectStore.getState().currentProjectId);
     if (!project) return;
+    // #189：保存指示——开始保存 → 成功「已保存」约 2s 后隐藏；失败回到隐藏（提示走 err toast）
+    setSaveState('saving');
     // 合并源 = agent store 当前 config（含 agent_* 已配置字段），而非 project store 旧快照（#105 🔴-B）
     const current = useAgentStore.getState().config;
     void useProjectStore
@@ -132,8 +153,14 @@ function GeneralPanel() {
         dirtyRef.current = false;
         setDirty(false);
         pushToast('ok', t('toast.saved'));
+        setSaveState('saved');
+        if (saveHideTimerRef.current) clearTimeout(saveHideTimerRef.current);
+        saveHideTimerRef.current = setTimeout(() => setSaveState('idle'), SAVE_INDICATOR_HIDE_MS);
       })
-      .catch(() => pushToast('err', t('toast.saveFailed')));
+      .catch(() => {
+        setSaveState('idle');
+        pushToast('err', t('toast.saveFailed'));
+      });
   };
 
   const handleDefaultWordsBlur = () => {
@@ -151,16 +178,46 @@ function GeneralPanel() {
     dirtyRef.current = false;
     setDefaultWords(v);
     setDirty(false);
+    // #189：丢弃旧项目 pending 防抖（防旧 timer 对已切换的项目补存）
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
   }, [currentProjectId]);
+
+  // #189（rc1 发布缺陷）：窗口隐藏到托盘（Electron hide 不卸载、无失焦）→
+  // document visibilitychange(hidden) → dirty 时 flush；卸载时移除监听
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden && dirtyRef.current) flushDefaultWords();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- flushDefaultWords 经 ref/store 读最新值，闭包身份无关
+  }, []);
 
   // 卸载守卫（缺陷 #1 修复）：跳页/切分类时若 dirty → flush（fire-and-forget）
   useEffect(() => () => {
+    // #189：清理防抖 / 保存指示计时器（防卸载后 timer 回调 setState）
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    if (saveHideTimerRef.current) clearTimeout(saveHideTimerRef.current);
     if (dirtyRef.current) flushDefaultWords();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 契约：依赖 [] 经 ref 读最新值（spec §5.4 实现注意）
   }, []);
 
   return (
     <div className="space-y-5">
+      {/* #189：页面正上方保存指示（默认隐藏；保存中/已保存文案，约 2s 后自动隐藏） */}
+      <div
+        data-testid="settings-save-indicator"
+        className={cn(
+          'h-4 text-[12px] transition-opacity duration-200',
+          saveState === 'idle' ? 'opacity-0' : 'opacity-100',
+          saveState === 'saved' ? 'text-ok' : 'text-ink-3',
+        )}
+      >
+        {saveState === 'saving' ? t('set.saving') : saveState === 'saved' ? t('set.saved') : ''}
+      </div>
       <AppearanceCard />
       <section className="space-y-5 rounded-lg border border-line bg-surface p-6 shadow-card">
         <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
