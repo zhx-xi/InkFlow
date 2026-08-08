@@ -1,5 +1,5 @@
 /** 应用骨架（spec §7.2：HashRouter 四路由 + 侧边导航 + 顶栏职责回归——页面标题/主题/语言/内核状态（品牌由侧边栏品牌区承载），不再承担导航） */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useI18n } from './i18n/useI18n';
 import { useThemeEffect } from './theme';
@@ -14,6 +14,7 @@ import { ModelsPage } from './pages/models';
 import { ProjectsPage } from './pages/projects';
 import { LibraryPage } from './pages/library';
 import { SettingsPage } from './pages/settings';
+import { apiFetch } from './api/client';
 
 /** 页面标题随路由变化（顶栏文本元素；正文 h1 承担 heading 语义） */
 const TITLE_BY_PATH: Record<string, string> = {
@@ -27,6 +28,30 @@ const TITLE_BY_PATH: Record<string, string> = {
 
 function AppLayout() {
   useThemeEffect();
+  // #192 内核状态真实化（rc2 复验缺陷）：顶栏不再硬编码「内核已连接」——
+  // 挂载即探测 /health，成功 → 已连接；失败/不可达 → 未就绪；此后每 5s 轮询刷新（状态仅顶栏消费）
+  const [kernelOnline, setKernelOnline] = useState(false);
+  useEffect(() => {
+    let disposed = false;
+    const checkHealth = async (): Promise<void> => {
+      try {
+        await apiFetch('/health');
+        if (!disposed) {
+          setKernelOnline(true);
+        }
+      } catch {
+        if (!disposed) {
+          setKernelOnline(false);
+        }
+      }
+    };
+    void checkHealth();
+    const timer = setInterval(() => void checkHealth(), 5000);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+    };
+  }, []);
   // F32 设置持久化（#152，spec §5.2 步骤 ②）：挂载时双轨加载设置（localStorage 快照 → 后端覆盖），恰好一次
   useEffect(() => {
     void useThemeStore.getState().initFromBackend();
@@ -80,7 +105,9 @@ function AppLayout() {
                 <SelectItem value="en">{t('lang.en')}</SelectItem>
               </SelectContent>
             </Select>
-            <span className="text-[12px] text-ink-3 [-webkit-app-region:no-drag]">{t('sb.kernel')}</span>
+            <span className="text-[12px] text-ink-3 [-webkit-app-region:no-drag]">
+              {kernelOnline ? t('sb.kernel') : t('sb.kernelOffline')}
+            </span>
             <WindowControls />
           </div>
         </header>
