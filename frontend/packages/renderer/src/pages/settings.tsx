@@ -179,6 +179,20 @@ function GeneralPanel() {
     if (dirtyRef.current) flushDefaultWords();
   };
 
+  /** #199：即改即存设置统一保存反馈——saving → await setter（Promise<boolean>）→ saved(2s)/idle */
+  const runImmediateSave = (action: () => Promise<boolean>) => {
+    setSaveState('saving');
+    void action().then((ok) => {
+      if (ok) {
+        setSaveState('saved');
+        if (saveHideTimerRef.current) clearTimeout(saveHideTimerRef.current);
+        saveHideTimerRef.current = setTimeout(() => setSaveState('idle'), SAVE_INDICATOR_HIDE_MS);
+      } else {
+        setSaveState('idle');
+      }
+    });
+  };
+
   // 切项目重读（缺陷 #2 修复）：currentProjectId 变化 → 重读新项目 config.default_words + 清 dirty
   //（dirty 编辑被丢弃是有意行为——项目切换 = 上下文切换，跨项目保留草稿无场景）
   // #198（2026-08-09，rc4 复验缺陷）：无项目/项目无级值时读全局 fetchSettings().default_words 回显
@@ -259,7 +273,7 @@ function GeneralPanel() {
       <section className="space-y-5 rounded-lg border border-line bg-surface p-6 shadow-card">
         <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
           <span>{t('set.font')}</span>
-          <Select value={font} onValueChange={(v) => setFont(v as FontKey)}>
+          <Select value={font} onValueChange={(v) => runImmediateSave(() => setFont(v as FontKey))}>
             <SelectTrigger aria-label={t('set.font')} className="w-56">
               <SelectValue />
             </SelectTrigger>
@@ -275,7 +289,10 @@ function GeneralPanel() {
 
         <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
           <span>{t('set.closeBehavior')}</span>
-          <Select value={closeBehavior} onValueChange={(v) => void setCloseBehavior(v as CloseBehavior)}>
+          <Select
+            value={closeBehavior}
+            onValueChange={(v) => runImmediateSave(() => setCloseBehavior(v as CloseBehavior))}
+          >
             <SelectTrigger aria-label={t('set.closeBehavior')} className="w-56">
               <SelectValue />
             </SelectTrigger>
@@ -299,7 +316,7 @@ function GeneralPanel() {
           <Switch
             data-testid="settings-tray-hint-switch"
             checked={!trayHintDismissed}
-            onCheckedChange={(checked) => void setTrayHintDismissed(!checked)}
+            onCheckedChange={(checked) => runImmediateSave(() => setTrayHintDismissed(!checked))}
             aria-label={t('set.trayHint')}
           />
         </div>

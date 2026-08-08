@@ -102,9 +102,11 @@ type ThemeStateF32 = ReturnType<typeof useThemeStore.getState> & {
   font: FontKey;
   closeBehavior: CloseBehavior;
   trayHintDismissed: boolean;
-  setFont: (f: FontKey) => void;
-  setCloseBehavior: (b: CloseBehavior) => Promise<void>;
-  setTrayHintDismissed: (v: boolean) => Promise<void>;
+  // #199（2026-08-09）：setter 返回 Promise<boolean>（成功 true / 失败 false，内部 catch 不 rethrow）——
+  // 给设置页顶部保存指示提供精确持久化结果信号；GREEN 后类型与真实 store 对齐
+  setFont: (f: FontKey) => Promise<boolean>;
+  setCloseBehavior: (b: CloseBehavior) => Promise<boolean>;
+  setTrayHintDismissed: (v: boolean) => Promise<boolean>;
   initFromBackend: () => Promise<void>;
 };
 const themeStateF32 = () => useThemeStore.getState() as ThemeStateF32;
@@ -482,6 +484,53 @@ describe('theme store — F32 IPC 桥接（spec §5.3）', () => {
     expect(rejected).toBe(false);
     expect(useThemeStore.getState().trayHintDismissed).toBe(false);
     expect(settingsApi.dismissTrayHint).not.toHaveBeenCalled();
+    expect(useToastStore.getState().toasts.some((t) => t.type === 'err')).toBe(true);
+  });
+});
+
+/**
+ * #199（2026-08-09，rc4 复验缺陷）：设置保存反馈统一化——setter 需向调用方暴露
+ * 持久化结果（Promise<boolean>：成功 true / 失败 false，内部 catch 不 rethrow），
+ * 供设置页顶部「已保存」指示精确驱动。RED 预期：现状 setFont 返回 void、
+ * 行为 setter 失败不 rethrow 但成功/失败无返回值 → resolves.toBe(true) 收到 undefined
+ * 或 reject 泄漏（is-not-a-function 已由 F32 用例覆盖，本组为返回值语义升级）。
+ */
+describe('theme store — #199 setter 持久化结果（保存反馈信号）', () => {
+  it('setFont 成功 → resolves true（PATCH 成功返回持久化成功信号）', async () => {
+    patchSettingsMock.mockResolvedValue({ ...DEFAULT_SETTINGS, font: 'serif' });
+    await expect(themeStateF32().setFont('serif')).resolves.toBe(true);
+  });
+
+  it('setFont PATCH reject → resolves false（不 rethrow，失败信号 = false）+ err toast + 本地值保留（乐观更新）', async () => {
+    patchSettingsMock.mockRejectedValue(new Error('network down'));
+    await expect(themeStateF32().setFont('serif')).resolves.toBe(false);
+    expect(useThemeStore.getState().font).toBe('serif'); // 乐观更新不回滚
+    expect(useToastStore.getState().toasts.some((t) => t.type === 'err')).toBe(true);
+  });
+
+  it('setCloseBehavior 成功 → resolves true（PATCH → IPC → store 更新全链路成功）', async () => {
+    patchSettingsMock.mockResolvedValue({ ...DEFAULT_SETTINGS, close_behavior: 'quit' });
+    await expect(themeStateF32().setCloseBehavior('quit')).resolves.toBe(true);
+    expect(useThemeStore.getState().closeBehavior).toBe('quit');
+  });
+
+  it('setCloseBehavior PATCH reject → resolves false（不 rethrow）+ store 回弹 + err toast', async () => {
+    patchSettingsMock.mockRejectedValue(new Error('network down'));
+    await expect(themeStateF32().setCloseBehavior('quit')).resolves.toBe(false);
+    expect(useThemeStore.getState().closeBehavior).toBe('tray'); // 回弹
+    expect(useToastStore.getState().toasts.some((t) => t.type === 'err')).toBe(true);
+  });
+
+  it('setTrayHintDismissed 成功 → resolves true', async () => {
+    patchSettingsMock.mockResolvedValue({ ...DEFAULT_SETTINGS, tray_hint_dismissed: true });
+    await expect(themeStateF32().setTrayHintDismissed(true)).resolves.toBe(true);
+    expect(useThemeStore.getState().trayHintDismissed).toBe(true);
+  });
+
+  it('setTrayHintDismissed PATCH reject → resolves false（不 rethrow）+ store 回弹 + err toast', async () => {
+    patchSettingsMock.mockRejectedValue(new Error('network down'));
+    await expect(themeStateF32().setTrayHintDismissed(true)).resolves.toBe(false);
+    expect(useThemeStore.getState().trayHintDismissed).toBe(false);
     expect(useToastStore.getState().toasts.some((t) => t.type === 'err')).toBe(true);
   });
 });
