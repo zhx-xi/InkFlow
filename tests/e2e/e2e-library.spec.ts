@@ -241,7 +241,7 @@ test('设定库：内核预置角色 → 角色分类列表渲染条目', async 
   }
 });
 
-test('设定库：大纲分类无数据 → 空态引导 + 「去创建」→ /writing', async () => {
+test('设定库：大纲分类无数据 → 空态引导 + 「去创建」→ 打开创建对话框（#196，不跳 /writing）', async () => {
   const { app, window } = await launchApp();
   try {
     const name = `E2E-空态-${Date.now()}`;
@@ -257,9 +257,14 @@ test('设定库：大纲分类无数据 → 空态引导 + 「去创建」→ /w
     await expect(window.getByTestId('library-tab-empty')).toBeVisible({ timeout: 15_000 });
     await expect(window.getByTestId('library-tab-empty-cta')).toBeVisible();
     await window.getByTestId('library-tab-empty-cta').click();
-    await expect
-      .poll(async () => window.evaluate(() => location.hash), { timeout: 15_000 })
-      .toContain('/writing');
+    // #196（2026-08-09）：非 RAG 分类空态 CTA 打开分类创建对话框，不跳 /writing
+    await expect(window.getByTestId('library-create-dialog')).toBeVisible({ timeout: 15_000 });
+    // 大纲分类对话框字段：名称（必填）+ 描述
+    await expect(window.getByLabel('名称')).toBeVisible();
+    await expect(window.getByLabel('描述')).toBeVisible();
+    // 取消关闭（关闭路径仅取消/Esc/成功，#195）
+    await window.getByRole('button', { name: '取消' }).click();
+    await expect(window.getByTestId('library-create-dialog')).toBeHidden();
   } finally {
     await app.close();
   }
