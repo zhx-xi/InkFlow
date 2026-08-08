@@ -2,11 +2,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Library } from 'lucide-react';
-import { apiFetch, ensureApiReady } from '../api/client';
+import { apiFetch, ensureApiReady, errorMessage } from '../api/client';
+import { LibraryCreateDialog } from '../components/LibraryCreateDialog';
 import { Skeleton } from '../components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
 import { useProjectStore } from '../stores/project';
+import { useToastStore } from '../stores/toast';
 import { cn } from '../lib/cn';
 
 type CatKey = 'characters' | 'world' | 'outline' | 'timeline' | 'foreshadow' | 'rag';
@@ -72,8 +74,12 @@ export function LibraryPage() {
   const [loading, setLoading] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  // #196：分类实体手动创建对话框开关（仅非 RAG 分类空态 CTA 打开）
+  const [createOpen, setCreateOpen] = useState(false);
 
   const cat = CATS.find((c) => c.key === activeCat) ?? CATS[0];
+  // rag 无创建端点（CTA 已走跳转分支），对话框仅在五个可创建分类下渲染
+  const createCat = activeCat === 'rag' ? null : activeCat;
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? null;
 
   // 挂载加载项目列表（Electron 下等待 preload 注入，与项目页同源防 401 竞态）
@@ -128,6 +134,26 @@ export function LibraryPage() {
 
   const handleProjectChange = (id: string) => {
     selectProject(id);
+  };
+
+  // #196：POST 到当前分类创建端点 → 关闭对话框 + 复用 reloadKey 机制实时刷新列表
+  const handleCreate = async (input: Record<string, unknown>) => {
+    if (!currentProjectId) return;
+    const current = CATS.find((c) => c.key === activeCat) ?? CATS[0];
+    // rag 不适用（无创建端点；CTA 已走跳转分支，此处防御性早退）
+    if (current.key === 'rag') return;
+    try {
+      // 关键：timeline 分类的创建端点是 /timeline/events（不是 /timeline 列表端点）
+      const createEndpoint =
+        current.key === 'timeline'
+          ? `/api/v1/projects/${currentProjectId}/timeline/events`
+          : current.endpoint(currentProjectId);
+      await apiFetch(createEndpoint, { method: 'POST', body: input });
+      setCreateOpen(false);
+      setReloadKey((k) => k + 1); // 列表实时刷新（复用既有 reloadKey 机制）
+    } catch (err) {
+      useToastStore.getState().pushToast('err', errorMessage(err));
+    }
   };
 
   return (
@@ -231,7 +257,7 @@ export function LibraryPage() {
                   type="button"
                   data-testid="library-tab-empty-cta"
                   className="mt-4 rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                  onClick={() => navigate('/writing')}
+                  onClick={() => (cat.key === 'rag' ? navigate('/writing') : setCreateOpen(true))}
                 >
                   {t('lib.empty.create')}
                 </button>
@@ -250,6 +276,16 @@ export function LibraryPage() {
             )}
           </div>
         </>
+      )}
+
+      {/* #196：分类实体手动创建对话框（挂在页面根部，open 受控；RAG 分类不渲染） */}
+      {createCat !== null && (
+        <LibraryCreateDialog
+          open={createOpen}
+          cat={createCat}
+          onCreate={handleCreate}
+          onOpenChange={setCreateOpen}
+        />
       )}
     </div>
   );

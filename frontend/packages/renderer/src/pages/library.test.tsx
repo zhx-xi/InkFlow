@@ -44,6 +44,7 @@ import { LibraryPage } from './library';
 import { apiFetch } from '../api/client';
 import { useProjectStore } from '../stores/project';
 import { useThemeStore } from '../stores/theme';
+import { useToastStore } from '../stores/toast';
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
@@ -232,7 +233,7 @@ describe('设定库页 — 项目上下文（spec §7.3）', () => {
     expect(within(empty).getByTestId('library-tab-empty-cta')).toBeInTheDocument();
   });
 
-  it('#105 修复批契约：空态 CTA 可点——点击「去创建」→ 路由 /writing', async () => {
+  it('#196 空态 CTA 打开创建对话框：世界观分类空态「去创建」→ 对话框出现，不跳转 /writing（替代 #105 占位跳转）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
     });
@@ -241,9 +242,13 @@ describe('设定库页 — 项目上下文（spec §7.3）', () => {
 
     await user.click(screen.getByRole('tab', { name: '世界观' }));
     const empty = await screen.findByTestId('library-tab-empty');
-    // RED：当前 CTA 无 onClick（死按钮）→ 点击后不导航，location-probe 永不出现
+    // RED：现状 CTA navigate('/writing') → 无对话框 → element-missing FAIL
     await user.click(within(empty).getByTestId('library-tab-empty-cta'));
-    expect(await screen.findByTestId('location-probe')).toHaveTextContent('/writing');
+    await waitFor(() => {
+      expect(screen.getByTestId('library-create-dialog')).toBeInTheDocument();
+    });
+    // 不跳转
+    expect(screen.queryByTestId('location-probe')).not.toBeInTheDocument();
   });
 
   it('深链直达：/library?cat=outline → 初始 tab 大纲（侧边导航联动）', async () => {
@@ -328,5 +333,179 @@ describe('设定库页 — 分类端点全覆盖与失败兜底（#105 补测）
       expect(charCalls.length).toBe(2);
       expect(screen.getByTestId('library-list')).toHaveTextContent('林晚');
     });
+  });
+});
+
+/**
+ * #196（2026-08-09，rc3 复验缺陷）：设定库分类实体手动创建（specs/f36-library-manual-create/spec.md）。
+ * - 五个可创建分类（角色/世界观/大纲/时间线/伏笔）空态 CTA → 打开 LibraryCreateDialog（不跳 /writing）
+ * - 对话框字段按分类渲染（后端 DTO 已核实，见 spec §2.1 表）；名称/标题必填
+ * - 保存成功 → POST 对应分类端点 → 对话框关闭 + 列表实时刷新（重新拉取当前分类端点）
+ * - 保存失败 → err toast（errorMessage）+ 对话框保持打开
+ * - 知识库 RAG 分类无创建端点（extractions/runs = AI 提取运行列表）→ 空态 CTA 保持跳 /writing 引导
+ * GREEN 契约：library.tsx 渲染 <LibraryCreateDialog>（新组件 components/LibraryCreateDialog.tsx）；
+ * data-testid=library-create-dialog；字段经 label/aria-label 关联（i18n lib.create.* 由 GREEN 补 zh/en）；
+ * 创建按钮 data-testid=library-create-save。
+ * RED 预期：现状 CTA navigate('/writing') → 无对话框 → element-missing FAIL；
+ * RAG 保持用例为确认型（现状即跳转）。
+ */
+describe('设定库页 — #196 分类实体手动创建', () => {
+  /** 播种 p1 + 切到指定 tab + 点击空态 CTA 打开对话框 */
+  async function openCreateDialog(tabName: string) {
+    act(() => {
+      useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
+    });
+    // 空态前提：当前分类端点 mock 为空（beforeEach 默认对角色/大纲/时间线/RAG 有数据 → 无空态）
+    const emptyByTab: Record<string, string | null> = {
+      '角色': '/api/v1/projects/p1/characters',
+      '世界观': '/api/v1/projects/p1/world-settings',
+      '大纲': '/api/v1/projects/p1/outlines',
+      '时间线': null, // TimelineView 特例（event_timeline）
+      '伏笔': '/api/v1/projects/p1/foreshadowings',
+      '知识库 RAG': '/api/v1/projects/p1/extractions/runs',
+    };
+    const emptyTarget = emptyByTab[tabName];
+    if (emptyTarget !== undefined) {
+      // 一次性 seed 语义（#196 实现期父侧裁定）：仅首次 GET 返回空（空态前提），
+      // 此后委托 prev——POST 与刷新 GET 必须走用例自身 mock（reject/回显），
+      // 无条件拦截会把 POST 也 resolve，保存流用例永远无法通过
+      const prev = apiFetchMock.getMockImplementation();
+      let seeded = false;
+      apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+        if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+        if (
+          !seeded &&
+          (path === emptyTarget || (emptyTarget === null && path === '/api/v1/projects/p1/timeline'))
+        ) {
+          seeded = true;
+          return emptyTarget === null
+            ? { project_id: 'p1', total: 0, event_timeline: [], narrative_order: [] }
+            : { items: [], total: 0, offset: 0, limit: 50 };
+        }
+        return prev ? prev(path, init) : { items: [], total: 0, offset: 0, limit: 50 };
+      });
+    }
+    const user = userEvent.setup();
+    renderLibrary();
+    await user.click(screen.getByRole('tab', { name: tabName }));
+    const empty = await screen.findByTestId('library-tab-empty');
+    await user.click(within(empty).getByTestId('library-tab-empty-cta'));
+    const dialog = await screen.findByTestId('library-create-dialog');
+    return { user, dialog };
+  }
+
+  it('角色分类对话框：字段齐全（名称/性格/背景/目标）', async () => {
+    const { dialog } = await openCreateDialog('角色');
+    expect(within(dialog).getByLabelText('名称')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('性格')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('背景')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('目标')).toBeInTheDocument();
+    expect(within(dialog).getByTestId('library-create-save')).toBeInTheDocument();
+  });
+
+  it('世界观分类对话框：字段（名称/类别/内容）', async () => {
+    const { dialog } = await openCreateDialog('世界观');
+    expect(within(dialog).getByLabelText('名称')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('类别')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('内容')).toBeInTheDocument();
+  });
+
+  it('大纲分类对话框：字段（名称/描述）', async () => {
+    const { dialog } = await openCreateDialog('大纲');
+    expect(within(dialog).getByLabelText('名称')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('描述')).toBeInTheDocument();
+  });
+
+  it('时间线分类对话框：字段（标题/时间显示/描述）', async () => {
+    const { dialog } = await openCreateDialog('时间线');
+    expect(within(dialog).getByLabelText('标题')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('时间显示')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('描述')).toBeInTheDocument();
+  });
+
+  it('伏笔分类对话框：字段（标题/优先级/位置/描述）', async () => {
+    const { dialog } = await openCreateDialog('伏笔');
+    expect(within(dialog).getByLabelText('标题')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('优先级')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('位置')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('描述')).toBeInTheDocument();
+  });
+
+  it('角色创建保存：填写 → POST /characters body 对齐 DTO → 对话框关闭 + 列表刷新出现新角色', async () => {
+    // 后端语义 mock：POST 入数组，GET 返回数组（回显式模拟真实落库）
+    const chars: Array<{ id: string; name: string }> = [{ id: 'c1', name: '林晚' }];
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+      if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/characters') {
+        if (init?.method === 'POST') {
+          const body = init.body as { name: string };
+          const created = { id: 'c9', name: body.name };
+          chars.push(created);
+          return created;
+        }
+        return { items: chars, total: chars.length, offset: 0, limit: 50 };
+      }
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    const { user, dialog } = await openCreateDialog('角色');
+    await user.type(within(dialog).getByLabelText('名称'), '叶孤城');
+    await user.type(within(dialog).getByLabelText('性格'), '孤傲');
+    await user.type(within(dialog).getByLabelText('背景'), '剑客');
+    await user.type(within(dialog).getByLabelText('目标'), '决战');
+    await user.click(within(dialog).getByTestId('library-create-save'));
+
+    // POST body 对齐后端 CharacterCreateBody（name/personality/background/goals）
+    await waitFor(() => {
+      const postCall = apiFetchMock.mock.calls.find(
+        (c) => c[0] === '/api/v1/projects/p1/characters' && c[1]?.method === 'POST',
+      );
+      expect(postCall).toBeTruthy();
+      expect((postCall![1]!.body as { name: string; personality: string; background: string; goals: string }))
+        .toEqual({ name: '叶孤城', personality: '孤傲', background: '剑客', goals: '决战' });
+    });
+    // 对话框关闭 + 列表刷新（重新 GET 出现新角色）
+    await waitFor(() => {
+      expect(screen.queryByTestId('library-create-dialog')).not.toBeInTheDocument();
+      expect(screen.getByTestId('library-list')).toHaveTextContent('叶孤城');
+    });
+  });
+
+  it('创建保存失败：POST reject → err toast + 对话框保持打开（可修改重试）', async () => {
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+      if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/outlines') {
+        // GET 空列表（空态）；POST 失败（reject）——区分 method，否则 POST 也命中空列表分支 resolve
+        if (init?.method === 'POST') throw new Error('创建失败');
+        return { items: [], total: 0, offset: 0, limit: 50 };
+      }
+      throw new Error('创建失败');
+    });
+    const { user, dialog } = await openCreateDialog('大纲');
+    await user.type(within(dialog).getByLabelText('名称'), '卷一 风起');
+    await user.click(within(dialog).getByTestId('library-create-save'));
+    // err toast（errorMessage）
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'err')).toBe(true);
+    });
+    // 对话框保持
+    expect(screen.getByTestId('library-create-dialog')).toBeInTheDocument();
+  });
+
+  it('知识库 RAG 分类空态 CTA → 仍跳 /writing（无创建端点，保持 AI 提取引导）', async () => {
+    act(() => {
+      useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
+    });
+    // RAG 默认 mock 有数据 → 先 mock 空（空态前提）
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/extractions/runs') return { items: [], total: 0, offset: 0, limit: 50 };
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    const user = userEvent.setup();
+    renderLibrary();
+    await user.click(screen.getByRole('tab', { name: '知识库 RAG' }));
+    const empty = await screen.findByTestId('library-tab-empty');
+    await user.click(within(empty).getByTestId('library-tab-empty-cta'));
+    expect(await screen.findByTestId('location-probe')).toHaveTextContent('/writing');
   });
 });
