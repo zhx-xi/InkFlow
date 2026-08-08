@@ -118,6 +118,21 @@ describe('resolveKernelCommand（内核命令定位三分支，spec §3.2.1）',
     });
   });
 
+  // ⚠️ #187 rc1 发布缺陷（2026-08-08）：isPackaged 分支硬编码相对路径 → 从任意 cwd
+  // 命令行启动 GUI 时 spawn ENOENT（Explorer 双击/快捷方式 cwd=app 目录才正常）。
+  // RED 契约：packagedKernelPath 提供时命令必须用绝对路径（主进程传 app.getAppPath() 定位）。
+  it('分支②a：isPackaged=true + packagedKernelPath → 使用绝对路径（#187 任意 cwd 启动）', () => {
+    expect(
+      resolveKernelCommand({
+        isPackaged: true,
+        packagedKernelPath: 'C:/app/resources/kernel/inkflow.exe',
+      })
+    ).toEqual({
+      command: 'C:/app/resources/kernel/inkflow.exe',
+      args: ['serve', '--port', '0'],
+    });
+  });
+
   it('分支③：默认 dev → backend\\.venv\\Scripts\\python.exe -m inkflow serve --port 0', () => {
     expect(resolveKernelCommand({ isPackaged: false })).toEqual({
       command: 'backend\\.venv\\Scripts\\python.exe',
