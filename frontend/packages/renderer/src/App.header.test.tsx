@@ -116,8 +116,23 @@ describe('App 顶栏 — 主题/语言 Radix Select 契约升级（#106 §8.2⑤
     // 循环按钮移除（RED：现状仍存在 → FAIL）
     expect(within(banner).queryByTestId('header-theme-toggle')).not.toBeInTheDocument();
     expect(within(banner).queryByTestId('header-lang')).not.toBeInTheDocument();
-    // 内核状态保留
-    expect(within(banner).getByText('内核已连接')).toBeInTheDocument();
+    // 内核状态保留（#192：状态真实化——挂载后 /health 成功才显示「内核已连接」；
+    // apiFetch mock 默认 resolve → waitFor 后变已连接）
+    await waitFor(() => {
+      expect(within(banner).getByText('内核已连接')).toBeInTheDocument();
+    });
+  });
+
+  // ⚠️ #192 rc2 复验缺陷（2026-08-08）：顶栏「内核已连接」恒显（App.tsx 硬编码 t('sb.kernel')），
+  // 内核启动失败时仍显示已连接——sb.kernelOffline「内核未就绪」i18n key 存在但全仓未使用。
+  // RED 契约：/health 请求失败（内核不可达）→ 顶栏显示「内核未就绪」。
+  it('#192 内核状态真实化：/health 失败 → 顶栏显示「内核未就绪」（不再恒显「内核已连接」）', async () => {
+    apiFetchMock.mockRejectedValue(new Error('kernel unreachable'));
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByText('内核未就绪')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('内核已连接')).not.toBeInTheDocument();
   });
 
   it('主题 Select：回读当前主题 + 展开可见全部选项（三主题）+ 选择直达生效（setTheme）', async () => {
