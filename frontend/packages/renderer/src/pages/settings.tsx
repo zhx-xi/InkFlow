@@ -11,7 +11,7 @@ import { TemplateDialog } from '../components/TemplateDialog';
 import { Switch } from '../components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import type { CloseBehavior } from '../api/client';
-import { apiFetch, ensureApiReady, errorMessage, patchSettings } from '../api/client';
+import { apiFetch, ensureApiReady, errorMessage, fetchSettings, patchSettings } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import { useAgentStore } from '../stores/agent';
 import { useProjectStore } from '../stores/project';
@@ -181,20 +181,45 @@ function GeneralPanel() {
 
   // 切项目重读（缺陷 #2 修复）：currentProjectId 变化 → 重读新项目 config.default_words + 清 dirty
   //（dirty 编辑被丢弃是有意行为——项目切换 = 上下文切换，跨项目保留草稿无场景）
+  // #198（2026-08-09，rc4 复验缺陷）：无项目/项目无级值时读全局 fetchSettings().default_words 回显
+  //（项目级覆盖优先；fetch 失败静默保持 800000 兜底；cleanup cancelled 防卸载/切项目后 setState）
   useEffect(() => {
-    const p = useProjectStore
-      .getState()
-      .projects.find((x) => x.id === useProjectStore.getState().currentProjectId);
-    const v = String(p?.config.default_words ?? 800000);
-    valueRef.current = v;
-    dirtyRef.current = false;
-    setDefaultWords(v);
-    setDirty(false);
-    // #189：丢弃旧项目 pending 防抖（防旧 timer 对已切换的项目补存）
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
+    const state = useProjectStore.getState();
+    const p = state.projects.find((x) => x.id === state.currentProjectId);
+    const projectWords = p?.config.default_words;
+    let cancelled = false;
+    const apply = (v: string) => {
+      valueRef.current = v;
+      dirtyRef.current = false;
+      setDefaultWords(v);
+      setDirty(false);
+      // #189：丢弃旧项目 pending 防抖（防旧 timer 对已切换的项目补存）
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+    };
+    if (projectWords !== undefined && projectWords !== null) {
+      apply(String(projectWords));
+    } else {
+      const fallback = String(projectWords ?? 800000);
+      apply(fallback);
+      void fetchSettings()
+        .then((s) => {
+          if (cancelled) return;
+          const st = useProjectStore.getState();
+          const cur = st.projects.find((x) => x.id === st.currentProjectId);
+          if (cur?.config.default_words !== undefined && cur?.config.default_words !== null) return;
+          // #198 竞态守卫：用户已编辑（dirty 或值偏离兜底）→ 不回写全局值，
+          // 防 fetch 期间输入被异步回写覆盖（如「8000001000」拼接）
+          if (dirtyRef.current || valueRef.current !== fallback) return;
+          apply(String(s.default_words));
+        })
+        .catch(() => {});
     }
+    return () => {
+      cancelled = true;
+    };
   }, [currentProjectId]);
 
   // #189（rc1 发布缺陷）：窗口隐藏到托盘（Electron hide 不卸载、无失焦）→

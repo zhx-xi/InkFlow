@@ -327,6 +327,8 @@ beforeEach(() => {
     font: 'sans',
     close_behavior: 'tray',
     tray_hint_dismissed: false,
+    // #198：默认补齐 default_words（后端 AppSettings 恒返回；无项目回显兜底源）
+    default_words: 800000,
   });
   // F32（#152）：扩展重置 font/closeBehavior/trayHintDismissed——测试间隔离，
   // 防「上一用例改 store 值 → 下一用例 Select 初值漂移」污染既有用例（GREEN 后 cast 可删）
@@ -525,6 +527,76 @@ describe('设置页 — 常规分类', () => {
       const indicator = screen.getByTestId('settings-save-indicator');
       expect(indicator.textContent).toBe('已保存');
     });
+  });
+
+  // ⚠️ #198（2026-08-09，rc4 复验缺陷）：default_words 全局值重启加载失败——
+  // 设置页初始值只从项目 config 读（无项目兜底 800000），不从 fetchSettings().default_words 读。
+  // 修复契约：初始值 = 项目 config.default_words 存在时优先，否则读全局 fetchSettings()；
+  // 保存路径维持 #189（有项目 → 项目 config；无项目 → 全局 settings）。GREEN 需在
+  // settings.tsx GeneralPanel 引入 fetchSettings 读取（经 fetchSettingsMock 断言 wire）。
+  it('#198 无项目 + 后端全局 default_words → 初始值显示全局值（重启回显，非 800000 兜底）', async () => {
+    useProjectStore.setState({ projects: [], currentProjectId: null, loading: false, error: null });
+    fetchSettingsMock.mockResolvedValueOnce({
+      theme: 'paper', bg: 'default', lang: 'zh', font: 'sans',
+      close_behavior: 'tray', tray_hint_dismissed: false, default_words: 123456,
+    });
+    renderSettings();
+    const input = screen.getByLabelText('新章节默认字数');
+    // GREEN 前初始值恒 800000 → toHaveValue(123456) FAIL = RED
+    await waitFor(() => {
+      expect(input).toHaveValue(123456);
+    });
+  });
+
+  it('#198 有项目 config.default_words=60000 → 项目级优先（fetchSettings 全局值不覆盖）', async () => {
+    useProjectStore.setState({
+      projects: [{
+        id: 'p1', name: '青云志', genre: '玄幻', language: 'zh-CN', target_words: 800000,
+        config: { default_words: 60000 },
+        created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
+      }],
+      currentProjectId: 'p1', loading: false, error: null,
+    });
+    fetchSettingsMock.mockResolvedValueOnce({
+      theme: 'paper', bg: 'default', lang: 'zh', font: 'sans',
+      close_behavior: 'tray', tray_hint_dismissed: false, default_words: 123456,
+    });
+    renderSettings();
+    const input = screen.getByLabelText('新章节默认字数');
+    await waitFor(() => {
+      expect(input).toHaveValue(60000);
+    });
+    // 异步全局值到达后也不得覆盖项目级值（给 fetch promise 足够时间 settle 再复核；
+    // 确认型：GREEN 若短路不 fetch（项目有级值）也绿，若 fetch 则不得覆盖）
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(input).toHaveValue(60000);
+  });
+
+  it('#198 有项目但 config 无 default_words → 读全局 fetchSettings 值（项目未设 → 全局兜底链）', async () => {
+    // beforeEach 项目 p1 config: {}（无 default_words）
+    fetchSettingsMock.mockResolvedValueOnce({
+      theme: 'paper', bg: 'default', lang: 'zh', font: 'sans',
+      close_behavior: 'tray', tray_hint_dismissed: false, default_words: 234567,
+    });
+    renderSettings();
+    const input = screen.getByLabelText('新章节默认字数');
+    // GREEN 前恒 800000 → toHaveValue(234567) FAIL = RED
+    await waitFor(() => {
+      expect(input).toHaveValue(234567);
+    });
+  });
+
+  it('#198 fetchSettings 失败 → 保持 800000 兜底（静默，无 toast 无错误态）', async () => {
+    useProjectStore.setState({ projects: [], currentProjectId: null, loading: false, error: null });
+    fetchSettingsMock.mockRejectedValueOnce(new Error('network down'));
+    renderSettings();
+    const input = screen.getByLabelText('新章节默认字数');
+    // 确认型守卫：RED 阶段现状即 800000（无 fetch 调用）——GREEN 后 fetch 失败也不得污染
+    await waitFor(() => {
+      expect(input).toHaveValue(800000);
+    });
+    const toasts = useToastStore.getState().toasts;
+    expect(toasts.length).toBe(0);
   });
 });
 
