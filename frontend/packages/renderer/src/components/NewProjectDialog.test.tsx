@@ -228,7 +228,9 @@ describe('新建项目对话框 — ESC 关闭 + 遮罩点击 + 焦点归还（I
     expect(document.activeElement).toBe(trigger);
   });
 
-  it('遮罩点击关闭：点击 backdrop → 对话框卸载（dialog 内部点击不关闭）', async () => {
+  // ⚠️ #195 契约升级（2026-08-08 用户拍板）：遮罩点击**不再关闭**对话框——rc3 复验发现
+  // 「鼠标移到外面自动关闭」导致输入内容丢失（误触）；关闭路径仅：取消按钮 / ESC / 创建成功。
+  it('遮罩点击不关闭：#195 防误触（点击 backdrop → 对话框保持；dialog 内部点击也不关闭）', async () => {
     const user = userEvent.setup();
     renderHarness();
 
@@ -238,15 +240,28 @@ describe('新建项目对话框 — ESC 关闭 + 遮罩点击 + 焦点归还（I
     const backdrop = dialog.parentElement as HTMLElement;
     expect(backdrop).not.toBeNull();
 
-    // dialog 内部点击（如标题区域）不应关闭
+    // dialog 内部点击（如标题区域）不关闭
     fireEvent.click(dialog);
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-    // 遮罩点击 → 关闭
+    // 遮罩点击 → #195 不再关闭（防误触；创建成功/取消/ESC 才关闭）
     fireEvent.click(backdrop);
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  // ⚠️ #195 契约（2026-08-08）：目标字数清空可重输——rc3 复验「改不了」根因 =
+  // type="number" + Number('')=0 → 清空瞬间变 0，无法重输。契约：清空 → 输入框显示空字符串。
+  it('目标字数清空重输：#195 清空输入框 → 显示空（不强制变 0），可输入新值', async () => {
+    const user = userEvent.setup();
+    renderHarness();
+
+    await user.click(screen.getByTestId('open-trigger'));
+    const input = screen.getByLabelText('目标字数') as HTMLInputElement;
+    expect(input.value).toBe('800000'); // 默认值（既有契约）
+    await user.clear(input);
+    expect(input.value).toBe(''); // #195：清空后为空（当前实现 Number('')=0 → 变 '0' → FAIL）
+    await user.type(input, '1500');
+    expect(input.value).toBe('1500');
   });
 
   it('取消按钮关闭 + 焦点归还触发按钮', async () => {

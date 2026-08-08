@@ -1,7 +1,8 @@
-/** 新建项目对话框（spec §4.2.2）：书名必填 1-100 / Genre 11 枚举 / 语言 / 目标字数默认 800000 */
+/** 新建项目对话框（spec §4.2.2）：书名必填 1-100 / Genre 11 枚举 / 语言 / 目标字数默认 800000
+ * #189：目标字数初始值读全局 default_words（方案 A 闭环）；#195：清空可重输 + 遮罩点击不关闭 */
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { errorMessage } from '../api/client';
+import { errorMessage, fetchSettings } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import { useProjectStore } from '../stores/project';
 import { useTemplatesStore } from '../stores/templates';
@@ -23,14 +24,18 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
   const [name, setName] = useState('');
   const [genre, setGenre] = useState(GENRES[0]);
   const [language, setLanguage] = useState('zh-CN');
-  const [targetWords, setTargetWords] = useState(800000);
+  // #195：目标字数用字符串本地 state——type="number" + Number('')=0 会让清空瞬间变 '0'，
+  // 无法重输（rc3 复验）；字符串态允许清空显示 ''，提交时再 Number 转换
+  const [targetWordsInput, setTargetWordsInput] = useState('800000');
+  // #189：fetchSettings 异步返回不得覆盖用户已输入值（仅在未改动时注入全局默认）
+  const targetWordsEditedRef = useRef(false);
   // #107：Agent 模板选择（null = 默认模板，POST body 不含 template_id）
   const [templateId, setTemplateId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // #105 修复批：submitting 防双重提交；in-flight 时 ESC/遮罩忽略关闭路径（防误关丢进度）
+  // #105 修复批：submitting 防双重提交；in-flight 时 ESC 忽略关闭路径（防误关丢进度）
   const [submitting, setSubmitting] = useState(false);
 
-  // §6.2③ 焦点归还：记录打开时 activeElement，任意关闭路径（ESC/遮罩/取消）卸载后归还触发按钮
+  // §6.2③ 焦点归还：记录打开时 activeElement，任意关闭路径（ESC/取消/创建成功）卸载后归还触发按钮
   const returnFocusRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -43,6 +48,24 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
   useEffect(() => {
     if (templates.length === 0) void loadTemplates();
   }, [loadTemplates, templates.length]);
+
+  // #189（方案 A 闭环）：挂载时读全局 default_words 作为目标字数初始值；
+  // fetch 失败保持 800000 兜底（初始 state 即兜底值）；用户已输入 → 不覆盖
+  useEffect(() => {
+    let cancelled = false;
+    void fetchSettings()
+      .then((settings) => {
+        if (cancelled || targetWordsEditedRef.current) return;
+        const v = typeof settings.default_words === 'number' ? settings.default_words : 800000;
+        setTargetWordsInput(String(v));
+      })
+      .catch(() => {
+        /* #189：读取失败保持 800000 兜底 */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // §6.2③ ESC 键关闭：document 级监听覆盖对话框内任意焦点；
   // 忽略 Radix Select 等已 preventDefault 的 Escape（如下拉面板开启时只关面板不关对话框）；
@@ -68,6 +91,9 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
     }
     setError(null);
     setSubmitting(true);
+    // #195：提交时字符串 → 数字——空串 → 0（Number('')=0）；非法（非数字）→ 800000 默认兜底
+    const parsedTargetWords = Number(targetWordsInput);
+    const targetWords = Number.isFinite(parsedTargetWords) ? parsedTargetWords : 800000;
     try {
       await createProject({
         name: trimmed,
@@ -89,9 +115,6 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
     <div
       role="presentation"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
-      onClick={() => {
-        if (!submitting) onClose();
-      }}
     >
       <div
         role="dialog"
@@ -175,8 +198,11 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
               type="number"
               min={0}
               className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm outline-none"
-              value={targetWords}
-              onChange={(e) => setTargetWords(Number(e.target.value))}
+              value={targetWordsInput}
+              onChange={(e) => {
+                targetWordsEditedRef.current = true;
+                setTargetWordsInput(e.target.value);
+              }}
             />
           </label>
         </div>

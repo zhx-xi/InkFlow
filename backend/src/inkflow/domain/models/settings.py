@@ -27,6 +27,7 @@ class SettingsKey(StrEnum):
     FONT = "font"
     CLOSE_BEHAVIOR = "close_behavior"
     TRAY_HINT_DISMISSED = "tray_hint_dismissed"
+    DEFAULT_WORDS = "default_words"
 
 
 class AppSettings(BaseModel):
@@ -44,6 +45,7 @@ class AppSettings(BaseModel):
     font: FontKey = "sans"
     close_behavior: CloseBehavior = "tray"
     tray_hint_dismissed: bool = False
+    default_words: int = 800000
 
 
 class AppSettingsUpdate(BaseModel):
@@ -62,3 +64,4 @@ class AppSettingsUpdate(BaseModel):
     font: FontKey | None = None
     close_behavior: CloseBehavior | None = None
     tray_hint_dismissed: bool | None = None
+    default_words: int | None = None

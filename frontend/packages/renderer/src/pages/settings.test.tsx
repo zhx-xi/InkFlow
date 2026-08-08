@@ -491,6 +491,25 @@ describe('设置页 — 常规分类', () => {
     Object.defineProperty(document, 'hidden', { value: false, configurable: true });
   });
 
+  // ⚠️ #189 全局默认（2026-08-08 用户拍板方案 A）：无当前项目时 default_words 不再静默丢弃——
+  // 防抖到期 PATCH /api/v1/settings {default_words}（全局默认语义）；有项目时仍 PATCH 项目 config。
+  it('#189 全局默认：无当前项目时改 default_words → 防抖到期 patchSettings({default_words})（不再静默丢弃）', async () => {
+    useProjectStore.setState({ projects: [], currentProjectId: null, loading: false, error: null });
+    const user = userEvent.setup();
+    renderSettings();
+    const input = screen.getByLabelText('新章节默认字数');
+    await user.clear(input);
+    await user.type(input, '300000');
+    // 不失去焦点（防抖自动保存路径）——无项目时目标为全局 settings（patchSettingsMock：
+    // vi.hoisted 替换，不走 apiFetch——2026-08-08 父侧裁定）
+    await waitFor(
+      () => {
+        expect(patchSettingsMock).toHaveBeenCalledWith({ default_words: 300000 });
+      },
+      { timeout: 3000 },
+    );
+  });
+
   // ⚠️ #189 用户追加拍板（2026-08-08）：保存成功后页面正上方提示「已保存」
   // （参考 Notion / Google Docs 顶部保存指示：顶部小字、成功显示约 2s 淡出）
   // data-testid 契约：settings-save-indicator（页面正上方容器，文本 = 当前保存状态）

@@ -24,6 +24,8 @@ export interface AppSettings {
   font: 'serif' | 'sans' | 'mono';
   close_behavior: CloseBehavior;
   tray_hint_dismissed: boolean;
+  /** #189：全局默认目标字数（无项目时保存 / 新建项目初始化用；默认 800000 后端补齐） */
+  default_words: number;
 }
 
 /** F32（#152）：PATCH /settings 请求体——部分更新，只发用户改动字段（响应恒为合并后全量） */

@@ -61,6 +61,7 @@ def _defaults() -> dict:
         "font": "sans",
         "close_behavior": "tray",
         "tray_hint_dismissed": False,
+        "default_words": 800000,
     }
 
 
@@ -80,6 +81,7 @@ class TestAppSettings:
             font="mono",
             close_behavior="quit",
             tray_hint_dismissed=True,
+            default_words=5000,
         )
         assert s.model_dump() == {
             "theme": "night",
@@ -88,6 +90,7 @@ class TestAppSettings:
             "font": "mono",
             "close_behavior": "quit",
             "tray_hint_dismissed": True,
+            "default_words": 5000,
         }
 
     def test_json_roundtrip(self):
@@ -141,7 +144,7 @@ class TestSettingsKey:
     """SettingsKey 枚举契约（§2.2，service 白名单依赖 value 构造）。"""
 
     def test_members_and_values(self):
-        """6 成员 + value 与 §2.1 设置键名一一对应。"""
+        """7 成员 + value 与 §2.1 设置键名一一对应。"""
         assert {k.name: k.value for k in SettingsKey} == {
             "THEME": "theme",
             "BG": "bg",
@@ -149,6 +152,7 @@ class TestSettingsKey:
             "FONT": "font",
             "CLOSE_BEHAVIOR": "close_behavior",
             "TRAY_HINT_DISMISSED": "tray_hint_dismissed",
+            "DEFAULT_WORDS": "default_words",
         }
 
     def test_construct_by_value(self):
