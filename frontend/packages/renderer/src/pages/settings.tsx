@@ -11,7 +11,7 @@ import { TemplateDialog } from '../components/TemplateDialog';
 import { Switch } from '../components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import type { CloseBehavior } from '../api/client';
-import { apiFetch, ensureApiReady, errorMessage } from '../api/client';
+import { apiFetch, ensureApiReady, errorMessage, patchSettings } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import { useAgentStore } from '../stores/agent';
 import { useProjectStore } from '../stores/project';
@@ -128,7 +128,8 @@ function GeneralPanel() {
   // F32（#152，spec §5.4 flushDefaultWords 契约）：空值/非法 → 静默不 PATCH；
   // <1000 → err toast 不 PATCH（与后端 ge=1000 对齐）；合法 → updateConfig 单次 PATCH 完整 config
   // + project store 本地合并（评审 🔴-2）；成功 → agent store setConfig + 清 dirty + ok toast；
-  // 失败 → err toast + agent store 不被污染（缺陷 #4）+ dirty 保持；无当前项目 → 不保存（评审 🟢）
+  // 失败 → err toast + agent store 不被污染（缺陷 #4）+ dirty 保持；无当前项目 → PATCH /api/v1/settings
+  // 全局默认（#189 方案 A，不再静默丢弃）
   const flushDefaultWords = () => {
     const n = Number(valueRef.current);
     if (valueRef.current === '' || !Number.isFinite(n)) return;
@@ -136,10 +137,30 @@ function GeneralPanel() {
       pushToast('err', t('toast.saveFailed'));
       return;
     }
+    // #189 保存反馈（项目/全局两条路径共用）：成功 →「已保存」约 2s 后隐藏 + 清 dirty + ok toast；
+    // 失败 → 回到隐藏（提示走 err toast）+ dirty 保持
+    const markSaved = () => {
+      valueRef.current = String(n);
+      dirtyRef.current = false;
+      setDirty(false);
+      pushToast('ok', t('toast.saved'));
+      setSaveState('saved');
+      if (saveHideTimerRef.current) clearTimeout(saveHideTimerRef.current);
+      saveHideTimerRef.current = setTimeout(() => setSaveState('idle'), SAVE_INDICATOR_HIDE_MS);
+    };
+    const markFailed = () => {
+      setSaveState('idle');
+      pushToast('err', t('toast.saveFailed'));
+    };
     const project = useProjectStore
       .getState()
       .projects.find((p) => p.id === useProjectStore.getState().currentProjectId);
-    if (!project) return;
+    if (!project) {
+      // #189 方案 A（全局默认语义）：无当前项目 → PATCH /api/v1/settings（全局默认，不静默丢弃）
+      setSaveState('saving');
+      void patchSettings({ default_words: n }).then(markSaved).catch(markFailed);
+      return;
+    }
     // #189：保存指示——开始保存 → 成功「已保存」约 2s 后隐藏；失败回到隐藏（提示走 err toast）
     setSaveState('saving');
     // 合并源 = agent store 当前 config（含 agent_* 已配置字段），而非 project store 旧快照（#105 🔴-B）
@@ -149,18 +170,9 @@ function GeneralPanel() {
       .updateConfig(project.id, { ...current, default_words: n })
       .then(() => {
         useAgentStore.getState().setConfig({ ...current, default_words: n });
-        valueRef.current = String(n);
-        dirtyRef.current = false;
-        setDirty(false);
-        pushToast('ok', t('toast.saved'));
-        setSaveState('saved');
-        if (saveHideTimerRef.current) clearTimeout(saveHideTimerRef.current);
-        saveHideTimerRef.current = setTimeout(() => setSaveState('idle'), SAVE_INDICATOR_HIDE_MS);
+        markSaved();
       })
-      .catch(() => {
-        setSaveState('idle');
-        pushToast('err', t('toast.saveFailed'));
-      });
+      .catch(markFailed);
   };
 
   const handleDefaultWordsBlur = () => {
