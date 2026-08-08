@@ -52,6 +52,9 @@ export const zh = {
   'set.trayHint': '首次托盘提示',
   'set.trayHintDesc': '关闭窗口时在系统托盘显示首次提示',
   'set.defaultWords': '新章节默认字数',
+  // #189（rc1 发布缺陷）：页面顶部保存指示
+  'set.saving': '保存中…',
+  'set.saved': '已保存',
   'set.models.summary': '已配置 Provider',
   'set.models.placeholder': '模型管理将在后续版本提供',
   'set.templates.placeholder': '模板功能将在后续版本提供',
