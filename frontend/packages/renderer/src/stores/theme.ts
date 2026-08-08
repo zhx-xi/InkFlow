@@ -59,9 +59,15 @@ function pushSaveFailed(): void {
   useToastStore.getState().pushToast('err', '保存失败');
 }
 
-/** 视觉设置 fire-and-forget PATCH：失败 err toast，本地值保留不回滚（§5.2 setter 流程，§7 边界 #7） */
-function persistVisual(patch: AppSettingsUpdate): void {
-  void patchSettings(patch).catch(() => pushSaveFailed());
+/** 视觉设置 PATCH：#199 返回持久化结果信号（成功 true / 失败 false，内部 catch 不 rethrow）；
+ * 失败 err toast，本地值保留不回滚（§5.2 setter 流程，§7 边界 #7） */
+function persistVisual(patch: AppSettingsUpdate): Promise<boolean> {
+  return patchSettings(patch)
+    .then(() => true)
+    .catch(() => {
+      pushSaveFailed();
+      return false;
+    });
 }
 
 interface ThemeState {
@@ -72,14 +78,16 @@ interface ThemeState {
   closeBehavior: CloseBehavior;
   trayHintDismissed: boolean;
 
-  /** 视觉设置（乐观更新 + 缓存回写 + PATCH）：theme 背景随主题过滤（BG_BY_THEME） */
-  setTheme: (theme: ThemeName) => void;
-  setBg: (bg: ThemeBg) => void;
-  setLang: (lang: Lang) => void;
-  setFont: (font: FontKey) => void;
-  /** 行为设置：PATCH 成功 → IPC 推送主进程 → store 更新；失败 → err toast + 值回弹（§5.3） */
-  setCloseBehavior: (closeBehavior: CloseBehavior) => Promise<void>;
-  setTrayHintDismissed: (trayHintDismissed: boolean) => Promise<void>;
+  /** 视觉设置（乐观更新 + 缓存回写 + PATCH）：theme 背景随主题过滤（BG_BY_THEME）；
+   * #199：返回持久化结果信号（成功 true / 失败 false） */
+  setTheme: (theme: ThemeName) => Promise<boolean>;
+  setBg: (bg: ThemeBg) => Promise<boolean>;
+  setLang: (lang: Lang) => Promise<boolean>;
+  setFont: (font: FontKey) => Promise<boolean>;
+  /** 行为设置：PATCH 成功 → IPC 推送主进程 → store 更新；失败 → err toast + 值回弹（§5.3）；
+   * #199：返回持久化结果信号（成功 true / 失败 false，不 rethrow） */
+  setCloseBehavior: (closeBehavior: CloseBehavior) => Promise<boolean>;
+  setTrayHintDismissed: (trayHintDismissed: boolean) => Promise<boolean>;
   /** 双轨加载（§5.2 步骤 ②③④⑤）：ensureApiReady → GET → theme 三分支覆盖 → 缓存回写 → 主进程桥接 */
   initFromBackend: () => Promise<void>;
 }
@@ -99,25 +107,25 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     const { lang, font } = get();
     set({ theme, bg });
     writeCache({ theme, bg, lang, font });
-    persistVisual({ theme });
+    return persistVisual({ theme });
   },
   setBg: (bg) => {
     const { theme, lang, font } = get();
     set({ bg });
     writeCache({ theme, bg, lang, font });
-    persistVisual({ bg });
+    return persistVisual({ bg });
   },
   setLang: (lang) => {
     const { theme, bg, font } = get();
     set({ lang });
     writeCache({ theme, bg, lang, font });
-    persistVisual({ lang });
+    return persistVisual({ lang });
   },
   setFont: (font) => {
     const { theme, bg, lang } = get();
     set({ font });
     writeCache({ theme, bg, lang, font });
-    persistVisual({ font });
+    return persistVisual({ font });
   },
   setCloseBehavior: async (closeBehavior) => {
     try {
@@ -127,9 +135,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       const { theme, bg, lang, font } = get();
       set({ closeBehavior });
       writeCache({ theme, bg, lang, font });
+      return true;
     } catch {
       // 失败 → err toast + store 不更新（Select 回弹），主进程行为不变（§7 边界 #8）
       pushSaveFailed();
+      return false;
     }
   },
   setTrayHintDismissed: async (trayHintDismissed) => {
@@ -140,8 +150,10 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         void window.INKFLOW_API?.settings?.dismissTrayHint();
       }
       set({ trayHintDismissed });
+      return true;
     } catch {
       pushSaveFailed();
+      return false;
     }
   },
   initFromBackend: async () => {

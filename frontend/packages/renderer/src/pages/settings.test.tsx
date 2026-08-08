@@ -1483,9 +1483,10 @@ type ThemeStoreF32 = ReturnType<typeof useThemeStore.getState> & {
   font: FontKeyF32;
   closeBehavior: CloseBehaviorF32;
   trayHintDismissed: boolean;
-  setFont: (f: FontKeyF32) => void;
-  setCloseBehavior: (b: CloseBehaviorF32) => Promise<void>;
-  setTrayHintDismissed: (v: boolean) => Promise<void>;
+  // #199（2026-08-09）：setter 返回 Promise<boolean>（成功 true / 失败 false）——保存反馈信号
+  setFont: (f: FontKeyF32) => Promise<boolean>;
+  setCloseBehavior: (b: CloseBehaviorF32) => Promise<boolean>;
+  setTrayHintDismissed: (v: boolean) => Promise<boolean>;
   initFromBackend: () => Promise<void>;
 };
 const themeStateF32 = () => useThemeStore.getState() as ThemeStoreF32;
@@ -1545,6 +1546,68 @@ describe('设置页 — 首次托盘提示开关（F32 §6.2 RED 契约）', () 
     } finally {
       useThemeStore.setState({ setTrayHintDismissed: original } as unknown as Partial<ThemeStoreF32>);
     }
+  });
+});
+
+/**
+ * #199（2026-08-09，rc4 复验缺陷）：设置保存反馈统一化——设置页所有即改即存设置
+ * （首次托盘提示开关 / 关闭窗口时 Select / 编辑器字体 Select）保存成功后统一显示
+ * 顶部「已保存」（settings-save-indicator，与 default_words #189 同一指示器）；
+ * 失败 → err toast（store 内既有）+ 指示器回到隐藏。GREEN 契约：
+ * - GeneralPanel 三个控件调用处包「saving → await setter（Promise<boolean>）→ saved(2s)/idle」
+ * - store setter 返回 Promise<boolean>（成功 true / 失败 false，见 stores/theme.test.ts #199 组）
+ * RED 预期：现状切换无顶部提示（指示器恒空/隐藏）→ textContent 断言 FAIL = RED。
+ */
+describe('设置页 — #199 保存反馈统一化（顶部「已保存」）', () => {
+  it('编辑器字体 Select 切换「等宽」→ 顶部「已保存」（font 即改即存反馈）', async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    await user.click(screen.getByRole('combobox', { name: '编辑器字体' }));
+    await user.click(await screen.findByRole('option', { name: '等宽' }));
+    // GREEN 前 font 切换零顶部提示 → 恒空 → FAIL = RED
+    await waitFor(() => {
+      expect(screen.getByTestId('settings-save-indicator').textContent).toBe('已保存');
+    });
+    // store 已持久化（wire 佐证）
+    expect(useThemeStore.getState().font).toBe('mono');
+  });
+
+  it('关闭窗口时 Select 切换「直接退出」→ 顶部「已保存」（closeBehavior 即改即存反馈）', async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    await user.click(screen.getByRole('combobox', { name: '关闭窗口时' }));
+    await user.click(await screen.findByRole('option', { name: '直接退出' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('settings-save-indicator').textContent).toBe('已保存');
+    });
+    expect(useThemeStore.getState().closeBehavior).toBe('quit');
+  });
+
+  it('首次托盘提示开关切换 → 顶部「已保存」（trayHint 即改即存反馈）', async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    const sw = screen.getByTestId('settings-tray-hint-switch');
+    await user.click(sw); // 关闭提示 → setTrayHintDismissed(true)
+    await waitFor(() => {
+      expect(screen.getByTestId('settings-save-indicator').textContent).toBe('已保存');
+    });
+    expect(useThemeStore.getState().trayHintDismissed).toBe(true);
+  });
+
+  it('font 切换 PATCH 失败 → err toast + 顶部指示器不显示「已保存」（失败回隐藏，提示走 err toast）', async () => {
+    patchSettingsMock.mockRejectedValue(new Error('network down'));
+    const user = userEvent.setup();
+    renderSettings();
+    await user.click(screen.getByRole('combobox', { name: '编辑器字体' }));
+    await user.click(await screen.findByRole('option', { name: '等宽' }));
+    // err toast 出现（store 内 pushSaveFailed 既有行为）
+    await waitFor(() => {
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts.some((t) => t.type === 'err')).toBe(true);
+    });
+    // 指示器不得显示「已保存」（失败信号 = false → idle）
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.getByTestId('settings-save-indicator').textContent).not.toBe('已保存');
   });
 });
 
