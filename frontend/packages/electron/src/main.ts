@@ -169,7 +169,16 @@ function clearMonitorTimers(): void {
 
 /** dev 分支相对命令以仓库根为基准解析（pnpm 脚本/E2E 的 cwd 是 frontend/ 或 packages/electron/） */
 function resolveKernelCommandForSpawn(): { command: string; args: string[] } {
-  const resolved = resolveKernelCommand({ isPackaged: app.isPackaged, env: process.env });
+  const resolved = resolveKernelCommand({
+    isPackaged: app.isPackaged,
+    env: process.env,
+    // #187 任意 cwd 启动：打包版传绝对路径（app.getAppPath() 定位 resources/kernel/inkflow.exe）；
+    // typeof 守卫兼容测试 mock 缺失 getAppPath（与 resolveKernelStatePath/requestSingleInstanceLock 同款防御）
+    packagedKernelPath:
+      app.isPackaged && typeof app.getAppPath === 'function'
+        ? path.join(app.getAppPath(), 'resources', 'kernel', 'inkflow.exe')
+        : undefined,
+  });
   if (app.isPackaged || path.isAbsolute(resolved.command)) {
     return resolved;
   }
@@ -331,6 +340,8 @@ function spawnKernel(): void {
   const child = spawn(command, args, {
     stdio: ['ignore', 'pipe', 'pipe'] as const,
     windowsHide: true,
+    // #187 双保险：打包版 spawn cwd 固定为 exe 所在目录，任意 cwd 启动不依赖相对路径解析
+    cwd: app.isPackaged ? path.dirname(process.execPath) : undefined,
   });
   kernelProcess = child;
   kernelInfo = null;

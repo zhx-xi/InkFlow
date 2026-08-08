@@ -73,6 +73,8 @@ export function nextBackoffDelayMs(failureCount: number): number {
 
 export interface ResolveKernelCommandOptions {
   isPackaged: boolean;
+  /** 打包版内核绝对路径（#187 任意 cwd 启动修复）；缺省回落相对路径兼容旧调用/测试 */
+  packagedKernelPath?: string;
   env?: Record<string, string | undefined>;
 }
 
@@ -84,7 +86,7 @@ export interface KernelCommand {
 /**
  * 内核命令定位三分支（spec §3.2.1）：
  * ① env.INKFLOW_KERNEL_CMD 存在 → trim 后按空白 split，首段 command 其余 args（优先级最高）；
- * ② isPackaged=true → resources/kernel/inkflow.exe serve --port 0；
+ * ② isPackaged=true → resources/kernel/inkflow.exe serve --port 0；packagedKernelPath 提供时用绝对路径（#187 任意 cwd 启动）；
  * ③ 默认 dev → backend\.venv\Scripts\python.exe -m inkflow serve --port 0。
  */
 export function resolveKernelCommand(opts: ResolveKernelCommandOptions): KernelCommand {
@@ -94,7 +96,10 @@ export function resolveKernelCommand(opts: ResolveKernelCommandOptions): KernelC
     return { command, args };
   }
   if (opts.isPackaged) {
-    return { command: 'resources/kernel/inkflow.exe', args: ['serve', '--port', '0'] };
+    return {
+      command: opts.packagedKernelPath ?? 'resources/kernel/inkflow.exe',
+      args: ['serve', '--port', '0'],
+    };
   }
   return {
     command: 'backend\\.venv\\Scripts\\python.exe',
