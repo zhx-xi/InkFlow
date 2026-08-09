@@ -1,8 +1,9 @@
 # F21: 导出服务（output_service）— 功能规格
 
-> **Spec 版本**: 1.2 | **日期**: 2026-08-09 | **依据**: PRD v2.2 §6.4 P1-15, Issue #53, Constitution P1-P6（P2 解耦 / P5 YAGNI）
+> **Spec 版本**: 1.3 | **日期**: 2026-08-09 | **依据**: PRD v2.2 §6.4 P1-15, Issue #53, Constitution P1-P6（P2 解耦 / P5 YAGNI）
 > **所属阶段**: 0.6.0（#53 导出服务，估算 1.5-2 人天——v1.1 拍板范围收敛）
 >
+> **Spec 变更（v1.2 → v1.3）**: **评审修复吸收（2026-08-09，评审 PASS with minor 后父侧修订）**——① §3.3 异常映射表措辞漂移修正（404「项目不存在」/500「内部错误: <e>」，与实现/F15 audit 先例/ADR-012 中文文案一致）；② §6.1 卷排序键修正（`order_index ASC` 仅——`Volume` 实体无 `created_at` 字段）；③ §5.1 要点 2「asyncio.gather 并行拉取」在实现中落实（B4 修复批），正文与设定聚合并行、设定 5 源并行，include_settings=False 零调用契约不变。
 > **Spec 变更（v1.1 → v1.2）**: **实现期父侧裁定（2026-08-09）**——CLI 传输路径改为**恒经 HTTP**（`ensure_kernel()` + `InkFlowHTTPClient.get_raw` 下载，F38 #169 全仓改造后的一致模式；v1.1 的「直接消费 service 不经 HTTP」是未同步 F38 的陈旧措辞，§4/§8.1/§12 D 表修订）；CLI 信封按 F7 实际契约 `{"ok": ...}`（v1.1 示例 success 键为过时措辞，§4 修订）；人类模式成功文案码点锁定为 `✅ 导出成功: {name} → {path} ({bytes:,} bytes)`（§4 修订）。
 > **Spec 变更（v1.0 → v1.1）**: **用户拍板（2026-08-09）**——Q1=A 仅 TXT 格式（国内网文发布生态 TXT 为主流，EPUB/Markdown/DOCX 无发布场景，YAGNI 收敛）；Q2 自解（TXT 纯文本零依赖，不引入任何导出库）；Q3=C `include_settings` 参数切换（默认不含）。§1/§2/§3/§4/§5/§7/§8/§9/§10/§12/§13 全面修订为单格式管线；Issue #53 验收标准同步（gh comment 留痕 2026-08-09）。
 >
@@ -154,11 +155,11 @@ Content-Disposition: attachment; filename="mybook-txt.txt"
 
 | 场景 | HTTP 状态 | 错误 body（ADR-012 统一格式） | 抛出/捕获点 |
 |------|-----------|-------------------------------|-------------|
-| 项目不存在 / 已软删 | 404 | `{"detail": "Project not found"}` | service 校验（复用 F9 character_errors `ProjectNotFoundError`，陷阱 16：**不导出**到 `ports/__init__.py`，router 显式 except 映射） |
+| 项目不存在 / 已软删 | 404 | `{"detail": "项目不存在"}`（v1.3 修订：与实现/F15 audit 先例/ADR-012 中文文案一致，v1.1 表格的英文 "Project not found" 为漂移措辞） | service 校验（复用 F9 character_errors `ProjectNotFoundError`，陷阱 16：**不导出**到 `ports/__init__.py`，router 显式 except 映射） |
 | `format` 非 txt（v1.1 不支持的其他值） | 422 | Pydantic `Literal["txt"]` 校验错误 | DTO 层（FastAPI 自动） |
 | `include_settings` 非法 | 422 | Pydantic 校验错误 | DTO 层 |
 | 项目存在但无任何内容 | 200 | 空文档（标题 + 空正文，见 §7 E4） | 不视为错误 |
-| 内部错误（序列化异常） | 500 | `{"detail": "Internal server error"}` | router `except Exception` → loguru（ADR-016） |
+| 内部错误（序列化异常） | 500 | `{"detail": "内部错误: <e>"}`（v1.3 修订：与实现/F15 audit 先例/ADR-012 一致，v1.1 表格的英文 "Internal server error" 为漂移措辞） | router `except Exception` → loguru（ADR-016） |
 
 ---
 
@@ -300,7 +301,7 @@ $ inkflow export 我的书 --include-settings --json
 
 | 层级 | 排序键 | 说明 |
 |------|--------|------|
-| 卷 | `order_index ASC, created_at ASC` | F2 语义 |
+| 卷 | `order_index ASC`（v1.3 修订：`Volume` 实体无 `created_at` 字段——F2 卷仅 title/order_index，repo `list_volumes` 已按 order_index 升序，stable sort 保序） | F2 语义 |
 | 章（卷内） | `order_index ASC, created_at ASC` | F2 语义 |
 | 未分组章 | 单独「未分组」卷，排在所有命名卷之后 | `volume_id IS NULL` |
 | 附录-角色 | `created_at ASC`（稳定 ASCII 键；**不用 name 排序**——中文码点序与直觉不符，F15 教训） |

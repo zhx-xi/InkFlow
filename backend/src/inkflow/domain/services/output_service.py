@@ -5,14 +5,15 @@ Protocol（零跨模块 MODIFY，全部走既有只读方法，§8.2），export
 spec §5.1 步骤 ①-④ 执行:
 
 ① 项目校验（ProjectRepositoryProtocol.get → None → ProjectNotFoundError 404）
-② 正文聚合（只读）: list_volumes 拉卷骨架 + list_chapters 循环分页拉全
-   （limit=50 绝不静默丢章，M1 兜底）→ 软删章防御性过滤（getattr）→
-   内存按 volume_id 分组（None 归「未分组」卷，排所有命名卷之后）→
-   卷 order_index ASC、章（卷内）order_index ASC, created_at ASC
-③ include_settings 分支（Q3=C 拍板）: False（默认）→ settings=[] 且五个
-   设定 repo 方法均不调用（条件依赖性能契约）; True → 5 类各聚合成
-   BookSetting，顺序固定 character → world → outline → timeline →
-   foreshadowing（§5.1 ③/§6.3 摘要拼接）
+② 正文聚合 + ③ 设定聚合（并行拉取，§5.1 要点 2）:
+   正文: list_volumes 拉卷骨架 + list_chapters 循环分页拉全（limit=50 绝不
+   静默丢章，M1 兜底）→ 软删章防御性过滤（getattr）→ 内存按 volume_id
+   分组（None 归「未分组」卷，排所有命名卷之后）→ 卷 order_index ASC、
+   章（卷内）order_index ASC, created_at ASC
+   设定（include_settings=True）: 5 类 repo 经 asyncio.gather 并行拉取，
+   组装顺序固定 character → world → outline → timeline → foreshadowing
+   （§5.1 ③/§6.3 摘要拼接）; False（默认）→ settings=[] 且五个设定 repo
+   方法均不调用（条件依赖性能契约）
 ④ 组装 BookDocument（统一中间表示，§2.2）
 
 只依赖 domain/ports/ 与 domain/models/（Protocol 与领域模型），不依赖任何
@@ -23,6 +24,7 @@ infrastructure 实现——domain/ 零框架 import 门禁天然满足（ADR-002
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -111,8 +113,9 @@ class ExportService:
     ) -> BookDocument:
         """导出聚合编排 — 项目 → BookDocument（统一中间表示）.
 
-        流程: 项目校验 → 正文聚合（分页拉全 + 软删过滤 + 内存分组）→
-        include_settings 分支（默认不调用设定 repo）→ 组装 BookDocument。
+        流程: 项目校验 → 正文 + 设定并行聚合（asyncio.gather，§5.1 要点 2；
+        分页拉全 + 软删过滤 + 内存分组；include_settings=False 不调用设定
+        repo）→ 组装 BookDocument。
         只读幂等：同一项目同一参数两次导出 BookDocument 逐字段相等
         （§5.4 确定性；updated_at 仅入 meta 展示）。
 
@@ -133,16 +136,23 @@ class ExportService:
         if project is None:
             raise ProjectNotFoundError()
 
-        # ② 正文聚合（只读，分页拉全，软删防御性过滤，内存分组）
-        volumes = await self._chapter_repo.list_volumes(pid_int)
-        chapters = await self._load_all(self._chapter_repo.list_chapters, pid_int)
-        chapters = [ch for ch in chapters if not getattr(ch, "is_deleted", False)]
-        book_volumes = self._assemble_volumes(volumes, chapters)
-
-        # ③ include_settings 分支（条件依赖：False → 设定 repo 零调用）
+        # ② 正文聚合 + ③ 设定聚合（并行，§5.1 要点 2: 各数据源相互独立）
+        volumes_coro = self._chapter_repo.list_volumes(pid_int)
+        chapters_coro = self._load_all(self._chapter_repo.list_chapters, pid_int)
         settings: list[BookSetting] = []
         if include_settings:
-            settings = await self._aggregate_settings(pid_int)
+            volumes, chapters, settings = await asyncio.gather(
+                volumes_coro,
+                chapters_coro,
+                self._aggregate_settings(pid_int),
+            )
+        else:
+            # 条件依赖: False → 设定 repo 零调用（不创建 _aggregate_settings 协程）
+            volumes, chapters = await asyncio.gather(volumes_coro, chapters_coro)
+
+        # 软删章防御性过滤 + 内存分组（§5.2/§6.1）
+        chapters = [ch for ch in chapters if not getattr(ch, "is_deleted", False)]
+        book_volumes = self._assemble_volumes(volumes, chapters)
 
         # ④ 组装 BookDocument（§2.2）
         return BookDocument(
@@ -244,7 +254,7 @@ class ExportService:
     # ── 附录聚合（spec §5.1 ③/§6.3，include_settings=True 时）────
 
     async def _aggregate_settings(self, pid_int: int) -> list[BookSetting]:
-        """5 类设定档案聚合 — 顺序固定 character → world → outline → timeline → foreshadowing.
+        """5 类设定档案聚合 — asyncio.gather 并行拉取（§5.1 要点 2），组装顺序固定.
 
         Args:
             pid_int: 项目 int 主键.
@@ -252,12 +262,15 @@ class ExportService:
         Returns:
             按 §6.1 排序键与 §6.3 摘要拼接规则组装的 BookSetting 列表.
         """
-        characters = await self._load_all(self._character_repo.list, pid_int)
-        worlds = await self._load_all(self._world_repo.list, pid_int)
-        outlines = await self._load_all(self._outline_repo.list, pid_int)
-        events = await self._timeline_repo.list_all(pid_int)
-        foreshadowings = await self._load_all(self._foreshadowing_repo.list, pid_int)
+        characters, worlds, outlines, events, foreshadowings = await asyncio.gather(
+            self._load_all(self._character_repo.list, pid_int),
+            self._load_all(self._world_repo.list, pid_int),
+            self._load_all(self._outline_repo.list, pid_int),
+            self._timeline_repo.list_all(pid_int),
+            self._load_all(self._foreshadowing_repo.list, pid_int),
+        )
 
+        # 组装顺序固定（§5.1 ③）: character → world → outline → timeline → foreshadowing
         settings: list[BookSetting] = []
         settings.extend(self._character_settings(characters))
         settings.extend(self._world_settings(worlds))

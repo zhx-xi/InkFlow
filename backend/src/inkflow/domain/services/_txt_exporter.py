@@ -10,10 +10,10 @@
    正文原样（含换行，不转义不清洗）
 3. 未分组卷（title == "未分组"，service 聚合常量）: 不输出卷标题行与
    "-" 分隔线，直接输出其章（单卷退化，§5.3）
-4. 附录（settings 非空）: 「附录：设定档案」+ 按 settings 顺序分节
-   （service 聚合保证固定顺序 character → world → outline → timeline →
-   foreshadowing；同一 type 只输出一次分节标题），每条目输出 name 行 +
-   content 行；settings 为空 → 不输出附录
+4. 附录（settings 非空）: 「附录：设定档案」+ 按规范序分节（§5.3:
+   character → world → outline → timeline → foreshadowing，_SECTION_ORDER；
+   同一 type 只输出一次分节标题），每条目输出 name 行 + content 行；
+   settings 为空 → 不输出附录
 5. 空项目（无卷无章无设定）→ 书名 + 分隔线（§7 E4）
 
 依据: specs/f21-export-service/spec.md §3.2/§5.3/§6.2/§7 E3-E4。
@@ -44,6 +44,15 @@ _SECTION_TITLES = {
 }
 """分节标题映射（spec §5.3 附录示例形态）。"""
 
+_SECTION_ORDER = {
+    "character": 0,
+    "world": 1,
+    "outline": 2,
+    "timeline": 3,
+    "foreshadowing": 4,
+}
+"""附录分节规范序（spec §5.3/§5.1 ③: character → world → outline → timeline → foreshadowing）。"""
+
 
 def to_txt(book: BookDocument) -> str:
     """BookDocument → TXT 纯文本（行级结构见模块 docstring）.
@@ -65,7 +74,8 @@ def to_txt(book: BookDocument) -> str:
         lines.append("")
         lines.append(_APPENDIX_TITLE)
         seen_types: set[str] = set()
-        for setting in book.settings:
+        # 规范序分节（§5.3）: 按 _SECTION_ORDER 排序后分组输出，同 type 只输出一次标题
+        for setting in sorted(book.settings, key=lambda s: _SECTION_ORDER.get(s.type, 99)):
             if setting.type not in seen_types:
                 seen_types.add(setting.type)
                 lines.extend(["", _SECTION_TITLES[setting.type]])

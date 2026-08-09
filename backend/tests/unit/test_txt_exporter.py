@@ -69,6 +69,9 @@ SECTION_TITLES = {
     "foreshadowing": "【伏笔】",
 }
 
+# 附录规范分节顺序（契约锁死，§5.1 ③：character → world → outline → timeline → foreshadowing）
+_CANONICAL_ORDER = ["character", "world", "outline", "timeline", "foreshadowing"]
+
 
 # ── make_* 工厂（与 test_output_models.py 同形，文件独立不互相 import）──
 
@@ -290,8 +293,12 @@ class TestToTxtAppendix:
             make_setting("outline", "大纲条目"),
         ]
         text = to_txt(make_document(settings=settings))
-        pos = [text.index(SECTION_TITLES[s.type]) for s in settings]
-        assert pos == sorted(pos)
+        # 规范序（§5.1 ③）：character → world → outline → timeline → foreshadowing。
+        # 断言各分节标题在输出中的出现位置严格递增（而非按 settings 输入序——旧断言恒真空洞，
+        # 父侧裁定 2026-08-09 改为锁定规范序）。
+        positions = [text.index(SECTION_TITLES[t]) for t in _CANONICAL_ORDER]
+        assert positions == sorted(positions)
+        assert positions[0] < positions[1] < positions[2] < positions[3] < positions[4]
 
     def test_entry_contains_name_and_content(self):
         """每条目输出 name 行 + content 行（§5.3 示例形态）。"""
