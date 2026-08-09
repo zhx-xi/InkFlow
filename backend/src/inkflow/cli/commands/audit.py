@@ -27,6 +27,7 @@ import uuid
 
 import typer
 
+from inkflow.cli.commands.audit_chapter import app as audit_chapter_app
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
@@ -42,6 +43,10 @@ app = typer.Typer(
 @app.callback()
 def _audit_callback() -> None:
     """audit 组回调——保持命令组形态（Typer 单命令提升规避，spec §4 命令树）."""
+
+
+# F34 章节审计子组（spec §4: inkflow audit chapter ...，v1.1 --confirm/--history）
+app.add_typer(audit_chapter_app)
 
 
 # 维度枚举 → 人类可读中文标签（spec §4.2 人类可读摘要）.

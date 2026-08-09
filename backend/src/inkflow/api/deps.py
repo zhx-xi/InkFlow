@@ -16,6 +16,7 @@ from inkflow.domain.services._style_llm_analyzer import StyleLLMAnalyzer
 from inkflow.domain.services._timeline_extractor import TimelineExtractor
 from inkflow.domain.services._world_extractor import WorldExtractor
 from inkflow.domain.services.audit_service import AuditService
+from inkflow.domain.services.chapter_audit_service import ChapterAuditService
 from inkflow.domain.services.chapter_service import ChapterService
 from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.context_service import ContextService
@@ -33,6 +34,9 @@ from inkflow.domain.services.summary_service import SummaryService
 from inkflow.domain.services.timeline_service import TimelineService
 from inkflow.domain.services.world_service import WorldService
 from inkflow.domain.services.writing_service import WritingService
+from inkflow.infrastructure.database.repositories.audit_log_repo import (
+    SQLiteAuditLogRepository,
+)
 from inkflow.infrastructure.database.repositories.audit_repo import (
     SQLiteAuditRepository,
 )
@@ -345,6 +349,27 @@ def get_audit_service(
         chapter_repo=SQLiteChapterRepository(db),
         run_repo=SQLExtractionRunRepository(db),
         audit_repo=SQLiteAuditRepository(db),
+    )
+
+
+def get_chapter_audit_service(
+    db: AsyncSession,
+) -> ChapterAuditService:
+    """获取 ChapterAuditService 实例（F34 章节审计服务，spec §5/§8）.
+
+    装配: 复用 F1/F2/F9/F10 各 SQLite 仓储 + F15 AuditService
+    （get_audit_service 先例，静态一致性委托）+ F5 LangChainLLMClient
+    （人设/设定漂移 LLM 检查）+ F34 自有 SQLiteAuditLogRepository
+    （审计日志轻量记录，§8.2）——除 audit_log_repo 外全部为既有实现。
+    """
+    return ChapterAuditService(
+        project_repo=SQLiteProjectRepository(db),
+        chapter_repo=SQLiteChapterRepository(db),
+        character_repo=SQLiteCharacterRepository(db),
+        world_repo=SQLiteWorldRepository(db),
+        audit_service=get_audit_service(db),
+        llm_client=LangChainLLMClient(),
+        audit_log_repo=SQLiteAuditLogRepository(db),
     )
 
 

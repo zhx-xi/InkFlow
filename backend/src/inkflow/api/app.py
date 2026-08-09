@@ -14,6 +14,7 @@ from inkflow.api.routers import (
     agent_templates,
     audit,
     chapter,
+    chapter_audit,
     characters,
     context,
     export,
@@ -117,6 +118,7 @@ app.include_router(provider_configs.router)
 app.include_router(agent_templates.router)
 app.include_router(style.router)
 app.include_router(chapter.router)
+app.include_router(chapter_audit.router)
 app.include_router(characters.router)
 app.include_router(writing.router)
 app.include_router(agent.router)

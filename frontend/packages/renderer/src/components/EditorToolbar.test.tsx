@@ -17,6 +17,16 @@
  * - 点击回调：onUndo/onRedo/onSave/onContinue/onGenerate
  *
  * RED 预期：当前按钮无 title 属性 → toHaveAttribute('title') 断言 FAIL。
+ *
+ * F34 章节审计（Issue #208，spec §8.1 Q3=C 最小版）追加契约（2026-08-09）：
+ * - 新 prop：onAudit: () => void（必填；renderToolbar helper 默认 props 已补 vi.fn()，
+ *   既有用例零改动）
+ * - 新按钮：aria-label（或 title）用 i18n 键 write.toolbar.audit（zh「审计」/ en「Audit」，
+ *   GREEN 补 zh.ts + en.ts）；disabled 跟随 prop（与续写/生成一致）
+ *
+ * RED 预期（追加用例）：当前 EditorToolbar 无 onAudit prop 与审计按钮 →
+ * 既有用例保持绿 + 新用例 element-missing（getByRole button 审计 找不到）；
+ * tsc --noEmit 报 onAudit 属性缺失（TS2322，属 RED 的一部分）。
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
@@ -31,6 +41,7 @@ function renderToolbar(overrides: Partial<Parameters<typeof EditorToolbar>[0]> =
     onSave: vi.fn(),
     onContinue: vi.fn(),
     onGenerate: vi.fn(),
+    onAudit: vi.fn(), // F34 #208：审计按钮回调（GREEN 前为多余键，无害）
     ...overrides,
   };
   render(<EditorToolbar {...props} />);
@@ -97,5 +108,27 @@ describe('工具栏 — 既有行为保持（迁移自 writing.test.tsx）', () 
 
     await user.click(within(toolbar).getByRole('button', { name: '生成' }));
     expect(props.onGenerate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('工具栏 — 审计按钮（F34 章节审计 Issue #208，spec §8.1 Q3=C）', () => {
+  it('渲染：审计按钮（i18n write.toolbar.audit「审计」）', () => {
+    renderToolbar();
+    const toolbar = screen.getByTestId('editor-toolbar');
+    expect(within(toolbar).getByRole('button', { name: '审计' })).toBeInTheDocument();
+  });
+
+  it('点击审计按钮 → onAudit 被调用', async () => {
+    const user = userEvent.setup();
+    const props = renderToolbar();
+    const toolbar = screen.getByTestId('editor-toolbar');
+    await user.click(within(toolbar).getByRole('button', { name: '审计' }));
+    expect(props.onAudit).toHaveBeenCalledTimes(1);
+  });
+
+  it('disabled=true → 审计按钮禁用', () => {
+    renderToolbar({ disabled: true });
+    const toolbar = screen.getByTestId('editor-toolbar');
+    expect(within(toolbar).getByRole('button', { name: '审计' })).toBeDisabled();
   });
 });
