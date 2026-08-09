@@ -61,3 +61,43 @@ class WorldNameConflictError(WorldServiceError):
 
     def __init__(self, message: str = "同名世界观条目已存在（条目名在项目内必须唯一）") -> None:
         super().__init__(message)
+
+
+class WorldParentNotFoundError(WorldServiceError):
+    """父地点不存在或不在同一项目 — 422.
+
+    用于 create/update 挂接时父节点校验失败（spec §7 边界 1/2/3）。
+    """
+
+    def __init__(self, message: str = "父地点不存在或不在同一项目") -> None:
+        super().__init__(message)
+
+
+class WorldCycleError(WorldServiceError):
+    """循环引用：parent 是自身或其子孙 — 422.
+
+    循环防护（spec §5.2）检测到挂接形成环时抛出（spec §7 边界 4/5）。
+    """
+
+    def __init__(self, message: str = "不能将地点挂接到自身或其子孙下") -> None:
+        super().__init__(message)
+
+
+class WorldChildrenActionRequiredError(WorldServiceError):
+    """有子地点时必须显式选择级联删除或 reparent — 422（spec §5.5）."""
+
+    def __init__(
+        self,
+        message: str = (
+            "该地点存在子地点，必须指定 cascade=true（级联删除）或 "
+            "reparent_to=<id>（子地点改挂新父）"
+        ),
+    ) -> None:
+        super().__init__(message)
+
+
+class WorldReparentTargetError(WorldServiceError):
+    """reparent 目标非法（不存在/跨项目/自身子树）— 422（spec §7 边界 11）."""
+
+    def __init__(self, message: str = "reparent 目标地点不存在/不在同一项目/是自身子树") -> None:
+        super().__init__(message)

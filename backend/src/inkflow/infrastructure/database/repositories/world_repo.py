@@ -20,7 +20,8 @@ import builtins
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import func, select, text
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,6 +55,7 @@ def _orm_to_domain(orm: WorldSettingORM) -> WorldSetting:
         category=orm.category,
         content=orm.content,
         extra=orm.extra or {},
+        parent_id=_int_to_uuid(orm.parent_id),
         is_deleted=orm.is_deleted,
         created_at=orm.created_at,
         updated_at=orm.updated_at,
@@ -68,6 +70,7 @@ def _domain_to_orm(domain: WorldSetting) -> WorldSettingORM:
         category=domain.category,
         content=domain.content,
         extra=domain.extra,
+        parent_id=_uuid_to_int(domain.parent_id) if domain.parent_id is not None else None,
         is_deleted=domain.is_deleted,
     )
 
@@ -99,11 +102,19 @@ class SQLiteWorldRepository:
         return _orm_to_domain(orm) if orm else None
 
     async def get_by_name(self, project_id: int, name: str) -> WorldSetting | None:
-        """按项目内条目名查询活动条目（不含已软删除）."""
-        stmt = select(WorldSettingORM).where(
-            WorldSettingORM.project_id == project_id,
-            WorldSettingORM.name == name,
-            ~WorldSettingORM.is_deleted,
+        """按项目内条目名查询活动条目（不含已软删除）.
+
+        跨层同名多条时返回最早创建（created_at ASC）的一条（spec §2.4 确定性）。
+        """
+        stmt = (
+            select(WorldSettingORM)
+            .where(
+                WorldSettingORM.project_id == project_id,
+                WorldSettingORM.name == name,
+                ~WorldSettingORM.is_deleted,
+            )
+            .order_by(WorldSettingORM.created_at.asc())
+            .limit(1)
         )
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
@@ -118,8 +129,10 @@ class SQLiteWorldRepository:
         sort_desc: bool = True,
         offset: int = 0,
         limit: int = 50,
+        parent_id: int | None = None,
+        top_level_only: bool = False,
     ) -> tuple[builtins.list[WorldSetting], int]:
-        """分页查询项目内条目列表，支持搜索与类别过滤（不含已软删除）.
+        """分页查询项目内条目列表，支持搜索、类别与 parent_id 过滤（不含已软删除）.
 
         Args:
             project_id: 项目主键（int）.
@@ -129,6 +142,8 @@ class SQLiteWorldRepository:
             sort_desc: 是否倒序.
             offset: 分页偏移.
             limit: 分页大小.
+            parent_id: 直接父级过滤（可选；top_level_only=False 时生效）.
+            top_level_only: True 只返回顶层（parent_id IS NULL）.
 
         Returns:
             (当前页条目列表, 符合条件的总记录数).
@@ -144,6 +159,12 @@ class SQLiteWorldRepository:
         # 类别精确过滤（category= 空串 → 未分类条目）
         if category is not None:
             base = base.where(WorldSettingORM.category == category)
+        # F35: 列表 parent_id 过滤（Q3=A）——top_level_only 与 parent_id 为 AND 语义
+        # （Protocol docstring: 「先 top_level_only 过滤再加 parent_id 条件」）；缺省全量向后兼容
+        if top_level_only:
+            base = base.where(WorldSettingORM.parent_id.is_(None))
+        if parent_id is not None:
+            base = base.where(WorldSettingORM.parent_id == parent_id)
 
         # 总数（分页前）
         count_stmt = select(func.count()).select_from(base.subquery())
@@ -192,6 +213,7 @@ class SQLiteWorldRepository:
             ValueError: 条目不存在.
         """
         setting_id = _uuid_to_int(setting.id)
+        parent_id = _uuid_to_int(setting.parent_id) if setting.parent_id is not None else None
         stmt = (
             sa_update(WorldSettingORM)
             .where(WorldSettingORM.id == setting_id)
@@ -200,6 +222,7 @@ class SQLiteWorldRepository:
                 category=setting.category,
                 content=setting.content,
                 extra=setting.extra,
+                parent_id=parent_id,
                 updated_at=_utcnow(),
             )
         )
@@ -259,6 +282,102 @@ class SQLiteWorldRepository:
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:
+            return False
+        await self._session.delete(orm)
+        await self._session.commit()
+        return True
+
+    async def get_by_parent_and_name(
+        self, project_id: int, parent_id: int | None, name: str
+    ) -> WorldSetting | None:
+        """按 (project_id, parent_id, name) 查询活动条目（parent_id=None = 顶层）."""
+        stmt = select(WorldSettingORM).where(
+            WorldSettingORM.project_id == project_id,
+            WorldSettingORM.name == name,
+            ~WorldSettingORM.is_deleted,
+        )
+        if parent_id is None:
+            stmt = stmt.where(WorldSettingORM.parent_id.is_(None))
+        else:
+            stmt = stmt.where(WorldSettingORM.parent_id == parent_id)
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
+        return _orm_to_domain(orm) if orm else None
+
+    async def collect_ancestor_ids(self, setting_id: int) -> builtins.list[int]:
+        """祖先链 id 列表，**不含自身**（父链 [父, 祖父, ...]，spec §5.2 循环防护用）.
+
+        递归 CTE：起点 = 自身（仅当有父且活动），结果排除自身；仅活动条目（is_deleted=0）。
+        """
+        sql = text(
+            """
+            WITH RECURSIVE ancestors(id, parent_id) AS (
+              SELECT w.id, w.parent_id FROM world_settings w
+              WHERE w.parent_id IS NOT NULL AND w.id = :sid AND w.is_deleted = 0
+              UNION ALL
+              SELECT w.id, w.parent_id FROM world_settings w
+              JOIN ancestors a ON w.id = a.parent_id
+              WHERE w.is_deleted = 0
+            )
+            SELECT id FROM ancestors WHERE id != :sid
+            """
+        )
+        result = await self._session.execute(sql, {"sid": setting_id})
+        return [row[0] for row in result.fetchall()]
+
+    async def list_descendants(self, setting_id: int) -> builtins.list[WorldSetting]:
+        """子树（**含自身**），层序（父先子后，同层 created_at ASC）；仅活动条目.
+
+        两段式：CTE 取层序 id 集合（depth 升序 + created_at ASC），再按 id 批量查 ORM
+        行（类型处理完整），Python 侧按 CTE 顺序重排，确保层序稳定。
+        """
+        sql = text(
+            """
+            WITH RECURSIVE descendants(id, depth, created_at) AS (
+              SELECT id, 0, created_at FROM world_settings WHERE id = :sid AND is_deleted = 0
+              UNION ALL
+              SELECT w.id, d.depth + 1, w.created_at FROM world_settings w
+              JOIN descendants d ON w.parent_id = d.id
+              WHERE w.is_deleted = 0
+            )
+            SELECT id FROM descendants
+            ORDER BY depth ASC, created_at ASC
+            """
+        )
+        result = await self._session.execute(sql, {"sid": setting_id})
+        ordered_ids = [row[0] for row in result.fetchall()]
+        if not ordered_ids:
+            return []
+        stmt = select(WorldSettingORM).where(WorldSettingORM.id.in_(ordered_ids))
+        rows = (await self._session.execute(stmt)).scalars().all()
+        by_id = {orm.id: _orm_to_domain(orm) for orm in rows}
+        return [by_id[sid] for sid in ordered_ids if sid in by_id]
+
+    async def hard_delete_many(self, setting_ids: builtins.list[int]) -> int:
+        """单事务原子物理删除（DELETE WHERE id IN (...)），返回删除行数."""
+        if not setting_ids:
+            return 0
+        stmt = sa_delete(WorldSettingORM).where(WorldSettingORM.id.in_(setting_ids))
+        result = await self._session.execute(stmt)
+        await self._session.commit()
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
+
+    async def delete_with_reparent(self, setting_id: int, reparent_to: int) -> bool:
+        """单事务: UPDATE 直接子地点 parent_id=reparent_to WHERE parent_id=setting_id
+        + DELETE 自身；返回自身是否被删（不存在 → False）."""
+        # ① 子地点改挂新父
+        upd = (
+            sa_update(WorldSettingORM)
+            .where(WorldSettingORM.parent_id == setting_id)
+            .values(parent_id=reparent_to, updated_at=_utcnow())
+        )
+        await self._session.execute(upd)
+        # ② 删除自身
+        stmt = select(WorldSettingORM).where(WorldSettingORM.id == setting_id)
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
+        if orm is None:
+            await self._session.commit()
             return False
         await self._session.delete(orm)
         await self._session.commit()

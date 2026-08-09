@@ -6,7 +6,8 @@
 - DB 主键为 int 自增；领域层 id 为 UUID，映射规则: domain_id = uuid.UUID(int=orm.id)
   （int↔UUID 转换函数在 repositories/world_repo.py，参照 project_repo.py / character_repo.py 惯例）
 - 软删除标记 is_deleted + partial unique index（sqlite_where）保证
-  「活动记录唯一、软删除后可重建同名」的语义（spec §2.4）
+  「同级（project_id, parent_id）内活动记录唯一、软删除后可重建同名」的语义
+  （spec §2.4；顶层应用层校验——SQLite unique index 对 NULL 不冲突）
 - FK 级联: 项目删除 → 世界观条目级联删除
 """
 
@@ -46,14 +47,16 @@ class WorldSettingORM(Base):
 
     __table_args__ = (
         Index(
-            "uq_world_settings_active_name",
+            "uq_world_settings_active_name_parent",
             "project_id",
+            "parent_id",
             "name",
             unique=True,
             sqlite_where=text("is_deleted = 0"),
         ),
     )
-    """项目内活动条目名唯一（软删除后允许重建同名，spec §2.4）."""
+    """同级（project_id, parent_id）内活动条目名唯一（软删除后允许重建同名，
+    spec §2.4；顶层应用层校验——SQLite unique index 对 NULL 不冲突）."""
 
     id: Mapped[int] = mapped_column(
         Integer,
@@ -75,6 +78,14 @@ class WorldSettingORM(Base):
         nullable=False,
     )
     """条目名 (1–50 字符，去空白)."""
+
+    parent_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("world_settings.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    """父地点（自引用 FK，可空=顶层；已索引）."""
 
     category: Mapped[str] = mapped_column(
         String(50),

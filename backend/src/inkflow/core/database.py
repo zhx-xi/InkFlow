@@ -80,6 +80,28 @@ def ensure_provider_builtin_key_column(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE provider_configs ADD COLUMN builtin_key VARCHAR(50)"))
 
 
+def ensure_world_parent_id_column(conn: Connection) -> None:
+    """#173：为既有库 world_settings 补 parent_id 列 + 替换唯一索引（幂等）.
+
+    表不存在（全新环境）→ no-op，等 create_all 建新表（自动含列+新索引）；
+    旧全局唯一索引 uq_world_settings_active_name 与新同级唯一语义冲突，必须删除重建。
+    """
+    cols = conn.execute(text("PRAGMA table_info(world_settings)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return  # 表不存在（全新环境）→ create_all 建新表（自动含列+新索引）
+    if "parent_id" not in names:
+        conn.execute(text("ALTER TABLE world_settings ADD COLUMN parent_id INTEGER"))
+    # 唯一索引替换：旧全局唯一 → 新同级唯一（先删旧，再建新，幂等）
+    conn.execute(text("DROP INDEX IF EXISTS uq_world_settings_active_name"))
+    conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_world_settings_active_name_parent "
+            "ON world_settings (project_id, parent_id, name) WHERE is_deleted = 0"
+        )
+    )
+
+
 async def drop_tables() -> None:
     """Drop all tables (for test teardown)."""
     async with engine.begin() as conn:

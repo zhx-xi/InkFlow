@@ -51,7 +51,8 @@ class WorldRepositoryProtocol(Protocol):
         ...
 
     async def get_by_name(self, project_id: int, name: str) -> WorldSetting | None:
-        """按项目内条目名查询活动条目.
+        """按项目内条目名查询活动条目；跨层同名多条时返回最早创建
+        （created_at ASC）的一条（spec §2.4 确定性声明）.
 
         Args:
             project_id: 项目主键（int）.
@@ -71,8 +72,10 @@ class WorldRepositoryProtocol(Protocol):
         sort_desc: bool = True,
         offset: int = 0,
         limit: int = 50,
+        parent_id: int | None = None,
+        top_level_only: bool = False,
     ) -> tuple[builtins.list[WorldSetting], int]:
-        """分页查询项目内条目列表，支持搜索与类别过滤.
+        """分页查询项目内条目列表，支持搜索与类别过滤（Q3=A 列表 parent_id 过滤）.
 
         Args:
             project_id: 项目主键（int）.
@@ -82,6 +85,8 @@ class WorldRepositoryProtocol(Protocol):
             sort_desc: 是否倒序.
             offset: 分页偏移.
             limit: 分页大小.
+            parent_id: 直接父级过滤（可选；top_level_only=False 时生效）.
+            top_level_only: True 只返回顶层（parent_id IS NULL）.
 
         Returns:
             (条目列表, 总数) 元组.
@@ -141,4 +146,31 @@ class WorldRepositoryProtocol(Protocol):
         Returns:
             是否删除成功（不存在返回 False）.
         """
+        ...
+
+    async def get_by_parent_and_name(
+        self, project_id: int, parent_id: int | None, name: str
+    ) -> WorldSetting | None:
+        """按 (project_id, parent_id, name) 查询活动条目（parent_id=None = 顶层）——
+        同级唯一校验用（spec §5.1）。"""
+        ...
+
+    async def collect_ancestor_ids(self, setting_id: int) -> builtins.list[int]:
+        """祖先链 id 列表，**不含自身**（父链，从近到远 [父, 祖父, ...]；
+        用于循环防护：检查新父的祖先链是否含自身，spec §5.2）。"""
+        ...
+
+    async def list_descendants(self, setting_id: int) -> builtins.list[WorldSetting]:
+        """子树（**含自身**），层序（父先子后，同层 created_at ASC）；
+        仅活动条目（is_deleted=0）；不存在/软删 id → 空列表（spec §5.3）。"""
+        ...
+
+    async def hard_delete_many(self, setting_ids: builtins.list[int]) -> int:
+        """单事务原子物理删除（DELETE WHERE id IN (...)），返回删除行数；
+        空列表 → 0 不报错；不存在的 id 不影响计数（spec §5.5 级联真删）。"""
+        ...
+
+    async def delete_with_reparent(self, setting_id: int, reparent_to: int) -> bool:
+        """单事务: UPDATE 直接子地点 parent_id=reparent_to WHERE parent_id=setting_id
+        + DELETE 自身；返回自身是否被删（不存在 → False，spec §5.5 reparent）。"""
         ...

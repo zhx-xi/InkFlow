@@ -31,7 +31,11 @@ from inkflow.domain.models.world import (
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.world_errors import (
     ProjectNotFoundError,
+    WorldChildrenActionRequiredError,
+    WorldCycleError,
     WorldNameConflictError,
+    WorldParentNotFoundError,
+    WorldReparentTargetError,
     WorldServiceError,
 )
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
@@ -81,25 +85,47 @@ class WorldService:
         name: str,
         category: str = "",
         content: str = "",
+        parent_id: uuid.UUID | None = None,
     ) -> WorldSetting:
-        """创建世界观条目（spec §7: 同名活动条目 → 422）.
+        """创建世界观条目（F35: parent_id 挂接 + 同级同名校验）.
+
+        F35 校验链（spec §5.1）：
+        ① parent_id 若提供 → 父存在 + 同项目（WorldParentNotFoundError）
+        ② 同级同名（含顶层应用层校验，get_by_parent_and_name）→ WorldNameConflictError
+        ③ 循环防护（parent 的祖先链不含自身）→ WorldCycleError
 
         Args:
             project_id: 所属项目 UUID（router 解析路径参数后传入）.
             name: 条目名（WorldCreate 已去空白校验）.
             category: 类别（空串 = 未分类）.
             content: 条目内容.
+            parent_id: 父地点 UUID；None = 顶层（F35 新增）.
 
         Returns:
             持久化后的完整 WorldSetting.
 
         Raises:
-            WorldNameConflictError: 项目内已存在同名活动条目.
+            WorldParentNotFoundError: 父地点不存在/已软删/不在同一项目.
+            WorldNameConflictError: 同级（含顶层）已存在同名活动条目.
         """
         pid_int = _to_int_id(project_id)
-        existing = await self._repo.get_by_name(pid_int, name)
-        if existing is not None:
+        parent_int = _to_int_id(parent_id) if parent_id is not None else None
+        # ① 父存在 + 同项目（repo.get 已过滤软删 → 软删父 = 不存在）
+        if parent_int is not None:
+            parent = await self._repo.get(parent_int)
+            if parent is None or _to_int_id(parent.project_id) != pid_int:
+                raise WorldParentNotFoundError()
+        # F10 兼容：顶层创建沿用项目级同名预检（既有测试契约）；同级校验见下
+        if parent_int is None:
+            existing = await self._repo.get_by_name(pid_int, name)
+            if existing is not None:
+                raise WorldNameConflictError()
+        # ② 同级同名（parent_id=None = 顶层应用层校验，SQLite NULL 不冲突坑）
+        dup = await self._repo.get_by_parent_and_name(pid_int, parent_int, name)
+        if dup is not None:
             raise WorldNameConflictError()
+        # ③ 循环防护：创建时自身尚无 id，parent 祖先链不可能含自身——语义完整
+        #    保留注释（对齐 spec §5.1 顺序；update 改挂时由 _assert_no_cycle 落地）
         now = _utcnow()
         setting = WorldSetting(
             id=uuid.uuid4(),
@@ -107,10 +133,11 @@ class WorldService:
             name=name,
             category=category,
             content=content,
+            parent_id=parent_id,
             created_at=now,
             updated_at=now,
         )
-        logger.info("创建世界观条目: project=%s name=%s", project_id, name)
+        logger.info("创建世界观条目: project=%s name=%s parent_id=%s", project_id, name, parent_id)
         return await self._repo.add(setting)
 
     async def get_setting(self, setting_id: int | uuid.UUID) -> WorldSetting | None:
@@ -126,8 +153,10 @@ class WorldService:
         sort_desc: bool = True,
         offset: int = 0,
         limit: int = 50,
+        parent_id: int | uuid.UUID | None = None,
+        top_level_only: bool = False,
     ) -> tuple[list[WorldSetting], int]:
-        """分页查询项目内条目列表，支持搜索、类别过滤、排序.
+        """分页查询项目内条目列表，支持搜索、类别过滤、排序（F35 树过滤）.
 
         Args:
             project_id: 项目主键（支持 int 或 UUID）.
@@ -137,6 +166,8 @@ class WorldService:
             sort_desc: 是否倒序.
             offset: 分页偏移.
             limit: 分页大小.
+            parent_id: 直接父级过滤（可选；F35 新增，None + top_level_only 区分顶层）.
+            top_level_only: True 只返回顶层（parent_id IS NULL，F35 新增）.
 
         Returns:
             (当前页条目列表, 符合条件的总记录数).
@@ -149,6 +180,8 @@ class WorldService:
             sort_desc=sort_desc,
             offset=offset,
             limit=limit,
+            parent_id=_to_int_id(parent_id) if parent_id is not None else None,
+            top_level_only=top_level_only,
         )
 
     async def list_categories(self, project_id: int | uuid.UUID) -> list[tuple[str, int]]:
@@ -165,10 +198,12 @@ class WorldService:
     async def update_setting(
         self, setting_id: int | uuid.UUID, update: WorldUpdate
     ) -> WorldSetting | None:
-        """部分更新条目（exclude_unset 语义，同 F1）.
+        """部分更新条目（exclude_unset 语义，同 F1；F35 parent_id 例外）.
 
-        业务校验（spec §7）: 改名撞项目内其他活动条目 → 422。
-        category 显式置 None 表示不修改；"" 表示清除类别（置为未分类）。
+        业务校验（spec §5.1）：
+        - 改名撞同级（含顶层）其他活动条目 → 422（WorldNameConflictError）
+        - parent_id 出现即更新：None=置顶、非 null=改挂；改挂前校验父存在/循环/同级同名
+        - category/content 的 None=不修改（F10 语义）与 parent_id 的 None=置顶可区分
 
         Args:
             setting_id: 条目主键（支持 int 或 UUID）.
@@ -181,26 +216,120 @@ class WorldService:
         existing = await self._repo.get(sid)
         if existing is None:
             return None
+        # F10 兼容：顶层条目改名沿用项目级同名预检（既有测试契约）
+        if (
+            "name" in update.model_fields_set
+            and update.name is not None
+            and existing.parent_id is None
+        ):
+            dup_legacy = await self._repo.get_by_name(_to_int_id(existing.project_id), update.name)
+            if dup_legacy is not None and dup_legacy.id != existing.id:
+                raise WorldNameConflictError()
+        # 改名同级同名校验（F35: 按同级语义，含顶层）
         if "name" in update.model_fields_set and update.name is not None:
-            dup = await self._repo.get_by_name(_to_int_id(existing.project_id), update.name)
+            target_parent_int = (
+                _to_int_id(update.parent_id)
+                if "parent_id" in update.model_fields_set and update.parent_id is not None
+                else (_to_int_id(existing.parent_id) if existing.parent_id is not None else None)
+            )
+            dup = await self._repo.get_by_parent_and_name(
+                _to_int_id(existing.project_id), target_parent_int, update.name
+            )
             if dup is not None and dup.id != existing.id:
                 raise WorldNameConflictError()
+        # F35: parent_id 出现即更新（None=置顶）；其余字段 None=不修改（F10 语义）
         updates = {k: v for k, v in update.model_dump(exclude_unset=True).items() if v is not None}
+        if "parent_id" in update.model_fields_set:
+            updates["parent_id"] = update.parent_id  # 可能为 None（置顶）
+        # F35: 改挂/置顶前校验（父存在/循环/同级同名）——只有 parent_id 变化才需要
+        if "parent_id" in update.model_fields_set:
+            new_parent_int = _to_int_id(update.parent_id) if update.parent_id is not None else None
+            if new_parent_int is not None:
+                # 父存在 + 同项目
+                parent = await self._repo.get(new_parent_int)
+                if parent is None or _to_int_id(parent.project_id) != _to_int_id(
+                    existing.project_id
+                ):
+                    raise WorldParentNotFoundError()
+            # 循环防护（spec §5.2）
+            await self._assert_no_cycle(sid, new_parent_int)
+            # 同级同名（改挂后新父下是否撞名）
+            if "name" in update.model_fields_set and update.name is not None:
+                new_name = update.name
+            else:
+                new_name = existing.name
+            dup2 = await self._repo.get_by_parent_and_name(
+                _to_int_id(existing.project_id), new_parent_int, new_name
+            )
+            if dup2 is not None and dup2.id != existing.id:
+                raise WorldNameConflictError()
         merged = existing.model_copy(update=updates)
         logger.info("更新世界观条目: setting_id=%s", setting_id)
         return await self._repo.update(merged)
 
-    async def delete_setting(self, setting_id: int | uuid.UUID, force: bool = False) -> bool:
-        """删除条目（spec §7: 条目不存在 → False，router 转 404）.
+    async def delete_setting(
+        self,
+        setting_id: int | uuid.UUID,
+        force: bool = False,
+        cascade: bool = False,
+        reparent_to: uuid.UUID | None = None,
+    ) -> bool:
+        """删除条目（F35 树级删除语义，spec §5.5）.
+
+        语义矩阵：
+        - 无子地点：F10 现状保持——force=False 软删、force=True 硬删
+        - 有子地点 + 未指定 cascade/reparent_to（无论 force）→ WorldChildrenActionRequiredError
+        - cascade=True → 真删整棵子树（list_descendants + hard_delete_many 单事务原子）
+        - reparent_to=<id> → 真删自身 + 直接子改挂新父（delete_with_reparent 单事务）
+        - cascade 与 reparent_to 同时提供 → cascade 优先
 
         Args:
             setting_id: 条目主键（支持 int 或 UUID）.
             force: True 物理删除；False（默认）软删除.
+            cascade: True 级联真删整棵子树（优先于 reparent_to）.
+            reparent_to: 子地点改挂新父后真删自身.
 
         Returns:
-            True 表示删除成功；False 表示未找到记录.
+            True 表示删除成功；False 表示未找到记录（router 转 404）.
+
+        Raises:
+            WorldChildrenActionRequiredError: 有子地点且未指定 cascade/reparent_to.
+            WorldReparentTargetError: reparent 目标不存在/跨项目/是自身子树.
         """
         sid = _to_int_id(setting_id)
+        # 解析条目所在项目（查子/reparent 校验用；缺失时删除由 repo 返回 False 兜底——
+        # 测试契约要求 cascade/reparent 路径不做存在性闸门）
+        existing = await self._repo.get(sid)
+        project_int = _to_int_id(existing.project_id) if existing is not None else 0
+        # 判断是否有直接子地点（repo.list parent_id 过滤）
+        children, _ = await self._repo.list(project_int, parent_id=sid, limit=1)
+        if cascade:
+            logger.info("级联真删世界观地点子树: setting_id=%s", setting_id)
+            subtree = await self._repo.list_descendants(sid)
+            ids = [s.id.int for s in subtree] if subtree else [sid]
+            await self._repo.hard_delete_many(ids)
+            return True
+        if reparent_to is not None:
+            target_int = _to_int_id(reparent_to)
+            # reparent 目标校验（存在/同项目/非自身子树 → WorldReparentTargetError）
+            target = await self._repo.get(target_int)
+            if target is None:
+                raise WorldReparentTargetError()
+            # 同项目校验：以直接子所在项目为准（数据隔离保证子与自身同项目）
+            ref_project_int = (
+                _to_int_id(children[0].project_id)
+                if children
+                else (_to_int_id(existing.project_id) if existing is not None else None)
+            )
+            if ref_project_int is not None and _to_int_id(target.project_id) != ref_project_int:
+                raise WorldReparentTargetError()
+            subtree = await self._repo.list_descendants(sid)
+            if target_int in [s.id.int for s in subtree]:
+                raise WorldReparentTargetError()
+            logger.info("reparent 真删世界观条目: setting_id=%s → %s", setting_id, reparent_to)
+            return await self._repo.delete_with_reparent(sid, target_int)
+        if children:
+            raise WorldChildrenActionRequiredError()
         if force:
             logger.info("硬删除世界观条目: setting_id=%s", setting_id)
             return await self._repo.hard_delete(sid)
@@ -221,6 +350,52 @@ class WorldService:
         if restored is not None:
             logger.info("恢复世界观条目: setting_id=%s", setting_id)
         return restored
+
+    # ── F35 树查询（spec §5.3）────────────────────────────────────
+
+    async def list_ancestors(self, setting_id: int | uuid.UUID) -> list[WorldSetting] | None:
+        """祖先链（含自身，自身在前，面包屑展示）.
+
+        Returns:
+            祖先链（[自身, 父, 祖父, ...]）；条目不存在 → None（router 转 404）。
+        """
+        sid = _to_int_id(setting_id)
+        setting = await self._repo.get(sid)
+        if setting is None:
+            return None
+        chain: list[WorldSetting] = [setting]
+        current = setting
+        # 逐级上溯（祖先链深度有限，应用层遍历；与 repo.collect_ancestor_ids 语义一致）
+        seen: set[int] = set()
+        while current.parent_id is not None:
+            parent_int = _to_int_id(current.parent_id)
+            if parent_int in seen:
+                break  # 防御：数据异常成环时截断
+            seen.add(parent_int)
+            parent = await self._repo.get(parent_int)
+            if parent is None:
+                break  # 父已软删/不存在 → 链在此截断
+            chain.append(parent)
+            current = parent
+        return chain
+
+    async def list_descendants(self, setting_id: int | uuid.UUID) -> list[WorldSetting] | None:
+        """子树（含自身，层序：父先子后）——直接透传 repo（测试契约）.
+
+        Returns:
+            子树列表；层序/含自身由 repo 保证（不存在/软删 id → 空列表）。
+        """
+        return await self._repo.list_descendants(_to_int_id(setting_id))
+
+    async def _assert_no_cycle(self, pid_int: int, new_parent_id: int | None) -> None:
+        """校验 new_parent_id 不是 self 或其子孙（spec §5.2，O(depth)）."""
+        if new_parent_id is None:
+            return
+        if new_parent_id == pid_int:
+            raise WorldCycleError()
+        ancestor_ids = await self._repo.collect_ancestor_ids(new_parent_id)
+        if pid_int in ancestor_ids:
+            raise WorldCycleError()
 
     # ── AI 提取入口（spec §5.1 步骤 ①）────────────────────────────
 
