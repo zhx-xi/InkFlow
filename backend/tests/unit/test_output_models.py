@@ -343,7 +343,7 @@ class TestExportRequest:
     def test_invalid_format_rejected(self):
         """非 txt 字符串 → ValidationError（v1.1 仅接受 txt，§3.3 422 契约）。"""
         with pytest.raises(ValidationError):
-            ExportRequest(format="epub")  # type: ignore[arg-type]
+            ExportRequest(format="epub")  # type: ignore[arg-type]  # 故意传非法值测校验
 
     def test_json_roundtrip(self):
         """JSON roundtrip 无损（format 枚举 ↔ 字符串双向）。"""
