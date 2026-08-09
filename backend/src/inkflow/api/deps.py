@@ -202,6 +202,11 @@ def get_world_service(
 
     repo = SQLiteWorldRepository(db)
     map_svc = get_map_service(db)
+
+    async def _location_cleanup(location_ids: list[int]) -> None:
+        """地点硬删钩子：pin SET NULL（D10=b 显式级联；mypy 契约 Awaitable[None]）."""
+        await map_svc.clear_location_pins([uuid.UUID(int=i) for i in location_ids])
+
     return WorldService(
         repository=repo,
         extractor=WorldExtractor(
@@ -210,7 +215,7 @@ def get_world_service(
             repository=repo,
         ),
         project_repo=SQLiteProjectRepository(db),
-        location_cleanup=lambda ids: map_svc.clear_location_pins([uuid.UUID(int=i) for i in ids]),
+        location_cleanup=_location_cleanup,
     )
 
 
