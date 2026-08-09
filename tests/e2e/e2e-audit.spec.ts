@@ -125,7 +125,7 @@ test('章节审计闭环：审计按钮 → 报告弹层 → 接受 → audit-lo
     await expect(window.getByTestId('chapter-editor')).toHaveValue('审计测试正文内容。');
 
     // 点工具栏「审计」按钮 → 弹层出现（loading → 报告）
-    await window.getByRole('button', { name: '审计' }).click();
+    await window.getByRole('button', { name: '审计', exact: true }).click();
     const dlg = window.getByRole('dialog');
     await expect(dlg).toBeVisible({ timeout: 15_000 });
     // 等待非 loading（报告或降级提示出现——无 LLM key 时 LLM 检查降级但确定性检查返回）
@@ -169,7 +169,7 @@ test('章节审计拒绝闭环：拒绝 → note 输入 → audit-logs rejected 
       .getByRole('button', { name: /第一章 审计测试/ })
       .click();
 
-    await window.getByRole('button', { name: '审计' }).click();
+    await window.getByRole('button', { name: '审计', exact: true }).click();
     const dlg = window.getByRole('dialog');
     await expect(dlg).toBeVisible({ timeout: 15_000 });
     await expect(dlg.getByTestId('audit-dialog-loading')).not.toBeVisible({ timeout: 30_000 });
