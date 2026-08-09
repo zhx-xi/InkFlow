@@ -519,7 +519,12 @@ class TestMapRepository:
     # ── 共用查询 / 项目级操作（#175 / D10=b）──
 
     async def test_list_by_root_locations(self, db_session, project):
-        """list_by_root_locations 批量多地点查询；空列表/不存在地点 → 空."""
+        """list_by_root_locations 批量多地点查询；空列表/不存在地点 → 空.
+
+        F37 契约升级（spec §8）：签名扩展 include_global: bool = True（默认含全局图）。
+        本用例显式传 include_global=False 保持原语义（不含全局图）。
+        RED: 签名未扩展 → TypeError: ... unexpected keyword argument 'include_global'.
+        """
         repo = SQLiteMapRepository(db_session)
         b1 = await _add_location(db_session, project, "青州")
         b2 = await _add_location(db_session, project, "东大陆")
@@ -527,11 +532,11 @@ class TestMapRepository:
         c2 = await repo.add(_map(project, "C2东大陆图", root_location_id=uuid.UUID(int=b2.id)))
         await repo.add(_map(project, "全局图"))
 
-        found = await repo.list_by_root_locations(project.id, [b1.id, b2.id])
+        found = await repo.list_by_root_locations(project.id, [b1.id, b2.id], include_global=False)
         assert {m.id for m in found} == {c1.id, c2.id}
 
-        assert await repo.list_by_root_locations(project.id, []) == []
-        assert await repo.list_by_root_locations(project.id, [99999]) == []
+        assert await repo.list_by_root_locations(project.id, [], include_global=False) == []
+        assert await repo.list_by_root_locations(project.id, [99999], include_global=False) == []
 
     async def test_delete_by_project_and_clear_location_pins(self, db_session, project):
         """delete_by_project 单事务删项目全部 maps+pins 返回 maps 行数；
@@ -558,3 +563,67 @@ class TestMapRepository:
         assert await repo.list(project.id) == ([], 0)
         count = (await db_session.execute(text("SELECT COUNT(*) FROM map_pins"))).scalar_one()
         assert count == 0
+
+
+# ── F37 跨书复制（#175）：list_by_root_locations include_global（Q3=B 全局图，spec §8）──
+
+
+@pytest.mark.integration
+class TestListByRootLocationsGlobal:
+    """F37 include_global 契约（spec §8）: 默认 True 含全局图；False 仅关联地点图.
+
+    统一契约签名（父侧定稿，GREEN 按此实现）:
+    map_repository.py 签名扩展:
+      async def list_by_root_locations(
+          self, project_id: int, location_ids: builtins.list[int],
+          include_global: bool = True,
+      ) -> builtins.list[WorldMap]
+    map_repo.py 实现: WHERE project_id=? AND (root_location_id IN (:ids) OR
+      (include_global AND root_location_id IS NULL))
+
+    RED 阶段预期: 签名未扩展 → TypeError（unexpected keyword argument
+    'include_global'）；缺省语义用例 → AssertionError（全局图缺失）；既有其余用例 PASS。
+    """
+
+    async def test_default_include_global_true(self, db_session, project):
+        """缺省调用（不传 include_global）→ 关联地点图 + 全局图（root NULL）.
+        RED: 缺省不含全局图 → AssertionError.
+        """
+        repo = SQLiteMapRepository(db_session)
+        b1 = await _add_location(db_session, project, "青州")
+        c1 = await repo.add(_map(project, "C1青州图", root_location_id=uuid.UUID(int=b1.id)))
+        g1 = await repo.add(_map(project, "全局图"))
+
+        found = await repo.list_by_root_locations(project.id, [b1.id])
+        assert {m.id for m in found} == {c1.id, g1.id}
+
+    async def test_include_global_false_excludes_global(self, db_session, project):
+        """include_global=False → 仅关联地点图（不含全局图）.
+        RED: 签名未扩展 → TypeError.
+        """
+        repo = SQLiteMapRepository(db_session)
+        b1 = await _add_location(db_session, project, "青州")
+        c1 = await repo.add(_map(project, "C1青州图", root_location_id=uuid.UUID(int=b1.id)))
+        await repo.add(_map(project, "全局图"))
+
+        found = await repo.list_by_root_locations(project.id, [b1.id], include_global=False)
+        assert [m.id for m in found] == [c1.id]
+
+    async def test_empty_location_ids_true_returns_only_global(self, db_session, project):
+        """空地点列表 + include_global=True → 只返回全局图（Q3=B）.
+        RED: 签名未扩展 → TypeError.
+        """
+        repo = SQLiteMapRepository(db_session)
+        await repo.add(_map(project, "全局图"))
+
+        found = await repo.list_by_root_locations(project.id, [], include_global=True)
+        assert [m.name for m in found] == ["全局图"]
+
+    async def test_empty_location_ids_false_returns_empty(self, db_session, project):
+        """空地点列表 + include_global=False → 空列表.
+        RED: 签名未扩展 → TypeError.
+        """
+        repo = SQLiteMapRepository(db_session)
+        await repo.add(_map(project, "全局图"))
+
+        assert await repo.list_by_root_locations(project.id, [], include_global=False) == []

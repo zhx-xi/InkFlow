@@ -101,3 +101,17 @@ class WorldReparentTargetError(WorldServiceError):
 
     def __init__(self, message: str = "reparent 目标地点不存在/不在同一项目/是自身子树") -> None:
         super().__init__(message)
+
+
+class CopySourceNotFoundError(Exception):
+    """源项目不存在 — 复制入口校验失败，API 层映射为 404「源项目不存在」."""
+
+    def __init__(self, message: str = "源项目不存在") -> None:
+        super().__init__(message)
+
+
+class CopyRootNotFoundError(Exception):
+    """复制起点条目不存在或不在源项目 — API 层映射为 404「复制起点条目不存在或不在源项目」."""
+
+    def __init__(self, message: str = "复制起点条目不存在或不在源项目") -> None:
+        super().__init__(message)

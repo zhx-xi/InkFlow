@@ -353,6 +353,19 @@ class SQLiteWorldRepository:
         by_id = {orm.id: _orm_to_domain(orm) for orm in rows}
         return [by_id[sid] for sid in ordered_ids if sid in by_id]
 
+    async def list_all_active(self, project_id: int) -> builtins.list[WorldSetting]:
+        """项目内全部活动条目（is_deleted=0），按 created_at ASC 稳定排序（copy 缺省起点用）."""
+        stmt = (
+            select(WorldSettingORM)
+            .where(
+                WorldSettingORM.project_id == project_id,
+                ~WorldSettingORM.is_deleted,
+            )
+            .order_by(WorldSettingORM.created_at.asc())
+        )
+        result = await self._session.execute(stmt)
+        return [_orm_to_domain(o) for o in result.scalars().all()]
+
     async def hard_delete_many(self, setting_ids: builtins.list[int]) -> int:
         """单事务原子物理删除（DELETE WHERE id IN (...)），返回删除行数."""
         if not setting_ids:

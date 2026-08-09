@@ -672,3 +672,80 @@ class TestF35DeleteWithReparentCoverage:
         assert await repo.get(old_parent.id.int) is None  # 自身真删
         moved = await repo.get(child.id.int)
         assert moved is not None and moved.parent_id == new_parent.id
+
+
+# ── F37 跨书复制（#175）：list_all_active（copy 缺省起点全量查询，spec §8）──
+
+
+@pytest.mark.integration
+class TestListAllActive:
+    """F37 list_all_active 契约（spec §8：copy 缺省起点全量查询）.
+
+    统一契约签名（父侧定稿，GREEN 按此实现）:
+    world_repository.py 新增（Protocol 层）:
+      async def list_all_active(self, project_id: int) -> builtins.list[WorldSetting]:
+          '''项目内全部活动条目（is_deleted=0），按 created_at ASC 稳定排序（copy 缺省起点用）。'''
+    world_repo.py 新增（实现层）:
+      SELECT WHERE project_id=? AND ~is_deleted ORDER BY created_at ASC
+
+    RED 阶段预期: SQLiteWorldRepository 尚无 list_all_active → AttributeError
+    （FAILED 非收集错误）；既有用例保持 PASS。
+    """
+
+    async def test_filters_soft_deleted_and_cross_project(self, db_session, project):
+        """混合造数: 活动 + 软删 + 跨项目 → 只返回本项目活动条目.
+        RED: 方法不存在 → AttributeError.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        s1 = await repo.add(_setting(project, "大越国"))
+        s2 = await repo.add(_setting(project, "青州"))
+        s_del = await repo.add(_setting(project, "古神禁地"))
+        row = await db_session.execute(
+            select(WorldSettingORM).where(WorldSettingORM.id == s_del.id.int)
+        )
+        row.scalar_one().is_deleted = True
+        await db_session.commit()
+
+        other = ProjectORM(name="其他项目")
+        db_session.add(other)
+        await db_session.commit()
+        await db_session.refresh(other)
+        await repo.add(_setting(other, "他书条目"))
+
+        active = await repo.list_all_active(project.id)
+        assert [s.id for s in active] == [s1.id, s2.id]
+
+    async def test_sorted_by_created_at_asc(self, db_session, project):
+        """排序确定性: 直插两条显式不同 created_at → created_at ASC（repo.add 不保留
+        created_at——F36 1l 教训，排序断言必须 core insert 显式时间）.
+        RED: 方法不存在 → AttributeError.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        t = _now() - timedelta(minutes=10)
+        await db_session.execute(
+            insert(WorldSettingORM).values(
+                project_id=project.id,
+                name="晚条目",
+                created_at=t + timedelta(minutes=5),
+                updated_at=t + timedelta(minutes=5),
+            )
+        )
+        await db_session.execute(
+            insert(WorldSettingORM).values(
+                project_id=project.id,
+                name="早条目",
+                created_at=t,
+                updated_at=t,
+            )
+        )
+        await db_session.commit()
+
+        active = await repo.list_all_active(project.id)
+        assert [s.name for s in active] == ["早条目", "晚条目"]
+
+    async def test_empty_project_returns_empty_list(self, db_session, project):
+        """空项目（无任何条目）→ 空列表.
+        RED: 方法不存在 → AttributeError.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        assert await repo.list_all_active(project.id) == []

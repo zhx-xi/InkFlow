@@ -30,7 +30,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from inkflow.api.deps import get_db, get_world_service
+from inkflow.api.deps import get_copy_service, get_db, get_world_service
+from inkflow.domain.models.copy import WorldCopyRequest
 from inkflow.domain.models.world import (
     WorldExtractRequest,
     WorldUpdate,
@@ -40,11 +41,14 @@ from inkflow.domain.models.world import (
 )
 from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.ports.world_errors import (
+    CopyRootNotFoundError,
+    CopySourceNotFoundError,
     ProjectNotFoundError,
     WorldExtractionError,
     WorldNotFoundError,
     WorldServiceError,
 )
+from inkflow.domain.services.copy_service import WorldCopyService
 from inkflow.domain.services.world_service import WorldService
 
 router = APIRouter(prefix="/api/v1", tags=["世界观"])
@@ -66,6 +70,11 @@ def _get_svc(db: AsyncSession) -> WorldService:
     return get_world_service(db)
 
 
+def _get_copy_svc(db: AsyncSession) -> WorldCopyService:
+    """获取 WorldCopyService 实例（方便 mock）。"""
+    return get_copy_service(db)
+
+
 async def _run_service(coro: Awaitable[Any]) -> Any:
     """执行服务调用并统一映射业务异常到 HTTP 状态码（spec §3.4）。"""
     try:
@@ -75,6 +84,10 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
     except WorldNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except ProjectNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except CopySourceNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except CopyRootNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except WorldExtractionError as err:
         raise HTTPException(
@@ -122,6 +135,19 @@ async def extract_world_settings(
     """AI 提取世界观条目（spec §3.1/§5.1）。"""
     svc = _get_svc(db)
     result = await _run_service(svc.extract(request))
+    return result.model_dump(mode="json")
+
+
+@router.post("/projects/{target_project_id}/world-settings/copy")
+async def copy_world_settings(
+    target_project_id: str,
+    request: WorldCopyRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """跨书复制源项目世界观到目标项目（spec §3.1；Q2=A 缺省整棵 / Q3=B 全局图）。"""
+    tpid = _parse_id(target_project_id, detail="项目不存在")
+    svc = _get_copy_svc(db)
+    result = await _run_service(svc.copy(request.source_project_id, tpid, request.root_setting_id))
     return result.model_dump(mode="json")
 
 

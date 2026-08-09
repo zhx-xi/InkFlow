@@ -292,6 +292,47 @@ def descendants_cmd(
 
 
 # ---------------------------------------------------------------------------
+# copy  —  inkflow world copy <source_project_id> <target_project_id> [--root <uuid>]
+# ---------------------------------------------------------------------------
+
+
+@app.command("copy")
+def copy_world_cmd(
+    ctx: typer.Context,
+    source_project_id: str = typer.Argument(..., help="源项目 ID (UUID)"),
+    target_project_id: str = typer.Argument(..., help="目标项目 ID (UUID)"),
+    root: str | None = typer.Option(None, "--root", help="复制起点条目 ID (UUID)；缺省 = 整棵"),
+) -> None:
+    """复制源项目世界观到目标项目（跨书复用；同名冲突跳过 + warning）"""
+    cli_ctx: CliContext = ctx.obj
+    src = _parse_uuid(cli_ctx, source_project_id, "源项目不存在")
+    tgt = _parse_uuid(cli_ctx, target_project_id, "项目不存在")
+
+    async def _impl() -> dict:
+        body: dict[str, Any] = {"source_project_id": str(src)}
+        if root is not None:
+            body["root_setting_id"] = root  # 契约定死: 无 --root 时 body 不含 root_setting_id 键
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(f"/projects/{tgt}/world-settings/copy", json=body)
+
+    result = _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, result)
+        return
+    created_n = len(result.get("created", []))
+    maps_n = len(result.get("maps_created", []))
+    pins_n = result.get("pins_created", 0)
+    typer.echo(f"✅ 复制完成: {created_n} 条世界观条目, {maps_n} 张地图, {pins_n} 个 pin")
+    skipped = result.get("skipped", [])
+    if skipped:
+        typer.echo(f"⚠️ 跳过同名条目: {', '.join(skipped)}")
+    for w in result.get("warnings", []):
+        typer.echo(f"⚠️ {w}")
+
+
+# ---------------------------------------------------------------------------
 # update  —  inkflow world update --id <uuid> [--name] [--category ""] ...
 # ---------------------------------------------------------------------------
 
