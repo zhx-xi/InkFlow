@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 import uuid
 from datetime import datetime
+from typing import Literal, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +25,9 @@ def _log_orm_to_domain(orm: AuditLogORM) -> AuditLog:
         project_id=uuid.UUID(int=orm.project_id),
         chapter_id=uuid.UUID(int=orm.chapter_id),
         chapter_title=orm.chapter_title,
-        status=orm.status,
+        # status 由 ORM str 列读出，运行时恒为三态之一（service/confirm 写入前映射），
+        # mypy 需显式收窄为领域 Literal（mypy 无法从 Mapped[str] 推断字面量）
+        status=cast(Literal["pending", "accepted", "rejected"], orm.status),
         severity_summary=orm.severity_summary,
         summary=orm.summary,
         degraded=orm.degraded,
