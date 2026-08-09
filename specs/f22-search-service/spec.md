@@ -1,13 +1,14 @@
 # F22: 全文搜索（search_service）— 功能规格
 
-> **Spec 版本**: 1.1 | **日期**: 2026-08-09 | **依据**: PRD v2.2 §6.4 P1-16, Issue #54, Constitution P1-P6（P2 解耦 / P5 YAGNI）
-> **所属阶段**: 0.6.0（#54 全文搜索，估算 2.5-3.5 人天——v1.1 拍板含 AI 检索增强 + 跨项目选择器）
+> **Spec 版本**: 1.2 | **日期**: 2026-08-09 | **依据**: PRD v2.2 §6.4 P1-16, Issue #54, Constitution P1-P6（P2 解耦 / P5 YAGNI）
+> **所属阶段**: 0.6.0（#54 全文搜索，估算 2.5-3.5 人天——v1.1 拍板含 AI 检索增强 + 跨项目选择器；v1.2 拍板含 CLI 恒 HTTP）
 >
 > **Spec 变更（v1.0 → v1.1）**: **用户拍板（2026-08-09）**——Q1=A FTS5+jieba（词法主检索）+ **AI 语义检索增强**（接入既有 RAG VectorStoreProtocol，`mode=semantic`）；Q2=用户自定义方案（默认用户自维护 + 设置项开启 AI 自动维护 + 写完一章审计确认后增量同步 + 手动全量重建——**章节审计拆出单独立项 #208/F34**，F22 不阻塞等待；同步触发用内容变更 + REVIEW/FINAL 状态，审计确认作为 F34 落地后的增强触发点）；Q3=默认单项目 + **同世界观项目选择器跨项目检索**（`project_ids` 数组，会话级选择不持久化）。§2/§3/§5/§6/§7/§8/§11/§12/§13 同步修订；Issue #54 验收标准 + #208 立项已 gh comment 留痕。
+> **Spec 变更（v1.1 → v1.2）**: **用户拍板（2026-08-09，方案 A）**——CLI 恒经 HTTP（ADR-030/F38 对齐，Issue #169）：`inkflow search` 查询经 `GET /api/v1/search`、`--rebuild` 经**新增 `POST /api/v1/search/rebuild` 端点**（v1.1 的「直接消费 service，不经 HTTP」废弃——F23/F21 直连先例已被 F38 推翻）。§3/§4/§5/§8/§9/§12/§13 同步修订。
 >
 > **关联 Issues**: [#54](https://github.com/zhx-xi/InkFlow/issues/54)；[#208](https://github.com/zhx-xi/InkFlow/issues/208)（F34 章节审计——AI 维护增强触发，非阻塞）
-> **依赖**: ✅ F1（项目校验）· ✅ F2（章节正文源）· ✅ F9（角色档案源）· ✅ F10（世界观条目源）· ✅ F11（大纲源）· ✅ F12（时间线源）· ✅ F13（伏笔源）· ✅ F16（jieba 分词依赖已锁定，直接复用）· ✅ F14（RAG VectorStoreProtocol + chromadb + BGE——semantic 模式复用，零新增依赖）· ✅ F19 #77（token 中间件）· ✅ SQLite FTS5（实测 3.50.4 已启用，零新依赖）· ⏳ #208 F34 章节审计（增强触发点，**非阻塞**，见 §5.3 注）
-> **参考 ADR**: [ADR-001](../../adr/ADR-001.md)（模块化单体）· [ADR-002](../../adr/ADR-002.md)（六边形分层）· [ADR-003](../../adr/ADR-003.md)（Repository）· [ADR-004](../../adr/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/ADR-012.md)（错误处理）· [ADR-013](../../adr/ADR-013.md)（RAG：向量检索边界声明，§5.8）· [ADR-018](../../adr/ADR-018.md)（测试分层）· [ADR-019](../../adr/ADR-019.md)（版本里程碑 + 模块编号口径）· [ADR-021](../../adr/ADR-021.md)（内核进程化：token 契约）· [ADR-025](../../adr/ADR-025.md)（依赖锁定：零新增依赖）· [ADR-027](../../adr/ADR-027.md)（覆盖率门禁）
+> **依赖**: ✅ F1（项目校验）· ✅ F2（章节正文源）· ✅ F9（角色档案源）· ✅ F10（世界观条目源）· ✅ F11（大纲源）· ✅ F12（时间线源）· ✅ F13（伏笔源）· ✅ F16（jieba 分词依赖已锁定，直接复用）· ✅ F14（RAG VectorStoreProtocol + chromadb + BGE——semantic 模式复用，零新增依赖）· ✅ F19 #77（token 中间件）· ✅ F38（CLI 恒经 HTTP 已合入，本模块 CLI 从第一天走 HTTP）· ✅ SQLite FTS5（实测 3.50.4 已启用，零新依赖）· ⏳ #208 F34 章节审计（增强触发点，**非阻塞**，见 §5.3 注）
+> **参考 ADR**: [ADR-001](../../adr/ADR-001.md)（模块化单体）· [ADR-002](../../adr/ADR-002.md)（六边形分层）· [ADR-003](../../adr/ADR-003.md)（Repository）· [ADR-004](../../adr/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/ADR-012.md)（错误处理）· [ADR-013](../../adr/ADR-013.md)（RAG：向量检索边界声明，§5.8）· [ADR-018](../../adr/ADR-018.md)（测试分层）· [ADR-019](../../adr/ADR-019.md)（版本里程碑 + 模块编号口径）· [ADR-021](../../adr/ADR-021.md)（内核进程化：token 契约）· [ADR-025](../../adr/ADR-025.md)（依赖锁定：零新增依赖）· [ADR-027](../../adr/ADR-027.md)（覆盖率门禁）· [ADR-030](../../adr/ADR-030.md)（本地内核服务化：CLI 恒经 HTTP，§4）
 > **状态**: 待实现 🔲（0.6.0，Q1-Q3 已拍板 2026-08-09）
 
 ---
@@ -114,14 +115,16 @@ class SearchResponse(BaseModel):
 
 ## 3. API 契约
 
-### 3.1 端点总览（1 个，GET 只读）
+### 3.1 端点总览（2 个：GET 只读 + POST 重建）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/v1/search` | 全文搜索（query 参数见下） |
+| POST | `/api/v1/search/rebuild` | **手动全量重建索引**（v1.2 新增：承接 CLI `--rebuild`，ADR-030/F38 恒 HTTP） |
 
-- query：`q`（必填）、`project_id` **或** `project_ids`（必填其一；`project_ids` 逗号分隔 UUID 数组 = 同世界观选择器，v1.1）、`types`（可选，逗号分隔枚举）、`mode`（可选，`keyword`/`semantic`，默认 keyword）、`limit`（默认 20）、`offset`（默认 0）
-- 响应：200 `SearchResponse` JSON；幂等只读
+- GET query：`q`（必填）、`project_id` **或** `project_ids`（必填其一；`project_ids` 逗号分隔 UUID 数组 = 同世界观选择器，v1.1）、`types`（可选，逗号分隔枚举）、`mode`（可选，`keyword`/`semantic`，默认 keyword）、`limit`（默认 20）、`offset`（默认 0）
+- GET 响应：200 `SearchResponse` JSON；幂等只读
+- POST rebuild：query 参数 `project_id`（可选 UUID）——**缺省 = 重建全部项目索引**；传 = 仅重建指定项目。响应 200 `{"rebuilt_at": "<ISO8601 UTC>", "project_id": "<uuid>" | null}`；有副作用（写 FTS 索引），**用 POST 非 GET**（F12 check 只读先例不适用）
 
 ### 3.2 请求/响应示例
 
@@ -155,6 +158,22 @@ GET /api/v1/search?q=龙&project_ids=1,2&types=chapter,world&mode=keyword&limit=
 }
 ```
 
+```http
+POST /api/v1/search/rebuild?project_id=00000000-0000-0000-0000-000000000001
+→ 200
+{
+  "rebuilt_at": "2026-08-09T12:00:00Z",
+  "project_id": "00000000-0000-0000-0000-000000000001"
+}
+
+POST /api/v1/search/rebuild   # 缺省 = 全部项目
+→ 200
+{
+  "rebuilt_at": "2026-08-09T12:00:00Z",
+  "project_id": null
+}
+```
+
 ### 3.3 异常映射表
 
 | 场景 | HTTP 状态 | 错误 body（ADR-012 统一格式） | 抛出/捕获点 |
@@ -167,30 +186,38 @@ GET /api/v1/search?q=龙&project_ids=1,2&types=chapter,world&mode=keyword&limit=
 | 查询语法构造失败（分词空） | 200 | 空结果（`total: 0`）——分词后无有效词（如纯标点），返回空而非 422 | service（§5.3 注） |
 | 索引尚未建立 | 200 | 懒初始化：首次查询自动全量重建后返回真实结果 | service（§5.2） |
 | semantic 模式但向量库为空 | 200 | 空结果 + `mode=semantic` 回显（向量库未建/未提取内容，无命中不报错） | service（§5.8 注） |
+| rebuild 传了不存在的 project_id | 404 | `{"detail": "Project not found: <id>"}` | service 校验（同 GET，逐个校验） |
 | 内部错误（DB 异常） | 500 | `{"detail": "Internal server error"}` | router `except Exception` → loguru（ADR-016） |
 
 ---
 
 ## 4. CLI 命令签名
 
-F7 全局约定：`--json` 信封、退出码 0/1/2。F22 新增 `inkflow search` 命令（直接消费 service，不经 HTTP——六边形表现层适配器，F23/F21 先例）。
+F7 全局约定：`--json` 信封、退出码 0/1/2。F22 新增 `inkflow search` 命令，**经 ensure_kernel() + InkFlowHTTPClient 调用内核 REST API**（v1.2 拍板方案 A：ADR-030/F38「CLI 恒经 HTTP」——不直接消费 domain service；与 F38 改造后的 style/audit 等命令同一模式）。
 
 ```text
 inkflow search <query> --project <name|id> [--project <name|id>]... [--type TYPE]... [--mode keyword|semantic] [--limit N] [--offset N] [--json]
+inkflow search --rebuild [--project <name|id>]
 
 参数:
-  query                    查询词（必填，1-100 字符）
+  query                    查询词（必填，1-100 字符；--rebuild 模式不适用）
   --project, -p            项目名称或 ID（**可重复**：多个 = 同世界观选择器，v1.1；必填 ≥1）
   --type, -t               可搜索类型（可重复，如 -t chapter -t character；缺省 = 全部）
   --mode                   检索模式（默认 keyword；semantic = AI 语义检索，v1.1）
   --limit                  默认 20，最大 100
   --offset                 默认 0
+  --rebuild                手动全量重建索引（v1.1 用户自维护入口；不传 --project 重建全部项目索引，传则单项目）
   --json                   输出 JSON 信封
 
-成功: 退出 0；非 --json 时打印人类可读结果（类型徽标 + 项目名 + 标题 + snippet）；--json 时信封 data = SearchResponse
-失败: 项目不存在 → 退出 1，error = "项目不存在: <name>"
+成功: 退出 0；非 --json 时打印人类可读结果（类型徽标 + 项目名 + 标题 + snippet）；--json 时信封 data = SearchResponse（--rebuild 时 data = {"rebuilt_at", "project_id"}）
+失败: 项目不存在 → 退出 1，error = "项目不存在: <name>"（HttpApiError 404 → NOT_FOUND，F38 错误码映射）
       query 空白 → 退出 2（Typer 自动）
+      内核未运行 → ensure_kernel 拉起（KernelStartupError → KERNEL_ERROR，F38 模式）
 ```
+
+HTTP 端点映射（v1.2）：
+- `inkflow search <query> -p X` → `GET /api/v1/search?q=...&project_ids=...`（--mode/--type/--limit/--offset 透传）
+- `inkflow search --rebuild [-p X]` → `POST /api/v1/search/rebuild[?project_id=...]`
 
 示例：
 
@@ -252,7 +279,7 @@ $ inkflow search 龙 -p 我的书 -p 系列前传 --mode semantic --json
 - **数据源 max(updated_at) 查询**：走自有补充端口 `search_repo`（F15 audit_repo 先例：ORM 原生 SQL 只读，零跨模块 MODIFY），见 §8.2
 - **并发**：单用户本地（F19 serve 单进程），重建用 `asyncio.Lock` 防并发重复重建
 
-> **v1.1 CLI 增补**：`inkflow search --rebuild [--project <id>]` 手动全量重建（用户自维护默认路径；不传 project 重建全部项目索引，传则单项目）。对应 §4 命令签名补 `--rebuild` 标志。
+> **v1.1/v1.2 CLI 增补**：`inkflow search --rebuild [--project <id>]` 手动全量重建（用户自维护默认路径；不传 project 重建全部项目索引，传则单项目）。对应 §4 命令签名补 `--rebuild` 标志；v1.2 起 `--rebuild` 经 `POST /api/v1/search/rebuild` 端点（ADR-030/F38 恒 HTTP）。
 
 ### 5.3 索引维护策略（v1.1 用户拍板方案）
 
@@ -441,8 +468,8 @@ mode=semantic:
 | CREATE | `domain/services/_search_tokenizer.py` | 分词与预处理纯函数（jieba 封装 + 转义 + 过滤 + MATCH 构造，§5.5）——`_word_count.py`/`_style_analyzer.py` 先例 |
 | CREATE | `domain/ports/search_repository.py` | **自有补充端口**（F15 audit_repository 先例）：`max_updated_at(table)` + FTS 读写（见 §8.2） |
 | CREATE | `infrastructure/database/repositories/search_repo.py` | SQLiteSearchRepository：FTS5 建表/重建/查询原生 SQL + meta 读写（含 ai_maintenance 设置） |
-| CREATE | `api/routers/search.py` | GET `/api/v1/search`（§3） |
-| CREATE | `cli/commands/search.py` | `inkflow search` 命令 + `--rebuild`（§4） |
+| CREATE | `api/routers/search.py` | GET `/api/v1/search` + POST `/api/v1/search/rebuild`（§3） |
+| CREATE | `cli/commands/search.py` | `inkflow search` 命令 + `--rebuild`（§4；ensure_kernel + InkFlowHTTPClient，F38 模式） |
 | CREATE | `backend/tests/unit/test_search_models.py` | DTO 校验（空白/超长/枚举/project_ids 必填） |
 | CREATE | `backend/tests/unit/test_search_tokenizer.py` | 分词/转义/MATCH 构造（中文词、保留字、标点过滤） |
 | CREATE | `backend/tests/unit/test_search_service.py` | 编排：mock repos + mock search_repo → 判脏/重建/增量/软删排除/多项目 |
@@ -498,9 +525,9 @@ class SearchRepositoryProtocol(Protocol):
 | 单元 | `tests/unit/test_search_tokenizer.py` | 分词纯函数：中文词拆分、保留字转义、标点过滤、XML 转义 |
 | 单元 | `tests/unit/test_search_service.py` | 编排：mock 数据源 repos + mock search_repo → 判脏（stale/新鲜/首次）、重建触发、增量触发、软删排除、多项目校验、types 筛选透传 |
 | 集成 | `tests/unit/test_search_index.py` | **真 SQLite 内存 FTS5**（`aiosqlite :memory:` + CREATE VIRTUAL TABLE）：索引→查询闭环、中文命中、snippet `<mark>` 断言、BM25 排序、多项目过滤、分页 |
-| 单元 | `tests/unit/test_search_semantic.py` | semantic：FakeEmbeddings + 临时 chroma → EntityType 映射、outline 恒空（覆盖缺口）、空库空结果、失败不降级 |
-| API | `tests/api/test_search_api.py` | TestClient：200 命中/空结果/404/422（含 project_id+project_ids 双缺 422）、mode 参数、token 中间件 |
-| CLI | `tests/cli/test_cli_search.py` | CliRunner：命中输出、`--json` 信封、404 错误、多 `-p` 多 `-t`、`--rebuild`、`--mode` |
+| 单元 | `tests/unit/test_search_semantic.py` | semantic：**mock VectorStoreProtocol**（父侧裁定 2026-08-09：F22 是 RAG 消费方，mock retrieve 返回固定 RetrievedEntity 等价 FakeEmbeddings 固定向量；真 chroma 集成已由 F14 test_langchain_vector_store.py 覆盖且避免 chromadb/coverage 同进程冲突，ci.yml 无需新增 --ignore）→ EntityType 映射、outline 恒空（覆盖缺口）、空库空结果、失败不降级 |
+| API | `tests/api/test_search_api.py` | TestClient：200 命中/空结果/404/422（含 project_id+project_ids 双缺 422）、mode 参数、token 中间件、POST rebuild（200 全量/单项目、404 项目不存在） |
+| CLI | `tests/cli/test_cli_search.py` | CliRunner + F38 mock 轨（patch ensure_kernel + InkFlowHTTPClient）：命中输出、`--json` 信封、404 错误、多 `-p` 多 `-t`、`--rebuild`、`--mode` |
 
 ### 9.2 关键场景（RED 批要点）
 
@@ -581,6 +608,7 @@ F22 编号 0.6.0 立项未改号（ADR-019 v5 口径）；变体编号声明依�
 | D7 | API `/api/v1/search` 顶层查询端点 | project_ids 走 query 参数 | 搜索是跨资源查询（6 类型 + 多项目），非项目子资源；与 `/api/v1/audit`（F15）风格一致 | `/projects/{pid}/search`（误导为项目子资源，且多项目语义被弱化） |
 | D8 | **v1.1：project_ids 数组（默认单项目）** | `project_id` 或 `project_ids` 必填其一 | Q3 拍板（2026-08-09）：默认单项目 + 同世界观选择器显式跨项目；会话级不持久化（#175 承接持久化） | 无差别全局搜索（无场景）；持久化项目组实体表（超范围 + 与 #175 重复） |
 | D9 | **v1.1：semantic 复用 RAG 不新建** | mode=semantic → VectorStoreProtocol.retrieve | Q1 拍板 AI 检索增强；零新增依赖（F14 已有）；覆盖缺口显式声明（§5.8） | 独立向量检索实现（重复基建）；新增 embedding 模型（体积 + 供应链成本） |
+| D10 | **v1.2：CLI 恒经 HTTP + rebuild 端点** | `inkflow search` 走 ensure_kernel + InkFlowHTTPClient；`--rebuild` 经新增 `POST /api/v1/search/rebuild` | 方案 A 拍板（2026-08-09）：ADR-030/F38「CLI 恒经 HTTP」全局架构（Issue #169 已合入）；v1.1 直连先例（F23/F21）已被 F38 推翻；rebuild 是写操作 → 显式 POST 端点（F12 check 只读 GET 先例不适用） | v1.1 字面「直接消费 service」（违背 ADR-030 + F38 豁免判据——search 有对应端点不满足豁免）；查询走 HTTP + rebuild 直连（同命令双路径，最别扭） |
 
 ---
 
@@ -593,7 +621,7 @@ F22 编号 0.6.0 立项未改号（ADR-019 v5 口径）；变体编号声明依�
 | M1 | 中文关键词跨类型搜索：`search 龙 -p <项目>` 命中章节正文 + 角色 + 世界观 | 集成+CLI | `pytest tests/unit/test_search_index.py tests/unit/test_search_service.py` |
 | M2 | 类型筛选：`-t chapter` 只返回章节命中 | CLI+API | `pytest ../tests/cli/test_cli_search.py ../tests/api/test_search_api.py` |
 | M3 | 高亮：snippet 含 `<mark>` 标记且位置正确 | 集成 | `pytest tests/unit/test_search_index.py -k snippet` |
-| M4 | API `GET /api/v1/search` 200 命中/空结果/404/422 全矩阵（含双参数缺省 422） | API | `pytest ../tests/api/test_search_api.py` |
+| M4 | API `GET /api/v1/search` 200 命中/空结果/404/422 全矩阵（含双参数缺省 422）+ POST rebuild（200/404） | API | `pytest ../tests/api/test_search_api.py` |
 | M5 | 索引脏检测：内容变更后首查重建并命中新内容；无变更不重建 | 单元 | `pytest tests/unit/test_search_service.py -k stale` |
 | M6 | 软删内容不命中 | 单元 | `pytest tests/unit/test_search_service.py -k deleted` |
 | M7 | FTS5 保留字/特殊字符查询安全（`AND`、引号、XML 标签） | 单元+集成 | `pytest tests/unit/test_search_tokenizer.py tests/unit/test_search_index.py -k escape` |
@@ -602,7 +630,7 @@ F22 编号 0.6.0 立项未改号（ADR-019 v5 口径）；变体编号声明依�
 | M10 | **v1.1：多项目检索** `project_ids=1,2` 两项目命中 + 404 单项目失败 | 集成+API | `pytest tests/unit/test_search_index.py -k multi tests/unit/test_search_service.py -k multi` |
 | M11 | **v1.1：AI 自动维护** `ai_maintenance=true` + 变更 → 增量同步；增量失败回退懒重建 | 单元 | `pytest tests/unit/test_search_service.py -k incremental` |
 | M12 | **v1.1：semantic 模式** FakeEmbeddings 命中映射 + outline 恒空（覆盖缺口）+ embedding 异常 200 空 | 单元 | `pytest tests/unit/test_search_semantic.py` |
-| M13 | **v1.1：手动 rebuild** `inkflow search --rebuild` 强制全量重建 | CLI+单元 | `pytest ../tests/cli/test_cli_search.py tests/unit/test_search_service.py -k rebuild` |
+| M13 | **v1.1/v1.2：手动 rebuild** `inkflow search --rebuild` 强制全量重建（经 POST rebuild 端点） | CLI+单元 | `pytest ../tests/cli/test_cli_search.py tests/unit/test_search_service.py -k rebuild` |
 | M14 | 全量门禁：lint/unit/integration/api/cli 绿 + 覆盖率达标 | CI | `uv run ruff check src/ tests/unit/ ../tests/` + 全量 pytest |
 | M15 | 手工闭环：CLI 搜索真实项目中文词命中 + GUI 未来接线冒烟 | 手动 | 发布前冒烟 |
 

@@ -25,6 +25,7 @@ from inkflow.domain.services.outline_service import OutlineService
 from inkflow.domain.services.output_service import ExportService
 from inkflow.domain.services.project_service import ProjectService
 from inkflow.domain.services.provider_config_service import ProviderConfigService
+from inkflow.domain.services.search_service import SearchService
 from inkflow.domain.services.session_service import SessionService
 from inkflow.domain.services.settings_service import SettingsService
 from inkflow.domain.services.style_service import StyleService
@@ -55,6 +56,9 @@ from inkflow.infrastructure.database.repositories.project_repo import (
 )
 from inkflow.infrastructure.database.repositories.provider_config_repo import (
     SQLiteProviderConfigRepository,
+)
+from inkflow.infrastructure.database.repositories.search_repo import (
+    SQLiteSearchRepository,
 )
 from inkflow.infrastructure.database.repositories.session_repo import (
     SQLiteSessionRepository,
@@ -380,6 +384,23 @@ def get_style_service(
             llm_client=LangChainLLMClient(),
             prompt_manager=LangChainPromptManager(),
         ),
+    )
+
+
+def get_search_service(
+    db: AsyncSession,
+) -> SearchService:
+    """获取 SearchService 实例（F22 全文搜索，spec §8.1）."""
+    return SearchService(
+        project_repo=SQLiteProjectRepository(db),
+        chapter_repo=SQLiteChapterRepository(db),
+        character_repo=SQLiteCharacterRepository(db),
+        world_repo=SQLiteWorldRepository(db),
+        outline_repo=SQLiteOutlineRepository(db),
+        timeline_repo=SQLiteTimelineRepository(db),
+        foreshadowing_repo=SQLiteForeshadowingRepository(db),
+        search_repo=SQLiteSearchRepository(db),
+        vector_store=None,  # semantic 模式可选注入；未配置 embedding 时 keyword 正常（懒装配）
     )
 
 

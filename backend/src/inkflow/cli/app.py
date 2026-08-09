@@ -52,6 +52,7 @@ from inkflow.cli.commands import (  # noqa: E402  # app 定义后导入
     kernel,
     outline,
     project,
+    search,
     session,
     style,
     timeline,
@@ -84,3 +85,5 @@ app.add_typer(session.app, name="session")
 app.add_typer(kernel.app, name="kernel")
 # serve 用 command() 直接注册避免 inkflow serve serve 嵌套
 app.command(name="serve")(_serve_fn)
+# search 同款：单命令组压平，command() 直接注册避免 inkflow search search 嵌套
+app.command(name="search")(search.search_cmd)
