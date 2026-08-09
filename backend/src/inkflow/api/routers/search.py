@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Awaitable
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import ValidationError
@@ -40,7 +40,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_db, get_search_service
 from inkflow.core.database import async_session_factory
-from inkflow.domain.models.search import SearchQuery, SearchResponse
+from inkflow.domain.models.search import (
+    SearchEntityType,
+    SearchMode,
+    SearchQuery,
+    SearchResponse,
+)
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.services.search_service import SearchService
 
@@ -58,27 +63,50 @@ def _get_svc() -> SearchService:
     return get_search_service(async_session_factory())
 
 
-def _resolve_project_ids(project_id: str | None, project_ids: str | None) -> list[str]:
-    """project_id 单值 / project_ids 逗号分隔 → 原始字符串列表（spec §3.1 Q3）.
+def _resolve_project_ids(project_id: str | None, project_ids: str | None) -> list[uuid.UUID]:
+    """project_id 单值 / project_ids 逗号分隔 → UUID 列表（spec §3.1 Q3）.
 
     同时缺省 → 422 精确 detail "project_id or project_ids required"
     （v1.1 Q3：必填其一；router 层显式校验，不触达 service）。UUID 格式
-    校验交给 SearchQuery（Pydantic 422，detail 为 list）。
+    在 router 层转换，非法格式 → 422（Pydantic 风格 detail，字段名回显）。
     """
-    if project_id is None and project_ids is None:
-        raise HTTPException(status_code=422, detail="project_id or project_ids required")
     raw = project_id if project_id is not None else project_ids
-    return [part.strip() for part in raw.split(",") if part.strip()]
+    if raw is None:
+        raise HTTPException(status_code=422, detail="project_id or project_ids required")
+    try:
+        return [uuid.UUID(part.strip()) for part in raw.split(",") if part.strip()]
+    except ValueError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=[{"loc": ["project_ids"], "msg": "invalid UUID format", "type": "value_error"}],
+        ) from e
 
 
-def _resolve_types(types: str | None) -> list[str] | None:
-    """逗号分隔 SearchEntityType 原始值列表；空/缺省 → None（spec §2.2）.
+def _resolve_types(types: str | None) -> list[SearchEntityType] | None:
+    """逗号分隔 SearchEntityType 枚举列表；空/缺省 → None（spec §2.2）.
 
-    枚举值校验交给 SearchQuery（Pydantic 422，detail 为 list）。
+    枚举转换在 router 层完成，非法值 → 422（Pydantic 风格 detail，字段名回显）。
     """
     if not types:
         return None
-    return [part.strip() for part in types.split(",") if part.strip()]
+    try:
+        return [SearchEntityType(part.strip()) for part in types.split(",") if part.strip()]
+    except ValueError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=[{"loc": ["types"], "msg": "invalid SearchEntityType", "type": "enum"}],
+        ) from e
+
+
+def _resolve_mode(mode: str) -> SearchMode:
+    """mode 字符串 → SearchMode 枚举；非法值 → 422（spec §3.3）."""
+    try:
+        return SearchMode(mode)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=[{"loc": ["mode"], "msg": "invalid SearchMode", "type": "enum"}],
+        ) from e
 
 
 async def _run_service(coro: Awaitable[Any]) -> Any:
@@ -117,14 +145,14 @@ async def search_endpoint(
             q=q,
             project_ids=_resolve_project_ids(project_id, project_ids),
             types=_resolve_types(types),
-            mode=mode,
+            mode=_resolve_mode(mode),
             limit=limit,
             offset=offset,
         )
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.errors(include_context=False)) from e
     svc = _get_svc()
-    return await _run_service(svc.search(query))
+    return cast(SearchResponse, await _run_service(svc.search(query)))
 
 
 @router.post("/rebuild")
@@ -140,4 +168,4 @@ async def rebuild_endpoint(
     """
     pid = uuid.UUID(project_id).int if project_id else None
     svc = _get_svc()
-    return await _run_service(svc.rebuild(pid))
+    return cast(dict[str, Any], await _run_service(svc.rebuild(pid)))

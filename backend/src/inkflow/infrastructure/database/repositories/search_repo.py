@@ -15,8 +15,9 @@ import builtins
 import uuid
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import bindparam, text
+from sqlalchemy import BindParameter, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.search import SearchEntityType, SearchHit
@@ -165,7 +166,10 @@ class SQLiteSearchRepository:
         )
         type_clause = " AND entity_type IN :types" if types is not None else ""
 
-        in_binds = [bindparam("match"), bindparam("project_ids", expanding=True)]
+        in_binds: list[BindParameter[Any]] = [
+            bindparam("match"),
+            bindparam("project_ids", expanding=True),
+        ]
         if types is not None:
             in_binds.append(bindparam("types", expanding=True))
 
