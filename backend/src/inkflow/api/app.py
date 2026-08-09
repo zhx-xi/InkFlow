@@ -34,6 +34,7 @@ from inkflow.core.database import (
     create_tables,
     engine,
     ensure_provider_builtin_key_column,
+    ensure_world_parent_id_column,
 )
 from inkflow.core.log import setup_logging
 
@@ -47,6 +48,7 @@ async def lifespan(app: FastAPI):
     # 新库 create_all 已含列（no-op）；旧库加列后由 seed 按 name 命中回填。
     async with engine.begin() as conn:
         await conn.run_sync(ensure_provider_builtin_key_column)
+        await conn.run_sync(ensure_world_parent_id_column)
     # #106 F1：启动后幂等 seed 内置 4 provider（ProviderConfigService 同名跳过，
     # 全新安装注册表为空 → seed 补全；重复启动不重复插入）
     async with async_session_factory() as session:

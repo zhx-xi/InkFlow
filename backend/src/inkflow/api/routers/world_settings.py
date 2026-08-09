@@ -90,6 +90,7 @@ class WorldSettingCreateBody(BaseModel):
     name: str
     category: str = ""
     content: str = ""
+    parent_id: uuid.UUID | None = None  # ← F35 新增（None = 顶层）
 
     @field_validator("name")
     @classmethod
@@ -136,7 +137,17 @@ async def create_world_setting(
     """创建世界观条目（spec §3.2）。"""
     pid = _parse_id(project_id, detail="项目不存在")
     svc = _get_svc(db)
-    setting = await _run_service(svc.create_setting(pid, data.name, data.category, data.content))
+    # F35: parent_id 缺省不传键（既有测试契约）；提供时按关键字透传
+    if data.parent_id is None:
+        setting = await _run_service(
+            svc.create_setting(pid, data.name, data.category, data.content)
+        )
+    else:
+        setting = await _run_service(
+            svc.create_setting(
+                pid, data.name, data.category, data.content, parent_id=data.parent_id
+            )
+        )
     return setting.model_dump(mode="json")
 
 
@@ -145,26 +156,33 @@ async def list_world_settings(
     project_id: str,
     search: str | None = Query(None),
     category: str | None = Query(None),
+    parent_id: str | None = Query(None),
     sort_by: str = Query("updated_at"),
     sort_desc: bool = Query(True),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    """获取项目内条目列表（搜索 + 类别过滤 + 分页，spec §3.1/§6.2）。"""
+    """获取项目内条目列表（搜索 + 类别过滤 + F35 parent_id 过滤 + 分页，spec §3.1/§6.2）。"""
     pid = _parse_id(project_id, detail="项目不存在")
     svc = _get_svc(db)
-    items, total = await _run_service(
-        svc.list_settings(
-            pid,
-            search=search,
-            category=category,
-            sort_by=sort_by,
-            sort_desc=sort_desc,
-            offset=offset,
-            limit=limit,
-        )
-    )
+    # F35 Q3=A: ?parent_id=none → 顶层过滤；?parent_id=<uuid> → 直接子级；缺省 → 全量。
+    # 参数形状按测试契约精确传递（缺省不含 parent_id/top_level_only 键）。
+    list_kwargs: dict[str, Any] = {
+        "search": search,
+        "category": category,
+        "sort_by": sort_by,
+        "sort_desc": sort_desc,
+        "offset": offset,
+        "limit": limit,
+    }
+    if parent_id is not None:
+        if parent_id.lower() == "none":
+            list_kwargs["parent_id"] = None
+            list_kwargs["top_level_only"] = True
+        else:
+            list_kwargs["parent_id"] = _parse_id(parent_id, detail="世界观条目不存在")
+    items, total = await _run_service(svc.list_settings(pid, **list_kwargs))
     return {
         "items": [s.model_dump(mode="json") for s in items],
         "total": total,
@@ -200,6 +218,34 @@ async def get_world_setting(
     return setting.model_dump(mode="json")
 
 
+@router.get("/world-settings/{setting_id}/ancestors")
+async def get_world_setting_ancestors(
+    setting_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """祖先链（含自身，自身在前；面包屑，spec §3.1）。"""
+    sid = _parse_id(setting_id, detail="世界观条目不存在")
+    svc = _get_svc(db)
+    chain = await _run_service(svc.list_ancestors(sid))
+    if chain is None:
+        raise HTTPException(status_code=404, detail="世界观条目不存在")
+    return {"items": [s.model_dump(mode="json") for s in chain], "total": len(chain)}
+
+
+@router.get("/world-settings/{setting_id}/descendants")
+async def get_world_setting_descendants(
+    setting_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """子树（含自身，层序；复制/级联删除用，spec §3.1）。"""
+    sid = _parse_id(setting_id, detail="世界观条目不存在")
+    svc = _get_svc(db)
+    subtree = await _run_service(svc.list_descendants(sid))
+    if subtree is None:
+        raise HTTPException(status_code=404, detail="世界观条目不存在")
+    return {"items": [s.model_dump(mode="json") for s in subtree], "total": len(subtree)}
+
+
 @router.patch("/world-settings/{setting_id}")
 async def update_world_setting(
     setting_id: str,
@@ -219,12 +265,28 @@ async def update_world_setting(
 async def delete_world_setting(
     setting_id: str,
     force: bool = Query(False),
+    cascade: bool = Query(False),
+    reparent_to: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """删除条目（默认软删除，?force=true 硬删除，spec §3.1/§7）。"""
+    """删除条目（默认软删；?force=true 硬删；F35: ?cascade=true 级联真删 |
+    ?reparent_to=<id> 子改挂，spec §5.5）。"""
     sid = _parse_id(setting_id, detail="世界观条目不存在")
     svc = _get_svc(db)
-    ok = await _run_service(svc.delete_setting(sid, force=force))
+    reparent_uuid: uuid.UUID | None = None
+    if reparent_to is not None:
+        reparent_uuid = _parse_id(reparent_to, detail="世界观条目不存在")
+    # F35: 参数形状按测试契约精确传递（缺省不含 cascade/reparent_to 键）
+    if cascade:
+        ok = await _run_service(
+            svc.delete_setting(sid, force=force, cascade=True, reparent_to=None)
+        )
+    elif reparent_uuid is not None:
+        ok = await _run_service(
+            svc.delete_setting(sid, force=force, cascade=False, reparent_to=reparent_uuid)
+        )
+    else:
+        ok = await _run_service(svc.delete_setting(sid, force=force))
     if not ok:
         raise HTTPException(status_code=404, detail="世界观条目不存在")
 

@@ -99,7 +99,9 @@ class WorldSetting(BaseModel):
     Attributes:
         id: 主键 UUID.
         project_id: 所属项目 UUID.
-        name: 条目名；项目内活动条目唯一（partial unique，见 spec §2.4）.
+        name: 条目名；同级（project_id, parent_id）内活动条目唯一
+            （partial unique，见 spec §2.4）.
+        parent_id: 父地点 UUID；None = 顶层（F35 新增）.
         category: 类别（建议值：设定/规则/约束/组织/地理/种族/文化/科技/
             魔法体系；自由文本，受控词表归 F14）；空串 = 未分类.
         content: 条目内容/详细设定.
@@ -114,6 +116,7 @@ class WorldSetting(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
     name: str
+    parent_id: uuid.UUID | None = None  # ← F35 新增：父地点；None = 顶层
     category: str = ""
     content: str = ""
     extra: dict[str, Any] = Field(default_factory=dict)
@@ -128,12 +131,14 @@ class WorldCreate(BaseModel):
     Attributes:
         project_id: 所属项目 UUID，必填.
         name: 条目名，必填，1-50 字符，去空白.
+        parent_id: 父地点 UUID；None = 顶层（F35 新增）.
         category: 类别，默认为空串（未分类），≤ 50 字符，去空白.
         content: 条目内容，默认为空串，≤ 20000 字符.
     """
 
     project_id: uuid.UUID
     name: str
+    parent_id: uuid.UUID | None = None  # ← F35 新增（None = 顶层）
     category: str = ""
     content: str = ""
 
@@ -161,11 +166,15 @@ class WorldUpdate(BaseModel):
 
     category: None 表示不修改；"" 表示清除类别（置为未分类）。
     只有传入的字段会被更新，未传入的字段保持不变。
+
+    F35 parent_id 例外：与 category/content 的 None=不修改不同，parent_id
+    出现即更新（service 用 model_fields_set 判断）：null=置顶、非 null=挂接。
     """
 
     name: str | None = None
     category: str | None = None
     content: str | None = None
+    parent_id: uuid.UUID | None = None  # ← F35 新增
 
     @field_validator("name")
     @classmethod

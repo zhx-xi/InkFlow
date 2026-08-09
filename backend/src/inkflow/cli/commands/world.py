@@ -86,18 +86,22 @@ def create_setting_cmd(
     name: str = typer.Option(..., "--name", "-n", help="条目名"),
     category: str = typer.Option("", "--category", "-c", help="类别（空串 = 未分类）"),
     content: str = typer.Option("", "--content", help="条目内容"),
+    parent: str | None = typer.Option(None, "--parent", help="父地点 ID (UUID)；缺省 = 顶层"),
 ) -> None:
-    """创建世界观条目"""
+    """创建世界观条目（F35: --parent 指定父地点，缺省顶层）"""
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
     async def _impl() -> dict:
+        body: dict[str, Any] = {"name": name, "category": category, "content": content}
+        if parent is not None:
+            body["parent_id"] = parent  # 契约定死: 无 --parent 时 body 不含 parent_id 键
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
             return await client.post(
                 f"/projects/{pid}/world-settings",
-                json={"name": name, "category": category, "content": content},
+                json=body,
             )
 
     setting = _run(cli_ctx, _impl)
@@ -225,6 +229,69 @@ def get_setting_cmd(
 
 
 # ---------------------------------------------------------------------------
+# ancestors  —  inkflow world ancestors --id <uuid>
+# ---------------------------------------------------------------------------
+
+
+@app.command("ancestors")
+def ancestors_cmd(
+    ctx: typer.Context,
+    setting_id: str = typer.Argument(..., help="条目 ID (UUID)"),
+) -> None:
+    """查看祖先链（含自身，自身在前，面包屑）"""
+    cli_ctx: CliContext = ctx.obj
+    sid = _parse_uuid(cli_ctx, setting_id, "世界观条目不存在")
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/world-settings/{sid}/ancestors")
+
+    data = _run(cli_ctx, _impl)
+    items = data.get("items", [])
+    if cli_ctx.json_output:
+        print_result(cli_ctx, data)
+    elif not items:
+        print_result(cli_ctx, "📭 暂无祖先链")
+    else:
+        print_result(cli_ctx, " → ".join(s["name"] for s in items))
+
+
+# ---------------------------------------------------------------------------
+# descendants  —  inkflow world descendants --id <uuid>
+# ---------------------------------------------------------------------------
+
+
+@app.command("descendants")
+def descendants_cmd(
+    ctx: typer.Context,
+    setting_id: str = typer.Argument(..., help="条目 ID (UUID)"),
+) -> None:
+    """查看子树（含自身，层序）"""
+    cli_ctx: CliContext = ctx.obj
+    sid = _parse_uuid(cli_ctx, setting_id, "世界观条目不存在")
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/world-settings/{sid}/descendants")
+
+    data = _run(cli_ctx, _impl)
+    items = data.get("items", [])
+    if cli_ctx.json_output:
+        print_result(cli_ctx, data)
+    elif not items:
+        print_result(cli_ctx, "📭 暂无子地点")
+    else:
+        for s in items:
+            depth = s.get("depth", 0)  # 若无 depth 字段则平铺输出
+            indent = "  " * depth
+            typer.echo(f"{indent}- {s['name']}")
+
+
+# ---------------------------------------------------------------------------
 # update  —  inkflow world update --id <uuid> [--name] [--category ""] ...
 # ---------------------------------------------------------------------------
 
@@ -238,8 +305,9 @@ def update_setting_cmd(
         None, "--category", "-c", help='新类别；传空字符串 "" 表示清除类别（置为未分类）'
     ),
     content: str | None = typer.Option(None, "--content", help="新条目内容"),
+    parent: str | None = typer.Option(None, "--parent", help="新父地点 ID (UUID)"),
 ) -> None:
-    """更新世界观条目（仅更新传入的字段）"""
+    """更新世界观条目（仅更新传入的字段；--parent 传新父 ID）"""
     cli_ctx: CliContext = ctx.obj
     sid = _parse_uuid(cli_ctx, setting_id, "世界观条目不存在")
 
@@ -251,6 +319,8 @@ def update_setting_cmd(
             update_fields["category"] = category
         if content is not None:
             update_fields["content"] = content
+        if parent is not None:
+            update_fields["parent_id"] = parent
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
@@ -274,8 +344,12 @@ def delete_setting_cmd(
     setting_id: str = typer.Option(..., "--id", "-i", help="条目 ID (UUID)"),
     force: bool = typer.Option(False, "--force", "-f", help="跳过确认"),
     permanent: bool = typer.Option(False, "--permanent", "-p", help="硬删除（物理删除）"),
+    cascade: bool = typer.Option(False, "--cascade", help="级联真删子树（F35）"),
+    reparent_to: str | None = typer.Option(
+        None, "--reparent-to", help="子地点改挂新父后删除自身（F35）"
+    ),
 ) -> None:
-    """删除世界观条目（默认软删除；--permanent 物理删除）"""
+    """删除世界观条目（默认软删除；--permanent 物理删除；F35: --cascade / --reparent-to）"""
     cli_ctx: CliContext = ctx.obj
     sid = _parse_uuid(cli_ctx, setting_id, "世界观条目不存在")
     if not force:
@@ -287,12 +361,17 @@ def delete_setting_cmd(
             raise typer.Exit()
 
     async def _impl() -> None:
+        params: dict[str, str] = {"force": "true" if permanent else "false"}
+        if cascade:
+            params["cascade"] = "true"
+        if reparent_to is not None:
+            params["reparent_to"] = reparent_to
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
             await client.delete(
                 f"/world-settings/{sid}",
-                params={"force": "true" if permanent else "false"},
+                params=params,
             )
 
     _run(cli_ctx, _impl)
