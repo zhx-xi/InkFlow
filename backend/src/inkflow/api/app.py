@@ -22,6 +22,7 @@ from inkflow.api.routers import (
     outlines,
     project,
     provider_configs,
+    search,
     sessions,
     settings,
     style,
@@ -127,6 +128,7 @@ app.include_router(foreshadowings.router)
 app.include_router(extractions.router)
 app.include_router(sessions.router)
 app.include_router(settings.router)
+app.include_router(search.router)
 
 
 # ---- 健康检查 ----
