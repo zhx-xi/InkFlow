@@ -358,7 +358,7 @@ describe('templates store — 默认模板', () => {
     });
     expect(apiFetchMock).toHaveBeenCalledWith(
       '/api/v1/agent-templates/default',
-      expect.objectContaining({ method: 'PATCH', body: expect.objectContaining({ id: 2 }) }),
+      expect.objectContaining({ method: 'PATCH', body: expect.objectContaining({ id: '2' }) }),
     );
     const s = useTemplatesStore.getState();
     expect(s.defaultTemplateId).toBe(2);

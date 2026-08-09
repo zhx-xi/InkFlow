@@ -241,7 +241,8 @@ vi.mock('../stores/templates', async () => {
       return dup;
     },
     setDefault: async (id) => {
-      await apiFetch('/api/v1/agent-templates/default', { method: 'PATCH', body: { id } });
+      // 后端 SetDefaultRequest.id 契约为 str（与 stores/templates.test.ts 断言一致）
+      await apiFetch('/api/v1/agent-templates/default', { method: 'PATCH', body: { id: String(id) } });
       set((s) => ({
         defaultTemplateId: id,
         templates: s.templates.map((t) => ({ ...t, is_default: t.id === id })),
@@ -920,7 +921,7 @@ describe('设置页 — 模板分类（#107 RED 契约）', () => {
     await waitFor(() => {
       expect(apiFetchMock).toHaveBeenCalledWith(
         '/api/v1/agent-templates/default',
-        expect.objectContaining({ method: 'PATCH', body: expect.objectContaining({ id: 2 }) }),
+        expect.objectContaining({ method: 'PATCH', body: expect.objectContaining({ id: '2' }) }),
       );
     });
     // 徽标迁移：card2 出现「默认」，card1 移除（store is_default 翻转 → 重渲染）
