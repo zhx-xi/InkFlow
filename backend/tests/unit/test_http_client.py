@@ -541,3 +541,64 @@ class TestStreamSseInterrupted:
         assert err.code == "STREAM_INTERRUPTED"
         assert "connection lost" in err.detail
         assert isinstance(err.__cause__, httpx.ReadError)
+
+
+class TestGetRaw:
+    """get_raw 原始文本下载（F21 导出契约 §4：返回 text/plain 响应文本，非 JSON 信封）。
+
+    设计假设（F21 RED 阶段父侧裁定，2026-08-09）:
+    - `async def get_raw(self, path, *, params=None) -> str`：GET 请求，2xx
+      时返回响应文本（response.text，UTF-8 解码）；非 2xx 抛 HttpApiError
+      （与 _request 同规则：detail 提取 + X-InkFlow-Error-Code 头）。
+    - 用途：F21 export 端点返回 text/plain 字节流，CLI 经此下载 TXT；
+      _request 的 response.json() 无法解析纯文本（会抛 JSONDecodeError）。
+    - 实现提示：可独立方法（httpx.AsyncClient.get → .text），不复用
+      _request（后者强制 json 解析）。
+    """
+
+    async def test_get_raw_returns_text_body(self, handle):
+        """2xx text/plain → 返回原始响应文本（UTF-8 解码，非 JSON 解析）。"""
+        text = "我的小说\n==============================\n第 1 章 开端\n（正文……）\n"
+
+        def _handler(request):
+            return httpx.Response(
+                200,
+                content=text.encode("utf-8"),
+                headers={"content-type": "text/plain; charset=utf-8"},
+            )
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                result = await client.get_raw("/projects/1/export")
+        assert result == text
+
+    async def test_get_raw_passes_query_params(self, handle):
+        """params 拼接到请求 URL 查询串（include_settings=true 透传）。"""
+        seen: list[str] = []
+
+        def _handler(request):
+            seen.append(str(request.url))
+            return httpx.Response(
+                200,
+                content="TXT",
+                headers={"content-type": "text/plain; charset=utf-8"},
+            )
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                await client.get_raw("/projects/1/export", params={"include_settings": "true"})
+        assert seen == [f"{BASE_URL}/projects/1/export?include_settings=true"]
+
+    async def test_get_raw_404_raises_http_api_error(self, handle):
+        """非 2xx（404）→ HttpApiError(404, detail)，与 _request 同规则。"""
+
+        def _handler(request):
+            return _json_response(404, {"detail": "项目不存在"})
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                with pytest.raises(HttpApiError) as exc_info:
+                    await client.get_raw("/projects/999/export")
+        err = exc_info.value
+        assert err.status_code == 404
+        assert err.detail == "项目不存在"
