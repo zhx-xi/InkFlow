@@ -1,37 +1,21 @@
-"""F3 write 子命令 — next / continue / revise（F23: 默认流式输出，spec §4）."""
+"""F3 write 子命令 — next / continue / revise（F23 流式；Issue #169 CLI 恒经 HTTP）."""
 
 from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import AsyncGenerator
 
 import typer
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
-from inkflow.core.database import async_session_factory
-from inkflow.domain.models.writing import (
-    ContinueWritingRequest,
-    RevisionRequest,
-    WritingMode,
-    WritingRequest,
-    WritingResult,
-    WritingStreamEvent,
-)
-from inkflow.domain.ports.llm_errors import LLMRequestError
-from inkflow.domain.services.writing_service import NullContextProvider, WritingService
-from inkflow.infrastructure.database.repositories.chapter_repo import SQLiteChapterRepository
-from inkflow.infrastructure.database.repositories.project_repo import SQLiteProjectRepository
-from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
-from inkflow.infrastructure.llm.prompt_manager import LangChainPromptManager
+from inkflow.domain.models.writing import WritingMode, WritingRequest
+from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 
 app = typer.Typer(help="AI 写作命令", no_args_is_help=True)
 
 _SHOW_CONTEXT_NOTE = "(--show-context 功能将在 F6 联调时启用)"
-
-# F23 流式（spec §7 E1）: service 前置校验失败消息 → NOT_FOUND 语义
-_NOT_FOUND_MESSAGES = ("项目不存在", "章节不存在")
 
 
 def _get_cli_ctx(ctx: typer.Context) -> CliContext:
@@ -39,66 +23,68 @@ def _get_cli_ctx(ctx: typer.Context) -> CliContext:
     return ctx.obj if isinstance(ctx.obj, CliContext) else CliContext()
 
 
-def _build_service(db_session):
-    llm = LangChainLLMClient()
-    prompts = LangChainPromptManager()
-    project_repo = SQLiteProjectRepository(db_session)
-    chapter_repo = SQLiteChapterRepository(db_session)
-    return WritingService(
-        llm_client=llm,
-        prompt_manager=prompts,
-        project_repo=project_repo,
-        chapter_repo=chapter_repo,
-        context_provider=NullContextProvider(),
-    )
+def _run_async(coro):
+    """同步运行协程（CLI 命令内 asyncio.run）."""
+    return asyncio.run(coro)
 
 
-async def _collect_stream(
-    cli_ctx: CliContext,
-    events: AsyncGenerator[WritingStreamEvent, None],
-    mode: WritingMode,
-) -> WritingResult:
-    """消费 service 流式事件，流结束后返回 WritingResult（spec §4.1/§4.2）.
+def _run(cli_ctx: CliContext, coro_fn):
+    """执行内核调用并统一映射 HTTP 异常为 F7 错误信封（退出码 1）."""
+    try:
+        return _run_async(coro_fn())
+    except HttpApiError as exc:
+        code, message = map_http_error(exc.status_code, exc.detail, exc.code)
+        print_error(cli_ctx, code, message)
+    except KernelStartupError as exc:
+        print_error(cli_ctx, "KERNEL_ERROR", f"内核启动失败: {exc}")
 
-    人类模式: 逐 delta 用 typer.echo(ev.delta, nl=False) 连续打印（chunk 间无分隔，拼接 == 全文）
+
+async def _collect_stream(cli_ctx: CliContext, events, mode: str) -> dict:
+    """消费内核 SSE 流式事件（dict 帧，F23 §6），流结束后返回 WritingResult dict.
+
+    人类模式: 逐 delta 用 typer.echo(delta, nl=False) 连续打印（chunk 间无分隔，拼接 == 全文）
     --json:    静默收集 delta（不打印任何中间输出），仅由调用方输出信封
+    流中 error 帧（done=True + error）→ {"error": ...} 标记，调用方映射 LLM_ERROR
     """
     parts: list[str] = []
-    done_ev: WritingStreamEvent | None = None
+    done_ev: dict | None = None
     async for ev in events:
-        if ev.delta:
-            parts.append(ev.delta)
+        if ev.get("delta"):
+            parts.append(ev["delta"])
             if not cli_ctx.json_output:
-                typer.echo(ev.delta, nl=False)
-        elif ev.done:
+                typer.echo(ev["delta"], nl=False)
+        elif ev.get("done"):
             done_ev = ev
 
     content = "".join(parts)
+    if done_ev is not None and done_ev.get("error"):
+        return {"error": done_ev["error"]}
     if done_ev is None:
-        # 防御: 流异常终止（无 done 帧）——不崩溃，按空结果回退（真实 service 恒发 done 帧）
-        done_ev = WritingStreamEvent(
-            done=True,
-            format_valid=False,
-            warnings=["生成内容为空"],
-            word_count=len(content),
-            model="",
-        )
-    return WritingResult(
-        content=content,
-        word_count=done_ev.word_count if done_ev.word_count is not None else len(content),
-        mode=mode,
-        format_valid=bool(done_ev.format_valid or False),
-        retry_count=0,
-        model=done_ev.model or "",
-        token_usage=done_ev.token_usage,
-        warnings=done_ev.warnings,
-    )
+        # 防御: 流异常终止（无 done 帧）——不崩溃，按空结果回退（真实内核恒发 done 帧）
+        done_ev = {
+            "format_valid": False,
+            "warnings": ["生成内容为空"],
+            "word_count": len(content),
+            "model": "",
+        }
+    return {
+        "content": content,
+        "word_count": (
+            done_ev["word_count"] if done_ev.get("word_count") is not None else len(content)
+        ),
+        "mode": mode,
+        "format_valid": bool(done_ev.get("format_valid") or False),
+        "retry_count": 0,
+        "model": done_ev.get("model") or "",
+        "token_usage": done_ev.get("token_usage"),
+        "warnings": done_ev.get("warnings", []),
+    }
 
 
 def _echo_warnings(warnings: list[str]) -> None:
     """格式校验/修订警告逐条 echo（spec §4.1 / §7 E6/E7）."""
     for w in warnings:
-        typer.echo(w)
+        typer.echo(f"⚠ {w}")
 
 
 @app.command("next")
@@ -117,10 +103,12 @@ def next(
 
     cli_ctx = _get_cli_ctx(ctx)
 
-    async def _run() -> None:
-        try:
-            async with async_session_factory() as db:
-                service = _build_service(db)
+    async def _impl() -> list[dict]:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            results: list[dict] = []
+            for _ in range(count):
                 request = WritingRequest(
                     project_id=uuid.UUID(project_id),
                     chapter_id=uuid.UUID(chapter_id),
@@ -129,39 +117,37 @@ def next(
                     min_words=min_words,
                     style_hint=style or None,
                 )
-                results: list[WritingResult] = []
-                for i in range(count):
-                    result = await _collect_stream(
+                body = request.model_dump(mode="json", exclude_none=True)
+                body["mode"] = WritingMode.GENERATE.value
+                results.append(
+                    await _collect_stream(
                         cli_ctx,
-                        service.stream_generate(request),
-                        WritingMode.GENERATE,
+                        client.stream_sse("/writing/stream", json=body),
+                        WritingMode.GENERATE.value,
                     )
-                    results.append(result)
-                    if not cli_ctx.json_output:
-                        status = "✅" if result.format_valid else "⚠️"
-                        typer.echo(
-                            f"{status} 章节生成成功: {result.word_count} 字 "
-                            f"(重试 {result.retry_count} 次, {result.model})"
-                        )
-                        _echo_warnings(result.warnings)
-                        if i < count - 1:
-                            typer.echo()  # 章间空行分隔（spec §4.1）
-                if cli_ctx.json_output:
-                    data = (
-                        results[0].model_dump(mode="json")
-                        if count == 1
-                        else [r.model_dump(mode="json") for r in results]
-                    )
-                    print_result(cli_ctx, data)
-                if show_context and not cli_ctx.json_output:
-                    typer.echo(_SHOW_CONTEXT_NOTE)
-        except LLMRequestError as exc:
-            message = str(exc)
-            if message in _NOT_FOUND_MESSAGES:
-                print_error(cli_ctx, "NOT_FOUND", message)
-            print_error(cli_ctx, "LLM_ERROR", f"LLM 调用失败: {exc}")
+                )
+            return results
 
-    asyncio.run(_run())
+    results = _run(cli_ctx, _impl)
+    if results is None:
+        return
+    for i, result in enumerate(results):
+        if result.get("error"):
+            print_error(cli_ctx, "LLM_ERROR", result["error"])
+        if not cli_ctx.json_output:
+            status = "✅" if result["format_valid"] else "⚠️"
+            typer.echo(
+                f"{status} 章节生成成功: {result['word_count']} 字 "
+                f"(重试 {result['retry_count']} 次, {result['model']})"
+            )
+            _echo_warnings(result["warnings"])
+            if i < len(results) - 1:
+                typer.echo()  # 章间空行分隔（spec §4.1）
+    if cli_ctx.json_output:
+        data = results[0] if len(results) == 1 else results
+        print_result(cli_ctx, data)
+    if show_context and not cli_ctx.json_output:
+        typer.echo(_SHOW_CONTEXT_NOTE)
 
 
 @app.command("continue")
@@ -176,41 +162,36 @@ def continue_(
 
     cli_ctx = _get_cli_ctx(ctx)
 
-    # existing_content is read from the chapter via the service
-    async def _run() -> None:
-        try:
-            async with async_session_factory() as db:
-                service = _build_service(db)
-                chapter_repo = SQLiteChapterRepository(db)
-                chapter = await chapter_repo.get_chapter(uuid.UUID(chapter_id).int)
-                if not chapter:
-                    print_error(cli_ctx, "NOT_FOUND", "章节不存在")
-                assert chapter is not None  # print_error 已退出；仅用于类型收窄
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            # 章节原文经 HTTP 获取（Issue #169：CLI 不再直连仓储）
+            chapter = await client.get(f"/chapters/{chapter_id}")
+            body = {
+                "project_id": project_id,
+                "chapter_id": chapter_id,
+                "existing_content": chapter.get("content") or "",
+                "target_words": target_words,
+                "context": context,
+                "mode": WritingMode.CONTINUE.value,
+            }
+            return await _collect_stream(
+                cli_ctx,
+                client.stream_sse("/writing/stream", json=body),
+                WritingMode.CONTINUE.value,
+            )
 
-                request = ContinueWritingRequest(
-                    project_id=uuid.UUID(project_id),
-                    chapter_id=uuid.UUID(chapter_id),
-                    existing_content=chapter.content or "",
-                    target_words=target_words,
-                    context=context,
-                )
-                result = await _collect_stream(
-                    cli_ctx,
-                    service.stream_continue(request),
-                    WritingMode.CONTINUE,
-                )
-                if cli_ctx.json_output:
-                    print_result(cli_ctx, result.model_dump(mode="json"))
-                else:
-                    typer.echo(f"✅ 续写完成: {result.word_count} 字 ({result.model})")
-                    _echo_warnings(result.warnings)
-        except LLMRequestError as exc:
-            message = str(exc)
-            if message in _NOT_FOUND_MESSAGES:
-                print_error(cli_ctx, "NOT_FOUND", message)
-            print_error(cli_ctx, "LLM_ERROR", f"LLM 调用失败: {exc}")
-
-    asyncio.run(_run())
+    result = _run(cli_ctx, _impl)
+    if result is None:
+        return
+    if result.get("error"):
+        print_error(cli_ctx, "LLM_ERROR", result["error"])
+    if cli_ctx.json_output:
+        print_result(cli_ctx, result)
+    else:
+        typer.echo(f"✅ 续写完成: {result['word_count']} 字 ({result['model']})")
+        _echo_warnings(result["warnings"])
 
 
 @app.command("revise")
@@ -225,37 +206,34 @@ def revise(
 
     cli_ctx = _get_cli_ctx(ctx)
 
-    async def _run() -> None:
-        try:
-            async with async_session_factory() as db:
-                service = _build_service(db)
-                chapter_repo = SQLiteChapterRepository(db)
-                chapter = await chapter_repo.get_chapter(uuid.UUID(chapter_id).int)
-                if not chapter:
-                    print_error(cli_ctx, "NOT_FOUND", "章节不存在")
-                assert chapter is not None  # print_error 已退出；仅用于类型收窄
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            # 章节原文经 HTTP 获取（Issue #169：CLI 不再直连仓储）
+            chapter = await client.get(f"/chapters/{chapter_id}")
+            body = {
+                "project_id": project_id,
+                "chapter_id": chapter_id,
+                "content": chapter.get("content") or "",
+                "feedback": instruction,
+                "mode": WritingMode.REVISE.value,
+            }
+            if range_ is not None:
+                body["target_range"] = range_
+            return await _collect_stream(
+                cli_ctx,
+                client.stream_sse("/writing/stream", json=body),
+                WritingMode.REVISE.value,
+            )
 
-                request = RevisionRequest(
-                    project_id=uuid.UUID(project_id),
-                    chapter_id=uuid.UUID(chapter_id),
-                    content=chapter.content or "",
-                    feedback=instruction,
-                    target_range=range_,
-                )
-                result = await _collect_stream(
-                    cli_ctx,
-                    service.stream_revise(request),
-                    WritingMode.REVISE,
-                )
-                if cli_ctx.json_output:
-                    print_result(cli_ctx, result.model_dump(mode="json"))
-                else:
-                    typer.echo(f"✅ 修订完成: {result.word_count} 字 ({result.model})")
-                    _echo_warnings(result.warnings)
-        except LLMRequestError as exc:
-            message = str(exc)
-            if message in _NOT_FOUND_MESSAGES:
-                print_error(cli_ctx, "NOT_FOUND", message)
-            print_error(cli_ctx, "LLM_ERROR", f"LLM 调用失败: {exc}")
-
-    asyncio.run(_run())
+    result = _run(cli_ctx, _impl)
+    if result is None:
+        return
+    if result.get("error"):
+        print_error(cli_ctx, "LLM_ERROR", result["error"])
+    if cli_ctx.json_output:
+        print_result(cli_ctx, result)
+    else:
+        typer.echo(f"✅ 修订完成: {result['word_count']} 字 ({result['model']})")
+        _echo_warnings(result["warnings"])

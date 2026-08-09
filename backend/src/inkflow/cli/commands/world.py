@@ -1,15 +1,17 @@
 """F10 世界观管理 CLI 命令 — `inkflow world <action>`.
 
-薄层设计：仅做参数解析/校验与结果格式化，全部业务委托 WorldService
-（spec §4）。遵循 F7 §5 全局约定：--json 统一信封
+薄层设计：仅做参数解析/校验与结果格式化，业务经 ensure_kernel() +
+InkFlowHTTPClient 调内核 REST API（spec §4；Issue #169 CLI 恒经 HTTP）。
+遵循 F7 §5 全局约定：--json 统一信封
 {"ok": true, "data": ...} / {"ok": false, "error": {"code", "message"}}；
 退出码 0/1/2/130；删除类命令二次确认 + --force；
 --json + 无 --force 的删除 → VALIDATION_ERROR。
 
 错误码映射（spec §4/§7）:
-- WorldServiceError 子类（同名条目等）→ VALIDATION_ERROR
-- WorldNotFoundError / ProjectNotFoundError / 无效 UUID → NOT_FOUND
-- WorldExtractionError / LLMRequestError → LLM_ERROR
+- HttpApiError：404 → NOT_FOUND、422 → VALIDATION_ERROR、
+  401 → CONFIG_ERROR、500 + LLM_ERROR 头 → LLM_ERROR、其余 → INTERNAL_ERROR
+- KernelStartupError → KERNEL_ERROR
+- pydantic ValidationError / 文本文件缺失 → VALIDATION_ERROR
 - 其余异常 → DB_ERROR
 
 依据: specs/f10-world-service/spec.md §4/§4.2。
@@ -27,30 +29,8 @@ from pydantic import ValidationError
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
-from inkflow.core.database import async_session_factory, create_tables
-from inkflow.domain.models.world import (
-    WorldExtractionResult,
-    WorldExtractRequest,
-    WorldSetting,
-    WorldUpdate,
-)
-from inkflow.domain.ports.llm_errors import LLMRequestError
-from inkflow.domain.ports.world_errors import (
-    ProjectNotFoundError,
-    WorldExtractionError,
-    WorldNotFoundError,
-    WorldServiceError,
-)
-from inkflow.domain.services._world_extractor import WorldExtractor
-from inkflow.domain.services.world_service import WorldService
-from inkflow.infrastructure.database.repositories.project_repo import (
-    SQLiteProjectRepository,
-)
-from inkflow.infrastructure.database.repositories.world_repo import (
-    SQLiteWorldRepository,
-)
-from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
-from inkflow.infrastructure.llm.prompt_manager import LangChainPromptManager
+from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 
 app = typer.Typer(name="world", help="世界观管理", no_args_is_help=True)
 
@@ -75,19 +55,16 @@ def _parse_uuid(cli_ctx: CliContext, value: str, message: str) -> uuid.UUID:
 
 
 def _run(cli_ctx: CliContext, coro_fn):
-    """执行服务调用并统一映射领域异常为 F7 错误信封（退出码 1）."""
+    """执行内核调用并统一映射 HTTP 异常为 F7 错误信封（退出码 1）."""
     try:
         return _run_async(coro_fn())
     except typer.Exit:
         raise
-    except (WorldNotFoundError, ProjectNotFoundError) as e:
-        print_error(cli_ctx, "NOT_FOUND", str(e))
-    except WorldExtractionError as e:
-        print_error(cli_ctx, "LLM_ERROR", str(e))
-    except LLMRequestError:
-        print_error(cli_ctx, "LLM_ERROR", "LLM 调用失败，请稍后重试")
-    except WorldServiceError as e:
-        print_error(cli_ctx, "VALIDATION_ERROR", str(e))
+    except HttpApiError as exc:
+        code, message = map_http_error(exc.status_code, exc.detail, exc.code)
+        print_error(cli_ctx, code, message)
+    except KernelStartupError as exc:
+        print_error(cli_ctx, "KERNEL_ERROR", f"内核启动失败: {exc}")
     except ValidationError as e:
         messages = "; ".join(str(err.get("msg", "")) for err in e.errors())
         print_error(cli_ctx, "VALIDATION_ERROR", messages or "参数校验失败")
@@ -95,11 +72,6 @@ def _run(cli_ctx: CliContext, coro_fn):
         print_error(cli_ctx, "VALIDATION_ERROR", f"文本文件不存在: {e.filename}")
     except Exception as e:
         print_error(cli_ctx, "DB_ERROR", f"内部错误: {e}")
-
-
-def _setting_to_dict(setting: WorldSetting) -> dict:
-    """世界观条目领域模型 → JSON-safe dict."""
-    return setting.model_dump(mode="json")
 
 
 # ---------------------------------------------------------------------------
@@ -119,24 +91,22 @@ def create_setting_cmd(
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = WorldService(repository=SQLiteWorldRepository(session))
-            return await svc.create_setting(
-                project_id=pid,
-                name=name,
-                category=category,
-                content=content,
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                f"/projects/{pid}/world-settings",
+                json={"name": name, "category": category, "content": content},
             )
 
     setting = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, _setting_to_dict(setting))
-    elif setting.category:
-        typer.echo(f"✅ 世界观条目创建成功: [{setting.name}] ({setting.category})")
+        print_result(cli_ctx, setting)
+    elif setting["category"]:
+        typer.echo(f"✅ 世界观条目创建成功: [{setting['name']}] ({setting['category']})")
     else:
-        typer.echo(f"✅ 世界观条目创建成功: [{setting.name}]")
+        typer.echo(f"✅ 世界观条目创建成功: [{setting['name']}]")
 
 
 # ---------------------------------------------------------------------------
@@ -163,27 +133,31 @@ def list_settings_cmd(
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = WorldService(repository=SQLiteWorldRepository(session))
-            return await svc.list_settings(
-                project_id=pid,
-                search=search,
-                category=category,
-                sort_by=sort,
-                sort_desc=sort_desc,
-                offset=offset,
-                limit=limit,
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(
+                f"/projects/{pid}/world-settings",
+                params={
+                    "search": search,
+                    "category": category,
+                    "sort_by": sort,
+                    "sort_desc": sort_desc,
+                    "offset": offset,
+                    "limit": limit,
+                },
             )
 
-    settings, total = _run(cli_ctx, _impl)
+    data = _run(cli_ctx, _impl)
+    settings = data.get("items", [])
+    total = data.get("total", 0)
     if not settings and not cli_ctx.json_output:
         print_result(cli_ctx, "📭 暂无条目")
         return
     if not cli_ctx.json_output and total:
         print_result(cli_ctx, f"共 {total} 个条目")
-    print_result(cli_ctx, [_setting_to_dict(s) for s in settings])
+    print_result(cli_ctx, settings)
 
 
 # ---------------------------------------------------------------------------
@@ -200,21 +174,22 @@ def list_categories_cmd(
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = WorldService(repository=SQLiteWorldRepository(session))
-            return await svc.list_categories(project_id=pid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/projects/{pid}/world-settings/categories")
 
-    categories = _run(cli_ctx, _impl)
+    data = _run(cli_ctx, _impl)
+    categories = data.get("items", [])
     if not categories and not cli_ctx.json_output:
         print_result(cli_ctx, "📭 暂无类别")
         return
     if cli_ctx.json_output:
-        print_result(cli_ctx, [{"category": c, "count": n} for c, n in categories])
+        print_result(cli_ctx, categories)
     else:
-        for c, n in categories:
-            typer.echo(f"  {c}: {n} 条")
+        for item in categories:
+            typer.echo(f"  {item['category']}: {item['count']} 条")
 
 
 # ---------------------------------------------------------------------------
@@ -231,24 +206,22 @@ def get_setting_cmd(
     cli_ctx: CliContext = ctx.obj
     sid = _parse_uuid(cli_ctx, setting_id, "世界观条目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = WorldService(repository=SQLiteWorldRepository(session))
-            return await svc.get_setting(setting_id=sid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/world-settings/{sid}")
 
     setting = _run(cli_ctx, _impl)
-    if setting is None:
-        print_error(cli_ctx, "NOT_FOUND", "世界观条目不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _setting_to_dict(setting))
+        print_result(cli_ctx, setting)
     else:
-        typer.echo(f"ID:         {setting.id}")
-        typer.echo(f"名称:       {setting.name}")
-        typer.echo(f"类别:       {setting.category}")
-        typer.echo(f"内容:       {setting.content}")
-        typer.echo(f"创建时间:   {setting.created_at}")
-        typer.echo(f"更新时间:   {setting.updated_at}")
+        typer.echo(f"ID:         {setting['id']}")
+        typer.echo(f"名称:       {setting['name']}")
+        typer.echo(f"类别:       {setting['category']}")
+        typer.echo(f"内容:       {setting['content']}")
+        typer.echo(f"创建时间:   {setting['created_at']}")
+        typer.echo(f"更新时间:   {setting['updated_at']}")
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +243,7 @@ def update_setting_cmd(
     cli_ctx: CliContext = ctx.obj
     sid = _parse_uuid(cli_ctx, setting_id, "世界观条目不存在")
 
-    async def _impl():
+    async def _impl() -> dict:
         update_fields: dict[str, Any] = {}
         if name is not None:
             update_fields["name"] = name
@@ -278,19 +251,16 @@ def update_setting_cmd(
             update_fields["category"] = category
         if content is not None:
             update_fields["content"] = content
-        update = WorldUpdate(**update_fields)
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = WorldService(repository=SQLiteWorldRepository(session))
-            return await svc.update_setting(setting_id=sid, update=update)
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.patch(f"/world-settings/{sid}", json=update_fields)
 
     setting = _run(cli_ctx, _impl)
-    if setting is None:
-        print_error(cli_ctx, "NOT_FOUND", "世界观条目不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _setting_to_dict(setting))
+        print_result(cli_ctx, setting)
     else:
-        typer.echo(f"✅ 条目已更新: [{setting.name}]")
+        typer.echo(f"✅ 条目已更新: [{setting['name']}]")
 
 
 # ---------------------------------------------------------------------------
@@ -316,21 +286,21 @@ def delete_setting_cmd(
             typer.echo("已取消")
             raise typer.Exit()
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = WorldService(repository=SQLiteWorldRepository(session))
-            return await svc.delete_setting(setting_id=sid, force=permanent)
+    async def _impl() -> None:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            await client.delete(
+                f"/world-settings/{sid}",
+                params={"force": "true" if permanent else "false"},
+            )
 
-    ok = _run(cli_ctx, _impl)
-    if ok:
-        label = "已永久删除" if permanent else "已删除"
-        if cli_ctx.json_output:
-            print_result(cli_ctx, {"id": str(sid), "deleted": True})
-        else:
-            typer.echo(f"✅ 条目 #{setting_id} {label}")
+    _run(cli_ctx, _impl)
+    label = "已永久删除" if permanent else "已删除"
+    if cli_ctx.json_output:
+        print_result(cli_ctx, {"id": str(sid), "deleted": True})
     else:
-        print_error(cli_ctx, "NOT_FOUND", "世界观条目不存在")
+        typer.echo(f"✅ 条目 #{setting_id} {label}")
 
 
 # ---------------------------------------------------------------------------
@@ -347,19 +317,17 @@ def restore_setting_cmd(
     cli_ctx: CliContext = ctx.obj
     sid = _parse_uuid(cli_ctx, setting_id, "世界观条目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = WorldService(repository=SQLiteWorldRepository(session))
-            return await svc.restore_setting(setting_id=sid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(f"/world-settings/{sid}/restore")
 
     setting = _run(cli_ctx, _impl)
-    if setting is None:
-        print_error(cli_ctx, "NOT_FOUND", "世界观条目不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _setting_to_dict(setting))
+        print_result(cli_ctx, setting)
     else:
-        typer.echo(f"✅ 条目已恢复: [{setting.name}]")
+        typer.echo(f"✅ 条目已恢复: [{setting['name']}]")
 
 
 # ---------------------------------------------------------------------------
@@ -386,35 +354,32 @@ def extract_settings_cmd(
         raise typer.Exit(code=2)
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
+    async def _impl() -> dict:
         extract_text = text
         if text_file is not None:
             extract_text = Path(text_file).read_text(encoding="utf-8")
-        request = WorldExtractRequest(project_id=pid, text=extract_text, model=model)
-        await create_tables()
-        async with async_session_factory() as session:
-            repo = SQLiteWorldRepository(session)
-            svc = WorldService(
-                repository=repo,
-                extractor=WorldExtractor(
-                    llm_client=LangChainLLMClient(),
-                    prompt_manager=LangChainPromptManager(),
-                    repository=repo,
-                ),
-                project_repo=SQLiteProjectRepository(session),
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                "/world-settings/extract",
+                json={
+                    "project_id": str(pid),
+                    "text": extract_text,
+                    "model": model,
+                },
             )
-            return await svc.extract(request)
 
-    result: WorldExtractionResult = _run(cli_ctx, _impl)
+    result = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, result.model_dump(mode="json"))
+        print_result(cli_ctx, result)
     else:
-        n_created = len(result.created)
-        n_updated = len(result.updated)
-        n_warnings = len(result.warnings)
+        n_created = len(result["created"])
+        n_updated = len(result["updated"])
+        n_warnings = len(result["warnings"])
         typer.echo(
             f"✅ 提取完成: 新增 {n_created} 个条目, 更新 {n_updated} 个条目, "
             f"警告 {n_warnings} 条"
         )
         if n_warnings:
-            typer.echo(f"⚠️ 提取完成但有警告: {'; '.join(result.warnings[:3])}")
+            typer.echo(f"⚠️ 提取完成但有警告: {'; '.join(result['warnings'][:3])}")

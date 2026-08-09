@@ -1,15 +1,17 @@
 """F9 角色管理 CLI 命令 — `inkflow character <action>` + `character group <action>`.
 
-薄层设计：仅做参数解析/校验与结果格式化，全部业务委托 CharacterService
-（spec §4）。遵循 F7 §5 全局约定：--json 统一信封
+薄层设计：仅做参数解析/校验与结果格式化，业务经 ensure_kernel() +
+InkFlowHTTPClient 调内核 REST API（spec §4；Issue #169 CLI 恒经 HTTP）。
+遵循 F7 §5 全局约定：--json 统一信封
 {"ok": true, "data": ...} / {"ok": false, "error": {"code", "message"}}；
 退出码 0/1/2/130；删除类命令二次确认 + --force；
 --json + 无 --force 的删除 → VALIDATION_ERROR。
 
 错误码映射（spec §4/§7）:
-- CharacterServiceError 子类（同名/自环/重复关系等）→ VALIDATION_ERROR
-- CharacterNotFoundError / ProjectNotFoundError / 无效 UUID → NOT_FOUND
-- CharacterExtractionError / LLMRequestError → LLM_ERROR
+- HttpApiError：404 → NOT_FOUND、422 → VALIDATION_ERROR、
+  401 → CONFIG_ERROR、500 + LLM_ERROR 头 → LLM_ERROR、其余 → INTERNAL_ERROR
+- KernelStartupError → KERNEL_ERROR
+- pydantic ValidationError / 文本文件缺失 → VALIDATION_ERROR
 - 其余异常 → DB_ERROR
 
 依据: specs/f9-character-service/spec.md §4/§7/§9。
@@ -27,31 +29,8 @@ from pydantic import ValidationError
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
-from inkflow.core.database import async_session_factory, create_tables
-from inkflow.domain.models.character import (
-    Character,
-    CharacterExtractionResult,
-    CharacterExtractRequest,
-    CharacterGroup,
-    CharacterUpdate,
-)
-from inkflow.domain.ports.character_errors import (
-    CharacterExtractionError,
-    CharacterNotFoundError,
-    CharacterServiceError,
-    ProjectNotFoundError,
-)
-from inkflow.domain.ports.llm_errors import LLMRequestError
-from inkflow.domain.services._character_extractor import CharacterExtractor
-from inkflow.domain.services.character_service import CharacterService
-from inkflow.infrastructure.database.repositories.character_repo import (
-    SQLiteCharacterRepository,
-)
-from inkflow.infrastructure.database.repositories.project_repo import (
-    SQLiteProjectRepository,
-)
-from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
-from inkflow.infrastructure.llm.prompt_manager import LangChainPromptManager
+from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 
 app = typer.Typer(name="character", help="角色管理", no_args_is_help=True)
 
@@ -78,19 +57,16 @@ def _parse_uuid(cli_ctx: CliContext, value: str, message: str) -> uuid.UUID:
 
 
 def _run(cli_ctx: CliContext, coro_fn):
-    """执行服务调用并统一映射领域异常为 F7 错误信封（退出码 1）."""
+    """执行内核调用并统一映射 HTTP 异常为 F7 错误信封（退出码 1）."""
     try:
         return _run_async(coro_fn())
     except typer.Exit:
         raise
-    except (CharacterNotFoundError, ProjectNotFoundError) as e:
-        print_error(cli_ctx, "NOT_FOUND", str(e))
-    except CharacterExtractionError as e:
-        print_error(cli_ctx, "LLM_ERROR", str(e))
-    except LLMRequestError:
-        print_error(cli_ctx, "LLM_ERROR", "LLM 调用失败，请稍后重试")
-    except CharacterServiceError as e:
-        print_error(cli_ctx, "VALIDATION_ERROR", str(e))
+    except HttpApiError as exc:
+        code, message = map_http_error(exc.status_code, exc.detail, exc.code)
+        print_error(cli_ctx, code, message)
+    except KernelStartupError as exc:
+        print_error(cli_ctx, "KERNEL_ERROR", f"内核启动失败: {exc}")
     except ValidationError as e:
         messages = "; ".join(str(err.get("msg", "")) for err in e.errors())
         print_error(cli_ctx, "VALIDATION_ERROR", messages or "参数校验失败")
@@ -98,21 +74,6 @@ def _run(cli_ctx: CliContext, coro_fn):
         print_error(cli_ctx, "VALIDATION_ERROR", f"文本文件不存在: {e.filename}")
     except Exception as e:
         print_error(cli_ctx, "DB_ERROR", f"内部错误: {e}")
-
-
-def _character_to_dict(character: Character) -> dict:
-    """角色领域模型 → JSON-safe dict."""
-    return character.model_dump(mode="json")
-
-
-def _group_to_dict(group: CharacterGroup) -> dict:
-    """分组领域模型 → JSON-safe dict."""
-    return group.model_dump(mode="json")
-
-
-def _relation_to_dict(relation) -> dict:
-    """关系领域模型 → JSON-safe dict."""
-    return dict(relation.model_dump(mode="json"))
 
 
 # ---------------------------------------------------------------------------
@@ -135,24 +96,26 @@ def create_character(
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
     gid = _parse_uuid(cli_ctx, group_id, "分组不存在") if group_id is not None else None
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = CharacterService(repository=SQLiteCharacterRepository(session))
-            return await svc.create_character(
-                project_id=pid,
-                name=name,
-                personality=personality,
-                background=background,
-                goals=goals,
-                group_id=gid,
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                f"/projects/{pid}/characters",
+                json={
+                    "name": name,
+                    "personality": personality,
+                    "background": background,
+                    "goals": goals,
+                    "group_id": str(gid) if gid is not None else None,
+                },
             )
 
     character = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, _character_to_dict(character))
+        print_result(cli_ctx, character)
     else:
-        typer.echo(f"✅ 角色创建成功: [{character.name}]")
+        typer.echo(f"✅ 角色创建成功: [{character['name']}]")
 
 
 # ---------------------------------------------------------------------------
@@ -180,27 +143,31 @@ def list_characters(
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
     gid = _parse_uuid(cli_ctx, group_id, "分组不存在") if group_id is not None else None
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = CharacterService(repository=SQLiteCharacterRepository(session))
-            return await svc.list_characters(
-                project_id=pid,
-                search=search,
-                group_id=gid,
-                sort_by=sort,
-                sort_desc=sort_desc,
-                offset=offset,
-                limit=limit,
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(
+                f"/projects/{pid}/characters",
+                params={
+                    "search": search,
+                    "group_id": str(gid) if gid is not None else None,
+                    "sort_by": sort,
+                    "sort_desc": sort_desc,
+                    "offset": offset,
+                    "limit": limit,
+                },
             )
 
-    characters, total = _run(cli_ctx, _impl)
+    data = _run(cli_ctx, _impl)
+    characters = data.get("items", [])
+    total = data.get("total", 0)
     if not characters and not cli_ctx.json_output:
         print_result(cli_ctx, "📭 暂无角色")
         return
     if not cli_ctx.json_output and total:
         print_result(cli_ctx, f"共 {total} 个角色")
-    print_result(cli_ctx, [_character_to_dict(c) for c in characters])
+    print_result(cli_ctx, characters)
 
 
 # ---------------------------------------------------------------------------
@@ -217,26 +184,24 @@ def get_character(
     cli_ctx: CliContext = ctx.obj
     cid = _parse_uuid(cli_ctx, character_id, "角色不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = CharacterService(repository=SQLiteCharacterRepository(session))
-            return await svc.get_character(character_id=cid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/characters/{cid}")
 
     character = _run(cli_ctx, _impl)
-    if character is None:
-        print_error(cli_ctx, "NOT_FOUND", "角色不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _character_to_dict(character))
+        print_result(cli_ctx, character)
     else:
-        typer.echo(f"ID:         {character.id}")
-        typer.echo(f"名称:       {character.name}")
-        typer.echo(f"性格:       {character.personality}")
-        typer.echo(f"背景:       {character.background}")
-        typer.echo(f"目标:       {character.goals}")
-        typer.echo(f"分组:       {character.group_id}")
-        typer.echo(f"创建时间:   {character.created_at}")
-        typer.echo(f"更新时间:   {character.updated_at}")
+        typer.echo(f"ID:         {character['id']}")
+        typer.echo(f"名称:       {character['name']}")
+        typer.echo(f"性格:       {character['personality']}")
+        typer.echo(f"背景:       {character['background']}")
+        typer.echo(f"目标:       {character['goals']}")
+        typer.echo(f"分组:       {character['group_id']}")
+        typer.echo(f"创建时间:   {character['created_at']}")
+        typer.echo(f"更新时间:   {character['updated_at']}")
 
 
 # ---------------------------------------------------------------------------
@@ -260,7 +225,7 @@ def update_character(
     cli_ctx: CliContext = ctx.obj
     cid = _parse_uuid(cli_ctx, character_id, "角色不存在")
 
-    async def _impl():
+    async def _impl() -> dict:
         update_fields: dict[str, Any] = {}
         if name is not None:
             update_fields["name"] = name
@@ -272,21 +237,18 @@ def update_character(
             update_fields["goals"] = goals
         if group_id is not None:
             update_fields["group_id"] = (
-                None if group_id == "" else _parse_uuid(cli_ctx, group_id, "分组不存在")
+                None if group_id == "" else str(_parse_uuid(cli_ctx, group_id, "分组不存在"))
             )
-        update = CharacterUpdate(**update_fields)
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = CharacterService(repository=SQLiteCharacterRepository(session))
-            return await svc.update_character(character_id=cid, update=update)
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.patch(f"/characters/{cid}", json=update_fields)
 
     character = _run(cli_ctx, _impl)
-    if character is None:
-        print_error(cli_ctx, "NOT_FOUND", "角色不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _character_to_dict(character))
+        print_result(cli_ctx, character)
     else:
-        typer.echo(f"✅ 角色已更新: [{character.name}]")
+        typer.echo(f"✅ 角色已更新: [{character['name']}]")
 
 
 # ---------------------------------------------------------------------------
@@ -312,21 +274,21 @@ def delete_character(
             typer.echo("已取消")
             raise typer.Exit()
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = CharacterService(repository=SQLiteCharacterRepository(session))
-            return await svc.delete_character(character_id=cid, force=permanent)
+    async def _impl() -> None:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            await client.delete(
+                f"/characters/{cid}",
+                params={"force": "true" if permanent else "false"},
+            )
 
-    ok = _run(cli_ctx, _impl)
-    if ok:
-        label = "永久删除" if permanent else "已删除"
-        if cli_ctx.json_output:
-            print_result(cli_ctx, {"id": str(cid), "deleted": True})
-        else:
-            typer.echo(f"✅ 角色 #{character_id} {label}")
+    _run(cli_ctx, _impl)
+    label = "永久删除" if permanent else "已删除"
+    if cli_ctx.json_output:
+        print_result(cli_ctx, {"id": str(cid), "deleted": True})
     else:
-        print_error(cli_ctx, "NOT_FOUND", "角色不存在")
+        typer.echo(f"✅ 角色 #{character_id} {label}")
 
 
 # ---------------------------------------------------------------------------
@@ -343,19 +305,17 @@ def restore_character(
     cli_ctx: CliContext = ctx.obj
     cid = _parse_uuid(cli_ctx, character_id, "角色不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = CharacterService(repository=SQLiteCharacterRepository(session))
-            return await svc.restore_character(character_id=cid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(f"/characters/{cid}/restore")
 
     character = _run(cli_ctx, _impl)
-    if character is None:
-        print_error(cli_ctx, "NOT_FOUND", "角色不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _character_to_dict(character))
+        print_result(cli_ctx, character)
     else:
-        typer.echo(f"✅ 角色已恢复: [{character.name}]")
+        typer.echo(f"✅ 角色已恢复: [{character['name']}]")
 
 
 # ---------------------------------------------------------------------------
@@ -376,22 +336,24 @@ def relate_characters(
     cid = _parse_uuid(cli_ctx, character_id, "角色不存在")
     to = _parse_uuid(cli_ctx, to_character_id, "角色不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = CharacterService(repository=SQLiteCharacterRepository(session))
-            return await svc.create_relation(
-                character_id=cid,
-                to_character_id=to,
-                relation_type=relation_type,
-                description=description,
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                f"/characters/{cid}/relations",
+                json={
+                    "to_character_id": str(to),
+                    "relation_type": relation_type,
+                    "description": description,
+                },
             )
 
     relation = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, _relation_to_dict(relation))
+        print_result(cli_ctx, relation)
     else:
-        typer.echo(f"✅ 关系已创建: {cid} → {to} ({relation.relation_type})")
+        typer.echo(f"✅ 关系已创建: {cid} → {to} ({relation['relation_type']})")
 
 
 # ---------------------------------------------------------------------------
@@ -417,20 +379,17 @@ def unrelate_characters(
             typer.echo("已取消")
             raise typer.Exit()
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = CharacterService(repository=SQLiteCharacterRepository(session))
-            return await svc.delete_relation(character_id=cid, relation_id=rid)
+    async def _impl() -> None:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            await client.delete(f"/characters/{cid}/relations/{rid}")
 
-    ok = _run(cli_ctx, _impl)
-    if ok:
-        if cli_ctx.json_output:
-            print_result(cli_ctx, {"id": str(rid), "deleted": True})
-        else:
-            typer.echo(f"✅ 关系 #{relation_id} 已删除")
+    _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, {"id": str(rid), "deleted": True})
     else:
-        print_error(cli_ctx, "NOT_FOUND", "关系不存在")
+        typer.echo(f"✅ 关系 #{relation_id} 已删除")
 
 
 # ---------------------------------------------------------------------------
@@ -447,23 +406,24 @@ def list_relations(
     cli_ctx: CliContext = ctx.obj
     cid = _parse_uuid(cli_ctx, character_id, "角色不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = CharacterService(repository=SQLiteCharacterRepository(session))
-            return await svc.list_relations(character_id=cid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/characters/{cid}/relations")
 
-    relations = _run(cli_ctx, _impl)
+    data = _run(cli_ctx, _impl)
+    relations = data.get("items", [])
     if not relations and not cli_ctx.json_output:
         print_result(cli_ctx, "📭 暂无关系")
         return
     if cli_ctx.json_output:
-        print_result(cli_ctx, [_relation_to_dict(r) for r in relations])
+        print_result(cli_ctx, relations)
     else:
         for r in relations:
             typer.echo(
-                f"  [{r.relation_type}] {r.from_character_id} → {r.to_character_id}"
-                f"{': ' + r.description if r.description else ''}"
+                f"  [{r['relation_type']}] {r['from_character_id']} → {r['to_character_id']}"
+                f"{': ' + r['description'] if r.get('description') else ''}"
             )
 
 
@@ -491,40 +451,37 @@ def extract_characters(
         raise typer.Exit(code=2)
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
+    async def _impl() -> dict:
         extract_text = text
         if text_file is not None:
             extract_text = Path(text_file).read_text(encoding="utf-8")
-        request = CharacterExtractRequest(project_id=pid, text=extract_text, model=model)
-        await create_tables()
-        async with async_session_factory() as session:
-            repo = SQLiteCharacterRepository(session)
-            svc = CharacterService(
-                repository=repo,
-                extractor=CharacterExtractor(
-                    llm_client=LangChainLLMClient(),
-                    prompt_manager=LangChainPromptManager(),
-                    repository=repo,
-                ),
-                project_repo=SQLiteProjectRepository(session),
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                "/characters/extract",
+                json={
+                    "project_id": str(pid),
+                    "text": extract_text,
+                    "model": model,
+                },
             )
-            return await svc.extract(request)
 
-    result: CharacterExtractionResult = _run(cli_ctx, _impl)
+    result = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, result.model_dump(mode="json"))
+        print_result(cli_ctx, result)
     else:
-        n_created = len(result.created)
-        n_updated = len(result.updated)
-        n_rel_created = len(result.relations_created)
-        n_rel_updated = len(result.relations_updated)
-        n_warnings = len(result.warnings)
+        n_created = len(result["created"])
+        n_updated = len(result["updated"])
+        n_rel_created = len(result["relations_created"])
+        n_rel_updated = len(result["relations_updated"])
+        n_warnings = len(result["warnings"])
         typer.echo(
             f"✅ 提取完成: 新增 {n_created} 个角色, 更新 {n_updated} 个角色, "
             f"新增 {n_rel_created} 条关系, 更新 {n_rel_updated} 条, 警告 {n_warnings} 条"
         )
         if n_warnings:
-            typer.echo(f"⚠️ 提取完成但有警告: {'; '.join(result.warnings[:3])}")
+            typer.echo(f"⚠️ 提取完成但有警告: {'; '.join(result['warnings'][:3])}")
 
 
 # ---------------------------------------------------------------------------
@@ -543,17 +500,20 @@ def create_group_cmd(
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = CharacterService(repository=SQLiteCharacterRepository(session))
-            return await svc.create_group(project_id=pid, name=name, description=description)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                f"/projects/{pid}/character-groups",
+                json={"name": name, "description": description},
+            )
 
     group = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, _group_to_dict(group))
+        print_result(cli_ctx, group)
     else:
-        typer.echo(f"✅ 分组创建成功: [{group.name}]")
+        typer.echo(f"✅ 分组创建成功: [{group['name']}]")
 
 
 @group_app.command("list")
@@ -565,17 +525,18 @@ def list_groups_cmd(
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = CharacterService(repository=SQLiteCharacterRepository(session))
-            return await svc.list_groups(project_id=pid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/projects/{pid}/character-groups")
 
-    groups = _run(cli_ctx, _impl)
+    data = _run(cli_ctx, _impl)
+    groups = data.get("items", [])
     if not groups and not cli_ctx.json_output:
         print_result(cli_ctx, "📭 暂无分组")
         return
-    print_result(cli_ctx, [_group_to_dict(g) for g in groups])
+    print_result(cli_ctx, groups)
 
 
 @group_app.command("get")
@@ -587,23 +548,21 @@ def get_group_cmd(
     cli_ctx: CliContext = ctx.obj
     gid = _parse_uuid(cli_ctx, group_id, "分组不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = CharacterService(repository=SQLiteCharacterRepository(session))
-            return await svc.get_group(group_id=gid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/character-groups/{gid}")
 
     group = _run(cli_ctx, _impl)
-    if group is None:
-        print_error(cli_ctx, "NOT_FOUND", "分组不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _group_to_dict(group))
+        print_result(cli_ctx, group)
     else:
-        typer.echo(f"ID:         {group.id}")
-        typer.echo(f"名称:       {group.name}")
-        typer.echo(f"说明:       {group.description}")
-        typer.echo(f"排序:       {group.sort_order}")
-        typer.echo(f"创建时间:   {group.created_at}")
+        typer.echo(f"ID:         {group['id']}")
+        typer.echo(f"名称:       {group['name']}")
+        typer.echo(f"说明:       {group['description']}")
+        typer.echo(f"排序:       {group['sort_order']}")
+        typer.echo(f"创建时间:   {group['created_at']}")
 
 
 @group_app.command("update")
@@ -617,19 +576,22 @@ def update_group_cmd(
     cli_ctx: CliContext = ctx.obj
     gid = _parse_uuid(cli_ctx, group_id, "分组不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = CharacterService(repository=SQLiteCharacterRepository(session))
-            return await svc.update_group(group_id=gid, name=name, description=description)
+    async def _impl() -> dict:
+        update_fields: dict[str, Any] = {}
+        if name is not None:
+            update_fields["name"] = name
+        if description is not None:
+            update_fields["description"] = description
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.patch(f"/character-groups/{gid}", json=update_fields)
 
     group = _run(cli_ctx, _impl)
-    if group is None:
-        print_error(cli_ctx, "NOT_FOUND", "分组不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _group_to_dict(group))
+        print_result(cli_ctx, group)
     else:
-        typer.echo(f"✅ 分组已更新: [{group.name}]")
+        typer.echo(f"✅ 分组已更新: [{group['name']}]")
 
 
 @group_app.command("delete")
@@ -648,20 +610,17 @@ def delete_group_cmd(
             typer.echo("已取消")
             raise typer.Exit()
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = CharacterService(repository=SQLiteCharacterRepository(session))
-            return await svc.delete_group(group_id=gid, force=False)
+    async def _impl() -> None:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            await client.delete(f"/character-groups/{gid}")
 
-    ok = _run(cli_ctx, _impl)
-    if ok:
-        if cli_ctx.json_output:
-            print_result(cli_ctx, {"id": str(gid), "deleted": True})
-        else:
-            typer.echo(f"✅ 分组 #{group_id} 已删除")
+    _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, {"id": str(gid), "deleted": True})
     else:
-        print_error(cli_ctx, "NOT_FOUND", "分组不存在")
+        typer.echo(f"✅ 分组 #{group_id} 已删除")
 
 
 # ── 注册 group 子组 ──

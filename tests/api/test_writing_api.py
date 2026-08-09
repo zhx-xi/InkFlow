@@ -1,6 +1,10 @@
 """F3 写作 API 集成测试 — Mock WritingService（不触发真实 LLM 调用）。
 
 TDD RED 阶段：路由尚未注册，预期全部失败。
+
+GREEN 实现契约（Issue #169 spec §3.3，🟡-4）：writing.py _map_service_error 的
+500 LLM 分支须带 headers={"X-InkFlow-Error-Code": "LLM_ERROR"}；404 与其他
+500 分支不带该头。
 """
 
 from __future__ import annotations
@@ -127,13 +131,14 @@ async def test_revise_endpoint(override_writing_service):
 async def test_generate_project_not_found(
     override_writing_service, mock_writing_service
 ):
-    """项目不存在 → 404 \"项目不存在\"。"""
+    """项目不存在 → 404 \"项目不存在\"（不带 X-InkFlow-Error-Code 头，spec §3.3）。"""
     mock_writing_service.generate_chapter.side_effect = LLMRequestError("项目不存在")
     body = {**_payload(), "outline": "测试大纲"}
     async with _client() as client:
         resp = await client.post("/api/v1/writing/generate", json=body)
     assert resp.status_code == 404
     assert resp.json()["detail"] == "项目不存在"
+    assert resp.headers.get("X-InkFlow-Error-Code") is None
 
 
 @pytest.mark.asyncio
@@ -162,7 +167,10 @@ async def test_generate_validation_error(override_writing_service):
 
 @pytest.mark.asyncio
 async def test_generate_llm_error_500(override_writing_service, mock_writing_service):
-    """LLM 调用失败 → 500 + 通用消息（不泄漏内部细节，ADR-012）。"""
+    """LLM 调用失败 → 500 + 通用消息（不泄漏内部细节，ADR-012）。
+
+    Issue #169 🟡-4：须带 X-InkFlow-Error-Code: LLM_ERROR 响应头（spec §3.3）。
+    """
     mock_writing_service.generate_chapter.side_effect = LLMRequestError(
         "API key invalid"
     )
@@ -172,6 +180,7 @@ async def test_generate_llm_error_500(override_writing_service, mock_writing_ser
     assert resp.status_code == 500
     assert resp.json()["detail"] == "LLM 调用失败，请稍后重试"
     assert "API key invalid" not in resp.text
+    assert resp.headers.get("X-InkFlow-Error-Code") == "LLM_ERROR"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -194,7 +203,10 @@ async def test_continue_llm_error_500(override_writing_service, mock_writing_ser
 
 @pytest.mark.asyncio
 async def test_revise_unknown_error_500(override_writing_service, mock_writing_service):
-    """revise 端点未预期异常 → 500「服务器内部错误」（未知异常分支）。"""
+    """revise 端点未预期异常 → 500「服务器内部错误」（未知异常分支）。
+
+    Issue #169 🟡-4：非 LLM 500 不带 X-InkFlow-Error-Code 头（spec §3.3）。
+    """
     mock_writing_service.revise_content.side_effect = RuntimeError("boom")
     body = {
         **_payload(),
@@ -205,6 +217,7 @@ async def test_revise_unknown_error_500(override_writing_service, mock_writing_s
         resp = await client.post("/api/v1/writing/revise", json=body)
     assert resp.status_code == 500
     assert resp.json()["detail"] == "服务器内部错误，请稍后重试"
+    assert resp.headers.get("X-InkFlow-Error-Code") is None
 
 
 @pytest.mark.asyncio

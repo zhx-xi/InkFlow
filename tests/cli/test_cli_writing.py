@@ -1,8 +1,18 @@
-"""CLI 写作命令集成测试 — CliRunner + Mock WritingService。
+"""CLI 写作命令集成测试 — CliRunner + 有状态 fake InkFlowHTTPClient（F38 HTTP mock 轨）.
 
 测试范围：inkflow write next/continue/revise。
 需 pytest marker: @pytest.mark.writing
+
+F38 改造（#169）：mock 目标从 domain Service/LLM 客户端迁移到 ensure_kernel +
+InkFlowHTTPClient（HTTP JSON 响应 + SSE 流式 mock）；create_tables/session/LLM
+patch 已移除（isolated_db 不再需要——命令不再直连 DB）。有状态 fake client
+以内存章节表模拟 GET /chapters/{id}（continue/revise 取章节原文拼请求体）。
+RED 阶段命令模块无 ensure_kernel/InkFlowHTTPClient 属性 → fake_http_client
+fixture 的 patch setup 抛 AttributeError（同根因，预期 RED）。
 """
+
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -13,94 +23,102 @@ from .conftest import _parse_json_output
 
 runner = CliRunner()
 
+_CONTENT = "# 试炼场风波\n\n清晨的薄雾尚未散尽……"
 
-class _FakeWritingService:
-    """CLI 测试用假 WritingService — 返回预设 WritingStreamEvent，不触发真实 LLM.
 
-    F23（spec §4，Q3 拍板）: CLI 默认流式——只消费 stream_generate /
-    stream_continue / stream_revise；非流式三方法保留仅供对照（CLI 不再调用）。
+def _http_err(status_code: int, detail: str, code: str | None = None):
+    """惰性构造 HttpApiError（infrastructure.http RED 阶段不存在，禁顶部 import）."""
+    from inkflow.infrastructure.http import HttpApiError
+
+    return HttpApiError(status_code=status_code, detail=detail, code=code)
+
+
+class _FakeHTTPClient:
+    """有状态 fake InkFlowHTTPClient — 内存章节表模拟，不触发真实 LLM/DB.
+
+    F23（spec §4，Q3 拍板）: CLI 默认流式——只消费 stream_sse（mode 判别）；
+    非流式端点（generate/continue/revise）为兜底路径，本文件用例不触发。
+
+    - get("/chapters/{id}") → 内存章节 dict（content 预置）；未知 id → 404
+    - stream_sse("/writing/stream") → 预置 delta + done 帧（dict 形态，§6.2）
+    - stream_error 置位后 stream_sse 在首帧前抛 HttpApiError（流前错误路径）
     """
 
-    def __init__(self, *args, **kwargs):
-        pass
+    def __init__(self, handle):
+        self.stream_error = None
+        self.chapters = {
+            "22222222-2222-2222-2222-222222222222": {
+                "id": "22222222-2222-2222-2222-222222222222",
+                "title": "试炼场",
+                "content": _CONTENT,
+            }
+        }
 
-    async def generate_chapter(self, request):
-        return _preset_writing_result("generate")
+    async def __aenter__(self):
+        return self
 
-    async def continue_writing(self, request):
-        return _preset_writing_result("continue")
+    async def __aexit__(self, *exc):
+        return False
 
-    async def revise_content(self, request):
-        return _preset_writing_result("revise")
+    async def get(self, path, *, params=None):
+        if path.startswith("/chapters/"):
+            cid = path.rsplit("/", 1)[-1]
+            if cid in self.chapters:
+                return self.chapters[cid]
+            raise _http_err(404, "章节不存在")
+        raise AssertionError(f"unexpected GET {path}")
 
-    async def stream_generate(self, request):
-        for event in _preset_stream_events("generate"):
-            yield event
+    async def post(self, path, *, json=None):
+        raise AssertionError(f"unexpected POST {path}")
 
-    async def stream_continue(self, request):
-        for event in _preset_stream_events("continue"):
-            yield event
+    async def stream_sse(self, path, *, json=None):
+        assert path == "/writing/stream", path
+        assert json is not None and json.get("mode") in (
+            "generate",
+            "continue",
+            "revise",
+        )
+        if self.stream_error is not None:
+            raise self.stream_error
+        yield {"done": False, "delta": _CONTENT}
+        yield {
+            "done": True,
+            "format_valid": True,
+            "word_count": 2347,
+            "model": "deepseek/deepseek-chat",
+            "token_usage": {
+                "prompt_tokens": 1820,
+                "completion_tokens": 2600,
+                "total_tokens": 4420,
+            },
+            "warnings": [],
+        }
 
-    async def stream_revise(self, request):
-        for event in _preset_stream_events("revise"):
-            yield event
 
-
-def _preset_stream_events(mode: str):
-    """F23 流式事件序列 — delta（全文单帧）+ done 帧，镜像 _preset_writing_result 字段."""
-    from inkflow.domain.models.writing import WritingStreamEvent
-    from inkflow.domain.ports.llm_client import TokenUsage
-
-    yield WritingStreamEvent(delta="# 试炼场风波\n\n清晨的薄雾尚未散尽……")
-    yield WritingStreamEvent(
-        done=True,
-        format_valid=True,
-        word_count=2347,
-        model="deepseek/deepseek-chat",
-        token_usage=TokenUsage(
-            prompt_tokens=1820, completion_tokens=2600, total_tokens=4420
-        ),
-        warnings=[],
+@pytest.fixture
+def fake_http_client():
+    """patch ensure_kernel + InkFlowHTTPClient（命令模块命名空间）→ 有状态 fake client."""
+    fake_handle = SimpleNamespace(
+        port=38291,
+        token="test-token",
+        pid=1,
+        version="0.1.0",
+        started_at="",
+        reused=True,
     )
-
-
-def _preset_writing_result(mode: str):
-    from inkflow.domain.models.writing import WritingMode, WritingResult
-    from inkflow.domain.ports.llm_client import TokenUsage
-
-    return WritingResult(
-        content="# 试炼场风波\n\n清晨的薄雾尚未散尽……",
-        word_count=2347,
-        mode=WritingMode(mode),
-        format_valid=True,
-        retry_count=1,
-        model="deepseek/deepseek-chat",
-        token_usage=TokenUsage(
-            prompt_tokens=1820, completion_tokens=2600, total_tokens=4420
+    with (
+        patch(
+            "inkflow.cli.commands.write.ensure_kernel",
+            AsyncMock(return_value=fake_handle),
         ),
-        warnings=[],
-    )
+        patch("inkflow.cli.commands.write.InkFlowHTTPClient") as mock_cls,
+    ):
+        mock_cls.return_value = _FakeHTTPClient(fake_handle)
+        yield mock_cls.return_value
 
 
 class TestWriteCLI:
-    """inkflow write 子命令测试 — Mock WritingService/ChapterService."""
-
-    def _patch_write_services(self, monkeypatch, fake_service):
-        import inkflow.cli.commands.write as write_mod
-
-        monkeypatch.setattr(write_mod, "_build_service", lambda session: fake_service)
-
-        class _FakeChapter:
-            content = "已有内容。" * 30
-
-        class _FakeChapterRepo:
-            def __init__(self, *args, **kwargs):
-                pass
-
-            async def get_chapter(self, chapter_id):
-                return _FakeChapter()
-
-        monkeypatch.setattr(write_mod, "SQLiteChapterRepository", _FakeChapterRepo)
+    """inkflow write 子命令测试 — 有状态 fake HTTP client."""
 
     @pytest.mark.writing
     def test_write_help(self):
@@ -111,9 +129,8 @@ class TestWriteCLI:
         assert all(cmd in result.stdout for cmd in ["next", "continue", "revise"])
 
     @pytest.mark.writing
-    def test_write_next_human(self, isolated_db, monkeypatch):
+    def test_write_next_human(self, fake_http_client):
         """next 默认人类可读输出."""
-        self._patch_write_services(monkeypatch, _FakeWritingService())
         result = runner.invoke(
             app,
             [
@@ -132,9 +149,8 @@ class TestWriteCLI:
         assert "2347 字" in result.output
 
     @pytest.mark.writing
-    def test_write_next_json(self, isolated_db, monkeypatch):
+    def test_write_next_json(self, fake_http_client):
         """next --json 输出 WritingResult JSON."""
-        self._patch_write_services(monkeypatch, _FakeWritingService())
         result = runner.invoke(
             app,
             [
@@ -156,9 +172,8 @@ class TestWriteCLI:
         assert data["format_valid"] is True
 
     @pytest.mark.writing
-    def test_write_continue_json(self, isolated_db, monkeypatch):
+    def test_write_continue_json(self, fake_http_client):
         """continue --json 输出 WritingResult JSON."""
-        self._patch_write_services(monkeypatch, _FakeWritingService())
         result = runner.invoke(
             app,
             [
@@ -179,9 +194,8 @@ class TestWriteCLI:
         assert data["word_count"] == 2347
 
     @pytest.mark.writing
-    def test_write_revise_json(self, isolated_db, monkeypatch):
+    def test_write_revise_json(self, fake_http_client):
         """revise --json 输出 WritingResult JSON."""
-        self._patch_write_services(monkeypatch, _FakeWritingService())
         result = runner.invoke(
             app,
             [
@@ -204,16 +218,11 @@ class TestWriteCLI:
         assert data["word_count"] == 2347
 
     @pytest.mark.writing
-    def test_write_next_llm_error(self, isolated_db, monkeypatch):
-        """LLM 调用失败 → 退出码 1，stderr 输出错误信息（F23: 流中异常 → LLM_ERROR）."""
-        from inkflow.domain.ports.llm_errors import LLMRequestError
-
-        class _FailingService:
-            async def stream_generate(self, request):
-                raise LLMRequestError("LLM 调用失败，请稍后重试")
-                yield  # pragma: no cover — 使函数为 async generator，首个 next() 即抛异常
-
-        self._patch_write_services(monkeypatch, _FailingService())
+    def test_write_next_llm_error(self, fake_http_client):
+        """LLM 调用失败 → 退出码 1，stderr 输出错误信息（F38: 流前 500 + LLM_ERROR 头）."""
+        fake_http_client.stream_error = _http_err(
+            500, "LLM 调用失败，请稍后重试", code="LLM_ERROR"
+        )
         result = runner.invoke(
             app,
             [

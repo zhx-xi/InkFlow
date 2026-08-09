@@ -1,18 +1,15 @@
 """F14 统一提取 CLI 命令 — `inkflow extract <action>`.
 
-薄层设计：仅做参数解析/校验与结果格式化，全部业务委托 ExtractionService
-（spec §4.1）。遵循 F7 §5 全局约定：--json 统一信封
+分层设计：仅做参数解析/校验与结果格式化，业务经 ensure_kernel() + InkFlowHTTPClient
+调用内核 REST API（spec §4.1；Issue #169 CLI 恒经 HTTP）。遵循 F7 §5 全局约定：--json 统一信封
 {"ok": true, "data": ...} / {"ok": false, "error": {"code", "message"}}；
 退出码 0/1/2/130。
 
-错误码映射（spec §4/§7）:
-- UnsupportedExtractionTypeError → UNSUPPORTED_TYPE
-- ProjectNotFoundError / 无效 UUID → NOT_FOUND
-- ExtractionServiceError 子类（类型参数约束/章节校验）与 F16
-  StyleValidationError → VALIDATION_ERROR
-- RAGUnavailableError / VectorStoreError → RAG_ERROR
-- ForeshadowingExtractionError / TimelineExtractionError → EXTRACTION_ERROR
-- LLMRequestError → LLM_ERROR
+错误码映射（spec §4/§7）：
+- HttpApiError：404 → NOT_FOUND、422 → VALIDATION_ERROR、401 → CONFIG_ERROR、
+  500 + X-InkFlow-Error-Code: LLM_ERROR → LLM_ERROR、其余 → INTERNAL_ERROR（spec §5.3）
+- KernelStartupError → KERNEL_ERROR
+- pydantic ValidationError / 文本文件缺失 → VALIDATION_ERROR
 - 其余异常 → DB_ERROR
 
 run 的 --text/--text-file/--chapters 三选一互斥（同 F9 character extract
@@ -26,70 +23,19 @@ from __future__ import annotations
 import asyncio
 import uuid
 from pathlib import Path
-from typing import Any
 
 import typer
 from pydantic import ValidationError
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
-from inkflow.core.database import async_session_factory, create_tables
 from inkflow.domain.models.extraction import (
     ExtractionRequest,
-    ExtractionResult,
-    ExtractionRun,
     ExtractionStatus,
     ExtractionType,
 )
-from inkflow.domain.ports.character_errors import ProjectNotFoundError
-from inkflow.domain.ports.extraction_errors import (
-    ExtractionServiceError,
-    RAGUnavailableError,
-    UnsupportedExtractionTypeError,
-    VectorStoreError,
-)
-from inkflow.domain.ports.foreshadowing_errors import ForeshadowingExtractionError
-from inkflow.domain.ports.llm_errors import LLMRequestError
-from inkflow.domain.ports.style_errors import StyleValidationError
-from inkflow.domain.ports.timeline_errors import TimelineExtractionError
-from inkflow.domain.services._character_extractor import CharacterExtractor
-from inkflow.domain.services._foreshadowing_extractor import ForeshadowingExtractor
-from inkflow.domain.services._outline_generator import OutlineGenerator
-from inkflow.domain.services._style_llm_analyzer import StyleLLMAnalyzer
-from inkflow.domain.services._timeline_extractor import TimelineExtractor
-from inkflow.domain.services._world_extractor import WorldExtractor
-from inkflow.domain.services.character_service import CharacterService
-from inkflow.domain.services.extraction_service import ExtractionService
-from inkflow.domain.services.outline_service import OutlineService
-from inkflow.domain.services.style_service import StyleService
-from inkflow.domain.services.timeline_service import TimelineService
-from inkflow.domain.services.world_service import WorldService
-from inkflow.infrastructure.database.repositories.chapter_repo import (
-    SQLiteChapterRepository,
-)
-from inkflow.infrastructure.database.repositories.character_repo import (
-    SQLiteCharacterRepository,
-)
-from inkflow.infrastructure.database.repositories.extraction_run_repo import (
-    SQLExtractionRunRepository,
-)
-from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
-    SQLiteForeshadowingRepository,
-)
-from inkflow.infrastructure.database.repositories.outline_repo import (
-    SQLiteOutlineRepository,
-)
-from inkflow.infrastructure.database.repositories.project_repo import (
-    SQLiteProjectRepository,
-)
-from inkflow.infrastructure.database.repositories.timeline_repo import (
-    SQLiteTimelineRepository,
-)
-from inkflow.infrastructure.database.repositories.world_repo import (
-    SQLiteWorldRepository,
-)
-from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
-from inkflow.infrastructure.llm.prompt_manager import LangChainPromptManager
+from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 
 app = typer.Typer(name="extract", help="统一提取入口（6 种类型）", no_args_is_help=True)
 
@@ -113,139 +59,55 @@ def _parse_uuid(cli_ctx: CliContext, value: str, message: str) -> uuid.UUID:
         raise typer.Exit(1) from None  # print_error 已退出，此行不可达（静态分析用）
 
 
-def _run(cli_ctx: CliContext, coro_fn) -> Any:
-    """执行服务调用并统一映射领域异常为 F7 错误信封（退出码 1）."""
+def _run(cli_ctx: CliContext, coro_fn):
+    """执行内核调用并统一映射 HTTP 异常为 F7 错误信封（退出码 1）."""
     try:
         return _run_async(coro_fn())
     except typer.Exit:
         raise
-    except ProjectNotFoundError as e:
-        print_error(cli_ctx, "NOT_FOUND", str(e))
-    except UnsupportedExtractionTypeError as e:
-        print_error(cli_ctx, "UNSUPPORTED_TYPE", str(e))
-    except ExtractionServiceError as e:
-        print_error(cli_ctx, "VALIDATION_ERROR", str(e))
-    except StyleValidationError as e:
-        print_error(cli_ctx, "VALIDATION_ERROR", str(e))
-    except (RAGUnavailableError, VectorStoreError) as e:
-        print_error(cli_ctx, "RAG_ERROR", str(e))
-    except (ForeshadowingExtractionError, TimelineExtractionError) as e:
-        print_error(cli_ctx, "EXTRACTION_ERROR", str(e))
-    except LLMRequestError as e:
-        print_error(cli_ctx, "LLM_ERROR", str(e))
+    except HttpApiError as exc:
+        code, message = map_http_error(exc.status_code, exc.detail, exc.code)
+        print_error(cli_ctx, code, message)
+    except KernelStartupError as exc:
+        print_error(cli_ctx, "KERNEL_ERROR", f"内核启动失败: {exc}")
     except ValidationError as e:
         messages = "; ".join(str(err.get("msg", "")) for err in e.errors())
         print_error(cli_ctx, "VALIDATION_ERROR", messages or "参数校验失败")
+    except FileNotFoundError as e:
+        print_error(cli_ctx, "VALIDATION_ERROR", f"文本文件不存在: {e.filename}")
     except Exception as e:
         print_error(cli_ctx, "DB_ERROR", f"内部错误: {e}")
 
 
-def _make_service(session) -> ExtractionService:
-    """构造注入完整依赖的 ExtractionService（ADR-015）.
-
-    向量存储未装配（LangChainVectorStore 归 M6/M7）: vector_store=None，
-    index=true / reindex / retrieve 时门面抛 RAGUnavailableError → RAG_ERROR。
-    STYLE 槽位装配 F16 StyleService（门面恒确定性——llm_analysis 恒 False，
-    LLM 深度分析器装配仅为对齐 get_style_service，spec §8.2）。
-    """
-    project_repo = SQLiteProjectRepository(session)
-    chapter_repo = SQLiteChapterRepository(session)
-    character_repo = SQLiteCharacterRepository(session)
-    world_repo = SQLiteWorldRepository(session)
-    outline_repo = SQLiteOutlineRepository(session)
-    timeline_repo = SQLiteTimelineRepository(session)
-    foreshadowing_repo = SQLiteForeshadowingRepository(session)
-    llm_client = LangChainLLMClient()
-    prompt_manager = LangChainPromptManager()
-    return ExtractionService(
-        project_repo=project_repo,
-        chapter_repo=chapter_repo,
-        run_repo=SQLExtractionRunRepository(session),
-        character_service=CharacterService(
-            repository=character_repo,
-            extractor=CharacterExtractor(
-                llm_client=llm_client,
-                prompt_manager=prompt_manager,
-                repository=character_repo,
-            ),
-            project_repo=project_repo,
-        ),
-        world_service=WorldService(
-            repository=world_repo,
-            extractor=WorldExtractor(
-                llm_client=llm_client,
-                prompt_manager=prompt_manager,
-                repository=world_repo,
-            ),
-            project_repo=project_repo,
-        ),
-        outline_service=OutlineService(
-            repository=outline_repo,
-            generator=OutlineGenerator(
-                llm_client=llm_client,
-                prompt_manager=prompt_manager,
-                repository=outline_repo,
-            ),
-            project_repo=project_repo,
-        ),
-        timeline_service=TimelineService(repository=timeline_repo, project_repo=project_repo),
-        foreshadowing_extractor=ForeshadowingExtractor(
-            llm_client=llm_client,
-            prompt_manager=prompt_manager,
-            foreshadowing_repo=foreshadowing_repo,
-        ),
-        timeline_extractor=TimelineExtractor(
-            llm_client=llm_client,
-            prompt_manager=prompt_manager,
-            timeline_repo=timeline_repo,
-        ),
-        style_service=StyleService(
-            project_repo=project_repo,
-            chapter_repo=chapter_repo,
-            llm_analyzer=StyleLLMAnalyzer(
-                llm_client=llm_client,
-                prompt_manager=prompt_manager,
-            ),
-        ),
-        character_repo=character_repo,
-        world_repo=world_repo,
-        timeline_repo=timeline_repo,
-        foreshadowing_repo=foreshadowing_repo,
-        vector_store=None,
-    )
-
-
-def _summarize(result: ExtractionResult) -> str:
-    """提取结果的人类可读摘要（spec §4.3）。"""
-    if result.status is ExtractionStatus.SKIPPED:
-        reason = result.skipped_reason or "内容未变更"
-        return f"⏭ 提取跳过: {result.type.value} {reason}，未调用 LLM"
+def _summarize(result: dict) -> str:
+    """提取结果的人类可读摘要（spec §4.3）."""
+    if result["status"] == ExtractionStatus.SKIPPED.value:
+        reason = result.get("skipped_reason") or "内容未变更"
+        return f"⏭ 提取跳过: {result['type']} {reason}，未调用 LLM"
     summary = (
-        f"{result.type.value} 处理 {result.processed_sources} 个源"
-        f"（跳过 {result.skipped_sources}），新增 {result.created} 更新 {result.updated}"
+        f"{result['type']} 处理 {result['processed_sources']} 个源"
+        f"（跳过 {result['skipped_sources']}），新增 {result['created']} 更新 {result['updated']}"
     )
-    if result.warnings:
-        summary += f"，警告 {len(result.warnings)} 条"
+    if result.get("warnings"):
+        summary += f"，警告 {len(result['warnings'])} 条"
     return f"✅ 提取完成: {summary}"
 
 
-def _status_line(run: ExtractionRun) -> str:
-    """单条 run 记录的人类可读表达（spec §4.3）。"""
-    if run.status is ExtractionStatus.SUCCESS:
-        tail = f"新增 {run.created_count} 更新 {run.updated_count}"
-        if run.indexed:
+def _status_line(run: dict) -> str:
+    """单条 run 记录的人类可读表达（spec §4.3）."""
+    if run["status"] == ExtractionStatus.SUCCESS.value:
+        tail = f"新增 {run['created_count']} 更新 {run['updated_count']}"
+        if run["indexed"]:
             tail += ", 已索引"
-        return (
-            f"[{run.type.value}] {run.source_key} — ✅ success "
-            f"({run.run_at:%Y-%m-%d %H:%M}, {tail})"
-        )
-    if run.status is ExtractionStatus.SKIPPED:
-        return f"[{run.type.value}] {run.source_key} — ⏭ skipped (内容未变更)"
-    return f"[{run.type.value}] {run.source_key} — ❌ error ({run.error or '提取失败'})"
+        run_at = str(run["run_at"])[:16].replace("T", " ")
+        return f"[{run['type']}] {run['source_key']} — ✅ success ({run_at}, {tail})"
+    if run["status"] == ExtractionStatus.SKIPPED.value:
+        return f"[{run['type']}] {run['source_key']} — ⏭ skipped (内容未变更)"
+    return f"[{run['type']}] {run['source_key']} — ❌ error ({run.get('error') or '提取失败'})"
 
 
 # ---------------------------------------------------------------------------
-# run  —  inkflow extract run --project-id <uuid> --type <type> [--text|--text-file|--chapters] ...
+# run  — inkflow extract run --project-id <uuid> --type <type> [--text|--text-file|--chapters] ...
 # ---------------------------------------------------------------------------
 
 
@@ -277,7 +139,7 @@ def extract_run_cmd(
     auto_extract: bool | None = typer.Option(
         None,
         "--auto-extract/--no-auto-extract",
-        help="timeline 设置项覆盖（缺省跟随项目配置 timeline_auto_extract）",
+        help="timeline 设置项覆盖（缺席跟随项目配置 timeline_auto_extract）",
     ),
     model: str | None = typer.Option(
         None, "--model", help="覆盖项目默认模型 (provider/model_name)"
@@ -288,13 +150,13 @@ def extract_run_cmd(
     """执行统一提取（6 种类型；--text/--text-file/--chapters 三选一）"""
     cli_ctx: CliContext = ctx.obj
     if text and text_file is not None:
-        typer.echo("❌ --text 与 --text-file 不能同时使用", err=True)
+        typer.echo("⚠️ --text 与 --text-file 不能同时使用", err=True)
         raise typer.Exit(code=2)
     if text and chapters is not None:
-        typer.echo("❌ --text 与 --chapters 不能同时使用", err=True)
+        typer.echo("⚠️ --text 与 --chapters 不能同时使用", err=True)
         raise typer.Exit(code=2)
     if text_file is not None and chapters is not None:
-        typer.echo("❌ --text-file 与 --chapters 不能同时使用", err=True)
+        typer.echo("⚠️ --text-file 与 --chapters 不能同时使用", err=True)
         raise typer.Exit(code=2)
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
     chapter_ids: list[uuid.UUID] | None = None
@@ -305,7 +167,7 @@ def extract_run_cmd(
             if part.strip()
         ]
 
-    async def _impl():
+    async def _impl() -> dict:
         extract_text = text if text else None
         if text_file is not None:
             extract_text = Path(text_file).read_text(encoding="utf-8")
@@ -322,19 +184,20 @@ def extract_run_cmd(
             index=index,
             force=force,
         )
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).extract(request=request)
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post("/extract", json=request.model_dump(mode="json"))
 
     result = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, result.model_dump(mode="json"))
+        print_result(cli_ctx, result)
     else:
         typer.echo(_summarize(result))
 
 
 # ---------------------------------------------------------------------------
-# status  —  inkflow extract status --project-id <uuid> [--type <type>]
+# status  — inkflow extract status --project-id <uuid> [--type <type>]
 # ---------------------------------------------------------------------------
 
 
@@ -348,22 +211,23 @@ def extract_status_cmd(
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).list_runs(
-                project_id=pid, type=type, offset=0, limit=50
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(
+                f"/projects/{pid}/extractions/runs",
+                params={"type": type.value if type else None},
             )
 
-    runs, total = _run(cli_ctx, _impl)
+    data = _run(cli_ctx, _impl)
+    runs = data.get("items", [])
+    total = data.get("total", 0)
     if cli_ctx.json_output:
-        print_result(
-            cli_ctx,
-            {"items": [run.model_dump(mode="json") for run in runs], "total": total},
-        )
+        print_result(cli_ctx, {"items": runs, "total": total})
         return
     if not runs:
-        typer.echo("📭 暂无提取记录")
+        typer.echo("📥 暂无提取记录")
         return
     typer.echo(f"📋 提取状态（project {pid}）:")
     for run in runs:

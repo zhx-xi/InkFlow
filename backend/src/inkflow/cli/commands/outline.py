@@ -1,17 +1,18 @@
 """F11 大纲管理 CLI 命令 — `inkflow outline <action>` + `outline point <action>`
 + `outline arc <action>` + `outline generate`.
 
-薄层设计：仅做参数解析/校验与结果格式化，全部业务委托 OutlineService
-（spec §4）。遵循 F7 §5 全局约定：--json 统一信封
+薄层设计：仅做参数解析/校验与结果格式化，业务经 ensure_kernel() +
+InkFlowHTTPClient 调内核 REST API（spec §4；Issue #169 CLI 恒经 HTTP）。
+遵循 F7 §5 全局约定：--json 统一信封
 {"ok": true, "data": ...} / {"ok": false, "error": {"code", "message"}}；
 退出码 0/1/2/130；删除类命令二次确认 + --force；
 --json + 无 --force 的删除 → VALIDATION_ERROR。
 
 错误码映射（spec §4/§7）:
-- OutlineServiceError 子类（同名大纲/弧线、弧线跨项目等）→ VALIDATION_ERROR
-- OutlineNotFoundError / PlotPointNotFoundError / StoryArcNotFoundError /
-  ProjectNotFoundError / 无效 UUID → NOT_FOUND
-- OutlineGenerationError / LLMRequestError → LLM_ERROR
+- HttpApiError：404 → NOT_FOUND、422 → VALIDATION_ERROR、
+  401 → CONFIG_ERROR、500 + LLM_ERROR 头 → LLM_ERROR、其余 → INTERNAL_ERROR
+- KernelStartupError → KERNEL_ERROR
+- pydantic ValidationError / 文本文件缺失 → VALIDATION_ERROR
 - 其余异常 → DB_ERROR
 
 依据: specs/f11-outline-service/spec.md §4/§4.5/§7。
@@ -29,36 +30,8 @@ from pydantic import ValidationError
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
-from inkflow.core.database import async_session_factory, create_tables
-from inkflow.domain.models.outline import (
-    Outline,
-    OutlineGenerateRequest,
-    OutlineGenerationResult,
-    OutlineUpdate,
-    PlotPoint,
-    PlotPointUpdate,
-    StoryArc,
-    StoryArcUpdate,
-)
-from inkflow.domain.ports.llm_errors import LLMRequestError
-from inkflow.domain.ports.outline_errors import (
-    OutlineGenerationError,
-    OutlineNotFoundError,
-    OutlineServiceError,
-    PlotPointNotFoundError,
-    ProjectNotFoundError,
-    StoryArcNotFoundError,
-)
-from inkflow.domain.services._outline_generator import OutlineGenerator
-from inkflow.domain.services.outline_service import OutlineService
-from inkflow.infrastructure.database.repositories.outline_repo import (
-    SQLiteOutlineRepository,
-)
-from inkflow.infrastructure.database.repositories.project_repo import (
-    SQLiteProjectRepository,
-)
-from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
-from inkflow.infrastructure.llm.prompt_manager import LangChainPromptManager
+from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 
 app = typer.Typer(name="outline", help="大纲管理", no_args_is_help=True)
 
@@ -87,24 +60,16 @@ def _parse_uuid(cli_ctx: CliContext, value: str, message: str) -> uuid.UUID:
 
 
 def _run(cli_ctx: CliContext, coro_fn):
-    """执行服务调用并统一映射领域异常为 F7 错误信封（退出码 1）."""
+    """执行内核调用并统一映射 HTTP 异常为 F7 错误信封（退出码 1）."""
     try:
         return _run_async(coro_fn())
     except typer.Exit:
         raise
-    except (
-        OutlineNotFoundError,
-        PlotPointNotFoundError,
-        StoryArcNotFoundError,
-        ProjectNotFoundError,
-    ) as e:
-        print_error(cli_ctx, "NOT_FOUND", str(e))
-    except OutlineGenerationError as e:
-        print_error(cli_ctx, "LLM_ERROR", str(e))
-    except LLMRequestError:
-        print_error(cli_ctx, "LLM_ERROR", "LLM 调用失败，请稍后重试")
-    except OutlineServiceError as e:
-        print_error(cli_ctx, "VALIDATION_ERROR", str(e))
+    except HttpApiError as exc:
+        code, message = map_http_error(exc.status_code, exc.detail, exc.code)
+        print_error(cli_ctx, code, message)
+    except KernelStartupError as exc:
+        print_error(cli_ctx, "KERNEL_ERROR", f"内核启动失败: {exc}")
     except ValidationError as e:
         messages = "; ".join(str(err.get("msg", "")) for err in e.errors())
         print_error(cli_ctx, "VALIDATION_ERROR", messages or "参数校验失败")
@@ -112,35 +77,6 @@ def _run(cli_ctx: CliContext, coro_fn):
         print_error(cli_ctx, "VALIDATION_ERROR", f"文本文件不存在: {e.filename}")
     except Exception as e:
         print_error(cli_ctx, "DB_ERROR", f"内部错误: {e}")
-
-
-def _outline_to_dict(outline: Outline) -> dict:
-    """大纲领域模型 → JSON-safe dict."""
-    return outline.model_dump(mode="json")
-
-
-def _point_to_dict(point: PlotPoint) -> dict:
-    """情节点领域模型 → JSON-safe dict."""
-    return point.model_dump(mode="json")
-
-
-def _arc_to_dict(arc: StoryArc) -> dict:
-    """弧线领域模型 → JSON-safe dict."""
-    return arc.model_dump(mode="json")
-
-
-def _make_service(session):
-    """构造 OutlineService（含生成管线依赖），供各命令复用."""
-    repo = SQLiteOutlineRepository(session)
-    return OutlineService(
-        repository=repo,
-        generator=OutlineGenerator(
-            llm_client=LangChainLLMClient(),
-            prompt_manager=LangChainPromptManager(),
-            repository=repo,
-        ),
-        project_repo=SQLiteProjectRepository(session),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -160,22 +96,24 @@ def create_outline_cmd(
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = OutlineService(repository=SQLiteOutlineRepository(session))
-            return await svc.create_outline(
-                project_id=pid,
-                name=name,
-                description=description,
-                sort_order=sort_order,
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                f"/projects/{pid}/outlines",
+                json={
+                    "name": name,
+                    "description": description,
+                    "sort_order": sort_order,
+                },
             )
 
     outline = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, _outline_to_dict(outline))
+        print_result(cli_ctx, outline)
     else:
-        typer.echo(f"✅ 大纲创建成功: [{outline.name}]")
+        typer.echo(f"✅ 大纲创建成功: [{outline['name']}]")
 
 
 # ---------------------------------------------------------------------------
@@ -201,26 +139,30 @@ def list_outlines_cmd(
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = OutlineService(repository=SQLiteOutlineRepository(session))
-            return await svc.list_outlines(
-                project_id=pid,
-                search=search,
-                sort_by=sort,
-                sort_desc=sort_desc,
-                offset=offset,
-                limit=limit,
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(
+                f"/projects/{pid}/outlines",
+                params={
+                    "search": search,
+                    "sort_by": sort,
+                    "sort_desc": sort_desc,
+                    "offset": offset,
+                    "limit": limit,
+                },
             )
 
-    outlines, total = _run(cli_ctx, _impl)
+    data = _run(cli_ctx, _impl)
+    outlines = data.get("items", [])
+    total = data.get("total", 0)
     if not outlines and not cli_ctx.json_output:
         print_result(cli_ctx, "📭 暂无大纲")
         return
     if not cli_ctx.json_output and total:
         print_result(cli_ctx, f"共 {total} 个大纲")
-    print_result(cli_ctx, [_outline_to_dict(o) for o in outlines])
+    print_result(cli_ctx, outlines)
 
 
 # ---------------------------------------------------------------------------
@@ -237,24 +179,22 @@ def get_outline_cmd(
     cli_ctx: CliContext = ctx.obj
     oid = _parse_uuid(cli_ctx, outline_id, "大纲不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = OutlineService(repository=SQLiteOutlineRepository(session))
-            return await svc.get_outline(outline_id=oid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/outlines/{oid}")
 
     outline = _run(cli_ctx, _impl)
-    if outline is None:
-        print_error(cli_ctx, "NOT_FOUND", "大纲不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _outline_to_dict(outline))
+        print_result(cli_ctx, outline)
     else:
-        typer.echo(f"ID:         {outline.id}")
-        typer.echo(f"名称:       {outline.name}")
-        typer.echo(f"描述:       {outline.description}")
-        typer.echo(f"排序:       {outline.sort_order}")
-        typer.echo(f"创建时间:   {outline.created_at}")
-        typer.echo(f"更新时间:   {outline.updated_at}")
+        typer.echo(f"ID:         {outline['id']}")
+        typer.echo(f"名称:       {outline['name']}")
+        typer.echo(f"描述:       {outline['description']}")
+        typer.echo(f"排序:       {outline['sort_order']}")
+        typer.echo(f"创建时间:   {outline['created_at']}")
+        typer.echo(f"更新时间:   {outline['updated_at']}")
 
 
 # ---------------------------------------------------------------------------
@@ -274,7 +214,7 @@ def update_outline_cmd(
     cli_ctx: CliContext = ctx.obj
     oid = _parse_uuid(cli_ctx, outline_id, "大纲不存在")
 
-    async def _impl():
+    async def _impl() -> dict:
         update_fields: dict[str, Any] = {}
         if name is not None:
             update_fields["name"] = name
@@ -282,19 +222,16 @@ def update_outline_cmd(
             update_fields["description"] = description
         if sort_order is not None:
             update_fields["sort_order"] = sort_order
-        update = OutlineUpdate(**update_fields)
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = OutlineService(repository=SQLiteOutlineRepository(session))
-            return await svc.update_outline(outline_id=oid, update=update)
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.patch(f"/outlines/{oid}", json=update_fields)
 
     outline = _run(cli_ctx, _impl)
-    if outline is None:
-        print_error(cli_ctx, "NOT_FOUND", "大纲不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _outline_to_dict(outline))
+        print_result(cli_ctx, outline)
     else:
-        typer.echo(f"✅ 大纲已更新: [{outline.name}]")
+        typer.echo(f"✅ 大纲已更新: [{outline['name']}]")
 
 
 # ---------------------------------------------------------------------------
@@ -320,21 +257,21 @@ def delete_outline_cmd(
             typer.echo("已取消")
             raise typer.Exit()
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = OutlineService(repository=SQLiteOutlineRepository(session))
-            return await svc.delete_outline(outline_id=oid, force=permanent)
+    async def _impl() -> None:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            await client.delete(
+                f"/outlines/{oid}",
+                params={"force": "true" if permanent else "false"},
+            )
 
-    ok = _run(cli_ctx, _impl)
-    if ok:
-        label = "永久删除" if permanent else "已删除"
-        if cli_ctx.json_output:
-            print_result(cli_ctx, {"id": str(oid), "deleted": True})
-        else:
-            typer.echo(f"✅ 大纲 #{outline_id} {label}")
+    _run(cli_ctx, _impl)
+    label = "永久删除" if permanent else "已删除"
+    if cli_ctx.json_output:
+        print_result(cli_ctx, {"id": str(oid), "deleted": True})
     else:
-        print_error(cli_ctx, "NOT_FOUND", "大纲不存在")
+        typer.echo(f"✅ 大纲 #{outline_id} {label}")
 
 
 # ---------------------------------------------------------------------------
@@ -351,19 +288,17 @@ def restore_outline_cmd(
     cli_ctx: CliContext = ctx.obj
     oid = _parse_uuid(cli_ctx, outline_id, "大纲不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = OutlineService(repository=SQLiteOutlineRepository(session))
-            return await svc.restore_outline(outline_id=oid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(f"/outlines/{oid}/restore")
 
     outline = _run(cli_ctx, _impl)
-    if outline is None:
-        print_error(cli_ctx, "NOT_FOUND", "大纲不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _outline_to_dict(outline))
+        print_result(cli_ctx, outline)
     else:
-        typer.echo(f"✅ 大纲已恢复: [{outline.name}]")
+        typer.echo(f"✅ 大纲已恢复: [{outline['name']}]")
 
 
 # ---------------------------------------------------------------------------
@@ -393,42 +328,47 @@ def generate_outline_cmd(
         raise typer.Exit(code=2)
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
+    async def _impl() -> dict:
         gen_prompt = prompt
         if prompt_file is not None:
             gen_prompt = Path(prompt_file).read_text(encoding="utf-8")
-        request = OutlineGenerateRequest(
-            project_id=pid,
-            name=name,
-            prompt=gen_prompt,
-            num_chapters=num_chapters,
-            save=save,
-            model=model,
-        )
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = _make_service(session)
-            return await svc.generate(request)
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                "/outlines/generate",
+                json={
+                    "project_id": str(pid),
+                    "name": name,
+                    "prompt": gen_prompt,
+                    "num_chapters": num_chapters,
+                    "save": save,
+                    "model": model,
+                },
+            )
 
-    result: OutlineGenerationResult = _run(cli_ctx, _impl)
+    result = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, result.model_dump(mode="json"))
+        print_result(cli_ctx, result)
     else:
-        if result.saved:
-            outline_name = result.outline.name if result.outline else (name or "未命名大纲")
+        if result["saved"]:
+            outline_name = (
+                result["outline"]["name"] if result.get("outline") else (name or "未命名大纲")
+            )
             typer.echo(
-                f"✅ 大纲生成并保存: [{outline_name}]，含 {len(result.plot_points)} 个情节点、"
-                f"{len(result.arcs)} 条弧线"
+                f"✅ 大纲生成并保存: [{outline_name}]，含 {len(result['plot_points'])} 个情节点、"
+                f"{len(result['arcs'])} 条弧线"
             )
         else:
-            n_points = len(result.preview.plot_points) if result.preview else 0
-            n_arcs = len(result.preview.arcs) if result.preview else 0
+            preview = result.get("preview") or {}
+            n_points = len(preview.get("plot_points", []))
+            n_arcs = len(preview.get("arcs", []))
             typer.echo(
                 f"🔍 大纲预览（未保存）: {n_points} 个情节点、{n_arcs} 条弧线 "
                 "—— 使用 --save 保存后落库"
             )
-        if result.warnings:
-            typer.echo(f"⚠️ 生成完成但有警告: {'; '.join(result.warnings[:3])}")
+        if result.get("warnings"):
+            typer.echo(f"⚠️ 生成完成但有警告: {'; '.join(result['warnings'][:3])}")
 
 
 # ---------------------------------------------------------------------------
@@ -445,17 +385,18 @@ def list_points_cmd(
     cli_ctx: CliContext = ctx.obj
     oid = _parse_uuid(cli_ctx, outline_id, "大纲不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = OutlineService(repository=SQLiteOutlineRepository(session))
-            return await svc.list_points(outline_id=oid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/outlines/{oid}/plot-points")
 
-    points = _run(cli_ctx, _impl)
+    data = _run(cli_ctx, _impl)
+    points = data.get("items", [])
     if not points and not cli_ctx.json_output:
         print_result(cli_ctx, "📭 暂无情节点")
         return
-    print_result(cli_ctx, [_point_to_dict(p) for p in points])
+    print_result(cli_ctx, points)
 
 
 @point_app.command("create")
@@ -475,25 +416,27 @@ def create_point_cmd(
     oid = _parse_uuid(cli_ctx, outline_id, "大纲不存在")
     aid = _parse_uuid(cli_ctx, arc_id, "弧线不存在") if arc_id is not None else None
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = OutlineService(repository=SQLiteOutlineRepository(session))
-            return await svc.create_point(
-                outline_id=oid,
-                name=name,
-                type=type,
-                description=description,
-                position=position,
-                arc_id=aid,
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                f"/outlines/{oid}/plot-points",
+                json={
+                    "name": name,
+                    "type": type,
+                    "description": description,
+                    "position": position,
+                    "arc_id": str(aid) if aid is not None else None,
+                },
             )
 
     point = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, _point_to_dict(point))
+        print_result(cli_ctx, point)
     else:
-        type_suffix = f" ({point.type})" if point.type else ""
-        typer.echo(f"✅ 情节点创建成功: [{point.name}]{type_suffix}")
+        type_suffix = f" ({point['type']})" if point["type"] else ""
+        typer.echo(f"✅ 情节点创建成功: [{point['name']}]{type_suffix}")
 
 
 @point_app.command("update")
@@ -512,7 +455,7 @@ def update_point_cmd(
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, point_id, "情节点不存在")
 
-    async def _impl():
+    async def _impl() -> dict:
         update_fields: dict[str, Any] = {}
         if name is not None:
             update_fields["name"] = name
@@ -524,21 +467,18 @@ def update_point_cmd(
             update_fields["position"] = position
         if arc_id is not None:
             update_fields["arc_id"] = (
-                "" if arc_id == "" else _parse_uuid(cli_ctx, arc_id, "弧线不存在")
+                "" if arc_id == "" else str(_parse_uuid(cli_ctx, arc_id, "弧线不存在"))
             )
-        update = PlotPointUpdate(**update_fields)
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = OutlineService(repository=SQLiteOutlineRepository(session))
-            return await svc.update_point(point_id=pid, update=update)
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.patch(f"/plot-points/{pid}", json=update_fields)
 
     point = _run(cli_ctx, _impl)
-    if point is None:
-        print_error(cli_ctx, "NOT_FOUND", "情节点不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _point_to_dict(point))
+        print_result(cli_ctx, point)
     else:
-        typer.echo(f"✅ 情节点已更新: [{point.name}]")
+        typer.echo(f"✅ 情节点已更新: [{point['name']}]")
 
 
 @point_app.command("delete")
@@ -557,20 +497,17 @@ def delete_point_cmd(
             typer.echo("已取消")
             raise typer.Exit()
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = OutlineService(repository=SQLiteOutlineRepository(session))
-            return await svc.delete_point(point_id=pid, force=False)
+    async def _impl() -> None:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            await client.delete(f"/plot-points/{pid}")
 
-    ok = _run(cli_ctx, _impl)
-    if ok:
-        if cli_ctx.json_output:
-            print_result(cli_ctx, {"id": str(pid), "deleted": True})
-        else:
-            typer.echo(f"✅ 情节点 #{point_id} 已删除")
+    _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, {"id": str(pid), "deleted": True})
     else:
-        print_error(cli_ctx, "NOT_FOUND", "情节点不存在")
+        typer.echo(f"✅ 情节点 #{point_id} 已删除")
 
 
 # ---------------------------------------------------------------------------
@@ -587,17 +524,18 @@ def list_arcs_cmd(
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = OutlineService(repository=SQLiteOutlineRepository(session))
-            return await svc.list_arcs(project_id=pid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/projects/{pid}/story-arcs")
 
-    arcs = _run(cli_ctx, _impl)
+    data = _run(cli_ctx, _impl)
+    arcs = data.get("items", [])
     if not arcs and not cli_ctx.json_output:
         print_result(cli_ctx, "📭 暂无弧线")
         return
-    print_result(cli_ctx, [_arc_to_dict(a) for a in arcs])
+    print_result(cli_ctx, arcs)
 
 
 @arc_app.command("create")
@@ -611,17 +549,20 @@ def create_arc_cmd(
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = OutlineService(repository=SQLiteOutlineRepository(session))
-            return await svc.create_arc(project_id=pid, name=name, description=description)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                f"/projects/{pid}/story-arcs",
+                json={"name": name, "description": description},
+            )
 
     arc = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, _arc_to_dict(arc))
+        print_result(cli_ctx, arc)
     else:
-        typer.echo(f"✅ 弧线创建成功: [{arc.name}]")
+        typer.echo(f"✅ 弧线创建成功: [{arc['name']}]")
 
 
 @arc_app.command("update")
@@ -635,25 +576,22 @@ def update_arc_cmd(
     cli_ctx: CliContext = ctx.obj
     aid = _parse_uuid(cli_ctx, arc_id, "弧线不存在")
 
-    async def _impl():
+    async def _impl() -> dict:
         update_fields: dict[str, Any] = {}
         if name is not None:
             update_fields["name"] = name
         if description is not None:
             update_fields["description"] = description
-        update = StoryArcUpdate(**update_fields)
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = OutlineService(repository=SQLiteOutlineRepository(session))
-            return await svc.update_arc(arc_id=aid, update=update)
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.patch(f"/story-arcs/{aid}", json=update_fields)
 
     arc = _run(cli_ctx, _impl)
-    if arc is None:
-        print_error(cli_ctx, "NOT_FOUND", "弧线不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _arc_to_dict(arc))
+        print_result(cli_ctx, arc)
     else:
-        typer.echo(f"✅ 弧线已更新: [{arc.name}]")
+        typer.echo(f"✅ 弧线已更新: [{arc['name']}]")
 
 
 @arc_app.command("delete")
@@ -672,20 +610,17 @@ def delete_arc_cmd(
             typer.echo("已取消")
             raise typer.Exit()
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = OutlineService(repository=SQLiteOutlineRepository(session))
-            return await svc.delete_arc(arc_id=aid, force=False)
+    async def _impl() -> None:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            await client.delete(f"/story-arcs/{aid}")
 
-    ok = _run(cli_ctx, _impl)
-    if ok:
-        if cli_ctx.json_output:
-            print_result(cli_ctx, {"id": str(aid), "deleted": True})
-        else:
-            typer.echo(f"✅ 弧线 #{arc_id} 已删除")
+    _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, {"id": str(aid), "deleted": True})
     else:
-        print_error(cli_ctx, "NOT_FOUND", "弧线不存在")
+        typer.echo(f"✅ 弧线 #{arc_id} 已删除")
 
 
 # ── 注册 point / arc 子组 ──

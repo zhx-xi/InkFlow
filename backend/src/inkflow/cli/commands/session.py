@@ -1,22 +1,22 @@
 """F24 会话管理 CLI 命令 — `inkflow session <action>` + `session log <action>`.
 
-薄层设计：仅做参数解析/校验与结果格式化，全部业务委托 SessionService
-（spec §4）。遵循 F7 §5 全局约定：--json 统一信封
-{"ok": true, "data": ...} / {"ok": false, "error": {"code", "message"}}；
+薄层设计：仅做参数解析/校验与结果格式化，业务经 ensure_kernel() + InkFlowHTTPClient
+调用内核 REST API（spec §4；Issue #169 CLI 恒经 HTTP）。遵循 F7 §5 全局约定：
+--json 统一信封 {"ok": true, "data": ...} / {"ok": false, "error": {"code", "message"}}；
 退出码 0/1/2。
 
-错误码映射（spec §4/§7）:
-- SessionServiceError（含 SessionTransitionError）/ pydantic ValidationError
-  → VALIDATION_ERROR
-- SessionNotFoundError / ProjectNotFoundError / 无效 UUID → NOT_FOUND
-- 其余异常 → DB_ERROR（"内部错误: ..."）；typer 参数解析错误（非法枚举、
-  --context-json/--context-file 互斥等）→ 退出码 2
+错误码映射（spec §4/§7 + F38 §5.3）:
+- HttpApiError：404 → NOT_FOUND、422 → VALIDATION_ERROR、401 → CONFIG_ERROR、
+  500 + X-InkFlow-Error-Code: LLM_ERROR → LLM_ERROR、其余 → INTERNAL_ERROR
+- KernelStartupError → KERNEL_ERROR
+- pydantic ValidationError → VALIDATION_ERROR；其余异常 → DB_ERROR
+- typer 参数解析错误（非法枚举、--context-json/--context-file 互斥等）→ 退出码 2
 
 状态机命令（spec §2.4）：pause（active→paused）/ resume（paused→active）/
 complete（active|paused→completed）/ fail（active|paused→failed）。
 删除为两级语义（spec §2.5）：默认归档（force=False）、--force 直删。
 
-依据: specs/f24-session-service/spec.md §4/§7。
+依据: specs/f24-session-service/spec.md §4/§7 + specs/f38-cli-http/spec.md §3.1/§5.3。
 """
 
 from __future__ import annotations
@@ -33,7 +33,6 @@ from pydantic import BaseModel, ValidationError
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
-from inkflow.core.database import async_session_factory, create_tables
 from inkflow.domain.models.session import (
     LogLevel,
     Session,
@@ -42,23 +41,12 @@ from inkflow.domain.models.session import (
     SessionFail,
     SessionLogCreate,
     SessionLogEntry,
-    SessionStatus,
     SessionType,
     SessionUpdate,
     SessionView,
 )
-from inkflow.domain.ports.character_errors import ProjectNotFoundError
-from inkflow.domain.ports.session_errors import (
-    SessionNotFoundError,
-    SessionServiceError,
-)
-from inkflow.domain.services.session_service import SessionService
-from inkflow.infrastructure.database.repositories.project_repo import (
-    SQLiteProjectRepository,
-)
-from inkflow.infrastructure.database.repositories.session_repo import (
-    SQLiteSessionRepository,
-)
+from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 
 app = typer.Typer(name="session", help="会话管理", no_args_is_help=True)
 
@@ -85,15 +73,16 @@ def _parse_uuid(cli_ctx: CliContext, value: str, message: str) -> uuid.UUID:
 
 
 def _run(cli_ctx: CliContext, coro_fn):
-    """执行服务调用并统一映射领域异常为 F7 错误信封（退出码 1）."""
+    """执行内核调用并统一映射 HTTP 异常为 F7 错误信封（退出码 1）."""
     try:
         return _run_async(coro_fn())
     except typer.Exit:
         raise
-    except (SessionNotFoundError, ProjectNotFoundError) as e:
-        print_error(cli_ctx, "NOT_FOUND", str(e))
-    except SessionServiceError as e:
-        print_error(cli_ctx, "VALIDATION_ERROR", str(e))
+    except HttpApiError as exc:
+        code, message = map_http_error(exc.status_code, exc.detail, exc.code)
+        print_error(cli_ctx, code, message)
+    except KernelStartupError as exc:
+        print_error(cli_ctx, "KERNEL_ERROR", f"内核启动失败: {exc}")
     except ValidationError as e:
         messages = "; ".join(str(err.get("msg", "")) for err in e.errors())
         print_error(cli_ctx, "VALIDATION_ERROR", messages or "参数校验失败")
@@ -170,14 +159,6 @@ def _resolve_context(context_json: str | None, context_file: str | None) -> dict
     return {}
 
 
-def _make_service(session) -> SessionService:
-    """构造注入完整依赖的 SessionService（ADR-015）."""
-    return SessionService(
-        repository=SQLiteSessionRepository(session),
-        project_repo=SQLiteProjectRepository(session),
-    )
-
-
 # ---------------------------------------------------------------------------
 # create  —  inkflow session create --type <writing|task> [--project-id] ...
 # ---------------------------------------------------------------------------
@@ -212,16 +193,19 @@ def create_session_cmd(
         context=context,
     )
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).create(data=data)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                "/sessions", json=data.model_dump(mode="json", exclude_none=True)
+            )
 
-    view = _run(cli_ctx, _impl)
+    view = _view_to_dict(SessionView.model_validate(_run(cli_ctx, _impl)))
     if cli_ctx.json_output:
-        print_result(cli_ctx, _view_to_dict(view))
+        print_result(cli_ctx, view)
     else:
-        typer.echo(f"✅ 会话创建成功: [{view.session.title}]")
+        typer.echo(f"✅ 会话创建成功: [{view['session']['title']}]")
 
 
 # ---------------------------------------------------------------------------
@@ -247,37 +231,44 @@ def list_sessions_cmd(
     _require_enum(status, ("active", "paused", "completed", "failed"), "--status")
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在") if project_id is not None else None
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).list(
-                session_type=SessionType(session_type) if session_type else None,
-                status=SessionStatus(status) if status else None,
-                project_id=pid,
-                search=search,
-                limit=limit,
-                offset=offset,
-            )
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            params: dict[str, Any] = {"limit": limit, "offset": offset}
+            if session_type is not None:
+                params["session_type"] = session_type
+            if status is not None:
+                params["status"] = status
+            if pid is not None:
+                params["project_id"] = str(pid)
+            if search is not None:
+                params["search"] = search
+            return await client.get("/sessions", params=params)
 
-    items, total = _run(cli_ctx, _impl)
+    data = _run(cli_ctx, _impl)
+    items = data["items"]
+    total = data["total"]
     if cli_ctx.json_output:
         print_result(
             cli_ctx,
             {
-                "items": [_view_to_dict(v) for v in items],
+                "items": [_view_to_dict(SessionView.model_validate(item)) for item in items],
                 "total": total,
-                "offset": offset,
-                "limit": limit,
+                "offset": data["offset"],
+                "limit": data["limit"],
             },
         )
         return
+    items = [_view_to_dict(SessionView.model_validate(item)) for item in items]
     if not items:
         typer.echo("📭 暂无会话")
         return
-    for v in items:
+    for item in items:
         typer.echo(
-            f"[{v.session.id}] {v.session.title} "
-            f"({v.session.session_type.value}/{v.session.status.value}) — 日志 {v.log_count} 条"
+            f"[{item['session']['id']}] {item['session']['title']} "
+            f"({item['session']['session_type']}/{item['session']['status']})"
+            f" — 日志 {item['log_count']} 条"
         )
     typer.echo(f"共 {total} 个会话")
 
@@ -296,24 +287,26 @@ def get_session_cmd(
     cli_ctx: CliContext = ctx.obj
     sid = _parse_uuid(cli_ctx, session_id, "会话不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).get(session_id=sid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/sessions/{sid}")
 
     view = _run(cli_ctx, _impl)
     if view is None:
         print_error(cli_ctx, "NOT_FOUND", "会话不存在")
+    view = _view_to_dict(SessionView.model_validate(view))
     if cli_ctx.json_output:
-        print_result(cli_ctx, _view_to_dict(view))
+        print_result(cli_ctx, view)
     else:
         typer.echo(
-            f"会话: {view.session.title} "
-            f"({view.session.session_type.value}/{view.session.status.value})"
+            f"会话: {view['session']['title']} "
+            f"({view['session']['session_type']}/{view['session']['status']})"
         )
-        typer.echo(f"项目: {view.session.project_id}")
-        typer.echo(f"开始: {view.session.started_at} | 日志: {view.log_count} 条")
-        typer.echo(f"上下文: {view.session.context}")
+        typer.echo(f"项目: {view['session']['project_id']}")
+        typer.echo(f"开始: {view['session']['started_at']} | 日志: {view['log_count']} 条")
+        typer.echo(f"上下文: {view['session']['context']}")
 
 
 # ---------------------------------------------------------------------------
@@ -342,18 +335,23 @@ def update_session_cmd(
         update_fields["context"] = _parse_json_value(context_json, "--context-json")
     data = SessionUpdate(**update_fields)
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).update(session_id=sid, data=data)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.patch(
+                f"/sessions/{sid}",
+                json=data.model_dump(mode="json", exclude_none=True),
+            )
 
     updated = _run(cli_ctx, _impl)
     if updated is None:
         print_error(cli_ctx, "NOT_FOUND", "会话不存在")
+    updated = _session_to_dict(Session.model_validate(updated))
     if cli_ctx.json_output:
-        print_result(cli_ctx, _session_to_dict(updated))
+        print_result(cli_ctx, updated)
     else:
-        typer.echo(f"✅ 会话已更新: [{updated.title}]")
+        typer.echo(f"✅ 会话已更新: [{updated['title']}]")
 
 
 # ---------------------------------------------------------------------------
@@ -370,16 +368,17 @@ def pause_session_cmd(
     cli_ctx: CliContext = ctx.obj
     sid = _parse_uuid(cli_ctx, session_id, "会话不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).pause(session_id=sid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(f"/sessions/{sid}/pause")
 
-    session = _run(cli_ctx, _impl)
+    session = _session_to_dict(Session.model_validate(_run(cli_ctx, _impl)))
     if cli_ctx.json_output:
-        print_result(cli_ctx, _session_to_dict(session))
+        print_result(cli_ctx, session)
     else:
-        typer.echo(f"✅ 会话已暂停: [{session.title}]")
+        typer.echo(f"✅ 会话已暂停: [{session['title']}]")
 
 
 @app.command("resume")
@@ -391,16 +390,17 @@ def resume_session_cmd(
     cli_ctx: CliContext = ctx.obj
     sid = _parse_uuid(cli_ctx, session_id, "会话不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).resume(session_id=sid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(f"/sessions/{sid}/resume")
 
-    session = _run(cli_ctx, _impl)
+    session = _session_to_dict(Session.model_validate(_run(cli_ctx, _impl)))
     if cli_ctx.json_output:
-        print_result(cli_ctx, _session_to_dict(session))
+        print_result(cli_ctx, session)
     else:
-        typer.echo(f"✅ 会话已恢复: [{session.title}]")
+        typer.echo(f"✅ 会话已恢复: [{session['title']}]")
 
 
 @app.command("complete")
@@ -415,16 +415,20 @@ def complete_session_cmd(
     result = _parse_json_value(result_json, "--result-json") if result_json is not None else {}
     data = SessionComplete(result=result)
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).complete(session_id=sid, data=data)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                f"/sessions/{sid}/complete",
+                json=data.model_dump(mode="json", exclude_none=True),
+            )
 
-    session = _run(cli_ctx, _impl)
+    session = _session_to_dict(Session.model_validate(_run(cli_ctx, _impl)))
     if cli_ctx.json_output:
-        print_result(cli_ctx, _session_to_dict(session))
+        print_result(cli_ctx, session)
     else:
-        typer.echo(f"✅ 会话已完成: [{session.title}]")
+        typer.echo(f"✅ 会话已完成: [{session['title']}]")
 
 
 @app.command("fail")
@@ -438,16 +442,20 @@ def fail_session_cmd(
     sid = _parse_uuid(cli_ctx, session_id, "会话不存在")
     data = SessionFail(error=error)
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).fail(session_id=sid, data=data)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                f"/sessions/{sid}/fail",
+                json=data.model_dump(mode="json", exclude_none=True),
+            )
 
-    session = _run(cli_ctx, _impl)
+    session = _session_to_dict(Session.model_validate(_run(cli_ctx, _impl)))
     if cli_ctx.json_output:
-        print_result(cli_ctx, _session_to_dict(session))
+        print_result(cli_ctx, session)
     else:
-        typer.echo(f"✅ 会话已失败: [{session.title}]")
+        typer.echo(f"✅ 会话已失败: [{session['title']}]")
 
 
 # ---------------------------------------------------------------------------
@@ -466,30 +474,34 @@ def list_logs_cmd(
     cli_ctx: CliContext = ctx.obj
     sid = _parse_uuid(cli_ctx, session_id, "会话不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).list_logs(
-                session_id=sid, limit=limit, offset=offset
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(
+                f"/sessions/{sid}/logs", params={"limit": limit, "offset": offset}
             )
 
-    items, total = _run(cli_ctx, _impl)
+    data = _run(cli_ctx, _impl)
+    items = data["items"]
+    total = data["total"]
     if cli_ctx.json_output:
         print_result(
             cli_ctx,
             {
-                "items": [_log_to_dict(entry) for entry in items],
+                "items": [_log_to_dict(SessionLogEntry.model_validate(item)) for item in items],
                 "total": total,
-                "offset": offset,
-                "limit": limit,
+                "offset": data["offset"],
+                "limit": data["limit"],
             },
         )
         return
+    items = [_log_to_dict(SessionLogEntry.model_validate(item)) for item in items]
     if not items:
         typer.echo("📭 暂无日志")
         return
     for entry in items:
-        typer.echo(f"#{entry.seq} [{entry.level.value}] {entry.message}")
+        typer.echo(f"#{entry['seq']} [{entry['level']}] {entry['message']}")
     typer.echo(f"共 {total} 条日志")
 
 
@@ -513,16 +525,20 @@ def add_log_cmd(
     payload = _parse_json_value(payload_json, "--payload-json") if payload_json is not None else {}
     data = SessionLogCreate(level=LogLevel(level), message=message, payload=payload)
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).add_log(session_id=sid, data=data)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                f"/sessions/{sid}/logs",
+                json=data.model_dump(mode="json", exclude_none=True),
+            )
 
-    entry = _run(cli_ctx, _impl)
+    entry = _log_to_dict(SessionLogEntry.model_validate(_run(cli_ctx, _impl)))
     if cli_ctx.json_output:
-        print_result(cli_ctx, _log_to_dict(entry))
+        print_result(cli_ctx, entry)
     else:
-        typer.echo(f"✅ 日志已添加: #{entry.seq} [{entry.level.value}] {entry.message}")
+        typer.echo(f"✅ 日志已添加: #{entry['seq']} [{entry['level']}] {entry['message']}")
 
 
 # ---------------------------------------------------------------------------
@@ -540,10 +556,12 @@ def delete_session_cmd(
     cli_ctx: CliContext = ctx.obj
     sid = _parse_uuid(cli_ctx, session_id, "会话不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).delete(session_id=sid, force=force)
+    async def _impl() -> bool:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            await client.delete(f"/sessions/{sid}", params={"force": force})
+            return True
 
     ok = _run(cli_ctx, _impl)
     if ok:
@@ -564,18 +582,20 @@ def restore_session_cmd(
     cli_ctx: CliContext = ctx.obj
     sid = _parse_uuid(cli_ctx, session_id, "会话不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).restore(session_id=sid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(f"/sessions/{sid}/restore")
 
     restored = _run(cli_ctx, _impl)
     if restored is None:
         print_error(cli_ctx, "NOT_FOUND", "会话不存在")
+    restored = _session_to_dict(Session.model_validate(restored))
     if cli_ctx.json_output:
-        print_result(cli_ctx, _session_to_dict(restored))
+        print_result(cli_ctx, restored)
     else:
-        typer.echo(f"✅ 会话已恢复: [{restored.title}]")
+        typer.echo(f"✅ 会话已恢复: [{restored['title']}]")
 
 
 # ── 注册 log 子组 ──

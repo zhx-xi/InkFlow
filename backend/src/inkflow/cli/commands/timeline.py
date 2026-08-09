@@ -1,14 +1,16 @@
 """F12 时间线管理 CLI 命令 — `inkflow timeline <action>`.
 
-薄层设计：仅做参数解析/校验与结果格式化，全部业务委托 TimelineService
-（spec §4）。遵循 F7 §5 全局约定：--json 统一信封
+分层设计：仅做参数解析/校验与结果格式化，业务经 ensure_kernel() + InkFlowHTTPClient
+调用内核 REST API（spec §4；Issue #169 CLI 恒经 HTTP）。遵循 F7 §5 全局约定：--json 统一信封
 {"ok": true, "data": ...} / {"ok": false, "error": {"code", "message"}}；
 退出码 0/1/2/130；删除类命令二次确认 + --force；
 --json + 无 --force 的删除 → VALIDATION_ERROR。
 
-错误码映射（spec §4/§7）:
-- TimelineServiceError → VALIDATION_ERROR
-- TimelineNotFoundError / ProjectNotFoundError / 无效 UUID → NOT_FOUND
+错误码映射（spec §4/§7）：
+- HttpApiError：404 → NOT_FOUND、422 → VALIDATION_ERROR、401 → CONFIG_ERROR、
+  500 + LLM_ERROR 头 → LLM_ERROR、其余 → INTERNAL_ERROR（spec §5.3）
+- KernelStartupError → KERNEL_ERROR
+- pydantic ValidationError / 非法数值 → VALIDATION_ERROR
 - 其余异常 → DB_ERROR（F12 无 LLM，无 LLM_ERROR）
 
 依据: specs/f12-timeline-service/spec.md §4/§7。
@@ -25,20 +27,9 @@ from pydantic import ValidationError
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
-from inkflow.core.database import async_session_factory, create_tables
-from inkflow.domain.models.timeline import TimelineEvent, TimelineEventUpdate
-from inkflow.domain.ports.timeline_errors import (
-    ProjectNotFoundError,
-    TimelineNotFoundError,
-    TimelineServiceError,
-)
-from inkflow.domain.services.timeline_service import TimelineService
-from inkflow.infrastructure.database.repositories.project_repo import (
-    SQLiteProjectRepository,
-)
-from inkflow.infrastructure.database.repositories.timeline_repo import (
-    SQLiteTimelineRepository,
-)
+from inkflow.domain.models.timeline import TimelineEventUpdate
+from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 
 app = typer.Typer(name="timeline", help="时间线管理", no_args_is_help=True)
 
@@ -63,15 +54,16 @@ def _parse_uuid(cli_ctx: CliContext, value: str, message: str) -> uuid.UUID:
 
 
 def _run(cli_ctx: CliContext, coro_fn):
-    """执行服务调用并统一映射领域异常为 F7 错误信封（退出码 1）."""
+    """执行内核调用并统一映射 HTTP 异常为 F7 错误信封（退出码 1）."""
     try:
         return _run_async(coro_fn())
     except typer.Exit:
         raise
-    except (TimelineNotFoundError, ProjectNotFoundError) as e:
-        print_error(cli_ctx, "NOT_FOUND", str(e))
-    except TimelineServiceError as e:
-        print_error(cli_ctx, "VALIDATION_ERROR", str(e))
+    except HttpApiError as exc:
+        code, message = map_http_error(exc.status_code, exc.detail, exc.code)
+        print_error(cli_ctx, code, message)
+    except KernelStartupError as exc:
+        print_error(cli_ctx, "KERNEL_ERROR", f"内核启动失败: {exc}")
     except ValidationError as e:
         messages = "; ".join(str(err.get("msg", "")) for err in e.errors())
         print_error(cli_ctx, "VALIDATION_ERROR", messages or "参数校验失败")
@@ -79,20 +71,15 @@ def _run(cli_ctx: CliContext, coro_fn):
         print_error(cli_ctx, "DB_ERROR", f"内部错误: {e}")
 
 
-def _event_to_dict(event: TimelineEvent) -> dict:
-    """时间线事件领域模型 → JSON-safe dict."""
-    return event.model_dump(mode="json")
-
-
-def _time_label(event: TimelineEvent) -> str:
+def _time_label(event: dict) -> str:
     """事件时间的人类可读表达（time_display 优先，缺失回退数值；未知 = 时间未知）."""
-    if event.time_value is None and not event.time_display:
+    if event.get("time_value") is None and not event.get("time_display"):
         return "时间未知"
-    return event.time_display or str(event.time_value)
+    return event.get("time_display") or str(event.get("time_value"))
 
 
 # ---------------------------------------------------------------------------
-# create  —  inkflow timeline create --project-id <uuid> --title <str> ...
+# create  — inkflow timeline create --project-id <uuid> --title <str> ...
 # ---------------------------------------------------------------------------
 
 
@@ -103,14 +90,14 @@ def create_event_cmd(
     title: str = typer.Option(..., "--title", "-t", help="事件标题（1-100 字符）"),
     description: str = typer.Option("", "--description", "-d", help="事件描述"),
     time_value: float | None = typer.Option(
-        None, "--time-value", help="世界内时间数值键（缺省 = 时间未知）"
+        None, "--time-value", help="世界内时间数值键（缺席 = 时间未知）"
     ),
     time_unit: str = typer.Option("", "--time-unit", help="时间单位标签（仅语义）"),
     time_display: str = typer.Option(
-        "", "--time-display", help="原始时间表达（如「青元历 317 年秋」）"
+        "", "--time-display", help="原始时间表达（如「青元历 317 年初」）"
     ),
     narrative_position: int | None = typer.Option(
-        None, "--narrative-position", help="叙事位置（缺省 = 叙事末尾追加）"
+        None, "--narrative-position", help="叙事位置（缺席 = 叙事末尾追加）"
     ),
     timeline_flag: str = typer.Option(
         "", "--timeline-flag", help="时间线标记（flashback / flashforward）"
@@ -120,36 +107,35 @@ def create_event_cmd(
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = TimelineService(
-                repository=SQLiteTimelineRepository(session),
-                project_repo=SQLiteProjectRepository(session),
-            )
-            return await svc.create_event(
-                project_id=pid,
-                title=title,
-                description=description,
-                time_value=time_value,
-                time_unit=time_unit,
-                time_display=time_display,
-                narrative_position=narrative_position,
-                timeline_flag=timeline_flag,
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                f"/projects/{pid}/timeline/events",
+                json={
+                    "title": title,
+                    "description": description,
+                    "time_value": time_value,
+                    "time_unit": time_unit,
+                    "time_display": time_display,
+                    "narrative_position": narrative_position,
+                    "timeline_flag": timeline_flag,
+                },
             )
 
     event = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, _event_to_dict(event))
+        print_result(cli_ctx, event)
     else:
         typer.echo(
-            f"✅ 事件创建成功: [{event.title}]"
-            f"（{_time_label(event)}，叙事第 {event.narrative_position} 位）"
+            f"✅ 事件创建成功: [{event['title']}]"
+            f"（{_time_label(event)}，叙事第 {event['narrative_position']} 位）"
         )
 
 
 # ---------------------------------------------------------------------------
-# list  —  inkflow timeline list --project-id <uuid> [--search] [--sort] ...
+# list  — inkflow timeline list --project-id <uuid> [--search] [--sort] ...
 # ---------------------------------------------------------------------------
 
 
@@ -171,34 +157,31 @@ def list_events_cmd(
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = TimelineService(
-                repository=SQLiteTimelineRepository(session),
-                project_repo=SQLiteProjectRepository(session),
-            )
-            return await svc.list_events(
-                project_id=pid,
-                search=search,
-                sort_by=sort,
-                sort_desc=sort_desc,
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(
+                f"/projects/{pid}/timeline/events",
+                params={"search": search, "sort_by": sort, "sort_desc": sort_desc},
             )
 
-    events, total = _run(cli_ctx, _impl)
+    data = _run(cli_ctx, _impl)
+    events = data.get("items", [])
+    total = data.get("total", 0)
     if cli_ctx.json_output:
-        print_result(cli_ctx, [_event_to_dict(e) for e in events])
+        print_result(cli_ctx, events)
         return
     if not events:
-        typer.echo("📭 暂无事件")
+        typer.echo("📥 暂无事件")
         return
     typer.echo(f"共 {total} 个事件")
     for e in events:
-        typer.echo(f"  #{e.narrative_position} [{e.title}]（{_time_label(e)}）")
+        typer.echo(f"  #{e['narrative_position']} [{e['title']}]（{_time_label(e)}）")
 
 
 # ---------------------------------------------------------------------------
-# view  —  inkflow timeline view --project-id <uuid> [--json]
+# view  — inkflow timeline view --project-id <uuid> [--json]
 # ---------------------------------------------------------------------------
 
 
@@ -211,34 +194,31 @@ def view_timeline_cmd(
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = TimelineService(
-                repository=SQLiteTimelineRepository(session),
-                project_repo=SQLiteProjectRepository(session),
-            )
-            return await svc.get_timeline_view(project_id=pid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/projects/{pid}/timeline")
 
     view = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, view.model_dump(mode="json"))
+        print_result(cli_ctx, view)
     else:
-        if view.total == 0:
-            typer.echo("📋 双线总览: 共 0 个事件（暂无事件）")
+        if view["total"] == 0:
+            typer.echo("📈 双线总览: 共 0 个事件（暂无事件）")
             return
         etl = " ".join(
-            f"{i}. {e.title}({_time_label(e)})" for i, e in enumerate(view.event_timeline, 1)
+            f"{i}. {e['title']}({_time_label(e)})" for i, e in enumerate(view["event_timeline"], 1)
         )
-        nol = " ".join(f"{i}. {e.title}" for i, e in enumerate(view.narrative_order, 1))
+        nol = " ".join(f"{i}. {e['title']}" for i, e in enumerate(view["narrative_order"], 1))
         typer.echo(
-            f"📋 双线总览: 共 {view.total} 个事件 — "
+            f"📈 双线总览: 共 {view['total']} 个事件 —— "
             f"事件时间线（世界内时间升序）: {etl}；叙事顺序: {nol}"
         )
 
 
 # ---------------------------------------------------------------------------
-# check  —  inkflow timeline check --project-id <uuid> [--include-flashbacks/--no-...]
+# check  — inkflow timeline check --project-id <uuid> [--include-flashbacks/--no-...]
 # ---------------------------------------------------------------------------
 
 
@@ -256,43 +236,41 @@ def check_consistency_cmd(
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = TimelineService(
-                repository=SQLiteTimelineRepository(session),
-                project_repo=SQLiteProjectRepository(session),
-            )
-            return await svc.check_consistency(
-                project_id=pid, include_flashbacks=include_flashbacks
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(
+                f"/projects/{pid}/timeline/check",
+                params={"include_flashbacks": include_flashbacks},
             )
 
     report = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, report.model_dump(mode="json"))
+        print_result(cli_ctx, report)
     else:
-        if report.consistent:
+        if report["consistent"]:
             typer.echo(
-                f"🔍 一致性检查: ✅ 一致（检查 {report.checked} 个事件，"
-                f"跳过 {report.skipped} 个时间未知）"
+                f"📊 一致性检查: ✅ 一致（检查 {report['checked']} 个事件，"
+                f"跳过 {report['skipped']} 个时间未知）"
             )
         else:
             typer.echo(
-                f"🔍 一致性检查: ⚠️ 发现 {len(report.conflicts)} 个冲突"
-                f"（检查 {report.checked} 个事件，跳过 {report.skipped} 个）"
+                f"📊 一致性检查: ⚠️ 发现 {len(report['conflicts'])} 个冲突"
+                f"（检查 {report['checked']} 个事件，跳过 {report['skipped']} 个）"
             )
-            for conflict in report.conflicts:
-                typer.echo(f"   [冲突] {conflict.message}")
-        if report.flashbacks:
+            for conflict in report["conflicts"]:
+                typer.echo(f"   [冲突] {conflict['message']}")
+        if report["flashbacks"]:
             typer.echo(
-                f"🔍 一致性检查: 💡 {len(report.flashbacks)} 个已声明倒叙/插叙" "（不视为冲突）:"
+                f"📊 一致性检查: 💡 {len(report['flashbacks'])} 个已声明倒叙/插叙" "（不视为冲突）"
             )
-            for fb in report.flashbacks:
-                typer.echo(f"   [倒叙] {fb.message}")
+            for fb in report["flashbacks"]:
+                typer.echo(f"   [倒叙] {fb['message']}")
 
 
 # ---------------------------------------------------------------------------
-# get  —  inkflow timeline get --id <uuid>
+# get  — inkflow timeline get --id <uuid>
 # ---------------------------------------------------------------------------
 
 
@@ -305,35 +283,30 @@ def get_event_cmd(
     cli_ctx: CliContext = ctx.obj
     eid = _parse_uuid(cli_ctx, event_id, "事件不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = TimelineService(
-                repository=SQLiteTimelineRepository(session),
-                project_repo=SQLiteProjectRepository(session),
-            )
-            return await svc.get_event(event_id=eid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/timeline/events/{eid}")
 
     event = _run(cli_ctx, _impl)
-    if event is None:
-        print_error(cli_ctx, "NOT_FOUND", "事件不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _event_to_dict(event))
+        print_result(cli_ctx, event)
     else:
-        typer.echo(f"ID:           {event.id}")
-        typer.echo(f"标题:         {event.title}")
-        typer.echo(f"描述:         {event.description}")
+        typer.echo(f"ID:           {event['id']}")
+        typer.echo(f"标题:         {event['title']}")
+        typer.echo(f"描述:         {event['description']}")
         typer.echo(f"世界内时间:   {_time_label(event)}")
-        typer.echo(f"时间单位:     {event.time_unit}")
-        typer.echo(f"原始时间表达: {event.time_display}")
-        typer.echo(f"叙事位置:     {event.narrative_position}")
-        typer.echo(f"时间线标记:   {event.timeline_flag or '（正叙）'}")
-        typer.echo(f"创建时间:     {event.created_at}")
-        typer.echo(f"更新时间:     {event.updated_at}")
+        typer.echo(f"时间单位:     {event['time_unit']}")
+        typer.echo(f"原始时间表达: {event['time_display']}")
+        typer.echo(f"叙事位置:     {event['narrative_position']}")
+        typer.echo(f"时间线标记:   {event['timeline_flag'] or '（正叙）'}")
+        typer.echo(f"创建时间:     {event['created_at']}")
+        typer.echo(f"更新时间:     {event['updated_at']}")
 
 
 # ---------------------------------------------------------------------------
-# update  —  inkflow timeline update --id <uuid> [--title] [--time-value ""] ...
+# update  — inkflow timeline update --id <uuid> [--title] [--time-value ""] ...
 # ---------------------------------------------------------------------------
 
 
@@ -384,26 +357,24 @@ def update_event_cmd(
         update_fields["timeline_flag"] = timeline_flag
     update = TimelineEventUpdate(**update_fields)
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = TimelineService(
-                repository=SQLiteTimelineRepository(session),
-                project_repo=SQLiteProjectRepository(session),
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.patch(
+                f"/timeline/events/{eid}",
+                json=update.model_dump(exclude_unset=True, mode="json"),
             )
-            return await svc.update_event(event_id=eid, update=update)
 
     event = _run(cli_ctx, _impl)
-    if event is None:
-        print_error(cli_ctx, "NOT_FOUND", "事件不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _event_to_dict(event))
+        print_result(cli_ctx, event)
     else:
-        typer.echo(f"✅ 事件已更新: [{event.title}]")
+        typer.echo(f"✅ 事件已更新: [{event['title']}]")
 
 
 # ---------------------------------------------------------------------------
-# delete  —  inkflow timeline delete --id <uuid> [--force] [--permanent]
+# delete  — inkflow timeline delete --id <uuid> [--force] [--permanent]
 # ---------------------------------------------------------------------------
 
 
@@ -425,30 +396,25 @@ def delete_event_cmd(
             typer.echo("已取消")
             raise typer.Exit()
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = TimelineService(
-                repository=SQLiteTimelineRepository(session),
-                project_repo=SQLiteProjectRepository(session),
-            )
+    async def _impl() -> None:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
             if permanent:
-                return await svc.hard_delete_event(event_id=eid)
-            return await svc.soft_delete_event(event_id=eid)
+                await client.delete(f"/timeline/events/{eid}", params={"force": True})
+            else:
+                await client.delete(f"/timeline/events/{eid}")
 
-    ok = _run(cli_ctx, _impl)
-    if ok:
-        label = "已永久删除" if permanent else "已删除"
-        if cli_ctx.json_output:
-            print_result(cli_ctx, {"id": str(eid), "deleted": True})
-        else:
-            typer.echo(f"✅ 事件 #{event_id} {label}")
+    _run(cli_ctx, _impl)
+    label = "已永久删除" if permanent else "已删除"
+    if cli_ctx.json_output:
+        print_result(cli_ctx, {"id": str(eid), "deleted": True})
     else:
-        print_error(cli_ctx, "NOT_FOUND", "事件不存在")
+        typer.echo(f"✅ 事件 #{event_id} {label}")
 
 
 # ---------------------------------------------------------------------------
-# restore  —  inkflow timeline restore --id <uuid>
+# restore  — inkflow timeline restore --id <uuid>
 # ---------------------------------------------------------------------------
 
 
@@ -461,19 +427,14 @@ def restore_event_cmd(
     cli_ctx: CliContext = ctx.obj
     eid = _parse_uuid(cli_ctx, event_id, "事件不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = TimelineService(
-                repository=SQLiteTimelineRepository(session),
-                project_repo=SQLiteProjectRepository(session),
-            )
-            return await svc.restore_event(event_id=eid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(f"/timeline/events/{eid}/restore")
 
     event = _run(cli_ctx, _impl)
-    if event is None:
-        print_error(cli_ctx, "NOT_FOUND", "事件不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _event_to_dict(event))
+        print_result(cli_ctx, event)
     else:
-        typer.echo(f"✅ 事件已恢复: [{event.title}]")
+        typer.echo(f"✅ 事件已恢复: [{event['title']}]")

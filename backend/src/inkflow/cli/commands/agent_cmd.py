@@ -1,4 +1,10 @@
-"""Agent CLI commands — `inkflow agent <action>`."""
+"""Agent CLI commands — `inkflow agent <action>`.
+
+薄层设计：仅做参数解析/校验与结果格式化，业务经 ensure_kernel() + InkFlowHTTPClient
+调用内核 REST API（spec §4；Issue #169 CLI 恒经 HTTP）。
+错误映射（F38 §5.3）：HttpApiError 404/422 等 → stderr「❌ {detail}」+ 退出码 1；
+KernelStartupError → 「❌ 内核启动失败: ...」+ 退出码 1。
+"""
 
 from __future__ import annotations
 
@@ -9,11 +15,9 @@ import uuid
 
 import typer
 
-from inkflow.core.database import async_session_factory, create_tables
 from inkflow.domain.models.agent_pipeline import PipelineExecuteRequest, RoleOverride
-from inkflow.domain.services.agent_service import AgentService, AgentServiceError
-from inkflow.infrastructure.agent.langgraph_pipeline import LangGraphAgentPipeline
-from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 
 app = typer.Typer(name="agent", help="Agent 管线管理", no_args_is_help=True)
 
@@ -25,6 +29,19 @@ def _run_async(coro):
 def _print_json(data) -> None:
     json.dump(data, sys.stdout, ensure_ascii=False, indent=2)
     print()
+
+
+def _run(coro_fn):
+    """执行内核调用并映射 HTTP 异常 → stderr「❌ {detail}」+ 退出码 1."""
+    try:
+        return _run_async(coro_fn())
+    except HttpApiError as exc:
+        _, message = map_http_error(exc.status_code, exc.detail, exc.code)
+        typer.echo(f"❌ {message}", err=True)
+        raise typer.Exit(code=1) from exc
+    except KernelStartupError as exc:
+        typer.echo(f"❌ 内核启动失败: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command("run")
@@ -65,11 +82,10 @@ def run_pipeline(
         except (ValueError, KeyError):
             typer.echo(f"⚠️ 忽略无效覆盖: {o}", err=True)
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            pipeline_engine = LangGraphAgentPipeline(llm_client=LangChainLLMClient())
-            svc = AgentService(pipeline=pipeline_engine, db_session=session)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
             request = PipelineExecuteRequest(
                 project_id=uuid.UUID(project_id),
                 pipeline=pipeline,
@@ -77,13 +93,12 @@ def run_pipeline(
                 variables=variables,
                 role_overrides=role_overrides if role_overrides else None,
             )
-            return await svc.execute(request)
+            return await client.post(
+                "/agent/pipelines/execute",
+                json=request.model_dump(mode="json", exclude_none=True),
+            )
 
-    try:
-        result = _run_async(_impl())
-    except AgentServiceError as e:
-        typer.echo(f"❌ {e}", err=True)
-        raise typer.Exit(code=1) from e
+    result = _run(_impl)
 
     if json_output:
         _print_json(result)
@@ -102,14 +117,13 @@ def check_status(
 ) -> None:
     """查看管线执行状态"""
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            pipeline_engine = LangGraphAgentPipeline(llm_client=LangChainLLMClient())
-            svc = AgentService(pipeline=pipeline_engine, db_session=session)
-            return await svc.get_status(run_id)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/agent/pipelines/executions/{run_id}")
 
-    result = _run_async(_impl())
+    result = _run(_impl)
     if result is None:
         typer.echo("❌ 执行记录不存在", err=True)
         raise typer.Exit(code=1)
@@ -141,14 +155,13 @@ def template_list(
 ) -> None:
     """列出内置管线模板"""
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            pipeline_engine = LangGraphAgentPipeline(llm_client=LangChainLLMClient())
-            svc = AgentService(pipeline=pipeline_engine, db_session=session)
-            return svc.list_templates()
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get("/agent/pipelines/templates")
 
-    result = _run_async(_impl())
+    result = _run(_impl)
     if json_output:
         _print_json(result)
     else:
