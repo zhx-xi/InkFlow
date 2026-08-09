@@ -17,11 +17,11 @@ FK CASCADE 语义才生效。
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest import mock
 
 import pytest
-from sqlalchemy import event, func, select
+from sqlalchemy import event, func, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -287,26 +287,33 @@ class TestWorldRepository:
     # ── partial unique ──
 
     async def test_duplicate_active_name_raises_integrity_error(self, db_session, project):
-        """插入第二个活动同名条目 → IntegrityError（partial unique）."""
+        """插入同父下第二个活动同名条目 → IntegrityError（同级 partial unique，spec §2.4）.
+
+        F35 行为变更（spec §2.1 规则 5）：项目内全局唯一 → 同级唯一。
+        顶层同名（parent_id NULL）DB 不再拦截（SQLite unique index NULL 不冲突），
+        由 service 层应用层校验（422）；**同级同名仍由 DB partial unique 拦截**。
+        """
         repo = SQLiteWorldRepository(db_session)
-        await repo.add(_setting(project, "灵气复苏"))
+        parent = await repo.add(_setting(project, "青州"))
+        await repo.add(_setting(project, "清河县城", parent_id=parent.id))
 
         with pytest.raises(IntegrityError):
-            await repo.add(_setting(project, "灵气复苏"))
+            await repo.add(_setting(project, "清河县城", parent_id=parent.id))
         await db_session.rollback()
 
     async def test_soft_deleted_name_reusable_but_restore_conflicts(self, db_session, project):
-        """软删后可重建同名；恢复旧条目与活动同名冲突 → IntegrityError."""
+        """同父下软删后可重建同名；恢复旧条目与活动同名冲突 → IntegrityError（同级语义）."""
         repo = SQLiteWorldRepository(db_session)
-        first = await repo.add(_setting(project, "灵气复苏"))
+        parent = await repo.add(_setting(project, "青州"))
+        first = await repo.add(_setting(project, "清河县城", parent_id=parent.id))
         await repo.soft_delete(first.id.int)
 
-        # partial unique 排除已删除行 → 同名可复用
-        second = await repo.add(_setting(project, "灵气复苏"))
+        # partial unique 排除已删除行 → 同父下同名可复用
+        second = await repo.add(_setting(project, "清河县城", parent_id=parent.id))
         assert second.id != first.id
-        assert second.name == "灵气复苏"
+        assert second.name == "清河县城"
 
-        # 恢复旧条目 → 项目内出现两个活动同名 → IntegrityError
+        # 恢复旧条目 → 同父下出现两个活动同名 → IntegrityError
         with pytest.raises(IntegrityError):
             await repo.restore(first.id.int)
         await db_session.rollback()
@@ -401,3 +408,231 @@ class TestWorldRepositoryCoverageGaps:
                 await repo.update(s.model_copy(update={"name": "改名"}))
         finally:
             db_session.execute = real_execute
+
+
+# ── F35 地点树（#173）：parent_id 邻接表 / 递归 CTE / 同级唯一 / 列表过滤 ──
+
+
+@pytest.mark.integration
+class TestF35LocationTree:
+    """F35 地点树仓储契约（spec §2.4/§5.3/§7 边界 16 + §9 测试策略 1/3/6/8）.
+
+    RED 阶段预期: SQLiteWorldRepository 尚无 get_by_parent_and_name /
+    collect_ancestor_ids / list_descendants 方法（AttributeError）、list 无
+    parent_id 参数（TypeError）、WorldSetting 无 parent_id 字段（建树时
+    extra='ignore' 静默丢弃 → 读回断言 AttributeError）。
+    """
+
+    # ── get_by_parent_and_name（同级唯一校验，spec §5.1 ③）──
+
+    async def test_get_by_parent_and_name_same_level_hit(self, db_session, project):
+        """同级命中：(project_id, parent_id, name) 三元组精确匹配直接子级.
+        RED: 方法不存在 → AttributeError.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        country = await repo.add(_setting(project, "大越国"))
+        state = await repo.add(_setting(project, "青州", parent_id=country.id))
+        await repo.add(_setting(project, "清河县城", parent_id=state.id))
+
+        hit = await repo.get_by_parent_and_name(project.id, state.id.int, "清河县城")
+        assert hit is not None
+        assert hit.name == "清河县城"
+
+    async def test_get_by_parent_and_name_top_level_hit(self, db_session, project):
+        """顶层命中：parent_id=None 查询顶层地点（spec §2.4 应用层校验路径）.
+        RED: 方法不存在 → AttributeError.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        country = await repo.add(_setting(project, "大越国"))
+        await repo.add(_setting(project, "青州", parent_id=country.id))
+
+        hit = await repo.get_by_parent_and_name(project.id, None, "大越国")
+        assert hit is not None and hit.id == country.id
+
+    async def test_get_by_parent_and_name_miss_returns_none(self, db_session, project):
+        """未命中（名字/父组合不存在）→ None.
+        RED: 方法不存在 → AttributeError.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        country = await repo.add(_setting(project, "大越国"))
+        await repo.add(_setting(project, "青州", parent_id=country.id))
+
+        assert await repo.get_by_parent_and_name(project.id, country.id.int, "不存在") is None
+        assert await repo.get_by_parent_and_name(project.id, 99999, "青州") is None
+
+    async def test_get_by_parent_and_name_excludes_soft_deleted(self, db_session, project):
+        """软删条目不命中（同级唯一索引排除 is_deleted=1，spec §2.4）.
+        RED: 方法不存在 → AttributeError.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        country = await repo.add(_setting(project, "大越国"))
+        state = await repo.add(_setting(project, "青州", parent_id=country.id))
+        await repo.soft_delete(state.id.int)
+
+        assert await repo.get_by_parent_and_name(project.id, country.id.int, "青州") is None
+
+    # ── collect_ancestor_ids（递归 CTE 祖先链，不含自身，spec §5.2/§5.3）──
+
+    async def test_collect_ancestor_ids_three_level_tree(self, db_session, project):
+        """3 层树（国→州→县）：collect_ancestor_ids(县) = [州, 国]，不含自身（spec §9 场景 1）.
+        RED: 方法不存在 → AttributeError.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        country = await repo.add(_setting(project, "大越国"))
+        state = await repo.add(_setting(project, "青州", parent_id=country.id))
+        county = await repo.add(_setting(project, "清河县城", parent_id=state.id))
+
+        ancestors = await repo.collect_ancestor_ids(county.id.int)
+        assert ancestors == [state.id.int, country.id.int]  # 近→远，不含自身
+
+    async def test_collect_ancestor_ids_top_level_empty(self, db_session, project):
+        """顶层地点祖先链为空列表.
+        RED: 方法不存在 → AttributeError.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        country = await repo.add(_setting(project, "大越国"))
+
+        assert await repo.collect_ancestor_ids(country.id.int) == []
+
+    async def test_collect_ancestor_ids_missing_empty(self, db_session, project):
+        """不存在的 id → 空列表（CTE 起点无行）.
+        RED: 方法不存在 → AttributeError.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        assert await repo.collect_ancestor_ids(99999) == []
+
+    # ── list_descendants（递归 CTE 子树，含自身，层序，spec §5.3）──
+
+    async def test_list_descendants_includes_self_level_order(self, db_session, project):
+        """子树含自身 + 层序（父先子后，同层 created_at ASC）— 复制/级联删除确定性输出.
+        RED: 方法不存在 → AttributeError.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        country = await repo.add(_setting(project, "大越国"))
+        state = await repo.add(_setting(project, "青州", parent_id=country.id))
+        county = await repo.add(_setting(project, "清河县城", parent_id=state.id))
+
+        subtree = await repo.list_descendants(country.id.int)
+        assert [s.id for s in subtree] == [country.id, state.id, county.id]
+
+    async def test_list_descendants_missing_empty(self, db_session, project):
+        """不存在的 id → 空列表（不含自身；不存在无自身可言）.
+        RED: 方法不存在 → AttributeError.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        assert await repo.list_descendants(99999) == []
+
+    # ── list parent_id 过滤（Q3=A，spec §7 边界 16）──
+
+    async def test_list_parent_filter_direct_children(self, db_session, project):
+        """list(parent_id=X) → 仅 X 的直接子级（不含孙代）.
+        RED: list 签名无 parent_id → TypeError.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        country = await repo.add(_setting(project, "大越国"))
+        state = await repo.add(_setting(project, "青州", parent_id=country.id))
+        await repo.add(_setting(project, "清河县城", parent_id=state.id))
+        await repo.add(_setting(project, "东大陆"))
+
+        children, total = await repo.list(project.id, parent_id=country.id.int)
+        assert total == 1
+        assert [s.id for s in children] == [state.id]
+
+    async def test_list_top_level_only(self, db_session, project):
+        """list(top_level_only=True) → 仅顶层地点（parent_id IS NULL）.
+        RED: list 签名无 top_level_only → TypeError.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        country = await repo.add(_setting(project, "大越国"))
+        await repo.add(_setting(project, "青州", parent_id=country.id))
+        other = await repo.add(_setting(project, "东大陆"))
+
+        tops, total = await repo.list(project.id, top_level_only=True)
+        assert total == 2
+        assert {s.id for s in tops} == {country.id, other.id}
+
+    async def test_list_default_no_filter_backward_compat(self, db_session, project):
+        """缺省（不带 parent_id 参数）→ 全量，向后兼容（Q3=A 回归）."""
+        repo = SQLiteWorldRepository(db_session)
+        country = await repo.add(_setting(project, "大越国"))
+        await repo.add(_setting(project, "青州", parent_id=country.id))
+
+        all_s, total = await repo.list(project.id)
+        _ = all_s  # 列表内容由后续断言覆盖
+        assert total == 2
+
+    # ── get_by_name 确定性（spec §2.4 声明）──
+
+    async def test_get_by_name_deterministic_earliest_created(self, db_session, project):
+        """跨层同名多条 → get_by_name 返回最早创建（created_at ASC）一条（spec §2.4
+        提取合并锚点确定性声明）.
+        ⚠️ RED 阶段预期失败形态: 旧全局唯一索引 uq_world_settings_active_name
+        (project_id, name) 仍拦截第二条同名插入 → **IntegrityError**（GREEN 阶段
+        ORM 替换为同级唯一索引 (project_id, parent_id, name) 后本用例通过）.
+        造数: 第一条走 repo.add（挂青州下）；第二条 core insert 显式 created_at
+        更晚（跨层同名，旧索引不区分 parent → 拦截；新索引 NULL/不同父不冲突）.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        state = await repo.add(_setting(project, "青州"))
+        first = await repo.add(_setting(project, "旧城区", parent_id=state.id))
+        later = _now() + timedelta(minutes=5)
+        await db_session.execute(
+            insert(WorldSettingORM).values(
+                project_id=project.id,
+                name="旧城区",
+                created_at=later,
+                updated_at=later,
+            )
+        )
+        await db_session.commit()
+
+        hit = await repo.get_by_name(project.id, "旧城区")
+        assert hit is not None and hit.id == first.id  # 最早创建一条
+
+    # ── repo 三写点 parent_id 往返（F14 教训，spec §9 场景 8）──
+
+    async def test_add_parent_id_roundtrip(self, db_session, project):
+        """写点一：add 带 parent_id → get 读回一致（UUID 领域值）.
+        RED: WorldSetting 无 parent_id 字段 → add 静默丢弃 → 读回断言 AttributeError.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        parent = await repo.add(_setting(project, "大越国"))
+        child = await repo.add(_setting(project, "青州", parent_id=parent.id))
+
+        got = await repo.get(child.id.int)
+        assert got is not None and got.parent_id == parent.id
+
+    async def test_update_parent_id_roundtrip(self, db_session, project):
+        """写点二：update 改 parent_id → get 读回一致.
+        RED: add 丢弃 parent_id + update .values() 无 parent_id → 读回断言 AttributeError.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        p1 = await repo.add(_setting(project, "大越国"))
+        p2 = await repo.add(_setting(project, "东大陆"))
+        state = await repo.add(_setting(project, "青州", parent_id=p1.id))
+
+        # 显式构造完整实体改挂（不依赖 model_copy(update=...) 对未知字段的行为）
+        moved = WorldSetting(
+            id=state.id,
+            project_id=state.project_id,
+            name=state.name,
+            category=state.category,
+            content=state.content,
+            extra=state.extra,
+            is_deleted=state.is_deleted,
+            created_at=state.created_at,
+            updated_at=state.updated_at,
+            parent_id=p2.id,
+        )
+        await repo.update(moved)
+
+        got = await repo.get(state.id.int)
+        assert got is not None and got.parent_id == p2.id
+
+    async def test_add_without_parent_keeps_none(self, db_session, project):
+        """写点三：无 parent_id → 顶层保持 None（边界 X：顶层语义不受影响）."""
+        repo = SQLiteWorldRepository(db_session)
+        top = await repo.add(_setting(project, "大越国"))
+
+        got = await repo.get(top.id.int)
+        assert got is not None and got.parent_id is None

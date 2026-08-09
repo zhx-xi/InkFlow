@@ -14,6 +14,23 @@
 返回 coroutine 导致 500（F4 4.1 实测陷阱）。
 
 依据: specs/f10-world-service/spec.md §3 + §7 + §9。
+
+F35 追加段（#173 地点层级，spec §3.1/§3.3 契约）:
+- create body 新增 parent_id → create_setting 收到 parent_id=<uuid> 关键字参数
+- list 新增 ?parent_id=<uuid>（直接子级）/ ?parent_id=none（顶层）→ list_settings
+  收到 parent_id=<uuid> / (parent_id=None, top_level_only=True)
+- GET /world-settings/{sid}/ancestors|descendants → {"items", "total"}
+  （ancestors 自身在前；descendants 层序）；service 返回 None → 404「世界观条目不存在」
+- PATCH {"parent_id": null} → update.model_fields_set 含 parent_id（置顶语义，
+  spec §2.2 exclude_unset 区分）；未传 parent_id → 不含（不修改父级）
+- DELETE ?cascade=true → delete_setting(sid, force=False, cascade=True, reparent_to=None)；
+  ?reparent_to=<uuid> → reparent_to=<uuid>
+- 新错误类（WorldParentNotFoundError / WorldCycleError / WorldChildrenActionRequiredError /
+  WorldReparentTargetError，继承 WorldServiceError → 422），detail 文案精确匹配 spec §3.3；
+  RED 阶段未实现 → 用例体内惰性 import（ImportError = 预期失败点，不影响既有用例收集）
+- RED 预期（追加段）: 新端点用例 404 断言 FAIL；create parent_id / list 过滤 / DELETE
+  参数 / PATCH 置顶 / 新错误类用例 FAIL；test_update_setting_without_parent_id 为守护
+  用例，RED 阶段即 PASS（既有 exclude_unset 语义已满足）。
 """
 
 from __future__ import annotations
@@ -37,6 +54,7 @@ from inkflow.domain.ports.world_errors import (
 client = TestClient(app)
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
+PARENT_ID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000002")  # F35: 父地点
 TS = datetime(2026, 8, 1, 10, 0, 0)
 
 
@@ -352,3 +370,268 @@ class TestRunServiceExceptBranch:
             await _run_service(_raise(WorldNotFoundError("x")))
         assert ei.value.status_code == 404
         assert "x" in ei.value.detail
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# F35 地点层级追加段（#173）: parent_id / ancestors / descendants / PATCH 置顶 /
+# DELETE cascade/reparent_to / 列表过滤 / 新错误映射 —— 契约见文件头 docstring
+# ══════════════════════════════════════════════════════════════════════════
+
+
+class TestWorldLocationTreeAPI:
+    """F35 世界观地点层级 API 契约（spec §3.1/§3.3，追加段）。"""
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_create_setting_with_parent_id(self, mock_get_svc: MagicMock) -> None:
+        """F35: create body 带 parent_id → 201 + create_setting 收到 parent_id 关键字.
+
+        RED 预期: 当前 router 调 create_setting(pid, name, category, content)
+        无 parent_id 关键字 → assert_awaited_once_with 断言失败。
+        """
+        svc = _mock_svc(mock_get_svc)
+        setting = _setting("清河县城")
+        svc.create_setting = AsyncMock(return_value=setting)
+
+        response = client.post(
+            f"/api/v1/projects/{PID}/world-settings",
+            json={
+                "name": "清河县城",
+                "category": "地理",
+                "content": "青州辖下县城。",
+                "parent_id": str(PARENT_ID),
+            },
+        )
+        assert response.status_code == 201
+        assert response.json()["name"] == "清河县城"
+        svc.create_setting.assert_awaited_once_with(
+            PID, "清河县城", "地理", "青州辖下县城。", parent_id=PARENT_ID
+        )
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_list_settings_parent_id_filter(self, mock_get_svc: MagicMock) -> None:
+        """F35: GET ?parent_id=<uuid> → list_settings 收到 parent_id=<uuid>（直接子级，spec §7 #16）
+        ."""
+        svc = _mock_svc(mock_get_svc)
+        svc.list_settings = AsyncMock(return_value=([], 0))
+
+        response = client.get(
+            f"/api/v1/projects/{PID}/world-settings", params={"parent_id": str(PARENT_ID)}
+        )
+        assert response.status_code == 200
+        svc.list_settings.assert_awaited_once_with(
+            PID,
+            search=None,
+            category=None,
+            sort_by="updated_at",
+            sort_desc=True,
+            offset=0,
+            limit=50,
+            parent_id=PARENT_ID,
+        )
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_list_settings_top_level_only(self, mock_get_svc: MagicMock) -> None:
+        """F35: GET ?parent_id=none → list_settings 收到 top_level_only=True +
+        parent_id=None（顶层）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.list_settings = AsyncMock(return_value=([], 0))
+
+        response = client.get(
+            f"/api/v1/projects/{PID}/world-settings", params={"parent_id": "none"}
+        )
+        assert response.status_code == 200
+        svc.list_settings.assert_awaited_once_with(
+            PID,
+            search=None,
+            category=None,
+            sort_by="updated_at",
+            sort_desc=True,
+            offset=0,
+            limit=50,
+            parent_id=None,
+            top_level_only=True,
+        )
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_get_ancestors_success(self, mock_get_svc: MagicMock) -> None:
+        """F35: GET /world-settings/{sid}/ancestors → 200 {items, total}（自身在前，spec §3.1）.
+
+        RED 预期: 路由未注册 → 404 → status_code 断言失败。
+        """
+        svc = _mock_svc(mock_get_svc)
+        child = _setting("清河县城")
+        parent = _setting("青州")
+        svc.list_ancestors = AsyncMock(return_value=[child, parent])
+
+        response = client.get(f"/api/v1/world-settings/{child.id}/ancestors")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 2
+        assert data["items"][0]["name"] == "清河县城"
+        assert data["items"][1]["name"] == "青州"
+        svc.list_ancestors.assert_awaited_once_with(child.id)
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_get_ancestors_not_found_404(self, mock_get_svc: MagicMock) -> None:
+        """F35: list_ancestors 返回 None → 404「世界观条目不存在」.
+
+        RED 预期: 路由未注册 → 404 但 detail 为 FastAPI 默认 "Not Found"
+        → detail 断言失败（证明路由缺失，非 404 语义错误）。
+        """
+        svc = _mock_svc(mock_get_svc)
+        svc.list_ancestors = AsyncMock(return_value=None)
+
+        response = client.get(f"/api/v1/world-settings/{uuid.uuid4()}/ancestors")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "世界观条目不存在"
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_get_descendants_success(self, mock_get_svc: MagicMock) -> None:
+        """F35: GET /world-settings/{sid}/descendants → 200 {items, total}（层序，spec §3.1）.
+
+        RED 预期: 路由未注册 → 404 → status_code 断言失败。
+        """
+        svc = _mock_svc(mock_get_svc)
+        child = _setting("清河县城")
+        parent = _setting("青州")
+        svc.list_descendants = AsyncMock(return_value=[parent, child])
+
+        response = client.get(f"/api/v1/world-settings/{parent.id}/descendants")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 2
+        assert data["items"][0]["name"] == "青州"
+        assert data["items"][1]["name"] == "清河县城"
+        svc.list_descendants.assert_awaited_once_with(parent.id)
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_get_descendants_not_found_404(self, mock_get_svc: MagicMock) -> None:
+        """F35: list_descendants 返回 None → 404「世界观条目不存在」.
+
+        RED 预期: 路由未注册 → detail 为 "Not Found" → detail 断言失败。
+        """
+        svc = _mock_svc(mock_get_svc)
+        svc.list_descendants = AsyncMock(return_value=None)
+
+        response = client.get(f"/api/v1/world-settings/{uuid.uuid4()}/descendants")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "世界观条目不存在"
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_update_setting_parent_id_null_promotes(self, mock_get_svc: MagicMock) -> None:
+        """F35: PATCH {"parent_id": null} → update 收到 WorldUpdate 且 model_fields_set 含
+        parent_id（置顶）.
+
+        RED 预期: 当前 WorldUpdate 无 parent_id 字段（extra 忽略）→ fields_set 为空
+        → "parent_id" in fields_set 断言失败。
+        """
+        svc = _mock_svc(mock_get_svc)
+        setting = _setting("清河县城")
+        svc.update_setting = AsyncMock(return_value=setting)
+
+        response = client.patch(f"/api/v1/world-settings/{setting.id}", json={"parent_id": None})
+        assert response.status_code == 200
+        svc.update_setting.assert_awaited_once()
+        args, kwargs = svc.update_setting.await_args
+        update = args[1] if len(args) > 1 else kwargs["update"]
+        assert "parent_id" in update.model_fields_set
+        assert update.parent_id is None
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_update_setting_without_parent_id(self, mock_get_svc: MagicMock) -> None:
+        """F35 守护: PATCH 未传 parent_id → model_fields_set 不含 parent_id（不修改父级）.
+
+        RED 阶段即 PASS（既有 exclude_unset 语义已满足）——防 GREEN 误加字段的守护契约。
+        """
+        svc = _mock_svc(mock_get_svc)
+        setting = _setting("清河县城")
+        svc.update_setting = AsyncMock(return_value=setting)
+
+        response = client.patch(
+            f"/api/v1/world-settings/{setting.id}", json={"name": "清河县城·改"}
+        )
+        assert response.status_code == 200
+        args, kwargs = svc.update_setting.await_args
+        update = args[1] if len(args) > 1 else kwargs["update"]
+        assert "parent_id" not in update.model_fields_set
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_delete_setting_cascade_param(self, mock_get_svc: MagicMock) -> None:
+        """F35: DELETE ?cascade=true → delete_setting 收到 (sid, force=False, cascade=True,
+        reparent_to=None)."""
+        svc = _mock_svc(mock_get_svc)
+        svc.delete_setting = AsyncMock(return_value=True)
+
+        setting_id = uuid.uuid4()
+        response = client.delete(f"/api/v1/world-settings/{setting_id}?cascade=true")
+        assert response.status_code == 204
+        svc.delete_setting.assert_awaited_once_with(
+            setting_id, force=False, cascade=True, reparent_to=None
+        )
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_delete_setting_reparent_to_param(self, mock_get_svc: MagicMock) -> None:
+        """F35: DELETE ?reparent_to=<uuid> → delete_setting 收到 reparent_to=<uuid>."""
+        svc = _mock_svc(mock_get_svc)
+        svc.delete_setting = AsyncMock(return_value=True)
+
+        setting_id = uuid.uuid4()
+        response = client.delete(f"/api/v1/world-settings/{setting_id}?reparent_to={PARENT_ID}")
+        assert response.status_code == 204
+        svc.delete_setting.assert_awaited_once_with(
+            setting_id, force=False, cascade=False, reparent_to=PARENT_ID
+        )
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_delete_setting_children_action_required_422(self, mock_get_svc: MagicMock) -> None:
+        """F35: 有子地点 DELETE 无参数 → 422 + detail 精确匹配（spec §3.2 示例文案）.
+
+        惰性 import: WorldChildrenActionRequiredError 尚未实现，RED 阶段
+        ImportError = 预期失败点（不影响既有用例收集）。
+        """
+        from inkflow.domain.ports.world_errors import WorldChildrenActionRequiredError
+
+        svc = _mock_svc(mock_get_svc)
+        svc.delete_setting = AsyncMock(side_effect=WorldChildrenActionRequiredError())
+
+        detail = (
+            "该地点存在子地点，必须指定 cascade=true（级联删除）或 "
+            "reparent_to=<id>（子地点改挂新父）"
+        )
+        response = client.delete(f"/api/v1/world-settings/{uuid.uuid4()}")
+        assert response.status_code == 422
+        assert response.json()["detail"] == detail
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_f35_new_error_mapping_422(self, mock_get_svc: MagicMock) -> None:
+        """F35 新错误类 → 422 + detail 精确匹配 spec §3.3（父不存在/循环/reparent 目标非法）.
+
+        惰性 import: 三错误类尚未实现，RED 阶段 ImportError = 预期失败点。
+        """
+        from inkflow.domain.ports.world_errors import (
+            WorldCycleError,
+            WorldParentNotFoundError,
+            WorldReparentTargetError,
+        )
+
+        svc = _mock_svc(mock_get_svc)
+        svc.create_setting = AsyncMock(side_effect=[WorldParentNotFoundError(), WorldCycleError()])
+        svc.delete_setting = AsyncMock(side_effect=WorldReparentTargetError())
+
+        resp1 = client.post(
+            f"/api/v1/projects/{PID}/world-settings",
+            json={"name": "清河县城", "parent_id": str(PARENT_ID)},
+        )
+        assert resp1.status_code == 422
+        assert resp1.json()["detail"] == "父地点不存在或不在同一项目"
+
+        resp2 = client.post(
+            f"/api/v1/projects/{PID}/world-settings",
+            json={"name": "清河县城", "parent_id": str(PARENT_ID)},
+        )
+        assert resp2.status_code == 422
+        assert resp2.json()["detail"] == "不能将地点挂接到自身或其子孙下"
+
+        resp3 = client.delete(f"/api/v1/world-settings/{uuid.uuid4()}?reparent_to={PARENT_ID}")
+        assert resp3.status_code == 422
+        assert resp3.json()["detail"] == "reparent 目标地点不存在/不在同一项目/是自身子树"

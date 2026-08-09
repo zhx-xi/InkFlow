@@ -33,11 +33,27 @@ from inkflow.domain.ports.world_errors import (
     WorldNameConflictError,
     WorldServiceError,
 )
+
+# F35（#173）：新增错误类尚未实现（RED 阶段）——用临时 stub 保证文件可收集、
+# 既有用例不受影响；GREEN 后自动使用真实类（spec §3.3 异常映射表）。
+try:  # pragma: no cover - RED 阶段占位分支
+    from inkflow.domain.ports.world_errors import (
+        WorldChildrenActionRequiredError,
+        WorldCycleError,
+        WorldParentNotFoundError,
+        WorldReparentTargetError,
+    )
+except ImportError:  # pragma: no cover - RED 阶段占位分支
+    WorldParentNotFoundError = type("WorldParentNotFoundError", (Exception,), {})
+    WorldCycleError = type("WorldCycleError", (Exception,), {})
+    WorldChildrenActionRequiredError = type("WorldChildrenActionRequiredError", (Exception,), {})
+    WorldReparentTargetError = type("WorldReparentTargetError", (Exception,), {})
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
 from inkflow.domain.services._world_extractor import WorldExtractor
 from inkflow.domain.services.world_service import WorldService
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
+OTHER_PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000002")  # F35: 跨项目校验用
 TS = datetime(2026, 8, 1, 10, 0, 0)
 DEFAULT_MODEL = "openai/gpt-4o"
 
@@ -49,6 +65,7 @@ def _setting(
     content: str = "",
     is_deleted: bool = False,
     project_id: uuid.UUID = PID,
+    parent_id: uuid.UUID | None = None,  # F35: 父地点；None = 顶层
 ) -> WorldSetting:
     """构造测试用世界观条目实体（固定时间戳，便于断言）。"""
     return WorldSetting(
@@ -58,6 +75,7 @@ def _setting(
         category=category,
         content=content,
         is_deleted=is_deleted,
+        parent_id=parent_id,
         created_at=TS,
         updated_at=TS,
     )
@@ -76,6 +94,12 @@ def mock_repo() -> MagicMock:
     repo.soft_delete = AsyncMock(return_value=True)
     repo.restore = AsyncMock(return_value=None)
     repo.hard_delete = AsyncMock(return_value=True)
+    # F35（#173）新方法默认值：既有用例零影响，新用例按需覆盖
+    repo.get_by_parent_and_name = AsyncMock(return_value=None)
+    repo.collect_ancestor_ids = AsyncMock(return_value=[])
+    repo.list_descendants = AsyncMock(return_value=[])
+    repo.hard_delete_many = AsyncMock(return_value=0)
+    repo.delete_with_reparent = AsyncMock(return_value=True)
     return repo
 
 
@@ -299,3 +323,359 @@ class TestExtract:
         svc = WorldService(repository=mock_repo, extractor=mock_extractor)
         with pytest.raises(WorldServiceError):
             await svc.extract(WorldExtractRequest(project_id=PID, text="第一章正文"))
+
+
+# ── F35 地点树（#173）：create 校验链 / update parent 语义 / 删除矩阵 ──
+
+
+class TestF35CreateValidationChain:
+    """F35 create_setting 校验链（spec §5.1 ①②③④⑤：父存在→同级同名→循环→落库）.
+
+    RED 阶段预期: create_setting 签名无 parent_id 参数 → 传 parent_id 的调用
+    TypeError；未传 parent_id 的用例因 get_by_parent_and_name 未被调用 /
+    add 收到的实体无 parent_id 属性而失败（AssertionError / AttributeError）。
+    """
+
+    async def test_create_parent_missing_raises_parent_not_found(self, service, mock_repo) -> None:
+        """parent_id 指向不存在条目（repo.get → None）→ WorldParentNotFoundError（spec §7 边界 1）.
+        # F35
+        RED: create_setting 无 parent_id 参数 → TypeError.
+        """
+        mock_repo.get = AsyncMock(return_value=None)
+        with pytest.raises(WorldParentNotFoundError):
+            await service.create_setting(PID, "清河县城", parent_id=uuid.uuid4())
+        mock_repo.add.assert_not_awaited()
+
+    async def test_create_parent_cross_project_raises_parent_not_found(
+        self, service, mock_repo
+    ) -> None:
+        """parent_id 指向跨项目条目（repo.get 返回他项目实体）→
+        WorldParentNotFoundError（数据隔离基线，spec §7 边界 3）.  # F35
+        RED: create_setting 无 parent_id 参数 → TypeError.
+        """
+        other_parent = _setting(name="他国", project_id=OTHER_PID)
+        mock_repo.get = AsyncMock(return_value=other_parent)
+        with pytest.raises(WorldParentNotFoundError):
+            await service.create_setting(PID, "清河县城", parent_id=other_parent.id)
+        mock_repo.add.assert_not_awaited()
+
+    async def test_create_parent_soft_deleted_raises_parent_not_found(
+        self, service, mock_repo
+    ) -> None:
+        """parent_id 指向已软删条目（get 过滤软删 → None）→
+        WorldParentNotFoundError（软删父不可挂接，spec §7 边界 2）.  # F35
+        RED: create_setting 无 parent_id 参数 → TypeError.
+        """
+        mock_repo.get = AsyncMock(return_value=None)
+        with pytest.raises(WorldParentNotFoundError):
+            await service.create_setting(PID, "清河县城", parent_id=uuid.uuid4())
+        mock_repo.add.assert_not_awaited()
+
+    async def test_create_same_parent_duplicate_name_raises_conflict(
+        self, service, mock_repo
+    ) -> None:
+        """同级同名（get_by_parent_and_name 命中）→ WorldNameConflictError（DB 兜底前预检，spec
+        §5.1 ③）.  # F35
+        RED: create_setting 无 parent_id 参数 → TypeError.
+        """
+        parent = _setting(name="青州")
+        mock_repo.get = AsyncMock(return_value=parent)
+        mock_repo.get_by_parent_and_name = AsyncMock(return_value=_setting(name="清河县城"))
+        with pytest.raises(WorldNameConflictError):
+            await service.create_setting(PID, "清河县城", parent_id=parent.id)
+        mock_repo.add.assert_not_awaited()
+
+    async def test_create_top_level_duplicate_name_raises_conflict(
+        self, service, mock_repo
+    ) -> None:
+        """顶层同名（get_by_parent_and_name(pid, None, name) 命中）→ WorldNameConflictError（spec
+        §2.4: SQLite NULL 不冲突 → 应用层校验）.  # F35
+        RED: get_by_parent_and_name 未被调用 → 断言失败.
+        """
+        mock_repo.get_by_parent_and_name = AsyncMock(return_value=_setting(name="大越国"))
+        with pytest.raises(WorldNameConflictError):
+            await service.create_setting(PID, "大越国")
+        mock_repo.add.assert_not_awaited()
+
+    async def test_create_with_parent_id_passes_uuid_to_add(self, service, mock_repo) -> None:
+        """成功路径：create_setting(pid, name, parent_id=X) → 父校验通过后 add 收到 parent_id=X
+        的实体（UUID→int 转换断言）.  # F35
+        RED: create_setting 无 parent_id 参数 → TypeError.
+        """
+        parent = _setting(name="青州")
+        mock_repo.get = AsyncMock(return_value=parent)
+        mock_repo.get_by_parent_and_name = AsyncMock(return_value=None)
+
+        created = await service.create_setting(PID, "清河县城", parent_id=parent.id)
+
+        assert created.name == "清河县城"
+        # 校验链调用参数：父 id 已转 int、顶层/同级预检走 (pid, parent_int, name)
+        mock_repo.get_by_parent_and_name.assert_awaited_once_with(
+            PID.int, parent.id.int, "清河县城"
+        )
+        added = mock_repo.add.await_args.args[0]
+        assert added.parent_id == parent.id  # 领域层保留 UUID
+
+    async def test_create_without_parent_id_passes_none(self, service, mock_repo) -> None:
+        """成功路径：无 parent_id → add 收到 parent_id=None 实体（顶层）；顶层同名预检用 (pid,
+        None, name).  # F35
+        RED: 顶层预检未被调用 → 断言失败；add 实体无 parent_id 属性 → AttributeError.
+        """
+        created = await service.create_setting(PID, "大越国")
+
+        assert created.name == "大越国"
+        mock_repo.get_by_parent_and_name.assert_awaited_once_with(PID.int, None, "大越国")
+        added = mock_repo.add.await_args.args[0]
+        assert added.parent_id is None
+
+
+class TestF35UpdateParentSemantics:
+    """F35 update_setting parent_id 特殊处理（spec §2.2 None 语义差异，load-bearing）.
+
+    RED 阶段预期: WorldUpdate 无 parent_id 字段（静默忽略）→ model_fields_set
+    不含 parent_id → merged 实体无 parent_id 属性 → AttributeError / DID NOT RAISE。
+    """
+
+    async def test_update_parent_id_none_moves_to_top(self, service, mock_repo) -> None:
+        """WorldUpdate(parent_id=None)（model_fields_set 含 parent_id）→ 置顶：repo.update 收到
+        parent_id=None 的实体（spec §5.1 load-bearing）.  # F35
+        RED: 字段缺失静默忽略 → merged 无 parent_id 属性 → AttributeError.
+        """
+        parent = _setting(name="青州")
+        existing = _setting(name="清河县城", parent_id=parent.id)
+        mock_repo.get = AsyncMock(return_value=existing)
+        mock_repo.update = AsyncMock(side_effect=lambda s: s)
+
+        result = await service.update_setting(existing.id, WorldUpdate(parent_id=None))
+
+        merged = mock_repo.update.await_args.args[0]
+        assert merged.id == existing.id
+        assert merged.parent_id is None  # 显式 null = 置顶
+        assert result == merged
+
+    async def test_update_without_parent_id_keeps_parent(self, service, mock_repo) -> None:
+        """WorldUpdate(name='x') 不含 parent_id → 不修改 parent：repo.update 收到
+        parent_id=原值（与置顶可区分）.  # F35
+        RED: merged 无 parent_id 属性 → AttributeError.
+        """
+        parent = _setting(name="青州")
+        existing = _setting(name="清河县城", parent_id=parent.id)
+        mock_repo.get = AsyncMock(return_value=existing)
+        mock_repo.update = AsyncMock(side_effect=lambda s: s)
+
+        await service.update_setting(existing.id, WorldUpdate(name="清河县城·改"))
+
+        merged = mock_repo.update.await_args.args[0]
+        assert merged.parent_id == parent.id  # 未出现 → 保持原值
+
+    async def test_update_reparent_cycle_raises(self, service, mock_repo) -> None:
+        """改挂循环：新父祖先链含自身 → WorldCycleError（spec §5.2 祖先链反向校验）.
+        RED: WorldUpdate 静默忽略 parent_id → 不抛异常 → DID NOT RAISE.
+        """
+        parent = _setting(name="青州")
+        existing = _setting(name="清河县城", parent_id=parent.id)
+        target = _setting(name="清河县城分县")  # 假设 target 是 existing 的子孙
+        mock_repo.get = AsyncMock(return_value=existing)
+        mock_repo.collect_ancestor_ids = AsyncMock(
+            return_value=[existing.id.int]
+        )  # 新父祖先链含自身
+
+        with pytest.raises(WorldCycleError):
+            await service.update_setting(existing.id, WorldUpdate(parent_id=target.id))
+        mock_repo.update.assert_not_awaited()
+        mock_repo.collect_ancestor_ids.assert_awaited_once_with(target.id.int)
+
+    async def test_update_reparent_name_conflict_raises(self, service, mock_repo) -> None:
+        """改挂到新父时同级已存在同名 → WorldNameConflictError（同级唯一校验，spec §5.1 ③）.  # F35
+        RED: WorldUpdate 静默忽略 parent_id → 不抛异常 → DID NOT RAISE.
+        """
+        parent = _setting(name="青州")
+        existing = _setting(name="清河县城", parent_id=parent.id)
+        target = _setting(name="东大陆")
+        mock_repo.get = AsyncMock(return_value=existing)
+        mock_repo.get_by_parent_and_name = AsyncMock(return_value=_setting(name="清河县城"))
+        mock_repo.collect_ancestor_ids = AsyncMock(return_value=[])
+
+        with pytest.raises(WorldNameConflictError):
+            await service.update_setting(existing.id, WorldUpdate(parent_id=target.id))
+        mock_repo.update.assert_not_awaited()
+
+
+class TestF35DeleteMatrix:
+    """F35 delete_setting 删除语义矩阵（spec §5.5，load-bearing；边界 X：无子软删保持 F10）.
+
+    RED 阶段预期: delete_setting 签名无 cascade/reparent_to → 相关调用 TypeError；
+    有子用例因不抛 WorldChildrenActionRequiredError → DID NOT RAISE。
+    """
+
+    async def test_delete_no_children_soft_deletes_f10_kept(self, service, mock_repo) -> None:
+        """无子地点（repo.list(parent_id=sid) 空）→ 无参 delete → repo.soft_delete（F10 软删保持，
+        边界 X）.
+        RED: 当前实现不查子 → list 未被调用 → 断言失败.
+        """
+        setting = _setting(name="清河县城")
+        sid = setting.id.int
+        mock_repo.list = AsyncMock(return_value=([], 0))
+
+        result = await service.delete_setting(setting.id)
+
+        assert result is True
+        mock_repo.soft_delete.assert_awaited_once_with(sid)
+        mock_repo.hard_delete.assert_not_awaited()
+        mock_repo.list.assert_awaited()
+        assert mock_repo.list.await_args.kwargs["parent_id"] == sid  # 查子用直接子级过滤
+
+    async def test_delete_no_children_force_hard_deletes(self, service, mock_repo) -> None:
+        """无子地点 + force=True → repo.hard_delete（F10 硬删保持）；force 同样先查子.  # F35
+        RED: 当前实现不查子 → list 未被调用 → 断言失败.
+        """
+        setting = _setting(name="清河县城")
+        sid = setting.id.int
+        mock_repo.list = AsyncMock(return_value=([], 0))
+
+        result = await service.delete_setting(setting.id, force=True)
+
+        assert result is True
+        mock_repo.hard_delete.assert_awaited_once_with(sid)
+        mock_repo.soft_delete.assert_not_awaited()
+        mock_repo.list.assert_awaited()
+        assert mock_repo.list.await_args.kwargs["parent_id"] == sid
+
+    async def test_delete_with_children_requires_action_even_force(
+        self, service, mock_repo
+    ) -> None:
+        """有子地点（repo.list(parent_id=sid) 非空）+ 无 cascade/reparent →
+        WorldChildrenActionRequiredError（无论 force，强制显式选择，spec §5.5）.  # F35
+        RED: 不抛异常 → DID NOT RAISE.
+        """
+        setting = _setting(name="青州")
+        child = _setting(name="清河县城")
+        mock_repo.list = AsyncMock(return_value=([child], 1))
+
+        with pytest.raises(WorldChildrenActionRequiredError):
+            await service.delete_setting(setting.id)
+        with pytest.raises(WorldChildrenActionRequiredError):
+            await service.delete_setting(setting.id, force=True)
+        mock_repo.soft_delete.assert_not_awaited()
+        mock_repo.hard_delete.assert_not_awaited()
+
+    async def test_delete_cascade_hard_deletes_subtree(self, service, mock_repo) -> None:
+        """cascade=True → list_descendants(sid) 收集子树（含自身）→ hard_delete_many(子树 int 集合)
+        真删（spec §5.5 D4=A，单事务原子）.  # F35
+        RED: delete_setting 无 cascade 参数 → TypeError.
+        """
+        setting = _setting(name="青州")
+        child = _setting(name="清河县城")
+        sid, child_int = setting.id.int, child.id.int
+        mock_repo.list = AsyncMock(return_value=([child], 1))
+        mock_repo.list_descendants = AsyncMock(return_value=[setting, child])
+
+        result = await service.delete_setting(setting.id, cascade=True)
+
+        assert result is True
+        mock_repo.list_descendants.assert_awaited_once_with(sid)
+        mock_repo.hard_delete_many.assert_awaited_once()
+        assert set(mock_repo.hard_delete_many.await_args.args[0]) == {sid, child_int}
+        mock_repo.soft_delete.assert_not_awaited()
+
+    async def test_delete_reparent_moves_children_to_target(self, service, mock_repo) -> None:
+        """reparent_to=X → 先校验目标（存在+同项目+非自身子树）→ delete_with_reparent(sid, X.int)
+        （自身真删 + 直接子改挂，spec §5.5 D2=A）.  # F35
+        RED: delete_setting 无 reparent_to 参数 → TypeError.
+        """
+        setting = _setting(name="青州")
+        child = _setting(name="清河县城")
+        target = _setting(name="东大陆")
+        sid = setting.id.int
+        mock_repo.list = AsyncMock(return_value=([child], 1))
+        mock_repo.list_descendants = AsyncMock(return_value=[setting, child])  # target 不在子树
+        mock_repo.get = AsyncMock(return_value=target)
+
+        result = await service.delete_setting(setting.id, reparent_to=target.id)
+
+        assert result is True
+        mock_repo.delete_with_reparent.assert_awaited_once_with(sid, target.id.int)
+        mock_repo.hard_delete_many.assert_not_awaited()
+        mock_repo.soft_delete.assert_not_awaited()
+        mock_repo.hard_delete.assert_not_awaited()
+
+    async def test_delete_reparent_missing_target_raises(self, service, mock_repo) -> None:
+        """reparent 目标不存在（repo.get → None）→ WorldReparentTargetError（spec §5.5 注 + §7 边界
+        11）.  # F35
+        RED: delete_setting 无 reparent_to 参数 → TypeError.
+        """
+        setting = _setting(name="青州")
+        child = _setting(name="清河县城")
+        mock_repo.list = AsyncMock(return_value=([child], 1))
+        mock_repo.get = AsyncMock(return_value=None)
+
+        with pytest.raises(WorldReparentTargetError):
+            await service.delete_setting(setting.id, reparent_to=uuid.uuid4())
+        mock_repo.delete_with_reparent.assert_not_awaited()
+
+    async def test_delete_reparent_cross_project_target_raises(self, service, mock_repo) -> None:
+        """reparent 目标跨项目 → WorldReparentTargetError（数据隔离基线）.  # F35
+        RED: delete_setting 无 reparent_to 参数 → TypeError.
+        """
+        setting = _setting(name="青州")
+        child = _setting(name="清河县城")
+        other_target = _setting(name="他国", project_id=OTHER_PID)
+        mock_repo.list = AsyncMock(return_value=([child], 1))
+        mock_repo.get = AsyncMock(return_value=other_target)
+
+        with pytest.raises(WorldReparentTargetError):
+            await service.delete_setting(setting.id, reparent_to=other_target.id)
+        mock_repo.delete_with_reparent.assert_not_awaited()
+
+    async def test_delete_reparent_target_in_own_subtree_raises(self, service, mock_repo) -> None:
+        """reparent 目标是自身子树（X ∈ list_descendants(sid) 集合）→
+        WorldReparentTargetError（spec §5.5 注）.  # F35
+        RED: delete_setting 无 reparent_to 参数 → TypeError.
+        """
+        setting = _setting(name="青州")
+        child = _setting(name="清河县城")
+        target = _setting(name="清河县城分县")  # 假设是自身子孙
+        mock_repo.list = AsyncMock(return_value=([child], 1))
+        mock_repo.list_descendants = AsyncMock(return_value=[setting, child, target])
+        mock_repo.get = AsyncMock(return_value=target)
+
+        with pytest.raises(WorldReparentTargetError):
+            await service.delete_setting(setting.id, reparent_to=target.id)
+        mock_repo.delete_with_reparent.assert_not_awaited()
+
+    async def test_delete_cascade_precedes_reparent(self, service, mock_repo) -> None:
+        """cascade + reparent_to 同时提供 → cascade 优先（hard_delete_many 调用，
+        delete_with_reparent 不调用，spec §5.5）.  # F35
+        RED: delete_setting 无 cascade/reparent_to 参数 → TypeError.
+        """
+        setting = _setting(name="青州")
+        child = _setting(name="清河县城")
+        target = _setting(name="东大陆")
+        sid = setting.id.int
+        mock_repo.list = AsyncMock(return_value=([child], 1))
+        mock_repo.list_descendants = AsyncMock(return_value=[setting, child])
+        mock_repo.get = AsyncMock(return_value=target)
+
+        result = await service.delete_setting(setting.id, cascade=True, reparent_to=target.id)
+
+        assert result is True
+        mock_repo.hard_delete_many.assert_awaited_once()
+        assert set(mock_repo.hard_delete_many.await_args.args[0]) == {sid, child.id.int}
+        mock_repo.delete_with_reparent.assert_not_awaited()
+
+
+class TestF35TreeQueries:
+    """F35 树查询 service 透传."""
+
+    async def test_list_descendants_forwards(self, service, mock_repo) -> None:
+        """list_descendants(sid) 透传 repo（UUID→int；层序/含自身由 repo 保证，spec §5.3）.  # F35
+        RED: service 无此方法 → AttributeError.
+        """
+        setting = _setting(name="青州")
+        child = _setting(name="清河县城")
+        mock_repo.list_descendants = AsyncMock(return_value=[setting, child])
+
+        result = await service.list_descendants(setting.id)
+
+        assert result == [setting, child]
+        mock_repo.list_descendants.assert_awaited_once_with(setting.id.int)

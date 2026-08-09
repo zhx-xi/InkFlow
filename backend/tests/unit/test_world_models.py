@@ -147,3 +147,84 @@ class TestWorldExtractRequest:
         """超过 50000 字符的 text 应抛出 ValidationError."""
         with pytest.raises(ValidationError, match="提取文本不能超过 50000 个字符"):
             WorldExtractRequest(project_id=PID, text="文" * 50001)
+
+
+class TestF35ParentIdModel:
+    """F35 地点树 — parent_id 字段契约（spec §2.2 数据模型）.
+
+    RED 阶段预期: WorldSetting/WorldCreate/WorldUpdate 尚未加 parent_id 字段，
+    Pydantic v2 默认 extra='ignore' 会**静默丢弃**未知字段 —— 因此必须显式断言
+    model_dump() 键存在（#107 空洞陷阱：仅断言属性 roundtrip 会因静默忽略而假绿）。
+    """
+
+    def test_world_setting_parent_id_roundtrip_and_dump_key(self):
+        """带 parent_id 构造 → roundtrip 保留；model_dump() 必须含 parent_id 键（防 extra='ignore'
+        空洞）.
+        RED: 字段缺失 → model_dump()['parent_id'] KeyError.
+        """
+        parent = uuid.UUID("9b1c2d3e-0000-4000-8000-000000000099")
+        setting = WorldSetting(
+            id=uuid.UUID("9b1c2d3e-0000-4000-8000-000000000001"),
+            project_id=PID,
+            name="清河县城",
+            parent_id=parent,
+            created_at=TS,
+            updated_at=TS,
+        )
+        dumped = setting.model_dump()
+        assert dumped["parent_id"] == parent  # 键存在（#107 空洞陷阱）
+        assert setting.parent_id == parent  # 属性 roundtrip
+
+    def test_world_setting_parent_id_defaults_none(self):
+        """不传 parent_id → 默认 None（顶层，spec §2.1 可空=顶层）.
+        RED: 属性不存在 → AttributeError.
+        """
+        setting = WorldSetting(
+            id=uuid.UUID("9b1c2d3e-0000-4000-8000-000000000001"),
+            project_id=PID,
+            name="大越国",
+            created_at=TS,
+            updated_at=TS,
+        )
+        assert setting.parent_id is None
+
+    def test_world_create_parent_id_roundtrip_and_default(self):
+        """WorldCreate 带 parent_id 构造 + roundtrip；缺省 None（顶层）.
+        RED: 字段缺失 → KeyError / AttributeError.
+        """
+        parent = uuid.UUID("9b1c2d3e-0000-4000-8000-000000000099")
+        with_parent = WorldCreate(project_id=PID, name="清河县城", parent_id=parent)
+        assert with_parent.model_dump()["parent_id"] == parent
+        assert with_parent.parent_id == parent
+
+        top = WorldCreate(project_id=PID, name="大越国")
+        assert top.model_dump()["parent_id"] is None
+        assert top.parent_id is None
+
+    def test_world_update_parent_id_explicit_none_in_fields_set(self):
+        """WorldUpdate(parent_id=None) → model_fields_set 含 parent_id（置顶语义 load-bearing，spec
+        §2.2 None 语义差异）.
+        RED: 字段缺失静默忽略 → model_fields_set 为空 → 断言失败.
+        """
+        update = WorldUpdate(parent_id=None)
+        assert "parent_id" in update.model_fields_set  # 出现即更新（None=置顶）
+        assert update.parent_id is None
+
+    def test_world_update_parent_id_absent_when_not_provided(self):
+        """WorldUpdate(name='x') 不含 parent_id → 不修改 parent（与「置顶」可区分，spec §2.2）."""
+        update = WorldUpdate(name="新名")
+        assert "parent_id" not in update.model_fields_set
+
+    def test_world_setting_extra_scale_preserved(self):
+        """extra.scale 自由文本键 roundtrip 保留（spec §2.1: scale 纯展示标签，extra JSON
+        零迁移承载）."""
+        setting = WorldSetting(
+            id=uuid.UUID("9b1c2d3e-0000-4000-8000-000000000001"),
+            project_id=PID,
+            name="清河县城",
+            extra={"scale": "县城"},
+            created_at=TS,
+            updated_at=TS,
+        )
+        assert setting.model_dump()["extra"] == {"scale": "县城"}
+        assert setting.extra == {"scale": "县城"}
