@@ -8,9 +8,9 @@ import typer
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
-from inkflow.core.database import async_session_factory, create_tables
 from inkflow.domain.models.project import Genre
-from inkflow.domain.services.project_service import ProjectService
+from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 
 app = typer.Typer(name="project", help="项目/书籍管理", no_args_is_help=True)
 
@@ -25,9 +25,15 @@ def _run_async(coro):
     return asyncio.run(coro)
 
 
-def _project_to_dict(project) -> dict:
-    """Serialize a Project domain model to a JSON-safe dict."""
-    return dict(project.model_dump(mode="json"))
+def _run(cli_ctx: CliContext, coro_fn):
+    """执行内核调用并统一映射 HTTP 异常为 F7 错误信封（退出码 1）."""
+    try:
+        return _run_async(coro_fn())
+    except HttpApiError as exc:
+        code, message = map_http_error(exc.status_code, exc.detail, exc.code)
+        print_error(cli_ctx, code, message)
+    except KernelStartupError as exc:
+        print_error(cli_ctx, "KERNEL_ERROR", f"内核启动失败: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -45,25 +51,26 @@ def create(
 ) -> None:
     """创建新项目"""
     cli_ctx: CliContext = ctx.obj
-    # Convert genre string to Genre enum
-    genre_enum = Genre(genre)
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = ProjectService(session)
-            return await svc.create_project(
-                name=name,
-                genre=genre_enum,
-                language=language,
-                target_words=target_words,
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                "/projects",
+                json={
+                    "name": name,
+                    "genre": Genre(genre).value,
+                    "language": language,
+                    "target_words": target_words,
+                },
             )
 
-    project = _run_async(_impl())
+    project = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, _project_to_dict(project))
+        print_result(cli_ctx, project)
     else:
-        typer.echo(f"✅ 项目创建成功: [{project.name}] ({project.genre.value})")
+        typer.echo(f"✅ 项目创建成功: [{project['name']}] ({project['genre']})")
 
 
 # ---------------------------------------------------------------------------
@@ -82,19 +89,30 @@ def list(
     """列出项目"""
     cli_ctx: CliContext = ctx.obj
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = ProjectService(session)
-            return await svc.list_projects(search=search, sort_by=sort)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(
+                "/projects",
+                params={
+                    "search": search,
+                    "sort_by": sort,
+                    "sort_desc": True,
+                    "offset": 0,
+                    "limit": 50,
+                },
+            )
 
-    projects, total = _run_async(_impl())
+    data = _run(cli_ctx, _impl)
+    projects = data.get("items", [])
+    total = data.get("total", 0)
     if not projects and not cli_ctx.json_output:
         print_result(cli_ctx, "📭 暂无项目")
         return
     if not cli_ctx.json_output and total:
         print_result(cli_ctx, f"共 {total} 个项目")
-    print_result(cli_ctx, [_project_to_dict(p) for p in projects])
+    print_result(cli_ctx, projects)
 
 
 # ---------------------------------------------------------------------------
@@ -110,25 +128,23 @@ def get(
     """查看项目详情"""
     cli_ctx: CliContext = ctx.obj
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = ProjectService(session)
-            return await svc.get(project_id)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/projects/{project_id}")
 
-    project = _run_async(_impl())
-    if project is None:
-        print_error(cli_ctx, "NOT_FOUND", "项目不存在")
+    project = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, _project_to_dict(project))
+        print_result(cli_ctx, project)
     else:
-        typer.echo(f"ID:         {project.id}")
-        typer.echo(f"名称:       {project.name}")
-        typer.echo(f"分类:       {project.genre.value}")
-        typer.echo(f"语言:       {project.language}")
-        typer.echo(f"目标字数:   {project.target_words}")
-        typer.echo(f"创建时间:   {project.created_at}")
-        typer.echo(f"更新时间:   {project.updated_at}")
+        typer.echo(f"ID:         {project['id']}")
+        typer.echo(f"名称:       {project['name']}")
+        typer.echo(f"分类:       {project['genre']}")
+        typer.echo(f"语言:       {project['language']}")
+        typer.echo(f"目标字数:   {project['target_words']}")
+        typer.echo(f"创建时间:   {project['created_at']}")
+        typer.echo(f"更新时间:   {project['updated_at']}")
 
 
 # ---------------------------------------------------------------------------
@@ -151,20 +167,18 @@ def delete(
             typer.echo("已取消")
             raise typer.Exit()
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = ProjectService(session)
-            if permanent:
-                return await svc.hard_delete(project_id)
-            return await svc.soft_delete(project_id)
+    async def _impl() -> None:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            await client.delete(
+                f"/projects/{project_id}",
+                params={"force": "true" if permanent else "false"},
+            )
 
-    ok = _run_async(_impl())
-    if ok:
-        label = "永久删除" if permanent else "已删除"
-        print_result(cli_ctx, f"✅ 项目 #{project_id} {label}")
-    else:
-        print_error(cli_ctx, "NOT_FOUND", "项目不存在")
+    _run(cli_ctx, _impl)
+    label = "永久删除" if permanent else "已删除"
+    print_result(cli_ctx, f"✅ 项目 #{project_id} {label}")
 
 
 # ---------------------------------------------------------------------------
@@ -180,16 +194,14 @@ def restore(
     """恢复已删除的项目"""
     cli_ctx: CliContext = ctx.obj
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = ProjectService(session)
-            return await svc.restore(project_id)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(f"/projects/{project_id}/restore")
 
-    project = _run_async(_impl())
-    if project is None:
-        print_error(cli_ctx, "NOT_FOUND", "项目不存在")
+    project = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, _project_to_dict(project))
+        print_result(cli_ctx, project)
     else:
-        typer.echo(f"✅ 项目已恢复: [{project.name}] ({project.genre.value})")
+        typer.echo(f"✅ 项目已恢复: [{project['name']}] ({project['genre']})")

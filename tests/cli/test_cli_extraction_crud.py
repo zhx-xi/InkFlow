@@ -1,14 +1,40 @@
-"""F14 提取 CLI 命令测试（CRUD/status 部分）— Mock ExtractionService 隔离数据库。
+"""F14 提取 CLI 命令测试（CRUD/status 部分）— Mock ensure_kernel + InkFlowHTTPClient。
 
 从 test_cli_extraction.py 拆分（monster-file 护栏）：
 TestExtractRegistration / TestExtractRun / TestExtractStatus。
+
+F38 改造（#169）：mock 目标从 domain Service 迁移到 ensure_kernel + InkFlowHTTPClient
+（HTTP JSON 响应）；create_tables patch 已移除。
+
+── RED 形态说明 ─────────────────────────────────────────────
+- fake_http_client fixture patch 命令模块命名空间
+  （inkflow.cli.commands.extract.ensure_kernel / .InkFlowHTTPClient）——当前命令模块
+  尚无这两个属性 → fixture setup 抛 AttributeError → 相关用例 ERROR（同根因，
+  预期 RED；GREEN 命令改造落地后自动转绿）。
+- HttpApiError 在用例体内惰性导入：RED 阶段 inkflow.infrastructure.http 尚未实现，
+  顶部 import 会使整文件收集失败（ModuleNotFoundError），无法呈现上述预期形态。
+
+── 端点契约（spec §3.1 表）────────────────────────────────
+- run → POST /extract（body = ExtractionRequest 字段，project_id 在 body 内——
+  端点扁平无路径参数；type/text/chapter_ids/prompt/num_chapters/save/
+  auto_extract/index/force 等，JSON 形态：枚举 → 字符串、UUID → 字符串）
+- status → GET /projects/{pid}/extractions/runs（params: type；响应
+  {"items": [...], "total", "offset", "limit"} 信封）
+- 错误映射（spec §5.3）：404 → NOT_FOUND；422 → VALIDATION_ERROR；
+  500 + X-InkFlow-Error-Code: LLM_ERROR → LLM_ERROR（extract 含 LLM 路径，
+  测试以 code="LLM_ERROR" 模拟响应头——父侧拍板保留 LLM_ERROR 语义）；
+  500 无头 → INTERNAL_ERROR。
+  ⚠️ 错误码语义变更（恒 HTTP 后 CLI 只见状态码 + detail）：RAG_ERROR
+  （RAGUnavailableError）→ INTERNAL_ERROR；EXTRACTION_ERROR
+  （ForeshadowingExtractionError 等）→ INTERNAL_ERROR；DB_ERROR →
+  INTERNAL_ERROR（spec §5.3 注）。
 """
 
 from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -16,17 +42,6 @@ from typer.testing import CliRunner
 
 from inkflow.cli.commands.extract import app
 from inkflow.cli.context import CliContext
-from inkflow.domain.models.extraction import (
-    ExtractionResult,
-    ExtractionRun,
-    ExtractionStatus,
-    ExtractionType,
-)
-from inkflow.domain.ports.character_errors import ProjectNotFoundError
-from inkflow.domain.ports.extraction_errors import (
-    RAGUnavailableError,
-)
-from inkflow.domain.ports.foreshadowing_errors import ForeshadowingExtractionError
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 CH1 = uuid.UUID("7a4f2c91-0000-4000-8000-000000000001")
@@ -40,28 +55,36 @@ def cli_runner() -> CliRunner:
 
 
 @pytest.fixture
-def mock_extraction_service():
-    """Mock ExtractionService，绕过数据库（ADR-015 依赖注入）."""
-    with patch(
-        "inkflow.cli.commands.extract.ExtractionService", autospec=True
-    ) as mock_cls:
+def fake_http_client():
+    """Mock ensure_kernel + InkFlowHTTPClient，绕过真实内核与 HTTP（F38 mock 轨）。"""
+    fake_handle = SimpleNamespace(
+        port=38291,
+        token="test-token",
+        pid=1,
+        version="0.1.0",
+        started_at="",
+        reused=True,
+    )
+    with (
+        patch(
+            "inkflow.cli.commands.extract.ensure_kernel",
+            AsyncMock(return_value=fake_handle),
+        ),
+        patch(
+            "inkflow.cli.commands.extract.InkFlowHTTPClient", autospec=True
+        ) as mock_cls,
+    ):
         mock_instance = AsyncMock()
+        mock_instance.__aenter__.return_value = mock_instance
         mock_cls.return_value = mock_instance
         yield mock_instance
 
 
-@pytest.fixture
-def mock_create_tables():
-    """Mock create_tables 避免数据库初始化."""
-    with patch("inkflow.cli.commands.extract.create_tables", AsyncMock()):
-        yield
-
-
-def _make_result(**overrides) -> ExtractionResult:
-    """构造测试用 ExtractionResult 领域对象."""
-    defaults = dict(
-        type=ExtractionType.CHARACTER,
-        status=ExtractionStatus.SUCCESS,
+def _make_result(**overrides: object) -> dict:
+    """构造测试用 ExtractionResult JSON dict（枚举 → 字符串）."""
+    defaults: dict[str, object] = dict(
+        type="character",
+        status="success",
         skipped_reason=None,
         processed_sources=2,
         skipped_sources=0,
@@ -73,28 +96,28 @@ def _make_result(**overrides) -> ExtractionResult:
         detail={"created": [], "updated": []},
     )
     defaults.update(overrides)
-    return ExtractionResult(**defaults)
+    return defaults
 
 
-def _make_run(**overrides) -> ExtractionRun:
-    """构造测试用 ExtractionRun 领域对象."""
-    defaults = dict(
+def _make_run(**overrides: object) -> dict:
+    """构造测试用 ExtractionRun JSON dict（run_at → ISO 字符串）."""
+    defaults: dict[str, object] = dict(
         id=1,
-        project_id=PID,
-        type=ExtractionType.CHARACTER,
+        project_id=str(PID),
+        type="character",
         source_key=str(CH1),
         content_hash="abc123",
-        status=ExtractionStatus.SUCCESS,
+        status="success",
         created_count=2,
         updated_count=1,
         warnings_json="[]",
         error=None,
         model="deepseek-v3",
         indexed=True,
-        run_at=datetime(2026, 8, 2, 10, 0, 0),
+        run_at="2026-08-02T10:00:00",
     )
     defaults.update(overrides)
-    return ExtractionRun(**defaults)
+    return defaults
 
 
 class TestExtractRegistration:
@@ -108,12 +131,10 @@ class TestExtractRegistration:
 
 
 class TestExtractRun:
-    def test_run_character_text_json(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
-        """run --type character --text --json → 成功信封 + ExtractionRequest 透传."""
-        mock_extraction_service.extract.return_value = _make_result(
-            type=ExtractionType.CHARACTER, indexed=False
+    def test_run_character_text_json(self, cli_runner, fake_http_client):
+        """run --type character --text --json → 成功信封 + ExtractionRequest body 透传."""
+        fake_http_client.post.return_value = _make_result(
+            type="character", indexed=False
         )
         result = cli_runner.invoke(
             app,
@@ -134,21 +155,20 @@ class TestExtractRun:
         assert data["data"]["type"] == "character"
         assert data["data"]["status"] == "success"
         assert data["data"]["created"] == 3
-        call = mock_extraction_service.extract.await_args
-        request = call.kwargs["request"]
-        assert request.project_id == PID
-        assert request.type is ExtractionType.CHARACTER
-        assert "林晚推开柴门" in request.text
-        assert request.chapter_ids is None
-        assert request.index is False
+        call = fake_http_client.post.await_args
+        assert call.args[0] == "/extract"
+        body: dict = call.kwargs["json"]
+        assert body["project_id"] == str(PID)
+        assert body["type"] == "character"
+        assert "林晚推开柴门" in body["text"]
+        assert body["chapter_ids"] is None
+        assert body["index"] is False
 
-    def test_run_text_file(
-        self, cli_runner, mock_extraction_service, mock_create_tables, tmp_path
-    ):
+    def test_run_text_file(self, cli_runner, fake_http_client, tmp_path):
         """--text-file 读取文件内容作为 text 透传."""
         src = tmp_path / "chapter.txt"
         src.write_text("第一章：林晚在山神庙中醒来。", encoding="utf-8")
-        mock_extraction_service.extract.return_value = _make_result()
+        fake_http_client.post.return_value = _make_result()
         result = cli_runner.invoke(
             app,
             [
@@ -163,16 +183,13 @@ class TestExtractRun:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
-        call = mock_extraction_service.extract.await_args
-        request = call.kwargs["request"]
-        assert request.text == "第一章：林晚在山神庙中醒来。"
-        assert request.type is ExtractionType.SETTING
+        body: dict = fake_http_client.post.await_args.kwargs["json"]
+        assert body["text"] == "第一章：林晚在山神庙中醒来。"
+        assert body["type"] == "setting"
 
-    def test_run_chapters(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
-        """--chapters 逗号分隔 UUID 列表 → chapter_ids 透传."""
-        mock_extraction_service.extract.return_value = _make_result()
+    def test_run_chapters(self, cli_runner, fake_http_client):
+        """--chapters 逗号分隔 UUID 列表 → chapter_ids 透传（JSON 字符串数组）."""
+        fake_http_client.post.return_value = _make_result()
         result = cli_runner.invoke(
             app,
             [
@@ -187,17 +204,14 @@ class TestExtractRun:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
-        call = mock_extraction_service.extract.await_args
-        request = call.kwargs["request"]
-        assert request.chapter_ids == [CH1, CH2]
-        assert request.text is None
+        body: dict = fake_http_client.post.await_args.kwargs["json"]
+        assert body["chapter_ids"] == [str(CH1), str(CH2)]
+        assert body["text"] is None
 
-    def test_run_outline_params(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
+    def test_run_outline_params(self, cli_runner, fake_http_client):
         """outline 参数透传: --prompt/--num-chapters/--no-save."""
-        mock_extraction_service.extract.return_value = _make_result(
-            type=ExtractionType.OUTLINE, created=1, updated=0, warnings=[]
+        fake_http_client.post.return_value = _make_result(
+            type="outline", created=1, updated=0, warnings=[]
         )
         result = cli_runner.invoke(
             app,
@@ -216,19 +230,16 @@ class TestExtractRun:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
-        call = mock_extraction_service.extract.await_args
-        request = call.kwargs["request"]
-        assert request.type is ExtractionType.OUTLINE
-        assert request.prompt == "都市异能，双女主"
-        assert request.num_chapters == 20
-        assert request.save is False
+        body: dict = fake_http_client.post.await_args.kwargs["json"]
+        assert body["type"] == "outline"
+        assert body["prompt"] == "都市异能，双女主"
+        assert body["num_chapters"] == 20
+        assert body["save"] is False
 
-    def test_run_timeline_auto_extract(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
+    def test_run_timeline_auto_extract(self, cli_runner, fake_http_client):
         """--auto-extract 显式开启 timeline 设置项覆盖."""
-        mock_extraction_service.extract.return_value = _make_result(
-            type=ExtractionType.TIMELINE, indexed=False
+        fake_http_client.post.return_value = _make_result(
+            type="timeline", indexed=False
         )
         result = cli_runner.invoke(
             app,
@@ -245,16 +256,13 @@ class TestExtractRun:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
-        call = mock_extraction_service.extract.await_args
-        request = call.kwargs["request"]
-        assert request.auto_extract is True
+        body: dict = fake_http_client.post.await_args.kwargs["json"]
+        assert body["auto_extract"] is True
 
-    def test_run_timeline_no_auto_extract(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
+    def test_run_timeline_no_auto_extract(self, cli_runner, fake_http_client):
         """--no-auto-extract 显式关闭 timeline 设置项覆盖."""
-        mock_extraction_service.extract.return_value = _make_result(
-            type=ExtractionType.TIMELINE, indexed=False
+        fake_http_client.post.return_value = _make_result(
+            type="timeline", indexed=False
         )
         result = cli_runner.invoke(
             app,
@@ -269,15 +277,12 @@ class TestExtractRun:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
-        call = mock_extraction_service.extract.await_args
-        request = call.kwargs["request"]
-        assert request.auto_extract is False
+        body: dict = fake_http_client.post.await_args.kwargs["json"]
+        assert body["auto_extract"] is False
 
-    def test_run_index_force(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
+    def test_run_index_force(self, cli_runner, fake_http_client):
         """--index --force → index=True + force=True 透传."""
-        mock_extraction_service.extract.return_value = _make_result()
+        fake_http_client.post.return_value = _make_result()
         result = cli_runner.invoke(
             app,
             [
@@ -294,16 +299,13 @@ class TestExtractRun:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
-        call = mock_extraction_service.extract.await_args
-        request = call.kwargs["request"]
-        assert request.index is True
-        assert request.force is True
+        body: dict = fake_http_client.post.await_args.kwargs["json"]
+        assert body["index"] is True
+        assert body["force"] is True
 
-    def test_run_human_success(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
+    def test_run_human_success(self, cli_runner, fake_http_client):
         """run 人类模式 success → ✅ 提取完成 摘要（处理/跳过/新增/更新/警告）."""
-        mock_extraction_service.extract.return_value = _make_result()
+        fake_http_client.post.return_value = _make_result()
         result = cli_runner.invoke(
             app,
             [
@@ -323,12 +325,10 @@ class TestExtractRun:
             in result.output
         )
 
-    def test_run_human_skipped(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
+    def test_run_human_skipped(self, cli_runner, fake_http_client):
         """run 人类模式 skipped → ⏭ 提取跳过（含原因，未调用 LLM）."""
-        mock_extraction_service.extract.return_value = _make_result(
-            status=ExtractionStatus.SKIPPED,
+        fake_http_client.post.return_value = _make_result(
+            status="skipped",
             skipped_reason="内容未变更（源: chapter 7a4f2c91-...）",
         )
         result = cli_runner.invoke(
@@ -350,9 +350,7 @@ class TestExtractRun:
             in result.output
         )
 
-    def test_run_style_success(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
+    def test_run_style_success(self, cli_runner, fake_http_client):
         """--type style → 正常执行：退出码 0 + ✅ 提取完成摘要（F16 落地，spec §4.1/§8.2）。
 
         门面结果归一（spec §8.2 表 #6）: created=0/updated=0/model=None、
@@ -393,9 +391,9 @@ class TestExtractRun:
             "llm_assessment": None,
             "warnings": [],
         }
-        mock_extraction_service.extract.return_value = _make_result(
-            type=ExtractionType.STYLE,
-            status=ExtractionStatus.SUCCESS,
+        fake_http_client.post.return_value = _make_result(
+            type="style",
+            status="success",
             processed_sources=1,
             skipped_sources=0,
             created=0,
@@ -423,16 +421,15 @@ class TestExtractRun:
             "✅ 提取完成: style 处理 1 个源（跳过 0），新增 0 更新 0，警告 1 条"
             in result.output
         )
-        call = mock_extraction_service.extract.await_args
-        request = call.kwargs["request"]
-        assert request.type is ExtractionType.STYLE
-        assert request.text == "林晚"
+        body: dict = fake_http_client.post.await_args.kwargs["json"]
+        assert body["type"] == "style"
+        assert body["text"] == "林晚"
 
-    def test_run_project_not_found(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
+    def test_run_project_not_found(self, cli_runner, fake_http_client):
         """项目不存在 → NOT_FOUND 错误信封 + 退出码 1."""
-        mock_extraction_service.extract.side_effect = ProjectNotFoundError()
+        from inkflow.infrastructure.http import HttpApiError  # RED 期惰性导入
+
+        fake_http_client.post.side_effect = HttpApiError(404, "项目不存在")
         result = cli_runner.invoke(
             app,
             [
@@ -451,9 +448,7 @@ class TestExtractRun:
         assert data["ok"] is False
         assert data["error"]["code"] == "NOT_FOUND"
 
-    def test_run_invalid_uuid(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
+    def test_run_invalid_uuid(self, cli_runner, fake_http_client):
         """无效 project-id UUID → NOT_FOUND（spec §7: 无效 UUID → 404 语义）."""
         result = cli_runner.invoke(
             app,
@@ -472,13 +467,13 @@ class TestExtractRun:
         data = json.loads(result.stdout)
         assert data["ok"] is False
         assert data["error"]["code"] == "NOT_FOUND"
-        mock_extraction_service.extract.assert_not_awaited()
+        fake_http_client.post.assert_not_awaited()
 
-    def test_run_rag_error(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
-        """index=true 但向量库不可用 → RAG_ERROR 错误信封 + 退出码 1."""
-        mock_extraction_service.extract.side_effect = RAGUnavailableError()
+    def test_run_internal_error(self, cli_runner, fake_http_client):
+        """index=true 但向量库不可用（HTTP 500 无错误码头）→ INTERNAL_ERROR + 退出码 1."""
+        from inkflow.infrastructure.http import HttpApiError  # RED 期惰性导入
+
+        fake_http_client.post.side_effect = HttpApiError(500, "向量库未装配")
         result = cli_runner.invoke(
             app,
             [
@@ -496,14 +491,14 @@ class TestExtractRun:
         assert result.exit_code == 1
         data = json.loads(result.stdout)
         assert data["ok"] is False
-        assert data["error"]["code"] == "RAG_ERROR"
+        assert data["error"]["code"] == "INTERNAL_ERROR"
 
-    def test_run_extraction_error(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
-        """管线解析失败 → EXTRACTION_ERROR 错误信封 + 退出码 1."""
-        mock_extraction_service.extract.side_effect = ForeshadowingExtractionError(
-            "3 次尝试后仍无法解析为合法 JSON"
+    def test_run_extraction_internal_error(self, cli_runner, fake_http_client):
+        """管线解析失败（HTTP 500 无错误码头）→ INTERNAL_ERROR 错误信封 + 退出码 1."""
+        from inkflow.infrastructure.http import HttpApiError  # RED 期惰性导入
+
+        fake_http_client.post.side_effect = HttpApiError(
+            500, "3 次尝试后仍无法解析为合法 JSON"
         )
         result = cli_runner.invoke(
             app,
@@ -521,11 +516,9 @@ class TestExtractRun:
         assert result.exit_code == 1
         data = json.loads(result.stdout)
         assert data["ok"] is False
-        assert data["error"]["code"] == "EXTRACTION_ERROR"
+        assert data["error"]["code"] == "INTERNAL_ERROR"
 
-    def test_run_text_and_text_file_exit_2(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
+    def test_run_text_and_text_file_exit_2(self, cli_runner, fake_http_client):
         """--text 与 --text-file 同时使用 → 退出码 2（F9 先例）."""
         result = cli_runner.invoke(
             app,
@@ -543,11 +536,9 @@ class TestExtractRun:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 2
-        mock_extraction_service.extract.assert_not_awaited()
+        fake_http_client.post.assert_not_awaited()
 
-    def test_run_text_and_chapters_exit_2(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
+    def test_run_text_and_chapters_exit_2(self, cli_runner, fake_http_client):
         """--text 与 --chapters 同时使用 → 退出码 2（三选一互斥）."""
         result = cli_runner.invoke(
             app,
@@ -565,11 +556,9 @@ class TestExtractRun:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 2
-        mock_extraction_service.extract.assert_not_awaited()
+        fake_http_client.post.assert_not_awaited()
 
-    def test_run_invalid_type_exit_2(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
+    def test_run_invalid_type_exit_2(self, cli_runner, fake_http_client):
         """--type 非法值 → 退出码 2（Typer Choice 校验）."""
         result = cli_runner.invoke(
             app,
@@ -585,16 +574,21 @@ class TestExtractRun:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 2
-        mock_extraction_service.extract.assert_not_awaited()
+        fake_http_client.post.assert_not_awaited()
 
 
 class TestExtractStatus:
-    def test_status_json(self, cli_runner, mock_extraction_service, mock_create_tables):
+    def test_status_json(self, cli_runner, fake_http_client):
         """status --json → 成功信封 + runs 数组（items/total）+ --type 过滤透传."""
-        mock_extraction_service.list_runs.return_value = (
-            [_make_run(), _make_run(id=2, type=ExtractionType.SETTING, indexed=False)],
-            2,
-        )
+        fake_http_client.get.return_value = {
+            "items": [
+                _make_run(),
+                _make_run(id=2, type="setting", indexed=False),
+            ],
+            "total": 2,
+            "offset": 0,
+            "limit": 50,
+        }
         result = cli_runner.invoke(
             app,
             ["status", "--project-id", str(PID), "--type", "character"],
@@ -608,33 +602,33 @@ class TestExtractStatus:
         assert data["data"]["items"][0]["source_key"] == str(CH1)
         assert data["data"]["items"][0]["created_count"] == 2
         assert data["data"]["items"][0]["indexed"] is True
-        mock_extraction_service.list_runs.assert_awaited_once_with(
-            project_id=PID, type=ExtractionType.CHARACTER, offset=0, limit=50
-        )
+        call = fake_http_client.get.await_args
+        assert call.args[0] == f"/projects/{PID}/extractions/runs"
+        assert call.kwargs["params"]["type"] == "character"
 
-    def test_status_human(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
+    def test_status_human(self, cli_runner, fake_http_client):
         """status 人类模式 → 📋 状态行（success/skipped/error 三态）."""
-        mock_extraction_service.list_runs.return_value = (
-            [
+        fake_http_client.get.return_value = {
+            "items": [
                 _make_run(),
                 _make_run(
                     id=2,
-                    type=ExtractionType.SETTING,
-                    status=ExtractionStatus.SKIPPED,
+                    type="setting",
+                    status="skipped",
                     source_key="manual",
                 ),
                 _make_run(
                     id=3,
-                    type=ExtractionType.FORESHADOWING,
-                    status=ExtractionStatus.ERROR,
+                    type="foreshadowing",
+                    status="error",
                     source_key="manual",
                     error="3 次尝试后仍无法解析为合法 JSON",
                 ),
             ],
-            3,
-        )
+            "total": 3,
+            "offset": 0,
+            "limit": 50,
+        }
         result = cli_runner.invoke(
             app,
             ["status", "--project-id", str(PID)],
@@ -652,11 +646,14 @@ class TestExtractStatus:
             in result.output
         )
 
-    def test_status_human_empty(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
+    def test_status_human_empty(self, cli_runner, fake_http_client):
         """无记录人类模式 → 暂无提取记录."""
-        mock_extraction_service.list_runs.return_value = ([], 0)
+        fake_http_client.get.return_value = {
+            "items": [],
+            "total": 0,
+            "offset": 0,
+            "limit": 50,
+        }
         result = cli_runner.invoke(
             app,
             ["status", "--project-id", str(PID)],
@@ -665,9 +662,7 @@ class TestExtractStatus:
         assert result.exit_code == 0
         assert "暂无提取记录" in result.output
 
-    def test_status_invalid_type_exit_2(
-        self, cli_runner, mock_extraction_service, mock_create_tables
-    ):
+    def test_status_invalid_type_exit_2(self, cli_runner, fake_http_client):
         """status --type 非法值 → 退出码 2."""
         result = cli_runner.invoke(
             app,
@@ -675,4 +670,23 @@ class TestExtractStatus:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 2
-        mock_extraction_service.list_runs.assert_not_awaited()
+        fake_http_client.get.assert_not_awaited()
+
+    def test_status_kernel_startup_error(self, cli_runner):
+        """ensure_kernel 失败（内核冷启动超时）→ KERNEL_ERROR 信封 + 退出码 1（F38 spec §5.3）."""
+        from inkflow.infrastructure.kernel import KernelStartupError
+
+        with patch(
+            "inkflow.cli.commands.extract.ensure_kernel",
+            AsyncMock(side_effect=KernelStartupError("启动超时")),
+        ):
+            result = cli_runner.invoke(
+                app,
+                ["status", "--project-id", str(PID)],
+                obj=CliContext(json_output=True),
+            )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "KERNEL_ERROR"
+        assert "内核启动失败" in data["error"]["message"]

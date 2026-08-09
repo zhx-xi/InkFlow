@@ -44,7 +44,11 @@ def _map_service_error(exc: Exception) -> HTTPException:
         if exc.args and exc.args[0] in _NOT_FOUND_MESSAGES:
             return HTTPException(status_code=404, detail=exc.args[0])
         logger.exception("LLM 调用失败: %s", exc)
-        return HTTPException(status_code=500, detail="LLM 调用失败，请稍后重试")
+        return HTTPException(
+            status_code=500,
+            detail="LLM 调用失败，请稍后重试",
+            headers={"X-InkFlow-Error-Code": "LLM_ERROR"},
+        )
     logger.exception("写作服务未预期异常: %s", exc)
     return HTTPException(status_code=500, detail="服务器内部错误，请稍后重试")
 

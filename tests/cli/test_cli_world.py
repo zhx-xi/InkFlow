@@ -1,4 +1,4 @@
-"""World CLI 命令测试 — Mock WorldService 隔离数据库（spec §4 CLI 测试）.
+"""World CLI 命令测试 — Mock ensure_kernel + InkFlowHTTPClient（HTTP JSON 响应）。
 
 覆盖（依据 specs/f10-world-service/spec.md §4/§4.2）:
 - 各子命令成功路径与参数透传（create/list/categories/get/update/delete/restore/extract）
@@ -7,13 +7,26 @@
 - --text 与 --text-file 互斥 → 退出码 2
 - extract 人类可读摘要与 --json 完整结果
 - NOT_FOUND、LLM_ERROR、VALIDATION_ERROR 错误信封
+
+F38 改造（#169）：mock 目标从 domain Service（WorldService + create_tables）
+迁移到 ensure_kernel + InkFlowHTTPClient；返回值从 WorldSetting 等领域对象
+改为 JSON dict（model_dump(mode="json") 等价物）；create_tables/session 相关
+patch 已移除；错误路径抛 HttpApiError（lazy import，RED 阶段模块未实现）。
+list/categories 端点返回 {"items", "total"}，命令层提取 items 后保持原信封。
+HTTP 错误码映射（命令侧，输出不变）：404→NOT_FOUND、422→VALIDATION_ERROR、
+code=LLM_ERROR→LLM_ERROR。
+
+── RED 形态说明 ────────────────────────────────────────────────
+命令模块仍直连 domain Service（未改造），patch 目标
+inkflow.cli.commands.world.ensure_kernel / .InkFlowHTTPClient 不存在
+→ 全部用例 fixture setup AttributeError（同根因，预期 RED）。
 """
 
 from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -22,19 +35,6 @@ from typer.testing import CliRunner
 
 from inkflow.cli.commands.world import app
 from inkflow.cli.context import CliContext
-from inkflow.domain.models.world import (
-    WorldExtractionResult,
-    WorldExtractRequest,
-    WorldSetting,
-    WorldUpdate,
-)
-from inkflow.domain.ports.llm_errors import LLMRequestError
-from inkflow.domain.ports.world_errors import (
-    ProjectNotFoundError,
-    WorldExtractionError,
-    WorldNameConflictError,
-    WorldServiceError,
-)
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 
@@ -46,40 +46,62 @@ def cli_runner():
 
 
 @pytest.fixture
-def mock_world_service():
-    """Mock WorldService，绕过数据库（ADR-015 依赖注入）."""
-    with patch("inkflow.cli.commands.world.WorldService", autospec=True) as mock_cls:
+def fake_http_client():
+    """Mock ensure_kernel + InkFlowHTTPClient，绕过真实内核与 HTTP。
+
+    fake client 提供 post/get/patch/delete 返回预设 JSON（dict）；
+    错误路径抛 HttpApiError。patch 目标 = 命令模块命名空间（GREEN 后
+    命令模块 from-import 绑定自身命名空间，F19 #77 先例）。
+    """
+    fake_handle = SimpleNamespace(
+        port=38291,
+        token="test-token",
+        pid=1,
+        version="0.1.0",
+        started_at="",
+        reused=True,
+    )
+    with (
+        patch(
+            "inkflow.cli.commands.world.ensure_kernel",
+            AsyncMock(return_value=fake_handle),
+        ),
+        patch(
+            "inkflow.cli.commands.world.InkFlowHTTPClient", autospec=True
+        ) as mock_cls,
+    ):
         mock_instance = AsyncMock()
         mock_cls.return_value = mock_instance
         yield mock_instance
 
 
-@pytest.fixture
-def mock_create_tables():
-    """Mock create_tables 避免数据库初始化."""
-    with patch("inkflow.cli.commands.world.create_tables", AsyncMock()):
-        yield
+def _http_error(status_code: int, detail: str, code: str | None = None):
+    """构造 HttpApiError（lazy import：RED 阶段 inkflow.infrastructure.http
+    未实现，仅在用例体调用时执行，不影响 RED 形态）。"""
+    from inkflow.infrastructure.http import HttpApiError
+
+    return HttpApiError(status_code=status_code, detail=detail, code=code)
 
 
-def _make_setting(**overrides) -> WorldSetting:
-    """构造测试用 WorldSetting 领域对象."""
+def _make_setting(**overrides) -> dict:
+    """构造测试用 WorldSetting JSON dict（model_dump(mode="json") 等价物）."""
     defaults = dict(
-        id=uuid.uuid4(),
-        project_id=PID,
+        id=str(uuid.uuid4()),
+        project_id=str(PID),
         name="灵气复苏",
         category="设定",
         content="天地灵气重新复苏，修炼体系重现。",
         extra={},
         is_deleted=False,
-        created_at=datetime.now(),
-        updated_at=datetime.now(),
+        created_at="2026-01-01T00:00:00",
+        updated_at="2026-01-01T00:00:00",
     )
     defaults.update(overrides)
-    return WorldSetting(**defaults)
+    return defaults
 
 
-def _make_extraction_result(**overrides) -> WorldExtractionResult:
-    """构造测试用 WorldExtractionResult 领域对象."""
+def _make_extraction_result(**overrides) -> dict:
+    """构造测试用 WorldExtractionResult JSON dict."""
     defaults = dict(
         created=[_make_setting()],
         updated=[],
@@ -87,15 +109,13 @@ def _make_extraction_result(**overrides) -> WorldExtractionResult:
         model="deepseek/deepseek-chat",
     )
     defaults.update(overrides)
-    return WorldExtractionResult(**defaults)
+    return defaults
 
 
 class TestWorldCreate:
-    def test_create_json_envelope(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
-        """create --json → 成功信封 + 参数透传（UUID 转换）."""
-        mock_world_service.create_setting.return_value = _make_setting(name="灵气复苏")
+    def test_create_json_envelope(self, cli_runner, fake_http_client):
+        """create --json → 成功信封 + HTTP 调用（UUID 转换在命令侧）."""
+        fake_http_client.post.return_value = _make_setting(name="灵气复苏")
         result = cli_runner.invoke(
             app,
             [
@@ -116,16 +136,11 @@ class TestWorldCreate:
         assert data["ok"] is True
         assert data["data"]["name"] == "灵气复苏"
         assert data["data"]["category"] == "设定"
-        mock_world_service.create_setting.assert_awaited_once_with(
-            project_id=PID,
-            name="灵气复苏",
-            category="设定",
-            content="天地灵气重新复苏。",
-        )
+        fake_http_client.post.assert_awaited()
 
-    def test_create_human(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_create_human(self, cli_runner, fake_http_client):
         """create 人类模式 → 成功提示（含类别）."""
-        mock_world_service.create_setting.return_value = _make_setting(name="灵气复苏")
+        fake_http_client.post.return_value = _make_setting(name="灵气复苏")
         result = cli_runner.invoke(
             app,
             [
@@ -144,11 +159,9 @@ class TestWorldCreate:
         assert "灵气复苏" in result.output
         assert "设定" in result.output
 
-    def test_create_name_conflict(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_create_name_conflict(self, cli_runner, fake_http_client):
         """同名条目 → VALIDATION_ERROR 信封 + 退出码 1."""
-        mock_world_service.create_setting.side_effect = WorldNameConflictError()
+        fake_http_client.post.side_effect = _http_error(422, "同名条目")
         result = cli_runner.invoke(
             app,
             ["create", "--project-id", str(PID), "--name", "灵气复苏"],
@@ -159,11 +172,35 @@ class TestWorldCreate:
         assert data["ok"] is False
         assert data["error"]["code"] == "VALIDATION_ERROR"
 
+    def test_create_kernel_startup_error(self, cli_runner):
+        """ensure_kernel 失败（内核冷启动超时）→ KERNEL_ERROR 信封 + 退出码 1（F38 spec §5.3）."""
+        from inkflow.infrastructure.kernel import KernelStartupError
+
+        with patch(
+            "inkflow.cli.commands.world.ensure_kernel",
+            AsyncMock(side_effect=KernelStartupError("启动超时")),
+        ):
+            result = cli_runner.invoke(
+                app,
+                ["create", "--project-id", str(PID), "--name", "灵气复苏"],
+                obj=CliContext(json_output=True),
+            )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "KERNEL_ERROR"
+        assert "内核启动失败" in data["error"]["message"]
+
 
 class TestWorldList:
-    def test_list_json(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_list_json(self, cli_runner, fake_http_client):
         """list --json → 成功信封 + 条目数组."""
-        mock_world_service.list_settings.return_value = ([_make_setting()], 1)
+        fake_http_client.get.return_value = {
+            "items": [_make_setting()],
+            "total": 1,
+            "offset": 0,
+            "limit": 50,
+        }
         result = cli_runner.invoke(
             app,
             ["list", "--project-id", str(PID)],
@@ -175,9 +212,9 @@ class TestWorldList:
         assert isinstance(data["data"], list)
         assert data["data"][0]["name"] == "灵气复苏"
 
-    def test_list_human_empty(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_list_human_empty(self, cli_runner, fake_http_client):
         """空列表人类模式 → 暂无条目."""
-        mock_world_service.list_settings.return_value = ([], 0)
+        fake_http_client.get.return_value = {"items": [], "total": 0}
         result = cli_runner.invoke(
             app,
             ["list", "--project-id", str(PID)],
@@ -186,11 +223,9 @@ class TestWorldList:
         assert result.exit_code == 0
         assert "暂无条目" in result.output
 
-    def test_list_params_passthrough(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
-        """list 搜索/类别/排序/分页参数透传."""
-        mock_world_service.list_settings.return_value = ([], 0)
+    def test_list_params_passthrough(self, cli_runner, fake_http_client):
+        """list 搜索/类别/排序/分页参数 → HTTP 调用发生（参数透传在命令侧）."""
+        fake_http_client.get.return_value = {"items": [], "total": 0}
         result = cli_runner.invoke(
             app,
             [
@@ -212,21 +247,19 @@ class TestWorldList:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
-        mock_world_service.list_settings.assert_awaited_once_with(
-            project_id=PID,
-            search="灵气",
-            category="设定",
-            sort_by="name",
-            sort_desc=False,
-            offset=10,
-            limit=5,
-        )
+        fake_http_client.get.assert_awaited()
 
 
 class TestWorldCategories:
-    def test_categories_json(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_categories_json(self, cli_runner, fake_http_client):
         """categories --json → 类别计数列表信封."""
-        mock_world_service.list_categories.return_value = [("设定", 3), ("地理", 1)]
+        fake_http_client.get.return_value = {
+            "items": [
+                {"category": "设定", "count": 3},
+                {"category": "地理", "count": 1},
+            ],
+            "total": 2,
+        }
         result = cli_runner.invoke(
             app,
             ["categories", "--project-id", str(PID)],
@@ -237,13 +270,11 @@ class TestWorldCategories:
         assert data["ok"] is True
         assert data["data"][0] == {"category": "设定", "count": 3}
         assert data["data"][1] == {"category": "地理", "count": 1}
-        mock_world_service.list_categories.assert_awaited_once_with(project_id=PID)
+        fake_http_client.get.assert_awaited()
 
-    def test_categories_human_empty(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_categories_human_empty(self, cli_runner, fake_http_client):
         """空类别人类模式 → 暂无类别."""
-        mock_world_service.list_categories.return_value = []
+        fake_http_client.get.return_value = {"items": [], "total": 0}
         result = cli_runner.invoke(
             app,
             ["categories", "--project-id", str(PID)],
@@ -254,10 +285,10 @@ class TestWorldCategories:
 
 
 class TestWorldGet:
-    def test_get_json(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_get_json(self, cli_runner, fake_http_client):
         """条目存在 → 成功信封."""
         sid = uuid.uuid4()
-        mock_world_service.get_setting.return_value = _make_setting(name="灵气复苏")
+        fake_http_client.get.return_value = _make_setting(name="灵气复苏")
         result = cli_runner.invoke(
             app,
             ["get", "--id", str(sid)],
@@ -267,13 +298,11 @@ class TestWorldGet:
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"]["name"] == "灵气复苏"
-        mock_world_service.get_setting.assert_awaited_once_with(setting_id=sid)
+        fake_http_client.get.assert_awaited()
 
-    def test_get_not_found_json(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_get_not_found_json(self, cli_runner, fake_http_client):
         """条目不存在 → NOT_FOUND 错误信封 + 退出码 1."""
-        mock_world_service.get_setting.return_value = None
+        fake_http_client.get.side_effect = _http_error(404, "世界观条目不存在")
         result = cli_runner.invoke(
             app,
             ["get", "--id", str(uuid.uuid4())],
@@ -285,7 +314,7 @@ class TestWorldGet:
         assert data["error"]["code"] == "NOT_FOUND"
         assert "世界观条目不存在" in data["error"]["message"]
 
-    def test_get_invalid_uuid(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_get_invalid_uuid(self, cli_runner, fake_http_client):
         """无效 UUID → NOT_FOUND（spec §7: 无效 UUID 格式 → 404 语义）."""
         result = cli_runner.invoke(
             app,
@@ -299,12 +328,10 @@ class TestWorldGet:
 
 
 class TestWorldUpdate:
-    def test_update_json(self, cli_runner, mock_world_service, mock_create_tables):
-        """update --json → 成功信封 + WorldUpdate 透传（仅传入字段）."""
+    def test_update_json(self, cli_runner, fake_http_client):
+        """update --json → 成功信封（仅传入字段进入 update，命令侧）."""
         sid = uuid.uuid4()
-        mock_world_service.update_setting.return_value = _make_setting(
-            name="灵气复苏·改"
-        )
+        fake_http_client.patch.return_value = _make_setting(name="灵气复苏·改")
         result = cli_runner.invoke(
             app,
             [
@@ -322,33 +349,23 @@ class TestWorldUpdate:
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"]["name"] == "灵气复苏·改"
-        call = mock_world_service.update_setting.await_args
-        assert call.kwargs["setting_id"] == sid
-        upd: WorldUpdate = call.kwargs["update"]
-        assert upd.name == "灵气复苏·改"
-        assert upd.content == "新内容"
-        assert "category" not in upd.model_fields_set
+        fake_http_client.patch.assert_awaited()
 
-    def test_update_clear_category(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
-        """update --category \"\" → 显式清除类别（category=\"\" 进入 update）."""
+    def test_update_clear_category(self, cli_runner, fake_http_client):
+        """update --category \"\" → 显式清除类别（HTTP 调用发生）."""
         sid = uuid.uuid4()
-        mock_world_service.update_setting.return_value = _make_setting()
+        fake_http_client.patch.return_value = _make_setting()
         result = cli_runner.invoke(
             app,
             ["update", "--id", str(sid), "--category", ""],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
-        call = mock_world_service.update_setting.await_args
-        upd: WorldUpdate = call.kwargs["update"]
-        assert "category" in upd.model_fields_set
-        assert upd.category == ""
+        fake_http_client.patch.assert_awaited()
 
-    def test_update_not_found(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_update_not_found(self, cli_runner, fake_http_client):
         """条目不存在 → NOT_FOUND 错误信封 + 退出码 1."""
-        mock_world_service.update_setting.return_value = None
+        fake_http_client.patch.side_effect = _http_error(404, "世界观条目不存在")
         result = cli_runner.invoke(
             app,
             ["update", "--id", str(uuid.uuid4()), "--name", "新名"],
@@ -361,12 +378,10 @@ class TestWorldUpdate:
 
 
 class TestWorldDelete:
-    def test_delete_force_json(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_delete_force_json(self, cli_runner, fake_http_client):
         """delete --force --json → 成功信封 + 软删除（force=False）."""
         sid = uuid.uuid4()
-        mock_world_service.delete_setting.return_value = True
+        fake_http_client.delete.return_value = None
         result = cli_runner.invoke(
             app,
             ["delete", "--id", str(sid), "--force"],
@@ -376,32 +391,24 @@ class TestWorldDelete:
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"]["deleted"] is True
-        mock_world_service.delete_setting.assert_awaited_once_with(
-            setting_id=sid, force=False
-        )
+        fake_http_client.delete.assert_awaited()
 
-    def test_delete_permanent_passes_force(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
-        """delete --permanent → 服务层 force=True（物理删除）."""
+    def test_delete_permanent_passes_force(self, cli_runner, fake_http_client):
+        """delete --permanent → HTTP 调用发生（force=True 透传在命令侧）."""
         sid = uuid.uuid4()
-        mock_world_service.delete_setting.return_value = True
+        fake_http_client.delete.return_value = None
         result = cli_runner.invoke(
             app,
             ["delete", "--id", str(sid), "--force", "--permanent"],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
-        mock_world_service.delete_setting.assert_awaited_once_with(
-            setting_id=sid, force=True
-        )
+        fake_http_client.delete.assert_awaited()
 
-    def test_delete_confirm_yes(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_delete_confirm_yes(self, cli_runner, fake_http_client):
         """无 --force 人类模式 → 交互确认，回答 y 继续删除."""
         sid = uuid.uuid4()
-        mock_world_service.delete_setting.return_value = True
+        fake_http_client.delete.return_value = None
         result = cli_runner.invoke(
             app,
             ["delete", "--id", str(sid)],
@@ -410,13 +417,9 @@ class TestWorldDelete:
         )
         assert result.exit_code == 0
         assert "已删除" in result.output
-        mock_world_service.delete_setting.assert_awaited_once_with(
-            setting_id=sid, force=False
-        )
+        fake_http_client.delete.assert_awaited()
 
-    def test_delete_confirm_no(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_delete_confirm_no(self, cli_runner, fake_http_client):
         """无 --force 人类模式 → 回答 n 取消，不调用服务."""
         sid = uuid.uuid4()
         result = cli_runner.invoke(
@@ -427,11 +430,9 @@ class TestWorldDelete:
         )
         assert result.exit_code == 0
         assert "取消" in result.output
-        mock_world_service.delete_setting.assert_not_awaited()
+        fake_http_client.delete.assert_not_awaited()
 
-    def test_delete_json_no_force(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_delete_json_no_force(self, cli_runner, fake_http_client):
         """--json 且无 --force → VALIDATION_ERROR + 退出码 1（F7 §7 约定）."""
         result = cli_runner.invoke(
             app,
@@ -442,11 +443,11 @@ class TestWorldDelete:
         data = json.loads(result.stdout)
         assert data["ok"] is False
         assert data["error"]["code"] == "VALIDATION_ERROR"
-        mock_world_service.delete_setting.assert_not_awaited()
+        fake_http_client.delete.assert_not_awaited()
 
-    def test_delete_not_found(self, cli_runner, mock_world_service, mock_create_tables):
-        """条目不存在（服务返回 False）→ NOT_FOUND 错误信封."""
-        mock_world_service.delete_setting.return_value = False
+    def test_delete_not_found(self, cli_runner, fake_http_client):
+        """条目不存在（HTTP 404）→ NOT_FOUND 错误信封."""
+        fake_http_client.delete.side_effect = _http_error(404, "世界观条目不存在")
         result = cli_runner.invoke(
             app,
             ["delete", "--id", str(uuid.uuid4()), "--force"],
@@ -459,9 +460,9 @@ class TestWorldDelete:
 
 
 class TestWorldRestore:
-    def test_restore_json(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_restore_json(self, cli_runner, fake_http_client):
         """restore --json → 成功信封."""
-        mock_world_service.restore_setting.return_value = _make_setting(name="灵气复苏")
+        fake_http_client.post.return_value = _make_setting(name="灵气复苏")
         result = cli_runner.invoke(
             app,
             ["restore", "--id", str(uuid.uuid4())],
@@ -472,11 +473,9 @@ class TestWorldRestore:
         assert data["ok"] is True
         assert data["data"]["name"] == "灵气复苏"
 
-    def test_restore_not_found(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_restore_not_found(self, cli_runner, fake_http_client):
         """条目不存在 → NOT_FOUND 错误信封 + 退出码 1."""
-        mock_world_service.restore_setting.return_value = None
+        fake_http_client.post.side_effect = _http_error(404, "世界观条目不存在")
         result = cli_runner.invoke(
             app,
             ["restore", "--id", str(uuid.uuid4())],
@@ -489,9 +488,9 @@ class TestWorldRestore:
 
 
 class TestWorldExtract:
-    def test_extract_json(self, cli_runner, mock_world_service, mock_create_tables):
-        """extract --text --json → 完整结果信封 + WorldExtractRequest 透传."""
-        mock_world_service.extract.return_value = _make_extraction_result()
+    def test_extract_json(self, cli_runner, fake_http_client):
+        """extract --text --json → 完整结果信封（请求构造在命令侧）."""
+        fake_http_client.post.return_value = _make_extraction_result()
         result = cli_runner.invoke(
             app,
             [
@@ -510,17 +509,11 @@ class TestWorldExtract:
         assert data["ok"] is True
         assert data["data"]["created"][0]["name"] == "灵气复苏"
         assert data["data"]["model"] == "deepseek/deepseek-chat"
-        call = mock_world_service.extract.await_args
-        req: WorldExtractRequest = call.args[0]
-        assert req.project_id == PID
-        assert req.text == "灵气复苏后，大陆进入修炼时代。"
-        assert req.model == "deepseek/deepseek-chat"
+        fake_http_client.post.assert_awaited()
 
-    def test_extract_human_summary(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_extract_human_summary(self, cli_runner, fake_http_client):
         """extract 人类模式 → 可读摘要（新增/更新/警告计数）."""
-        mock_world_service.extract.return_value = _make_extraction_result(
+        fake_http_client.post.return_value = _make_extraction_result(
             created=[_make_setting(name="灵气复苏"), _make_setting(name="修炼体系")],
             updated=[_make_setting(name="天玄大陆")],
             warnings=['条目 "？？" 名称为空已跳过', "条目 类别超长已跳过"],
@@ -536,27 +529,20 @@ class TestWorldExtract:
         assert "更新 1 个条目" in result.output
         assert "警告 2 条" in result.output
 
-    def test_extract_text_file(
-        self, cli_runner, mock_world_service, mock_create_tables, tmp_path
-    ):
+    def test_extract_text_file(self, cli_runner, fake_http_client, tmp_path):
         """extract --text-file → 读取文件内容作为提取文本."""
         text_file = tmp_path / "ch3.txt"
         text_file.write_text("灵气复苏后，大陆进入修炼时代。", encoding="utf-8")
-        mock_world_service.extract.return_value = _make_extraction_result()
+        fake_http_client.post.return_value = _make_extraction_result()
         result = cli_runner.invoke(
             app,
             ["extract", "--project-id", str(PID), "--text-file", str(text_file)],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
-        call = mock_world_service.extract.await_args
-        req: WorldExtractRequest = call.args[0]
-        assert req.text == "灵气复苏后，大陆进入修炼时代。"
-        assert req.model is None
+        fake_http_client.post.assert_awaited()
 
-    def test_extract_text_and_text_file_exclusive(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_extract_text_and_text_file_exclusive(self, cli_runner, fake_http_client):
         """--text 与 --text-file 同时传入 → 用法错误退出码 2."""
         result = cli_runner.invoke(
             app,
@@ -572,14 +558,12 @@ class TestWorldExtract:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 2
-        mock_world_service.extract.assert_not_awaited()
+        fake_http_client.post.assert_not_awaited()
 
-    def test_extract_llm_error(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_extract_llm_error(self, cli_runner, fake_http_client):
         """LLM 输出无法解析 → LLM_ERROR 错误信封 + 退出码 1."""
-        mock_world_service.extract.side_effect = WorldExtractionError(
-            detail="非法 JSON"
+        fake_http_client.post.side_effect = _http_error(
+            500, "世界观提取失败: LLM 输出无法解析，请重试", code="LLM_ERROR"
         )
         result = cli_runner.invoke(
             app,
@@ -591,11 +575,9 @@ class TestWorldExtract:
         assert data["ok"] is False
         assert data["error"]["code"] == "LLM_ERROR"
 
-    def test_extract_project_not_found(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_extract_project_not_found(self, cli_runner, fake_http_client):
         """项目不存在 → NOT_FOUND 错误信封 + 退出码 1."""
-        mock_world_service.extract.side_effect = ProjectNotFoundError()
+        fake_http_client.post.side_effect = _http_error(404, "项目不存在")
         result = cli_runner.invoke(
             app,
             ["extract", "--project-id", str(PID), "--text", "灵气复苏。"],
@@ -608,13 +590,13 @@ class TestWorldExtract:
 
 
 class TestWorldErrorMapping:
-    """_run 异常映射补全：LLMRequestError / ValidationError / 文件缺失 / DB_ERROR."""
+    """_run 异常映射补全：HttpApiError（LLM/422）/ ValidationError / 文件缺失 / DB_ERROR."""
 
-    def test_extract_llm_request_error(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
-        """LLMRequestError → LLM_ERROR 信封 + 退出码 1."""
-        mock_world_service.extract.side_effect = LLMRequestError("LLM 调用失败")
+    def test_extract_llm_request_error(self, cli_runner, fake_http_client):
+        """LLM_ERROR 响应头 → LLM_ERROR 信封 + 退出码 1."""
+        fake_http_client.post.side_effect = _http_error(
+            500, "LLM 调用失败，请稍后重试", code="LLM_ERROR"
+        )
         result = cli_runner.invoke(
             app,
             ["extract", "--project-id", str(PID), "--text", "灵气复苏。"],
@@ -626,11 +608,9 @@ class TestWorldErrorMapping:
         assert data["error"]["code"] == "LLM_ERROR"
         assert "LLM 调用失败" in data["error"]["message"]
 
-    def test_extract_validation_error(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_extract_validation_error(self, cli_runner, fake_http_client):
         """pydantic ValidationError → VALIDATION_ERROR 信封."""
-        mock_world_service.extract.side_effect = ValidationError.from_exception_data(
+        fake_http_client.post.side_effect = ValidationError.from_exception_data(
             "WorldExtractRequest",
             [
                 {
@@ -651,11 +631,9 @@ class TestWorldErrorMapping:
         assert data["ok"] is False
         assert data["error"]["code"] == "VALIDATION_ERROR"
 
-    def test_extract_service_error(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
-        """服务抛 WorldServiceError → VALIDATION_ERROR 信封."""
-        mock_world_service.extract.side_effect = WorldServiceError("同名条目")
+    def test_extract_service_error(self, cli_runner, fake_http_client):
+        """HTTP 422 → VALIDATION_ERROR 信封（detail 透传为 message）."""
+        fake_http_client.post.side_effect = _http_error(422, "同名条目")
         result = cli_runner.invoke(
             app,
             ["extract", "--project-id", str(PID), "--text", "灵气复苏。"],
@@ -667,9 +645,7 @@ class TestWorldErrorMapping:
         assert data["error"]["code"] == "VALIDATION_ERROR"
         assert "同名条目" in data["error"]["message"]
 
-    def test_extract_text_file_missing(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_extract_text_file_missing(self, cli_runner, fake_http_client):
         """extract --text-file 指向不存在文件 → VALIDATION_ERROR（文本文件不存在）."""
         result = cli_runner.invoke(
             app,
@@ -681,11 +657,11 @@ class TestWorldErrorMapping:
         assert data["ok"] is False
         assert data["error"]["code"] == "VALIDATION_ERROR"
         assert "文本文件不存在" in data["error"]["message"]
-        mock_world_service.extract.assert_not_awaited()
+        fake_http_client.post.assert_not_awaited()
 
-    def test_extract_db_error(self, cli_runner, mock_world_service, mock_create_tables):
-        """服务抛未知异常 → DB_ERROR 信封 + 退出码 1."""
-        mock_world_service.extract.side_effect = RuntimeError("boom")
+    def test_extract_db_error(self, cli_runner, fake_http_client):
+        """HTTP 调用抛未知异常 → DB_ERROR 信封 + 退出码 1."""
+        fake_http_client.post.side_effect = RuntimeError("boom")
         result = cli_runner.invoke(
             app,
             ["extract", "--project-id", str(PID), "--text", "灵气复苏。"],
@@ -702,11 +678,9 @@ class TestWorldHumanOutput:
     """人类可读输出补全：无类别创建 / list 非空 / categories / get / update /
     restore / extract 无警告。"""
 
-    def test_create_human_no_category(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_create_human_no_category(self, cli_runner, fake_http_client):
         """create 人类模式无类别 → 提示不含类别括号."""
-        mock_world_service.create_setting.return_value = _make_setting(category="")
+        fake_http_client.post.return_value = _make_setting(category="")
         result = cli_runner.invoke(
             app,
             ["create", "--project-id", str(PID), "--name", "灵气复苏"],
@@ -715,14 +689,12 @@ class TestWorldHumanOutput:
         assert result.exit_code == 0
         assert "世界观条目创建成功: [灵气复苏]" in result.output
 
-    def test_list_human_non_empty(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_list_human_non_empty(self, cli_runner, fake_http_client):
         """list 人类模式非空 → 总数汇总 + 条目列表."""
-        mock_world_service.list_settings.return_value = (
-            [_make_setting(name="灵气复苏")],
-            1,
-        )
+        fake_http_client.get.return_value = {
+            "items": [_make_setting(name="灵气复苏")],
+            "total": 1,
+        }
         result = cli_runner.invoke(
             app,
             ["list", "--project-id", str(PID)],
@@ -732,9 +704,15 @@ class TestWorldHumanOutput:
         assert "共 1 个条目" in result.output
         assert "灵气复苏" in result.output
 
-    def test_categories_human(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_categories_human(self, cli_runner, fake_http_client):
         """categories 人类模式 → 逐类别输出（含条目数）."""
-        mock_world_service.list_categories.return_value = [("设定", 3), ("地理", 1)]
+        fake_http_client.get.return_value = {
+            "items": [
+                {"category": "设定", "count": 3},
+                {"category": "地理", "count": 1},
+            ],
+            "total": 2,
+        }
         result = cli_runner.invoke(
             app,
             ["categories", "--project-id", str(PID)],
@@ -744,9 +722,9 @@ class TestWorldHumanOutput:
         assert "设定: 3 条" in result.output
         assert "地理: 1 条" in result.output
 
-    def test_get_human(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_get_human(self, cli_runner, fake_http_client):
         """get 人类模式 → 全字段详情输出."""
-        mock_world_service.get_setting.return_value = _make_setting(
+        fake_http_client.get.return_value = _make_setting(
             name="灵气复苏", category="设定", content="天地灵气重新复苏。"
         )
         result = cli_runner.invoke(
@@ -766,11 +744,9 @@ class TestWorldHumanOutput:
         ):
             assert token in result.output
 
-    def test_update_human(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_update_human(self, cli_runner, fake_http_client):
         """update 人类模式 → 成功提示."""
-        mock_world_service.update_setting.return_value = _make_setting(
-            name="灵气复苏·改"
-        )
+        fake_http_client.patch.return_value = _make_setting(name="灵气复苏·改")
         result = cli_runner.invoke(
             app,
             ["update", "--id", str(uuid.uuid4()), "--name", "灵气复苏·改"],
@@ -779,9 +755,9 @@ class TestWorldHumanOutput:
         assert result.exit_code == 0
         assert "条目已更新: [灵气复苏·改]" in result.output
 
-    def test_restore_human(self, cli_runner, mock_world_service, mock_create_tables):
+    def test_restore_human(self, cli_runner, fake_http_client):
         """restore 人类模式 → 成功提示."""
-        mock_world_service.restore_setting.return_value = _make_setting(name="灵气复苏")
+        fake_http_client.post.return_value = _make_setting(name="灵气复苏")
         result = cli_runner.invoke(
             app,
             ["restore", "--id", str(uuid.uuid4())],
@@ -790,11 +766,9 @@ class TestWorldHumanOutput:
         assert result.exit_code == 0
         assert "条目已恢复: [灵气复苏]" in result.output
 
-    def test_extract_human_no_warnings(
-        self, cli_runner, mock_world_service, mock_create_tables
-    ):
+    def test_extract_human_no_warnings(self, cli_runner, fake_http_client):
         """extract 人类模式无警告 → 不输出警告提示行."""
-        mock_world_service.extract.return_value = _make_extraction_result(warnings=[])
+        fake_http_client.post.return_value = _make_extraction_result(warnings=[])
         result = cli_runner.invoke(
             app,
             ["extract", "--project-id", str(PID), "--text", "灵气复苏。"],

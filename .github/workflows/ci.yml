@@ -421,6 +421,10 @@ jobs:
                  ../tests/cli/test_cli_session.py `
                  ../tests/cli/test_cli_session_coverage.py `
                  ../tests/cli/test_cli_kernel.py `
+                 ../tests/cli/test_cli_http_kernel.py `
+                 ../tests/cli/test_cli_outline_http.py `
+                 ../tests/cli/test_cli_display_helpers.py `
+                 ../tests/cli/test_cli_run_fallback.py `
                  -v --tb=short
 
   # ── Smoke: health check (fastest) ──

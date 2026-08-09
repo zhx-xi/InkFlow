@@ -1,17 +1,19 @@
 """F13 伏笔管理 CLI 命令 — `inkflow foreshadowing <action>`.
 
-薄层设计：仅做参数解析/校验与结果格式化，全部业务委托 ForeshadowingService
-（spec §4）。遵循 F7 §5 全局约定：--json 统一信封
+分层设计：仅做参数解析/校验与结果格式化，业务经 ensure_kernel() + InkFlowHTTPClient
+调用内核 REST API（spec §4；Issue #169 CLI 恒经 HTTP）。遵循 F7 §5 全局约定：--json 统一信封
 {"ok": true, "data": ...} / {"ok": false, "error": {"code", "message"}}；
 退出码 0/1/2/130；删除类命令二次确认 + --force；
 --json + 无 --force 的删除 → VALIDATION_ERROR。
 
-错误码映射（spec §4/§7）:
-- ForeshadowingServiceError（含同名冲突/事件校验）→ VALIDATION_ERROR
-- ForeshadowingNotFoundError / ProjectNotFoundError / 无效 UUID → NOT_FOUND
+错误码映射（spec §4/§7）：
+- HttpApiError：404 → NOT_FOUND、422 → VALIDATION_ERROR、401 → CONFIG_ERROR、
+  500 + LLM_ERROR 头 → LLM_ERROR、其余 → INTERNAL_ERROR（spec §5.3）
+- KernelStartupError → KERNEL_ERROR
+- pydantic ValidationError → VALIDATION_ERROR
 - 其余异常 → DB_ERROR（F13 无 LLM，无 LLM_ERROR）
 
-状态机命令（spec §2.4）: resolve（open→resolved）/ reopen（resolved→open），
+状态机命令（spec §2.4）：resolve（open→resolved）、reopen（resolved→open），
 均为幂等操作；软删除伏笔对其执行 → NOT_FOUND。
 update 的 --event-id "" 表示解除事件挂接（置为 None，spec §2.5）。
 
@@ -29,28 +31,13 @@ from pydantic import ValidationError
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
-from inkflow.core.database import async_session_factory, create_tables
 from inkflow.domain.models.foreshadowing import (
-    Foreshadowing,
     ForeshadowingCreate,
     ForeshadowingStatus,
     ForeshadowingUpdate,
 )
-from inkflow.domain.ports.foreshadowing_errors import (
-    ForeshadowingNotFoundError,
-    ForeshadowingServiceError,
-    ProjectNotFoundError,
-)
-from inkflow.domain.services.foreshadowing_service import ForeshadowingService
-from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
-    SQLiteForeshadowingRepository,
-)
-from inkflow.infrastructure.database.repositories.project_repo import (
-    SQLiteProjectRepository,
-)
-from inkflow.infrastructure.database.repositories.timeline_repo import (
-    SQLiteTimelineRepository,
-)
+from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 
 app = typer.Typer(name="foreshadowing", help="伏笔管理", no_args_is_help=True)
 
@@ -75,15 +62,16 @@ def _parse_uuid(cli_ctx: CliContext, value: str, message: str) -> uuid.UUID:
 
 
 def _run(cli_ctx: CliContext, coro_fn):
-    """执行服务调用并统一映射领域异常为 F7 错误信封（退出码 1）."""
+    """执行内核调用并统一映射 HTTP 异常为 F7 错误信封（退出码 1）."""
     try:
         return _run_async(coro_fn())
     except typer.Exit:
         raise
-    except (ForeshadowingNotFoundError, ProjectNotFoundError) as e:
-        print_error(cli_ctx, "NOT_FOUND", str(e))
-    except ForeshadowingServiceError as e:
-        print_error(cli_ctx, "VALIDATION_ERROR", str(e))
+    except HttpApiError as exc:
+        code, message = map_http_error(exc.status_code, exc.detail, exc.code)
+        print_error(cli_ctx, code, message)
+    except KernelStartupError as exc:
+        print_error(cli_ctx, "KERNEL_ERROR", f"内核启动失败: {exc}")
     except ValidationError as e:
         messages = "; ".join(str(err.get("msg", "")) for err in e.errors())
         print_error(cli_ctx, "VALIDATION_ERROR", messages or "参数校验失败")
@@ -91,39 +79,23 @@ def _run(cli_ctx: CliContext, coro_fn):
         print_error(cli_ctx, "DB_ERROR", f"内部错误: {e}")
 
 
-def _to_dict(foreshadowing: Foreshadowing) -> dict:
-    """伏笔领域模型 → JSON-safe dict."""
-    return foreshadowing.model_dump(mode="json")
-
-
-def _status_label(foreshadowing: Foreshadowing) -> str:
+def _status_label(foreshadowing: dict) -> str:
     """伏笔状态的人类可读表达（open = 未回收，resolved = 已回收）."""
-    if foreshadowing.status == ForeshadowingStatus.RESOLVED:
-        return "已回收"
-    return "未回收"
+    return "已回收" if foreshadowing["status"] == ForeshadowingStatus.RESOLVED.value else "未回收"
 
 
-def _item_label(foreshadowing: Foreshadowing) -> str:
+def _item_label(foreshadowing: dict) -> str:
     """伏笔列表条目的人类可读表达（spec §4.2）."""
-    if foreshadowing.status == ForeshadowingStatus.RESOLVED:
-        if foreshadowing.resolved_at is not None:
-            return f"[{foreshadowing.title}] (回收于 {foreshadowing.resolved_at.date()})"
-        return f"[{foreshadowing.title}] (已回收)"
-    loc = f", {foreshadowing.location}" if foreshadowing.location else ""
-    return f"[{foreshadowing.title}] (优先级 {foreshadowing.priority}{loc})"
-
-
-def _make_service(session) -> ForeshadowingService:
-    """构造注入完整依赖的 ForeshadowingService（ADR-015）."""
-    return ForeshadowingService(
-        repository=SQLiteForeshadowingRepository(session),
-        project_repo=SQLiteProjectRepository(session),
-        timeline_repo=SQLiteTimelineRepository(session),
-    )
+    if foreshadowing["status"] == ForeshadowingStatus.RESOLVED.value:
+        if foreshadowing.get("resolved_at") is not None:
+            return f"[{foreshadowing['title']}] (回收于 {foreshadowing['resolved_at'][:10]})"
+        return f"[{foreshadowing['title']}] (已回收)"
+    loc = f", {foreshadowing['location']}" if foreshadowing.get("location") else ""
+    return f"[{foreshadowing['title']}] (优先级 {foreshadowing['priority']}{loc})"
 
 
 # ---------------------------------------------------------------------------
-# create  —  inkflow foreshadowing create --project-id <uuid> --title <str> ...
+# create  — inkflow foreshadowing create --project-id <uuid> --title <str> ...
 # ---------------------------------------------------------------------------
 
 
@@ -136,7 +108,7 @@ def create_foreshadowing_cmd(
     priority: int = typer.Option(50, "--priority", help="注入优先级（0-100，默认 50）"),
     location: str = typer.Option("", "--location", help="埋设位置自由文本"),
     event_id: str | None = typer.Option(
-        None, "--event-id", help="F12 时间线事件锚点 (UUID，缺省 = 不挂接)"
+        None, "--event-id", help="F12 时间线事件锚点 (UUID，缺席 = 不挂接)"
     ),
 ) -> None:
     """创建伏笔（status 固定为 open，即创建即埋设）"""
@@ -154,23 +126,33 @@ def create_foreshadowing_cmd(
         event_id=parsed_event_id,
     )
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).create(data=data)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                f"/projects/{pid}/foreshadowings",
+                json={
+                    "title": data.title,
+                    "description": data.description,
+                    "priority": data.priority,
+                    "location": data.location,
+                    "event_id": str(data.event_id) if data.event_id is not None else None,
+                },
+            )
 
     foreshadowing = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
-        print_result(cli_ctx, _to_dict(foreshadowing))
+        print_result(cli_ctx, foreshadowing)
     else:
         typer.echo(
-            f"✅ 伏笔创建成功: [{foreshadowing.title}]"
-            f"（优先级 {foreshadowing.priority}，{_status_label(foreshadowing)}）"
+            f"✅ 伏笔创建成功: [{foreshadowing['title']}]"
+            f"（优先级 {foreshadowing['priority']}，{_status_label(foreshadowing)}）"
         )
 
 
 # ---------------------------------------------------------------------------
-# list  —  inkflow foreshadowing list --project-id <uuid> [--status] [--search] ...
+# list  — inkflow foreshadowing list --project-id <uuid> [--status] [--search] ...
 # ---------------------------------------------------------------------------
 
 
@@ -189,43 +171,47 @@ def list_foreshadowings_cmd(
         False, "--sort-desc/--no-sort-desc", help="按排序字段降序（默认升序）"
     ),
 ) -> None:
-    """列出项目内伏笔（默认全部活动伏笔；--status 过滤）"""
+    """列出项目内伏笔（默认全部活动伏笔，--status 过滤）"""
     cli_ctx: CliContext = ctx.obj
     if status is not None and status not in ("open", "resolved"):
-        typer.echo("❌ --status 必须是 open 或 resolved", err=True)
+        typer.echo("⚠️ --status 必须是 open 或 resolved", err=True)
         raise typer.Exit(code=2)
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).list(
-                project_id=pid,
-                search=search,
-                status=status,
-                sort_by=sort,
-                sort_desc=sort_desc,
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(
+                f"/projects/{pid}/foreshadowings",
+                params={
+                    "search": search,
+                    "status": status,
+                    "sort_by": sort,
+                    "sort_desc": sort_desc,
+                },
             )
 
-    items, _total = _run(cli_ctx, _impl)
+    data = _run(cli_ctx, _impl)
+    items = data.get("items", [])
     if cli_ctx.json_output:
-        print_result(cli_ctx, [_to_dict(f) for f in items])
+        print_result(cli_ctx, items)
         return
     if not items:
-        typer.echo("📭 暂无伏笔")
+        typer.echo("📥 暂无伏笔")
         return
-    open_items = [f for f in items if f.status == ForeshadowingStatus.OPEN]
-    resolved_items = [f for f in items if f.status == ForeshadowingStatus.RESOLVED]
+    open_items = [f for f in items if f["status"] == ForeshadowingStatus.OPEN.value]
+    resolved_items = [f for f in items if f["status"] == ForeshadowingStatus.RESOLVED.value]
     if open_items:
         parts = " ".join(f"{i}. {_item_label(f)}" for i, f in enumerate(open_items, 1))
-        typer.echo(f"📋 未回收伏笔 {len(open_items)} 条: {parts}")
+        typer.echo(f"📌 未回收伏笔 {len(open_items)} 条: {parts}")
     if resolved_items:
         parts = ", ".join(_item_label(f) for f in resolved_items)
         typer.echo(f"🔍 已回收伏笔 {len(resolved_items)} 条: {parts}")
 
 
 # ---------------------------------------------------------------------------
-# get  —  inkflow foreshadowing get --id <uuid>
+# get  — inkflow foreshadowing get --id <uuid>
 # ---------------------------------------------------------------------------
 
 
@@ -238,31 +224,30 @@ def get_foreshadowing_cmd(
     cli_ctx: CliContext = ctx.obj
     fid = _parse_uuid(cli_ctx, foreshadowing_id, "伏笔不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).get(foreshadowing_id=fid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/foreshadowings/{fid}")
 
     foreshadowing = _run(cli_ctx, _impl)
-    if foreshadowing is None:
-        print_error(cli_ctx, "NOT_FOUND", "伏笔不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _to_dict(foreshadowing))
+        print_result(cli_ctx, foreshadowing)
     else:
-        typer.echo(f"ID:           {foreshadowing.id}")
-        typer.echo(f"标题:         {foreshadowing.title}")
-        typer.echo(f"描述:         {foreshadowing.description}")
-        typer.echo(f"优先级:       {foreshadowing.priority}")
-        typer.echo(f"状态:         {foreshadowing.status.value}（{_status_label(foreshadowing)}）")
-        typer.echo(f"埋设位置:     {foreshadowing.location or '（未记录）'}")
-        typer.echo(f"事件锚点:     {foreshadowing.event_id or '（未挂接）'}")
-        typer.echo(f"回收时间:     {foreshadowing.resolved_at or '（未回收）'}")
-        typer.echo(f"创建时间:     {foreshadowing.created_at}")
-        typer.echo(f"更新时间:     {foreshadowing.updated_at}")
+        typer.echo(f"ID:           {foreshadowing['id']}")
+        typer.echo(f"标题:         {foreshadowing['title']}")
+        typer.echo(f"描述:         {foreshadowing['description']}")
+        typer.echo(f"优先级:       {foreshadowing['priority']}")
+        typer.echo(f"状态:         {foreshadowing['status']}（{_status_label(foreshadowing)}）")
+        typer.echo(f"埋设位置:     {foreshadowing['location'] or '（未记录）'}")
+        typer.echo(f"事件锚点:     {foreshadowing['event_id'] or '（未挂接）'}")
+        typer.echo(f"回收时间:     {foreshadowing['resolved_at'] or '（未回收）'}")
+        typer.echo(f"创建时间:     {foreshadowing['created_at']}")
+        typer.echo(f"更新时间:     {foreshadowing['updated_at']}")
 
 
 # ---------------------------------------------------------------------------
-# update  —  inkflow foreshadowing update --id <uuid> [--title] [--event-id ""] ...
+# update  — inkflow foreshadowing update --id <uuid> [--title] [--event-id ""] ...
 # ---------------------------------------------------------------------------
 
 
@@ -300,22 +285,24 @@ def update_foreshadowing_cmd(
             update_fields["event_id"] = _parse_uuid(cli_ctx, event_id, "事件不存在")
     update = ForeshadowingUpdate(**update_fields)
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).update(foreshadowing_id=fid, data=update)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.patch(
+                f"/foreshadowings/{fid}",
+                json=update.model_dump(exclude_unset=True, mode="json"),
+            )
 
     foreshadowing = _run(cli_ctx, _impl)
-    if foreshadowing is None:
-        print_error(cli_ctx, "NOT_FOUND", "伏笔不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _to_dict(foreshadowing))
+        print_result(cli_ctx, foreshadowing)
     else:
-        typer.echo(f"✅ 伏笔已更新: [{foreshadowing.title}]")
+        typer.echo(f"✅ 伏笔已更新: [{foreshadowing['title']}]")
 
 
 # ---------------------------------------------------------------------------
-# delete  —  inkflow foreshadowing delete --id <uuid> [--force] [--permanent]
+# delete  — inkflow foreshadowing delete --id <uuid> [--force] [--permanent]
 # ---------------------------------------------------------------------------
 
 
@@ -337,34 +324,27 @@ def delete_foreshadowing_cmd(
             typer.echo("已取消")
             raise typer.Exit()
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            svc = _make_service(session)
-            existing = await svc.get(foreshadowing_id=fid)
-            if existing is None:
-                return None
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            existing = await client.get(f"/foreshadowings/{fid}")
             if permanent:
-                ok = await svc.hard_delete(foreshadowing_id=fid)
+                await client.delete(f"/foreshadowings/{fid}", params={"force": True})
             else:
-                ok = await svc.soft_delete(foreshadowing_id=fid)
-            return existing, ok
+                await client.delete(f"/foreshadowings/{fid}")
+            return existing
 
-    result = _run(cli_ctx, _impl)
-    if result is None:
-        print_error(cli_ctx, "NOT_FOUND", "伏笔不存在")
-    existing, ok = result
-    if not ok:
-        print_error(cli_ctx, "NOT_FOUND", "伏笔不存在")
+    existing = _run(cli_ctx, _impl)
     label = "已永久删除" if permanent else "已删除"
     if cli_ctx.json_output:
         print_result(cli_ctx, {"id": str(fid), "deleted": True})
     else:
-        typer.echo(f"✅ 伏笔{label}: [{existing.title}]")
+        typer.echo(f"✅ 伏笔{label}: [{existing['title']}]")
 
 
 # ---------------------------------------------------------------------------
-# restore  —  inkflow foreshadowing restore --id <uuid>
+# restore  — inkflow foreshadowing restore --id <uuid>
 # ---------------------------------------------------------------------------
 
 
@@ -377,22 +357,21 @@ def restore_foreshadowing_cmd(
     cli_ctx: CliContext = ctx.obj
     fid = _parse_uuid(cli_ctx, foreshadowing_id, "伏笔不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).restore(foreshadowing_id=fid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(f"/foreshadowings/{fid}/restore")
 
     foreshadowing = _run(cli_ctx, _impl)
-    if foreshadowing is None:
-        print_error(cli_ctx, "NOT_FOUND", "伏笔不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _to_dict(foreshadowing))
+        print_result(cli_ctx, foreshadowing)
     else:
-        typer.echo(f"✅ 伏笔已恢复: [{foreshadowing.title}]")
+        typer.echo(f"✅ 伏笔已恢复: [{foreshadowing['title']}]")
 
 
 # ---------------------------------------------------------------------------
-# resolve  —  inkflow foreshadowing resolve --id <uuid>  （open→resolved）
+# resolve  — inkflow foreshadowing resolve --id <uuid>  （open→resolved）
 # ---------------------------------------------------------------------------
 
 
@@ -405,22 +384,21 @@ def resolve_foreshadowing_cmd(
     cli_ctx: CliContext = ctx.obj
     fid = _parse_uuid(cli_ctx, foreshadowing_id, "伏笔不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).resolve(foreshadowing_id=fid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(f"/foreshadowings/{fid}/resolve")
 
     foreshadowing = _run(cli_ctx, _impl)
-    if foreshadowing is None:
-        print_error(cli_ctx, "NOT_FOUND", "伏笔不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _to_dict(foreshadowing))
+        print_result(cli_ctx, foreshadowing)
     else:
-        typer.echo(f"✅ 伏笔已回收: [{foreshadowing.title}]")
+        typer.echo(f"✅ 伏笔已回收: [{foreshadowing['title']}]")
 
 
 # ---------------------------------------------------------------------------
-# reopen  —  inkflow foreshadowing reopen --id <uuid>  （resolved→open）
+# reopen  — inkflow foreshadowing reopen --id <uuid>  （resolved→open）
 # ---------------------------------------------------------------------------
 
 
@@ -433,15 +411,14 @@ def reopen_foreshadowing_cmd(
     cli_ctx: CliContext = ctx.obj
     fid = _parse_uuid(cli_ctx, foreshadowing_id, "伏笔不存在")
 
-    async def _impl():
-        await create_tables()
-        async with async_session_factory() as session:
-            return await _make_service(session).reopen(foreshadowing_id=fid)
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(f"/foreshadowings/{fid}/reopen")
 
     foreshadowing = _run(cli_ctx, _impl)
-    if foreshadowing is None:
-        print_error(cli_ctx, "NOT_FOUND", "伏笔不存在")
     if cli_ctx.json_output:
-        print_result(cli_ctx, _to_dict(foreshadowing))
+        print_result(cli_ctx, foreshadowing)
     else:
-        typer.echo(f"✅ 伏笔已重新开启: [{foreshadowing.title}]")
+        typer.echo(f"✅ 伏笔已重新开启: [{foreshadowing['title']}]")
