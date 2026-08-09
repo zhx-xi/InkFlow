@@ -44,7 +44,7 @@
 | 0.3.1 ✅ | 质量加固补丁（milestone #9）：#86 LLM 客户端修复（PR #108：timeout→request_timeout + zhipu 注册 + audit 路由）· #87 LangGraph 状态重构（PR #110：StateGraph(dict)→TypedDict+reducer，节点增量返回，type: ignore 清零）· #92 真实 AI CI job（PR #111：e2e-ai-backend，label run-ai-tests 触发 + workflow_dispatch 兜底；tests/e2e/ T1+T2，缺 key 永远 skip；⚠️ 真实验证需先配 LLM_API_KEY secret）· #104 覆盖率补全（PR #114/#115/#116/#117：三层补测至后端 98.90% 行/96.32% 分支、前端 99.11%/92.51%、API 端点 100%、E2E 三页；CI 门槛 98.5/95.0 常态化，口径见 ADR-027） |
 | 0.4.0 ✅ | F19 打包分发（PR #144，#48：B+ chromadb 进包 + API embedding 装配 + 数据目录 sys.frozen→%APPDATA% + PyInstaller 内核 onedir 142MB + electron-builder NSIS 145.6MB/便携 ZIP 177.4MB + release.yml tag v* 自动发布；发布门禁 #145 ✅：rc.1-rc.6 迭代修复（artifact 结构/GH_TOKEN/版本注入/asar renderer 路径/品牌图标）后 **v0.4.0 正式发布 2026-08-07**（exe 144.3MB + zip 175.5MB））+ GUI 演进——子任务 D 导航重构+设置页框架（PR #120/#121，#105，承接 #99 交互反馈实现）· 子任务 E 模型管理页（PR #122，#106：ProviderConfig 注册表 + 模型管理页 + 角色绑定只读区 + 顶栏 Select + 自绘窗口按钮，覆盖率 99.27%）· 模型管理修复（PR #131/#132，#125/#126：addModel rethrow + 部分失败保留草稿 + builtin_key 判重防 seed 复活，2026-08-06）· 子任务 F Agent 模板（PR #135，#107：AgentTemplate 实体（引用式）+ 角色独立温度链（0.7 哨兵移除）+ 风险确认框 + 新建项目模板下拉，三层测试全绿）· 架构图 + ChatLiteLLM 残留清理（PR #134，#134 文档同步）· CI uv cache 修复 + job 分批（PR #128，#128）；遗留：设置持久化 #152（0.5.0） |
 | 0.5.0 ✅ | Agent 集成：F24 会话 ✅（#51）· E2E 增强（#139/#140）· 设置持久化（#152 ✅ PR #176）· 本地内核服务化（#166 ✅ PR #171 / #167 ✅ PR #172 / **#168 ✅ PR #181**）——0.5.0 里程碑 2026-08-08 关闭。**发布修复链（rc1-rc4 迭代）**：prerelease 自动标记（#183 ✅ PR #184）· CLI zip 命名对齐（#185 ✅ PR #186）· GUI 任意 cwd 启动（#187 ✅ PR #191）· 托盘图标+内核状态菜单刷新（#188 ✅ PR #190）· 设置持久化全局化 default_words 方案 A + 顶部已保存（#189 ✅ PR #190/#197）· rc2 复验四缺陷：内核路径 resourcesPath/顶栏状态真实化/托盘 logo 源图（#192 ✅ PR #193）· 新建项目对话框目标字数+遮罩（#195 ✅ PR #197）· 回归防护补测（PR #194）——rc1→rc4 预发布迭代后 **v0.5.0 正式发布 2026-08-08**（Latest） |
-| 0.6.0 | F21 导出 · F22 全文搜索 · 世界观三连（**#173 地点树 ✅ PR #215** / #174 地图视图 / #175 跨书复用）· CLI 恒经 HTTP（#169 ✅ PR #213）· E2E 设置页补全（#141）· 设定库分类实体创建（#196：角色/世界观等手动创建，当前占位跳写作页）· default_words 全局值重启加载（#198：设置页初始值读 fetchSettings）· 设置保存反馈统一化（#199：tray hint/close behavior 等切换顶部「已保存」） |
+| 0.6.0 | F21 导出 · F22 全文搜索（✅ PR #216）· 世界观三连（**#173 地点树 ✅ PR #215** / #174 地图视图 / #175 跨书复用）· CLI 恒经 HTTP（#169 ✅ PR #213）· E2E 设置页补全（#141）· 设定库分类实体创建（#196：角色/世界观等手动创建，当前占位跳写作页）· default_words 全局值重启加载（#198：设置页初始值读 fetchSettings）· 设置保存反馈统一化（#199：tray hint/close behavior 等切换顶部「已保存」） |
 | 1.0.0 🎉 | **本地完全可用 = CLI + GUI + skills + MCP** + 跨平台 + 文档 + 全量验收 |
 | 2.0.0 ☁️ | 云端：F18 云 Web（移出单机）· 用户 API · Admin 后台 · GUI 远程模式 |
 
@@ -69,7 +69,7 @@ F1 项目/书籍 · F2 章节 · F3 写作管道 · F4 Agent 编排 · F5 LLM Pr
 
 ### Phase 3 功能（F18-F24，2026-08-02 形态决策后归属调整）
 
-F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI ✅ 子任务 A PR #85 / B PR #95 / C PR #97；0.4.0 演进 ✅ 子任务 D 导航重构 PR #120/#121 / E 模型管理 PR #122 / F Agent 模板 PR #135 + 打包 PR #144）· F20 MCP（1.0.0）· F21 导出（0.6.0）· F22 搜索（0.6.0）· F23 SSE ✅（PR #83）· F24 会话（0.5.0）· ~~F25 daemon~~（移除，ADR-029：伪需求，真实意图=外部 agent 经 MCP/skills 调用，由 F19/F20/ADR-022 覆盖）
+F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI ✅ 子任务 A PR #85 / B PR #95 / C PR #97；0.4.0 演进 ✅ 子任务 D 导航重构 PR #120/#121 / E 模型管理 PR #122 / F Agent 模板 PR #135 + 打包 PR #144）· F20 MCP（1.0.0）· F21 导出（0.6.0）· F22 搜索（0.6.0 ✅ PR #216：FTS5+jieba 词法 + semantic 增强 + 索引三态维护 + 跨项目）· F23 SSE ✅（PR #83）· F24 会话（0.5.0）· ~~F25 daemon~~（移除，ADR-029：伪需求，真实意图=外部 agent 经 MCP/skills 调用，由 F19/F20/ADR-022 覆盖）
 
 > F17 空置（PRD §6.2 标题残留编号）。F18-F24 版本归属以 ADR-019 v5 为准（PRD §6.3/6.4 原归属已被形态决策重排）。
 
@@ -228,6 +228,7 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 - `specs/f14-extraction-service/spec.md`：F14 统一提取服务规格（横切收敛门面 + 增量提取 + RAG 首次落地）
 - `specs/f15-audit-service/spec.md`：F15 一致性审计服务规格（横切审计型：只读聚合 + 8 规则引擎 + 零跨模块 MODIFY）
 - `specs/f16-style-service/spec.md`：F16 风格检测服务规格（确定性文本分析型：风格指纹 12 项 + AI 痕迹 8 特征 + jieba 词汇增强 + LLM 深度分析可选 + F14 STYLE 槽位落地）
+- `specs/f22-search-service/spec.md`：F22 全文搜索规格（索引检索型：FTS5+jieba 词法 + semantic 增强 + 索引三态维护 + project_ids 跨项目，v1.2 CLI 恒 HTTP，PR #216）
 - `specs/f23-sse-stream/spec.md`：F23 SSE 流式输出规格（传输增强型：统一 /stream 端点 + mode 判别联合 + SSE 帧协议 + CLI 默认流式）
 - `specs/f30-kernel-bootstrap/spec.md`：F30 内核冷启动基建规格（客户端发现型：kernel.json 三态读写 + ensure_kernel 复用/互斥拉起 + 版本校验 + dev 调试命令，ADR-030 ②）
 - `specs/f32-settings-persistence/spec.md`：F32 设置持久化规格（设置域横切型：key-value app_settings 设置库 + GET/PATCH /settings + 前端双轨加载 + 主进程桥接 + 表单草稿守卫，#152 PR #176）
