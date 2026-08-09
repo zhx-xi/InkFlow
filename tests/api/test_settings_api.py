@@ -642,8 +642,10 @@ DEFAULT_SETTINGS = {
     "font": "sans",
     "close_behavior": "tray",
     "tray_hint_dismissed": False,
+    "default_words": 800000,
 }
-"""6 字段默认值（spec §2.1 表 + §3.2 空表响应示例）。"""
+"""7 字段默认值（spec §2.1 表 + §3.2 空表响应示例；
+default_words 为 #197 新增字段，2026-08-09 F22 收尾同步）。"""
 
 
 @pytest.fixture

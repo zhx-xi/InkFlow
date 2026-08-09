@@ -286,6 +286,7 @@ jobs:
                  ../tests/api/test_project_api.py `
                  ../tests/api/test_export_api.py `
                  ../tests/cli/test_cli_project.py `
+                 ../tests/api/test_search_api.py `
                  -v --tb=short
 
   # ── Integration: Writing (API + CLI) ──
@@ -428,6 +429,7 @@ jobs:
                  ../tests/cli/test_cli_display_helpers.py `
                  ../tests/cli/test_cli_run_fallback.py `
                  ../tests/cli/test_cli_export.py `
+                 ../tests/cli/test_cli_search.py `
                  -v --tb=short
 
   # ── Smoke: health check (fastest) ──
