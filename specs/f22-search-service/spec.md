@@ -525,7 +525,7 @@ class SearchRepositoryProtocol(Protocol):
 | 单元 | `tests/unit/test_search_tokenizer.py` | 分词纯函数：中文词拆分、保留字转义、标点过滤、XML 转义 |
 | 单元 | `tests/unit/test_search_service.py` | 编排：mock 数据源 repos + mock search_repo → 判脏（stale/新鲜/首次）、重建触发、增量触发、软删排除、多项目校验、types 筛选透传 |
 | 集成 | `tests/unit/test_search_index.py` | **真 SQLite 内存 FTS5**（`aiosqlite :memory:` + CREATE VIRTUAL TABLE）：索引→查询闭环、中文命中、snippet `<mark>` 断言、BM25 排序、多项目过滤、分页 |
-| 单元 | `tests/unit/test_search_semantic.py` | semantic：FakeEmbeddings + 临时 chroma → EntityType 映射、outline 恒空（覆盖缺口）、空库空结果、失败不降级 |
+| 单元 | `tests/unit/test_search_semantic.py` | semantic：**mock VectorStoreProtocol**（父侧裁定 2026-08-09：F22 是 RAG 消费方，mock retrieve 返回固定 RetrievedEntity 等价 FakeEmbeddings 固定向量；真 chroma 集成已由 F14 test_langchain_vector_store.py 覆盖且避免 chromadb/coverage 同进程冲突，ci.yml 无需新增 --ignore）→ EntityType 映射、outline 恒空（覆盖缺口）、空库空结果、失败不降级 |
 | API | `tests/api/test_search_api.py` | TestClient：200 命中/空结果/404/422（含 project_id+project_ids 双缺 422）、mode 参数、token 中间件、POST rebuild（200 全量/单项目、404 项目不存在） |
 | CLI | `tests/cli/test_cli_search.py` | CliRunner + F38 mock 轨（patch ensure_kernel + InkFlowHTTPClient）：命中输出、`--json` 信封、404 错误、多 `-p` 多 `-t`、`--rebuild`、`--mode` |
 
