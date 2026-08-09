@@ -22,6 +22,7 @@ from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.context_service import ContextService
 from inkflow.domain.services.extraction_service import ExtractionService
 from inkflow.domain.services.foreshadowing_service import ForeshadowingService
+from inkflow.domain.services.map_service import MapService
 from inkflow.domain.services.outline_service import OutlineService
 from inkflow.domain.services.output_service import ExportService
 from inkflow.domain.services.project_service import ProjectService
@@ -91,8 +92,11 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 def get_project_service(
     db: AsyncSession,
 ) -> ProjectService:
-    """获取 ProjectService 实例（注入数据库 session）."""
-    return ProjectService(db)
+    """获取 ProjectService 实例（注入数据库 session + F36 项目硬删钩子）."""
+    import uuid
+
+    map_svc = get_map_service(db)
+    return ProjectService(db, map_cleanup=lambda pid: map_svc.cleanup_project(uuid.UUID(int=pid)))
 
 
 def get_chapter_service(
@@ -191,9 +195,18 @@ def get_world_service(
     """获取 WorldService 实例（世界观条目仓储 + AI 提取器）.
 
     装配 WorldExtractor（LLM 客户端 + Prompt 模板 + 同一仓储实例），
-    extract 入口的项目存在性校验使用 F1 项目仓储。
+    extract 入口的项目存在性校验使用 F1 项目仓储；F36 地点硬删钩子接线
+    MapService.clear_location_pins（D10=b 显式级联）。
     """
+    import uuid
+
     repo = SQLiteWorldRepository(db)
+    map_svc = get_map_service(db)
+
+    async def _location_cleanup(location_ids: list[int]) -> None:
+        """地点硬删钩子：pin SET NULL（D10=b 显式级联；mypy 契约 Awaitable[None]）."""
+        await map_svc.clear_location_pins([uuid.UUID(int=i) for i in location_ids])
+
     return WorldService(
         repository=repo,
         extractor=WorldExtractor(
@@ -201,6 +214,25 @@ def get_world_service(
             prompt_manager=LangChainPromptManager(),
             repository=repo,
         ),
+        project_repo=SQLiteProjectRepository(db),
+        location_cleanup=_location_cleanup,
+    )
+
+
+def get_map_service(
+    db: AsyncSession,
+) -> MapService:
+    """获取 MapService 实例（地图仓储 + 图片资产存储 + 世界观/项目仓储）."""
+    from inkflow.core.config import config
+    from inkflow.infrastructure.assets import LocalMapAssetStore
+    from inkflow.infrastructure.database.repositories.map_repo import (
+        SQLiteMapRepository,
+    )
+
+    return MapService(
+        repository=SQLiteMapRepository(db),
+        asset_store=LocalMapAssetStore(config.data_dir),
+        world_repo=SQLiteWorldRepository(db),
         project_repo=SQLiteProjectRepository(db),
     )
 

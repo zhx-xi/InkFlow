@@ -1,6 +1,8 @@
 # F36: 世界观地图视图（world-map）— 功能规格
 
-> **Spec 版本**: 1.1 | **日期**: 2026-08-09 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §5（workspace）、PRD v2.1 §6.2 P1-02、F10 spec + F35 spec v1.1（地点树，本模块数据基础）、Constitution P1-P6
+> **Spec 版本**: 1.2 | **日期**: 2026-08-09 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §5（workspace）、PRD v2.1 §6.2 P1-02、F10 spec + F35 spec v1.1（地点树，本模块数据基础）、Constitution P1-P6
+>
+> **Spec 变更**（1.1 → 1.2，2026-08-09 实现期修订）：① §8 补 5 行 MODIFY（world_service/project_service 钩子接线、http client post_file/put_file/get_bytes、pyproject python-multipart、ci.yml 登记）；② §12 补决策 13-15（get_pin 新增裁定、python-multipart 依赖、钩子接线形态）。
 >
 > **Spec 变更**（1.0 → 1.1，2026-08-09 拍板）：Q1-Q3 全拍板——**Q1=B（drill-down + 面包屑一起）**；**Q2=A（真删删文件——删除语义收敛为真删，无归档窗口）**；Q3=A（root_location 过滤）。**删除语义重设计（D1-D7）**：maps/map_pins **新表无 is_deleted 列**（真删，无恢复）；地图删除 = 确认后真删 + **有子地图时强制选择**（`?cascade=true` 级联删 / `?reparent_to=<map_id>` 子地图改挂新父——目标父地图自动补 pin，D3）；**FK 运行时由 service 显式级联（D10=b，生产连接未开 foreign_keys=ON）**；children 查询补地点软删过滤（评审 F2）；地图树 drill-down 与 #175 复制共用地点→地图查询（评审 S10）。
 >
@@ -525,7 +527,13 @@ children:    repo.children(map_id)（单 SQL JOIN + 地点软删过滤，§5.2�
 | `backend/tests/unit/test_map_api.py` | **CREATE** | API 契约（multipart 上传/下载/删除参数/错误映射） |
 | `tests/cli/test_cli_map.py` | **CREATE** | CLI 命令（信封/退出码/图片上传/删除参数） |
 
-> **⚠️ CI 盲区防范（Issue #59/#61 教训）**：`tests/cli/test_cli_map.py` 是**新文件**，必须显式加入 ci.yml `integration-cli-backend` job 文件列表（Windows pytest 不展开 glob）——**本模块唯一需改 ci.yml 的项**。
+| `backend/src/inkflow/domain/services/world_service.py` | **MODIFY** | delete_setting 加 location_cleanup 可选回调（cascade/force 硬删分支调用，D10=b 接线；v1.2 补） |
+| `backend/src/inkflow/domain/services/project_service.py` | **MODIFY** | hard_delete 加 map_cleanup 可选回调（成功后调用，D10=b 接线；v1.2 补） |
+| `backend/src/inkflow/infrastructure/http/client.py` | **MODIFY** | 新增 post_file/put_file/get_bytes（multipart 上传 + 原始字节下载，CLI map create/image/get 用；v1.2 补） |
+| `backend/pyproject.toml` | **MODIFY** | HTTP 组加 python-multipart>=0.0.9（multipart 端点必需；v1.2 补） |
+| `.github/workflows/ci.yml` | **MODIFY** | integration-cli-backend job 追加 test_cli_map.py（v1.2 补） |
+
+> **⚠️ CI 盲区防范（Issue #59/#61 教训）**：`tests/cli/test_cli_map.py` 是**新文件**，已显式加入 ci.yml `integration-cli-backend` job 文件列表（Windows pytest 不展开 glob）。
 
 ---
 
@@ -612,6 +620,9 @@ F36 被依赖:
 | 10 | **children 与 #175 共用地点→地图查询（评审 S10）** | repo 提供 `list_by_root_locations(project_id, location_ids)` | 单一来源（children 服务层 = list_pins 提取 locations → 调共用查询）；#175 复制直接复用 | 两套查询（实现重复） |
 | 11 | 项目硬删显式级联 | service 查 maps → 删 pins → 删文件 → 删 maps | D10=b 推论：FK 不生效时防孤儿数据 | 依赖 DB CASCADE（不生效） |
 | 12 | 无缺省置顶选项 | reparent_to 必填（显式目标） | 「变孤儿」不隐式发生（与 F35 一致） | 缺省置顶（隐式断链） |
+| 13 | **repo 补 get_pin（实现期裁定 2026-08-09）** | update_pin 保持单参全对象 + 新增 get_pin(pin_id)（Protocol 16→17 方法） | service 需现有 pin 合并部分更新（update_map 同款 get→model_copy 模式）；并行 RED 批契约分歧以源头 repo 契约为准（F30 先例） | 两参 (pin_id, update) 透传（无法表达部分更新） |
+| 14 | **python-multipart 依赖（实现期发现）** | pyproject HTTP 组加 python-multipart>=0.0.9 | FastAPI multipart/form-data 端点必需（实测缺失 ImportError） | 手写 multipart 解析（复杂度高） |
+| 15 | **钩子接线形态（实现期裁定）** | WorldService/ProjectService 加可选回调（location_cleanup/map_cleanup）+ deps 装配 MapService 方法 | 不碰 F1/F35 service 公共契约（默认 None 向后兼容）；CLI/API 全路径经 deps 覆盖 | router 层双 service 编排（脏） |
 
 ---
 

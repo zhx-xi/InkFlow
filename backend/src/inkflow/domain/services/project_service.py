@@ -6,13 +6,17 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from inkflow.domain.models.project import Genre, Project, ProjectConfig, ProjectUpdate
 from inkflow.infrastructure.database.repositories.project_repo import (
     SQLiteProjectRepository,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
@@ -35,10 +39,21 @@ class ProjectService:
     """项目业务服务 — 编排核心业务逻辑.
 
     所有方法均委托给 SQLiteProjectRepository，仅在必要时进行领域层转换。
+
+    Args:
+        db_session: SQLAlchemy 异步 session.
+        map_cleanup: 项目硬删钩子（F36 D10=b）：项目硬删后清理地图与 pin
+            （MapService.cleanup_project）；失败仅 log warning 不阻断主流程.
     """
 
-    def __init__(self, db_session) -> None:
+    def __init__(
+        self,
+        db_session,
+        *,
+        map_cleanup: Callable[[int], Awaitable[int]] | None = None,
+    ) -> None:
         self._repo = SQLiteProjectRepository(db_session)
+        self._map_cleanup = map_cleanup
 
     async def create_project(
         self,
@@ -155,4 +170,11 @@ class ProjectService:
         Returns:
             True 表示成功删除一条记录，False 表示未找到记录.
         """
-        return await self._repo.hard_delete(_to_int_id(project_id))
+        pid_int = _to_int_id(project_id)
+        deleted = await self._repo.hard_delete(pid_int)
+        if deleted and self._map_cleanup is not None:
+            try:
+                await self._map_cleanup(pid_int)
+            except Exception:
+                logger.warning("项目硬删后地图清理失败: %s", project_id, exc_info=True)
+        return deleted

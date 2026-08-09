@@ -412,6 +412,8 @@ jobs:
                  ../tests/cli/test_cli_character_errors.py `
                  ../tests/cli/test_cli_world.py `
                  ../tests/cli/test_cli_world_tree.py `
+                 ../tests/cli/test_cli_map.py `
+                 ../tests/cli/test_cli_map_coverage.py `
                  ../tests/cli/test_cli_outline.py `
                  ../tests/cli/test_cli_timeline_crud.py `
                  ../tests/cli/test_cli_timeline_ops.py `

@@ -20,6 +20,7 @@ from inkflow.api.routers import (
     export,
     extractions,
     foreshadowings,
+    maps,
     outlines,
     project,
     provider_configs,
@@ -120,6 +121,7 @@ app.include_router(style.router)
 app.include_router(chapter.router)
 app.include_router(chapter_audit.router)
 app.include_router(characters.router)
+app.include_router(maps.router)
 app.include_router(writing.router)
 app.include_router(agent.router)
 app.include_router(context.router)
