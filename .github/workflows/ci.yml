@@ -284,6 +284,7 @@ jobs:
           uv run pytest ../tests/integration/test_project_repository.py `
                  ../tests/integration/test_project_service.py `
                  ../tests/api/test_project_api.py `
+                 ../tests/api/test_export_api.py `
                  ../tests/cli/test_cli_project.py `
                  -v --tb=short
 
@@ -425,6 +426,7 @@ jobs:
                  ../tests/cli/test_cli_outline_http.py `
                  ../tests/cli/test_cli_display_helpers.py `
                  ../tests/cli/test_cli_run_fallback.py `
+                 ../tests/cli/test_cli_export.py `
                  -v --tb=short
 
   # ── Smoke: health check (fastest) ──
