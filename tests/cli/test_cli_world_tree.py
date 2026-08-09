@@ -262,3 +262,75 @@ class TestWorldTreeDeleteParams:
         assert data["ok"] is False
         assert data["error"]["code"] == "VALIDATION_ERROR"
         assert "该地点存在子地点" in data["error"]["message"]
+
+
+class TestWorldTreeHumanOutput:
+    """F35 人类可读输出分支补测（非 --json，world.py L255-258 / L285-291）.
+
+    既有 F35 CLI 用例只测 --json 信封（print_result 信封分支），人类输出分支
+    （面包屑 / 「暂无」提示 / depth 缩进列表）此前全 miss——#177 覆盖率补测。
+    """
+
+    def test_ancestors_human_breadcrumb(self, cli_runner, fake_http_client):
+        """ancestors 非空 → stdout 面包屑「清河县城 → 青州 → 大越国」（L258 join 分支）."""
+        sid = uuid.uuid4()
+        fake_http_client.get.return_value = {
+            "items": [
+                _make_setting(name="清河县城"),
+                _make_setting(name="青州"),
+                _make_setting(name="大越国"),
+            ],
+            "total": 3,
+        }
+        result = cli_runner.invoke(
+            app, ["ancestors", str(sid)], obj=CliContext(json_output=False)
+        )
+        assert result.exit_code == 0
+        assert "清河县城 → 青州 → 大越国" in result.stdout
+        assert (
+            fake_http_client.get.await_args.args[0]
+            == f"/world-settings/{sid}/ancestors"
+        )
+
+    def test_ancestors_human_empty(self, cli_runner, fake_http_client):
+        """ancestors 空列表 → stdout「📭 暂无祖先链」（L256，emoji 码点精确）."""
+        sid = uuid.uuid4()
+        fake_http_client.get.return_value = {"items": [], "total": 0}
+        result = cli_runner.invoke(
+            app, ["ancestors", str(sid)], obj=CliContext(json_output=False)
+        )
+        assert result.exit_code == 0
+        assert "\U0001f4ed 暂无祖先链" in result.stdout
+
+    def test_descendants_human_indent(self, cli_runner, fake_http_client):
+        """descendants 非空 → stdout 按 depth 缩进平铺「- 名称」（L288-291）."""
+        sid = uuid.uuid4()
+        fake_http_client.get.return_value = {
+            "items": [
+                _make_setting(name="大越国", depth=0),
+                _make_setting(name="青州", depth=1),
+                _make_setting(name="清河县城", depth=2),
+            ],
+            "total": 3,
+        }
+        result = cli_runner.invoke(
+            app, ["descendants", str(sid)], obj=CliContext(json_output=False)
+        )
+        assert result.exit_code == 0
+        assert "- 大越国" in result.stdout
+        assert "  - 青州" in result.stdout
+        assert "    - 清河县城" in result.stdout
+        assert (
+            fake_http_client.get.await_args.args[0]
+            == f"/world-settings/{sid}/descendants"
+        )
+
+    def test_descendants_human_empty(self, cli_runner, fake_http_client):
+        """descendants 空列表 → stdout「📭 暂无子地点」（L286，emoji 码点精确）."""
+        sid = uuid.uuid4()
+        fake_http_client.get.return_value = {"items": [], "total": 0}
+        result = cli_runner.invoke(
+            app, ["descendants", str(sid)], obj=CliContext(json_output=False)
+        )
+        assert result.exit_code == 0
+        assert "\U0001f4ed 暂无子地点" in result.stdout

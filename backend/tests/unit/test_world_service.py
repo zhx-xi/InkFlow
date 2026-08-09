@@ -500,6 +500,89 @@ class TestF35UpdateParentSemantics:
             await service.update_setting(existing.id, WorldUpdate(parent_id=target.id))
         mock_repo.update.assert_not_awaited()
 
+    async def test_update_reparent_missing_parent_raises(self, service, mock_repo) -> None:
+        """改挂父不存在（repo.get(新父) → None）→ WorldParentNotFoundError（spec §7 边界 1）.
+        # F35 coverage-gap 补测（非 RED）：改挂父存在性校验 L253 未覆盖.
+        """
+        parent = _setting(name="青州")
+        existing = _setting(name="清河县城", parent_id=parent.id)
+        mock_repo.get = AsyncMock(
+            side_effect=lambda sid: existing if sid == existing.id.int else None
+        )
+
+        with pytest.raises(WorldParentNotFoundError):
+            await service.update_setting(existing.id, WorldUpdate(parent_id=uuid.uuid4()))
+        mock_repo.update.assert_not_awaited()
+
+    async def test_update_reparent_cross_project_parent_raises(self, service, mock_repo) -> None:
+        """改挂父跨项目（repo.get(新父) 返回他项目实体）→ WorldParentNotFoundError（数据隔离）.
+        # F35 coverage-gap 补测（非 RED）：改挂父同项目校验 raise 分支 L250-253 未覆盖.
+        """
+        parent = _setting(name="青州")
+        existing = _setting(name="清河县城", parent_id=parent.id)
+        other_parent = _setting(name="他国", project_id=OTHER_PID)
+        mock_repo.get = AsyncMock(
+            side_effect=lambda sid: existing if sid == existing.id.int else other_parent
+        )
+
+        with pytest.raises(WorldParentNotFoundError):
+            await service.update_setting(existing.id, WorldUpdate(parent_id=other_parent.id))
+        mock_repo.update.assert_not_awaited()
+
+    async def test_update_reparent_with_rename_conflict_raises(self, service, mock_repo) -> None:
+        """改挂+同时改名：新父下改名后撞同级（get_by_parent_and_name 命中他条目）→
+        WorldNameConflictError（new_name=update.name 分支 L258 + 改挂后同级校验 L261-265）.
+        # F35 coverage-gap 补测（非 RED）：name+parent_id 同时变更路径未覆盖.
+        """
+        parent = _setting(name="青州")
+        existing = _setting(name="清河县城", parent_id=parent.id)
+        target = _setting(name="东大陆")
+        mock_repo.get = AsyncMock(
+            side_effect=lambda sid: existing if sid == existing.id.int else target
+        )
+        # 第一次调用（改名后新父同级预检）不冲突；第二次调用（改挂后同级校验）命中他条目
+        mock_repo.get_by_parent_and_name = AsyncMock(
+            side_effect=[None, _setting(name="清河县城·迁")]
+        )
+        mock_repo.collect_ancestor_ids = AsyncMock(return_value=[])
+
+        with pytest.raises(WorldNameConflictError):
+            await service.update_setting(
+                existing.id, WorldUpdate(name="清河县城·迁", parent_id=target.id)
+            )
+        mock_repo.update.assert_not_awaited()
+        assert mock_repo.get_by_parent_and_name.await_count == 2
+
+    async def test_update_rename_conflict_same_parent_raises(self, service, mock_repo) -> None:
+        """有父条目改名撞同级（get_by_parent_and_name(pid, 原父, 新名) 命中他条目）→
+        WorldNameConflictError（F35 同级改名校验 L239 未覆盖）.
+        # F35 coverage-gap 补测（非 RED）：既有改名冲突用例仅覆盖顶层 get_by_name 路径.
+        """
+        parent = _setting(name="青州")
+        existing = _setting(name="清河县城", parent_id=parent.id)
+        other = _setting(name="清河县城·改")
+        mock_repo.get = AsyncMock(return_value=existing)
+        mock_repo.get_by_parent_and_name = AsyncMock(return_value=other)
+
+        with pytest.raises(WorldNameConflictError):
+            await service.update_setting(existing.id, WorldUpdate(name="清河县城·改"))
+        mock_repo.update.assert_not_awaited()
+        mock_repo.get_by_parent_and_name.assert_awaited_once_with(
+            PID.int, parent.id.int, "清河县城·改"
+        )
+
+    async def test_update_reparent_to_self_raises(self, service, mock_repo) -> None:
+        """改挂父为自身（parent_id == 自身 id）→ WorldCycleError（L394-395 直接自环短路分支）.
+        # F35 coverage-gap 补测（非 RED）：_assert_no_cycle 直接自环分支未覆盖.
+        """
+        existing = _setting(name="青州")
+        mock_repo.get = AsyncMock(return_value=existing)
+
+        with pytest.raises(WorldCycleError):
+            await service.update_setting(existing.id, WorldUpdate(parent_id=existing.id))
+        mock_repo.update.assert_not_awaited()
+        mock_repo.collect_ancestor_ids.assert_not_awaited()  # 直接自环短路，不再查祖先链
+
 
 class TestF35DeleteMatrix:
     """F35 delete_setting 删除语义矩阵（spec §5.5，load-bearing；边界 X：无子软删保持 F10）.
@@ -679,3 +762,62 @@ class TestF35TreeQueries:
 
         assert result == [setting, child]
         mock_repo.list_descendants.assert_awaited_once_with(setting.id.int)
+
+    async def test_list_ancestors_returns_self_then_ancestors(self, service, mock_repo) -> None:
+        """3 级祖先链（自身→父→祖父）：返回 [自身, 父, 祖父]（自身在前，面包屑顺序）.
+        # F35 coverage-gap 补测（非 RED）：list_ancestors while 循环主体 L356-380 全未覆盖.
+        """
+        grandparent = _setting(name="大越国")
+        parent = _setting(name="青州", parent_id=grandparent.id)
+        setting = _setting(name="清河县城", parent_id=parent.id)
+        by_id = {
+            setting.id.int: setting,
+            parent.id.int: parent,
+            grandparent.id.int: grandparent,
+        }
+        mock_repo.get = AsyncMock(side_effect=lambda sid: by_id.get(sid))
+
+        result = await service.list_ancestors(setting.id)
+
+        assert result == [setting, parent, grandparent]
+        mock_repo.get.assert_any_await(setting.id.int)
+        mock_repo.get.assert_any_await(parent.id.int)
+        mock_repo.get.assert_any_await(grandparent.id.int)
+
+    async def test_list_ancestors_truncates_at_missing_parent(self, service, mock_repo) -> None:
+        """父已软删（repo.get(父) → None）→ 链在父处截断，仅返回自身（面包屑不悬挂）.
+        # F35 coverage-gap 补测（非 RED）：while 循环 break 分支 L376-377.
+        """
+        parent = _setting(name="青州")
+        setting = _setting(name="清河县城", parent_id=parent.id)
+        mock_repo.get = AsyncMock(
+            side_effect=lambda sid: setting if sid == setting.id.int else None
+        )
+
+        result = await service.list_ancestors(setting.id)
+
+        assert result == [setting]
+        mock_repo.get.assert_any_await(parent.id.int)  # 已尝试上溯到父
+
+    async def test_list_ancestors_truncates_at_cycle(self, service, mock_repo) -> None:
+        """数据异常成环（父反指子）→ seen 防御截断，不死循环（L372-373 防御分支）.
+        链上溯一圈后回到自身 → 再次访问自身时其父已在 seen 中 → 截断（自身出现两次 = 环闭合点）.
+        # F35 coverage-gap 补测（非 RED）：while 循环成环截断分支未覆盖.
+        """
+        parent = _setting(name="青州")
+        setting = _setting(name="清河县城", parent_id=parent.id)
+        parent_cyclic = parent.model_copy(update={"parent_id": setting.id})  # 异常：父反指子
+        by_id = {setting.id.int: setting, parent_cyclic.id.int: parent_cyclic}
+        mock_repo.get = AsyncMock(side_effect=lambda sid: by_id.get(sid))
+
+        result = await service.list_ancestors(setting.id)
+
+        assert result == [setting, parent_cyclic, setting]  # 上溯一圈后截断
+
+    async def test_list_ancestors_missing_returns_none(self, service, mock_repo) -> None:
+        """条目不存在（repo.get → None）→ 返回 None（router 转 404）.
+        # F35 coverage-gap 补测（非 RED）：list_ancestors 入口 None 分支 L364-365.
+        """
+        mock_repo.get = AsyncMock(return_value=None)
+
+        assert await service.list_ancestors(uuid.uuid4()) is None

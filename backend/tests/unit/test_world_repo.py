@@ -636,3 +636,39 @@ class TestF35LocationTree:
 
         got = await repo.get(top.id.int)
         assert got is not None and got.parent_id is None
+
+
+# ── F35 补测（coverage-gap，非 RED）：delete_with_reparent 缺失分支 ──
+
+
+@pytest.mark.integration
+class TestF35DeleteWithReparentCoverage:
+    """F35 delete_with_reparent（spec §5.5 D2）补测：自身不存在分支 + 正常路径契约."""
+
+    async def test_delete_with_reparent_missing_setting_returns_false(self, db_session, project):
+        """自身不存在 → 子改挂 UPDATE 影响 0 行 + 回查无行 → commit + 返回 False（不报错）.
+        # F35 coverage-gap 补测（非 RED）：repo L380-381 未覆盖.
+        """
+        repo = SQLiteWorldRepository(db_session)
+        target = await repo.add(_setting(project, "东大陆"))
+
+        result = await repo.delete_with_reparent(99999, target.id.int)
+
+        assert result is False
+        # 子改挂未执行：目标父下无新增子级
+        children, _ = await repo.list(project.id, parent_id=target.id.int)
+        assert children == []
+
+    async def test_delete_with_reparent_moves_children_and_deletes_self(self, db_session, project):
+        """正常路径：直接子改挂新父 + 自身真删（单事务，返回 True）."""
+        repo = SQLiteWorldRepository(db_session)
+        old_parent = await repo.add(_setting(project, "青州"))
+        new_parent = await repo.add(_setting(project, "东大陆"))
+        child = await repo.add(_setting(project, "清河县城", parent_id=old_parent.id))
+
+        result = await repo.delete_with_reparent(old_parent.id.int, new_parent.id.int)
+
+        assert result is True
+        assert await repo.get(old_parent.id.int) is None  # 自身真删
+        moved = await repo.get(child.id.int)
+        assert moved is not None and moved.parent_id == new_parent.id

@@ -221,6 +221,19 @@ class TestWorldSettingCRUDAPI:
         assert response.json()["category"] == ""
 
     @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_update_setting_not_found_404(self, mock_get_svc: MagicMock) -> None:
+        """F35 补测: PATCH 条目不存在（update_setting 返回 None）→ 404「世界观条目不存在」
+        （world_settings.py L259-260 的 `if setting is None` 分支）。"""
+        svc = _mock_svc(mock_get_svc)
+        svc.update_setting = AsyncMock(return_value=None)
+
+        response = client.patch(
+            f"/api/v1/world-settings/{uuid.uuid4()}", json={"name": "清河县城·改"}
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"] == "世界观条目不存在"
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
     def test_delete_setting_soft_204(self, mock_get_svc: MagicMock) -> None:
         """软删除条目返回 204（默认 force=False）."""
         svc = _mock_svc(mock_get_svc)
