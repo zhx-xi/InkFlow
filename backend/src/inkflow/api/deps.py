@@ -22,6 +22,7 @@ from inkflow.domain.services.context_service import ContextService
 from inkflow.domain.services.extraction_service import ExtractionService
 from inkflow.domain.services.foreshadowing_service import ForeshadowingService
 from inkflow.domain.services.outline_service import OutlineService
+from inkflow.domain.services.output_service import ExportService
 from inkflow.domain.services.project_service import ProjectService
 from inkflow.domain.services.provider_config_service import ProviderConfigService
 from inkflow.domain.services.session_service import SessionService
@@ -340,6 +341,25 @@ def get_audit_service(
         chapter_repo=SQLiteChapterRepository(db),
         run_repo=SQLExtractionRunRepository(db),
         audit_repo=SQLiteAuditRepository(db),
+    )
+
+
+def get_export_service(
+    db: AsyncSession,
+) -> ExportService:
+    """获取 ExportService 实例（F21 导出服务，spec §8.2）。
+
+    装配: 复用 F1/F2/F9/F10/F11/F12/F13 各 SQLite 仓储——全部既有实现，
+    零跨模块 MODIFY（§8.2）。
+    """
+    return ExportService(
+        project_repo=SQLiteProjectRepository(db),
+        chapter_repo=SQLiteChapterRepository(db),
+        character_repo=SQLiteCharacterRepository(db),
+        world_repo=SQLiteWorldRepository(db),
+        outline_repo=SQLiteOutlineRepository(db),
+        timeline_repo=SQLiteTimelineRepository(db),
+        foreshadowing_repo=SQLiteForeshadowingRepository(db),
     )
 
 

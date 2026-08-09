@@ -1,8 +1,10 @@
 # F21: 导出服务（output_service）— 功能规格
 
-> **Spec 版本**: 1.1 | **日期**: 2026-08-09 | **依据**: PRD v2.2 §6.4 P1-15, Issue #53, Constitution P1-P6（P2 解耦 / P5 YAGNI）
+> **Spec 版本**: 1.3 | **日期**: 2026-08-09 | **依据**: PRD v2.2 §6.4 P1-15, Issue #53, Constitution P1-P6（P2 解耦 / P5 YAGNI）
 > **所属阶段**: 0.6.0（#53 导出服务，估算 1.5-2 人天——v1.1 拍板范围收敛）
 >
+> **Spec 变更（v1.2 → v1.3）**: **评审修复吸收（2026-08-09，评审 PASS with minor 后父侧修订）**——① §3.3 异常映射表措辞漂移修正（404「项目不存在」/500「内部错误: <e>」，与实现/F15 audit 先例/ADR-012 中文文案一致）；② §6.1 卷排序键修正（`order_index ASC` 仅——`Volume` 实体无 `created_at` 字段）；③ §5.1 要点 2「asyncio.gather 并行拉取」在实现中落实（B4 修复批），正文与设定聚合并行、设定 5 源并行，include_settings=False 零调用契约不变。
+> **Spec 变更（v1.1 → v1.2）**: **实现期父侧裁定（2026-08-09）**——CLI 传输路径改为**恒经 HTTP**（`ensure_kernel()` + `InkFlowHTTPClient.get_raw` 下载，F38 #169 全仓改造后的一致模式；v1.1 的「直接消费 service 不经 HTTP」是未同步 F38 的陈旧措辞，§4/§8.1/§12 D 表修订）；CLI 信封按 F7 实际契约 `{"ok": ...}`（v1.1 示例 success 键为过时措辞，§4 修订）；人类模式成功文案码点锁定为 `✅ 导出成功: {name} → {path} ({bytes:,} bytes)`（§4 修订）。
 > **Spec 变更（v1.0 → v1.1）**: **用户拍板（2026-08-09）**——Q1=A 仅 TXT 格式（国内网文发布生态 TXT 为主流，EPUB/Markdown/DOCX 无发布场景，YAGNI 收敛）；Q2 自解（TXT 纯文本零依赖，不引入任何导出库）；Q3=C `include_settings` 参数切换（默认不含）。§1/§2/§3/§4/§5/§7/§8/§9/§10/§12/§13 全面修订为单格式管线；Issue #53 验收标准同步（gh comment 留痕 2026-08-09）。
 >
 > **关联 Issues**: [#53](https://github.com/zhx-xi/InkFlow/issues/53)
@@ -153,23 +155,25 @@ Content-Disposition: attachment; filename="mybook-txt.txt"
 
 | 场景 | HTTP 状态 | 错误 body（ADR-012 统一格式） | 抛出/捕获点 |
 |------|-----------|-------------------------------|-------------|
-| 项目不存在 / 已软删 | 404 | `{"detail": "Project not found"}` | service 校验（复用 F9 character_errors `ProjectNotFoundError`，陷阱 16：**不导出**到 `ports/__init__.py`，router 显式 except 映射） |
+| 项目不存在 / 已软删 | 404 | `{"detail": "项目不存在"}`（v1.3 修订：与实现/F15 audit 先例/ADR-012 中文文案一致，v1.1 表格的英文 "Project not found" 为漂移措辞） | service 校验（复用 F9 character_errors `ProjectNotFoundError`，陷阱 16：**不导出**到 `ports/__init__.py`，router 显式 except 映射） |
 | `format` 非 txt（v1.1 不支持的其他值） | 422 | Pydantic `Literal["txt"]` 校验错误 | DTO 层（FastAPI 自动） |
 | `include_settings` 非法 | 422 | Pydantic 校验错误 | DTO 层 |
 | 项目存在但无任何内容 | 200 | 空文档（标题 + 空正文，见 §7 E4） | 不视为错误 |
-| 内部错误（序列化异常） | 500 | `{"detail": "Internal server error"}` | router `except Exception` → loguru（ADR-016） |
+| 内部错误（序列化异常） | 500 | `{"detail": "内部错误: <e>"}`（v1.3 修订：与实现/F15 audit 先例/ADR-012 一致，v1.1 表格的英文 "Internal server error" 为漂移措辞） | router `except Exception` → loguru（ADR-016） |
 
 ---
 
 ## 4. CLI 命令签名
 
-F7 全局约定：`--json` 信封（`{"success": bool, "data": ..., "error": ...}`）、退出码 0 成功 / 1 业务错误 / 2 用法错误。F21 新增 `inkflow export` 组（1 个命令，直接消费 service，不经 HTTP——六边形表现层适配器，F23 先例）。
+F7 全局约定：`--json` 信封（`{"ok": true, "data": ..., "error": ...}`——v1.2 按 F7 实际契约修订，v1.1 示例的 success 键为过时措辞）、退出码 0 成功 / 1 业务错误 / 2 用法错误。F21 新增 `inkflow export` 组（1 个命令，**恒经 HTTP**：`ensure_kernel()` + `InkFlowHTTPClient`，F38 #169 全仓一致模式——v1.2 实现期父侧裁定，见 §12 D10）。CLI 经 `InkFlowHTTPClient.get_raw` 下载 TXT 原始文本（`infrastructure/http/client.py` 新增方法，§8.1），不经 HTTP 打自己的服务层直连已随 #169 废弃。
 
 ```text
 inkflow export <project> [--include-settings] [--output PATH]
 
 参数:
-  project                 项目名称或 ID（F1 约定：名称精确匹配，数字按 ID 解析）
+  project                 项目名称或 ID（F1 约定：名称精确匹配，数字按 ID 解析——
+                          CLI 先经 GET /projects?search=<name> 精确匹配名称取 id；
+                          数字/UUID 直通 GET /projects/{pid} 取项目对象）
   --include-settings      包含设定档案附录（默认不含）
   --output, -o            输出路径。目录 → 用建议文件名写入；文件路径 → 直接写入。
                           默认当前工作目录 + 建议文件名
@@ -177,20 +181,20 @@ inkflow export <project> [--include-settings] [--output PATH]
 
 成功: 退出 0；信封 data = ExportResult {format, filename, bytes, path}
 失败: 项目不存在 → 退出 1，error = "项目不存在: <name>"
-      写文件失败（权限/磁盘）→ 退出 1，error = 系统错误消息
+      写文件失败（权限/磁盘）→ 退出 1，error = "写文件失败: <系统错误>"
 ```
 
 示例：
 
 ```text
 $ inkflow export 我的书 -o ./out/
-Exporting 我的书 → ./out/我的书-txt.txt (1,234,567 bytes)
+✅ 导出成功: 我的书 → ./out/我的书-txt.txt (1,234,567 bytes)
 
 $ inkflow export 我的书 --include-settings --json
-{"success": true, "data": {"format": "txt", "filename": "我的书-txt.txt", "bytes": 2048, "path": "我的书-txt.txt"}}
+{"ok": true, "data": {"format": "txt", "filename": "我的书-txt.txt", "bytes": 2048, "path": "我的书-txt.txt"}}
 ```
 
-> v1.1 移除 `--format` 选项（唯一格式 txt，选项无意义）；未来格式扩展时恢复 `-f/--format`（§5.5 注）。
+> v1.1 移除 `--format` 选项（唯一格式 txt，选项无意义）；未来格式扩展时恢复 `-f/--format`（§5.5 注）。v1.2 修订：人类模式成功文案码点锁定 `✅ 导出成功: {name} → {path} ({bytes:,} bytes)`（✅ U+2705 无变体、ASCII 冒号、箭头 U+2192、bytes 千分位逗号）。
 
 ---
 
@@ -297,7 +301,7 @@ $ inkflow export 我的书 --include-settings --json
 
 | 层级 | 排序键 | 说明 |
 |------|--------|------|
-| 卷 | `order_index ASC, created_at ASC` | F2 语义 |
+| 卷 | `order_index ASC`（v1.3 修订：`Volume` 实体无 `created_at` 字段——F2 卷仅 title/order_index，repo `list_volumes` 已按 order_index 升序，stable sort 保序） | F2 语义 |
 | 章（卷内） | `order_index ASC, created_at ASC` | F2 语义 |
 | 未分组章 | 单独「未分组」卷，排在所有命名卷之后 | `volume_id IS NULL` |
 | 附录-角色 | `created_at ASC`（稳定 ASCII 键；**不用 name 排序**——中文码点序与直觉不符，F15 教训） |
@@ -364,6 +368,7 @@ $ inkflow export 我的书 --include-settings --json
 | MODIFY | `api/app.py` | `app.include_router(export.router)` + import（1 行） |
 | MODIFY | `api/deps.py` | ExportService 装配（注入 7 个 repository；见 §8.2） |
 | MODIFY | `cli/app.py` | import + `app.add_typer(export.app)`（注册 export 组，1-2 行） |
+| MODIFY | `infrastructure/http/client.py` | `InkFlowHTTPClient.get_raw(path, *, params=None) -> str`（v1.2 新增：原始文本下载，F21 CLI 消费；`_request` 强制 JSON 解析无法处理 text/plain） |
 | MODIFY | `.github/workflows/ci.yml` | 两处联动（陷阱 13/15，2026-08-09 核实）：① `tests/cli/test_cli_export.py` 显式追加 **integration-cli-backend** job 文件列表（Windows pytest 不展开 glob）② `tests/api/test_export_api.py` 显式追加 **integration-project-backend** job 文件列表（既有先例 `../tests/api/test_project_api.py`）；coverage-backend 跑 `../tests/api/` 目录自动覆盖，无需追加 |
 
 > ⚠️ 文件清单反向核对（F32 评审教训）：上表每个 CREATE 已核实不存在（2026-08-09），每个 MODIFY 已确认存在；ci.yml 联动已按真实 job 结构写明。**v1.1 删除** v1.0 的 `_exporters/` 包 4 序列化器 + 对应 4 测试文件（EPUB/DOCX/Markdown 无场景）。
@@ -489,6 +494,7 @@ class ExportService:
 | D7 | 序列化器单文件 `_txt_exporter.py` | 私有模块不进 ports | v1.1 单格式，`_exporters/` 包无必要（Rule of Three：单一实现不建包）；与 `_word_count.py` 先例一致 | 独立包/独立 infrastructure 层（过度分层） |
 | D8 | API 路径 `/export` 挂在项目下 | `GET /api/v1/projects/{pid}/export` | 资源语义：导出是项目的一个视图；与既有 `/projects/{pid}/...` 风格一致 | `/api/v1/export?project_id=`（顶层动作，破坏资源嵌套惯例） |
 | D9 | `format` 参数保留（仅 txt） | API 接受 `format=txt`，CLI 无 `-f` | 为未来格式扩展留契约接缝（§5.5）零成本；CLI 单格式选项是噪音 | 完全删除 format 参数（未来扩展要改 API 契约）；CLI 保留 `-f`（单选项噪音） |
+| D10 | **v1.2：CLI 恒经 HTTP（`ensure_kernel()` + `InkFlowHTTPClient.get_raw`）** | CLI 传输层与 F38 #169 全仓一致（`infrastructure/http/client.py` 新增 `get_raw(path, *, params=None) -> str` 原始文本下载） | v1.1 写「直接消费 service 不经 HTTP（F23 先例）」——但 F38 #169 已把全部 CLI 改为恒经 HTTP（豁免仅 serve/kernel status/config/llm），新命令绕过 HTTP 是架构倒退；导出端点返回 text/plain，`_request` 的 `response.json()` 无法解析，需 raw 下载方法；CLI 测试沿用 F38 mock 范式（test_cli_audit.py 同款） | 直连 service（#169 后无先例、测试范式自创、与 ADR-030 冲突）；CLI 复用 `_request` 传 text/plain（JSONDecodeError 必炸） |
 
 ---
 
