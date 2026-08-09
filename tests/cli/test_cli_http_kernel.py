@@ -141,8 +141,20 @@ def real_kernel(tmp_path_factory):
 
 
 class TestEnsureKernelReal:
-    """真实内核轨：ensure_kernel 自动拉起 + 复用（M5，spec §9.2）。"""
+    """真实内核轨：ensure_kernel 自动拉起 + 复用（M5，spec §9.2）。
 
+    ⚠️ CI 环境跳过（2026-08-09 PR #213 实测）：GitHub Actions Windows
+    runner 沙箱（Session 0）中 `sys.executable -m inkflow serve` 拉起后
+    秒退（KernelStartupError「内核启动后立即退出」×3 次重试，本机
+    Windows 11 3.11/3.13 均正常）。对齐 spec §9.3「M5 延迟验证不入常规
+    CI」：mock 轨（TestNoSpawn）留 CI，真实内核轨本机/开发环境运行
+    （M5 验收按 §9.3 手工基准 + 本文件本机全绿）。
+    """
+
+    @pytest.mark.skipif(
+        os.environ.get("CI") == "true",
+        reason="GitHub Actions runner 沙箱无法拉起真实内核（秒退）；本机 M5 验证",
+    )
     def test_no_kernel_auto_spawn(self, real_kernel):
         """无 kernel.json → ensure_kernel 自动拉起：reused=False + 五字段状态文件。"""
         handle = real_kernel.handle
@@ -162,6 +174,10 @@ class TestEnsureKernelReal:
         assert handle.token == payload["token"]
         assert state.is_process_alive(handle.pid)
 
+    @pytest.mark.skipif(
+        os.environ.get("CI") == "true",
+        reason="GitHub Actions runner 沙箱无法拉起真实内核（秒退）；本机 M5 验证",
+    )
     def test_reuse_same_pid(self, real_kernel):
         """二次 ensure_kernel（同 state_file）：reused=True 且 pid 不变（未重新 spawn）。"""
         first = real_kernel.handle
@@ -206,6 +222,10 @@ class TestHttpClientReal:
     # async 用例必须显式 mark（先例 tests/integration/test_agent_pipeline.py）
     pytestmark = pytest.mark.asyncio
 
+    @pytest.mark.skipif(
+        os.environ.get("CI") == "true",
+        reason="GitHub Actions runner 沙箱无法拉起真实内核（秒退）；本机 M5 验证",
+    )
     async def test_get_projects_via_real_http(self, real_kernel):
         """真实 HTTP：GET /api/v1/projects → 200 + items/total（裸数据，非信封）。
 

@@ -500,6 +500,13 @@ test_cli_http_kernel.py（~4 cases，显式加入 ci.yml integration-cli-backend
 ```
 
 > **真实内核轨的启动成本**：每次起真实内核 ~4.7s——控制在 4 cases 内（CI 时长预算）；测试串行（mutex 防并发双内核）。
+>
+> **⚠️ CI 环境 skip（PR #213 实测修正）**：GitHub Actions Windows runner 沙箱
+> （Session 0）中 `sys.executable -m inkflow serve` 拉起后秒退（KernelStartupError
+> 「内核启动后立即退出」×3 次重试；本机 Windows 11 3.11/3.13 均正常）。真实内核
+> 轨 3 用例（TestEnsureKernelReal ×2 + TestHttpClientReal ×1）加
+> `skipif(CI=true)`——对齐 §9.3「M5 延迟验证不入常规 CI」；mock 轨
+> （TestNoSpawn ×2）留 CI。M5 验收由本机运行本文件全绿 + §9.3 手工基准承担。
 
 ### 9.3 延迟验证（M5，不入常规 CI）
 
