@@ -464,3 +464,80 @@ class TestLifecycle:
             async with InkFlowHTTPClient(handle, **kwargs) as client:
                 await client.get("/projects")
         assert captured and captured[0]["timeout"] == expected
+
+
+class TestExtractDetailFallback:
+    """_extract_detail 容错分支：body 非 dict / 无 detail 键 / detail 非 str / 非 JSON。"""
+
+    @pytest.mark.parametrize(
+        ("payload", "expected_detail"),
+        [
+            ([1, 2, 3], ""),  # body 是 list（非 dict）→ ""
+            ({"msg": "服务器错误"}, ""),  # dict 但无 detail 键 → ""
+            ({"detail": 123}, "123"),  # detail 非 str（int）→ str() 转换
+        ],
+    )
+    async def test_non_2xx_malformed_body_detail(self, handle, payload, expected_detail):
+        """非 2xx + 异常 body 形状 → HttpApiError.detail 按提取规则兜底。"""
+
+        def _handler(request):
+            return _json_response(500, payload)
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                with pytest.raises(HttpApiError) as exc_info:
+                    await client.get("/projects")
+        assert exc_info.value.status_code == 500
+        assert exc_info.value.detail == expected_detail
+
+    async def test_non_2xx_plain_text_body_detail_empty(self, handle):
+        """500 返回纯文本（非 JSON）→ response.json() 抛错 → detail == ""。"""
+
+        def _handler(request):
+            return httpx.Response(
+                500,
+                content=b"<html><body>Internal Server Error</body></html>",
+                request=httpx.Request("GET", BASE_URL),
+            )
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                with pytest.raises(HttpApiError) as exc_info:
+                    await client.get("/projects")
+        assert exc_info.value.status_code == 500
+        assert exc_info.value.detail == ""
+
+
+class TestStreamSseInterrupted:
+    """stream_sse 流中断分支（契约 §5：流中途断开 → HttpApiError(code=STREAM_INTERRUPTED)）。"""
+
+    async def test_stream_interrupted_after_partial_frame(self, handle):
+        """已 yield 部分帧后流中断 → HttpApiError(status_code=0, STREAM_INTERRUPTED)。"""
+
+        async def _aiter_lines():
+            yield 'data: {"done": false, "delta": "部分"}'
+            raise httpx.ReadError("connection lost")
+
+        fake_response = MagicMock()
+        fake_response.status_code = 200
+        fake_response.aiter_lines = _aiter_lines
+
+        mock_client = MagicMock()
+        mock_client.aclose = AsyncMock()
+        stream_cm = mock_client.stream.return_value
+        stream_cm.__aenter__ = AsyncMock(return_value=fake_response)
+        stream_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch(HTTP_MOD, return_value=mock_client):
+            async with InkFlowHTTPClient(handle) as client:
+                events = []
+                with pytest.raises(HttpApiError) as exc_info:
+                    async for ev in client.stream_sse("/stream", json={}):
+                        events.append(ev)
+
+        assert events == [{"done": False, "delta": "部分"}]
+        err = exc_info.value
+        assert err.status_code == 0
+        assert err.code == "STREAM_INTERRUPTED"
+        assert "connection lost" in err.detail
+        assert isinstance(err.__cause__, httpx.ReadError)

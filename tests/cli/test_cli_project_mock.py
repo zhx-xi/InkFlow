@@ -109,6 +109,24 @@ class TestProjectCreate:
         assert result.exit_code == 0
         assert "星辰变" in result.output
 
+    def test_create_kernel_startup_error(self, cli_runner):
+        """ensure_kernel 失败（内核冷启动超时）→ KERNEL_ERROR 信封 + 退出码 1（F38 spec §5.3）."""
+        from inkflow.cli.commands.project import app
+        from inkflow.infrastructure.kernel import KernelStartupError
+
+        with patch(
+            "inkflow.cli.commands.project.ensure_kernel",
+            AsyncMock(side_effect=KernelStartupError("启动超时")),
+        ):
+            result = cli_runner.invoke(
+                app, ["create", "--name", "星辰变"], obj=CliContext(json_output=True)
+            )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "KERNEL_ERROR"
+        assert "内核启动失败" in data["error"]["message"]
+
 
 class TestProjectGet:
     def test_get_json(self, cli_runner, fake_http_client):

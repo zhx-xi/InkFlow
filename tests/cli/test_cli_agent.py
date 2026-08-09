@@ -221,6 +221,21 @@ class TestAgentRunExecution:
         assert result.exit_code == 0
         assert "(--watch 功能将在 Phase 2 完善)" in result.stdout
 
+    @pytest.mark.agent
+    def test_run_kernel_startup_error(self):
+        """ensure_kernel 失败（内核冷启动超时）→ stderr ❌ 内核启动失败 + 退出码 1（F38 §5.3）."""
+        from inkflow.infrastructure.kernel import KernelStartupError
+
+        with patch(
+            f"{AGENT_MOD}.ensure_kernel",
+            AsyncMock(side_effect=KernelStartupError("启动超时")),
+        ):
+            result = runner.invoke(
+                app, ["agent", "run", "--project-id", str(uuid.uuid4())]
+            )
+        assert result.exit_code == 1
+        assert "❌ 内核启动失败: 启动超时" in result.stderr
+
 
 class TestAgentStatusExecution:
     """agent status 真实执行路径：成功/无记录/--json/error 行。"""

@@ -102,7 +102,8 @@ def _run(cli_ctx: CliContext, coro_fn):
 
 def _dimension_label(finding: dict) -> str:
     """维度枚举 → 人类可读中文标签（spec §4.2 `[级别] 维度: 消息`）."""
-    return _DIMENSION_LABELS.get(finding["dimension"], finding["dimension"])
+    dim = finding.get("dimension")
+    return _DIMENSION_LABELS.get(dim, dim) if isinstance(dim, str) else str(dim)
 
 
 def _counts_line(report: dict) -> str:

@@ -414,6 +414,25 @@ class TestStyleAnalyze:
         assert data["ok"] is False
         assert data["error"]["code"] == "INTERNAL_ERROR"
 
+    def test_analyze_kernel_startup_error(self, cli_runner):
+        """ensure_kernel 失败（内核冷启动超时）→ KERNEL_ERROR 信封 + 退出码 1（spec §5.3）."""
+        from inkflow.infrastructure.kernel import KernelStartupError
+
+        with patch(
+            "inkflow.cli.commands.style.ensure_kernel",
+            AsyncMock(side_effect=KernelStartupError("启动超时")),
+        ):
+            result = cli_runner.invoke(
+                app,
+                ["analyze", "--project-id", str(PID), "--text", TEXT],
+                obj=CliContext(json_output=True),
+            )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "KERNEL_ERROR"
+        assert "内核启动失败" in data["error"]["message"]
+
 
 class TestStyleAnalyzeEdgeBranches:
     """补齐 miss 行：无效 UUID、typer.Exit 透传、高频词超 5 省略号、jieba=None、

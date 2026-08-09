@@ -440,3 +440,22 @@ class TestVectorErrorBranches:
         assert data["ok"] is False
         assert data["error"]["code"] == "INTERNAL_ERROR"
         assert "向量检索内部错误" in data["error"]["message"]
+
+    def test_retrieve_kernel_startup_error(self, cli_runner):
+        """ensure_kernel 失败（内核冷启动超时）→ KERNEL_ERROR 信封 + 退出码 1（F38 spec §5.3）."""
+        from inkflow.infrastructure.kernel import KernelStartupError
+
+        with patch(
+            "inkflow.cli.commands.vector.ensure_kernel",
+            AsyncMock(side_effect=KernelStartupError("启动超时")),
+        ):
+            result = cli_runner.invoke(
+                app,
+                ["retrieve", "--project-id", str(PID), "--query", "林晚"],
+                obj=CliContext(json_output=True),
+            )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "KERNEL_ERROR"
+        assert "内核启动失败" in data["error"]["message"]

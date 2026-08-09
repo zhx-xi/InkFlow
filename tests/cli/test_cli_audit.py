@@ -453,3 +453,22 @@ class TestAuditCheckEdgeBranches:
         assert "❌ 不一致" in result.output
         assert "0 error / 0 warning / 0 info" in result.output
         assert "完整报告见 inkflow audit check --json" not in result.output
+
+    def test_check_kernel_startup_error(self, cli_runner):
+        """ensure_kernel 失败（内核冷启动超时）→ KERNEL_ERROR 信封 + 退出码 1（F38 spec §5.3）."""
+        from inkflow.infrastructure.kernel import KernelStartupError
+
+        with patch(
+            "inkflow.cli.commands.audit.ensure_kernel",
+            AsyncMock(side_effect=KernelStartupError("启动超时")),
+        ):
+            result = cli_runner.invoke(
+                app,
+                ["check", "--project-id", str(PID)],
+                obj=CliContext(json_output=True),
+            )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "KERNEL_ERROR"
+        assert "内核启动失败" in data["error"]["message"]
