@@ -44,7 +44,7 @@
 | 0.3.1 ✅ | 质量加固补丁（milestone #9）：#86 LLM 客户端修复（PR #108：timeout→request_timeout + zhipu 注册 + audit 路由）· #87 LangGraph 状态重构（PR #110：StateGraph(dict)→TypedDict+reducer，节点增量返回，type: ignore 清零）· #92 真实 AI CI job（PR #111：e2e-ai-backend，label run-ai-tests 触发 + workflow_dispatch 兜底；tests/e2e/ T1+T2，缺 key 永远 skip；⚠️ 真实验证需先配 LLM_API_KEY secret）· #104 覆盖率补全（PR #114/#115/#116/#117：三层补测至后端 98.90% 行/96.32% 分支、前端 99.11%/92.51%、API 端点 100%、E2E 三页；CI 门槛 98.5/95.0 常态化，口径见 ADR-027） |
 | 0.4.0 ✅ | F19 打包分发（PR #144，#48：B+ chromadb 进包 + API embedding 装配 + 数据目录 sys.frozen→%APPDATA% + PyInstaller 内核 onedir 142MB + electron-builder NSIS 145.6MB/便携 ZIP 177.4MB + release.yml tag v* 自动发布；发布门禁 #145 ✅：rc.1-rc.6 迭代修复（artifact 结构/GH_TOKEN/版本注入/asar renderer 路径/品牌图标）后 **v0.4.0 正式发布 2026-08-07**（exe 144.3MB + zip 175.5MB））+ GUI 演进——子任务 D 导航重构+设置页框架（PR #120/#121，#105，承接 #99 交互反馈实现）· 子任务 E 模型管理页（PR #122，#106：ProviderConfig 注册表 + 模型管理页 + 角色绑定只读区 + 顶栏 Select + 自绘窗口按钮，覆盖率 99.27%）· 模型管理修复（PR #131/#132，#125/#126：addModel rethrow + 部分失败保留草稿 + builtin_key 判重防 seed 复活，2026-08-06）· 子任务 F Agent 模板（PR #135，#107：AgentTemplate 实体（引用式）+ 角色独立温度链（0.7 哨兵移除）+ 风险确认框 + 新建项目模板下拉，三层测试全绿）· 架构图 + ChatLiteLLM 残留清理（PR #134，#134 文档同步）· CI uv cache 修复 + job 分批（PR #128，#128）；遗留：设置持久化 #152（0.5.0） |
 | 0.5.0 ✅ | Agent 集成：F24 会话 ✅（#51）· E2E 增强（#139/#140）· 设置持久化（#152 ✅ PR #176）· 本地内核服务化（#166 ✅ PR #171 / #167 ✅ PR #172 / **#168 ✅ PR #181**）——0.5.0 里程碑 2026-08-08 关闭。**发布修复链（rc1-rc4 迭代）**：prerelease 自动标记（#183 ✅ PR #184）· CLI zip 命名对齐（#185 ✅ PR #186）· GUI 任意 cwd 启动（#187 ✅ PR #191）· 托盘图标+内核状态菜单刷新（#188 ✅ PR #190）· 设置持久化全局化 default_words 方案 A + 顶部已保存（#189 ✅ PR #190/#197）· rc2 复验四缺陷：内核路径 resourcesPath/顶栏状态真实化/托盘 logo 源图（#192 ✅ PR #193）· 新建项目对话框目标字数+遮罩（#195 ✅ PR #197）· 回归防护补测（PR #194）——rc1→rc4 预发布迭代后 **v0.5.0 正式发布 2026-08-08**（Latest） |
-| 0.6.0 | F21 导出 · F22 全文搜索（✅ PR #216）· 世界观三连（**#173 地点树 ✅ PR #215** / **#174 地图视图 ✅ PR #220** / #175 跨书复用）· CLI 恒经 HTTP（#169 ✅ PR #213）· E2E 设置页补全（#141）· 设定库分类实体创建（#196：角色/世界观等手动创建，当前占位跳写作页）· default_words 全局值重启加载（#198：设置页初始值读 fetchSettings）· 设置保存反馈统一化（#199：tray hint/close behavior 等切换顶部「已保存」） |
+| 0.6.0 | F21 导出 · F22 全文搜索（✅ PR #216）· 世界观三连（**#173 地点树 ✅ PR #215** / **#174 地图视图 ✅ PR #220** / **#175 跨书复用 ✅ PR #223**）· CLI 恒经 HTTP（#169 ✅ PR #213）· E2E 设置页补全（#141）· 设定库分类实体创建（#196：角色/世界观等手动创建，当前占位跳写作页）· default_words 全局值重启加载（#198：设置页初始值读 fetchSettings）· 设置保存反馈统一化（#199：tray hint/close behavior 等切换顶部「已保存」） |
 | 1.0.0 🎉 | **本地完全可用 = CLI + GUI + skills + MCP** + 跨平台 + 文档 + 全量验收 |
 | 2.0.0 ☁️ | 云端：F18 云 Web（移出单机）· 用户 API · Admin 后台 · GUI 远程模式 |
 
@@ -233,6 +233,9 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 - `specs/f30-kernel-bootstrap/spec.md`：F30 内核冷启动基建规格（客户端发现型：kernel.json 三态读写 + ensure_kernel 复用/互斥拉起 + 版本校验 + dev 调试命令，ADR-030 ②）
 - `specs/f32-settings-persistence/spec.md`：F32 设置持久化规格（设置域横切型：key-value app_settings 设置库 + GET/PATCH /settings + 前端双轨加载 + 主进程桥接 + 表单草稿守卫，#152 PR #176）
 - `specs/f33-cli-dist/spec.md`：F33 CLI 独立发布产物规格（打包/发布基建增量专项型：inkflow-cli-<version>.zip 第 4 发布产物 + NSIS PATH 勾选/清理 + release.yml 增量，ADR-030 ⑤，#168 PR #181）
+- `specs/f35-world-location-tree/spec.md`：F35 世界观地点层级规格（F10 扩展型：parent_id 树 + 递归 CTE 子树查询 + 删除矩阵，PR #215）
+- `specs/f36-world-map/spec.md`：F36 世界观地图规格（地图实体 + 本地资产型：maps/map_pins 表 + MapAssetStoreProtocol + children drill-down + 硬删钩子，PR #220）
+- `specs/f37-world-copy/spec.md`：F37 世界观跨书复制规格（F10 扩展型：递归子树复制 + 全局图 Q3=B + pin 转纯注释 + 地图资产复制，v1.2，PR #223）
 - 每个模块 spec 定义了：数据模型、API 契约、CLI 命令、边界情况、测试策略
 - spec 是开发的唯一真相来源。如果发现 spec 与实现矛盾，先更新 spec，再改代码
 - **Spec 篇幅纪律（2026-08-08 #201 立规）**：新 spec 默认单文件 ≤800 行；超过且章节内聚可拆时，允许 `specs/f<X>-<name>/references/` 子目录（tests/implementation/decisions 等），但 **spec.md 头部必须显式声明 references/ 清单**（防 agent 漏读）；已实现 spec 只加「快速导航」块（§N 标题 + 行号）不物理拆分
@@ -497,6 +500,9 @@ AI 编码助手在开始任何工作前，应**按顺序**阅读以下文件：
 | P0 | `specs/f30-kernel-bootstrap/spec.md` | F30 功能规格（客户端发现型：kernel.json + ensure_kernel + 互斥 + stale，ADR-030 ②） |
 | P0 | `specs/f32-settings-persistence/spec.md` | F32 功能规格（设置域横切型：app_settings 设置库 + GET/PATCH /settings + 双轨加载 + IPC 桥接 + 表单守卫，#152 PR #176） |
 | P0 | `specs/f33-cli-dist/spec.md` | F33 功能规格（打包/发布基建增量专项型：inkflow-cli-<version>.zip + NSIS PATH 勾选/清理 + release.yml 增量，#168 PR #181） |
+| P0 | `specs/f35-world-location-tree/spec.md` | F35 功能规格（地点树扩展型：parent_id 层级 + list_descendants/ancestors 递归 CTE + 删除矩阵，PR #215） |
+| P0 | `specs/f36-world-map/spec.md` | F36 功能规格（地图实体 + 本地资产型：maps/map_pins + MapAssetStoreProtocol + 硬删钩子，PR #220） |
+| P0 | `specs/f37-world-copy/spec.md` | F37 功能规格（复制编排型：递归子树复制 + 全局图 + pin 转纯注释，PR #223） |
 | P1 | `design/architecture-analysis-2026-07-30.md` | 架构分析总览；ADR 索引表（决策详情在 `adr/`） |
 | P1 | `design/workflow.md` | git worktree + PR 流程详解 |
 | P1 | `backend/pyproject.toml` | 依赖版本、工具配置（Ruff、mypy、pytest） |
