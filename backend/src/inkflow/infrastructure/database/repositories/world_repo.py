@@ -360,7 +360,7 @@ class SQLiteWorldRepository:
         stmt = sa_delete(WorldSettingORM).where(WorldSettingORM.id.in_(setting_ids))
         result = await self._session.execute(stmt)
         await self._session.commit()
-        return int(result.rowcount or 0)  # type: ignore[attr-defined]
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
 
     async def delete_with_reparent(self, setting_id: int, reparent_to: int) -> bool:
         """单事务: UPDATE 直接子地点 parent_id=reparent_to WHERE parent_id=setting_id
