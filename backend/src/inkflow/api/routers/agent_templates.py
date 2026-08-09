@@ -134,10 +134,16 @@ def _to_response(template: AgentTemplate, *, used_by: list[dict] | None = None) 
 async def list_agent_templates(
     db: AsyncSession = Depends(get_db),
 ):
-    """模板列表（spec §9.3）— {items, total} 信封，每项含 10 字段响应."""
+    """模板列表（spec §9.3）— {items, total} 信封，每项含 10 字段响应 + used_by 引用列表."""
     svc = _get_service(db)
     items = await _run_service(svc.list())
-    return {"items": [_to_response(t) for t in items], "total": len(items)}
+    items_with_used_by = []
+    for t in items:
+        assert t.id is not None  # list() 仅返回已持久化模板（id 由 repo 分配）
+        refs = await SQLiteAgentTemplateRepository(db).list_projects_by_template(t.id)
+        used_by = [{"id": str(p.id), "name": p.name} for p in refs]
+        items_with_used_by.append(_to_response(t, used_by=used_by))
+    return {"items": items_with_used_by, "total": len(items)}
 
 
 @router.post("", status_code=201)

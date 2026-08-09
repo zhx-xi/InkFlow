@@ -310,3 +310,183 @@ test.describe('F32 设置持久化（#152）', () => {
     }
   });
 });
+
+// ────────────────────────────────────────────────────────────────
+// E3 设置页 Agent 链/快捷键 E2E 补测（#105 合入后：#105 🔴-2 即改即存 + 快捷键面板）
+// 新增用例：Agent 四角色开关（无项目纯 UI）/ 默认模型下拉落库 / 开关即改即存 / 快捷键面板渲染
+// ────────────────────────────────────────────────────────────────
+
+/** 直调内核 API（X-InkFlow-Token 认证；204 无 body 返回 undefined，否则解析 JSON） */
+async function fetchKernel(kernel: KernelInfo, path: string, init?: RequestInit): Promise<any> {
+  const res = await fetch(`http://127.0.0.1:${kernel.port}${path}`, {
+    ...init,
+    headers: {
+      'X-InkFlow-Token': kernel.token,
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (res.status === 204) return undefined;
+  return res.json();
+}
+
+// ────────────────────────────────────────────────────────────────
+// E3-1 Agent 链四角色开关（无项目纯 UI 状态；store 纯内存无持久化）
+// ────────────────────────────────────────────────────────────────
+test('设置页：Agent 链四角色开关逐个切换（无项目纯 UI 状态）', async () => {
+  const { app, window } = await launchApp();
+  try {
+    // 清空持久化 UI 偏好（inkflow.ui）并重载：保证语言/主题初始确定性（zh）
+    await window.evaluate(() => localStorage.clear());
+    await window.reload();
+    await expect(window.getByTestId('app-nav')).toBeVisible();
+
+    // 设置页 → Agent 分类 → AgentChainCard
+    await gotoNav(window, '设置');
+    await window.getByTestId('settings-cat-agent').click();
+    const chain = window.getByTestId('agent-chain-card');
+    await expect(chain).toBeVisible();
+
+    // 无当前项目：agent store 纯内存 config={} → 初始全 off 可稳定断言；
+    // 逐个角色：初始 off → 点开 on → 再点回 off（getByRole name 子串匹配在 card 内唯一）
+    const roles = ['Architect 大纲架构师', 'Writer 执笔', 'Auditor 审校', 'Reviser 修订'];
+    for (const name of roles) {
+      const sw = chain.getByRole('switch', { name });
+      await expect(sw).not.toBeChecked();
+      await sw.click();
+      await expect(sw).toBeChecked();
+      await sw.click();
+      await expect(sw).not.toBeChecked();
+    }
+  } finally {
+    await app.close();
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// E3-2 默认模型下拉（有项目：PATCH 落库确认）
+// ────────────────────────────────────────────────────────────────
+test('设置页：默认模型下拉选 deepseek → 直调内核确认 PATCH 落库', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    await window.evaluate(() => localStorage.clear());
+    await window.reload();
+    await expect(window.getByTestId('app-nav')).toBeVisible();
+
+    // 前置：UI 创建唯一项目（persist 契约「无当前项目不保存」）
+    const name = `E2E-AgentModel-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    expect(await window.evaluate(() => location.hash)).toContain('/writing');
+
+    // 直调内核 GET /projects 按唯一名找项目 id（不硬编码 DB 持久 id）
+    const list = await fetchKernel(kernel, '/api/v1/projects');
+    const project = list.items.find((p: { name: string }) => p.name === name);
+    expect(project).toBeTruthy();
+    const projectId = project.id as string;
+
+    // 设置页 → Agent 分类 → 默认模型下拉选 deepseek（option 为 Radix portal，展开后才存在）
+    await gotoNav(window, '设置');
+    await window.getByTestId('settings-cat-agent').click();
+    const combo = window.getByRole('combobox', { name: '默认模型' });
+    await expect(combo).toBeVisible();
+    await combo.click();
+    await window.getByRole('option', { name: 'deepseek', exact: true }).click();
+    await expect(combo).toContainText('deepseek');
+
+    // saveConfig 为 fire-and-forget → 轮询后端 GET /projects/{id} 确认 config.model 落库
+    await expect
+      .poll(
+        async () => {
+          const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
+          return r.config?.model;
+        },
+        { timeout: 10_000 }
+      )
+      .toBe('deepseek');
+  } finally {
+    await app.close();
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// E3-3 Agent 链开关即改即存（有项目：PATCH 落库确认）
+// ────────────────────────────────────────────────────────────────
+test('设置页：Agent 链开关即改即存（Writer 关 → PATCH 落库确认）', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    await window.evaluate(() => localStorage.clear());
+    await window.reload();
+    await expect(window.getByTestId('app-nav')).toBeVisible();
+
+    // 前置：UI 创建唯一项目
+    const name = `E2E-AgentSwitch-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    const list = await fetchKernel(kernel, '/api/v1/projects');
+    const project = list.items.find((p: { name: string }) => p.name === name);
+    expect(project).toBeTruthy();
+    const projectId = project.id as string;
+
+    // PATCH 落库锚点基线：点开关前先 GET 单项目记录 updated_at（project_repo.update 每次刷新 updated_at）
+    const baseline = (await fetchKernel(kernel, `/api/v1/projects/${projectId}`)).updated_at as string;
+
+    // 设置页 → Agent 分类 → Writer 开关：初始 on（新项目默认 config.agent_* = null = 跟随默认模型，
+    // checked = value !== undefined 为 true）→ 点关 → off（config.agent_writer 变 undefined）
+    await gotoNav(window, '设置');
+    await window.getByTestId('settings-cat-agent').click();
+    const chain = window.getByTestId('agent-chain-card');
+    await expect(chain).toBeVisible();
+    const writer = chain.getByRole('switch', { name: 'Writer 执笔' });
+    await expect(writer).toBeChecked();
+    await writer.click();
+    await expect(writer).not.toBeChecked();
+
+    // ⚠️ off 状态（undefined）经 PATCH JSON.stringify 省略 → 后端 ProjectConfig 解析默认 None → 读回
+    // null → 开关恢复 on：off 持久化受 null 语义限制（#105 遗留，已知限制，另立 issue 跟踪）。
+    // 故落库锚点不能用 config.agent_writer===null（默认即 null，恒真无效断言）；改用 updated_at 变化
+    // 证明「开关操作 → PATCH 链路真实落库」（fire-and-forget，轮询等待）
+    await expect
+      .poll(
+        async () => {
+          const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
+          return r.updated_at;
+        },
+        { timeout: 10_000 }
+      )
+      .not.toBe(baseline);
+  } finally {
+    await app.close();
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// E3-4 快捷键面板渲染（常规分类：五组标签 + 组合键）
+// ────────────────────────────────────────────────────────────────
+test('设置页：快捷键面板渲染（五组快捷键标签与组合键）', async () => {
+  const { app, window } = await launchApp();
+  try {
+    await window.evaluate(() => localStorage.clear());
+    await window.reload();
+    await expect(window.getByTestId('app-nav')).toBeVisible();
+
+    await gotoNav(window, '设置');
+    await expect(window.getByTestId('settings-panel')).toBeVisible();
+    const shortcuts = window.getByTestId('settings-shortcuts');
+    await expect(shortcuts).toBeVisible();
+    await expect(shortcuts).toContainText('快捷键一览');
+
+    // 五组断言：标签与组合键均 exact 匹配（Ctrl+Enter 是 Ctrl+Shift+Enter 子串，必须 exact）
+    const pairs: Array<[string, string]> = [
+      ['撤销', 'Ctrl+Z'],
+      ['重做', 'Ctrl+Y'],
+      ['保存', 'Ctrl+S'],
+      ['续写', 'Ctrl+Enter'],
+      ['生成', 'Ctrl+Shift+Enter'],
+    ];
+    for (const [label, combo] of pairs) {
+      await expect(shortcuts.getByText(label, { exact: true })).toBeVisible();
+      await expect(shortcuts.getByText(combo, { exact: true })).toBeVisible();
+    }
+  } finally {
+    await app.close();
+  }
+});

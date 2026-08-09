@@ -145,7 +145,8 @@ export const useTemplatesStore = create<TemplatesState>((set) => ({
 
   setDefault: async (id) => {
     try {
-      await apiFetch('/api/v1/agent-templates/default', { method: 'PATCH', body: { id } });
+      // 后端 SetDefaultRequest.id 契约为 str（Pydantic v2 拒绝 int → 422），必须 String(id)
+      await apiFetch('/api/v1/agent-templates/default', { method: 'PATCH', body: { id: String(id) } });
       set((s) => ({
         defaultTemplateId: id,
         templates: s.templates.map((t) => ({ ...t, is_default: t.id === id })),
