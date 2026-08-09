@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from inkflow.domain.models.world import (
@@ -64,6 +65,8 @@ class WorldService:
         extractor: 世界观提取管线（B2）；deps.py 负责组装，默认 None 时
             extract 入口报错（防止静默降级）.
         project_repo: 项目仓储（F1），extract 入口校验项目存在并读取默认模型.
+        location_cleanup: 地点硬删钩子（F36 D10=b）：真删地点后清理关联地图 pin
+            （MapService.clear_location_pins）；失败仅 log warning 不阻断主流程.
     """
 
     def __init__(
@@ -72,10 +75,12 @@ class WorldService:
         repository: WorldRepositoryProtocol,
         extractor: WorldExtractor | None = None,
         project_repo: ProjectRepositoryProtocol | None = None,
+        location_cleanup: Callable[[list[int]], Awaitable[None]] | None = None,
     ) -> None:
         self._repo = repository
         self._extractor = extractor
         self._project_repo = project_repo
+        self._location_cleanup = location_cleanup
 
     # ── WorldSetting ─────────────────────────────────────────────
 
@@ -308,6 +313,7 @@ class WorldService:
             subtree = await self._repo.list_descendants(sid)
             ids = [s.id.int for s in subtree] if subtree else [sid]
             await self._repo.hard_delete_many(ids)
+            await self._notify_location_cleanup(ids)
             return True
         if reparent_to is not None:
             target_int = _to_int_id(reparent_to)
@@ -332,9 +338,21 @@ class WorldService:
             raise WorldChildrenActionRequiredError()
         if force:
             logger.info("硬删除世界观条目: setting_id=%s", setting_id)
-            return await self._repo.hard_delete(sid)
+            deleted = await self._repo.hard_delete(sid)
+            if deleted:
+                await self._notify_location_cleanup([sid])
+            return deleted
         logger.info("软删除世界观条目: setting_id=%s", setting_id)
         return await self._repo.soft_delete(sid)
+
+    async def _notify_location_cleanup(self, ids: list[int]) -> None:
+        """调用地点硬删钩子（F36 D10=b）；失败仅 log warning 不阻断主流程."""
+        if self._location_cleanup is None:
+            return
+        try:
+            await self._location_cleanup(ids)
+        except Exception:
+            logger.warning("地点硬删后 pin 清理失败: %s", ids, exc_info=True)
 
     async def restore_setting(self, setting_id: int | uuid.UUID) -> WorldSetting | None:
         """恢复软删除条目.

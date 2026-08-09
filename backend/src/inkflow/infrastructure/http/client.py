@@ -115,6 +115,45 @@ class InkFlowHTTPClient:
             )
         return response.text
 
+    async def post_file(
+        self, path, *, data: dict, filename: str, content: bytes, params=None
+    ) -> dict:
+        """multipart 表单上传（F36 地图图片上传；files={'file': (filename, content)}）."""
+        return await self._request_file(
+            "POST", path, data=data, filename=filename, content=content, params=params
+        )
+
+    async def put_file(
+        self, path, *, data: dict, filename: str, content: bytes, params=None
+    ) -> dict:
+        """multipart 表单上传（F36 地图换图 PUT）."""
+        return await self._request_file(
+            "PUT", path, data=data, filename=filename, content=content, params=params
+        )
+
+    async def get_bytes(self, path, *, params=None) -> bytes:
+        """GET 原始字节（F36 地图图片下载；非 JSON 响应）."""
+        response = await self._client.request("GET", path, params=params)
+        if not 200 <= response.status_code < 300:
+            raise HttpApiError(
+                status_code=response.status_code,
+                detail=_extract_detail(response),
+                code=response.headers.get("X-InkFlow-Error-Code"),
+            )
+        return response.content
+
+    async def _request_file(self, method, path, *, data, filename, content, params) -> dict:
+        """multipart 请求（错误处理同 _request）."""
+        files = {"file": (filename, content)}
+        response = await self._client.request(method, path, params=params, data=data, files=files)
+        if not 200 <= response.status_code < 300:
+            raise HttpApiError(
+                status_code=response.status_code,
+                detail=_extract_detail(response),
+                code=response.headers.get("X-InkFlow-Error-Code"),
+            )
+        return cast(dict, response.json())
+
     async def stream_sse(self, path, *, json=None) -> AsyncGenerator[dict, None]:
         """POST + SSE 流式消费：`data: {json}` 帧逐行解析并 yield 原样 dict。
 
