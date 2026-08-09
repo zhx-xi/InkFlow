@@ -165,6 +165,10 @@ class WorldRepositoryProtocol(Protocol):
         仅活动条目（is_deleted=0）；不存在/软删 id → 空列表（spec §5.3）。"""
         ...
 
+    async def list_all_active(self, project_id: int) -> builtins.list[WorldSetting]:
+        """项目内全部活动条目（is_deleted=0），按 created_at ASC 稳定排序（copy 缺省起点用）."""
+        ...
+
     async def hard_delete_many(self, setting_ids: builtins.list[int]) -> int:
         """单事务原子物理删除（DELETE WHERE id IN (...)），返回删除行数；
         空列表 → 0 不报错；不存在的 id 不影响计数（spec §5.5 级联真删）。"""

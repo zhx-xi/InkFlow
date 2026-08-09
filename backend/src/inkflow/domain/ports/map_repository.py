@@ -189,16 +189,20 @@ class MapRepositoryProtocol(Protocol):
         ...
 
     async def list_by_root_locations(
-        self, project_id: int, location_ids: builtins.list[int]
+        self,
+        project_id: int,
+        location_ids: builtins.list[int],
+        include_global: bool = True,
     ) -> builtins.list[WorldMap]:
-        """按根地点集合查地图（#175 跨书复制共用查询）.
+        """按根地点集合查地图（#175 跨书复制共用查询；include_global=True 含全局图）.
 
         Args:
             project_id: 项目主键（int）.
             location_ids: 根地点主键列表（int）.
+            include_global: True 时附加 root_location_id IS NULL 的全局图（Q3=B）.
 
         Returns:
-            命中地图列表；空列表入参 → 空列表.
+            命中地图列表；空列表入参 + include_global=False → 空列表.
         """
         ...
 

@@ -1,8 +1,8 @@
 # F37: 世界观跨书复制（world-copy）— 功能规格
 
-> **Spec 版本**: 1.1 | **日期**: 2026-08-09 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §6（workspace）、PRD v2.1 §6.2 P1-02、F35 spec v1.1（地点树）+ F36 spec v1.1（地图）、Constitution P1-P6
+> **Spec 版本**: 1.2 | **日期**: 2026-08-10 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §6（workspace）、PRD v2.1 §6.2 P1-02、F35 spec v1.1（地点树）+ F36 spec v1.1（地图）、Constitution P1-P6
 >
-> **Spec 变更**（1.0 → 1.1，2026-08-09 拍板）：Q1-Q3 全拍板——**Q1=A（CLI 先行 + API 同步）**；**Q2=A（整棵默认 + 子树可选）**；**Q3=B（复制全局图——root_location_id IS NULL 的地图一并复制，2026-08-09 固化）**。**全局图 pin 丢失策略（评审 R3/S3 修订）**：pin 关联地点不在复制集合 → **转纯注释（location 置 NULL，保留 label/坐标）**——复用 F36「硬删地点 → pin SET NULL」语义。删除语义联动：源/目标项目删除为真删（F35/F36 拍板），复制只读源不影响。
+> **Spec 变更**（1.1 → 1.2，2026-08-10 实现期修订）：§8 文件结构对照真实源码树修正——`map_asset_store.py` 的 `copy` 方法**已由 F36 合入实现**（#174）改为「无变更」；`map_repository.py`/`map_repo.py` 的 `list_by_root_locations` 改为「F36 已实现基础签名，F37 加 `include_global` 参数」；CLI 测试因 900 行护栏拆分新文件 `tests/cli/test_cli_world_copy.py`（需登记 ci.yml）；API 端点路径修正为 `/projects/{target_project_id}/world-settings/copy`（spec §3.1 一致）；`deps.py` 为新增 `get_copy_service(db)`；补列 test_world_repo.py/test_map_repo.py MODIFY。
 >
 > **所属阶段**: 0.6.0 世界观三连 Step 3（复用层，估算 2-3 人天）
 >
@@ -207,7 +207,7 @@ async def copy(self, relative_path: str, *, map_id: uuid.UUID) -> str:
 
 ### 5.4 与 #169 的关系（⚠️ 边界声明）
 
-本模块交付 `copy_service` + API + CLI 直连（F10 现状：CLI 直连 domain）。**#169 CLI 恒 HTTP 合入后**，CLI `world copy` 自动改走 HTTP（服务层不变，只是 CLI 调用路径换）——本 spec 不感知 #169 时序，接口契约（service 签名/API 端点）不变。
+**#169 CLI 恒 HTTP 已合入**（F38，2026-08-09）——本模块实现直接按「CLI 恒经 HTTP」落地：`world copy` 走 `ensure_kernel()` + `InkFlowHTTPClient` 调 POST `/projects/{target}/world-settings/copy` 端点（F38 豁免判据不适用：API 有对应端点 → 必须走 HTTP）。服务层/API 端点契约与 §5.1/§3 一致，不受传输层影响。
 
 ---
 
@@ -246,18 +246,20 @@ async def copy(self, relative_path: str, *, map_id: uuid.UUID) -> str:
 | `backend/src/inkflow/domain/services/copy_service.py` | **CREATE** | WorldCopyService（§5.1 编排） |
 | `backend/src/inkflow/domain/ports/world_errors.py` | **MODIFY** | 新增 CopySourceNotFoundError / CopyRootNotFoundError |
 | `backend/src/inkflow/domain/ports/world_repository.py` | **MODIFY** | 新增 `list_all_active(project_id) -> list[WorldSetting]`（全量活动条目，copy 缺省起点用；F35 v1.1 已加 get_by_parent_and_name 冲突预筛复用） |
-| `backend/src/inkflow/infrastructure/database/repositories/world_repo.py` | **MODIFY** | 实现 `list_all_active`（活动条目全量，层序/创建序稳定排序） |
-| `backend/src/inkflow/infrastructure/assets/map_asset_store.py` | **MODIFY** | MapAssetStoreProtocol + LocalMapAssetStore 加 `copy` 方法（F36 v1.1 §8 扩展点） |
-| `backend/src/inkflow/domain/ports/map_repository.py` | **MODIFY** | 加 `list_by_root_locations(project_id, location_ids, include_global: bool = True)`（F36 v1.1 共用查询 + 全局图参数） |
-| `backend/src/inkflow/infrastructure/database/repositories/map_repo.py` | **MODIFY** | 实现上述查询（复用 F36 children 同款 JOIN 结构） |
-| `backend/src/inkflow/api/routers/world_settings.py` | **MODIFY** | 新增 POST `/world-settings/copy` 端点（**注册在 `{setting_id}` 之前**）；`_get_svc` 装配 copy service |
-| `backend/src/inkflow/cli/commands/world.py` | **MODIFY** | 新增 `copy` 子命令 |
-| `backend/src/inkflow/api/deps.py` | **MODIFY** | `get_world_service` 装配 WorldCopyService（map_repo/asset_store 按 F36 状态） |
+| `backend/src/inkflow/infrastructure/database/repositories/world_repo.py` | **MODIFY** | 实现 `list_all_active`（活动条目全量，created_at ASC 稳定排序） |
+| `backend/src/inkflow/infrastructure/assets/map_asset_store.py` | **无变更** | `copy` 方法**已由 F36 合入实现**（#174，spec v1.1 §8 扩展点已兑现）——F37 仅复用 |
+| `backend/src/inkflow/domain/ports/map_repository.py` | **MODIFY** | `list_by_root_locations` 签名扩展 `include_global: bool = True`（F36 已实现基础签名（project_id, location_ids）；F37 加全局图参数 Q3=B） |
+| `backend/src/inkflow/infrastructure/database/repositories/map_repo.py` | **MODIFY** | 实现 `include_global`（WHERE `root_location_id IN (:ids) OR (include_global AND root_location_id IS NULL)`；空列表 + False → 空） |
+| `backend/src/inkflow/api/routers/world_settings.py` | **MODIFY** | 新增 POST `/projects/{target_project_id}/world-settings/copy` 端点（**注册在 `{setting_id}` 之前**，F10 extract 先例）；`_get_copy_svc` 装配 copy service；`_run_service` 加 CopySource/CopyRoot 两个 404 分支 |
+| `backend/src/inkflow/cli/commands/world.py` | **MODIFY** | 新增 `copy` 子命令（位置参数 `<source> <target>` + `--root`；CLI 恒 HTTP——POST copy 端点，F38 后形态） |
+| `backend/src/inkflow/api/deps.py` | **MODIFY** | 新增 `get_copy_service(db)` 装配 WorldCopyService（repository/project_repo/map_repo/asset_store 全量接线） |
 | `backend/tests/unit/test_copy_service.py` | **CREATE** | 复制编排（层序/映射/冲突/回滚/地图复制/全局图/pin 转纯注释） |
 | `backend/tests/unit/test_copy_api.py` | **CREATE** | API 契约（copy 端点/错误映射/路由顺序） |
-| `tests/cli/test_cli_world.py` | **MODIFY** | `world copy` 命令用例（信封/退出码/跳过） |
+| `tests/cli/test_cli_world_copy.py` | **CREATE** | `world copy` 命令用例（信封/退出码/跳过；F37 拆分——test_cli_world.py 追加后超 900 行护栏，F35/F36 先例） |
+| `backend/tests/unit/test_world_repo.py` | **MODIFY** | 追加 `list_all_active` 契约（3 用例：软删过滤/created_at ASC 排序/空项目） |
+| `backend/tests/unit/test_map_repo.py` | **MODIFY** | 升级 `test_list_by_root_locations`（显式 include_global=False 保持原语义）+ 追加 include_global 契约（4 用例） |
 
-> **CI 盲区防范**：`tests/cli/test_cli_world.py` 已在 ci.yml `integration-cli-backend` 文件列表（F35 同款——新增命令用例同文件追加，**无需改 ci.yml**）。
+> **CI 盲区防范**：`tests/cli/test_cli_world_copy.py` 为 F37 新文件——已追加进 ci.yml `integration-cli-backend` job 文件列表（**必须登记，否则 CI 盲区绿**；F35/F36 拆分先例同款）。`backend/tests/unit/` 新文件由 unit-test-backend 自动收集无需登记。
 
 ---
 

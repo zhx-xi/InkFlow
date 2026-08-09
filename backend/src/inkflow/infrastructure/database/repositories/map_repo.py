@@ -24,7 +24,7 @@ import builtins
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -296,22 +296,27 @@ class SQLiteMapRepository:
     # ── 共用查询 / 项目级操作（#175 / D10=b）──
 
     async def list_by_root_locations(
-        self, project_id: int, location_ids: builtins.list[int]
+        self,
+        project_id: int,
+        location_ids: builtins.list[int],
+        include_global: bool = True,
     ) -> builtins.list[WorldMap]:
-        """按根地点集合查地图（#175 跨书复用共用查询）.
+        """按根地点集合查地图（#175 跨书复制共用查询；include_global=True 含全局图）.
 
-        空列表入参 → 空列表；created_at ASC。
+        空列表入参 + include_global=False → 空列表；空列表 + True → 仅全局图；
+        created_at ASC。
         """
-        if not location_ids:
+        stmt = select(MapORM).where(MapORM.project_id == project_id)
+        if not location_ids and not include_global:
             return []
-        stmt = (
-            select(MapORM)
-            .where(
-                MapORM.project_id == project_id,
-                MapORM.root_location_id.in_(location_ids),
-            )
-            .order_by(MapORM.created_at.asc())
-        )
+        conds = []
+        if location_ids:
+            conds.append(MapORM.root_location_id.in_(location_ids))
+        if include_global:
+            conds.append(MapORM.root_location_id.is_(None))
+        if conds:
+            stmt = stmt.where(or_(*conds))
+        stmt = stmt.order_by(MapORM.created_at.asc())
         result = await self._session.execute(stmt)
         return [_orm_to_domain(o) for o in result.scalars().all()]
 

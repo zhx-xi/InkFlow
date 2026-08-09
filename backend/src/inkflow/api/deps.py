@@ -20,6 +20,7 @@ from inkflow.domain.services.chapter_audit_service import ChapterAuditService
 from inkflow.domain.services.chapter_service import ChapterService
 from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.context_service import ContextService
+from inkflow.domain.services.copy_service import WorldCopyService
 from inkflow.domain.services.extraction_service import ExtractionService
 from inkflow.domain.services.foreshadowing_service import ForeshadowingService
 from inkflow.domain.services.map_service import MapService
@@ -216,6 +217,24 @@ def get_world_service(
         ),
         project_repo=SQLiteProjectRepository(db),
         location_cleanup=_location_cleanup,
+    )
+
+
+def get_copy_service(
+    db: AsyncSession,
+) -> WorldCopyService:
+    """获取 WorldCopyService 实例（世界观跨书复制编排）。"""
+    from inkflow.core.config import config
+    from inkflow.infrastructure.assets import LocalMapAssetStore
+    from inkflow.infrastructure.database.repositories.map_repo import (
+        SQLiteMapRepository,
+    )
+
+    return WorldCopyService(
+        repository=SQLiteWorldRepository(db),
+        project_repo=SQLiteProjectRepository(db),
+        map_repo=SQLiteMapRepository(db),
+        asset_store=LocalMapAssetStore(config.data_dir),
     )
 
 
