@@ -420,6 +420,7 @@ jobs:
                  ../tests/cli/test_cli_extraction_errors.py `
                  ../tests/cli/test_cli_vector.py `
                  ../tests/cli/test_cli_audit.py `
+                 ../tests/cli/test_cli_audit_chapter.py `
                  ../tests/cli/test_cli_style.py `
                  ../tests/cli/test_cli_session.py `
                  ../tests/cli/test_cli_session_coverage.py `
@@ -761,7 +762,7 @@ jobs:
         run: pnpm --filter inkflow-electron build
 
       - name: E2E writing (Playwright _electron writing page)
-        run: pnpm --filter inkflow-electron test:e2e e2e-writing
+        run: pnpm --filter inkflow-electron test:e2e e2e-writing e2e-audit
 
   e2e-frontend-library:
     # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）

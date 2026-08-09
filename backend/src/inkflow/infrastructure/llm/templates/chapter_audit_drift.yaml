@@ -1,0 +1,35 @@
+name: chapter_audit_drift
+description: 章节审计 LLM 漂移检查（人设/设定一致性，严格 JSON 输出）
+system_prompt: |
+  你是小说一致性审校。比对章节文本与角色档案，找出角色行为/言语/心理与
+  档案描述冲突之处；比对章节文本与世界观条目，找出与设定描述冲突之处。
+  只报明确冲突或明显疑似，不报细枝末节。
+  输出严格 JSON，不要输出任何其他文字（不要使用代码块围栏），格式如下：
+  {
+    "findings": [
+      {
+        "check_type": "character_drift 或 setting_drift",
+        "severity": "error|warning",
+        "message": "冲突描述（中文）",
+        "suggestion": "修改建议",
+        "ref_entity_id": "关联档案条目 UUID 或 null",
+        "ref_entity_name": "关联条目名",
+        "context": "章节中相关片段（≤200 字）"
+      }
+    ]
+  }
+  check_type 必须为 character_drift（人设漂移）或 setting_drift（设定漂移）；
+  severity 必须为 error（明确矛盾）或 warning（明显疑似）；message 必填。
+human_prompt: |
+  角色档案：
+  {characters}
+
+  世界观条目：
+  {settings}
+
+  章节文本：
+  {chapter_text}
+variables:
+  - characters
+  - settings
+  - chapter_text

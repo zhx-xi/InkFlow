@@ -2,6 +2,9 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Compass } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { auditChapter, confirmAudit, type AuditReportDto } from '../api/audit';
+import { errorMessage } from '../api/client';
+import { AuditDialog } from '../components/AuditDialog';
 import { ChapterEditor } from '../components/ChapterEditor';
 import { ContextPanel } from '../components/ContextPanel';
 import { EditorToolbar } from '../components/EditorToolbar';
@@ -61,6 +64,47 @@ export function WritingPage() {
     await saveContent();
     setSavedAt(new Date());
   }, [saveContent]);
+
+  // F34 章节审计（Issue #208）：报告为瞬态 UI 状态（F19 先例），不新增 store
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [auditReport, setAuditReport] = useState<AuditReportDto | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
+  const [auditConfirming, setAuditConfirming] = useState(false);
+
+  const handleAudit = useCallback(async () => {
+    if (!effectiveProjectId || !currentChapterId) return;
+    setAuditOpen(true);
+    setAuditLoading(true);
+    setAuditError(null);
+    setAuditReport(null);
+    try {
+      const report = await auditChapter(effectiveProjectId, currentChapterId);
+      setAuditReport(report);
+    } catch (err) {
+      setAuditError(errorMessage(err));
+    } finally {
+      setAuditLoading(false);
+    }
+  }, [effectiveProjectId, currentChapterId]);
+
+  const handleConfirm = useCallback(
+    async (action: 'accept' | 'reject', note: string) => {
+      if (!effectiveProjectId || !currentChapterId) return;
+      setAuditConfirming(true);
+      try {
+        await confirmAudit(effectiveProjectId, currentChapterId, action, note);
+        // 确认成功 → 关闭弹层（闭环）；失败保留弹层显示 error
+        setAuditOpen(false);
+        setAuditReport(null);
+      } catch (err) {
+        setAuditError(errorMessage(err));
+      } finally {
+        setAuditConfirming(false);
+      }
+    },
+    [effectiveProjectId, currentChapterId],
+  );
 
   // 挂载自动加载当前项目卷章树；currentProjectId 为空时回退首个项目（路由直入写作页场景）
   useEffect(() => {
@@ -165,6 +209,7 @@ export function WritingPage() {
             onSave={() => void save()}
             onContinue={() => start('continue')}
             onGenerate={() => start('generate')}
+            onAudit={() => void handleAudit()}
           />
           <ChapterEditor onEditorKeyDown={handleKeyDown} onContentChange={handleContentChange} />
           <StreamArea
@@ -179,6 +224,15 @@ export function WritingPage() {
         </main>
         <ContextPanel />
       </div>
+      <AuditDialog
+        open={auditOpen}
+        report={auditReport}
+        loading={auditLoading}
+        error={auditError}
+        onClose={() => setAuditOpen(false)}
+        onConfirm={(a, n) => void handleConfirm(a, n)}
+        confirming={auditConfirming}
+      />
       <StatusBar model={model} wordCount={displayWords} savedAt={savedAt} />
     </div>
   );
