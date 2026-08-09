@@ -46,6 +46,7 @@ from inkflow.cli.commands import (  # noqa: E402  # app 定义后导入
     audit,
     chapter,
     character,
+    export,
     extract,
     foreshadowing,
     kernel,
@@ -68,6 +69,7 @@ app.add_typer(world.app, name="world")
 app.add_typer(outline.app, name="outline")
 app.add_typer(timeline.app, name="timeline")
 app.add_typer(foreshadowing.app, name="foreshadowing")
+app.add_typer(export.app, name="export")
 app.add_typer(extract.app, name="extract")
 app.add_typer(audit.app, name="audit")
 app.add_typer(style.app, name="style")

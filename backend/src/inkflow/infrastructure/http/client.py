@@ -90,6 +90,31 @@ class InkFlowHTTPClient:
             )
         return cast(dict, response.json())
 
+    async def get_raw(self, path, *, params=None) -> str:
+        """GET 请求并返回原始响应文本（F21 导出下载，非 JSON 信封）。
+
+        与 _request 的区别: _request 强制 response.json() 解析，无法处理
+        text/plain 字节流（TXT 导出）；本方法返回 response.text（UTF-8 解码）。
+
+        Args:
+            path: API 路径（不含 base_url 前缀）.
+            params: 查询参数 dict（可选）.
+
+        Returns:
+            响应文本（2xx；UTF-8 解码）.
+
+        Raises:
+            HttpApiError: 非 2xx（与 _request 同规则: detail 提取 + X-InkFlow-Error-Code 头）.
+        """
+        response = await self._client.get(path, params=params)
+        if not 200 <= response.status_code < 300:
+            raise HttpApiError(
+                status_code=response.status_code,
+                detail=_extract_detail(response),
+                code=response.headers.get("X-InkFlow-Error-Code"),
+            )
+        return response.text
+
     async def stream_sse(self, path, *, json=None) -> AsyncGenerator[dict, None]:
         """POST + SSE 流式消费：`data: {json}` 帧逐行解析并 yield 原样 dict。
 

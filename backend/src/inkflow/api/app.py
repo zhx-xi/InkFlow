@@ -16,6 +16,7 @@ from inkflow.api.routers import (
     chapter,
     characters,
     context,
+    export,
     extractions,
     foreshadowings,
     outlines,
@@ -107,6 +108,7 @@ app.add_middleware(TokenAuthMiddleware)
 
 # ---- 注册路由 ----
 app.include_router(audit.router)
+app.include_router(export.router)
 app.include_router(project.router)
 app.include_router(provider_configs.router)
 app.include_router(agent_templates.router)
