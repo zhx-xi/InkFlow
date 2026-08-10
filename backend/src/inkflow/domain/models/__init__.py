@@ -5,6 +5,7 @@ from inkflow.domain.models.agent_pipeline import (
     PipelineExecuteRequest,
     RoleOverride,
 )
+from inkflow.domain.models.agent_tools import ToolSpec
 from inkflow.domain.models.audit import (
     AuditDimension,
     AuditFinding,
@@ -220,6 +221,7 @@ __all__ = [
     "TimelineExtractionResult",
     "TimelineView",
     "TokenBudgetConfig",
+    "ToolSpec",
     "Volume",
     "VolumeCreate",
     "VolumeUpdate",

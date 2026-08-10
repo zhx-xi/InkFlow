@@ -434,6 +434,7 @@ jobs:
                  ../tests/cli/test_cli_run_fallback.py `
                  ../tests/cli/test_cli_export.py `
                  ../tests/cli/test_cli_search.py `
+                 ../tests/cli/test_cli_agent_tools.py `
                  -v --tb=short
 
   # ── Smoke: health check (fastest) ──
