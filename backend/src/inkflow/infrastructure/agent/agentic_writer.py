@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable
 from dataclasses import dataclass
+from typing import cast
 
 from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent
 from inkflow.infrastructure.agent.tools.reader_tools import ReaderToolDeps, build_reader_tools
@@ -67,8 +68,8 @@ class DeepAgentInvokeAdapter:
         # deepagents 输入 {"messages": [...]}；graph.invoke 同步返回（含 "messages" 键）
         result = self._inner.invoke({"messages": messages}, config=config)  # type: ignore[attr-defined]  # 鸭子类型：deepagents CompiledStateGraph
         if isinstance(result, Awaitable):
-            return await result
-        return result
+            return cast(dict, await result)
+        return cast(dict, result)
 
 
 def build_agentic_writer(
