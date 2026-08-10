@@ -50,6 +50,7 @@ from inkflow.cli.commands import (  # noqa: E402  # app 定义后导入
     extract,
     foreshadowing,
     kernel,
+    memory_cmd,
     outline,
     project,
     search,
@@ -85,6 +86,7 @@ app.add_typer(config_app, name="config")
 app.add_typer(agent_cmd.app, name="agent")
 app.add_typer(session.app, name="session")
 app.add_typer(kernel.app, name="kernel")
+app.add_typer(memory_cmd.app, name="memory")
 # serve 用 command() 直接注册避免 inkflow serve serve 嵌套
 app.command(name="serve")(_serve_fn)
 # search 同款：单命令组压平，command() 直接注册避免 inkflow search search 嵌套

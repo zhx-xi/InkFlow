@@ -9,10 +9,11 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from inkflow.api.deps import get_agent_run_repo, get_draft_service
 from inkflow.domain.models.draft import DraftStatus
+from inkflow.domain.services._word_count import count_words
 from inkflow.domain.services.draft_service import (
     DraftNotFoundError,
     DraftService,
@@ -117,3 +118,31 @@ async def reject_draft(
     except DraftStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"draft_id": draft.id, "status": draft.status.value}
+
+
+class DraftUpdateRequest(BaseModel):
+    """draft 编辑请求体 — content 必填非空（镜像 DraftService.create 语义）."""
+
+    content: str = Field(..., min_length=1)  # Pydantic min_length=1 防空串
+
+
+@router.patch("/drafts/{draft_id}")
+async def update_draft(
+    draft_id: str,
+    body: DraftUpdateRequest,
+    svc: DraftService = Depends(get_draft_service),
+) -> dict:
+    """编辑草稿正文（确认前手动修改；F28 diff 事件捕获入口）."""
+    try:
+        draft = await svc.update(draft_id, body.content)
+    except DraftNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except DraftStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    learned = bool(getattr(svc, "last_learned", False))
+    return {
+        "draft_id": draft.id,
+        "status": draft.status.value,
+        "word_count": count_words(draft.content),
+        "learned": learned,
+    }

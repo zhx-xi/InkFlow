@@ -5,6 +5,9 @@ DraftService 是 Agentic 写作闭环的草稿保存区服务：
 - confirm: 确认流——内容写入目标章节 + chapter status 置 FINAL（spec §2.4/§5.2 约束④），
   draft 状态置 CONFIRMED 并回填 confirmed_at
 - reject: 拒绝流——draft 状态置 REJECTED（保留记录，供 F28 分析）
+- update: F28 编辑流——确认前手动修改正文（update_content 落库），
+  经可选注入的 memory_service 捕获 diff 事件（memory_learning 开启时），
+  last_learned 透传本次编辑是否触发新偏好落库
 
 仅依赖 domain/models 与注入的 repo/service（鸭子类型，不感知 ORM/框架），
 domain/ 零框架 import 门禁天然满足（ADR-002/015）。
@@ -41,6 +44,8 @@ class DraftService:
         draft_repo: SQLiteDraftRepository（鸭子类型，需 create/get/list/update_status）.
         chapter_service: ChapterService（确认流写正式章节用，可空；测试可注入 mock）.
         audit_service: AuditLogService（写操作审计，可空）.
+        memory_service: MemoryService（可选注入——F28 diff 事件捕获入口；
+            关闭时 memory_service 内部零行为，测试可注入 mock）.
     """
 
     def __init__(
@@ -49,10 +54,13 @@ class DraftService:
         draft_repo: object,
         chapter_service: object | None = None,
         audit_service: object | None = None,
+        memory_service: object | None = None,
     ) -> None:
         self._repo = draft_repo
         self._chapter_service = chapter_service
         self._audit_service = audit_service
+        self._memory_service = memory_service
+        self.last_learned: bool = False  # F28: 本次 update 是否触发新偏好落库
 
     async def create(
         self,
@@ -208,3 +216,37 @@ class DraftService:
                 degraded=True,
             )
         return rejected
+
+    async def update(self, draft_id: str, content: str) -> Draft:
+        """编辑草稿正文（确认前手动修改；F28 diff 事件捕获入口）.
+
+        Raises:
+            DraftNotFoundError: 草稿不存在.
+            DraftStateError: 草稿非 DRAFT 状态（confirmed/rejected 不可编辑）.
+            ValueError: content strip 后为空.
+        """
+        if not content.strip():
+            raise ValueError("草稿内容不能为空")
+        draft = await self._repo.get(draft_id)  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按契约提供 get
+        if draft is None:
+            raise DraftNotFoundError("草稿不存在")
+        if draft.status != DraftStatus.DRAFT:
+            message = "草稿已确认" if draft.status is DraftStatus.CONFIRMED else "草稿已拒绝"
+            raise DraftStateError(message)
+        updated: Draft | None = await self._repo.update_content(  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按契约提供 update_content；注解收窄 Any（镜像 confirm 写法）
+            draft_id, content
+        )
+        if updated is None:
+            raise DraftNotFoundError("草稿不存在")
+        # F28 事件捕获（可选注入；关闭时 memory_service 内部零行为）
+        if self._memory_service is not None:
+            await self._memory_service.record_draft_edit(  # type: ignore[attr-defined]  # 鸭子类型：memory_service 按 F28 契约提供 record_draft_edit
+                draft_id=draft_id,
+                project_id=draft.project_id,
+                chapter_id=draft.chapter_id,
+                before=draft.content,
+                after=content,
+                agent_run_id=draft.agent_run_id,
+            )
+            self.last_learned = bool(getattr(self._memory_service, "last_learned", False))
+        return updated

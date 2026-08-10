@@ -1,7 +1,8 @@
 """上下文管理领域模型 — 分层 Token 预算、数据源类型、组装结果.
 
 ContextLayer 定义三层上下文策略（protected / compressible / dynamic），
-ContextSourceType 枚举六种数据源，ContextItem/ContextBlock/DroppedItem 为组装过程的
+ContextSourceType 枚举七种数据源（F28 追加 preference），
+ContextItem/ContextBlock/DroppedItem 为组装过程的
 中间数据结构，ContextRequest 为 API 输入，ContextAssemblyResult 为最终产出。
 
 依据: specs/f6-context-service/spec.md §3, ADR-010.
@@ -42,6 +43,7 @@ class ContextSourceType(StrEnum):
     │ world_setting           │ compressible  │ 空实现 (F9 Phase 2)       │
     │ chapter_summary         │ dynamic       │ LLM 生成 + 缓存表 (本模块) │
     │ foreshadowing           │ dynamic       │ 空实现 (F14 Phase 2)      │
+    │ preference              │ protected     │ F28 已学偏好（memory_learning） │
     └─────────────────────────┴───────────────┴──────────────────────────┘
     """
 
@@ -51,6 +53,7 @@ class ContextSourceType(StrEnum):
     WORLD_SETTING = "world_setting"
     CHAPTER_SUMMARY = "chapter_summary"
     FORESHADOWING = "foreshadowing"
+    PREFERENCE = "preference"
 
 
 # ── 层级映射 ────────────────────────────────────────────────────────
@@ -61,6 +64,7 @@ SOURCE_LAYER: dict[ContextSourceType, ContextLayer] = {
     ContextSourceType.WORLD_SETTING: ContextLayer.COMPRESSIBLE,
     ContextSourceType.CHAPTER_SUMMARY: ContextLayer.DYNAMIC,
     ContextSourceType.FORESHADOWING: ContextLayer.DYNAMIC,
+    ContextSourceType.PREFERENCE: ContextLayer.PROTECTED,
 }
 
 

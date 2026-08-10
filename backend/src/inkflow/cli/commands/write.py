@@ -138,6 +138,12 @@ def next(
     mode: Literal["deterministic", "agentic"] = typer.Option(
         "deterministic", "--mode", help="写作模式: deterministic|agentic"
     ),
+    memory_learning: bool | None = typer.Option(
+        None,
+        "--memory-learning",
+        "--no-memory-learning",
+        help="记忆学习开关（覆盖项目配置；默认读项目 extra['memory_learning']）",
+    ),
     max_steps: int | None = typer.Option(None, "--max-steps", help="agentic 最大步骤数"),
     token_budget: int | None = typer.Option(None, "--token-budget", help="agentic token 预算"),
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
@@ -162,6 +168,7 @@ def next(
                     style_hint=style or None,
                     max_steps=max_steps,
                     token_budget=token_budget,
+                    memory_learning=memory_learning,
                 )
                 body = request.model_dump(mode="json", exclude_none=True)
                 return await client.post("/writing/agentic/generate", json=body)

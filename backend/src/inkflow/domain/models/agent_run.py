@@ -120,6 +120,7 @@ class AgenticWriteRequest(BaseModel):
         style_hint: 风格提示（可选）.
         max_steps: 最大工具步数（None = 读设置/默认 12）.
         token_budget: token 预算（None = 读设置/默认 32K）.
+        memory_learning: F28 记忆学习显式覆盖（None = 读项目配置，F13 同构）.
     """
 
     project_id: uuid.UUID
@@ -130,3 +131,4 @@ class AgenticWriteRequest(BaseModel):
     style_hint: str | None = None
     max_steps: int | None = Field(default=None, ge=1)  # None = 读设置/默认 12
     token_budget: int | None = Field(default=None, ge=1)  # None = 读设置/默认 32K
+    memory_learning: bool | None = None  # F28: None = 读项目配置 extra["memory_learning"]
