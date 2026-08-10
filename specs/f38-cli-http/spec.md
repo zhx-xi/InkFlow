@@ -56,6 +56,7 @@ F38 是 ADR-030 ② D1=A 的消费方改造：**所有业务 `inkflow <cmd>` 先
 | `kernel status` | **豁免** | F30 已实现为「**绝不拉起内核**」的纯状态查询（spec §4：非用户面 dev 命令）；走 HTTP 会破坏「查询 ≠ 拉起」语义 |
 | `config show/set` | **豁免** | 操作本地 `config.json`（CONFIG_WHITELIST 键集合）；**API 无对应端点**——F32 `/api/v1/settings` 是 AppSettings 键集合（theme/language 等），与 CONFIG_WHITELIST（default.model/context.max_ratio 等）**完全不同**；config.json 与内核共享同一 data_dir（无数据漂移） |
 | `llm list/set-key` | **豁免** | 操作本地 `keys/`（APIKeyManager AES-256-GCM 文件）；API 仅 POST /settings/llm-keys（写入），**无 key 状态读取端点**（llm list 需 provider→key 状态→掩码）；keys/ 与内核共享同一 data_dir |
+| `agent tools list`（F26 新增，登记 2026-08-10） | **豁免** | 本地静态枚举（工具注册表 `infrastructure/agent/tools/` 是代码内静态资源，非内核运行时状态）；**API 无对应端点**（F26 纯内部基础设施）；不启动内核、不发 HTTP——F38 恒 HTTP 改造不适用于无端点命令 |
 | 其余 14 个（project/chapter/character/world/outline/timeline/foreshadowing/extract/audit/style/vector/agent/session/write） | **改造** | 全部有对应 API 端点（§3.1 消费清单）；domain 数据经 HTTP 单一路径 |
 
 > **豁免的代价**：config/llm 走本地文件（非 HTTP）——与 ADR-030「恒经 HTTP」字面有偏差，但**数据仍与内核一致**（共享 data_dir），且无「双路径漂移」风险（配置/密钥非领域数据、无内存态）。若未来云端模式（F18）需要远程配置，再为 config/llm 补端点（登记 §10）。

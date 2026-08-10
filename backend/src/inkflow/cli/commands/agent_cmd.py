@@ -172,3 +172,40 @@ def template_list(
             for tpl in result["items"]:
                 typer.echo(f"  [{tpl['id']}] {tpl['name']}")
                 typer.echo(f"      阶段: {' → '.join(tpl['stages'])}")
+
+
+# ── F26: Agent 只读工具诊断（本地静态枚举，F38 恒 HTTP 的豁免命令） ──
+
+tools_app = typer.Typer(name="tools", help="工具诊断", no_args_is_help=True)
+app.add_typer(tools_app)
+
+
+@tools_app.command("list")
+def tools_list_cmd(
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """列出已注册的 Agent 只读工具（本地静态枚举）"""
+    try:
+        from inkflow.infrastructure.agent.tools import TOOL_REGISTRY
+    except Exception as exc:
+        typer.echo(f"❌ 工具注册表加载失败: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    if json_output:
+        _print_json(
+            {
+                "ok": True,
+                "data": {
+                    "items": [
+                        {
+                            "name": t.name,
+                            "description": t.description,
+                            "input_schema": t.input_schema,
+                        }
+                        for t in TOOL_REGISTRY
+                    ]
+                },
+            }
+        )
+    else:
+        for t in TOOL_REGISTRY:
+            typer.echo(f"{t.name}: {t.description}")
