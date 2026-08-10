@@ -18,7 +18,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AgentToolCall(BaseModel):
@@ -128,5 +128,5 @@ class AgenticWriteRequest(BaseModel):
     context: str = ""
     min_words: int = 2000
     style_hint: str | None = None
-    max_steps: int | None = None  # None = 读设置/默认 12
-    token_budget: int | None = None  # None = 读设置/默认 32K
+    max_steps: int | None = Field(default=None, ge=1)  # None = 读设置/默认 12
+    token_budget: int | None = Field(default=None, ge=1)  # None = 读设置/默认 32K

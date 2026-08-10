@@ -92,6 +92,13 @@ def _tokens_of(message: object) -> int:
         return 0
 
 
+class AgenticWriteNotFoundError(Exception):
+    """项目/章节不存在（API 映射 404；service run 校验前置语义）."""
+
+    def __init__(self, message: str = "章节不存在") -> None:
+        super().__init__(message)
+
+
 class AgenticWriterService:
     """agentic 编排服务——deepagents ReAct 循环驱动 + 护栏 + 兜底 + 审计 + 决策轨迹。"""
 

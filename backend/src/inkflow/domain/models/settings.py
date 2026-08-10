@@ -28,6 +28,9 @@ class SettingsKey(StrEnum):
     CLOSE_BEHAVIOR = "close_behavior"
     TRAY_HINT_DISMISSED = "tray_hint_dismissed"
     DEFAULT_WORDS = "default_words"
+    AGENT_MAX_STEPS = "agent_max_steps"
+    AGENT_TOKEN_BUDGET = "agent_token_budget"
+    AGENT_MAX_CONSECUTIVE_TOOL = "agent_max_consecutive_tool"
 
 
 class AppSettings(BaseModel):
@@ -46,6 +49,9 @@ class AppSettings(BaseModel):
     close_behavior: CloseBehavior = "tray"
     tray_hint_dismissed: bool = False
     default_words: int = 800000
+    agent_max_steps: int = 12
+    agent_token_budget: int = 32000
+    agent_max_consecutive_tool: int = 3
 
 
 class AppSettingsUpdate(BaseModel):
@@ -65,3 +71,6 @@ class AppSettingsUpdate(BaseModel):
     close_behavior: CloseBehavior | None = None
     tray_hint_dismissed: bool | None = None
     default_words: int | None = None
+    agent_max_steps: int | None = None
+    agent_token_budget: int | None = None
+    agent_max_consecutive_tool: int | None = None

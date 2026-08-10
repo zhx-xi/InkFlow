@@ -2,7 +2,7 @@
 
 TDD RED 阶段：路由与 deps 未实现，预期全部失败（deps import 收集期失败 + 端点 404）。
 
-需 pytest marker: @pytest.mark.api
+需 pytestmark = pytest.mark.asyncio（既有 API 测试同款，asyncio_mode=auto 双保险）。
 
 ══════════════════════════════════════════════════════════════════════════
 HTTP 契约（实现者以本文件为准，spec §3.1/§3.3）:
@@ -58,7 +58,7 @@ from inkflow.api.deps import (
     get_draft_service,
 )
 
-pytestmark = pytest.mark.api
+pytestmark = pytest.mark.asyncio  # 既有 API 测试同款（test_project_api.py 先例）
 
 PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 CHAPTER_ID = uuid.UUID("87654321-4321-8765-4321-876543218765")

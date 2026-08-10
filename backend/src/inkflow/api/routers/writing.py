@@ -14,7 +14,8 @@ from collections.abc import AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from inkflow.api.deps import get_writing_service
+from inkflow.api.deps import get_agentic_writer_service, get_writing_service
+from inkflow.domain.models.agent_run import AgenticWriteRequest
 from inkflow.domain.models.writing import (
     ContinueWritingRequest,
     RevisionRequest,
@@ -23,6 +24,10 @@ from inkflow.domain.models.writing import (
     WritingStreamEvent,
 )
 from inkflow.domain.ports.llm_errors import LLMRequestError
+from inkflow.domain.services.agentic_writer_service import (
+    AgenticWriteNotFoundError,
+    AgenticWriterService,
+)
 from inkflow.domain.services.writing_service import WritingService, _NotFoundError
 
 logger = logging.getLogger(__name__)
@@ -53,6 +58,25 @@ def _map_service_error(exc: Exception) -> HTTPException:
         )
     logger.exception("写作服务未预期异常: %s", exc)
     return HTTPException(status_code=500, detail="服务器内部错误，请稍后重试")
+
+
+def _map_agentic_service_error(exc: Exception) -> HTTPException:
+    """将 agentic 服务层异常映射为 HTTP 响应（ADR-012 镜像）.
+
+    - AgenticWriteNotFoundError（项目/章节不存在）→ 404（detail=异常消息）
+    - 其余异常 → 500 + X-InkFlow-Error-Code: LLM_ERROR 头（不泄漏内部细节）
+    """
+    if isinstance(exc, AgenticWriteNotFoundError):
+        return HTTPException(
+            status_code=404,
+            detail=exc.args[0] if exc.args else "章节不存在",
+        )
+    logger.exception("Agentic 写作服务未预期异常: %s", exc)
+    return HTTPException(
+        status_code=500,
+        detail="LLM 调用失败，请稍后重试",
+        headers={"X-InkFlow-Error-Code": "LLM_ERROR"},
+    )
 
 
 @router.post("/generate")
@@ -92,6 +116,28 @@ async def revise_content(
     except Exception as exc:
         raise _map_service_error(exc) from exc
     return result.model_dump(mode="json")
+
+
+@router.post("/agentic/generate")
+async def agentic_generate(
+    data: AgenticWriteRequest,
+    svc: AgenticWriterService = Depends(get_agentic_writer_service),
+) -> dict:
+    """agentic 生成章节（spec §3.1/§3.3）——guardrail 双形态均 200（ADR-D）."""
+    try:
+        run = await svc.run(data)
+    except Exception as exc:
+        raise _map_agentic_service_error(exc) from exc
+    return {
+        "run_id": run.id,
+        "status": run.status.value,
+        "draft_id": run.draft_id,
+        "final_content": run.final_content,
+        "word_count": len(run.final_content) if run.final_content else 0,
+        "steps": [s.model_dump(mode="json") for s in run.steps],
+        "token_usage_total": run.token_usage_total,
+        "terminated_by": run.terminated_by,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from typing import Literal
 
 import typer
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
+from inkflow.domain.models.agent_run import AgenticWriteRequest
 from inkflow.domain.models.writing import WritingMode, WritingRequest
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
@@ -87,6 +89,41 @@ def _echo_warnings(warnings: list[str]) -> None:
         typer.echo(f"⚠ {w}")
 
 
+def _agentic_tool_sequence(steps: list[dict]) -> str:
+    """steps 中 tool_calls 的 tool_name 去重顺序连接（a → b）."""
+    seen: set[str] = set()
+    names: list[str] = []
+    for step in steps:
+        for tool_call in step.get("tool_calls") or []:
+            name = tool_call.get("tool_name")
+            if name and name not in seen:
+                seen.add(name)
+                names.append(name)
+    return " → ".join(names)
+
+
+def _echo_agentic_result(cli_ctx: CliContext, result: dict) -> None:
+    """agentic 模式输出：草稿确认指引/护栏提示 + 轨迹摘要（--json 走信封）."""
+    if cli_ctx.json_output:
+        print_result(cli_ctx, result)
+        return
+    status = result.get("status")
+    draft_id = result.get("draft_id")
+    terminated_by = result.get("terminated_by") or "-"
+    if status == "terminated_by_guardrail":
+        typer.echo(f"⚠️ 护栏终止 ({terminated_by})，产物已保留")
+    elif draft_id:
+        typer.echo(f"✅ 草稿已保存 ({draft_id})，确认命令: inkflow agent draft confirm {draft_id}")
+    else:
+        typer.echo("⚠️ 未生成草稿")
+    steps = result.get("steps") or []
+    tools = _agentic_tool_sequence(steps)
+    typer.echo(
+        f"步骤: {len(steps)} · 工具: [{tools}] · tokens: "
+        f"{result.get('token_usage_total')} · 终止: {terminated_by}"
+    )
+
+
 @app.command("next")
 def next(
     ctx: typer.Context,
@@ -98,18 +135,39 @@ def next(
     style: str = typer.Option("", "--style", help="写作风格"),
     count: int = typer.Option(1, "--count", help="生成章节数"),
     show_context: bool = typer.Option(False, "--show-context", help="显示注入的上下文"),
+    mode: Literal["deterministic", "agentic"] = typer.Option(
+        "deterministic", "--mode", help="写作模式: deterministic|agentic"
+    ),
+    max_steps: int | None = typer.Option(None, "--max-steps", help="agentic 最大步骤数"),
+    token_budget: int | None = typer.Option(None, "--token-budget", help="agentic token 预算"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
 ) -> None:
-    """从大纲生成完整章节（F23: 默认流式输出，spec §4.1）."""
+    """从大纲生成完整章节（F23: 默认流式输出，spec §4.1；--mode agentic 走 F27 非流式编排）."""
 
     cli_ctx = _get_cli_ctx(ctx)
+    if json_output:
+        cli_ctx.json_output = True
 
-    async def _impl() -> list[dict]:
+    async def _impl() -> dict | list[dict]:
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
+            if mode == "agentic":
+                request = AgenticWriteRequest(
+                    project_id=uuid.UUID(project_id),
+                    chapter_id=uuid.UUID(chapter_id),
+                    outline=outline,
+                    context=context,
+                    min_words=min_words,
+                    style_hint=style or None,
+                    max_steps=max_steps,
+                    token_budget=token_budget,
+                )
+                body = request.model_dump(mode="json", exclude_none=True)
+                return await client.post("/writing/agentic/generate", json=body)
             results: list[dict] = []
             for _ in range(count):
-                request = WritingRequest(
+                stream_request = WritingRequest(
                     project_id=uuid.UUID(project_id),
                     chapter_id=uuid.UUID(chapter_id),
                     outline=outline,
@@ -117,7 +175,7 @@ def next(
                     min_words=min_words,
                     style_hint=style or None,
                 )
-                body = request.model_dump(mode="json", exclude_none=True)
+                body = stream_request.model_dump(mode="json", exclude_none=True)
                 body["mode"] = WritingMode.GENERATE.value
                 results.append(
                     await _collect_stream(
@@ -130,6 +188,10 @@ def next(
 
     results = _run(cli_ctx, _impl)
     if results is None:
+        return
+    if mode == "agentic":
+        # agentic 分支恒返回 dict（deterministic 分支恒返回 list）
+        _echo_agentic_result(cli_ctx, results)
         return
     for i, result in enumerate(results):
         if result.get("error"):
