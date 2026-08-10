@@ -158,3 +158,142 @@ test('#232 项目卡片点击：多项目点击卡片 → 写作页项目上下�
     await app.close();
   }
 });
+
+// ────────────────────────────────────────────────────────────────
+// 4. #143 项目页深度：模板创建（模板下拉 → 选模板 → 创建成功 → 列表刷新 + 落库）
+// ────────────────────────────────────────────────────────────────
+test('项目页：模板下拉选 Agent 模板创建 → 卡片出现 + config.template_id 落库', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    // 前置：经内核 API 构造模板（CI 全新库无 seed 模板；AgentTemplateCreate 仅 name 必填）
+    const tplName = `E2E-TPL-${Date.now()}`;
+    const tpl = await fetchKernel(kernel, '/api/v1/agent-templates', {
+      method: 'POST',
+      body: JSON.stringify({ name: tplName }),
+    });
+    const tplId = String(tpl.id);
+
+    const name = `E2E-模板-${Date.now()}`;
+    await window.getByTestId('new-project-btn').click();
+    const dlg = window.getByRole('dialog');
+    // 模板下拉（Radix Select：trigger aria-label='Agent 模板'，选项 portal 展开）
+    await dlg.getByLabel('Agent 模板').click();
+    await window.getByRole('option', { name: tplName }).click();
+    await window.getByLabel('书名').fill(name);
+    await dlg.getByRole('button', { name: '创建', exact: true }).click();
+    await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
+
+    // 回项目页断言卡片（列表刷新：新项目出现）
+    await gotoNav(window, '项目');
+    const card = window.getByTestId('project-card').filter({ hasText: name });
+    await expect(card).toHaveCount(1);
+    await expect(card).toContainText('玄幻');
+
+    // 落库断言：config.template_id === String(tplId)（后端存 str；#107 契约）
+    await expect
+      .poll(
+        async () => {
+          const { items } = await fetchKernel(kernel, '/api/v1/projects');
+          const proj = items.find((p: { name: string }) => p.name === name);
+          if (!proj) return undefined;
+          const detail = await fetchKernel(kernel, `/api/v1/projects/${proj.id}`);
+          return detail.config?.template_id;
+        },
+        { timeout: 10_000 }
+      )
+      .toBe(tplId);
+  } finally {
+    await app.close();
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// 5. #143 项目页深度：多项目网格渲染（2 卡片并存 + 末位新建卡片入口）
+// ────────────────────────────────────────────────────────────────
+test('项目页：多项目渲染（2 卡片并存 + new-project-card 末位入口）', async () => {
+  const { app, window } = await launchApp();
+  try {
+    const nameA = `E2E-多A-${Date.now()}`;
+    const nameB = `E2E-多B-${Date.now()}`;
+    await createProjectViaUi(window, nameA);
+    await gotoNav(window, '项目');
+    await createProjectViaUi(window, nameB);
+    await gotoNav(window, '项目');
+
+    const cardA = window.getByTestId('project-card').filter({ hasText: nameA });
+    const cardB = window.getByTestId('project-card').filter({ hasText: nameB });
+    await expect(cardA).toHaveCount(1);
+    await expect(cardB).toHaveCount(1);
+    await expect(cardA).toContainText('玄幻');
+    await expect(cardB).toContainText('玄幻');
+
+    // 有项目时网格末位虚线新建卡片入口（空态不渲染）
+    await expect(window.getByTestId('new-project-card')).toBeVisible();
+    // 当前项目 = 最后创建 B（writing-badge 唯一跟随）
+    await expect(
+      window.getByTestId('project-card').filter({ hasText: nameB }).getByTestId('writing-badge')
+    ).toBeVisible();
+    await expect(
+      window.getByTestId('project-card').filter({ hasText: nameA }).getByTestId('writing-badge')
+    ).toHaveCount(0);
+  } finally {
+    await app.close();
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// 6. #143 项目页深度：删除同步 + 空态（UI 无删除按钮 → 内核 API 删除 →
+//    导航往返列表刷新消失 → 删光 → projects-empty + 空态 CTA 打开对话框）
+// ────────────────────────────────────────────────────────────────
+test('项目页：删除项目列表同步消失 + 空态（projects-empty + CTA 打开对话框）', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-删除-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    await gotoNav(window, '项目');
+    await expect(window.getByTestId('project-card').filter({ hasText: name })).toHaveCount(1);
+
+    // 经内核 API 删除（204；UI 无删除入口，范围留痕 PR body）
+    const { items } = await fetchKernel(kernel, '/api/v1/projects');
+    const proj = items.find((p: { name: string }) => p.name === name);
+    expect(proj, '内核应存在该项目').toBeTruthy();
+    await fetchKernel(kernel, `/api/v1/projects/${proj.id}`, { method: 'DELETE' });
+
+    // 导航往返触发 loadProjects 重拉 → 卡片消失
+    await gotoNav(window, '写作');
+    await gotoNav(window, '项目');
+    await expect(window.getByTestId('project-card').filter({ hasText: name })).toHaveCount(0);
+
+    // 删光全部项目 → 空态（模拟 CI 全新库语义；删除后列表同步刷新）
+    const all = await fetchKernel(kernel, '/api/v1/projects');
+    for (const p of all.items) {
+      await fetchKernel(kernel, `/api/v1/projects/${p.id}`, { method: 'DELETE' });
+    }
+    await gotoNav(window, '写作');
+    await gotoNav(window, '项目');
+    await expect(window.getByTestId('projects-empty')).toBeVisible();
+
+    // 空态 CTA（scope 到空态容器，避免与顶栏 new-project-btn 同文案 strict violation）
+    await window.getByTestId('projects-empty').getByRole('button', { name: '新建项目' }).click();
+    await expect(window.getByRole('dialog')).toBeVisible();
+    await window.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
+    await expect(window.getByRole('dialog')).toHaveCount(0);
+    await expect(window.getByTestId('projects-empty')).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});
+
+/** 直调内核 API（E3 契约 helper 复制：带 token + 204 短路；spec 自包含不 import） */
+async function fetchKernel(kernel: KernelInfo, path: string, init?: RequestInit): Promise<any> {
+  const res = await fetch(`http://127.0.0.1:${kernel.port}${path}`, {
+    ...init,
+    headers: {
+      'X-InkFlow-Token': kernel.token,
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (res.status === 204) return undefined; // 204 无 body，防 res.json() 抛错
+  return res.json();
+}
