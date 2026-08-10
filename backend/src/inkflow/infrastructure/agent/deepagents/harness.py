@@ -78,12 +78,15 @@ def build_deep_agent(
     与 subagent）；显式传入则原样使用、不抛错。
     """
     model_name = _strip_model_prefix(model)
-    chat = ChatOpenAI(
-        model=model_name,
-        openai_api_base=base_url,
-        openai_api_key=api_key,
-        temperature=0.2,
-    )
+    chat_kwargs: dict[str, object] = {
+        "model": model_name,
+        "temperature": 0.2,
+    }
+    if api_key:
+        chat_kwargs["openai_api_key"] = api_key
+    if base_url:
+        chat_kwargs["openai_api_base"] = base_url
+    chat = ChatOpenAI(**chat_kwargs)  # type: ignore[arg-type]  # chat_kwargs 为动态 dict[str, object]，无法静态匹配 ChatOpenAI 构造参数（langchain-openai pydantic 签名，openai_api_* 为运行时别名）
     if profile_key is None:
         ensure_profile(model_name)
     return create_deep_agent(
