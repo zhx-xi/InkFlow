@@ -206,3 +206,237 @@ test('写作页：新建章节 → 输入正文 → 工具栏保存 → 内核�
     await app.close();
   }
 });
+
+// ────────────────────────────────────────────────────────────────
+// 5. 写作页：无项目空态（writing-empty + 返回项目页闭环）
+// ────────────────────────────────────────────────────────────────
+test('写作页：无项目空态（writing-empty）→ 返回项目页', async () => {
+  const { app, window } = await launchApp();
+  try {
+    // 确定性「无项目」：拦截项目列表 API → 空列表（共享 DB 有历史项目，不能依赖真实状态）
+    await window.route('**/api/v1/projects', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], total: 0, offset: 0, limit: 50 }),
+      });
+    });
+    await window.reload();
+
+    // 无项目时侧边栏导航到写作页 → 空态引导
+    await gotoNav(window, '写作');
+    const empty = window.getByTestId('writing-empty');
+    await expect(empty).toBeVisible();
+    await expect(empty).toContainText('选择或新建项目开始写作');
+
+    // 空态无编辑器/工具栏（AI 按钮无项目态 = 不渲染）
+    await expect(window.getByTestId('editor-toolbar')).toHaveCount(0);
+
+    // 返回项目页闭环
+    await empty.getByRole('button', { name: '返回项目页', exact: true }).click();
+    expect(await window.evaluate(() => location.hash)).toContain('/projects');
+    await expect(window.getByTestId('new-project-btn')).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// 6. 写作页：树创建联动（UI 新建章节 → 树节点 + data-current + 编辑器标题 + 落库）
+// ────────────────────────────────────────────────────────────────
+test('写作页：UI 新建章节 → 树联动（当前章 data-current + 编辑器标题 + 字数 0 + 内核落库）', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-创建-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    const pid = await findProjectId(kernel, name);
+
+    // UI 新建章节（底部「+ 新建章节」→ 输入标题 → Enter）
+    const chapterTitle = `联动测试章${Date.now() % 100000}`;
+    await window.getByRole('button', { name: /新建章节/ }).click();
+    const titleInput = window.getByPlaceholder('新建章节', { exact: true });
+    await titleInput.fill(chapterTitle);
+    await titleInput.press('Enter');
+
+    // 树联动：新节点出现且为当前章（data-current=true，唯一 tree-chapter）
+    const tree = window.getByTestId('project-tree');
+    const current = tree.getByTestId('tree-chapter');
+    await expect(current).toHaveCount(1);
+    await expect(current).toContainText(chapterTitle);
+    await expect(current).toHaveAttribute('data-current', 'true');
+    await expect(current).toContainText('0'); // 新建章节字数 0
+
+    // 编辑器标题同步（ChapterEditor 头部 h2）
+    await expect(window.locator('main h2')).toContainText(chapterTitle);
+
+    // 内核落库：章节列表含新章
+    await expect
+      .poll(
+        async () => {
+          const res = await kernelFetch(kernel, `/api/v1/projects/${pid}/chapters`);
+          if (!res.ok) return null;
+          const data = (await res.json()) as {
+            items: Array<{ title: string; word_count: number }>;
+          };
+          const ch = data.items.find((c) => c.title === chapterTitle);
+          return ch ? { title: ch.title, words: ch.word_count } : null;
+        },
+        { timeout: 10_000 }
+      )
+      .toEqual({ title: chapterTitle, words: 0 });
+  } finally {
+    await app.close();
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// 7. 写作页：多章切换联动（data-current 迁移 + 编辑器内容切换）
+// ────────────────────────────────────────────────────────────────
+test('写作页：多章切换 → data-current 迁移 + 编辑器内容切换', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-切换-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    const pid = await findProjectId(kernel, name);
+
+    // 内核 API 预置：2 卷 + 2 章（各带不同正文）
+    const vols: Array<{ id: string; title: string }> = [];
+    for (const vt of ['第一卷 风起', '第二卷 云涌']) {
+      const r = await kernelFetch(kernel, `/api/v1/projects/${pid}/volumes`, {
+        method: 'POST',
+        body: { title: vt },
+      });
+      expect(r.status).toBe(201);
+      vols.push((await r.json()) as { id: string; title: string });
+    }
+    const seeds: Array<{ title: string; volume_id: string; content: string }> = [
+      { title: '第一章 初见', volume_id: vols[0].id, content: '第一章正文内容。' },
+      { title: '第二章 夜谈', volume_id: vols[1].id, content: '第二章正文内容。' },
+    ];
+    for (const ch of seeds) {
+      const r = await kernelFetch(kernel, `/api/v1/projects/${pid}/chapters`, {
+        method: 'POST',
+        body: { title: ch.title, volume_id: ch.volume_id, content: ch.content },
+      });
+      expect(r.status).toBe(201);
+    }
+
+    // 重挂载写作页触发 loadChapterTree
+    await gotoNav(window, '项目');
+    await gotoNav(window, '写作');
+    await expect(window.getByTestId('project-tree')).toBeVisible();
+
+    // 初始无当前章（loadChapterTree 不自动选中）→ 无 tree-chapter
+    const tree = window.getByTestId('project-tree');
+    await expect(tree.getByTestId('tree-volume')).toHaveCount(2);
+    await expect(tree.getByTestId('tree-chapter')).toHaveCount(0);
+
+    // 点章 A → 成为当前章（data-current 标记）→ 编辑器显示 A 正文
+    await tree.getByRole('button', { name: /第一章 初见/ }).click();
+    let current = tree.getByTestId('tree-chapter');
+    await expect(current).toHaveCount(1);
+    await expect(current).toHaveAttribute('data-current', 'true');
+    await expect(current).toContainText('第一章 初见');
+    await expect(window.getByTestId('chapter-editor')).toHaveValue('第一章正文内容。');
+
+    // 点章 B → data-current 迁移（A 失去标记，tree-chapter 唯一且为 B）→ 编辑器切到 B 正文
+    await tree.getByRole('button', { name: /第二章 夜谈/ }).click();
+    current = tree.getByTestId('tree-chapter');
+    await expect(current).toHaveCount(1);
+    await expect(current).toHaveAttribute('data-current', 'true');
+    await expect(current).toContainText('第二章 夜谈');
+    await expect(window.getByTestId('chapter-editor')).toHaveValue('第二章正文内容。');
+  } finally {
+    await app.close();
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// 8. 写作页：草稿自动保存（2s 防抖 → 内核落库 + 状态栏自动保存时间）
+// ────────────────────────────────────────────────────────────────
+test('写作页：草稿自动保存（不点保存 → 2s 防抖落库 + 状态栏时间）', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-自动保存-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    const pid = await findProjectId(kernel, name);
+
+    // 新建章节 → 输入正文（不点工具栏保存，验证自动保存路径）
+    await window.getByRole('button', { name: /新建章节/ }).click();
+    const titleInput = window.getByPlaceholder('新建章节', { exact: true });
+    await titleInput.fill('自动保存测试章');
+    await titleInput.press('Enter');
+    await expect(window.getByTestId('tree-chapter')).toContainText('自动保存测试章');
+
+    const text = `E2E 自动保存正文 ${Date.now()}`;
+    await window.getByTestId('chapter-editor').fill(text);
+
+    // 2s 防抖自动保存 → 轮询内核正文落库
+    await expect
+      .poll(
+        async () => {
+          const listRes = await kernelFetch(kernel, `/api/v1/projects/${pid}/chapters`);
+          const list = (await listRes.json()) as {
+            items: Array<{ id: string; title: string }>;
+          };
+          const ch = list.items.find((c) => c.title === '自动保存测试章');
+          if (!ch) return null;
+          const detailRes = await kernelFetch(kernel, `/api/v1/chapters/${ch.id}`);
+          return ((await detailRes.json()) as { content: string }).content;
+        },
+        { timeout: 10_000 }
+      )
+      .toBe(text);
+
+    // 状态栏「自动保存: HH:MM:SS」出现（savedAt 状态流转可见）
+    await expect(window.getByText(/自动保存: \d{1,2}:\d{2}/)).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// 9. 写作页：工具栏完整性 + AI 按钮状态（deterministic 模式）
+// ────────────────────────────────────────────────────────────────
+test('写作页：工具栏 6 按钮齐全且可用 + 续写/生成（AI）按钮 enabled', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-工具栏-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    const pid = await findProjectId(kernel, name);
+
+    // 预置一章并选中（AI 按钮态前提：有项目 + 有当前章）
+    const r = await kernelFetch(kernel, `/api/v1/projects/${pid}/chapters`, {
+      method: 'POST',
+      body: { title: '工具栏测试章', content: '工具栏正文。' },
+    });
+    expect(r.status).toBe(201);
+    await gotoNav(window, '项目');
+    await gotoNav(window, '写作');
+    await window
+      .getByTestId('project-tree')
+      .getByRole('button', { name: /工具栏测试章/ })
+      .click();
+    await expect(window.getByTestId('chapter-editor')).toHaveValue('工具栏正文。');
+
+    // 工具栏 6 按钮：撤销/重做/保存/续写/生成/审计（aria-label 精确匹配，exact 防撞名）
+    const toolbar = window.getByTestId('editor-toolbar');
+    await expect(toolbar).toBeVisible();
+    for (const label of ['撤销', '重做', '保存', '续写', '生成', '审计']) {
+      const btn = toolbar.getByRole('button', { name: label, exact: true });
+      await expect(btn).toBeVisible();
+      await expect(btn).toBeEnabled();
+    }
+
+    // stream-area idle 引导文案（deterministic 模式，未生成）
+    await expect(window.getByTestId('stream-area')).toContainText(
+      '点击「续写」或 Ctrl+Enter 开始 AI 续写'
+    );
+
+    // 状态栏：内核已连接 + 模型占位 + 字数
+    await expect(window.getByText('内核已连接')).toBeVisible();
+    await expect(window.getByText(/字数: /)).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});

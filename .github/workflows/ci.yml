@@ -76,6 +76,8 @@ jobs:
               - 'tests/**'
             frontend:
               - 'frontend/**'
+            # E2E spec 变更（tests/e2e/）触发页面级 e2e-* job（#142 实测：纯 E2E 变更
+            # 之前只命中 tests output，页面级 job 全部 skip → 新增用例 CI 无验证）
             e2e:
               - 'tests/e2e/**'
             ci:
