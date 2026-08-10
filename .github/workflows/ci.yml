@@ -443,6 +443,7 @@ jobs:
                  ../tests/cli/test_cli_agent_run.py `
                  ../tests/cli/test_cli_agent_draft.py `
                  ../tests/cli/test_cli_write_agentic.py `
+                 ../tests/cli/test_cli_memory.py `
                  -v --tb=short
 
   # ── Smoke: health check (fastest) ──

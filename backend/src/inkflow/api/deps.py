@@ -1,5 +1,6 @@
 """FastAPI 依赖注入 — 数据库 session 和 Service 获取."""
 
+import uuid
 from collections.abc import AsyncGenerator
 
 from fastapi import Depends
@@ -27,6 +28,7 @@ from inkflow.domain.services.draft_service import DraftService
 from inkflow.domain.services.extraction_service import ExtractionService
 from inkflow.domain.services.foreshadowing_service import ForeshadowingService
 from inkflow.domain.services.map_service import MapService
+from inkflow.domain.services.memory_service import MemoryService
 from inkflow.domain.services.outline_service import OutlineService
 from inkflow.domain.services.output_service import ExportService
 from inkflow.domain.services.project_service import ProjectService
@@ -63,8 +65,14 @@ from inkflow.infrastructure.database.repositories.extraction_run_repo import (
 from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
     SQLiteForeshadowingRepository,
 )
+from inkflow.infrastructure.database.repositories.memory_event_repo import (
+    SQLiteMemoryEventRepository,
+)
 from inkflow.infrastructure.database.repositories.outline_repo import (
     SQLiteOutlineRepository,
+)
+from inkflow.infrastructure.database.repositories.preference_repo import (
+    SQLitePreferenceRepository,
 )
 from inkflow.infrastructure.database.repositories.project_repo import (
     SQLiteProjectRepository,
@@ -135,14 +143,41 @@ def get_agent_run_repo(
     return SQLiteAgentRunRepository(db)
 
 
+def get_preference_repo(
+    db: AsyncSession = Depends(get_db),
+) -> SQLitePreferenceRepository:
+    """获取偏好仓储实例（F28 偏好查询端点用）."""
+    return SQLitePreferenceRepository(db)
+
+
+def get_memory_event_repo(
+    db: AsyncSession = Depends(get_db),
+) -> SQLiteMemoryEventRepository:
+    """获取记忆事件仓储实例（F28 事件查询端点用）."""
+    return SQLiteMemoryEventRepository(db)
+
+
+def get_memory_service(
+    db: AsyncSession = Depends(get_db),
+) -> MemoryService:
+    """获取 MemoryService 实例（偏好学习编排）."""
+    return MemoryService(
+        preference_repo=SQLitePreferenceRepository(db),
+        event_repo=SQLiteMemoryEventRepository(db),
+        project_repo=SQLiteProjectRepository(db),
+        audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
+    )
+
+
 def get_draft_service(
     db: AsyncSession = Depends(get_db),
 ) -> DraftService:
-    """获取 DraftService 实例（草稿列表/确认/拒绝）."""
+    """获取 DraftService 实例（草稿列表/确认/拒绝/编辑；F28 接入 diff 事件）."""
     return DraftService(
         draft_repo=SQLiteDraftRepository(db),
         chapter_service=get_chapter_service(db),
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
+        memory_service=get_memory_service(db),
     )
 
 
@@ -167,6 +202,7 @@ def get_agentic_writer_service(
         draft_repo=SQLiteDraftRepository(db),
         chapter_service=get_chapter_service(db),
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
+        memory_service=get_memory_service(db),
     )
     audit_service = AuditLogService(SQLiteAuditLogRepository(db))
     deps = AgenticWriterDeps(
@@ -205,6 +241,22 @@ def get_agentic_writer_service(
     )
 
 
+def _collect_explicit_texts(db: AsyncSession):
+    """收集显式设定文本（冲突过滤用）：角色档案 name 列表.
+
+    调用 get_character_service(db).list_characters(project_id) 取角色名；
+    返回形态以真实实现为准（tuple (list, total) 或 list——宽松兼容）。
+    """
+
+    async def loader(project_id: uuid.UUID) -> list[str]:
+        svc = get_character_service(db)
+        result = await svc.list_characters(project_id)
+        characters = result[0] if isinstance(result, tuple) else result
+        return [c.name for c in characters if getattr(c, "name", "")]
+
+    return loader
+
+
 def get_context_service(
     db: AsyncSession,
 ) -> ContextService:
@@ -214,6 +266,7 @@ def get_context_service(
     使用 Mock count_tokens（生产环境由 F5 LLMClient.count_tokens 替换）。
     """
     from inkflow.domain.models.context import ContextSourceType
+    from inkflow.infrastructure.context.preference_source import PreferenceSource
     from inkflow.infrastructure.context.sources import (
         CharacterSettingSource,
         ForeshadowingSource,
@@ -232,6 +285,11 @@ def get_context_service(
         ContextSourceType.CHARACTER_SETTING: CharacterSettingSource(),
         ContextSourceType.WORLD_SETTING: WorldSettingSource(),
         ContextSourceType.FORESHADOWING: ForeshadowingSource(SQLiteForeshadowingRepository(db)),
+        ContextSourceType.PREFERENCE: PreferenceSource(
+            SQLitePreferenceRepository(db),
+            project_repo,
+            explicit_texts=_collect_explicit_texts(db),
+        ),
     }
 
     return ContextService(
