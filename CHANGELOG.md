@@ -4,6 +4,27 @@
 
 > 版本口径以 [ADR-019 v5](adr/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
 
+## [0.6.0] - 2026-08-09
+
+### 新增
+- **F21 导出服务（#53，PR #214）**：TXT 单格式管线（v1.1 拍板仅 TXT）+ BookDocument 中间表示 + include_settings 设定附录开关（零新增依赖）
+- **F22 全文搜索（#54，PR #216）**：FTS5+jieba 词法主检索 + AI 语义检索（mode=semantic，复用 F14 RAG）+ 索引维护三态（懒重建/ai_maintenance 增量/手动全量）+ 跨项目 project_ids 选择器
+- **CLI 恒经 HTTP（#169，PR #213）**：ensure_kernel 接线 + infrastructure/http/ 客户端层（ADR-030 ② D1=A，冷启动 4.7s→热调用 ~214ms）
+- **世界观三连**：
+  - F35 地点树（#173，PR #215）：parent_id 邻接表 + 祖先链 + 级联删/reparent（真删语义）
+  - F36 地图视图（#174，PR #220）：maps/map_pins 新表 + 图片资产 + drill-down/面包屑 + 真删删文件
+  - F37 跨书复制（#175，PR #223）：递归子树 + 全局图 + pin 降级纯注释 + CLI/API 双入口
+- **F34 章节审计（#208，PR #219）**：audit_logs 轻量记录 + 字数/人设/设定漂移 LLM 检查 + CLI/GUI 双确认闭环
+- **设定库分类实体手动创建（#196，PR #207）**：空态 CTA 打开创建对话框（不再跳写作页）
+- **E2E 设置页补全（#141，PR #222）**：模板 CRUD/风险确认框/Agent 链/默认模型/快捷键（~10 用例，ADR-028）
+
+### 修复
+- default_words 全局值重启加载（#198，PR #205）：设置页初始值回退读 fetchSettings（无项目不再显示兜底 800000）
+- 设置保存反馈统一化（#199，PR #206）：tray hint/close behavior/font 切换顶部「已保存」指示
+
+### 变更
+- 0.6.0 开工前文档一致性修复（#201，PR #202）：spec 头部状态 ×4、ADR 条数 28→30、specs/README 索引、16 个长 spec 快速导航块、spec 篇幅纪律立规
+
 ## [0.5.0] - 2026-08-08
 
 ### 新增
@@ -98,6 +119,7 @@
   - F8 CI 测试分层（#23，PR #24/#25）
 - **P0-11 云端接口 Protocol（#34，PR #36/#37）**：Auth / Database / Storage / User / Sync / MCPTransport
 
+[0.6.0]: https://github.com/zhx-xi/InkFlow/milestone/6
 [0.5.0]: https://github.com/zhx-xi/InkFlow/releases/tag/v0.5.0
 [0.4.0]: https://github.com/zhx-xi/InkFlow/releases/tag/v0.4.0
 [0.3.1]: https://github.com/zhx-xi/InkFlow/milestone/9

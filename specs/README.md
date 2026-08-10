@@ -52,6 +52,18 @@
 | F32 设置持久化（设置域横切型） | [`f32-settings-persistence/spec.md`](f32-settings-persistence/spec.md) | ✅ 已实现（PR #176+#197） |
 | F33 CLI 独立发布产物 | [`f33-cli-dist/spec.md`](f33-cli-dist/spec.md) | ✅ 已实现（PR #181） |
 
+### 导出 + 搜索 + 世界观（0.6.0）
+
+| Feature | 规格 | 状态 |
+|---------|------|------|
+| F21 导出服务 | [`f21-export-service/spec.md`](f21-export-service/spec.md) | ✅ 已实现（PR #214） |
+| F22 全文搜索 | [`f22-search-service/spec.md`](f22-search-service/spec.md) | ✅ 已实现（PR #216） |
+| F34 章节审计 | [`f34-chapter-audit/spec.md`](f34-chapter-audit/spec.md) | ✅ 已实现（PR #219） |
+| F38 CLI 恒经 HTTP（传输改造型） | [`f38-cli-http/spec.md`](f38-cli-http/spec.md) | ✅ 已实现（PR #213） |
+| F35 世界观地点层级（树型） | [`f35-world-location-tree/spec.md`](f35-world-location-tree/spec.md) | ✅ 已实现（PR #215） |
+| F36 世界观地图视图（资产呈现型） | [`f36-world-map/spec.md`](f36-world-map/spec.md) | ✅ 已实现（PR #220） |
+| F37 世界观跨书复制（复用型） | [`f37-world-copy/spec.md`](f37-world-copy/spec.md) | ✅ 已实现（PR #223） |
+
 ### Agent 化升级（0.7.0，规划中）
 
 | Feature | 规格 | 状态 |
@@ -60,4 +72,4 @@
 
 ---
 
-> F17 空置（PRD §6.2 标题残留编号）；F18 云端（2.0.0）、F20 MCP（1.0.0）、F21 导出（0.6.0）、F22 搜索（0.6.0）、F27-F29 规划中无 spec；F25 daemon 已移除（ADR-029）不复用。
+> F17 空置（PRD §6.2 标题残留编号）；F18 云端（2.0.0）、F20 MCP（1.0.0）、F27-F29 规划中无 spec；F25 daemon 已移除（ADR-029）不复用。

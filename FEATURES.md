@@ -103,6 +103,25 @@
 
 **0.5.0 交付实证**：16/16 issues 全关（milestone #5 2026-08-08 关闭）· rc1→rc4 预发布迭代后 v0.5.0 正式发布（2026-08-08，Latest）。
 
+### 1.8 导出 + 搜索 + 世界观（0.6.0，2026-08-09 里程碑关闭 ✅）
+
+| Issue | 内容 | 交付 | 状态 |
+|-------|------|------|------|
+| #53 | F21 导出服务：TXT 单格式管线（v1.1 拍板仅 TXT）+ BookDocument 中间表示 + include_settings 附录开关 | PR #214 | ✅ |
+| #54 | F22 全文搜索：FTS5+jieba 词法 + AI 语义检索（mode=semantic，复用 F14 RAG）+ 索引维护三态 + 跨项目 project_ids | PR #216 | ✅ |
+| #169 | F38 CLI 恒经 HTTP：ensure_kernel 接线 + infrastructure/http/ 客户端层（ADR-030 ② D1=A，冷启动 4.7s→热调用 ~214ms） | PR #213 | ✅ |
+| #173 | F35 世界观地点层级：parent_id 树 + 祖先链 + 级联删/reparent（真删语义，提取建树后置 0.7.0） | PR #215 | ✅ |
+| #174 | F36 世界观地图视图：maps/map_pins 新表 + 图片资产 + drill-down/面包屑 + 真删删文件 | PR #220 | ✅ |
+| #175 | F37 世界观跨书复制：递归子树 + 全局图（Q3=B）+ pin 降级纯注释 + CLI/API 双入口 | PR #223 | ✅ |
+| #208 | F34 章节审计：audit_logs 轻量记录 + 字数/人设/设定漂移 LLM 检查 + CLI/GUI 双确认闭环 | PR #219 | ✅ |
+| #196 | 设定库分类实体手动创建（空态 CTA 打开创建对话框，不再跳写作页） | PR #207 | ✅ |
+| #198 | default_words 全局值重启加载（初始值回退读 fetchSettings） | PR #205 | ✅ |
+| #199 | 设置保存反馈统一化（tray hint/close behavior/font 顶部「已保存」） | PR #206 | ✅ |
+| #141 | E2E 设置页补全（模板 CRUD/风险确认框/Agent 链/默认模型/快捷键，~10 用例） | PR #222 | ✅ |
+| #201 | 0.6.0 开工前文档一致性修复（15🔴 漂移 + spec 导航 + 立规） | PR #202 | ✅ |
+
+**0.6.0 交付实证**：12/12 issues 全关（milestone #6 2026-08-09 关闭）· 新增 f34-f38 五个模块变体（审计型/传输改造型/树型/资产呈现型/复用型）· 全链路 CLI 恒经 HTTP 单路径（ADR-030 ② 落地）。
+
 ---
 
 ## 二、规划中功能
@@ -111,17 +130,7 @@
 |---------|------|------|----------|-------|------|
 | skills 包 | **1.0.0** | 小说写作 skills（源码单一真相 + 三通道分发） | 无 | [#70](https://github.com/zhx-xi/InkFlow/issues/70) | 🔜 已建 issue |
 | F20 MCP Server | **1.0.0** | MCP Server（stdio 薄客户端经 HTTP），≥15 工具（ADR-023 v2） | #166（内核冷启动基建，✅ 已实现 PR #171） | [#49](https://github.com/zhx-xi/InkFlow/issues/49) | 🔜 已建 issue |
-| CLI 恒经 HTTP | **0.6.0** | CLI 统一经 HTTP 访问内核（ADR-030 ② D1=A，实测热调用 ~214ms vs 直连 4.7s） | #166（✅ 已实现 PR #171） | [#169](https://github.com/zhx-xi/InkFlow/issues/169) | 🔜 已建 issue |
-| E2E 设置页补全 | **0.6.0** | 设置页 E2E 补全（模板管理/Agent/快捷键） | #139（✅ 已实现 PR #156） | [#141](https://github.com/zhx-xi/InkFlow/issues/141) | 🔜 已建 issue |
-| 世界观地理层级 | **0.6.0** | 地点树（parent_id + 祖先链 + 提取增强） | 无 | [#173](https://github.com/zhx-xi/InkFlow/issues/173) | 🔜 已建 issue（设计书就绪） |
-| 世界观地图视图 | **0.6.0** | 图片 + pin + 地点关联（地图树 + 面包屑） | #173 | [#174](https://github.com/zhx-xi/InkFlow/issues/174) | 🔜 已建 issue |
-| 世界观跨书复用 | **0.6.0** | 复制/导出（系列小说设定沉淀，引用共享后置） | #173（地图复制依赖 #174） | [#175](https://github.com/zhx-xi/InkFlow/issues/175) | 🔜 已建 issue |
-| 设定库分类实体手动创建 | **0.6.0** | 角色/世界观等空态手动创建（当前占位跳写作页） | 无 | [#196](https://github.com/zhx-xi/InkFlow/issues/196) | 🔜 已建 issue |
-| default_words 全局值重启加载 | **0.6.0** | 设置页初始值读 fetchSettings（无项目时显示兜底 800000 缺陷） | 无 | [#198](https://github.com/zhx-xi/InkFlow/issues/198) | 🔜 已建 issue |
-| 设置保存反馈统一化 | **0.6.0** | tray hint/close behavior 等切换补顶部「已保存」提示 | 无 | [#199](https://github.com/zhx-xi/InkFlow/issues/199) | 🔜 已建 issue |
 | ~~F25 daemon~~ | ~~0.5.0~~ | ~~daemon 后台写作~~（**已移除**，ADR-029：伪需求；真实意图=外部 agent 经 MCP/skills 调用，由 F19 serve + F20 MCP + skills 包覆盖） | 无 | [#52](https://github.com/zhx-xi/InkFlow/issues/52) | ❌ 已关闭（2026-08-07） |
-| F21 导出服务 | **0.6.0** | 导出 EPUB / MD / TXT / DOCX（≥3 格式） | 无 | [#53](https://github.com/zhx-xi/InkFlow/issues/53) | 🔜 已建 issue |
-| F22 全文搜索 | **0.6.0** | 全文搜索 | 无 | [#54](https://github.com/zhx-xi/InkFlow/issues/54) | 🔜 已建 issue |
 | 1.0.0 发布验收 | **1.0.0** | CLI + GUI + skills + MCP 四界面齐备；跨平台打包（macOS/Linux）+ 文档完善 + Phase 3 Gate | 以上全部 | [#55](https://github.com/zhx-xi/InkFlow/issues/55) | 🔜 已建 issue |
 | F18 云端 Web 用户端 | **2.0.0** | 云 Web UI（前端一套两用，移出单机） | — | [#47](https://github.com/zhx-xi/InkFlow/issues/47) | 🔜 已建 issue |
 | 云端总：云存档 + 异地写作 | **2.0.0** | 用户 API + Admin 后台 + GUI 远程模式（PostgreSQL + JWT + BYOK；无 CRDT，LWW + 修订历史） | P0-11 协议（已就绪） | [#71](https://github.com/zhx-xi/InkFlow/issues/71) | 🔜 已建 issue |
@@ -141,7 +150,7 @@
 | 0.3.1 | 质量加固补丁 | #86 LLM 修复 · #87 LangGraph 重构 · #92 真实 AI CI · #104 覆盖率（后端 98.9%/96.3% 分支） | ✅ 已交付（PR #108/#110/#111/#114-#117，2026-08-06） |
 | 0.4.0 | 打包 + GUI 演进 | F19 打包（exe / 安装包 / 便携 ZIP）· 导航重构 · 模型管理 · Agent 模板 | ✅ 已交付（2026-08-07 v0.4.0 正式发布，PR #120/#121/#122/#131/#132/#135/#144/#145） |
 | 0.5.0 | Agent 集成 | F24 会话 · E2E 增强（#139/#140）· 设置持久化（#152）· 本地内核服务化（#166 冷启动 / #167 托盘 / #168 CLI 产物）· 发布修复链（#183/#185/#187/#188/#189/#192/#195） | ✅ 已交付（2026-08-08 v0.5.0 正式发布，PR #156/#157/#171/#172/#176/#181/#184/#186/#190/#191/#193/#194/#197） |
-| 0.6.0 | 导出 + 搜索 + 世界观 | F21 导出 · F22 全文搜索 · 世界观三连（#173/#174/#175）· CLI 恒经 HTTP（#169）· E2E 设置页（#141）· 设定库手动创建（#196）· default_words 重启加载（#198）· 保存反馈统一化（#199） | 🔜 已排期（10 issues） |
+| 0.6.0 | 导出 + 搜索 + 世界观 | F21 导出 · F22 全文搜索 · F34 章节审计 · 世界观三连（#173/#174/#175）· CLI 恒经 HTTP（#169）· E2E 设置页（#141）· 设定库手动创建（#196）· default_words 重启加载（#198）· 保存反馈统一化（#199） | ✅ 已交付（2026-08-09 里程碑关闭，PR #202/#205/#206/#207/#213/#214/#215/#216/#219/#220/#222/#223） |
 | 1.0.0 | 本地完全可用 | CLI + GUI + skills + MCP 四界面齐备 + 跨平台 + 文档 + Phase 3 Gate | 🔜 |
 | 2.0.0 | 云端 | F18 云 Web · 用户 API · Admin 后台 · GUI 远程模式（云存档/异地写作） | 🔜 |
 
@@ -169,4 +178,4 @@
 
 ---
 
-*本文件由功能盘点建立于 2026-08-02（0.2.0 交付后），与 AGENTS.md / ADR-019 口径一致（v5 修订 2026-08-08：0.5.0 交付 + 0.6.0 排期）。*
+*本文件由功能盘点建立于 2026-08-02（0.2.0 交付后），与 AGENTS.md / ADR-019 口径一致（v5 修订 2026-08-09：0.5.0/0.6.0 交付 + 世界观三连 + 章节审计）。*
