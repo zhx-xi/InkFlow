@@ -233,7 +233,9 @@ class DraftService:
         if draft.status != DraftStatus.DRAFT:
             message = "草稿已确认" if draft.status is DraftStatus.CONFIRMED else "草稿已拒绝"
             raise DraftStateError(message)
-        updated = await self._repo.update_content(draft_id, content)  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按契约提供 update_content
+        updated: Draft | None = await self._repo.update_content(  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按契约提供 update_content；注解收窄 Any（镜像 confirm 写法）
+            draft_id, content
+        )
         if updated is None:
             raise DraftNotFoundError("草稿不存在")
         # F28 事件捕获（可选注入；关闭时 memory_service 内部零行为）
