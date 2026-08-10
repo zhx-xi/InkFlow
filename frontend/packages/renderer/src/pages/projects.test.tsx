@@ -12,6 +12,12 @@
  * - 新建对话框（role="dialog"）：书名必填 1-100（空 → 「书名不能为空」，不发 POST）
  *   / 题材 11 枚举（Genre） / 语言（含 zh-CN） / 目标字数默认 800000
  * - 「创建」→ POST /api/v1/projects → 201 → navigate('/writing')（渲染于 MemoryRouter 下断言）
+ * - #232 点击项目卡片 → selectProject(p.id)（store currentProjectId 切换）+ navigate('/writing')：
+ *   ① ProjectCard 根元素可点击——GREEN 必须：onClick prop（ProjectsPage 传入）+ role="button" +
+ *      tabIndex={0} + Enter/Space 键盘触发（cursor-pointer 为样式，不测）
+ *   ② ProjectsPage 卡片 onClick = useProjectStore.selectProject(p.id) + useNavigate()('/writing')
+ *      （复用 NewProjectDialog 创建成功后的既有跳转模式）
+ *   ③ 多项目切换：点击不同卡片 → currentProjectId 分别切换（p1 / p2）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -260,5 +266,55 @@ describe('项目页 — 空列表引导化空态（#98 §5.2.6）', () => {
     await screen.findAllByTestId('project-card');
     expect(screen.getByTestId('new-project-card')).toBeInTheDocument();
     expect(screen.queryByTestId('projects-empty')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * #232 点击项目卡片跳转写作页（2026-08-10 增量契约，Issue #232）
+ *
+ * ⚠️ 契约：GREEN 实现必须匹配（RED 阶段本 describe 全部 FAIL——卡片无 onClick）：
+ * - ProjectCard 根元素可点击：role="button"（可访问名 = 卡片文本）+ tabIndex={0}（React 渲染 tabindex="0"）
+ * - 点击卡片 → useProjectStore.selectProject(id)（currentProjectId 切换为被点项目）
+ *   + navigate('/writing')（writing-probe 出现；复用 NewProjectDialog 创建成功跳转模式）
+ * - 多项目切换：p1 / p2 卡片分别点击 → currentProjectId 对应切换
+ * - 键盘可达：卡片 focus 后 Enter 触发同样跳转（Space 可选，契约不钉）
+ * - 既有用例零回归：cards 数组顺序 = mock 返回顺序（p1 青云志 / p2 山海经）
+ */
+describe('项目页 — 点击卡片跳转写作页（#232）', () => {
+  it('点击第一张卡片（p1 青云志）→ currentProjectId 切换 + 跳转写作页', async () => {
+    const user = userEvent.setup();
+    renderProjectsPage();
+    const cards = await screen.findAllByTestId('project-card');
+
+    await user.click(cards[0]);
+
+    expect(await screen.findByTestId('writing-probe')).toBeInTheDocument();
+    expect(useProjectStore.getState().currentProjectId).toBe('p1');
+  });
+
+  it('点击第二张卡片（p2 山海经）→ 项目上下文切换为 p2（多项目切换）', async () => {
+    const user = userEvent.setup();
+    renderProjectsPage();
+    const cards = await screen.findAllByTestId('project-card');
+
+    await user.click(cards[1]);
+
+    expect(await screen.findByTestId('writing-probe')).toBeInTheDocument();
+    expect(useProjectStore.getState().currentProjectId).toBe('p2');
+  });
+
+  it('键盘可达：卡片 role=button + tabindex=0，Enter 触发跳转', async () => {
+    const user = userEvent.setup();
+    renderProjectsPage();
+    const card = (await screen.findAllByTestId('project-card'))[0];
+
+    expect(card).toHaveAttribute('role', 'button');
+    expect(card).toHaveAttribute('tabindex', '0');
+
+    card.focus();
+    await user.keyboard('{Enter}');
+
+    expect(await screen.findByTestId('writing-probe')).toBeInTheDocument();
+    expect(useProjectStore.getState().currentProjectId).toBe('p1');
   });
 });

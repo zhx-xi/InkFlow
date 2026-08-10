@@ -1,6 +1,7 @@
 /** 项目页（spec §4.2.2）：卡片网格 + 新建对话框，双入口 + 创建后跳转写作页 */
 import { useEffect, useState } from 'react';
 import { BookOpen } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { NewProjectDialog } from '../components/NewProjectDialog';
 import { ProjectCard } from '../components/ProjectCard';
 import { Skeleton } from '../components/ui/skeleton';
@@ -10,12 +11,14 @@ import { ensureApiReady } from '../api/client';
 
 export function ProjectsPage() {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const projects = useProjectStore((s) => s.projects);
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const loading = useProjectStore((s) => s.loading);
   const error = useProjectStore((s) => s.error);
   const chapterProgress = useProjectStore((s) => s.chapterProgress);
   const loadProjects = useProjectStore((s) => s.loadProjects);
+  const selectProject = useProjectStore((s) => s.selectProject);
   const [dialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
@@ -88,6 +91,10 @@ export function ProjectsPage() {
               project={p}
               progress={chapterProgress[p.id]}
               isCurrent={currentProjectId === p.id}
+              onClick={() => {
+                selectProject(p.id);
+                navigate('/writing');
+              }}
             />
           ))}
           <button
