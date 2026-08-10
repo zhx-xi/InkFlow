@@ -121,6 +121,7 @@ class ProjectCreate(BaseModel):
         language: 写作语言，默认为 zh-CN.
         target_words: 目标字数，默认为 0（不限）.
         config: AI 写作配置.
+        template_id: 新建项目引用的 AgentTemplate id（None = 默认模板）.
     """
 
     name: str
@@ -128,6 +129,7 @@ class ProjectCreate(BaseModel):
     language: str = "zh-CN"
     target_words: int = 0
     config: ProjectConfig = Field(default_factory=ProjectConfig)
+    template_id: int | None = None
 
     @field_validator("name")
     @classmethod

@@ -213,3 +213,122 @@ test('退出回收：app.close() → 内核 pid 不再存活（无僵尸）', as
   // spec §3.2.5 / §3.7 M4：关闭后内核必须被回收（优雅 kill → 3s 超时 → taskkill 兜底）
   expect(isAlive(pid), `内核 pid=${pid} 应已退出`).toBe(false);
 });
+
+// ────────────────────────────────────────────────────────────────
+// 4. #143 壳 chrome：窗口控制按钮（自绘 header-wc-*；#106 拍板）
+//    断言走主进程 BrowserWindow 状态（Playwright 无头启动异步延迟 → 轮询）
+// ────────────────────────────────────────────────────────────────
+test('窗口控制：最小化按钮 → isMinimized 轮询 true → restore 恢复', async () => {
+  const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+  try {
+    const window = await app.firstWindow();
+    await waitKernelInfo(app);
+
+    await window.getByTestId('header-wc-min').click();
+    await expect
+      .poll(
+        () =>
+          app.evaluate(({ BrowserWindow }) => {
+            const win = BrowserWindow.getAllWindows()[0];
+            return win ? win.isMinimized() : false;
+          }),
+        { timeout: 10_000 }
+      )
+      .toBe(true);
+
+    // 还原（最小化后窗口不可交互，主进程 restore）
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.restore());
+    await expect
+      .poll(
+        () =>
+          app.evaluate(({ BrowserWindow }) => {
+            const win = BrowserWindow.getAllWindows()[0];
+            return win ? win.isMinimized() : true;
+          }),
+        { timeout: 10_000 }
+      )
+      .toBe(false);
+  } finally {
+    await app.close();
+  }
+});
+
+test('窗口控制：最大化 ↔ 还原（aria-label Maximize↔Restore 跟随 IPC push）', async () => {
+  const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+  try {
+    const window = await app.firstWindow();
+    await waitKernelInfo(app);
+
+    const maxBtn = window.getByTestId('header-wc-max');
+    await expect(maxBtn).toHaveAttribute('aria-label', 'Maximize');
+
+    await maxBtn.click();
+    await expect
+      .poll(
+        () =>
+          app.evaluate(({ BrowserWindow }) => {
+            const win = BrowserWindow.getAllWindows()[0];
+            return win ? win.isMaximized() : false;
+          }),
+        { timeout: 10_000 }
+      )
+      .toBe(true);
+    // IPC push window:maximized-changed → 按钮 aria-label 切换 Restore
+    await expect(maxBtn).toHaveAttribute('aria-label', 'Restore');
+
+    // 还原
+    await maxBtn.click();
+    await expect
+      .poll(
+        () =>
+          app.evaluate(({ BrowserWindow }) => {
+            const win = BrowserWindow.getAllWindows()[0];
+            return win ? win.isMaximized() : true;
+          }),
+        { timeout: 10_000 }
+      )
+      .toBe(false);
+    await expect(maxBtn).toHaveAttribute('aria-label', 'Maximize');
+  } finally {
+    await app.close();
+  }
+});
+
+test('窗口控制：关闭按钮（tray 语义）→ 窗口隐藏 + 内核存活', async () => {
+  const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+  try {
+    const window = await app.firstWindow();
+    const kernel = await waitKernelInfo(app);
+    const pid = kernel.pid;
+
+    // 防 DB 残留 close_behavior='quit'（F32 M6 用例）破坏 tray 语义：显式复位
+    await app.evaluate(
+      (_electronModule: unknown, v: string) => {
+        (globalThis as unknown as { __trayActions?: { setCloseBehavior(x: 'tray' | 'quit'): void } })
+          .__trayActions?.setCloseBehavior(v as 'tray' | 'quit');
+      },
+      'tray'
+    );
+
+    // 自绘关闭按钮 UI 路径（renderer → window:close IPC → mainWindow.close() → 拦截隐藏）
+    await window.getByTestId('header-wc-close').click();
+
+    // 窗口隐藏 + 内核保持（tray 语义：preventDefault + hide）
+    await expect
+      .poll(
+        () =>
+          app.evaluate(() => {
+            const info = (globalThis as unknown as {
+              __trayInfo?: { windowVisible: boolean };
+            }).__trayInfo;
+            return info ? info.windowVisible : true;
+          }),
+        { timeout: 15_000 }
+      )
+      .toBe(false);
+    expect(isAlive(pid), 'tray 关闭后内核必须存活').toBe(true);
+    expect(await healthCheck(kernel)).toBe(200);
+  } finally {
+    await app.close();
+  }
+});

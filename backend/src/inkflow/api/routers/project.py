@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_db, get_project_service
-from inkflow.domain.models.project import ProjectCreate, ProjectUpdate
+from inkflow.domain.models.project import ProjectConfig, ProjectCreate, ProjectUpdate
 from inkflow.domain.services.project_service import ProjectService
 
 
@@ -41,12 +41,15 @@ async def create_project(
 ):
     """创建新项目。"""
     service = _get_svc(db)
+    config = data.config or ProjectConfig()
+    if data.template_id is not None:
+        config = config.model_copy(update={"template_id": str(data.template_id)})
     project = await service.create_project(
         name=data.name,
         genre=data.genre,
         language=data.language,
         target_words=data.target_words,
-        config=data.config,
+        config=config,
     )
     return project.model_dump(mode="json")
 
