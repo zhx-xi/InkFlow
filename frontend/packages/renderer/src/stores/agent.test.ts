@@ -16,8 +16,11 @@
  *     PATCH /api/v1/projects/{projectId}，body { config: 当前 config }
  *     若 apiKeyDraft 非空 → 先 POST /api/v1/settings/llm-keys（落 key，provider 取参数）→ 清空 draft → 再 PATCH config
  *
- * 表单语义契约（spec §4.2.3）：
- * - config.agent_*: string | null | undefined —— null = 默认模型（启用），undefined = 字段缺失（从管线移除）
+ * 表单语义契约（spec §4.2.3 + #225 拍板 2026-08-10）：
+ * - config.agent_*: string | null —— null = 关闭（禁用该角色）；字符串 = 开启且指定模型；
+ *   字符串 "__default__"（AGENT_DEFAULT_SENTINEL）= 跟随默认（预留，前端本期不暴露中间态 UI）
+ * - 关闭必须显式发送 null：undefined 会被 JSON.stringify 省略 → 后端视为「缺失」（不改字段）
+ *   → 重启读回旧值 → 开关误显示开启（#225 根因链，E3-3 E2E 实证）
  * - temperature: 0.0-2.0（后端 ProjectConfig Field ge=0 le=2）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -69,14 +72,17 @@ describe('agent store — ProjectConfig 表单状态', () => {
     expect(c.writing_style).toBe('文风细腻');
   });
 
-  it('null = 默认模型语义：agent_architect 显式置 null 表示「启用 + 默认模型」', () => {
+  it('null = 关闭语义（#225）：agent_architect 显式置 null（禁用角色），JSON 序列化保留', () => {
     act(() => {
       useAgentStore.getState().setConfig({ agent_architect: null });
     });
     expect(useAgentStore.getState().config.agent_architect).toBeNull();
+    // 线缆语义（#225）：null 被 JSON.stringify 保留 → PATCH body 含 agent_architect: null
+    // （与 undefined 省略键相反——后端可区分「关闭」vs「缺失」）
+    expect(JSON.stringify(useAgentStore.getState().config)).toContain('"agent_architect":null');
   });
 
-  it('undefined = 从管线移除：值为 undefined，序列化（JSON.stringify）时字段缺失', () => {
+  it('undefined 不再用于关闭（#225 语义反转）：序列化省略是 JSON 事实，组件层禁止产生 undefined', () => {
     act(() => {
       useAgentStore.getState().setConfig({ agent_writer: 'gpt-4o' });
     });
@@ -85,7 +91,8 @@ describe('agent store — ProjectConfig 表单状态', () => {
     });
     const cfg = useAgentStore.getState().config;
     expect(cfg.agent_writer).toBeUndefined();
-    // 线缆语义：PATCH body JSON 序列化后字段缺失 = 后端视为未提供（从管线移除）
+    // JSON 事实：undefined 键被省略 → 后端视为「缺失」（不改字段）→ 重启读回旧值 →
+    // 开关误显示开启——#225 根因，关闭必须显式 null（见 AgentChainCard 契约）
     expect(JSON.stringify(cfg)).not.toContain('agent_writer');
   });
 
@@ -187,6 +194,25 @@ describe('agent store — REST actions', () => {
       body: { config: { model: 'gpt-4o' } },
     });
     expect(useAgentStore.getState().apiKeyDraft).toBe('');
+  });
+
+  it('saveConfig：#225 关闭态（null）→ PATCH body config 含 agent_writer: null（显式 null 非缺键）', async () => {
+    // 确认型：store 透传 config（含 null 键）——锁「关闭 = 显式 null」线缆不被过滤/省略
+    apiFetchMock.mockResolvedValue({ ok: true });
+    act(() => {
+      useAgentStore.getState().setConfig({ model: 'gpt-4o', agent_writer: 'deepseek/deepseek-chat' });
+    });
+    act(() => {
+      useAgentStore.getState().setConfig({ agent_writer: null });
+    });
+    await act(async () => {
+      await useAgentStore.getState().saveConfig('p1');
+    });
+    const patchCall = apiFetchMock.mock.calls.find((c) => c[0] === '/api/v1/projects/p1');
+    expect(patchCall).toBeTruthy();
+    const body = (patchCall![1] as { body: { config: ProjectConfig } }).body;
+    expect(body.config.agent_writer).toBeNull(); // null 键存在 → JSON.stringify 保留 → 后端落库 null
+    expect(body.config.model).toBe('gpt-4o'); // 未涉及字段透传
   });
 });
 

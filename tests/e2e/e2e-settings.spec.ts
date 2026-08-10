@@ -409,9 +409,9 @@ test('设置页：默认模型下拉选 deepseek → 直调内核确认 PATCH �
 });
 
 // ────────────────────────────────────────────────────────────────
-// E3-3 Agent 链开关即改即存（有项目：PATCH 落库确认）
+// E3-3 Agent 链开关即改即存（有项目：PATCH 落库确认；#225 语义升级 2026-08-10）
 // ────────────────────────────────────────────────────────────────
-test('设置页：Agent 链开关即改即存（Writer 关 → PATCH 落库确认）', async () => {
+test('设置页：Agent 链开关即改即存（#225 三态语义：null=关闭 / 字符串=开启 / __default__=跟随默认）', async () => {
   const { app, window, kernel } = await launchApp();
   try {
     await window.evaluate(() => localStorage.clear());
@@ -426,35 +426,121 @@ test('设置页：Agent 链开关即改即存（Writer 关 → PATCH 落库确�
     expect(project).toBeTruthy();
     const projectId = project.id as string;
 
-    // PATCH 落库锚点基线：点开关前先 GET 单项目记录 updated_at（project_repo.update 每次刷新 updated_at）
-    const baseline = (await fetchKernel(kernel, `/api/v1/projects/${projectId}`)).updated_at as string;
-
-    // 设置页 → Agent 分类 → Writer 开关：初始 on（新项目默认 config.agent_* = null = 跟随默认模型，
-    // checked = value !== undefined 为 true）→ 点关 → off（config.agent_writer 变 undefined）
+    // 设置页 → Agent 分类 → Writer 开关
     await gotoNav(window, '设置');
     await window.getByTestId('settings-cat-agent').click();
     const chain = window.getByTestId('agent-chain-card');
     await expect(chain).toBeVisible();
     const writer = chain.getByRole('switch', { name: 'Writer 执笔' });
-    await expect(writer).toBeChecked();
-    await writer.click();
+
+    // #225 语义：新项目默认 config.agent_* = null = 关闭 → 初始 off
+    // （旧实现 checked = value !== undefined → null 误显示 on，#225 根因）
     await expect(writer).not.toBeChecked();
 
-    // ⚠️ off 状态（undefined）经 PATCH JSON.stringify 省略 → 后端 ProjectConfig 解析默认 None → 读回
-    // null → 开关恢复 on：off 持久化受 null 语义限制（#105 遗留，已知限制，另立 issue 跟踪）。
-    // 故落库锚点不能用 config.agent_writer===null（默认即 null，恒真无效断言）；改用 updated_at 变化
-    // 证明「开关操作 → PATCH 链路真实落库」（fire-and-forget，轮询等待）
+    // 点开 → sentinel "__default__"（跟随默认，前端不暴露中间态 UI）
+    await writer.click();
+    await expect(writer).toBeChecked();
+    // 开态落库断言（#225：字符串值落库 roundtrip；旧实现开 = null → 本断言 RED）
     await expect
       .poll(
         async () => {
           const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
-          return r.updated_at;
+          return r.config?.agent_writer;
         },
         { timeout: 10_000 }
       )
-      .not.toBe(baseline);
+      .toBe('__default__');
+
+    // 点关 → 显式 null（禁用角色）→ 开关 off
+    await writer.click();
+    await expect(writer).not.toBeChecked();
+    // 关态落库断言（#225 核心：显式 null 落库，替代旧 updated_at 锚点——
+    // 旧实现关闭发 undefined 被省略 → 后端缺失不改 → 此处恒非 null 或保持旧值）
+    await expect
+      .poll(
+        async () => {
+          const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
+          return r.config?.agent_writer;
+        },
+        { timeout: 10_000 }
+      )
+      .toBeNull();
   } finally {
     await app.close();
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// #225 M2：Agent 链开关「关闭」重启持久化（二次 launch 同数据目录，F32 M3 模式）
+// ────────────────────────────────────────────────────────────────
+test('#225 M2：Agent 链开关关闭 → 重启（二次 launch 同数据目录）→ 开关仍关闭', async () => {
+  test.setTimeout(240_000);
+  const userDataDir = mkdtempSync(path.join(tmpdir(), 'inkflow-e2e-225-agent-'));
+
+  // ── 第一程：创建项目 → Writer 点开（落库 __default__）→ 点关（落库 null）──
+  const first = await launchAppWithUserData(userDataDir);
+  let projectId: string;
+  try {
+    await first.window.evaluate(() => localStorage.clear());
+    await first.window.reload();
+    await expect(first.window.getByTestId('app-nav')).toBeVisible();
+
+    const name = `E2E-225-Persist-${Date.now()}`;
+    await createProjectViaUi(first.window, name);
+    const list = await fetchKernel(first.kernel, '/api/v1/projects');
+    const project = list.items.find((p: { name: string }) => p.name === name);
+    expect(project).toBeTruthy();
+    projectId = project.id as string;
+
+    await gotoNav(first.window, '设置');
+    await first.window.getByTestId('settings-cat-agent').click();
+    const writer = first.window.getByTestId('agent-chain-card').getByRole('switch', { name: 'Writer 执笔' });
+    await expect(writer).not.toBeChecked(); // 新项目默认 null = 关闭
+
+    // 开 → 关（关闭 = 显式 null 落库）
+    await writer.click();
+    await expect(writer).toBeChecked();
+    await writer.click();
+    await expect(writer).not.toBeChecked();
+    await expect
+      .poll(
+        async () => {
+          const r = await fetchKernel(first.kernel, `/api/v1/projects/${projectId}`);
+          return r.config?.agent_writer;
+        },
+        { timeout: 10_000 }
+      )
+      .toBeNull(); // 关闭态显式 null 已落库（非缺键/非旧值）
+  } finally {
+    await first.app.close();
+  }
+
+  // ── 第二程：复用同一数据目录重启 → 后端权威 + UI 开关状态双断言 ──
+  const second = await launchAppWithUserData(userDataDir);
+  try {
+    await second.window.evaluate(() => localStorage.clear());
+    await second.window.reload();
+    await expect(second.window.getByTestId('app-nav')).toBeVisible();
+
+    // ① 后端权威（不依赖 UI 导航，#232 未合时 currentProjectId 无法经卡片设置）：
+    //    重启后内核读同一 DB → config.agent_writer 仍为 null（关闭）
+    const r = await fetchKernel(second.kernel, `/api/v1/projects/${projectId}`);
+    expect(r.config?.agent_writer).toBeNull();
+
+    // ② UI 状态：设置页 Agent 分类 → Writer 开关显示关闭（重启后不误恢复开启）
+    await gotoNav(second.window, '设置');
+    await second.window.getByTestId('settings-cat-agent').click();
+    await expect(
+      second.window.getByTestId('agent-chain-card').getByRole('switch', { name: 'Writer 执笔' })
+    ).not.toBeChecked();
+  } finally {
+    await second.app.close();
+  }
+
+  try {
+    rmSync(userDataDir, { recursive: true, force: true });
+  } catch {
+    // 临时目录清理失败（Windows 文件锁）不阻塞用例
   }
 });
 

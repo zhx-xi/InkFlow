@@ -105,3 +105,50 @@ class TestProjectConfigDefaultWords:
         """model_dump 序列化 round-trip 保留 default_words 字段值."""
         config = ProjectConfig(default_words=50000)
         assert config.model_dump()["default_words"] == 50000
+
+
+class TestProjectConfigAgentSemantics:
+    """ProjectConfig.agent_* 三态语义契约（#225，方案 1 + sentinel 扩展，2026-08-10 拍板）.
+
+    契约（M3）：
+    - 显式 null = 关闭（禁用该角色）
+    - 字符串 = 开启且指定模型
+    - 字符串 "__default__"（AGENT_DEFAULT_SENTINEL 常量）= 跟随默认（预留，前端本期不暴露）
+    - 空字符串（含纯空白）无意义 → ValidationError
+
+    RED 预期：常量未实现 → 用例体惰性 import 抛 ImportError（FAILED，非 ERROR）；
+    空串校验未实现 → pytest.raises DID NOT RAISE（干净断言 FAIL）。
+    """
+
+    def test_agent_sentinel_constant_defined(self):
+        """AGENT_DEFAULT_SENTINEL 常量存在且值为 "__default__"（用例体惰性 import = RED 失败点）."""
+        from inkflow.domain.models.project import AGENT_DEFAULT_SENTINEL
+
+        assert AGENT_DEFAULT_SENTINEL == "__default__"
+
+    def test_agent_sentinel_accept_and_roundtrip(self):
+        """sentinel "__default__" 合法（跟随默认预留）：构造不报错 + model_dump roundtrip 保留."""
+        from inkflow.domain.models.project import AGENT_DEFAULT_SENTINEL
+
+        config = ProjectConfig(agent_writer=AGENT_DEFAULT_SENTINEL)
+        assert config.agent_writer == AGENT_DEFAULT_SENTINEL
+        assert config.model_dump()["agent_writer"] == AGENT_DEFAULT_SENTINEL
+
+    def test_agent_explicit_null_roundtrip(self):
+        """显式 null = 关闭：构造保留 + model_dump 序列化保留（null 落库语义）."""
+        config = ProjectConfig(agent_architect=None)
+        assert config.agent_architect is None
+        assert config.model_dump()["agent_architect"] is None
+
+    def test_agent_string_model_roundtrip(self):
+        """字符串 = 开启且指定模型：值保留 + 不污染其他 agent_* 字段."""
+        config = ProjectConfig(agent_writer="deepseek/deepseek-chat")
+        assert config.agent_writer == "deepseek/deepseek-chat"
+        assert config.agent_architect is None  # 未指定角色保持默认 None（关闭）
+
+    def test_agent_empty_string_rejected(self):
+        """空字符串（含纯空白）作为模型名无意义 → ValidationError（#225 语义：字符串=指定模型）."""
+        with pytest.raises(ValidationError):
+            ProjectConfig(agent_writer="")
+        with pytest.raises(ValidationError):
+            ProjectConfig(agent_writer="   ")
