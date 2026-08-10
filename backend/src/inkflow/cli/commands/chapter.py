@@ -150,12 +150,14 @@ def list_ch(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
+            params: dict[str, str] = {}
+            if volume_id:
+                params["volume_id"] = str(uuid.UUID(volume_id))
+            if status:
+                params["status"] = ChapterStatus(status).value
             return await client.get(
                 f"/projects/{uuid.UUID(project_id)}/chapters",
-                params={
-                    "volume_id": str(uuid.UUID(volume_id)) if volume_id else None,
-                    "status": ChapterStatus(status).value if status else None,
-                },
+                params=params,
             )
 
     data = _run(cli_ctx, _impl)
