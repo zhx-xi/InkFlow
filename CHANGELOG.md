@@ -4,7 +4,7 @@
 
 > 版本口径以 [ADR-019 v5](adr/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
 
-## [0.6.0] - 2026-08-09
+## [0.6.0] - 2026-08-10
 
 ### 新增
 - **F21 导出服务（#53，PR #214）**：TXT 单格式管线（v1.1 拍板仅 TXT）+ BookDocument 中间表示 + include_settings 设定附录开关（零新增依赖）
