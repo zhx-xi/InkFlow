@@ -105,7 +105,7 @@ class AuditLog(BaseModel):
     Attributes:
         id: 审计记录 UUID（ORM 主键 int 背书）.
         project_id: 所属项目 UUID.
-        chapter_id: 所属章节 UUID.
+        chapter_id: 所属章节 UUID（可空——F27 save_draft 未绑定章节时审计可空）.
         chapter_title: 章节标题快照（章节改名后仍可读）.
         status: 确认状态（pending/accepted/rejected）.
         severity_summary: 严重级别摘要（如 "1 error, 2 warnings, 0 info"）.
@@ -120,7 +120,7 @@ class AuditLog(BaseModel):
 
     id: uuid.UUID
     project_id: uuid.UUID
-    chapter_id: uuid.UUID
+    chapter_id: uuid.UUID | None = None  # 可空：F27 save_draft 未绑定章节时审计可空
     chapter_title: str  # 快照（章节改名后仍可读）
     status: Literal["pending", "accepted", "rejected"]
     severity_summary: str  # 摘要：如 "1 error, 2 warnings, 0 info"（计数落库）

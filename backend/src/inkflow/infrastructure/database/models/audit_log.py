@@ -45,8 +45,10 @@ class AuditLogORM(Base):
 
     chapter_id: Mapped[int] = mapped_column(
         ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=True,
     )
-    """所属章节（章节硬删除 → 审计记录级联删除，E14）."""
+    """所属章节（可空——F27 save_draft 未绑定章节时审计可空；章节硬删除 →
+    审计记录级联删除，E14）."""
 
     chapter_title: Mapped[str] = mapped_column(
         String(200),

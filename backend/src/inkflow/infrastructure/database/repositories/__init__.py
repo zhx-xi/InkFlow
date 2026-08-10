@@ -1,5 +1,8 @@
 """仓储实现."""
 
+from inkflow.infrastructure.database.repositories.agent_run_repo import (
+    SQLiteAgentRunRepository,
+)
 from inkflow.infrastructure.database.repositories.audit_repo import (
     SQLiteAuditRepository,
 )
@@ -8,6 +11,9 @@ from inkflow.infrastructure.database.repositories.chapter_repo import (
 )
 from inkflow.infrastructure.database.repositories.character_repo import (
     SQLiteCharacterRepository,
+)
+from inkflow.infrastructure.database.repositories.draft_repo import (
+    SQLiteDraftRepository,
 )
 from inkflow.infrastructure.database.repositories.extraction_run_repo import (
     SQLExtractionRunRepository,
@@ -39,9 +45,11 @@ from inkflow.infrastructure.database.repositories.world_repo import (
 
 __all__ = [
     "SQLExtractionRunRepository",
+    "SQLiteAgentRunRepository",
     "SQLiteAuditRepository",
     "SQLiteChapterRepository",
     "SQLiteCharacterRepository",
+    "SQLiteDraftRepository",
     "SQLiteForeshadowingRepository",
     "SQLiteOutlineRepository",
     "SQLiteProjectRepository",
