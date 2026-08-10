@@ -15,6 +15,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+# 225 拍板——字符串 "__default__" = 跟随默认（预留 sentinel，前端本期不暴露中间态 UI）。
+AGENT_DEFAULT_SENTINEL = "__default__"
+
 
 class Genre(StrEnum):
     """中文网络小说分类枚举."""
@@ -37,10 +40,10 @@ class ProjectConfig(BaseModel):
 
     Attributes:
         model: 默认 AI 模型名称.
-        agent_architect: 架构师 Agent 模型（可为 None，表示使用默认值）.
-        agent_writer: 写手 Agent 模型.
-        agent_auditor: 审阅 Agent 模型.
-        agent_reviser: 修订 Agent 模型.
+        agent_architect: 架构师 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
+        agent_writer: 写手 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
+        agent_auditor: 审阅 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
+        agent_reviser: 修订 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
         temperature: 生成温度 (0.0 - 2.0).
         role_architect_temperature: 架构师角色独立温度（None = 跟随默认）.
         role_writer_temperature: 写手角色独立温度（None = 跟随默认）.
@@ -66,6 +69,17 @@ class ProjectConfig(BaseModel):
     writing_style: str = ""
     default_words: int = Field(default=800000, ge=1000, le=10_000_000, description="新章节默认字数")
     extra: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("agent_architect", "agent_writer", "agent_auditor", "agent_reviser")
+    @classmethod
+    def validate_agent_model(cls, v: str | None) -> str | None:
+        """agent_* 三态语义校验（#225）：None=关闭；"__default__"=跟随默认；字符串必须非空。"""
+        if v is None or v == AGENT_DEFAULT_SENTINEL:
+            return v
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("Agent 模型不能为空字符串")
+        return stripped
 
 
 class Project(BaseModel):

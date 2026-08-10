@@ -195,3 +195,45 @@ class TestProjectRepositoryCoverageGaps:
         assert await repo.hard_delete(created.id.int) is True
         assert await repo.get(created.id.int) is None
         assert await repo.hard_delete(created.id.int) is False
+
+    # ── #225 agent_* 三态持久化（确认型守护：repo 层行为不变，锁定落库/读回契约） ──
+
+    async def test_update_config_agent_null_persists(self, db_session):
+        """#225 M1：config.agent_writer=null（关闭）→ 真实 DB 落库 → 读回仍为 None。
+
+        确认型：repo 层当前实现已满足（config.model_dump() 全字段落库），本用例守护
+        「显式 null 落库 + 重新构造读回」链路——GREEN 若把 null 视作缺失/移除键，
+        此用例转 RED。
+        """
+        repo = SQLiteProjectRepository(db_session)
+        created = await repo.add(
+            _project(
+                "开关持久化项目",
+                config=ProjectConfig(model="gpt-4o", agent_writer="deepseek/deepseek-chat"),
+            )
+        )
+
+        updated = await repo.update(
+            created.model_copy(update={"config": ProjectConfig(model="gpt-4o", agent_writer=None)})
+        )
+        assert updated.config.agent_writer is None
+
+        # 「重启读回」单元级锚点：get 重新构造领域对象，null 必须保留（非默认回填）
+        got = await repo.get(created.id.int)
+        assert got is not None
+        assert got.config.agent_writer is None
+        assert got.config.model == "gpt-4o"
+
+    async def test_config_sentinel_roundtrip(self, db_session):
+        """#225 M3：sentinel "__default__"（跟随默认）→ 真实 DB 落库 → 读回保留。
+
+        确认型守护：repo 层对字符串值透明，锁定 sentinel 持久化不丢失。
+        """
+        repo = SQLiteProjectRepository(db_session)
+        created = await repo.add(
+            _project("sentinel 项目", config=ProjectConfig(agent_writer="__default__"))
+        )
+
+        got = await repo.get(created.id.int)
+        assert got is not None
+        assert got.config.agent_writer == "__default__"

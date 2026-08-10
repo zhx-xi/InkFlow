@@ -1,8 +1,10 @@
-/** 写作 Agent 链（spec §4.2.3）：Architect/Writer/Auditor/Reviser 四行开关 ↔ config.agent_* */
+/** 写作 Agent 链（spec §4.2.3）：Architect/Writer/Auditor/Reviser 四行开关 ↔ config.agent_*；
+ *  #225 三态语义：null=关闭（禁用角色）；字符串=开启且指定模型；
+ *  "__default__"（AGENT_DEFAULT_SENTINEL）=跟随默认（预留，前端不暴露中间态 UI） */
 import { ClipboardCheck, Network, PenLine, RefreshCw, type LucideIcon } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
 import { useAgentStore } from '../stores/agent';
-import type { ProjectConfig } from '../stores/project';
+import { AGENT_DEFAULT_SENTINEL, type ProjectConfig } from '../stores/project';
 import { Switch } from './ui/switch';
 
 type AgentField = 'agent_architect' | 'agent_writer' | 'agent_auditor' | 'agent_reviser';
@@ -46,10 +48,15 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
       <div className="mt-4 divide-y divide-line">
         {AGENT_ROLES.map((role) => {
           const value = config[role.field];
-          const checked = value !== undefined;
-          const tag = value === null ? t('ag.defaultModel') : value === undefined ? t('ag.removed') : value;
+          // 三态语义（#225）：null=关闭（禁用角色）；字符串=开启且指定模型；
+          // "__default__"（AGENT_DEFAULT_SENTINEL）=跟随默认（预留）
+          const checked = typeof value === 'string';
+          const tag =
+            value == null ? t('ag.disabled') : value === AGENT_DEFAULT_SENTINEL ? t('ag.defaultModel') : value;
           const toggle = () => {
-            setConfig(agentPatch(role.field, checked ? undefined : null));
+            // 关闭 → 显式 null（JSON.stringify 保留 → 后端落库 null → 重启仍关闭）；
+            // 打开 → sentinel "__default__"（跟随默认，本期无模型选择 UI）
+            setConfig(agentPatch(role.field, checked ? null : AGENT_DEFAULT_SENTINEL));
             onConfigChange?.();
           };
           return (

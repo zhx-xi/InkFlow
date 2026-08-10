@@ -1,8 +1,10 @@
-"""项目业务服务单元测试 — Mock Repository（#104 覆盖率补测）.
+"""项目业务服务单元测试 — Mock Repository（#104 覆盖率补测 + #225 契约升级）.
 
 覆盖:
 - update: 项目不存在 → None（不触发仓储更新）；部分更新合并
   （existing.model_copy(update=dto.model_dump(exclude_unset=True))）
+- #225 契约升级：config 子对象从「整体替换」改为「字段级合并」——显式 null=关闭、
+  缺失字段不改、sentinel "__default__"=跟随默认（预留）；顶层字段合并语义不变
 - create/get/list/soft_delete/restore/hard_delete 基础委托与 UUID→int 转换
 """
 
@@ -91,9 +93,18 @@ class TestProjectUpdate:
         assert result == merged
         assert result is not None
 
-    async def test_update_replaces_config_subobject(self, svc, mock_repo) -> None:
-        """config 为传入字段 → 整体替换为新 ProjectConfig。"""
-        existing = _project(config=ProjectConfig(model="gpt-4o"))
+    async def test_update_merges_config_subobject_fields(self, svc, mock_repo) -> None:
+        """#225 契约升级：config 传入 → 字段级合并（不再整体替换），未传 config 字段保留。
+
+        原契约（#104）为「整体替换」——PATCH 只传部分字段会把其余 agent_* 打回默认
+        None（关闭/跟随默认语义混淆，前端省略 undefined 键 → 落库 null 的根因链）。
+        #225 拍板：config 子对象按字段合并，缺失字段不改。
+        """
+        existing = _project(
+            config=ProjectConfig(
+                model="gpt-4o", temperature=0.7, agent_writer="deepseek/deepseek-chat"
+            )
+        )
         mock_repo.get = AsyncMock(return_value=existing)
 
         new_config = ProjectConfig(model="deepseek-v3", temperature=0.3, writing_style="冷峻")
@@ -101,13 +112,59 @@ class TestProjectUpdate:
 
         merged = mock_repo.update.await_args.args[0]
         assert merged.genre == Genre.KEHUAN
-        # model_copy(update=model_dump(exclude_unset=True)) 会把嵌套 config 序列化为
-        # dict，且只含 DTO 显式设置的字段（Pydantic v2 默认行为）
-        assert merged.config == new_config.model_dump(exclude_unset=True)
-        assert merged.config["model"] == "deepseek-v3"
-        assert merged.config["writing_style"] == "冷峻"
-        assert merged.name == "旧名字"  # 未传字段保持不变
+        # 字段级合并：merged.config 为 ProjectConfig 实例（非 dict），显式传入字段更新
+        assert isinstance(merged.config, ProjectConfig)
+        assert merged.config.model == "deepseek-v3"
+        assert merged.config.temperature == 0.3
+        assert merged.config.writing_style == "冷峻"
+        # 未传 config 字段保留 existing 值（#225 核心：缺失字段不改）
+        assert merged.config.agent_writer == "deepseek/deepseek-chat"
+        assert merged.name == "旧名字"  # 顶层未传字段保持不变
         assert result is not None
+
+    async def test_update_config_explicit_null_disables_role(self, svc, mock_repo) -> None:
+        """#225 M1：PATCH config {agent_writer: null} → 显式 null 落库（关闭），其余字段保留。"""
+        existing = _project(
+            config=ProjectConfig(
+                model="gpt-4o", agent_writer="deepseek/deepseek-chat", temperature=0.5
+            )
+        )
+        mock_repo.get = AsyncMock(return_value=existing)
+
+        # 显式传 None → fields_set 含 agent_writer → exclude_unset dump 保留 agent_writer: None
+        await svc.update(PID, ProjectUpdate(config=ProjectConfig(agent_writer=None)))
+
+        merged = mock_repo.update.await_args.args[0]
+        assert isinstance(merged.config, ProjectConfig)
+        assert merged.config.agent_writer is None  # 显式 null = 关闭
+        assert merged.config.model == "gpt-4o"  # 未传字段保留
+        assert merged.config.temperature == 0.5  # 未传字段保留
+
+    async def test_update_config_missing_field_unchanged(self, svc, mock_repo) -> None:
+        """#225 M1：PATCH config 缺失 agent_writer → 该字段不改（保留原字符串）。"""
+        existing = _project(
+            config=ProjectConfig(model="gpt-4o", agent_writer="deepseek/deepseek-chat")
+        )
+        mock_repo.get = AsyncMock(return_value=existing)
+
+        await svc.update(PID, ProjectUpdate(config=ProjectConfig(model="deepseek-v3")))
+
+        merged = mock_repo.update.await_args.args[0]
+        assert isinstance(merged.config, ProjectConfig)
+        assert merged.config.model == "deepseek-v3"  # 显式传的字段更新
+        assert merged.config.agent_writer == "deepseek/deepseek-chat"  # 缺失字段不改
+
+    async def test_update_config_sentinel_follows_default(self, svc, mock_repo) -> None:
+        """#225 M3：sentinel "__default__" = 跟随默认（预留）——字符串值落库 roundtrip。"""
+        existing = _project(config=ProjectConfig(model="gpt-4o"))
+        mock_repo.get = AsyncMock(return_value=existing)
+
+        await svc.update(PID, ProjectUpdate(config=ProjectConfig(agent_writer="__default__")))
+
+        merged = mock_repo.update.await_args.args[0]
+        assert isinstance(merged.config, ProjectConfig)
+        assert merged.config.agent_writer == "__default__"
+        assert merged.config.model == "gpt-4o"  # 未传字段保留
 
 
 class TestProjectServiceBasics:

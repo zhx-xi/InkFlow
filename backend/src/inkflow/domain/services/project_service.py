@@ -136,7 +136,11 @@ class ProjectService:
         existing = await self._repo.get(_to_int_id(project_id))
         if existing is None:
             return None
-        updated = existing.model_copy(update=dto.model_dump(exclude_unset=True))
+        updates = dto.model_dump(exclude_unset=True)
+        config_updates = updates.get("config")
+        if isinstance(config_updates, dict):
+            updates["config"] = existing.config.model_copy(update=config_updates)
+        updated = existing.model_copy(update=updates)
         return await self._repo.update(updated)
 
     async def soft_delete(self, project_id: int | uuid.UUID) -> bool:

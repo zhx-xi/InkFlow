@@ -19,7 +19,8 @@
  *   #105 修复批：生成快捷键 = Ctrl+Shift+Enter，非裸 Shift+Enter）
  * - 模型：Provider 摘要 + 占位（#106 前不实现管理）
  * - Agent：四角色开关（Architect/Writer/Auditor/Reviser，role=switch ↔ config.agent_*：
- *   关闭→undefined 从管线移除 / 重开→null 默认模型）+ 默认模型下拉
+ *   关闭→null（禁用角色，#225 拍板）/ 重开→"__default__"（跟随默认 sentinel，前端
+ *   本期不暴露中间态 UI））+ 默认模型下拉
  *   （combobox aria-label「默认模型」ag.defaultModel 已有，选项 openai/deepseek/ollama）
  * - 模板：模板列表（名称/描述/应用项目数徽标/设为默认标记）+ 新建/编辑/删除/设为默认
  *   + TemplateDialog（#107 契约，见下方 RED 段）
@@ -632,11 +633,11 @@ describe('设置页 — Agent 分类（迁移自 AgentChainCard，spec §7.4/§7
     expect(within(card).getAllByRole('switch')).toHaveLength(4);
   });
 
-  it('开关 ↔ config.agent_*：关闭 → undefined（从管线移除），重开 → null（默认模型）', async () => {
+  it('开关 ↔ config.agent_*：#225 关闭 → null（禁用角色），重开 → "__default__"（跟随默认）', async () => {
     act(() => {
       useAgentStore.getState().setConfig({
         agent_architect: 'gpt-4o',
-        agent_writer: null,
+        agent_writer: '__default__',
         agent_auditor: 'gpt-4o',
         agent_reviser: 'gpt-4o',
       });
@@ -645,18 +646,41 @@ describe('设置页 — Agent 分类（迁移自 AgentChainCard，spec §7.4/§7
     const card = screen.getByTestId('agent-chain-card');
     const switches = within(card).getAllByRole('switch');
 
+    // checked 判定 = 字符串值（null=关闭 → 不勾选；"__default__" 是字符串 → 勾选）
     expect(switches[0]).toBeChecked();
     expect(switches[1]).toBeChecked();
 
     await user.click(switches[0]);
-    expect(useAgentStore.getState().config.agent_architect).toBeUndefined();
-
-    await user.click(switches[0]);
     expect(useAgentStore.getState().config.agent_architect).toBeNull();
 
-    // 修复契约（#105 🔴-2）：开关变更 → 即改即存 PATCH /api/v1/projects/p1 body config 含
-    // agent_architect: null（重开 = null 默认模型；undefined 态 JSON 序列化被丢弃 → 断言 null 态）。
+    await user.click(switches[0]);
+    expect(useAgentStore.getState().config.agent_architect).toBe('__default__');
+
+    // 修复契约（#225）：开关变更 → 即改即存 PATCH /api/v1/projects/p1 body config 含
+    // agent_architect（末次 = 重开态 sentinel；关闭态显式 null 由独立用例锁定）。
     // GREEN 前 AgentPanel 零持久化 → 无 PATCH 调用 → RED
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/projects/p1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.objectContaining({ config: expect.objectContaining({ agent_architect: '__default__' }) }),
+        }),
+      );
+    });
+  });
+
+  it('#225 关闭即改即存：点击开关关闭 → PATCH body config 含 agent_architect: null（显式 null 非缺键）', async () => {
+    seedProjectConfig({ agent_architect: 'gpt-4o' });
+    const user = await openAgentPanel();
+    const card = screen.getByTestId('agent-chain-card');
+    const sw = within(card).getAllByRole('switch')[0];
+    expect(sw).toBeChecked();
+
+    await user.click(sw); // 关闭 → setConfig({agent_architect: null})（#225：不再发 undefined）
+
+    // RED 证据（当前实现发 undefined → PATCH body 对象含 agent_architect: undefined，
+    // objectContaining(null) 不匹配 → FAIL）；GREEN 后 body 含显式 null
     await waitFor(() => {
       expect(apiFetchMock).toHaveBeenCalledWith(
         '/api/v1/projects/p1',
@@ -678,7 +702,7 @@ describe('设置页 — Agent 分类（迁移自 AgentChainCard，spec §7.4/§7
     expect(useAgentStore.getState().config.agent_architect).toBe('gpt-4o');
   });
 
-  it('开关变更即改即存：点击开关 → PATCH /api/v1/projects/p1 body 含 config.agent_architect（#105 🔴-2 修复契约）', async () => {
+  it('开关变更即改即存：点击开关 → PATCH /api/v1/projects/p1 body 含 config.agent_architect（#225 语义）', async () => {
     seedProjectConfig({
       agent_architect: 'gpt-4o',
       agent_writer: 'gpt-4o',
@@ -689,7 +713,7 @@ describe('设置页 — Agent 分类（迁移自 AgentChainCard，spec §7.4/§7
     const card = screen.getByTestId('agent-chain-card');
     const switches = within(card).getAllByRole('switch');
 
-    // 关 → 开（开 = null 默认模型；undefined 序列化被 JSON 丢弃 → 断言 null 态的 PATCH body）
+    // 关 → 开（关 = null 禁用角色；开 = "__default__" 跟随默认 sentinel，#225）
     await user.click(switches[0]);
     await user.click(switches[0]);
 
@@ -699,10 +723,27 @@ describe('设置页 — Agent 分类（迁移自 AgentChainCard，spec §7.4/§7
         '/api/v1/projects/p1',
         expect.objectContaining({
           method: 'PATCH',
-          body: expect.objectContaining({ config: expect.objectContaining({ agent_architect: null }) }),
+          body: expect.objectContaining({ config: expect.objectContaining({ agent_architect: '__default__' }) }),
         }),
       );
     });
+  });
+
+  it('#225 M2 重启持久化：项目 config.agent_writer=null（关闭）→ loadFromProject 后开关保持关闭', async () => {
+    // 旧实现 checked = value !== undefined → null 误显示开启（#225 根因：重启读回 null → 开关恢复 on）
+    seedProjectConfig({ agent_writer: null });
+    await openAgentPanel();
+    const card = screen.getByTestId('agent-chain-card');
+    // RED 证据：当前实现 null !== undefined → 开关 checked → not.toBeChecked FAIL
+    expect(within(card).getAllByRole('switch')[1]).not.toBeChecked();
+    expect(useAgentStore.getState().config.agent_writer).toBeNull();
+  });
+
+  it('#225 M3 sentinel 读回：项目 config.agent_writer="__default__"（跟随默认）→ 开关开启', async () => {
+    // 确认型：字符串（含 sentinel）→ 开关 checked（GREEN 判定 value !== null）
+    seedProjectConfig({ agent_writer: '__default__' });
+    await openAgentPanel();
+    expect(within(screen.getByTestId('agent-chain-card')).getAllByRole('switch')[1]).toBeChecked();
   });
 
   it('默认模型下拉：combobox「默认模型」选项 openai/deepseek/ollama', async () => {
@@ -1253,14 +1294,14 @@ describe('设置页 — #105 修复批二次迭代（交叉路径 RED 契约）'
     const user = userEvent.setup();
     renderSettings();
 
-    // Agent 分类：store 空 → 挂载播种；architect 关→开（null 态可序列化）
+    // Agent 分类：store 空 → 挂载播种；architect 关→开（#225：关=null / 开="__default__" sentinel）
     await user.click(within(screen.getByTestId('settings-nav')).getByRole('button', { name: 'Agent' }));
     const card = screen.getByTestId('agent-chain-card');
     const switches = within(card).getAllByRole('switch');
     await user.click(switches[0]);
     await user.click(switches[0]);
     await waitFor(() => {
-      expect(useAgentStore.getState().config.agent_architect).toBeNull();
+      expect(useAgentStore.getState().config.agent_architect).toBe('__default__');
     });
 
     // 回 General 分类：改 default_words → 失焦 PATCH
@@ -1271,13 +1312,13 @@ describe('设置页 — #105 修复批二次迭代（交叉路径 RED 契约）'
     await user.tab();
 
     // 契约：最新 PATCH body config = 全部已配置字段（现状合并源 = project store 旧快照 →
-    // agent_architect 回 'deepseek' 而非 null → FAIL = RED）
+    // agent_architect 回 'deepseek' 而非 '__default__' → FAIL = RED；#225：终态开 = sentinel）
     await waitFor(() => {
       const patchCalls = apiFetchMock.mock.calls.filter((c) => c[1]?.method === 'PATCH');
       expect(patchCalls.length).toBeGreaterThanOrEqual(3); // toggle 关 + toggle 开 + general 失焦
       const lastBody = patchCalls[patchCalls.length - 1][1]?.body as { config: ProjectConfig };
       expect(lastBody.config).toEqual(
-        expect.objectContaining({ model: 'gpt-4o', agent_architect: null, default_words: 60000 }),
+        expect.objectContaining({ model: 'gpt-4o', agent_architect: '__default__', default_words: 60000 }),
       );
     });
   });
@@ -1381,11 +1422,11 @@ describe('设置页 — AgentPanel persist 并发守卫（#105 补测）', () =>
     const card = screen.getByTestId('agent-chain-card');
     const switches = within(card).getAllByRole('switch');
 
-    // 第一次 toggle（off→on）：agent_architect=null → PATCH #1 in-flight（persistingRef=true）
+    // 第一次 toggle（off→on）：agent_architect="__default__"（#225 打开=sentinel）→ PATCH #1 in-flight（persistingRef=true）
     await user.click(switches[0]);
     await waitFor(() => expect(apiFetchMock).toHaveBeenCalledTimes(1));
 
-    // 第二次 toggle（on→off）：agent_architect=undefined；并发守卫挂起 pending，不发新 PATCH
+    // 第二次 toggle（on→off）：agent_architect=null（#225 关闭=显式 null）；并发守卫挂起 pending，不发新 PATCH
     await user.click(switches[0]);
     expect(apiFetchMock).toHaveBeenCalledTimes(1);
 
@@ -1398,8 +1439,8 @@ describe('设置页 — AgentPanel persist 并发守卫（#105 补测）', () =>
     const patchCalls = apiFetchMock.mock.calls.filter((c) => c[1]?.method === 'PATCH');
     const firstBody = patchCalls[0][1]?.body as { config: ProjectConfig };
     const lastBody = patchCalls[patchCalls.length - 1][1]?.body as { config: ProjectConfig };
-    expect(firstBody.config).toEqual({ agent_architect: null }); // toggle1 的 config
-    expect(lastBody.config).toEqual({ agent_architect: undefined }); // toggle2（最新）的 config
+    expect(firstBody.config).toEqual({ agent_architect: '__default__' }); // toggle1（开）的 config
+    expect(lastBody.config).toEqual({ agent_architect: null }); // toggle2（关，最新）的 config——#225：显式 null 非 undefined
   });
 
   it('无当前项目：persist 早退（不发 PATCH、不弹 toast）', async () => {

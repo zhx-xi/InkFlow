@@ -11,7 +11,12 @@ export interface Project {
   updated_at: string;
 }
 
-/** ProjectConfig（domain/models/project.py：agent_* 为 None 表示默认模型） */
+/** ProjectConfig（domain/models/project.py：#225 三态语义）：
+ *  agent_*: null=关闭（禁用角色）；字符串=开启且指定模型；
+ *  "__default__"（AGENT_DEFAULT_SENTINEL）=跟随默认（预留，前端不暴露中间态 UI） */
+/** #225 sentinel：跟随默认（后端契约预留；字符串=开启） */
+export const AGENT_DEFAULT_SENTINEL = '__default__';
+
 export interface ProjectConfig {
   model?: string | null;
   agent_architect?: string | null;

@@ -236,7 +236,7 @@ export const zh = {
   'ag.defaultWords': '默认字数',
   'ag.save': '保存',
   'ag.defaultModel': '默认模型',
-  'ag.removed': '已移除',
+  'ag.disabled': '已关闭',
   'ag.chainTitle': '写作 Agent 链',
   'ag.chainDesc': 'Architect 规划 → Writer 执笔 → Auditor 审校 → Reviser 修订，可按需开关',
   'ag.architect': 'Architect 大纲架构师',

@@ -226,7 +226,7 @@ export const en: Record<string, string> = {
   'ag.defaultWords': 'Default length',
   'ag.save': 'Save',
   'ag.defaultModel': 'Default model',
-  'ag.removed': 'Removed',
+  'ag.disabled': 'Disabled',
   'ag.chainTitle': 'Writing agent chain',
   'ag.chainDesc': 'Architect plans → Writer drafts → Auditor reviews → Reviser polishes',
   'ag.architect': 'Architect',
