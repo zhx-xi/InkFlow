@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from dataclasses import dataclass
 
 from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent
@@ -53,6 +54,23 @@ def build_writer_agent_system_prompt(
     return str(template.system_prompt)
 
 
+class DeepAgentInvokeAdapter:
+    """deepagents 0.7.5 invoke 形态适配——服务层契约传裸消息列表，
+    真实 graph 需要 {"messages": [...]} dict（真实冒烟 2026-08-10 实测
+    InvalidUpdateError: Expected dict）；graph.invoke 为同步方法（返回 dict
+    非 coroutine，冒烟第二轮实测 TypeError await）。"""
+
+    def __init__(self, inner: object) -> None:
+        self._inner = inner
+
+    async def invoke(self, messages: list, config: dict | None = None) -> dict:
+        # deepagents 输入 {"messages": [...]}；graph.invoke 同步返回（含 "messages" 键）
+        result = self._inner.invoke({"messages": messages}, config=config)  # type: ignore[attr-defined]  # 鸭子类型：deepagents CompiledStateGraph
+        if isinstance(result, Awaitable):
+            return await result
+        return result
+
+
 def build_agentic_writer(
     *,
     model: str,
@@ -73,7 +91,8 @@ def build_agentic_writer(
         profile_key: deepagents HarnessProfile key（None = 按模型名自动确保）.
 
     Returns:
-        deepagents CompiledStateGraph（可 invoke 的 agent）.
+        DeepAgentInvokeAdapter（包装 deepagents CompiledStateGraph，服务层
+        契约裸消息列表 → graph {"messages": [...]} dict 形态）.
     """
     reader_deps = ReaderToolDeps(
         character_service=deps.character_service,
@@ -90,7 +109,7 @@ def build_agentic_writer(
             )
         )
     )
-    return build_deep_agent(
+    agent = build_deep_agent(
         model=model,
         api_key=api_key,
         base_url=base_url,
@@ -98,3 +117,4 @@ def build_agentic_writer(
         system_prompt=system_prompt,
         profile_key=profile_key,
     )
+    return DeepAgentInvokeAdapter(agent)

@@ -415,7 +415,8 @@ async def test_build_agentic_writer_assembles_six_tools():
             deps=deps,
             system_prompt="SP",
         )
-    assert agent is fake_agent
+    assert agent is not fake_agent  # 适配器包装（真实冒烟 2026-08-10：deepagents invoke 需 dict）
+    assert hasattr(agent, "invoke")  # 服务层契约：仍可 invoke(messages)
     kwargs = mock_build.call_args.kwargs
     assert kwargs["system_prompt"] == "SP"
     assert len(kwargs["tools"]) == 6
@@ -428,6 +429,13 @@ async def test_build_agentic_writer_assembles_six_tools():
         "count_words",
     ]
     assert names[5] == "save_draft"
+    # 适配器 invoke 包装行为：裸消息列表 → {"messages": [...]} dict（真实 graph 形态）
+    fake_agent.invoke = AsyncMock(return_value={"messages": [{"type": "ai", "content": "正文。"}]})
+    result = await agent.invoke([{"type": "user", "content": "你好"}])
+    fake_agent.invoke.assert_awaited_once()
+    call = fake_agent.invoke.await_args
+    assert call.args[0] == {"messages": [{"type": "user", "content": "你好"}]}
+    assert result["messages"][0]["content"] == "正文。"
 
 
 # ── agentic_writer_service 异常分支 + BaseMessage 双形态 ────────────
