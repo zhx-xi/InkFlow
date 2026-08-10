@@ -127,3 +127,34 @@ test('项目→写作页导航：创建后自动跳转 + 侧边栏「项目/写�
     await app.close();
   }
 });
+
+// ────────────────────────────────────────────────────────────────
+// 3. #232 项目卡片点击 → 写作页（项目上下文切换）
+// ────────────────────────────────────────────────────────────────
+test('#232 项目卡片点击：多项目点击卡片 → 写作页项目上下文切换（writing-badge 跟随）', async () => {
+  const { app, window } = await launchApp();
+  try {
+    const nameA = `E2E-卡A-${Date.now()}`;
+    const nameB = `E2E-卡B-${Date.now()}`;
+    // 创建两个项目（末次创建 B → 当前项目 = B）
+    await createProjectViaUi(window, nameA);
+    await gotoNav(window, '项目');
+    await createProjectViaUi(window, nameB);
+    await gotoNav(window, '项目');
+
+    // 点击 A 卡片 → 跳转写作页（项目上下文切换为 A）
+    const cardA = window.getByTestId('project-card').filter({ hasText: nameA });
+    await cardA.click();
+    expect(await window.evaluate(() => location.hash)).toContain('/writing');
+    await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
+
+    // 回项目页断言 A 为当前项目（writing-badge 跟随），B 无 badge
+    await gotoNav(window, '项目');
+    const badgeA = window.getByTestId('project-card').filter({ hasText: nameA }).getByTestId('writing-badge');
+    await expect(badgeA).toBeVisible();
+    const badgeB = window.getByTestId('project-card').filter({ hasText: nameB }).getByTestId('writing-badge');
+    await expect(badgeB).toHaveCount(0);
+  } finally {
+    await app.close();
+  }
+});

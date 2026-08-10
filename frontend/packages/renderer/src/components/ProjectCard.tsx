@@ -1,4 +1,5 @@
 /** 项目卡片（spec §4.2.2）：书名/题材/目标字数/章节进度/相对更新时间/进度条/写作中标记 */
+import { type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useI18n } from '../i18n/useI18n';
 import type { ChapterProgress, Project } from '../stores/project';
 
@@ -21,21 +22,34 @@ export interface ProjectCardProps {
   project: Project;
   progress?: ChapterProgress;
   isCurrent: boolean;
+  /** #232：卡片可点击（ProjectsPage 传入 → selectProject + navigate('/writing')）；缺省 = 纯展示 */
+  onClick?: () => void;
 }
 
-export function ProjectCard({ project, progress, isCurrent }: ProjectCardProps) {
+export function ProjectCard({ project, progress, isCurrent, onClick }: ProjectCardProps) {
   const { t } = useI18n();
   const written = progress?.written ?? 0;
   const total = progress?.total ?? 0;
   const pct = total > 0 ? Math.round((written / total) * 100) : 0;
   const progressLabel = t('pj.chapterProgress', { n: written, m: total });
 
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onClick?.();
+    }
+  };
+
   return (
     <div
       data-testid="project-card"
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={onClick ? handleKeyDown : undefined}
       className={`relative rounded-lg border bg-surface p-6 shadow-card transition duration-180 hover:shadow-card-hover ${
         isCurrent ? 'border-accent' : 'border-line'
-      }`}
+      }${onClick ? ' cursor-pointer' : ''}`}
     >
       {isCurrent && (
         <span
