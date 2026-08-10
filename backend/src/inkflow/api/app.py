@@ -11,6 +11,7 @@ from inkflow.api.deps import get_provider_config_service
 from inkflow.api.middleware.token_auth import TokenAuthMiddleware
 from inkflow.api.routers import (
     agent,
+    agent_runs,
     agent_templates,
     audit,
     chapter,
@@ -124,6 +125,7 @@ app.include_router(characters.router)
 app.include_router(maps.router)
 app.include_router(writing.router)
 app.include_router(agent.router)
+app.include_router(agent_runs.router)
 app.include_router(context.router)
 app.include_router(world_settings.router)
 app.include_router(outlines.router)

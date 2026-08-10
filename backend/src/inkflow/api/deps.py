@@ -15,12 +15,15 @@ from inkflow.domain.services._outline_generator import OutlineGenerator
 from inkflow.domain.services._style_llm_analyzer import StyleLLMAnalyzer
 from inkflow.domain.services._timeline_extractor import TimelineExtractor
 from inkflow.domain.services._world_extractor import WorldExtractor
+from inkflow.domain.services.agentic_writer_service import AgenticWriterService
+from inkflow.domain.services.audit_log_service import AuditLogService
 from inkflow.domain.services.audit_service import AuditService
 from inkflow.domain.services.chapter_audit_service import ChapterAuditService
 from inkflow.domain.services.chapter_service import ChapterService
 from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.context_service import ContextService
 from inkflow.domain.services.copy_service import WorldCopyService
+from inkflow.domain.services.draft_service import DraftService
 from inkflow.domain.services.extraction_service import ExtractionService
 from inkflow.domain.services.foreshadowing_service import ForeshadowingService
 from inkflow.domain.services.map_service import MapService
@@ -36,6 +39,9 @@ from inkflow.domain.services.summary_service import SummaryService
 from inkflow.domain.services.timeline_service import TimelineService
 from inkflow.domain.services.world_service import WorldService
 from inkflow.domain.services.writing_service import WritingService
+from inkflow.infrastructure.database.repositories.agent_run_repo import (
+    SQLiteAgentRunRepository,
+)
 from inkflow.infrastructure.database.repositories.audit_log_repo import (
     SQLiteAuditLogRepository,
 )
@@ -47,6 +53,9 @@ from inkflow.infrastructure.database.repositories.chapter_repo import (
 )
 from inkflow.infrastructure.database.repositories.character_repo import (
     SQLiteCharacterRepository,
+)
+from inkflow.infrastructure.database.repositories.draft_repo import (
+    SQLiteDraftRepository,
 )
 from inkflow.infrastructure.database.repositories.extraction_run_repo import (
     SQLExtractionRunRepository,
@@ -116,6 +125,83 @@ def get_writing_service(
         prompt_manager=LangChainPromptManager(),
         project_repo=SQLiteProjectRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
+    )
+
+
+def get_agent_run_repo(
+    db: AsyncSession = Depends(get_db),
+) -> SQLiteAgentRunRepository:
+    """获取 AgentRun 仓储实例（run 查询端点用）."""
+    return SQLiteAgentRunRepository(db)
+
+
+def get_draft_service(
+    db: AsyncSession = Depends(get_db),
+) -> DraftService:
+    """获取 DraftService 实例（草稿列表/确认/拒绝）."""
+    return DraftService(
+        draft_repo=SQLiteDraftRepository(db),
+        chapter_service=get_chapter_service(db),
+        audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
+    )
+
+
+def get_agentic_writer_service(
+    db: AsyncSession = Depends(get_db),
+) -> AgenticWriterService:
+    """获取 AgenticWriterService 实例（agentic 编排，装配 F26/F27 工具）."""
+    from inkflow.core.config import config
+    from inkflow.infrastructure.agent.agentic_writer import (
+        AgenticWriterDeps,
+        build_agentic_writer,
+        build_writer_agent_system_prompt,
+    )
+    from inkflow.infrastructure.llm.provider_config import (
+        get_provider_config,
+        parse_model_string,
+    )
+
+    # 循环依赖注意：不重复调 get_draft_service(db)（直接 Python 调用无 FastAPI
+    # 依赖缓存）——草稿服务在同一函数内联构建，deps 与 service 共享同源实例
+    draft_service = DraftService(
+        draft_repo=SQLiteDraftRepository(db),
+        chapter_service=get_chapter_service(db),
+        audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
+    )
+    audit_service = AuditLogService(SQLiteAuditLogRepository(db))
+    deps = AgenticWriterDeps(
+        character_service=get_character_service(db),
+        foreshadowing_service=get_foreshadowing_service(db),
+        summary_service=get_summary_service(db),
+        chapter_audit_service=get_chapter_audit_service(db),
+        draft_service=draft_service,
+        audit_service=audit_service,
+    )
+    system_prompt = build_writer_agent_system_prompt(LangChainPromptManager())
+    # 模型/密钥/base_url 同源装配（F5 provider_config）：默认模型解析 provider，
+    # 未配置 key/base_url 时回退空串（harness 支持空 key/base_url 走 ChatOpenAI 默认）
+    model = config.llm_default_model
+    api_key = ""
+    base_url = ""
+    try:
+        provider, _ = parse_model_string(model)
+        provider_cfg = get_provider_config(provider)
+        api_key = provider_cfg.api_key
+        base_url = provider_cfg.base_url or ""
+    except ValueError:
+        pass
+    return AgenticWriterService(
+        agent_factory=lambda: build_agentic_writer(
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            deps=deps,
+            system_prompt=system_prompt,
+        ),
+        draft_service=draft_service,
+        audit_service=audit_service,
+        run_repo=SQLiteAgentRunRepository(db),
+        chapter_service=get_chapter_service(db),
     )
 
 

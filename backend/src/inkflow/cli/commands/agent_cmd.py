@@ -209,3 +209,167 @@ def tools_list_cmd(
     else:
         for t in TOOL_REGISTRY:
             typer.echo(f"{t.name}: {t.description}")
+
+
+# ── F27: Agent 运行记录查询 + 草稿确认流（拍板 A：复数 runs，REST /agent/runs 命名一致） ──
+
+
+def _tool_sequence(steps: list[dict]) -> str:
+    """steps 中 tool_calls 的 tool_name 去重顺序连接（a → b）."""
+    seen: set[str] = set()
+    names: list[str] = []
+    for step in steps:
+        for tool_call in step.get("tool_calls") or []:
+            name = tool_call.get("tool_name")
+            if name and name not in seen:
+                seen.add(name)
+                names.append(name)
+    return " → ".join(names)
+
+
+def _print_json_envelope(data) -> None:
+    """--json 信封输出（F27 契约: {"ok": true, "data": <API 响应原样>}）."""
+    json.dump({"ok": True, "data": data}, sys.stdout, ensure_ascii=False, indent=2)
+    print()
+
+
+runs_app = typer.Typer(name="runs", help="Agent 运行记录查询", no_args_is_help=True)
+draft_app = typer.Typer(name="draft", help="草稿管理", no_args_is_help=True)
+app.add_typer(runs_app)
+app.add_typer(draft_app)
+
+
+@runs_app.command("list")
+def runs_list(
+    project_id: str = typer.Option(..., "--project-id", help="项目 ID（UUID）"),
+    limit: int = typer.Option(20, "--limit", help="条数上限"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """列出项目的 Agent 运行记录（倒序，分页）"""
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(
+                "/agent/runs", params={"project_id": project_id, "limit": limit}
+            )
+
+    data = _run(_impl)
+    if data is None:
+        return
+    if json_output:
+        _print_json_envelope(data)
+        return
+    items = data.get("items") or []
+    typer.echo(f"共 {data.get('total', len(items))} 条运行记录")
+    for run in items:
+        typer.echo(
+            f"{run['id']}  {run['status']}  {run.get('terminated_by') or '-'}  "
+            f"{run.get('token_usage_total')} tokens"
+        )
+
+
+@runs_app.command("show")
+def runs_show(
+    run_id: str = typer.Argument(..., help="运行记录 ID"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """查看单次运行决策轨迹"""
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/agent/runs/{run_id}")
+
+    data = _run(_impl)
+    if data is None:
+        return
+    if json_output:
+        _print_json_envelope(data)
+        return
+    typer.echo(f"运行 {data['id']} (status={data['status']})")
+    steps = data.get("steps") or []
+    typer.echo(f"步骤: {len(steps)}")
+    typer.echo(f"工具: {_tool_sequence(steps)}")
+    typer.echo(f"tokens: {data.get('token_usage_total')}")
+    typer.echo(f"终止: {data.get('terminated_by') or '-'}")
+
+
+@draft_app.command("list")
+def draft_list(
+    project_id: str = typer.Option(..., "--project-id", help="项目 ID（UUID）"),
+    status: str | None = typer.Option(None, "--status", help="过滤: draft|confirmed|rejected"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """列出项目的草稿（用户确认入口）"""
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            params: dict[str, object] = {"project_id": project_id}
+            if status:
+                params["status"] = status
+            return await client.get("/agent/drafts", params=params)
+
+    data = _run(_impl)
+    if data is None:
+        return
+    if json_output:
+        _print_json_envelope(data)
+        return
+    items = data.get("items") or []
+    typer.echo(f"共 {data.get('total', len(items))} 条草稿")
+    for draft in items:
+        typer.echo(f"{draft['id']}  {draft['status']}  {draft.get('summary') or '-'}")
+
+
+@draft_app.command("confirm")
+def draft_confirm(
+    draft_id: str = typer.Argument(..., help="草稿 ID"),
+    chapter_id: str | None = typer.Option(None, "--chapter-id", help="目标章节 ID（草稿未绑定）"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """确认草稿 → 写入正式章节"""
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            body: dict[str, object] = {}
+            if chapter_id:
+                body["chapter_id"] = chapter_id
+            return await client.post(f"/agent/drafts/{draft_id}/confirm", json=body)
+
+    data = _run(_impl)
+    if data is None:
+        return
+    if json_output:
+        _print_json_envelope(data)
+        return
+    content = data.get("final_content") or ""
+    typer.echo(f"✅ 章节已更新 (status=final, 字数 {len(content)})")
+
+
+@draft_app.command("reject")
+def draft_reject(
+    draft_id: str = typer.Argument(..., help="草稿 ID"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """拒绝草稿（保留记录）"""
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(f"/agent/drafts/{draft_id}/reject", json={})
+
+    data = _run(_impl)
+    if data is None:
+        return
+    if json_output:
+        _print_json_envelope(data)
+        return
+    typer.echo("✅ 草稿已拒绝（保留记录）")

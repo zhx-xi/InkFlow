@@ -440,6 +440,9 @@ jobs:
                  ../tests/cli/test_cli_export.py `
                  ../tests/cli/test_cli_search.py `
                  ../tests/cli/test_cli_agent_tools.py `
+                 ../tests/cli/test_cli_agent_run.py `
+                 ../tests/cli/test_cli_agent_draft.py `
+                 ../tests/cli/test_cli_write_agentic.py `
                  -v --tb=short
 
   # ── Smoke: health check (fastest) ──

@@ -5,6 +5,13 @@ from inkflow.domain.models.agent_pipeline import (
     PipelineExecuteRequest,
     RoleOverride,
 )
+from inkflow.domain.models.agent_run import (
+    AgenticWriteRequest,
+    AgentRun,
+    AgentRunStatus,
+    AgentStep,
+    AgentToolCall,
+)
 from inkflow.domain.models.agent_tools import ToolSpec
 from inkflow.domain.models.audit import (
     AuditDimension,
@@ -47,6 +54,7 @@ from inkflow.domain.models.context import (
     DroppedItem,
     TokenBudgetConfig,
 )
+from inkflow.domain.models.draft import Draft, DraftStatus
 from inkflow.domain.models.extraction import (
     ExtractionRequest,
     ExtractionResult,
@@ -129,6 +137,11 @@ from inkflow.domain.models.writing import (
 )
 
 __all__ = [
+    "AgentRun",
+    "AgentRunStatus",
+    "AgentStep",
+    "AgentToolCall",
+    "AgenticWriteRequest",
     "AppSettings",
     "AppSettingsUpdate",
     "AuditDimension",
@@ -158,6 +171,8 @@ __all__ = [
     "ContextSourceType",
     "ContinueWritingRequest",
     "DimensionSummary",
+    "Draft",
+    "DraftStatus",
     "DroppedItem",
     "ExtractedCharacter",
     "ExtractedForeshadowing",

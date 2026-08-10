@@ -23,7 +23,7 @@ def _log_orm_to_domain(orm: AuditLogORM) -> AuditLog:
     return AuditLog(
         id=uuid.UUID(int=orm.id),
         project_id=uuid.UUID(int=orm.project_id),
-        chapter_id=uuid.UUID(int=orm.chapter_id),
+        chapter_id=uuid.UUID(int=orm.chapter_id) if orm.chapter_id is not None else None,
         chapter_title=orm.chapter_title,
         # status 由 ORM str 列读出，运行时恒为三态之一（service/confirm 写入前映射），
         # mypy 需显式收窄为领域 Literal（mypy 无法从 Mapped[str] 推断字面量）
@@ -60,7 +60,7 @@ class SQLiteAuditLogRepository:
         """
         orm = AuditLogORM(
             project_id=log.project_id.int,
-            chapter_id=log.chapter_id.int,
+            chapter_id=log.chapter_id.int if log.chapter_id else None,
             chapter_title=log.chapter_title,
             status=log.status,
             severity_summary=log.severity_summary,

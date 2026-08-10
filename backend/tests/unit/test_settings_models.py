@@ -53,7 +53,11 @@ from inkflow.domain.models.settings import (
 
 
 def _defaults() -> dict:
-    """6 字段默认字典（§2.1 表 + §2.2 AppSettings 默认值）。"""
+    """10 字段默认字典（§2.1 表 + §2.2 AppSettings 默认值）。
+
+    F27 扩展（#160 Q2 拍板）：agent_max_steps/agent_token_budget/
+    agent_max_consecutive_tool 预算护栏设置键（ADR-C 默认值 12/32K/3）。
+    """
     return {
         "theme": "paper",
         "bg": "default",
@@ -62,6 +66,9 @@ def _defaults() -> dict:
         "close_behavior": "tray",
         "tray_hint_dismissed": False,
         "default_words": 800000,
+        "agent_max_steps": 12,
+        "agent_token_budget": 32000,
+        "agent_max_consecutive_tool": 3,
     }
 
 
@@ -69,7 +76,7 @@ class TestAppSettings:
     """AppSettings 默认值 + 合法字面量 + JSON roundtrip 契约。"""
 
     def test_defaults_complete(self):
-        """空构造 == 6 字段默认字典（§9.4「默认值齐全」）。"""
+        """空构造 == 10 字段默认字典（§9.4「默认值齐全」）。"""
         assert AppSettings().model_dump() == _defaults()
 
     def test_accepts_all_valid_literals(self):
@@ -82,6 +89,9 @@ class TestAppSettings:
             close_behavior="quit",
             tray_hint_dismissed=True,
             default_words=5000,
+            agent_max_steps=8,
+            agent_token_budget=16000,
+            agent_max_consecutive_tool=5,
         )
         assert s.model_dump() == {
             "theme": "night",
@@ -91,6 +101,9 @@ class TestAppSettings:
             "close_behavior": "quit",
             "tray_hint_dismissed": True,
             "default_words": 5000,
+            "agent_max_steps": 8,
+            "agent_token_budget": 16000,
+            "agent_max_consecutive_tool": 5,
         }
 
     def test_json_roundtrip(self):
@@ -144,7 +157,7 @@ class TestSettingsKey:
     """SettingsKey 枚举契约（§2.2，service 白名单依赖 value 构造）。"""
 
     def test_members_and_values(self):
-        """7 成员 + value 与 §2.1 设置键名一一对应。"""
+        """10 成员 + value 与 §2.1 设置键名一一对应。"""
         assert {k.name: k.value for k in SettingsKey} == {
             "THEME": "theme",
             "BG": "bg",
@@ -153,6 +166,9 @@ class TestSettingsKey:
             "CLOSE_BEHAVIOR": "close_behavior",
             "TRAY_HINT_DISMISSED": "tray_hint_dismissed",
             "DEFAULT_WORDS": "default_words",
+            "AGENT_MAX_STEPS": "agent_max_steps",
+            "AGENT_TOKEN_BUDGET": "agent_token_budget",
+            "AGENT_MAX_CONSECUTIVE_TOOL": "agent_max_consecutive_tool",
         }
 
     def test_construct_by_value(self):

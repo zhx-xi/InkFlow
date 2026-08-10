@@ -53,7 +53,11 @@ from inkflow.domain.services.settings_service import SettingsService
 
 
 def _defaults() -> dict:
-    """7 字段默认字典（与 AppSettings 默认值一致，独立字面量防实现偏差）。"""
+    """10 字段默认字典（与 AppSettings 默认值一致，独立字面量防实现偏差）。
+
+    F27 扩展（#160 Q2 拍板）：agent_max_steps/agent_token_budget/
+    agent_max_consecutive_tool 预算护栏设置键（ADR-C 默认值 12/32K/3）。
+    """
     return {
         "theme": "paper",
         "bg": "default",
@@ -62,6 +66,9 @@ def _defaults() -> dict:
         "close_behavior": "tray",
         "tray_hint_dismissed": False,
         "default_words": 800000,
+        "agent_max_steps": 12,
+        "agent_token_budget": 32000,
+        "agent_max_consecutive_tool": 3,
     }
 
 
