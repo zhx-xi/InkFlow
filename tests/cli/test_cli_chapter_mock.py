@@ -11,6 +11,19 @@ list 端点返回 {"items", "total"}，命令层提取 items 后保持原信封
 命令模块仍直连 domain Service（未改造），patch 目标
 inkflow.cli.commands.chapter.ensure_kernel / .InkFlowHTTPClient 不存在
 → 全部用例 fixture setup AttributeError（同根因，预期 RED）。
+
+── #231 追加段（CLI chapter list 422 修复契约）─────────────────
+根因（0.6.0 验证实测 + httpx 行为验证）：list_ch 显式构造 params
+{"volume_id": None, "status": None}，httpx 将 value=None 的查询参数
+编码为空字符串（httpx.URL params 编码实测 b'volume_id=&status='）→
+API Query 收到 status='' → Pydantic ChapterStatus 枚举校验 422
+「Input should be 'draft', 'writing', 'review' or 'final', input: ''」。
+契约（修复方向 A：CLI 层构造 params 时过滤 None，不放松 API 层校验）：
+- 不传 --status/--volume-id → params 不含 status/volume_id 键
+  （RED 阶段 FAIL：当前 params 含两键且值为 None）
+- 传 --status draft → params["status"] == "draft"（守护，RED 阶段即 PASS）
+RED 预期：1 failed，其余既有用例全部 passed（新增用例失败点为
+断言 FAIL，非 ERROR）。
 """
 
 import json
@@ -336,6 +349,50 @@ class TestChapterList:
         )
         assert result.exit_code == 0
         assert "total" in result.output
+
+    def test_list_no_filters_sends_no_none_params(self, cli_runner, fake_http_client):
+        """#231：不传 --status/--volume-id → params 不含 status/volume_id 键.
+
+        httpx 将 value=None 的查询参数编码为空字符串（status=），API 枚举
+        校验收到空串报 422 —— 契约：None 值不得进入 params。
+        """
+        pid = uuid.uuid4()
+        fake_http_client.get.return_value = {
+            "items": [_make_chapter()],
+            "total": 1,
+            "offset": 0,
+            "limit": 50,
+        }
+        result = cli_runner.invoke(
+            chapter_app,
+            ["list", "--project-id", str(pid)],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is True
+        assert payload["data"]["total"] == 1
+        params = fake_http_client.get.await_args.kwargs.get("params") or {}
+        assert "status" not in params
+        assert "volume_id" not in params
+
+    def test_list_with_status_still_sends_status(self, cli_runner, fake_http_client):
+        """#231 守护：传 --status draft → params 含 status=draft（不回归）."""
+        pid = uuid.uuid4()
+        fake_http_client.get.return_value = {
+            "items": [_make_chapter(status="draft")],
+            "total": 1,
+            "offset": 0,
+            "limit": 50,
+        }
+        result = cli_runner.invoke(
+            chapter_app,
+            ["list", "--project-id", str(pid), "--status", "draft"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        params = fake_http_client.get.await_args.kwargs.get("params") or {}
+        assert params.get("status") == "draft"
 
 
 class TestChapterUpdate:
