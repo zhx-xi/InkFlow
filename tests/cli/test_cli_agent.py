@@ -295,6 +295,14 @@ class TestAgentStatusExecution:
         assert json.loads(result.stdout) == self._STATUS_RESULT
         assert "执行 ID:" not in result.stdout
 
+    @pytest.mark.agent
+    def test_status_none_result_exit_1(self, fake_http_client):
+        """status get 返回 None → 「❌ 执行记录不存在」+ exit 1（覆盖 128-129）。"""
+        fake_http_client.get.return_value = None
+        result = runner.invoke(app, ["agent", "status", "--run-id", "ghost"])
+        assert result.exit_code == 1
+        assert "❌ 执行记录不存在" in result.stderr
+
 
 class TestAgentValidateExecution:
     """agent validate 真实执行：Phase 1 占位提示。"""

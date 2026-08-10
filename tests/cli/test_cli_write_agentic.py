@@ -209,6 +209,14 @@ class TestWriteNextAgenticExecution:
         assert "⚠️ 护栏终止 (max_steps)" in result.stdout
 
     @pytest.mark.agent
+    def test_agentic_completed_without_draft_id(self, fake_http_client):
+        """completed 无 draft_id → 「未生成草稿」提示（覆盖 write.py:118）。"""
+        fake_http_client.post.return_value = _agentic_run(draft_id=None)
+        result = _next_result("--mode", "agentic")
+        assert result.exit_code == 0
+        assert "⚠️ 未生成草稿" in result.stdout
+
+    @pytest.mark.agent
     def test_agentic_404(self, fake_http_client):
         """agentic 404（项目/章节不存在）→ stderr ❌ + 退出码 1。"""
         fake_http_client.post.side_effect = _http_err(404, "章节不存在")

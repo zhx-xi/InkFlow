@@ -989,3 +989,133 @@ async def test_agentic_final_tool_calls_defensive_max_steps():
     # 最终含 tool_calls 无正文 → 防御分支 max_steps
     assert run.status == AgentRunStatus.TERMINATED_BY_GUARDRAIL
     assert run.terminated_by == "max_steps"
+
+
+# ── 第三轮缺口补测（line 98.46% → 98.5% 门禁） ────────────────────
+
+
+async def test_draft_confirm_update_status_none_race():
+    """confirm 的 update_status 返回 None（确认前被删）→ DraftNotFoundError（覆盖 166）。"""
+    from inkflow.domain.models.draft import Draft, DraftStatus
+    from inkflow.domain.services.draft_service import DraftNotFoundError, DraftService
+
+    repo = AsyncMock()
+    repo.get.return_value = Draft(
+        id=DRAFT_ID,
+        project_id=PROJECT_ID,
+        chapter_id=CHAPTER_ID,
+        content="x",
+        status=DraftStatus.DRAFT,
+        created_at=_utcnow(),
+    )
+    repo.update_status.return_value = None  # 竞态：确认前被并发删除
+    svc = DraftService(draft_repo=repo, audit_service=None)
+    with pytest.raises(DraftNotFoundError):
+        await svc.confirm(DRAFT_ID)
+
+
+async def test_draft_reject_state_error():
+    """reject 状态非 DRAFT → DraftStateError（覆盖 194-195）。"""
+    from inkflow.domain.models.draft import Draft, DraftStatus
+    from inkflow.domain.services.draft_service import DraftService, DraftStateError
+
+    repo = AsyncMock()
+    repo.get.return_value = Draft(
+        id=DRAFT_ID,
+        project_id=PROJECT_ID,
+        chapter_id=CHAPTER_ID,
+        content="x",
+        status=DraftStatus.CONFIRMED,
+        created_at=_utcnow(),
+        confirmed_at=_utcnow(),
+    )
+    svc = DraftService(draft_repo=repo)
+    with pytest.raises(DraftStateError, match="草稿已确认"):
+        await svc.reject(DRAFT_ID)
+
+
+async def test_draft_reject_update_status_none_race():
+    """reject 的 update_status 返回 None（拒绝前被删）→ DraftNotFoundError（覆盖 201）。"""
+    from inkflow.domain.models.draft import Draft, DraftStatus
+    from inkflow.domain.services.draft_service import DraftNotFoundError, DraftService
+
+    repo = AsyncMock()
+    repo.get.return_value = Draft(
+        id=DRAFT_ID,
+        project_id=PROJECT_ID,
+        chapter_id=CHAPTER_ID,
+        content="x",
+        status=DraftStatus.DRAFT,
+        created_at=_utcnow(),
+    )
+    repo.update_status.return_value = None
+    svc = DraftService(draft_repo=repo, audit_service=None)
+    with pytest.raises(DraftNotFoundError):
+        await svc.reject(DRAFT_ID)
+
+
+def test_build_writer_agent_system_prompt_fallback():
+    """render 结果无 messages → 回退 template.system_prompt（覆盖 agentic_writer.py:53）。"""
+    from inkflow.infrastructure.agent.agentic_writer import (
+        build_writer_agent_system_prompt,
+    )
+
+    pm = MagicMock()
+    template = MagicMock()
+    template.system_prompt = "模板兜底 prompt"
+    pm.load.return_value = template
+    rendered = MagicMock()
+    rendered.messages = []
+    pm.render.return_value = rendered
+    result = build_writer_agent_system_prompt(pm)
+    assert result == "模板兜底 prompt"
+
+
+async def test_agentic_final_content_with_tool_history():
+    """自然终止 + 历史含 tool 消息 → _final_content 遍历跳过非 ai 消息（覆盖 261->260）。"""
+    from inkflow.domain.models.agent_run import AgentRunStatus
+    from inkflow.domain.services.agentic_writer_service import (
+        AgenticWriteRequest,
+        AgenticWriterService,
+    )
+
+    class _ToolThenContentAgent:
+        async def invoke(self, messages, config=None):
+            return {
+                "messages": [
+                    {
+                        "type": "ai",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "c1",
+                                "name": "search_characters",
+                                "args": {"project_id": str(PROJECT_ID)},
+                            }
+                        ],
+                    },
+                    {"type": "tool", "name": "search_characters", "content": '{"ok": true}'},
+                    {"type": "ai", "content": "最终正文。", "response_metadata": {"model": "m"}},
+                ]
+            }
+
+    deps = {
+        "draft_service": AsyncMock(),
+        "audit_service": AsyncMock(),
+        "run_repo": AsyncMock(),
+    }
+    svc = AgenticWriterService(
+        agent_factory=_ToolThenContentAgent,
+        draft_service=deps["draft_service"],
+        audit_service=deps["audit_service"],
+        run_repo=deps["run_repo"],
+    )
+    run = await svc.run(
+        AgenticWriteRequest(
+            project_id=PROJECT_ID,
+            chapter_id=CHAPTER_ID,
+            outline="大纲",
+        )
+    )
+    assert run.status == AgentRunStatus.COMPLETED
+    assert run.final_content == "最终正文。"
