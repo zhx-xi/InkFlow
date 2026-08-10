@@ -589,3 +589,403 @@ async def test_agent_runs_reject_409():
         assert resp.status_code == 409
     finally:
         app.dependency_overrides.clear()
+
+
+# ── 第二轮缺口补测（coverage 98.37/94.90 → 门禁 98.5/95.0） ─────────
+
+
+# draft_service 剩余分支（get/list 透传 + audit/chapter None）
+
+
+async def test_draft_get_and_list_passthrough():
+    """get/list 透传 repo（覆盖 103-104/124-130）。"""
+    from inkflow.domain.services.draft_service import DraftService
+
+    repo = AsyncMock()
+    repo.get.return_value = None
+    repo.list.return_value = ([], 0)
+    svc = DraftService(draft_repo=repo)
+    assert await svc.get("nope") is None
+    items, total = await svc.list(PROJECT_ID, status=None)
+    assert items == [] and total == 0
+    repo.list.assert_awaited_once_with(PROJECT_ID, status=None, offset=0, limit=50)
+
+
+async def test_draft_create_without_audit_service():
+    """audit_service=None 时 create 不落审计（覆盖 90->99 分支）。"""
+    from inkflow.domain.models.draft import Draft, DraftStatus
+    from inkflow.domain.services.draft_service import DraftService
+
+    repo = AsyncMock()
+    repo.create.return_value = Draft(
+        id=DRAFT_ID,
+        project_id=PROJECT_ID,
+        chapter_id=CHAPTER_ID,
+        content="x",
+        status=DraftStatus.DRAFT,
+        created_at=_utcnow(),
+    )
+    svc = DraftService(draft_repo=repo, audit_service=None)
+    draft = await svc.create(project_id=PROJECT_ID, content="x")
+    assert draft.id == DRAFT_ID
+
+
+async def test_draft_confirm_without_chapter_service():
+    """chapter_service=None 时 confirm 跳过章节写入（仅状态流转，覆盖 None 分支）。"""
+    from inkflow.domain.models.draft import Draft, DraftStatus
+    from inkflow.domain.services.draft_service import DraftService
+
+    repo = AsyncMock()
+    repo.get.return_value = Draft(
+        id=DRAFT_ID,
+        project_id=PROJECT_ID,
+        chapter_id=CHAPTER_ID,
+        content="x",
+        status=DraftStatus.DRAFT,
+        created_at=_utcnow(),
+    )
+    repo.update_status.return_value = Draft(
+        id=DRAFT_ID,
+        project_id=PROJECT_ID,
+        chapter_id=CHAPTER_ID,
+        content="x",
+        status=DraftStatus.CONFIRMED,
+        created_at=_utcnow(),
+        confirmed_at=_utcnow(),
+    )
+    svc = DraftService(draft_repo=repo, chapter_service=None, audit_service=None)
+    confirmed = await svc.confirm(DRAFT_ID)
+    assert confirmed.status == DraftStatus.CONFIRMED
+
+
+async def test_draft_reject_without_audit_service():
+    """audit_service=None 时 reject 不落审计。"""
+    from inkflow.domain.models.draft import Draft, DraftStatus
+    from inkflow.domain.services.draft_service import DraftService
+
+    repo = AsyncMock()
+    repo.get.return_value = Draft(
+        id=DRAFT_ID,
+        project_id=PROJECT_ID,
+        chapter_id=CHAPTER_ID,
+        content="x",
+        status=DraftStatus.DRAFT,
+        created_at=_utcnow(),
+    )
+    repo.update_status.return_value = Draft(
+        id=DRAFT_ID,
+        project_id=PROJECT_ID,
+        chapter_id=CHAPTER_ID,
+        content="x",
+        status=DraftStatus.REJECTED,
+        created_at=_utcnow(),
+    )
+    svc = DraftService(draft_repo=repo, audit_service=None)
+    rejected = await svc.reject(DRAFT_ID)
+    assert rejected.status == DraftStatus.REJECTED
+
+
+# agentic_writer_service 剩余边界分支
+
+
+async def test_agentic_invoke_returns_non_dict():
+    """invoke 返回非 dict → history 为空 → steps 空 + completed 防御（覆盖 238/254/263）。"""
+    from inkflow.domain.models.agent_run import AgentRunStatus
+    from inkflow.domain.services.agentic_writer_service import (
+        AgenticWriteRequest,
+        AgenticWriterService,
+    )
+
+    class _WeirdAgent:
+        async def invoke(self, messages, config=None):
+            return "not a dict"
+
+    deps = {
+        "draft_service": AsyncMock(),
+        "audit_service": AsyncMock(),
+        "run_repo": AsyncMock(),
+    }
+    svc = AgenticWriterService(
+        agent_factory=_WeirdAgent,
+        draft_service=deps["draft_service"],
+        audit_service=deps["audit_service"],
+        run_repo=deps["run_repo"],
+    )
+    run = await svc.run(
+        AgenticWriteRequest(
+            project_id=PROJECT_ID,
+            chapter_id=CHAPTER_ID,
+            outline="大纲",
+        )
+    )
+    # 无 AI 消息 → empty_content 护栏（历史无 AI 消息 → _is_empty_final True）
+    assert run.status == AgentRunStatus.TERMINATED_BY_GUARDRAIL
+
+
+async def test_agentic_request_with_context_and_style():
+    """请求带 context + style_hint → 初始消息含上下文与风格（覆盖 244/247）。"""
+    from inkflow.domain.models.agent_run import AgentRunStatus
+    from inkflow.domain.services.agentic_writer_service import (
+        AgenticWriteRequest,
+        AgenticWriterService,
+    )
+
+    class _CaptureAgent:
+        def __init__(self):
+            self.seen = []
+
+        async def invoke(self, messages, config=None):
+            self.seen.append(list(messages))
+            return {
+                "messages": [
+                    {
+                        "type": "ai",
+                        "content": "正文。",
+                        "response_metadata": {"usage": {"total_tokens": 5}},
+                    }
+                ]
+            }
+
+    agent = _CaptureAgent()
+    deps = {
+        "draft_service": AsyncMock(),
+        "audit_service": AsyncMock(),
+        "run_repo": AsyncMock(),
+    }
+    svc = AgenticWriterService(
+        agent_factory=lambda: agent,
+        draft_service=deps["draft_service"],
+        audit_service=deps["audit_service"],
+        run_repo=deps["run_repo"],
+    )
+    run = await svc.run(
+        AgenticWriteRequest(
+            project_id=PROJECT_ID,
+            chapter_id=CHAPTER_ID,
+            outline="大纲",
+            context="前文摘要",
+            min_words=1500,
+            style_hint="冷峻硬汉风",
+        )
+    )
+    assert run.status == AgentRunStatus.COMPLETED
+    initial = agent.seen[0][0]["content"]
+    assert "前文摘要" in initial
+    assert "1500" in initial
+    assert "冷峻硬汉风" in initial
+
+
+async def test_agentic_token_usage_weird_metadata():
+    """usage 非 dict / total_tokens 非法 → token 提取防御（覆盖 88/91-92）。"""
+    from inkflow.domain.models.agent_run import AgentRunStatus
+    from inkflow.domain.services.agentic_writer_service import (
+        AgenticWriteRequest,
+        AgenticWriterService,
+    )
+
+    class _WeirdMetaAgent:
+        async def invoke(self, messages, config=None):
+            return {
+                "messages": [
+                    {
+                        "type": "ai",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "c1",
+                                "name": "search_characters",
+                                "args": {"project_id": str(PROJECT_ID)},
+                            }
+                        ],
+                        "response_metadata": {"usage": "not-a-dict"},
+                    },
+                    {"type": "tool", "name": "search_characters", "content": '{"ok": true}'},
+                    {
+                        "type": "ai",
+                        "content": "正文。",
+                        "response_metadata": {"usage": {"total_tokens": "NaN"}},
+                    },
+                ]
+            }
+
+    deps = {
+        "draft_service": AsyncMock(),
+        "audit_service": AsyncMock(),
+        "run_repo": AsyncMock(),
+    }
+    svc = AgenticWriterService(
+        agent_factory=_WeirdMetaAgent,
+        draft_service=deps["draft_service"],
+        audit_service=deps["audit_service"],
+        run_repo=deps["run_repo"],
+    )
+    run = await svc.run(
+        AgenticWriteRequest(
+            project_id=PROJECT_ID,
+            chapter_id=CHAPTER_ID,
+            outline="大纲",
+        )
+    )
+    assert run.status == AgentRunStatus.COMPLETED
+    assert run.token_usage_total == 0  # 防御：非法 usage 均计 0
+
+
+async def test_agentic_tool_result_missing():
+    """tool_call 无后续同名 tool 消息 → result 空串（覆盖 318->317/320）。"""
+    from inkflow.domain.models.agent_run import AgentRunStatus
+    from inkflow.domain.services.agentic_writer_service import (
+        AgenticWriteRequest,
+        AgenticWriterService,
+    )
+
+    class _NoResultAgent:
+        async def invoke(self, messages, config=None):
+            # tool_call 后无对应 tool 消息（异常历史形态）
+            return {
+                "messages": [
+                    {
+                        "type": "ai",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "c1",
+                                "name": "search_characters",
+                                "args": {"project_id": str(PROJECT_ID)},
+                            }
+                        ],
+                    },
+                    {
+                        "type": "ai",
+                        "content": "正文。",
+                        "response_metadata": {"model": "zhipu/glm-4.5"},
+                    },
+                ]
+            }
+
+    deps = {
+        "draft_service": AsyncMock(),
+        "audit_service": AsyncMock(),
+        "run_repo": AsyncMock(),
+    }
+    svc = AgenticWriterService(
+        agent_factory=_NoResultAgent,
+        draft_service=deps["draft_service"],
+        audit_service=deps["audit_service"],
+        run_repo=deps["run_repo"],
+    )
+    run = await svc.run(
+        AgenticWriteRequest(
+            project_id=PROJECT_ID,
+            chapter_id=CHAPTER_ID,
+            outline="大纲",
+        )
+    )
+    assert run.status == AgentRunStatus.COMPLETED
+    assert run.model == "zhipu/glm-4.5"  # 覆盖 _extract_model 命中分支（338）
+    results = [tc.result for step in run.steps for tc in step.tool_calls]
+    assert any(r == "" for r in results)
+
+
+async def test_agentic_token_budget_guardrail():
+    """累计 tokens 超预算 → token_budget 护栏（覆盖 377）。"""
+    from inkflow.domain.models.agent_run import AgentRunStatus
+    from inkflow.domain.services.agentic_writer_service import (
+        AgenticWriteRequest,
+        AgenticWriterService,
+    )
+
+    class _TokenHeavyAgent:
+        async def invoke(self, messages, config=None):
+            return {
+                "messages": [
+                    {
+                        "type": "ai",
+                        "content": "正文。",
+                        "response_metadata": {"usage": {"total_tokens": 50000}},
+                    },
+                ]
+            }
+
+    deps = {
+        "draft_service": AsyncMock(),
+        "audit_service": AsyncMock(),
+        "run_repo": AsyncMock(),
+    }
+    svc = AgenticWriterService(
+        agent_factory=_TokenHeavyAgent,
+        draft_service=deps["draft_service"],
+        audit_service=deps["audit_service"],
+        run_repo=deps["run_repo"],
+        token_budget_default=32000,
+    )
+    run = await svc.run(
+        AgenticWriteRequest(
+            project_id=PROJECT_ID,
+            chapter_id=CHAPTER_ID,
+            outline="大纲",
+        )
+    )
+    assert run.status == AgentRunStatus.TERMINATED_BY_GUARDRAIL
+    assert run.terminated_by == "token_budget"
+
+
+async def test_agentic_final_tool_calls_defensive_max_steps():
+    """最终消息仍含 tool_calls 且无正文 → 防御 max_steps（覆盖 384）。"""
+    from inkflow.domain.models.agent_run import AgentRunStatus
+    from inkflow.domain.services.agentic_writer_service import (
+        AgenticWriteRequest,
+        AgenticWriterService,
+    )
+
+    class _LoopingAgent:
+        async def invoke(self, messages, config=None):
+            return {
+                "messages": [
+                    {
+                        "type": "ai",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "c1",
+                                "name": "search_characters",
+                                "args": {"project_id": str(PROJECT_ID)},
+                            }
+                        ],
+                    },
+                    {"type": "tool", "name": "search_characters", "content": '{"ok": true}'},
+                    {
+                        "type": "ai",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "c2",
+                                "name": "search_characters",
+                                "args": {"project_id": str(PROJECT_ID)},
+                            }
+                        ],
+                    },
+                ]
+            }
+
+    deps = {
+        "draft_service": AsyncMock(),
+        "audit_service": AsyncMock(),
+        "run_repo": AsyncMock(),
+    }
+    svc = AgenticWriterService(
+        agent_factory=_LoopingAgent,
+        draft_service=deps["draft_service"],
+        audit_service=deps["audit_service"],
+        run_repo=deps["run_repo"],
+        max_steps_default=12,  # 未超 max_steps（2 步 < 12）
+    )
+    run = await svc.run(
+        AgenticWriteRequest(
+            project_id=PROJECT_ID,
+            chapter_id=CHAPTER_ID,
+            outline="大纲",
+        )
+    )
+    # 最终含 tool_calls 无正文 → 防御分支 max_steps
+    assert run.status == AgentRunStatus.TERMINATED_BY_GUARDRAIL
+    assert run.terminated_by == "max_steps"
