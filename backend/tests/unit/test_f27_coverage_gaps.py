@@ -254,15 +254,17 @@ async def db_session():
     """独立 in-memory SQLite（ORM 惰性导入必须在 create_all 之前——规则 1l）。"""
 
     # 惰性导入注册全部相关表（create_all 依赖 Base.metadata 已注册）
-    from inkflow.infrastructure.database.models.agent_run import (  # noqa: F401
+    from inkflow.infrastructure.database.models.agent_run import (  # noqa: F401  # 惰性导入注册 ORM 表（create_all 依赖 metadata）
         AgentRunORM,
         DraftORM,
     )
-    from inkflow.infrastructure.database.models.chapter import (  # noqa: F401
+    from inkflow.infrastructure.database.models.chapter import (  # noqa: F401  # 惰性导入注册 ORM 表（create_all 依赖 metadata）
         ChapterORM,
         VolumeORM,
     )
-    from inkflow.infrastructure.database.models.project import ProjectORM  # noqa: F401
+    from inkflow.infrastructure.database.models.project import (
+        ProjectORM,  # noqa: F401  # 惰性导入注册 ORM 表（create_all 依赖 metadata）
+    )
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
