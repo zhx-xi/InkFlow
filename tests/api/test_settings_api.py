@@ -643,9 +643,13 @@ DEFAULT_SETTINGS = {
     "close_behavior": "tray",
     "tray_hint_dismissed": False,
     "default_words": 800000,
+    "agent_max_steps": 12,
+    "agent_token_budget": 32000,
+    "agent_max_consecutive_tool": 3,
 }
-"""7 字段默认值（spec §2.1 表 + §3.2 空表响应示例；
-default_words 为 #197 新增字段，2026-08-09 F22 收尾同步）。"""
+"""10 字段默认值（spec §2.1 表 + §3.2 空表响应示例；
+default_words 为 #197 新增字段，2026-08-09 F22 收尾同步；
+agent_* 三键为 F27 #160 Q2 拍板预算护栏设置键，2026-08-10 扩展）。"""
 
 
 @pytest.fixture
