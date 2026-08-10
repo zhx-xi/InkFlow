@@ -119,10 +119,10 @@ class WritingService:
     # ── revise_content ────────────────────────────────────────────
 
     async def revise_content(self, request: RevisionRequest) -> WritingResult:
-        await self._project_repo.get(request.project_id)
+        project = await self._project_repo.get(request.project_id)
         await self._validate_chapter(request.project_id, request.chapter_id)
 
-        model = request.model or "openai/gpt-4o"
+        model = request.model or project.config.model
         temperature = request.temperature if request.temperature is not None else 0.4
 
         warnings: list[str] = []
@@ -422,9 +422,9 @@ class WritingService:
         self, request: RevisionRequest
     ) -> AsyncGenerator[WritingStreamEvent, None]:
         """流式修订 — 语义镜像 revise_content；无 FormatValidator（spec §5.1 注）."""
-        await self._stream_validate(request.project_id, request.chapter_id)
+        project = await self._stream_validate(request.project_id, request.chapter_id)
 
-        model = request.model or "openai/gpt-4o"
+        model = request.model or project.config.model
         temperature = request.temperature if request.temperature is not None else 0.4
 
         warnings: list[str] = []

@@ -23,7 +23,7 @@ from inkflow.domain.models.writing import (
     WritingStreamEvent,
 )
 from inkflow.domain.ports.llm_errors import LLMRequestError
-from inkflow.domain.services.writing_service import WritingService
+from inkflow.domain.services.writing_service import WritingService, _NotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,8 @@ def _map_service_error(exc: Exception) -> HTTPException:
     - LLM 调用失败 → 500 通用消息，记录原始异常，不泄漏内部细节
     - 其他未知异常 → 500 通用消息
     """
+    if isinstance(exc, _NotFoundError):
+        return HTTPException(status_code=404, detail=exc.args[0] if exc.args else "章节不存在")
     if isinstance(exc, LLMRequestError):
         if exc.args and exc.args[0] in _NOT_FOUND_MESSAGES:
             return HTTPException(status_code=404, detail=exc.args[0])

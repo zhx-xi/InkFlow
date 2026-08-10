@@ -594,3 +594,92 @@ class TestStreamErrors:
             async for _ev in sse.aiter_sse():
                 break  # 消费首帧后立即退出 = 客户端断开
         assert closed is True
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Issue #229 修复契约：真实 WritingService + 章节不存在 → 404（而非 500）
+# ═══════════════════════════════════════════════════════════════════════
+# 背景（0.6.0 验证实测）：writing_service._NotFoundError 非 LLMRequestError 子类，
+# _map_service_error 只认 LLMRequestError + 消息匹配 → 真实路径掉 except Exception →
+# 500「服务器内部错误」。契约：三个动作端点传不存在 chapter_id → 404「章节不存在」
+# （ADR-012：领域异常 → 404/422；404 不带 X-InkFlow-Error-Code 头，#169 契约）。
+# RED 阶段预期：本段 3 用例断言 404 → 实际 500 → 干净断言 FAIL；既有用例全 PASS。
+
+
+@pytest.fixture
+def real_writing_service():
+    """真实 WritingService + mock repos —— 章节不存在路径（Issue #229）。"""
+
+    from inkflow.domain.models.project import Project, ProjectConfig
+    from inkflow.domain.services.writing_service import WritingService
+
+    project = Project(
+        id=uuid.uuid4(),
+        name="测试小说",
+        genre="玄幻",
+        language="zh-CN",
+        target_words=100000,
+        config=ProjectConfig(model="deepseek/deepseek-chat", temperature=0.7),
+        is_deleted=False,
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+    )
+    project_repo = MagicMock()
+    project_repo.get = AsyncMock(return_value=project)
+    chapter_repo = MagicMock()
+    chapter_repo.get_chapter = AsyncMock(return_value=None)  # 章节不存在
+    return WritingService(
+        llm_client=MagicMock(),
+        prompt_manager=MagicMock(),
+        project_repo=project_repo,
+        chapter_repo=chapter_repo,
+    )
+
+
+@pytest.fixture
+def override_real_writing_service(real_writing_service):
+    """将 get_writing_service 替换为真实 WritingService（走真实异常映射链）。"""
+
+    from inkflow.api.app import app
+    from inkflow.api.deps import get_writing_service
+
+    app.dependency_overrides[get_writing_service] = lambda: real_writing_service
+    yield real_writing_service
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_generate_missing_chapter_404(override_real_writing_service):
+    """Issue #229: generate 传不存在 chapter_id → 404「章节不存在」而非 500。"""
+    body = {**_payload(), "outline": "测试大纲"}
+    async with _client() as client:
+        resp = await client.post("/api/v1/writing/generate", json=body)
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "章节不存在"
+    assert resp.headers.get("X-InkFlow-Error-Code") is None
+
+
+@pytest.mark.asyncio
+async def test_continue_missing_chapter_404(override_real_writing_service):
+    """Issue #229: continue 传不存在 chapter_id → 404「章节不存在」而非 500。"""
+    body = {**_payload(), "existing_content": "林尘深吸一口气，缓缓走向试炼台……" * 3}
+    async with _client() as client:
+        resp = await client.post("/api/v1/writing/continue", json=body)
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "章节不存在"
+    assert resp.headers.get("X-InkFlow-Error-Code") is None
+
+
+@pytest.mark.asyncio
+async def test_revise_missing_chapter_404(override_real_writing_service):
+    """Issue #229: revise 传不存在 chapter_id → 404「章节不存在」而非 500。"""
+    body = {
+        **_payload(),
+        "content": "……（原文段落内容，此处为待修订的完整段落文本，超过十个字符）",
+        "feedback": "对话节奏太拖沓",
+    }
+    async with _client() as client:
+        resp = await client.post("/api/v1/writing/revise", json=body)
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "章节不存在"
+    assert resp.headers.get("X-InkFlow-Error-Code") is None

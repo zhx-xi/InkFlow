@@ -286,6 +286,30 @@ class TestWritingService:
         result = await service.generate_chapter(request)
         assert result.format_valid is True
 
+    # ── Issue #230 修复契约：revise 默认模型走项目配置（与 generate/continue 一致）──
+
+    async def test_revise_uses_project_config_model(
+        self, service, mock_llm, mock_project_repo, proj_id
+    ) -> None:
+        """Issue #230: revise 不传 model → LLM 请求 model = 项目配置值
+        （而非硬编码 openai/gpt-4o）。"""
+        mock_project_repo.get.return_value.config.model = "deepseek/deepseek-chat"
+        mock_llm.chat.return_value = ChatResponse(
+            content=_good_content(),
+            model="deepseek/deepseek-chat",
+            token_usage=TokenUsage(prompt_tokens=100, completion_tokens=500, total_tokens=600),
+        )
+        request = RevisionRequest(
+            project_id=proj_id,
+            chapter_id=uuid.uuid4(),
+            content="待修订原文内容。" * 10,
+            feedback="节奏太慢，删减环境描写",
+        )
+        result = await service.revise_content(request)
+        assert result.mode == WritingMode.REVISE
+        assert mock_llm.chat.await_args.kwargs["model"] == "deepseek/deepseek-chat"
+        assert mock_llm.chat.await_args.kwargs["temperature"] == 0.4
+
 
 class TestNullContextProvider:
     async def test_returns_empty(self) -> None:
@@ -601,3 +625,23 @@ class TestStreamRevise:
         done = events[-1]
         assert done.done is True
         assert "未能定位目标范围 '第99段'，已对全文执行修订" in done.warnings
+
+    async def test_revise_uses_project_config_model(
+        self, service, mock_llm, mock_project_repo, proj_id
+    ) -> None:
+        """Issue #230: stream_revise 不传 model → chat_stream 请求 model = 项目配置值。"""
+        mock_project_repo.get.return_value.config.model = "deepseek/deepseek-chat"
+        content = "修订后的正文内容。" * 100
+        mock_llm.chat_stream = MagicMock(return_value=_stream_events([content]))
+        request = RevisionRequest(
+            project_id=proj_id,
+            chapter_id=uuid.uuid4(),
+            content="待修订原文内容。" * 10,
+            feedback="节奏太慢，删减环境描写",
+        )
+        events = [ev async for ev in service.stream_revise(request)]
+        done = events[-1]
+        assert done.done is True
+        assert done.model == "deepseek/deepseek-chat"
+        kwargs = mock_llm.chat_stream.call_args.kwargs
+        assert kwargs["model"] == "deepseek/deepseek-chat"
