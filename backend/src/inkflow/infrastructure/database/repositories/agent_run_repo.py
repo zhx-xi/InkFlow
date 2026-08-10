@@ -160,3 +160,40 @@ class SQLiteAgentRunRepository:
         await self._session.commit()
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
+
+    async def save(self, run: AgentRun) -> AgentRun | None:
+        """服务层契约：最终状态一次写回（存在则更新，与 create/update_result 语义等价）.
+
+        与 update_result 的差异：签名接收完整领域 AgentRun（服务层已填好全部终态
+        字段）；不存在时按领域实体创建（insert，run 记录被并发清理后的兜底）。
+        steps 为决策轨迹 JSON 快照全量，单次 commit。
+
+        Args:
+            run: 终态 AgentRun（status/steps/final_content/draft_id/model/
+                token_usage_total/terminated_by/updated_at 均已填好）.
+
+        Returns:
+            更新后的 AgentRun（steps 读回）；契约返回 None 兜底（更新路径一般总能写回）.
+        """
+        stmt = select(AgentRunORM).where(AgentRunORM.id == run.id)
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
+        if orm is None:
+            orm = AgentRunORM(
+                id=run.id,
+                project_id=str(run.project_id),
+                chapter_id=str(run.chapter_id) if run.chapter_id is not None else None,
+                mode=run.mode,
+            )
+            self._session.add(orm)
+        orm.status = run.status.value
+        orm.steps = [s.model_dump(mode="json") for s in run.steps]
+        orm.final_content = run.final_content
+        orm.draft_id = run.draft_id
+        orm.model = run.model
+        orm.token_usage_total = run.token_usage_total
+        orm.terminated_by = run.terminated_by
+        orm.updated_at = run.updated_at
+        await self._session.commit()
+        await self._session.refresh(orm)
+        return _orm_to_domain(orm)
