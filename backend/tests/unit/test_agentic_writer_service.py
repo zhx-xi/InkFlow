@@ -256,7 +256,7 @@ async def test_normal_loop_two_tools_then_content() -> None:
             _ai_msg(content="这是正文内容。"),
         )
     ]
-    service, agent, deps = _make_service(responses)
+    service, _, deps = _make_service(responses)
     deps["draft_service"].create.return_value = Draft(
         id="draft-1",
         project_id=PROJECT_ID,
@@ -322,7 +322,7 @@ async def test_repeat_tool_guardrail() -> None:
         messages.append(_ai_msg(tool_calls=[_tool_call("search_characters")]))
         messages.append(_tool_msg("search_characters"))
     responses = [_history(*messages)]
-    service, agent, deps = _make_service(responses, max_consecutive_tool=3)
+    service, _, deps = _make_service(responses, max_consecutive_tool=3)
 
     run = await service.run(_make_request())
 
@@ -587,7 +587,7 @@ async def test_guardrail_returns_run_not_raises() -> None:
         messages.append(_ai_msg(tool_calls=[_tool_call("search_characters")]))
         messages.append(_tool_msg("search_characters"))
     responses = [_history(*messages)]
-    service, _, deps = _make_service(responses, max_consecutive_tool=3)
+    service, _, _ = _make_service(responses, max_consecutive_tool=3)
 
     run = await service.run(_make_request())
 

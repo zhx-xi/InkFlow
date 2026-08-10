@@ -46,17 +46,17 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from inkflow.api.deps import (
+    get_agent_run_repo,
+    get_agentic_writer_service,
+    get_draft_service,
+)
 from inkflow.domain.models.agent_run import (
     AgenticWriteRequest,
     AgentRun,
     AgentRunStatus,
 )
 from inkflow.domain.models.draft import Draft, DraftStatus
-from inkflow.api.deps import (
-    get_agent_run_repo,
-    get_agentic_writer_service,
-    get_draft_service,
-)
 
 pytestmark = pytest.mark.asyncio  # 既有 API 测试同款（test_project_api.py 先例）
 
@@ -196,7 +196,7 @@ async def test_agentic_generate_completed(overrides):
 
 
 async def test_agentic_generate_guardrail_200(overrides):
-    """guardrail 终止（max_steps 超限）→ 200 + status=terminated_by_guardrail（ADR-D 非 HTTP 错误）。"""
+    """guardrail 终止（max_steps 超限）→ 200 + terminated_by_guardrail（ADR-D 非 HTTP 错误）。"""
     writer = overrides["writer"]
     writer.run.return_value = AgentRun(
         id=RUN_ID,

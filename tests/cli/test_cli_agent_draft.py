@@ -6,9 +6,9 @@
 
 ══════════════════════════════════════════════════════════════════════════
 HTTP 契约（实现者以本文件为准）:
-- draft list → GET /agent/drafts（params: project_id=<UUID str>, status=<draft|confirmed|rejected 可选>, offset, limit）
+- draft list → GET /agent/drafts（params: project_id, status, offset, limit）
   → 200: {"items": [draft...], "total": N}
-- draft confirm → POST /agent/drafts/{draft_id}/confirm（body: {"chapter_id": "<UUID str>"} 可选——草稿未绑定章节时指定）
+- draft confirm → POST /agent/drafts/{draft_id}/confirm（body {"chapter_id"} 可选）
   → 200: {"draft_id": "<id>", "status": "confirmed", "chapter_id": "<UUID str>"}
 - draft reject → POST /agent/drafts/{draft_id}/reject（body: 空或 {"reason": "..."}）
   → 200: {"draft_id": "<id>", "status": "rejected"}

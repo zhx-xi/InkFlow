@@ -1,4 +1,6 @@
-"""F27 M9 CLI RED 契约测试 — agent runs list/show（决策轨迹查询，拍板 A: 复数 runs 与 REST /agent/runs 命名一致）.
+"""F27 M9 CLI RED 契约测试 — agent runs list/show（决策轨迹查询）.
+
+拍板 A: 复数 runs 与 REST /agent/runs 命名一致。
 
 测试范围：inkflow agent runs list / agent runs show --help 与真实执行路径（HTTP mock 轨）。
 
@@ -17,7 +19,7 @@ HTTP 契约（实现者以本文件为准）:
 ══════════════════════════════════════════════════════════════════════════
 
 人类模式输出（父侧定稿，实现按此）:
-- list: 首行「共 N 条运行记录」；每行「{id}  {status}  {terminated_by or "-"}  {token_usage_total} tokens」
+- list: 首行「共 N 条运行记录」；每行「{id}  {status}  {terminated_by or "-"}  {tokens}」
 - show: 「运行 {id} (status={status})」+「步骤: {len(steps)}」+「工具: {tool 序列 a → b}」+
   「tokens: {token_usage_total}」+「终止: {terminated_by or "-"}」
 - --json: print_result 信封 {"ok": true, "data": <API 响应原样>}
