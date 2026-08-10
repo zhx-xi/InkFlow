@@ -647,9 +647,7 @@ DEFAULT_SETTINGS = {
     "agent_token_budget": 32000,
     "agent_max_consecutive_tool": 3,
 }
-"""10 字段默认值（spec §2.1 表 + §3.2 空表响应示例；
-default_words 为 #197 新增字段，2026-08-09 F22 收尾同步；
-agent_* 三键为 F27 #160 Q2 拍板预算护栏设置键，2026-08-10 扩展）。"""
+"""10 字段默认值（§2.1 表 + §3.2 空表响应；agent_* 为 F27 #160 Q2 拍板预算键）。"""
 
 
 @pytest.fixture
