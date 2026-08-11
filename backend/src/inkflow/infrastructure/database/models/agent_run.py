@@ -21,10 +21,10 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text
+from sqlalchemy import DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -73,7 +73,7 @@ class AgentRunORM(Base):
     """运行状态（running/completed/failed/terminated_by_guardrail）."""
 
     steps: Mapped[list] = mapped_column(
-        JSON,
+        LenientJSON(fallback=[]),
         nullable=False,
         default=list,
     )

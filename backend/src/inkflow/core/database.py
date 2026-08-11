@@ -1,18 +1,71 @@
 """SQLAlchemy async engine and session factory."""
 
-from collections.abc import AsyncGenerator
+import numbers
+from collections.abc import AsyncGenerator, Callable
+from typing import Any, TypeVar, overload
 
 from sqlalchemy import Connection, event, text
+from sqlalchemy.dialects.sqlite import JSON
+from sqlalchemy.engine import Dialect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.sql.type_api import TypeEngineMixin
+from sqlalchemy.types import TypeEngine
 
 from inkflow.core.config import config
+
+_TE = TypeVar("_TE", bound=TypeEngine[Any])
 
 
 class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
 
     pass
+
+
+class LenientJSON(JSON):
+    """容错 JSON 列类型（#261）：DB 空串/空白串/损坏 JSON 回退默认值，不再抛 ValueError。
+
+    SQLAlchemy SQLite JSON 类型的 result_processor 对非 None 原始值无条件 json.loads，
+    历史数据把 extra/config 等 JSON 列写成空串 ''（如旧版本落库/手工改库）时，任何 ORM
+    读取都会 ValueError("Expecting value: line 1 column 1")。本类型在解析前先做空串检查，
+    解析失败按列 fallback（dict 列 {} / list 列 []）容错，与既有 `orm.extra or {}` 防护互补。
+    """
+
+    def __init__(self, *args: Any, fallback: Any = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._fallback = fallback
+
+    @overload
+    def adapt(self, cls: type[_TE], **kw: Any) -> _TE: ...
+
+    @overload
+    def adapt(self, cls: type[TypeEngineMixin], **kw: Any) -> TypeEngine[Any]: ...
+
+    def adapt(self, cls: type[TypeEngine[Any] | TypeEngineMixin], **kw: Any) -> TypeEngine[Any]:
+        # SQLite 方言会把泛型 JSON 适配为内部 _SQliteJson；constructor_copy 只复制签名
+        # 匹配的参数，fallback 状态会丢失，容错 result_processor 被绕过。本项目仅使用
+        # SQLite，JSON 语义不变：适配时返回带同样 fallback 的新实例（不能返回 self，
+        # SQLAlchemy _dialect_info 要求 impl 与类型实例分离，否则断言失败）。
+        if issubclass(cls, JSON):
+            return type(self)(fallback=self._fallback, **kw)
+        return super().adapt(cls, **kw)
+
+    def result_processor(self, dialect: Dialect, coltype: Any) -> Callable[[Any], Any] | None:
+        base_process = super().result_processor(dialect, coltype)
+
+        def _process(value: Any) -> Any:
+            if value is None or (isinstance(value, str) and not value.strip()):
+                return self._fallback
+            try:
+                return base_process(value) if base_process is not None else value
+            except ValueError:
+                return self._fallback
+            except TypeError:
+                # 镜像 _SQliteJson 语义：SQLite 返回的裸数值（JSON 标量）原样透传
+                return value if isinstance(value, numbers.Number) else self._fallback
+
+        return _process
 
 
 engine = create_async_engine(

@@ -34,10 +34,9 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -140,7 +139,7 @@ class TimelineEventORM(Base):
     """来源章节（F14 提取锚点；章节硬删 → 置 NULL 事件保留；索引支撑 list_by_chapter）."""
 
     extra: Mapped[dict] = mapped_column(
-        JSON,
+        LenientJSON(fallback={}),
         nullable=False,
         default=dict,
     )

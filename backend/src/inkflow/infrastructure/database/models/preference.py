@@ -19,10 +19,10 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, DateTime, Float, Integer, String, Text
+from sqlalchemy import DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -82,7 +82,7 @@ class ProjectPreferenceORM(Base):
     """支持事件数（≥N 才落库，count desc 排序依据）"""
 
     source_events: Mapped[list] = mapped_column(
-        JSON,
+        LenientJSON(fallback=[]),
         nullable=False,
         default=list,
     )

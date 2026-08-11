@@ -30,10 +30,9 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -97,7 +96,7 @@ class OutlineORM(Base):
     """大纲间排序权重（小者在前，≥ 0）."""
 
     extra: Mapped[dict] = mapped_column(
-        JSON,
+        LenientJSON(fallback={}),
         nullable=False,
         default=dict,
     )
@@ -199,7 +198,7 @@ class PlotPointORM(Base):
     """所属故事弧线（可选；弧线删除时置 NULL，已索引）."""
 
     extra: Mapped[dict] = mapped_column(
-        JSON,
+        LenientJSON(fallback={}),
         nullable=False,
         default=dict,
     )
