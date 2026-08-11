@@ -221,7 +221,10 @@ def _make_service(learner=None, extra=None) -> tuple[MemoryService, dict]:
     deps["preference_repo"].update.return_value = None
     deps["preference_repo"].delete.return_value = True
     deps["event_repo"].create.return_value = SimpleNamespace(id="evt-1", event_type="draft_edited")
-    deps["event_repo"].list_by_project.return_value = []
+    deps["event_repo"].list_by_project.return_value = (
+        [],
+        0,
+    )  # #249 契约修正：真实 repo 返回 (list, total) 元组
     deps["project_repo"].get.return_value = _project(extra or {})
     service = MemoryService(
         preference_repo=deps["preference_repo"],
@@ -522,13 +525,16 @@ async def test_stats_math() -> None:
     """契约⑪a: 事件序列 → chapters/direct_confirms/modify_rate/
     avg_diff_chars/regenerate_rate 数学正确."""
     service, deps = _make_service()
-    deps["event_repo"].list_by_project.return_value = [
-        _event("draft_edited", diff_chars=5, event_id="e1"),
-        _event("draft_edited", diff_chars=-3, event_id="e2"),
-        _event("draft_confirmed", event_id="e3"),
-        _event("draft_confirmed", event_id="e4"),
-        _event("draft_rejected", event_id="e5"),
-    ]
+    deps["event_repo"].list_by_project.return_value = (
+        [  # #249 契约修正：真实 repo 返回 (list, total) 元组（memory_event_repo.py L102）
+            _event("draft_edited", diff_chars=5, event_id="e1"),
+            _event("draft_edited", diff_chars=-3, event_id="e2"),
+            _event("draft_confirmed", event_id="e3"),
+            _event("draft_confirmed", event_id="e4"),
+            _event("draft_rejected", event_id="e5"),
+        ],
+        5,
+    )
     deps["preference_repo"].count_by_project.return_value = 3
     stats = await service.stats(PROJECT_ID)
     assert stats["project_id"] == str(PROJECT_ID)

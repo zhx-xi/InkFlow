@@ -312,7 +312,7 @@ class MemoryService:
         Returns:
             统计字典（project_id / agentic / learned_preferences / baseline_ref）.
         """
-        events: list[MemoryEvent] = await self._event_repo.list_by_project(  # type: ignore[attr-defined]  # 鸭子类型：event_repo 按契约提供 list_by_project
+        events, _total = await self._event_repo.list_by_project(  # type: ignore[attr-defined]  # 鸭子类型：event_repo 按契约返回 (list, total) 元组
             project_id
         )
         edited = [e for e in events if e.event_type == MemoryEventType.DRAFT_EDITED]
