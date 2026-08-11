@@ -47,6 +47,16 @@ def _extract_detail(response: httpx.Response) -> str:
     return detail if isinstance(detail, str) else str(detail)
 
 
+def _filter_none_params(params: dict | None) -> dict | None:
+    """过滤值为 None 的查询参数（#254：httpx 会把 None 编码为空串 → FastAPI 解析失败）.
+
+    None 过滤，显式空串保留（调用方显式传 "" 是其意图）.
+    """
+    if not params:
+        return params
+    return {k: v for k, v in params.items() if v is not None}
+
+
 class InkFlowHTTPClient:
     """内核 HTTP 客户端：base_url + X-InkFlow-Token 请求头 + 请求/SSE 流式方法。"""
 
@@ -81,7 +91,9 @@ class InkFlowHTTPClient:
         return await self._request("DELETE", path, params=params, json=json)
 
     async def _request(self, method, path, *, params=None, json=None) -> dict:
-        response = await self._client.request(method, path, params=params, json=json)
+        response = await self._client.request(
+            method, path, params=_filter_none_params(params), json=json
+        )
         if not 200 <= response.status_code < 300:
             raise HttpApiError(
                 status_code=response.status_code,
@@ -106,7 +118,7 @@ class InkFlowHTTPClient:
         Raises:
             HttpApiError: 非 2xx（与 _request 同规则: detail 提取 + X-InkFlow-Error-Code 头）.
         """
-        response = await self._client.get(path, params=params)
+        response = await self._client.get(path, params=_filter_none_params(params))
         if not 200 <= response.status_code < 300:
             raise HttpApiError(
                 status_code=response.status_code,
@@ -133,7 +145,7 @@ class InkFlowHTTPClient:
 
     async def get_bytes(self, path, *, params=None) -> bytes:
         """GET 原始字节（F36 地图图片下载；非 JSON 响应）."""
-        response = await self._client.request("GET", path, params=params)
+        response = await self._client.request("GET", path, params=_filter_none_params(params))
         if not 200 <= response.status_code < 300:
             raise HttpApiError(
                 status_code=response.status_code,
@@ -145,7 +157,9 @@ class InkFlowHTTPClient:
     async def _request_file(self, method, path, *, data, filename, content, params) -> dict:
         """multipart 请求（错误处理同 _request）."""
         files = {"file": (filename, content)}
-        response = await self._client.request(method, path, params=params, data=data, files=files)
+        response = await self._client.request(
+            method, path, params=_filter_none_params(params), data=data, files=files
+        )
         if not 200 <= response.status_code < 300:
             raise HttpApiError(
                 status_code=response.status_code,
