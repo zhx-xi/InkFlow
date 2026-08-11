@@ -71,6 +71,50 @@ jobs:
           Compress-Archive -Path dist/inkflow -DestinationPath "dist/InkFlow-cli-$version-x64.zip" -CompressionLevel Optimal
           Write-Host "CLI zip created: dist/InkFlow-cli-$version-x64.zip"
 
+      # #253 教训固化（2026-08-12）：打包后产物冒烟——PyInstaller 收集缺失
+      # （chromadb.posthog → tiktoken → chromadb.api.rust → tiktoken .pyd，rc3→rc7 五轮）
+      # 在源码环境（venv 完整依赖）的单元/集成/E2E 全部测不出，只能在打包产物上验证。
+      # 模块完整性 = serve 启动 + RAG 初始化触发（注册 embedding 模型 → reindex）：
+      # 模块缺失 → ModuleNotFoundError（stderr traceback，立即 fail）；无 LLM key 时
+      # reindex 返回 401/500 属 API 调用失败（模块已加载）——冒烟仅断言无 ModuleNotFoundError。
+      - name: Packaged kernel smoke (RAG module integrity)
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          $smoke = Join-Path $env:RUNNER_TEMP 'smoke'
+          New-Item -ItemType Directory -Force -Path $smoke | Out-Null
+          Expand-Archive -Path "dist/InkFlow-cli-$version-x64.zip" -DestinationPath $smoke -Force
+          $exe = Join-Path $smoke 'inkflow/inkflow.exe'
+          & $exe --version | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw 'CLI version check failed' }
+          $env:APPDATA = $smoke
+          $log = Join-Path $smoke 'kernel.log'
+          $kj = Join-Path $smoke 'kernel.json'
+          $proc = Start-Process -FilePath $exe -ArgumentList @('serve','--port','0','--port-file',$kj) -PassThru -RedirectStandardError $log -WindowStyle Hidden
+          try {
+            for ($i = 0; $i -lt 60; $i++) { if (Test-Path $kj) { break }; Start-Sleep -Seconds 1 }
+            if (-not (Test-Path $kj)) { throw 'kernel.json not created (serve failed)' }
+            $k = Get-Content $kj -Raw | ConvertFrom-Json
+            $h = @{ 'X-InkFlow-Token' = $k.token; 'Content-Type' = 'application/json' }
+            $base = "http://127.0.0.1:$($k.port)/api/v1"
+            $newProj = Invoke-RestMethod -Uri "$base/projects" -Method POST -Headers $h -Body '{"name":"smoke"}' -TimeoutSec 30
+            $providers = Invoke-RestMethod -Uri "$base/provider-configs" -Headers $h -TimeoutSec 30
+            $zhipu = $providers.items | Where-Object { $_.name -eq 'zhipu' }
+            if (-not $zhipu) { throw 'zhipu provider seed missing' }
+            $null = Invoke-RestMethod -Uri "$base/provider-configs/$($zhipu.id)" -Method PATCH -Headers $h -Body '{"models":[{"id":"embedding-3","type":"embedding","roles":[]}]}' -TimeoutSec 30
+            try {
+              $null = Invoke-RestMethod -Uri "$base/projects/$($newProj.id)/vector/reindex" -Method POST -Headers $h -TimeoutSec 120
+              Write-Host 'reindex OK（模块完整性通过）'
+            } catch {
+              Write-Host "reindex status: $([int]$_.Exception.Response.StatusCode)（无 key 时 API 失败属预期——模块已加载）"
+            }
+            $stderr = Get-Content $log -Raw -ErrorAction SilentlyContinue
+            if ($stderr -match 'ModuleNotFoundError') { throw "ModuleNotFoundError in packaged kernel: $stderr" }
+            Write-Host 'Packaged kernel smoke passed'
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+
       - name: Upload CLI zip artifact
         uses: actions/upload-artifact@v7
         with:

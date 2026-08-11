@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.core.database import async_session_factory, get_session
 from inkflow.domain.ports.context_sources import ContextSourceProtocol
+from inkflow.domain.ports.extraction_errors import RAGUnavailableError
 from inkflow.domain.ports.vector_store import VectorStoreProtocol
 from inkflow.domain.services._character_extractor import CharacterExtractor
 from inkflow.domain.services._foreshadowing_extractor import ForeshadowingExtractor
@@ -607,10 +608,14 @@ def get_style_service(
     )
 
 
-def get_search_service(
+async def get_search_service(
     db: AsyncSession,
 ) -> SearchService:
-    """获取 SearchService 实例（F22 全文搜索，spec §8.1）."""
+    """获取 SearchService 实例（F22 全文搜索，spec §8.1）.
+
+    #264：注入 get_vector_store_optional()——未配置 embedding 时 None 兜底，
+    semantic 模式真实可用（原硬编码 vector_store=None 导致 semantic 恒空）。
+    """
     return SearchService(
         project_repo=SQLiteProjectRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
@@ -620,7 +625,8 @@ def get_search_service(
         timeline_repo=SQLiteTimelineRepository(db),
         foreshadowing_repo=SQLiteForeshadowingRepository(db),
         search_repo=SQLiteSearchRepository(db),
-        vector_store=None,  # semantic 模式可选注入；未配置 embedding 时 keyword 正常（懒装配）
+        # #264: 注入可选 vector_store（未配置 embedding 时 None → keyword 正常）
+        vector_store=await get_vector_store_optional(),
     )
 
 
@@ -685,3 +691,16 @@ async def get_vector_store() -> VectorStoreProtocol:
         except Exception as e:
             raise RAGUnavailableError(f"RAG 向量库不可用: Embedding 模型加载失败（{e}）") from e
     return _vector_store
+
+
+async def get_vector_store_optional() -> VectorStoreProtocol | None:
+    """获取 RAG 向量存储（可选）——未配置 embedding 时返回 None 而非抛错。
+
+    #264：search semantic 恒空根因——get_search_service 硬编码 vector_store=None。
+    此处兜底为 None：未配置 embedding 模型时 keyword 模式保持正常（懒装配降级），
+    已配置时注入真实 vector_store（semantic 模式可用）。
+    """
+    try:
+        return await get_vector_store()
+    except RAGUnavailableError:
+        return None

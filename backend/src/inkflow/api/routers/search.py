@@ -52,7 +52,7 @@ from inkflow.domain.services.search_service import SearchService
 router = APIRouter(prefix="/api/v1/search", tags=["Search"])
 
 
-def _get_svc() -> SearchService:
+async def _get_svc() -> SearchService:
     """获取 SearchService 实例（F22 全文搜索，spec §8.1）.
 
     零参模块级工厂（镜像 settings.py `_get_key_manager()` 模式）：测试经
@@ -60,7 +60,7 @@ def _get_svc() -> SearchService:
     生产路径经 deps.get_search_service 装配（自建会话，与端点
     `Depends(get_db)` 同源 async_session_factory）。
     """
-    return get_search_service(async_session_factory())
+    return await get_search_service(async_session_factory())
 
 
 def _resolve_project_ids(project_id: str | None, project_ids: str | None) -> list[uuid.UUID]:
@@ -151,7 +151,7 @@ async def search_endpoint(
         )
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.errors(include_context=False)) from e
-    svc = _get_svc()
+    svc = await _get_svc()
     return cast(SearchResponse, await _run_service(svc.search(query)))
 
 
@@ -167,5 +167,5 @@ async def rebuild_endpoint(
     返回 {"rebuilt_at": str, "project_id": str | None}。
     """
     pid = uuid.UUID(project_id).int if project_id else None
-    svc = _get_svc()
+    svc = await _get_svc()
     return cast(dict[str, Any], await _run_service(svc.rebuild(pid)))
