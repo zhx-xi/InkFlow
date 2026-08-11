@@ -9,7 +9,7 @@
 import os
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all, copy_metadata
+from PyInstaller.utils.hooks import collect_all, collect_data_files, copy_metadata
 
 # PyInstaller 以 spec 文件所在目录为基准解析相对路径——spec 在 pyinstaller/ 子目录，
 # 必须用绝对路径锚定 backend 根（实测 pyinstaller/src/... not found）。
@@ -24,6 +24,11 @@ datas, binaries, hiddenimports = collect_all("inkflow")
 # importlib.metadata.version("inkflow") 读取，依赖 dist-info；
 # PyInstaller 不自动收集 .dist-info，缺失则冻结 exe 抛 PackageNotFoundError。
 datas += copy_metadata("inkflow")
+
+# tiktoken 编码数据（#253 rc4 实测）：OpenAIEmbeddings._tokenize 运行时经 tiktoken
+# 加载 cl100k_base 编码文件，PyInstaller 不自动收集 tiktoken_files 数据，
+# 缺失则冻结版 vector/retrieve 抛 ValueError: Unknown encoding cl100k_base。
+_tiktoken_datas = collect_data_files("tiktoken")
 
 # 运行时钩子（冒烟 2 实测）：冻结版 PyInstaller 引导器在 Windows 上重定向
 # stdout/stderr 时忽略 PYTHONUTF8/PYTHONIOENCODING，退化为区域编码（本机 cp936），
@@ -75,7 +80,7 @@ a = Analysis(
         "transformers",
         "sentence_transformers",
     ],
-    datas=datas,
+    datas=datas + _tiktoken_datas,
     binaries=binaries,
     noarchive=False,
     optimize=0,
