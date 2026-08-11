@@ -9,7 +9,7 @@
 import os
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all, collect_data_files, copy_metadata
+from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 # PyInstaller 以 spec 文件所在目录为基准解析相对路径——spec 在 pyinstaller/ 子目录，
 # 必须用绝对路径锚定 backend 根（实测 pyinstaller/src/... not found）。
@@ -25,10 +25,16 @@ datas, binaries, hiddenimports = collect_all("inkflow")
 # PyInstaller 不自动收集 .dist-info，缺失则冻结 exe 抛 PackageNotFoundError。
 datas += copy_metadata("inkflow")
 
-# tiktoken 编码数据（#253 rc4 实测）：OpenAIEmbeddings._tokenize 运行时经 tiktoken
-# 加载 cl100k_base 编码文件，PyInstaller 不自动收集 tiktoken_files 数据，
-# 缺失则冻结版 vector/retrieve 抛 ValueError: Unknown encoding cl100k_base。
-_tiktoken_datas = collect_data_files("tiktoken")
+# tiktoken Rust 扩展二进制（#253 rc6 补充）：tiktoken 0.13 编码数据内嵌在
+# tiktoken/_tiktoken.cp3xx-win_amd64.pyd（Rust 编译扩展），PyInstaller 静态分析不可见；
+# 此前 collect_data_files("tiktoken") 返回 0 文件（#256 无效）；改为 collect_all
+# 一次性收集 datas/binaries/hiddenimports 三件套，缺失则冻结版 vector reindex
+# 抛 ValueError: Unknown encoding cl100k_base。
+_tiktoken_datas, _tiktoken_binaries, _tiktoken_hidden = collect_all("tiktoken")
+
+# tiktoken_ext 顶层包（含 openai_public 插件）：随 tiktoken 一并收集 datas/binaries/
+# hiddenimports 三件套，防止 frozen 版 tiktoken_ext 模块缺失。
+_tiktoken_ext_datas, _tiktoken_ext_binaries, _tiktoken_ext_hidden = collect_all("tiktoken_ext")
 
 # chromadb 全家桶（#253 rc5 补充）：chromadb 1.x Rust 后端子包（chromadb.api.rust）
 # 由 importlib 动态导入，PyInstaller 静态分析不可见；此前逐层补 posthog/tiktoken 仍漏
@@ -64,6 +70,8 @@ a = Analysis(
     # 静态分析不可见，必须显式列出。
     # chromadb 子模块（RAG 进包）：首次打包冒烟（--help / serve / RAG 检索）后按缺模块逐项补充。
     hiddenimports=hiddenimports
+    + _tiktoken_hidden
+    + _tiktoken_ext_hidden
     + [
         "uvicorn.logging",
         "uvicorn.loops.auto",
@@ -89,8 +97,8 @@ a = Analysis(
         "transformers",
         "sentence_transformers",
     ],
-    datas=datas + _tiktoken_datas,
-    binaries=binaries,
+    datas=datas + _tiktoken_datas + _tiktoken_ext_datas,
+    binaries=binaries + _tiktoken_binaries + _tiktoken_ext_binaries,
     noarchive=False,
     optimize=0,
 )
