@@ -5,11 +5,13 @@
 - 命中人类可读输出（类型徽标 + 项目名 + 标题 + snippet，<mark> → [ ] 方括号替换）
 - --json 成功信封（{"ok": true, "data": SearchResponse}）
 - HttpApiError(404) → NOT_FOUND 错误信封 + 退出码 1（F38 错误码映射）
-- 多 -p 多 -t（及 --limit / --offset）透传 GET /api/v1/search params
-- --rebuild → POST /api/v1/search/rebuild（人类输出 + --json 信封两种形态）
+- 多 -p 多 -t（及 --limit / --offset）透传 GET /search params
+- --rebuild → POST /search/rebuild（人类输出 + --json 信封两种形态）
 - --mode semantic 透传
 - query 缺失 → 退出码 2（Typer 自动）
-- 项目名 → GET /api/v1/projects 解析为 id（父侧裁定：--project 接受名或 UUID）
+- 项目名 → GET /projects 解析为 id（父侧裁定：--project 接受名或 UUID）
+
+> **⚠️ 契约修正（#246，2026-08-11 rc1 验证实测）**：端点路径**不带 `/api/v1` 前缀**——InkFlowHTTPClient base_url 已含 `/api/v1`（infrastructure/http/client.py L55），双前缀会拼出 `/api/v1/api/v1/search` → 真实 HTTP 404（0.6.0 F38 改造遗留，mock 轨测不出 URL 拼接）。以下 docstring/断言中的 `/api/v1/search`、`/api/v1/search/rebuild`、`/api/v1/projects` 全部为修正后形态（`/search`、`/search/rebuild`、`/projects`）。
 
 ── RED 形态说明 ─────────────────────────────────────────────
 - 本文件模块级 import `inkflow.cli.commands.search`（命令模块不存在）
@@ -21,10 +23,10 @@
 - HttpApiError 经 _http_error helper 在用例体内惰性导入（F38 已合入
   main，inkflow.infrastructure.http 存在；惰性仅为防御收集期连锁失败）。
 
-── 端点契约（spec §4，v1.2）────────────────────────────────
-- search <query> -p X → GET /api/v1/search（params: q / project_ids
+── 端点契约（spec §4，v1.2；#246 修正：路径不含 /api/v1 前缀）────────────────
+- search <query> -p X → GET /search（params: q / project_ids
   逗号连接 / types 逗号连接 / mode / limit / offset）
-- --rebuild [-p X] → POST /api/v1/search/rebuild（params: project_id 可选）
+- --rebuild [-p X] → POST /search/rebuild（params: project_id 可选）
 - 错误映射（F38 map_http_error）：404 → NOT_FOUND；422 →
   VALIDATION_ERROR；500 + LLM_ERROR 头 → LLM_ERROR；其余 → INTERNAL_ERROR
 
@@ -57,14 +59,14 @@
    （可重复）、--mode（keyword/semantic，默认 keyword）、--limit
    （默认 20）、--offset（默认 0）、--rebuild、--json。
 
-3. HTTP 端点映射（spec §4，v1.2）：
-   - 查询 → `await client.get("/api/v1/search", params={...})`——
+3. HTTP 端点映射（spec §4，v1.2；#246 修正：base_url 已含 /api/v1，路径不带前缀）：
+   - 查询 → `await client.get("/search", params={...})`——
      params 含 q、project_ids（多 -p 逗号连接 UUID 字符串）、types
      （多 -t 逗号连接枚举）、mode、limit、offset
-   - --rebuild → `await client.post("/api/v1/search/rebuild",
+   - --rebuild → `await client.post("/search/rebuild",
      params={...})`——project_id 仅当 --project 提供（缺省 = 重建全部）
    - client 方法以位置参数传 path（F38 既有命令形态）
-   - 项目名解析与命中展示的项目名映射均经 `GET /api/v1/projects`
+   - 项目名解析与命中展示的项目名映射均经 `GET /projects`
      列表端点（响应信封 {"items": [{id, name}, ...], "total"}）——
      本文件 mock 仅覆盖该列表端点 + search / rebuild 端点，其余路径
      视为测试错误（_route_http 抛 AssertionError）
@@ -193,24 +195,29 @@ def _projects_response(**overrides: object) -> dict:
 
 
 def _route_http(*args, **kwargs) -> dict:
-    """mock client.get 的 URL 路由：/api/v1/projects 与 /api/v1/search 返回不同响应。
+    """mock client.get 的 URL 路由：/projects 与 /search 返回不同响应。
 
     设计假设 #3：--project 项目名解析（GET /projects 匹配 name）与
     人类输出项目名映射共用该列表端点；未预期路径抛错 = 测试失败。
+    #246 修正：路径不带 /api/v1 前缀（base_url 已含）——实现若仍传
+    /api/v1/... 前缀，本路由抛 AssertionError = RED 预期。
     """
     path = args[0] if args else kwargs.get("path")
-    if path == "/api/v1/projects":
+    if path == "/projects":
         return _projects_response()
-    if path == "/api/v1/search":
+    if path == "/search":
         return _search_response()
     raise AssertionError(f"unexpected GET path: {path!r}")
 
 
 def _search_call(client):
-    """取 GET /api/v1/search 的调用记录（兼容 CLI 先拉项目列表的多调用形态）。"""
+    """取 GET /search 的调用记录（兼容 CLI 先拉项目列表的多调用形态）。
+
+    #246 修正：路径不带 /api/v1 前缀。
+    """
     calls = client.get.await_args_list
-    search_calls = [c for c in calls if c.args and c.args[0] == "/api/v1/search"]
-    assert search_calls, "GET /api/v1/search 未被调用"
+    search_calls = [c for c in calls if c.args and c.args[0] == "/search"]
+    assert search_calls, "GET /search 未被调用"
     return search_calls[-1]
 
 
@@ -337,7 +344,7 @@ class TestSearchQuery:
         fake_http_client.get.assert_not_awaited()
 
     def test_project_name_resolution(self, cli_runner, fake_http_client):
-        """--project 项目名 → GET /api/v1/projects 匹配 name 解析为 id（父侧裁定）。
+        """--project 项目名 → GET /projects 匹配 name 解析为 id（父侧裁定）。
 
         设计假设 #3：列表信封 {"items": [{id, name}]}；解析后查询
         params project_ids = 解析出的 UUID 字符串。
@@ -351,8 +358,8 @@ class TestSearchQuery:
         assert result.exit_code == 0
         calls = fake_http_client.get.await_args_list
         assert any(
-            c.args and c.args[0] == "/api/v1/projects" for c in calls
-        ), "GET /api/v1/projects 未被调用（项目名解析）"
+            c.args and c.args[0] == "/projects" for c in calls
+        ), "GET /projects 未被调用（项目名解析）"
         params = _params(_search_call(fake_http_client))
         assert params["project_ids"] == str(PID)
 
@@ -364,15 +371,15 @@ class TestSearchRebuild:
     """--rebuild 命令契约（设计假设 #3/#5，v1.2 经 POST 端点）。"""
 
     def test_rebuild_human_post_called(self, cli_runner, fake_http_client):
-        """--rebuild 缺省项目 → POST /api/v1/search/rebuild（无 project_id），退出 0。"""
+        """--rebuild 缺省项目 → POST /search/rebuild（无 project_id），退出 0。"""
         fake_http_client.post.return_value = {"rebuilt_at": TS, "project_id": None}
         result = cli_runner.invoke(
             app, ["--rebuild"], obj=CliContext(json_output=False)
         )
         assert result.exit_code == 0
         call = fake_http_client.post.await_args
-        assert call is not None, "POST /api/v1/search/rebuild 未被调用"
-        assert call.args[0] == "/api/v1/search/rebuild"
+        assert call is not None, "POST /search/rebuild 未被调用"
+        assert call.args[0] == "/search/rebuild"
         assert "project_id" not in _params(call)
 
     def test_rebuild_json_envelope(self, cli_runner, fake_http_client):
@@ -397,8 +404,8 @@ class TestSearchRebuild:
         )
         assert result.exit_code == 0
         call = fake_http_client.post.await_args
-        assert call is not None, "POST /api/v1/search/rebuild 未被调用"
-        assert call.args[0] == "/api/v1/search/rebuild"
+        assert call is not None, "POST /search/rebuild 未被调用"
+        assert call.args[0] == "/search/rebuild"
         assert _params(call)["project_id"] == str(PID)
 
 

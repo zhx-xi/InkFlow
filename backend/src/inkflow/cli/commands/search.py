@@ -81,7 +81,7 @@ async def _resolve_projects(
     name_map: dict[str, str] = {}
     if not pending_names:
         return resolved, name_map
-    data = await client.get("/api/v1/projects", params={"offset": 0, "limit": 50})
+    data = await client.get("/projects", params={"offset": 0, "limit": 50})
     items = data.get("items", [])
     name_map = {item["id"]: item["name"] for item in items}
     by_name = {item["name"]: item["id"] for item in items}
@@ -96,7 +96,7 @@ async def _resolve_projects(
 
 async def _fetch_projects(client: InkFlowHTTPClient) -> dict[str, str]:
     """GET /api/v1/projects 列表 → {id: name} 映射（人类输出项目名展示，spec §4）."""
-    data = await client.get("/api/v1/projects", params={"offset": 0, "limit": 50})
+    data = await client.get("/projects", params={"offset": 0, "limit": 50})
     return {item["id"]: item["name"] for item in data.get("items", [])}
 
 
@@ -156,7 +156,7 @@ def search_cmd(
                 if project_ids:
                     params["project_id"] = project_ids[0]
                 return (
-                    await client.post("/api/v1/search/rebuild", params=params or None),
+                    await client.post("/search/rebuild", params=params or None),
                     name_map,
                 )
             params = {
@@ -168,7 +168,7 @@ def search_cmd(
             }
             if type_:
                 params["types"] = ",".join(type_)
-            data = await client.get("/api/v1/search", params=params)
+            data = await client.get("/search", params=params)
             if not (cli_ctx.json_output or json_output) and data.get("hits"):
                 name_map = await _fetch_projects(client)
             return data, name_map

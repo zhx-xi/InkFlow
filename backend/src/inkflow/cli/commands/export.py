@@ -126,7 +126,7 @@ def export_cmd(
             pid, project_name = await _resolve_project(cli_ctx, client, project)
             txt = await client.get_raw(
                 f"/projects/{pid}/export",
-                params={"include_settings": "true" if include_settings else None},
+                params={"include_settings": "true"} if include_settings else None,
             )
             filename = suggest_filename(project_name, ExportFormat.TXT)
             path = _resolve_output_path(output, filename)
