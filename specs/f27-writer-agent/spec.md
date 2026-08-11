@@ -7,7 +7,7 @@
 **关联 Issues**: #160（F27 Writer Agent 闭环）
 **依赖**: ✅ F26 agent-tools（deepagents 集成 + 5 只读工具，PR #236）· ✅ F5 LLM Provider · ✅ F4 Agent 管线 · ✅ #87 LangGraph 重构 · ✅ F34 单章审计 · ✅ F3 writing_service · ⏳ F28 agent-memory（F27 是事件源，反向依赖）
 **参考 ADR**: ADR-D（护栏触发语义）、ADR-E（编排引擎=deepagents 0.7.5）、ADR-F（写工具形态）、ADR-C（预算护栏数值——本 spec 定稿）、ADR-015（LangChain 隔离）、ADR-027（覆盖率门禁）
-**状态**: ✅ 已拍板（Q1=选项 A、Q2=选项 A + 设置可改、Q3=选项 A（N=5/模式）、Q4=选项 A，2026-08-10）
+**状态**: ✅ 已实现（PR #241，2026-08-10 合入；Q1-Q4 拍板 2026-08-10）
 
 > **模块类型声明**: 本模块为 Agent 化升级新增变体——「**自主循环闭环型**」（第 11 个模块变体，编号依据：AGENTS.md 模块类型谱系，F26=第 10 变体口径延续）。与 F26（deepagents 集成 + 工具定义型）不同：F27 是**首个有 LLM 自主控制流 + 写操作落库 + 用户确认流**的业务闭环，新增 1 张 agent_run 表 + 1 张 draft 表（Q4 拍板）。
 

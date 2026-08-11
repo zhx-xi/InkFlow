@@ -28,13 +28,13 @@
 | 维度 | 说明 |
 |------|------|
 | **团队** | 单人开发 |
-| **时间线** | SemVer 版本里程碑（ADR-019 v5）：0.1.0 ✅ → 0.2.0 ✅（F9-F16 已交付）→ 0.3.0 ✅ GUI（F19 提前 + F23 SSE 提前）→ 0.3.1 ✅ 质量加固（#86 LLM 修复 / #87 状态重构 / #92 真实 AI CI / #104 覆盖率）→ 0.4.0 ✅ 打包 + GUI 演进（v0.4.0 2026-08-07 发布）→ 0.5.0 ✅ Agent 集成（v0.5.0 2026-08-08 发布）→ 0.6.0 ✅ 导出+搜索+世界观（v0.6.0 2026-08-10 发布）→ **1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）** → **2.0.0 = 云端**；对应 PRD W10-W24 周计划（明细见下方里程碑表） |
+| **时间线** | SemVer 版本里程碑（ADR-019 v6）：0.1.0 ✅ → 0.2.0 ✅（F9-F16 已交付）→ 0.3.0 ✅ GUI（F19 提前 + F23 SSE 提前）→ 0.3.1 ✅ 质量加固（#86 LLM 修复 / #87 状态重构 / #92 真实 AI CI / #104 覆盖率）→ 0.4.0 ✅ 打包 + GUI 演进（v0.4.0 2026-08-07 发布）→ 0.5.0 ✅ Agent 集成（v0.5.0 2026-08-08 发布）→ 0.6.0 ✅ 导出+搜索+世界观（v0.6.0 2026-08-10 发布）→ 0.7.0 ✅ Agent 化升级（deepagents 0.7.5 harness + F26/F27/F28，v0.7.0-rc1 2026-08-11）→ **1.0.0 = 本地完全可用（CLI+GUI+skills+MCP）** → **2.0.0 = 云端**；对应 PRD W10-W24 周计划（明细见下方里程碑表） |
 | **部署模式** | 本地优先（SQLite，免认证）；**2.0.0 云端里程碑**：云存档/异地写作（PostgreSQL + JWT + BYOK，无 CRDT），GUI/CLI 远程模式连接云端 |
 | **多界面** | GUI（Electron，React 复用）+ CLI（Typer）+ REST API（FastAPI：本地内核通用通信契约，亦为云端用户 API 同一契约）+ MCP Server（stdio 直连 domain）（+ 云端 Web/Admin 后台） |
 | **工作流** | SDD + TDD：先写 spec → 再写测试（RED）→ 写代码（GREEN）→ 重构 |
 | **仓库** | `https://github.com/zhx-xi/InkFlow` |
 
-### 里程碑（ADR-019 v5：2026-08-07 F25 daemon 移除，ADR-029；v4 2026-08-06 skills + F20 MCP 后移至 1.0.0，#70/#49 拍板；v2 2026-08-02 产品形态决策重排，Issue #65）
+### 里程碑（ADR-019 v6：2026-08-11 0.7.0 = Agent 化主线（F26/F27/F28 + deepagents 0.7.5 编排拍板），F29 移 0.8.0；v5 2026-08-07 F25 daemon 移除，ADR-029；v4 2026-08-06 skills + F20 MCP 后移至 1.0.0，#70/#49 拍板；v2 2026-08-02 产品形态决策重排，Issue #65）
 
 | 版本 | 内容 |
 |------|------|
@@ -45,6 +45,7 @@
 | 0.4.0 ✅ | F19 打包分发（PR #144，#48：B+ chromadb 进包 + API embedding 装配 + 数据目录 sys.frozen→%APPDATA% + PyInstaller 内核 onedir 142MB + electron-builder NSIS 145.6MB/便携 ZIP 177.4MB + release.yml tag v* 自动发布；发布门禁 #145 ✅：rc.1-rc.6 迭代修复（artifact 结构/GH_TOKEN/版本注入/asar renderer 路径/品牌图标）后 **v0.4.0 正式发布 2026-08-07**（exe 144.3MB + zip 175.5MB））+ GUI 演进——子任务 D 导航重构+设置页框架（PR #120/#121，#105，承接 #99 交互反馈实现）· 子任务 E 模型管理页（PR #122，#106：ProviderConfig 注册表 + 模型管理页 + 角色绑定只读区 + 顶栏 Select + 自绘窗口按钮，覆盖率 99.27%）· 模型管理修复（PR #131/#132，#125/#126：addModel rethrow + 部分失败保留草稿 + builtin_key 判重防 seed 复活，2026-08-06）· 子任务 F Agent 模板（PR #135，#107：AgentTemplate 实体（引用式）+ 角色独立温度链（0.7 哨兵移除）+ 风险确认框 + 新建项目模板下拉，三层测试全绿）· 架构图 + ChatLiteLLM 残留清理（PR #134，#134 文档同步）· CI uv cache 修复 + job 分批（PR #128，#128）；遗留：设置持久化 #152（0.5.0） |
 | 0.5.0 ✅ | Agent 集成：F24 会话 ✅（#51）· E2E 增强（#139/#140）· 设置持久化（#152 ✅ PR #176）· 本地内核服务化（#166 ✅ PR #171 / #167 ✅ PR #172 / **#168 ✅ PR #181**）——0.5.0 里程碑 2026-08-08 关闭。**发布修复链（rc1-rc4 迭代）**：prerelease 自动标记（#183 ✅ PR #184）· CLI zip 命名对齐（#185 ✅ PR #186）· GUI 任意 cwd 启动（#187 ✅ PR #191）· 托盘图标+内核状态菜单刷新（#188 ✅ PR #190）· 设置持久化全局化 default_words 方案 A + 顶部已保存（#189 ✅ PR #190/#197）· rc2 复验四缺陷：内核路径 resourcesPath/顶栏状态真实化/托盘 logo 源图（#192 ✅ PR #193）· 新建项目对话框目标字数+遮罩（#195 ✅ PR #197）· 回归防护补测（PR #194）——rc1→rc4 预发布迭代后 **v0.5.0 正式发布 2026-08-08**（Latest） |
 | 0.6.0 ✅ | F21 导出 ✅（PR #214）· F22 全文搜索 ✅（PR #216）· 世界观三连（**#173 地点树 ✅ PR #215** / **#174 地图视图 ✅ PR #220** / **#175 跨书复用 ✅ PR #223**）· CLI 恒经 HTTP ✅（#169 PR #213）· F34 章节审计 ✅（#208 PR #219）· E2E 设置页补全 ✅（#141 PR #222）· 设定库分类实体创建 ✅（#196 PR #207）· default_words 全局值重启加载 ✅（#198 PR #205）· 设置保存反馈统一化 ✅（#199 PR #206）——**0.6.0 里程碑 2026-08-09 关闭**（12/12 issues） |
+| 0.7.0 ✅ | Agent 化升级（deepagents 0.7.5 harness）：F26 Agent 工具基础设施 ✅（#90 PR #236：deepagents 集成 + 5 只读工具，ADR-E v6）· F27 Writer Agent 闭环 ✅（#160 PR #240 spec + #241 实现：ReAct 工具循环 + save_draft 草稿确认流 + 四重护栏 + agent_run 轨迹，ADR-D/F）· F28 记忆系统 ✅（#159 PR #242：diff 事件捕获 + N≥2 偏好学习 + protected 层注入 + inkflow memory list/remove，ADR-G/H）· E2E 增强 ✅（#142 PR #238 写作页 / #143 PR #239 项目页+壳）· bug 批 ✅（#225 PR #237 Agent 链开关持久化 · #229+#230 PR #234 writing 404 映射 + revise 模型回退 · #231 PR #233 chapter list --status · #232 PR #235 项目卡片跳转）——**0.7.0 里程碑 10/10 issues 全关**（2026-08-11，收尾 #243） |
 | 1.0.0 🎉 | **本地完全可用 = CLI + GUI + skills + MCP** + 跨平台 + 文档 + 全量验收 |
 | 2.0.0 ☁️ | 云端：F18 云 Web（移出单机）· 用户 API · Admin 后台 · GUI 远程模式 |
 
@@ -65,13 +66,13 @@ F1 项目/书籍 · F2 章节 · F3 写作管道 · F4 Agent 编排 · F5 LLM Pr
 | F15 | `audit_service` | 一致性审计（角色/时间线/世界/伏笔 4 维度） | ✅ 已完成（PR #74） |
 | F16 | `style_service` | 风格检测（风格指纹/AI 痕迹/词汇分析） | ✅ 已完成（PR #75） |
 
-> 模块类型谱系：F9/F10 提取型 → F11 生成型 → F12 确定性检查型（无 LLM）→ F13 状态追踪+F6 注入型（无 LLM，首个自带 F6 数据源替换）→ F14 横切收敛型（门面：收敛 F9-F13 管线 + 增量提取 + RAG 首次落地 ADR-013）→ F15 横切审计型（纯消费者：只读聚合 4 维档案 + 跨模块引用，零跨模块 MODIFY）→ F16 确定性文本分析型（无 LLM 主体 + LLM 深度分析可选 + jieba 增强：文本统计特征计算，StyleReport 瞬态输出，F14 STYLE 槽位注册 handler 接口零变更）→ **F23 传输增强型（零新实体：WritingStreamEvent 判别联合 DTO + service 流式方法 + API SSE 端点 + CLI 默认流式，SSE 一条代码路径两用 ADR-021）** → **F30 客户端发现型（第 13 变体：零实体零 API 端点，kernel.json 状态文件三态 + ensure_kernel 拉起器（复用/互斥拉起/秒退重试/版本校验）+ CreateMutexW 互斥 + stale 清理 + dev kernel status，ADR-030 ② 基建 #166 PR #171）** → **F32 设置域横切型（第 14 变体：新实体 app_settings 设置库（key-value 零迁移）+ GET/PATCH /settings（默认值补齐/未知字段 422）+ 前端双轨加载（localStorage 降级缓存层）+ Electron 主进程桥接（持久化权威=后端、运行时权威=主进程）+ 表单草稿守卫（Q3=C：卸载 flush 自动保存），#152 PR #176）**。后续模块实施时先对照对应变体样板（`specs/f14-extraction-service/spec.md` 为横切模板；`specs/f16-style-service/spec.md` 为确定性文本分析模板；`specs/f23-sse-stream/spec.md` 为传输增强模板；`specs/f32-settings-persistence/spec.md` 为设置域模板；F13 另含 F6 集成模式 `specs/f13-foreshadowing-service/spec.md` §5）。
+> 模块类型谱系：F9/F10 提取型 → F11 生成型 → F12 确定性检查型（无 LLM）→ F13 状态追踪+F6 注入型（无 LLM，首个自带 F6 数据源替换）→ F14 横切收敛型（门面：收敛 F9-F13 管线 + 增量提取 + RAG 首次落地 ADR-013）→ F15 横切审计型（纯消费者：只读聚合 4 维档案 + 跨模块引用，零跨模块 MODIFY）→ F16 确定性文本分析型（无 LLM 主体 + LLM 深度分析可选 + jieba 增强：文本统计特征计算，StyleReport 瞬态输出，F14 STYLE 槽位注册 handler 接口零变更）→ **F23 传输增强型（零新实体：WritingStreamEvent 判别联合 DTO + service 流式方法 + API SSE 端点 + CLI 默认流式，SSE 一条代码路径两用 ADR-021）** → **F30 客户端发现型（第 13 变体：零实体零 API 端点，kernel.json 状态文件三态 + ensure_kernel 拉起器（复用/互斥拉起/秒退重试/版本校验）+ CreateMutexW 互斥 + stale 清理 + dev kernel status，ADR-030 ② 基建 #166 PR #171）** → **F26 deepagents 集成型（Agent 工具基础设施 + harness 装配：create_deep_agent + HarnessProfile，F27/F28 前置）** → **F27 自主循环闭环型（首个 LLM 自主控制流 + 写操作落库 + 用户确认流）** → **F28 偏好学习闭环型（首个从用户行为反向学习并回注生成流程：diff 事件捕获 + 规则化统计）**（F26-F28 变体编号以各自 spec 为准：F27=第 11、F28=第 12，F26=第 10 口径延续；AGENTS.md 既有 F30/F32 的 13/14 编号为 0.5.0 时代先行计数，存在历史口径差异）。后续模块实施时先对照对应变体样板（`specs/f14-extraction-service/spec.md` 为横切模板；`specs/f16-style-service/spec.md` 为确定性文本分析模板；`specs/f23-sse-stream/spec.md` 为传输增强模板；`specs/f32-settings-persistence/spec.md` 为设置域模板；F13 另含 F6 集成模式 `specs/f13-foreshadowing-service/spec.md` §5）。
 
 ### Phase 3 功能（F18-F24，2026-08-02 形态决策后归属调整）
 
 F18 web_ui（云端 2.0.0）· F19 GUI（0.3.0 GUI ✅ 子任务 A PR #85 / B PR #95 / C PR #97；0.4.0 演进 ✅ 子任务 D 导航重构 PR #120/#121 / E 模型管理 PR #122 / F Agent 模板 PR #135 + 打包 PR #144）· F20 MCP（1.0.0）· F21 导出（0.6.0）· F22 搜索（0.6.0 ✅ PR #216：FTS5+jieba 词法 + semantic 增强 + 索引三态维护 + 跨项目）· F23 SSE ✅（PR #83）· F24 会话（0.5.0）· ~~F25 daemon~~（移除，ADR-029：伪需求，真实意图=外部 agent 经 MCP/skills 调用，由 F19/F20/ADR-022 覆盖）
 
-> F17 空置（PRD §6.2 标题残留编号）。F18-F24 版本归属以 ADR-019 v5 为准（PRD §6.3/6.4 原归属已被形态决策重排）。
+> F17 空置（PRD §6.2 标题残留编号）。F18-F24 版本归属以 ADR-019 v6 为准（PRD §6.3/6.4 原归属已被形态决策重排）。
 
 ---
 
@@ -190,7 +191,7 @@ class ProjectRepository:  # 实现 Protocol，无需显式继承
 | [ADR-015](adr/ADR-015.md) | **LangChain 隔离**：Protocol 模式 |
 | [ADR-017](adr/ADR-017.md) | **CI 代码质量**：Reviewdog + Ruff |
 | [ADR-018](adr/ADR-018.md) | **测试分层**：三层目录 + 按功能并行 CI |
-| [ADR-019](adr/ADR-019.md) | **版本里程碑**：SemVer + 1.0.0 = 本地完全可用（v5：v2 重排 +2.0.0 云端，v3 skills 后移 1.0.0，v4 F20 MCP 后移 1.0.0，v5 F25 daemon 移除） |
+| [ADR-019](adr/ADR-019.md) | **版本里程碑**：SemVer + 1.0.0 = 本地完全可用（v6：v2 重排 +2.0.0 云端，v3 skills 后移 1.0.0，v4 F20 MCP 后移 1.0.0，v5 F25 daemon 移除，v6 0.7.0 Agent 化主线 + deepagents 0.7.5） |
 | [ADR-020](adr/ADR-020.md) | 单机 GUI：**Electron** + 共享 React 渲染层 |
 | [ADR-021](adr/ADR-021.md) | **本地内核进程化**：localhost REST + SSE |
 | [ADR-022](adr/ADR-022.md) | **skills 包**：源码单一真相 + 三通道分发 |
