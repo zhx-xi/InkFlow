@@ -4,7 +4,7 @@
 - export 组注册（export 命令）
 - 导出成功：名称解析 → 下载 TXT → 落盘（tmp_path）+ 人类模式输出
 - --json 成功信封 {"ok": true, "data": {format/filename/bytes/path}} 精确断言
-- --include-settings 透传 query include_settings=true（默认 false）
+- --include-settings 透传 query include_settings=true（默认 false 且不含该键，#247）
 - 项目不存在（搜索无匹配）→ NOT_FOUND 错误信封 + 退出码 1
 - 下载途中 404 / 500 → NOT_FOUND / INTERNAL_ERROR + 退出码 1
 - --output/-o 目录 vs 文件路径 vs 默认 cwd 语义
@@ -47,7 +47,8 @@ infrastructure.http 已随 F38 GREEN（与 audit RED 期不同，无需惰性导
    返回原始响应文本（TXT，非 JSON 信封）；非 2xx 抛 HttpApiError
    （GREEN 扩展 infrastructure/http/client.py）。
    include_settings=true 时 params={"include_settings": "true"}；
-   默认不带 params 或传 false（测试断言 != "true"，不锁形态）。
+   默认（false）params 完全不含 include_settings 键（#247 契约收紧：
+   None 值必须过滤——None → httpx 空串 include_settings= → API 422）。
 5. 建议文件名: 由项目 name 生成 "{name}-txt.txt"（GREEN 可复用服务侧
    _export_filename.suggest_filename 或自行拼装；非法字符清洗 E5/空书名
    占位 E7 归单元层 tests/unit/test_output_models.py，本文件只用干净名称）。
@@ -279,7 +280,13 @@ class TestExportIncludeSettings:
     def test_export_include_settings_default_false(
         self, cli_runner, fake_http_client, tmp_path
     ):
-        """缺省（不带 flag）→ 下载 query 不含 include_settings=true。"""
+        """缺省（不带 flag）→ 下载 query **完全不含** include_settings 键。
+
+        #247 契约收紧（rc1 验证实测）：旧实现 `params={"include_settings":
+        "true" if flag else None}` 在 False 时把 None 传给 httpx → 序列化为
+        空串 `include_settings=` → FastAPI bool_parsing 422。契约 = None 值
+        必须过滤（#231 同族修复）。
+        """
         out_dir = tmp_path / "out"
         out_dir.mkdir()
         fake_http_client.get.return_value = _project_list()
@@ -292,9 +299,7 @@ class TestExportIncludeSettings:
         )
 
         assert result.exit_code == 0
-        assert (
-            _raw_call_params(fake_http_client.get_raw).get("include_settings") != "true"
-        )
+        assert "include_settings" not in _raw_call_params(fake_http_client.get_raw)
 
 
 class TestExportOutputPaths:

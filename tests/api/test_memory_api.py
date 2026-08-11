@@ -132,11 +132,25 @@ def _stats_payload(**overrides) -> dict:
     return stats
 
 
-def _install_memory_router() -> None:
-    """惰性注册 memory router 到 app（RED: 模块缺失 → ImportError → 用例 FAILED）."""
-    from inkflow.api.routers.memory import router
+def _memory_route_paths() -> set[str]:
+    """真实 app 已注册的 memory 相关路由路径（#245 装配契约）。
 
-    app.include_router(router)
+    不再手动 include_router——F28 缺陷 #245 实锤：router 文件存在但
+    app.py 未注册，旧测试手动安装 router 绕过了真实装配（CI 盲区）。
+    本 helper 从真实 app.routes 提取路径，供装配断言 + 用例直接打真实 app。
+    fastapi 0.141.1 的 include_router 为惰性注册：app.routes 中为
+    _IncludedRouter 包装对象（无 path 属性），真实路径经
+    effective_route_contexts() 展开（ctx.path）——两条路径都覆盖。
+    """
+    paths: set[str] = set()
+    for route in app.routes:
+        if hasattr(route, "path"):
+            paths.add(str(getattr(route, "path", "")))
+        expand = getattr(route, "effective_route_contexts", None)
+        if callable(expand):
+            for ctx in expand():
+                paths.add(str(getattr(ctx, "path", "")))
+    return {p for p in paths if "preferences" in p or "memory/stats" in p}
 
 
 def _override_memory_service(svc) -> None:
@@ -249,13 +263,15 @@ class TestPatchDraftEndpoint:
 class TestPreferencesEndpoint:
     """GET/DELETE /api/v1/agent/preferences — 项目已学偏好列表/删除.
 
-    RED: inkflow.api.routers.memory 缺失 → 用例体 lazy import ImportError → FAILED。
+    #245 修正（rc1 验证实测）：端点必须在**真实 app 装配**（app.py
+    include_router(memory.router)）——旧设计用例体 lazy import + 手动
+    include_router 绕过装配（CI 盲区）；现用例直接打真实 app，装配缺失
+    时 404 ≠ 期望码 → FAILED（RED 形态）。
     """
 
     async def test_preferences_list_200(self, memory_svc, clean_overrides):
         """GET preferences → 200: {"items", "total"} + ProjectPreference 字段口径。"""
         memory_svc.list_preferences.return_value = ([_pref_dict()], 1)
-        _install_memory_router()
         _override_memory_service(memory_svc)
         async with _client() as client:
             resp = await client.get(
@@ -310,7 +326,6 @@ class TestPreferencesEndpoint:
             updated_at=datetime(2026, 8, 11, tzinfo=UTC),
         )
         memory_svc.list_preferences.return_value = ([pref], 1)
-        _install_memory_router()
         _override_memory_service(memory_svc)
         async with _client() as client:
             resp = await client.get(
@@ -324,7 +339,6 @@ class TestPreferencesEndpoint:
 
     async def test_preferences_list_category_filter(self, memory_svc, clean_overrides):
         """GET preferences?category=addressing → 过滤参数透传 service。"""
-        _install_memory_router()
         _override_memory_service(memory_svc)
         async with _client() as client:
             resp = await client.get(
@@ -336,7 +350,6 @@ class TestPreferencesEndpoint:
 
     async def test_preferences_delete_200(self, memory_svc, clean_overrides):
         """DELETE preferences/{id} → 200: {"preference_id", "deleted": true}。"""
-        _install_memory_router()
         _override_memory_service(memory_svc)
         async with _client() as client:
             resp = await client.delete(f"/api/v1/agent/preferences/{PREFERENCE_ID}")
@@ -352,7 +365,6 @@ class TestPreferencesEndpoint:
         """DELETE 404: 偏好不存在（PreferenceNotFoundError 映射）。"""
         from inkflow.domain.services.memory_service import PreferenceNotFoundError
 
-        _install_memory_router()
         _override_memory_service(memory_svc)
         memory_svc.remove_preference.side_effect = PreferenceNotFoundError("偏好不存在")
         async with _client() as client:
@@ -363,12 +375,11 @@ class TestPreferencesEndpoint:
 class TestMemoryStatsEndpoint:
     """GET /api/v1/agent/memory/stats — 修改率统计（验收判据①对照机制）.
 
-    RED: inkflow.api.routers.memory 缺失 → 用例体 lazy import ImportError → FAILED。
+    #245 修正：真实 app 装配断言（同 TestPreferencesEndpoint）。
     """
 
     async def test_memory_stats_200(self, memory_svc, clean_overrides):
         """stats 200: project_id/agentic 口径/learned_preferences/baseline_ref。"""
-        _install_memory_router()
         _override_memory_service(memory_svc)
         async with _client() as client:
             resp = await client.get(
@@ -387,3 +398,22 @@ class TestMemoryStatsEndpoint:
         assert data["learned_preferences"] == 3
         assert data["baseline_ref"] == "docs/agent-baseline-2026-08-10.md"
         assert memory_svc.stats.await_args.kwargs["project_id"] == PROJECT_ID
+
+
+class TestMemoryAssembly:
+    """#245 装配契约：memory router 必须在真实 app 注册（不再手动安装）。
+
+    rc1 验证实测（2026-08-11）：router 文件存在但 app.py 未 include_router
+    → CLI `memory list/remove/stats` 全部 404、openapi 无路径。旧测试手动
+    include_router 绕过真实装配（CI 盲区）。本类锁定真实装配防回归；
+    同文件其余用例已移除 _install_memory_router 调用（依赖真实装配）。
+    """
+
+    def test_memory_routes_registered_in_app(self):
+        """app.routes 含 preferences 列表/删除 + memory/stats 三端点。"""
+        paths = _memory_route_paths()
+        assert "/api/v1/agent/preferences" in paths, f"缺 preferences 列表路由: {paths}"
+        assert "/api/v1/agent/memory/stats" in paths, f"缺 memory/stats 路由: {paths}"
+        assert any(
+            p.startswith("/api/v1/agent/preferences/") for p in paths
+        ), f"缺 preferences 删除路由: {paths}"
