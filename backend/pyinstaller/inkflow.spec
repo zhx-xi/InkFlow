@@ -58,6 +58,7 @@ a = Analysis(
         "uvicorn.lifespan.on",
         "sqlalchemy.dialects.sqlite.aiosqlite",  # SQLAlchemy async 引擎动态导入（实测缺失）
         "aiosqlite",  # aiosqlite dialect import_dbapi 运行时 import（实测缺失）
+        "chromadb.telemetry.product.posthog",  # #253 rc3 vector reindex 打包缺模块（RAG 进包补充）
         # ⚠️ 不收集 langchain_community.embeddings（评审 🔴4）：B+ 后源码 0 引用；
         #    其 PEP 562 懒加载 + TYPE_CHECKING import 会被静态分析跟进，
         #    拖回 torch/transformers/sentence_transformers 全家，T0 瘦身全废。

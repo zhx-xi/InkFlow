@@ -300,6 +300,19 @@ class TestSQLitePreferenceRepository:
         assert items == []
         assert total == 0
 
+    async def test_count_by_project(self, db_session):
+        """契约（#252 rc3 实测）：count_by_project 返回项目偏好总数——memory_service.stats
+        按契约调用；方法缺失 → AttributeError → stats 500（mock 轨 AsyncMock 不验证方法存在）。
+        """
+        repo = SQLitePreferenceRepository(db_session)
+        assert await repo.count_by_project(PROJECT_ID) == 0
+
+        await _create_pref(repo, pattern="P1", count=2, confidence=0.67)
+        await _create_pref(repo, pattern="P2", count=1, confidence=0.5)
+        await _create_pref(repo, pattern="P3", count=1, confidence=0.5)
+
+        assert await repo.count_by_project(PROJECT_ID) == 3
+
     async def test_update_refreshes_count_confidence_source_events(self, db_session):
         """契约⑧: update 更新 count/confidence/source_events，持久化读回生效."""
         # 惰性：RED 阶段模块未实现

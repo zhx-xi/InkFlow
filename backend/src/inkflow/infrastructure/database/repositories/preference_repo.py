@@ -131,6 +131,22 @@ class SQLitePreferenceRepository:
         result = await self._session.execute(stmt)
         return [_orm_to_domain(o) for o in result.scalars().all()], total
 
+    async def count_by_project(self, project_id: uuid.UUID) -> int:
+        """统计该项目偏好总数（#252：memory_service.stats 按契约调用，方法缺失 → 500）.
+
+        Args:
+            project_id: 所属项目 UUID.
+
+        Returns:
+            该项目偏好总数（0 = 无偏好）.
+        """
+        stmt = (
+            select(func.count())
+            .select_from(ProjectPreferenceORM)
+            .where(ProjectPreferenceORM.project_id == str(project_id))
+        )
+        return (await self._session.execute(stmt)).scalar_one()
+
     async def update(
         self,
         preference_id: str,

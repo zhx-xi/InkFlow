@@ -162,6 +162,53 @@ def _json_response(status: int, payload: dict, headers: dict | None = None) -> h
     )
 
 
+class TestQueryParamNoneFilter:
+    """#254 契约：query 参数中 None 值必须过滤（httpx 会把 None 编码为空串
+    → FastAPI 空串解析失败 → 404/422——rc3 实测 character list group_id= 空串 404）。
+
+    过滤规则：**None 过滤，显式空串保留**（调用方显式传 "" 是其意图）。
+    """
+
+    async def test_none_params_filtered_from_url(self, handle):
+        """GET params 含 None → 请求 URL 不含该参数（b=None 被滤，a=1 保留）。"""
+        seen: list[str] = []
+
+        def _handler(request):
+            seen.append(str(request.url))
+            return _json_response(200, {"ok": True, "data": []})
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                await client.get("/projects", params={"a": 1, "b": None})
+        assert seen == [f"{BASE_URL}/projects?a=1"], f"URL={seen}"
+
+    async def test_explicit_empty_string_kept(self, handle):
+        """显式空串保留（与 None 区分——调用方显式传 \"\" 是意图）。"""
+        seen: list[str] = []
+
+        def _handler(request):
+            seen.append(str(request.url))
+            return _json_response(200, {"ok": True, "data": []})
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                await client.get("/projects", params={"c": ""})
+        assert seen == [f"{BASE_URL}/projects?c="], f"URL={seen}"
+
+    async def test_all_none_params_omitted(self, handle):
+        """全部 None → 无 query 串（裸路径）。"""
+        seen: list[str] = []
+
+        def _handler(request):
+            seen.append(str(request.url))
+            return _json_response(200, {"ok": True, "data": []})
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                await client.get("/projects", params={"a": None, "b": None})
+        assert seen == [f"{BASE_URL}/projects"], f"URL={seen}"
+
+
 class TestBaseUrlAndToken:
     """base_url 推导与 token 请求头（契约 §3）。"""
 
