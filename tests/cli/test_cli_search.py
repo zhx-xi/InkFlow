@@ -11,7 +11,12 @@
 - query 缺失 → 退出码 2（Typer 自动）
 - 项目名 → GET /projects 解析为 id（父侧裁定：--project 接受名或 UUID）
 
-> **⚠️ 契约修正（#246，2026-08-11 rc1 验证实测）**：端点路径**不带 `/api/v1` 前缀**——InkFlowHTTPClient base_url 已含 `/api/v1`（infrastructure/http/client.py L55），双前缀会拼出 `/api/v1/api/v1/search` → 真实 HTTP 404（0.6.0 F38 改造遗留，mock 轨测不出 URL 拼接）。以下 docstring/断言中的 `/api/v1/search`、`/api/v1/search/rebuild`、`/api/v1/projects` 全部为修正后形态（`/search`、`/search/rebuild`、`/projects`）。
+> **⚠️ 契约修正（#246，2026-08-11 rc1 验证实测）**：端点路径**不带**
+> `/api/v1` 前缀——InkFlowHTTPClient base_url 已含 `/api/v1`
+> （infrastructure/http/client.py L55），双前缀拼出 `/api/v1/api/v1/search`
+> → 真实 HTTP 404（0.6.0 F38 改造遗留，mock 轨测不出 URL 拼接）。
+> 以下 docstring/断言中 `/api/v1/search`、`/api/v1/search/rebuild`、
+> `/api/v1/projects` 均为修正后形态（`/search`、`/search/rebuild`、`/projects`）。
 
 ── RED 形态说明 ─────────────────────────────────────────────
 - 本文件模块级 import `inkflow.cli.commands.search`（命令模块不存在）
