@@ -7,7 +7,7 @@
 **关联 Issues**: #159（F28 Agent Memory 记忆系统）
 **依赖**: ✅ F27 writer-agent（diff 事件源：draft 表 + update_content 未接线 + audit_logs，PR #241）· ✅ F6 context-service（注入端口，ContextSourceType/SOURCE_LAYER）· ✅ F26 agent-tools · ✅ F13（extra 键 + 请求覆盖先例）· ✅ F34（audit_logs 复用）· ✅ F32（settings 键扩展先例——本模块不新增全局设置键）
 **参考 ADR**: ADR-G（记忆提取方式：规则化统计 N≥2）、ADR-H（memory_learning 默认 false）、ADR-A（双模式开关 extra 键）、ADR-D（产物保留语义）、ADR-027（覆盖率门禁）
-**状态**: ✅ 已拍板（Q1=选项 A、Q2=选项 A、Q3=选项 A、Q4=选项 A，2026-08-11）
+**状态**: ✅ 已实现（PR #242，2026-08-11 合入；Q1-Q4 拍板 2026-08-11）
 
 > **模块类型声明**: 本模块为 Agent 化升级新增变体——「**偏好学习闭环型**」（第 12 个模块变体，编号依据：AGENTS.md 模块类型谱系，F27=第 11 变体口径延续）。与 F27（自主循环闭环型）不同：F28 是**首个从用户行为反向学习并回注生成流程**的模块，新增 2 张表（project_preferences + memory_events，Q2 拍板），跨模块 MODIFY F27 draft 服务（接线 update_content）+ F6 context（新增数据源）。
 

@@ -122,6 +122,23 @@
 
 **0.6.0 交付实证**：12/12 issues 全关（milestone #6 2026-08-09 关闭）· 2026-08-10 v0.6.0 正式发布（Latest）· 新增 f34-f38 五个模块变体（审计型/传输改造型/树型/资产呈现型/复用型）· 全链路 CLI 恒经 HTTP 单路径（ADR-030 ② 落地）。
 
+### 1.9 Agent 化升级（0.7.0，2026-08-11 里程碑 10/10 issues 全关 ✅）
+
+| Issue | 内容 | 交付 | 状态 |
+|-------|------|------|------|
+| #90 | F26 Agent 工具基础设施：ToolSpec + deepagents 0.7.5 harness 集成（create_deep_agent + HarnessProfile `openai:<model>`）+ 5 只读工具（excluded_tools 禁默认文件系统工具；subagent task 工具 F29 用） | PR #236 | ✅ |
+| #160 | F27 Writer Agent 闭环：ReAct 工具循环 + save_draft 草稿写工具（draft 表 + 确认流 draft→final）+ 四重护栏（max_steps 12 / repeat_tool 3 / empty_content 重试 / token_budget 32K）+ agent_run 决策轨迹快照 | PR #240（spec）+ #241 | ✅ |
+| #159 | F28 记忆系统：diff 事件捕获（PATCH drafts 编辑端点）+ N≥2 规则化偏好学习（project_preferences + memory_events 表，confidence=1-1/(count+1)）+ F6 protected 层注入（显式设定 > 学习偏好）+ inkflow memory list/remove/stats + memory_learning extra 键默认 false | PR #242 | ✅ |
+| #142 | E2E 写作页深度：树 CRUD + 工具栏 + AI 按钮状态 | PR #238 | ✅ |
+| #143 | E2E 项目页 + 壳 chrome：模板创建/删除确认/窗口控制 | PR #239 | ✅ |
+| #225 | Agent 链开关「关闭」状态持久化（重启后恢复开启，#105 遗留） | PR #237 | ✅ |
+| #229 | writing API 资源不存在错误映射违约：_NotFoundError 500 → 404（ADR-012） | PR #234 | ✅ |
+| #230 | revise_content 默认模型硬编码 openai/gpt-4o → 走项目配置回退 | PR #234 | ✅ |
+| #231 | CLI chapter list 不传 --status 报 422 → 空参数过滤（帮助信息与行为一致） | PR #233 | ✅ |
+| #232 | 项目页点击项目卡片不跳转写作面板（多项目无法切换） | PR #235 | ✅ |
+
+**0.7.0 交付实证**：10/10 issues 全关（milestone #10，2026-08-11）· Agent 化主线 F26→F27→F28（deepagents 0.7.5 harness）· agentic 写作闭环（save_draft + 确认流 + 修改率基线 docs/agent-baseline-2026-08-10.md）· v0.7.0-rc1 预发布（2026-08-11）。
+
 ---
 
 ## 二、规划中功能
@@ -130,6 +147,7 @@
 |---------|------|------|----------|-------|------|
 | skills 包 | **1.0.0** | 小说写作 skills（源码单一真相 + 三通道分发） | 无 | [#70](https://github.com/zhx-xi/InkFlow/issues/70) | 🔜 已建 issue |
 | F20 MCP Server | **1.0.0** | MCP Server（stdio 薄客户端经 HTTP），≥15 工具（ADR-023 v2） | #166（内核冷启动基建，✅ 已实现 PR #171） | [#49](https://github.com/zhx-xi/InkFlow/issues/49) | 🔜 已建 issue |
+| F29 Supervisor 自主编排 | **0.8.0** | 自主编排 + HITL（F26 subagent task 工具预留；依赖 #87 ✅ + F28 ✅） | F26/F27/F28 | [#161](https://github.com/zhx-xi/InkFlow/issues/161) | 🔜 已建 issue |
 | ~~F25 daemon~~ | ~~0.5.0~~ | ~~daemon 后台写作~~（**已移除**，ADR-029：伪需求；真实意图=外部 agent 经 MCP/skills 调用，由 F19 serve + F20 MCP + skills 包覆盖） | 无 | [#52](https://github.com/zhx-xi/InkFlow/issues/52) | ❌ 已关闭（2026-08-07） |
 | 1.0.0 发布验收 | **1.0.0** | CLI + GUI + skills + MCP 四界面齐备；跨平台打包（macOS/Linux）+ 文档完善 + Phase 3 Gate | 以上全部 | [#55](https://github.com/zhx-xi/InkFlow/issues/55) | 🔜 已建 issue |
 | F18 云端 Web 用户端 | **2.0.0** | 云 Web UI（前端一套两用，移出单机） | — | [#47](https://github.com/zhx-xi/InkFlow/issues/47) | 🔜 已建 issue |
@@ -151,6 +169,7 @@
 | 0.4.0 | 打包 + GUI 演进 | F19 打包（exe / 安装包 / 便携 ZIP）· 导航重构 · 模型管理 · Agent 模板 | ✅ 已交付（2026-08-07 v0.4.0 正式发布，PR #120/#121/#122/#131/#132/#135/#144/#145） |
 | 0.5.0 | Agent 集成 | F24 会话 · E2E 增强（#139/#140）· 设置持久化（#152）· 本地内核服务化（#166 冷启动 / #167 托盘 / #168 CLI 产物）· 发布修复链（#183/#185/#187/#188/#189/#192/#195） | ✅ 已交付（2026-08-08 v0.5.0 正式发布，PR #156/#157/#171/#172/#176/#181/#184/#186/#190/#191/#193/#194/#197） |
 | 0.6.0 | 导出 + 搜索 + 世界观 | F21 导出 · F22 全文搜索 · F34 章节审计 · 世界观三连（#173/#174/#175）· CLI 恒经 HTTP（#169）· E2E 设置页（#141）· 设定库手动创建（#196）· default_words 重启加载（#198）· 保存反馈统一化（#199） | ✅ 已交付（2026-08-09 里程碑关闭；2026-08-10 v0.6.0 正式发布，PR #202/#205/#206/#207/#213/#214/#215/#216/#219/#220/#222/#223） |
+| 0.7.0 | Agent 化升级 | F26 Agent 工具基础设施（deepagents 0.7.5）· F27 Writer Agent 闭环（ReAct + save_draft）· F28 记忆系统（偏好学习 + 注入）· E2E 增强（#142/#143）· bug 批（#225/#229/#230/#231/#232） | ✅ 已交付（2026-08-11 里程碑 10/10 issues 全关，PR #233-#242） |
 | 1.0.0 | 本地完全可用 | CLI + GUI + skills + MCP 四界面齐备 + 跨平台 + 文档 + Phase 3 Gate | 🔜 |
 | 2.0.0 | 云端 | F18 云 Web · 用户 API · Admin 后台 · GUI 远程模式（云存档/异地写作） | 🔜 |
 
@@ -178,4 +197,4 @@
 
 ---
 
-*本文件由功能盘点建立于 2026-08-02（0.2.0 交付后），与 AGENTS.md / ADR-019 口径一致（v5 修订 2026-08-09：0.5.0/0.6.0 交付 + 世界观三连 + 章节审计）。*
+*本文件由功能盘点建立于 2026-08-02（0.2.0 交付后），与 AGENTS.md / ADR-019 口径一致（v6 修订 2026-08-11：0.7.0 Agent 化主线交付 + F29 移 0.8.0）。*

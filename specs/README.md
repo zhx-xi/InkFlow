@@ -64,12 +64,14 @@
 | F36 世界观地图视图（资产呈现型） | [`f36-world-map/spec.md`](f36-world-map/spec.md) | ✅ 已实现（PR #220） |
 | F37 世界观跨书复制（复用型） | [`f37-world-copy/spec.md`](f37-world-copy/spec.md) | ✅ 已实现（PR #223） |
 
-### Agent 化升级（0.7.0，规划中）
+### Agent 化升级（0.7.0，已交付 ✅）
 
 | Feature | 规格 | 状态 |
 |---------|------|------|
-| F26 Agent 工具基础设施 | [`f26-agent-tools/spec.md`](f26-agent-tools/spec.md) | ✅ 已拍板（Q1-Q3=A，2026-08-03）待实现 |
+| F26 Agent 工具基础设施 | [`f26-agent-tools/spec.md`](f26-agent-tools/spec.md) | ✅ 已实现（PR #236） |
+| F27 Writer Agent 闭环 | [`f27-writer-agent/spec.md`](f27-writer-agent/spec.md) | ✅ 已实现（spec PR #240 + 实现 PR #241） |
+| F28 记忆系统 | [`f28-agent-memory/spec.md`](f28-agent-memory/spec.md) | ✅ 已实现（PR #242） |
 
 ---
 
-> F17 空置（PRD §6.2 标题残留编号）；F18 云端（2.0.0）、F20 MCP（1.0.0）、F27-F29 规划中无 spec；F25 daemon 已移除（ADR-029）不复用。
+> F17 空置（PRD §6.2 标题残留编号）；F18 云端（2.0.0）、F20 MCP（1.0.0）、F29 规划中无 spec（0.8.0 远期占位）；F25 daemon 已移除（ADR-029）不复用。

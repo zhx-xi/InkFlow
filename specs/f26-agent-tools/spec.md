@@ -6,8 +6,8 @@
 **所属阶段**: 0.7.0（Agent 化升级第一批），估算 2-4 人天（v1.0 为 3-5 人天，deepagents 覆盖 chat_with_tools 端口后收缩）
 **关联 Issues**: #90（F26，spec v1.0 已随 spec-only PR #91 合入主仓）
 **依赖**: ✅ F5 LLM Provider（已合入）· ✅ F4 Agent 管线（已合入）· ✅ #87 LangGraph 重构（已合入 0.3.1）· ✅ F34 单章审计（0.6.0 已合入，audit_chapter 包装对象）
-**参考 ADR**: ADR-015（LangChain 隔离）、ADR-018（测试分层）、ADR-019（编号口径）、ADR-E（编排引擎——待修订为 Deep Agents harness）
-**状态**: ✅ 已拍板（Q1-Q3=选项 A，2026-08-03；编排框架 deepagents 升级 2026-08-10；spec v1.1 起草待评审，实现时随 worktree 合入）
+**参考 ADR**: ADR-015（LangChain 隔离）、ADR-018（测试分层）、ADR-019（编号口径）、ADR-E（编排引擎=Deep Agents harness 0.7.5，v6 修订）
+**状态**: ✅ 已实现（PR #236，2026-08-10 合入；Q1-Q3 拍板 2026-08-03，deepagents 编排升级 2026-08-10）
 
 > **Spec 变更**（v1.0 → v1.1，2026-08-10）：编排框架从「LangGraph 手写」升级为「Deep Agents harness」（deepagents 0.7.5，用户拍板，Spike 0 全项验证通过）。① 范围收缩：删除 `LLMClientProtocol.chat_with_tools` 端口扩展 + bind_tools 适配 + 弱模型降级逻辑（被 deepagents 工具循环覆盖）；② 新增「deepagents 集成层」（§5）：create_deep_agent 装配（ChatOpenAI 实例直传）+ HarnessProfile 注册（key 格式 `openai:<model>`）+ excluded_tools 禁用默认文件系统工具 + subagent task 工具禁用决策（F26 禁、F29 0.8.0 用）；③ 依赖变更：新增 `deepagents==0.7.5` + `langchain>=1.3.14`（现 pyproject 仅 langchain-core），硬依赖 langchain-anthropic/langchain-google-genai 打包增量留 F26 QA 实测；④ 模型名处理：provider 配置剥离 registry 前缀（`zhipu/glm-4.5` → `glm-4.5`，复用既有 `parse_model_string`）；⑤ 空 content 风险记录（Spike ②，~66% 空响应）——本阶段不处理，见 §5.7 F27 前置风险；⑥ 估算 3-5 → 2-4 人天；⑦ 验收 M1-M5 按新方案重写（§13）；⑧ audit_chapter 包装对象修正：v1.0 写 F15 audit_service（项目级 run_audit），实际应为 **F34 ChapterAuditService.audit**（单章审计，0.6.0 已合入）；count_words 修正为 `domain/services/_word_count.py` 顶层纯函数（非 writing_service 内部方法）。
 
