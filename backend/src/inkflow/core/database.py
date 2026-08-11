@@ -2,16 +2,19 @@
 
 import numbers
 from collections.abc import AsyncGenerator, Callable
-from typing import Any
+from typing import Any, TypeVar, overload
 
 from sqlalchemy import Connection, event, text
 from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.engine import Dialect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.sql.type_api import TypeEngineMixin
 from sqlalchemy.types import TypeEngine
 
 from inkflow.core.config import config
+
+_TE = TypeVar("_TE", bound=TypeEngine[Any])
 
 
 class Base(DeclarativeBase):
@@ -33,7 +36,13 @@ class LenientJSON(JSON):
         super().__init__(*args, **kwargs)
         self._fallback = fallback
 
-    def adapt(self, cls: type[Any], **kw: Any) -> TypeEngine[Any]:
+    @overload
+    def adapt(self, cls: type[_TE], **kw: Any) -> _TE: ...
+
+    @overload
+    def adapt(self, cls: type[TypeEngineMixin], **kw: Any) -> TypeEngine[Any]: ...
+
+    def adapt(self, cls: type[TypeEngine[Any] | TypeEngineMixin], **kw: Any) -> TypeEngine[Any]:
         # SQLite 方言会把泛型 JSON 适配为内部 _SQliteJson；constructor_copy 只复制签名
         # 匹配的参数，fallback 状态会丢失，容错 result_processor 被绕过。本项目仅使用
         # SQLite，JSON 语义不变：适配时返回带同样 fallback 的新实例（不能返回 self，
