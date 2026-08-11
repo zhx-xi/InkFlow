@@ -30,6 +30,15 @@ datas += copy_metadata("inkflow")
 # 缺失则冻结版 vector/retrieve 抛 ValueError: Unknown encoding cl100k_base。
 _tiktoken_datas = collect_data_files("tiktoken")
 
+# chromadb 全家桶（#253 rc5 补充）：chromadb 1.x Rust 后端子包（chromadb.api.rust）
+# 由 importlib 动态导入，PyInstaller 静态分析不可见；此前逐层补 posthog/tiktoken 仍漏
+# Rust 子包，改为 collect_all("chromadb") 一次性收集 datas/binaries/hiddenimports。
+# 重依赖（onnxruntime/tokenizers/torch 等）仍由下方 excludes 挡住，体积可接受。
+_chromadb_datas, _chromadb_binaries, _chromadb_hiddenimports = collect_all("chromadb")
+datas += _chromadb_datas
+binaries += _chromadb_binaries
+hiddenimports += _chromadb_hiddenimports
+
 # 运行时钩子（冒烟 2 实测）：冻结版 PyInstaller 引导器在 Windows 上重定向
 # stdout/stderr 时忽略 PYTHONUTF8/PYTHONIOENCODING，退化为区域编码（本机 cp936），
 # serve 打印 emoji 等字符直接 UnicodeEncodeError（Electron 内核以管道捕获 stdout

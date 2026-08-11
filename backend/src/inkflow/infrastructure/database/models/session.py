@@ -29,10 +29,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -89,14 +88,14 @@ class SessionORM(Base):
     """会话描述/备注 (≤5000 字符)."""
 
     context: Mapped[dict] = mapped_column(
-        JSON,
+        LenientJSON(fallback={}),
         nullable=False,
         default=dict,
     )
     """上下文快照（JSON）: 写作会话 = 续写上下文；任务会话 = 任务参数."""
 
     result: Mapped[dict] = mapped_column(
-        JSON,
+        LenientJSON(fallback={}),
         nullable=False,
         default=dict,
     )
@@ -198,7 +197,7 @@ class SessionLogORM(Base):
     """日志消息 (1-2000 字符，去空白)."""
 
     payload: Mapped[dict] = mapped_column(
-        JSON,
+        LenientJSON(fallback={}),
         nullable=False,
         default=dict,
     )

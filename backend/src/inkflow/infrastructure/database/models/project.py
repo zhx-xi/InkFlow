@@ -8,10 +8,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, Integer, String
-from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -64,7 +63,7 @@ class ProjectORM(Base):
     """目标字数（0 表示不限）."""
 
     config: Mapped[dict] = mapped_column(
-        JSON,
+        LenientJSON(fallback={}),
         nullable=False,
         default=dict,
     )

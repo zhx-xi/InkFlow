@@ -16,10 +16,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
-from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -66,7 +65,7 @@ class AgentTemplateORM(Base):
     """全角色兜底温度（None = 跟随默认）."""
 
     roles: Mapped[dict] = mapped_column(
-        JSON,
+        LenientJSON(fallback={}),
         nullable=False,
         default=dict,
     )

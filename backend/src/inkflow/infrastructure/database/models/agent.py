@@ -6,10 +6,9 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -40,7 +39,7 @@ class AgentExecutionORM(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     """管线整体状态（pending/running/completed/failed/skipped）."""
 
-    stages: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    stages: Mapped[list] = mapped_column(LenientJSON(fallback=[]), nullable=False, default=list)
     """各阶段快照（StageResult 字典列表，JSON 序列化）."""
 
     final_output: Mapped[str] = mapped_column(Text, nullable=False, default="")

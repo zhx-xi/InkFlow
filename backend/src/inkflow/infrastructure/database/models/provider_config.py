@@ -14,10 +14,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, Integer, String
-from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -63,7 +62,7 @@ class ProviderConfigORM(Base):
     """默认模型字符串（provider/model 格式）."""
 
     models: Mapped[list] = mapped_column(
-        JSON,
+        LenientJSON(fallback=[]),
         nullable=False,
         default=list,
     )

@@ -25,10 +25,9 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -107,7 +106,7 @@ class CharacterORM(Base):
     """所属分组（分组删除时置 NULL，已索引）."""
 
     extra: Mapped[dict] = mapped_column(
-        JSON,
+        LenientJSON(fallback={}),
         nullable=False,
         default=dict,
     )

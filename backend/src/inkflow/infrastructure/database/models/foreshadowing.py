@@ -34,10 +34,9 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -136,7 +135,7 @@ class ForeshadowingORM(Base):
     """回收时间 (UTC；仅状态迁移维护：resolve 设置 / reopen 清空，已索引)."""
 
     extra: Mapped[dict] = mapped_column(
-        JSON,
+        LenientJSON(fallback={}),
         nullable=False,
         default=dict,
     )
