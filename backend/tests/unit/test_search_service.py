@@ -128,7 +128,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from inkflow.core.database import Base
 from inkflow.domain.models.chapter import Chapter, ChapterStatus
 from inkflow.domain.models.character import Character
 from inkflow.domain.models.foreshadowing import Foreshadowing
@@ -693,3 +695,36 @@ async def test_semantic_retrieve_failure_returns_empty_not_keyword(repos):
     assert resp.hits == []
     assert resp.mode == "semantic"
     repos.search_repo.query.assert_not_awaited()
+
+
+class TestSearchServiceAssembly:
+    """#264 装配契约：get_search_service 必须注入 vector_store（非 None——semantic 模式真实可用）。
+
+    rc7 实测：deps.get_search_service 硬编码 vector_store=None → search semantic 恒空
+    （同内核 /vector/retrieve 命中）。契约：get_search_service 为 async（Depends 支持），
+    注入的 vector_store 来自 get_vector_store（可选——未配置 embedding 时 None 兜底）。
+    """
+
+    @pytest.fixture
+    async def db_session(self):
+        """独立 in-memory SQLite（unit 层无全局 db_session——模块级自建惯例）。"""
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        async with factory() as session:
+            yield session
+        await engine.dispose()
+
+    async def test_get_search_service_injects_vector_store(self, db_session, monkeypatch):
+        """装配：get_search_service 返回的实例 vector_store 非 None（mock get_vector_store）。"""
+        from inkflow.api.deps import get_search_service
+
+        marker = object()
+
+        async def _fake_get_vector_store():
+            return marker
+
+        monkeypatch.setattr("inkflow.api.deps.get_vector_store", _fake_get_vector_store)
+        svc = await get_search_service(db_session)
+        assert svc._vector_store is marker, "vector_store 未注入（#264）"
