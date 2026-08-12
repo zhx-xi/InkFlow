@@ -1,6 +1,8 @@
 /**
- * 设定库分类实体手动创建对话框（#196，specs/f36-library-manual-create/spec.md §2.2/§2.3）：
+ * 设定库分类实体创建/编辑对话框（#196 + F43 双模式扩展，
+ * specs/f36-library-manual-create/spec.md §2.2/§2.3 + specs/f43-setting-library-crud/spec.md §2.2）：
  * 受控表单对话框，字段按分类渲染（后端 DTO 字段名对齐 spec §2.1 表）；
+ * editing 非空 = 编辑模式（打开预填现值），空 = 创建模式（空表单重置，#196）；
  * 名称/标题必填（strip 后非空 → 保存按钮 enabled）；保存中禁用防重复提交；
  * 关闭路径 = 取消 / ESC / 成功后父级关闭（#195 拍板：遮罩点击不关闭）。
  */
@@ -10,10 +12,29 @@ import { useI18n } from '../i18n/useI18n';
 
 export type LibraryCreateCat = 'characters' | 'world' | 'outline' | 'timeline' | 'foreshadow';
 
+/** 五分类列表项完整 DTO（F43 §2.1：后端领域模型字段对齐，缺失字段兜底 ''） */
+export interface LibraryItemDTO {
+  id: string | number;
+  name?: string; // characters/world/outline
+  title?: string; // timeline/foreshadow
+  personality?: string; // characters
+  background?: string; // characters
+  goals?: string; // characters
+  category?: string; // world
+  content?: string; // world
+  description?: string; // outline/timeline/foreshadow
+  time_display?: string; // timeline
+  priority?: number; // foreshadow
+  location?: string; // foreshadow
+}
+
 export interface LibraryCreateDialogProps {
   open: boolean;
   cat: LibraryCreateCat;
-  onCreate: (input: Record<string, unknown>) => Promise<void>;
+  /** F43：非空 = 编辑模式（预填现值），空 = 创建模式（#196 行为） */
+  editing?: LibraryItemDTO | null;
+  /** F43：onCreate 改名 onSave——语义 = 保存回调，父级分支 PATCH/POST */
+  onSave: (input: Record<string, unknown>) => Promise<void>;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -30,7 +51,13 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 const INPUT_CLS =
   'w-full rounded-md border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent';
 
-export function LibraryCreateDialog({ open, cat, onCreate, onOpenChange }: LibraryCreateDialogProps) {
+export function LibraryCreateDialog({
+  open,
+  cat,
+  editing = null,
+  onSave,
+  onOpenChange,
+}: LibraryCreateDialogProps) {
   const { t } = useI18n();
   const [name, setName] = useState('');
   const [title, setTitle] = useState('');
@@ -45,22 +72,23 @@ export function LibraryCreateDialog({ open, cat, onCreate, onOpenChange }: Libra
   const [location, setLocation] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // 打开时重置表单（分类切换重开场景；保存失败时不清空已填内容，可修改重试）
+  // 打开时初始化表单：editing 非空 → 预填现值（?? '' 兜底，spec E5）；
+  // editing 为空 → 重置空表单（保持 #196 行为）；保存失败时不清空已填内容，可修改重试
   useEffect(() => {
     if (!open) return;
-    setName('');
-    setTitle('');
-    setDescription('');
-    setPersonality('');
-    setBackground('');
-    setGoals('');
-    setCategory('');
-    setContent('');
-    setTimeDisplay('');
-    setPriority(50);
-    setLocation('');
+    setName(editing?.name ?? '');
+    setTitle(editing?.title ?? '');
+    setDescription(editing?.description ?? '');
+    setPersonality(editing?.personality ?? '');
+    setBackground(editing?.background ?? '');
+    setGoals(editing?.goals ?? '');
+    setCategory(editing?.category ?? '');
+    setContent(editing?.content ?? '');
+    setTimeDisplay(editing?.time_display ?? '');
+    setPriority(editing?.priority ?? 50);
+    setLocation(editing?.location ?? '');
     setSaving(false);
-  }, [open, cat]);
+  }, [open, cat, editing]);
 
   // ESC 关闭（尊重 Radix Select 等已 preventDefault 的 Escape；参照 TemplateDialog 既有交互）
   useEffect(() => {
@@ -96,7 +124,7 @@ export function LibraryCreateDialog({ open, cat, onCreate, onOpenChange }: Libra
     if (!canSave) return;
     setSaving(true);
     try {
-      await onCreate(buildBody());
+      await onSave(buildBody());
       // 成功后由父级关闭对话框 + 刷新列表
     } catch {
       // 保存失败：按钮恢复 + 对话框保持（错误提示由父级 toast 处理）
@@ -110,12 +138,14 @@ export function LibraryCreateDialog({ open, cat, onCreate, onOpenChange }: Libra
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={t(`lib.create.title.${cat}`)}
+        aria-label={editing ? t(`lib.edit.title.${cat}`) : t(`lib.create.title.${cat}`)}
         data-testid="library-create-dialog"
         className="max-h-[85vh] w-[520px] overflow-y-auto rounded-lg border border-line bg-surface p-6 shadow-card"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="font-serif text-[18px] font-semibold">{t(`lib.create.title.${cat}`)}</h2>
+        <h2 className="font-serif text-[18px] font-semibold">
+          {editing ? t(`lib.edit.title.${cat}`) : t(`lib.create.title.${cat}`)}
+        </h2>
         <div className="mt-4 space-y-4">
           {cat === 'characters' && (
             <>
@@ -302,7 +332,7 @@ export function LibraryCreateDialog({ open, cat, onCreate, onOpenChange }: Libra
             disabled={!canSave}
             onClick={() => void handleSave()}
           >
-            {t('lib.create.save')}
+            {editing ? t('lib.edit.save') : t('lib.create.save')}
           </button>
         </div>
       </div>
