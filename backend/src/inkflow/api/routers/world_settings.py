@@ -146,8 +146,17 @@ async def copy_world_settings(
 ):
     """跨书复制源项目世界观到目标项目（spec §3.1；Q2=A 缺省整棵 / Q3=B 全局图）。"""
     tpid = _parse_id(target_project_id, detail="项目不存在")
+    if request.self_only and request.root_setting_id is None:
+        raise HTTPException(status_code=422, detail="仅本体复制必须指定复制起点")
     svc = _get_copy_svc(db)
-    result = await _run_service(svc.copy(request.source_project_id, tpid, request.root_setting_id))
+    result = await _run_service(
+        svc.copy(
+            request.source_project_id,
+            tpid,
+            request.root_setting_id,
+            self_only=request.self_only,
+        )
+    )
     return result.model_dump(mode="json")
 
 

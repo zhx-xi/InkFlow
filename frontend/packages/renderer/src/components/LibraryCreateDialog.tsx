@@ -9,6 +9,8 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useI18n } from '../i18n/useI18n';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { TagEditor } from './TagEditor';
 
 export type LibraryCreateCat = 'characters' | 'world' | 'outline' | 'timeline' | 'foreshadow';
 
@@ -26,6 +28,9 @@ export interface LibraryItemDTO {
   time_display?: string; // timeline
   priority?: number; // foreshadow
   location?: string; // foreshadow
+  // ── F43 P1 新增 ──
+  parent_id?: string | number | null; // world：F35 父节点（null=顶层）
+  extra?: Record<string, unknown>; // characters：role_rank / groups 承载（spec §2.1）
 }
 
 export interface LibraryCreateDialogProps {
@@ -33,6 +38,8 @@ export interface LibraryCreateDialogProps {
   cat: LibraryCreateCat;
   /** F43：非空 = 编辑模式（预填现值），空 = 创建模式（#196 行为） */
   editing?: LibraryItemDTO | null;
+  /** F43 P1：建议标签 = 当前项目角色 extra.groups 并集（父级聚合，D-13 数据驱动） */
+  tagSuggestions?: string[];
   /** F43：onCreate 改名 onSave——语义 = 保存回调，父级分支 PATCH/POST */
   onSave: (input: Record<string, unknown>) => Promise<void>;
   onOpenChange: (open: boolean) => void;
@@ -51,10 +58,20 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 const INPUT_CLS =
   'w-full rounded-md border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent';
 
+/** 五档角色等级（D1 拍板；存 extra.role_rank，spec §2.2） */
+const ROLE_RANKS = [
+  { key: 'protagonist', labelKey: 'lib.rank.protagonist' },
+  { key: 'major', labelKey: 'lib.rank.major' },
+  { key: 'minor', labelKey: 'lib.rank.minor' },
+  { key: 'scene', labelKey: 'lib.rank.scene' },
+  { key: 'walkon', labelKey: 'lib.rank.walkon' },
+] as const;
+
 export function LibraryCreateDialog({
   open,
   cat,
   editing = null,
+  tagSuggestions = [],
   onSave,
   onOpenChange,
 }: LibraryCreateDialogProps) {
@@ -70,6 +87,9 @@ export function LibraryCreateDialog({
   const [timeDisplay, setTimeDisplay] = useState('');
   const [priority, setPriority] = useState(50);
   const [location, setLocation] = useState('');
+  // F43 P1：角色等级（D1 必填无默认，初始 '' → 保存 gate 拦截）+ 分组标签（D2）
+  const [rank, setRank] = useState('');
+  const [rankTags, setRankTags] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   // 打开时初始化表单：editing 非空 → 预填现值（?? '' 兜底，spec E5）；
@@ -87,6 +107,15 @@ export function LibraryCreateDialog({
     setTimeDisplay(editing?.time_display ?? '');
     setPriority(editing?.priority ?? 50);
     setLocation(editing?.location ?? '');
+    // F43 P1：等级预填 editing.extra.role_rank ?? ''（旧数据无等级 → 占位重选，E14）；
+    // 标签预填 extra.groups（非数组兜底 []，E26），去重保序
+    setRank(String(editing?.extra?.role_rank ?? ''));
+    const groups = editing?.extra?.groups;
+    setRankTags(
+      Array.isArray(groups)
+        ? [...new Set(groups.filter((g): g is string => typeof g === 'string').map((g) => g.trim()).filter(Boolean))]
+        : [],
+    );
     setSaving(false);
   }, [open, cat, editing]);
 
@@ -103,12 +132,20 @@ export function LibraryCreateDialog({
   if (!open) return null;
 
   const requiredValue = cat === 'timeline' || cat === 'foreshadow' ? title.trim() : name.trim();
-  const canSave = requiredValue !== '' && !saving;
+  // F43 P1（D1）：角色分类等级必填无默认——名称/标题 + 等级双必填才 enabled（E13）
+  const canSave = requiredValue !== '' && !saving && (cat !== 'characters' || rank !== '');
 
   const buildBody = (): Record<string, unknown> => {
     switch (cat) {
       case 'characters':
-        return { name: name.trim(), personality, background, goals };
+        // F43 P1（spec §3.2）：创建/编辑均发送完整 extra { role_rank, groups }（整体替换语义防丢字段）
+        return {
+          name: name.trim(),
+          personality,
+          background,
+          goals,
+          extra: { role_rank: rank, groups: rankTags },
+        };
       case 'world':
         return { name: name.trim(), category, content };
       case 'outline':
@@ -185,6 +222,25 @@ export function LibraryCreateDialog({
                   onChange={(e) => setGoals(e.target.value)}
                 />
               </Field>
+              {/* F43 P1：角色等级下拉（shadcn Select，D1 必填无默认）+ 分组标签编辑器（D2） */}
+              <Field label={t('lib.rank.label')}>
+                <Select
+                  value={rank}
+                  onValueChange={(v) => setRank(v)}
+                >
+                  <SelectTrigger data-testid="library-create-rank" aria-label={t('lib.rank.label')}>
+                    <SelectValue placeholder={t('lib.rank.placeholder')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ROLE_RANKS.map((r) => (
+                      <SelectItem key={r.key} value={r.key}>
+                        {t(r.labelKey)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <TagEditor selected={rankTags} suggestions={tagSuggestions} onChange={setRankTags} />
             </>
           )}
 

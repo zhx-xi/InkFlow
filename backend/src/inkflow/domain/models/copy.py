@@ -15,10 +15,12 @@ class WorldCopyRequest(BaseModel):
 
     source_project_id: 源项目（世界观设定从哪来）.
     root_setting_id:   复制起点（指定子树）；None = 复制源项目全部活动世界观条目.
+    self_only:         仅复制 root_setting_id 本体（不含子级）；需与 root_setting_id 同用.
     """
 
     source_project_id: uuid.UUID
     root_setting_id: uuid.UUID | None = None
+    self_only: bool = False  # P1 新增：True = 仅复制 root_setting_id 本体（不含子级）
 
 
 class WorldCopyResult(BaseModel):

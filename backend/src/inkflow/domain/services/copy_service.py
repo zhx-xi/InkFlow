@@ -81,6 +81,7 @@ class WorldCopyService:
         source_project_id: int | uuid.UUID,
         target_project_id: int | uuid.UUID,
         root_setting_id: int | uuid.UUID | None = None,
+        self_only: bool = False,
     ) -> WorldCopyResult:
         """复制源项目世界观到目标项目（spec §5.1 算法 ①-⑧）.
 
@@ -88,6 +89,7 @@ class WorldCopyService:
             source_project_id: 源项目主键（支持 int 或 UUID）.
             target_project_id: 目标项目主键（支持 int 或 UUID）.
             root_setting_id: 复制起点条目（指定子树）；None = 复制源项目全部活动条目.
+            self_only: True = 仅复制 root_setting_id 本体（不含子级）；缺省 False 保持子树语义.
 
         Returns:
             WorldCopyResult: created=新条目列表, skipped=冲突源条目名,
@@ -119,7 +121,11 @@ class WorldCopyService:
             root = await self._repo.get(root_int)
             if root is None or _to_int_id(root.project_id) != source_int:
                 raise CopyRootNotFoundError()
-            copy_set = await self._repo.list_descendants(root_int)
+            # P1: self_only=True → 仅复制 root 本体（不含子级）
+            if self_only:
+                copy_set = [root]
+            else:
+                copy_set = await self._repo.list_descendants(root_int)
         else:
             copy_set = await self._repo.list_all_active(source_int)
 

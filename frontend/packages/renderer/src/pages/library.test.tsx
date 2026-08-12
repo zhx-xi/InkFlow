@@ -452,16 +452,31 @@ describe('设定库页 — #196 分类实体手动创建', () => {
     await user.type(within(dialog).getByLabelText('性格'), '孤傲');
     await user.type(within(dialog).getByLabelText('背景'), '剑客');
     await user.type(within(dialog).getByLabelText('目标'), '决战');
+    // P1 D1 契约升级（2026-08-13）：角色创建必填等级——未选保存 disabled，显式选择「重要配角」后保存
+    await user.click(within(dialog).getByTestId('library-create-rank'));
+    await user.click(await screen.findByRole('option', { name: '重要配角' }));
     await user.click(within(dialog).getByTestId('library-create-save'));
 
-    // POST body 对齐后端 CharacterCreateBody（name/personality/background/goals）
+    // POST body 对齐后端 CharacterCreateBody（name/personality/background/goals + P1 extra 透传）
     await waitFor(() => {
       const postCall = apiFetchMock.mock.calls.find(
         (c) => c[0] === '/api/v1/projects/p1/characters' && c[1]?.method === 'POST',
       );
       expect(postCall).toBeTruthy();
-      expect((postCall![1]!.body as { name: string; personality: string; background: string; goals: string }))
-        .toEqual({ name: '叶孤城', personality: '孤傲', background: '剑客', goals: '决战' });
+      const body = postCall![1]!.body as {
+        name: string;
+        personality: string;
+        background: string;
+        goals: string;
+        extra: { role_rank: string; groups: string[] };
+      };
+      expect(body).toEqual({
+        name: '叶孤城',
+        personality: '孤傲',
+        background: '剑客',
+        goals: '决战',
+        extra: { role_rank: 'major', groups: [] },
+      });
     });
     // 对话框关闭 + 列表刷新（重新 GET 出现新角色）
     await waitFor(() => {
@@ -529,14 +544,15 @@ describe('设定库页 — #196 分类实体手动创建', () => {
  * element-missing（类 3 契约缺口）；L10 为确认型（现状 RAG 行本就无按钮 → 预期直接绿）。
  */
 describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
-  /** 角色列表完整 DTO（编辑预填需要全字段，spec §2.1） */
+  /** 角色列表完整 DTO（编辑预填需要全字段，spec §2.1；P1 契约升级 2026-08-13：含等级/标签 extra——编辑保存 enabled 前提） */
   const fullChar = {
     id: 'c1', name: '林晚', personality: '孤傲', background: '剑客', goals: '决战',
+    extra: { role_rank: 'major', groups: [] },
   };
 
   /** 播种 p1 + 角色列表 mock（回显式：PATCH 合并更新，GET 返回最新） */
   function mockCharacters() {
-    const chars: Array<Record<string, string>> = [{ ...fullChar }];
+    const chars: Array<Record<string, unknown>> = [{ ...fullChar }];
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
       if (path === '/api/v1/projects/p1/characters') {

@@ -1,9 +1,10 @@
 /** 设定库页（spec §7.3：项目上下文 + 面包屑 + 六分类 tab + 空态引导；F43：行编辑/删除 + 保存指示） */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Library, Pencil, Trash2 } from 'lucide-react';
+import { ChevronRight, Copy, Library, Pencil, Trash2 } from 'lucide-react';
 import { apiFetch, ensureApiReady, errorMessage } from '../api/client';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { CopyDialog } from '../components/CopyDialog';
 import { LibraryCreateDialog, type LibraryItemDTO } from '../components/LibraryCreateDialog';
 import { Skeleton } from '../components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -71,6 +72,152 @@ const SAVE_INDICATOR_HIDE_MS = 2_000;
 /** #189 模式：页面顶部保存指示状态（idle 不渲染 / saving / saved） */
 type SaveState = 'idle' | 'saving' | 'saved';
 
+/** F43 P1（§3.3）：世界观复制结果（F37 既有响应，前端消费 created/skipped/warnings） */
+interface WorldCopyResult {
+  created: Array<Record<string, unknown>>;
+  skipped: string[];
+  maps_created: Array<Record<string, unknown>>;
+  pins_created: number;
+  warnings: string[];
+}
+
+/** F43 P1（§5.5）：复制对话框状态（行内 subtree 带 rootId；顶部整体 all 无 rootId） */
+interface CopyState {
+  open: boolean;
+  mode: 'subtree' | 'all';
+  rootId?: string | number;
+}
+
+/** F43 P1（§5.3）：前端建树节点（parent_id 树） */
+interface WorldTreeNode {
+  item: LibraryItemDTO;
+  children: WorldTreeNode[];
+}
+
+/** F43 P1（D3）：世界观分类默认分组（拍板五类；数据自定义自动进 chips，无「全部」选项） */
+const DEFAULT_WORLD_CATS = ['地图', '势力', '功法', '门派', '秘境'];
+
+/**
+ * F43 P1（§5.3）：items → 树——顶层 = parent_id null/缺失；按 items 顺序保序；
+ * 孤儿（parent_id 指向不存在节点）降级为顶层（E18 防御）。
+ */
+function buildWorldTree(items: LibraryItemDTO[]): WorldTreeNode[] {
+  const nodes = new Map<string | number, WorldTreeNode>();
+  for (const item of items) {
+    nodes.set(item.id, { item, children: [] });
+  }
+  const roots: WorldTreeNode[] = [];
+  for (const item of items) {
+    const node = nodes.get(item.id);
+    if (!node) continue;
+    const parentId = item.parent_id;
+    if (parentId !== null && parentId !== undefined && nodes.has(parentId)) {
+      nodes.get(parentId)!.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+  return roots;
+}
+
+/** F43 P1（§5.3）：递归树节点视图——toggle 仅渲染在有子节点行；操作按钮随 D12 悬停显示 */
+function WorldNodeView({
+  node,
+  depth,
+  collapsed,
+  onToggle,
+  onEdit,
+  onDelete,
+  onCopy,
+}: {
+  node: WorldTreeNode;
+  depth: number;
+  collapsed: Set<string | number>;
+  onToggle: (id: string | number) => void;
+  onEdit: (item: LibraryItemDTO) => void;
+  onDelete: (item: LibraryItemDTO) => void;
+  onCopy: (item: LibraryItemDTO) => void;
+}) {
+  const { t } = useI18n();
+  const { item, children } = node;
+  const hasChildren = children.length > 0;
+  const isCollapsed = collapsed.has(item.id);
+  return (
+    <div className="tree-node">
+      <div
+        className="tree-row group flex items-center gap-2 px-3 py-2 text-[13px] text-ink transition-colors duration-150 hover:bg-surface-2/60"
+        style={{ paddingLeft: depth * 18 + 12 }}
+      >
+        {hasChildren ? (
+          <button
+            type="button"
+            data-testid={`world-tree-toggle-${item.id}`}
+            aria-label={isCollapsed ? t('nav.expand') : t('nav.collapse')}
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-3 transition duration-150 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => onToggle(item.id)}
+          >
+            <ChevronRight
+              className={cn('h-3.5 w-3.5 transition-transform duration-180', !isCollapsed && 'rotate-90')}
+              aria-hidden="true"
+            />
+          </button>
+        ) : (
+          <span className="h-5 w-5 shrink-0" aria-hidden="true" />
+        )}
+        <span className="min-w-0 flex-1 truncate">{item.name ?? ''}</span>
+        {item.category ? (
+          <span className="shrink-0 rounded-full bg-surface-3 px-2 py-0.5 text-[11px] text-ink-2">
+            {item.category}
+          </span>
+        ) : null}
+        {/* F43 P1：行内操作按钮（D12 悬停显示；P0 编辑/删除 testid 不变 + 复制 world-copy-<id>） */}
+        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-180 group-hover:opacity-100 focus-within:opacity-100">
+          <button
+            type="button"
+            data-testid={`lib-edit-${item.id}`}
+            aria-label={`${t('lib.edit')} ${item.name ?? ''}`}
+            className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => onEdit(item)}
+          >
+            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            data-testid={`lib-delete-${item.id}`}
+            aria-label={`${t('lib.delete')} ${item.name ?? ''}`}
+            className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => onDelete(item)}
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            data-testid={`world-copy-${item.id}`}
+            aria-label={`${t('lib.copy.title')} ${item.name ?? ''}`}
+            className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => onCopy(item)}
+          >
+            <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+      {!isCollapsed &&
+        children.map((child) => (
+          <WorldNodeView
+            key={String(child.item.id)}
+            node={child}
+            depth={depth + 1}
+            collapsed={collapsed}
+            onToggle={onToggle}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            onCopy={onCopy}
+          />
+        ))}
+    </div>
+  );
+}
+
 function isCatKey(v: string | null): v is CatKey {
   return v !== null && (CAT_KEYS as string[]).includes(v);
 }
@@ -102,11 +249,71 @@ export function LibraryPage() {
   // #189 模式：顶部保存指示状态 + 自动隐藏计时器 ref（clearTimeout 防重叠）
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const saveHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // F43 P1：世界观分类筛选（null = 未选 → 展示所有，D3 无「全部」选项）
+  const [activeWorldCat, setActiveWorldCat] = useState<string | null>(null);
+  // F43 P1：世界观树收起集合（默认全部展开；点击 toggle 收起/展开）
+  const [collapsedIds, setCollapsedIds] = useState<Set<string | number>>(new Set());
+  // F43 P1：复制对话框状态（行内 subtree / 顶部整体 all）
+  const [copyState, setCopyState] = useState<CopyState | null>(null);
 
   const cat = CATS.find((c) => c.key === activeCat) ?? CATS[0];
   // rag 无创建端点（CTA 已走跳转分支），对话框仅在五个可创建分类下渲染
   const createCat = activeCat === 'rag' ? null : activeCat;
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? null;
+
+  // F43 P1（D-11）：世界观分类 chips = 默认分组 + 数据中自定义 category（去重，无「全部」）
+  const worldCategories = useMemo(() => {
+    if (activeCat !== 'world') return [];
+    const cats = new Set<string>(DEFAULT_WORLD_CATS);
+    for (const item of items) {
+      const cat = (item.category ?? '').trim();
+      if (cat) cats.add(cat);
+    }
+    return [...cats];
+  }, [activeCat, items]);
+
+  // F43 P1（§5.3）：世界观树（parent_id 前端建树，顶层保序 + 孤儿降级）
+  const worldRoots = useMemo(
+    () => (activeCat === 'world' ? buildWorldTree(items) : []),
+    [activeCat, items],
+  );
+  // §5.4：分类筛选作用于顶层节点（含其子树整体显隐，树不拆散）
+  const filteredWorldRoots = useMemo(
+    () =>
+      activeWorldCat === null
+        ? worldRoots
+        : worldRoots.filter((node) => node.item.category === activeWorldCat),
+    [activeWorldCat, worldRoots],
+  );
+
+  // F43 P1（D-13）：建议标签 = 当前项目角色 extra.groups 并集（数据驱动，供创建/编辑对话框）
+  const tagSuggestions = useMemo(() => {
+    if (activeCat !== 'characters') return [];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const item of items) {
+      const groups = item.extra?.groups;
+      if (!Array.isArray(groups)) continue;
+      for (const g of groups) {
+        if (typeof g !== 'string') continue;
+        const tag = g.trim();
+        if (tag && !seen.has(tag)) {
+          seen.add(tag);
+          out.push(tag);
+        }
+      }
+    }
+    return out;
+  }, [activeCat, items]);
+
+  // F43 P1（§5.5/E20）：复制目标项目 = projects 排除当前项目；空数组 → 复制按钮 disabled（E21）
+  const copyTargetOptions = useMemo(
+    () =>
+      projects
+        .filter((p) => p.id !== currentProjectId)
+        .map((p) => ({ id: p.id, name: p.name })),
+    [projects, currentProjectId],
+  );
 
   // 挂载加载项目列表（Electron 下等待 preload 注入，与项目页同源防 401 竞态）
   useEffect(() => {
@@ -227,6 +434,51 @@ export function LibraryPage() {
     }
   };
 
+  // F43 P1（§5.5/§3.3）：复制确认 → POST F37 copy 端点 → 结果 toast；
+  // 成功关框；失败 err toast + 对话框保持打开可重试（E24）
+  const handleCopy = async (targetId: string, selfOnly: boolean, state: CopyState) => {
+    if (!currentProjectId) return;
+    const targetProject = projects.find((p) => p.id === targetId);
+    try {
+      const body =
+        state.mode === 'all'
+          ? { source_project_id: currentProjectId }
+          : {
+              source_project_id: currentProjectId,
+              root_setting_id: String(state.rootId),
+              ...(selfOnly ? { self_only: true } : {}),
+            };
+      const result = await apiFetch<WorldCopyResult>(
+        `/api/v1/projects/${targetId}/world-settings/copy`,
+        { method: 'POST', body },
+      );
+      useToastStore
+        .getState()
+        .pushToast('ok', t('lib.copy.result', { n: result.created.length, name: targetProject?.name ?? targetId }));
+      // E23：warnings 非空 → 追加 warn toast（第一条 warning，不刷屏）；无 warnings 但 skipped 非空 → 跳过数
+      if (result.warnings.length > 0) {
+        useToastStore.getState().pushToast('warn', result.warnings[0]);
+      } else if (result.skipped.length > 0) {
+        useToastStore.getState().pushToast('warn', t('lib.copy.skipped', { n: result.skipped.length }));
+      }
+      setCopyState(null);
+    } catch (err) {
+      useToastStore.getState().pushToast('err', errorMessage(err));
+    }
+  };
+
+  const toggleCollapsed = (id: string | number) => {
+    setCollapsedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
   return (
     <div data-testid="library-page" className="mx-auto max-w-[1080px] px-12 py-10">
       <h1 className="font-serif text-[26px] font-semibold">{t('lib.title')}</h1>
@@ -339,45 +591,139 @@ export function LibraryPage() {
                   {t('lib.empty.create')}
                 </button>
               </div>
+            ) : activeCat === 'world' ? (
+              <>
+                {/* F43 P1（§5.4）：世界观分类筛选工具栏——默认分组 + 数据自定义 chips（无「全部」，
+                    未选 = 展示所有，再点同 chip 取消）；右上角顶部整体复制（E21 单项目 disabled） */}
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <span className="text-[12px] text-ink-2">{t('lib.worldCat.label')}</span>
+                  {worldCategories.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      data-testid={`world-cat-filter-${cat}`}
+                      aria-pressed={activeWorldCat === cat}
+                      className={cn(
+                        'rounded-full border px-3 py-1 text-[12px] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                        activeWorldCat === cat
+                          ? 'border-accent bg-accent/10 text-accent'
+                          : 'border-line text-ink-2 hover:border-accent hover:text-accent',
+                      )}
+                      onClick={() => setActiveWorldCat(activeWorldCat === cat ? null : cat)}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    data-testid="world-copy-all"
+                    title={copyTargetOptions.length === 0 ? t('lib.copy.needTwo') : undefined}
+                    disabled={copyTargetOptions.length === 0}
+                    className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={() => setCopyState({ open: true, mode: 'all' })}
+                  >
+                    <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                    {t('lib.copy.all')}
+                  </button>
+                </div>
+                {/* F43 P1（§5.3）：世界观树视图（library-list testid 不变；筛选无匹配 → 轻空态 E19） */}
+                <div
+                  data-testid="library-list"
+                  className="overflow-hidden rounded-lg border border-line bg-surface shadow-card"
+                >
+                  {filteredWorldRoots.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-[13px] text-ink-2">
+                      {t('common.empty')}
+                    </div>
+                  ) : (
+                    filteredWorldRoots.map((node) => (
+                      <WorldNodeView
+                        key={String(node.item.id)}
+                        node={node}
+                        depth={0}
+                        collapsed={collapsedIds}
+                        onToggle={toggleCollapsed}
+                        onEdit={(item) => {
+                          setEditing(item);
+                          setCreateOpen(true);
+                        }}
+                        onDelete={(item) => setPendingDelete(item)}
+                        onCopy={(item) => setCopyState({ open: true, mode: 'subtree', rootId: item.id })}
+                      />
+                    ))
+                  )}
+                </div>
+              </>
             ) : (
               <ul
                 data-testid="library-list"
                 className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface shadow-card"
               >
-                {items.map((item) => (
-                  <li
-                    key={String(item.id)}
-                    className="group lib-item flex items-center gap-3 px-4 py-2.5 text-[13px] text-ink"
-                  >
-                    <span className="min-w-0 flex-1 truncate">{item.title ?? item.name ?? ''}</span>
-                    {/* F43 §5.1（D12）：悬停显示操作按钮；focus-within 保证键盘可达可见 */}
-                    {activeCat !== 'rag' && (
-                      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-180 group-hover:opacity-100 focus-within:opacity-100">
-                        <button
-                          type="button"
-                          data-testid={`lib-edit-${item.id}`}
-                          aria-label={`${t('lib.edit')} ${item.title ?? item.name ?? ''}`}
-                          className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => {
-                            setEditing(item);
-                            setCreateOpen(true);
-                          }}
+                {items.map((item) => {
+                  // F43 P1（§5.1/§5.2）：角色行等级徽标 + 标签 chips（缺省不渲染）
+                  const isCharacters = activeCat === 'characters';
+                  const rank = isCharacters ? String(item.extra?.role_rank ?? '') : '';
+                  const groups =
+                    isCharacters && Array.isArray(item.extra?.groups)
+                      ? (item.extra!.groups as unknown[]).filter(
+                          (g): g is string => typeof g === 'string',
+                        )
+                      : [];
+                  return (
+                    <li
+                      key={String(item.id)}
+                      className="group lib-item flex items-center gap-3 px-4 py-2.5 text-[13px] text-ink"
+                    >
+                      <span className="min-w-0 flex-1 truncate">{item.title ?? item.name ?? ''}</span>
+                      {rank !== '' && (
+                        <span
+                          data-testid={`lib-rank-${item.id}`}
+                          className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] text-accent"
                         >
-                          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          data-testid={`lib-delete-${item.id}`}
-                          aria-label={`${t('lib.delete')} ${item.title ?? item.name ?? ''}`}
-                          className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => setPendingDelete(item)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                        </button>
-                      </div>
-                    )}
-                  </li>
-                ))}
+                          {t(`lib.rank.${rank}`)}
+                        </span>
+                      )}
+                      {groups.length > 0 && (
+                        <div data-testid={`lib-tags-${item.id}`} className="flex shrink-0 items-center gap-1">
+                          {groups.map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded-full bg-surface-3 px-2 py-0.5 text-[11px] text-ink-2"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {/* F43 §5.1（D12）：悬停显示操作按钮；focus-within 保证键盘可达可见 */}
+                      {activeCat !== 'rag' && (
+                        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-180 group-hover:opacity-100 focus-within:opacity-100">
+                          <button
+                            type="button"
+                            data-testid={`lib-edit-${item.id}`}
+                            aria-label={`${t('lib.edit')} ${item.title ?? item.name ?? ''}`}
+                            className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            onClick={() => {
+                              setEditing(item);
+                              setCreateOpen(true);
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            data-testid={`lib-delete-${item.id}`}
+                            aria-label={`${t('lib.delete')} ${item.title ?? item.name ?? ''}`}
+                            className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            onClick={() => setPendingDelete(item)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
@@ -390,10 +736,24 @@ export function LibraryPage() {
           open={createOpen}
           cat={createCat}
           editing={editing}
+          tagSuggestions={tagSuggestions}
           onSave={handleSave}
           onOpenChange={(open) => {
             setCreateOpen(open);
             if (!open) setEditing(null); // 关闭即清空编辑态（重开创建对话框不残留预填）
+          }}
+        />
+      )}
+
+      {/* F43 P1（§5.5）：世界观复制对话框（行内 subtree + 顶部整体 all 共用；#195 遮罩不关闭） */}
+      {copyState && (
+        <CopyDialog
+          open={copyState.open}
+          mode={copyState.mode}
+          targetOptions={copyTargetOptions}
+          onCopy={(targetId, selfOnly) => handleCopy(targetId, selfOnly, copyState)}
+          onOpenChange={(open) => {
+            if (!open) setCopyState(null);
           }}
         />
       )}

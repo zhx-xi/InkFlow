@@ -723,3 +723,32 @@ class TestExtractConfigErrors:
         svc = CharacterService(repository=mock_repo, extractor=mock_extractor)
         with pytest.raises(CharacterServiceError, match="项目仓储未配置"):
             await svc.extract(CharacterExtractRequest(project_id=PID, text="x"))
+
+
+class TestCharacterExtraContract:
+    """F43 P1 角色 extra 透传契约（spec §2.4）— create_character 加 extra 参数透传到实体.
+
+    【RED 预期】create_character 签名尚无 extra 参数 → 传 extra= 触发 TypeError
+    （FAILED）；缺省用例（守护）当前即 PASS——GREEN 后 extra or {} 语义保持。
+    """
+
+    async def test_create_character_passes_extra_to_entity(self, service, mock_repo) -> None:
+        """传 extra → repo.add 收到的 Character.extra == 该 dict（role_rank/groups 原样落库）."""
+        extra = {"role_rank": "major", "groups": ["主角团"]}
+        created = await service.create_character(
+            project_id=PID,
+            name="林尘",
+            personality="坚韧",
+            background="山村少年",
+            goals="变强",
+            extra=extra,
+        )
+        added = mock_repo.add.await_args.args[0]
+        assert added.extra == extra
+        assert created.extra == extra
+
+    async def test_create_character_extra_defaults_empty(self, service, mock_repo) -> None:
+        """不传 extra（默认 None）→ Character.extra == {}（向后兼容，既有行为）."""
+        await service.create_character(project_id=PID, name="林尘")
+        added = mock_repo.add.await_args.args[0]
+        assert added.extra == {}
