@@ -127,6 +127,20 @@ class TestFrontmatterErrors:
             sp.parse_skill_metadata(text, "web-research")
         assert exc.value.code == "SKILLS_INVALID_FRONTMATTER"
 
+    def test_unterminated_frontmatter(self, sp):
+        """有起始 --- 但无终止 --- → N1。"""
+        text = "---\nname: web-research\ndescription: 网络调研技能\n"
+        with pytest.raises(sp.SkillValidationError) as exc:
+            sp.parse_skill_metadata(text, "web-research")
+        assert exc.value.code == "SKILLS_INVALID_FRONTMATTER"
+
+    def test_frontmatter_not_mapping(self, sp):
+        """frontmatter YAML 非映射（标量）→ N1。"""
+        text = "---\njust-a-string\n---\n"
+        with pytest.raises(sp.SkillValidationError) as exc:
+            sp.parse_skill_metadata(text, "web-research")
+        assert exc.value.code == "SKILLS_INVALID_FRONTMATTER"
+
 
 class TestNameValidation:
     def test_name_too_long(self, sp):
@@ -216,3 +230,22 @@ class TestOptionalFieldLenience:
             meta = sp.parse_skill_metadata(text, "web-research")
         assert meta.allowed_tools is None
         assert any("allowed-tools" in str(w.message) for w in caught)
+
+    def test_compatibility_wrong_type_ignored(self, sp):
+        """compatibility 非 str → 忽略 + 警告，不抛错。"""
+        text = (
+            "---\nname: web-research\ndescription: 网络调研技能\n"
+            "compatibility: [Python 3.11, Python 3.12]\n---\n"
+        )
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            meta = sp.parse_skill_metadata(text, "web-research")
+        assert meta.compatibility is None
+        assert any("compatibility" in str(w.message) for w in caught)
+
+
+class TestErrorStr:
+    def test_error_str_returns_message(self, sp):
+        """SkillValidationError.__str__ 返回 message。"""
+        err = sp.SkillValidationError("SKILLS_INVALID_NAME", "name 不合规")
+        assert str(err) == "name 不合规"

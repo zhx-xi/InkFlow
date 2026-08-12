@@ -138,6 +138,20 @@ class TestInstall:
         envelope = json.loads(result.stdout)
         assert envelope["error"]["code"] == "SKILLS_SOURCE_INVALID"
 
+    def test_install_read_oserror(self, tmp_path, monkeypatch):
+        """SKILL.md 读取失败（OSError）→ exit 1 + SKILLS_SOURCE_INVALID。"""
+        pkg = make_skill_package(tmp_path)
+        import pathlib
+
+        def _boom(self, *args, **kwargs):
+            raise OSError("denied")
+
+        monkeypatch.setattr(pathlib.Path, "read_text", _boom)
+        result = _invoke(["install", str(pkg)])
+        assert result.exit_code == 1
+        envelope = json.loads(result.stdout)
+        assert envelope["error"]["code"] == "SKILLS_SOURCE_INVALID"
+
     def test_install_already_exists(self, tmp_path, skills_dir):
         """同名已存在且无 --force → exit 1 + ALREADY_INSTALLED。"""
         pkg = make_skill_package(tmp_path)
@@ -213,6 +227,16 @@ class TestList:
         assert entry["status"] == "invalid"
         assert "SKILLS_INVALID_FRONTMATTER" in str(entry.get("error", ""))
 
+    def test_list_skips_dir_without_skill_md(self, tmp_path, skills_dir):
+        """无 SKILL.md 的目录被跳过（不报错、不列出）。"""
+        empty_dir = skills_dir / "not-a-skill"
+        empty_dir.mkdir(parents=True)
+        (empty_dir / "readme.txt").write_text("x", encoding="utf-8")
+        result = _invoke(["list"])
+        assert result.exit_code == 0
+        names = [s["name"] for s in json.loads(result.stdout)["data"]["skills"]]
+        assert "not-a-skill" not in names
+
 
 class TestVerify:
     def test_verify_all_ok(self, tmp_path, skills_dir):
@@ -257,6 +281,13 @@ class TestVerify:
         envelope = json.loads(result.stdout)
         assert envelope["error"]["code"] == "NOT_FOUND"
 
+    def test_verify_empty_root_not_found(self, tmp_path, skills_dir):
+        """无任何已导入 skills → verify → exit 1 + NOT_FOUND。"""
+        result = _invoke(["verify"])
+        assert result.exit_code == 1
+        envelope = json.loads(result.stdout)
+        assert envelope["error"]["code"] == "NOT_FOUND"
+
 
 class TestRemove:
     def test_remove_success(self, tmp_path, skills_dir):
@@ -274,6 +305,21 @@ class TestRemove:
         assert result.exit_code == 1
         envelope = json.loads(result.stdout)
         assert envelope["error"]["code"] == "NOT_FOUND"
+
+    def test_remove_oserror(self, tmp_path, skills_dir, monkeypatch):
+        """remove 删除失败（OSError）→ exit 1 + SKILLS_TARGET_UNWRITABLE。"""
+        pkg = make_skill_package(tmp_path)
+        assert _invoke(["install", str(pkg)]).exit_code == 0
+        import shutil as _shutil
+
+        def _boom(*args, **kwargs):
+            raise OSError("denied")
+
+        monkeypatch.setattr(_shutil, "rmtree", _boom)
+        result = _invoke(["remove", "web-research"])
+        assert result.exit_code == 1
+        envelope = json.loads(result.stdout)
+        assert envelope["error"]["code"] == "SKILLS_TARGET_UNWRITABLE"
 
 
 class TestFullCycle:
