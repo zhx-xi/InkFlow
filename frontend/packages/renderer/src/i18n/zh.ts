@@ -119,6 +119,7 @@ export const zh = {
   'm.addProvider': '添加 Provider',
   'm.editProvider': '编辑 Provider',
   'm.name': '名称',
+  'm.model': '模型',
   'm.baseUrl': 'Base URL',
   'm.apiKey': 'API Key',
   'm.preset': '预置模板',

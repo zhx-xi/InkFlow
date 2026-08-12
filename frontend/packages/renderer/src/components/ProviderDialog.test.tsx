@@ -16,10 +16,20 @@
  *
  * 行为契约：
  * - 测试连接（「测试连接」按钮）→ POST /api/v1/settings/llm/test（§8.3 既有端点复用），
- *   body 含 provider / base_url / api_key（F2 评审确认 2026-08-06：三键即完整契约——
- *   不要求 model 字段；后端将兼容缺 model 的请求体）：
+ *   body 含 provider / model / base_url / api_key（#267 契约升级 2026-08-12：四键完整——
+ *   F2 评审「三键即完整契约」作废。根因：测试发生在保存前 provider 未入库，缺 model
+ *   时后端回退链（settings.py L170 注册表 default_model → config.llm_default_model）
+ *   必然落空 → 回退 openai/gpt-4o → deepseek API 拒绝无效模型 → 真实 key 也失败。
+ *   GREEN 必须将用户输入/预设默认的 model 随请求体发出）：
  *   成功 {ok:true} → toast ok「连接成功」；失败 {ok:false, message} → toast err「连接失败: {message}」
  *   （toast 断言 useToastStore 状态；文案与 agent store 测试连接一致）
+ * - 模型输入框：label「模型」，位于名称旁（Base URL 上方）；编辑模式回显 editing.default_model
+ * - 预置模板选择（非编辑模式）：选 preset → 名称/Base URL/模型自动填充
+ *   （PRESET_TEMPLATES 各 preset 带默认模型：openai 空、deepseek→deepseek-chat、
+ *   zhipu→glm-4-flash、ollama→qwen2.5）
+ * - 模型留空时测试请求仍发送（body 不含 model 键——后端 LLMTestRequest 语义：
+ *   model 缺失 → 回退链兜底；提供但空白（''）→ 提供即校验 422 拒绝。故留空必须缺键，
+ *   等价旧行为不劣化）
  * - 保存（「保存」按钮）：
  *   * 添加模式（editing 空）→ POST /api/v1/provider-configs，body 含 name / base_url
  *   * 编辑模式（editing 有值）→ PATCH /api/v1/provider-configs/{id}
@@ -27,8 +37,9 @@
  *   * 请求成功 → onSaved(返回的 ProviderConfig)
  *
  * 新增 i18n key（GREEN 补 zh.ts / en.ts；可复用已有 ag.save「保存」/ ag.test「测试连接」/
- * dlg.cancel「取消」）：m.name='名称' m.baseUrl='Base URL' m.apiKey='API Key'
+ * dlg.cancel「取消」）：m.name='名称' m.model='模型' m.baseUrl='Base URL' m.apiKey='API Key'
  * m.addProvider='添加 Provider' m.editProvider='编辑 Provider'
+ * （#267 新增 m.model：zh '模型' / en 'Model'）
  *
  * RED 预期：./ProviderDialog 模块不存在 → module-not-found（类 1 契约缺口）。
  */
@@ -131,11 +142,12 @@ describe('ProviderDialog — 打开 / 关闭', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('编辑模式：editing 有值 → 「编辑 Provider」标题 + 名称回显', () => {
+  it('编辑模式：editing 有值 → 「编辑 Provider」标题 + 名称/模型回显', () => {
     renderDialog({ editing: editingProvider });
     const dlg = screen.getByRole('dialog');
     expect(within(dlg).getByText('编辑 Provider')).toBeInTheDocument();
     expect(within(dlg).getByLabelText('名称')).toHaveValue('openai');
+    expect(within(dlg).getByLabelText('模型')).toHaveValue('gpt-4o');
   });
 });
 
@@ -149,11 +161,41 @@ describe('ProviderDialog — 输入校验', () => {
     expect(saveBtn).toBeEnabled();
   });
 
-  it('字段齐全：名称 / Base URL / API Key（password）', () => {
+  it('字段齐全：名称 / 模型 / Base URL / API Key（password）', () => {
     renderDialog();
     expect(screen.getByLabelText('名称')).toBeInTheDocument();
+    expect(screen.getByLabelText('模型')).toBeInTheDocument();
     expect(screen.getByLabelText('Base URL')).toBeInTheDocument();
     expect(screen.getByLabelText('API Key')).toHaveAttribute('type', 'password');
+  });
+
+  it('选择 deepseek 预置模板 → 名称/Base URL/模型自动填充（deepseek-chat）', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByRole('combobox', { name: '预置模板' }));
+    await user.click(await screen.findByRole('option', { name: 'deepseek' }));
+    expect(screen.getByLabelText('名称')).toHaveValue('deepseek');
+    expect(screen.getByLabelText('模型')).toHaveValue('deepseek-chat');
+    expect(screen.getByLabelText('Base URL')).toHaveValue('https://api.deepseek.com/v1');
+  });
+
+  it('选择 zhipu 预置模板 → 模型自动填充 glm-4-flash；ollama → qwen2.5', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByRole('combobox', { name: '预置模板' }));
+    await user.click(await screen.findByRole('option', { name: 'zhipu' }));
+    expect(screen.getByLabelText('模型')).toHaveValue('glm-4-flash');
+    await user.click(screen.getByRole('combobox', { name: '预置模板' }));
+    await user.click(await screen.findByRole('option', { name: 'ollama' }));
+    expect(screen.getByLabelText('模型')).toHaveValue('qwen2.5');
+  });
+
+  it('openai 预置模板 → 默认模型为空（无预设，用户自填）', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByRole('combobox', { name: '预置模板' }));
+    await user.click(await screen.findByRole('option', { name: 'openai' }));
+    expect(screen.getByLabelText('模型')).toHaveValue('');
   });
 });
 
@@ -161,13 +203,14 @@ describe('ProviderDialog — 测试连接（POST /settings/llm/test）', () => {
   async function fillAndTest() {
     const user = userEvent.setup();
     await user.type(screen.getByLabelText('名称'), 'openai');
+    await user.type(screen.getByLabelText('模型'), 'gpt-4o');
     await user.type(screen.getByLabelText('Base URL'), 'https://api.openai.com/v1');
     await user.type(screen.getByLabelText('API Key'), 'sk-test-123');
     await user.click(screen.getByRole('button', { name: '测试连接' }));
     return user;
   }
 
-  it('成功 {ok:true} → toast ok「连接成功」', async () => {
+  it('成功 {ok:true} → 请求体四键 {provider, model, base_url, api_key} + toast ok「连接成功」', async () => {
     renderDialog();
     await fillAndTest();
     await waitFor(() => {
@@ -175,12 +218,13 @@ describe('ProviderDialog — 测试连接（POST /settings/llm/test）', () => {
         '/api/v1/settings/llm/test',
         expect.objectContaining({
           method: 'POST',
-          // F2 评审确认：请求体契约 = {provider, base_url, api_key}（不要求 model，后端将兼容缺 model）
-          body: expect.objectContaining({
+          // #267 契约升级：请求体必须含 model（toEqual 全等锁四键——缺 model 即 FAIL）
+          body: {
             provider: 'openai',
+            model: 'gpt-4o',
             base_url: 'https://api.openai.com/v1',
             api_key: 'sk-test-123',
-          }),
+          },
         }),
       );
     });
@@ -201,11 +245,44 @@ describe('ProviderDialog — 测试连接（POST /settings/llm/test）', () => {
     renderDialog();
     await fillAndTest();
     await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/settings/llm/test',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.objectContaining({ model: 'gpt-4o' }),
+        }),
+      );
+    });
+    await waitFor(() => {
       const toasts = useToastStore.getState().toasts;
       expect(toasts.length).toBeGreaterThan(0);
       const last = toasts[toasts.length - 1];
       expect(last.type).toBe('err');
       expect(last.message).toBe('连接失败: 模型不可达');
+    });
+  });
+
+  it('模型留空 → 测试请求仍发送（body 不含 model 键，后端回退链兜底）', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(screen.getByLabelText('名称'), 'openai');
+    await user.type(screen.getByLabelText('Base URL'), 'https://api.openai.com/v1');
+    await user.type(screen.getByLabelText('API Key'), 'sk-test-123');
+    await user.click(screen.getByRole('button', { name: '测试连接' }));
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/settings/llm/test',
+        expect.objectContaining({
+          method: 'POST',
+          // 后端 LLMTestRequest 语义：model 缺失 → 回退链；提供但空白（如 ''）→ 422 拒绝
+          // （提供即校验）。故 model 留空时 body 必须不含 model 键（= 旧行为，不劣化）。
+          body: {
+            provider: 'openai',
+            base_url: 'https://api.openai.com/v1',
+            api_key: 'sk-test-123',
+          },
+        }),
+      );
     });
   });
 });

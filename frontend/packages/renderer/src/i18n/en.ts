@@ -113,6 +113,7 @@ export const en: Record<string, string> = {
   'm.addProvider': 'Add Provider',
   'm.editProvider': 'Edit Provider',
   'm.name': 'Name',
+  'm.model': 'Model',
   'm.baseUrl': 'Base URL',
   'm.apiKey': 'API Key',
   'm.preset': 'Preset',

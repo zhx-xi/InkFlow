@@ -32,11 +32,11 @@ const NAME_RE = /^[a-z0-9_-]{1,32}$/;
  * _PROVIDER_BASE_URLS 对齐——deepseek /v1、ollama /v1、zhipu 尾斜杠、
  * openai 空（SDK 默认端点）。
  */
-const PRESET_TEMPLATES: Array<{ name: string; base_url: string }> = [
-  { name: 'openai', base_url: '' },
-  { name: 'deepseek', base_url: 'https://api.deepseek.com/v1' },
-  { name: 'zhipu', base_url: 'https://open.bigmodel.cn/api/paas/v4/' },
-  { name: 'ollama', base_url: 'http://localhost:11434/v1' },
+const PRESET_TEMPLATES: Array<{ name: string; base_url: string; model: string }> = [
+  { name: 'openai', base_url: '', model: '' },
+  { name: 'deepseek', base_url: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+  { name: 'zhipu', base_url: 'https://open.bigmodel.cn/api/paas/v4/', model: 'glm-4-flash' },
+  { name: 'ollama', base_url: 'http://localhost:11434/v1', model: 'qwen2.5' },
 ];
 
 export function ProviderDialog({ open, onOpenChange, editing = null, onSaved }: ProviderDialogProps) {
@@ -44,6 +44,7 @@ export function ProviderDialog({ open, onOpenChange, editing = null, onSaved }: 
   const pushToast = useToastStore((s) => s.pushToast);
   const [name, setName] = useState(editing?.name ?? '');
   const [baseUrl, setBaseUrl] = useState(editing?.base_url ?? '');
+  const [model, setModel] = useState(editing?.default_model ?? '');
   const [apiKey, setApiKey] = useState('');
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -53,6 +54,7 @@ export function ProviderDialog({ open, onOpenChange, editing = null, onSaved }: 
     if (!open) return;
     setName(editing?.name ?? '');
     setBaseUrl(editing?.base_url ?? '');
+    setModel(editing?.default_model ?? '');
     setApiKey('');
   }, [open, editing]);
 
@@ -77,15 +79,22 @@ export function ProviderDialog({ open, onOpenChange, editing = null, onSaved }: 
     if (!preset) return;
     setName(preset.name);
     setBaseUrl(preset.base_url);
+    setModel(preset.model);
   };
 
   const handleTest = async () => {
     if (testing) return;
     setTesting(true);
     try {
+      const trimmedModel = model.trim();
       const res = await apiFetch<LlmTestResponse>('/api/v1/settings/llm/test', {
         method: 'POST',
-        body: { provider: trimmedName, base_url: baseUrl, api_key: apiKey },
+        body: {
+          provider: trimmedName,
+          ...(trimmedModel ? { model: trimmedModel } : {}),
+          base_url: baseUrl,
+          api_key: apiKey,
+        },
       });
       if (res.ok) {
         pushToast('ok', t('m.dialog.testOk'));
@@ -185,6 +194,16 @@ export function ProviderDialog({ open, onOpenChange, editing = null, onSaved }: 
             {trimmedName !== '' && !nameValid && (
               <p className="text-[12px] text-err">{t('m.nameInvalid')}</p>
             )}
+          </label>
+          <label className="flex flex-col gap-1.5 text-[13px]">
+            <span>{t('m.model')}</span>
+            <input
+              aria-label={t('m.model')}
+              className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder="gpt-4o"
+            />
           </label>
           <label className="flex flex-col gap-1.5 text-[13px]">
             <span>{t('m.baseUrl')}</span>
