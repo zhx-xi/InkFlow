@@ -22,6 +22,8 @@ from inkflow.domain.models.chapter import ChapterStatus, ChapterUpdate
 from inkflow.domain.models.draft import Draft, DraftStatus
 from inkflow.domain.services._word_count import count_words
 
+_ZERO_PROJECT_ID = uuid.UUID(int=0)
+
 
 class DraftNotFoundError(Exception):
     """草稿不存在（API 映射 404）。"""
@@ -84,8 +86,10 @@ class DraftService:
             已落库的 Draft（id 为 uuid4 字符串）.
 
         Raises:
-            ValueError: content strip 后为空.
+            ValueError: project_id 为全零 UUID（#275 孤儿数据签名），或 content strip 后为空.
         """
+        if project_id == _ZERO_PROJECT_ID:
+            raise ValueError("project_id 不能为全零 UUID（#275 孤儿数据签名）")
         if not content.strip():
             raise ValueError("草稿内容不能为空")
         draft: Draft = await self._repo.create(  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按契约提供 create
@@ -250,3 +254,17 @@ class DraftService:
             )
             self.last_learned = bool(getattr(self._memory_service, "last_learned", False))
         return updated
+
+    async def prune_orphans(self, *, dry_run: bool = False) -> int:
+        """删除孤儿草稿（project_id=全零 UUID，#275 旧数据清理）→ 删除条数.
+
+        Args:
+            dry_run: True = 只统计不删除（清理前预览）.
+
+        Returns:
+            匹配的孤儿草稿条数（dry_run=True 时不删除）.
+        """
+        count: int = await self._repo.prune_orphans(  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按契约提供 prune_orphans
+            dry_run=dry_run
+        )
+        return count

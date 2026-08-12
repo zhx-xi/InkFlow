@@ -259,7 +259,7 @@ async def test_agentic_invoke_error_failed():
         "run_repo": AsyncMock(),
     }
     svc = AgenticWriterService(
-        agent_factory=lambda: agent,
+        agent_factory=lambda _request: agent,
         draft_service=deps["draft_service"],
         audit_service=deps["audit_service"],
         run_repo=deps["run_repo"],
@@ -322,7 +322,7 @@ async def test_agentic_base_message_object_form():
         "run_repo": AsyncMock(),
     }
     svc = AgenticWriterService(
-        agent_factory=_ObjAgent,
+        agent_factory=lambda _request: _ObjAgent(),
         draft_service=deps["draft_service"],
         audit_service=deps["audit_service"],
         run_repo=deps["run_repo"],
@@ -343,3 +343,26 @@ async def test_agentic_base_message_object_form():
     results = [tc.result for step in run.steps for tc in step.tool_calls]
     assert any("角色A" in r for r in results)
     assert run.token_usage_total == 420  # 120 + 300（对象形态 usage 提取）
+
+
+async def test_final_content_empty_history() -> None:
+    """#275 覆盖率补测: _final_content 对无 AI 消息的历史返回空串（L265 分支）."""
+    from inkflow.domain.services.agentic_writer_service import AgenticWriterService
+
+    deps = {
+        "draft_service": AsyncMock(),
+        "audit_service": AsyncMock(),
+        "run_repo": AsyncMock(),
+    }
+    svc = AgenticWriterService(
+        agent_factory=lambda _request: AsyncMock(),
+        draft_service=deps["draft_service"],
+        audit_service=deps["audit_service"],
+        run_repo=deps["run_repo"],
+    )
+
+    result = svc._final_content(
+        [{"type": "tool", "name": "search_characters", "content": '{"ok": true}'}]
+    )
+
+    assert result == ""

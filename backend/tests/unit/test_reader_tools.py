@@ -440,3 +440,74 @@ class TestBuildReaderTools:
         for tool in build_reader_tools(_make_deps()):
             assert isinstance(tool.spec, ToolSpec)
             assert callable(tool.func)
+
+
+# ── #275: LLM 字符串参数规范化（deepagents 工具参数不经过 Pydantic 转换） ──
+
+
+class TestStringProjectIdNormalization:
+    """#275 冒烟实测补充契约: LLM 工具调用参数为字符串形态，工具 func 必须
+    规范化为 uuid.UUID 再透传 service——否则 check_foreshadowing 等严格校验
+    的 service 收到 str → 「项目不存在」、save_draft 防御误拒.
+
+    冒烟实锤（2026-08-12，真实内核 zhipu/glm-4.5）: 所有工具调用
+    arguments.project_id 均为字符串 "00000000-...0003"（deepagents 透传
+    LLM JSON 原值，不经过 args_schema Pydantic 校验）；check_foreshadowing
+    返回 「项目不存在」、save_draft 被防御拒绝（str != uuid.UUID 恒真）。
+
+    RED 预期: 当前实现直接透传 str → mock service 收到 str（非 uuid.UUID）
+    → 断言 FAILED（clean FAILED）。
+    """
+
+    async def test_search_characters_normalizes_project_id(self):
+        """search_characters 字符串 project_id → service 收到 uuid.UUID."""
+        svc = AsyncMock()
+        svc.list_characters.return_value = ([], 0)
+        tool = _tool(_make_deps(character_service=svc), "search_characters")
+
+        payload = json.loads(await tool.func(project_id=str(PROJECT_ID)))
+
+        assert payload["ok"] is True
+        call = svc.list_characters.await_args
+        assert _kwarg_or_positional(call, "project_id", 0) == PROJECT_ID
+
+    async def test_check_foreshadowing_normalizes_project_id(self):
+        """check_foreshadowing 字符串 project_id → service 收到 uuid.UUID."""
+        svc = AsyncMock()
+        svc.list.return_value = ([], 0)
+        tool = _tool(_make_deps(foreshadowing_service=svc), "check_foreshadowing")
+
+        payload = json.loads(await tool.func(project_id=str(PROJECT_ID)))
+
+        assert payload["ok"] is True
+        call = svc.list.await_args
+        assert _kwarg_or_positional(call, "project_id", 0) == PROJECT_ID
+
+    async def test_get_prior_summary_normalizes_project_id(self):
+        """get_prior_summary 字符串 project_id → service 收到 uuid.UUID."""
+        svc = AsyncMock()
+        svc.list_recent.return_value = []
+        tool = _tool(_make_deps(summary_service=svc), "get_prior_summary")
+
+        payload = json.loads(await tool.func(project_id=str(PROJECT_ID)))
+
+        assert payload["ok"] is True
+        call = svc.list_recent.await_args
+        assert _kwarg_or_positional(call, "project_id", 0) == PROJECT_ID
+
+    async def test_audit_chapter_normalizes_ids(self):
+        """audit_chapter 字符串 project_id/chapter_id → service 收到 uuid.UUID."""
+        svc = AsyncMock()
+        svc.audit.return_value = {"findings": []}
+        tool = _tool(_make_deps(chapter_audit_service=svc), "audit_chapter")
+
+        payload = json.loads(
+            await tool.func(
+                project_id=str(PROJECT_ID), chapter_id=str(CHAPTER_ID), include_static=False
+            )
+        )
+
+        assert payload["ok"] is True
+        call = svc.audit.await_args
+        assert _kwarg_or_positional(call, "project_id", 0) == PROJECT_ID
+        assert _kwarg_or_positional(call, "chapter_id", 1) == CHAPTER_ID

@@ -8,6 +8,7 @@ from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.core.database import async_session_factory, get_session
+from inkflow.domain.models.agent_run import AgenticWriteRequest
 from inkflow.domain.ports.context_sources import ContextSourceProtocol
 from inkflow.domain.ports.extraction_errors import RAGUnavailableError
 from inkflow.domain.ports.vector_store import VectorStoreProtocol
@@ -214,7 +215,26 @@ def get_agentic_writer_service(
         draft_service=draft_service,
         audit_service=audit_service,
     )
-    system_prompt = build_writer_agent_system_prompt(LangChainPromptManager())
+    prompt_manager = LangChainPromptManager()
+
+    def _build_agent(request: AgenticWriteRequest) -> object:
+        """每次 run 构建 agent——系统提示与工具期望上下文按请求注入（#275）."""
+
+        system_prompt = build_writer_agent_system_prompt(
+            prompt_manager,
+            project_id=request.project_id,
+            chapter_id=request.chapter_id,
+        )
+        return build_agentic_writer(
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            deps=deps,
+            system_prompt=system_prompt,
+            expected_project_id=request.project_id,
+            expected_chapter_id=request.chapter_id,
+        )
+
     # 模型/密钥/base_url 同源装配（F5 provider_config）：默认模型解析 provider，
     # 未配置 key/base_url 时回退空串（harness 支持空 key/base_url 走 ChatOpenAI 默认）
     model = config.llm_default_model
@@ -228,13 +248,7 @@ def get_agentic_writer_service(
     except ValueError:
         pass
     return AgenticWriterService(
-        agent_factory=lambda: build_agentic_writer(
-            model=model,
-            api_key=api_key,
-            base_url=base_url,
-            deps=deps,
-            system_prompt=system_prompt,
-        ),
+        agent_factory=_build_agent,
         draft_service=draft_service,
         audit_service=audit_service,
         run_repo=SQLiteAgentRunRepository(db),

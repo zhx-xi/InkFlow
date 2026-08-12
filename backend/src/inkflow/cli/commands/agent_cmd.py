@@ -373,3 +373,27 @@ def draft_reject(
         _print_json_envelope(data)
         return
     typer.echo("✅ 草稿已拒绝（保留记录）")
+
+
+@draft_app.command("prune-orphans")
+def draft_prune_orphans(
+    dry_run: bool = typer.Option(False, "--dry-run", help="只统计不删除（预览）"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """清理孤儿草稿（project_id=全零 UUID，#275 缺陷数据）"""
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post("/agent/drafts/prune-orphans", json={"dry_run": dry_run})
+
+    data = _run(_impl)
+    if data is None:
+        return
+    if json_output:
+        _print_json_envelope(data)
+        return
+    deleted = data.get("deleted", 0)
+    suffix = "（dry-run，未实际删除）" if dry_run else ""
+    typer.echo(f"✅ 已删除 {deleted} 条孤儿草稿{suffix}")

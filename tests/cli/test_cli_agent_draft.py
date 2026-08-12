@@ -244,3 +244,46 @@ class TestAgentDraftExecution:
         result = _draft_result("confirm", DRAFT_ID, "--json")
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {"ok": True, "data": payload}
+
+    # ── #275: 孤儿草稿清理命令（prune-orphans） ──
+
+    @pytest.mark.agent
+    def test_draft_prune_orphans_success(self, fake_http_client):
+        """#275 清理命令: prune-orphans → POST /agent/drafts/prune-orphans + 人类输出。
+
+        RED 预期: 命令不存在 → typer exit 2（No such command）→ exit_code 断言
+        FAILED；HTTP mock 未被调用 → assert_awaited 断言 FAILED（clean FAILED）。
+        """
+        fake_http_client.post.return_value = {"deleted": 3}
+        result = _draft_result("prune-orphans")
+        assert result.exit_code == 0
+        call = fake_http_client.post.await_args
+        assert call.args[0] == "/agent/drafts/prune-orphans"
+        assert call.kwargs["json"] == {"dry_run": False}
+        assert "✅ 已删除 3 条孤儿草稿" in result.stdout
+
+    @pytest.mark.agent
+    def test_draft_prune_orphans_dry_run(self, fake_http_client):
+        """#275 清理命令 --dry-run: body {"dry_run": true} + dry-run 提示。"""
+        fake_http_client.post.return_value = {"deleted": 2}
+        result = _draft_result("prune-orphans", "--dry-run")
+        assert result.exit_code == 0
+        assert fake_http_client.post.await_args.kwargs["json"] == {"dry_run": True}
+        assert "dry-run" in result.stdout
+
+    @pytest.mark.agent
+    def test_draft_prune_orphans_json(self, fake_http_client):
+        """#275 清理命令 --json: stdout 信封 == API 响应。"""
+        payload = {"deleted": 5}
+        fake_http_client.post.return_value = payload
+        result = _draft_result("prune-orphans", "--json")
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {"ok": True, "data": payload}
+
+    @pytest.mark.agent
+    def test_draft_prune_orphans_error(self, fake_http_client):
+        """#275 清理命令错误面: HTTP 错误 → stderr ❌ + 退出码 1。"""
+        fake_http_client.post.side_effect = _http_err(500, "内核错误")
+        result = _draft_result("prune-orphans")
+        assert result.exit_code == 1
+        assert "❌ 内核错误" in result.stderr

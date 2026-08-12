@@ -83,6 +83,13 @@ class ReaderToolDeps:
 # ── 序列化与信封 ──
 
 
+def _coerce_uuid(value: object) -> uuid.UUID:
+    """规范化为 uuid.UUID——deepagents 透传 LLM JSON 原值，参数恒为 str（#275）."""
+    if isinstance(value, uuid.UUID):
+        return value
+    return uuid.UUID(str(value))
+
+
 def _serialize_data(value: object) -> object:
     """递归序列化：列表逐元素、pydantic 模型 model_dump(mode="json")、其余原样."""
     if isinstance(value, list):
@@ -167,6 +174,9 @@ def build_reader_tools(deps: ReaderToolDeps) -> list[Tool]:
         search: str | None = None,
         group_id: uuid.UUID | None = None,
     ) -> str:
+        project_id = _coerce_uuid(project_id)
+        if group_id is not None:
+            group_id = _coerce_uuid(group_id)
         try:
             items = await _fetch_all_pages(
                 deps.character_service.list_characters,  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
@@ -179,6 +189,7 @@ def build_reader_tools(deps: ReaderToolDeps) -> list[Tool]:
             return _fail(exc)
 
     async def _check_foreshadowing(project_id: uuid.UUID, status: str | None = None) -> str:
+        project_id = _coerce_uuid(project_id)
         try:
             items = await _fetch_all_pages(
                 deps.foreshadowing_service.list,  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
@@ -190,6 +201,7 @@ def build_reader_tools(deps: ReaderToolDeps) -> list[Tool]:
             return _fail(exc)
 
     async def _get_prior_summary(project_id: uuid.UUID, limit: int = 10) -> str:
+        project_id = _coerce_uuid(project_id)
         try:
             result = await deps.summary_service.list_recent(  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
                 project_id, limit=limit
@@ -203,6 +215,8 @@ def build_reader_tools(deps: ReaderToolDeps) -> list[Tool]:
         chapter_id: uuid.UUID,
         include_static: bool = True,
     ) -> str:
+        project_id = _coerce_uuid(project_id)
+        chapter_id = _coerce_uuid(chapter_id)
         try:
             result = await deps.chapter_audit_service.audit(  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
                 project_id,

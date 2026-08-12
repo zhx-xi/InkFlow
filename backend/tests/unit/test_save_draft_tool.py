@@ -229,3 +229,128 @@ async def test_save_draft_empty_content_rejected() -> None:
     payload = json.loads(result)
     assert payload["ok"] is False
     assert "不能为空" in payload["error"]
+
+
+# ── #275: 工具参数 = 请求上下文防御（期望 project_id/chapter_id 注入） ──
+
+WRONG_ID = uuid.UUID("99999999-9999-4999-8999-999999999999")  # #275: 与请求上下文不符的伪造 id
+
+
+async def test_save_draft_rejects_wrong_project_id() -> None:
+    """#275 防御契约①: deps 注入期望上下文后，工具参数 project_id 与期望不符
+    → {\"ok\": false, \"error\" 含 project_id} 且不落库.
+
+    RED 预期: 当前实现无期望上下文校验 → 错误 id 照常落库 → ok 断言 FAILED
+    （clean FAILED，非 ERROR）。
+    """
+    deps = _make_deps(
+        expected_project_id=PROJECT_ID,
+        expected_chapter_id=CHAPTER_ID,
+    )
+    deps.draft_service.create.return_value = _make_draft()
+    tool = build_save_draft_tool(deps)
+
+    result = await tool.func(project_id=WRONG_ID, chapter_id=CHAPTER_ID, content=CONTENT)
+
+    payload = json.loads(result)
+    assert payload["ok"] is False
+    assert "project_id" in payload["error"]
+    deps.draft_service.create.assert_not_awaited()
+
+
+async def test_save_draft_accepts_matching_project_id() -> None:
+    """#275 防御契约②: 工具参数与期望上下文一致 → 正常落库（守护用例，RED 阶段 PASS）."""
+    deps = _make_deps(
+        expected_project_id=PROJECT_ID,
+        expected_chapter_id=CHAPTER_ID,
+    )
+    deps.draft_service.create.return_value = _make_draft()
+    tool = build_save_draft_tool(deps)
+
+    result = await tool.func(project_id=PROJECT_ID, chapter_id=CHAPTER_ID, content=CONTENT)
+
+    payload = json.loads(result)
+    assert payload["ok"] is True
+    deps.draft_service.create.assert_awaited_once()
+
+
+async def test_save_draft_no_expected_context_passes_through() -> None:
+    """#275 防御契约③: 未注入期望上下文（默认 None）→ 任意 project_id 照常落库
+    （向后兼容，守护用例，RED 阶段 PASS）."""
+    deps = _make_deps()
+    deps.draft_service.create.return_value = _make_draft()
+    tool = build_save_draft_tool(deps)
+
+    result = await tool.func(project_id=WRONG_ID, content=CONTENT)
+
+    payload = json.loads(result)
+    assert payload["ok"] is True
+    deps.draft_service.create.assert_awaited_once()
+
+
+async def test_save_draft_rejects_wrong_chapter_id() -> None:
+    """#275 防御契约④: 期望 chapter_id 与工具参数不符 → 拒绝（不落库）.
+
+    RED 预期: 当前实现无校验 → 错误 chapter 照常落库 → ok 断言 FAILED。
+    """
+    deps = _make_deps(
+        expected_project_id=PROJECT_ID,
+        expected_chapter_id=CHAPTER_ID,
+    )
+    deps.draft_service.create.return_value = _make_draft()
+    tool = build_save_draft_tool(deps)
+
+    result = await tool.func(project_id=PROJECT_ID, chapter_id=WRONG_ID, content=CONTENT)
+
+    payload = json.loads(result)
+    assert payload["ok"] is False
+    assert "chapter_id" in payload["error"]
+    deps.draft_service.create.assert_not_awaited()
+
+
+# ── #275 冒烟补充契约: LLM 字符串参数规范化（deepagents 透传 JSON 原值） ──
+
+
+async def test_save_draft_accepts_string_project_id() -> None:
+    """#275 冒烟补充①: LLM 工具参数为字符串形态（实测 arguments.project_id
+    恒为 str）——防御比较前必须规范化，正确字符串值应放行且 create 收到
+    uuid.UUID 对象.
+
+    冒烟实锤（2026-08-12）: 错误消息「期望 ...0003，收到 ...0003」——str 与
+    uuid.UUID 显示相同却比较不等，防御误拒真实草稿保存。
+
+    RED 预期: 当前实现 str != uuid.UUID 恒真 → 拒绝 → ok 断言 FAILED。
+    """
+    deps = _make_deps(
+        expected_project_id=PROJECT_ID,
+        expected_chapter_id=CHAPTER_ID,
+    )
+    deps.draft_service.create.return_value = _make_draft()
+    tool = build_save_draft_tool(deps)
+
+    result = await tool.func(
+        project_id=str(PROJECT_ID), chapter_id=str(CHAPTER_ID), content=CONTENT
+    )
+
+    payload = json.loads(result)
+    assert payload["ok"] is True
+    create_call = deps.draft_service.create.await_args
+    assert create_call.kwargs["project_id"] == PROJECT_ID
+    assert create_call.kwargs["chapter_id"] == CHAPTER_ID
+
+
+async def test_save_draft_rejects_wrong_string_project_id() -> None:
+    """#275 冒烟补充②: 错误的字符串 project_id 同样被防御拒绝（规范化后比较）."""
+    deps = _make_deps(
+        expected_project_id=PROJECT_ID,
+        expected_chapter_id=CHAPTER_ID,
+    )
+    deps.draft_service.create.return_value = _make_draft()
+    tool = build_save_draft_tool(deps)
+
+    result = await tool.func(project_id=str(WRONG_ID), chapter_id=str(CHAPTER_ID), content=CONTENT)
+
+    payload = json.loads(result)
+    assert payload["ok"] is False
+    assert "project_id" in payload["error"]
+    deps.draft_service.create.assert_not_awaited()

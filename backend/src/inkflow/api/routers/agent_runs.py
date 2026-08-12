@@ -146,3 +146,19 @@ async def update_draft(
         "word_count": count_words(draft.content),
         "learned": learned,
     }
+
+
+class PruneOrphansRequest(BaseModel):
+    """prune-orphans 请求体 — dry_run 可选（默认 False）."""
+
+    dry_run: bool = False
+
+
+@router.post("/drafts/prune-orphans")
+async def prune_orphan_drafts(
+    body: PruneOrphansRequest | None = None,
+    svc: DraftService = Depends(get_draft_service),
+) -> dict:
+    """删除孤儿草稿（project_id=全零，#275 数据清理）→ {"deleted": N}."""
+    count = await svc.prune_orphans(dry_run=body.dry_run if body else False)
+    return {"deleted": count}
