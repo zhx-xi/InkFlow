@@ -362,3 +362,21 @@ class TestRoleOverridesPriority:
         assert writer.system_prompt == "只改提示词"
         assert writer.model == "template/writer-model"  # 链外模型保持
         assert writer.temperature == 1.2  # 链 1 项目每角色温度
+
+
+class TestTemplateIdParsing:
+    """template_id 非数字 → 跳过装配（#273 覆盖率补测：int() ValueError 分支）。"""
+
+    async def test_invalid_template_id_skips_assembly(self):
+        """template_id 非数字字符串 → 转换失败跳过模板读取（fake.get 零调用），
+        回退内置管线模板（行为等价无 template_id 旧项目，设计假设 3）。"""
+        fake = FakeTemplateRepo(_make_template())
+        service = _build_service(fake)
+        merged = await _merge(
+            service,
+            ProjectConfig(template_id="not-a-number", temperature=0.9),
+        )
+
+        assert fake.get_calls == []  # int 转换失败 → 不查询模板仓储
+        assert merged["writer"].agent.model == BUILTIN_MODEL  # 回退内置模型
+        assert merged["writer"].agent.temperature == 0.8  # 内置温度链 4
