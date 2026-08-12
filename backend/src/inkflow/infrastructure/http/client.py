@@ -81,8 +81,8 @@ class InkFlowHTTPClient:
     async def get(self, path, *, params=None, json=None) -> dict:
         return await self._request("GET", path, params=params, json=json)
 
-    async def post(self, path, *, params=None, json=None) -> dict:
-        return await self._request("POST", path, params=params, json=json)
+    async def post(self, path, *, params=None, json=None, timeout=None) -> dict:
+        return await self._request("POST", path, params=params, json=json, timeout=timeout)
 
     async def patch(self, path, *, params=None, json=None) -> dict:
         return await self._request("PATCH", path, params=params, json=json)
@@ -90,10 +90,11 @@ class InkFlowHTTPClient:
     async def delete(self, path, *, params=None, json=None) -> dict:
         return await self._request("DELETE", path, params=params, json=json)
 
-    async def _request(self, method, path, *, params=None, json=None) -> dict:
-        response = await self._client.request(
-            method, path, params=_filter_none_params(params), json=json
-        )
+    async def _request(self, method, path, *, params=None, json=None, timeout=None) -> dict:
+        kwargs: dict = {"params": _filter_none_params(params), "json": json}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        response = await self._client.request(method, path, **kwargs)
         if not 200 <= response.status_code < 300:
             raise HttpApiError(
                 status_code=response.status_code,
