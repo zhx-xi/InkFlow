@@ -146,13 +146,21 @@
 
 **0.7.0 交付实证**：10/10 issues 全关（milestone #10，2026-08-11）· Agent 化主线 F26→F27→F28（deepagents 0.7.5 harness）· agentic 写作闭环（save_draft + 确认流 + 修改率基线 docs/agent-baseline-2026-08-10.md）· v0.7.0-rc1 预发布（2026-08-11）。
 
+### 1.10 F19-skills 包（0.8.0，2026-08-13 PR #304 ✅）
+
+| Issue | 内容 | 交付 | 状态 |
+|-------|------|------|------|
+| #70 | F19-skills 包：**官方轨** `skills/inkflow/` 资产（Q1=B 蓝本复制改造：SKILL.md frontmatter version=0.8.0 + 20 references 去 Hermes 化 + cli-commands.md 全量 23 组命令参考 + json-contracts.md JSON 契约 + mcp-setup.md 占位 + 2 scripts）+ **用户自定义轨** skills 命令组（Q2 导入语义：install/list/verify/remove，零后端代码，deepagents 0.7.5 frontmatter 规则镜像，落盘 `data_dir/skills/` 与 SkillsMiddleware 逐字节兼容） | PR #304 | ✅ |
+
+**0.8.0 交付实证**：skills 包双轨落地（ADR-022 演进为双轨——官方轨 GitHub 分发 CLI 不管理 / 用户自定义轨 CLI 导入管理）· Q3 随安装包收集暂缓（后续单独打包评估）· agent 实际使用 skills 属后续 issue（本期只做导入+管理）。
+
 ---
 
 ## 二、规划中功能
 
 | Feature | 版本 | 内容 | 依赖/前置 | Issue | 状态 |
 |---------|------|------|----------|-------|------|
-| skills 包 | **1.0.0** | 小说写作 skills（源码单一真相 + 三通道分发） | 无 | [#70](https://github.com/zhx-xi/InkFlow/issues/70) | 🔜 已建 issue |
+| skills 包 | ✅ 0.8.0 | 官方 skills/inkflow/ 资产（GitHub 分发）+ 用户自定义轨 skills 命令组（导入管理） | 无 | [#70](https://github.com/zhx-xi/InkFlow/issues/70) | ✅ 已交付（PR #304，2026-08-13） |
 | F20 MCP Server | **1.0.0** | MCP Server（stdio 薄客户端经 HTTP），≥15 工具（ADR-023 v2） | #166（内核冷启动基建，✅ 已实现 PR #171） | [#49](https://github.com/zhx-xi/InkFlow/issues/49) | 🔜 已建 issue |
 | F29 Supervisor 自主编排 | **0.8.0** | 自主编排 + HITL（F26 subagent task 工具预留；依赖 #87 ✅ + F28 ✅） | F26/F27/F28 | [#161](https://github.com/zhx-xi/InkFlow/issues/161) | 🔜 已建 issue |
 | ~~F25 daemon~~ | ~~0.5.0~~ | ~~daemon 后台写作~~（**已移除**，ADR-029：伪需求；真实意图=外部 agent 经 MCP/skills 调用，由 F19 serve + F20 MCP + skills 包覆盖） | 无 | [#52](https://github.com/zhx-xi/InkFlow/issues/52) | ❌ 已关闭（2026-08-07） |
