@@ -60,7 +60,12 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act } from '@testing-library/react';
-import { useModelsStore, type ProviderConfig, type ProviderModel } from './models';
+import {
+  selectChatModelOptions,
+  useModelsStore,
+  type ProviderConfig,
+  type ProviderModel,
+} from './models';
 import { apiFetch, ApiError } from '../api/client';
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -478,5 +483,54 @@ describe('models store — 角色绑定草稿（主模型 / 四角色 / RAG embe
     for (const [role, modelId] of slots) {
       expect(b[role]).toBe(modelId);
     }
+  });
+});
+
+/**
+ * F42 #268（2026-08-12）：chat 模型扁平化 selector 契约（spec §5.2 Q3）。
+ *
+ * GREEN 实现 src/stores/models.ts 导出：
+ * - selectChatModelOptions(providers: ProviderConfig[]): Array<{ value: string; label: string }>
+ *   仅含 type === 'chat' 的模型；value = `${provider.name}/${model.id}`（provider 名取
+ *   items[].name）；label 同 value；顺序 = providers 顺序 × models 顺序（稳定）；空 → []。
+ *   供 AgentChainCard 与 AgentPanel 默认模型下拉共用（spec §5.2 store 扩展行）。
+ */
+describe('models store — chat 模型扁平化 selector（F42 #268）', () => {
+  it('空 providers → 空选项', () => {
+    expect(selectChatModelOptions([])).toEqual([]);
+  });
+
+  it('混合 chat/embedding → 只含 chat，扁平为 provider/model', () => {
+    const options = selectChatModelOptions(PROVIDERS);
+    expect(options).toEqual([
+      { value: 'openai/gpt-4o', label: 'openai/gpt-4o' },
+      { value: 'deepseek/deepseek-chat', label: 'deepseek/deepseek-chat' },
+    ]);
+  });
+
+  it('多 provider 多 chat 模型 → 按 providers × models 顺序稳定扁平', () => {
+    const mixed: ProviderConfig[] = [
+      {
+        id: 1, name: 'openai', base_url: 'https://api.openai.com/v1', default_model: 'gpt-4o',
+        models: [
+          { id: 'gpt-4o', type: 'chat', roles: [] },
+          { id: 'text-embedding-3-small', type: 'embedding', roles: [] },
+          { id: 'gpt-4o-mini', type: 'chat', roles: [] },
+        ],
+        key_saved: true, max_retries: 3, timeout: 60,
+        created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
+      },
+      {
+        id: 2, name: 'zhipu', base_url: 'https://open.bigmodel.cn/api/paas/v4', default_model: 'glm-4.5',
+        models: [{ id: 'glm-4.5', type: 'chat', roles: [] }],
+        key_saved: false, max_retries: 3, timeout: 60,
+        created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
+      },
+    ];
+    expect(selectChatModelOptions(mixed).map((o) => o.value)).toEqual([
+      'openai/gpt-4o',
+      'openai/gpt-4o-mini',
+      'zhipu/glm-4.5',
+    ]);
   });
 });

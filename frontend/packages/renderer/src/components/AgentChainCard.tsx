@@ -1,10 +1,13 @@
 /** 写作 Agent 链（spec §4.2.3）：Architect/Writer/Auditor/Reviser 四行开关 ↔ config.agent_*；
  *  #225 三态语义：null=关闭（禁用角色）；字符串=开启且指定模型；
  *  "__default__"（AGENT_DEFAULT_SENTINEL）=跟随默认（预留，前端不暴露中间态 UI） */
+import { useEffect } from 'react';
 import { ClipboardCheck, Network, PenLine, RefreshCw, type LucideIcon } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
 import { useAgentStore } from '../stores/agent';
+import { selectChatModelOptions, useModelsStore } from '../stores/models';
 import { AGENT_DEFAULT_SENTINEL, type ProjectConfig } from '../stores/project';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Switch } from './ui/switch';
 
 type AgentField = 'agent_architect' | 'agent_writer' | 'agent_auditor' | 'agent_reviser';
@@ -40,6 +43,15 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
   const { t } = useI18n();
   const config = useAgentStore((s) => s.config);
   const setConfig = useAgentStore((s) => s.setConfig);
+  const providers = useModelsStore((s) => s.providers);
+
+  // F42 #268（spec §5.2 Q3）：挂载即加载 provider-configs 数据源，Select 选项随 store 响应式更新
+  useEffect(() => {
+    void useModelsStore.getState().loadProviders();
+  }, []);
+
+  const chatOptions = selectChatModelOptions(providers);
+  const followDefaultOption = { value: AGENT_DEFAULT_SENTINEL, label: t('ag.followDefault') };
 
   return (
     <section data-testid="agent-chain-card" className="rounded-lg border border-line bg-surface p-6 shadow-card">
@@ -51,8 +63,20 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
           // 三态语义（#225）：null=关闭（禁用角色）；字符串=开启且指定模型；
           // "__default__"（AGENT_DEFAULT_SENTINEL）=跟随默认（预留）
           const checked = typeof value === 'string';
+          const tagWarn =
+            typeof value === 'string' &&
+            value !== AGENT_DEFAULT_SENTINEL &&
+            !chatOptions.some((o) => o.value === value);
           const tag =
-            value == null ? t('ag.disabled') : value === AGENT_DEFAULT_SENTINEL ? t('ag.defaultModel') : value;
+            value == null
+              ? t('ag.disabled')
+              : value === AGENT_DEFAULT_SENTINEL
+                ? t('ag.defaultModel')
+                : tagWarn && !value.includes('/')
+                  ? t('ag.modelFormatFix')
+                  : tagWarn
+                    ? t('ag.unregisteredModel')
+                    : value;
           const toggle = () => {
             // 关闭 → 显式 null（JSON.stringify 保留 → 后端落库 null → 重启仍关闭）；
             // 打开 → sentinel "__default__"（跟随默认，本期无模型选择 UI）
@@ -67,10 +91,39 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-[13px] font-medium">{t(role.nameKey)}</span>
-                  <span className="rounded bg-surface-3 px-1.5 py-0.5 text-[11px] text-ink-3">{tag}</span>
+                  <span
+                    className={`rounded bg-surface-3 px-1.5 py-0.5 text-[11px] ${tagWarn ? 'text-warn' : 'text-ink-3'}`}
+                  >
+                    {tag}
+                  </span>
                 </div>
                 <p className="mt-0.5 text-[12px] text-ink-3">{t(role.descKey)}</p>
               </div>
+              {checked && (
+                <Select
+                  value={typeof value === 'string' ? value : AGENT_DEFAULT_SENTINEL}
+                  onValueChange={(v) => {
+                    setConfig(agentPatch(role.field, v));
+                    onConfigChange?.();
+                  }}
+                >
+                  <SelectTrigger
+                    data-testid={`agent-model-select-${role.field}`}
+                    aria-label={t('ag.defaultModel')}
+                    className="w-52"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={followDefaultOption.value}>{followDefaultOption.label}</SelectItem>
+                    {chatOptions.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Switch checked={checked} onCheckedChange={toggle} aria-label={t(role.nameKey)} />
             </div>
           );
