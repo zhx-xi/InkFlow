@@ -78,7 +78,14 @@ def _build_write_chapter_template() -> PipelineConfig:
             input_from=["writer"],
             output_to=["reviser"],
         ),
-        PipelineStage(id="reviser", name="修订定稿", agent=reviser, input_from=["auditor"]),
+        # F4 模板数据修正（spec §5.3.2 实证）：reviser 同时依赖 writer（原文）与
+        # auditor（审阅意见）——模板/节点/测试三者不一致，真相来源收敛回模板数据
+        PipelineStage(
+            id="reviser",
+            name="修订定稿",
+            agent=reviser,
+            input_from=["writer", "auditor"],
+        ),
     ]
 
     return PipelineConfig(

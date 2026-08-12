@@ -69,6 +69,20 @@ class ProjectConfig(BaseModel):
     writing_style: str = ""
     default_words: int = Field(default=800000, ge=1000, le=10_000_000, description="新章节默认字数")
     extra: dict[str, Any] = Field(default_factory=dict)
+    agent_order: list[list[str]] = Field(default_factory=list)
+    """Agent 链执行拓扑 — 层级嵌套数组（v1.1 拍板：同层并行；v1.2 拍板：槽位编号 0-9）。
+
+    - 外层索引 = 槽位编号 0-9（共 10 个数字，v1.2 拍板）——索引 0 先执行，逐层串行
+    - 内层 = 同槽位（同编号）并行角色字段名数组（agent_architect 等，带 agent_ 前缀）
+    - 示例: [["agent_architect"], ["agent_writer", "agent_auditor"], ["agent_reviser"]]
+            = 槽位 0 架构规划 → 槽位 1 写作+审阅并行 → 槽位 2 修订
+    - 默认模板 = 槽位 0-3（architect=0/writer=1/auditor=2/reviser=3）；槽位 4-9 预留自定义 Agent
+    - 空层（[]）= 空槽（该编号无角色，跳过）——允许跳号
+    - 长度上限 10（编号 0-9）；空列表 = 未配置 → 默认模板拓扑
+    - 双模式（v1.3 B1）：空列表 = 默认模板模式——agent_* null 不触发真禁用（跟随模板）；
+      非空 = 配置驱动模式——null 真禁用（跳过，§2.2）
+    - 角色名支持任意字符串（自定义 Agent，v1.2 执行解锁 + v1.3 数据面）
+    """
 
     @field_validator("agent_architect", "agent_writer", "agent_auditor", "agent_reviser")
     @classmethod
@@ -80,6 +94,38 @@ class ProjectConfig(BaseModel):
         if not stripped:
             raise ValueError("Agent 模型不能为空字符串")
         return stripped
+
+    @field_validator("agent_order", mode="before")
+    @classmethod
+    def validate_agent_order(cls, v: Any) -> list[list[str]]:
+        """存储层校验（spec §2.1）：结构 + 去重 + 长度上限。
+
+        - 长度 ≤ 10（槽位编号 0-9）
+        - 每层必须为数组；空层（[]）= 空槽，允许
+        - 元素必须为非空字符串（strip 后判空）；跨层全局去重（防歧义）
+        - 返回 strip 规范化后的新列表；空列表原样返回（默认模板模式）
+        """
+        # 契约固定 ValueError（TRY004 建议 TypeError，测试断言 ValueError 消息）
+        if not isinstance(v, list):
+            raise ValueError("agent_order 每层必须为数组")  # noqa: TRY004  # 契约固定 ValueError（测试断言消息）
+        if len(v) > 10:
+            raise ValueError("agent_order 最多 10 层（槽位编号 0-9）")
+        seen: set[str] = set()
+        result: list[list[str]] = []
+        for layer in v:
+            if not isinstance(layer, list):
+                raise ValueError("agent_order 每层必须为数组")  # noqa: TRY004  # 契约固定 ValueError（测试断言消息）
+            layer_items: list[str] = []
+            for item in layer:
+                if not isinstance(item, str) or not item.strip():
+                    raise ValueError("agent_order 元素必须为非空字符串")
+                stripped = item.strip()
+                if stripped in seen:
+                    raise ValueError(f"agent_order 角色重复: {stripped}")
+                seen.add(stripped)
+                layer_items.append(stripped)
+            result.append(layer_items)
+        return result
 
 
 class Project(BaseModel):

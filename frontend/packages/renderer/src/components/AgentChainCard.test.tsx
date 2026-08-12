@@ -221,3 +221,150 @@ describe('AgentChainCard — F42 模型选择（spec §5.2）', () => {
     expect(within(card).getByText('格式需修正（应为 provider/model）')).toBeInTheDocument();
   });
 });
+
+describe('AgentChainCard — F42 #269 执行顺序编辑（spec §5.3/M6）', () => {
+  /** 默认拓扑常量（与后端默认模板槽位一致：architect=0/writer=1/auditor=2/reviser=3） */
+  const DEFAULT_ORDER = [
+    ['agent_architect'],
+    ['agent_writer'],
+    ['agent_auditor'],
+    ['agent_reviser'],
+  ];
+
+  function slotOf(field: string): HTMLElement {
+    return screen.getByTestId(`agent-order-slot-${field}`);
+  }
+
+  function moveUp(field: string): HTMLElement {
+    return screen.getByTestId(`agent-order-move-up-${field}`);
+  }
+
+  function moveDown(field: string): HTMLElement {
+    return screen.getByTestId(`agent-order-move-down-${field}`);
+  }
+
+  it('空 agent_order（默认模板模式）→ 显示默认拓扑槽位 0-3', async () => {
+    await renderCard();
+    expect(slotOf('agent_architect')).toHaveTextContent('0');
+    expect(slotOf('agent_writer')).toHaveTextContent('1');
+    expect(slotOf('agent_auditor')).toHaveTextContent('2');
+    expect(slotOf('agent_reviser')).toHaveTextContent('3');
+  });
+
+  it('每行上移/下移按钮：首行上移禁用、末行下移禁用（边界）', async () => {
+    await renderCard();
+    expect(moveUp('agent_architect')).toBeDisabled();
+    expect(moveDown('agent_reviser')).toBeDisabled();
+    expect(moveUp('agent_writer')).toBeEnabled();
+    expect(moveDown('agent_writer')).toBeEnabled();
+  });
+
+  it('回读：config.agent_order 非空 → 槽位号按配置显示（writer=0/architect=1）', async () => {
+    act(() => {
+      useAgentStore.getState().setConfig({
+        agent_order: [['agent_writer'], ['agent_architect']],
+        agent_writer: 'openai/gpt-4o',
+        agent_architect: 'openai/gpt-4o',
+      });
+    });
+    await renderCard();
+    expect(slotOf('agent_writer')).toHaveTextContent('0');
+    expect(slotOf('agent_architect')).toHaveTextContent('1');
+  });
+
+  it('点击 Writer 上移（空 agent_order）→ agent_order 显式化默认拓扑并移动（并入上一层 = 并行组）', async () => {
+    const user = userEvent.setup();
+    const onConfigChange = await renderCard();
+
+    await user.click(moveUp('agent_writer'));
+
+    expect(useAgentStore.getState().config.agent_order).toEqual([
+      ['agent_architect', 'agent_writer'],
+      ['agent_auditor'],
+      ['agent_reviser'],
+    ]);
+    expect(onConfigChange).toHaveBeenCalled();
+  });
+
+  it('点击 Writer 下移（默认拓扑）→ 并入下一层（auditor 层 = 并行组）', async () => {
+    const user = userEvent.setup();
+    const onConfigChange = await renderCard();
+
+    await user.click(moveDown('agent_writer'));
+
+    expect(useAgentStore.getState().config.agent_order).toEqual([
+      ['agent_architect'],
+      ['agent_auditor', 'agent_writer'],
+      ['agent_reviser'],
+    ]);
+    expect(onConfigChange).toHaveBeenCalled();
+  });
+
+  it('点击 Auditor 上移（默认拓扑）→ 并入 writer 层 → PATCH 结构为并行组', async () => {
+    const user = userEvent.setup();
+    await renderCard();
+
+    await user.click(moveUp('agent_auditor'));
+
+    expect(useAgentStore.getState().config.agent_order).toEqual([
+      ['agent_architect'],
+      ['agent_writer', 'agent_auditor'],
+      ['agent_reviser'],
+    ]);
+  });
+
+  it('关闭角色（配置驱动模式）→ agent_order 剔除该角色（B1：关闭动作 = null + order 移除）', async () => {
+    const user = userEvent.setup();
+    act(() => {
+      useAgentStore.getState().setConfig({
+        agent_order: DEFAULT_ORDER,
+        agent_writer: 'openai/gpt-4o',
+      });
+    });
+    await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    const switches = within(card).getAllByRole('switch');
+
+    // Writer 行 = 索引 1（Architect/Writer/Auditor/Reviser 固定顺序）
+    await user.click(switches[1]);
+
+    expect(useAgentStore.getState().config.agent_writer).toBeNull();
+    // 剔除后空层压缩：[[architect],[auditor],[reviser]]
+    expect(useAgentStore.getState().config.agent_order).toEqual([
+      ['agent_architect'],
+      ['agent_auditor'],
+      ['agent_reviser'],
+    ]);
+  });
+
+  it('开启角色（配置驱动模式）→ agent_order 加入默认槽位（writer→1）', async () => {
+    const user = userEvent.setup();
+    act(() => {
+      useAgentStore.getState().setConfig({
+        agent_order: [['agent_architect'], ['agent_auditor'], ['agent_reviser']],
+      });
+    });
+    await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    const switches = within(card).getAllByRole('switch');
+
+    await user.click(switches[1]); // Writer 开启
+
+    expect(useAgentStore.getState().config.agent_writer).toBe(AGENT_DEFAULT_SENTINEL);
+    expect(useAgentStore.getState().config.agent_order).toEqual(DEFAULT_ORDER);
+  });
+
+  it('默认模式（agent_order 空）开关动作不写入 agent_order（B1：保持默认模板模式）', async () => {
+    const user = userEvent.setup();
+    const onConfigChange = await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    const switches = within(card).getAllByRole('switch');
+
+    await user.click(switches[0]); // Architect 开启
+
+    expect(useAgentStore.getState().config.agent_architect).toBe(AGENT_DEFAULT_SENTINEL);
+    // agent_order 保持未配置（undefined/缺省）→ 后端默认模板模式
+    expect(useAgentStore.getState().config.agent_order).toBeUndefined();
+    expect(onConfigChange).toHaveBeenCalled();
+  });
+});

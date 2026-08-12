@@ -28,6 +28,8 @@ export interface ProjectConfig {
   writing_style?: string;
   /** #107：项目内绑定 Agent 模板（config JSON 零迁移，null = 解除引用） */
   template_id?: number | null;
+  /** F42 #269：Agent 链执行拓扑（层级嵌套，外层=槽位 0-9、同层并行；空=默认模板模式） */
+  agent_order?: string[][];
 }
 
 export interface NewProjectInput {

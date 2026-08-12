@@ -22,7 +22,7 @@ class TestBuiltinTemplates:
         architect.input_from=[], architect.output_to=['writer']
         writer.input_from=['architect'], writer.output_to=['auditor']
         auditor.input_from=['writer'], auditor.output_to=['reviser']
-        reviser.input_from=['auditor'], reviser.output_to=[]
+        reviser.input_from=['writer','auditor']（F42 #269 F4 模板数据修正，spec §5.3.2）
         """
         tpl = get_template("builtin:write_chapter")
         stages = {s.id: s for s in tpl.stages}
@@ -32,7 +32,7 @@ class TestBuiltinTemplates:
         assert stages["writer"].output_to == ["auditor"]
         assert stages["auditor"].input_from == ["writer"]
         assert stages["auditor"].output_to == ["reviser"]
-        assert stages["reviser"].input_from == ["auditor"]
+        assert stages["reviser"].input_from == ["writer", "auditor"]
         assert stages["reviser"].output_to == []
 
     def test_builtin_template_source_is_builtin(self):

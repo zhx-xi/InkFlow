@@ -19,6 +19,35 @@ from inkflow.infrastructure.database.repositories.project_repo import (
 logger = logging.getLogger(__name__)
 
 
+def _validate_agent_order_config(config: ProjectConfig) -> None:
+    """配置驱动模式语义校验（C1，spec §2.3/§7）：agent_order 非空时必须包含全部启用角色。
+
+    - agent_order 空（默认模板模式）→ 直接返回（不校验，B1 零迁移）
+    - 非空（配置驱动模式）→ 启用角色 = 4 个 agent_* 字段中非 None 的字段名集合：
+      - 启用集合为空 → ValueError（至少 1 个启用角色）
+      - order 展开集缺启用角色 → ValueError（消息含缺失字段名，按字母序、逗号+空格连接）
+    """
+    if not config.agent_order:
+        return
+    enabled_roles = {
+        field
+        for field in ("agent_architect", "agent_writer", "agent_auditor", "agent_reviser")
+        if getattr(config, field) is not None
+    }
+    if not enabled_roles:
+        raise ValueError("配置驱动模式至少需要 1 个启用角色")
+    order_roles = {role for layer in config.agent_order for role in layer}
+    # 缺失字段名按角色字段声明序（architect/writer/auditor/reviser）输出——
+    # 与 UI/模板角色顺序一致（契约断言锚定首个缺失角色，如 agent_writer）
+    missing = [
+        field
+        for field in ("agent_architect", "agent_writer", "agent_auditor", "agent_reviser")
+        if field in enabled_roles and field not in order_roles
+    ]
+    if missing:
+        raise ValueError(f"agent_order 必须包含全部启用角色: {', '.join(missing)}")
+
+
 def _utcnow() -> datetime:
     """返回当前 UTC 时间（时区感知）."""
     return datetime.now(UTC)
@@ -141,6 +170,8 @@ class ProjectService:
         if isinstance(config_updates, dict):
             updates["config"] = existing.config.model_copy(update=config_updates)
         updated = existing.model_copy(update=updates)
+        # C1：合并后语义校验（配置驱动模式必须包含全部启用角色）→ ValueError 由 router 转 422
+        _validate_agent_order_config(updated.config)
         return await self._repo.update(updated)
 
     async def soft_delete(self, project_id: int | uuid.UUID) -> bool:
