@@ -73,6 +73,8 @@ export const en: Record<string, string> = {
   'set.models.placeholder': 'Model management will be available in a later version',
   'set.templates.placeholder': 'Template management will be available in a later version',
   'set.account.dataDir': 'Data Directory',
+  'set.account.dataDirSave': 'Save',
+  'set.account.dataDirRestart': 'Takes effect after restart',
   'set.account.about': 'About',
   'set.account.dataMgr': 'Data Management',
   'set.account.dataMgrPlaceholder': 'Export and backup coming soon',

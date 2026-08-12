@@ -181,6 +181,9 @@ spec.md v1.1 §3 API 契约 + §3.4 异常映射 + §9.1/§9.4 测试策略）�
     api/routers/settings.py 追加 get_settings + patch_settings 路由 +
     deps.get_settings_service + settings 域 4 文件（models/ports/repo/
     service）后全绿。
+
+    【#266 契约段已拆分】Issue #266（GET/PUT /api/v1/settings/data-dir）
+    契约测试拆至 tests/api/test_settings_data_dir.py（2026-08-12，900 护栏）。
 ════════════════════════════════════════════════════════════════════
 """
 
@@ -193,7 +196,7 @@ from fastapi.testclient import TestClient
 
 from inkflow.api.app import app
 from inkflow.api.routers import (
-    settings,  # noqa: F401  # RED 收集断言：模块存在性契约（GREEN 实现后即被使用）
+    settings,  # noqa: F401  # RED 收集断言：模块存在性契约（字符串 patch 路径使用，非符号引用）
 )
 from inkflow.domain.ports.llm_client import ChatMessage, ChatResponse
 from inkflow.domain.ports.llm_errors import LLMRequestError
@@ -850,8 +853,7 @@ class TestSettingsTokenAuth:
 
 class TestCoverageGapDirectHandlerCalls:
     """#177 覆盖率盲区补测 — 直接调用 router 模块函数，让 except 分支可被
-    coverage 记录（coverage.py 对 TestClient portal 线程内异常传播路径存在
-    统计盲区；直接调用不经 TestClient，pytest 下可正常记录）。
+    coverage 记录（TestClient portal 线程内异常传播路径存在统计盲区）。
 
     补测非 TDD：被测源码已存在（settings.py L140-142 / L215-219），
     本类用例直接通过，不改动任何 src/ 文件。

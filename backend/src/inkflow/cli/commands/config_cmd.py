@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 from pydantic import ValidationError
 
@@ -41,6 +43,31 @@ def set_config(
 ) -> None:
     """设置配置项（写入 config.json）."""
     cli_ctx: CliContext = ctx.obj
+
+    # #266：data-dir 特殊——写入 instance.env（固定锚点），不走 config.json
+    if key == "data-dir":
+        raw = value.strip()
+        if not raw:
+            print_error(cli_ctx, "CONFIG_ERROR", "值不合法: 数据目录不能为空", exit_code=1)
+            return
+        try:
+            # 延迟导入：契约测试 monkeypatch 模块属性（importlib 取 sys.modules
+            # 真实模块），调用时动态解析才能命中替换后的函数
+            from inkflow.core.config import save_instance_env
+
+            resolved = save_instance_env(Path(raw))
+        except OSError as e:
+            print_error(cli_ctx, "CONFIG_ERROR", f"值不合法: {e}", exit_code=1)
+            return
+        if not cli_ctx.json_output:
+            typer.echo(f"✅ data-dir = {resolved}")
+            typer.echo("⚠ 数据目录将在重启后生效")
+        else:
+            print_result(
+                cli_ctx,
+                {"key": "data-dir", "value": str(resolved), "restart_required": True},
+            )
+        return
 
     if key not in CONFIG_WHITELIST:
         allowed = ", ".join(CONFIG_WHITELIST)

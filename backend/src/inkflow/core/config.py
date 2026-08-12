@@ -11,12 +11,55 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-def _default_data_dir() -> Path:
-    """根据打包状态返回默认数据目录。
+def get_instance_env_path() -> Path:
+    """instance.env 固定锚点（不随 data_dir 变）：%APPDATA%/InkFlow/instance.env。"""
+    base = Path(os.environ.get("APPDATA", Path.home())) / "InkFlow"
+    return base / "instance.env"
 
-    打包模式（PyInstaller sys.frozen=True）→ %APPDATA%/InkFlow（缺失时 Path.home() 兜底）；
-    dev 模式 → ./data（行为不变防回归，spec §2.1.1 方案 B）。
+
+def load_instance_env() -> dict[str, str]:
+    """读 instance.env → KEY=VALUE dict。
+
+    文件缺失 → {}；空行/# 注释/无 = 行跳过；VALUE 空串的键跳过。
     """
+    path = get_instance_env_path()
+    if not path.exists():
+        return {}
+    result: dict[str, str] = {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if key and value:
+            result[key] = value
+    return result
+
+
+def save_instance_env(data_dir: Path) -> Path:
+    """写 INKFLOW_DATA_DIR=<绝对路径> 到 instance.env（UTF-8 无 BOM，单行 \n 结尾）。
+
+    展开为绝对路径（expanduser + resolve）→ 创建锚点父目录与 data_dir 目录
+    （parents=True, exist_ok=True）→ 写文件 → 返回绝对路径。
+    """
+    resolved = data_dir.expanduser().resolve()
+    anchor = get_instance_env_path()
+    anchor.parent.mkdir(parents=True, exist_ok=True)
+    resolved.mkdir(parents=True, exist_ok=True)
+    anchor.write_text(f"INKFLOW_DATA_DIR={resolved}\n", encoding="utf-8")
+    return resolved
+
+
+def _default_data_dir() -> Path:
+    """数据目录优先级：进程 env INKFLOW_DATA_DIR（pydantic 层）> instance.env > 默认。"""
+    instance_env = load_instance_env()
+    env_value = instance_env.get("INKFLOW_DATA_DIR")
+    if env_value:
+        return Path(env_value)
     if getattr(sys, "frozen", False):
         return Path(os.environ.get("APPDATA", Path.home())) / "InkFlow"
     return Path("./data")
@@ -158,6 +201,8 @@ config = InkFlowConfig()
 
 # Config key 白名单: CLI key → Pydantic field name
 CONFIG_WHITELIST: dict[str, str] = {
+    # 数据目录（写入 instance.env 而非 config.json）
+    "data-dir": "data_dir",
     "default.model": "llm_default_model",
     "default.temperature": "llm_temperature",
     "context.max_ratio": "context_max_ratio",

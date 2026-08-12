@@ -78,6 +78,8 @@ export const zh = {
   'set.models.placeholder': '模型管理将在后续版本提供',
   'set.templates.placeholder': '模板功能将在后续版本提供',
   'set.account.dataDir': '数据目录',
+  'set.account.dataDirSave': '保存',
+  'set.account.dataDirRestart': '重启后生效',
   'set.account.about': '关于',
   'set.account.dataMgr': '数据管理',
   'set.account.dataMgrPlaceholder': '导出 / 备份功能即将推出',

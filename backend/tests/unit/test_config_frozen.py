@@ -38,13 +38,22 @@ def test_default_data_dir_frozen_uses_appdata(monkeypatch, tmp_path) -> None:
     assert result == tmp_path / "InkFlow"
 
 
-def test_default_data_dir_frozen_without_appdata_falls_back_to_home(
-    monkeypatch,
-) -> None:
+def test_default_data_dir_frozen_without_appdata_falls_back_to_home(monkeypatch, tmp_path) -> None:
     """F1-工厂补充：sys.frozen=True 但 APPDATA 缺失 → Path.home()/InkFlow 兜底。"""
+    import importlib
+
     from inkflow.core.config import _default_data_dir
 
     # Arrange
+    # #266 隔离升级：instance.env 锚点固定指到 tmp_path，防真实 home 下的
+    # instance.env（若有）污染本用例（raising=False：RED 阶段属性可不存在）
+    core_config_mod = importlib.import_module("inkflow.core.config")
+    monkeypatch.setattr(
+        core_config_mod,
+        "get_instance_env_path",
+        lambda: tmp_path / "InkFlow" / "instance.env",
+        raising=False,
+    )
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.delenv("APPDATA", raising=False)
 
@@ -76,11 +85,14 @@ def test_settings_frozen_defaults_data_dir_to_appdata(monkeypatch, tmp_path) -> 
 
 
 # ---- F2 dev 模式：sys.frozen 未设置/False → ./data 不变 ----
-def test_default_data_dir_dev_keeps_cwd_relative(monkeypatch) -> None:
+def test_default_data_dir_dev_keeps_cwd_relative(monkeypatch, tmp_path) -> None:
     """F2-工厂：非 frozen（属性缺失/False）→ Path("./data")，dev 行为不变。"""
     from inkflow.core.config import _default_data_dir
 
     # Arrange
+    # #266 隔离升级：APPDATA 固定到 tmp_path（instance.env 锚点随之隔离，
+    # 防真实 APPDATA 下未来存在的 instance.env 污染 dev 默认语义）
+    monkeypatch.setenv("APPDATA", str(tmp_path))
     monkeypatch.delattr(sys, "frozen", raising=False)
 
     # Act
@@ -90,9 +102,11 @@ def test_default_data_dir_dev_keeps_cwd_relative(monkeypatch) -> None:
     assert result == Path("./data")
 
 
-def test_settings_dev_keeps_cwd_relative_data_dir(monkeypatch) -> None:
+def test_settings_dev_keeps_cwd_relative_data_dir(monkeypatch, tmp_path) -> None:
     """F2-集成：默认环境（非 frozen）→ data_dir=Path("./data")，防回归。"""
     # Arrange
+    # #266 隔离升级：APPDATA 固定到 tmp_path（instance.env 锚点随之隔离）
+    monkeypatch.setenv("APPDATA", str(tmp_path))
     monkeypatch.delattr(sys, "frozen", raising=False)
     monkeypatch.delenv("INKFLOW_DATA_DIR", raising=False)
 
