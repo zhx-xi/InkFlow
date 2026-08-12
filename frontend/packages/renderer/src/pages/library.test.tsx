@@ -509,3 +509,280 @@ describe('设定库页 — #196 分类实体手动创建', () => {
     expect(await screen.findByTestId('location-probe')).toHaveTextContent('/writing');
   });
 });
+
+/**
+ * F43（2026-08-12，specs/f43-setting-library-crud/spec.md §5.1-5.4/§9.2）：
+ * 六分类列表项编辑/删除（P0 批次）。
+ *
+ * GREEN 契约（library.tsx + LibraryCreateDialog.tsx + ConfirmDialog.tsx + i18n zh/en）：
+ * - 列表行（非 RAG）操作按钮：lib-edit-<id>（编辑）/ lib-delete-<id>（删除）
+ * - 行编辑 → LibraryCreateDialog 双模式（editing prop 预填现值，data-testid=library-create-dialog 不变；
+ *   保存按钮 library-create-save 不变）→ 保存 → PATCH 扁平端点（§3.1 表）→ 关框 + 刷新 + lib-save-indicator「已保存」
+ * - 行删除 → ConfirmDialog（testidPrefix='lib-confirm'）：lib-confirm-dialog / lib-confirm-cancel / lib-confirm-ok；
+ *   文案 = lib.delete.confirm「点击确认后立即移除（后台逻辑删除，30 天后彻底清除）」；
+ *   世界观追加 lib.delete.worldCascade「该条目及其全部子条目将级联删除，不可恢复」+ DELETE ?cascade=true
+ * - #195：遮罩点击不关闭；关闭仅 取消/Esc/确认成功
+ * - 删除成功 → reloadKey 刷新 + ok toast（toast.saved）；失败 → err toast + 列表不变
+ * - RAG 分类行无操作按钮（无 PATCH/DELETE 端点）
+ *
+ * RED 预期：lib-edit-x / lib-delete-x / lib-confirm-dialog / lib-save-indicator 均不存在 →
+ * element-missing（类 3 契约缺口）；L10 为确认型（现状 RAG 行本就无按钮 → 预期直接绿）。
+ */
+describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
+  /** 角色列表完整 DTO（编辑预填需要全字段，spec §2.1） */
+  const fullChar = {
+    id: 'c1', name: '林晚', personality: '孤傲', background: '剑客', goals: '决战',
+  };
+
+  /** 播种 p1 + 角色列表 mock（回显式：PATCH 合并更新，GET 返回最新） */
+  function mockCharacters() {
+    const chars: Array<Record<string, string>> = [{ ...fullChar }];
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+      if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/characters') {
+        return { items: chars, total: chars.length, offset: 0, limit: 50 };
+      }
+      // 编辑保存 PATCH 打扁平端点（spec §3.1：PATCH /api/v1/characters/{id}），合并更新回显
+      if (path === '/api/v1/characters/c1' && init?.method === 'PATCH') {
+        const body = init.body as Record<string, string>;
+        chars[0] = { ...chars[0], ...body };
+        return chars[0];
+      }
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    act(() => {
+      useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
+    });
+  }
+
+  it('L1 行编辑按钮点击 → 对话框打开且预填现值（getByDisplayValue）', async () => {
+    mockCharacters();
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await screen.findByTestId('library-list');
+    await user.click(screen.getByTestId('lib-edit-c1'));
+
+    const dialog = await screen.findByTestId('library-create-dialog');
+    expect(within(dialog).getByLabelText('名称')).toHaveValue('林晚');
+    expect(within(dialog).getByLabelText('性格')).toHaveValue('孤傲');
+    expect(within(dialog).getByLabelText('背景')).toHaveValue('剑客');
+    expect(within(dialog).getByLabelText('目标')).toHaveValue('决战');
+  });
+
+  it('L2 编辑保存：PATCH /api/v1/characters/c1 → 关框 + 列表刷新显示新名 + 顶部「已保存」指示', async () => {
+    mockCharacters();
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await screen.findByTestId('library-list');
+    await user.click(screen.getByTestId('lib-edit-c1'));
+    const dialog = await screen.findByTestId('library-create-dialog');
+    const nameInput = within(dialog).getByLabelText('名称');
+    await user.clear(nameInput);
+    await user.type(nameInput, '叶孤城');
+    await user.click(within(dialog).getByTestId('library-create-save'));
+
+    await waitFor(() => {
+      const patchCall = apiFetchMock.mock.calls.find(
+        (c) => c[0] === '/api/v1/characters/c1' && c[1]?.method === 'PATCH',
+      );
+      expect(patchCall).toBeTruthy();
+      expect(patchCall![1]!.body).toEqual(expect.objectContaining({ name: '叶孤城' }));
+    });
+    // 关框 + 列表刷新（GET 回显新名）+ 顶部「已保存」指示（#189 模式，lib-save-indicator）
+    await waitFor(() => {
+      expect(screen.queryByTestId('library-create-dialog')).not.toBeInTheDocument();
+      expect(screen.getByTestId('library-list')).toHaveTextContent('叶孤城');
+      expect(screen.getByTestId('lib-save-indicator').textContent).toBe('已保存');
+    });
+  });
+
+  it('L3 编辑保存失败：PATCH reject → err toast + 对话框保持打开', async () => {
+    mockCharacters();
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+      if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/characters') {
+        return { items: [{ ...fullChar }], total: 1, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/characters/c1' && init?.method === 'PATCH') throw new Error('保存失败');
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await screen.findByTestId('library-list');
+    await user.click(screen.getByTestId('lib-edit-c1'));
+    const dialog = await screen.findByTestId('library-create-dialog');
+    const nameInput = within(dialog).getByLabelText('名称');
+    await user.clear(nameInput);
+    await user.type(nameInput, '叶孤城');
+    await user.click(within(dialog).getByTestId('library-create-save'));
+
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'err')).toBe(true);
+    });
+    expect(screen.getByTestId('library-create-dialog')).toBeInTheDocument();
+  });
+
+  it('L4 行删除按钮 → 确认框：标题含名称 + D11 统一文案', async () => {
+    mockCharacters();
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await screen.findByTestId('library-list');
+    await user.click(screen.getByTestId('lib-delete-c1'));
+
+    const confirm = await screen.findByTestId('lib-confirm-dialog');
+    expect(confirm).toHaveTextContent('林晚');
+    expect(confirm).toHaveTextContent('点击确认后立即移除（后台逻辑删除，30 天后彻底清除）');
+  });
+
+  it('L5 确认删除：DELETE /api/v1/characters/c1 → 关框 + 列表刷新（条目消失）+ ok toast', async () => {
+    // 状态化 mock：初始含 c1（渲染删除按钮），DELETE 后清空（列表刷新条目消失）
+    const chars = [{ ...fullChar }];
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/characters') {
+        return { items: chars, total: chars.length, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/characters/c1' && init?.method === 'DELETE') {
+        chars.length = 0;
+        return undefined;
+      }
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    act(() => {
+      useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
+    });
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await screen.findByTestId('library-list');
+    await user.click(screen.getByTestId('lib-delete-c1'));
+    await user.click(await screen.findByTestId('lib-confirm-ok'));
+
+    await waitFor(() => {
+      expect(
+        apiFetchMock.mock.calls.some(
+          (c) => c[0] === '/api/v1/characters/c1' && c[1]?.method === 'DELETE',
+        ),
+      ).toBe(true);
+      expect(screen.queryByTestId('lib-confirm-dialog')).not.toBeInTheDocument();
+      expect(screen.queryByText('林晚')).not.toBeInTheDocument();
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'ok')).toBe(true);
+    });
+  });
+
+  it('L6 世界观删除：确认框含级联警告 + DELETE 带 ?cascade=true', async () => {
+    act(() => {
+      useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
+    });
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/world-settings') {
+        return { items: [{ id: 'w1', name: '九州', category: '地理', content: '天下地理' }], total: 1, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/world-settings/w1?cascade=true' && init?.method === 'DELETE') return undefined;
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('library-list');
+    await user.click(screen.getByTestId('lib-delete-w1'));
+
+    const confirm = await screen.findByTestId('lib-confirm-dialog');
+    expect(confirm).toHaveTextContent('该条目及其全部子条目将级联删除，不可恢复');
+    await user.click(within(confirm).getByTestId('lib-confirm-ok'));
+
+    await waitFor(() => {
+      expect(
+        apiFetchMock.mock.calls.some(
+          (c) => c[0] === '/api/v1/world-settings/w1?cascade=true' && c[1]?.method === 'DELETE',
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it('L7 取消按钮关闭且零请求；遮罩点击不关闭（#195）', async () => {
+    mockCharacters();
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await screen.findByTestId('library-list');
+    // 取消路径
+    await user.click(screen.getByTestId('lib-delete-c1'));
+    await user.click(await screen.findByTestId('lib-confirm-cancel'));
+    expect(screen.queryByTestId('lib-confirm-dialog')).not.toBeInTheDocument();
+
+    // 遮罩点击不关闭（#195：遮罩是 dialog 的父层 role=presentation）
+    await user.click(screen.getByTestId('lib-delete-c1'));
+    const confirm = await screen.findByTestId('lib-confirm-dialog');
+    const overlay = confirm.parentElement;
+    expect(overlay).not.toBeNull();
+    await user.click(overlay!);
+    expect(screen.getByTestId('lib-confirm-dialog')).toBeInTheDocument();
+
+    // 全程零 DELETE 调用
+    expect(apiFetchMock.mock.calls.some((c) => c[1]?.method === 'DELETE')).toBe(false);
+  });
+
+  it('L8 Esc 关闭确认框且零请求', async () => {
+    mockCharacters();
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await screen.findByTestId('library-list');
+    await user.click(screen.getByTestId('lib-delete-c1'));
+    await screen.findByTestId('lib-confirm-dialog');
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByTestId('lib-confirm-dialog')).not.toBeInTheDocument();
+    expect(apiFetchMock.mock.calls.some((c) => c[1]?.method === 'DELETE')).toBe(false);
+  });
+
+  it('L9 删除失败：DELETE reject → err toast + 列表不变（条目仍在）', async () => {
+    mockCharacters();
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/characters') {
+        return { items: [{ ...fullChar }], total: 1, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/characters/c1' && init?.method === 'DELETE') throw new Error('删除失败');
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await screen.findByTestId('library-list');
+    await user.click(screen.getByTestId('lib-delete-c1'));
+    await user.click(await screen.findByTestId('lib-confirm-ok'));
+
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'err')).toBe(true);
+      expect(screen.getByTestId('library-list')).toHaveTextContent('林晚');
+    });
+  });
+
+  it('L10 RAG 分类行无操作按钮（无 PATCH/DELETE 端点，确认型）', async () => {
+    act(() => {
+      useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
+    });
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/extractions/runs') {
+        return { items: [{ id: 1, status: 'success' }], total: 1, offset: 0, limit: 50 };
+      }
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await user.click(screen.getByRole('tab', { name: '知识库 RAG' }));
+    const list = await screen.findByTestId('library-list');
+    expect(within(list).queryAllByTestId(/^lib-edit-/)).toHaveLength(0);
+    expect(within(list).queryAllByTestId(/^lib-delete-/)).toHaveLength(0);
+  });
+});

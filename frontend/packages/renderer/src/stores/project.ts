@@ -79,6 +79,10 @@ interface ProjectState {
   createProject: (input: NewProjectInput) => Promise<Project>;
   /** #107：项目内切换模板（PATCH body { config: patch }，本地 config 合并更新） */
   updateConfig: (id: string, patch: ProjectConfig) => Promise<void>;
+  /** F43：项目重命名（PATCH body { name } → 本地更新；失败 rethrow，页面 catch → err toast） */
+  renameProject: (id: string, name: string) => Promise<void>;
+  /** F43：项目删除（DELETE → 本地移除 + currentProjectId 条件置 null + 清理 chapterProgress；失败 rethrow） */
+  deleteProject: (id: string) => Promise<void>;
   selectProject: (id: string | null) => void;
 }
 
@@ -135,6 +139,29 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         p.id === id ? { ...p, config: { ...p.config, ...patch } } : p,
       ),
     }));
+  },
+
+  // F43 §2.4/§5.6：失败 rethrow（不吞错，页面 catch → err toast）
+  renameProject: async (id, name) => {
+    await apiFetch(`/api/v1/projects/${id}`, { method: 'PATCH', body: { name } });
+    set((s) => ({
+      projects: s.projects.map((p) => (p.id === id ? { ...p, name } : p)),
+    }));
+  },
+
+  // F43 §2.4/§5.6：DELETE（apiFetch 204 → undefined，不解析 body）；本地三处同步：
+  // projects 移除 / currentProjectId 条件置 null（E7）/ chapterProgress 删除键
+  deleteProject: async (id) => {
+    await apiFetch(`/api/v1/projects/${id}`, { method: 'DELETE' });
+    set((s) => {
+      const chapterProgress = { ...s.chapterProgress };
+      delete chapterProgress[id];
+      return {
+        projects: s.projects.filter((p) => p.id !== id),
+        currentProjectId: s.currentProjectId === id ? null : s.currentProjectId,
+        chapterProgress,
+      };
+    });
   },
 
   selectProject: (id) => set({ currentProjectId: id }),

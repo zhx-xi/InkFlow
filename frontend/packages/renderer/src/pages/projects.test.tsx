@@ -27,6 +27,7 @@ import { ProjectsPage } from './projects';
 import { apiFetch } from '../api/client';
 import { useProjectStore } from '../stores/project';
 import { useThemeStore } from '../stores/theme';
+import { useToastStore } from '../stores/toast';
 import type { Project } from '../stores/project';
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -316,5 +317,195 @@ describe('项目页 — 点击卡片跳转写作页（#232）', () => {
 
     expect(await screen.findByTestId('writing-probe')).toBeInTheDocument();
     expect(useProjectStore.getState().currentProjectId).toBe('p1');
+  });
+});
+
+/**
+ * F43（2026-08-12，specs/f43-setting-library-crud/spec.md §5.5/§5.6/§9.2）：
+ * 项目卡片菜单（重命名/删除，US-3）。
+ *
+ * GREEN 契约（ProjectCard.tsx + projects.tsx + stores/project.ts + i18n zh/en）：
+ * - 卡片菜单按钮 data-testid=project-card-menu-<id>（点击 stopPropagation，不触发卡片跳转 #232）
+ * - 菜单项：project-rename-<id>（重命名）/ project-delete-<id>（删除）
+ * - 重命名对话框（轻量单字段）：project-rename-dialog / project-rename-input（预填现名）/
+ *   project-rename-save / project-rename-cancel → 保存 → store.renameProject(id, name)
+ *   → PATCH /api/v1/projects/{id} body {name} → 关框 + 卡片显示新名 + ok toast
+ * - 删除确认 ConfirmDialog（testidPrefix='project-delete'）：project-delete-dialog / -cancel / -ok；
+ *   文案 = pj.delete.range「其章节、设定、大纲、时间线数据将全部删除」+ D11 统一行；
+ *   确认 → store.deleteProject(id) → DELETE → 卡片消失；删除当前项目 → currentProjectId 置 null
+ * - #195：遮罩点击不关闭；失败 → err toast
+ *
+ * RED 预期：project-card-menu-* 不存在 → element-missing（类 3 契约缺口）。
+ */
+describe('项目页 — F43 卡片菜单重命名/删除（P0）', () => {
+  it('P1 卡片菜单按钮 → 菜单项（重命名/删除）可见', async () => {
+    const user = userEvent.setup();
+    renderProjectsPage();
+    await screen.findAllByTestId('project-card');
+
+    await user.click(screen.getByTestId('project-card-menu-p1'));
+
+    expect(screen.getByTestId('project-rename-p1')).toBeInTheDocument();
+    expect(screen.getByTestId('project-delete-p1')).toBeInTheDocument();
+  });
+
+  it('P2 菜单按钮点击不触发卡片跳转（stopPropagation，#232 回归）', async () => {
+    const user = userEvent.setup();
+    renderProjectsPage();
+    await screen.findAllByTestId('project-card');
+    useProjectStore.setState({ currentProjectId: null });
+
+    await user.click(screen.getByTestId('project-card-menu-p1'));
+
+    expect(screen.queryByTestId('writing-probe')).not.toBeInTheDocument();
+    expect(useProjectStore.getState().currentProjectId).toBeNull();
+  });
+
+  it('P3 重命名：输入新名 → PATCH {name} → 关框 + 卡片显示新名 + ok toast', async () => {
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+      if (path === '/api/v1/projects' && !init?.method) {
+        return {
+          items: [makeProject({ id: 'p1', name: '青云志' })],
+          total: 1, offset: 0, limit: 50,
+        };
+      }
+      if (path === '/api/v1/projects/p1/chapters') return chapterPage(0, 0);
+      if (path === '/api/v1/projects/p1' && init?.method === 'PATCH') {
+        return makeProject({ id: 'p1', name: (init.body as { name: string }).name });
+      }
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    const user = userEvent.setup();
+    renderProjectsPage();
+    await screen.findAllByTestId('project-card');
+
+    await user.click(screen.getByTestId('project-card-menu-p1'));
+    await user.click(screen.getByTestId('project-rename-p1'));
+
+    const dialog = await screen.findByTestId('project-rename-dialog');
+    const input = within(dialog).getByTestId('project-rename-input');
+    expect(input).toHaveValue('青云志'); // 预填现名
+    await user.clear(input);
+    await user.type(input, '青云志·改');
+    await user.click(within(dialog).getByTestId('project-rename-save'));
+
+    await waitFor(() => {
+      const patchCall = apiFetchMock.mock.calls.find(
+        (c) => c[0] === '/api/v1/projects/p1' && c[1]?.method === 'PATCH',
+      );
+      expect(patchCall).toBeTruthy();
+      expect(patchCall![1]!.body).toEqual({ name: '青云志·改' });
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('project-rename-dialog')).not.toBeInTheDocument();
+      expect(screen.getByText('青云志·改')).toBeInTheDocument();
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'ok')).toBe(true);
+    });
+  });
+
+  it('P4 重命名失败：PATCH reject → err toast + 对话框保持', async () => {
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/projects' && !init?.method) {
+        return {
+          items: [makeProject({ id: 'p1', name: '青云志' })],
+          total: 1, offset: 0, limit: 50,
+        };
+      }
+      if (path === '/api/v1/projects/p1/chapters') return chapterPage(0, 0);
+      if (path === '/api/v1/projects/p1' && init?.method === 'PATCH') throw new Error('改名失败');
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    const user = userEvent.setup();
+    renderProjectsPage();
+    await screen.findAllByTestId('project-card');
+
+    await user.click(screen.getByTestId('project-card-menu-p1'));
+    await user.click(screen.getByTestId('project-rename-p1'));
+    const dialog = await screen.findByTestId('project-rename-dialog');
+    const input = within(dialog).getByTestId('project-rename-input');
+    await user.clear(input);
+    await user.type(input, '新名');
+    await user.click(within(dialog).getByTestId('project-rename-save'));
+
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'err')).toBe(true);
+      expect(screen.getByTestId('project-rename-dialog')).toBeInTheDocument();
+    });
+  });
+
+  it('P5 删除：确认框含数据范围文案 + D11 行 → 确认 → DELETE → 卡片消失', async () => {
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/projects' && !init?.method) {
+        return {
+          items: [makeProject({ id: 'p1', name: '青云志' })],
+          total: 1, offset: 0, limit: 50,
+        };
+      }
+      if (path === '/api/v1/projects/p1/chapters') return chapterPage(0, 0);
+      if (path === '/api/v1/projects/p1' && init?.method === 'DELETE') return undefined;
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    const user = userEvent.setup();
+    renderProjectsPage();
+    await screen.findAllByTestId('project-card');
+
+    await user.click(screen.getByTestId('project-card-menu-p1'));
+    await user.click(screen.getByTestId('project-delete-p1'));
+
+    const confirm = await screen.findByTestId('project-delete-dialog');
+    expect(confirm).toHaveTextContent('青云志');
+    expect(confirm).toHaveTextContent('其章节、设定、大纲、时间线数据将全部删除');
+    expect(confirm).toHaveTextContent('点击确认后立即移除（后台逻辑删除，30 天后彻底清除）');
+    await user.click(within(confirm).getByTestId('project-delete-ok'));
+
+    await waitFor(() => {
+      expect(
+        apiFetchMock.mock.calls.some(
+          (c) => c[0] === '/api/v1/projects/p1' && c[1]?.method === 'DELETE',
+        ),
+      ).toBe(true);
+      expect(screen.queryByTestId('project-delete-dialog')).not.toBeInTheDocument();
+      expect(screen.queryByText('青云志')).not.toBeInTheDocument();
+    });
+  });
+
+  it('P6 删除当前项目 → currentProjectId 置 null（spec E7）', async () => {
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/projects' && !init?.method) {
+        return {
+          items: [makeProject({ id: 'p1', name: '青云志' })],
+          total: 1, offset: 0, limit: 50,
+        };
+      }
+      if (path === '/api/v1/projects/p1/chapters') return chapterPage(0, 0);
+      if (path === '/api/v1/projects/p1' && init?.method === 'DELETE') return undefined;
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    const user = userEvent.setup();
+    renderProjectsPage();
+    await screen.findAllByTestId('project-card');
+    useProjectStore.setState({ currentProjectId: 'p1' });
+
+    await user.click(screen.getByTestId('project-card-menu-p1'));
+    await user.click(screen.getByTestId('project-delete-p1'));
+    await user.click(await screen.findByTestId('project-delete-ok'));
+
+    await waitFor(() => {
+      expect(useProjectStore.getState().currentProjectId).toBeNull();
+    });
+  });
+
+  it('P7 删除取消：cancel → 零 DELETE 调用，卡片仍在', async () => {
+    const user = userEvent.setup();
+    renderProjectsPage();
+    await screen.findAllByTestId('project-card');
+
+    await user.click(screen.getByTestId('project-card-menu-p1'));
+    await user.click(screen.getByTestId('project-delete-p1'));
+    await user.click(await screen.findByTestId('project-delete-cancel'));
+
+    expect(screen.queryByTestId('project-delete-dialog')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('project-card')).toHaveLength(2);
+    expect(apiFetchMock.mock.calls.some((c) => c[1]?.method === 'DELETE')).toBe(false);
   });
 });

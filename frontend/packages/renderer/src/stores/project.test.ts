@@ -282,3 +282,112 @@ describe('project store — #107 模板引用（template_id）', () => {
     expect((project?.config as ConfigWithTemplate).template_id).toBe(2);
   });
 });
+
+/**
+ * F43（2026-08-12，specs/f43-setting-library-crud/spec.md §2.4/§5.6/§9.2）：
+ * 项目重命名/删除 actions（GUI 卡片菜单消费）。
+ *
+ * GREEN 需在 src/stores/project.ts 补：
+ * - renameProject(id: string, name: string): Promise<void>
+ *     PATCH /api/v1/projects/{id} body { name } → 成功 → 本地 projects 中该 id 的 name 更新；
+ *     失败 rethrow（页面 catch → err toast，spec §5.6）
+ * - deleteProject(id: string): Promise<void>
+ *     DELETE /api/v1/projects/{id}（204，apiFetch 返回 undefined）→ 成功 → 本地移除该 id；
+ *     currentProjectId === id → 置 null；清理 chapterProgress[id]；失败 rethrow
+ *
+ * RED 预期：两 action 未实现 → is-not-a-function（类 2 契约缺口，对齐 #107 updateConfig 先例）。
+ */
+describe('project store — F43 重命名/删除 actions', () => {
+  /** 契约增强类型：GREEN 实现后与 ProjectState 合并（对齐 #107 updateConfig cast 先例） */
+  type ProjectStateWithCrud = ReturnType<typeof useProjectStore.getState> & {
+    renameProject: (id: string, name: string) => Promise<void>;
+    deleteProject: (id: string) => Promise<void>;
+  };
+  const stateWithCrud = () => useProjectStore.getState() as ProjectStateWithCrud;
+
+  it('契约面：renameProject / deleteProject 是函数（GREEN 补 action；当前缺失 → is-not-a-function RED）', () => {
+    expect(typeof stateWithCrud().renameProject).toBe('function');
+    expect(typeof stateWithCrud().deleteProject).toBe('function');
+  });
+
+  it('renameProject：PATCH /api/v1/projects/{id} body {name} → 本地 name 更新', async () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: '青云志' }), makeProject({ id: 'p2', name: '山海经' })],
+      currentProjectId: 'p1',
+    });
+    apiFetchMock.mockResolvedValue({ ok: true });
+
+    await act(async () => {
+      await stateWithCrud().renameProject('p1', '青云志·改');
+    });
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects/p1', {
+      method: 'PATCH',
+      body: { name: '青云志·改' },
+    });
+    const s = useProjectStore.getState();
+    expect(s.projects.find((p) => p.id === 'p1')?.name).toBe('青云志·改');
+    // 其它项目不受影响
+    expect(s.projects.find((p) => p.id === 'p2')?.name).toBe('山海经');
+  });
+
+  it('renameProject 失败：rethrow（rejects）+ 本地不变（spec §5.6 不吞错）', async () => {
+    useProjectStore.setState({ projects: [makeProject({ id: 'p1', name: '青云志' })] });
+    apiFetchMock.mockRejectedValue(new Error('改名失败'));
+
+    await expect(stateWithCrud().renameProject('p1', '新名')).rejects.toThrow('改名失败');
+    expect(useProjectStore.getState().projects[0].name).toBe('青云志');
+  });
+
+  it('deleteProject：DELETE /api/v1/projects/{id} → 本地移除 + chapterProgress 清理', async () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: '青云志' }), makeProject({ id: 'p2', name: '山海经' })],
+      currentProjectId: 'p2',
+      chapterProgress: { p1: { written: 3, total: 12 }, p2: { written: 0, total: 0 } },
+    });
+    apiFetchMock.mockResolvedValue(undefined);
+
+    await act(async () => {
+      await stateWithCrud().deleteProject('p1');
+    });
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects/p1', {
+      method: 'DELETE',
+    });
+    const s = useProjectStore.getState();
+    expect(s.projects.map((p) => p.id)).toEqual(['p2']);
+    expect(s.chapterProgress).toEqual({ p2: { written: 0, total: 0 } });
+    // 删除的是非当前项目 → currentProjectId 不变
+    expect(s.currentProjectId).toBe('p2');
+  });
+
+  it('deleteProject 删除当前项目 → currentProjectId 置 null（spec E7）', async () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: '青云志' }), makeProject({ id: 'p2', name: '山海经' })],
+      currentProjectId: 'p1',
+      chapterProgress: { p1: { written: 3, total: 12 } },
+    });
+    apiFetchMock.mockResolvedValue(undefined);
+
+    await act(async () => {
+      await stateWithCrud().deleteProject('p1');
+    });
+
+    const s = useProjectStore.getState();
+    expect(s.currentProjectId).toBeNull();
+    expect(s.projects.map((p) => p.id)).toEqual(['p2']);
+  });
+
+  it('deleteProject 失败：rethrow（rejects）+ 本地不变', async () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: '青云志' })],
+      currentProjectId: 'p1',
+    });
+    apiFetchMock.mockRejectedValue(new Error('删除失败'));
+
+    await expect(stateWithCrud().deleteProject('p1')).rejects.toThrow('删除失败');
+    const s = useProjectStore.getState();
+    expect(s.projects).toHaveLength(1);
+    expect(s.currentProjectId).toBe('p1');
+  });
+});
