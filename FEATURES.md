@@ -119,6 +119,13 @@
 | #199 | 设置保存反馈统一化（tray hint/close behavior/font 顶部「已保存」） | PR #206 | ✅ |
 | #141 | E2E 设置页补全（模板 CRUD/风险确认框/Agent 链/默认模型/快捷键，~10 用例） | PR #222 | ✅ |
 | #201 | 0.6.0 开工前文档一致性修复（15🔴 漂移 + spec 导航 + 立规） | PR #202 | ✅ |
+| #249/#252 | memory stats 500 修复链（service 元组解包 → preference_repo 方法缺失） | PR #250/#255 | ✅ |
+| #253/#254 | 打包收集链（chromadb telemetry → CLI None 参数过滤 → tiktoken 编码数据 → chromadb 全家桶 → tiktoken Rust 扩展） | PR #255/#256/#262/#263 | ✅ |
+| #264 | search semantic 装配注入 + spec 收集契约测试 + 打包产物冒烟（三层防回归） | PR #265 | ✅ |
+| #266 | 数据目录设置：instance.env 固定锚点 + CLI config set data-dir + GUI 设置页（DB/向量库整体迁移） | PR #272 | ✅ |
+| #267 | 模型测试按钮：测试请求自包含 model（保存前测试不再回退全局默认） | PR #271 | ✅ |
+| #274 | CLI agentic 长超时（30s → 300s 读超时，agentic 多步 ReAct 不再 ReadTimeout） | PR #279 | ✅ |
+| #275 | agentic 系统提示注入 project_id（工具查询 + save_draft 草稿归属修复） | PR #280 | ✅ |
 
 **0.6.0 交付实证**：12/12 issues 全关（milestone #6 2026-08-09 关闭）· 2026-08-10 v0.6.0 正式发布（Latest）· 新增 f34-f38 五个模块变体（审计型/传输改造型/树型/资产呈现型/复用型）· 全链路 CLI 恒经 HTTP 单路径（ADR-030 ② 落地）。
 
