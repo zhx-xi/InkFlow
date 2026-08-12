@@ -303,3 +303,145 @@ test('设定库：分类加载失败 → error + 重试 → 列表恢复', async
     await app.close();
   }
 });
+// ────────────────────────────────────────────────────────────────
+// F43 P1（#284）：P0 遗留 E2E 契约补全（spec §5.7/§9.3 E2E-E1/E2/E3）——
+// 编辑保存闭环 / 删除确认闭环 / 删除取消零请求
+// ────────────────────────────────────────────────────────────────
+
+test('设定库：编辑保存闭环（E2E-E1）——预填 → 改名称 → 保存 → PATCH 生效 + 已保存指示', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-编辑-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    const pid = await findProjectId(kernel, name);
+
+    // 预置 1 个角色（带 extra.role_rank='major' → 编辑对话框等级预填 → 保存按钮 enabled；
+    // P1 等级必填 gate：无等级预置时编辑保存会被 disabled）
+    const res = await kernelFetch(kernel, `/api/v1/projects/${pid}/characters`, {
+      method: 'POST',
+      body: { name: '角色甲', personality: 'E2E 测试', extra: { role_rank: 'major', groups: [] } },
+    });
+    expect(res.status).toBe(201);
+    const created = (await res.json()) as { id: string };
+    const cid = created.id;
+
+    await gotoNav(window, '设定库');
+    await expect(window.getByTestId('library-list')).toContainText('角色甲', { timeout: 15_000 });
+
+    // 行编辑 → 对话框预填（名称 + 等级）
+    await window.getByTestId(`lib-edit-${cid}`).click();
+    const dialog = window.getByTestId('library-create-dialog');
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByTestId('library-create-name')).toHaveValue('角色甲');
+    await expect(window.getByTestId('library-create-rank')).toContainText('重要配角');
+
+    // 只改名称（不动等级）→ 保存
+    const newName = '角色甲·改';
+    await window.getByTestId('library-create-name').fill(newName);
+    await window.getByTestId('library-create-save').click();
+
+    // 保存指示「已保存」（2s 自动隐藏 → 时间敏感项先断言）
+    await expect(window.getByTestId('lib-save-indicator')).toHaveText('已保存', { timeout: 15_000 });
+    await expect(dialog).toBeHidden();
+    // PATCH 生效：列表显示新名（reloadKey 重新拉取）
+    await expect(window.getByTestId('library-list')).toContainText(newName, { timeout: 15_000 });
+    // 内核落库：角色名已更新（PATCH 真实生效证据）
+    await expect
+      .poll(
+        async () => {
+          const r = await kernelFetch(kernel, `/api/v1/projects/${pid}/characters`);
+          const data = (await r.json()) as { items: Array<{ id: string; name: string }> };
+          return data.items.find((c) => c.id === cid)?.name;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(newName);
+  } finally {
+    await app.close();
+  }
+});
+
+test('设定库：删除确认闭环（E2E-E2）——确认框 D11 文案 → 确认 → DELETE → 条目消失 + ok toast', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-删除-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    const pid = await findProjectId(kernel, name);
+    const res = await kernelFetch(kernel, `/api/v1/projects/${pid}/characters`, {
+      method: 'POST',
+      body: { name: '角色甲', personality: 'E2E 测试' },
+    });
+    expect(res.status).toBe(201);
+    const created = (await res.json()) as { id: string };
+    const cid = created.id;
+
+    await gotoNav(window, '设定库');
+    await expect(window.getByTestId('library-list')).toContainText('角色甲', { timeout: 15_000 });
+
+    // 行删除 → 二次确认框（D11 统一文案 + 标题含角色名）
+    await window.getByTestId(`lib-delete-${cid}`).click();
+    const confirm = window.getByTestId('lib-confirm-dialog');
+    await expect(confirm).toBeVisible({ timeout: 15_000 });
+    await expect(confirm).toContainText('删除角色甲？');
+    await expect(confirm).toContainText('点击确认后立即移除（后台逻辑删除，30 天后彻底清除）');
+
+    // 确认 → DELETE → ok toast（2s 自动消失 → 时间敏感项先断言）
+    await window.getByTestId('lib-confirm-ok').click();
+    await expect(window.getByRole('status')).toContainText('已保存', { timeout: 15_000 });
+    await expect(confirm).toBeHidden();
+    // 条目消失 → 角色列表空态
+    await expect(window.getByTestId('library-tab-empty')).toBeVisible({ timeout: 15_000 });
+    // 内核落库：DELETE 后列表不再返回该角色（软删过滤）
+    await expect
+      .poll(
+        async () => {
+          const r = await kernelFetch(kernel, `/api/v1/projects/${pid}/characters`);
+          const data = (await r.json()) as { total: number };
+          return data.total;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('设定库：删除取消零请求（E2E-E3）——取消 → 关闭 + 条目仍在 + 内核无删除', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-取消-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    const pid = await findProjectId(kernel, name);
+    const res = await kernelFetch(kernel, `/api/v1/projects/${pid}/characters`, {
+      method: 'POST',
+      body: { name: '角色甲', personality: 'E2E 测试' },
+    });
+    expect(res.status).toBe(201);
+    const created = (await res.json()) as { id: string };
+    const cid = created.id;
+
+    await gotoNav(window, '设定库');
+    await expect(window.getByTestId('library-list')).toContainText('角色甲', { timeout: 15_000 });
+
+    // 行删除 → 确认框出现
+    await window.getByTestId(`lib-delete-${cid}`).click();
+    const confirm = window.getByTestId('lib-confirm-dialog');
+    await expect(confirm).toBeVisible({ timeout: 15_000 });
+
+    // 取消 → 对话框关闭
+    await window.getByTestId('lib-confirm-cancel').click();
+    await expect(confirm).toBeHidden();
+    // 条目仍在（列表未变化，无刷新）
+    await expect(window.getByTestId('library-list')).toContainText('角色甲');
+    // 无 ok toast（取消不发任何请求）
+    await expect(window.getByRole('status')).toHaveCount(0);
+    // 内核零请求：角色仍存在
+    const r = await kernelFetch(kernel, `/api/v1/projects/${pid}/characters`);
+    const data = (await r.json()) as { items: Array<{ name: string }>; total: number };
+    expect(data.total).toBe(1);
+    expect(data.items[0].name).toBe('角色甲');
+  } finally {
+    await app.close();
+  }
+});

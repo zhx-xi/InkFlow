@@ -643,3 +643,60 @@ class TestCopyErrorsModule:
         assert issubclass(CopyRootNotFoundError, Exception)
         assert not issubclass(CopySourceNotFoundError, WorldServiceError)
         assert not issubclass(CopyRootNotFoundError, WorldServiceError)
+
+
+class TestSelfOnlyCopy:
+    """F43 P1 复制 self_only 分支契约（spec §2.5/§5.6）— 仅本体复制集合=[root].
+
+    【RED 预期】copy 签名尚无 self_only 参数 → 显式传 self_only 触发 TypeError
+    （FAILED）；缺省用例（守护）当前即 PASS——GREEN 后缺省 False 保持既有子树语义。
+    契约锁定: self_only 以 kwargs 形态传入（copy(..., self_only=True)）。
+    """
+
+    async def test_self_only_true_copies_root_only(self, service, mock_repo, mock_map_repo) -> None:
+        """root + self_only=True → 复制集合=[root]：list_descendants 不调用、仅 root 落库、
+        map 查询自动收窄到 root（spec §2.5）."""
+        country = _setting("大越国")
+        state = _setting("青州", parent_id=country.id)
+        county = _setting("清河县城", parent_id=state.id)
+        mock_repo.get = AsyncMock(side_effect=lambda sid: state if sid == state.id.int else None)
+        mock_repo.list_descendants = AsyncMock(return_value=[state, county])
+
+        result = await service.copy(
+            SOURCE_PID, TARGET_PID, root_setting_id=state.id, self_only=True
+        )
+
+        assert [s.name for s in result.created] == ["青州"]
+        mock_repo.add.assert_awaited_once()
+        mock_repo.list_descendants.assert_not_awaited()
+        mock_repo.list_all_active.assert_not_awaited()
+        loc_call = mock_map_repo.list_by_root_locations.await_args
+        assert set(loc_call.args[1]) == {state.id.int}
+        assert country.id.int not in loc_call.args[1]
+
+    async def test_self_only_false_uses_descendants(self, service, mock_repo) -> None:
+        """root + self_only=False（显式）→ list_descendants 被调用（既有子树语义不破坏）."""
+        country = _setting("大越国")
+        state = _setting("青州", parent_id=country.id)
+        county = _setting("清河县城", parent_id=state.id)
+        mock_repo.get = AsyncMock(side_effect=lambda sid: state if sid == state.id.int else None)
+        mock_repo.list_descendants = AsyncMock(return_value=[state, county])
+
+        result = await service.copy(
+            SOURCE_PID, TARGET_PID, root_setting_id=state.id, self_only=False
+        )
+
+        assert [s.name for s in result.created] == ["青州", "清河县城"]
+        mock_repo.list_descendants.assert_awaited_once_with(state.id.int)
+
+    async def test_self_only_default_uses_descendants(self, service, mock_repo) -> None:
+        """不传 self_only（缺省 False）→ 既有子树语义（守护用例，RED 阶段即 PASS）."""
+        country = _setting("大越国")
+        state = _setting("青州", parent_id=country.id)
+        mock_repo.get = AsyncMock(side_effect=lambda sid: state if sid == state.id.int else None)
+        mock_repo.list_descendants = AsyncMock(return_value=[state])
+
+        result = await service.copy(SOURCE_PID, TARGET_PID, root_setting_id=state.id)
+
+        assert [s.name for s in result.created] == ["青州"]
+        mock_repo.list_descendants.assert_awaited_once_with(state.id.int)

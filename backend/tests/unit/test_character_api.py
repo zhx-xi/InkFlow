@@ -136,7 +136,9 @@ class TestCharacterCRUDAPI:
         assert data["personality"] == "坚韧隐忍"
         assert data["project_id"] == str(PID)
         assert data["is_deleted"] is False
-        svc.create_character.assert_awaited_once_with(PID, "林尘", "坚韧隐忍", "", "", None)
+        svc.create_character.assert_awaited_once_with(
+            PID, "林尘", "坚韧隐忍", "", "", None, extra={}
+        )
 
     @patch("inkflow.api.routers.characters.get_character_service")
     def test_create_character_name_conflict_422(self, mock_get_svc: MagicMock) -> None:
@@ -675,3 +677,52 @@ class TestCharacterCoverageGaps:
         response = client.delete(f"/api/v1/character-groups/{uuid.uuid4()}")
         assert response.status_code == 404
         assert response.json()["detail"] == "分组不存在"
+
+
+class TestCharacterExtraAPI:
+    """F43 P1 角色 extra API 透传契约（spec §3.2）— 创建/更新 body 带 extra 透传到 service.
+
+    【RED 预期】CharacterCreateBody/CharacterUpdate 尚无 extra 字段 → body extra
+    被 Pydantic 忽略 → 创建断言收到调用缺 extra kwarg（AssertionError）/ 更新断言
+    CharacterUpdate.extra 属性访问 AttributeError = 断言失败形态。GREEN 后自动转绿。
+    """
+
+    @patch("inkflow.api.routers.characters.get_character_service")
+    def test_create_character_passes_extra(self, mock_get_svc: MagicMock) -> None:
+        """POST body 带 extra → svc.create_character 收到 extra 参数（原样透传）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.create_character = AsyncMock(return_value=_char("林尘"))
+
+        response = client.post(
+            f"/api/v1/projects/{PID}/characters",
+            json={
+                "name": "林尘",
+                "personality": "坚韧",
+                "extra": {"role_rank": "major", "groups": ["主角团"]},
+            },
+        )
+        assert response.status_code == 201
+        svc.create_character.assert_awaited_once_with(
+            PID,
+            "林尘",
+            "坚韧",
+            "",
+            "",
+            None,
+            extra={"role_rank": "major", "groups": ["主角团"]},
+        )
+
+    @patch("inkflow.api.routers.characters.get_character_service")
+    def test_update_character_passes_extra(self, mock_get_svc: MagicMock) -> None:
+        """PATCH body 带 extra → svc.update_character 收到 CharacterUpdate.extra（整体替换语义）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.update_character = AsyncMock(return_value=_char("林尘"))
+
+        response = client.patch(
+            f"/api/v1/characters/{uuid.uuid4()}",
+            json={"extra": {"role_rank": "major", "groups": ["主角团"]}},
+        )
+        assert response.status_code == 200
+        update = svc.update_character.await_args.args[1]
+        assert update.extra == {"role_rank": "major", "groups": ["主角团"]}
+        assert "extra" in update.model_fields_set

@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from inkflow.domain.models.character import (
     Character,
@@ -95,6 +96,7 @@ class CharacterService:
         background: str = "",
         goals: str = "",
         group_id: uuid.UUID | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> Character:
         """创建角色（spec §7: 同名活动角色 → 422；分组跨项目 → 422）.
 
@@ -105,6 +107,7 @@ class CharacterService:
             background: 背景设定.
             goals: 目标/动机.
             group_id: 所属分组 UUID（None 表示未分组）.
+            extra: 扩展属性字典（role_rank/groups 等）；None 落库为空 dict.
 
         Returns:
             持久化后的完整 Character.
@@ -130,6 +133,7 @@ class CharacterService:
             background=background,
             goals=goals,
             group_id=group_id,
+            extra=extra or {},
             created_at=now,
             updated_at=now,
         )

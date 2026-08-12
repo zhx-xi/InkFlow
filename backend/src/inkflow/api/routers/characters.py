@@ -102,6 +102,7 @@ class CharacterCreateBody(BaseModel):
     background: str = ""
     goals: str = ""
     group_id: uuid.UUID | None = None
+    extra: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("name")
     @classmethod
@@ -189,6 +190,7 @@ async def create_character(
             data.background,
             data.goals,
             data.group_id,
+            extra=data.extra,
         )
     )
     return character.model_dump(mode="json")

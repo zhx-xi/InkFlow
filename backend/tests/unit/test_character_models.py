@@ -203,3 +203,32 @@ class TestCharacterExtractRequest:
         """超过 50000 字符的 text 应抛出 ValidationError."""
         with pytest.raises(ValidationError, match="提取文本不能超过 50000 个字符"):
             CharacterExtractRequest(project_id=PID, text="文" * 50001)
+
+
+class TestCharacterExtraContract:
+    """F43 P1 角色 extra 字段契约（spec §2.4）— RED: CharacterCreate/Update 尚无 extra 字段.
+
+    【RED 预期】CharacterCreate/CharacterUpdate 目前无 extra 字段 → Pydantic
+    extra='ignore' 静默丢弃 → model_dump() 无 extra 键（KeyError）/ 属性访问
+    AttributeError = 断言失败形态（非 ERROR）。GREEN 后自动转绿。
+    """
+
+    def test_create_accepts_extra_field(self):
+        """CharacterCreate 带 extra（role_rank/groups）→ 字段存在且值原样."""
+        create = CharacterCreate(
+            project_id=PID,
+            name="林尘",
+            extra={"role_rank": "major", "groups": ["主角团"]},
+        )
+        assert create.model_dump()["extra"] == {"role_rank": "major", "groups": ["主角团"]}
+
+    def test_create_extra_defaults_to_empty_dict(self):
+        """CharacterCreate 缺省 extra → 字段存在且为空 dict（向后兼容）."""
+        create = CharacterCreate(project_id=PID, name="林尘")
+        assert create.model_dump()["extra"] == {}
+
+    def test_update_accepts_extra_field(self):
+        """CharacterUpdate 带 extra → 字段存在且进入 model_fields_set（exclude_unset 整体替换）."""
+        update = CharacterUpdate(name="林尘", extra={"role_rank": "major", "groups": ["主角团"]})
+        assert update.extra == {"role_rank": "major", "groups": ["主角团"]}
+        assert "extra" in update.model_fields_set

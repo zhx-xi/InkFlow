@@ -171,7 +171,7 @@ class TestWorldCopyAPI:
         assert data["maps_created"][0]["name"] == "清河县城图"
         assert isinstance(data["pins_created"], int)
         assert isinstance(data["warnings"], list)
-        svc.copy.assert_awaited_once_with(SOURCE_PID, TARGET_PID, None)
+        svc.copy.assert_awaited_once_with(SOURCE_PID, TARGET_PID, None, self_only=False)
 
     @patch("inkflow.api.routers.world_settings.get_copy_service")
     def test_copy_without_root_key(self, mock_get_svc: MagicMock) -> None:
@@ -184,7 +184,7 @@ class TestWorldCopyAPI:
             json={"source_project_id": str(SOURCE_PID)},
         )
         assert response.status_code == 200
-        svc.copy.assert_awaited_once_with(SOURCE_PID, TARGET_PID, None)
+        svc.copy.assert_awaited_once_with(SOURCE_PID, TARGET_PID, None, self_only=False)
 
     @patch("inkflow.api.routers.world_settings.get_copy_service")
     def test_copy_with_root(self, mock_get_svc: MagicMock) -> None:
@@ -197,7 +197,7 @@ class TestWorldCopyAPI:
             json={"source_project_id": str(SOURCE_PID), "root_setting_id": str(ROOT_ID)},
         )
         assert response.status_code == 200
-        svc.copy.assert_awaited_once_with(SOURCE_PID, TARGET_PID, ROOT_ID)
+        svc.copy.assert_awaited_once_with(SOURCE_PID, TARGET_PID, ROOT_ID, self_only=False)
 
     @patch("inkflow.api.routers.world_settings.get_copy_service")
     def test_copy_target_not_found_404(self, mock_get_svc: MagicMock) -> None:
@@ -273,3 +273,57 @@ class TestWorldCopyAPI:
         svc = get_copy_service(AsyncMock())
 
         assert isinstance(svc, WorldCopyService)
+
+
+class TestWorldCopySelfOnly:
+    """F43 P1 复制 self_only 契约（spec §2.5/§3.3）— 透传 + root 缺省互斥 422.
+
+    【RED 预期】WorldCopyRequest 尚无 self_only 字段 → body self_only 被 Pydantic
+    忽略 → 断言收到调用缺 self_only kwarg（AssertionError）/ 互斥校验缺失返回
+    200 而非 422（AssertionError）= 断言失败形态。契约锁定: svc.copy 第 4 参以
+    kwargs 形态透传（self_only=request.self_only）。
+    """
+
+    @patch("inkflow.api.routers.world_settings.get_copy_service")
+    def test_copy_self_only_true_passed(self, mock_get_svc: MagicMock) -> None:
+        """body 带 root + self_only=true → svc.copy 收到 self_only=True."""
+        svc = _mock_svc(mock_get_svc)
+        svc.copy = AsyncMock(return_value=_result())
+
+        response = client.post(
+            f"/api/v1/projects/{TARGET_PID}/world-settings/copy",
+            json={
+                "source_project_id": str(SOURCE_PID),
+                "root_setting_id": str(ROOT_ID),
+                "self_only": True,
+            },
+        )
+        assert response.status_code == 200
+        svc.copy.assert_awaited_once_with(SOURCE_PID, TARGET_PID, ROOT_ID, self_only=True)
+
+    @patch("inkflow.api.routers.world_settings.get_copy_service")
+    def test_copy_self_only_without_root_422(self, mock_get_svc: MagicMock) -> None:
+        """body 带 self_only=true 但 root_setting_id 缺省（None）→ 422 互斥（spec §3.3 表）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.copy = AsyncMock(return_value=_result())
+
+        response = client.post(
+            f"/api/v1/projects/{TARGET_PID}/world-settings/copy",
+            json={"source_project_id": str(SOURCE_PID), "self_only": True},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "仅本体复制必须指定复制起点"
+        svc.copy.assert_not_awaited()
+
+    @patch("inkflow.api.routers.world_settings.get_copy_service")
+    def test_copy_self_only_defaults_false(self, mock_get_svc: MagicMock) -> None:
+        """body 无 self_only 键 → svc.copy 收到 self_only=False（缺省，向后兼容）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.copy = AsyncMock(return_value=_result())
+
+        response = client.post(
+            f"/api/v1/projects/{TARGET_PID}/world-settings/copy",
+            json={"source_project_id": str(SOURCE_PID), "root_setting_id": str(ROOT_ID)},
+        )
+        assert response.status_code == 200
+        svc.copy.assert_awaited_once_with(SOURCE_PID, TARGET_PID, ROOT_ID, self_only=False)

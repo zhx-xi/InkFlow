@@ -122,6 +122,7 @@ class CharacterCreate(BaseModel):
         background: 背景设定，默认为空串.
         goals: 目标/动机，默认为空串.
         group_id: 所属角色分组 UUID（None 表示未分组）.
+        extra: 扩展属性字典（如 role_rank/groups），默认为空 dict.
     """
 
     project_id: uuid.UUID
@@ -130,6 +131,7 @@ class CharacterCreate(BaseModel):
     background: str = ""
     goals: str = ""
     group_id: uuid.UUID | None = None
+    extra: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("name")
     @classmethod
@@ -143,6 +145,7 @@ class CharacterUpdate(BaseModel):
 
     group_id: None 表示清除分组；不传该字段表示不修改。
     只有传入的字段会被更新，未传入的字段保持不变。
+    extra: 传 dict 整体替换；不传该字段表示不修改（exclude_unset 语义）。
     """
 
     name: str | None = None
@@ -150,6 +153,7 @@ class CharacterUpdate(BaseModel):
     background: str | None = None
     goals: str | None = None
     group_id: uuid.UUID | None = None
+    extra: dict[str, Any] | None = None
 
     @field_validator("name")
     @classmethod
