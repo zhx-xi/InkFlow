@@ -19,6 +19,8 @@ app = typer.Typer(help="AI 写作命令", no_args_is_help=True)
 
 _SHOW_CONTEXT_NOTE = "(--show-context 功能将在 F6 联调时启用)"
 
+_AGENTIC_TIMEOUT = 300.0  # agentic 多步 ReAct 长任务端点 per-request 超时（#274）
+
 
 def _get_cli_ctx(ctx: typer.Context) -> CliContext:
     """从 typer.Context.obj 取 CliContext；根 app 尚未接线 --json 时回退人类模式."""
@@ -171,7 +173,9 @@ def next(
                     memory_learning=memory_learning,
                 )
                 body = request.model_dump(mode="json", exclude_none=True)
-                return await client.post("/writing/agentic/generate", json=body)
+                return await client.post(
+                    "/writing/agentic/generate", json=body, timeout=_AGENTIC_TIMEOUT
+                )
             results: list[dict] = []
             for _ in range(count):
                 stream_request = WritingRequest(

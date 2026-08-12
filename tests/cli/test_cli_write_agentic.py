@@ -235,3 +235,26 @@ class TestWriteNextAgenticExecution:
         result = _next_result("--mode", "foo")
         assert result.exit_code == 2
         assert "Invalid value" in result.stderr
+
+
+class TestWriteNextAgenticTimeout:
+    """#274 契约：agentic 调用点必须传长 timeout（300s），其余端点默认。
+
+    背景：rc9 实测 agentic 多步 ReAct 循环（LLM 多次调用 + 工具调用）耗时 44s+，
+    远超 InkFlowHTTPClient 默认 30s → ReadTimeout 必失败；服务端实际生成成功。
+    修复 = agentic 端点 per-request timeout 覆盖：post 传 timeout=300.0。
+
+    RED 预期：当前 write.py agentic 分支调用 `client.post(path, json=body)`
+    不带 timeout → `call.kwargs.get("timeout") is None` → 本断言 FAILED；
+    GREEN 后 agentic 分支传 timeout=300.0 → PASS。
+    """
+
+    @pytest.mark.agent
+    def test_agentic_post_uses_long_timeout(self, fake_http_client):
+        """POST /writing/agentic/generate 带 timeout=300.0（长任务端点专用）。"""
+        fake_http_client.post.return_value = _agentic_run()
+        result = _next_result("--mode", "agentic")
+        assert result.exit_code == 0
+        call = fake_http_client.post.await_args
+        assert call.args[0] == "/writing/agentic/generate"
+        assert call.kwargs.get("timeout") == 300.0
