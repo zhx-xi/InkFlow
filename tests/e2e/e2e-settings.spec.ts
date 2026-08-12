@@ -366,7 +366,7 @@ test('设置页：Agent 链四角色开关逐个切换（无项目纯 UI 状态�
 // ────────────────────────────────────────────────────────────────
 // E3-2 默认模型下拉（有项目：PATCH 落库确认）
 // ────────────────────────────────────────────────────────────────
-test('设置页：默认模型下拉选 deepseek → 直调内核确认 PATCH 落库', async () => {
+test('设置页：默认模型下拉选 deepseek/deepseek-chat → 直调内核确认 PATCH 落库（F42 #268 R1：provider/model 选项）', async () => {
   const { app, window, kernel } = await launchApp();
   try {
     await window.evaluate(() => localStorage.clear());
@@ -384,16 +384,32 @@ test('设置页：默认模型下拉选 deepseek → 直调内核确认 PATCH �
     expect(project).toBeTruthy();
     const projectId = project.id as string;
 
-    // 设置页 → Agent 分类 → 默认模型下拉选 deepseek（option 为 Radix portal，展开后才存在）
+    // F42 #268 R1：默认模型下拉选项 = provider-configs chat 模型列表（spec §5.2 Q3）——
+    // seed provider models 初始为空，先直调内核给 deepseek 添加 chat 模型
+    const providers = await fetchKernel(kernel, '/api/v1/provider-configs');
+    const deepseek = providers.items.find((p: { name: string }) => p.name === 'deepseek');
+    expect(deepseek).toBeTruthy();
+    await fetchKernel(kernel, `/api/v1/provider-configs/${deepseek.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        models: [...deepseek.models, { id: 'deepseek-chat', type: 'chat', roles: [] }],
+      }),
+    });
+    // 数据源变更 → 重载页面（AgentChainCard 挂载 loadProviders 拉取最新列表）
+    await window.reload();
+    await expect(window.getByTestId('app-nav')).toBeVisible();
+
+    // 设置页 → Agent 分类 → 默认模型下拉选 deepseek/deepseek-chat（option 为 Radix portal，展开后才存在）
     await gotoNav(window, '设置');
     await window.getByTestId('settings-cat-agent').click();
     const combo = window.getByRole('combobox', { name: '默认模型' });
     await expect(combo).toBeVisible();
     await combo.click();
-    await window.getByRole('option', { name: 'deepseek', exact: true }).click();
-    await expect(combo).toContainText('deepseek');
+    await window.getByRole('option', { name: 'deepseek/deepseek-chat', exact: true }).click();
+    await expect(combo).toContainText('deepseek/deepseek-chat');
 
     // saveConfig 为 fire-and-forget → 轮询后端 GET /projects/{id} 确认 config.model 落库
+    // （R1：完整 provider/model 值，非裸 provider 名）
     await expect
       .poll(
         async () => {
@@ -402,7 +418,7 @@ test('设置页：默认模型下拉选 deepseek → 直调内核确认 PATCH �
         },
         { timeout: 10_000 }
       )
-      .toBe('deepseek');
+      .toBe('deepseek/deepseek-chat');
   } finally {
     await app.close();
   }

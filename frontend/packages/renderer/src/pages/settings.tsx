@@ -22,6 +22,7 @@ import {
 } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import { useAgentStore } from '../stores/agent';
+import { selectChatModelOptions, useModelsStore } from '../stores/models';
 import { useProjectStore } from '../stores/project';
 import type { AgentTemplate, AgentTemplateInput } from '../stores/templates';
 import { useTemplatesStore } from '../stores/templates';
@@ -378,6 +379,9 @@ function AgentPanel() {
   const config = useAgentStore((s) => s.config);
   const setConfig = useAgentStore((s) => s.setConfig);
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
+  // F42 #268（spec §5.2 Q3）：默认模型下拉数据源 = provider-configs chat 模型扁平化
+  // （AgentChainCard 挂载已触发 loadProviders，本面板复用 store 订阅，无需重复加载）
+  const chatModelOptions = selectChatModelOptions(useModelsStore((s) => s.providers));
 
   // #105 修复批二次迭代 🔴-A：播种守卫收紧——仅当 config 不含 model 且无任何 agent_* 字段时才播种
   //（general 先改 default_words 的草稿不拦截，进入 Agent 分类仍按项目 config 重新播种）
@@ -430,9 +434,9 @@ function AgentPanel() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {['openai', 'deepseek', 'ollama'].map((m) => (
-              <SelectItem key={m} value={m}>
-                {m}
+            {chatModelOptions.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
               </SelectItem>
             ))}
           </SelectContent>

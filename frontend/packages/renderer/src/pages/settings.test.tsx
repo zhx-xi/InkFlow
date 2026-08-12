@@ -371,7 +371,14 @@ beforeEach(() => {
   });
   useAgentStore.setState({ config: {}, apiKeyDraft: '', testStatus: 'idle', testMessage: null });
   useToastStore.setState({ toasts: [] });
-  apiFetchMock.mockResolvedValue({ ok: true });
+  // F42 #268：默认 mock 按 URL 分发——AgentChainCard 挂载会 loadProviders()
+  // （GET /api/v1/provider-configs，spec §5.2 数据源）；其余请求保持 {ok:true}
+  apiFetchMock.mockImplementation(async (path: string) => {
+    if (path === '/api/v1/provider-configs') {
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    }
+    return { ok: true };
+  });
 });
 
 describe('设置页 — 五分类导航（spec §7.4）', () => {
@@ -663,10 +670,11 @@ describe('设置页 — Agent 分类（迁移自 AgentChainCard，spec §7.4/§7
   it('开关 ↔ config.agent_*：#225 关闭 → null（禁用角色），重开 → "__default__"（跟随默认）', async () => {
     act(() => {
       useAgentStore.getState().setConfig({
-        agent_architect: 'gpt-4o',
+        // F42 #268 R1 ③（spec §8 O2）：fixture 裸名 agent_* 改 provider/model（Q3 格式统一）
+        agent_architect: 'openai/gpt-4o',
         agent_writer: '__default__',
-        agent_auditor: 'gpt-4o',
-        agent_reviser: 'gpt-4o',
+        agent_auditor: 'openai/gpt-4o',
+        agent_reviser: 'openai/gpt-4o',
       });
     });
     const user = await openAgentPanel();
@@ -773,12 +781,41 @@ describe('设置页 — Agent 分类（迁移自 AgentChainCard，spec §7.4/§7
     expect(within(screen.getByTestId('agent-chain-card')).getAllByRole('switch')[1]).toBeChecked();
   });
 
-  it('默认模型下拉：combobox「默认模型」选项 openai/deepseek/ollama', async () => {
+  it('默认模型下拉：combobox「默认模型」选项 = provider-configs chat 模型列表（F42 #268 R1 ①：openai/deepseek/ollama 硬编码 → chat 扁平）', async () => {
+    // R1 ①：数据源改为 provider-configs chat 模型（spec §5.2 Q3）——mock 注入两 provider 的 chat 模型
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs') {
+        return {
+          items: [
+            {
+              id: 1, name: 'openai', base_url: 'https://api.openai.com/v1', default_model: 'gpt-4o',
+              models: [{ id: 'gpt-4o', type: 'chat', roles: [] }],
+              key_saved: true, max_retries: 3, timeout: 60,
+              created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
+            },
+            {
+              id: 2, name: 'deepseek', base_url: 'https://api.deepseek.com', default_model: 'deepseek-chat',
+              models: [{ id: 'deepseek-chat', type: 'chat', roles: [] }],
+              key_saved: false, max_retries: 3, timeout: 60,
+              created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
+            },
+            {
+              id: 3, name: 'ollama', base_url: 'http://127.0.0.1:11434', default_model: 'qwen3',
+              models: [{ id: 'qwen3', type: 'chat', roles: [] }],
+              key_saved: false, max_retries: 3, timeout: 60,
+              created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
+            },
+          ],
+          total: 3, offset: 0, limit: 50,
+        };
+      }
+      return { ok: true };
+    });
     const user = await openAgentPanel();
     await user.click(screen.getByRole('combobox', { name: '默认模型' }));
-    expect(await screen.findByRole('option', { name: 'openai' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'deepseek' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'ollama' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: 'openai/gpt-4o' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'deepseek/deepseek-chat' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'ollama/qwen3' })).toBeInTheDocument();
   });
 });
 
@@ -1230,7 +1267,7 @@ describe('设置页 — 下拉即改即存分支（#105 补测）', () => {
   });
 });
 
-describe('设置页 — 默认模型下拉回读与选择（#105 补测）', () => {
+describe('设置页 — 默认模型下拉回读与选择（#105 补测；F42 #268 R1 ② 改 provider/model）', () => {
   async function openAgentPanel() {
     const user = userEvent.setup();
     renderSettings();
@@ -1238,19 +1275,47 @@ describe('设置页 — 默认模型下拉回读与选择（#105 补测）', () 
     return user;
   }
 
-  it('config.model 已配置 → 下拉回读当前模型值（truthy 分支）', async () => {
+  /** R1 ②：默认模型下拉数据源 = provider-configs chat 模型（spec §5.2 Q3）——mock 注入 deepseek/ollama 两 provider */
+  function mockChatProviders() {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs') {
+        return {
+          items: [
+            {
+              id: 2, name: 'deepseek', base_url: 'https://api.deepseek.com', default_model: 'deepseek-chat',
+              models: [{ id: 'deepseek-chat', type: 'chat', roles: [] }],
+              key_saved: false, max_retries: 3, timeout: 60,
+              created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
+            },
+            {
+              id: 3, name: 'ollama', base_url: 'http://127.0.0.1:11434', default_model: 'qwen3',
+              models: [{ id: 'qwen3', type: 'chat', roles: [] }],
+              key_saved: false, max_retries: 3, timeout: 60,
+              created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
+            },
+          ],
+          total: 2, offset: 0, limit: 50,
+        };
+      }
+      return { ok: true };
+    });
+  }
+
+  it('config.model 已配置 → 下拉回读当前模型值（truthy 分支，完整 provider/model）', async () => {
+    mockChatProviders();
     act(() => {
-      useAgentStore.getState().setConfig({ model: 'deepseek' });
+      useAgentStore.getState().setConfig({ model: 'deepseek/deepseek-chat' });
     });
     await openAgentPanel();
-    expect(screen.getByRole('combobox', { name: '默认模型' })).toHaveTextContent('deepseek');
+    expect(screen.getByRole('combobox', { name: '默认模型' })).toHaveTextContent('deepseek/deepseek-chat');
   });
 
-  it('选择模型 → setConfig({ model }) 即改即存', async () => {
+  it('选择模型 → setConfig({ model }) 即改即存（完整 provider/model）', async () => {
+    mockChatProviders();
     const user = await openAgentPanel();
     await user.click(screen.getByRole('combobox', { name: '默认模型' }));
-    await user.click(await screen.findByRole('option', { name: 'ollama' }));
-    expect(useAgentStore.getState().config.model).toBe('ollama');
+    await user.click(await screen.findByRole('option', { name: 'ollama/qwen3' }));
+    expect(useAgentStore.getState().config.model).toBe('ollama/qwen3');
     // 修复契约（#105 🔴-2）：下拉变更 → 即改即存 PATCH /api/v1/projects/p1 body config.model
     // （GREEN 前零 PATCH 调用 → RED）
     await waitFor(() => {
@@ -1258,7 +1323,7 @@ describe('设置页 — 默认模型下拉回读与选择（#105 补测）', () 
         '/api/v1/projects/p1',
         expect.objectContaining({
           method: 'PATCH',
-          body: expect.objectContaining({ config: expect.objectContaining({ model: 'ollama' }) }),
+          body: expect.objectContaining({ config: expect.objectContaining({ model: 'ollama/qwen3' }) }),
         }),
       );
     });
@@ -1417,7 +1482,17 @@ describe('设置页 — AgentPanel persist 并发守卫（#105 补测）', () =>
   }
 
   it('saveConfig reject → err toast「保存失败」（persist catch 分支）', async () => {
-    apiFetchMock.mockRejectedValueOnce(new Error('network down'));
+    // F42 #268：AgentChainCard 挂载会 loadProviders()（GET provider-configs 成功）；
+    // 仅 PATCH /projects/p1 reject（Once 语义从「首个请求」升级为「PATCH 请求」，防 GET 消费）
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/provider-configs') {
+        return { items: [], total: 0, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/projects/p1' && init?.method === 'PATCH') {
+        throw new Error('network down');
+      }
+      return { ok: true };
+    });
     const user = await openAgentPanel();
     const card = screen.getByTestId('agent-chain-card');
 
@@ -1433,9 +1508,12 @@ describe('设置页 — AgentPanel persist 并发守卫（#105 补测）', () =>
   it('in-flight 期间再次 toggle → pending 补存：当前 PATCH 结束后以最新 config 重发', async () => {
     let resolvePatch!: (v: unknown) => void;
     let hold = true;
-    // 首个 PATCH 挂起（手动 resolve），后续 PATCH 立即成功
+    // 首个 PATCH 挂起（手动 resolve），后续 PATCH 立即成功；
+    // F42 #268：provider-configs GET 直接成功（AgentChainCard 挂载 loadProviders）
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
-      void path; // 参数契约保持（apiFetch 双参签名），仅使用 init
+      if (path === '/api/v1/provider-configs') {
+        return { items: [], total: 0, offset: 0, limit: 50 };
+      }
       if (init?.method === 'PATCH' && hold) {
         hold = false;
         return new Promise((resolve) => {
@@ -1449,19 +1527,23 @@ describe('设置页 — AgentPanel persist 并发守卫（#105 补测）', () =>
     const card = screen.getByTestId('agent-chain-card');
     const switches = within(card).getAllByRole('switch');
 
+    // F42 #268 适配：挂载后 apiFetch 含 provider-configs GET → 计数断言改为「仅数 PATCH 调用」
+    const patchCallCount = () =>
+      apiFetchMock.mock.calls.filter((c) => c[1]?.method === 'PATCH').length;
+
     // 第一次 toggle（off→on）：agent_architect="__default__"（#225 打开=sentinel）→ PATCH #1 in-flight（persistingRef=true）
     await user.click(switches[0]);
-    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(patchCallCount()).toBe(1));
 
     // 第二次 toggle（on→off）：agent_architect=null（#225 关闭=显式 null）；并发守卫挂起 pending，不发新 PATCH
     await user.click(switches[0]);
-    expect(apiFetchMock).toHaveBeenCalledTimes(1);
+    expect(patchCallCount()).toBe(1);
 
     // 完成 PATCH #1 → finally 检测 pending → 以最新 config 补存 PATCH #2
     await act(async () => {
       resolvePatch({ ok: true });
     });
-    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(patchCallCount()).toBe(2));
 
     const patchCalls = apiFetchMock.mock.calls.filter((c) => c[1]?.method === 'PATCH');
     const firstBody = patchCalls[0][1]?.body as { config: ProjectConfig };
@@ -1477,7 +1559,9 @@ describe('设置页 — AgentPanel persist 并发守卫（#105 补测）', () =>
 
     await user.click(within(card).getAllByRole('switch')[0]);
 
-    expect(apiFetchMock).not.toHaveBeenCalled();
+    // F42 #268 适配：AgentChainCard 挂载会 loadProviders()（provider-configs GET 允许）；
+    // 契约 = 无 PATCH 调用（persist 早退）+ 无 toast
+    expect(apiFetchMock.mock.calls.filter((c) => c[1]?.method === 'PATCH')).toHaveLength(0);
     expect(useToastStore.getState().toasts).toHaveLength(0);
   });
 });

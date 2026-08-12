@@ -15,7 +15,12 @@ from inkflow.domain.models.agent_pipeline import (
     RoleOverride,
 )
 from inkflow.domain.models.chapter import Chapter
-from inkflow.domain.models.project import Genre, Project, ProjectConfig
+from inkflow.domain.models.project import (
+    AGENT_DEFAULT_SENTINEL,
+    Genre,
+    Project,
+    ProjectConfig,
+)
 from inkflow.domain.ports.agent_pipeline import (
     PipelineContext,
     PipelineError,
@@ -487,3 +492,76 @@ class TestRunPipelineFailures:
         assert record.status == "failed"
         assert record.error == "执行异常: boom"
         assert record.stages == []
+
+
+class TestMergeRoleConfigsSentinel:
+    """F42 #268 三态模型选择执行层（spec §5.1 + §13 M1）：
+
+    - agent_* = AGENT_DEFAULT_SENTINEL（"__default__"）→ 不覆盖模板角色模型
+      （v1.0 缺陷：非空即覆盖 → model="__default__" → parse_model_string ValueError）
+    - agent_* = 裸模型名（无 /）→ warning + 回退跟随默认（不覆盖，不抛错）
+    - agent_* = 合规 provider/model → 覆盖模板角色模型（既有语义保持）
+    """
+
+    async def test_sentinel_does_not_override_template_model(self):
+        """agent_writer="__default__" → writer stage model 保持模板 openai/gpt-4o
+        （非 sentinel；v1.0 缺陷：非空即覆盖 → ValueError）。"""
+        project = _make_project(config=ProjectConfig(agent_writer=AGENT_DEFAULT_SENTINEL))
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+        request = PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_chapter")
+
+        await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        stages = {s.id: s for s in pipeline.executed_stages}
+        # 模板 builtin:write_chapter writer model = "openai/gpt-4o"（pipeline_templates L47）
+        assert stages["writer"].agent.model == "openai/gpt-4o"
+        assert stages["writer"].agent.model != AGENT_DEFAULT_SENTINEL
+
+    async def test_bare_model_name_falls_back_to_template(self):
+        """agent_writer="gpt-4o"（裸名，无 /）→ warning + 不覆盖（回退跟随默认，零迁移）。"""
+        project = _make_project(config=ProjectConfig(agent_writer="gpt-4o"))
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+        request = PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_chapter")
+
+        await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        stages = {s.id: s for s in pipeline.executed_stages}
+        # 裸名不覆盖 → 回退模板模型（Q3 兼容策略，§5.1）
+        assert stages["writer"].agent.model == "openai/gpt-4o"
+
+    async def test_qualified_model_overrides_template(self):
+        """agent_writer="zhipu/glm-4.5"（合规 provider/model）→ 覆盖模板模型（既有语义保持）。"""
+        project = _make_project(config=ProjectConfig(agent_writer="zhipu/glm-4.5"))
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+        request = PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_chapter")
+
+        await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        stages = {s.id: s for s in pipeline.executed_stages}
+        assert stages["writer"].agent.model == "zhipu/glm-4.5"
+
+    async def test_architect_sentinel_and_qualified_other_roles(self):
+        """混合：architect=__default__（不覆盖）+ reviser=zhipu/glm-4.5（覆盖）+ 其余模板。"""
+        project = _make_project(
+            config=ProjectConfig(
+                agent_architect=AGENT_DEFAULT_SENTINEL,
+                agent_reviser="zhipu/glm-4.5",
+            )
+        )
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+        request = PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_chapter")
+
+        await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        stages = {s.id: s for s in pipeline.executed_stages}
+        assert stages["architect"].agent.model == "openai/gpt-4o"  # sentinel 不覆盖
+        assert stages["reviser"].agent.model == "zhipu/glm-4.5"  # 合规覆盖
+        assert stages["writer"].agent.model == "openai/gpt-4o"  # 未配置 → 模板

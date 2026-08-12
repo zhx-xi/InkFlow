@@ -13,7 +13,7 @@ from inkflow.domain.models.agent_pipeline import (
     RoleOverride,
 )
 from inkflow.domain.models.agent_template import RoleTemplate
-from inkflow.domain.models.project import ProjectConfig
+from inkflow.domain.models.project import AGENT_DEFAULT_SENTINEL, ProjectConfig
 from inkflow.domain.ports.agent_pipeline import (
     AgentPipelineProtocol,
     PipelineContext,
@@ -230,8 +230,18 @@ class AgentService:
 
             # 项目配置覆盖 model（用户拍板 Q1=A：项目 agent_* 非空仍覆盖模板）
             project_model = project_role_models.get(stage.id)
-            if project_model:
-                new_agent.model = project_model
+            # F42 #268（spec §5.1）：sentinel = 跟随默认 → 不覆盖（v1.0 缺陷：
+            # 非空即覆盖 → model="__default__" → parse_model_string ValueError）；
+            # 裸模型名（无 /）→ warning + 不覆盖（Q3 兼容策略，存量数据零迁移）
+            if project_model and project_model != AGENT_DEFAULT_SENTINEL:
+                if "/" not in project_model:
+                    logger.warning(
+                        "agent_%s 裸模型名 %r 格式不合规（应为 provider/model），回退跟随默认",
+                        stage.id,
+                        project_model,
+                    )
+                else:
+                    new_agent.model = project_model
 
             # role_overrides 最高优先级
             if role_overrides and stage.id in role_overrides:

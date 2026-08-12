@@ -155,3 +155,18 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
   setRoleBinding: (role, modelId) =>
     set((s) => ({ roleBinding: { ...s.roleBinding, [role]: modelId } })),
 }));
+
+/** F42 #268：chat 模型扁平化选项（provider/model 格式，Q3）——供 AgentChainCard 与 AgentPanel 共用 */
+export function selectChatModelOptions(
+  providers: ProviderConfig[],
+): Array<{ value: string; label: string }> {
+  const options: Array<{ value: string; label: string }> = [];
+  for (const p of providers) {
+    for (const m of p.models) {
+      if (m.type === 'chat') {
+        options.push({ value: `${p.name}/${m.id}`, label: `${p.name}/${m.id}` });
+      }
+    }
+  }
+  return options;
+}
