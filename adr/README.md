@@ -46,6 +46,14 @@
 | [ADR-028](ADR-028.md) | E2E 按页面域拆分 + 门禁口径（6 spec + 6 job；e2e-shell 提前第一批 required；AI 链路只测 UI 状态；1.0.0 全页面覆盖） | ✅ 已接受 | 2026-08-06 |
 | [ADR-029](ADR-029.md) | F25 daemon 移除 — 伪需求判定 + 意图已覆盖（外部 agent 经 MCP/skills 调用由 F19 serve + F20 MCP + skills 包承担；#52） | ✅ 已接受 | 2026-08-07 |
 | [ADR-030](ADR-030.md) | 本地内核服务化 — 冷启动协议（kernel.json + ensure_kernel）+ 常驻生命周期 + CLI 恒经 HTTP + GUI 托盘常驻 + MCP 薄客户端（D1-D4 拍板 2026-08-07） | ✅ 已接受 | 2026-08-07 |
+| [ADR-031](ADR-031.md) | Agent 化双模式开关 — deterministic（默认）+ agentic（显式开启）（原 ADR-A，agent-upgrade-path 落盘） | ✅ 已接受 | 2026-08-12 |
+| [ADR-032](ADR-032.md) | 工具调用接口位置 — 扩展 LLMClientProtocol（领域层 ToolSpec，不泄漏 LangChain 类型）（原 ADR-B） | ✅ 已接受 | 2026-08-12 |
+| [ADR-033](ADR-033.md) | 预算护栏数值 — max_steps=12 / token 32K / 同工具连续 3（F27 实现实测定稿，原 ADR-C） | ✅ 已接受 | 2026-08-12 |
+| [ADR-034](ADR-034.md) | 护栏触发语义 — 产物保留 + terminated_by_guardrail 映射 FAILED + 可回退 deterministic（原 ADR-D） | ✅ 已接受 | 2026-08-12 |
+| [ADR-035](ADR-035.md) | Agentic 编排引擎 — deepagents 0.7.5 harness（v0.7.0 实测定稿，原 ADR-E） | ✅ 已接受 | 2026-08-12 |
+| [ADR-036](ADR-036.md) | 写工具形态 — 内部自定义工具 save_draft（草稿 + 用户确认 + 三约束，原 ADR-F） | ✅ 已接受 | 2026-08-12 |
+| [ADR-037](ADR-037.md) | 记忆提取方式 — 规则化统计（N≥2 阈值）先行，LLM 提取第二阶段；结构化偏好表（原 ADR-G） | ✅ 已接受 | 2026-08-12 |
+| [ADR-038](ADR-038.md) | 记忆开关 — memory_learning 项目级默认 false（显式开启，F13 同构）（原 ADR-H） | ✅ 已接受 | 2026-08-12 |
 
 ## 当前有效决策速览
 

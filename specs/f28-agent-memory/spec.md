@@ -2,11 +2,11 @@
 
 **Spec 版本**: 1.0（初稿待评审）
 **日期**: 2026-08-11
-**依据**: PRD §6.1 F3/F4/F5 + Agent 化升级路径 v1.1（design/agent-upgrade-path-2026-08-03.md）§4 Stage 2 + ADR-G/ADR-H + F27 spec v1.0（specs/f27-writer-agent/spec.md，事件源契约）+ 用户拍板（2026-08-03 判据 E 纳入核心路径）
+**依据**: PRD §6.1 F3/F4/F5 + Agent 化升级路径 v1.1（design/agent-upgrade-path-2026-08-03.md）§4 Stage 2 + adr/ADR-037.md/adr/ADR-038.md + F27 spec v1.0（specs/f27-writer-agent/spec.md，事件源契约）+ 用户拍板（2026-08-03 判据 E 纳入核心路径）
 **所属阶段**: 0.7.0（Agent 化升级第三批），估算 6-10 人天
 **关联 Issues**: #159（F28 Agent Memory 记忆系统）
 **依赖**: ✅ F27 writer-agent（diff 事件源：draft 表 + update_content 未接线 + audit_logs，PR #241）· ✅ F6 context-service（注入端口，ContextSourceType/SOURCE_LAYER）· ✅ F26 agent-tools · ✅ F13（extra 键 + 请求覆盖先例）· ✅ F34（audit_logs 复用）· ✅ F32（settings 键扩展先例——本模块不新增全局设置键）
-**参考 ADR**: ADR-G（记忆提取方式：规则化统计 N≥2）、ADR-H（memory_learning 默认 false）、ADR-A（双模式开关 extra 键）、ADR-D（产物保留语义）、ADR-027（覆盖率门禁）
+**参考 ADR**: adr/ADR-037.md（记忆提取方式：规则化统计 N≥2）、adr/ADR-038.md（memory_learning 默认 false）、adr/ADR-031.md（双模式开关 extra 键）、adr/ADR-034.md（产物保留语义）、ADR-027（覆盖率门禁）
 **状态**: ✅ 已实现（PR #242，2026-08-11 合入；Q1-Q4 拍板 2026-08-11）
 
 > **模块类型声明**: 本模块为 Agent 化升级新增变体——「**偏好学习闭环型**」（第 12 个模块变体，编号依据：AGENTS.md 模块类型谱系，F27=第 11 变体口径延续）。与 F27（自主循环闭环型）不同：F28 是**首个从用户行为反向学习并回注生成流程**的模块，新增 2 张表（project_preferences + memory_events，Q2 拍板），跨模块 MODIFY F27 draft 服务（接线 update_content）+ F6 context（新增数据源）。
@@ -31,14 +31,14 @@ F27 agentic 生成 → 草稿（draft 状态）
 ### 1.2 与既有模块的边界
 
 - **事件边界**：diff 事件只从**用户主动行为**产生（编辑草稿/拒绝草稿/确认草稿）；LLM 自身输出与护栏触发不产生学习事件。
-- **写入边界**：偏好提取/落库/删除只经 memory_service（调 repo，不碰 ORM，F27 ADR-F 约束①同构）。
+- **写入边界**：偏好提取/落库/删除只经 memory_service（调 repo，不碰 ORM，F27 adr/ADR-036.md 约束①同构）。
 - **注入边界**：偏好只经 F6 context 端口注入（新增 PreferenceSource），不直接改 agentic_writer 的 system prompt。
 - **开关边界**：`memory_learning=false`（默认）时**零行为变化**——不捕获事件、不提取、不注入、不额外审计（验收判据④）。
 - **明确不含**：LLM 提取偏好（第二阶段远期，F14 extraction 模式）、跨项目偏好共享、向量化检索、GUI 界面（F19 渲染层未排期，CLI 先行 Q3 拍板）、F29 supervisor 记忆消费。
 
 ### 1.3 与样板差异
 
-非 F9 实体 CRUD（无标准全量 CRUD 端点）、非 F14 横切门面、非 F27 编排闭环。本模块是「**事件捕获 + 规则化提取 + 结构化存储 + 上下文注入 + 透明控制**」五件套的组合变体——核心是**可解释、可测试的规则化统计**（ADR-G：LLM 提取为第二阶段）。
+非 F9 实体 CRUD（无标准全量 CRUD 端点）、非 F14 横切门面、非 F27 编排闭环。本模块是「**事件捕获 + 规则化提取 + 结构化存储 + 上下文注入 + 透明控制**」五件套的组合变体——核心是**可解释、可测试的规则化统计**（adr/ADR-037.md：LLM 提取为第二阶段）。
 
 ---
 
@@ -63,7 +63,7 @@ class PreferenceCategory(StrEnum):
 
 
 class ProjectPreference(BaseModel):
-    """一条已学习的项目偏好（结构化偏好表，非向量——ADR-G）。
+    """一条已学习的项目偏好（结构化偏好表，非向量——adr/ADR-037.md）。
 
     Attributes:
         id: 偏好 UUID 字符串（uuid4）.
@@ -140,7 +140,7 @@ class MemoryEvent(BaseModel):
 
 | 表 | 关键列 | 说明 |
 |----|--------|------|
-| `project_preferences` | id(String36 PK) / project_id(String36 idx) / category(String20) / pattern(Text) / value(Text) / confidence(Float) / count(Integer) / source_events(JSON) / created_at / updated_at | 结构化偏好表（ADR-G）；project_id 无 FK（镜像 agent_runs/drafts 先例） |
+| `project_preferences` | id(String36 PK) / project_id(String36 idx) / category(String20) / pattern(Text) / value(Text) / confidence(Float) / count(Integer) / source_events(JSON) / created_at / updated_at | 结构化偏好表（adr/ADR-037.md）；project_id 无 FK（镜像 agent_runs/drafts 先例） |
 | `memory_events` | id(String36 PK) / project_id(String36 idx) / draft_id(String36) / chapter_id(String36) / agent_run_id(String36) / event_type(String20) / before_content(Text) / after_content(Text) / diff_chars(Integer) / created_at | diff 事件表（Q2 独立表）；全部 FK 可空且无 FK 声明（镜像 drafts 先例，级联由服务层承担） |
 
 > 决策论证：`source_events` 用 **JSON 数组**（事件 id 字符串列表）——只读消费、一次写入，与 agent_runs.steps JSON 快照先例一致（F27 §2.3）；事件详情可经 memory_events 表查询（可追溯性）。
@@ -249,9 +249,9 @@ inkflow write next --project-id <UUID> --chapter-id <UUID> --outline <文本>
 
 - **捕获条件**：`memory_learning=true`（项目级开启）才落 memory_events；关闭时上述路径**零额外行为**（验收判据④）。
 - **只读消费**：memory_events 一次写入、只读消费（镜像 agent_runs.steps JSON 快照语义）；无更新/删除端点（YAGNI）。
-- **事务语义**：PATCH drafts 编辑 = 单次 commit（镜像 F27 单工具单事务 ADR-F 约束②）；事件记录与内容更新同事务（原子）。
+- **事务语义**：PATCH drafts 编辑 = 单次 commit（镜像 F27 单工具单事务 adr/ADR-036.md 约束②）；事件记录与内容更新同事务（原子）。
 
-### 5.2 偏好提取（规则化统计，ADR-G）
+### 5.2 偏好提取（规则化统计，adr/ADR-037.md）
 
 **输入**：项目内全部 `draft_edited` 事件（`draft_rejected` 不直接提取——只贡献重新生成率统计；`draft_confirmed` 不提取）。
 
@@ -272,7 +272,7 @@ inkflow write next --project-id <UUID> --chapter-id <UUID> --outline <文本>
 
 统计合并:
   4. 同项目内同 (category, value) 聚合 → count += 1
-  5. count == 2（阈值 N≥2，ADR-G）→ 落库 ProjectPreference（防过度泛化：
+  5. count == 2（阈值 N≥2，adr/ADR-037.md）→ 落库 ProjectPreference（防过度泛化：
      一次修改可能是试错，两次同类修改才是稳定偏好）
   6. count > 2 → 更新既有偏好（count+1, confidence 重算, source_events 追加）
   7. confidence = 1 - 1 / (count + 1)   // 单调递增: N=2→0.67, N=3→0.75, N=5→0.83
@@ -284,7 +284,7 @@ inkflow write next --project-id <UUID> --chapter-id <UUID> --outline <文本>
 
 ### 5.3 存储
 
-- `project_preferences`：非向量结构化表（ADR-G）——category/pattern/value/confidence/count/source_events 六要素 + 时间戳。
+- `project_preferences`：非向量结构化表（adr/ADR-037.md）——category/pattern/value/confidence/count/source_events 六要素 + 时间戳。
 - `memory_events`：diff 事件表（Q2 独立表）——可追溯（source_events 反查事件详情）。
 - **项目删除级联**：project 删除时偏好/事件清理由服务层承担（镜像 F27 无 FK 先例，级联语义在 service——跨模块钩子接线，F28 RED 批内置既有 project_service 改动用例，规则 1k 形态）。
 - **无缓存**：读路径实时查库（删除偏好立即生效 = 无内存/进程缓存，验收判据③）。
@@ -325,7 +325,7 @@ class PreferenceSource:
 **冲突判定规则（可测试）**：偏好 value 若**已存在于同项目任意显式设定文本**（角色档案 fields、世界观条目、大纲内容——经注入的其他 sources 输出文本匹配），判定冲突 → 跳过。实现：PreferenceSource.collect 时加载显式设定文本集合（character/world/outline 查询），偏好 value 子串匹配即跳过。
 **删除立即生效**：collect 实时查库（无缓存），删除偏好后下次生成即不含该条（验收判据③）。
 
-### 5.5 开关（ADR-H：memory_learning 默认 false）
+### 5.5 开关（adr/ADR-038.md：memory_learning 默认 false）
 
 | 层级 | 键/字段 | 默认 | 说明 |
 |------|---------|------|------|
@@ -438,9 +438,9 @@ class PreferenceSource:
 
 | 项 | 归属 |
 |----|------|
-| LLM 提取偏好（语义级） | 第二阶段远期（ADR-G，F14 extraction 模式） |
+| LLM 提取偏好（语义级） | 第二阶段远期（adr/ADR-037.md，F14 extraction 模式） |
 | 跨项目偏好共享/全局偏好 | 未排期（本项目内学习，防污染） |
-| 向量化检索/语义相似偏好 | 未排期（非向量结构化表，ADR-G） |
+| 向量化检索/语义相似偏好 | 未排期（非向量结构化表，adr/ADR-037.md） |
 | GUI 记忆面板/toast | F19 渲染层接入时（Q3：CLI 先行） |
 | F29 supervisor 记忆消费 | F29（0.8.0，#161） |
 | 偏好自动过期/置信度衰减 | 远期（YAGNI；当前 count 单调累积） |
@@ -463,13 +463,13 @@ class PreferenceSource:
 
 | 决策 | 方案 | 备选（否决理由） |
 |------|------|-----------------|
-| 偏好提取方式 | 规则化统计（difflib 文本片段 + N≥2 阈值，ADR-G） | LLM 提取（不可解释不可测试，第二阶段远期） |
+| 偏好提取方式 | 规则化统计（difflib 文本片段 + N≥2 阈值，adr/ADR-037.md） | LLM 提取（不可解释不可测试，第二阶段远期） |
 | 偏好存储形态 | 结构化表 project_preferences（category/pattern/value/confidence/count/source_events） | 向量库（过重；偏好是短文本精确匹配，非语义检索） |
 | diff 事件存储 | 独立 memory_events 表（Q2 建议） | agent_run 扩展 payload（run 是生成侧记录，用户编辑事件混入职责污染；run 可能被清理而事件需留存） |
 | 注入层 | F6 ContextSourceType.PREFERENCE → PROTECTED（升级路径 Stage 2 指定） | COMPRESSIBLE（可被压缩裁剪，偏好稳定性受损）；DYNAMIC（预算竞争可能全丢） |
 | 冲突规则 | 显式设定 > 学习偏好（value 子串命中显式设定文本即跳过） | 偏好覆盖显式设定（用户显式录入的角色档案被学习噪声覆盖，违背可控性） |
 | 删除语义 | 实时查库无缓存，删除立即生效 | 进程内缓存（删除不生效窗口期，验收判据③无法满足） |
-| 开关 | extra["memory_learning"] 默认 false + 请求/CLI 覆盖（ADR-H，F13 同构） | 全局设置键（F32 白名单扩展——偏好开关是项目级语义，非全局用户设置） |
+| 开关 | extra["memory_learning"] 默认 false + 请求/CLI 覆盖（adr/ADR-038.md，F13 同构） | 全局设置键（F32 白名单扩展——偏好开关是项目级语义，非全局用户设置） |
 | 事件捕获点 | 接线 F27 update_content（新增 PATCH drafts 端点） | 确认时对比章节内容（F27 confirm 原子写入无 before 留存；章节原内容可能是空/旧稿，非用户意图信号） |
 | 透明提示 | CLI 输出「AI 已记住」+ JSON learned 字段（Q3 建议） | 静默学习（用户失去控制感，违背可解释 AI 目标） |
 

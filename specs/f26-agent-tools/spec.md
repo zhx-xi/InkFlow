@@ -6,7 +6,7 @@
 **所属阶段**: 0.7.0（Agent 化升级第一批），估算 2-4 人天（v1.0 为 3-5 人天，deepagents 覆盖 chat_with_tools 端口后收缩）
 **关联 Issues**: #90（F26，spec v1.0 已随 spec-only PR #91 合入主仓）
 **依赖**: ✅ F5 LLM Provider（已合入）· ✅ F4 Agent 管线（已合入）· ✅ #87 LangGraph 重构（已合入 0.3.1）· ✅ F34 单章审计（0.6.0 已合入，audit_chapter 包装对象）
-**参考 ADR**: ADR-015（LangChain 隔离）、ADR-018（测试分层）、ADR-019（编号口径）、ADR-E（编排引擎=Deep Agents harness 0.7.5，v6 修订）
+**参考 ADR**: ADR-015（LangChain 隔离）、ADR-018（测试分层）、ADR-019（编号口径）、adr/ADR-035.md（编排引擎=Deep Agents harness 0.7.5，v6 修订）
 **状态**: ✅ 已实现（PR #236，2026-08-10 合入；Q1-Q3 拍板 2026-08-03，deepagents 编排升级 2026-08-10）
 
 > **Spec 变更**（v1.0 → v1.1，2026-08-10）：编排框架从「LangGraph 手写」升级为「Deep Agents harness」（deepagents 0.7.5，用户拍板，Spike 0 全项验证通过）。① 范围收缩：删除 `LLMClientProtocol.chat_with_tools` 端口扩展 + bind_tools 适配 + 弱模型降级逻辑（被 deepagents 工具循环覆盖）；② 新增「deepagents 集成层」（§5）：create_deep_agent 装配（ChatOpenAI 实例直传）+ HarnessProfile 注册（key 格式 `openai:<model>`）+ excluded_tools 禁用默认文件系统工具 + subagent task 工具禁用决策（F26 禁、F29 0.8.0 用）；③ 依赖变更：新增 `deepagents==0.7.5` + `langchain>=1.3.14`（现 pyproject 仅 langchain-core），硬依赖 langchain-anthropic/langchain-google-genai 打包增量留 F26 QA 实测；④ 模型名处理：provider 配置剥离 registry 前缀（`zhipu/glm-4.5` → `glm-4.5`，复用既有 `parse_model_string`）；⑤ 空 content 风险记录（Spike ②，~66% 空响应）——本阶段不处理，见 §5.7 F27 前置风险；⑥ 估算 3-5 → 2-4 人天；⑦ 验收 M1-M5 按新方案重写（§13）；⑧ audit_chapter 包装对象修正：v1.0 写 F15 audit_service（项目级 run_audit），实际应为 **F34 ChapterAuditService.audit**（单章审计，0.6.0 已合入）；count_words 修正为 `domain/services/_word_count.py` 顶层纯函数（非 writing_service 内部方法）。
@@ -157,7 +157,7 @@ def build_deep_agent(*, model: str, api_key: str, base_url: str,
 
 - **现象**（Spike ② 实测）：system_prompt「写正文前必须先查角色档案」+ 用户要求写正文 → zhipu 在 ToolMessage 后最终 AIMessage `content=''`，复现 2 轮共 2/3 概率（V2 两次：0/3、1/3；无强制指令场景 4/4 成功）。消息序列正常（Human→AIM(tool)→Tool→AIM('')），非框架丢内容，是模型「工具已满足需求」时输出空文本。
 - **F26 影响评估：不阻塞**——F26 无正文生成场景（无 ReAct 循环、无用户可见输出），工具调用本身稳定（触发率 7/7），空 content 只影响「工具后写正文」的最终产物，该场景属于 F27。
-- **F27 spec 必须含重试护栏（硬性前置条件）**：最终 AIMessage content 为空 → 自动重试（附工具结果重申「请输出正文」）→ 仍空则 `terminated_by_guardrail`（映射 FAILED，与升级路径 v1.1 ADR-D 一致）。F27 起草时本条为强制验收项。
+- **F27 spec 必须含重试护栏（硬性前置条件）**：最终 AIMessage content 为空 → 自动重试（附工具结果重申「请输出正文」）→ 仍空则 `terminated_by_guardrail`（映射 FAILED，与升级路径 v1.1 adr/ADR-034.md 一致）。F27 起草时本条为强制验收项。
 
 ---
 
@@ -259,7 +259,7 @@ def build_deep_agent(*, model: str, api_key: str, base_url: str,
 
 | 决策 | 方案 | 备选（否决理由） |
 |------|------|-----------------|
-| 编排框架 | **deepagents 0.7.5（v1.1 修订，2026-08-10 用户拍板，ADR-E 待修订）** | LangGraph 手写（不同 Agent 挂不同 skill 需自研 SKILLS_BY_ROLE 等效机制；deepagents 官方一等公民） |
+| 编排框架 | **deepagents 0.7.5（v1.1 修订，2026-08-10 用户拍板，adr/ADR-035.md 待修订）** | LangGraph 手写（不同 Agent 挂不同 skill 需自研 SKILLS_BY_ROLE 等效机制；deepagents 官方一等公民） |
 | 工具调用接口 | **不做端口扩展——deepagents 内建工具循环（v1.1 修订）** | v1.0 chat_with_tools + bind_tools + 降级（被框架覆盖，自研是重复劳动；Spike 0 验证） |
 | LLM 接入方式 | ChatOpenAI 实例直传 create_deep_agent（Spike ①） | 传模型字符串（破坏 InkFlow 多 Provider base_url 架构） |
 | HarnessProfile key | `openai:<model>`（Spike ③ 实测格式） | `anthropic:...` 文档格式（对 ChatOpenAI 实例不匹配 → 静默默认 profile，隐藏坑） |
