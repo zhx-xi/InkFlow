@@ -107,13 +107,42 @@ def _make_retrieved(**overrides: object) -> dict:
     return defaults
 
 
+def _make_status(**overrides: object) -> dict:
+    """构造测试用 vector status JSON dict（#276 新增 GET /vector/status 响应）。"""
+    defaults: dict[str, object] = dict(
+        configured_fp={
+            "schema_version": 1,
+            "embedding": {
+                "provider": "openai",
+                "model_id": "text-embedding-3-small",
+                "base_url": "https://api.test.example/v1",
+                "dimension": 384,
+            },
+            "chunking": {
+                "mode": "fixed",
+                "chunk_size": 500,
+                "overlap_ratio": 0.0,
+                "chunker_version": 1,
+            },
+            "indexed_at": None,
+            "status": "fresh",
+        },
+        indexed_fp=None,
+        stale=False,
+        reason=None,
+        dimension_mismatch=False,
+    )
+    defaults.update(overrides)
+    return defaults
+
+
 class TestVectorRegistration:
     def test_group_help_lists_all_commands(self):
-        """vector 组帮助包含 reindex/retrieve 两个命令（NO_COLOR 规避 FORCE_COLOR 渲染坑）."""
+        """vector 组帮助包含 status/reindex/retrieve 三个命令（#276 新增 status）。"""
         runner = CliRunner(env={"NO_COLOR": "1"})
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
-        for name in ("reindex", "retrieve"):
+        for name in ("status", "reindex", "retrieve"):
             assert name in result.output
 
 
@@ -459,3 +488,124 @@ class TestVectorErrorBranches:
         assert data["ok"] is False
         assert data["error"]["code"] == "KERNEL_ERROR"
         assert "内核启动失败" in data["error"]["message"]
+
+
+class TestVectorStatus:
+    """#276 新增 `vector status` 命令——GET /projects/{pid}/vector/status。
+
+    RED 形态: status 命令未实现 → 帮助缺失断言 FAIL / invoke 报「No such command」。
+    """
+
+    def test_status_json(self, cli_runner, fake_http_client):
+        """status --json → 成功信封 + data（stale/reason/configured_fp）。"""
+        fake_http_client.get.return_value = _make_status(
+            stale=True, reason="model_changed"
+        )
+        result = cli_runner.invoke(
+            app,
+            ["status", "--project-id", str(PID)],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["ok"] is True
+        assert data["data"]["stale"] is True
+        assert data["data"]["reason"] == "model_changed"
+        assert data["data"]["configured_fp"]["embedding"]["model_id"] == (
+            "text-embedding-3-small"
+        )
+        fake_http_client.get.assert_awaited_once_with(f"/projects/{PID}/vector/status")
+
+    def test_status_human_fresh(self, cli_runner, fake_http_client):
+        """status 人类模式 fresh → 输出一致状态行（模型 id 可见）。"""
+        fake_http_client.get.return_value = _make_status()
+        result = cli_runner.invoke(
+            app,
+            ["status", "--project-id", str(PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "text-embedding-3-small" in result.output
+        assert "一致" in result.output
+
+    def test_status_human_stale(self, cli_runner, fake_http_client):
+        """status 人类模式 stale → 输出不一致警告 + reason 文案（模型已变更）。"""
+        fake_http_client.get.return_value = _make_status(
+            stale=True, reason="model_changed"
+        )
+        result = cli_runner.invoke(
+            app,
+            ["status", "--project-id", str(PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "不一致" in result.output
+        assert "模型已变更" in result.output
+
+    def test_status_invalid_uuid(self, cli_runner, fake_http_client):
+        """无效 project-id UUID → NOT_FOUND（同 reindex 语义）。"""
+        result = cli_runner.invoke(
+            app,
+            ["status", "--project-id", "not-a-uuid"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "NOT_FOUND"
+        fake_http_client.get.assert_not_awaited()
+
+
+class TestVectorStaleWarning:
+    """#276 reindex/retrieve 前置 stale 警告（非阻断，先查 status 再执行）。
+
+    RED 形态: 命令未接 status 检查 → 新用例断言 FAIL（无警告输出）。
+    """
+
+    def test_reindex_stale_warns_and_continues(self, cli_runner, fake_http_client):
+        """reindex 前置 stale → 输出「索引可能过期」警告 + 仍执行 reindex。"""
+        fake_http_client.get.return_value = _make_status(
+            stale=True, reason="model_changed"
+        )
+        fake_http_client.post.return_value = _make_reindex_result()
+        result = cli_runner.invoke(
+            app,
+            ["reindex", "--project-id", str(PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "索引可能过期" in result.output
+        assert "✅ 索引完成" in result.output
+        fake_http_client.post.assert_awaited_once_with(
+            f"/projects/{PID}/vector/reindex", json={"entity_types": None}
+        )
+
+    def test_reindex_fresh_no_warning(self, cli_runner, fake_http_client):
+        """reindex 前置 fresh → 无警告（正常执行）。"""
+        fake_http_client.get.return_value = _make_status()
+        fake_http_client.post.return_value = _make_reindex_result()
+        result = cli_runner.invoke(
+            app,
+            ["reindex", "--project-id", str(PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "索引可能过期" not in result.output
+
+    def test_retrieve_stale_warns_and_returns_results(
+        self, cli_runner, fake_http_client
+    ):
+        """retrieve 前置 stale → 警告首行 + 结果正常返回（stale 不阻断检索）。"""
+        fake_http_client.get.return_value = _make_status(
+            stale=True, reason="chunking_changed"
+        )
+        fake_http_client.post.return_value = {"items": [_make_retrieved()]}
+        result = cli_runner.invoke(
+            app,
+            ["retrieve", "--project-id", str(PID), "--query", "林晚"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "索引可能过期" in result.output
+        assert "🔍 检索结果" in result.output
+        assert "林晚的身世" in result.output

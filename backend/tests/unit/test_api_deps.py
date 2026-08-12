@@ -248,13 +248,20 @@ async def test_get_vector_store_lazy_init_and_cached(db) -> None:
     mock_vs.assert_called_once()
 
 
-async def test_get_vector_store_init_failure_raises_rag_unavailable(db) -> None:
+async def test_get_vector_store_init_failure_raises_rag_unavailable(
+    db, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """LangChainVectorStore 初始化抛异常 → RAGUnavailableError（500 语义）。
 
     F19 B+ 改造后：无 embedding 模型（空注册表）→ RAGUnavailableError（E1 契约），
-    单例保持 None 可重试。LangChainVectorStore 构造失败路径同 test_deps_embedding.py
-    的 E1/E4（未配置 → RAGUnavailableError）。
+    单例保持 None 可重试。#276 契约升级（2026-08-12）：注册表空但
+    config.embedding_model 有值会走本地 BGE fallback——本用例显式清空
+    config.embedding_model 保持「未配置 → RAGUnavailableError」原始语义
+    （镜像 test_deps_embedding.py 的 E1 升级）。
     """
+    from inkflow.core.config import config
+
+    monkeypatch.setattr(config, "embedding_model", "")
     repo = MagicMock()
     repo.list = AsyncMock(return_value=[])
     with (

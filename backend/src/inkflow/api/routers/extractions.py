@@ -40,7 +40,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from inkflow.api.deps import get_db, get_extraction_service
+from inkflow.api.deps import get_db, get_extraction_service, get_vector_status, refresh_vector_store
 from inkflow.domain.models.extraction import ExtractionRequest, ExtractionType
 from inkflow.domain.ports.character_errors import (
     CharacterExtractionError,
@@ -199,11 +199,28 @@ async def reindex_project(
     data: ReindexBody | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """全量重建索引（spec §3.3）— entity_types 缺省 = 全部 5 种（幂等 upsert）。"""
+    """全量重建索引（spec §3.3 + #276 四步协议）— 前置刷新单例.
+
+    ① 刷新向量存储单例（失败 → RAGUnavailableError 500，reindex 拒绝执行）；
+    ② 委托服务层（锁 + reindexing 指纹 + 维度探测 + upsert + 差集删除 +
+    fresh commit-last）；entity_types 缺省 = 全部 5 种（幂等 upsert）。
+    """
     pid = _parse_id(project_id)
+    # ① 刷新单例（失败 → RAGUnavailableError 500，reindex 拒绝执行）
+    await refresh_vector_store()
     svc = await _get_svc(db)
     result = await _run_service(svc.reindex(pid, entity_types=data.entity_types if data else None))
     return result.model_dump(mode="json")
+
+
+@router.get("/projects/{project_id}/vector/status")
+async def vector_status(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """向量索引状态（#276）— 200 语义，指纹比对 + 维度探测。"""
+    pid = _parse_id(project_id)
+    return await get_vector_status(str(pid))
 
 
 @router.post("/projects/{project_id}/vector/retrieve")

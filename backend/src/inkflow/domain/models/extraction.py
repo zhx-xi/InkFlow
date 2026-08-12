@@ -218,9 +218,12 @@ class ReindexResult(BaseModel):
         entity_types: 实际处理的实体类型（EntityType 枚举）.
         indexed: 索引的实体总数（含 upsert 覆盖）.
         warnings: 重建过程中的 warning 汇总.
+        collections_recreated: 维度不匹配重建标志（#276）——探测到现存向量
+            维度与当前 embedding 维度不一致时重建 collection 为 True.
     """
 
     project_id: uuid.UUID
     entity_types: list[EntityType]  # 实际处理的实体类型
     indexed: int  # 索引的实体总数（含 upsert 覆盖）
     warnings: list[str] = Field(default_factory=list)  # warning 汇总
+    collections_recreated: bool = False  # 维度不匹配重建标志（#276）

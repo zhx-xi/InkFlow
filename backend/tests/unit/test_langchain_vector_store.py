@@ -293,3 +293,178 @@ async def test_metadata_preserved_with_project_id(store: LangChainVectorStore) -
     assert metadata["chapter_id"] == "ch1"  # 用户 metadata 透传
     assert metadata["title"] == "登基"
     assert metadata["timeline_flag"] == "MAIN"
+
+
+# ── 契约 10: 维度探测（#276 S2c，QA 报告 §4.1-C）─────────────────
+# 新增方法: probe_collection_dimension(project_id) -> int（现存向量维度，
+# 空库/无向量 → 0）; probe_embedding_dimension() -> int（当前 embeddings
+# 实测维度，缓存进实例属性 embedding_dimension）。
+# RED 形态: 新用例 AttributeError（方法缺失）FAIL，既有用例全 PASS。
+
+
+async def test_probe_collection_dimension_empty_store_returns_zero(
+    store: LangChainVectorStore,
+) -> None:
+    """契约10: 空库 probe_collection_dimension → 0（无冲突，可直接灌新模型）。"""
+    assert await store.probe_collection_dimension("p1") == 0
+
+
+async def test_probe_collection_dimension_returns_existing_dimension(
+    store: LangChainVectorStore,
+) -> None:
+    """契约10: 库中已有 384 维向量 → 返回 384（同维原地重灌/异维重建的判定依据）。"""
+    await store.index(make_entity("c1", EntityType.CHARACTER, "p1", "苹果"))
+    assert await store.probe_collection_dimension("p1") == 384
+
+
+async def test_probe_collection_dimension_is_collection_wide(
+    store: LangChainVectorStore,
+) -> None:
+    """契约10: 维度是 collection 级不变量——p2 有数据时 p1 探测也返回维度。
+
+    ⚠️ 父侧契约修正（2026-08-12 真实冒烟实证）：per-project 过滤会导致
+    「本项目无向量但 collection 被其他项目锁定维度」时误报 0 → 跳过重建 →
+    upsert 撞旧维度崩（InvalidArgumentError）。探测必须查 collection 全局。
+    """
+    await store.index(make_entity("c1", EntityType.CHARACTER, "p2", "苹果"))
+    assert await store.probe_collection_dimension("p1") == 384
+
+
+async def test_probe_embedding_dimension_returns_fake_dimension(
+    store: LangChainVectorStore,
+) -> None:
+    """契约10: probe_embedding_dimension → FakeEmbeddings 维度 384（实测非推导）。"""
+    assert await store.probe_embedding_dimension() == 384
+    # 缓存: 二次调用一致
+    assert await store.probe_embedding_dimension() == 384
+    assert store.embedding_dimension == 384
+
+
+# ── 契约 11: 差集删除（#276 S2c，QA 报告 §4.1-C / §3.1 步骤 3b）──
+# 新增方法: delete_stale(project_id, source_ids, entity_types=None) -> int
+# —— collection 现存 id 集 − 源侧 id 集 = 待删 id（幽灵 chunk/孤儿向量），
+# 删除并返回删除数；entity_types=None = 全部 5 种。幂等（重复调用删 0）。
+# RED 形态: 新用例 AttributeError（方法缺失）FAIL，既有用例全 PASS。
+
+
+async def test_delete_stale_removes_orphan_ids(store: LangChainVectorStore) -> None:
+    """契约11: 库 {a,b,c} vs 源 {a,b} → 仅删 c（章节缩水/删除后的幽灵 chunk）。"""
+    await store.index_batch(
+        [
+            make_entity("a", EntityType.CHAPTER_CHUNK, "p1", "苹果"),
+            make_entity("b", EntityType.CHAPTER_CHUNK, "p1", "香蕉"),
+            make_entity("c", EntityType.CHAPTER_CHUNK, "p1", "橙子"),
+        ]
+    )
+    deleted = await store.delete_stale("p1", {"a", "b"})
+    assert deleted == 1
+    results = await store.retrieve("苹果", project_id="p1")
+    assert {r.entity_id for r in results} == {"a", "b"}
+    # 幂等: 再删一次 → 0（差集为空）
+    assert await store.delete_stale("p1", {"a", "b"}) == 0
+
+
+async def test_delete_stale_with_empty_source_clears_project(
+    store: LangChainVectorStore,
+) -> None:
+    """契约11: 无源侧数据（空集）→ 清空该项目全部 id（源实体全删场景）。"""
+    await store.index_batch(
+        [
+            make_entity("a", EntityType.CHAPTER_CHUNK, "p1", "苹果"),
+            make_entity("b", EntityType.CHAPTER_CHUNK, "p1", "香蕉"),
+        ]
+    )
+    deleted = await store.delete_stale("p1", set())
+    assert deleted == 2
+    assert await store.retrieve("苹果", project_id="p1") == []
+
+
+async def test_delete_stale_keeps_other_projects(store: LangChainVectorStore) -> None:
+    """契约11: 跨项目隔离——p2 的 id 不在删除范围（p1 差集不误删 p2）。"""
+    await store.index_batch(
+        [
+            make_entity("a", EntityType.CHAPTER_CHUNK, "p1", "苹果"),
+            make_entity("c2", EntityType.CHAPTER_CHUNK, "p2", "苹果"),
+        ]
+    )
+    deleted = await store.delete_stale("p1", {"a"})
+    assert deleted == 0
+    results_p2 = await store.retrieve("苹果", project_id="p2")
+    assert [r.entity_id for r in results_p2] == ["c2"]
+
+
+async def test_delete_stale_with_entity_types_filter(
+    store: LangChainVectorStore,
+) -> None:
+    """契约11: entity_types 限定类型——只清指定 collection 的差集。"""
+    await store.index_batch(
+        [
+            make_entity("c1", EntityType.CHARACTER, "p1", "苹果"),
+            make_entity("s1", EntityType.SETTING, "p1", "苹果"),
+        ]
+    )
+    deleted = await store.delete_stale("p1", set(), entity_types=[EntityType.CHARACTER])
+    assert deleted == 1
+    results = await store.retrieve("苹果", project_id="p1")
+    assert [r.entity_id for r in results] == ["s1"]
+
+
+# ── 契约 12: inkflow_meta collection 指纹读写（#276 S2c）────────
+# 新增方法: write_fingerprint(project_id, fingerprint: dict, status: str) -> None
+# （upsert doc id="fp:{project_id}" 到 inkflow_meta collection，document=JSON）；
+# read_fingerprint(project_id) -> dict | None（无 doc → None）。
+# 指纹与向量数据同库同生命周期；per-project 隔离（p1/p2 互不可见）。
+# commit-last 的「失败不提交」由 API 层契约 19 注入异常验证，本层验证
+# 读写往返 + 状态覆盖 + 项目隔离。
+# RED 形态: 新用例 AttributeError（方法缺失）FAIL，既有用例全 PASS。
+
+
+async def test_write_and_read_fingerprint_roundtrip(store: LangChainVectorStore) -> None:
+    """契约12: write_fingerprint 后 read_fingerprint 可读回同值（JSON 无损）。"""
+    fp = {
+        "schema_version": 1,
+        "embedding": {
+            "provider": "openai",
+            "model_id": "text-embedding-3-small",
+            "base_url": "https://api.test.example/v1",
+            "dimension": 384,
+        },
+        "chunking": {
+            "mode": "fixed",
+            "chunk_size": 500,
+            "overlap_ratio": 0.0,
+            "chunker_version": 1,
+        },
+        "indexed_at": "2026-08-12T08:00:00Z",
+        "status": "fresh",
+    }
+    await store.write_fingerprint("p1", fp, "fresh")
+    stored = await store.read_fingerprint("p1")
+    assert stored is not None
+    assert stored["schema_version"] == 1
+    assert stored["embedding"]["model_id"] == "text-embedding-3-small"
+    assert stored["embedding"]["dimension"] == 384
+    assert stored["status"] == "fresh"
+
+
+async def test_read_fingerprint_missing_returns_none(store: LangChainVectorStore) -> None:
+    """契约12: 无指纹 doc → None（unknown 状态判定依据）。"""
+    assert await store.read_fingerprint("p1") is None
+
+
+async def test_write_fingerprint_overwrites_status(store: LangChainVectorStore) -> None:
+    """契约12: 同 project 二次写覆盖（reindexing → fresh 的 commit-last 更新路径）。"""
+    fp = {"schema_version": 1, "status": "reindexing"}
+    await store.write_fingerprint("p1", fp, "reindexing")
+    await store.write_fingerprint("p1", {"schema_version": 1, "status": "fresh"}, "fresh")
+    stored = await store.read_fingerprint("p1")
+    assert stored is not None
+    assert stored["status"] == "fresh"
+
+
+async def test_fingerprint_isolated_per_project(store: LangChainVectorStore) -> None:
+    """契约12: per-project 隔离——p1 指纹不影响 p2（p2 无指纹）。"""
+    fp = {"schema_version": 1, "status": "fresh"}
+    await store.write_fingerprint("p1", fp, "fresh")
+    assert await store.read_fingerprint("p2") is None
+    assert await store.read_fingerprint("p1") is not None

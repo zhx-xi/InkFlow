@@ -403,6 +403,11 @@ class _Deps:
         self.vector_store = MagicMock()
         self.vector_store.index_batch = AsyncMock()
         self.vector_store.retrieve = AsyncMock()
+        # #276 G4（2026-08-12）：reindex 协议新方法——probe 维度/差集删除/指纹
+        self.vector_store.probe_embedding_dimension = AsyncMock(return_value=384)
+        self.vector_store.probe_collection_dimension = AsyncMock(return_value=0)
+        self.vector_store.delete_stale = AsyncMock(return_value=0)
+        self.vector_store.write_fingerprint = AsyncMock()
 
     def service(self, *, vector_store: Any = _NO_VECTOR) -> ExtractionService:
         """装配门面；vector_store 传 None 模拟 RAG 未装配。"""

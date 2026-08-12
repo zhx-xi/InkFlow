@@ -512,8 +512,21 @@ async def get_extraction_service(
     模板 + 对应仓储）+ F16 StyleService（get_style_service，STYLE 槽位，
     §8.2）+ SQLExtractionRunRepository（增量追踪）+ F1/F2 仓储 +
     懒加载向量存储（get_vector_store，API embedding——从 ProviderConfig
-    注册表读取 embedding 模型，首次调用才初始化，spec f19 §5）。
+    注册表读取 embedding 模型，首次调用才初始化，spec f19 §5）+ #276
+    reindex 四步协议指纹提供器（fingerprint_provider，dimension 取 store
+    实测值；None = 不写指纹，向后兼容）。
     """
+    vector_store = await get_vector_store()
+
+    async def _fingerprint_provider() -> dict | None:
+        """reindex 指纹提供器（#276）— configured 指纹 + store 实测维度。"""
+        dimension = (
+            vector_store.embedding_dimension  # type: ignore[attr-defined]  # embedding_dimension 为 G2 运行时实例属性（Protocol 未声明，LangChainVectorStore 与测试 fake 均提供）
+            if vector_store is not None
+            else None
+        )
+        return await build_configured_fingerprint(dimension=dimension)
+
     return ExtractionService(
         project_repo=SQLiteProjectRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
@@ -537,7 +550,8 @@ async def get_extraction_service(
         world_repo=SQLiteWorldRepository(db),
         timeline_repo=SQLiteTimelineRepository(db),
         foreshadowing_repo=SQLiteForeshadowingRepository(db),
-        vector_store=await get_vector_store(),
+        vector_store=vector_store,
+        fingerprint_provider=_fingerprint_provider,
     )
 
 
@@ -648,63 +662,199 @@ _vector_store: VectorStoreProtocol | None = None
 """模块级向量存储单例 — 懒加载（首次调用才初始化，spec §8）。"""
 
 
+async def _resolve_embedding_spec() -> tuple[str, str, str]:
+    """解析 embedding 装配选型 → (provider, model_id, base_url)（#276 G3）.
+
+    选型规则（用户拍板 2026-08-12）: ProviderConfig 注册表首个
+    type="embedding" 模型为唯一真相源；注册表无 → config.embedding_model
+    本地 BGE 离线 fallback（provider 标记 "local"）；两者皆不可用 →
+    RAGUnavailableError「未配置 embedding 模型」。base_url 为 None 时归一化为
+    空串（指纹 dict 与 OpenAI 构造共用同一元组）。
+    """
+    from inkflow.core.config import config
+    from inkflow.domain.models.provider_config import ProviderConfig, ProviderModel
+    from inkflow.domain.ports.extraction_errors import RAGUnavailableError
+    from inkflow.infrastructure.database.repositories.provider_config_repo import (
+        SQLiteProviderConfigRepository,
+    )
+
+    # 读 ProviderConfig 注册表取首个 type="embedding" 模型（spec f19 §5.4）
+    found: tuple[ProviderConfig, ProviderModel] | None = None
+    async with async_session_factory() as session:
+        repo = SQLiteProviderConfigRepository(session)
+        for p in await repo.list():
+            for m in p.models:
+                if m.type == "embedding":
+                    found = (p, m)
+                    break
+            if found:
+                break
+    if found is not None:
+        provider_cfg, model = found
+        return provider_cfg.name, model.id, provider_cfg.base_url or ""
+    if config.embedding_model:
+        return "local", config.embedding_model, ""
+    raise RAGUnavailableError("未配置 embedding 模型")
+
+
+async def _build_store() -> VectorStoreProtocol:
+    """按当前配置装配新向量存储（不赋值全局单例，供 get/refresh 复用）.
+
+    与 _resolve_embedding_spec 共用选型段: API embedding（OpenAIEmbeddings）
+    或本地 BGE 离线 fallback（HuggingFaceBgeEmbeddings）；embedding 或
+    LangChainVectorStore 构造失败 → RAGUnavailableError（500 RAG 前缀，
+    spec §3.4/§5.5 B1）。
+    """
+    provider, model_id, base_url = await _resolve_embedding_spec()
+    from langchain_core.embeddings import Embeddings
+
+    from inkflow.core.config import config
+    from inkflow.infrastructure.llm.key_manager import APIKeyManager
+    from inkflow.infrastructure.rag.langchain_vector_store import (
+        LangChainVectorStore,
+    )
+
+    try:
+        # 显式类型注解：if/else 分支赋值不同类型（BGE/OpenAI）——mypy 推断
+        # 首分支类型导致第二分支 [assignment] 报错（CI lint-backend 实测）
+        embeddings: Embeddings
+        if provider == "local":
+            from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+
+            embeddings = HuggingFaceBgeEmbeddings(
+                model_name=model_id,
+                # device 非顶层字段（pydantic extra_forbidden）——走 model_kwargs
+                # （2026-08-12 实测修正）
+                model_kwargs={"device": config.embedding_device},
+            )
+        else:
+            from langchain_openai import OpenAIEmbeddings
+
+            key = APIKeyManager(
+                secret_key=config.secret_key,
+                storage_dir=config.data_dir / "keys",
+            ).load(provider)
+            embeddings = OpenAIEmbeddings(
+                model=model_id,
+                api_key=SecretStr(key),
+                base_url=base_url or None,
+            )
+        return LangChainVectorStore(
+            persist_dir=config.vector_store_dir,
+            embeddings=embeddings,
+        )
+    except Exception as e:
+        raise RAGUnavailableError(f"RAG 向量库不可用: Embedding 模型加载失败（{e}）") from e
+
+
 async def get_vector_store() -> VectorStoreProtocol:
     """获取 RAG 向量存储（模块级单例，懒加载，spec f19 §5）.
 
-    LangChainVectorStore（Chroma 持久化到 config.vector_store_dir）+ API
-    embedding（spec f19 §5.2）：从 ProviderConfig 注册表读取首个
-    type="embedding" 模型（§5.4 选型规则），api_key 来自
-    APIKeyManager.load(provider.name)，base_url 非空时透传 OpenAI 兼容端点。
-    仅首次调用时初始化；未配置 embedding 模型抛 RAGUnavailableError
-    （spec §3.4: 500「RAG 向量库不可用」前缀，§5.5 B1/B6）。
+    LangChainVectorStore（Chroma 持久化到 config.vector_store_dir）+ embedding
+    装配（#276 G3）: 注册表首个 type="embedding" 模型为唯一真相源（API
+    embedding，spec f19 §5.2/§5.4）；注册表无 → config.embedding_model 本地
+    BGE 离线 fallback；两者皆不可用 → RAGUnavailableError（500「RAG 向量库
+    不可用」前缀，§5.5 B1/B6）。仅首次调用时初始化，懒加载单例语义不变。
     """
     global _vector_store
     if _vector_store is None:
-        from langchain_openai import OpenAIEmbeddings
-
-        from inkflow.core.config import config
-        from inkflow.domain.models.provider_config import ProviderConfig, ProviderModel
-        from inkflow.domain.ports.extraction_errors import RAGUnavailableError
-        from inkflow.infrastructure.database.repositories.provider_config_repo import (
-            SQLiteProviderConfigRepository,
-        )
-        from inkflow.infrastructure.llm.key_manager import APIKeyManager
-        from inkflow.infrastructure.rag.langchain_vector_store import (
-            LangChainVectorStore,
-        )
-
-        # 读 ProviderConfig 注册表取首个 type="embedding" 模型（spec f19 §5.4）
-        found: tuple[ProviderConfig, ProviderModel] | None = None
-        async with async_session_factory() as session:
-            repo = SQLiteProviderConfigRepository(session)
-            for p in await repo.list():
-                for m in p.models:
-                    if m.type == "embedding":
-                        found = (p, m)
-                        break
-                if found:
-                    break
-        if found is None:
-            raise RAGUnavailableError("未配置 embedding 模型")
-        provider_cfg, model = found
-
-        key = APIKeyManager(
-            secret_key=config.secret_key,
-            storage_dir=config.data_dir / "keys",
-        ).load(provider_cfg.name)
-        embeddings = OpenAIEmbeddings(
-            model=model.id,
-            api_key=SecretStr(key),
-            base_url=provider_cfg.base_url,
-        )
-        try:
-            _vector_store = LangChainVectorStore(
-                persist_dir=config.vector_store_dir,
-                embeddings=embeddings,
-            )
-        except Exception as e:
-            raise RAGUnavailableError(f"RAG 向量库不可用: Embedding 模型加载失败（{e}）") from e
+        _vector_store = await _build_store()
     return _vector_store
+
+
+async def refresh_vector_store() -> VectorStoreProtocol:
+    """刷新向量存储单例（#276 G3 契约 14）——重建失败保留旧实例.
+
+    用当前配置重建 store（重新走选型 + 构造）；成功 → 原子替换模块级
+    _vector_store；失败 → RAGUnavailableError 上抛，旧实例保留不动
+    （不允许半替换/静默回退，防 reindex 用旧模型重写旧向量假成功）。
+    """
+    global _vector_store
+    new_store = await _build_store()
+    _vector_store = new_store
+    return new_store
+
+
+async def build_configured_fingerprint(*, dimension: int | None = None) -> dict | None:
+    """构建当前 embedding 配置的指纹 dict（#276 G3 契约 15）.
+
+    与 _build_store 共用 _resolve_embedding_spec 选型；解析失败
+    （RAGUnavailableError）→ 返回 None。base_url 去尾部斜杠；chunking 为
+    当前固定切片默认值（fixed / 500 / 0.0 / 1，与领域常量一致）。
+    """
+    from inkflow.domain.ports.extraction_errors import RAGUnavailableError
+
+    try:
+        provider, model_id, base_url = await _resolve_embedding_spec()
+    except RAGUnavailableError:
+        return None
+    return {
+        "schema_version": 1,
+        "embedding": {
+            "provider": provider,
+            "model_id": model_id,
+            "base_url": base_url.rstrip("/"),
+            "dimension": dimension,
+        },
+        "chunking": {
+            "mode": "fixed",
+            "chunk_size": 500,
+            "overlap_ratio": 0.0,
+            "chunker_version": 1,
+        },
+        "indexed_at": None,
+        "status": "fresh",
+    }
+
+
+async def get_vector_status(project_id: str) -> dict:
+    """返回项目 RAG 向量状态 dict（#276 G3 契约 15）.
+
+    configured_fp 来自当前配置（dimension 取 store.embedding_dimension 实测值，
+    未 embed 过 = None）；indexed_fp 来自 store.read_fingerprint；stale/reason
+    由 compare_fingerprints 判定（dimension 不参与比对）；dimension_mismatch
+    为独立判据: 索引存在且维度不同，或无索引但集合已含不同维度向量。
+    """
+    store = await get_vector_store_optional()
+    if store is None:
+        return {
+            "configured_fp": None,
+            "indexed_fp": None,
+            "stale": False,
+            "reason": "no_embedding",
+            "dimension_mismatch": False,
+        }
+    configured_dict = await build_configured_fingerprint(
+        dimension=(
+            store.embedding_dimension if store.embedding_dimension else None  # type: ignore[attr-defined]  # embedding_dimension 为 G2 运行时实例属性（Protocol 未声明，LangChainVectorStore 与测试 fake 均提供）
+        )
+    )
+    indexed_raw = await store.read_fingerprint(project_id)
+
+    from inkflow.domain.models.vector_fingerprint import VectorFingerprint
+    from inkflow.domain.services.vector_fingerprint import compare_fingerprints
+
+    configured = VectorFingerprint.model_validate(configured_dict)
+    indexed = VectorFingerprint.model_validate(indexed_raw) if indexed_raw else None
+    stale, reason = compare_fingerprints(configured, indexed)
+    mismatch = False
+    if (
+        indexed is not None
+        and configured.embedding.dimension is not None
+        and indexed.embedding.dimension is not None
+        and configured.embedding.dimension != indexed.embedding.dimension
+    ):
+        mismatch = True
+    elif indexed is None and configured.embedding.dimension is not None:
+        probe = await store.probe_collection_dimension(project_id)
+        mismatch = probe != 0 and probe != configured.embedding.dimension
+    return {
+        "configured_fp": configured_dict,
+        "indexed_fp": indexed_raw,
+        "stale": stale,
+        "reason": reason,
+        "dimension_mismatch": mismatch,
+    }
 
 
 async def get_vector_store_optional() -> VectorStoreProtocol | None:

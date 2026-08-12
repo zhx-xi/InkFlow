@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from typing import Protocol
 
 
@@ -146,5 +147,74 @@ class VectorStoreProtocol(Protocol):
 
         Returns:
             删除的实体数量。
+        """
+        ...
+
+    async def read_fingerprint(self, project_id: str) -> dict | None:
+        """读取项目索引指纹（与向量数据同库同生命周期）。
+
+        Args:
+            project_id: 项目 ID。
+
+        Returns:
+            指纹 dict（含 status）；无指纹时返回 None。
+        """
+        ...
+
+    async def write_fingerprint(self, project_id: str, fingerprint: dict, status: str) -> None:
+        """写入/覆盖项目索引指纹（commit-last 的持久化提交点）。
+
+        Args:
+            project_id: 项目 ID。
+            fingerprint: 指纹 dict（schema_version / embedding / chunking 等）。
+            status: 指纹状态（fresh / stale / reindexing）。
+        """
+        ...
+
+    async def probe_collection_dimension(self, project_id: str) -> int:
+        """探测项目现存向量的维度。
+
+        Args:
+            project_id: 项目 ID。
+
+        Returns:
+            现存向量维度；空库（无向量）时返回 0。
+        """
+        ...
+
+    async def probe_embedding_dimension(self) -> int:
+        """探测当前 embeddings 实测维度（结果缓存到实例）。
+
+        Returns:
+            当前 embeddings 的向量维度。
+        """
+        ...
+
+    async def delete_stale(
+        self,
+        project_id: str,
+        source_ids: set[str],
+        entity_types: list[EntityType] | None = None,
+    ) -> int:
+        """差集删除: collection 现存 id 减源侧 id = 待删 id（幽灵/孤儿向量）。
+
+        Args:
+            project_id: 项目 ID。
+            source_ids: 源侧现存 id 全集。
+            entity_types: 限定实体类型，None 表示全部类型。
+
+        Returns:
+            实际删除的实体数量。
+        """
+        ...
+
+    async def recreate_collections(self, entity_types: list[EntityType] | None = None) -> Path:
+        """备份并删除重建集合（维度不匹配时调用）。
+
+        Args:
+            entity_types: 限定实体类型，None 表示全部类型。
+
+        Returns:
+            备份目录路径；持久化目录不存在（无备份）时返回原目录。
         """
         ...
