@@ -270,15 +270,12 @@ def update(
             parsed = json.loads(config_json)
         except json.JSONDecodeError:
             print_error(cli_ctx, "VALIDATION_ERROR", f"--config-json 不是合法 JSON: {config_json}")
-            return
         if not isinstance(parsed, dict):
             print_error(cli_ctx, "VALIDATION_ERROR", "--config-json 必须是 JSON 对象")
-            return
         cfg.update(parsed)
     for kv in config:
         if "=" not in kv:
             print_error(cli_ctx, "VALIDATION_ERROR", f"--config 格式应为 KEY=VALUE: {kv}")
-            return
         key, _, raw = kv.partition("=")
         cfg[key] = _parse_config_value(raw)
     if cfg:

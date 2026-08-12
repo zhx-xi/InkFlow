@@ -261,7 +261,6 @@ def template_create(
             body["roles"] = json.loads(roles_json)
         except json.JSONDecodeError:
             print_error(cli_ctx, "VALIDATION_ERROR", f"--roles-json 不是合法 JSON: {roles_json}")
-            return
 
     async def _impl() -> dict:
         handle = await ensure_kernel()
@@ -305,7 +304,6 @@ def template_update(
             body["roles"] = json.loads(roles_json)
         except json.JSONDecodeError:
             print_error(cli_ctx, "VALIDATION_ERROR", f"--roles-json 不是合法 JSON: {roles_json}")
-            return
 
     async def _impl() -> dict:
         handle = await ensure_kernel()
@@ -327,7 +325,6 @@ def template_delete(
     cli_ctx: CliContext = ctx.obj
     if cli_ctx.json_output and not force:
         print_error(cli_ctx, "VALIDATION_ERROR", "删除需 --force 或交互确认")
-        return
     if not force and not typer.confirm(f"确定删除模板 #{template_id} 吗？"):
         typer.echo("已取消")
         raise typer.Exit()

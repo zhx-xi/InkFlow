@@ -165,6 +165,20 @@ class TestProjectUpdateBasic:
         call = fake_http_client.patch.await_args
         assert call.kwargs["json"] == {"genre": "科幻"}
 
+    def test_update_language(self, cli_runner, fake_http_client):
+        """--language 透传进 body."""
+        from inkflow.cli.commands.project import app
+
+        fake_http_client.patch.return_value = _make_project(language="en-US")
+        result = cli_runner.invoke(
+            app,
+            ["update", "--id", "1", "--language", "en-US"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        call = fake_http_client.patch.await_args
+        assert call.kwargs["json"] == {"language": "en-US"}
+
     def test_update_target_words(self, cli_runner, fake_http_client):
         """--target-words int → body."""
         from inkflow.cli.commands.project import app
@@ -260,6 +274,50 @@ class TestProjectUpdateConfigTristate:
         assert call.kwargs["json"] == {
             "config": {"agent_writer": "zhipu/glm-4.5", "temperature": 0.8}
         }
+
+    def test_config_int_value(self, cli_runner, fake_http_client):
+        """--config 整数 → int 值（_parse_config_value int 分支）."""
+        from inkflow.cli.commands.project import app
+
+        fake_http_client.patch.return_value = _make_project()
+        result = cli_runner.invoke(
+            app,
+            ["update", "--id", "1", "--config", "default_words=100000"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        call = fake_http_client.patch.await_args
+        assert call.kwargs["json"] == {"config": {"default_words": 100000}}
+
+    def test_config_without_equals(self, cli_runner, fake_http_client):
+        """--config 无 = → VALIDATION_ERROR + 不调用 PATCH."""
+        from inkflow.cli.commands.project import app
+
+        result = cli_runner.invoke(
+            app,
+            ["update", "--id", "1", "--config", "agent_writer"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        assert "KEY=VALUE" in data["error"]["message"]
+        fake_http_client.patch.assert_not_awaited()
+
+    def test_config_json_not_object(self, cli_runner, fake_http_client):
+        """--config-json 非 JSON 对象 → VALIDATION_ERROR + 不调用 PATCH."""
+        from inkflow.cli.commands.project import app
+
+        result = cli_runner.invoke(
+            app,
+            ["update", "--id", "1", "--config-json", '["a", "b"]'],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        assert "JSON 对象" in data["error"]["message"]
+        fake_http_client.patch.assert_not_awaited()
 
 
 class TestProjectUpdateAgentOrder:

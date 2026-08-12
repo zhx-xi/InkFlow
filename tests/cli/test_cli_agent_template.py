@@ -256,6 +256,50 @@ class TestTemplateCreate:
         data = json.loads(result.stdout)
         assert data["error"]["code"] == "VALIDATION_ERROR"
 
+    def test_create_full_options(self, cli_runner, fake_http_client):
+        """全可选参数（--description/--main-model/--default-temperature/--default-words）落入请求体."""
+        from inkflow.cli.commands.agent_cmd import app
+
+        fake_http_client.post.return_value = _make_template(id=2, name="全参")
+        result = cli_runner.invoke(
+            app,
+            [
+                "template",
+                "create",
+                "--name",
+                "全参",
+                "--description",
+                "desc",
+                "--main-model",
+                "zhipu/glm-4.5",
+                "--default-temperature",
+                "0.3",
+                "--default-words",
+                "5000",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        body = fake_http_client.post.await_args.kwargs["json"]
+        assert body["description"] == "desc"
+        assert body["main_model"] == "zhipu/glm-4.5"
+        assert body["default_temperature"] == 0.3
+        assert body["default_words"] == 5000
+
+    def test_create_invalid_roles_json(self, cli_runner, fake_http_client):
+        """--roles-json 非法 JSON → VALIDATION_ERROR + 不调用 POST."""
+        from inkflow.cli.commands.agent_cmd import app
+
+        result = cli_runner.invoke(
+            app,
+            ["template", "create", "--name", "x", "--roles-json", "{bad"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        fake_http_client.post.assert_not_awaited()
+
 
 class TestTemplateUpdate:
     def test_update_json(self, cli_runner, fake_http_client):
@@ -289,6 +333,54 @@ class TestTemplateUpdate:
         assert result.exit_code == 1
         data = json.loads(result.stdout)
         assert data["error"]["code"] == "NOT_FOUND"
+
+    def test_update_full_options(self, cli_runner, fake_http_client):
+        """多字段更新（--name/--main-model/--default-temperature/--default-words/--is-default）落入请求体."""
+        from inkflow.cli.commands.agent_cmd import app
+
+        fake_http_client.patch.return_value = _make_template(name="改名")
+        result = cli_runner.invoke(
+            app,
+            [
+                "template",
+                "update",
+                "--id",
+                "1",
+                "--name",
+                "改名",
+                "--main-model",
+                "deepseek/deepseek-chat",
+                "--default-temperature",
+                "0.5",
+                "--default-words",
+                "6000",
+                "--is-default",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        body = fake_http_client.patch.await_args.kwargs["json"]
+        assert body == {
+            "name": "改名",
+            "main_model": "deepseek/deepseek-chat",
+            "default_temperature": 0.5,
+            "default_words": 6000,
+            "is_default": True,
+        }
+
+    def test_update_invalid_roles_json(self, cli_runner, fake_http_client):
+        """update --roles-json 非法 JSON → VALIDATION_ERROR + 不调用 PATCH."""
+        from inkflow.cli.commands.agent_cmd import app
+
+        result = cli_runner.invoke(
+            app,
+            ["template", "update", "--id", "1", "--roles-json", "{bad"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        fake_http_client.patch.assert_not_awaited()
 
 
 class TestTemplateDelete:
@@ -449,6 +541,34 @@ class TestTemplateGetDefault:
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["data"]["template"]["name"] == "默认模板"
+
+    def test_get_default_human_null(self, cli_runner, fake_http_client):
+        """人类模式无默认模板 → 📭 提示."""
+        from inkflow.cli.commands.agent_cmd import app
+
+        fake_http_client.get.return_value = {"template": None}
+        result = cli_runner.invoke(
+            app,
+            ["template", "get-default"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "📭" in result.output or "未设置" in result.output
+
+    def test_get_default_human_with_template(self, cli_runner, fake_http_client):
+        """人类模式有默认模板 → ⭐ 输出模板名."""
+        from inkflow.cli.commands.agent_cmd import app
+
+        fake_http_client.get.return_value = {
+            "template": _make_template(is_default=True)
+        }
+        result = cli_runner.invoke(
+            app,
+            ["template", "get-default"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "默认模板" in result.output
 
 
 class TestTemplatePipelines:

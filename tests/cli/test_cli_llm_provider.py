@@ -210,6 +210,48 @@ class TestProviderCreate:
         assert result.exit_code == 0
         assert "custom" in result.output
 
+    def test_create_full_options(self, cli_runner, fake_http_client):
+        """全可选参数（--max-retries/--timeout/--models-json）落入请求体."""
+        from inkflow.cli.commands.llm import app
+
+        fake_http_client.post.return_value = _make_provider(id=2, name="custom")
+        result = cli_runner.invoke(
+            app,
+            [
+                "provider",
+                "create",
+                "--name",
+                "custom",
+                "--max-retries",
+                "5",
+                "--timeout",
+                "30",
+                "--models-json",
+                '[{"id": "m1", "type": "chat", "roles": []}]',
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        body = fake_http_client.post.await_args.kwargs["json"]
+        assert body["max_retries"] == 5
+        assert body["timeout"] == 30
+        assert body["models"] == [{"id": "m1", "type": "chat", "roles": []}]
+
+    def test_create_invalid_models_json(self, cli_runner, fake_http_client):
+        """--models-json 非法 JSON → VALIDATION_ERROR + 不调用 POST."""
+        from inkflow.cli.commands.llm import app
+
+        result = cli_runner.invoke(
+            app,
+            ["provider", "create", "--name", "custom", "--models-json", "{bad"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        assert "--models-json" in data["error"]["message"]
+        fake_http_client.post.assert_not_awaited()
+
     def test_create_conflict_422(self, cli_runner, fake_http_client):
         """重名冲突 → VALIDATION_ERROR 信封（detail 透传）."""
         from inkflow.cli.commands.llm import app
@@ -259,6 +301,52 @@ class TestProviderUpdate:
         assert result.exit_code == 1
         data = json.loads(result.stdout)
         assert data["error"]["code"] == "NOT_FOUND"
+
+    def test_update_multiple_fields(self, cli_runner, fake_http_client):
+        """多字段更新（--name/--base-url/--default-model/--max-retries）落入请求体."""
+        from inkflow.cli.commands.llm import app
+
+        fake_http_client.patch.return_value = _make_provider(name="renamed")
+        result = cli_runner.invoke(
+            app,
+            [
+                "provider",
+                "update",
+                "--id",
+                "1",
+                "--name",
+                "renamed",
+                "--base-url",
+                "https://new.example/v1",
+                "--default-model",
+                "new/model",
+                "--max-retries",
+                "7",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        body = fake_http_client.patch.await_args.kwargs["json"]
+        assert body == {
+            "name": "renamed",
+            "base_url": "https://new.example/v1",
+            "default_model": "new/model",
+            "max_retries": 7,
+        }
+
+    def test_update_invalid_models_json(self, cli_runner, fake_http_client):
+        """update --models-json 非法 JSON → VALIDATION_ERROR + 不调用 PATCH."""
+        from inkflow.cli.commands.llm import app
+
+        result = cli_runner.invoke(
+            app,
+            ["provider", "update", "--id", "1", "--models-json", "{bad"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        fake_http_client.patch.assert_not_awaited()
 
 
 class TestProviderDelete:
@@ -336,6 +424,19 @@ class TestProviderDelete:
         assert result.exit_code == 1
         data = json.loads(result.stdout)
         assert data["error"]["code"] == "NOT_FOUND"
+
+    def test_delete_force_human(self, cli_runner, fake_http_client):
+        """人类模式 --force 删除成功 → ✅ 输出."""
+        from inkflow.cli.commands.llm import app
+
+        fake_http_client.delete.return_value = {}
+        result = cli_runner.invoke(
+            app,
+            ["provider", "delete", "--id", "5", "--force"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "已删除" in result.output
 
 
 class TestProviderModels:
@@ -468,6 +569,35 @@ class TestProviderModels:
         assert data["error"]["code"] == "NOT_FOUND"
         fake_http_client.patch.assert_not_awaited()
 
+    def test_models_set_json_invalid(self, cli_runner, fake_http_client):
+        """--set-json 非法 JSON → VALIDATION_ERROR + 不调用 PATCH."""
+        from inkflow.cli.commands.llm import app
+
+        result = cli_runner.invoke(
+            app,
+            ["provider", "models", "--id", "1", "--set-json", "{bad"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        fake_http_client.patch.assert_not_awaited()
+
+    def test_models_add_invalid_json(self, cli_runner, fake_http_client):
+        """--add 非法 JSON → VALIDATION_ERROR + 不调用 PATCH/GET."""
+        from inkflow.cli.commands.llm import app
+
+        result = cli_runner.invoke(
+            app,
+            ["provider", "models", "--id", "1", "--add", "{bad"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        fake_http_client.get.assert_not_awaited()
+        fake_http_client.patch.assert_not_awaited()
+
 
 class TestLlmTest:
     def test_test_ok(self, cli_runner, fake_http_client):
@@ -527,6 +657,41 @@ class TestLlmTest:
         assert result.exit_code == 1
         data = json.loads(result.stdout)
         assert data["error"]["code"] == "INTERNAL_ERROR"
+
+    def test_test_with_base_url(self, cli_runner, fake_http_client):
+        """--base-url 透传进请求体."""
+        from inkflow.cli.commands.llm import app
+
+        fake_http_client.post.return_value = {"ok": True, "message": "连接成功"}
+        result = cli_runner.invoke(
+            app,
+            [
+                "test",
+                "--provider",
+                "deepseek",
+                "--api-key",
+                "sk-test",
+                "--base-url",
+                "https://probe.example/v1",
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        body = fake_http_client.post.await_args.kwargs["json"]
+        assert body["base_url"] == "https://probe.example/v1"
+
+    def test_test_ok_human(self, cli_runner, fake_http_client):
+        """人类模式连通成功 → ✅ 输出."""
+        from inkflow.cli.commands.llm import app
+
+        fake_http_client.post.return_value = {"ok": True, "message": "连接成功"}
+        result = cli_runner.invoke(
+            app,
+            ["test", "--provider", "deepseek", "--api-key", "sk-test"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "连接成功" in result.output
 
 
 class TestKeyRemove:

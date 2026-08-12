@@ -120,7 +120,6 @@ def provider_create(
             body["models"] = json.loads(models_json)
         except json.JSONDecodeError:
             print_error(cli_ctx, "VALIDATION_ERROR", f"--models-json 不是合法 JSON: {models_json}")
-            return
 
     async def _impl() -> dict:
         handle = await ensure_kernel()
@@ -164,7 +163,6 @@ def provider_update(
             body["models"] = json.loads(models_json)
         except json.JSONDecodeError:
             print_error(cli_ctx, "VALIDATION_ERROR", f"--models-json 不是合法 JSON: {models_json}")
-            return
 
     async def _impl() -> dict:
         handle = await ensure_kernel()
@@ -186,7 +184,6 @@ def provider_delete(
     cli_ctx: CliContext = ctx.obj
     if cli_ctx.json_output and not force:
         print_error(cli_ctx, "VALIDATION_ERROR", "删除需 --force 或交互确认")
-        return
     if not force and not typer.confirm(f"确定删除 Provider #{provider_id} 吗？"):
         typer.echo("已取消")
         raise typer.Exit()
@@ -224,14 +221,12 @@ def provider_models(
             parsed_set = json.loads(set_json)
         except json.JSONDecodeError:
             print_error(cli_ctx, "VALIDATION_ERROR", f"--set-json 不是合法 JSON: {set_json}")
-            return
     else:
         for item in add:
             try:
                 parsed_add.append(json.loads(item))
             except json.JSONDecodeError:
                 print_error(cli_ctx, "VALIDATION_ERROR", f"--add 不是合法 JSON: {item}")
-                return
 
     async def _impl() -> dict:
         handle = await ensure_kernel()
@@ -298,7 +293,6 @@ def key_remove(
         km.delete(provider)
     except FileNotFoundError:
         print_error(cli_ctx, "NOT_FOUND", f"Provider {provider} 未配置 API Key")
-        return
     if not cli_ctx.json_output:
         typer.echo(f"✅ Provider {provider} 的 API Key 已删除")
     else:

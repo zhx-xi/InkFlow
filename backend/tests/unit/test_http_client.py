@@ -777,3 +777,20 @@ class TestNoContent204:
             async with make_client() as client:
                 data = await client.put_file("/map/x", data={}, filename="a.png", content=b"x")
         assert data == {}
+
+    async def test_put_file_404_raises_http_api_error(self, handle):
+        """put_file 非 2xx → HttpApiError（_request_file 错误分支，#300 补测）。"""
+
+        def _handler(request):
+            return httpx.Response(
+                404,
+                json={"detail": "地图不存在"},
+                request=httpx.Request("PUT", f"{BASE_URL}/map/x"),
+            )
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                with pytest.raises(HttpApiError) as exc_info:
+                    await client.put_file("/map/x", data={}, filename="a.png", content=b"x")
+        assert exc_info.value.status_code == 404
+        assert exc_info.value.detail == "地图不存在"
