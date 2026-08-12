@@ -253,3 +253,54 @@ def delete_ch(
 
     _run(cli_ctx, _impl)
     print_result(cli_ctx, {"deleted": True})
+
+
+# -- Chapter Summary --
+
+
+summary_app = typer.Typer(name="summary", help="章节摘要管理", no_args_is_help=True)
+
+
+@summary_app.command("get")
+def get_summary(
+    ctx: typer.Context,
+    chapter_id: str = typer.Option(..., "--id", "-i"),
+):
+    """查看章节摘要缓存"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/context/chapters/{uuid.UUID(chapter_id)}/summary")
+
+    data = _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, data)
+    else:
+        typer.echo(data["summary"])
+
+
+@summary_app.command("refresh")
+def refresh_summary(
+    ctx: typer.Context,
+    chapter_id: str = typer.Option(..., "--id", "-i"),
+):
+    """强制重新生成章节摘要"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(f"/context/chapters/{uuid.UUID(chapter_id)}/summary/refresh")
+
+    data = _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, data)
+    else:
+        typer.echo("✅ 章节摘要已重新生成")
+
+
+chapter_app.add_typer(summary_app, name="summary")

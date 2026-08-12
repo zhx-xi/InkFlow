@@ -447,6 +447,8 @@ jobs:
                  ../tests/cli/test_cli_llm_provider.py `
                  ../tests/cli/test_cli_agent_template.py `
                  ../tests/cli/test_cli_project_update.py `
+                 ../tests/cli/test_cli_chapter_summary.py `
+                 ../tests/cli/test_cli_context_assemble.py `
                  -v --tb=short
 
   # ── Smoke: health check (fastest) ──
