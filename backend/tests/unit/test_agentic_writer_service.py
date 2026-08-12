@@ -66,7 +66,9 @@
        class AgenticWriterService:
            def __init__(
                self, *,
-               agent_factory: Callable[[], object],   # 返回可 invoke 的 agent（fake/真实均可）
+               agent_factory: Callable[[AgenticWriteRequest], object],
+               # 每次 run 调用一次，传入当前请求（#275 升级: 装配层按请求注入
+               # project_id/chapter_id 上下文——系统提示渲染与工具期望上下文同源）
                draft_service,                          # DraftService（鸭子类型）
                audit_service,                          # audit 日志（F34 形态）
                run_repo,                               # AgentRunRepository（鸭子类型）
@@ -78,7 +80,8 @@
            ): ...
            async def run(self, request: AgenticWriteRequest) -> AgentRun
 
-   - agent_factory 每次 run 调用一次，返回 agent 对象；agent 须有
+   - agent_factory 每次 run 调用一次（调用形态 agent_factory(request)，#275 契约
+     升级——GREEN 前为无参调用），返回 agent 对象；agent 须有
      `async def invoke(self, messages: list, config: dict | None = None) -> dict`
      返回值含 "messages" 键（deepagents 语义：完整消息历史，末条为最终 AIMessage）。
    - 工具执行在 agent 内建循环（deepagents ToolNode）；服务层从返回的消息历史
@@ -225,8 +228,11 @@ def _make_service(
         "run_repo": AsyncMock(),
         "chapter_service": AsyncMock(),
     }
+    # #275: agent_factory 收到的请求对象记录（request=None 默认兼容 GREEN 前
+    # 无参调用形态——既有用例 RED 阶段仍 PASS，新契约用例断言收到真实请求）
+    factory_calls: list[Any] = []
     service = AgenticWriterService(
-        agent_factory=lambda: agent,
+        agent_factory=lambda request=None: (factory_calls.append(request), agent)[1],
         draft_service=deps["draft_service"],
         audit_service=deps["audit_service"],
         run_repo=deps["run_repo"],
@@ -235,6 +241,7 @@ def _make_service(
         max_consecutive_tool=max_consecutive_tool,
         empty_content_retries=empty_content_retries,
     )
+    deps["factory_calls"] = factory_calls
     return service, agent, deps
 
 
@@ -593,3 +600,27 @@ async def test_guardrail_returns_run_not_raises() -> None:
 
     assert isinstance(run, AgentRun)
     assert run.status == AgentRunStatus.TERMINATED_BY_GUARDRAIL
+
+
+# ── #275: agent_factory 接收请求上下文（装配层注入 project_id/chapter_id 的前提） ──
+
+
+async def test_agent_factory_receives_request_context() -> None:
+    """#275 装配契约: run() 把真实请求（project_id/chapter_id）传给 agent_factory.
+
+    回归根因: 系统提示无 project_id → LLM 编造全零 UUID。服务层必须在 agent
+    构建时注入请求上下文（agent_factory(request)），装配层据此渲染系统提示并
+    注入工具期望上下文（save_draft 防御同源）。
+
+    RED 预期: 当前实现无参调用 agent_factory() → 记录为 None → 断言 FAILED
+    （clean FAILED，非 ERROR）。
+    """
+    service, _, deps = _make_service([_history(_ai_msg(content="正文。"))])
+
+    await service.run(_make_request())
+
+    calls: list = deps["factory_calls"]
+    assert calls, "agent_factory 应被调用一次"
+    assert calls[0] is not None, "agent_factory 应收到请求对象（#275：当前实现无参调用）"
+    assert calls[0].project_id == PROJECT_ID
+    assert calls[0].chapter_id == CHAPTER_ID

@@ -23,6 +23,7 @@ PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 CHAPTER_ID = uuid.UUID("87654321-4321-8765-4321-876543218765")
 DRAFT_ID = "draft-0001"
 RUN_ID = "run-0001"
+WRONG_ID = uuid.UUID("99999999-9999-4999-8999-999999999999")  # #275: 与请求上下文不符的伪造 id
 
 
 def _utcnow() -> datetime:
@@ -155,7 +156,11 @@ async def test_agent_run_repo_save_update(db_session, project):
 
 
 def test_build_writer_agent_system_prompt():
-    """模板渲染：load("writer_agent") + render 结果 messages[0] 为 system prompt。"""
+    """模板渲染：load("writer_agent") + render 结果 messages[0] 为 system prompt。
+
+    #275 契约升级：无参调用向后兼容——render 变量 dict 恒含 project_id/chapter_id 键
+    （值为空串），模板变量化后 validate() 仍通过。
+    """
     from inkflow.infrastructure.agent.agentic_writer import (
         build_writer_agent_system_prompt,
     )
@@ -169,7 +174,7 @@ def test_build_writer_agent_system_prompt():
     pm.render.return_value = rendered
     result = build_writer_agent_system_prompt(pm)
     pm.load.assert_called_once_with("writer_agent")
-    pm.render.assert_called_once_with(template, {})
+    pm.render.assert_called_once_with(template, {"project_id": "", "chapter_id": ""})
     assert result == "渲染后的 system prompt"
 
 
@@ -221,3 +226,125 @@ async def test_build_agentic_writer_assembles_six_tools():
     call = fake_agent.invoke.await_args
     assert call.args[0] == {"messages": [{"type": "user", "content": "你好"}]}
     assert result["messages"][0]["content"] == "正文。"
+
+
+# ── #275: 系统提示注入 project_id/chapter_id（工具上下文装配契约） ──
+
+
+def test_build_writer_agent_system_prompt_injects_project_context() -> None:
+    """#275 装配契约: 传 project_id/chapter_id → render 收到真实值 + 结果含二者.
+
+    RED 预期: 当前实现 render(template, {}) → assert_called_once_with 断言失败
+    （clean FAILED）。
+    """
+    from inkflow.infrastructure.agent.agentic_writer import (
+        build_writer_agent_system_prompt,
+    )
+
+    pm = MagicMock()
+    template = MagicMock()
+    template.system_prompt = "SP {project_id} {chapter_id}"
+    pm.load.return_value = template
+    rendered = MagicMock()
+    rendered.messages = [{"content": f"SP {PROJECT_ID} {CHAPTER_ID}"}]
+    pm.render.return_value = rendered
+
+    result = build_writer_agent_system_prompt(
+        pm,
+        project_id=PROJECT_ID,
+        chapter_id=CHAPTER_ID,
+    )
+
+    pm.render.assert_called_once_with(
+        template,
+        {"project_id": str(PROJECT_ID), "chapter_id": str(CHAPTER_ID)},
+    )
+    assert str(PROJECT_ID) in result
+    assert str(CHAPTER_ID) in result
+
+
+async def test_build_agentic_writer_forwards_context_to_save_draft_tool() -> None:
+    """#275 装配契约: build_agentic_writer 注入期望上下文 → save_draft 工具拒绝
+    错误 project_id、接受正确 project_id（工具参数 = 请求上下文的集成契约）。
+
+    RED 预期: 当前签名无 expected_project_id → TypeError → pytest.fail
+    （干净 FAILED，非 ERROR）。
+    """
+    from inkflow.domain.models.draft import Draft, DraftStatus
+    from inkflow.infrastructure.agent.agentic_writer import (
+        AgenticWriterDeps,
+        build_agentic_writer,
+    )
+
+    deps = AgenticWriterDeps(
+        character_service=AsyncMock(),
+        foreshadowing_service=AsyncMock(),
+        summary_service=AsyncMock(),
+        chapter_audit_service=AsyncMock(),
+        draft_service=AsyncMock(),
+        audit_service=AsyncMock(),
+    )
+    fake_agent = MagicMock()
+    with patch(
+        "inkflow.infrastructure.agent.agentic_writer.build_deep_agent",
+        return_value=fake_agent,
+    ) as mock_build:
+        try:
+            build_agentic_writer(
+                model="zhipu/glm-4.5",
+                api_key="k",
+                base_url="http://x",
+                deps=deps,
+                system_prompt="SP",
+                expected_project_id=PROJECT_ID,
+                expected_chapter_id=CHAPTER_ID,
+            )
+        except TypeError as exc:
+            pytest.fail(f"build_agentic_writer 应支持 expected_project_id（#275）: {exc}")
+
+    tools = mock_build.call_args.kwargs["tools"]
+    save_tool = next(t for t in tools if t.spec.name == "save_draft")
+
+    # 错误 project_id → 拒绝（不落库）
+    wrong = await save_tool.func(
+        project_id=WRONG_ID,
+        chapter_id=CHAPTER_ID,
+        content="正文",
+    )
+    assert '"ok": false' in wrong
+    deps.draft_service.create.assert_not_awaited()
+
+    # 正确 project_id → 落库成功（单事务恰一次）
+    deps.draft_service.create.return_value = Draft(
+        id="draft-275",
+        project_id=PROJECT_ID,
+        chapter_id=CHAPTER_ID,
+        content="正文",
+        status=DraftStatus.DRAFT,
+        created_at=_utcnow(),
+        confirmed_at=None,
+    )
+    right = await save_tool.func(
+        project_id=PROJECT_ID,
+        chapter_id=CHAPTER_ID,
+        content="正文",
+    )
+    assert '"ok": true' in right
+    deps.draft_service.create.assert_awaited_once()
+
+
+async def test_deep_agent_invoke_adapter_sync_result() -> None:
+    """#275 覆盖率补测: DeepAgentInvokeAdapter 同步返回分支——inner.invoke
+    返回非 Awaitable dict → 直接透传（真实 deepagents graph 为同步方法）."""
+    from inkflow.infrastructure.agent.agentic_writer import DeepAgentInvokeAdapter
+
+    inner = MagicMock()
+    inner.invoke = MagicMock(return_value={"messages": [{"type": "ai", "content": "正文。"}]})
+    adapter = DeepAgentInvokeAdapter(inner)
+
+    result = await adapter.invoke([{"type": "user", "content": "你好"}])
+
+    assert result["messages"][0]["content"] == "正文。"
+    inner.invoke.assert_called_once_with(
+        {"messages": [{"type": "user", "content": "你好"}]}, config=None
+    )

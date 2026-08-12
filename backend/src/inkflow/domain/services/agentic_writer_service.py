@@ -10,7 +10,9 @@ AgenticWriterService 是 agentic 写入闭环的领域编排层（spec §5.1/§5
 - 全部终态经 run_repo.save 一次写回（崩溃可见性: create 先行落 running 记录）
 
 依赖注入（鸭子类型）:
-- agent_factory: Callable[[], object]——返回可 invoke 的 agent
+- agent_factory: Callable[[AgenticWriteRequest], object]——每次 run 调用一次，
+  传入当前请求（#275: 装配层按请求注入 project_id/chapter_id 上下文——系统提示
+  渲染与 save_draft 工具期望上下文同源）
 - draft_service: DraftService（create 兜底落草稿）
 - audit_service: AuditLogService（record）
 - run_repo: AgentRunRepository（create/save）
@@ -105,7 +107,7 @@ class AgenticWriterService:
     def __init__(
         self,
         *,
-        agent_factory: Callable[[], object],  # 每次 run 调用一次，返回可 invoke 的 agent
+        agent_factory: Callable[[AgenticWriteRequest], object],  # 每次 run 调用一次，传入当前请求
         draft_service,  # DraftService（鸭子类型）
         audit_service,  # AuditLogService（鸭子类型）
         run_repo,  # AgentRunRepository（鸭子类型，有 create/save）
@@ -157,7 +159,7 @@ class AgenticWriterService:
             updated_at=now,
         )
 
-        agent = self._agent_factory()
+        agent = self._agent_factory(request)
         history: list[object] = []
         try:
             history = await self._invoke_agent(agent, [self._build_initial_message(request)])

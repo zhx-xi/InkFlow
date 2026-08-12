@@ -86,6 +86,7 @@ pytestmark = pytest.mark.asyncio  # 实测 mode=Mode.AUTO；显式 mark 兼容 S
 PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 CHAPTER_ID = uuid.UUID("87654321-4321-8765-4321-876543218765")
 CONTENT = "草稿正文内容。"
+ZERO_PROJECT_ID = uuid.UUID(int=0)  # #275: rc9 缺陷数据签名（全零 UUID）
 
 
 def _utcnow() -> datetime:
@@ -257,3 +258,32 @@ class TestDraftRepository:
         fetched = await repo.get(draft.id)
         assert fetched is not None
         assert fetched.content == "新内容"
+
+    async def test_prune_orphans_deletes_zero_project_drafts(self, db_session, project, chapter):
+        """契约⑨（#275 清理）: prune_orphans 删除 project_id=全零 的草稿，正常草稿保留.
+
+        RED 预期: SQLiteDraftRepository 无 prune_orphans → AttributeError FAILED。
+        """
+        repo = SQLiteDraftRepository(db_session)
+        await repo.create(project_id=ZERO_PROJECT_ID, chapter_id=None, content="孤儿A")
+        await repo.create(project_id=ZERO_PROJECT_ID, chapter_id=None, content="孤儿B")
+        await repo.create(project_id=PROJECT_ID, chapter_id=CHAPTER_ID, content="正常草稿")
+
+        count = await repo.prune_orphans()
+
+        assert count == 2
+        _, total_zero = await repo.list(project_id=ZERO_PROJECT_ID)
+        assert total_zero == 0
+        _, total_normal = await repo.list(project_id=PROJECT_ID)
+        assert total_normal == 1
+
+    async def test_prune_orphans_dry_run_counts_only(self, db_session, project, chapter):
+        """契约⑩（#275 清理）: dry_run=True 只统计不删除."""
+        repo = SQLiteDraftRepository(db_session)
+        await repo.create(project_id=ZERO_PROJECT_ID, chapter_id=None, content="孤儿")
+
+        count = await repo.prune_orphans(dry_run=True)
+
+        assert count == 1
+        _, total = await repo.list(project_id=ZERO_PROJECT_ID)
+        assert total == 1

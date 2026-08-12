@@ -364,3 +364,41 @@ async def test_drafts_reject(overrides):
         resp = await client.post(f"/api/v1/agent/drafts/{DRAFT_ID}/reject")
     assert resp.status_code == 200
     assert resp.json()["status"] == "rejected"
+
+
+# ── #275: 孤儿草稿清理端点（prune-orphans） ──
+
+
+async def test_drafts_prune_orphans(overrides):
+    """#275 清理端点: POST /agent/drafts/prune-orphans → 200 {"deleted": N}。
+
+    RED 预期: 端点未注册 → 404 → status_code 断言 FAILED（clean FAILED）。
+    """
+    from unittest.mock import AsyncMock
+
+    draft_svc = overrides["draft"]
+    draft_svc.prune_orphans = AsyncMock(return_value=3)
+
+    async with _client() as client:
+        resp = await client.post("/api/v1/agent/drafts/prune-orphans")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"deleted": 3}
+    draft_svc.prune_orphans.assert_awaited_once_with(dry_run=False)
+
+
+async def test_drafts_prune_orphans_dry_run(overrides):
+    """#275 清理端点: body {"dry_run": true} → svc 收到 dry_run=True。"""
+    from unittest.mock import AsyncMock
+
+    draft_svc = overrides["draft"]
+    draft_svc.prune_orphans = AsyncMock(return_value=2)
+
+    async with _client() as client:
+        resp = await client.post(
+            "/api/v1/agent/drafts/prune-orphans", json={"dry_run": True}
+        )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"deleted": 2}
+    draft_svc.prune_orphans.assert_awaited_once_with(dry_run=True)

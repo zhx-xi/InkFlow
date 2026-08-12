@@ -164,3 +164,22 @@ class SQLiteDraftRepository:
         await self._session.commit()
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
+
+    async def prune_orphans(self, *, dry_run: bool = False) -> int:
+        """删除/统计 project_id == 全零 UUID 的草稿（#275 孤儿数据清理）.
+
+        Args:
+            dry_run: True = 只统计不删除（查询 + count，不 commit）.
+
+        Returns:
+            匹配条数（dry_run=True 时草稿保留）.
+        """
+        stmt = select(DraftORM).where(DraftORM.project_id == str(uuid.UUID(int=0)))
+        result = await self._session.execute(stmt)
+        orphans = list(result.scalars().all())
+        if dry_run:
+            return len(orphans)
+        for orm in orphans:
+            await self._session.delete(orm)
+        await self._session.commit()
+        return len(orphans)

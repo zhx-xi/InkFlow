@@ -34,11 +34,18 @@ class SaveDraftParams(BaseModel):
 
 @dataclass
 class SaveDraftToolDeps:
-    """写工具工厂依赖——service 实例注入（鸭子类型，镜像 ReaderToolDeps）."""
+    """写工具工厂依赖——service 实例注入（鸭子类型，镜像 ReaderToolDeps）.
+
+    expected_project_id/expected_chapter_id: #275 期望上下文——每次 run 由
+    装配层注入请求真实值；工具参数与期望不符 → 拒绝（防 LLM 编造全零 UUID
+    落孤儿数据）。
+    """
 
     draft_service: object  # 有 create(*, project_id, chapter_id, content,
     #   summary="", agent_run_id=None) -> Draft
     audit_service: object  # 有 record(**kwargs)（AuditLogService 形态）
+    expected_project_id: uuid.UUID | None = None
+    expected_chapter_id: uuid.UUID | None = None
 
 
 def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool:
@@ -65,7 +72,35 @@ def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool:
         content: str = "",
         summary: str | None = None,
     ) -> str:
+        project_id = project_id if isinstance(project_id, uuid.UUID) else uuid.UUID(str(project_id))
+        chapter_id = (
+            None
+            if chapter_id is None
+            else (chapter_id if isinstance(chapter_id, uuid.UUID) else uuid.UUID(str(chapter_id)))
+        )
+
+        def _validate_context() -> None:
+            """#275 工具上下文校验——参数与期望不符直接抛 ValueError.
+
+            统一 except 路径生成错误信封（约束③失败审计自动覆盖）。
+            """
+            if deps.expected_project_id is not None and project_id != deps.expected_project_id:
+                raise ValueError(
+                    f"project_id 与当前项目上下文不符（期望 {deps.expected_project_id}，"
+                    f"收到 {project_id}）"
+                )
+            if (
+                deps.expected_chapter_id is not None
+                and chapter_id is not None
+                and chapter_id != deps.expected_chapter_id
+            ):
+                raise ValueError(
+                    f"chapter_id 与当前章节上下文不符（期望 {deps.expected_chapter_id}，"
+                    f"收到 {chapter_id}）"
+                )
+
         try:
+            _validate_context()
             draft = await deps.draft_service.create(  # type: ignore[attr-defined]  # 鸭子类型：draft_service 按契约提供 create
                 project_id=project_id,
                 chapter_id=chapter_id,

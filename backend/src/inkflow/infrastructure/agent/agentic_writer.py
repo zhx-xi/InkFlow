@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import cast
@@ -38,18 +39,26 @@ class AgenticWriterDeps:
 def build_writer_agent_system_prompt(
     prompt_manager,
     *,
+    project_id: uuid.UUID | None = None,
+    chapter_id: uuid.UUID | None = None,
     outline: str = "",
     context: str = "",
     min_words: int = 2000,
     style_hint: str = "",
 ) -> str:
-    """渲染 writer_agent.yaml system_prompt（variables 按需，模板未用变量可传空）.
+    """渲染 writer_agent.yaml system_prompt（#275: 注入当前项目/章节 UUID）.
 
-    父侧定稿：模板 system_prompt 写死（无变量）——render 用空 dict 原样返回；
-    outline/context/min_words/style_hint 参数预留（后续模板变量化时启用）。
+    变量 dict 恒含 project_id/chapter_id 键（None → 空串）——模板 variables
+    声明后 PromptManager.render 的 validate 要求两键必传。
     """
     template = prompt_manager.load("writer_agent")
-    rendered = prompt_manager.render(template, {})
+    rendered = prompt_manager.render(
+        template,
+        {
+            "project_id": str(project_id) if project_id is not None else "",
+            "chapter_id": str(chapter_id) if chapter_id is not None else "",
+        },
+    )
     if rendered.messages:
         return str(rendered.messages[0]["content"])
     return str(template.system_prompt)
@@ -80,6 +89,8 @@ def build_agentic_writer(
     deps: AgenticWriterDeps,
     system_prompt: str,
     profile_key: str | None = None,
+    expected_project_id: uuid.UUID | None = None,
+    expected_chapter_id: uuid.UUID | None = None,
 ):
     """组装 agent：5 只读 + save_draft → build_deep_agent（deepagents ReAct 循环）.
 
@@ -90,6 +101,10 @@ def build_agentic_writer(
         deps: 装配依赖（5 只读 service + draft/audit service）.
         system_prompt: writer_agent 系统提示（build_writer_agent_system_prompt 产物）.
         profile_key: deepagents HarnessProfile key（None = 按模型名自动确保）.
+        expected_project_id: #275 期望项目上下文——save_draft 工具防御用
+            （每次 run 由装配层注入请求真实值，工具参数不符 → 拒绝）.
+        expected_chapter_id: #275 期望章节上下文——save_draft 工具防御用
+            （每次 run 由装配层注入请求真实值，工具参数不符 → 拒绝）.
 
     Returns:
         DeepAgentInvokeAdapter（包装 deepagents CompiledStateGraph，服务层
@@ -107,6 +122,8 @@ def build_agentic_writer(
             SaveDraftToolDeps(
                 draft_service=deps.draft_service,
                 audit_service=deps.audit_service,
+                expected_project_id=expected_project_id,
+                expected_chapter_id=expected_chapter_id,
             )
         )
     )
