@@ -649,3 +649,61 @@ class TestGetRaw:
         err = exc_info.value
         assert err.status_code == 404
         assert err.detail == "项目不存在"
+
+
+class TestPerRequestTimeout:
+    """#274 契约：post 支持 per-request timeout 覆盖（agentic 长任务端点）。
+
+    背景：rc9 实测 `write next --mode agentic` 必失败（ReadTimeout 30s）——
+    agentic 多步 ReAct 循环实测 44s+ 远超默认 30s；服务端生成成功但客户端断开。
+    修复 = per-request timeout 覆盖：agentic 调用点传长 timeout（300s），
+    其余端点保持默认（快速端点不引入长等待兜底）。
+
+    RED 预期：当前 post 签名无 timeout 参数 → 显式传 timeout 的用例
+    TypeError（unexpected keyword argument 'timeout'，用例内异常 = FAILED）；
+    默认形态守护用例 PASS（既有实现即满足）。GREEN 后 post/_request 增加
+    `timeout: float | None = None` 透传给 httpx request（请求级覆盖），
+    显式传值用例转 PASS。
+    """
+
+    async def test_post_explicit_timeout_forwarded(self, handle):
+        """post(path, json=..., timeout=300.0) → AsyncClient.request 收到 timeout=300.0。"""
+        mock_client = MagicMock()
+        _response = httpx.Response(
+            200,
+            json={"ok": True},
+            request=httpx.Request("POST", f"{BASE_URL}/writing/agentic/generate"),
+        )
+        mock_client.request = AsyncMock(return_value=_response)
+        mock_client.aclose = AsyncMock()
+        with patch(HTTP_MOD, return_value=mock_client):
+            async with InkFlowHTTPClient(handle) as client:
+                await client.post(
+                    "/writing/agentic/generate",
+                    json={"project_id": "p1"},
+                    timeout=300.0,
+                )
+        call = mock_client.request.await_args
+        assert call.args[0] == "POST"
+        assert call.args[1] == "/writing/agentic/generate"
+        assert call.kwargs.get("timeout") == 300.0
+
+    async def test_post_default_no_timeout_kwarg(self, handle):
+        """默认（不传 timeout）→ request 无 timeout kwarg（httpx 走 client 级默认）。
+
+        守护用例：默认路径行为不得改变——RED 阶段即 PASS 是刻意为之。
+        """
+        mock_client = MagicMock()
+        _response = httpx.Response(
+            200,
+            json={"ok": True},
+            request=httpx.Request("POST", f"{BASE_URL}/projects"),
+        )
+        mock_client.request = AsyncMock(return_value=_response)
+        mock_client.aclose = AsyncMock()
+        with patch(HTTP_MOD, return_value=mock_client):
+            async with InkFlowHTTPClient(handle) as client:
+                await client.post("/projects", json={"name": "示例"})
+        call = mock_client.request.await_args
+        assert call.args[0] == "POST"
+        assert call.kwargs.get("timeout") is None
