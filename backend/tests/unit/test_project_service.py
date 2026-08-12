@@ -223,3 +223,104 @@ class TestProjectServiceBasics:
         mock_repo.hard_delete = AsyncMock(return_value=False)
         assert await svc.hard_delete(999) is False
         mock_repo.hard_delete.assert_awaited_once_with(999)
+
+
+class TestUpdateAgentOrderValidation:
+    """F42 #269 API 层语义校验（spec §2.3 + §13 M4）：PATCH config.agent_order 在
+    合并后校验「配置驱动模式必须包含全部启用角色」→ ValueError（router 转 422）。
+
+    校验规则（Plan C1 裁定，落点 = project_service.update 合并后）:
+    - agent_order 空（默认模板模式）→ 不校验（任意 agent_* 状态）
+    - agent_order 非空（配置驱动模式）→ 启用角色 = 合并后 agent_* 非 null 字段名；
+      全部关闭 → ValueError("配置驱动模式至少需要 1 个启用角色")；
+      order 缺启用角色 → ValueError("agent_order 必须包含全部启用角色: {缺失字段名}")
+
+    RED 形态（两阶段）：当前 ProjectConfig 无 agent_order 字段（extra ignore）+ 无
+    校验 → 非法用例 DID NOT RAISE（断言 FAIL）；合法用例 `"agent_order" in
+    merged.config.model_dump()` AssertionError。GREEN 后按真实校验行为判定。
+    """
+
+    async def test_config_driven_mode_requires_all_enabled_roles(self, svc, mock_repo) -> None:
+        """配置驱动模式：order 缺启用角色（agent_writer 启用但不在 order）→ ValueError
+        「agent_order 必须包含全部启用角色: agent_writer」（消息对齐 #251 CLI 契约）。"""
+        existing = _project(
+            config=ProjectConfig(
+                agent_architect="openai/gpt-4o",
+                agent_writer="openai/gpt-4o",  # 启用
+                agent_auditor="openai/gpt-4o",
+                agent_reviser="openai/gpt-4o",
+            )
+        )
+        mock_repo.get = AsyncMock(return_value=existing)
+
+        with pytest.raises(ValueError, match="agent_order 必须包含全部启用角色: agent_writer"):
+            await svc.update(
+                PID,
+                ProjectUpdate(config=ProjectConfig(agent_order=[["agent_architect"]])),
+            )
+        mock_repo.update.assert_not_awaited()
+
+    async def test_all_roles_disabled_rejected(self, svc, mock_repo) -> None:
+        """配置驱动模式 + 全部 agent_* null → ValueError「至少需要 1 个启用角色」（§7）。"""
+        existing = _project(config=ProjectConfig())  # 全 null
+        mock_repo.get = AsyncMock(return_value=existing)
+
+        with pytest.raises(ValueError, match="至少需要 1 个启用角色"):
+            await svc.update(
+                PID,
+                ProjectUpdate(
+                    config=ProjectConfig(agent_order=[["agent_architect"], ["agent_writer"]])
+                ),
+            )
+        mock_repo.update.assert_not_awaited()
+
+    async def test_config_driven_valid_order_saved(self, svc, mock_repo) -> None:
+        """order 含全部启用角色 → 校验通过，合并后 config 含 agent_order 落库。"""
+        existing = _project(
+            config=ProjectConfig(
+                agent_architect="openai/gpt-4o",
+                agent_writer="openai/gpt-4o",
+                agent_auditor="openai/gpt-4o",
+                agent_reviser="openai/gpt-4o",
+            )
+        )
+        mock_repo.get = AsyncMock(return_value=existing)
+
+        order = [["agent_architect"], ["agent_writer", "agent_auditor"], ["agent_reviser"]]
+        await svc.update(PID, ProjectUpdate(config=ProjectConfig(agent_order=order)))
+
+        merged = mock_repo.update.await_args.args[0]
+        # RED 阶段：agent_order 字段不存在 → AssertionError（extra ignore 静默丢弃）
+        assert "agent_order" in merged.config.model_dump()
+        assert merged.config.model_dump()["agent_order"] == order
+
+    async def test_default_mode_no_validation(self, svc, mock_repo) -> None:
+        """默认模板模式（agent_order 空/缺省）→ 不校验：全 null 也允许保存（B1 零迁移）。"""
+        existing = _project(config=ProjectConfig(agent_writer="openai/gpt-4o"))
+        mock_repo.get = AsyncMock(return_value=existing)
+
+        # 显式写回空列表 = 清空 order → 默认模式；agent_writer 仍启用 → 无校验约束
+        await svc.update(PID, ProjectUpdate(config=ProjectConfig(agent_order=[])))
+
+        merged = mock_repo.update.await_args.args[0]
+        assert "agent_order" in merged.config.model_dump()
+        assert merged.config.model_dump()["agent_order"] == []
+
+    async def test_disabled_role_absent_from_order_allowed(self, svc, mock_repo) -> None:
+        """关闭角色（null）可不出现于 order（§2.3 关闭角色语义）→ 校验通过。"""
+        existing = _project(
+            config=ProjectConfig(
+                agent_architect="openai/gpt-4o",
+                agent_writer=None,  # 关闭——不要求出现在 order
+                agent_auditor="openai/gpt-4o",
+                agent_reviser="openai/gpt-4o",
+            )
+        )
+        mock_repo.get = AsyncMock(return_value=existing)
+
+        order = [["agent_architect"], ["agent_auditor"], ["agent_reviser"]]
+        await svc.update(PID, ProjectUpdate(config=ProjectConfig(agent_order=order)))
+
+        merged = mock_repo.update.await_args.args[0]
+        assert "agent_order" in merged.config.model_dump()
+        assert merged.config.model_dump()["agent_order"] == order

@@ -280,6 +280,10 @@ export const en: Record<string, string> = {
   'ag.auditorDesc': 'Consistency: characters / timeline / world / foreshadowing',
   'ag.reviser': 'Reviser',
   'ag.reviserDesc': 'Auto-revises per audit feedback',
+  // F42 #269: agent chain execution order editing (slot + move up/down)
+  'ag.slot': 'Slot',
+  'ag.moveUp': 'Move up',
+  'ag.moveDown': 'Move down',
   'ap.title': 'Appearance',
   'ap.theme': 'Theme',
   'ap.bg': 'Background',

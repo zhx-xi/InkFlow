@@ -290,6 +290,10 @@ export const zh = {
   'ag.auditorDesc': '一致性审计: 角色 / 时间线 / 世界观 / 伏笔',
   'ag.reviser': 'Reviser 修订',
   'ag.reviserDesc': '按审校意见自动修订章节',
+  // F42 #269：Agent 链执行顺序编辑（槽位 + 上移/下移）
+  'ag.slot': '槽位',
+  'ag.moveUp': '上移',
+  'ag.moveDown': '下移',
   // 外观
   'ap.title': '外观',
   'ap.theme': '主题',

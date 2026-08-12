@@ -47,20 +47,40 @@ def _render(template: str, variables: dict[str, str]) -> str:
 def _build_messages(
     state: PipelineState, stage: PipelineStage, upstream_keys: list[str]
 ) -> list[ChatMessage]:
-    """构建 system + user 消息：system 为渲染后的角色 Prompt，user 含上游输出。
+    """构建 system + user 消息（v1.3 B8 定稿）：system 为渲染后的角色 Prompt，user 含上游输出。
 
     渲染变量 = 上下文变量 + 上游阶段输出（以 ``{stage_id}_output`` 命名），
     因此系统 Prompt 可直接引用 ``{architect_output}`` / ``{writer_output}`` 等占位符。
-    上游输出从嵌套 results dict 读取（``state["results"][key].output``）；
-    skipped 上游的 output 默认 ""，与旧 ``state.get(f"{key}_output", "")`` 语义等价。
+
+    注入键集（v1.3 B8）= upstream_keys（input_from）∪ 该角色 system_prompt 中
+    ``_VARIABLE_RE`` 扫描出的全部 ``{xxx_output}`` 占位符键（xxx 部分）：
+    - 键在 upstream_keys 且 results 有该键 → 实际输出（``.get`` 防御）
+    - 否则 → 空串（未执行角色 / 同层 / 未来层强制空——即使 results 已有同层角色值
+      也强制空，保证断言稳定；无 None 字面量注入，评审 O4）
+    - user 消息 parts 只列 upstream_keys（既有逻辑不变）
     """
     variables = dict(state["context"].variables)
-    for key in upstream_keys:
-        variables[f"{key}_output"] = state["results"][key].output
+    # 注入键集 = upstream_keys ∪ prompt 占位符扫描集（{xxx_output} → xxx，去重保序）
+    inject_keys: list[str] = list(upstream_keys)
+    for match in _VARIABLE_RE.finditer(stage.agent.system_prompt):
+        placeholder = match.group(1)
+        if placeholder.endswith("_output"):
+            role_key = placeholder[: -len("_output")]
+            if role_key not in inject_keys:
+                inject_keys.append(role_key)
+    for key in inject_keys:
+        if key in upstream_keys:
+            # 实际输出（.get 防御：未执行/跳过的上游无条目 → 空串）
+            sr = state["results"].get(key)
+            variables[f"{key}_output"] = sr.output if sr is not None else ""
+        else:
+            # 同层/未来层/未执行引用 → 强制空串（软降级，C3）
+            variables[f"{key}_output"] = ""
     system_prompt = _render(stage.agent.system_prompt, variables)
     parts = [f"请执行阶段 {stage.id}（{stage.name}）"]
     for key in upstream_keys:
-        upstream_output = state["results"][key].output
+        sr = state["results"].get(key)
+        upstream_output = sr.output if sr is not None else ""
         parts.append(f"以下是上游阶段 {key} 的输出：\n{upstream_output}")
     return [
         ChatMessage(role="system", content=system_prompt),
@@ -121,21 +141,31 @@ async def _call_llm_node(state: PipelineState, stage_id: str, upstream_keys: lis
     return result
 
 
+async def generic_node(state: PipelineState, stage_id: str) -> dict:
+    """通用节点：任意 stage.id 执行，upstream_keys 从 stage.input_from 推导（v1.2）。
+
+    v1.1 漏洞修复：4 具名节点硬编码 upstream 与重排拓扑脱节（如 reviser 经重排后
+    上游变化仍读旧硬编码）——泛化后上游完全由边定义驱动。
+    """
+    stage: PipelineStage = state["stages"][stage_id]
+    return await _call_llm_node(state, stage_id, stage.input_from)
+
+
 async def architect_node(state: PipelineState) -> dict:
-    """架构师节点 — 规划章节结构（无上游输出）。"""
-    return await _call_llm_node(state, "architect", [])
+    """兼容别名（v1.2 泛化）：architect 角色经通用节点执行，upstream 由 input_from 推导。"""
+    return await generic_node(state, "architect")
 
 
 async def writer_node(state: PipelineState) -> dict:
-    """写手节点 — 基于架构师输出生成章节内容。"""
-    return await _call_llm_node(state, "writer", ["architect"])
+    """兼容别名（v1.2 泛化）：writer 角色经通用节点执行，upstream 由 input_from 推导。"""
+    return await generic_node(state, "writer")
 
 
 async def auditor_node(state: PipelineState) -> dict:
-    """审阅节点 — 基于写手输出审校文笔质量。"""
-    return await _call_llm_node(state, "auditor", ["writer"])
+    """兼容别名（v1.2 泛化）：auditor 角色经通用节点执行，upstream 由 input_from 推导。"""
+    return await generic_node(state, "auditor")
 
 
 async def reviser_node(state: PipelineState) -> dict:
-    """修订节点 — 基于写手输出与审阅意见修订。"""
-    return await _call_llm_node(state, "reviser", ["writer", "auditor"])
+    """兼容别名（v1.2 泛化）：reviser 角色经通用节点执行，upstream 由 input_from 推导。"""
+    return await generic_node(state, "reviser")

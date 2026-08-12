@@ -103,7 +103,11 @@ async def update_project(
     """部分更新项目。"""
     pid = _parse_project_id(project_id)
     service = _get_svc(db)
-    project = await service.update(pid, data)
+    try:
+        project = await service.update(pid, data)
+    except ValueError as e:
+        # C1：agent_order 语义校验（配置驱动模式缺启用角色等）→ 422 + 中文 detail
+        raise HTTPException(status_code=422, detail=str(e)) from e
     if project is None:
         raise HTTPException(status_code=404, detail="项目不存在")
     return project.model_dump(mode="json")

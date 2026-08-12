@@ -565,3 +565,145 @@ class TestMergeRoleConfigsSentinel:
         assert stages["architect"].agent.model == "openai/gpt-4o"  # sentinel 不覆盖
         assert stages["reviser"].agent.model == "zhipu/glm-4.5"  # 合规覆盖
         assert stages["writer"].agent.model == "openai/gpt-4o"  # 未配置 → 模板
+
+
+class TestExecuteAgentOrder:
+    """F42 #269 执行拓扑装配（spec §5.3.1 F3 定稿：启用集合 → _apply_agent_order →
+    _merge_role_configs → _run_pipeline）：配置驱动模式下 pipeline 收到的 stages
+    按 agent_order 重排；null 角色摘除。
+
+    RED 形态（两阶段）：ProjectConfig.agent_order 字段不存在（extra='ignore' 静默
+    丢弃）→ 首断言 `"agent_order" in config.model_dump()` AssertionError；
+    GREEN 后字段存在 → 首断言过，后续顺序断言驱动 execute 接线。
+    """
+
+    async def test_execute_reorders_stages_by_config(self):
+        """配置驱动模式：agent_order=[[writer],[architect],[auditor],[reviser]] →
+        pipeline.executed_stages 顺序 = [writer, architect, auditor, reviser]（F3 装配顺序）。"""
+        config = ProjectConfig(
+            agent_order=[
+                ["agent_writer"],
+                ["agent_architect"],
+                ["agent_auditor"],
+                ["agent_reviser"],
+            ],
+            agent_architect="openai/gpt-4o",
+            agent_writer="openai/gpt-4o",
+            agent_auditor="openai/gpt-4o",
+            agent_reviser="openai/gpt-4o",
+        )
+        # RED 阶段首断言：agent_order 字段不存在（extra ignore 静默丢弃）
+        assert "agent_order" in config.model_dump()
+        project = _make_project(config=config)
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+        request = PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_chapter")
+
+        await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        assert [s.id for s in pipeline.executed_stages] == [
+            "writer",
+            "architect",
+            "auditor",
+            "reviser",
+        ]
+
+    async def test_execute_parallel_layer(self):
+        """并行层 [[architect],[writer,auditor],[reviser]] → 层序保持（层内顺序不承诺）。"""
+        config = ProjectConfig(
+            agent_order=[["agent_architect"], ["agent_writer", "agent_auditor"], ["agent_reviser"]],
+            agent_architect="openai/gpt-4o",
+            agent_writer="openai/gpt-4o",
+            agent_auditor="openai/gpt-4o",
+            agent_reviser="openai/gpt-4o",
+        )
+        assert "agent_order" in config.model_dump()
+        project = _make_project(config=config)
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+        request = PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_chapter")
+
+        await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        ids = [s.id for s in pipeline.executed_stages]
+        # architect 恒在 writer/auditor 前；reviser 恒在 writer/auditor 后
+        assert ids.index("architect") < ids.index("writer")
+        assert ids.index("architect") < ids.index("auditor")
+        assert ids.index("reviser") > ids.index("writer")
+        assert ids.index("reviser") > ids.index("auditor")
+
+    async def test_execute_skips_disabled_role(self):
+        """配置驱动模式：agent_writer=null（关闭）+ agent_order 含 writer →
+        writer 从执行拓扑摘除（Q2 真禁用 + B1）。"""
+        config = ProjectConfig(
+            agent_order=[
+                ["agent_architect"],
+                ["agent_writer"],
+                ["agent_auditor"],
+                ["agent_reviser"],
+            ],
+            agent_architect="openai/gpt-4o",
+            agent_writer=None,  # 关闭
+            agent_auditor="openai/gpt-4o",
+            agent_reviser="openai/gpt-4o",
+        )
+        assert "agent_order" in config.model_dump()
+        project = _make_project(config=config)
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+        request = PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_chapter")
+
+        await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        assert [s.id for s in pipeline.executed_stages] == [
+            "architect",
+            "auditor",
+            "reviser",
+        ]
+
+    async def test_execute_default_mode_ignores_null(self):
+        """默认模板模式（agent_order 空）：agent_writer=null 不触发跳过（B1：null 不真禁用），
+        四角色照常执行（v1.0 语义）。"""
+        config = ProjectConfig(agent_writer=None)
+        project = _make_project(config=config)
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+        request = PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_chapter")
+
+        await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        assert [s.id for s in pipeline.executed_stages] == [
+            "architect",
+            "writer",
+            "auditor",
+            "reviser",
+        ]
+
+    async def test_execute_invalid_order_falls_back_default(self):
+        """agent_order 缺启用角色（writer 启用但不在 order）→ 执行层回退默认拓扑（M5）。"""
+        config = ProjectConfig(
+            agent_order=[["agent_architect"], ["agent_auditor"], ["agent_reviser"]],
+            agent_architect="openai/gpt-4o",
+            agent_writer="openai/gpt-4o",  # 启用但 order 缺失 → 非法
+            agent_auditor="openai/gpt-4o",
+            agent_reviser="openai/gpt-4o",
+        )
+        assert "agent_order" in config.model_dump()
+        project = _make_project(config=config)
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+        request = PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_chapter")
+
+        await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        assert [s.id for s in pipeline.executed_stages] == [
+            "architect",
+            "writer",
+            "auditor",
+            "reviser",
+        ]

@@ -160,23 +160,24 @@ def test_validate_unknown_upstream():
 
 
 def test_validate_multiple_entries():
-    """2 个 input_from=[] 阶段 → 入口错误。"""
+    """2 个 input_from=[] 阶段 → 放宽后合法（多入口，F42 #269 §5.3.2 层级并行）。"""
     stages = [
         _make_stage("a", "A", _make_role("architect"), input_from=[], output_to=["b"]),
         _make_stage("b", "B", _make_role("writer"), input_from=[], output_to=[]),
     ]
     errors = LangGraphAgentPipeline(MockLLMClient()).validate(stages)
-    assert any("入口" in e for e in errors)
+    assert errors == []
 
 
 def test_validate_no_terminal():
-    """无 output_to=[] 阶段 → 终点错误。"""
+    """a→b→a 无 output_to=[] 阶段 → 放宽后「终点」错误消失，环检测仍报「循环」。"""
     stages = [
         _make_stage("a", "A", _make_role("architect"), input_from=[], output_to=["b"]),
         _make_stage("b", "B", _make_role("writer"), input_from=["a"], output_to=["a"]),
     ]
     errors = LangGraphAgentPipeline(MockLLMClient()).validate(stages)
-    assert any("终点" in e for e in errors)
+    assert any("循环" in e for e in errors)
+    assert not any("终点" in e for e in errors)
 
 
 def test_validate_cycle():
@@ -305,29 +306,34 @@ def test_validate_indegree_decrement_not_zero():
     assert LangGraphAgentPipeline(MockLLMClient()).validate(stages) == []
 
 
-async def test_execute_invalid_config_raises():
-    """execute 前 validate 失败 → PipelineError（管线配置无效）。"""
+async def test_execute_multiple_entries_succeeds():
+    """2 个独立无依赖阶段（多入口/多终点）→ 放宽后合法，执行成功（F42 #269 §5.3.2）。"""
     stages = [
         _make_stage("a", "A", _make_role("architect"), input_from=[], output_to=[]),
         _make_stage("b", "B", _make_role("writer"), input_from=[], output_to=[]),
     ]
-    with pytest.raises(PipelineError, match="管线配置无效"):
-        await LangGraphAgentPipeline(MockLLMClient()).execute(stages, _make_context())
+    result = await LangGraphAgentPipeline(MockLLMClient()).execute(stages, _make_context())
+    assert [s.status for s in result.stages] == [StageStatus.COMPLETED, StageStatus.COMPLETED]
 
 
-async def test_execute_unknown_stage_type_raises():
-    """阶段 id 不在 _NODE_MAP → PipelineError（未知阶段类型）。"""
+async def test_execute_arbitrary_stage_id_succeeds():
+    """任意 stage.id（非内置 4）→ 通用节点执行成功（v1.2 白名单删除）。"""
     stages = [
-        _make_stage("unknown", "未知", _make_role("architect"), input_from=[], output_to=[]),
+        _make_stage("custom_role", "自定义", _make_role("architect"), input_from=[], output_to=[]),
     ]
-    with pytest.raises(PipelineError, match="未知阶段类型: unknown"):
-        await LangGraphAgentPipeline(MockLLMClient()).execute(stages, _make_context())
+    result = await LangGraphAgentPipeline(MockLLMClient()).execute(stages, _make_context())
+    assert result.stages[0].status == StageStatus.COMPLETED
+    assert result.final_output == "mock_response_1"
 
 
 async def test_execute_node_pipeline_error_propagates(monkeypatch):
-    """节点内抛 PipelineError → except PipelineError 原样透传（不包装）。"""
+    """节点内抛 PipelineError → except PipelineError 原样透传（不包装）。
 
-    async def _boom_node(state):
+    F42 #269 R1：monkeypatch 目标从 _NODE_MAP 改通用节点 generic_node
+    （pipeline_nodes.py 具名节点删除，任意 stage.id 经 generic_node 执行）。
+    """
+
+    async def _boom_node(state, stage_id):
         raise PipelineError("node exploded")
 
     stages = [
@@ -335,8 +341,8 @@ async def test_execute_node_pipeline_error_propagates(monkeypatch):
         _make_stage("writer", "W", _make_role("writer"), input_from=["architect"], output_to=[]),
     ]
     monkeypatch.setattr(
-        "inkflow.infrastructure.agent.langgraph_pipeline._NODE_MAP",
-        {"architect": _boom_node, "writer": _boom_node},
+        "inkflow.infrastructure.agent.pipeline_nodes.generic_node",
+        _boom_node,
     )
     with pytest.raises(PipelineError, match="node exploded"):
         await LangGraphAgentPipeline(MockLLMClient()).execute(stages, _make_context())
@@ -345,7 +351,7 @@ async def test_execute_node_pipeline_error_propagates(monkeypatch):
 async def test_execute_node_generic_exception_wrapped(monkeypatch):
     """节点内抛非 PipelineError 异常 → 包装为 PipelineError（管线执行失败），保留 cause。"""
 
-    async def _crash_node(state):
+    async def _crash_node(state, stage_id):
         raise RuntimeError("node crashed")
 
     stages = [
@@ -353,9 +359,173 @@ async def test_execute_node_generic_exception_wrapped(monkeypatch):
         _make_stage("writer", "W", _make_role("writer"), input_from=["architect"], output_to=[]),
     ]
     monkeypatch.setattr(
-        "inkflow.infrastructure.agent.langgraph_pipeline._NODE_MAP",
-        {"architect": _crash_node, "writer": _crash_node},
+        "inkflow.infrastructure.agent.pipeline_nodes.generic_node",
+        _crash_node,
     )
     with pytest.raises(PipelineError, match="管线执行失败") as exc_info:
         await LangGraphAgentPipeline(MockLLMClient()).execute(stages, _make_context())
     assert isinstance(exc_info.value.__cause__, RuntimeError)
+
+
+# ── F42 #269 层级拓扑 / 并行层 / 空注入（spec §5.3.2/§5.3.3 + §13 M4/M5）─────────
+
+
+class RoleMapLLMClient:
+    """per-role 响应表 mock（v1.3 R2 并行断言契约）：按 stage.id 分发响应，
+    不按调用序——「层间顺序确定」断言 = 调用序号单调（层 2 全部 > 层 1 全部）。"""
+
+    def __init__(self, responses: dict[str, str]):
+        self.responses = responses
+        self.calls: list[dict] = []  # 每次调用的 stage 标识从 user 消息提取
+
+    async def chat(self, messages, *, model=None, temperature=None, max_tokens=None, **kwargs):
+        user_content = messages[1].content if len(messages) > 1 else ""
+        # 从 user 消息首行提取阶段 id（pipeline_nodes L61 形态「请执行阶段 {id}（...）」）
+        import re
+
+        m = re.search(r"请执行阶段 (\w+)", user_content)
+        stage_id = m.group(1) if m else "unknown"
+        self.calls.append(
+            {"stage": stage_id, "model": model, "temperature": temperature, "messages": messages}
+        )
+        from inkflow.domain.ports.llm_client import ChatResponse
+
+        return ChatResponse(
+            content=self.responses.get(stage_id, f"resp_{stage_id}"),
+            model=model or "mock",
+            finish_reason="stop",
+        )
+
+
+def _parallel_chain() -> list[PipelineStage]:
+    """层级并行拓扑（spec M5 场景）：architect → writer/auditor 并行 → reviser 全连接。"""
+    architect = _make_stage(
+        "architect",
+        "架构师",
+        _make_role("architect"),
+        input_from=[],
+        output_to=["writer", "auditor"],
+    )
+    writer = _make_stage(
+        "writer",
+        "写手",
+        _make_role("writer", name="写手", system_prompt="基于 {architect_output} 写作"),
+        input_from=["architect"],
+        output_to=["reviser"],
+    )
+    auditor = _make_stage(
+        "auditor",
+        "审阅",
+        _make_role("auditor", name="审阅", system_prompt="审阅 {writer_output}"),
+        input_from=["architect"],
+        output_to=["reviser"],
+    )
+    reviser = _make_stage(
+        "reviser",
+        "修订",
+        _make_role(
+            "reviser",
+            name="修订",
+            system_prompt="修订 {writer_output} 和 {auditor_output}",
+        ),
+        input_from=["architect", "writer", "auditor"],
+        output_to=[],
+    )
+    return [architect, writer, auditor, reviser]
+
+
+async def test_validate_hierarchical_topology():
+    """层级并行拓扑（多入口/多终点 + 全连接边）→ validate 通过（M4）。"""
+    pipeline = LangGraphAgentPipeline(MockLLMClient())
+    assert pipeline.validate(_parallel_chain()) == []
+
+
+async def test_execute_parallel_layer_order_monotonic():
+    """并行层执行：per-role 响应表 mock → 层间调用序号单调（层 2 全部 > 层 1 全部）。
+    层内（writer/auditor）不承诺顺序（v1.3 R2 断言契约）。"""
+    llm = RoleMapLLMClient(
+        {"architect": "大纲", "writer": "正文", "auditor": "审阅意见", "reviser": "修订稿"}
+    )
+    result = await LangGraphAgentPipeline(llm).execute(_parallel_chain(), _make_context())
+
+    # 全部角色均被执行
+    stages_called = {c["stage"] for c in llm.calls}
+    assert stages_called == {"architect", "writer", "auditor", "reviser"}
+    # 层间顺序确定：architect（层 0）调用序号 < writer/auditor（层 1）< reviser（层 2）
+    seq = {c["stage"]: i for i, c in enumerate(llm.calls)}
+    assert seq["architect"] < seq["writer"]
+    assert seq["architect"] < seq["auditor"]
+    assert seq["writer"] < seq["reviser"]
+    assert seq["auditor"] < seq["reviser"]
+    # 成品 = 终点输出
+    assert result.final_output == "修订稿"
+
+
+async def test_execute_parallel_layer_shared_input():
+    """并行层共享前序输出：writer/auditor 都收到 architect 输出。"""
+    llm = RoleMapLLMClient(
+        {"architect": "大纲内容", "writer": "正文", "auditor": "审阅意见", "reviser": "修订稿"}
+    )
+    await LangGraphAgentPipeline(llm).execute(_parallel_chain(), _make_context())
+
+    for call in llm.calls:
+        if call["stage"] in ("writer", "auditor"):
+            assert "大纲内容" in call["messages"][1].content  # 前序层输出注入
+    reviser_call = next(c for c in llm.calls if c["stage"] == "reviser")
+    assert "正文" in reviser_call["messages"][1].content
+    assert "审阅意见" in reviser_call["messages"][1].content
+
+
+async def test_execute_missing_upstream_empty_injection():
+    """未执行角色空注入（§5.3.3 .get 防御）：writer 不在管线（results 无条目）→
+    auditor 引用 {writer_output} → 空串（无 None 字面量，评审 O4）。"""
+    # 只有 architect → auditor 两阶段；auditor prompt 引用 writer_output（未执行）
+    architect = _make_stage(
+        "architect", "架构师", _make_role("architect"), input_from=[], output_to=["auditor"]
+    )
+    auditor = _make_stage(
+        "auditor",
+        "审阅",
+        _make_role("auditor", name="审阅", system_prompt="引用 {writer_output} 检查"),
+        input_from=["architect"],
+        output_to=[],
+    )
+    llm = MockLLMClient(["大纲", "审阅意见"])
+    await LangGraphAgentPipeline(llm).execute([architect, auditor], _make_context())
+
+    auditor_user = llm.calls[1]["messages"][1].content
+    assert "None" not in auditor_user  # 空注入非 None 字面量
+    auditor_system = llm.calls[1]["messages"][0].content
+    assert "None" not in auditor_system
+    assert "{writer_output}" not in auditor_system  # 占位符被渲染（空串）
+
+
+async def test_execute_same_layer_reference_forced_empty():
+    """同层不可见硬语义（v1.3 B8）：writer/auditor 同层且 auditor 引用 {writer_output}
+    → 即使 writer 调度先执行完成也强制注入空串（断言稳定，防 flaky）。"""
+    writer = _make_stage(
+        "writer",
+        "写手",
+        _make_role("writer", name="写手", system_prompt="独立写作"),
+        input_from=[],
+        output_to=[],
+    )
+    auditor = _make_stage(
+        "auditor",
+        "审阅",
+        _make_role("auditor", name="审阅", system_prompt="审阅 {writer_output}"),
+        input_from=[],
+        output_to=[],
+    )
+    llm = RoleMapLLMClient({"writer": "正文内容", "auditor": "审阅意见"})
+    await LangGraphAgentPipeline(llm).execute([writer, auditor], _make_context())
+
+    auditor_call = next(c for c in llm.calls if c["stage"] == "auditor")
+    auditor_system = auditor_call["messages"][0].content
+    # 同层引用强制空：即使 writer 已执行（正文内容在 results），auditor 仍收空串
+    assert "{writer_output}" not in auditor_system
+    assert "正文内容" not in auditor_system
+    assert "None" not in auditor_system
+    # user 消息不得包含同层上游段（input_from 不含同层）
+    auditor_user = auditor_call["messages"][1].content
+    assert "正文内容" not in auditor_user

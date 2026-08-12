@@ -24,6 +24,118 @@ from inkflow.domain.ports.agent_pipeline import (
 logger = logging.getLogger(__name__)
 
 
+def _project_role_models(config: ProjectConfig) -> dict[str, str | None]:
+    """内置 4 角色字段名 → 项目配置模型值映射（stage.id 不带 agent_ 前缀）。"""
+    return {
+        "architect": config.agent_architect,
+        "writer": config.agent_writer,
+        "auditor": config.agent_auditor,
+        "reviser": config.agent_reviser,
+    }
+
+
+def _apply_agent_order(
+    stages: list[PipelineStage],
+    agent_order: list[list[str]],
+    enabled_roles: set[str],
+) -> list[PipelineStage]:
+    """按 agent_order 层级拓扑重排管线阶段（spec §5.3.1 步骤 2-8 + 裁定 C1-C4）。
+
+    双模式（B1）：
+    - agent_order 空 = 默认模板模式 → 原样返回 stages（null 不触发跳过，v1.0 语义零迁移）
+    - 非空 = 配置驱动模式 → 防御校验 → 跳过过滤 → 层级映射 → 全连接边重建 → 终点角色校验
+
+    防御回退（warning + 原样返回）：
+    - 长度 >10 / 跨层重复 / 缺启用角色（C1）/ 终点角色为 architect/auditor（C2 成品身份）
+
+    软降级（C3）：未来层/同层引用不回退，由 pipeline_nodes 空注入处理。
+    自定义角色（C4）：agent_order 中非内置角色且模板 stages 无此 stage → 跳过 + warning。
+    """
+    if not agent_order:
+        return stages
+
+    # 防御校验：长度上限（槽位 0-9）/ 跨层重复（执行层防御，存储层已拦的损坏数据）
+    if len(agent_order) > 10:
+        logger.warning("agent_order 超过 10 层（槽位编号 0-9），回退默认拓扑")
+        return stages
+    flattened = [role for layer in agent_order for role in layer]
+    if len(flattened) != len(set(flattened)):
+        logger.warning("agent_order 存在跨层重复角色，回退默认拓扑")
+        return stages
+
+    # 缺启用角色校验（C1）：启用角色（字段名，去 agent_ 前缀）必须全部出现在 order 展开集
+    order_roles = {role.removeprefix("agent_") for role in flattened}
+    enabled_stage_ids = {role.removeprefix("agent_") for role in enabled_roles}
+    missing = enabled_stage_ids - order_roles
+    if missing:
+        logger.warning(
+            "agent_order 缺少启用角色: %s，回退默认拓扑",
+            ", ".join(sorted(missing)),
+        )
+        return stages
+
+    # 跳过过滤（Q2+B1）：配置驱动模式下 enabled_roles 不含的角色（null）从 order 摘除；
+    # 层变空保留空层（后续按非空层计算，空槽不影响前序全层成员集合）
+    filtered_layers = [[role for role in layer if role in enabled_roles] for layer in agent_order]
+
+    # 层级映射：agent_xxx → xxx（stage.id）；非内置角色且模板无此 stage → 跳过 + warning
+    stage_by_id = {s.id: s for s in stages}
+    mapped_layers: list[list[str]] = []
+    for layer in filtered_layers:
+        mapped: list[str] = []
+        for role in layer:
+            stage_id = role.removeprefix("agent_")
+            if stage_id not in stage_by_id:
+                logger.warning(
+                    "agent_order 角色 %s 在模板 stages 中无对应阶段（prompt 缺失），跳过",
+                    role,
+                )
+                continue
+            mapped.append(stage_id)
+        mapped_layers.append(mapped)
+
+    # 空槽（[]）与全部被过滤的层不参与拓扑（非空层计算）
+    non_empty_layers = [layer for layer in mapped_layers if layer]
+    if not non_empty_layers:
+        # 配置驱动模式全部角色关闭/跳过 → 无可执行角色 → 空管线
+        return []
+
+    # 终点角色校验（C2 成品身份）：重排后终点（无 output_to 节点）为 architect/auditor
+    # （非内容产出，永不作为成品）→ 回退默认拓扑 + warning
+    terminal_ids = non_empty_layers[-1]
+    if any(sid in ("architect", "auditor") for sid in terminal_ids):
+        logger.warning(
+            "agent_order 终点角色 %s 非内容产出（成品身份 C2），回退默认拓扑",
+            sorted(terminal_ids),
+        )
+        return stages
+
+    # 全连接边重建：第 i 层每节点 input_from = 前序全部非空层所有角色；
+    # output_to = 后序全部非空层所有角色（空槽不改变前序全层成员集合）
+    result: list[PipelineStage] = []
+    for i, layer in enumerate(non_empty_layers):
+        prev_roles: list[str] = []
+        for prev in non_empty_layers[:i]:
+            prev_roles.extend(prev)
+        next_roles: list[str] = []
+        for nxt in non_empty_layers[i + 1 :]:
+            next_roles.extend(nxt)
+        for stage_id in layer:
+            stage = stage_by_id[stage_id]
+            result.append(
+                PipelineStage(
+                    id=stage.id,
+                    name=stage.name,
+                    agent=stage.agent,
+                    input_from=list(prev_roles),
+                    output_to=list(next_roles),
+                    max_retries=stage.max_retries,
+                    required=stage.required,
+                )
+            )
+    return result
+
+
 class AgentServiceError(Exception):
     """Agent 服务层异常。"""
 
@@ -87,10 +199,12 @@ class AgentService:
             if chapter is None:
                 raise AgentServiceError("章节不存在")
 
-        # 4. 合并角色配置（引用式模板装配 + 每角色独立温度链）
-        stages = await self._merge_role_configs(
-            template.stages, project.config, request.role_overrides
-        )
+        # 4. 执行拓扑装配（F3 定稿）：读 agent_* 得启用集合（字段名）→ _apply_agent_order
+        #    （双模式分派 + 跳过过滤 + 重排 + 边重建 + C2 终点角色校验）→ 合并角色配置
+        project_role_models = _project_role_models(project.config)
+        enabled_roles = {f"agent_{k}" for k, v in project_role_models.items() if v is not None}
+        stages = _apply_agent_order(template.stages, project.config.agent_order, enabled_roles)
+        stages = await self._merge_role_configs(stages, project.config, request.role_overrides)
 
         # 5. 创建执行记录
         execution = await self._store.create_execution(
@@ -194,12 +308,7 @@ class AgentService:
                 template = await self._template_repo.get(int_id)
 
         # 项目配置的角色映射
-        project_role_models = {
-            "architect": project_config.agent_architect,
-            "writer": project_config.agent_writer,
-            "auditor": project_config.agent_auditor,
-            "reviser": project_config.agent_reviser,
-        }
+        project_role_models = _project_role_models(project_config)
 
         merged = []
         for stage in stages:
