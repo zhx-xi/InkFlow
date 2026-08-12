@@ -4,6 +4,29 @@
 
 > 版本口径以 [ADR-019 v5](adr/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
 
+## [0.7.0] - 2026-08-12
+
+### 新增
+- **F26 Agent 工具基础设施（#90，PR #236）**：deepagents 0.7.5 harness 编排 + 5 只读领域工具（search_characters / check_foreshadowing / get_prior_summary / audit_chapter / count_words），静态注册表 + 工具工厂（ADR-E v6）
+- **F27 Writer Agent 闭环（#160，PR #240/#241）**：ReAct 工具循环 + save_draft 草稿确认流（draft → confirm → 正式章节）+ 四重护栏（repeat_tool / max_steps / empty_content / token_budget）+ agent_run 决策轨迹全量快照（ADR-D/F）
+- **F28 记忆系统（#159，PR #242）**：diff 事件捕获 + N≥2 偏好学习 + protected 层注入写作上下文 + `inkflow memory list/remove/stats`（ADR-G/H）
+- **数据目录设置（#266，PR #272）**：`config set data-dir` + GUI 设置页——`%APPDATA%\InkFlow\instance.env` 固定锚点持久化 INKFLOW_DATA_DIR，DB/向量库/chroma 整体迁移，三端一致（CLI config show = 设置 API = 实际目录）
+- **模型测试按钮（#267，PR #271）**：ProviderDialog 测试请求自包含 model（不依赖未保存的注册表状态），真实 key 一键验证连接
+- E2E 增强（#142 PR #238 写作页 / #143 PR #239 项目页+壳）
+
+### 修复
+- writing 404 映射 + revise 模型回退（#229/#230，PR #234）
+- chapter list --status + Agent 链开关持久化 + 项目卡片跳转（#231/#225/#232，PR #233/#237/#235）
+- memory stats 500——service 未解包 repo 元组（#249，PR #250）
+- rc3 三缺陷：preference_repo 方法缺失 + CLI None 参数过滤 + chromadb telemetry 收集（#252/#253/#254，PR #255）
+- 打包收集链：#253 补充（tiktoken 编码数据 → chromadb 全家桶 collect_all → tiktoken/tiktoken_ext Rust 扩展，PR #256/#262/#263）
+- search semantic 装配注入 + spec 收集契约测试 + 打包产物冒烟（#264，PR #265）
+- CLI agentic 30s 读超时 → 长超时（#274，PR #279）
+- agentic 系统提示未注入 project_id → 工具查询全空 + 草稿落孤儿项目（#275，PR #280）
+
+### 变更
+- 0.7.0 预发布迭代 rc1-rc10（2026-08-11 ~ 08-12），收集类缺陷五轮洋葱剥皮（posthog → tiktoken 数据 → chromadb Rust → tiktoken Rust 扩展）后收敛，正式版体积 exe 173.0MB / 便携 zip 211.4MB / CLI zip 104.2MB（vs 0.6.0：+14%/+14%/+38%，deepagents 硬依赖 + 收集类全家桶代价）
+
 ## [0.6.0] - 2026-08-10
 
 ### 新增
