@@ -36,10 +36,11 @@ specs/f16-style-service/spec.md §8.2（STYLE 槽位落地）。
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -315,6 +316,9 @@ class ExtractionService:
             reindex 全量重建用档案仓储（§5.6）.
         vector_store: RAG 向量存储（ADR-013）；None = 未装配，
             index=true / reindex / retrieve 时报 RAGUnavailableError（§5.6/§6.3）.
+        fingerprint_provider: reindex 四步协议指纹提供器（#276）——返回当前
+            configured 指纹 dict；None = 不写指纹（向后兼容）。reindex 全程
+            持锁（_reindex_lock），先写 reindexing 后 commit-last 写 fresh。
     """
 
     def __init__(
@@ -335,6 +339,7 @@ class ExtractionService:
         timeline_repo: TimelineRepositoryProtocol | None = None,
         foreshadowing_repo: ForeshadowingRepositoryProtocol | None = None,
         vector_store: VectorStoreProtocol | None = None,
+        fingerprint_provider: Callable[[], Awaitable[dict | None]] | None = None,
     ) -> None:
         self._project_repo = project_repo
         self._chapter_repo = chapter_repo
@@ -351,6 +356,8 @@ class ExtractionService:
         self._timeline_repo = timeline_repo
         self._foreshadowing_repo = foreshadowing_repo
         self._vector_store = vector_store
+        self._fingerprint_provider = fingerprint_provider
+        self._reindex_lock = asyncio.Lock()
 
         # 类型注册表（spec §6.1: 6 槽全注册；F16 §8.2: STYLE → StyleService.analyze）。
         # TIMELINE 槽位为双 handler 选择器（§5.5: 设置项开启 → TimelineExtractor，
@@ -794,76 +801,127 @@ class ExtractionService:
         project_id: uuid.UUID,
         entity_types: list[EntityType] | None = None,
     ) -> ReindexResult:
-        """全量重建索引（spec §5.6）— 从各模块仓储分页拉取档案 → index_batch.
+        """全量重建索引（spec §5.6 + #276 四步协议）— 顺序不可调换:
+
+        ① 写 status="reindexing" 指纹（fingerprint_provider 非 None 时）
+        ② 维度探测（probe_embedding_dimension vs probe_collection_dimension；
+           空库 0 → 直灌，异维 → recreate_collections + collections_recreated）
+        ③ upsert 全量（既有逐类型分页拉取 → index_batch）→ 差集删除
+           （delete_stale(pid, 源侧 id 全集, entity_types)）
+        ④ commit-last 写 status="fresh" 指纹（唯一提交点——任何失败不提交 fresh）
+
+        并发 reindex 全程持 _reindex_lock 串行（契约 20）。
 
         Args:
             project_id: 所属项目 UUID.
             entity_types: 需重建的实体类型；None = 全部 5 种（缺省语义）.
 
         Returns:
-            ReindexResult（indexed = 索引实体总数，幂等 upsert）.
+            ReindexResult（indexed = 索引实体总数，幂等 upsert；
+            collections_recreated = 维度不匹配重建标志）.
 
         Raises:
             RAGUnavailableError: 向量存储未装配（500）.
         """
-        if self._vector_store is None:
-            raise RAGUnavailableError()
-        types = list(entity_types) if entity_types else list(EntityType)
-        warnings: list[str] = []
-        total = 0
-        pid = str(project_id)
-        pid_int = _to_int_id(project_id)
+        async with self._reindex_lock:
+            if self._vector_store is None:
+                raise RAGUnavailableError()
+            # None = 全部 5 种（缺省语义）；[] = 显式空（#276 协议骨架，
+            # 只走探测/差集/指纹不索引——父侧契约修正 2026-08-12）
+            types = list(entity_types) if entity_types is not None else list(EntityType)
+            pid = str(project_id)
+            pid_int = _to_int_id(project_id)
+            # ① 写 reindexing 指纹（非 None 时；commit-last 前失败不提交 fresh）
+            fp = await self._fingerprint_provider() if self._fingerprint_provider else None
+            if fp is not None:
+                await self._vector_store.write_fingerprint(pid, fp, "reindexing")
+            # ② 维度探测（空库 0 → 直灌；异维 → 重建 collection）
+            recreated = False
+            target_dim = await self._vector_store.probe_embedding_dimension()
+            existing_dim = await self._vector_store.probe_collection_dimension(pid)
+            if existing_dim and target_dim and existing_dim != target_dim:
+                await self._vector_store.recreate_collections(types)
+                recreated = True
+            warnings: list[str] = []
+            total = 0
+            source_ids: set[str] = set()
 
-        for entity_type in types:
-            if entity_type is EntityType.CHARACTER:
-                if self._character_repo is None:
-                    warnings.append(f"实体类型 {entity_type.value} 未配置仓储，已跳过")
+            # ③ upsert 全量（既有逐类型分页拉取）→ 循环外差集删除
+            for entity_type in types:
+                if entity_type is EntityType.CHARACTER:
+                    if self._character_repo is None:
+                        warnings.append(f"实体类型 {entity_type.value} 未配置仓储，已跳过")
+                        continue
+                    records = await self._paged_list(self._character_repo.list, pid_int)
+                    entities = [_project_character(c, pid) for c in records]
+                elif entity_type is EntityType.SETTING:
+                    if self._world_repo is None:
+                        warnings.append(f"实体类型 {entity_type.value} 未配置仓储，已跳过")
+                        continue
+                    records = await self._paged_list(self._world_repo.list, pid_int)
+                    entities = [_project_setting(s, pid) for s in records]
+                elif entity_type is EntityType.FORESHADOWING:
+                    if self._foreshadowing_repo is None:
+                        warnings.append(f"实体类型 {entity_type.value} 未配置仓储，已跳过")
+                        continue
+                    records = await self._paged_list(self._foreshadowing_repo.list, pid_int)
+                    entities = [_project_foreshadowing(f, pid) for f in records]
+                elif entity_type is EntityType.TIMELINE_EVENT:
+                    if self._timeline_repo is None:
+                        warnings.append(f"实体类型 {entity_type.value} 未配置仓储，已跳过")
+                        continue
+                    events = await self._timeline_repo.list_all(pid_int)
+                    entities = [_project_timeline_event(e, pid) for e in events]
+                elif entity_type is EntityType.CHAPTER_CHUNK:
+                    chapters = await self._paged_list(self._chapter_repo.list_chapters, pid_int)
+                    entities = [
+                        _project_chapter_chunk(ch.id, ch.title, i, chunk, pid)
+                        for ch in chapters
+                        for i, chunk in enumerate(chunk_text(ch.content))
+                    ]
+                else:
                     continue
-                records = await self._paged_list(self._character_repo.list, pid_int)
-                entities = [_project_character(c, pid) for c in records]
-            elif entity_type is EntityType.SETTING:
-                if self._world_repo is None:
-                    warnings.append(f"实体类型 {entity_type.value} 未配置仓储，已跳过")
-                    continue
-                records = await self._paged_list(self._world_repo.list, pid_int)
-                entities = [_project_setting(s, pid) for s in records]
-            elif entity_type is EntityType.FORESHADOWING:
-                if self._foreshadowing_repo is None:
-                    warnings.append(f"实体类型 {entity_type.value} 未配置仓储，已跳过")
-                    continue
-                records = await self._paged_list(self._foreshadowing_repo.list, pid_int)
-                entities = [_project_foreshadowing(f, pid) for f in records]
-            elif entity_type is EntityType.TIMELINE_EVENT:
-                if self._timeline_repo is None:
-                    warnings.append(f"实体类型 {entity_type.value} 未配置仓储，已跳过")
-                    continue
-                events = await self._timeline_repo.list_all(pid_int)
-                entities = [_project_timeline_event(e, pid) for e in events]
-            elif entity_type is EntityType.CHAPTER_CHUNK:
-                chapters = await self._paged_list(self._chapter_repo.list_chapters, pid_int)
-                entities = [
-                    _project_chapter_chunk(ch.id, ch.title, i, chunk, pid)
-                    for ch in chapters
-                    for i, chunk in enumerate(chunk_text(ch.content))
-                ]
-            else:
-                continue
-            if entities:
-                await self._vector_store.index_batch(entities)
-            total += len(entities)
+                if entities:
+                    try:
+                        await self._vector_store.index_batch(entities)
+                    except Exception:
+                        # ⚠️ 维度兜底重试（2026-08-12 真实冒烟实证）：
+                        # 「空但维度锁定」的 collection（曾写入后数据被差集
+                        # 删除清空）probe=0 探测不到维度 → upsert 撞旧维度崩
+                        # （chroma InvalidArgumentError 384 vs 768）。
+                        # 未重建过 → 重建后重试；重建过仍失败 → 原样上抛。
+                        if not recreated:
+                            await self._vector_store.recreate_collections(types)
+                            recreated = True
+                            await self._vector_store.index_batch(entities)
+                        else:
+                            raise
+                    source_ids.update(e.id for e in entities)
+                total += len(entities)
 
-        logger.info(
-            "重建索引: project=%s types=%s indexed=%d",
-            project_id,
-            [t.value for t in types],
-            total,
-        )
-        return ReindexResult(
-            project_id=project_id,
-            entity_types=types,
-            indexed=total,
-            warnings=warnings,
-        )
+            await self._vector_store.delete_stale(pid, source_ids, entity_types=types)
+            # ④ commit-last 写 fresh 指纹（唯一提交点）
+            if fp is not None:
+                await self._vector_store.write_fingerprint(pid, fp, "fresh")
+
+            # 日志含 embedding model id——E2E/M4 防假成功观测点
+            # （#276：断言日志中 model id = 当前配置模型，证明单例已刷新）
+            embedding_model_id = (fp or {}).get("embedding", {}).get("model_id", "?")
+            logger.info(
+                "重建索引: project=%s types=%s indexed=%d embedding_model=%s recreated=%s",
+                project_id,
+                [t.value for t in types],
+                total,
+                embedding_model_id,
+                recreated,
+            )
+            return ReindexResult(
+                project_id=project_id,
+                entity_types=types,
+                indexed=total,
+                warnings=warnings,
+                collections_recreated=recreated,
+            )
 
     async def _paged_list(self, fn: Callable[..., Any], project_id: int) -> list[Any]:
         """分页循环拉取仓储列表（limit=100，spec §5.6 reindex 分页）。"""

@@ -605,3 +605,253 @@ test('设置页：快捷键面板渲染（五组快捷键标签与组合键）',
     await app.close();
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #276 E2E 契约（G7，范围 5）：设置页 RAG 向量状态 UI 状态流。
+// 父侧范围裁定（2026-08-12）：E2E 环境无真实 embedding API 端点，reindex 成功闭环
+// （fresh 持久化/日志断言）由真实模型冒烟（M3-M7 门禁）覆盖；此处只做 UI 状态流断言
+// （横幅/按钮/对话框/负例），全部无需真实 embedding 调用——不点击 reindex 确认。
+// 依赖：G1-G5 后端 vector status 端点、G6 设置页 RAG 区块 testid。
+// ⚠️ 内核数据目录为共享持久库（dev 侧 instance.env → %APPDATA%\InkFlow；Electron
+// --user-data-dir 只隔离渲染层 profile，不隔离 provider 注册表）→ 用例 setup 先清理
+// 此前 E2E 遗留的 e2e-rag* 测试 provider（绝不触碰 seed 4 个），保证注册表确定性。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 直调内核 API（X-InkFlow-Token 认证 + JSON body）：非 2xx 抛错；204 → data undefined。 */
+async function apiJson(
+  kernel: KernelInfo,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<{ status: number; data: unknown }> {
+  const res = await fetch(`http://127.0.0.1:${kernel.port}${path}`, {
+    method,
+    headers: {
+      'X-InkFlow-Token': kernel.token,
+      'Content-Type': 'application/json',
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`kernel API ${method} ${path} -> ${res.status}: ${detail}`);
+  }
+  const data = res.status === 204 ? undefined : await res.json();
+  return { status: res.status, data };
+}
+
+/** 清理此前 E2E 运行遗留的 e2e-rag* 测试 provider（共享持久注册表；seed/用户 provider 不动）。 */
+async function cleanupRagTestProviders(kernel: KernelInfo): Promise<void> {
+  const { data } = await apiJson(kernel, 'GET', '/api/v1/provider-configs');
+  const items = (data as { items: Array<{ id: number; name: string }> }).items ?? [];
+  for (const p of items) {
+    if (p.name.startsWith('e2e-rag')) {
+      await apiJson(kernel, 'DELETE', `/api/v1/provider-configs/${p.id}`);
+    }
+  }
+}
+
+/**
+ * 配置 embedding provider（e2e-rag + 落盘 mock key）→ 201。
+ * 另需 POST /api/v1/settings/llm-keys：G1-G5 _build_store 对非本地 embedding provider
+ * 强制 key 存在（APIKeyManager.load 抛错 → RAGUnavailableError → status no_embedding）。
+ */
+async function ensureEmbeddingProvider(
+  kernel: KernelInfo,
+  modelId: string,
+): Promise<{ status: number }> {
+  await cleanupRagTestProviders(kernel);
+  let created: { status: number; data: unknown };
+  try {
+    created = await apiJson(kernel, 'POST', '/api/v1/provider-configs', {
+      name: 'e2e-rag',
+      base_url: 'https://api.test.example/v1',
+      models: [{ id: modelId, type: 'embedding' }],
+    });
+  } catch (err) {
+    // 同名残留（422）→ 幂等复用：PATCH 刷新 models（正常已被 cleanup 清掉，仅兜底）
+    if (!(err instanceof Error) || !/422/.test(err.message)) throw err;
+    const { data } = await apiJson(kernel, 'GET', '/api/v1/provider-configs');
+    const existing = ((data as { items: Array<{ id: number; name: string }> }).items ?? []).find(
+      (p) => p.name === 'e2e-rag',
+    );
+    if (!existing) throw err;
+    created = await apiJson(kernel, 'PATCH', `/api/v1/provider-configs/${existing.id}`, {
+      base_url: 'https://api.test.example/v1',
+      models: [{ id: modelId, type: 'embedding' }],
+    });
+  }
+  await apiJson(kernel, 'POST', '/api/v1/settings/llm-keys', {
+    provider: 'e2e-rag',
+    api_key: 'e2e-mock-key',
+  });
+  return created;
+}
+
+/** 设置页 → 模型分类：ModelsPanel 挂载 → fetchVectorStatus → RAG 状态卡片出现。 */
+async function openRagStatus(window: Page): Promise<void> {
+  await gotoNav(window, '设置');
+  await window.getByTestId('settings-cat-models').click();
+  await expect(window.getByTestId('rag-status-card')).toBeVisible({ timeout: 15_000 });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RAG 向量状态区块（#276）——4 个 UI 状态流用例（无真实 embedding 调用）。
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('RAG 向量状态区块（#276）', () => {
+  /** 独立 userData 临时目录（渲染层隔离；内核 DB 共享，provider 由 cleanup 保证确定性）。 */
+  const mkUserData = (): string => mkdtempSync(path.join(tmpdir(), 'inkflow-e2e-rag-'));
+
+  test('rag_unknown_shows_stale_banner：无指纹 → unknown 视同 stale（模型名/横幅/按钮）', async () => {
+    const userDataDir = mkUserData();
+    const { app, window, kernel } = await launchAppWithUserData(userDataDir);
+    try {
+      await window.evaluate(() => localStorage.clear());
+      await window.reload();
+      await expect(window.getByTestId('app-nav')).toBeVisible();
+
+      await createProjectViaUi(window, 'RAG 测试项目');
+
+      // Node fetch 直调内核配置 embedding provider（201）；注册表首个 embedding 模型 = configured_fp.model_id
+      const created = await ensureEmbeddingProvider(kernel, 'text-embedding-test');
+      expect(created.status).toBe(201);
+
+      await openRagStatus(window);
+      await expect(window.getByTestId('rag-model-name')).toContainText('text-embedding-test');
+      const banner = window.getByTestId('rag-stale-banner');
+      await expect(banner).toBeVisible();
+      await expect(banner).toContainText('无索引指纹');
+      await expect(window.getByTestId('rag-reindex-btn')).toBeVisible();
+    } finally {
+      await app.close();
+      try {
+        rmSync(userDataDir, { recursive: true, force: true });
+      } catch {
+        // Windows 文件锁：临时目录清理失败不阻塞用例
+      }
+    }
+  });
+
+  test('rag_reindex_button_opens_confirm_dialog：点重新向量化 → 确认对话框出现（不点确认）', async () => {
+    const userDataDir = mkUserData();
+    const { app, window, kernel } = await launchAppWithUserData(userDataDir);
+    try {
+      await window.evaluate(() => localStorage.clear());
+      await window.reload();
+      await expect(window.getByTestId('app-nav')).toBeVisible();
+
+      await createProjectViaUi(window, 'RAG 测试项目');
+      await ensureEmbeddingProvider(kernel, 'text-embedding-test');
+
+      await openRagStatus(window);
+      await window.getByTestId('rag-reindex-btn').click();
+      const dlg = window.getByTestId('rag-confirm-dialog');
+      await expect(dlg).toBeVisible();
+      await expect(dlg).toContainText('将用当前模型全量重建向量索引');
+      await expect(window.getByTestId('rag-confirm-ok')).toBeVisible();
+      // 不点击确认：真实 reindex 会调 embedding API 失败（E2E 无真实端点）——本用例只锁 UI 链路
+    } finally {
+      await app.close();
+      try {
+        rmSync(userDataDir, { recursive: true, force: true });
+      } catch {
+        // Windows 文件锁：临时目录清理失败不阻塞用例
+      }
+    }
+  });
+
+  test('rag_no_embedding_shows_hint：无 embedding 可用（无 provider + 无本地 BGE 模型）→ 提示态', async () => {
+    const userDataDir = mkUserData();
+    const { app, window, kernel } = await launchAppWithUserData(userDataDir);
+    try {
+      await window.evaluate(() => localStorage.clear());
+      await window.reload();
+      await expect(window.getByTestId('app-nav')).toBeVisible();
+
+      await createProjectViaUi(window, 'RAG 测试项目');
+      // 不配置任何 provider——清理遗留 e2e-rag* 保证「注册表无 embedding」成立（seed 4 个均无 embedding 模型）
+      await cleanupRagTestProviders(kernel);
+
+      await openRagStatus(window);
+      // ⚠️ 父侧裁定（2026-08-12 E2E 实测）：本地 E2E 环境无 BGE 模型文件
+      // （HuggingFaceBgeEmbeddings 构造失败）→ fallback 走 no_embedding 态——
+      // 断言「未配置 embedding 模型」提示 + 无横幅无按钮（真实环境语义；
+      // BGE fallback 两态需真实模型文件，由打包版/真机冒烟覆盖）
+      await expect(window.getByTestId('rag-no-embedding')).toBeVisible();
+      await expect(window.getByTestId('rag-model-name')).toHaveText('—');
+      await expect(window.getByTestId('rag-stale-banner')).not.toBeVisible();
+      await expect(window.getByTestId('rag-reindex-btn')).not.toBeVisible();
+    } finally {
+      await app.close();
+      try {
+        rmSync(userDataDir, { recursive: true, force: true });
+      } catch {
+        // Windows 文件锁：临时目录清理失败不阻塞用例
+      }
+    }
+  });
+
+  test('rag_stale_persists_across_restart：stale（unknown）跨重启保留', async () => {
+    // 重启用例 = 二次 launch + 二次内核冷启动，放宽单用例超时（F32 M3 模式）
+    test.setTimeout(240_000);
+    const userDataDir = mkUserData();
+    const name = `RAG 重启项目-${Date.now()}`;
+
+    // ── 第一程：创建项目 → 配置 embedding provider → 设置页确认横幅（unknown 态）──
+    const first = await launchAppWithUserData(userDataDir);
+    try {
+      await first.window.evaluate(() => localStorage.clear());
+      await first.window.reload();
+      await expect(first.window.getByTestId('app-nav')).toBeVisible();
+
+      await createProjectViaUi(first.window, name);
+      await ensureEmbeddingProvider(first.kernel, 'text-embedding-test');
+
+      await openRagStatus(first.window);
+      await expect(first.window.getByTestId('rag-stale-banner')).toBeVisible();
+    } finally {
+      await first.app.close();
+    }
+
+    // ── 第二程：同 userData 重启 → 设置页横幅仍出现（unknown 态持久——未 reindex 过）──
+    const second = await launchAppWithUserData(userDataDir);
+    try {
+      // currentProjectId 为内存态（无 persist）→ 项目页卡片重新选中本项目（#232）
+      await gotoNav(second.window, '项目');
+      await second.window.getByTestId('project-card').filter({ hasText: name }).click();
+      await expect(second.window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
+
+      await openRagStatus(second.window);
+      const banner = second.window.getByTestId('rag-stale-banner');
+      await expect(banner).toBeVisible();
+      // 后端权威（只读）：指纹缺失跨重启稳定 = stale true / reason unknown（UI 横幅同源）
+      const list = await apiJson(second.kernel, 'GET', '/api/v1/projects');
+      const project = ((list.data as { items: Array<{ id: string; name: string }> }).items ?? []).find(
+        (p) => p.name === name,
+      );
+      expect(project).toBeTruthy();
+      await expect
+        .poll(
+          async () => {
+            const r = await apiJson(
+              second.kernel,
+              'GET',
+              `/api/v1/projects/${(project as { id: string }).id}/vector/status`,
+            );
+            const status = r.data as { stale?: boolean; reason?: string | null };
+            return { stale: status.stale, reason: status.reason };
+          },
+          { timeout: 10_000 },
+        )
+        .toEqual({ stale: true, reason: 'unknown' });
+    } finally {
+      await second.app.close();
+    }
+
+    try {
+      rmSync(userDataDir, { recursive: true, force: true });
+    } catch {
+      // Windows 文件锁：临时目录清理失败不阻塞用例
+    }
+  });
+});

@@ -92,6 +92,56 @@ def _retrieved_label(entity: dict, index: int) -> str:
     )
 
 
+def _reason_label(reason: str | None) -> str:
+    """status reason 码 → 人类可读文案（#276；spec §3.1）."""
+    if reason is None or reason == "fresh":
+        return ""
+    return {
+        "unknown": "无索引指纹",
+        "model_changed": "模型已变更",
+        "chunking_changed": "切片参数已变更",
+        "schema_old": "数据版本过旧",
+        "no_embedding": "未配置 embedding 模型",
+    }.get(reason, "")
+
+
+def _status_label(data: dict) -> str:
+    """vector status 的人类可读表达（#276；spec §3.1）."""
+    if data.get("stale") is True:
+        return f"⚠️ 索引可能过期（{_reason_label(data.get('reason'))}），向量库与当前配置不一致"
+    if data.get("reason") == "no_embedding":
+        return "ℹ️ 未配置 embedding 模型"
+    model_id = data.get("configured_fp", {}).get("embedding", {}).get("model_id", "")
+    return f"✅ 向量库状态: 与当前配置一致（模型: {model_id}）"
+
+
+# ---------------------------------------------------------------------------
+# status  — inkflow vector status --project-id <uuid>
+# ---------------------------------------------------------------------------
+
+
+@app.command("status")
+def vector_status_cmd(
+    ctx: typer.Context,
+    project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
+) -> None:
+    """查询向量索引状态（fresh/stale + reason，spec §3.1）"""
+    cli_ctx: CliContext = ctx.obj
+    pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/projects/{pid}/vector/status")
+
+    data = _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, data)
+    else:
+        typer.echo(_status_label(data))
+
+
 # ---------------------------------------------------------------------------
 # reindex  — inkflow vector reindex --project-id <uuid> [--type <type>]...
 # ---------------------------------------------------------------------------
@@ -115,6 +165,16 @@ def vector_reindex_cmd(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
+            status: dict | None = None
+            try:
+                status = await client.get(f"/projects/{pid}/vector/status")
+            except Exception:
+                status = None
+            # 仅 dict 响应参与 stale 判定; 查询失败/异常形态不阻断（严格 is True）
+            if isinstance(status, dict) and status.get("stale") is True:
+                typer.echo(
+                    f"⚠️ 索引可能过期（{_reason_label(status.get('reason'))}），正在使用当前配置重建"
+                )
             return await client.post(
                 f"/projects/{pid}/vector/reindex",
                 json={"entity_types": ([t.value for t in entity_types] if entity_types else None)},
@@ -152,6 +212,16 @@ def vector_retrieve_cmd(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
+            status: dict | None = None
+            try:
+                status = await client.get(f"/projects/{pid}/vector/status")
+            except Exception:
+                status = None
+            # 仅 dict 响应参与 stale 判定; 查询失败/异常形态不阻断（严格 is True）
+            if isinstance(status, dict) and status.get("stale") is True:
+                typer.echo(
+                    f"⚠️ 索引可能过期（{_reason_label(status.get('reason'))}），检索结果可能异常"
+                )
             return await client.post(
                 f"/projects/{pid}/vector/retrieve",
                 json={

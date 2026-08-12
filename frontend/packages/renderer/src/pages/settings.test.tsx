@@ -171,6 +171,12 @@ const { fetchDataDirMock, updateDataDirMock } = vi.hoisted(() => ({
   updateDataDirMock: vi.fn(),
 }));
 
+// #276（2026-08-12）：RAG 向量检索区块契约 mock（GREEN 实现于 src/api/vector.ts）
+const { vectorStatusMock, vectorReindexMock } = vi.hoisted(() => ({
+  vectorStatusMock: vi.fn(),
+  vectorReindexMock: vi.fn(),
+}));
+
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
   return {
@@ -182,6 +188,13 @@ vi.mock('../api/client', async (importOriginal) => {
     updateDataDir: updateDataDirMock,
   };
 });
+
+// #276（2026-08-12）：RAG 向量检索区块 —— GREEN 才创建 src/api/vector.ts，
+// 假实现保证既有用例可运行（#107 Mock-屏蔽型 RED 同款）；GREEN 落地后可删。
+vi.mock('../api/vector', () => ({
+  fetchVectorStatus: vectorStatusMock,
+  postVectorReindex: vectorReindexMock,
+}));
 
 // ⚠️ #107 RED 阶段 mock：stores/templates 与 components/TemplateDialog 由 GREEN 创建，
 // 本文件以测试内假实现提供（保证既有用例可运行）。假 store 行为与 stores/templates.test.ts
@@ -2049,5 +2062,162 @@ describe('设置页 — 数据目录持久化（#266 RED 契约）', () => {
     switchToAccount();
     const input = await screen.findByTestId('settings-data-dir-input');
     expect(input).toHaveAttribute('aria-label', '数据目录');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// #276 S2c RAG 向量检索区块契约（2026-08-12，Issue #276 范围 5）
+// ══════════════════════════════════════════════════════════════════
+// ModelsPanel（模型分类）落地 RAG 区块。data-testid 即契约：
+// - rag-status-card：状态卡片（常驻展示当前 embedding 模型 + 匹配状态）
+// - rag-model-name：当前生效 embedding 模型 id（API provider/model 或本地 BGE）
+// - rag-stale-banner：stale 警告横幅（含 reason 文案；fresh/未配置不渲染）
+// - rag-reindex-btn：重新向量化按钮（仅 stale/unknown 时出现）
+// - rag-confirm-dialog + rag-confirm-ok：确认对话框（维度不匹配 → 破坏性二次确认）
+// - rag-no-embedding：未配置 embedding 提示态
+// 行为：
+// - 挂载 ModelsPanel → fetchVectorStatus(当前项目 id) → 展示模型名 + 状态行；
+//   fresh → 绿色「索引与模型匹配」；stale → 横幅（reason 文案）+ 按钮
+// - 点击按钮 → 确认对话框（文案说明将用当前模型重建）→ 确认 →
+//   postVectorReindex(projectId) → 完成 → 重新 fetchVectorStatus → fresh → 横幅消失
+// - dimension_mismatch=true → 二次确认文案（「清空当前向量库并重建」，破坏性）
+// - reason 文案映射：unknown「无索引指纹」/ model_changed「模型已变更」/
+//   chunking_changed「切片参数已变更」/ schema_old「数据版本过旧」/ no_embedding「未配置」
+// 新增 i18n key（GREEN 补 zh.ts / en.ts）：
+// set.rag.title='向量检索（RAG）' set.rag.model='当前模型' set.rag.fresh='索引与模型匹配'
+// set.rag.stale='向量库与当前配置不一致，检索结果可能异常'
+// set.rag.reindex='重新向量化' set.rag.confirm='将用当前模型全量重建向量索引'
+// set.rag.confirmDestructive='此操作将清空当前向量库并重建（维度不兼容）'
+// set.rag.noEmbedding='未配置 embedding 模型' set.rag.reason.unknown='无索引指纹'
+// set.rag.reason.modelChanged='模型已变更' set.rag.reason.chunkingChanged='切片参数已变更'
+// set.rag.reason.schemaOld='数据版本过旧'
+// RED 预期：GREEN 前 ModelsPanel 为占位 → 新用例全部 element-missing FAIL，
+// 既有用例保持绿。
+
+const ragFingerprint = {
+  schema_version: 1,
+  embedding: {
+    provider: 'openai',
+    model_id: 'text-embedding-3-small',
+    base_url: 'http://api.test/v1',
+    dimension: 384,
+  },
+  chunking: { mode: 'fixed', chunk_size: 500, overlap_ratio: 0, chunker_version: 1 },
+  indexed_at: '2026-08-12T08:00:00Z',
+  status: 'fresh',
+};
+
+const ragStatusFresh = {
+  configured_fp: ragFingerprint,
+  indexed_fp: ragFingerprint,
+  stale: false,
+  reason: null,
+  dimension_mismatch: false,
+};
+
+const ragStatusStaleModelChanged = {
+  ...ragStatusFresh,
+  configured_fp: { ...ragFingerprint, embedding: { ...ragFingerprint.embedding, model_id: 'text-embedding-3-large' } },
+  stale: true,
+  reason: 'model_changed',
+};
+
+const ragStatusUnknown = {
+  ...ragStatusFresh,
+  indexed_fp: null,
+  stale: true,
+  reason: 'unknown',
+};
+
+const ragStatusNoEmbedding = {
+  configured_fp: null,
+  indexed_fp: null,
+  stale: false,
+  reason: 'no_embedding',
+  dimension_mismatch: false,
+};
+
+const ragReindexResult = {
+  project_id: '1',
+  entity_types: ['character', 'setting', 'foreshadowing', 'timeline_event', 'chapter_chunk'],
+  indexed: 87,
+  warnings: [],
+  collections_recreated: false,
+};
+
+function renderModelsPanel(): void {
+  useProjectStore.setState({ currentProjectId: '1' });
+  render(
+    <MemoryRouter>
+      <SettingsPage />
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByTestId('settings-cat-models'));
+}
+
+describe('RAG 向量检索区块（#276）', () => {
+  beforeEach(() => {
+    vectorStatusMock.mockReset();
+    vectorReindexMock.mockReset();
+    vectorStatusMock.mockResolvedValue(ragStatusFresh);
+    vectorReindexMock.mockResolvedValue(ragReindexResult);
+  });
+
+  it('test_rag_fresh_shows_model_name_and_no_banner：fresh → 模型名 + 匹配态，无横幅', async () => {
+    renderModelsPanel();
+    expect(await screen.findByTestId('rag-model-name')).toHaveTextContent(
+      'text-embedding-3-small',
+    );
+    expect(screen.getByTestId('rag-status-card')).toBeInTheDocument();
+    expect(screen.queryByTestId('rag-stale-banner')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('rag-reindex-btn')).not.toBeInTheDocument();
+  });
+
+  it('test_rag_stale_shows_banner_and_reindex_button：stale → 横幅（reason 文案）+ 按钮', async () => {
+    vectorStatusMock.mockResolvedValue(ragStatusStaleModelChanged);
+    renderModelsPanel();
+    const banner = await screen.findByTestId('rag-stale-banner');
+    expect(banner.textContent).toContain('模型已变更');
+    expect(screen.getByTestId('rag-reindex-btn')).toBeInTheDocument();
+  });
+
+  it('test_rag_unknown_shows_banner：unknown（存量升级）视同 stale → 横幅 + 按钮', async () => {
+    vectorStatusMock.mockResolvedValue(ragStatusUnknown);
+    renderModelsPanel();
+    expect(await screen.findByTestId('rag-stale-banner')).toBeInTheDocument();
+    expect(screen.getByTestId('rag-reindex-btn')).toBeInTheDocument();
+  });
+
+  it('test_rag_no_embedding_shows_hint：未配置 embedding → 提示态，无横幅无按钮', async () => {
+    vectorStatusMock.mockResolvedValue(ragStatusNoEmbedding);
+    renderModelsPanel();
+    expect(await screen.findByTestId('rag-no-embedding')).toBeInTheDocument();
+    expect(screen.queryByTestId('rag-stale-banner')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('rag-reindex-btn')).not.toBeInTheDocument();
+  });
+
+  it('test_rag_reindex_flow_confirm_then_fresh：点击按钮 → 确认 → reindex → 刷新 fresh 横幅消失', async () => {
+    vectorStatusMock.mockResolvedValueOnce(ragStatusStaleModelChanged).mockResolvedValue(ragStatusFresh);
+    renderModelsPanel();
+    fireEvent.click(await screen.findByTestId('rag-reindex-btn'));
+    // 确认对话框出现 → 确认
+    expect(await screen.findByTestId('rag-confirm-dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('rag-confirm-ok'));
+    // reindex 调用 + 状态刷新（fresh → 横幅消失）
+    await waitFor(() => {
+      expect(vectorReindexMock).toHaveBeenCalledWith('1');
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('rag-stale-banner')).not.toBeInTheDocument();
+    });
+    expect(vectorStatusMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('test_rag_dimension_mismatch_shows_destructive_confirm：维度不匹配 → 破坏性二次确认文案', async () => {
+    vectorStatusMock.mockResolvedValue({ ...ragStatusStaleModelChanged, dimension_mismatch: true });
+    renderModelsPanel();
+    fireEvent.click(await screen.findByTestId('rag-reindex-btn'));
+    const dialog = await screen.findByTestId('rag-confirm-dialog');
+    expect(dialog.textContent).toContain('清空当前向量库并重建');
   });
 });

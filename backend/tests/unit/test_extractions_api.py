@@ -610,9 +610,15 @@ class TestExtractionRunsAPI:
 
 
 class TestVectorReindexAPI:
-    """POST /api/v1/projects/{project_id}/vector/reindex — 全量重建索引。"""
+    """POST /api/v1/projects/{project_id}/vector/reindex — 全量重建索引。
+
+    #276 GREEN 前瞻（父侧 2026-08-12）：reindex 端点前置
+    await refresh_vector_store()（单例刷新）——测试必须 patch 该函数
+    （真实实现访问 ProviderConfig 注册表/构造 embeddings，测试环境会炸）。
+    """
 
     @patch("inkflow.api.routers.extractions.get_extraction_service")
+    @patch("inkflow.api.routers.extractions.refresh_vector_store", new=AsyncMock())
     def test_reindex_success(self, mock_get_svc: MagicMock) -> None:
         """指定 entity_types 重建：透传 + ReindexResult 序列化。"""
         svc = _mock_svc(mock_get_svc)
@@ -633,6 +639,7 @@ class TestVectorReindexAPI:
         )
 
     @patch("inkflow.api.routers.extractions.get_extraction_service")
+    @patch("inkflow.api.routers.extractions.refresh_vector_store", new=AsyncMock())
     def test_reindex_default_all_types(self, mock_get_svc: MagicMock) -> None:
         """缺省 entity_types（无 body）→ None 透传（服务层 = 全部 5 种）。"""
         svc = _mock_svc(mock_get_svc)
@@ -644,6 +651,7 @@ class TestVectorReindexAPI:
         svc.reindex.assert_awaited_once_with(PID, entity_types=None)
 
     @patch("inkflow.api.routers.extractions.get_extraction_service")
+    @patch("inkflow.api.routers.extractions.refresh_vector_store", new=AsyncMock())
     def test_reindex_project_not_found_404(self, mock_get_svc: MagicMock) -> None:
         """项目不存在返回 404「项目不存在」."""
         svc = _mock_svc(mock_get_svc)
@@ -671,6 +679,7 @@ class TestVectorReindexAPI:
         assert response.status_code == 422
 
     @patch("inkflow.api.routers.extractions.get_extraction_service")
+    @patch("inkflow.api.routers.extractions.refresh_vector_store", new=AsyncMock())
     def test_reindex_rag_unavailable_500(self, mock_get_svc: MagicMock) -> None:
         """RAG 不可用（未装配）→ 500「向量检索服务不可用」."""
         svc = _mock_svc(mock_get_svc)

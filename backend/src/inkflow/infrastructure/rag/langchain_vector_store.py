@@ -15,11 +15,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
 import chromadb
 from langchain_core.embeddings import Embeddings
+from loguru import logger
 
 from inkflow.domain.ports.vector_store import (
     EntityType,
@@ -42,6 +46,12 @@ class LangChainVectorStore:
     - 距离度量 cosine；relevance_score = 1 - distance
     """
 
+    _META_COLLECTION = "inkflow_meta"
+    """指纹专用 collection 名（与向量数据同库同生命周期，不参与语义检索）。"""
+
+    _FP_ID_PREFIX = "fp:"
+    """指纹 doc id 前缀（id = fp:{project_id}，per-project 隔离）。"""
+
     def __init__(self, persist_dir: Path, embeddings: Embeddings) -> None:
         """初始化向量存储。
 
@@ -53,6 +63,9 @@ class LangChainVectorStore:
         self._embeddings = embeddings
         self._client: chromadb.ClientAPI | None = None
         self._collections: dict[EntityType, chromadb.Collection] = {}
+        self._meta_collection: chromadb.Collection | None = None
+        self.embedding_dimension: int | None = None
+        """当前 embeddings 实测维度缓存（probe_embedding_dimension 懒填充）。"""
 
     # ── VectorStoreProtocol 实现 ──
 
@@ -101,6 +114,37 @@ class LangChainVectorStore:
     async def delete_project(self, project_id: str) -> int:
         """删除指定项目的所有向量数据（遍历全部 collection），返回删除总数。"""
         return await asyncio.to_thread(self._delete_project_sync, project_id)
+
+    async def read_fingerprint(self, project_id: str) -> dict | None:
+        """读取项目索引指纹（inkflow_meta collection，同库同生命周期）。"""
+        return await asyncio.to_thread(self._read_fingerprint_sync, project_id)
+
+    async def write_fingerprint(self, project_id: str, fingerprint: dict, status: str) -> None:
+        """写入/覆盖项目索引指纹（status 合并进指纹 dict，commit-last 提交点）。"""
+        await asyncio.to_thread(self._write_fingerprint_sync, project_id, fingerprint, status)
+
+    async def probe_collection_dimension(self, project_id: str) -> int:
+        """探测项目现存向量的维度（空库/无向量 → 0）。"""
+        return await asyncio.to_thread(self._probe_collection_dimension_sync, project_id)
+
+    async def probe_embedding_dimension(self) -> int:
+        """探测当前 embeddings 实测维度（结果缓存到 self.embedding_dimension）。"""
+        return await asyncio.to_thread(self._probe_embedding_dimension_sync)
+
+    async def delete_stale(
+        self,
+        project_id: str,
+        source_ids: set[str],
+        entity_types: list[EntityType] | None = None,
+    ) -> int:
+        """差集删除: collection 现存 id - 源侧 id = 待删 id（幽灵/孤儿向量）。"""
+        return await asyncio.to_thread(
+            self._delete_stale_sync, project_id, source_ids, entity_types
+        )
+
+    async def recreate_collections(self, entity_types: list[EntityType] | None = None) -> Path:
+        """备份持久化目录并删除重建集合（维度不匹配时调用），返回备份路径。"""
+        return await asyncio.to_thread(self._recreate_collections_sync, entity_types)
 
     # ── 私有: chromadb 同步操作（由 asyncio.to_thread 包装调用）──
 
@@ -215,3 +259,112 @@ class LangChainVectorStore:
                 collection.delete(ids=ids)
                 total += len(ids)
         return total
+
+    def _get_meta_collection(self) -> chromadb.Collection:
+        """懒初始化: 获取/创建 inkflow_meta collection（指纹存储，无检索语义）。"""
+        if self._meta_collection is None:
+            if self._client is None:
+                self._client = chromadb.PersistentClient(path=str(self._persist_dir))
+            self._meta_collection = self._client.get_or_create_collection(
+                name=self._META_COLLECTION
+            )
+        return self._meta_collection
+
+    def _read_fingerprint_sync(self, project_id: str) -> dict | None:
+        """同步读取项目指纹: get by id → json.loads(document)；无 doc → None。"""
+        collection = self._get_meta_collection()
+        result = collection.get(ids=[f"{self._FP_ID_PREFIX}{project_id}"])
+        documents = result.get("documents") or []
+        if not result["ids"] or not documents or not documents[0]:
+            return None
+        raw = documents[0]
+        if not isinstance(raw, str):
+            return None
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else None
+
+    def _write_fingerprint_sync(self, project_id: str, fingerprint: dict, status: str) -> None:
+        """同步写入/覆盖项目指纹（显式 1 维占位向量，meta 不参与语义检索）。"""
+        doc = dict(fingerprint)
+        doc["status"] = status
+        collection = self._get_meta_collection()
+        collection.upsert(
+            ids=[f"{self._FP_ID_PREFIX}{project_id}"],
+            documents=[json.dumps(doc, ensure_ascii=False)],
+            # chroma stub 对 embeddings 类型过严（实际运行时接受 list[list[float]]）
+            embeddings=cast(Any, [[0.0]]),
+        )
+
+    def _probe_collection_dimension_sync(self, project_id: str) -> int:
+        """同步探测现存向量维度: 逐 collection 取首条向量长度，全部为空 → 0。
+
+        ⚠️ 不按 project_id 过滤（2026-08-12 真实冒烟修正）: collection 维度
+        是库级不变量（chroma 建库时固定）——本项目无向量但 collection 被
+        其他项目数据锁定维度时，per-project 探测会误报 0 → 跳过重建 →
+        upsert 撞旧维度崩（InvalidArgumentError 384 vs 768 实证）。
+        """
+        for entity_type in EntityType:
+            collection = self._get_collection(entity_type)
+            result = collection.get(
+                include=["embeddings"],
+                limit=1,
+            )
+            ids = result["ids"]
+            if not ids:
+                continue
+            embeddings = result.get("embeddings")
+            if embeddings is not None and len(embeddings) > 0:
+                # get 返回形状为 (N, dim)，embeddings[0] 即首条向量
+                return len(embeddings[0])
+        return 0
+
+    def _probe_embedding_dimension_sync(self) -> int:
+        """同步探测 embeddings 实测维度（一次性缓存到实例属性，避免重复 embed）。"""
+        if self.embedding_dimension is None:
+            self.embedding_dimension = len(self._embeddings.embed_query(""))
+        return self.embedding_dimension
+
+    def _delete_stale_sync(
+        self,
+        project_id: str,
+        source_ids: set[str],
+        entity_types: list[EntityType] | None,
+    ) -> int:
+        """同步差集删除: 每 collection 现存 id 减源侧 id 后删除，返回删除总数。"""
+        types = list(entity_types) if entity_types else list(EntityType)
+        total = 0
+        for entity_type in types:
+            collection = self._get_collection(entity_type)
+            ids = collection.get(where={"project_id": project_id})["ids"]
+            orphans = [entity_id for entity_id in ids if entity_id not in source_ids]
+            if orphans:
+                collection.delete(ids=orphans)
+                total += len(orphans)
+        return total
+
+    def _recreate_collections_sync(self, entity_types: list[EntityType] | None) -> Path:
+        """同步重建: 备份持久化目录 → 删除重建实体 collection → 返回备份路径。"""
+        types = list(entity_types) if entity_types else list(EntityType)
+        backup_path = self._persist_dir
+        if self._persist_dir.is_dir():
+            # 备份目录名带唯一后缀：同秒两次重建（双向维度切换）会撞名
+            # （2026-08-12 真实冒烟 FileExistsError 实证）
+            base = f"{self._persist_dir}.bak-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            backup_path = Path(base)
+            suffix = 1
+            while backup_path.exists():
+                backup_path = Path(f"{base}-{suffix}")
+                suffix += 1
+            shutil.copytree(str(self._persist_dir), str(backup_path))
+            logger.info("向量集合重建前备份完成: {} -> {}", self._persist_dir, backup_path)
+        if self._client is not None:
+            existing = {collection.name for collection in self._client.list_collections()}
+            for entity_type in types:
+                # 必须先清缓存再删除，避免缓存引用已删除的旧 collection
+                self._collections.pop(entity_type, None)
+                name = f"inkflow_{entity_type.value}"
+                if name in existing:
+                    self._client.delete_collection(name=name)
+        for entity_type in types:
+            self._get_collection(entity_type)
+        return backup_path
