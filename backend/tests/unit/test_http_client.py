@@ -707,3 +707,90 @@ class TestPerRequestTimeout:
         call = mock_client.request.await_args
         assert call.args[0] == "POST"
         assert call.kwargs.get("timeout") is None
+
+
+class TestNoContent204:
+    """#251 P1 冒烟暴露（2026-08-12）：DELETE 204 空响应 → _request 强制
+    response.json() 抛 JSONDecodeError——provider/agent-template/project delete
+    均为 204 端点，CLI 真实调用必炸（Traceback + exit 1）。
+
+    RED 预期：当前实现 response.json() 对空 body 抛 JSONDecodeError → 用例
+    FAILED（用例内异常）。GREEN 后 2xx 空 body 返回 {}（非 2xx 语义不变）。
+    """
+
+    async def test_delete_204_empty_body_returns_dict(self, handle):
+        """DELETE 204（无 body）→ 返回 {}（不抛异常）。"""
+        seen: list[str] = []
+
+        def _handler(request):
+            seen.append(str(request.url))
+            return httpx.Response(
+                204,
+                request=httpx.Request("DELETE", f"{BASE_URL}/provider-configs/1"),
+            )
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                data = await client.delete("/provider-configs/1")
+        assert data == {}
+        assert seen == [f"{BASE_URL}/provider-configs/1"]
+
+    async def test_delete_204_is_2xx_no_http_error(self, handle):
+        """204 不触发 HttpApiError（2xx 语义守护）。"""
+
+        def _handler(request):
+            return httpx.Response(
+                204,
+                request=httpx.Request("DELETE", f"{BASE_URL}/provider-configs/1"),
+            )
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                data = await client.delete("/provider-configs/1")
+        assert isinstance(data, dict)
+
+    async def test_post_204_empty_body_returns_dict(self, handle):
+        """POST 204 同族防御（未来 204 端点不炸）。"""
+
+        def _handler(request):
+            return httpx.Response(
+                204,
+                request=httpx.Request("POST", f"{BASE_URL}/x"),
+            )
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                data = await client.post("/x")
+        assert data == {}
+
+    async def test_put_file_204_empty_body_returns_dict(self, handle):
+        """put_file 204（无 body）→ 返回 {}（_request_file 同族防御，#300
+        coverage 补测：multipart 路径的 204 分支与 _request 同规则）。"""
+
+        def _handler(request):
+            return httpx.Response(
+                204,
+                request=httpx.Request("PUT", f"{BASE_URL}/map/x"),
+            )
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                data = await client.put_file("/map/x", data={}, filename="a.png", content=b"x")
+        assert data == {}
+
+    async def test_put_file_404_raises_http_api_error(self, handle):
+        """put_file 非 2xx → HttpApiError（_request_file 错误分支，#300 补测）。"""
+
+        def _handler(request):
+            return httpx.Response(
+                404,
+                json={"detail": "地图不存在"},
+                request=httpx.Request("PUT", f"{BASE_URL}/map/x"),
+            )
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                with pytest.raises(HttpApiError) as exc_info:
+                    await client.put_file("/map/x", data={}, filename="a.png", content=b"x")
+        assert exc_info.value.status_code == 404
+        assert exc_info.value.detail == "地图不存在"
