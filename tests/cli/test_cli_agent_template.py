@@ -123,12 +123,19 @@ class TestTemplateHelp:
             assert cmd in result.stdout
 
     def test_template_pipelines_help(self, cli_runner):
-        """agent template pipelines --help 保留旧 --json（迁移后旧功能）."""
+        """agent template pipelines --help 保留旧 --json（迁移后旧功能）。
+
+        注意 CI 环境 help 输出含 ANSI 转义码（rich 渲染），断言前必须 strip
+        （#300 CI 实测：本地子组 help 无 ANSI、CI 有 → '--json' 子串被截断）。
+        """
+        import re
+
         from inkflow.cli.commands.agent_cmd import app
 
         result = cli_runner.invoke(app, ["template", "pipelines", "--help"])
         assert result.exit_code == 0
-        assert "--json" in result.stdout
+        text = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
+        assert "--json" in text
 
 
 class TestTemplateList:
