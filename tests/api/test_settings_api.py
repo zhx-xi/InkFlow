@@ -98,12 +98,10 @@
     不得泄漏进 message（通用文案）。
 
 12. 【llm/test 不落盘契约】探测端点【禁止】触碰 APIKeyManager——
-    api_key 仅用于本次探测（内存），不存储：patch
-    `_get_key_manager` 后 POST /llm/test，断言其零调用。
+    api_key 仅用于本次探测（内存），不存储：patch `_get_key_manager` 零调用断言。
 
 13. lifespan/TestClient：TestClient(app) 触发 lifespan → create_tables()
-    在 CWD 写 ./inkflow.db，与 tests/api 既有测试（test_health.py、
-    test_token_auth.py 设计假设 #8）行为一致，已接受，不做规避。
+    在 CWD 写 ./inkflow.db（test_health.py / test_token_auth.py #8 同款，已接受）。
 
 14. 【#106 F2 行为变更驱动（2026-08-06 评审）】llm/test 契约修订：
     model 必填 → 可选（缺省回退注册表 default_model → config.
@@ -182,8 +180,7 @@ spec.md v1.1 §3 API 契约 + §3.4 异常映射 + §9.1/§9.4 测试策略）�
     deps.get_settings_service + settings 域 4 文件（models/ports/repo/
     service）后全绿。
 
-    【#266 契约段已拆分】Issue #266（GET/PUT /api/v1/settings/data-dir）
-    契约测试拆至 tests/api/test_settings_data_dir.py（2026-08-12，900 护栏）。
+    【#266 契约段已拆分】见 tests/api/test_settings_data_dir.py（2026-08-12）。
 ════════════════════════════════════════════════════════════════════
 """
 
