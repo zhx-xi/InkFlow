@@ -155,6 +155,16 @@ class TestContinueWritingRequest:
                 target_words=100,
             )
 
+    def test_context_too_long_raises(self) -> None:
+        """context 超长 → ValueError（#273 覆盖率补测：L95-97 分支）。"""
+        with pytest.raises(ValidationError, match="上下文不能超过 20000 个字符"):
+            ContinueWritingRequest(
+                project_id=uuid.uuid4(),
+                chapter_id=uuid.uuid4(),
+                existing_content="已有内容" * 20,
+                context="x" * 20001,
+            )
+
 
 class TestRevisionRequest:
     def test_empty_feedback_raises(self) -> None:

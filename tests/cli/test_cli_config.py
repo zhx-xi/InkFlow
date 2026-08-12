@@ -1,4 +1,11 @@
-"""Config 持久化测试."""
+"""Config 持久化测试.
+
+#266 data-dir 契约段（RED 阶段，0.7.0 方案 A）:
+- 契约：`config set data-dir <path>` 新增 save_instance_env 写 instance.env
+  （INKFLOW_DATA_DIR=<abs> 一行，返回绝对路径 Path）
+- 现状：data-dir 不在 CONFIG_WHITELIST → 未知配置项 exit 2 → 新用例 1-4 FAIL
+- 守护用例 5：config show 已输出 data_dir → RED 阶段即 PASS，刻意保留
+"""
 
 import importlib
 import json
@@ -187,3 +194,110 @@ class TestConfigSetTypeBranches:
         assert data["ok"] is False
         assert data["error"]["code"] == "CONFIG_ERROR"
         assert "值不合法" in data["error"]["message"]
+
+
+class TestConfigDataDir:
+    """Issue #266: config set data-dir 契约（RED 阶段，0.7.0 方案 A）.
+
+    契约锁定：
+    - 白名单新增 "data-dir": "data_dir"；set data-dir 调 save_instance_env 写
+      instance.env 一行 INKFLOW_DATA_DIR=<abs>，返回绝对路径 Path
+    - 空白值 / save_instance_env 抛 OSError → CONFIG_ERROR 信封 exit 1；
+      人类模式 "✅ data-dir = " + "重启后生效"；--json 信封
+      {"key": "data-dir", "value": str(resolved), "restart_required": True}
+    RED 预期：data-dir 不在白名单 → 未知配置项 exit 2 → 用例 1-4 FAIL
+    （断言失败非 ERROR，锚点 monkeypatch 均 raising=False）；
+    守护用例 test_show_contains_data_dir PASS（show 已输出 data_dir）。
+    """
+
+    def test_set_data_dir_writes_instance_env(self, cli_runner, tmp_path, monkeypatch):
+        """data-dir 写入 instance.env 且人类模式输出成功提示."""
+        from inkflow.cli.commands.config_cmd import app
+
+        anchor = tmp_path / "InkFlow" / "instance.env"
+        monkeypatch.setattr(
+            core_config_mod, "get_instance_env_path", lambda: anchor, raising=False
+        )
+        result = cli_runner.invoke(
+            app,
+            ["set", "data-dir", str(tmp_path / "custom-data")],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert anchor.exists()
+        expected = str((tmp_path / "custom-data").resolve())
+        assert f"INKFLOW_DATA_DIR={expected}" in anchor.read_text(encoding="utf-8")
+        assert "✅ data-dir = " in result.output
+        assert "重启后生效" in result.output
+
+    def test_set_data_dir_json_envelope(self, cli_runner, tmp_path, monkeypatch):
+        """--json 模式返回重启提示信封."""
+        from inkflow.cli.commands.config_cmd import app
+
+        anchor = tmp_path / "InkFlow" / "instance.env"
+        monkeypatch.setattr(
+            core_config_mod, "get_instance_env_path", lambda: anchor, raising=False
+        )
+        result = cli_runner.invoke(
+            app,
+            ["set", "data-dir", str(tmp_path / "custom-data")],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["ok"] is True
+        assert data["data"]["key"] == "data-dir"
+        assert data["data"]["value"] == str((tmp_path / "custom-data").resolve())
+        assert data["data"]["restart_required"] is True
+
+    def test_set_data_dir_blank_value(self, cli_runner, tmp_path, monkeypatch):
+        """空白值 → CONFIG_ERROR 信封 + 退出码 1."""
+        from inkflow.cli.commands.config_cmd import app
+
+        anchor = tmp_path / "InkFlow" / "instance.env"
+        monkeypatch.setattr(
+            core_config_mod, "get_instance_env_path", lambda: anchor, raising=False
+        )
+        result = cli_runner.invoke(
+            app,
+            ["set", "data-dir", "   "],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["error"]["code"] == "CONFIG_ERROR"
+        assert "值不合法" in data["error"]["message"]
+
+    def test_set_data_dir_oserror(self, cli_runner, tmp_path, monkeypatch):
+        """save_instance_env 抛 OSError → CONFIG_ERROR 信封 + 退出码 1."""
+        from inkflow.cli.commands.config_cmd import app
+
+        anchor = tmp_path / "InkFlow" / "instance.env"
+        monkeypatch.setattr(
+            core_config_mod, "get_instance_env_path", lambda: anchor, raising=False
+        )
+
+        def _raise_oserror(_path):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(
+            core_config_mod, "save_instance_env", _raise_oserror, raising=False
+        )
+        result = cli_runner.invoke(
+            app,
+            ["set", "data-dir", str(tmp_path / "x")],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["error"]["code"] == "CONFIG_ERROR"
+        assert "值不合法" in data["error"]["message"]
+
+    def test_show_contains_data_dir(self, cli_runner):
+        """守护用例：config show 输出已含 data_dir（RED 阶段即绿，刻意保留）."""
+        from inkflow.cli.commands.config_cmd import app
+
+        result = cli_runner.invoke(app, ["show"], obj=CliContext(json_output=True))
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "data_dir" in data["data"]

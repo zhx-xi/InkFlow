@@ -175,3 +175,20 @@ export async function fetchSettings(): Promise<AppSettings> {
 export async function patchSettings(patch: AppSettingsUpdate): Promise<AppSettings> {
   return apiFetch<AppSettings>('/api/v1/settings', { method: 'PATCH', body: patch });
 }
+
+/** #266：数据目录信息（GET /api/v1/settings/data-dir 响应；restart_required 仅写响应含） */
+export interface DataDirInfo {
+  data_dir: string;
+  instance_env_path: string;
+  restart_required?: boolean;
+}
+
+/** #266：GET /api/v1/settings/data-dir——当前生效数据目录 + instance.env 锚点 */
+export async function fetchDataDir(): Promise<DataDirInfo> {
+  return apiFetch<DataDirInfo>('/api/v1/settings/data-dir');
+}
+
+/** #266：PUT /api/v1/settings/data-dir——持久化数据目录到 instance.env（重启后生效） */
+export async function updateDataDir(body: { data_dir: string }): Promise<DataDirInfo> {
+  return apiFetch<DataDirInfo>('/api/v1/settings/data-dir', { method: 'PUT', body });
+}

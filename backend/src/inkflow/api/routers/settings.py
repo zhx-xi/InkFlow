@@ -17,13 +17,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_db, get_provider_config_service, get_settings_service
-from inkflow.core.config import config
+from inkflow.core.config import config, get_instance_env_path, save_instance_env
 from inkflow.domain.models.settings import AppSettings, AppSettingsUpdate
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
 from inkflow.domain.services.settings_service import SettingsService
@@ -99,6 +100,17 @@ class LLMTestRequest(BaseModel):
     @classmethod
     def validate_api_key(cls, v: str) -> str:
         return _validate_not_blank(v, "api_key")
+
+
+class DataDirUpdate(BaseModel):
+    """PUT /data-dir 请求体 — data_dir 必填非空（多余字段忽略）。"""
+
+    data_dir: str
+
+    @field_validator("data_dir")
+    @classmethod
+    def validate_data_dir(cls, v: str) -> str:
+        return _validate_not_blank(v, "data_dir")
 
 
 def _get_key_manager() -> APIKeyManager:
@@ -217,3 +229,26 @@ async def patch_settings(
     except Exception as exc:
         logger.exception("设置持久化失败")
         raise HTTPException(status_code=500, detail="设置保存失败，请稍后重试") from exc
+
+
+@router.get("/data-dir")
+async def get_data_dir() -> dict:
+    """当前生效数据目录 + instance.env 固定锚点（#266 方案 A）。"""
+    return {
+        "data_dir": str(config.data_dir),
+        "instance_env_path": str(get_instance_env_path()),
+    }
+
+
+@router.put("/data-dir")
+async def put_data_dir(update: DataDirUpdate) -> dict:
+    """持久化数据目录到 instance.env（重启后生效；旧数据不迁移）。"""
+    try:
+        resolved = save_instance_env(Path(update.data_dir))
+    except OSError as exc:
+        logger.exception("数据目录保存失败")
+        raise HTTPException(status_code=500, detail="数据目录保存失败，请稍后重试") from exc
+    return {
+        "data_dir": str(resolved),
+        "restart_required": True,
+    }

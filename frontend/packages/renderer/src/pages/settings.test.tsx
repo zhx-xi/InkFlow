@@ -124,7 +124,26 @@
  * - RED 预期：GREEN 前新用例 FAIL 于 element-missing（settings-tray-hint-switch 不存在）/
  *   断言型缺口（font/closeBehavior 初值 = 本地 state 写死）/ waitFor 超时（卸载 flush 不存在、
  *   project store 不合并）/ 污染断言（失败路径现状先 setConfig）；既有用例保持绿
+ *
+ * ⚠️ #266 数据目录持久化 RED 契约（2026-08-12，instance.env 持久化，spec 待定稿）：
+ * AccountPanel「数据目录」区从硬编码占位 → 真实数据目录设置项。data-testid 即契约：
+ * - settings-data-dir-input：输入框（回显 fetchDataDir().data_dir，aria-label = t('set.account.dataDir')）
+ * - settings-data-dir-save：保存按钮（文本 = t('set.account.dataDirSave')）
+ * - settings-data-dir-hint：成功提示行（文本 = t('set.account.dataDirRestart')「重启后生效」）
+ * 行为：挂载 AccountPanel → fetchDataDir()（GET /api/v1/settings/data-dir）→ 输入框回显；
+ * 修改 + 保存 → updateDataDir({ data_dir })（PUT /api/v1/settings/data-dir）→ 成功：
+ * 提示行 + pushToast('ok', t('toast.saved'))；失败：pushToast('err', t('toast.saveFailed'))，
+ * 提示行不显示。硬编码占位 ~/.inkflow/data 被真实 data_dir 替换。
+ * API client 契约（GREEN 实现于 src/api/client.ts）：DataDirInfo { data_dir, instance_env_path,
+ * restart_required? }；fetchDataDir() / updateDataDir(body: { data_dir: string })。
+ * 新增 i18n key（GREEN 补 zh.ts / en.ts）：set.account.dataDirSave / set.account.dataDirRestart。
+ * RED 阶段 mock：vi.hoisted fetchDataDirMock/updateDataDirMock + vi.mock('../api/client') factory
+ * spread（镜像 F32 模式；beforeEach 内 mockReset + mockResolvedValue 默认——挂载异步 fetch 是
+ * fire-and-forget，缺默认会 TypeError 未处理 rejection）。
+ * RED 预期：GREEN 前无输入框/保存按钮（硬编码占位）→ 新用例全部 element-missing FAIL，
+ * 既有用例保持绿。
  */
+
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -146,6 +165,12 @@ const { fetchSettingsMock, patchSettingsMock } = vi.hoisted(() => ({
   patchSettingsMock: vi.fn(),
 }));
 
+// #266（2026-08-12）：数据目录持久化契约 mock（GREEN 实现于 src/api/client.ts，镜像 F32 模式）
+const { fetchDataDirMock, updateDataDirMock } = vi.hoisted(() => ({
+  fetchDataDirMock: vi.fn(),
+  updateDataDirMock: vi.fn(),
+}));
+
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
   return {
@@ -153,6 +178,8 @@ vi.mock('../api/client', async (importOriginal) => {
     apiFetch: vi.fn(),
     fetchSettings: fetchSettingsMock,
     patchSettings: patchSettingsMock,
+    fetchDataDir: fetchDataDirMock,
+    updateDataDir: updateDataDirMock,
   };
 });
 
@@ -1851,5 +1878,92 @@ describe('设置页 — default_words 卸载 flush（F32 §5.4 RED 契约）', (
       (c) => c[0] === '/api/v1/projects/p1' && c[1]?.method === 'PATCH',
     );
     expect(patchCalls).toHaveLength(0);
+  });
+});
+
+/**
+ * #266 数据目录持久化 RED 契约（2026-08-12，instance.env 持久化；GREEN 义务见文件头 docstring）：
+ * AccountPanel「数据目录」区——挂载 fetchDataDir() 回显 → 修改 + 保存 → updateDataDir PUT
+ * → 成功提示「重启后生效」+ ok toast；失败 → err toast 且提示行不显示；input aria-label =
+ * t('set.account.dataDir')（'数据目录'，i18n 默认 zh）。
+ * RED 预期：GREEN 前硬编码占位 ~/.inkflow/data、无输入框/保存按钮 → 新用例全部
+ * element-missing FAIL（findByTestId 超时 / getByTestId 抛 TestingLibraryElementError），
+ * 既有用例保持绿。
+ */
+describe('设置页 — 数据目录持久化（#266 RED 契约）', () => {
+  /** 切到「账户」分类（fireEvent 同步派发，契约 testid = settings-cat-account） */
+  function switchToAccount() {
+    fireEvent.click(screen.getByTestId('settings-cat-account'));
+  }
+
+  beforeEach(() => {
+    // ⚠️ mockReset 后必须 mockResolvedValue 默认——挂载异步 fetch 是 fire-and-forget，
+    // 缺默认会 TypeError 未处理 rejection
+    fetchDataDirMock.mockReset();
+    fetchDataDirMock.mockResolvedValue({
+      data_dir: 'C:/Users/test/InkFlow',
+      instance_env_path: 'C:/Users/test/InkFlow/instance.env',
+    });
+    updateDataDirMock.mockReset();
+    updateDataDirMock.mockResolvedValue({
+      data_dir: 'C:/Users/test/InkFlow',
+      instance_env_path: 'C:/Users/test/InkFlow/instance.env',
+      restart_required: true,
+    });
+  });
+
+  it('test_account_data_dir_input_shows_api_value：挂载账户面板 → fetchDataDir 回显 data_dir', async () => {
+    renderSettings();
+    switchToAccount();
+    // RED：GREEN 前输入框不存在 → findByTestId 超时（TestingLibraryElementError）
+    const input = await screen.findByTestId('settings-data-dir-input');
+    await waitFor(() => {
+      expect(input).toHaveValue('C:/Users/test/InkFlow');
+    });
+    expect(fetchDataDirMock).toHaveBeenCalled();
+  });
+
+  it('test_account_data_dir_save_calls_put_and_shows_hint：修改 + 保存 → PUT body 精确 + 重启提示 + ok toast', async () => {
+    renderSettings();
+    switchToAccount();
+    const input = await screen.findByTestId('settings-data-dir-input');
+    fireEvent.change(input, { target: { value: 'D:/novels/ink' } });
+    fireEvent.click(screen.getByTestId('settings-data-dir-save'));
+    // 契约：updateDataDir body 精确 = { data_dir: 'D:/novels/ink' }
+    await waitFor(() => {
+      expect(updateDataDirMock).toHaveBeenCalledWith({ data_dir: 'D:/novels/ink' });
+    });
+    // 成功 → 提示行「重启后生效」（t('set.account.dataDirRestart')，i18n 默认 zh）
+    await waitFor(() => {
+      expect(screen.getByTestId('settings-data-dir-hint').textContent).toContain('重启后生效');
+    });
+    // toast store 收到 ok（pushToast('ok', t('toast.saved'))）
+    await waitFor(() => {
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts.some((t) => t.type === 'ok')).toBe(true);
+    });
+  });
+
+  it('test_account_data_dir_save_failure_shows_err_toast：保存失败 → err toast + 提示行不显示', async () => {
+    updateDataDirMock.mockRejectedValueOnce(new Error('boom'));
+    renderSettings();
+    switchToAccount();
+    const input = await screen.findByTestId('settings-data-dir-input');
+    fireEvent.change(input, { target: { value: 'D:/novels/ink' } });
+    fireEvent.click(screen.getByTestId('settings-data-dir-save'));
+    // 失败 → pushToast('err', t('toast.saveFailed'))
+    await waitFor(() => {
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts.some((t) => t.type === 'err')).toBe(true);
+    });
+    // 提示行不显示
+    expect(screen.queryByTestId('settings-data-dir-hint')).not.toBeInTheDocument();
+  });
+
+  it('test_account_data_dir_input_has_aria_label：input aria-label = 数据目录（set.account.dataDir）', async () => {
+    renderSettings();
+    switchToAccount();
+    const input = await screen.findByTestId('settings-data-dir-input');
+    expect(input).toHaveAttribute('aria-label', '数据目录');
   });
 });

@@ -59,6 +59,13 @@ class TestFormatValidator:
         assert result.valid is False
         assert any("R7" in e for e in result.errors)
 
+    def test_json_key_value_leak_detected(self) -> None:
+        """非完整 JSON 但含 "key": value 形态 → R2 泄漏检测（#273 覆盖率补测）。"""
+        content = '正文开始 "章节": "第一章" 然后继续正文内容。'
+        result = FormatValidator.validate(content, min_words=5)
+        assert result.valid is False
+        assert any("R2" in e and "泄漏" in e for e in result.errors)
+
     def test_word_count_meets_minimum(self) -> None:
         content = "第一章 开端\n\n" + "正文内容足够长。" * 500
         result = FormatValidator.validate(content, min_words=30)

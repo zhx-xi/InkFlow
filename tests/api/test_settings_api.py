@@ -98,12 +98,10 @@
     不得泄漏进 message（通用文案）。
 
 12. 【llm/test 不落盘契约】探测端点【禁止】触碰 APIKeyManager——
-    api_key 仅用于本次探测（内存），不存储：patch
-    `_get_key_manager` 后 POST /llm/test，断言其零调用。
+    api_key 仅用于本次探测（内存），不存储：patch `_get_key_manager` 零调用断言。
 
 13. lifespan/TestClient：TestClient(app) 触发 lifespan → create_tables()
-    在 CWD 写 ./inkflow.db，与 tests/api 既有测试（test_health.py、
-    test_token_auth.py 设计假设 #8）行为一致，已接受，不做规避。
+    在 CWD 写 ./inkflow.db（test_health.py / test_token_auth.py #8 同款，已接受）。
 
 14. 【#106 F2 行为变更驱动（2026-08-06 评审）】llm/test 契约修订：
     model 必填 → 可选（缺省回退注册表 default_model → config.
@@ -181,6 +179,8 @@ spec.md v1.1 §3 API 契约 + §3.4 异常映射 + §9.1/§9.4 测试策略）�
     api/routers/settings.py 追加 get_settings + patch_settings 路由 +
     deps.get_settings_service + settings 域 4 文件（models/ports/repo/
     service）后全绿。
+
+    【#266 契约段已拆分】见 tests/api/test_settings_data_dir.py（2026-08-12）。
 ════════════════════════════════════════════════════════════════════
 """
 
@@ -193,7 +193,7 @@ from fastapi.testclient import TestClient
 
 from inkflow.api.app import app
 from inkflow.api.routers import (
-    settings,  # noqa: F401  # RED 收集断言：模块存在性契约（GREEN 实现后即被使用）
+    settings,  # noqa: F401  # RED 收集断言：模块存在性契约（字符串 patch 路径使用，非符号引用）
 )
 from inkflow.domain.ports.llm_client import ChatMessage, ChatResponse
 from inkflow.domain.ports.llm_errors import LLMRequestError
@@ -850,8 +850,7 @@ class TestSettingsTokenAuth:
 
 class TestCoverageGapDirectHandlerCalls:
     """#177 覆盖率盲区补测 — 直接调用 router 模块函数，让 except 分支可被
-    coverage 记录（coverage.py 对 TestClient portal 线程内异常传播路径存在
-    统计盲区；直接调用不经 TestClient，pytest 下可正常记录）。
+    coverage 记录（TestClient portal 线程内异常传播路径存在统计盲区）。
 
     补测非 TDD：被测源码已存在（settings.py L140-142 / L215-219），
     本类用例直接通过，不改动任何 src/ 文件。
