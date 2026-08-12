@@ -762,3 +762,18 @@ class TestNoContent204:
             async with make_client() as client:
                 data = await client.post("/x")
         assert data == {}
+
+    async def test_put_file_204_empty_body_returns_dict(self, handle):
+        """put_file 204（无 body）→ 返回 {}（_request_file 同族防御，#300
+        coverage 补测：multipart 路径的 204 分支与 _request 同规则）。"""
+
+        def _handler(request):
+            return httpx.Response(
+                204,
+                request=httpx.Request("PUT", f"{BASE_URL}/map/x"),
+            )
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                data = await client.put_file("/map/x", data={}, filename="a.png", content=b"x")
+        assert data == {}
