@@ -72,11 +72,12 @@ class TestAgentCLI:
         assert "--file" in self._strip_ansi(result.stdout)
 
     @pytest.mark.agent
-    def test_agent_template_list_help(self):
-        """inkflow agent template list --help。"""
+    def test_agent_template_pipelines_help(self):
+        """inkflow agent template --help 含 pipelines 子命令（#251：template 升级为
+        管理组后，旧「列出内置管线模板」迁移至 pipelines 子命令）。"""
         result = runner.invoke(app, ["agent", "template", "--help"])
         assert result.exit_code == 0
-        assert "--json" in self._strip_ansi(result.stdout)
+        assert "pipelines" in self._strip_ansi(result.stdout)
 
 
 # =====================================================================
@@ -317,7 +318,8 @@ class TestAgentValidateExecution:
 
 
 class TestAgentTemplateExecution:
-    """agent template 真实执行路径：有/无模板 + --json。"""
+    """agent template pipelines 真实执行路径：有/无模板 + --json
+    （#251：template 升级为管理组后，旧「列出内置管线模板」迁移至 pipelines 子命令）。"""
 
     _TPL: ClassVar[dict] = {
         "id": "builtin:write_chapter",
@@ -329,7 +331,7 @@ class TestAgentTemplateExecution:
     def test_template_list_with_items(self, fake_http_client):
         """有模板：列出 id/name/阶段链。"""
         fake_http_client.get.return_value = {"items": [self._TPL]}
-        result = runner.invoke(app, ["agent", "template"])
+        result = runner.invoke(app, ["agent", "template", "pipelines"])
         assert result.exit_code == 0
         assert "内置管线模板:" in result.stdout
         assert "  [builtin:write_chapter] 章节写作" in result.stdout
@@ -339,7 +341,7 @@ class TestAgentTemplateExecution:
     def test_template_list_empty(self, fake_http_client):
         """无模板：📭 空提示。"""
         fake_http_client.get.return_value = {"items": []}
-        result = runner.invoke(app, ["agent", "template"])
+        result = runner.invoke(app, ["agent", "template", "pipelines"])
         assert result.exit_code == 0
         assert "📭 暂无可用的管线模板" in result.stdout
 
@@ -347,7 +349,7 @@ class TestAgentTemplateExecution:
     def test_template_json(self, fake_http_client):
         """template --json：stdout 为单一可解析 JSON。"""
         fake_http_client.get.return_value = {"items": [self._TPL]}
-        result = runner.invoke(app, ["agent", "template", "--json"])
+        result = runner.invoke(app, ["agent", "template", "pipelines", "--json"])
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {"items": [self._TPL]}
         assert "内置管线模板" not in result.stdout

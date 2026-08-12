@@ -101,7 +101,12 @@ class InkFlowHTTPClient:
                 detail=_extract_detail(response),
                 code=response.headers.get("X-InkFlow-Error-Code"),
             )
-        return cast(dict, response.json())
+        try:
+            return cast(dict, response.json())
+        except jsonlib.JSONDecodeError:
+            # 2xx 空 body（204 No Content，如 DELETE 端点）→ 返回 {}（#251 冒烟实证：
+            # provider/agent-template/project delete 均 204，空 body 解析必炸）
+            return {}
 
     async def get_raw(self, path, *, params=None) -> str:
         """GET 请求并返回原始响应文本（F21 导出下载，非 JSON 信封）。
@@ -167,7 +172,12 @@ class InkFlowHTTPClient:
                 detail=_extract_detail(response),
                 code=response.headers.get("X-InkFlow-Error-Code"),
             )
-        return cast(dict, response.json())
+        try:
+            return cast(dict, response.json())
+        except jsonlib.JSONDecodeError:
+            # 2xx 空 body（204 No Content，如 DELETE 端点）→ 返回 {}（#251 冒烟实证：
+            # provider/agent-template/project delete 均 204，空 body 解析必炸）
+            return {}
 
     async def stream_sse(self, path, *, json=None) -> AsyncGenerator[dict, None]:
         """POST + SSE 流式消费：`data: {json}` 帧逐行解析并 yield 原样 dict。

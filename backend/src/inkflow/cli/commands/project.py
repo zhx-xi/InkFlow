@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import typer
 
@@ -13,6 +14,10 @@ from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_htt
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 
 app = typer.Typer(name="project", help="项目/书籍管理", no_args_is_help=True)
+
+# 模块级已有命令函数 `list`，会在字符串注解求值时遮蔽内置 list（Typer eval_str=True），
+# 故此处用别名承载 list[str] 泛型供 update 命令注解使用
+ConfigList = list[str]
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +128,7 @@ def list(
 @app.command()
 def get(
     ctx: typer.Context,
-    project_id: int = typer.Option(..., "--id", "-i", help="项目 ID"),
+    project_id: str = typer.Option(..., "--id", "-i", help="项目 ID（int 或 UUID）"),
 ) -> None:
     """查看项目详情"""
     cli_ctx: CliContext = ctx.obj
@@ -155,7 +160,7 @@ def get(
 @app.command()
 def delete(
     ctx: typer.Context,
-    project_id: int = typer.Option(..., "--id", "-i", help="项目 ID"),
+    project_id: str = typer.Option(..., "--id", "-i", help="项目 ID（int 或 UUID）"),
     force: bool = typer.Option(False, "--force", "-f", help="跳过确认"),
     permanent: bool = typer.Option(False, "--permanent", "-p", help="硬删除（永久删除）"),
 ) -> None:
@@ -189,7 +194,7 @@ def delete(
 @app.command()
 def restore(
     ctx: typer.Context,
-    project_id: int = typer.Option(..., "--id", "-i", help="项目 ID"),
+    project_id: str = typer.Option(..., "--id", "-i", help="项目 ID（int 或 UUID）"),
 ) -> None:
     """恢复已删除的项目"""
     cli_ctx: CliContext = ctx.obj
@@ -205,3 +210,88 @@ def restore(
         print_result(cli_ctx, project)
     else:
         typer.echo(f"✅ 项目已恢复: [{project['name']}] ({project['genre']})")
+
+
+# ---------------------------------------------------------------------------
+# update  —  inkflow project update --id 1 [--name xxx] [--config k=v ...]
+# ---------------------------------------------------------------------------
+
+
+def _parse_config_value(raw: str):
+    """--config 值解析：#225 三态 + 数字 + JSON（null→None；__default__→sentinel；
+    数字→int/float；[ / { 开头→json.loads；其余→字符串）."""
+    if raw == "null":
+        return None
+    try:
+        if raw.isdigit() or (raw.startswith("-") and raw[1:].isdigit()):
+            return int(raw)
+        f = float(raw)
+        if raw.lower() not in ("nan", "inf", "-inf"):
+            return f
+    except ValueError:
+        pass
+    if raw.startswith("[") or raw.startswith("{"):
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            pass
+    return raw
+
+
+@app.command("update")
+def update(
+    ctx: typer.Context,
+    project_id: str = typer.Option(..., "--id", "-i", help="项目 ID（int 或 UUID）"),
+    name: str | None = typer.Option(None, "--name", "-n", help="项目名称"),
+    genre: str | None = typer.Option(None, "--genre", "-g", help="小说分类"),
+    language: str | None = typer.Option(None, "--language", "-l", help="写作语言"),
+    target_words: int | None = typer.Option(None, "--target-words", "-w", help="目标字数"),
+    config: ConfigList = typer.Option(
+        [], "--config", help="config 字段级更新 KEY=VALUE（可重复；null/__default__/JSON 值）"
+    ),
+    config_json: str | None = typer.Option(
+        None, "--config-json", help="config 整体 JSON（与 --config 合并，--config 覆盖）"
+    ),
+) -> None:
+    """更新项目（config 字段级，#225 三态语义）"""
+    cli_ctx: CliContext = ctx.obj
+    body: dict = {}
+    if name is not None:
+        body["name"] = name
+    if genre is not None:
+        body["genre"] = genre
+    if language is not None:
+        body["language"] = language
+    if target_words is not None:
+        body["target_words"] = target_words
+    cfg: dict = {}
+    if config_json is not None:
+        try:
+            parsed = json.loads(config_json)
+        except json.JSONDecodeError:
+            print_error(cli_ctx, "VALIDATION_ERROR", f"--config-json 不是合法 JSON: {config_json}")
+            return
+        if not isinstance(parsed, dict):
+            print_error(cli_ctx, "VALIDATION_ERROR", "--config-json 必须是 JSON 对象")
+            return
+        cfg.update(parsed)
+    for kv in config:
+        if "=" not in kv:
+            print_error(cli_ctx, "VALIDATION_ERROR", f"--config 格式应为 KEY=VALUE: {kv}")
+            return
+        key, _, raw = kv.partition("=")
+        cfg[key] = _parse_config_value(raw)
+    if cfg:
+        body["config"] = cfg
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.patch(f"/projects/{project_id}", json=body)
+
+    project = _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, project)
+    else:
+        typer.echo(f"✅ 项目 #{project_id} 已更新: [{project['name']}]")

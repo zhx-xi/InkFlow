@@ -707,3 +707,58 @@ class TestPerRequestTimeout:
         call = mock_client.request.await_args
         assert call.args[0] == "POST"
         assert call.kwargs.get("timeout") is None
+
+
+class TestNoContent204:
+    """#251 P1 冒烟暴露（2026-08-12）：DELETE 204 空响应 → _request 强制
+    response.json() 抛 JSONDecodeError——provider/agent-template/project delete
+    均为 204 端点，CLI 真实调用必炸（Traceback + exit 1）。
+
+    RED 预期：当前实现 response.json() 对空 body 抛 JSONDecodeError → 用例
+    FAILED（用例内异常）。GREEN 后 2xx 空 body 返回 {}（非 2xx 语义不变）。
+    """
+
+    async def test_delete_204_empty_body_returns_dict(self, handle):
+        """DELETE 204（无 body）→ 返回 {}（不抛异常）。"""
+        seen: list[str] = []
+
+        def _handler(request):
+            seen.append(str(request.url))
+            return httpx.Response(
+                204,
+                request=httpx.Request("DELETE", f"{BASE_URL}/provider-configs/1"),
+            )
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                data = await client.delete("/provider-configs/1")
+        assert data == {}
+        assert seen == [f"{BASE_URL}/provider-configs/1"]
+
+    async def test_delete_204_is_2xx_no_http_error(self, handle):
+        """204 不触发 HttpApiError（2xx 语义守护）。"""
+
+        def _handler(request):
+            return httpx.Response(
+                204,
+                request=httpx.Request("DELETE", f"{BASE_URL}/provider-configs/1"),
+            )
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                data = await client.delete("/provider-configs/1")
+        assert isinstance(data, dict)
+
+    async def test_post_204_empty_body_returns_dict(self, handle):
+        """POST 204 同族防御（未来 204 端点不炸）。"""
+
+        def _handler(request):
+            return httpx.Response(
+                204,
+                request=httpx.Request("POST", f"{BASE_URL}/x"),
+            )
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                data = await client.post("/x")
+        assert data == {}

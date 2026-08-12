@@ -15,6 +15,8 @@ import uuid
 
 import typer
 
+from inkflow.cli.context import CliContext
+from inkflow.cli.output import print_error, print_result
 from inkflow.domain.models.agent_pipeline import PipelineExecuteRequest, RoleOverride
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
@@ -42,6 +44,17 @@ def _run(coro_fn):
     except KernelStartupError as exc:
         typer.echo(f"❌ 内核启动失败: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+
+
+def _run_ctx(cli_ctx: CliContext, coro_fn):
+    """执行内核调用并映射 HTTP 异常 → print_error 信封（供 JSON 断言命令使用）."""
+    try:
+        return _run_async(coro_fn())
+    except HttpApiError as exc:
+        code, message = map_http_error(exc.status_code, exc.detail, exc.code)
+        print_error(cli_ctx, code, message)
+    except KernelStartupError as exc:
+        print_error(cli_ctx, "KERNEL_ERROR", f"内核启动失败: {exc}")
 
 
 @app.command("run")
@@ -149,11 +162,16 @@ def validate_pipeline_config(
     typer.echo(f"   文件: {file}")
 
 
-@app.command("template")
-def template_list(
+template_app = typer.Typer(name="template", help="Agent 模板管理", no_args_is_help=True)
+
+
+@template_app.command("pipelines")
+def template_pipelines(
+    ctx: typer.Context,
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
 ) -> None:
-    """列出内置管线模板"""
+    """列出内置管线模板（#251：template 升级为管理组后迁移至此）"""
+    cli_ctx: CliContext = ctx.obj
 
     async def _impl() -> dict:
         handle = await ensure_kernel()
@@ -164,6 +182,8 @@ def template_list(
     result = _run(_impl)
     if json_output:
         _print_json(result)
+    elif cli_ctx.json_output:
+        print_result(cli_ctx, result)
     else:
         if not result["items"]:
             typer.echo("📭 暂无可用的管线模板")
@@ -172,6 +192,212 @@ def template_list(
             for tpl in result["items"]:
                 typer.echo(f"  [{tpl['id']}] {tpl['name']}")
                 typer.echo(f"      阶段: {' → '.join(tpl['stages'])}")
+
+
+@template_app.command("list")
+def template_list(ctx: typer.Context) -> None:
+    """列出 Agent 模板"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get("/agent-templates")
+
+    data = _run_ctx(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, data)
+        return
+    items = data.get("items") or []
+    if not items:
+        typer.echo("📭 暂无模板")
+        return
+    for t in items:
+        typer.echo(f"  [{t['id']}] {t['name']}  {'⭐ 默认' if t.get('is_default') else ''}")
+
+
+@template_app.command("get")
+def template_get(
+    ctx: typer.Context,
+    template_id: str = typer.Option(..., "--id", help="模板 ID"),
+) -> None:
+    """查看 Agent 模板"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/agent-templates/{template_id}")
+
+    data = _run_ctx(cli_ctx, _impl)
+    print_result(cli_ctx, data)
+
+
+@template_app.command("create")
+def template_create(
+    ctx: typer.Context,
+    name: str = typer.Option(..., "--name", help="模板名称"),
+    description: str | None = typer.Option(None, "--description"),
+    main_model: str | None = typer.Option(None, "--main-model"),
+    default_temperature: float | None = typer.Option(None, "--default-temperature"),
+    roles_json: str | None = typer.Option(None, "--roles-json", help="roles 四键 JSON"),
+    default_words: int | None = typer.Option(None, "--default-words"),
+) -> None:
+    """创建 Agent 模板"""
+    cli_ctx: CliContext = ctx.obj
+    body: dict = {"name": name}
+    if description is not None:
+        body["description"] = description
+    if main_model is not None:
+        body["main_model"] = main_model
+    if default_temperature is not None:
+        body["default_temperature"] = default_temperature
+    if default_words is not None:
+        body["default_words"] = default_words
+    if roles_json is not None:
+        try:
+            body["roles"] = json.loads(roles_json)
+        except json.JSONDecodeError:
+            print_error(cli_ctx, "VALIDATION_ERROR", f"--roles-json 不是合法 JSON: {roles_json}")
+            return
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post("/agent-templates", json=body)
+
+    data = _run_ctx(cli_ctx, _impl)
+    print_result(cli_ctx, data)
+
+
+@template_app.command("update")
+def template_update(
+    ctx: typer.Context,
+    template_id: str = typer.Option(..., "--id", help="模板 ID"),
+    name: str | None = typer.Option(None, "--name", help="模板名称"),
+    description: str | None = typer.Option(None, "--description"),
+    main_model: str | None = typer.Option(None, "--main-model"),
+    default_temperature: float | None = typer.Option(None, "--default-temperature"),
+    roles_json: str | None = typer.Option(None, "--roles-json", help="roles 四键 JSON"),
+    default_words: int | None = typer.Option(None, "--default-words"),
+    is_default: bool | None = typer.Option(None, "--is-default"),
+) -> None:
+    """更新 Agent 模板"""
+    cli_ctx: CliContext = ctx.obj
+    body: dict = {}
+    if name is not None:
+        body["name"] = name
+    if description is not None:
+        body["description"] = description
+    if main_model is not None:
+        body["main_model"] = main_model
+    if default_temperature is not None:
+        body["default_temperature"] = default_temperature
+    if default_words is not None:
+        body["default_words"] = default_words
+    if is_default is not None:
+        body["is_default"] = is_default
+    if roles_json is not None:
+        try:
+            body["roles"] = json.loads(roles_json)
+        except json.JSONDecodeError:
+            print_error(cli_ctx, "VALIDATION_ERROR", f"--roles-json 不是合法 JSON: {roles_json}")
+            return
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.patch(f"/agent-templates/{template_id}", json=body)
+
+    data = _run_ctx(cli_ctx, _impl)
+    print_result(cli_ctx, data)
+
+
+@template_app.command("delete")
+def template_delete(
+    ctx: typer.Context,
+    template_id: str = typer.Option(..., "--id", help="模板 ID"),
+    force: bool = typer.Option(False, "--force", "-f", help="跳过确认"),
+) -> None:
+    """删除 Agent 模板"""
+    cli_ctx: CliContext = ctx.obj
+    if cli_ctx.json_output and not force:
+        print_error(cli_ctx, "VALIDATION_ERROR", "删除需 --force 或交互确认")
+        return
+    if not force and not typer.confirm(f"确定删除模板 #{template_id} 吗？"):
+        typer.echo("已取消")
+        raise typer.Exit()
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.delete(f"/agent-templates/{template_id}")
+
+    _run_ctx(cli_ctx, _impl)
+    print_result(cli_ctx, {"deleted": True})
+
+
+@template_app.command("duplicate")
+def template_duplicate(
+    ctx: typer.Context,
+    template_id: str = typer.Option(..., "--id", help="模板 ID"),
+) -> None:
+    """复制 Agent 模板"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(f"/agent-templates/{template_id}/duplicate")
+
+    data = _run_ctx(cli_ctx, _impl)
+    print_result(cli_ctx, data)
+
+
+@template_app.command("set-default")
+def template_set_default(
+    ctx: typer.Context,
+    template_id: str = typer.Option(..., "--id", help="模板 ID"),
+) -> None:
+    """设为默认模板"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.patch("/agent-templates/default", json={"id": template_id})
+
+    data = _run_ctx(cli_ctx, _impl)
+    print_result(cli_ctx, data)
+
+
+@template_app.command("get-default")
+def template_get_default(ctx: typer.Context) -> None:
+    """查看默认模板"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get("/agent-templates/default")
+
+    data = _run_ctx(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, data)
+        return
+    template = data.get("template")
+    if template is None:
+        typer.echo("📭 未设置默认模板")
+        return
+    typer.echo(f"⭐ 默认模板: [{template['id']}] {template['name']}")
 
 
 # ── F26: Agent 只读工具诊断（本地静态枚举，F38 恒 HTTP 的豁免命令） ──
@@ -237,6 +463,7 @@ runs_app = typer.Typer(name="runs", help="Agent 运行记录查询", no_args_is_
 draft_app = typer.Typer(name="draft", help="草稿管理", no_args_is_help=True)
 app.add_typer(runs_app)
 app.add_typer(draft_app)
+app.add_typer(template_app)
 
 
 @runs_app.command("list")
