@@ -218,7 +218,7 @@ class TestFullConnectEdges:
         from inkflow.domain.ports.llm_client import LLMClientProtocol
         from inkflow.infrastructure.agent.langgraph_pipeline import LangGraphAgentPipeline
 
-        class _DummyLLM(LLMClientProtocol):  # type: ignore[misc]
+        class _DummyLLM(LLMClientProtocol):  # type: ignore[misc]  # Protocol 子类省略抽象方法（测试哑实现）
             async def chat(
                 self, messages, *, model=None, temperature=None, max_tokens=None, **kwargs
             ):

@@ -107,14 +107,14 @@ class ProjectConfig(BaseModel):
         """
         # 契约固定 ValueError（TRY004 建议 TypeError，测试断言 ValueError 消息）
         if not isinstance(v, list):
-            raise ValueError("agent_order 每层必须为数组")  # noqa: TRY004
+            raise ValueError("agent_order 每层必须为数组")  # noqa: TRY004  # 契约固定 ValueError（测试断言消息）
         if len(v) > 10:
             raise ValueError("agent_order 最多 10 层（槽位编号 0-9）")
         seen: set[str] = set()
         result: list[list[str]] = []
         for layer in v:
             if not isinstance(layer, list):
-                raise ValueError("agent_order 每层必须为数组")  # noqa: TRY004
+                raise ValueError("agent_order 每层必须为数组")  # noqa: TRY004  # 契约固定 ValueError（测试断言消息）
             layer_items: list[str] = []
             for item in layer:
                 if not isinstance(item, str) or not item.strip():
