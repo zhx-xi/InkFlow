@@ -101,18 +101,30 @@ def _make_config(**kw) -> object:
 
 
 class FakeLLM:
-    """决策 LLM fake — 按调用序返回预置结构化输出（宽松取参，不锁内部调用形状）。"""
+    """决策 LLM fake — 按「调用类型」区分 supervisor 决策与角色执行。
 
-    def __init__(self, decisions: list[str]):
+    supervisor 决策 system prompt 含「决策」字样（契约：实现侧 system prompt
+    组装必须含该词——见 test docstring + GREEN 任务书）；角色执行（generic_node）
+    system = 角色 system_prompt（不含「决策」）。
+    decisions 队列只服务 supervisor 决策；角色执行恒返回 role_output。
+    """
+
+    def __init__(self, decisions: list[str], role_output: str = "角色输出"):
         # decisions: 每个元素是一个决策文本（如 '{"action": "execute", "role": "writer"}'）
         self.decisions = list(decisions)
+        self.role_output = role_output
         self.call_count = 0
 
     async def chat(self, messages, **kwargs):
         self.call_count += 1
-        if not self.decisions:
-            return type("R", (), {"content": '{"action": "finish"}'})()
-        return type("R", (), {"content": self.decisions.pop(0)})()
+        system = messages[0].content if messages else ""
+        if "决策" in system:
+            # supervisor 决策调用
+            if not self.decisions:
+                return type("R", (), {"content": '{"action": "finish"}'})()
+            return type("R", (), {"content": self.decisions.pop(0)})()
+        # 角色执行调用（generic_node）
+        return type("R", (), {"content": self.role_output})()
 
 
 class TestSupervisorPipelineDynamicRoute:

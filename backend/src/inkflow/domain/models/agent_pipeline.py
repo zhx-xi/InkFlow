@@ -39,6 +39,29 @@ class PipelineConfig(BaseModel):
         return v
 
 
+class SupervisorExecuteConfig(BaseModel):
+    """Supervisor 模式执行配置。"""
+
+    max_steps: int = Field(default=30, ge=1, le=100, description="路由步数上限（振荡护栏）")
+    max_consecutive: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="同角色连续调度上限（振荡护栏）",
+    )
+    hitl_roles: list[str] = Field(
+        default_factory=list,
+        description="HITL 确认角色列表（这些角色执行前 interrupt 等待确认；空=无 HITL）",
+    )
+    fallback_on_error: bool = Field(
+        default=True,
+        description="异常/超限时回退固定链（deterministic 兜底）；False = 直接失败",
+    )
+    supervisor_prompt: str | None = Field(
+        default=None, description="supervisor 决策 system prompt 覆盖（默认模板）"
+    )
+
+
 class PipelineExecuteRequest(BaseModel):
     """管线执行请求 DTO。"""
 
@@ -47,3 +70,10 @@ class PipelineExecuteRequest(BaseModel):
     chapter_id: uuid.UUID | None = Field(default=None, description="章节 ID（可选）")
     variables: dict[str, str] = Field(default_factory=dict, description="Prompt 模板变量")
     role_overrides: dict[str, RoleOverride] | None = Field(default=None, description="角色覆盖")
+    mode: Literal["static", "supervisor"] = Field(
+        default="static",
+        description="执行模式：static=既有静态 DAG（默认）；supervisor=动态路由编排",
+    )
+    supervisor: SupervisorExecuteConfig | None = Field(
+        default=None, description="supervisor 模式配置（mode=supervisor 时生效）"
+    )

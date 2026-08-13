@@ -51,6 +51,11 @@ class AgentExecutionORM(Base):
     total_duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     """管线总耗时（毫秒）."""
 
+    hitl_payload: Mapped[dict | None] = mapped_column(
+        LenientJSON(fallback=None), nullable=True, default=None
+    )
+    """HITL interrupt payload 快照（waiting_hitl 时填充）。"""
+
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
     """记录创建时间（UTC）."""
 
