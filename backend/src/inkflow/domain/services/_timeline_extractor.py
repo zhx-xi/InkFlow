@@ -16,8 +16,8 @@ TimelineRepositoryProtocol），测试中注入 Mock。
    → 非法条目跳过 + warning
 ⑤ 修复式重试 ≤ 2 次（附错误信息）→ 仍失败 → TimelineExtractionError
 ⑥ 合并落库（§5.5 合并策略）: 按 (project_id, title, source_chapter_id)
-   匹配活动事件 → 存在=非空字段覆盖 / 不存在=新建（narrative_position=None
-   走 F12 next_position 追加语义）/ 软删同名同章=新建 + warning
+   匹配事件 → 存在=非空字段覆盖 / 不存在=新建（narrative_position=None
+   走 F12 next_position 追加语义；v1.1 真删：无「软删同名同章」分支）
 ⑦ 返回 TimelineExtractionResult（created/updated/warnings + model）
 """
 
@@ -261,7 +261,7 @@ class TimelineExtractor:
         item_warnings: list[str],
         model: str,
     ) -> TimelineExtractionResult:
-        """合并落库: 按 (project_id, title, source_chapter_id) 匹配活动事件。"""
+        """合并落库: 按 (project_id, title, source_chapter_id) 匹配事件。"""
         warnings = list(item_warnings)
         pid_int = _to_int_id(request.project_id)
         cid_int = _to_int_id(request.chapter_id)
@@ -274,8 +274,6 @@ class TimelineExtractor:
         for ee in events:
             existing = await self._find_active_by_title(pid_int, cid_int, ee.title)
             if existing is None:
-                if await self._has_soft_deleted_same_title(pid_int, cid_int, ee.title):
-                    warnings.append(f"存在已删除的同名同章事件「{ee.title}」，已新建事件")
                 now = _utcnow()
                 narrative_position = ee.narrative_position
                 if narrative_position is None:
@@ -320,27 +318,12 @@ class TimelineExtractor:
     async def _find_active_by_title(
         self, pid_int: int, cid_int: int, title: str
     ) -> TimelineEvent | None:
-        """在指定来源章的活动事件中按 title 精确匹配（§5.5 匹配逻辑在服务层）。"""
+        """在指定来源章的事件中按 title 精确匹配（§5.5 匹配逻辑在服务层）。"""
         events = await self._repo.list_by_chapter(pid_int, cid_int)
         for event in events:
             if event.title == title:
                 return event
         return None
-
-    async def _has_soft_deleted_same_title(self, pid_int: int, cid_int: int, title: str) -> bool:
-        """检查项目内是否存在已软删除的同名同章事件（用于 warning 提示）。
-
-        通过 list 搜索同名校验；若仓储实现默认排除软删除记录，
-        该场景仅影响提示，不影响合并行为（新建事件）。
-        """
-        events, _ = await self._repo.list(project_id=pid_int, search=title, limit=100)
-        return any(
-            event.is_deleted
-            and event.title == title
-            and event.source_chapter_id is not None
-            and _to_int_id(event.source_chapter_id) == cid_int
-            for event in events
-        )
 
 
 def _merge_event_fields(
@@ -359,7 +342,7 @@ def _merge_event_fields(
     时间戳等无关字段。
 
     Args:
-        existing: 库中同名同章活动事件.
+        existing: 库中同名同章事件.
         ee: LLM 提取出的事件.
 
     Returns:
@@ -392,7 +375,6 @@ def _merge_event_fields(
         timeline_flag=new_timeline_flag,
         source_chapter_id=existing.source_chapter_id,
         extra=existing.extra,
-        is_deleted=existing.is_deleted,
         created_at=existing.created_at,
         updated_at=_utcnow(),
     )

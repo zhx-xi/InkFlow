@@ -1,13 +1,13 @@
-"""SQLite 大纲/情节点/弧线仓储 — 实现 OutlineRepositoryProtocol 全部 28 个方法.
+"""SQLite 大纲/情节点/弧线仓储 — 实现 OutlineRepositoryProtocol 全部方法.
 
 转换函数（_orm_to_domain / _domain_to_orm / int↔UUID 辅助）按项目惯例
 放在本仓储层（参照 project_repo.py / chapter_repo.py / character_repo.py）。
 
-级联语义（spec §2.3/§6/§7）:
-- 大纲软删除 → 其全部情节点级联软删（soft_delete_points_of）；大纲恢复 → 级联恢复
-- 弧线软删除/硬删除 → 成员情节点 arc_id 置 NULL（情节点本身保留）
-- 大纲硬删除 → 情节点物理删除（DB FK CASCADE）；项目删除 → 三实体物理级联
-- 活动记录 partial unique：项目内活动大纲/弧线同名唯一，软删后可重建（spec §2.4）
+级联语义（spec §2.3/§6/§7，v1.1 真删）:
+- 大纲真删 → 其全部情节点物理级联删除（DB FK CASCADE）
+- 弧线真删 → 成员情节点 arc_id 置 NULL（clear_arc_of_points，情节点本身保留）
+- 项目删除 → 三实体物理级联
+- 项目内大纲/弧线同名全唯一（全唯一索引，spec §2.4）
 
 注: 方法名 ``list`` 会遮蔽类作用域中的内置 ``list``，返回注解统一
 写作 ``builtins.list[...]``（与 domain/ports/outline_repository.py 一致）。
@@ -57,7 +57,6 @@ def _outline_orm_to_domain(orm: OutlineORM) -> Outline:
         description=orm.description,
         sort_order=orm.sort_order,
         extra=orm.extra or {},
-        is_deleted=orm.is_deleted,
         created_at=orm.created_at,
         updated_at=orm.updated_at,
     )
@@ -71,7 +70,6 @@ def _outline_domain_to_orm(domain: Outline) -> OutlineORM:
         description=domain.description,
         sort_order=domain.sort_order,
         extra=domain.extra,
-        is_deleted=domain.is_deleted,
     )
 
 
@@ -87,7 +85,6 @@ def _point_orm_to_domain(orm: PlotPointORM) -> PlotPoint:
         position=orm.position,
         arc_id=_int_to_uuid(orm.arc_id),
         extra=orm.extra or {},
-        is_deleted=orm.is_deleted,
         created_at=orm.created_at,
         updated_at=orm.updated_at,
     )
@@ -104,7 +101,6 @@ def _point_domain_to_orm(domain: PlotPoint) -> PlotPointORM:
         position=domain.position,
         arc_id=_uuid_to_int(domain.arc_id) if domain.arc_id is not None else None,
         extra=domain.extra,
-        is_deleted=domain.is_deleted,
     )
 
 
@@ -115,7 +111,6 @@ def _arc_orm_to_domain(orm: StoryArcORM) -> StoryArc:
         project_id=uuid.UUID(int=orm.project_id),
         name=orm.name,
         description=orm.description,
-        is_deleted=orm.is_deleted,
         created_at=orm.created_at,
         updated_at=orm.updated_at,
     )
@@ -127,7 +122,6 @@ def _arc_domain_to_orm(domain: StoryArc) -> StoryArcORM:
         project_id=_uuid_to_int(domain.project_id),
         name=domain.name,
         description=domain.description,
-        is_deleted=domain.is_deleted,
     )
 
 
@@ -148,21 +142,17 @@ class SQLiteOutlineRepository:
         return _outline_orm_to_domain(orm)
 
     async def get(self, outline_id: int) -> Outline | None:
-        """按主键查询大纲（不含已软删除）."""
-        stmt = select(OutlineORM).where(
-            OutlineORM.id == outline_id,
-            ~OutlineORM.is_deleted,
-        )
+        """按主键查询大纲."""
+        stmt = select(OutlineORM).where(OutlineORM.id == outline_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _outline_orm_to_domain(orm) if orm else None
 
     async def get_by_name(self, project_id: int, name: str) -> Outline | None:
-        """按项目内大纲名查询活动大纲（不含已软删除）."""
+        """按项目内大纲名查询大纲."""
         stmt = select(OutlineORM).where(
             OutlineORM.project_id == project_id,
             OutlineORM.name == name,
-            ~OutlineORM.is_deleted,
         )
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
@@ -177,15 +167,12 @@ class SQLiteOutlineRepository:
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[builtins.list[Outline], int]:
-        """分页查询项目内大纲列表，支持名称模糊搜索（不含已软删除）.
+        """分页查询项目内大纲列表，支持名称模糊搜索.
 
         Returns:
             (当前页大纲列表, 符合条件的总记录数).
         """
-        base = select(OutlineORM).where(
-            OutlineORM.project_id == project_id,
-            ~OutlineORM.is_deleted,
-        )
+        base = select(OutlineORM).where(OutlineORM.project_id == project_id)
 
         # 搜索: name icontains
         if search:
@@ -231,48 +218,8 @@ class SQLiteOutlineRepository:
             raise ValueError(f"Outline {outline_id} not found after update")
         return _outline_orm_to_domain(orm)
 
-    async def soft_delete(self, outline_id: int) -> bool:
-        """软删除大纲（is_deleted=True，级联软删其全部情节点）.
-
-        Returns:
-            True 表示成功删除一条记录，False 表示未找到/已删除.
-        """
-        stmt = (
-            sa_update(OutlineORM)
-            .where(OutlineORM.id == outline_id, ~OutlineORM.is_deleted)
-            .values(is_deleted=True, updated_at=_utcnow())
-        )
-        result = await self._session.execute(stmt)
-        if result.rowcount > 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-            # 级联软删情节点；该方法内部 commit，大纲 UPDATE 一并提交（单事务）
-            await self.soft_delete_points_of(outline_id)
-        else:
-            await self._session.commit()
-        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-
-    async def restore(self, outline_id: int) -> Outline | None:
-        """恢复已软删除大纲（含级联恢复其全部情节点）.
-
-        Returns:
-            恢复后的 Outline；记录不存在或未删除时返回 None（重复操作无毒）.
-        """
-        stmt = (
-            sa_update(OutlineORM)
-            .where(OutlineORM.id == outline_id, OutlineORM.is_deleted)
-            .values(is_deleted=False, updated_at=_utcnow())
-        )
-        result = await self._session.execute(stmt)
-        if result.rowcount > 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-            # 级联恢复情节点；该方法内部 commit，大纲 UPDATE 一并提交（单事务）
-            await self.restore_points_of(outline_id)
-        else:
-            await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-            return None
-        return await self.get(outline_id)
-
     async def hard_delete(self, outline_id: int) -> bool:
-        """物理删除大纲（其情节点由 DB FK CASCADE 物理删除）."""
+        """物理删除大纲（其情节点由 DB FK CASCADE 物理删除，v1.1 默认真删语义）."""
         stmt = select(OutlineORM).where(OutlineORM.id == outline_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
@@ -281,36 +228,6 @@ class SQLiteOutlineRepository:
         await self._session.delete(orm)
         await self._session.commit()
         return True
-
-    async def soft_delete_points_of(self, outline_id: int) -> None:
-        """级联软删某大纲的全部活动情节点（大纲软删除时调用）.
-
-        内部执行 UPDATE 并 commit（与调用方 pending 变更同一事务）。
-        """
-        await self._session.execute(
-            sa_update(PlotPointORM)
-            .where(
-                PlotPointORM.outline_id == outline_id,
-                ~PlotPointORM.is_deleted,
-            )
-            .values(is_deleted=True, updated_at=_utcnow())
-        )
-        await self._session.commit()
-
-    async def restore_points_of(self, outline_id: int) -> None:
-        """级联恢复某大纲的全部已软删情节点（大纲恢复时调用）.
-
-        内部执行 UPDATE 并 commit（与调用方 pending 变更同一事务）。
-        """
-        await self._session.execute(
-            sa_update(PlotPointORM)
-            .where(
-                PlotPointORM.outline_id == outline_id,
-                PlotPointORM.is_deleted,
-            )
-            .values(is_deleted=False, updated_at=_utcnow())
-        )
-        await self._session.commit()
 
     # ── PlotPoint ──
 
@@ -323,23 +240,17 @@ class SQLiteOutlineRepository:
         return _point_orm_to_domain(orm)
 
     async def get_point(self, point_id: int) -> PlotPoint | None:
-        """按主键查询情节点（不含已软删除）."""
-        stmt = select(PlotPointORM).where(
-            PlotPointORM.id == point_id,
-            ~PlotPointORM.is_deleted,
-        )
+        """按主键查询情节点."""
+        stmt = select(PlotPointORM).where(PlotPointORM.id == point_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _point_orm_to_domain(orm) if orm else None
 
     async def list_points(self, outline_id: int) -> builtins.list[PlotPoint]:
-        """列出大纲内全部活动情节点，按 (position ASC, created_at ASC) 稳定排序."""
+        """列出大纲内全部情节点，按 (position ASC, created_at ASC) 稳定排序."""
         stmt = (
             select(PlotPointORM)
-            .where(
-                PlotPointORM.outline_id == outline_id,
-                ~PlotPointORM.is_deleted,
-            )
+            .where(PlotPointORM.outline_id == outline_id)
             .order_by(
                 PlotPointORM.position.asc(),
                 PlotPointORM.created_at.asc(),
@@ -351,13 +262,10 @@ class SQLiteOutlineRepository:
         return [_point_orm_to_domain(o) for o in orms]
 
     async def list_points_by_arc(self, arc_id: int) -> builtins.list[PlotPoint]:
-        """列出挂载到指定弧线的全部活动情节点，按 position ASC 排序."""
+        """列出挂载到指定弧线的全部情节点，按 position ASC 排序."""
         stmt = (
             select(PlotPointORM)
-            .where(
-                PlotPointORM.arc_id == arc_id,
-                ~PlotPointORM.is_deleted,
-            )
+            .where(PlotPointORM.arc_id == arc_id)
             .order_by(
                 PlotPointORM.position.asc(),
                 PlotPointORM.created_at.asc(),
@@ -371,11 +279,10 @@ class SQLiteOutlineRepository:
     async def next_position(self, outline_id: int) -> int:
         """计算大纲内下一个排序位置：max(position)+1（无情节点时 = 1）.
 
-        只统计活动情节点（软删不计入）。
+        计算 max(position)+1。
         """
         stmt = select(func.coalesce(func.max(PlotPointORM.position), 0) + 1).where(
             PlotPointORM.outline_id == outline_id,
-            ~PlotPointORM.is_deleted,
         )
         result = await self._session.execute(stmt)
         return result.scalar_one()
@@ -408,36 +315,8 @@ class SQLiteOutlineRepository:
             raise ValueError(f"PlotPoint {point_id} not found after update")
         return _point_orm_to_domain(orm)
 
-    async def soft_delete_point(self, point_id: int) -> bool:
-        """软删除情节点（is_deleted=True）."""
-        stmt = (
-            sa_update(PlotPointORM)
-            .where(PlotPointORM.id == point_id, ~PlotPointORM.is_deleted)
-            .values(is_deleted=True, updated_at=_utcnow())
-        )
-        result = await self._session.execute(stmt)
-        await self._session.commit()
-        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-
-    async def restore_point(self, point_id: int) -> PlotPoint | None:
-        """恢复已软删除情节点.
-
-        Returns:
-            恢复后的 PlotPoint；记录不存在或未删除时返回 None（重复操作无毒）.
-        """
-        stmt = (
-            sa_update(PlotPointORM)
-            .where(PlotPointORM.id == point_id, PlotPointORM.is_deleted)
-            .values(is_deleted=False, updated_at=_utcnow())
-        )
-        result = await self._session.execute(stmt)
-        await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-            return None
-        return await self.get_point(point_id)
-
     async def hard_delete_point(self, point_id: int) -> bool:
-        """物理删除情节点."""
+        """物理删除情节点（v1.1 默认真删语义）."""
         stmt = select(PlotPointORM).where(PlotPointORM.id == point_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
@@ -470,34 +349,27 @@ class SQLiteOutlineRepository:
         return _arc_orm_to_domain(orm)
 
     async def get_arc(self, arc_id: int) -> StoryArc | None:
-        """按主键查询故事弧线（不含已软删除）."""
-        stmt = select(StoryArcORM).where(
-            StoryArcORM.id == arc_id,
-            ~StoryArcORM.is_deleted,
-        )
+        """按主键查询故事弧线."""
+        stmt = select(StoryArcORM).where(StoryArcORM.id == arc_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _arc_orm_to_domain(orm) if orm else None
 
     async def get_arc_by_name(self, project_id: int, name: str) -> StoryArc | None:
-        """按项目内弧线名查询活动故事弧线（不含已软删除）."""
+        """按项目内弧线名查询故事弧线."""
         stmt = select(StoryArcORM).where(
             StoryArcORM.project_id == project_id,
             StoryArcORM.name == name,
-            ~StoryArcORM.is_deleted,
         )
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _arc_orm_to_domain(orm) if orm else None
 
     async def list_arcs(self, project_id: int) -> builtins.list[StoryArc]:
-        """查询项目内全部活动故事弧线，按 name 升序."""
+        """查询项目内全部故事弧线，按 name 升序."""
         stmt = (
             select(StoryArcORM)
-            .where(
-                StoryArcORM.project_id == project_id,
-                ~StoryArcORM.is_deleted,
-            )
+            .where(StoryArcORM.project_id == project_id)
             .order_by(StoryArcORM.name.asc(), StoryArcORM.id.asc())
         )
         result = await self._session.execute(stmt)
@@ -528,44 +400,8 @@ class SQLiteOutlineRepository:
             raise ValueError(f"StoryArc {arc_id} not found after update")
         return _arc_orm_to_domain(orm)
 
-    async def soft_delete_arc(self, arc_id: int) -> bool:
-        """软删除故事弧线（is_deleted=True，成员情节点 arc_id 置 NULL）.
-
-        Returns:
-            True 表示成功删除一条记录，False 表示未找到/已删除.
-        """
-        stmt = (
-            sa_update(StoryArcORM)
-            .where(StoryArcORM.id == arc_id, ~StoryArcORM.is_deleted)
-            .values(is_deleted=True, updated_at=_utcnow())
-        )
-        result = await self._session.execute(stmt)
-        if result.rowcount > 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-            # 成员情节点 arc_id 置 NULL；该方法内部 commit，弧线 UPDATE 一并提交（单事务）
-            await self.clear_arc_of_points(arc_id)
-        else:
-            await self._session.commit()
-        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-
-    async def restore_arc(self, arc_id: int) -> StoryArc | None:
-        """恢复已软删除故事弧线（仅恢复弧线本身，成员 arc_id 保持 NULL）.
-
-        Returns:
-            恢复后的 StoryArc；记录不存在或未删除时返回 None（重复操作无毒）.
-        """
-        stmt = (
-            sa_update(StoryArcORM)
-            .where(StoryArcORM.id == arc_id, StoryArcORM.is_deleted)
-            .values(is_deleted=False, updated_at=_utcnow())
-        )
-        result = await self._session.execute(stmt)
-        await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-            return None
-        return await self.get_arc(arc_id)
-
     async def hard_delete_arc(self, arc_id: int) -> bool:
-        """物理删除故事弧线（成员情节点 arc_id 由 DB FK SET NULL 置空）."""
+        """物理删除故事弧线（成员情节点 arc_id 由 DB FK SET NULL 置空，v1.1 默认真删语义）."""
         stmt = select(StoryArcORM).where(StoryArcORM.id == arc_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()

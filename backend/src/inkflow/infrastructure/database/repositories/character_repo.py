@@ -1,13 +1,12 @@
-"""SQLite 角色/分组/关系仓储 — 实现 CharacterRepositoryProtocol 全部 23 个方法.
+"""SQLite 角色/分组/关系仓储 — 实现 CharacterRepositoryProtocol 全部方法.
 
 转换函数（_orm_to_domain / _domain_to_orm / int↔UUID 辅助）按项目惯例
 放在本仓储层（参照 project_repo.py / chapter_repo.py）。
 
-级联语义（spec §2.3/§6/§7）:
-- 角色软删除 → 其全部关系（双向）级联软删除；角色恢复 → 级联恢复
-- 分组软删除/硬删除 → 成员角色 group_id 置 NULL（角色本身保留）
-- 角色硬删除 → 关系物理删除（DB FK CASCADE）
-- 活动记录 partial unique：同名/同关系键软删后可重建（spec §2.4）
+级联语义（spec §2.3/§6/§7，v1.1 真删）:
+- 角色真删 → 其全部关系（双向）物理删除（DB FK CASCADE）
+- 分组真删 → 成员角色 group_id 置 NULL（角色本身保留）
+- 项目内同名/同关系键全唯一（全唯一索引，spec §2.4）
 
 注: 方法名 ``list`` 会遮蔽类作用域中的内置 ``list``，返回注解统一
 写作 ``builtins.list[...]``（与 domain/ports/character_repository.py 一致）。
@@ -59,7 +58,6 @@ def _char_orm_to_domain(orm: CharacterORM) -> Character:
         goals=orm.goals,
         group_id=_int_to_uuid(orm.group_id),
         extra=orm.extra or {},
-        is_deleted=orm.is_deleted,
         created_at=orm.created_at,
         updated_at=orm.updated_at,
     )
@@ -75,7 +73,6 @@ def _char_domain_to_orm(domain: Character) -> CharacterORM:
         goals=domain.goals,
         group_id=_uuid_to_int(domain.group_id) if domain.group_id is not None else None,
         extra=domain.extra,
-        is_deleted=domain.is_deleted,
     )
 
 
@@ -87,7 +84,6 @@ def _group_orm_to_domain(orm: CharacterGroupORM) -> CharacterGroup:
         name=orm.name,
         description=orm.description,
         sort_order=orm.sort_order,
-        is_deleted=orm.is_deleted,
         created_at=orm.created_at,
         updated_at=orm.updated_at,
     )
@@ -100,7 +96,6 @@ def _group_domain_to_orm(domain: CharacterGroup) -> CharacterGroupORM:
         name=domain.name,
         description=domain.description,
         sort_order=domain.sort_order,
-        is_deleted=domain.is_deleted,
     )
 
 
@@ -113,7 +108,6 @@ def _relation_orm_to_domain(orm: CharacterRelationORM) -> CharacterRelation:
         to_character_id=uuid.UUID(int=orm.to_character_id),
         relation_type=orm.relation_type,
         description=orm.description,
-        is_deleted=orm.is_deleted,
         created_at=orm.created_at,
         updated_at=orm.updated_at,
     )
@@ -127,7 +121,6 @@ def _relation_domain_to_orm(domain: CharacterRelation) -> CharacterRelationORM:
         to_character_id=_uuid_to_int(domain.to_character_id),
         relation_type=domain.relation_type,
         description=domain.description,
-        is_deleted=domain.is_deleted,
     )
 
 
@@ -148,21 +141,17 @@ class SQLiteCharacterRepository:
         return _char_orm_to_domain(orm)
 
     async def get(self, character_id: int) -> Character | None:
-        """按主键查询角色（不含已软删除）."""
-        stmt = select(CharacterORM).where(
-            CharacterORM.id == character_id,
-            ~CharacterORM.is_deleted,
-        )
+        """按主键查询角色."""
+        stmt = select(CharacterORM).where(CharacterORM.id == character_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _char_orm_to_domain(orm) if orm else None
 
     async def get_by_name(self, project_id: int, name: str) -> Character | None:
-        """按项目内角色名查询活动角色（不含已软删除）."""
+        """按项目内角色名查询角色."""
         stmt = select(CharacterORM).where(
             CharacterORM.project_id == project_id,
             CharacterORM.name == name,
-            ~CharacterORM.is_deleted,
         )
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
@@ -178,15 +167,12 @@ class SQLiteCharacterRepository:
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[builtins.list[Character], int]:
-        """分页查询项目内角色列表，支持搜索与分组过滤（不含已软删除）.
+        """分页查询项目内角色列表，支持搜索与分组过滤.
 
         Returns:
             (当前页角色列表, 符合条件的总记录数).
         """
-        base = select(CharacterORM).where(
-            CharacterORM.project_id == project_id,
-            ~CharacterORM.is_deleted,
-        )
+        base = select(CharacterORM).where(CharacterORM.project_id == project_id)
 
         # 搜索: name icontains
         if search:
@@ -239,48 +225,8 @@ class SQLiteCharacterRepository:
             raise ValueError(f"Character {char_id} not found after update")
         return _char_orm_to_domain(orm)
 
-    async def soft_delete(self, character_id: int) -> bool:
-        """软删除角色（is_deleted=True，级联软删其双向关系）.
-
-        Returns:
-            True 表示成功删除一条记录，False 表示未找到/已删除.
-        """
-        stmt = (
-            sa_update(CharacterORM)
-            .where(CharacterORM.id == character_id, ~CharacterORM.is_deleted)
-            .values(is_deleted=True, updated_at=_utcnow())
-        )
-        result = await self._session.execute(stmt)
-        if result.rowcount > 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-            # 级联软删关系；该方法内部 commit，角色 UPDATE 一并提交（单事务）
-            await self.soft_delete_relations_of(character_id)
-        else:
-            await self._session.commit()
-        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-
-    async def restore(self, character_id: int) -> Character | None:
-        """恢复已软删除角色（含级联恢复其双向关系）.
-
-        Returns:
-            恢复后的 Character；记录不存在或未删除时返回 None（重复操作无毒）.
-        """
-        stmt = (
-            sa_update(CharacterORM)
-            .where(CharacterORM.id == character_id, CharacterORM.is_deleted)
-            .values(is_deleted=False, updated_at=_utcnow())
-        )
-        result = await self._session.execute(stmt)
-        if result.rowcount > 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-            # 级联恢复关系；该方法内部 commit，角色 UPDATE 一并提交（单事务）
-            await self.restore_relations_of(character_id)
-        else:
-            await self._session.commit()
-        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-            return None
-        return await self.get(character_id)
-
     async def hard_delete(self, character_id: int) -> bool:
-        """物理删除角色（其双向关系由 DB FK CASCADE 物理删除）."""
+        """物理删除角色（其双向关系由 DB FK CASCADE 物理删除，v1.1 默认真删语义）."""
         stmt = select(CharacterORM).where(CharacterORM.id == character_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
@@ -301,23 +247,17 @@ class SQLiteCharacterRepository:
         return _group_orm_to_domain(orm)
 
     async def get_group(self, group_id: int) -> CharacterGroup | None:
-        """按主键查询分组（不含已软删除）."""
-        stmt = select(CharacterGroupORM).where(
-            CharacterGroupORM.id == group_id,
-            ~CharacterGroupORM.is_deleted,
-        )
+        """按主键查询分组."""
+        stmt = select(CharacterGroupORM).where(CharacterGroupORM.id == group_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _group_orm_to_domain(orm) if orm else None
 
     async def list_groups(self, project_id: int) -> builtins.list[CharacterGroup]:
-        """查询项目内全部分组（不含已软删除，按 sort_order 升序）."""
+        """查询项目内全部分组（按 sort_order 升序）."""
         stmt = (
             select(CharacterGroupORM)
-            .where(
-                CharacterGroupORM.project_id == project_id,
-                ~CharacterGroupORM.is_deleted,
-            )
+            .where(CharacterGroupORM.project_id == project_id)
             .order_by(CharacterGroupORM.sort_order.asc(), CharacterGroupORM.id.asc())
         )
         result = await self._session.execute(stmt)
@@ -349,25 +289,8 @@ class SQLiteCharacterRepository:
             raise ValueError(f"CharacterGroup {group_id} not found after update")
         return _group_orm_to_domain(orm)
 
-    async def soft_delete_group(self, group_id: int) -> bool:
-        """软删除分组，成员角色 group_id 置 NULL（角色本身保留）."""
-        stmt = (
-            sa_update(CharacterGroupORM)
-            .where(CharacterGroupORM.id == group_id, ~CharacterGroupORM.is_deleted)
-            .values(is_deleted=True, updated_at=_utcnow())
-        )
-        result = await self._session.execute(stmt)
-        if result.rowcount > 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-            await self._session.execute(
-                sa_update(CharacterORM)
-                .where(CharacterORM.group_id == group_id)
-                .values(group_id=None, updated_at=_utcnow())
-            )
-        await self._session.commit()
-        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-
     async def hard_delete_group(self, group_id: int) -> bool:
-        """物理删除分组，成员角色 group_id 置 NULL（角色本身保留）."""
+        """物理删除分组，成员角色 group_id 置 NULL（角色本身保留，v1.1 默认真删语义）."""
         stmt = select(CharacterGroupORM).where(CharacterGroupORM.id == group_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
@@ -393,11 +316,8 @@ class SQLiteCharacterRepository:
         return _relation_orm_to_domain(orm)
 
     async def get_relation(self, relation_id: int) -> CharacterRelation | None:
-        """按主键查询关系（不含已软删除）."""
-        stmt = select(CharacterRelationORM).where(
-            CharacterRelationORM.id == relation_id,
-            ~CharacterRelationORM.is_deleted,
-        )
+        """按主键查询关系."""
+        stmt = select(CharacterRelationORM).where(CharacterRelationORM.id == relation_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _relation_orm_to_domain(orm) if orm else None
@@ -405,12 +325,11 @@ class SQLiteCharacterRepository:
     async def get_relation_by_key(
         self, from_id: int, to_id: int, relation_type: str
     ) -> CharacterRelation | None:
-        """按 (from, to, relation_type) 唯一键查询活动关系."""
+        """按 (from, to, relation_type) 唯一键查询关系."""
         stmt = select(CharacterRelationORM).where(
             CharacterRelationORM.from_character_id == from_id,
             CharacterRelationORM.to_character_id == to_id,
             CharacterRelationORM.relation_type == relation_type,
-            ~CharacterRelationORM.is_deleted,
         )
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
@@ -421,12 +340,9 @@ class SQLiteCharacterRepository:
     ) -> builtins.list[CharacterRelation]:
         """查询项目内关系列表，可按角色过滤（双向）.
 
-        提供 character_id 时返回该角色作为起点或终点的全部活动关系。
+        提供 character_id 时返回该角色作为起点或终点的全部关系。
         """
-        stmt = select(CharacterRelationORM).where(
-            CharacterRelationORM.project_id == project_id,
-            ~CharacterRelationORM.is_deleted,
-        )
+        stmt = select(CharacterRelationORM).where(CharacterRelationORM.project_id == project_id)
         if character_id is not None:
             stmt = stmt.where(
                 or_(
@@ -465,19 +381,8 @@ class SQLiteCharacterRepository:
             raise ValueError(f"CharacterRelation {rel_id} not found after update")
         return _relation_orm_to_domain(orm)
 
-    async def soft_delete_relation(self, relation_id: int) -> bool:
-        """软删除关系（is_deleted=True）."""
-        stmt = (
-            sa_update(CharacterRelationORM)
-            .where(CharacterRelationORM.id == relation_id, ~CharacterRelationORM.is_deleted)
-            .values(is_deleted=True, updated_at=_utcnow())
-        )
-        result = await self._session.execute(stmt)
-        await self._session.commit()
-        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-
     async def hard_delete_relation(self, relation_id: int) -> bool:
-        """物理删除关系."""
+        """物理删除关系（v1.1 默认真删语义）."""
         stmt = select(CharacterRelationORM).where(CharacterRelationORM.id == relation_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
@@ -486,41 +391,3 @@ class SQLiteCharacterRepository:
         await self._session.delete(orm)
         await self._session.commit()
         return True
-
-    # ── 级联操作 ──
-
-    async def soft_delete_relations_of(self, character_id: int) -> None:
-        """级联软删某角色的全部关系（双向，角色软删除时调用）.
-
-        内部执行 UPDATE 并 commit（与调用方 pending 变更同一事务）。
-        """
-        await self._session.execute(
-            sa_update(CharacterRelationORM)
-            .where(
-                or_(
-                    CharacterRelationORM.from_character_id == character_id,
-                    CharacterRelationORM.to_character_id == character_id,
-                ),
-                ~CharacterRelationORM.is_deleted,
-            )
-            .values(is_deleted=True, updated_at=_utcnow())
-        )
-        await self._session.commit()
-
-    async def restore_relations_of(self, character_id: int) -> None:
-        """级联恢复某角色的全部关系（双向，角色恢复时调用）.
-
-        内部执行 UPDATE 并 commit（与调用方 pending 变更同一事务）。
-        """
-        await self._session.execute(
-            sa_update(CharacterRelationORM)
-            .where(
-                or_(
-                    CharacterRelationORM.from_character_id == character_id,
-                    CharacterRelationORM.to_character_id == character_id,
-                ),
-                CharacterRelationORM.is_deleted,
-            )
-            .values(is_deleted=False, updated_at=_utcnow())
-        )
-        await self._session.commit()

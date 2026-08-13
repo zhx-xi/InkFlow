@@ -13,7 +13,7 @@ CharacterRepositoryProtocol），测试中注入 Mock。
    → 非法条目跳过 + warning
 ⑤ 修复式重试 ≤ 2 次（附错误信息）→ 仍失败 → CharacterExtractionError
 ⑥ 合并落库（§5.4）: 角色按 (project_id, name) 匹配活动角色 →
-   存在=更新(非空覆盖) / 不存在=创建（软删同名 → 新建 + warning）;
+   存在=更新(非空覆盖) / 不存在=创建（v1.1 真删：无「软删同名」分支）;
    关系名称解析为 id → 按 (from, to, type) upsert
 ⑦ 返回 CharacterExtractionResult
 """
@@ -308,8 +308,6 @@ class CharacterExtractor:
         for ec in characters:
             existing = await self._repo.get_by_name(pid_int, ec.name)
             if existing is None:
-                if await self._has_soft_deleted_same_name(pid_int, ec.name):
-                    warnings.append(f"存在已删除的同名角色档案「{ec.name}」，已新建角色")
                 now = _utcnow()
                 new_char = await self._repo.add(
                     Character(
@@ -409,7 +407,6 @@ class CharacterExtractor:
                     to_character_id=existing_rel.to_character_id,
                     relation_type=existing_rel.relation_type,
                     description=er.description,
-                    is_deleted=existing_rel.is_deleted,
                     created_at=existing_rel.created_at,
                     updated_at=_utcnow(),
                 )
@@ -425,20 +422,11 @@ class CharacterExtractor:
         name: str,
         name_to_char: dict[str, Character],
     ) -> Character | None:
-        """将角色名解析为角色实体: 先查本次提取产物，再查库中活动角色。"""
+        """将角色名解析为角色实体: 先查本次提取产物，再查库中角色。"""
         char = name_to_char.get(name)
         if char is not None:
             return char
         return await self._repo.get_by_name(pid_int, name)
-
-    async def _has_soft_deleted_same_name(self, pid_int: int, name: str) -> bool:
-        """检查项目内是否存在已软删除的同名角色档案（用于 warning 提示）。
-
-        通过 list 搜索同名校验；若仓储实现默认排除软删除记录，
-        该场景仅影响提示，不影响合并行为（新建角色）。
-        """
-        chars, _ = await self._repo.list(project_id=pid_int, search=name, limit=100)
-        return any(c.is_deleted and c.name == name for c in chars)
 
 
 def _merge_character_fields(existing: Character, ec: ExtractedCharacter) -> Character | None:
@@ -448,7 +436,7 @@ def _merge_character_fields(existing: Character, ec: ExtractedCharacter) -> Char
     保留 existing 的 id / group_id / extra / 时间戳等无关字段。
 
     Args:
-        existing: 库中同名活动角色.
+        existing: 库中同名角色.
         ec: LLM 提取出的角色.
 
     Returns:
@@ -472,7 +460,6 @@ def _merge_character_fields(existing: Character, ec: ExtractedCharacter) -> Char
         goals=new_goals,
         group_id=existing.group_id,
         extra=existing.extra,
-        is_deleted=existing.is_deleted,
         created_at=existing.created_at,
         updated_at=_utcnow(),
     )

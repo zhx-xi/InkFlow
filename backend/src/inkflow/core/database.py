@@ -221,6 +221,106 @@ def ensure_world_drop_is_deleted(conn: Connection) -> None:
     conn.execute(text("ALTER TABLE world_settings DROP COLUMN is_deleted"))
 
 
+def _migrate_drop_is_deleted(
+    conn: Connection,
+    table: str,
+    unique_indexes: dict[str, str] | None = None,
+) -> None:
+    """#211 v1.1：单表 is_deleted 列移除迁移（幂等，spec §8.3 通用步骤）.
+
+    步骤（load-bearing 顺序，SQLite DROP COLUMN 不能删除被索引/partial WHERE
+    引用的列）：
+    ① DELETE 存量软删记录（is_deleted=1 物理清除）；
+    ② DROP 依赖 is_deleted 的索引（partial unique + is_deleted 单列索引，
+       按 sqlite_master 枚举）；
+    ③ CREATE 全唯一索引（无 WHERE 条件，仅 unique_indexes 提供的表）；
+    ④ ALTER TABLE <table> DROP COLUMN is_deleted。
+
+    表不存在或列已不存在（全新环境/已迁移）→ no-op。
+
+    Args:
+        conn: 同步连接（conn.run_sync 传入）.
+        table: 目标表名（硬编码常量，非用户输入）.
+        unique_indexes: {索引名: 索引列列表（不含表名）}，partial unique → 全唯一；
+            None/空表示该表无唯一索引（仅清理存量软删 + 删列）.
+    """
+    cols = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+    names = {row[1] for row in cols}
+    if not names or "is_deleted" not in names:
+        return  # 表不存在（全新环境）或列已移除 → no-op
+    # ① 清存量软删
+    conn.execute(text(f"DELETE FROM {table} WHERE is_deleted = 1"))
+    # ② 删依赖 is_deleted 的索引（partial unique + 单列索引，按 sqlite_master 枚举）
+    index_rows = conn.execute(
+        text(
+            "SELECT name FROM sqlite_master "
+            "WHERE type = 'index' AND tbl_name = :tbl AND sql LIKE '%is_deleted%'"
+        ),
+        {"tbl": table},
+    ).fetchall()
+    for (index_name,) in index_rows:
+        conn.execute(text(f'DROP INDEX IF EXISTS "{index_name}"'))
+    # ③ 重建全唯一索引（无 WHERE is_deleted = 0）
+    if unique_indexes:
+        for index_name, columns in unique_indexes.items():
+            conn.execute(
+                text(f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} " f"ON {table} ({columns})")
+            )
+    # ④ 删列
+    conn.execute(text(f"ALTER TABLE {table} DROP COLUMN is_deleted"))
+
+
+def ensure_character_drop_is_deleted(conn: Connection) -> None:
+    """#211 v1.1：characters/character_groups/character_relations 软删 → 真删迁移.
+
+    三表均含 partial unique 索引（角色名/分组名/关系键，spec §2.4）→ 全唯一；
+    角色/分组删除语义由 DB FK（关系 CASCADE / 成员 group_id SET NULL）保证。
+    """
+    _migrate_drop_is_deleted(
+        conn,
+        "characters",
+        {"uq_characters_active_name": "project_id, name"},
+    )
+    _migrate_drop_is_deleted(
+        conn,
+        "character_groups",
+        {"uq_character_groups_active_name": "project_id, name"},
+    )
+    _migrate_drop_is_deleted(
+        conn,
+        "character_relations",
+        {
+            "uq_character_relations_active_key": (
+                "project_id, from_character_id, to_character_id, relation_type"
+            )
+        },
+    )
+
+
+def ensure_outline_drop_is_deleted(conn: Connection) -> None:
+    """#211 v1.1：outlines/plot_points/story_arcs 软删 → 真删迁移.
+
+    outlines 与 story_arcs 含 partial unique（大纲名/弧线名，spec §2.4）→ 全唯一；
+    plot_points 无唯一约束（仅清理存量软删 + 删列）。
+    """
+    _migrate_drop_is_deleted(
+        conn,
+        "outlines",
+        {"uq_outlines_active_name": "project_id, name"},
+    )
+    _migrate_drop_is_deleted(conn, "plot_points")
+    _migrate_drop_is_deleted(
+        conn,
+        "story_arcs",
+        {"uq_story_arcs_active_name": "project_id, name"},
+    )
+
+
+def ensure_timeline_drop_is_deleted(conn: Connection) -> None:
+    """#211 v1.1：timeline_events 软删 → 真删迁移（无唯一约束，仅清理 + 删列）."""
+    _migrate_drop_is_deleted(conn, "timeline_events")
+
+
 async def drop_tables() -> None:
     """Drop all tables (for test teardown)."""
     async with engine.begin() as conn:

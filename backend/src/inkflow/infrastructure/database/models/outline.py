@@ -8,10 +8,10 @@
   映射规则: domain_id = uuid.UUID(int=orm.id)
   （int↔UUID 转换函数在 repositories/outline_repo.py，
   参照 project_repo.py / character_repo.py 惯例）
-- 软删除标记 is_deleted + partial unique index（sqlite_where）保证
-  「活动记录唯一、软删除后可重建同名」的语义（spec §2.4）
-- FK 级联: 项目删除 → 大纲/情节点/弧线级联删除；大纲硬删除 → 情节点物理级联删除
-  （大纲软删 → 情节点级联软删由服务层实现）；弧线删除 → 情节点 arc_id 置 NULL
+- 全唯一索引 (project_id, name) 保证「项目内大纲/弧线同名唯一」的语义
+  （v1.1 真删语义移除 is_deleted 列与 partial unique，spec §2.4）
+- FK 级联: 项目删除 → 大纲/情节点/弧线级联删除；大纲删除 → 情节点物理级联删除；
+  弧线删除 → 情节点 arc_id 置 NULL
 - 情节点冗余 project_id（同 F9 CharacterRelation 先例），便于弧线跨项目归属校验
 - 本文件为纯 ORM 映射，不包含任何领域转换函数（转换在 repo 层）
 """
@@ -21,14 +21,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import (
-    Boolean,
     DateTime,
     ForeignKey,
     Index,
     Integer,
     String,
     Text,
-    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -55,10 +53,9 @@ class OutlineORM(Base):
             "project_id",
             "name",
             unique=True,
-            sqlite_where=text("is_deleted = 0"),
         ),
     )
-    """项目内活动大纲名唯一（软删除后允许重建同名，spec §2.4）."""
+    """项目内大纲名唯一（v1.1 全唯一索引，spec §2.4）."""
 
     id: Mapped[int] = mapped_column(
         Integer,
@@ -102,14 +99,6 @@ class OutlineORM(Base):
     )
     """扩展字典（生成标记、来源约束等 Phase 2+ 字段预留）."""
 
-    is_deleted: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        index=True,
-    )
-    """软删除标记（已索引，用于过滤查询）."""
-
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
@@ -152,7 +141,7 @@ class PlotPointORM(Base):
         nullable=False,
         index=True,
     )
-    """所属大纲（大纲硬删除级联删除；软删级联由服务层实现，已索引）."""
+    """所属大纲（大纲删除 FK 级联删除，已索引）."""
 
     project_id: Mapped[int] = mapped_column(
         Integer,
@@ -204,14 +193,6 @@ class PlotPointORM(Base):
     )
     """扩展字典（参与角色、地点等 Phase 2+ 字段预留）."""
 
-    is_deleted: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        index=True,
-    )
-    """软删除标记（已索引，用于过滤查询）."""
-
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
@@ -246,10 +227,9 @@ class StoryArcORM(Base):
             "project_id",
             "name",
             unique=True,
-            sqlite_where=text("is_deleted = 0"),
         ),
     )
-    """项目内活动弧线名唯一（软删除后允许重建同名，spec §2.4）."""
+    """项目内弧线名唯一（v1.1 全唯一索引，spec §2.4）."""
 
     id: Mapped[int] = mapped_column(
         Integer,
@@ -278,14 +258,6 @@ class StoryArcORM(Base):
         default="",
     )
     """弧线说明 (≤ 500 字符)."""
-
-    is_deleted: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        index=True,
-    )
-    """软删除标记（已索引，用于过滤查询）."""
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,

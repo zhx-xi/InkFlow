@@ -374,7 +374,7 @@ def update_event_cmd(
 
 
 # ---------------------------------------------------------------------------
-# delete  — inkflow timeline delete --id <uuid> [--force] [--permanent]
+# delete  — inkflow timeline delete --id <uuid> [--force]
 # ---------------------------------------------------------------------------
 
 
@@ -383,16 +383,14 @@ def delete_event_cmd(
     ctx: typer.Context,
     event_id: str = typer.Option(..., "--id", "-i", help="事件 ID (UUID)"),
     force: bool = typer.Option(False, "--force", "-f", help="跳过确认"),
-    permanent: bool = typer.Option(False, "--permanent", "-p", help="硬删除（物理删除）"),
 ) -> None:
-    """删除时间线事件（默认软删除；--permanent 物理删除）"""
+    """真删时间线事件（v1.1，不可恢复）"""
     cli_ctx: CliContext = ctx.obj
     eid = _parse_uuid(cli_ctx, event_id, "事件不存在")
     if not force:
         if cli_ctx.json_output:
             print_error(cli_ctx, "VALIDATION_ERROR", "删除需 --force 或交互确认")
-        label = "永久删除" if permanent else "删除"
-        if not typer.confirm(f"确定要{label}事件 #{event_id} 吗？"):
+        if not typer.confirm(f"确定要删除事件 #{event_id} 吗？"):
             typer.echo("已取消")
             raise typer.Exit()
 
@@ -400,41 +398,10 @@ def delete_event_cmd(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
-            if permanent:
-                await client.delete(f"/timeline/events/{eid}", params={"force": True})
-            else:
-                await client.delete(f"/timeline/events/{eid}")
+            await client.delete(f"/timeline/events/{eid}")
 
     _run(cli_ctx, _impl)
-    label = "已永久删除" if permanent else "已删除"
     if cli_ctx.json_output:
         print_result(cli_ctx, {"id": str(eid), "deleted": True})
     else:
-        typer.echo(f"✅ 事件 #{event_id} {label}")
-
-
-# ---------------------------------------------------------------------------
-# restore  — inkflow timeline restore --id <uuid>
-# ---------------------------------------------------------------------------
-
-
-@app.command("restore")
-def restore_event_cmd(
-    ctx: typer.Context,
-    event_id: str = typer.Option(..., "--id", "-i", help="事件 ID (UUID)"),
-) -> None:
-    """恢复已删除的时间线事件"""
-    cli_ctx: CliContext = ctx.obj
-    eid = _parse_uuid(cli_ctx, event_id, "事件不存在")
-
-    async def _impl() -> dict:
-        handle = await ensure_kernel()
-        client = InkFlowHTTPClient(handle)
-        async with client:
-            return await client.post(f"/timeline/events/{eid}/restore")
-
-    event = _run(cli_ctx, _impl)
-    if cli_ctx.json_output:
-        print_result(cli_ctx, event)
-    else:
-        typer.echo(f"✅ 事件已恢复: [{event['title']}]")
+        typer.echo(f"✅ 事件 #{event_id} 已删除")

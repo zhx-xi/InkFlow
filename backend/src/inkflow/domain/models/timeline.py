@@ -142,7 +142,6 @@ class TimelineEvent(BaseModel):
         source_chapter_id: F14 提取来源章节（Q3 联动锚点）— 仅作来源追溯，
             不参与业务规则校验；None = 手工事件（不参与提取合并匹配）.
         extra: 扩展属性字典（参与角色、地点、标签等 Phase 2+ 字段预留）.
-        is_deleted: 软删除标记.
         created_at: 创建时间 (UTC).
         updated_at: 最后更新时间 (UTC).
     """
@@ -160,7 +159,6 @@ class TimelineEvent(BaseModel):
     timeline_flag: str = ""  # ""/flashback/flashforward（建议值，自由文本）
     source_chapter_id: uuid.UUID | None = None  # F14 提取来源章节（Q3 联动）; None = 手工事件
     extra: dict[str, Any] = Field(default_factory=dict)
-    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -471,7 +469,7 @@ class TimelineExtractionResult(BaseModel):
     Attributes:
         created: 本次新建的事件列表.
         updated: 本次更新（同名同章合并）的事件列表.
-        warnings: 提取/合并过程中的警告信息（跳过条目、软删同名同章等）.
+        warnings: 提取/合并过程中的警告信息（跳过条目等）.
         model: 实际使用的模型.
     """
 

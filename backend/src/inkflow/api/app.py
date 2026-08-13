@@ -39,8 +39,11 @@ from inkflow.core.database import (
     async_session_factory,
     create_tables,
     engine,
+    ensure_character_drop_is_deleted,
     ensure_map_columns,
+    ensure_outline_drop_is_deleted,
     ensure_provider_builtin_key_column,
+    ensure_timeline_drop_is_deleted,
     ensure_world_drop_is_deleted,
     ensure_world_parent_id_column,
 )
@@ -59,6 +62,9 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_world_parent_id_column)
         await conn.run_sync(ensure_map_columns)
         await conn.run_sync(ensure_world_drop_is_deleted)
+        await conn.run_sync(ensure_character_drop_is_deleted)
+        await conn.run_sync(ensure_outline_drop_is_deleted)
+        await conn.run_sync(ensure_timeline_drop_is_deleted)
     # #106 F1：启动后幂等 seed 内置 4 provider（ProviderConfigService 同名跳过，
     # 全新安装注册表为空 → seed 补全；重复启动不重复插入）
     async with async_session_factory() as session:

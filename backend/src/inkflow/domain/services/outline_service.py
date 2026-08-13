@@ -7,10 +7,9 @@
   arc_id 跨项目或不存在
 - 资源不存在（404 语义）: 多数方法返回 None 由 router 层转 404；
   create_point 等返回非 Optional 的方法抛 OutlineNotFoundError
-- 级联编排（spec §6.1/§6.2）: 大纲软删 → 先删大纲本体再级联软删其情节点
-  （repo.soft_delete_points_of）；大纲恢复 → 级联恢复情节点；弧线软删 →
-  成员情节点 arc_id 置 NULL（repo.clear_arc_of_points，情节点保留）；
-  弧线恢复不恢复成员关联（同 F9 分组语义）
+- 级联编排（spec §6.1/§6.2，v1.1 真删）: 大纲真删 → 情节点由 DB FK CASCADE
+  物理级联删除；弧线真删 → 成员情节点 arc_id 置 NULL（DB FK SET NULL，
+  情节点保留）
 - AI 生成入口（§5.1 步骤 ①）: 校验项目存在并组装 project_info（项目名/
   类型/目标字数/写作风格/extra 纯文本），以 project.config.model 作为
   默认模型，再委托 OutlineGenerator 执行管线（②-⑦）
@@ -153,7 +152,7 @@ class OutlineService:
         return await self._repo.add(outline)
 
     async def get_outline(self, outline_id: int | uuid.UUID) -> Outline | None:
-        """按主键获取大纲（不含已软删除）；不存在返回 None（router 转 404）."""
+        """按主键获取大纲；不存在返回 None（router 转 404）."""
         return await self._repo.get(_to_int_id(outline_id))
 
     async def list_outlines(
@@ -214,43 +213,18 @@ class OutlineService:
         logger.info("更新大纲: outline_id=%s", outline_id)
         return await self._repo.update(merged)
 
-    async def delete_outline(self, outline_id: int | uuid.UUID, force: bool = False) -> bool:
-        """删除大纲（spec §7: 大纲不存在 → False，router 转 404）.
+    async def delete_outline(self, outline_id: int | uuid.UUID) -> bool:
+        """真删大纲（v1.1，spec §7: 大纲不存在 → False，router 转 404）.
 
         Args:
             outline_id: 大纲主键（支持 int 或 UUID）.
-            force: True 物理删除（情节点由 FK CASCADE）；False（默认）软删除，
-                服务层先软删大纲本体，再级联软删其情节点（§6.1）.
 
         Returns:
             True 表示删除成功；False 表示未找到记录.
         """
         oid = _to_int_id(outline_id)
-        if force:
-            logger.info("硬删除大纲: outline_id=%s", outline_id)
-            return await self._repo.hard_delete(oid)
-        # 软删除编排: 先删大纲本体，再级联软删其情节点（仓储内部级联为幂等兜底）
-        deleted = await self._repo.soft_delete(oid)
-        await self._repo.soft_delete_points_of(oid)
-        logger.info("软删除大纲: outline_id=%s（级联软删其情节点）", outline_id)
-        return deleted
-
-    async def restore_outline(self, outline_id: int | uuid.UUID) -> Outline | None:
-        """恢复软删除大纲并级联恢复其情节点（spec §6.1）.
-
-        Args:
-            outline_id: 大纲主键（支持 int 或 UUID）.
-
-        Returns:
-            恢复后的 Outline；大纲不存在/未删除返回 None（重复操作无毒，同 F1）.
-        """
-        oid = _to_int_id(outline_id)
-        restored = await self._repo.restore(oid)
-        if restored is None:
-            return None
-        await self._repo.restore_points_of(oid)
-        logger.info("恢复大纲: outline_id=%s（级联恢复其情节点）", outline_id)
-        return restored
+        logger.info("真删大纲: outline_id=%s（情节点由 FK CASCADE 级联）", outline_id)
+        return await self._repo.hard_delete(oid)
 
     # ── PlotPoint ──────────────────────────────────────────────
 
@@ -307,7 +281,7 @@ class OutlineService:
         return await self._repo.add_point(point)
 
     async def get_point(self, point_id: int | uuid.UUID) -> PlotPoint | None:
-        """按主键获取情节点（不含已软删除）；不存在返回 None（router 转 404）."""
+        """按主键获取情节点；不存在返回 None（router 转 404）."""
         return await self._repo.get_point(_to_int_id(point_id))
 
     async def update_point(
@@ -346,46 +320,27 @@ class OutlineService:
         logger.info("更新情节点: point_id=%s", point_id)
         return await self._repo.update_point(merged)
 
-    async def delete_point(self, point_id: int | uuid.UUID, force: bool = False) -> bool:
-        """删除情节点（spec §7: 情节点不存在 → False，router 转 404）.
+    async def delete_point(self, point_id: int | uuid.UUID) -> bool:
+        """真删情节点（v1.1，spec §7: 情节点不存在 → False，router 转 404）.
 
         Args:
             point_id: 情节点主键（支持 int 或 UUID）.
-            force: True 物理删除；False（默认）软删除.
 
         Returns:
             True 表示删除成功；False 表示未找到记录.
         """
         pid = _to_int_id(point_id)
-        if force:
-            logger.info("硬删除情节点: point_id=%s", point_id)
-            return await self._repo.hard_delete_point(pid)
-        logger.info("软删除情节点: point_id=%s", point_id)
-        return await self._repo.soft_delete_point(pid)
-
-    async def restore_point(self, point_id: int | uuid.UUID) -> PlotPoint | None:
-        """恢复软删除情节点.
-
-        Args:
-            point_id: 情节点主键（支持 int 或 UUID）.
-
-        Returns:
-            恢复后的 PlotPoint；情节点不存在/未删除返回 None（重复操作无毒，同 F1）.
-        """
-        pid = _to_int_id(point_id)
-        restored = await self._repo.restore_point(pid)
-        if restored is not None:
-            logger.info("恢复情节点: point_id=%s", point_id)
-        return restored
+        logger.info("真删情节点: point_id=%s", point_id)
+        return await self._repo.hard_delete_point(pid)
 
     async def list_points(self, outline_id: int | uuid.UUID) -> list[PlotPoint]:
-        """查询大纲内全部活动情节点（position ASC 稳定排序，spec §6.3）.
+        """查询大纲内全部情节点（position ASC 稳定排序，spec §6.3）.
 
         Args:
             outline_id: 大纲主键（支持 int 或 UUID）.
 
         Returns:
-            该大纲的活动情节点列表；大纲不存在返回空列表.
+            该大纲的情节点列表；大纲不存在返回空列表.
         """
         oid = _to_int_id(outline_id)
         outline = await self._repo.get(oid)
@@ -431,11 +386,11 @@ class OutlineService:
         return await self._repo.add_arc(arc)
 
     async def get_arc(self, arc_id: int | uuid.UUID) -> StoryArc | None:
-        """按主键获取弧线（不含已软删除）；不存在返回 None（router 转 404）."""
+        """按主键获取弧线；不存在返回 None（router 转 404）."""
         return await self._repo.get_arc(_to_int_id(arc_id))
 
     async def list_arcs(self, project_id: int | uuid.UUID) -> list[StoryArc]:
-        """查询项目内全部活动故事弧线（name ASC，spec §6.3）."""
+        """查询项目内全部故事弧线（name ASC，spec §6.3）."""
         return await self._repo.list_arcs(_to_int_id(project_id))
 
     async def update_arc(self, arc_id: int | uuid.UUID, update: StoryArcUpdate) -> StoryArc | None:
@@ -463,41 +418,18 @@ class OutlineService:
         logger.info("更新弧线: arc_id=%s", arc_id)
         return await self._repo.update_arc(merged)
 
-    async def delete_arc(self, arc_id: int | uuid.UUID, force: bool = False) -> bool:
-        """删除弧线（spec §6.2/§7: 成员情节点 arc_id 置 NULL，情节点本身保留）.
+    async def delete_arc(self, arc_id: int | uuid.UUID) -> bool:
+        """真删弧线（v1.1，spec §6.2/§7: 成员情节点 arc_id 由 FK SET NULL，情节点本身保留）.
 
         Args:
             arc_id: 弧线主键（支持 int 或 UUID）.
-            force: True 物理删除；False（默认）软删除，服务层均编排将成员
-                情节点 arc_id 置 NULL（clear_arc_of_points）.
 
         Returns:
             True 表示删除成功；False 表示未找到记录.
         """
         aid = _to_int_id(arc_id)
-        if force:
-            logger.info("硬删除弧线: arc_id=%s", arc_id)
-            return await self._repo.hard_delete_arc(aid)
-        # 软删除编排: 先软删弧线本体，再清理成员 arc_id（仓储内部清理为幂等兜底）
-        deleted = await self._repo.soft_delete_arc(aid)
-        await self._repo.clear_arc_of_points(aid)
-        logger.info("软删除弧线: arc_id=%s（成员情节点 arc_id 置 NULL）", arc_id)
-        return deleted
-
-    async def restore_arc(self, arc_id: int | uuid.UUID) -> StoryArc | None:
-        """恢复软删除弧线（spec §6.2: 不恢复成员关联，同 F9 分组语义）.
-
-        Args:
-            arc_id: 弧线主键（支持 int 或 UUID）.
-
-        Returns:
-            恢复后的 StoryArc；弧线不存在/未删除返回 None（重复操作无毒，同 F1）.
-        """
-        aid = _to_int_id(arc_id)
-        restored = await self._repo.restore_arc(aid)
-        if restored is not None:
-            logger.info("恢复弧线: arc_id=%s", arc_id)
-        return restored
+        logger.info("真删弧线: arc_id=%s（成员 arc_id 由 FK SET NULL）", arc_id)
+        return await self._repo.hard_delete_arc(aid)
 
     # ── AI 生成入口（spec §5.1 步骤 ①）────────────────────────
 

@@ -20,8 +20,8 @@ class TimelineRepositoryProtocol(Protocol):
     """时间线事件仓储端口.
 
     按 spec §2: 单实体（无子实体、无唯一约束）；事件列表默认按
-    narrative_position ASC 排序；双线视图/一致性检查需要全量活动事件
-    （list_all）。软删除事件不进入任何查询结果。
+    narrative_position ASC 排序；双线视图/一致性检查需要全量事件
+    （list_all）。v1.1 真删语义下删除即物理消失。
 
     注: 类内方法名 ``list`` 会在 mypy 类作用域解析中遮蔽内置 ``list``，
     因此返回注解中的列表类型统一写作 ``builtins.list[...]``（同 F9/F10/F11）。
@@ -41,7 +41,7 @@ class TimelineRepositoryProtocol(Protocol):
         ...
 
     async def get(self, event_id: int) -> TimelineEvent | None:
-        """按主键查询事件（不含已软删除）.
+        """按主键查询事件.
 
         Args:
             event_id: 事件主键（int，与 ORM 层一致）.
@@ -60,7 +60,7 @@ class TimelineRepositoryProtocol(Protocol):
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[builtins.list[TimelineEvent], int]:
-        """分页查询项目内活动事件列表，支持标题模糊搜索与排序.
+        """分页查询项目内事件列表，支持标题模糊搜索与排序.
 
         Args:
             project_id: 项目主键（int）.
@@ -77,33 +77,33 @@ class TimelineRepositoryProtocol(Protocol):
         ...
 
     async def list_all(self, project_id: int) -> builtins.list[TimelineEvent]:
-        """列出项目内全部活动事件，按 (narrative_position ASC, created_at ASC) 稳定排序.
+        """列出项目内全部事件，按 (narrative_position ASC, created_at ASC) 稳定排序.
 
-        双线视图/一致性检查直接消费此全量结果（软删除事件不进入）.
+        双线视图/一致性检查直接消费此全量结果.
 
         Args:
             project_id: 项目主键（int）.
 
         Returns:
-            活动事件列表.
+            事件列表.
         """
         ...
 
     async def list_by_chapter(
         self, project_id: int, chapter_id: int
     ) -> builtins.list[TimelineEvent]:
-        """列出项目内活动事件中 source_chapter_id 等于指定章的事件.
+        """列出项目内事件中 source_chapter_id 等于指定章的事件.
 
         F14 提取合并用（spec §5.5 合并策略）: 按 title 比对由服务层完成，
         本方法只负责按来源章拉取候选集。按 (narrative_position ASC,
-        created_at ASC) 排序；软删除事件不进入。
+        created_at ASC) 排序。
 
         Args:
             project_id: 项目主键（int）.
             chapter_id: 来源章节主键（int，与 ORM 层一致）.
 
         Returns:
-            指定来源章的活动事件列表.
+            指定来源章的事件列表.
         """
         ...
 
@@ -131,30 +131,8 @@ class TimelineRepositoryProtocol(Protocol):
         """
         ...
 
-    async def soft_delete(self, event_id: int) -> bool:
-        """软删除事件（is_deleted=True）.
-
-        Args:
-            event_id: 事件主键（int）.
-
-        Returns:
-            是否删除成功（不存在返回 False）.
-        """
-        ...
-
-    async def restore(self, event_id: int) -> TimelineEvent | None:
-        """恢复已软删除事件.
-
-        Args:
-            event_id: 事件主键（int）.
-
-        Returns:
-            恢复后的 TimelineEvent，不存在则返回 None.
-        """
-        ...
-
     async def hard_delete(self, event_id: int) -> bool:
-        """物理删除事件（仅用于 force 场景）.
+        """物理删除事件（v1.1 默认真删语义）.
 
         Args:
             event_id: 事件主键（int）.
