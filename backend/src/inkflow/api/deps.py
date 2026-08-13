@@ -49,9 +49,6 @@ from inkflow.infrastructure.database.repositories.agent_run_repo import (
 from inkflow.infrastructure.database.repositories.audit_log_repo import (
     SQLiteAuditLogRepository,
 )
-from inkflow.infrastructure.database.repositories.audit_repo import (
-    SQLiteAuditRepository,
-)
 from inkflow.infrastructure.database.repositories.chapter_repo import (
     SQLiteChapterRepository,
 )
@@ -563,8 +560,7 @@ def get_audit_service(
     """获取 AuditService 实例（F15 审计服务，spec §5/§8）.
 
     装配: 复用 F9/F10/F13/F14/F2/F1 各 SQLite 仓储 + F12 TimelineService
-    （get_timeline_service 先例）+ SQLiteAuditRepository（F15 自有软删集合
-    查询实现，§8.2）——除 audit_repo 外全部为既有实现。
+    （get_timeline_service 先例）——#211 真删后无软删集合查询，全部为既有实现。
     """
     return AuditService(
         project_repo=SQLiteProjectRepository(db),
@@ -574,7 +570,6 @@ def get_audit_service(
         foreshadowing_repo=SQLiteForeshadowingRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
         run_repo=SQLExtractionRunRepository(db),
-        audit_repo=SQLiteAuditRepository(db),
     )
 
 

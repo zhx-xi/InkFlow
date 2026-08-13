@@ -3,9 +3,6 @@
 from inkflow.infrastructure.database.repositories.agent_run_repo import (
     SQLiteAgentRunRepository,
 )
-from inkflow.infrastructure.database.repositories.audit_repo import (
-    SQLiteAuditRepository,
-)
 from inkflow.infrastructure.database.repositories.chapter_repo import (
     SQLiteChapterRepository,
 )
@@ -46,7 +43,6 @@ from inkflow.infrastructure.database.repositories.world_repo import (
 __all__ = [
     "SQLExtractionRunRepository",
     "SQLiteAgentRunRepository",
-    "SQLiteAuditRepository",
     "SQLiteChapterRepository",
     "SQLiteCharacterRepository",
     "SQLiteDraftRepository",

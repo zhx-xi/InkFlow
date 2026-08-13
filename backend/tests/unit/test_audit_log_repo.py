@@ -37,8 +37,8 @@
    String(10) / severity_summary String(50) / summary Text 默认 "" /
    degraded Boolean 默认 False / note Text 默认 "" / created_at DateTime /
    confirmed_at DateTime nullable
-5. 仓储构造: SQLiteAuditLogRepository(db_session)（与 F15 SQLiteAuditRepository
-   同构）；所有 id 参数/返回均为 int / uuid.UUID(int=...) 语义
+5. 仓储构造: SQLiteAuditLogRepository(db_session)；所有 id 参数/返回均为
+   int / uuid.UUID(int=...) 语义
 6. datetime 用固定 UTC 值构造（SQLite DateTime 列存储不经时区 roundtrip，
    本文件不断言精确时刻相等，只断言非 None 落库）
 7. RED 预期: 收集期 1 error（ModuleNotFoundError: No module named

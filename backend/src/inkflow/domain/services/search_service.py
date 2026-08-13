@@ -209,7 +209,7 @@ class SearchService:
         return await self._search_repo.is_stale(_TABLES)
 
     async def _rebuild(self, project_ids: list[int] | None = None) -> None:
-        """全量收集文档并一次重建（分页循环 limit=50 默认；软删过滤）."""
+        """全量收集文档并一次重建（分页循环 limit=50 默认；#211 真删后无软删过滤）."""
         if project_ids is None:
             projects = await self._list_all_projects()
             project_ids = [project.id.int for project in projects]
@@ -302,7 +302,7 @@ class SearchService:
         )
 
     async def _collect_project_documents(self, project_id: int) -> list[SearchDocument]:
-        """收集单项目 6 类索引文档（spec §6.1：title/body 拼装 + 软删过滤）."""
+        """收集单项目 6 类索引文档（spec §6.1：title/body 拼装；#211 真删后无软删过滤）."""
         documents: list[SearchDocument] = []
         documents.extend(await self._collect_chapters(project_id))
         documents.extend(await self._collect_characters(project_id))
@@ -387,8 +387,6 @@ class SearchService:
         """时间线文档：title = event.title；body = description + time_display（非空时）."""
         documents: list[SearchDocument] = []
         for event in await self._timeline_repo.list_all(project_id):
-            if getattr(event, "is_deleted", False):
-                continue
             body_text = " ".join(part for part in (event.description, event.time_display) if part)
             documents.append(
                 SearchDocument(
@@ -434,13 +432,11 @@ class SearchService:
         fetcher: Callable[..., Awaitable[tuple[list[Any], int]]],
         project_id: int,
     ) -> AsyncIterator[Any]:
-        """分页循环拉取单一数据源（limit=50 默认；软删实体跳过，spec §6.2）."""
+        """分页循环拉取单一数据源（limit=50 默认；#211 真删后无软删过滤）."""
         offset = 0
         while True:
             batch, total = await fetcher(project_id, offset=offset, limit=_PAGE_SIZE)
             for entity in batch:
-                if getattr(entity, "is_deleted", False):
-                    continue
                 yield entity
             offset += len(batch)
             if offset >= total or not batch:

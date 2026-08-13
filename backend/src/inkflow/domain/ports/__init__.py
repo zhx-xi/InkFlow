@@ -23,7 +23,7 @@
     - extraction_errors: 统一提取服务异常（F14）
     - extraction_run_repository: 增量追踪记录仓储（F14）
     - audit_errors: 一致性审计异常（F15）
-    - audit_repository: 审计软删集合补充查询端口（F15）
+    - audit_repository: 审计仓储端口（F15，#211 真删后无软删集合查询）
 """
 
 from inkflow.domain.ports.agent_pipeline import (

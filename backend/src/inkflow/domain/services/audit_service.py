@@ -1,13 +1,11 @@
 """F15 一致性审计服务 — 跨 4 档案的确定性规则引擎（spec §5）.
 
 AuditService 是 F15 的编排核心: 构造注入 F1/F2/F9/F10/F12/F13/F14 各仓储
-Protocol、F12 TimelineService 与 F15 自有 AuditRepositoryProtocol（软删集合
-补充查询），run_audit 按 spec §5.1 步骤 ①-⑤ 执行:
+Protocol 与 F12 TimelineService，run_audit 按 spec §5.1 步骤 ①-⑤ 执行:
 
 ① 项目校验（ProjectRepositoryProtocol.get → None → ProjectNotFoundError 404）
 ② 单次全量读取（分页循环 list(limit=100) 拉取角色/世界条目/伏笔/章节/runs，
-   list_relations/list_groups 全量，TimelineService.get_timeline_view 全量
-   事件，audit_repo.list_deleted 软删集合——共享同一次快照，不逐规则重复查询）
+   list_relations/list_groups 全量，TimelineService.get_timeline_view 全量事件）
 ③ 8 条确定性规则（§5.2 注册表，按维度顺序执行，纯内存）:
    - R-C1 关系引用完整性 / R-C2 分组引用完整性（character）
    - R-T1 委托 F12 check_consistency 双线一致性（timeline，转换不重写算法）
@@ -19,8 +17,8 @@ Protocol、F12 TimelineService 与 F15 自有 AuditRepositoryProtocol（软删�
 ⑤ findings 稳定排序（dimension 序 → severity 序 → entity_name → id，§6.3）
    → 返回 AuditReport（timeline_check 嵌套 F12 原始报告，§5.3）
 
-软删引用分级（§5.4 注）: 引用目标在活动集合与软删集合中都不存在 → error
-（悬空，异常数据）; 目标在软删集合 → warning（合法但值得注意）; F2 章节为
+引用完整性分级（#211 真删语义）: F9/F12 删除已统一为真删，无软删集合；
+引用目标不在活动集合即悬空 → error；无「软删 → warning」档。F2 章节为
 硬删除（无软删概念），R-X1 只有 error 档（§5.5 注）。
 
 只依赖 domain/ports/ 与 domain/services/（Protocol 与领域服务），不依赖任何
@@ -98,18 +96,6 @@ def _to_int_id(value: int | uuid.UUID) -> int:
     return value
 
 
-def _deleted_set(ids: list[int]) -> set[uuid.UUID]:
-    """将仓储层软删 int id 列表转换为领域 UUID 集合（供 R-C1/R-C2/R-F1 判定）.
-
-    Args:
-        ids: 软删实体 int 主键列表（来自 audit_repo.list_deleted）.
-
-    Returns:
-        领域 UUID 集合.
-    """
-    return {uuid.UUID(int=i) for i in ids}
-
-
 def _finding_sort_key(finding: AuditFinding) -> tuple[int, int, str]:
     """findings 稳定排序键（spec §6.3: dimension 序 → severity 序 → id）.
 
@@ -144,8 +130,6 @@ class AuditService:
         foreshadowing_repo: F13 伏笔仓储——伏笔档案读取（R-F1/R-F2 + counts）.
         chapter_repo: F2 章节仓储——章节读取（R-W2/R-X1/R-X2 + counts）.
         run_repo: F14 run 仓储——extraction_runs 读取（R-X2 + counts）.
-        audit_repo: F15 自有审计仓储——软删集合补充查询（R-C1/R-C2/R-F1
-            分级数据源，§8.2）.
 
     只依赖 domain/ports/ 与 domain/services/（Protocol 与领域服务），
     不依赖任何 infrastructure 实现——domain/ 零框架 import 门禁天然满足
@@ -161,7 +145,7 @@ class AuditService:
         foreshadowing_repo: ForeshadowingRepositoryProtocol,
         chapter_repo: ChapterRepositoryProtocol,
         run_repo: ExtractionRunRepositoryProtocol,
-        audit_repo: AuditRepositoryProtocol,
+        audit_repo: AuditRepositoryProtocol | None = None,
     ) -> None:
         self._project_repo = project_repo
         self._character_repo = character_repo
@@ -170,7 +154,6 @@ class AuditService:
         self._foreshadowing_repo = foreshadowing_repo
         self._chapter_repo = chapter_repo
         self._run_repo = run_repo
-        self._audit_repo = audit_repo
 
     # ── 服务编排（spec §5.1 步骤 ①-⑤）────────────────────────────
 
@@ -212,19 +195,16 @@ class AuditService:
         fores: list[Foreshadowing] = await self._load_all(self._foreshadowing_repo.list, project_id)
         chapters: list[Chapter] = await self._load_all(self._chapter_repo.list_chapters, project_id)
         runs: list[ExtractionRun] = await self._load_all(self._run_repo.list, project_id)
-        deleted_chars, deleted_groups, deleted_events = await self._audit_repo.list_deleted(
-            _to_int_id(project_id)
-        )
 
         # ③ 规则引擎（按维度枚举序执行，全部纯内存，§5.2/§6.1）
         findings: list[AuditFinding] = []
-        findings.extend(self._audit_character(chars, rels, groups, deleted_chars, deleted_groups))
+        findings.extend(self._audit_character(chars, rels, groups))
         timeline_check = await self._timeline_service.check_consistency(
             project_id, include_flashbacks=True
         )
         findings.extend(self._audit_timeline(timeline_check))
         findings.extend(self._audit_world(worlds, len(chapters), project))
-        findings.extend(self._audit_foreshadowing(fores, events, deleted_events))
+        findings.extend(self._audit_foreshadowing(fores, events))
         findings.extend(self._audit_cross(events, chapters, runs))
 
         # ④ 汇总 + ⑤ 排序（§6.2/§6.3）
@@ -285,30 +265,25 @@ class AuditService:
         chars: list[Character],
         rels: list[CharacterRelation],
         groups: list[CharacterGroup],
-        deleted_char_ids: list[int],
-        deleted_group_ids: list[int],
     ) -> list[AuditFinding]:
         """角色维度规则 — R-C1 关系引用完整性 + R-C2 分组引用完整性（§5.4）.
 
-        R-C1: 活动关系的 from/to 端指向软删角色 → warning「已软删」；指向
-        活动与软删集合都不存在的角色（悬空）→ error「不存在」。
-        R-C2: 活动角色的 group_id 指向软删分组 → warning；指向不存在分组
-        （悬空）→ error；group_id=None（未分组）跳过。
+        #211 真删语义: F9 删除为硬删除，无软删集合；引用目标不在活动集合即
+        悬空 → error（无「软删 → warning」档）。
+        R-C1: 活动关系的 from/to 端指向不存在的角色（悬空）→ error「不存在」。
+        R-C2: 活动角色的 group_id 指向不存在分组（悬空）→ error；
+        group_id=None（未分组）跳过。
 
         Args:
             chars: 活动角色列表（分页循环全量）.
-            rels: 活动关系列表（list_relations 全量，不含软删关系）.
+            rels: 活动关系列表（list_relations 全量，真删后无软删关系）.
             groups: 活动分组列表（list_groups 全量）.
-            deleted_char_ids: 软删角色 int id 集合（audit_repo.list_deleted）.
-            deleted_group_ids: 软删分组 int id 集合.
 
         Returns:
             R-C1/R-C2 审计发现列表.
         """
         active = {c.id for c in chars}
-        deleted = _deleted_set(deleted_char_ids)
         active_groups = {g.id for g in groups}
-        deleted_groups = _deleted_set(deleted_group_ids)
         names = {c.id: c.name for c in chars}
         findings: list[AuditFinding] = []
 
@@ -323,52 +298,28 @@ class AuditService:
             ):
                 if end_id in active:
                     continue
-                if end_id in deleted:
-                    findings.append(
-                        AuditFinding(
-                            id=f"character.relation_ref:{rel.id}",
-                            rule_id="character.relation_ref",
-                            dimension=AuditDimension.CHARACTER,
-                            severity=AuditSeverity.WARNING,
-                            message=(
-                                f"关系 {rel_label} 的 {end_label} 端指向已软删的角色"
-                                "（角色已删除但关系引用残留，请确认是否删除该关系）"
-                            ),
-                            entity_type="relation",
-                            entity_id=rel.id,
-                            entity_name=rel_label,
-                            ref_type="character",
-                            ref_id=end_id,
-                            data={
-                                "relation_type": rel.relation_type,
-                                "from_character_id": str(rel.from_character_id),
-                                "to_character_id": str(rel.to_character_id),
-                            },
-                        )
+                findings.append(
+                    AuditFinding(
+                        id=f"character.relation_ref:{rel.id}",
+                        rule_id="character.relation_ref",
+                        dimension=AuditDimension.CHARACTER,
+                        severity=AuditSeverity.ERROR,
+                        message=(
+                            f"关系 {rel_label} 的 {end_label} 端指向不存在的角色"
+                            "（悬空引用，请删除该关系或恢复目标角色）"
+                        ),
+                        entity_type="relation",
+                        entity_id=rel.id,
+                        entity_name=rel_label,
+                        ref_type="character",
+                        ref_id=end_id,
+                        data={
+                            "relation_type": rel.relation_type,
+                            "from_character_id": str(rel.from_character_id),
+                            "to_character_id": str(rel.to_character_id),
+                        },
                     )
-                else:
-                    findings.append(
-                        AuditFinding(
-                            id=f"character.relation_ref:{rel.id}",
-                            rule_id="character.relation_ref",
-                            dimension=AuditDimension.CHARACTER,
-                            severity=AuditSeverity.ERROR,
-                            message=(
-                                f"关系 {rel_label} 的 {end_label} 端指向不存在的角色"
-                                "（悬空引用，请删除该关系或恢复目标角色）"
-                            ),
-                            entity_type="relation",
-                            entity_id=rel.id,
-                            entity_name=rel_label,
-                            ref_type="character",
-                            ref_id=end_id,
-                            data={
-                                "relation_type": rel.relation_type,
-                                "from_character_id": str(rel.from_character_id),
-                                "to_character_id": str(rel.to_character_id),
-                            },
-                        )
-                    )
+                )
 
         # R-C2 分组引用完整性（§5.4: 对每条已分组角色的 group_id 判定）
         for char in chars:
@@ -376,42 +327,23 @@ class AuditService:
                 continue
             if char.group_id in active_groups:
                 continue
-            if char.group_id in deleted_groups:
-                findings.append(
-                    AuditFinding(
-                        id=f"character.group_ref:{char.id}",
-                        rule_id="character.group_ref",
-                        dimension=AuditDimension.CHARACTER,
-                        severity=AuditSeverity.WARNING,
-                        message=(
-                            f"角色 {char.name} 的分组引用指向已软删的分组"
-                            "（分组已删除但成员引用残留）"
-                        ),
-                        entity_type="character",
-                        entity_id=char.id,
-                        entity_name=char.name,
-                        ref_type="group",
-                        ref_id=char.group_id,
-                    )
+            findings.append(
+                AuditFinding(
+                    id=f"character.group_ref:{char.id}",
+                    rule_id="character.group_ref",
+                    dimension=AuditDimension.CHARACTER,
+                    severity=AuditSeverity.ERROR,
+                    message=(
+                        f"角色 {char.name} 的分组引用指向不存在的分组"
+                        "（悬空引用，请修正分组或删除该角色）"
+                    ),
+                    entity_type="character",
+                    entity_id=char.id,
+                    entity_name=char.name,
+                    ref_type="group",
+                    ref_id=char.group_id,
                 )
-            else:
-                findings.append(
-                    AuditFinding(
-                        id=f"character.group_ref:{char.id}",
-                        rule_id="character.group_ref",
-                        dimension=AuditDimension.CHARACTER,
-                        severity=AuditSeverity.ERROR,
-                        message=(
-                            f"角色 {char.name} 的分组引用指向不存在的分组"
-                            "（悬空引用，请修正分组或删除该角色）"
-                        ),
-                        entity_type="character",
-                        entity_id=char.id,
-                        entity_name=char.name,
-                        ref_type="group",
-                        ref_id=char.group_id,
-                    )
-                )
+            )
         return findings
 
     def _audit_timeline(self, report: ConsistencyReport | None) -> list[AuditFinding]:
@@ -535,26 +467,24 @@ class AuditService:
         self,
         fores: list[Foreshadowing],
         events: list[TimelineEvent],
-        deleted_event_ids: list[int],
     ) -> list[AuditFinding]:
         """伏笔维度规则 — R-F1 event_id 锚点存在性 + R-F2 状态机一致性（§5.4）.
 
-        R-F1: 活动伏笔的 event_id 指向软删事件 → warning「已软删」（F13
-        语义: 软删不影响锚点，审计提示确认）；指向活动与软删集合都不存在的
-        事件（悬空）→ error「不存在」；event_id=None（未挂接）跳过。
+        #211 真删语义: F12 事件删除为硬删除，无软删集合；event_id 不在活动
+        集合即悬空 → error（无「软删 → warning」档）。
+        R-F1: 活动伏笔的 event_id 指向不存在的事件（悬空）→ error「不存在」；
+        event_id=None（未挂接）跳过。
         R-F2: status=resolved 且 resolved_at=None → error；status=open 且
         resolved_at 非空 → error（状态与时间戳矛盾）。
 
         Args:
             fores: 活动伏笔列表（分页循环全量，全部状态）.
             events: 活动事件列表（TimelineService 视图 narrative_order）.
-            deleted_event_ids: 软删事件 int id 集合（audit_repo.list_deleted）.
 
         Returns:
             R-F1/R-F2 审计发现列表.
         """
         active_events = {e.id for e in events}
-        deleted_events = _deleted_set(deleted_event_ids)
         findings: list[AuditFinding] = []
 
         # R-F1 事件锚点（§5.4: 对每条已挂接伏笔的 event_id 判定）
@@ -563,42 +493,23 @@ class AuditService:
                 continue
             if f.event_id in active_events:
                 continue
-            if f.event_id in deleted_events:
-                findings.append(
-                    AuditFinding(
-                        id=f"foreshadowing.event_anchor:{f.id}",
-                        rule_id="foreshadowing.event_anchor",
-                        dimension=AuditDimension.FORESHADOWING,
-                        severity=AuditSeverity.WARNING,
-                        message=(
-                            f"伏笔「{f.title}」锚点事件已软删"
-                            "（锚点保留但事件不在时间线视图中，请确认是否需解除挂接）"
-                        ),
-                        entity_type="foreshadowing",
-                        entity_id=f.id,
-                        entity_name=f.title,
-                        ref_type="event",
-                        ref_id=f.event_id,
-                    )
+            findings.append(
+                AuditFinding(
+                    id=f"foreshadowing.event_anchor:{f.id}",
+                    rule_id="foreshadowing.event_anchor",
+                    dimension=AuditDimension.FORESHADOWING,
+                    severity=AuditSeverity.ERROR,
+                    message=(
+                        f"伏笔「{f.title}」锚点事件不存在（悬空锚点，"
+                        "请修正 event_id 或恢复目标事件）"
+                    ),
+                    entity_type="foreshadowing",
+                    entity_id=f.id,
+                    entity_name=f.title,
+                    ref_type="event",
+                    ref_id=f.event_id,
                 )
-            else:
-                findings.append(
-                    AuditFinding(
-                        id=f"foreshadowing.event_anchor:{f.id}",
-                        rule_id="foreshadowing.event_anchor",
-                        dimension=AuditDimension.FORESHADOWING,
-                        severity=AuditSeverity.ERROR,
-                        message=(
-                            f"伏笔「{f.title}」锚点事件不存在（悬空锚点，"
-                            "请修正 event_id 或恢复目标事件）"
-                        ),
-                        entity_type="foreshadowing",
-                        entity_id=f.id,
-                        entity_name=f.title,
-                        ref_type="event",
-                        ref_id=f.event_id,
-                    )
-                )
+            )
 
         # R-F2 状态机一致性（§5.4: status 与 resolved_at 矛盾 → error）
         for f in fores:
