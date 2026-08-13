@@ -3,7 +3,8 @@
 方案 A：supervisor 节点无静态出边，Command(goto) 全权控制路由（Spike ② 教训：
 条件边+Command 并存会 fan-out）。护栏（steps/consecutive）在 supervisor 节点
 内部校验（LLM 决策后强制）。fallback 固定链兜底（architect→writer→auditor→
-reviser 剩余角色）。HITL = interrupt() + Command(resume)。
+reviser 剩余角色）。HITL：supervisor 命中 hitl_roles → goto hitl 节点；hitl 节点仅
+interrupt（无其他副作用）。resume 后 approved → goto role，rejected → goto fallback。
 """
 
 from __future__ import annotations
@@ -177,7 +178,8 @@ async def _supervisor_node(
     护栏（LLM 决策后强制）：steps>=max_steps / role==last_role 且
     consecutive>=max_consecutive / role 不在角色池 → goto fallback。
     空 content / 解析失败 → 重试（最多 3 次，附路由历史重申）→ 仍失败 → fallback。
-    HITL：决策角色在 hitl_roles 时 interrupt() 暂停，resume 后同一节点继续返回 Command。
+    HITL：决策角色在 hitl_roles 时 goto="hitl"（interrupt 前置独立节点，无其他副作用）；
+    resume 后由 hitl 节点按 approved 分支 goto role / fallback。
     """
     action, role = await _decide_next_action(state, supervisor_config)
     if action == "":
@@ -195,17 +197,30 @@ async def _supervisor_node(
             return Command(update={"_abort": True}, goto=END)
         return Command(update={"route_history": ["__fallback__"]}, goto="fallback")
     if role in supervisor_config.hitl_roles:
-        hitl_decision: dict = interrupt(
-            {
-                "question": f"确认执行下一角色 {role}？",
-                "role": role,
-                "route_history": state.get("route_history", []),
-            }
-        )
-        if not hitl_decision.get("approved", False):
-            # 人工拒绝 → 回退固定链（deterministic 兜底）
-            return Command(update={"route_history": ["__fallback__"]}, goto="fallback")
+        # HITL 命中 → goto 独立 hitl 节点（interrupt 前置，无其他副作用）
+        return Command(update={"route_history": [role]}, goto="hitl")
     return Command(update={"route_history": [role]}, goto=role)
+
+
+async def _hitl_node(
+    state: SupervisorState, supervisor_config: SupervisorExecuteConfig
+) -> Command[Any]:
+    """HITL 确认节点：interrupt 前置（无其他副作用），resume 后从 interrupt 返回 resume 值。
+    LangGraph resume 语义 = 节点从头重跑；本节点除 interrupt 外无副作用，
+    重跑安全。approved=True → goto 待确认角色；False → fallback 固定链。
+    待确认角色 = route_history 尾部（supervisor 决策时已追加增量）。
+    """
+    pending_role = state.get("route_history", [])[-1] if state.get("route_history") else ""
+    decision: dict = interrupt(
+        {
+            "question": f"确认执行下一角色 {pending_role}？",
+            "role": pending_role,
+            "route_history": state.get("route_history", []),
+        }
+    )
+    if decision.get("approved", False):
+        return Command(goto=pending_role)
+    return Command(update={"route_history": ["__fallback__"]}, goto="fallback")
 
 
 async def _bootstrap_node(
@@ -286,10 +301,11 @@ class SupervisorPipeline(AgentPipelineProtocol):
     def _build_graph(
         self, config: SupervisorExecuteConfig
     ) -> CompiledStateGraph[SupervisorState, Any, Any, Any]:
-        """方案 A 拓扑：supervisor 无静态出边，Command(goto) 全权控制路由。"""
+        """方案 A 拓扑：supervisor/hitl 无静态出边，Command(goto) 全权控制路由。"""
         g = StateGraph(SupervisorState)
         g.add_node("bootstrap", partial(_bootstrap_node, llm_client=self._llm))
         g.add_node("supervisor", partial(_supervisor_node, supervisor_config=config))
+        g.add_node("hitl", partial(_hitl_node, supervisor_config=config))
         for role_id in self._roles:
             g.add_node(role_id, partial(_role_node, role_id=role_id))
         g.add_node("fallback", _fallback_node)

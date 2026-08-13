@@ -272,9 +272,17 @@ class TestSupervisorPipelineHITL:
             raise AssertionError("应抛 HITLInterrupt")
         except HITLInterrupt as exc:
             interrupt = exc
-        # 契约：resume(payload, approved=True) → 继续执行（GREEN 后按实现形态收紧）
+        # 契约（v1.0 契约升级，QA 抓实现缺陷）：resume approved=True → 真正执行确认的
+        # 角色（reviser 出现在 stage 结果），而非 supervisor 重新决策跳过。
+        # 旧契约 `isinstance(final_output, str)` 对空串假绿——LangGraph resume 会
+        # 重跑 interrupt 所在节点，interrupt 若在决策之后则 resume 重新决策（队列空
+        # → finish → 空结果）。修复 = interrupt 前置独立 hitl 节点（无其他副作用），
+        # resume 后重跑无副作用 → 返回 resume 值 → 继续执行确认角色。
         result = await pipeline.resume(interrupt, approved=True)
+        stage_ids = [sr.stage_id for sr in result.stages]
+        assert "reviser" in stage_ids
         assert isinstance(result.final_output, str)
+        assert result.final_output != ""
 
     @pytest.mark.asyncio
     async def test_no_hitl_when_roles_empty(self) -> None:
@@ -330,3 +338,231 @@ class TestSupervisorPipelineTopology:
         # 契约：SupervisorPipeline 构建的图，supervisor 节点无 add_edge 静态出边
         # 实现确认：暴露 _build_graph 或内部状态供测试检查；此处宽松断言类存在
         assert inspect.isclass(SupervisorPipeline)
+
+
+class TestParseDecisionCoverage:
+    """_parse_decision 防御分支补测（规则 1j：覆盖率缺口闭合，直接通过）。"""
+
+    def test_empty_content_returns_none(self) -> None:
+        """空 content → None。"""
+        from inkflow.infrastructure.agent.supervisor_pipeline import _parse_decision
+
+        assert _parse_decision("") is None
+        assert _parse_decision("   ") is None
+
+    def test_invalid_json_returns_none(self) -> None:
+        """非 JSON → None。"""
+        from inkflow.infrastructure.agent.supervisor_pipeline import _parse_decision
+
+        assert _parse_decision("not json") is None
+
+    def test_non_dict_returns_none(self) -> None:
+        """JSON 非 dict（如数组）→ None。"""
+        from inkflow.infrastructure.agent.supervisor_pipeline import _parse_decision
+
+        assert _parse_decision("[1, 2]") is None
+
+    def test_unknown_action_returns_none(self) -> None:
+        """未知 action（非 execute/finish/fallback）→ None。"""
+        from inkflow.infrastructure.agent.supervisor_pipeline import _parse_decision
+
+        assert _parse_decision('{"action": "dance"}') is None
+
+    def test_execute_without_role_returns_none(self) -> None:
+        """action=execute 但 role 缺失/非 str → None。"""
+        from inkflow.infrastructure.agent.supervisor_pipeline import _parse_decision
+
+        assert _parse_decision('{"action": "execute"}') is None
+        assert _parse_decision('{"action": "execute", "role": 42}') is None
+
+    def test_valid_variants(self) -> None:
+        """合法决策 → (action, role)。"""
+        from inkflow.infrastructure.agent.supervisor_pipeline import _parse_decision
+
+        assert _parse_decision('{"action": "execute", "role": "writer"}') == ("execute", "writer")
+        assert _parse_decision('{"action": "finish"}') == ("finish", "")
+        assert _parse_decision('{"action": "fallback"}') == ("fallback", "")
+
+
+class TestDecisionLLMExceptionCoverage:
+    """_decide_next_action LLM 异常重试补测（规则 1j）。"""
+
+    @pytest.mark.asyncio
+    async def test_llm_exception_retry_then_success(self) -> None:
+        """LLM 抛异常 → 重试 → 成功（覆盖 except 分支）。"""
+        from inkflow.infrastructure.agent.supervisor_pipeline import _decide_next_action
+
+        class FlakyLLM:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def chat(self, messages, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    raise RuntimeError("transient")
+                return type("R", (), {"content": '{"action": "finish"}'})()
+
+        from inkflow.domain.ports.agent_pipeline import PipelineContext
+
+        state = {
+            "context": PipelineContext(project_id="p1"),
+            "stages": {},
+            "llm_client": FlakyLLM(),
+            "results": {},
+            "route_history": [],
+            "steps": 0,
+            "consecutive": 0,
+            "last_role": "",
+            "final_output": "",
+        }
+        action, role = await _decide_next_action(state, _make_config())
+        assert action == "finish"
+        assert role == ""
+
+
+class TestGuardFallbackOnErrorFalseCoverage:
+    """护栏触发 + fallback_on_error=false → FAILED（覆盖 L187/L195 分支）。"""
+
+    @pytest.mark.asyncio
+    async def test_invalid_role_with_fallback_disabled_fails(self) -> None:
+        """非法角色 + fallback_on_error=false → FAILED（不回退）。"""
+        llm = FakeLLM(['{"action": "execute", "role": "ghost"}'])
+        pipeline = SupervisorPipeline(llm)
+        result = await pipeline.execute(
+            _make_stages(), _make_context(), supervisor=_make_config(fallback_on_error=False)
+        )
+        from inkflow.domain.ports.agent_pipeline import StageStatus
+
+        assert result.status == StageStatus.FAILED
+
+
+class TestHITLRejectCoverage:
+    """HITL reject（approved=False → fallback 固定链）补测（覆盖 L205-207）。"""
+
+    @pytest.mark.asyncio
+    async def test_hitl_reject_goes_fallback(self) -> None:
+        """hitl_roles 命中 + resume approved=False → 回退固定链。"""
+        from inkflow.infrastructure.agent.supervisor_pipeline import HITLInterrupt
+
+        llm = FakeLLM(
+            [
+                '{"action": "execute", "role": "writer"}',
+                '{"action": "finish"}',
+            ]
+        )
+        pipeline = SupervisorPipeline(llm)
+        try:
+            await pipeline.execute(
+                _make_stages(), _make_context(), supervisor=_make_config(hitl_roles=["writer"])
+            )
+            raise AssertionError("应抛 HITLInterrupt")
+        except HITLInterrupt as exc:
+            interrupt = exc
+        result = await pipeline.resume(interrupt, approved=False)
+        # 拒绝 → fallback 固定链 → final_output 非空（reviser 输出）
+        assert isinstance(result.final_output, str)
+        assert result.final_output != ""
+
+
+class TestFallbackAbortCoverage:
+    """fallback 链中角色失败 → _abort → FAILED（覆盖 L249-250）。"""
+
+    @pytest.mark.asyncio
+    async def test_fallback_chain_required_failure(self) -> None:
+        """fallback 链中 required 角色失败 → FAILED。"""
+        from unittest.mock import AsyncMock, patch
+
+        llm = FakeLLM(['{"action": "fallback"}'])
+        pipeline = SupervisorPipeline(llm)
+        with patch(
+            "inkflow.infrastructure.agent.supervisor_pipeline.generic_node",
+            AsyncMock(
+                side_effect=lambda state, role_id: {
+                    "results": {
+                        role_id: __import__(
+                            "inkflow.domain.ports.agent_pipeline", fromlist=["StageResult"]
+                        ).StageResult(
+                            stage_id=role_id,
+                            status=__import__(
+                                "inkflow.domain.ports.agent_pipeline", fromlist=["StageStatus"]
+                            ).StageStatus.FAILED,
+                            error="boom",
+                        )
+                    },
+                    "_abort": True,
+                }
+            ),
+        ):
+            result = await pipeline.execute(
+                _make_stages(), _make_context(), supervisor=_make_config()
+            )
+        from inkflow.domain.ports.agent_pipeline import StageStatus
+
+        assert result.status == StageStatus.FAILED
+
+
+class TestValidateErrorsCoverage:
+    """validate 错误路径补测（覆盖 L280/283 + execute PipelineError）。"""
+
+    @pytest.mark.asyncio
+    async def test_validate_empty_stages(self) -> None:
+        """空角色池 → PipelineError。"""
+        from inkflow.domain.ports.agent_pipeline import PipelineError
+
+        pipeline = SupervisorPipeline(FakeLLM([]))
+        with pytest.raises(PipelineError):
+            await pipeline.execute([], _make_context(), supervisor=_make_config())
+
+    @pytest.mark.asyncio
+    async def test_validate_duplicate_ids(self) -> None:
+        """重复角色 id → PipelineError。"""
+        from inkflow.domain.ports.agent_pipeline import AgentRole, PipelineError, PipelineStage
+
+        dup_stage = PipelineStage(
+            id="writer",
+            name="写手",
+            agent=AgentRole(id="writer", name="写手", system_prompt="写作"),
+        )
+        pipeline = SupervisorPipeline(FakeLLM([]))
+        with pytest.raises(PipelineError):
+            await pipeline.execute(
+                [dup_stage, dup_stage], _make_context(), supervisor=_make_config()
+            )
+
+
+class TestResumeErrorCoverage:
+    """resume 错误路径补测（覆盖 L363-364/368）。"""
+
+    @pytest.mark.asyncio
+    async def test_resume_without_execute_raises(self) -> None:
+        """未 execute 直接 resume → PipelineError（thread 不存在）。"""
+        from inkflow.domain.ports.agent_pipeline import PipelineError
+
+        pipeline = SupervisorPipeline(FakeLLM([]))
+        with pytest.raises(PipelineError):
+            await pipeline.resume(type("I", (), {"payload": {}})(), approved=True)
+
+
+class TestToResultCustomRoleCoverage:
+    """_to_result 自定义角色兜底补测（覆盖 L395-396）。"""
+
+    @pytest.mark.asyncio
+    async def test_custom_role_executed_included(self) -> None:
+        """自定义角色（非固定链）执行后出现在 stages 结果中。"""
+        from inkflow.domain.ports.agent_pipeline import AgentRole, PipelineStage
+
+        custom_stage = PipelineStage(
+            id="researcher",
+            name="研究员",
+            agent=AgentRole(id="researcher", name="研究员", system_prompt="调研"),
+        )
+        llm = FakeLLM(
+            [
+                '{"action": "execute", "role": "researcher"}',
+                '{"action": "finish"}',
+            ]
+        )
+        pipeline = SupervisorPipeline(llm)
+        result = await pipeline.execute([custom_stage], _make_context(), supervisor=_make_config())
+        stage_ids = [sr.stage_id for sr in result.stages]
+        assert "researcher" in stage_ids
