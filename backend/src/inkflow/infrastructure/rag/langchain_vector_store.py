@@ -5,8 +5,9 @@
   对齐 ``config.vector_store_collections``）
 - 项目隔离 = ``metadata.project_id`` 过滤（所有查询 always 带
   ``where={"project_id": project_id}``，Protocol 强制）
-- embeddings 由构造注入（生产 ``HuggingFaceBgeEmbeddings(BAAI/bge-small-zh-v1.5)``，
-  测试 ``FakeEmbeddings``）——BGE 模型首次使用需联网下载 ~100MB，懒加载
+- embeddings 由构造注入（生产 ``OpenAIEmbeddings``——API embedding，模型来自
+  ProviderConfig 注册表 type="embedding" 条目，spec f19 §5.4；测试
+  ``FakeEmbeddings``）——懒加载
 - chromadb 同步 API 全部用 ``asyncio.to_thread`` 包装（不阻塞事件循环）
 - 距离度量 cosine；``relevance_score = 1 - distance``
 - 懒初始化: 首次调用时创建 ``PersistentClient`` + ``get_or_create_collection``
@@ -40,8 +41,8 @@ class LangChainVectorStore:
 
     - 每 EntityType 一个 collection（collection 名 = f"inkflow_{entity_type.value}"）
     - 项目隔离 = metadata.project_id 过滤（查询 always 带 project_id）
-    - embeddings 由构造注入（生产 HuggingFaceBgeEmbeddings(BAAI/bge-small-zh-v1.5)，
-      测试 FakeEmbeddings）——BGE 模型首次使用需联网下载 ~100MB，懒加载
+    - embeddings 由构造注入（生产 OpenAIEmbeddings——API embedding，模型来自
+      ProviderConfig 注册表 type="embedding" 条目；测试 FakeEmbeddings）——懒加载
     - chromadb 同步 API 用 asyncio.to_thread 包装（不阻塞事件循环）
     - 距离度量 cosine；relevance_score = 1 - distance
     """
