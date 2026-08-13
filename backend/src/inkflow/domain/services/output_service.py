@@ -150,8 +150,7 @@ class ExportService:
             # 条件依赖: False → 设定 repo 零调用（不创建 _aggregate_settings 协程）
             volumes, chapters = await asyncio.gather(volumes_coro, chapters_coro)
 
-        # 软删章防御性过滤 + 内存分组（§5.2/§6.1）
-        chapters = [ch for ch in chapters if not getattr(ch, "is_deleted", False)]
+        # 内存分组（§5.2/§6.1；v1.1 真删语义无软删过滤）
         book_volumes = self._assemble_volumes(volumes, chapters)
 
         # ④ 组装 BookDocument（§2.2）
