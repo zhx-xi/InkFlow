@@ -371,3 +371,42 @@ def test_serve_smoke(tmp_path):
     finally:
         proc.terminate()
         proc.wait(timeout=5)
+
+
+# ── 内核启动失败 / 错误信封 / 无 force 交互（迁移自 test_cli_project_mock.py，#281 T3 合并）──
+
+
+@pytest.mark.project
+def test_create_kernel_startup_error(fake_http_client):
+    """ensure_kernel 失败（内核冷启动超时）→ KERNEL_ERROR 信封 + 退出码 1（F38 spec §5.3）。"""
+    from inkflow.infrastructure.kernel import KernelStartupError
+
+    with patch(
+        "inkflow.cli.commands.project.ensure_kernel",
+        AsyncMock(side_effect=KernelStartupError("启动超时")),
+    ):
+        result = runner.invoke(app, ["--json", "project", "create", "--name", "测试"])
+    assert result.exit_code == 1
+    data = json.loads(result.stdout)
+    assert data["ok"] is False
+    assert data["error"]["code"] == "KERNEL_ERROR"
+    assert "内核启动失败" in data["error"]["message"]
+
+
+@pytest.mark.project
+def test_get_not_found_json(fake_http_client):
+    """get 不存在项目（--json）→ 退出码 1 + 错误信封 NOT_FOUND。"""
+    result = runner.invoke(app, ["--json", "project", "get", "--id", "999"])
+    assert result.exit_code == 1
+    data = json.loads(result.stdout)
+    assert data["ok"] is False
+    assert data["error"]["code"] == "NOT_FOUND"
+
+
+@pytest.mark.project
+def test_delete_without_force_prompts(fake_http_client):
+    """delete 无 --force → 交互确认，回答 n 取消（不调用 delete）。"""
+    result = runner.invoke(app, ["project", "delete", "--id", "1"], input="n\n")
+    assert result.exit_code == 0
+    assert "取消" in result.output
+    fake_http_client.delete.assert_not_awaited()

@@ -1,6 +1,6 @@
-"""分发正确性 + 增量判定 + batch/resume/outline 细节 — Mock 各模块 Service + Repo + VectorStore。
+"""timeline 双语义 + STYLE 委托 — Mock 各模块 Service + Repo + VectorStore。
 
-覆盖: 分发正确性 / 项目校验 / 增量判定（skip/force/手动/批量/断点续跑）/ outline 冲突透传。
+覆盖: timeline 双语义（设置项三级判定）/ STYLE 委托 StyleService（每次执行 + 归一）。
 
 拆分自 test_extraction_service.py（#281 测试文件规模治理）；
 共享 helper/_Deps 定义见本文件（各拆分文件自包含副本）。
@@ -20,7 +20,6 @@ from inkflow.domain.models.chapter import Chapter
 from inkflow.domain.models.character import (
     Character,
     CharacterExtractionResult,
-    CharacterExtractRequest,
 )
 from inkflow.domain.models.extraction import (
     ExtractionRequest,
@@ -31,11 +30,9 @@ from inkflow.domain.models.extraction import (
 from inkflow.domain.models.foreshadowing import (
     Foreshadowing,
     ForeshadowingExtractionResult,
-    ForeshadowingExtractRequest,
     ForeshadowingStatus,
 )
 from inkflow.domain.models.outline import (
-    OutlineGenerateRequest,
     OutlineGenerationResult,
 )
 from inkflow.domain.models.project import Project, ProjectConfig
@@ -43,20 +40,16 @@ from inkflow.domain.models.timeline import (
     ConsistencyReport,
     TimelineEvent,
     TimelineExtractionResult,
+    TimelineExtractRequest,
 )
 from inkflow.domain.models.world import (
     WorldExtractionResult,
-    WorldExtractRequest,
     WorldSetting,
 )
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.ports.extraction_errors import (
-    ChapterNotFoundError,
-    ChapterNotInProjectError,
     ExtractionValidationError,
 )
-from inkflow.domain.ports.llm_errors import LLMRequestError
-from inkflow.domain.ports.outline_errors import OutlineNameConflictError
 from inkflow.domain.services.extraction_service import ExtractionService
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
@@ -443,397 +436,244 @@ def _upserted_runs(deps: _Deps) -> list[ExtractionRun]:
 # ── 分发正确性 ──────────────────────────────────────────────────
 
 
-async def test_character_text_dispatches_to_character_service() -> None:
-    """手动文本 → CharacterService.extract（text/model 透传）+ 结果归一 + run 落库。"""
-    deps = _Deps(_project())
-    deps.character_service.extract = AsyncMock(return_value=_character_result(created=2, updated=1))
+async def test_timeline_config_on_uses_extractor() -> None:
+    """项目配置 timeline_auto_extract=true → 委托 TimelineExtractor（章节模式）。"""
+    deps = _Deps(_project(extra={"timeline_auto_extract": True}))
+    deps.stub_chapter(_chapter(CH1, CONTENT_1))
+    deps.timeline_extractor.extract = AsyncMock(return_value=_timeline_result(created=2, updated=1))
     svc = deps.service()
 
-    result = await svc.extract(_req(ExtractionType.CHARACTER, text="文本", model=CUSTOM_MODEL))
+    result = await svc.extract(_req(ExtractionType.TIMELINE, chapter_ids=[CH1], model=CUSTOM_MODEL))
 
-    deps.character_service.extract.assert_awaited_once()
-    req = deps.character_service.extract.await_args.args[0]
-    assert isinstance(req, CharacterExtractRequest)
-    assert req.project_id == PID
-    assert req.text == "文本"
-    assert req.model == CUSTOM_MODEL
-    assert result.status is ExtractionStatus.SUCCESS
-    assert result.processed_sources == 1
-    assert result.skipped_sources == 0
-    assert result.created == 2
-    assert result.updated == 1
-    assert result.model == DEFAULT_MODEL
-    assert result.indexed is False
-    runs = _upserted_runs(deps)
-    assert len(runs) == 1
-    assert runs[0].source_key == "manual"
-    assert runs[0].content_hash == _sha("文本")
-    assert runs[0].status is ExtractionStatus.SUCCESS
-    assert runs[0].created_count == 2
-    assert runs[0].updated_count == 1
-    assert runs[0].model == DEFAULT_MODEL
-
-
-async def test_setting_text_dispatches_to_world_service() -> None:
-    """手动文本 → WorldService.extract（参数透传）。"""
-    deps = _Deps(_project())
-    deps.world_service.extract = AsyncMock(return_value=_world_result(created=1, updated=1))
-    svc = deps.service()
-
-    result = await svc.extract(_req(ExtractionType.SETTING, text="青云城坐落于群山之间"))
-
-    deps.world_service.extract.assert_awaited_once()
-    req = deps.world_service.extract.await_args.args[0]
-    assert isinstance(req, WorldExtractRequest)
-    assert req.project_id == PID
-    assert req.text == "青云城坐落于群山之间"
-    assert result.created == 1
-    assert result.updated == 1
-
-
-async def test_outline_dispatches_with_prompt_num_chapters_save() -> None:
-    """OUTLINE → OutlineService.generate（prompt/num_chapters/save/model 透传），每次执行。"""
-    deps = _Deps(_project())
-    deps.outline_service.generate = AsyncMock(return_value=_outline_result(saved=False))
-    svc = deps.service()
-
-    result = await svc.extract(
-        _req(
-            ExtractionType.OUTLINE,
-            prompt="复仇与救赎双线并进",
-            num_chapters=30,
-            save=False,
-            model=CUSTOM_MODEL,
-        )
-    )
-
-    deps.outline_service.generate.assert_awaited_once()
-    req = deps.outline_service.generate.await_args.args[0]
-    assert isinstance(req, OutlineGenerateRequest)
-    assert req.project_id == PID
-    assert req.prompt == "复仇与救赎双线并进"
-    assert req.num_chapters == 30
-    assert req.save is False
-    assert req.model == CUSTOM_MODEL
-    # 预览模式: created=0；每次执行（无增量 skip）
-    assert result.created == 0
-    assert result.processed_sources == 1
-    runs = _upserted_runs(deps)
-    assert runs[0].source_key == "full"
-    assert runs[0].status is ExtractionStatus.SUCCESS
-
-
-async def test_outline_saved_created_counts_one() -> None:
-    """OUTLINE save=true 且新建 → created=1（§5.3 口径）。"""
-    deps = _Deps(_project())
-    deps.outline_service.generate = AsyncMock(return_value=_outline_result(saved=True))
-    svc = deps.service()
-
-    result = await svc.extract(_req(ExtractionType.OUTLINE, prompt="双线"))
-
-    assert result.created == 1
-    assert result.updated == 0
-
-
-async def test_foreshadowing_dispatches_to_extractor() -> None:
-    """FORESHADOWING → ForeshadowingExtractor.extract（default_model=项目模型透传）。"""
-    deps = _Deps(_project())
-    deps.foreshadowing_extractor.extract = AsyncMock(return_value=_fs_result(created=2, updated=1))
-    svc = deps.service()
-
-    result = await svc.extract(
-        _req(ExtractionType.FORESHADOWING, text="铜镜在烛光下泛着微光", model=CUSTOM_MODEL)
-    )
-
-    deps.foreshadowing_extractor.extract.assert_awaited_once()
+    deps.timeline_extractor.extract.assert_awaited_once()
     req, kwargs = (
-        deps.foreshadowing_extractor.extract.await_args.args[0],
-        (deps.foreshadowing_extractor.extract.await_args.kwargs),
+        deps.timeline_extractor.extract.await_args.args[0],
+        (deps.timeline_extractor.extract.await_args.kwargs),
     )
-    assert isinstance(req, ForeshadowingExtractRequest)
+    assert isinstance(req, TimelineExtractRequest)
     assert req.project_id == PID
-    assert req.text == "铜镜在烛光下泛着微光"
+    assert req.chapter_id == CH1
+    assert req.text == CONTENT_1
     assert req.model == CUSTOM_MODEL
     assert kwargs["default_model"] == DEFAULT_MODEL
     assert result.created == 2
     assert result.updated == 1
-
-
-async def test_character_chapter_mode_passes_chapter_text() -> None:
-    """章节模式 → 读章节内容后按章透传 text 给 CharacterService.extract。"""
-    deps = _Deps(_project())
-    deps.stub_chapter(_chapter(CH1, CONTENT_1))
-    deps.character_service.extract = AsyncMock(return_value=_character_result())
-    svc = deps.service()
-
-    result = await svc.extract(_req(ExtractionType.CHARACTER, chapter_ids=[CH1]))
-
-    deps.chapter_repo.get_chapter.assert_awaited_once_with(CH1.int)
-    req = deps.character_service.extract.await_args.args[0]
-    assert req.text == CONTENT_1
-    assert result.processed_sources == 1
+    deps.timeline_service.check_consistency.assert_not_awaited()
     runs = _upserted_runs(deps)
     assert runs[0].source_key == str(CH1)
-    assert runs[0].content_hash == _sha(CONTENT_1)
 
 
-# ── 项目校验 ────────────────────────────────────────────────────
-
-
-async def test_project_not_found_raises() -> None:
-    """project_repo.get → None → ProjectNotFoundError（所有类型统一，handler 不调用）。"""
-    deps = _Deps(project=None)
-    svc = deps.service()
-
-    with pytest.raises(ProjectNotFoundError):
-        await svc.extract(_req(ExtractionType.CHARACTER, text="文本"))
-
-    deps.character_service.extract.assert_not_awaited()
-
-
-# ── 增量判定 ────────────────────────────────────────────────────
-
-
-async def test_same_hash_skips_without_calling_handler() -> None:
-    """章节 hash 相同 + not force → skip（零 LLM 调用，首个源落 skipped run）。"""
-    deps = _Deps(_project())
+async def test_timeline_request_auto_extract_overrides_off_config() -> None:
+    """请求 auto_extract=true 覆盖关闭的项目配置 → 委托 TimelineExtractor。"""
+    deps = _Deps(_project())  # 配置默认关闭
     deps.stub_chapter(_chapter(CH1, CONTENT_1))
-    deps.stub_runs({str(CH1): _run(str(CH1), _sha(CONTENT_1))})
+    deps.timeline_extractor.extract = AsyncMock(return_value=_timeline_result())
     svc = deps.service()
 
-    result = await svc.extract(_req(ExtractionType.CHARACTER, chapter_ids=[CH1]))
+    await svc.extract(_req(ExtractionType.TIMELINE, chapter_ids=[CH1], auto_extract=True))
 
-    assert result.status is ExtractionStatus.SKIPPED
-    assert result.processed_sources == 0
-    assert result.skipped_sources == 1
-    assert result.skipped_reason == f"内容未变更（源: chapter {CH1}）"
+    deps.timeline_extractor.extract.assert_awaited_once()
+    deps.timeline_service.check_consistency.assert_not_awaited()
+
+
+async def test_timeline_request_auto_extract_false_overrides_on_config() -> None:
+    """请求 auto_extract=false 覆盖开启的配置 → 不调用 LLM，直接委托 check_consistency。"""
+    deps = _Deps(_project(extra={"timeline_auto_extract": True}))
+    deps.timeline_service.check_consistency = AsyncMock(return_value=_consistency_report())
+    svc = deps.service()
+
+    result = await svc.extract(
+        _req(ExtractionType.TIMELINE, auto_extract=False, include_flashbacks=False)
+    )
+
+    deps.timeline_extractor.extract.assert_not_awaited()  # Mock extractor 未被调用
+    deps.timeline_service.check_consistency.assert_awaited_once_with(PID, include_flashbacks=False)
+    assert result.status is ExtractionStatus.SUCCESS
     assert result.created == 0
     assert result.updated == 0
-    deps.character_service.extract.assert_not_awaited()  # Mock handler 未被调用
+    assert result.model is None  # 确定性检查无 LLM
     runs = _upserted_runs(deps)
-    assert len(runs) == 1
-    assert runs[0].source_key == str(CH1)
-    assert runs[0].status is ExtractionStatus.SKIPPED
+    assert runs[0].source_key == "full"
 
 
-async def test_different_hash_executes() -> None:
-    """章节 hash 不同 → 执行。"""
+async def test_timeline_default_follows_off_config() -> None:
+    """auto_extract=None（缺省）→ 跟随项目配置（关闭 → check_consistency）。"""
     deps = _Deps(_project())
-    deps.stub_chapter(_chapter(CH1, CONTENT_1))
-    deps.stub_runs({str(CH1): _run(str(CH1), _sha("旧内容"))})
-    deps.character_service.extract = AsyncMock(return_value=_character_result())
+    deps.timeline_service.check_consistency = AsyncMock(return_value=_consistency_report())
     svc = deps.service()
 
-    result = await svc.extract(_req(ExtractionType.CHARACTER, chapter_ids=[CH1]))
+    await svc.extract(_req(ExtractionType.TIMELINE))
 
-    deps.character_service.extract.assert_awaited_once()
+    deps.timeline_extractor.extract.assert_not_awaited()
+    deps.timeline_service.check_consistency.assert_awaited_once()
+
+
+async def test_timeline_off_always_executes() -> None:
+    """TIMELINE 关闭语义：每次执行（存在 full run 也重新检查）。"""
+    deps = _Deps(_project())
+    deps.stub_runs({"full": _run("full", _sha(""), type_=ExtractionType.TIMELINE)})
+    deps.timeline_service.check_consistency = AsyncMock(return_value=_consistency_report())
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.TIMELINE))
+
+    deps.timeline_service.check_consistency.assert_awaited_once()
+    assert result.processed_sources == 1
+
+
+async def test_timeline_off_with_text_raises() -> None:
+    """设置项关闭且携带 text → 422「时间线自动提取未开启」。"""
+    deps = _Deps(_project())
+    svc = deps.service()
+
+    with pytest.raises(ExtractionValidationError, match="时间线自动提取未开启"):
+        await svc.extract(_req(ExtractionType.TIMELINE, text="文本"))
+
+    deps.timeline_service.check_consistency.assert_not_awaited()
+
+
+async def test_timeline_off_with_chapter_ids_raises() -> None:
+    """设置项关闭且携带 chapter_ids → 422「时间线自动提取未开启」。"""
+    deps = _Deps(_project())
+    svc = deps.service()
+
+    with pytest.raises(ExtractionValidationError, match="时间线自动提取未开启"):
+        await svc.extract(_req(ExtractionType.TIMELINE, chapter_ids=[CH1]))
+
+
+async def test_timeline_on_manual_text_raises() -> None:
+    """设置项开启但使用手动 text → 422（时间线提取需要章节来源锚点）。"""
+    deps = _Deps(_project(extra={"timeline_auto_extract": True}))
+    svc = deps.service()
+
+    with pytest.raises(ExtractionValidationError, match="章节模式"):
+        await svc.extract(_req(ExtractionType.TIMELINE, text="文本"))
+
+    deps.timeline_extractor.extract.assert_not_awaited()
+
+
+async def test_timeline_on_incremental_skip() -> None:
+    """设置项开启：章节 hash 相同 → skip（extractor 不被调用）。"""
+    deps = _Deps(_project(extra={"timeline_auto_extract": True}))
+    deps.stub_chapter(_chapter(CH1, CONTENT_1))
+    deps.stub_runs({str(CH1): _run(str(CH1), _sha(CONTENT_1), type_=ExtractionType.TIMELINE)})
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.TIMELINE, chapter_ids=[CH1]))
+
+    assert result.status is ExtractionStatus.SKIPPED
+    deps.timeline_extractor.extract.assert_not_awaited()
+
+
+# ── STYLE 委托（F16 落地，spec §8.2）────────────────────────────
+
+
+async def test_style_dispatches_to_style_service() -> None:
+    """STYLE → 委托 StyleService.analyze（llm_analysis=False 恒确定性）+ 归一断言。
+
+    门面恒确定性（spec §2.8/§5.7）: F14 ExtractionRequest 无 llm_analysis 字段，
+    委托时显式传 False；结果归一 created=0/updated=0/model=None/detail=
+    StyleReport.model_dump/warnings 透传（§8.2 表 #6）；每次执行固定 full 源落 run。
+    """
+    deps = _Deps(_project())
+    report = _style_report()
+    deps.style_service.analyze = AsyncMock(return_value=report)
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.STYLE, text="第一章……"))
+
+    deps.style_service.analyze.assert_awaited_once_with(
+        project_id=PID, text="第一章……", chapter_ids=None, llm_analysis=False
+    )
+    assert result.status is ExtractionStatus.SUCCESS
+    assert result.processed_sources == 1
+    assert result.skipped_sources == 0
+    assert result.created == 0
+    assert result.updated == 0
+    assert result.model is None
+    assert result.warnings == report.warnings
+    assert result.detail == report.model_dump(mode="json")
+    runs = _upserted_runs(deps)
+    assert len(runs) == 1
+    assert runs[0].source_key == "full"  # 每次执行（§8.2 表 #4）
+    assert runs[0].content_hash == _sha("")
+    assert runs[0].status is ExtractionStatus.SUCCESS
+    assert runs[0].created_count == 0
+    assert runs[0].updated_count == 0
+    assert runs[0].model is None
+
+
+async def test_style_chapter_mode_passes_through() -> None:
+    """STYLE 章节模式 → chapter_ids 透传 StyleService（门面不读章节，固定 full 源）。"""
+    deps = _Deps(_project())
+    deps.stub_chapter(_chapter(CH1, CONTENT_1))
+    deps.style_service.analyze = AsyncMock(
+        return_value=_style_report(source=f"chapter:{CH1}", warnings=[])
+    )
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.STYLE, chapter_ids=[CH1]))
+
+    deps.style_service.analyze.assert_awaited_once_with(
+        project_id=PID, text=None, chapter_ids=[CH1], llm_analysis=False
+    )
+    deps.chapter_repo.get_chapter.assert_not_awaited()  # 章节读取在 StyleService 内（F16 §5.1）
+    assert result.status is ExtractionStatus.SUCCESS
+    runs = _upserted_runs(deps)
+    assert runs[0].source_key == "full"
+
+
+async def test_style_always_executes_with_existing_run() -> None:
+    """STYLE 每次执行：即使存在 full run 也重新分析（无增量 skip，spec §6.4/§8.2 #4）。"""
+    deps = _Deps(_project())
+    deps.stub_runs({"full": _run("full", _sha(""), type_=ExtractionType.STYLE)})
+    deps.style_service.analyze = AsyncMock(return_value=_style_report())
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.STYLE, text="第一章……"))
+
+    deps.style_service.analyze.assert_awaited_once()
     assert result.status is ExtractionStatus.SUCCESS
     assert result.processed_sources == 1
     assert result.skipped_sources == 0
 
 
-async def test_no_run_executes() -> None:
-    """无 run 行 → 执行（首次提取）。"""
-    deps = _Deps(_project())
-    deps.stub_chapter(_chapter(CH1, CONTENT_1))
-    deps.character_service.extract = AsyncMock(return_value=_character_result())
-    svc = deps.service()
-
-    await svc.extract(_req(ExtractionType.CHARACTER, chapter_ids=[CH1]))
-
-    deps.character_service.extract.assert_awaited_once()
-
-
-async def test_force_true_executes_despite_same_hash() -> None:
-    """force=true → 忽略相同 hash 强制执行。"""
-    deps = _Deps(_project())
-    deps.stub_chapter(_chapter(CH1, CONTENT_1))
-    deps.stub_runs({str(CH1): _run(str(CH1), _sha(CONTENT_1))})
-    deps.character_service.extract = AsyncMock(return_value=_character_result())
-    svc = deps.service()
-
-    result = await svc.extract(_req(ExtractionType.CHARACTER, chapter_ids=[CH1], force=True))
-
-    deps.character_service.extract.assert_awaited_once()
-    assert result.status is ExtractionStatus.SUCCESS
-    assert result.processed_sources == 1
-
-
-# ── 手动模式 ────────────────────────────────────────────────────
-
-
-async def test_manual_same_text_skips() -> None:
-    """手动模式 source_key=manual：同文本重复提交 → skip。"""
-    deps = _Deps(_project())
-    deps.character_service.extract = AsyncMock(return_value=_character_result())
-    svc = deps.service()
-    request = _req(ExtractionType.CHARACTER, text="同一段文本")
-
-    first = await svc.extract(request)
-    assert first.status is ExtractionStatus.SUCCESS
-
-    deps.stub_runs({"manual": _run("manual", _sha("同一段文本"))})
-    deps.character_service.extract.reset_mock()
-    second = await svc.extract(request)
-
-    assert second.status is ExtractionStatus.SKIPPED
-    assert second.skipped_sources == 1
-    assert second.skipped_reason == "内容未变更（源: manual）"
-    deps.character_service.extract.assert_not_awaited()
-
-
-async def test_manual_different_text_executes() -> None:
-    """手动模式：不同文本 → 执行。"""
-    deps = _Deps(_project())
-    deps.stub_runs({"manual": _run("manual", _sha("旧文本"))})
-    deps.character_service.extract = AsyncMock(return_value=_character_result())
-    svc = deps.service()
-
-    result = await svc.extract(_req(ExtractionType.CHARACTER, text="新文本"))
-
-    deps.character_service.extract.assert_awaited_once()
-    assert result.status is ExtractionStatus.SUCCESS
-
-
-# ── 批量章节 ────────────────────────────────────────────────────
-
-
-async def test_batch_partial_skip_counts() -> None:
-    """批量章节：部分 skip 部分执行 → success + 计数正确 + detail 保留首个执行源。"""
-    deps = _Deps(_project())
-    deps.chapter_repo.get_chapter = AsyncMock(side_effect=_chapter_by_id)
-    deps.stub_runs({str(CH1): _run(str(CH1), _sha(CONTENT_1))})
-    executed = _character_result(created=2, updated=1, warnings=["跳过非法条目"])
-    deps.character_service.extract = AsyncMock(return_value=executed)
-    svc = deps.service()
-
-    result = await svc.extract(_req(ExtractionType.CHARACTER, chapter_ids=[CH1, CH2]))
-
-    assert result.status is ExtractionStatus.SUCCESS
-    assert result.processed_sources == 1
-    assert result.skipped_sources == 1
-    assert result.created == 2
-    assert result.updated == 1
-    assert result.warnings == ["跳过非法条目"]
-    assert result.detail == executed.model_dump(mode="json")
-    runs = _upserted_runs(deps)
-    assert [r.source_key for r in runs] == [str(CH2)]  # 仅执行源落 run
-    assert runs[0].content_hash == _sha(CONTENT_2)
-
-
-async def test_batch_chapter_not_found_raises() -> None:
-    """章节不存在（含软删）→ ChapterNotFoundError。"""
-    deps = _Deps(_project())
-    deps.stub_chapter(None)
-    svc = deps.service()
-
-    with pytest.raises(ChapterNotFoundError):
-        await svc.extract(_req(ExtractionType.CHARACTER, chapter_ids=[CH1]))
-
-    deps.character_service.extract.assert_not_awaited()
-
-
-async def test_batch_cross_project_chapter_raises() -> None:
-    """跨项目章节 → ChapterNotInProjectError。"""
-    deps = _Deps(_project())
-    deps.stub_chapter(_chapter(CH1, CONTENT_1, project_id=OTHER_PID))
-    svc = deps.service()
-
-    with pytest.raises(ChapterNotInProjectError):
-        await svc.extract(_req(ExtractionType.CHARACTER, chapter_ids=[CH1]))
-
-    deps.character_service.extract.assert_not_awaited()
-
-
-async def test_batch_chapter_too_long_raises() -> None:
-    """章节内容超 50000 字符 → ExtractionValidationError（422 语义）。"""
-    deps = _Deps(_project())
-    deps.stub_chapter(_chapter(CH1, "长" * 50001))
-    svc = deps.service()
-
-    with pytest.raises(ExtractionValidationError, match="50000"):
-        await svc.extract(_req(ExtractionType.CHARACTER, chapter_ids=[CH1]))
-
-
-# ── 断点续跑（核心）─────────────────────────────────────────────
-
-
-async def test_resume_after_mid_batch_failure() -> None:
-    """第 2 章失败 → 抛异常且第 1 章 run 已落库；重跑 → 第 1 章 skip、第 2 章执行。"""
-    deps = _Deps(_project())
-    deps.chapter_repo.get_chapter = AsyncMock(side_effect=_chapter_by_id)
-    runs: dict[str, ExtractionRun] = {}
-    deps.stub_runs(runs)
-    deps.character_service.extract = AsyncMock(
-        side_effect=[_character_result(created=1), LLMRequestError("LLM 调用失败")]
-    )
-    svc = deps.service()
-    request = _req(ExtractionType.CHARACTER, chapter_ids=[CH1, CH2])
-
-    # 第一次：第 2 章失败 → 门面抛异常；第 1 章 run 已 upsert
-    with pytest.raises(LLMRequestError):
-        await svc.extract(request)
-    runs_after_failure = _upserted_runs(deps)
-    assert [r.source_key for r in runs_after_failure] == [str(CH1)]
-    assert runs_after_failure[0].status is ExtractionStatus.SUCCESS
-    assert runs_after_failure[0].content_hash == _sha(CONTENT_1)
-
-    # 模拟持久化后重跑：第 1 章 hash 相同 → skip，第 2 章执行
-    runs[str(CH1)] = runs_after_failure[0]
-    deps.character_service.extract.reset_mock()
-    deps.character_service.extract = AsyncMock(return_value=_character_result(created=1))
-    result = await svc.extract(request)
-
-    assert result.status is ExtractionStatus.SUCCESS
-    assert result.processed_sources == 1
-    assert result.skipped_sources == 1
-    calls = deps.character_service.extract.await_args_list
-    assert len(calls) == 1
-    assert calls[0].args[0].text == CONTENT_2  # 只处理失败章
-
-
-# ── outline 语义 ────────────────────────────────────────────────
-
-
-async def test_outline_always_executes_with_existing_run() -> None:
-    """OUTLINE 每次执行：即使存在 full run 也重新生成。"""
-    deps = _Deps(_project())
-    deps.stub_runs({"full": _run("full", _sha(""), type_=ExtractionType.OUTLINE)})
-    deps.outline_service.generate = AsyncMock(return_value=_outline_result())
-    svc = deps.service()
-
-    result = await svc.extract(_req(ExtractionType.OUTLINE, prompt="双线"))
-
-    deps.outline_service.generate.assert_awaited_once()
-    assert result.status is ExtractionStatus.SUCCESS
-
-
-async def test_outline_name_conflict_passthrough() -> None:
-    """OUTLINE 同名冲突 → 透传 F11 OutlineNameConflictError。"""
-    deps = _Deps(_project())
-    deps.outline_service.generate = AsyncMock(side_effect=OutlineNameConflictError())
-    svc = deps.service()
-
-    with pytest.raises(OutlineNameConflictError):
-        await svc.extract(_req(ExtractionType.OUTLINE, prompt="双线"))
-
-
-async def test_outline_with_text_raises() -> None:
-    """OUTLINE 携带 text → 422（类型不匹配字段显式报错）。"""
-    deps = _Deps(_project())
-    svc = deps.service()
-
-    with pytest.raises(ExtractionValidationError, match="outline 类型不支持"):
-        await svc.extract(_req(ExtractionType.OUTLINE, text="文本"))
-
-
-async def test_character_missing_source_raises() -> None:
-    """character 无 text 且无 chapter_ids → 422。"""
+async def test_style_missing_source_raises() -> None:
+    """STYLE 无 text 且无 chapter_ids → 422（_validate_input style 行，spec §8.2 表 #3）。"""
     deps = _Deps(_project())
     svc = deps.service()
 
     with pytest.raises(ExtractionValidationError, match="必须提供 text 或 chapter_ids"):
-        await svc.extract(_req(ExtractionType.CHARACTER))
+        await svc.extract(_req(ExtractionType.STYLE))
+
+    deps.style_service.analyze.assert_not_awaited()
 
 
-# ── TIMELINE 双语义 ─────────────────────────────────────────────
+async def test_style_index_true_warning() -> None:
+    (
+        """STYLE + index=true → indexed=False + warning「outline/timeline/style"""
+        """ 类型不支持自动索引」。"""
+    )
+    deps = _Deps(_project())
+    deps.style_service.analyze = AsyncMock(return_value=_style_report())
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.STYLE, text="第一章……", index=True))
+
+    assert result.indexed is False
+    assert "outline/timeline/style 类型不支持自动索引" in result.warnings
+    deps.vector_store.index_batch.assert_not_awaited()
+
+
+async def test_style_project_not_found_first() -> None:
+    """项目校验先于 STYLE handler：项目不存在 → ProjectNotFoundError（StyleService 不被调用）。"""
+    deps = _Deps(project=None)
+    svc = deps.service()
+
+    with pytest.raises(ProjectNotFoundError):
+        await svc.extract(_req(ExtractionType.STYLE, text="第一章……"))
+
+    deps.style_service.analyze.assert_not_awaited()
+
+
+# ── RAG 索引编排（index=true）───────────────────────────────────
