@@ -46,7 +46,7 @@ class TestTimelineEventModel:
 
     def test_event_defaults(self):
         """默认值：description='', time_value=None, time_unit='', time_display='',
-        narrative_position=0, timeline_flag='', extra={}, is_deleted=False."""
+        narrative_position=0, timeline_flag='', extra={}."""
         event = TimelineEvent(
             id=EID,
             project_id=PID,
@@ -62,7 +62,6 @@ class TestTimelineEventModel:
         assert event.narrative_position == 0
         assert event.timeline_flag == ""
         assert event.extra == {}
-        assert event.is_deleted is False
 
     def test_event_required_fields(self):
         """缺少必填字段（title）应抛出 ValidationError."""

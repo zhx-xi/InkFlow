@@ -164,7 +164,6 @@ class TestOutlineCRUDAPI:
         assert data["name"] == "第一卷大纲"
         assert data["description"] == "主角觉醒"
         assert data["project_id"] == str(PID)
-        assert data["is_deleted"] is False
         svc.create_outline.assert_awaited_once_with(PID, "第一卷大纲", "主角觉醒", 1)
 
     @patch("inkflow.api.routers.outlines.get_outline_service")
@@ -277,26 +276,15 @@ class TestOutlineCRUDAPI:
         assert response.json()["description"] == "（修订版）"
 
     @patch("inkflow.api.routers.outlines.get_outline_service")
-    def test_delete_outline_soft_204(self, mock_get_svc: MagicMock) -> None:
-        """软删除大纲返回 204（默认 force=False）."""
+    def test_delete_outline_204(self, mock_get_svc: MagicMock) -> None:
+        """删除大纲返回 204（v1.1 真删，无 force 参数）."""
         svc = _mock_svc(mock_get_svc)
         svc.delete_outline = AsyncMock(return_value=True)
 
-        response = client.delete(f"/api/v1/outlines/{uuid.uuid4()}")
+        outline_id = uuid.uuid4()
+        response = client.delete(f"/api/v1/outlines/{outline_id}")
         assert response.status_code == 204
-        _, kwargs = svc.delete_outline.await_args
-        assert kwargs["force"] is False
-
-    @patch("inkflow.api.routers.outlines.get_outline_service")
-    def test_delete_outline_force_204(self, mock_get_svc: MagicMock) -> None:
-        """硬删除大纲返回 204（?force=true 透传）."""
-        svc = _mock_svc(mock_get_svc)
-        svc.delete_outline = AsyncMock(return_value=True)
-
-        response = client.delete(f"/api/v1/outlines/{uuid.uuid4()}?force=true")
-        assert response.status_code == 204
-        _, kwargs = svc.delete_outline.await_args
-        assert kwargs["force"] is True
+        svc.delete_outline.assert_awaited_once_with(outline_id)
 
     @patch("inkflow.api.routers.outlines.get_outline_service")
     def test_delete_outline_not_found_404(self, mock_get_svc: MagicMock) -> None:
@@ -305,27 +293,6 @@ class TestOutlineCRUDAPI:
         svc.delete_outline = AsyncMock(return_value=False)
 
         response = client.delete(f"/api/v1/outlines/{uuid.uuid4()}")
-        assert response.status_code == 404
-        assert response.json()["detail"] == "大纲不存在"
-
-    @patch("inkflow.api.routers.outlines.get_outline_service")
-    def test_restore_outline_success(self, mock_get_svc: MagicMock) -> None:
-        """恢复大纲返回 200 + Outline JSON."""
-        svc = _mock_svc(mock_get_svc)
-        outline = _outline("第一卷大纲")
-        svc.restore_outline = AsyncMock(return_value=outline)
-
-        response = client.post(f"/api/v1/outlines/{outline.id}/restore")
-        assert response.status_code == 200
-        assert response.json()["name"] == "第一卷大纲"
-
-    @patch("inkflow.api.routers.outlines.get_outline_service")
-    def test_restore_outline_not_found_404(self, mock_get_svc: MagicMock) -> None:
-        """恢复不存在的大纲返回 404."""
-        svc = _mock_svc(mock_get_svc)
-        svc.restore_outline = AsyncMock(return_value=None)
-
-        response = client.post(f"/api/v1/outlines/{uuid.uuid4()}/restore")
         assert response.status_code == 404
         assert response.json()["detail"] == "大纲不存在"
 
@@ -447,26 +414,15 @@ class TestPlotPointAPI:
         assert upd.arc_id == ""
 
     @patch("inkflow.api.routers.outlines.get_outline_service")
-    def test_delete_point_soft_204(self, mock_get_svc: MagicMock) -> None:
-        """软删除情节点返回 204."""
+    def test_delete_point_204(self, mock_get_svc: MagicMock) -> None:
+        """删除情节点返回 204（v1.1 真删，无 force 参数）."""
         svc = _mock_svc(mock_get_svc)
         svc.delete_point = AsyncMock(return_value=True)
 
-        response = client.delete(f"/api/v1/plot-points/{uuid.uuid4()}")
+        point_id = uuid.uuid4()
+        response = client.delete(f"/api/v1/plot-points/{point_id}")
         assert response.status_code == 204
-        _, kwargs = svc.delete_point.await_args
-        assert kwargs["force"] is False
-
-    @patch("inkflow.api.routers.outlines.get_outline_service")
-    def test_delete_point_force_204(self, mock_get_svc: MagicMock) -> None:
-        """硬删除情节点返回 204（?force=true 透传）."""
-        svc = _mock_svc(mock_get_svc)
-        svc.delete_point = AsyncMock(return_value=True)
-
-        response = client.delete(f"/api/v1/plot-points/{uuid.uuid4()}?force=true")
-        assert response.status_code == 204
-        _, kwargs = svc.delete_point.await_args
-        assert kwargs["force"] is True
+        svc.delete_point.assert_awaited_once_with(point_id)
 
     @patch("inkflow.api.routers.outlines.get_outline_service")
     def test_delete_point_not_found_404(self, mock_get_svc: MagicMock) -> None:
@@ -475,28 +431,6 @@ class TestPlotPointAPI:
         svc.delete_point = AsyncMock(return_value=False)
 
         response = client.delete(f"/api/v1/plot-points/{uuid.uuid4()}")
-        assert response.status_code == 404
-        assert response.json()["detail"] == "情节点不存在"
-
-    @patch("inkflow.api.routers.outlines.get_outline_service")
-    def test_restore_point_success(self, mock_get_svc: MagicMock) -> None:
-        """恢复情节点返回 200 + PlotPoint JSON."""
-        svc = _mock_svc(mock_get_svc)
-        outline = _outline("第一卷大纲")
-        point = _point("主角登场", outline_id=outline.id)
-        svc.restore_point = AsyncMock(return_value=point)
-
-        response = client.post(f"/api/v1/plot-points/{point.id}/restore")
-        assert response.status_code == 200
-        assert response.json()["name"] == "主角登场"
-
-    @patch("inkflow.api.routers.outlines.get_outline_service")
-    def test_restore_point_not_found_404(self, mock_get_svc: MagicMock) -> None:
-        """恢复不存在的情节点返回 404."""
-        svc = _mock_svc(mock_get_svc)
-        svc.restore_point = AsyncMock(return_value=None)
-
-        response = client.post(f"/api/v1/plot-points/{uuid.uuid4()}/restore")
         assert response.status_code == 404
         assert response.json()["detail"] == "情节点不存在"
 
@@ -599,15 +533,15 @@ class TestStoryArcAPI:
         assert response.json()["description"] == "（修订版）"
 
     @patch("inkflow.api.routers.outlines.get_outline_service")
-    def test_delete_arc_soft_204(self, mock_get_svc: MagicMock) -> None:
-        """软删除弧线返回 204."""
+    def test_delete_arc_204(self, mock_get_svc: MagicMock) -> None:
+        """删除弧线返回 204（v1.1 真删，无 force 参数）."""
         svc = _mock_svc(mock_get_svc)
         svc.delete_arc = AsyncMock(return_value=True)
 
-        response = client.delete(f"/api/v1/story-arcs/{uuid.uuid4()}")
+        arc_id = uuid.uuid4()
+        response = client.delete(f"/api/v1/story-arcs/{arc_id}")
         assert response.status_code == 204
-        _, kwargs = svc.delete_arc.await_args
-        assert kwargs["force"] is False
+        svc.delete_arc.assert_awaited_once_with(arc_id)
 
     @patch("inkflow.api.routers.outlines.get_outline_service")
     def test_delete_arc_not_found_404(self, mock_get_svc: MagicMock) -> None:
@@ -616,27 +550,6 @@ class TestStoryArcAPI:
         svc.delete_arc = AsyncMock(return_value=False)
 
         response = client.delete(f"/api/v1/story-arcs/{uuid.uuid4()}")
-        assert response.status_code == 404
-        assert response.json()["detail"] == "弧线不存在"
-
-    @patch("inkflow.api.routers.outlines.get_outline_service")
-    def test_restore_arc_success(self, mock_get_svc: MagicMock) -> None:
-        """恢复弧线返回 200 + StoryArc JSON."""
-        svc = _mock_svc(mock_get_svc)
-        arc = _arc("主角成长线")
-        svc.restore_arc = AsyncMock(return_value=arc)
-
-        response = client.post(f"/api/v1/story-arcs/{arc.id}/restore")
-        assert response.status_code == 200
-        assert response.json()["name"] == "主角成长线"
-
-    @patch("inkflow.api.routers.outlines.get_outline_service")
-    def test_restore_arc_not_found_404(self, mock_get_svc: MagicMock) -> None:
-        """恢复不存在的弧线返回 404."""
-        svc = _mock_svc(mock_get_svc)
-        svc.restore_arc = AsyncMock(return_value=None)
-
-        response = client.post(f"/api/v1/story-arcs/{uuid.uuid4()}/restore")
         assert response.status_code == 404
         assert response.json()["detail"] == "弧线不存在"
 

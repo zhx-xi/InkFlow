@@ -6,7 +6,7 @@
   → TimelineServiceError（配置错误，防静默降级）
 - 更新清除语义：time_value "" → 置 None、None → 不修改；timeline_flag ""
   → 置 ""（清除标记）；其余字段 None → 不修改；更新不存在 → None
-- soft_delete / restore / get_event None（router 层转 404）
+- delete_event 真删委托 repo.hard_delete；get_event None（router 层转 404）
 - list 透传搜索/排序/分页；view 编排（两种排序视图）；check 编排
 
 依据: specs/f12-timeline-service/spec.md §7 + §9 测试策略。
@@ -74,8 +74,6 @@ def mock_repo() -> MagicMock:
     repo.list_all = AsyncMock(return_value=[])
     repo.next_position = AsyncMock(return_value=1)
     repo.update = AsyncMock(side_effect=lambda e: e)
-    repo.soft_delete = AsyncMock(return_value=True)
-    repo.restore = AsyncMock(return_value=None)
     repo.hard_delete = AsyncMock(return_value=True)
     return repo
 
@@ -122,7 +120,6 @@ class TestCreateEvent:
         assert added.time_display == "青元历 317 年秋"
         assert added.narrative_position == 3
         assert added.timeline_flag == ""
-        assert added.is_deleted is False
 
     async def test_create_event_auto_position_calls_next_position(
         self, service: TimelineService, mock_repo: MagicMock
@@ -283,33 +280,20 @@ class TestUpdateEvent:
         mock_repo.update.assert_not_awaited()
 
 
-class TestDeleteRestore:
-    """软删/恢复 — 委托仓储。"""
+class TestDeleteEvent:
+    """真删 — 委托仓储。"""
 
-    async def test_soft_delete_event_delegates(
+    async def test_delete_event_delegates(
         self, service: TimelineService, mock_repo: MagicMock
     ) -> None:
-        """软删事件：委托 repo.soft_delete；不存在 → False。"""
+        """真删事件（v1.1）：委托 repo.hard_delete；不存在 → False。"""
         event = _event("宗门大比")
-        result = await service.soft_delete_event(event.id)
+        result = await service.delete_event(event.id)
         assert result is True
-        mock_repo.soft_delete.assert_awaited_once_with(event.id.int)
+        mock_repo.hard_delete.assert_awaited_once_with(event.id.int)
 
-        mock_repo.soft_delete = AsyncMock(return_value=False)
-        assert await service.soft_delete_event(uuid.uuid4()) is False
-
-    async def test_restore_event_returns_entity_or_none(
-        self, service: TimelineService, mock_repo: MagicMock
-    ) -> None:
-        """恢复软删事件：委托 repo.restore；不存在 → None（重复操作无毒）。"""
-        event = _event("宗门大比")
-        mock_repo.restore = AsyncMock(return_value=event)
-        result = await service.restore_event(event.id)
-        assert result == event
-        mock_repo.restore.assert_awaited_once_with(event.id.int)
-
-        mock_repo.restore = AsyncMock(return_value=None)
-        assert await service.restore_event(uuid.uuid4()) is None
+        mock_repo.hard_delete = AsyncMock(return_value=False)
+        assert await service.delete_event(uuid.uuid4()) is False
 
 
 class TestViewCheck:
@@ -393,8 +377,8 @@ class TestViewCheck:
 # ── Phase 3 覆盖率补齐（#104）──────────────────────────────────
 
 
-class TestIntIdAndHardDelete:
-    """int id 直传路径 + 硬删除编排。"""
+class TestIntIdAndDelete:
+    """int id 直传路径 + 真删编排。"""
 
     async def test_get_event_with_int_id(
         self, service: TimelineService, mock_repo: MagicMock
@@ -404,10 +388,12 @@ class TestIntIdAndHardDelete:
         assert await service.get_event(42) is None
         mock_repo.get.assert_awaited_once_with(42)
 
-    async def test_hard_delete_event(self, service: TimelineService, mock_repo: MagicMock) -> None:
-        """hard_delete_event → 委托 repo.hard_delete（int id），返回结果透传。"""
-        assert await service.hard_delete_event(uuid.uuid4()) is True
-        mock_repo.hard_delete.assert_awaited_once()
+    async def test_delete_event_with_int_id(
+        self, service: TimelineService, mock_repo: MagicMock
+    ) -> None:
+        """delete_event → 委托 repo.hard_delete（int id），返回结果透传。"""
+        assert await service.delete_event(42) is True
+        mock_repo.hard_delete.assert_awaited_once_with(42)
 
 
 class TestConsistencyFlashbacksExcluded:

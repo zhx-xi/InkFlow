@@ -1,14 +1,14 @@
 """F11 大纲服务单元测试 — Mock Repository（F11 服务层 RED→GREEN）.
 
 覆盖 spec §9 服务测试 + §7 边界表:
-- 大纲 CRUD 全流程（Mock Repository）：创建/更新/软删/恢复/硬删
+- 大纲 CRUD 全流程（Mock Repository）：创建/更新/真删（v1.1 默认硬删）
 - 同名活动大纲创建/改名 → OutlineNameConflictError（422 语义）
 - 大纲不存在各操作 → None（router 层转 404；create_point 抛 OutlineNotFoundError）
 - 情节点 CRUD：create_point（position 缺省 → next_position）、update_point
-  （arc_id 三态：不传不修改 / None 清除 / UUID 设置）、软删/恢复
+  （arc_id 三态：不传不修改 / None 清除 / UUID 设置）、真删
 - 情节点挂不存在的弧线（含跨项目）→ ArcNotInProjectError（422 语义）
-- 弧线 CRUD + 软删时 clear_arc 编排（成员 arc_id 置 NULL）；恢复不恢复成员关联
-- 大纲软删 → 情节点级联软删编排（repo.soft_delete_points_of）；恢复级联
+- 弧线 CRUD + 真删编排（成员 arc_id 由 FK SET NULL 置空）
+- 大纲真删 → 情节点由 FK CASCADE 级联物理删除（无软删级联编排）
 - generate 入口：校验项目存在 → 组装 project_info → 调用 OutlineGenerator →
   返回 OutlineGenerationResult；项目不存在 → ProjectNotFoundError；
   generator / project_repo 未注入 → OutlineServiceError（配置错误）
@@ -117,11 +117,7 @@ def mock_repo() -> MagicMock:
     repo.get_by_name = AsyncMock(return_value=None)
     repo.list = AsyncMock(return_value=([], 0))
     repo.update = AsyncMock(side_effect=lambda o: o)
-    repo.soft_delete = AsyncMock(return_value=True)
-    repo.restore = AsyncMock(return_value=None)
     repo.hard_delete = AsyncMock(return_value=True)
-    repo.soft_delete_points_of = AsyncMock(return_value=None)
-    repo.restore_points_of = AsyncMock(return_value=None)
     # ── PlotPoint ──
     repo.add_point = AsyncMock(side_effect=lambda p: p)
     repo.get_point = AsyncMock(return_value=None)
@@ -129,8 +125,6 @@ def mock_repo() -> MagicMock:
     repo.list_points_by_arc = AsyncMock(return_value=[])
     repo.next_position = AsyncMock(return_value=1)
     repo.update_point = AsyncMock(side_effect=lambda p: p)
-    repo.soft_delete_point = AsyncMock(return_value=True)
-    repo.restore_point = AsyncMock(return_value=None)
     repo.hard_delete_point = AsyncMock(return_value=True)
     repo.clear_arc_of_points = AsyncMock(return_value=None)
     # ── StoryArc ──
@@ -139,8 +133,6 @@ def mock_repo() -> MagicMock:
     repo.get_arc_by_name = AsyncMock(return_value=None)
     repo.list_arcs = AsyncMock(return_value=[])
     repo.update_arc = AsyncMock(side_effect=lambda a: a)
-    repo.soft_delete_arc = AsyncMock(return_value=True)
-    repo.restore_arc = AsyncMock(return_value=None)
     repo.hard_delete_arc = AsyncMock(return_value=True)
     return repo
 
@@ -176,10 +168,10 @@ def service(
 
 
 class TestOutlineCrud:
-    """大纲 CRUD — 创建/查询/更新/软删/恢复/硬删 + 级联编排。"""
+    """大纲 CRUD — 创建/查询/更新/真删（v1.1 默认硬删）。"""
 
     async def test_create_outline_success_persists(self, service, mock_repo) -> None:
-        """创建大纲 → repo.add 收到完整实体（UUID 项目归属、默认软删标记）。"""
+        """创建大纲 → repo.add 收到完整实体（UUID 项目归属）。"""
         created = await service.create_outline(
             project_id=PID, name="第一卷大纲", description="主角觉醒", sort_order=1
         )
@@ -191,7 +183,6 @@ class TestOutlineCrud:
         assert added.name == "第一卷大纲"
         assert added.description == "主角觉醒"
         assert added.sort_order == 1
-        assert added.is_deleted is False
 
     async def test_create_outline_duplicate_active_name_raises(self, service, mock_repo) -> None:
         """同名活动大纲已存在 → OutlineNameConflictError（422 语义），不落库。"""
@@ -269,41 +260,19 @@ class TestOutlineCrud:
             await service.update_outline(existing.id, OutlineUpdate(name="第二卷大纲"))
         mock_repo.update.assert_not_awaited()
 
-    async def test_delete_outline_soft_cascades_points(self, service, mock_repo) -> None:
-        """软删除编排：先软删大纲本体，再级联软删其情节点；不存在 → False。"""
+    async def test_delete_outline_hard_deletes(self, service, mock_repo) -> None:
+        """真删大纲（v1.1）：委托 repo.hard_delete（情节点由 FK CASCADE）；不存在 → False。"""
         outline = _outline(name="第一卷大纲")
         result = await service.delete_outline(outline.id)
         assert result is True
-        mock_repo.soft_delete.assert_awaited_once_with(outline.id.int)
-        mock_repo.soft_delete_points_of.assert_awaited_once_with(outline.id.int)
-
-        mock_repo.soft_delete = AsyncMock(return_value=False)
-        assert await service.delete_outline(uuid.uuid4()) is False
-
-    async def test_delete_outline_force_hard_deletes(self, service, mock_repo) -> None:
-        """force=True → 物理删除，不触发软删级联（情节点由 FK CASCADE）。"""
-        outline = _outline(name="第一卷大纲")
-        result = await service.delete_outline(outline.id, force=True)
-        assert result is True
         mock_repo.hard_delete.assert_awaited_once_with(outline.id.int)
-        mock_repo.soft_delete.assert_not_awaited()
-        mock_repo.soft_delete_points_of.assert_not_awaited()
 
-    async def test_restore_outline_cascades_points(self, service, mock_repo) -> None:
-        """恢复编排：恢复大纲后级联恢复其情节点；不存在 → None。"""
-        outline = _outline(name="第一卷大纲")
-        mock_repo.restore = AsyncMock(return_value=outline)
-        result = await service.restore_outline(outline.id)
-        assert result == outline
-        mock_repo.restore_points_of.assert_awaited_once_with(outline.id.int)
-
-        mock_repo.restore = AsyncMock(return_value=None)
-        assert await service.restore_outline(uuid.uuid4()) is None
-        assert mock_repo.restore_points_of.await_count == 1  # 未再触发级联
+        mock_repo.hard_delete = AsyncMock(return_value=False)
+        assert await service.delete_outline(uuid.uuid4()) is False
 
 
 class TestPlotPointCrud:
-    """情节点 — 创建（position 缺省/弧线校验）/更新（arc_id 三态）/软删/恢复。"""
+    """情节点 — 创建（position 缺省/弧线校验）/更新（arc_id 三态）/真删。"""
 
     async def test_create_point_success_with_default_position(self, service, mock_repo) -> None:
         """position 缺省 → 用 next_position（大纲末尾 +1）；项目归属取自大纲。"""
@@ -324,7 +293,6 @@ class TestPlotPointCrud:
         assert added.description == "外门测试"
         assert added.position == 5
         assert added.arc_id is None
-        assert added.is_deleted is False
         assert created == added
 
     async def test_create_point_explicit_position_skips_next_position(
@@ -426,31 +394,15 @@ class TestPlotPointCrud:
         assert result is None
         mock_repo.update_point.assert_not_awaited()
 
-    async def test_delete_point_soft_and_force(self, service, mock_repo) -> None:
-        """软删委托 soft_delete_point；force → hard_delete_point；不存在 → False。"""
+    async def test_delete_point_hard_deletes(self, service, mock_repo) -> None:
+        """真删情节点（v1.1）：委托 repo.hard_delete_point；不存在 → False。"""
         point = _point("主角登场", outline=_outline(name="第一卷大纲"))
         result = await service.delete_point(point.id)
         assert result is True
-        mock_repo.soft_delete_point.assert_awaited_once_with(point.id.int)
-        mock_repo.hard_delete_point.assert_not_awaited()
-
-        result = await service.delete_point(point.id, force=True)
-        assert result is True
         mock_repo.hard_delete_point.assert_awaited_once_with(point.id.int)
 
-        mock_repo.soft_delete_point = AsyncMock(return_value=False)
+        mock_repo.hard_delete_point = AsyncMock(return_value=False)
         assert await service.delete_point(uuid.uuid4()) is False
-
-    async def test_restore_point(self, service, mock_repo) -> None:
-        """恢复情节点：委托 restore_point；不存在 → None。"""
-        point = _point("主角登场", outline=_outline(name="第一卷大纲"))
-        mock_repo.restore_point = AsyncMock(return_value=point)
-        result = await service.restore_point(point.id)
-        assert result == point
-        mock_repo.restore_point.assert_awaited_once_with(point.id.int)
-
-        mock_repo.restore_point = AsyncMock(return_value=None)
-        assert await service.restore_point(uuid.uuid4()) is None
 
     async def test_list_points(self, service, mock_repo) -> None:
         """情节点列表透传大纲 id；大纲不存在 → 空列表（无悬空查询）。"""
@@ -469,10 +421,10 @@ class TestPlotPointCrud:
 
 
 class TestStoryArcCrud:
-    """弧线 — 创建（同名唯一）/查询/更新/删除编排/恢复。"""
+    """弧线 — 创建（同名唯一）/查询/更新/真删。"""
 
     async def test_create_arc_success(self, service, mock_repo) -> None:
-        """创建弧线 → repo.add_arc 收到完整实体（UUID 项目归属、默认软删标记）。"""
+        """创建弧线 → repo.add_arc 收到完整实体（UUID 项目归属）。"""
         arc = await service.create_arc(PID, "主角成长线", "从废柴到强者的蜕变")
         assert arc.name == "主角成长线"
         mock_repo.get_arc_by_name.assert_awaited_once_with(PID.int, "主角成长线")
@@ -480,7 +432,6 @@ class TestStoryArcCrud:
         assert isinstance(added, StoryArc)
         assert added.project_id == PID
         assert added.description == "从废柴到强者的蜕变"
-        assert added.is_deleted is False
 
     async def test_create_arc_duplicate_name_raises(self, service, mock_repo) -> None:
         """项目内同名活动弧线 → ArcNameConflictError（422 语义），不落库。"""
@@ -529,37 +480,17 @@ class TestStoryArcCrud:
         mock_repo.get_arc = AsyncMock(return_value=None)
         assert await service.update_arc(uuid.uuid4(), StoryArcUpdate(name="x")) is None
 
-    async def test_delete_arc_soft_clears_members(self, service, mock_repo) -> None:
-        """弧线软删编排：软删本体 + 成员 arc_id 置 NULL（情节点保留）；不存在 → False。"""
+    async def test_delete_arc_hard_deletes(self, service, mock_repo) -> None:
+        """真删弧线（v1.1）：委托 repo.hard_delete_arc（成员 arc_id 由 FK SET NULL）；
+        无 clear_arc 编排；不存在 → False。"""
         arc = _arc(name="主角成长线")
         result = await service.delete_arc(arc.id)
         assert result is True
-        mock_repo.soft_delete_arc.assert_awaited_once_with(arc.id.int)
-        mock_repo.clear_arc_of_points.assert_awaited_once_with(arc.id.int)
-
-        mock_repo.soft_delete_arc = AsyncMock(return_value=False)
-        assert await service.delete_arc(uuid.uuid4()) is False
-
-    async def test_delete_arc_force_hard_deletes(self, service, mock_repo) -> None:
-        """force=True → 物理删除，不触发 clear_arc 编排。"""
-        arc = _arc(name="主角成长线")
-        result = await service.delete_arc(arc.id, force=True)
-        assert result is True
         mock_repo.hard_delete_arc.assert_awaited_once_with(arc.id.int)
-        mock_repo.soft_delete_arc.assert_not_awaited()
         mock_repo.clear_arc_of_points.assert_not_awaited()
 
-    async def test_restore_arc_does_not_restore_members(self, service, mock_repo) -> None:
-        """恢复弧线：不恢复成员关联（同 F9 分组语义）；不存在 → None。"""
-        arc = _arc(name="主角成长线")
-        mock_repo.restore_arc = AsyncMock(return_value=arc)
-        result = await service.restore_arc(arc.id)
-        assert result == arc
-        mock_repo.restore_arc.assert_awaited_once_with(arc.id.int)
-        mock_repo.clear_arc_of_points.assert_not_awaited()
-
-        mock_repo.restore_arc = AsyncMock(return_value=None)
-        assert await service.restore_arc(uuid.uuid4()) is None
+        mock_repo.hard_delete_arc = AsyncMock(return_value=False)
+        assert await service.delete_arc(uuid.uuid4()) is False
 
 
 class TestGenerate:

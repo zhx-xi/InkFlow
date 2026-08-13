@@ -3,7 +3,7 @@
 覆盖 spec §5.5（时间线提取管线，Q2 拍板）+ §9 测试策略「提取（Mock LLM，
 遵循 ADR-015）」全部场景:
 合法 JSON 全量落库 / 同名同章更新与幂等性 / None 未知值不覆盖 / 空串明确
-值覆盖 / 软删同名同章新建 + warning / 非法条目跳过 / 围栏输出 / 修复重试与
+值覆盖 / 非法条目跳过 / 围栏输出 / 修复重试与
 异常透传 / 空条目列表 / 模板与模型参数断言 / narrative_position=None 走
 next_position 追加语义。
 
@@ -58,7 +58,6 @@ def _event(
     time_unit: str = "",
     narrative_position: int = 1,
     timeline_flag: str = "",
-    is_deleted: bool = False,
     source_chapter_id: uuid.UUID | None = CID,
 ) -> TimelineEvent:
     """构造测试用时间线事件实体（默认时间戳固定，便于断言）。"""
@@ -73,7 +72,6 @@ def _event(
         narrative_position=narrative_position,
         timeline_flag=timeline_flag,
         source_chapter_id=source_chapter_id,
-        is_deleted=is_deleted,
         created_at=TS,
         updated_at=TS,
     )
@@ -280,25 +278,6 @@ class TestTimelineExtractor:
         assert len(result.created) == 1
         assert result.created[0].narrative_position == 7
         mock_repo.next_position.assert_awaited_once_with(PID.int)
-
-    async def test_soft_deleted_same_title_creates_with_warning(
-        self, extractor, mock_llm, mock_repo
-    ) -> None:
-        """软删同名同章 → 视为不存在 → 新建 + warning。"""
-        mock_repo.list.return_value = (
-            [_event("旧事件", is_deleted=True)],
-            1,
-        )
-        mock_llm.chat.return_value = _ok_response(
-            _payload(events=[{"title": "旧事件", "time_value": 2.0}])
-        )
-        result = await extractor.extract(
-            TimelineExtractRequest(project_id=PID, chapter_id=CID, text="t"),
-            default_model=DEFAULT_MODEL,
-        )
-        assert len(result.created) == 1
-        assert result.created[0].source_chapter_id == CID
-        assert any("已删除" in w for w in result.warnings)
 
     async def test_idempotent_second_extract(self, extractor, mock_llm, mock_repo) -> None:
         """同文本二次提取 → 全部命中已有事件且非空覆盖无变化 → 空 created/updated。"""

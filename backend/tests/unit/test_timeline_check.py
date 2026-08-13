@@ -6,7 +6,7 @@
 - 未知标记值等同未标记；未标记 + 已标记混合只报未标记
 - 同刻事件不冲突；时间未知计入 skipped；0/1 个事件恒一致
 - include_flashbacks=false → flashbacks 空列表，conflicts/consistent 不变
-- 软删除事件不参与；快照断言（同一集合两次检查逐字段相等）
+- 真删事件不参与；快照断言（同一集合两次检查逐字段相等）
 - 报告视图正确性（event_timeline 升序未知末尾 / narrative_order 叙事升序）
 
 实现说明: 直接用真实 TimelineService + 内存 Fake repo（list_all 按
@@ -34,8 +34,8 @@ TS = datetime(2026, 8, 1, 10, 0, 0)
 class FakeTimelineRepo:
     """内存版 TimelineRepositoryProtocol — 一致性检查测试用.
 
-    list_all 按 (narrative_position ASC, created_at ASC) 稳定排序并排除
-    软删除事件（模拟真实仓储契约，spec §8.1）。
+    list_all 按 (narrative_position ASC, created_at ASC) 稳定排序（真删
+    契约下无软删状态，所有现存事件均参与，spec §8.1）。
     """
 
     def __init__(self, events: list[TimelineEvent]) -> None:
@@ -63,8 +63,8 @@ class FakeTimelineRepo:
         return events, len(events)
 
     async def list_all(self, project_id: int) -> list[TimelineEvent]:
-        active = [e for e in self._events if e.project_id.int == project_id and not e.is_deleted]
-        return sorted(active, key=lambda e: (e.narrative_position, e.created_at))
+        events = [e for e in self._events if e.project_id.int == project_id]
+        return sorted(events, key=lambda e: (e.narrative_position, e.created_at))
 
     async def next_position(self, project_id: int) -> int:
         events = await self.list_all(project_id)
@@ -76,20 +76,6 @@ class FakeTimelineRepo:
                 self._events[i] = event
                 return event
         raise KeyError(event.id)
-
-    async def soft_delete(self, event_id: int) -> bool:
-        for e in self._events:
-            if e.id.int == event_id:
-                e.is_deleted = True
-                return True
-        return False
-
-    async def restore(self, event_id: int) -> TimelineEvent | None:
-        for e in self._events:
-            if e.id.int == event_id and e.is_deleted:
-                e.is_deleted = False
-                return e
-        return None
 
     async def hard_delete(self, event_id: int) -> bool:
         before = len(self._events)
@@ -121,7 +107,6 @@ def _event(
     time_display: str = "",
     narrative_position: int = 1,
     timeline_flag: str = "",
-    is_deleted: bool = False,
 ) -> TimelineEvent:
     """构造测试用时间线事件实体（固定时间戳）。"""
     return TimelineEvent(
@@ -132,7 +117,6 @@ def _event(
         time_display=time_display,
         narrative_position=narrative_position,
         timeline_flag=timeline_flag,
-        is_deleted=is_deleted,
         created_at=TS,
         updated_at=TS,
     )
@@ -359,23 +343,6 @@ async def test_include_flashbacks_false_empties_flashbacks() -> None:
     assert legal.flashbacks == []
     assert legal.conflicts == []
     assert legal.consistent is True
-
-
-@pytest.mark.asyncio
-async def test_soft_deleted_events_excluded() -> None:
-    """软删除事件不参与检查（list_all 排除）：[10, 9(删), 8] → checked=2，1 条冲突。"""
-    events = [
-        _event("事件1", time_value=10.0, narrative_position=1),
-        _event("事件2", time_value=9.0, narrative_position=2, is_deleted=True),
-        _event("事件3", time_value=8.0, narrative_position=3),
-    ]
-    report = await _make_service(events).check_consistency(PID)
-    assert report is not None
-    assert report.checked == 2
-    assert report.skipped == 0
-    assert len(report.conflicts) == 1
-    assert report.conflicts[0].prev.title == "事件1"
-    assert report.conflicts[0].next.title == "事件3"
 
 
 @pytest.mark.asyncio

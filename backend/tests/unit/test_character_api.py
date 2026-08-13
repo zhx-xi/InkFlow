@@ -135,7 +135,6 @@ class TestCharacterCRUDAPI:
         assert data["name"] == "林尘"
         assert data["personality"] == "坚韧隐忍"
         assert data["project_id"] == str(PID)
-        assert data["is_deleted"] is False
         svc.create_character.assert_awaited_once_with(
             PID, "林尘", "坚韧隐忍", "", "", None, extra={}
         )
@@ -261,27 +260,15 @@ class TestCharacterCRUDAPI:
         assert response.json()["goals"] == "成为青云宗首席弟子"
 
     @patch("inkflow.api.routers.characters.get_character_service")
-    def test_delete_character_soft_204(self, mock_get_svc: MagicMock) -> None:
-        """软删除角色返回 204（默认 force=False）."""
+    def test_delete_character_204(self, mock_get_svc: MagicMock) -> None:
+        """删除角色返回 204（v1.1 真删，无 force 参数）."""
         svc = _mock_svc(mock_get_svc)
         svc.delete_character = AsyncMock(return_value=True)
 
         char_id = uuid.uuid4()
         response = client.delete(f"/api/v1/characters/{char_id}")
         assert response.status_code == 204
-        svc.delete_character.assert_awaited_once_with(char_id, force=False)
-
-    @patch("inkflow.api.routers.characters.get_character_service")
-    def test_delete_character_force_204(self, mock_get_svc: MagicMock) -> None:
-        """硬删除角色返回 204（?force=true 透传）."""
-        svc = _mock_svc(mock_get_svc)
-        svc.delete_character = AsyncMock(return_value=True)
-
-        response = client.delete(f"/api/v1/characters/{uuid.uuid4()}?force=true")
-        assert response.status_code == 204
-        svc.delete_character.assert_awaited_once()
-        _, kwargs = svc.delete_character.await_args
-        assert kwargs["force"] is True
+        svc.delete_character.assert_awaited_once_with(char_id)
 
     @patch("inkflow.api.routers.characters.get_character_service")
     def test_delete_character_not_found_404(self, mock_get_svc: MagicMock) -> None:
@@ -290,27 +277,6 @@ class TestCharacterCRUDAPI:
         svc.delete_character = AsyncMock(return_value=False)
 
         response = client.delete(f"/api/v1/characters/{uuid.uuid4()}")
-        assert response.status_code == 404
-        assert response.json()["detail"] == "角色不存在"
-
-    @patch("inkflow.api.routers.characters.get_character_service")
-    def test_restore_character_success(self, mock_get_svc: MagicMock) -> None:
-        """恢复角色返回 200 + Character JSON."""
-        svc = _mock_svc(mock_get_svc)
-        char = _char("林尘")
-        svc.restore_character = AsyncMock(return_value=char)
-
-        response = client.post(f"/api/v1/characters/{char.id}/restore")
-        assert response.status_code == 200
-        assert response.json()["name"] == "林尘"
-
-    @patch("inkflow.api.routers.characters.get_character_service")
-    def test_restore_character_not_found_404(self, mock_get_svc: MagicMock) -> None:
-        """恢复不存在的角色返回 404."""
-        svc = _mock_svc(mock_get_svc)
-        svc.restore_character = AsyncMock(return_value=None)
-
-        response = client.post(f"/api/v1/characters/{uuid.uuid4()}/restore")
         assert response.status_code == 404
         assert response.json()["detail"] == "角色不存在"
 
@@ -544,12 +510,14 @@ class TestGroupAPI:
 
     @patch("inkflow.api.routers.characters.get_character_service")
     def test_delete_group_success(self, mock_get_svc: MagicMock) -> None:
-        """删除分组返回 204."""
+        """删除分组返回 204（v1.1 真删，无 force 参数）."""
         svc = _mock_svc(mock_get_svc)
         svc.delete_group = AsyncMock(return_value=True)
 
-        response = client.delete(f"/api/v1/character-groups/{uuid.uuid4()}")
+        gid = uuid.uuid4()
+        response = client.delete(f"/api/v1/character-groups/{gid}")
         assert response.status_code == 204
+        svc.delete_group.assert_awaited_once_with(gid)
 
 
 class TestExtractAPI:
