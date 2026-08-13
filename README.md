@@ -6,7 +6,7 @@
 
 ## ✨ 功能特性
 
-### 已实现（0.1.0 → 0.7.0）
+### 已实现（0.1.0 → 0.8.0）
 
 - **AI 写作管道**：生成 → 续写 → 修订，Agent 角色链编排（架构师 / 写手 / 审阅 / 修订，LangGraph）
 - **创作工具链 8 件套**：
@@ -23,12 +23,20 @@
 - **Agent 集成（0.5.0，v0.5.0 2026-08-08 正式发布）**：会话管理（F24：四态状态机 + 两级删除）· 本地内核服务化（冷启动 kernel.json + GUI 托盘常驻 + CLI 独立发布产物，ADR-030）· 设置持久化（app_settings + 跨重启保留 + 顶部「已保存」提示）· E2E 按页面域拆分（6 job，ADR-028）
 - **导出 + 搜索 + 世界观（0.6.0，2026-08-09 里程碑关闭）**：TXT 导出（F21）· 全文搜索（F22：FTS5+jieba+语义检索）· 章节审计（F34：audit_logs + CLI/GUI 确认闭环）· 世界观三连（F35 地点树 / F36 地图视图 / F37 跨书复制）· CLI 恒经 HTTP（ADR-030 ② 落地，冷启动 4.7s→热调用 ~214ms）· 设置页 E2E 补全
 - **Agent 化升级（0.7.0，v0.7.0 2026-08-12 正式发布）**：Agent 工具基础设施（F26：deepagents 0.7.5 harness + 5 只读工具）· Writer Agent 闭环（F27：ReAct 工具循环 + save_draft 草稿确认流 + 四重护栏 + 决策轨迹）· 记忆系统（F28：从修改/确认行为学习项目偏好 N≥2 + 写作上下文注入 + `inkflow memory list/remove` 可控）· 数据目录设置（#266：`config set data-dir` + GUI 设置页，instance.env 持久化，数据/DB/向量库整体迁移）· 模型测试按钮（#267：ProviderDialog 一键测试真实连接）· E2E 增强（#142/#143）· bug 批（#229 404 映射 / #230 revise 模型回退 / #225 开关持久化 / #231 chapter list / #232 项目卡片跳转）
+- **编排完全体 + Supervisor + 设定库 + RAG + skills + CLI（0.8.0，2026-08-13 18/18 issues 全关）**：
+  - **编排完全体（F42）**：Agent 链三态模型选择（真禁用/项目默认/指定模型）· 执行顺序编辑（agent_order 层级拓扑，槽位 0-9 同层并行）· 默认管线模板（builtin:write_auto 全自动 + builtin:write_continue 续写）· GUI 写作入口管线化 · 自定义 Agent 数据面 + UI（RoleTemplate prompt/name + ProjectConfig 自定义角色）
+  - **F29 Supervisor 自主编排 + HITL**：Command(goto) 动态路由 + 振荡护栏 + deterministic 回退 + 关键节点人工确认
+  - **删除语义统一**：普通实体软删→真删（F1 回收站/F24 归档保留软删）
+  - **RAG 指纹一致性**：向量指纹 + stale 检测 + 重新向量化协议
+  - **F19-skills 包**：官方 skills/inkflow/ 资产 + 用户自定义轨 skills 命令组（install/list/verify/remove）
+  - **CLI 命令面补齐**：provider 管理 / agent template 管理 / project config
+  - **设定库 GUI 升级（F43）**：CRUD 闭环 + 角色等级标签 + 世界观地图工作台 + 大纲三级 + 时间线双序
 - **上下文智能装配**：写作时自动注入相关角色、世界观、伏笔，分层 Token 预算
-- **多界面战略**：CLI（Typer）✅ + REST API（FastAPI）✅ + GUI（Electron + React）✅ + MCP Server（1.0.0）🔜 + 云端 Web（2.0.0）🔜
+- **多界面战略**：CLI（Typer）✅ + REST API（FastAPI）✅ + GUI（Electron + React）✅ + MCP Server（0.9.0）🔜 + 云端 Web（2.0.0）🔜
 
 ### 规划中
 
-skills 包 + MCP Server（1.0.0）· 云存档与异地写作（2.0.0）——明细见 [`FEATURES.md`](FEATURES.md)。
+MCP Server（0.9.0）· 云存档与异地写作（2.0.0）——明细见 [`FEATURES.md`](FEATURES.md)。
 
 ## 🚀 快速开始
 
@@ -72,7 +80,7 @@ uv run inkflow serve
 | 文档 | 内容 | 读者 |
 |------|------|------|
 | [`FEATURES.md`](FEATURES.md) | **功能清单（当前 + 规划，唯一权威）** | 所有人 |
-| [`CHANGELOG.md`](CHANGELOG.md) | 版本变更日志（0.1.0 → 0.7.0） | 所有人 |
+| [`CHANGELOG.md`](CHANGELOG.md) | 版本变更日志（0.1.0 → 0.8.0） | 所有人 |
 | [`design/`](design/) | 产品规格（PRD）、架构分析、里程碑评审、开发工作流 | 开发者 |
 | [`specs/`](specs/) | 功能规格书（每 feature 一份，SDD 真相来源） | 开发者 |
 | [`adr/`](adr/README.md) | 架构决策记录（30 条 + 索引） | 开发者 |
@@ -92,12 +100,13 @@ uv run inkflow serve
 | 0.5.0 | 会话 + 内核服务化 + 设置持久化 + E2E 分层 | ✅（v0.5.0 2026-08-08 正式发布） |
 | 0.6.0 | 导出 + 全文搜索 + 章节审计 + 世界观三连 + CLI 恒 HTTP + E2E 设置页 | ✅（2026-08-09 里程碑关闭） |
 | 0.7.0 | Agent 化升级（deepagents harness · Writer Agent 闭环 · 记忆系统 · 数据目录设置 · 模型测试 · E2E/bug 批） | ✅（v0.7.0 2026-08-12 正式发布） |
+| 0.8.0 | 编排完全体 + Supervisor + 设定库 + RAG 指纹 + skills + CLI（F42/F29/F43/F19-skills/F10） | ✅（2026-08-13 里程碑 18/18 issues 全关） |
 | 1.0.0 | 本地完全可用（CLI + GUI + skills + MCP） | 🔜 |
 | 2.0.0 | 云端（云存档 + 异地写作） | 🔜 |
 
 ## 🛠️ 技术栈
 
-Python 3.11 · FastAPI（REST）· Typer（CLI）· SQLAlchemy 2 async + SQLite（未来 PostgreSQL）· LangChain / LangGraph + Deep Agents harness（deepagents 0.7.5，agentic 编排，0.7.0 起）· Chroma + BGE（RAG）· React 19 + Vite 6 + shadcn/ui + Zustand + Tailwind 4（前端，0.3.0 起）· Electron 34（桌面壳，0.3.0 起）
+Python 3.11 · FastAPI（REST）· Typer（CLI）· SQLAlchemy 2 async + SQLite（未来 PostgreSQL）· LangChain / LangGraph + Deep Agents harness（deepagents 0.7.5，agentic 编排，0.7.0 起）+ 自研 LangGraph StateGraph Supervisor 动态路由（F29，0.8.0 起）· Chroma + BGE（RAG）· React 19 + Vite 6 + shadcn/ui + Zustand + Tailwind 4（前端，0.3.0 起）· Electron 34（桌面壳，0.3.0 起）
 
 架构：**模块化单体 + Clean Architecture**（domain / infrastructure / api / cli 分层，依赖方向单向），决策全部记录于 [`adr/`](adr/README.md)。
 

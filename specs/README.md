@@ -1,7 +1,7 @@
 # specs/ — 功能规格索引
 
 > SDD（Spec-Driven Development）真相来源：每 feature 一个目录 `specs/f<编号>-<短名>/spec.md`。
-> 版本归属以 [ADR-019 v5](../adr/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](../FEATURES.md)。
+> 版本归属以 [ADR-019 v7](../adr/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](../FEATURES.md)。
 > 篇幅纪律（2026-08-08 #201 立规）：新 spec 默认单文件 ≤800 行；超过且章节内聚可拆时允许 `references/` 子目录（spec.md 头部必须声明清单）；已实现 spec 只加「快速导航」块不物理拆分。
 
 ## 分类索引
@@ -72,6 +72,17 @@
 | F27 Writer Agent 闭环 | [`f27-writer-agent/spec.md`](f27-writer-agent/spec.md) | ✅ 已实现（spec PR #240 + 实现 PR #241） |
 | F28 记忆系统 | [`f28-agent-memory/spec.md`](f28-agent-memory/spec.md) | ✅ 已实现（PR #242） |
 
+### 编排完全体 + Supervisor + 设定库 + skills + CLI（0.8.0，已交付 ✅）
+
+| Feature | 规格 | 状态 |
+|---------|------|------|
+| F42 Agent 链配置驱动编排 | [`f42-agent-chain-config/spec.md`](f42-agent-chain-config/spec.md) | ✅ 已实现（spec-only PR #288/#290/#292/#294 + 实现 PR #299/#305/#308/#309/#315/#314） |
+| F43 设定库 GUI 升级 | [`f43-setting-library-crud/spec.md`](f43-setting-library-crud/spec.md) | ✅ 已实现（PR #301/#306/#311/#319/#322） |
+| F29 Supervisor 自主编排 | [`f29-supervisor/spec.md`](f29-supervisor/spec.md) | ✅ 已实现（PR #323 + #324 登记） |
+| F19-skills 包 | [`f19-skills/spec.md`](f19-skills/spec.md) | ✅ 已实现（PR #304） |
+| F10 删除语义统一（v1.1） | [`f10-world-service/spec.md`](f10-world-service/spec.md) | ✅ 已实现（PR #57 v1.0 + #312 v1.1 删除语义统一） |
+| F14 提取门面拆分 | [`f14-extraction-service/spec.md`](f14-extraction-service/spec.md) | ✅ 已实现（PR #72 + #316 拆分） |
+
 ---
 
-> F17 空置（PRD §6.2 标题残留编号）；F18 云端（2.0.0）、F20 MCP（1.0.0）、F29 规划中无 spec（0.8.0 远期占位）；F25 daemon 已移除（ADR-029）不复用。
+> F17 空置（PRD §6.2 标题残留编号）；F18 云端（2.0.0）、F20 MCP（0.9.0）；F25 daemon 已移除（ADR-029）不复用。
