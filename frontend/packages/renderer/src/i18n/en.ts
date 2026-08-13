@@ -43,7 +43,7 @@ export const en: Record<string, string> = {
   'lib.saving': 'Saving…',
   'lib.saved': 'Saved',
   'lib.delete.title': 'Delete {name}?',
-  'lib.delete.confirm': 'Removing immediately after confirmation (soft delete; permanently purged after 30 days)',
+  'lib.delete.confirm': 'Confirmed — removed immediately and cannot be restored',
   'lib.delete.worldCascade': 'This entry and all its children will be cascade-deleted and cannot be recovered',
   'lib.delete.ok': 'Delete',
   // F36 (#196): library category manual-create dialog

@@ -1,4 +1,4 @@
-"""SQLite 地图仓储 — 实现 MapRepositoryProtocol 全部 16 个方法.
+"""SQLite 地图仓储 — 实现 MapRepositoryProtocol 全部 19 个方法.
 
 转换函数（_orm_to_domain / _domain_to_orm / int↔UUID 辅助）按项目惯例
 放在本仓储层（参考 world_repo.py）。
@@ -362,6 +362,38 @@ class SQLiteMapRepository:
             sa_update(MapPinORM)
             .where(MapPinORM.location_id == location_id)
             .values(location_id=None, updated_at=_utcnow())
+        )
+        result = await self._session.execute(stmt)
+        await self._session.commit()
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
+
+    async def clear_ref_pins(self, ref_type: str, ref_ids: builtins.list[int]) -> int:
+        """解除角色/事件关联 pin（UPDATE map_pins SET ref_id=NULL
+        WHERE type=:t AND ref_id IN :ids）.
+
+        pin 保留、label 不变（F43 P5 角色/事件硬删钩子，SET NULL 由 service
+        显式执行，生产 foreign_keys=OFF 下不依赖 FK）。
+        """
+        stmt = (
+            sa_update(MapPinORM)
+            .where(MapPinORM.type == ref_type, MapPinORM.ref_id.in_(ref_ids))
+            .values(ref_id=None, updated_at=_utcnow())
+        )
+        result = await self._session.execute(stmt)
+        await self._session.commit()
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
+
+    async def clear_map_root_locations(self, location_ids: builtins.list[int]) -> int:
+        """解除地图根地点关联（UPDATE maps SET root_location_id=NULL
+        WHERE root_location_id IN :ids）.
+
+        F43 P5 地点硬删钩子扩展: 地点删除后其挂载图 root_location_id 置 NULL
+        （图保留，仅解除根地点关联）。
+        """
+        stmt = (
+            sa_update(MapORM)
+            .where(MapORM.root_location_id.in_(location_ids))
+            .values(root_location_id=None, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)
         await self._session.commit()

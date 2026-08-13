@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -73,6 +74,8 @@ class CharacterService:
         extractor: 角色提取管线（B2）；deps.py 负责组装，默认 None 时
             extract 入口报错（防止静默降级）.
         project_repo: 项目仓储（F1），extract 入口校验项目存在并读取默认模型.
+        map_cleanup: 角色硬删钩子（F43 P5）：删除成功后解除 map_pins.ref_id
+            （type=role）关联；失败由 deps 闭包处理，不阻断主流程.
     """
 
     def __init__(
@@ -81,10 +84,12 @@ class CharacterService:
         repository: CharacterRepositoryProtocol,
         extractor: CharacterExtractor | None = None,
         project_repo: ProjectRepositoryProtocol | None = None,
+        map_cleanup: Callable[[int], Awaitable[None]] | None = None,
     ) -> None:
         self._repo = repository
         self._extractor = extractor
         self._project_repo = project_repo
+        self._map_cleanup = map_cleanup
 
     # ── Character ──────────────────────────────────────────────────
 
@@ -203,6 +208,8 @@ class CharacterService:
     async def delete_character(self, character_id: int | uuid.UUID) -> bool:
         """真删角色（v1.1，spec §7: 角色不存在 → False，router 转 404）.
 
+        F43 P5: 删除成功后触发 map_cleanup 钩子（解除 map_pins.ref_id 关联）。
+
         Args:
             character_id: 角色主键（支持 int 或 UUID）.
 
@@ -210,8 +217,11 @@ class CharacterService:
             True 表示删除成功；False 表示未找到记录.
         """
         cid = _to_int_id(character_id)
-        logger.info("真删角色: character_id=%s（关系由 FK CASCADE 级联）", character_id)
-        return await self._repo.hard_delete(cid)
+        logger.info("真删角色: character_id=%s（关系显式清理 + FK 级联）", character_id)
+        deleted = await self._repo.hard_delete(cid)
+        if deleted and self._map_cleanup is not None:
+            await self._map_cleanup(cid)
+        return deleted
 
     # ── CharacterRelation ──────────────────────────────────────────
 

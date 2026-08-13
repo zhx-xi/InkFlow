@@ -332,9 +332,16 @@ def get_character_service(
     """获取 CharacterService 实例（角色/分组/关系仓储 + AI 提取器）.
 
     装配 CharacterExtractor（LLM 客户端 + Prompt 模板 + 同一仓储实例），
-    extract 入口的项目存在性校验使用 F1 项目仓储。
+    extract 入口的项目存在性校验使用 F1 项目仓储；F43 P5 角色硬删钩子
+    接线 MapService.clear_ref_pins（type=role 关联 pin 显式解除）。
     """
     repo = SQLiteCharacterRepository(db)
+    map_svc = get_map_service(db)
+
+    async def _map_cleanup(role_id: int) -> None:
+        """角色硬删钩子：解除 type=role 关联 pin（F43 P5 显式清理）."""
+        await map_svc.clear_ref_pins("role", [uuid.UUID(int=role_id)])
+
     return CharacterService(
         repository=repo,
         extractor=CharacterExtractor(
@@ -343,6 +350,7 @@ def get_character_service(
             repository=repo,
         ),
         project_repo=SQLiteProjectRepository(db),
+        map_cleanup=_map_cleanup,
     )
 
 
@@ -441,11 +449,19 @@ def get_timeline_service(
     """获取 TimelineService 实例（时间线事件仓储 + F1 项目仓储）.
 
     装配 SQLiteTimelineRepository（事件 CRUD + 双线视图 + 一致性检查），
-    项目存在性校验使用 F1 项目仓储（同 F9/F10/F11 模式）。
+    项目存在性校验使用 F1 项目仓储（同 F9/F10/F11 模式）；F43 P5 事件
+    硬删钩子接线 MapService.clear_ref_pins（type=event 关联 pin 显式解除）。
     """
+    map_svc = get_map_service(db)
+
+    async def _map_cleanup(event_id: int) -> None:
+        """事件硬删钩子：解除 type=event 关联 pin（F43 P5 显式清理）."""
+        await map_svc.clear_ref_pins("event", [uuid.UUID(int=event_id)])
+
     return TimelineService(
         repository=SQLiteTimelineRepository(db),
         project_repo=SQLiteProjectRepository(db),
+        map_cleanup=_map_cleanup,
     )
 
 

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from inkflow.domain.models.timeline import (
@@ -158,6 +159,8 @@ class TimelineService:
         repository: 时间线事件仓储端口（B1）.
         project_repo: 项目仓储（F1），项目存在性校验用；默认 None 时
             依赖项目的入口报错（防止静默降级）.
+        map_cleanup: 事件硬删钩子（F43 P5）：删除成功后解除 map_pins.ref_id
+            （type=event）关联；失败由 deps 闭包处理，不阻断主流程.
     """
 
     def __init__(
@@ -165,9 +168,11 @@ class TimelineService:
         *,
         repository: TimelineRepositoryProtocol,
         project_repo: ProjectRepositoryProtocol | None = None,
+        map_cleanup: Callable[[int], Awaitable[None]] | None = None,
     ) -> None:
         self._repo = repository
         self._project_repo = project_repo
+        self._map_cleanup = map_cleanup
 
     async def _ensure_project(self, project_id: uuid.UUID) -> None:
         """校验项目存在（spec §3.4: 项目不存在 → 404 语义）.
@@ -309,6 +314,8 @@ class TimelineService:
     async def delete_event(self, event_id: int | uuid.UUID) -> bool:
         """真删事件（v1.1，spec §7: 事件不存在 → False，router 转 404）.
 
+        F43 P5: 删除成功后触发 map_cleanup 钩子（解除 map_pins.ref_id 关联）。
+
         Args:
             event_id: 事件主键（支持 int 或 UUID）.
 
@@ -317,7 +324,10 @@ class TimelineService:
         """
         eid = _to_int_id(event_id)
         logger.info("真删时间线事件: event_id=%s", event_id)
-        return await self._repo.hard_delete(eid)
+        deleted = await self._repo.hard_delete(eid)
+        if deleted and self._map_cleanup is not None:
+            await self._map_cleanup(eid)
+        return deleted
 
     # ── 双线视图与一致性检查（spec §5）──────────────────────────
 

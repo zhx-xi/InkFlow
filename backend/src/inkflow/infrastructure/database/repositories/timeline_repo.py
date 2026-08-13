@@ -34,6 +34,7 @@ from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.timeline import TimelineEvent
+from inkflow.infrastructure.database.models.foreshadowing import ForeshadowingORM
 from inkflow.infrastructure.database.models.timeline import TimelineEventORM
 
 
@@ -268,7 +269,10 @@ class SQLiteTimelineRepository:
         return _orm_to_domain(orm)
 
     async def hard_delete(self, event_id: int) -> bool:
-        """物理删除事件（v1.1 默认真删语义）.
+        """物理删除事件（先显式置空伏笔 event_id，foreign_keys=OFF 下不依赖 FK，v1.1 默认真删语义）.
+
+        F43 P5（spec §2.10/§5.18）: 生产连接未开 foreign_keys=ON，显式
+        UPDATE foreshadowings SET event_id=NULL 与主删除同一事务。
 
         Returns:
             True 表示删除成功，False 表示不存在.
@@ -278,6 +282,11 @@ class SQLiteTimelineRepository:
         orm = result.scalar_one_or_none()
         if orm is None:
             return False
+        await self._session.execute(
+            sa_update(ForeshadowingORM)
+            .where(ForeshadowingORM.event_id == event_id)
+            .values(event_id=None)
+        )
         await self._session.delete(orm)
         await self._session.commit()
         return True

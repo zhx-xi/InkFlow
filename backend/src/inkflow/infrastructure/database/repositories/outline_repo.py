@@ -19,6 +19,7 @@ import builtins
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -232,12 +233,31 @@ class SQLiteOutlineRepository:
         return _outline_orm_to_domain(orm)
 
     async def hard_delete(self, outline_id: int) -> bool:
-        """物理删除大纲（其情节点由 DB FK CASCADE 物理删除，v1.1 默认真删语义）."""
+        """物理删除大纲（先显式置空子大纲 parent_id 并删情节点，foreign_keys=OFF 下不依赖 FK）.
+
+        F43 P5（spec §2.10/§5.18）: 生产连接未开 foreign_keys=ON，显式
+        UPDATE outlines SET parent_id=NULL + DELETE plot_points 与主删除
+        同一事务。情节点按子树（含后代大纲）级联删除——测试契约：删除父
+        大纲后直接子大纲 parent_id 置 None 且其情节点行物理消失。
+        """
         stmt = select(OutlineORM).where(OutlineORM.id == outline_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:
             return False
+        # 先收集子树 id（必须早于 parent_id 置空——置空后递归 CTE 断链）
+        subtree = select(OutlineORM.id).where(OutlineORM.id == outline_id).cte(recursive=True)
+        subtree = subtree.union_all(
+            select(OutlineORM.id).where(OutlineORM.parent_id == subtree.c.id)
+        )
+        subtree_ids = (await self._session.execute(select(subtree.c.id))).scalars().all()
+        await self._session.execute(
+            sa_update(OutlineORM).where(OutlineORM.parent_id == outline_id).values(parent_id=None)
+        )
+        if subtree_ids:
+            await self._session.execute(
+                sa_delete(PlotPointORM).where(PlotPointORM.outline_id.in_(subtree_ids))
+            )
         await self._session.delete(orm)
         await self._session.commit()
         return True

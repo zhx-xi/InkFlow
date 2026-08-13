@@ -240,3 +240,34 @@ class MapRepositoryProtocol(Protocol):
             更新行数.
         """
         ...
+
+    async def clear_ref_pins(self, ref_type: str, ref_ids: builtins.list[int]) -> int:
+        """解除角色/事件关联 pin（UPDATE map_pins SET ref_id=NULL
+        WHERE type=:t AND ref_id IN :ids）.
+
+        pin 保留、label 不变（F43 P5 角色/事件硬删钩子，SET NULL 由 service
+        显式执行，生产 foreign_keys=OFF 下不依赖 FK）.
+
+        Args:
+            ref_type: pin 类型（role/event）.
+            ref_ids: 待解除关联的实体主键列表（int）.
+
+        Returns:
+            更新行数.
+        """
+        ...
+
+    async def clear_map_root_locations(self, location_ids: builtins.list[int]) -> int:
+        """解除地图根地点关联（UPDATE maps SET root_location_id=NULL
+        WHERE root_location_id IN :ids）.
+
+        F43 P5 地点硬删钩子扩展: 地点删除后其挂载图 root_location_id 置 NULL
+        （图保留，仅解除根地点关联）.
+
+        Args:
+            location_ids: 待解除关联的地点主键列表（int）.
+
+        Returns:
+            更新行数.
+        """
+        ...
