@@ -383,7 +383,7 @@ test('设定库：删除确认闭环（E2E-E2）——确认框 D11 文案 → �
     const confirm = window.getByTestId('lib-confirm-dialog');
     await expect(confirm).toBeVisible({ timeout: 15_000 });
     await expect(confirm).toContainText('删除角色甲？');
-    await expect(confirm).toContainText('点击确认后立即移除（后台逻辑删除，30 天后彻底清除）');
+    await expect(confirm).toContainText('点击确认后立即移除，不可恢复');
 
     // 确认 → DELETE → ok toast（2s 自动消失 → 时间敏感项先断言）
     await window.getByTestId('lib-confirm-ok').click();
