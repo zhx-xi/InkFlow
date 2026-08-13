@@ -161,8 +161,8 @@ def _make_service(
     svc._template_repo.get = AsyncMock(return_value=None)
     from inkflow.infrastructure.agent.pipeline_templates import get_template
 
-    svc._get_template = get_template  # type: ignore[assignment]
-    svc._list_templates = lambda: {"items": []}  # type: ignore[assignment]
+    svc._get_template = get_template  # type: ignore[assignment]  # 既有模块级函数绑定（签名兼容测试 mock）
+    svc._list_templates = lambda: {"items": []}  # type: ignore[assignment]  # 测试 stub 简化返回值
     svc._load_template = AsyncMock(return_value=None)
     return svc
 

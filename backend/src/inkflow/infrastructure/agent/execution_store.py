@@ -78,10 +78,11 @@ class ExecutionStore:
 
     async def get_hitl_payload(self, execution_id: str) -> dict | None:
         """读取 HITL interrupt payload 快照。"""
-        execution = await self.get_execution(execution_id)
+        execution: AgentExecutionORM | None = await self.get_execution(execution_id)
         if execution is None:
             return None
-        return execution.hitl_payload
+        payload: dict | None = execution.hitl_payload
+        return payload
 
     async def list_executions(
         self,

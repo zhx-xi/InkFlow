@@ -30,7 +30,9 @@ class TestSupervisorExecuteConfig:
 
     def test_import_exists(self) -> None:
         """SupervisorExecuteConfig 可从 domain.models.agent_pipeline import。"""
-        from inkflow.domain.models.agent_pipeline import SupervisorExecuteConfig  # noqa: F401
+        from inkflow.domain.models.agent_pipeline import (
+            SupervisorExecuteConfig,  # noqa: F401  # 契约存在性导入（用例体 lazy，防收集期错误）
+        )
 
         assert True
 
@@ -107,7 +109,7 @@ class TestPipelineExecuteRequestMode:
         with pytest.raises(ValueError):
             PipelineExecuteRequest(
                 project_id="00000000-0000-0000-0000-000000000001",
-                mode="unknown",  # type: ignore[arg-type]
+                mode="unknown",  # type: ignore[arg-type]  # 契约用例：非法 mode 触发 ValidationError
             )
 
     def test_supervisor_config_embedded(self) -> None:
