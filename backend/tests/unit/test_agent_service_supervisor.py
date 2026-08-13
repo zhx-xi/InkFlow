@@ -69,6 +69,7 @@ class MockPipeline:
         self.executed_stages: list[PipelineStage] = []
         self.executed_context: PipelineContext | None = None
         self.supervisor_config = None
+        self.resume_called_with: tuple | None = None
         self.result = PipelineResult(
             stages=[
                 StageResult(stage_id="writer", status=StageStatus.COMPLETED, output="正文"),
@@ -83,6 +84,11 @@ class MockPipeline:
         self.executed_stages = list(stages)
         self.executed_context = context
         self.supervisor_config = supervisor
+        return self.result
+
+    async def resume(self, interrupt_obj, *, approved: bool = False) -> PipelineResult:
+        """HITL resume：confirm 后继续执行（记录调用参数）。"""
+        self.resume_called_with = (interrupt_obj, approved)
         return self.result
 
     def validate(self, stages) -> list[str]:
@@ -141,7 +147,9 @@ def _make_service(
 ) -> AgentService:
     """构造 AgentService（注入 mock pipeline + store，镜像既有惯例）。"""
     svc = AgentService.__new__(AgentService)  # 跳过 __init__（内部延迟 import 依赖真实 DB）
-    svc._pipeline = pipeline or MockPipeline()
+    pipeline = pipeline or MockPipeline()
+    svc._pipeline = pipeline
+    svc._supervisor_pipeline = pipeline  # supervisor 模式共用同一 mock（构造注入）
     svc._store = store or MockExecutionStore()
     # 项目仓库 mock（execute 第一步校验项目存在）
 
