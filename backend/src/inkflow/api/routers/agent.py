@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_db
@@ -14,6 +15,13 @@ from inkflow.infrastructure.agent.langgraph_pipeline import LangGraphAgentPipeli
 from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 
 router = APIRouter(prefix="/api/v1/agent", tags=["Agent"])
+
+
+class ConfirmRequest(BaseModel):
+    """HITL 确认请求体。"""
+
+    approved: bool = Field(..., description="True=继续执行；False=拒绝（回退固定链）")
+    comment: str | None = Field(default=None, description="确认备注（可选）")
 
 
 def _parse_id(id_str: str, detail: str = "资源不存在") -> uuid.UUID:
@@ -57,6 +65,23 @@ async def get_execution_status(
     if result is None:
         raise HTTPException(status_code=404, detail="执行记录不存在")
     return result
+
+
+@router.post("/pipelines/executions/{execution_id}/confirm")
+async def confirm_execution(
+    execution_id: str,
+    data: ConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """HITL 人工确认（waiting_hitl 执行记录 → resume/回退）。"""
+    svc = _svc(db)
+    try:
+        return await svc.confirm_execution(execution_id, approved=data.approved)
+    except AgentServiceError as e:
+        detail = str(e)
+        if "执行记录不存在" in detail:
+            raise HTTPException(status_code=404, detail=detail) from e
+        raise HTTPException(status_code=422, detail=detail) from e
 
 
 @router.get("/pipelines/executions")
