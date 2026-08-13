@@ -33,7 +33,6 @@ interface MapListResponse {
   limit: number;
 }
 
-/** 分类统一响应 {items,...}（timeline 特例为 TimelineView 双数组，取数时单独分支） */
 type CatResponse = ListResponse;
 
 const CATS: Array<{
@@ -353,7 +352,7 @@ export function LibraryPage() {
     };
   }, [currentProjectId]);
 
-  // F43 P3（§5.15）：大纲 tab 加载项目章节列表 → chapter_id → title 映射（章关联徽标标题）
+  // F43 P3：章节标题映射（章关联徽标）
   useEffect(() => {
     if (!currentProjectId || activeCat !== 'outline') {
       setChapterTitles({});
@@ -388,8 +387,7 @@ export function LibraryPage() {
     if (p === 'world') setWorkbenchActive(true);
   }, [searchParams, activeCat]);
 
-  // 当前项目 + 激活分类 → 拉取分类端点（统一响应 {items,...}；timeline 特例 TimelineView 双数组；
-  // #105 修复批：依赖 activeCat 字符串而非 cat 对象；失败 → error 态（library-retry 可重试））
+  // 拉取分类端点（timeline 特例 TimelineView 双数组；失败 → error 态可重试）
   useEffect(() => {
     if (!currentProjectId) {
       setItems([]);
@@ -406,9 +404,7 @@ export function LibraryPage() {
       .then((data) => {
         if (cancelled) return;
         if (current.key === 'timeline') {
-          // §5.16：取完整 TimelineView 双数组（narrative_order 单独存，供双序本地切换）
           const view = data as unknown as TimelineViewData;
-          // 事件 time_display 允许 null（timeline 领域 DTO），items 容器为通用 LibraryItemDTO → 边界收敛
           setItems((view.event_timeline ?? []) as unknown as LibraryItemDTO[]);
           setTimelineNarrative(view.narrative_order ?? []);
         } else {
@@ -750,7 +746,6 @@ export function LibraryPage() {
                 </div>
               </>
             ) : activeCat === 'outline' ? (
-              /* F43 P3（§5.14-5.15）：大纲三级树 + 章关联徽标（替代 P0 平铺列表） */
               <OutlineTree
                 outlines={items}
                 chapterTitles={chapterTitles}
@@ -765,7 +760,6 @@ export function LibraryPage() {
                 }}
               />
             ) : activeCat === 'timeline' ? (
-              /* F43 P4（§5.16-5.17）：时间线双序 + 两级检查（替代 P0 平铺列表） */
               <TimelineView
                 projectId={currentProjectId}
                 eventTimeline={items}
