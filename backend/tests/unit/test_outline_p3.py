@@ -52,6 +52,7 @@ try:
     from inkflow.domain.ports.outline_errors import (
         OutlineChapterRefError,
         OutlineHierarchyError,
+        OutlineLevelError,
     )
 except ImportError:  # RED 阶段: F43 P3 新错误类未实现 → stub（GREEN 建真实类替换）
 
@@ -60,6 +61,9 @@ except ImportError:  # RED 阶段: F43 P3 新错误类未实现 → stub（GREEN
 
     class OutlineHierarchyError(Exception):
         """F43 P3 层级约束错误 stub（GREEN 建真实类替换）."""
+
+    class OutlineLevelError(Exception):
+        """F43 P3 层级非法错误 stub（GREEN 建真实类替换）."""
 
 
 from inkflow.api.app import app
@@ -182,6 +186,13 @@ class TestOutlineP3Models:
         with pytest.raises((ValueError, ValidationError)):
             OutlineCreate(project_id=PID, name="非法层级", level="bogus")
 
+    def test_ob2c_outline_update_level_validation(self) -> None:
+        """OB2c models：OutlineUpdate level 合法/显式 None/非法（覆盖 validate_level 286-288）."""
+        assert OutlineUpdate(name="x", level="volume").level == "volume"
+        assert OutlineUpdate(name="x", level=None).level is None
+        with pytest.raises((ValueError, ValidationError)):
+            OutlineUpdate(name="x", level="bogus")
+
 
 class TestOutlineP3Service:
     """OB3-OB8: service 层层级/章关联校验契约（全 Mock repo 轨）."""
@@ -276,6 +287,35 @@ class TestOutlineP3Service:
         result = await svc.create_outline(PID, "孤立章", level="chapter", parent_id=None)
         assert result.model_dump()["level"] == "chapter"
         assert result.model_dump()["parent_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_ob2b_service_invalid_level_raises_level_error(self, mock_repo) -> None:
+        """OB2b service：create_outline(level="invalid") → OutlineLevelError（覆盖 L156/L99）."""
+        svc = _make_service(mock_repo)
+        with pytest.raises(OutlineLevelError):
+            await svc.create_outline(PID, "非法层级", level="invalid")
+
+    @pytest.mark.asyncio
+    async def test_ob4b_service_parent_not_found_raises_hierarchy(self, mock_repo) -> None:
+        """OB4b service：volume + parent 不存在 → OutlineHierarchyError（覆盖 L162）."""
+        mock_repo.get = AsyncMock(return_value=None)
+        svc = _make_service(mock_repo)
+        with pytest.raises(OutlineHierarchyError):
+            await svc.create_outline(PID, "卷甲", level="volume", parent_id=uuid.uuid4())
+
+    @pytest.mark.asyncio
+    async def test_ob9b_service_update_clears_parent_and_chapter(self, mock_repo) -> None:
+        """OB9b service：update 清除 parent_id/chapter_id 为 None（覆盖 L299/L302）."""
+        existing = _outline(
+            "章甲", level="chapter", parent_id=uuid.uuid4(), chapter_id=uuid.uuid4()
+        )
+        mock_repo.get = AsyncMock(return_value=existing)
+        mock_repo.update = AsyncMock(side_effect=lambda o: o)
+        svc = _make_service(mock_repo)
+        update = OutlineUpdate(parent_id="", chapter_id="")
+        result = await svc.update_outline(existing.id, update)
+        assert result.parent_id is None
+        assert result.chapter_id is None
 
 
 class TestOutlineP3API:
