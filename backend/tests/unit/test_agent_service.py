@@ -707,3 +707,57 @@ class TestExecuteAgentOrder:
             "auditor",
             "reviser",
         ]
+
+
+class TestListTemplatesNewBuiltin:
+    """F42 #297：list_templates() 暴露 write_auto / write_continue（M6）。"""
+
+    def test_list_templates_includes_new_templates(self) -> None:
+        """list_templates() 返回含 write_auto / write_continue（CLI agent template
+        pipelines 自动暴露）。"""
+        service, _, _, _, _ = _build_service()
+
+        result = service.list_templates()
+
+        ids = [t["id"] for t in result["items"]]
+        assert "builtin:write_auto" in ids
+        assert "builtin:write_continue" in ids
+        auto = next(t for t in result["items"] if t["id"] == "builtin:write_auto")
+        assert auto["stages"] == ["architect", "writer", "auditor", "reviser"]
+        cont = next(t for t in result["items"] if t["id"] == "builtin:write_continue")
+        assert cont["stages"] == ["writer", "auditor", "reviser"]
+
+
+class TestExecuteNewBuiltinTemplates:
+    """F42 #297：execute 双模板默认模板模式（agent_order 空，null 不跳过，M5）。"""
+
+    async def test_execute_write_auto_default_mode(self) -> None:
+        """execute(builtin:write_auto) 默认模板模式：4 角色照常（null 不跳过）。"""
+        config = ProjectConfig(agent_writer=None)  # null 不触发跳过（默认模板模式）
+        project = _make_project(config=config)
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+        request = PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_auto")
+
+        await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        assert [s.id for s in pipeline.executed_stages] == [
+            "architect",
+            "writer",
+            "auditor",
+            "reviser",
+        ]
+
+    async def test_execute_write_continue_default_mode(self) -> None:
+        """execute(builtin:write_continue) 默认模板模式：3 角色（无 architect）。"""
+        config = ProjectConfig(agent_writer=None)
+        project = _make_project(config=config)
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+        request = PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_continue")
+
+        await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        assert [s.id for s in pipeline.executed_stages] == ["writer", "auditor", "reviser"]
