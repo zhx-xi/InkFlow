@@ -52,3 +52,5 @@ pr-body-*.md
 frontend/packages/kernel/
 frontend/packages/electron/dist/
 frontend/packages/electron/renderer-dist/
+
+.tmp
