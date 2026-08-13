@@ -12,8 +12,10 @@ import asyncio
 import json
 import sys
 import uuid
+from pathlib import Path
 
 import typer
+import yaml
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
@@ -151,15 +153,51 @@ def check_status(
             typer.echo(f"错误: {result['error']}")
 
 
+def _load_pipeline_config(file: str) -> dict:
+    """读 YAML 管线文件 → dict（强制 source=yaml）；错误抛 ValueError（消息即原因）."""
+    try:
+        raw = Path(file).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise ValueError(f"配置文件不存在: {file}") from None
+    try:
+        config = yaml.safe_load(raw)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"YAML 解析失败: {exc}") from None
+    if not isinstance(config, dict):
+        raise TypeError("管线配置必须是 YAML 映射")
+    config.setdefault("source", "yaml")
+    return config
+
+
 @app.command("validate")
 def validate_pipeline_config(
+    ctx: typer.Context,
     file: str = typer.Option(..., "--file", "-f", help="管线 YAML 文件路径"),
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
 ) -> None:
-    """校验管线配置文件"""
-    # Phase 1: 仅打印提示，Phase 2 实现完整 YAML 解析
-    typer.echo("⚠️ YAML 管线校验将在 Phase 2 实现")
-    typer.echo(f"   文件: {file}")
+    """校验管线配置文件（读 YAML → POST /agent/pipelines/validate）"""
+    cli_ctx: CliContext = ctx.obj
+    try:
+        config = _load_pipeline_config(file)
+    except (ValueError, TypeError) as exc:
+        print_error(cli_ctx, "VALIDATION_ERROR", str(exc))
+        raise typer.Exit(1) from None
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post("/agent/pipelines/validate", json=config)
+
+    result = _run_ctx(cli_ctx, _impl)
+    if cli_ctx.json_output or json_output:
+        print_result(cli_ctx, result)
+    else:
+        if result["valid"]:
+            typer.echo("✅ 管线配置有效")
+        else:
+            errors = "; ".join(result.get("errors") or [])
+            typer.echo(f"❌ 管线配置无效: {errors}")
 
 
 template_app = typer.Typer(name="template", help="Agent 模板管理", no_args_is_help=True)

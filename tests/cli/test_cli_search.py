@@ -373,11 +373,11 @@ class TestSearchQuery:
 
 
 class TestSearchRebuild:
-    """--rebuild 命令契约（设计假设 #3/#5，v1.2 经 POST 端点）。"""
+    """--rebuild 命令契约（设计假设 #3/#5，v1.2 经 POST 端点；#251 P3 多项目）。"""
 
     def test_rebuild_human_post_called(self, cli_runner, fake_http_client):
-        """--rebuild 缺省项目 → POST /search/rebuild（无 project_id），退出 0。"""
-        fake_http_client.post.return_value = {"rebuilt_at": TS, "project_id": None}
+        """--rebuild 缺省项目 → POST /search/rebuild（无 project_ids），退出 0。"""
+        fake_http_client.post.return_value = {"rebuilt_at": TS, "project_ids": None}
         result = cli_runner.invoke(
             app, ["--rebuild"], obj=CliContext(json_output=False)
         )
@@ -385,24 +385,26 @@ class TestSearchRebuild:
         call = fake_http_client.post.await_args
         assert call is not None, "POST /search/rebuild 未被调用"
         assert call.args[0] == "/search/rebuild"
-        assert "project_id" not in _params(call)
+        assert "project_ids" not in _params(call)
 
     def test_rebuild_json_envelope(self, cli_runner, fake_http_client):
-        """--rebuild --json → 成功信封 data = {"rebuilt_at", "project_id"}。"""
-        fake_http_client.post.return_value = {"rebuilt_at": TS, "project_id": None}
+        """--rebuild --json → 成功信封 data = {"rebuilt_at", "project_ids"}。"""
+        fake_http_client.post.return_value = {"rebuilt_at": TS, "project_ids": None}
         result = cli_runner.invoke(
             app, ["--rebuild", "--json"], obj=CliContext(json_output=True)
         )
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["ok"] is True
-        assert data["data"] == {"rebuilt_at": TS, "project_id": None}
+        assert data["data"] == {"rebuilt_at": TS, "project_ids": None}
 
-    def test_rebuild_with_project_passes_project_id(self, cli_runner, fake_http_client):
-        """--rebuild -p X → POST params project_id=str(X)（单项目重建）。"""
+    def test_rebuild_with_project_passes_project_ids(
+        self, cli_runner, fake_http_client
+    ):
+        """--rebuild -p X → POST params project_ids=str(X)（单项目重建）。"""
         fake_http_client.post.return_value = {
             "rebuilt_at": TS,
-            "project_id": str(PID),
+            "project_ids": [str(PID)],
         }
         result = cli_runner.invoke(
             app, ["--rebuild", "-p", str(PID)], obj=CliContext(json_output=False)
@@ -411,7 +413,27 @@ class TestSearchRebuild:
         call = fake_http_client.post.await_args
         assert call is not None, "POST /search/rebuild 未被调用"
         assert call.args[0] == "/search/rebuild"
-        assert _params(call)["project_id"] == str(PID)
+        assert _params(call)["project_ids"] == str(PID)
+
+    def test_rebuild_multi_project_passes_project_ids(
+        self, cli_runner, fake_http_client
+    ):
+        """--rebuild -p X -p Y → POST params project_ids=X,Y + 人类输出计数（#251 P3）。"""
+        fake_http_client.post.return_value = {
+            "rebuilt_at": TS,
+            "project_ids": [str(PID), str(PID2)],
+        }
+        result = cli_runner.invoke(
+            app,
+            ["--rebuild", "-p", str(PID), "-p", str(PID2)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        call = fake_http_client.post.await_args
+        assert call is not None, "POST /search/rebuild 未被调用"
+        assert call.args[0] == "/search/rebuild"
+        assert _params(call)["project_ids"] == f"{PID},{PID2}"
+        assert "2 个项目" in result.output
 
 
 # ── 错误分支全覆盖（F22 QA 补测 2026-08-09：覆盖率 98.47 < 98.5 门禁，F38 各 CLI 同款分支）──

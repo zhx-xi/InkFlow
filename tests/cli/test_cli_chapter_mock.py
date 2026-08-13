@@ -462,3 +462,51 @@ class TestChapterMove:
         payload = json.loads(result.stdout)
         assert payload["ok"] is False
         assert payload["error"]["code"] == "NOT_FOUND"
+
+
+class TestVolumeUpdate:
+    """volume update 命令契约（#251 P3：现仅 create/list/delete）。"""
+
+    def test_update_json(self, cli_runner, fake_http_client):
+        """volume update --json → PATCH /volumes/{id}（--order → body order_index）."""
+        vid = uuid.uuid4()
+        fake_http_client.patch.return_value = _make_volume(title="新卷名")
+        result = cli_runner.invoke(
+            volume_app,
+            ["update", "--id", str(vid), "--title", "新卷名", "--order", "2.5"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is True
+        assert payload["data"]["title"] == "新卷名"
+        call = fake_http_client.patch.await_args
+        assert call is not None, "PATCH 未被调用"
+        assert call.args[0] == f"/volumes/{vid}"
+        body = call.kwargs.get("json") or {}
+        assert body["title"] == "新卷名"
+        assert body["order_index"] == 2.5
+
+    def test_update_human(self, cli_runner, fake_http_client):
+        """volume update 人类模式 → 成功提示."""
+        fake_http_client.patch.return_value = _make_volume()
+        result = cli_runner.invoke(
+            volume_app,
+            ["update", "--id", str(uuid.uuid4()), "--title", "新卷名"],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "新卷名" in result.output
+
+    def test_update_not_found(self, cli_runner, fake_http_client):
+        """卷不存在 → NOT_FOUND 错误信封 + 退出码 1."""
+        fake_http_client.patch.side_effect = _http_error(404, "卷不存在")
+        result = cli_runner.invoke(
+            volume_app,
+            ["update", "--id", str(uuid.uuid4()), "--title", "新卷名"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is False
+        assert payload["error"]["code"] == "NOT_FOUND"

@@ -306,15 +306,88 @@ class TestAgentStatusExecution:
 
 
 class TestAgentValidateExecution:
-    """agent validate 真实执行：Phase 1 占位提示。"""
+    """agent validate 真实执行：读 YAML → POST /agent/pipelines/validate（#251 P3）。"""
+
+    _VALID_RESULT: ClassVar[dict] = {"valid": True, "errors": []}
 
     @pytest.mark.agent
-    def test_validate_prints_phase2_hint(self):
-        """validate：打印 Phase 2 占位提示 + 文件路径回显。"""
-        result = runner.invoke(app, ["agent", "validate", "--file", "pipeline.yaml"])
+    def test_validate_reads_yaml_and_posts(self, fake_http_client, tmp_path):
+        """读 YAML 文件 → POST /agent/pipelines/validate（body source=yaml）。"""
+        yaml_file = tmp_path / "pipeline.yaml"
+        yaml_file.write_text(
+            "name: 测试管线\n"
+            "description: 测试\n"
+            "stages:\n"
+            "  - id: writer\n"
+            "    name: 写手\n"
+            "    agent:\n"
+            "      id: writer\n"
+            "      name: 写手\n"
+            "      system_prompt: 你是写手\n"
+            "    input_from: []\n"
+            "    output_to: []\n",
+            encoding="utf-8",
+        )
+        fake_http_client.post.return_value = self._VALID_RESULT
+        result = runner.invoke(app, ["agent", "validate", "--file", str(yaml_file)])
         assert result.exit_code == 0
-        assert "⚠️ YAML 管线校验将在 Phase 2 实现" in result.stdout
-        assert "   文件: pipeline.yaml" in result.stdout
+        assert "✅" in result.output
+        call = fake_http_client.post.await_args
+        assert call is not None, "POST 未被调用"
+        assert call.args[0] == "/agent/pipelines/validate"
+        body = call.kwargs.get("json") or {}
+        assert body["source"] == "yaml"
+        assert body["name"] == "测试管线"
+
+    @pytest.mark.agent
+    def test_validate_file_not_found(self, fake_http_client):
+        """文件不存在 → VALIDATION_ERROR 信封 + 退出码 1，不调 POST。"""
+        result = runner.invoke(app, ["agent", "validate", "--file", "nonexistent.yaml"])
+        assert result.exit_code == 1
+        fake_http_client.post.assert_not_awaited()
+
+    @pytest.mark.agent
+    def test_validate_yaml_parse_error(self, fake_http_client, tmp_path):
+        """非法 YAML → VALIDATION_ERROR + 退出码 1，不调 POST。"""
+        yaml_file = tmp_path / "bad.yaml"
+        yaml_file.write_text("name: [unclosed\n", encoding="utf-8")
+        result = runner.invoke(app, ["agent", "validate", "--file", str(yaml_file)])
+        assert result.exit_code == 1
+        fake_http_client.post.assert_not_awaited()
+
+    @pytest.mark.agent
+    def test_validate_non_mapping(self, fake_http_client, tmp_path):
+        """YAML 非映射（列表）→ VALIDATION_ERROR + 退出码 1，不调 POST。"""
+        yaml_file = tmp_path / "list.yaml"
+        yaml_file.write_text("- item1\n- item2\n", encoding="utf-8")
+        result = runner.invoke(app, ["agent", "validate", "--file", str(yaml_file)])
+        assert result.exit_code == 1
+        fake_http_client.post.assert_not_awaited()
+
+    @pytest.mark.agent
+    def test_validate_invalid_pipeline(self, fake_http_client, tmp_path):
+        """后端返回 valid=False → ❌ 管线配置无效 + errors 回显。"""
+        yaml_file = tmp_path / "pipeline.yaml"
+        yaml_file.write_text("name: x\nstages: []\n", encoding="utf-8")
+        fake_http_client.post.return_value = {"valid": False, "errors": ["阶段为空"]}
+        result = runner.invoke(app, ["agent", "validate", "--file", str(yaml_file)])
+        assert result.exit_code == 0
+        assert "❌ 管线配置无效" in result.output
+        assert "阶段为空" in result.output
+
+    @pytest.mark.agent
+    def test_validate_json_output(self, fake_http_client, tmp_path):
+        """根级 --json → 成功信封 data = {valid, errors}。"""
+        yaml_file = tmp_path / "pipeline.yaml"
+        yaml_file.write_text("name: x\nstages: []\n", encoding="utf-8")
+        fake_http_client.post.return_value = {"valid": True, "errors": []}
+        result = runner.invoke(
+            app, ["--json", "agent", "validate", "--file", str(yaml_file)]
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["ok"] is True
+        assert data["data"]["valid"] is True
 
 
 class TestAgentTemplateExecution:
@@ -353,3 +426,14 @@ class TestAgentTemplateExecution:
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {"items": [self._TPL]}
         assert "内置管线模板" not in result.stdout
+
+    @pytest.mark.agent
+    def test_template_crud_list_with_items(self, fake_http_client):
+        """agent template list（CRUD 组）有 items → 逐条输出（含默认标记）。"""
+        fake_http_client.get.return_value = {
+            "items": [{"id": 1, "name": "模板A", "is_default": True}]
+        }
+        result = runner.invoke(app, ["agent", "template", "list"])
+        assert result.exit_code == 0
+        assert "[1] 模板A" in result.output
+        assert "⭐ 默认" in result.output

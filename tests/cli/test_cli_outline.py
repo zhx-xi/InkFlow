@@ -657,6 +657,90 @@ class TestArcUpdate:
         fake_http_client.patch.assert_awaited()
 
 
+class TestPointGet:
+    """point get 命令契约（#251 P3：point 子组现无 get）。"""
+
+    def test_point_get_json(self, cli_runner, fake_http_client):
+        """point get --json → 成功信封 + GET /plot-points/{id}."""
+        pid = uuid.uuid4()
+        fake_http_client.get.return_value = _make_point()
+        result = cli_runner.invoke(
+            app, ["point", "get", "--id", str(pid)], obj=CliContext(json_output=True)
+        )
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is True
+        assert payload["data"]["name"] == "主角登场"
+        call = fake_http_client.get.await_args
+        assert call is not None, "GET 未被调用"
+        assert call.args[0] == f"/plot-points/{pid}"
+
+    def test_point_get_not_found(self, cli_runner, fake_http_client):
+        """情节点不存在 → NOT_FOUND 错误信封 + 退出码 1."""
+        fake_http_client.get.side_effect = _http_error(404, "情节点不存在")
+        result = cli_runner.invoke(
+            app,
+            ["point", "get", "--id", str(uuid.uuid4())],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is False
+        assert payload["error"]["code"] == "NOT_FOUND"
+
+    def test_point_get_human(self, cli_runner, fake_http_client):
+        """point get 人类模式 → 字段对齐输出."""
+        pid = uuid.uuid4()
+        fake_http_client.get.return_value = _make_point()
+        result = cli_runner.invoke(
+            app, ["point", "get", "--id", str(pid)], obj=CliContext(json_output=False)
+        )
+        assert result.exit_code == 0
+        assert "主角登场" in result.output
+
+
+class TestArcGet:
+    """arc get 命令契约（#251 P3：arc 子组现无 get）。"""
+
+    def test_arc_get_json(self, cli_runner, fake_http_client):
+        """arc get --json → 成功信封 + GET /story-arcs/{id}."""
+        aid = uuid.uuid4()
+        fake_http_client.get.return_value = _make_arc()
+        result = cli_runner.invoke(
+            app, ["arc", "get", "--id", str(aid)], obj=CliContext(json_output=True)
+        )
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is True
+        assert payload["data"]["name"] == "主角成长线"
+        call = fake_http_client.get.await_args
+        assert call is not None, "GET 未被调用"
+        assert call.args[0] == f"/story-arcs/{aid}"
+
+    def test_arc_get_not_found(self, cli_runner, fake_http_client):
+        """弧线不存在 → NOT_FOUND 错误信封 + 退出码 1."""
+        fake_http_client.get.side_effect = _http_error(404, "弧线不存在")
+        result = cli_runner.invoke(
+            app,
+            ["arc", "get", "--id", str(uuid.uuid4())],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is False
+        assert payload["error"]["code"] == "NOT_FOUND"
+
+    def test_arc_get_human(self, cli_runner, fake_http_client):
+        """arc get 人类模式 → 字段对齐输出."""
+        aid = uuid.uuid4()
+        fake_http_client.get.return_value = _make_arc()
+        result = cli_runner.invoke(
+            app, ["arc", "get", "--id", str(aid)], obj=CliContext(json_output=False)
+        )
+        assert result.exit_code == 0
+        assert "主角成长线" in result.output
+
+
 class TestArcDelete:
     def test_arc_delete_force_json(self, cli_runner, fake_http_client):
         """arc delete --force --json → 成功信封 + 真删除."""

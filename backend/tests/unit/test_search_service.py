@@ -24,13 +24,14 @@
      ③ 查询词分词 + MATCH 构造（每词 ``"<词>"`` 引号包裹空格连接，隐式 AND）
      ④ ``search_repo.query(match, project_ids=[p.int ...], types, limit, offset)``
      ⑤ 组装 SearchResponse（total/hits/query/types/mode/project_ids 回显，见 9）
-   - ``async def rebuild(self, project_id: int | None = None) -> None``（手动全量重建，
+   - ``async def rebuild(self, project_ids: list[int] | None = None) -> dict``（手动全量重建，
      API/CLI 调用；跳过脏检测）:
-     - ``project_id=None``: ``project_repo.list_all()``（分页循环，limit=50 默认）
+     - ``project_ids=None``: ``project_repo.list_all()``（分页循环，limit=50 默认）
        枚举全部项目 → 合并收集文档一次重建
-     - ``project_id=<int>``: 先 ``project_repo.get(pid)`` 校验（None → ProjectNotFoundError）
+     - ``project_ids=[...]``: 逐 ``project_repo.get(pid)`` 校验（None → ProjectNotFoundError）
      - 流程: ``search_repo.ensure_index()``（幂等建表）→ 收集 6 类文档 →
-       ``search_repo.rebuild(documents)``
+       ``search_repo.rebuild(documents)``；返回
+       ``{"rebuilt_at": str, "project_ids": [str] | None}``（None = 全部）
 
 3. 内部装配缝（GREEN 按此实现，测试以 mock 断言行为）:
 
@@ -486,12 +487,12 @@ async def test_manual_rebuild_all_projects(repos):
 
 
 async def test_manual_rebuild_single_project_validates(repos):
-    """M13: rebuild(123) 单项目——先校验项目存在，再重建该项目文档."""
+    """M13: rebuild([123]) 单项目——先校验项目存在，再重建该项目文档."""
     pid = uuid.UUID(int=1000)
     _given_project(repos, pid)
     repos.character_repo.list.return_value = ([_character(pid, uuid.UUID(int=1002), "龙女")], 1)
 
-    await _make_service(repos).rebuild(pid.int)
+    await _make_service(repos).rebuild([pid.int])
 
     repos.project_repo.get.assert_awaited_once_with(pid.int)
     repos.search_repo.ensure_index.assert_awaited_once()
@@ -501,12 +502,33 @@ async def test_manual_rebuild_single_project_validates(repos):
     repos.search_repo.is_stale.assert_not_awaited()
 
 
+async def test_manual_rebuild_multi_project_validates(repos):
+    """M13: rebuild([a, b]) 多项目——逐项目校验后合并重建一次（#251 P3）。"""
+    p1 = uuid.UUID(int=1000)
+    p2 = uuid.UUID(int=2000)
+    repos.project_repo.get.side_effect = [_project(p1), _project(p2)]
+    repos.character_repo.list.side_effect = [
+        ([_character(p1, uuid.UUID(int=1002), "龙女")], 1),
+        ([_character(p2, uuid.UUID(int=2002), "剑客")], 1),
+    ]
+
+    await _make_service(repos).rebuild([p1.int, p2.int])
+
+    assert repos.project_repo.get.await_count == 2
+    repos.search_repo.ensure_index.assert_awaited_once()
+    repos.search_repo.rebuild.assert_awaited_once()
+    docs = _rebuild_docs(repos)
+    assert {d.project_id for d in docs} == {p1.int, p2.int}
+    repos.project_repo.list_all.assert_not_awaited()
+    repos.search_repo.is_stale.assert_not_awaited()
+
+
 async def test_manual_rebuild_missing_project_raises(repos):
     """E1: rebuild 传不存在项目 → ProjectNotFoundError，不重建."""
     repos.project_repo.get.return_value = None
 
     with pytest.raises(ProjectNotFoundError):
-        await _make_service(repos).rebuild(999)
+        await _make_service(repos).rebuild([999])
 
     repos.search_repo.rebuild.assert_not_awaited()
 

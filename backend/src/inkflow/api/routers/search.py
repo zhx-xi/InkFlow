@@ -158,14 +158,19 @@ async def search_endpoint(
 @router.post("/rebuild")
 async def rebuild_endpoint(
     project_id: str | None = None,
+    project_ids: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """手动全量重建索引（v1.2 新增，承接 CLI --rebuild，spec §3.1/M13）.
+    """手动全量重建索引（v1.2 新增；#251 P3 多项目升级，spec §3.1/M13）.
 
-    project_id 缺省 = 全部项目（service.rebuild(None)）；传 = 单项目
-    （service.rebuild(<UUID>.int)，spec §8.2 project_ids 为 list[int] 口径）。
-    返回 {"rebuilt_at": str, "project_id": str | None}。
+    project_id / project_ids 都缺省 = 全部项目（service.rebuild(None)）；
+    提供任一 → _resolve_project_ids 解析为 list[int] 传 service。
+    返回 {"rebuilt_at": str, "project_ids": [str] | None}。
     """
-    pid = uuid.UUID(project_id).int if project_id else None
+    if project_id is None and project_ids is None:
+        pid_list: list[int] | None = None
+    else:
+        pids = _resolve_project_ids(project_id, project_ids)
+        pid_list = [p.int for p in pids]
     svc = await _get_svc()
-    return cast(dict[str, Any], await _run_service(svc.rebuild(pid)))
+    return cast(dict[str, Any], await _run_service(svc.rebuild(pid_list)))

@@ -119,10 +119,10 @@ def _print_human(data: dict, name_map: dict[str, str]) -> None:
 
 
 def _print_rebuild_human(data: dict) -> None:
-    """--rebuild 人类输出：重建完成提示（spec §4）."""
-    pid = data.get("project_id")
-    if pid:
-        typer.echo(f"✅ 索引重建完成 (project {pid})")
+    """--rebuild 人类输出：project_ids 非空 → 计数；否则全部项目（spec §4）."""
+    pids = data.get("project_ids")
+    if pids:
+        typer.echo(f"✅ 索引重建完成 ({len(pids)} 个项目)")
     else:
         typer.echo("✅ 索引重建完成 (全部项目)")
 
@@ -154,7 +154,7 @@ def search_cmd(
             if rebuild:
                 params: dict[str, str] = {}
                 if project_ids:
-                    params["project_id"] = project_ids[0]
+                    params["project_ids"] = ",".join(project_ids)
                 return (
                     await client.post("/search/rebuild", params=params or None),
                     name_map,
