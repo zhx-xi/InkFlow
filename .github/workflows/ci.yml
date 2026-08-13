@@ -154,7 +154,7 @@ jobs:
       - name: "Guardrail: file length (monster file ban)"
         shell: pwsh
         run: |
-          uv run python ../ci_cd/check_file_length.py 900 src/ ../tests/ tests/unit/
+          uv run python ../ci_cd/check_file_length.py 900 src/ ../tests/ tests/unit/ ../frontend/packages/
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: "Guardrail: noqa must carry a reason"
