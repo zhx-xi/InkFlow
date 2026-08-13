@@ -1,10 +1,10 @@
 """SQLiteWorldRepository 集成测试 — in-memory SQLite（F10 仓储层 RED→GREEN）.
 
-覆盖 WorldRepositoryProtocol 全部 11 个方法（spec §8.1 / §9 仓储测试）:
-- 条目 CRUD 往返（add/get/list/update/soft_delete/restore/hard_delete）
-- get_by_name 命中与未命中（跨项目隔离、软删后不命中）
-- partial unique: 活动同名唯一；软删后可重建同名；恢复旧记录 → IntegrityError
-- 软删除后 get 返回 None
+覆盖 WorldRepositoryProtocol 方法（spec §8.1 / §9 仓储测试）:
+- 条目 CRUD 往返（add/get/list/update/hard_delete）
+- get_by_name 命中与未命中（跨项目隔离）
+- 全唯一索引: 同层级同名唯一；真删后重建同名
+- 真删后 get 返回 None
 - list 搜索（name icontains）/category 过滤（含空串 = 未分类）
 - list_categories 聚合（计数、排除空类别、count 降序 + category 升序）
 - 分页（offset/limit，越界返回空列表）
@@ -110,7 +110,6 @@ class TestWorldRepository:
         assert saved.category == "设定"
         assert saved.content == "天地灵气复苏，万物可修行。"
         assert saved.extra == {"别名": ["灵气时代"]}
-        assert saved.is_deleted is False
 
         # 持久化验证：直接查表
         row = await db_session.execute(
@@ -130,8 +129,8 @@ class TestWorldRepository:
         repo = SQLiteWorldRepository(db_session)
         assert await repo.get(99999) is None
 
-    async def test_get_by_name_hit_miss_and_excludes_soft_deleted(self, db_session, project):
-        """get_by_name 命中活动条目；未命中/跨项目/软删后均返回 None."""
+    async def test_get_by_name_hit_miss(self, db_session, project):
+        """get_by_name 命中条目；未命中/跨项目/真删后均返回 None."""
         repo = SQLiteWorldRepository(db_session)
         s = await repo.add(_setting(project, "灵气复苏"))
 
@@ -146,21 +145,20 @@ class TestWorldRepository:
         await db_session.refresh(other)
         assert await repo.get_by_name(other.id, "灵气复苏") is None
 
-        # 软删后不再命中
-        await repo.soft_delete(s.id.int)
+        # 真删后不再命中
+        await repo.hard_delete(s.id.int)
         assert await repo.get_by_name(project.id, "灵气复苏") is None
 
-    async def test_list_returns_active_settings_with_total(self, db_session, project):
-        """list 排除软删与其他项目，返回 (列表, 总数)."""
+    async def test_list_returns_settings_with_total(self, db_session, project):
+        """list 返回 (列表, 总数)."""
         repo = SQLiteWorldRepository(db_session)
         s1 = await repo.add(_setting(project, "灵气复苏"))
         s2 = await repo.add(_setting(project, "宗门等级"))
         s3 = await repo.add(_setting(project, "古神禁地"))
-        await repo.soft_delete(s3.id.int)
 
         settings, total = await repo.list(project.id)
-        assert total == 2
-        assert {s.id for s in settings} == {s1.id, s2.id}
+        assert total == 3
+        assert {s.id for s in settings} == {s1.id, s2.id, s3.id}
 
     async def test_list_search_icontains(self, db_session, project):
         """search 对 name 不区分大小写子串匹配."""
@@ -245,36 +243,6 @@ class TestWorldRepository:
         got = await repo.get(s.id.int)
         assert got is not None and got.name == "灵气复苏·改"
 
-    async def test_soft_delete_then_get_returns_none(self, db_session, project):
-        """软删除后 get/get_by_name/list 均不可见；重复软删返回 False."""
-        repo = SQLiteWorldRepository(db_session)
-        s = await repo.add(_setting(project, "灵气复苏"))
-
-        assert await repo.soft_delete(s.id.int) is True
-        assert await repo.get(s.id.int) is None
-        assert await repo.get_by_name(project.id, "灵气复苏") is None
-        settings, total = await repo.list(project.id)
-        assert settings == [] and total == 0
-
-        # 已删除/不存在 → False
-        assert await repo.soft_delete(s.id.int) is False
-        assert await repo.soft_delete(99999) is False
-
-    async def test_restore_setting(self, db_session, project):
-        """restore 恢复软删条目；恢复未删除/不存在的条目返回 None（重复操作无毒）."""
-        repo = SQLiteWorldRepository(db_session)
-        s = await repo.add(_setting(project, "灵气复苏"))
-        await repo.soft_delete(s.id.int)
-
-        restored = await repo.restore(s.id.int)
-        assert restored is not None
-        assert restored.id == s.id
-        assert restored.is_deleted is False
-        assert await repo.get(s.id.int) is not None
-
-        assert await repo.restore(s.id.int) is None
-        assert await repo.restore(99999) is None
-
     async def test_hard_delete_setting(self, db_session, project):
         """hard_delete 物理删除条目行；重复删除返回 False."""
         repo = SQLiteWorldRepository(db_session)
@@ -284,14 +252,14 @@ class TestWorldRepository:
         assert await repo.get(s.id.int) is None
         assert await repo.hard_delete(s.id.int) is False
 
-    # ── partial unique ──
+    # ── 全唯一索引 ──
 
     async def test_duplicate_active_name_raises_integrity_error(self, db_session, project):
-        """插入同父下第二个活动同名条目 → IntegrityError（同级 partial unique，spec §2.4）.
+        """插入同父下第二个同名条目 → IntegrityError（同级全唯一索引，spec §2.4）.
 
         F35 行为变更（spec §2.1 规则 5）：项目内全局唯一 → 同级唯一。
         顶层同名（parent_id NULL）DB 不再拦截（SQLite unique index NULL 不冲突），
-        由 service 层应用层校验（422）；**同级同名仍由 DB partial unique 拦截**。
+        由 service 层应用层校验（422）；**同级同名仍由 DB 全唯一索引拦截**。
         """
         repo = SQLiteWorldRepository(db_session)
         parent = await repo.add(_setting(project, "青州"))
@@ -301,34 +269,28 @@ class TestWorldRepository:
             await repo.add(_setting(project, "清河县城", parent_id=parent.id))
         await db_session.rollback()
 
-    async def test_soft_deleted_name_reusable_but_restore_conflicts(self, db_session, project):
-        """同父下软删后可重建同名；恢复旧条目与活动同名冲突 → IntegrityError（同级语义）."""
+    async def test_deleted_name_reusable(self, db_session, project):
+        """同父下真删后可重建同名（v1.1 全唯一索引仅约束现存行）."""
         repo = SQLiteWorldRepository(db_session)
         parent = await repo.add(_setting(project, "青州"))
         first = await repo.add(_setting(project, "清河县城", parent_id=parent.id))
-        await repo.soft_delete(first.id.int)
+        await repo.hard_delete(first.id.int)
 
-        # partial unique 排除已删除行 → 同父下同名可复用
+        # 全唯一索引仅约束现存行 → 同父下同名可复用
         second = await repo.add(_setting(project, "清河县城", parent_id=parent.id))
-        assert second.id != first.id
         assert second.name == "清河县城"
-
-        # 恢复旧条目 → 同父下出现两个活动同名 → IntegrityError
-        with pytest.raises(IntegrityError):
-            await repo.restore(first.id.int)
-        await db_session.rollback()
 
     # ── list_categories 聚合 ──
 
     async def test_list_categories_aggregates_counts(self, db_session, project):
-        """list_categories 聚合活动条目类别计数：排除空类别与软删，count 降序 + category 升序."""
+        """list_categories 聚合条目类别计数：排除空类别，count 降序 + category 升序."""
         repo = SQLiteWorldRepository(db_session)
         await repo.add(_setting(project, "灵气复苏", category="设定"))
         await repo.add(_setting(project, "宗门等级", category="规则"))
         await repo.add(_setting(project, "炼丹术", category="规则"))
         await repo.add(_setting(project, "无主之地", category=""))  # 未分类 → 不计入汇总
         s_del = await repo.add(_setting(project, "古神禁地", category="地理"))
-        await repo.soft_delete(s_del.id.int)  # 软删 → 不计入汇总
+        await repo.hard_delete(s_del.id.int)  # 真删 → 不计入汇总
 
         cats = await repo.list_categories(project.id)
         assert cats == [("规则", 2), ("设定", 1)]
@@ -460,14 +422,14 @@ class TestF35LocationTree:
         assert await repo.get_by_parent_and_name(project.id, country.id.int, "不存在") is None
         assert await repo.get_by_parent_and_name(project.id, 99999, "青州") is None
 
-    async def test_get_by_parent_and_name_excludes_soft_deleted(self, db_session, project):
-        """软删条目不命中（同级唯一索引排除 is_deleted=1，spec §2.4）.
+    async def test_get_by_parent_and_name_excludes_deleted(self, db_session, project):
+        """真删条目不命中（全唯一索引，spec §2.4）.
         RED: 方法不存在 → AttributeError.
         """
         repo = SQLiteWorldRepository(db_session)
         country = await repo.add(_setting(project, "大越国"))
         state = await repo.add(_setting(project, "青州", parent_id=country.id))
-        await repo.soft_delete(state.id.int)
+        await repo.hard_delete(state.id.int)
 
         assert await repo.get_by_parent_and_name(project.id, country.id.int, "青州") is None
 
@@ -619,7 +581,6 @@ class TestF35LocationTree:
             category=state.category,
             content=state.content,
             extra=state.extra,
-            is_deleted=state.is_deleted,
             created_at=state.created_at,
             updated_at=state.updated_at,
             parent_id=p2.id,
@@ -684,27 +645,23 @@ class TestListAllActive:
     统一契约签名（父侧定稿，GREEN 按此实现）:
     world_repository.py 新增（Protocol 层）:
       async def list_all_active(self, project_id: int) -> builtins.list[WorldSetting]:
-          '''项目内全部活动条目（is_deleted=0），按 created_at ASC 稳定排序（copy 缺省起点用）。'''
+          '''项目内全部条目（v1.1 真删无软删过滤），按 created_at ASC 稳定排序。'''
     world_repo.py 新增（实现层）:
-      SELECT WHERE project_id=? AND ~is_deleted ORDER BY created_at ASC
+      SELECT WHERE project_id=? ORDER BY created_at ASC
 
     RED 阶段预期: SQLiteWorldRepository 尚无 list_all_active → AttributeError
     （FAILED 非收集错误）；既有用例保持 PASS。
     """
 
-    async def test_filters_soft_deleted_and_cross_project(self, db_session, project):
-        """混合造数: 活动 + 软删 + 跨项目 → 只返回本项目活动条目.
+    async def test_filters_cross_project(self, db_session, project):
+        """混合造数: 本项目 + 跨项目 → 只返回本项目条目（真删条目不返回）.
         RED: 方法不存在 → AttributeError.
         """
         repo = SQLiteWorldRepository(db_session)
         s1 = await repo.add(_setting(project, "大越国"))
         s2 = await repo.add(_setting(project, "青州"))
         s_del = await repo.add(_setting(project, "古神禁地"))
-        row = await db_session.execute(
-            select(WorldSettingORM).where(WorldSettingORM.id == s_del.id.int)
-        )
-        row.scalar_one().is_deleted = True
-        await db_session.commit()
+        await repo.hard_delete(s_del.id.int)  # 真删 → 不返回
 
         other = ProjectORM(name="其他项目")
         db_session.add(other)

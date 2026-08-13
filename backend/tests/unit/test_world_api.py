@@ -23,7 +23,7 @@ F35 追加段（#173 地点层级，spec §3.1/§3.3 契约）:
   （ancestors 自身在前；descendants 层序）；service 返回 None → 404「世界观条目不存在」
 - PATCH {"parent_id": null} → update.model_fields_set 含 parent_id（置顶语义，
   spec §2.2 exclude_unset 区分）；未传 parent_id → 不含（不修改父级）
-- DELETE ?cascade=true → delete_setting(sid, force=False, cascade=True, reparent_to=None)；
+- DELETE ?cascade=true → delete_setting(sid, cascade=True, reparent_to=None)；
   ?reparent_to=<uuid> → reparent_to=<uuid>
 - 新错误类（WorldParentNotFoundError / WorldCycleError / WorldChildrenActionRequiredError /
   WorldReparentTargetError，继承 WorldServiceError → 422），detail 文案精确匹配 spec §3.3；
@@ -101,7 +101,6 @@ class TestWorldSettingCRUDAPI:
         assert data["name"] == "灵气复苏"
         assert data["category"] == "设定"
         assert data["project_id"] == str(PID)
-        assert data["is_deleted"] is False
         svc.create_setting.assert_awaited_once_with(
             PID, "灵气复苏", "设定", "公元 2048 年全球灵气浓度回升。"
         )
@@ -234,27 +233,15 @@ class TestWorldSettingCRUDAPI:
         assert response.json()["detail"] == "世界观条目不存在"
 
     @patch("inkflow.api.routers.world_settings.get_world_service")
-    def test_delete_setting_soft_204(self, mock_get_svc: MagicMock) -> None:
-        """软删除条目返回 204（默认 force=False）."""
+    def test_delete_setting_204(self, mock_get_svc: MagicMock) -> None:
+        """删除条目返回 204（v1.1 真删，无 force 参数）."""
         svc = _mock_svc(mock_get_svc)
         svc.delete_setting = AsyncMock(return_value=True)
 
         setting_id = uuid.uuid4()
         response = client.delete(f"/api/v1/world-settings/{setting_id}")
         assert response.status_code == 204
-        svc.delete_setting.assert_awaited_once_with(setting_id, force=False)
-
-    @patch("inkflow.api.routers.world_settings.get_world_service")
-    def test_delete_setting_force_204(self, mock_get_svc: MagicMock) -> None:
-        """硬删除条目返回 204（?force=true 透传）."""
-        svc = _mock_svc(mock_get_svc)
-        svc.delete_setting = AsyncMock(return_value=True)
-
-        response = client.delete(f"/api/v1/world-settings/{uuid.uuid4()}?force=true")
-        assert response.status_code == 204
-        svc.delete_setting.assert_awaited_once()
-        _, kwargs = svc.delete_setting.await_args
-        assert kwargs["force"] is True
+        svc.delete_setting.assert_awaited_once_with(setting_id)
 
     @patch("inkflow.api.routers.world_settings.get_world_service")
     def test_delete_setting_not_found_404(self, mock_get_svc: MagicMock) -> None:
@@ -263,27 +250,6 @@ class TestWorldSettingCRUDAPI:
         svc.delete_setting = AsyncMock(return_value=False)
 
         response = client.delete(f"/api/v1/world-settings/{uuid.uuid4()}")
-        assert response.status_code == 404
-        assert response.json()["detail"] == "世界观条目不存在"
-
-    @patch("inkflow.api.routers.world_settings.get_world_service")
-    def test_restore_setting_success(self, mock_get_svc: MagicMock) -> None:
-        """恢复条目返回 200 + WorldSetting JSON."""
-        svc = _mock_svc(mock_get_svc)
-        setting = _setting("灵气复苏")
-        svc.restore_setting = AsyncMock(return_value=setting)
-
-        response = client.post(f"/api/v1/world-settings/{setting.id}/restore")
-        assert response.status_code == 200
-        assert response.json()["name"] == "灵气复苏"
-
-    @patch("inkflow.api.routers.world_settings.get_world_service")
-    def test_restore_setting_not_found_404(self, mock_get_svc: MagicMock) -> None:
-        """恢复不存在的条目返回 404."""
-        svc = _mock_svc(mock_get_svc)
-        svc.restore_setting = AsyncMock(return_value=None)
-
-        response = client.post(f"/api/v1/world-settings/{uuid.uuid4()}/restore")
         assert response.status_code == 404
         assert response.json()["detail"] == "世界观条目不存在"
 
@@ -570,17 +536,14 @@ class TestWorldLocationTreeAPI:
 
     @patch("inkflow.api.routers.world_settings.get_world_service")
     def test_delete_setting_cascade_param(self, mock_get_svc: MagicMock) -> None:
-        """F35: DELETE ?cascade=true → delete_setting 收到 (sid, force=False, cascade=True,
-        reparent_to=None)."""
+        """F35: DELETE ?cascade=true → delete_setting 收到 (sid, cascade=True, reparent_to=None)."""
         svc = _mock_svc(mock_get_svc)
         svc.delete_setting = AsyncMock(return_value=True)
 
         setting_id = uuid.uuid4()
         response = client.delete(f"/api/v1/world-settings/{setting_id}?cascade=true")
         assert response.status_code == 204
-        svc.delete_setting.assert_awaited_once_with(
-            setting_id, force=False, cascade=True, reparent_to=None
-        )
+        svc.delete_setting.assert_awaited_once_with(setting_id, cascade=True, reparent_to=None)
 
     @patch("inkflow.api.routers.world_settings.get_world_service")
     def test_delete_setting_reparent_to_param(self, mock_get_svc: MagicMock) -> None:
@@ -592,7 +555,7 @@ class TestWorldLocationTreeAPI:
         response = client.delete(f"/api/v1/world-settings/{setting_id}?reparent_to={PARENT_ID}")
         assert response.status_code == 204
         svc.delete_setting.assert_awaited_once_with(
-            setting_id, force=False, cascade=False, reparent_to=PARENT_ID
+            setting_id, cascade=False, reparent_to=PARENT_ID
         )
 
     @patch("inkflow.api.routers.world_settings.get_world_service")
