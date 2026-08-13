@@ -428,8 +428,8 @@ test('写作页：工具栏 6 按钮齐全且可用 + 续写/生成（AI）按�
       await expect(btn).toBeEnabled();
     }
 
-    // stream-area idle 引导文案（deterministic 模式，未生成）
-    await expect(window.getByTestId('stream-area')).toContainText(
+    // pipeline-status idle 引导文案（deterministic 模式，未生成）
+    await expect(window.getByTestId('pipeline-status')).toContainText(
       '点击「续写」或 Ctrl+Enter 开始 AI 续写'
     );
 

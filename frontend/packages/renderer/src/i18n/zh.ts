@@ -265,6 +265,9 @@ export const zh = {
   'write.stream.invalid': '未通过',
   'write.stream.error': '生成失败: {message}',
   'write.stream.stopped': '生成中断 · 已保留前文',
+  'write.pipeline.running': '执行中',
+  'write.pipeline.success': '生成完成',
+  'write.pipeline.failed': '生成失败: {message}',
   'write.retry': '重试',
   // F34 章节审计（Issue #208）
   'audit.accept': '接受',

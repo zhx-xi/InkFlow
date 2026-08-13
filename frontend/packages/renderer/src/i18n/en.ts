@@ -258,6 +258,9 @@ export const en: Record<string, string> = {
   'write.stream.invalid': 'invalid',
   'write.stream.error': 'Generation failed: {message}',
   'write.stream.stopped': 'Stopped · draft preserved',
+  'write.pipeline.running': 'Running...',
+  'write.pipeline.success': 'Generation complete',
+  'write.pipeline.failed': 'Generation failed: {message}',
   'write.retry': 'Retry',
   // F34 chapter audit (Issue #208)
   'audit.accept': 'Accept',
