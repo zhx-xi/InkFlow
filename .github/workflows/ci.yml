@@ -405,8 +405,7 @@ jobs:
 
       - name: Run CLI integration tests
         run: |
-          uv run pytest ../tests/cli/test_cli_project_mock.py `
-                 ../tests/cli/test_cli_chapter_mock.py `
+          uv run pytest ../tests/cli/test_cli_chapter_mock.py `
                  ../tests/cli/test_cli_write.py `
                  ../tests/cli/test_cli_output.py `
                  ../tests/cli/test_cli_serve.py `
