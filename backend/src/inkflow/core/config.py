@@ -148,8 +148,9 @@ class InkFlowConfig(BaseSettings):
     """是否启用 LangSmith 追踪。"""
 
     # ---- Embedding 模型 ----
-    embedding_model: str = "BAAI/bge-small-zh-v1.5"
-    """本地 Embedding 模型名称（sentence-transformers 兼容）。首次运行自动下载。"""
+    embedding_model: str = ""
+    """Embedding 模型（已弃用本地 embedding，空 = 未配置；装配以 ProviderConfig
+    注册表 type="embedding" 条目为准，spec f19 §5.4）。"""
 
     embedding_device: str = "cpu"
     """Embedding 推理设备：cpu / cuda。"""

@@ -679,13 +679,12 @@ _vector_store: VectorStoreProtocol | None = None
 async def _resolve_embedding_spec() -> tuple[str, str, str]:
     """解析 embedding 装配选型 → (provider, model_id, base_url)（#276 G3）.
 
-    选型规则（用户拍板 2026-08-12）: ProviderConfig 注册表首个
-    type="embedding" 模型为唯一真相源；注册表无 → config.embedding_model
-    本地 BGE 离线 fallback（provider 标记 "local"）；两者皆不可用 →
-    RAGUnavailableError「未配置 embedding 模型」。base_url 为 None 时归一化为
-    空串（指纹 dict 与 OpenAI 构造共用同一元组）。
+    选型规则（用户拍板 2026-08-13 #330 D1=b）: ProviderConfig 注册表首个
+    type="embedding" 模型为唯一真相源（API embedding）；注册表无 embedding →
+    RAGUnavailableError「未配置 embedding 模型，请先在 Provider 配置中添加
+    embedding 模型」。base_url 为 None 时归一化为空串（指纹 dict 与 OpenAI
+    构造共用同一元组）。
     """
-    from inkflow.core.config import config
     from inkflow.domain.models.provider_config import ProviderConfig, ProviderModel
     from inkflow.domain.ports.extraction_errors import RAGUnavailableError
     from inkflow.infrastructure.database.repositories.provider_config_repo import (
@@ -706,18 +705,15 @@ async def _resolve_embedding_spec() -> tuple[str, str, str]:
     if found is not None:
         provider_cfg, model = found
         return provider_cfg.name, model.id, provider_cfg.base_url or ""
-    if config.embedding_model:
-        return "local", config.embedding_model, ""
-    raise RAGUnavailableError("未配置 embedding 模型")
+    raise RAGUnavailableError("未配置 embedding 模型，请先在 Provider 配置中添加 embedding 模型")
 
 
 async def _build_store() -> VectorStoreProtocol:
     """按当前配置装配新向量存储（不赋值全局单例，供 get/refresh 复用）.
 
-    与 _resolve_embedding_spec 共用选型段: API embedding（OpenAIEmbeddings）
-    或本地 BGE 离线 fallback（HuggingFaceBgeEmbeddings）；embedding 或
-    LangChainVectorStore 构造失败 → RAGUnavailableError（500 RAG 前缀，
-    spec §3.4/§5.5 B1）。
+    与 _resolve_embedding_spec 共用选型段: API embedding（OpenAIEmbeddings）；
+    embedding 或 LangChainVectorStore 构造失败 → RAGUnavailableError（500
+    RAG 前缀，spec §3.4/§5.5 B1）。
     """
     provider, model_id, base_url = await _resolve_embedding_spec()
     from langchain_core.embeddings import Embeddings
@@ -729,30 +725,19 @@ async def _build_store() -> VectorStoreProtocol:
     )
 
     try:
-        # 显式类型注解：if/else 分支赋值不同类型（BGE/OpenAI）——mypy 推断
-        # 首分支类型导致第二分支 [assignment] 报错（CI lint-backend 实测）
+        # 显式类型注解：OpenAIEmbeddings 赋值——保留 Embeddings Protocol 契约
         embeddings: Embeddings
-        if provider == "local":
-            from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+        from langchain_openai import OpenAIEmbeddings
 
-            embeddings = HuggingFaceBgeEmbeddings(
-                model_name=model_id,
-                # device 非顶层字段（pydantic extra_forbidden）——走 model_kwargs
-                # （2026-08-12 实测修正）
-                model_kwargs={"device": config.embedding_device},
-            )
-        else:
-            from langchain_openai import OpenAIEmbeddings
-
-            key = APIKeyManager(
-                secret_key=config.secret_key,
-                storage_dir=config.data_dir / "keys",
-            ).load(provider)
-            embeddings = OpenAIEmbeddings(
-                model=model_id,
-                api_key=SecretStr(key),
-                base_url=base_url or None,
-            )
+        key = APIKeyManager(
+            secret_key=config.secret_key,
+            storage_dir=config.data_dir / "keys",
+        ).load(provider)
+        embeddings = OpenAIEmbeddings(
+            model=model_id,
+            api_key=SecretStr(key),
+            base_url=base_url or None,
+        )
         return LangChainVectorStore(
             persist_dir=config.vector_store_dir,
             embeddings=embeddings,
@@ -766,9 +751,9 @@ async def get_vector_store() -> VectorStoreProtocol:
 
     LangChainVectorStore（Chroma 持久化到 config.vector_store_dir）+ embedding
     装配（#276 G3）: 注册表首个 type="embedding" 模型为唯一真相源（API
-    embedding，spec f19 §5.2/§5.4）；注册表无 → config.embedding_model 本地
-    BGE 离线 fallback；两者皆不可用 → RAGUnavailableError（500「RAG 向量库
-    不可用」前缀，§5.5 B1/B6）。仅首次调用时初始化，懒加载单例语义不变。
+    embedding，spec f19 §5.2/§5.4）；注册表无 embedding → RAGUnavailableError
+    未配置 embedding 模型（500「RAG 向量库不可用」前缀，§5.5 B1/B6）。
+    仅首次调用时初始化，懒加载单例语义不变。
     """
     global _vector_store
     if _vector_store is None:

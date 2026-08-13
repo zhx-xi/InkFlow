@@ -132,23 +132,25 @@ async def test_get_vector_store_ignores_chat_only_models(
     repo.list.assert_awaited_once()
 
 
-# ── E1 升级: 本地 BGE 离线 fallback（#276 契约升级）──────────────
+# ── E1-upgrade 移除: 本地 BGE fallback（#330 拍板 D1=b）────────────
 
 
-async def test_get_vector_store_falls_back_to_local_bge() -> None:
-    """E1-upgrade: 注册表空 + config.embedding_model 有值 → 走本地 BGE 离线 fallback。
+async def test_get_vector_store_without_embedding_raises_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#330 RED: 注册表空 + config.embedding_model 有值（旧默认非空）→ 抛「未配置」。
 
-    #276 用户拍板（2026-08-12）：ProviderConfig 注册表唯一真相源，
-    config.embedding_model 本地 BGE 保留为未配置 API embedding 时的离线
-    fallback。BGE 构造收到 model_name=config.embedding_model；
-    LangChainVectorStore 正常装配（与 E2 同构的返回语义）。
+    D1=b 拍板（2026-08-13）：移除本地 BGE fallback——0.8.0 主路径 = API
+    embedding；「未配置 embedding」必须明确报错，不得静默回退 local
+    （打包版无 torch/sentence-transformers，fallback 必 500）。
+    RED 形态：当前实现走 local fallback 返回 store → pytest.raises FAIL。
     """
-    # Arrange: 空注册表 + 默认 BGE 配置（fallback 路径）
+    # Arrange: 空注册表 + embedding_model 保持默认非空（旧 fallback 触发条件）
     repo = _repo_with_providers([])
+    monkeypatch.setattr(config, "embedding_model", "BAAI/bge-small-zh-v1.5")
     fake_bge = MagicMock()
-    fake_store = MagicMock()
 
-    # Act: 无 API embedding → fallback 本地 BGE → store 正常返回
+    # Act & Assert: 未配置 embedding → 必须抛「未配置」（非返回 local store）
     with (
         patch(
             "inkflow.infrastructure.database.repositories.provider_config_repo.SQLiteProviderConfigRepository",
@@ -157,44 +159,38 @@ async def test_get_vector_store_falls_back_to_local_bge() -> None:
         patch(
             "langchain_community.embeddings.HuggingFaceBgeEmbeddings",
             return_value=fake_bge,
-        ) as mock_bge,
+        ),
         patch(
             "inkflow.infrastructure.rag.langchain_vector_store.LangChainVectorStore",
-            return_value=fake_store,
-        ) as mock_vs,
+            return_value=MagicMock(),
+        ),
+        pytest.raises(RAGUnavailableError, match="未配置 embedding 模型"),
     ):
-        store = await deps.get_vector_store()
+        await deps.get_vector_store()
 
-    # Assert: store 返回；BGE 收到 config.embedding_model 模型名
-    assert store is fake_store
-    call = mock_bge.call_args
-    assert call.kwargs.get("model_name") == "BAAI/bge-small-zh-v1.5"
-    assert mock_vs.call_args.kwargs.get("embeddings") is fake_bge
+    repo.list.assert_awaited_once()
+    assert deps._vector_store is None
 
 
-async def test_get_vector_store_bge_fallback_failure_raises(
+async def test_get_vector_store_bge_fallback_removed_raises_unconfigured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """E1-upgrade: 注册表空 + BGE 构造失败 → RAGUnavailableError（不静默降级）。"""
-    # Arrange: 空注册表 + BGE 构造抛错（本地模型损坏/缺失）
+    """#330 RED: 注册表空 + embedding_model 非空 → 抛「未配置」（错误消息不得是
+    「RAG 向量库不可用」——旧 fallback 构造失败路径已删除）."""
+    # Arrange: 空注册表 + embedding_model 有值（触发旧 local 分支）
     repo = _repo_with_providers([])
     monkeypatch.setattr(config, "embedding_model", "BAAI/bge-large-zh-v1.5")
 
-    # Act & Assert: fallback 失败 → RAGUnavailableError（500 RAG 前缀语义）
+    # Act & Assert: 未配置 → RAGUnavailableError 消息含「未配置 embedding 模型」
     with (
         patch(
             "inkflow.infrastructure.database.repositories.provider_config_repo.SQLiteProviderConfigRepository",
             return_value=repo,
         ),
-        patch(
-            "langchain_community.embeddings.HuggingFaceBgeEmbeddings",
-            side_effect=RuntimeError("model not found"),
-        ),
-        pytest.raises(RAGUnavailableError, match="RAG 向量库不可用"),
+        pytest.raises(RAGUnavailableError, match="未配置 embedding 模型"),
     ):
         await deps.get_vector_store()
 
-    # 失败后单例保持 None（可重试）
     assert deps._vector_store is None
 
 

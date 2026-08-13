@@ -83,7 +83,7 @@ class VectorStoreProtocol(Protocol):
 
     基础设施层实现示例：
         from langchain_chroma import Chroma
-        from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+        from langchain_openai import OpenAIEmbeddings
         class LangChainVectorStore: ...
 
     测试时可注入 Mock 实现（如内存 dict），不依赖真实 Chroma。
