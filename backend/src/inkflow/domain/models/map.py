@@ -22,6 +22,8 @@ class WorldMap(BaseModel):
     image_path: str  # 相对 config.data_dir 的路径（如 maps/<uuid>/main.png）
     description: str = ""
     root_location_id: uuid.UUID | None = None
+    bg_source: str = "image"  # F43 P2：枚举 shape/image/ai（默认 image，旧数据兼容）
+    extra: dict = Field(default_factory=dict)  # F43 P2：扩展字典（{"shapes": [...]}）
     created_at: datetime
     updated_at: datetime
 
@@ -45,6 +47,8 @@ class WorldMapUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     root_location_id: uuid.UUID | None = None
+    bg_source: str | None = None  # F43 P2：shape/image/ai（exclude_unset 语义）
+    extra: dict | None = None  # F43 P2：shapes 整体替换（exclude_unset 语义）
 
 
 class MapPin(BaseModel):
@@ -55,6 +59,8 @@ class MapPin(BaseModel):
     id: uuid.UUID
     map_id: uuid.UUID
     location_id: uuid.UUID | None = None
+    type: str = "location"  # F43 P2：枚举 location/role/event/other（默认 location）
+    ref_id: uuid.UUID | None = None  # F43 P2：type=role/event 关联实体主键
     x: float
     y: float
     label: str
@@ -66,6 +72,8 @@ class MapPinCreate(BaseModel):
     """创建 pin 请求 DTO."""
 
     location_id: uuid.UUID | None = None
+    ref_id: uuid.UUID | None = None  # F43 P2：type=role/event 用
+    type: str = "location"  # F43 P2：location/role/event/other
     x: float = Field(ge=0, le=100)
     y: float = Field(ge=0, le=100)
     label: str = ""
@@ -78,6 +86,8 @@ class MapPinUpdate(BaseModel):
     """
 
     location_id: uuid.UUID | None = None
+    ref_id: uuid.UUID | None = None  # F43 P2：exclude_unset 语义
+    type: str | None = None  # F43 P2：exclude_unset 语义
     x: float | None = None
     y: float | None = None
     label: str | None = None

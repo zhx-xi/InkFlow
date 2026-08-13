@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -44,6 +44,14 @@ class MapORM(Base):
     name: Mapped[str] = mapped_column(String(50), nullable=False)
     image_path: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    bg_source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="image"
+    )  # F43 P2：枚举 shape/image/ai（默认 image，旧数据兼容）
+    extra: Mapped[dict] = mapped_column(
+        LenientJSON(fallback={}),
+        nullable=False,
+        default=dict,
+    )  # F43 P2：扩展字典（{"shapes": [...]}）
     root_location_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("world_settings.id"),
@@ -77,6 +85,12 @@ class MapPinORM(Base):
         nullable=True,
         index=True,
     )
+    type: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="location"
+    )  # F43 P2：枚举 location/role/event/other（默认 location）
+    ref_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, index=True
+    )  # F43 P2：type=role/event 关联实体主键（int，与 ORM 层一致）
     x: Mapped[float] = mapped_column(Float, nullable=False)
     y: Mapped[float] = mapped_column(Float, nullable=False)
     label: Mapped[str] = mapped_column(String(50), nullable=False)

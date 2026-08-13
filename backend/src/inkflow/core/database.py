@@ -155,6 +155,31 @@ def ensure_world_parent_id_column(conn: Connection) -> None:
     )
 
 
+def ensure_map_columns(conn: Connection) -> None:
+    """F43 P2：为既有库 maps/map_pins 补 bg_source/extra/type/ref_id 列（幂等）.
+
+    沿用 ensure_world_parent_id_column 模式：先查 PRAGMA table_info 确认列缺失
+    才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，等
+    create_all 建新表（ORM 已含新列）。spec §2.7.3。
+    """
+    map_cols = conn.execute(text("PRAGMA table_info(maps)")).fetchall()
+    map_names = {row[1] for row in map_cols}
+    if map_names:
+        if "bg_source" not in map_names:
+            conn.execute(text("ALTER TABLE maps ADD COLUMN bg_source VARCHAR(16) DEFAULT 'image'"))
+        if "extra" not in map_names:
+            conn.execute(text("ALTER TABLE maps ADD COLUMN extra JSON"))
+    pin_cols = conn.execute(text("PRAGMA table_info(map_pins)")).fetchall()
+    pin_names = {row[1] for row in pin_cols}
+    if pin_names:
+        if "type" not in pin_names:
+            conn.execute(
+                text("ALTER TABLE map_pins ADD COLUMN type VARCHAR(16) DEFAULT 'location'")
+            )
+        if "ref_id" not in pin_names:
+            conn.execute(text("ALTER TABLE map_pins ADD COLUMN ref_id INTEGER"))
+
+
 async def drop_tables() -> None:
     """Drop all tables (for test teardown)."""
     async with engine.begin() as conn:

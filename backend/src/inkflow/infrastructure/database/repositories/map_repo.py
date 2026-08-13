@@ -60,6 +60,8 @@ def _orm_to_domain(orm: MapORM) -> WorldMap:
         image_path=orm.image_path,
         description=orm.description,
         root_location_id=_int_to_uuid(orm.root_location_id),
+        bg_source=orm.bg_source,
+        extra=orm.extra or {},
         created_at=orm.created_at,
         updated_at=orm.updated_at,
     )
@@ -78,6 +80,8 @@ def _domain_to_orm(domain: WorldMap) -> MapORM:
         root_location_id=_uuid_to_int(domain.root_location_id)
         if domain.root_location_id is not None
         else None,
+        bg_source=domain.bg_source,
+        extra=domain.extra,
     )
 
 
@@ -87,6 +91,8 @@ def _pin_orm_to_domain(orm: MapPinORM) -> MapPin:
         id=uuid.UUID(int=orm.id),
         map_id=uuid.UUID(int=orm.map_id),
         location_id=_int_to_uuid(orm.location_id),
+        type=orm.type,
+        ref_id=_int_to_uuid(orm.ref_id),
         x=orm.x,
         y=orm.y,
         label=orm.label,
@@ -100,6 +106,8 @@ def _pin_domain_to_orm(domain: MapPin) -> MapPinORM:
     return MapPinORM(
         map_id=_uuid_to_int(domain.map_id),
         location_id=_uuid_to_int(domain.location_id) if domain.location_id is not None else None,
+        type=domain.type,
+        ref_id=_uuid_to_int(domain.ref_id) if domain.ref_id is not None else None,
         x=domain.x,
         y=domain.y,
         label=domain.label,
@@ -180,6 +188,8 @@ class SQLiteMapRepository:
         orm.name = map.name
         orm.image_path = map.image_path
         orm.description = map.description
+        orm.bg_source = map.bg_source
+        orm.extra = map.extra
         orm.root_location_id = (
             _uuid_to_int(map.root_location_id) if map.root_location_id is not None else None
         )
@@ -246,6 +256,8 @@ class SQLiteMapRepository:
         if orm is None:
             return None
         orm.location_id = _uuid_to_int(pin.location_id) if pin.location_id is not None else None
+        orm.type = pin.type
+        orm.ref_id = _uuid_to_int(pin.ref_id) if pin.ref_id is not None else None
         orm.x = pin.x
         orm.y = pin.y
         orm.label = pin.label
