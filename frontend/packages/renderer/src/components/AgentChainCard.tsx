@@ -2,21 +2,46 @@
  *  #225 三态语义：null=关闭（禁用角色）；字符串=开启且指定模型；
  *  "__default__"（AGENT_DEFAULT_SENTINEL）=跟随默认（预留，前端不暴露中间态 UI） */
 import { useEffect } from 'react';
-import { ClipboardCheck, Network, PenLine, RefreshCw, type LucideIcon } from 'lucide-react';
+import { ClipboardCheck, Network, PenLine, RefreshCw, Sparkles, type LucideIcon } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
 import { useAgentStore } from '../stores/agent';
 import { selectChatModelOptions, useModelsStore } from '../stores/models';
 import { AGENT_DEFAULT_SENTINEL, type ProjectConfig } from '../stores/project';
+import { useTemplatesStore } from '../stores/templates';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Switch } from './ui/switch';
 
 type AgentField = 'agent_architect' | 'agent_writer' | 'agent_auditor' | 'agent_reviser';
 
-const AGENT_ROLES: Array<{ field: AgentField; nameKey: string; descKey: string; icon: LucideIcon }> = [
-  { field: 'agent_architect', nameKey: 'ag.architect', descKey: 'ag.architectDesc', icon: Network },
-  { field: 'agent_writer', nameKey: 'ag.writer', descKey: 'ag.writerDesc', icon: PenLine },
-  { field: 'agent_auditor', nameKey: 'ag.auditor', descKey: 'ag.auditorDesc', icon: ClipboardCheck },
-  { field: 'agent_reviser', nameKey: 'ag.reviser', descKey: 'ag.reviserDesc', icon: RefreshCw },
+/** F42 #296：内置四角色键（模板 roles 中过滤这些键，其余视为自定义角色） */
+const BUILTIN_ROLE_KEYS = ['architect', 'writer', 'auditor', 'reviser'] as const;
+/** F42 #296：内置字段写顶层 config.agent_*；自定义字段写 config.agent_roles */
+const BUILTIN_FIELDS = ['agent_architect', 'agent_writer', 'agent_auditor', 'agent_reviser'];
+
+/** 内置角色行（nameKey/descKey → i18n；builtin=true → 读 config.agent_*） */
+type BuiltinChainRow = {
+  field: AgentField;
+  nameKey: string;
+  descKey: string;
+  icon: LucideIcon;
+  builtin: true;
+};
+
+/** 自定义角色行（显示名 = role.name ?? 裸名；builtin=false → 读 config.agent_roles） */
+type CustomChainRow = {
+  field: string;
+  name: string;
+  icon: LucideIcon;
+  builtin: false;
+};
+
+type ChainRow = BuiltinChainRow | CustomChainRow;
+
+const AGENT_ROLES: BuiltinChainRow[] = [
+  { field: 'agent_architect', nameKey: 'ag.architect', descKey: 'ag.architectDesc', icon: Network, builtin: true },
+  { field: 'agent_writer', nameKey: 'ag.writer', descKey: 'ag.writerDesc', icon: PenLine, builtin: true },
+  { field: 'agent_auditor', nameKey: 'ag.auditor', descKey: 'ag.auditorDesc', icon: ClipboardCheck, builtin: true },
+  { field: 'agent_reviser', nameKey: 'ag.reviser', descKey: 'ag.reviserDesc', icon: RefreshCw, builtin: true },
 ];
 
 /** F42 #269：默认模板拓扑（与后端默认模板槽位一致：architect=0/writer=1/auditor=2/reviser=3）；
@@ -29,7 +54,7 @@ const DEFAULT_AGENT_ORDER: string[][] = [
 ];
 
 /** 角色 → 默认槽位（开启角色时写入 agent_order 的目标槽位，spec §5.3/M6） */
-const DEFAULT_SLOTS: Record<AgentField, number> = {
+const DEFAULT_SLOTS: Record<string, number> = {
   agent_architect: 0,
   agent_writer: 1,
   agent_auditor: 2,
@@ -41,19 +66,18 @@ export interface AgentChainCardProps {
   onConfigChange?: () => void;
 }
 
-function agentPatch(field: AgentField, value: string | null | undefined): Partial<ProjectConfig> {
-  switch (field) {
-    case 'agent_architect':
-      return { agent_architect: value };
-    case 'agent_writer':
-      return { agent_writer: value };
-    case 'agent_auditor':
-      return { agent_auditor: value };
-    case 'agent_reviser':
-      return { agent_reviser: value };
-    default:
-      return {};
+function agentPatch(
+  field: string,
+  value: string | null,
+  current: ProjectConfig,
+): Partial<ProjectConfig> {
+  // 内置字段 → 顶层 config.agent_*；自定义字段 → agent_roles 浅合并（防丢其他自定义角色）
+  if (BUILTIN_FIELDS.includes(field)) {
+    const patch: Partial<ProjectConfig> & Record<string, string | null> = {};
+    patch[field] = value;
+    return patch;
   }
+  return { agent_roles: { ...(current.agent_roles ?? {}), [field]: value } };
 }
 
 /** 当前 order 派生：agent_order 非空 = 配置驱动模式；空/undefined = 默认模板拓扑（仅显示） */
@@ -63,10 +87,19 @@ function deriveOrder(config: ProjectConfig): string[][] {
     : DEFAULT_AGENT_ORDER;
 }
 
+/** F42 #296：角色默认槽位（内置 0-3；自定义 = 4 + roles 顺序索引，不在列表则 4） */
+function defaultSlotOf(field: string, customRoleFields: string[]): number {
+  if (field in DEFAULT_SLOTS) {
+    return DEFAULT_SLOTS[field];
+  }
+  const idx = customRoleFields.indexOf(field);
+  return idx >= 0 ? 4 + idx : 4;
+}
+
 /** 角色所在层索引（不在 order 中 → 默认槽位，用于显示与移动边界判定） */
-function slotOf(order: string[][], field: AgentField): number {
+function slotOf(order: string[][], field: string, customRoleFields: string[]): number {
   const idx = order.findIndex((layer) => layer.includes(field));
-  return idx >= 0 ? idx : DEFAULT_SLOTS[field];
+  return idx >= 0 ? idx : defaultSlotOf(field, customRoleFields);
 }
 
 export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
@@ -78,18 +111,40 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
   // F42 #268（spec §5.2 Q3）：挂载即加载 provider-configs 数据源，Select 选项随 store 响应式更新
   useEffect(() => {
     void useModelsStore.getState().loadProviders();
+    // F42 #296：挂载即加载模板，自定义角色行随模板响应式更新（与 loadProviders 并行）
+    void useTemplatesStore.getState().loadTemplates();
   }, []);
 
   const chatOptions = selectChatModelOptions(providers);
   const followDefaultOption = { value: AGENT_DEFAULT_SENTINEL, label: t('ag.followDefault') };
+
+  // F42 #296：模板 roles 非四键 → 自定义角色行（显示名 = role.name ?? 裸名，Sparkles 图标）
+  // ?? [] 兜底：loadTemplates 响应缺 items 时 store 可能短暂为 undefined（边界守卫，不改契约语义）
+  const templates = useTemplatesStore((s) => s.templates) ?? [];
+  const template = templates.find((t) => String(t.id) === String(config.template_id));
+  const customRoles: CustomChainRow[] = template
+    ? Object.entries(template.roles)
+        .filter(([key]) => !(BUILTIN_ROLE_KEYS as readonly string[]).includes(key))
+        .map(([bareName, role]) => ({
+          field: `agent_${bareName}`,
+          name: role.name ?? bareName,
+          icon: Sparkles,
+          builtin: false,
+        }))
+    : [];
+  const customRoleFields = customRoles.map((r) => r.field);
+  const allRows: ChainRow[] = [...AGENT_ROLES, ...customRoles];
 
   return (
     <section data-testid="agent-chain-card" className="rounded-lg border border-line bg-surface p-6 shadow-card">
       <h2 className="font-serif text-[17px] font-semibold">{t('ag.chainTitle')}</h2>
       <p className="mt-1 text-[12px] text-ink-3">{t('ag.chainDesc')}</p>
       <div className="mt-4 divide-y divide-line">
-        {AGENT_ROLES.map((role) => {
-          const value = config[role.field];
+        {allRows.map((role) => {
+          const value = role.builtin
+            ? config[role.field as AgentField]
+            : config.agent_roles?.[role.field];
+          const displayName = role.builtin ? t(role.nameKey) : role.name;
           // 三态语义（#225）：null=关闭（禁用角色）；字符串=开启且指定模型；
           // "__default__"（AGENT_DEFAULT_SENTINEL）=跟随默认（预留）
           const checked = typeof value === 'string';
@@ -109,7 +164,7 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
                     : value;
           // F42 #269：槽位号 + 上移/下移边界（M6 契约）
           const order = deriveOrder(config);
-          const slot = slotOf(order, role.field);
+          const slot = slotOf(order, role.field, customRoleFields);
           const idx = order.findIndex((layer) => layer.includes(role.field));
           const upDisabled = idx <= 0; // 首层或不在 order → 上移禁用
           const downDisabled = idx < 0 || idx === order.length - 1; // 末层或不在 order → 下移禁用
@@ -145,7 +200,7 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
             // 配置驱动模式（order 非空）同步从 agent_order 剔除该角色并压缩空层（B1）；
             // 打开 → sentinel "__default__"（跟随默认，本期无模型选择 UI）；
             // 配置驱动模式同步加入默认槽位；默认模板模式（order 空）不写 agent_order
-            const patch = agentPatch(role.field, checked ? null : AGENT_DEFAULT_SENTINEL);
+            const patch = agentPatch(role.field, checked ? null : AGENT_DEFAULT_SENTINEL, config);
             if (checked) {
               // 关闭
               if (config.agent_order && config.agent_order.length > 0) {
@@ -159,7 +214,7 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
             } else if (config.agent_order && config.agent_order.length > 0) {
               // 开启（配置驱动模式）：角色加入默认槽位（新层插入，既有层后移）
               const order = config.agent_order.map((layer) => [...layer]);
-              order.splice(DEFAULT_SLOTS[role.field], 0, [role.field]);
+              order.splice(defaultSlotOf(role.field, customRoleFields), 0, [role.field]);
               setConfig({ ...patch, agent_order: order });
             } else {
               // 开启（默认模板模式）：只写 field，不写 agent_order（B1 保持默认模式）
@@ -174,14 +229,14 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-[13px] font-medium">{t(role.nameKey)}</span>
+                  <span className="text-[13px] font-medium">{displayName}</span>
                   <span
                     className={`rounded bg-surface-3 px-1.5 py-0.5 text-[11px] ${tagWarn ? 'text-warn' : 'text-ink-3'}`}
                   >
                     {tag}
                   </span>
                 </div>
-                <p className="mt-0.5 text-[12px] text-ink-3">{t(role.descKey)}</p>
+                {role.builtin && <p className="mt-0.5 text-[12px] text-ink-3">{t(role.descKey)}</p>}
               </div>
               {/* F42 #269：槽位号 + 上移/下移（M6 契约，data-testid 即契约） */}
               <div className="flex shrink-0 items-center gap-1" aria-label={`${t('ag.slot')} ${slot}`}>
@@ -217,7 +272,7 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
                 <Select
                   value={typeof value === 'string' ? value : AGENT_DEFAULT_SENTINEL}
                   onValueChange={(v) => {
-                    setConfig(agentPatch(role.field, v));
+                    setConfig(agentPatch(role.field, v, config));
                     onConfigChange?.();
                   }}
                 >
@@ -238,7 +293,7 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
                   </SelectContent>
                 </Select>
               )}
-              <Switch checked={checked} onCheckedChange={toggle} aria-label={t(role.nameKey)} />
+              <Switch checked={checked} onCheckedChange={toggle} aria-label={displayName} />
             </div>
           );
         })}
