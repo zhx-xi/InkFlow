@@ -80,6 +80,9 @@ def apply_sqlite_pragma(dbapi_connection) -> None:
     - ``PRAGMA journal_mode=WAL``: WAL 日志模式（文件级持久，跨连接生效）
     - ``PRAGMA busy_timeout=<config.db_busy_timeout_ms>``: 多进程写并发锁等待
       超时，数值在**调用时**从 config 单例读取（默认 5000）。
+    - ``PRAGMA foreign_keys=ON``: 启用 SQLite 外键约束（#327），使 ORM 声明的
+      ``ForeignKey(..., ondelete=...)``（CASCADE/SET NULL）真正生效，
+      project 硬删时子实体级联清理。
 
     PRAGMA 不支持 ``?`` 参数占位，busy_timeout 为 config int，f-string 拼接安全。
     cursor 用完即 close。对同一连接重复调用幂等；内存库 WAL 不生效但不抛错。
@@ -88,6 +91,7 @@ def apply_sqlite_pragma(dbapi_connection) -> None:
     try:
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute(f"PRAGMA busy_timeout={config.db_busy_timeout_ms}")
+        cursor.execute("PRAGMA foreign_keys=ON")
     finally:
         cursor.close()
 

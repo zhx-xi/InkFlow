@@ -123,8 +123,13 @@ class TestF36ServiceHooks:
         mock_cb.assert_not_awaited()
 
     async def test_project_service_map_cleanup(self) -> None:
-        """ProjectService(map_cleanup=cb): hard_delete 成功（True）→ await cb(pid.int)；
-        hard_delete 返回 False → 不调用。  # F36（异常 log warning 不阻断属实现侧，测试只断言调用）
+        """ProjectService(map_cleanup=cb): hard_delete 前先调 cb(pid.int)（#327 方案 B 顺序）.
+
+        #327 拍板：FK=ON 后 maps 引用 project 的裸 FK 会拦截删除，map_cleanup
+        必须提前到 repo.hard_delete 之前（先删 maps+pins+文件再删 project）。
+        因此 cb 以「钩子已注入」为唯一触发条件，与 repo 删除结果无关——
+        hard_delete 返回 False（项目不存在）时 cleanup 也执行（list 空幂等无害）。
+        # F36 旧契约（deleted 才调 cb）被 #327 方案 B 取代。
         """
 
         with mock.patch(
@@ -139,4 +144,5 @@ class TestF36ServiceHooks:
             mock_repo.hard_delete = AsyncMock(return_value=False)
             mock_cb.reset_mock()
             assert await svc.hard_delete(PID) is False
-            mock_cb.assert_not_awaited()
+            # #327 新契约：cleanup 无条件提前执行（不再以 deleted 为门槛）
+            mock_cb.assert_awaited_once_with(PID.int)
