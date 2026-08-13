@@ -110,12 +110,12 @@ class WorldService:
             持久化后的完整 WorldSetting.
 
         Raises:
-            WorldParentNotFoundError: 父地点不存在/已软删/不在同一项目.
+            WorldParentNotFoundError: 父地点不存在/不在同一项目.
             WorldNameConflictError: 同级（含顶层）已存在同名活动条目.
         """
         pid_int = _to_int_id(project_id)
         parent_int = _to_int_id(parent_id) if parent_id is not None else None
-        # ① 父存在 + 同项目（repo.get 已过滤软删 → 软删父 = 不存在）
+        # ① 父存在 + 同项目（repo.get 真删语义下不存在即无记录）
         if parent_int is not None:
             parent = await self._repo.get(parent_int)
             if parent is None or _to_int_id(parent.project_id) != pid_int:
@@ -146,7 +146,7 @@ class WorldService:
         return await self._repo.add(setting)
 
     async def get_setting(self, setting_id: int | uuid.UUID) -> WorldSetting | None:
-        """按主键获取条目（不含已软删除）；不存在返回 None（router 转 404）."""
+        """按主键获取条目；不存在返回 None（router 转 404）."""
         return await self._repo.get(_to_int_id(setting_id))
 
     async def list_settings(
@@ -275,22 +275,20 @@ class WorldService:
     async def delete_setting(
         self,
         setting_id: int | uuid.UUID,
-        force: bool = False,
         cascade: bool = False,
         reparent_to: uuid.UUID | None = None,
     ) -> bool:
-        """删除条目（F35 树级删除语义，spec §5.5）.
+        """删除条目（v1.1 默认真删 + F35 树级删除语义，spec §5.5）.
 
         语义矩阵：
-        - 无子地点：F10 现状保持——force=False 软删、force=True 硬删
-        - 有子地点 + 未指定 cascade/reparent_to（无论 force）→ WorldChildrenActionRequiredError
+        - 无子地点：真删（hard_delete）
+        - 有子地点 + 未指定 cascade/reparent_to → WorldChildrenActionRequiredError
         - cascade=True → 真删整棵子树（list_descendants + hard_delete_many 单事务原子）
         - reparent_to=<id> → 真删自身 + 直接子改挂新父（delete_with_reparent 单事务）
         - cascade 与 reparent_to 同时提供 → cascade 优先
 
         Args:
             setting_id: 条目主键（支持 int 或 UUID）.
-            force: True 物理删除；False（默认）软删除.
             cascade: True 级联真删整棵子树（优先于 reparent_to）.
             reparent_to: 子地点改挂新父后真删自身.
 
@@ -336,14 +334,11 @@ class WorldService:
             return await self._repo.delete_with_reparent(sid, target_int)
         if children:
             raise WorldChildrenActionRequiredError()
-        if force:
-            logger.info("硬删除世界观条目: setting_id=%s", setting_id)
-            deleted = await self._repo.hard_delete(sid)
-            if deleted:
-                await self._notify_location_cleanup([sid])
-            return deleted
-        logger.info("软删除世界观条目: setting_id=%s", setting_id)
-        return await self._repo.soft_delete(sid)
+        logger.info("真删世界观条目: setting_id=%s", setting_id)
+        deleted = await self._repo.hard_delete(sid)
+        if deleted:
+            await self._notify_location_cleanup([sid])
+        return deleted
 
     async def _notify_location_cleanup(self, ids: list[int]) -> None:
         """调用地点硬删钩子（F36 D10=b）；失败仅 log warning 不阻断主流程."""
@@ -353,21 +348,6 @@ class WorldService:
             await self._location_cleanup(ids)
         except Exception:
             logger.warning("地点硬删后 pin 清理失败: %s", ids, exc_info=True)
-
-    async def restore_setting(self, setting_id: int | uuid.UUID) -> WorldSetting | None:
-        """恢复软删除条目.
-
-        Args:
-            setting_id: 条目主键（支持 int 或 UUID）.
-
-        Returns:
-            恢复后的 WorldSetting；条目不存在/未删除返回 None（重复操作无毒，同 F1）.
-        """
-        sid = _to_int_id(setting_id)
-        restored = await self._repo.restore(sid)
-        if restored is not None:
-            logger.info("恢复世界观条目: setting_id=%s", setting_id)
-        return restored
 
     # ── F35 树查询（spec §5.3）────────────────────────────────────
 
@@ -392,7 +372,7 @@ class WorldService:
             seen.add(parent_int)
             parent = await self._repo.get(parent_int)
             if parent is None:
-                break  # 父已软删/不存在 → 链在此截断
+                break  # 父不存在 → 链在此截断
             chain.append(parent)
             current = parent
         return chain
@@ -401,7 +381,7 @@ class WorldService:
         """子树（含自身，层序：父先子后）——直接透传 repo（测试契约）.
 
         Returns:
-            子树列表；层序/含自身由 repo 保证（不存在/软删 id → 空列表）。
+            子树列表；层序/含自身由 repo 保证（不存在 id → 空列表）。
         """
         return await self._repo.list_descendants(_to_int_id(setting_id))
 

@@ -16,7 +16,7 @@ WorldRepositoryProtocol），测试中注入 Mock。
    → 非法条目跳过 + warning
 ⑤ 修复式重试 ≤ 2 次（附错误信息）→ 仍失败 → WorldExtractionError
 ⑥ 合并落库（§5.4）: 条目按 (project_id, name) 匹配活动条目 →
-   存在=更新(非空覆盖) / 不存在=创建（软删同名 → 新建 + warning）
+   存在=更新(非空覆盖) / 不存在=创建（v1.1 真删：无「软删同名」分支）
 ⑦ 返回 WorldExtractionResult
 """
 
@@ -271,8 +271,6 @@ class WorldExtractor:
         for es in world_settings:
             existing = await self._repo.get_by_name(pid_int, es.name)
             if existing is None:
-                if await self._has_soft_deleted_same_name(pid_int, es.name):
-                    warnings.append(f"存在已删除的同名条目档案「{es.name}」，已新建条目")
                 now = _utcnow()
                 new_setting = await self._repo.add(
                     WorldSetting(
@@ -304,17 +302,6 @@ class WorldExtractor:
             model=model,
         )
 
-    # ── 私有辅助 ────────────────────────────────────────────────
-
-    async def _has_soft_deleted_same_name(self, pid_int: int, name: str) -> bool:
-        """检查项目内是否存在已软删除的同名条目档案（用于 warning 提示）。
-
-        通过 list 搜索同名校验；若仓储实现默认排除软删除记录，
-        该场景仅影响提示，不影响合并行为（新建条目）。
-        """
-        settings, _ = await self._repo.list(project_id=pid_int, search=name, limit=100)
-        return any(s.is_deleted and s.name == name for s in settings)
-
 
 def _merge_world_fields(existing: WorldSetting, es: ExtractedWorldSetting) -> WorldSetting | None:
     """非空字段覆盖合并（category/content 独立判断）.
@@ -323,7 +310,7 @@ def _merge_world_fields(existing: WorldSetting, es: ExtractedWorldSetting) -> Wo
     保留 existing 的 id / extra / 时间戳等无关字段。
 
     Args:
-        existing: 库中同名活动条目.
+        existing: 库中同名条目.
         es: LLM 提取出的条目.
 
     Returns:
@@ -340,7 +327,6 @@ def _merge_world_fields(existing: WorldSetting, es: ExtractedWorldSetting) -> Wo
         category=new_category,
         content=new_content,
         extra=existing.extra,
-        is_deleted=existing.is_deleted,
         created_at=existing.created_at,
         updated_at=_utcnow(),
     )

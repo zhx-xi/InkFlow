@@ -1,13 +1,12 @@
-"""SQLite 世界观条目仓储 — 实现 WorldRepositoryProtocol 全部 11 个方法.
+"""SQLite 世界观条目仓储 — 实现 WorldRepositoryProtocol 全部方法.
 
 转换函数（_orm_to_domain / _domain_to_orm / int↔UUID 辅助）按项目惯例
 放在本仓储层（参照 character_repo.py）。
 
-语义（spec §2.4/§6/§7）:
-- 项目内活动条目 name 唯一（partial unique index，ORM 层定义）；软删后可重建同名
-- soft_delete = UPDATE is_deleted=1；hard_delete = DELETE
-- get/get_by_name/list 一律排除已软删除条目
-- list_categories 聚合活动条目类别计数（排除空类别 = 未分类，spec §6.1/§6.2）
+语义（spec §2.4/§6/§7，v1.1 真删）:
+- 项目内条目 name 唯一（全唯一索引，ORM 层定义）；删除 = 物理 DELETE
+- get/get_by_name/list 查询全部条目（真删后不存在软删记录）
+- list_categories 聚合条目类别计数（排除空类别 = 未分类，spec §6.1/§6.2）
 - FK 级联: 项目物理删除 → 条目级联物理删除（DB FK CASCADE）
 
 注: 方法名 ``list`` 会遮蔽类作用域中的内置 ``list``，返回注解统一
@@ -56,7 +55,6 @@ def _orm_to_domain(orm: WorldSettingORM) -> WorldSetting:
         content=orm.content,
         extra=orm.extra or {},
         parent_id=_int_to_uuid(orm.parent_id),
-        is_deleted=orm.is_deleted,
         created_at=orm.created_at,
         updated_at=orm.updated_at,
     )
@@ -71,7 +69,6 @@ def _domain_to_orm(domain: WorldSetting) -> WorldSettingORM:
         content=domain.content,
         extra=domain.extra,
         parent_id=_uuid_to_int(domain.parent_id) if domain.parent_id is not None else None,
-        is_deleted=domain.is_deleted,
     )
 
 
@@ -92,17 +89,14 @@ class SQLiteWorldRepository:
         return _orm_to_domain(orm)
 
     async def get(self, setting_id: int) -> WorldSetting | None:
-        """按主键查询条目（不含已软删除）."""
-        stmt = select(WorldSettingORM).where(
-            WorldSettingORM.id == setting_id,
-            ~WorldSettingORM.is_deleted,
-        )
+        """按主键查询条目."""
+        stmt = select(WorldSettingORM).where(WorldSettingORM.id == setting_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _orm_to_domain(orm) if orm else None
 
     async def get_by_name(self, project_id: int, name: str) -> WorldSetting | None:
-        """按项目内条目名查询活动条目（不含已软删除）.
+        """按项目内条目名查询条目.
 
         跨层同名多条时返回最早创建（created_at ASC）的一条（spec §2.4 确定性）。
         """
@@ -111,7 +105,6 @@ class SQLiteWorldRepository:
             .where(
                 WorldSettingORM.project_id == project_id,
                 WorldSettingORM.name == name,
-                ~WorldSettingORM.is_deleted,
             )
             .order_by(WorldSettingORM.created_at.asc())
             .limit(1)
@@ -132,7 +125,7 @@ class SQLiteWorldRepository:
         parent_id: int | None = None,
         top_level_only: bool = False,
     ) -> tuple[builtins.list[WorldSetting], int]:
-        """分页查询项目内条目列表，支持搜索、类别与 parent_id 过滤（不含已软删除）.
+        """分页查询项目内条目列表，支持搜索、类别与 parent_id 过滤.
 
         Args:
             project_id: 项目主键（int）.
@@ -148,10 +141,7 @@ class SQLiteWorldRepository:
         Returns:
             (当前页条目列表, 符合条件的总记录数).
         """
-        base = select(WorldSettingORM).where(
-            WorldSettingORM.project_id == project_id,
-            ~WorldSettingORM.is_deleted,
-        )
+        base = select(WorldSettingORM).where(WorldSettingORM.project_id == project_id)
 
         # 搜索: name icontains
         if search:
@@ -181,7 +171,7 @@ class SQLiteWorldRepository:
         return [_orm_to_domain(o) for o in orms], total
 
     async def list_categories(self, project_id: int) -> builtins.list[tuple[str, int]]:
-        """聚合项目内活动条目的类别计数（排除空类别 = 未分类）.
+        """聚合项目内条目的类别计数（排除空类别 = 未分类）.
 
         按 spec §6.1/§6.2: 空类别视为未分类，不参与类别汇总（未分类条目
         通过 list(category=\"\") 查询）；返回 (类别, 条目数) 列表，
@@ -197,7 +187,6 @@ class SQLiteWorldRepository:
             select(WorldSettingORM.category, func.count())
             .where(
                 WorldSettingORM.project_id == project_id,
-                ~WorldSettingORM.is_deleted,
                 WorldSettingORM.category != "",
             )
             .group_by(WorldSettingORM.category)
@@ -238,42 +227,8 @@ class SQLiteWorldRepository:
             raise ValueError(f"WorldSetting {setting_id} not found after update")
         return _orm_to_domain(orm)
 
-    async def soft_delete(self, setting_id: int) -> bool:
-        """软删除条目（is_deleted=True）.
-
-        Returns:
-            True 表示成功删除一条记录，False 表示未找到/已删除.
-        """
-        stmt = (
-            sa_update(WorldSettingORM)
-            .where(WorldSettingORM.id == setting_id, ~WorldSettingORM.is_deleted)
-            .values(is_deleted=True, updated_at=_utcnow())
-        )
-        result = await self._session.execute(stmt)
-        await self._session.commit()
-        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-
-    async def restore(self, setting_id: int) -> WorldSetting | None:
-        """恢复已软删除条目.
-
-        Returns:
-            恢复后的 WorldSetting；记录不存在或未删除时返回 None（重复操作无毒）.
-            若恢复导致项目内活动同名冲突（partial unique），commit 时抛 IntegrityError.
-        """
-        stmt = (
-            sa_update(WorldSettingORM)
-            .where(WorldSettingORM.id == setting_id, WorldSettingORM.is_deleted)
-            .values(is_deleted=False, updated_at=_utcnow())
-        )
-        result = await self._session.execute(stmt)
-        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-            await self._session.commit()
-            return None
-        await self._session.commit()
-        return await self.get(setting_id)
-
     async def hard_delete(self, setting_id: int) -> bool:
-        """物理删除条目（仅用于 force 场景）.
+        """物理删除条目（v1.1 默认真删语义）.
 
         Returns:
             True 表示删除成功，False 表示不存在.
@@ -290,11 +245,10 @@ class SQLiteWorldRepository:
     async def get_by_parent_and_name(
         self, project_id: int, parent_id: int | None, name: str
     ) -> WorldSetting | None:
-        """按 (project_id, parent_id, name) 查询活动条目（parent_id=None = 顶层）."""
+        """按 (project_id, parent_id, name) 查询条目（parent_id=None = 顶层）."""
         stmt = select(WorldSettingORM).where(
             WorldSettingORM.project_id == project_id,
             WorldSettingORM.name == name,
-            ~WorldSettingORM.is_deleted,
         )
         if parent_id is None:
             stmt = stmt.where(WorldSettingORM.parent_id.is_(None))
@@ -307,17 +261,16 @@ class SQLiteWorldRepository:
     async def collect_ancestor_ids(self, setting_id: int) -> builtins.list[int]:
         """祖先链 id 列表，**不含自身**（父链 [父, 祖父, ...]，spec §5.2 循环防护用）.
 
-        递归 CTE：起点 = 自身（仅当有父且活动），结果排除自身；仅活动条目（is_deleted=0）。
+        递归 CTE：起点 = 自身（仅当有父），结果排除自身。
         """
         sql = text(
             """
             WITH RECURSIVE ancestors(id, parent_id) AS (
               SELECT w.id, w.parent_id FROM world_settings w
-              WHERE w.parent_id IS NOT NULL AND w.id = :sid AND w.is_deleted = 0
+              WHERE w.parent_id IS NOT NULL AND w.id = :sid
               UNION ALL
               SELECT w.id, w.parent_id FROM world_settings w
               JOIN ancestors a ON w.id = a.parent_id
-              WHERE w.is_deleted = 0
             )
             SELECT id FROM ancestors WHERE id != :sid
             """
@@ -326,7 +279,7 @@ class SQLiteWorldRepository:
         return [row[0] for row in result.fetchall()]
 
     async def list_descendants(self, setting_id: int) -> builtins.list[WorldSetting]:
-        """子树（**含自身**），层序（父先子后，同层 created_at ASC）；仅活动条目.
+        """子树（**含自身**），层序（父先子后，同层 created_at ASC）.
 
         两段式：CTE 取层序 id 集合（depth 升序 + created_at ASC），再按 id 批量查 ORM
         行（类型处理完整），Python 侧按 CTE 顺序重排，确保层序稳定。
@@ -334,11 +287,10 @@ class SQLiteWorldRepository:
         sql = text(
             """
             WITH RECURSIVE descendants(id, depth, created_at) AS (
-              SELECT id, 0, created_at FROM world_settings WHERE id = :sid AND is_deleted = 0
+              SELECT id, 0, created_at FROM world_settings WHERE id = :sid
               UNION ALL
               SELECT w.id, d.depth + 1, w.created_at FROM world_settings w
               JOIN descendants d ON w.parent_id = d.id
-              WHERE w.is_deleted = 0
             )
             SELECT id FROM descendants
             ORDER BY depth ASC, created_at ASC
@@ -354,13 +306,10 @@ class SQLiteWorldRepository:
         return [by_id[sid] for sid in ordered_ids if sid in by_id]
 
     async def list_all_active(self, project_id: int) -> builtins.list[WorldSetting]:
-        """项目内全部活动条目（is_deleted=0），按 created_at ASC 稳定排序（copy 缺省起点用）."""
+        """项目内全部条目，按 created_at ASC 稳定排序（copy 缺省起点用）."""
         stmt = (
             select(WorldSettingORM)
-            .where(
-                WorldSettingORM.project_id == project_id,
-                ~WorldSettingORM.is_deleted,
-            )
+            .where(WorldSettingORM.project_id == project_id)
             .order_by(WorldSettingORM.created_at.asc())
         )
         result = await self._session.execute(stmt)

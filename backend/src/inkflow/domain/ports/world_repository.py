@@ -19,8 +19,8 @@ from inkflow.domain.models.world import WorldSetting
 class WorldRepositoryProtocol(Protocol):
     """世界观条目仓储端口.
 
-    按 spec §2.4: 项目内活动条目 name 唯一（partial unique）；
-    软删除后同名可复用。list_categories 聚合活动条目类别计数。
+    按 spec §2.4: 项目内条目 name 唯一（全唯一索引）；
+    v1.1 真删语义下删除即物理消失。list_categories 聚合条目类别计数。
 
     注: 类内方法名 ``list`` 会在 mypy 类作用域解析中遮蔽内置 ``list``，
     因此返回注解中的列表类型统一写作 ``builtins.list[...]``（同 F9）。
@@ -40,7 +40,7 @@ class WorldRepositoryProtocol(Protocol):
         ...
 
     async def get(self, setting_id: int) -> WorldSetting | None:
-        """按主键查询条目（不含已软删除）.
+        """按主键查询条目.
 
         Args:
             setting_id: 条目主键（int，与 ORM 层一致）.
@@ -51,7 +51,7 @@ class WorldRepositoryProtocol(Protocol):
         ...
 
     async def get_by_name(self, project_id: int, name: str) -> WorldSetting | None:
-        """按项目内条目名查询活动条目；跨层同名多条时返回最早创建
+        """按项目内条目名查询条目；跨层同名多条时返回最早创建
         （created_at ASC）的一条（spec §2.4 确定性声明）.
 
         Args:
@@ -115,30 +115,8 @@ class WorldRepositoryProtocol(Protocol):
         """
         ...
 
-    async def soft_delete(self, setting_id: int) -> bool:
-        """软删除条目（is_deleted=True）.
-
-        Args:
-            setting_id: 条目主键（int）.
-
-        Returns:
-            是否删除成功（不存在返回 False）.
-        """
-        ...
-
-    async def restore(self, setting_id: int) -> WorldSetting | None:
-        """恢复已软删除条目.
-
-        Args:
-            setting_id: 条目主键（int）.
-
-        Returns:
-            恢复后的 WorldSetting，不存在则返回 None.
-        """
-        ...
-
     async def hard_delete(self, setting_id: int) -> bool:
-        """物理删除条目（仅用于 force 场景）.
+        """物理删除条目（v1.1 默认真删语义）.
 
         Args:
             setting_id: 条目主键（int）.
@@ -151,7 +129,7 @@ class WorldRepositoryProtocol(Protocol):
     async def get_by_parent_and_name(
         self, project_id: int, parent_id: int | None, name: str
     ) -> WorldSetting | None:
-        """按 (project_id, parent_id, name) 查询活动条目（parent_id=None = 顶层）——
+        """按 (project_id, parent_id, name) 查询条目（parent_id=None = 顶层）——
         同级唯一校验用（spec §5.1）。"""
         ...
 
@@ -162,11 +140,11 @@ class WorldRepositoryProtocol(Protocol):
 
     async def list_descendants(self, setting_id: int) -> builtins.list[WorldSetting]:
         """子树（**含自身**），层序（父先子后，同层 created_at ASC）；
-        仅活动条目（is_deleted=0）；不存在/软删 id → 空列表（spec §5.3）。"""
+        真删语义下不存在 id → 空列表（spec §5.3）。"""
         ...
 
     async def list_all_active(self, project_id: int) -> builtins.list[WorldSetting]:
-        """项目内全部活动条目（is_deleted=0），按 created_at ASC 稳定排序（copy 缺省起点用）."""
+        """项目内全部条目，按 created_at ASC 稳定排序（copy 缺省起点用）."""
         ...
 
     async def hard_delete_many(self, setting_ids: builtins.list[int]) -> int:

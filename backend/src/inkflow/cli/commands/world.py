@@ -375,7 +375,7 @@ def update_setting_cmd(
 
 
 # ---------------------------------------------------------------------------
-# delete  —  inkflow world delete --id <uuid> [--force] [--permanent]
+# delete  —  inkflow world delete --id <uuid> [--force]
 # ---------------------------------------------------------------------------
 
 
@@ -384,25 +384,24 @@ def delete_setting_cmd(
     ctx: typer.Context,
     setting_id: str = typer.Option(..., "--id", "-i", help="条目 ID (UUID)"),
     force: bool = typer.Option(False, "--force", "-f", help="跳过确认"),
-    permanent: bool = typer.Option(False, "--permanent", "-p", help="硬删除（物理删除）"),
     cascade: bool = typer.Option(False, "--cascade", help="级联真删子树（F35）"),
     reparent_to: str | None = typer.Option(
         None, "--reparent-to", help="子地点改挂新父后删除自身（F35）"
     ),
 ) -> None:
-    """删除世界观条目（默认软删除；--permanent 物理删除；F35: --cascade / --reparent-to）"""
+    """删除世界观条目（v1.1 真删，不可恢复；F35: --cascade / --reparent-to）"""
     cli_ctx: CliContext = ctx.obj
     sid = _parse_uuid(cli_ctx, setting_id, "世界观条目不存在")
     if not force:
         if cli_ctx.json_output:
             print_error(cli_ctx, "VALIDATION_ERROR", "删除需 --force 或交互确认")
-        label = "永久删除" if permanent else "删除"
+        label = "删除"
         if not typer.confirm(f"确定要{label}条目 #{setting_id} 吗？"):
             typer.echo("已取消")
             raise typer.Exit()
 
     async def _impl() -> None:
-        params: dict[str, str] = {"force": "true" if permanent else "false"}
+        params: dict[str, str] = {}
         if cascade:
             params["cascade"] = "true"
         if reparent_to is not None:
@@ -416,38 +415,10 @@ def delete_setting_cmd(
             )
 
     _run(cli_ctx, _impl)
-    label = "已永久删除" if permanent else "已删除"
     if cli_ctx.json_output:
         print_result(cli_ctx, {"id": str(sid), "deleted": True})
     else:
-        typer.echo(f"✅ 条目 #{setting_id} {label}")
-
-
-# ---------------------------------------------------------------------------
-# restore  —  inkflow world restore --id <uuid>
-# ---------------------------------------------------------------------------
-
-
-@app.command("restore")
-def restore_setting_cmd(
-    ctx: typer.Context,
-    setting_id: str = typer.Option(..., "--id", "-i", help="条目 ID (UUID)"),
-) -> None:
-    """恢复已删除的世界观条目"""
-    cli_ctx: CliContext = ctx.obj
-    sid = _parse_uuid(cli_ctx, setting_id, "世界观条目不存在")
-
-    async def _impl() -> dict:
-        handle = await ensure_kernel()
-        client = InkFlowHTTPClient(handle)
-        async with client:
-            return await client.post(f"/world-settings/{sid}/restore")
-
-    setting = _run(cli_ctx, _impl)
-    if cli_ctx.json_output:
-        print_result(cli_ctx, setting)
-    else:
-        typer.echo(f"✅ 条目已恢复: [{setting['name']}]")
+        typer.echo(f"✅ 条目 #{setting_id} 已删除")
 
 
 # ---------------------------------------------------------------------------

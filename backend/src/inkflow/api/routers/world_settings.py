@@ -299,12 +299,11 @@ async def update_world_setting(
 @router.delete("/world-settings/{setting_id}", status_code=204)
 async def delete_world_setting(
     setting_id: str,
-    force: bool = Query(False),
     cascade: bool = Query(False),
     reparent_to: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """删除条目（默认软删；?force=true 硬删；F35: ?cascade=true 级联真删 |
+    """删除条目（v1.1 默认真删，无 force 参数；F35: ?cascade=true 级联真删 |
     ?reparent_to=<id> 子改挂，spec §5.5）。"""
     sid = _parse_id(setting_id, detail="世界观条目不存在")
     svc = _get_svc(db)
@@ -313,28 +312,10 @@ async def delete_world_setting(
         reparent_uuid = _parse_id(reparent_to, detail="世界观条目不存在")
     # F35: 参数形状按测试契约精确传递（缺省不含 cascade/reparent_to 键）
     if cascade:
-        ok = await _run_service(
-            svc.delete_setting(sid, force=force, cascade=True, reparent_to=None)
-        )
+        ok = await _run_service(svc.delete_setting(sid, cascade=True, reparent_to=None))
     elif reparent_uuid is not None:
-        ok = await _run_service(
-            svc.delete_setting(sid, force=force, cascade=False, reparent_to=reparent_uuid)
-        )
+        ok = await _run_service(svc.delete_setting(sid, cascade=False, reparent_to=reparent_uuid))
     else:
-        ok = await _run_service(svc.delete_setting(sid, force=force))
+        ok = await _run_service(svc.delete_setting(sid))
     if not ok:
         raise HTTPException(status_code=404, detail="世界观条目不存在")
-
-
-@router.post("/world-settings/{setting_id}/restore")
-async def restore_world_setting(
-    setting_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """恢复软删除条目（spec §3.1/§7）。"""
-    sid = _parse_id(setting_id, detail="世界观条目不存在")
-    svc = _get_svc(db)
-    setting = await _run_service(svc.restore_setting(sid))
-    if setting is None:
-        raise HTTPException(status_code=404, detail="世界观条目不存在")
-    return setting.model_dump(mode="json")

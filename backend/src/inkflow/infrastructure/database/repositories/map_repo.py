@@ -7,7 +7,7 @@
 - maps/map_pins 均【无 is_deleted 列】（真删语义）——repo 方法无任何软删过滤
 - delete/delete_many/delete_by_project 单事务显式级联：先删 pins 再删 maps 行
   （D10=b，不依赖 DB FK 动作；生产连接 FK OFF）
-- children 单 SQL JOIN 过滤地点软删（is_deleted=0，评审 F2）+ DISTINCT
+- children 单 SQL JOIN 关联地点（v1.1 真删语义无 is_deleted 过滤）+ DISTINCT
 - list 过滤三态: root_location_id=None + top_level_only=False = 全量;
   top_level_only=True = 全局图（root_location_id IS NULL）;
   root_location_id 非 None = 精确过滤
@@ -278,8 +278,8 @@ class SQLiteMapRepository:
         """查询本图 pin 关联地点的子地图（drill-down，Q1=B）.
 
         单 SQL: JOIN map_pins p（p.map_id=:id AND p.location_id IS NOT NULL）
-        JOIN world_settings w（w.id=p.location_id AND w.is_deleted=0，
-        地点软删过滤——评审 F2）JOIN maps m2（m2.root_location_id=p.location_id）；
+        JOIN world_settings w（w.id=p.location_id，v1.1 真删语义无 is_deleted 过滤）
+        JOIN maps m2（m2.root_location_id=p.location_id）；
         DISTINCT；ORDER BY created_at ASC。
         """
         stmt = (
@@ -293,10 +293,7 @@ class SQLiteMapRepository:
             )
             .join(
                 WorldSettingORM,
-                and_(
-                    WorldSettingORM.id == MapPinORM.location_id,
-                    ~WorldSettingORM.is_deleted,
-                ),
+                WorldSettingORM.id == MapPinORM.location_id,
             )
             .where(MapORM.root_location_id == MapPinORM.location_id)
             .distinct()

@@ -5,9 +5,9 @@
 设计约定（同 F9 spec §2 / character.py）:
 - DB 主键为 int 自增；领域层 id 为 UUID，映射规则: domain_id = uuid.UUID(int=orm.id)
   （int↔UUID 转换函数在 repositories/world_repo.py，参照 project_repo.py / character_repo.py 惯例）
-- 软删除标记 is_deleted + partial unique index（sqlite_where）保证
-  「同级（project_id, parent_id）内活动记录唯一、软删除后可重建同名」的语义
-  （spec §2.4；顶层应用层校验——SQLite unique index 对 NULL 不冲突）
+- 全唯一索引 (project_id, parent_id, name) 保证「同级内条目名唯一」的语义
+  （v1.1 真删语义移除 is_deleted 列与 partial unique，spec §2.4；
+  顶层应用层校验——SQLite unique index 对 NULL 不冲突）
 - FK 级联: 项目删除 → 世界观条目级联删除
 """
 
@@ -16,14 +16,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import (
-    Boolean,
     DateTime,
     ForeignKey,
     Index,
     Integer,
     String,
     Text,
-    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -51,10 +49,9 @@ class WorldSettingORM(Base):
             "parent_id",
             "name",
             unique=True,
-            sqlite_where=text("is_deleted = 0"),
         ),
     )
-    """同级（project_id, parent_id）内活动条目名唯一（软删除后允许重建同名，
+    """同级（project_id, parent_id）内条目名唯一（v1.1 全唯一索引；
     spec §2.4；顶层应用层校验——SQLite unique index 对 NULL 不冲突）."""
 
     id: Mapped[int] = mapped_column(
@@ -106,14 +103,6 @@ class WorldSettingORM(Base):
         default=dict,
     )
     """扩展字典（来源章节、标签、别名等 Phase 2+ 字段预留）."""
-
-    is_deleted: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        index=True,
-    )
-    """软删除标记（已索引，用于过滤查询）."""
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,

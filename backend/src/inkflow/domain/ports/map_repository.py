@@ -176,8 +176,8 @@ class MapRepositoryProtocol(Protocol):
         """查询本图 pin 关联地点的子地图（drill-down，Q1=B）.
 
         单 SQL: JOIN map_pins p（p.map_id=:id AND p.location_id IS NOT NULL）
-        JOIN world_settings w（w.id=p.location_id AND w.is_deleted=0，
-        地点软删过滤——评议 F2）JOIN maps m2（m2.root_location_id=p.location_id）;
+        JOIN world_settings w（w.id=p.location_id，v1.1 真删语义无 is_deleted 过滤）
+        JOIN maps m2（m2.root_location_id=p.location_id）;
         DISTINCT; ORDER BY created_at ASC.
 
         Args:

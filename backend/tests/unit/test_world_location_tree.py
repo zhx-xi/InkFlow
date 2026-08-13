@@ -21,7 +21,7 @@ GREEN 实现契约（本文件 docstring 即契约，GREEN 实现者以此为准
 
    async def list_descendants(setting_id: int) -> list[WorldSetting]:
        '''子树（**含自身**），层序（父先子后，同层 created_at ASC）；
-       仅活动条目（is_deleted=0）；不存在/软删 id → 空列表（spec §5.3）。'''
+       真删语义；不存在 id → 空列表（spec §5.3）。'''
 
    async def hard_delete_many(setting_ids: list[int]) -> int:
        '''单事务原子物理删除（DELETE WHERE id IN (...)），返回删除行数；
@@ -359,20 +359,20 @@ class TestWorldAncestorDescendantCte:
         desc = await repo.list_descendants(a.id.int)
         assert [s.id for s in desc] == [a.id, b.id, c.id, d.id]
 
-    async def test_soft_deleted_excluded_from_cte(self, db_session, project):
-        """软删条目不进入 CTE 结果: 软删中间节点 → 祖先链断、子孙不可达
-        （spec §5.3 WHERE is_deleted=0）."""
+    async def test_hard_deleted_excluded_from_cte(self, db_session, project):
+        """真删条目不进入 CTE 结果: 物理删除中间节点 → 祖先链断、子孙不可达
+        （v1.1 真删语义，spec §5.3）."""
         repo = SQLiteWorldRepository(db_session)
         country, state, county = await _build_3level_tree(repo, project)
 
-        await repo.soft_delete(state.id.int)
+        await repo.hard_delete(state.id.int)
 
-        # 县仍活动，但其父链经过软删的州 → 断链 → 无祖先
+        # 县仍存在，但其父链经过已物理删除的州 → 断链 → 无祖先
         assert await repo.collect_ancestor_ids(county.id.int) == []
         # 国的子树只剩自身（州被排除，县经州不可达）
         desc = await repo.list_descendants(country.id.int)
         assert [s.id for s in desc] == [country.id]
-        # 软删节点自身也不可进入 CTE
+        # 已物理删除的节点自身也不可进入 CTE
         assert await repo.collect_ancestor_ids(state.id.int) == []
         assert await repo.list_descendants(state.id.int) == []
 
@@ -654,11 +654,11 @@ class TestWorldGetByParentAndName:
         assert await repo.get_by_parent_and_name(project.id, state.id.int, "loc_nope") is None
         assert await repo.get_by_parent_and_name(project.id, 99999, "loc_county") is None
 
-    async def test_soft_deleted_not_matched(self, db_session, project):
-        """软删条目不命中（仅活动条目，spec §5.1 校验语义）."""
+    async def test_hard_deleted_not_matched(self, db_session, project):
+        """真删条目不命中（v1.1 物理删除后查询无记录，spec §5.1 校验语义）."""
         repo = SQLiteWorldRepository(db_session)
         _, state, county = await _build_3level_tree(repo, project)
-        await repo.soft_delete(county.id.int)
+        await repo.hard_delete(county.id.int)
 
         assert await repo.get_by_parent_and_name(project.id, state.id.int, "loc_county") is None
 

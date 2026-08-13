@@ -99,14 +99,13 @@ class WorldSetting(BaseModel):
     Attributes:
         id: 主键 UUID.
         project_id: 所属项目 UUID.
-        name: 条目名；同级（project_id, parent_id）内活动条目唯一
-            （partial unique，见 spec §2.4）.
+        name: 条目名；同级（project_id, parent_id）内唯一
+            （全唯一索引，见 spec §2.4）.
         parent_id: 父地点 UUID；None = 顶层（F35 新增）.
         category: 类别（建议值：设定/规则/约束/组织/地理/种族/文化/科技/
             魔法体系；自由文本，受控词表归 F14）；空串 = 未分类.
         content: 条目内容/详细设定.
         extra: 扩展属性字典（来源章节、标签、别名等 Phase 2+ 字段预留）.
-        is_deleted: 软删除标记.
         created_at: 创建时间.
         updated_at: 最后更新时间.
     """
@@ -120,7 +119,6 @@ class WorldSetting(BaseModel):
     category: str = ""
     content: str = ""
     extra: dict[str, Any] = Field(default_factory=dict)
-    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 
