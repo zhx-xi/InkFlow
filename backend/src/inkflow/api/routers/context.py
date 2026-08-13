@@ -19,10 +19,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import (
+    get_chapter_service,
     get_context_service,
     get_db,
+    get_project_service,
     get_summary_service,
 )
+from inkflow.core.config import config as app_config
 from inkflow.domain.models.context import ContextRequest
 from inkflow.domain.ports.context_errors import ContextBudgetExceededError
 
@@ -67,7 +70,16 @@ async def get_chapter_summary(
 
     svc = get_summary_service(db)
     try:
-        summary_text = await svc.ensure_summary(cid, model="openai/gpt-4o")
+        # #329：model 走项目 config.model（与写作链路一致）→ 回退全局默认
+        cid_int = cid.int
+        chapter = await get_chapter_service(db).get_chapter(cid_int)
+        if chapter is None:
+            raise HTTPException(status_code=404, detail="章节不存在")
+        project = await get_project_service(db).get(chapter.project_id)
+        model = project.config.model if project else ""
+        if not model:
+            model = app_config.llm_default_model
+        summary_text = await svc.ensure_summary(cid, model=model)
         return {"summary": summary_text, "chapter_id": str(cid)}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
@@ -89,7 +101,16 @@ async def refresh_chapter_summary(
 
     svc = get_summary_service(db)
     try:
-        summary_text = await svc.ensure_summary(cid, model="openai/gpt-4o", force=True)
+        # #329：model 走项目 config.model（与写作链路一致）→ 回退全局默认
+        cid_int = cid.int
+        chapter = await get_chapter_service(db).get_chapter(cid_int)
+        if chapter is None:
+            raise HTTPException(status_code=404, detail="章节不存在")
+        project = await get_project_service(db).get(chapter.project_id)
+        model = project.config.model if project else ""
+        if not model:
+            model = app_config.llm_default_model
+        summary_text = await svc.ensure_summary(cid, model=model, force=True)
         return {"summary": summary_text, "chapter_id": str(cid)}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
