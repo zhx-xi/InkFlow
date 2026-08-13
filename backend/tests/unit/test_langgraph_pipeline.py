@@ -529,3 +529,56 @@ async def test_execute_same_layer_reference_forced_empty():
     # user 消息不得包含同层上游段（input_from 不含同层）
     auditor_user = auditor_call["messages"][1].content
     assert "正文内容" not in auditor_user
+
+
+# ── F42 #297 双模板执行契约（spec §5.6 + §13 M8）─────────
+
+
+def _template_stages(template_id: str) -> list[PipelineStage]:
+    """从 BUILTIN_TEMPLATES 取模板 stages（局部 import 避免顶部 import 污染）。"""
+    from inkflow.infrastructure.agent.pipeline_templates import get_template
+
+    return list(get_template(template_id).stages)
+
+
+async def test_execute_write_auto_template():
+    """mock LLM 执行 write_auto：调用顺序 architect→writer→auditor→reviser；
+    writer 收 architect 输出，reviser 收 writer+auditor 输出；成品=reviser。"""
+    llm = RoleMapLLMClient(
+        {"architect": "大纲", "writer": "正文", "auditor": "审阅意见", "reviser": "修订稿"}
+    )
+    result = await LangGraphAgentPipeline(llm).execute(
+        _template_stages("builtin:write_auto"),
+        _make_context(variables={"genre": "科幻", "target_words": "3000"}),
+    )
+
+    assert [c["stage"] for c in llm.calls] == ["architect", "writer", "auditor", "reviser"]
+    assert result.final_output == "修订稿"
+    # 变量注入：writer 收 architect 输出；reviser 收 writer + auditor 输出
+    writer_call = next(c for c in llm.calls if c["stage"] == "writer")
+    assert "大纲" in writer_call["messages"][1].content
+    reviser_call = next(c for c in llm.calls if c["stage"] == "reviser")
+    assert "正文" in reviser_call["messages"][1].content
+    assert "审阅意见" in reviser_call["messages"][1].content
+
+
+async def test_execute_write_continue_template():
+    """mock LLM 执行 write_continue：调用顺序 writer→auditor→reviser（无 architect）；
+    writer 收前文摘要（context 变量），reviser 收 writer+auditor 输出；成品=reviser。"""
+    llm = RoleMapLLMClient({"writer": "续写正文", "auditor": "审阅意见", "reviser": "修订稿"})
+    result = await LangGraphAgentPipeline(llm).execute(
+        _template_stages("builtin:write_continue"),
+        _make_context(variables={"context": "前文摘要", "writing_style": "平实"}),
+    )
+
+    assert [c["stage"] for c in llm.calls] == ["writer", "auditor", "reviser"]
+    assert result.final_output == "修订稿"
+    # writer 入口无 architect 输出；前文摘要经 context 变量注入 system prompt
+    writer_call = next(c for c in llm.calls if c["stage"] == "writer")
+    writer_system = writer_call["messages"][0].content
+    assert "前文摘要" in writer_system  # {context} 渲染为前文摘要
+    assert "{architect_output}" not in writer_system
+    # reviser 收 writer + auditor 输出
+    reviser_call = next(c for c in llm.calls if c["stage"] == "reviser")
+    assert "续写正文" in reviser_call["messages"][1].content
+    assert "审阅意见" in reviser_call["messages"][1].content
