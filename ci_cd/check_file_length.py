@@ -6,7 +6,7 @@
 覆盖范围：.py / .ts / .tsx（#281 前端护栏扩展，2026-08-13）。
 自动排除 node_modules / dist / .venv / __pycache__ 等构建与依赖目录。
 
-存量豁免（ALLOWLIST）：仅存功能文件（拆分另见 #307）。
+存量豁免（ALLOWLIST）：已清零（#307 拆分功能文件后归零）。
 ⚠️ 规则固化（#281 T4）：不再新增 ALLOWLIST 豁免——超限文件优先拆分，
 而非贴线增长后申请豁免。
 """
@@ -14,10 +14,8 @@
 import sys
 from pathlib import Path
 
-# 存量超限功能文件（拆分见 #307，拆分后移除——届时 ALLOWLIST 归零）
-ALLOWLIST = {
-    "src/inkflow/domain/services/extraction_service.py",  # 978 行（F14 门面，#307）
-}
+# 存量超限功能文件（#307 已清零：extraction_service.py 拆分至 ≤900 行，ALLOWLIST 归零）
+ALLOWLIST: set[str] = set()
 
 # 检查的扩展名（#281 起含前端 .ts/.tsx）
 EXTENSIONS = (".py", ".ts", ".tsx")
