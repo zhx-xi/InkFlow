@@ -46,7 +46,7 @@ export const zh = {
   'lib.saving': '保存中…',
   'lib.saved': '已保存',
   'lib.delete.title': '删除{name}？',
-  'lib.delete.confirm': '点击确认后立即移除（后台逻辑删除，30 天后彻底清除）',
+  'lib.delete.confirm': '点击确认后立即移除，不可恢复',
   'lib.delete.worldCascade': '该条目及其全部子条目将级联删除，不可恢复',
   'lib.delete.ok': '确认删除',
   // F36（#196）：分类实体手动创建对话框

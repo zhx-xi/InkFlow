@@ -18,6 +18,7 @@ import builtins
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, or_, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -226,12 +227,24 @@ class SQLiteCharacterRepository:
         return _char_orm_to_domain(orm)
 
     async def hard_delete(self, character_id: int) -> bool:
-        """物理删除角色（其双向关系由 DB FK CASCADE 物理删除，v1.1 默认真删语义）."""
+        """物理删除角色（先显式删除其双向关系，foreign_keys=OFF 下不依赖 FK）.
+
+        F43 P5（spec §2.10/§5.18）: 生产连接未开 foreign_keys=ON，显式
+        DELETE character_relations（from/to 双向）与主删除同一事务。
+        """
         stmt = select(CharacterORM).where(CharacterORM.id == character_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:
             return False
+        await self._session.execute(
+            sa_delete(CharacterRelationORM).where(
+                or_(
+                    CharacterRelationORM.from_character_id == character_id,
+                    CharacterRelationORM.to_character_id == character_id,
+                )
+            )
+        )
         await self._session.delete(orm)
         await self._session.commit()
         return True

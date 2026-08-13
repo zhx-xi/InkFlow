@@ -218,3 +218,119 @@ class TestChapterRepositoryGaps:
         assert repr(v) == "<VolumeORM id=1 title='第一卷'>"
         c = ChapterORM(id=2, title="第一章")
         assert repr(c) == "<ChapterORM id=2 title='第一章'>"
+
+
+# ══ P5 删除引用残留清理（#284 最后一批，spec §2.10/§5.18）══
+#
+# 生产 foreign_keys=OFF → 删除写作章节后 6 处引用残留（outlines.chapter_id /
+# timeline_events.source_chapter_id / audit_logs / chapter_summaries /
+# agent_runs.chapter_id / drafts.chapter_id）。本段用 OFF fixture 契约
+# 「delete_chapter 显式清理」。
+#
+# 注意 agent_runs / drafts 的 chapter_id 是 String(36) 领域 UUID 字符串
+# （非 int FK）——匹配键 = str(uuid.UUID(int=chapter_id))。
+
+
+@pytest.fixture
+async def db_session_off_fk():
+    """独立 in-memory SQLite — 不设 PRAGMA foreign_keys（默认 OFF，镜像生产）."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    # 刻意不设置 foreign_keys=ON —— 镜像生产（apply_sqlite_pragma 无此设置）
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        yield session
+    await engine.dispose()
+
+
+class TestP5DeleteChapterCleansReferences:
+    """P5：delete_chapter 显式清理 6 处引用——RED 预期 FAIL."""
+
+    async def test_delete_chapter_cleans_all_six_references(self, db_session_off_fk, project):
+        """删除章节 → outlines.chapter_id / timeline.source_chapter_id 置空；
+        audit_logs / chapter_summaries 删除；agent_runs / drafts chapter_id 置空."""
+        repo = SQLiteChapterRepository(db_session_off_fk)
+        ch = await repo.add_chapter(_chapter(project, "第一章"))
+        chid = ch.id.int
+        ch_uuid_str = str(uuid.UUID(int=chid))
+
+        # ① outlines.chapter_id 引用
+        from inkflow.infrastructure.database.models.outline import OutlineORM
+
+        db_session_off_fk.add(OutlineORM(name="试剑大典", project_id=project.id, chapter_id=chid))
+        # ② timeline_events.source_chapter_id 引用
+        from inkflow.infrastructure.database.models.timeline import TimelineEventORM
+
+        db_session_off_fk.add(
+            TimelineEventORM(
+                title="觉醒", project_id=project.id, description="", source_chapter_id=chid
+            )
+        )
+        # ③ audit_logs.chapter_id 引用（CASCADE → 删除）
+        from inkflow.infrastructure.database.models.audit_log import AuditLogORM
+
+        db_session_off_fk.add(
+            AuditLogORM(
+                project_id=project.id,
+                chapter_id=chid,
+                chapter_title="第一章",
+                status="pending",
+                severity_summary="0 errors",
+            )
+        )
+        # ④ chapter_summaries.chapter_id 引用（CASCADE → 删除）
+        from inkflow.infrastructure.database.models.context import ChapterSummaryORM
+
+        db_session_off_fk.add(ChapterSummaryORM(chapter_id=chid, summary="摘要", model="test"))
+        # ⑤ agent_runs.chapter_id（String(36) uuid 字符串 → 置空）
+        from inkflow.infrastructure.database.models.agent_run import AgentRunORM
+
+        db_session_off_fk.add(
+            AgentRunORM(
+                id=str(uuid.uuid4()),
+                project_id=str(uuid.UUID(int=project.id)),
+                chapter_id=ch_uuid_str,
+                status="completed",
+            )
+        )
+        # ⑥ drafts.chapter_id（String(36) uuid 字符串 → 置空）
+        from inkflow.infrastructure.database.models.agent_run import DraftORM
+
+        db_session_off_fk.add(
+            DraftORM(
+                id=str(uuid.uuid4()),
+                project_id=str(uuid.UUID(int=project.id)),
+                chapter_id=ch_uuid_str,
+                content="草稿",
+            )
+        )
+        await db_session_off_fk.commit()
+
+        assert await repo.delete_chapter(chid) is True
+
+        # ① outlines.chapter_id → NULL
+        outline_row = await db_session_off_fk.execute(select(OutlineORM))
+        assert outline_row.scalars().all()[0].chapter_id is None
+        # ② timeline_events.source_chapter_id → NULL
+        te_row = await db_session_off_fk.execute(select(TimelineEventORM))
+        assert te_row.scalars().all()[0].source_chapter_id is None
+        # ③ audit_logs 行删除
+        from sqlalchemy import func as sa_func
+
+        audit_count = await db_session_off_fk.execute(
+            select(sa_func.count()).select_from(AuditLogORM)
+        )
+        assert audit_count.scalar_one() == 0
+        # ④ chapter_summaries 行删除
+        summary_count = await db_session_off_fk.execute(
+            select(sa_func.count()).select_from(ChapterSummaryORM)
+        )
+        assert summary_count.scalar_one() == 0
+        # ⑤ agent_runs.chapter_id → NULL
+        run_row = await db_session_off_fk.execute(select(AgentRunORM))
+        assert run_row.scalars().all()[0].chapter_id is None
+        # ⑥ drafts.chapter_id → NULL
+        draft_row = await db_session_off_fk.execute(select(DraftORM))
+        assert draft_row.scalars().all()[0].chapter_id is None

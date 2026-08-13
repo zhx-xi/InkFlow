@@ -296,6 +296,45 @@ class TestDeleteEvent:
         assert await service.delete_event(uuid.uuid4()) is False
 
 
+class TestP5DeleteEventTriggersMapCleanup:
+    """C8：delete_event 触发 map_cleanup 钩子——RED 预期 FAIL（现无钩子调用）."""
+
+    async def test_delete_event_calls_map_cleanup_hook(self, mock_repo, mock_project_repo) -> None:
+        """删除成功 → map_cleanup 钩子被调用（clear_ref_pins('event', [eid])）."""
+        map_cleanup = AsyncMock()
+        svc = TimelineService(
+            repository=mock_repo,
+            project_repo=mock_project_repo,
+            map_cleanup=map_cleanup,
+        )
+        event = _event("宗门大比")
+        mock_repo.hard_delete = AsyncMock(return_value=True)
+
+        result = await svc.delete_event(event.id)
+
+        assert result is True
+        map_cleanup.assert_awaited_once()
+        call = map_cleanup.await_args
+        assert call is not None and call.args[0] == event.id.int
+
+    async def test_delete_event_missing_skips_map_cleanup(
+        self, mock_repo, mock_project_repo
+    ) -> None:
+        """删除失败（事件不存在）→ 钩子不被调用."""
+        map_cleanup = AsyncMock()
+        svc = TimelineService(
+            repository=mock_repo,
+            project_repo=mock_project_repo,
+            map_cleanup=map_cleanup,
+        )
+        mock_repo.hard_delete = AsyncMock(return_value=False)
+
+        result = await svc.delete_event(uuid.uuid4())
+
+        assert result is False
+        map_cleanup.assert_not_awaited()
+
+
 class TestViewCheck:
     """双线视图与一致性检查 — 编排。"""
 

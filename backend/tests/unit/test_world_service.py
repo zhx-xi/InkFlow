@@ -759,3 +759,40 @@ class TestF35TreeQueries:
         mock_repo.get = AsyncMock(return_value=None)
 
         assert await service.list_ancestors(uuid.uuid4()) is None
+
+
+# ══ P5 删除引用残留清理（#284 最后一批，spec §2.10/§5.18）══
+#
+# 生产 foreign_keys=OFF → 删除世界观条目后 maps.root_location_id / pin
+# location_id 残留。cascade/单删路径已调 location_cleanup（F36 D10=b）；
+# **reparent 路径漏调**（spec §5.18）——本段契约补上。
+
+
+class TestP5DeleteSettingReparentTriggersLocationCleanup:
+    """C9：delete_setting reparent 路径触发 location_cleanup——RED 预期 FAIL."""
+
+    async def test_delete_setting_reparent_calls_location_cleanup(
+        self, mock_repo, mock_project_repo, mock_extractor
+    ) -> None:
+        """reparent 删除（子改挂新父）→ location_cleanup 钩子被调用（[被删条目 id]）."""
+        location_cleanup = AsyncMock()
+        svc = WorldService(
+            repository=mock_repo,
+            extractor=mock_extractor,
+            project_repo=mock_project_repo,
+            location_cleanup=location_cleanup,
+        )
+        setting = _setting(name="清河县城")
+        target = _setting(name="青州")
+        mock_repo.get = AsyncMock(
+            side_effect=lambda sid: target if sid == target.id.int else setting
+        )
+        mock_repo.list = AsyncMock(return_value=([_setting(name="子地点")], 1))
+        mock_repo.delete_with_reparent = AsyncMock(return_value=True)
+
+        result = await svc.delete_setting(setting.id, reparent_to=target.id)
+
+        assert result is True
+        location_cleanup.assert_awaited_once()
+        call = location_cleanup.await_args
+        assert call is not None and call.args[0] == [setting.id.int]

@@ -640,3 +640,45 @@ class TestOutlineRepositoryCoverageGaps:
         assert repr(p) == "<PlotPointORM id=2 name='主角登场'>"
         a = StoryArcORM(id=3, name="主角成长线")
         assert repr(a) == "<StoryArcORM id=3 name='主角成长线'>"
+
+
+# ══ P5 删除引用残留清理（#284 最后一批，spec §2.10/§5.18）══
+#
+# 生产 foreign_keys=OFF → 删除父大纲后子大纲 parent_id / 情节点残留。
+# 本段用 OFF fixture 契约「hard_delete 显式清理」（镜像生产，不依赖 FK）。
+
+
+@pytest.fixture
+async def db_session_off_fk():
+    """独立 in-memory SQLite — 不设 PRAGMA foreign_keys（默认 OFF，镜像生产）."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    # 刻意不设置 foreign_keys=ON —— 镜像生产（apply_sqlite_pragma 无此设置）
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        yield session
+    await engine.dispose()
+
+
+class TestP5HardDeleteCleansChildrenAndPoints:
+    """P5：hard_delete 显式置空子大纲 parent_id + 删情节点——RED 预期 FAIL."""
+
+    async def test_hard_delete_detaches_children_and_deletes_points(
+        self, db_session_off_fk, project
+    ):
+        """删除父大纲 → 直接子大纲 parent_id 置 None；情节点行物理删除."""
+        repo = SQLiteOutlineRepository(db_session_off_fk)
+        parent = await repo.add(_outline(project, "整体大纲", level="overall"))
+        child = await repo.add(_outline(project, "第一卷", level="volume", parent_id=parent.id))
+        await repo.add_point(_point(child, project, "主角登场"))
+
+        assert await repo.hard_delete(parent.id.int) is True
+
+        got = await repo.get(child.id.int)
+        assert got is not None
+        assert got.parent_id is None
+
+        points = await repo.list_points(child.id.int)
+        assert points == []

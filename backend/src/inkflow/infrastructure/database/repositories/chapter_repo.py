@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +17,12 @@ from inkflow.domain.models.chapter import (
     Volume,
 )
 from inkflow.domain.services._word_count import count_words
+from inkflow.infrastructure.database.models.agent_run import AgentRunORM, DraftORM
+from inkflow.infrastructure.database.models.audit_log import AuditLogORM
 from inkflow.infrastructure.database.models.chapter import ChapterORM, VolumeORM
+from inkflow.infrastructure.database.models.context import ChapterSummaryORM
+from inkflow.infrastructure.database.models.outline import OutlineORM
+from inkflow.infrastructure.database.models.timeline import TimelineEventORM
 
 
 def _utcnow() -> datetime:
@@ -200,10 +206,41 @@ class SQLiteChapterRepository:
         return _chapter_orm_to_domain(result.scalar_one())
 
     async def delete_chapter(self, chapter_id: int) -> bool:
+        """物理删除章节（先显式清理 6 处引用，foreign_keys=OFF 下不依赖 FK）.
+
+        F43 P5（spec §2.10/§5.18）: 生产连接未开 foreign_keys=ON，显式
+        引用清理与主删除同一事务——
+        ① outlines.chapter_id / timeline_events.source_chapter_id → NULL
+        ② audit_logs / chapter_summaries 级联删除
+        ③ agent_runs / drafts chapter_id（String(36) uuid 字符串）→ NULL
+        """
         result = await self._session.execute(select(ChapterORM).where(ChapterORM.id == chapter_id))
         orm = result.scalar_one_or_none()
         if orm is None:
             return False
+        ch_uuid_str = str(uuid.UUID(int=chapter_id))
+        await self._session.execute(
+            sa_update(OutlineORM).where(OutlineORM.chapter_id == chapter_id).values(chapter_id=None)
+        )
+        await self._session.execute(
+            sa_update(TimelineEventORM)
+            .where(TimelineEventORM.source_chapter_id == chapter_id)
+            .values(source_chapter_id=None)
+        )
+        await self._session.execute(
+            sa_delete(AuditLogORM).where(AuditLogORM.chapter_id == chapter_id)
+        )
+        await self._session.execute(
+            sa_delete(ChapterSummaryORM).where(ChapterSummaryORM.chapter_id == chapter_id)
+        )
+        await self._session.execute(
+            sa_update(AgentRunORM)
+            .where(AgentRunORM.chapter_id == ch_uuid_str)
+            .values(chapter_id=None)
+        )
+        await self._session.execute(
+            sa_update(DraftORM).where(DraftORM.chapter_id == ch_uuid_str).values(chapter_id=None)
+        )
         await self._session.delete(orm)
         await self._session.commit()
         return True

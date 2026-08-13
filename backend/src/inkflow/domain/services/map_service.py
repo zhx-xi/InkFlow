@@ -562,13 +562,29 @@ class MapService:
     async def clear_location_pins(self, location_ids: list[uuid.UUID]) -> int:
         """地点硬删钩子（D10=b）: 解除地点关联 pin（SET NULL，pin 保留，label 不变）.
 
+        F43 P5 扩展: 追加一次性解除 maps.root_location_id 关联（单次批量 repo
+        调用，不参与返回值累计——返回值保持既有契约 = pin 清理行数）。
+
         Args:
             location_ids: 待解除关联的地点 UUID 列表.
 
         Returns:
-            累计更新行数.
+            累计 pin 更新行数.
         """
         total = 0
         for location_id in location_ids:
             total += await self._repo.clear_location_pins(_to_int_id(location_id))
+        await self._repo.clear_map_root_locations([_to_int_id(i) for i in location_ids])
         return total
+
+    async def clear_ref_pins(self, ref_type: str, ref_ids: list[uuid.UUID]) -> int:
+        """角色/事件硬删钩子（F43 P5）: 解除关联 pin（UPDATE map_pins SET ref_id=NULL）.
+
+        Args:
+            ref_type: pin 类型（role/event）.
+            ref_ids: 待解除关联的实体 UUID 列表.
+
+        Returns:
+            更新行数（批量转换为 int ids 后单次调用 repo）.
+        """
+        return await self._repo.clear_ref_pins(ref_type, [_to_int_id(i) for i in ref_ids])

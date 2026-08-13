@@ -287,6 +287,9 @@ class WorldService:
         - reparent_to=<id> → 真删自身 + 直接子改挂新父（delete_with_reparent 单事务）
         - cascade 与 reparent_to 同时提供 → cascade 优先
 
+        F43 P5: reparent 分支补调 location_cleanup 钩子（spec §5.18，
+        cascade/单删分支已有，reparent 分支此前漏调）。
+
         Args:
             setting_id: 条目主键（支持 int 或 UUID）.
             cascade: True 级联真删整棵子树（优先于 reparent_to）.
@@ -331,6 +334,7 @@ class WorldService:
             if target_int in [s.id.int for s in subtree]:
                 raise WorldReparentTargetError()
             logger.info("reparent 真删世界观条目: setting_id=%s → %s", setting_id, reparent_to)
+            await self._notify_location_cleanup([sid])
             return await self._repo.delete_with_reparent(sid, target_int)
         if children:
             raise WorldChildrenActionRequiredError()

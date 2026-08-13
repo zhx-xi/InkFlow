@@ -723,3 +723,55 @@ class TestCharacterExtraContract:
         await service.create_character(project_id=PID, name="林尘")
         added = mock_repo.add.await_args.args[0]
         assert added.extra == {}
+
+
+# ══ P5 删除引用残留清理（#284 最后一批，spec §2.10/§5.18）══
+#
+# 生产 foreign_keys=OFF → 删除角色后 map_pins.ref_id(type=role) 残留。
+# 本段契约：delete_character 注入 map_cleanup 钩子 → 删除成功后调用
+# clear_ref_pins('role', [角色 int id])。镜像 world_service 的
+# location_cleanup 钩子先例（F36 D10=b）。
+
+
+class TestP5DeleteCharacterTriggersMapCleanup:
+    """C7：delete_character 触发 map_cleanup 钩子——RED 预期 FAIL（现无钩子调用）."""
+
+    async def test_delete_character_calls_map_cleanup_hook(
+        self, mock_repo, mock_project_repo, mock_extractor
+    ) -> None:
+        """删除成功 → map_cleanup 钩子被调用（clear_ref_pins('role', [cid])）."""
+        map_cleanup = AsyncMock()
+        svc = CharacterService(
+            repository=mock_repo,
+            extractor=mock_extractor,
+            project_repo=mock_project_repo,
+            map_cleanup=map_cleanup,
+        )
+        char = _char(name="林尘")
+        mock_repo.hard_delete = AsyncMock(return_value=True)
+
+        result = await svc.delete_character(char.id)
+
+        assert result is True
+        map_cleanup.assert_awaited_once()
+        # 钩子接收角色 int id（map_pins.ref_id 为 int 主键）
+        call = map_cleanup.await_args
+        assert call is not None and call.args[0] == char.id.int
+
+    async def test_delete_character_missing_skips_map_cleanup(
+        self, mock_repo, mock_project_repo, mock_extractor
+    ) -> None:
+        """删除失败（角色不存在）→ 钩子不被调用."""
+        map_cleanup = AsyncMock()
+        svc = CharacterService(
+            repository=mock_repo,
+            extractor=mock_extractor,
+            project_repo=mock_project_repo,
+            map_cleanup=map_cleanup,
+        )
+        mock_repo.hard_delete = AsyncMock(return_value=False)
+
+        result = await svc.delete_character(uuid.uuid4())
+
+        assert result is False
+        map_cleanup.assert_not_awaited()

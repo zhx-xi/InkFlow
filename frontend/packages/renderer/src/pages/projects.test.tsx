@@ -455,7 +455,7 @@ describe('项目页 — F43 卡片菜单重命名/删除（P0）', () => {
     const confirm = await screen.findByTestId('project-delete-dialog');
     expect(confirm).toHaveTextContent('青云志');
     expect(confirm).toHaveTextContent('其章节、设定、大纲、时间线数据将全部删除');
-    expect(confirm).toHaveTextContent('点击确认后立即移除（后台逻辑删除，30 天后彻底清除）');
+    expect(confirm).toHaveTextContent('点击确认后立即移除，不可恢复');
     await user.click(within(confirm).getByTestId('project-delete-ok'));
 
     await waitFor(() => {
