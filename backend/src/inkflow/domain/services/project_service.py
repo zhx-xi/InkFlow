@@ -23,9 +23,11 @@ def _validate_agent_order_config(config: ProjectConfig) -> None:
     """配置驱动模式语义校验（C1，spec §2.3/§7）：agent_order 非空时必须包含全部启用角色。
 
     - agent_order 空（默认模板模式）→ 直接返回（不校验，B1 零迁移）
-    - 非空（配置驱动模式）→ 启用角色 = 4 个 agent_* 字段中非 None 的字段名集合：
+    - 非空（配置驱动模式）→ 启用角色 = 内置 agent_* 非 null ∪ agent_roles 非 null
+      （F42 #295，spec §5.3.4 第 4 点；agent_roles key 已带 agent_ 前缀）：
       - 启用集合为空 → ValueError（至少 1 个启用角色）
-      - order 展开集缺启用角色 → ValueError（消息含缺失字段名，按字母序、逗号+空格连接）
+      - order 展开集缺启用角色 → ValueError（消息含缺失字段名，内置四角色按
+        声明序、自定义角色按字段序追加，逗号+空格连接）
     """
     if not config.agent_order:
         return
@@ -34,16 +36,24 @@ def _validate_agent_order_config(config: ProjectConfig) -> None:
         for field in ("agent_architect", "agent_writer", "agent_auditor", "agent_reviser")
         if getattr(config, field) is not None
     }
+    # F42 #295：自定义角色启用口径 = agent_roles 非 null 的 key（带前缀，直接并入）
+    for field, value in (config.agent_roles or {}).items():
+        if value is not None:
+            enabled_roles.add(field)
     if not enabled_roles:
         raise ValueError("配置驱动模式至少需要 1 个启用角色")
     order_roles = {role for layer in config.agent_order for role in layer}
     # 缺失字段名按角色字段声明序（architect/writer/auditor/reviser）输出——
     # 与 UI/模板角色顺序一致（契约断言锚定首个缺失角色，如 agent_writer）
-    missing = [
+    missing: list[str] = [
         field
         for field in ("agent_architect", "agent_writer", "agent_auditor", "agent_reviser")
         if field in enabled_roles and field not in order_roles
     ]
+    # 自定义角色（agent_roles）追加在末尾（无固定声明序，按字段序输出）
+    for field in config.agent_roles or {}:
+        if field in enabled_roles and field not in order_roles and field not in missing:
+            missing.append(field)
     if missing:
         raise ValueError(f"agent_order 必须包含全部启用角色: {', '.join(missing)}")
 

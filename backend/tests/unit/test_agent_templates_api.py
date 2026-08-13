@@ -295,3 +295,73 @@ class TestAgentTemplateDeleteAPI:
         response = client.delete("/api/v1/agent-templates/1")
         assert response.status_code == 409
         assert response.json()["detail"] == "默认模板不可删除"
+
+
+class TestAgentTemplateCustomRoleAPI:
+    """F42 #295 _to_response 输出自定义角色（spec §5.3.4 数据面 + M3 模板 API 可读写）。
+
+    契约：模板 roles 含自定义角色（非四键）时，API 响应 roles 含该自定义键
+    （prompt/name 可读回）；内置四键顺序契约不变。
+
+    RED 形态：_to_response 固定四键 ROLE_KEYS 丢弃自定义键 →
+    `"researcher" in data["roles"]` AssertionError。
+    """
+
+    @patch("inkflow.api.routers.agent_templates.SQLiteAgentTemplateRepository")
+    @patch("inkflow.api.routers.agent_templates._get_service")
+    def test_get_includes_custom_roles(
+        self, mock_get_svc: MagicMock, mock_repo_cls: MagicMock
+    ) -> None:
+        """模板含自定义角色（prompt/name）→ 响应 roles 含自定义键 + prompt/name 可读回。"""
+        svc = _mock_svc(mock_get_svc)
+        template = _template(
+            1,
+            "含自定义角色",
+            roles={
+                "researcher": RoleTemplate(
+                    prompt="你是研究员", name="研究员", model="zhipu/glm-4.5"
+                ),
+            },
+        )
+        svc.get = AsyncMock(return_value=template)
+        _mock_template_repo(mock_repo_cls, [])
+
+        response = client.get("/api/v1/agent-templates/1")
+        assert response.status_code == 200
+        data = response.json()
+        # 自定义角色键存在 + prompt/name 可读回
+        assert "researcher" in data["roles"]
+        assert data["roles"]["researcher"]["prompt"] == "你是研究员"
+        assert data["roles"]["researcher"]["name"] == "研究员"
+        assert data["roles"]["researcher"]["model"] == "zhipu/glm-4.5"
+
+    @patch("inkflow.api.routers.agent_templates._get_service")
+    def test_create_response_includes_custom_role_prompt_name(
+        self, mock_get_svc: MagicMock
+    ) -> None:
+        """POST 创建模板含自定义角色（prompt/name）→ 响应回读 prompt/name（M3 可写可读）。"""
+        svc = _mock_svc(mock_get_svc)
+        template = _template(
+            1,
+            "我的模板",
+            roles={
+                "writer": RoleTemplate(model="m/w"),
+                "researcher": RoleTemplate(prompt="p", name="研究员"),
+            },
+        )
+        svc.create = AsyncMock(return_value=template)
+
+        response = client.post(
+            "/api/v1/agent-templates",
+            json={
+                "name": "我的模板",
+                "roles": {
+                    "writer": {"model": "m/w", "temperature": 0.6, "enabled": True},
+                    "researcher": {"prompt": "p", "name": "研究员"},
+                },
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["roles"]["researcher"]["prompt"] == "p"
+        assert data["roles"]["researcher"]["name"] == "研究员"

@@ -324,3 +324,60 @@ class TestUpdateAgentOrderValidation:
         merged = mock_repo.update.await_args.args[0]
         assert "agent_order" in merged.config.model_dump()
         assert merged.config.model_dump()["agent_order"] == order
+
+
+class TestAgentRolesValidation:
+    """F42 #295 启用角色口径扩展（spec §5.3.4 数据面第 4 点）：配置驱动模式启用 =
+    内置 agent_* 非 null ∪ agent_roles 非 null。
+
+    契约：agent_order 非空时，agent_roles 中非 null 的自定义角色也必须出现在
+    order 展开集，否则 ValueError「agent_order 必须包含全部启用角色: ...」；
+    agent_roles 值为 null（关闭）的自定义角色不要求出现在 order。
+
+    RED 形态：agent_roles 字段不存在（extra ignore 丢弃）→ 校验不覆盖自定义角色
+    → 缺自定义角色用例 DID NOT RAISE（断言 FAIL）；守护用例（关闭不要求）RED 阶段即 PASS。
+    """
+
+    async def test_custom_role_enabled_requires_in_order(self, svc, mock_repo) -> None:
+        """agent_roles 自定义角色非 null（启用）+ agent_order 缺该角色 → ValueError
+        「agent_order 必须包含全部启用角色: agent_researcher」。"""
+        existing = _project(
+            config=ProjectConfig(
+                agent_architect="openai/gpt-4o",
+                agent_roles={"agent_researcher": "zhipu/glm-4.5"},  # 启用自定义角色
+            )
+        )
+        mock_repo.get = AsyncMock(return_value=existing)
+
+        with pytest.raises(ValueError, match="agent_order 必须包含全部启用角色"):
+            await svc.update(
+                PID,
+                ProjectUpdate(
+                    config=ProjectConfig(
+                        agent_order=[["agent_architect"]],  # 缺 agent_researcher
+                        agent_roles={"agent_researcher": "zhipu/glm-4.5"},
+                    )
+                ),
+            )
+        mock_repo.update.assert_not_awaited()
+
+    async def test_custom_role_disabled_not_required_in_order(self, svc, mock_repo) -> None:
+        """agent_roles 自定义角色 null（关闭）→ 不要求出现在 order → 校验通过（守护）。"""
+        existing = _project(
+            config=ProjectConfig(
+                agent_architect="openai/gpt-4o",
+                agent_roles={"agent_researcher": None},  # 关闭
+            )
+        )
+        mock_repo.get = AsyncMock(return_value=existing)
+
+        await svc.update(
+            PID,
+            ProjectUpdate(
+                config=ProjectConfig(
+                    agent_order=[["agent_architect"]],
+                    agent_roles={"agent_researcher": None},
+                )
+            ),
+        )
+        mock_repo.update.assert_awaited_once()
