@@ -137,7 +137,7 @@ class ForeshadowingService:
 
         Raises:
             ProjectNotFoundError: 项目不存在（router 层转 404）.
-            ForeshadowingNameConflictError: 项目内已存在同名活动伏笔（422）.
+            ForeshadowingNameConflictError: 项目内已存在同名伏笔（422）.
             EventNotFoundError / EventNotInProjectError: event_id 锚点校验失败（422）.
             ForeshadowingServiceError: project_repo / timeline_repo 未注入（配置错误）.
         """
@@ -164,7 +164,7 @@ class ForeshadowingService:
         return await self._repo.add(foreshadowing)
 
     async def get(self, foreshadowing_id: int | uuid.UUID) -> Foreshadowing | None:
-        """按主键获取伏笔（不含已软删除）；不存在返回 None（router 转 404）."""
+        """按主键获取伏笔；不存在返回 None（router 转 404）."""
         return await self._repo.get(_to_int_id(foreshadowing_id))
 
     async def list(
@@ -177,12 +177,12 @@ class ForeshadowingService:
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[builtins.list[Foreshadowing], int]:
-        """分页查询项目内活动伏笔列表（spec §6.3）.
+        """分页查询项目内伏笔列表（spec §6.3）.
 
         Args:
             project_id: 所属项目 UUID（router 解析路径参数后传入）.
             search: 伏笔名不区分大小写子串匹配（可选）.
-            status: 状态精确过滤（open / resolved；不传 = 全部活动伏笔）.
+            status: 状态精确过滤（open / resolved；不传 = 全部伏笔）.
             sort_by: 排序字段（priority / title / status / updated_at / created_at）.
             sort_desc: 是否倒序（默认 True，priority 大者在前）.
             offset: 分页偏移.
@@ -213,7 +213,7 @@ class ForeshadowingService:
 
         event_id 语义（spec §2.5/§7）: None 不修改；"" 解除事件挂接
         （置 None）；UUID 挂接（仅当与现有值不同时校验存在性 + 同项目）。
-        title 变更时做同名检查（命中其他活动伏笔 → 422）。
+        title 变更时做同名检查（命中其他伏笔 → 422）。
         status / resolved_at 不可经本方法修改（DTO 无此字段，天然满足）。
 
         Args:
@@ -224,7 +224,7 @@ class ForeshadowingService:
             更新后的完整 Foreshadowing；伏笔不存在返回 None（router 转 404）.
 
         Raises:
-            ForeshadowingNameConflictError: 改名与项目内其他活动伏笔同名（422）.
+            ForeshadowingNameConflictError: 改名与项目内其他伏笔同名（422）.
             EventNotFoundError / EventNotInProjectError: event_id 锚点校验失败（422）.
             ForeshadowingServiceError: timeline_repo 未注入（配置错误）.
         """
@@ -242,7 +242,7 @@ class ForeshadowingService:
             elif new_event_id != existing.event_id:
                 # 事件校验只在 event_id 发生变化时执行（避免对未变字段重复校验）
                 await self._validate_event(existing.project_id, new_event_id)
-        # title 改名同名检查（命中其他活动伏笔 → 422）
+        # title 改名同名检查（命中其他伏笔 → 422）
         if "title" in updates and updates["title"] != existing.title:
             dup = await self._repo.get_by_title(_to_int_id(existing.project_id), updates["title"])
             if dup is not None and dup.id != existing.id:
@@ -259,7 +259,7 @@ class ForeshadowingService:
 
         Returns:
             迁移后的 Foreshadowing；已 resolved 原样返回（幂等，resolved_at
-            不更新）；伏笔不存在/已软删除返回 None（router 转 404）.
+            不更新）；伏笔不存在返回 None（router 转 404）.
         """
         fid = _to_int_id(foreshadowing_id)
         existing = await self._repo.get(fid)
@@ -280,8 +280,8 @@ class ForeshadowingService:
             foreshadowing_id: 伏笔主键（支持 int 或 UUID）.
 
         Returns:
-            迁移后的 Foreshadowing；已 open 原样返回（幂等）；伏笔不存在/
-            已软删除返回 None（router 转 404）.
+            迁移后的 Foreshadowing；已 open 原样返回（幂等）；伏笔不存在
+            返回 None（router 转 404）.
         """
         fid = _to_int_id(foreshadowing_id)
         existing = await self._repo.get(fid)
@@ -295,8 +295,8 @@ class ForeshadowingService:
         logger.info("伏笔已重新开启: foreshadowing_id=%s", foreshadowing_id)
         return await self._repo.update(merged)
 
-    async def soft_delete(self, foreshadowing_id: int | uuid.UUID) -> bool:
-        """软删除伏笔（spec §7: 不存在 → False，router 转 404）.
+    async def delete(self, foreshadowing_id: int | uuid.UUID) -> bool:
+        """删除伏笔（v1.1 默认真删，不可恢复；spec §7: 不存在 → False，router 转 404）.
 
         Args:
             foreshadowing_id: 伏笔主键（支持 int 或 UUID）.
@@ -305,33 +305,5 @@ class ForeshadowingService:
             True 表示删除成功；False 表示未找到记录.
         """
         fid = _to_int_id(foreshadowing_id)
-        logger.info("软删除伏笔: foreshadowing_id=%s", foreshadowing_id)
-        return await self._repo.soft_delete(fid)
-
-    async def restore(self, foreshadowing_id: int | uuid.UUID) -> Foreshadowing | None:
-        """恢复已软删除伏笔（原 status/resolved_at 原样保留，spec §2.4）.
-
-        Args:
-            foreshadowing_id: 伏笔主键（支持 int 或 UUID）.
-
-        Returns:
-            恢复后的 Foreshadowing；不存在返回 None（router 转 404）.
-        """
-        fid = _to_int_id(foreshadowing_id)
-        restored = await self._repo.restore(fid)
-        if restored is not None:
-            logger.info("恢复伏笔: foreshadowing_id=%s", foreshadowing_id)
-        return restored
-
-    async def hard_delete(self, foreshadowing_id: int | uuid.UUID) -> bool:
-        """物理删除伏笔（spec §3.1: ?force=true 物理删除；不存在 → False）.
-
-        Args:
-            foreshadowing_id: 伏笔主键（支持 int 或 UUID）.
-
-        Returns:
-            True 表示删除成功；False 表示未找到记录.
-        """
-        fid = _to_int_id(foreshadowing_id)
-        logger.info("硬删除伏笔: foreshadowing_id=%s", foreshadowing_id)
+        logger.info("真删伏笔: foreshadowing_id=%s", foreshadowing_id)
         return await self._repo.hard_delete(fid)

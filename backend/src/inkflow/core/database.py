@@ -321,6 +321,15 @@ def ensure_timeline_drop_is_deleted(conn: Connection) -> None:
     _migrate_drop_is_deleted(conn, "timeline_events")
 
 
+def ensure_foreshadowing_drop_is_deleted(conn: Connection) -> None:
+    """#211 v1.1：foreshadowings 软删 → 真删迁移（partial unique → 全唯一）."""
+    _migrate_drop_is_deleted(
+        conn,
+        "foreshadowings",
+        {"uq_foreshadowings_active_title": "project_id, title"},
+    )
+
+
 async def drop_tables() -> None:
     """Drop all tables (for test teardown)."""
     async with engine.begin() as conn:

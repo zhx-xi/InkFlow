@@ -22,9 +22,9 @@ from inkflow.domain.models.foreshadowing import Foreshadowing
 class ForeshadowingRepositoryProtocol(Protocol):
     """伏笔档案仓储端口.
 
-    按 spec §2: 单实体；项目内活动伏笔 title 唯一（partial unique）；
-    软删除后同名可复用。list_open 供 F6 数据源查询注入集合
-    （status=open 且未软删除，按 (priority DESC, updated_at DESC) 排序）。
+    按 spec §2: 单实体；项目内伏笔 title 唯一（全唯一索引）；
+    v1.1 真删语义下删除即物理消失。list_open 供 F6 数据源查询注入集合
+    （status=open，按 (priority DESC, updated_at DESC) 排序）。
 
     注: 类内方法名 ``list`` 会在 mypy 类作用域解析中遮蔽内置 ``list``，
     因此返回注解中的列表类型统一写作 ``builtins.list[...]``（同 F9/F10/F11/F12）。
@@ -44,7 +44,7 @@ class ForeshadowingRepositoryProtocol(Protocol):
         ...
 
     async def get(self, foreshadowing_id: int) -> Foreshadowing | None:
-        """按主键查询伏笔（不含已软删除）.
+        """按主键查询伏笔.
 
         Args:
             foreshadowing_id: 伏笔主键（int，与 ORM 层一致）.
@@ -55,10 +55,9 @@ class ForeshadowingRepositoryProtocol(Protocol):
         ...
 
     async def get_by_title(self, project_id: int, title: str) -> Foreshadowing | None:
-        """按 (project_id, title) 查询活动伏笔（不含已软删除）.
+        """按 (project_id, title) 查询伏笔.
 
-        同名唯一性检查用（spec §2.3 partial unique 语义）：软删除后同名
-        可复用，故仅命中 is_deleted=False 的活动条目.
+        同名唯一性检查用（spec §2.3 全唯一索引语义）：真删后同名可重建.
 
         Args:
             project_id: 项目主键（int）.
@@ -79,12 +78,12 @@ class ForeshadowingRepositoryProtocol(Protocol):
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[builtins.list[Foreshadowing], int]:
-        """分页查询项目内活动伏笔列表，支持标题模糊搜索、状态过滤与排序.
+        """分页查询项目内伏笔列表，支持标题模糊搜索、状态过滤与排序.
 
         Args:
             project_id: 项目主键（int）.
             search: 伏笔名不区分大小写子串匹配（可选）.
-            status: 状态精确过滤（open / resolved；不传 = 全部活动伏笔）.
+            status: 状态精确过滤（open / resolved；不传 = 全部伏笔）.
             sort_by: 排序字段（priority / title / status / updated_at /
                 created_at；伏笔语境下默认 priority，与注入顺序一致）.
             sort_desc: 是否倒序（默认 True，priority 大者在前；priority
@@ -98,7 +97,7 @@ class ForeshadowingRepositoryProtocol(Protocol):
         ...
 
     async def list_open(self, project_id: int) -> builtins.list[Foreshadowing]:
-        """列出项目内全部未回收伏笔（status=open 且未软删除），供 F6 注入消费.
+        """列出项目内全部未回收伏笔（status=open），供 F6 注入消费.
 
         返回顺序即 F6 注入顺序：按 (priority DESC, updated_at DESC) 排序
         （spec §6.2/§6.3；priority 为注入优先级键，大者先注入；相等时按
@@ -123,30 +122,8 @@ class ForeshadowingRepositoryProtocol(Protocol):
         """
         ...
 
-    async def soft_delete(self, foreshadowing_id: int) -> bool:
-        """软删除伏笔（is_deleted=True）.
-
-        Args:
-            foreshadowing_id: 伏笔主键（int）.
-
-        Returns:
-            是否删除成功（不存在返回 False）.
-        """
-        ...
-
-    async def restore(self, foreshadowing_id: int) -> Foreshadowing | None:
-        """恢复已软删除伏笔（原 status/resolved_at 原样保留，spec §2.4）.
-
-        Args:
-            foreshadowing_id: 伏笔主键（int）.
-
-        Returns:
-            恢复后的 Foreshadowing，不存在则返回 None.
-        """
-        ...
-
     async def hard_delete(self, foreshadowing_id: int) -> bool:
-        """物理删除伏笔（仅用于 force 场景）.
+        """物理删除伏笔（v1.1 默认真删语义）.
 
         Args:
             foreshadowing_id: 伏笔主键（int）.
