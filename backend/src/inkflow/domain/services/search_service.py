@@ -158,29 +158,34 @@ class SearchService:
             project_ids=query.project_ids,
         )
 
-    async def rebuild(self, project_id: int | None = None) -> dict:
+    async def rebuild(self, project_ids: list[int] | None = None) -> dict:
         """手动全量重建（跳过脏检测；API/CLI 调用，spec §3.1/M13）.
 
-        project_id=None → 分页枚举全部项目，合并文档一次重建；
-        project_id=<int> → 先校验项目存在（None → ProjectNotFoundError）。
+        project_ids=None → 分页枚举全部项目，合并文档一次重建；
+        project_ids=[...] → 逐项目校验存在（None → ProjectNotFoundError）。
+        返回 {"rebuilt_at": str, "project_ids": [str] | None}（None = 全部）。
         """
-        if project_id is not None:
-            project = await self._project_repo.get(project_id)
-            if project is None:
-                raise ProjectNotFoundError(f"Project not found: {project_id}")
-            project_ids = [project_id]
+        requested = project_ids
+        if requested is not None:
+            for pid in requested:
+                project = await self._project_repo.get(pid)
+                if project is None:
+                    raise ProjectNotFoundError(f"Project not found: {pid}")
+            target_ids = requested
         else:
             projects = await self._list_all_projects()
-            project_ids = [project.id.int for project in projects]
+            target_ids = [project.id.int for project in projects]
 
         await self._search_repo.ensure_index()
         documents: list[SearchDocument] = []
-        for pid in project_ids:
+        for pid in target_ids:
             documents.extend(await self._collect_project_documents(pid))
         await self._search_repo.rebuild(documents)
         return {
             "rebuilt_at": datetime.now(UTC).isoformat(),
-            "project_id": str(uuid.UUID(int=project_id)) if project_id is not None else None,
+            "project_ids": (
+                [str(uuid.UUID(int=pid)) for pid in target_ids] if requested is not None else None
+            ),
         }
 
     async def _ensure_index(self, project_ids: list[int] | None = None) -> None:

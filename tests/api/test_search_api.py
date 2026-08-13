@@ -79,14 +79,13 @@
    error"}，内部异常消息不得泄漏进响应（TestClient 默认
    raise_server_exceptions=True，GREEN 必须捕获并转 HTTPException）。
 
-9. POST /api/v1/search/rebuild 请求契约（spec §3.1-§3.2，v1.2 新增）：
-   - query 参数 project_id：可选 UUID；缺省 → service.rebuild(None)
-     （重建全部项目索引）；传 → service.rebuild(<UUID>.int)（int
-     形态，spec §8.2 SearchRepositoryProtocol 的 project_ids 为
-     list[int] 口径）
-   - 200 响应：{"rebuilt_at": "<ISO8601 UTC>", "project_id":
-     "<uuid>" | null}——全量重建 project_id 为 null，单项目回显
-     UUID 字符串
+9. POST /api/v1/search/rebuild 请求契约（spec §3.1-§3.2，v1.2 新增；#251 P3 多项目升级）：
+   - query 参数 project_id（单值）或 project_ids（逗号分隔多值）：可选；
+     都缺省 → service.rebuild(None)（重建全部项目索引）；提供 →
+     service.rebuild([<UUID>.int, ...])（list[int] 口径，spec §8.2）
+   - 200 响应：{"rebuilt_at": "<ISO8601 UTC>", "project_ids":
+     ["<uuid>", ...] | null}——全量重建 project_ids 为 null，
+     指定项目回显 UUID 字符串列表
    - 404：service.rebuild 抛 ProjectNotFoundError（映射同假设 #6）
 
 10. RED 阶段预期：`inkflow.api.routers.search` 模块不存在 → 本文件
@@ -204,10 +203,10 @@ def _query_arg(svc):
 
 
 def _rebuild_arg(svc):
-    """取 service.rebuild 收到的 project_id（位置或关键字传参，兼容两种 GREEN 形态）。"""
+    """取 service.rebuild 收到的 project_ids 列表（位置或关键字传参）。"""
     call = svc.rebuild.await_args
     assert call is not None, "service.rebuild 未被调用"
-    return call.args[0] if call.args else call.kwargs["project_id"]
+    return call.args[0] if call.args else call.kwargs["project_ids"]
 
 
 # ── GET /api/v1/search（spec §3.1-§3.3）──
@@ -371,27 +370,43 @@ class TestSearchRebuild:
     """POST /api/v1/search/rebuild 端点契约（设计假设 #9）。"""
 
     def test_rebuild_200_all(self, client, mock_svc):
-        """缺省 project_id → service.rebuild(None)（重建全部），响应 project_id=null。"""
-        mock_svc.rebuild.return_value = {"rebuilt_at": TS, "project_id": None}
+        """缺省 project_id/project_ids → service.rebuild(None)，响应 project_ids=null。"""
+        mock_svc.rebuild.return_value = {"rebuilt_at": TS, "project_ids": None}
         resp = client.post(ENDPOINT_REBUILD)
         assert resp.status_code == 200
         body = resp.json()
         assert body["rebuilt_at"] == TS
-        assert body["project_id"] is None
+        assert body["project_ids"] is None
         assert _rebuild_arg(mock_svc) is None
 
     def test_rebuild_200_single_project(self, client, mock_svc):
-        """project_id=X → service.rebuild 收到 UUID.int，响应回显 UUID 字符串。"""
+        """project_id=X → service.rebuild 收到 [UUID.int]，响应回显 UUID 列表。"""
         mock_svc.rebuild.return_value = {
             "rebuilt_at": TS,
-            "project_id": str(PROJECT_A),
+            "project_ids": [str(PROJECT_A)],
         }
         resp = client.post(ENDPOINT_REBUILD, params={"project_id": str(PROJECT_A)})
         assert resp.status_code == 200
         body = resp.json()
         assert body["rebuilt_at"] == TS
-        assert body["project_id"] == str(PROJECT_A)
-        assert _rebuild_arg(mock_svc) == PROJECT_A.int
+        assert body["project_ids"] == [str(PROJECT_A)]
+        assert _rebuild_arg(mock_svc) == [PROJECT_A.int]
+
+    def test_rebuild_200_multi_project(self, client, mock_svc):
+        """project_ids=X,Y → service.rebuild 收到 [X.int, Y.int]（#251 P3 多项目）。"""
+        mock_svc.rebuild.return_value = {
+            "rebuilt_at": TS,
+            "project_ids": [str(PROJECT_A), str(PROJECT_B)],
+        }
+        resp = client.post(
+            ENDPOINT_REBUILD,
+            params={"project_ids": f"{PROJECT_A},{PROJECT_B}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["rebuilt_at"] == TS
+        assert body["project_ids"] == [str(PROJECT_A), str(PROJECT_B)]
+        assert _rebuild_arg(mock_svc) == [PROJECT_A.int, PROJECT_B.int]
 
     def test_rebuild_404_project_not_found(self, client, mock_svc):
         """project_id 不存在 → 404（映射同 GET，假设 #6/#9）。"""

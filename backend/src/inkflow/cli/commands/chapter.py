@@ -102,6 +102,34 @@ def delete_vol(
     print_result(cli_ctx, {"deleted": True})
 
 
+@volume_app.command("update")
+def update_vol(
+    ctx: typer.Context,
+    volume_id: str = typer.Option(..., "--id", "-i"),
+    title: str | None = typer.Option(None, "--title", "-t"),
+    order: float | None = typer.Option(None, "--order", "-o"),
+):
+    """更新卷（仅更新传入字段）"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        update_fields: dict[str, object] = {}
+        if title is not None:
+            update_fields["title"] = title
+        if order is not None:
+            update_fields["order_index"] = order
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.patch(f"/volumes/{uuid.UUID(volume_id)}", json=update_fields)
+
+    vol = _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, vol)
+    else:
+        typer.echo(f"✅ 卷已更新: [{title if title is not None else vol['title']}]")
+
+
 # -- Chapter --
 
 

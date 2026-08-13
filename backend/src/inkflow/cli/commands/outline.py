@@ -477,6 +477,31 @@ def delete_point_cmd(
         typer.echo(f"✅ 情节点 #{point_id} 已删除")
 
 
+@point_app.command("get")
+def get_point_cmd(
+    ctx: typer.Context,
+    point_id: str = typer.Option(..., "--id", "-i", help="情节点 ID (UUID)"),
+) -> None:
+    """查看情节点详情"""
+    cli_ctx: CliContext = ctx.obj
+    pid = _parse_uuid(cli_ctx, point_id, "情节点不存在")
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/plot-points/{pid}")
+
+    point = _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, point)
+    else:
+        typer.echo(f"ID:         {point['id']}")
+        typer.echo(f"名称:       {point['name']}")
+        typer.echo(f"类型:       {point['type']}")
+        typer.echo(f"描述:       {point['description']}")
+
+
 # ---------------------------------------------------------------------------
 # arc 子组  —  inkflow outline arc <list|create|update|delete>
 # ---------------------------------------------------------------------------
@@ -588,6 +613,30 @@ def delete_arc_cmd(
         print_result(cli_ctx, {"id": str(aid), "deleted": True})
     else:
         typer.echo(f"✅ 弧线 #{arc_id} 已删除")
+
+
+@arc_app.command("get")
+def get_arc_cmd(
+    ctx: typer.Context,
+    arc_id: str = typer.Option(..., "--id", "-i", help="弧线 ID (UUID)"),
+) -> None:
+    """查看弧线详情"""
+    cli_ctx: CliContext = ctx.obj
+    aid = _parse_uuid(cli_ctx, arc_id, "弧线不存在")
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/story-arcs/{aid}")
+
+    arc = _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, arc)
+    else:
+        typer.echo(f"ID:         {arc['id']}")
+        typer.echo(f"名称:       {arc['name']}")
+        typer.echo(f"描述:       {arc['description']}")
 
 
 # ── 注册 point / arc 子组 ──
