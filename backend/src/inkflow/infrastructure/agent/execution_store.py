@@ -61,6 +61,29 @@ class ExecutionStore:
         execution.total_duration_ms = total_duration_ms
         await self._session.commit()
 
+    async def update_status(
+        self,
+        execution_id: str,
+        status: str,
+        hitl_payload: dict | None = None,
+    ) -> None:
+        """更新执行记录状态（HITL：waiting_hitl）。"""
+        execution = await self.get_execution(execution_id)
+        if execution is None:
+            return
+        execution.status = status
+        if hitl_payload is not None:
+            execution.hitl_payload = hitl_payload
+        await self._session.commit()
+
+    async def get_hitl_payload(self, execution_id: str) -> dict | None:
+        """读取 HITL interrupt payload 快照。"""
+        execution: AgentExecutionORM | None = await self.get_execution(execution_id)
+        if execution is None:
+            return None
+        payload: dict | None = execution.hitl_payload
+        return payload
+
     async def list_executions(
         self,
         project_id: str,
