@@ -214,7 +214,7 @@ class TestForeshadowingRepository:
         first = await repo.add(_foreshadowing(project, "林晚的身世"))
         await repo.hard_delete(first.id.int)
 
-        rebuilt = await repo.add(_foreshadowing(project, "林晚的身世"))
+        await repo.add(_foreshadowing(project, "林晚的身世"))
 
         # 真删后仅存新记录（旧档案物理消失）
         rows = await db_session.execute(select(ForeshadowingORM))
