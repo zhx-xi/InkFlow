@@ -8,11 +8,11 @@ import { AuditDialog } from '../components/AuditDialog';
 import { ChapterEditor } from '../components/ChapterEditor';
 import { ContextPanel } from '../components/ContextPanel';
 import { EditorToolbar } from '../components/EditorToolbar';
+import { PipelineStatus } from '../components/PipelineStatus';
 import { ProjectTree } from '../components/ProjectTree';
 import { StatusBar } from '../components/StatusBar';
-import { StreamArea } from '../components/StreamArea';
 import { Skeleton } from '../components/ui/skeleton';
-import { useStream } from '../hooks/useStream';
+import { usePipeline } from '../hooks/usePipeline';
 import { useI18n } from '../i18n/useI18n';
 import { useChapterStore } from '../stores/chapter';
 import { useProjectStore } from '../stores/project';
@@ -53,8 +53,14 @@ export function WritingPage() {
 
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? projects[0];
   const effectiveProjectId = currentProjectId ?? currentProject?.id ?? '';
-  const stream = useStream({ projectId: effectiveProjectId, chapterId: currentChapterId ?? '' });
-  const { status, text, wordCount, summary, error, start, stop, retry } = stream;
+  const pipeline = usePipeline({
+    projectId: effectiveProjectId,
+    chapterId: currentChapterId ?? '',
+    genre: currentProject?.genre ?? '',
+    targetWords: currentProject?.target_words ?? 0,
+    writingStyle: currentProject?.config?.writing_style ?? '',
+  });
+  const { status, error, start } = pipeline;
 
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const dirtyRef = useRef(false);
@@ -138,7 +144,7 @@ export function WritingPage() {
       const key = e.key.toLowerCase();
       if (e.shiftKey && key === 'enter') {
         e.preventDefault();
-        start('generate');
+        start('write_auto');
         return;
       }
       switch (key) {
@@ -156,7 +162,7 @@ export function WritingPage() {
           break;
         case 'enter':
           e.preventDefault();
-          start('continue');
+          start('write_continue');
           break;
         default:
           break;
@@ -170,9 +176,9 @@ export function WritingPage() {
   }
 
   const currentChapter = chapters.find((c) => c.id === currentChapterId);
-  const displayWords = status === 'generating' ? wordCount : currentChapter?.word_count ?? 0;
-  const model = summary?.model ?? currentProject?.config?.model ?? null;
-  const generating = status === 'generating';
+  const displayWords = currentChapter?.word_count ?? 0;
+  const model = currentProject?.config?.model ?? null;
+  const generating = status === 'running';
 
   return (
     <div className="flex h-full flex-col">
@@ -207,20 +213,12 @@ export function WritingPage() {
             onUndo={() => document.execCommand('undo')}
             onRedo={() => document.execCommand('redo')}
             onSave={() => void save()}
-            onContinue={() => start('continue')}
-            onGenerate={() => start('generate')}
+            onContinue={() => start('write_continue')}
+            onGenerate={() => start('write_auto')}
             onAudit={() => void handleAudit()}
           />
           <ChapterEditor onEditorKeyDown={handleKeyDown} onContentChange={handleContentChange} />
-          <StreamArea
-            status={status}
-            text={text}
-            wordCount={wordCount}
-            summary={summary}
-            error={error}
-            onStop={stop}
-            onRetry={retry}
-          />
+          <PipelineStatus status={status} error={error} />
         </main>
         <ContextPanel />
       </div>
