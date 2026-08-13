@@ -188,8 +188,9 @@
 |---|---|---|---|
 | GET | `/health` | ✅ | tests/api/test_health.py |
 
-## 附录：RAG 文件与 coverage 同进程冲突说明（F14 先例）
+## 附录：RAG 覆盖口径更新登记（#273）
 
-- **冲突**：`src/inkflow/rag/langchain_vector_store.py` 依赖 chromadb C 扩展，与 coverage 追踪器同进程运行时崩溃（F14 先例，2026-08 排查结论）。
-- **处理**：`backend/pyproject.toml` 的 `[tool.coverage.run]` 通过 `pytest --ignore` 排除该文件参与行覆盖统计；`omit = ["*/test_*.py", "*/tests/*"]` 排除测试代码自身。
-- **替代证据**：该文件的方法级覆盖以「测试方法全覆盖」替代——`backend/tests/unit/test_langchain_vector_store.py` 覆盖其全部公开方法；服务层调用链（`tests/integration/test_agent_pipeline.py` 等）亦间接验证。此登记即为 pyproject.toml 注释中「ci_cd/api-coverage.md 登记」所指。
+- **历史冲突**：`src/inkflow/rag/langchain_vector_store.py` 曾依赖 chromadb C 扩展，与 coverage 追踪器同进程运行时崩溃（F14 先例，2026-08 排查结论），`tests/unit/test_langchain_vector_store.py` 被 `pytest --ignore` 排除，覆盖率以「测试方法全覆盖」为替代证据。
+- **#273 实证修复**：冲突已于 #273 实证修复（#276 hnsw:sync_threshold=3 + chromadb 1.5.9），`tests/unit/test_langchain_vector_store.py` 已进 cov 口径（不再 `--ignore`），`langchain_vector_store.py` 真实覆盖 99%（171 行 0 miss，2 partial branch）。
+- **门禁达成**：完整 CI 口径 line=98.77% / branch=96.06%，coverage-backend 门禁（line ≥ 98.5%、branch ≥ 95%）达成。
+- **omit 说明**：`omit = ["*/test_*.py", "*/tests/*"]` 仍排除测试代码自身参与覆盖统计。
