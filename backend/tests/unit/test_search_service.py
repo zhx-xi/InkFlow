@@ -1,4 +1,4 @@
-"""SearchService 编排契约测试（F22 RED，spec §9.2 + M5/M6/M10/M11/M13）.
+"""SearchService 编排契约测试（F22 RED，spec §9.2 + M5/M10/M11/M13）.
 
 被测模块 ``inkflow.domain.services.search_service`` 尚未实现（RED 阶段）——
 顶部 import 首报 ``No module named 'inkflow.domain.services.search_service'``，
@@ -44,13 +44,13 @@
        ["chapters", "characters", "world_settings", "outlines",
         "timeline_events", "foreshadowings"]
 
-   - ``_rebuild()``: 拉取 6 类数据源（分页循环，limit=50 默认），排除软删（见 6），
+   - ``_rebuild()``: 拉取 6 类数据源（分页循环，limit=50 默认），
      每实体一条 SearchDocument，调 ``search_repo.rebuild(documents)``
    - ``_incremental_sync()``: 调 ``search_repo.incremental_sync(documents, deleted)``
 
 4. 数据源 repo 调用形态（全部 AsyncMock 注入，int 主键——仓储层惯例，F9 §8.1）:
 
-   - ``project_repo.get(project_id: int) -> Project | None``（None = 不存在/已软删 → 404）
+   - ``project_repo.get(project_id: int) -> Project | None``（None = 不存在 → 404）
    - ``project_repo.list_all(search=None, sort_by='updated_at', sort_desc=True,
      offset=0, limit=50) -> (list[Project], int)``
    - ``chapter_repo.list_chapters(project_id, volume_id=None, status=None,
@@ -93,8 +93,8 @@
      outline.name / event.title / foreshadowing.title）
    - ``body: str``（jieba 分词后空格连接文本，非空）
 
-6. 软删排除（M6，spec §6.2）: 收集文档时对实体做 is_deleted 过滤
-   （``getattr(entity, 'is_deleted', False)``——Chapter 领域模型无该字段，视为未删除）
+6. 无软删过滤（issue #211 删除语义统一）: 实体无 is_deleted 字段，收集文档时
+   不做软删排除——repo 返回的全部实体一律入索引
 
 7. semantic 模式（spec §5.8，vector_store 注入时）:
 
@@ -226,13 +226,12 @@ def _project(pid: uuid.UUID, name: str = "测试项目") -> Project:
     return Project(id=pid, name=name, created_at=_NOW, updated_at=_NOW)
 
 
-def _character(pid: uuid.UUID, cid: uuid.UUID, name: str, is_deleted: bool = False) -> Character:
+def _character(pid: uuid.UUID, cid: uuid.UUID, name: str) -> Character:
     return Character(
         id=cid,
         project_id=pid,
         name=name,
         personality="冷静",
-        is_deleted=is_deleted,
         created_at=_NOW,
         updated_at=_NOW,
     )
@@ -293,7 +292,7 @@ def _given_project(repos, pid: uuid.UUID, name: str = "测试项目") -> Project
 
 
 async def test_project_missing_raises_project_not_found(repos):
-    """E1: project_repo.get → None（不存在/已软删）→ ProjectNotFoundError（404）."""
+    """E1: project_repo.get → None（不存在）→ ProjectNotFoundError（404）."""
     repos.project_repo.get.return_value = None
 
     with pytest.raises(ProjectNotFoundError):
@@ -410,23 +409,6 @@ async def test_fresh_index_skips_rebuild(repos):
     repos.search_repo.rebuild.assert_not_awaited()
     repos.search_repo.incremental_sync.assert_not_awaited()
     repos.search_repo.query.assert_awaited_once()
-
-
-async def test_soft_deleted_entity_excluded_from_documents(repos):
-    """M6: 软删实体（is_deleted=True）不进索引文档（spec §6.2）."""
-    pid = uuid.UUID(int=1000)
-    _given_project(repos, pid)
-    active = _character(pid, uuid.UUID(int=1002), "龙女")
-    deleted = _character(pid, uuid.UUID(int=1008), "旧角色", is_deleted=True)
-    repos.character_repo.list.return_value = ([active, deleted], 2)
-    repos.search_repo.is_stale.return_value = True
-
-    await _make_service(repos).search(_query("龙", [pid]))
-
-    docs = _rebuild_docs(repos)
-    assert len(docs) == 1
-    assert docs[0].entity_id == active.id.int
-    assert deleted.id.int not in [d.entity_id for d in docs]
 
 
 # ────────────────────────────── 多项目（M10/E1） ──────────────────────────────
