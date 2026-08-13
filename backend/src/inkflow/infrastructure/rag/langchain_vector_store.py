@@ -321,7 +321,8 @@ class LangChainVectorStore:
     def _probe_embedding_dimension_sync(self) -> int:
         """同步探测 embeddings 实测维度（一次性缓存到实例属性，避免重复 embed）。"""
         if self.embedding_dimension is None:
-            self.embedding_dimension = len(self._embeddings.embed_query(""))
+            # 非空占位符探测维度：zhipu embedding API 拒绝空 prompt（400 code 1213）→ reindex 失败
+            self.embedding_dimension = len(self._embeddings.embed_query("0"))
         return self.embedding_dimension
 
     def _delete_stale_sync(
