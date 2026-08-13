@@ -694,3 +694,26 @@ class TestCharacterExtraAPI:
         update = svc.update_character.await_args.args[1]
         assert update.extra == {"role_rank": "major", "groups": ["主角团"]}
         assert "extra" in update.model_fields_set
+
+
+# ══ P5 删除引用残留清理（#284 最后一批，spec §3.8）══
+#
+# API 面零变更（清理是 service/repo 内部行为）——C10 守护用例：
+# DELETE /characters/{id} 调用链不变（204 + svc.delete_character 被调）。
+# RED 阶段 PASS 是刻意的（守护，非失败用例）。
+
+
+class TestP5DeleteCharacterAPIContract:
+    """C10：API 面零变更守护——DELETE 端点调用链不受清理实现影响."""
+
+    @patch("inkflow.api.routers.characters.get_character_service")
+    def test_delete_character_keeps_204_contract(self, mock_get_svc: MagicMock) -> None:
+        """删除角色仍返回 204；svc.delete_character 仍被调用（清理为内部行为，API 无感知）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.delete_character = AsyncMock(return_value=True)
+
+        char_id = uuid.uuid4()
+        response = client.delete(f"/api/v1/characters/{char_id}")
+
+        assert response.status_code == 204
+        svc.delete_character.assert_awaited_once_with(char_id)

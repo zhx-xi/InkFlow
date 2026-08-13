@@ -651,7 +651,7 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
 
     const confirm = await screen.findByTestId('lib-confirm-dialog');
     expect(confirm).toHaveTextContent('林晚');
-    expect(confirm).toHaveTextContent('点击确认后立即移除（后台逻辑删除，30 天后彻底清除）');
+    expect(confirm).toHaveTextContent('点击确认后立即移除，不可恢复');
   });
 
   it('L5 确认删除：DELETE /api/v1/characters/c1 → 关框 + 列表刷新（条目消失）+ ok toast', async () => {

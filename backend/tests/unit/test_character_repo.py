@@ -550,3 +550,48 @@ class TestCharacterRepositoryCoverageGaps:
         assert repr(g) == "<CharacterGroupORM id=2 name='主角团'>"
         r = CharacterRelationORM(id=3, from_character_id=1, to_character_id=2, relation_type="师徒")
         assert repr(r) == "<CharacterRelationORM id=3 1->2 '师徒'>"
+
+
+# ══ P5 删除引用残留清理（#284 最后一批，spec §2.10/§5.18）══
+#
+# 设计背景：生产环境 SQLite PRAGMA foreign_keys=OFF（core/database.py 仅设
+# WAL + busy_timeout）→ ORM ondelete 声明为休眠，删除父行后引用残留。本段用
+# **OFF fixture**（镜像生产）契约「hard_delete 显式清理 character_relations」。
+# 注意：本文件顶部 db_session fixture 显式 PRAGMA foreign_keys=ON（FK 级联
+# 生效 → 掩盖残留，假绿）——P5 契约必须用独立 OFF fixture。
+
+
+@pytest.fixture
+async def db_session_off_fk():
+    """独立 in-memory SQLite — 不设 PRAGMA foreign_keys（默认 OFF，镜像生产）."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    # 刻意不设置 foreign_keys=ON —— 镜像生产（apply_sqlite_pragma 无此设置）
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        yield session
+    await engine.dispose()
+
+
+class TestP5HardDeleteCleansRelations:
+    """P5：hard_delete 显式清理 character_relations（生产 foreign_keys=OFF 下
+    不依赖 FK CASCADE）——RED 预期 FAIL（现实现无显式清理，关系行残留）。"""
+
+    async def test_hard_delete_removes_incoming_and_outgoing_relations(
+        self, db_session_off_fk, project
+    ):
+        """删除角色 → from/to 双向关系行全部物理删除（不依赖 FK）."""
+        repo = SQLiteCharacterRepository(db_session_off_fk)
+        a = await repo.add(_char(project, "林尘"))
+        b = await repo.add(_char(project, "阿澈"))
+        await repo.add_relation(_relation(project, a, b, "师徒"))
+        await repo.add_relation(_relation(project, b, a, "宿敌"))
+
+        assert await repo.hard_delete(a.id.int) is True
+
+        count = await db_session_off_fk.execute(
+            select(func.count()).select_from(CharacterRelationORM)
+        )
+        assert count.scalar_one() == 0

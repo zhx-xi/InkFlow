@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from inkflow.core.database import Base
 from inkflow.domain.models.timeline import TimelineEvent
 from inkflow.infrastructure.database.models.chapter import ChapterORM
+from inkflow.infrastructure.database.models.foreshadowing import ForeshadowingORM
 from inkflow.infrastructure.database.models.project import ProjectORM
 from inkflow.infrastructure.database.models.timeline import TimelineEventORM
 from inkflow.infrastructure.database.repositories.timeline_repo import (
@@ -469,3 +470,51 @@ class TestTimelineRepository:
         # 事件行保留（仅来源置空）
         count = await db_session.execute(select(func.count()).select_from(TimelineEventORM))
         assert count.scalar_one() == 1
+
+
+# ══ P5 删除引用残留清理（#284 最后一批，spec §2.10/§5.18）══
+#
+# 生产 foreign_keys=OFF → 删除时间线事件后伏笔 event_id 残留。
+# 本段用 OFF fixture 契约「hard_delete 显式清理」（镜像生产，不依赖 FK）。
+
+
+@pytest.fixture
+async def db_session_off_fk():
+    """独立 in-memory SQLite — 不设 PRAGMA foreign_keys（默认 OFF，镜像生产）."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    # 刻意不设置 foreign_keys=ON —— 镜像生产（apply_sqlite_pragma 无此设置）
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        yield session
+    await engine.dispose()
+
+
+class TestP5HardDeleteCleansForeshadowings:
+    """P5：hard_delete 显式置空 foreshadowings.event_id——RED 预期 FAIL."""
+
+    async def test_hard_delete_event_sets_foreshadowing_event_id_null(
+        self, db_session_off_fk, project
+    ):
+        """删除事件 → 关联伏笔 event_id 置 None（伏笔保留，仅解除锚点）."""
+        repo = SQLiteTimelineRepository(db_session_off_fk)
+        e = await repo.add(_event(project, "林尘觉醒"))
+
+        # 直接插入伏笔（ForeshadowingORM，event_id 指向事件）
+        fs = ForeshadowingORM(
+            title="金手指伏笔",
+            project_id=project.id,
+            description="",
+            event_id=e.id.int,
+        )
+        db_session_off_fk.add(fs)
+        await db_session_off_fk.commit()
+
+        assert await repo.hard_delete(e.id.int) is True
+
+        row = await db_session_off_fk.execute(
+            select(ForeshadowingORM).where(ForeshadowingORM.id == fs.id)
+        )
+        assert row.scalar_one().event_id is None
