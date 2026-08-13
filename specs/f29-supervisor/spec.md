@@ -7,7 +7,7 @@
 **关联 Issues**: #161（本模块）；被依赖：无（系列终点）；前置：✅ #87 LangGraph StateGraph 重构 / ✅ #269 agent_order 编排（F42 §5.3.1）
 **依赖**: ✅ F42 #269 已合入（PR #305：通用节点 + 多入口/终点引擎）· ✅ F26 deepagents 集成层（PR #236）· ✅ F27 agentic writer（PR #240/#241）· ✅ F28 agent-memory（PR #242）· LangGraph 1.2.10（venv 已锁）· checkpointer（InMemorySaver 内置 / SqliteSaver 待定）
 **参考 ADR**: [adr/ADR-035.md](../adr/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5，原 ADR-E）、ADR-006v2（Agent 编排 LangGraph StateGraph）、ADR-015（LangChain 隔离）
-**状态**: 待实现 🔲
+**状态**: ✅ 已实现（PR #323 + #324 AGENTS.md 登记，2026-08-13）
 
 > **模块类型声明**: 本模块为「**自主编排型**」（第 13 变体，接续 F42 配置驱动编排型）——在既有 LangGraphAgentPipeline（静态 DAG 引擎）之上新增 **Supervisor 动态路由编排层**：supervisor 节点经 LLM 决策返回 `Command(goto=role)` 动态选择下一执行角色（替代静态边拓扑），配套路由振荡护栏（同角色连续调度上限 3 + 步数上限 30）、deterministic 回退（异常/超限回退固定链）与 HITL（关键节点人工确认）。无新实体表；复用既有 ExecutionStore 执行记录。
 

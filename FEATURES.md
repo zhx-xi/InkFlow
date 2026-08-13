@@ -146,13 +146,30 @@
 
 **0.7.0 交付实证**：10/10 issues 全关（milestone #10，2026-08-11）· Agent 化主线 F26→F27→F28（deepagents 0.7.5 harness）· agentic 写作闭环（save_draft + 确认流 + 修改率基线 docs/agent-baseline-2026-08-10.md）· v0.7.0-rc1 预发布（2026-08-11）。
 
-### 1.10 F19-skills 包（0.8.0，2026-08-13 PR #304 ✅）
+### 1.10 编排完全体 + Supervisor + 设定库 + RAG + skills + CLI（0.8.0，2026-08-13 18/18 issues 全关 ✅）
 
 | Issue | 内容 | 交付 | 状态 |
 |-------|------|------|------|
-| #70 | F19-skills 包：**官方轨** `skills/inkflow/` 资产（Q1=B 蓝本复制改造：SKILL.md frontmatter version=0.8.0 + 20 references 去 Hermes 化 + cli-commands.md 全量 23 组命令参考 + json-contracts.md JSON 契约 + mcp-setup.md 占位 + 2 scripts）+ **用户自定义轨** skills 命令组（Q2 导入语义：install/list/verify/remove，零后端代码，deepagents 0.7.5 frontmatter 规则镜像，落盘 `data_dir/skills/` 与 SkillsMiddleware 逐字节兼容） | PR #304 | ✅ |
+| #268 | Agent 链模型选择：三态 Select（真禁用/项目默认/指定模型）+ sentinel 执行修复 + 裸名兼容 + provider-configs chat 数据源 | PR #299 | ✅ |
+| #269 | Agent 执行顺序编辑：agent_order 层级拓扑（槽位 0-9 同层并行）+ 双模式 B1 + 存储/API/执行三层校验 + 通用节点 + 多入口/终点引擎 | PR #305 | ✅ |
+| #295 | 自定义 Agent 数据面：RoleTemplate prompt/name + ProjectConfig 自定义角色字段 | PR #309 | ✅ |
+| #296 | 自定义 Agent UI：AgentChainCard 自定义角色行 | PR #315 | ✅ |
+| #297 | 默认管线模板：builtin:write_auto 全自动 + builtin:write_continue 续写（F42 §5.6） | PR #308 | ✅ |
+| #298 | GUI 写作入口管线化：写作页全自动/续写切换 + 执行状态 UI | PR #314 | ✅ |
+| #161 | F29 Supervisor 自主编排 + HITL：自研 LangGraph StateGraph 编排层 + Command(goto) 动态路由 + 振荡护栏 + deterministic 回退 + HITL interrupt | PR #323 + #324 登记 | ✅ |
+| #211 | 删除语义统一：普通实体软删→真删（F10 v1.1；F1 回收站/F24 归档保留软删） | PR #312 | ✅ |
+| #276 | RAG embedding 一致性：向量指纹 + stale 检测 + 重新向量化协议 | PR #302 | ✅ |
+| #70 | F19-skills 包：官方 skills/inkflow/ 资产 + 用户自定义轨 skills 命令组（install/list/verify/remove，ADR-022 双轨） | PR #304 | ✅ |
+| #251 | CLI 命令面补齐：provider 管理 / agent template 管理 / project config（P1/P2/P3） | PR #300/#303/#317 | ✅ |
+| #284 | 设定库 GUI 升级（F43，P0-P5）：CRUD 闭环 + 角色等级标签 + 世界观地图工作台 + 大纲三级 + 时间线双序 + 删除引用残留清理 | PR #301/#306/#311/#319/#322 | ✅ |
+| #281 | 测试文件规模治理：拆分豁免超限文件 + 前端护栏扩展 + 双份冗余归并 | PR #310 | ✅ |
+| #273 | coverage-backend 门禁治本：移除 chromadb 测试 --ignore 排除 | PR #321 | ✅ |
+| #307 | extraction_service 拆分（978→900 行内，F14 门面） | PR #316 | ✅ |
+| #313 | RoleTemplate 测试契约同步（#309 遗留） | PR #320 | ✅ |
+| #283 | 0.7.0 Agent 化架构决策收尾：ADR-A~H 正式落盘 ADR-031~038 + 设计文档入库 | PR #287 + #289 | ✅ |
+| #257 | 多 Agent 能力分析登记（Agent 差异化能力白名单） | PR #285 | ✅ |
 
-**0.8.0 交付实证**：skills 包双轨落地（ADR-022 演进为双轨——官方轨 GitHub 分发 CLI 不管理 / 用户自定义轨 CLI 导入管理）· Q3 随安装包收集暂缓（后续单独打包评估）· agent 实际使用 skills 属后续 issue（本期只做导入+管理）。
+**0.8.0 交付实证**：18/18 issues 全关（milestone #11，2026-08-13）· 配置驱动编排完全体（F42：三态模型选择 + agent_order 槽位 0-9 层级拓扑 + 双模式 + 通用节点 + GUI 写作管线化 write_auto/write_continue + 自定义 Agent 数据面/UI）· F29 Supervisor 自主编排 + HITL（Command(goto) 动态路由 + 振荡护栏 + deterministic 回退）· 删除语义统一（软删→真删）· RAG 指纹一致性（stale 检测 + 重新向量化）· skills 双轨（官方轨 GitHub 分发 + 用户自定义轨 CLI 导入）· CLI 命令面补齐（provider/template/project config）· 设定库 GUI 升级（F43 P0-P5）。
 
 ---
 
@@ -161,15 +178,15 @@
 | Feature | 版本 | 内容 | 依赖/前置 | Issue | 状态 |
 |---------|------|------|----------|-------|------|
 | skills 包 | ✅ 0.8.0 | 官方 skills/inkflow/ 资产（GitHub 分发）+ 用户自定义轨 skills 命令组（导入管理） | 无 | [#70](https://github.com/zhx-xi/InkFlow/issues/70) | ✅ 已交付（PR #304，2026-08-13） |
-| F20 MCP Server | **1.0.0** | MCP Server（stdio 薄客户端经 HTTP），≥15 工具（ADR-023 v2） | #166（内核冷启动基建，✅ 已实现 PR #171） | [#49](https://github.com/zhx-xi/InkFlow/issues/49) | 🔜 已建 issue |
-| F29 Supervisor 自主编排 | **0.8.0** | 自主编排 + HITL（F26 subagent task 工具预留；依赖 #87 ✅ + F28 ✅） | F26/F27/F28 | [#161](https://github.com/zhx-xi/InkFlow/issues/161) | 🔜 已建 issue |
+| F20 MCP Server | **0.9.0** | MCP Server（stdio 薄客户端经 HTTP），≥15 工具（ADR-023 v2） | #166（内核冷启动基建，✅ 已实现 PR #171） | [#49](https://github.com/zhx-xi/InkFlow/issues/49) | 🔜 已建 issue |
+| F29 Supervisor 自主编排 | ✅ 0.8.0 | 自主编排 + HITL（Command(goto) 动态路由 + 振荡护栏 + deterministic 回退） | F26/F27/F28 | [#161](https://github.com/zhx-xi/InkFlow/issues/161) | ✅ 已交付（PR #323 + #324 登记，2026-08-13） |
 | ~~F25 daemon~~ | ~~0.5.0~~ | ~~daemon 后台写作~~（**已移除**，ADR-029：伪需求；真实意图=外部 agent 经 MCP/skills 调用，由 F19 serve + F20 MCP + skills 包覆盖） | 无 | [#52](https://github.com/zhx-xi/InkFlow/issues/52) | ❌ 已关闭（2026-08-07） |
 | 1.0.0 发布验收 | **1.0.0** | CLI + GUI + skills + MCP 四界面齐备；跨平台打包（macOS/Linux）+ 文档完善 + Phase 3 Gate | 以上全部 | [#55](https://github.com/zhx-xi/InkFlow/issues/55) | 🔜 已建 issue |
 | F18 云端 Web 用户端 | **2.0.0** | 云 Web UI（前端一套两用，移出单机） | — | [#47](https://github.com/zhx-xi/InkFlow/issues/47) | 🔜 已建 issue |
 | 云端总：云存档 + 异地写作 | **2.0.0** | 用户 API + Admin 后台 + GUI 远程模式（PostgreSQL + JWT + BYOK；无 CRDT，LWW + 修订历史） | P0-11 协议（已就绪） | [#71](https://github.com/zhx-xi/InkFlow/issues/71) | 🔜 已建 issue |
 
 > F17 空置（PRD §6.2 标题残留编号，不使用）。
-> 版本归属以 [ADR-019 v5](adr/ADR-019.md) 为准。
+> 版本归属以 [ADR-019 v7](adr/ADR-019.md) 为准。
 
 ---
 
@@ -185,6 +202,7 @@
 | 0.5.0 | Agent 集成 | F24 会话 · E2E 增强（#139/#140）· 设置持久化（#152）· 本地内核服务化（#166 冷启动 / #167 托盘 / #168 CLI 产物）· 发布修复链（#183/#185/#187/#188/#189/#192/#195） | ✅ 已交付（2026-08-08 v0.5.0 正式发布，PR #156/#157/#171/#172/#176/#181/#184/#186/#190/#191/#193/#194/#197） |
 | 0.6.0 | 导出 + 搜索 + 世界观 | F21 导出 · F22 全文搜索 · F34 章节审计 · 世界观三连（#173/#174/#175）· CLI 恒经 HTTP（#169）· E2E 设置页（#141）· 设定库手动创建（#196）· default_words 重启加载（#198）· 保存反馈统一化（#199） | ✅ 已交付（2026-08-09 里程碑关闭；2026-08-10 v0.6.0 正式发布，PR #202/#205/#206/#207/#213/#214/#215/#216/#219/#220/#222/#223） |
 | 0.7.0 | Agent 化升级 | F26 Agent 工具基础设施（deepagents 0.7.5）· F27 Writer Agent 闭环（ReAct + save_draft）· F28 记忆系统（偏好学习 + 注入）· E2E 增强（#142/#143）· bug 批（#225/#229/#230/#231/#232） | ✅ 已交付（2026-08-11 里程碑 10/10 issues 全关，PR #233-#242） |
+| 0.8.0 | 编排完全体 + Supervisor + 设定库 + RAG + skills + CLI | F42 编排完全体（三态模型选择 + agent_order 槽位 0-9 + 双模板 + 自定义 Agent 数据面/UI）· F29 Supervisor（动态路由 + HITL）· 删除语义统一 · RAG 指纹 · F19-skills 包 · CLI 命令面补齐 · 设定库 GUI（F43 P0-P5） | ✅ 已交付（2026-08-13 里程碑 18/18 issues 全关，PR #285/#287/#289/#299/#302/#304/#305/#308/#309/#310/#312/#314/#315/#316/#317/#320/#321/#322/#323/#324） |
 | 1.0.0 | 本地完全可用 | CLI + GUI + skills + MCP 四界面齐备 + 跨平台 + 文档 + Phase 3 Gate | 🔜 |
 | 2.0.0 | 云端 | F18 云 Web · 用户 API · Admin 后台 · GUI 远程模式（云存档/异地写作） | 🔜 |
 
@@ -197,7 +215,7 @@
 | CLI（Typer） | ✅ 可用（64 命令 / 17 组） | `inkflow <group> <command>`；`--json` 输出 JSON 信封 |
 | REST API（FastAPI） | ✅ 可用（92 端点 / 12 router） | `inkflow serve` 启动，Swagger 见 `/docs`；本地内核通用通信契约 |
 | GUI（Electron + React） | ✅ 0.3.0 可用（0.4.0 打包分发） | 本地桌面端（项目/写作/Agent/模型/设置页 + 侧边栏导航），渲染层不承载业务逻辑（ADR-020/021） |
-| MCP Server | 🔜 1.0.0 | stdio 直连 domain（ADR-023） |
+| MCP Server | 🔜 0.9.0 | stdio 直连 domain（ADR-023） |
 | 云 Web / Admin | 🔜 2.0.0 | 与本地 GUI 共享 React 代码（一套两用） |
 
 ---
@@ -212,4 +230,4 @@
 
 ---
 
-*本文件由功能盘点建立于 2026-08-02（0.2.0 交付后），与 AGENTS.md / ADR-019 口径一致（v6 修订 2026-08-11：0.7.0 Agent 化主线交付 + F29 移 0.8.0）。*
+*本文件由功能盘点建立于 2026-08-02（0.2.0 交付后），与 AGENTS.md / ADR-019 口径一致（v7 修订 2026-08-13：0.8.0 编排完全体 + Supervisor + 设定库 + RAG 指纹 + skills + CLI 补齐交付）。*
