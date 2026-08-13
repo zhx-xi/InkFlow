@@ -166,7 +166,7 @@ describe('设定库页 — F43 P4 时间线双序 + 两级检查（spec §5.16-5
       narrative_order: (timeline.narrative_order as Array<Record<string, unknown>>).map((e) => ({ ...e })),
     };
 
-    apiFetchMock.mockImplementation(async (path: string, _init?: { method?: string; body?: unknown }) => {
+    apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/projects') {
         return { items: [projectP1, projectP2], total: 2, offset: 0, limit: 50 };
       }
