@@ -1,11 +1,11 @@
-# F43 设定库 GUI 升级（P0+P1+P2 批次）— 功能规格
+# F43 设定库 GUI 升级（P0+P1+P2+P3+P4 批次）— 功能规格
 
-> **Spec 版本**: v1.2（2026-08-13）
-> **Spec 变更**: v1.2 — P2 批次（issue #284 第三批）：地图工作台——世界观 tab 挂接地图视图（面包屑 + 一图多标记 + 三底图共存）；后端扩展（map_pins type 枚举 + ref 关联角色/事件、maps bg_source + shapes 存储、简图地图创建）。P1 交付物（角色等级/标签/世界观树/复制）已在 v1.1 合入（PR #306）。
-> **阶段**: 0.8.0（issue #284 的 P2 批次；P3-P5 后续批次另开 PR）
-> **估算**: 5-8 人天（前后端混合：后端扩展 ~2-3 + 前端地图工作台 ~3-5 + 测试）
-> **关联 Issues**: #284（parent，GUI 升级总 issue）、#174（F36 地图，本批扩展 map_pins/maps）、#196（创建对话框先例）、#189（已保存指示先例）、#195（遮罩不关闭拍板）、#211（删除语义统一，P5 对齐）
-> **设计依据**: `design/setting-library-v2-decisions-2026-08-12.md`（D4 地图入口 / D5 三底图共存+pin 独立叠加层 / D6 一图多标记 / D7 面包屑）+ `specs/f36-world-map/spec.md`（maps/map_pins 数据基础）
+> **Spec 版本**: v1.3（2026-08-13）
+> **Spec 变更**: v1.3 — P3+P4 批次（issue #284 第四/五批）：大纲三级结构（整体/卷/章，level 字段标记 + parent_id 层级）+ 章关联写作章节（chapter_id → chapters）+ 时间线双序（叙事序/世界序切换）+ 两级检查（工具栏整体检查 + 事件行内单事件检查）；后端扩展（outlines 加 level/parent_id/chapter_id 三列 + 单事件检查端点）。P2 交付物（地图工作台）已在 v1.2 合入（PR #311）。
+> **阶段**: 0.8.0（issue #284 的 P3+P4 批次；P5 后续批次另开 PR）
+> **估算**: 5-8 人天（前后端混合：后端扩展 ~2-3 + 前端大纲三级树/时间线双序 ~3-5 + 测试）
+> **关联 Issues**: #284（parent，GUI 升级总 issue）、#174（F36 地图）、#3（F3 章节，章关联目标）、#196（创建对话框先例）、#189（已保存指示先例）、#195（遮罩不关闭拍板）、#211（删除语义统一，P5 对齐）
+> **设计依据**: `design/setting-library-v2-decisions-2026-08-12.md`（D8 大纲三级 / D9 章关联 / D10 时间线双序+两级检查）+ `specs/f11-outline-service/spec.md`（outlines 数据基础）+ `specs/f12-timeline-service/spec.md`（双序/check 数据基础）
 > **状态**: 待实现 🔲
 
 ---
@@ -14,18 +14,18 @@
 
 ### 1.1 模块定位
 
-设定库 GUI（library.tsx 六分类 tab + projects.tsx 项目卡片）在 P0（PR #301，v1.0）已补齐六分类编辑/删除 + 项目重命名/删除的 CRUD 闭环。本批（P1）在三块能力上继续升级（决策文档 D1/D2/D3 + F37 复制端点消费）：
+设定库 GUI（library.tsx 六分类 tab + projects.tsx 项目卡片）通过 issue #284 分 P0-P5 批次升级。P0（PR #301，v1.0）补齐六分类编辑/删除 + 项目重命名/删除 CRUD 闭环；P1（PR #306，v1.1）补齐角色等级必填（D1）+ 分组标签多选（D2）+ 世界观树/分类筛选（D3）+ 世界观复制（F37）；P2（PR #311，v1.2）落地地图工作台（D4-D7）。本批（P3+P4，v1.3）在大纲与时间线方向继续升级（决策文档 D8/D9/D10）：
 
-1. **角色等级必填**（D1）：等级字段必填、无默认值——新建/编辑角色未选等级时阻止保存（用户/Agent 显式选择）。
-2. **角色分组标签**（D2）：wiki 标签式——可选 + 可创建 + 可多选（与等级正交；等级=分量，标签=归属）。
-3. **世界观树 + 分类筛选**（D3）：世界观 tab 从平铺列表升级为层级树渲染（parent_id 树）+ 分类 chips 筛选（**无「全部」选项**——默认分组 + 用户/Agent 自定义自动进 chips；默认展示所有）。
-4. **世界观复制 GUI**（F37 消费）：行内复制（节点±子级）+ 顶部整体复制——复制到目标项目（F37 跨书复制端点）。
+1. **大纲三级结构**（D8）：整体→卷→章→情节点（`level` 字段标记 + `parent_id` 层级），各层展开/收起/新增。
+2. **章关联写作章节**（D9）：章关联实际写作章节（`chapter_id`）；已关联显示 📎 徽标，未关联显示「关联章节」按钮。
+3. **时间线双序**（D10）：叙事序/世界序切换视图。
+4. **两级检查**（D10）：工具栏整体一致性检查 + 事件行内单事件检查。
 
-**与 F42 的关系**：F42 = 0.9.0 多 Agent 配置（agent-chain-config），本 F43 = 0.8.0 设定库 GUI（issue #284 的 P0+P1+P2）。编号按 AGENTS.md 模块类型谱系顺延。
+**与 F42 的关系**：F42 = 0.9.0 多 Agent 配置（agent-chain-config），本 F43 = 0.8.0 设定库 GUI（issue #284 的 P0-P4）。编号按 AGENTS.md 模块类型谱系顺延。
 
-### 1.2 范围（P2 交付物）
+### 1.2 范围（P3+P4 交付物）
 
-P0（六分类 CRUD 闭环，PR #301）+ P1（角色等级/标签/世界观树/复制，PR #306）已合入。本批 P2 在地图工作台方向升级（决策文档 D4/D5/D6/D7 + F36 后端扩展）：
+P0（六分类 CRUD 闭环，PR #301）+ P1（角色等级/标签/世界观树/复制，PR #306）+ P2（地图工作台，PR #311）已合入。本批 P3+P4 在大纲与时间线方向升级（决策文档 D8/D9/D10 + F11/F12 后端扩展）：
 
 | # | 交付物 | 来源 |
 |---|--------|------|
@@ -37,19 +37,31 @@ P0（六分类 CRUD 闭环，PR #301）+ P1（角色等级/标签/世界观树/�
 | 6 | 一图多标记（D6）：点击画布任意位置添加标记；类型=地点/角色/事件/其他；关联设定实体（角色/事件/地点，可搜索）；pin 列表可编辑/删除 | D6 |
 | 7 | 面包屑导航（D7）：设定库 / 世界观 / 地图视图 / {地图名}，逐级可回跳 | D7 |
 | 8 | 后端扩展：`map_pins` 加 `type` 枚举 + `ref_id` 关联（角色/事件/地点）；`maps` 加 `bg_source` + `extra`（shapes）；简图地图创建（无图片） | 决策文档 §3/§4 |
+| 9 | 大纲三级结构（D8）：整体→卷→章→情节点，`level` 字段标记（overall/volume/chapter）+ `parent_id` 层级 | D8 |
+| 10 | 章关联（D9）：章关联实际写作章节（`chapter_id` → chapters）；已关联显示 📎 徽标，未关联显示「关联章节」按钮（选择器后置） | D9 |
+| 11 | 时间线双序（D10）：叙事序/世界序切换视图 | D10 |
+| 12 | 两级检查（D10）：工具栏整体检查 + 事件行内单事件检查 | D10 |
+| 13 | 后端扩展：`outlines` 加 `level`/`parent_id`/`chapter_id` 三列 + 迁移；单事件检查端点 `GET /timeline/events/{id}/check` | 决策文档 §3/§4 |
 
 ### 1.3 边界声明
 
-- 本批**只覆盖 P2**（地图工作台 + 后端 pins/maps 扩展）。P3-P5（大纲三级/时间线双序/30 天清理 job）不在本批，issue #284 保持 OPEN。
+- 本批**覆盖 P3+P4**（大纲三级 + 章关联 + 时间线双序 + 两级检查）。P5（30 天清理 job）不在本批，issue #284 保持 OPEN（PR body `Part of #284`，禁用 `Closes #284`）。
 - **AI 底图不做**（D5 拍板「占位后置」）：仅渲染「即将推出」禁用态，无生成逻辑、无 LLM 调用。
 - **简图地图创建（无图片）**：需放宽 `maps.image_path` NOT NULL 语义（简图模式无图）。SQLite ALTER 无法改 NOT NULL 约束 → 简图模式 `image_path` 存空串 `""`，service 按 `bg_source` 校验（image 模式必须有图，shape 模式可空）。
 - **pin 关联实体校验**：`type=role` → `ref_id` 指向同项目活动角色；`type=event` → `ref_id` 指向同项目活动事件；`type=location` → 沿用 F36 `location_id`（指向同项目活动地点）；`type=other` → 无关联（纯注释 pin）。跨项目/软删实体 → 422。
 - 地图创建仍复用 F36 端点（本批扩展 `bg_source` 参数支持简图）；**不新增绘图引擎**（形状是简单绝对定位 div，非 SVG 笔刷/图层）。
 - 角色等级筛选 chips（P1 §10 登记）仍归 P2+ 候选，本批不做。
 
+- **大纲三级 level 默认值（向后兼容）**：旧平铺大纲（含情节点）默认 `level=chapter`（孤立章，parent_id 空，渲染时降级为顶层）——情节点天然挂其下（零迁移，D8「章→情节点」严格成立）。用户之后可新建 overall/volume 把孤立章挂入层级。
+- **三级层级约束（严格）**：`overall` 无 parent；`volume` 只能 parent=`overall`；`chapter` 只能 parent=`volume`（或 parent 空 = 孤立章）。非法层级/跨项目/不存在 parent → 422。
+- **章关联约束（D9）**：仅 `level=chapter` 可关联写作章节（`chapter_id`）；关联章节须同项目且存在，跨项目/软删 → 422；`chapter_id` 可清除（置空）。「关联章节」按钮的**选择器后置**（D9 拍板）——本批仅渲染按钮 + 📎 徽标，章节选择器交互后置。
+- **情节点挂载**：情节点仍挂 `outline_id`（不关心 level，历史兼容）；新建情节点仅在 `level=chapter` 节点（前端渲染「＋情节点」按钮仅 chapter 层级）。
+- **时间线双序数据已就绪**：F12 已含 `time_value`（世界序）+ `narrative_position`（叙事序）+ `TimelineView` 双视图端点——本批仅前端消费双视图切换，零后端字段新增。
+- **单事件检查语义**：单事件检查 = 该事件与其叙事相邻事件的逆序对（作为 prev/next 的 order_conflict/flashback/flashforward）；`time_value` 为 None 的事件不参与检查（返回 `checked=false`）。
+
 ---
 
-## 2. 数据模型（前端类型扩展 + 后端极小改动）
+## 2. 数据模型（前端类型扩展 + 后端加列扩展）
 
 ### 2.1 设定库列表项 DTO（library.tsx 现 `ListItem` 仅 id/name/title）
 
@@ -225,9 +237,82 @@ interface MapShape {
 - 表不存在（全新环境）→ no-op，等 `create_all` 建新表（ORM 已含新列）。
 - `ensure_map_columns` 在 lifespan `create_tables()` 后调用（对齐 F35 接线）。
 
+#### 2.8 大纲三级 + 章关联后端扩展（P3，F11 加列）
+
+F11 `outlines` 现仅平铺（name/description/sort_order/extra），情节点挂 `outline_id`。D8 三级结构 + D9 章关联需加三列：
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| `level` | str | NOT NULL, DEFAULT 'chapter' | 枚举 `overall`/`volume`/`chapter`（旧数据默认 chapter = 孤立章） |
+| `parent_id` | int \| NULL | 可空，自引用 FK→outlines.id（SET NULL），已索引 | 父大纲：volume→overall、chapter→volume；None = 顶层/孤立章 |
+| `chapter_id` | int \| NULL | 可空，FK→chapters.id（SET NULL），已索引 | 章关联实际写作章节（仅 level=chapter 可设） |
+
+**层级校验（严格，决策点 2.A）**：
+
+| 场景 | 校验 |
+|------|------|
+| level 非法（非 overall/volume/chapter） | 422（OutlineServiceError 子类） |
+| overall + parent_id 非空 | 422（overall 不允许挂父） |
+| volume + parent 非 overall（同项目） | 422（卷只能挂整体） |
+| chapter + parent 非 volume（同项目） | 422（章只能挂卷）；parent 空 = 孤立章（合法） |
+| chapter_id 非空且 level ≠ chapter | 422（仅章可关联章节） |
+| chapter_id 指向不存在/跨项目/软删章节 | 422 |
+
+**Outline 领域实体扩展**（`domain/models/outline.py`）：
+
+```python
+class Outline(BaseModel):
+    # ... 既有字段 ...
+    level: str = "chapter"                    # P3：overall/volume/chapter
+    parent_id: uuid.UUID | None = None        # P3：父大纲
+    chapter_id: uuid.UUID | None = None       # P3：关联写作章节（仅 chapter）
+```
+
+**OutlineCreate/Update 扩展**（字段 + 校验同上表）；`OutlineUpdate.parent_id`/`chapter_id` 传 `""` = 清除（置 None，对齐 PlotPointUpdate.arc_id 先例）。
+
+**ORM 加列**（`infrastructure/database/models/outline.py`）：
+
+```python
+level: Mapped[str] = mapped_column(String(16), nullable=False, default="chapter")
+parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("outlines.id", ondelete="SET NULL"), nullable=True, index=True)
+chapter_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True, index=True)
+```
+
+**迁移**（`database.py` `ensure_outline_columns(conn)`，沿用 F35/F43-P2 幂等模式）：
+
+```text
+① PRAGMA table_info(outlines) → 无 level → ALTER ADD COLUMN level VARCHAR(16) DEFAULT 'chapter'
+② → 无 parent_id → ALTER ADD COLUMN parent_id INTEGER
+③ → 无 chapter_id → ALTER ADD COLUMN chapter_id INTEGER
+```
+
+表不存在 → no-op，等 `create_all` 建新表。在 `create_tables()` 后接线（与 ensure_map_columns 同点）。
+
+**校验依赖注入**：`OutlineService.__init__` 加 `chapter_repo: ChapterRepositoryProtocol | None = None`（可选注入，校验 chapter_id 用）；`deps.py` 装配传真实 repo，既有测试构造不传 → 跳过 chapter 校验（向后兼容，对齐 MapService 先例）。parent 层级校验用 `repository.get(parent_id)` 查父大纲 level。
+
+#### 2.9 时间线单事件检查（P4，零字段新增）
+
+F12 双序数据（time_value/narrative_position）+ `TimelineView` + `check_consistency` 已就绪。本批仅新增**单事件检查**（决策点 3.A）：
+
+**EventCheckReport 响应模型**（`domain/models/timeline.py` 新增）：
+
+```python
+class EventCheckReport(BaseModel):
+    event_id: uuid.UUID
+    checked: bool                          # 该事件 time_value 是否非 None（None = 不参与检查）
+    consistent: bool                       # conflicts 为空
+    conflicts: list[TimelineConflict] = []   # 该事件参与的 order_conflict
+    flashbacks: list[TimelineConflict] = []  # 该事件参与的 flashback/flashforward
+```
+
+**check_event 方法**（`TimelineService` 新增）：取该事件 + 其叙事相邻事件（prev/next），复用相邻对扫描分类逻辑，返回该事件作为 prev 或 next 的逆序对。
+
+- 复用 `check_consistency` 的相邻对分类（§5.3 同款）：`prev.time > next.time` 且 next 标记 flashback → flashbacks；prev 标记 flashforward → flashbacks；否则 conflicts。
+- 单事件最多参与两对（与 prev、与 next），返回这两对中该事件涉及的全部冲突。
+
 ---
 
-## 3. API 契约（前端消费 + 后端极小改动）
+## 3. API 契约（前端消费 + 后端扩展）
 
 ### 3.1 端点总览表
 
@@ -364,13 +449,77 @@ class WorldMapUpdate(BaseModel):
 | MapBgSourceError | 422 | bg_source 非法 / image 模式缺图片 |
 | 既有 F36 异常（§3.3 F36 spec） | 404/422/500 | 不变 |
 
+#### 3.6 大纲端点扩展（P3，level/parent_id/chapter_id 透传）
+
+| 操作 | 端点 | 变更 |
+|------|------|------|
+| 创建大纲（扩展） | `POST /api/v1/projects/{pid}/outlines` | body `OutlineCreateBody` 加 `level`（默认 chapter）+ `parent_id` + `chapter_id` |
+| 更新大纲（扩展） | `PATCH /api/v1/outlines/{id}` | body `OutlineUpdate` 加 `level` + `parent_id` + `chapter_id`（exclude_unset；`""` 清除） |
+| 列表/详情（消费） | `GET /projects/{pid}/outlines`、`GET /outlines/{id}` | 响应 `Outline` 加 `level` + `parent_id` + `chapter_id` |
+
+**OutlineCreateBody 扩展**：
+
+```python
+class OutlineCreateBody(BaseModel):
+    name: str
+    description: str = ""
+    sort_order: int = 0
+    level: str = "chapter"                    # P3：overall/volume/chapter
+    parent_id: uuid.UUID | None = None        # P3：父大纲
+    chapter_id: uuid.UUID | None = None       # P3：关联章节
+```
+
+**body 示例**：
+
+```json
+// 创建整体大纲
+POST /api/v1/projects/p1/outlines
+{"name": "初入江湖", "level": "overall", "description": "..."}
+
+// 在整体下创建卷
+{"name": "第一卷", "level": "volume", "parent_id": "<overall-id>"}
+
+// 在卷下创建章 + 关联写作章节
+{"name": "试剑大典", "level": "chapter", "parent_id": "<volume-id>", "chapter_id": "<chapter-id>"}
+```
+
+**异常映射（P3 新增）**：
+
+| 异常 | 状态码 | detail |
+|------|--------|--------|
+| OutlineLevelError | 422 | level 非法 |
+| OutlineHierarchyError | 422 | 层级约束违反（overall 挂父 / volume 非挂 overall / chapter 非挂 volume） |
+| OutlineChapterRefError | 422 | chapter_id 仅 chapter 可设 / 章节不存在或跨项目 |
+
+#### 3.7 时间线单事件检查端点（P4 新增）
+
+| 操作 | 端点 | 说明 |
+|------|------|------|
+| 单事件检查（新增） | `GET /api/v1/timeline/events/{event_id}/check` | 返回 `EventCheckReport`（该事件参与的所有逆序冲突） |
+
+- 事件不存在 → 404「事件不存在」。
+- `time_value` 为 None → `checked=false`，conflicts/flashbacks 均空，consistent=true（不参与检查，非冲突）。
+- 复用 `TimelineConflict` 模型（§2.6），零新冲突类型。
+
+响应示例：
+
+```json
+{
+  "event_id": "t5",
+  "checked": true,
+  "consistent": false,
+  "conflicts": [{"conflict_type":"order_conflict","prev":{...},"next":{...},"message":"..."}],
+  "flashbacks": []
+}
+```
+
 ## 4. CLI 命令签名
 
 **无变更**。本批为前端 GUI 批次 + 后端 API 扩展（pin type/ref_id 透传、maps bg_source/extra 透传），CLI 面不动（F7 约定 CLI 保持现状；pin type/ref_id 的 CLI 写入经既有 `--location` 路径不变，新增 `--type`/`--ref` 登记 #251 候选，本批不做）。
 
 ---
 
-## 5. 关键差异节（前端交互型 + 后端极小扩展 — 本模块类型）
+## 5. 关键差异节（前端交互型 + 后端扩展 — 本模块类型）
 
 ### 5.1 角色等级必填（D1，P1 新增）
 
@@ -540,6 +689,43 @@ update_map(...):  bg_source/extra 进入 WorldMapUpdate exclude_unset 合并
 
 - `character_repo` / `timeline_repo` 注入 `MapService.__init__`（可选，默认 None）——`deps.py` 装配时传入真实 repo，既有测试构造不传 → 跳过校验（向后兼容）。
 
+### 5.14 大纲三级树渲染（D8，P3 新增）
+
+大纲 tab 列表区从平铺升级为三级树（`data-testid="outline-tree"`），层级 = overall（顶层）→ volume → chapter → 情节点：
+
+- **建树**：前端拉 `GET /projects/{pid}/outlines`（响应含 level/parent_id），本地建树——overall 顶层（parent_id 空且 level=overall）；volume 挂 overall（parent_id=overall.id）；chapter 挂 volume（parent_id=volume.id）；**孤立章**（level=chapter 且 parent_id 空）降级为顶层。
+- **节点渲染**：overall 卡片（`outline-overall-<id>`）+ 卷（`outline-volume-<id>`）+ 章（`outline-chapter-<id>`）+ 情节点（`outline-point-<id>`）。
+- **展开/收起**：toggle（`outline-toggle-<id>`）——overall/volume/chapter 三级均支持；有子节点才渲染 toggle（叶子不渲染）。
+- **各层新增**：overall 节点「＋卷」按钮（`outline-add-volume-<parentId>`）；volume 节点「＋章」按钮（`outline-add-chapter-<parentId>`）；chapter 节点「＋情节点」按钮（`outline-add-point-<chapterId>`）。
+- **情节点拉取**：chapter 首次展开时 `GET /outlines/{chapterId}/plot-points` 按需拉取（前端本地缓存）；情节点行内编辑/删除（复用 P0 情节点编辑/删除，`outline-point-edit-<id>`/`outline-point-del-<id>`）。
+- **大纲行内操作**：编辑/删除按钮沿用 P0 `lib-edit-<id>`/`lib-delete-<id>`（D12 悬停显示）；overall/volume/chapter 三级均可编辑/删除。
+
+### 5.15 章关联徽标（D9，P3 新增）
+
+- chapter 节点若 `chapter_id` 非空 → 渲染 📎 徽标（`outline-chapter-ref-<id>`，含关联章节标题）；未关联 → 渲染「关联章节」按钮（`outline-chapter-link-<id>`）。
+- 「关联章节」按钮点击 → 本批仅 toast 提示「请选择要关联的写作章节」（**选择器后置**，D9 拍板），不打开章节选择器。
+- 章节标题来源：前端加载项目章节列表（`GET /projects/{pid}/chapters`）建 `chapter_id → title` 映射；未加载到 → 徽标仅显示 📎 图标（无标题）。
+
+### 5.16 时间线双序切换（D10，P4 新增）
+
+时间线 tab 工具栏（`data-testid="timeline-toolbar"`）加双序切换 chips：
+
+- 序 chips：`tl-view-narrative`（叙事序）/ `tl-view-world`（世界序），激活态 aria-pressed。
+- 数据源：`GET /projects/{pid}/timeline` 返回 `TimelineView { event_timeline, narrative_order }`——叙事序显示 `narrative_order`（narrative_position 升序），世界序显示 `event_timeline`（time_value 升序，未知排末尾）。
+- **前端数据获取改造**：timeline 分类从「仅取 event_timeline」改为「取完整 TimelineView」（存 event_timeline + narrative_order 两个数组），切换仅本地切换显示数组，零额外请求。
+- 图例：`tl-legend`（「点=叙事顺序 · 时间轴=世界内时间」）。
+
+### 5.17 两级检查（D10，P4 新增）
+
+**整体检查**（工具栏按钮 `tl-check-all`）：
+
+- 点击 → `GET /projects/{pid}/timeline/check` → 结果 toast：consistent=true → `lib.tlCheckOK`（「未发现矛盾事件」）；否则 `lib.tlCheckWarn`（「发现 {n} 处时间矛盾」）。
+
+**单事件检查**（行内按钮 `tl-check-one-<id>`）：
+
+- 点击 → `GET /timeline/events/{id}/check` → 结果 toast：checked=false → 「该事件无时间信息，跳过检查」；consistent=true → 「与上下文一致」；否则列出该事件参与的第一条冲突 message。
+- 单事件检查按钮渲染在每个事件行内（`tl-check-one-<id>`）。
+
 ## 6. 组织规则（i18n 键）
 
 P0 key 表不变。P1 新增（zh.ts / en.ts 同步）：
@@ -602,6 +788,33 @@ P2 新增（地图工作台；zh.ts / en.ts 同步）：
 | `lib.shape.newLabel` | 新区域 | New area | 方框/椭圆默认 label |
 | `lib.shape.newText` | 新文字 | New text | 文字默认 label |
 
+P3+P4 新增（大纲三级 + 章关联 + 时间线双序；zh.ts / en.ts 同步）：
+
+| key | zh | en | 说明 |
+|-----|----|----|------|
+| `lib.level.overall` | 整体 | Overall | 大纲层级（D8） |
+| `lib.level.volume` | 卷 | Volume | |
+| `lib.level.chapter` | 章 | Chapter | |
+| `lib.volumes` | 卷 | Volumes | 计数后缀 |
+| `lib.chapters` | 章 | Chapters | 计数后缀 |
+| `lib.outlinePoints` | 情节点 | Plot Points | 情节点计数 |
+| `lib.empty.points` | 暂无情节点 | No plot points | 情节点空态 |
+| `lib.chapterRefTip` | 已关联写作章节，点击可在写作页打开 | Linked to a writing chapter | 📎 徽标 title |
+| `lib.chapterLink` | 关联章节 | Link chapter | 关联章节按钮 |
+| `lib.chapterLinkPick` | 请选择要关联的写作章节 | Select the chapter to link | 选择器后置 toast |
+| `lib.addVolume` | ＋卷 | + Volume | 新增卷按钮 |
+| `lib.addChapter` | ＋章 | + Chapter | 新增章按钮 |
+| `lib.addPoint` | ＋情节点 | + Plot Point | 新增情节点按钮 |
+| `lib.tlView.narrative` | 叙事序 | Narrative order | 双序 chips |
+| `lib.tlView.world` | 世界序 | World time | 双序 chips |
+| `lib.tlCheck` | 一致性检查 | Consistency check | 整体检查按钮 |
+| `lib.tlCheckOne` | 单事件检查 | Check event | 行内检查按钮 |
+| `lib.tlLegend` | 点=叙事顺序 · 时间轴=世界内时间 | Dot = narrative order · axis = world time | 图例 |
+| `lib.tlCheckOK` | 未发现矛盾事件 | No conflicts found | 检查通过 toast |
+| `lib.tlCheckWarn` | 发现 {n} 处时间矛盾 | {n} time conflicts found | 检查警告 toast |
+| `lib.tlCheckSkip` | 该事件无时间信息，跳过检查 | No time info, skipped | 单事件跳过 toast |
+| `lib.tlCheckEventOK` | 与上下文一致 | Consistent with context | 单事件通过 toast |
+
 ## 7. 边界情况与错误处理
 
 P0 表（E1-E12）不变。P1 追加：
@@ -641,6 +854,26 @@ P2 追加：
 | E38 | 地图删除后画布仍选中该地图 | 删除地图 → activeMapId 置空 → 面包屑回「地图视图」空态 |
 | E39 | 未选任何地图进入工作台 | 画布显示 `lib.worldMapSelectTip` 空态；面包屑止于「地图视图」 |
 | E40 | pin 列表类型筛选 | 前端本地过滤（四档 chips），无匹配显示空态 |
+
+P3+P4 追加：
+
+| # | 场景 | 行为 |
+|---|------|------|
+| E41 | level 非法（创建/更新） | 422 OutlineLevelError |
+| E42 | overall 挂父（parent_id 非空） | 422 OutlineHierarchyError |
+| E43 | volume parent 非 overall（同项目） | 422 OutlineHierarchyError |
+| E44 | chapter parent 非 volume（同项目） | 422 OutlineHierarchyError |
+| E45 | chapter_id 非空但 level ≠ chapter | 422 OutlineChapterRefError |
+| E46 | chapter_id 指向不存在/跨项目/软删章节 | 422 OutlineChapterRefError |
+| E47 | 孤立章（level=chapter 且 parent 空） | 渲染降级为顶层（合法，非错误） |
+| E48 | chapter_id 清除（PATCH `""`） | 置 None，📎 徽标消失 → 「关联章节」按钮 |
+| E49 | 大纲三级树空 / 单层 / 深链 | 空 → 既有空态；单层无 toggle；深链直接渲染 |
+| E50 | 情节点拉取失败（网络） | chapter 展开显示「情节点加载失败」轻提示 + 重试 |
+| E51 | 时间线双序切换 | 本地切换数组，零请求；空序显示空态 |
+| E52 | 整体检查无事件 | toast「未发现矛盾事件」（checked=0，consistent） |
+| E53 | 单事件检查 time_value None | toast「该事件无时间信息，跳过检查」 |
+| E54 | 单事件检查有冲突 | toast 显示第一条冲突 message（含修正建议） |
+| E55 | 单事件检查事件不存在 | 404（事件已删除），前端 err toast |
 
 ## 8. 文件结构
 
@@ -695,6 +928,39 @@ P2 追加（地图工作台 + 后端扩展）：
 
 > **测试文件拆分（900 行护栏）**：library.test.tsx 已 ~788 行，P2 前端契约估算 ~400 行 → 拆 `library-p2.test.tsx` 兄弟文件（自带全套基础设施，对齐 P1 `library-p1.test.tsx` 先例）；后端契约新拆 `test_map_p2.py`（test_map_service.py 已 830 行，追加会超 900 护栏）。
 > **ci.yml 登记**：前端无新测试文件目录（同 pages/ 目录，既有 job glob 覆盖）；后端 unit 测试由 `pytest tests/unit/` 全目录跑（非显式文件列表）→ 新文件 `test_map_p2.py` 自动覆盖，零登记。
+
+P3+P4 追加（大纲三级 + 章关联 + 时间线双序 + 单事件检查）：
+
+**前端**：
+
+| 操作 | 文件 | 变更 |
+|------|------|------|
+| MODIFY | `frontend/packages/renderer/src/pages/library.tsx` | 大纲 tab 挂接 OutlineTree（5.14/5.15）；时间线 tab 挂接 TimelineView（5.16/5.17）+ 完整 TimelineView 获取改造 |
+| NEW | `frontend/packages/renderer/src/components/OutlineTree.tsx` | 大纲三级树（overall/volume/chapter/情节点 + 展开收起 + 各层新增 + 章关联徽标） |
+| NEW | `frontend/packages/renderer/src/components/TimelineView.tsx` | 时间线双序切换 + 两级检查（工具栏整体 + 行内单事件） |
+| MODIFY | `frontend/packages/renderer/src/i18n/zh.ts` / `en.ts` | §6 P3+P4 新 key 表 |
+| NEW | `frontend/packages/renderer/src/pages/library-p3.test.tsx` | P3 前端契约（§9.6 O 系列） |
+| NEW | `frontend/packages/renderer/src/pages/library-p4.test.tsx` | P4 前端契约（§9.6 T 系列） |
+
+**后端**：
+
+| 操作 | 文件 | 变更 |
+|------|------|------|
+| MODIFY | `backend/src/inkflow/domain/models/outline.py` | Outline/OutlineCreate/OutlineUpdate 加 level/parent_id/chapter_id + 校验 |
+| MODIFY | `backend/src/inkflow/domain/ports/outline_errors.py` | OutlineLevelError/OutlineHierarchyError/OutlineChapterRefError（422 类） |
+| MODIFY | `backend/src/inkflow/domain/services/outline_service.py` | create_outline/update_outline 加 level/parent_id/chapter_id + 层级校验 + chapter_repo 注入 |
+| MODIFY | `backend/src/inkflow/infrastructure/database/models/outline.py` | OutlineORM 加 level/parent_id/chapter_id |
+| MODIFY | `backend/src/inkflow/infrastructure/database/repositories/outline_repo.py` | ORM↔领域映射补 level/parent_id/chapter_id |
+| MODIFY | `backend/src/inkflow/api/routers/outlines.py` | OutlineCreateBody 加字段 + create/update 透传 |
+| MODIFY | `backend/src/inkflow/api/deps.py` | get_outline_service 注入 chapter_repo |
+| MODIFY | `backend/src/inkflow/core/database.py` | ensure_outline_columns + lifespan 接线 |
+| MODIFY | `backend/src/inkflow/domain/models/timeline.py` | EventCheckReport 模型 |
+| MODIFY | `backend/src/inkflow/domain/services/timeline_service.py` | check_event 方法 |
+| MODIFY | `backend/src/inkflow/api/routers/timeline.py` | GET /timeline/events/{id}/check 端点 |
+| NEW | `backend/tests/unit/test_outline_p3.py` | P3 后端契约（§9.7 O 系列） |
+| MODIFY | `backend/tests/unit/test_timeline_check.py` | P4 单事件检查契约（§9.7 T 系列） |
+
+> **测试文件拆分（900 行护栏，本批）**：`library.tsx` 已 847 行 → 大纲/时间线渲染拆独立组件 `OutlineTree.tsx`/`TimelineView.tsx`；前端契约拆 `library-p3.test.tsx`/`library-p4.test.tsx`；后端 `test_outline_service.py`(626)/`test_outline_api.py`(740) 追加会超护栏 → 新拆 `test_outline_p3.py`；`test_timeline_check.py`(396) 追加单事件检查契约安全。
 
 ## 9. 测试策略
 
@@ -775,6 +1041,74 @@ P2 追加（地图工作台 + 后端扩展）：
 
 > **向后兼容约束（GREEN 必守）**：`MapPin` 领域实体加 `type`/`ref_id` 必须带默认值（`type="location"`, `ref_id=None`）；`WorldMap` 加 `bg_source`/`extra` 必须带默认值（`bg_source="image"`, `extra={}`）——否则 `copy_service.copy`（L227 构造 `MapPin(location_id/x/y/label)`，只传旧字段）与既有 F36 测试构造 TypeError。
 
+### 9.6 P3+P4 前端 RED 契约（Vitest + RTL）
+
+**P3 大纲三级 + 章关联（library-p3.test.tsx，O 系列）**：
+
+| # | 用例 | 断言要点 |
+|---|------|---------|
+| O1 | 大纲三级树渲染 | 数据含 overall/volume/chapter → `outline-overall-*`/`outline-volume-*`/`outline-chapter-*` 层级渲染 |
+| O2 | 孤立章降级顶层 | level=chapter 且 parent 空 → 渲染为顶层节点 |
+| O3 | 三级展开/收起 | 点 `outline-toggle-<id>` → 子节点显隐 |
+| O4 | 各层新增按钮 | overall 有 `outline-add-volume-*`；volume 有 `outline-add-chapter-*`；chapter 有 `outline-add-point-*` |
+| O5 | 章关联徽标（已关联） | chapter 有 chapter_id → `outline-chapter-ref-<id>` 显示 📎 + 章节标题 |
+| O6 | 章关联按钮（未关联） | chapter 无 chapter_id → `outline-chapter-link-<id>` 按钮 |
+| O7 | 关联章节按钮点击 toast | 点 `outline-chapter-link-<id>` → toast「请选择要关联的写作章节」（选择器后置） |
+| O8 | 情节点拉取 + 渲染 | chapter 展开 → `GET /outlines/{id}/plot-points` → `outline-point-*` 渲染 |
+
+**P4 时间线双序 + 两级检查（library-p4.test.tsx，T 系列）**：
+
+| # | 用例 | 断言要点 |
+|---|------|---------|
+| T1 | 双序切换 chips 渲染 + 默认叙事序 | `tl-view-narrative` 默认激活；`tl-view-world` 存在 |
+| T2 | 世界序切换 | 点 `tl-view-world` → 列表按 time_value 升序（未知排末尾） |
+| T3 | 叙事序切换 | 点 `tl-view-narrative` → 列表按 narrative_position 升序 |
+| T4 | 整体检查按钮 + 结果 toast | 点 `tl-check-all` → `GET /timeline/check` → consistent → toast「未发现矛盾事件」 |
+| T5 | 整体检查发现冲突 | check 返回 conflicts → toast「发现 {n} 处时间矛盾」 |
+| T6 | 单事件检查按钮 + 一致 toast | 点 `tl-check-one-<id>` → `GET /timeline/events/{id}/check` → consistent → toast「与上下文一致」 |
+| T7 | 单事件检查冲突 toast | check 返回冲突 → toast 显示第一条 message |
+| T8 | 单事件检查跳过（无时间） | check 返回 checked=false → toast「该事件无时间信息，跳过检查」 |
+
+### 9.7 P3+P4 后端 RED 契约（pytest + unittest.mock.patch）
+
+**P3 大纲扩展（test_outline_p3.py，O 系列）**：
+
+| # | 层 | 契约 |
+|---|----|------|
+| OB1 | models | Outline/OutlineCreate/OutlineUpdate 含 level/parent_id/chapter_id（默认 chapter/None/None） |
+| OB2 | models | level 非法 → 校验错误 |
+| OB3 | service | create_outline level=overall + parent_id 非空 → OutlineHierarchyError |
+| OB4 | service | create_outline level=volume + parent 非 overall → OutlineHierarchyError |
+| OB5 | service | create_outline level=chapter + parent 非 volume → OutlineHierarchyError |
+| OB6 | service | create_outline level=chapter + chapter_id 指向不存在章节 → OutlineChapterRefError |
+| OB7 | service | create_outline level=overall + chapter_id 非空 → OutlineChapterRefError |
+| OB8 | service | 孤立章（chapter + parent 空）合法创建 |
+| OB9 | api | POST outlines 透传 level/parent_id/chapter_id；PATCH 透传 + `""` 清除 |
+| OB10 | repo | Outline ORM↔领域往返含 level/parent_id/chapter_id |
+| OB11 | database | ensure_outline_columns 迁移（旧表加列 + 幂等 + 表不存在 no-op） |
+
+**P4 单事件检查（test_timeline_check.py 追加，T 系列）**：
+
+| # | 层 | 契约 |
+|---|----|------|
+| TB1 | service | check_event 返回该事件参与的逆序冲突（order_conflict） |
+| TB2 | service | check_event flashback/flashforward 分类 |
+| TB3 | service | check_event time_value None → checked=false |
+| TB4 | service | check_event 事件不存在 → None（router 转 404） |
+| TB5 | api | GET /timeline/events/{id}/check 返回 EventCheckReport |
+
+### 9.8 P2 遗留地图 E2E（本批必补，§10 已登记）
+
+P2 spec §9.5 登记「地图 E2E = P3 前置必补」。本批补 P2 遗留地图 E2E（e2e-library.spec.ts 追加，`PYTHONUTF8=1` + build renderer dist）：
+
+| # | 用例 | 断言要点 |
+|---|------|---------|
+| E2E-M1 | 地图工作台入口 + 面包屑 | 世界观 tab → 地图节点 → 画布 + 面包屑含地图名 |
+| E2E-M2 | 一图多标记 | 点击画布添加 pin → POST → pin 列表刷新 |
+| E2E-M3 | 三底图切换 | 切换 bg_source → PATCH + pins 保留 |
+
+> P3/P4 大纲/时间线 E2E 不在本批（任务书未强制，登记后续批次）。
+
 ## 10. 不在范围内
 
 P0 表更新（已入范围的 P1 行移除）+ P1 新行：
@@ -790,10 +1124,10 @@ P0 表更新（已入范围的 P1 行移除）+ P1 新行：
 | AI 底图生成 | 后置（D5 拍板） | 仅占位「即将推出」，无 LLM 生成逻辑 |
 | 内置绘图引擎（笔刷/图层） | 未来（F36 §10 同） | 简图是简单绝对定位 div，非专业绘图 |
 | pin 关联势力/功法等其它实体 | P2+ 候选 | 本批仅角色/事件/地点三类（D6 拍板） |
-| 地图 E2E 契约 | P3 批次前置必补 | 任务书未强制，登记 P3（对齐 P0 §14 Q3 先例） |
+| ~~地图 E2E 契约~~ | ✅ 本批 P3+P4 | P2 遗留必补已入范围（§9.8 E2E-M1..M3） |
 | CLI pin type/ref_id 写入 | #251 | 本批 CLI 面不动 |
-| 大纲三级 + 章关联（D8/D9） | P3 批次 | level 字段 + 章节 FK |
-| 时间线双序 + 两级检查（D10） | P4 批次 | check 端点消费 + 双视图 |
+| ~~大纲三级 + 章关联（D8/D9）~~ | ✅ 本批 P3 | 已入范围（§2.8/§3.6/§5.14-5.15） |
+| ~~时间线双序 + 两级检查（D10）~~ | ✅ 本批 P4 | 已入范围（§2.9/§3.7/§5.16-5.17） |
 | 删除 30 天清理 job（#211 对齐） | P5 批次 | 后端清理任务 |
 | RAG 分类编辑/删除 | 无归属 | 无 PATCH/DELETE 端点（extractions/runs 为运行记录） |
 | 项目硬删除/恢复（force/restore） | 无归属 | GUI 不暴露危险操作，软删语义由确认文案表达（D6） |
@@ -805,15 +1139,19 @@ P0 表更新（已入范围的 P1 行移除）+ P1 新行：
 
 | 依赖 | 状态 | 说明 |
 |------|------|------|
-| #284（设定库 GUI 升级总 issue） | ✅ OPEN | 本批为 P2 子批次；PR body `Part of #284` + 注明 P2 完成 / P3-P5 未做（spec §13 M 门禁；**禁用 `Closes #284`**——P3-P5 未完成不得关 issue） |
+| #284（设定库 GUI 升级总 issue） | ✅ OPEN | 本批为 P3+P4 子批次；PR body `Part of #284` + 注明 P3+P4 完成 / P5 未做（spec §13 M 门禁；**禁用 `Closes #284`**——P5 未完成不得关 issue） |
 | P0 批次（PR #301） | ✅ 已合 | 编辑/删除/保存指示/ConfirmDialog 基座（v1.0 交付物，本批复用） |
 | P1 批次（PR #306） | ✅ 已合 | 角色等级/标签/世界观树/复制（v1.1 交付物，本批世界观树渲染复用） |
+| P2 批次（PR #311） | ✅ 已合 | 地图工作台（v1.2 交付物，本批沿用） |
 | F35 世界观树（parent_id） | ✅ 已合 | 后端 parent_id/ancestors/descendants + list 参数（前端纯渲染） |
-| F36 地图（#174） | ✅ 已合 | maps/map_pins 表 + pins 端点 + 图片资产（本批扩展 type/ref_id/bg_source/extra） |
+| F36 地图（#174） | ✅ 已合 | maps/map_pins 表 + pins 端点 + 图片资产（P2 已扩展 type/ref_id/bg_source/extra） |
+| F11 大纲（outlines/plot_points/story_arcs） | ✅ 已合 | 本批扩展 level/parent_id/chapter_id（加列级） |
+| F12 时间线（timeline_events + TimelineView + check） | ✅ 已合 | 本批消费双视图 + 新增单事件检查端点 |
+| F3 章节（#3，chapters 表） | ✅ 已合 | 章关联目标（chapter_id → chapters.id） |
 | #196 创建对话框 | ✅ 已合 | LibraryCreateDialog 双模式基座 |
 | #189 已保存指示模式 | ✅ 已合 | 编辑保存反馈复用（P0 已接） |
 | #195 遮罩不关闭拍板 | ✅ 已合 | PinDialog/ConfirmDialog 遵守 |
-| #211 删除语义统一 | ⏳ OPEN | P5 批次对齐；本批 pin 删除沿用 F36 真删语义（pin 无软删） |
+| #312 删除语义统一（F10） | ✅ 已合 | 普通实体软删→真删；本批大纲/时间线沿用真删语义（P5 仅剩 30 天清理 job） |
 | 角色 extra 列（LenientJSON） | ✅ 已有 | 无迁移（P1 已透传） |
 
 ---
@@ -829,6 +1167,11 @@ P0 表（D-1..D-6）+ P1 表（D-7..D-13）不变。P2 追加：
 | D-16 | image_path 语义放宽（shape 存空串）而非 ALTER 改 NOT NULL | SQLite ALTER 无法改列约束；空串语义清晰（shape=无图）；service 按 bg_source 校验 | 重建表迁移（破坏面大）；占位路径 hack（脏） |
 | D-17 | 角色/事件关联校验 = MapService 可选注入 character_repo/timeline_repo（默认 None） | 向后兼容（既有 F36 测试构造不传→跳过校验）；deps 装配传真实 repo | 硬注入（破坏既有测试构造） |
 | D-18 | pin 独立叠加层 = 数据正交（pins 独立表，与 bg_source/shapes 无 FK） | D5 拍板「切换底图不影响标记」；前端只 PATCH bg_source，pins 零触碰 | pins 挂 bg_source 下（切换即失效，违反 D5） |
+| D-19 | 大纲三级 = `level` 字段标记（overall/volume/chapter）+ `parent_id` 自引用（非独立 volume/chapter 实体） | 单一 outlines 表加列即可；对齐决策文档 §4「level 字段标记」推荐；情节点挂 outline 不变 | 独立 volume/chapter 实体表（复用 F3 Volume/Chapter 会混淆写作侧语义，且迁移重） |
+| D-20 | 旧大纲 level 默认 `chapter`（孤立章） | 情节点天然挂其下（零迁移，D8「章→情节点」严格）；孤立章渲染降级顶层（同 P1 世界观树孤儿降级） | 默认 overall（情节点挂 overall 违反「章→情节点」结构） |
+| D-21 | 三级层级严格校验（overall 无父 / volume→overall / chapter→volume） | D8 明确三级；后端轻校验防脏数据；孤立章 parent 空合法 | 宽松（parent 只校验同项目存在）——层级错乱风险 |
+| D-22 | 章关联 = `chapter_id` FK→chapters（仅 level=chapter 可设）+ 选择器后置 | D9 拍板「选择器后置」；仅 chapter 可关联符合「章关联写作章节」语义；FK SET NULL 章节删除不破坏大纲 | 任意 level 可关联（语义模糊）；本批实现选择器（D9 拍板后置，不做） |
+| D-23 | 单事件检查 = 独立端点 `GET /timeline/events/{id}/check`（复用相邻对扫描） | RESTful 清晰；复用 check_consistency 分类逻辑（零新冲突类型）；前端行内按需调用 | 复用 check + `?event_id=` 参数（语义混在整体检查端点）；纯前端筛选（依赖整体 check 全量返回，开销大） |
 
 ---
 
@@ -836,16 +1179,15 @@ P0 表（D-1..D-6）+ P1 表（D-7..D-13）不变。P2 追加：
 
 | # | 验收项 | 验证方式 |
 |---|--------|---------|
-| M1 | f43 spec v1.2 合入（与实现同 PR；头部版本行 + Spec 变更行 + P2 章节 + 跨节同步） | PR diff 核对 + `git log origin/main -- specs/f43-setting-library-crud/spec.md` |
-| M2 | RED 批全 FAIL 有实证（前端 M1-M13 + 后端 B1-B7 契约；测试输出存档） | 测试输出存档（RED 日志） |
-| M3 | 前端测试全绿（既有 + P1 R1-R13 + P2 M1-M13） | `pnpm --filter renderer test` 全绿（GREEN 后本地实证） |
-| M4 | 地图工作台面包屑回跳 + 点击添加标记 + 一图多标记 | library-p2.test.tsx M1-M4/M7/M9 + 手动核对 |
-| M5 | 三底图切换 pin 保留（pin 独立叠加层） | library-p2.test.tsx M5/M6 + 手动核对（切底图后 pins 列表不变） |
-| M6 | 标记类型四档 + 关联设定实体 + 列表编辑/删除 | library-p2.test.tsx M8/M10/M11 + 手动核对 |
-| M7 | 简图 shapes（添加/拖拽/删除） | library-p2.test.tsx M12/M13 + 手动核对 |
-| M8 | 后端扩展契约全绿（pin type/ref_id 校验 + bg_source/extra + 迁移） | `backend/.venv pytest backend/tests/unit/test_map_p2.py` |
-| M9 | PR 合入 + CI 全绿（statusCheckRollup 对照）；PR body `Part of #284` + 注明 P2 完成 / P3-P5 未做 | gh pr checks 轮询 + gh pr view |
-| M10 | issue #284 保持 OPEN（P3-P5 未做，注明进度）；worktree 清理 | gh issue view 284 |
+| M1 | f43 spec v1.3 合入（与实现同 PR；头部版本行 + Spec 变更行 + P3+P4 章节 + 跨节同步） | PR diff 核对 + `git log origin/main -- specs/f43-setting-library-crud/spec.md` |
+| M2 | RED 批全 FAIL 有实证（前端 O1-O8/T1-T8 + 后端 OB1-OB11/TB1-TB5 契约；测试输出存档） | 测试输出存档（RED 日志） |
+| M3 | 前端测试全绿（既有 + P1 R 系列 + P2 M 系列 + P3 O 系列 + P4 T 系列） | `pnpm --filter renderer test` 全绿（GREEN 后本地实证） |
+| M4 | 大纲三级（整体/卷/章）展开收起 + 章关联写作章节徽标 | library-p3.test.tsx O1-O8 + 手动核对 |
+| M5 | 时间线叙事序/世界序切换正确 + 整体/单事件检查 | library-p4.test.tsx T1-T8 + 手动核对 |
+| M6 | P2 遗留地图 E2E 补全（E2E-M1..M3） | e2e-library.spec.ts 全绿（PYTHONUTF8=1 + build renderer dist） |
+| M7 | 后端扩展契约全绿（大纲 level/parent_id/chapter_id + 单事件检查） | `backend/.venv pytest backend/tests/unit/test_outline_p3.py backend/tests/unit/test_timeline_check.py` |
+| M8 | PR 合入 + CI 全绿（statusCheckRollup 对照）；PR body `Part of #284` + 注明 P3+P4 完成 / P5 未做 | gh pr checks 轮询 + gh pr view |
+| M9 | issue #284 保持 OPEN（P5 未做，注明进度）；worktree 清理 + 状态标记 ✅ | gh issue view 284 |
 
 ---
 
@@ -858,24 +1200,27 @@ P0 表（D-1..D-6）+ P1 表（D-7..D-13）不变。P2 追加：
 - **Q3（✅ 已确认，决策文档 D6）**：标记类型四档（地点/角色/事件/其他），关联实体三类（角色/事件/地点）；pin 删除沿用 F36 真删语义。正文 §2.7.1/§5.12/§11 已落实。
 - **Q4（✅ 已确认，决策文档 D7）**：面包屑四级（设定库/世界观/地图视图/{地图名}），逐级可回跳。正文 §5.9 已落实。
 - **Q5（✅ 已确认，用户拍板「P2 前后端混合」）**：P2 非纯前端——需后端扩展（pins type/ref_id、maps bg_source/extra、简图创建、迁移），任务书「前端为主」已修正为「前后端混合」。正文 §1.2/§2.7/§8 已落实。
+- **Q6（✅ 已确认，用户拍板 1.A）**：大纲三级 level 默认值 = `chapter`（旧大纲 → 孤立章，情节点零迁移）。正文 §1.3/§2.8/D-20 已落实。
+- **Q7（✅ 已确认，用户拍板 2.A）**：三级层级严格约束（overall 无父 / volume→overall / chapter→volume；孤立章 parent 空合法）。正文 §1.3/§2.8/D-21 已落实。
+- **Q8（✅ 已确认，用户拍板 3.A）**：单事件检查 = 独立端点 `GET /timeline/events/{id}/check`（复用相邻对扫描）。正文 §2.9/§3.7/D-23 已落实。
 
 ---
 
-## 跨节同步声明（v1.2 修订必查）
+## 跨节同步声明（v1.3 修订必查）
 
 | # | 位置 | 同步点 |
 |---|------|--------|
-| 1 | 头部 | 版本 v1.2 + Spec 变更行 + 估算 5-8 人天 + 关联 Issues 加 #174 |
-| 2 | §1.2/§1.3 | P2 交付物表（8 项）+ 边界声明（AI 后置/简图无图/pin 校验/非绘图引擎） |
-| 3 | §2.7 | 后端扩展（map_pins type/ref_id + maps bg_source/extra + shapes 结构 + 迁移） |
-| 4 | §3.5 | 地图工作台 API（pin type/ref_id + maps bg_source/extra + 异常映射） |
-| 5 | §5 | 关键差异节 5.8-5.13（地图布局/面包屑/三底图/简图/一图多标记/后端 service） |
-| 6 | §6 | i18n key 表（28 个新 key） |
-| 7 | §7 | E27-E40 边界表 |
-| 8 | §8 | 文件结构（前端 6 + 后端 12） |
-| 9 | §9 | RED 契约 M1-M13 + 后端 B1-B7 |
-| 10 | §10/§11/§12/§13/§14 | 不在范围更新 / 依赖表 / D-14..D-18 / M1-M10 / Q1-Q5 |
+| 1 | 头部 | 版本 v1.3 + Spec 变更行 + 估算 5-8 人天 + 关联 Issues 加 #3 |
+| 2 | §1.2/§1.3 | P3+P4 交付物表（13 项）+ 边界声明（level 默认/层级约束/章关联/情节点/双序/单事件检查） |
+| 3 | §2.8/§2.9 | 后端扩展（outlines level/parent_id/chapter_id + 层级校验 + 迁移 + EventCheckReport + check_event） |
+| 4 | §3.6/§3.7 | 大纲端点扩展 + 单事件检查端点 + 异常映射 |
+| 5 | §5 | 关键差异节 5.14-5.17（大纲三级树/章关联徽标/时间线双序/两级检查） |
+| 6 | §6 | i18n key 表（23 个新 key） |
+| 7 | §7 | E41-E55 边界表 |
+| 8 | §8 | 文件结构（前端 6 + 后端 13） |
+| 9 | §9 | RED 契约 O1-O8/T1-T8 + 后端 OB1-OB11/TB1-TB5 + 地图 E2E |
+| 10 | §10/§11/§12/§13/§14 | 不在范围更新 / 依赖表 / D-19..D-23 / M1-M9 / Q6-Q8 |
 
 ---
 
-*（Spec v1.2 完。实现阶段：Plan → RED（前端 M1-M13 + 后端 B1-B7 契约全 FAIL 实证存档）→ Codex GREEN（唯一编码执行者）→ QA（前端全绿 + 手动核对地图交互）→ PR `feat(gui): 设定库 P2 地图工作台...` body `Part of #284` + 进度注明 P2 完成 / P3-P5 未做，**禁用 `Closes #284`**。）*
+*（Spec v1.3 完。实现阶段：Plan → RED（前端 O1-O8/T1-T8 + 后端 OB1-OB11/TB1-TB5 契约全 FAIL 实证存档）→ Codex GREEN（唯一编码执行者）→ QA（前端全绿 + 手动核对大纲三级/时间线双序）→ PR `feat(gui): 设定库 P3+P4 大纲三级与时间线双序...` body `Part of #284` + 进度注明 P3+P4 完成 / P5 未做，**禁用 `Closes #284`**。）*

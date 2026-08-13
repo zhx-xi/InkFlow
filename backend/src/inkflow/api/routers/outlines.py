@@ -151,6 +151,9 @@ class OutlineCreateBody(BaseModel):
     name: str
     description: str = ""
     sort_order: int = 0
+    level: str = "chapter"  # F43 P3：overall/volume/chapter
+    parent_id: uuid.UUID | None = None  # F43 P3：父大纲
+    chapter_id: uuid.UUID | None = None  # F43 P3：关联写作章节（仅 chapter）
 
     @field_validator("name")
     @classmethod
@@ -183,7 +186,15 @@ async def create_outline(
     pid = _parse_id(project_id, detail="项目不存在")
     svc = _get_svc(db)
     outline = await _run_service(
-        svc.create_outline(pid, data.name, data.description, data.sort_order)
+        svc.create_outline(
+            pid,
+            data.name,
+            data.description,
+            data.sort_order,
+            level=data.level,
+            parent_id=data.parent_id,
+            chapter_id=data.chapter_id,
+        )
     )
     return outline.model_dump(mode="json")
 

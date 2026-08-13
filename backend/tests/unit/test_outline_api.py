@@ -164,7 +164,9 @@ class TestOutlineCRUDAPI:
         assert data["name"] == "第一卷大纲"
         assert data["description"] == "主角觉醒"
         assert data["project_id"] == str(PID)
-        svc.create_outline.assert_awaited_once_with(PID, "第一卷大纲", "主角觉醒", 1)
+        svc.create_outline.assert_awaited_once_with(
+            PID, "第一卷大纲", "主角觉醒", 1, level="chapter", parent_id=None, chapter_id=None
+        )
 
     @patch("inkflow.api.routers.outlines.get_outline_service")
     def test_create_outline_name_conflict_422(self, mock_get_svc: MagicMock) -> None:

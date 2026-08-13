@@ -79,6 +79,23 @@ def _validate_description(v: str, field: str = "描述", max_len: int = 5000) ->
     return v
 
 
+def _validate_level(v: str) -> str:
+    """大纲层级校验：仅接受 overall/volume/chapter（F43 P3 三级结构，spec §2.8）.
+
+    Args:
+        v: 原始层级值.
+
+    Returns:
+        原样返回的合法层级.
+
+    Raises:
+        ValueError: 层级不是 overall/volume/chapter.
+    """
+    if v not in {"overall", "volume", "chapter"}:
+        raise ValueError("大纲层级只能为 overall/volume/chapter")
+    return v
+
+
 class Outline(BaseModel):
     """大纲领域实体 — 对应 outlines 表.
 
@@ -88,6 +105,9 @@ class Outline(BaseModel):
         name: 大纲名；项目内唯一（全唯一索引，见 spec §2.4）.
         description: 大纲总体描述（故事主线概述）.
         sort_order: 大纲间排序权重（小者在前）.
+        level: 大纲层级（overall/volume/chapter；旧数据默认 chapter = 孤立章）.
+        parent_id: 父大纲 UUID（volume→overall、chapter→volume；None = 顶层/孤立章）.
+        chapter_id: 关联写作章节 UUID（仅 level=chapter 可设）.
         extra: 扩展属性字典（生成标记、来源约束等 Phase 2+ 字段预留）.
         created_at: 创建时间.
         updated_at: 最后更新时间.
@@ -100,9 +120,18 @@ class Outline(BaseModel):
     name: str
     description: str = ""
     sort_order: int = 0
+    level: str = "chapter"  # F43 P3：overall/volume/chapter
+    parent_id: uuid.UUID | None = None  # F43 P3：父大纲
+    chapter_id: uuid.UUID | None = None  # F43 P3：关联写作章节（仅 chapter 可设）
     extra: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("level")
+    @classmethod
+    def validate_level(cls, v: str) -> str:
+        """验证大纲层级：仅接受 overall/volume/chapter."""
+        return _validate_level(v)
 
 
 class PlotPoint(BaseModel):
@@ -167,12 +196,18 @@ class OutlineCreate(BaseModel):
         name: 大纲名，必填，1-50 字符，去空白.
         description: 大纲描述，默认为空串，≤ 5000 字符.
         sort_order: 排序权重，默认为 0，≥ 0.
+        level: 大纲层级，默认为 chapter（孤立章）.
+        parent_id: 父大纲 UUID（可选；overall 禁父、volume 父须 overall、chapter 父须 volume）.
+        chapter_id: 关联写作章节 UUID（可选；仅 level=chapter 可设）.
     """
 
     project_id: uuid.UUID
     name: str
     description: str = ""
     sort_order: int = 0
+    level: str = "chapter"
+    parent_id: uuid.UUID | None = None
+    chapter_id: uuid.UUID | None = None
 
     @field_validator("name")
     @classmethod
@@ -194,17 +229,29 @@ class OutlineCreate(BaseModel):
             raise ValueError("排序权重不能为负数")
         return v
 
+    @field_validator("level")
+    @classmethod
+    def validate_level(cls, v: str) -> str:
+        """验证大纲层级：仅接受 overall/volume/chapter."""
+        return _validate_level(v)
+
 
 class OutlineUpdate(BaseModel):
     """更新大纲请求 DTO — 所有字段可选（exclude_unset 语义，同 F1）.
 
     name/description/sort_order: None 表示不修改；只有传入的字段会被更新，
     未传入的字段保持不变。
+    level: None 表示不修改；传入合法层级则更新。
+    parent_id/chapter_id: None 表示不修改；"" 表示清除（置 None，对齐
+    PlotPointUpdate.arc_id 先例）。
     """
 
     name: str | None = None
     description: str | None = None
     sort_order: int | None = None
+    level: str | None = None
+    parent_id: uuid.UUID | str | None = None  # str "" = 清除父大纲
+    chapter_id: uuid.UUID | str | None = None  # str "" = 清除章关联
 
     @field_validator("name")
     @classmethod
@@ -231,6 +278,14 @@ class OutlineUpdate(BaseModel):
         if v < 0:
             raise ValueError("排序权重不能为负数")
         return v
+
+    @field_validator("level")
+    @classmethod
+    def validate_level(cls, v: str | None) -> str | None:
+        """验证大纲层级：None（不修改）直接返回；否则仅接受 overall/volume/chapter."""
+        if v is None:
+            return v
+        return _validate_level(v)
 
 
 class PlotPointCreate(BaseModel):

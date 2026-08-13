@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 
 from inkflow.domain.models.timeline import (
     ConsistencyReport,
+    EventCheckReport,
     TimelineConflict,
     TimelineEvent,
     TimelineEventRef,
@@ -73,6 +74,65 @@ def _to_ref(event: TimelineEvent) -> TimelineEventRef:
         time_display=event.time_display,
         narrative_position=event.narrative_position,
         timeline_flag=event.timeline_flag,
+    )
+
+
+def _classify_pair(prev: TimelineEvent, nxt: TimelineEvent) -> TimelineConflict | None:
+    """分类相邻事件对（spec §5.4）——check_consistency 与 check_event 共用.
+
+    仅当双方 time_value 均已知且 prev.time_value > next.time_value（逆序对）时
+    返回 TimelineConflict：next 标记 flashback → flashback；prev 标记
+    flashforward → flashforward；否则 → order_conflict。正序/同时刻/任一时间
+    未知 → None（不参与比较）。
+
+    Args:
+        prev: 叙事序中靠前的事件.
+        nxt: 叙事序中靠后的事件.
+
+    Returns:
+        逆序对的分类结果；正序/同时刻/时间未知返回 None.
+    """
+    prev_tv = prev.time_value
+    nxt_tv = nxt.time_value
+    if prev_tv is None or nxt_tv is None or prev_tv <= nxt_tv:
+        return None
+    if nxt.timeline_flag == "flashback":
+        return TimelineConflict(
+            conflict_type="flashback",
+            prev=_to_ref(prev),
+            next=_to_ref(nxt),
+            message=(
+                f"叙事第 {nxt.narrative_position} 位事件"
+                f"「{nxt.title}」声明为倒叙（flashback）："
+                f"其世界内时间（{_time_label(nxt)}）早于前叙事件"
+                f"（{_time_label(prev)}），已标记，判定合法。"
+            ),
+        )
+    if prev.timeline_flag == "flashforward":
+        return TimelineConflict(
+            conflict_type="flashforward",
+            prev=_to_ref(prev),
+            next=_to_ref(nxt),
+            message=(
+                f"叙事第 {prev.narrative_position} 位事件"
+                f"「{prev.title}」声明为插叙（flashforward）："
+                f"其世界内时间（{_time_label(prev)}）晚于后叙事件"
+                f"（{_time_label(nxt)}），已标记，判定合法。"
+            ),
+        )
+    return TimelineConflict(
+        conflict_type="order_conflict",
+        prev=_to_ref(prev),
+        next=_to_ref(nxt),
+        message=(
+            f"叙事第 {prev.narrative_position} 位事件"
+            f"「{prev.title}」（{_time_label(prev)}）晚于叙事第"
+            f" {nxt.narrative_position} 位事件「{nxt.title}」"
+            f"（{_time_label(nxt)}）：叙事顺序与世界内时间矛盾。"
+            "若为倒叙/插叙请给后叙事件标记 "
+            "timeline_flag=flashback（或前叙事件标记 "
+            "flashforward）；否则请修正事件时间或叙事位置。"
+        ),
     )
 
 
@@ -283,6 +343,71 @@ class TimelineService:
             narrative_order=events,
         )
 
+    async def check_event(self, event_id: int | uuid.UUID) -> EventCheckReport | None:
+        """单事件检查（F43 P4 spec §2.9/§3.7）——报告该事件参与的相邻对逆序冲突.
+
+        ① repo.get 取事件，不存在 → 返回 None（router 转 404）；
+        ② 事件 time_value None → checked=false、consistent=true、冲突为空
+           （不参与检查，非冲突）；
+        ③ repo.list_all(project_id) 取全部事件（已按 narrative_position ASC
+           稳定排序），定位该事件在叙事序中的位置 i；
+        ④ 检查相邻对 (events[i-1], events[i]) 与 (events[i], events[i+1])，
+           复用 _classify_pair（check_consistency 的相邻对分类逻辑）；该事件
+           最多参与两对，两对的逆序冲突均计入；
+        ⑤ 返回 EventCheckReport（consistent = conflicts 为空，flashbacks 不影响）.
+
+        Args:
+            event_id: 事件主键（支持 int 或 UUID）.
+
+        Returns:
+            EventCheckReport；事件不存在返回 None（router 转 404「事件不存在」）.
+        """
+        eid = _to_int_id(event_id)
+        event: TimelineEvent | None = await self._repo.get(eid)
+        if event is None:
+            return None
+        if event.time_value is None:
+            return EventCheckReport(
+                event_id=event.id,
+                checked=False,
+                consistent=True,
+                conflicts=[],
+                flashbacks=[],
+            )
+        events = await self._repo.list_all(_to_int_id(event.project_id))
+        # 事件在叙事序中的位置 i（list_all 已按 narrative_position ASC 稳定排序）
+        i = next((idx for idx, e in enumerate(events) if e.id == event.id), None)
+        conflicts: list[TimelineConflict] = []
+        flashbacks: list[TimelineConflict] = []
+        if i is not None:
+            if i > 0:
+                conflict = _classify_pair(events[i - 1], events[i])
+                if conflict is not None:
+                    if conflict.conflict_type in ("flashback", "flashforward"):
+                        flashbacks.append(conflict)
+                    else:
+                        conflicts.append(conflict)
+            if i + 1 < len(events):
+                conflict = _classify_pair(events[i], events[i + 1])
+                if conflict is not None:
+                    if conflict.conflict_type in ("flashback", "flashforward"):
+                        flashbacks.append(conflict)
+                    else:
+                        conflicts.append(conflict)
+        logger.info(
+            "单事件检查: event=%s checked=True conflicts=%d flashbacks=%d",
+            event.id,
+            len(conflicts),
+            len(flashbacks),
+        )
+        return EventCheckReport(
+            event_id=event.id,
+            checked=True,
+            consistent=len(conflicts) == 0,
+            conflicts=conflicts,
+            flashbacks=flashbacks,
+        )
+
     async def check_consistency(
         self, project_id: uuid.UUID, include_flashbacks: bool = True
     ) -> ConsistencyReport | None:
@@ -316,56 +441,14 @@ class TimelineService:
         conflicts: list[TimelineConflict] = []
         flashbacks: list[TimelineConflict] = []
         for i in range(len(seq) - 1):
-            (prev, prev_tv), (nxt, nxt_tv) = seq[i], seq[i + 1]
-            if prev_tv <= nxt_tv:
-                continue  # 正序/同刻：不冲突（§5.4）
-            if nxt.timeline_flag == "flashback":
+            conflict = _classify_pair(seq[i][0], seq[i + 1][0])
+            if conflict is None:
+                continue  # 正序/同刻/时间未知：不冲突（§5.4）
+            if conflict.conflict_type in ("flashback", "flashforward"):
                 if include_flashbacks:
-                    flashbacks.append(
-                        TimelineConflict(
-                            conflict_type="flashback",
-                            prev=_to_ref(prev),
-                            next=_to_ref(nxt),
-                            message=(
-                                f"叙事第 {nxt.narrative_position} 位事件"
-                                f"「{nxt.title}」声明为倒叙（flashback）："
-                                f"其世界内时间（{_time_label(nxt)}）早于前叙事件"
-                                f"（{_time_label(prev)}），已标记，判定合法。"
-                            ),
-                        )
-                    )
-            elif prev.timeline_flag == "flashforward":
-                if include_flashbacks:
-                    flashbacks.append(
-                        TimelineConflict(
-                            conflict_type="flashforward",
-                            prev=_to_ref(prev),
-                            next=_to_ref(nxt),
-                            message=(
-                                f"叙事第 {prev.narrative_position} 位事件"
-                                f"「{prev.title}」声明为插叙（flashforward）："
-                                f"其世界内时间（{_time_label(prev)}）晚于后叙事件"
-                                f"（{_time_label(nxt)}），已标记，判定合法。"
-                            ),
-                        )
-                    )
+                    flashbacks.append(conflict)
             else:
-                conflicts.append(
-                    TimelineConflict(
-                        conflict_type="order_conflict",
-                        prev=_to_ref(prev),
-                        next=_to_ref(nxt),
-                        message=(
-                            f"叙事第 {prev.narrative_position} 位事件"
-                            f"「{prev.title}」（{_time_label(prev)}）晚于叙事第"
-                            f" {nxt.narrative_position} 位事件「{nxt.title}」"
-                            f"（{_time_label(nxt)}）：叙事顺序与世界内时间矛盾。"
-                            "若为倒叙/插叙请给后叙事件标记 "
-                            "timeline_flag=flashback（或前叙事件标记 "
-                            "flashforward）；否则请修正事件时间或叙事位置。"
-                        ),
-                    )
-                )
+                conflicts.append(conflict)
         logger.info(
             "一致性检查: project=%s checked=%d skipped=%d conflicts=%d flashbacks=%d",
             project_id,

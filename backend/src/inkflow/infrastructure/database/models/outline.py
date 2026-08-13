@@ -92,6 +92,29 @@ class OutlineORM(Base):
     )
     """大纲间排序权重（小者在前，≥ 0）."""
 
+    level: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="chapter",
+    )
+    """大纲层级（overall/volume/chapter；旧数据默认 chapter = 孤立章，F43 P3）."""
+
+    parent_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("outlines.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    """父大纲（自引用；volume→overall、chapter→volume；父删除置 NULL，已索引，F43 P3）."""
+
+    chapter_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("chapters.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    """关联写作章节（仅 level=chapter 可设；章节删除置 NULL，已索引，F43 P3）."""
+
     extra: Mapped[dict] = mapped_column(
         LenientJSON(fallback={}),
         nullable=False,

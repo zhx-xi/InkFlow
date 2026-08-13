@@ -394,3 +394,175 @@ async def test_check_project_missing_raises_not_found() -> None:
 
     with pytest.raises(ProjectNotFoundError):
         await svc.check_consistency(PID)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# F43 P4 追加段：单事件检查 check_event 契约（spec §2.9/§3.7/§9.7 T 系列）
+# 纯插入追加（git diff 删除列 0），严禁覆盖既有用例。RED 预期形态:
+# - TB1-TB4 service: TimelineService 无 check_event 方法 → AttributeError（FAILED）
+# - TB5 api: EventCheckReport 缺失 → 用例体 lazy import ImportError（FAILED 形态，
+#   非收集 ERROR）；GREEN 后若端点漏注册 → assert 200 == 404 兜底
+# GREEN 必实现:
+# - domain/models/timeline.py 新增 EventCheckReport（event_id: uuid.UUID、
+#   checked: bool、consistent: bool、conflicts: list[TimelineConflict] = []、
+#   flashbacks: list[TimelineConflict] = []，spec §2.9）
+# - TimelineService.check_event(event_id) → EventCheckReport | None:
+#   repo.get 取事件（不存在 → 返回 None）；取该事件叙事相邻事件（prev/next），
+#   复用 check_consistency 相邻对分类（prev.time > next.time 且 next 标
+#   flashback → flashbacks；prev 标 flashforward → flashbacks；否则 conflicts）；
+#   事件 time_value None → checked=false 且 conflicts/flashbacks 空 consistent=true
+# - api/routers/timeline.py: GET /timeline/events/{event_id}/check →
+#   _run_service(svc.check_event(eid))；None → 404「事件不存在」；
+#   否则 report.model_dump(mode="json")
+# ══════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.asyncio
+async def test_tb1_check_event_reports_participating_order_conflict() -> None:
+    """TB1 service：check_event 返回该事件参与的逆序冲突（order_conflict）.
+
+    [1.0, 3.0, 2.0, 4.0]：唯一逆序对 (事件2, 事件3)；目标=事件2（作为 prev 参与）→
+    conflicts 恰 1 条 order_conflict，flashbacks 空。
+    RED 预期: TimelineService 无 check_event 方法 → AttributeError（service 层失败形态）。
+    """
+    events = _seq(1.0, 3.0, 2.0, 4.0)
+    target = events[1]  # 事件2（time=3.0，逆序对 prev）
+    report = await _make_service(events).check_event(target.id)  # RED: AttributeError
+    assert report is not None
+    assert report.event_id == target.id
+    assert report.checked is True
+    assert report.consistent is False
+    assert len(report.conflicts) == 1
+    conflict = report.conflicts[0]
+    assert conflict.conflict_type == "order_conflict"
+    assert conflict.prev.id == target.id
+    assert conflict.next.id == events[2].id
+    assert report.flashbacks == []
+
+
+@pytest.mark.asyncio
+async def test_tb2_check_event_flashback_flashforward_classification() -> None:
+    """TB2 service：check_event flashback/flashforward 分类正确.
+
+    - [10.0, 5.0] flags={2: flashback}：逆序对 next 标 flashback → 目标=事件2 →
+      flashbacks[0].conflict_type == "flashback"
+    - [10.0, 5.0] flags={1: flashforward}：逆序对 prev 标 flashforward → 目标=事件1 →
+      flashbacks[0].conflict_type == "flashforward"
+    RED 预期: check_event 缺失 → AttributeError（service 层失败形态）。
+    """
+    fb_events = _seq(10.0, 5.0, flags={2: "flashback"})
+    fb_target = fb_events[1]
+    fb = await _make_service(fb_events).check_event(fb_target.id)
+    assert fb is not None
+    assert fb.checked is True
+    assert fb.conflicts == []
+    assert len(fb.flashbacks) == 1
+    assert fb.flashbacks[0].conflict_type == "flashback"
+    assert fb.flashbacks[0].next.id == fb_target.id
+
+    ff_events = _seq(10.0, 5.0, flags={1: "flashforward"})
+    ff_target = ff_events[0]
+    ff = await _make_service(ff_events).check_event(ff_target.id)
+    assert ff is not None
+    assert ff.conflicts == []
+    assert len(ff.flashbacks) == 1
+    assert ff.flashbacks[0].conflict_type == "flashforward"
+    assert ff.flashbacks[0].prev.id == ff_target.id
+
+
+@pytest.mark.asyncio
+async def test_tb3_check_event_unknown_time_checked_false() -> None:
+    """TB3 service：check_event time_value None → checked=false，consistent=true.
+
+    目标=事件2（time_value=None，两侧邻居时间已知）；不参与检查 →
+    checked=false 且 conflicts/flashbacks 均空（非冲突）。
+    RED 预期: check_event 缺失 → AttributeError（service 层失败形态）。
+    """
+    events = _seq(1.0, None, 3.0)
+    target = events[1]
+    report = await _make_service(events).check_event(target.id)
+    assert report is not None
+    assert report.event_id == target.id
+    assert report.checked is False
+    assert report.consistent is True
+    assert report.conflicts == []
+    assert report.flashbacks == []
+
+
+@pytest.mark.asyncio
+async def test_tb4_check_event_missing_event_returns_none() -> None:
+    """TB4 service：check_event 事件不存在 → 返回 None（router 转 404「事件不存在」）.
+
+    RED 预期: check_event 缺失 → AttributeError（service 层失败形态）。
+    GREEN 必实现: repo.get 未命中 → return None。
+    """
+    svc = _make_service(_seq(1.0, 2.0))
+    report = await svc.check_event(uuid.uuid4())  # RED: AttributeError
+    assert report is None
+
+
+def test_tb5_api_event_check_returns_report() -> None:
+    """TB5 api：GET /timeline/events/{id}/check 返回 EventCheckReport.
+
+    含 event_id/checked/consistent/conflicts 字段；RED 预期: ① EventCheckReport
+    缺失 → 用例体 lazy import ImportError（FAILED 形态，非收集 ERROR）；
+    ② GREEN 后端点漏注册 → 404 → assert 200 == 404 兜底。
+    GREEN 必实现: router 新增 GET /timeline/events/{event_id}/check →
+    _run_service(svc.check_event(eid))；check_event 返回 None → 404「事件不存在」；
+    否则 report.model_dump(mode="json")。
+    """
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from fastapi.testclient import TestClient
+
+    from inkflow.api.app import app
+    from inkflow.domain.models.timeline import (  # RED: ImportError（EventCheckReport 缺失）
+        EventCheckReport,
+        TimelineConflict,
+        TimelineEventRef,
+    )
+
+    event_id = uuid.uuid4()
+    report = EventCheckReport(
+        event_id=event_id,
+        checked=True,
+        consistent=False,
+        conflicts=[
+            TimelineConflict(
+                conflict_type="order_conflict",
+                prev=TimelineEventRef(
+                    id=uuid.uuid4(),
+                    title="宗门大比夺冠",
+                    time_value=319.0,
+                    time_display="青元历 319 年夏",
+                    narrative_position=4,
+                    timeline_flag="",
+                ),
+                next=TimelineEventRef(
+                    id=event_id,
+                    title="外门往事",
+                    time_value=312.0,
+                    time_display="青元历 312 年",
+                    narrative_position=5,
+                    timeline_flag="",
+                ),
+                message="叙事顺序与世界内时间矛盾。",
+            )
+        ],
+        flashbacks=[],
+    )
+    with patch("inkflow.api.routers.timeline.get_timeline_service") as mock_get_svc:
+        svc = MagicMock()
+        mock_get_svc.return_value = svc
+        svc.check_event = AsyncMock(return_value=report)
+
+        client = TestClient(app)
+        response = client.get(f"/api/v1/timeline/events/{event_id}/check")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["event_id"] == str(event_id)
+        assert data["checked"] is True
+        assert data["consistent"] is False
+        assert data["conflicts"][0]["conflict_type"] == "order_conflict"
+        assert data["flashbacks"] == []
+        svc.check_event.assert_awaited_once_with(event_id)

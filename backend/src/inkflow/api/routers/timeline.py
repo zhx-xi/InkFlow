@@ -218,6 +218,20 @@ async def check_timeline_consistency(
     return report.model_dump(mode="json")
 
 
+@router.get("/timeline/events/{event_id}/check")
+async def check_timeline_event(
+    event_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """单事件一致性检查（F43 P4 spec §3.7）：事件不存在 → 404「事件不存在」."""
+    eid = _parse_id(event_id, detail="事件不存在")
+    svc = _get_svc(db)
+    report = await _run_service(svc.check_event(eid))
+    if report is None:
+        raise HTTPException(status_code=404, detail="事件不存在")
+    return report.model_dump(mode="json")
+
+
 # ── 事件详情/更新/删除/恢复（扁平路径）──────────────────────────
 
 
