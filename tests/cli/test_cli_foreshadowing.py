@@ -1,7 +1,7 @@
 """Foreshadowing CLI 命令测试 — Mock ensure_kernel + InkFlowHTTPClient（spec §4/§9 CLI 测试）.
 
 覆盖（依据 specs/f13-foreshadowing-service/spec.md §4/§9）:
-- 各子命令成功路径与参数透传（create/list/get/update/delete/restore/resolve/reopen，含 --event-id）
+- 各子命令成功路径与参数透传（create/list/get/update/delete/resolve/reopen，含 --event-id）
 - 信封格式与退出码 0/1/2（--status 非法值 → 退出码 2）
 - delete 二次确认 + --force；--json + delete 无 --force → VALIDATION_ERROR
 - resolve/reopen 人类可读输出（✅ 伏笔已回收/已重新开启）与 --json 完整对象
@@ -21,9 +21,8 @@ import 会使整文件收集失败（ModuleNotFoundError），无法呈现上述
 create → POST /projects/{pid}/foreshadowings（body: title/description/priority/
 location/event_id）；list → GET /projects/{pid}/foreshadowings（params: search/
 status/sort_by/sort_desc）；get → GET /foreshadowings/{id}；update → PATCH
-/foreshadowings/{id}；delete → GET（确认标题）+ DELETE /foreshadowings/{id}
-（--permanent → params force=True）；restore/resolve/reopen → POST
-/foreshadowings/{id}/restore|resolve|reopen。
+/foreshadowings/{id}；delete → DELETE /foreshadowings/{id}（v1.1 真删，
+无 params）；resolve/reopen → POST /foreshadowings/{id}/resolve|reopen。
 错误映射（spec §5.3）：404 → NOT_FOUND；422 → VALIDATION_ERROR；500 无头 →
 INTERNAL_ERROR（DB_ERROR 恒 HTTP 后由 INTERNAL_ERROR 替代，spec §5.3 注）。
 """
@@ -89,7 +88,6 @@ def _make_foreshadowing(**overrides: object) -> dict:
         event_id=None,
         resolved_at=None,
         extra={},
-        is_deleted=False,
         created_at="2026-08-02T12:00:00",
         updated_at="2026-08-02T12:00:00",
     )
@@ -99,7 +97,7 @@ def _make_foreshadowing(**overrides: object) -> dict:
 
 class TestForeshadowingRegistration:
     def test_group_help_lists_all_commands(self):
-        """foreshadowing 组帮助包含全部 8 个命令（NO_COLOR 规避 FORCE_COLOR 渲染坑）."""
+        """foreshadowing 组帮助包含全部 7 个命令（NO_COLOR 规避 FORCE_COLOR 渲染坑）."""
         runner = CliRunner(env={"NO_COLOR": "1"})
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
@@ -109,7 +107,6 @@ class TestForeshadowingRegistration:
             "get",
             "update",
             "delete",
-            "restore",
             "resolve",
             "reopen",
         ):
@@ -461,9 +458,8 @@ class TestForeshadowingUpdate:
 
 class TestForeshadowingDelete:
     def test_delete_force_json(self, cli_runner, fake_http_client):
-        """delete --force --json → 成功信封 + 软删除（无 force 参数，API 默认）."""
+        """delete --force --json → 成功信封 + 真删除（无确认 GET）."""
         eid = uuid.uuid4()
-        fake_http_client.get.return_value = _make_foreshadowing()
         fake_http_client.delete.return_value = {}
         result = cli_runner.invoke(
             app,
@@ -477,28 +473,9 @@ class TestForeshadowingDelete:
         assert data["data"]["id"] == str(eid)
         fake_http_client.delete.assert_awaited_once_with(f"/foreshadowings/{eid}")
 
-    def test_delete_permanent_hard_delete(self, cli_runner, fake_http_client):
-        """delete --permanent → 硬删除（HTTP force=True 查询参数）."""
-        eid = uuid.uuid4()
-        fake_http_client.get.return_value = _make_foreshadowing()
-        fake_http_client.delete.return_value = {}
-        result = cli_runner.invoke(
-            app,
-            ["delete", "--id", str(eid), "--force", "--permanent"],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 0
-        data = json.loads(result.stdout)
-        assert data["ok"] is True
-        assert data["data"]["deleted"] is True
-        fake_http_client.delete.assert_awaited_once_with(
-            f"/foreshadowings/{eid}", params={"force": True}
-        )
-
     def test_delete_confirm_yes(self, cli_runner, fake_http_client):
         """无 --force 人类模式 → 交互确认，回答 y 继续删除（输出含标题）."""
         eid = uuid.uuid4()
-        fake_http_client.get.return_value = _make_foreshadowing()
         fake_http_client.delete.return_value = {}
         result = cli_runner.invoke(
             app,
@@ -507,7 +484,7 @@ class TestForeshadowingDelete:
             obj=CliContext(json_output=False),
         )
         assert result.exit_code == 0
-        assert "✅ 伏笔已删除: [林晚的身世]" in result.output
+        assert f"✅ 伏笔 #{eid} 已删除" in result.output
         fake_http_client.delete.assert_awaited_once_with(f"/foreshadowings/{eid}")
 
     def test_delete_confirm_no(self, cli_runner, fake_http_client):
@@ -537,46 +514,13 @@ class TestForeshadowingDelete:
         fake_http_client.delete.assert_not_awaited()
 
     def test_delete_not_found(self, cli_runner, fake_http_client):
-        """伏笔不存在（GET 404）→ NOT_FOUND 错误信封，不调用删除."""
+        """伏笔不存在（DELETE 404）→ NOT_FOUND 错误信封."""
         from inkflow.infrastructure.http import HttpApiError  # RED 期惰性导入
 
-        fake_http_client.get.side_effect = HttpApiError(404, "伏笔不存在")
+        fake_http_client.delete.side_effect = HttpApiError(404, "伏笔不存在")
         result = cli_runner.invoke(
             app,
             ["delete", "--id", str(uuid.uuid4()), "--force"],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 1
-        data = json.loads(result.stdout)
-        assert data["ok"] is False
-        assert data["error"]["code"] == "NOT_FOUND"
-        fake_http_client.delete.assert_not_awaited()
-
-
-class TestForeshadowingRestore:
-    def test_restore_json(self, cli_runner, fake_http_client):
-        """restore --json → 成功信封 + id 透传."""
-        eid = uuid.uuid4()
-        fake_http_client.post.return_value = _make_foreshadowing()
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(eid)],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 0
-        data = json.loads(result.stdout)
-        assert data["ok"] is True
-        assert data["data"]["title"] == "林晚的身世"
-        fake_http_client.post.assert_awaited_once_with(f"/foreshadowings/{eid}/restore")
-
-    def test_restore_not_found(self, cli_runner, fake_http_client):
-        """伏笔不存在 → NOT_FOUND 错误信封 + 退出码 1."""
-        from inkflow.infrastructure.http import HttpApiError  # RED 期惰性导入
-
-        fake_http_client.post.side_effect = HttpApiError(404, "伏笔不存在")
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(uuid.uuid4())],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1
@@ -733,7 +677,7 @@ class TestForeshadowingErrorMapping:
 
 
 class TestForeshadowingHumanOutput:
-    """人类可读输出补全：已回收状态 / get 详情 / update / restore / delete 软删失败."""
+    """人类可读输出补全：已回收状态 / get 详情 / update / delete 失败."""
 
     def test_create_human_resolved_status(self, cli_runner, fake_http_client):
         """create 人类模式返回已回收状态 → 状态标签为已回收."""
@@ -820,23 +764,11 @@ class TestForeshadowingHumanOutput:
         assert result.exit_code == 0
         assert "伏笔已更新: [林晚的身世·改]" in result.output
 
-    def test_restore_human(self, cli_runner, fake_http_client):
-        """restore 人类模式 → 成功提示."""
-        fake_http_client.post.return_value = _make_foreshadowing()
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(uuid.uuid4())],
-            obj=CliContext(json_output=False),
-        )
-        assert result.exit_code == 0
-        assert "伏笔已恢复: [林晚的身世]" in result.output
-
-    def test_delete_soft_delete_false(self, cli_runner, fake_http_client):
-        """delete 服务层删除失败（API 404）→ NOT_FOUND 错误信封."""
+    def test_delete_not_found_on_delete(self, cli_runner, fake_http_client):
+        """delete 时 API 404 → NOT_FOUND 错误信封."""
         from inkflow.infrastructure.http import HttpApiError  # RED 期惰性导入
 
         eid = uuid.uuid4()
-        fake_http_client.get.return_value = _make_foreshadowing()
         fake_http_client.delete.side_effect = HttpApiError(404, "伏笔不存在")
         result = cli_runner.invoke(
             app,

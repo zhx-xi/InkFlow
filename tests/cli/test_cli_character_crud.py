@@ -1,7 +1,7 @@
 """Character CLI 命令测试 — Mock ensure_kernel + InkFlowHTTPClient（HTTP JSON 响应）。
 
 覆盖（依据 specs/f9-character-service/spec.md §4/§7/§9）:
-- 各子命令成功路径与参数透传（create/list/get/update/delete/restore + group 子组）
+- 各子命令成功路径与参数透传（create/list/get/update/delete + group 子组）
 - 信封格式与退出码 0/1/2
 - delete 二次确认 + --force；--json + delete 无 --force → VALIDATION_ERROR
 - NOT_FOUND、VALIDATION_ERROR 错误信封
@@ -90,7 +90,6 @@ def _make_character(**overrides) -> dict:
         goals="成为强者",
         group_id=None,
         extra={},
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )
@@ -106,7 +105,6 @@ def _make_group(**overrides) -> dict:
         name="主角团",
         description="核心小队",
         sort_order=0,
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )
@@ -123,7 +121,6 @@ def _make_relation(**overrides) -> dict:
         to_character_id=str(uuid.uuid4()),
         relation_type="师徒",
         description="亦师亦友",
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )
@@ -368,7 +365,7 @@ class TestCharacterUpdate:
 
 class TestCharacterDelete:
     def test_delete_force_json(self, cli_runner, fake_http_client):
-        """delete --force --json → 成功信封 + 软删除（force=False）."""
+        """delete --force --json → 成功信封 + 真删除."""
         cid = uuid.uuid4()
         fake_http_client.delete.return_value = None
         result = cli_runner.invoke(
@@ -380,18 +377,6 @@ class TestCharacterDelete:
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"]["deleted"] is True
-        fake_http_client.delete.assert_awaited()
-
-    def test_delete_permanent_passes_force(self, cli_runner, fake_http_client):
-        """delete --permanent → HTTP 调用发生（force=True 透传在命令侧）."""
-        cid = uuid.uuid4()
-        fake_http_client.delete.return_value = None
-        result = cli_runner.invoke(
-            app,
-            ["delete", "--id", str(cid), "--force", "--permanent"],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 0
         fake_http_client.delete.assert_awaited()
 
     def test_delete_confirm_yes(self, cli_runner, fake_http_client):
@@ -440,34 +425,6 @@ class TestCharacterDelete:
         result = cli_runner.invoke(
             app,
             ["delete", "--id", str(uuid.uuid4()), "--force"],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 1
-        data = json.loads(result.stdout)
-        assert data["ok"] is False
-        assert data["error"]["code"] == "NOT_FOUND"
-
-
-class TestCharacterRestore:
-    def test_restore_json(self, cli_runner, fake_http_client):
-        """restore --json → 成功信封."""
-        fake_http_client.post.return_value = _make_character(name="林尘")
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(uuid.uuid4())],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 0
-        data = json.loads(result.stdout)
-        assert data["ok"] is True
-        assert data["data"]["name"] == "林尘"
-
-    def test_restore_not_found(self, cli_runner, fake_http_client):
-        """角色不存在 → NOT_FOUND 错误信封 + 退出码 1."""
-        fake_http_client.post.side_effect = _http_error(404, "角色不存在")
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(uuid.uuid4())],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1

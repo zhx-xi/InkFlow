@@ -1,13 +1,12 @@
-"""Timeline CLI 命令测试（delete/restore/错误映射/人类输出）— Mock ensure_kernel +
+"""Timeline CLI 命令测试（delete/错误映射/人类输出）— Mock ensure_kernel +
 InkFlowHTTPClient（spec §4/§9 CLI 测试）.
 
 覆盖（依据 specs/f12-timeline-service/spec.md §4/§9）:
-- delete 二次确认 + --force；--permanent → 硬删除（HTTP force=True）
+- delete 二次确认 + --force（v1.1 真删，不可恢复）
 - --json + delete 无 --force → VALIDATION_ERROR
-- restore 成功/不存在
 - 错误映射：NotFound → NOT_FOUND；ServiceError → VALIDATION_ERROR；
   未知异常 → INTERNAL_ERROR；typer.Exit 透传
-- 人类可读输出补全（时间未知 / list 非空 / view 空 / get 详情 / update / restore）
+- 人类可读输出补全（时间未知 / list 非空 / view 空 / get 详情 / update）
 
 F38 改造（#169）：mock 目标从 domain Service 迁移到 ensure_kernel + InkFlowHTTPClient
 （HTTP JSON 响应）；create_tables patch 已移除。
@@ -21,10 +20,8 @@ F38 改造（#169）：mock 目标从 domain Service 迁移到 ensure_kernel + I
   顶部 import 会使整文件收集失败（ModuleNotFoundError），无法呈现上述预期形态。
 
 ── 端点契约（spec §3.1 表）────────────────────────────────
-- delete → DELETE /timeline/events/{id}（--permanent → params force=True；
-  软删除不带 params，API 默认 force=false）；204 无 body → CLI 自构
-  {"deleted": true, "id": ...} 信封
-- restore → POST /timeline/events/{id}/restore
+- delete → DELETE /timeline/events/{id}（v1.1 真删，无 params）；204 无 body →
+  CLI 自构 {"deleted": true, "id": ...} 信封
 - 错误映射（spec §5.3）：404 → NOT_FOUND；422 → VALIDATION_ERROR；500 无头 →
   INTERNAL_ERROR（DB_ERROR 恒 HTTP 后由 INTERNAL_ERROR 替代，spec §5.3 注）。
 """
@@ -90,7 +87,6 @@ def _make_event(**overrides: object) -> dict:
         narrative_position=3,
         timeline_flag="",
         extra={},
-        is_deleted=False,
         created_at="2026-08-02T12:00:00",
         updated_at="2026-08-02T12:00:00",
     )
@@ -154,7 +150,7 @@ def _make_view(**overrides: object) -> dict:
 
 class TestTimelineDelete:
     def test_delete_force_json(self, cli_runner, fake_http_client):
-        """delete --force --json → 成功信封 + 软删除（无 force 参数，API 默认）."""
+        """delete --force --json → 成功信封 + 真删除."""
         eid = uuid.uuid4()
         fake_http_client.delete.return_value = {}
         result = cli_runner.invoke(
@@ -168,23 +164,6 @@ class TestTimelineDelete:
         assert data["data"]["deleted"] is True
         assert data["data"]["id"] == str(eid)
         fake_http_client.delete.assert_awaited_once_with(f"/timeline/events/{eid}")
-
-    def test_delete_permanent_hard_delete(self, cli_runner, fake_http_client):
-        """delete --permanent → 硬删除（HTTP force=True 查询参数）."""
-        eid = uuid.uuid4()
-        fake_http_client.delete.return_value = {}
-        result = cli_runner.invoke(
-            app,
-            ["delete", "--id", str(eid), "--force", "--permanent"],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 0
-        data = json.loads(result.stdout)
-        assert data["ok"] is True
-        assert data["data"]["deleted"] is True
-        fake_http_client.delete.assert_awaited_once_with(
-            f"/timeline/events/{eid}", params={"force": True}
-        )
 
     def test_delete_confirm_yes(self, cli_runner, fake_http_client):
         """无 --force 人类模式 → 交互确认，回答 y 继续删除."""
@@ -234,40 +213,6 @@ class TestTimelineDelete:
         result = cli_runner.invoke(
             app,
             ["delete", "--id", str(uuid.uuid4()), "--force"],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 1
-        data = json.loads(result.stdout)
-        assert data["ok"] is False
-        assert data["error"]["code"] == "NOT_FOUND"
-
-
-class TestTimelineRestore:
-    def test_restore_json(self, cli_runner, fake_http_client):
-        """restore --json → 成功信封 + event_id 透传."""
-        eid = uuid.uuid4()
-        fake_http_client.post.return_value = _make_event()
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(eid)],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 0
-        data = json.loads(result.stdout)
-        assert data["ok"] is True
-        assert data["data"]["title"] == "林尘觉醒金手指"
-        fake_http_client.post.assert_awaited_once_with(
-            f"/timeline/events/{eid}/restore"
-        )
-
-    def test_restore_not_found(self, cli_runner, fake_http_client):
-        """事件不存在 → NOT_FOUND 错误信封 + 退出码 1."""
-        from inkflow.infrastructure.http import HttpApiError  # RED 期惰性导入
-
-        fake_http_client.post.side_effect = HttpApiError(404, "事件不存在")
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(uuid.uuid4())],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1
@@ -345,7 +290,7 @@ class TestTimelineErrorMapping:
 
 
 class TestTimelineHumanOutput:
-    """人类可读输出补全：时间未知 / list 非空 / view 空 / get 详情 / update / restore."""
+    """人类可读输出补全：时间未知 / list 非空 / view 空 / get 详情 / update."""
 
     def test_create_time_unknown_human(self, cli_runner, fake_http_client):
         """create 人类模式无时间信息 → 时间未知."""
@@ -447,14 +392,3 @@ class TestTimelineHumanOutput:
         )
         assert result.exit_code == 0
         assert "事件已更新: [林尘觉醒金手指·改]" in result.output
-
-    def test_restore_human(self, cli_runner, fake_http_client):
-        """restore 人类模式 → 成功提示."""
-        fake_http_client.post.return_value = _make_event()
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(uuid.uuid4())],
-            obj=CliContext(json_output=False),
-        )
-        assert result.exit_code == 0
-        assert "事件已恢复: [林尘觉醒金手指]" in result.output
