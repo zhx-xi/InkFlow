@@ -15,10 +15,10 @@ ForeshadowingRepositoryProtocol），测试中注入 Mock。
 ④ 解析 JSON → Pydantic schema 校验（ExtractedForeshadowing）
    → 非法条目跳过 + warning
 ⑤ 修复式重试 ≤ 2 次（附错误信息）→ 仍失败 → ForeshadowingExtractionError
-⑥ 合并落库（§5.4 合并策略）: 按 (project_id, title) 匹配活动伏笔 →
+⑥ 合并落库（§5.4 合并策略）: 按 (project_id, title) 匹配伏笔 →
    存在=非空字段覆盖（description/location 独立判断，不重置 status）/
-   不存在=创建（status=open, priority=50, event_id=None）；
-   软删同名 → 新建 + warning
+   不存在=创建（status=open, priority=50, event_id=None；
+   v1.1 真删：无「软删同名」分支）
 ⑦ 返回 ForeshadowingExtractionResult（created/updated/warnings + model）
 """
 
@@ -262,7 +262,7 @@ class ForeshadowingExtractor:
         item_warnings: list[str],
         model: str,
     ) -> ForeshadowingExtractionResult:
-        """合并落库: 按 (project_id, title) 匹配活动伏笔 → 覆盖/新建。"""
+        """合并落库: 按 (project_id, title) 匹配伏笔 → 覆盖/新建。"""
         warnings = list(item_warnings)
         pid_int = _to_int_id(request.project_id)
 
@@ -274,8 +274,6 @@ class ForeshadowingExtractor:
         for ef in foreshadowings:
             existing = await self._repo.get_by_title(pid_int, ef.title)
             if existing is None:
-                if await self._has_soft_deleted_same_title(pid_int, ef.title):
-                    warnings.append(f"存在已删除的同名伏笔档案「{ef.title}」，已新建伏笔")
                 now = _utcnow()
                 new_fs = await self._repo.add(
                     Foreshadowing(
@@ -310,17 +308,6 @@ class ForeshadowingExtractor:
             model=model,
         )
 
-    # ── 私有辅助 ────────────────────────────────────────────────
-
-    async def _has_soft_deleted_same_title(self, pid_int: int, title: str) -> bool:
-        """检查项目内是否存在已软删除的同名伏笔档案（用于 warning 提示）。
-
-        通过 list 搜索同名校验；若仓储实现默认排除软删除记录，
-        该场景仅影响提示，不影响合并行为（新建伏笔）。
-        """
-        items, _ = await self._repo.list(project_id=pid_int, search=title, limit=100)
-        return any(f.is_deleted and f.title == title for f in items)
-
 
 def _merge_foreshadowing_fields(
     existing: Foreshadowing, ef: ExtractedForeshadowing
@@ -331,7 +318,7 @@ def _merge_foreshadowing_fields(
     保留 existing 的 id / priority / status / event_id / 时间戳等无关字段。
 
     Args:
-        existing: 库中同名活动伏笔.
+        existing: 库中同名伏笔.
         ef: LLM 提取出的伏笔.
 
     Returns:
@@ -352,7 +339,6 @@ def _merge_foreshadowing_fields(
         event_id=existing.event_id,
         resolved_at=existing.resolved_at,
         extra=existing.extra,
-        is_deleted=existing.is_deleted,
         created_at=existing.created_at,
         updated_at=_utcnow(),
     )

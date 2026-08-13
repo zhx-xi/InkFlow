@@ -3,19 +3,19 @@
 转换函数（_orm_to_domain / _domain_to_orm / int↔UUID 辅助）按项目惯例
 放在本仓储层（参照 world_repo.py / outline_repo.py）。
 
-语义（spec §2/§6/§7）:
+语义（spec §2/§6/§7，v1.1 真删）:
 - 无任何唯一约束（spec §2.4）: title / narrative_position / time_value
   均允许重复——时间线事件是「实例」而非「档案」，无同名冲突检查
-- soft_delete = UPDATE is_deleted=1；hard_delete = DELETE
-- get/list/list_all 一律排除已软删除事件
+- 删除 = 物理 DELETE（hard_delete）
+- get/list/list_all 查询全部事件（真删后不存在软删记录）
 - list 默认按 narrative_position ASC 排序（spec §6.3）；
   sort_by=time_value 时未知时间始终排末尾（NULLS LAST，升/降序均适用）
 - list_all 按 (narrative_position ASC, created_at ASC) 稳定排序（叙事顺序），
   供双线视图/一致性检查消费
-- list_by_chapter 按来源章（source_chapter_id）拉取项目内活动事件候选集
+- list_by_chapter 按来源章（source_chapter_id）拉取项目内事件候选集
   （F14 提取合并用，spec §5.5）；同 list_all 稳定排序
 - source_chapter_id 映射: DB int ↔ 领域 uuid.UUID(int=...)（None 保持 None）
-- next_position = 项目内活动事件 max(narrative_position)+1（空项目 = 1）
+- next_position = 项目内事件 max(narrative_position)+1（空项目 = 1）
 - FK 级联: 项目物理删除 → 事件级联物理删除（DB FK CASCADE）；
   章节物理删除 → source_chapter_id 置 NULL（事件保留，DB FK SET NULL）
 
@@ -68,7 +68,6 @@ def _orm_to_domain(orm: TimelineEventORM) -> TimelineEvent:
         timeline_flag=orm.timeline_flag,
         source_chapter_id=_int_to_uuid(orm.source_chapter_id),
         extra=orm.extra or {},
-        is_deleted=orm.is_deleted,
         created_at=orm.created_at,
         updated_at=orm.updated_at,
     )
@@ -89,7 +88,6 @@ def _domain_to_orm(domain: TimelineEvent) -> TimelineEventORM:
             _uuid_to_int(domain.source_chapter_id) if domain.source_chapter_id is not None else None
         ),
         extra=domain.extra,
-        is_deleted=domain.is_deleted,
     )
 
 
@@ -110,11 +108,8 @@ class SQLiteTimelineRepository:
         return _orm_to_domain(orm)
 
     async def get(self, event_id: int) -> TimelineEvent | None:
-        """按主键查询事件（不含已软删除）."""
-        stmt = select(TimelineEventORM).where(
-            TimelineEventORM.id == event_id,
-            ~TimelineEventORM.is_deleted,
-        )
+        """按主键查询事件."""
+        stmt = select(TimelineEventORM).where(TimelineEventORM.id == event_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _orm_to_domain(orm) if orm else None
@@ -128,7 +123,7 @@ class SQLiteTimelineRepository:
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[builtins.list[TimelineEvent], int]:
-        """分页查询项目内活动事件列表，支持标题模糊搜索与排序（不含已软删除）.
+        """分页查询项目内事件列表，支持标题模糊搜索与排序.
 
         Args:
             project_id: 项目主键（int）.
@@ -142,10 +137,7 @@ class SQLiteTimelineRepository:
         Returns:
             (当前页事件列表, 符合条件的总记录数).
         """
-        base = select(TimelineEventORM).where(
-            TimelineEventORM.project_id == project_id,
-            ~TimelineEventORM.is_deleted,
-        )
+        base = select(TimelineEventORM).where(TimelineEventORM.project_id == project_id)
 
         # 搜索: title icontains
         if search:
@@ -178,16 +170,13 @@ class SQLiteTimelineRepository:
         return [_orm_to_domain(o) for o in orms], total
 
     async def list_all(self, project_id: int) -> builtins.list[TimelineEvent]:
-        """列出项目内全部活动事件，按 (narrative_position ASC, created_at ASC) 稳定排序.
+        """列出项目内全部事件，按 (narrative_position ASC, created_at ASC) 稳定排序.
 
-        双线视图/一致性检查直接消费此全量结果（软删除事件不进入）。
+        双线视图/一致性检查直接消费此全量结果。
         """
         stmt = (
             select(TimelineEventORM)
-            .where(
-                TimelineEventORM.project_id == project_id,
-                ~TimelineEventORM.is_deleted,
-            )
+            .where(TimelineEventORM.project_id == project_id)
             .order_by(
                 TimelineEventORM.narrative_position.asc(),
                 TimelineEventORM.created_at.asc(),
@@ -200,25 +189,24 @@ class SQLiteTimelineRepository:
     async def list_by_chapter(
         self, project_id: int, chapter_id: int
     ) -> builtins.list[TimelineEvent]:
-        """列出项目内活动事件中 source_chapter_id 等于指定章的事件.
+        """列出项目内事件中 source_chapter_id 等于指定章的事件.
 
         F14 提取合并用（spec §5.5 合并策略）: 按 title 比对由服务层完成，
         本方法只负责按来源章拉取候选集。按 (narrative_position ASC,
-        created_at ASC) 排序；软删除事件不进入。
+        created_at ASC) 排序。
 
         Args:
             project_id: 项目主键（int）.
             chapter_id: 来源章节主键（int，与 ORM 层一致）.
 
         Returns:
-            指定来源章的活动事件列表.
+            指定来源章的事件列表.
         """
         stmt = (
             select(TimelineEventORM)
             .where(
                 TimelineEventORM.project_id == project_id,
                 TimelineEventORM.source_chapter_id == chapter_id,
-                ~TimelineEventORM.is_deleted,
             )
             .order_by(
                 TimelineEventORM.narrative_position.asc(),
@@ -232,11 +220,10 @@ class SQLiteTimelineRepository:
     async def next_position(self, project_id: int) -> int:
         """计算项目内下一个叙事位置: max(narrative_position)+1（无事件时 = 1）.
 
-        只统计活动事件（软删不计入 max）。
+        计算 max(narrative_position)+1。
         """
         stmt = select(func.coalesce(func.max(TimelineEventORM.narrative_position), 0) + 1).where(
             TimelineEventORM.project_id == project_id,
-            ~TimelineEventORM.is_deleted,
         )
         result = await self._session.execute(stmt)
         return result.scalar_one()
@@ -280,41 +267,8 @@ class SQLiteTimelineRepository:
             raise ValueError(f"TimelineEvent {event_id} not found after update")
         return _orm_to_domain(orm)
 
-    async def soft_delete(self, event_id: int) -> bool:
-        """软删除事件（is_deleted=True）.
-
-        Returns:
-            True 表示成功删除一条记录，False 表示未找到/已删除.
-        """
-        stmt = (
-            sa_update(TimelineEventORM)
-            .where(TimelineEventORM.id == event_id, ~TimelineEventORM.is_deleted)
-            .values(is_deleted=True, updated_at=_utcnow())
-        )
-        result = await self._session.execute(stmt)
-        await self._session.commit()
-        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-
-    async def restore(self, event_id: int) -> TimelineEvent | None:
-        """恢复已软删除事件.
-
-        Returns:
-            恢复后的 TimelineEvent；记录不存在或未删除时返回 None（重复操作无毒）.
-        """
-        stmt = (
-            sa_update(TimelineEventORM)
-            .where(TimelineEventORM.id == event_id, TimelineEventORM.is_deleted)
-            .values(is_deleted=False, updated_at=_utcnow())
-        )
-        result = await self._session.execute(stmt)
-        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
-            await self._session.commit()
-            return None
-        await self._session.commit()
-        return await self.get(event_id)
-
     async def hard_delete(self, event_id: int) -> bool:
-        """物理删除事件（仅用于 force 场景）.
+        """物理删除事件（v1.1 默认真删语义）.
 
         Returns:
             True 表示删除成功，False 表示不存在.

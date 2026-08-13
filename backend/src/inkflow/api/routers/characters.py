@@ -1,4 +1,4 @@
-"""F9 角色管理 REST API — 16 个端点：角色 CRUD + 关系 + 分组 + AI 提取。
+"""F9 角色管理 REST API — 15 个端点：角色 CRUD + 关系 + 分组 + AI 提取。
 
 端点风格沿用 F2（spec §3）：创建/列表嵌套项目路径
 （/projects/{project_id}/...），详情/更新/删除扁平（/characters/...、
@@ -279,29 +279,14 @@ async def update_character(
 @router.delete("/characters/{character_id}", status_code=204)
 async def delete_character(
     character_id: str,
-    force: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
-    """删除角色（默认软删除，?force=true 硬删除，spec §3.2）。"""
+    """真删角色（v1.1 默认真删，无 force 参数，spec §3.2）。"""
     cid = _parse_id(character_id, detail="角色不存在")
     svc = _get_svc(db)
-    ok = await _run_service(svc.delete_character(cid, force=force))
+    ok = await _run_service(svc.delete_character(cid))
     if not ok:
         raise HTTPException(status_code=404, detail="角色不存在")
-
-
-@router.post("/characters/{character_id}/restore")
-async def restore_character(
-    character_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """恢复软删除角色（含级联恢复关系，spec §6.1）。"""
-    cid = _parse_id(character_id, detail="角色不存在")
-    svc = _get_svc(db)
-    character = await _run_service(svc.restore_character(cid))
-    if character is None:
-        raise HTTPException(status_code=404, detail="角色不存在")
-    return character.model_dump(mode="json")
 
 
 # ── CharacterRelation ──────────────────────────────────────────
@@ -372,7 +357,7 @@ async def delete_relation(
     relation_id: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """软删除关系（spec §7）。"""
+    """真删关系（v1.1，spec §7）。"""
     cid = _parse_id(character_id, detail="角色不存在")
     rid = _parse_id(relation_id, detail="关系不存在")
     svc = _get_svc(db)
@@ -459,12 +444,11 @@ async def update_character_group(
 @router.delete("/character-groups/{group_id}", status_code=204)
 async def delete_character_group(
     group_id: str,
-    force: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
-    """删除分组（默认软删除，成员 group_id 置 NULL，spec §6.2）。"""
+    """真删分组（v1.1，成员 group_id 置 NULL，spec §6.2）。"""
     gid = _parse_id(group_id, detail="分组不存在")
     svc = _get_svc(db)
-    ok = await _run_service(svc.delete_group(gid, force=force))
+    ok = await _run_service(svc.delete_group(gid))
     if not ok:
         raise HTTPException(status_code=404, detail="分组不存在")

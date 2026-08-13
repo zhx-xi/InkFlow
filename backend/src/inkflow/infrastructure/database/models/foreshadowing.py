@@ -8,8 +8,9 @@
   映射规则: domain_id = uuid.UUID(int=orm.id)
   （int↔UUID 转换函数在 repositories/foreshadowing_repo.py，
   参照 project_repo.py / character_repo.py 惯例）
-- partial unique index（sqlite_where）保证「项目内活动伏笔同名唯一、
-  软删除后可重建同名」的语义（spec §2.3: 伏笔是档案，「同名 = 同一伏笔」）
+- 全唯一索引 (project_id, title) 保证「项目内伏笔同名唯一」的语义
+  （v1.1 真删语义移除 is_deleted 列与 partial unique，spec §2.3:
+  伏笔是档案，「同名 = 同一伏笔」）
 - 索引（spec §8）: project_id / (project_id, status) /
   (project_id, priority) / (project_id, event_id)，支撑项目隔离、
   状态过滤、注入优先级排序与事件锚点查询
@@ -24,16 +25,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import (
-    Boolean,
-    DateTime,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    Text,
-    text,
-)
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from inkflow.core.database import Base, LenientJSON
@@ -49,8 +41,7 @@ class ForeshadowingORM(Base):
 
     Maps to the ``foreshadowings`` table. Each row corresponds to one
     foreshadowing archive within a project (a single lifecycle:
-    埋设 → 追踪 → 回收), so active titles are unique per project
-    (spec §2.3).
+    埋设 → 追踪 → 回收), so titles are unique per project (spec §2.3).
     """
 
     __tablename__ = "foreshadowings"
@@ -61,14 +52,13 @@ class ForeshadowingORM(Base):
             "project_id",
             "title",
             unique=True,
-            sqlite_where=text("is_deleted = 0"),
         ),
         Index("ix_foreshadowings_project_id", "project_id"),
         Index("ix_foreshadowings_project_status", "project_id", "status"),
         Index("ix_foreshadowings_project_priority", "project_id", "priority"),
         Index("ix_foreshadowings_project_event_id", "project_id", "event_id"),
     )
-    """项目内活动伏笔同名唯一（软删除后允许重建同名，spec §2.3）+
+    """项目内伏笔同名唯一（v1.1 全唯一索引，spec §2.3）+
     项目隔离 / 状态过滤 / 注入优先级排序 / 事件锚点查询索引（spec §8）."""
 
     id: Mapped[int] = mapped_column(
@@ -89,7 +79,7 @@ class ForeshadowingORM(Base):
         String(100),
         nullable=False,
     )
-    """伏笔名 (1–100 字符，去空白；项目内活动伏笔唯一)."""
+    """伏笔名 (1–100 字符，去空白；项目内唯一)."""
 
     description: Mapped[str] = mapped_column(
         Text,
@@ -140,14 +130,6 @@ class ForeshadowingORM(Base):
         default=dict,
     )
     """扩展字典（标签、关联角色名等 Phase 2+ 字段预留）."""
-
-    is_deleted: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        index=True,
-    )
-    """软删除标记（已索引，用于过滤查询；软删伏笔不进入注入与列表）."""
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

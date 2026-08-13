@@ -118,7 +118,6 @@ class Foreshadowing(BaseModel):
         event_id: F12 时间线事件锚点（None = 未挂接；叙事位置从事件获取）.
         resolved_at: 回收时间 (UTC)（仅状态迁移维护）.
         extra: 扩展属性字典（标签、关联角色名等 Phase 2+ 字段预留）.
-        is_deleted: 软删除标记.
         created_at: 创建时间 (UTC).
         updated_at: 最后更新时间 (UTC).
     """
@@ -135,7 +134,6 @@ class Foreshadowing(BaseModel):
     event_id: uuid.UUID | None = None  # F12 时间线事件锚点（None = 未挂接；叙事位置从事件获取）
     resolved_at: datetime | None = None  # 回收时间（仅状态迁移维护）
     extra: dict[str, Any] = Field(default_factory=dict)
-    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -299,7 +297,7 @@ class ForeshadowingExtractionResult(BaseModel):
     Attributes:
         created: 本次新建的伏笔列表.
         updated: 本次更新（同名合并）的伏笔列表.
-        warnings: 提取/合并过程中的警告信息（跳过条目、软删同名新建等）.
+        warnings: 提取/合并过程中的警告信息（跳过条目等）.
         model: 实际使用的模型.
     """
 

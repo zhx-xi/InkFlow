@@ -41,8 +41,7 @@ class SQLiteAuditLogRepository:
     """SQLite 审计日志仓储实现（AuditLogRepositoryProtocol 结构化子类型）.
 
     不显式继承 Protocol（结构化子类型），由 F34 服务层按
-    AuditLogRepositoryProtocol 注入使用；与 F15 SQLiteAuditRepository
-    同构（session 注入 + 轻量 CRUD）。
+    AuditLogRepositoryProtocol 注入使用（session 注入 + 轻量 CRUD）。
     """
 
     def __init__(self, session: AsyncSession) -> None:

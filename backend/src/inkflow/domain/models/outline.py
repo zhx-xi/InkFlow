@@ -85,11 +85,10 @@ class Outline(BaseModel):
     Attributes:
         id: 主键 UUID.
         project_id: 所属项目 UUID.
-        name: 大纲名；项目内活动大纲唯一（partial unique，见 spec §2.4）.
+        name: 大纲名；项目内唯一（全唯一索引，见 spec §2.4）.
         description: 大纲总体描述（故事主线概述）.
         sort_order: 大纲间排序权重（小者在前）.
         extra: 扩展属性字典（生成标记、来源约束等 Phase 2+ 字段预留）.
-        is_deleted: 软删除标记.
         created_at: 创建时间.
         updated_at: 最后更新时间.
     """
@@ -102,7 +101,6 @@ class Outline(BaseModel):
     description: str = ""
     sort_order: int = 0
     extra: dict[str, Any] = Field(default_factory=dict)
-    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -112,15 +110,14 @@ class PlotPoint(BaseModel):
 
     Attributes:
         id: 主键 UUID.
-        outline_id: 所属大纲 UUID（大纲软删/硬删 → 级联）.
+        outline_id: 所属大纲 UUID（大纲删除 → FK 级联）.
         project_id: 所属项目 UUID（冗余存储，便于弧线归属校验与项目隔离）.
         name: 情节点名；大纲内允许重名（不做唯一约束）.
         type: 情节点类型（建议值：开篇/发展/转折/高潮/结局；空串 = 未分类）.
         description: 情节点要点描述.
         position: 大纲内排序（小者在前）；允许重复.
-        arc_id: 所属故事弧线 UUID（可选；弧线软删 → 置 NULL）.
+        arc_id: 所属故事弧线 UUID（可选；弧线删除 → FK 置 NULL）.
         extra: 扩展属性字典（参与角色、地点等 Phase 2+ 字段预留）.
-        is_deleted: 软删除标记.
         created_at: 创建时间.
         updated_at: 最后更新时间.
     """
@@ -136,7 +133,6 @@ class PlotPoint(BaseModel):
     position: int = 0
     arc_id: uuid.UUID | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
-    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -147,9 +143,8 @@ class StoryArc(BaseModel):
     Attributes:
         id: 主键 UUID.
         project_id: 所属项目 UUID.
-        name: 弧线名；项目内活动弧线唯一（partial unique，见 spec §2.4）.
+        name: 弧线名；项目内唯一（全唯一索引，见 spec §2.4）.
         description: 弧线说明.
-        is_deleted: 软删除标记.
         created_at: 创建时间.
         updated_at: 最后更新时间.
     """
@@ -160,7 +155,6 @@ class StoryArc(BaseModel):
     project_id: uuid.UUID
     name: str
     description: str = ""
-    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 

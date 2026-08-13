@@ -1,4 +1,4 @@
-"""F12 时间线管理 REST API — 8 个端点：事件 CRUD + 双线总览 + 一致性检查。
+"""F12 时间线管理 REST API — 7 个端点：事件 CRUD + 双线总览 + 一致性检查。
 
 端点风格沿用 F2/F9/F10/F11（spec §3.1）：创建/列表/双线总览/一致性检查
 嵌套项目路径（/projects/{project_id}/timeline...），详情/更新/删除扁平
@@ -253,29 +253,11 @@ async def update_timeline_event(
 @router.delete("/timeline/events/{event_id}", status_code=204)
 async def delete_timeline_event(
     event_id: str,
-    force: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
-    """删除事件（默认软删除，?force=true 硬删除，spec §3.1/§7）。"""
+    """真删事件（v1.1，无 force 参数，spec §3.1/§7）。"""
     eid = _parse_id(event_id, detail="事件不存在")
     svc = _get_svc(db)
-    if force:
-        ok = await _run_service(svc.hard_delete_event(eid))
-    else:
-        ok = await _run_service(svc.soft_delete_event(eid))
+    ok = await _run_service(svc.delete_event(eid))
     if not ok:
         raise HTTPException(status_code=404, detail="事件不存在")
-
-
-@router.post("/timeline/events/{event_id}/restore")
-async def restore_timeline_event(
-    event_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """恢复软删除事件（重复操作无毒，同 F1，spec §3.1/§7）。"""
-    eid = _parse_id(event_id, detail="事件不存在")
-    svc = _get_svc(db)
-    event = await _run_service(svc.restore_event(eid))
-    if event is None:
-        raise HTTPException(status_code=404, detail="事件不存在")
-    return event.model_dump(mode="json")

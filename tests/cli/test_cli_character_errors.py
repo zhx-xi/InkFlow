@@ -90,7 +90,6 @@ def _make_character(**overrides) -> dict:
         goals="成为强者",
         group_id=None,
         extra={},
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )
@@ -106,7 +105,6 @@ def _make_group(**overrides) -> dict:
         name="主角团",
         description="核心小队",
         sort_order=0,
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )
@@ -123,7 +121,6 @@ def _make_relation(**overrides) -> dict:
         to_character_id=str(uuid.uuid4()),
         relation_type="师徒",
         description="亦师亦友",
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )
@@ -275,17 +272,6 @@ class TestCharacterErrorMapping:
         assert result.exit_code == 0
         for token in ("名称:", "林尘", "性格:", "坚毅", "背景:", "目标:", "分组:"):
             assert token in result.output
-
-    def test_restore_human(self, cli_runner, fake_http_client):
-        """restore 人类模式 → 成功提示."""
-        fake_http_client.post.return_value = _make_character(name="林尘")
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(uuid.uuid4())],
-            obj=CliContext(json_output=False),
-        )
-        assert result.exit_code == 0
-        assert "角色已恢复: [林尘]" in result.output
 
     def test_relate_human(self, cli_runner, fake_http_client):
         """relate 人类模式 → 关系创建提示."""

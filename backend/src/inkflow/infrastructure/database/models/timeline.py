@@ -14,9 +14,9 @@
 - 四个非唯一索引: project_id / (project_id, narrative_position) /
   (project_id, time_value) / source_chapter_id，支撑项目隔离、叙事排序、
   事件时间线排序与 F14 按来源章拉取（list_by_chapter）
-- FK 级联: 项目硬删除 → 事件级联物理删除；章节硬删除 →
+- FK 级联: 项目删除 → 事件级联物理删除；章节硬删除 →
   source_chapter_id 置 NULL（事件保留，spec §5.5 联动语义）；无子实体、
-  无级联软删
+  无级联
 - 本文件为纯 ORM 映射，不包含任何领域转换函数（转换在 repo 层）
 """
 
@@ -25,7 +25,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import (
-    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -144,13 +143,6 @@ class TimelineEventORM(Base):
         default=dict,
     )
     """扩展字典（参与角色、地点、标签等 Phase 2+ 字段预留）."""
-
-    is_deleted: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-    )
-    """软删除标记（软删事件不进入双线视图与一致性检查）."""
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

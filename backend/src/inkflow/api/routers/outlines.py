@@ -1,4 +1,4 @@
-"""F11 大纲管理 REST API — 19 个端点：大纲/情节点/弧线 CRUD + AI 生成.
+"""F11 大纲管理 REST API — 16 个端点：大纲/情节点/弧线 CRUD + AI 生成.
 
 端点风格沿用 F2/F9/F10（spec §3.1）：创建/列表嵌套项目或大纲路径
 （/projects/{project_id}/outlines、/outlines/{outline_id}/plot-points），
@@ -255,29 +255,14 @@ async def update_outline(
 @router.delete("/outlines/{outline_id}", status_code=204)
 async def delete_outline(
     outline_id: str,
-    force: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
-    """删除大纲（默认软删除 + 级联软删情节点，?force=true 硬删除，spec §3.2）。"""
+    """真删大纲（v1.1，情节点 FK 级联，无 force 参数，spec §3.2）。"""
     oid = _parse_id(outline_id, detail="大纲不存在")
     svc = _get_svc(db)
-    ok = await _run_service(svc.delete_outline(oid, force=force))
+    ok = await _run_service(svc.delete_outline(oid))
     if not ok:
         raise HTTPException(status_code=404, detail="大纲不存在")
-
-
-@router.post("/outlines/{outline_id}/restore")
-async def restore_outline(
-    outline_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """恢复软删除大纲（级联恢复情节点，spec §6.1）。"""
-    oid = _parse_id(outline_id, detail="大纲不存在")
-    svc = _get_svc(db)
-    outline = await _run_service(svc.restore_outline(oid))
-    if outline is None:
-        raise HTTPException(status_code=404, detail="大纲不存在")
-    return outline.model_dump(mode="json")
 
 
 # ── PlotPoint ────────────────────────────────────────────────
@@ -386,29 +371,14 @@ async def update_point(
 @router.delete("/plot-points/{point_id}", status_code=204)
 async def delete_point(
     point_id: str,
-    force: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
-    """删除情节点（默认软删除，?force=true 硬删除，spec §3.3）。"""
+    """真删情节点（v1.1，无 force 参数，spec §3.3）。"""
     pid = _parse_id(point_id, detail="情节点不存在")
     svc = _get_svc(db)
-    ok = await _run_service(svc.delete_point(pid, force=force))
+    ok = await _run_service(svc.delete_point(pid))
     if not ok:
         raise HTTPException(status_code=404, detail="情节点不存在")
-
-
-@router.post("/plot-points/{point_id}/restore")
-async def restore_point(
-    point_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """恢复软删除情节点。"""
-    pid = _parse_id(point_id, detail="情节点不存在")
-    svc = _get_svc(db)
-    point = await _run_service(svc.restore_point(pid))
-    if point is None:
-        raise HTTPException(status_code=404, detail="情节点不存在")
-    return point.model_dump(mode="json")
 
 
 # ── StoryArc ─────────────────────────────────────────────────
@@ -503,26 +473,11 @@ async def update_arc(
 @router.delete("/story-arcs/{arc_id}", status_code=204)
 async def delete_arc(
     arc_id: str,
-    force: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
-    """删除弧线（成员情节点 arc_id 置 NULL，情节点保留，spec §6.2）。"""
+    """真删弧线（v1.1，成员 arc_id 由 FK SET NULL，情节点保留，spec §6.2）。"""
     aid = _parse_id(arc_id, detail="弧线不存在")
     svc = _get_svc(db)
-    ok = await _run_service(svc.delete_arc(aid, force=force))
+    ok = await _run_service(svc.delete_arc(aid))
     if not ok:
         raise HTTPException(status_code=404, detail="弧线不存在")
-
-
-@router.post("/story-arcs/{arc_id}/restore")
-async def restore_arc(
-    arc_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """恢复软删除弧线（不恢复成员关联，同 F9 分组语义）。"""
-    aid = _parse_id(arc_id, detail="弧线不存在")
-    svc = _get_svc(db)
-    arc = await _run_service(svc.restore_arc(aid))
-    if arc is None:
-        raise HTTPException(status_code=404, detail="弧线不存在")
-    return arc.model_dump(mode="json")

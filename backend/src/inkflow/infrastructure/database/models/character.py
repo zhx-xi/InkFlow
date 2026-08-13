@@ -5,8 +5,9 @@
 设计约定（同 F1 §12 / F9 spec §2）:
 - DB 主键为 int 自增；领域层 id 为 UUID，映射规则: domain_id = uuid.UUID(int=orm.id)
   （int↔UUID 转换函数在 repositories/character_repo.py，参照 project_repo.py 惯例）
-- 软删除标记 is_deleted + partial unique index（sqlite_where）保证
-  「活动记录唯一、软删除后可重建同名」的语义（spec §2.4）
+- 全唯一索引 (project_id, name) / (project_id, from, to, relation_type)
+  保证「项目内同名/同关系键唯一」的语义（v1.1 真删语义移除 is_deleted 列
+  与 partial unique，spec §2.4）
 - FK 级联: 项目删除 → 角色/分组/关系级联删除；分组删除 → 成员 group_id 置 NULL；
   角色硬删除 → 关系物理删除
 """
@@ -16,14 +17,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import (
-    Boolean,
     DateTime,
     ForeignKey,
     Index,
     Integer,
     String,
     Text,
-    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -50,10 +49,9 @@ class CharacterORM(Base):
             "project_id",
             "name",
             unique=True,
-            sqlite_where=text("is_deleted = 0"),
         ),
     )
-    """项目内活动角色名唯一（软删除后允许重建同名，spec §2.4）."""
+    """项目内角色名唯一（v1.1 全唯一索引，spec §2.4）."""
 
     id: Mapped[int] = mapped_column(
         Integer,
@@ -112,14 +110,6 @@ class CharacterORM(Base):
     )
     """扩展字典（外貌/口头禅等 Phase 2+ 字段预留）."""
 
-    is_deleted: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        index=True,
-    )
-    """软删除标记（已索引，用于过滤查询）."""
-
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
@@ -154,10 +144,9 @@ class CharacterGroupORM(Base):
             "project_id",
             "name",
             unique=True,
-            sqlite_where=text("is_deleted = 0"),
         ),
     )
-    """项目内活动分组名唯一（软删除后允许重建同名，spec §2.4）."""
+    """项目内分组名唯一（v1.1 全唯一索引，spec §2.4）."""
 
     id: Mapped[int] = mapped_column(
         Integer,
@@ -193,13 +182,6 @@ class CharacterGroupORM(Base):
         default=0,
     )
     """列表排序权重（小者在前，≥ 0）."""
-
-    is_deleted: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-    )
-    """软删除标记."""
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -237,10 +219,9 @@ class CharacterRelationORM(Base):
             "to_character_id",
             "relation_type",
             unique=True,
-            sqlite_where=text("is_deleted = 0"),
         ),
     )
-    """活动关系中 (project, from, to, relation_type) 唯一（spec §2.4）."""
+    """关系中 (project, from, to, relation_type) 唯一（v1.1 全唯一索引，spec §2.4）."""
 
     id: Mapped[int] = mapped_column(
         Integer,
@@ -285,13 +266,6 @@ class CharacterRelationORM(Base):
         default="",
     )
     """关系说明 (≤ 500 字符)."""
-
-    is_deleted: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-    )
-    """软删除标记."""
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,

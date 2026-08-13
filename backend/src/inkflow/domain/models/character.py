@@ -86,13 +86,12 @@ class Character(BaseModel):
     Attributes:
         id: 主键 UUID.
         project_id: 所属项目 UUID.
-        name: 角色名；项目内活动角色唯一（partial unique，见 spec §2.4）.
+        name: 角色名；项目内唯一（全唯一索引，见 spec §2.4）.
         personality: 性格描述.
         background: 背景设定.
         goals: 目标/动机.
         group_id: 所属角色分组 UUID（None 表示未分组）.
         extra: 扩展属性字典.
-        is_deleted: 软删除标记.
         created_at: 创建时间.
         updated_at: 最后更新时间.
     """
@@ -107,7 +106,6 @@ class Character(BaseModel):
     goals: str = ""
     group_id: uuid.UUID | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
-    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -173,7 +171,6 @@ class CharacterGroup(BaseModel):
         name: 分组名称.
         description: 分组描述.
         sort_order: 排序权重（小在前）.
-        is_deleted: 软删除标记.
         created_at: 创建时间.
         updated_at: 最后更新时间.
     """
@@ -185,7 +182,6 @@ class CharacterGroup(BaseModel):
     name: str
     description: str = ""
     sort_order: int = 0
-    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -193,8 +189,8 @@ class CharacterGroup(BaseModel):
 class CharacterRelation(BaseModel):
     """角色关系领域实体 — 关系图谱的有向边，对应 character_relations 表.
 
-    活动关系中 (project_id, from_character_id, to_character_id,
-    relation_type) 唯一（partial unique，见 spec §2.4）。
+    关系中 (project_id, from_character_id, to_character_id,
+    relation_type) 唯一（全唯一索引，见 spec §2.4）。
 
     Attributes:
         id: 主键 UUID.
@@ -203,7 +199,6 @@ class CharacterRelation(BaseModel):
         to_character_id: 关系终点角色 UUID.
         relation_type: 关系类型（自由文本，1-20 字符）.
         description: 关系描述.
-        is_deleted: 软删除标记.
         created_at: 创建时间.
         updated_at: 最后更新时间.
     """
@@ -216,7 +211,6 @@ class CharacterRelation(BaseModel):
     to_character_id: uuid.UUID
     relation_type: str
     description: str = ""
-    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 

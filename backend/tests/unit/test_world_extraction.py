@@ -51,7 +51,6 @@ def _setting(
     *,
     category: str = "",
     content: str = "",
-    is_deleted: bool = False,
 ) -> WorldSetting:
     """构造测试用世界观条目实体（默认时间戳固定，便于断言）。"""
     return WorldSetting(
@@ -60,7 +59,6 @@ def _setting(
         name=name,
         category=category,
         content=content,
-        is_deleted=is_deleted,
         created_at=TS,
         updated_at=TS,
     )
@@ -180,7 +178,7 @@ class TestWorldExtractor:
         assert mock_repo.add.await_count == 0
 
     async def test_update_preserves_unrelated_fields(self, extractor, mock_llm, mock_repo) -> None:
-        """更新时保留 extra / created_at / is_deleted 等无关字段。"""
+        """更新时保留 extra / created_at 等无关字段。"""
         existing = WorldSetting(
             id=uuid.UUID("9b1c2d3e-0000-4000-8000-000000000001"),
             project_id=PID,
@@ -203,7 +201,6 @@ class TestWorldExtractor:
         assert merged.category == "设定"
         assert merged.extra == {"tags": ["核心"]}
         assert merged.created_at == TS
-        assert merged.is_deleted is False
 
     async def test_idempotent_second_extraction_produces_empty(
         self, extractor, mock_llm, mock_repo
@@ -235,24 +232,6 @@ class TestWorldExtractor:
         assert result2.updated == []
         assert mock_repo.add.await_count == 2  # 第二轮无新建
         assert mock_repo.update.await_count == 0
-
-    async def test_soft_deleted_same_name_creates_new_with_warning(
-        self, extractor, mock_llm, mock_repo
-    ) -> None:
-        """软删除同名 → 新建条目 + warning（不隐式恢复旧档案）。"""
-        deleted = _setting(name="灵气复苏", category="旧档案", is_deleted=True)
-        mock_repo.list = AsyncMock(return_value=([deleted], 1))
-        mock_llm.chat.return_value = _ok_response(
-            _payload(settings=[{"name": "灵气复苏", "category": "设定"}])
-        )
-        result = await extractor.extract(
-            WorldExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
-        )
-        assert len(result.created) == 1
-        assert result.created[0].name == "灵气复苏"
-        assert result.created[0].is_deleted is False
-        assert mock_repo.add.await_count == 1
-        assert any("已删除" in w for w in result.warnings)
 
     async def test_invalid_entries_skipped_with_warning(
         self, extractor, mock_llm, mock_repo

@@ -9,8 +9,8 @@ F13 专属异常类型，继承自 Exception。
 - 无 LLM 相关错误（F13 无 LLM，伏笔状态追踪为确定性逻辑，见 §5）
 
 与 F9/F10/F11 的差异: 无 LLM 提取/生成错误。
-与 F12 的差异: foreshadowings 有 partial unique 约束（(project_id, title)
-WHERE is_deleted = 0，「同名 = 同一伏笔」，见 §2.3），故有同名冲突类错误
+与 F12 的差异: foreshadowings 有全唯一约束（(project_id, title)，
+「同名 = 同一伏笔」，见 §2.3），故有同名冲突类错误
 （ForeshadowingNameConflictError）；且伏笔可挂接 F12 时间线事件（event_id
 锚点，见 §2.2），故新增事件校验类错误（EventNotFoundError /
 EventNotInProjectError，见 §3.4）。

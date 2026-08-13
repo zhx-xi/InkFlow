@@ -7,8 +7,8 @@
   分组跨项目、关系自环、关系跨项目、重复关系
 - 资源不存在（404 语义）: 多数方法返回 None 由 router 层转 404；
   create_relation 等返回非 Optional 的方法抛 CharacterNotFoundError
-- 级联编排（spec §2.3/§6）: 角色软删 → 先级联软删其双向关系再软删本体；
-  角色恢复 → 级联恢复关系（服务层保证图谱一致，仓储内部级联为幂等兜底）
+- 级联编排（spec §2.3/§6，v1.1 真删）: 角色真删 → 关系由 DB FK CASCADE
+  物理级联删除；分组真删 → 成员角色 group_id 置 NULL（角色本身保留）
 - AI 提取入口（§5.1 步骤 ①）: 校验项目存在并取 project.config.model 作为
   默认模型，再委托 CharacterExtractor 执行管线（②-⑦）
 
@@ -141,7 +141,7 @@ class CharacterService:
         return await self._repo.add(character)
 
     async def get_character(self, character_id: int | uuid.UUID) -> Character | None:
-        """按主键获取角色（不含已软删除）；不存在返回 None（router 转 404）."""
+        """按主键获取角色；不存在返回 None（router 转 404）."""
         return await self._repo.get(_to_int_id(character_id))
 
     async def list_characters(
@@ -200,53 +200,29 @@ class CharacterService:
         logger.info("更新角色: character_id=%s", character_id)
         return await self._repo.update(merged)
 
-    async def delete_character(self, character_id: int | uuid.UUID, force: bool = False) -> bool:
-        """删除角色（spec §7: 角色不存在 → False，router 转 404）.
+    async def delete_character(self, character_id: int | uuid.UUID) -> bool:
+        """真删角色（v1.1，spec §7: 角色不存在 → False，router 转 404）.
 
         Args:
             character_id: 角色主键（支持 int 或 UUID）.
-            force: True 物理删除（关系由 DB FK CASCADE）；False（默认）软删除，
-                服务层先级联软删其全部双向关系，再软删角色本体（§2.3/§6.1）.
 
         Returns:
             True 表示删除成功；False 表示未找到记录.
         """
         cid = _to_int_id(character_id)
-        if force:
-            logger.info("硬删除角色: character_id=%s", character_id)
-            return await self._repo.hard_delete(cid)
-        # 软删除编排: 先级联软删双向关系，再软删角色本体（仓储内部级联为幂等兜底）
-        await self._repo.soft_delete_relations_of(cid)
-        logger.info("软删除角色: character_id=%s（级联软删其双向关系）", character_id)
-        return await self._repo.soft_delete(cid)
-
-    async def restore_character(self, character_id: int | uuid.UUID) -> Character | None:
-        """恢复软删除角色并级联恢复其双向关系（spec §6.1）.
-
-        Args:
-            character_id: 角色主键（支持 int 或 UUID）.
-
-        Returns:
-            恢复后的 Character；角色不存在/未删除返回 None（重复操作无毒，同 F1）.
-        """
-        cid = _to_int_id(character_id)
-        restored = await self._repo.restore(cid)
-        if restored is None:
-            return None
-        await self._repo.restore_relations_of(cid)
-        logger.info("恢复角色: character_id=%s（级联恢复其双向关系）", character_id)
-        return restored
+        logger.info("真删角色: character_id=%s（关系由 FK CASCADE 级联）", character_id)
+        return await self._repo.hard_delete(cid)
 
     # ── CharacterRelation ──────────────────────────────────────────
 
     async def list_relations(self, character_id: int | uuid.UUID) -> list[CharacterRelation]:
-        """查询角色全部活动关系（双向: 作为 from 或 to，spec §6.1）.
+        """查询角色全部关系（双向: 作为 from 或 to，spec §6.1）.
 
         Args:
             character_id: 角色主键（支持 int 或 UUID）.
 
         Returns:
-            该角色作为起点或终点的全部活动关系；角色不存在返回空列表.
+            该角色作为起点或终点的全部关系；角色不存在返回空列表.
         """
         cid = _to_int_id(character_id)
         character = await self._repo.get(cid)
@@ -355,7 +331,7 @@ class CharacterService:
     async def delete_relation(
         self, character_id: int | uuid.UUID, relation_id: int | uuid.UUID
     ) -> bool:
-        """软删除关系（spec §7: 关系不存在/不属于该角色 → False，router 转 404）.
+        """真删关系（v1.1，spec §7: 关系不存在/不属于该角色 → False，router 转 404）.
 
         Args:
             character_id: 关系所属角色主键（from 或 to 均可）.
@@ -372,8 +348,8 @@ class CharacterService:
             and _to_int_id(relation.to_character_id) != cid
         ):
             return False
-        logger.info("软删除关系: relation_id=%s", relation_id)
-        return await self._repo.soft_delete_relation(rid)
+        logger.info("真删关系: relation_id=%s", relation_id)
+        return await self._repo.hard_delete_relation(rid)
 
     # ── CharacterGroup ─────────────────────────────────────────────
 
@@ -415,7 +391,7 @@ class CharacterService:
         return await self._repo.add_group(group)
 
     async def get_group(self, group_id: int | uuid.UUID) -> CharacterGroup | None:
-        """按主键获取分组（不含已软删除）；不存在返回 None（router 转 404）."""
+        """按主键获取分组；不存在返回 None（router 转 404）."""
         return await self._repo.get_group(_to_int_id(group_id))
 
     async def list_groups(self, project_id: int | uuid.UUID) -> list[CharacterGroup]:
@@ -460,23 +436,18 @@ class CharacterService:
         logger.info("更新分组: group_id=%s", group_id)
         return await self._repo.update_group(merged)
 
-    async def delete_group(self, group_id: int | uuid.UUID, force: bool = False) -> bool:
-        """删除分组（spec §6.2/§7: 成员角色 group_id 置 NULL，角色本身保留）.
+    async def delete_group(self, group_id: int | uuid.UUID) -> bool:
+        """真删分组（v1.1，spec §6.2/§7: 成员角色 group_id 置 NULL，角色本身保留）.
 
         Args:
             group_id: 分组主键（支持 int 或 UUID）.
-            force: True 物理删除；False（默认）软删除（仓储层均负责将
-                成员角色 group_id 置 NULL）.
 
         Returns:
             True 表示删除成功；False 表示未找到记录.
         """
         gid = _to_int_id(group_id)
-        if force:
-            logger.info("硬删除分组: group_id=%s（成员 group_id 置 NULL）", group_id)
-            return await self._repo.hard_delete_group(gid)
-        logger.info("软删除分组: group_id=%s（成员 group_id 置 NULL）", group_id)
-        return await self._repo.soft_delete_group(gid)
+        logger.info("真删分组: group_id=%s（成员 group_id 置 NULL）", group_id)
+        return await self._repo.hard_delete_group(gid)
 
     # ── AI 提取入口（spec §5.1 步骤 ①）────────────────────────────
 

@@ -1,7 +1,7 @@
 """F14 伏笔提取管线单元测试 — Mock LLM + Mock PromptManager + Mock Repo.
 
 覆盖 spec §5.4「伏笔提取管线」全部场景:
-合法 JSON 全量落库 / 同名活动伏笔非空覆盖且 status 不重置 / 软删同名新建 /
+合法 JSON 全量落库 / 同名活动伏笔非空覆盖且 status 不重置 /
 非法条目跳过 / 围栏输出 / 修复重试与异常 / 幂等性 / 模板与模型参数断言。
 
 依据: specs/f14-extraction-service/spec.md §5.4 + §9 测试策略。
@@ -53,7 +53,6 @@ def _fs(
     status: ForeshadowingStatus = ForeshadowingStatus.OPEN,
     priority: int = 50,
     event_id: uuid.UUID | None = None,
-    is_deleted: bool = False,
 ) -> Foreshadowing:
     """构造测试用伏笔实体（默认时间戳固定，便于断言）。"""
     return Foreshadowing(
@@ -65,7 +64,6 @@ def _fs(
         status=status,
         location=location,
         event_id=event_id,
-        is_deleted=is_deleted,
         created_at=TS,
         updated_at=TS,
     )
@@ -163,7 +161,6 @@ class TestForeshadowingExtractor:
         assert first.priority == 50
         assert first.status == ForeshadowingStatus.OPEN
         assert first.event_id is None
-        assert first.is_deleted is False
 
     async def test_fenced_output_extracts_json_fragment(self, extractor, mock_llm) -> None:
         """输出带围栏/前后缀文字 → _extract_json_fragment 提取成功。"""
@@ -279,22 +276,6 @@ class TestForeshadowingExtractor:
         assert merged.description == "旧描述"  # None 不覆盖
         assert merged.location == "第 9 章·密室"
         assert mock_repo.update.await_count == 1
-
-    async def test_soft_deleted_same_title_creates_new_with_warning(
-        self, extractor, mock_llm, mock_repo
-    ) -> None:
-        """软删同名 → 新建伏笔 + warning（不隐式恢复旧档案）。"""
-        deleted = _fs("铜镜的秘密", description="旧档案", is_deleted=True)
-        mock_repo.list = AsyncMock(return_value=([deleted], 1))
-        mock_llm.chat.return_value = _ok_response(_payload([{"title": "铜镜的秘密"}]))
-        result = await extractor.extract(
-            ForeshadowingExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
-        )
-        assert len(result.created) == 1
-        assert result.created[0].title == "铜镜的秘密"
-        assert result.created[0].is_deleted is False
-        assert mock_repo.add.await_count == 1
-        assert any("已删除" in w for w in result.warnings)
 
     async def test_idempotent_second_extraction_produces_empty(
         self, extractor, mock_llm, mock_repo

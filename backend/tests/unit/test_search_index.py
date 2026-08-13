@@ -91,7 +91,7 @@ from inkflow.infrastructure.database.repositories.search_repo import SQLiteSearc
 async def db_session():
     """独立 in-memory SQLite — 每个测试一个全新数据库（启用 FK 级联）。
 
-    同 test_audit_repo.py fixture 模式：:memory: 每连接独立，必须全程同一
+    同仓储测试 fixture 模式：:memory: 每连接独立，必须全程同一
     engine/session；FTS5 虚拟表 + search_meta 由 ensure_index() 创建
     （不在 Base.metadata 内，spec §2.4）。
     """

@@ -90,7 +90,6 @@ def _make_outline(**overrides) -> dict:
         description="故事主线概述",
         sort_order=0,
         extra={},
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )
@@ -110,7 +109,6 @@ def _make_point(**overrides) -> dict:
         position=1,
         arc_id=None,
         extra={},
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )
@@ -125,7 +123,6 @@ def _make_arc(**overrides) -> dict:
         project_id=str(PID),
         name="主角成长线",
         description="主角从废柴到巅峰的成长轨迹。",
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )
@@ -419,7 +416,7 @@ class TestOutlineErrorMapping:
 
 
 class TestOutlineHumanOutput:
-    """人类可读输出补全：list 非空 / get / update / restore / point / arc / delete 确认."""
+    """人类可读输出补全：list 非空 / get / update / point / arc / delete 确认."""
 
     def test_list_human_non_empty(self, cli_runner, fake_http_client):
         """list 人类模式非空 → 总数汇总 + 大纲列表."""
@@ -472,17 +469,6 @@ class TestOutlineHumanOutput:
         )
         assert result.exit_code == 0
         assert "大纲已更新: [第一卷大纲·改]" in result.output
-
-    def test_restore_human(self, cli_runner, fake_http_client):
-        """restore 人类模式 → 成功提示."""
-        fake_http_client.post.return_value = _make_outline(name="第一卷大纲")
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(uuid.uuid4())],
-            obj=CliContext(json_output=False),
-        )
-        assert result.exit_code == 0
-        assert "大纲已恢复: [第一卷大纲]" in result.output
 
     def test_point_list_human_empty(self, cli_runner, fake_http_client):
         """point list 人类模式空列表 → 暂无情节点."""

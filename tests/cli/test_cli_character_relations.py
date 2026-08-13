@@ -93,7 +93,6 @@ def _make_character(**overrides) -> dict:
         goals="成为强者",
         group_id=None,
         extra={},
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )
@@ -109,7 +108,6 @@ def _make_group(**overrides) -> dict:
         name="主角团",
         description="核心小队",
         sort_order=0,
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )
@@ -126,7 +124,6 @@ def _make_relation(**overrides) -> dict:
         to_character_id=str(uuid.uuid4()),
         relation_type="师徒",
         description="亦师亦友",
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )
@@ -419,7 +416,7 @@ class TestGroupCommands:
         fake_http_client.patch.assert_awaited()
 
     def test_group_delete_force_json(self, cli_runner, fake_http_client):
-        """group delete --force --json → 成功信封 + 软删除."""
+        """group delete --force --json → 成功信封 + 真删除."""
         gid = uuid.uuid4()
         fake_http_client.delete.return_value = None
         result = cli_runner.invoke(

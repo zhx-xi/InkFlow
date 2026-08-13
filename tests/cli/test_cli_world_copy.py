@@ -99,7 +99,6 @@ def _make_setting(**overrides) -> dict:
         category="设定",
         content="天地灵气重新复苏，修炼体系重现。",
         extra={},
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )

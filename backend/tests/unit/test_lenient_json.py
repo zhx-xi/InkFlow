@@ -44,3 +44,16 @@ class TestLenientJSON:
     def test_list_json_passthrough(self):
         """JSON 数组（如 agent_templates.roles）→ list（原行为不变）。"""
         assert _process('["a", "b"]', fallback={}) == ["a", "b"]
+
+    def test_adapt_non_json_delegates_to_super(self):
+        """adapt(非 JSON 类型) → super().adapt（非 JSON 分支）。"""
+        from sqlalchemy import String
+
+        col = LenientJSON(fallback={})
+        adapted = col.adapt(String)
+        assert adapted is not None
+
+    def test_scalar_number_passthrough_on_typeerror(self):
+        """TypeError 分支：SQLite 返回裸数值（JSON 标量）→ 原样透传（不 fallback）。"""
+        assert _process(42, fallback={}) == 42
+        assert _process(3.14, fallback={}) == 3.14

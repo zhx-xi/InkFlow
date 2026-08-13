@@ -39,6 +39,7 @@ PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 TS = datetime(2026, 8, 1, 10, 0, 0, tzinfo=UTC)
 
 # 常用实体 UUID（各测试共享，便于稳定断言）
+# 注: #211 真删语义下 *_DELETED 常量用作「悬空引用 id」（不在活动集合 → error）
 C_A = uuid.UUID("11111111-1111-4111-8111-111111111111")
 C_B = uuid.UUID("22222222-2222-4222-8222-222222222222")
 C_DELETED = uuid.UUID("33333333-3333-4333-8333-333333333333")
@@ -239,7 +240,6 @@ class _Deps:
         *,
         events: list[TimelineEvent] | None = None,
         report: ConsistencyReport | None = None,
-        deleted: tuple[list[int], list[int], list[int]] = ([], [], []),
     ) -> None:
         self.project_repo = MagicMock()
         self.project_repo.get = AsyncMock(return_value=project)
@@ -261,7 +261,6 @@ class _Deps:
         self.run_repo = MagicMock()
         self.run_repo.list = AsyncMock(return_value=([], 0))
         self.audit_repo = MagicMock()
-        self.audit_repo.list_deleted = AsyncMock(return_value=deleted)
 
     def service(self) -> AuditService:
         """按 spec §8.1 构造签名装配审计服务（全部注入 Mock）。"""
@@ -290,18 +289,16 @@ async def test_rf1_event_id_active_no_finding():
     deps.foreshadowing_repo.list = AsyncMock(
         return_value=([_foreshadowing(uuid.uuid4(), "铜镜的秘密", event_id=EV_1)], 1)
     )
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [], []))
 
     report = await deps.service().run_audit(PID)
 
     assert _findings_by_rule(report, "foreshadowing.event_anchor") == []
 
 
-async def test_rf1_event_id_soft_deleted_warning():
+async def test_rf1_event_id_dangling_error():
     deps = _Deps(_project(), events=[_event(EV_1, "林晚入宫")])
     foreshadowing = _foreshadowing(uuid.uuid4(), "铜镜的秘密", event_id=EV_DELETED)
     deps.foreshadowing_repo.list = AsyncMock(return_value=([foreshadowing], 1))
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [], [EV_DELETED.int]))
 
     report = await deps.service().run_audit(PID)
 
@@ -310,20 +307,19 @@ async def test_rf1_event_id_soft_deleted_warning():
     f = findings[0]
     assert f.id == f"foreshadowing.event_anchor:{foreshadowing.id}"
     assert f.dimension == AuditDimension.FORESHADOWING
-    assert f.severity == AuditSeverity.WARNING
+    assert f.severity == AuditSeverity.ERROR
     assert f.entity_type == "foreshadowing"
     assert f.entity_id == foreshadowing.id
     assert f.entity_name == "铜镜的秘密"
     assert f.ref_type == "event"
     assert f.ref_id == EV_DELETED
-    assert "已软删" in f.message
+    assert "不存在" in f.message
 
 
 async def test_rf1_event_id_missing_error():
     deps = _Deps(_project(), events=[_event(EV_1, "林晚入宫")])
     foreshadowing = _foreshadowing(uuid.uuid4(), "身世之谜", event_id=EV_MISSING)
     deps.foreshadowing_repo.list = AsyncMock(return_value=([foreshadowing], 1))
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [], []))
 
     report = await deps.service().run_audit(PID)
 
@@ -341,7 +337,6 @@ async def test_rf1_event_id_none_skipped():
     deps.foreshadowing_repo.list = AsyncMock(
         return_value=([_foreshadowing(uuid.uuid4(), "铜镜的秘密", event_id=None)], 1)
     )
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [], [EV_DELETED.int]))
 
     report = await deps.service().run_audit(PID)
 
@@ -637,18 +632,21 @@ async def test_counts_all_keys():
 async def test_consistent_true_with_warning_info_only():
     """仅 warning/info findings → consistent=True（spec §6.2: consistent 仅由 error 决定）。"""
     deps = _Deps(_project(), events=[_event(EV_1, "林晚入宫")])
-    deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "沈砚", group_id=G_DELETED)], 1))
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [G_DELETED.int], []))
+    deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "沈砚", group_id=None)], 1))
     deps.world_repo.list = AsyncMock(return_value=([_setting(uuid.uuid4(), "青云城")], 1))
-    deps.chapter_repo.list_chapters = AsyncMock(return_value=([_chapter(CH_1, "第一章")], 1))
-    deps.run_repo.list = AsyncMock(return_value=([], 0))
+    deps.chapter_repo.list_chapters = AsyncMock(
+        return_value=([_chapter(CH_1, "第一章"), _chapter(CH_2, "第二章")], 2)
+    )
+    deps.run_repo.list = AsyncMock(
+        return_value=([_run(str(CH_1), status=ExtractionStatus.ERROR, error="LLM 调用超时")], 1)
+    )
 
     report = await deps.service().run_audit(PID)
 
     assert report.summary.consistent is True
     assert report.summary.total == 3
     assert all(f.severity != AuditSeverity.ERROR for f in report.findings)
-    assert report.summary.by_dimension[AuditDimension.CHARACTER].warning == 1
+    assert report.summary.by_dimension[AuditDimension.CROSS].warning == 1
     assert report.summary.by_dimension[AuditDimension.WORLD].info == 1
     assert report.summary.by_dimension[AuditDimension.CROSS].info == 1
     assert report.summary.by_dimension[AuditDimension.TIMELINE].error == 0
@@ -659,7 +657,6 @@ async def test_consistent_false_with_error():
     """任一 error finding → consistent=False（混合数据集，见排序测试同款）。"""
     deps = _Deps(_project(), events=[_event(EV_1, "林晚入宫")])
     deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "林晚", group_id=G_MISSING)], 1))
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [], []))
 
     report = await deps.service().run_audit(PID)
 
@@ -675,15 +672,13 @@ async def test_findings_sorted_stable_order():
     )
     deps = _Deps(_project(), events=[_event(EV_1, "林晚入宫")])
     c_shen = _char(C_A, "沈砚", group_id=G_MISSING)  # R-C2 error（悬空分组）
-    c_lin = _char(C_B, "林晚", group_id=G_DELETED)  # R-C2 warning（软删分组）
+    c_lin = _char(C_B, "林晚", group_id=G_DELETED)  # R-C2 error（悬空分组，真删无 warning 档）
     deps.character_repo.list = AsyncMock(return_value=([c_shen, c_lin], 2))
     deps.character_repo.list_groups = AsyncMock(return_value=[])
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [G_DELETED.int], []))
     setting = _setting(uuid.uuid4(), "青云城")
     deps.world_repo.list = AsyncMock(return_value=([setting], 1))
     foreshadowing = _foreshadowing(uuid.uuid4(), "铜镜的秘密", event_id=EV_DELETED)
     deps.foreshadowing_repo.list = AsyncMock(return_value=([foreshadowing], 1))
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [G_DELETED.int], [EV_DELETED.int]))
     deps.chapter_repo.list_chapters = AsyncMock(return_value=([_chapter(CH_1, "第一章")], 1))
     deps.run_repo.list = AsyncMock(return_value=([], 0))
     deps.timeline_service.check_consistency = AsyncMock(
@@ -702,19 +697,19 @@ async def test_findings_sorted_stable_order():
     report = await deps.service().run_audit(PID)
 
     assert [f.id for f in report.findings] == [
-        f"character.group_ref:{c_shen.id}",  # character · error（先于同维度 warning）
-        f"character.group_ref:{c_lin.id}",  # character · warning
+        f"character.group_ref:{c_shen.id}",  # character · error（同维度 error 按 id 稳定序）
+        f"character.group_ref:{c_lin.id}",  # character · error
         f"timeline.dual_consistency:{EV_1}:{EV_2}",  # timeline · error
         f"world.entry_content:{setting.id}",  # world · info
-        f"foreshadowing.event_anchor:{foreshadowing.id}",  # foreshadowing · warning
+        f"foreshadowing.event_anchor:{foreshadowing.id}",  # foreshadowing · error
         f"extraction.run_gap:{CH_1!s}",  # cross · info（跨维度排最后）
     ]
     assert report.summary.total == 6
-    assert report.summary.by_dimension[AuditDimension.CHARACTER].error == 1
-    assert report.summary.by_dimension[AuditDimension.CHARACTER].warning == 1
+    assert report.summary.by_dimension[AuditDimension.CHARACTER].error == 2
+    assert report.summary.by_dimension[AuditDimension.CHARACTER].warning == 0
     assert report.summary.by_dimension[AuditDimension.TIMELINE].error == 1
     assert report.summary.by_dimension[AuditDimension.WORLD].info == 1
-    assert report.summary.by_dimension[AuditDimension.FORESHADOWING].warning == 1
+    assert report.summary.by_dimension[AuditDimension.FORESHADOWING].error == 1
     assert report.summary.by_dimension[AuditDimension.CROSS].info == 1
 
 
@@ -722,7 +717,6 @@ async def test_deterministic_snapshot():
     """同一 Mock 数据集两次 run_audit → summary/findings/timeline_check 逐字段相等（spec §6.4）。"""
     deps = _Deps(_project(), events=[_event(EV_1, "林晚入宫")])
     deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "林晚", group_id=G_MISSING)], 1))
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [], []))
     deps.world_repo.list = AsyncMock(return_value=([_setting(uuid.uuid4(), "青云城")], 1))
     deps.chapter_repo.list_chapters = AsyncMock(return_value=([_chapter(CH_1, "第一章")], 1))
     deps.run_repo.list = AsyncMock(return_value=([], 0))

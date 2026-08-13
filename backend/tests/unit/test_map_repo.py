@@ -483,9 +483,9 @@ class TestMapRepository:
 
     # ── children（drill-down JOIN，评审 F2，load-bearing）──
 
-    async def test_children_with_location_and_soft_delete_filter(self, db_session, project):
+    async def test_children_with_location_and_hard_delete_filter(self, db_session, project):
         """children: A pin→B，B 挂图 C → children(A) 含 C；无 pin → 空；
-        B 软删（is_deleted=1）→ children(A) 不含 C."""
+        B 真删（物理删除，v1.1）→ children(A) 不含 C."""
         repo = SQLiteMapRepository(db_session)
         a = await repo.add(_map(project, "A全图"))
         b = await _add_location(db_session, project, "青州")
@@ -499,9 +499,13 @@ class TestMapRepository:
         children = await repo.children(a.id.int)
         assert [m.id for m in children] == [c.id]
 
-        # 地点软删 → 该地点下地图不再出现在 children（评审 F2）
-        b.is_deleted = True
-        await db_session.commit()
+        # 地点真删（FK ON 下先清依赖：clear_location_pins 置空 pin、删除以 B 为根的地图 C，
+        # 再物理删 B）→ 该地点下地图不再出现在 children（v1.1 真删语义）
+        await repo.clear_location_pins(b.id)
+        await repo.delete(c.id.int)
+        from inkflow.infrastructure.database.repositories.world_repo import SQLiteWorldRepository
+
+        await SQLiteWorldRepository(db_session).hard_delete(b.id)
         assert await repo.children(a.id.int) == []
 
     async def test_children_dedup_same_location_two_pins(self, db_session, project):

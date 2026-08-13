@@ -1,7 +1,7 @@
 """Outline CLI 命令测试（outline/point/arc CRUD）— Mock ensure_kernel + InkFlowHTTPClient。
 
 覆盖（依据 specs/f11-outline-service/spec.md §4/§7）:
-- outline 组成功路径（create/list/get/update/delete/restore）
+- outline 组成功路径（create/list/get/update/delete）
 - point 子组（list/create/update/delete，含 --position/--arc-id）
 - arc 子组（list/create/update/delete）
 - 信封格式与退出码 0/1/2
@@ -97,7 +97,6 @@ def _make_outline(**overrides) -> dict:
         description="故事主线概述",
         sort_order=0,
         extra={},
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )
@@ -117,7 +116,6 @@ def _make_point(**overrides) -> dict:
         position=1,
         arc_id=None,
         extra={},
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )
@@ -132,7 +130,6 @@ def _make_arc(**overrides) -> dict:
         project_id=str(PID),
         name="主角成长线",
         description="主角从废柴到巅峰的成长轨迹。",
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )
@@ -349,7 +346,7 @@ class TestOutlineUpdate:
 
 class TestOutlineDelete:
     def test_delete_force_json(self, cli_runner, fake_http_client):
-        """delete --force --json → 成功信封 + 软删除（force=False）."""
+        """delete --force --json → 成功信封 + 真删除."""
         sid = uuid.uuid4()
         fake_http_client.delete.return_value = None
         result = cli_runner.invoke(
@@ -361,18 +358,6 @@ class TestOutlineDelete:
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"]["deleted"] is True
-        fake_http_client.delete.assert_awaited()
-
-    def test_delete_permanent_passes_force(self, cli_runner, fake_http_client):
-        """delete --permanent → HTTP 调用发生（force=True 透传在命令侧）."""
-        sid = uuid.uuid4()
-        fake_http_client.delete.return_value = None
-        result = cli_runner.invoke(
-            app,
-            ["delete", "--id", str(sid), "--force", "--permanent"],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 0
         fake_http_client.delete.assert_awaited()
 
     def test_delete_confirm_yes(self, cli_runner, fake_http_client):
@@ -421,34 +406,6 @@ class TestOutlineDelete:
         result = cli_runner.invoke(
             app,
             ["delete", "--id", str(uuid.uuid4()), "--force"],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 1
-        data = json.loads(result.stdout)
-        assert data["ok"] is False
-        assert data["error"]["code"] == "NOT_FOUND"
-
-
-class TestOutlineRestore:
-    def test_restore_json(self, cli_runner, fake_http_client):
-        """restore --json → 成功信封."""
-        fake_http_client.post.return_value = _make_outline(name="第一卷大纲")
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(uuid.uuid4())],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 0
-        data = json.loads(result.stdout)
-        assert data["ok"] is True
-        assert data["data"]["name"] == "第一卷大纲"
-
-    def test_restore_not_found(self, cli_runner, fake_http_client):
-        """大纲不存在 → NOT_FOUND 错误信封 + 退出码 1."""
-        fake_http_client.post.side_effect = _http_error(404, "大纲不存在")
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(uuid.uuid4())],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1
@@ -598,7 +555,7 @@ class TestPointUpdate:
 
 class TestPointDelete:
     def test_point_delete_force_json(self, cli_runner, fake_http_client):
-        """point delete --force --json → 成功信封 + 软删除."""
+        """point delete --force --json → 成功信封 + 真删除."""
         pid = uuid.uuid4()
         fake_http_client.delete.return_value = None
         result = cli_runner.invoke(
@@ -702,7 +659,7 @@ class TestArcUpdate:
 
 class TestArcDelete:
     def test_arc_delete_force_json(self, cli_runner, fake_http_client):
-        """arc delete --force --json → 成功信封 + 软删除."""
+        """arc delete --force --json → 成功信封 + 真删除."""
         aid = uuid.uuid4()
         fake_http_client.delete.return_value = None
         result = cli_runner.invoke(

@@ -38,7 +38,7 @@ class TestOutlineModel:
     """Outline 领域实体测试."""
 
     def test_outline_defaults(self):
-        """默认值：description='', sort_order=0, extra={}, is_deleted=False."""
+        """默认值：description='', sort_order=0, extra={}."""
         outline = Outline(
             id=OID,
             project_id=PID,
@@ -50,7 +50,6 @@ class TestOutlineModel:
         assert outline.description == ""
         assert outline.sort_order == 0
         assert outline.extra == {}
-        assert outline.is_deleted is False
 
     def test_outline_required_fields(self):
         """缺少必填字段（name）应抛出 ValidationError."""
@@ -137,7 +136,7 @@ class TestPlotPointModel:
     """PlotPoint 领域实体测试."""
 
     def test_plot_point_defaults(self):
-        """默认值：type='', position=0, arc_id=None, extra={}, is_deleted=False."""
+        """默认值：type='', position=0, arc_id=None, extra={}."""
         point = PlotPoint(
             id=OID,
             outline_id=OID,
@@ -151,7 +150,6 @@ class TestPlotPointModel:
         assert point.position == 0
         assert point.arc_id is None
         assert point.extra == {}
-        assert point.is_deleted is False
 
     def test_plot_point_required_fields(self):
         """缺少必填字段（name）应抛出 ValidationError."""
@@ -256,7 +254,7 @@ class TestStoryArcModel:
     """StoryArc 领域实体测试."""
 
     def test_story_arc_defaults(self):
-        """默认值：description='', is_deleted=False."""
+        """默认值：description=''."""
         arc = StoryArc(
             id=OID,
             project_id=PID,
@@ -266,7 +264,6 @@ class TestStoryArcModel:
         )
         assert arc.name == "主角成长线"
         assert arc.description == ""
-        assert arc.is_deleted is False
 
     def test_story_arc_required_fields(self):
         """缺少必填字段（name）应抛出 ValidationError."""

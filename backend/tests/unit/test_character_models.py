@@ -32,7 +32,7 @@ class TestCharacterModel:
     """Character 领域实体测试."""
 
     def test_character_defaults(self):
-        """默认值：personality='', group_id=None, extra={}, is_deleted=False."""
+        """默认值：personality='', group_id=None, extra={}."""
         char = Character(
             id=uuid.UUID("9b1c2d3e-0000-4000-8000-000000000001"),
             project_id=PID,
@@ -46,7 +46,6 @@ class TestCharacterModel:
         assert char.goals == ""
         assert char.group_id is None
         assert char.extra == {}
-        assert char.is_deleted is False
 
     def test_character_required_fields(self):
         """缺少必填字段（name）应抛出 ValidationError."""
@@ -112,7 +111,7 @@ class TestCharacterGroupModel:
     """CharacterGroup 领域实体测试."""
 
     def test_group_defaults(self):
-        """默认值：description='', sort_order=0, is_deleted=False."""
+        """默认值：description='', sort_order=0."""
         group = CharacterGroup(
             id=uuid.UUID("5a1b2c3d-0000-4000-8000-000000000001"),
             project_id=PID,
@@ -122,7 +121,6 @@ class TestCharacterGroupModel:
         )
         assert group.description == ""
         assert group.sort_order == 0
-        assert group.is_deleted is False
 
 
 class TestCharacterRelationModel:
@@ -141,7 +139,6 @@ class TestCharacterRelationModel:
         )
         assert relation.relation_type == "师徒"
         assert relation.description == ""
-        assert relation.is_deleted is False
 
 
 class TestCharacterRelationCreate:

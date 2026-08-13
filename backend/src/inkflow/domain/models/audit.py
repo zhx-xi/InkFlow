@@ -48,12 +48,12 @@ class AuditSeverity(StrEnum):
 
     Attributes:
         ERROR: 引用断裂 / 状态矛盾 —— 数据不一致，需修正.
-        WARNING: 软删引用 / 可恢复异常 —— 数据一致但值得注意.
+        WARNING: 可恢复异常（如 R-X2 提取失败）——数据一致但值得注意.
         INFO: 缺口 / 健康度提示 —— 不涉及一致性.
     """
 
     ERROR = "error"  # 引用断裂 / 状态矛盾 —— 数据不一致，需修正
-    WARNING = "warning"  # 软删引用 / 可恢复异常 —— 数据一致但值得注意
+    WARNING = "warning"  # 可恢复异常（如 R-X2 提取失败）——数据一致但值得注意
     INFO = "info"  # 缺口 / 健康度提示 —— 不涉及一致性
 
 

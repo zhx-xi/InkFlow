@@ -27,7 +27,7 @@ class TestWorldSettingModel:
     """WorldSetting 领域实体测试."""
 
     def test_world_setting_defaults(self):
-        """默认值：category='', content='', extra={}, is_deleted=False."""
+        """默认值：category='', content='', extra={}, parent_id=None."""
         setting = WorldSetting(
             id=uuid.UUID("9b1c2d3e-0000-4000-8000-000000000001"),
             project_id=PID,
@@ -39,7 +39,7 @@ class TestWorldSettingModel:
         assert setting.category == ""
         assert setting.content == ""
         assert setting.extra == {}
-        assert setting.is_deleted is False
+        assert setting.parent_id is None
 
     def test_world_setting_required_fields(self):
         """缺少必填字段（name）应抛出 ValidationError."""

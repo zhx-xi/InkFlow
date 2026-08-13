@@ -14,7 +14,7 @@
 - 其余异常 → DB_ERROR（F13 无 LLM，无 LLM_ERROR）
 
 状态机命令（spec §2.4）：resolve（open→resolved）、reopen（resolved→open），
-均为幂等操作；软删除伏笔对其执行 → NOT_FOUND。
+均为幂等操作；不存在的伏笔对其执行 → NOT_FOUND。
 update 的 --event-id "" 表示解除事件挂接（置为 None，spec §2.5）。
 
 依据: specs/f13-foreshadowing-service/spec.md §4/§7。
@@ -302,7 +302,7 @@ def update_foreshadowing_cmd(
 
 
 # ---------------------------------------------------------------------------
-# delete  — inkflow foreshadowing delete --id <uuid> [--force] [--permanent]
+# delete  — inkflow foreshadowing delete --id <uuid> [--force]
 # ---------------------------------------------------------------------------
 
 
@@ -311,63 +311,29 @@ def delete_foreshadowing_cmd(
     ctx: typer.Context,
     foreshadowing_id: str = typer.Option(..., "--id", "-i", help="伏笔 ID (UUID)"),
     force: bool = typer.Option(False, "--force", "-f", help="跳过确认"),
-    permanent: bool = typer.Option(False, "--permanent", "-p", help="硬删除（物理删除）"),
 ) -> None:
-    """删除伏笔（默认软删除；--permanent 物理删除）"""
+    """删除伏笔（v1.1 真删，不可恢复）"""
     cli_ctx: CliContext = ctx.obj
     fid = _parse_uuid(cli_ctx, foreshadowing_id, "伏笔不存在")
     if not force:
         if cli_ctx.json_output:
             print_error(cli_ctx, "VALIDATION_ERROR", "删除需 --force 或交互确认")
-        label = "永久删除" if permanent else "删除"
+        label = "删除"
         if not typer.confirm(f"确定要{label}伏笔 #{foreshadowing_id} 吗？"):
             typer.echo("已取消")
             raise typer.Exit()
 
-    async def _impl() -> dict:
+    async def _impl() -> None:
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
-            existing = await client.get(f"/foreshadowings/{fid}")
-            if permanent:
-                await client.delete(f"/foreshadowings/{fid}", params={"force": True})
-            else:
-                await client.delete(f"/foreshadowings/{fid}")
-            return existing
+            await client.delete(f"/foreshadowings/{fid}")
 
-    existing = _run(cli_ctx, _impl)
-    label = "已永久删除" if permanent else "已删除"
+    _run(cli_ctx, _impl)
     if cli_ctx.json_output:
         print_result(cli_ctx, {"id": str(fid), "deleted": True})
     else:
-        typer.echo(f"✅ 伏笔{label}: [{existing['title']}]")
-
-
-# ---------------------------------------------------------------------------
-# restore  — inkflow foreshadowing restore --id <uuid>
-# ---------------------------------------------------------------------------
-
-
-@app.command("restore")
-def restore_foreshadowing_cmd(
-    ctx: typer.Context,
-    foreshadowing_id: str = typer.Option(..., "--id", "-i", help="伏笔 ID (UUID)"),
-) -> None:
-    """恢复已删除的伏笔"""
-    cli_ctx: CliContext = ctx.obj
-    fid = _parse_uuid(cli_ctx, foreshadowing_id, "伏笔不存在")
-
-    async def _impl() -> dict:
-        handle = await ensure_kernel()
-        client = InkFlowHTTPClient(handle)
-        async with client:
-            return await client.post(f"/foreshadowings/{fid}/restore")
-
-    foreshadowing = _run(cli_ctx, _impl)
-    if cli_ctx.json_output:
-        print_result(cli_ctx, foreshadowing)
-    else:
-        typer.echo(f"✅ 伏笔已恢复: [{foreshadowing['title']}]")
+        typer.echo(f"✅ 伏笔 #{foreshadowing_id} 已删除")
 
 
 # ---------------------------------------------------------------------------

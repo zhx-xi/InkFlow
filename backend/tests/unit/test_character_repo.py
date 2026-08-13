@@ -1,9 +1,10 @@
 """SQLiteCharacterRepository 集成测试 — in-memory SQLite（F9 B2 RED→GREEN）.
 
-覆盖 CharacterRepositoryProtocol 全部 23 个方法（spec §8.1 / §9 仓储测试）:
+覆盖 CharacterRepositoryProtocol 方法（spec §8.1 / §9 仓储测试）:
 - Character / CharacterGroup / CharacterRelation CRUD 往返
-- partial unique: 活动同名唯一；软删后可重建同名；恢复旧记录 → IntegrityError
-- 级联软删/恢复（角色 ↔ 关系双向）、分组删除后成员 group_id 置 NULL
+- 全唯一索引: 同名唯一；真删后重建同名
+- 真删后 get 返回 None
+- 分组删除后成员 group_id 置 NULL
 - list_relations 双向查询、分页与搜索排序
 - 硬删除 FK 级联（角色/项目物理删除后关联行消失）
 
@@ -139,7 +140,6 @@ class TestCharacterRepository:
         assert saved.goals == "成仙"
         assert saved.group_id is None
         assert saved.extra == {"外貌": "青衫"}
-        assert saved.is_deleted is False
 
         # 持久化验证：直接查表
         row = await db_session.execute(select(CharacterORM).where(CharacterORM.id == saved.id.int))
@@ -157,8 +157,8 @@ class TestCharacterRepository:
         repo = SQLiteCharacterRepository(db_session)
         assert await repo.get(99999) is None
 
-    async def test_get_by_name_hit_miss_and_excludes_soft_deleted(self, db_session, project):
-        """get_by_name 命中活动角色；未命中/跨项目/软删后均返回 None."""
+    async def test_get_by_name_hit_miss(self, db_session, project):
+        """get_by_name 命中角色；未命中/跨项目/真删后均返回 None."""
         repo = SQLiteCharacterRepository(db_session)
         c = await repo.add(_char(project, "林尘"))
 
@@ -173,21 +173,20 @@ class TestCharacterRepository:
         await db_session.refresh(other)
         assert await repo.get_by_name(other.id, "林尘") is None
 
-        # 软删后不再命中
-        await repo.soft_delete(c.id.int)
+        # 真删后不再命中
+        await repo.hard_delete(c.id.int)
         assert await repo.get_by_name(project.id, "林尘") is None
 
-    async def test_list_returns_active_characters_with_total(self, db_session, project):
-        """list 排除软删与其他项目，返回 (列表, 总数)."""
+    async def test_list_returns_characters_with_total(self, db_session, project):
+        """list 返回 (列表, 总数)."""
         repo = SQLiteCharacterRepository(db_session)
         c1 = await repo.add(_char(project, "林尘"))
         c2 = await repo.add(_char(project, "阿澈"))
         c3 = await repo.add(_char(project, "青云真人"))
-        await repo.soft_delete(c3.id.int)
 
         chars, total = await repo.list(project.id)
-        assert total == 2
-        assert {c.id for c in chars} == {c1.id, c2.id}
+        assert total == 3
+        assert {c.id for c in chars} == {c1.id, c2.id, c3.id}
 
     async def test_list_search_icontains(self, db_session, project):
         """search 对 name 不区分大小写子串匹配."""
@@ -267,36 +266,6 @@ class TestCharacterRepository:
         got = await repo.get(c.id.int)
         assert got is not None and got.name == "林尘·改"
 
-    async def test_soft_delete_character_then_get_returns_none(self, db_session, project):
-        """软删除后 get/get_by_name/list 均不可见；重复软删返回 False."""
-        repo = SQLiteCharacterRepository(db_session)
-        c = await repo.add(_char(project, "林尘"))
-
-        assert await repo.soft_delete(c.id.int) is True
-        assert await repo.get(c.id.int) is None
-        assert await repo.get_by_name(project.id, "林尘") is None
-        chars, total = await repo.list(project.id)
-        assert chars == [] and total == 0
-
-        # 已删除/不存在 → False
-        assert await repo.soft_delete(c.id.int) is False
-        assert await repo.soft_delete(99999) is False
-
-    async def test_restore_character(self, db_session, project):
-        """restore 恢复软删角色；恢复未删除/不存在的角色返回 None（重复操作无毒）."""
-        repo = SQLiteCharacterRepository(db_session)
-        c = await repo.add(_char(project, "林尘"))
-        await repo.soft_delete(c.id.int)
-
-        restored = await repo.restore(c.id.int)
-        assert restored is not None
-        assert restored.id == c.id
-        assert restored.is_deleted is False
-        assert await repo.get(c.id.int) is not None
-
-        assert await repo.restore(c.id.int) is None
-        assert await repo.restore(99999) is None
-
     async def test_hard_delete_character(self, db_session, project):
         """hard_delete 物理删除角色行；重复删除返回 False."""
         repo = SQLiteCharacterRepository(db_session)
@@ -306,10 +275,10 @@ class TestCharacterRepository:
         assert await repo.get(c.id.int) is None
         assert await repo.hard_delete(c.id.int) is False
 
-    # ── partial unique ──
+    # ── 全唯一索引 ──
 
     async def test_duplicate_active_name_raises_integrity_error(self, db_session, project):
-        """插入第二个活动同名角色 → IntegrityError（partial unique）."""
+        """插入第二个同名角色 → IntegrityError（全唯一索引）."""
         repo = SQLiteCharacterRepository(db_session)
         await repo.add(_char(project, "林尘"))
 
@@ -317,26 +286,20 @@ class TestCharacterRepository:
             await repo.add(_char(project, "林尘"))
         await db_session.rollback()
 
-    async def test_soft_deleted_name_reusable_but_restore_conflicts(self, db_session, project):
-        """软删后可重建同名；恢复旧角色与活动同名冲突 → IntegrityError."""
+    async def test_deleted_name_reusable(self, db_session, project):
+        """真删后可重建同名（v1.1 全唯一索引仅约束现存行）."""
         repo = SQLiteCharacterRepository(db_session)
         first = await repo.add(_char(project, "林尘"))
-        await repo.soft_delete(first.id.int)
+        await repo.hard_delete(first.id.int)
 
-        # partial unique 排除已删除行 → 同名可复用
+        # 全唯一索引仅约束现存行 → 同名可复用
         second = await repo.add(_char(project, "林尘"))
-        assert second.id != first.id
         assert second.name == "林尘"
-
-        # 恢复旧角色 → 项目内出现两个活动同名 → IntegrityError
-        with pytest.raises(IntegrityError):
-            await repo.restore(first.id.int)
-        await db_session.rollback()
 
     # ── CharacterGroup ──
 
     async def test_group_crud_roundtrip(self, db_session, project):
-        """分组 add/get/list（sort_order 升序）/update/软删全流程."""
+        """分组 add/get/list（sort_order 升序）/update/真删全流程."""
         repo = SQLiteCharacterRepository(db_session)
         g1 = await repo.add_group(_group(project, "主角团", sort_order=2))
         g2 = await repo.add_group(_group(project, "反派", sort_order=1))
@@ -354,26 +317,9 @@ class TestCharacterRepository:
         assert updated.name == "主角团·改"
         assert updated.sort_order == 0
 
-        assert await repo.soft_delete_group(g2.id.int) is True
+        assert await repo.hard_delete_group(g2.id.int) is True
         assert await repo.get_group(g2.id.int) is None
         assert [g.name for g in await repo.list_groups(project.id)] == ["主角团·改"]
-
-    async def test_soft_delete_group_sets_member_group_id_null(self, db_session, project):
-        """分组软删后，成员角色 group_id 置 NULL（角色本身保留）."""
-        repo = SQLiteCharacterRepository(db_session)
-        g = await repo.add_group(_group(project, "主角团"))
-        c1 = await repo.add(_char(project, "林尘", group_id=g.id))
-        c2 = await repo.add(_char(project, "阿澈", group_id=g.id))
-
-        assert await repo.soft_delete_group(g.id.int) is True
-        assert await repo.get_group(g.id.int) is None
-
-        got1 = await repo.get(c1.id.int)
-        got2 = await repo.get(c2.id.int)
-        assert got1 is not None and got1.group_id is None
-        assert got2 is not None and got2.group_id is None
-        # 角色仍活动
-        assert got1.name == "林尘"
 
     async def test_hard_delete_group_sets_member_group_id_null(self, db_session, project):
         """分组硬删后，成员角色 group_id 置 NULL，分组行物理消失."""
@@ -440,65 +386,19 @@ class TestCharacterRepository:
             await repo.add_relation(_relation(project, a, b, "师徒"))
         await db_session.rollback()
 
-    async def test_soft_delete_and_hard_delete_relation(self, db_session, project):
-        """关系软删后不可见；硬删后物理消失."""
+    async def test_hard_delete_relation(self, db_session, project):
+        """关系真删后物理消失；重复删除返回 False."""
         repo = SQLiteCharacterRepository(db_session)
         a = await repo.add(_char(project, "林尘"))
         b = await repo.add(_char(project, "阿澈"))
         r = await repo.add_relation(_relation(project, a, b, "师徒"))
-
-        assert await repo.soft_delete_relation(r.id.int) is True
-        assert await repo.get_relation(r.id.int) is None
-        assert await repo.list_relations(project.id) == []
-        assert await repo.soft_delete_relation(r.id.int) is False
 
         assert await repo.hard_delete_relation(r.id.int) is True
         count = await db_session.execute(select(func.count()).select_from(CharacterRelationORM))
         assert count.scalar_one() == 0
         assert await repo.hard_delete_relation(r.id.int) is False
 
-    # ── 级联软删/恢复/硬删 ──
-
-    async def test_soft_delete_character_cascades_relations_bidirectional(
-        self, db_session, project
-    ):
-        """角色软删 → 其作为 from 或 to 的关系全部级联软删."""
-        repo = SQLiteCharacterRepository(db_session)
-        a = await repo.add(_char(project, "林尘"))
-        b = await repo.add(_char(project, "阿澈"))
-        c = await repo.add(_char(project, "青云真人"))
-        r_out = await repo.add_relation(_relation(project, a, b, "师徒"))
-        r_in = await repo.add_relation(_relation(project, c, a, "宿敌"))
-        d = await repo.add(_char(project, "路人"))
-        r_other = await repo.add_relation(_relation(project, b, d, "朋友"))
-
-        assert await repo.soft_delete(a.id.int) is True
-        assert await repo.get(a.id.int) is None
-
-        # 双向关系均被级联软删
-        assert await repo.get_relation(r_out.id.int) is None
-        assert await repo.get_relation(r_in.id.int) is None
-        assert await repo.list_relations(project.id, character_id=a.id.int) == []
-
-        # 未涉及的关系不受影响
-        assert await repo.get_relation(r_other.id.int) is not None
-
-    async def test_restore_character_cascades_relations(self, db_session, project):
-        """角色恢复 → 其双向关系级联恢复（restore_relations_of）."""
-        repo = SQLiteCharacterRepository(db_session)
-        a = await repo.add(_char(project, "林尘"))
-        b = await repo.add(_char(project, "阿澈"))
-        r = await repo.add_relation(_relation(project, a, b, "师徒"))
-
-        await repo.soft_delete(a.id.int)
-        assert await repo.get_relation(r.id.int) is None
-
-        restored = await repo.restore(a.id.int)
-        assert restored is not None and restored.id == a.id
-        rel = await repo.get_relation(r.id.int)
-        assert rel is not None
-        assert rel.relation_type == "师徒"
-        assert rel.is_deleted is False
+    # ── 级联真删 ──
 
     async def test_hard_delete_character_cascades_relations_physically(self, db_session, project):
         """角色硬删 → 关联关系行物理删除（DB FK CASCADE）."""
@@ -633,12 +533,12 @@ class TestCharacterRepositoryCoverageGaps:
         finally:
             db_session.execute = real_execute
 
-    # ── soft_delete_group 不存在 → False（rowcount=0 分支） ──
+    # ── hard_delete_group 不存在 → False（rowcount=0 分支） ──
 
-    async def test_soft_delete_group_missing_returns_false(self, db_session, project):
-        """soft_delete_group 不存在的分组 → False（不执行成员解绑 UPDATE）."""
+    async def test_hard_delete_group_missing_returns_false(self, db_session, project):
+        """hard_delete_group 不存在的分组 → False."""
         repo = SQLiteCharacterRepository(db_session)
-        assert await repo.soft_delete_group(99999) is False
+        assert await repo.hard_delete_group(99999) is False
 
     # ── ORM __repr__ ──
 

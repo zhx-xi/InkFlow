@@ -38,6 +38,7 @@ PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 TS = datetime(2026, 8, 1, 10, 0, 0, tzinfo=UTC)
 
 # 常用实体 UUID（各测试共享，便于稳定断言）
+# 注: #211 真删语义下 *_DELETED 常量用作「悬空引用 id」（不在活动集合 → error）
 C_A = uuid.UUID("11111111-1111-4111-8111-111111111111")
 C_B = uuid.UUID("22222222-2222-4222-8222-222222222222")
 C_DELETED = uuid.UUID("33333333-3333-4333-8333-333333333333")
@@ -238,7 +239,6 @@ class _Deps:
         *,
         events: list[TimelineEvent] | None = None,
         report: ConsistencyReport | None = None,
-        deleted: tuple[list[int], list[int], list[int]] = ([], [], []),
     ) -> None:
         self.project_repo = MagicMock()
         self.project_repo.get = AsyncMock(return_value=project)
@@ -260,7 +260,6 @@ class _Deps:
         self.run_repo = MagicMock()
         self.run_repo.list = AsyncMock(return_value=([], 0))
         self.audit_repo = MagicMock()
-        self.audit_repo.list_deleted = AsyncMock(return_value=deleted)
 
     def service(self) -> AuditService:
         """按 spec §8.1 构造签名装配审计服务（全部注入 Mock）。"""
@@ -288,7 +287,6 @@ async def test_rc1_both_ends_active_no_finding():
     deps = _Deps(_project())
     deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "林晚"), _char(C_B, "沈砚")], 2))
     deps.character_repo.list_relations = AsyncMock(return_value=[_rel(uuid.uuid4(), C_A, C_B)])
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [], []))
 
     report = await deps.service().run_audit(PID)
 
@@ -296,12 +294,11 @@ async def test_rc1_both_ends_active_no_finding():
     assert report.summary.counts["relations"] == 1
 
 
-async def test_rc1_to_end_soft_deleted_warning():
+async def test_rc1_to_end_dangling_error():
     deps = _Deps(_project())
     deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "林晚")], 1))
     rel = _rel(uuid.uuid4(), C_A, C_DELETED)
     deps.character_repo.list_relations = AsyncMock(return_value=[rel])
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([C_DELETED.int], [], []))
 
     report = await deps.service().run_audit(PID)
 
@@ -310,28 +307,35 @@ async def test_rc1_to_end_soft_deleted_warning():
     f = findings[0]
     assert f.id == f"character.relation_ref:{rel.id}"
     assert f.dimension == AuditDimension.CHARACTER
-    assert f.severity == AuditSeverity.WARNING
+    assert f.severity == AuditSeverity.ERROR
     assert f.entity_type == "relation"
     assert f.entity_id == rel.id
     assert f.entity_name
     assert f.ref_type == "character"
     assert f.ref_id == C_DELETED
-    assert "已软删" in f.message
+    assert "不存在" in f.message
 
 
-async def test_rc1_from_end_soft_deleted_warning():
+async def test_rc1_from_end_dangling_error():
     deps = _Deps(_project())
     deps.character_repo.list = AsyncMock(return_value=([_char(C_B, "沈砚")], 1))
     rel = _rel(uuid.uuid4(), C_DELETED, C_B)
     deps.character_repo.list_relations = AsyncMock(return_value=[rel])
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([C_DELETED.int], [], []))
 
     report = await deps.service().run_audit(PID)
 
     findings = _findings_by_rule(report, "character.relation_ref")
     assert len(findings) == 1
-    assert findings[0].severity == AuditSeverity.WARNING
-    assert findings[0].ref_id == C_DELETED
+    f = findings[0]
+    assert f.id == f"character.relation_ref:{rel.id}"
+    assert f.dimension == AuditDimension.CHARACTER
+    assert f.severity == AuditSeverity.ERROR
+    assert f.entity_type == "relation"
+    assert f.entity_id == rel.id
+    assert f.entity_name
+    assert f.ref_type == "character"
+    assert f.ref_id == C_DELETED
+    assert "不存在" in f.message
 
 
 async def test_rc1_to_end_missing_error():
@@ -339,7 +343,6 @@ async def test_rc1_to_end_missing_error():
     deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "林晚")], 1))
     rel = _rel(uuid.uuid4(), C_A, C_MISSING)
     deps.character_repo.list_relations = AsyncMock(return_value=[rel])
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [], []))
 
     report = await deps.service().run_audit(PID)
 
@@ -358,7 +361,6 @@ async def test_rc1_from_end_missing_error():
     deps.character_repo.list = AsyncMock(return_value=([_char(C_B, "沈砚")], 1))
     rel = _rel(uuid.uuid4(), C_MISSING, C_B)
     deps.character_repo.list_relations = AsyncMock(return_value=[rel])
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [], []))
 
     report = await deps.service().run_audit(PID)
 
@@ -370,13 +372,12 @@ async def test_rc1_from_end_missing_error():
 
 async def test_rc1_empty_relations_no_finding():
     (
-        "空关系列表 → 无 finding；软删关系由仓储层过滤"
-        "（list_relations 契约不含软删），审计只扫描返回的活动关系。"
+        "空关系列表 → 无 finding；#211 删除为真删，仓储层不返回已删关系，"
+        "审计只扫描返回的活动关系。"
     )
     deps = _Deps(_project())
     deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "林晚")], 1))
     deps.character_repo.list_relations = AsyncMock(return_value=[])
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([C_DELETED.int], [], []))
 
     report = await deps.service().run_audit(PID)
 
@@ -390,19 +391,17 @@ async def test_rc2_group_id_active_no_finding():
     deps = _Deps(_project())
     deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "林晚", group_id=G_ACTIVE)], 1))
     deps.character_repo.list_groups = AsyncMock(return_value=[_group(G_ACTIVE)])
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [], []))
 
     report = await deps.service().run_audit(PID)
 
     assert _findings_by_rule(report, "character.group_ref") == []
 
 
-async def test_rc2_group_id_soft_deleted_warning():
+async def test_rc2_group_id_dangling_error():
     deps = _Deps(_project())
     char = _char(C_A, "沈砚", group_id=G_DELETED)
     deps.character_repo.list = AsyncMock(return_value=([char], 1))
     deps.character_repo.list_groups = AsyncMock(return_value=[])
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [G_DELETED.int], []))
 
     report = await deps.service().run_audit(PID)
 
@@ -411,13 +410,13 @@ async def test_rc2_group_id_soft_deleted_warning():
     f = findings[0]
     assert f.id == f"character.group_ref:{char.id}"
     assert f.dimension == AuditDimension.CHARACTER
-    assert f.severity == AuditSeverity.WARNING
+    assert f.severity == AuditSeverity.ERROR
     assert f.entity_type == "character"
     assert f.entity_id == char.id
     assert f.entity_name == "沈砚"
     assert f.ref_type == "group"
     assert f.ref_id == G_DELETED
-    assert "已软删" in f.message
+    assert "不存在" in f.message
 
 
 async def test_rc2_group_id_missing_error():
@@ -425,7 +424,6 @@ async def test_rc2_group_id_missing_error():
     char = _char(C_A, "林晚", group_id=G_MISSING)
     deps.character_repo.list = AsyncMock(return_value=([char], 1))
     deps.character_repo.list_groups = AsyncMock(return_value=[])
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [], []))
 
     report = await deps.service().run_audit(PID)
 
@@ -442,7 +440,6 @@ async def test_rc2_group_id_none_skipped():
     deps = _Deps(_project())
     deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "林晚", group_id=None)], 1))
     deps.character_repo.list_groups = AsyncMock(return_value=[])
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [G_DELETED.int], []))
 
     report = await deps.service().run_audit(PID)
 
@@ -453,7 +450,6 @@ async def test_rc2_empty_characters_no_finding():
     deps = _Deps(_project())
     deps.character_repo.list = AsyncMock(return_value=([], 0))
     deps.character_repo.list_groups = AsyncMock(return_value=[])
-    deps.audit_repo.list_deleted = AsyncMock(return_value=([], [G_DELETED.int], []))
 
     report = await deps.service().run_audit(PID)
 

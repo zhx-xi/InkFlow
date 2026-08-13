@@ -23,10 +23,9 @@ from inkflow.domain.models.outline import (
 class OutlineRepositoryProtocol(Protocol):
     """大纲/情节点/弧线仓储端口.
 
-    按 spec §2.4: 项目内活动大纲/弧线 name 唯一（partial unique）；
-    软删除后同名可复用。大纲软删 → 情节点级联（服务层编排
-    soft_delete_points_of / restore_points_of）；弧线软删 → 成员
-    arc_id 置 NULL（clear_arc_of_points）。
+    按 spec §2.4: 项目内大纲/弧线 name 唯一（全唯一索引）；v1.1 真删
+    语义下删除即物理消失。大纲删除 → 情节点 FK CASCADE 物理级联；
+    弧线删除 → 成员 arc_id 置 NULL（clear_arc_of_points）。
 
     注: 类内方法名 ``list`` 会在 mypy 类作用域解析中遮蔽内置 ``list``，
     因此返回注解中的列表类型统一写作 ``builtins.list[...]``（同 F9/F10）。
@@ -46,7 +45,7 @@ class OutlineRepositoryProtocol(Protocol):
         ...
 
     async def get(self, outline_id: int) -> Outline | None:
-        """按主键查询大纲（不含已软删除）.
+        """按主键查询大纲.
 
         Args:
             outline_id: 大纲主键（int，与 ORM 层一致）.
@@ -57,14 +56,14 @@ class OutlineRepositoryProtocol(Protocol):
         ...
 
     async def get_by_name(self, project_id: int, name: str) -> Outline | None:
-        """按项目内大纲名查询活动大纲.
+        """按项目内大纲名查询大纲.
 
         Args:
             project_id: 项目主键（int）.
             name: 大纲名（已去空白）.
 
         Returns:
-            若命中活动大纲则返回 Outline，否则返回 None.
+            若命中则返回 Outline，否则返回 None.
         """
         ...
 
@@ -103,52 +102,14 @@ class OutlineRepositoryProtocol(Protocol):
         """
         ...
 
-    async def soft_delete(self, outline_id: int) -> bool:
-        """软删除大纲（is_deleted=True）.
-
-        Args:
-            outline_id: 大纲主键（int）.
-
-        Returns:
-            是否删除成功（不存在返回 False）.
-        """
-        ...
-
-    async def restore(self, outline_id: int) -> Outline | None:
-        """恢复已软删除大纲.
-
-        Args:
-            outline_id: 大纲主键（int）.
-
-        Returns:
-            恢复后的 Outline，不存在则返回 None.
-        """
-        ...
-
     async def hard_delete(self, outline_id: int) -> bool:
-        """物理删除大纲（仅用于 force 场景）.
+        """物理删除大纲（情节点由 DB FK CASCADE 级联，v1.1 默认真删语义）.
 
         Args:
             outline_id: 大纲主键（int）.
 
         Returns:
             是否删除成功（不存在返回 False）.
-        """
-        ...
-
-    async def soft_delete_points_of(self, outline_id: int) -> None:
-        """级联软删除大纲的全部情节点（大纲软删时调用）.
-
-        Args:
-            outline_id: 大纲主键（int）.
-        """
-        ...
-
-    async def restore_points_of(self, outline_id: int) -> None:
-        """级联恢复大纲的全部情节点（大纲恢复时调用）.
-
-        Args:
-            outline_id: 大纲主键（int）.
         """
         ...
 
@@ -166,7 +127,7 @@ class OutlineRepositoryProtocol(Protocol):
         ...
 
     async def get_point(self, point_id: int) -> PlotPoint | None:
-        """按主键查询情节点（不含已软删除）.
+        """按主键查询情节点.
 
         Args:
             point_id: 情节点主键（int）.
@@ -177,7 +138,7 @@ class OutlineRepositoryProtocol(Protocol):
         ...
 
     async def list_points(self, outline_id: int) -> builtins.list[PlotPoint]:
-        """列出大纲内全部活动情节点，按 (position ASC, created_at ASC) 稳定排序.
+        """列出大纲内全部情节点，按 (position ASC, created_at ASC) 稳定排序.
 
         Args:
             outline_id: 大纲主键（int）.
@@ -188,7 +149,7 @@ class OutlineRepositoryProtocol(Protocol):
         ...
 
     async def list_points_by_arc(self, arc_id: int) -> builtins.list[PlotPoint]:
-        """列出挂载到指定弧线的全部活动情节点.
+        """列出挂载到指定弧线的全部情节点.
 
         Args:
             arc_id: 弧线主键（int）.
@@ -222,30 +183,8 @@ class OutlineRepositoryProtocol(Protocol):
         """
         ...
 
-    async def soft_delete_point(self, point_id: int) -> bool:
-        """软删除情节点（is_deleted=True）.
-
-        Args:
-            point_id: 情节点主键（int）.
-
-        Returns:
-            是否删除成功（不存在返回 False）.
-        """
-        ...
-
-    async def restore_point(self, point_id: int) -> PlotPoint | None:
-        """恢复已软删除情节点.
-
-        Args:
-            point_id: 情节点主键（int）.
-
-        Returns:
-            恢复后的 PlotPoint，不存在则返回 None.
-        """
-        ...
-
     async def hard_delete_point(self, point_id: int) -> bool:
-        """物理删除情节点（仅用于 force 场景）.
+        """物理删除情节点（v1.1 默认真删语义）.
 
         Args:
             point_id: 情节点主键（int）.
@@ -277,7 +216,7 @@ class OutlineRepositoryProtocol(Protocol):
         ...
 
     async def get_arc(self, arc_id: int) -> StoryArc | None:
-        """按主键查询故事弧线（不含已软删除）.
+        """按主键查询故事弧线.
 
         Args:
             arc_id: 弧线主键（int）.
@@ -288,19 +227,19 @@ class OutlineRepositoryProtocol(Protocol):
         ...
 
     async def get_arc_by_name(self, project_id: int, name: str) -> StoryArc | None:
-        """按项目内弧线名查询活动故事弧线.
+        """按项目内弧线名查询故事弧线.
 
         Args:
             project_id: 项目主键（int）.
             name: 弧线名（已去空白）.
 
         Returns:
-            若命中活动弧线则返回 StoryArc，否则返回 None.
+            若命中则返回 StoryArc，否则返回 None.
         """
         ...
 
     async def list_arcs(self, project_id: int) -> builtins.list[StoryArc]:
-        """列出项目内全部活动故事弧线，按 name 升序.
+        """列出项目内全部故事弧线，按 name 升序.
 
         Args:
             project_id: 项目主键（int）.
@@ -321,30 +260,8 @@ class OutlineRepositoryProtocol(Protocol):
         """
         ...
 
-    async def soft_delete_arc(self, arc_id: int) -> bool:
-        """软删除故事弧线（is_deleted=True）.
-
-        Args:
-            arc_id: 弧线主键（int）.
-
-        Returns:
-            是否删除成功（不存在返回 False）.
-        """
-        ...
-
-    async def restore_arc(self, arc_id: int) -> StoryArc | None:
-        """恢复已软删除故事弧线.
-
-        Args:
-            arc_id: 弧线主键（int）.
-
-        Returns:
-            恢复后的 StoryArc，不存在则返回 None.
-        """
-        ...
-
     async def hard_delete_arc(self, arc_id: int) -> bool:
-        """物理删除故事弧线（仅用于 force 场景）.
+        """物理删除故事弧线（成员 arc_id 由 DB FK SET NULL，v1.1 默认真删语义）.
 
         Args:
             arc_id: 弧线主键（int）.

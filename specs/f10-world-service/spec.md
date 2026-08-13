@@ -1,23 +1,25 @@
 # F10: 世界观管理 (world_service) — 功能规格
 
-> **Spec 版本**: 1.0 | **日期**: 2026-08-01 | **依据**: PRD v2.1 §6.2 P1-02, Constitution P1-P6, ADR-019
-> **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第二个模块，估算 3-5 人天）
-> **关联 Issues**: [#40](https://github.com/zhx-xi/InkFlow/issues/40)
-> **依赖**: F1 ✅, F5 ✅（前置）；F6 ✅（数据源集成点，见 §11 与待澄清 Q1）
-> **参考 ADR**: [ADR-001](../../adr/ADR-001.md) (模块化单体), [ADR-002](../../adr/ADR-002.md) (六边形分层), [ADR-003](../../adr/ADR-003.md) (Repository), [ADR-004](../../adr/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/ADR-007v2.md) (包结构), [ADR-010](../../adr/ADR-010.md) (上下文分层), [ADR-012](../../adr/ADR-012.md) (错误处理), [ADR-014](../../adr/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/ADR-016.md) (loguru), [ADR-017](../../adr/ADR-017.md) (CI 门禁), [ADR-018](../../adr/ADR-018.md) (测试分层), [ADR-019](../../adr/ADR-019.md) (版本里程碑)
-> **状态**: ✅ 已实现（PR #57）
+> **Spec 版本**: 1.1 | **日期**: 2026-08-13 | **依据**: PRD v2.1 §6.2 P1-02, Constitution P1-P6, ADR-019, ADR-027
+> **所属阶段**: Phase 2 — 创作工具链（0.8.0 里程碑，删除语义统一 issue #211，估算 5-8 人天）
+> **关联 Issues**: [#40](https://github.com/zhx-xi/InkFlow/issues/40)（v1.0 本体）、[#211](https://github.com/zhx-xi/InkFlow/issues/211)（v1.1 删除语义统一）
+> **依赖**: F1 ✅, F5 ✅（前置）；F6 ✅（数据源集成点）；F9/F11/F12/F13 ✅（跨模块统一，§8.2）；F14/F15 ✅（连锁适配，§8.2）
+> **参考 ADR**: [ADR-027](../../adr/ADR-027.md)（覆盖率门禁）
+> **状态**: ✅ 已实现（PR #57，v1.0）；🔲 v1.1 删除语义统一待实现
+
+> **Spec 变更（v1.0 → v1.1，2026-08-13，issue #211）**: 删除语义统一——普通实体软删→真删。① WorldSetting 移除 `is_deleted` 字段（§2.1/§2.5）；② partial unique → 全唯一索引（§2.4）；③ DELETE 默认真删（移除 `force` 软删路径），restore 端点/命令移除（§3/§4）；④ 提取合并移除「软删同名→新建+warning」分支（§5.4）；⑤ 跨模块 F9/F11/F12/F13/F14/F15 同步适配（§8.2 全量 MODIFY 清单）；⑥ `is_deleted` 列移除 + 存量软删数据迁移（§8.3）。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**（§10）。
 
 >
-> **快速导航**（2026-08-08 #201）：
-> [1. 概述](L12) · [2. 数据模型](L34) · [3. API 契约](L213) · [4. CLI 命令签名](L344)
-> [5. AI 提取模式（样板核心，同 F9 §5）](L401) · [6. 分类与查询规则](L488) · [7. 边界情况与错误处理](L515) · [8. 文件结构](L547)
-> [9. 测试策略](L638) · [10. 不在范围内](L682) · [11. 依赖关系](L702) · [12. 关键架构决策记录](L730)
-> [13. 验收标准](L752) · [待澄清问题（≤ 3 个，评审时确认）](L768)
+> **快速导航**（2026-08-08 #201 + 2026-08-13 v1.1）：
+> [1. 概述](L20) · [2. 数据模型](L43) · [3. API 契约](L221) · [4. CLI 命令签名](L328)
+> [5. AI 提取模式](L380) · [6. 分类与查询规则](L458) · [7. 边界情况与错误处理](L485) · [8. 文件结构](L519)
+> [8.2 跨模块 MODIFY 清单](L603) · [8.3 数据库迁移](L683) · [9. 测试策略](L708) · [10. 不在范围内](L754)
+> [11. 依赖关系](L776) · [12. 关键架构决策记录](L797) · [13. 验收标准](L812) · [14. 影响面评估结论](L829) · [待澄清问题](L845)
 ---
 
 ## 1. 概述
 
-管理小说的**世界观条目**（创建/查询/更新/软删除），以**类别（category）**承载世界观层级设定（规则/设定/约束/组织/地理等），并支持**从章节文本用 LLM 自动提取世界观信息**（条目名/类别/内容）。
+管理小说的**世界观条目**（创建/查询/更新/真删除），以**类别（category）**承载世界观层级设定（规则/设定/约束/组织/地理等），并支持**从章节文本用 LLM 自动提取世界观信息**（条目名/类别/内容）。
 
 **核心价值**: 作者与 AI Agent 可以维护结构化世界观设定；AI 提取把「写在正文里的世界观信息」沉淀为可复用的设定档案，为 F6 上下文注入（世界观设定进 Prompt）、F16 一致性审计提供数据基础。
 
@@ -32,8 +34,9 @@ F9 spec 已明示「F10 实施时直接对照 F9 §5 与对应文件结构，不
 
 **边界声明**:
 - F10 只做**单次、单章节文本**的基础提取（输入一段文本 → 输出世界观条目并合并落库）。增量提取、批量/全书提取、定时提取、指代消解归 **F14 统一提取服务**（Issue #44），见 §10
-- F10 不实现 F6 上下文注入（`ContextSourceProtocol` 的 `world_setting` 数据源）；实体与查询能力为其预留，集成点见 §11 与待澄清 Q1
+- F10 不实现 F6 上下文注入（`ContextSourceProtocol` 的 `world_setting` 数据源）；实体与查询能力为其预留，集成点见 §11
 - F10 是世界观**条目/设定管理**，**不是复杂知识图谱**：不做条目间关系表、不做类别层级树（决策见 §2.2/§2.3，理由详见 §12）
+- **删除语义（v1.1 变更）**: 条目删除 = 确认后**真删**（物理删除，不可恢复），不再有软删/restore 语义。这是全项目「普通实体软删→真删」统一（issue #211）的一部分，与 F9/F11/F12/F13 同族（§8.2）。**例外**：F1 项目（回收站）与 F24 会话（归档）保留软删语义（§10）。
 
 ---
 
@@ -47,19 +50,20 @@ F9 spec 已明示「F10 实施时直接对照 F9 §5 与对应文件结构，不
 |------|------|------|------|
 | id | UUID | PK | 领域层 UUID，DB int 自增映射 |
 | project_id | UUID | NOT NULL, FK→projects.id (CASCADE), 已索引 | 所属项目 |
-| name | str | NOT NULL, 1-50 字符, 去空白 | 条目名（如「灵气复苏」「宗门等级体系」）；**项目内活动条目唯一**（partial unique，见 §2.4） |
+| name | str | NOT NULL, 1-50 字符, 去空白 | 条目名（如「灵气复苏」「宗门等级体系」）；**项目内同层级唯一**（全唯一，见 §2.4） |
+| parent_id | UUID? | FK→world_settings.id (CASCADE), 可空=顶层 | 父地点（F35 树形结构） |
 | category | str | NOT NULL, DEFAULT "", ≤ 50 字符, 去空白 | 类别（建议值：设定/规则/约束/组织/地理/种族/文化/科技/魔法体系；自由文本，受控词表归 F14）；空串 = 未分类 |
 | content | str | NOT NULL, DEFAULT "", ≤ 20000 字符 | 条目内容/详细设定 |
 | extra | dict[str, Any] | NOT NULL, DEFAULT {} | 扩展字典（来源章节、标签、别名等 Phase 2+ 字段预留） |
-| is_deleted | bool | NOT NULL, DEFAULT False, 已索引 | 软删除标记 |
+| ~~is_deleted~~ | ~~bool~~ | ~~NOT NULL, DEFAULT False~~ | **（v1.1 移除）** 原软删除标记，真删语义下无意义 |
 | created_at | datetime | NOT NULL, AUTO | 创建时间 (UTC) |
 | updated_at | datetime | NOT NULL, AUTO | 更新时间 (UTC) |
 
 **业务规则**:
-- `name` 项目内**活动条目唯一** = 「同名 = 同一世界观条目」，这是 AI 提取合并策略的锚点（§5.4），也防止手误重复建档
-- `category` 是**条目属性**（平铺字段），不是独立实体：PRD「层级设定（规则/设定/约束）」以条目类别表达；类别无独立生命周期（描述/排序/成员数），独立建表属过度设计（决策理由见 §2.2 与 §12）
+- `name` 项目内**同层级（project_id, parent_id）唯一** = 「同名 = 同一世界观条目」，这是 AI 提取合并策略的锚点（§5.4），也防止手误重复建档。**（v1.1）真删语义下，全唯一索引（无 `is_deleted` 条件）；删除即物理删除，重建同名条目天然合法（旧行已不存在）**
+- `category` 是**条目属性**（平铺字段），不是独立实体（决策理由见 §2.2 与 §12）
 - 类别**层级树**（category 父子关系）不在 F10 范围（§10）
-- 条目间**不建立外键关联**：「规则A 约束 设定B」类引用用 content 自由文本表达；独立 `WorldRelation` 表属 Phase 2+（决策理由见 §2.3 与 §12）
+- 条目间**不建立外键关联**：独立 `WorldRelation` 表属 Phase 2+（决策理由见 §2.3 与 §12）
 
 ### 2.2 分类设计决策（不建独立分组表）
 
@@ -81,27 +85,31 @@ F9 spec 已明示「F10 实施时直接对照 F9 §5 与对应文件结构，不
 | 考量 | 结论 |
 |------|------|
 | 需求来源 | PRD P1-02 未要求条目间关系图谱；Issue #40 仅「层级设定 + 规则约束管理 + AI 提取」 |
-| 与 F9 的差异 | 角色关系（师徒/敌对）是创作**核心结构**，需双向查询；世界观条目间引用（「规则A 约束 设定B」）是**增强语义**，MVP 用 content 自由文本即可表达 |
-| 图谱代价 | 关系表需要两端校验、级联软删、图谱查询 API——一套 F9 §2.3/§6.1 的完整机制，收益在 MVP 阶段不成比例 |
-| 演进路径 | F14 统一提取/ F16 一致性审计如需要「规则→设定」溯源，再引入 WorldRelation 表（Phase 2+），届时对照 F9 §2.3/§3.3/§6.1 实现 |
+| 与 F9 的差异 | 角色关系（师徒/敌对）是创作**核心结构**，需双向查询；世界观条目间引用是**增强语义**，MVP 用 content 自由文本即可表达 |
+| 图谱代价 | 关系表需要两端校验、级联删除、图谱查询 API——一套 F9 §2.3/§6.1 的完整机制，收益在 MVP 阶段不成比例 |
+| 演进路径 | F14 统一提取/ F16 一致性审计如需要「规则→设定」溯源，再引入 WorldRelation 表（Phase 2+） |
 
 > 结论：**倾向简单，避免过度设计**（Constitution P5 YAGNI）。`extra` 字典可临时承载轻量引用标记（不保证图谱能力，不做查询承诺）。
 
-### 2.4 唯一约束（partial unique index，SQLite）
+### 2.4 唯一约束（全唯一索引，SQLite；v1.1 变更）
+
+**v1.0** 用 partial unique index（`WHERE is_deleted = 0`）保证「软删除后可重建同名」；**v1.1 真删语义下改为全唯一索引**：
 
 ```python
-# ORM __table_args__（SQLAlchemy 2.0 + SQLite partial index）
+# ORM __table_args__（SQLAlchemy 2.0 + SQLite 全唯一索引；v1.1 移除 sqlite_where）
 __table_args__ = (
     Index(
-        "uq_world_settings_active_name",
-        "project_id", "name",
+        "uq_world_settings_name_parent",
+        "project_id", "parent_id", "name",
         unique=True,
-        sqlite_where=text("is_deleted = 0"),
+        # v1.1: 移除 sqlite_where=text("is_deleted = 0")
     ),
 )
 ```
 
-**为什么是 partial index**: 「同名 = 同一世界观条目」是 AI 提取合并策略的锚点（§5.4），活动条目名必须唯一；而**软删除后再创建同名条目**是合法操作（旧档案已废弃），partial index 恰好两者兼得（已删除行不参与唯一性）。服务层再做一次同名检查以给出友好 422 文案。
+**为什么是全唯一索引（v1.1）**: 「同名 = 同一世界观条目」是 AI 提取合并策略的锚点（§5.4），活动条目名必须唯一。v1.0 的 partial index 是为「软删后可重建同名」服务的；真删后记录被物理删除，重建同名条目天然合法（旧行已不存在），无需 `is_deleted` 条件。服务层再做一次同名检查以给出友好 422 文案。
+
+> ⚠️ **跨模块同类变更**：F9 角色名/分组名/关系、F11 大纲名/弧线名、F13 伏笔标题的 partial unique 索引同步改为全唯一（§8.2 清单 C4）。
 
 ### 2.5 领域模型（Pydantic v2 语法，参照 F9 `domain/models/character.py`）
 
@@ -138,10 +146,11 @@ class WorldSetting(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
     name: str
+    parent_id: uuid.UUID | None = None  # ← F35：父地点；None = 顶层
     category: str = ""
     content: str = ""
     extra: dict[str, Any] = Field(default_factory=dict)
-    is_deleted: bool = False
+    # v1.1: 移除 is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -150,6 +159,7 @@ class WorldCreate(BaseModel):
     """创建世界观条目请求 DTO."""
     project_id: uuid.UUID
     name: str
+    parent_id: uuid.UUID | None = None  # ← F35（None = 顶层）
     category: str = ""
     content: str = ""
 
@@ -170,27 +180,22 @@ class WorldCreate(BaseModel):
 
 
 class WorldUpdate(BaseModel):
-    """更新世界观条目请求 DTO — 所有字段可选（exclude_unset 语义，同 F1）.
+    """更新世界观条目请求 DTO — 所有字段均为可选项（exclude_unset 语义，同 F1）.
 
     category: None 表示不修改；"" 表示清除类别（置为未分类）.
-    只有传入的字段会被更新，未传入的字段保持不变.
+    F35 parent_id 例外：出现即更新（service 用 model_fields_set 判断）.
     """
     name: str | None = None
     category: str | None = None
     content: str | None = None
-
-    # name/category/content 复用 WorldCreate 的校验逻辑（None 时直接返回）
+    parent_id: uuid.UUID | None = None  # ← F35
 ```
 
 ### 2.6 提取相关模型（§5 详述）
 
 ```python
 class ExtractedWorldSetting(BaseModel):
-    """LLM 提取出的单个世界观条目（schema 校验用）.
-
-    name 非法（空/超长）时该条被跳过并记录 warning，不影响其余条目落库.
-    category/content 为 None 或空串时落库为空串（未分类/无内容）.
-    """
+    """LLM 提取出的单个世界观条目（schema 校验用）."""
     name: str                  # 1-50 去空白；非法 → 该条跳过 + warning
     category: str | None = None   # ≤ 50 去空白；None/空串 = 未分类
     content: str | None = None    # ≤ 20000；None/空串 = 无内容
@@ -204,10 +209,7 @@ class WorldExtractRequest(BaseModel):
 
 
 class WorldExtractionResult(BaseModel):
-    """世界观提取结果 — 合并落库后的报告.
-
-    （无 relations 字段：F10 不建条目关联表，见 §2.3）
-    """
+    """世界观提取结果 — 合并落库后的报告."""
     created: list[WorldSetting]
     updated: list[WorldSetting]
     warnings: list[str]
@@ -220,22 +222,26 @@ class WorldExtractionResult(BaseModel):
 
 端点风格沿用 F2/F9：**创建/列表/类别汇总嵌套于项目路径**，**详情/更新/删除扁平**。错误响应格式沿用 F1/F2/F9（`{"detail": "..."}` 404 / 422）。
 
-### 3.1 端点总览（8 个，镜像 F9 §3.1 布局；无分组/关系端点，见 §2.2/§2.3）
+### 3.1 端点总览（10 个；v1.1 移除 restore，DELETE 真删）
 
-| 方法 | 路径 | 用途 | 请求体 | 响应 |
+| 方法 | 路径 | 用途 | 请求体/参数 | 响应 |
 |------|------|------|--------|------|
 | POST | `/api/v1/projects/{project_id}/world-settings` | 创建条目 | `WorldCreate` | 201 + WorldSetting |
-| GET | `/api/v1/projects/{project_id}/world-settings` | 条目列表 | Query: `?search=&category=&sort_by=&sort_desc=&offset=&limit=` | 200 + `{items, total, offset, limit}` |
+| GET | `/api/v1/projects/{project_id}/world-settings` | 条目列表 | Query: `?search=&category=&parent_id=&sort_by=&sort_desc=&offset=&limit=` | 200 + `{items, total, offset, limit}` |
 | GET | `/api/v1/projects/{project_id}/world-settings/categories` | 类别汇总（含条目数） | — | 200 + `{items, total}` |
+| POST | `/api/v1/projects/{target_project_id}/world-settings/copy` | 跨书复制世界观（F35） | `WorldCopyRequest` | 200 + result |
 | GET | `/api/v1/world-settings/{setting_id}` | 条目详情 | — | 200 + WorldSetting JSON |
+| GET | `/api/v1/world-settings/{setting_id}/ancestors` | 祖先链（F35） | — | 200 + `{items, total}` |
+| GET | `/api/v1/world-settings/{setting_id}/descendants` | 子树（F35） | — | 200 + `{items, total}` |
 | PATCH | `/api/v1/world-settings/{setting_id}` | 更新条目 | `WorldUpdate` | 200 + WorldSetting |
-| DELETE | `/api/v1/world-settings/{setting_id}` | 删除条目 | Query: `?force=true` | 204（默认软删除） |
-| POST | `/api/v1/world-settings/{setting_id}/restore` | 恢复条目 | — | 200 + WorldSetting |
+| DELETE | `/api/v1/world-settings/{setting_id}` | **删除条目（真删）** | Query: `?cascade=true` / `?reparent_to=<id>` | 204 |
 | POST | `/api/v1/world-settings/extract` | AI 提取世界观信息 | `WorldExtractRequest` | 200 + WorldExtractionResult |
 
+> **v1.1 变更**：① `POST /world-settings/{id}/restore` 端点**移除**；② `DELETE` 的 `?force=true` 参数**移除**（默认即真删，无软删路径）；③ `?cascade=true`（级联真删整棵子树）与 `?reparent_to=<id>`（子改挂后真删自身）为 F35 树级删除语义，**保留**。
+>
 > `POST /world-settings/extract` 在 router 中注册于 `POST /world-settings/{setting_id}` 之前，避免路径歧义（同 F9 characters.py 做法）。
 
-### 3.2 请求/响应示例 — 条目 CRUD
+### 3.2 请求/响应示例 — 条目 CRUD 与删除
 
 **创建条目**:
 ```http
@@ -248,17 +254,12 @@ Content-Type: application/json
 ```json
 {
   "id": "9b1c2d3e-...", "project_id": "3f2e1d4a-...", "name": "灵气复苏",
-  "category": "设定", "content": "公元 2048 年全球灵气浓度回升，觉醒者出现。",
-  "extra": {}, "is_deleted": false,
+  "parent_id": null, "category": "设定", "content": "公元 2048 年全球灵气浓度回升，觉醒者出现。",
+  "extra": {},
   "created_at": "2026-08-01T10:00:00Z", "updated_at": "2026-08-01T10:00:00Z"
 }
 ```
-
-**列出条目（搜索 + 类别过滤 + 分页）**:
-```http
-GET /api/v1/projects/3f2e1d4a-.../world-settings?search=灵气&category=设定&sort_by=name&sort_desc=false&offset=0&limit=20
-```
-→ 200 `{"items": [...], "total": 1, "offset": 0, "limit": 20}`
+> **v1.1 变更**：响应体移除 `is_deleted` 字段。
 
 **同名冲突**:
 ```http
@@ -267,19 +268,13 @@ POST /api/v1/projects/3f2e1d4a-.../world-settings
 ```
 → 422 `{"detail": "同名世界观条目已存在（条目名在项目内必须唯一）"}`
 
-**更新条目（清除类别）**:
+**删除条目（真删，v1.1）**:
 ```http
-PATCH /api/v1/world-settings/9b1c2d3e-...
-{ "content": "（修订版内容……）", "category": "" }
+DELETE /api/v1/world-settings/9b1c2d3e-...            → 204（物理删除，不可恢复）
+DELETE /api/v1/world-settings/9b1c2d3e-...?cascade=true → 204（级联真删整棵子树）
+DELETE /api/v1/world-settings/9b1c2d3e-...?reparent_to=<id> → 204（子改挂后真删自身）
 ```
-→ 200（更新后 WorldSetting JSON，category 为空串）
-
-**软删除 / 恢复 / 硬删除**:
-```http
-DELETE /api/v1/world-settings/9b1c2d3e-...            → 204（软删除）
-POST /api/v1/world-settings/9b1c2d3e-.../restore      → 200 + WorldSetting
-DELETE /api/v1/world-settings/9b1c2d3e-...?force=true → 204（物理删除）
-```
+> **v1.1 变更**：删除后实体**不可恢复**（无 restore 端点）；再次删除同 id → 404。有子地点且未指定 cascade/reparent_to → 422「该条目包含子地点，须指定级联删除或改挂」（F35 语义，`WorldChildrenActionRequiredError`）。
 
 ### 3.3 请求/响应示例 — 类别汇总与提取
 
@@ -287,35 +282,15 @@ DELETE /api/v1/world-settings/9b1c2d3e-...?force=true → 204（物理删除）
 ```http
 GET /api/v1/projects/3f2e1d4a-.../world-settings/categories
 ```
-→ 200
-```json
-{
-  "items": [
-    {"category": "设定", "count": 4},
-    {"category": "规则", "count": 3},
-    {"category": "约束", "count": 1}
-  ],
-  "total": 3
-}
-```
-> 仅统计**活动条目**；空类别（未分类）条目不出现；按 count 降序、category 升序排列。该字段由仓储聚合，不建表。
+→ 200 `{"items": [{"category": "设定", "count": 4}, ...], "total": 3}`
+> 仅统计**活动条目**（真删后即全部条目）；空类别（未分类）条目不出现；按 count 降序、category 升序排列。
 
 **AI 提取**:
 ```http
 POST /api/v1/world-settings/extract
-Content-Type: application/json
-
 { "project_id": "3f2e1d4a-...", "text": "第一章正文……" }
 ```
-→ 200
-```json
-{
-  "created": [{"id": "...", "name": "灵气复苏", "category": "设定", ...}],
-  "updated": [{"id": "...", "name": "宗门等级", "category": "规则", ...}],
-  "warnings": ["条目 \"？？\" 名称为空已跳过"],
-  "model": "deepseek/deepseek-chat"
-}
-```
+→ 200 `{"created": [...], "updated": [...], "warnings": [...], "model": "deepseek/deepseek-chat"}`
 
 ### 3.4 错误响应格式（沿用 F1/F2/F9/ADR-012）
 
@@ -324,12 +299,11 @@ Content-Type: application/json
 {"detail": "项目不存在"}
 {"detail": "世界观条目不存在"}
 
-// 422 — 业务校验失败 / Pydantic 验证失败
+// 422 — 业务校验失败 / 树级删除需指定动作
 {"detail": "同名世界观条目已存在（条目名在项目内必须唯一）"}
-{"detail": "类别不能超过 50 个字符"}
-{"detail": "内容不能超过 20000 个字符"}
+{"detail": "该条目包含子地点，须指定级联删除或改挂"}
 
-// 500 — LLM 提取失败（日志记录原始异常，不泄漏堆栈）
+// 500 — LLM 提取失败
 {"detail": "世界观提取失败: LLM 输出无法解析，请重试"}
 {"detail": "LLM 调用失败，请稍后重试"}
 ```
@@ -340,41 +314,48 @@ Content-Type: application/json
 |-----------|--------|------|
 | 项目/条目不存在（Service 返回 None） | 404 | 见上 |
 | 无效 UUID 格式 | 404 | 统一解析失败处理（同 F9 `_parse_id`） |
-| 同名条目 | 422 | 服务层业务校验（`WorldNameConflictError`，消息即 detail） |
+| 同名条目 | 422 | 服务层业务校验（`WorldNameConflictError`） |
+| 有子地点未指定 cascade/reparent_to | 422 | `WorldChildrenActionRequiredError` |
+| reparent 目标非法（不存在/跨项目/自身子树） | 422 | `WorldReparentTargetError` |
 | Pydantic `ValidationError` | 422 | FastAPI 自动生成 |
-| `WorldExtractionError`（LLM 输出解析失败，重试后仍失败） | 500 | `"世界观提取失败: LLM 输出无法解析，请重试"` |
-| `LLMRequestError`（F5 重试耗尽） | 500 | `"LLM 调用失败，请稍后重试"` |
+| `WorldExtractionError` | 500 | `"世界观提取失败: LLM 输出无法解析，请重试"` |
+| `LLMRequestError` | 500 | `"LLM 调用失败，请稍后重试"` |
+
+> **v1.1 变更**：移除「恢复不存在的条目」「硬删除已软删除的条目」等软删相关错误场景（§7）。
 
 ---
 
 ## 4. CLI 命令签名
 
-遵循 F7 §5 全局约定：`--json` 统一信封 `{"ok": true, "data": ...}` / `{"ok": false, "error": {"code", "message"}}`；退出码 0/1/2/130；错误码 NOT_FOUND / VALIDATION_ERROR / LLM_ERROR / DB_ERROR；删除类命令二次确认 + `--force`；`--json` + 无 `--force` 的删除 → `VALIDATION_ERROR`（沿用 F7 §7）。`world` 组在 F10 落地时并入 F7 命令树（`cli/app.py` 注册，同 F9 character 组）。
+遵循 F7 §5 全局约定：`--json` 统一信封；退出码 0/1/2/130；错误码 NOT_FOUND / VALIDATION_ERROR / LLM_ERROR / DB_ERROR；删除类命令二次确认 + `--force`；`--json` + 无 `--force` 的删除 → `VALIDATION_ERROR`。`world` 组在 F10 落地时并入 F7 命令树。
 
-### 4.1 world 组（委托 WorldService；无子组——F10 无子实体，见 §2.2/§2.3）
+### 4.1 world 组（委托 WorldService；无子组）
 
 ```bash
 inkflow world create --project-id <uuid> --name <str> \
     [--category <str>] [--content <str>] [--json]
 
 inkflow world list --project-id <uuid> \
-    [--search <str>] [--category <str>] \
+    [--search <str>] [--category <str>] [--parent-id <uuid|none>] \
     [--sort <name|category|updated_at|created_at>] [--sort-desc/--no-sort-desc] [--json]
 
-inkflow world categories --project-id <uuid> [--json]   # 类别汇总（含条目数）
+inkflow world categories --project-id <uuid> [--json]   # 类别汇总
 
 inkflow world get --id <uuid> [--json]
 
 inkflow world update --id <uuid> \
     [--name <str>] [--category <str|"">] [--content <str>] [--json]
-    # --category "" 表示清除类别（置为未分类）
 
-inkflow world delete --id <uuid> [--force] [--permanent] [--json]
-inkflow world restore --id <uuid> [--json]
+inkflow world delete --id <uuid> [--force] [--cascade] [--reparent-to <uuid>] [--json]
+# v1.1: 移除 [--permanent]（无软删/硬删之分，默认真删）；[--force] 仅作二次确认跳过
+
+# v1.1: 移除 inkflow world restore --id <uuid>
 
 inkflow world extract --project-id <uuid> \
     --text <str> | --text-file <path> [--model <str>] [--json]
 ```
+
+> **v1.1 变更**：① 移除 `world restore` 子命令；② `world delete` 移除 `--permanent`（真删无软删/硬删之分）；`--force` 保留为「跳过交互确认」语义（沿用 F7 §7 删除确认约定）；`--cascade` / `--reparent-to` 保留（F35 树级删除）。
 
 ### 4.2 输出格式
 
@@ -383,21 +364,13 @@ inkflow world extract --project-id <uuid> \
 ✅ 世界观条目创建成功: [灵气复苏] (设定)
 ✅ 条目已删除: [灵气复苏]
 ✅ 提取完成: 新增 3 个条目, 更新 1 个条目, 跳过 2 条, 警告 2 条
-⚠️ 提取完成但有警告: 条目 "？？" 名称为空已跳过; 条目 "灵力体系" 类别超长已跳过
 
 # --json 输出
-inkflow world create --project-id ... --name "灵气复苏" --category 设定 --json
-→ {"ok": true, "data": {"id": "...", "name": "灵气复苏", "category": "设定", ...}}
-
-inkflow world extract --project-id ... --text-file ch3.txt --json
-→ {"ok": true, "data": {"created": [...], "updated": [...],
-     "warnings": [...], "model": "deepseek/deepseek-chat"}}
+inkflow world delete --id ... --json
+→ {"ok": true, "data": null}   # 删除成功（真删，无返回体）
 
 inkflow world get --id 00000000-0000-0000-0000-000000000000 --json
 → {"ok": false, "error": {"code": "NOT_FOUND", "message": "世界观条目不存在"}}   # 退出码 1
-
-inkflow world delete --id ... --json
-→ {"ok": false, "error": {"code": "VALIDATION_ERROR", "message": "删除需 --force 或交互确认"}}  # 退出码 1
 ```
 
 **`--text-file` 设计理由**（同 F9 §4.3）: 章节文本可达数千字，作为命令行参数在 Windows 下受 8191 字符限制；`--text` 与 `--text-file` 互斥（同时传入 → 退出码 2）。
@@ -406,7 +379,7 @@ inkflow world delete --id ... --json
 
 ## 5. AI 提取模式（样板核心，同 F9 §5）
 
-> ⚠️ **本节与 F9 §5 一一对应，是 F9 骨架的直接复用**：提取管线（模板渲染 → LLM → JSON 解析 → 修复式重试 → 合并落库）的**实现直接对照 F9 `_character_extractor.py`**，仅替换领域实体（WorldSetting ↔ Character）与模板名（world_extract ↔ character_extract）。以下内容为 F10 的实体化副本，供实现与评审对照，不重复设计。
+> ⚠️ **本节与 F9 §5 一一对应，是 F9 骨架的直接复用**：提取管线（模板渲染 → LLM → JSON 解析 → 修复式重试 → 合并落库）的实现对照 F9 `_character_extractor.py`，仅替换领域实体与模板名。
 
 ### 5.1 模式总览（同 F9 §5.1 骨架，无 relations 步骤）
 
@@ -424,13 +397,6 @@ inkflow world delete --id ... --json
     └─ 条目: 按 (project_id, name) 匹配活动条目 → 存在=更新(非空覆盖) / 不存在=创建
  ⑥ 返回 WorldExtractionResult（created/updated/warnings + 实际模型）
 ```
-
-**模式要点（与 F9 §5.1 完全一致）**:
-1. **模板与代码分离**: 提取指令在 `infrastructure/llm/templates/world_extract.yaml`（ADR-014/015），领域服务只组装变量
-2. **LLM 输出 schema 校验**: 用 Pydantic 模型校验原始 JSON，非法条目**跳过 + warning**，整批非法才抛错
-3. **合并锚点 = 项目内唯一键**: 条目用 name，与 §2.4 partial unique 对齐
-4. **失败策略**: LLM 调用失败（F5 重试耗尽）→ 透传 `LLMRequestError`；解析失败重试 ≤2 → `WorldExtractionError`；**合并阶段不重试**（已落库数据不可重复合并）
-5. **单事务**: 整个合并在一个 session 内完成，任何异常回滚，无部分落库
 
 ### 5.2 LLM 模板（`world_extract.yaml`）
 
@@ -462,23 +428,22 @@ variables:
 |------|------|
 | 输出为合法 JSON 且通过 schema 校验 | 进入合并 |
 | 输出含代码块围栏/前后缀文字 | 提取首个 `{...}` 平衡片段（`_extract_json_fragment`），再解析 |
-| 仍失败 | 构建修复 Prompt（原输出 + 解析错误信息 + 「只输出 JSON」）重试，`retry_count += 1`，≤ 2 次 |
-| 3 次（1 次原始 + 2 次修复）均失败 | `WorldExtractionError`（含原始输出片段，日志记录） |
+| 仍失败 | 构建修复 Prompt 重试 ≤ 2 次 |
+| 3 次均失败 | `WorldExtractionError` |
 
-> 与 F3 格式重试（≤3）同源但更保守（同 F9）：提取是批处理操作，无「部分可用」输出，失败必须显式报错而非静默返回。
-
-### 5.4 合并策略（同名条目规则，同 F9 §5.4 单实体版）
+### 5.4 合并策略（同名条目规则，v1.1 变更）
 
 **条目合并（按项目内活动条目 name 精确匹配）**:
 
 | 情况 | 行为 | 计入 |
 |------|------|------|
-| 项目内存在同名**活动**条目 | 非空提取字段**覆盖**对应字段（category/content 独立判断），更新 updated_at | `updated` |
+| 项目内存在同名条目 | 非空提取字段**覆盖**对应字段（category/content 独立判断），更新 updated_at | `updated` |
 | 不存在 | 创建新条目 | `created` |
-| 存在但已**软删除** | 视为不存在 → **创建新条目**（不隐式恢复旧档案；partial unique 允许） | `created` + warning「存在已删除的同名条目档案」 |
 | 提取字段非法（name 空/超长、category/content 超长） | 该条**跳过** | `warnings` |
 
-**幂等性**: 对同一文本重复提取，第二次应产出空 `created`/`updated` 列表（全部命中已有数据，非空字段覆盖后值不变）——这是合并策略正确性的关键验收点（同 F9）。
+> **v1.1 变更**：移除「存在但已软删除 → 视为不存在 → 新建 + warning『存在已删除的同名条目档案』」分支——真删语义下不存在软删记录，`_has_soft_deleted_same_name` 辅助方法移除（§8）。
+
+**幂等性**: 对同一文本重复提取，第二次应产出空 `created`/`updated` 列表——这是合并策略正确性的关键验收点（同 F9）。
 
 ### 5.5 提取输入约束（同 F9 §5.5）
 
@@ -486,8 +451,7 @@ variables:
 |------|-----|------|
 | text | 去空白非空，≤ 50000 字符 | 空 → 422「章节文本不能为空」 |
 | 默认模型 | `project.config.model` | F1 项目配置 |
-| temperature | 固定 0.2（结构化输出低温稳定） | 不对外暴露 |
-| 并发 | 不限制（单用户本地工具；同文本并发提取由唯一键兜底） | — |
+| temperature | 固定 0.2 | 结构化输出低温稳定 |
 
 ---
 
@@ -497,11 +461,11 @@ variables:
 
 ### 6.1 分类语义
 
-- `category` 是条目的**平铺属性**（一对一），不是独立实体（§2.2 决策）：规则/设定/约束等层级通过类别表达
-- **建议值清单**（设定/规则/约束/组织/地理/种族/文化/科技/魔法体系）仅用于 LLM 模板引导与 CLI/UI 提示，**不做枚举校验**——LLM 输出类别不可控，受控词表归 F14（同 F9 relation_type 处理）
-- **空类别 = 未分类**，允许；`GET /world-settings/categories` 不包含未分类条目，未分类条目通过 `category=` 空串过滤查询
-- 类别**层级树**（父子关系）不在 F10 范围（§10）
-- 规则/约束类条目在 F6 上下文注入中的**优先级排序**归 F6 集成（§11），F10 只保证 category 可被查询过滤，不预判注入语义
+- `category` 是条目的**平铺属性**（一对一），不是独立实体（§2.2 决策）
+- **建议值清单**（设定/规则/约束/组织/地理/种族/文化/科技/魔法体系）仅用于 LLM 模板引导与 CLI/UI 提示，**不做枚举校验**（受控词表归 F14）
+- **空类别 = 未分类**，允许；`GET /world-settings/categories` 不包含未分类条目
+- 类别**层级树**不在 F10 范围（§10）
+- 规则/约束类条目在 F6 上下文注入中的优先级排序归 F6 集成（§11）
 
 ### 6.2 搜索与排序（条目列表，沿用 F1 §6/F9 §6.3）
 
@@ -509,12 +473,12 @@ variables:
 |------|--------|------|------|
 | `search` | — | — | 对 name 不区分大小写子串匹配（icontains） |
 | `category` | — | 1-50 字符 | 类别**精确**过滤；`category=` 空串查询未分类条目 |
-| `sort_by` | `updated_at` | `name` / `category` / `updated_at` / `created_at` | 排序字段 |
+| `parent_id` | — | uuid / `none` | F35：`none` = 顶层；`<uuid>` = 直接子级；缺省 = 全量 |
+| `sort_by` | `updated_at` | `name`/`category`/`updated_at`/`created_at` | 排序字段 |
 | `sort_desc` | `true` | — | 降序 |
-| `offset` / `limit` | 0 / 50 | offset ≥ 0, limit [1, 100] | 分页 |
+| `offset`/`limit` | 0/50 | offset ≥ 0, limit [1, 100] | 分页 |
 
-- **类别汇总**（`GET /world-settings/categories`）：活动条目按 category 分组计数（排除空类别），按 count 降序、category 升序返回；由仓储层聚合（`list_categories`），不建表
-- 条目**内容**全文检索不在 F10 范围（F22 搜索服务，§10）
+> **v1.1 措辞**：真删语义下「活动条目」= 全部条目（无软删记录）；仓储查询不再带 `~is_deleted` 过滤（§8）。
 
 ---
 
@@ -524,99 +488,95 @@ variables:
 |------|---------|
 | 创建条目名为空/全空白 | 422: "条目名不能为空" |
 | 创建条目名 > 50 字符 | 422: "条目名不能超过 50 个字符" |
-| 创建条目名与项目内**活动**条目重复 | 422: "同名世界观条目已存在（条目名在项目内必须唯一）" |
-| 软删除后**再创建同名条目** | ✅ 成功（partial unique 排除已删除行；服务层同名检查仅限活动条目） |
+| 创建条目名与项目内同层级条目重复 | 422: "同名世界观条目已存在（条目名在项目内必须唯一）" |
+| 删除后**再创建同名条目** | ✅ 成功（全唯一索引仅约束现存行；旧行已物理删除） |
 | category > 50 字符 | 422: "类别不能超过 50 个字符" |
 | content > 20000 字符 | 422: "内容不能超过 20000 个字符" |
-| 获取/更新/软删除/硬删除不存在的条目 | 404: "世界观条目不存在" |
-| 硬删除已软删除的条目 | 404: "世界观条目不存在"（已排除） |
-| 恢复不存在的条目 | 404: "世界观条目不存在" |
-| 恢复未删除的条目 | 正常返回（重复操作无毒，同 F1） |
+| 获取/更新/删除不存在的条目 | 404: "世界观条目不存在" |
+| 删除有子地点的条目（未指定 cascade/reparent_to） | 422: "该条目包含子地点，须指定级联删除或改挂"（`WorldChildrenActionRequiredError`） |
+| 级联真删（`?cascade=true`） | 整棵子树物理删除（含子地点），不可恢复 |
+| 改挂真删（`?reparent_to=<id>`） | 直接子改挂新父 + 自身物理删除；目标非法 → 422 `WorldReparentTargetError` |
 | 条目不存在 / 无效 UUID 格式 | 404: "世界观条目不存在"（统一 `_parse_id` 处理） |
 | 提取 text 为空/全空白 | 422: "章节文本不能为空" |
 | 提取 text > 50000 字符 | 422: "章节文本不能超过 50000 个字符" |
 | 提取时项目不存在 | 404: "项目不存在" |
-| LLM 返回非 JSON / 无法解析 | 修复重试 ≤ 2 → 仍失败 → 500: "世界观提取失败: LLM 输出无法解析，请重试" |
+| LLM 返回非 JSON / 无法解析 | 修复重试 ≤ 2 → 仍失败 → 500 |
 | LLM 返回空条目列表 | 200 + 空 created/updated + warning "未提取到世界观信息" |
-| LLM 输出中个别条目非法（空名等） | 该条跳过 + warning，**不影响其他条目落库** |
-| 提取时 LLM 调用失败（网络/Key） | 500: "LLM 调用失败，请稍后重试"（F5 已内部重试 3 次） |
+| LLM 输出中个别条目非法（空名等） | 该条跳过 + warning，不影响其他条目落库 |
+| 提取时 LLM 调用失败 | 500: "LLM 调用失败，请稍后重试" |
 | 合并中途 DB 错误 | 整体回滚（单事务），无部分落库 |
 | 条目列表搜索/类别过滤无结果 | 200: `{"items": [], "total": 0}` |
 | 分页越界 | 200: 空 items（同 F1） |
-| 类别汇总无活动条目 | 200: `{"items": [], "total": 0}` |
-| 项目硬删除 | 条目级联物理删除（FK CASCADE）；项目软删除不影响条目数据 |
-| `--text` 与 `--text-file` 同时传入 | CLI 退出码 2（用法错误） |
-| 提取合并幂等性 | 同文本二次提取 → created/updated 为空（全部命中已有） |
+| 类别汇总无条目 | 200: `{"items": [], "total": 0}` |
+| 项目删除 | 条目级联物理删除（FK CASCADE） |
+| `--text` 与 `--text-file` 同时传入 | CLI 退出码 2 |
+| 提取合并幂等性 | 同文本二次提取 → created/updated 为空 |
+
+> **v1.1 变更**：移除「软删除后**再创建同名条目**（partial unique 排除）」「硬删除已软删除的条目」「恢复不存在的条目」「恢复未删除的条目」等软删相关条目；删除语义统一为「真删 + 不可恢复」。
 
 ---
 
 ## 8. 文件结构
 
-遵循 ADR-007v2 包结构，与 F9 真实源码树一一对应。新增/修改文件：
+遵循 ADR-007v2 包结构。**v1.1 变更面 = F10 本体 MODIFY（§8）+ 跨模块 MODIFY（§8.2）+ 数据库迁移（§8.3）**。F10 本体文件结构（对照 v1.0 §8 逐文件标注变更）：
 
 ```text
 backend/src/inkflow/
 ├── domain/
 │   ├── models/
-│   │   ├── world.py             ← CREATE: WorldSetting, WorldCreate, WorldUpdate,
-│   │   │                             WorldExtractRequest, WorldExtractionResult,
-│   │   │                             ExtractedWorldSetting
-│   │   └── __init__.py          ← MODIFY: 导出新模型
+│   │   ├── world.py             ← MODIFY: WorldSetting 移除 is_deleted 字段（§2.5）
+│   │   └── __init__.py          （不变）
 │   ├── ports/
-│   │   ├── world_repository.py  ← CREATE: WorldRepositoryProtocol
-│   │   ├── world_errors.py      ← CREATE: WorldExtractionError / WorldServiceError /
-│   │   │                             WorldNotFoundError / ProjectNotFoundError /
-│   │   │                             WorldNameConflictError
-│   │   └── __init__.py          ← MODIFY: 导出
+│   │   ├── world_repository.py  ← MODIFY: 移除 soft_delete / restore 方法（§8.1）
+│   │   ├── world_errors.py      （不变）
+│   │   └── __init__.py          （不变）
 │   └── services/
-│       ├── world_service.py     ← CREATE: WorldService（条目 CRUD + extract 入口）
-│       ├── _world_extractor.py  ← CREATE: 提取管线（对照 F9 _character_extractor.py
-│       │                             骨架：模板渲染 → LLM → JSON 解析 → 修复重试 → 合并）
-│       └── __init__.py          ← MODIFY
+│       ├── world_service.py     ← MODIFY: delete_setting 移除 force 软删路径；restore_setting 移除
+│       ├── _world_extractor.py  ← MODIFY: 移除 _has_soft_deleted_same_name + 软删同名分支
+│       └── __init__.py          （不变）
 ├── infrastructure/
 │   ├── llm/templates/
-│   │   └── world_extract.yaml   ← CREATE: 提取模板（§5.2）
+│   │   └── world_extract.yaml   （不变）
 │   └── database/
 │       ├── models/
-│       │   ├── world.py         ← CREATE: WorldSettingORM
-│       │   │                        （partial unique index, FK, soft-delete 标记）
-│       │   └── __init__.py      ← MODIFY: 注册 WorldSettingORM（create_tables 依赖）
+│       │   ├── world.py         ← MODIFY: WorldSettingORM 移除 is_deleted 列；partial unique → 全唯一（§2.4）
+│       │   └── __init__.py      （不变）
 │       └── repositories/
-│           ├── world_repo.py    ← CREATE: SQLiteWorldRepository
-│           └── __init__.py      ← MODIFY
+│           ├── world_repo.py    ← MODIFY: 移除 soft_delete / restore；get/get_by_name/list 移除 ~is_deleted 过滤
+│           └── __init__.py      （不变）
 ├── api/
 │   ├── routers/
-│   │   ├── world_settings.py    ← CREATE: 8 个端点（条目 CRUD + categories + extract）
-│   │   └── __init__.py          ← MODIFY
-│   ├── deps.py                  ← MODIFY: get_world_service
-│   └── app.py                   ← MODIFY: 注册 world_settings.router
+│   │   ├── world_settings.py    ← MODIFY: 移除 restore 端点；DELETE 移除 force 参数
+│   │   └── __init__.py          （不变）
+│   ├── deps.py                  （不变）
+│   └── app.py                   （不变）
 └── cli/
     ├── commands/
-    │   ├── world.py             ← CREATE: world 组（create/list/categories/get/update/
-    │   │                             delete/restore/extract）
-    │   └── __init__.py          ← MODIFY
-    └── app.py                   ← MODIFY: 注册 world 命令组
+    │   ├── world.py             ← MODIFY: 移除 restore 子命令；delete 移除 --permanent
+    │   └── __init__.py          （不变）
+    └── app.py                   （不变）
+
+backend/src/inkflow/core/
+└── database.py                  ← MODIFY: 新增 ensure_world_drop_is_deleted 迁移函数（§8.3）
 
 backend/tests/
 ├── unit/
-│   ├── test_world_models.py     ← CREATE: 领域模型/DTO 验证 + 提取 DTO schema
-│   ├── test_world_repo.py       ← CREATE: 仓储集成测试（in-memory SQLite，含 partial unique）
-│   ├── test_world_service.py    ← CREATE: 服务测试（条目 CRUD + 业务校验）
-│   ├── test_world_extraction.py ← CREATE: 提取管线测试（Mock LLM：解析/重试/合并/幂等）
-│   └── test_world_api.py        ← CREATE: API 集成测试（Mock Service）
-└── test_cli_world.py            ← CREATE: CLI 测试（Mock WorldService，信封/退出码）
+│   ├── test_world_models.py     ← MODIFY: 移除 is_deleted 断言
+│   ├── test_world_repo.py       ← MODIFY: 软删/恢复/partial unique 用例改写为真删/全唯一
+│   ├── test_world_service.py    ← MODIFY: 软删/恢复用例改写
+│   ├── test_world_extraction.py ← MODIFY: 软删同名分支用例移除
+│   └── test_world_api.py        ← MODIFY: restore 端点用例移除；DELETE 真删断言
+└── test_cli_world.py            ← MODIFY: restore 命令用例移除
 ```
 
-> 测试文件位置与现有树一致（同 F9）：仓储/API 集成测试放 `tests/unit/`，CLI 测试放 `tests/` 根。
-
-### 8.1 WorldRepositoryProtocol（参照 F9 `character_repository.py` Protocol 风格）
+### 8.1 WorldRepositoryProtocol（v1.1 移除软删方法）
 
 ```python
 class WorldRepositoryProtocol(Protocol):
     """世界观条目仓储端口.
 
-    按 spec §2.4: 项目内活动条目 name 唯一（partial unique）；
-    软删除后同名可复用。list_categories 聚合活动条目类别计数。
+    按 spec §2.4: 项目内同层级条目 name 唯一（全唯一索引，v1.1）。
+    v1.1 真删语义：无 soft_delete / restore 方法。
 
     注: 类内方法名 ``list`` 会在 mypy 类作用域解析中遮蔽内置 ``list``，
     因此返回注解中的列表类型统一写作 ``builtins.list[...]``（同 F9）。
@@ -632,56 +592,162 @@ class WorldRepositoryProtocol(Protocol):
                    limit: int = 50) -> tuple[builtins.list[WorldSetting], int]: ...
     async def list_categories(self, project_id: int) -> builtins.list[tuple[str, int]]: ...
     async def update(self, setting: WorldSetting) -> WorldSetting: ...
-    async def soft_delete(self, setting_id: int) -> bool: ...
-    async def restore(self, setting_id: int) -> WorldSetting | None: ...
     async def hard_delete(self, setting_id: int) -> bool: ...
+    async def hard_delete_many(self, setting_ids: builtins.list[int]) -> int: ...
+    async def delete_with_reparent(self, setting_id: int, reparent_to: int) -> bool: ...
+    # v1.1 移除: soft_delete / restore
 ```
 
-> 仓储层方法入参用 int（与 F9/SummaryRepositoryProtocol 一致）；Service 负责 UUID ↔ int 转换（沿用 F1 `_to_int_id` 模式）。
+> 仓储层方法入参用 int（与 F9 一致）；Service 负责 UUID ↔ int 转换。`hard_delete` / `hard_delete_many` / `delete_with_reparent` 为 F35 树级删除语义（保留）。
+
+### 8.2 跨模块 MODIFY 清单（全量，v1.1 变更核心）
+
+删除语义统一涉及 **F9/F11/F12/F13 同族真删 + F14 提取适配 + F15 审计适配**。总览：
+
+| 维度 | F9 角色 | F10 世界观 | F11 大纲 | F12 时间线 | F13 伏笔 | F14 提取 | F15 审计 |
+|------|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| is_deleted 列移除 | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
+| partial unique → 全唯一 | ✅×3 | ✅×1 | ✅×2 | ❌（无 unique） | ✅×1 | — | — |
+| restore 端点/命令/方法移除 | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
+| DELETE force 参数移除 | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
+| 提取软删同名分支移除 | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
+| 软删集合查询/引用检查移除 | — | — | — | — | — | — | ✅ |
+
+**F9 角色（character）**:
+```text
+domain/models/character.py                ← MODIFY: Character/CharacterGroup/CharacterRelation 移除 is_deleted
+domain/ports/character_repository.py      ← MODIFY: 移除 soft_delete/restore/soft_delete_group/
+                                              soft_delete_relations_of/restore_relations_of 等方法
+infrastructure/database/models/character.py ← MODIFY: 3 个 partial unique → 全唯一；移除 is_deleted 列
+infrastructure/database/repositories/character_repo.py ← MODIFY: 移除软删方法；查询移除 ~is_deleted
+domain/services/character_service.py      ← MODIFY: delete_character/delete_group 移除 force（默认真删，关系 FK CASCADE）；
+                                              restore_character 移除
+domain/services/_character_extractor.py   ← MODIFY: 移除 _has_soft_deleted_same_name + 软删同名分支
+api/routers/characters.py                 ← MODIFY: 移除 /restore 端点；DELETE 移除 force
+cli/commands/character.py                 ← MODIFY: 移除 restore 子命令；delete 移除 --permanent
+```
+
+**F11 大纲（outline）**:
+```text
+domain/models/outline.py                  ← MODIFY: Outline/PlotPoint/StoryArc 移除 is_deleted
+domain/ports/outline_repository.py        ← MODIFY: 移除 soft_delete/restore/soft_delete_points_of/
+                                              restore_points_of 等方法
+infrastructure/database/models/outline.py ← MODIFY: 2 个 partial unique → 全唯一；移除 is_deleted 列
+infrastructure/database/repositories/outline_repo.py ← MODIFY: 移除软删方法；查询移除 ~is_deleted
+domain/services/outline_service.py        ← MODIFY: delete_outline/delete_point/delete_arc 移除 force；
+                                              restore_outline/restore_point/restore_arc 移除
+domain/services/_outline_generator.py     ← MODIFY: 移除软删同名分支
+api/routers/outlines.py                   ← MODIFY: 移除 3 个 /restore 端点；DELETE 移除 force
+cli/commands/outline.py                   ← MODIFY: 移除 restore 子命令；delete 移除 --permanent
+```
+
+**F12 时间线（timeline）**:
+```text
+domain/models/timeline.py                 ← MODIFY: TimelineEvent 移除 is_deleted
+domain/ports/timeline_repository.py       ← MODIFY: 移除 soft_delete/restore
+infrastructure/database/models/timeline.py ← MODIFY: 移除 is_deleted 列（无 partial unique，§2.4 注）
+infrastructure/database/repositories/timeline_repo.py ← MODIFY: 移除 soft_delete/restore；查询移除 ~is_deleted
+domain/services/timeline_service.py       ← MODIFY: soft_delete_event/hard_delete_event → delete_event（真删）；
+                                              restore_event 移除
+domain/services/_timeline_extractor.py    ← MODIFY: 移除 _has_soft_deleted_same_title + 软删同名分支
+api/routers/timeline.py                   ← MODIFY: 移除 /restore 端点；DELETE 移除 force
+cli/commands/timeline.py                  ← MODIFY: 移除 restore 子命令；delete 移除 --permanent
+```
+
+**F13 伏笔（foreshadowing）**:
+```text
+domain/models/foreshadowing.py            ← MODIFY: Foreshadowing 移除 is_deleted
+domain/ports/foreshadowing_repository.py  ← MODIFY: 移除 soft_delete/restore
+infrastructure/database/models/foreshadowing.py ← MODIFY: partial unique → 全唯一；移除 is_deleted 列
+infrastructure/database/repositories/foreshadowing_repo.py ← MODIFY: 移除 soft_delete/restore；查询移除 ~is_deleted
+domain/services/foreshadowing_service.py  ← MODIFY: soft_delete/hard_delete → delete（真删）；restore 移除
+domain/services/_foreshadowing_extractor.py ← MODIFY: 移除 _has_soft_deleted_same_title + 软删同名分支
+api/routers/foreshadowings.py             ← MODIFY: 移除 /restore 端点；DELETE 移除 force
+cli/commands/foreshadowing.py             ← MODIFY: 移除 restore 子命令；delete 移除 --permanent
+```
+
+**F14 提取（extraction）**: 各提取器的软删同名分支已并入各模块清单（_world/_character/_timeline/_foreshadowing/_outline 五处）；F14 提取服务本体（`extraction_service.py`）无软删实体、无独立变更（仅「F2 get 不含软删」注释措辞随 F2 语义不变而保留）。
+
+**F15 审计（audit）**:
+```text
+domain/ports/audit_repository.py          ← MODIFY: AuditRepositoryProtocol 移除 list_deleted
+infrastructure/database/repositories/audit_repo.py ← DELETE: 整文件移除（唯一职责 = 软删集合查询，真删后无意义）
+domain/services/audit_service.py          ← MODIFY: 移除 list_deleted 调用 + _deleted_set；
+                                              R-C1/R-C2/R-F1 软删 warning 分支移除，悬空（活动∪软删集合都不存在）→ error；
+                                              软删集合参数从 _audit_character/_audit_foreshadowing 签名移除
+domain/models/audit.py                    ← MODIFY: AuditSeverity.WARNING 移除「软删引用」语义（保留 run.status=error 等）
+```
+
+> ⚠️ **不纳入本次变更（明确排除）**：F1 项目（`project.py`/`project_repo.py`/`project_service.py`/`project` CLI 的 soft_delete/restore 保留，回收站模式）、F24 会话（`session.py` 系归档语义保留）、F16 风格（无软删实体）、F35/36/37 地图（已真删）。
+
+### 8.3 数据库迁移（is_deleted 列移除 + 存量软删数据清理）
+
+项目无 alembic，`create_all` 管理 schema + 幂等迁移函数（参照 `ensure_provider_builtin_key_column` / `ensure_world_parent_id_column` 先例，`core/database.py`）。v1.1 新增迁移函数，覆盖 **5 张表**（world_settings / characters+character_groups+character_relations / outlines+plot_points+story_arcs / timeline_events / foreshadowings）：
+
+**迁移步骤（每张表，幂等）**:
+1. **清理存量软删数据**：`DELETE FROM <表> WHERE is_deleted = 1`（Q3=A 拍板：存量软删记录物理删除，真删语义下本不该存在）
+2. **DROP 依赖 is_deleted 的索引**：partial unique 索引（`sqlite_where="is_deleted = 0"`）+ is_deleted 的 `ix_*` 单列索引
+3. **重建全唯一索引**：`CREATE UNIQUE INDEX ... ON <表>(...)`（无 `WHERE is_deleted = 0`）——partial unique → 全唯一（§2.4）
+4. **DROP is_deleted 列**：`ALTER TABLE <表> DROP COLUMN is_deleted`（SQLite 3.35+ 支持；必须先 DROP 引用该列的索引，否则报错）
+
+> ⚠️ **顺序约束（load-bearing）**：SQLite `DROP COLUMN` 不能删除「被索引/部分索引 WHERE 子句引用」的列，故步骤顺序必须是 ① 清数据 → ② 删索引 → ③ 建新索引 → ④ 删列。表不存在（全新环境）→ no-op，等 `create_all` 建新表（自动无 is_deleted 列 + 全唯一索引）。
+
+**迁移函数签名（plan 阶段展开实现）**:
+```python
+def ensure_world_drop_is_deleted(conn) -> None: ...      # world_settings
+def ensure_character_drop_is_deleted(conn) -> None: ... # characters/character_groups/character_relations
+def ensure_outline_drop_is_deleted(conn) -> None: ...   # outlines/plot_points/story_arcs
+def ensure_timeline_drop_is_deleted(conn) -> None: ...  # timeline_events
+def ensure_foreshadowing_drop_is_deleted(conn) -> None: ... # foreshadowings
+```
+
+这些函数在应用启动（`create_tables` 后）与 CLI `ensure_kernel` 路径按序调用，幂等、可重复执行。
 
 ---
 
 ## 9. 测试策略
 
-### 测试层次（沿用 ADR-018 三层目录 + pytest markers；六层结构同 F9 §9）
+### 测试层次（沿用 ADR-018 三层目录 + pytest markers）
 
 ```text
-单元测试: 领域模型/DTO 验证 + 提取 DTO schema          ~12 cases
-集成测试: SQLiteWorldRepository（in-memory SQLite）     ~14 cases
-服务测试: WorldService（Mock Repository）               ~12 cases
-提取测试: 提取管线（Mock LLM，全合并分支）              ~13 cases
-API 测试: 8 端点（Mock Service）                       ~14 cases
-CLI 测试: world 组（Mock WorldService）                ~16 cases
+单元测试: 领域模型/DTO 验证 + 提取 DTO schema
+集成测试: SQLiteWorldRepository（in-memory SQLite，含全唯一索引）
+服务测试: WorldService（Mock Repository）
+提取测试: 提取管线（Mock LLM，全合并分支）
+API 测试: 10 端点（Mock Service）
+CLI 测试: world 组（Mock WorldService）
 ```
 
-### 关键测试场景
+### 关键测试场景（v1.1 改写点）
 
-**领域模型**: name 空/空白/超长 → ValidationError / category 空串合法、超长 → ValidationError / content 超长 → ValidationError / 默认值（category="", content=""）/ WorldUpdate 部分更新语义（category: None 不修改、"" 清除）/ ExtractedWorldSetting schema（name 必填、category/content 可空）/ WorldExtractRequest（text 空 → 422、超长 → 422）
+**领域模型**: WorldSetting 无 is_deleted 字段（构造不接受、序列化不含）；其余 name/category/content 校验、WorldUpdate 部分更新、提取 DTO schema 不变
 
-**仓储**: 条目 CRUD 往返 / `get_by_name` 命中与未命中 / 活动同名唯一（partial unique：插入第二个活动同名 → IntegrityError；软删除后可再插同名）/ 软删除后 get 返回 None / `list` 搜索与 category 过滤 / `list_categories` 聚合（计数、排除空类别、排序）/ 分页 / 硬删除 FK 级联（项目删除 → 条目级联）
+**仓储（真删/全唯一）**: 条目 CRUD 往返 / `get_by_name` 命中与未命中 / 同层级同名唯一（全唯一索引：插入第二个同名 → IntegrityError）/ **删除后重建同名 → 成功**（物理删除后唯一约束不拦）/ `hard_delete` 物理删除（删除后 get 返回 None）/ `list` 搜索与 category 过滤 / `list_categories` 聚合 / 分页 / FK 级联
 
-**服务**: 创建/更新/软删/恢复全流程 / 同名活动条目 → 422 / 条目不存在各操作 → None → 404 / extract 入口编排（项目不存在 → 404；extractor/project_repo 未注入 → 配置错误）
+**服务（真删）**: 创建/更新/删除全流程 / 同名条目 → 422 / 条目不存在 → 404 / delete_setting 无子地点真删、有子地点未指定动作 → 422、cascade 真删子树、reparent 改挂 / extract 入口编排
 
-**提取（Mock LLM，遵循 ADR-015；断言同 F9）**:
-- 合法 JSON → 全部落库，created/updated 计数正确
-- 同名已存在 → 更新（非空覆盖，`updated`），幂等性（二次提取全空）
-- 软删除同名 → 新建 + warning
-- 非法条目（空名/超长）→ 跳过 + warning，其余正常落库
-- 输出带围栏/前缀文字 → `_extract_json_fragment` 提取成功
-- 输出完全非法 → 修复重试 2 次 → WorldExtractionError
-- Mock LLM 抛 LLMRequestError → 透传（不消耗解析重试）
-- 空条目列表 → 空结果 + warning
-- 断言 Prompt 使用 world_extract 模板 + 变量 text + 项目默认模型 + temperature 0.2
+**提取（Mock LLM）**: 合法 JSON 落库 / 同名更新 + 幂等 / 非法条目跳过 + warning / 围栏提取 / 完全非法重试 → WorldExtractionError / LLMRequestError 透传 / 空列表 warning / Prompt 断言。**v1.1 移除**「软删同名 → 新建 + warning」用例
 
-**API**: 8 端点成功路径 / 404 全路径（项目/条目）/ 422 业务校验（同名冲突、字段超长）/ extract 200 / extract LLM 失败 → 500 / categories 汇总 / 无效 UUID → 404
+**API（Mock Service）**: 10 端点成功路径 / 404 全路径 / 422 业务校验 / extract 200 / LLM 失败 500 / categories 汇总 / 无效 UUID 404。**v1.1 移除** restore 端点用例；DELETE 断言真删（无 force）
 
-**CLI**: 各子命令成功路径与参数透传 / 信封格式与退出码 0/1/2 / delete 二次确认 + `--force` / `--json` + delete 无 `--force` → VALIDATION_ERROR / `--text` 与 `--text-file` 互斥 → 退出码 2 / extract 人类可读摘要与 `--json` 完整结果 / NOT_FOUND、LLM_ERROR 错误信封
+**CLI**: 各子命令成功路径与透传 / 信封与退出码 / delete 二次确认 + `--force` / `--json` + delete 无 `--force` → VALIDATION_ERROR / `--text` 与 `--text-file` 互斥 / extract 摘要与 `--json`。**v1.1 移除** restore 子命令用例
 
-### 覆盖率目标
+### 跨模块测试改写面（§8.2 对应）
 
-- F10 模块行覆盖率 **≥ 80%**（DTO 验证 100%、合并策略全分支，同 F9）
-- 全仓覆盖率 **≥ 60%**（0.2.0 DoD，ADR-019）
-- CI 门禁：ruff + mypy + pytest 全绿（ADR-017/018）
+| 测试文件 | 改写内容 |
+|---------|---------|
+| test_character_{models,repo,service,extraction,api}.py / test_cli_character.py | 软删/恢复用例 → 真删；partial unique → 全唯一；提取软删同名分支移除 |
+| test_outline_{models,repo,service,generation,api}.py / test_cli_outline.py | 同上（大纲/情节点/弧线三实体） |
+| test_timeline_{models,repo,service,extractor,check,api}.py / test_cli_timeline.py | soft_delete_event/restore_event → delete_event |
+| test_foreshadowing_{models,repo,service,extractor,api}.py / test_cli_foreshadowing.py | soft_delete/restore → delete |
+| test_world_*.py / test_cli_world.py | 见上（F10 本体） |
+| test_audit_{models,repo,service}.py | 软删集合/软删引用 warning 用例 → 悬空 error |
+| test_map_*.py / test_session_*.py / test_project_*.py | **不改**（F35 已真删 / F24 归档 / F1 回收站保留） |
+
+### 覆盖率目标（ADR-027）
+
+- 变更模块行覆盖率 **≥ 98.5%**，分支覆盖率 **≥ 95.0%**（ADR-027 门禁）
+- CI 门禁：ruff + mypy + pytest 全绿；单测试文件 ≤ 900 行护栏
 
 ---
 
@@ -689,47 +755,42 @@ CLI 测试: world 组（Mock WorldService）                ~16 cases
 
 | 项 | 归属/原因 |
 |----|----------|
-| 增量提取 / 批量章节提取 / 全书扫描 / 定时提取 | **F14 统一提取服务**（#44）——F10 只做单次单文本基础提取 |
-| 指代消解（「这个世界」「法则」等归并到具体条目） | F14（依赖全文索引/上下文） |
-| 提取预览（dry-run，先看后落库） | F14 或 0.2.x 增强；MVP 以结果报告（created/updated）代替 |
-| 受控类别词表（枚举/自定义类别库） | F14 定义（F10 用自由文本 ≤50 字符 + 建议值清单，同 F9 relation_type 处理） |
-| 条目间关系/引用图谱（WorldRelation 表） | **Phase 2+**（F14 后按需引入；MVP 用 content 自由文本引用，决策见 §2.3/§12） |
-| 类别层级树（category 父子关系/继承） | Phase 2+（F16 一致性审计可能需要「规则→设定」溯源） |
-| 规则/约束冲突检测（条目间矛盾） | F16 一致性审计（Phase 2） |
-| F6 `world_setting` 数据源真实实现（替换空实现） | 集成点，见 §11 与待澄清 Q1 |
-| 世界观版本历史 / 条目变更审计日志 | F15 审计服务（Issue 待创建） |
-| 写作时世界观一致性检查 | F16 一致性审计（Phase 2） |
-| 条目内容全文检索 | F22 搜索服务（Phase 3） |
+| **F1 项目软删（回收站模式）** | **保留不改**（v1.1 明确排除）——项目是顶层容器，回收站防误操作是 PRD v2.1 明确设计，与「普通实体」本质不同 |
+| **F24 会话归档语义** | **保留不改**（v1.1 明确排除）——会话是唯一保留「归档」语义的实体（可直删/可归档/归档可取消归档/归档可直删），拍板明确 |
+| F16 风格软删 | 无软删实体（文本分析型模块），无变更 |
+| 增量提取 / 批量章节提取 / 全书扫描 | F14 统一提取服务 |
+| 指代消解 | F14 |
+| 提取预览（dry-run） | F14 或 0.2.x 增强 |
+| 受控类别词表 | F14 |
+| 条目间关系/引用图谱（WorldRelation 表） | Phase 2+ |
+| 类别层级树 | Phase 2+ |
+| 规则/约束冲突检测 | F16 一致性审计 |
+| F6 `world_setting` 数据源真实实现 | 集成点 |
+| 世界观版本历史 / 变更审计日志 | F15 审计服务 |
+| 条目内容全文检索 | F22 搜索服务 |
 | 跨项目世界观共享/引用/合并 | Phase 4 云端 |
-| 世界观可视化 / 导出 | F18 Web UI（0.3.0）/ F21 导出服务（0.6.0） |
+| 世界观可视化 / 导出 | F18 Web UI / F21 导出服务 |
 
 ---
 
 ## 11. 依赖关系
 
-与 F1 §11 / F2 §11 / F9 §11 已声明依赖保持一致（F1 被依赖列表含 F6/F7，F2 被依赖列表含 F6/F7，F9 在其上追加；F10 同构）：
-
 ```text
 F10 依赖:
-  F1 (project_service) ✅ — 项目存在性校验（404）；project.config.model 作为提取默认模型
-  F5 (llm_service)     ✅ — LLMClientProtocol.chat + PromptTemplateProtocol（world_extract 模板，
-                             ADR-014/015 隔离：domain/ 零 LangChain import，CI 强制检查）
-  F2 (chapter_service) — 可选：CLI extract --text-file 读取章节内容时不做 F2 校验（直接文本输入），
-                          不产生硬依赖
+  F1 (project_service) ✅ — 项目存在性校验；project.config.model 默认模型
+  F5 (llm_service)     ✅ — LLMClientProtocol + PromptTemplateProtocol
+  F2 (chapter_service) — 可选（extract --text-file 不做 F2 校验）
 
-F10 被依赖:
-  F6 (context_service) ✅ — world_setting 数据源（compressible 层，见 F6 spec §3.2）：
-                            F6 已留 ContextSourceProtocol 空实现 WorldSettingSource
-                            （infrastructure/context/sources.py，注释为 ADR-019 前旧编号
-                            「F9 世界设定数据源」），0.2.0 替换为真实实现（基于 F10 Repository
-                            查询世界观条目）。实现归属待澄清（Q1，同 F9 Q1）
-  F7 (CLI)             ✅ — world 命令组并入 F7 命令树（cli/app.py 注册）
-  F14 (统一提取)        ⏳ — (#44) 复用 F10 的合并/落库能力与唯一键约定
-  F15 (审计)            ⏳ — (Issue 待创建) 世界观条目变更作为审计数据源
-  F20 (MCP)             ⏳ — (Phase 3) manage_world 工具基于本模块 API
+F10 被依赖（v1.1 删除语义变更的下游）:
+  F6 (context_service) ✅ — world_setting 数据源
+  F7 (CLI)             ✅ — world 命令组
+  F9/F11/F12/F13       ✅ — 同族真删统一（§8.2 联动）
+  F14 (统一提取)        ✅ — 提取合并的软删同名分支随 F10/F9/F11/F12/F13 真删同步移除
+  F15 (审计)            ✅ — 软删集合查询/软删引用 warning 随真删移除（§8.2）
+  F20 (MCP)             ⏳ — manage_world 工具
 ```
 
-> ⚠️ **编号口径说明**: F6 spec §10 与 `infrastructure/context/sources.py` 中 WorldSettingSource 注释「F9 世界设定数据源」为 ADR-019 之前的旧编号（旧口径 F8=角色/F9=世界观）；按 [ADR-019](../../adr/ADR-019.md) 现行口径 **F9 = 角色管理**、**F10 = 世界观**、F14 = 统一提取。本 spec 及后续 F 模块一律以 ADR-019 为准（与 F9 spec §11 同一声明）。
+> **v1.1 变更**：F14 的「软删同名 → 新建 + warning」分支依赖各模块 `is_deleted` 语义，真删后该分支移除；F15 的软删集合（`audit_repo.list_deleted`）依赖 `is_deleted=1` 数据，真删后移除，审计软删引用 warning 退化为悬空 error。
 
 ---
 
@@ -737,21 +798,14 @@ F10 被依赖:
 
 | 决策 | 方案 | 理由 |
 |------|------|------|
-| 分类建模 | `category` 为 WorldSetting 字段（自由文本 ≤50 字符，空串=未分类），**不建独立类别/分组表** | PRD「层级设定（规则/设定/约束）」是条目类别属性而非容器实体；类别无独立生命周期（描述/排序/成员数），独立表徒增 CRUD 且与 AI 提取「条目+类别一并落库」的流程不匹配；需要时从字段迁移到表是低成本演进 |
-| 条目关联 | **MVP 不建 WorldRelation 表**；「规则A 约束 设定B」用 content 自由文本表达 | PRD P1-02 未要求条目间关系图谱；世界观条目间引用是增强语义而非创作核心结构（与 F9 角色关系不同）；避免过度设计（P5 YAGNI），F14 后按需对照 F9 §2.3/§6.1 引入 |
-| 同名语义 | 「项目内活动条目 name 唯一」= 同一条目 | 这是 AI 提取合并的锚点（§5.4），也防止手误重复建档 |
-| 唯一约束实现 | SQLite partial unique index（`WHERE is_deleted = 0`） | 软删除后再创建同名条目合法；比「服务层检查 + 全表唯一」更稳（DB 兜底） |
-| 合并策略 | 非空字段覆盖；不隐式恢复软删除档案 | 确定性、幂等、可重跑；隐式恢复会带来「意外复活」的不可预期行为 |
-| 提取重试 | 解析失败修复式重试 ≤ 2 次（F3 模式），合并阶段不重试 | 提取无部分可用输出，失败显式报错；合并重试会导致重复写入 |
-| 提取温度 | 固定 0.2 低温 | 结构化 JSON 输出稳定性优先（F3/F9 先例） |
-| 提取模板 | `world_extract.yaml` 走 F5 PromptManager | ADR-014/015：模板与代码分离、domain/ 零 LangChain |
-| 提取管线 | **完全复用 F9 §5 骨架**（对照 `_character_extractor.py` 实现） | F9 spec 明示「F10 实施时直接对照 F9 §5 与对应文件结构，不应重新发明」；仅替换实体与模板名 |
-| 端点布局 | 创建/列表/类别汇总嵌套项目路径，详情扁平（同 F2/F9） | 与 F2 §3/F9 §3 端点风格一致，OpenAPI 分组清晰 |
-| extract 端点 | `POST /api/v1/world-settings/extract`（动作型，返回 200） | 与 F3 writing / F9 characters 动作型端点一致；单次同步调用，不做任务队列（YAGNI） |
-| 类别汇总端点 | `GET /world-settings/categories`（只读聚合） | 「层级设定」管理的最小可用视图（各类别条目数一目了然）；单条聚合查询，成本极低 |
-| CLI 布局 | `inkflow world` 顶级组（无子组） | 条目是顶级实体；F9 character 的 group 子组因分组是子实体，F10 无子实体故不嵌套 |
-| 文本输入 | `--text` / `--text-file` 双通道 | Windows 命令行参数 8191 字符限制，章节文本需文件通道 |
-| 提取事务 | 合并单 session 事务，失败全回滚 | 无部分落库；合并失败不会留下半套条目 |
+| 删除语义 | **普通实体（F9/F10/F11/F12/F13）软删 → 真删**（v1.1） | 2026-08-09 世界观三连拍板「删除语义收敛：会话唯一保留归档，其他功能删除 = 确认后真删，restore 无使用情景」；Q1=A 全族统一 |
+| F1 项目回收站保留 | **不改**（v1.1） | 项目是顶层容器，删除级联海量数据，回收站防误操作是 PRD 明确设计；issue 影响面未列 F1（Q2=A） |
+| F24 会话归档保留 | **不改**（v1.1） | 会话是唯一归档语义实体，拍板明确 |
+| is_deleted 列处置 | **移除列 + 存量软删记录物理删除**（v1.1） | 真删语义下列无意义；保留死列留下不可见死数据；Q3=A（最彻底） |
+| partial unique → 全唯一 | `(project_id, parent_id, name)` 全唯一索引（v1.1） | 真删后无软删记录，重建同名天然合法；partial 的 `WHERE is_deleted=0` 失去意义 |
+| 合并策略 | 非空字段覆盖；移除「软删同名 → 新建 + warning」分支 | 真删后不存在软删档案，分支无意义 |
+| 树级删除语义 | cascade/reparent 保留；force 软删路径移除 | F35 树形结构仍需要级联真删/改挂；软删/硬删切换（force）真删后无意义 |
+| 分类建模 / 条目关联 / 提取重试 / 温度 / 模板 / 端点布局 | 沿用 v1.0 决策 | 删除语义变更不影响这些决策 |
 
 ---
 
@@ -759,26 +813,45 @@ F10 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | 领域模型 + DTO 验证（含 partial unique 语义、提取 DTO schema） | `pytest tests/unit/test_world_models.py -v` 全绿 |
-| M2 | 仓储层全部方法（条目 CRUD + 类别汇总 + 唯一约束） | `pytest tests/unit/test_world_repo.py -v` 全绿 |
-| M3 | 服务层 CRUD + 业务校验（同名冲突等） | `pytest tests/unit/test_world_service.py -v` 全绿 |
-| M4 | AI 提取管线（解析/重试/合并策略/幂等性，Mock LLM） | `pytest tests/unit/test_world_extraction.py -v` 全绿 |
-| M5 | API 8 端点 + 错误路径全绿 | `pytest tests/unit/test_world_api.py -v` 全绿 |
-| M6 | CLI world 组（信封/退出码/确认交互/双文本通道） | `pytest tests/test_cli_world.py -v` 全绿 |
-| M7 | 真实 LLM 联调：对一章正文执行 extract 成功落库 | 手工验证（配置任一 Provider Key，`inkflow world extract`） |
-| M8 | 全量回归 + 覆盖率 + lint/type | `pytest -v` 全绿；F10 模块行覆盖 ≥ 80%、全仓 ≥ 60%（0.2.0 DoD）；ruff + mypy 通过（CI 门禁 ADR-017） |
-| M9 | domain/ 零 LangChain import | CI 强制检查通过（沿用 F5/F6/F9 约束） |
+| M1 | F10 spec v1.1 合入 main（删除语义 + 跨模块 MODIFY 清单 + 影响面 7 项结论） | spec v1.1 commit 合入 |
+| M2 | RED 批全 FAIL 有实证（真删语义 / partial unique 变更 / F14 合并 / F15 审计 / restore 移除契约） | 测试输出存档，批全 FAIL |
+| M3 | 后端测试全绿（本地运行输出实证） | `pytest -v` 全绿 |
+| M4 | 真删语义生效（DELETE 后实体不可 restore）+ restore 端点/命令/方法移除 | 定向测试 + 手工验证 |
+| M5 | partial unique 语义变更正确（真删后同名重建） | 仓储测试 + 迁移函数验证 |
+| M6 | F14 提取合并 / F15 审计适配（无软删排除逻辑残留） | 提取/审计测试全绿 + grep 无 `is_deleted` 残留（F1/F24 除外） |
+| M7 | GUI 删除确认框对齐（真删不可恢复提示）+ restore 入口处理 | GUI 删除确认框文案对齐（GUI 本无 restore 入口，仅确认文案） |
+| M8 | 覆盖率门禁（ADR-027 98.5/95.0） | coverage.xml 对照 |
+| M9 | PR 合入 + CI 全绿 | statusCheckRollup 对照 |
+| M10 | issue #211 关闭；worktree 清理 | issue closed |
 
 ---
 
-## 待澄清问题（≤ 3 个，评审时确认）
+## 14. 影响面评估结论（对应 issue #211 影响面 1-7）
 
-| # | 问题 | 影响 | 建议 |
+| # | 影响面 | 评估结论 | 落地 |
+|---|--------|---------|------|
+| 1 | F10 world_settings | `is_deleted` 列移除；DELETE 默认软删 → 真删（force 软删路径移除）；restore 端点/方法/命令移除 | §2/§3/§4/§8 |
+| 2 | partial unique 索引 | 7 个 `(…, name) WHERE is_deleted=0` partial unique → 全唯一（F9×3、F10×1、F11×2、F13×1；F12 无 unique） | §2.4/§8.2/§8.3 |
+| 3 | F14 提取合并 | `get_by_name` 软删排除逻辑（`~is_deleted`）移除；同名合并锚点的「软删同名 → 新建 + warning」分支移除 | §5.4/§8.2 |
+| 4 | F15 审计 | 软删引用检查规则（`audit_repo.list_deleted` 数据源）移除；R-C1/R-C2/R-F1 软删 warning → 悬空 error；audit_repo 整文件删除 | §8.2 |
+| 5 | F9-F13/F16 同族 | F9/F11/F12/F13 软删 → 真删（与 F10 同族）；**F16 无软删实体，无变更** | §8.2 |
+| 6 | GUI | 删除确认框已统一（`ConfirmDialog`，F43）；**GUI 本无 restore 入口**（restore 仅后端 API + CLI），仅需确认文案对齐「真删不可恢复」 | §7 |
+| 7 | 测试面 | 688 处软删匹配、~45 测试文件改写（F9-F15 + world）；F1/F24/session/map 测试不动 | §9 |
+
+> **明确排除（拍板）**：F1 项目回收站、F24 会话归档——保留软删语义，不在本次变更范围。
+
+---
+
+## 待澄清问题（已拍板 ✅，2026-08-13）
+
+| # | 问题 | 拍板 | 结论 |
 |---|------|------|------|
-| Q1 | F6 `WorldSettingSource` 空实现（`infrastructure/context/sources.py`）的替换是否纳入 F10 里程碑？该文件属 F6 模块，但真实实现依赖 F10 Repository | 影响 F10 收尾范围与 F6 文件修改归属 | 建议：F10 只交付实体/查询能力；替换作为 0.2.0 内 F6 联调任务（写 F10 plan 时单独列出）——**同 F9 Q1 决策** |
-| Q2 | 分类/关联语义确认：MVP 按「category 自由文本字段 + 不建条目关联表」实现（本 spec 已按此设计）；是否需要独立类别表（类别描述/排序/管理）或条目间关联表（WorldRelation）？ | 影响数据模型与 API（独立表需新增 CRUD 端点） | 建议：保持字段方案，独立类别表/关联表列入 Phase 2+（F14 后按需）——**同 F9 Q2 决策 A（MVP 最小集）** |
-| Q3 | 条目软删除后再次提取到同名条目：当前设计为「新建新档案 + warning」。是否期望「自动恢复旧档案并合并」？ | 影响合并策略与数据生命周期 | 建议：保持新建（不隐式恢复），旧档案由用户显式 restore——**同 F9 Q3 决策 A** |
+| Q1 | 统一范围：F9/F11/F12/F13 是否一并真删？ | ✅ A（全部统一） | F9/F10/F11/F12/F13 一起真删，F14/F15 连锁适配（§8.2） |
+| Q2 | F1 项目是否纳入？ | ✅ A（不改 F1） | 项目保留回收站（软删 + restore），PRD 防误操作设计（§10/§12） |
+| Q3 | is_deleted 列处置 + 存量软删数据 | ✅ A（移除列 + 清存量） | 移除 is_deleted 列 + 存量软删记录物理删除（§8.3） |
+
+> **补充拍板（用户 2026-08-13）**：F24 会话归档语义确认——会话可直删 / 可归档 / 归档可取消归档 / 归档可直删，**保持不变**（§10）。
 
 ---
 
-*本文档为 F10 功能规格（What），实施步骤（How）见后续 `specs/f10-world-service/plan.md`。所有里程碑验收以本节 M1-M9 为准。*
+*本文档为 F10 功能规格 v1.1（What），实施步骤（How）见后续 `specs/f10-world-service/plan.md`。所有里程碑验收以 §13 M1-M10 为准。*

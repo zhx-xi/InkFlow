@@ -1,12 +1,11 @@
 """SQLiteTimelineRepository 集成测试 — in-memory SQLite（F12 仓储层 RED→GREEN）.
 
 覆盖 TimelineRepositoryProtocol 全部方法（spec §8.1 / §9 仓储测试）:
-- 事件 CRUD 往返（add/get/list/list_all/update/soft_delete/restore/hard_delete）
+- 事件 CRUD 往返（add/get/list/list_all/update/hard_delete）
 - list 搜索（title icontains）/ 分页 / 各 sort_by 排序
   （narrative_position 默认升序；time_value 排序 NULLS LAST）
-- list_all 全量活动事件（软删除排除；narrative_position 重复时
-  created_at ASC 稳定排序）
-- next_position（空项目 → 1、追加 → max+1；软删不计入 max）
+- list_all 全量事件（narrative_position 重复时 created_at ASC 稳定排序）
+- next_position（空项目 → 1、追加 → max+1；真删不计入 max）
 - 无唯一约束: title / narrative_position / time_value 均可重复（spec §2.4）
 - 硬删除 FK 级联（项目物理删除 → 事件级联物理删除）
 
@@ -126,7 +125,6 @@ class TestTimelineRepository:
         assert saved.narrative_position == 3
         assert saved.timeline_flag == "flashback"
         assert saved.extra == {"参与角色": ["林尘"]}
-        assert saved.is_deleted is False
 
         # 持久化验证：直接查表
         row = await db_session.execute(
@@ -147,13 +145,13 @@ class TestTimelineRepository:
         repo = SQLiteTimelineRepository(db_session)
         assert await repo.get(99999) is None
 
-    async def test_list_returns_active_events_with_total(self, db_session, project):
-        """list 排除软删与其他项目，返回 (列表, 总数)."""
+    async def test_list_returns_events_with_total(self, db_session, project):
+        """list 返回 (列表, 总数)；真删事件不可见."""
         repo = SQLiteTimelineRepository(db_session)
         e1 = await repo.add(_event(project, "觉醒"))
         e2 = await repo.add(_event(project, "宗门大比"))
         e3 = await repo.add(_event(project, "古神禁地"))
-        await repo.soft_delete(e3.id.int)
+        await repo.hard_delete(e3.id.int)
 
         events, total = await repo.list(project.id)
         assert total == 2
@@ -240,14 +238,14 @@ class TestTimelineRepository:
         page3, _ = await repo.list(project.id, offset=99, limit=2)
         assert page3 == []
 
-    async def test_list_all_returns_active_events_sorted(self, db_session, project):
-        """list_all 全量活动事件；narrative_position 重复时 created_at ASC 稳定排序."""
+    async def test_list_all_returns_events_sorted(self, db_session, project):
+        """list_all 全量事件；narrative_position 重复时 created_at ASC 稳定排序."""
         repo = SQLiteTimelineRepository(db_session)
         late_first = await repo.add(_event(project, "位置1·后建", narrative_position=1))
         early = await repo.add(_event(project, "位置1·先建", narrative_position=1))
         pos2 = await repo.add(_event(project, "位置2", narrative_position=2))
-        gone = await repo.add(_event(project, "软删·位置0", narrative_position=0))
-        await repo.soft_delete(gone.id.int)
+        gone = await repo.add(_event(project, "已删·位置0", narrative_position=0))
+        await repo.hard_delete(gone.id.int)
 
         # created_at 由 DB 生成（插入序）；用直接 UPDATE 注入受控时间戳，
         # 使「同位置 → created_at ASC」排序可确定性断言
@@ -277,7 +275,7 @@ class TestTimelineRepository:
         assert await repo.next_position(project.id) == 1
 
     async def test_next_position_appends_after_max(self, db_session, project):
-        """next_position = 项目内活动 max+1；软删事件不计入 max；项目隔离."""
+        """next_position = 项目内事件 max+1；真删事件不计入 max；项目隔离."""
         repo = SQLiteTimelineRepository(db_session)
         await repo.add(_event(project, "事件A", narrative_position=5))
         assert await repo.next_position(project.id) == 6
@@ -286,9 +284,9 @@ class TestTimelineRepository:
         await repo.add(_event(project, "事件B", narrative_position=5))
         assert await repo.next_position(project.id) == 6
 
-        # 软删事件不计入 max
+        # 真删事件不计入 max
         high = await repo.add(_event(project, "事件C", narrative_position=100))
-        await repo.soft_delete(high.id.int)
+        await repo.hard_delete(high.id.int)
         assert await repo.next_position(project.id) == 6
 
         # 项目隔离
@@ -329,36 +327,6 @@ class TestTimelineRepository:
         with pytest.raises(ValueError):
             await repo.update(_event(project, "幽灵", id=uuid.UUID(int=99999)))
         await db_session.rollback()
-
-    async def test_soft_delete_then_get_returns_none(self, db_session, project):
-        """软删除后 get/list/list_all 均不可见；重复软删返回 False."""
-        repo = SQLiteTimelineRepository(db_session)
-        e = await repo.add(_event(project, "觉醒"))
-
-        assert await repo.soft_delete(e.id.int) is True
-        assert await repo.get(e.id.int) is None
-        events, total = await repo.list(project.id)
-        assert events == [] and total == 0
-        assert await repo.list_all(project.id) == []
-
-        # 已删除/不存在 → False
-        assert await repo.soft_delete(e.id.int) is False
-        assert await repo.soft_delete(99999) is False
-
-    async def test_restore_event(self, db_session, project):
-        """restore 恢复软删事件；恢复未删除/不存在的返回 None（重复操作无毒）."""
-        repo = SQLiteTimelineRepository(db_session)
-        e = await repo.add(_event(project, "觉醒"))
-        await repo.soft_delete(e.id.int)
-
-        restored = await repo.restore(e.id.int)
-        assert restored is not None
-        assert restored.id == e.id
-        assert restored.is_deleted is False
-        assert await repo.get(e.id.int) is not None
-
-        assert await repo.restore(e.id.int) is None
-        assert await repo.restore(99999) is None
 
     async def test_hard_delete_event(self, db_session, project):
         """hard_delete 物理删除事件行；重复删除返回 False."""
@@ -429,9 +397,9 @@ class TestTimelineRepository:
         assert got_manual is not None
         assert got_manual.source_chapter_id is None
 
-    async def test_list_by_chapter_filters_active_events_sorted(self, db_session, project):
-        """list_by_chapter 按章过滤活动事件；(narrative_position, created_at)
-        ASC 排序；软删不入、跨章互不干扰."""
+    async def test_list_by_chapter_filters_events_sorted(self, db_session, project):
+        """list_by_chapter 按章过滤事件；(narrative_position, created_at)
+        ASC 排序；真删不入、跨章互不干扰."""
         repo = SQLiteTimelineRepository(db_session)
         ch1 = ChapterORM(project_id=project.id, title="第一章")
         ch2 = ChapterORM(project_id=project.id, title="第二章")
@@ -452,9 +420,9 @@ class TestTimelineRepository:
             _event(project, "二章事件", source_chapter_id=c2, narrative_position=5)
         )
         gone = await repo.add(
-            _event(project, "一章·软删", source_chapter_id=c1, narrative_position=0)
+            _event(project, "一章·已删", source_chapter_id=c1, narrative_position=0)
         )
-        await repo.soft_delete(gone.id.int)
+        await repo.hard_delete(gone.id.int)
 
         # 注入受控 created_at，使「同位置 → created_at ASC」排序可确定性断言
         await db_session.execute(

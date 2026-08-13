@@ -235,7 +235,7 @@ def update_outline_cmd(
 
 
 # ---------------------------------------------------------------------------
-# delete  —  inkflow outline delete --id <uuid> [--force] [--permanent]
+# delete  —  inkflow outline delete --id <uuid> [--force]
 # ---------------------------------------------------------------------------
 
 
@@ -244,16 +244,14 @@ def delete_outline_cmd(
     ctx: typer.Context,
     outline_id: str = typer.Option(..., "--id", "-i", help="大纲 ID (UUID)"),
     force: bool = typer.Option(False, "--force", "-f", help="跳过确认"),
-    permanent: bool = typer.Option(False, "--permanent", "-p", help="硬删除（物理删除）"),
 ) -> None:
-    """删除大纲（默认软删除并级联其情节点；--permanent 物理删除）"""
+    """真删大纲（v1.1，不可恢复，情节点级联删除）"""
     cli_ctx: CliContext = ctx.obj
     oid = _parse_uuid(cli_ctx, outline_id, "大纲不存在")
     if not force:
         if cli_ctx.json_output:
             print_error(cli_ctx, "VALIDATION_ERROR", "删除需 --force 或交互确认")
-        label = "永久删除" if permanent else "删除"
-        if not typer.confirm(f"确定要{label}大纲 #{outline_id} 吗？"):
+        if not typer.confirm(f"确定要删除大纲 #{outline_id} 吗？"):
             typer.echo("已取消")
             raise typer.Exit()
 
@@ -261,44 +259,13 @@ def delete_outline_cmd(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
-            await client.delete(
-                f"/outlines/{oid}",
-                params={"force": "true" if permanent else "false"},
-            )
+            await client.delete(f"/outlines/{oid}")
 
     _run(cli_ctx, _impl)
-    label = "永久删除" if permanent else "已删除"
     if cli_ctx.json_output:
         print_result(cli_ctx, {"id": str(oid), "deleted": True})
     else:
-        typer.echo(f"✅ 大纲 #{outline_id} {label}")
-
-
-# ---------------------------------------------------------------------------
-# restore  —  inkflow outline restore --id <uuid>
-# ---------------------------------------------------------------------------
-
-
-@app.command("restore")
-def restore_outline_cmd(
-    ctx: typer.Context,
-    outline_id: str = typer.Option(..., "--id", "-i", help="大纲 ID (UUID)"),
-) -> None:
-    """恢复已删除的大纲（级联恢复其情节点）"""
-    cli_ctx: CliContext = ctx.obj
-    oid = _parse_uuid(cli_ctx, outline_id, "大纲不存在")
-
-    async def _impl() -> dict:
-        handle = await ensure_kernel()
-        client = InkFlowHTTPClient(handle)
-        async with client:
-            return await client.post(f"/outlines/{oid}/restore")
-
-    outline = _run(cli_ctx, _impl)
-    if cli_ctx.json_output:
-        print_result(cli_ctx, outline)
-    else:
-        typer.echo(f"✅ 大纲已恢复: [{outline['name']}]")
+        typer.echo(f"✅ 大纲 #{outline_id} 已删除")
 
 
 # ---------------------------------------------------------------------------

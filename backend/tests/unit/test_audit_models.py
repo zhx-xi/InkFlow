@@ -40,7 +40,7 @@ def make_finding(**overrides: Any) -> AuditFinding:
         "rule_id": RULE_ID,
         "dimension": AuditDimension.CHARACTER,
         "severity": AuditSeverity.ERROR,
-        "message": "关系 林晚→?? 的 to 端指向不存在的角色（悬空引用，请删除该关系或恢复目标角色）",
+        "message": "关系 林晚→?? 的 to 端指向不存在的角色（悬空引用，请删除该关系或修正引用）",
         "entity_type": "relation",
         "entity_id": EID,
         "entity_name": "林晚→??",

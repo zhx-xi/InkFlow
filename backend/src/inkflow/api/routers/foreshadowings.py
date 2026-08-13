@@ -1,9 +1,9 @@
-"""F13 伏笔管理 REST API — 8 个端点：伏笔 CRUD + restore/resolve/reopen 状态机动作。
+"""F13 伏笔管理 REST API — 7 个端点：伏笔 CRUD + resolve/reopen 状态机动作。
 
 端点风格沿用 F2/F9/F10/F11/F12（spec §3.1）：创建/列表嵌套项目路径
 （/projects/{project_id}/foreshadowings），详情/更新/删除/状态动作扁平
 （/foreshadowings/{foreshadowing_id}...）。`/foreshadowings` 下全部为
-静态路径段 + 固定动作段（restore/resolve/reopen），无动态段冲突，
+静态路径段 + 固定动作段（resolve/reopen），无动态段冲突，
 无需注册顺序注意。
 
 各端点通过 `Depends(get_db)` 注入数据库 session，再调用模块级
@@ -210,32 +210,14 @@ async def update_foreshadowing(
 @router.delete("/foreshadowings/{foreshadowing_id}", status_code=204)
 async def delete_foreshadowing(
     foreshadowing_id: str,
-    force: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
-    """删除伏笔（默认软删除，?force=true 硬删除，spec §3.1/§7）。"""
+    """删除伏笔（v1.1 默认真删，不可恢复，spec §3.1/§7）。"""
     fid = _parse_id(foreshadowing_id, detail="伏笔不存在")
     svc = _get_svc(db)
-    if force:
-        ok = await _run_service(svc.hard_delete(fid))
-    else:
-        ok = await _run_service(svc.soft_delete(fid))
+    ok = await _run_service(svc.delete(fid))
     if not ok:
         raise HTTPException(status_code=404, detail="伏笔不存在")
-
-
-@router.post("/foreshadowings/{foreshadowing_id}/restore")
-async def restore_foreshadowing(
-    foreshadowing_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """恢复软删除伏笔（原 status/resolved_at 原样保留，spec §2.4）。"""
-    fid = _parse_id(foreshadowing_id, detail="伏笔不存在")
-    svc = _get_svc(db)
-    foreshadowing = await _run_service(svc.restore(fid))
-    if foreshadowing is None:
-        raise HTTPException(status_code=404, detail="伏笔不存在")
-    return foreshadowing.model_dump(mode="json")
 
 
 @router.post("/foreshadowings/{foreshadowing_id}/resolve")

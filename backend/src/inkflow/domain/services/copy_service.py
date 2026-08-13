@@ -165,7 +165,6 @@ class WorldCopyService:
                 category=src.category,
                 content=src.content,
                 extra=src.extra,
-                is_deleted=False,
                 created_at=now,
                 updated_at=now,
             )

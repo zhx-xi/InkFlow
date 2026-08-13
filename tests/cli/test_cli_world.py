@@ -1,7 +1,7 @@
 """World CLI 命令测试 — Mock ensure_kernel + InkFlowHTTPClient（HTTP JSON 响应）。
 
 覆盖（依据 specs/f10-world-service/spec.md §4/§4.2）:
-- 各子命令成功路径与参数透传（create/list/categories/get/update/delete/restore/extract）
+- 各子命令成功路径与参数透传（create/list/categories/get/update/delete/extract）
 - 信封格式与退出码 0/1/2
 - delete 二次确认 + --force；--json + delete 无 --force → VALIDATION_ERROR
 - --text 与 --text-file 互斥 → 退出码 2
@@ -92,7 +92,6 @@ def _make_setting(**overrides) -> dict:
         category="设定",
         content="天地灵气重新复苏，修炼体系重现。",
         extra={},
-        is_deleted=False,
         created_at="2026-01-01T00:00:00",
         updated_at="2026-01-01T00:00:00",
     )
@@ -379,7 +378,7 @@ class TestWorldUpdate:
 
 class TestWorldDelete:
     def test_delete_force_json(self, cli_runner, fake_http_client):
-        """delete --force --json → 成功信封 + 软删除（force=False）."""
+        """delete --force --json → 成功信封 + 真删除."""
         sid = uuid.uuid4()
         fake_http_client.delete.return_value = None
         result = cli_runner.invoke(
@@ -391,18 +390,6 @@ class TestWorldDelete:
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"]["deleted"] is True
-        fake_http_client.delete.assert_awaited()
-
-    def test_delete_permanent_passes_force(self, cli_runner, fake_http_client):
-        """delete --permanent → HTTP 调用发生（force=True 透传在命令侧）."""
-        sid = uuid.uuid4()
-        fake_http_client.delete.return_value = None
-        result = cli_runner.invoke(
-            app,
-            ["delete", "--id", str(sid), "--force", "--permanent"],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 0
         fake_http_client.delete.assert_awaited()
 
     def test_delete_confirm_yes(self, cli_runner, fake_http_client):
@@ -451,34 +438,6 @@ class TestWorldDelete:
         result = cli_runner.invoke(
             app,
             ["delete", "--id", str(uuid.uuid4()), "--force"],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 1
-        data = json.loads(result.stdout)
-        assert data["ok"] is False
-        assert data["error"]["code"] == "NOT_FOUND"
-
-
-class TestWorldRestore:
-    def test_restore_json(self, cli_runner, fake_http_client):
-        """restore --json → 成功信封."""
-        fake_http_client.post.return_value = _make_setting(name="灵气复苏")
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(uuid.uuid4())],
-            obj=CliContext(json_output=True),
-        )
-        assert result.exit_code == 0
-        data = json.loads(result.stdout)
-        assert data["ok"] is True
-        assert data["data"]["name"] == "灵气复苏"
-
-    def test_restore_not_found(self, cli_runner, fake_http_client):
-        """条目不存在 → NOT_FOUND 错误信封 + 退出码 1."""
-        fake_http_client.post.side_effect = _http_error(404, "世界观条目不存在")
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(uuid.uuid4())],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1
@@ -676,7 +635,7 @@ class TestWorldErrorMapping:
 
 class TestWorldHumanOutput:
     """人类可读输出补全：无类别创建 / list 非空 / categories / get / update /
-    restore / extract 无警告。"""
+    extract 无警告。"""
 
     def test_create_human_no_category(self, cli_runner, fake_http_client):
         """create 人类模式无类别 → 提示不含类别括号."""
@@ -754,17 +713,6 @@ class TestWorldHumanOutput:
         )
         assert result.exit_code == 0
         assert "条目已更新: [灵气复苏·改]" in result.output
-
-    def test_restore_human(self, cli_runner, fake_http_client):
-        """restore 人类模式 → 成功提示."""
-        fake_http_client.post.return_value = _make_setting(name="灵气复苏")
-        result = cli_runner.invoke(
-            app,
-            ["restore", "--id", str(uuid.uuid4())],
-            obj=CliContext(json_output=False),
-        )
-        assert result.exit_code == 0
-        assert "条目已恢复: [灵气复苏]" in result.output
 
     def test_extract_human_no_warnings(self, cli_runner, fake_http_client):
         """extract 人类模式无警告 → 不输出警告提示行."""

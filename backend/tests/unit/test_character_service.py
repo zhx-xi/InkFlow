@@ -1,13 +1,13 @@
 """F9 角色服务单元测试 — Mock Repository（F9 M3 RED→GREEN）.
 
 覆盖 spec §9 服务测试 + §7 边界表:
-- 创建/更新/软删/恢复/硬删全流程（Mock Repository）
+- 创建/更新/真删全流程（Mock Repository）
 - 同名活动角色创建 → CharacterNameConflictError（422 语义）
 - group_id 跨项目 → GroupNotInProjectError
 - 关系自环 / 重复 / 跨项目 → SelfRelationError / RelationConflictError / CrossProjectRelationError
 - 角色不存在各操作 → None（router 层转 404；create_relation 抛 CharacterNotFoundError）
-- 级联软删与恢复的编排（repo.soft_delete_relations_of / restore_relations_of）
-- 分组删除 → 成员 group_id 置 NULL 的编排（委托 soft_delete_group / hard_delete_group）
+- 删除编排（委托 hard_delete / hard_delete_group / hard_delete_relation，关系由 DB FK CASCADE）
+- 分组删除 → 成员 group_id 置 NULL 的编排（委托 hard_delete_group）
 - extract 入口：校验项目存在 → 调用 CharacterExtractor → 返回 CharacterExtractionResult
 
 依据: specs/f9-character-service/spec.md §7 + §9 测试策略。
@@ -117,7 +117,6 @@ def mock_repo() -> MagicMock:
     repo.add = AsyncMock(side_effect=lambda c: c)
     repo.update = AsyncMock(side_effect=lambda c: c)
     repo.soft_delete = AsyncMock(return_value=True)
-    repo.restore = AsyncMock(return_value=None)
     repo.hard_delete = AsyncMock(return_value=True)
     repo.add_group = AsyncMock(side_effect=lambda g: g)
     repo.get_group = AsyncMock(return_value=None)
@@ -133,7 +132,6 @@ def mock_repo() -> MagicMock:
     repo.soft_delete_relation = AsyncMock(return_value=True)
     repo.hard_delete_relation = AsyncMock(return_value=True)
     repo.soft_delete_relations_of = AsyncMock(return_value=None)
-    repo.restore_relations_of = AsyncMock(return_value=None)
     return repo
 
 
@@ -168,10 +166,10 @@ def service(
 
 
 class TestCharacterCrud:
-    """角色 CRUD — 创建/查询/更新/软删/恢复/硬删。"""
+    """角色 CRUD — 创建/查询/更新/真删。"""
 
     async def test_create_character_success_persists(self, service, mock_repo) -> None:
-        """创建角色 → repo.add 收到完整实体（UUID 项目归属、空分组、默认软删标记）。"""
+        """创建角色 → repo.add 收到完整实体（UUID 项目归属、空分组）。"""
         created = await service.create_character(
             project_id=PID, name="林尘", personality="坚韧", background="山村少年", goals="变强"
         )
@@ -185,7 +183,6 @@ class TestCharacterCrud:
         assert added.background == "山村少年"
         assert added.goals == "变强"
         assert added.group_id is None
-        assert added.is_deleted is False
 
     async def test_create_character_duplicate_active_name_raises_conflict(
         self, service, mock_repo
@@ -312,42 +309,20 @@ class TestCharacterCrud:
             await service.update_character(existing.id, CharacterUpdate(group_id=uuid.uuid4()))
         mock_repo.update.assert_not_awaited()
 
-    async def test_delete_character_soft_cascades_relations(self, service, mock_repo) -> None:
-        """软删除编排：先级联软删双向关系，再软删角色；不存在 → False。"""
+    async def test_delete_character_hard_deletes(self, service, mock_repo) -> None:
+        """真删角色（v1.1）：委托 repo.hard_delete（关系由 DB FK CASCADE）；不存在 → False."""
         char = _char(name="林尘")
-        mock_repo.soft_delete = AsyncMock(return_value=True)
         result = await service.delete_character(char.id)
-        assert result is True
-        mock_repo.soft_delete_relations_of.assert_awaited_once_with(char.id.int)
-        mock_repo.soft_delete.assert_awaited_once_with(char.id.int)
-
-        mock_repo.soft_delete = AsyncMock(return_value=False)
-        assert await service.delete_character(uuid.uuid4()) is False
-
-    async def test_delete_character_force_hard_deletes(self, service, mock_repo) -> None:
-        """force=True → 物理删除，不触发软删级联。"""
-        char = _char(name="林尘")
-        result = await service.delete_character(char.id, force=True)
         assert result is True
         mock_repo.hard_delete.assert_awaited_once_with(char.id.int)
         mock_repo.soft_delete.assert_not_awaited()
-        mock_repo.soft_delete_relations_of.assert_not_awaited()
 
-    async def test_restore_character_cascades_relations(self, service, mock_repo) -> None:
-        """恢复编排：恢复角色后级联恢复其双向关系；不存在 → None。"""
-        char = _char(name="林尘")
-        mock_repo.restore = AsyncMock(return_value=char)
-        result = await service.restore_character(char.id)
-        assert result == char
-        mock_repo.restore_relations_of.assert_awaited_once_with(char.id.int)
-
-        mock_repo.restore = AsyncMock(return_value=None)
-        assert await service.restore_character(uuid.uuid4()) is None
-        assert mock_repo.restore_relations_of.await_count == 1  # 未再触发级联
+        mock_repo.hard_delete = AsyncMock(return_value=False)
+        assert await service.delete_character(uuid.uuid4()) is False
 
 
 class TestRelationCrud:
-    """角色关系 — 创建（自环/跨项目/重复校验）/双向查询/更新/软删。"""
+    """角色关系 — 创建（自环/跨项目/重复校验）/双向查询/更新/真删。"""
 
     async def test_create_relation_success(self, service, mock_repo) -> None:
         """创建关系 → repo.add_relation 收到完整边（from/to/type/description，同项目）。"""
@@ -457,17 +432,18 @@ class TestRelationCrud:
         mock_repo.get_relation = AsyncMock(return_value=rel)
         assert await service.update_relation(other_char.id, rel.id, description="x") is None
 
-    async def test_delete_relation_soft_deletes(self, service, mock_repo) -> None:
-        """软删关系：委托 repo.soft_delete_relation；关系缺失/不属于该角色 → False。"""
+    async def test_delete_relation_hard_deletes(self, service, mock_repo) -> None:
+        """真删关系（v1.1）：委托 repo.hard_delete_relation；关系缺失/不属于该角色 → False。"""
         from_char = _char(name="林尘")
         to_char = _char(name="苏瑶")
         rel = _rel(from_char, to_char, relation_type="同伴")
         mock_repo.get_relation = AsyncMock(return_value=rel)
-        mock_repo.soft_delete_relation = AsyncMock(return_value=True)
+        mock_repo.hard_delete_relation = AsyncMock(return_value=True)
 
         result = await service.delete_relation(from_char.id, rel.id)
         assert result is True
-        mock_repo.soft_delete_relation.assert_awaited_once_with(rel.id.int)
+        mock_repo.hard_delete_relation.assert_awaited_once_with(rel.id.int)
+        mock_repo.soft_delete_relation.assert_not_awaited()
 
         mock_repo.get_relation = AsyncMock(return_value=None)
         assert await service.delete_relation(from_char.id, uuid.uuid4()) is False
@@ -488,7 +464,6 @@ class TestGroupCrud:
         assert added.project_id == PID
         assert added.description == "主角及其伙伴"
         assert added.sort_order == 1
-        assert added.is_deleted is False
 
     async def test_create_group_duplicate_name_raises(self, service, mock_repo) -> None:
         """项目内同名活动分组 → GroupNameConflictError（422 语义）。"""
@@ -537,19 +512,15 @@ class TestGroupCrud:
         mock_repo.get_group = AsyncMock(return_value=None)
         assert await service.update_group(uuid.uuid4(), name="x") is None
 
-    async def test_delete_group_soft_delete_detaches_members(self, service, mock_repo) -> None:
-        """分组删除编排：默认软删（repo 将成员 group_id 置 NULL）；force → 物理删除。"""
+    async def test_delete_group_hard_deletes(self, service, mock_repo) -> None:
+        """分组删除编排（v1.1 真删）：委托 repo.hard_delete_group；不存在 → False。"""
         group = _group(name="主角团")
         result = await service.delete_group(group.id)
         assert result is True
-        mock_repo.soft_delete_group.assert_awaited_once_with(group.id.int)
-        mock_repo.hard_delete_group.assert_not_awaited()
-
-        result = await service.delete_group(group.id, force=True)
-        assert result is True
         mock_repo.hard_delete_group.assert_awaited_once_with(group.id.int)
+        mock_repo.soft_delete_group.assert_not_awaited()
 
-        mock_repo.soft_delete_group = AsyncMock(return_value=False)
+        mock_repo.hard_delete_group = AsyncMock(return_value=False)
         assert await service.delete_group(uuid.uuid4()) is False
 
 

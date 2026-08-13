@@ -1,7 +1,7 @@
 """F9 角色提取管线单元测试 — Mock LLM + Mock PromptManager + Mock Repo.
 
 覆盖 spec §9「提取（Mock LLM，遵循 ADR-015）」全部场景:
-合法 JSON 全量落库 / 同名更新与幂等性 / 软删同名新建 / 非法条目跳过 /
+合法 JSON 全量落库 / 同名更新与幂等性 / 非法条目跳过 /
 不可解析关系引用 / 围栏输出 / 修复重试与异常透传 / 空角色列表 /
 模板与模型参数断言。
 
@@ -52,7 +52,6 @@ def _char(
     personality: str = "",
     background: str = "",
     goals: str = "",
-    is_deleted: bool = False,
 ) -> Character:
     """构造测试用角色实体（默认时间戳固定，便于断言）。"""
     return Character(
@@ -62,7 +61,6 @@ def _char(
         personality=personality,
         background=background,
         goals=goals,
-        is_deleted=is_deleted,
         created_at=TS,
         updated_at=TS,
     )
@@ -215,7 +213,7 @@ class TestCharacterExtractor:
         assert mock_repo.add.await_count == 0
 
     async def test_update_preserves_unrelated_fields(self, extractor, mock_llm, mock_repo) -> None:
-        """更新时保留 group_id / extra / created_at / is_deleted 等无关字段。"""
+        """更新时保留 group_id / extra / created_at 等无关字段。"""
         group_id = uuid.uuid4()
         existing = Character(
             id=uuid.UUID("9b1c2d3e-0000-4000-8000-000000000001"),
@@ -240,7 +238,6 @@ class TestCharacterExtractor:
         assert merged.group_id == group_id
         assert merged.extra == {"tags": ["主角"]}
         assert merged.created_at == TS
-        assert merged.is_deleted is False
 
     async def test_idempotent_second_extraction_produces_empty(
         self, extractor, mock_llm, mock_repo
@@ -280,24 +277,6 @@ class TestCharacterExtractor:
         assert mock_repo.add_relation.await_count == 1
         assert mock_repo.update.await_count == 0
         assert mock_repo.update_relation.await_count == 0
-
-    async def test_soft_deleted_same_name_creates_new_with_warning(
-        self, extractor, mock_llm, mock_repo
-    ) -> None:
-        """软删除同名 → 新建角色 + warning（不隐式恢复旧档案）。"""
-        deleted = _char(name="林尘", personality="旧档案", is_deleted=True)
-        mock_repo.list = AsyncMock(return_value=([deleted], 1))
-        mock_llm.chat.return_value = _ok_response(
-            _payload(chars=[{"name": "林尘", "personality": "坚韧"}])
-        )
-        result = await extractor.extract(
-            CharacterExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
-        )
-        assert len(result.created) == 1
-        assert result.created[0].name == "林尘"
-        assert result.created[0].is_deleted is False
-        assert mock_repo.add.await_count == 1
-        assert any("已删除" in w for w in result.warnings)
 
     async def test_invalid_entries_skipped_with_warning(
         self, extractor, mock_llm, mock_repo

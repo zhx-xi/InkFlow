@@ -2,7 +2,7 @@
 
 覆盖 spec §9「生成（Mock LLM，遵循 ADR-015）」全部场景:
 合法 JSON 全量落库（position 1..N）/ 大纲名回退与缺省 / 弧线按名复用 /
-弧线引用无法解析 / 非法条目跳过 / 同名冲突 422 / 软删同名新建 /
+弧线引用无法解析 / 非法条目跳过 / 同名冲突 422 /
 围栏输出提取 / 修复重试与异常透传 / 空情节点 warning / save=false 零落库 /
 模板与模型参数断言 / num_chapters 条件段解析（真实 PromptManager）。
 
@@ -336,21 +336,6 @@ class TestOutlineGenerator:
         assert mock_repo.add.await_count == 0
         assert mock_repo.add_arc.await_count == 0
         assert mock_repo.add_point.await_count == 0
-
-    async def test_soft_deleted_same_name_outline_creates_new(
-        self, generator, mock_llm, mock_repo
-    ) -> None:
-        """软删除同名大纲（get_by_name 排除）→ 视为不存在 → 新建（不隐式恢复）。"""
-        mock_llm.chat.return_value = _ok_response(_payload())
-        result = await generator.generate(
-            OutlineGenerateRequest(project_id=PID),
-            project_info="项目名：雾都谜案",
-            default_model=DEFAULT_MODEL,
-        )
-        assert mock_repo.add.await_count == 1
-        assert result.outline is not None
-        assert result.outline.name == "雾都谜案大纲"
-        assert result.outline.is_deleted is False
 
     async def test_fenced_output_extracts_json_fragment(self, generator, mock_llm) -> None:
         """输出带围栏/前后缀文字 → _extract_json_fragment 提取成功。"""

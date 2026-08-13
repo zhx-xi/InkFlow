@@ -252,7 +252,7 @@ def update_character(
 
 
 # ---------------------------------------------------------------------------
-# delete  —  inkflow character delete --id <uuid> [--force] [--permanent]
+# delete  —  inkflow character delete --id <uuid> [--force]
 # ---------------------------------------------------------------------------
 
 
@@ -261,16 +261,14 @@ def delete_character(
     ctx: typer.Context,
     character_id: str = typer.Option(..., "--id", "-i", help="角色 ID (UUID)"),
     force: bool = typer.Option(False, "--force", "-f", help="跳过确认"),
-    permanent: bool = typer.Option(False, "--permanent", "-p", help="硬删除（物理删除）"),
 ) -> None:
-    """删除角色（默认软删除；--permanent 物理删除）"""
+    """真删角色（v1.1，不可恢复）"""
     cli_ctx: CliContext = ctx.obj
     cid = _parse_uuid(cli_ctx, character_id, "角色不存在")
     if not force:
         if cli_ctx.json_output:
             print_error(cli_ctx, "VALIDATION_ERROR", "删除需 --force 或交互确认")
-        label = "永久删除" if permanent else "删除"
-        if not typer.confirm(f"确定要{label}角色 #{character_id} 吗？"):
+        if not typer.confirm(f"确定要删除角色 #{character_id} 吗？"):
             typer.echo("已取消")
             raise typer.Exit()
 
@@ -278,44 +276,13 @@ def delete_character(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
-            await client.delete(
-                f"/characters/{cid}",
-                params={"force": "true" if permanent else "false"},
-            )
+            await client.delete(f"/characters/{cid}")
 
     _run(cli_ctx, _impl)
-    label = "永久删除" if permanent else "已删除"
     if cli_ctx.json_output:
         print_result(cli_ctx, {"id": str(cid), "deleted": True})
     else:
-        typer.echo(f"✅ 角色 #{character_id} {label}")
-
-
-# ---------------------------------------------------------------------------
-# restore  —  inkflow character restore --id <uuid>
-# ---------------------------------------------------------------------------
-
-
-@app.command("restore")
-def restore_character(
-    ctx: typer.Context,
-    character_id: str = typer.Option(..., "--id", "-i", help="角色 ID (UUID)"),
-) -> None:
-    """恢复已删除的角色（级联恢复其双向关系）"""
-    cli_ctx: CliContext = ctx.obj
-    cid = _parse_uuid(cli_ctx, character_id, "角色不存在")
-
-    async def _impl() -> dict:
-        handle = await ensure_kernel()
-        client = InkFlowHTTPClient(handle)
-        async with client:
-            return await client.post(f"/characters/{cid}/restore")
-
-    character = _run(cli_ctx, _impl)
-    if cli_ctx.json_output:
-        print_result(cli_ctx, character)
-    else:
-        typer.echo(f"✅ 角色已恢复: [{character['name']}]")
+        typer.echo(f"✅ 角色 #{character_id} 已删除")
 
 
 # ---------------------------------------------------------------------------

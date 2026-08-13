@@ -5,7 +5,7 @@
 - 404 全路径（项目/事件不存在、无效 UUID → 404）
 - 422 字段校验（标题空/超长、time_value 非有限/越界、清除传非空字符串）
 - 双线总览 200 / 一致性检查 200（include_flashbacks 两态）
-- 删除 force 两态（默认软删 / ?force=true 硬删）
+- 删除真删（delete_event，无 force 参数）
 
 策略: @patch("inkflow.api.routers.timeline.get_timeline_service")
 整体替换 Service 获取函数（router 模块级本地引用），每个被路由 await 的
@@ -176,7 +176,6 @@ class TestTimelineEventCRUDAPI:
         assert data["project_id"] == str(PID)
         assert data["time_value"] == 317.5
         assert data["narrative_position"] == 3
-        assert data["is_deleted"] is False
         svc.create_event.assert_awaited_once_with(
             PID,
             "林尘觉醒金手指",
@@ -437,60 +436,23 @@ class TestTimelineEventCRUDAPI:
         assert response.json()["detail"] == "事件不存在"
 
     @patch("inkflow.api.routers.timeline.get_timeline_service")
-    def test_delete_event_soft_204(self, mock_get_svc: MagicMock) -> None:
-        """软删除事件返回 204（默认 force=False）."""
+    def test_delete_event_204(self, mock_get_svc: MagicMock) -> None:
+        """删除事件返回 204（v1.1 真删，无 force 参数）."""
         svc = _mock_svc(mock_get_svc)
-        svc.soft_delete_event = AsyncMock(return_value=True)
-        svc.hard_delete_event = AsyncMock(return_value=True)
+        svc.delete_event = AsyncMock(return_value=True)
 
         event_id = uuid.uuid4()
         response = client.delete(f"/api/v1/timeline/events/{event_id}")
         assert response.status_code == 204
-        svc.soft_delete_event.assert_awaited_once_with(event_id)
-        svc.hard_delete_event.assert_not_awaited()
-
-    @patch("inkflow.api.routers.timeline.get_timeline_service")
-    def test_delete_event_force_204(self, mock_get_svc: MagicMock) -> None:
-        """硬删除事件返回 204（?force=true 透传）."""
-        svc = _mock_svc(mock_get_svc)
-        svc.soft_delete_event = AsyncMock(return_value=True)
-        svc.hard_delete_event = AsyncMock(return_value=True)
-
-        event_id = uuid.uuid4()
-        response = client.delete(f"/api/v1/timeline/events/{event_id}?force=true")
-        assert response.status_code == 204
-        svc.hard_delete_event.assert_awaited_once_with(event_id)
-        svc.soft_delete_event.assert_not_awaited()
+        svc.delete_event.assert_awaited_once_with(event_id)
 
     @patch("inkflow.api.routers.timeline.get_timeline_service")
     def test_delete_event_not_found_404(self, mock_get_svc: MagicMock) -> None:
         """删除不存在的事件返回 404「事件不存在」."""
         svc = _mock_svc(mock_get_svc)
-        svc.soft_delete_event = AsyncMock(return_value=False)
+        svc.delete_event = AsyncMock(return_value=False)
 
         response = client.delete(f"/api/v1/timeline/events/{uuid.uuid4()}")
-        assert response.status_code == 404
-        assert response.json()["detail"] == "事件不存在"
-
-    @patch("inkflow.api.routers.timeline.get_timeline_service")
-    def test_restore_event_success(self, mock_get_svc: MagicMock) -> None:
-        """恢复事件返回 200 + TimelineEvent JSON."""
-        svc = _mock_svc(mock_get_svc)
-        event = _event("林尘觉醒金手指")
-        svc.restore_event = AsyncMock(return_value=event)
-
-        response = client.post(f"/api/v1/timeline/events/{event.id}/restore")
-        assert response.status_code == 200
-        assert response.json()["title"] == "林尘觉醒金手指"
-        svc.restore_event.assert_awaited_once_with(event.id)
-
-    @patch("inkflow.api.routers.timeline.get_timeline_service")
-    def test_restore_event_not_found_404(self, mock_get_svc: MagicMock) -> None:
-        """恢复不存在的事件返回 404「事件不存在」."""
-        svc = _mock_svc(mock_get_svc)
-        svc.restore_event = AsyncMock(return_value=None)
-
-        response = client.post(f"/api/v1/timeline/events/{uuid.uuid4()}/restore")
         assert response.status_code == 404
         assert response.json()["detail"] == "事件不存在"
 

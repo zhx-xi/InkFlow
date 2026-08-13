@@ -439,19 +439,16 @@ async def test_export_ungrouped_only_single_volume():
     assert doc.volumes[0].chapters[0].title == "第一章"
 
 
-async def test_export_filters_soft_deleted_chapters():
-    """软删章（is_deleted=True）不进入聚合（M4；Chapter 模型无该字段 → setattr 注入）。"""
+async def test_export_includes_all_chapters_no_soft_delete_filter():
+    """v1.1 真删语义：无软删过滤，所有章节进入聚合（M4 契约反转）。"""
     live = _chapter(uuid.uuid4(), "存活章", volume_id=None, order_index=1.0)
-    deleted = _chapter(uuid.uuid4(), "软删章", volume_id=None, order_index=2.0)
-    # 领域模型无 is_deleted 字段，Pydantic v2 禁止常规赋值——用 object.__setattr__
-    # 注入模拟 ORM 软删标记（父侧裁定 2026-08-09：测试 fixture 注入方式修复，契约语义不变）
-    object.__setattr__(deleted, "is_deleted", True)
-    deps = _Deps(volumes=[], chapters=[live, deleted])
+    second = _chapter(uuid.uuid4(), "第二章", volume_id=None, order_index=2.0)
+    deps = _Deps(volumes=[], chapters=[live, second])
 
     doc = await deps.service().export(PID)
 
     assert len(doc.volumes) == 1
-    assert [c.title for c in doc.volumes[0].chapters] == ["存活章"]
+    assert [c.title for c in doc.volumes[0].chapters] == ["存活章", "第二章"]
 
 
 async def test_export_empty_project_no_volumes():

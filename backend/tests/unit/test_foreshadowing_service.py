@@ -13,7 +13,7 @@
 - resolve（open→resolved + resolved_at 设置；已 resolved 幂等不更新
   resolved_at；不存在 → None）/ reopen（resolved→open + resolved_at 清空；
   已 open 幂等）
-- 404 全路径：get/update/resolve/reopen 不存在 → None；soft_delete → False
+- 404 全路径：get/update/resolve/reopen 不存在 → None；delete → False
 
 依据: specs/f13-foreshadowing-service/spec.md §7 + §9 测试策略。
 """
@@ -108,8 +108,6 @@ def mock_repo() -> MagicMock:
     repo.list = AsyncMock(return_value=([], 0))
     repo.list_open = AsyncMock(return_value=[])
     repo.update = AsyncMock(side_effect=lambda f: f)
-    repo.soft_delete = AsyncMock(return_value=True)
-    repo.restore = AsyncMock(return_value=None)
     repo.hard_delete = AsyncMock(return_value=True)
     return repo
 
@@ -150,7 +148,7 @@ class TestCreate:
     async def test_create_defaults_open_and_priority_50(
         self, service: ForeshadowingService, mock_repo: MagicMock
     ) -> None:
-        """最小创建：status=open、priority=50、event_id=None、未软删除。"""
+        """最小创建：status=open、priority=50、event_id=None、未删除。"""
         created = await service.create(ForeshadowingCreate(project_id=PID, title="林晚的身世"))
         assert created.title == "林晚的身世"
         mock_repo.get_by_title.assert_awaited_once_with(PID.int, "林晚的身世")
@@ -161,7 +159,6 @@ class TestCreate:
         assert added.priority == 50
         assert added.event_id is None
         assert added.resolved_at is None
-        assert added.is_deleted is False
 
     async def test_create_with_event_id_validates_and_attaches(
         self,
@@ -193,7 +190,7 @@ class TestCreate:
         mock_repo: MagicMock,
         mock_timeline_repo: MagicMock,
     ) -> None:
-        """event_id 指向不存在事件（含已软删，F12 get 不含软删）→ EventNotFoundError。"""
+        """event_id 指向不存在事件（含已删除，F12 get 不含删除）→ EventNotFoundError。"""
         mock_timeline_repo.get = AsyncMock(return_value=None)
         with pytest.raises(EventNotFoundError):
             await service.create(
@@ -501,49 +498,24 @@ class TestResolveReopen:
     async def test_resolve_reopen_missing_returns_none(
         self, service: ForeshadowingService, mock_repo: MagicMock
     ) -> None:
-        """不存在/已软删除的伏笔执行 resolve/reopen → None（router 转 404）。"""
+        """不存在的伏笔执行 resolve/reopen → None（router 转 404）。"""
         mock_repo.get = AsyncMock(return_value=None)
         assert await service.resolve(uuid.uuid4()) is None
         assert await service.reopen(uuid.uuid4()) is None
         mock_repo.update.assert_not_awaited()
 
 
-class TestDeleteRestore:
-    """软删/恢复/硬删 — 委托仓储。"""
+class TestDelete:
+    """真删 — 委托仓储。"""
 
-    async def test_soft_delete_delegates(
+    async def test_delete_delegates(
         self, service: ForeshadowingService, mock_repo: MagicMock
     ) -> None:
-        """软删伏笔：委托 repo.soft_delete；不存在 → False。"""
+        """真删伏笔（v1.1）：委托 repo.hard_delete；不存在 → False。"""
         f = _foreshadowing("林晚的身世")
-        result = await service.soft_delete(f.id)
-        assert result is True
-        mock_repo.soft_delete.assert_awaited_once_with(f.id.int)
-
-        mock_repo.soft_delete = AsyncMock(return_value=False)
-        assert await service.soft_delete(uuid.uuid4()) is False
-
-    async def test_hard_delete_delegates(
-        self, service: ForeshadowingService, mock_repo: MagicMock
-    ) -> None:
-        """硬删伏笔：委托 repo.hard_delete；不存在 → False。"""
-        f = _foreshadowing("林晚的身世")
-        result = await service.hard_delete(f.id)
+        result = await service.delete(f.id)
         assert result is True
         mock_repo.hard_delete.assert_awaited_once_with(f.id.int)
 
         mock_repo.hard_delete = AsyncMock(return_value=False)
-        assert await service.hard_delete(uuid.uuid4()) is False
-
-    async def test_restore_returns_entity_or_none(
-        self, service: ForeshadowingService, mock_repo: MagicMock
-    ) -> None:
-        """恢复软删伏笔：委托 repo.restore；不存在 → None（重复操作无毒）。"""
-        f = _foreshadowing("林晚的身世")
-        mock_repo.restore = AsyncMock(return_value=f)
-        result = await service.restore(f.id)
-        assert result == f
-        mock_repo.restore.assert_awaited_once_with(f.id.int)
-
-        mock_repo.restore = AsyncMock(return_value=None)
-        assert await service.restore(uuid.uuid4()) is None
+        assert await service.delete(uuid.uuid4()) is False

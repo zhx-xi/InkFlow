@@ -181,13 +181,12 @@ async def test_get_extraction_service_assembles_facade(db) -> None:
 
 
 def test_get_audit_service_assembles_facade(db) -> None:
-    """get_audit_service → AuditService（F15 门面全装配，audit_repo 同 session）。"""
+    """get_audit_service → AuditService（F15 门面全装配，#211 后无 audit_repo）。"""
     svc = deps.get_audit_service(db)
     assert isinstance(svc, AuditService)
     assert svc._project_repo._session is db
     assert svc._chapter_repo._session is db
     assert svc._run_repo._session is db
-    assert svc._audit_repo._session is db
     assert isinstance(svc._timeline_service, TimelineService)
 
 

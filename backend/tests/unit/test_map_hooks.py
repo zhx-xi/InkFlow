@@ -4,9 +4,9 @@
 独立成文件。fixtures/helpers 复制自 test_map_service.py（mock_repo/mock_asset_store/
 mock_world_repo/mock_project_repo/_map/_pin/_setting/_project），保持同构。
 
-覆盖（spec §5.4 D10=b + 父侧定稿接线契约 2026-08-09）:
+覆盖（spec §5.4 D10=b + 父侧定稿接线契约 2026-08-09；v1.1 真删适配）:
 - WorldService.delete_setting cascade 分支 → location_cleanup(子树全部 int ids)
-- WorldService.delete_setting force 分支 → location_cleanup([sid])；软删不调用
+- WorldService.delete_setting 真删分支（无参，v1.1）→ location_cleanup([sid])
 - ProjectService.hard_delete 成功 → map_cleanup(pid_int)；失败不调用
 """
 
@@ -54,7 +54,6 @@ def _setting(name: str, *, project_id: uuid.UUID = PID) -> WorldSetting:
         name=name,
         category="",
         content="",
-        is_deleted=False,
         parent_id=None,
         created_at=TS,
         updated_at=TS,
@@ -75,7 +74,6 @@ def mock_repo() -> MagicMock:
     repo.list_descendants = AsyncMock(return_value=[])
     repo.hard_delete_many = AsyncMock(return_value=0)
     repo.hard_delete = AsyncMock(return_value=True)
-    repo.soft_delete = AsyncMock(return_value=True)
     return repo
 
 
@@ -106,22 +104,22 @@ class TestF36ServiceHooks:
         mock_cb.assert_awaited_once_with([setting.id.int, child.id.int, grandchild.id.int])
         mock_repo.hard_delete_many.assert_awaited_once()
 
-    async def test_world_service_location_cleanup_force(self) -> None:
-        """force 分支（hard_delete 之后）→ await cb([sid])；软删（无参）→ cb 不调用。  # F36"""
+    async def test_world_service_location_cleanup_default(self) -> None:
+        """真删分支（无参 delete，v1.1）→ await cb([sid])；hard_delete 失败 → cb 不调用。  # F36"""
 
         setting = _setting(name="清河县城")
         mock_repo = MagicMock(spec=WorldRepositoryProtocol)
         mock_repo.get = AsyncMock(return_value=setting)
         mock_repo.list = AsyncMock(return_value=([], 0))
         mock_repo.hard_delete = AsyncMock(return_value=True)
-        mock_repo.soft_delete = AsyncMock(return_value=True)
         mock_cb = AsyncMock()
         svc = WorldService(repository=mock_repo, location_cleanup=mock_cb)
-        assert await svc.delete_setting(setting.id, force=True) is True
+        assert await svc.delete_setting(setting.id) is True
         mock_cb.assert_awaited_once_with([setting.id.int])
 
         mock_cb.reset_mock()
-        assert await svc.delete_setting(setting.id) is True  # 软删分支
+        mock_repo.hard_delete = AsyncMock(return_value=False)
+        assert await svc.delete_setting(setting.id) is False
         mock_cb.assert_not_awaited()
 
     async def test_project_service_map_cleanup(self) -> None:
