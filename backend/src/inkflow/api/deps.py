@@ -400,7 +400,7 @@ def get_copy_service(
 def get_map_service(
     db: AsyncSession,
 ) -> MapService:
-    """获取 MapService 实例（地图仓储 + 图片资产存储 + 世界观/项目仓储）."""
+    """获取 MapService 实例（地图仓储 + 图片资产存储 + 世界观/项目/角色/时间线仓储）."""
     from inkflow.core.config import config
     from inkflow.infrastructure.assets import LocalMapAssetStore
     from inkflow.infrastructure.database.repositories.map_repo import (
@@ -412,6 +412,8 @@ def get_map_service(
         asset_store=LocalMapAssetStore(config.data_dir),
         world_repo=SQLiteWorldRepository(db),
         project_repo=SQLiteProjectRepository(db),
+        character_repo=SQLiteCharacterRepository(db),
+        timeline_repo=SQLiteTimelineRepository(db),
     )
 
 

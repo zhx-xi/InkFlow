@@ -33,6 +33,16 @@ class MapPinLocationNotFoundError(MapServiceError):
         super().__init__(message)
 
 
+class MapPinRefNotFoundError(MapServiceError):
+    def __init__(self, message: str = "pin 关联角色/事件不存在或不在同一项目") -> None:
+        super().__init__(message)
+
+
+class MapBgSourceError(MapServiceError):
+    def __init__(self, message: str = "bg_source 非法或图片缺失") -> None:
+        super().__init__(message)
+
+
 class MapChildrenActionRequiredError(MapServiceError):
     def __init__(
         self,

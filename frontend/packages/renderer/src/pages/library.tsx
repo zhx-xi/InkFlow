@@ -6,6 +6,7 @@ import { apiFetch, ensureApiReady, errorMessage } from '../api/client';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { CopyDialog } from '../components/CopyDialog';
 import { LibraryCreateDialog, type LibraryItemDTO } from '../components/LibraryCreateDialog';
+import { MapWorkbench, type WorldMapDTO } from '../components/MapWorkbench';
 import { Skeleton } from '../components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
@@ -17,6 +18,14 @@ type CatKey = 'characters' | 'world' | 'outline' | 'timeline' | 'foreshadow' | '
 
 interface ListResponse {
   items: LibraryItemDTO[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+/** F43 P2：地图列表响应（GET /projects/{pid}/maps） */
+interface MapListResponse {
+  items: WorldMapDTO[];
   total: number;
   offset: number;
   limit: number;
@@ -255,6 +264,10 @@ export function LibraryPage() {
   const [collapsedIds, setCollapsedIds] = useState<Set<string | number>>(new Set());
   // F43 P1：复制对话框状态（行内 subtree / 顶部整体 all）
   const [copyState, setCopyState] = useState<CopyState | null>(null);
+  // F43 P2：地图列表（挂载时拉取）+ 当前选中地图 + 工作台态（世界观 tab 默认进入）
+  const [maps, setMaps] = useState<WorldMapDTO[]>([]);
+  const [activeMapId, setActiveMapId] = useState<string | null>(null);
+  const [workbenchActive, setWorkbenchActive] = useState(false);
 
   const cat = CATS.find((c) => c.key === activeCat) ?? CATS[0];
   // rag 无创建端点（CTA 已走跳转分支），对话框仅在五个可创建分类下渲染
@@ -323,10 +336,31 @@ export function LibraryPage() {
     })();
   }, [loadProjects]);
 
+  // F43 P2：挂载/项目切换时拉取地图列表（世界观点亮徽标的数据源；失败静默空列表）
+  useEffect(() => {
+    if (!currentProjectId) {
+      setMaps([]);
+      return;
+    }
+    let cancelled = false;
+    void apiFetch<MapListResponse>(`/api/v1/projects/${currentProjectId}/maps`)
+      .then((data) => {
+        if (!cancelled) setMaps(data.items ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setMaps([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProjectId]);
+
   // URL cat 变化（AppNav 直达）→ 同步激活 tab
   useEffect(() => {
     const p = searchParams.get('cat');
     if (isCatKey(p) && p !== activeCat) setActiveCat(p);
+    // F43 P2：直达世界观 tab → 默认进入地图工作台
+    if (p === 'world') setWorkbenchActive(true);
   }, [searchParams, activeCat]);
 
   // 当前项目 + 激活分类 → 拉取分类端点（统一响应 {items,...}；timeline 特例 {event_timeline:[...]}；
@@ -371,6 +405,8 @@ export function LibraryPage() {
   const handleTabChange = (key: CatKey) => {
     setActiveCat(key);
     setSearchParams({ cat: key });
+    // F43 P2：进入世界观 tab 默认地图工作台态（退出后重进恢复）
+    if (key === 'world') setWorkbenchActive(true);
   };
 
   const handleProjectChange = (id: string) => {
@@ -591,6 +627,30 @@ export function LibraryPage() {
                   {t('lib.empty.create')}
                 </button>
               </div>
+            ) : activeCat === 'world' && workbenchActive ? (
+              /* F43 P2（§5.8）：地图工作台——左树（P1 复用 + 🗺 徽标）+ 右画布/pin 列表 */
+              <MapWorkbench
+                projectId={currentProjectId}
+                worldItems={items}
+                maps={maps}
+                activeMapId={activeMapId}
+                onSelectMap={(mapId) => setActiveMapId(mapId)}
+                onExitWorkbench={() => setWorkbenchActive(false)}
+                onClearMap={() => setActiveMapId(null)}
+                worldCategories={worldCategories}
+                activeWorldCat={activeWorldCat}
+                onWorldCatChange={setActiveWorldCat}
+                collapsedIds={collapsedIds}
+                onToggle={toggleCollapsed}
+                onEdit={(item) => {
+                  setEditing(item);
+                  setCreateOpen(true);
+                }}
+                onDelete={(item) => setPendingDelete(item)}
+                onCopy={(item) => setCopyState({ open: true, mode: 'subtree', rootId: item.id })}
+                onCopyAll={() => setCopyState({ open: true, mode: 'all' })}
+                copyTargetOptions={copyTargetOptions}
+              />
             ) : activeCat === 'world' ? (
               <>
                 {/* F43 P1（§5.4）：世界观分类筛选工具栏——默认分组 + 数据自定义 chips（无「全部」，

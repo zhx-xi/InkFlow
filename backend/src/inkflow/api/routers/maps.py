@@ -92,23 +92,38 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
 @router.post("/projects/{project_id}/maps", status_code=201)
 async def create_map(
     project_id: str,
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
     name: str = Form(...),
     description: str = Form(""),
     root_location_id: str | None = Form(None),
+    bg_source: str = Form("image"),
     db: AsyncSession = Depends(get_db),
 ):
-    """创建地图（multipart：图片文件 + Form 字段；spec §3.1）。"""
+    """创建地图（multipart：图片文件 + Form 字段；spec §3.1 + F43 P2 bg_source）。
+
+    F43 P2: bg_source=shape 时 file 可选（无图 → image_path 存空串）；读不到
+    文件内容时透传空 bytes + 空 filename，由 service 按 bg_source 校验。
+    """
     pid = _parse_id(project_id, detail="项目不存在")
     root_uuid: uuid.UUID | None = None
     if root_location_id is not None:
         # router 侧解析；解析失败不调 service（测试锁定）
         root_uuid = _parse_location_id(root_location_id, detail="父地点不存在或不在同一项目")
-    content = await file.read()
+    content = await file.read() if file is not None else b""
+    filename = (file.filename or "main.png") if file is not None else ""
     svc = _get_svc(db)
-    wm = await _run_service(
-        svc.create_map(pid, name, description, root_uuid, file.filename or "main.png", content)
-    )
+    if bg_source != "image":
+        # F43 P2: 非默认 bg_source（shape/ai）显式 kwargs 透传；默认 image 走既有
+        # 6 参形态（兼容既有 F36 API 测试断言，服务层默认值一致）
+        wm = await _run_service(
+            svc.create_map(
+                pid, name, description, root_uuid, filename, content, bg_source=bg_source
+            )
+        )
+    else:
+        wm = await _run_service(
+            svc.create_map(pid, name, description, root_uuid, filename, content)
+        )
     return wm.model_dump(mode="json")
 
 
@@ -239,10 +254,19 @@ async def add_pin(
     data: MapPinCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    """添加地图 pin（JSON body；坐标 0-100 Pydantic 校验，spec §3.1）。"""
+    """添加地图 pin（JSON body；坐标 0-100 Pydantic 校验，spec §3.1 + F43 P2 type/ref_id）。"""
     sid = _parse_id(map_id, detail="地图不存在")
     svc = _get_svc(db)
-    pin = await _run_service(svc.add_pin(sid, data.location_id, data.x, data.y, data.label))
+    # F43 P2: type/ref_id 仅非默认值时以 kwargs 透传——默认值走既有 5 参形态
+    # （兼容既有 F36 测试断言）；显式值锁定 kwargs 形态（mock 位置/关键字比较分离）
+    pin_kwargs: dict[str, Any] = {}
+    if data.type != "location":
+        pin_kwargs["type"] = data.type
+    if data.ref_id is not None:
+        pin_kwargs["ref_id"] = data.ref_id
+    pin = await _run_service(
+        svc.add_pin(sid, data.location_id, data.x, data.y, data.label, **pin_kwargs)
+    )
     return pin.model_dump(mode="json")
 
 

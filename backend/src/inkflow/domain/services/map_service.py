@@ -24,17 +24,21 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from inkflow.domain.models.map import MapPin, MapPinUpdate, WorldMap, WorldMapUpdate
+from inkflow.domain.ports.character_repository import CharacterRepositoryProtocol
 from inkflow.domain.ports.map_errors import (
+    MapBgSourceError,
     MapChildrenActionRequiredError,
     MapNameConflictError,
     MapNotFoundError,
     MapPinLocationNotFoundError,
+    MapPinRefNotFoundError,
     MapReparentTargetError,
     MapRootLocationConflictError,
     MapRootLocationNotFoundError,
 )
 from inkflow.domain.ports.map_repository import MapRepositoryProtocol
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
+from inkflow.domain.ports.timeline_repository import TimelineRepositoryProtocol
 from inkflow.domain.ports.world_errors import ProjectNotFoundError
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
 from inkflow.infrastructure.assets.map_asset_store import MapAssetStoreProtocol
@@ -62,6 +66,8 @@ class MapService:
         asset_store: 图片资产存储端口（本地文件系统）.
         world_repo: 世界观条目仓储（root_location/pin location 校验）.
         project_repo: 项目仓储（create 校验 + 项目硬删钩子）.
+        character_repo: 角色仓储（F43 P2 type=role 关联校验；None=跳过校验仅透传）.
+        timeline_repo: 时间线仓储（F43 P2 type=event 关联校验；None=跳过校验仅透传）.
     """
 
     def __init__(
@@ -71,11 +77,15 @@ class MapService:
         asset_store: MapAssetStoreProtocol,
         world_repo: WorldRepositoryProtocol,
         project_repo: ProjectRepositoryProtocol | None = None,
+        character_repo: CharacterRepositoryProtocol | None = None,
+        timeline_repo: TimelineRepositoryProtocol | None = None,
     ) -> None:
         self._repo = repository
         self._asset_store = asset_store
         self._world_repo = world_repo
         self._project_repo = project_repo
+        self._character_repo = character_repo
+        self._timeline_repo = timeline_repo
 
     # ── 地图 CRUD ───────────────────────────────────────────────
 
@@ -87,6 +97,7 @@ class MapService:
         root_location_id: int | uuid.UUID | None = None,
         image_filename: str = "",
         image_content: bytes = b"",
+        bg_source: str = "image",
     ) -> WorldMap:
         """创建地图（spec §5.4 校验链 ①②③ + 文件/落库编排 ④⑤⑥）.
 
@@ -97,6 +108,8 @@ class MapService:
             root_location_id: 根地点 UUID；None = 全局图（不挂地点）.
             image_filename: 图片文件名（扩展名决定存储格式）.
             image_content: 图片字节内容.
+            bg_source: F43 P2 底图来源（shape/image/ai）；shape/ai 可无图
+                （image_path 存空串），image 模式缺图 → MapBgSourceError.
 
         Returns:
             持久化后的完整 WorldMap.
@@ -106,8 +119,11 @@ class MapService:
             MapRootLocationNotFoundError: 根地点不存在或跨项目（422）.
             MapNameConflictError: 项目内同名地图已存在（422）.
             MapRootLocationConflictError: 根地点已挂有其他地图（422）.
+            MapBgSourceError: bg_source 非法或 image 模式缺图片（422）.
             MapAssetError: 图片写入失败（500，透传不落库）.
         """
+        if bg_source not in {"shape", "image", "ai"}:
+            raise MapBgSourceError()
         pid_int = _to_int_id(project_id)
         # ① 项目存在性
         if self._project_repo is None or await self._project_repo.get(pid_int) is None:
@@ -125,11 +141,17 @@ class MapService:
             existing_maps, _ = await self._repo.list(pid_int, root_location_id=root_int)
             if existing_maps:
                 raise MapRootLocationConflictError()
-        # ④ 先写图片文件（失败透传——不落库，MapAssetError 自然向上传播）
+        # ④ 图片文件编排：image 模式必填图片（缺图 422）；shape/ai 可无图
+        #    （不写图，image_path 存空串——F43 P2 简图语义）
         map_id = uuid.uuid4()
-        rel_path = await self._asset_store.save(
-            map_id=map_id, filename=image_filename, content=image_content
-        )
+        if image_content:
+            rel_path = await self._asset_store.save(
+                map_id=map_id, filename=image_filename, content=image_content
+            )
+        else:
+            if bg_source == "image":
+                raise MapBgSourceError()
+            rel_path = ""
         # ⑤ 落库失败 → 删已写文件防孤儿 → re-raise
         now = _utcnow()
         wm = WorldMap(
@@ -139,6 +161,7 @@ class MapService:
             image_path=rel_path,
             description=description,
             root_location_id=uuid.UUID(int=root_int) if root_int is not None else None,
+            bg_source=bg_source,
             created_at=now,
             updated_at=now,
         )
@@ -419,26 +442,44 @@ class MapService:
         x: float = 0.0,
         y: float = 0.0,
         label: str = "",
+        type: str = "location",
+        ref_id: int | uuid.UUID | None = None,
     ) -> MapPin:
-        """添加 pin（位置校验: 地点存在 + 同项目）.
+        """添加 pin（F43 P2: type/ref_id 关联校验 + 位置校验）.
 
         Args:
             map_id: 地图主键（支持 int 或 UUID）.
             location_id: 关联地点 UUID；None = 纯注释 pin.
             x/y: 坐标（0-100，DTO 层校验）.
             label: 显示标签.
+            type: F43 P2 pin 类型（location/role/event/other，默认 location）.
+            ref_id: F43 P2 type=role/event 关联实体 UUID（与 location_id 二选一）.
 
         Returns:
             持久化后的 MapPin.
 
         Raises:
             MapNotFoundError: 地图不存在（404）.
+            MapBgSourceError: type 非法（非 location/role/event/other）（422）.
+            MapPinRefNotFoundError: role/event 关联实体不存在或跨项目（422）.
             MapPinLocationNotFoundError: 地点不存在或跨项目（422）.
         """
         sid = _to_int_id(map_id)
         wm = await self._repo.get(sid)
         if wm is None:
             raise MapNotFoundError()
+        if type not in {"location", "role", "event", "other"}:
+            raise MapBgSourceError()
+        # F43 P2: role/event 关联校验（未注入对应 repo 时跳过校验仅透传，D-17）
+        ref_int = _to_int_id(ref_id) if ref_id is not None else None
+        if type == "role" and self._character_repo is not None:
+            char = await self._character_repo.get(ref_int) if ref_int is not None else None
+            if char is None or _to_int_id(char.project_id) != _to_int_id(wm.project_id):
+                raise MapPinRefNotFoundError()
+        elif type == "event" and self._timeline_repo is not None:
+            event = await self._timeline_repo.get(ref_int) if ref_int is not None else None
+            if event is None or _to_int_id(event.project_id) != _to_int_id(wm.project_id):
+                raise MapPinRefNotFoundError()
         loc_int = _to_int_id(location_id) if location_id is not None else None
         if loc_int is not None:
             loc = await self._world_repo.get(loc_int)
@@ -452,6 +493,8 @@ class MapService:
             x=x,
             y=y,
             label=label,
+            type=type,
+            ref_id=uuid.UUID(int=ref_int) if ref_int is not None else None,
             created_at=now,
             updated_at=now,
         )
@@ -489,6 +532,8 @@ class MapService:
         updates = {k: v for k, v in update.model_dump(exclude_unset=True).items() if v is not None}
         if "location_id" in update.model_fields_set:
             updates["location_id"] = update.location_id  # 出现即更新（null=转纯注释 pin）
+        if "ref_id" in update.model_fields_set:
+            updates["ref_id"] = update.ref_id  # F43 P2: 出现即更新（null=清关联）
         merged = existing.model_copy(update=updates)
         return await self._repo.update_pin(merged)
 
