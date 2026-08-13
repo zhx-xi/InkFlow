@@ -464,14 +464,14 @@ async def hitl_node(state: SupervisorState) -> dict:
 
 > F29 起草自检后剩余设计决策点（实现确认项已并入正文，此处仅阻塞级）：
 
-- **Q1（阻塞级）：HITL 确认交互形态** 🔲 — supervisor 模式的 HITL 是**全新交互模式**（节点级 interrupt），与 F27 save_draft 工具级确认流不同。
-  - A. **API 先行**（建议）：POST confirm 端点 + GET 状态含 hitl_pending；GUI/CLI 后续接（本 spec 默认此方案）
+- **Q1（阻塞级）：HITL 确认交互形态** ✅ 已确认（用户拍板：选项 A）— supervisor 模式的 HITL 是**全新交互模式**（节点级 interrupt），与 F27 save_draft 工具级确认流不同。
+  - **A. API 先行**（已拍板）：POST confirm 端点 + GET 状态含 hitl_pending；GUI/CLI 后续接（本 spec 默认此方案）
   - B. CLI 确认命令同步实现（`inkflow agent confirm`）：CLI 面完整，估算 +1-2 人天
   - C. 本期不做 HITL（仅动态路由 + 护栏 + 回退）：范围收缩，但 issue #161 验收要点「HITL：interrupt() 人工确认」落空
-- **Q2（设计决策级）：supervisor 决策 LLM 模型来源** 🔲 —
-  - A. `config.llm_default_model`（全局默认，与 F27 agentic 一致）✅ 建议
+- **Q2（设计决策级）：supervisor 决策 LLM 模型来源** ✅ 已确认（用户拍板：选项 A）—
+  - **A. `config.llm_default_model`**（已拍板，与 F27 agentic 一致）
   - B. 独立配置字段（supervisor 专用模型）
   - C. 复用 reviser 角色模型（成品角色模型）
-- **Q3（设计决策级）：重复执行角色的执行记录形态** 🔲 — supervisor 允许同一角色多次执行（如 writer 写 2 次再审）。
-  - A. **保留多次执行记录**（route_history 顺序展开 stages 快照，每次执行一个 StageResult）✅ 建议
+- **Q3（设计决策级）：重复执行角色的执行记录形态** ✅ 已确认（用户拍板：选项 A）— supervisor 允许同一角色多次执行（如 writer 写 2 次再审）。
+  - **A. 保留多次执行记录**（已拍板，route_history 顺序展开 stages 快照，每次执行一个 StageResult）
   - B. 合并为单条（只保留最后执行结果）
