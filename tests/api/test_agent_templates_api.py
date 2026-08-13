@@ -195,10 +195,34 @@ ROLE_KEYS = ["architect", "writer", "auditor", "reviser"]
 """模板 roles 四角色键（spec §9.1，顺序契约）。"""
 
 ROLES_PAYLOAD = {
-    "architect": {"model": "openai/gpt-4o", "temperature": 0.7, "enabled": True},
-    "writer": {"model": "openai/gpt-4o", "temperature": 0.8, "enabled": True},
-    "auditor": {"model": "openai/gpt-4o", "temperature": 0.5, "enabled": True},
-    "reviser": {"model": "openai/gpt-4o", "temperature": 0.6, "enabled": False},
+    "architect": {
+        "model": "openai/gpt-4o",
+        "temperature": 0.7,
+        "enabled": True,
+        "prompt": None,
+        "name": None,
+    },
+    "writer": {
+        "model": "openai/gpt-4o",
+        "temperature": 0.8,
+        "enabled": True,
+        "prompt": None,
+        "name": None,
+    },
+    "auditor": {
+        "model": "openai/gpt-4o",
+        "temperature": 0.5,
+        "enabled": True,
+        "prompt": None,
+        "name": None,
+    },
+    "reviser": {
+        "model": "openai/gpt-4o",
+        "temperature": 0.6,
+        "enabled": False,
+        "prompt": None,
+        "name": None,
+    },
 }
 """完整 roles 载荷（含 enabled=False 的 reviser，验证 enabled 回显，#10）。"""
 
@@ -551,21 +575,29 @@ class TestUpdateAgentTemplate:
                 "model": "deepseek/deepseek-chat",
                 "temperature": 0.3,
                 "enabled": True,
+                "prompt": None,
+                "name": None,
             },
             "writer": {
                 "model": "deepseek/deepseek-chat",
                 "temperature": 0.3,
                 "enabled": True,
+                "prompt": None,
+                "name": None,
             },
             "auditor": {
                 "model": "deepseek/deepseek-chat",
                 "temperature": 0.3,
                 "enabled": False,
+                "prompt": None,
+                "name": None,
             },
             "reviser": {
                 "model": "deepseek/deepseek-chat",
                 "temperature": 0.3,
                 "enabled": False,
+                "prompt": None,
+                "name": None,
             },
         }
         resp = await client.patch(f"{ENDPOINT}/{row.id}", json={"roles": new_roles})
