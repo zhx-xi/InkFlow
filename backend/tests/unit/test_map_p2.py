@@ -78,6 +78,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
 
 try:
     from inkflow.domain.ports.map_errors import MapBgSourceError, MapPinRefNotFoundError
@@ -86,6 +88,7 @@ except ImportError:  # pragma: no cover - F43 P2 RED: 错误类尚未实现
     MapPinRefNotFoundError = None
 
 from inkflow.api.app import app
+from inkflow.core.database import Base, ensure_map_columns
 from inkflow.domain.models.map import MapPin, MapPinCreate, MapPinUpdate, WorldMap, WorldMapUpdate
 from inkflow.domain.models.project import Project
 from inkflow.domain.ports.character_repository import CharacterRepositoryProtocol
@@ -613,3 +616,139 @@ class TestB7RepoRoundtrip:
         orm = _domain_to_orm(wm)
         assert orm.bg_source == "shape"
         assert orm.extra == SHAPES
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# B8: ensure_map_columns 迁移契约（spec §2.7.3 — 覆盖率缺口闭合补测，GREEN 形态）
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+async def engine():
+    """独立 in-memory SQLite — 每个测试一个全新数据库（镜像 test_provider_config_migration.py）."""
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+    yield eng
+    await eng.dispose()
+
+
+async def _create_legacy_maps(conn) -> None:
+    """模拟旧库: 手工建 maps 表（无 bg_source/extra 列，其余列同 MapORM）+ 1 行旧数据."""
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE maps (
+                id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                name VARCHAR(50) NOT NULL,
+                image_path VARCHAR(255) NOT NULL,
+                description VARCHAR(500) NOT NULL,
+                root_location_id INTEGER,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO maps
+                (project_id, name, image_path, description, root_location_id,
+                 created_at, updated_at)
+            VALUES
+                (1, '清河县城图', 'maps/abc123/main.png', '', NULL,
+                 '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+            """
+        )
+    )
+
+
+async def _create_legacy_map_pins(conn) -> None:
+    """模拟旧库: 手工建 map_pins 表（无 type/ref_id 列，其余列同 MapPinORM）+ 1 行旧数据."""
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE map_pins (
+                id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                map_id INTEGER NOT NULL,
+                location_id INTEGER,
+                x FLOAT NOT NULL,
+                y FLOAT NOT NULL,
+                label VARCHAR(50) NOT NULL,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO map_pins
+                (map_id, location_id, x, y, label, created_at, updated_at)
+            VALUES
+                (1, NULL, 42.5, 68.0, '清河县城', '2026-01-01 00:00:00',
+                 '2026-01-01 00:00:00')
+            """
+        )
+    )
+
+
+@pytest.mark.integration
+class TestMapMigration:
+    """B8: ensure_map_columns 轻量列迁移契约 — 旧库加列 / 数据保留 / 幂等 / 表不存在 no-op."""
+
+    async def test_legacy_maps_gets_bg_source_and_extra(self, engine):
+        """旧 maps 表（无 bg_source/extra 列）迁移后: 两列存在 + 旧数据保留."""
+        async with engine.begin() as conn:
+            await _create_legacy_maps(conn)
+            await conn.run_sync(ensure_map_columns)
+
+            cols = (await conn.execute(text("PRAGMA table_info(maps)"))).fetchall()
+            col_names = [row[1] for row in cols]
+            assert "bg_source" in col_names, f"迁移后应含 bg_source 列，实际列: {col_names}"
+            assert "extra" in col_names, f"迁移后应含 extra 列，实际列: {col_names}"
+
+            names = (await conn.execute(text("SELECT name FROM maps"))).scalars().all()
+            assert names == ["清河县城图"]  # 迁移不丢数据
+
+    async def test_legacy_map_pins_gets_type_and_ref_id(self, engine):
+        """旧 map_pins 表（无 type/ref_id 列）迁移后: 两列存在 + 旧数据保留."""
+        async with engine.begin() as conn:
+            await _create_legacy_map_pins(conn)
+            await conn.run_sync(ensure_map_columns)
+
+            cols = (await conn.execute(text("PRAGMA table_info(map_pins)"))).fetchall()
+            col_names = [row[1] for row in cols]
+            assert "type" in col_names, f"迁移后应含 type 列，实际列: {col_names}"
+            assert "ref_id" in col_names, f"迁移后应含 ref_id 列，实际列: {col_names}"
+
+            labels = (await conn.execute(text("SELECT label FROM map_pins"))).scalars().all()
+            assert labels == ["清河县城"]  # 迁移不丢数据
+
+    async def test_idempotent_when_columns_exist(self, engine):
+        """新库（create_all 已含新列）→ 迁移 no-op 不报错（幂等）."""
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(ensure_map_columns)  # no-op
+
+            map_cols = (await conn.execute(text("PRAGMA table_info(maps)"))).fetchall()
+            map_names = [row[1] for row in map_cols]
+            assert "bg_source" in map_names
+            assert "extra" in map_names
+
+            pin_cols = (await conn.execute(text("PRAGMA table_info(map_pins)"))).fetchall()
+            pin_names = [row[1] for row in pin_cols]
+            assert "type" in pin_names
+            assert "ref_id" in pin_names
+
+    async def test_noop_when_tables_missing(self, engine):
+        """表不存在 → 迁移 no-op 不抛错，无副作用（未建表、未 ALTER）."""
+        async with engine.begin() as conn:
+            result = await conn.run_sync(ensure_map_columns)
+            assert result is None  # 签名契约 -> None，不抛异常
+
+            map_cols = (await conn.execute(text("PRAGMA table_info(maps)"))).fetchall()
+            pin_cols = (await conn.execute(text("PRAGMA table_info(map_pins)"))).fetchall()
+            assert map_cols == []  # 未建表、未 ALTER（无副作用）
+            assert pin_cols == []
