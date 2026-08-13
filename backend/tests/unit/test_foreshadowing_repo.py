@@ -2,16 +2,15 @@
 
 覆盖 ForeshadowingRepositoryProtocol 全部方法（spec §8.1 / §9 仓储测试）:
 - 伏笔 CRUD 往返（含 event_id 挂接/解除持久化、resolved_at 保留）
-- get_by_title 命中与未命中（软删排除、项目隔离）
-- partial unique: 活动同名插入 → IntegrityError（回滚后可继续）；
-  软删除后同名可重建（spec §2.3 档案语义）
+- get_by_title 命中与未命中（真删排除、项目隔离）
+- 全唯一索引: 同名插入 → IntegrityError（回滚后可继续）；
+  真删后同名可重建（spec §2.3）
 - list 搜索（title icontains）/ status 精确过滤（open/resolved/不传=全部）/
   各 sort_by 排序（priority 默认降序，priority 相等按 updated_at DESC 兜底）/
   分页
 - list_open: F6 注入集合只含 open 活动伏笔，按 (priority DESC, updated_at DESC)，
-  resolved/软删除排除（spec §5.3/§8.1）
-- 软删除后 get/list 不可见 / restore 恢复且 status/resolved_at 原样保留 /
-  hard_delete 物理删除
+  resolved/真删排除（spec §5.3/§8.1）
+- 真删后 get/list 不可见 / hard_delete 物理删除
 - 事件硬删 → 伏笔 event_id 自动置 NULL（FK ON DELETE SET NULL）
 - 项目硬删 → 伏笔级联物理删除（FK CASCADE）
 
@@ -138,7 +137,6 @@ class TestForeshadowingRepository:
         assert saved.event_id is None
         assert saved.resolved_at is None
         assert saved.extra == {"标签": ["身世"]}
-        assert saved.is_deleted is False
 
         # 持久化验证：直接查表
         row = await db_session.execute(
@@ -163,7 +161,7 @@ class TestForeshadowingRepository:
     # ── get_by_title ──
 
     async def test_get_by_title_hit_and_miss(self, db_session, project):
-        """get_by_title 命中活动伏笔；未命中/软删/其他项目均返回 None."""
+        """get_by_title 命中活动伏笔；未命中/真删/其他项目均返回 None."""
         repo = SQLiteForeshadowingRepository(db_session)
         saved = await repo.add(_foreshadowing(project, "林晚的身世"))
 
@@ -174,8 +172,8 @@ class TestForeshadowingRepository:
         # 未命中
         assert await repo.get_by_title(project.id, "铜镜的秘密") is None
 
-        # 软删除后同名不可见（同名唯一检查语义：软删后同名可复用）
-        await repo.soft_delete(saved.id.int)
+        # 真删后同名不可见（同名唯一检查语义：真删后同名可复用）
+        await repo.hard_delete(saved.id.int)
         assert await repo.get_by_title(project.id, "林晚的身世") is None
 
         # 项目隔离
@@ -185,10 +183,10 @@ class TestForeshadowingRepository:
         await db_session.refresh(other)
         assert await repo.get_by_title(other.id, "林晚的身世") is None
 
-    # ── partial unique（spec §2.3）──
+    # ── 全唯一索引（spec §2.3）──
 
-    async def test_partial_unique_active_title_conflict(self, db_session, project):
-        """项目内活动伏笔同名唯一：插入第二个活动同名 → IntegrityError，回滚后可继续."""
+    async def test_duplicate_title_raises_integrity_error(self, db_session, project):
+        """项目内伏笔同名唯一：插入第二个同名 → IntegrityError，回滚后可继续."""
         repo = SQLiteForeshadowingRepository(db_session)
         project_id = project.id  # rollback 会使 ORM 对象过期，先缓存 int 主键
         await repo.add(_foreshadowing(project, "林晚的身世"))
@@ -197,7 +195,7 @@ class TestForeshadowingRepository:
             await repo.add(_foreshadowing(project, "林晚的身世"))
         await db_session.rollback()  # 事务回滚，恢复可用
 
-        # 回滚后仅剩 1 条活动伏笔
+        # 回滚后仅剩 1 条伏笔
         items, total = await repo.list(project_id)
         assert total == 1
         assert items[0].title == "林晚的身世"
@@ -210,29 +208,27 @@ class TestForeshadowingRepository:
         saved = await repo.add(_foreshadowing(other, "林晚的身世"))
         assert saved.id != items[0].id
 
-    async def test_same_title_rebuildable_after_soft_delete(self, db_session, project):
-        """软删除后同名可重建（旧档案已废弃，作者重新埋同一条线）."""
+    async def test_deleted_title_reusable(self, db_session, project):
+        """真删后同名可重建（v1.1 全唯一索引仅约束现存行）."""
         repo = SQLiteForeshadowingRepository(db_session)
         first = await repo.add(_foreshadowing(project, "林晚的身世"))
-        await repo.soft_delete(first.id.int)
+        await repo.hard_delete(first.id.int)
 
         rebuilt = await repo.add(_foreshadowing(project, "林晚的身世"))
-        assert rebuilt.id != first.id
-        assert rebuilt.is_deleted is False
 
-        # 两条记录并存（旧档案软删保留 + 新活动档案）
+        # 真删后仅存新记录（旧档案物理消失）
         rows = await db_session.execute(select(ForeshadowingORM))
-        assert len(rows.scalars().all()) == 2
+        assert len(rows.scalars().all()) == 1
 
     # ── list ──
 
     async def test_list_returns_active_with_total(self, db_session, project):
-        """list 排除软删与其他项目，返回 (列表, 总数)."""
+        """list 排除真删与其他项目，返回 (列表, 总数)."""
         repo = SQLiteForeshadowingRepository(db_session)
         f1 = await repo.add(_foreshadowing(project, "林晚的身世"))
         f2 = await repo.add(_foreshadowing(project, "铜镜的秘密"))
         f3 = await repo.add(_foreshadowing(project, "古鼎之谜"))
-        await repo.soft_delete(f3.id.int)
+        await repo.hard_delete(f3.id.int)
 
         items, total = await repo.list(project.id)
         assert total == 2
@@ -391,7 +387,7 @@ class TestForeshadowingRepository:
 
     async def test_list_open_only_open_active_sorted(self, db_session, project):
         """list_open 只含 open 活动伏笔，按 (priority DESC, updated_at DESC)；
-        resolved/软删除/其他项目排除."""
+        resolved/真删/其他项目排除."""
         repo = SQLiteForeshadowingRepository(db_session)
         low = await repo.add(_foreshadowing(project, "低优先级", priority=10))
         high = await repo.add(_foreshadowing(project, "高优先级", priority=90))
@@ -406,8 +402,8 @@ class TestForeshadowingRepository:
                 priority=95,
             )
         )
-        gone = await repo.add(_foreshadowing(project, "软删", priority=100))
-        await repo.soft_delete(gone.id.int)
+        gone = await repo.add(_foreshadowing(project, "已删", priority=100))
+        await repo.hard_delete(gone.id.int)
 
         # 注入受控 updated_at：同优先级（此处无）与 (priority DESC, updated_at DESC) 断言
         await db_session.execute(
@@ -497,48 +493,7 @@ class TestForeshadowingRepository:
             await repo.update(_foreshadowing(project, "幽灵", id=uuid.UUID(int=99999)))
         await db_session.rollback()
 
-    # ── 软删 / 恢复 / 硬删 ──
-
-    async def test_soft_delete_then_get_returns_none(self, db_session, project):
-        """软删除后 get/list 均不可见；重复软删返回 False."""
-        repo = SQLiteForeshadowingRepository(db_session)
-        f = await repo.add(_foreshadowing(project, "林晚的身世"))
-
-        assert await repo.soft_delete(f.id.int) is True
-        assert await repo.get(f.id.int) is None
-        items, total = await repo.list(project.id)
-        assert items == [] and total == 0
-
-        # 已删除/不存在 → False
-        assert await repo.soft_delete(f.id.int) is False
-        assert await repo.soft_delete(99999) is False
-
-    async def test_restore_preserves_status_and_resolved_at(self, db_session, project):
-        """restore 恢复软删伏笔；status/resolved_at 原样保留（spec §2.4）；重复操作无毒."""
-        repo = SQLiteForeshadowingRepository(db_session)
-        f = await repo.add(_foreshadowing(project, "铜镜的秘密"))
-        await repo.update(
-            f.model_copy(
-                update={
-                    "status": ForeshadowingStatus.RESOLVED,
-                    "resolved_at": _dt(10),
-                }
-            )
-        )
-        await repo.soft_delete(f.id.int)
-
-        restored = await repo.restore(f.id.int)
-        assert restored is not None
-        assert restored.id == f.id
-        assert restored.is_deleted is False
-        assert restored.status == ForeshadowingStatus.RESOLVED
-        # SQLite 读回时间无 tzinfo（naive），断言用 naive 时间戳
-        assert restored.resolved_at == datetime(2026, 1, 10)
-        assert await repo.get(f.id.int) is not None
-
-        # 恢复未删除的/不存在的 → None（重复操作无毒）
-        assert await repo.restore(f.id.int) is None
-        assert await repo.restore(99999) is None
+    # ── 删除（真删）──
 
     async def test_hard_delete_foreshadowing(self, db_session, project):
         """hard_delete 物理删除伏笔行；重复删除返回 False."""

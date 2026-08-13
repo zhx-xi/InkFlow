@@ -9,7 +9,7 @@
 - 无 open 伏笔 / 全部 resolved / 项目不存在 → 空列表（repo 返回空即空注入，
   不报错，同 F6 数据源惯例）
 
-注: 过滤语义（resolved / 软删除排除、priority DESC 排序）由仓储层保证
+注: 过滤语义（resolved / 真删排除、priority DESC 排序）由仓储层保证
 （SQLiteForeshadowingRepository.list_open，见 test_foreshadowing_repo.py）；
 本文件只测数据源对 repo 结果的消费与 ContextItem 构造。
 

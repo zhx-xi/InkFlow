@@ -1,7 +1,7 @@
 """F13 伏笔管理 API 测试 — Mock Service 层（M5 RED→GREEN）。
 
 测试范围 (spec §9 API 测试 + §3.4 异常映射表):
-- 8 端点成功路径（201/200/204）
+- 7 端点成功路径（201/200/204）
 - 404 全路径（项目/伏笔不存在、无效 UUID → 404）
 - 422 业务校验（同名冲突、event_id 不存在/跨项目、仓储未配置）
 - resolve/reopen 响应（resolved_at 设置与清空）与幂等动作
@@ -54,7 +54,6 @@ def _foreshadowing(title: str, **overrides: object) -> Foreshadowing:
         "event_id": None,
         "resolved_at": None,
         "extra": {},
-        "is_deleted": False,
         "created_at": TS,
         "updated_at": TS,
     }
@@ -97,7 +96,6 @@ class TestForeshadowingAPI:
         assert data["status"] == "open"
         assert data["priority"] == 80
         assert data["event_id"] is None
-        assert data["is_deleted"] is False
         svc.create.assert_awaited_once()
         args, _ = svc.create.await_args
         assert args[0].project_id == PID
@@ -176,7 +174,7 @@ class TestForeshadowingAPI:
 
     @patch("inkflow.api.routers.foreshadowings.get_foreshadowing_service")
     def test_create_event_not_found_422(self, mock_get_svc: MagicMock) -> None:
-        """event_id 指向不存在的事件（含已软删）返回 422「事件不存在」."""
+        """event_id 指向不存在的事件（含已删除）返回 422「事件不存在」."""
         svc = _mock_svc(mock_get_svc)
         svc.create = AsyncMock(side_effect=EventNotFoundError())
 
@@ -364,67 +362,30 @@ class TestForeshadowingAPI:
         assert response.status_code == 404
         assert response.json()["detail"] == "伏笔不存在"
 
-    # ── 删除（扁平路径，force 两态）──────────────────────────
+    # ── 删除（扁平路径，v1.1 真删）──────────────────────────
 
     @patch("inkflow.api.routers.foreshadowings.get_foreshadowing_service")
-    def test_delete_foreshadowing_soft_204(self, mock_get_svc: MagicMock) -> None:
-        """软删除伏笔返回 204（默认 force=False）."""
+    def test_delete_foreshadowing_204(self, mock_get_svc: MagicMock) -> None:
+        """删除伏笔返回 204（v1.1 真删，无 force 参数）."""
         svc = _mock_svc(mock_get_svc)
-        svc.soft_delete = AsyncMock(return_value=True)
-        svc.hard_delete = AsyncMock(return_value=True)
+        svc.delete = AsyncMock(return_value=True)
 
         foreshadowing_id = uuid.uuid4()
         response = client.delete(f"/api/v1/foreshadowings/{foreshadowing_id}")
         assert response.status_code == 204
-        svc.soft_delete.assert_awaited_once_with(foreshadowing_id)
-        svc.hard_delete.assert_not_awaited()
-
-    @patch("inkflow.api.routers.foreshadowings.get_foreshadowing_service")
-    def test_delete_foreshadowing_force_204(self, mock_get_svc: MagicMock) -> None:
-        """硬删除伏笔返回 204（?force=true 透传）."""
-        svc = _mock_svc(mock_get_svc)
-        svc.soft_delete = AsyncMock(return_value=True)
-        svc.hard_delete = AsyncMock(return_value=True)
-
-        foreshadowing_id = uuid.uuid4()
-        response = client.delete(f"/api/v1/foreshadowings/{foreshadowing_id}?force=true")
-        assert response.status_code == 204
-        svc.hard_delete.assert_awaited_once_with(foreshadowing_id)
-        svc.soft_delete.assert_not_awaited()
+        svc.delete.assert_awaited_once_with(foreshadowing_id)
 
     @patch("inkflow.api.routers.foreshadowings.get_foreshadowing_service")
     def test_delete_foreshadowing_not_found_404(self, mock_get_svc: MagicMock) -> None:
         """删除不存在的伏笔返回 404「伏笔不存在」."""
         svc = _mock_svc(mock_get_svc)
-        svc.soft_delete = AsyncMock(return_value=False)
+        svc.delete = AsyncMock(return_value=False)
 
         response = client.delete(f"/api/v1/foreshadowings/{uuid.uuid4()}")
         assert response.status_code == 404
         assert response.json()["detail"] == "伏笔不存在"
 
-    # ── restore / resolve / reopen（状态机动作）──────────────
-
-    @patch("inkflow.api.routers.foreshadowings.get_foreshadowing_service")
-    def test_restore_foreshadowing_success(self, mock_get_svc: MagicMock) -> None:
-        """恢复伏笔返回 200 + Foreshadowing JSON."""
-        svc = _mock_svc(mock_get_svc)
-        foreshadowing = _foreshadowing("林晚的身世")
-        svc.restore = AsyncMock(return_value=foreshadowing)
-
-        response = client.post(f"/api/v1/foreshadowings/{foreshadowing.id}/restore")
-        assert response.status_code == 200
-        assert response.json()["title"] == "林晚的身世"
-        svc.restore.assert_awaited_once_with(foreshadowing.id)
-
-    @patch("inkflow.api.routers.foreshadowings.get_foreshadowing_service")
-    def test_restore_foreshadowing_not_found_404(self, mock_get_svc: MagicMock) -> None:
-        """恢复不存在的伏笔返回 404「伏笔不存在」."""
-        svc = _mock_svc(mock_get_svc)
-        svc.restore = AsyncMock(return_value=None)
-
-        response = client.post(f"/api/v1/foreshadowings/{uuid.uuid4()}/restore")
-        assert response.status_code == 404
-        assert response.json()["detail"] == "伏笔不存在"
+    # ── resolve / reopen（状态机动作）──────────────
 
     @patch("inkflow.api.routers.foreshadowings.get_foreshadowing_service")
     def test_resolve_foreshadowing_success(self, mock_get_svc: MagicMock) -> None:

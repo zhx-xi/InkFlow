@@ -40,7 +40,7 @@ class TestForeshadowingModel:
 
     def test_entity_defaults(self):
         """默认值：description='', priority=50, status=OPEN, location='',
-        event_id=None, resolved_at=None, extra={}, is_deleted=False."""
+        event_id=None, resolved_at=None, extra={}."""
         foreshadowing = Foreshadowing(
             id=FID,
             project_id=PID,
@@ -56,7 +56,6 @@ class TestForeshadowingModel:
         assert foreshadowing.event_id is None
         assert foreshadowing.resolved_at is None
         assert foreshadowing.extra == {}
-        assert foreshadowing.is_deleted is False
 
     def test_entity_required_fields(self):
         """缺少必填字段（title）应抛出 ValidationError."""
