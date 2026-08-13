@@ -23,6 +23,7 @@ export function PipelineStatus({ status, error }: PipelineStatusProps) {
       {status === 'failed' && error && (
         <div className="text-err">{t('write.pipeline.failed', { message: error })}</div>
       )}
+      {status === 'idle' && <div className="text-ink-3">{t('write.stream.idle')}</div>}
     </div>
   );
 }
