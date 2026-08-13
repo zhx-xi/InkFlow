@@ -209,6 +209,12 @@ class ProjectService:
     async def hard_delete(self, project_id: int | uuid.UUID) -> bool:
         """物理删除项目（从数据库中永久移除）.
 
+        顺序：先执行 map_cleanup 钩子（取 maps 列表删图片文件），再执行
+        repo.hard_delete 删除 project 行。FK=ON 后 maps 引用 project 的裸 FK
+        会以 NO ACTION 拦截删除，必须先清 maps；且 cleanup 先取列表才能在
+        CASCADE 删行前拿到图片路径，避免文件残留。cleanup 异常仅 warning
+        不阻断，FK CASCADE 仍兜底清理 DB 行。
+
         Args:
             project_id: 项目主键（支持 int 或 UUID）.
 
@@ -216,10 +222,9 @@ class ProjectService:
             True 表示成功删除一条记录，False 表示未找到记录.
         """
         pid_int = _to_int_id(project_id)
-        deleted = await self._repo.hard_delete(pid_int)
-        if deleted and self._map_cleanup is not None:
+        if self._map_cleanup is not None:
             try:
                 await self._map_cleanup(pid_int)
             except Exception:
-                logger.warning("项目硬删后地图清理失败: %s", project_id, exc_info=True)
-        return deleted
+                logger.warning("项目硬删地图清理失败: %s", project_id, exc_info=True)
+        return await self._repo.hard_delete(pid_int)

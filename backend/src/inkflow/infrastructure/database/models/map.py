@@ -37,7 +37,7 @@ class MapORM(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("projects.id"),
+        ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -54,7 +54,7 @@ class MapORM(Base):
     )  # F43 P2：扩展字典（{"shapes": [...]}）
     root_location_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("world_settings.id"),
+        ForeignKey("world_settings.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -75,13 +75,13 @@ class MapPinORM(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     map_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("maps.id"),
+        ForeignKey("maps.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     location_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("world_settings.id"),
+        ForeignKey("world_settings.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
