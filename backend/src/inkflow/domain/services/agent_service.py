@@ -12,10 +12,11 @@ from inkflow.domain.models.agent_pipeline import (
     PipelineExecuteRequest,
     RoleOverride,
 )
-from inkflow.domain.models.agent_template import RoleTemplate
+from inkflow.domain.models.agent_template import AgentTemplate, RoleTemplate
 from inkflow.domain.models.project import AGENT_DEFAULT_SENTINEL, ProjectConfig
 from inkflow.domain.ports.agent_pipeline import (
     AgentPipelineProtocol,
+    AgentRole,
     PipelineContext,
     PipelineError,
     PipelineStage,
@@ -38,6 +39,7 @@ def _apply_agent_order(
     stages: list[PipelineStage],
     agent_order: list[list[str]],
     enabled_roles: set[str],
+    template_roles: dict[str, RoleTemplate] | None = None,
 ) -> list[PipelineStage]:
     """按 agent_order 层级拓扑重排管线阶段（spec §5.3.1 步骤 2-8 + 裁定 C1-C4）。
 
@@ -49,7 +51,9 @@ def _apply_agent_order(
     - 长度 >10 / 跨层重复 / 缺启用角色（C1）/ 终点角色为 architect/auditor（C2 成品身份）
 
     软降级（C3）：未来层/同层引用不回退，由 pipeline_nodes 空注入处理。
-    自定义角色（C4）：agent_order 中非内置角色且模板 stages 无此 stage → 跳过 + warning。
+    自定义角色（C4 + F42 #295）：agent_order 中非内置角色且模板 stages 无此
+    stage → 从 template_roles（AgentTemplate.roles）装配占位 AgentRole
+    （prompt 非 None 时）；template_roles 无该角色或 prompt 为 None → 跳过 + warning。
     """
     if not agent_order:
         return stages
@@ -86,10 +90,27 @@ def _apply_agent_order(
         for role in layer:
             stage_id = role.removeprefix("agent_")
             if stage_id not in stage_by_id:
-                logger.warning(
-                    "agent_order 角色 %s 在模板 stages 中无对应阶段（prompt 缺失），跳过",
-                    role,
-                )
+                # F42 #295（spec §5.3.4）：从 AgentTemplate.roles 装配占位角色
+                role_template = (template_roles or {}).get(stage_id)
+                if role_template is not None and role_template.prompt is not None:
+                    placeholder_agent = AgentRole(
+                        id=stage_id,
+                        name=role_template.name or stage_id,
+                        system_prompt=role_template.prompt,
+                        model=role_template.model or "openai/gpt-4o",
+                        temperature=role_template.temperature,
+                    )
+                    stage_by_id[stage_id] = PipelineStage(
+                        id=stage_id,
+                        name=role_template.name or stage_id,
+                        agent=placeholder_agent,
+                    )
+                    mapped.append(stage_id)
+                else:
+                    logger.warning(
+                        "agent_order 角色 %s 在模板 stages 中无对应阶段（prompt 缺失），跳过",
+                        role,
+                    )
                 continue
             mapped.append(stage_id)
         mapped_layers.append(mapped)
@@ -200,10 +221,22 @@ class AgentService:
                 raise AgentServiceError("章节不存在")
 
         # 4. 执行拓扑装配（F3 定稿）：读 agent_* 得启用集合（字段名）→ _apply_agent_order
-        #    （双模式分派 + 跳过过滤 + 重排 + 边重建 + C2 终点角色校验）→ 合并角色配置
+        #    （双模式分派 + 跳过过滤 + 自定义 stage 构造 + 重排 + 边重建 +
+        #    C2 终点角色校验）→ 合并角色配置
         project_role_models = _project_role_models(project.config)
         enabled_roles = {f"agent_{k}" for k, v in project_role_models.items() if v is not None}
-        stages = _apply_agent_order(template.stages, project.config.agent_order, enabled_roles)
+        # F42 #295（spec §5.3.4 第 4 点）：启用角色口径 = 内置 agent_* 非 null
+        # ∪ agent_roles 非 null（key 已带 agent_ 前缀，直接并入）
+        for field, value in (project.config.agent_roles or {}).items():
+            if value is not None:
+                enabled_roles.add(field)
+        project_template = await self._load_template(project.config)
+        stages = _apply_agent_order(
+            template.stages,
+            project.config.agent_order,
+            enabled_roles,
+            project_template.roles if project_template else None,
+        )
         stages = await self._merge_role_configs(stages, project.config, request.role_overrides)
 
         # 5. 创建执行记录
@@ -273,18 +306,31 @@ class AgentService:
         """列出所有内置模板。"""
         return {"items": self._list_templates()}
 
+    async def _load_template(self, project_config: ProjectConfig) -> AgentTemplate | None:
+        """引用式模板读取：config.template_id（str，JSON 存储）→ int 转换 →
+        template_repo.get；转换失败 / 模板不存在 → None（回退内置管线模板，
+        等价无 template_id 旧项目）。
+        """
+        if project_config.template_id is None:
+            return None
+        try:
+            int_id = int(project_config.template_id)
+        except ValueError:
+            return None
+        return await self._template_repo.get(int_id)
+
     async def _merge_role_configs(
         self,
         stages: list[PipelineStage],
         project_config: ProjectConfig,
         role_overrides: dict[str, RoleOverride] | None,
     ) -> list[PipelineStage]:
-        """合并角色配置: 引用式模板装配 + 每角色独立温度链 + role_overrides 最高优先级。
+        """合并角色配置: 引用式模板装配 + 每角色独立温度链 + prompt 覆盖 +
+        role_overrides 最高优先级。
 
         合并策略（spec §9.2.3 引用式生成机制）:
-        1. 项目 config.template_id（str，JSON 存储）→ int 转换 → template_repo.get
-           运行时读取 AgentTemplate；转换失败 / 模板不存在 → 跳过装配（回退内置
-           管线模板，等价无 template_id 旧项目）
+        1. 项目 config.template_id → _load_template 运行时读取 AgentTemplate；
+           转换失败 / 模板不存在 → 跳过装配（回退内置管线模板）
         2. 温度解析链（每角色独立，首个非 None 即止）:
            ① 项目 config 每角色温度字段 role_<role>_temperature（非 None 即覆盖）
            ② 模板 roles[role].temperature（缺省 key → RoleTemplate()，temperature
@@ -296,19 +342,21 @@ class AgentService:
         3. 模型装配: 模板 role 的 model 仅当 enabled=True 且 model 非 None 时覆盖；
            随后项目 agent_* 非空仍覆盖（用户拍板 Q1=A，项目优先）；最后
            role_overrides 覆盖（优先级最高，既有语义不变）
+        4. prompt 覆盖（F42 #295，spec §5.3.4）: 模板 roles[role].prompt 非 None
+           时覆盖 system_prompt（自定义角色 prompt 唯一来源）；role_overrides
+           prompt 优先级更高（最后覆盖）
+        5. 项目角色模型映射 = 内置 agent_* ∪ agent_roles（自定义角色三态字段，
+           key 去 agent_ 前缀 = stage.id）
         """
-        # 引用式模板读取：template_id 为 str → int 转换；失败 / 不存在 → template=None
-        template = None
-        if project_config.template_id is not None:
-            try:
-                int_id = int(project_config.template_id)
-            except ValueError:
-                int_id = None
-            if int_id is not None:
-                template = await self._template_repo.get(int_id)
+        # 引用式模板读取（F42 #295 提取为独立方法 _load_template）
+        template = await self._load_template(project_config)
 
         # 项目配置的角色映射
         project_role_models = _project_role_models(project_config)
+        # F42 #295（spec §5.3.4）：自定义角色三态字段并入角色模型映射
+        # （key 带 agent_ 前缀 → 去前缀 = stage.id）
+        for field, value in (project_config.agent_roles or {}).items():
+            project_role_models[field.removeprefix("agent_")] = value
 
         merged = []
         for stage in stages:
@@ -351,6 +399,11 @@ class AgentService:
                     )
                 else:
                     new_agent.model = project_model
+
+            # prompt 覆盖（F42 #295，spec §5.3.4）：模板 roles 定义 prompt 时
+            # 覆盖 system_prompt（role_overrides 仍为最高优先级，在下方覆盖）
+            if role_template.prompt is not None:
+                new_agent.system_prompt = role_template.prompt
 
             # role_overrides 最高优先级
             if role_overrides and stage.id in role_overrides:

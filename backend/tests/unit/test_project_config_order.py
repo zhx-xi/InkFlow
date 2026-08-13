@@ -119,3 +119,49 @@ class TestAgentOrderInvalid:
         """同角色同层内重复 → ValueError「角色重复」。"""
         with pytest.raises(ValueError, match="agent_order 角色重复: agent_writer"):
             ProjectConfig(agent_order=[["agent_writer", "agent_writer"]])
+
+
+class TestAgentRolesField:
+    """F42 #295 ProjectConfig 自定义角色三态字段 agent_roles（spec §5.3.4 数据面第 2 点）。
+
+    契约：agent_roles: dict[str, str | None]（key 带 agent_ 前缀，value 三态）：
+    - 默认空 dict（零迁移）
+    - value 三态语义与 agent_* 对齐：None=关闭 / "__default__"=跟随默认 / 字符串非空
+    - 空字符串值 → ValueError「Agent 模型不能为空字符串」
+    - 值 strip 规范化
+
+    RED 形态：agent_roles 字段不存在（extra='ignore' 静默丢弃）→
+    `"agent_roles" in model_dump()` AssertionError；非法值用例 pytest.raises DID NOT RAISE。
+    """
+
+    def test_default_empty_dict(self) -> None:
+        """默认 agent_roles == {}（零迁移：旧 config JSON 无键 → 空 dict）。"""
+        cfg = ProjectConfig()
+        dumped = cfg.model_dump()
+        assert "agent_roles" in dumped
+        assert dumped["agent_roles"] == {}
+
+    def test_explicit_custom_role_preserved(self) -> None:
+        """显式 agent_roles（自定义角色字段名 → provider/model）保留。"""
+        cfg = ProjectConfig(agent_roles={"agent_researcher": "zhipu/glm-4.5"})
+        assert cfg.model_dump()["agent_roles"] == {"agent_researcher": "zhipu/glm-4.5"}
+
+    def test_null_value_disables(self) -> None:
+        """value None = 关闭（与 agent_* 同三态语义）。"""
+        cfg = ProjectConfig(agent_roles={"agent_researcher": None})
+        assert cfg.model_dump()["agent_roles"] == {"agent_researcher": None}
+
+    def test_sentinel_follows_default(self) -> None:
+        """value "__default__" = 跟随默认（AGENT_DEFAULT_SENTINEL 语义）。"""
+        cfg = ProjectConfig(agent_roles={"agent_researcher": "__default__"})
+        assert cfg.model_dump()["agent_roles"] == {"agent_researcher": "__default__"}
+
+    def test_empty_string_rejected(self) -> None:
+        """空字符串 value → ValueError「Agent 模型不能为空字符串」（三态校验）。"""
+        with pytest.raises(ValueError, match="Agent 模型不能为空字符串"):
+            ProjectConfig(agent_roles={"agent_researcher": ""})
+
+    def test_whitespace_value_stripped(self) -> None:
+        """value 带空白 → strip 规范化（与 agent_* 对齐）。"""
+        cfg = ProjectConfig(agent_roles={"agent_researcher": "  zhipu/glm-4.5  "})
+        assert cfg.model_dump()["agent_roles"] == {"agent_researcher": "zhipu/glm-4.5"}

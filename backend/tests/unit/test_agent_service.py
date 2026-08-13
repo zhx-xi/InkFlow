@@ -761,3 +761,83 @@ class TestExecuteNewBuiltinTemplates:
         await asyncio.sleep(0.05)
 
         assert [s.id for s in pipeline.executed_stages] == ["writer", "auditor", "reviser"]
+class FakeTemplateRepo:
+    """自定义角色装配用模板仓储 Mock（get 返回预设 AgentTemplate 或 None）。"""
+
+    def __init__(self, template=None):
+        self.template = template
+
+    async def get(self, template_id):
+        return self.template
+
+
+class TestExecuteCustomRole:
+    """F42 #295 execute 自定义角色装配（spec §5.3.4 数据面集成 + §13 M6）。
+
+    契约：agent_roles（自定义角色三态）+ agent_order 引用自定义角色 + template_id
+    模板 roles 定义自定义角色 prompt → execute 装配后 pipeline.executed_stages
+    含自定义角色 stage（system_prompt/name/model 装配正确，层序正确）。
+
+    RED 形态（多阶段）：首断言 `"agent_roles" in config.model_dump()` AssertionError
+    （字段不存在，extra ignore 静默丢弃）；GREEN 后字段存在 → 后续装配断言驱动。
+    """
+
+    async def test_execute_custom_role_via_template_roles(self):
+        """agent_roles + agent_order + template_id 模板 roles → 自定义角色经装配执行。"""
+        from inkflow.domain.models.agent_template import AgentTemplate, RoleTemplate
+
+        template = AgentTemplate(
+            id=1,
+            name="自定义模板",
+            roles={"researcher": RoleTemplate(prompt="你是研究员，检查章节设定", name="研究员")},
+        )
+        config = ProjectConfig(
+            template_id="1",
+            agent_order=[["agent_architect"], ["agent_writer"], ["agent_researcher"]],
+            agent_architect="openai/gpt-4o",
+            agent_writer="openai/gpt-4o",
+            agent_roles={"agent_researcher": "zhipu/glm-4.5"},
+        )
+        assert "agent_roles" in config.model_dump()  # RED 首断言
+        project = _make_project(config=config)
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+        service._template_repo = FakeTemplateRepo(template)
+
+        await service.execute(
+            PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_chapter")
+        )
+        await asyncio.sleep(0.05)
+
+        stages = {s.id: s for s in pipeline.executed_stages}
+        assert "researcher" in stages
+        assert stages["researcher"].agent.system_prompt == "你是研究员，检查章节设定"
+        assert stages["researcher"].agent.name == "研究员"
+        # agent_roles 覆盖 model（三态 provider/model）
+        assert stages["researcher"].agent.model == "zhipu/glm-4.5"
+        # 层序：researcher（层 2）在 writer（层 1）后
+        ids = [s.id for s in pipeline.executed_stages]
+        assert ids.index("researcher") > ids.index("writer")
+        # 配置驱动模式：auditor/reviser 为 null → 跳过（不参与执行）
+        assert "auditor" not in stages
+        assert "reviser" not in stages
+
+    async def test_execute_custom_role_model_none_follows_default(self):
+        """agent_roles 自定义角色 value=None（关闭）→ 不参与执行（null 摘除）。"""
+        config = ProjectConfig(
+            agent_order=[["agent_architect"], ["agent_writer"]],
+            agent_architect="openai/gpt-4o",
+            agent_writer="openai/gpt-4o",
+            agent_roles={"agent_researcher": None},  # 关闭
+        )
+        project = _make_project(config=config)
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+
+        await service.execute(
+            PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_chapter")
+        )
+        await asyncio.sleep(0.05)
+
+        stages = {s.id: s for s in pipeline.executed_stages}
+        assert "researcher" not in stages  # null 关闭 → 未构造/未执行

@@ -114,7 +114,9 @@ def _to_response(template: AgentTemplate, *, used_by: list[dict] | None = None) 
     """实体 → 响应字典：模板 10 字段 + roles 四角色键归一 + 可选 used_by.
 
     回填语义：未配置角色（model=None）回填 BUILTIN_DEFAULT_MODEL，保证
-    roles[role].model 恒为 str（API 测试契约；spec §9.2.5 enabled=False 亦然）."""
+    roles[role].model 恒为 str（API 测试契约；spec §9.2.5 enabled=False 亦然）。
+    F42 #295（spec §5.3.4）：非四键自定义角色追加在四键之后（prompt/name 透出，
+    模型同样回填内置默认）。"""
     data = template.model_dump(mode="json")
     roles: dict[str, dict] = {}
     for key in ROLE_KEYS:
@@ -124,6 +126,12 @@ def _to_response(template: AgentTemplate, *, used_by: list[dict] | None = None) 
         # （spec §9.2.5 enabled=False 语义「关闭 = 使用默认模型」）
         role_dict["model"] = role_dict["model"] or BUILTIN_DEFAULT_MODEL
         roles[key] = role_dict
+    # 自定义角色（非四键）：保持四键顺序在前，自定义键追加在后
+    for key, role in template.roles.items():
+        if key not in ROLE_KEYS:
+            role_dict = role.model_dump(mode="json")
+            role_dict["model"] = role_dict["model"] or BUILTIN_DEFAULT_MODEL
+            roles[key] = role_dict
     data["roles"] = roles
     if used_by is not None:
         data["used_by"] = used_by

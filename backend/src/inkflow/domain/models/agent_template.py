@@ -33,11 +33,17 @@ class RoleTemplate(BaseModel):
         model: 角色模型（None = 跟随默认）.
         temperature: 独立温度（None = 跟随默认，显式语义，spec §9.2.3）.
         enabled: False = 该角色 model 不覆盖，用默认模型（spec §9.2.5）.
+        prompt: 自定义角色 system_prompt（F42 #295，spec §5.3.4 数据面；
+            None = 未定义 → 执行层跳过防御）.
+        name: 自定义角色显示名（F42 #295，spec §5.3.4 数据面；None = 回退
+            角色字段名）.
     """
 
     model: str | None = None
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     enabled: bool = True
+    prompt: str | None = None
+    name: str | None = None
 
 
 class AgentTemplate(BaseModel):

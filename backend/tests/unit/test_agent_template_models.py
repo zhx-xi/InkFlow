@@ -218,7 +218,15 @@ class TestAgentTemplate:
             default_words=50000,
         )
         dumped = t.model_dump()
-        assert dumped["roles"] == {"writer": {"model": "m/w", "temperature": 0.6, "enabled": False}}
+        assert dumped["roles"] == {
+            "writer": {
+                "model": "m/w",
+                "temperature": 0.6,
+                "enabled": False,
+                "prompt": None,
+                "name": None,
+            }
+        }
         assert isinstance(json.dumps(dumped, ensure_ascii=False), str)
 
     def test_json_roundtrip_full_entity(self):
@@ -243,7 +251,13 @@ class TestAgentTemplate:
         assert dumped["id"] == 1
         assert dumped["is_default"] is True
         assert isinstance(dumped["created_at"], str)
-        assert dumped["roles"]["writer"] == {"model": "m/w", "temperature": 0.6, "enabled": False}
+        assert dumped["roles"]["writer"] == {
+            "model": "m/w",
+            "temperature": 0.6,
+            "enabled": False,
+            "prompt": None,
+            "name": None,
+        }
         reloaded = AgentTemplate.model_validate(dumped)
         assert reloaded == t
 
@@ -363,3 +377,36 @@ class TestAgentTemplateUpdate:
         u = AgentTemplateUpdate(is_default=False)
         assert u.is_default is False
         assert "is_default" in u.model_fields_set
+
+
+class TestRoleTemplatePromptName:
+    """F42 #295 RoleTemplate 扩展 prompt/name（spec §5.3.4 数据面第 1 点）。
+
+    契约：prompt/name 均为可选字段，默认 None（零迁移：旧 roles JSON 无键
+    → 读回默认 None）；显式赋值保留；model_dump/model_validate roundtrip 含新键。
+
+    RED 形态：RoleTemplate().prompt → AttributeError（字段不存在）。
+    GREEN 适配预警（既有测试）：test_json_roundtrip（L110-114）、
+    test_json_roundtrip_full_entity（L224-248）等 model_dump 精确 dict 断言
+    会因 model_dump 多出 prompt/name 键而翻红——GREEN 阶段同步补键。
+    """
+
+    def test_defaults_prompt_name_none(self):
+        """默认 prompt=None, name=None（零迁移）。"""
+        r = RoleTemplate()
+        assert r.prompt is None
+        assert r.name is None
+
+    def test_explicit_prompt_name(self):
+        """显式赋值 prompt/name 保留。"""
+        r = RoleTemplate(prompt="你是自定义研究员", name="研究员")
+        assert r.prompt == "你是自定义研究员"
+        assert r.name == "研究员"
+
+    def test_json_roundtrip_includes_prompt_name(self):
+        """model_dump(mode='json') → model_validate 还原含 prompt/name（API 序列化契约）。"""
+        r = RoleTemplate(model="openai/gpt-4o", prompt="p", name="n", enabled=True)
+        reloaded = RoleTemplate.model_validate(r.model_dump(mode="json"))
+        assert reloaded == r
+        assert reloaded.prompt == "p"
+        assert reloaded.name == "n"

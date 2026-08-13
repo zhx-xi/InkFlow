@@ -314,3 +314,55 @@ class TestCustomRoleDefense:
         assert by_id["writer"].input_from == ["architect"]
         # architect（层 0）→ output_to = 后序全部（writer + custom_role）
         assert sorted(by_id["architect"].output_to) == ["custom_role", "writer"]
+
+
+class TestCustomRoleConstruction:
+    """F42 #295 _apply_agent_order 步骤 5 自定义 stage 构造（spec §5.3.4 数据面第 5 点）。
+
+    契约：_apply_agent_order 第 4 参数 template_roles（裸名 → RoleTemplate）——
+    agent_order 含自定义角色（非内置 4 且模板 stages 无此 stage）时，从 template_roles
+    装配占位 AgentRole（system_prompt=RoleTemplate.prompt、name=RoleTemplate.name or stage_id、
+    model=RoleTemplate.model or 内置默认）；template_roles 无该角色或
+    prompt 为 None → 跳过 + warning。
+
+    RED 形态：_apply_agent_order 当前签名 3 参 → 多传第 4 参 TypeError（签名未扩）。
+    既有 TestCustomRoleDefense（3 参调用）在 GREEN 后第 4 参默认 None 保持兼容。
+    """
+
+    def test_custom_role_constructed_from_template_roles(self) -> None:
+        """agent_order 含自定义角色 + template_roles 提供 prompt → 构造占位 stage
+        参与执行（system_prompt/name 从 RoleTemplate 装配）。"""
+        from inkflow.domain.models.agent_template import RoleTemplate
+
+        order = [[F_ARCHITECT], [F_WRITER], ["agent_researcher"]]
+        enabled = {F_ARCHITECT, F_WRITER, "agent_researcher"}
+        template_roles = {
+            "researcher": RoleTemplate(prompt="你是研究员，检查章节设定一致性", name="研究员"),
+        }
+        result = _apply_agent_order(list(DEFAULT_STAGES), order, enabled, template_roles)
+
+        assert _stage_ids(result) == ["architect", "writer", "researcher"]
+        by_id = {s.id: s for s in result}
+        assert by_id["researcher"].agent.system_prompt == "你是研究员，检查章节设定一致性"
+        assert by_id["researcher"].agent.name == "研究员"
+        # researcher 为终点（层 2）→ input_from = 前序全部（architect + writer）
+        assert sorted(by_id["researcher"].input_from) == ["architect", "writer"]
+
+    def test_custom_role_missing_prompt_skipped(self) -> None:
+        """template_roles 无该自定义角色（prompt 无来源）→ 跳过 + 其余正常（C4 防御保持）。"""
+        order = [[F_ARCHITECT], [F_WRITER], ["agent_researcher"]]
+        enabled = {F_ARCHITECT, F_WRITER, "agent_researcher"}
+        result = _apply_agent_order(list(DEFAULT_STAGES), order, enabled, {})
+
+        assert _stage_ids(result) == ["architect", "writer"]
+
+    def test_custom_role_prompt_none_skipped(self) -> None:
+        """template_roles 有该角色但 prompt 为 None → 跳过（prompt 缺失防御）。"""
+        from inkflow.domain.models.agent_template import RoleTemplate
+
+        order = [[F_ARCHITECT], [F_WRITER], ["agent_researcher"]]
+        enabled = {F_ARCHITECT, F_WRITER, "agent_researcher"}
+        template_roles = {"researcher": RoleTemplate(prompt=None, name="研究员")}
+        result = _apply_agent_order(list(DEFAULT_STAGES), order, enabled, template_roles)
+
+        assert _stage_ids(result) == ["architect", "writer"]

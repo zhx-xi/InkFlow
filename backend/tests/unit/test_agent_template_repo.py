@@ -239,9 +239,27 @@ class TestAgentTemplateRepository:
             select(AgentTemplateORM).where(AgentTemplateORM.id == saved.id)
         )
         assert row.scalar_one().roles == {
-            "architect": {"model": "openai/gpt-4o", "temperature": 0.7, "enabled": True},
-            "writer": {"model": "deepseek/deepseek-chat", "temperature": None, "enabled": False},
-            "auditor": {"model": None, "temperature": None, "enabled": True},
+            "architect": {
+                "model": "openai/gpt-4o",
+                "temperature": 0.7,
+                "enabled": True,
+                "prompt": None,
+                "name": None,
+            },
+            "writer": {
+                "model": "deepseek/deepseek-chat",
+                "temperature": None,
+                "enabled": False,
+                "prompt": None,
+                "name": None,
+            },
+            "auditor": {
+                "model": None,
+                "temperature": None,
+                "enabled": True,
+                "prompt": None,
+                "name": None,
+            },
         }
 
     async def test_roles_empty_by_default(self, db_session):

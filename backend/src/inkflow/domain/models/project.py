@@ -44,6 +44,8 @@ class ProjectConfig(BaseModel):
         agent_writer: 写手 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
         agent_auditor: 审阅 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
         agent_reviser: 修订 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
+        agent_roles: 自定义角色三态字段（key 带 agent_ 前缀，value 三态语义
+            与 agent_* 完全一致；spec §5.3.4 数据面）.
         temperature: 生成温度 (0.0 - 2.0).
         role_architect_temperature: 架构师角色独立温度（None = 跟随默认）.
         role_writer_temperature: 写手角色独立温度（None = 跟随默认）.
@@ -60,6 +62,13 @@ class ProjectConfig(BaseModel):
     agent_writer: str | None = None
     agent_auditor: str | None = None
     agent_reviser: str | None = None
+    agent_roles: dict[str, str | None] = Field(default_factory=dict)
+    """自定义角色三态字段（F42 #295，spec §5.3.4 数据面第 2 点）.
+
+    key 为带 agent_ 前缀的角色字段名（如 agent_researcher），value 三态语义
+    与 agent_* 完全对齐：None=关闭 / "__default__"=跟随默认 /
+    "<provider>/<model>"=指定模型。零迁移：旧 config JSON 无键 → 默认空 dict。
+    """
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     role_architect_temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     role_writer_temperature: float | None = Field(default=None, ge=0.0, le=2.0)
@@ -94,6 +103,25 @@ class ProjectConfig(BaseModel):
         if not stripped:
             raise ValueError("Agent 模型不能为空字符串")
         return stripped
+
+    @field_validator("agent_roles")
+    @classmethod
+    def validate_agent_roles(cls, v: dict[str, str | None]) -> dict[str, str | None]:
+        """agent_roles 三态语义校验（F42 #295，spec §5.3.4 数据面第 2 点）.
+
+        与 validate_agent_model 完全对齐：None=关闭；"__default__"=跟随默认；
+        字符串 strip 后必须非空（空串 ValueError「Agent 模型不能为空字符串」）。
+        """
+        result: dict[str, str | None] = {}
+        for key, value in v.items():
+            if value is None or value == AGENT_DEFAULT_SENTINEL:
+                result[key] = value
+                continue
+            stripped = value.strip()
+            if not stripped:
+                raise ValueError("Agent 模型不能为空字符串")
+            result[key] = stripped
+        return result
 
     @field_validator("agent_order", mode="before")
     @classmethod
