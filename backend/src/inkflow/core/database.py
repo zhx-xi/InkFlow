@@ -183,6 +183,28 @@ def ensure_map_columns(conn: Connection) -> None:
             )
         if "ref_id" not in pin_names:
             conn.execute(text("ALTER TABLE map_pins ADD COLUMN ref_id INTEGER"))
+
+
+def ensure_outline_columns(conn: Connection) -> None:
+    """F43 P3：为既有库 outlines 表补 level/parent_id/chapter_id 列（幂等）.
+
+    沿用 ensure_map_columns 幂等模式：先查 PRAGMA table_info 确认列缺失
+    才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，
+    等 create_all 建新表（ORM 已含三列）。spec §2.8 迁移（接线点在
+    create_tables() 后，与 ensure_map_columns 同点）。
+    """
+    cols = conn.execute(text("PRAGMA table_info(outlines)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return  # 表不存在（全新环境）→ create_all 建新表（自动含三列）
+    if "level" not in names:
+        conn.execute(text("ALTER TABLE outlines ADD COLUMN level VARCHAR(16) DEFAULT 'chapter'"))
+    if "parent_id" not in names:
+        conn.execute(text("ALTER TABLE outlines ADD COLUMN parent_id INTEGER"))
+    if "chapter_id" not in names:
+        conn.execute(text("ALTER TABLE outlines ADD COLUMN chapter_id INTEGER"))
+
+
 def ensure_world_drop_is_deleted(conn: Connection) -> None:
     """#211 v1.1：world_settings 软删语义 → 真删迁移（幂等，spec §8.3）.
 

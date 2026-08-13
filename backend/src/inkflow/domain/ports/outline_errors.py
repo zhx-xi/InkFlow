@@ -90,3 +90,24 @@ class ArcNotInProjectError(OutlineServiceError):
 
     def __init__(self, message: str = "弧线不存在于该项目") -> None:
         super().__init__(message)
+
+
+class OutlineLevelError(OutlineServiceError):
+    """大纲层级非法（非 overall/volume/chapter）— 422."""
+
+    def __init__(self, message: str = "大纲层级只能为 overall/volume/chapter") -> None:
+        super().__init__(message)
+
+
+class OutlineHierarchyError(OutlineServiceError):
+    """大纲层级约束违反（overall 挂父 / volume 非挂 overall / chapter 非挂 volume）— 422."""
+
+    def __init__(self, message: str = "大纲层级约束违反") -> None:
+        super().__init__(message)
+
+
+class OutlineChapterRefError(OutlineServiceError):
+    """章关联约束违反（chapter_id 仅 chapter 可设 / 章节不存在或跨项目）— 422."""
+
+    def __init__(self, message: str = "章关联约束违反") -> None:
+        super().__init__(message)

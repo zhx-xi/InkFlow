@@ -445,3 +445,176 @@ test('设定库：删除取消零请求（E2E-E3）——取消 → 关闭 + 条
     await app.close();
   }
 });
+
+// ────────────────────────────────────────────────────────────────
+// F43 P2（#284）：P2 遗留地图 E2E 契约补全（spec §9.8 E2E-M1/M2/M3）——
+// 地图工作台入口+面包屑 / 一图多标记 / 三底图切换 pin 保留
+// testid 契约以 P2 已交付源码为准（MapWorkbench.tsx / MapCanvas.tsx / PinDialog.tsx）
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * F43 P2 预置：唯一项目 → 世界观节点（JSON）→ 简图地图（⚠️ multipart Form，
+ * kernelFetch 是 JSON-only，单独 fetch + FormData）→ 可选预置 pin（JSON）。
+ * 返回 pid / rootLocationId（世界观节点 id）/ mapId / mapName 供断言使用。
+ */
+async function presetMapWithPin(
+  window: Page,
+  kernel: KernelInfo,
+  name: string,
+  opts: { withPin?: boolean } = {},
+): Promise<{ pid: string; rootLocationId: string; mapId: string; mapName: string }> {
+  await createProjectViaUi(window, name);
+  const pid = await findProjectId(kernel, name);
+
+  // 世界观节点（category='地图'）→ 返回 id 作 rootLocationId（地图挂载根地点）
+  const wsRes = await kernelFetch(kernel, `/api/v1/projects/${pid}/world-settings`, {
+    method: 'POST',
+    body: { name: `${name}-节点甲`, category: '地图' },
+  });
+  expect(wsRes.status).toBe(201);
+  const ws = (await wsRes.json()) as { id: string };
+  const rootLocationId = ws.id;
+
+  // 地图（multipart：name + bg_source + root_location_id；bg_source=shape 无图也可建）
+  const mapName = `${name}-地图`;
+  const form = new FormData();
+  form.append('name', mapName);
+  form.append('bg_source', 'shape');
+  form.append('root_location_id', rootLocationId);
+  const mapRes = await fetch(`http://127.0.0.1:${kernel.port}/api/v1/projects/${pid}/maps`, {
+    method: 'POST',
+    headers: { 'X-InkFlow-Token': kernel.token },
+    body: form,
+  });
+  expect(mapRes.status).toBe(201);
+  const mapData = (await mapRes.json()) as { id: string };
+  const mapId = mapData.id;
+
+  if (opts.withPin) {
+    const pinRes = await kernelFetch(kernel, `/api/v1/maps/${mapId}/pins`, {
+      method: 'POST',
+      body: { location_id: rootLocationId, x: 30, y: 40, label: '地点甲' },
+    });
+    expect(pinRes.status).toBe(201);
+  }
+
+  return { pid, rootLocationId, mapId, mapName };
+}
+
+/** F43 P2 进入地图工作台：设定库 → 世界观 tab → 点击地图节点徽标（world-map-badge-<rootLocationId>）→ 画布出现 */
+async function openMapWorkbench(window: Page, rootLocationId: string): Promise<void> {
+  await gotoNav(window, '设定库');
+  await expect(window.getByTestId('library-page')).toBeVisible({ timeout: 15_000 });
+  await window.getByRole('tab', { name: '世界观' }).click();
+  const badge = window.getByTestId(`world-map-badge-${rootLocationId}`);
+  await expect(badge).toBeVisible({ timeout: 15_000 });
+  await badge.click();
+  await expect(window.getByTestId('map-canvas')).toBeVisible({ timeout: 15_000 });
+}
+
+/** 画布内 pin 计数（scope 到 map-canvas：页面级 map-pin-list / map-pin-edit-* 同前缀，不可整页计数） */
+function canvasPins(window: Page) {
+  return window.getByTestId('map-canvas').locator('[data-testid^="map-pin-"]');
+}
+
+test('设定库：地图工作台入口 + 面包屑（E2E-M1）——世界观 tab → 地图节点徽标 → 画布 + 面包屑含地图名', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-地图-M1-${Date.now()}`;
+    const { rootLocationId, mapName } = await presetMapWithPin(window, kernel, name);
+
+    await openMapWorkbench(window, rootLocationId);
+
+    // 画布 + 底图工具栏（三态 chips：简图/图片/AI）
+    await expect(window.getByTestId('map-bg-tools')).toBeVisible({ timeout: 15_000 });
+    // 四级面包屑：设定库 / 世界观 / 地图视图 / {地图名}——当前级显示地图名
+    await expect(window.getByTestId('map-breadcrumb')).toBeVisible();
+    await expect(window.getByTestId('map-bc-current')).toContainText(mapName);
+    // 无 pin → 空画布点击提示（预置无 pin）
+    await expect(window.getByTestId('map-pin-add-hint')).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});
+
+test('设定库：一图多标记（E2E-M2）——点击画布 → pin-dialog → 保存 → 新 pin 出现 + 列表刷新', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-地图-M2-${Date.now()}`;
+    const { rootLocationId, mapId } = await presetMapWithPin(window, kernel, name, { withPin: true });
+
+    await openMapWorkbench(window, rootLocationId);
+
+    // 预置 1 个 pin（画布叠加层渲染 map-pin-<id>）
+    await expect(canvasPins(window)).toHaveCount(1, { timeout: 15_000 });
+
+    // 点击画布任意位置 → PinDialog（名称/类型/保存五元素齐全）
+    await window.getByTestId('map-canvas').click({ position: { x: 150, y: 120 } });
+    const dialog = window.getByTestId('pin-dialog');
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    await expect(dialog.getByTestId('pin-name')).toBeVisible();
+
+    // 填名称 → 保存（label 必填 1-50 gate；默认 type=location 不选关联 → 纯注释 pin）
+    const newLabel = '新标记乙';
+    await dialog.getByTestId('pin-name').fill(newLabel);
+    await dialog.getByTestId('pin-save').click();
+
+    // 时间敏感项最先断言：ok toast（~2s 自动消失）
+    await expect(window.getByRole('status')).toContainText('已保存', { timeout: 15_000 });
+    await expect(dialog).toBeHidden();
+    // 新 pin 出现（画布计数 1→2）+ pin 列表刷新含新 label
+    await expect(canvasPins(window)).toHaveCount(2, { timeout: 15_000 });
+    await expect(window.getByTestId('map-pin-list')).toContainText(newLabel);
+    // 内核落库：pin 列表 total=2（POST 真实发生证据）
+    await expect
+      .poll(
+        async () => {
+          const r = await kernelFetch(kernel, `/api/v1/maps/${mapId}/pins`);
+          const data = (await r.json()) as { total: number };
+          return data.total;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(2);
+  } finally {
+    await app.close();
+  }
+});
+
+test('设定库：三底图切换 pin 保留（E2E-M3）——shape→image 切换 PATCH bg_source，pin 独立叠加层不消失', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-地图-M3-${Date.now()}`;
+    const { rootLocationId, mapId } = await presetMapWithPin(window, kernel, name, { withPin: true });
+
+    await openMapWorkbench(window, rootLocationId);
+
+    // 预置 1 个 pin
+    await expect(canvasPins(window)).toHaveCount(1, { timeout: 15_000 });
+
+    // 简图（创建即 bg_source=shape）→ 画布仍显示 pin（数量不变）
+    await window.getByTestId('map-bg-shape').click();
+    await expect(canvasPins(window)).toHaveCount(1);
+
+    // 切图片底图（无图 → 画布「无图片」占位；pin 独立叠加层仍保留）
+    await window.getByTestId('map-bg-image').click();
+    await expect(window.getByTestId('map-bg-image')).toHaveAttribute('aria-pressed', 'true', {
+      timeout: 15_000,
+    });
+    await expect(canvasPins(window)).toHaveCount(1);
+
+    // 内核落库：bg_source 已 PATCH 为 image（切换真实发生，非仅 UI 态）
+    await expect
+      .poll(
+        async () => {
+          const r = await kernelFetch(kernel, `/api/v1/maps/${mapId}`);
+          const data = (await r.json()) as { bg_source: string };
+          return data.bg_source;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe('image');
+  } finally {
+    await app.close();
+  }
+});

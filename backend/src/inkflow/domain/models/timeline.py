@@ -360,6 +360,27 @@ class ConsistencyReport(BaseModel):
     narrative_order: list[TimelineEvent] = []  # 叙事顺序视图（narrative_position 升序）
 
 
+class EventCheckReport(BaseModel):
+    """单事件检查报告（F43 P4 spec §2.9/§3.7）.
+
+    仅报告该事件作为叙事相邻对 prev/next 参与的逆序冲突（复用 check_consistency
+    的相邻对分类：order_conflict/flashback/flashforward，零新冲突类型）。
+
+    Attributes:
+        event_id: 被检查事件 UUID.
+        checked: 该事件 time_value 是否非 None（None = 不参与检查）.
+        consistent: conflicts 为空.
+        conflicts: 该事件参与的 order_conflict.
+        flashbacks: 该事件参与的 flashback/flashforward.
+    """
+
+    event_id: uuid.UUID
+    checked: bool
+    consistent: bool
+    conflicts: list[TimelineConflict] = []
+    flashbacks: list[TimelineConflict] = []
+
+
 class TimelineView(BaseModel):
     """双时间线总览（事件时间线 + 叙事时间线）.
 

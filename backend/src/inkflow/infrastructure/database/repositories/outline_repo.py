@@ -56,6 +56,9 @@ def _outline_orm_to_domain(orm: OutlineORM) -> Outline:
         name=orm.name,
         description=orm.description,
         sort_order=orm.sort_order,
+        level=orm.level,
+        parent_id=_int_to_uuid(orm.parent_id),
+        chapter_id=_int_to_uuid(orm.chapter_id),
         extra=orm.extra or {},
         created_at=orm.created_at,
         updated_at=orm.updated_at,
@@ -69,6 +72,9 @@ def _outline_domain_to_orm(domain: Outline) -> OutlineORM:
         name=domain.name,
         description=domain.description,
         sort_order=domain.sort_order,
+        level=domain.level,
+        parent_id=_uuid_to_int(domain.parent_id) if domain.parent_id is not None else None,
+        chapter_id=_uuid_to_int(domain.chapter_id) if domain.chapter_id is not None else None,
         extra=domain.extra,
     )
 
@@ -202,6 +208,13 @@ class SQLiteOutlineRepository:
                 name=outline.name,
                 description=outline.description,
                 sort_order=outline.sort_order,
+                level=outline.level,
+                parent_id=_uuid_to_int(outline.parent_id)
+                if outline.parent_id is not None
+                else None,
+                chapter_id=_uuid_to_int(outline.chapter_id)
+                if outline.chapter_id is not None
+                else None,
                 extra=outline.extra,
                 updated_at=_utcnow(),
             )

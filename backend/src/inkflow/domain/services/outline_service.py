@@ -18,6 +18,8 @@
 - repository: OutlineRepositoryProtocol（B1 已实现）
 - generator: OutlineGenerator（B2 已实现）
 - project_repo: ProjectRepositoryProtocol（F1 已实现，generate 入口校验用）
+- chapter_repo: ChapterRepositoryProtocol（F2 已实现，F43 P3 章关联校验用；
+  可选注入，None 跳过 chapter_id 存在性校验，向后兼容）
 
 依据: specs/f11-outline-service/spec.md §6/§7/§9。
 """
@@ -40,9 +42,13 @@ from inkflow.domain.models.outline import (
     StoryArcUpdate,
 )
 from inkflow.domain.models.project import Project
+from inkflow.domain.ports.chapter_repository import ChapterRepositoryProtocol
 from inkflow.domain.ports.outline_errors import (
     ArcNameConflictError,
     ArcNotInProjectError,
+    OutlineChapterRefError,
+    OutlineHierarchyError,
+    OutlineLevelError,
     OutlineNameConflictError,
     OutlineNotFoundError,
     OutlineServiceError,
@@ -98,6 +104,8 @@ class OutlineService:
         generator: 大纲生成管线（B2）；deps.py 负责组装，默认 None 时
             generate 入口报错（防止静默降级）.
         project_repo: 项目仓储（F1），generate 入口校验项目存在并读取默认模型.
+        chapter_repo: 章节仓储（F2），F43 P3 校验 chapter_id 存在且同项目；
+            可选注入，None 跳过校验（向后兼容）。
     """
 
     def __init__(
@@ -106,12 +114,63 @@ class OutlineService:
         repository: OutlineRepositoryProtocol,
         generator: OutlineGenerator | None = None,
         project_repo: ProjectRepositoryProtocol | None = None,
+        chapter_repo: ChapterRepositoryProtocol | None = None,
     ) -> None:
         self._repo = repository
         self._generator = generator
         self._project_repo = project_repo
+        self._chapter_repo = chapter_repo
 
     # ── Outline ────────────────────────────────────────────────
+
+    async def _validate_outline_hierarchy(
+        self,
+        project_id: uuid.UUID,
+        level: str,
+        parent_id: uuid.UUID | None,
+        chapter_id: uuid.UUID | None,
+    ) -> None:
+        """F43 P3 大纲三级 + 章关联层级校验（严格，spec §2.8 决策点 2.A）.
+
+        规则:
+        - level 非 overall/volume/chapter → OutlineLevelError
+        - overall 不允许挂父（parent_id 非空）→ OutlineHierarchyError
+        - volume 父须 level=overall 且同项目（不存在/不符 → OutlineHierarchyError）
+        - chapter 父须 level=volume 且同项目；parent 空 = 孤立章（合法）
+        - chapter_id 非空且 level ≠ chapter → OutlineChapterRefError
+        - chapter_id 非空时经 chapter_repo.get_chapter 校验存在且同项目
+          （chapter_repo 未注入 → 跳过校验，向后兼容）
+
+        Args:
+            project_id: 所属项目 UUID.
+            level: 大纲层级.
+            parent_id: 父大纲 UUID（None = 顶层/孤立章）.
+            chapter_id: 关联写作章节 UUID（None = 不关联）.
+
+        Raises:
+            OutlineLevelError: level 非法.
+            OutlineHierarchyError: 层级约束违反.
+            OutlineChapterRefError: chapter_id 约束违反.
+        """
+        if level not in {"overall", "volume", "chapter"}:
+            raise OutlineLevelError()
+        if level == "overall" and parent_id is not None:
+            raise OutlineHierarchyError("整体大纲不允许挂载父大纲")
+        if parent_id is not None:
+            parent = await self._repo.get(_to_int_id(parent_id))
+            if parent is None or parent.project_id != project_id:
+                raise OutlineHierarchyError("父大纲不存在或不属于该项目")
+            if level == "volume" and parent.level != "overall":
+                raise OutlineHierarchyError("卷大纲只能挂载在整体大纲下")
+            if level == "chapter" and parent.level != "volume":
+                raise OutlineHierarchyError("章大纲只能挂载在卷大纲下")
+        if chapter_id is not None:
+            if level != "chapter":
+                raise OutlineChapterRefError("仅章层级大纲可关联写作章节")
+            if self._chapter_repo is not None:
+                chapter = await self._chapter_repo.get_chapter(_to_int_id(chapter_id))
+                if chapter is None or chapter.project_id != project_id:
+                    raise OutlineChapterRefError("关联章节不存在或不属于该项目")
 
     async def create_outline(
         self,
@@ -119,25 +178,40 @@ class OutlineService:
         name: str,
         description: str = "",
         sort_order: int = 0,
+        level: str = "chapter",
+        parent_id: uuid.UUID | None = None,
+        chapter_id: uuid.UUID | None = None,
     ) -> Outline:
-        """创建大纲（spec §7: 同名活动大纲 → 422）.
+        """创建大纲（spec §7: 同名活动大纲 → 422；F43 P3 三级层级校验）.
 
         Args:
             project_id: 所属项目 UUID（router 解析路径参数后传入）.
             name: 大纲名（OutlineCreate 已去空白校验）.
             description: 大纲总体描述.
             sort_order: 大纲间排序权重（小者在前）.
+            level: 大纲层级（overall/volume/chapter；默认 chapter = 孤立章）.
+            parent_id: 父大纲 UUID（None = 顶层/孤立章）.
+            chapter_id: 关联写作章节 UUID（仅 level=chapter 可设）.
 
         Returns:
             持久化后的完整 Outline.
 
         Raises:
             OutlineNameConflictError: 项目内已存在同名活动大纲.
+            OutlineLevelError: level 非法.
+            OutlineHierarchyError: 层级约束违反.
+            OutlineChapterRefError: chapter_id 约束违反.
         """
         pid_int = _to_int_id(project_id)
         existing = await self._repo.get_by_name(pid_int, name)
         if existing is not None:
             raise OutlineNameConflictError()
+        await self._validate_outline_hierarchy(
+            project_id=project_id,
+            level=level,
+            parent_id=parent_id,
+            chapter_id=chapter_id,
+        )
         now = _utcnow()
         outline = Outline(
             id=uuid.uuid4(),
@@ -145,10 +219,13 @@ class OutlineService:
             name=name,
             description=description,
             sort_order=sort_order,
+            level=level,
+            parent_id=parent_id,
+            chapter_id=chapter_id,
             created_at=now,
             updated_at=now,
         )
-        logger.info("创建大纲: project=%s name=%s", project_id, name)
+        logger.info("创建大纲: project=%s name=%s level=%s", project_id, name, level)
         return await self._repo.add(outline)
 
     async def get_outline(self, outline_id: int | uuid.UUID) -> Outline | None:
@@ -191,7 +268,9 @@ class OutlineService:
     ) -> Outline | None:
         """部分更新大纲（exclude_unset 语义，同 F1）.
 
-        业务校验（spec §7）: 改名撞项目内其他活动大纲 → 422。
+        业务校验（spec §7 + F43 P3 §2.8）: 改名撞项目内其他活动大纲 → 422；
+        层级变更（level/parent_id/chapter_id）按三级结构严格校验；parent_id/
+        chapter_id 传 "" = 清除（置 None，对齐 PlotPointUpdate.arc_id 先例）。
 
         Args:
             outline_id: 大纲主键（支持 int 或 UUID）.
@@ -199,6 +278,12 @@ class OutlineService:
 
         Returns:
             更新后的完整 Outline；大纲不存在返回 None（router 转 404）.
+
+        Raises:
+            OutlineNameConflictError: 改名撞项目内其他活动大纲.
+            OutlineLevelError: level 非法.
+            OutlineHierarchyError: 层级约束违反.
+            OutlineChapterRefError: chapter_id 约束违反.
         """
         oid = _to_int_id(outline_id)
         existing = await self._repo.get(oid)
@@ -209,7 +294,19 @@ class OutlineService:
             if dup is not None and dup.id != existing.id:
                 raise OutlineNameConflictError()
         updates = {k: v for k, v in update.model_dump(exclude_unset=True).items() if v is not None}
+        if "parent_id" in update.model_fields_set and not isinstance(update.parent_id, uuid.UUID):
+            # None / "" → 清除父大纲归属（对齐 PlotPointUpdate.arc_id 先例）
+            updates["parent_id"] = None
+        if "chapter_id" in update.model_fields_set and not isinstance(update.chapter_id, uuid.UUID):
+            # None / "" → 清除章关联
+            updates["chapter_id"] = None
         merged = existing.model_copy(update=updates)
+        await self._validate_outline_hierarchy(
+            project_id=merged.project_id,
+            level=merged.level,
+            parent_id=merged.parent_id,
+            chapter_id=merged.chapter_id,
+        )
         logger.info("更新大纲: outline_id=%s", outline_id)
         return await self._repo.update(merged)
 

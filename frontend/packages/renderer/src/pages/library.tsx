@@ -7,6 +7,8 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { CopyDialog } from '../components/CopyDialog';
 import { LibraryCreateDialog, type LibraryItemDTO } from '../components/LibraryCreateDialog';
 import { MapWorkbench, type WorldMapDTO } from '../components/MapWorkbench';
+import { OutlineTree } from '../components/OutlineTree';
+import { TimelineView, type TimelineEventDTO, type TimelineViewData } from '../components/TimelineView';
 import { Skeleton } from '../components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
@@ -31,26 +33,18 @@ interface MapListResponse {
   limit: number;
 }
 
-/** timeline 契约特例：GET /timeline 返回 TimelineView {event_timeline:[...]}，其余分类统一 {items:[...]} */
-type TimelineResponsePath = 'event_timeline';
-
-type CatResponse = ListResponse & { event_timeline?: LibraryItemDTO[] };
+/** 分类统一响应 {items,...}（timeline 特例为 TimelineView 双数组，取数时单独分支） */
+type CatResponse = ListResponse;
 
 const CATS: Array<{
   key: CatKey;
   labelKey: string;
   endpoint: (projectId: string) => string;
-  responsePath?: TimelineResponsePath;
 }> = [
   { key: 'characters', labelKey: 'nav.lib.characters', endpoint: (id) => `/api/v1/projects/${id}/characters` },
   { key: 'world', labelKey: 'nav.lib.world', endpoint: (id) => `/api/v1/projects/${id}/world-settings` },
   { key: 'outline', labelKey: 'nav.lib.outline', endpoint: (id) => `/api/v1/projects/${id}/outlines` },
-  {
-    key: 'timeline',
-    labelKey: 'nav.lib.timeline',
-    endpoint: (id) => `/api/v1/projects/${id}/timeline`,
-    responsePath: 'event_timeline',
-  },
+  { key: 'timeline', labelKey: 'nav.lib.timeline', endpoint: (id) => `/api/v1/projects/${id}/timeline` },
   { key: 'foreshadow', labelKey: 'nav.lib.foreshadow', endpoint: (id) => `/api/v1/projects/${id}/foreshadowings` },
   { key: 'rag', labelKey: 'nav.lib.rag', endpoint: (id) => `/api/v1/projects/${id}/extractions/runs` },
 ];
@@ -268,6 +262,10 @@ export function LibraryPage() {
   const [maps, setMaps] = useState<WorldMapDTO[]>([]);
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
   const [workbenchActive, setWorkbenchActive] = useState(false);
+  // F43 P4（§5.16）：时间线完整双视图——event_timeline 存 items（列表/空态），narrative_order 单独存
+  const [timelineNarrative, setTimelineNarrative] = useState<TimelineEventDTO[]>([]);
+  // F43 P3（§5.15）：章节标题映射（chapter_id → title，大纲 tab 加载时拉取）
+  const [chapterTitles, setChapterTitles] = useState<Record<string, string>>({});
 
   const cat = CATS.find((c) => c.key === activeCat) ?? CATS[0];
   // rag 无创建端点（CTA 已走跳转分支），对话框仅在五个可创建分类下渲染
@@ -355,6 +353,33 @@ export function LibraryPage() {
     };
   }, [currentProjectId]);
 
+  // F43 P3（§5.15）：大纲 tab 加载项目章节列表 → chapter_id → title 映射（章关联徽标标题）
+  useEffect(() => {
+    if (!currentProjectId || activeCat !== 'outline') {
+      setChapterTitles({});
+      return;
+    }
+    let cancelled = false;
+    void apiFetch<{ items?: Array<{ id: string | number; title?: string }> }>(
+      `/api/v1/projects/${currentProjectId}/chapters`,
+    )
+      .then((data) => {
+        if (cancelled) return;
+        const map: Record<string, string> = {};
+        for (const ch of data.items ?? []) {
+          const title = ch.title?.trim();
+          if (title) map[String(ch.id)] = title;
+        }
+        setChapterTitles(map);
+      })
+      .catch(() => {
+        if (!cancelled) setChapterTitles({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProjectId, activeCat]);
+
   // URL cat 变化（AppNav 直达）→ 同步激活 tab
   useEffect(() => {
     const p = searchParams.get('cat');
@@ -363,11 +388,12 @@ export function LibraryPage() {
     if (p === 'world') setWorkbenchActive(true);
   }, [searchParams, activeCat]);
 
-  // 当前项目 + 激活分类 → 拉取分类端点（统一响应 {items,...}；timeline 特例 {event_timeline:[...]}；
+  // 当前项目 + 激活分类 → 拉取分类端点（统一响应 {items,...}；timeline 特例 TimelineView 双数组；
   // #105 修复批：依赖 activeCat 字符串而非 cat 对象；失败 → error 态（library-retry 可重试））
   useEffect(() => {
     if (!currentProjectId) {
       setItems([]);
+      setTimelineNarrative([]);
       setLoading(false);
       setLoadFailed(false);
       return;
@@ -379,13 +405,22 @@ export function LibraryPage() {
     void apiFetch<CatResponse>(current.endpoint(currentProjectId))
       .then((data) => {
         if (cancelled) return;
-        const list = current.responsePath ? (data[current.responsePath] ?? []) : data.items;
-        setItems(list);
+        if (current.key === 'timeline') {
+          // §5.16：取完整 TimelineView 双数组（narrative_order 单独存，供双序本地切换）
+          const view = data as unknown as TimelineViewData;
+          // 事件 time_display 允许 null（timeline 领域 DTO），items 容器为通用 LibraryItemDTO → 边界收敛
+          setItems((view.event_timeline ?? []) as unknown as LibraryItemDTO[]);
+          setTimelineNarrative(view.narrative_order ?? []);
+        } else {
+          setItems(data.items ?? []);
+          setTimelineNarrative([]);
+        }
         setLoading(false);
       })
       .catch(() => {
         if (cancelled) return;
         setItems([]);
+        setTimelineNarrative([]);
         setLoading(false);
         setLoadFailed(true);
       });
@@ -714,6 +749,28 @@ export function LibraryPage() {
                   )}
                 </div>
               </>
+            ) : activeCat === 'outline' ? (
+              /* F43 P3（§5.14-5.15）：大纲三级树 + 章关联徽标（替代 P0 平铺列表） */
+              <OutlineTree
+                outlines={items}
+                chapterTitles={chapterTitles}
+                onEdit={(item) => {
+                  setEditing(item);
+                  setCreateOpen(true);
+                }}
+                onDelete={(item) => setPendingDelete(item)}
+                onAdd={() => {
+                  setEditing(null);
+                  setCreateOpen(true);
+                }}
+              />
+            ) : activeCat === 'timeline' ? (
+              /* F43 P4（§5.16-5.17）：时间线双序 + 两级检查（替代 P0 平铺列表） */
+              <TimelineView
+                projectId={currentProjectId}
+                eventTimeline={items}
+                narrativeOrder={timelineNarrative}
+              />
             ) : (
               <ul
                 data-testid="library-list"

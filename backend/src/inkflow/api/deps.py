@@ -431,6 +431,7 @@ def get_outline_service(
             repository=repo,
         ),
         project_repo=SQLiteProjectRepository(db),
+        chapter_repo=SQLiteChapterRepository(db),
     )
 
 
