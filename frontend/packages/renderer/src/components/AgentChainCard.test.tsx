@@ -39,6 +39,7 @@ import { AgentChainCard } from './AgentChainCard';
 import { AGENT_DEFAULT_SENTINEL } from '../stores/project';
 import { useAgentStore } from '../stores/agent';
 import { useModelsStore, type ProviderConfig } from '../stores/models';
+import { useTemplatesStore, type AgentTemplate } from '../stores/templates';
 import { apiFetch } from '../api/client';
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -79,6 +80,9 @@ beforeEach(() => {
     if (path === '/api/v1/provider-configs') {
       return { items: PROVIDERS, total: 3, offset: 0, limit: 50 };
     }
+    if (path === '/api/v1/agent-templates') {
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    }
     return { ok: true };
   });
   useAgentStore.setState({ config: {}, apiKeyDraft: '', testStatus: 'idle', testMessage: null });
@@ -89,6 +93,7 @@ beforeEach(() => {
     selectedModelId: null,
     roleBinding: { main: '', architect: '', writer: '', auditor: '', reviser: '', embedding: '' },
   });
+  useTemplatesStore.setState({ templates: [], loading: false, error: null, defaultTemplateId: null });
 });
 
 async function renderCard() {
@@ -366,5 +371,154 @@ describe('AgentChainCard — F42 #269 执行顺序编辑（spec §5.3/M6）', ()
     // agent_order 保持未配置（undefined/缺省）→ 后端默认模板模式
     expect(useAgentStore.getState().config.agent_order).toBeUndefined();
     expect(onConfigChange).toHaveBeenCalled();
+  });
+});
+
+describe('AgentChainCard — F42 #296 自定义角色行（spec §5.3.4）', () => {
+  /** 含自定义角色的模板：researcher（带 name）+ editor（无 name，回退裸名） */
+  const TEMPLATE_WITH_CUSTOM = {
+    id: 2,
+    name: '悬疑推理模板',
+    description: '',
+    main_model: 'openai/gpt-4o',
+    default_temperature: 0.7,
+    roles: {
+      architect: { model: null, temperature: null, enabled: true },
+      writer: { model: null, temperature: null, enabled: true },
+      auditor: { model: null, temperature: null, enabled: true },
+      reviser: { model: null, temperature: null, enabled: true },
+      researcher: { model: null, temperature: null, enabled: true, name: '资料研究员', prompt: '你负责搜集资料' },
+      editor: { model: null, temperature: null, enabled: true, name: null, prompt: '你负责润色' },
+    },
+    default_words: 800000,
+    is_default: false,
+    used_by: [],
+    created_at: '2026-08-01T00:00:00Z',
+    updated_at: '2026-08-01T00:00:00Z',
+  } as unknown as AgentTemplate;
+
+  /** 覆盖默认 mock：agent-templates 返回含自定义角色的模板（config.template_id=2 匹配） */
+  function mockTemplatesWithCustom() {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs') {
+        return { items: PROVIDERS, total: 3, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/agent-templates') {
+        return { items: [TEMPLATE_WITH_CUSTOM], total: 1, offset: 0, limit: 50 };
+      }
+      return { ok: true };
+    });
+  }
+
+  it('R1 自定义角色行渲染：模板 roles 非四键 → researcher/editor 行（显示名 = name 或裸名）', async () => {
+    mockTemplatesWithCustom();
+    act(() => useAgentStore.getState().setConfig({ template_id: 2 }));
+    await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    expect(await within(card).findByText('资料研究员')).toBeInTheDocument();
+    expect(within(card).getByText('editor')).toBeInTheDocument();
+    // 4 内置 + 2 自定义 = 6 开关
+    expect(within(card).getAllByRole('switch')).toHaveLength(6);
+  });
+
+  it('R2 无模板引用（template_id 缺失）→ 无自定义角色行（只内置 4）', async () => {
+    mockTemplatesWithCustom();
+    await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    // 模板已加载但 config 无 template_id → 不渲染自定义角色行
+    expect(within(card).getAllByRole('switch')).toHaveLength(4);
+    expect(within(card).queryByText('资料研究员')).not.toBeInTheDocument();
+  });
+
+  it('R3 自定义开关开 → agent_roles sentinel（三态映射 1）', async () => {
+    const user = userEvent.setup();
+    mockTemplatesWithCustom();
+    act(() => useAgentStore.getState().setConfig({ template_id: 2 }));
+    const onConfigChange = await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    await within(card).findByText('资料研究员');
+    const switches = within(card).getAllByRole('switch');
+    await user.click(switches[4]); // researcher = 内置 4 之后第 1 个
+    expect(useAgentStore.getState().config.agent_roles).toEqual({ agent_researcher: AGENT_DEFAULT_SENTINEL });
+    expect(onConfigChange).toHaveBeenCalled();
+  });
+
+  it('R4 自定义 Select 选模型 → agent_roles provider/model（三态映射 2）', async () => {
+    const user = userEvent.setup();
+    mockTemplatesWithCustom();
+    act(() => useAgentStore.getState().setConfig({ template_id: 2 }));
+    await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    await within(card).findByText('资料研究员');
+    await user.click(within(card).getAllByRole('switch')[4]); // 开启 researcher
+    const select = await screen.findByTestId('agent-model-select-agent_researcher');
+    await user.click(select);
+    await user.click(await screen.findByRole('option', { name: 'zhipu/glm-4.5' }));
+    expect(useAgentStore.getState().config.agent_roles).toEqual({ agent_researcher: 'zhipu/glm-4.5' });
+  });
+
+  it('R5 自定义关 → agent_roles null（三态映射 3）', async () => {
+    const user = userEvent.setup();
+    mockTemplatesWithCustom();
+    act(() =>
+      useAgentStore.getState().setConfig({
+        template_id: 2,
+        agent_roles: { agent_researcher: AGENT_DEFAULT_SENTINEL },
+      }),
+    );
+    await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    await within(card).findByText('资料研究员');
+    await user.click(within(card).getAllByRole('switch')[4]); // 关闭 researcher
+    expect(useAgentStore.getState().config.agent_roles).toEqual({ agent_researcher: null });
+  });
+
+  it('R6 自定义角色默认槽位号（4/5 按模板 roles 顺序）', async () => {
+    mockTemplatesWithCustom();
+    act(() => useAgentStore.getState().setConfig({ template_id: 2 }));
+    await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    await within(card).findByText('资料研究员');
+    expect(screen.getByTestId('agent-order-slot-agent_researcher')).toHaveTextContent('4');
+    expect(screen.getByTestId('agent-order-slot-agent_editor')).toHaveTextContent('5');
+  });
+
+  it('R7 回读 agent_order 含自定义角色 → 槽位按配置显示（researcher=0）', async () => {
+    mockTemplatesWithCustom();
+    act(() =>
+      useAgentStore.getState().setConfig({
+        template_id: 2,
+        agent_order: [
+          ['agent_researcher'],
+          ['agent_architect'],
+          ['agent_writer'],
+          ['agent_auditor'],
+          ['agent_reviser'],
+        ],
+        agent_roles: { agent_researcher: AGENT_DEFAULT_SENTINEL },
+      }),
+    );
+    await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    await within(card).findByText('资料研究员');
+    expect(screen.getByTestId('agent-order-slot-agent_researcher')).toHaveTextContent('0');
+  });
+
+  it('R8 回读 config.agent_roles 已有模型 → 开关 on + Select 回显', async () => {
+    mockTemplatesWithCustom();
+    act(() =>
+      useAgentStore.getState().setConfig({
+        template_id: 2,
+        agent_roles: { agent_researcher: 'zhipu/glm-4.5' },
+      }),
+    );
+    await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    await within(card).findByText('资料研究员');
+    expect(within(card).getAllByRole('switch')[4]).toBeChecked();
+    expect(screen.getByTestId('agent-model-select-agent_researcher')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('agent-model-select-agent_researcher')).toHaveTextContent('zhipu/glm-4.5');
+    });
   });
 });

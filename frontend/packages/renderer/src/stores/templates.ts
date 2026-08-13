@@ -11,6 +11,9 @@ export interface AgentTemplateRole {
   model: string | null;
   temperature: number | null;
   enabled: boolean;
+  /** F42 #295：自定义角色 prompt/name（后端 _to_response 已透出；内置四键可能缺省） */
+  prompt?: string | null;
+  name?: string | null;
 }
 
 /** Agent 模板实体（后端 AgentTemplate DTO；used_by 列表端点即完整实体） */
@@ -20,12 +23,8 @@ export interface AgentTemplate {
   description: string;
   main_model: string;
   default_temperature: number;
-  roles: {
-    architect: AgentTemplateRole;
-    writer: AgentTemplateRole;
-    auditor: AgentTemplateRole;
-    reviser: AgentTemplateRole;
-  };
+  /** F42 #295：roles 放宽为索引签名（四键必有语义保留在数据契约，自定义键追加在后） */
+  roles: Record<string, AgentTemplateRole>;
   default_words: number;
   is_default: boolean;
   used_by?: Array<{ id: string; name: string }>;

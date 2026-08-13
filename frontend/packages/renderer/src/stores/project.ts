@@ -30,6 +30,8 @@ export interface ProjectConfig {
   template_id?: number | null;
   /** F42 #269：Agent 链执行拓扑（层级嵌套，外层=槽位 0-9、同层并行；空=默认模板模式） */
   agent_order?: string[][];
+  /** F42 #296：自定义角色三态字段（key 带 agent_ 前缀，value 三态与 agent_* 相同：null=关闭/__default__=跟随默认/provider/model=指定） */
+  agent_roles?: Record<string, string | null>;
 }
 
 export interface NewProjectInput {
