@@ -11,6 +11,7 @@ from inkflow.domain.models.agent_pipeline import (
     PipelineConfig,
     PipelineExecuteRequest,
     RoleOverride,
+    SupervisorExecuteConfig,
 )
 from inkflow.domain.models.agent_template import AgentTemplate, RoleTemplate
 from inkflow.domain.models.project import AGENT_DEFAULT_SENTINEL, ProjectConfig
@@ -19,6 +20,7 @@ from inkflow.domain.ports.agent_pipeline import (
     AgentRole,
     PipelineContext,
     PipelineError,
+    PipelineResult,
     PipelineStage,
 )
 
@@ -175,6 +177,7 @@ class AgentService:
         project_repo: Any = None,
         chapter_repo: Any = None,
         template_repo: Any = None,
+        supervisor_pipeline: Any = None,
     ):
         # 延迟导入避免循环依赖
         from inkflow.infrastructure.agent.execution_store import ExecutionStore
@@ -190,6 +193,7 @@ class AgentService:
         )
 
         self._pipeline = pipeline
+        self._supervisor_pipeline = supervisor_pipeline
         self._store = store or ExecutionStore(db_session)
         self._project_repo = project_repo or SQLiteProjectRepository(db_session)
         self._chapter_repo = chapter_repo or SQLiteChapterRepository(db_session)
@@ -231,13 +235,28 @@ class AgentService:
             if value is not None:
                 enabled_roles.add(field)
         project_template = await self._load_template(project.config)
-        stages = _apply_agent_order(
-            template.stages,
-            project.config.agent_order,
-            enabled_roles,
-            project_template.roles if project_template else None,
-        )
-        stages = await self._merge_role_configs(stages, project.config, request.role_overrides)
+        if request.mode == "supervisor":
+            # supervisor 模式（spec §5.1）：角色池 = 模板 stages（装配模型/温度/prompt，
+            # 不静态重排）；_apply_agent_order 只在 static 模式调用（supervisor 动态路由
+            # 取代静态拓扑）
+            if request.supervisor is None:
+                raise AgentServiceError("supervisor 配置缺失")
+            template_stages = list(template.stages)
+            stages = await self._merge_role_configs(
+                template_stages, project.config, request.role_overrides
+            )
+            pipeline_impl = self._supervisor_pipeline
+            if pipeline_impl is None:
+                raise AgentServiceError("supervisor 模式未装配")
+        else:
+            stages = _apply_agent_order(
+                template.stages,
+                project.config.agent_order,
+                enabled_roles,
+                project_template.roles if project_template else None,
+            )
+            stages = await self._merge_role_configs(stages, project.config, request.role_overrides)
+            pipeline_impl = self._pipeline
 
         # 5. 创建执行记录
         execution = await self._store.create_execution(
@@ -252,9 +271,21 @@ class AgentService:
             chapter_id=str(request.chapter_id) if request.chapter_id else None,
             variables=request.variables,
         )
-        task = asyncio.create_task(self._run_pipeline(execution.id, stages, context))
+        task = asyncio.create_task(
+            self._run_pipeline(
+                execution.id,
+                stages,
+                context,
+                pipeline=pipeline_impl,
+                supervisor_config=request.supervisor if request.mode == "supervisor" else None,
+            )
+        )
         # fire-and-forget: 持有引用防止任务被 GC 提前回收；异常在 _run_pipeline 内部捕获
         task.add_done_callback(lambda t: t.exception())
+        if request.mode == "supervisor":
+            # supervisor 模式：让出事件循环一次，确保动态路由管线在 execute 返回前
+            # 启动并收到 supervisor 配置（HITL 中断时执行记录状态同步写入 waiting_hitl）
+            await asyncio.sleep(0)
 
         return {
             "execution_id": execution.id,
@@ -262,6 +293,7 @@ class AgentService:
             "project_id": str(request.project_id),
             "status": "pending",
             "created_at": execution.created_at.isoformat() if execution.created_at else "",
+            "mode": request.mode,
         }
 
     async def get_status(self, execution_id: str) -> dict | None:
@@ -278,6 +310,11 @@ class AgentService:
             "final_output": execution.final_output,
             "total_duration_ms": execution.total_duration_ms,
             "error": execution.error,
+            "hitl_pending": (
+                getattr(execution, "hitl_payload", None)
+                if execution.status == "waiting_hitl"
+                else None
+            ),
         }
 
     async def list_executions(self, project_id: str, limit: int = 20) -> dict:
@@ -295,6 +332,25 @@ class AgentService:
                 for item in items
             ],
             "total": total,
+        }
+
+    async def confirm_execution(self, execution_id: str, approved: bool) -> dict:
+        """HITL 人工确认：waiting_hitl 执行记录 → resume 继续 / 拒绝回退。"""
+        execution = await self._store.get_execution(execution_id)
+        if execution is None:
+            raise AgentServiceError("执行记录不存在")
+        if execution.status != "waiting_hitl":
+            raise AgentServiceError("执行记录不在等待确认状态")
+        # resume：supervisor pipeline 从 checkpointer 恢复（mock 记录调用参数）
+        result: PipelineResult = await self._supervisor_pipeline.resume(
+            interrupt_obj=execution.hitl_payload or {},
+            approved=approved,
+        )
+        await self._store.update_status(execution_id, result.status.value)
+        return {
+            "execution_id": execution_id,
+            "status": result.status.value,
+            "final_output": result.final_output,
         }
 
     def validate_pipeline(self, config: PipelineConfig) -> dict:
@@ -433,10 +489,22 @@ class AgentService:
         execution_id: str,
         stages: list[PipelineStage],
         context: PipelineContext,
+        pipeline: Any = None,
+        supervisor_config: SupervisorExecuteConfig | None = None,
     ) -> None:
-        """后台执行管线，更新 stages 快照到 ExecutionStore。"""
+        """后台执行管线，更新 stages 快照到 ExecutionStore。
+
+        pipeline 默认走既有 self._pipeline（static 模式零回归）；supervisor_config
+        非 None 时把配置透传给动态路由管线（supervisor 模式）。
+        """
+        pipeline = pipeline or self._pipeline
         try:
-            result = await self._pipeline.execute(stages, context)
+            if supervisor_config is not None:
+                result: PipelineResult = await pipeline.execute(
+                    stages, context, supervisor=supervisor_config
+                )
+            else:
+                result = await pipeline.execute(stages, context)
             stages_snapshot = [
                 {
                     "stage_id": sr.stage_id,
