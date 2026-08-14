@@ -276,9 +276,9 @@ class TestExecute:
         assert stages["writer"].agent.system_prompt == "自定义写手提示词"
         # 项目配置覆盖模板默认温度（模板 architect=0.7 → 项目 0.9）
         assert stages["architect"].agent.temperature == 0.9
-        # 未覆盖角色保持模板值
+        # 未覆盖角色保持模板温度；#373 方案 B：未配置角色 model 跟随项目 model（非模板值）
         assert stages["auditor"].agent.temperature == 0.5
-        assert stages["reviser"].agent.model == "openai/gpt-4o"
+        assert stages["reviser"].agent.model == project.config.model
 
     async def test_execute_runs_pipeline_async(self):
         """execute() 立即返回（fire-and-forget），后台任务调用 pipeline.execute()。"""
@@ -430,8 +430,9 @@ class TestRoleOverridePartials:
 
         writer = {s.id: s for s in pipeline.executed_stages}["writer"]
         assert writer.agent.system_prompt == "只改提示词"
-        # model 未被覆盖；temperature 保持模板值（模板 writer=0.8，非 0.7 不触发项目替换）
-        assert writer.agent.model == template_stages["writer"].agent.model
+        # #373 方案 B：未配置角色 model 跟随项目 model（非模板 openai/gpt-4o）；
+        # temperature 保持模板值（模板 writer=0.8，非 0.7 不触发项目替换）
+        assert writer.agent.model == project.config.model
         assert writer.agent.temperature == template_stages["writer"].agent.temperature
         assert writer.agent.temperature != 0.9
 
@@ -497,10 +498,12 @@ class TestRunPipelineFailures:
 class TestMergeRoleConfigsSentinel:
     """F42 #268 三态模型选择执行层（spec §5.1 + §13 M1）：
 
-    - agent_* = AGENT_DEFAULT_SENTINEL（"__default__"）→ 不覆盖模板角色模型
-      （v1.0 缺陷：非空即覆盖 → model="__default__" → parse_model_string ValueError）
+    - agent_* = AGENT_DEFAULT_SENTINEL（"__default__"）→ 跟随项目 model
+      （#367：sentinel=跟随默认 → 跟随项目配置的 model，非模板 openai/gpt-4o）
+    - agent_* = None/缺键（GUI 默认形态）→ 方案 B（#373）：无模板引用时回退项目
+      model（内置模板 openai/gpt-4o 仅兜底；自定义模板 role 指定 model 仍优先）
     - agent_* = 裸模型名（无 /）→ warning + 回退跟随默认（不覆盖，不抛错）
-    - agent_* = 合规 provider/model → 覆盖模板角色模型（既有语义保持）
+    - agent_* = 合规 provider/model → 覆盖模板角色模型
     """
 
     async def test_sentinel_falls_back_to_project_model(self):
@@ -569,10 +572,10 @@ class TestMergeRoleConfigsSentinel:
         await asyncio.sleep(0.05)
 
         stages = {s.id: s for s in pipeline.executed_stages}
-        # sentinel → 项目 model
+        # sentinel → 项目 model；合规覆盖；未配置（None）→ 方案 B 回退项目 model（#373）
         assert stages["architect"].agent.model == "deepseek/deepseek-v4-flash"
         assert stages["reviser"].agent.model == "zhipu/glm-4.5"  # 合规覆盖
-        assert stages["writer"].agent.model == "openai/gpt-4o"  # 未配置 → 模板
+        assert stages["writer"].agent.model == "deepseek/deepseek-v4-flash"  # 未配置 → 项目 model
 
     async def test_all_roles_sentinel_follow_project_model(self):
         """GUI 默认配置（#367 真实复现场景）：只配项目 model、四角色全 __default__
@@ -598,6 +601,25 @@ class TestMergeRoleConfigsSentinel:
             assert (
                 stage.agent.model == "deepseek/deepseek-v4-flash"
             ), f"sentinel 应回退项目 model，实际 {stage.id}={stage.agent.model}"
+
+    async def test_none_roles_fall_back_to_project_model(self):
+        """#373（方案 B）：四角色 None/缺键（GUI 默认形态——前端不发 agent_* 键
+        → ProjectConfig 默认 None）→ 各 stage model 回退项目 model（内置模板
+        openai/gpt-4o 仅兜底；v1.0 缺陷：None 不覆盖 → 无 key 重试耗尽）。"""
+        project = _make_project(config=ProjectConfig(model="deepseek/deepseek-v4-flash"))
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+        request = PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_auto")
+
+        await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        stages = {s.id: s for s in pipeline.executed_stages}
+        for stage in stages.values():
+            assert (
+                stage.agent.model == "deepseek/deepseek-v4-flash"
+            ), f"未配置角色应回退项目 model，实际 {stage.id}={stage.agent.model}"
+            assert stage.agent.model != "openai/gpt-4o"
 
 
 class TestExecuteAgentOrder:
