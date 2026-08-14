@@ -249,6 +249,28 @@ describe('TemplateDialog — 打开 / 关闭', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it('#349: 遮罩点击不关闭（对齐 #195，输入框全选鼠标松开不误触发）', async () => {
+    const user = userEvent.setup();
+    const { onOpenChange } = renderDialog();
+    // 点击遮罩（role=presentation 的外层 fixed div）——不关闭
+    const overlay = document.querySelector('[role="presentation"]');
+    expect(overlay).not.toBeNull();
+    await user.click(overlay as HTMLElement);
+    expect(onOpenChange).not.toHaveBeenCalled();
+    // 弹窗仍打开
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('#349: 默认字数输入框内交互（聚焦/全选）不关闭弹窗', async () => {
+    const user = userEvent.setup();
+    const { onOpenChange } = renderDialog();
+    const wordsInput = screen.getByTestId('template-default-words');
+    await user.click(wordsInput);
+    // 聚焦输入框（在 dialog 内）——不触发关闭
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
   it('编辑模式：editing 有值 → 「编辑模板」标题', () => {
     renderDialog({ editing: EDITING_TEMPLATE });
     expect(within(screen.getByRole('dialog')).getByText('编辑模板')).toBeInTheDocument();
