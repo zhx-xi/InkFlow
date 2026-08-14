@@ -96,8 +96,8 @@ describe('chapter store — 卷章树与当前章', () => {
   });
 
   it('#345: loadChapterTree 切项目时重置当前章与正文（防旧项目 content 残留）', async () => {
-    // 模拟项目 A 状态：已选中章节 + 正文
-    useChapterStore.setState({ currentChapterId: 'c1', content: '项目 A 的正文' });
+    // 模拟项目 A 状态：已选中章节 + 正文（树已加载，treeProjectId='p1'）
+    useChapterStore.setState({ treeProjectId: 'p1', currentChapterId: 'c1', content: '项目 A 的正文' });
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/projects/p2/volumes') return { items: volumes };
       if (path === '/api/v1/projects/p2/chapters') return { items: chapters, total: 2, offset: 0, limit: 50 };
@@ -111,6 +111,27 @@ describe('chapter store — 卷章树与当前章', () => {
     // 切到项目 B：正文与当前章必须清空，绝不允许显示上一项目的文字
     expect(s.content).toBe('');
     expect(s.currentChapterId).toBeNull();
+    expect(s.treeProjectId).toBe('p2');
+    expect(s.volumes).toEqual(volumes);
+    expect(s.chapters).toEqual(chapters);
+  });
+
+  it('#371: loadChapterTree 同项目 reload 保留当前章与正文（防挂载清空已播种/已编辑内容）', async () => {
+    // 模拟同项目刷新场景：树已属于 p1 + 已选中章节 + 正文（写作页挂载自动 reload）
+    useChapterStore.setState({ treeProjectId: 'p1', currentChapterId: 'c1', content: '已有正文第一段。' });
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects/p1/volumes') return { items: volumes };
+      if (path === '/api/v1/projects/p1/chapters') return { items: chapters, total: 2, offset: 0, limit: 50 };
+      throw new Error(`unexpected path: ${path}`);
+    });
+
+    await act(async () => {
+      await useChapterStore.getState().loadChapterTree('p1');
+    });
+    const s = useChapterStore.getState();
+    // 同项目 reload：正文与当前章保留（#371 修复：不再无条件清空）
+    expect(s.content).toBe('已有正文第一段。');
+    expect(s.currentChapterId).toBe('c1');
     expect(s.volumes).toEqual(volumes);
     expect(s.chapters).toEqual(chapters);
   });

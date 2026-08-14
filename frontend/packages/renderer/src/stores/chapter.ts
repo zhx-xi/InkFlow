@@ -34,6 +34,8 @@ interface ChapterState {
   volumes: Volume[];
   chapters: ChapterMeta[];
   currentChapterId: string | null;
+  /** 当前卷章树所属项目 id（#371：同项目 reload 保留当前章/正文；切项目清空） */
+  treeProjectId: string | null;
   /** 当前章节正文（SSE done 帧/保存后提交） */
   content: string;
   loading: boolean;
@@ -55,6 +57,7 @@ export const useChapterStore = create<ChapterState>((set, get) => ({
   volumes: [],
   chapters: [],
   currentChapterId: null,
+  treeProjectId: null,
   content: '',
   loading: false,
   error: null,
@@ -72,7 +75,16 @@ export const useChapterStore = create<ChapterState>((set, get) => ({
       const chapterData = await apiFetch<ChapterListResponse>(
         `/api/v1/projects/${projectId}/chapters`,
       );
-      set({ volumes, chapters: chapterData.items, currentChapterId: null, content: '', loading: false });
+      // #371：同项目 reload（treeProjectId 相同）保留当前章/正文——写作页挂载自动加载
+      // 不清空已播种/已编辑内容；切项目/首次加载（不同或 null）→ 清空（#345 防旧项目残留）
+      const sameProject = get().treeProjectId === projectId;
+      set({
+        volumes,
+        chapters: chapterData.items,
+        treeProjectId: projectId,
+        ...(sameProject ? {} : { currentChapterId: null, content: '' }),
+        loading: false,
+      });
     } catch (err) {
       set({ error: errorMessage(err), loading: false });
     }

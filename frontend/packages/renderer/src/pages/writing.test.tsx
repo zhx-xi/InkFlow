@@ -90,7 +90,7 @@ beforeEach(() => {
 
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
   useChapterStore.setState({
-    volumes: seedVolumes, chapters: seedChapters, currentChapterId: 'c1', content: '已有正文第一段。', loading: false, error: null,
+    volumes: seedVolumes, chapters: seedChapters, treeProjectId: 'p1', currentChapterId: 'c1', content: '已有正文第一段。', loading: false, error: null,
   });
   useProjectStore.setState({
     projects: [{ id: 'p1', name: '青云志', genre: '玄幻', language: 'zh-CN', target_words: 800000, config: {}, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' }],
