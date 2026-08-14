@@ -29,9 +29,11 @@ export interface ProjectCardProps {
   onRename?: (project: Project) => void;
   /** F43：卡片菜单「删除」→ 父级打开删除确认框（可选，缺省 = 纯展示） */
   onDelete?: (project: Project) => void;
+  /** #351：卡片菜单「修改」→ 父级 selectProject + 跳设置页（可省略，默认 = 纯展示） */
+  onEdit?: (project: Project) => void;
 }
 
-export function ProjectCard({ project, progress, isCurrent, onClick, onRename, onDelete }: ProjectCardProps) {
+export function ProjectCard({ project, progress, isCurrent, onClick, onRename, onDelete, onEdit }: ProjectCardProps) {
   const { t } = useI18n();
   // F43：菜单打开状态为组件本地 state（点击菜单项后关闭）
   const [menuOpen, setMenuOpen] = useState(false);
@@ -111,6 +113,18 @@ export function ProjectCard({ project, progress, isCurrent, onClick, onRename, o
             className="absolute right-0 top-7 z-20 w-28 rounded-md border border-line bg-surface p-1 shadow-card"
             onClick={(e) => e.stopPropagation()}
           >
+            <button
+              type="button"
+              data-testid={`project-edit-${project.id}`}
+              className="flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-[13px] text-ink-2 transition duration-180 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(false);
+                onEdit?.(project);
+              }}
+            >
+              {t('pj.edit')}
+            </button>
             <button
               type="button"
               data-testid={`project-rename-${project.id}`}

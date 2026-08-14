@@ -91,6 +91,7 @@ function renderProjectsPage(initialEntry = '/projects') {
       <Routes>
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/writing" element={<div data-testid="writing-probe">写作页探针</div>} />
+        <Route path="/settings" element={<div data-testid="settings-probe">设置页探针</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -347,6 +348,23 @@ describe('项目页 — F43 卡片菜单重命名/删除（P0）', () => {
 
     expect(screen.getByTestId('project-rename-p1')).toBeInTheDocument();
     expect(screen.getByTestId('project-delete-p1')).toBeInTheDocument();
+  });
+
+  it('#351: 卡片菜单「修改」入口 → selectProject + 跳转设置页（D1=A 项目级设置合集锚定）', async () => {
+    const user = userEvent.setup();
+    useProjectStore.setState({ currentProjectId: null });
+    renderProjectsPage();
+    await screen.findAllByTestId('project-card');
+
+    // 打开 p1 卡片菜单 → 点「修改」→ selectProject(p1) + navigate('/settings?cat=general')
+    await user.click(screen.getByTestId('project-card-menu-p1'));
+    const editBtn = screen.getByTestId('project-edit-p1');
+    expect(editBtn).toBeInTheDocument();
+    await user.click(editBtn);
+
+    expect(useProjectStore.getState().currentProjectId).toBe('p1');
+    // settings-probe 出现（MemoryRouter 下 /settings 路由渲染占位）
+    expect(await screen.findByTestId('settings-probe')).toBeInTheDocument();
   });
 
   it('P2 菜单按钮点击不触发卡片跳转（stopPropagation，#232 回归）', async () => {
