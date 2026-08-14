@@ -96,8 +96,8 @@ interface WorldTreeNode {
   children: WorldTreeNode[];
 }
 
-/** F43 P1（D3）：世界观分类默认分组（拍板五类；数据自定义自动进 chips，无「全部」选项） */
-const DEFAULT_WORLD_CATS = ['地图', '势力', '功法', '门派', '秘境'];
+/** F43 P1（D3）：世界观分类默认分组（#352 拍板仅地图；数据自定义自动进 chips，无「全部」选项） */
+const DEFAULT_WORLD_CATS = ['地图'];
 
 /**
  * F43 P1（§5.3）：items → 树——顶层 = parent_id null/缺失；按 items 顺序保序；
