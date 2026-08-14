@@ -618,3 +618,10 @@ test('设定库：三底图切换 pin 保留（E2E-M3）——shape→image 切�
     await app.close();
   }
 });
+
+// ────────────────────────────────────────────────────────────────
+// F43 P1/P3/P4（#284）：0.8.0 设定库 P 块功能 E2E 补测（E2E-A1..A9）——
+// 角色等级/标签创建与编辑 / 世界观树/分类筛选/跨项目复制 /
+// 大纲三级树/章关联 / 时间线双序/一致性检查
+// testid 契约以已交付源码为准（library.tsx + OutlineTree/TimelineView/CopyDialog/TagEditor），
+// 参考 library-p1/p3/p4.test.tsx（R/O/T 序号契约）
