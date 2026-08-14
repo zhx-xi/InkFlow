@@ -112,7 +112,6 @@ export function TemplateDialog({ open, onOpenChange, editing = null, onCreate, o
     <div
       role="presentation"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
-      onClick={() => onOpenChange(false)}
     >
       <div
         role="dialog"
