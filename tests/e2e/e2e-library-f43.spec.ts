@@ -79,6 +79,33 @@ async function createProjectViaUi(window: Page, name: string): Promise<void> {
   await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
 }
 
+async function kernelFetch(
+  info: KernelInfo,
+  pathname: string,
+  init?: { method?: string; body?: unknown }
+): Promise<Response> {
+  return fetch(`http://127.0.0.1:${info.port}${pathname}`, {
+    method: init?.method ?? 'GET',
+    headers: {
+      'X-InkFlow-Token': info.token,
+      'Content-Type': 'application/json',
+    },
+    body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+  });
+}
+
+/** 从内核项目列表按书名查 id（断言存在） */
+
+async function findProjectId(kernel: KernelInfo, name: string): Promise<string> {
+  const res = await kernelFetch(kernel, '/api/v1/projects');
+  expect(res.ok).toBe(true);
+  const data = (await res.json()) as { items: Array<{ id: string; name: string }> };
+  const project = data.items.find((p) => p.name === name);
+  expect(project, `项目「${name}」应已创建并持久化`).toBeTruthy();
+  return project!.id;
+}
+
+
 test.describe.configure({ timeout: 120_000 });
 
 
