@@ -105,6 +105,19 @@ test.describe.configure({ timeout: 120_000 });
 // F42 Agent 链 E2E（#268/#269/#295-296，2026-08-14）——从 e2e-settings.spec.ts 拆分（900 行护栏）
 // #268 角色模型三态+重启保持 / #269 执行顺序+边界 / #295-296 自定义角色渲染+落库
 // ────────────────────────────────────────────────────────────────
+async function fetchKernel(kernel: KernelInfo, path: string, init?: RequestInit): Promise<any> {
+  const res = await fetch(`http://127.0.0.1:${kernel.port}${path}`, {
+    ...init,
+    headers: {
+      'X-InkFlow-Token': kernel.token,
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (res.status === 204) return undefined;
+  return res.json();
+}
+
 async function apiJson(
   kernel: KernelInfo,
   method: string,
