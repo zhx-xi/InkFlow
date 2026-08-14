@@ -2,9 +2,10 @@
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
 
 import inkflow
 from inkflow.api.deps import get_provider_config_service
@@ -50,6 +51,7 @@ from inkflow.core.database import (
     ensure_world_parent_id_column,
 )
 from inkflow.core.log import setup_logging
+from inkflow.domain.ports.extraction_errors import RAGUnavailableError
 
 
 @asynccontextmanager
@@ -126,6 +128,13 @@ app.add_middleware(
 
 # ---- Token 鉴权（纯 ASGI，spec §2.3.1；注册在 CORS 之后：CORS 外层、token 内层） ----
 app.add_middleware(TokenAuthMiddleware)
+
+
+# ---- 全局异常处理：RAG 向量库不可用（#341，覆盖端点构造期与前置刷新冒泡）----
+@app.exception_handler(RAGUnavailableError)
+async def _rag_unavailable_handler(request: Request, exc: RAGUnavailableError) -> JSONResponse:
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
+
 
 # ---- 注册路由 ----
 app.include_router(audit.router)

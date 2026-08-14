@@ -689,6 +689,26 @@ class TestVectorReindexAPI:
         assert response.status_code == 500
         assert response.json()["detail"] == "向量检索服务不可用"
 
+    @patch("inkflow.api.routers.extractions.get_extraction_service")
+    @patch(
+        "inkflow.api.routers.extractions.refresh_vector_store",
+        side_effect=RAGUnavailableError(
+            "未配置 embedding 模型，请先在 Provider 配置中添加 embedding 模型"
+        ),
+    )
+    def test_reindex_refresh_unconfigured_embedding_500(
+        self, mock_refresh: MagicMock, mock_get_svc: MagicMock
+    ) -> None:
+        """#341: 未配置 embedding 时 refresh_vector_store 抛错 → 500 且 detail 不丢失.
+
+        端点前置刷新（L210）在 _run_service 之外——构造期 RAGUnavailableError
+        冒泡成裸 500（detail=Internal Server Error）是 #330 修复不完整的残留；
+        修复后应返回 500 + detail 含「未配置 embedding 模型」。
+        """
+        response = client.post(f"/api/v1/projects/{PID}/vector/reindex", json={})
+        assert response.status_code == 500
+        assert "未配置 embedding 模型" in response.json()["detail"]
+
 
 class TestVectorRetrieveAPI:
     """POST /api/v1/projects/{project_id}/vector/retrieve — 语义检索。"""
@@ -823,6 +843,27 @@ class TestVectorRetrieveAPI:
         )
         assert response.status_code == 500
         assert response.json()["detail"] == "向量检索服务不可用"
+
+    @patch(
+        "inkflow.api.routers.extractions.get_extraction_service",
+        side_effect=RAGUnavailableError(
+            "未配置 embedding 模型，请先在 Provider 配置中添加 embedding 模型"
+        ),
+    )
+    def test_retrieve_unconfigured_embedding_500(self, mock_get_svc: MagicMock) -> None:
+        """#341: 未配置 embedding 时服务装配抛错 → 500 且 detail 不丢失.
+
+        _get_svc（构造期 get_vector_store 装配）在 _run_service 之外——
+        RAGUnavailableError 冒泡成裸 500（detail=Internal Server Error）是
+        #330 修复不完整的残留；修复后应返回 500 + detail 含「未配置
+        embedding 模型」。
+        """
+        response = client.post(
+            f"/api/v1/projects/{PID}/vector/retrieve",
+            json={"query": "q"},
+        )
+        assert response.status_code == 500
+        assert "未配置 embedding 模型" in response.json()["detail"]
 
 
 class TestExtractionCoverageGaps:
