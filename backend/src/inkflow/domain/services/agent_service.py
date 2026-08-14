@@ -456,6 +456,13 @@ class AgentService:
                     )
                 else:
                     new_agent.model = project_model
+            elif project_model is None and project_config.template_id is None:
+                # #373（方案 B）：未配置角色（None/缺键 = GUI 默认形态——前端不发
+                # agent_* 键 → ProjectConfig 默认 None）且无模板引用（纯内置模板，
+                # openai/gpt-4o 仅兜底形态）→ 回退项目 model 驱动路由
+                # （v1.0 缺陷：None 落入不覆盖 → 模板 openai/gpt-4o → 无 key 重试耗尽；
+                # template_id 存在时保持既有模板装配语义，spec §9.2.5）
+                new_agent.model = project_config.model
 
             # prompt 覆盖（F42 #295，spec §5.3.4）：模板 roles 定义 prompt 时
             # 覆盖 system_prompt（role_overrides 仍为最高优先级，在下方覆盖）
