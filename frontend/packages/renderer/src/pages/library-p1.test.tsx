@@ -374,16 +374,20 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     expect(screen.getByText('中州')).toBeInTheDocument();
   });
 
-  it('R9 世界观分类 chips：默认分组 + 数据自定义自动进；无「全部」chip（D-10）', async () => {
+  it('R9 世界观分类 chips：默认仅「地图」（#352）+ 数据自定义自动进；无「全部」chip（D-10）', async () => {
     mockWorldTree([...worldTree, { id: 'w2', name: '宗门', category: '组织', content: '宗门林立' }]);
     const user = userEvent.setup();
     renderLibrary();
 
     await user.click(screen.getByRole('tab', { name: '世界观' }));
     await screen.findByTestId('library-list');
-    // 默认分组五类 + 数据中自定义分类「组织」自动进 chips（D-11 数据驱动）
-    for (const cat of ['地图', '势力', '功法', '门派', '秘境', '组织']) {
+    // #352 拍板：默认分组仅「地图」；数据中自定义分类「组织」「秘境」自动进 chips（D-11 数据驱动）
+    for (const cat of ['地图', '组织', '秘境']) {
       expect(screen.getByTestId(`world-cat-filter-${cat}`)).toBeInTheDocument();
+    }
+    // #352：势力/功法/门派 不再默认预置（题材相关分类按项目由用户/agent 创建）
+    for (const cat of ['势力', '功法', '门派']) {
+      expect(screen.queryByTestId(`world-cat-filter-${cat}`)).not.toBeInTheDocument();
     }
     // 无「全部」chip（D3 拍板：未选 = 展示所有，toggle 取消）
     expect(screen.queryByTestId('world-cat-filter-全部')).not.toBeInTheDocument();
