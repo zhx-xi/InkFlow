@@ -1,100 +1,4 @@
 /**
-});
-  }
-// 0.8.0 编排完全体 E2E 补测（#268 三态模型选择 / #269 执行顺序编辑 / #295-296 自定义角色）
-// 契约源：components/AgentChainCard.tsx（data-testid 即契约）+ AgentChainCard.test.tsx（RTL）
-// 三态 Select：角色行模型下拉（agent-model-select-<field>，开关开时条件渲染）——
-//   null=关闭（Switch off）/ "__default__"=跟随默认 sentinel（Switch on 默认 / 下拉「跟随默认」）/
-//   "<provider>/<model>"=指定模型（下拉选项）
-// 执行顺序：agent-order-slot-<field> 槽位号 + agent-order-move-up/down-<field> 移动按钮
-//   （首层上移/末层下移禁用）；移动写 config.agent_order 分层数组（[["a"],["b"]]），空层压缩
-// 自定义角色：模板 roles 非四键 → 行 field=agent_<bareName>，显示名 role.name ?? 裸名，Sparkles 图标；
-//   开关/下拉写 config.agent_roles（dict 浅合并，防丢其他自定义角色）
-// 数据隔离：每用例独立 launchApp + 唯一项目名（E2E-<场景>-<ts>）；落库断言锚点 = 变更必变字段
-//   （agent_* 三态值本身有区分度，直接轮询 GET /api/v1/projects/{id} 的 config 值，比 updated_at 强）
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** 幂等确保 deepseek 配置含 deepseek-chat chat 模型（持久 DB 去重自愈，E3-2 模式）；须在进入 Agent 分类前调用 */
-async function apiJson(
-  kernel: KernelInfo,
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; data: unknown }> {
-  const res = await fetch(`http://127.0.0.1:${kernel.port}${path}`, {
-    method,
-    headers: {
-      'X-InkFlow-Token': kernel.token,
-      'Content-Type': 'application/json',
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    throw new Error(`kernel API ${method} ${path} -> ${res.status}: ${detail}`);
-  }
-  const data = res.status === 204 ? undefined : await res.json();
-  return { status: res.status, data };
-}
-
-
-async function ensureDeepseekChatModel(kernel: KernelInfo): Promise<void> {
-  const providers = await fetchKernel(kernel, '/api/v1/provider-configs');
-  const deepseek = providers.items.find((p: { name: string }) => p.name === 'deepseek');
-  expect(deepseek).toBeTruthy();
-  const deduped = deepseek.models.filter(
-    (m: { id: string }, i: number, arr: Array<{ id: string }>) =>
-      m.id !== 'deepseek-chat' || arr.findIndex((x) => x.id === m.id) === i,
-  );
-  if (
-    deduped.length !== deepseek.models.length ||
-    !deepseek.models.some((m: { id: string }) => m.id === 'deepseek-chat')
-  ) {
-    await fetchKernel(kernel, `/api/v1/provider-configs/${deepseek.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        models: [...deduped, { id: 'deepseek-chat', type: 'chat', roles: [] }],
-      }),
-    });
-  }
-}
-
-/** 预置含自定义角色的模板（#295/#296：roles 非四键 → 自定义行；researcher 带 name / editor 裸名回退） */
-async function createCustomRoleTemplate(kernel: KernelInfo): Promise<{ id: string; name: string }> {
-  const name = `E2E-CustomRole-${Date.now()}`;
-  const tpl = await fetchKernel(kernel, '/api/v1/agent-templates', {
-    method: 'POST',
-    body: JSON.stringify({
-      name,
-      roles: {
-        architect: { enabled: true },
-        writer: { enabled: true },
-        auditor: { enabled: true },
-        reviser: { enabled: true },
-        researcher: { enabled: true, name: '资料研究员', prompt: '你负责搜集资料' },
-        editor: { enabled: true, name: null, prompt: '你负责润色' },
-      },
-    }),
-  });
-  return { id: String(tpl.id), name };
-}
-
-/** 经新建项目对话框选择 Agent 模板创建项目（e2e-projects 模板创建用例模式） */
-async function createProjectWithTemplateViaUi(window: Page, name: string, tplName: string): Promise<void> {
-  await window.getByTestId('new-project-btn').click();
-  const dlg = window.getByRole('dialog');
-  await dlg.getByLabel('Agent 模板').click();
-  await window.getByRole('option', { name: tplName, exact: true }).click();
-  await window.getByLabel('书名').fill(name);
-  await dlg.getByRole('button', { name: '创建', exact: true }).click();
-  await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// A5-1 #268 三态模型选择：角色行模型下拉三值（跟随默认 / 指定模型 / 禁用）→ 内核落库
-// ─────────────────────────────────────────────────────────────────────────────
-});
-/**
  * 设置页域 E2E（ADR-028 E1 拆分自 electron-pages.spec.ts）
  *
  * 运行方式：
@@ -193,14 +97,106 @@ async function createProjectViaUi(window: Page, name: string): Promise<void> {
 
 test.describe.configure({ timeout: 120_000 });
 
+// ────────────────────────────────────────────────────────────────
+// 5. 设置页：Agent 分类渲染（迁移自 Agent 页；agents 路由已删，spec §7.10 Q1=A）
+// ────────────────────────────────────────────────────────────────
 
 // ────────────────────────────────────────────────────────────────
 // F42 Agent 链 E2E（#268/#269/#295-296，2026-08-14）——从 e2e-settings.spec.ts 拆分（900 行护栏）
 // #268 角色模型三态+重启保持 / #269 执行顺序+边界 / #295-296 自定义角色渲染+落库
 // ────────────────────────────────────────────────────────────────
-// ────────────────────────────────────────────────────────────────
-// 5. 设置页：Agent 分类渲染（迁移自 Agent 页；agents 路由已删，spec §7.10 Q1=A）
-// ────────────────────────────────────────────────────────────────
+async function apiJson(
+  kernel: KernelInfo,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<{ status: number; data: unknown }> {
+  const res = await fetch(`http://127.0.0.1:${kernel.port}${path}`, {
+    method,
+    headers: {
+      'X-InkFlow-Token': kernel.token,
+      'Content-Type': 'application/json',
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`kernel API ${method} ${path} -> ${res.status}: ${detail}`);
+  }
+  const data = res.status === 204 ? undefined : await res.json();
+  return { status: res.status, data };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 0.8.0 编排完全体 E2E 补测（#268 三态模型选择 / #269 执行顺序编辑 / #295-296 自定义角色）
+// 契约源：components/AgentChainCard.tsx（data-testid 即契约）+ AgentChainCard.test.tsx（RTL）
+// 三态 Select：角色行模型下拉（agent-model-select-<field>，开关开时条件渲染）——
+//   null=关闭（Switch off）/ "__default__"=跟随默认 sentinel（Switch on 默认 / 下拉「跟随默认」）/
+//   "<provider>/<model>"=指定模型（下拉选项）
+// 执行顺序：agent-order-slot-<field> 槽位号 + agent-order-move-up/down-<field> 移动按钮
+//   （首层上移/末层下移禁用）；移动写 config.agent_order 分层数组（[["a"],["b"]]），空层压缩
+// 自定义角色：模板 roles 非四键 → 行 field=agent_<bareName>，显示名 role.name ?? 裸名，Sparkles 图标；
+//   开关/下拉写 config.agent_roles（dict 浅合并，防丢其他自定义角色）
+// 数据隔离：每用例独立 launchApp + 唯一项目名（E2E-<场景>-<ts>）；落库断言锚点 = 变更必变字段
+//   （agent_* 三态值本身有区分度，直接轮询 GET /api/v1/projects/{id} 的 config 值，比 updated_at 强）
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 幂等确保 deepseek 配置含 deepseek-chat chat 模型（持久 DB 去重自愈，E3-2 模式）；须在进入 Agent 分类前调用 */
+async function ensureDeepseekChatModel(kernel: KernelInfo): Promise<void> {
+  const providers = await fetchKernel(kernel, '/api/v1/provider-configs');
+  const deepseek = providers.items.find((p: { name: string }) => p.name === 'deepseek');
+  expect(deepseek).toBeTruthy();
+  const deduped = deepseek.models.filter(
+    (m: { id: string }, i: number, arr: Array<{ id: string }>) =>
+      m.id !== 'deepseek-chat' || arr.findIndex((x) => x.id === m.id) === i,
+  );
+  if (
+    deduped.length !== deepseek.models.length ||
+    !deepseek.models.some((m: { id: string }) => m.id === 'deepseek-chat')
+  ) {
+    await fetchKernel(kernel, `/api/v1/provider-configs/${deepseek.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        models: [...deduped, { id: 'deepseek-chat', type: 'chat', roles: [] }],
+      }),
+    });
+  }
+}
+
+/** 预置含自定义角色的模板（#295/#296：roles 非四键 → 自定义行；researcher 带 name / editor 裸名回退） */
+async function createCustomRoleTemplate(kernel: KernelInfo): Promise<{ id: string; name: string }> {
+  const name = `E2E-CustomRole-${Date.now()}`;
+  const tpl = await fetchKernel(kernel, '/api/v1/agent-templates', {
+    method: 'POST',
+    body: JSON.stringify({
+      name,
+      roles: {
+        architect: { enabled: true },
+        writer: { enabled: true },
+        auditor: { enabled: true },
+        reviser: { enabled: true },
+        researcher: { enabled: true, name: '资料研究员', prompt: '你负责搜集资料' },
+        editor: { enabled: true, name: null, prompt: '你负责润色' },
+      },
+    }),
+  });
+  return { id: String(tpl.id), name };
+}
+
+/** 经新建项目对话框选择 Agent 模板创建项目（e2e-projects 模板创建用例模式） */
+async function createProjectWithTemplateViaUi(window: Page, name: string, tplName: string): Promise<void> {
+  await window.getByTestId('new-project-btn').click();
+  const dlg = window.getByRole('dialog');
+  await dlg.getByLabel('Agent 模板').click();
+  await window.getByRole('option', { name: tplName, exact: true }).click();
+  await window.getByLabel('书名').fill(name);
+  await dlg.getByRole('button', { name: '创建', exact: true }).click();
+  await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A5-1 #268 三态模型选择：角色行模型下拉三值（跟随默认 / 指定模型 / 禁用）→ 内核落库
 // ─────────────────────────────────────────────────────────────────────────────
 test('设置页：#268 角色模型三态 Select（跟随默认/指定模型/禁用）→ 内核 config.agent_writer 三值落库', async () => {
   const { app, window, kernel } = await launchApp();
