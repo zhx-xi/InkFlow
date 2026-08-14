@@ -503,10 +503,16 @@ class TestMergeRoleConfigsSentinel:
     - agent_* = 合规 provider/model → 覆盖模板角色模型（既有语义保持）
     """
 
-    async def test_sentinel_does_not_override_template_model(self):
-        """agent_writer="__default__" → writer stage model 保持模板 openai/gpt-4o
-        （非 sentinel；v1.0 缺陷：非空即覆盖 → ValueError）。"""
-        project = _make_project(config=ProjectConfig(agent_writer=AGENT_DEFAULT_SENTINEL))
+    async def test_sentinel_falls_back_to_project_model(self):
+        """agent_writer="__default__" + model="deepseek/deepseek-v4-flash" → writer stage
+        model 回退项目 model（#367：sentinel=跟随默认 → 跟随项目配置的 model，
+        非模板 openai/gpt-4o；v1.0 缺陷：不覆盖 → 无 openai key → 重试耗尽）。"""
+        project = _make_project(
+            config=ProjectConfig(
+                model="deepseek/deepseek-v4-flash",
+                agent_writer=AGENT_DEFAULT_SENTINEL,
+            )
+        )
         pipeline = MockPipeline()
         service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
         request = PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_chapter")
@@ -515,9 +521,8 @@ class TestMergeRoleConfigsSentinel:
         await asyncio.sleep(0.05)
 
         stages = {s.id: s for s in pipeline.executed_stages}
-        # 模板 builtin:write_chapter writer model = "openai/gpt-4o"（pipeline_templates L47）
-        assert stages["writer"].agent.model == "openai/gpt-4o"
-        assert stages["writer"].agent.model != AGENT_DEFAULT_SENTINEL
+        assert stages["writer"].agent.model == "deepseek/deepseek-v4-flash"
+        assert stages["writer"].agent.model != "openai/gpt-4o"
 
     async def test_bare_model_name_falls_back_to_template(self):
         """agent_writer="gpt-4o"（裸名，无 /）→ warning + 不覆盖（回退跟随默认，零迁移）。"""
@@ -546,10 +551,12 @@ class TestMergeRoleConfigsSentinel:
         stages = {s.id: s for s in pipeline.executed_stages}
         assert stages["writer"].agent.model == "zhipu/glm-4.5"
 
-    async def test_architect_sentinel_and_qualified_other_roles(self):
-        """混合：architect=__default__（不覆盖）+ reviser=zhipu/glm-4.5（覆盖）+ 其余模板。"""
+    async def test_architect_sentinel_follows_project_model(self):
+        """混合：architect=__default__（回退项目 model）+ reviser=zhipu/glm-4.5（覆盖）+ 其余模板。
+        #367：sentinel 不再保持模板 openai/gpt-4o，而是跟随项目配置的 model。"""
         project = _make_project(
             config=ProjectConfig(
+                model="deepseek/deepseek-v4-flash",
                 agent_architect=AGENT_DEFAULT_SENTINEL,
                 agent_reviser="zhipu/glm-4.5",
             )
@@ -562,9 +569,35 @@ class TestMergeRoleConfigsSentinel:
         await asyncio.sleep(0.05)
 
         stages = {s.id: s for s in pipeline.executed_stages}
-        assert stages["architect"].agent.model == "openai/gpt-4o"  # sentinel 不覆盖
+        # sentinel → 项目 model
+        assert stages["architect"].agent.model == "deepseek/deepseek-v4-flash"
         assert stages["reviser"].agent.model == "zhipu/glm-4.5"  # 合规覆盖
         assert stages["writer"].agent.model == "openai/gpt-4o"  # 未配置 → 模板
+
+    async def test_all_roles_sentinel_follow_project_model(self):
+        """GUI 默认配置（#367 真实复现场景）：只配项目 model、四角色全 __default__
+        → 四角色全部回退项目 model（非模板 openai/gpt-4o）。"""
+        project = _make_project(
+            config=ProjectConfig(
+                model="deepseek/deepseek-v4-flash",
+                agent_architect=AGENT_DEFAULT_SENTINEL,
+                agent_writer=AGENT_DEFAULT_SENTINEL,
+                agent_auditor=AGENT_DEFAULT_SENTINEL,
+                agent_reviser=AGENT_DEFAULT_SENTINEL,
+            )
+        )
+        pipeline = MockPipeline()
+        service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
+        request = PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_auto")
+
+        await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        stages = {s.id: s for s in pipeline.executed_stages}
+        for stage in stages.values():
+            assert (
+                stage.agent.model == "deepseek/deepseek-v4-flash"
+            ), f"sentinel 应回退项目 model，实际 {stage.id}={stage.agent.model}"
 
 
 class TestExecuteAgentOrder:
@@ -761,6 +794,8 @@ class TestExecuteNewBuiltinTemplates:
         await asyncio.sleep(0.05)
 
         assert [s.id for s in pipeline.executed_stages] == ["writer", "auditor", "reviser"]
+
+
 class FakeTemplateRepo:
     """自定义角色装配用模板仓储 Mock（get 返回预设 AgentTemplate 或 None）。"""
 

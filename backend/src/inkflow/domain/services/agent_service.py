@@ -443,10 +443,11 @@ class AgentService:
 
             # 项目配置覆盖 model（用户拍板 Q1=A：项目 agent_* 非空仍覆盖模板）
             project_model = project_role_models.get(stage.id)
-            # F42 #268（spec §5.1）：sentinel = 跟随默认 → 不覆盖（v1.0 缺陷：
-            # 非空即覆盖 → model="__default__" → parse_model_string ValueError）；
-            # 裸模型名（无 /）→ warning + 不覆盖（Q3 兼容策略，存量数据零迁移）
-            if project_model and project_model != AGENT_DEFAULT_SENTINEL:
+            # #367（spec §5.1 三态语义修正）：sentinel = 跟随默认 → 回退项目配置的 model
+            # （v1.0 缺陷：不覆盖 → 模板 openai/gpt-4o → 无 openai key → architect 重试耗尽）
+            if project_model == AGENT_DEFAULT_SENTINEL:
+                new_agent.model = project_config.model
+            elif project_model:
                 if "/" not in project_model:
                     logger.warning(
                         "agent_%s 裸模型名 %r 格式不合规（应为 provider/model），回退跟随默认",
