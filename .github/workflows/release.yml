@@ -68,7 +68,9 @@ jobs:
         shell: pwsh
         run: |
           $version = '${{ github.ref_name }}'.TrimStart('v')
-          Compress-Archive -Path dist/inkflow -DestinationPath "dist/InkFlow-cli-$version-x64.zip" -CompressionLevel Optimal
+          # #342: CLI zip 随包携带官方 skills（三通道②）——复制 skills 到 dist 后打包
+          Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE/skills" dist/skills
+          Compress-Archive -Path dist/inkflow, dist/skills -DestinationPath "dist/InkFlow-cli-$version-x64.zip" -CompressionLevel Optimal
           Write-Host "CLI zip created: dist/InkFlow-cli-$version-x64.zip"
 
       # #253 教训固化（2026-08-12）：打包后产物冒烟——PyInstaller 收集缺失
@@ -229,6 +231,9 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force packages/kernel | Out-Null
           Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE/kernel-onedir/*" packages/kernel/
+          # #342: 随包分发官方 skills（electron-builder extraResources.from: ../skills）
+          New-Item -ItemType Directory -Force packages/skills | Out-Null
+          Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE/skills/*" packages/skills/
 
       # renderer dist + electron out 放回 electron-builder 期望的位置
       # ⚠️ renderer dist 必须复制进 electron 包内（rc.5 实测空白 #145）：

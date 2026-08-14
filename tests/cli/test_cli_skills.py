@@ -152,6 +152,38 @@ class TestInstall:
         envelope = json.loads(result.stdout)
         assert envelope["error"]["code"] == "SKILLS_SOURCE_INVALID"
 
+    def test_install_builtin_flag_imports_official_skill(
+        self, tmp_path, skills_dir, monkeypatch
+    ):
+        """#342: install --builtin 从随包资源目录导入官方 inkflow skill（三通道②）.
+
+        --builtin 免 SOURCE：定位打包资源目录（frozen: resources/skills/inkflow；
+        dev: 仓库根 skills/inkflow）→ 导入到 data_dir/skills/。
+        """
+        # 模拟内置源：仓库根 skills/inkflow（dev 形态）
+
+        repo_skills = Path(__file__).resolve().parents[2] / "skills" / "inkflow"
+        if not repo_skills.is_dir():
+            pytest.skip("仓库 skills/inkflow 不存在（本任务应已创建）")
+
+        result = _invoke(["install", "--builtin"])
+        assert result.exit_code == 0
+        envelope = json.loads(result.stdout)
+        assert envelope["ok"] is True
+        assert envelope["data"]["name"] == "inkflow"
+        assert (skills_dir / "inkflow" / "SKILL.md").is_file()
+        # references 子目录保留（26 文件包结构）
+        assert (skills_dir / "inkflow" / "references").is_dir()
+
+    def test_install_builtin_respects_target(self, tmp_path, monkeypatch):
+        """#342: install --builtin 支持 --target 覆盖目标根。"""
+        alt_root = tmp_path / "alt-skills"
+        result = _invoke(["install", "--builtin", "--target", str(alt_root)])
+        assert result.exit_code == 0
+        envelope = json.loads(result.stdout)
+        assert envelope["data"]["name"] == "inkflow"
+        assert (alt_root / "inkflow" / "SKILL.md").is_file()
+
     def test_install_already_exists(self, tmp_path, skills_dir):
         """同名已存在且无 --force → exit 1 + ALREADY_INSTALLED。"""
         pkg = make_skill_package(tmp_path)
