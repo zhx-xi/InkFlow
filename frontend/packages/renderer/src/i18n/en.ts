@@ -312,6 +312,7 @@ export const en: Record<string, string> = {
   'pj.time.weeks': '{n}w ago',
   // F43: project card menu rename/delete (specs/f43-setting-library-crud/spec.md §6)
   'pj.rename': 'Rename',
+  'pj.edit': 'Edit',
   'pj.delete': 'Delete',
   'pj.rename.title': 'Rename Project',
   'pj.rename.placeholder': 'Project name',

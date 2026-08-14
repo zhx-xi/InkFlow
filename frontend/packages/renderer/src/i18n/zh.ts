@@ -320,6 +320,7 @@ export const zh = {
   'pj.time.weeks': '{n} 周前',
   // F43：项目卡片菜单重命名/删除（specs/f43-setting-library-crud/spec.md §6）
   'pj.rename': '重命名',
+  'pj.edit': '修改',
   'pj.delete': '删除',
   'pj.rename.title': '重命名项目',
   'pj.rename.placeholder': '项目名称',
