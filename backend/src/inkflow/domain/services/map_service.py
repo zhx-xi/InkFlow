@@ -30,6 +30,7 @@ from inkflow.domain.ports.map_errors import (
     MapChildrenActionRequiredError,
     MapNameConflictError,
     MapNotFoundError,
+    MapParentMapNotFoundError,
     MapPinLocationNotFoundError,
     MapPinRefNotFoundError,
     MapReparentTargetError,
@@ -98,8 +99,9 @@ class MapService:
         image_filename: str = "",
         image_content: bytes = b"",
         bg_source: str = "image",
+        parent_map_id: int | uuid.UUID | None = None,
     ) -> WorldMap:
-        """创建地图（spec §5.4 校验链 ①②③ + 文件/落库编排 ④⑤⑥）.
+        """创建地图（spec §5.4 校验链 ①②③④ + 文件/落库编排 ⑤⑥）.
 
         Args:
             project_id: 所属项目 UUID（支持 int 或 UUID）.
@@ -110,6 +112,7 @@ class MapService:
             image_content: 图片字节内容.
             bg_source: F43 P2 底图来源（shape/image/ai）；shape/ai 可无图
                 （image_path 存空串），image 模式缺图 → MapBgSourceError.
+            parent_map_id: #368 v1.3 父图 UUID；None = 根图（图挂图层级）.
 
         Returns:
             持久化后的完整 WorldMap.
@@ -119,6 +122,7 @@ class MapService:
             MapRootLocationNotFoundError: 根地点不存在或跨项目（422）.
             MapNameConflictError: 项目内同名地图已存在（422）.
             MapRootLocationConflictError: 根地点已挂有其他地图（422）.
+            MapParentMapNotFoundError: 父地图不存在或跨项目（422）.
             MapBgSourceError: bg_source 非法或 image 模式缺图片（422）.
             MapAssetError: 图片写入失败（500，透传不落库）.
         """
@@ -141,7 +145,13 @@ class MapService:
             existing_maps, _ = await self._repo.list(pid_int, root_location_id=root_int)
             if existing_maps:
                 raise MapRootLocationConflictError()
-        # ④ 图片文件编排：image 模式必填图片（缺图 422）；shape/ai 可无图
+        # ④ parent_map_id 校验（#368 v1.3，spec §5.4）：同项目存在的地图；层级深度不限
+        parent_int = _to_int_id(parent_map_id) if parent_map_id is not None else None
+        if parent_int is not None:
+            parent_map = await self._repo.get(parent_int)
+            if parent_map is None or _to_int_id(parent_map.project_id) != pid_int:
+                raise MapParentMapNotFoundError()
+        # ⑤ 图片文件编排：image 模式必填图片（缺图 422）；shape/ai 可无图
         #    （不写图，image_path 存空串——F43 P2 简图语义）
         map_id = uuid.uuid4()
         if image_content:
@@ -152,7 +162,7 @@ class MapService:
             if bg_source == "image":
                 raise MapBgSourceError()
             rel_path = ""
-        # ⑤ 落库失败 → 删已写文件防孤儿 → re-raise
+        # ⑥ 落库失败 → 删已写文件防孤儿 → re-raise
         now = _utcnow()
         wm = WorldMap(
             id=map_id,
@@ -161,6 +171,7 @@ class MapService:
             image_path=rel_path,
             description=description,
             root_location_id=uuid.UUID(int=root_int) if root_int is not None else None,
+            parent_map_id=(uuid.UUID(int=parent_int) if parent_int is not None else None),
             bg_source=bg_source,
             created_at=now,
             updated_at=now,

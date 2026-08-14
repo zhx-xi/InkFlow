@@ -555,11 +555,11 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
     });
   });
 
-  it('#346: 地图工作台「创建子图」按钮（挂在树节点）→ POST 携带 root_location_id', async () => {
+  it('#346/#368: 地图工作台「创建子图」按钮（挂在树节点）→ POST 携带 parent_map_id（父图 id，v1.3 图挂图层级）', async () => {
     const baseImpl = apiFetchMock.getMockImplementation();
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
       if (path === '/api/v1/projects/p1/maps' && init?.method === 'POST') {
-        return { ...mapM1, id: 'm9', name: '中州分图', root_location_id: 'w1' };
+        return { ...mapM1, id: 'm9', name: '中州分图', parent_map_id: 'm1' };
       }
       return baseImpl!(path, init);
     });
@@ -581,11 +581,54 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
       expect(postCall).toBeTruthy();
       const body = postCall![1]!.body;
       if (body instanceof FormData) {
-        expect(String(body.get('root_location_id'))).toBe('w1');
+        // v1.3 #368：创建子图传父图 id（parent_map_id），而非条目 id（root_location_id）
+        expect(String(body.get('parent_map_id'))).toBe('m1');
+        expect(body.get('root_location_id')).toBeNull();
         expect(String(body.get('bg_source'))).toBe('shape');
       } else {
-        expect(body).toEqual(expect.objectContaining({ root_location_id: 'w1', bg_source: 'shape' }));
+        expect(body).toEqual(
+          expect.objectContaining({ parent_map_id: 'm1', bg_source: 'shape' }),
+        );
+        expect((body as Record<string, unknown>).root_location_id).toBeUndefined();
       }
     });
+  });
+
+  it('#368: 树节点行 linkedMap 命中时显示地图名（而非条目名）', async () => {
+    // mapM1（九州舆图）挂 w1；w1a 无地图 → 树行主体显示地图名「九州舆图」
+    mockMapWorkbench(worldTree, [mapM1]);
+    renderLibrary();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('map-workbench');
+    const row = (await screen.findByTestId('world-map-badge-w1')).closest('.tree-row');
+    expect(row).not.toBeNull();
+    expect(within(row as HTMLElement).getByText('九州舆图')).toBeInTheDocument();
+    // w1a 无地图 → 无徽标；条目名保留显示
+    expect(screen.queryByTestId('world-map-badge-w1a')).not.toBeInTheDocument();
+    expect(screen.getByText('中州')).toBeInTheDocument(); // 条目名保留（w1a 无 linkedMap）
+  });
+
+  it('#368: 前端树按图层级渲染——子图（parent_map_id）出现在父图节点下', async () => {
+    // m2 为 m1 的子图（parent_map_id='m1'，root_location_id=null）
+    const childMap: Record<string, unknown> = {
+      id: 'm2', project_id: 'p1', name: '中州细图', image_path: '', description: '',
+      root_location_id: null, parent_map_id: 'm1', bg_source: 'shape', extra: {},
+      created_at: '2026-08-02T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
+    };
+    mockMapWorkbench(worldTree, [mapM1, childMap]);
+    renderLibrary();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('map-workbench');
+    // 父图 m1 行（挂 w1 条目徽标）显示地图名；子图 m2 行渲染在树中（可点击选中）
+    const parentRow = (await screen.findByTestId('world-map-badge-w1')).closest('.tree-row');
+    expect(parentRow).not.toBeNull();
+    expect(within(parentRow as HTMLElement).getByText('九州舆图')).toBeInTheDocument();
+    expect(screen.getByText('中州细图')).toBeInTheDocument(); // 子图节点渲染
+    const childBadge = screen.getByTestId('world-map-badge-m2');
+    await user.click(childBadge);
+    await screen.findByTestId('map-canvas');
+    expect(screen.getByTestId('map-bc-current')).toHaveTextContent('中州细图');
   });
 });

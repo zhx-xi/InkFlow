@@ -109,6 +109,8 @@ client = TestClient(app)
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 REF_ID = uuid.UUID("3f2e1d4a-0000-4000-8000-00000000000a")  # 角色/事件关联 ref（role/event pin）
+PARENT_ID = uuid.UUID("3f2e1d4a-0000-4000-8000-00000000000b")  # #368 v1.3：父图 UUID
+PARENT_INT = PARENT_ID.int  # #368 v1.3：父图 int（ORM 存储形态）
 TS = datetime(2026, 8, 1, 10, 0, 0)
 SHAPES = {
     "shapes": [{"id": "s_1", "type": "rect", "x": 10, "y": 20, "w": 30, "h": 40, "label": "城墙"}]
@@ -617,6 +619,49 @@ class TestB7RepoRoundtrip:
         assert orm.bg_source == "shape"
         assert orm.extra == SHAPES
 
+    def test_map_orm_to_domain_carries_parent_map_id(self) -> None:
+        """_orm_to_domain: ORM parent_map_id → 领域（int→UUID；None 保持 None）.
+
+        RED 形态: WorldMap 无 parent_map_id 字段 → wm.parent_map_id AttributeError
+        （#368 v1.3 新列未映射）。
+        """
+        orm = MapORM(
+            id=1,
+            project_id=1,
+            name="子图",
+            image_path="",
+            description="",
+            created_at=TS,
+            updated_at=TS,
+        )
+        orm.bg_source = "shape"  # F43 P2 既有列（非本契约目标，赋默认避免 ValidationError）
+        orm.parent_map_id = PARENT_INT
+        wm = _orm_to_domain(orm)
+        assert wm.parent_map_id == PARENT_ID
+        orm.parent_map_id = None
+        assert _orm_to_domain(orm).parent_map_id is None
+
+    def test_map_domain_to_orm_carries_parent_map_id(self) -> None:
+        """_domain_to_orm: 领域 parent_map_id → ORM（UUID→int；None 保持 None）.
+
+        RED 形态: MapORM 无 parent_map_id 列 → orm.parent_map_id AttributeError。
+        """
+        wm = WorldMap(
+            id=uuid.uuid4(),
+            project_id=PID,
+            name="子图",
+            image_path="",
+            description="",
+            root_location_id=None,
+            parent_map_id=PARENT_ID,
+            created_at=TS,
+            updated_at=TS,
+        )
+        orm = _domain_to_orm(wm)
+        assert orm.parent_map_id == PARENT_INT
+        wm.parent_map_id = None
+        assert _domain_to_orm(wm).parent_map_id is None
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # B8: ensure_map_columns 迁移契约（spec §2.7.3 — 覆盖率缺口闭合补测，GREEN 形态）
@@ -725,6 +770,19 @@ class TestMapMigration:
 
             labels = (await conn.execute(text("SELECT label FROM map_pins"))).scalars().all()
             assert labels == ["清河县城"]  # 迁移不丢数据
+
+    async def test_legacy_maps_gets_parent_map_id(self, engine):
+        """旧 maps 表（无 parent_map_id 列）迁移后: 列存在 + 旧数据保留（#368 v1.3）."""
+        async with engine.begin() as conn:
+            await _create_legacy_maps(conn)
+            await conn.run_sync(ensure_map_columns)
+
+            cols = (await conn.execute(text("PRAGMA table_info(maps)"))).fetchall()
+            col_names = [row[1] for row in cols]
+            assert "parent_map_id" in col_names, f"迁移后应含 parent_map_id 列，实际列: {col_names}"
+
+            names = (await conn.execute(text("SELECT name FROM maps"))).scalars().all()
+            assert names == ["清河县城图"]  # 迁移不丢数据
 
     async def test_idempotent_when_columns_exist(self, engine):
         """新库（create_all 已含新列）→ 迁移 no-op 不报错（幂等）."""

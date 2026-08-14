@@ -96,6 +96,7 @@ async def create_map(
     name: str = Form(...),
     description: str = Form(""),
     root_location_id: str | None = Form(None),
+    parent_map_id: str | None = Form(None),  # #368 v1.3：图挂父图 id
     bg_source: str = Form("image"),
     db: AsyncSession = Depends(get_db),
 ):
@@ -103,27 +104,32 @@ async def create_map(
 
     F43 P2: bg_source=shape 时 file 可选（无图 → image_path 存空串）；读不到
     文件内容时透传空 bytes + 空 filename，由 service 按 bg_source 校验。
+    #368 v1.3: parent_map_id=父图 id（None=根图）——router 侧解析非法 UUID → 422
+    「父地图不存在或不在同一项目」；父图校验由 service 抛出 MapParentMapNotFoundError
+    （继承 MapServiceError → _run_service 自动映射 422）。
     """
     pid = _parse_id(project_id, detail="项目不存在")
     root_uuid: uuid.UUID | None = None
     if root_location_id is not None:
         # router 侧解析；解析失败不调 service（测试锁定）
         root_uuid = _parse_location_id(root_location_id, detail="父地点不存在或不在同一项目")
+    parent_uuid: uuid.UUID | None = None
+    if parent_map_id is not None:
+        # router 侧解析；解析失败不调 service（与 root_location_id 同款）
+        parent_uuid = _parse_location_id(parent_map_id, detail="父地图不存在或不在同一项目")
     content = await file.read() if file is not None else b""
     filename = (file.filename or "main.png") if file is not None else ""
     svc = _get_svc(db)
+    # F43 P2/ #368 v1.3: 非默认 bg_source / parent_map_id 以 kwargs 透传；缺省形态
+    # 保持既有 6 参调用（兼容既有 F36 API 测试断言，服务层默认值一致）
+    create_kwargs: dict[str, Any] = {}
     if bg_source != "image":
-        # F43 P2: 非默认 bg_source（shape/ai）显式 kwargs 透传；默认 image 走既有
-        # 6 参形态（兼容既有 F36 API 测试断言，服务层默认值一致）
-        wm = await _run_service(
-            svc.create_map(
-                pid, name, description, root_uuid, filename, content, bg_source=bg_source
-            )
-        )
-    else:
-        wm = await _run_service(
-            svc.create_map(pid, name, description, root_uuid, filename, content)
-        )
+        create_kwargs["bg_source"] = bg_source
+    if parent_uuid is not None:
+        create_kwargs["parent_map_id"] = parent_uuid
+    wm = await _run_service(
+        svc.create_map(pid, name, description, root_uuid, filename, content, **create_kwargs)
+    )
     return wm.model_dump(mode="json")
 
 

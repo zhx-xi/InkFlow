@@ -136,6 +136,11 @@ from inkflow.domain.ports.map_errors import (
     MapRootLocationNotFoundError,
     MapServiceError,
 )
+
+try:  # pragma: no cover - #368 RED: MapParentMapNotFoundError 尚未实现
+    from inkflow.domain.ports.map_errors import MapParentMapNotFoundError
+except ImportError:
+    MapParentMapNotFoundError = type("MapParentMapNotFoundError", (MapServiceError,), {})
 from inkflow.domain.ports.map_repository import MapRepositoryProtocol
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.world_errors import ProjectNotFoundError
@@ -379,6 +384,53 @@ class TestCreateMap:
             await service.create_map(PID, "清河县城图", "", None, "main.png", IMG)
         mock_repo.add.assert_not_awaited()
         mock_asset_store.delete.assert_not_awaited()
+
+    # ── #368 v1.3：parent_map_id 图挂图层级（spec §2.1 业务规则 4 + §5.4 校验链 ④）──
+
+    async def test_create_parent_map_missing_raises(
+        self, service, mock_repo, mock_project_repo, mock_world_repo, mock_asset_store
+    ) -> None:
+        """④ parent_map_id 提供 + repo.get(parent) None → MapParentMapNotFoundError（422）."""
+        mock_project_repo.get = AsyncMock(return_value=_project())
+        parent = uuid.uuid4()
+        mock_repo.get = AsyncMock(return_value=None)  # 父图不存在
+        with pytest.raises(MapParentMapNotFoundError):
+            await service.create_map(
+                PID, "清河县城图", "", None, "main.png", IMG, parent_map_id=parent
+            )
+        mock_repo.add.assert_not_awaited()
+        mock_asset_store.save.assert_not_awaited()
+
+    async def test_create_parent_map_cross_project_raises(
+        self, service, mock_repo, mock_project_repo, mock_world_repo, mock_asset_store
+    ) -> None:
+        """④ parent_map_id 指向跨项目地图 → MapParentMapNotFoundError（422）."""
+        mock_project_repo.get = AsyncMock(return_value=_project())
+        parent = uuid.uuid4()
+        mock_repo.get = AsyncMock(return_value=_map("父图", project_id=OTHER_PID))
+        with pytest.raises(MapParentMapNotFoundError):
+            await service.create_map(
+                PID, "清河县城图", "", None, "main.png", IMG, parent_map_id=parent
+            )
+        mock_repo.add.assert_not_awaited()
+        mock_asset_store.save.assert_not_awaited()
+
+    async def test_create_with_parent_map_success(
+        self, service, mock_repo, mock_asset_store, mock_project_repo, mock_world_repo
+    ) -> None:
+        """⑥ 成功: parent_map_id 提供 + 同项目父图 → add 收到 parent_map_id（层级深度不限）."""
+        mock_project_repo.get = AsyncMock(return_value=_project())
+        parent = uuid.uuid4()
+        mock_repo.get = AsyncMock(return_value=_map("父图", project_id=PID))
+        result = await service.create_map(
+            PID, "清河县城图", "", None, "main.png", IMG, parent_map_id=parent
+        )
+        assert result.name == "清河县城图"
+        mock_repo.get.assert_awaited_once_with(parent.int)
+        added = mock_repo.add.await_args.args[0]
+        assert isinstance(added, WorldMap)
+        assert added.parent_map_id == parent
+        assert result is added
 
 
 class TestUpdateMap:
@@ -806,8 +858,13 @@ class TestMapErrorsModule:
     def test_error_default_messages(self) -> None:
         """默认消息文案逐字（父侧定稿契约，GREEN 实现按此落地）."""
         assert str(MapNameConflictError()) == "同名地图已存在（项目内）"
-        assert str(MapRootLocationConflictError()) == "该地点已挂有一张地图"
-        assert str(MapRootLocationNotFoundError()) == "父地点不存在或不在同一项目"
+        # #368 v1.3：detail 引导用户（③ 修复点）——保留前缀 + 引导后缀
+        assert str(MapRootLocationConflictError()) == (
+            "该地点已挂有一张地图（如需层级请用创建子图）"
+        )
+        assert str(MapRootLocationNotFoundError()) == (
+            "父地点不存在或不在同一项目（根地点应为世界观条目 id，而非地图 id）"
+        )
         assert str(MapPinLocationNotFoundError()) == "pin 关联地点不存在或不在同一项目"
         assert str(MapChildrenActionRequiredError()) == (
             "该地图存在子地图，必须指定 cascade=true（级联删除）或 "

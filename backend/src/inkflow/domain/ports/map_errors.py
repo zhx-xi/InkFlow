@@ -19,12 +19,20 @@ class MapNameConflictError(MapServiceError):
 
 
 class MapRootLocationConflictError(MapServiceError):
-    def __init__(self, message: str = "该地点已挂有一张地图") -> None:
+    def __init__(self, message: str = "该地点已挂有一张地图（如需层级请用创建子图）") -> None:
         super().__init__(message)
 
 
 class MapRootLocationNotFoundError(MapServiceError):
-    def __init__(self, message: str = "父地点不存在或不在同一项目") -> None:
+    def __init__(
+        self,
+        message: str = "父地点不存在或不在同一项目（根地点应为世界观条目 id，而非地图 id）",
+    ) -> None:
+        super().__init__(message)
+
+
+class MapParentMapNotFoundError(MapServiceError):
+    def __init__(self, message: str = "父地图不存在或不在同一项目") -> None:
         super().__init__(message)
 
 
