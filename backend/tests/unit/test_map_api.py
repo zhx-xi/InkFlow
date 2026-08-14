@@ -129,6 +129,7 @@ try:
         MapReparentTargetError,
         MapRootLocationConflictError,
         MapRootLocationNotFoundError,
+        MapServiceError,
     )
 except ImportError:  # pragma: no cover - F36 RED: map_errors 尚未实现
     MapServiceError = type("MapServiceError", (Exception,), {})
@@ -141,6 +142,11 @@ except ImportError:  # pragma: no cover - F36 RED: map_errors 尚未实现
     MapNotFoundError = type("MapNotFoundError", (Exception,), {})
     MapPinNotFoundError = type("MapPinNotFoundError", (Exception,), {})
     MapAssetError = type("MapAssetError", (Exception,), {})
+
+try:  # pragma: no cover - #368 RED: MapParentMapNotFoundError 尚未实现
+    from inkflow.domain.ports.map_errors import MapParentMapNotFoundError
+except ImportError:
+    MapParentMapNotFoundError = type("MapParentMapNotFoundError", (MapServiceError,), {})
 
 import inkflow.api.routers.maps  # noqa: F401  # RED 阶段主契约 import（router 未实现 → 收集期失败点；GREEN 后仍保持显式导入）
 from inkflow.api.app import app
@@ -263,6 +269,7 @@ class TestMapCreateAPI:
         ① service 抛 MapRootLocationNotFoundError（MapServiceError → 422 映射）；
         ② 请求体 root_location_id 非 UUID → router 侧解析失败同 422 同文案，
         且 create_map 不被调用（本文件锁定行为，见文件头设计假设 2）。
+        #368 v1.3：错误类 detail 追加引导后缀（③ 修复点）。
         """
         svc = _mock_svc(mock_get_svc)
         svc.create_map = AsyncMock(side_effect=MapRootLocationNotFoundError())
@@ -272,7 +279,9 @@ class TestMapCreateAPI:
             data={"name": "清河县城图", "root_location_id": str(LOC_ID)},
         )
         assert resp1.status_code == 422
-        assert resp1.json()["detail"] == "父地点不存在或不在同一项目"
+        assert resp1.json()["detail"] == (
+            "父地点不存在或不在同一项目（根地点应为世界观条目 id，而非地图 id）"
+        )
 
         svc.create_map = AsyncMock(return_value=_map(PID))
         resp2 = client.post(
@@ -297,6 +306,64 @@ class TestMapCreateAPI:
         )
         assert response.status_code == 404
         assert response.json()["detail"] == "项目不存在"
+
+    # ── #368 v1.3：parent_map_id Form 透传（spec §3.1）──
+
+    @patch("inkflow.api.routers.maps.get_map_service")
+    def test_create_map_parent_map_id_passthrough(self, mock_get_svc: MagicMock) -> None:
+        """POST parent_map_id=UUID → create_map 收到 parent_map_id kwarg（图挂图层级）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.create_map = AsyncMock(return_value=_map(PID, parent_map_id=LOC_ID))
+        parent_id = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000009")
+
+        response = client.post(
+            f"/api/v1/projects/{PID}/maps",
+            files={"file": ("main.png", PNG_BYTES, "image/png")},
+            data={
+                "name": "清河县城图",
+                "description": "县城布局",
+                "parent_map_id": str(parent_id),
+            },
+        )
+        assert response.status_code == 201
+        svc.create_map.assert_awaited_once_with(
+            PID, "清河县城图", "县城布局", None, "main.png", PNG_BYTES, parent_map_id=parent_id
+        )
+
+    @patch("inkflow.api.routers.maps.get_map_service")
+    def test_create_map_parent_map_missing_422(self, mock_get_svc: MagicMock) -> None:
+        """parent_map_id 父图不存在 → 422 + detail「父地图不存在或不在同一项目」."""
+        svc = _mock_svc(mock_get_svc)
+        svc.create_map = AsyncMock(side_effect=MapParentMapNotFoundError())
+
+        response = client.post(
+            f"/api/v1/projects/{PID}/maps",
+            files={"file": ("main.png", PNG_BYTES, "image/png")},
+            data={
+                "name": "清河县城图",
+                "parent_map_id": str(uuid.uuid4()),
+            },
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "父地图不存在或不在同一项目"
+
+    @patch("inkflow.api.routers.maps.get_map_service")
+    def test_create_map_parent_map_id_invalid_422(self, mock_get_svc: MagicMock) -> None:
+        """parent_map_id 非 UUID → 422（router 侧解析失败，create_map 不被调用）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.create_map = AsyncMock(return_value=_map(PID))
+
+        response = client.post(
+            f"/api/v1/projects/{PID}/maps",
+            files={"file": ("main.png", PNG_BYTES, "image/png")},
+            data={
+                "name": "清河县城图",
+                "parent_map_id": "not-a-uuid",
+            },
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "父地图不存在或不在同一项目"
+        svc.create_map.assert_not_awaited()
 
 
 class TestMapListAPI:

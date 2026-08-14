@@ -15,6 +15,7 @@ import { useToastStore } from '../stores/toast';
 import { ConfirmDialog } from './ConfirmDialog';
 import type { LibraryItemDTO } from './LibraryCreateDialog';
 import { MapCanvas } from './MapCanvas';
+import { MapChildNodeView } from './MapChildNodeView';
 import { MapCreateDialog } from './MapCreateDialog';
 import { PinDialog, type PinRefOption, type PinSaveInput } from './PinDialog';
 
@@ -29,6 +30,7 @@ export interface WorldMapDTO {
   image_path?: string;
   description?: string;
   root_location_id?: string | number | null;
+  parent_map_id?: string | number | null; // #368 v1.3：图挂父图；null/undefined=根图
   bg_source?: MapBgSource;
   extra?: Record<string, unknown>;
   created_at?: string;
@@ -139,6 +141,7 @@ function WorkbenchNodeView({
   depth,
   collapsed,
   mapByLocation,
+  childrenByParent,
   pinCounts,
   activeMapId,
   onToggle,
@@ -147,11 +150,13 @@ function WorkbenchNodeView({
   onCopy,
   onSelectMap,
   onCreateChild,
+  onCreateChildForMap,
 }: {
   node: WorldTreeNode;
   depth: number;
   collapsed: Set<string | number>;
   mapByLocation: Map<string, WorldMapDTO>;
+  childrenByParent: Map<string, WorldMapDTO[]>;
   pinCounts: Record<string, number>;
   activeMapId: string | null;
   onToggle: (id: string | number) => void;
@@ -160,6 +165,7 @@ function WorkbenchNodeView({
   onCopy: (item: LibraryItemDTO) => void;
   onSelectMap: (mapId: string) => void;
   onCreateChild: (item: LibraryItemDTO) => void;
+  onCreateChildForMap: (map: WorldMapDTO) => void;
 }) {
   const { t } = useI18n();
   const { item, children } = node;
@@ -209,7 +215,8 @@ function WorkbenchNodeView({
             <span>{pinCounts[String(linkedMap.id)] ?? 0}</span>
           </button>
         )}
-        <span className="min-w-0 flex-1 truncate">{item.name ?? ''}</span>
+        {/* #368：linkedMap 命中时显示地图名（地图视角名称一致）；否则显示条目名 */}
+        <span className="min-w-0 flex-1 truncate">{linkedMap ? linkedMap.name : (item.name ?? '')}</span>
         {item.category ? (
           <span className="shrink-0 rounded-full bg-surface-3 px-2 py-0.5 text-[11px] text-ink-2">
             {item.category}
@@ -244,13 +251,17 @@ function WorkbenchNodeView({
           >
             <Copy className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
-          {/* #346：树节点行创建子图（root_location_id 预填该节点 id） */}
+          {/* #346/#368：树节点行创建子图——有 linkedMap 传父图 id（parent_map_id）；无地图禁用 */}
           <button
             type="button"
             data-testid={`map-create-child-${item.id}`}
             aria-label={`${t('lib.map.createChild')} ${item.name ?? ''}`}
-            title={t('lib.map.createChild')}
-            className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            title={linkedMap ? t('lib.map.createChild') : '请先为该地点创建地图'}
+            disabled={linkedMap === null}
+            className={cn(
+              'rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              linkedMap === null && 'cursor-not-allowed opacity-50',
+            )}
             onClick={() => onCreateChild(item)}
           >
             <MapPlus className="h-3.5 w-3.5" aria-hidden="true" />
@@ -265,6 +276,7 @@ function WorkbenchNodeView({
             depth={depth + 1}
             collapsed={collapsed}
             mapByLocation={mapByLocation}
+            childrenByParent={childrenByParent}
             pinCounts={pinCounts}
             activeMapId={activeMapId}
             onToggle={onToggle}
@@ -273,6 +285,22 @@ function WorkbenchNodeView({
             onCopy={onCopy}
             onSelectMap={onSelectMap}
             onCreateChild={onCreateChild}
+            onCreateChildForMap={onCreateChildForMap}
+          />
+        ))}
+      {/* #368 v1.3：图挂图层级——该地图的子图递归渲染（深度不限） */}
+      {linkedMap &&
+        (childrenByParent.get(String(linkedMap.id)) ?? []).map((child) => (
+          <MapChildNodeView
+            key={String(child.id)}
+            map={child}
+            depth={depth + 1}
+            collapsed={collapsed}
+            childrenByParent={childrenByParent}
+            pinCounts={pinCounts}
+            activeMapId={activeMapId}
+            onSelectMap={onSelectMap}
+            onCreateChild={onCreateChildForMap}
           />
         ))}
     </div>
@@ -316,7 +344,8 @@ export function MapWorkbench({
   const [createDialog, setCreateDialog] = useState<{
     open: boolean;
     rootLocationId: string | number | null;
-  }>({ open: false, rootLocationId: null });
+    parentMapId: string | number | null; // #368 v1.3：创建子图传父图 id（parent_map_id）
+  }>({ open: false, rootLocationId: null, parentMapId: null });
   const [refLists, setRefLists] = useState<{
     characters: Array<{ id: string | number; name?: string }>;
     timeline: Array<{ id: string | number; name?: string; title?: string }>;
@@ -368,6 +397,19 @@ export function MapWorkbench({
     for (const m of localMaps) {
       if (m.root_location_id !== null && m.root_location_id !== undefined) {
         map.set(String(m.root_location_id), m);
+      }
+    }
+    return map;
+  }, [localMaps]);
+  // #368 v1.3：parent_map_id → 子图列表（图挂图层级，前端树渲染）
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string, WorldMapDTO[]>();
+    for (const m of localMaps) {
+      if (m.parent_map_id !== null && m.parent_map_id !== undefined) {
+        const key = String(m.parent_map_id);
+        const list = map.get(key) ?? [];
+        list.push(m);
+        map.set(key, list);
       }
     }
     return map;
@@ -507,12 +549,17 @@ export function MapWorkbench({
     }
   };
 
-  /** #346 创建地图：multipart FormData（bg_source 固定 shape；子图携带 root_location_id） */
+  /** #346/#368 创建地图：multipart FormData（bg_source 固定 shape；子图携带 parent_map_id，根图可挂条目） */
   const handleCreateMap = async (name: string) => {
     try {
       const fd = new FormData();
       fd.append('name', name);
       fd.append('bg_source', 'shape');
+      // #368 v1.3：创建子图传父图 id（parent_map_id），而非条目 id
+      if (createDialog.parentMapId != null) {
+        fd.append('parent_map_id', String(createDialog.parentMapId));
+      }
+      // 创建根图挂条目场景（root_location_id 保留）
       if (createDialog.rootLocationId != null) {
         fd.append('root_location_id', String(createDialog.rootLocationId));
       }
@@ -529,7 +576,7 @@ export function MapWorkbench({
         );
         setLocalMaps(data.items ?? []);
       }
-      setCreateDialog({ open: false, rootLocationId: null });
+      setCreateDialog({ open: false, rootLocationId: null, parentMapId: null });
       useToastStore.getState().pushToast('ok', t('toast.saved'));
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
@@ -628,7 +675,7 @@ export function MapWorkbench({
             data-testid="map-create-root"
             title={t('lib.map.createRoot')}
             className="inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => setCreateDialog({ open: true, rootLocationId: null })}
+            onClick={() => setCreateDialog({ open: true, rootLocationId: null, parentMapId: null })}
           >
             <MapPlus className="h-3.5 w-3.5" aria-hidden="true" />
             {t('lib.map.createRoot')}
@@ -688,6 +735,7 @@ export function MapWorkbench({
                   depth={0}
                   collapsed={collapsedIds}
                   mapByLocation={mapByLocation}
+                  childrenByParent={childrenByParent}
                   pinCounts={pinCounts}
                   activeMapId={activeMapId}
                   onToggle={onToggle}
@@ -695,7 +743,14 @@ export function MapWorkbench({
                   onDelete={onDelete}
                   onCopy={onCopy}
                   onSelectMap={onSelectMap}
-                  onCreateChild={(item) => setCreateDialog({ open: true, rootLocationId: item.id })}
+                  onCreateChild={(item) => {
+                    // #368 v1.3：条目行创建子图 → 传 linkedMap.id 作为 parentMapId（无地图按钮已禁用）
+                    const lm = mapByLocation.get(String(item.id)) ?? null;
+                    if (lm) setCreateDialog({ open: true, rootLocationId: null, parentMapId: lm.id });
+                  }}
+                  onCreateChildForMap={(map) =>
+                    setCreateDialog({ open: true, rootLocationId: null, parentMapId: map.id })
+                  }
                 />
               ))
             )}
@@ -805,12 +860,12 @@ export function MapWorkbench({
         }}
       />
 
-      {/* #346 创建地图对话框（根图 rootLocationId=null / 子图预填节点 id） */}
+      {/* #346/#368 创建地图对话框（根图 parentMapId=null / 子图预填父图 id） */}
       <MapCreateDialog
         open={createDialog.open}
         onSave={(name) => void handleCreateMap(name)}
         onOpenChange={(open) => {
-          if (!open) setCreateDialog({ open: false, rootLocationId: null });
+          if (!open) setCreateDialog({ open: false, rootLocationId: null, parentMapId: null });
         }}
       />
 

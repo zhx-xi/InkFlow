@@ -193,6 +193,8 @@ def ensure_map_columns(conn: Connection) -> None:
             conn.execute(text("ALTER TABLE maps ADD COLUMN bg_source VARCHAR(16) DEFAULT 'image'"))
         if "extra" not in map_names:
             conn.execute(text("ALTER TABLE maps ADD COLUMN extra JSON"))
+        if "parent_map_id" not in map_names:
+            conn.execute(text("ALTER TABLE maps ADD COLUMN parent_map_id INTEGER"))
     pin_cols = conn.execute(text("PRAGMA table_info(map_pins)")).fetchall()
     pin_names = {row[1] for row in pin_cols}
     if pin_names:

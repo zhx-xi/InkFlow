@@ -22,6 +22,7 @@ class WorldMap(BaseModel):
     image_path: str  # 相对 config.data_dir 的路径（如 maps/<uuid>/main.png）
     description: str = ""
     root_location_id: uuid.UUID | None = None
+    parent_map_id: uuid.UUID | None = None  # #368 v1.3：图挂父图；None=根图
     bg_source: str = "image"  # F43 P2：枚举 shape/image/ai（默认 image，旧数据兼容）
     extra: dict = Field(default_factory=dict)  # F43 P2：扩展字典（{"shapes": [...]}）
     created_at: datetime
@@ -35,6 +36,7 @@ class WorldMapCreate(BaseModel):
     name: str
     description: str = ""
     root_location_id: uuid.UUID | None = None
+    parent_map_id: uuid.UUID | None = None  # #368 v1.3：图挂父图；None=根图
 
 
 class WorldMapUpdate(BaseModel):

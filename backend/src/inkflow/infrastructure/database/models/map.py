@@ -58,6 +58,12 @@ class MapORM(Base):
         nullable=True,
         index=True,
     )
+    parent_map_id: Mapped[int | None] = mapped_column(  # #368 v1.3：图挂父图（自引用 FK）
+        Integer,
+        ForeignKey("maps.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,

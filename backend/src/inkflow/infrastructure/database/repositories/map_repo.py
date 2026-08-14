@@ -60,6 +60,7 @@ def _orm_to_domain(orm: MapORM) -> WorldMap:
         image_path=orm.image_path,
         description=orm.description,
         root_location_id=_int_to_uuid(orm.root_location_id),
+        parent_map_id=_int_to_uuid(orm.parent_map_id),  # #368 v1.3
         bg_source=orm.bg_source,
         extra=orm.extra or {},
         created_at=orm.created_at,
@@ -80,6 +81,9 @@ def _domain_to_orm(domain: WorldMap) -> MapORM:
         root_location_id=_uuid_to_int(domain.root_location_id)
         if domain.root_location_id is not None
         else None,
+        parent_map_id=_uuid_to_int(domain.parent_map_id)
+        if domain.parent_map_id is not None
+        else None,  # #368 v1.3
         bg_source=domain.bg_source,
         extra=domain.extra,
     )
