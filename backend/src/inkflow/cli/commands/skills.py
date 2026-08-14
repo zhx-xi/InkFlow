@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import sys
 from pathlib import Path
 
 import typer
@@ -20,6 +21,23 @@ def _skills_root() -> Path:
     return config.data_dir / "skills"
 
 
+def _builtin_skills_dir() -> Path | None:
+    """定位随包 skills 资源根目录（含 inkflow/ 子目录）；不存在 → None。
+
+    frozen（PyInstaller onedir）：exe 上两级 / skills——
+      - CLI zip: <root>/inkflow/inkflow.exe → <root>/skills（parent.parent）
+      - GUI: resources/kernel/inkflow.exe → resources/skills（parent.parent）
+    dev：仓库根 skills/（skills.py 位于 backend/src/inkflow/cli/commands/，parents[5]）。
+    """
+    if getattr(sys, "frozen", False):
+        root = Path(sys.executable).resolve().parent.parent / "skills"
+    else:
+        root = Path(__file__).resolve().parents[5] / "skills"
+    if not (root / "inkflow").is_dir():
+        return None
+    return root
+
+
 def _count_files(directory: Path) -> int:
     """统计目录下文件总数（含子目录）。"""
     return sum(1 for p in directory.rglob("*") if p.is_file())
@@ -28,16 +46,43 @@ def _count_files(directory: Path) -> int:
 @app.command("install")
 def install(
     ctx: typer.Context,
-    source: str = typer.Argument(..., help="含 SKILL.md 的 skill 包目录路径"),
+    source: str | None = typer.Argument(
+        None, help="含 SKILL.md 的 skill 包目录路径（--builtin 时省略）"
+    ),
     target: Path | None = typer.Option(
         None, "--target", help="覆盖默认目标根（默认 data_dir/skills）"
     ),
     force: bool = typer.Option(False, "--force", help="覆盖已存在同名 skill"),
+    builtin: bool = typer.Option(
+        False, "--builtin", help="从随包资源目录导入官方 inkflow skill（#342 三通道②）"
+    ),
 ) -> None:
     """导入用户自定义 skill 包到 data_dir/skills/<name>/。"""
     cli_ctx: CliContext = ctx.obj
     root = target if target is not None else _skills_root()
-    src = Path(source)
+
+    if builtin and source is not None:
+        raise typer.BadParameter("--builtin 与 SOURCE 参数互斥")
+    if builtin:
+        builtin_root = _builtin_skills_dir()
+        if builtin_root is None:
+            print_error(
+                cli_ctx,
+                "SKILLS_SOURCE_INVALID",
+                "内置 skills 资源不存在（打包产物缺 skills 目录？）",
+            )
+            return
+        src = builtin_root / "inkflow"
+    elif source is None:
+        print_error(
+            cli_ctx,
+            "SKILLS_SOURCE_INVALID",
+            "缺少 SOURCE 参数（或使用 --builtin 导入随包 skills）",
+            exit_code=2,
+        )
+        return
+    else:
+        src = Path(source)
 
     if not src.is_dir() or not (src / "SKILL.md").is_file():
         print_error(cli_ctx, "SKILLS_SOURCE_INVALID", f"源目录无效（不存在或缺少 SKILL.md）: {src}")

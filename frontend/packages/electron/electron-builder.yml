@@ -16,6 +16,9 @@ files:
 extraResources:
   - from: ../kernel
     to: kernel
+  # #342: 官方 skills 随包分发（resources/skills/，与 kernel 同组装模式）
+  - from: ../skills
+    to: skills
 win:
   icon: build/icon.ico
   target:
