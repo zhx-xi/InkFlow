@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from langchain_core.messages import AIMessage
 
+from inkflow.core.config import config
 from inkflow.domain.ports.llm_client import ChatMessage, ChatResponse, StreamEvent
 from inkflow.infrastructure.llm.provider_config import LLMProviderConfig
 
@@ -18,12 +19,14 @@ async def _async_iter(items):
 
 
 def _fake_provider_config(provider: str = "openai") -> LLMProviderConfig:
+    # #344: simulate real assembly path -- get_provider_config builds
+    # LLMProviderConfig with timeout=config.llm_request_timeout
     return LLMProviderConfig(
         provider=provider,
         api_key="test-key",
         default_model="gpt-4o",
         max_retries=1,
-        timeout=10,
+        timeout=config.llm_request_timeout,
     )
 
 
@@ -393,3 +396,65 @@ class TestLangChainLLMClientErrorMapping:
         assert "openai_api_key" not in kwargs
         assert "openai_api_base" not in kwargs
         assert "max_tokens" not in kwargs
+
+    # ── #344 管线节点 LLM 装配契约（真实 LLM 链路修复）──
+
+    def test_pipeline_llm_client_assembles_api_key_base_url_model(self):
+        """#344: 管线节点 LangChainLLMClient 装配 — APIKeyManager 已存 key 回退链生效.
+
+        GUI 场景 key 经 POST /settings/llm-keys 注册（APIKeyManager 落盘），
+        管线节点 LangChainLLMClient() 无参构造 → chat(model='zhipu/glm-4.5')
+        应解析到已存 key + 注册表 base_url + 正确 model。防止「测试轨只锁
+        writing 路径、管线路径裸奔」盲区（#344 修复方向 ③）。
+        """
+        from inkflow.domain.ports.llm_client import ChatMessage
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        fake_key = "zhipu-stored-key-abc123"
+        # APIKeyManager.load 回退链命中（GUI 注册的 key）
+        with patch(
+            "inkflow.infrastructure.llm.provider_config._load_stored_key",
+            return_value=fake_key,
+        ):
+            client = LangChainLLMClient()
+            with patch("inkflow.infrastructure.llm.langchain_client.ChatOpenAI") as mock_chat:
+                mock_chat.return_value.ainvoke = AsyncMock(
+                    return_value=MagicMock(content="ok", response_metadata={})
+                )
+                import asyncio
+
+                asyncio.run(
+                    client.chat(
+                        [ChatMessage(role="user", content="hi")],
+                        model="zhipu/glm-4.5",
+                    )
+                )
+        kwargs = mock_chat.call_args[1]
+        assert kwargs["openai_api_key"] == fake_key
+        assert kwargs["openai_api_base"] == "https://open.bigmodel.cn/api/paas/v4/"
+        assert kwargs["model"] == "glm-4.5"
+
+    def test_pipeline_llm_client_timeout_allows_slow_models(self):
+        """#344: 管线节点 LLM 请求超时须大于慢模型真实延迟（zhipu 33-112s 实测）.
+
+        根因实证（2026-08-14 真实 LLM）：glm-4.5 单次调用 33.7s（简单）/
+        112.3s（architect 完整 prompt），request_timeout=120 处极限边缘，
+        慢网络下必然超时 → 4 次重试 × 120s = 8 分钟 → 「architect 重试耗尽」。
+        契约：LangChainLLMClient 构造的 ChatOpenAI request_timeout >= 300。
+        """
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        # Contract 1: config.llm_request_timeout default must allow slow models
+        # (real assembly data source in provider_config.get_provider_config)
+        assert config.llm_request_timeout >= 300, (
+            f"config.llm_request_timeout={config.llm_request_timeout} "
+            "too tight for slow models (#344 root cause)"
+        )
+
+        provider_cfg = _fake_provider_config()
+        with patch("inkflow.infrastructure.llm.langchain_client.ChatOpenAI") as mock_chat:
+            LangChainLLMClient()._get_chat_model(provider_cfg)
+        kwargs = mock_chat.call_args[1]
+        assert (
+            kwargs["request_timeout"] >= 300
+        ), f"request_timeout={kwargs.get('request_timeout')} 对慢模型太紧（#344 根因）"

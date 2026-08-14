@@ -118,7 +118,7 @@ class InkFlowConfig(BaseSettings):
     llm_max_retries: int = 3
     """LLM 调用失败自动重试次数。"""
 
-    llm_request_timeout: int = 120
+    llm_request_timeout: int = 300
     """LLM API 请求超时（秒）。"""
 
     # ---- LLM Provider API Keys（通过环境变量注入，不落盘） ----
