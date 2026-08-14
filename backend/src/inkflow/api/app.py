@@ -40,6 +40,7 @@ from inkflow.core.database import (
     async_session_factory,
     create_tables,
     engine,
+    ensure_agent_executions_hitl_payload_column,
     ensure_character_drop_is_deleted,
     ensure_foreshadowing_drop_is_deleted,
     ensure_map_columns,
@@ -62,6 +63,7 @@ async def lifespan(app: FastAPI):
     # #126 A1：旧库轻量列迁移 —— create_tables 之后、seed 之前补 builtin_key 列，
     # 新库 create_all 已含列（no-op）；旧库加列后由 seed 按 name 命中回填。
     async with engine.begin() as conn:
+        await conn.run_sync(ensure_agent_executions_hitl_payload_column)
         await conn.run_sync(ensure_provider_builtin_key_column)
         await conn.run_sync(ensure_world_parent_id_column)
         await conn.run_sync(ensure_map_columns)
