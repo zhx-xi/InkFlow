@@ -192,7 +192,17 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
                 .filter((layer) => layer.length > 0).length;
               compressed.splice(before, 0, [role.field]);
             }
-            setConfig({ agent_order: compressed });
+            // #347：移动 = 该角色参与管线 → 未启用时自动启用（sentinel 跟随默认），
+            // 防后端 C1「配置驱动模式至少需要 1 个启用角色」422
+            const fieldValue = BUILTIN_FIELDS.includes(role.field)
+              ? config[role.field as AgentField]
+              : (config.agent_roles ?? {})[role.field];
+            if (fieldValue == null || fieldValue === '') {
+              const patch = agentPatch(role.field, AGENT_DEFAULT_SENTINEL, config);
+              setConfig({ ...patch, agent_order: compressed });
+            } else {
+              setConfig({ agent_order: compressed });
+            }
             onConfigChange?.();
           };
           const toggle = () => {
