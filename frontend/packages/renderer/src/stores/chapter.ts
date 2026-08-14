@@ -72,7 +72,7 @@ export const useChapterStore = create<ChapterState>((set, get) => ({
       const chapterData = await apiFetch<ChapterListResponse>(
         `/api/v1/projects/${projectId}/chapters`,
       );
-      set({ volumes, chapters: chapterData.items, loading: false });
+      set({ volumes, chapters: chapterData.items, currentChapterId: null, content: '', loading: false });
     } catch (err) {
       set({ error: errorMessage(err), loading: false });
     }

@@ -95,6 +95,26 @@ describe('chapter store — 卷章树与当前章', () => {
     expect(useChapterStore.getState().loading).toBe(false);
   });
 
+  it('#345: loadChapterTree 切项目时重置当前章与正文（防旧项目 content 残留）', async () => {
+    // 模拟项目 A 状态：已选中章节 + 正文
+    useChapterStore.setState({ currentChapterId: 'c1', content: '项目 A 的正文' });
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects/p2/volumes') return { items: volumes };
+      if (path === '/api/v1/projects/p2/chapters') return { items: chapters, total: 2, offset: 0, limit: 50 };
+      throw new Error(`unexpected path: ${path}`);
+    });
+
+    await act(async () => {
+      await useChapterStore.getState().loadChapterTree('p2');
+    });
+    const s = useChapterStore.getState();
+    // 切到项目 B：正文与当前章必须清空，绝不允许显示上一项目的文字
+    expect(s.content).toBe('');
+    expect(s.currentChapterId).toBeNull();
+    expect(s.volumes).toEqual(volumes);
+    expect(s.chapters).toEqual(chapters);
+  });
+
   it('selectChapter：GET /chapters/{id} → 当前章 + 正文段落化纯文本提交', async () => {
     apiFetchMock.mockResolvedValue({
       id: 'c1', project_id: 'p1', volume_id: 'v1', title: '第1章 初见',
