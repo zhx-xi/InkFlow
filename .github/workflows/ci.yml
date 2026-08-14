@@ -1149,3 +1149,67 @@ jobs:
           uv run pytest ../tests/e2e/test_llm_connectivity.py `
                  ../tests/e2e/test_writing_generate.py `
                  -v --tb=short -m e2e
+
+  # ── 真实 AI GUI e2e（#298 管线化 / #161 Supervisor 动态路由）：与 e2e-ai-backend 同开关哲学 ──
+  # label run-ai-tests 触发 + workflow_dispatch 兜底；信息性 check 不进 needs 不 required——
+  # 外部 LLM 服务抖动不卡 merge。守卫：secrets.LLM_API_KEY 为空时测试 step 跳过（缺 key 永远 skip 不 fail）。
+  # 说明：B1 spec（e2e-pipeline-ai.spec.ts）读 process.env.INKFLOW_LLM_KEY；zhipu base_url 走 seed
+  # provider 注册表内置（open.bigmodel.cn），无需额外注入 base_url/model env。
+  e2e-ai-frontend:
+    if: github.event_name == 'workflow_dispatch' || (github.event.action == 'labeled' && github.event.label.name == 'run-ai-tests')
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      INKFLOW_LLM_KEY: ${{ secrets.LLM_API_KEY }}
+      # 内核 spawn 需 UTF-8（Windows runner cp1252 会 UnicodeEncodeError）
+      PYTHONUTF8: "1"
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          prune-cache: false
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install backend deps (kernel venv)
+        working-directory: backend
+        run: uv sync --frozen --extra dev
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build renderer (dist/)
+        run: pnpm --filter renderer build
+
+      - name: Build electron main/preload (out/)
+        run: pnpm --filter inkflow-electron build
+
+      - name: E2E pipeline AI (real LLM, #298 管线化)
+        # 守卫（同 e2e-ai-backend）：INKFLOW_LLM_KEY 为空（fork PR / 未配置）时跳过——缺 key 永远 skip 不 fail。
+        if: env.INKFLOW_LLM_KEY != ''
+        run: pnpm --filter inkflow-electron test:e2e e2e-pipeline-ai
