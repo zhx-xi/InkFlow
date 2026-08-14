@@ -277,6 +277,38 @@ describe('AgentChainCard — F42 #269 执行顺序编辑（spec §5.3/M6）', ()
     expect(slotOf('agent_architect')).toHaveTextContent('1');
   });
 
+  it('#347: 移动时自动启用被移动角色（防后端 C1 422「配置驱动模式至少需要 1 个启用角色」）', async () => {
+    const user = userEvent.setup();
+    const onConfigChange = await renderCard();
+    // 初始全 null（默认模板模式）——移动 Writer 上移
+    await user.click(moveUp('agent_writer'));
+
+    const config = useAgentStore.getState().config;
+    // agent_order 显式化（既有语义）
+    expect(config.agent_order).toEqual([
+      ['agent_architect', 'agent_writer'],
+      ['agent_auditor'],
+      ['agent_reviser'],
+    ]);
+    // #347：被移动角色自动启用（sentinel 跟随默认）→ 后端 C1 校验恒过
+    expect(config.agent_writer).toBe(AGENT_DEFAULT_SENTINEL);
+    expect(onConfigChange).toHaveBeenCalled();
+  });
+
+  it('#347: 零启用角色时移动内置角色 → 被移动角色自动启用（不再产生 422 配置）', async () => {
+    const user = userEvent.setup();
+    await renderCard();
+    // 全 null 默认模式，移动 Auditor 下移
+    await user.click(moveDown('agent_auditor'));
+    const config = useAgentStore.getState().config;
+    expect(config.agent_auditor).toBe(AGENT_DEFAULT_SENTINEL);
+    // 至少一个启用角色 → C1 恒过
+    const enabled = Object.entries(config).filter(
+      ([k, v]) => k.startsWith('agent_') && v != null && v !== '',
+    );
+    expect(enabled.length).toBeGreaterThan(0);
+  });
+
   it('点击 Writer 上移（空 agent_order）→ agent_order 显式化默认拓扑并移动（并入上一层 = 并行组）', async () => {
     const user = userEvent.setup();
     const onConfigChange = await renderCard();
