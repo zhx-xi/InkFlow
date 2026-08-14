@@ -143,19 +143,13 @@ def ensure_agent_executions_hitl_payload_column(conn: Connection) -> None:
     项目无 alembic 基建（create_all 管理 schema）；SQLite ALTER TABLE ADD COLUMN 幂等，
     先查 PRAGMA table_info 确认列缺失才执行。表不存在（全新环境）→ no-op 不抛错，
     等 create_all 建新表（自动含 hitl_payload 列）。
-
-    注意：SQL 用裸字符串而非 text()——既有 ensure_* 函数均经 run_sync 收到 SQLAlchemy
-    Connection，text() 可执行；但契约测试直接以标准库 sqlite3.Connection 调用，
-    text() 对象无法被裸连接执行（TypeError: execute() argument 1 must be str）。
-    裸字符串两种连接均接受（SQLAlchemy Connection.execute 自动按字符串处理），
-    故此处统一用裸字符串以兼容双轨调用。
     """
-    cols = conn.execute("PRAGMA table_info(agent_executions)").fetchall()
+    cols = conn.execute(text("PRAGMA table_info(agent_executions)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
         return  # 表不存在（全新环境）→ create_all 建新表（自动含 hitl_payload 列）
     if "hitl_payload" not in names:
-        conn.execute("ALTER TABLE agent_executions ADD COLUMN hitl_payload TEXT")
+        conn.execute(text("ALTER TABLE agent_executions ADD COLUMN hitl_payload TEXT"))
 
 
 def ensure_world_parent_id_column(conn: Connection) -> None:
