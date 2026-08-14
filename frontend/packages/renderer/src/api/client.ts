@@ -134,7 +134,12 @@ export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promis
     res = await fetch(`${baseURL}${path}`, {
       ...init,
       headers,
-      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      body:
+        init.body === undefined
+          ? undefined
+          : init.body instanceof FormData
+            ? init.body
+            : JSON.stringify(init.body),
     });
   } catch {
     // 网络层失败（内核未启动/端口未监听）

@@ -118,6 +118,13 @@ export const en: Record<string, string> = {
   'lib.shape.text': '+ Text',
   'lib.shape.newLabel': 'New area',
   'lib.shape.newText': 'New text',
+  // #346: map workbench create root/child map (multipart POST /projects/{pid}/maps)
+  'lib.map.createRoot': 'New root map',
+  'lib.map.createChild': 'New child map',
+  'lib.map.createTitle': 'New map',
+  'lib.map.createPlaceholder': 'Map name',
+  'lib.map.createSave': 'Create',
+  'lib.map.createCancel': 'Cancel',
   // F43 P3+P4 (specs/f43-setting-library-crud/spec.md §6): outline tree + chapter link + timeline dual view
   'lib.level.overall': 'Overall',
   'lib.level.volume': 'Volume',

@@ -121,6 +121,13 @@ export const zh = {
   'lib.shape.text': '＋文字',
   'lib.shape.newLabel': '新区域',
   'lib.shape.newText': '新文字',
+  // #346：地图工作台创建根图/子图（POST /projects/{pid}/maps multipart）
+  'lib.map.createRoot': '创建根图',
+  'lib.map.createChild': '创建子图',
+  'lib.map.createTitle': '创建地图',
+  'lib.map.createPlaceholder': '地图名称',
+  'lib.map.createSave': '创建',
+  'lib.map.createCancel': '取消',
   // F43 P3+P4（specs/f43-setting-library-crud/spec.md §6）：大纲三级树 + 章关联 + 时间线双序/两级检查
   'lib.level.overall': '整体',
   'lib.level.volume': '卷',
