@@ -511,4 +511,81 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
       expect((shapePatch![1]!.body as { extra: { shapes: unknown[] } }).extra.shapes).toHaveLength(0);
     });
   });
+
+  it('#346: 地图工作台「创建根图」按钮 → POST /projects/{pid}/maps（bg_source=shape）→ 列表刷新', async () => {
+    // 扩展 mock：POST maps 返回新地图（id=m9）
+    const createdMap = { ...mapM1, id: 'm9', name: '新舆图', root_location_id: null };
+    const baseImpl = apiFetchMock.getMockImplementation();
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+      if (path === '/api/v1/projects/p1/maps' && init?.method === 'POST') {
+        return createdMap;
+      }
+      return baseImpl!(path, init);
+    });
+    mockMapWorkbench(worldTree, []);
+    renderLibrary();
+    const user = userEvent.setup();
+    // 进入地图工作台（点世界观 tab）
+    await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('map-workbench');
+    // 创建根图按钮存在
+    expect(screen.getByTestId('map-create-root')).toBeInTheDocument();
+    await user.click(screen.getByTestId('map-create-root'));
+    // 名称输入 → 保存 → POST multipart FormData（bg_source=shape 无图可建）
+    const nameInput = await screen.findByTestId('map-create-name');
+    await user.type(nameInput, '新舆图');
+    await user.click(screen.getByTestId('map-create-save'));
+    await waitFor(() => {
+      const postCall = apiFetchMock.mock.calls.find(
+        (c) => c[0] === '/api/v1/projects/p1/maps' && c[1]?.method === 'POST',
+      );
+      expect(postCall).toBeTruthy();
+      const body = postCall![1]!.body;
+      // apiFetch 支持 FormData 直传（multipart）；断言关键字段
+      if (body instanceof FormData) {
+        expect(String(body.get('name'))).toBe('新舆图');
+        expect(String(body.get('bg_source'))).toBe('shape');
+      } else {
+        expect(body).toEqual(expect.objectContaining({ name: '新舆图', bg_source: 'shape' }));
+      }
+    });
+    // 创建成功 → toast + 列表刷新（新地图出现在树徽标：root_location_id null → 仅 maps 状态更新）
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((x) => x.type === 'ok')).toBe(true);
+    });
+  });
+
+  it('#346: 地图工作台「创建子图」按钮（挂在树节点）→ POST 携带 root_location_id', async () => {
+    const baseImpl = apiFetchMock.getMockImplementation();
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+      if (path === '/api/v1/projects/p1/maps' && init?.method === 'POST') {
+        return { ...mapM1, id: 'm9', name: '中州分图', root_location_id: 'w1' };
+      }
+      return baseImpl!(path, init);
+    });
+    mockMapWorkbench(worldTree, [mapM1]);
+    renderLibrary();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('map-workbench');
+    // 树节点 w1 行有「创建子图」按钮
+    const childBtn = await screen.findByTestId('map-create-child-w1');
+    await user.click(childBtn);
+    const nameInput = await screen.findByTestId('map-create-name');
+    await user.type(nameInput, '中州分图');
+    await user.click(screen.getByTestId('map-create-save'));
+    await waitFor(() => {
+      const postCall = apiFetchMock.mock.calls.find(
+        (c) => c[0] === '/api/v1/projects/p1/maps' && c[1]?.method === 'POST',
+      );
+      expect(postCall).toBeTruthy();
+      const body = postCall![1]!.body;
+      if (body instanceof FormData) {
+        expect(String(body.get('root_location_id'))).toBe('w1');
+        expect(String(body.get('bg_source'))).toBe('shape');
+      } else {
+        expect(body).toEqual(expect.objectContaining({ root_location_id: 'w1', bg_source: 'shape' }));
+      }
+    });
+  });
 });

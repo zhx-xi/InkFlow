@@ -7,7 +7,7 @@
  * （PATCH extra.shapes）均在组件内完成（消费方契约 library-p2.test.tsx 覆盖）。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, Copy, Pencil, Trash2 } from 'lucide-react';
+import { ChevronRight, Copy, MapPlus, Pencil, Trash2 } from 'lucide-react';
 import { apiFetch, errorMessage } from '../api/client';
 import { cn } from '../lib/cn';
 import { useI18n } from '../i18n/useI18n';
@@ -15,6 +15,7 @@ import { useToastStore } from '../stores/toast';
 import { ConfirmDialog } from './ConfirmDialog';
 import type { LibraryItemDTO } from './LibraryCreateDialog';
 import { MapCanvas } from './MapCanvas';
+import { MapCreateDialog } from './MapCreateDialog';
 import { PinDialog, type PinRefOption, type PinSaveInput } from './PinDialog';
 
 export type MapBgSource = 'shape' | 'image' | 'ai';
@@ -145,6 +146,7 @@ function WorkbenchNodeView({
   onDelete,
   onCopy,
   onSelectMap,
+  onCreateChild,
 }: {
   node: WorldTreeNode;
   depth: number;
@@ -157,6 +159,7 @@ function WorkbenchNodeView({
   onDelete: (item: LibraryItemDTO) => void;
   onCopy: (item: LibraryItemDTO) => void;
   onSelectMap: (mapId: string) => void;
+  onCreateChild: (item: LibraryItemDTO) => void;
 }) {
   const { t } = useI18n();
   const { item, children } = node;
@@ -241,6 +244,17 @@ function WorkbenchNodeView({
           >
             <Copy className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
+          {/* #346：树节点行创建子图（root_location_id 预填该节点 id） */}
+          <button
+            type="button"
+            data-testid={`map-create-child-${item.id}`}
+            aria-label={`${t('lib.map.createChild')} ${item.name ?? ''}`}
+            title={t('lib.map.createChild')}
+            className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => onCreateChild(item)}
+          >
+            <MapPlus className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
         </div>
       </div>
       {!isCollapsed &&
@@ -258,11 +272,14 @@ function WorkbenchNodeView({
             onDelete={onDelete}
             onCopy={onCopy}
             onSelectMap={onSelectMap}
+            onCreateChild={onCreateChild}
           />
         ))}
     </div>
   );
 }
+
+/** #346 创建地图轻量对话框（MapCreateDialog.tsx，2026-08-14 拆分） */
 
 export function MapWorkbench({
   projectId,
@@ -296,6 +313,10 @@ export function MapWorkbench({
     defaultY: number;
   }>({ open: false, editing: null, defaultX: 0, defaultY: 0 });
   const [pendingDeletePin, setPendingDeletePin] = useState<MapPinDTO | null>(null);
+  const [createDialog, setCreateDialog] = useState<{
+    open: boolean;
+    rootLocationId: string | number | null;
+  }>({ open: false, rootLocationId: null });
   const [refLists, setRefLists] = useState<{
     characters: Array<{ id: string | number; name?: string }>;
     timeline: Array<{ id: string | number; name?: string; title?: string }>;
@@ -486,6 +507,35 @@ export function MapWorkbench({
     }
   };
 
+  /** #346 创建地图：multipart FormData（bg_source 固定 shape；子图携带 root_location_id） */
+  const handleCreateMap = async (name: string) => {
+    try {
+      const fd = new FormData();
+      fd.append('name', name);
+      fd.append('bg_source', 'shape');
+      if (createDialog.rootLocationId != null) {
+        fd.append('root_location_id', String(createDialog.rootLocationId));
+      }
+      const created = await apiFetch<WorldMapDTO | { items?: WorldMapDTO[] }>(
+        `/api/v1/projects/${projectId}/maps`,
+        { method: 'POST', body: fd },
+      );
+      // 返回完整地图 → 追加本地列表；否则（列表形状响应）回退重拉
+      if (created && typeof created === 'object' && 'id' in created) {
+        setLocalMaps((prev) => [...prev, created]);
+      } else {
+        const data = await apiFetch<{ items?: WorldMapDTO[] }>(
+          `/api/v1/projects/${projectId}/maps`,
+        );
+        setLocalMaps(data.items ?? []);
+      }
+      setCreateDialog({ open: false, rootLocationId: null });
+      useToastStore.getState().pushToast('ok', t('toast.saved'));
+    } catch (err) {
+      useToastStore.getState().pushToast('err', errorMessage(err));
+    }
+  };
+
   /** shapes 持久化：整体替换 PATCH extra.shapes + 回写本地地图 */
   const handleUpdateShapes = async (shapes: MapShape[]) => {
     if (!activeMap) return;
@@ -571,9 +621,22 @@ export function MapWorkbench({
             </span>
           </>
         )}
-        <span className="ml-auto text-[12px] text-ink-3">
-          {pins.length}
-          {t('lib.worldMapPins')}
+        <span className="ml-auto flex items-center gap-2">
+          {/* #346：创建根图（无父地点）——面包屑右缘 */}
+          <button
+            type="button"
+            data-testid="map-create-root"
+            title={t('lib.map.createRoot')}
+            className="inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setCreateDialog({ open: true, rootLocationId: null })}
+          >
+            <MapPlus className="h-3.5 w-3.5" aria-hidden="true" />
+            {t('lib.map.createRoot')}
+          </button>
+          <span className="text-[12px] text-ink-3">
+            {pins.length}
+            {t('lib.worldMapPins')}
+          </span>
         </span>
       </div>
 
@@ -632,6 +695,7 @@ export function MapWorkbench({
                   onDelete={onDelete}
                   onCopy={onCopy}
                   onSelectMap={onSelectMap}
+                  onCreateChild={(item) => setCreateDialog({ open: true, rootLocationId: item.id })}
                 />
               ))
             )}
@@ -738,6 +802,15 @@ export function MapWorkbench({
         onSave={(input) => void handlePinSave(input)}
         onOpenChange={(open) => {
           if (!open) setPinDialog({ open: false, editing: null, defaultX: 0, defaultY: 0 });
+        }}
+      />
+
+      {/* #346 创建地图对话框（根图 rootLocationId=null / 子图预填节点 id） */}
+      <MapCreateDialog
+        open={createDialog.open}
+        onSave={(name) => void handleCreateMap(name)}
+        onOpenChange={(open) => {
+          if (!open) setCreateDialog({ open: false, rootLocationId: null });
         }}
       />
 
