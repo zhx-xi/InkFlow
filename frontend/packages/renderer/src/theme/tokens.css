@@ -38,6 +38,7 @@
 }
 [data-theme="paper"][data-bg="parchment"] {  /* 变体: 羊皮纸 */
   --bg: #F4EFE6; --surface: #FBF8F1; --surface-2: #EFE9DC; --surface-3: #E7E0D0;
+  --line: #ACA289;  /* #350: 变体背景下按钮边框可辨（vs #F4EFE6 对比 >= 2:1） */
 }
 
 /* ── 夜航 night: 暖灰黑 + 暖金（跟随系统深色偏好） ── */
@@ -61,7 +62,7 @@
 }
 [data-theme="night"][data-bg="navy"] {  /* 变体: 墨蓝黑 */
   --bg: #171A1E; --surface: #1E2228; --surface-2: #242A31; --surface-3: #414852;
-  --line: #3B424D;
+  --line: #4E5765;  /* #350: 从 #3B424D 加深（vs #171A1E 对比 >= 2:1） */
 }
 
 /* ── 墨韵 ink: 宣纸 + 墨黑 + 朱砂点缀（手动选择） ── */
@@ -85,6 +86,7 @@
 }
 [data-theme="ink"][data-bg="ochre"] {  /* 变体: 深褐纸 */
   --bg: #EDE6D6; --surface: #F6F1E5; --surface-2: #E9E1CE; --surface-3: #CDBF9F;
+  --line: #A89976;  /* #350: 变体背景下按钮边框可辨（vs #EDE6D6 对比 >= 2:1） */
 }
 
 /* 动效降级 */
