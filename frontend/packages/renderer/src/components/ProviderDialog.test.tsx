@@ -313,6 +313,60 @@ describe('ProviderDialog — 保存（onSaved 回调）', () => {
     });
   });
 
+  it('#348: 添加模式填写模型名 → POST body 含 default_model（设置页/模型管理页同源显示）', async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs') return { ...createdProvider, default_model: 'gpt-4o' };
+      return { ok: true };
+    });
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(screen.getByLabelText('名称'), 'openai');
+    await user.type(screen.getByLabelText('模型'), 'gpt-4o');
+    await user.type(screen.getByLabelText('Base URL'), 'https://api.openai.com/v1');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/provider-configs',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.objectContaining({
+            name: 'openai',
+            base_url: 'https://api.openai.com/v1',
+            // #348：用户填的模型名必须随保存落库（旧实现不发送 → 两页不一致）
+            default_model: 'gpt-4o',
+          }),
+        }),
+      );
+    });
+  });
+
+  it('#348: 编辑模式修改模型名 → PATCH body 含 default_model', async () => {
+    const updated = { ...editingProvider, default_model: 'gpt-4o-turbo' };
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs/1') return updated;
+      return { ok: true };
+    });
+    const user = userEvent.setup();
+    const { onSaved } = renderDialog({ editing: editingProvider });
+    await user.clear(screen.getByLabelText('模型'));
+    await user.type(screen.getByLabelText('模型'), 'gpt-4o-turbo');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/provider-configs/1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.objectContaining({ default_model: 'gpt-4o-turbo' }),
+        }),
+      );
+    });
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalledWith(updated);
+    });
+  });
+
   it('编辑模式：PATCH /api/v1/provider-configs/{id} → onSaved', async () => {
     const updated = { ...editingProvider, base_url: 'https://api.openai.com/v2' };
     apiFetchMock.mockImplementation(async (path: string) => {
