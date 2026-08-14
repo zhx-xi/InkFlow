@@ -128,12 +128,12 @@ export function ProviderDialog({ open, onOpenChange, editing = null, onSaved }: 
       if (editing) {
         saved = await apiFetch<ProviderConfig>(`/api/v1/provider-configs/${editing.id}`, {
           method: 'PATCH',
-          body: { name: trimmedName, base_url: baseUrl },
+          body: { name: trimmedName, base_url: baseUrl, default_model: model },
         });
       } else {
         saved = await apiFetch<ProviderConfig>('/api/v1/provider-configs', {
           method: 'POST',
-          body: { name: trimmedName, base_url: baseUrl },
+          body: { name: trimmedName, base_url: baseUrl, default_model: model },
         });
       }
       onSaved(saved);
