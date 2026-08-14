@@ -25,7 +25,8 @@ TOKENS = (
 
 def _hex_to_rgb(value: str) -> tuple[int, int, int]:
     h = value.strip().lstrip("#")
-    return tuple(int(h[i : i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
+    # 三元组长度恒 3——类型检查器无法从切片推导元组长度
+    return tuple(int(h[i : i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]  # 三元组定长
 
 
 def _luminance(rgb: tuple[int, int, int]) -> float:
