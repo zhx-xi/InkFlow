@@ -410,6 +410,11 @@ export function MapWorkbench({
     }
     return map;
   }, [localMaps]);
+  // #377：独立根图（无 root_location_id 且无 parent_map_id）→ 树顶层节点
+  const orphanRootMaps = useMemo(
+    () => localMaps.filter((m) => (m.root_location_id === null || m.root_location_id === undefined) && (m.parent_map_id === null || m.parent_map_id === undefined)),
+    [localMaps],
+  );
 
   // 关联实体候选（worldItems 本地已加载；characters/timeline 按需拉取）
   const refOptions = useMemo<PinRefOption[]>(
@@ -566,6 +571,8 @@ export function MapWorkbench({
       // 返回完整地图 → 追加本地列表；否则（列表形状响应）回退重拉
       if (created && typeof created === 'object' && 'id' in created) {
         setLocalMaps((prev) => [...prev, created]);
+        // #377：创建成功后自动选中新图（右侧渲染画布 + 树高亮）
+        onSelectMap(String(created.id));
       } else {
         const data = await apiFetch<{ items?: WorldMapDTO[] }>(
           `/api/v1/projects/${projectId}/maps`,
@@ -690,7 +697,7 @@ export function MapWorkbench({
             data-testid="library-list"
             className="overflow-hidden rounded-lg border border-line bg-surface shadow-card"
           >
-            {filteredWorldRoots.length === 0 ? (
+            {filteredWorldRoots.length === 0 && orphanRootMaps.length === 0 ? (
               <div className="px-4 py-8 text-center text-[13px] text-ink-2">{t('common.empty')}</div>
             ) : (
               filteredWorldRoots.map((node) => (
@@ -719,6 +726,9 @@ export function MapWorkbench({
                 />
               ))
             )}
+            {orphanRootMaps.map((m) => (
+              <MapChildNodeView key={String(m.id)} map={m} depth={0} collapsed={collapsedIds} childrenByParent={childrenByParent} pinCounts={pinCounts} activeMapId={activeMapId} onSelectMap={onSelectMap} onCreateChild={(map) => setCreateDialog({ open: true, rootLocationId: null, parentMapId: map.id })} />
+            ))}
           </div>
         </aside>
 
