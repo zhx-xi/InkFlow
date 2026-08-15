@@ -433,9 +433,10 @@ test('写作页：工具栏 6 按钮齐全且可用 + 续写/生成（AI）按�
       '点击「续写」或 Ctrl+Enter 开始 AI 续写'
     );
 
-    // 状态栏：内核已连接 + 模型占位 + 字数
-    await expect(window.getByText('内核已连接')).toBeVisible();
-    await expect(window.getByText(/字数: /)).toBeVisible();
+    // 状态栏：内核已连接 + 模型占位 + 字数（scope 到 statusbar，消除顶栏+底部双「内核已连接」撞名）
+    const statusbar = window.getByTestId('statusbar');
+    await expect(statusbar.getByText('内核已连接')).toBeVisible();
+    await expect(statusbar.getByText(/字数: /)).toBeVisible();
   } finally {
     await app.close();
   }

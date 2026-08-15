@@ -17,21 +17,27 @@
  *     （role=combobox）；选项 lang.zh/lang.en「中文 / EN」；选择 → themeStore.setLang（直达生效）
  *   - 与设置页联动：设置页常规分类主题 radio 切换 → 顶栏 Select 同步显示（共享 themeStore）
  *   - 循环按钮移除：header-theme-toggle / header-lang 不再存在
- *   - 内核状态：t('sb.kernel')「内核已连接」
- * - 既有断言保持：无「paper / zh」调试文本
+ *   - 内核状态：t('sb.kernel')「内核已连接」/ t('sb.kernelOffline')「内核未就绪」
  *
  * RED 预期（GREEN 前，2026-08-06 现状为循环按钮）：
  * - getByRole('combobox', { name: '主题'|'语言' }) → 找不到（按钮非 combobox）
  * - header-theme-select / header-lang-select testid 缺失
  * - header-theme-toggle / header-lang 仍存在 → queryByTestId 断言 FAIL
+ *
+ * ⚠️ #384 门控适配（2026-08-16）：
+ * - 顶栏内核状态改从 useKernelStore 读（status==='ready' → 已连接，否则 → 未就绪）
+ * - 正常用例 beforeEach 预设 status='ready'+booted=true（跳过 booting 封面，同步渲染主 UI）
+ * - #192 用例改门控语义：启动期（booted=false）/health 失败 → BootGate 封面错误+重试（非顶栏未就绪）
+ * - 新增运行期断连用例：booted=true + status='failed' → 主 UI 保留 + 顶栏「内核未就绪」（门控不回退）
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import { apiFetch } from './api/client';
 import { useProjectStore } from './stores/project';
 import { useThemeStore } from './stores/theme';
+import { useKernelStore } from './stores/kernel';
 
 vi.mock('./api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./api/client')>();
@@ -47,8 +53,14 @@ beforeEach(() => {
   window.location.hash = '';
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
   useProjectStore.setState({ projects: [], currentProjectId: null, loading: false, error: null });
+  // #384 门控适配：预设 ready+booted（跳过 booting 封面，顶栏/主题/语言用例关注非门控）
+  useKernelStore.setState({ status: 'ready', booted: true });
   // 空列表即可——顶栏断言与项目列表内容无关
   apiFetchMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
+});
+
+afterEach(() => {
+  useKernelStore.getState().stopPolling();
 });
 
 describe('App 顶栏 — 职责回归：品牌 + 页面标题 + 全局状态（#105 §7.2）', () => {
@@ -116,23 +128,42 @@ describe('App 顶栏 — 主题/语言 Radix Select 契约升级（#106 §8.2⑤
     // 循环按钮移除（RED：现状仍存在 → FAIL）
     expect(within(banner).queryByTestId('header-theme-toggle')).not.toBeInTheDocument();
     expect(within(banner).queryByTestId('header-lang')).not.toBeInTheDocument();
-    // 内核状态保留（#192：状态真实化——挂载后 /health 成功才显示「内核已连接」；
-    // apiFetch mock 默认 resolve → waitFor 后变已连接）
+    // 内核状态从 store 读（#384：预设 ready → 顶栏显示「内核已连接」）
     await waitFor(() => {
       expect(within(banner).getByText('内核已连接')).toBeInTheDocument();
     });
   });
 
-  // ⚠️ #192 rc2 复验缺陷（2026-08-08）：顶栏「内核已连接」恒显（App.tsx 硬编码 t('sb.kernel')），
-  // 内核启动失败时仍显示已连接——sb.kernelOffline「内核未就绪」i18n key 存在但全仓未使用。
-  // RED 契约：/health 请求失败（内核不可达）→ 顶栏显示「内核未就绪」。
-  it('#192 内核状态真实化：/health 失败 → 顶栏显示「内核未就绪」（不再恒显「内核已连接」）', async () => {
+  // ⚠️ #192 rc2 复验缺陷（2026-08-08）→ #384 门控化（2026-08-16）：
+  // 原缺陷：顶栏「内核已连接」恒显（App.tsx 硬编码 t('sb.kernel')），内核启动失败仍显示已连接。
+  // #384 后语义升级：启动期（booted=false）/health 失败 → BootGate 门控封面「内核连接失败」+ 重试
+  // （不再进入主 UI，顶栏不渲染——彻底消除「内核未就绪期间主界面半可用」）。
+  it('#192 内核状态真实化（#384 门控版）：启动期 /health 失败 → 门控封面「内核连接失败」+ 重试', async () => {
+    // 覆盖 beforeEach 的 ready 预设：回到启动期（门控开启）
+    useKernelStore.setState({ status: 'booting', booted: false });
     apiFetchMock.mockRejectedValue(new Error('kernel unreachable'));
     render(<App />);
-    await waitFor(() => {
-      expect(screen.getByText('内核未就绪')).toBeInTheDocument();
+    await screen.findByText('内核连接失败');
+    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument();
+    // 门控封面下主 UI 不渲染（无 app-nav）
+    expect(screen.queryByTestId('app-nav')).not.toBeInTheDocument();
+  });
+
+  // #384 新增：运行期断连（booted=true + failed）→ 主 UI 保留 + 顶栏「内核未就绪」（门控不回退）
+  it('运行期断连（booted=true + failed）→ 主 UI 保留 + 顶栏「内核未就绪」', async () => {
+    useKernelStore.setState({ status: 'failed', booted: true });
+    // /health 失败保持 failed；其余请求成功（projects 正常渲染）
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/health') throw new Error('kernel unreachable');
+      return { items: [], total: 0, offset: 0, limit: 50 };
     });
+    render(<App />);
+    await waitFor(() => expect(useProjectStore.getState().loading).toBe(false));
+    const banner = screen.getByRole('banner');
+    expect(within(banner).getByText('内核未就绪')).toBeInTheDocument();
     expect(screen.queryByText('内核已连接')).not.toBeInTheDocument();
+    // 门控未回退：主 UI 保留（app-nav 存在）
+    expect(screen.getByTestId('app-nav')).toBeInTheDocument();
   });
 
   it('主题 Select：回读当前主题 + 展开可见全部选项（三主题）+ 选择直达生效（setTheme）', async () => {

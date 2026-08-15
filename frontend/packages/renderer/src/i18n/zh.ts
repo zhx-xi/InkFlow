@@ -25,6 +25,9 @@ export const zh = {
   'sb.model': '模型',
   'sb.words': '字数',
   'sb.autosave': '自动保存',
+  // 启动门控（#384）
+  'gate.booting': '正在启动内核…',
+  'gate.failed': '内核连接失败',
   // 设定库页
   'lib.title': '设定库',
   'lib.projectSelect': '当前项目',

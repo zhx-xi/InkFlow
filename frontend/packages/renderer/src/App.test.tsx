@@ -18,8 +18,12 @@
  *   造成 theme=undefined 污染 store；RED 阶段该分支无调用方，零影响）
  * - RED 预期：GREEN 前 App.tsx 无 initFromBackend 调用 → initSpy 零调用 → waitFor 超时 FAIL；
  *   既有 3 用例保持绿
+ *
+ * ⚠️ #384 门控适配（2026-08-16）：门控是异步的（挂载 booting → 封面 → checkHealth 异步转 ready）。
+ * 本文件关注点是导航/品牌（非门控），故 beforeEach 预设 useKernelStore status='ready'+booted=true
+ * （跳过 booting 封面，同步渲染主 UI）。门控三态另测（App.gate.test.tsx / BootGate.test.tsx）。
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
@@ -27,6 +31,7 @@ import { apiFetch } from './api/client';
 import { useProjectStore } from './stores/project';
 import { useChapterStore } from './stores/chapter';
 import { useThemeStore } from './stores/theme';
+import { useKernelStore } from './stores/kernel';
 
 vi.mock('./api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./api/client')>();
@@ -43,6 +48,8 @@ beforeEach(() => {
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
   useProjectStore.setState({ projects: [], currentProjectId: null, loading: false, error: null });
   useChapterStore.setState({ volumes: [], chapters: [], currentChapterId: null, content: '', loading: false, error: null });
+  // #384 门控适配：预设 ready+booted（跳过 booting 封面，本文件测导航/品牌不测门控）
+  useKernelStore.setState({ status: 'ready', booted: true });
   // 种子项目 p1：写作页挂载回退首个项目渲染 editor（冒烟确定性，与 App.routing.test.tsx 同源）
   apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
     if (path === '/api/v1/projects' && (!init?.method || init.method === 'GET')) {
@@ -63,6 +70,10 @@ beforeEach(() => {
     }
     return { items: [], total: 0, offset: 0, limit: 50 };
   });
+});
+
+afterEach(() => {
+  useKernelStore.getState().stopPolling();
 });
 
 describe('App 骨架', () => {
