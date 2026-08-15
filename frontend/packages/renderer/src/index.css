@@ -37,3 +37,26 @@ body {
   background: var(--bg);
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
+
+/* #375 全局滚动条主题：三主题由 CSS 变量驱动（WebKit + Firefox） */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--line);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--accent);
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
