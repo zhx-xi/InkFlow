@@ -60,8 +60,8 @@ from inkflow.domain.ports.world_errors import WorldServiceError
 try:  # pragma: no cover - RED 阶段占位分支
     from inkflow.domain.models.world import WorldCategory, _validate_category_name
 except ImportError:  # pragma: no cover - RED 阶段占位分支
-    WorldCategory = None  # type: ignore[assignment]
-    _validate_category_name = None  # type: ignore[assignment]
+    WorldCategory = None  # type: ignore[assignment]  # RED 占位：v1.2 未实现时置 None
+    _validate_category_name = None  # type: ignore[assignment]  # RED 占位：校验函数未实现时置 None
 
 try:  # pragma: no cover - RED 阶段占位分支
     from inkflow.domain.ports.world_errors import (
