@@ -36,6 +36,13 @@ class MapParentMapNotFoundError(MapServiceError):
         super().__init__(message)
 
 
+class MapParentCycleError(MapServiceError):
+    """PATCH 改挂目标 = 自身或自身子孙（循环拒绝，spec §7 场景 10b）."""
+
+    def __str__(self) -> str:
+        return "不能将地图挂到自己的子孙地图下"
+
+
 class MapPinLocationNotFoundError(MapServiceError):
     def __init__(self, message: str = "pin 关联地点不存在或不在同一项目") -> None:
         super().__init__(message)

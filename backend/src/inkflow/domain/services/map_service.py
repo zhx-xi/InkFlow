@@ -30,6 +30,7 @@ from inkflow.domain.ports.map_errors import (
     MapChildrenActionRequiredError,
     MapNameConflictError,
     MapNotFoundError,
+    MapParentCycleError,
     MapParentMapNotFoundError,
     MapPinLocationNotFoundError,
     MapPinRefNotFoundError,
@@ -57,6 +58,23 @@ def _to_int_id(value: int | uuid.UUID) -> int:
     if isinstance(value, uuid.UUID):
         return value.int
     return value
+
+
+def _collect_descendants(root_id: int, maps: list[WorldMap]) -> set[int]:
+    """沿 parent_map_id 收集 root_id 的全部子孙 id（BFS；本地量级递归安全）."""
+    children: dict[int, list[int]] = {}
+    for m in maps:
+        if m.parent_map_id is not None:
+            children.setdefault(_to_int_id(m.parent_map_id), []).append(_to_int_id(m.id))
+    out: set[int] = set()
+    stack = list(children.get(root_id, []))
+    while stack:
+        cur = stack.pop()
+        if cur in out:
+            continue
+        out.add(cur)
+        stack.extend(children.get(cur, []))
+    return out
 
 
 class MapService:
@@ -234,10 +252,14 @@ class MapService:
         ② 改名撞他图（排除自身）→ MapNameConflictError
         ③ 改挂根地点: 新地点不存在/跨项目 → MapRootLocationNotFoundError；
            该地点已被他图挂载 → MapRootLocationConflictError；null=改全局图
+        ④' 改挂父图（v1.4 #378）: 父图不存在/跨项目 → MapParentMapNotFoundError；
+           目标 = 自身或自身子孙 → MapParentCycleError（循环拒绝，防成环）；
+           null=变根图
 
         Args:
             map_id: 地图主键（支持 int 或 UUID）.
-            update: 更新 DTO（root_location_id None=不修改；出现且 null=改全局图）.
+            update: 更新 DTO（root_location_id None=不修改；出现且 null=改全局图；
+                parent_map_id None=不修改；出现且 null=改根图）.
 
         Returns:
             更新后的 WorldMap；地图不存在返回 None.
@@ -246,6 +268,8 @@ class MapService:
             MapNameConflictError: 改名撞他图（422）.
             MapRootLocationNotFoundError: 新根地点不存在或跨项目（422）.
             MapRootLocationConflictError: 新根地点已被他图挂载（422）.
+            MapParentMapNotFoundError: 父图不存在或跨项目（422）.
+            MapParentCycleError: 目标 = 自身或自身子孙（422）.
         """
         sid = _to_int_id(map_id)
         existing = await self._repo.get(sid)
@@ -267,10 +291,27 @@ class MapService:
             )
             if dups and dups[0].id != existing.id:
                 raise MapRootLocationConflictError()
+        # ④' parent_map_id 改挂（v1.4 #378）：父图存在/同项目 + 循环校验（防成环）
+        if "parent_map_id" in update.model_fields_set and update.parent_map_id is not None:
+            parent_int = _to_int_id(update.parent_map_id)
+            parent_map = await self._repo.get(parent_int)
+            if parent_map is None or _to_int_id(parent_map.project_id) != _to_int_id(
+                existing.project_id
+            ):
+                raise MapParentMapNotFoundError()
+            # 循环校验：目标 = 自身或自身子孙 → 拒绝
+            if parent_int == sid:
+                raise MapParentCycleError()
+            all_maps, _ = await self._repo.list(_to_int_id(existing.project_id))
+            descendants = _collect_descendants(sid, all_maps)
+            if parent_int in descendants:
+                raise MapParentCycleError()
         # ④ 合并（出现即更新；root_location_id 保持 UUID，仓储层负责 int 转换）
         updates = {k: v for k, v in update.model_dump(exclude_unset=True).items() if v is not None}
         if "root_location_id" in update.model_fields_set:
             updates["root_location_id"] = update.root_location_id
+        if "parent_map_id" in update.model_fields_set:
+            updates["parent_map_id"] = update.parent_map_id
         merged = existing.model_copy(update=updates)
         return await self._repo.update(merged)
 

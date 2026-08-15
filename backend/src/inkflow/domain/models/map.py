@@ -44,11 +44,14 @@ class WorldMapUpdate(BaseModel):
 
     root_location_id: None 表示不修改；出现且为 null = 改为全局图（与 F35 parent_id 同款
     exclude_unset 语义）.
+    parent_map_id（v1.4 #378）：None 表示不修改；出现且为 null = 改为根图；
+    出现且为 id = 改挂为 id 图之子图（循环校验见 §5.4）.
     """
 
     name: str | None = None
     description: str | None = None
     root_location_id: uuid.UUID | None = None
+    parent_map_id: uuid.UUID | None = None  # v1.4 #378：PATCH 改挂父图；null=变根图
     bg_source: str | None = None  # F43 P2：shape/image/ai（exclude_unset 语义）
     extra: dict | None = None  # F43 P2：shapes 整体替换（exclude_unset 语义）
 

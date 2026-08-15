@@ -1,6 +1,8 @@
 # F36: 世界观地图视图（world-map）— 功能规格
 
-> **Spec 版本**: 1.3 | **日期**: 2026-08-14 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §5（workspace）、PRD v2.1 §6.2 P1-02、F10 spec + F35 spec v1.1（地点树，本模块数据基础）、Constitution P1-P6
+> **Spec 版本**: 1.4 | **日期**: 2026-08-15 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §5（workspace）、PRD v2.1 §6.2 P1-02、F10 spec + F35 spec v1.1（地点树，本模块数据基础）、Constitution P1-P6
+>
+> **Spec 变更**（1.3 → 1.4，2026-08-15 #378 拍板）：GUI 拖拽调层级——`WorldMapUpdate` 加 `parent_map_id`（PATCH 改挂：null=变根图 / id=成为其子图）；`update_map` 校验链扩展（父图存在/同项目复用 `MapParentMapNotFoundError` + **循环校验**——不能挂到自己子孙，新增 422 `MapParentCycleError`）；前端地图工作台左栏目录树（根图→子图→孙图）+ 原生 HTML5 拖拽。同步：§2.1 业务规则、§2.3 领域模型、§3.1 端点总览、§5.4 服务层校验链、§7 错误表、§12 决策 17、§13 M3/M4 验收。
 >
 > **Spec 变更**（1.2 → 1.3，2026-08-14 #368 拍板）：新增**图挂图层级**（maps 表加 `parent_map_id`）——语义区分 `root_location_id`（图关联世界观条目，保留）+ `parent_map_id`（图挂父图，新增）；一父多子（1:N）+ 子单父（N:1）+ 层级深度不限；根图 parent_map_id=null，子图 parent_map_id=父图 id；前端「创建子图」传父图 id（parent_map_id）而非条目 id；后端校验父图存在 + 同项目（422 新错误 `MapParentMapNotFoundError`）。同步：§2.1 maps 表 + 业务规则、§2.3 领域模型、§2.4 ORM、§3.1 端点总览、§5.4 服务层校验链、§7 错误表、§12 决策 16、§13 M3/M4 验收。
 >
@@ -80,7 +82,7 @@ F36 增量:  新表 maps（图片地图）+ map_pins（标记）——【无 is_
 1. **一个地点最多一张图**：unique `(project_id, root_location_id) WHERE root_location_id IS NOT NULL`（设计书 §5.1「每个父地点可挂一张图」）；全局图（NULL）允许多张（不同主题/用途）——**无 is_deleted，普通 unique 即可**（真删语义下无软删行参与唯一性）
 2. **name 项目内唯一**：unique `(project_id, name)`（真删语义下直接唯一）
 3. **root_location_id 校验**：必须指向**同项目活动地点**（F35 校验链复用）——跨项目/软删地点 422
-4. **parent_map_id 校验（v1.3 #368）**：必须指向**同项目存在的地图**（图挂图层级）——父图不存在/跨项目 422（`MapParentMapNotFoundError`）；**层级深度不做限制**（不做最大深度校验）；根图 parent_map_id=null
+4. **parent_map_id 校验（v1.3 #368）**：必须指向**同项目存在的地图**（图挂图层级）——父图不存在/跨项目 422（`MapParentMapNotFoundError`）；**层级深度不做限制**（不做最大深度校验）；根图 parent_map_id=null。**变更（v1.4 #378）**：PATCH 允许改挂 parent_map_id（null=变根图 / id=成为其子图），校验同创建 + **循环校验**——不能挂到自己子孙地图（422 新错误 `MapParentCycleError`，防成环）
 5. **root_location_id 变更**（PATCH）：允许改挂（换父地点/改全局）；改挂后地图树导航自动跟随（导航是查询不是快照）
 6. **懒构建**：任何层可断——父地点无图/地点无父节点均合法（设计书 §5.2）；`children` 查询空列表不是错误
 
@@ -137,11 +139,14 @@ class WorldMapUpdate(BaseModel):
 
     root_location_id: None 表示不修改；出现且为 null = 改为全局图（与 F35 parent_id 同款
     exclude_unset 语义）.
+    parent_map_id（v1.4 #378）：None 表示不修改；出现且为 null = 改为根图；
+    出现且为 id = 改挂为 id 图之子图（循环校验见 §5.4）.
     """
+
     name: str | None = None
     description: str | None = None
     root_location_id: uuid.UUID | None = None
-
+    parent_map_id: uuid.UUID | None = None   # v1.4 #378：PATCH 改挂父图；null=变根图（exclude_unset 语义）
 
 class MapPin(BaseModel):
     """地图 pin 领域实体 — 对应 map_pins 表（无 is_deleted——真删语义）."""
@@ -256,7 +261,7 @@ class MapPinORM(Base):
 | GET | `/api/v1/maps/{map_id}` | 地图详情 |
 | GET | `/api/v1/maps/{map_id}/image` | 图片文件（FileResponse，Content-Type 按扩展名；404 = 文件缺失） |
 | GET | `/api/v1/maps/{map_id}/children` | 子地图列表（drill-down：本图 pins 关联地点下挂的地图，Q1=B；**过滤地点软删**——评审 F2） |
-| PATCH | `/api/v1/maps/{map_id}` | 更新元数据（name/description/root_location_id） |
+| PATCH | `/api/v1/maps/{map_id}` | 更新元数据（name/description/root_location_id/**parent_map_id（v1.4 #378：null=变根图 / id=改挂为其子图）**） |
 | PUT | `/api/v1/maps/{map_id}/image` | 换图（multipart file；新文件写入成功后才删旧文件） |
 | DELETE | `/api/v1/maps/{map_id}` | **D6 参数**：`?cascade=true` = 真删 + 级联删全部子地图（递归）+ pins + 文件 \| `?reparent_to=<map_id>` = 真删自身 + 子地图改挂新父（目标父地图自动补 pin，D3）+ 文件删除；**有子地图且未指定 → 422** |
 | POST | `/api/v1/maps/{map_id}/pins` | 创建 pin → 201 |
@@ -321,6 +326,7 @@ DELETE /api/v1/maps/9
 | MapRootLocationConflictError | 422 | 该地点已挂有一张地图（#368：detail 引导「如需层级请用创建子图」） |
 | MapRootLocationNotFoundError | 422 | 父地点不存在或不在同一项目（#368：detail 引导「根地点应为世界观条目 id（而非地图 id）」） |
 | MapParentMapNotFoundError | 422 | **v1.3 #368 新增**：父地图不存在或不在同一项目 |
+| MapParentCycleError | 422 | **v1.4 #378 新增**：不能将地图挂到自己的子孙地图下（PATCH 改挂循环校验） |
 | MapPinLocationNotFoundError | 422 | pin 关联地点不存在或不在同一项目 |
 | MapChildrenActionRequiredError | 422 | 该地图存在子地图，必须指定 cascade 或 reparent_to |
 | MapReparentTargetError | 422 | reparent 目标地图不存在/不在同一项目/是自身子孙地图 |
@@ -462,7 +468,9 @@ create_map:  ① 项目存在（ProjectNotFoundError）
              ⑥ 落库（DB 失败 → 删已写文件，防孤儿）
 create_pin:  ① map 存在（MapNotFoundError）② location_id 若提供 → 同项目活动地点
              ③ x/y 范围 Pydantic 校验 ④ 落库
-update_map:  改名校验 + root_location 改挂校验（同 ②③）；换图走 PUT /image（save → 删旧）
+update_map:  改名校验 + root_location 改挂校验（同 ②③）；**parent_map_id 改挂（v1.4 #378）——
+             ④' 父图存在/同项目（MapParentMapNotFoundError，复用创建校验）+ 循环校验
+             （目标 = 自身或自身子孙 → MapParentCycleError）**；换图走 PUT /image（save → 删旧）
 delete_map:  D6 参数（cascade/reparent_to）；真删编排：
              - 无子: 单事务 DELETE map + DELETE pins + asset_store.delete(image_path)
              - cascade: 子树集合（递归 children）→ 单事务 DELETE 全部 + 删全部图片文件
@@ -504,6 +512,7 @@ children:    repo.children(map_id)（单 SQL JOIN + 地点软删过滤，§5.2�
 | 8 | DELETE 无参数 + 有子地图 | 422 MapChildrenActionRequiredError（强制选择） |
 | 9 | DELETE ?cascade=true | 递归真删子孙地图 + pins + 文件（单事务原子） |
 | 10 | DELETE ?reparent_to 目标非法 | 422 MapReparentTargetError（不存在/跨项目/自身子孙地图） |
+| 10b | **PATCH parent_map_id 目标 = 自身或自身子孙（v1.4 #378）** | 422 MapParentCycleError（循环拒绝，防成环） |
 | 11 | reparent 自动补 pin | 目标已有同地点 pin → 复用；否则创建默认 pin（居中 + 地点名） |
 | 12 | 换图失败（新文件写失败） | 旧文件保留，DB 不变，抛 MapAssetError（不丢旧图） |
 | 13 | 真删地图文件删除失败（占用/只读） | 记录 warning，DB 行删除成功（孤儿文件后续手动清理——不阻断删除） |
@@ -638,6 +647,7 @@ F36 被依赖:
 | 14 | **python-multipart 依赖（实现期发现）** | pyproject HTTP 组加 python-multipart>=0.0.9 | FastAPI multipart/form-data 端点必需（实测缺失 ImportError） | 手写 multipart 解析（复杂度高） |
 | 15 | **钩子接线形态（实现期裁定）** | WorldService/ProjectService 加可选回调（location_cleanup/map_cleanup）+ deps 装配 MapService 方法 | 不碰 F1/F35 service 公共契约（默认 None 向后兼容）；CLI/API 全路径经 deps 覆盖 | router 层双 service 编排（脏） |
 | 16 | **图挂图层级（v1.3 #368 拍板）** | maps 表加 `parent_map_id`（自引用 FK，可空，索引）；一父多子 + 子单父 + 层级深度不限；root_location_id（图↔条目）保留 | GUI「创建子图」心智 = 图挂图（根图→子图→孙图）；与 F35 地点树脱钩不冲突（两套层级并存）；无最大深度校验（本地量级递归安全） | 选项 A：允许一地点挂多图（去唯一约束——破坏 F36 既有「一个地点最多一张图」语义，导航歧义）；root_location_id 传父图挂载条目 id（语义错位：子图本应挂图） |
+| 17 | **拖拽调层级 = PATCH parent_map_id（v1.4 #378 拍板）** | `WorldMapUpdate` 加 `parent_map_id`；update_map 校验链 = 父图存在/同项目（复用 MapParentMapNotFoundError）+ **循环校验**（新增 MapParentCycleError：目标 = 自身/自身子孙 422）；GUI 原生 HTML5 拖拽（不引入 dnd-kit） | 拖拽调整层级是「一本书地图」自然交互；后端同时防御（防直接 API 调用绕过前端循环拒绝）；原生 HTML5 DnD 零依赖（dnd-kit 评估后否决——单树场景无复杂 DnD 需求） | 纯前端本地重排（刷新即失效，假交互）；dnd-kit（新依赖，复杂度不值） |
 
 ---
 
@@ -647,8 +657,8 @@ F36 被依赖:
 |--------|------|------|
 | M1 | 数据模型 + 建表（create_all 自动，无 is_deleted） | `pytest backend/tests/unit/test_map_repo.py -v` 全绿；新库表存在（PRAGMA table_list）；maps 无 is_deleted 列 |
 | M2 | 资产存储（save/delete/copy/resolve/校验） | `pytest backend/tests/unit/test_map_asset_store.py -v` 全绿（魔数/大小/路径穿越/copy） |
-| M3 | 服务编排（校验链/真删矩阵/reparent/文件生命周期/项目硬删钩子） | `pytest backend/tests/unit/test_map_service.py -v` 全绿（v1.3 #368：create_map parent_map_id 校验链——父图不存在/跨项目 422 MapParentMapNotFoundError；层级深度不限） |
-| M4 | API 契约（multipart 上传/下载/换图/删除参数/错误映射） | `pytest backend/tests/unit/test_map_api.py -v` 全绿（v1.3 #368：POST parent_map_id Form 透传 + 422 映射） |
+| M3 | 服务编排（校验链/真删矩阵/reparent/文件生命周期/项目硬删钩子） | `pytest backend/tests/unit/test_map_service.py -v` 全绿（v1.3 #368：create_map parent_map_id 校验链——父图不存在/跨项目 422 MapParentMapNotFoundError；层级深度不限；v1.4 #378：update_map 改挂 parent_map_id——成功/改根图/父图不存在 422/自身或子孙循环 422 MapParentCycleError） |
+| M4 | API 契约（multipart 上传/下载/换图/删除参数/错误映射） | `pytest backend/tests/unit/test_map_api.py -v` 全绿（v1.3 #368：POST parent_map_id Form 透传 + 422 映射；v1.4 #378：PATCH parent_map_id body 透传 + 循环 422 映射） |
 | M5 | children drill-down + 面包屑导航链路（含地点软删过滤） | children JOIN 测试全绿（含 B 软删后 C 消失用例）；手工验证：图 A pin→B，B 挂图 C → children(A)=[C]；B 归档 → children(A)=[] |
 | M6 | CLI map 组 | `pytest ../tests/cli/test_cli_map.py -v` 全绿（**且已追加 ci.yml integration-cli-backend job**） |
 | M7 | 手工验证 | 上传图片建图 → pin 关联地点 → 换图 → 有子图删除（422）→ cascade 真删（文件消失）→ 重建后 reparent（子图改挂 + 目标补 pin）→ 硬删地点 pin 转纯注释 |

@@ -558,6 +558,36 @@ class TestMapUpdateAPI:
         update = args[1] if len(args) > 1 else kwargs["update"]
         assert "root_location_id" not in update.model_fields_set
 
+    # ── v1.4 #378：parent_map_id 改挂（拖拽调层级）──
+    @patch("inkflow.api.routers.maps.get_map_service")
+    def test_update_map_parent_map_id_passthrough(self, mock_get_svc: MagicMock) -> None:
+        """PATCH {parent_map_id: id} → update_map 收到 update.parent_map_id（拖拽改挂）."""
+        svc = _mock_svc(mock_get_svc)
+        m = _map(PID)
+        new_parent = uuid.uuid4()
+        svc.update_map = AsyncMock(return_value=m)
+
+        response = client.patch(f"/api/v1/maps/{m.id}", json={"parent_map_id": str(new_parent)})
+        assert response.status_code == 200
+        args, kwargs = svc.update_map.await_args
+        update = args[1] if len(args) > 1 else kwargs["update"]
+        assert "parent_map_id" in update.model_fields_set
+        assert update.parent_map_id == new_parent
+
+    @patch("inkflow.api.routers.maps.get_map_service")
+    def test_update_map_parent_map_id_null(self, mock_get_svc: MagicMock) -> None:
+        """PATCH {parent_map_id: null} → fields_set 含 parent_map_id 且为 None（变根图）."""
+        svc = _mock_svc(mock_get_svc)
+        m = _map(PID)
+        svc.update_map = AsyncMock(return_value=m)
+
+        response = client.patch(f"/api/v1/maps/{m.id}", json={"parent_map_id": None})
+        assert response.status_code == 200
+        args, kwargs = svc.update_map.await_args
+        update = args[1] if len(args) > 1 else kwargs["update"]
+        assert "parent_map_id" in update.model_fields_set
+        assert update.parent_map_id is None
+
 
 class TestMapImagePutAPI:
     """替换地图图片端点（PUT /api/v1/maps/{map_id}/image，multipart）。"""
