@@ -317,16 +317,12 @@ export function MapWorkbench({
   onSelectMap,
   onExitWorkbench,
   onClearMap,
-  worldCategories,
   activeWorldCat,
-  onWorldCatChange,
   collapsedIds,
   onToggle,
   onEdit,
   onDelete,
   onCopy,
-  onCopyAll,
-  copyTargetOptions,
 }: MapWorkbenchProps) {
   const { t } = useI18n();
   // 本地地图副本：底图切换 / shapes 持久化后回写（props 仅在父级重拉时同步）
@@ -688,39 +684,8 @@ export function MapWorkbench({
       </div>
 
       <div className="flex items-start gap-4">
-        {/* 左栏：P1 分类 chips + 世界观树（library-list testid 契约不变） */}
+        {/* 左栏：世界观树（library-list testid 契约不变） */}
         <aside className="w-[260px] shrink-0 space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[12px] text-ink-2">{t('lib.worldCat.label')}</span>
-            {worldCategories.map((cat) => (
-              <button
-                key={cat}
-                type="button"
-                data-testid={`world-cat-filter-${cat}`}
-                aria-pressed={activeWorldCat === cat}
-                className={cn(
-                  'rounded-full border px-3 py-1 text-[12px] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  activeWorldCat === cat
-                    ? 'border-accent bg-accent/10 text-accent'
-                    : 'border-line text-ink-2 hover:border-accent hover:text-accent',
-                )}
-                onClick={() => onWorldCatChange(activeWorldCat === cat ? null : cat)}
-              >
-                {cat}
-              </button>
-            ))}
-            <button
-              type="button"
-              data-testid="world-copy-all"
-              title={copyTargetOptions.length === 0 ? t('lib.copy.needTwo') : undefined}
-              disabled={copyTargetOptions.length === 0}
-              className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-              onClick={onCopyAll}
-            >
-              <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-              {t('lib.copy.all')}
-            </button>
-          </div>
           <div
             data-testid="library-list"
             className="overflow-hidden rounded-lg border border-line bg-surface shadow-card"

@@ -631,4 +631,28 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
     await screen.findByTestId('map-canvas');
     expect(screen.getByTestId('map-bc-current')).toHaveTextContent('中州细图');
   });
+
+  it('#376: 地图工作台左栏隐藏世界观分类筛选栏——仅条目列表页展示分类 chips 与整体复制', async () => {
+    mockMapWorkbench(worldTree, [mapM1]);
+    renderLibrary();
+    const user = userEvent.setup();
+    // 点世界观 tab → 默认进入地图工作台（handleTabChange → workbenchActive=true）
+    await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('map-workbench');
+    // 工作台左栏仅剩地图树：分类 chips 与整体复制按钮隐藏
+    expect(screen.queryByTestId('world-cat-filter-地图')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('world-copy-all')).not.toBeInTheDocument();
+    expect(screen.getByTestId('world-map-badge-w1')).toBeInTheDocument();
+    // 退出工作台回列表页 → 分类 chips 恢复（P1 契约保留）
+    await user.click(screen.getByTestId('map-bc-world'));
+    await screen.findByTestId('library-list');
+    expect(screen.getByTestId('world-cat-filter-地图')).toBeInTheDocument();
+    expect(screen.getByTestId('world-copy-all')).toBeInTheDocument();
+    // 再进工作台（重进世界观 tab）→ 仍无分类栏
+    await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('map-workbench');
+    expect(screen.getByTestId('map-workbench')).toBeInTheDocument();
+    expect(screen.queryByTestId('world-cat-filter-地图')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('world-copy-all')).not.toBeInTheDocument();
+  });
 });
