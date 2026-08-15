@@ -1,6 +1,6 @@
 # F46: Agent 关联关系编辑——DAG 编排（dag-orchestration）功能规格
 
-**Spec 版本**: 1.0（初稿，2026-08-16）
+**Spec 版本**: 1.1（Q1-Q3 拍板 A：三类型全做 / 确定性 gate / 列表式编辑器，2026-08-16）
 **日期**: 2026-08-16
 **依据**: Issue #270（Agent 关联关系编辑——DAG 编排，编排完全体第 3 步）+ 2026-08-12 用户拍板「Agent 链编排完全体规划：#268 模型选择 → #269 执行顺序 → #270 关联关系（本模块，最终步）」+ F42 spec v1.3（§5.4 DAG 预留 + §5.3 层级拓扑 + §5.5 deepagents 兼容）+ F29 spec v1.0（supervisor 动态路由边界）+ Spike 验证报告 `docs/f46-dag-spike-2026-08-16.md`（M1 结论：自研 LangGraph 编排层 + `add_conditional_edges` 条件分支）
 **所属阶段**: 0.9.0（多 Agent 能力里程碑，轨道 A Agent 编排：F42/#268/#269 ✅ → #161 F29 ✅ → **#270 F46**），估算 8-12 人天
@@ -8,6 +8,8 @@
 **依赖**: ✅ #269 agent_order 层级拓扑（PR #305，F42 §5.3.1 通用节点 + 多入口/终点引擎）· ✅ F42 配置驱动编排（已实现，#299/#305/#308/#309/#315/#314）· ✅ F29 supervisor 动态路由（PR #323，边界 §5.5）· ✅ F26 deepagents 集成层（PR #236）· ✅ F42 #295 自定义 Agent 数据面（RoleTemplate prompt/name + agent_roles 三态字段，agent_relations 引用面复用）· LangGraph 1.2.10（venv 已锁）
 **参考 ADR**: [adr/ADR-035.md](../adr/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5，原 ADR-E）、ADR-006v2（Agent 编排 LangGraph StateGraph）、ADR-015（LangChain 隔离）、ADR-019（编号口径）
 **状态**: 待实现 🔲
+
+> **Spec 变更**（v1.0 → v1.1，2026-08-16，待澄清 Q1-Q3 拍板）：用户拍板「按照建议」——Q1=A 三类型全做（sequential + data + conditional）、Q2=A 确定性 gate（关键词匹配「通过/PASS」）、Q3=A 列表式编辑器 + 只读 DAG 预览。正文 §1.2.1/§2.1/§5.2/§5.3.2/§5.3.3 已按 A 方案起草（v1.0 即按建议默认落笔），本次修订仅留痕拍板结果（待澄清区标 ✅ 已确认），正文无实质改动。
 
 > **模块类型声明**: 本模块为「**配置驱动编排型（DAG 增强）**」变体——无新实体表、无新业务端点；在既有 Agent 管线（LangGraphAgentPipeline 分层全连接 DAG）上增加**角色间显式有向边**（`agent_relations`）能力：① 依赖类型语义（顺序依赖 / 数据传递 / 条件分支，产品设计 §1.2）；② 执行拓扑从「分层全连接」升级为「基线 + 显式边叠加」（§5.3）；③ 条件分支经 `add_conditional_edges` gate 语义落地（Spike ②）；④ 前端 DAG 可视化编辑器（§5.2）。编号依据：F46 为 Agent 化升级链（F26-F29）+ 配置面（F42）之后的 DAG 编排模块；按「最新无冲突基线」接续——F29=第 13 变体、F38=第 18 变体为当前最新无冲突基线，本模块声明**第 19 变体**（冲突以 ADR-019 v5+ 为准）。
 
@@ -464,16 +466,18 @@ def _make_gate(from_id: str, to_id: str):
 
 > F46 起草自检后剩余设计决策点（Spike 已定项不占配额：编排引擎 = 自研 LangGraph、条件边 = add_conditional_edges，见 §12）：
 
-- **Q1（阻塞级）：依赖类型范围** 🔲 待回执
+> **v1.1 拍板（2026-08-16）**：用户拍板「按照建议」——Q1=A / Q2=A / Q3=A 全部确认。正文已按 A 方案起草（v1.0 即按建议默认落笔），条目保留留痕。
+
+- **Q1（阻塞级）：依赖类型范围** ✅ 已确认（用户拍板：选项 A）
   - **A. 三类型全做（sequential + data + conditional）**（建议）——完整覆盖 issue 产品设计三类型；「Auditor 依赖 Writer 输出」= data、「Reviser 在 Auditor 通过后才执行」= conditional 均可达；data/sequential 引擎成本极低（都是 `add_edge`），conditional 是 issue 验收「含条件分支语义」核心
   - B. 只做顺序依赖（sequential）——最小范围，但「条件分支语义」验收落空，data 语义无法显式表达
   - C. sequential + conditional（不做 data）——data 已被基线全连接覆盖，砍掉减少一个类型；但「数据传递」作为独立语义（同层数据依赖打破并行）缺失
   - **影响**：Q1 决定 §1.2.1/§2.1 type 枚举/§5.3.2 引擎映射/§8 文件结构；估算 A 全做 +0 人天（conditional 本就在验收内），B/C 缩减 -0.5~1 人天
-- **Q2（阻塞级）：conditional gate 判定语义** 🔲 待回执
+- **Q2（阻塞级）：conditional gate 判定语义** ✅ 已确认（用户拍板：选项 A）
   - **A. 确定性规则（关键词匹配「通过/PASS」）**（建议）——零额外 LLM 调用、可预测、可断言；内置 auditor prompt 约定输出「审核结论：通过 / 不通过」；自定义角色由用户自行约定标记
   - B. 独立 LLM 判定（结构化 pass/fail）——更智能但多一次 LLM 调用 + 成本 + 弱模型空 content 风险（F26 教训）
   - **影响**：Q2 决定 §5.3.3 gate 实现/§8 auditor prompt 约定/§9 测试策略；A 零成本，B 估算 +1-2 人天
-- **Q3（设计决策级）：DAG 编辑器形态** 🔲 待回执
+- **Q3（设计决策级）：DAG 编辑器形态** ✅ 已确认（用户拍板：选项 A）
   - **A. 列表 + 连线（关系列表 + 依赖选择器 + 只读 DAG 预览）**（建议）——复用既有 AgentChainCard，MVP 可落地，成本可控
   - B. 独立画布（拖拽连线，React Flow 等）——交互直观但大 UI 工程（+3-5 人天），超本期估算
   - **影响**：Q3 决定 §5.2/§8 前端文件结构/§10 范围外；A 零增量（列表编辑在 8-12 人天内），B 估算 +3-5 人天
