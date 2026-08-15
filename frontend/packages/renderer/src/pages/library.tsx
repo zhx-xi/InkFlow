@@ -643,23 +643,9 @@ export function LibraryPage() {
                   {t('lib.retry')}
                 </button>
               </div>
-            ) : items.length === 0 ? (
-              <div
-                data-testid="library-tab-empty"
-                className="flex flex-col items-center justify-center rounded-lg border border-dashed border-line bg-surface px-6 py-14 text-center"
-              >
-                <p className="text-[13px] text-ink-2">{t('lib.empty.tab', { name: t(cat.labelKey) })}</p>
-                <button
-                  type="button"
-                  data-testid="library-tab-empty-cta"
-                  className="mt-4 rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                  onClick={() => (cat.key === 'rag' ? navigate('/writing') : setCreateOpen(true))}
-                >
-                  {t('lib.empty.create')}
-                </button>
-              </div>
-            ) : activeCat === 'world' && workbenchActive ? (
-              /* F43 P2（§5.8）：地图工作台——左树（P1 复用 + 🗺 徽标）+ 右画布/pin 列表 */
+            ) : activeCat === 'world' && workbenchActive && (items.length > 0 || maps.length > 0) ? (
+              /* F43 P2（§5.8）：地图工作台——左树（#378 目录树 + P1/P2 兼容徽标）+ 右画布/pin 列表；
+                 #378：世界条目为空但已有地图时仍进入工作台（地图为树主体） */
               <MapWorkbench
                 projectId={currentProjectId}
                 worldItems={items}
@@ -682,6 +668,21 @@ export function LibraryPage() {
                 onCopyAll={() => setCopyState({ open: true, mode: 'all' })}
                 copyTargetOptions={copyTargetOptions}
               />
+            ) : items.length === 0 ? (
+              <div
+                data-testid="library-tab-empty"
+                className="flex flex-col items-center justify-center rounded-lg border border-dashed border-line bg-surface px-6 py-14 text-center"
+              >
+                <p className="text-[13px] text-ink-2">{t('lib.empty.tab', { name: t(cat.labelKey) })}</p>
+                <button
+                  type="button"
+                  data-testid="library-tab-empty-cta"
+                  className="mt-4 rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                  onClick={() => (cat.key === 'rag' ? navigate('/writing') : setCreateOpen(true))}
+                >
+                  {t('lib.empty.create')}
+                </button>
+              </div>
             ) : activeCat === 'world' ? (
               <>
                 {/* F43 P1（§5.4）：世界观分类筛选工具栏——默认分组 + 数据自定义 chips（无「全部」，

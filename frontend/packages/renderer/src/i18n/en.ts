@@ -125,6 +125,14 @@ export const en: Record<string, string> = {
   'lib.map.createPlaceholder': 'Map name',
   'lib.map.createSave': 'Create',
   'lib.map.createCancel': 'Cancel',
+  // #378: map directory tree drag re-parent + rename (specs/f36-world-map/spec.md v1.4)
+  'lib.map.drag': 'Drag to re-parent',
+  'lib.map.dropRoot': 'Drop here to make it a root map',
+  'lib.map.cycleReject': 'Cannot drop a map onto itself or its descendants',
+  'lib.map.deleteHasChildren': 'This map has child maps — move them away or use cascade delete',
+  'lib.map.renameTitle': 'Rename Map',
+  'lib.map.renamePlaceholder': 'Map name',
+  'lib.map.renameSave': 'Save',
   // F43 P3+P4 (specs/f43-setting-library-crud/spec.md §6): outline tree + chapter link + timeline dual view
   'lib.level.overall': 'Overall',
   'lib.level.volume': 'Volume',

@@ -7,16 +7,16 @@
  * （PATCH extra.shapes）均在组件内完成（消费方契约 library-p2.test.tsx 覆盖）。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, Copy, MapPlus, Pencil, Trash2 } from 'lucide-react';
-import { apiFetch, errorMessage } from '../api/client';
+import { ChevronRight, MapPlus, Pencil, Trash2 } from 'lucide-react';
+import { ApiError, apiFetch, errorMessage } from '../api/client';
 import { cn } from '../lib/cn';
 import { useI18n } from '../i18n/useI18n';
 import { useToastStore } from '../stores/toast';
 import { ConfirmDialog } from './ConfirmDialog';
 import type { LibraryItemDTO } from './LibraryCreateDialog';
 import { MapCanvas } from './MapCanvas';
-import { MapChildNodeView } from './MapChildNodeView';
 import { MapCreateDialog } from './MapCreateDialog';
+import { MapDirectoryTree } from './MapDirectoryTree';
 import { PinDialog, type PinRefOption, type PinSaveInput } from './PinDialog';
 
 export type MapBgSource = 'shape' | 'image' | 'ai';
@@ -95,32 +95,7 @@ interface PinListResponse {
   limit: number;
 }
 
-interface WorldTreeNode {
-  item: LibraryItemDTO;
-  children: WorldTreeNode[];
-}
-
 const PIN_TYPES: PinType[] = ['location', 'role', 'event', 'other'];
-
-/** P1 §5.3：items → 树（顶层 = parent_id null/缺失；孤儿降级顶层；按 items 顺序保序） */
-function buildWorldTree(items: LibraryItemDTO[]): WorldTreeNode[] {
-  const nodes = new Map<string | number, WorldTreeNode>();
-  for (const item of items) {
-    nodes.set(item.id, { item, children: [] });
-  }
-  const roots: WorldTreeNode[] = [];
-  for (const item of items) {
-    const node = nodes.get(item.id);
-    if (!node) continue;
-    const parentId = item.parent_id;
-    if (parentId !== null && parentId !== undefined && nodes.has(parentId)) {
-      nodes.get(parentId)!.children.push(node);
-    } else {
-      roots.push(node);
-    }
-  }
-  return roots;
-}
 
 /** extra.shapes 防御性提取（脏数据兜底空数组） */
 function extractShapes(map: WorldMapDTO): MapShape[] {
@@ -135,178 +110,6 @@ function extractShapes(map: WorldMapDTO): MapShape[] {
   );
 }
 
-/** 工作台树节点视图（P1 树渲染 + P2 🗺 地图徽标；悬停操作按钮与 P1 同款 testid） */
-function WorkbenchNodeView({
-  node,
-  depth,
-  collapsed,
-  mapByLocation,
-  childrenByParent,
-  pinCounts,
-  activeMapId,
-  onToggle,
-  onEdit,
-  onDelete,
-  onCopy,
-  onSelectMap,
-  onCreateChild,
-  onCreateChildForMap,
-}: {
-  node: WorldTreeNode;
-  depth: number;
-  collapsed: Set<string | number>;
-  mapByLocation: Map<string, WorldMapDTO>;
-  childrenByParent: Map<string, WorldMapDTO[]>;
-  pinCounts: Record<string, number>;
-  activeMapId: string | null;
-  onToggle: (id: string | number) => void;
-  onEdit: (item: LibraryItemDTO) => void;
-  onDelete: (item: LibraryItemDTO) => void;
-  onCopy: (item: LibraryItemDTO) => void;
-  onSelectMap: (mapId: string) => void;
-  onCreateChild: (item: LibraryItemDTO) => void;
-  onCreateChildForMap: (map: WorldMapDTO) => void;
-}) {
-  const { t } = useI18n();
-  const { item, children } = node;
-  const hasChildren = children.length > 0;
-  const isCollapsed = collapsed.has(item.id);
-  // root_location_id 与树节点 id 字符串化比较（String === String，契约）
-  const linkedMap = mapByLocation.get(String(item.id)) ?? null;
-  const isActive =
-    linkedMap !== null && activeMapId !== null && String(linkedMap.id) === String(activeMapId);
-  return (
-    <div className="tree-node">
-      <div
-        className="tree-row group flex items-center gap-2 px-3 py-2 text-[13px] text-ink transition-colors duration-150 hover:bg-surface-2/60"
-        style={{ paddingLeft: depth * 18 + 12 }}
-      >
-        {hasChildren ? (
-          <button
-            type="button"
-            data-testid={`world-tree-toggle-${item.id}`}
-            aria-label={isCollapsed ? t('nav.expand') : t('nav.collapse')}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-3 transition duration-150 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => onToggle(item.id)}
-          >
-            <ChevronRight
-              className={cn('h-3.5 w-3.5 transition-transform duration-180', !isCollapsed && 'rotate-90')}
-              aria-hidden="true"
-            />
-          </button>
-        ) : (
-          <span className="h-5 w-5 shrink-0" aria-hidden="true" />
-        )}
-        {linkedMap && (
-          <button
-            type="button"
-            data-testid={`world-map-badge-${item.id}`}
-            aria-label={`${t('lib.worldMap')} ${linkedMap.name}`}
-            title={linkedMap.name}
-            className={cn(
-              'flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[11px] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              isActive
-                ? 'border-accent bg-accent/10 text-accent'
-                : 'border-line text-ink-2 hover:border-accent hover:text-accent',
-            )}
-            onClick={() => onSelectMap(String(linkedMap.id))}
-          >
-            <span aria-hidden="true">🗺</span>
-            <span>{pinCounts[String(linkedMap.id)] ?? 0}</span>
-          </button>
-        )}
-        {/* #368：linkedMap 命中时显示地图名（地图视角名称一致）；否则显示条目名 */}
-        <span className="min-w-0 flex-1 truncate">{linkedMap ? linkedMap.name : (item.name ?? '')}</span>
-        {item.category ? (
-          <span className="shrink-0 rounded-full bg-surface-3 px-2 py-0.5 text-[11px] text-ink-2">
-            {item.category}
-          </span>
-        ) : null}
-        {/* P1 行内操作按钮（D12 悬停显示；testid 与普通树视图一致） */}
-        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-180 group-hover:opacity-100 focus-within:opacity-100">
-          <button
-            type="button"
-            data-testid={`lib-edit-${item.id}`}
-            aria-label={`${t('lib.edit')} ${item.name ?? ''}`}
-            className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => onEdit(item)}
-          >
-            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            data-testid={`lib-delete-${item.id}`}
-            aria-label={`${t('lib.delete')} ${item.name ?? ''}`}
-            className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => onDelete(item)}
-          >
-            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            data-testid={`world-copy-${item.id}`}
-            aria-label={`${t('lib.copy.title')} ${item.name ?? ''}`}
-            className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => onCopy(item)}
-          >
-            <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-          {/* #346/#368：树节点行创建子图——有 linkedMap 传父图 id（parent_map_id）；无地图禁用 */}
-          <button
-            type="button"
-            data-testid={`map-create-child-${item.id}`}
-            aria-label={`${t('lib.map.createChild')} ${item.name ?? ''}`}
-            title={linkedMap ? t('lib.map.createChild') : '请先为该地点创建地图'}
-            disabled={linkedMap === null}
-            className={cn(
-              'rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              linkedMap === null && 'cursor-not-allowed opacity-50',
-            )}
-            onClick={() => onCreateChild(item)}
-          >
-            <MapPlus className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-      {!isCollapsed &&
-        children.map((child) => (
-          <WorkbenchNodeView
-            key={String(child.item.id)}
-            node={child}
-            depth={depth + 1}
-            collapsed={collapsed}
-            mapByLocation={mapByLocation}
-            childrenByParent={childrenByParent}
-            pinCounts={pinCounts}
-            activeMapId={activeMapId}
-            onToggle={onToggle}
-            onEdit={onEdit}
-            onDelete={onDelete}
-            onCopy={onCopy}
-            onSelectMap={onSelectMap}
-            onCreateChild={onCreateChild}
-            onCreateChildForMap={onCreateChildForMap}
-          />
-        ))}
-      {/* #368 v1.3：图挂图层级——该地图的子图递归渲染（深度不限） */}
-      {linkedMap &&
-        (childrenByParent.get(String(linkedMap.id)) ?? []).map((child) => (
-          <MapChildNodeView
-            key={String(child.id)}
-            map={child}
-            depth={depth + 1}
-            collapsed={collapsed}
-            childrenByParent={childrenByParent}
-            pinCounts={pinCounts}
-            activeMapId={activeMapId}
-            onSelectMap={onSelectMap}
-            onCreateChild={onCreateChildForMap}
-          />
-        ))}
-    </div>
-  );
-}
-
 /** #346 创建地图轻量对话框（MapCreateDialog.tsx，2026-08-14 拆分） */
 
 export function MapWorkbench({
@@ -317,7 +120,6 @@ export function MapWorkbench({
   onSelectMap,
   onExitWorkbench,
   onClearMap,
-  activeWorldCat,
   collapsedIds,
   onToggle,
   onEdit,
@@ -342,6 +144,9 @@ export function MapWorkbench({
     rootLocationId: string | number | null;
     parentMapId: string | number | null; // #368 v1.3：创建子图传父图 id（parent_map_id）
   }>({ open: false, rootLocationId: null, parentMapId: null });
+  // #378：重命名目标（非空 → MapCreateDialog editing 模式）与删除确认目标
+  const [renameTarget, setRenameTarget] = useState<WorldMapDTO | null>(null);
+  const [pendingDeleteMap, setPendingDeleteMap] = useState<WorldMapDTO | null>(null);
   const [refLists, setRefLists] = useState<{
     characters: Array<{ id: string | number; name?: string }>;
     timeline: Array<{ id: string | number; name?: string; title?: string }>;
@@ -378,43 +183,6 @@ export function MapWorkbench({
       cancelled = true;
     };
   }, [activeMapId]);
-
-  // P1：世界观树（parent_id 建树）+ 分类筛选作用于顶层（含子树整体显隐）
-  const worldRoots = useMemo(() => buildWorldTree(worldItems), [worldItems]);
-  const filteredWorldRoots = useMemo(
-    () =>
-      activeWorldCat === null
-        ? worldRoots
-        : worldRoots.filter((node) => node.item.category === activeWorldCat),
-    [activeWorldCat, worldRoots],
-  );
-  const mapByLocation = useMemo(() => {
-    const map = new Map<string, WorldMapDTO>();
-    for (const m of localMaps) {
-      if (m.root_location_id !== null && m.root_location_id !== undefined) {
-        map.set(String(m.root_location_id), m);
-      }
-    }
-    return map;
-  }, [localMaps]);
-  // #368 v1.3：parent_map_id → 子图列表（图挂图层级，前端树渲染）
-  const childrenByParent = useMemo(() => {
-    const map = new Map<string, WorldMapDTO[]>();
-    for (const m of localMaps) {
-      if (m.parent_map_id !== null && m.parent_map_id !== undefined) {
-        const key = String(m.parent_map_id);
-        const list = map.get(key) ?? [];
-        list.push(m);
-        map.set(key, list);
-      }
-    }
-    return map;
-  }, [localMaps]);
-  // #377：独立根图（无 root_location_id 且无 parent_map_id）→ 树顶层节点
-  const orphanRootMaps = useMemo(
-    () => localMaps.filter((m) => (m.root_location_id === null || m.root_location_id === undefined) && (m.parent_map_id === null || m.parent_map_id === undefined)),
-    [localMaps],
-  );
 
   // 关联实体候选（worldItems 本地已加载；characters/timeline 按需拉取）
   const refOptions = useMemo<PinRefOption[]>(
@@ -586,6 +354,74 @@ export function MapWorkbench({
     }
   };
 
+  /** #378 拖拽改挂：PATCH parent_map_id（目标 id 或 null=变根图）→ 回写本地列表 + ok toast */
+  const handleReparent = async (mapId: string, parentMapId: string | null) => {
+    try {
+      const updated = await apiFetch<WorldMapDTO | undefined>(`/api/v1/maps/${mapId}`, {
+        method: 'PATCH',
+        body: { parent_map_id: parentMapId },
+      });
+      setLocalMaps((prev) =>
+        prev.map((m) =>
+          String(m.id) === String(mapId)
+            ? updated
+              ? { ...m, ...updated }
+              : { ...m, parent_map_id: parentMapId }
+            : m,
+        ),
+      );
+      useToastStore.getState().pushToast('ok', t('toast.saved'));
+    } catch (err) {
+      useToastStore.getState().pushToast('err', errorMessage(err));
+    }
+  };
+
+  /** #378 循环拖拽被拒：err toast（组件内已拦截，不发 PATCH） */
+  const handleCycleReject = () => {
+    useToastStore.getState().pushToast('err', t('lib.map.cycleReject'));
+  };
+
+  /** #378 重命名地图：PATCH body {name} → 回写本地列表 + 关闭对话框 + ok toast */
+  const handleRenameMap = async (map: WorldMapDTO, name: string) => {
+    try {
+      const updated = await apiFetch<WorldMapDTO | undefined>(`/api/v1/maps/${map.id}`, {
+        method: 'PATCH',
+        body: { name },
+      });
+      setLocalMaps((prev) =>
+        prev.map((m) =>
+          String(m.id) === String(map.id) ? (updated ? { ...m, ...updated } : { ...m, name }) : m,
+        ),
+      );
+      setRenameTarget(null);
+      useToastStore.getState().pushToast('ok', t('toast.saved'));
+    } catch (err) {
+      useToastStore.getState().pushToast('err', errorMessage(err));
+    }
+  };
+
+  /** #378 删除地图：ConfirmDialog 确认 → DELETE /maps/{id} → 过滤本地列表；422（有子图）→ 提示 */
+  const handleDeleteMap = async () => {
+    if (!pendingDeleteMap) return;
+    const target = pendingDeleteMap;
+    try {
+      await apiFetch(`/api/v1/maps/${target.id}`, { method: 'DELETE' });
+      setLocalMaps((prev) => prev.filter((m) => String(m.id) !== String(target.id)));
+      setPendingDeleteMap(null);
+      if (activeMapId !== null && String(activeMapId) === String(target.id)) {
+        onClearMap();
+      }
+      useToastStore.getState().pushToast('ok', t('toast.saved'));
+    } catch (err) {
+      setPendingDeleteMap(null);
+      if (err instanceof ApiError && err.status === 422) {
+        useToastStore.getState().pushToast('err', t('lib.map.deleteHasChildren'));
+      } else {
+        useToastStore.getState().pushToast('err', errorMessage(err));
+      }
+    }
+  };
+
   /** shapes 持久化：整体替换 PATCH extra.shapes + 回写本地地图 */
   const handleUpdateShapes = async (shapes: MapShape[]) => {
     if (!activeMap) return;
@@ -691,44 +527,29 @@ export function MapWorkbench({
       </div>
 
       <div className="flex items-start gap-4">
-        {/* 左栏：世界观树（library-list testid 契约不变） */}
+        {/* 左栏：#378 地图目录树（library-list testid 保留，供 P2 既有契约等待） */}
         <aside className="w-[260px] shrink-0 space-y-3">
           <div
             data-testid="library-list"
             className="overflow-hidden rounded-lg border border-line bg-surface shadow-card"
           >
-            {filteredWorldRoots.length === 0 && orphanRootMaps.length === 0 ? (
-              <div className="px-4 py-8 text-center text-[13px] text-ink-2">{t('common.empty')}</div>
-            ) : (
-              filteredWorldRoots.map((node) => (
-                <WorkbenchNodeView
-                  key={String(node.item.id)}
-                  node={node}
-                  depth={0}
-                  collapsed={collapsedIds}
-                  mapByLocation={mapByLocation}
-                  childrenByParent={childrenByParent}
-                  pinCounts={pinCounts}
-                  activeMapId={activeMapId}
-                  onToggle={onToggle}
-                  onEdit={onEdit}
-                  onDelete={onDelete}
-                  onCopy={onCopy}
-                  onSelectMap={onSelectMap}
-                  onCreateChild={(item) => {
-                    // #368 v1.3：条目行创建子图 → 传 linkedMap.id 作为 parentMapId（无地图按钮已禁用）
-                    const lm = mapByLocation.get(String(item.id)) ?? null;
-                    if (lm) setCreateDialog({ open: true, rootLocationId: null, parentMapId: lm.id });
-                  }}
-                  onCreateChildForMap={(map) =>
-                    setCreateDialog({ open: true, rootLocationId: null, parentMapId: map.id })
-                  }
-                />
-              ))
-            )}
-            {orphanRootMaps.map((m) => (
-              <MapChildNodeView key={String(m.id)} map={m} depth={0} collapsed={collapsedIds} childrenByParent={childrenByParent} pinCounts={pinCounts} activeMapId={activeMapId} onSelectMap={onSelectMap} onCreateChild={(map) => setCreateDialog({ open: true, rootLocationId: null, parentMapId: map.id })} />
-            ))}
+            <MapDirectoryTree
+              maps={localMaps}
+              activeMapId={activeMapId}
+              onSelectMap={onSelectMap}
+              onCreateChild={(map) => setCreateDialog({ open: true, rootLocationId: null, parentMapId: map.id })}
+              onDeleteMap={(map) => setPendingDeleteMap(map)}
+              onRenameMap={(map) => setRenameTarget(map)}
+              onReparent={(mapId, parentMapId) => void handleReparent(mapId, parentMapId)}
+              onCycleReject={handleCycleReject}
+              worldItems={worldItems}
+              collapsedIds={collapsedIds}
+              onToggle={onToggle}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onCopy={onCopy}
+              pinCounts={pinCounts}
+            />
           </div>
         </aside>
 
@@ -835,14 +656,40 @@ export function MapWorkbench({
         }}
       />
 
-      {/* #346/#368 创建地图对话框（根图 parentMapId=null / 子图预填父图 id） */}
+      {/* #346/#368 创建地图对话框（根图 parentMapId=null / 子图预填父图 id）；#378 重命名模式（editing=renameTarget） */}
       <MapCreateDialog
-        open={createDialog.open}
-        onSave={(name) => void handleCreateMap(name)}
+        open={createDialog.open || renameTarget !== null}
+        editing={renameTarget}
+        onSave={(name) => {
+          if (renameTarget !== null) {
+            void handleRenameMap(renameTarget, name);
+          } else {
+            void handleCreateMap(name);
+          }
+        }}
         onOpenChange={(open) => {
-          if (!open) setCreateDialog({ open: false, rootLocationId: null, parentMapId: null });
+          if (!open) {
+            setCreateDialog({ open: false, rootLocationId: null, parentMapId: null });
+            setRenameTarget(null);
+          }
         }}
       />
+
+      {/* #378 删除地图二次确认（真删；422 有子图 → err toast 提示） */}
+      {pendingDeleteMap && (
+        <ConfirmDialog
+          open
+          title={t('lib.delete.title', { name: pendingDeleteMap.name })}
+          message={t('lib.delete.confirm')}
+          confirmText={t('lib.delete.ok')}
+          danger
+          testidPrefix="map-delete-confirm"
+          onConfirm={() => void handleDeleteMap()}
+          onOpenChange={(open) => {
+            if (!open) setPendingDeleteMap(null);
+          }}
+        />
+      )}
 
       {/* pin 删除二次确认（真删；确认后刷新列表 + ok toast） */}
       {pendingDeletePin && (
