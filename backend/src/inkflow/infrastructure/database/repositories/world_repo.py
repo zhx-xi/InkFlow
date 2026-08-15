@@ -424,7 +424,10 @@ class SQLiteWorldRepository:
             )
             .group_by(WorldSettingORM.category)
         )
-        counts: dict[str, int] = dict((await self._session.execute(count_stmt)).all())
+        counts = {
+            str(category): int(cnt)
+            for category, cnt in (await self._session.execute(count_stmt)).all()
+        }
         return [(_category_orm_to_domain(c), counts.get(c.name, 0)) for c in cats]
 
     async def rename_category(self, category_id: uuid.UUID, name: str) -> WorldCategory | None:
