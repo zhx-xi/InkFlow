@@ -148,6 +148,14 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     });
   }
 
+  /** #376：世界观 tab 默认进地图工作台 → 点 map-bc-world 退出回列表页（P1 分类 chips/复制交互在列表页断言） */
+  async function enterWorldList(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('map-workbench');
+    await user.click(screen.getByTestId('map-bc-world'));
+    await screen.findByTestId('library-list');
+  }
+
   /**
    * 播种 p1 + 世界观列表/复制端点 mock。
    * copyResult=null → 复制端点 reject（R13a 失败路径）；默认返回 WorldCopyResult（created 2 条）。
@@ -379,8 +387,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     const user = userEvent.setup();
     renderLibrary();
 
-    await user.click(screen.getByRole('tab', { name: '世界观' }));
-    await screen.findByTestId('library-list');
+    await enterWorldList(user);
     // #352 拍板：默认分组仅「地图」；数据中自定义分类「组织」「秘境」自动进 chips（D-11 数据驱动）
     for (const cat of ['地图', '组织', '秘境']) {
       expect(screen.getByTestId(`world-cat-filter-${cat}`)).toBeInTheDocument();
@@ -403,8 +410,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     const user = userEvent.setup();
     renderLibrary();
 
-    await user.click(screen.getByRole('tab', { name: '世界观' }));
-    await screen.findByTestId('library-list');
+    await enterWorldList(user);
     // 默认展示所有
     expect(screen.getByText('宗门')).toBeInTheDocument();
     expect(screen.getByText('昆仑派')).toBeInTheDocument();
@@ -425,8 +431,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     const user = userEvent.setup();
     renderLibrary();
 
-    await user.click(screen.getByRole('tab', { name: '世界观' }));
-    await screen.findByTestId('library-list');
+    await enterWorldList(user);
     await user.click(screen.getByTestId('world-copy-w1'));
     const dialog = await screen.findByTestId('world-copy-dialog');
     // 范围 chips：本体+全部子级（默认）/ 仅本体
@@ -466,8 +471,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     const user = userEvent.setup();
     renderLibrary();
 
-    await user.click(screen.getByRole('tab', { name: '世界观' }));
-    await screen.findByTestId('library-list');
+    await enterWorldList(user);
     await user.click(screen.getByTestId('world-copy-w1'));
     const dialog = await screen.findByTestId('world-copy-dialog');
     await user.click(within(dialog).getByTestId('world-copy-scope-self'));
@@ -490,8 +494,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     const user = userEvent.setup();
     renderLibrary();
 
-    await user.click(screen.getByRole('tab', { name: '世界观' }));
-    await screen.findByTestId('library-list');
+    await enterWorldList(user);
     await user.click(screen.getByTestId('world-copy-all'));
     const dialog = await screen.findByTestId('world-copy-dialog');
     // 整体复制：范围固定「全部」，scope chips 隐藏
@@ -515,8 +518,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     const user = userEvent.setup();
     renderLibrary();
 
-    await user.click(screen.getByRole('tab', { name: '世界观' }));
-    await screen.findByTestId('library-list');
+    await enterWorldList(user);
     await user.click(screen.getByTestId('world-copy-w1'));
     const dialog = await screen.findByTestId('world-copy-dialog');
     await user.click(within(dialog).getByTestId('world-copy-target'));
@@ -534,8 +536,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     const user = userEvent.setup();
     renderLibrary();
 
-    await user.click(screen.getByRole('tab', { name: '世界观' }));
-    await screen.findByTestId('library-list');
+    await enterWorldList(user);
     expect(screen.getByTestId('world-copy-all')).toBeDisabled();
   });
 });
