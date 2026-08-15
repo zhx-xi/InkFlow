@@ -234,10 +234,13 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
     });
   }
 
-  /** 世界观 tab 切到工作台并点开地图画布（badgeId = 树节点 id，默认 w1） */
+  /** 世界观 tab 切到地图工作台并点开地图画布（badgeId = 树节点 id，默认 w1）。
+   *  #389：世界观 tab 默认停列表页 → 点「地图视图」按钮进工作台 → 点 badge 选图。 */
   async function openMapWorkbench(user: ReturnType<typeof userEvent.setup>, badgeId = 'w1') {
     await user.click(screen.getByRole('tab', { name: '世界观' }));
     await screen.findByTestId('library-list');
+    await user.click(screen.getByTestId('map-view-entry'));
+    await screen.findByTestId('map-workbench');
     await user.click(screen.getByTestId(`world-map-badge-${badgeId}`));
     await screen.findByTestId('map-canvas');
   }
@@ -263,6 +266,9 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
     const user = userEvent.setup();
     await user.click(screen.getByRole('tab', { name: '世界观' }));
     await screen.findByTestId('library-list');
+    // #389：列表页 → 点「地图视图」进工作台
+    await user.click(screen.getByTestId('map-view-entry'));
+    await screen.findByTestId('map-workbench');
     // root_location_id=w1 命中 → 🗺 徽标渲染；w1a 无地图 → 不渲染徽标
     expect(screen.getByTestId('world-map-badge-w1')).toBeInTheDocument();
     expect(screen.queryByTestId('world-map-badge-w1a')).not.toBeInTheDocument();
@@ -527,6 +533,8 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
     const user = userEvent.setup();
     // 进入地图工作台（点世界观 tab）
     await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('library-list');
+    await user.click(screen.getByTestId('map-view-entry'));
     await screen.findByTestId('map-workbench');
     // 创建根图按钮存在
     expect(screen.getByTestId('map-create-root')).toBeInTheDocument();
@@ -567,6 +575,8 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
     renderLibrary();
     const user = userEvent.setup();
     await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('library-list');
+    await user.click(screen.getByTestId('map-view-entry'));
     await screen.findByTestId('map-workbench');
     // 树节点 w1 行有「创建子图」按钮
     const childBtn = await screen.findByTestId('map-create-child-w1');
@@ -600,6 +610,8 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
     renderLibrary();
     const user = userEvent.setup();
     await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('library-list');
+    await user.click(screen.getByTestId('map-view-entry'));
     await screen.findByTestId('map-workbench');
     const row = (await screen.findByTestId('world-map-badge-w1')).closest('.tree-row');
     expect(row).not.toBeNull();
@@ -620,6 +632,8 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
     renderLibrary();
     const user = userEvent.setup();
     await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('library-list');
+    await user.click(screen.getByTestId('map-view-entry'));
     await screen.findByTestId('map-workbench');
     // 父图 m1 行（挂 w1 条目徽标）显示地图名；子图 m2 行渲染在树中（可点击选中）
     const parentRow = (await screen.findByTestId('world-map-badge-w1')).closest('.tree-row');
@@ -632,28 +646,25 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
     expect(screen.getByTestId('map-bc-current')).toHaveTextContent('中州细图');
   });
 
-  it('#376: 地图工作台左栏隐藏世界观分类筛选栏——仅条目列表页展示分类 chips 与整体复制', async () => {
+  it('#389: 点世界观 tab → 列表页（非地图工作台）+ 分类栏无「地图」chip + 地图视图按钮进工作台', async () => {
     mockMapWorkbench(worldTree, [mapM1]);
     renderLibrary();
     const user = userEvent.setup();
-    // 点世界观 tab → 默认进入地图工作台（handleTabChange → workbenchActive=true）
+    // 点世界观 tab → 列表页（分类 chips + 世界树 + 整体复制 + 地图视图按钮），非 map-workbench
     await user.click(screen.getByRole('tab', { name: '世界观' }));
-    await screen.findByTestId('map-workbench');
-    // 工作台左栏仅剩地图树：分类 chips 与整体复制按钮隐藏
+    await screen.findByTestId('library-list');
+    expect(screen.queryByTestId('map-workbench')).not.toBeInTheDocument();
+    expect(screen.getByTestId('world-copy-all')).toBeInTheDocument();
+    // 分类栏无「地图」chip（地图归地图工作台）
     expect(screen.queryByTestId('world-cat-filter-地图')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('world-copy-all')).not.toBeInTheDocument();
+    // 地图视图按钮 → 进工作台
+    await user.click(screen.getByTestId('map-view-entry'));
+    await screen.findByTestId('map-workbench');
     expect(screen.getByTestId('world-map-badge-w1')).toBeInTheDocument();
-    // 退出工作台回列表页 → 分类 chips 恢复（P1 契约保留）
+    // 退出工作台回列表页（map-bc-world）→ 地图视图按钮仍在
     await user.click(screen.getByTestId('map-bc-world'));
     await screen.findByTestId('library-list');
-    expect(screen.getByTestId('world-cat-filter-地图')).toBeInTheDocument();
-    expect(screen.getByTestId('world-copy-all')).toBeInTheDocument();
-    // 再进工作台（重进世界观 tab）→ 仍无分类栏
-    await user.click(screen.getByRole('tab', { name: '世界观' }));
-    await screen.findByTestId('map-workbench');
-    expect(screen.getByTestId('map-workbench')).toBeInTheDocument();
-    expect(screen.queryByTestId('world-cat-filter-地图')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('world-copy-all')).not.toBeInTheDocument();
+    expect(screen.getByTestId('map-view-entry')).toBeInTheDocument();
   });
 
   it('#377: 创建根图成功后自动选中新图（右侧渲染画布 + 面包屑=新图名）+ 树含新节点', async () => {
@@ -673,6 +684,8 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
     renderLibrary();
     const user = userEvent.setup();
     await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('library-list');
+    await user.click(screen.getByTestId('map-view-entry'));
     await screen.findByTestId('map-workbench');
     // 创建根图（空地图列表 → 无既有选中）
     await user.click(screen.getByTestId('map-create-root'));
@@ -755,5 +768,43 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
       const s = shapes.find((x) => x.id === 's_1');
       expect(s?.label).toBe('主城');
     });
+  });
+
+  it('#389 分类可新建：点新建分类 → 输入 name → POST /world-categories → chips 出现', async () => {
+    // 状态化分类 mock：POST 追加 + GET 读取（刷新后 chips 出现）
+    const categories: Array<{ id: string; name: string; count: number }> = [];
+    const baseImpl = apiFetchMock.getMockImplementation();
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+      if (path === '/api/v1/projects/p1/world-categories' && init?.method === 'POST') {
+        const cat = { id: `wc${categories.length + 1}`, name: (init.body as { name: string }).name, count: 0 };
+        categories.push(cat);
+        return { ...cat, project_id: 'p1' };
+      }
+      if (path === '/api/v1/projects/p1/world-categories') {
+        return { items: categories.map((c) => ({ ...c })), total: categories.length };
+      }
+      return baseImpl!(path, init);
+    });
+    mockMapWorkbench(worldTree, []);
+    renderLibrary();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('library-list');
+    // 初始无「势力」分类 chip
+    expect(screen.queryByTestId('world-cat-filter-势力')).not.toBeInTheDocument();
+    // 新建分类按钮 → 对话框 → 输入 → 保存
+    await user.click(screen.getByTestId('world-cat-add'));
+    const nameInput = await screen.findByTestId('world-cat-name');
+    await user.type(nameInput, '势力');
+    await user.click(screen.getByTestId('world-cat-save'));
+    // POST 落库（body {name}）+ chips 出现新分类
+    await waitFor(() => {
+      const postCall = apiFetchMock.mock.calls.find(
+        (c) => c[0] === '/api/v1/projects/p1/world-categories' && c[1]?.method === 'POST',
+      );
+      expect(postCall).toBeTruthy();
+      expect((postCall![1]!.body as { name: string }).name).toBe('势力');
+    });
+    await screen.findByTestId('world-cat-filter-势力');
   });
 });

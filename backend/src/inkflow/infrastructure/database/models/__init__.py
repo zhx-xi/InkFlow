@@ -23,7 +23,7 @@ from inkflow.infrastructure.database.models.provider_config import ProviderConfi
 from inkflow.infrastructure.database.models.session import SessionLogORM, SessionORM
 from inkflow.infrastructure.database.models.settings import SettingsORM
 from inkflow.infrastructure.database.models.timeline import TimelineEventORM
-from inkflow.infrastructure.database.models.world import WorldSettingORM
+from inkflow.infrastructure.database.models.world import WorldCategoryORM, WorldSettingORM
 
 __all__ = [
     "AgentExecutionORM",
@@ -50,5 +50,6 @@ __all__ = [
     "StoryArcORM",
     "TimelineEventORM",
     "VolumeORM",
+    "WorldCategoryORM",
     "WorldSettingORM",
 ]

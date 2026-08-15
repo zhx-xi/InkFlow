@@ -9,9 +9,12 @@ import { LibraryCreateDialog, type LibraryItemDTO } from '../components/LibraryC
 import { MapWorkbench, type WorldMapDTO } from '../components/MapWorkbench';
 import { OutlineTree } from '../components/OutlineTree';
 import { TimelineView, type TimelineEventDTO, type TimelineViewData } from '../components/TimelineView';
+import { WorldCatActionButtons } from '../components/WorldCatActionButtons';
+import { WorldCategoryDialog } from '../components/WorldCategoryDialog';
 import { Skeleton } from '../components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
+import { useWorldCategories } from '../hooks/useWorldCategories';
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
 import { cn } from '../lib/cn';
@@ -20,14 +23,6 @@ type CatKey = 'characters' | 'world' | 'outline' | 'timeline' | 'foreshadow' | '
 
 interface ListResponse {
   items: LibraryItemDTO[];
-  total: number;
-  offset: number;
-  limit: number;
-}
-
-/** F43 P2：地图列表响应（GET /projects/{pid}/maps） */
-interface MapListResponse {
-  items: WorldMapDTO[];
   total: number;
   offset: number;
   limit: number;
@@ -83,26 +78,11 @@ interface WorldCopyResult {
   warnings: string[];
 }
 
-/** F43 P1（§5.5）：复制对话框状态（行内 subtree 带 rootId；顶部整体 all 无 rootId） */
-interface CopyState {
-  open: boolean;
-  mode: 'subtree' | 'all';
-  rootId?: string | number;
-}
+/** F43 P1（§5.5/§5.3）：复制对话框状态 + 前端建树节点（parent_id 树） */
+interface CopyState { open: boolean; mode: 'subtree' | 'all'; rootId?: string | number }
+interface WorldTreeNode { item: LibraryItemDTO; children: WorldTreeNode[] }
 
-/** F43 P1（§5.3）：前端建树节点（parent_id 树） */
-interface WorldTreeNode {
-  item: LibraryItemDTO;
-  children: WorldTreeNode[];
-}
-
-/** F43 P1（D3）：世界观分类默认分组（#352 拍板仅地图；数据自定义自动进 chips，无「全部」选项） */
-const DEFAULT_WORLD_CATS = ['地图'];
-
-/**
- * F43 P1（§5.3）：items → 树——顶层 = parent_id null/缺失；按 items 顺序保序；
- * 孤儿（parent_id 指向不存在节点）降级为顶层（E18 防御）。
- */
+/** F43 P1（§5.3）：items → 树——顶层 = parent_id null/缺失；按序保序；孤儿降级顶层（E18） */
 function buildWorldTree(items: LibraryItemDTO[]): WorldTreeNode[] {
   const nodes = new Map<string | number, WorldTreeNode>();
   for (const item of items) {
@@ -271,16 +251,17 @@ export function LibraryPage() {
   const createCat = activeCat === 'rag' ? null : activeCat;
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? null;
 
-  // F43 P1（D-11）：世界观分类 chips = 默认分组 + 数据中自定义 category（去重，无「全部」）
-  const worldCategories = useMemo(() => {
-    if (activeCat !== 'world') return [];
-    const cats = new Set<string>(DEFAULT_WORLD_CATS);
-    for (const item of items) {
-      const cat = (item.category ?? '').trim();
-      if (cat) cats.add(cat);
-    }
-    return [...cats];
-  }, [activeCat, items]);
+  // #389：世界观分类实体列表 + 新建分类（state/加载/保存逻辑集中在 hook）
+  const { worldCategoryList, worldCatDialogOpen, setWorldCatDialogOpen, handleWorldCatSave } = useWorldCategories(currentProjectId, activeCat, reloadKey, () => {
+    setReloadKey((k) => k + 1);
+    setActiveWorldCat(null);
+  });
+
+  // #389：世界观分类 chips = 分类实体名列表（不再含默认分组与条目 category 去重）
+  const worldCategories = useMemo(
+    () => (activeCat === 'world' ? worldCategoryList.map((c) => c.name) : []),
+    [activeCat, worldCategoryList],
+  );
 
   // F43 P1（§5.3）：世界观树（parent_id 前端建树，顶层保序 + 孤儿降级）
   const worldRoots = useMemo(
@@ -340,7 +321,7 @@ export function LibraryPage() {
       return;
     }
     let cancelled = false;
-    void apiFetch<MapListResponse>(`/api/v1/projects/${currentProjectId}/maps`)
+    void apiFetch<{ items?: WorldMapDTO[] }>(`/api/v1/projects/${currentProjectId}/maps`)
       .then((data) => {
         if (!cancelled) setMaps(data.items ?? []);
       })
@@ -383,8 +364,6 @@ export function LibraryPage() {
   useEffect(() => {
     const p = searchParams.get('cat');
     if (isCatKey(p) && p !== activeCat) setActiveCat(p);
-    // F43 P2：直达世界观 tab → 默认进入地图工作台
-    if (p === 'world') setWorkbenchActive(true);
   }, [searchParams, activeCat]);
 
   // 拉取分类端点（timeline 特例 TimelineView 双数组；失败 → error 态可重试）
@@ -436,8 +415,6 @@ export function LibraryPage() {
   const handleTabChange = (key: CatKey) => {
     setActiveCat(key);
     setSearchParams({ cat: key });
-    // F43 P2：进入世界观 tab 默认地图工作台态（退出后重进恢复）
-    if (key === 'world') setWorkbenchActive(true);
   };
 
   const handleProjectChange = (id: string) => {
@@ -460,10 +437,9 @@ export function LibraryPage() {
         });
       } else {
         // 关键：timeline 分类的创建端点是 /timeline/events（不是 /timeline 列表端点）
-        const createEndpoint =
-          current.key === 'timeline'
-            ? `/api/v1/projects/${currentProjectId}/timeline/events`
-            : current.endpoint(currentProjectId);
+        const createEndpoint = current.key === 'timeline'
+          ? `/api/v1/projects/${currentProjectId}/timeline/events`
+          : current.endpoint(currentProjectId);
         await apiFetch(createEndpoint, { method: 'POST', body: input });
       }
       setCreateOpen(false);
@@ -682,6 +658,15 @@ export function LibraryPage() {
                 >
                   {t('lib.empty.create')}
                 </button>
+                {/* #389：世界观空态也提供「新建分类」+「地图视图」入口（列表页工具栏同款） */}
+                {cat.key === 'world' && (
+                  <div className="mt-4 flex items-center gap-2">
+                    <WorldCatActionButtons
+                      onAddCategory={() => setWorldCatDialogOpen(true)}
+                      onOpenMapView={() => setWorkbenchActive(true)}
+                    />
+                  </div>
+                )}
               </div>
             ) : activeCat === 'world' ? (
               <>
@@ -706,6 +691,11 @@ export function LibraryPage() {
                       {cat}
                     </button>
                   ))}
+                  {/* #389：新建分类入口 + 地图视图独立入口（进工作台唯一入口；map-bc-world 返回列表页） */}
+                  <WorldCatActionButtons
+                    onAddCategory={() => setWorldCatDialogOpen(true)}
+                    onOpenMapView={() => setWorkbenchActive(true)}
+                  />
                   <button
                     type="button"
                     data-testid="world-copy-all"
@@ -852,10 +842,17 @@ export function LibraryPage() {
           onSave={handleSave}
           onOpenChange={(open) => {
             setCreateOpen(open);
-            if (!open) setEditing(null); // 关闭即清空编辑态（重开创建对话框不残留预填）
+            if (!open) setEditing(null);
           }}
         />
       )}
+
+      {/* #389：新建分类对话框（仅世界观 tab 工具栏入口打开；保存成功父级关框 + 刷新） */}
+      <WorldCategoryDialog
+        open={worldCatDialogOpen}
+        onSave={(name) => void handleWorldCatSave(name)}
+        onOpenChange={setWorldCatDialogOpen}
+      />
 
       {/* F43 P1（§5.5）：世界观复制对话框（行内 subtree + 顶部整体 all 共用；#195 遮罩不关闭） */}
       {copyState && (

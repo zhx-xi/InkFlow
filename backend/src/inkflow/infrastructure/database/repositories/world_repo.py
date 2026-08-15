@@ -24,8 +24,8 @@ from sqlalchemy import func, select, text
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from inkflow.domain.models.world import WorldSetting
-from inkflow.infrastructure.database.models.world import WorldSettingORM
+from inkflow.domain.models.world import WorldCategory, WorldSetting
+from inkflow.infrastructure.database.models.world import WorldCategoryORM, WorldSettingORM
 
 
 def _utcnow() -> datetime:
@@ -69,6 +69,25 @@ def _domain_to_orm(domain: WorldSetting) -> WorldSettingORM:
         content=domain.content,
         extra=domain.extra,
         parent_id=_uuid_to_int(domain.parent_id) if domain.parent_id is not None else None,
+    )
+
+
+def _category_orm_to_domain(orm: WorldCategoryORM) -> WorldCategory:
+    """分类 ORM 行 → 领域实体（int PK → UUID）."""
+    return WorldCategory(
+        id=uuid.UUID(int=orm.id),
+        project_id=uuid.UUID(int=orm.project_id),
+        name=orm.name,
+        created_at=orm.created_at,
+        updated_at=orm.updated_at,
+    )
+
+
+def _category_domain_to_orm(domain: WorldCategory) -> WorldCategoryORM:
+    """分类领域实体 → ORM 行（UUID → int；id/时间戳由 DB 自增/默认分配）."""
+    return WorldCategoryORM(
+        project_id=_uuid_to_int(domain.project_id),
+        name=domain.name,
     )
 
 
@@ -341,6 +360,113 @@ class SQLiteWorldRepository:
         if orm is None:
             await self._session.commit()
             return False
+        await self._session.delete(orm)
+        await self._session.commit()
+        return True
+
+    # ── WorldCategory（v1.2，issue #389）──────────────────────────
+
+    async def create_category(self, project_id: int | uuid.UUID, name: str) -> WorldCategory:
+        """创建分类（id 由 DB 自增分配；(project_id, name) 全唯一索引兜底同名冲突）.
+
+        返回领域实体 WorldCategory（id 为 UUID，映射惯例同条目 `_orm_to_domain`；
+        读取方法 get_category 以 `.id.int` 传 DB 主键）。
+        """
+        pid = _uuid_to_int(project_id)
+        domain = WorldCategory(
+            id=uuid.uuid4(),
+            project_id=uuid.UUID(int=pid),
+            name=name,
+            created_at=_utcnow(),
+            updated_at=_utcnow(),
+        )
+        orm = _category_domain_to_orm(domain)
+        self._session.add(orm)
+        await self._session.commit()
+        await self._session.refresh(orm)
+        return _category_orm_to_domain(orm)
+
+    async def get_category(self, category_id: uuid.UUID) -> WorldCategory | None:
+        """按主键查询分类."""
+        stmt = select(WorldCategoryORM).where(WorldCategoryORM.id == _uuid_to_int(category_id))
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
+        return _category_orm_to_domain(orm) if orm else None
+
+    async def get_category_by_name(
+        self, project_id: int | uuid.UUID, name: str
+    ) -> WorldCategory | None:
+        """按 (project_id, name) 查询分类."""
+        stmt = select(WorldCategoryORM).where(
+            WorldCategoryORM.project_id == _uuid_to_int(project_id),
+            WorldCategoryORM.name == name,
+        )
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
+        return _category_orm_to_domain(orm) if orm else None
+
+    async def list_world_categories(
+        self, project_id: int | uuid.UUID
+    ) -> builtins.list[tuple[WorldCategory, int]]:
+        """分类实体列表 + 每个分类名匹配的条目计数（排除空类别，spec §6.1）."""
+        pid = _uuid_to_int(project_id)
+        cats_stmt = (
+            select(WorldCategoryORM)
+            .where(WorldCategoryORM.project_id == pid)
+            .order_by(WorldCategoryORM.id.asc())
+        )
+        cats = (await self._session.execute(cats_stmt)).scalars().all()
+        count_stmt = (
+            select(WorldSettingORM.category, func.count())
+            .where(
+                WorldSettingORM.project_id == pid,
+                WorldSettingORM.category != "",
+            )
+            .group_by(WorldSettingORM.category)
+        )
+        counts: dict[str, int] = dict((await self._session.execute(count_stmt)).all())
+        return [(_category_orm_to_domain(c), counts.get(c.name, 0)) for c in cats]
+
+    async def rename_category(self, category_id: uuid.UUID, name: str) -> WorldCategory | None:
+        """重命名分类 + 反向同步条目 category（同一事务，spec §6.1 D2=A）."""
+        cid = _uuid_to_int(category_id)
+        stmt = select(WorldCategoryORM).where(WorldCategoryORM.id == cid)
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
+        if orm is None:
+            return None
+        old_name = orm.name
+        # 先反向同步条目（category=<旧名> → <新名>），再改分类行（同一事务）
+        await self._session.execute(
+            sa_update(WorldSettingORM)
+            .where(
+                WorldSettingORM.project_id == orm.project_id,
+                WorldSettingORM.category == old_name,
+            )
+            .values(category=name, updated_at=_utcnow())
+        )
+        orm.name = name
+        await self._session.commit()
+        await self._session.refresh(orm)
+        return _category_orm_to_domain(orm)
+
+    async def delete_category(self, category_id: uuid.UUID) -> bool:
+        """删除分类 + 反向清空条目 category（同一事务，spec §6.1 D2=A）."""
+        cid = _uuid_to_int(category_id)
+        stmt = select(WorldCategoryORM).where(WorldCategoryORM.id == cid)
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
+        if orm is None:
+            return False
+        # 先反向清空条目（category=<分类名> → '' 未分类），再物理删除分类行（同一事务）
+        await self._session.execute(
+            sa_update(WorldSettingORM)
+            .where(
+                WorldSettingORM.project_id == orm.project_id,
+                WorldSettingORM.category == orm.name,
+            )
+            .values(category="", updated_at=_utcnow())
+        )
         await self._session.delete(orm)
         await self._session.commit()
         return True

@@ -11,9 +11,10 @@ WorldRepositoryProtocol 定义 WorldSetting 的 CRUD 操作与类别聚合，
 from __future__ import annotations
 
 import builtins
+import uuid
 from typing import Protocol
 
-from inkflow.domain.models.world import WorldSetting
+from inkflow.domain.models.world import WorldCategory, WorldSetting
 
 
 class WorldRepositoryProtocol(Protocol):
@@ -155,4 +156,80 @@ class WorldRepositoryProtocol(Protocol):
     async def delete_with_reparent(self, setting_id: int, reparent_to: int) -> bool:
         """单事务: UPDATE 直接子地点 parent_id=reparent_to WHERE parent_id=setting_id
         + DELETE 自身；返回自身是否被删（不存在 → False，spec §5.5 reparent）。"""
+        ...
+
+    # ── WorldCategory（v1.2，issue #389）──────────────────────────
+    # 分类方法使用领域层 UUID 全程传递（category_id/project_id 均为 UUID），
+    # 由实现层负责 int↔UUID 转换（与 WorldSetting 的 int 仓储约定不同——
+    # 测试契约锚定 service → repo 传 UUID，见 tests/unit/test_world_categories.py）。
+
+    async def create_category(self, project_id: uuid.UUID, name: str) -> WorldCategory:
+        """创建分类（项目内同名由 (project_id, name) 全唯一索引兜底）.
+
+        Args:
+            project_id: 所属项目 UUID.
+            name: 分类名（已去空白校验）.
+
+        Returns:
+            持久化后的 WorldCategory.
+        """
+        ...
+
+    async def get_category(self, category_id: uuid.UUID) -> WorldCategory | None:
+        """按主键查询分类.
+
+        Args:
+            category_id: 分类主键（领域 UUID）.
+
+        Returns:
+            若命中则返回 WorldCategory，否则返回 None.
+        """
+        ...
+
+    async def get_category_by_name(self, project_id: uuid.UUID, name: str) -> WorldCategory | None:
+        """按 (project_id, name) 查询分类（同名冲突预检用）.
+
+        Args:
+            project_id: 所属项目 UUID.
+            name: 分类名（已去空白）.
+
+        Returns:
+            若命中则返回 WorldCategory，否则返回 None.
+        """
+        ...
+
+    async def list_world_categories(
+        self, project_id: uuid.UUID
+    ) -> builtins.list[tuple[WorldCategory, int]]:
+        """分类实体列表 + 每个分类名匹配的条目计数（排除空类别）.
+
+        Args:
+            project_id: 所属项目 UUID.
+
+        Returns:
+            (分类实体, 条目数) 列表.
+        """
+        ...
+
+    async def rename_category(self, category_id: uuid.UUID, name: str) -> WorldCategory | None:
+        """重命名分类 + 反向同步条目 category（同一事务，spec §6.1 D2=A）.
+
+        Args:
+            category_id: 分类主键（领域 UUID）.
+            name: 新分类名（已去空白校验）.
+
+        Returns:
+            更新后的 WorldCategory；分类不存在返回 None.
+        """
+        ...
+
+    async def delete_category(self, category_id: uuid.UUID) -> bool:
+        """删除分类 + 反向清空条目 category（同一事务，spec §6.1 D2=A）.
+
+        Args:
+            category_id: 分类主键（领域 UUID）.
+
+        Returns:
+            是否删除成功（不存在返回 False）.
+        """
         ...

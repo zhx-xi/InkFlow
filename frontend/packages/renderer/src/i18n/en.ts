@@ -78,6 +78,10 @@ export const en: Record<string, string> = {
   'lib.tags.suggest': 'Suggestions',
   'lib.tags.add': '+ {tag}',
   'lib.worldCat.label': 'Category',
+  // #389: world category CRUD (create dialog + entry)
+  'lib.worldCat.add': 'New Category',
+  'lib.worldCat.name': 'Category name',
+  'lib.worldCat.nameEmpty': 'Category name is required',
   'lib.copy.title': 'Copy to Project',
   'lib.copy.scope': 'Copy scope',
   'lib.copy.scope.subtree': 'Self + all children',
