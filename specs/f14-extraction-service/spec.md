@@ -2,7 +2,7 @@
 
 > **Spec 版本**: 1.2 | **日期**: 2026-08-16 | **依据**: PRD v2.1 §6.2 P1-06, Constitution P1-P6, ADR-013/019
 > **Spec 变更**: v1.1 — 用户拍板 Q1=选项 A（STYLE 注册占位 + 调用 422，v1.0 已按此设计，仅标记确认——**本拍板已被 F16 兑现**：F16 ✅ 已注册 handler，§6.1/§12，占位表述随 F16 spec §8.2 第 10 项同步修订）/ Q2=选项 B（TIMELINE 新建「章节文本 → 时间线事件」LLM 提取管线 + `timeline_auto_extract` 设置项，默认 false）/ Q3=综合方案（保留源 sha256 增量 + F12 事件 `source_chapter_id` 章节联动）；v1.0 的「TIMELINE 委托 F12 确定性检查」改为设置项关闭时的兜底语义（跨模块 MODIFY F12，F13 改 F6 sources.py 先例）
-> **Spec 变更**: v1.2 — RAG 切片扩展（#277 切片可配置 + #278 智能切片）：三档切片策略模式（fixed/paragraph/dialogue/llm）+ 滑动重叠开关（默认关，Q4 ✅ 按建议）+ 检索元数据补强（章节 x/y + chunk 偏移 + 时间戳）+ 切片参数纳入 #276 指纹联动 + 对话/LLM 切片器（M4，降级段落）——§5.6.1-§5.6.7 扩展，跨模块 MODIFY F32 settings（app_settings 4 键），§7/§8/§9/§12/§13 同步
+> **Spec 变更**: v1.2 — RAG 切片扩展（#277 切片可配置 + #278 智能切片）：三档切片策略模式（fixed/paragraph/dialogue/llm）+ 滑动重叠开关（默认关，用户拍板按 docs 建议）+ 检索元数据补强（章节 x/y + chunk 偏移 + 时间戳）+ 切片参数纳入 #276 指纹联动 + 对话/LLM 切片器（M4，降级段落）——§5.6.1-§5.6.7 扩展，跨模块 MODIFY F32 settings（app_settings 4 键），§7/§8/§9/§12/§13 同步
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑**第六个**模块，估算 5.5-7.5 人天（Q2 时间线提取管线 +1.5 人天））
 > **关联 Issues**: [#44](https://github.com/zhx-xi/InkFlow/issues/44), [#277](https://github.com/zhx-xi/InkFlow/issues/277), [#278](https://github.com/zhx-xi/InkFlow/issues/278)
 > **依赖**: F1 ✅（项目校验 + `project.config.extra["timeline_auto_extract"]` 设置项，§2.6）；F2 ✅（章节读取，chapter_ids 模式 + chapter_chunk 索引源 + 事件 `source_chapter_id` 章节联动 FK）；F5 ✅（LLM）；F9 ✅ / F10 ✅ / F11 ✅ / F12 ✅（委托检查 + **跨模块 MODIFY F12 事件实体**，F13 改 F6 sources.py 先例）/ F13 ✅（委托管线）；F16 ✅（STYLE 类型依赖已交付——注册 StyleService.analyze handler，接口零变更，见 §6.1/§11）；ADR-013（RAG 首次落地：`VectorStoreProtocol` 已由 P0-11 定义，本模块实现基础设施层，**不重新定义协议**）；#276 ✅（RAG 向量指纹协议已合入——切片参数纳入指纹 §5.6.5 引用其 `ChunkingFingerprint`/`compare_fingerprints`/reindex 四步协议，**不重新定义**）
@@ -1096,11 +1096,11 @@ def chunk_text(
 - 段落边界贴合小说「空行分段」语义结构；超长段降级保证单块不超 chunk_size（embedding 质量与固定档一致）。
 - `chunk_size <= 0` → ValueError（与 FIXED 同契约）；`chunk_size` 越界（<100 或 >2000）由 app_settings 校验层 422（§5.6.3）。
 
-#### 5.6.3 滑动重叠开关（#277，默认关——Q4 ✅ 按建议）
+#### 5.6.3 滑动重叠开关（#277，默认关——用户拍板按 docs 建议）
 
 ```text
 全局设置（app_settings，§2 数据模型 + §8 跨模块 MODIFY F32 settings）:
-  rag_chunk_overlap       : bool  = False   # 重叠开关，默认关（Q4 ✅ 按建议）
+  rag_chunk_overlap       : bool  = False   # 重叠开关，默认关（用户拍板按 docs 建议）
   rag_chunk_overlap_ratio : float = 0.15    # 重叠比例，范围 [0.10, 0.20]
 ```
 
@@ -1121,7 +1121,7 @@ chapter_chunk 的 `metadata` 在现有 `{chapter_id, chapter_title, chunk_index}
 | `indexed_at` | str | 索引时间戳（ISO 8601，reindex 统一写入） |
 
 - `_map_retrieved` 延续 `.get()` fallback 约定（旧数据缺键不崩：`metadata.get("chapter_x")` 等，缺失回退现状展示，QA §P2-1）——**任何新代码禁止直接 `metadata["chapter_x"]` 下标访问**。
-- 章节 x/y 语义与卷信息表达见待澄清 Q1。
+- 章节 x/y 语义与卷信息表达见待澄清 Q4。
 
 #### 5.6.5 切片参数纳入指纹（#276 联动，不重定义协议）
 
@@ -1560,7 +1560,7 @@ CLI 测试: extract/vector 组（Mock ExtractionService）    ~20 cases
 | RAG 检索结果用于 F15 审计的跨模块一致性核对 | F15 审计服务（Phase 2） |
 | 增量提取定时任务 / daemon 自动提取 | F25 daemon（Phase 3）——MVP 手动触发（API/CLI） |
 | 项目级切片配置覆盖（每项目独立 mode/chunk_size/overlap） | Phase 2+——MVP 全局 app_settings（§5.6.3，需求文档 Q2.1 建议全局；小说类型差异支持项目级，需项目配置持久化 + API 扩展） |
-| CLI `vector reindex --chunk-mode/--chunk-size/--overlap` 显式覆盖 | 后置 P2（需求文档 §2.3 建议）——MVP 切片配置经 app_settings 持久化，reindex 不加覆盖参数（YAGNI，待澄清 Q3） |
+| CLI `vector reindex --chunk-mode/--chunk-size/--overlap` 显式覆盖 | 后置 P2（需求文档 §2.3 建议）——MVP 切片配置经 app_settings 持久化，reindex 不加覆盖参数（YAGNI，待澄清 Q6） |
 | 检索结果位置跳转（点击结果跳原文章节） | P2 前端增强——MVP 只展示位置文本（章节 x/y），§5.6.4 |
 | 对话切片真实样本收集与识别规则验证 | #278 M4 前置（QA §2.5 Q2.5）——落地前需真实对话体样本验证识别规则 |
 | LLM 档 token 成本预估弹窗（选 LLM 档时展示） | 后置 P2（docs §2.3）——MVP LLM 档仅降级 + 日志 |
@@ -1645,7 +1645,7 @@ F14 被依赖:
 | 事件-章节联动 source_chapter_id（v1.1） | F12 事件实体新增 `source_chapter_id`（UUID?，FK→chapters.id ON DELETE SET NULL，已索引）；事件合并匹配键 `(project_id, title, source_chapter_id)`；仓储新增 `list_by_chapter` | 用户拍板 Q3 综合方案要求「精确提取 + 事件和章节联动」；与 F13 的 `event_id` 锚点**同构**（跨模块引用先例：F13 引 F12 事件、F14 引 F2 章节——引用方模块负责校验，被引用方只加可空 FK + SET NULL 语义）；同章同名 = 同一事件（重提取更新）、跨章同名 = 不同事件（章节是事件实例的语境）；章节软删保留来源锚点、硬删 SET NULL（事件档案不因来源删除而丢失） |
 | 增量粒度综合（源 hash + 联动，v1.1） | 保留 v1.0 的**按源 sha256 hash** 增量（选项 A 核心）+ 事件-章节联动（重提取按 `source_chapter_id` 匹配更新）；实体级字段 diff 仍归 Phase 2+ | 用户拍板 Q3=综合方案（在 A 与 B 之间取交集：A 的精确内容指纹 + B 的实体来源追踪）；MVP 收益上限 = 「章节变更 → 该章事件精准更新」闭环（M10 手工实证）；字段级 diff 的跨章节实体追踪（F9 档案无来源章节字段）仍超出 MVP 范围（YAGNI） |
 | 切片策略模式（v1.2，#277/#278） | `ChunkingMode` 四值（fixed/paragraph/dialogue/llm）+ `chunk_text` 按 mode 分发，三档共享 `Chunk{text, start_offset}` 返回与块 id 规则 | 固定 500 字切片不符合小说语义结构（对话密集章节硬切语义单元）；策略模式为 #278 预留统一接口（§5.6.1）；三档成本递增（段落<对话<LLM，docs §2.1）；默认 fixed 保持存量行为与向量不变（零迁移） |
-| 重叠默认关（v1.2，Q4 ✅ 按建议） | `rag_chunk_overlap` 默认 False，范围 10%-20%；overlap>0 块 id 加 start_offset，检索按章节去重取最高分 | 保持存量行为不变、索引体积可控；开启后打破「拼接还原原文」不变式 → 弱不变式「每字符至少被一块覆盖」（QA §4.1-A4）；去重杜绝相邻重复块刷屏（QA §P1-1） |
+| 重叠默认关（v1.2，用户拍板按 docs 建议） | `rag_chunk_overlap` 默认 False，范围 10%-20%；overlap>0 块 id 加 start_offset，检索按章节去重取最高分 | 保持存量行为不变、索引体积可控；开启后打破「拼接还原原文」不变式 → 弱不变式「每字符至少被一块覆盖」（QA §4.1-A4）；去重杜绝相邻重复块刷屏（QA §P1-1） |
 | 切片参数纳入指纹（v1.2，#276 联动） | reindex 装配从 app_settings 读切片配置 → `build_fingerprint(chunking=...)` 写入；chunker_version 手动 bump 管控 LLM 非确定漂移 | 复用 #276 已实现协议（不重定义）；切片变更 → chunking_changed → stale → 提示重建（QA §P1-1 幽灵块根治） |
 | 对话/LLM 切片降级段落（v1.2，#278 M4） | 对话无对话文本 / LLM analyzer 失败 → 降级段落切片 + warning，reindex 不中断；LLM 复用 _content_hash sha256 增量 | 失败不中断 reindex（QA §4.1-A3）；sha256 增量控制 LLM 档成本（QA §P2-2）；降级保证任何文本都有可用切片 |
 
