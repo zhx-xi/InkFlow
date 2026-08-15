@@ -140,6 +140,21 @@ async function presetWorldNodes(
   return ids;
 }
 
+/** #389 预置：世界观分类实体（POST /world-categories；chips 来源 = world_categories 表） */
+async function presetWorldCategories(
+  kernel: KernelInfo,
+  pid: string,
+  names: string[],
+): Promise<void> {
+  for (const name of names) {
+    const res = await kernelFetch(kernel, `/api/v1/projects/${pid}/world-categories`, {
+      method: 'POST',
+      body: { name },
+    });
+    expect(res.status).toBe(201);
+  }
+}
+
 /** F43 P3 预置：大纲节点（parent 用名称引用）；返回 name → id */
 async function presetOutlineNodes(
   kernel: KernelInfo,
@@ -184,12 +199,9 @@ async function presetTimelineEvent(
   return ((await res.json()) as { id: string }).id;
 }
 
-/** F43 P1：世界观 tab 默认进入地图工作台（P2），点面包屑「设定库」退出 → 普通 P1 树视图 */
+/** #389：世界观 tab 停列表页（分类 chips + 树 + 复制）；「地图视图」按钮才是进工作台唯一入口 */
 async function openWorldTabPlain(window: Page): Promise<void> {
   await window.getByRole('tab', { name: '世界观' }).click();
-  await expect(window.getByTestId('map-workbench')).toBeVisible({ timeout: 15_000 });
-  await window.getByTestId('map-bc-lib').click();
-  await expect(window.getByTestId('map-workbench')).toHaveCount(0);
   await expect(window.getByTestId('library-list')).toBeVisible({ timeout: 15_000 });
 }
 
@@ -361,9 +373,11 @@ test('设定库：世界观分类筛选 toggle（E2E-A4）——点 chip 仅显�
     const name = `E2E-世界筛选-${Date.now()}`;
     await createProjectViaUi(window, name);
     const pid = await findProjectId(kernel, name);
+    // #389：先建分类实体（chips 来源 = world_categories），再建条目（category 匹配分类实体）
+    await presetWorldCategories(kernel, pid, ['势力', '组织', '门派']);
     await presetWorldNodes(kernel, pid, [
-      { name: '九州', category: '地图' },
-      { name: '中州', category: '地图', parent: '九州' },
+      { name: '九州', category: '势力' },
+      { name: '中州', category: '势力', parent: '九州' },
       { name: '宗门', category: '组织' },
       { name: '昆仑派', category: '门派' },
     ]);
@@ -371,28 +385,25 @@ test('设定库：世界观分类筛选 toggle（E2E-A4）——点 chip 仅显�
     await gotoNav(window, '设定库');
     await expect(window.getByTestId('library-page')).toBeVisible({ timeout: 15_000 });
     await openWorldTabPlain(window);
-    // chips：默认仅「地图」（#352）+ 数据自定义「组织」「门派」自动进；无「全部」（D-10）
-    for (const cat of ['地图', '组织', '门派']) {
+    // #389：chips = 分类实体（无「地图」——地图归地图工作台）
+    for (const cat of ['势力', '组织', '门派']) {
       await expect(window.getByTestId(`world-cat-filter-${cat}`)).toBeVisible();
     }
-    // #352：势力/功法/秘境 不再默认预置（题材分类由用户/agent 自行创建）
-    await expect(window.getByTestId('world-cat-filter-势力')).toHaveCount(0);
-    await expect(window.getByTestId('world-cat-filter-功法')).toHaveCount(0);
-    await expect(window.getByTestId('world-cat-filter-秘境')).toHaveCount(0);
+    await expect(window.getByTestId('world-cat-filter-地图')).toHaveCount(0);
     await expect(window.getByTestId('world-cat-filter-全部')).toHaveCount(0);
     // 默认展示所有顶层
     await expect(window.getByTestId('library-list')).toContainText('宗门');
     await expect(window.getByTestId('library-list')).toContainText('昆仑派');
-    // 点「地图」→ 仅该分类顶层（含子树）显示，其余隐藏
-    await window.getByTestId('world-cat-filter-地图').click();
-    await expect(window.getByTestId('world-cat-filter-地图')).toHaveAttribute('aria-pressed', 'true');
+    // 点「势力」→ 仅该分类顶层（含子树）显示，其余隐藏
+    await window.getByTestId('world-cat-filter-势力').click();
+    await expect(window.getByTestId('world-cat-filter-势力')).toHaveAttribute('aria-pressed', 'true');
     await expect(window.getByTestId('library-list')).toContainText('九州');
     await expect(window.getByTestId('library-list')).toContainText('中州');
     await expect(window.getByTestId('library-list')).not.toContainText('宗门');
     await expect(window.getByTestId('library-list')).not.toContainText('昆仑派');
     // 再点同 chip → 取消筛选全部恢复
-    await window.getByTestId('world-cat-filter-地图').click();
-    await expect(window.getByTestId('world-cat-filter-地图')).toHaveAttribute('aria-pressed', 'false');
+    await window.getByTestId('world-cat-filter-势力').click();
+    await expect(window.getByTestId('world-cat-filter-势力')).toHaveAttribute('aria-pressed', 'false');
     await expect(window.getByTestId('library-list')).toContainText('宗门', { timeout: 15_000 });
     await expect(window.getByTestId('library-list')).toContainText('昆仑派');
   } finally {

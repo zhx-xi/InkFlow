@@ -791,3 +791,13 @@ class TestWorldCategoryRepository:
         fetched_entry = await repo.get(entry.id.int)
         assert fetched_entry is not None
         assert fetched_entry.category == ""
+
+    async def test_rename_category_not_found_returns_none(self, db_session, project):
+        """重命名不存在的分类 → None（覆盖率：不存在分支）."""
+        repo = SQLiteWorldRepository(db_session)
+        assert await repo.rename_category(999999, "宗门") is None
+
+    async def test_delete_category_not_found_returns_false(self, db_session, project):
+        """删除不存在的分类 → False（覆盖率：不存在分支）."""
+        repo = SQLiteWorldRepository(db_session)
+        assert await repo.delete_category(999999) is False

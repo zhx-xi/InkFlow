@@ -501,11 +501,13 @@ async function presetMapWithPin(
   return { pid, rootLocationId, mapId, mapName };
 }
 
-/** F43 P2 进入地图工作台：设定库 → 世界观 tab → 点击地图节点徽标（world-map-badge-<rootLocationId>）→ 画布出现 */
+/** F43 P2 进入地图工作台：设定库 → 世界观 tab（#389 停列表页）→ 点「地图视图」按钮 → 点地图节点徽标 → 画布出现 */
 async function openMapWorkbench(window: Page, rootLocationId: string): Promise<void> {
   await gotoNav(window, '设定库');
   await expect(window.getByTestId('library-page')).toBeVisible({ timeout: 15_000 });
   await window.getByRole('tab', { name: '世界观' }).click();
+  await expect(window.getByTestId('library-list')).toBeVisible({ timeout: 15_000 });
+  await window.getByTestId('map-view-entry').click();
   const badge = window.getByTestId(`world-map-badge-${rootLocationId}`);
   await expect(badge).toBeVisible({ timeout: 15_000 });
   await badge.click();
