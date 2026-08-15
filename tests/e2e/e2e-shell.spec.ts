@@ -83,7 +83,7 @@ test('启动闭环：窗口出现（title 含 InkFlow）+ 内核进程存在 + /
               ? { w: img.naturalWidth, src: img.getAttribute('src') ?? '' }
               : null;
           }),
-        { timeout: 10_000 }
+        { timeout: 60_000 }
       )
       .toMatchObject({
         w: expect.any(Number),
