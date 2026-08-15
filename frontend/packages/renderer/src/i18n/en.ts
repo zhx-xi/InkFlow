@@ -23,6 +23,9 @@ export const en: Record<string, string> = {
   'sb.model': 'Model',
   'sb.words': 'Words',
   'sb.autosave': 'Autosaved',
+  // Boot gate (#384)
+  'gate.booting': 'Starting kernel…',
+  'gate.failed': 'Kernel connection failed',
   'lib.title': 'Library',
   'lib.projectSelect': 'Current project',
   'lib.empty.noProject': 'Select or create a project to start building settings',
