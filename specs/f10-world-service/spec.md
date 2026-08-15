@@ -1,11 +1,13 @@
 # F10: 世界观管理 (world_service) — 功能规格
 
-> **Spec 版本**: 1.1 | **日期**: 2026-08-13 | **依据**: PRD v2.1 §6.2 P1-02, Constitution P1-P6, ADR-019, ADR-027
-> **所属阶段**: Phase 2 — 创作工具链（0.8.0 里程碑，删除语义统一 issue #211，估算 5-8 人天）
-> **关联 Issues**: [#40](https://github.com/zhx-xi/InkFlow/issues/40)（v1.0 本体）、[#211](https://github.com/zhx-xi/InkFlow/issues/211)（v1.1 删除语义统一）
+> **Spec 版本**: 1.2 | **日期**: 2026-08-16 | **依据**: PRD v2.1 §6.2 P1-02, Constitution P1-P6, ADR-019, ADR-027
+> **所属阶段**: 0.9.0 里程碑（世界观分类 CRUD，issue #389，估算 2-4 人天）
+> **关联 Issues**: [#40](https://github.com/zhx-xi/InkFlow/issues/40)（v1.0 本体）、[#211](https://github.com/zhx-xi/InkFlow/issues/211)（v1.1 删除语义统一）、[#389](https://github.com/zhx-xi/InkFlow/issues/389)（v1.2 分类实体 CRUD）
 > **依赖**: F1 ✅, F5 ✅（前置）；F6 ✅（数据源集成点）；F9/F11/F12/F13 ✅（跨模块统一，§8.2）；F14/F15 ✅（连锁适配，§8.2）
 > **参考 ADR**: [ADR-027](../../adr/ADR-027.md)（覆盖率门禁）
-> **状态**: ✅ 已实现（PR #57 v1.0 + #312 v1.1 删除语义统一，2026-08-13）
+> **状态**: ✅ 已实现 v1.0（PR #57）+ v1.1（PR #312）；🔨 v1.2 实施中（#389）
+
+> **Spec 变更（v1.1 → v1.2，2026-08-16，issue #389）**: 世界观分类从「条目平铺属性」升级为「独立受控词表实体」（反转 v1.0 §2.2「不建独立分组表」决策）。① 新增 `world_categories` 表 + `WorldCategory` 领域实体（§2.2/§2.6）；② 新增分类 CRUD 四端点（§3.1，10→14 端点）；③ 分类重命名/删除反向同步条目 `category` 字符串——删除置空、重命名改名（§6.1/§7，拍板 D2=A）；④ 前端分类 chips 来源改为分类实体（移除 `DEFAULT_WORLD_CATS=['地图']` 硬编码），世界观 tab 导航修正（进分类列表视图非地图工作台）+「地图视图」独立入口（§14）；⑤ 镜像 F9 CharacterGroup 模式（§12）。
 
 > **Spec 变更（v1.0 → v1.1，2026-08-13，issue #211）**: 删除语义统一——普通实体软删→真删。① WorldSetting 移除 `is_deleted` 字段（§2.1/§2.5）；② partial unique → 全唯一索引（§2.4）；③ DELETE 默认真删（移除 `force` 软删路径），restore 端点/命令移除（§3/§4）；④ 提取合并移除「软删同名→新建+warning」分支（§5.4）；⑤ 跨模块 F9/F11/F12/F13/F14/F15 同步适配（§8.2 全量 MODIFY 清单）；⑥ `is_deleted` 列移除 + 存量软删数据迁移（§8.3）。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**（§10）。
 
@@ -65,16 +67,18 @@ F9 spec 已明示「F10 实施时直接对照 F9 §5 与对应文件结构，不
 - 类别**层级树**（category 父子关系）不在 F10 范围（§10）
 - 条目间**不建立外键关联**：独立 `WorldRelation` 表属 Phase 2+（决策理由见 §2.3 与 §12）
 
-### 2.2 分类设计决策（不建独立分组表）
+### 2.2 分类设计决策（v1.2 反转：建独立分类表）
 
-对标 F9 `CharacterGroup` 的「分组实体」位置，F10 评估后**不引入 WorldCategory/WorldGroup 表**，用 `category` 字段承载：
+> **v1.2 变更（2026-08-16，issue #389，用户拍板 Q1=B）**：反转 v1.0「不建独立分组表」决策——分类升级为独立受控词表实体 `WorldCategory`。触发 = GUI 世界观页需要「新建分类」CRUD + 分类数据独立于地图（#389），v1.0「类别表只有在需要类别 CRUD 时才值得」的条件已满足（Phase 2+ 演进提前落地）。
 
-| 考量 | 结论 |
-|------|------|
-| PRD 语义 | P1-02 仅要求「层级设定（规则/设定/约束）」——是条目的**类别属性**，不是「条目归入分组」的容器关系 |
-| 独立表的价值 | 类别表只有在需要「类别描述/排序/成员数统计/类别 CRUD」时才值得；MVP 均不需要 |
-| LLM 提取兼容 | 类别作为字段可随条目一并提取/合并；独立表则需要「提取→建类别→挂条目」三步编排 |
-| 代价 | 若 Phase 2+ 需要类别管理，从字段迁移到表是低成本演进（category 已是规范化文本） |
+| 考量 | v1.0 结论 | v1.2 结论 |
+|------|----------|----------|
+| PRD 语义 | 条目的类别属性，非容器关系 | **不变**：条目 `category` 字段保留（字符串快照），分类实体是「受控词表」而非「分组容器」 |
+| 独立表的价值 | 仅类别 CRUD 时才值得 | **需要**：GUI「新建分类」+ 重命名/删除 + 分类独立于地图（#389） |
+| LLM 提取兼容 | 字段可随条目一并提取 | **不变**：条目 `category` 仍为自由文本快照，提取不受影响 |
+| 代价 | 字段→表低成本演进 | **落地**：新增 `world_categories` 表 + CRUD；条目表不改（零存量迁移） |
+
+**受控词表语义（D1=B1）**：`WorldCategory` 是「预置分类词表」；条目 `category` 是「字符串快照」（创建/编辑条目时自由输入，不强制外键）。前端分类 chips 来源 = 分类实体列表；分类重命名/删除反向同步条目 `category`（§6.1）。**「地图」不是世界观分类**（地图归地图工作台 #378），不进入分类实体、不渲染为 chip。
 
 > 「层级」一词在此解读为**条目的类型维度**（规则/设定/约束等），不是数据结构上的树/继承。真正的层级树归 Phase 2+（§10）。
 
@@ -191,7 +195,35 @@ class WorldUpdate(BaseModel):
     parent_id: uuid.UUID | None = None  # ← F35
 ```
 
-### 2.6 提取相关模型（§5 详述）
+### 2.6 WorldCategory（世界观分类，v1.2 新增）
+
+镜像 F9 `CharacterGroup`（§12）：分类是**受控词表实体**，条目 `category` 是字符串快照（D1=B1）。
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | UUID | PK | 领域层 UUID，DB int 自增映射 |
+| project_id | UUID | NOT NULL, FK→projects.id (CASCADE), 已索引 | 所属项目 |
+| name | str | NOT NULL, 1-50 字符, 去空白 | 分类名；**项目内唯一**（`(project_id, name)` 全唯一索引） |
+| created_at | datetime | NOT NULL, AUTO | 创建时间 (UTC) |
+| updated_at | datetime | NOT NULL, AUTO | 更新时间 (UTC) |
+
+**业务规则**：
+- `name` 项目内唯一 = 同名分类冲突 422「同名世界观分类已存在」
+- 分类实体**不存条目计数**（count 由 `GET` 时实时聚合条目 `category` 匹配数，同 v1.0 `list_categories` 语义）
+- **反向同步（D2=A，§6.1）**：重命名分类 → 同名字符串条目 `category` 改新名；删除分类 → 同名字符串条目 `category` 置空（条目变「未分类」）
+
+```python
+class WorldCategory(BaseModel):
+    """世界观分类领域实体 — 对应 world_categories 表（受控词表，v1.2）。"""
+    model_config = {"from_attributes": True}
+    id: uuid.UUID
+    project_id: uuid.UUID
+    name: str
+    created_at: datetime
+    updated_at: datetime
+```
+
+### 2.7 提取相关模型（§5 详述）
 
 ```python
 class ExtractedWorldSetting(BaseModel):
@@ -222,13 +254,17 @@ class WorldExtractionResult(BaseModel):
 
 端点风格沿用 F2/F9：**创建/列表/类别汇总嵌套于项目路径**，**详情/更新/删除扁平**。错误响应格式沿用 F1/F2/F9（`{"detail": "..."}` 404 / 422）。
 
-### 3.1 端点总览（10 个；v1.1 移除 restore，DELETE 真删）
+### 3.1 端点总览（14 个；v1.1 移除 restore，DELETE 真删；v1.2 新增分类 CRUD 四端点）
 
 | 方法 | 路径 | 用途 | 请求体/参数 | 响应 |
 |------|------|------|--------|------|
 | POST | `/api/v1/projects/{project_id}/world-settings` | 创建条目 | `WorldCreate` | 201 + WorldSetting |
 | GET | `/api/v1/projects/{project_id}/world-settings` | 条目列表 | Query: `?search=&category=&parent_id=&sort_by=&sort_desc=&offset=&limit=` | 200 + `{items, total, offset, limit}` |
 | GET | `/api/v1/projects/{project_id}/world-settings/categories` | 类别汇总（含条目数） | — | 200 + `{items, total}` |
+| POST | `/api/v1/projects/{project_id}/world-categories` | 创建分类（v1.2） | `WorldCategoryCreate` | 201 + WorldCategory |
+| GET | `/api/v1/projects/{project_id}/world-categories` | 分类列表（含条目数）（v1.2） | — | 200 + `{items, total}` |
+| PATCH | `/api/v1/world-categories/{category_id}` | 重命名分类（v1.2，反向同步条目） | `WorldCategoryUpdate` | 200 + WorldCategory |
+| DELETE | `/api/v1/world-categories/{category_id}` | 删除分类（v1.2，反向清空条目 category） | — | 204 |
 | POST | `/api/v1/projects/{target_project_id}/world-settings/copy` | 跨书复制世界观（F35） | `WorldCopyRequest` | 200 + result |
 | GET | `/api/v1/world-settings/{setting_id}` | 条目详情 | — | 200 + WorldSetting JSON |
 | GET | `/api/v1/world-settings/{setting_id}/ancestors` | 祖先链（F35） | — | 200 + `{items, total}` |
@@ -459,11 +495,13 @@ variables:
 
 （对应 F9 §6「关系图谱与分组管理规则」的位置；F10 无图谱/分组，本节承载分类语义与查询规则）
 
-### 6.1 分类语义
+### 6.1 分类语义（v1.2 更新：受控词表落地）
 
-- `category` 是条目的**平铺属性**（一对一），不是独立实体（§2.2 决策）
-- **建议值清单**（设定/规则/约束/组织/地理/种族/文化/科技/魔法体系）仅用于 LLM 模板引导与 CLI/UI 提示，**不做枚举校验**（受控词表归 F14）
-- **空类别 = 未分类**，允许；`GET /world-settings/categories` 不包含未分类条目
+- `category` 是条目的**平铺属性**（一对一），字符串快照；`WorldCategory` 是**受控词表实体**（§2.2/§2.6，v1.2 反转）
+- **建议值清单**（设定/规则/约束/组织/地理/种族/文化/科技/魔法体系）仅用于 LLM 模板引导与 CLI/UI 提示，**不做枚举校验**——条目 `category` 仍为自由文本，不强制外键（D1=B1）
+- **空类别 = 未分类**，允许；`GET /world-settings/categories` 与 `GET /world-categories` 均不包含未分类条目
+- **反向同步（D2=A）**：分类重命名 → 同名字符串条目 `category` 改新名；分类删除 → 同名字符串条目 `category` 置空。条目 `category` 与分类实体名保持一致（在实体存在时）
+- **「地图」非世界观分类**：地图归地图工作台（#378），分类实体不建「地图」，前端 chips 不渲染「地图」
 - 类别**层级树**不在 F10 范围（§10）
 - 规则/约束类条目在 F6 上下文注入中的优先级排序归 F6 集成（§11）
 
@@ -508,7 +546,13 @@ variables:
 | 条目列表搜索/类别过滤无结果 | 200: `{"items": [], "total": 0}` |
 | 分页越界 | 200: 空 items（同 F1） |
 | 类别汇总无条目 | 200: `{"items": [], "total": 0}` |
-| 项目删除 | 条目级联物理删除（FK CASCADE） |
+| 创建分类名为空/全空白（v1.2） | 422: "分类名不能为空" |
+| 创建分类名 > 50 字符（v1.2） | 422: "分类名不能超过 50 个字符" |
+| 创建/重命名分类与项目内同名分类重复（v1.2） | 422: "同名世界观分类已存在" |
+| 重命名分类成功（v1.2） | 同名字符串条目 category 改新名 + 200 WorldCategory |
+| 删除分类成功（v1.2） | 同名字符串条目 category 置空 + 204（D2=A） |
+| 获取/重命名/删除不存在的分类（v1.2） | 404: "世界观分类不存在" |
+| 项目删除 | 分类级联物理删除（FK CASCADE）+ 条目级联物理删除 |
 | `--text` 与 `--text-file` 同时传入 | CLI 退出码 2 |
 | 提取合并幂等性 | 同文本二次提取 → created/updated 为空 |
 
@@ -806,6 +850,8 @@ F10 被依赖（v1.1 删除语义变更的下游）:
 | 合并策略 | 非空字段覆盖；移除「软删同名 → 新建 + warning」分支 | 真删后不存在软删档案，分支无意义 |
 | 树级删除语义 | cascade/reparent 保留；force 软删路径移除 | F35 树形结构仍需要级联真删/改挂；软删/硬删切换（force）真删后无意义 |
 | 分类建模 / 条目关联 / 提取重试 / 温度 / 模板 / 端点布局 | 沿用 v1.0 决策 | 删除语义变更不影响这些决策 |
+| 分类建模反转（v1.2） | **条目平铺属性 → 独立受控词表实体 `WorldCategory`**（D1=B1） | #389 GUI 需「新建分类」CRUD + 分类独立于地图；反转 §2.2 v1.0「不建表」决策；条目 `category` 保留字符串快照，零存量迁移 |
+| 分类反向同步（v1.2） | **重命名改名 / 删除置空**（D2=A） | 受控词表一致性：条目 `category` 与分类实体名保持同步；删除后条目变「未分类」 |
 
 ---
 
@@ -823,6 +869,11 @@ F10 被依赖（v1.1 删除语义变更的下游）:
 | M8 | 覆盖率门禁（ADR-027 98.5/95.0） | coverage.xml 对照 |
 | M9 | PR 合入 + CI 全绿 | statusCheckRollup 对照 |
 | M10 | issue #211 关闭；worktree 清理 | issue closed |
+| M11 | 分类 CRUD 四端点 RED 全 FAIL 有实证（v1.2） | 后端测试输出存档，批全 FAIL |
+| M12 | 分类 CRUD 后端测试全绿（v1.2） | pytest 定向全绿 |
+| M13 | 分类反向同步生效（重命名改名 / 删除置空，v1.2） | 定向测试 + 手工验证 |
+| M14 | 前端导航 + 分类 chips + 地图视图按钮（v1.2） | vitest 全绿 + 三契约正确 |
+| M15 | issue #389 关闭；worktree 清理（v1.2） | issue closed |
 
 ---
 
