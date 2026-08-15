@@ -655,4 +655,36 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
     expect(screen.queryByTestId('world-cat-filter-地图')).not.toBeInTheDocument();
     expect(screen.queryByTestId('world-copy-all')).not.toBeInTheDocument();
   });
+
+  it('#377: 创建根图成功后自动选中新图（右侧渲染画布 + 面包屑=新图名）+ 树含新节点', async () => {
+    // POST 返回新根图（root_location_id=null / parent_map_id=null，无条目挂靠点）
+    const createdMap: Record<string, unknown> = {
+      ...mapM1, id: 'm9', name: '新舆图', root_location_id: null, parent_map_id: null,
+    };
+    // 先装工作台默认 mock，再覆盖 POST maps（mockImplementation 整体替换，顺序不可反）
+    mockMapWorkbench(worldTree, []);
+    const baseImpl = apiFetchMock.getMockImplementation();
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+      if (path === '/api/v1/projects/p1/maps' && init?.method === 'POST') {
+        return createdMap;
+      }
+      return baseImpl!(path, init);
+    });
+    renderLibrary();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('map-workbench');
+    // 创建根图（空地图列表 → 无既有选中）
+    await user.click(screen.getByTestId('map-create-root'));
+    const nameInput = await screen.findByTestId('map-create-name');
+    await user.type(nameInput, '新舆图');
+    await user.click(screen.getByTestId('map-create-save'));
+    // ① 自动选中：右侧渲染新图画布 + 面包屑当前层 = 新图名（activeMapId 已更新）
+    await waitFor(() => {
+      expect(screen.getByTestId('map-bc-current')).toHaveTextContent('新舆图');
+    });
+    expect(screen.getByTestId('map-canvas')).toBeInTheDocument();
+    // ② 树含新节点：无 root_location_id 的根图作为树顶层节点渲染（可点击选中）
+    expect(screen.getByTestId('world-map-badge-m9')).toBeInTheDocument();
+  });
 });
