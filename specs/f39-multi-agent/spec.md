@@ -1,6 +1,6 @@
 # F39: 多 Agent 能力（multi-agent）功能规格
 
-**Spec 版本**: 1.0
+**Spec 版本**: 1.1
 **日期**: 2026-08-16
 **依据**: 多 Agent 能力分析文档（`design/multi-agent-capability-analysis-2026-08-12.md`，已合入主仓）+ Issue #258（F39 后端核心）/ #259（F40 skill 上传绑定）/ #260（F41 自定义 Agent 编辑）+ 0.9.0 路线图拍板 Q1（`design/inkflow-0-9-0-roadmap-2026-08-15.md`：三 issue 合并一份 spec）
 **所属阶段**: 0.9.0（多 Agent 能力一期），估算 10-15 人天（F39 后端 5-7 + F40 前端 2-3 + F41 前端 3-5，F40/F41 依赖 F39 可并行）
@@ -8,6 +8,8 @@
 **依赖**: ✅ F26 工具注册表（已交付）· ✅ F27 agentic writer（已交付）· ✅ F19 AgentTemplate 实体模式（已交付）· ✅ #327 SQLite foreign_keys=ON（生产级联生效）
 **参考 ADR**: [ADR-015](../../adr/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/ADR-019.md)（编号口径）· [adr/ADR-035.md](../../adr/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5）· [ADR-022](../../adr/ADR-022.md)（skills 包分发型，与本 spec Skill 实体不同域，见 §1.3）
 **状态**: 待实现 🔲
+
+> **Spec 变更**（v1.0 → v1.1，2026-08-16，用户拍板 Q0=A / Q1=A）：① **Q0 定稿**「Agent/Skill 全局定义（应用级）+ 项目引用」——§2 实体无 project_id 字段，项目引用经 project config 留阶段 2 落地；② **Q1 定稿**「本期与 AgentTemplate 解耦」——本期无 AgentTemplate MODIFY，Agent 暂无运行时消费（能力以单元测试验证），roles 扩展为 Agent 引用留二期。§6 组织规则标注已拍板、§12 新增 D9/D10、待澄清 Q0/Q1 标记 ✅ 已确认（选项 A）。
 
 > **模块类型声明**: 本模块为「**能力白名单强制型**」变体——新建 Agent/Skill 两张实体表（全局应用级）+ 工具目录分组扩展 + 装配点白名单过滤改造 + 前端上传/编辑两套 UI。编号依据：AGENTS.md 模块类型谱系口径下，F39 为 Agent 化升级链（F26 集成层 → F27 闭环 → F28 记忆 → **F39 多 Agent 能力** → F29 Supervisor）的能力差异化模块。核心不变式：**多 Agent 行为差异化 = 工具 + skill 白名单的确定性强制，而非 system prompt 概率性请求**（分析文档 §0）。
 
@@ -332,8 +334,8 @@ def build_agentic_writer(
 
 ## 6. 组织规则
 
-- **全局定义 + 项目引用（Q0 推荐：是）**：Agent/Skill 是**全局应用级**实体（跨项目复用——「我的润色 Agent」不该每项目重建）；skill 是「方法论」而非「项目数据」，与「设定库随项目走」（角色/世界观=项目数据）不同层不冲突。项目差异通过阶段 2 的项目配置选择 Agent 实现（本 spec 不落地 project config 字段）。
-- **与 AgentTemplate 解耦（Q1 推荐：是）**：Agent 管「能力边界」（白名单），AgentTemplate 管「模型/温度」（F19 引用式）——两个正交维度；本期独立，二期 AgentTemplate.roles 扩展为任意 Agent 引用（模型/温度覆盖保留）时打通。
+- **全局定义 + 项目引用（Q0 已拍板 A）**：Agent/Skill 是**全局应用级**实体（跨项目复用——「我的润色 Agent」不该每项目重建）；skill 是「方法论」而非「项目数据」，与「设定库随项目走」（角色/世界观=项目数据）不同层不冲突。项目差异通过阶段 2 的项目配置选择 Agent 实现（本 spec 不落地 project config 字段）。
+- **与 AgentTemplate 解耦（Q1 已拍板 A）**：Agent 管「能力边界」（白名单），AgentTemplate 管「模型/温度」（F19 引用式）——两个正交维度；本期独立，二期 AgentTemplate.roles 扩展为任意 Agent 引用（模型/温度覆盖保留）时打通。
 - **白名单确定性强制**：任何 Agent 运行，工具与 skill 均按 `tool_ids`/`skill_ids` 白名单过滤后交付 LLM——白名单外对 LLM 不可见（确定性，非概率）。
 - **内置只读**：出厂 Agent/Skill 只读（409），用户只能「复制后改」或「新建自定义」；内置清单 = 产品资产，禁止运行时增删改。
 - **能力引用唯一真源**：工具以 `ToolSpec.name` 为唯一标识、skill 以 `Skill.id` 为唯一标识；下线工具在编辑页置灰提示（不硬删，避免存量 Agent 白名单悬空）。
@@ -490,6 +492,8 @@ def build_agentic_writer(
 | D6 | 装配能力 vs 消费接线 | 阶段 1 只交付能力（单元测试验证），不接运行时消费 | 分析文档 §6 演进路径分阶段；避免阶段 1 大改 F27 路径与双配置源 |
 | D7 | 内置只读 | builtin/source 字段 + service 409 | 镜像 AgentTemplate is_default 保护；内置清单 = 产品资产 |
 | D8 | Skill 存储形态 | SQLite 表（非 F19-skills 文件系统） | 本 spec Skill 是内部白名单实体（拼 system prompt 需 DB 查询 + 反查），与 F19-skills 分发型文件系统不同域 |
+| D9 | Agent/Skill 归属 | 全局定义（应用级）+ 项目引用（阶段 2 经 project config 落地） | Q0 拍板 A：方法论跨项目复用、与「设定库随项目走」分层不冲突；§2 实体无 project_id。否决：项目级定义（每项目重建，改动面大） |
+| D10 | 与 AgentTemplate 关系 | 本期解耦，二期 roles 扩展为 Agent 引用 | Q1 拍板 A：避免一次大改双配置源。否决：本期打通（+3-5 人天改造模板 + 管线，F42 已证执行层复杂度） |
 
 ---
 
@@ -531,7 +535,7 @@ def build_agentic_writer(
 
 ## 待澄清问题（≤3，留给用户拍板）
 
-### Q0：Agent/Skill 是否全局定义 + 项目引用？
+### Q0：Agent/Skill 是否全局定义 + 项目引用？　✅ 已确认（用户拍板：选项 A，2026-08-16）
 
 **用途**：决定 Agent/Skill 实体的归属粒度——是「应用级全局」（跨项目复用，「我的润色师」不每项目重建）还是「项目级」（每项目独立配置）。影响数据模型的 scope 字段与阶段 2 的项目引用设计。
 
@@ -542,7 +546,7 @@ def build_agentic_writer(
 
 **建议**：A。分析文档 §5.1 与 §6 演进路径均按全局定义设计；「设定库随项目走」是已拍板先例，但 skill=方法论、角色/世界观=项目数据，分层不冲突。**影响**：A 方案 §2 实体无 project_id 字段、阶段 2 项目引用走 config；B 方案需加 project_id 列 + 全部 CRUD 挂项目上下文，改动面大。
 
-### Q1：本期是否与 AgentTemplate 解耦？
+### Q1：本期是否与 AgentTemplate 解耦？　✅ 已确认（用户拍板：选项 A，2026-08-16）
 
 **用途**：决定本期是否改造 AgentTemplate（roles 四角色 → 任意 Agent 引用）。影响 F39-F41 的边界与阶段 2 排期。
 
@@ -555,4 +559,4 @@ def build_agentic_writer(
 
 ---
 
-> **Spec 变更记录**：v1.0 初稿（2026-08-16），待 Q0/Q1 拍板后修订。
+> **Spec 变更记录**：v1.0 初稿（2026-08-16）→ v1.1（2026-08-16，Q0=A / Q1=A 拍板定稿，留痕见头部 Spec 变更行 + §12 D9/D10）。
