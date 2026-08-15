@@ -4,6 +4,37 @@
 
 > 版本口径以 [ADR-019 v5](adr/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
 
+## [0.8.0] - 2026-08-15
+
+### 新增
+- **F19 Skills 包（#70，PR #304）**：官方轨 `skills/inkflow/`（GitHub 分发，frontmatter 五字段 + 26 文件）随 CLI zip/便携包携带（#342）；用户自定义轨 `inkflow skills install/list/verify/remove`（纯本地文件操作，ADR-022 双轨）
+- **F29 Supervisor 自主编排 + HITL（#161，PR #323）**：动态路由 Command(goto) + 振荡护栏 + deterministic 回退 + 人工确认流（#343 后续 GUI 落地）
+- **F42 编排完全体**：Agent 链模型选择（#268）/ 执行顺序 agent_order 配置驱动（#269）/ 自定义 Agent 数据面 RoleTemplate（#295）/ 自定义角色 UI（#296）/ 默认管线模板 write_auto + write_continue（#297）/ GUI 写作页管线化（#298）
+- **CLI 命令面补齐（#251）**：provider 管理 `llm provider` 组 + 模型注册/测试 + Agent 模板管理组 + `project update --config` + volume/outline/map/summary/context assemble（P1 #300 / P2 #303 / P3 #317）
+- **RAG embedding 一致性（#276）**：向量指纹 + stale 检测 + 重新向量化四步协议（status → 改模型 → reindex → fresh）
+- **设定库 GUI 升级（#284）**：CRUD 闭环 + 角色等级标签 + 世界观地图工作台 + 大纲三级 + 时间线双序
+- **删除语义统一（#211）**：普通实体软删→真删（仅 F24 会话保留归档语义）
+- **地图工作台目录树（#378）**：左侧目录树风格 + 拖拽移动调整 parent_map_id 层级（#385 修复落库）
+- **世界观默认分类（#352）**：仅「地图」，其余按项目由用户/agent 创建
+
+### 修复
+- 覆盖门禁漂移 + 测试文件规模治理（#273/#281/#307）
+- project 硬删不级联清理孤儿数据（#327）
+- reindex 空 prompt / embedding 维度探测（#328）
+- summary get/refresh 硬编码 openai/gpt-4o（#329）
+- 本地 BGE fallback 未打包 + retrieve 裸 500（#330/#341）
+- skills 随安装包分发通道落地（#342）
+- write_auto architect 重试耗尽真实 LLM 链路（#344）
+- 写作页跨项目 content 不刷新（#345）/ 地图缺创建根图按钮（#346）/ Agent 链保存失败（#347）/ 设置页模型不一致（#348）/ 模板默认字数弹窗（#349）/ 背景按钮对比度（#350）
+- 地图列表显示条目名 + 创建子图失败（#368）/ 挂载清空正文风险（#371）
+- 默认配置路径双形态（sentinel + 缺键/None）回退项目 model（#367/#373）
+- 全局滚动条主题样式（#375）/ 地图左栏冗余分类栏（#376）/ 创建根图自动选中（#377）
+- PATCH parent_map_id 不落库（#385）
+
+### 变更
+- 0.8.0 预发布迭代 rc1-rc6（2026-08-13 ~ 08-15）：GUI 复验发现 10 缺陷（#375-#379/#384 系列 + #385 阻断）→ 修复后 rc6 全量验证通过 + GUI 用户复验全部确认；正式版产物 exe 173.2MB / 便携 zip 211.6MB / CLI zip 104.3MB
+- 0.8.0 发布前文档同步（#325）：AGENTS/ADR-019/FEATURES/README/specs + workspace 设计文档（#283/#387）
+
 ## [0.7.0] - 2026-08-12
 
 ### 新增
