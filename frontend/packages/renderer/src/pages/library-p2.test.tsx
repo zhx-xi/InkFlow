@@ -59,7 +59,7 @@
  * M1-M13 共 13 it（M5/M7/M8/M12 多断言拆分）。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { LibraryPage } from './library';
@@ -686,5 +686,74 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
     expect(screen.getByTestId('map-canvas')).toBeInTheDocument();
     // ② 树含新节点：无 root_location_id 的根图作为树顶层节点渲染（可点击选中）
     expect(screen.getByTestId('world-map-badge-m9')).toBeInTheDocument();
+  });
+
+  it('#388 简图 resize：选中形状 → 拖右下角手柄 → w/h 变大 + PATCH extra.shapes 更新 w/h', async () => {
+    mockMapWorkbench(worldTree, [mapM2]);
+    renderLibrary();
+    const user = userEvent.setup();
+    await openMapWorkbench(user, 'w1a');
+    await waitFor(() => expect(screen.getAllByTestId(/^map-shape-s_/)).toHaveLength(1));
+    // 选中形状 → resize 手柄出现（四角 nw/ne/sw/se；本用例拖右下 se 角）
+    await user.click(screen.getByTestId('map-shape-s_1'));
+    const handle = await screen.findByTestId('map-shape-resize-s_1-se');
+    // 拖角：mock canvas rect（width=200/height=100）→ mousedown(150,100) → window mousemove(200,120) → mouseup
+    // GREEN 计算式：dw = (clientX - startClientX) / rect.width * 100；dh 同理；新 w/h = orig + dw/dh（clamp 0-100）
+    const canvas = screen.getByTestId('map-canvas');
+    canvas.getBoundingClientRect = () =>
+      ({
+        left: 100, top: 50, width: 200, height: 100, right: 300, bottom: 150, x: 100, y: 50,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    fireEvent.mouseDown(handle, { clientX: 150, clientY: 100 });
+    fireEvent.mouseMove(window, { clientX: 200, clientY: 120 });
+    fireEvent.mouseUp(window);
+    // PATCH extra.shapes 里 s_1 的 w/h 变大（原 24/16 → 拖大后 > 24 / > 16）
+    await waitFor(() => {
+      const shapePatch = apiFetchMock.mock.calls.find(
+        (c) =>
+          c[0] === '/api/v1/maps/m2' &&
+          c[1]?.method === 'PATCH' &&
+          (c[1]!.body as { extra?: { shapes?: unknown[] } }).extra?.shapes !== undefined,
+      );
+      expect(shapePatch).toBeTruthy();
+      const shapes = (
+        shapePatch![1]!.body as { extra: { shapes: Array<{ id: string; w?: number; h?: number }> } }
+      ).extra.shapes;
+      const s = shapes.find((x) => x.id === 's_1');
+      expect(s?.w).toBeGreaterThan(24);
+      expect(s?.h).toBeGreaterThan(16);
+    });
+  });
+
+  it('#388 简图改名：双击形状 → 内联输入 → Enter → PATCH extra.shapes 更新 label + 画布回显', async () => {
+    mockMapWorkbench(worldTree, [mapM2]);
+    renderLibrary();
+    const user = userEvent.setup();
+    await openMapWorkbench(user, 'w1a');
+    await waitFor(() => expect(screen.getAllByTestId(/^map-shape-s_/)).toHaveLength(1));
+    // 双击形状 → label 变内联 input（testid map-shape-label-input-s_1，初始值 = 当前 label '新区域'）
+    await user.dblClick(screen.getByTestId('map-shape-s_1'));
+    const input = await screen.findByTestId('map-shape-label-input-s_1');
+    // 输入新名 → Enter 提交（blur 亦可提交）；input 内交互须 stopPropagation 防触发形状拖拽
+    await user.clear(input);
+    await user.type(input, '主城');
+    await user.keyboard('{Enter}');
+    // 画布回显新名 + PATCH extra.shapes 里 s_1 label = '主城'
+    await waitFor(() => expect(screen.getByText('主城')).toBeInTheDocument());
+    await waitFor(() => {
+      const shapePatch = apiFetchMock.mock.calls.find(
+        (c) =>
+          c[0] === '/api/v1/maps/m2' &&
+          c[1]?.method === 'PATCH' &&
+          (c[1]!.body as { extra?: { shapes?: unknown[] } }).extra?.shapes !== undefined,
+      );
+      expect(shapePatch).toBeTruthy();
+      const shapes = (
+        shapePatch![1]!.body as { extra: { shapes: Array<{ id: string; label?: string }> } }
+      ).extra.shapes;
+      const s = shapes.find((x) => x.id === 's_1');
+      expect(s?.label).toBe('主城');
+    });
   });
 });

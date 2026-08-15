@@ -45,6 +45,20 @@ interface DragState {
   moved: boolean;
 }
 
+type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
+
+interface ResizeState {
+  shapeId: string;
+  corner: ResizeCorner;
+  startClientX: number;
+  startClientY: number;
+  origX: number;
+  origY: number;
+  origW: number;
+  origH: number;
+  moved: boolean;
+}
+
 function clamp(value: number): number {
   return Math.min(100, Math.max(0, value));
 }
@@ -74,13 +88,18 @@ export function MapCanvas({
   const canvasRef = useRef<HTMLDivElement>(null);
   const shapesRef = useRef<MapShape[]>([]);
   const dragRef = useRef<DragState | null>(null);
+  const resizeRef = useRef<ResizeState | null>(null);
+  const labelInputRef = useRef<HTMLInputElement>(null);
+  const labelSettledRef = useRef(false);
   const [shapes, setShapes] = useState<MapShape[]>(() => extractShapes(map));
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
+  const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
 
   // 地图数据变化（PATCH 回写）→ 同步 shapes；拖拽过程中的本地更新不受影响
   useEffect(() => {
     setShapes(extractShapes(map));
     setSelectedShapeId(null);
+    setEditingLabelId(null);
   }, [map]);
 
   useEffect(() => {
@@ -153,6 +172,95 @@ export function MapCanvas({
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+  };
+
+  /** mousedown（四角手柄）→ 记录基准 w/h/x/y + 挂 window mousemove/mouseup；mousemove 按角更新；mouseup 提交 */
+  const startResize = (e: React.MouseEvent, shape: MapShape, corner: ResizeCorner) => {
+    e.stopPropagation(); // 防触发形状拖拽 startDrag 与画布点击
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect || shape.type === 'text') return;
+    resizeRef.current = {
+      shapeId: shape.id,
+      corner,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      origX: shape.x,
+      origY: shape.y,
+      origW: shape.w ?? 24,
+      origH: shape.h ?? 16,
+      moved: false,
+    };
+    const onMove = (ev: MouseEvent) => {
+      const resize = resizeRef.current;
+      if (!resize || !rect) return;
+      const dw = ((ev.clientX - resize.startClientX) / rect.width) * 100;
+      const dh = ((ev.clientY - resize.startClientY) / rect.height) * 100;
+      if (Math.abs(dw) > 0.1 || Math.abs(dh) > 0.1) resize.moved = true;
+      setShapes((prev) =>
+        prev.map((s) => {
+          if (s.id !== resize.shapeId) return s;
+          if (resize.corner === 'se') {
+            return { ...s, w: clamp(resize.origW + dw), h: clamp(resize.origH + dh) };
+          }
+          if (resize.corner === 'sw') {
+            return {
+              ...s,
+              x: clamp(resize.origX + dw),
+              w: clamp(resize.origW - dw),
+              h: clamp(resize.origH + dh),
+            };
+          }
+          if (resize.corner === 'ne') {
+            return {
+              ...s,
+              y: clamp(resize.origY + dh),
+              w: clamp(resize.origW + dw),
+              h: clamp(resize.origH - dh),
+            };
+          }
+          return {
+            ...s,
+            x: clamp(resize.origX + dw),
+            y: clamp(resize.origY + dh),
+            w: clamp(resize.origW - dw),
+            h: clamp(resize.origH - dh),
+          };
+        }),
+      );
+    };
+    const onUp = () => {
+      const resize = resizeRef.current;
+      resizeRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      if (resize?.moved) onUpdateShapes(shapesRef.current);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  /** 双击形状 → 进入 label 内联编辑（防冒泡触发画布） */
+  const startRename = (e: React.MouseEvent, shape: MapShape) => {
+    e.stopPropagation();
+    labelSettledRef.current = false;
+    setEditingLabelId(shape.id);
+  };
+
+  /** Enter/blur → 提交 label（整体替换 PATCH；labelSettledRef 防 unmount blur 二次提交） */
+  const commitLabel = (shapeId: string) => {
+    if (labelSettledRef.current) return;
+    labelSettledRef.current = true;
+    const value = labelInputRef.current?.value ?? '';
+    const next = shapesRef.current.map((s) => (s.id === shapeId ? { ...s, label: value } : s));
+    setShapes(next);
+    setEditingLabelId(null);
+    onUpdateShapes(next);
+  };
+
+  /** Escape → 取消编辑（不保存） */
+  const cancelRename = () => {
+    labelSettledRef.current = true;
+    setEditingLabelId(null);
   };
 
   const imageSrc = `${getApiConfig().baseURL}/api/v1/maps/${String(map.id)}/image`;
@@ -244,12 +352,31 @@ export function MapCanvas({
                   transform: shape.type === 'text' ? 'translate(-50%, -50%)' : undefined,
                 }}
                 onMouseDown={(e) => startDrag(e, shape)}
+                onDoubleClick={(e) => startRename(e, shape)}
                 onClick={(e) => {
                   e.stopPropagation(); // 防冒泡触发画布添加 pin
                   setSelectedShapeId(shape.id);
                 }}
               >
-                <span className="pointer-events-none block truncate px-1">{shape.label}</span>
+                {editingLabelId === shape.id ? (
+                  <input
+                    ref={labelInputRef}
+                    data-testid={`map-shape-label-input-${shape.id}`}
+                    aria-label={t('lib.edit')}
+                    defaultValue={shape.label}
+                    autoFocus
+                    className="w-full select-text bg-transparent px-1 text-[12px] leading-tight outline-none"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitLabel(shape.id);
+                      else if (e.key === 'Escape') cancelRename();
+                    }}
+                    onBlur={() => commitLabel(shape.id)}
+                  />
+                ) : (
+                  <span className="pointer-events-none block truncate px-1">{shape.label}</span>
+                )}
                 {selectedShapeId === shape.id && (
                   <button
                     type="button"
@@ -264,6 +391,30 @@ export function MapCanvas({
                   >
                     ×
                   </button>
+                )}
+                {selectedShapeId === shape.id && shape.type !== 'text' && (
+                  <>
+                    <div
+                      data-testid={`map-shape-resize-${shape.id}-nw`}
+                      className="absolute left-0 top-0 h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize rounded-sm border border-line bg-surface shadow-card"
+                      onMouseDown={(e) => startResize(e, shape, 'nw')}
+                    />
+                    <div
+                      data-testid={`map-shape-resize-${shape.id}-ne`}
+                      className="absolute right-0 top-0 h-3 w-3 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize rounded-sm border border-line bg-surface shadow-card"
+                      onMouseDown={(e) => startResize(e, shape, 'ne')}
+                    />
+                    <div
+                      data-testid={`map-shape-resize-${shape.id}-sw`}
+                      className="absolute bottom-0 left-0 h-3 w-3 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize rounded-sm border border-line bg-surface shadow-card"
+                      onMouseDown={(e) => startResize(e, shape, 'sw')}
+                    />
+                    <div
+                      data-testid={`map-shape-resize-${shape.id}-se`}
+                      className="absolute bottom-0 right-0 h-3 w-3 translate-x-1/2 translate-y-1/2 cursor-nwse-resize rounded-sm border border-line bg-surface shadow-card"
+                      onMouseDown={(e) => startResize(e, shape, 'se')}
+                    />
+                  </>
                 )}
               </div>
             ))}
