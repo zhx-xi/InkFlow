@@ -81,6 +81,10 @@ export const zh = {
   'lib.tags.suggest': '建议',
   'lib.tags.add': '+ {tag}',
   'lib.worldCat.label': '分类',
+  // #389：世界观分类 CRUD（新建对话框 + 入口）
+  'lib.worldCat.add': '新建分类',
+  'lib.worldCat.name': '分类名',
+  'lib.worldCat.nameEmpty': '分类名不能为空',
   'lib.copy.title': '复制到项目',
   'lib.copy.scope': '复制范围',
   'lib.copy.scope.subtree': '本体 + 全部子级',

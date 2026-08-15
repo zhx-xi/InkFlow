@@ -264,6 +264,16 @@ def ensure_world_drop_is_deleted(conn: Connection) -> None:
     conn.execute(text("ALTER TABLE world_settings DROP COLUMN is_deleted"))
 
 
+def ensure_world_categories(conn: Connection) -> None:
+    """#389 v1.2：world_categories 分类实体表建表（仅 create_all，无存量数据迁移）.
+
+    全新表（非补列/改索引），由 Base.metadata.create_all 幂等创建——checkfirst
+    仅建缺失表；无需 ALTER 迁移。接线点若需显式调用，置于 create_tables() 之后
+    （与 ensure_map_columns / ensure_outline_columns 同点）。
+    """
+    Base.metadata.create_all(conn)
+
+
 def _migrate_drop_is_deleted(
     conn: Connection,
     table: str,

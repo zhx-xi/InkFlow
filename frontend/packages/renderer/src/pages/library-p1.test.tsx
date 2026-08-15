@@ -148,11 +148,9 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     });
   }
 
-  /** #376：世界观 tab 默认进地图工作台 → 点 map-bc-world 退出回列表页（P1 分类 chips/复制交互在列表页断言） */
+  /** #389：世界观 tab 停列表页（分类 chips + 树 + 复制）——点 tab 即列表页，无需退出工作台 */
   async function enterWorldList(user: ReturnType<typeof userEvent.setup>) {
     await user.click(screen.getByRole('tab', { name: '世界观' }));
-    await screen.findByTestId('map-workbench');
-    await user.click(screen.getByTestId('map-bc-world'));
     await screen.findByTestId('library-list');
   }
 
@@ -167,10 +165,20 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
       created: [{ id: 'x1' }, { id: 'x2' }], skipped: [], maps_created: [], pins_created: 0, warnings: [],
     },
   ) {
+    // #389：分类实体 = worldItems category 去重（排除空 + 「地图」——地图归地图工作台）
+    const catNames = [...new Set(worldItems.map((i) => String(i.category ?? '')).filter((c) => c !== '' && c !== '地图'))];
+    const categories = catNames.map((name, idx) => ({
+      id: `wc${idx + 1}`,
+      name,
+      count: worldItems.filter((w) => String(w.category ?? '') === name).length,
+    }));
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
       if (path === '/api/v1/projects') return { items: projectList, total: projectList.length, offset: 0, limit: 50 };
       if (path === '/api/v1/projects/p1/world-settings') {
         return { items: worldItems, total: worldItems.length, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/projects/p1/world-categories') {
+        return { items: categories, total: categories.length };
       }
       if (path === '/api/v1/projects/p2/world-settings/copy' && init?.method === 'POST') {
         if (copyResult === null) throw new Error('复制失败');
@@ -382,28 +390,26 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     expect(screen.getByText('中州')).toBeInTheDocument();
   });
 
-  it('R9 世界观分类 chips：默认仅「地图」（#352）+ 数据自定义自动进；无「全部」chip（D-10）', async () => {
+  it('R9 世界观分类 chips：来源=分类实体（无「地图」，#389）+ 数据驱动；无「全部」chip（D-10）', async () => {
     mockWorldTree([...worldTree, { id: 'w2', name: '宗门', category: '组织', content: '宗门林立' }]);
     const user = userEvent.setup();
     renderLibrary();
 
     await enterWorldList(user);
-    // #352 拍板：默认分组仅「地图」；数据中自定义分类「组织」「秘境」自动进 chips（D-11 数据驱动）
-    for (const cat of ['地图', '组织', '秘境']) {
+    // #389：chips 来源 = 分类实体（worldItems category 去重，排除「地图」——地图归地图工作台）
+    for (const cat of ['组织', '秘境']) {
       expect(screen.getByTestId(`world-cat-filter-${cat}`)).toBeInTheDocument();
     }
-    // #352：势力/功法/门派 不再默认预置（题材相关分类按项目由用户/agent 创建）
-    for (const cat of ['势力', '功法', '门派']) {
-      expect(screen.queryByTestId(`world-cat-filter-${cat}`)).not.toBeInTheDocument();
-    }
+    // 「地图」非世界观分类，不渲染 chip
+    expect(screen.queryByTestId('world-cat-filter-地图')).not.toBeInTheDocument();
     // 无「全部」chip（D3 拍板：未选 = 展示所有，toggle 取消）
     expect(screen.queryByTestId('world-cat-filter-全部')).not.toBeInTheDocument();
   });
 
-  it('R10 分类筛选 toggle：点 chip 仅显示该分类顶层（含子树）→ 再点同 chip 全部恢复', async () => {
+  it('R10 分类筛选 toggle：点分类实体 chip 仅显示该分类顶层（含子树）→ 再点同 chip 全部恢复', async () => {
     mockWorldTree([
-      { id: 'w1', name: '九州', category: '地图', content: '天下地理' },
-      { id: 'w1a', name: '中州', category: '地图', content: '中原腹地', parent_id: 'w1' },
+      { id: 'w1', name: '九州', category: '势力', content: '天下地理' },
+      { id: 'w1a', name: '中州', category: '势力', content: '中原腹地', parent_id: 'w1' },
       { id: 'w2', name: '宗门', category: '组织', content: '宗门林立' },
       { id: 'w3', name: '昆仑派', category: '门派', content: '仙门' },
     ]);
@@ -414,14 +420,14 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     // 默认展示所有
     expect(screen.getByText('宗门')).toBeInTheDocument();
     expect(screen.getByText('昆仑派')).toBeInTheDocument();
-    // 点「地图」→ 仅地图分类顶层（含子树）显示
-    await user.click(screen.getByTestId('world-cat-filter-地图'));
+    // 点「势力」→ 仅势力分类顶层（含子树）显示
+    await user.click(screen.getByTestId('world-cat-filter-势力'));
     expect(screen.getByText('九州')).toBeInTheDocument();
     expect(screen.getByText('中州')).toBeInTheDocument();
     expect(screen.queryByText('宗门')).not.toBeInTheDocument();
     expect(screen.queryByText('昆仑派')).not.toBeInTheDocument();
     // 再点同 chip → 取消筛选，全部恢复
-    await user.click(screen.getByTestId('world-cat-filter-地图'));
+    await user.click(screen.getByTestId('world-cat-filter-势力'));
     expect(screen.getByText('宗门')).toBeInTheDocument();
     expect(screen.getByText('昆仑派')).toBeInTheDocument();
   });

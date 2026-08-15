@@ -56,6 +56,16 @@ def _validate_category(v: str) -> str:
     return stripped
 
 
+def _validate_category_name(v: str) -> str:
+    """共享的分类名校验：去空白后非空且不超过 50 字符."""
+    stripped = v.strip()
+    if not stripped:
+        raise ValueError("分类名不能为空")
+    if len(stripped) > 50:
+        raise ValueError("分类名不能超过 50 个字符")
+    return stripped
+
+
 def _validate_content(v: str) -> str:
     """共享的内容校验：不超过 20000 字符（不强制去空白，正文可能含排版空白）.
 
@@ -253,3 +263,27 @@ class WorldExtractionResult(BaseModel):
     updated: list[WorldSetting]
     warnings: list[str]
     model: str
+
+
+class WorldCategory(BaseModel):
+    """世界观分类领域实体 — 对应 world_categories 表（受控词表，v1.2）.
+
+    受控词表语义（spec §2.2/§2.6，D1=B1）：分类实体是「预置分类词表」，
+    条目 category 是字符串快照（不强制外键）；分类重命名/删除反向同步
+    条目 category（§6.1，D2=A）。
+
+    Attributes:
+        id: 主键 UUID.
+        project_id: 所属项目 UUID.
+        name: 分类名；项目内唯一（(project_id, name) 全唯一索引）.
+        created_at: 创建时间.
+        updated_at: 最后更新时间.
+    """
+
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    name: str
+    created_at: datetime
+    updated_at: datetime

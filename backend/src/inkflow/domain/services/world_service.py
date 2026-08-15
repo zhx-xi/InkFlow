@@ -24,6 +24,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from inkflow.domain.models.world import (
+    WorldCategory,
     WorldExtractionResult,
     WorldExtractRequest,
     WorldSetting,
@@ -32,6 +33,7 @@ from inkflow.domain.models.world import (
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.world_errors import (
     ProjectNotFoundError,
+    WorldCategoryNameConflictError,
     WorldChildrenActionRequiredError,
     WorldCycleError,
     WorldNameConflictError,
@@ -352,6 +354,64 @@ class WorldService:
             await self._location_cleanup(ids)
         except Exception:
             logger.warning("地点硬删后 pin 清理失败: %s", ids, exc_info=True)
+
+    # ── WorldCategory（v1.2，issue #389）──────────────────────────
+
+    async def create_category(self, project_id: uuid.UUID, name: str) -> WorldCategory:
+        """创建世界观分类（spec §2.6：项目内分类名唯一）.
+
+        Args:
+            project_id: 所属项目 UUID.
+            name: 分类名（WorldCategoryCreateBody 已去空白校验）.
+
+        Returns:
+            持久化后的完整 WorldCategory.
+
+        Raises:
+            WorldCategoryNameConflictError: 项目内已存在同名分类.
+        """
+        existing = await self._repo.get_category_by_name(project_id, name)
+        if existing is not None:
+            raise WorldCategoryNameConflictError()
+        logger.info("创建世界观分类: project=%s name=%s", project_id, name)
+        return await self._repo.create_category(project_id, name)
+
+    async def list_world_categories(self, project_id: uuid.UUID) -> list[tuple[WorldCategory, int]]:
+        """分类实体列表 + 每个分类名匹配的条目计数（spec §3.1/§6.1）."""
+        return await self._repo.list_world_categories(project_id)
+
+    async def rename_category(self, category_id: uuid.UUID, name: str) -> WorldCategory | None:
+        """重命名分类（反向同步条目 category，spec §6.1 D2=A）.
+
+        Args:
+            category_id: 分类主键 UUID.
+            name: 新分类名（WorldCategoryUpdateBody 已去空白校验）.
+
+        Returns:
+            更新后的 WorldCategory；分类不存在返回 None（router 转 404）.
+
+        Raises:
+            WorldCategoryNameConflictError: 新名撞项目内其他分类.
+        """
+        existing = await self._repo.get_category(category_id)
+        if existing is None:
+            return None
+        dup = await self._repo.get_category_by_name(existing.project_id, name)
+        if dup is not None and dup.id != existing.id:
+            raise WorldCategoryNameConflictError()
+        logger.info("重命名世界观分类: category_id=%s → %s", category_id, name)
+        return await self._repo.rename_category(category_id, name)
+
+    async def delete_category(self, category_id: uuid.UUID) -> bool:
+        """删除分类（反向清空条目 category，spec §6.1 D2=A）.
+
+        Args:
+            category_id: 分类主键 UUID.
+
+        Returns:
+            True 表示删除成功；False 表示未找到记录（router 转 404）.
+        """
+        return await self._repo.delete_category(category_id)
 
     # ── F35 树查询（spec §5.3）────────────────────────────────────
 

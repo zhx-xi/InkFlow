@@ -1,4 +1,4 @@
-"""F10 世界观管理 REST API — 8 个端点：条目 CRUD + 类别汇总 + AI 提取。
+"""F10 世界观管理 REST API — 14 个端点：条目 CRUD + 类别汇总 + 分类 CRUD（v1.2）+ AI 提取。
 
 端点风格沿用 F2/F9（spec §3.1）：创建/列表/类别汇总嵌套项目路径
 （/projects/{project_id}/world-settings...），详情/更新/删除扁平
@@ -36,6 +36,7 @@ from inkflow.domain.models.world import (
     WorldExtractRequest,
     WorldUpdate,
     _validate_category,
+    _validate_category_name,
     _validate_content,
     _validate_name,
 )
@@ -122,6 +123,30 @@ class WorldSettingCreateBody(BaseModel):
     def validate_content(cls, v: str) -> str:
         """验证内容：不超过 20000 字符."""
         return _validate_content(v)
+
+
+class WorldCategoryCreateBody(BaseModel):
+    """创建世界观分类请求体（spec §3.1，v1.2）."""
+
+    name: str
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """验证分类名：去空白后非空且不超过 50 字符."""
+        return _validate_category_name(v)
+
+
+class WorldCategoryUpdateBody(BaseModel):
+    """重命名世界观分类请求体（spec §3.1，v1.2）."""
+
+    name: str
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """验证分类名：去空白后非空且不超过 50 字符."""
+        return _validate_category_name(v)
 
 
 # ── AI 提取（先于 /world-settings/{setting_id} 注册，避免路径歧义）──
@@ -319,3 +344,60 @@ async def delete_world_setting(
         ok = await _run_service(svc.delete_setting(sid))
     if not ok:
         raise HTTPException(status_code=404, detail="世界观条目不存在")
+
+
+# ── WorldCategory（v1.2，issue #389）────────────────────────────
+
+
+@router.post("/projects/{project_id}/world-categories", status_code=201)
+async def create_world_category(
+    project_id: str,
+    data: WorldCategoryCreateBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """创建世界观分类（spec §3.1，v1.2；同名 → 422）."""
+    pid = _parse_id(project_id, detail="项目不存在")
+    svc = _get_svc(db)
+    category = await _run_service(svc.create_category(pid, data.name))
+    return category.model_dump(mode="json")
+
+
+@router.get("/projects/{project_id}/world-categories")
+async def list_project_world_categories(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """获取项目内分类列表（含条目数，spec §3.1/§6.1，v1.2）."""
+    pid = _parse_id(project_id, detail="项目不存在")
+    svc = _get_svc(db)
+    categories = await _run_service(svc.list_world_categories(pid))
+    items = [{"id": str(c.id), "name": c.name, "count": n} for c, n in categories]
+    return {"items": items, "total": len(items)}
+
+
+@router.patch("/world-categories/{category_id}")
+async def rename_world_category(
+    category_id: str,
+    data: WorldCategoryUpdateBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """重命名分类（反向同步条目 category，spec §6.1 D2=A，v1.2）."""
+    cid = _parse_id(category_id, detail="世界观分类不存在")
+    svc = _get_svc(db)
+    category = await _run_service(svc.rename_category(cid, data.name))
+    if category is None:
+        raise HTTPException(status_code=404, detail="世界观分类不存在")
+    return category.model_dump(mode="json")
+
+
+@router.delete("/world-categories/{category_id}", status_code=204)
+async def delete_world_category(
+    category_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """删除分类（反向清空条目 category，spec §6.1 D2=A，v1.2）."""
+    cid = _parse_id(category_id, detail="世界观分类不存在")
+    svc = _get_svc(db)
+    ok = await _run_service(svc.delete_category(cid))
+    if not ok:
+        raise HTTPException(status_code=404, detail="世界观分类不存在")

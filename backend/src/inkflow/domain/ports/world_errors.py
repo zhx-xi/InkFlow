@@ -115,3 +115,17 @@ class CopyRootNotFoundError(Exception):
 
     def __init__(self, message: str = "复制起点条目不存在或不在源项目") -> None:
         super().__init__(message)
+
+
+class WorldCategoryNameConflictError(WorldServiceError):
+    """同名世界观分类已存在 — 422."""
+
+    def __init__(self, message: str = "同名世界观分类已存在") -> None:
+        super().__init__(message)
+
+
+class WorldCategoryNotFoundError(Exception):
+    """世界观分类不存在 — 404."""
+
+    def __init__(self, message: str = "世界观分类不存在") -> None:
+        super().__init__(message)

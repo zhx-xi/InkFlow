@@ -706,3 +706,98 @@ class TestListAllActive:
         """
         repo = SQLiteWorldRepository(db_session)
         assert await repo.list_all_active(project.id) == []
+
+
+@pytest.mark.integration
+class TestWorldCategoryRepository:
+    """SQLiteWorldRepository 分类 CRUD 集成测试（v1.2，issue #389）.
+
+    GREEN 契约：WorldCategoryORM（world_categories 表）+ repo 分类方法：
+      create_category(project_id, name) -> WorldCategory
+      get_category(category_id) -> WorldCategory | None
+      get_category_by_name(project_id, name) -> WorldCategory | None
+      list_world_categories(project_id) -> list[tuple[WorldCategory, int]]
+      rename_category(category_id, name) -> WorldCategory | None（反向同步条目 category）
+      delete_category(category_id) -> bool（反向清空条目 category）
+
+    RED: 方法不存在 → AttributeError（WorldCategoryORM 缺失仅影响 create_all，
+    分类方法调用即 AttributeError）。
+    """
+
+    async def test_create_and_get_category_roundtrip(self, db_session, project):
+        """create_category 落库 + get_category 读回（name/UUID 映射正确）."""
+        repo = SQLiteWorldRepository(db_session)
+        created = await repo.create_category(project.id, "势力")
+        assert created.name == "势力"
+        assert created.project_id == uuid.UUID(int=project.id)
+        fetched = await repo.get_category(created.id.int)
+        assert fetched is not None
+        assert fetched.name == "势力"
+
+    async def test_get_category_by_name_hit_and_miss(self, db_session, project):
+        """get_category_by_name 命中 / 未命中."""
+        repo = SQLiteWorldRepository(db_session)
+        await repo.create_category(project.id, "势力")
+        hit = await repo.get_category_by_name(project.id, "势力")
+        assert hit is not None
+        assert hit.name == "势力"
+        miss = await repo.get_category_by_name(project.id, "不存在")
+        assert miss is None
+
+    async def test_create_duplicate_name_integrity_error(self, db_session, project):
+        """同名分类 → IntegrityError（(project_id, name) 全唯一索引）."""
+        repo = SQLiteWorldRepository(db_session)
+        await repo.create_category(project.id, "势力")
+        with pytest.raises(IntegrityError):
+            await repo.create_category(project.id, "势力")
+
+    async def test_list_world_categories_with_count(self, db_session, project):
+        """list_world_categories 返回 (实体, 条目数)；空类别条目不计数."""
+        repo = SQLiteWorldRepository(db_session)
+        await repo.create_category(project.id, "势力")
+        # 造两条 category=势力 + 一条未分类条目
+        await repo.add(_setting(project, "宗门体系", category="势力"))
+        await repo.add(_setting(project, "功法等级", category="势力"))
+        await repo.add(_setting(project, "未分类条目", category=""))
+        result = await repo.list_world_categories(project.id)
+        assert len(result) == 1
+        cat, count = result[0]
+        assert cat.name == "势力"
+        assert count == 2
+
+    async def test_rename_category_syncs_entry_category(self, db_session, project):
+        """重命名分类 → 同名字符串条目 category 同步改新名（D2=A 重命名侧）."""
+        repo = SQLiteWorldRepository(db_session)
+        created = await repo.create_category(project.id, "势力")
+        entry = await repo.add(_setting(project, "宗门体系", category="势力"))
+        renamed = await repo.rename_category(created.id.int, "宗门")
+        assert renamed is not None
+        assert renamed.name == "宗门"
+        # 条目 category 同步
+        fetched_entry = await repo.get(entry.id.int)
+        assert fetched_entry is not None
+        assert fetched_entry.category == "宗门"
+
+    async def test_delete_category_clears_entry_category(self, db_session, project):
+        """删除分类 → 同名字符串条目 category 置空（D2=A 删除侧）."""
+        repo = SQLiteWorldRepository(db_session)
+        created = await repo.create_category(project.id, "势力")
+        entry = await repo.add(_setting(project, "宗门体系", category="势力"))
+        ok = await repo.delete_category(created.id.int)
+        assert ok is True
+        # 分类实体已删
+        assert await repo.get_category(created.id.int) is None
+        # 条目 category 置空
+        fetched_entry = await repo.get(entry.id.int)
+        assert fetched_entry is not None
+        assert fetched_entry.category == ""
+
+    async def test_rename_category_not_found_returns_none(self, db_session, project):
+        """重命名不存在的分类 → None（覆盖率：不存在分支）."""
+        repo = SQLiteWorldRepository(db_session)
+        assert await repo.rename_category(999999, "宗门") is None
+
+    async def test_delete_category_not_found_returns_false(self, db_session, project):
+        """删除不存在的分类 → False（覆盖率：不存在分支）."""
+        repo = SQLiteWorldRepository(db_session)
+        assert await repo.delete_category(999999) is False

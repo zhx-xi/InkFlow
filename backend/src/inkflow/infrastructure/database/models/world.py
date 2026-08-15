@@ -121,3 +121,62 @@ class WorldSettingORM(Base):
 
     def __repr__(self) -> str:
         return f"<WorldSettingORM id={self.id} name={self.name!r}>"
+
+
+class WorldCategoryORM(Base):
+    """世界观分类 ORM 模型 — 映射到 world_categories 表（受控词表，v1.2）.
+
+    Maps to the ``world_categories`` table. Each row is a controlled
+    vocabulary category within a project (issue #389).
+    """
+
+    __tablename__ = "world_categories"
+
+    __table_args__ = (
+        Index(
+            "uq_world_categories_project_name",
+            "project_id",
+            "name",
+            unique=True,
+        ),
+    )
+    """项目内分类名唯一（v1.2 全唯一索引，spec §2.6）."""
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+    """自增主键（领域层映射为 UUID）."""
+
+    project_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    """所属项目（项目删除级联删除，已索引）."""
+
+    name: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+    """分类名 (1–50 字符，去空白；项目内唯一)."""
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=_utcnow,
+    )
+    """记录创建时间（UTC）. """
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=_utcnow,
+        onupdate=_utcnow,
+    )
+    """记录最后更新时间（UTC，自动更新）. """
+
+    def __repr__(self) -> str:
+        return f"<WorldCategoryORM id={self.id} name={self.name!r}>"
