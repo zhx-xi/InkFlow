@@ -1,6 +1,6 @@
 # F20: MCP Server（mcp_service）— 功能规格
 
-**Spec 版本**: 1.0
+**Spec 版本**: 1.1
 **日期**: 2026-08-16
 **依据**: PRD §6.4 F20（≥15 工具）· ADR-023 v2（薄客户端经 HTTP，2026-08-07 D3=A 拍板）· ADR-030（本地内核服务化 ④）· Constitution P1-P6
 **所属阶段**: 0.9.0（估算 5-8 人天；1.0.0 → 0.9.0 提前拍板 2026-08-12——1.0.0 定位改为「正式可用」不应再含大功能，MCP 提前实现、提前在实际使用中验证）
@@ -8,6 +8,8 @@
 **依赖**: ✅ F30（ensure_kernel + kernel.json 冷启动）· ✅ F38（`infrastructure/http/` 传输层 + 零 cli 依赖）· ✅ F26（ToolSpec 契约 + 工具注册表机制）· ✅ F7（JSON 信封/错误码契约）
 **参考 ADR**: [ADR-023](../../adr/ADR-023.md)（MCP 设计 v2）· [ADR-030](../../adr/ADR-030.md)（内核服务化 ④）· [ADR-022](../../adr/ADR-022.md)（skills 双轨）· [ADR-021](../../adr/ADR-021.md)（内核并发契约）· [ADR-019](../../adr/ADR-019.md)（版本里程碑）
 **状态**: 待实现 🔲
+
+> **Spec 变更**（v1.0 → v1.1，2026-08-16）：待澄清 Q1-Q3 全部拍板（用户拍板 A/A/A）。① Q1 工具粒度 = **聚合 `manage_*`（action 枚举）15 工具**（细粒度 50+ 否决）；② Q2「与 F26 同源」落地 = **契约同源**（复用 ToolSpec + 信封语义，新建 `mcp/tools/` HTTP 工具工厂，非复用 F26 `build_reader_tools`）；③ Q3 write 流式 = **同步返回拼接结果**（走非流式端点 `/writing/generate|continue|revise`，不走 SSE 透传）。联动修订：§2.2/§2.3/§10/§12/待澄清节。
 
 > **模块类型声明**: 本模块为 **第 19 变体「MCP 表现层（薄客户端经 HTTP）型」**——InkFlow 第三表现层（与 `api/` REST、`cli/` 并列），对外部 agent 提供 MCP 行业标准 stdio 接口。编号依据 AGENTS.md 模块类型谱系（**F38=第 18 变体为最新无冲突基线**，接续编号）；⚠️ 历史变体编号存在漂移（f24/f27 均自述第 11、f30/f29 均自述第 13、f21/f36 均自述第 15），本 spec 以 F38=18 为基线声明第 19，冲突以 ADR-019 v5+ 为准。
 
@@ -73,7 +75,7 @@ F20 的 MCP 工具沿用同一 `ToolSpec` 结构（`name`/`description`/`input_s
 
 ### 2.2 MCP 工具参数模型（`mcp/tools/` 新增）
 
-15 个工具的参数模型采用 **「action 枚举 + 领域字段」聚合形态**（Q1 待拍板，本稿按聚合方案起草）：每个 `manage_*` 工具一个参数模型，`action: str`（枚举）路由子操作，领域字段按需可选（对某 action 无效的字段 LLM 不传）。
+15 个工具的参数模型采用 **「action 枚举 + 领域字段」聚合形态**（Q1 已拍板：选项 A，2026-08-16）：每个 `manage_*` 工具一个参数模型，`action: str`（枚举）路由子操作，领域字段按需可选（对某 action 无效的字段 LLM 不传）。
 
 | 工具名 | action 枚举 | 关键参数（除 action 外） | 对应内核端点（复用，零新增） |
 |--------|-------------|--------------------------|------------------------------|
@@ -85,7 +87,7 @@ F20 的 MCP 工具沿用同一 `ToolSpec` 结构（`name`/`description`/`input_s
 | `manage_world` | create / list / get / update / delete / restore | project_id, category, name, id | POST/GET `/projects/{pid}/world-settings` · GET `/projects/{pid}/world-settings/categories` · GET/PATCH/DELETE `/world-settings/{id}` · POST `/world-settings/{id}/restore` |
 | `manage_outline` | create / list / get / update / delete / generate | project_id, chapter_id, level, title, id | POST/GET `/projects/{pid}/outlines` · GET/PATCH/DELETE `/outlines/{id}` · plot-points / story-arcs 端点 · POST `/outlines/generate` |
 | `manage_foreshadowing` | create / list / get / update / delete / resolve / reopen | project_id, content, status, id | POST/GET `/projects/{pid}/foreshadowings` · GET/PATCH/DELETE `/foreshadowings/{id}` · POST `/foreshadowings/{id}/resolve/reopen` |
-| `write` | generate / continue / revise | project_id, chapter_id, instruction, target_words | POST `/writing/generate\|continue\|revise`（非流式兜底）· POST `/writing/stream`（SSE，Q3 待拍板） |
+| `write` | generate / continue / revise | project_id, chapter_id, instruction, target_words | POST `/writing/generate\|continue\|revise`（非流式，Q3 已拍板 A：同步返回拼接结果，不走 SSE 透传） |
 | `audit` | project / chapter | project_id, chapter_id, include_static | GET `/projects/{pid}/audit`（F15）· POST `/projects/{pid}/chapter-audit`（F34） |
 | `extract` | extract / reindex / retrieve | project_id, content, query | POST `/extract` · POST `/projects/{pid}/vector/reindex` · POST `/projects/{pid}/vector/retrieve` |
 | `export` | export | project_id, format, output_path | POST `/export`（F21） |
@@ -101,7 +103,7 @@ F20 的 MCP 工具沿用同一 `ToolSpec` 结构（`name`/`description`/`input_s
 |------|------|------|
 | ToolSpec 承载 | 复用 F26 `domain/models/agent_tools.py`（import，不复制） | 单一真相；工具契约（name/description/input_schema）与 agent 内部工具同源，避免双份漂移（ADR-023「与 CLI/F26 同源」） |
 | 工具参数模型归属 | `mcp/tools/` 表现层内（不进 domain） | MCP 工具参数是表现层 DTO，非领域模型；领域层零 MCP 感知（ADR-015） |
-| 工具粒度 | 聚合 `manage_*`（action 枚举）15 工具（**Q1 待拍板**） | PRD §6.4 F20 列 15 个聚合工具名；LLM 工具选择友好（15 vs 50+）；细粒度备选见 §12 |
+| 工具粒度 | 聚合 `manage_*`（action 枚举）15 工具（Q1 已拍板 A） | PRD §6.4 F20 列 15 个聚合工具名；LLM 工具选择友好（15 vs 50+）；细粒度备选见 §12 |
 | 工具返回形态 | MCP 协议 result（对齐 F26 `_ok`/`_fail` 信封：`{"ok": True, "data": ...}` / `{"ok": False, "error": ...}`） | agent 消费一致；成功/失败结构对称；MCP `isError` 标记失败（§3.2） |
 | 工具执行路径 | `InkFlowHTTPClient`（F38）→ 内核 HTTP | ADR-023 v2 薄客户端：冷启动快、单数据源、复用冷启动协议（不直连 domain） |
 
@@ -364,7 +366,7 @@ CLI/集成测试（显式加 ci.yml integration-cli-backend，真实内核轨）
 | GUI 内嵌 MCP / MCP 客户端 | 本模块是 server 侧；客户端（外部 agent）由用户生态提供 |
 | `inkflow skills install` 命令扩展 | F19-skills 已交付（0.8.0），本模块不扩展 |
 | MCP server 常驻（daemon 化） | ADR-030 语义：MCP server 短命（agent 拉起），常驻的是内核 |
-| 写工具流式回传（SSE 透传 MCP） | Q3 待拍板——MCP 工具同步返回拼接结果（默认）；流式语义留 P2 评估 |
+| 写工具流式回传（SSE 透传 MCP） | Q3 已拍板（选项 A，2026-08-16）——write 工具同步返回拼接结果（走非流式端点）；SSE 流式透传 MCP 留 P2 评估 |
 
 ## 11. 依赖关系
 
@@ -396,12 +398,13 @@ F20 被依赖:
 | 1 | MCP 接入方式 | **薄客户端经 HTTP**（ADR-023 v2 D3=A，2026-08-07 拍板） | 冷启动快（重组件在内核）、单数据源（无 SQLite WAL 竞争）、复用 F30 冷启动协议 | 直连 domain（每次 stdio 冷加载 chromadb/BGE + 双数据源）；包装 CLI 子进程（进程启动开销 + stdout 解析脆弱）；经 REST 转发（多一跳） |
 | 2 | MCP SDK | 官方 `mcp` 包（ADR-023） | 跟随 MCP 标准演进；未来 Streamable HTTP 只换传输层 | 自研 JSON-RPC 解析（重复造轮子） |
 | 3 | 传输 | stdio 本地传输（ADR-023 + p0-11 MCPTransport） | 本地 agent 场景标准；零端口/鉴权依赖 | Streamable HTTP（云端 P2 评估，后移） |
-| 4 | 工具粒度 | 聚合 `manage_*`（action 枚举）15 工具（**Q1 待拍板**） | PRD §6.4 F20 列 15 聚合名；LLM 工具选择友好 | 细粒度每命令一工具（50+，工具选择负担重） |
-| 5 | 与 F26 同源 | 契约同源（复用 ToolSpec + 信封语义 + 底层 service 语义），非实现同源（新建 HTTP 工具工厂）（**Q2 待拍板**） | 粒度不同（聚合 vs 精细）、路径不同（HTTP vs 直连） | 直接复用 build_reader_tools（func 直连 service，违背薄客户端） |
+| 4 | 工具粒度 | 聚合 `manage_*`（action 枚举）15 工具（Q1 已拍板 A） | PRD §6.4 F20 列 15 聚合名；LLM 工具选择友好 | 细粒度每命令一工具（50+，工具选择负担重） |
+| 5 | 与 F26 同源 | 契约同源（复用 ToolSpec + 信封语义 + 底层 service 语义），非实现同源（新建 HTTP 工具工厂）（Q2 已拍板 A） | 粒度不同（聚合 vs 精细）、路径不同（HTTP vs 直连） | 直接复用 build_reader_tools（func 直连 service，违背薄客户端） |
 | 6 | 冷启动 | 复用 F30 `ensure_kernel()`（MCP 层零冷启动逻辑） | ADR-030 ④ 明确 MCP 薄客户端冷启动复用 | MCP 层重实现拉起逻辑（重复 + 漂移） |
 | 7 | 工具返回 | MCP `result` 对齐 F26 `_ok`/`_fail` 信封 + `isError` 标记失败 | agent 消费一致；与 deepagents ToolMessage 语义同族 | 返回裸数据（失败无结构化标记，agent 难感知） |
 | 8 | 错误映射 | 复用 F38 `map_http_error`（HTTP 状态 → F7 错误码） | 不重定义错误码表；与 CLI 行为一致 | MCP 层自建错误码表（双份漂移） |
 | 9 | 工具面装配 | 静态 15 工具（tools/list 从注册表动态生成，不做能力裁剪） | 0.9.0 面稳定；能力裁剪留云端评估 | 运行时能力探测裁剪（复杂度 + 本期无消费场景） |
+| 10 | write 流式语义 | 同步返回拼接结果（走非流式端点 `/writing/generate\|continue\|revise`）（Q3 已拍板 A） | MCP 工具模型天然同步；agent 一次拿到全文；避免 stdio 会话内流式帧与 JSON-RPC 响应交织 | SSE 流式透传（MCP 协议层无法逐 delta 推送，对 agent 无协议级收益） |
 
 ---
 
@@ -433,22 +436,22 @@ F20 被依赖:
 
 ## 待澄清问题（≤3）
 
-- **Q1（阻塞级）工具粒度**：15 工具采用「聚合 `manage_*`（action 枚举）」还是「细粒度（每 CLI 子命令一工具，50+）」？🔲 待确认
+- **Q1（阻塞级）工具粒度**：15 工具采用「聚合 `manage_*`（action 枚举）」还是「细粒度（每 CLI 子命令一工具，50+）」？✅ 已确认（用户拍板：选项 A，2026-08-16）
   - A. **聚合 15 工具**（本稿方案）：`manage_character` 用 `action=create/list/get/update/delete` 区分；LLM 工具选择友好（15 vs 50+），input_schema 含全部 action 字段（部分字段对特定 action 无效）。与 PRD §6.4 F20 的 15 个工具名一一对应。
   - B. 细粒度 50+ 工具：`character_create`/`character_list`/... 每操作一工具；schema 精确但工具选择负担重、突破 PRD 15 工具口径（≥15 可超但心智变化大）。
   - 建议：A（PRD 口径一致 + LLM 工具选择友好；聚合 schema 的字段冗余可用「action 路由 + description 说明」缓解）。
 
-- **Q2（阻塞级）「与 F26 同源」落地**：F20 工具实现采用「契约同源（复用 ToolSpec + 新建 HTTP 工具工厂）」还是「复用 F26 工具集」？🔲 待确认
+- **Q2（阻塞级）「与 F26 同源」落地**：F20 工具实现采用「契约同源（复用 ToolSpec + 新建 HTTP 工具工厂）」还是「复用 F26 工具集」？✅ 已确认（用户拍板：选项 A，2026-08-16）
   - A. **契约同源**（本稿方案）：复用 `ToolSpec` 数据结构 + `_ok`/`_fail` 信封语义，新建 `mcp/tools/` HTTP 工具工厂（func = InkFlowHTTPClient 调端点）。理由：F26 工具粒度（5 只读）≠ F20（15 聚合）、路径（直连 service ≠ 经 HTTP）。
   - B. 复用 F26 `build_reader_tools`：直接暴露 F26 的 5 只读工具 + save_draft 为 MCP 工具。理由：零新工具代码；但工具面只有 6 个（<15，不满足 PRD）+ func 直连 service（违背薄客户端经 HTTP）。
   - 建议：A（满足 ≥15 + 薄客户端；「同源」= 契约/语义同源而非实现同源）。
 
-- **Q3（设计决策级）write 工具流式语义**：MCP `tools/call` 是同步 request/response，但 write 走 SSE 流式（内核 `/writing/stream`）。🔲 待确认
+- **Q3（设计决策级）write 工具流式语义**：MCP `tools/call` 是同步 request/response，但 write 走 SSE 流式（内核 `/writing/stream`）。✅ 已确认（用户拍板：选项 A，2026-08-16）
   - A. **同步返回拼接结果**（本稿方案）：write 工具调用非流式端点（`/writing/generate|continue|revise`），返回完整正文（拼接后）。理由：MCP 工具模型天然同步；agent 一次拿到全文；避免 stdio 会话内流式帧与 JSON-RPC 响应交织。
   - B. SSE 流式透传：write 工具内部消费 `/writing/stream`，逐 delta 拼接后一次性返回（结果仍是同步，但走流式端点拿实时进度）。理由：与 GUI/CLI 同源路径；但 MCP 协议层无法逐 delta 推送给 agent（stdio 单响应模型）。
   - 建议：A（简单可靠；B 的流式进度对 agent 无协议级收益，仅实现复杂度增加）。
 
-> **拍板后修订**：Q 拍板结果驱动 spec v1.1 修订（§2.2 工具表 / §4.1 / §5.3 / §12 决策表 / §10 范围），按 inkflow-governance「决策驱动修订」playbook 执行。
+> **拍板后修订（已完成 v1.1）**：Q1-Q3 全部拍板 A/A/A（2026-08-16），正文已按拍板结果联动修订——§2.2 工具表（Q1 聚合定稿 + write 行 Q3 定稿）、§2.3 决策表（Q1）、§10 范围（Q3）、§12 决策表（决策 4/5 标拍板 + 新增决策 10），本待澄清节三 Q 标 ✅ 留痕不删。
 
 ---
 
