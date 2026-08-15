@@ -1,12 +1,13 @@
 # F14: 统一提取服务 (extraction_service) — 功能规格
 
-> **Spec 版本**: 1.1 | **日期**: 2026-08-02 | **依据**: PRD v2.1 §6.2 P1-06, Constitution P1-P6, ADR-013/019
+> **Spec 版本**: 1.2 | **日期**: 2026-08-16 | **依据**: PRD v2.1 §6.2 P1-06, Constitution P1-P6, ADR-013/019
 > **Spec 变更**: v1.1 — 用户拍板 Q1=选项 A（STYLE 注册占位 + 调用 422，v1.0 已按此设计，仅标记确认——**本拍板已被 F16 兑现**：F16 ✅ 已注册 handler，§6.1/§12，占位表述随 F16 spec §8.2 第 10 项同步修订）/ Q2=选项 B（TIMELINE 新建「章节文本 → 时间线事件」LLM 提取管线 + `timeline_auto_extract` 设置项，默认 false）/ Q3=综合方案（保留源 sha256 增量 + F12 事件 `source_chapter_id` 章节联动）；v1.0 的「TIMELINE 委托 F12 确定性检查」改为设置项关闭时的兜底语义（跨模块 MODIFY F12，F13 改 F6 sources.py 先例）
+> **Spec 变更**: v1.2 — RAG 切片扩展（#277 切片可配置 + #278 智能切片）：三档切片策略模式（fixed/paragraph/dialogue/llm）+ 滑动重叠开关（默认关，Q4 ✅ 按建议）+ 检索元数据补强（章节 x/y + chunk 偏移 + 时间戳）+ 切片参数纳入 #276 指纹联动 + 对话/LLM 切片器（M4，降级段落）——§5.6.1-§5.6.7 扩展，跨模块 MODIFY F32 settings（app_settings 4 键），§7/§8/§9/§12/§13 同步
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑**第六个**模块，估算 5.5-7.5 人天（Q2 时间线提取管线 +1.5 人天））
-> **关联 Issues**: [#44](https://github.com/zhx-xi/InkFlow/issues/44)
-> **依赖**: F1 ✅（项目校验 + `project.config.extra["timeline_auto_extract"]` 设置项，§2.6）；F2 ✅（章节读取，chapter_ids 模式 + chapter_chunk 索引源 + 事件 `source_chapter_id` 章节联动 FK）；F5 ✅（LLM）；F9 ✅ / F10 ✅ / F11 ✅ / F12 ✅（委托检查 + **跨模块 MODIFY F12 事件实体**，F13 改 F6 sources.py 先例）/ F13 ✅（委托管线）；F16 ✅（STYLE 类型依赖已交付——注册 StyleService.analyze handler，接口零变更，见 §6.1/§11）；ADR-013（RAG 首次落地：`VectorStoreProtocol` 已由 P0-11 定义，本模块实现基础设施层，**不重新定义协议**）
+> **关联 Issues**: [#44](https://github.com/zhx-xi/InkFlow/issues/44), [#277](https://github.com/zhx-xi/InkFlow/issues/277), [#278](https://github.com/zhx-xi/InkFlow/issues/278)
+> **依赖**: F1 ✅（项目校验 + `project.config.extra["timeline_auto_extract"]` 设置项，§2.6）；F2 ✅（章节读取，chapter_ids 模式 + chapter_chunk 索引源 + 事件 `source_chapter_id` 章节联动 FK）；F5 ✅（LLM）；F9 ✅ / F10 ✅ / F11 ✅ / F12 ✅（委托检查 + **跨模块 MODIFY F12 事件实体**，F13 改 F6 sources.py 先例）/ F13 ✅（委托管线）；F16 ✅（STYLE 类型依赖已交付——注册 StyleService.analyze handler，接口零变更，见 §6.1/§11）；ADR-013（RAG 首次落地：`VectorStoreProtocol` 已由 P0-11 定义，本模块实现基础设施层，**不重新定义协议**）；#276 ✅（RAG 向量指纹协议已合入——切片参数纳入指纹 §5.6.5 引用其 `ChunkingFingerprint`/`compare_fingerprints`/reindex 四步协议，**不重新定义**）
 > **参考 ADR**: [ADR-001](../../adr/ADR-001.md) (模块化单体), [ADR-002](../../adr/ADR-002.md) (六边形分层), [ADR-003](../../adr/ADR-003.md) (Repository), [ADR-004](../../adr/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/ADR-007v2.md) (包结构), [ADR-010](../../adr/ADR-010.md) (上下文分层), [ADR-012](../../adr/ADR-012.md) (错误处理), [ADR-013](../../adr/ADR-013.md) (RAG: LangChain Chroma + BGE), [ADR-015](../../adr/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/ADR-016.md) (loguru), [ADR-017](../../adr/ADR-017.md) (CI 门禁), [ADR-018](../../adr/ADR-018.md) (测试分层), [ADR-019](../../adr/ADR-019.md) (版本里程碑)
-> **状态**: ✅ 已实现（PR #72 + #316 拆分，2026-08-13）
+> **状态**: ✅ v1.0/v1.1 已实现（PR #72 + #316 拆分，2026-08-13）；v1.2 RAG 切片扩展 🔲 待实现（0.9.0，#277/#278）
 
 >
 > **快速导航**（2026-08-08 #201）：
@@ -45,6 +46,7 @@ F14  门面:    ExtractionType(6 种) ──分发──▶ 上述管线（chara
 - F14 的 RAG 落地**只做基础设施与编排**：索引触发（提取后自动索引 / 全量重建）、检索入口（API/CLI）；**不接入 F3/F6 写作链路**（RAG 注入写作上下文归 Phase 2+ 联调，见 §10）
 - F14 的 **STYLE 类型**（F16 风格检测，Issue #46 **已交付**）**已注册 handler**：接口契约（枚举/API/CLI）在 F14 全量支持，F16 落地后注册 `StyleService.analyze`（确定性文本分析 + LLM 深度分析可选），调用返回 200 + StyleReport（§6.1；Q1 ✅ 已确认选项 A 的承诺已兑现——本 spec 占位表述随 F16 修订，见 §6.1/§12）
 - F14 的 **TIMELINE 类型**（Q2 ✅ 已确认选项 B）＝「章节文本 → 时间线事件」LLM 提取管线 + `timeline_auto_extract` 设置项（**默认 false**——AI 自动写事件档案需用户显式开启）；开启时新建管线提取事件（跨模块 MODIFY F12 事件实体加 `source_chapter_id`，Q3 联动），关闭时退回 F12 确定性检查；事件自动删除归 Phase 2+（§2.6/§5.5/§10）
+- F14 v1.2 的 **RAG 切片可配置**（#277/#278）＝三档切片策略模式（fixed/paragraph/dialogue/llm，§5.6.1）+ 滑动重叠开关（默认关，§5.6.3）+ 检索元数据补强（章节 x/y + chunk 偏移 + 时间戳，§5.6.4）+ 切片参数纳入 #276 指纹（§5.6.5）；对话/LLM 档（M4）为 0.9.0 后置档（§5.6.6/§5.6.7）——基础设施与索引编排已由 v1.0/v1.1 交付，本节扩展切片策略与配置（§8 跨模块 MODIFY F32 settings）
 
 ---
 
@@ -406,6 +408,7 @@ class ReindexResult(BaseModel):
 | POST | `/api/v1/projects/{project_id}/vector/retrieve` | 语义检索（RAG） | `{query, entity_types?, top_k?, min_score?}` | 200 + `{items: [RetrievedEntity]}` |
 
 > `/api/v1/extract` 为**静态路径段**，无与既有路由的歧义（F10 §3.1 的 extract 路径歧义处理不适用——本端点无 `{resource_id}` 兄弟段）。
+> 切片配置（mode/chunk_size/overlap）经 F32 `GET/PATCH /settings` 读写（§5.6.3，F32 已有端点），本 spec **不新增 API 端点**；`vector/status`（#276）的 stale reason 已含 `chunking_changed`（§5.6.5）。
 
 ### 3.2 请求/响应示例 — 统一提取
 
@@ -659,6 +662,8 @@ inkflow vector reindex --project-id <uuid> \
     [--type <character|setting|foreshadowing|timeline_event|chapter_chunk>] [--json]
     # 缺省 --type = 全部 5 种实体类型；从 F9-F13 档案 + F2 章节全量重建（幂等 upsert，§5.6）
     # 可重复 --type 指定多个（如 --type character --type setting）
+    # 切片配置（mode/chunk_size/overlap）经 app_settings 持久化（§5.6.3），reindex 不加
+    #   --chunk-mode 等覆盖参数（Q6 待拍板，§10）
 
 inkflow vector retrieve --project-id <uuid> --query <str> \
     [--type <character|setting|foreshadowing|timeline_event|chapter_chunk>] \
@@ -1022,11 +1027,11 @@ class LangChainVectorStore:
 | `setting` | F10 世界设定 | `名称：{name}\n分类：{category}\n内容：{content}` | `{name, category}` |
 | `foreshadowing` | F13 伏笔档案 | `伏笔：{title}\n{description}\n（埋设位置：{location}）` | `{name, status}` |
 | `timeline_event` | F12 事件档案 | `事件：{title}\n{description}\n时间：{time_value} {time_unit}\n叙事位置：{narrative_position}` | `{title, timeline_flag, chapter_id?}`（chapter_id = source_chapter_id——来自章节提取的事件写入，手工建档/未知来源省略；供按章节过滤检索结果） |
-| `chapter_chunk` | F2 章节内容（分块） | 块文本（~500 字/块，`_chunk_text` 纯函数） | `{chapter_id, chapter_title, chunk_index}` |
+| `chapter_chunk` | F2 章节内容（分块） | 块文本（切片策略模式按 mode 切分，§5.6.1；默认 fixed ~500 字） | `{chapter_id, chapter_title, chunk_index, chapter_x, chapter_y, volume_title?, chunk_start, indexed_at}` |
 
-- `IndexableEntity.id` = 实体 UUID 字符串（章节分块 = `f"{chapter_id}:{chunk_index}"`）→ Chroma upsert 幂等
+- `IndexableEntity.id` = 实体 UUID 字符串；章节分块 overlap=0 时 = `f"{chapter_id}:{idx}"`（现状），overlap>0 时 = `f"{chapter_id}:{idx}:{start_offset}"`（§5.6.3）→ Chroma upsert 幂等
 - `metadata` 自动附带 `project_id`（检索过滤键）
-- 分块规则（`domain/services/_chunking.py` 纯函数）: 按字符 ~500 字/块，优先在段落/句号边界切分（中文文本按 `。！？\n` 回溯），无重叠；单章 < 500 字 = 1 块；空内容跳过
+- 分块规则（`domain/services/_chunking.py` 纯函数，切片策略模式）: 见 §5.6.1-§5.6.7——三档切片（fixed/paragraph/dialogue/llm）+ 滑动重叠 + 元数据补强；默认 fixed（现状 ~500 字标点回溯无重叠）保持存量行为与向量不变
 
 **索引触发（两种路径）**:
 
@@ -1045,6 +1050,118 @@ class LangChainVectorStore:
 | BGE 模型首次下载（~100MB，需网络） | 懒加载：首次 index/retrieve 时初始化（deps 层模块级单例缓存）；失败 → RAGUnavailableError（消息提示联网/重试） |
 | chroma 持久化目录不可写 / 损坏 | `VectorStoreError`（500，loguru 记录） |
 | retrieve 无结果 | 200 + 空 items（正常路径，同 F9 空搜索） |
+
+#### 5.6.1 切片策略模式（ChunkingMode — 三档可配，#277/#278）
+
+将单一 `chunk_text` 扩展为**策略模式**：一个入口按 `mode` 分发到切片器，为 #278 对话/LLM 档预留统一接口。三档成本递增（docs `rag-vector-enhancement-requirements.md` §2.1 已定）：**段落（零成本）< 对话（纯规则零 LLM）< LLM 分析（token 成本）**。
+
+```python
+# domain/services/_chunking.py（扩展，纯函数 + 零框架依赖，ADR-002/015）
+
+class ChunkingMode(StrEnum):
+    FIXED = "fixed"            # 固定字符切片（现状：~500 字标点回溯，无重叠）
+    PARAGRAPH = "paragraph"    # 段落切片（空行切分 + 超长段降级标点回溯，#277）
+    DIALOGUE = "dialogue"      # 对话切片（说话人切换 + 短块合并，#278 M4）
+    LLM = "llm"                # LLM 语义分析切片（注入 analyzer + 失败降级，#278 M4）
+
+@dataclass
+class Chunk:
+    text: str          # 块文本
+    start_offset: int  # 块在原文中的起始字符偏移（0-based；overlap 块 id 用）
+
+def chunk_text(
+    text: str,
+    *,
+    mode: ChunkingMode = ChunkingMode.FIXED,
+    chunk_size: int = 500,
+    overlap_ratio: float = 0.0,
+    analyzer: Callable[[str], list[int]] | None = None,  # 仅 LLM 档注入
+) -> list[Chunk]: ...
+    # 空文本 → []；chunk_size <= 0 → ValueError（保持既有契约，§7）
+```
+
+- `mode` / `chunk_size` / `overlap_ratio` 来自全局设置（app_settings，§5.6.3/§5.6.5）；`analyzer` 仅 LLM 档由装配层注入（`_chunking.py` 零 LLM import）。
+- 三档共享 `Chunk{text, start_offset}` 返回结构与块 id 规则（§5.6.3）；overlap=0 时 FIXED 行为与现状逐字一致（向后兼容，存量向量无需重建）。
+
+#### 5.6.2 段落切片器（#277 M3，P1）
+
+```text
+规则（纯函数 _chunk_paragraph）:
+① 按空行（连续 \n\n）切分为段落（单 \n 不切，保留段落内换行）
+② 单段长度 <= chunk_size → 直接作为一块
+③ 单段长度 > chunk_size → 降级标点回溯（复用 FIXED 逻辑：从边界向前找 。！？\n 切分）
+④ 空文本 → []；chunk_size 可配（默认 500，范围 100-2000）
+```
+
+- 段落边界贴合小说「空行分段」语义结构；超长段降级保证单块不超 chunk_size（embedding 质量与固定档一致）。
+- `chunk_size <= 0` → ValueError（与 FIXED 同契约）；`chunk_size` 越界（<100 或 >2000）由 app_settings 校验层 422（§5.6.3）。
+
+#### 5.6.3 滑动重叠开关（#277，默认关——Q4 ✅ 按建议）
+
+```text
+全局设置（app_settings，§2 数据模型 + §8 跨模块 MODIFY F32 settings）:
+  rag_chunk_overlap       : bool  = False   # 重叠开关，默认关（Q4 ✅ 按建议）
+  rag_chunk_overlap_ratio : float = 0.15    # 重叠比例，范围 [0.10, 0.20]
+```
+
+- **块 id**：overlap=0 → `{chapter_id}:{idx}`（现状不变）；overlap>0 → `{chapter_id}:{idx}:{start_offset}`（重叠块 idx 不足以唯一标识，追加字符偏移）。
+- **检索去重**：overlap>0 时相邻块共享内容，检索合并按 `(entity_type, 源实体 id)` 去重取最高分再截断 top_k——chapter_chunk 的「源实体 id」= `chapter_id`（章节）非块 id（同章节多块命中只留最高分一条，杜绝相邻重复块刷屏，QA §P1-1）。
+- **不变式**：overlap=0 保持「拼接还原原文」不变式；overlap>0 打破该不变式 → 断言改为弱不变式「原文每字符至少被一个块覆盖」（§9，QA §4.1-A4）。
+
+#### 5.6.4 检索元数据补强（#277）
+
+chapter_chunk 的 `metadata` 在现有 `{chapter_id, chapter_title, chunk_index}` 基础上新增（全部 `str|int|float`）：
+
+| 键 | 类型 | 说明 |
+|----|------|------|
+| `chapter_x` | int | 全书第 x 章（按 order_index 排序，1-based） |
+| `chapter_y` | int | 全书共 y 章（章节总数） |
+| `volume_title` | str? | 所属卷标题（有 volume_id 时；无卷项目省略） |
+| `chunk_start` | int | 块起始字符偏移（供定位；overlap 时与 start_offset 一致） |
+| `indexed_at` | str | 索引时间戳（ISO 8601，reindex 统一写入） |
+
+- `_map_retrieved` 延续 `.get()` fallback 约定（旧数据缺键不崩：`metadata.get("chapter_x")` 等，缺失回退现状展示，QA §P2-1）——**任何新代码禁止直接 `metadata["chapter_x"]` 下标访问**。
+- 章节 x/y 语义与卷信息表达见待澄清 Q1。
+
+#### 5.6.5 切片参数纳入指纹（#276 联动，不重定义协议）
+
+复用 #276 已实现指纹协议（`domain/models/vector_fingerprint.py` 的 `ChunkingFingerprint{mode, chunk_size, overlap_ratio, chunker_version}` 已存在）——**本 spec 只声明装配接线，不重定义协议**：
+
+- reindex 装配时从 app_settings 读取切片配置快照 → `build_fingerprint(chunking={mode, chunk_size, overlap_ratio, chunker_version})` 写入指纹（`_extraction_rag.py` reindex 的 `_fingerprint_provider`）。
+- 任一字段变更（含 `chunker_version` 手动 bump）→ `compare_fingerprints` 报 `chunking_changed` → stale → GUI/CLI 提示重新向量化（复用 #276 的 status 端点 + 警告条）。
+- `chunker_version` 语义：切片算法改版手动 +1（对话/LLM 切片器边界规则调整、LLM analyzer 换 prompt 等不可复现变更），强制触发 stale（QA §P2-2 chunk id 漂移管控）。
+
+#### 5.6.6 对话切片器（#278 M4，P2）
+
+```text
+规则（纯函数 _chunk_dialogue）:
+① 说话人切换识别：中文对话形态——引号（「」“”）开头、破折号（——）开头、冒号+引号（：“）等
+   标记对话起始；连续对话归并为一块
+② 短块合并：对话块长度 < min_dialogue_len（默认 100 字符）→ 合并邻近叙述上下文
+   （向前合并，保持时间顺序）
+③ 无对话文本（无引号/破折号标记）→ 降级段落切片（§5.6.2，不产生空块）
+④ 空文本 → []
+```
+
+- 纯规则零 LLM 成本；识别规则易错（中文对话形态多样），M4 落地前需真实对话体样本验证（QA §2.5 Q2.5）。
+- 说话人切换点 = 语义边界（一段对话 = 一个完整情境），召回片段自洽（docs §2.1）。
+
+#### 5.6.7 LLM 分析切片器（#278 M4，P2）
+
+```text
+规则（装配层注入 analyzer，_chunking.py 保持纯函数）:
+① 语义切分：analyzer（LLM 回调，复用 F5 LangChainLLMClient + llm_chunk.yaml 模板）
+   返回语义边界偏移列表 → 按边界切分
+② 增量：复用 F14 _content_hash（sha256，extraction_runs.content_hash）——内容未变的章节
+   跳过 LLM 分析（直接复用上次切片结果 / 跳过重灌），控制「重新向量化」成本（QA §P2-2）
+③ 失败降级：analyzer 异常 / 未配置对话模型 / 超时 → 降级段落切片（§5.6.2）+ logger.warning
+   ——不允许 reindex 整体失败（QA §4.1-A3）
+④ chunk id 漂移管控：LLM 输出非确定（同章两次切分边界不同）→ 变更时手动 bump chunker_version
+   触发 stale（§5.6.5），避免残留（QA §P2-2）
+```
+
+- LLM 档成本最高（每次重建 token 成本），选择时 GUI/CLI 预估 token（docs §2.3）。
+- `_chunking.py` 通过 `analyzer: Callable[[str], list[int]] | None` 注入，domain 层零 LLM import（ADR-015）；analyzer 装配在 deps/装配层（复用 F5 LLMClient，未配置对话模型 → 降级段落 + warning，§7）。
 
 ### 5.7 横切收敛 vs 实体样板：差异对照表
 
@@ -1172,6 +1289,14 @@ _HANDLERS: dict[ExtractionType, ...] = {
 | CLI vector retrieve 缺 --query | 退出码 2（Typer 必填参数） |
 | run 表 upsert DB 错误 | 500（全局处理器；提取产物已落库——run 是副产物，失败不回滚实体） |
 | 项目硬删除 | extraction_runs 级联物理删除（FK CASCADE）；chroma 向量数据**不自动清理**（孤儿向量，检索按 project_id 过滤不可见；`vector reindex` 覆盖；全量清理归 Phase 2+，见 §12） |
+| 切片：空文本（所有模式） | 返回 `[]`（不产生块，不索引） |
+| 切片：chunk_size <= 0 | ValueError（`_chunking.py` 契约，同 FIXED） |
+| 切片：chunk_size 越界（<100 或 >2000）/ overlap_ratio 越界（<0.10 或 >0.20） | 422（app_settings 校验层，§5.6.3） |
+| 切片：overlap>0 且文本长度 < chunk_size | 1 块（不产生重复块） |
+| 切片：对话模式无对话文本 | 降级段落切片（§5.6.6，不产生空块） |
+| 切片：LLM analyzer 失败 / 未配置对话模型 / 超时 | 降级段落切片 + logger.warning，reindex 不中断（§5.6.7） |
+| 检索：旧向量数据缺新元数据键（chapter_x 等） | `_map_retrieved` `.get()` fallback 不崩（§5.6.4） |
+| 切片配置变更 | stale（chunking_changed）→ 提示重新向量化；重建前检索继续用旧向量（200 非空，§5.6.5） |
 
 ---
 
@@ -1206,7 +1331,7 @@ backend/src/inkflow/
 │       │                              _character_extractor.py 骨架；LLM 输出 ExtractedTimelineEvent；
 │       │                              合并按 (project_id, title, source_chapter_id)，经
 │       │                              TimelineRepositoryProtocol.list_by_chapter 匹配）
-│       ├── _chunking.py          ← CREATE: chunk_text 纯函数（~500 字/块，§5.6）
+│       ├── _chunking.py          ← MODIFY: 切片策略模式（ChunkingMode + Chunk + chunk_text 分发 + _chunk_fixed/_chunk_paragraph/_chunk_dialogue，§5.6.1/§5.6.2/§5.6.6；返回 Chunk{text, start_offset}）
 │       └── __init__.py           ← MODIFY
 ├── infrastructure/
 │   ├── rag/                      ← CREATE 目录（当前不存在，ADR-013 指定位置）
@@ -1226,7 +1351,8 @@ backend/src/inkflow/
 │   │       └── __init__.py       ← MODIFY
 │   └── llm/templates/
 │       ├── foreshadowing_extract.yaml ← CREATE: 伏笔提取模板（§5.4；变量 text）
-│       └── timeline_extract.yaml      ← CREATE: 时间线提取模板（§5.5；变量 text）
+│       ├── timeline_extract.yaml      ← CREATE: 时间线提取模板（§5.5；变量 text）
+│       └── llm_chunk.yaml             ← CREATE: LLM 切片模板（§5.6.7；变量 text，输出语义边界偏移列表）
 ├── api/
 │   ├── routers/
 │   │   ├── extractions.py       ← CREATE: 4 个端点（POST /extract + GET runs +
@@ -1265,6 +1391,7 @@ backend/tests/unit/
 ├── test_timeline_extractor.py        ← CREATE: 时间线提取管线（Mock LLM 分支 + 设置项开/关切换 +
 │                                         事件合并 + 章节联动语义，§5.5）
 ├── test_chunking.py                  ← CREATE: 分块纯函数（边界/标点切分/空文本）
+├── test_chunking_modes.py            ← CREATE: 切片器变体（段落/重叠/对话/LLM 降级/块 id/元数据/指纹联动，§9）
 ├── test_langchain_vector_store.py    ← CREATE: 真实 chroma（tmp 目录）+ FakeEmbeddings
 │                                         （index/retrieve/delete/delete_project/cosine 分数/
 │                                         min_score 过滤/project_id where 过滤）
@@ -1295,6 +1422,21 @@ backend/src/inkflow/
 │       └── repositories/timeline_repo.py ← MODIFY F12: SQLiteTimelineRepository 实现
 │                                            list_by_chapter（WHERE project_id=? AND
 │                                            source_chapter_id=? AND is_deleted=0）
+```
+
+**跨模块 MODIFY F32 settings（app_settings 切片配置 — 行式键值表免 ALTER，§5.6.3）**:
+
+```text
+backend/src/inkflow/
+└── domain/
+    └── models/settings.py          ← MODIFY F32: SettingsKey 枚举加 rag_chunk_mode /
+                                        rag_chunk_size / rag_chunk_overlap /
+                                        rag_chunk_overlap_ratio 四键；AppSettings 加对应
+                                        字段（默认 mode="fixed"/size=500/overlap=False/
+                                        ratio=0.15，字段名=SettingsKey 值）；AppSettingsUpdate
+                                        加对应可选字段（None=不更新）——service/repo/ORM 零改动
+                                        （行式键值表免 ALTER，SettingsService._merge 基于字段名
+                                        白名单自动生效，§5.6.3/§5.6.5）
 ```
 
 > **迁移注意**: timeline_events 表加列需 SQLite ALTER TABLE（`ALTER TABLE timeline_events ADD COLUMN source_chapter_id INTEGER`）——既有本地库升级路径；新列可空，既有事件 source_chapter_id=None（手工事件语义，不参与提取合并匹配，§5.5）。
@@ -1341,7 +1483,7 @@ class ExtractionRunRepositoryProtocol(Protocol):
 服务测试: ExtractionService 门面（Mock 各模块 Service）   ~28 cases
 管线测试: ForeshadowingExtractor（Mock LLM 分支）        ~15 cases
 管线测试: TimelineExtractor（Mock LLM 分支 + 设置项切换）~15 cases
-分块测试: chunk_text 纯函数                              ~8 cases
+切片测试: chunk_text + 切片器变体（段落/重叠/对话/LLM 降级）  ~25 cases
 RAG 测试: LangChainVectorStore（FakeEmbeddings + tmp chroma）~15 cases
 API 测试: 4 端点（Mock ExtractionService）               ~15 cases
 CLI 测试: extract/vector 组（Mock ExtractionService）    ~20 cases
@@ -1373,7 +1515,15 @@ CLI 测试: extract/vector 组（Mock ExtractionService）    ~20 cases
 
 **时间线提取管线（Mock LLM，§5.5）**: 合法 JSON → 合并落库（事件带 source_chapter_id）/ 修复重试 ≤2 → TimelineExtractionError / 条目级非法（title 空、time_value 越界）→ 跳过 + warning / 合并匹配：同 (title, source_chapter_id) 活动事件 → 非空字段覆盖且 **None 不动**（time_value/time_unit/narrative_position/timeline_flag 独立判断）/ 不存在 → 新建（time_value=None、narrative_position=LLM 输出或 None、timeline_flag 透传）/ 软删同名同章 → 新建 + warning / 手工事件（source_chapter_id=None）不匹配 → 新建 / 幂等：同文本二次提取 → 空 diff / **章节联动**：章节内容变更 → 重提取 → 同源事件更新（list_by_chapter Mock 断言查询键）/ 章节硬删 → source_chapter_id 置 None（repo 层语义）/ 设置项关闭 → extractor 不被调用
 
-**分块**: 500 字边界 / 标点边界回溯（。！？\n）/ 短文本 1 块 / 空文本 0 块 / 中文计数正确
+**分块（chunk_text，FIXED 现状，保持既有契约）**: 500 字边界 / 标点边界回溯（。！？\n）/ 短文本 1 块 / 空文本 0 块 / 中文计数正确
+
+**切片器变体（test_chunking_modes.py，§5.6.1-§5.6.7）**:
+- 段落模式：空行切分 / 单段 ≤ chunk_size 一块 / 超长段降级标点回溯 / 空文本 [] / chunk_size<=0 ValueError
+- 重叠：overlap=0 拼接还原原文不变式 / overlap=10%/20% 相邻块重叠率 ∈ 区间 / overlap>0 弱不变式「原文每字符至少被一块覆盖」/ 超短文本（<chunk_size）不产生重复块 / 块 id 三态（overlap=0 `{chapter_id}:{idx}`、overlap>0 `{chapter_id}:{idx}:{start_offset}`）
+- 对话模式：说话人切换边界（引号/破折号/冒号+引号）/ 连续对话归并 / 短块合并叙述上下文 / 无对话文本降级段落 / 空文本 []
+- LLM 模式：注入 mock analyzer（返回边界列表）→ 边界生效 / analyzer 异常 → 降级段落（reindex 不中断）/ 内容 hash 相同 → 不重复调用 analyzer（增量契约）
+- 元数据：_project_chapter_chunk 输出 chapter_x/chapter_y/volume_title/chunk_start/indexed_at；_map_retrieved 缺键 .get() fallback 不崩
+- 指纹联动：切片配置变更 → compare_fingerprints 报 chunking_changed（#276 既有纯函数，复用其测试）
 
 **RAG（真实 chroma + FakeEmbeddings，tmp 目录）**: index → collection upsert（id 幂等：同 id 二次 index 覆盖）/ index_batch / retrieve 按 project_id where 过滤（跨项目不可见）/ entity_types 过滤 / cosine 分数 = 1 - distance（FakeEmbeddings 固定向量可断言排序）/ min_score 过滤 / top_k 截断 / delete 单实体 / delete_project 返回删除数 / 空库 retrieve → 空列表 / **FakeEmbeddings 维度一致性**（size=384，与 BGE 输出维度同）/ **timeline_event 投影**（metadata 含 chapter_id=source_chapter_id——来自章节提取的事件；手工事件省略该键，§5.6 表）
 
@@ -1404,11 +1554,16 @@ CLI 测试: extract/vector 组（Mock ExtractionService）    ~20 cases
 | 长章节分块提取（> 50000 字符自动切块多次调用） | Phase 2+（F22 长文处理联动）——MVP 单章超限 422 |
 | 向量数据随项目删除自动清理 | Phase 2+——孤儿向量按 project_id 过滤不可见，`vector reindex` 可覆盖（§7/§12） |
 | 向量集合管理（collection 生命周期、迁移、备份） | Phase 2+——MVP 固定 5 个 collection（config.vector_store_collections 已定） |
-| RAG 混合检索（BM25 + 向量）、rerank、分块重叠优化 | Phase 2+——MVP cosine 相似度 + 固定 500 字无重叠分块（YAGNI） |
+| RAG 混合检索（BM25 + 向量）、rerank | Phase 2+——MVP cosine 相似度 + 切片策略模式（§5.6） |
 | 风格检测（F16 本体：风格指纹/AI 痕迹/词汇分析） | F16 风格检测服务（Issue #46 **已交付**）——F14 注册 handler 兑现（§6.1） |
 | extraction_runs 历史审计（多次运行轨迹、变更回溯） | F15 审计服务（Phase 2）——run 表每源一行最新状态（§2.3） |
 | RAG 检索结果用于 F15 审计的跨模块一致性核对 | F15 审计服务（Phase 2） |
 | 增量提取定时任务 / daemon 自动提取 | F25 daemon（Phase 3）——MVP 手动触发（API/CLI） |
+| 项目级切片配置覆盖（每项目独立 mode/chunk_size/overlap） | Phase 2+——MVP 全局 app_settings（§5.6.3，需求文档 Q2.1 建议全局；小说类型差异支持项目级，需项目配置持久化 + API 扩展） |
+| CLI `vector reindex --chunk-mode/--chunk-size/--overlap` 显式覆盖 | 后置 P2（需求文档 §2.3 建议）——MVP 切片配置经 app_settings 持久化，reindex 不加覆盖参数（YAGNI，待澄清 Q3） |
+| 检索结果位置跳转（点击结果跳原文章节） | P2 前端增强——MVP 只展示位置文本（章节 x/y），§5.6.4 |
+| 对话切片真实样本收集与识别规则验证 | #278 M4 前置（QA §2.5 Q2.5）——落地前需真实对话体样本验证识别规则 |
+| LLM 档 token 成本预估弹窗（选 LLM 档时展示） | 后置 P2（docs §2.3）——MVP LLM 档仅降级 + 日志 |
 
 ---
 
@@ -1440,6 +1595,10 @@ F14 依赖:
                             不重定义）；LangChain Chroma + BAAI/bge-small-zh-v1.5
                             （§5.6/§8）；依赖已锁定（chromadb/langchain-chroma/
                             sentence-transformers，pyproject），不新增
+  F32 (settings_service) ✅ — 切片配置经 app_settings 读取（跨模块 MODIFY F32 settings 四键，
+                            §5.6.3/§8）；SettingsService.get_settings 供 reindex 装配读配置快照
+  #276 (RAG 指纹)       ✅ — 切片参数纳入指纹引用其 ChunkingFingerprint / compare_fingerprints /
+                            reindex 四步协议（§5.6.5，**不重定义**）
   ADR-012 (错误处理)    ✅ — 门面失败即异常；错误码新增 EXTRACTION_ERROR / RAG_ERROR
                             （UNSUPPORTED_TYPE 已随 F16 删除，§3.4/§4）
 
@@ -1485,6 +1644,10 @@ F14 被依赖:
 | TIMELINE 提取管线（选项 B，v1.1） | 新建「章节文本 → 时间线事件」LLM 提取管线（`_timeline_extractor.py` + `timeline_extract.yaml`，镜像 F9 骨架）+ 设置项 `timeline_auto_extract`（默认 **false**；请求 `auto_extract` / CLI `--auto-extract` 可覆盖）；关闭时退回 F12 确定性检查 | 用户拍板 Q2=选项 B（含附加要求：AI 自动化需设置项由用户选择是否开启）——AI 自动写事件档案是**副作用型**能力（直接落库作者档案），默认关闭避免意外修改，显式开启 = 知情同意（与 F13 注入「默认进 dynamic 层」的差异：写入型自动化门槛高于读取型）；关闭语义保留 v1.0 的确定性检查（两种语义并存、设置项切换）；估算 +1.5 人天（§5.5/§13 M5b） |
 | 事件-章节联动 source_chapter_id（v1.1） | F12 事件实体新增 `source_chapter_id`（UUID?，FK→chapters.id ON DELETE SET NULL，已索引）；事件合并匹配键 `(project_id, title, source_chapter_id)`；仓储新增 `list_by_chapter` | 用户拍板 Q3 综合方案要求「精确提取 + 事件和章节联动」；与 F13 的 `event_id` 锚点**同构**（跨模块引用先例：F13 引 F12 事件、F14 引 F2 章节——引用方模块负责校验，被引用方只加可空 FK + SET NULL 语义）；同章同名 = 同一事件（重提取更新）、跨章同名 = 不同事件（章节是事件实例的语境）；章节软删保留来源锚点、硬删 SET NULL（事件档案不因来源删除而丢失） |
 | 增量粒度综合（源 hash + 联动，v1.1） | 保留 v1.0 的**按源 sha256 hash** 增量（选项 A 核心）+ 事件-章节联动（重提取按 `source_chapter_id` 匹配更新）；实体级字段 diff 仍归 Phase 2+ | 用户拍板 Q3=综合方案（在 A 与 B 之间取交集：A 的精确内容指纹 + B 的实体来源追踪）；MVP 收益上限 = 「章节变更 → 该章事件精准更新」闭环（M10 手工实证）；字段级 diff 的跨章节实体追踪（F9 档案无来源章节字段）仍超出 MVP 范围（YAGNI） |
+| 切片策略模式（v1.2，#277/#278） | `ChunkingMode` 四值（fixed/paragraph/dialogue/llm）+ `chunk_text` 按 mode 分发，三档共享 `Chunk{text, start_offset}` 返回与块 id 规则 | 固定 500 字切片不符合小说语义结构（对话密集章节硬切语义单元）；策略模式为 #278 预留统一接口（§5.6.1）；三档成本递增（段落<对话<LLM，docs §2.1）；默认 fixed 保持存量行为与向量不变（零迁移） |
+| 重叠默认关（v1.2，Q4 ✅ 按建议） | `rag_chunk_overlap` 默认 False，范围 10%-20%；overlap>0 块 id 加 start_offset，检索按章节去重取最高分 | 保持存量行为不变、索引体积可控；开启后打破「拼接还原原文」不变式 → 弱不变式「每字符至少被一块覆盖」（QA §4.1-A4）；去重杜绝相邻重复块刷屏（QA §P1-1） |
+| 切片参数纳入指纹（v1.2，#276 联动） | reindex 装配从 app_settings 读切片配置 → `build_fingerprint(chunking=...)` 写入；chunker_version 手动 bump 管控 LLM 非确定漂移 | 复用 #276 已实现协议（不重定义）；切片变更 → chunking_changed → stale → 提示重建（QA §P1-1 幽灵块根治） |
+| 对话/LLM 切片降级段落（v1.2，#278 M4） | 对话无对话文本 / LLM analyzer 失败 → 降级段落切片 + warning，reindex 不中断；LLM 复用 _content_hash sha256 增量 | 失败不中断 reindex（QA §4.1-A3）；sha256 增量控制 LLM 档成本（QA §P2-2）；降级保证任何文本都有可用切片 |
 
 ---
 
@@ -1504,18 +1667,23 @@ F14 被依赖:
 | M9 | CLI extract/vector 组（信封/退出码/RAG_ERROR——UNSUPPORTED_TYPE 已随 F16 删除，style 走成功路径）；**ci.yml `integration-cli-backend` job 显式列出 `tests/cli/test_cli_extraction.py` 与 `tests/cli/test_cli_vector.py`** | `pytest tests/cli/test_cli_extraction.py tests/cli/test_cli_vector.py -v` 全绿 + CI job 覆盖确认（Issue #59/#61 教训） |
 | M10 | 手工验证闭环（含 BGE 首次下载）：建项目/章节 → 增量提取 → 索引 → 检索 → 变更重提取 → **时间线提取联动** | 手工验证（`inkflow chapter create` 建 2+ 章 → `inkflow extract run --type character --chapters ... --index` 首次 success → 再次同请求 status=skipped（⏭）→ 修改第 2 章内容（`chapter update`）→ 再提取只处理第 2 章（processed_sources=1、skipped_sources=1）→ `inkflow vector reindex` 全量 → `inkflow vector retrieve --query <章节人物/伏笔关键词>` 返回相关实体（首次自动下载 BGE ~100MB，需网络）→ **时间线场景（Q2/Q3 拍板）**：项目更新设置 `config.extra["timeline_auto_extract"]=true`（或每次调用带 `--auto-extract` 单次覆盖）→ `inkflow extract run --type timeline --chapters ...` 提取事件 → `inkflow timeline list` 事件带 `source_chapter_id`（来源章节）→ 修改某章内容后重提取 → 同源事件被更新（updated>0）、新事件 created → 章节硬删后事件保留且 source_chapter_id 置空） |
 | M11 | 全量回归 + 覆盖率 + lint/type | `pytest -v` 全绿；F14 模块行覆盖 ≥ 80%、全仓 ≥ 60%（0.2.0 DoD）；ruff + mypy 通过（CI 门禁 ADR-017）；domain/ 零框架 import（ADR-002/015，含 `_chunking.py`） |
+| M12 | 切片器变体 + 重叠 + 元数据 + 指纹联动（#277 M3，P1） | `pytest tests/unit/test_chunking_modes.py tests/unit/test_chunking.py -v` 全绿（段落切分/重叠率 ∈ 区间/块 id 三态/对话降级/LLM 降级/元数据 fallback/指纹联动）；扩展 test_search_service.py 元数据缺键 `.get()` fallback 用例；手工：改切片配置 → stale → `vector reindex` → 检索正常且无幽灵块、无相邻重复块 |
+| M13 | 对话切片器 + LLM 分析切片器（#278 M4，P2） | `pytest tests/unit/test_chunking_modes.py -v` 全绿（说话人切换边界/短块合并/无对话降级段落；LLM mock analyzer 边界生效/失败降级不中断/hash 相同跳过 analyzer）；手工：对话文本检索返回对话级 chunk；LLM 档内容未变章节不重复调用 analyzer |
 
 > **验收标准 ↔ Issue #44 映射**: ①「≥6 种提取类型统一接口」→ M1/M3/M8/M9（ExtractionType 6 值 + 注册表 6 槽 + 统一 API/CLI）；②「增量提取（只处理变更内容）」→ M4/M10（hash 追踪 + skip + 断点续跑，手工闭环含「只处理第 2 章」实证）；③「RAG 向量存储落地（chromadb + BGE）」→ M6/M7/M10（LangChainVectorStore + reindex/retrieve + 手工检索闭环，BGE 首次下载 ~100MB 在 M10 实证）；**Q2/Q3 拍板范围** → M5b/M10（时间线提取管线 + 设置项切换 + 事件-章节联动，§2.6/§5.5）。
 
 ---
 
-## 待澄清问题（≤ 3 个，全部 ✅ 已确认——留痕保留，正文已按拍板结果修订）
+## 待澄清问题（历史 Q1-Q3 ✅ 已确认留痕；v1.2 新增 Q4-Q6 🔲 待拍板——设计决策级附建议，正文已按建议起草）
 
 | # | 问题 | 影响 | 建议 |
 |---|------|------|------|
 | Q1 | ✅ **已确认（用户拍板：选项 A）**——**STYLE 类型在 F16（Issue #46）未实现时如何进入统一接口？** 选项 A：注册表占位 + 调用返回 422「风格提取尚未实现（依赖 F16 风格检测）」（接口契约全量先行，F16 落地只填 handler）；选项 B：MVP 从 ExtractionType 枚举/API/CLI 剔除 STYLE，F16 落地时再加（接口变更一次）；选项 C：STYLE 映射到「预留通道」——统一接口返回 501 + 说明文档（区别于业务 422） | 验收标准 ①「≥6 种类型统一接口」的达成口径；F16 落地时的接口兼容性 | **A（已确认）**：v1.0 已按选项 A 设计（§6.1/§12），v1.1 **无正文变更**、仅标记确认；枚举/API/CLI 全量 6 种（验收 ① 直接可证），占位 422 + 独立错误码 UNSUPPORTED_TYPE 语义清晰，F16 落地零接口变更（修订位置：§1 边界声明/§6.1/§7/§12）（F16 已交付——本决策已兑现，F14 spec §6.1/§12 已同步修订） |
 | Q2 | ✅ **已确认（用户拍板：选项 B + 附加要求设置项）**——**TIMELINE 类型在统一接口中的语义？** 选项 A：委托 F12 确定性检查（check_consistency，零新 LLM 管线，事件档案仍手工维护）；选项 B：新建「章节文本 → 时间线事件」LLM 提取管线（新模板 + 提取器 + 事件合并，约 +1.5 人天）；选项 C：TIMELINE 从提取类型中剔除（与 PRD P1-06 6 种列表冲突） | 估算（4-6 → 5.5-7.5 人天）与 F12 边界声明；「时间线提取」是否 PRD 本意 | **B（已确认）**：新建时间线提取管线 + **设置项 `timeline_auto_extract`（默认 false，请求/CLI 可覆盖）**——AI 自动写事件档案需用户显式开启；关闭时退回 F12 确定性检查（两种语义并存）；§5.4 伏笔管线模式直接复用（管线同构）（修订位置：§2.6/§5.5/§6.1/§6.4/§7/§8/§12/§13 M5b） |
 | Q3 | ✅ **已确认（用户拍板：综合方案）**——**增量提取的变更追踪粒度？** 选项 A：按源 hash（章节/文本内容 sha256，MVP 方案）；选项 B：按实体字段级 diff（追踪每个实体最后提取的章节与字段来源，只重提取含变更字段的实体）；选项 C：updated_at 时间戳（章节 updated_at > 上次 run_at 才重跑） | 验收标准 ② 的实现口径；LLM token 节省上限 vs 实现复杂度 | **综合方案（已确认）**：保留源 sha256 hash 增量（选项 A 核心，§5.2）+ **事件-章节联动**（F12 事件 `source_chapter_id` 字段——章节变更 → 重提取 → 按 (project_id, title, source_chapter_id) 匹配更新，精确提取 + 联动，§2.6/§5.5）；实体级字段 diff 仍归 Phase 2+；C（updated_at）维持否决（修订位置：§2.6/§5.5/§8 跨模块 MODIFY/§12/§13 M5b/M10） |
+| Q4 | 🔲 **待拍板**——**章节 x/y 的语义与卷信息表达？** 选项 A：全书级 chapter_x/chapter_y（第 x 章/共 y 章，按 order_index 全局排序），有卷时附加 volume_title（卷内序后置 P2）；选项 B：卷内级（卷内第 x 章/卷内共 y 章），无卷项目退化全书级；选项 C：两者都写（volume_index/volume_title + 全书 chapter_x/chapter_y + 卷内 chapter_x_in_volume） | 检索结果「第几卷·第几章」展示口径；§5.6.4 元数据字段 + _map_retrieved 展示 + 测试契约 | **A（建议）**：全书级复用 order_index 排序零额外 join，卷信息仅附 volume_title 展示（需求文档 US-3.1「第 x 卷 · 第 y 章」的「第 y 章」MVP 取全书序）；卷内序需 volume 内章节排序计算，P2 再补 |
+| Q5 | 🔲 **待拍板**——**三档切片交付节奏（M3 先行 vs 同批）？** 选项 A：0.9.0 同批交付三档（段落+对话+LLM 一起实现合入）；选项 B：M3（段落+重叠+元数据+指纹联动）先行合入，M4（对话+LLM）作为同里程碑后续批次 | §13 M12/M13 实现分批与后续会话提示词拆分 | **B（建议）**：issue 已分 M3/M4 两层、成本递增、LLM 档需真实对话体样本验证（QA §2.5）；spec 一次写全、实现分批 |
+| Q6 | 🔲 **待拍板**——**切片配置的 CLI 暴露面？** 选项 A：仅 app_settings（GET/PATCH /settings + 现有 config/settings CLI），reindex 不加覆盖参数；选项 B：额外加 CLI `vector reindex --chunk-mode/--chunk-size/--overlap` 显式覆盖（需求文档 §2.3 建议） | §3/§4/§10 的 CLI 覆盖参数是否落地 | **A（建议）**：本次最小，配置经 app_settings 持久化（§5.6.3），reindex 不加覆盖参数（YAGNI）；CLI 覆盖后置 P2（§10） |
 
 ---
 
