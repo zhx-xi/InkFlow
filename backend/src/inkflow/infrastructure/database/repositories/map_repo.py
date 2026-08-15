@@ -197,6 +197,9 @@ class SQLiteMapRepository:
         orm.root_location_id = (
             _uuid_to_int(map.root_location_id) if map.root_location_id is not None else None
         )
+        orm.parent_map_id = (
+            _uuid_to_int(map.parent_map_id) if map.parent_map_id is not None else None
+        )
         orm.updated_at = _utcnow()
         await self._session.commit()
         await self._session.refresh(orm)

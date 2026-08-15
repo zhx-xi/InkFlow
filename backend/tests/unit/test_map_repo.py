@@ -374,6 +374,36 @@ class TestMapRepository:
         ghost = _map(project, "幽灵图", id=uuid.UUID(int=99999))
         assert await repo.update(ghost) is None
 
+    async def test_update_map_parent_map_rehang_persists(self, db_session, project):
+        """#385: update 改挂 parent_map_id → 读回新父图（真实 SQLite 轨，非 mock）。
+
+        回归实证：PATCH parent_map_id 返回 200 但 DB 未变（repo.update 漏写
+        parent_map_id 列，rc5 R2d FAIL）。服务层 merged 正确但持久化缺失——
+        只有真实 repo 轨能锁住（mock 轨测不出字段写入）。
+        """
+        repo = SQLiteMapRepository(db_session)
+        parent = await repo.add(_map(project, "南疆总图"))
+        child = await repo.add(_map(project, "中州分图"))
+        # 子图初始挂父图 A
+        attached = await repo.update(child.model_copy(update={"parent_map_id": parent.id}))
+        assert attached is not None and attached.parent_map_id == parent.id
+        # 改挂：子图挂到新父图 B
+        parent_b = await repo.add(_map(project, "东大陆总图"))
+        rehung = await repo.update(attached.model_copy(update={"parent_map_id": parent_b.id}))
+        assert rehung is not None and rehung.parent_map_id == parent_b.id
+        got = await repo.get(child.id.int)
+        assert got is not None and got.parent_map_id == parent_b.id
+
+    async def test_update_map_parent_map_null_persists(self, db_session, project):
+        """#385: update parent_map_id=null → 变根图持久化（读回 None）。"""
+        repo = SQLiteMapRepository(db_session)
+        parent = await repo.add(_map(project, "根图"))
+        child = await repo.add(_map(project, "子图", parent_map_id=parent.id))
+        detached = await repo.update(child.model_copy(update={"parent_map_id": None}))
+        assert detached is not None and detached.parent_map_id is None
+        got = await repo.get(child.id.int)
+        assert got is not None and got.parent_map_id is None
+
     async def test_delete_map_cascades_pins(self, db_session, project):
         """delete 单事务删地图行 + 其 pins（D10=b 显式级联）；不存在/重复删 → False."""
         repo = SQLiteMapRepository(db_session)
