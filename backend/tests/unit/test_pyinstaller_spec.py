@@ -78,3 +78,19 @@ def test_spec_filters_stale_dist_info():
     analysis_pos = src.find("= Analysis(")
     assert cleanup_pos != -1 and analysis_pos != -1, "spec 缺少清理/Analysis（#421 复发）"
     assert cleanup_pos < analysis_pos, "dist-info 清理必须在 Analysis 之前（#421 复发）"
+
+
+def test_spec_packages_mcp_entrypoint():
+    """spec 必须打包 inkflow-mcp.exe（#424：F20 spec §1.2 要求「打包产物含
+    inkflow-mcp.exe（PyInstaller 随 CLI 产物）」——但 0.9.0-rc3 产物无此入口，
+    dev venv 有 Scripts/inkflow-mcp.exe 且 MCP 握手 15 工具正常，纯打包缺口）。
+
+    修复方向（#424）：spec 为 `inkflow.mcp.server:run` 增加第二个 EXE（入口脚本
+    用 `src/inkflow/mcp/__main__.py`，stdio 薄客户端不启动 uvicorn）。"""
+    src = _spec_source()
+    # ① 必须有 inkflow-mcp 命名 EXE
+    assert (
+        'name="inkflow-mcp"' in src or 'name = "inkflow-mcp"' in src
+    ), "spec 缺少 inkflow-mcp EXE（#424）"
+    # ② 入口脚本必须指向 mcp 模块（stdio 薄客户端，非 __main__.py 的 serve）
+    assert "mcp" in src, "spec 缺少 mcp 入口引用（#424）"
