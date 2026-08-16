@@ -1170,7 +1170,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 90
     env:
       INKFLOW_LLM_KEY: ${{ secrets.LLM_API_KEY }}
       # 内核 spawn 需 UTF-8（Windows runner cp1252 会 UnicodeEncodeError）
@@ -1219,7 +1219,7 @@ jobs:
       - name: Build electron main/preload (out/)
         run: pnpm --filter inkflow-electron build
 
-      - name: E2E pipeline AI (real LLM, #298 管线化)
+      - name: E2E pipeline AI (real LLM, #298 管线化 + #366 G1-G4 补测)
         # 守卫（同 e2e-ai-backend）：INKFLOW_LLM_KEY 为空（fork PR / 未配置）时跳过——缺 key 永远 skip 不 fail。
         if: env.INKFLOW_LLM_KEY != ''
-        run: pnpm --filter inkflow-electron test:e2e e2e-pipeline-ai
+        run: pnpm --filter inkflow-electron test:e2e e2e-pipeline-ai e2e-pipeline-gaps
