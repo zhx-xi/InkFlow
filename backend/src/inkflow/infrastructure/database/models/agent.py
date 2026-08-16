@@ -64,6 +64,11 @@ class AgentExecutionORM(Base):
     元素形态 {from, to, type, gate_result}（gate_result: passed/skipped，仅 conditional 边有值）。
     """
 
+    trace: Mapped[list] = mapped_column(LenientJSON(fallback=[]), nullable=False, default=list)
+    """本次执行的轨迹快照（TraceEntry 列表：
+    node/type/reasoning/tool_calls/output/duration_ms/ts）。
+    """
+
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
     """记录创建时间（UTC）."""
 

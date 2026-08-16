@@ -67,6 +67,9 @@ async def execute_pipeline(
     db: AsyncSession = Depends(get_db),
 ):
     """执行管线（异步），返回 202。"""
+    # F47 #379：builtin:chat 单轮对话必须携带非空 variables.prompt
+    if data.pipeline == "builtin:chat" and not ((data.variables or {}).get("prompt") or "").strip():
+        raise HTTPException(status_code=422, detail="chat 管线需要 variables.prompt")
     svc = _svc(db)
     try:
         return await svc.execute(data)

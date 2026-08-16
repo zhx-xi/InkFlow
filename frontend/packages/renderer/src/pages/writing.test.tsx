@@ -546,3 +546,55 @@ describe('写作页 — HITL 确认流（#343：waiting_hitl → 内联确认卡
     );
   });
 });
+
+describe('写作页 — 底部 AI 聊天框（#379 F47 §4.1）', () => {
+  it('渲染 chat-panel（聊天输入框 + 发送按钮；空输入发送禁用）', () => {
+    render(<WritingPage />);
+    expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-input')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-send')).toBeDisabled();
+  });
+});
+
+describe('写作页 — 视图切换（#379 F47 §4.2：正文编辑 ↔ AI 执行详情）', () => {
+  it('默认 editor 视图：ChapterEditor 渲染、无 exec-detail', () => {
+    render(<WritingPage />);
+    expect(screen.getByTestId('chapter-editor')).toBeInTheDocument();
+    expect(screen.queryByTestId('exec-detail')).not.toBeInTheDocument();
+  });
+
+  it('点 view-toggle → detail 视图：ExecutionDetailPanel 渲染（mock 轨迹数据）', async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/agent/pipelines/executions/e1') {
+        return {
+          execution_id: 'e1',
+          pipeline: 'builtin:write_auto',
+          project_id: 'p1',
+          status: 'completed',
+          stages: [
+            { stage_id: 'architect', status: 'completed', output: '规划', error: '', retry_count: 0, duration_ms: 100 },
+          ],
+          trace: [
+            { node: 'supervisor', type: 'decision', reasoning: '{"action":"execute","role":"architect"}', tool_calls: [], output: '', duration_ms: 30, ts: '2026-08-16T10:00:00Z' },
+          ],
+          relations: [],
+          final_output: '成品',
+          total_duration_ms: 800,
+          error: '',
+        };
+      }
+      if (path === '/api/v1/projects/p1/volumes') return { items: seedVolumes };
+      if (path === '/api/v1/projects/p1/chapters') return { items: seedChapters, total: 2, offset: 0, limit: 50 };
+      if (path.startsWith('/api/v1/chapters/')) return { ok: true };
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    const user = userEvent.setup();
+    render(<WritingPage />);
+    // 未执行过管线 → detail 视图空态（exec-detail-empty）
+    await user.click(screen.getByTestId('view-toggle'));
+    expect(await screen.findByTestId('exec-detail-empty')).toBeInTheDocument();
+    // 切回 editor 视图 → ChapterEditor 恢复
+    await user.click(screen.getByTestId('view-toggle'));
+    expect(screen.getByTestId('chapter-editor')).toBeInTheDocument();
+  });
+});

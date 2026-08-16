@@ -10,8 +10,10 @@ interrupt（无其他副作用）。resume 后 approved → goto role，rejected
 from __future__ import annotations
 
 import json
+import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from functools import partial
 from typing import Annotated, Any, NotRequired, TypedDict, cast
 
@@ -136,20 +138,49 @@ def _parse_decision(content: str) -> tuple[str, str] | None:
     return None
 
 
+def _decision_trace_entry(raw_decision: str, started: float) -> dict:
+    """F47 #379：supervisor 路由决策 trace 条目（spec §2.1 type=decision）。
+
+    reasoning 记录决策 JSON 原文；duration_ms 为本次决策调用耗时；output 恒为空串。
+    """
+    return {
+        "node": "supervisor",
+        "type": "decision",
+        "reasoning": raw_decision,
+        "tool_calls": [],
+        "output": "",
+        "duration_ms": int((time.monotonic() - started) * 1000),
+        "ts": datetime.now(UTC).isoformat(),
+    }
+
+
 async def _decide_next_action(
-    state: SupervisorState, config: SupervisorExecuteConfig
+    state: SupervisorState,
+    config: SupervisorExecuteConfig,
+    trace_sink: Callable[[dict], None] | None = None,
 ) -> tuple[str, str]:
-    """LLM 决策循环：调用 chat → 解析；空 content / 解析失败 / 异常 → 重试 → 失败 ("", "")。"""
+    """LLM 决策循环：调用 chat → 解析；空 content / 解析失败 / 异常 → 重试 → 失败 ("", "")。
+
+    trace_sink（F47 #379）：每次路由决策完成后追加一条 decision trace（supervisor 节点
+    经实例注入收集器；直接调用本函数时省略，保持既有 (action, role) 契约）。
+    """
     llm: LLMClientProtocol = state["llm_client"]
+    started = time.monotonic()
+    raw_decision = ""
     for attempt in range(_MAX_DECISION_ATTEMPTS):
         messages = _build_decision_messages(state, config, attempt)
         try:
             response = await llm.chat(messages)
         except Exception:
             continue
-        parsed = _parse_decision(response.content)
+        raw_decision = response.content
+        parsed = _parse_decision(raw_decision)
         if parsed is not None:
+            if trace_sink is not None:
+                trace_sink(_decision_trace_entry(raw_decision, started))
             return parsed
+    if trace_sink is not None:
+        trace_sink(_decision_trace_entry(raw_decision, started))
     return "", ""
 
 
@@ -179,7 +210,9 @@ def _guard_triggered(state: SupervisorState, config: SupervisorExecuteConfig, ro
 
 
 async def _supervisor_node(
-    state: SupervisorState, supervisor_config: SupervisorExecuteConfig
+    state: SupervisorState,
+    supervisor_config: SupervisorExecuteConfig,
+    trace_sink: Callable[[dict], None] | None = None,
 ) -> Command[Any]:
     """LLM 决策下一个执行角色 → Command(goto)。
 
@@ -193,7 +226,7 @@ async def _supervisor_node(
     HITL：决策角色在 hitl_roles 时 goto="hitl"（interrupt 前置独立节点，无其他副作用）；
     resume 后由 hitl 节点按 approved 分支 goto role / fallback。
     """
-    action, role = await _decide_next_action(state, supervisor_config)
+    action, role = await _decide_next_action(state, supervisor_config, trace_sink)
     if action == "":
         # 决策重试耗尽：fallback_on_error=false → 直接失败；默认 → deterministic 回退
         if not supervisor_config.fallback_on_error:
@@ -299,6 +332,11 @@ class SupervisorPipeline(AgentPipelineProtocol):
         self._stages: list[PipelineStage] = []
         self._config = SupervisorExecuteConfig()
         self._thread_id = ""
+        self._trace: list[dict] = []
+
+    def _append_trace(self, entry: dict) -> None:
+        """F47 #379：收集 supervisor 路由决策 trace 条目（供 _to_result 合并返回）。"""
+        self._trace.append(entry)
 
     def validate(self, stages: Sequence[PipelineStage]) -> list[str]:
         """角色池合法性校验：非空 / 无重复 id（spec §7 空池拒绝）。"""
@@ -316,7 +354,10 @@ class SupervisorPipeline(AgentPipelineProtocol):
         """方案 A 拓扑：supervisor/hitl 无静态出边，Command(goto) 全权控制路由。"""
         g = StateGraph(SupervisorState)
         g.add_node("bootstrap", partial(_bootstrap_node, llm_client=self._llm))
-        g.add_node("supervisor", partial(_supervisor_node, supervisor_config=config))
+        g.add_node(
+            "supervisor",
+            partial(_supervisor_node, supervisor_config=config, trace_sink=self._append_trace),
+        )
         g.add_node("hitl", partial(_hitl_node, supervisor_config=config))
         for role_id in self._roles:
             g.add_node(role_id, partial(_role_node, role_id=role_id))
@@ -348,6 +389,7 @@ class SupervisorPipeline(AgentPipelineProtocol):
         self._stages = list(stages)
         self._roles = [s.id for s in stages]
         self._thread_id = f"supervisor-{uuid.uuid4()}"
+        self._trace = []
         app = self._build_graph(config)
         state = cast(
             SupervisorState,
@@ -428,8 +470,24 @@ class SupervisorPipeline(AgentPipelineProtocol):
             if failed or final_state.get("_abort", False)
             else StageStatus.COMPLETED
         )
+        # F47 #379（spec §2.1）：decision trace（supervisor 决策，执行期收集）在前，
+        # stage trace（角色节点执行，按 stage_results 组装）在后，随 result 返回。
+        trace_ts = datetime.now(UTC).isoformat()
+        stage_trace = [
+            {
+                "node": sr.stage_id,
+                "type": "stage",
+                "reasoning": sr.output,
+                "tool_calls": [],
+                "output": sr.output[:500],
+                "duration_ms": sr.duration_ms,
+                "ts": trace_ts,
+            }
+            for sr in stage_results
+        ]
         return PipelineResult(
             stages=stage_results,
             final_output=final_state.get("final_output", ""),
             status=status,
+            trace=[*self._trace, *stage_trace],
         )

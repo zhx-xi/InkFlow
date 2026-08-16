@@ -1,11 +1,19 @@
 import '@testing-library/jest-dom/vitest';
-import { afterEach } from 'vitest';
+import { afterEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 
 // RTL 自动清理（globals 模式下 afterEach 自动注册）
 afterEach(() => {
   cleanup();
 });
+
+// userEvent 在 fake timers 下每次 API 调用收尾会 await setTimeout(0)（wait()），
+// vitest 默认 fake timers 不自动推进 → user.type / user.click 挂起（ChatPanel 契约 4-6）。
+// 兜底：无参 useFakeTimers() 默认 shouldAdvanceTime=true（按真实时间自动推进 @sinonjs clock），
+// 显式传参的调用保持原样（既有轮询/防抖测试仍用 advanceTimersByTimeAsync 精确控制）。
+const originalUseFakeTimers = vi.useFakeTimers.bind(vi);
+vi.useFakeTimers = ((options?: Parameters<typeof vi.useFakeTimers>[0]) =>
+  originalUseFakeTimers(options === undefined ? { shouldAdvanceTime: true } : options)) as typeof vi.useFakeTimers;
 
 // jsdom 缺失的浏览器 API mock 位（SSE 走 fetch ReadableStream，mock 点在 api 层，见 frontend-testing 技能）
 

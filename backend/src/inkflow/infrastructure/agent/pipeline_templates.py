@@ -90,6 +90,15 @@ _CONTINUE_REVISER_PROMPT = """你是一位专业文稿修订师。根据审阅�
 请输出修订后的完整章节，保持与前文的连贯性，针对性地改进问题。"""
 
 
+_CHAT_ASSISTANT_PROMPT = (
+    "你是资深小说创作对话助手，结合设定库与上下文回答用户关于创作的提问。\n"
+    "\n"
+    "用户提问: {prompt}\n"
+    "\n"
+    "请用中文直接给出具体、可落地的创作建议或正文片段。"
+)
+
+
 def _build_write_chapter_template() -> PipelineConfig:
     """构建 builtin:write_chapter 模板 — Architect→Writer→Auditor→Reviser 四阶段链。"""
     architect = AgentRole(
@@ -276,10 +285,31 @@ def _build_write_continue_template() -> PipelineConfig:
     )
 
 
+def _build_chat_template() -> PipelineConfig:
+    """构建 builtin:chat 模板 — 单阶段对话助手（入口 + 终点）。"""
+    assistant = AgentRole(
+        id="chat",
+        name="对话助手",
+        system_prompt=_CHAT_ASSISTANT_PROMPT,
+        model=config.llm_default_model,
+        temperature=None,  # None = 跟随默认 → 项目顶层温度（spec §9.2.3 温度链）
+    )
+    stages = [
+        PipelineStage(id="chat", name="对话助手", agent=assistant),
+    ]
+    return PipelineConfig(
+        name="AI 对话 (1 阶段)",
+        description="单轮对话助手：结合设定库与上下文回答用户关于创作的提问",
+        stages=stages,
+        source="builtin",
+    )
+
+
 BUILTIN_TEMPLATES: dict[str, PipelineConfig] = {
     "builtin:write_chapter": _build_write_chapter_template(),
     "builtin:write_auto": _build_write_auto_template(),
     "builtin:write_continue": _build_write_continue_template(),
+    "builtin:chat": _build_chat_template(),
 }
 
 

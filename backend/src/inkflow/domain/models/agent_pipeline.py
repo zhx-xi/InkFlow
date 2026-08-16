@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from inkflow.domain.ports.agent_pipeline import PipelineContext as PipelineContext
 from inkflow.domain.ports.agent_pipeline import PipelineStage
 
 
