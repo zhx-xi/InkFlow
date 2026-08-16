@@ -746,8 +746,11 @@ async def _build_store() -> VectorStoreProtocol:
             secret_key=config.secret_key,
             storage_dir=config.data_dir / "keys",
         ).load(provider)
+        # #428 根因：装配 id 可能带 provider/ 前缀（zhipu/embedding-3 → embedding-3）。
+        # zhipu API 严格拒绝带前缀模型代码（400 code 1211）；deepseek 容忍但剥离无害。
+        normalized_model_id = model_id.split("/", 1)[-1]
         embeddings = OpenAIEmbeddings(
-            model=model_id,
+            model=normalized_model_id,
             api_key=SecretStr(key),
             base_url=base_url or None,
         )
