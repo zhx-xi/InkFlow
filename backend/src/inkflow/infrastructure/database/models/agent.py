@@ -59,6 +59,11 @@ class AgentExecutionORM(Base):
     )
     """HITL interrupt payload 快照（waiting_hitl 时填充）。"""
 
+    relations: Mapped[list] = mapped_column(LenientJSON(fallback=[]), nullable=False, default=list)
+    """本次执行的 agent_relations 边 + conditional gate 判定快照（F46 #270，spec §5.4）。
+    元素形态 {from, to, type, gate_result}（gate_result: passed/skipped，仅 conditional 边有值）。
+    """
+
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
     """记录创建时间（UTC）."""
 

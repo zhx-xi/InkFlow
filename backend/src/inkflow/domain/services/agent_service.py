@@ -6,6 +6,9 @@ import asyncio
 import copy
 import logging
 import uuid
+from collections import deque
+from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any
 
 from inkflow.domain.models.agent_pipeline import (
@@ -15,7 +18,7 @@ from inkflow.domain.models.agent_pipeline import (
     SupervisorExecuteConfig,
 )
 from inkflow.domain.models.agent_template import AgentTemplate, RoleTemplate
-from inkflow.domain.models.project import AGENT_DEFAULT_SENTINEL, ProjectConfig
+from inkflow.domain.models.project import AGENT_DEFAULT_SENTINEL, AgentRelation, ProjectConfig
 from inkflow.domain.ports.agent_pipeline import (
     AgentPipelineProtocol,
     AgentRole,
@@ -23,6 +26,8 @@ from inkflow.domain.ports.agent_pipeline import (
     PipelineError,
     PipelineResult,
     PipelineStage,
+    StageResult,
+    StageStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -160,6 +165,191 @@ def _apply_agent_order(
     return result
 
 
+def _has_cycle(nodes: set[str], edges: Sequence[tuple[str, str]]) -> bool:
+    """Kahn 拓扑排序环检测（spec §5.3.4 算法，域层独立实现，不依赖 infrastructure）。"""
+    indegree = {node: 0 for node in nodes}
+    adjacency: dict[str, list[str]] = {node: [] for node in nodes}
+    for src, dst in edges:
+        if src in indegree and dst in indegree:
+            adjacency[src].append(dst)
+            indegree[dst] += 1
+    queue = deque(node for node, degree in indegree.items() if degree == 0)
+    processed = 0
+    while queue:
+        node = queue.popleft()
+        processed += 1
+        for downstream in adjacency[node]:
+            indegree[downstream] -= 1
+            if indegree[downstream] == 0:
+                queue.append(downstream)
+    return processed != len(nodes)
+
+
+def _transitive_upstream(target_id: str, stages: Sequence[PipelineStage]) -> set[str]:
+    """target 阶段在基线中的 input_from 传递闭包（F46 #270 同层判定，spec §5.3.1 步骤 4）。"""
+    by_id = {s.id: s for s in stages}
+    seen: set[str] = set()
+    stack = list(by_id[target_id].input_from) if target_id in by_id else []
+    while stack:
+        stage_id = stack.pop()
+        if stage_id in seen:
+            continue
+        seen.add(stage_id)
+        stage = by_id.get(stage_id)
+        if stage is not None:
+            stack.extend(stage.input_from)
+    return seen
+
+
+def _append_unique(items: Sequence[str], value: str) -> list[str]:
+    """追加去重（spec §5.3.1：B.input_from 已含 A 时不重复追加）。"""
+    result = list(items)
+    if value not in result:
+        result.append(value)
+    return result
+
+
+def _apply_agent_relations(
+    stages: list[PipelineStage],
+    agent_relations: Sequence[AgentRelation],
+    enabled_roles: set[str],
+) -> tuple[list[PipelineStage], list[tuple[str, str]]]:
+    """在 agent_order 基线上叠加 agent_relations 显式边（spec §5.3.1，F46 #270）。
+
+    返回 (叠加后 stages, conditional_edges)——conditional_edges 为 (from_id, to_id)
+    列表（去 agent_ 前缀的 stage.id），供引擎 add_conditional_edges 构建条件路由。
+
+    防御校验（warning + 原样返回 (stages, [])，忽略关系）：
+    - 死角色引用：from/to 去 agent_ 前缀后 ∉ 启用角色集合（stage.id 口径）
+    - agent_relations 自身环（Kahn）
+    - conditional 边多后继（A 除 B 外还有其它出边）
+    合成后环检测（对最终 input_from/output_to 图，Kahn）→ 有环 → 回退纯基线。
+    """
+    if not agent_relations:
+        return stages, []
+
+    enabled_ids = {role.removeprefix("agent_") for role in enabled_roles}
+    stage_by_id = {s.id: s for s in stages}
+
+    # 防御校验 1：死角色引用（from/to 去 agent_ 前缀后须 ∈ 启用角色且存在于基线 stages）
+    for rel in agent_relations:
+        from_id = rel.from_.removeprefix("agent_")
+        if from_id not in enabled_ids or from_id not in stage_by_id:
+            logger.warning("agent_relations 引用了未启用角色 %s，忽略全部关系", rel.from_)
+            return stages, []
+        to_id = rel.to.removeprefix("agent_")
+        if to_id not in enabled_ids or to_id not in stage_by_id:
+            logger.warning("agent_relations 引用了未启用角色 %s，忽略全部关系", rel.to)
+            return stages, []
+
+    # 防御校验 2：agent_relations 自身环（Kahn）
+    relation_edges = [
+        (rel.from_.removeprefix("agent_"), rel.to.removeprefix("agent_")) for rel in agent_relations
+    ]
+    relation_nodes = {src for src, _ in relation_edges} | {dst for _, dst in relation_edges}
+    if _has_cycle(relation_nodes, relation_edges):
+        logger.warning("agent_relations 自身存在循环依赖，忽略全部关系")
+        return stages, []
+
+    # 防御校验 3：conditional 边多后继（A 除 B 外还有其它出边 → 条件 fan-out 归远期）
+    outgoing_counts: dict[str, int] = {}
+    for rel in agent_relations:
+        from_id = rel.from_.removeprefix("agent_")
+        outgoing_counts[from_id] = outgoing_counts.get(from_id, 0) + 1
+    for rel in agent_relations:
+        if rel.type == "conditional":
+            from_id = rel.from_.removeprefix("agent_")
+            if outgoing_counts.get(from_id, 0) > 1:
+                logger.warning(
+                    "agent_relations conditional 边 %s 存在多后继，忽略全部关系",
+                    rel.from_,
+                )
+                return stages, []
+
+    # 逐边叠加（关系优先；PipelineStage 为 dataclass，改动需新建实例）
+    result = list(stages)
+    index_by_id = {s.id: i for i, s in enumerate(result)}
+    result_by_id = dict(stage_by_id)
+
+    def _replace_stage(
+        stage_id: str,
+        *,
+        input_from: list[str] | None = None,
+        output_to: list[str] | None = None,
+    ) -> None:
+        """用 dataclasses.replace 新建 PipelineStage 实例并回写列表。"""
+        current = result_by_id[stage_id]
+        updated = replace(
+            current,
+            input_from=input_from if input_from is not None else current.input_from,
+            output_to=output_to if output_to is not None else current.output_to,
+        )
+        result_by_id[stage_id] = updated
+        result[index_by_id[stage_id]] = updated
+
+    conditional_edges: list[tuple[str, str]] = []
+    for rel in agent_relations:
+        from_id = rel.from_.removeprefix("agent_")
+        to_id = rel.to.removeprefix("agent_")
+        # 同层判定：基线中 A ∉ B 的传递前序 → 同层（打破并行）；否则跨层（基线已覆盖）
+        same_layer = from_id not in _transitive_upstream(to_id, stages)
+        if rel.type == "sequential":
+            if not same_layer:
+                continue  # 跨层：基线已覆盖时序，无引擎增量（跳过）
+            current = result_by_id[from_id]
+            _replace_stage(from_id, output_to=_append_unique(current.output_to, to_id))
+        elif rel.type == "data":
+            # data 边 = 时序 + 注入：双向幂等追加（跨层基线已含时无新效果）
+            current_from = result_by_id[from_id]
+            current_to = result_by_id[to_id]
+            _replace_stage(from_id, output_to=_append_unique(current_from.output_to, to_id))
+            _replace_stage(to_id, input_from=_append_unique(current_to.input_from, from_id))
+        else:  # conditional
+            current_to = result_by_id[to_id]
+            _replace_stage(to_id, input_from=_append_unique(current_to.input_from, from_id))
+            conditional_edges.append((from_id, to_id))
+
+    # 合成后环检测：对最终 input_from/output_to 图（含条件边注入）Kahn → 有环回退纯基线
+    synthesized_edges: list[tuple[str, str]] = []
+    for stage in result:
+        for upstream_id in stage.input_from:
+            synthesized_edges.append((upstream_id, stage.id))
+        for downstream_id in stage.output_to:
+            synthesized_edges.append((stage.id, downstream_id))
+    if _has_cycle({s.id for s in result}, synthesized_edges):
+        logger.warning("agent_relations 与 agent_order 合成产生环，忽略关系")
+        return stages, []
+
+    return result, conditional_edges
+
+
+def _build_relations_snapshot(
+    agent_relations: Sequence[AgentRelation], stage_results: Sequence[StageResult]
+) -> list[dict]:
+    """执行记录 relations 快照（spec §5.4）：{from, to, type, gate_result}。
+
+    - sequential/data 边：gate_result 省略（非条件边无判定）
+    - conditional 边：目标 stage 在结果中且 status=COMPLETED（有输出）→ passed；
+      否则（未执行/跳过）→ skipped
+    - from/to 输出去 agent_ 前缀（stage.id 口径）
+    """
+    result_by_id = {sr.stage_id: sr for sr in stage_results}
+    snapshot: list[dict] = []
+    for rel in agent_relations:
+        from_id = rel.from_.removeprefix("agent_")
+        to_id = rel.to.removeprefix("agent_")
+        entry: dict[str, str] = {"from": from_id, "to": to_id, "type": rel.type}
+        if rel.type == "conditional":
+            sr = result_by_id.get(to_id)
+            entry["gate_result"] = (
+                "passed"
+                if (sr is not None and sr.status == StageStatus.COMPLETED and sr.output)
+                else "skipped"
+            )
+        snapshot.append(entry)
+    return snapshot
+
+
 class AgentServiceError(Exception):
     """Agent 服务层异常。"""
 
@@ -238,6 +428,9 @@ class AgentService:
             if value is not None:
                 enabled_roles.add(field)
         project_template = await self._load_template(project.config)
+        # F46 #270（spec §5.1）：static 模式在基线上叠加 agent_relations 显式边并收集
+        # conditional_edges；supervisor 模式不消费 agent_relations（§5.5，保持空）
+        conditional_edges: list[tuple[str, str]] = []
         if request.mode == "supervisor":
             # supervisor 模式（spec §5.1）：角色池 = 模板 stages（装配模型/温度/prompt，
             # 不静态重排）；_apply_agent_order 只在 static 模式调用（supervisor 动态路由
@@ -257,6 +450,9 @@ class AgentService:
                 project.config.agent_order,
                 enabled_roles,
                 project_template.roles if project_template else None,
+            )
+            stages, conditional_edges = _apply_agent_relations(
+                stages, project.config.agent_relations, enabled_roles
             )
             stages = await self._merge_role_configs(stages, project.config, request.role_overrides)
             pipeline_impl = self._pipeline
@@ -284,6 +480,8 @@ class AgentService:
                 continue_context=(
                     request.pipeline == "builtin:write_continue" and request.chapter_id is not None
                 ),
+                conditional_edges=conditional_edges if request.mode != "supervisor" else [],
+                agent_relations=project.config.agent_relations,
             )
         )
         # fire-and-forget: 持有引用防止任务被 GC 提前回收；异常在 _run_pipeline 内部捕获
@@ -313,6 +511,7 @@ class AgentService:
             "project_id": execution.project_id,
             "status": execution.status,
             "stages": execution.stages,
+            "relations": getattr(execution, "relations", None) or [],
             "final_output": execution.final_output,
             "total_duration_ms": execution.total_duration_ms,
             "error": execution.error,
@@ -506,11 +705,14 @@ class AgentService:
         pipeline: Any = None,
         supervisor_config: SupervisorExecuteConfig | None = None,
         continue_context: bool = False,
+        conditional_edges: list[tuple[str, str]] | None = None,
+        agent_relations: Sequence[AgentRelation] | None = None,
     ) -> None:
-        """后台执行管线，更新 stages 快照到 ExecutionStore。
+        """后台执行管线，更新 stages 快照与 relations 元数据到 ExecutionStore。
 
         pipeline 默认走既有 self._pipeline（static 模式零回归）；supervisor_config
-        非 None 时把配置透传给动态路由管线（supervisor 模式）。
+        非 None 时把配置透传给动态路由管线（supervisor 模式）。conditional_edges/
+        agent_relations 为 F46 #270 新增：条件边透传 + 执行记录 relations 快照回填。
         """
         pipeline = pipeline or self._pipeline
         if continue_context:
@@ -526,7 +728,10 @@ class AgentService:
                     stages, context, supervisor=supervisor_config
                 )
             else:
-                result = await pipeline.execute(stages, context)
+                result = await pipeline.execute(
+                    stages, context, conditional_edges=conditional_edges or []
+                )
+            relations_snapshot = _build_relations_snapshot(agent_relations or [], result.stages)
             stages_snapshot = [
                 {
                     "stage_id": sr.stage_id,
@@ -544,6 +749,7 @@ class AgentService:
                 status=result.status.value,
                 final_output=result.final_output,
                 total_duration_ms=result.total_duration_ms,
+                relations=relations_snapshot,
             )
         except PipelineError as e:
             await self._store.update_stages(

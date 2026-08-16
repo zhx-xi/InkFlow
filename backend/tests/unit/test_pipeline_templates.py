@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 from inkflow.domain.ports.agent_pipeline import PipelineStage
 from inkflow.infrastructure.agent.pipeline_templates import BUILTIN_TEMPLATES, get_template
 
@@ -142,3 +144,27 @@ class TestBuiltinRegistry:
         assert "builtin:write_auto" in BUILTIN_TEMPLATES
         assert "builtin:write_continue" in BUILTIN_TEMPLATES
         assert "builtin:write_chapter" in BUILTIN_TEMPLATES
+
+
+# ── F46 #270 auditor 审核结论约定（spec §5.3.3 gate 判定依据）─────────
+
+
+class TestAuditorReviewConclusion:
+    """三个内置 auditor prompt 输出加「审核结论：通过 / 不通过」行（spec §5.3.3）。
+
+    conditional 边 gate = 关键词匹配（通过/PASS/通过审核/合格），auditor 是内置唯一
+    典型 conditional 上游（如 auditor→reviser 通过才修订）——prompt 约定使 gate 稳定
+    判定（自定义角色由用户自行在 prompt 约定标记）。
+    """
+
+    @pytest.mark.parametrize(
+        "template_id",
+        ["builtin:write_chapter", "builtin:write_auto", "builtin:write_continue"],
+    )
+    def test_auditor_prompt_has_review_conclusion_line(self, template_id: str) -> None:
+        """每个内置模板的 auditor prompt 均含「审核结论：通过 / 不通过」约定行。"""
+        auditor = _by_id(get_template(template_id).stages)["auditor"]
+        prompt = auditor.agent.system_prompt
+        assert "审核结论" in prompt, f"{template_id} auditor prompt 缺审核结论约定"
+        assert "通过" in prompt, f"{template_id} auditor prompt 缺「通过」标记"
+        assert "不通过" in prompt, f"{template_id} auditor prompt 缺「不通过」标记"

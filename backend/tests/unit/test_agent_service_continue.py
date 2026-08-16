@@ -106,11 +106,15 @@ class MockPipeline:
         self.executed_context: PipelineContext | None = None
 
     async def execute(
-        self, stages: list[PipelineStage], context: PipelineContext
+        self,
+        stages: list[PipelineStage],
+        context: PipelineContext,
+        conditional_edges: list[tuple[str, str]] | None = None,
     ) -> PipelineResult:
         self.execute_called = True
         self.executed_stages = list(stages)
         self.executed_context = context
+        self.executed_conditional_edges = conditional_edges
         return self.result
 
     def validate(self, stages: list[PipelineStage]) -> list[str]:

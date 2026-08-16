@@ -49,6 +49,7 @@ class ExecutionStore:
         final_output: str = "",
         error: str = "",
         total_duration_ms: int = 0,
+        relations: list | None = None,
     ) -> None:
         """更新 stages 快照和整体状态。"""
         execution = await self.get_execution(execution_id)
@@ -59,6 +60,7 @@ class ExecutionStore:
         execution.final_output = final_output
         execution.error = error
         execution.total_duration_ms = total_duration_ms
+        execution.relations = relations if relations is not None else []
         await self._session.commit()
 
     async def update_status(

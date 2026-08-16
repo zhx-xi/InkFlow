@@ -76,15 +76,20 @@ class MockPipeline:
         )
         self.errors = errors or []
         self.execute_called = False
+        self.executed_conditional_edges: list[tuple[str, str]] | None = None
         self.executed_stages: list[PipelineStage] = []
         self.executed_context: PipelineContext | None = None
 
     async def execute(
-        self, stages: list[PipelineStage], context: PipelineContext
+        self,
+        stages: list[PipelineStage],
+        context: PipelineContext,
+        conditional_edges: list[tuple[str, str]] | None = None,
     ) -> PipelineResult:
         self.execute_called = True
         self.executed_stages = list(stages)
         self.executed_context = context
+        self.executed_conditional_edges = conditional_edges
         return self.result
 
     def validate(self, stages: list[PipelineStage]) -> list[str]:
@@ -108,6 +113,7 @@ class FakeExecution:
         self.final_output = ""
         self.error = ""
         self.total_duration_ms = 0
+        self.relations: list[dict] | None = None
         self.created_at = datetime.now(UTC)
 
 
@@ -138,6 +144,7 @@ class MockExecutionStore:
         final_output: str = "",
         error: str = "",
         total_duration_ms: int = 0,
+        relations: list[dict] | None = None,
     ) -> None:
         execution = self.executions.get(execution_id)
         if execution is None:
@@ -147,6 +154,7 @@ class MockExecutionStore:
         execution.final_output = final_output
         execution.error = error
         execution.total_duration_ms = total_duration_ms
+        execution.relations = relations
 
     async def list_executions(
         self, project_id: str, limit: int = 20
@@ -496,15 +504,9 @@ class TestRunPipelineFailures:
 
 
 class TestMergeRoleConfigsSentinel:
-    """F42 #268 三态模型选择执行层（spec §5.1 + §13 M1）：
-
-    - agent_* = AGENT_DEFAULT_SENTINEL（"__default__"）→ 跟随项目 model
-      （#367：sentinel=跟随默认 → 跟随项目配置的 model，非模板 openai/gpt-4o）
-    - agent_* = None/缺键（GUI 默认形态）→ 方案 B（#373）：无模板引用时回退项目
-      model（内置模板 openai/gpt-4o 仅兜底；自定义模板 role 指定 model 仍优先）
-    - agent_* = 裸模型名（无 /）→ warning + 回退跟随默认（不覆盖，不抛错）
-    - agent_* = 合规 provider/model → 覆盖模板角色模型
-    """
+    """F42 #268 三态模型选择执行层（spec §5.1 + §13 M1）：agent_* sentinel → 跟随项目
+    model（#367）；None/缺键 → 方案 B 回退项目 model（#373）；裸名 → warning 回退；
+    合规 provider/model → 覆盖模板角色模型。"""
 
     async def test_sentinel_falls_back_to_project_model(self):
         """agent_writer="__default__" + model="deepseek/deepseek-v4-flash" → writer stage
@@ -829,15 +831,10 @@ class FakeTemplateRepo:
 
 
 class TestExecuteCustomRole:
-    """F42 #295 execute 自定义角色装配（spec §5.3.4 数据面集成 + §13 M6）。
-
-    契约：agent_roles（自定义角色三态）+ agent_order 引用自定义角色 + template_id
-    模板 roles 定义自定义角色 prompt → execute 装配后 pipeline.executed_stages
-    含自定义角色 stage（system_prompt/name/model 装配正确，层序正确）。
-
-    RED 形态（多阶段）：首断言 `"agent_roles" in config.model_dump()` AssertionError
-    （字段不存在，extra ignore 静默丢弃）；GREEN 后字段存在 → 后续装配断言驱动。
-    """
+    """F42 #295 execute 自定义角色装配（spec §5.3.4 数据面集成 + §13 M6）：
+    agent_roles + agent_order 引用自定义角色 + template_id 模板 roles 定义 prompt →
+    pipeline.executed_stages 含自定义角色 stage（prompt/name/model 装配正确）。
+    RED：首断言 `"agent_roles" in config.model_dump()` AssertionError。"""
 
     async def test_execute_custom_role_via_template_roles(self):
         """agent_roles + agent_order + template_id 模板 roles → 自定义角色经装配执行。"""

@@ -8,10 +8,17 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections import deque
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
-from inkflow.domain.models.project import Genre, Project, ProjectConfig, ProjectUpdate
+from inkflow.domain.models.project import (
+    AgentRelation,
+    Genre,
+    Project,
+    ProjectConfig,
+    ProjectUpdate,
+)
 from inkflow.infrastructure.database.repositories.project_repo import (
     SQLiteProjectRepository,
 )
@@ -56,6 +63,67 @@ def _validate_agent_order_config(config: ProjectConfig) -> None:
             missing.append(field)
     if missing:
         raise ValueError(f"agent_order 必须包含全部启用角色: {', '.join(missing)}")
+
+
+def _validate_agent_relations_config(config: ProjectConfig) -> None:
+    """agent_relations API 层语义校验（F46 #270，spec §2.3 API 层）：死角色引用 /
+    agent_relations 自身环 / conditional 边唯一后继 → ValueError（router 转 422）。
+
+    - 空 relations → 直接返回（零迁移）
+    - 已知角色集合 = 内置 4（agent_architect/agent_writer/agent_auditor/agent_reviser）
+      ∪ agent_roles keys（自定义角色，key 已带 agent_ 前缀）
+    - 死角色引用：from/to ∉ 已知角色集合 → ValueError
+      「agent_relations 引用了不存在的角色: xxx」；引用存在但未启用（agent_*=null）
+      → 允许保存（§2.3 软降级）
+    - 自身环：relations 图 Kahn 拓扑排序有环 → ValueError「agent_relations 存在循环依赖」
+    - conditional 唯一后继：conditional 边 A→B 要求 A 除 B 外无其它 relations 出边
+      → 违反 ValueError「conditional 边 <from>-><to> 要求 <to> 是 <from> 的唯一后继」
+    """
+    if not config.agent_relations:
+        return
+    # PATCH 合并路径（model_copy 不触发 validator）→ 元素可能是裸 dict；规范化后再校验
+    # （M7 API 层验证实证 2026-08-16：不规范化会 AttributeError 而非 422）
+    relations: list[AgentRelation] = [
+        rel if isinstance(rel, AgentRelation) else AgentRelation.model_validate(rel)
+        for rel in config.agent_relations
+    ]
+    builtin = {"agent_architect", "agent_writer", "agent_auditor", "agent_reviser"}
+    known = builtin | set((config.agent_roles or {}).keys())
+    for rel in relations:
+        if rel.from_ not in known:
+            raise ValueError(f"agent_relations 引用了不存在的角色: {rel.from_}")
+        if rel.to not in known:
+            raise ValueError(f"agent_relations 引用了不存在的角色: {rel.to}")
+
+    def _has_cycle_relations(relations: list[AgentRelation]) -> bool:
+        """Kahn 拓扑排序：relations 边自身有环 → True（消减后仍有未处理节点）。"""
+        in_degree: dict[str, int] = {}
+        out_edges: dict[str, list[str]] = {}
+        for rel in relations:
+            out_edges.setdefault(rel.from_, []).append(rel.to)
+            in_degree.setdefault(rel.to, 0)
+            in_degree[rel.to] += 1
+            in_degree.setdefault(rel.from_, 0)
+        queue = deque(node for node, deg in in_degree.items() if deg == 0)
+        processed = 0
+        while queue:
+            node = queue.popleft()
+            processed += 1
+            for nxt in out_edges.get(node, ()):
+                in_degree[nxt] -= 1
+                if in_degree[nxt] == 0:
+                    queue.append(nxt)
+        return processed < len(in_degree)
+
+    if _has_cycle_relations(relations):
+        raise ValueError("agent_relations 存在循环依赖")
+    for rel in relations:
+        if rel.type == "conditional":
+            out_count = sum(1 for r in relations if r.from_ == rel.from_)
+            if out_count > 1:
+                raise ValueError(
+                    f"conditional 边 {rel.from_}->{rel.to} 要求 {rel.to} 是 {rel.from_} 的唯一后继"
+                )
 
 
 def _utcnow() -> datetime:
@@ -182,6 +250,9 @@ class ProjectService:
         updated = existing.model_copy(update=updates)
         # C1：合并后语义校验（配置驱动模式必须包含全部启用角色）→ ValueError 由 router 转 422
         _validate_agent_order_config(updated.config)
+        # F46 #270：agent_relations API 层语义校验（死角色引用/自身环/conditional 唯一后继）
+        # → ValueError 由 router 转 422
+        _validate_agent_relations_config(updated.config)
         return await self._repo.update(updated)
 
     async def soft_delete(self, project_id: int | uuid.UUID) -> bool:

@@ -484,9 +484,10 @@ test('设置页：#295/#296 自定义角色行渲染（显示名/裸名回退 + 
     await expect(chain.getByRole('switch', { name: 'editor' })).toBeVisible();
     await expect(chain.getByRole('switch')).toHaveCount(6);
 
-    // Sparkles 图标（自定义行 icon 渲染；行内唯一 svg——Switch/移动按钮均无 svg）
+    // 行内 svg = 角色图标（Sparkles）+ 依赖入口按钮图标（GitBranch，F46 #270 新增）——
+    // Switch/移动按钮均无 svg
     const researcherRow = chain.getByRole('switch', { name: '资料研究员' }).locator('xpath=..');
-    await expect(researcherRow.locator('svg')).toHaveCount(1);
+    await expect(researcherRow.locator('svg')).toHaveCount(2);
 
     // 默认槽位：自定义角色 = 4 + roles 顺序索引（researcher=4 / editor=5）
     await expect(chain.getByTestId('agent-order-slot-agent_researcher')).toHaveText('4');
