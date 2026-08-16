@@ -747,7 +747,7 @@ async def _build_store() -> VectorStoreProtocol:
             storage_dir=config.data_dir / "keys",
         ).load(provider)
         embeddings = OpenAIEmbeddings(
-            model=model_id,
+            model=model_id.split("/", 1)[-1],  # #428: 剥 provider/ 前缀（zhipu 拒前缀 400）
             api_key=SecretStr(key),
             base_url=base_url or None,
         )

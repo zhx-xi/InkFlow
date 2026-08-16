@@ -231,6 +231,47 @@ async def test_get_vector_store_constructs_openai_embeddings() -> None:
     assert embeddings.openai_api_key.get_secret_value() == "sk-test-123"
 
 
+async def test_get_vector_store_strips_provider_prefix_from_model_id() -> None:
+    """#428 复发（rc6 实证）：装配 embedding 模型 id 带 provider 前缀（如
+    zhipu/embedding-3）时 _build_store 原样传给 OpenAIEmbeddings → zhipu API
+    400「模型不存在」（code 1211，严格拒绝前缀）；裸 id（embedding-2）正常。
+
+    _build_store 必须剥掉 provider/ 前缀再构造 OpenAIEmbeddings（与 chat
+    路径对齐）。"""
+    # Arrange: embedding 模型 id 带 provider 前缀
+    provider = ProviderConfig(
+        name="zhipu",
+        builtin_key="zhipu",
+        base_url="https://open.bigmodel.cn/api/paas/v4/",
+        models=[ProviderModel(id="zhipu/embedding-3", type="embedding")],
+    )
+    repo = _repo_with_providers([provider])
+    fake_store = MagicMock()
+
+    # Act
+    with (
+        patch(
+            "inkflow.infrastructure.database.repositories.provider_config_repo.SQLiteProviderConfigRepository",
+            return_value=repo,
+        ),
+        patch.object(APIKeyManager, "load", return_value="sk-test-123"),
+        patch(
+            "inkflow.infrastructure.rag.langchain_vector_store.LangChainVectorStore",
+            return_value=fake_store,
+        ) as mock_vs,
+    ):
+        store = await deps.get_vector_store()
+
+    # Assert: store 正常返回；OpenAIEmbeddings 收到**裸 id**（剥离 provider/ 前缀）
+    assert store is fake_store
+    call = mock_vs.call_args
+    embeddings = call.kwargs.get("embeddings") or call.args[1]
+    assert isinstance(embeddings, OpenAIEmbeddings)
+    assert (
+        embeddings.model == "embedding-3"
+    ), f"OpenAIEmbeddings.model 应为裸 id 'embedding-3'（#428），实际 {embeddings.model!r}"
+
+
 # ── E3: 懒加载单例 ───────────────────────────────────────────────
 
 
