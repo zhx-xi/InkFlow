@@ -250,6 +250,8 @@ beforeEach(() => {
   useThemeStore.setState({
     theme: 'paper', bg: 'default', lang: 'zh',
     font: 'sans', closeBehavior: 'tray', trayHintDismissed: false,
+    // #399：visualTouched 守卫重置（模块单例跨用例污染防护；GREEN 后真实字段）
+    visualTouched: false,
   } as unknown as Partial<ThemeStoreF32>);
   useProjectStore.setState({
     projects: [{ id: 'p1', name: '青云志', genre: '玄幻', language: 'zh-CN', target_words: 800000, config: {}, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' }],
@@ -594,6 +596,39 @@ describe('设置页 — default_words 卸载 flush（F32 §5.4 RED 契约）', (
       (c) => c[0] === '/api/v1/projects/p1' && c[1]?.method === 'PATCH',
     );
     expect(patchCalls).toHaveLength(0);
+  });
+
+  it('#399：PATCH 异步在途 → 切回常规 remount → store 合并后输入框自动同步 5000（订阅式重读）', async () => {
+    // 模拟 E2E F32 M1（e2e-settings.spec.ts:227）真实时序：输入 5000 → 切分类（blur flush PATCH
+    // 发出，异步在途）→ 立即切回常规 → remount 懒初始化读 store 旧值 800000 → PATCH 完成后
+    // updateConfig 合并 store config.default_words=5000 → 输入框必须自动刷新。
+    // GREEN 前 GeneralPanel 只一次性初始化 + useEffect[currentProjectId]（未变不触发）
+    // → 恒 800000 → waitFor toHaveValue(5000) 超时 = RED。
+    const patchResolvers: Array<(v: unknown) => void> = [];
+    apiFetchMock.mockImplementation((path, init) => {
+      if (path === '/api/v1/projects/p1' && init?.method === 'PATCH') {
+        return new Promise((res) => {
+          patchResolvers.push(res);
+        });
+      }
+      if (path === '/api/v1/provider-configs') {
+        return Promise.resolve({ items: [], total: 0, offset: 0, limit: 50 });
+      }
+      return Promise.resolve({ ok: true });
+    });
+    const user = userEvent.setup();
+    renderSettings();
+    const input = screen.getByLabelText('新章节默认字数');
+    await user.clear(input);
+    await user.type(input, '5000');
+    await switchToModels(user); // blur → flush PATCH（挂起）；卸载 cleanup 二次 flush（同挂起）
+    // 立即切回常规 → remount 懒初始化读 store（PATCH 未完成 → 800000）
+    await user.click(within(screen.getByTestId('settings-nav')).getByRole('button', { name: '常规' }));
+    // PATCH 完成 → updateConfig 合并 store config.default_words=5000
+    await act(async () => {
+      patchResolvers.forEach((r) => r({ ok: true }));
+    });
+    await waitFor(() => expect(screen.getByLabelText('新章节默认字数')).toHaveValue(5000));
   });
 });
 
