@@ -12,3 +12,4 @@ class ToolSpec:
     name: str  # 工具名（snake_case）
     description: str  # 工具用途描述
     input_schema: dict  # JSON Schema（Pydantic model_json_schema() 产物）
+    group: str = "project"  # 分组键（writing/retrieval/audit/project）
