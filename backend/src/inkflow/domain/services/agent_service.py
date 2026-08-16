@@ -589,8 +589,7 @@ class AgentService:
                 "final_output": "",
             }
         # 成功路径：写完整成品落库（#343 根因 6：interrupt 分支只写 waiting_hitl）
-        # F47 #379：trace 仅在非空时透传——空 trace 由 store 落库默认 []（语义等价），
-        # 且兼容既有测试 MockExecutionStore（update_stages 签名无 trace 参数）。
+        # F47 #379：trace 非空才透传（空则 store 默认 []；兼容既有 Mock 签名）
         trace = getattr(result, "trace", []) or []
         confirm_kwargs: dict[str, Any] = {
             "execution_id": execution_id,
@@ -771,8 +770,7 @@ class AgentService:
                 )
             relations_snapshot = _build_relations_snapshot(agent_relations or [], result.stages)
             stages_snapshot = _stage_snapshots(result.stages)
-            # F47 #379：trace 仅在非空时透传——空 trace 由 store 落库默认 []（语义等价），
-            # 且兼容既有测试 MockExecutionStore（update_stages 签名无 trace 参数）。
+            # F47 #379：trace 非空才透传（空则 store 默认 []；兼容既有 Mock 签名）
             trace = getattr(result, "trace", []) or []
             run_kwargs: dict[str, Any] = {
                 "execution_id": execution_id,
@@ -811,16 +809,10 @@ class AgentService:
     async def _assemble_setting_context(
         self, project_id: str, variables: dict[str, str]
     ) -> dict[str, str]:
-        """设定库摘要注入（#366 G1 设定驱动写作）。
+        """设定库摘要注入（#366 G1）：角色/世界观/大纲三源，任一 None 跳过。
 
-        角色/世界观/大纲三源读设定库（character_repo/world_repo/outline_repo，
-        均为可选注入，任一 None → 跳过该源；三源全 None → 原样返回）。
-        组装格式（每条非空才注入，跳过空条目）：
-          【角色】{name}：{personality}
-          【世界观】{name}：{content}
-          【大纲】{name}：{description}
-        合并为 variables["setting"]（\n\n 连接）。单源异常 → WARNING + 跳过该源
-        （失败隔离，不阻断管线）；整体异常 → WARNING + 原样返回。
+        每条非空才注入（【角色】/【世界观】/【大纲】）→ variables["setting"]（\\n\\n 连接）；
+        单源/整体异常 → WARNING + 回退（失败隔离，不阻断管线）。
         """
         if self._character_repo is None and self._world_repo is None and self._outline_repo is None:
             return variables
@@ -869,9 +861,8 @@ class AgentService:
     ) -> dict[str, str]:
         """write_continue 前文摘要注入（#318；#366 G1 设定注入同函数扩展）。
 
-        前序章节（order_index 小于当前章节）最多 10 章 → SummaryService.ensure_summary
-        （复用 F6 summary_repo 缓存 + LLM 生成）→ 拼接注入 variables["context"]。
-        任一步失败 → WARNING + 回退原 variables（F6 §4.6 不阻断管线执行）。
+        前序章节（order_index 小于当前）最多 10 章 → SummaryService.ensure_summary →
+        拼接注入 variables["context"]；任一步失败 → WARNING + 回退原 variables（不阻断管线）。
         """
         if self._summary_service is None or not chapter_id:
             return variables
