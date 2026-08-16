@@ -7,7 +7,7 @@
 **关联 Issues**: [#258](https://github.com/zhx-xi/InkFlow/issues/258)（F39 后端核心，W2 启动）· [#259](https://github.com/zhx-xi/InkFlow/issues/259)（F40 skill 上传绑定，W3，🔗#258）· [#260](https://github.com/zhx-xi/InkFlow/issues/260)（F41 自定义 Agent 编辑，W3，🔗#258）
 **依赖**: ✅ F26 工具注册表（已交付）· ✅ F27 agentic writer（已交付）· ✅ F19 AgentTemplate 实体模式（已交付）· ✅ #327 SQLite foreign_keys=ON（生产级联生效）
 **参考 ADR**: [ADR-015](../../adr/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/ADR-019.md)（编号口径）· [adr/ADR-035.md](../../adr/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5）· [ADR-022](../../adr/ADR-022.md)（skills 包分发型，与本 spec Skill 实体不同域，见 §1.3）
-**状态**: 待实现 🔲
+**状态**: ✅ 已实现（F39 后端 PR #403；F40 PR #408；F41 PR #407，2026-08-16）
 
 > **Spec 变更**（v1.0 → v1.1，2026-08-16，用户拍板 Q0=A / Q1=A）：① **Q0 定稿**「Agent/Skill 全局定义（应用级）+ 项目引用」——§2 实体无 project_id 字段，项目引用经 project config 留阶段 2 落地；② **Q1 定稿**「本期与 AgentTemplate 解耦」——本期无 AgentTemplate MODIFY，Agent 暂无运行时消费（能力以单元测试验证），roles 扩展为 Agent 引用留二期。§6 组织规则标注已拍板、§12 新增 D9/D10、待澄清 Q0/Q1 标记 ✅ 已确认（选项 A）。
 

@@ -29,11 +29,11 @@
 |------|------|
 | **团队** | 单人开发 |
 | **部署模式** | 本地优先（SQLite，免认证）；**2.0.0 云端里程碑**：云存档/异地写作（PostgreSQL + JWT + BYOK，无 CRDT），GUI/CLI 远程模式连接云端 |
-| **多界面** | GUI（Electron+React）+ CLI（Typer）+ REST API（FastAPI，本地内核通信契约）+ MCP Server（stdio 直连 domain） |
+| **多界面** | GUI（Electron+React）+ CLI（Typer）+ REST API（FastAPI，本地内核通信契约）+ MCP Server（stdio 薄客户端经 HTTP） |
 | **工作流** | SDD + TDD：先写 spec → 再写测试（RED）→ 写代码（GREEN）→ 重构 |
 | **仓库** | `https://github.com/zhx-xi/InkFlow` |
 
-> 版本里程碑（0.1.0 → 2.0.0，ADR-019 v7）、Phase 1-3 功能全表、模块类型谱系（F9-F42 各变体样板导航）→ **见 `FEATURES.md` + `ARCHITECTURE.md §4`**。F17 空置；F18-F24 版本归属以 ADR-019 v7 为准。
+> 版本里程碑（0.1.0 → 2.0.0，ADR-019 v8）、Phase 1-3 功能全表、模块类型谱系（F9-F46 各变体样板导航）→ **见 `FEATURES.md` + `ARCHITECTURE.md §4`**。F17 空置；F18-F24 版本归属以 ADR-019 v8 为准。
 
 ---
 
