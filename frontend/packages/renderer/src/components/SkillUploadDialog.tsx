@@ -93,7 +93,11 @@ export function SkillUploadDialog({ open, onOpenChange, onUploaded }: SkillUploa
       const newSkill = await useSkillsStore.getState().uploadSkill(content);
       for (const agentId of selected) {
         try {
-          await useAgentsStore.getState().bindSkill(agentId, newSkill.id);
+          // F41 合入后 agents store 用 updateAgent 全字段替换（无 bindSkill）；追加语义：
+          // 读当前 skill_ids（字符串化）→ 追加新 id → PATCH（spec §2.4/§5.4 绑定产物）
+          const agent = useAgentsStore.getState().agents.find((a) => a.id === agentId);
+          const skillIds = agent ? [...agent.skill_ids, String(newSkill.id)] : [String(newSkill.id)];
+          await useAgentsStore.getState().updateAgent(agentId, { skill_ids: skillIds });
         } catch (err) {
           // 上传成功但绑定失败：提示「上传成功，绑定失败」+ 已上传 skill 不回滚
           setError(`${t('skill.bindFail')}：${errorMessage(err)}`);

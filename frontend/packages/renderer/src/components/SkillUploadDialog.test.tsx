@@ -50,7 +50,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SkillUploadDialog } from './SkillUploadDialog';
 import { useSkillsStore, type Skill } from '../stores/skills';
-import { useAgentsStore, type Agent } from '../stores/agents';
+import { useAgentsStore, type AgentEntity } from '../stores/agents';
 import { apiFetch } from '../api/client';
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -60,7 +60,7 @@ vi.mock('../api/client', async (importOriginal) => {
 
 const apiFetchMock = vi.mocked(apiFetch);
 
-const AGENTS: Agent[] = [
+const AGENTS: AgentEntity[] = [
   {
     id: 1,
     name: '写手',
@@ -254,7 +254,7 @@ describe('SkillUploadDialog — 提交流程', () => {
   it('上传成功 + 勾选自定义 Agent → POST 后逐个 PATCH agents 追加 skill_ids', async () => {
     const user = userEvent.setup();
     const { onOpenChange, onUploaded } = renderDialog(true);
-    const updatedAgent: Agent = { ...AGENTS[1], skill_ids: ['9'] };
+    const updatedAgent: AgentEntity = { ...AGENTS[1], skill_ids: ['9'] };
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
       if (path === '/api/v1/agents') return { items: AGENTS, total: 2 };
       if (path === '/api/v1/skills' && init?.method === 'POST') return NEW_SKILL;
