@@ -9,12 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.core.database import async_session_factory, get_session
 from inkflow.domain.models.agent_run import AgenticWriteRequest
+from inkflow.domain.models.vector_fingerprint import CHUNKER_VERSION
 from inkflow.domain.ports.context_sources import ContextSourceProtocol
 from inkflow.domain.ports.extraction_errors import RAGUnavailableError
 from inkflow.domain.ports.vector_store import VectorStoreProtocol
 from inkflow.domain.services._character_extractor import CharacterExtractor
 from inkflow.domain.services._chunking import ChunkingConfig, ChunkingMode
 from inkflow.domain.services._foreshadowing_extractor import ForeshadowingExtractor
+from inkflow.domain.services._llm_chunk_analyzer import LLMChunkAnalyzer
 from inkflow.domain.services._outline_generator import OutlineGenerator
 from inkflow.domain.services._style_llm_analyzer import StyleLLMAnalyzer
 from inkflow.domain.services._timeline_extractor import TimelineExtractor
@@ -536,6 +538,13 @@ async def get_extraction_service(
     vector_store = await get_vector_store()
     chunking = await _load_chunking_config(db)
 
+    llm_chunk_analyzer = None
+    if chunking.mode is ChunkingMode.LLM:
+        llm_chunk_analyzer = LLMChunkAnalyzer(
+            llm_client=LangChainLLMClient(),
+            prompt_manager=LangChainPromptManager(),
+        ).analyze
+
     async def _fingerprint_provider() -> dict | None:
         """reindex 指纹提供器（#276 + #277 M3）— configured 指纹 + store 实测维度。"""
         dimension = (
@@ -574,6 +583,7 @@ async def get_extraction_service(
         vector_store=vector_store,
         fingerprint_provider=_fingerprint_provider,
         chunking=chunking,
+        llm_chunk_analyzer=llm_chunk_analyzer,
     )
 
 
@@ -801,7 +811,7 @@ def _chunking_fingerprint_dict(cfg: ChunkingConfig) -> dict:
         "mode": cfg.mode.value,
         "chunk_size": cfg.chunk_size,
         "overlap_ratio": cfg.overlap_ratio,
-        "chunker_version": 1,
+        "chunker_version": CHUNKER_VERSION,
     }
 
 

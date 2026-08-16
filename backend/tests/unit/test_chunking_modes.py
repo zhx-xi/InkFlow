@@ -275,3 +275,172 @@ class TestChunkingFingerprintLinkage:
         stale, reason = compare_fingerprints(fp, fp)
         assert stale is False
         assert reason is None
+
+
+# ══════════════════════ #278 M4 追加段（2026-08-16）══════════════════════
+# 对话切片器真规则 + LLM 分析切片器（spec §5.6.6/§5.6.7 + §13 M13 验收）。
+# RED 形态: _chunk_dialogue 不存在 → chunk_text(mode=DIALOGUE) 仍返回段落结果
+# （M3 降级行为）→ 本批真规则用例 FAIL；_chunk_llm 不存在 → analyzer 参数被忽略
+# （M3 降级段落）→ LLM 边界用例 FAIL。
+#
+# 设计假设（GREEN 实现者唯一契约，spec §5.6.6 代码块逐字为准）:
+# 1. ``chunk_text(text, mode=DIALOGUE, chunk_size=500, overlap_ratio=0.0,
+#    min_dialogue_len=100)``:
+#    - 空文本 → []；chunk_size <= 0 → ValueError（既有契约）
+#    - 说话人切换识别: 行 strip 后以 引号（「“『） 或 破折号（——） 或
+#      冒号+引号（：“） 开头 → 对话行（中文对话形态，spec ①）
+#    - 连续对话行归并为一块（说话人切换不切分，spec ①「连续对话归并为一块」）
+#    - 短对话块（块长 < min_dialogue_len）→ 向前合并邻近叙述上下文
+#      （保持时间顺序：叙述在前、对话在后，spec ②）
+#    - 无对话行 → 降级段落切片（spec ③，不产生空块）
+#    - 超长块（> chunk_size）→ 内部降级标点回溯（复用 FIXED 逻辑，与段落模式一致）
+#    - overlap_ratio 透传超长降级路径（弱不变式「每字符至少被一块覆盖」）
+# 2. ``chunk_text(text, mode=LLM, analyzer=None, ...)``:
+#    - analyzer: Callable[[str], list[int]] | None —— 语义边界起始偏移列表（升序）
+#    - analyzer 返回边界 → 按边界切分（首块 [0:b0]，末块 [bn:end]；start_offset 相应）
+#    - analyzer None / 抛异常 → 降级段落切片 + logger.warning（reindex 不中断，spec ③）
+#    - 空文本 → []；chunk_size <= 0 → ValueError
+# 3. 真实 LLM analyzer 装配在 deps/service 层（async，复用 F5 LLMClient）——
+#    _chunking.py 保持纯函数零 LLM import（ADR-015）；service 层 await 后
+#    构造闭包 analyzer 传入 chunk_text。
+
+
+class TestDialogueChunking:
+    """对话切片器真规则（spec §5.6.6，M4）— 说话人切换识别 + 短块合并.
+
+    ⚠️ 用例设计原则（#278 M4 RED 假绿教训）: 对话真规则与 M3 段落降级
+    必须**输出不同**——纯对话无空行文本在段落降级下恰好也一块（假绿）。
+    核心用例一律混入叙述行 + 空行/换行，使段落模式（按 \\n\\n 切）与
+    对话模式（按说话人切换 + 短块向前合并叙述）结果可区分。
+    """
+
+    def test_dialogue_quote_speaker_switch_merge(self) -> None:
+        """① 引号开头两行（说话人切换）连续对话归并 + 短对话块向前合并叙述.
+
+        段落模式（M3 降级）: 空行切两块 → 本用例 RED FAIL（证明真规则生效）.
+        """
+        text = "窗外雨声。\n\n“你来了？”张三问。\n“嗯。”李四应。"
+        chunks = chunk_text(text, mode=ChunkingMode.DIALOGUE, chunk_size=500)
+        # 对话真规则: 连续对话行归并一块 + 短对话块（<100）向前合并叙述 → 整文一块
+        assert [c.text for c in chunks] == [text]
+
+    def test_dialogue_dash_mark_recognized(self) -> None:
+        """① 破折号（——）开头 → 识别为对话行并归并 + 向前合并叙述.
+
+        段落模式: 空行切两块 → RED FAIL.
+        """
+        text = "破折号场景。\n\n——你来了？\n——嗯。"
+        chunks = chunk_text(text, mode=ChunkingMode.DIALOGUE, chunk_size=500)
+        assert [c.text for c in chunks] == [text]
+
+    def test_dialogue_colon_quote_mark_recognized(self) -> None:
+        """① 冒号+引号（：“）开头 → 识别为对话行并归并 + 向前合并叙述.
+
+        段落模式: 空行切两块 → RED FAIL.
+        """
+        text = "屋内。\n\n张三：“你来了？”\n李四：“嗯。”"
+        chunks = chunk_text(text, mode=ChunkingMode.DIALOGUE, chunk_size=500)
+        assert [c.text for c in chunks] == [text]
+
+    def test_dialogue_short_block_merges_preceding_narration(self) -> None:
+        """② 短对话块（< 100 字符）→ 向前合并邻近叙述（保持时间顺序）.
+
+        段落模式: 空行切两块 → RED FAIL.
+        """
+        text = "林晚推开窗，夜色如墨。\n\n“你来了？”张三问。"
+        chunks = chunk_text(text, mode=ChunkingMode.DIALOGUE, chunk_size=500)
+        assert len(chunks) == 1
+        assert chunks[0].text == text
+
+    def test_dialogue_long_block_keeps_separate_from_narration(self) -> None:
+        """长对话块（≥ min_dialogue_len）不合并，与叙述块边界正确.
+
+        用 \\n 分隔（段落模式不切）→ 对话模式切两块 → RED FAIL.
+        """
+        text = "“我们走吧，夜色正好，星光洒满长街。”林晚说。\n她抬起头，望向远方。"
+        chunks = chunk_text(text, mode=ChunkingMode.DIALOGUE, chunk_size=500)
+        assert [c.text for c in chunks] == [
+            "“我们走吧，夜色正好，星光洒满长街。”林晚说。",
+            "她抬起头，望向远方。",
+        ]
+
+    def test_dialogue_no_dialogue_falls_back_to_paragraph(self) -> None:
+        """③ 无对话文本（无引号/破折号标记）→ 降级段落切片（不产生空块）."""
+        text = "第一段。\n\n第二段。"
+        expected = chunk_text(text, mode=ChunkingMode.PARAGRAPH)
+        actual = chunk_text(text, mode=ChunkingMode.DIALOGUE)
+        assert actual == expected
+        assert all(c.text for c in actual)
+
+    def test_dialogue_empty_text(self) -> None:
+        """④ 空文本 → []."""
+        assert chunk_text("", mode=ChunkingMode.DIALOGUE) == []
+
+    def test_dialogue_non_positive_chunk_size_raises(self) -> None:
+        """chunk_size <= 0 → ValueError（与 FIXED/PARAGRAPH 同契约）."""
+        with pytest.raises(ValueError):
+            chunk_text("“你好”", mode=ChunkingMode.DIALOGUE, chunk_size=0)
+        with pytest.raises(ValueError):
+            chunk_text("“你好”", mode=ChunkingMode.DIALOGUE, chunk_size=-5)
+
+    def test_dialogue_overlong_block_backtracks_punctuation(self) -> None:
+        """超长对话块（> chunk_size）→ 内部降级标点回溯（单块 ≤ chunk_size）."""
+        text = "“" + "字" * 300 + "。”\n" + "“" + "字" * 300 + "。”"
+        chunks = chunk_text(text, mode=ChunkingMode.DIALOGUE, chunk_size=200)
+        assert chunks
+        assert all(len(c.text) <= 200 for c in chunks)
+
+
+class TestLLMChunking:
+    """LLM 分析切片器（spec §5.6.7，M4）— analyzer 边界生效 + 失败降级."""
+
+    def test_llm_analyzer_boundaries_applied(self) -> None:
+        """① analyzer 返回边界偏移列表 → 按边界切分."""
+        text = "一二三四五六七八九十甲乙丙丁"  # 14 字符
+        chunks = chunk_text(
+            text,
+            mode=ChunkingMode.LLM,
+            chunk_size=500,
+            analyzer=lambda t: [5, 10],
+        )
+        assert [c.text for c in chunks] == ["一二三四五", "六七八九十", "甲乙丙丁"]
+        assert [c.start_offset for c in chunks] == [0, 5, 10]
+
+    def test_llm_analyzer_empty_boundaries_single_chunk(self) -> None:
+        """analyzer 返回 [] → 整篇一块（无边界不切分）."""
+        text = "整篇文本内容"
+        chunks = chunk_text(
+            text,
+            mode=ChunkingMode.LLM,
+            chunk_size=500,
+            analyzer=lambda t: [],
+        )
+        assert len(chunks) == 1
+        assert chunks[0].text == text
+
+    def test_llm_analyzer_none_falls_back_to_paragraph(self) -> None:
+        """② analyzer None（未配置对话模型）→ 降级段落切片."""
+        text = "第一段。\n\n第二段。"
+        expected = chunk_text(text, mode=ChunkingMode.PARAGRAPH)
+        actual = chunk_text(text, mode=ChunkingMode.LLM, analyzer=None)
+        assert actual == expected
+
+    def test_llm_analyzer_exception_falls_back_to_paragraph(self) -> None:
+        """③ analyzer 抛异常 → 降级段落切片（异常不传播，reindex 不中断）."""
+
+        def broken_analyzer(text: str) -> list[int]:
+            raise RuntimeError("llm analyzer failed")
+
+        text = "第一段。\n\n第二段。"
+        expected = chunk_text(text, mode=ChunkingMode.PARAGRAPH)
+        actual = chunk_text(text, mode=ChunkingMode.LLM, analyzer=broken_analyzer)
+        assert actual == expected
+
+    def test_llm_empty_text(self) -> None:
+        """④ 空文本 → []."""
+        assert chunk_text("", mode=ChunkingMode.LLM, analyzer=lambda t: [3]) == []
+
+    def test_llm_non_positive_chunk_size_raises(self) -> None:
+        """chunk_size <= 0 → ValueError（与 FIXED/PARAGRAPH 同契约）."""
+        with pytest.raises(ValueError):
+            chunk_text("内容", mode=ChunkingMode.LLM, analyzer=lambda t: [1], chunk_size=0)

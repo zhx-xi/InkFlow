@@ -143,6 +143,16 @@ class LangChainVectorStore:
             self._delete_stale_sync, project_id, source_ids, entity_types
         )
 
+    async def list_entities(
+        self,
+        project_id: str,
+        entity_type: EntityType,
+        *,
+        where: dict[str, str | int | float] | None = None,
+    ) -> list[tuple[str, dict[str, str | int | float]]]:
+        """列出该类型下 (id, metadata) 对（LLM 增量跳过读回旧块）。"""
+        return await asyncio.to_thread(self._list_entities_sync, project_id, entity_type, where)
+
     async def recreate_collections(self, entity_types: list[EntityType] | None = None) -> Path:
         """备份持久化目录并删除重建集合（维度不匹配时调用），返回备份路径。"""
         return await asyncio.to_thread(self._recreate_collections_sync, entity_types)
@@ -357,6 +367,32 @@ class LangChainVectorStore:
                 collection.delete(ids=orphans)
                 total += len(orphans)
         return total
+
+    def _list_entities_sync(
+        self,
+        project_id: str,
+        entity_type: EntityType,
+        where: dict[str, str | int | float] | None,
+    ) -> list[tuple[str, dict[str, str | int | float]]]:
+        """同步列出实体: chroma collection.get(where=project_id 合并可选过滤)。"""
+        collection = self._get_collection(entity_type)
+        if where:
+            # chroma where 只接受单一相等条件或操作符节点——project_id 隔离
+            # 与调用方过滤条件须以 $and 组合（直接合并字典会被 chroma 判为
+            # 「多操作符」抛 ValueError，2026-08-16 实测）
+            filter_: dict[str, object] = {"$and": [{"project_id": project_id}, where]}
+        else:
+            filter_ = {"project_id": project_id}
+        result = collection.get(
+            where=cast(Any, filter_),
+            include=["metadatas"],
+        )
+        ids = result["ids"] or []
+        metadatas = result["metadatas"] or []
+        out: list[tuple[str, dict[str, str | int | float]]] = []
+        for entity_id, md in zip(ids, metadatas, strict=True):
+            out.append((entity_id, cast(dict[str, str | int | float], md or {})))
+        return out
 
     def _recreate_collections_sync(self, entity_types: list[EntityType] | None) -> Path:
         """同步重建: 备份持久化目录 → 删除重建实体 collection → 返回备份路径。"""
