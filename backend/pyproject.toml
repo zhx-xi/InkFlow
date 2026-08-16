@@ -40,10 +40,12 @@ dependencies = [
     "click>=8.1",
     "rich>=13.0",
     "jieba>=0.42.1",
+    "mcp>=2.0.0,<3.0.0",
 ]
 
 [project.scripts]
 inkflow = "inkflow.cli.app:app"
+inkflow-mcp = "inkflow.mcp.server:run"
 
 [project.optional-dependencies]
 dev = [
