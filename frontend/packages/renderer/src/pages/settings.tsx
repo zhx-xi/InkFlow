@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Bot, Cpu, FileText, SlidersHorizontal, UserRound } from 'lucide-react';
 import { AccountPanel } from './AccountPanel';
 import { AgentChainCard } from '../components/AgentChainCard';
+import { AgentList } from '../components/AgentList';
 import { AppearanceCard } from '../components/AppearanceCard';
 import { TemplateDialog } from '../components/TemplateDialog';
 import { Switch } from '../components/ui/switch';
@@ -589,6 +590,7 @@ function AgentPanel() {
           </SelectContent>
         </Select>
       </div>
+      <AgentList />
     </div>
   );
 }

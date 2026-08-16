@@ -259,10 +259,14 @@ beforeEach(() => {
   useToastStore.setState({ toasts: [] });
   // F42 #268：默认 mock 按 URL 分发——AgentChainCard 挂载会 loadProviders()
   // （GET /api/v1/provider-configs，spec §5.2 数据源）；其余请求保持 {ok:true}
+  // F41 #260：AgentList 挂载会 loadAgents/loadToolCatalog/loadSkills（3 GET）——同样分发空列表
   apiFetchMock.mockImplementation(async (path: string) => {
     if (path === '/api/v1/provider-configs') {
       return { items: [], total: 0, offset: 0, limit: 50 };
     }
+    if (path === '/api/v1/agents') return { items: [], total: 0 };
+    if (path === '/api/v1/agents/tools') return { items: [] };
+    if (path === '/api/v1/skills') return { items: [], total: 0 };
     return { ok: true };
   });
 });
@@ -695,6 +699,10 @@ describe('设置页 — Agent 分类（迁移自 AgentChainCard，spec §7.4/§7
           total: 3, offset: 0, limit: 50,
         };
       }
+      // F41 #260：AgentList 挂载 3 GET 分发（行内覆盖 variant 同 beforeEach）
+      if (path === '/api/v1/agents') return { items: [], total: 0 };
+      if (path === '/api/v1/agents/tools') return { items: [] };
+      if (path === '/api/v1/skills') return { items: [], total: 0 };
       return { ok: true };
     });
     const user = await openAgentPanel();
@@ -702,6 +710,49 @@ describe('设置页 — Agent 分类（迁移自 AgentChainCard，spec §7.4/§7
     expect(await screen.findByRole('option', { name: 'openai/gpt-4o' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'deepseek/deepseek-chat' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'ollama/qwen3' })).toBeInTheDocument();
+  });
+
+  it('F41 #260：Agent 管理列表挂载（agent-list 容器）+ 空列表 → 空态提示「暂无自定义 Agent」', async () => {
+    // 默认 mock 3 端点空列表 → 无内置/自定义 Agent → 空态
+    await openAgentPanel();
+    expect(await screen.findByTestId('agent-list')).toBeInTheDocument();
+    expect(screen.getByText('暂无自定义 Agent')).toBeInTheDocument();
+  });
+
+  it('F41 #260：深链 /settings?cat=agent → AgentList 挂载（Agent 快捷入口联动）', async () => {
+    renderSettings('/settings?cat=agent');
+    expect(await screen.findByTestId('agent-list')).toBeInTheDocument();
+  });
+
+  it('F41 #260：内置+自定义 Agent 渲染（内置只读徽标 / 自定义可编辑按钮）', async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/agents') {
+        return {
+          items: [
+            { id: 1, name: '架构师', description: '章节结构/大纲规划', icon: '🏗️', system_prompt: '你是架构师。', tool_ids: ['search_characters'], skill_ids: ['1'], model_override: null, temperature_override: null, builtin: true, created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+            { id: 2, name: '我的润色师', description: '专注文笔润色', icon: '✨', system_prompt: '你是润色师。', tool_ids: ['count_words'], skill_ids: ['3'], model_override: 'zhipu/glm-4.5', temperature_override: 0.6, builtin: false, created_at: '2026-08-16T01:00:00Z', updated_at: '2026-08-16T01:00:00Z' },
+          ],
+          total: 2,
+        };
+      }
+      if (path === '/api/v1/agents/tools') {
+        return { items: [{ name: 'search_characters', description: '搜索项目内角色档案', group: 'retrieval', input_schema: {} }, { name: 'count_words', description: '中英文混合字数统计', group: 'audit', input_schema: {} }] };
+      }
+      if (path === '/api/v1/skills') {
+        return { items: [{ id: 1, name: 'outline-planning', description: '大纲规划方法论', source: 'builtin', agent_ids: [] }, { id: 3, name: 'web-research', description: '网络调研方法论', source: 'user_upload', agent_ids: [] }], total: 2 };
+      }
+      if (path === '/api/v1/provider-configs') return { items: [], total: 0, offset: 0, limit: 50 };
+      return { ok: true };
+    });
+    await openAgentPanel();
+    const list = await screen.findByTestId('agent-list');
+    const builtinCard = within(list).getByTestId('agent-card-1');
+    expect(within(builtinCard).getByTestId('agent-builtin-badge-1')).toBeInTheDocument();
+    expect(within(builtinCard).queryByTestId('agent-edit-1')).not.toBeInTheDocument();
+    expect(within(builtinCard).getByTestId('agent-tool-chip-search_characters')).toBeInTheDocument();
+    const customCard = within(list).getByTestId('agent-card-2');
+    expect(within(customCard).getByTestId('agent-edit-2')).toBeInTheDocument();
+    expect(within(customCard).getByTestId('agent-del-2')).toBeInTheDocument();
   });
 });
 
