@@ -72,6 +72,12 @@ function GeneralPanel() {
   const setCloseBehavior = useThemeStore((s) => s.setCloseBehavior);
   const trayHintDismissed = useThemeStore((s) => s.trayHintDismissed);
   const setTrayHintDismissed = useThemeStore((s) => s.setTrayHintDismissed);
+  // #399：订阅 project store 的 default_words（zustand Object.is 比较，值变化才重渲染）——
+  // PATCH 异步在途 → remount 后 store 合并时输入框自动重读（订阅式重读）
+  const liveProjectWords = useProjectStore((s) => {
+    const p = s.projects.find((x) => x.id === s.currentProjectId);
+    return p?.config.default_words;
+  });
 
   // F32（#152，spec §5.4 Q3=C）：default_words ref 镜像 + dirty 跟踪——
   // 卸载 cleanup 闭包依赖 []，经 ref 读最新值（评审 🟡-7：防陈旧 state 捕获）
@@ -233,6 +239,16 @@ function GeneralPanel() {
       cancelled = true;
     };
   }, [currentProjectId]);
+
+  // #399：订阅式重读——store 外部合并（PATCH 在途完成）→ 输入框自动同步；
+  // 守卫：#198 dirty（用户输入中不覆盖）/ String 相等（已同步）跳过；不清 dirty（外部更新非用户输入）
+  useEffect(() => {
+    if (liveProjectWords === undefined || liveProjectWords === null) return;
+    if (dirtyRef.current) return; // #198 守卫：用户输入中不覆盖
+    if (String(liveProjectWords) === valueRef.current) return; // 已同步
+    valueRef.current = String(liveProjectWords);
+    setDefaultWords(String(liveProjectWords));
+  }, [liveProjectWords]);
 
   // #189（rc1 发布缺陷）：窗口隐藏到托盘（Electron hide 不卸载、无失焦）→
   // document visibilitychange(hidden) → dirty 时 flush；卸载时移除监听

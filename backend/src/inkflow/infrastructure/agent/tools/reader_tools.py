@@ -142,32 +142,43 @@ _TOOL_SPECS: list[ToolSpec] = [
         name="search_characters",
         description="搜索项目内角色档案（名称/简介/性格/关系摘要），支持按名称搜索与分组过滤",
         input_schema=SearchCharactersParams.model_json_schema(),
+        group="retrieval",
     ),
     ToolSpec(
         name="check_foreshadowing",
         description="列出项目中未回收的伏笔（内容/状态/埋设位置）",
         input_schema=CheckForeshadowingParams.model_json_schema(),
+        group="retrieval",
     ),
     ToolSpec(
         name="get_prior_summary",
         description="获取项目前文摘要（最近 N 章，与写作时上下文注入同源数据）",
         input_schema=GetPriorSummaryParams.model_json_schema(),
+        group="retrieval",
     ),
     ToolSpec(
         name="audit_chapter",
         description="对单个章节执行一致性审计（字数 + LLM 漂移 + 静态一致性），返回 findings",
         input_schema=AuditChapterParams.model_json_schema(),
+        group="audit",
     ),
     ToolSpec(
         name="count_words",
         description="统计中英文混合文本字数（去除 Markdown 语法）",
         input_schema=CountWordsParams.model_json_schema(),
+        group="audit",
     ),
 ]
 
 
-def build_reader_tools(deps: ReaderToolDeps) -> list[Tool]:
-    """构建 5 个只读工具（顺序固定：search_characters → count_words），func 闭包绑定 service."""
+def build_reader_tools(deps: ReaderToolDeps, include: list[str] | None = None) -> list[Tool]:
+    """构建只读工具（顺序固定：search_characters → count_words），func 闭包绑定 service.
+
+    Args:
+        deps: 工具依赖（service 实例注入）.
+        include: 白名单工具名列表；None = 全量 5 只读（向后兼容）；传入
+            [names] = 只返回白名单命中项（按 _TOOL_SPECS 目录原序，未知名忽略）.
+    """
 
     async def _search_characters(
         project_id: uuid.UUID,
@@ -233,10 +244,12 @@ def build_reader_tools(deps: ReaderToolDeps) -> list[Tool]:
         except Exception as exc:
             return _fail(exc)
 
-    return [
-        Tool(spec=_TOOL_SPECS[0], func=_search_characters),
-        Tool(spec=_TOOL_SPECS[1], func=_check_foreshadowing),
-        Tool(spec=_TOOL_SPECS[2], func=_get_prior_summary),
-        Tool(spec=_TOOL_SPECS[3], func=_audit_chapter),
-        Tool(spec=_TOOL_SPECS[4], func=_count_words),
-    ]
+    funcs: dict[str, Callable[..., Awaitable[str]]] = {
+        "search_characters": _search_characters,
+        "check_foreshadowing": _check_foreshadowing,
+        "get_prior_summary": _get_prior_summary,
+        "audit_chapter": _audit_chapter,
+        "count_words": _count_words,
+    }
+    specs = [spec for spec in _TOOL_SPECS if include is None or spec.name in include]
+    return [Tool(spec=spec, func=funcs[spec.name]) for spec in specs]

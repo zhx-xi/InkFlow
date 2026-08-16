@@ -66,6 +66,7 @@ from inkflow.cli.commands.context_cmd import app as context_app  # noqa: E402  #
 from inkflow.cli.commands.llm import app as llm_app  # noqa: E402  # app 定义后导入
 from inkflow.cli.commands.map import app as map_app  # noqa: E402  # app 定义后导入
 from inkflow.cli.commands.serve import serve as _serve_fn  # noqa: E402  # app 定义后导入
+from inkflow.cli.commands.skill_cmd import app as skill_app  # noqa: E402  # app 定义后导入
 from inkflow.cli.commands.skills import app as skills_app  # noqa: E402  # app 定义后导入
 
 app.add_typer(project.app, name="project")
@@ -90,6 +91,7 @@ app.add_typer(session.app, name="session")
 app.add_typer(kernel.app, name="kernel")
 app.add_typer(memory_cmd.app, name="memory")
 app.add_typer(context_app, name="context")
+app.add_typer(skill_app, name="skill")
 app.add_typer(skills_app, name="skills")
 # serve 用 command() 直接注册避免 inkflow serve serve 嵌套
 app.command(name="serve")(_serve_fn)

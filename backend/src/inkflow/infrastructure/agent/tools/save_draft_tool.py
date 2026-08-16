@@ -32,6 +32,18 @@ class SaveDraftParams(BaseModel):
     summary: str | None = None  # 一句话说明（用户确认时展示）
 
 
+SAVE_DRAFT_SPEC = ToolSpec(
+    name="save_draft",
+    description=(
+        "保存章节草稿（不修改正式章节）。agent 完成正文后必须调用本工具保存草稿；"
+        "草稿需用户确认后才生效。返回草稿 id。"
+    ),
+    input_schema=SaveDraftParams.model_json_schema(),
+    group="writing",
+)
+"""save_draft 静态 spec 常量（spec §5.1：静态化入 TOOL_REGISTRY；func 仍动态构建）."""
+
+
 @dataclass
 class SaveDraftToolDeps:
     """写工具工厂依赖——service 实例注入（鸭子类型，镜像 ReaderToolDeps）.
@@ -57,14 +69,7 @@ def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool:
     Returns:
         可执行 Tool（spec.name="save_draft"，func 为异步闭包）.
     """
-    spec = ToolSpec(
-        name="save_draft",
-        description=(
-            "保存章节草稿（不修改正式章节）。agent 完成正文后必须调用本工具保存草稿；"
-            "草稿需用户确认后才生效。返回草稿 id。"
-        ),
-        input_schema=SaveDraftParams.model_json_schema(),
-    )
+    spec = SAVE_DRAFT_SPEC  # 复用静态常量（与 TOOL_REGISTRY 同源，行为不变）
 
     async def _save_draft(
         project_id: uuid.UUID,

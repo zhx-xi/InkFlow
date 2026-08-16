@@ -366,6 +366,10 @@ jobs:
         run: |
           uv run pytest ../tests/integration/test_agent_pipeline.py `
                  ../tests/api/test_agent_api.py `
+                 ../tests/api/test_agents_api.py `
+                 ../tests/api/test_skills_api.py `
+                 ../tests/api/test_skills_cascade.py `
+                 ../tests/integration/test_builtin_seed.py `
                  ../tests/cli/test_cli_agent.py `
                  -v --tb=short
 
@@ -448,6 +452,8 @@ jobs:
                  ../tests/cli/test_cli_context_assemble.py `
                  ../tests/cli/test_cli_skills.py `
                  ../tests/cli/test_cli_mcp.py `
+                 ../tests/cli/test_cli_agent_entity.py `
+                 ../tests/cli/test_cli_skill.py `
                  -v --tb=short
 
   # ── Smoke: health check (fastest) ──

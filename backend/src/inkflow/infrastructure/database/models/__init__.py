@@ -1,6 +1,7 @@
 """SQLAlchemy ORM 模型 — import 触发 Base.metadata 注册."""
 
 from inkflow.infrastructure.database.models.agent import AgentExecutionORM, AgentStageResultORM
+from inkflow.infrastructure.database.models.agent_entity import AgentORM
 from inkflow.infrastructure.database.models.agent_run import AgentRunORM, DraftORM
 from inkflow.infrastructure.database.models.audit_log import AuditLogORM
 from inkflow.infrastructure.database.models.chapter import ChapterORM, VolumeORM
@@ -22,11 +23,13 @@ from inkflow.infrastructure.database.models.project import ProjectORM
 from inkflow.infrastructure.database.models.provider_config import ProviderConfigORM
 from inkflow.infrastructure.database.models.session import SessionLogORM, SessionORM
 from inkflow.infrastructure.database.models.settings import SettingsORM
+from inkflow.infrastructure.database.models.skill import SkillORM
 from inkflow.infrastructure.database.models.timeline import TimelineEventORM
 from inkflow.infrastructure.database.models.world import WorldCategoryORM, WorldSettingORM
 
 __all__ = [
     "AgentExecutionORM",
+    "AgentORM",
     "AgentRunORM",
     "AgentStageResultORM",
     "AuditLogORM",
@@ -47,6 +50,7 @@ __all__ = [
     "SessionLogORM",
     "SessionORM",
     "SettingsORM",
+    "SkillORM",
     "StoryArcORM",
     "TimelineEventORM",
     "VolumeORM",

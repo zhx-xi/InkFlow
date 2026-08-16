@@ -281,11 +281,18 @@ class SearchService:
         优先取 metadata['chapter_id']，缺省回退块 id 前半段；其余类型取
         RetrievedEntity.entity_id。title 依类型取 metadata 键，缺省回退
         content 前 40 字符；project_id 缺省回退本轮查询 pid。
+        #277 M3（spec §5.6.4）: CHAPTER_CHUNK 且 metadata 含 chapter_x/
+        chapter_y → title 前缀「第 x/y 章 · …」（Q4 拍板全书级位置）；
+        缺键一律 .get() 不崩（QA §P2-1）。
         """
         metadata = entity.metadata
         if entity.entity_type == EntityType.CHAPTER_CHUNK:
             raw_id = str(metadata.get("chapter_id") or entity.entity_id.split(":")[0])
             raw_title = metadata.get("chapter_title") or metadata.get("name") or entity.content[:40]
+            chapter_x = metadata.get("chapter_x")
+            chapter_y = metadata.get("chapter_y")
+            if chapter_x is not None and chapter_y is not None:
+                raw_title = f"第 {chapter_x}/{chapter_y} 章 · {raw_title}"
         elif entity.entity_type == EntityType.TIMELINE_EVENT:
             raw_id = entity.entity_id
             raw_title = metadata.get("title") or metadata.get("name") or entity.content[:40]

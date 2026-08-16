@@ -92,7 +92,7 @@ from inkflow.domain.ports.vector_store import (
     VectorStoreProtocol,
 )
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
-from inkflow.domain.services._chunking import chunk_text
+from inkflow.domain.services._chunking import ChunkingConfig, chunk_text
 from inkflow.domain.services._extraction_rag import (
     _ExtractionRAGMixin,
     _project_chapter_chunk,
@@ -221,6 +221,8 @@ class ExtractionService(_ExtractionRAGMixin):
         fingerprint_provider: reindex 四步协议指纹提供器（#276）——返回当前
             configured 指纹 dict；None = 不写指纹（向后兼容）。reindex 全程
             持锁（_reindex_lock），先写 reindexing 后 commit-last 写 fresh。
+        chunking: 切片配置（#277 M3，spec §5.6.1）——None = 默认
+            fixed/500/0.0（向后兼容）。reindex 与增量索引共用该配置。
     """
 
     def __init__(
@@ -242,6 +244,7 @@ class ExtractionService(_ExtractionRAGMixin):
         foreshadowing_repo: ForeshadowingRepositoryProtocol | None = None,
         vector_store: VectorStoreProtocol | None = None,
         fingerprint_provider: Callable[[], Awaitable[dict | None]] | None = None,
+        chunking: ChunkingConfig | None = None,
     ) -> None:
         self._project_repo = project_repo
         self._chapter_repo = chapter_repo
@@ -259,6 +262,7 @@ class ExtractionService(_ExtractionRAGMixin):
         self._foreshadowing_repo = foreshadowing_repo
         self._vector_store = vector_store
         self._fingerprint_provider = fingerprint_provider
+        self._chunking = chunking if chunking is not None else ChunkingConfig()
         self._reindex_lock = asyncio.Lock()
 
         # 类型注册表（spec §6.1: 6 槽全注册；F16 §8.2: STYLE → StyleService.analyze）。
@@ -692,9 +696,25 @@ class ExtractionService(_ExtractionRAGMixin):
                     _project_timeline_event(e, pid) for e in [*result.created, *result.updated]
                 )
             if src.chapter_id is not None:
+                cfg = self._chunking
+                indexed_at = _utcnow().isoformat()
+                chunks = chunk_text(
+                    src.text or "",
+                    mode=cfg.mode,
+                    chunk_size=cfg.chunk_size,
+                    overlap_ratio=cfg.overlap_ratio,
+                )
                 entities.extend(
-                    _project_chapter_chunk(src.chapter_id, src.title or "", i, chunk, pid)
-                    for i, chunk in enumerate(chunk_text(src.text or ""))
+                    _project_chapter_chunk(
+                        src.chapter_id,
+                        src.title or "",
+                        i,
+                        chunk,
+                        pid,
+                        overlap=cfg.overlap_ratio > 0,
+                        indexed_at=indexed_at,
+                    )
+                    for i, chunk in enumerate(chunks)
                 )
         return entities
 

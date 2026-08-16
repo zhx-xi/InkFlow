@@ -129,6 +129,8 @@ beforeEach(() => {
   useThemeStore.setState({
     theme: 'paper', bg: 'default', lang: 'zh',
     font: 'sans', closeBehavior: 'tray', trayHintDismissed: false,
+    // #399：visualTouched 守卫重置（模块单例跨用例污染防护；GREEN 后真实字段）
+    visualTouched: false,
   } as unknown as Partial<ThemeStateF32>);
 });
 
@@ -326,6 +328,27 @@ describe('theme store — F32 initFromBackend 双轨加载（spec §5.2）', () 
     } finally {
       warnSpy.mockRestore();
     }
+  });
+
+  it('#399：用户已通过 UI setTheme 选择 → initFromBackend 异步返回后端旧值不覆盖（visualTouched 守卫）', async () => {
+    // 模拟 E2E 顶栏用例（e2e-settings.spec.ts:180）竞态时序：reload 后 initFromBackend 在途，
+    // 用户点击「夜航」→ fetch 才返回后端旧值 ink（上一用例 PATCH 落库残留）——用户选择必须优先。
+    // GREEN 前 initFromBackend 无条件 set theme=ink → toBe('night') FAIL = RED。
+    let resolveFetch!: (v: typeof DEFAULT_SETTINGS) => void;
+    fetchSettingsMock.mockImplementation(
+      () => new Promise((res) => {
+        resolveFetch = res;
+      }),
+    );
+    const pending = themeStateF32().initFromBackend(); // 挂起中（fetch 未返回）
+    act(() => {
+      useThemeStore.getState().setTheme('night'); // 用户点击「夜航 · 深色」
+    });
+    await act(async () => {
+      resolveFetch({ ...DEFAULT_SETTINGS, theme: 'ink' }); // 后端残留 ink 返回
+      await pending;
+    });
+    expect(useThemeStore.getState().theme).toBe('night'); // 用户选择优先，不被覆盖
   });
 });
 

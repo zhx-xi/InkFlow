@@ -469,3 +469,70 @@ async def test_semantic_preserves_retrieve_order(repos):
 
     assert [h.title for h in resp.hits] == ["甲", "乙", "丙"]
     assert [h.score for h in resp.hits] == [0.5, 0.9, 0.7]
+
+
+# ══ #277 M3 追加段（2026-08-16）: 检索元数据 fallback（spec §5.6.4）══
+# 契约源: specs/f14-extraction-service/spec.md §5.6.4「_map_retrieved 延续
+# .get() fallback 约定（旧数据缺键不崩：metadata.get("chapter_x") 等，缺失
+# 回退现状展示，QA §P2-1）——任何新代码禁止直接 metadata["chapter_x"]
+# 下标访问」+ §13 M12「扩展 test_search_service.py 元数据缺键 .get()
+# fallback 用例」。
+# RED 期实现已用 .get() → 缺键用例守护 PASS（刻意）；新增键展示用例
+# （chapter_x 存在时 title 含位置）在实现补展示前 FAIL。
+
+
+async def test_semantic_chunk_missing_new_metadata_does_not_crash(repos):
+    """旧数据缺新键（chapter_x/y/volume_title/chunk_start/indexed_at）→ 不崩。"""
+    pid = uuid.UUID(int=1000)
+    _given_project(repos, pid)
+    repos.vector_store.retrieve.return_value = [
+        _entity(
+            EntityType.CHAPTER_CHUNK,
+            "3001:0",
+            "古井深处，龙瞳睁开。",
+            0.9,
+            # 旧数据：仅有既有键（chapter_id/chapter_title/project_id），无新键
+            {"chapter_id": "3001", "chapter_title": "第 3 章 龙的苏醒", "project_id": str(pid)},
+        ),
+    ]
+
+    resp = await _make_service(repos, vector_store=repos.vector_store).search(
+        _query("龙", [pid], mode="semantic")
+    )
+
+    assert resp.total == 1
+    assert resp.hits[0].title == "第 3 章 龙的苏醒"  # 回退现状展示
+    assert resp.hits[0].entity_id == uuid.UUID(int=3001)
+
+
+async def test_semantic_chunk_shows_position_when_present(repos):
+    """新键存在（chapter_x/chapter_y）→ title 含全书位置展示（Q4 拍板：第 x/y 章）。"""
+    pid = uuid.UUID(int=1000)
+    _given_project(repos, pid)
+    repos.vector_store.retrieve.return_value = [
+        _entity(
+            EntityType.CHAPTER_CHUNK,
+            "3001:0",
+            "古井深处，龙瞳睁开。",
+            0.9,
+            {
+                "chapter_id": "3001",
+                "chapter_title": "龙的苏醒",
+                "project_id": str(pid),
+                "chapter_x": 3,
+                "chapter_y": 10,
+                "volume_title": "第一卷",
+                "chunk_start": 0,
+                "indexed_at": "2026-08-16T08:00:00+00:00",
+            },
+        ),
+    ]
+
+    resp = await _make_service(repos, vector_store=repos.vector_store).search(
+        _query("龙", [pid], mode="semantic")
+    )
+
+    assert resp.total == 1
+    # MVP 展示位置文本（章节 x/y，Q4 拍板：全书级 chapter_x/chapter_y）
+    assert "3" in resp.hits[0].title and "10" in resp.hits[0].title
+    assert resp.hits[0].entity_id == uuid.UUID(int=3001)
