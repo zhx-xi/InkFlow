@@ -30,6 +30,10 @@
  *     列表不变（不 rethrow，同 templates.deleteTemplate 语义）
  *
  * RED 预期：./skills 模块不存在 → module-not-found（类 1 契约缺口，suite 级失败）。
+ *
+ * 2026-08-16 父侧修正（GREEN 后）：ApiError 构造签名与仓库不符——仓库为
+ * `constructor(status: number, detail: string)`（2 参），本文件原先误用
+ * `new ApiError(message, status, code)` 3 参形态。修正为 `(status, detail)`。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useSkillsStore, type Skill } from './skills';
@@ -83,7 +87,7 @@ describe('useSkillsStore.loadSkills', () => {
   });
 
   it('失败：error 设置 + 原列表保留', async () => {
-    apiFetchMock.mockRejectedValue(new ApiError('内核离线', 0, 'KernelOfflineError'));
+    apiFetchMock.mockRejectedValue(new ApiError(0, '内核离线'));
     await useSkillsStore.getState().loadSkills();
     const s = useSkillsStore.getState();
     expect(s.error).toContain('内核离线');
@@ -115,7 +119,7 @@ describe('useSkillsStore.uploadSkill', () => {
   });
 
   it('失败（422）：error 设置 + rethrow + 列表不变', async () => {
-    apiFetchMock.mockRejectedValue(new ApiError('frontmatter 缺少 name', 422, 'SkillFrontmatterError'));
+    apiFetchMock.mockRejectedValue(new ApiError(422, 'frontmatter 缺少 name'));
     await expect(useSkillsStore.getState().uploadSkill('bad')).rejects.toThrow();
     const s = useSkillsStore.getState();
     expect(s.error).toContain('frontmatter');
@@ -134,7 +138,7 @@ describe('useSkillsStore.deleteSkill', () => {
 
   it('失败（409 内置只读）：error 设置 + 列表不变 + 不 rethrow', async () => {
     useSkillsStore.setState({ skills: SKILLS });
-    apiFetchMock.mockRejectedValue(new ApiError('内置 Skill 只读', 409, 'SkillBuiltinError'));
+    apiFetchMock.mockRejectedValue(new ApiError(409, '内置 Skill 只读'));
     await useSkillsStore.getState().deleteSkill(2);
     const s = useSkillsStore.getState();
     expect(s.error).toContain('内置');

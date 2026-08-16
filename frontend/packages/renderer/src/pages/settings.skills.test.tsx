@@ -61,12 +61,14 @@ vi.mock('../stores/skills', async () => {
   const { create } = await import('zustand');
   const { apiFetch } = await import('../api/client');
   const useSkillsStore = create(() => ({
-    skills: [],
+    skills: [] as Array<{ id: number; name: string }>,
     loading: false,
     error: null,
     loadSkills: async () => {
-      const data = await apiFetch('/api/v1/skills');
-      useSkillsStore.setState({ skills: data.items ?? [], loading: false, error: null });
+      const data = await apiFetch<{ items: Array<{ id: number; name: string }>; total: number }>(
+        '/api/v1/skills'
+      );
+      useSkillsStore.setState({ skills: data.items, loading: false, error: null });
     },
     uploadSkill: async () => ({ id: 0, name: '', description: '', content: '', source: 'user_upload', created_at: '', updated_at: '', agent_ids: [] }),
     deleteSkill: async () => {},
@@ -78,12 +80,15 @@ vi.mock('../stores/agents', async () => {
   const { create } = await import('zustand');
   const { apiFetch } = await import('../api/client');
   const useAgentsStore = create(() => ({
-    agents: [],
+    agents: [] as Array<{ id: number; name: string; builtin: boolean }>,
     loading: false,
     error: null,
     loadAgents: async () => {
-      const data = await apiFetch('/api/v1/agents');
-      useAgentsStore.setState({ agents: data.items ?? [], loading: false, error: null });
+      const data = await apiFetch<{
+        items: Array<{ id: number; name: string; builtin: boolean }>;
+        total: number;
+      }>('/api/v1/agents');
+      useAgentsStore.setState({ agents: data.items, loading: false, error: null });
     },
     bindSkill: async () => {},
   }));
