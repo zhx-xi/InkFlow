@@ -1,7 +1,10 @@
 """管线模板 — 内置写作流水线定义。"""
 
+# #415 G1：角色默认模型引用 config.llm_default_model（配置文件=唯一默认源，代码不写第二份默认值）。
+
 from __future__ import annotations
 
+from inkflow.core.config import config
 from inkflow.domain.models.agent_pipeline import PipelineConfig
 from inkflow.domain.ports.agent_pipeline import AgentRole, PipelineStage
 
@@ -93,28 +96,28 @@ def _build_write_chapter_template() -> PipelineConfig:
         id="architect",
         name="架构师",
         system_prompt=_ARCHITECT_PROMPT,
-        model="openai/gpt-4o",
+        model=config.llm_default_model,
         temperature=None,  # None = 跟随默认 → 项目顶层温度（spec §9.2.3 温度链）
     )
     writer = AgentRole(
         id="writer",
         name="写手",
         system_prompt=_WRITER_PROMPT,
-        model="openai/gpt-4o",
+        model=config.llm_default_model,
         temperature=0.8,
     )
     auditor = AgentRole(
         id="auditor",
         name="审阅",
         system_prompt=_AUDITOR_PROMPT,
-        model="openai/gpt-4o",
+        model=config.llm_default_model,
         temperature=0.5,
     )
     reviser = AgentRole(
         id="reviser",
         name="修订",
         system_prompt=_REVISER_PROMPT,
-        model="openai/gpt-4o",
+        model=config.llm_default_model,
         temperature=0.6,
     )
 
@@ -158,28 +161,28 @@ def _build_write_auto_template() -> PipelineConfig:
         id="architect",
         name="架构师",
         system_prompt=_AUTO_ARCHITECT_PROMPT,
-        model="openai/gpt-4o",
+        model=config.llm_default_model,
         temperature=None,  # None = 跟随默认 → 项目顶层温度（spec §9.2.3 温度链）
     )
     writer = AgentRole(
         id="writer",
         name="写手",
         system_prompt=_AUTO_WRITER_PROMPT,
-        model="openai/gpt-4o",
+        model=config.llm_default_model,
         temperature=0.8,
     )
     auditor = AgentRole(
         id="auditor",
         name="审阅",
         system_prompt=_AUTO_AUDITOR_PROMPT,
-        model="openai/gpt-4o",
+        model=config.llm_default_model,
         temperature=0.5,
     )
     reviser = AgentRole(
         id="reviser",
         name="修订",
         system_prompt=_AUTO_REVISER_PROMPT,
-        model="openai/gpt-4o",
+        model=config.llm_default_model,
         temperature=0.6,
     )
 
@@ -223,21 +226,21 @@ def _build_write_continue_template() -> PipelineConfig:
         id="writer",
         name="写手",
         system_prompt=_CONTINUE_WRITER_PROMPT,
-        model="openai/gpt-4o",
+        model=config.llm_default_model,
         temperature=0.8,
     )
     auditor = AgentRole(
         id="auditor",
         name="审阅",
         system_prompt=_CONTINUE_AUDITOR_PROMPT,
-        model="openai/gpt-4o",
+        model=config.llm_default_model,
         temperature=0.5,
     )
     reviser = AgentRole(
         id="reviser",
         name="修订",
         system_prompt=_CONTINUE_REVISER_PROMPT,
-        model="openai/gpt-4o",
+        model=config.llm_default_model,
         temperature=0.6,
     )
 

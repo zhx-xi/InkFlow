@@ -109,7 +109,7 @@ class InkFlowConfig(BaseSettings):
     """CORS 白名单（仅放行本地来源，ADR-021；spec §2.3.2）。"""
 
     # ---- LLM Provider ----
-    llm_default_model: str = "openai/gpt-4o"
+    llm_default_model: str = "deepseek/deepseek-v4-flash"
     """默认 LLM 模型（LiteLLM 格式：provider/model_name）。"""
 
     llm_temperature: float = 0.7
@@ -130,10 +130,10 @@ class InkFlowConfig(BaseSettings):
 
     # ---- 模型路由（task → model，可在项目级配置覆盖） ----
     model_routing: dict[str, str] = {
-        "writing": "openai/gpt-4o",
+        "writing": "deepseek/deepseek-v4-flash",
         "audit": "deepseek/deepseek-chat",
         "outline": "deepseek/deepseek-chat",
-        "revision": "openai/gpt-4o",
+        "revision": "deepseek/deepseek-v4-flash",
     }
     """不同 Agent 角色的默认模型映射。"""
 

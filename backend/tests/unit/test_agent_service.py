@@ -540,8 +540,8 @@ class TestMergeRoleConfigsSentinel:
         await asyncio.sleep(0.05)
 
         stages = {s.id: s for s in pipeline.executed_stages}
-        # 裸名不覆盖 → 回退模板模型（Q3 兼容策略，§5.1）
-        assert stages["writer"].agent.model == "openai/gpt-4o"
+        # 裸名不覆盖 → 回退模板模型（Q3 兼容策略，§5.1；#415 G1：模板默认=config）
+        assert stages["writer"].agent.model == "deepseek/deepseek-v4-flash"
 
     async def test_qualified_model_overrides_template(self):
         """agent_writer="zhipu/glm-4.5"（合规 provider/model）→ 覆盖模板模型（既有语义保持）。"""

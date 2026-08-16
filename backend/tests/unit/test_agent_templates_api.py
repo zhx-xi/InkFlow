@@ -218,7 +218,8 @@ class TestAgentTemplateCreateAPI:
         assert data["id"] == 1
         assert data["name"] == "我的模板"
         assert data["roles"]["writer"]["model"] == "m/w"
-        assert data["roles"]["architect"]["model"] == "openai/gpt-4o"  # 缺省角色回填
+        # #415 G1：缺省角色回填 = config.llm_default_model（deepseek/deepseek-v4-flash）
+        assert data["roles"]["architect"]["model"] == "deepseek/deepseek-v4-flash"
         assert data["roles"]["architect"]["enabled"] is True
         assert "used_by" not in data  # create 响应不附加 used_by（默认行为不变）
         svc.create.assert_awaited_once()

@@ -29,6 +29,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_db, get_project_service
+from inkflow.core.config import config
 from inkflow.domain.models.agent_template import (
     AgentTemplate,
     AgentTemplateCreate,
@@ -57,7 +58,7 @@ DEFAULT_DELETE_DETAIL = "默认模板不可删除"
 """删除默认模板的 409 detail（API 测试契约 #12 定稿；service 侧 BuiltinError
 消息为「内置模板不可删除」，路由层映射为本契约文案）."""
 
-BUILTIN_DEFAULT_MODEL = "openai/gpt-4o"
+BUILTIN_DEFAULT_MODEL = config.llm_default_model
 """内置默认模型（与 pipeline_templates.py 四角色默认一致）.
 roles 输出时 model 为 None 的角色回填该值（spec §9.2.5「关闭 = 该角色使用默认模型」）."""
 

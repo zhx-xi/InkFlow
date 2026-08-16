@@ -25,6 +25,7 @@ import re
 
 import pytest
 
+from inkflow.core.config import config
 from inkflow.domain.ports.agent_pipeline import PipelineStage
 from inkflow.infrastructure.agent.pipeline_templates import BUILTIN_TEMPLATES, get_template
 
@@ -168,3 +169,24 @@ class TestAuditorReviewConclusion:
         assert "审核结论" in prompt, f"{template_id} auditor prompt 缺审核结论约定"
         assert "通过" in prompt, f"{template_id} auditor prompt 缺「通过」标记"
         assert "不通过" in prompt, f"{template_id} auditor prompt 缺「不通过」标记"
+
+
+# ── 模板默认模型契约（#415 G1，2026-08-16）─────────────────────────
+# 用户拍板：pipeline_templates 不写第二份默认值，角色 model 引用 config.llm_default_model。
+# 契约值 = deepseek/deepseek-v4-flash（产品决策）。
+
+
+def test_builtin_templates_roles_default_to_deepseek_v4_flash() -> None:
+    """三内置模板全部角色 model = deepseek/deepseek-v4-flash
+    （#415 G1；现值 openai/gpt-4o → FAIL）。"""
+    for tid, tpl in BUILTIN_TEMPLATES.items():
+        for stage in tpl.stages:
+            assert stage.agent.model == "deepseek/deepseek-v4-flash", f"{tid}/{stage.id}"
+
+
+def test_builtin_templates_model_follows_config_default() -> None:
+    """模板默认模型与 config.llm_default_model 一致
+    （#415 守护；RED 阶段二者 openai 相等 → PASS）。"""
+    for tid, tpl in BUILTIN_TEMPLATES.items():
+        for stage in tpl.stages:
+            assert stage.agent.model == config.llm_default_model, f"{tid}/{stage.id}"

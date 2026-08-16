@@ -1163,8 +1163,9 @@ jobs:
   # ── 真实 AI GUI e2e（#298 管线化 / #161 Supervisor 动态路由）：与 e2e-ai-backend 同开关哲学 ──
   # label run-ai-tests 触发 + workflow_dispatch 兜底；信息性 check 不进 needs 不 required——
   # 外部 LLM 服务抖动不卡 merge。守卫：secrets.LLM_API_KEY 为空时测试 step 跳过（缺 key 永远 skip 不 fail）。
-  # 说明：B1 spec（e2e-pipeline-ai.spec.ts）读 process.env.INKFLOW_LLM_KEY；zhipu base_url 走 seed
-  # provider 注册表内置（open.bigmodel.cn），无需额外注入 base_url/model env。
+  # 说明：B1 spec（e2e-pipeline-ai.spec.ts）读 process.env.INKFLOW_LLM_KEY；deepseek key 经
+  # INKFLOW_LLM_KEY 注入（secrets.LLM_API_KEY）；provider/model 由 tests/e2e/e2e-llm.config.ts 默认
+  # （deepseek/deepseek-v4-flash），INKFLOW_E2E_LLM_PROVIDER/MODEL env 可覆盖。
   e2e-ai-frontend:
     if: github.event_name == 'workflow_dispatch' || (github.event.action == 'labeled' && github.event.label.name == 'run-ai-tests')
     permissions:

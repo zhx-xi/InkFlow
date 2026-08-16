@@ -2,9 +2,15 @@ import { configDefaults, defineConfig } from 'vitest/config';
 
 // 主进程纯函数单测（node 环境；kernel.test.ts 不 import electron，可直接运行）
 export default defineConfig({
+  // #415 G2：e2e-llm.config.test.ts 在仓库根 tests/e2e/（frontend 包外）——vite fs.allow 默认禁
+  server: {
+    fs: {
+      allow: ['../../..'],
+    },
+  },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', '../../../tests/e2e/e2e-llm.config.test.ts'],
     // 覆盖率（#104 Phase 1）：electron 壳 20 用例纳入统计
     coverage: {
       provider: 'v8',

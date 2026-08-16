@@ -340,7 +340,7 @@ class TestLangChainLLMClientErrorMapping:
             async for _ in client.chat_stream(chat_messages):
                 pass  # pragma: no cover
         assert "LLM stream failed" in str(exc_info.value)
-        assert exc_info.value.provider == "openai"
+        assert exc_info.value.provider == "deepseek"  # #415 G1：默认模型 provider 跟随 config
 
     @pytest.mark.asyncio
     async def test_count_tokens_invalid_model_uses_raw_string(self, chat_messages):
