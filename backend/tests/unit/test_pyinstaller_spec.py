@@ -55,19 +55,26 @@ def test_spec_excludes_not_blocking_chromadb():
 
 
 def test_spec_filters_stale_dist_info():
-    """collect_all('inkflow') 收集的 datas 必须剥离 inkflow-*.dist-info（#421：uv
-    缓存恢复残留旧版 dist-info → 双 dist-info 进包 → importlib.metadata.version
-    取排序第一个 = 旧版本 → 版本注入失效，--version 显示 0.8.0rc1 而非 0.9.0rc1）。
-    过滤必须发生在 copy_metadata('inkflow') 之前（先剥离 collect_all 的旧版，
-    再单独注入当前版本）。"""
+    """spec 必须在 Analysis 前清理 site-packages 中非当前版本的 inkflow-*.dist-info
+    （#421 复发实证 2026-08-16 rc2：collect_all 过滤是空操作——editable 模式 datas
+    不含 dist-info，真凶 = PyInstaller 6.x metadata_required() 自动收集 + uv 缓存
+    恢复旧 site-packages 残留 → 双 dist-info → importlib.metadata.version 取排序第一个
+    = 旧版本）。
+
+    修复方向（#421 补充）：按 pyproject.toml 当前版本清理 site-packages 残留旧版
+    dist-info（不依赖 importlib.metadata 字母序），使 copy_metadata 与
+    metadata_required 都只能收集当前版本。"""
     src = _spec_source()
-    # 锁「过滤代码」而非字符串存在——现有注释也含 'dist-info' 字样，只断言字符串会假 GREEN
-    filter_expr = "datas = [d for d in datas if"
-    assert filter_expr in src, "spec 缺少 datas 列表推导过滤（#421）"
-    filter_pos = src.find(filter_expr)
-    copy_pos = src.find("copy_metadata")
-    assert filter_pos != -1 and copy_pos != -1, "spec 缺少过滤/copy_metadata（#421）"
-    assert filter_pos < copy_pos, "dist-info 过滤必须先于 copy_metadata（#421）"
-    # 过滤条件必须含 dist-info（剥离的是 dist-info 而非其他文件）
-    between = src[filter_pos:copy_pos]
-    assert "dist-info" in between, "datas 过滤条件缺少 dist-info（#421）"
+    # ① 必须读 pyproject.toml 版本（白名单基准）
+    assert "pyproject.toml" in src, "spec 缺少 pyproject.toml 版本读取（#421 复发）"
+    # ② 必须按版本规范化构造目标 dist-info 名（PEP 440：0.9.0-rc2 → 0.9.0rc2）
+    assert "inkflow-" in src, "spec 缺少 inkflow dist-info 名构造（#421 复发）"
+    # ③ 必须遍历 site-packages glob inkflow-*.dist-info 并删除非当前版本
+    assert 'glob("inkflow-*.dist-info")' in src, "spec 缺少 dist-info glob（#421 复发）"
+    assert "rmtree" in src, "spec 缺少 dist-info 清理（#421 复发）"
+    assert "_target_dist" in src, "spec 缺少当前版本 dist-info 白名单（#421 复发）"
+    # ④ 清理必须发生在 Analysis() 之前（Analysis 内部 metadata_required 会自动收集）
+    cleanup_pos = src.find("rmtree")
+    analysis_pos = src.find("= Analysis(")
+    assert cleanup_pos != -1 and analysis_pos != -1, "spec 缺少清理/Analysis（#421 复发）"
+    assert cleanup_pos < analysis_pos, "dist-info 清理必须在 Analysis 之前（#421 复发）"

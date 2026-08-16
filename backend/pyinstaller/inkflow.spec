@@ -23,6 +23,26 @@ datas, binaries, hiddenimports = collect_all("inkflow")
 # #421: 过滤 collect_all 收集的旧版 inkflow dist-info（uv 缓存残留），避免与当前版本 dist-info 并存导致版本注入失效
 datas = [d for d in datas if not ("inkflow-" in d[1] and ".dist-info" in d[1])]
 
+# #421 复发（rc2 实证）：PyInstaller 6.x metadata_required() 自动收集 dist-info（扫描到
+# __init__.py 的 importlib.metadata.version 调用 → 内部自动 copy_metadata），uv 缓存
+# 恢复旧 site-packages 残留 → 双 dist-info 进包 → importlib.metadata.version 取排序第一个
+# （旧版）。修复：Analysis 前清理 site-packages 中非当前版本的 inkflow-*.dist-info
+# （uv 缓存恢复的旧版残留），使 copy_metadata 与 metadata_required 都只能收集当前版本。
+import re
+import shutil
+import site as _site
+import tomllib
+
+with open(ROOT / "pyproject.toml", "rb") as _f:
+    _proj_ver = tomllib.load(_f)["project"]["version"]   # 例 "0.9.0-rc2"
+_norm_ver = re.sub(r"[^0-9a-zA-Z.]+", "", _proj_ver)     # PEP 440 规范化 → "0.9.0rc2"
+_target_dist = f"inkflow-{_norm_ver}.dist-info"
+for _sp in _site.getsitepackages():
+    for _old in Path(_sp).glob("inkflow-*.dist-info"):
+        if _old.name != _target_dist:
+            shutil.rmtree(_old, ignore_errors=True)
+            print(f"#421: removed stale dist-info {_old}")
+
 # ⚠️ copy_metadata（评审 🔴2）：INKFLOW_READY.version / /health 版本字段经
 # importlib.metadata.version("inkflow") 读取，依赖 dist-info；
 # PyInstaller 不自动收集 .dist-info，缺失则冻结 exe 抛 PackageNotFoundError。
