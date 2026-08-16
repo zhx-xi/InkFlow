@@ -60,12 +60,26 @@ export function WritingPage() {
     targetWords: currentProject?.target_words ?? 0,
     writingStyle: currentProject?.config?.writing_style ?? '',
     chapterTitle: chapters.find((c) => c.id === currentChapterId)?.title ?? '',
+    supervisor: currentProject?.config?.supervisor ?? null,
   });
-  const { status, error, start } = pipeline;
+  const { status, error, start, hitlPending, confirm } = pipeline;
 
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const dirtyRef = useRef(false);
   const loadedRef = useRef<string | null>(null);
+
+  const handleHitlConfirm = useCallback(
+    (approved: boolean) => {
+      setConfirming(true);
+      // confirm 内部状态机续跑；成功后恢复 confirming
+      confirm(approved);
+      // 简单起见：confirm 是异步续跑，成功/失败态由 usePipeline 内部处理；
+      // 这里延迟重置 confirming（轮询成功后 UI 已切换）
+      setTimeout(() => setConfirming(false), 1500);
+    },
+    [confirm],
+  );
 
   const save = useCallback(async () => {
     await saveContent();
@@ -219,7 +233,13 @@ export function WritingPage() {
             onAudit={() => void handleAudit()}
           />
           <ChapterEditor onEditorKeyDown={handleKeyDown} onContentChange={handleContentChange} />
-          <PipelineStatus status={status} error={error} />
+          <PipelineStatus
+            status={status}
+            error={error}
+            hitlPending={hitlPending}
+            onConfirm={handleHitlConfirm}
+            confirming={confirming}
+          />
         </main>
         <ContextPanel />
       </div>

@@ -133,6 +133,26 @@ class MockExecutionStore:
             if hitl_payload is not None:
                 exec_.hitl_payload = hitl_payload
 
+    async def update_stages(
+        self,
+        execution_id: str,
+        stages: list[dict],
+        status: str,
+        final_output: str = "",
+        error: str = "",
+        total_duration_ms: int = 0,
+        relations: list | None = None,
+    ) -> None:
+        """镜像真实 ExecutionStore.update_stages 语义（#343 根因 6：confirm 落库完整成品）。"""
+        exec_ = self.executions.get(execution_id)
+        if exec_ is not None:
+            exec_.stages = stages
+            exec_.status = status
+            exec_.final_output = final_output
+            exec_.error = error
+            exec_.total_duration_ms = total_duration_ms
+            exec_.relations = relations if relations is not None else []
+
     async def get_hitl_payload(self, execution_id: str):
         exec_ = self.executions.get(execution_id)
         return exec_.hitl_payload if exec_ else None
@@ -231,3 +251,129 @@ class TestConfirmExecution:
         svc = _make_service(store=MockExecutionStore())
         with pytest.raises(AgentServiceError):
             await svc.confirm_execution(str(uuid.uuid4()), approved=True)
+
+    @pytest.mark.asyncio
+    async def test_confirm_writes_final_output(self) -> None:
+        """confirm 成功后成品（final_output/stages）必须落库（#343 E2E 实证根因 6）。
+
+        HITL 链路：_run_pipeline 在 interrupt 处只 update_status(waiting_hitl)；
+        confirm_execution resume 成功后若只 update_status(completed) → stages/final_output
+        永不落库 → 前端 pollExecutionResult 等不到成品（E2E B1-5 三轮实证：
+        DB status=completed 但 stages=0、final_output 空、duration=0）。
+
+        契约：confirm 成功路径须调 update_stages（含 stages/final_output/total_duration_ms），
+        不只 update_status。
+
+        RED 预期：当前实现 resume 后仅 update_status → MockExecutionStore 的
+        execution.final_output 仍空 → 断言 FAIL。
+        """
+        exec_id = str(uuid.uuid4())
+        pipeline = MockPipeline()
+        store = MockExecutionStore({exec_id: MockExecution(exec_id, status="waiting_hitl")})
+        svc = _make_service(pipeline=pipeline, store=store)
+        # MockPipeline.result 含 final_output="定稿" + stages [writer, reviser]
+        result = await svc.confirm_execution(exec_id, approved=True)
+        assert result["status"] == "completed"
+        record = store.executions[exec_id]
+        assert record.final_output == "定稿"
+        assert record.total_duration_ms == 10
+
+
+class _HitlRaisingPipeline(MockPipeline):
+    """execute/resume 抛 HITLInterrupt 的管线 Mock（#343 后端缺口契约）。
+
+    execute() 首次调用抛 HITLInterrupt（模拟真实 SupervisorPipeline 的
+    `__interrupt__` 路径）；resume() 可配置二次 interrupt 语义。
+    """
+
+    def __init__(self, payload: dict | None = None, resume_interrupt: bool = False) -> None:
+        super().__init__()
+        self.payload = payload or {
+            "question": "确认执行下一角色 reviser？",
+            "role": "reviser",
+            "route_history": ["reviser"],
+        }
+        self.resume_interrupt = resume_interrupt
+
+    async def execute(self, stages, context, *, supervisor=None):
+        from inkflow.infrastructure.agent.supervisor_pipeline import HITLInterrupt
+
+        self.executed_stages = list(stages)
+        self.executed_context = context
+        self.supervisor_config = supervisor
+        raise HITLInterrupt(self.payload)
+
+    async def resume(self, interrupt_obj, *, approved: bool = False) -> PipelineResult:
+        from inkflow.infrastructure.agent.supervisor_pipeline import HITLInterrupt
+
+        self.resume_called_with = (interrupt_obj, approved)
+        if self.resume_interrupt:
+            raise HITLInterrupt(
+                {
+                    "question": "确认执行下一角色 writer？",
+                    "role": "writer",
+                    "route_history": ["reviser", "writer"],
+                }
+            )
+        return self.result
+
+
+class TestRunPipelineHitl:
+    """#343：_run_pipeline 收到 HITLInterrupt → 写 waiting_hitl + payload（spec §5.6 缺口）。"""
+
+    @pytest.mark.asyncio
+    async def test_run_pipeline_hitl_interrupt_writes_waiting_hitl(self) -> None:
+        """HITL interrupt → ExecutionStore status=waiting_hitl + hitl_payload 快照。
+
+        RED 预期：_run_pipeline 无 except HITLInterrupt → 落入 except Exception →
+        update_stages(status='failed') → 断言 FAIL（status 应为 waiting_hitl）。
+        """
+        from inkflow.domain.models.agent_pipeline import SupervisorExecuteConfig
+
+        exec_id = str(uuid.uuid4())
+        payload = {
+            "question": "确认执行下一角色 reviser？",
+            "role": "reviser",
+            "route_history": ["reviser"],
+        }
+        pipeline = _HitlRaisingPipeline(payload=payload)
+        store = MockExecutionStore({exec_id: MockExecution(exec_id, status="running")})
+        svc = _make_service(pipeline=pipeline, store=store)
+        cfg = SupervisorExecuteConfig(hitl_roles=["reviser"])
+
+        ctx = PipelineContext(project_id="1", chapter_id=None, variables={})
+        await svc._run_pipeline(
+            exec_id,
+            pipeline.executed_stages or [],
+            ctx,
+            pipeline=pipeline,
+            supervisor_config=cfg,
+        )
+        record = store.executions[exec_id]
+        assert record.status == "waiting_hitl"
+        assert record.hitl_payload == payload
+
+    @pytest.mark.asyncio
+    async def test_confirm_resume_second_interrupt_returns_waiting_hitl(self) -> None:
+        """confirm 后 resume 再次 interrupt → 再次写 waiting_hitl + 返回新 payload。
+
+        RED 预期：confirm_execution 无 except HITLInterrupt → HITLInterrupt 传播
+        → 用例 ERROR（非预期异常），断言 FAIL。
+        """
+        exec_id = str(uuid.uuid4())
+        payload = {
+            "question": "确认执行下一角色 reviser？",
+            "role": "reviser",
+            "route_history": ["reviser"],
+        }
+        pipeline = _HitlRaisingPipeline(payload=payload, resume_interrupt=True)
+        store = MockExecutionStore({exec_id: MockExecution(exec_id, status="waiting_hitl")})
+        store.executions[exec_id].hitl_payload = payload
+        svc = _make_service(pipeline=pipeline, store=store)
+
+        result = await svc.confirm_execution(exec_id, approved=True)
+        assert result["status"] == "waiting_hitl"
+        assert result["hitl_pending"]["role"] == "writer"
+        record = store.executions[exec_id]
+        assert record.status == "waiting_hitl"
+        assert record.hitl_payload["role"] == "writer"

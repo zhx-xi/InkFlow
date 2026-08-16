@@ -67,6 +67,17 @@ class AgentRelation(BaseModel):
         return v
 
 
+class SupervisorProjectConfig(BaseModel):
+    """项目级 Supervisor/HITL 配置（#343 拍板 2A）。
+
+    Attributes:
+        hitl_roles: HITL 确认角色列表（这些角色执行前 interrupt 等待人工确认；
+            空列表 = 不启用 HITL，supervisor 模式仍可用但无确认点）。
+    """
+
+    hitl_roles: list[str] = Field(default_factory=list)
+
+
 class ProjectConfig(BaseModel):
     """项目 AI 写作配置，可序列化为 JSON 进行导入/导出.
 
@@ -86,6 +97,7 @@ class ProjectConfig(BaseModel):
         template_id: 引用的 AgentTemplate id（str 存储于 config JSON；
             None = 未引用，回退默认装配，spec §9.2）.
         writing_style: 写作风格描述.
+        supervisor: 项目级 Supervisor/HITL 配置（None = 未启用，零迁移）.
         extra: 扩展配置字典.
     """
 
@@ -124,6 +136,10 @@ class ProjectConfig(BaseModel):
       非空 = 配置驱动模式——null 真禁用（跳过，§2.2）
     - 角色名支持任意字符串（自定义 Agent，v1.2 执行解锁 + v1.3 数据面）
     """
+    supervisor: SupervisorProjectConfig | None = Field(
+        default=None,
+        description="Supervisor/HITL 项目级配置（None = 未启用，零迁移）",
+    )
     agent_relations: list[AgentRelation] = Field(default_factory=list)
     """角色间显式关联关系（#270，spec §1.2）。
 

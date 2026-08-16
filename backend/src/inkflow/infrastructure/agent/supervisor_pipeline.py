@@ -104,14 +104,26 @@ def _parse_decision(content: str) -> tuple[str, str] | None:
     """解析 LLM 决策 JSON → (action, role)；解析失败/空 content 返回 None。
 
     role 仅在 action=execute 时有值，其余 action 恒为空串。
+    宽松解析（#343 实证根因）：LLM 可能返回 markdown 代码块围栏包裹的 JSON
+    （如 ```json\n{...}\n```），先试完整解析，失败则提取首个 { 到末个 } 子串。
     """
     if not content.strip():
         return None
-    try:
-        data = json.loads(content)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(data, dict):
+
+    def _try_parse(text: str) -> dict | None:
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        return data if isinstance(data, dict) else None
+
+    data = _try_parse(content)
+    if data is None:
+        start = content.find("{")
+        end = content.rfind("}")
+        if start != -1 and end != -1 and start < end:
+            data = _try_parse(content[start : end + 1])
+    if data is None:
         return None
     action = data.get("action")
     if action == "execute":

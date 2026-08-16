@@ -329,6 +329,8 @@ export const en: Record<string, string> = {
   'write.pipeline.running': 'Running...',
   'write.pipeline.success': 'Generation complete',
   'write.pipeline.failed': 'Generation failed: {message}',
+  'write.hitl.approve': 'Continue',
+  'write.hitl.reject': 'Reject & fallback',
   'write.retry': 'Retry',
   // F34 chapter audit (Issue #208)
   'audit.accept': 'Accept',

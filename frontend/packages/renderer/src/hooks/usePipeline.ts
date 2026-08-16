@@ -1,22 +1,29 @@
 /**
  * 管线执行 hook（spec §5.6）：提交 execute + 轮询 execution 状态 + 成品落章
- * 状态机: idle → running → success | failed
+ * 状态机: idle → running → success | failed | awaiting_human（HITL 中断，#343）
  * - start('write_auto') → executePipeline(builtin:write_auto)
  * - start('write_continue') → executePipeline(builtin:write_continue)
  * - 轮询 getExecutionStatus（1s 间隔 setTimeout 递归）：
  *   completed → chapterStore.setContent(final_output) + status='success'
  *   failed → status='failed' + error
+ *   waiting_hitl → hitlPending 暴露 + status='awaiting_human' + 停止轮询（等待 confirm）
  *   其它 → 继续轮询
+ * - confirm(approved) → confirmExecution(execution_id, approved) 后继续轮询续跑
  * - 并发保护：running 中再次 start 无操作
  * - 卸载清理 timer
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { executePipeline, getExecutionStatus, type PipelineExecuteRequest } from '../api/pipeline';
+import {
+  confirmExecution,
+  executePipeline,
+  getExecutionStatus,
+  type PipelineExecuteRequest,
+} from '../api/pipeline';
 import { errorMessage } from '../api/client';
 import { useChapterStore } from '../stores/chapter';
 
 export type PipelineMode = 'write_auto' | 'write_continue';
-export type PipelineRunStatus = 'idle' | 'running' | 'success' | 'failed';
+export type PipelineRunStatus = 'idle' | 'running' | 'success' | 'failed' | 'awaiting_human';
 
 export interface UsePipelineOptions {
   projectId: string;
@@ -25,14 +32,17 @@ export interface UsePipelineOptions {
   targetWords: number;
   writingStyle: string;
   chapterTitle: string;
-}
+  supervisor?: { hitl_roles?: string[] } | null;
+  }
 
 export interface UsePipelineResult {
   status: PipelineRunStatus;
   error: string | null;
   finalOutput: string;
   totalDurationMs: number;
+  hitlPending: { question: string; role: string } | null;
   start: (mode: PipelineMode) => void;
+  confirm: (approved: boolean) => void;
 }
 
 const POLL_INTERVAL_MS = 1000;
@@ -42,7 +52,9 @@ export function usePipeline(options: UsePipelineOptions): UsePipelineResult {
   const [error, setError] = useState<string | null>(null);
   const [finalOutput, setFinalOutput] = useState('');
   const [totalDurationMs, setTotalDurationMs] = useState(0);
+  const [hitlPending, setHitlPending] = useState<{ question: string; role: string } | null>(null);
   const inFlightRef = useRef(false);
+  const executionIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const buildVariables = useCallback(
@@ -75,6 +87,12 @@ export function usePipeline(options: UsePipelineOptions): UsePipelineResult {
         setError(s.error || '执行失败');
         setStatus('failed');
         inFlightRef.current = false;
+      } else if (s.status === 'waiting_hitl') {
+        setHitlPending(
+          s.hitl_pending ? { question: s.hitl_pending.question, role: s.hitl_pending.role } : null,
+        );
+        setStatus('awaiting_human');
+        inFlightRef.current = false; // 停止轮询，等待人工确认
       } else {
         timerRef.current = setTimeout(() => {
           void poll(executionId);
@@ -101,9 +119,13 @@ export function usePipeline(options: UsePipelineOptions): UsePipelineResult {
         pipeline: `builtin:${mode}`,
         ...(options.chapterId ? { chapter_id: options.chapterId } : {}),
         variables: buildVariables(mode),
+        ...(options.supervisor?.hitl_roles?.length
+          ? { mode: 'supervisor' as const, supervisor: { hitl_roles: options.supervisor.hitl_roles } }
+          : {}),
       };
       executePipeline(body)
         .then((res) => {
+          executionIdRef.current = res.execution_id;
           void poll(res.execution_id);
         })
         .catch((err) => {
@@ -112,7 +134,26 @@ export function usePipeline(options: UsePipelineOptions): UsePipelineResult {
           inFlightRef.current = false;
         });
     },
-    [options.projectId, options.chapterId, buildVariables, poll],
+    [options.projectId, options.chapterId, options.supervisor?.hitl_roles, buildVariables, poll],
+  );
+
+  const confirm = useCallback(
+    (approved: boolean) => {
+      const executionId = executionIdRef.current;
+      if (!executionId) return;
+      setStatus('running');
+      confirmExecution(executionId, approved)
+        .then(() => {
+          setHitlPending(null);
+          void poll(executionId);
+        })
+        .catch((err) => {
+          setError(errorMessage(err));
+          setStatus('failed');
+          inFlightRef.current = false;
+        });
+    },
+    [poll],
   );
 
   useEffect(() => {
@@ -121,5 +162,5 @@ export function usePipeline(options: UsePipelineOptions): UsePipelineResult {
     };
   }, []);
 
-  return { status, error, finalOutput, totalDurationMs, start };
+  return { status, error, finalOutput, totalDurationMs, hitlPending, start, confirm };
 }

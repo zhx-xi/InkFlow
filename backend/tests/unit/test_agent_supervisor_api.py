@@ -158,6 +158,46 @@ class TestConfirmEndpoint:
         assert response.json()["status"] == "completed"
 
 
+class TestSvcSupervisorAssembly:
+    """#343：_svc() 装配 SupervisorPipeline（spec §6 装配点，Block 2 缺口）。"""
+
+    def test_svc_has_supervisor_pipeline(self) -> None:
+        """_svc(db) 返回的 AgentService 应装配 SupervisorPipeline（非 None）。
+
+        RED 预期：_svc() 只装配 LangGraphAgentPipeline → _supervisor_pipeline=None
+        → 断言 FAIL（supervisor 模式 API 层 422「未装配」）。
+        """
+        from unittest.mock import AsyncMock
+
+        from inkflow.api.routers import agent as agent_router
+        from inkflow.infrastructure.agent.supervisor_pipeline import SupervisorPipeline
+
+        db = AsyncMock()
+        svc = agent_router._svc(db)
+        assert svc._supervisor_pipeline is not None
+        assert isinstance(svc._supervisor_pipeline, SupervisorPipeline)
+
+    def test_svc_supervisor_pipeline_shared_across_calls(self) -> None:
+        """_svc() 多次调用的 SupervisorPipeline 必须是同一实例（#343 E2E 实证根因 5）。
+
+        InMemorySaver checkpointer 存于 SupervisorPipeline 实例内——execute 与
+        confirm 走不同 _svc() 调用：若每次新建实例 → 新 InMemorySaver → confirm 的
+        resume() 找不到 execute 时的 thread_id 状态 → 500（E2E B1-5 实证：
+        确认卡片出现 → 点继续 → pipeline-status「生成失败: HTTP 500」）。
+
+        RED 预期：当前实现每次新建 → 两次调用实例不同 → 断言 FAIL。
+        """
+        from unittest.mock import AsyncMock
+
+        from inkflow.api.routers import agent as agent_router
+
+        db1 = AsyncMock()
+        db2 = AsyncMock()
+        svc1 = agent_router._svc(db1)
+        svc2 = agent_router._svc(db2)
+        assert svc1._supervisor_pipeline is svc2._supervisor_pipeline
+
+
 class TestGetStatusHitlPending:
     """GET 执行状态含 hitl_pending 契约（spec §3）。"""
 
