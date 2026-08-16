@@ -395,7 +395,7 @@ async def test_get_vector_status_fresh_when_fingerprint_matches() -> None:
                 "mode": "fixed",
                 "chunk_size": 500,
                 "overlap_ratio": 0.0,
-                "chunker_version": 1,
+                "chunker_version": 2,  # #278 M4: CHUNKER_VERSION bump（indexed 指纹模拟 M4 后）
             },
             "indexed_at": "2026-08-12T08:00:00Z",
             "status": "fresh",
@@ -439,7 +439,7 @@ async def test_get_vector_status_dimension_mismatch_independent() -> None:
                 "mode": "fixed",
                 "chunk_size": 500,
                 "overlap_ratio": 0.0,
-                "chunker_version": 1,
+                "chunker_version": 2,  # #278 M4: CHUNKER_VERSION bump（indexed 指纹模拟 M4 后）
             },
             "indexed_at": "2026-08-12T08:00:00Z",
             "status": "fresh",
@@ -580,7 +580,7 @@ async def test_build_configured_fingerprint_accepts_chunking_override() -> None:
 
 
 async def test_build_configured_fingerprint_chunking_default_unchanged() -> None:
-    """E9 守护: 不传 chunking → 默认 fixed/500/0.0/1（既有行为不变）。"""
+    """E9 守护: 不传 chunking → 默认 fixed/500/0.0/2（CHUNKER_VERSION 随 M4 bump）。"""
     repo = _repo_with_providers([_embedding_provider()])
 
     with (
@@ -597,7 +597,7 @@ async def test_build_configured_fingerprint_chunking_default_unchanged() -> None
         "mode": "fixed",
         "chunk_size": 500,
         "overlap_ratio": 0.0,
-        "chunker_version": 1,
+        "chunker_version": 2,
     }
 
 
