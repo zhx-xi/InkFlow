@@ -366,7 +366,7 @@ test('设置页：Agent 链四角色开关逐个切换（无项目纯 UI 状态�
 // ────────────────────────────────────────────────────────────────
 // E3-2 默认模型下拉（有项目：PATCH 落库确认）
 // ────────────────────────────────────────────────────────────────
-test('设置页：默认模型下拉选 deepseek/deepseek-chat → 直调内核确认 PATCH 落库（F42 #268 R1：provider/model 选项）', async () => {
+test('设置页：默认模型下拉选 deepseek/deepseek-v4-flash → 直调内核确认 PATCH 落库（F42 #268 R1：provider/model 选项）', async () => {
   const { app, window, kernel } = await launchApp();
   try {
     await window.evaluate(() => localStorage.clear());
@@ -386,23 +386,23 @@ test('设置页：默认模型下拉选 deepseek/deepseek-chat → 直调内核�
 
     // F42 #268 R1：默认模型下拉选项 = provider-configs chat 模型列表（spec §5.2 Q3）——
     // seed provider models 初始为空，先直调内核给 deepseek 添加 chat 模型；
-    // 幂等：始终 PATCH 为「去重后 models + deepseek-chat」（默认 userData 持久 DB，
+    // 幂等：始终 PATCH 为「去重后 models + deepseek-v4-flash」（默认 userData 持久 DB，
     // 重跑残留的重复模型一并自愈，避免下拉出现重复 option）
     const providers = await fetchKernel(kernel, '/api/v1/provider-configs');
     const deepseek = providers.items.find((p: { name: string }) => p.name === 'deepseek');
     expect(deepseek).toBeTruthy();
     const deduped = deepseek.models.filter(
       (m: { id: string }, i: number, arr: Array<{ id: string }>) =>
-        m.id !== 'deepseek-chat' || arr.findIndex((x) => x.id === m.id) === i,
+        m.id !== 'deepseek-v4-flash' || arr.findIndex((x) => x.id === m.id) === i,
     );
     if (
       deduped.length !== deepseek.models.length ||
-      !deepseek.models.some((m: { id: string }) => m.id === 'deepseek-chat')
+      !deepseek.models.some((m: { id: string }) => m.id === 'deepseek-v4-flash')
     ) {
       await fetchKernel(kernel, `/api/v1/provider-configs/${deepseek.id}`, {
         method: 'PATCH',
         body: JSON.stringify({
-          models: [...deduped, { id: 'deepseek-chat', type: 'chat', roles: [] }],
+          models: [...deduped, { id: 'deepseek-v4-flash', type: 'chat', roles: [] }],
         }),
       });
     }
@@ -413,13 +413,13 @@ test('设置页：默认模型下拉选 deepseek/deepseek-chat → 直调内核�
     await window.getByTestId('settings-cat-general').click();
     await window.getByTestId('settings-cat-agent').click();
 
-    // 设置页 → Agent 分类 → 默认模型下拉选 deepseek/deepseek-chat（option 为 Radix portal，展开后才存在；
+    // 设置页 → Agent 分类 → 默认模型下拉选 deepseek/deepseek-v4-flash（option 为 Radix portal，展开后才存在；
     // first() 防持久 DB 残留重复模型导致的 strict mode violation——点击任一重复项语义等价）
     const combo = window.getByRole('combobox', { name: '默认模型' });
     await expect(combo).toBeVisible();
     await combo.click();
-    await window.getByRole('option', { name: 'deepseek/deepseek-chat', exact: true }).first().click();
-    await expect(combo).toContainText('deepseek/deepseek-chat');
+    await window.getByRole('option', { name: 'deepseek/deepseek-v4-flash', exact: true }).first().click();
+    await expect(combo).toContainText('deepseek/deepseek-v4-flash');
 
     // saveConfig 为 fire-and-forget → 轮询后端 GET /projects/{id} 确认 config.model 落库
     // （R1：完整 provider/model 值，非裸 provider 名）
@@ -431,7 +431,7 @@ test('设置页：默认模型下拉选 deepseek/deepseek-chat → 直调内核�
         },
         { timeout: 10_000 }
       )
-      .toBe('deepseek/deepseek-chat');
+      .toBe('deepseek/deepseek-v4-flash');
   } finally {
     await app.close();
   }

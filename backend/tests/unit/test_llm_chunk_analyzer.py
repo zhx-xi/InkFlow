@@ -41,7 +41,7 @@ from inkflow.domain.ports.prompt_template import (
 )
 from inkflow.domain.services._llm_chunk_analyzer import LLMChunkAnalyzer, LLMChunkAnalyzerError
 
-DEFAULT_MODEL = "openai/gpt-4o"
+DEFAULT_MODEL = "deepseek/deepseek-v4-flash"  # #415 G1 伪契约同步：mock 数据跟随默认
 TEMPLATE_NAME = "llm_chunk"
 
 TEXT = "林晚推开窗，夜色如墨。她低声说：三年了，我终究还是回来了。窗外传来更鼓声。"

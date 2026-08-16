@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 
-from inkflow.core.config import load_config_json, save_config_json
+from inkflow.core.config import InkFlowConfig, load_config_json, save_config_json
 
 
 def test_load_config_json_missing_file_returns_empty(tmp_path) -> None:
@@ -53,3 +53,34 @@ def test_save_config_json_merges_existing(tmp_path) -> None:
     save_config_json(tmp_path, {"a": 1})
     save_config_json(tmp_path, {"b": 2})
     assert load_config_json(tmp_path) == {"a": 1, "b": 2}
+
+
+# ── G1 默认模型契约（#415，2026-08-16）─────────────────────────────
+# 用户拍板：生成管线默认模型切 deepseek/deepseek-v4-flash（便宜），仅 embedding 保留
+# zhipu。config.py 是唯一默认源（代码不写第二份默认值）；INKFLOW_* env 优先覆盖。
+# 契约值 = 用户拍板的产品决策（非配置来源断言）。
+
+
+def test_llm_default_model_defaults_to_deepseek_v4_flash(tmp_path, monkeypatch) -> None:
+    """默认生成模型 = deepseek/deepseek-v4-flash（#415 G1；现值 openai/gpt-4o → FAIL）。"""
+    monkeypatch.delenv("INKFLOW_LLM_DEFAULT_MODEL", raising=False)
+    cfg = InkFlowConfig(_env_file=None, data_dir=tmp_path)
+    assert cfg.llm_default_model == "deepseek/deepseek-v4-flash"
+
+
+def test_model_routing_writing_revision_defaults_to_deepseek_v4_flash(
+    tmp_path, monkeypatch
+) -> None:
+    """model_routing.writing/revision 默认 = deepseek/deepseek-v4-flash
+    （#415 G1；现值 openai/gpt-4o → FAIL）。"""
+    monkeypatch.delenv("INKFLOW_MODEL_ROUTING", raising=False)
+    cfg = InkFlowConfig(_env_file=None, data_dir=tmp_path)
+    assert cfg.model_routing["writing"] == "deepseek/deepseek-v4-flash"
+    assert cfg.model_routing["revision"] == "deepseek/deepseek-v4-flash"
+
+
+def test_llm_default_model_env_override_wins(tmp_path, monkeypatch) -> None:
+    """INKFLOW_LLM_DEFAULT_MODEL env 优先于配置默认（#415 守护；env 机制既有 → RED 阶段 PASS）。"""
+    monkeypatch.setenv("INKFLOW_LLM_DEFAULT_MODEL", "env/override-model")
+    cfg = InkFlowConfig(_env_file=None, data_dir=tmp_path)
+    assert cfg.llm_default_model == "env/override-model"

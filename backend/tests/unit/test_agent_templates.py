@@ -1,5 +1,6 @@
 """管线模板测试。"""
 
+from inkflow.core.config import config
 from inkflow.infrastructure.agent.pipeline_templates import (
     get_template,
     list_templates,
@@ -52,11 +53,11 @@ class TestBuiltinTemplates:
         assert "builtin:write_chapter" in ids
 
     def test_builtin_stages_have_default_agents(self):
-        """每个阶段有 AgentRole，model 默认 openai/gpt-4o。"""
+        """每个阶段有 AgentRole，model 默认跟随 config（#415 G1）。"""
         tpl = get_template("builtin:write_chapter")
         for stage in tpl.stages:
             assert stage.agent is not None
-            assert stage.agent.model == "openai/gpt-4o"
+            assert stage.agent.model == config.llm_default_model
 
     def test_builtin_template_is_pipeline_config(self):
         """get_template 返回 PipelineConfig 实例。"""

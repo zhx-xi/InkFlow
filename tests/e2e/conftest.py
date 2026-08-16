@@ -31,7 +31,7 @@ def llm_env(monkeypatch):
       裸模型名自动挂 deepseek provider（LLM_BASE_URL 存在时覆盖其端点）
     - LLM_BASE_URL（可选）：覆盖对应 provider 的内置端点（不硬编码 provider）
     """
-    raw = os.environ.get("LLM_MODEL", "deepseek-chat")
+    raw = os.environ.get("LLM_MODEL", "deepseek/deepseek-v4-flash")  # #415 G1
     if "/" in raw:
         provider, model_name = raw.split("/", 1)
         model = raw

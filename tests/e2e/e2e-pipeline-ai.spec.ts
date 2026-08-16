@@ -17,22 +17,24 @@
  * （test_writing_generate.py `assert result.content.strip()` 哲学）。
  *
  * LLM key 注入（真实内核 API，Node fetch + X-InkFlow-Token 头；与 e2e-writing 的 kernelFetch 同构）：
- * 1. POST /api/v1/settings/llm-keys {provider:'zhipu', api_key}
+ * provider/model 由 tests/e2e/e2e-llm.config.ts 默认（deepseek/deepseek-v4-flash），
+ * INKFLOW_E2E_LLM_PROVIDER / INKFLOW_E2E_LLM_MODEL env 优先覆盖（缺省读配置）：
+ * 1. POST /api/v1/settings/llm-keys {provider: cfg.provider, api_key}
  *    —— settings.py LLMKeyStoreRequest（provider/api_key 必填非空），201 {provider, status:'saved'}
- * 2. GET /api/v1/provider-configs → 按 name='zhipu' 找 seed provider（id 勿硬编码）→
+ * 2. GET /api/v1/provider-configs → 按 name=cfg.provider 找 seed provider（id 勿硬编码）→
  *    PATCH /api/v1/provider-configs/{id} {models: 去重后 chat 模型列表}
- *    —— ProviderConfigUpdate.models 整体替换语义（先读后合并）；补 glm-4.5 chat 条目
- * 3. GET /api/v1/projects/{id} 合并 config → PATCH {config:{model, agent_*: 'zhipu/glm-4.5'}}
+ *    —— ProviderConfigUpdate.models 整体替换语义（先读后合并）；补配置模型 chat 条目
+ * 3. GET /api/v1/projects/{id} 合并 config → PATCH {config:{model, agent_*: cfg.model}}
  *    —— ⚠️ 后端实证（agent_service._merge_role_configs）：管线角色模型链 =
- *       模板 role model（builtin write_auto/continue 写死 openai/gpt-4o）→ 项目 agent_* 覆盖；
- *       config.model 不参与管线路由 → 只 PATCH config.model 会拿 openai/gpt-4o 打无 key 的
- *       provider 必然失败。必须 agent_architect/writer/auditor/reviser 全部覆盖为 zhipu/glm-4.5。
+ *       模板 role model（builtin write_auto/continue 引用 config.llm_default_model）→ 项目 agent_* 覆盖；
+ *       config.model 不参与管线路由 → 只 PATCH config.model 会拿默认模型打无 key 的
+ *       provider 必然失败。必须 agent_architect/writer/auditor/reviser 全部覆盖为 cfg.model。
  *       config 整体替换语义（ProjectUpdate.config 为完整 ProjectConfig）→ 先 GET 合并再 PATCH。
  *
  * 运行方式（只 tsc 类型检查见 inkflow-e2e-testing skill；真跑需 build + key）：
  *   cd frontend
  *   pnpm --filter renderer build && pnpm --filter inkflow-electron build
- *   $env:INKFLOW_LLM_KEY = '<zhipu key>'   # 应为 zhipu 平台 key（glm-4.5）
+ *   $env:INKFLOW_LLM_KEY = '<deepseek key>'   # 应为 deepseek 平台 key（deepseek-v4-flash）
  *   pnpm --filter inkflow-electron test:e2e e2e-pipeline-ai.spec.ts
  *
  * 基建：launchApp/waitKernelInfo/readKernelInfo/kernelFetch/createProjectViaUi/gotoNav/findProjectId
@@ -46,6 +48,7 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
+import { resolveE2eLlmConfig } from './e2e-llm.config';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -136,22 +139,24 @@ async function gotoNav(window: Page, name: string): Promise<void> {
 // ────────────────────────────────────────────────────────────────
 
 /**
- * 预置 LLM 环境：zhipu key + zhipu 注册表补 glm-4.5 chat 模型 + 项目模型路由。
+ * 预置 LLM 环境：provider/model 由 e2e-llm.config.ts 默认 + INKFLOW_E2E_LLM_* env 覆盖，
+ * 注册 provider key + 补配置 chat 模型 + 项目模型路由。
  *
- * 项目路由必须是 agent_* 四角色全覆盖为 zhipu/glm-4.5（后端实证见文件头注释）：
- * builtin write_auto/continue 模板角色模型写死 openai/gpt-4o，仅项目 agent_*
+ * 项目路由必须是 agent_* 四角色全覆盖为配置模型（后端实证见文件头注释）：
+ * builtin write_auto/continue 模板角色模型引用 config.llm_default_model，仅项目 agent_*
  * 非空（且含 '/'）时覆盖；config.model 不参与管线模型解析。
  */
 async function setupLlmForProject(kernel: KernelInfo, projectId: string): Promise<void> {
-  // 1. 注册 zhipu key（APIKeyManager AES-256-GCM 加密存储；201 {provider, status:'saved'}）
+  const cfg = resolveE2eLlmConfig();
+  // 1. 注册 provider key（APIKeyManager AES-256-GCM 加密存储；201 {provider, status:'saved'}）
   const key = process.env.INKFLOW_LLM_KEY as string;
   const keyRes = await kernelFetch(kernel, '/api/v1/settings/llm-keys', {
     method: 'POST',
-    body: { provider: 'zhipu', api_key: key },
+    body: { provider: cfg.provider, api_key: key },
   });
-  expect(keyRes.ok, 'zhipu key 注册（POST /settings/llm-keys）应成功').toBe(true);
+  expect(keyRes.ok, `${cfg.provider} key 注册（POST /settings/llm-keys）应成功`).toBe(true);
 
-  // 2. zhipu seed provider 补 chat 模型（id 从 GET 列表取，勿硬编码；models 整体替换 → 先读后合并去重）
+  // 2. provider seed 补 chat 模型（id 从 GET 列表取，勿硬编码；models 整体替换 → 先读后合并去重）
   const pcRes = await kernelFetch(kernel, '/api/v1/provider-configs');
   expect(pcRes.ok).toBe(true);
   const pcs = (await pcRes.json()) as {
@@ -161,20 +166,21 @@ async function setupLlmForProject(kernel: KernelInfo, projectId: string): Promis
       models: Array<{ id: string; type: string }>;
     }>;
   };
-  const zhipu = pcs.items.find((p) => p.name === 'zhipu');
-  expect(zhipu, 'seed provider zhipu 应存在（全新库 seed 4 provider）').toBeTruthy();
-  const existing = zhipu!.models ?? [];
-  const models = existing.some((m) => m.id === 'glm-4.5' && m.type === 'chat')
+  const provider = pcs.items.find((p) => p.name === cfg.provider);
+  expect(provider, `seed provider ${cfg.provider} 应存在（全新库 seed 4 provider）`).toBeTruthy();
+  const modelId = cfg.model.split('/')[1];
+  const existing = provider!.models ?? [];
+  const models = existing.some((m) => m.id === modelId && m.type === 'chat')
     ? existing
-    : [...existing, { id: 'glm-4.5', type: 'chat' }];
-  const modelRes = await kernelFetch(kernel, `/api/v1/provider-configs/${zhipu!.id}`, {
+    : [...existing, { id: modelId, type: 'chat' }];
+  const modelRes = await kernelFetch(kernel, `/api/v1/provider-configs/${provider!.id}`, {
     method: 'PATCH',
     body: { models },
   });
-  expect(modelRes.ok, 'zhipu provider-configs PATCH（补 chat 模型）应成功').toBe(true);
+  expect(modelRes.ok, `${cfg.provider} provider-configs PATCH（补 chat 模型）应成功`).toBe(true);
 
-  // 3. 项目 config：model + 四角色 agent_* → zhipu/glm-4.5（config 整体替换 → 先 GET 合并）
-  await setProjectRoleModels(kernel, projectId, 'zhipu/glm-4.5', { model: 'zhipu/glm-4.5' });
+  // 3. 项目 config：model + 四角色 agent_* → 配置模型（config 整体替换 → 先 GET 合并）
+  await setProjectRoleModels(kernel, projectId, cfg.model, { model: cfg.model });
 }
 
 /**

@@ -77,8 +77,9 @@ from inkflow.domain.ports.agent_pipeline import PipelineStage
 from inkflow.domain.services.agent_service import AgentService
 from inkflow.infrastructure.agent.pipeline_templates import get_template
 
-# 内置管线模板默认模型（pipeline_templates.py 四角色均为此值）
-BUILTIN_MODEL = "openai/gpt-4o"
+# 内置管线模板默认模型（#415 G1 契约值：deepseek/deepseek-v4-flash，
+# pipeline_templates.py 引用 config）
+BUILTIN_MODEL = "deepseek/deepseek-v4-flash"
 # 内置管线模板温度（GREEN 后 architect=None，其余固定）
 BUILTIN_TEMPS = {"writer": 0.8, "auditor": 0.5, "reviser": 0.6}
 

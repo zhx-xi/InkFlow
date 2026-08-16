@@ -13,8 +13,8 @@
  *
  * ⚠️ 真实 LLM 依赖（同 e2e-pipeline-ai.spec.ts 哲学）：每个用例开头
  * `test.skip(!process.env.INKFLOW_LLM_KEY, ...)`——CI 默认（无 key）skip 不 fail；
- * 真实跑时轮询 900s / describe 3600s（zhipu glm-4.5 实测：write_auto 4 阶段
- * ~7.5m、write_continue 3 阶段 ~4.5m，见 e2e-pipeline-ai-contract.md 时间预算节）。
+ * 真实跑时轮询 900s / describe 3600s（实测：write_auto 4 阶段 ~7.5m、
+ * write_continue 3 阶段 ~4.5m，见 e2e-pipeline-ai-contract.md 时间预算节）。
  *
  * LLM 断言宽松（概率性）：G1 断言「角色名或世界观名之一出现在 final_output」
  * （二选一提高稳定性）；G3 断言前文主角名出现；G4 断言大纲名或描述关键词出现。
@@ -22,7 +22,7 @@
  * 运行方式（真实跑需 build + key）：
  *   cd frontend
  *   pnpm --filter renderer build && pnpm --filter inkflow-electron build
- *   $env:INKFLOW_LLM_KEY = '<zhipu key>'
+ *   $env:INKFLOW_LLM_KEY = '<deepseek key>'   # 应为 deepseek 平台 key（deepseek-v4-flash）
  *   pnpm --filter inkflow-electron test:e2e e2e-pipeline-gaps
  *   或隔离数据目录：workspace\scripts\run-e2e-isolated.ps1 -Spec e2e-pipeline-gaps.spec.ts
  *
@@ -38,6 +38,7 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
+import { resolveE2eLlmConfig } from './e2e-llm.config';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -124,18 +125,20 @@ async function gotoNav(window: Page, name: string): Promise<void> {
 // ────────────────────────────────────────────────────────────────
 
 /**
- * 预置 LLM 环境：zhipu key + zhipu 注册表补 glm-4.5 chat 模型 + 项目模型路由。
- * 项目路由必须是 agent_* 四角色全覆盖为 zhipu/glm-4.5（后端实证见 e2e-pipeline-ai.spec.ts
- * 文件头：builtin write_auto/continue 模板角色模型写死 openai/gpt-4o，仅项目 agent_*
- * 非空（且含 '/'）时覆盖；config.model 不参与管线模型解析）。
+ * 预置 LLM 环境：provider/model 由 e2e-llm.config.ts 默认 + INKFLOW_E2E_LLM_* env 覆盖，
+ * 注册 provider key + 补配置 chat 模型 + 项目模型路由。
+ * 项目路由必须是 agent_* 四角色全覆盖为配置模型（后端实证见 e2e-pipeline-ai.spec.ts
+ * 文件头：builtin write_auto/continue 模板角色模型引用 config.llm_default_model，仅项目
+ * agent_* 非空（且含 '/'）时覆盖；config.model 不参与管线模型解析）。
  */
 async function setupLlmForProject(kernel: KernelInfo, projectId: string): Promise<void> {
+  const cfg = resolveE2eLlmConfig();
   const key = process.env.INKFLOW_LLM_KEY as string;
   const keyRes = await kernelFetch(kernel, '/api/v1/settings/llm-keys', {
     method: 'POST',
-    body: { provider: 'zhipu', api_key: key },
+    body: { provider: cfg.provider, api_key: key },
   });
-  expect(keyRes.ok, 'zhipu key 注册（POST /settings/llm-keys）应成功').toBe(true);
+  expect(keyRes.ok, `${cfg.provider} key 注册（POST /settings/llm-keys）应成功`).toBe(true);
 
   const pcRes = await kernelFetch(kernel, '/api/v1/provider-configs');
   expect(pcRes.ok).toBe(true);
@@ -146,19 +149,20 @@ async function setupLlmForProject(kernel: KernelInfo, projectId: string): Promis
       models: Array<{ id: string; type: string }>;
     }>;
   };
-  const zhipu = pcs.items.find((p) => p.name === 'zhipu');
-  expect(zhipu, 'seed provider zhipu 应存在（全新库 seed 4 provider）').toBeTruthy();
-  const existing = zhipu!.models ?? [];
-  const models = existing.some((m) => m.id === 'glm-4.5' && m.type === 'chat')
+  const provider = pcs.items.find((p) => p.name === cfg.provider);
+  expect(provider, `seed provider ${cfg.provider} 应存在（全新库 seed 4 provider）`).toBeTruthy();
+  const modelId = cfg.model.split('/')[1];
+  const existing = provider!.models ?? [];
+  const models = existing.some((m) => m.id === modelId && m.type === 'chat')
     ? existing
-    : [...existing, { id: 'glm-4.5', type: 'chat' }];
-  const modelRes = await kernelFetch(kernel, `/api/v1/provider-configs/${zhipu!.id}`, {
+    : [...existing, { id: modelId, type: 'chat' }];
+  const modelRes = await kernelFetch(kernel, `/api/v1/provider-configs/${provider!.id}`, {
     method: 'PATCH',
     body: { models },
   });
-  expect(modelRes.ok, 'zhipu provider-configs PATCH（补 chat 模型）应成功').toBe(true);
+  expect(modelRes.ok, `${cfg.provider} provider-configs PATCH（补 chat 模型）应成功`).toBe(true);
 
-  await setProjectRoleModels(kernel, projectId, 'zhipu/glm-4.5', { model: 'zhipu/glm-4.5' });
+  await setProjectRoleModels(kernel, projectId, cfg.model, { model: cfg.model });
 }
 
 /**

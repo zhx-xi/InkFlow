@@ -96,7 +96,7 @@ from inkflow.infrastructure.agent.tools.reader_tools import (
 
 # ── 常量 ──────────────────────────────────────
 
-MODEL = "zhipu/glm-4.5"
+MODEL = "deepseek/deepseek-v4-flash"  # #415 G3 伪契约同步：mock 参数非语义断言
 API_KEY = "test-key"
 BASE_URL = "https://example.test/v1"
 BASE_PROMPT = "你是章节写手，负责按大纲撰写正文。"

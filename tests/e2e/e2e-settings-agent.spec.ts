@@ -26,6 +26,7 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
+import { resolveE2eLlmConfig } from './e2e-llm.config';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -155,23 +156,24 @@ async function apiJson(
 //   （agent_* 三态值本身有区分度，直接轮询 GET /api/v1/projects/{id} 的 config 值，比 updated_at 强）
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 幂等确保 deepseek 配置含 deepseek-chat chat 模型（持久 DB 去重自愈，E3-2 模式）；须在进入 Agent 分类前调用 */
-async function ensureDeepseekChatModel(kernel: KernelInfo): Promise<void> {
+/** 幂等确保 deepseek 配置含配置模型 chat 条目（持久 DB 去重自愈，E3-2 模式）；须在进入 Agent 分类前调用 */
+async function ensureConfiguredChatModel(kernel: KernelInfo): Promise<void> {
+  const modelId = resolveE2eLlmConfig().model.split('/')[1];
   const providers = await fetchKernel(kernel, '/api/v1/provider-configs');
   const deepseek = providers.items.find((p: { name: string }) => p.name === 'deepseek');
   expect(deepseek).toBeTruthy();
   const deduped = deepseek.models.filter(
     (m: { id: string }, i: number, arr: Array<{ id: string }>) =>
-      m.id !== 'deepseek-chat' || arr.findIndex((x) => x.id === m.id) === i,
+      m.id !== modelId || arr.findIndex((x) => x.id === m.id) === i,
   );
   if (
     deduped.length !== deepseek.models.length ||
-    !deepseek.models.some((m: { id: string }) => m.id === 'deepseek-chat')
+    !deepseek.models.some((m: { id: string }) => m.id === modelId)
   ) {
     await fetchKernel(kernel, `/api/v1/provider-configs/${deepseek.id}`, {
       method: 'PATCH',
       body: JSON.stringify({
-        models: [...deduped, { id: 'deepseek-chat', type: 'chat', roles: [] }],
+        models: [...deduped, { id: modelId, type: 'chat', roles: [] }],
       }),
     });
   }
@@ -218,14 +220,14 @@ test('设置页：#268 角色模型三态 Select（跟随默认/指定模型/禁
     await window.reload();
     await expect(window.getByTestId('app-nav')).toBeVisible();
 
-    // 前置：UI 创建唯一项目 + deepseek-chat chat 模型（下拉选项数据源；幂等自愈）
+    // 前置：UI 创建唯一项目 + 配置模型 chat 条目（下拉选项数据源；幂等自愈）
     const name = `E2E-AgentTriState-${Date.now()}`;
     await createProjectViaUi(window, name);
     const list = await fetchKernel(kernel, '/api/v1/projects');
     const project = list.items.find((p: { name: string }) => p.name === name);
     expect(project).toBeTruthy();
     const projectId = project.id as string;
-    await ensureDeepseekChatModel(kernel);
+    await ensureConfiguredChatModel(kernel);
 
     // 设置页 → Agent 分类（首次挂载 loadProviders 拉最新模型列表）
     await gotoNav(window, '设置');
@@ -252,8 +254,8 @@ test('设置页：#268 角色模型三态 Select（跟随默认/指定模型/禁
 
     // 三态 2：下拉选指定模型 → 落库 provider/model（option 为 Radix portal；first() 防持久 DB 重复选项）
     await roleSelect.click();
-    await window.getByRole('option', { name: 'deepseek/deepseek-chat', exact: true }).first().click();
-    await expect(roleSelect).toContainText('deepseek/deepseek-chat');
+    await window.getByRole('option', { name: 'deepseek/deepseek-v4-flash', exact: true }).first().click();
+    await expect(roleSelect).toContainText('deepseek/deepseek-v4-flash');
     await expect
       .poll(
         async () => {
@@ -262,7 +264,7 @@ test('设置页：#268 角色模型三态 Select（跟随默认/指定模型/禁
         },
         { timeout: 10_000 }
       )
-      .toBe('deepseek/deepseek-chat');
+      .toBe('deepseek/deepseek-v4-flash');
 
     // 三态 2b：下拉切回「跟随默认」→ 落库回到 sentinel（Select 可逆）
     await roleSelect.click();
@@ -304,7 +306,7 @@ test('#268 三态指定模型 → 重启（二次 launch 同数据目录）→ �
   const name = `E2E-AgentTriPersist-${Date.now()}`;
   let projectId: string;
 
-  // ── 第一程：创建项目 → Writer 开 → 选 deepseek/deepseek-chat（落库 provider/model）──
+  // ── 第一程：创建项目 → Writer 开 → 选 deepseek/deepseek-v4-flash（落库 provider/model）──
   const first = await launchAppWithUserData(userDataDir);
   try {
     await first.window.evaluate(() => localStorage.clear());
@@ -315,7 +317,7 @@ test('#268 三态指定模型 → 重启（二次 launch 同数据目录）→ �
     const project = list.items.find((p: { name: string }) => p.name === name);
     expect(project).toBeTruthy();
     projectId = project.id as string;
-    await ensureDeepseekChatModel(first.kernel);
+    await ensureConfiguredChatModel(first.kernel);
 
     await gotoNav(first.window, '设置');
     await first.window.getByTestId('settings-cat-agent').click();
@@ -323,7 +325,7 @@ test('#268 三态指定模型 → 重启（二次 launch 同数据目录）→ �
     const writer = chain.getByRole('switch', { name: 'Writer 执笔' });
     await writer.click();
     await chain.getByTestId('agent-model-select-agent_writer').click();
-    await first.window.getByRole('option', { name: 'deepseek/deepseek-chat', exact: true }).first().click();
+    await first.window.getByRole('option', { name: 'deepseek/deepseek-v4-flash', exact: true }).first().click();
     // 关闭前闸门：轮询内核确认落库（防 app.close() 与 fire-and-forget PATCH 竞态）
     await expect
       .poll(
@@ -333,7 +335,7 @@ test('#268 三态指定模型 → 重启（二次 launch 同数据目录）→ �
         },
         { timeout: 10_000 }
       )
-      .toBe('deepseek/deepseek-chat');
+      .toBe('deepseek/deepseek-v4-flash');
   } finally {
     await first.app.close();
   }
@@ -343,7 +345,7 @@ test('#268 三态指定模型 → 重启（二次 launch 同数据目录）→ �
   try {
     // ① 后端权威（不依赖 UI 导航）：内核读同一 DB → agent_writer 仍为指定模型
     const r = await fetchKernel(second.kernel, `/api/v1/projects/${projectId}`);
-    expect(r.config?.agent_writer).toBe('deepseek/deepseek-chat');
+    expect(r.config?.agent_writer).toBe('deepseek/deepseek-v4-flash');
 
     // ② UI 回显：currentProjectId 为内存态 → 项目页卡片重选本项目 → Agent 分类
     await gotoNav(second.window, '项目');
@@ -353,7 +355,7 @@ test('#268 三态指定模型 → 重启（二次 launch 同数据目录）→ �
     await second.window.getByTestId('settings-cat-agent').click();
     const chain = second.window.getByTestId('agent-chain-card');
     await expect(chain.getByRole('switch', { name: 'Writer 执笔' })).toBeChecked();
-    await expect(chain.getByTestId('agent-model-select-agent_writer')).toContainText('deepseek/deepseek-chat');
+    await expect(chain.getByTestId('agent-model-select-agent_writer')).toContainText('deepseek/deepseek-v4-flash');
   } finally {
     await second.app.close();
   }
@@ -514,7 +516,7 @@ test('设置页：#295/#296 自定义角色三态（开/选模型/关）→ 内�
     const project = list.items.find((p: { name: string }) => p.name === name);
     expect(project).toBeTruthy();
     const projectId = project.id as string;
-    await ensureDeepseekChatModel(kernel);
+    await ensureConfiguredChatModel(kernel);
 
     await gotoNav(window, '设置');
     await window.getByTestId('settings-cat-agent').click();
@@ -538,7 +540,7 @@ test('设置页：#295/#296 自定义角色三态（开/选模型/关）→ 内�
 
     // 三态 2：下拉选指定模型 → agent_roles[agent_researcher] = provider/model
     await chain.getByTestId('agent-model-select-agent_researcher').click();
-    await window.getByRole('option', { name: 'deepseek/deepseek-chat', exact: true }).first().click();
+    await window.getByRole('option', { name: 'deepseek/deepseek-v4-flash', exact: true }).first().click();
     await expect
       .poll(
         async () => {
@@ -547,7 +549,7 @@ test('设置页：#295/#296 自定义角色三态（开/选模型/关）→ 内�
         },
         { timeout: 10_000 }
       )
-      .toBe('deepseek/deepseek-chat');
+      .toBe('deepseek/deepseek-v4-flash');
 
     // 浅合并：第二个自定义角色（editor）开启 → researcher 值保留（agent_roles 非整体覆盖）
     await chain.getByRole('switch', { name: 'editor' }).click();
@@ -560,7 +562,7 @@ test('设置页：#295/#296 自定义角色三态（开/选模型/关）→ 内�
         { timeout: 10_000 }
       )
       .toEqual({
-        agent_researcher: 'deepseek/deepseek-chat',
+        agent_researcher: 'deepseek/deepseek-v4-flash',
         agent_editor: '__default__',
       });
 
