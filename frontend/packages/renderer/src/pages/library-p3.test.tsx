@@ -114,9 +114,11 @@ describe('#378 地图工作台目录树 + 拖拽层级（世界观 tab，issue #
     });
   }
 
-  /** 进世界观 tab（默认进工作台） */
+  /** 进世界观 tab（#389 导航反转：tab 默认停列表页/空态 → 点「地图视图」按钮才进工作台） */
   async function enterWorkbench(user: ReturnType<typeof userEvent.setup>) {
     await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('map-view-entry');
+    await user.click(screen.getByTestId('map-view-entry'));
     await screen.findByTestId('map-workbench');
   }
 
