@@ -259,10 +259,14 @@ beforeEach(() => {
   useToastStore.setState({ toasts: [] });
   // F42 #268：默认 mock 按 URL 分发——AgentChainCard 挂载会 loadProviders()
   // （GET /api/v1/provider-configs，spec §5.2 数据源）；其余请求保持 {ok:true}
+  // F41 #260：AgentList 挂载会 loadAgents/loadToolCatalog/loadSkills（3 GET）——同样分发空列表
   apiFetchMock.mockImplementation(async (path: string) => {
     if (path === '/api/v1/provider-configs') {
       return { items: [], total: 0, offset: 0, limit: 50 };
     }
+    if (path === '/api/v1/agents') return { items: [], total: 0 };
+    if (path === '/api/v1/agents/tools') return { items: [] };
+    if (path === '/api/v1/skills') return { items: [], total: 0 };
     return { ok: true };
   });
 });
@@ -323,6 +327,10 @@ describe('设置页 — 默认模型下拉回读与选择（#105 补测；F42 #2
           total: 2, offset: 0, limit: 50,
         };
       }
+      // F41 #260：AgentList 挂载 3 GET 分发（行内覆盖 variant 同 beforeEach）
+      if (path === '/api/v1/agents') return { items: [], total: 0 };
+      if (path === '/api/v1/agents/tools') return { items: [] };
+      if (path === '/api/v1/skills') return { items: [], total: 0 };
       return { ok: true };
     });
   }
@@ -517,6 +525,10 @@ describe('设置页 — AgentPanel persist 并发守卫（#105 补测）', () =>
       if (path === '/api/v1/projects/p1' && init?.method === 'PATCH') {
         throw new Error('network down');
       }
+      // F41 #260：AgentList 挂载 3 GET 分发（行内覆盖 variant 同 beforeEach）
+      if (path === '/api/v1/agents') return { items: [], total: 0 };
+      if (path === '/api/v1/agents/tools') return { items: [] };
+      if (path === '/api/v1/skills') return { items: [], total: 0 };
       return { ok: true };
     });
     const user = await openAgentPanel();
@@ -546,6 +558,10 @@ describe('设置页 — AgentPanel persist 并发守卫（#105 补测）', () =>
           resolvePatch = resolve;
         });
       }
+      // F41 #260：AgentList 挂载 3 GET 分发（行内覆盖 variant 同 beforeEach）
+      if (path === '/api/v1/agents') return { items: [], total: 0 };
+      if (path === '/api/v1/agents/tools') return { items: [] };
+      if (path === '/api/v1/skills') return { items: [], total: 0 };
       return { ok: true };
     });
 

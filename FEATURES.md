@@ -168,6 +168,8 @@
 | #313 | RoleTemplate 测试契约同步（#309 遗留） | PR #320 | ✅ |
 | #283 | 0.7.0 Agent 化架构决策收尾：ADR-A~H 正式落盘 ADR-031~038 + 设计文档入库 | PR #287 + #289 | ✅ |
 | #257 | 多 Agent 能力分析登记（Agent 差异化能力白名单） | PR #285 | ✅ |
+| #258 | 多 Agent 后端核心（F39）：Agent/Skill 实体 + 工具分组 + 白名单装配 + 内置 seed | PR #403 | ✅ |
+| #260 | 自定义 Agent 编辑（F41）：管理列表 + 创建/编辑页（prompt + 函数分组 checkbox + skill 绑定 + 模型/温度）+ 双向视图 + 删除保护 | PR #407 | ✅ |
 
 **0.8.0 交付实证**：18/18 issues 全关（milestone #11，2026-08-13）· 配置驱动编排完全体（F42：三态模型选择 + agent_order 槽位 0-9 层级拓扑 + 双模式 + 通用节点 + GUI 写作管线化 write_auto/write_continue + 自定义 Agent 数据面/UI）· F29 Supervisor 自主编排 + HITL（Command(goto) 动态路由 + 振荡护栏 + deterministic 回退）· 删除语义统一（软删→真删）· RAG 指纹一致性（stale 检测 + 重新向量化）· skills 双轨（官方轨 GitHub 分发 + 用户自定义轨 CLI 导入）· CLI 命令面补齐（provider/template/project config）· 设定库 GUI 升级（F43 P0-P5）。
 

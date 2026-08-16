@@ -260,10 +260,14 @@ beforeEach(() => {
   useToastStore.setState({ toasts: [] });
   // F42 #268：默认 mock 按 URL 分发——AgentChainCard 挂载会 loadProviders()
   // （GET /api/v1/provider-configs，spec §5.2 数据源）；其余请求保持 {ok:true}
+  // F41 #260：AgentList 挂载会 loadAgents/loadToolCatalog/loadSkills（3 GET）——同样分发空列表
   apiFetchMock.mockImplementation(async (path: string) => {
     if (path === '/api/v1/provider-configs') {
       return { items: [], total: 0, offset: 0, limit: 50 };
     }
+    if (path === '/api/v1/agents') return { items: [], total: 0 };
+    if (path === '/api/v1/agents/tools') return { items: [] };
+    if (path === '/api/v1/skills') return { items: [], total: 0 };
     return { ok: true };
   });
 });
