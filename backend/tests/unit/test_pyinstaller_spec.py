@@ -52,3 +52,22 @@ def test_spec_excludes_not_blocking_chromadb():
     src = _spec_source()
     excludes_block = src.split("excludes=[", 1)[1].split("]", 1)[0] if "excludes=[" in src else ""
     assert '"chromadb"' not in excludes_block, "excludes 排除了 chromadb 本体"
+
+
+def test_spec_filters_stale_dist_info():
+    """collect_all('inkflow') 收集的 datas 必须剥离 inkflow-*.dist-info（#421：uv
+    缓存恢复残留旧版 dist-info → 双 dist-info 进包 → importlib.metadata.version
+    取排序第一个 = 旧版本 → 版本注入失效，--version 显示 0.8.0rc1 而非 0.9.0rc1）。
+    过滤必须发生在 copy_metadata('inkflow') 之前（先剥离 collect_all 的旧版，
+    再单独注入当前版本）。"""
+    src = _spec_source()
+    # 锁「过滤代码」而非字符串存在——现有注释也含 'dist-info' 字样，只断言字符串会假 GREEN
+    filter_expr = "datas = [d for d in datas if"
+    assert filter_expr in src, "spec 缺少 datas 列表推导过滤（#421）"
+    filter_pos = src.find(filter_expr)
+    copy_pos = src.find("copy_metadata")
+    assert filter_pos != -1 and copy_pos != -1, "spec 缺少过滤/copy_metadata（#421）"
+    assert filter_pos < copy_pos, "dist-info 过滤必须先于 copy_metadata（#421）"
+    # 过滤条件必须含 dist-info（剥离的是 dist-info 而非其他文件）
+    between = src[filter_pos:copy_pos]
+    assert "dist-info" in between, "datas 过滤条件缺少 dist-info（#421）"
