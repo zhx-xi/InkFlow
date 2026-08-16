@@ -163,19 +163,19 @@ class FakeClient:
 
     async def get(self, path, *, params=None, json=None) -> dict:
         self.calls.append(("GET", path, params, json))
-        return self.response  # type: ignore[return-value]
+        return self.response  # type: ignore[return-value]  # 鸭子 fake：response 预置为 object 但方法契约返回 dict
 
     async def post(self, path, *, params=None, json=None, timeout=None) -> dict:
         self.calls.append(("POST", path, params, json))
-        return self.response  # type: ignore[return-value]
+        return self.response  # type: ignore[return-value]  # 鸭子 fake：response 预置为 object 但方法契约返回 dict
 
     async def patch(self, path, *, params=None, json=None) -> dict:
         self.calls.append(("PATCH", path, params, json))
-        return self.response  # type: ignore[return-value]
+        return self.response  # type: ignore[return-value]  # 鸭子 fake：response 预置为 object 但方法契约返回 dict
 
     async def delete(self, path, *, params=None, json=None) -> dict:
         self.calls.append(("DELETE", path, params, json))
-        return self.response  # type: ignore[return-value]
+        return self.response  # type: ignore[return-value]  # 鸭子 fake：response 预置为 object 但方法契约返回 dict
 
     async def get_raw(self, path, *, params=None) -> str:
         self.calls.append(("GET_RAW", path, params, None))
