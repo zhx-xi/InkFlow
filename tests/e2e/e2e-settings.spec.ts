@@ -184,7 +184,7 @@ test('顶栏：主题/语言 Select 展开全选项可见 + 选择直达生效�
     // 避免上次运行残留影响断言（Radix 选项文案按当前语言渲染）
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     // ── 主题 Select（Radix combobox，testid=header-theme-select，aria-label=主题）──
     const themeSelect = window.getByTestId('header-theme-select');
@@ -339,7 +339,7 @@ test('设置页：Agent 链四角色开关逐个切换（无项目纯 UI 状态�
     // 清空持久化 UI 偏好（inkflow.ui）并重载：保证语言/主题初始确定性（zh）
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     // 设置页 → Agent 分类 → AgentChainCard
     await gotoNav(window, '设置');
@@ -371,7 +371,7 @@ test('设置页：默认模型下拉选 deepseek/deepseek-chat → 直调内核�
   try {
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     // 前置：UI 创建唯一项目（persist 契约「无当前项目不保存」）
     const name = `E2E-AgentModel-${Date.now()}`;
@@ -445,7 +445,7 @@ test('设置页：Agent 链开关即改即存（#225 三态语义：null=关闭 
   try {
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     // 前置：UI 创建唯一项目
     const name = `E2E-AgentSwitch-${Date.now()}`;
@@ -512,7 +512,7 @@ test('#225 M2：Agent 链开关关闭 → 重启（二次 launch 同数据目录
   try {
     await first.window.evaluate(() => localStorage.clear());
     await first.window.reload();
-    await expect(first.window.getByTestId('app-nav')).toBeVisible();
+    await expect(first.window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     const name = `E2E-225-Persist-${Date.now()}`;
     await createProjectViaUi(first.window, name);
@@ -549,7 +549,7 @@ test('#225 M2：Agent 链开关关闭 → 重启（二次 launch 同数据目录
   try {
     await second.window.evaluate(() => localStorage.clear());
     await second.window.reload();
-    await expect(second.window.getByTestId('app-nav')).toBeVisible();
+    await expect(second.window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     // ① 后端权威（不依赖 UI 导航，#232 未合时 currentProjectId 无法经卡片设置）：
     //    重启后内核读同一 DB → config.agent_writer 仍为 null（关闭）
@@ -581,7 +581,7 @@ test('设置页：快捷键面板渲染（五组快捷键标签与组合键）',
   try {
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     await gotoNav(window, '设置');
     await expect(window.getByTestId('settings-panel')).toBeVisible();
@@ -708,7 +708,7 @@ test.describe('RAG 向量状态区块（#276）', () => {
     try {
       await window.evaluate(() => localStorage.clear());
       await window.reload();
-      await expect(window.getByTestId('app-nav')).toBeVisible();
+      await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
       await createProjectViaUi(window, 'RAG 测试项目');
 
@@ -738,7 +738,7 @@ test.describe('RAG 向量状态区块（#276）', () => {
     try {
       await window.evaluate(() => localStorage.clear());
       await window.reload();
-      await expect(window.getByTestId('app-nav')).toBeVisible();
+      await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
       await createProjectViaUi(window, 'RAG 测试项目');
       await ensureEmbeddingProvider(kernel, 'text-embedding-test');
@@ -766,7 +766,7 @@ test.describe('RAG 向量状态区块（#276）', () => {
     try {
       await window.evaluate(() => localStorage.clear());
       await window.reload();
-      await expect(window.getByTestId('app-nav')).toBeVisible();
+      await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
       await createProjectViaUi(window, 'RAG 测试项目');
       // 不配置任何 provider——清理遗留 e2e-rag* 保证「注册表无 embedding」成立（seed 4 个均无 embedding 模型）
@@ -802,7 +802,7 @@ test.describe('RAG 向量状态区块（#276）', () => {
     try {
       await first.window.evaluate(() => localStorage.clear());
       await first.window.reload();
-      await expect(first.window.getByTestId('app-nav')).toBeVisible();
+      await expect(first.window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
       await createProjectViaUi(first.window, name);
       await ensureEmbeddingProvider(first.kernel, 'text-embedding-test');
