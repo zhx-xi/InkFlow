@@ -514,10 +514,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Unit tests (Vitest, renderer + electron)
-        run: |
-          pnpm --filter renderer test
-          pnpm --filter inkflow-electron test
+      # 拆独立 step（#405）：多行 run 无退出码传播 → renderer vitest 失败被 electron 段成功掩盖
+      # （job 假绿，#214 coverage-backend 同族）。每 step 独立退出码，vitest 失败真实红。
+      - name: Unit tests (Vitest, renderer)
+        run: pnpm --filter renderer test
+
+      - name: Unit tests (Vitest, electron)
+        run: pnpm --filter inkflow-electron test
 
   # ── Frontend lint: ESLint + typecheck + compile check（静态检查，第一批恒跑）──
   lint-frontend:
