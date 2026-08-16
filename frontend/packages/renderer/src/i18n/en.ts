@@ -332,6 +332,11 @@ export const en: Record<string, string> = {
   'write.hitl.approve': 'Continue',
   'write.hitl.reject': 'Reject & fallback',
   'write.retry': 'Retry',
+  'write.chat.placeholder': 'Chat with AI, e.g. "write a fight scene"',
+  'write.chat.send': 'Send',
+  'write.chat.insert': 'Insert into chapter',
+  'write.chat.inserted': 'Inserted. Press Ctrl+S to save',
+  'write.chat.failed': 'Chat failed: {message}',
   // F34 chapter audit (Issue #208)
   'audit.accept': 'Accept',
   'audit.reject': 'Reject',

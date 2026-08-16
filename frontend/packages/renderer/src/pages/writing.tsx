@@ -6,6 +6,7 @@ import { auditChapter, confirmAudit, type AuditReportDto } from '../api/audit';
 import { errorMessage } from '../api/client';
 import { AuditDialog } from '../components/AuditDialog';
 import { ChapterEditor } from '../components/ChapterEditor';
+import { ChatPanel } from '../components/ChatPanel';
 import { ContextPanel } from '../components/ContextPanel';
 import { EditorToolbar } from '../components/EditorToolbar';
 import { PipelineStatus } from '../components/PipelineStatus';
@@ -252,6 +253,13 @@ export function WritingPage() {
         onConfirm={(a, n) => void handleConfirm(a, n)}
         confirming={auditConfirming}
       />
+      {effectiveProjectId !== '' && currentChapterId !== null ? (
+        <ChatPanel
+          projectId={effectiveProjectId}
+          chapterId={currentChapterId ?? undefined}
+          chapterContent={content}
+        />
+      ) : null}
       <StatusBar model={model} wordCount={displayWords} savedAt={savedAt} />
     </div>
   );

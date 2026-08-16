@@ -546,3 +546,12 @@ describe('写作页 — HITL 确认流（#343：waiting_hitl → 内联确认卡
     );
   });
 });
+
+describe('写作页 — 底部 AI 聊天框（#379 F47 §4.1）', () => {
+  it('渲染 chat-panel（聊天输入框 + 发送按钮；空输入发送禁用）', () => {
+    render(<WritingPage />);
+    expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-input')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-send')).toBeDisabled();
+  });
+});

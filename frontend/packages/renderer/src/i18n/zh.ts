@@ -338,6 +338,11 @@ export const zh = {
   'write.hitl.approve': '继续执行',
   'write.hitl.reject': '拒绝并回退',
   'write.retry': '重试',
+  'write.chat.placeholder': '与 AI 对话，如「帮我写一段打斗场景」',
+  'write.chat.send': '发送',
+  'write.chat.insert': '插入正文',
+  'write.chat.inserted': '已插入正文，按 Ctrl+S 保存',
+  'write.chat.failed': '对话失败: {message}',
   // F34 章节审计（Issue #208）
   'audit.accept': '接受',
   'audit.reject': '拒绝',
