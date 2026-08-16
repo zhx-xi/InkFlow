@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from inkflow.api.deps import get_db
+from inkflow.api.deps import get_db, get_summary_service
 from inkflow.domain.models.agent_pipeline import PipelineConfig, PipelineExecuteRequest
 from inkflow.domain.services.agent_service import AgentService, AgentServiceError
 from inkflow.infrastructure.agent.langgraph_pipeline import LangGraphAgentPipeline
@@ -35,7 +35,11 @@ def _parse_id(id_str: str, detail: str = "资源不存在") -> uuid.UUID:
 def _svc(db: AsyncSession) -> AgentService:
     """获取 AgentService 实例。"""
     pipeline = LangGraphAgentPipeline(llm_client=LangChainLLMClient())
-    return AgentService(pipeline=pipeline, db_session=db)
+    return AgentService(
+        pipeline=pipeline,
+        db_session=db,
+        summary_service=get_summary_service(db),
+    )
 
 
 @router.post("/pipelines/execute", status_code=202)

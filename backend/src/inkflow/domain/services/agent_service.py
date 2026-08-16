@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+import uuid
 from typing import Any
 
 from inkflow.domain.models.agent_pipeline import (
@@ -178,6 +179,7 @@ class AgentService:
         chapter_repo: Any = None,
         template_repo: Any = None,
         supervisor_pipeline: Any = None,
+        summary_service: Any = None,
     ):
         # 延迟导入避免循环依赖
         from inkflow.infrastructure.agent.execution_store import ExecutionStore
@@ -194,6 +196,7 @@ class AgentService:
 
         self._pipeline = pipeline
         self._supervisor_pipeline = supervisor_pipeline
+        self._summary_service = summary_service
         self._store = store or ExecutionStore(db_session)
         self._project_repo = project_repo or SQLiteProjectRepository(db_session)
         self._chapter_repo = chapter_repo or SQLiteChapterRepository(db_session)
@@ -278,6 +281,9 @@ class AgentService:
                 context,
                 pipeline=pipeline_impl,
                 supervisor_config=request.supervisor if request.mode == "supervisor" else None,
+                continue_context=(
+                    request.pipeline == "builtin:write_continue" and request.chapter_id is not None
+                ),
             )
         )
         # fire-and-forget: 持有引用防止任务被 GC 提前回收；异常在 _run_pipeline 内部捕获
@@ -499,6 +505,7 @@ class AgentService:
         context: PipelineContext,
         pipeline: Any = None,
         supervisor_config: SupervisorExecuteConfig | None = None,
+        continue_context: bool = False,
     ) -> None:
         """后台执行管线，更新 stages 快照到 ExecutionStore。
 
@@ -506,6 +513,13 @@ class AgentService:
         非 None 时把配置透传给动态路由管线（supervisor 模式）。
         """
         pipeline = pipeline or self._pipeline
+        if continue_context:
+            try:
+                context.variables = await self._assemble_continue_context(
+                    context.project_id, context.chapter_id, context.variables
+                )
+            except Exception:
+                logger.warning("前文摘要组装失败，回退请求变量", exc_info=True)
         try:
             if supervisor_config is not None:
                 result: PipelineResult = await pipeline.execute(
@@ -546,3 +560,47 @@ class AgentService:
                 status="failed",
                 error=f"执行异常: {e}",
             )
+
+    async def _assemble_continue_context(
+        self,
+        project_id: str,
+        chapter_id: str | None,
+        variables: dict[str, str],
+    ) -> dict[str, str]:
+        """write_continue 前文摘要注入（#318；#366 G1 设定注入同函数扩展）。
+
+        前序章节（order_index 小于当前章节）最多 10 章 → SummaryService.ensure_summary
+        （复用 F6 summary_repo 缓存 + LLM 生成）→ 拼接注入 variables["context"]。
+        任一步失败 → WARNING + 回退原 variables（F6 §4.6 不阻断管线执行）。
+        """
+        if self._summary_service is None or not chapter_id:
+            return variables
+        try:
+            project = await self._project_repo.get(uuid.UUID(project_id).int)
+            if project is None:
+                return variables
+            current = await self._chapter_repo.get_chapter(uuid.UUID(chapter_id).int)
+            if current is None:
+                return variables
+            chapters, _ = await self._chapter_repo.list_chapters(
+                uuid.UUID(project_id).int, limit=1000
+            )
+            prev = sorted(
+                (c for c in chapters if c.order_index < current.order_index),
+                key=lambda c: c.order_index,
+            )[-10:]
+            parts: list[str] = []
+            for ch in prev:
+                try:
+                    summary = await self._summary_service.ensure_summary(
+                        ch.id, project.config.model
+                    )
+                except Exception:
+                    logger.warning("章节 %s 摘要生成失败，跳过（F6 §4.6）", ch.id)
+                    continue
+                parts.append(f"{ch.title}：{summary}")
+            if parts:
+                variables["context"] = "\n\n".join(parts)
+        except Exception:
+            logger.warning("前文摘要组装失败，回退请求变量", exc_info=True)
+        return variables
