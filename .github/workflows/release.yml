@@ -70,7 +70,8 @@ jobs:
           $version = '${{ github.ref_name }}'.TrimStart('v')
           # #342: CLI zip 随包携带官方 skills（三通道②）——复制 skills 到 dist 后打包
           Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE/skills" dist/skills
-          Compress-Archive -Path dist/inkflow, dist/skills -DestinationPath "dist/InkFlow-cli-$version-x64.zip" -CompressionLevel Optimal
+          # #424: CLI zip 随包携带 MCP server 入口（inkflow-mcp onedir，F20 §1.2）
+          Compress-Archive -Path dist/inkflow, dist/inkflow-mcp, dist/skills -DestinationPath "dist/InkFlow-cli-$version-x64.zip" -CompressionLevel Optimal
           Write-Host "CLI zip created: dist/InkFlow-cli-$version-x64.zip"
 
       # #253 教训固化（2026-08-12）：打包后产物冒烟——PyInstaller 收集缺失
@@ -128,6 +129,13 @@ jobs:
         with:
           name: kernel-onedir
           path: backend/dist/inkflow
+
+      # #424: MCP server 独立 onedir 入口随包分发（便携/NSIS resources/kernel/mcp/）
+      - name: Upload MCP kernel artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: mcp-kernel
+          path: backend/dist/inkflow-mcp
 
   # ── renderer dist/ + electron out/（前端构建产物）──
   build-renderer:
@@ -209,6 +217,13 @@ jobs:
           name: kernel-onedir
           path: kernel-onedir
 
+      # #424: MCP server 独立入口随包分发（便携/NSIS resources/kernel/mcp/）
+      - name: Download MCP kernel artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: mcp-kernel
+          path: mcp-kernel
+
       - name: Download renderer artifact
         uses: actions/download-artifact@v7
         with:
@@ -231,6 +246,9 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force packages/kernel | Out-Null
           Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE/kernel-onedir/*" packages/kernel/
+          # #424: MCP server 独立 onedir 放入 resources/kernel/mcp/（与主内核 _internal/ 隔离）
+          New-Item -ItemType Directory -Force packages/kernel/mcp | Out-Null
+          Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE/mcp-kernel/*" packages/kernel/mcp/
           # #342: 随包分发官方 skills（electron-builder extraResources.from: ../skills）
           New-Item -ItemType Directory -Force packages/skills | Out-Null
           Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE/skills/*" packages/skills/
