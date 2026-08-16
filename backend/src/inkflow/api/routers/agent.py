@@ -34,11 +34,20 @@ def _parse_id(id_str: str, detail: str = "资源不存在") -> uuid.UUID:
 
 def _svc(db: AsyncSession) -> AgentService:
     """获取 AgentService 实例。"""
+    from inkflow.infrastructure.database.repositories.character_repo import (
+        SQLiteCharacterRepository,
+    )
+    from inkflow.infrastructure.database.repositories.outline_repo import SQLiteOutlineRepository
+    from inkflow.infrastructure.database.repositories.world_repo import SQLiteWorldRepository
+
     pipeline = LangGraphAgentPipeline(llm_client=LangChainLLMClient())
     return AgentService(
         pipeline=pipeline,
         db_session=db,
         summary_service=get_summary_service(db),
+        character_repo=SQLiteCharacterRepository(db),
+        world_repo=SQLiteWorldRepository(db),
+        outline_repo=SQLiteOutlineRepository(db),
     )
 
 

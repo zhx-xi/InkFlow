@@ -24,6 +24,7 @@ export interface UsePipelineOptions {
   genre: string;
   targetWords: number;
   writingStyle: string;
+  chapterTitle: string;
 }
 
 export interface UsePipelineResult {
@@ -48,6 +49,8 @@ export function usePipeline(options: UsePipelineOptions): UsePipelineResult {
     (mode: PipelineMode): Record<string, string> => {
       const vars: Record<string, string> = {};
       if (options.writingStyle) vars.writing_style = options.writingStyle;
+      // #366 G1 设定驱动写作：当前章节标题非空才注入（write_auto 与 write_continue 均注入）
+      if (options.chapterTitle) vars.chapter_title = options.chapterTitle;
       // 全自动生成：题材与目标字数作为生成约束注入（spec §5.6 write_auto）
       if (mode === 'write_auto') {
         if (options.genre) vars.genre = options.genre;
@@ -55,7 +58,7 @@ export function usePipeline(options: UsePipelineOptions): UsePipelineResult {
       }
       return vars;
     },
-    [options.genre, options.targetWords, options.writingStyle],
+    [options.genre, options.targetWords, options.writingStyle, options.chapterTitle],
   );
 
   const poll = useCallback(async (executionId: string) => {
