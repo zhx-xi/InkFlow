@@ -156,6 +156,9 @@ coll = COLLECT(
 # dev venv 有 Scripts/inkflow-mcp.exe 且 MCP 握手 15 工具正常，纯打包缺口。
 # 修复：新增独立 onedir 产物 inkflow-mcp——入口为 src/inkflow/mcp/__main__.py
 # （stdio 薄客户端经 HTTP 连本地内核，不启动 uvicorn；勿用根 __main__.py 的 serve）。
+# #424 v3（rc5 实测）：MCP 薄客户端 import 链（inkflow.http -> config -> db -> aiosqlite）
+# 在打包版冷启动 tools/call 报 No module named 'aiosqlite'。独立 Analysis 的 hiddenimports
+# 漏了主内核关键动态模块，需与主 Analysis 显式列表同源补齐，防止再次复发。
 # 独立 Analysis 保证 a_mcp.scripts 只含 mcp 入口；datas/binaries 复用主 Analysis
 # 结果（MCP 薄客户端与主内核共享依赖）。
 a_mcp = Analysis(
@@ -166,6 +169,14 @@ a_mcp = Analysis(
     + _tiktoken_hidden
     + _tiktoken_ext_hidden
     + [
+        "uvicorn.logging",
+        "uvicorn.loops.auto",
+        "uvicorn.protocols.http.auto",
+        "uvicorn.protocols.websockets.auto",
+        "uvicorn.lifespan.on",
+        "sqlalchemy.dialects.sqlite.aiosqlite",  # SQLAlchemy async 引擎动态导入（实测缺失）
+        "aiosqlite",  # aiosqlite dialect import_dbapi 运行时 import（实测缺失）
+        "chromadb.telemetry.product.posthog",  # #253 rc3 vector reindex 打包缺模块（RAG 进包补充）
         "inkflow.mcp.server",  # #424: MCP stdio 入口显式依赖，防未来收窄 collect_all 时漏收集
         "inkflow.mcp.tools",
     ],

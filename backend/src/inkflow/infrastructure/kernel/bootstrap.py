@@ -29,6 +29,31 @@ class KernelHandle:
 # ── 装配缝（测试 patch 点；全部同步函数）─────────────────────────────
 
 
+def _locate_kernel_exe() -> Path | None:
+    """定位同发行结构的 inkflow.exe（MCP 打包形态：#424 v3 冷启动修复）。
+
+    仅 frozen 且当前可执行文件名为 inkflow-mcp 前缀时生效；候选按顺序，找到即用：
+    1. 同目录 inkflow.exe（onedir 未来形态）
+    2. 父目录/inkflow/inkflow.exe（CLI zip：inkflow-mcp/ 与 inkflow/ 兄弟目录）
+    3. 父目录/inkflow.exe（便携：kernel/mcp/ 的父目录 kernel/inkflow.exe）
+    未命中 → None（回退旧行为）。
+    """
+    if not getattr(sys, "frozen", False):
+        return None
+    exe = Path(sys.executable)
+    if not exe.name.startswith("inkflow-mcp"):
+        return None
+    candidates = [
+        exe.with_name("inkflow.exe"),
+        exe.parent.parent / "inkflow" / "inkflow.exe",
+        exe.parent.parent / "inkflow.exe",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _default_spawn_cmd(state_file: Path) -> list[str]:
     """默认 spawn 命令（spec §5.2 多形态）。
 
@@ -36,8 +61,18 @@ def _default_spawn_cmd(state_file: Path) -> list[str]:
         '--port', '0', '--port-file', str(state_file)]
     sys.frozen=True  → [sys.executable, 'serve', '--port', '0',
         '--port-file', str(state_file)]（可执行文件自身）
+    sys.frozen=True + inkflow-mcp（#424 v3）：定位同发行结构兄弟 inkflow.exe；
+        未命中回退旧行为并日志告警（兼容异常部署）。
     """
+    kernel_exe = _locate_kernel_exe()
+    if kernel_exe is not None:
+        return [str(kernel_exe), "serve", "--port", "0", "--port-file", str(state_file)]
     if getattr(sys, "frozen", False):
+        if Path(sys.executable).name.startswith("inkflow-mcp"):
+            _log_kernel_event(
+                f"MCP 打包形态未定位到兄弟 inkflow.exe（executable={sys.executable}），"
+                "回退 spawn 自身，内核冷启动可能失败"
+            )
         return [sys.executable, "serve", "--port", "0", "--port-file", str(state_file)]
     return [sys.executable, "-m", "inkflow", "serve", "--port", "0", "--port-file", str(state_file)]
 

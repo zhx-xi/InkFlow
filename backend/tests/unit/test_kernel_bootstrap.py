@@ -145,6 +145,7 @@ import os
 import sys
 import threading
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -310,6 +311,36 @@ def test_default_spawn_cmd_frozen_mode(tmp_path, monkeypatch):
     ]
 
 
+def test_default_spawn_cmd_frozen_mcp_mode_locates_sibling_kernel(tmp_path, monkeypatch):
+    """#424 复发（rc5 实证）：MCP 打包形态 sys.executable=inkflow-mcp.exe（stdio
+    入口无 serve 子命令）→ ensure_kernel 冷启动秒退「内核启动后立即退出」。
+
+    frozen + exe 名为 inkflow-mcp 时，spawn_cmd 必须定位同发行结构的
+    inkflow.exe（CLI zip：inkflow-mcp/ 与 inkflow/ 兄弟目录；便携：
+    kernel/mcp/ 的父目录 kernel/）。"""
+    import tempfile
+
+    # 模拟 CLI zip 发行结构：inkflow-mcp.exe 与 inkflow/inkflow.exe 兄弟
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        mcp_dir = root / "inkflow-mcp"
+        kernel_dir = root / "inkflow"
+        mcp_dir.mkdir()
+        kernel_dir.mkdir()
+        mcp_exe = mcp_dir / "inkflow-mcp.exe"
+        kernel_exe = kernel_dir / "inkflow.exe"
+        mcp_exe.write_text("", encoding="utf-8")
+        kernel_exe.write_text("", encoding="utf-8")
+
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.setattr(sys, "executable", str(mcp_exe))
+        sf = root / "kernel.json"
+        cmd = _default_spawn_cmd(sf)
+        # spawn 命令必须指向兄弟 inkflow.exe（非 inkflow-mcp.exe 自身）
+        assert cmd[0].endswith("inkflow.exe"), f"spawn cmd 指向 {cmd[0]}（应为 inkflow.exe）"
+        assert "serve" in cmd and "--port-file" in cmd
+
+
 # ── 复用路径 ───────────────────────────────────────────────────────────────
 
 
@@ -340,9 +371,7 @@ async def test_ensure_kernel_reuses_running_kernel(tmp_path, kernel_mocks):
     m.log.assert_called()  # spec §6.2：复用也记日志
 
 
-async def test_ensure_kernel_health_failure_triggers_stale_relaunch(
-    tmp_path, kernel_mocks
-):
+async def test_ensure_kernel_health_failure_triggers_stale_relaunch(tmp_path, kernel_mocks):
     """复用失败：pid 活但 /health 非 200 → stale 清理 → 拉起。
 
     spec §7 行 4：pid 存在但 /health 超时/非 200 → stale → 清理 → 拉起。
@@ -364,9 +393,7 @@ async def test_ensure_kernel_health_failure_triggers_stale_relaunch(
     m.log.assert_called()
 
 
-async def test_ensure_kernel_dead_pid_triggers_stale_relaunch(
-    tmp_path, kernel_mocks
-):
+async def test_ensure_kernel_dead_pid_triggers_stale_relaunch(tmp_path, kernel_mocks):
     """复用失败：pid 不存在（崩溃残留）→ stale 清理 → 拉起。
 
     spec §7 行 3：kernel.json 存在但 pid 不存在 → stale → 清理 → 拉起。
@@ -388,9 +415,7 @@ async def test_ensure_kernel_dead_pid_triggers_stale_relaunch(
 # ── 拉起路径 ───────────────────────────────────────────────────────────────
 
 
-async def test_ensure_kernel_spawns_new_kernel_when_no_state(
-    tmp_path, kernel_mocks
-):
+async def test_ensure_kernel_spawns_new_kernel_when_no_state(tmp_path, kernel_mocks):
     """拉起：无状态 → 互斥成功 → spawn → 轮询就绪 → 写状态 → reused=False。
 
     spec §5.1 拉起分支 + §9 场景 2：断言 spawn 收到显式 spawn_cmd 覆盖
@@ -430,9 +455,7 @@ async def test_ensure_kernel_spawns_new_kernel_when_no_state(
     m.log.assert_called()
 
 
-async def test_ensure_kernel_default_state_file_from_config(
-    tmp_path, kernel_mocks, monkeypatch
-):
+async def test_ensure_kernel_default_state_file_from_config(tmp_path, kernel_mocks, monkeypatch):
     """state_file=None → config.data_dir/'kernel.json'（调用时读取）。
 
     契约：默认状态文件路径 = ``inkflow.core.config.config.data_dir / 'kernel.json'``
@@ -516,9 +539,7 @@ async def test_ensure_kernel_spawn_wait_timeout_raises(tmp_path, kernel_mocks):
     m.log.assert_called()
 
 
-async def test_ensure_kernel_immediate_exit_retries_then_raises(
-    tmp_path, kernel_mocks
-):
+async def test_ensure_kernel_immediate_exit_retries_then_raises(tmp_path, kernel_mocks):
     """秒退：spawn 后进程立即退出 → 清理重试 ≤2 → 仍失败抛 KernelStartupError。
 
     spec §7 行 7：捕获进程退出（Popen.poll() 非 None）→ 清理 → 重试 ≤2 次
@@ -568,9 +589,7 @@ async def test_ensure_kernel_version_mismatch_refuses_reuse(
     m.spawn.assert_called_once()
 
 
-async def test_ensure_kernel_same_major_different_minor_reuses(
-    tmp_path, kernel_mocks, monkeypatch
-):
+async def test_ensure_kernel_same_major_different_minor_reuses(tmp_path, kernel_mocks, monkeypatch):
     """major 相同、minor/patch 不同 → 直接复用（Q2：minor/patch 容忍）。"""
     m = kernel_mocks
     m.read.return_value = dataclasses.replace(_state(), version="2.99.0")
@@ -583,9 +602,7 @@ async def test_ensure_kernel_same_major_different_minor_reuses(
     m.spawn.assert_not_called()
 
 
-async def test_ensure_kernel_version_check_disabled_reuses(
-    tmp_path, kernel_mocks, monkeypatch
-):
+async def test_ensure_kernel_version_check_disabled_reuses(tmp_path, kernel_mocks, monkeypatch):
     """version_check=False → 跳过版本校验直接复用（health 仍须通过）。"""
     m = kernel_mocks
     st = dataclasses.replace(_state(), version="1.2.0")
@@ -638,9 +655,7 @@ async def test_ensure_kernel_timeout_env_fallback(tmp_path, kernel_mocks, monkey
     assert effective == pytest.approx(7.5, abs=0.5)
 
 
-async def test_ensure_kernel_timeout_default_when_env_unset(
-    tmp_path, kernel_mocks, monkeypatch
-):
+async def test_ensure_kernel_timeout_default_when_env_unset(tmp_path, kernel_mocks, monkeypatch):
     """timeout 三态③：env 未设置 → 默认 30.0（monkeypatch.delenv 确保干净）。"""
     monkeypatch.delenv("INKFLOW_KERNEL_TIMEOUT", raising=False)
     m = kernel_mocks
@@ -654,9 +669,7 @@ async def test_ensure_kernel_timeout_default_when_env_unset(
     assert effective == pytest.approx(30.0, abs=0.5)
 
 
-async def test_ensure_kernel_timeout_invalid_env_uses_default(
-    tmp_path, kernel_mocks, monkeypatch
-):
+async def test_ensure_kernel_timeout_invalid_env_uses_default(tmp_path, kernel_mocks, monkeypatch):
     """timeout 三态④：env 非 float（解析失败）→ 回退默认 30.0。"""
     monkeypatch.setenv("INKFLOW_KERNEL_TIMEOUT", "not-a-float")
     m = kernel_mocks

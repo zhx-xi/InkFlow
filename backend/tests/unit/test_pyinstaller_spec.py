@@ -94,3 +94,24 @@ def test_spec_packages_mcp_entrypoint():
     ), "spec 缺少 inkflow-mcp EXE（#424）"
     # ② 入口脚本必须指向 mcp 模块（stdio 薄客户端，非 __main__.py 的 serve）
     assert "mcp" in src, "spec 缺少 mcp 入口引用（#424）"
+
+
+def test_spec_mcp_entrypoint_includes_db_dynamic_modules():
+    """#424 复发（rc5 实证）：inkflow-mcp 独立 Analysis 的 hiddenimports 漏了主内核
+    关键动态模块（aiosqlite / sqlalchemy.dialects.sqlite.aiosqlite）——MCP 薄客户端
+    import 链（inkflow.http → config → db → aiosqlite）在打包版冷启动 tools/call
+    报 `No module named 'aiosqlite'`。
+
+    修复方向：a_mcp 的 hiddenimports 必须含 aiosqlite 与 sqlalchemy sqlite dialect
+    （与主 Analysis 同源）。"""
+    src = _spec_source()
+    # 找到 a_mcp Analysis 段（独立 Analysis 定义处）
+    mcp_analysis = src[src.find("a_mcp = Analysis(") :]
+    assert mcp_analysis, "spec 缺少 a_mcp Analysis（#424 复发）"
+    # 必须含 aiosqlite（MCP 薄客户端 import 链仍会拉 db 层）
+    assert '"aiosqlite"' in mcp_analysis, "mcp Analysis 缺 aiosqlite hiddenimport（#424 复发）"
+    # 必须含 sqlalchemy sqlite async dialect（同主 Analysis）
+    assert (
+        "sqlalchemy.dialects.sqlite.aiosqlite" in mcp_analysis
+    ), "mcp Analysis 缺 sqlalchemy sqlite dialect（#424 复发）"
+    assert "mcp" in src, "spec 缺少 mcp 入口引用（#424）"
