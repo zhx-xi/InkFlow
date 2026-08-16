@@ -468,3 +468,91 @@ async def test_fingerprint_isolated_per_project(store: LangChainVectorStore) -> 
     await store.write_fingerprint("p1", fp, "fresh")
     assert await store.read_fingerprint("p2") is None
     assert await store.read_fingerprint("p1") is not None
+
+
+# ══ #277 M3 追加段（2026-08-16）: 检索去重（spec §5.6.3）══════════
+# 契约源: specs/f14-extraction-service/spec.md §5.6.3「检索去重: 按
+# (entity_type, 源实体 id) 去重取最高分再截断 top_k——chapter_chunk 的
+# 源实体 id = chapter_id（章节）非块 id（同章节多块命中只留最高分一条，
+# 杜绝相邻重复块刷屏，QA §P1-1）」。
+# RED 期 _retrieve_sync 无去重 → 同章节多块返回 N 条 → 断言失败。
+
+
+async def test_retrieve_dedups_chapter_chunks_by_chapter_id(
+    store: LangChainVectorStore,
+) -> None:
+    """同章节多块命中 → 只留最高分一条（源实体 id = metadata chapter_id）。"""
+    await store.index_batch(
+        [
+            make_entity(
+                "c1:0",
+                EntityType.CHAPTER_CHUNK,
+                "p1",
+                "苹果是一种水果",
+                chapter_id="chap-1",
+            ),
+            make_entity(
+                "c1:1",
+                EntityType.CHAPTER_CHUNK,
+                "p1",
+                "苹果富含维生素",
+                chapter_id="chap-1",
+            ),
+        ]
+    )
+    results = await store.retrieve(
+        "苹果", project_id="p1", entity_types=[EntityType.CHAPTER_CHUNK], top_k=10
+    )
+    # 同章节两块 → 去重后恰 1 条（保留最高分块）
+    assert len(results) == 1
+    assert results[0].entity_type is EntityType.CHAPTER_CHUNK
+    # 返回的是最高分块（内容含「水果」——与查询共享更多字符）
+    assert "水果" in results[0].content
+
+
+async def test_retrieve_keeps_different_chapters_separate(
+    store: LangChainVectorStore,
+) -> None:
+    """不同章节的块各自保留（去重键 = chapter_id 非块 id 前缀）。"""
+    await store.index_batch(
+        [
+            make_entity(
+                "c1:0",
+                EntityType.CHAPTER_CHUNK,
+                "p1",
+                "苹果是一种水果",
+                chapter_id="chap-1",
+            ),
+            make_entity(
+                "c2:0",
+                EntityType.CHAPTER_CHUNK,
+                "p1",
+                "苹果在野外生长",
+                chapter_id="chap-2",
+            ),
+        ]
+    )
+    results = await store.retrieve(
+        "苹果", project_id="p1", entity_types=[EntityType.CHAPTER_CHUNK], top_k=10
+    )
+    assert len(results) == 2
+
+
+async def test_retrieve_dedup_does_not_merge_across_entity_types(
+    store: LangChainVectorStore,
+) -> None:
+    """去重键含 entity_type——character 与 chapter_chunk 同 id 不合并。"""
+    await store.index_batch(
+        [
+            make_entity("same-id", EntityType.CHARACTER, "p1", "苹果是水果"),
+            make_entity(
+                "same-id:0",
+                EntityType.CHAPTER_CHUNK,
+                "p1",
+                "苹果是水果",
+                chapter_id="same-id",
+            ),
+        ]
+    )
+    results = await store.retrieve("苹果", project_id="p1", top_k=10)
+    assert {r.entity_type for r in results} == {EntityType.CHARACTER, EntityType.CHAPTER_CHUNK}

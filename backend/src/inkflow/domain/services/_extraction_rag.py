@@ -27,6 +27,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from inkflow.domain.models.character import Character
@@ -46,7 +47,7 @@ from inkflow.domain.ports.vector_store import (
     VectorStoreProtocol,
 )
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
-from inkflow.domain.services._chunking import chunk_text
+from inkflow.domain.services._chunking import Chunk, ChunkingConfig, chunk_text
 
 logger = logging.getLogger(__name__)
 
@@ -138,21 +139,47 @@ def _project_chapter_chunk(
     chapter_id: uuid.UUID,
     chapter_title: str,
     chunk_index: int,
-    chunk: str,
+    chunk: Chunk,
     project_id: str,
+    *,
+    overlap: bool = False,
+    chapter_x: int | None = None,
+    chapter_y: int | None = None,
+    volume_title: str | None = None,
+    indexed_at: str | None = None,
 ) -> IndexableEntity:
-    """章节文本块 → IndexableEntity（§5.6 投影表；块 id = {chapter_id}:{idx}）。"""
+    """章节文本块 → IndexableEntity（§5.6 投影表；块 id 三态，spec §5.6.3/§5.6.4）。
+
+    块 id: overlap=False → {chapter_id}:{idx}（现状）；overlap=True →
+    {chapter_id}:{idx}:{start_offset}（重叠块 idx 不唯一，偏移消歧）。
+    metadata 补强: chunk_start 恒有；chapter_x/chapter_y/volume_title/indexed_at
+    仅非 None 时写入（None 省略键，QA §P2-1 fallback）。
+    """
+    if overlap:
+        entity_id = f"{chapter_id}:{chunk_index}:{chunk.start_offset}"
+    else:
+        entity_id = f"{chapter_id}:{chunk_index}"
+    metadata: dict[str, str | int | float] = {
+        "chapter_id": str(chapter_id),
+        "chapter_title": chapter_title,
+        "chunk_index": chunk_index,
+        "project_id": project_id,
+        "chunk_start": chunk.start_offset,
+    }
+    if chapter_x is not None:
+        metadata["chapter_x"] = chapter_x
+    if chapter_y is not None:
+        metadata["chapter_y"] = chapter_y
+    if volume_title is not None:
+        metadata["volume_title"] = volume_title
+    if indexed_at is not None:
+        metadata["indexed_at"] = indexed_at
     return IndexableEntity(
-        id=f"{chapter_id}:{chunk_index}",
+        id=entity_id,
         entity_type=EntityType.CHAPTER_CHUNK,
         project_id=project_id,
-        content=chunk,
-        metadata={
-            "chapter_id": str(chapter_id),
-            "chapter_title": chapter_title,
-            "chunk_index": chunk_index,
-            "project_id": project_id,
-        },
+        content=chunk.text,
+        metadata=metadata,
     )
 
 
@@ -171,6 +198,7 @@ class _ExtractionRAGMixin:
     _chapter_repo: ChapterRepositoryProtocol
     _fingerprint_provider: Callable[[], Awaitable[dict | None]] | None
     _reindex_lock: asyncio.Lock
+    _chunking: ChunkingConfig
 
     async def reindex(
         self,
@@ -250,11 +278,47 @@ class _ExtractionRAGMixin:
                     entities = [_project_timeline_event(e, pid) for e in events]
                 elif entity_type is EntityType.CHAPTER_CHUNK:
                     chapters = await self._paged_list(self._chapter_repo.list_chapters, pid_int)
-                    entities = [
-                        _project_chapter_chunk(ch.id, ch.title, i, chunk, pid)
-                        for ch in chapters
-                        for i, chunk in enumerate(chunk_text(ch.content))
-                    ]
+                    # Q4 拍板（spec §5.6.4）: chapter_x 为全书级，按 order_index
+                    # 全局排序（1-based）；repo 保证排序时此步幂等，mock 无序时兜底。
+                    chapters = sorted(chapters, key=lambda ch: getattr(ch, "order_index", 0.0))
+                    cfg = self._chunking
+                    chunk_overlap = cfg.overlap_ratio > 0
+                    indexed_at = datetime.now(UTC).isoformat()
+                    chapter_y = len(chapters)
+                    # 卷标题补强（spec §5.6.4）: 仅当存在归属卷的章节才拉全卷映射
+                    # （无卷章节 volume_title 省略；旧 mock 仓储无 list_volumes 契约兼容）
+                    volume_titles: dict[Any, str] = {}
+                    if any(getattr(ch, "volume_id", None) is not None for ch in chapters):
+                        volumes = await self._chapter_repo.list_volumes(pid_int)
+                        volume_titles = {v.id: v.title for v in volumes}
+                    entities = []
+                    for chapter_x, ch in enumerate(chapters, start=1):
+                        volume_title = (
+                            volume_titles.get(ch.volume_id)
+                            if getattr(ch, "volume_id", None) is not None
+                            else None
+                        )
+                        chunks = chunk_text(
+                            ch.content,
+                            mode=cfg.mode,
+                            chunk_size=cfg.chunk_size,
+                            overlap_ratio=cfg.overlap_ratio,
+                        )
+                        entities.extend(
+                            _project_chapter_chunk(
+                                ch.id,
+                                ch.title,
+                                i,
+                                chunk,
+                                pid,
+                                overlap=chunk_overlap,
+                                chapter_x=chapter_x,
+                                chapter_y=chapter_y,
+                                volume_title=volume_title,
+                                indexed_at=indexed_at,
+                            )
+                            for i, chunk in enumerate(chunks)
+                        )
                 else:
                     continue
                 if entities:

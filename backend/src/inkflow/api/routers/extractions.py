@@ -218,9 +218,14 @@ async def vector_status(
     project_id: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """向量索引状态（#276）— 200 语义，指纹比对 + 维度探测。"""
+    """向量索引状态（#276 + #277 M3）— 200 语义，指纹比对 + 维度探测。
+
+    #277 M3（spec §5.6.5）: 传 db 让 get_vector_status 从 app_settings 读
+    切片配置并入 configured_fp——切片配置变更才能通过 status 端点报
+    stale（GUI/CLI 提示重新向量化）。
+    """
     pid = _parse_id(project_id)
-    return await get_vector_status(str(pid))
+    return await get_vector_status(str(pid), db=db)
 
 
 @router.post("/projects/{project_id}/vector/retrieve")

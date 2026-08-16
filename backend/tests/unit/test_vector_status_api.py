@@ -212,7 +212,7 @@ def test_reindex_flow_stale_to_fresh(
     monkeypatch.setattr(
         extractions,
         "get_vector_status",
-        AsyncMock(side_effect=lambda pid: next(responses)),
+        AsyncMock(side_effect=lambda pid, db=None: next(responses)),
         raising=False,
     )
     svc = MagicMock()

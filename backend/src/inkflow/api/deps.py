@@ -13,6 +13,7 @@ from inkflow.domain.ports.context_sources import ContextSourceProtocol
 from inkflow.domain.ports.extraction_errors import RAGUnavailableError
 from inkflow.domain.ports.vector_store import VectorStoreProtocol
 from inkflow.domain.services._character_extractor import CharacterExtractor
+from inkflow.domain.services._chunking import ChunkingConfig, ChunkingMode
 from inkflow.domain.services._foreshadowing_extractor import ForeshadowingExtractor
 from inkflow.domain.services._outline_generator import OutlineGenerator
 from inkflow.domain.services._style_llm_analyzer import StyleLLMAnalyzer
@@ -533,15 +534,19 @@ async def get_extraction_service(
     实测值；None = 不写指纹，向后兼容）。
     """
     vector_store = await get_vector_store()
+    chunking = await _load_chunking_config(db)
 
     async def _fingerprint_provider() -> dict | None:
-        """reindex 指纹提供器（#276）— configured 指纹 + store 实测维度。"""
+        """reindex 指纹提供器（#276 + #277 M3）— configured 指纹 + store 实测维度。"""
         dimension = (
             vector_store.embedding_dimension  # type: ignore[attr-defined]  # embedding_dimension 为 G2 运行时实例属性（Protocol 未声明，LangChainVectorStore 与测试 fake 均提供）
             if vector_store is not None
             else None
         )
-        return await build_configured_fingerprint(dimension=dimension)
+        return await build_configured_fingerprint(
+            dimension=dimension,
+            chunking=_chunking_fingerprint_dict(chunking),
+        )
 
     return ExtractionService(
         project_repo=SQLiteProjectRepository(db),
@@ -568,6 +573,7 @@ async def get_extraction_service(
         foreshadowing_repo=SQLiteForeshadowingRepository(db),
         vector_store=vector_store,
         fingerprint_provider=_fingerprint_provider,
+        chunking=chunking,
     )
 
 
@@ -774,19 +780,51 @@ async def refresh_vector_store() -> VectorStoreProtocol:
     return new_store
 
 
-async def build_configured_fingerprint(*, dimension: int | None = None) -> dict | None:
-    """构建当前 embedding 配置的指纹 dict（#276 G3 契约 15）.
+async def _load_chunking_config(db: AsyncSession | None) -> ChunkingConfig:
+    """app_settings 切片配置快照 → ChunkingConfig（#277 M3；失败回退默认 fixed/500/0.0）。"""
+    if db is None:
+        return ChunkingConfig()
+    try:
+        settings = await SettingsService(SQLiteSettingsRepository(db)).get_settings()
+    except Exception:
+        return ChunkingConfig()
+    return ChunkingConfig(
+        mode=ChunkingMode(settings.rag_chunk_mode),
+        chunk_size=settings.rag_chunk_size,
+        overlap_ratio=settings.rag_chunk_overlap_ratio if settings.rag_chunk_overlap else 0.0,
+    )
 
-    与 _build_store 共用 _resolve_embedding_spec 选型；解析失败
-    （RAGUnavailableError）→ 返回 None。base_url 去尾部斜杠；chunking 为
-    当前固定切片默认值（fixed / 500 / 0.0 / 1，与领域常量一致）。
-    """
+
+def _chunking_fingerprint_dict(cfg: ChunkingConfig) -> dict:
+    """切片配置 → 指纹 chunking 段（与 ChunkingConfig 同一快照；overlap 关 → 0.0）。"""
+    return {
+        "mode": cfg.mode.value,
+        "chunk_size": cfg.chunk_size,
+        "overlap_ratio": cfg.overlap_ratio,
+        "chunker_version": 1,
+    }
+
+
+async def build_configured_fingerprint(
+    *,
+    dimension: int | None = None,
+    chunking: dict | None = None,
+) -> dict | None:
+    """构建当前 embedding 配置的指纹 dict（#276 G3 契约 15 + #277 M3 chunking 覆盖）。"""
     from inkflow.domain.ports.extraction_errors import RAGUnavailableError
 
     try:
         provider, model_id, base_url = await _resolve_embedding_spec()
     except RAGUnavailableError:
         return None
+    chunking_cfg = {
+        "mode": "fixed",
+        "chunk_size": 500,
+        "overlap_ratio": 0.0,
+        "chunker_version": 1,
+    }
+    if chunking is not None:
+        chunking_cfg.update(chunking)
     return {
         "schema_version": 1,
         "embedding": {
@@ -795,25 +833,14 @@ async def build_configured_fingerprint(*, dimension: int | None = None) -> dict 
             "base_url": base_url.rstrip("/"),
             "dimension": dimension,
         },
-        "chunking": {
-            "mode": "fixed",
-            "chunk_size": 500,
-            "overlap_ratio": 0.0,
-            "chunker_version": 1,
-        },
+        "chunking": chunking_cfg,
         "indexed_at": None,
         "status": "fresh",
     }
 
 
-async def get_vector_status(project_id: str) -> dict:
-    """返回项目 RAG 向量状态 dict（#276 G3 契约 15）.
-
-    configured_fp 来自当前配置（dimension 取 store.embedding_dimension 实测值，
-    未 embed 过 = None）；indexed_fp 来自 store.read_fingerprint；stale/reason
-    由 compare_fingerprints 判定（dimension 不参与比对）；dimension_mismatch
-    为独立判据: 索引存在且维度不同，或无索引但集合已含不同维度向量。
-    """
+async def get_vector_status(project_id: str, db: AsyncSession | None = None) -> dict:
+    """返回项目 RAG 向量状态 dict（#276 G3 契约 15；#277 M3: db 非 None 读切片配置入指纹）。"""
     store = await get_vector_store_optional()
     if store is None:
         return {
@@ -823,10 +850,14 @@ async def get_vector_status(project_id: str) -> dict:
             "reason": "no_embedding",
             "dimension_mismatch": False,
         }
+    chunking_dict: dict | None = None
+    if db is not None:
+        chunking_dict = _chunking_fingerprint_dict(await _load_chunking_config(db))
     configured_dict = await build_configured_fingerprint(
         dimension=(
             store.embedding_dimension if store.embedding_dimension else None  # type: ignore[attr-defined]  # embedding_dimension 为 G2 运行时实例属性（Protocol 未声明，LangChainVectorStore 与测试 fake 均提供）
-        )
+        ),
+        chunking=chunking_dict,
     )
     indexed_raw = await store.read_fingerprint(project_id)
 

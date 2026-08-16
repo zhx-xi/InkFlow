@@ -539,3 +539,90 @@ async def test_build_configured_fingerprint_returns_none_without_embedding(
         fp = await deps.build_configured_fingerprint(dimension=None)
 
     assert fp is None
+
+
+# ══ #277 M3 追加段（2026-08-16）: 切片配置纳入指纹（spec §5.6.5）═══
+# 契约源: specs/f14-extraction-service/spec.md §5.6.5「reindex 装配时从
+# app_settings 读取切片配置快照 → build_fingerprint(chunking={mode,
+# chunk_size, overlap_ratio, chunker_version}) 写入指纹；任一字段变更
+# （含 chunker_version 手动 bump）→ compare_fingerprints 报
+# chunking_changed → stale」。不重定义 #276 协议。
+# RED 期 build_configured_fingerprint 无 chunking 参数 → TypeError
+# （unexpected keyword argument）；get_vector_status 无 db 参数 → TypeError。
+
+
+async def test_build_configured_fingerprint_accepts_chunking_override() -> None:
+    """E9: build_configured_fingerprint 新增 chunking 参数 → 指纹 chunking 反映传入值。"""
+    repo = _repo_with_providers([_embedding_provider()])
+
+    with (
+        patch(
+            "inkflow.infrastructure.database.repositories.provider_config_repo.SQLiteProviderConfigRepository",
+            return_value=repo,
+        ),
+        patch.object(APIKeyManager, "load", return_value="sk-test-123"),
+    ):
+        fp = await deps.build_configured_fingerprint(
+            dimension=384,
+            chunking={
+                "mode": "paragraph",
+                "chunk_size": 600,
+                "overlap_ratio": 0.15,
+                "chunker_version": 1,
+            },
+        )
+
+    assert fp is not None
+    assert fp["chunking"]["mode"] == "paragraph"
+    assert fp["chunking"]["chunk_size"] == 600
+    assert fp["chunking"]["overlap_ratio"] == 0.15
+    assert fp["chunking"]["chunker_version"] == 1
+
+
+async def test_build_configured_fingerprint_chunking_default_unchanged() -> None:
+    """E9 守护: 不传 chunking → 默认 fixed/500/0.0/1（既有行为不变）。"""
+    repo = _repo_with_providers([_embedding_provider()])
+
+    with (
+        patch(
+            "inkflow.infrastructure.database.repositories.provider_config_repo.SQLiteProviderConfigRepository",
+            return_value=repo,
+        ),
+        patch.object(APIKeyManager, "load", return_value="sk-test-123"),
+    ):
+        fp = await deps.build_configured_fingerprint(dimension=384)
+
+    assert fp is not None
+    assert fp["chunking"] == {
+        "mode": "fixed",
+        "chunk_size": 500,
+        "overlap_ratio": 0.0,
+        "chunker_version": 1,
+    }
+
+
+async def test_get_extraction_service_fingerprint_provider_includes_chunking() -> None:
+    """E10: get_extraction_service 装配的 fingerprint_provider 从 settings 读切片配置。"""
+    repo = _repo_with_providers([_embedding_provider()])
+    fake_store = MagicMock()
+    fake_store.embedding_dimension = 768
+
+    with (
+        patch(
+            "inkflow.infrastructure.database.repositories.provider_config_repo.SQLiteProviderConfigRepository",
+            return_value=repo,
+        ),
+        patch.object(APIKeyManager, "load", return_value="sk-test-123"),
+        patch(
+            "inkflow.infrastructure.rag.langchain_vector_store.LangChainVectorStore",
+            return_value=fake_store,
+        ),
+    ):
+        svc = await deps.get_extraction_service(MagicMock())
+        fp = await svc._fingerprint_provider()  # type: ignore[attr-defined]  # 测试直接调用注入闭包
+
+    assert fp is not None
+    # chunking 键存在（默认值或 settings 值——db mock 未持久化 → 默认 fixed）
+    assert fp["chunking"]["mode"] in {"fixed", "paragraph"}
+    assert fp["chunking"]["chunk_size"] >= 100
+    assert fp["chunking"]["chunker_version"] == 1

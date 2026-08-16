@@ -207,7 +207,7 @@ class LangChainVectorStore:
         top_k: int,
         min_score: float,
     ) -> list[RetrievedEntity]:
-        """同步检索: 每类型查对应 collection（where project_id），合并排序截断。"""
+        """同步检索: 每类型查对应 collection（where project_id），去重合并排序截断。"""
         types = list(entity_types) if entity_types else list(EntityType)
         query_embedding = self._embeddings.embed_query(query)
         merged: list[RetrievedEntity] = []
@@ -241,6 +241,20 @@ class LangChainVectorStore:
                         metadata=cast(dict[str, str | int | float], metadata or {}),
                     )
                 )
+        # #277 M3（spec §5.6.3）: 检索去重——按 (entity_type, 源实体 id) 去重
+        # 取最高分（chapter_chunk 源实体 id = metadata chapter_id 非块 id，
+        # 同章节多块命中只留最高分一条，杜绝相邻重复块刷屏，QA §P1-1）。
+        best: dict[tuple[EntityType, str], RetrievedEntity] = {}
+        for item in merged:
+            if item.entity_type is EntityType.CHAPTER_CHUNK:
+                source_id = str(item.metadata.get("chapter_id") or item.entity_id.split(":")[0])
+            else:
+                source_id = item.entity_id
+            key = (item.entity_type, source_id)
+            prev = best.get(key)
+            if prev is None or item.relevance_score > prev.relevance_score:
+                best[key] = item
+        merged = list(best.values())
         merged.sort(key=lambda item: item.relevance_score, reverse=True)
         return merged[:top_k]
 

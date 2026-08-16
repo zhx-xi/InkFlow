@@ -226,3 +226,109 @@ async def test_reindex_twice_idempotent(store: MagicMock) -> None:
     calls = store.write_fingerprint.await_args_list
     assert calls[-1].args[2] == "fresh"
     assert store.delete_stale.await_count == 2
+
+
+# ══ #277 M3 追加段（2026-08-16）: reindex 配置切片 + 章节块元数据 ═══
+# 契约源: specs/f14-extraction-service/spec.md §5.6.3-§5.6.5。
+# RED 期 ExtractionService 无 chunking 参数 → TypeError；_project_chapter_chunk
+# 无新元数据/块 id 三态 → 断言失败。
+
+PARA_TEXT = "第一段。\n\n第二段。\n\n第三段。"
+
+
+async def test_reindex_chapter_chunk_uses_configured_paragraph_mode() -> None:
+    """reindex 装配 chunking mode=paragraph → 章节按段落切块（多块）。"""
+    from inkflow.domain.services._chunking import ChunkingConfig, ChunkingMode
+
+    chapters = [
+        MagicMock(id=1, title="第 1 章", content=PARA_TEXT, volume_id=None, order_index=1.0)
+    ]
+    store = MagicMock()
+    store.index_batch = AsyncMock()
+    store.delete_stale = AsyncMock(return_value=0)
+    store.probe_embedding_dimension = AsyncMock(return_value=384)
+    store.probe_collection_dimension = AsyncMock(return_value=0)
+    store.recreate_collections = AsyncMock()
+    store.write_fingerprint = AsyncMock()
+    svc = _make_service(
+        vector_store=store,
+        chunking=ChunkingConfig(mode=ChunkingMode.PARAGRAPH, chunk_size=500),
+    )
+    svc._chapter_repo.list_chapters = AsyncMock(return_value=(chapters, 1))
+    svc._chapter_repo.list_volumes = AsyncMock(return_value=[])
+
+    await svc.reindex(PID, entity_types=[EntityType.CHAPTER_CHUNK])
+
+    entities = store.index_batch.await_args.args[0]
+    chunks = [e for e in entities if e.entity_type is EntityType.CHAPTER_CHUNK]
+    assert [e.content for e in chunks] == ["第一段。", "第二段。", "第三段。"]
+
+
+async def test_reindex_chapter_chunk_metadata_writes_full_position_context() -> None:
+    """reindex 全量路径写全 chapter_x/chapter_y/volume_title/chunk_start/indexed_at。"""
+    chapters = [
+        MagicMock(id=1, title="第 1 章", content="甲" * 100, volume_id=10, order_index=2.0),
+        MagicMock(id=2, title="第 2 章", content="乙" * 100, volume_id=10, order_index=1.0),
+    ]
+    store = MagicMock()
+    store.index_batch = AsyncMock()
+    store.delete_stale = AsyncMock(return_value=0)
+    store.probe_embedding_dimension = AsyncMock(return_value=384)
+    store.probe_collection_dimension = AsyncMock(return_value=0)
+    store.recreate_collections = AsyncMock()
+    store.write_fingerprint = AsyncMock()
+    svc = _make_service(vector_store=store)
+    svc._chapter_repo.list_chapters = AsyncMock(return_value=(chapters, 2))
+    # volume_id=10 → 第一卷（list_volumes 映射）
+    volume = MagicMock()
+    volume.id = 10
+    volume.title = "第一卷"
+    svc._chapter_repo.list_volumes = AsyncMock(return_value=[volume])
+
+    await svc.reindex(PID, entity_types=[EntityType.CHAPTER_CHUNK])
+
+    entities = store.index_batch.await_args.args[0]
+    chunks = [e for e in entities if e.entity_type is EntityType.CHAPTER_CHUNK]
+    # list_chapters 按 order_index 排序（id=2 第 1 章、id=1 第 2 章）
+    assert len(chunks) == 2
+    by_chapter = {e.metadata["chapter_id"]: e for e in chunks}
+    assert by_chapter["2"].metadata["chapter_x"] == 1
+    assert by_chapter["2"].metadata["chapter_y"] == 2
+    assert by_chapter["1"].metadata["chapter_x"] == 2
+    assert by_chapter["1"].metadata["chapter_y"] == 2
+    for e in chunks:
+        assert e.metadata["volume_title"] == "第一卷"
+        assert e.metadata["chunk_start"] == 0
+        assert isinstance(e.metadata["indexed_at"], str)
+        assert "T" in e.metadata["indexed_at"]
+    # 无卷章节省略 volume_title（id=1 无 volume_id 场景由增量路径覆盖，此处同卷）
+    assert all("volume_title" in e.metadata for e in chunks)
+
+
+async def test_reindex_chapter_chunk_overlap_uses_triple_part_id() -> None:
+    """reindex overlap>0 → 块 id 三态（{chapter_id}:{idx}:{start_offset}）。"""
+    from inkflow.domain.services._chunking import ChunkingConfig, ChunkingMode
+
+    chapters = [
+        MagicMock(id=1, title="第 1 章", content="章" * 1200, volume_id=None, order_index=1.0)
+    ]
+    store = MagicMock()
+    store.index_batch = AsyncMock()
+    store.delete_stale = AsyncMock(return_value=0)
+    store.probe_embedding_dimension = AsyncMock(return_value=384)
+    store.probe_collection_dimension = AsyncMock(return_value=0)
+    store.recreate_collections = AsyncMock()
+    store.write_fingerprint = AsyncMock()
+    svc = _make_service(
+        vector_store=store,
+        chunking=ChunkingConfig(mode=ChunkingMode.FIXED, chunk_size=500, overlap_ratio=0.2),
+    )
+    svc._chapter_repo.list_chapters = AsyncMock(return_value=(chapters, 1))
+    svc._chapter_repo.list_volumes = AsyncMock(return_value=[])
+
+    await svc.reindex(PID, entity_types=[EntityType.CHAPTER_CHUNK])
+
+    entities = store.index_batch.await_args.args[0]
+    chunks = [e for e in entities if e.entity_type is EntityType.CHAPTER_CHUNK]
+    assert len(chunks) >= 2
+    assert any(len(e.id.split(":")) == 3 for e in chunks)
