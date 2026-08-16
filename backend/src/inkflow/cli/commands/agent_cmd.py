@@ -59,6 +59,68 @@ def _run_ctx(cli_ctx: CliContext, coro_fn):
         print_error(cli_ctx, "KERNEL_ERROR", f"内核启动失败: {exc}")
 
 
+@app.command("list")
+def agent_list(
+    ctx: typer.Context,
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """列出全部 Agent（name + description + builtin 标记，F39 #258 spec §4）"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get("/agents")
+
+    data = _run_ctx(cli_ctx, _impl)
+    if data is None:
+        return
+    if cli_ctx.json_output or json_output:
+        print_result(cli_ctx, data)
+        return
+    items = data.get("items") or []
+    if not items:
+        typer.echo("📭 暂无 Agent")
+        return
+    for agent in items:
+        mark = "（内置）" if agent.get("builtin") else ""
+        description = agent.get("description") or ""
+        typer.echo(f"[{agent['id']}] {agent['name']}  {description} {mark}")
+
+
+@app.command("show")
+def agent_show(
+    ctx: typer.Context,
+    agent_id: str = typer.Option(..., "--id", help="Agent ID"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """查看单个 Agent 详情（system_prompt + tool_ids + skill_ids + 覆盖，spec §4）"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/agents/{agent_id}")
+
+    data = _run_ctx(cli_ctx, _impl)
+    if data is None:
+        return
+    if cli_ctx.json_output or json_output:
+        print_result(cli_ctx, data)
+        return
+    typer.echo(f"[{data['id']}] {data['name']}")
+    typer.echo(f"  描述: {data.get('description') or ''}")
+    typer.echo(f"  icon: {data.get('icon') or ''}")
+    typer.echo(f"  system_prompt: {data.get('system_prompt') or ''}")
+    typer.echo(f"  tool_ids: {', '.join(data.get('tool_ids') or [])}")
+    typer.echo(f"  skill_ids: {', '.join(data.get('skill_ids') or [])}")
+    typer.echo(f"  model_override: {data.get('model_override') or '-'}")
+    typer.echo(f"  temperature_override: {data.get('temperature_override') or '-'}")
+    typer.echo(f"  builtin: {data.get('builtin')}")
+
+
 @app.command("run")
 def run_pipeline(
     project_id: str = typer.Option(..., "--project-id", help="项目 ID（UUID）"),

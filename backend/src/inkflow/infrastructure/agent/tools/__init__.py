@@ -10,14 +10,16 @@ from inkflow.infrastructure.agent.tools.reader_tools import (
     build_reader_tools,
 )
 from inkflow.infrastructure.agent.tools.save_draft_tool import (
+    SAVE_DRAFT_SPEC,
     SaveDraftParams,
     SaveDraftToolDeps,
     build_save_draft_tool,
 )
 
-TOOL_REGISTRY: list[ToolSpec] = _TOOL_SPECS
+TOOL_REGISTRY: list[ToolSpec] = [*_TOOL_SPECS, SAVE_DRAFT_SPEC]
 
 __all__ = [
+    "SAVE_DRAFT_SPEC",
     "TOOL_REGISTRY",
     "ReaderToolDeps",
     "SaveDraftParams",

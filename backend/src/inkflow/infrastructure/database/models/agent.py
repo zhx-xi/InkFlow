@@ -9,6 +9,9 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from inkflow.core.database import Base, LenientJSON
+from inkflow.infrastructure.database.models.agent_entity import AgentORM
+
+__all__ = ["AgentExecutionORM", "AgentORM", "AgentStageResultORM"]
 
 
 def _utcnow() -> datetime:

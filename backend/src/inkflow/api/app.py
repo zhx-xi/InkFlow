@@ -14,6 +14,7 @@ from inkflow.api.routers import (
     agent,
     agent_runs,
     agent_templates,
+    agents,
     audit,
     chapter,
     chapter_audit,
@@ -30,6 +31,7 @@ from inkflow.api.routers import (
     search,
     sessions,
     settings,
+    skills,
     style,
     timeline,
     world_settings,
@@ -53,6 +55,8 @@ from inkflow.core.database import (
 )
 from inkflow.core.log import setup_logging
 from inkflow.domain.ports.extraction_errors import RAGUnavailableError
+from inkflow.domain.services.agent_entity_service import seed_builtin_agents
+from inkflow.domain.services.skill_service import seed_builtin_skills
 
 
 @asynccontextmanager
@@ -77,6 +81,11 @@ async def lifespan(app: FastAPI):
     # 全新安装注册表为空 → seed 补全；重复启动不重复插入）
     async with async_session_factory() as session:
         await get_provider_config_service(session).seed_builtin_providers()
+        # #258 F39 M4：内置 Agent/Skill 出厂 seed（spec §5.3，同名跳过幂等；
+        # agent 的 skill_ids 指向对应出厂 skill——seed_builtin_agents 在出厂
+        # skill 未落库时按出厂列表序预测主键，与调用顺序无关）
+        await seed_builtin_agents(session)
+        await seed_builtin_skills(session)
     yield
     # TODO: 关闭数据库连接
 
@@ -152,6 +161,8 @@ app.include_router(maps.router)
 app.include_router(writing.router)
 app.include_router(agent.router)
 app.include_router(agent_runs.router)
+app.include_router(agents.router)
+app.include_router(skills.router)
 app.include_router(memory.router)
 app.include_router(context.router)
 app.include_router(world_settings.router)

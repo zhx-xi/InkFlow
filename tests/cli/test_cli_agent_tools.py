@@ -54,6 +54,7 @@ TOOL_NAMES = [
     "get_prior_summary",
     "audit_chapter",
     "count_words",
+    "save_draft",
 ]
 
 
@@ -88,7 +89,7 @@ class TestAgentToolsCLI:
         result = runner.invoke(app, ["agent", "tools", "list", "--json"])
         assert result.exit_code == 0
         items = json.loads(result.stdout)["data"]["items"]
-        assert len(items) == 5
+        assert len(items) == 6
         for item in items:
             assert isinstance(item["description"], str)
             assert item["description"].strip() != ""

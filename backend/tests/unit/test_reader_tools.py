@@ -180,11 +180,11 @@ class TestToolRegistry:
 
     async def test_registry_has_five_specs(self):
         """注册表长度 5."""
-        assert len(TOOL_REGISTRY) == 5
+        assert len(TOOL_REGISTRY) == 6
 
     async def test_registry_names_set(self):
         """注册表工具名集合与契约一致."""
-        assert {spec.name for spec in TOOL_REGISTRY} == set(EXPECTED_TOOL_NAMES)
+        assert {spec.name for spec in TOOL_REGISTRY} == set(EXPECTED_TOOL_NAMES) | {"save_draft"}
 
     async def test_registry_spec_fields(self):
         """每项 name/description 非空 str，input_schema 为 dict."""

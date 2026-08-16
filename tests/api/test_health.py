@@ -66,7 +66,11 @@ class TestLifespan:
             "inkflow.api.app.create_tables", new=AsyncMock()
         ) as mock_create_tables, patch(
             "inkflow.api.app.get_provider_config_service", return_value=fake_svc
-        ) as mock_svc_factory, TestClient(app) as lifespan_client:
+        ) as mock_svc_factory, patch(
+            "inkflow.api.app.seed_builtin_agents", new=AsyncMock()
+        ) as mock_seed_agents, patch(
+            "inkflow.api.app.seed_builtin_skills", new=AsyncMock()
+        ) as mock_seed_skills, TestClient(app) as lifespan_client:
             resp = lifespan_client.get("/health")
             assert resp.status_code == 200
         mock_setup_logging.assert_called_once()
@@ -74,3 +78,7 @@ class TestLifespan:
         # #106 F1：lifespan 接线 seed（mock create_tables 后表不存在，seed 必须 mock 才可测）
         mock_svc_factory.assert_called_once()
         fake_seed.assert_awaited_once()
+        # #258 F39 M4：lifespan 接线内置 Agent/Skill seed（同 create_tables mock 语义，
+        # 表不存在时真实 seed 会触发 DB 查询 → 必须 mock 才可测；F39 新增副作用）
+        mock_seed_agents.assert_awaited_once()
+        mock_seed_skills.assert_awaited_once()
