@@ -20,7 +20,7 @@ async def list_tools_result(tools: list[MCPTool]) -> mt.ListToolsResult:
             mt.Tool(
                 name=t.spec.name,
                 description=t.spec.description,
-                inputSchema=t.spec.input_schema,
+                input_schema=t.spec.input_schema,
             )
             for t in tools
         ]
@@ -34,13 +34,13 @@ async def call_tool_result(
     tool = next((t for t in tools if t.spec.name == name), None)
     if tool is None:
         text = json.dumps({"ok": False, "error": f"未知工具: {name}"}, ensure_ascii=False)
-        return mt.CallToolResult(content=[mt.TextContent(type="text", text=text)], isError=True)
+        return mt.CallToolResult(content=[mt.TextContent(type="text", text=text)], is_error=True)
     text = await tool.func(**(arguments or {}))
     try:
         ok = bool(json.loads(text).get("ok", False))
     except Exception:
         ok = False
-    return mt.CallToolResult(content=[mt.TextContent(type="text", text=text)], isError=not ok)
+    return mt.CallToolResult(content=[mt.TextContent(type="text", text=text)], is_error=not ok)
 
 
 def build_mcp_server(tools: list[MCPTool] | None = None) -> Server:
