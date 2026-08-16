@@ -25,7 +25,8 @@
  * - start('write_auto') → executePipeline({project_id, pipeline:'builtin:write_auto',
  *   chapter_id, variables:{genre?, target_words?, writing_style?}}（非空才注入）)
  * - start('write_continue') → executePipeline({pipeline:'builtin:write_continue',
- *   variables:{context: chapterStore.content, writing_style?}})
+ *   variables:{writing_style?}})（#318：前文摘要由后端生成注入 context，
+ *   前端不再传 chapterStore.content 全文）
  * - 轮询 getExecutionStatus(execution_id)（1s 间隔，setTimeout 递归）：
  *   status==='completed' → chapterStore.setContent(final_output) + status='success'
  *   status==='failed' → status='failed' + error
@@ -118,7 +119,7 @@ describe('usePipeline — 状态机（idle → running → success | failed）',
     });
   });
 
-  it('start(write_continue)：pipeline=builtin:write_continue + variables.context = 前文 content', async () => {
+  it('start(write_continue)：pipeline=builtin:write_continue + variables 不含 context（#318 后端生成）', async () => {
     const { result } = renderHook(() => usePipeline(OPTS));
     act(() => {
       result.current.start('write_continue');
@@ -127,7 +128,7 @@ describe('usePipeline — 状态机（idle → running → success | failed）',
       project_id: 'p1',
       pipeline: 'builtin:write_continue',
       chapter_id: 'c1',
-      variables: { context: '已有正文', writing_style: '文笔细腻' },
+      variables: { writing_style: '文笔细腻' },
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
