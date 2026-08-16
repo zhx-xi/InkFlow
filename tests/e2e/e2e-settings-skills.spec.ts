@@ -18,6 +18,7 @@
  * templates.spec.ts fetchKernel 先例）。每个用例独立 launch（workers=1，串行）。
  */
 import path from 'node:path';
+import { rmSync } from 'node:fs';
 import {
   test,
   expect,
@@ -29,6 +30,21 @@ import {
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const FRONTEND_DIR = path.join(REPO_ROOT, 'frontend');
 const MAIN_JS = 'packages/electron/out/main.js';
+
+// 隔离数据目录清理：本地跑（INKFLOW_DATA_DIR 已注入）时清空残留——E2E 重跑/前次失败
+// 会留下同名 skill/agent 导致 422 污染断言（2026-08-16 首跑实测）；CI 无此 env 不删
+if (process.env.INKFLOW_DATA_DIR) {
+  rmSync(process.env.INKFLOW_DATA_DIR, { recursive: true, force: true });
+}
+
+/** 卡片容器定位器：data-testid 前缀匹配容器 skill-card-<id> 与子元素 skill-card-name/desc/refs，
+ * 用 has:skill-card-name 只留容器（strict mode 防 2 元素歧义，2026-08-16 E2E 首跑实测） */
+function skillCard(window: Page, name: string) {
+  return window
+    .locator('[data-testid^="skill-card-"]')
+    .filter({ has: window.getByTestId('skill-card-name') })
+    .filter({ hasText: name });
+}
 
 interface KernelInfo {
   pid: number;
@@ -82,8 +98,10 @@ async function fetchKernel(
   return (await res.json()) as unknown;
 }
 
-/** 内核 API 预建自定义 Agent（F40 无 Agent 创建 UI；builtin=false 才能被绑定） */
-async function seedCustomAgent(kernel: KernelInfo, name: string): Promise<number> {
+/** 内核 API 预建自定义 Agent（F40 无 Agent 创建 UI；builtin=false 才能被绑定）。
+ * 名称带随机后缀——E2E 重跑/CI retry 时同名 422 会污染断言（2026-08-16 首跑实测数据残留） */
+async function seedCustomAgent(kernel: KernelInfo, baseName: string): Promise<{ id: number; name: string }> {
+  const name = `${baseName}${Math.floor(Math.random() * 100000)}`;
   const created = (await fetchKernel(kernel, '/api/v1/agents', {
     method: 'POST',
     body: {
@@ -97,7 +115,7 @@ async function seedCustomAgent(kernel: KernelInfo, name: string): Promise<number
   })) as { id: number; builtin: boolean };
   expect(created.id).toBeGreaterThan(0);
   expect(created.builtin).toBe(false);
-  return created.id;
+  return { id: created.id, name };
 }
 
 /** 进入设置页 Skill 分类（侧边栏「设置」→ 设置导航「Skill 管理」） */
@@ -107,15 +125,22 @@ async function gotoSkillCat(window: Page): Promise<void> {
   await expect(window.getByTestId('skill-list')).toBeVisible();
 }
 
-const VALID_SKILL_MD = `---
-name: e2e-research-method
+/** 生成唯一 skill 名 + 合法 SKILL.md 内容（用例间/重跑不撞名 422，2026-08-16 首跑实测） */
+function makeSkillMd(): { name: string; content: string } {
+  const name = `e2e-research-${Math.floor(Math.random() * 100000)}`;
+  return {
+    name,
+    content: `---
+name: ${name}
 description: E2E 调研方法论
 tags: research
 ---
 # 调研流程
 1. 明确问题
 2. 检索资料
-`;
+`,
+  };
+}
 
 test.describe.configure({ timeout: 120_000 });
 
@@ -126,6 +151,7 @@ test.describe.configure({ timeout: 120_000 });
 test('Skill 管理：上传（frontmatter 预览）→ 绑定默认不勾选 → 上传成功出现在列表', async () => {
   const { app, window } = await launchApp();
   try {
+    const skill = makeSkillMd();
     await gotoSkillCat(window);
 
     // 打开上传对话框
@@ -134,8 +160,8 @@ test('Skill 管理：上传（frontmatter 预览）→ 绑定默认不勾选 →
     await expect(dialog).toBeVisible();
 
     // 粘贴内容 → frontmatter 预览出现 name/description
-    await window.getByTestId('skill-upload-content').fill(VALID_SKILL_MD);
-    await expect(window.getByTestId('skill-upload-preview-name')).toHaveText('e2e-research-method');
+    await window.getByTestId('skill-upload-content').fill(skill.content);
+    await expect(window.getByTestId('skill-upload-preview-name')).toHaveText(skill.name);
     await expect(window.getByTestId('skill-upload-preview-desc')).toHaveText('E2E 调研方法论');
 
     // 🔴 D1：绑定 checkbox 默认不勾选
@@ -150,7 +176,7 @@ test('Skill 管理：上传（frontmatter 预览）→ 绑定默认不勾选 →
     await expect(dialog).not.toBeVisible();
 
     // 列表出现新 skill（用户上传 badge）
-    const card = window.locator('[data-testid^="skill-card-"]').filter({ hasText: 'e2e-research-method' });
+    const card = skillCard(window, skill.name);
     await expect(card).toBeVisible();
     await expect(card.locator('[data-testid^="skill-source-user-"]')).toBeVisible();
   } finally {
@@ -161,36 +187,38 @@ test('Skill 管理：上传（frontmatter 预览）→ 绑定默认不勾选 →
 test('Skill 管理：上传时绑定自定义 Agent → 引用视图显示被引用 → 删除确认列影响面', async () => {
   const { app, window, kernel } = await launchApp();
   try {
+    const skill = makeSkillMd();
     // 预建自定义 Agent（绑定目标；内置 Agent 绑定 → 409）
-    await seedCustomAgent(kernel, 'E2E 绑定测试员');
+    const custom = await seedCustomAgent(kernel, 'E2E 绑定测试员');
+    const customName = custom.name;
 
     await gotoSkillCat(window);
     await window.getByTestId('skill-add-btn').click();
     const dialog = window.getByTestId('skill-upload-dialog');
     await expect(dialog).toBeVisible();
 
-    await window.getByTestId('skill-upload-content').fill(VALID_SKILL_MD);
-    await expect(window.getByTestId('skill-upload-preview-name')).toHaveText('e2e-research-method');
+    await window.getByTestId('skill-upload-content').fill(skill.content);
+    await expect(window.getByTestId('skill-upload-preview-name')).toHaveText(skill.name);
 
     // 绑定区：内置 Agent 禁用（写手 = 内置 seed），自定义 Agent 可勾选
     const builtinAgent = window.getByTestId('skill-bind-agent-1');
     await expect(builtinAgent.locator('input')).toBeDisabled();
 
     // 搜索自定义 Agent 并勾选（D1：显式指定，非默认）
-    await window.getByTestId('skill-bind-search').fill('E2E 绑定测试员');
-    const customRow = window.locator('[data-testid^="skill-bind-agent-"]').filter({ hasText: 'E2E 绑定测试员' });
+    await window.getByTestId('skill-bind-search').fill(customName);
+    const customRow = window.locator('[data-testid^="skill-bind-agent-"]').filter({ hasText: customName });
     await expect(customRow).toBeVisible();
     await customRow.locator('input').check();
 
     await window.getByTestId('skill-upload-submit').click();
     await expect(dialog).not.toBeVisible();
 
-    // 引用视图：新 skill 卡片显示「被 1 个 Agent 引用：E2E 绑定测试员」
-    const card = window.locator('[data-testid^="skill-card-"]').filter({ hasText: 'e2e-research-method' });
+    // 引用视图：新 skill 卡片显示「被 1 个 Agent 引用：<customName>」
+    const card = skillCard(window, skill.name);
     await expect(card).toBeVisible();
     const refs = card.locator('[data-testid^="skill-refs-"]');
     await expect(refs).toBeVisible();
-    await expect(refs).toContainText('E2E 绑定测试员');
+    await expect(refs).toContainText(customName);
 
     // 删除保护：被引用 → 删除按钮存在 → 确认框列影响面 → 确认删除 → 卡片消失
     const deleteBtn = card.locator('[data-testid^="skill-delete-"]');
@@ -198,7 +226,7 @@ test('Skill 管理：上传时绑定自定义 Agent → 引用视图显示被引
     await deleteBtn.click();
     const confirm = window.getByTestId('skill-confirm-dialog');
     await expect(confirm).toBeVisible();
-    await expect(confirm.getByTestId('skill-confirm-message')).toContainText('E2E 绑定测试员');
+    await expect(confirm.getByTestId('skill-confirm-message')).toContainText(customName);
     await confirm.getByTestId('skill-confirm-ok').click();
     await expect(card).not.toBeVisible();
   } finally {
@@ -212,7 +240,7 @@ test('Skill 管理：内置 Skill 只读（无删除按钮）+ 内置 Agent 绑�
     await gotoSkillCat(window);
 
     // 内置 seed Skill（架构方法论）卡片存在，但无删除按钮（只读）
-    const builtinCard = window.locator('[data-testid^="skill-card-"]').filter({ hasText: '架构方法论' });
+    const builtinCard = skillCard(window, '架构方法论');
     await expect(builtinCard).toBeVisible();
     await expect(builtinCard.locator('[data-testid^="skill-source-builtin-"]')).toBeVisible();
     await expect(builtinCard.locator('[data-testid^="skill-delete-"]')).toHaveCount(0);
@@ -225,12 +253,16 @@ test('Skill 管理：内置 Skill 只读（无删除按钮）+ 内置 Agent 绑�
     await expect(builtinAgent.locator('input')).toBeDisabled();
     await expect(builtinAgent).toContainText('内置只读');
 
-    // 应用到全部：只勾非内置（内置仍禁用）——本用例无自定义 Agent → 点击后勾选数仍 0
+    // 应用到全部：只勾非内置（内置仍禁用）——断言「全部非禁用 checkbox 被勾选」
+    // （共享数据目录可能残留用例 2 的自定义 Agent，不断言绝对数量）
+    const bindableCount = await window
+      .locator('[data-testid^="skill-bind-agent-"] input[type="checkbox"]:not(:disabled)')
+      .count();
     await window.getByTestId('skill-bind-all').click();
     const checked = await window
       .locator('[data-testid^="skill-bind-agent-"] input[type="checkbox"]:checked')
       .count();
-    expect(checked).toBe(0);
+    expect(checked).toBe(bindableCount);
   } finally {
     await app.close();
   }
