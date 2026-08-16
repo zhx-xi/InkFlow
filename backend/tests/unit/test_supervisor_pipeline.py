@@ -383,6 +383,25 @@ class TestParseDecisionCoverage:
         assert _parse_decision('{"action": "finish"}') == ("finish", "")
         assert _parse_decision('{"action": "fallback"}') == ("fallback", "")
 
+    def test_markdown_fenced_json_returns_decision(self) -> None:
+        """markdown 代码块围栏包裹的 JSON → 剥离围栏后解析（#343 实证根因）。
+
+        zhipu/glm-4.5 决策输出实测形态：```json\\n{"action": "execute", "role": "architect"}\\n```
+        — 旧实现直接 json.loads 抛 JSONDecodeError → 决策重试耗尽 → fallback 固定链
+        → HITL 永不触发。修复 = 提取首个 { 到末个 } 的子串再解析。
+        """
+        from inkflow.infrastructure.agent.supervisor_pipeline import _parse_decision
+
+        fenced = '```json\n{"action": "execute", "role": "reviser"}\n```'
+        assert _parse_decision(fenced) == ("execute", "reviser")
+
+    def test_markdown_fenced_with_text_around(self) -> None:
+        """markdown 围栏前后带说明文字 → 仍提取 JSON 对象解析（宽松）。"""
+        from inkflow.infrastructure.agent.supervisor_pipeline import _parse_decision
+
+        noisy = '好的，决策如下：\n```json\n{"action": "finish"}\n```\n请确认。'
+        assert _parse_decision(noisy) == ("finish", "")
+
 
 class TestDecisionLLMExceptionCoverage:
     """_decide_next_action LLM 异常重试补测（规则 1j）。"""

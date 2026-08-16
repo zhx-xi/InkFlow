@@ -12,6 +12,7 @@ from inkflow.api.deps import get_db, get_summary_service
 from inkflow.domain.models.agent_pipeline import PipelineConfig, PipelineExecuteRequest
 from inkflow.domain.services.agent_service import AgentService, AgentServiceError
 from inkflow.infrastructure.agent.langgraph_pipeline import LangGraphAgentPipeline
+from inkflow.infrastructure.agent.supervisor_pipeline import SupervisorPipeline
 from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 
 router = APIRouter(prefix="/api/v1/agent", tags=["Agent"])
@@ -32,15 +33,25 @@ def _parse_id(id_str: str, detail: str = "资源不存在") -> uuid.UUID:
         raise HTTPException(status_code=404, detail=detail) from err
 
 
+# HITL 进程内共享单例：InMemorySaver checkpointer 存于 SupervisorPipeline 实例内，
+# execute 与 confirm 必须走同一实例才能恢复 checkpoint（#343 实证根因 5；
+# spec §5.6「InMemorySaver 实例存于 SupervisorPipeline（进程内）」）
+_supervisor_pipeline: SupervisorPipeline | None = None
+
+
 def _svc(db: AsyncSession) -> AgentService:
-    """获取 AgentService 实例。"""
+    """获取 AgentService 实例（static + supervisor 双管线装配，#414 repo 注入保持）。"""
+    global _supervisor_pipeline
     from inkflow.infrastructure.database.repositories.character_repo import (
         SQLiteCharacterRepository,
     )
     from inkflow.infrastructure.database.repositories.outline_repo import SQLiteOutlineRepository
     from inkflow.infrastructure.database.repositories.world_repo import SQLiteWorldRepository
 
-    pipeline = LangGraphAgentPipeline(llm_client=LangChainLLMClient())
+    llm_client = LangChainLLMClient()
+    pipeline = LangGraphAgentPipeline(llm_client=llm_client)
+    if _supervisor_pipeline is None:
+        _supervisor_pipeline = SupervisorPipeline(llm_client=llm_client)
     return AgentService(
         pipeline=pipeline,
         db_session=db,
@@ -48,6 +59,7 @@ def _svc(db: AsyncSession) -> AgentService:
         character_repo=SQLiteCharacterRepository(db),
         world_repo=SQLiteWorldRepository(db),
         outline_repo=SQLiteOutlineRepository(db),
+        supervisor_pipeline=_supervisor_pipeline,
     )
 
 

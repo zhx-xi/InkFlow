@@ -152,3 +152,34 @@ class TestProjectConfigAgentSemantics:
             ProjectConfig(agent_writer="")
         with pytest.raises(ValidationError):
             ProjectConfig(agent_writer="   ")
+
+
+class TestProjectConfigSupervisor:
+    """ProjectConfig.supervisor 字段契约（#343 拍板 2A：项目级 HITL 配置，2026-08-16）.
+
+    契约：
+    - 缺省 = None（零迁移，旧 config JSON 无键不报错）
+    - supervisor.hitl_roles 合法列表 → roundtrip 保留
+    - supervisor.hitl_roles 非 list → ValidationError
+
+    RED 预期：ProjectConfig 无 supervisor 字段 → 构造即 ValidationError（extra
+    拒绝或未知字段）→ 断言 FAIL；GREEN 后全部转绿。
+    """
+
+    def test_supervisor_default_none(self):
+        """未配置 supervisor → None（零迁移语义）."""
+        config = ProjectConfig()
+        assert config.supervisor is None
+
+    def test_supervisor_hitl_roles_roundtrip(self):
+        """supervisor.hitl_roles 合法列表 → 构造 + model_dump roundtrip 保留."""
+        config = ProjectConfig(supervisor={"hitl_roles": ["reviser"]})
+        assert config.supervisor is not None
+        assert config.supervisor.hitl_roles == ["reviser"]
+        dumped = config.model_dump()
+        assert dumped["supervisor"]["hitl_roles"] == ["reviser"]
+
+    def test_supervisor_hitl_roles_invalid_type(self):
+        """supervisor.hitl_roles 非 list → ValidationError（类型安全）."""
+        with pytest.raises(ValidationError):
+            ProjectConfig(supervisor={"hitl_roles": "reviser"})

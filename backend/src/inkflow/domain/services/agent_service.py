@@ -29,6 +29,7 @@ from inkflow.domain.ports.agent_pipeline import (
     StageResult,
     StageStatus,
 )
+from inkflow.infrastructure.agent.supervisor_pipeline import HITLInterrupt
 
 logger = logging.getLogger(__name__)
 
@@ -553,11 +554,45 @@ class AgentService:
         if execution.status != "waiting_hitl":
             raise AgentServiceError("执行记录不在等待确认状态")
         # resume：supervisor pipeline 从 checkpointer 恢复（mock 记录调用参数）
-        result: PipelineResult = await self._supervisor_pipeline.resume(
-            interrupt_obj=execution.hitl_payload or {},
-            approved=approved,
+        try:
+            result: PipelineResult = await self._supervisor_pipeline.resume(
+                interrupt_obj=execution.hitl_payload or {},
+                approved=approved,
+            )
+        except HITLInterrupt as e:
+            # 二次中断：resume 命中下一个 HITL 确认点 → 更新 waiting_hitl + 新 payload
+            await self._store.update_status(
+                execution_id=execution_id,
+                status="waiting_hitl",
+                hitl_payload=e.payload,
+            )
+            return {
+                "execution_id": execution_id,
+                "status": "waiting_hitl",
+                "hitl_pending": e.payload,
+                "final_output": "",
+            }
+        # 成功路径：写完整结果（stages/final_output/duration）落库，不只 status
+        # （#343 根因 6：HITL 链路 _run_pipeline interrupt 分支只写 waiting_hitl 状态，
+        # confirm 后必须在此补写成品，否则前端轮询永远等不到 final_output）
+        stages_snapshot = [
+            {
+                "stage_id": sr.stage_id,
+                "status": sr.status.value,
+                "output": sr.output,
+                "error": sr.error,
+                "retry_count": sr.retry_count,
+                "duration_ms": sr.duration_ms,
+            }
+            for sr in result.stages
+        ]
+        await self._store.update_stages(
+            execution_id=execution_id,
+            stages=stages_snapshot,
+            status=result.status.value,
+            final_output=result.final_output,
+            total_duration_ms=result.total_duration_ms,
         )
-        await self._store.update_status(execution_id, result.status.value)
         return {
             "execution_id": execution_id,
             "status": result.status.value,
@@ -763,6 +798,13 @@ class AgentService:
                 final_output=result.final_output,
                 total_duration_ms=result.total_duration_ms,
                 relations=relations_snapshot,
+            )
+        except HITLInterrupt as e:
+            # HITL 确认点中断：落 waiting_hitl 状态 + payload 快照，等待人工确认
+            await self._store.update_status(
+                execution_id=execution_id,
+                status="waiting_hitl",
+                hitl_payload=e.payload,
             )
         except PipelineError as e:
             await self._store.update_stages(
