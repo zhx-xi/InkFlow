@@ -9,7 +9,7 @@
 import os
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all, copy_metadata
+from PyInstaller.utils.hooks import collect_all
 
 # PyInstaller 以 spec 文件所在目录为基准解析相对路径——spec 在 pyinstaller/ 子目录，
 # 必须用绝对路径锚定 backend 根（实测 pyinstaller/src/... not found）。
@@ -20,9 +20,13 @@ ROOT = Path(SPECPATH).resolve().parent  # backend/
 # 替代手写 datas 的多数条目。
 datas, binaries, hiddenimports = collect_all("inkflow")
 
+# #421: 过滤 collect_all 收集的旧版 inkflow dist-info（uv 缓存残留），避免与当前版本 dist-info 并存导致版本注入失效
+datas = [d for d in datas if not ("inkflow-" in d[1] and ".dist-info" in d[1])]
+
 # ⚠️ copy_metadata（评审 🔴2）：INKFLOW_READY.version / /health 版本字段经
 # importlib.metadata.version("inkflow") 读取，依赖 dist-info；
 # PyInstaller 不自动收集 .dist-info，缺失则冻结 exe 抛 PackageNotFoundError。
+from PyInstaller.utils.hooks import copy_metadata
 datas += copy_metadata("inkflow")
 
 # tiktoken Rust 扩展二进制（#253 rc6 补充）：tiktoken 0.13 编码数据内嵌在
