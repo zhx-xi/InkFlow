@@ -53,10 +53,12 @@ from inkflow.domain.models.settings import (
 
 
 def _defaults() -> dict:
-    """10 字段默认字典（§2.1 表 + §2.2 AppSettings 默认值）。
+    """14 字段默认字典（§2.1 表 + §2.2 AppSettings 默认值）。
 
     F27 扩展（#160 Q2 拍板）：agent_max_steps/agent_token_budget/
     agent_max_consecutive_tool 预算护栏设置键（ADR-C 默认值 12/32K/3）。
+    #277 M3 扩展（spec §5.6.1/§5.6.3）：rag_chunk_mode/rag_chunk_size/
+    rag_chunk_overlap/rag_chunk_overlap_ratio 切片配置 4 键。
     """
     return {
         "theme": "paper",
@@ -69,6 +71,10 @@ def _defaults() -> dict:
         "agent_max_steps": 12,
         "agent_token_budget": 32000,
         "agent_max_consecutive_tool": 3,
+        "rag_chunk_mode": "fixed",
+        "rag_chunk_size": 500,
+        "rag_chunk_overlap": False,
+        "rag_chunk_overlap_ratio": 0.15,
     }
 
 
@@ -92,6 +98,10 @@ class TestAppSettings:
             agent_max_steps=8,
             agent_token_budget=16000,
             agent_max_consecutive_tool=5,
+            rag_chunk_mode="paragraph",
+            rag_chunk_size=600,
+            rag_chunk_overlap=True,
+            rag_chunk_overlap_ratio=0.18,
         )
         assert s.model_dump() == {
             "theme": "night",
@@ -104,6 +114,10 @@ class TestAppSettings:
             "agent_max_steps": 8,
             "agent_token_budget": 16000,
             "agent_max_consecutive_tool": 5,
+            "rag_chunk_mode": "paragraph",
+            "rag_chunk_size": 600,
+            "rag_chunk_overlap": True,
+            "rag_chunk_overlap_ratio": 0.18,
         }
 
     def test_json_roundtrip(self):
@@ -157,7 +171,7 @@ class TestSettingsKey:
     """SettingsKey 枚举契约（§2.2，service 白名单依赖 value 构造）。"""
 
     def test_members_and_values(self):
-        """10 成员 + value 与 §2.1 设置键名一一对应。"""
+        """14 成员 + value 与 §2.1 设置键名一一对应。"""
         assert {k.name: k.value for k in SettingsKey} == {
             "THEME": "theme",
             "BG": "bg",
@@ -169,9 +183,54 @@ class TestSettingsKey:
             "AGENT_MAX_STEPS": "agent_max_steps",
             "AGENT_TOKEN_BUDGET": "agent_token_budget",
             "AGENT_MAX_CONSECUTIVE_TOOL": "agent_max_consecutive_tool",
+            "RAG_CHUNK_MODE": "rag_chunk_mode",
+            "RAG_CHUNK_SIZE": "rag_chunk_size",
+            "RAG_CHUNK_OVERLAP": "rag_chunk_overlap",
+            "RAG_CHUNK_OVERLAP_RATIO": "rag_chunk_overlap_ratio",
         }
 
     def test_construct_by_value(self):
         """按 value 构造（service 白名单 ``SettingsKey(field)`` 的依赖）。"""
         assert SettingsKey("theme") is SettingsKey.THEME
         assert SettingsKey("tray_hint_dismissed") is SettingsKey.TRAY_HINT_DISMISSED
+        assert SettingsKey("rag_chunk_mode") is SettingsKey.RAG_CHUNK_MODE
+        assert SettingsKey("rag_chunk_overlap_ratio") is SettingsKey.RAG_CHUNK_OVERLAP_RATIO
+
+
+class TestChunkSettingsValidation:
+    """#277 切片配置 4 键校验（spec §5.6.2/§5.6.3：越界 → 422 ValidationError）."""
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"rag_chunk_mode": "char"},  # 非法切片模式（仅 fixed/paragraph/dialogue/llm）
+            {"rag_chunk_mode": ""},  # 空串
+            {"rag_chunk_size": 99},  # 低于下限 100
+            {"rag_chunk_size": 2001},  # 高于上限 2000
+            {"rag_chunk_size": 0},  # 非正数
+            {"rag_chunk_overlap_ratio": 0.05},  # 低于下限 0.10
+            {"rag_chunk_overlap_ratio": 0.25},  # 高于上限 0.20
+            {"rag_chunk_overlap_ratio": 0.0},  # 关闭语义应走 overlap=False，不写 ratio
+        ],
+    )
+    def test_rejects_invalid_chunk_settings(self, kwargs):
+        """切片配置越界/非法 → ValidationError（app_settings 校验层 422）。"""
+        with pytest.raises(ValidationError):
+            AppSettingsUpdate(**kwargs)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"rag_chunk_mode": "paragraph"},
+            {"rag_chunk_mode": "dialogue"},
+            {"rag_chunk_mode": "llm"},
+            {"rag_chunk_size": 100},
+            {"rag_chunk_size": 2000},
+            {"rag_chunk_overlap": True},
+            {"rag_chunk_overlap_ratio": 0.10},
+            {"rag_chunk_overlap_ratio": 0.20},
+        ],
+    )
+    def test_accepts_valid_chunk_settings(self, kwargs):
+        """切片配置合法边界值可构造（防实现收窄）。"""
+        AppSettingsUpdate(**kwargs)

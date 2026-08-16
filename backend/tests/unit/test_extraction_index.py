@@ -392,10 +392,21 @@ class _Deps:
         self.vector_store.delete_stale = AsyncMock(return_value=0)
         self.vector_store.write_fingerprint = AsyncMock()
 
-    def service(self, *, vector_store: Any = _NO_VECTOR) -> ExtractionService:
-        """装配门面；vector_store 传 None 模拟 RAG 未装配。"""
+    def service(
+        self,
+        *,
+        vector_store: Any = _NO_VECTOR,
+        chunking: Any = _NO_VECTOR,
+    ) -> ExtractionService:
+        """装配门面；vector_store 传 None 模拟 RAG 未装配。
+
+        #277 M3（2026-08-16）: 新增可选 chunking 参数（ChunkingConfig 领域
+        配置）——默认 _NO_VECTOR 语义 = 不传（ExtractionService 默认
+        fixed/500/0.0，既有用例零改动）；RED 期 ExtractionService 无该
+        参数 → 传了 TypeError（unexpected keyword argument）= 契约缺口。
+        """
         vs = self.vector_store if vector_store is _NO_VECTOR else vector_store
-        return ExtractionService(
+        kwargs: dict[str, object] = dict(
             project_repo=self.project_repo,
             chapter_repo=self.chapter_repo,
             run_repo=self.run_repo,
@@ -412,6 +423,9 @@ class _Deps:
             foreshadowing_repo=self.foreshadowing_repo,
             vector_store=vs,
         )
+        if chunking is not _NO_VECTOR:
+            kwargs["chunking"] = chunking
+        return ExtractionService(**kwargs)  # type: ignore[arg-type]  # 测试 helper：**kwargs 注入 mock 依赖
 
     def stub_chapter(self, chapter: Chapter | None) -> None:
         """让章节仓储返回指定章节（None = 不存在）。"""
@@ -662,3 +676,86 @@ async def test_reindex_without_vector_store_raises() -> None:
 
 
 # ── retrieve ────────────────────────────────────────────────────
+
+
+# ══ #277 M3 追加段（2026-08-16）: 切片配置 + 章节块元数据 ══════════
+# 契约源: specs/f14-extraction-service/spec.md §5.6.3/§5.6.4（块 id 三态 +
+# 元数据补强）。RED 期 ExtractionService 无 chunking 参数 → TypeError；
+# _project_chapter_chunk 无新元数据 → 断言 KeyError/值不符。
+
+PARA_TEXT = "第一段。\n\n第二段。\n\n第三段。"
+
+
+async def test_index_chunk_uses_paragraph_mode_when_configured() -> None:
+    """chunking 配置 mode=paragraph → 增量索引按段落切分（多块）。"""
+    from inkflow.domain.services._chunking import ChunkingConfig, ChunkingMode
+
+    deps = _Deps(_project())
+    deps.stub_chapter(_chapter(CH1, PARA_TEXT))
+    deps.character_service.extract = AsyncMock(return_value=_character_result(created=1))
+    svc = deps.service(chunking=ChunkingConfig(mode=ChunkingMode.PARAGRAPH, chunk_size=500))
+
+    result = await svc.extract(_req(ExtractionType.CHARACTER, chapter_ids=[CH1], index=True))
+
+    assert result.indexed is True
+    deps.vector_store.index_batch.assert_awaited_once()
+    entities = deps.vector_store.index_batch.await_args.args[0]
+    chunks = [e for e in entities if e.entity_type is EntityType.CHAPTER_CHUNK]
+    assert [e.content for e in chunks] == ["第一段。", "第二段。", "第三段。"]
+
+
+async def test_index_chunk_metadata_has_chunk_start_and_indexed_at() -> None:
+    """增量索引 chunk 元数据: chunk_start（Chunk.start_offset）+ indexed_at 时间戳。"""
+    deps = _Deps(_project())
+    deps.stub_chapter(_chapter(CH1, CONTENT_1))
+    deps.character_service.extract = AsyncMock(return_value=_character_result(created=1))
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.CHARACTER, chapter_ids=[CH1], index=True))
+
+    assert result.indexed is True
+    entities = deps.vector_store.index_batch.await_args.args[0]
+    chunk = next(e for e in entities if e.entity_type is EntityType.CHAPTER_CHUNK)
+    assert chunk.metadata["chunk_start"] == 0
+    assert isinstance(chunk.metadata["indexed_at"], str)
+    assert "T" in chunk.metadata["indexed_at"]  # ISO 8601
+
+
+async def test_index_chunk_overlap_uses_triple_part_id() -> None:
+    """overlap>0 → 块 id = {chapter_id}:{idx}:{start_offset}（重叠块 idx 不唯一）。"""
+    from inkflow.domain.services._chunking import ChunkingConfig, ChunkingMode
+
+    deps = _Deps(_project())
+    # 600 字符长文本 + 20% 重叠 → 至少 2 块且 id 带偏移
+    deps.stub_chapter(_chapter(CH1, "章" * 1200))
+    deps.character_service.extract = AsyncMock(return_value=_character_result(created=1))
+    svc = deps.service(
+        chunking=ChunkingConfig(mode=ChunkingMode.FIXED, chunk_size=500, overlap_ratio=0.2)
+    )
+
+    result = await svc.extract(_req(ExtractionType.CHARACTER, chapter_ids=[CH1], index=True))
+
+    assert result.indexed is True
+    entities = deps.vector_store.index_batch.await_args.args[0]
+    chunks = [e for e in entities if e.entity_type is EntityType.CHAPTER_CHUNK]
+    assert len(chunks) >= 2
+    assert all(":" in e.id for e in chunks)
+    # 三态：至少一块 id 含 start_offset（非末尾块必有重叠 → 三部分 id）
+    assert any(len(e.id.split(":")) == 3 for e in chunks)
+
+
+async def test_index_chunk_metadata_omits_chapter_x_y_in_incremental() -> None:
+    """增量索引（单章上下文）不写 chapter_x/chapter_y/volume_title（QA §P2-1 fallback）。"""
+    deps = _Deps(_project())
+    deps.stub_chapter(_chapter(CH1, CONTENT_1))
+    deps.character_service.extract = AsyncMock(return_value=_character_result(created=1))
+    svc = deps.service()
+
+    result = await svc.extract(_req(ExtractionType.CHARACTER, chapter_ids=[CH1], index=True))
+
+    assert result.indexed is True
+    entities = deps.vector_store.index_batch.await_args.args[0]
+    chunk = next(e for e in entities if e.entity_type is EntityType.CHAPTER_CHUNK)
+    assert "chapter_x" not in chunk.metadata
+    assert "chapter_y" not in chunk.metadata
+    assert "volume_title" not in chunk.metadata

@@ -53,10 +53,11 @@ from inkflow.domain.services.settings_service import SettingsService
 
 
 def _defaults() -> dict:
-    """10 字段默认字典（与 AppSettings 默认值一致，独立字面量防实现偏差）。
+    """14 字段默认字典（与 AppSettings 默认值一致，独立字面量防实现偏差）。
 
     F27 扩展（#160 Q2 拍板）：agent_max_steps/agent_token_budget/
     agent_max_consecutive_tool 预算护栏设置键（ADR-C 默认值 12/32K/3）。
+    #277 M3 扩展（spec §5.6.1/§5.6.3）：rag_chunk_* 切片配置 4 键。
     """
     return {
         "theme": "paper",
@@ -69,6 +70,10 @@ def _defaults() -> dict:
         "agent_max_steps": 12,
         "agent_token_budget": 32000,
         "agent_max_consecutive_tool": 3,
+        "rag_chunk_mode": "fixed",
+        "rag_chunk_size": 500,
+        "rag_chunk_overlap": False,
+        "rag_chunk_overlap_ratio": 0.15,
     }
 
 
@@ -189,3 +194,63 @@ class TestMergeDefense:
         }
         result = await _service(mock_repo).get_settings()
         assert result.model_dump() == {**_defaults(), "lang": "en"}
+
+
+class TestChunkSettingsPersistence:
+    """#277 切片配置 4 键白名单 + 合并（spec §5.6.3/§5.6.5）。"""
+
+    async def test_update_chunk_settings_persists_4_keys(self, mock_repo: AsyncMock):
+        """更新 4 键 → set_many 收到 JSON 编码键值（白名单放行，§5.6.3）。
+
+        镜像既有 update 用例模式：预置 get_all 模拟落库读回（真实仓储
+        set_many 后 get_all 返回新值）——update_settings 返回
+        get_settings() 读回结果，而非本地合并。
+        """
+        mock_repo.get_all.return_value = {
+            "rag_chunk_mode": '"paragraph"',
+            "rag_chunk_size": "600",
+            "rag_chunk_overlap": "true",
+            "rag_chunk_overlap_ratio": "0.18",
+        }
+        service = _service(mock_repo)
+        result = await service.update_settings(
+            AppSettingsUpdate(
+                rag_chunk_mode="paragraph",
+                rag_chunk_size=600,
+                rag_chunk_overlap=True,
+                rag_chunk_overlap_ratio=0.18,
+            )
+        )
+        mock_repo.set_many.assert_awaited_once_with(
+            {
+                "rag_chunk_mode": '"paragraph"',
+                "rag_chunk_size": "600",
+                "rag_chunk_overlap": "true",
+                "rag_chunk_overlap_ratio": "0.18",
+            }
+        )
+        assert result.rag_chunk_mode == "paragraph"
+        assert result.rag_chunk_size == 600
+        assert result.rag_chunk_overlap is True
+        assert result.rag_chunk_overlap_ratio == 0.18
+
+    async def test_merge_restores_chunk_settings_defaults(self, mock_repo: AsyncMock):
+        """表内仅存部分切片键 → 缺省键用默认值补齐（§5.6.5 配置快照读取前提）。"""
+        mock_repo.get_all.return_value = {
+            "rag_chunk_mode": '"paragraph"',
+            "rag_chunk_overlap": "true",
+        }
+        result = await _service(mock_repo).get_settings()
+        assert result.rag_chunk_mode == "paragraph"
+        assert result.rag_chunk_overlap is True
+        assert result.rag_chunk_size == 500  # 缺省 → 默认
+        assert result.rag_chunk_overlap_ratio == 0.15  # 缺省 → 默认
+
+    async def test_dirty_chunk_settings_ignored(self, mock_repo: AsyncMock):
+        """非法 chunk 配置 JSON → 防御忽略（§2.5 单字段校验防御）。"""
+        mock_repo.get_all.return_value = {
+            "rag_chunk_size": '"not-a-number"',
+            "rag_chunk_mode": '"char"',
+        }
+        result = await _service(mock_repo).get_settings()
+        assert result.model_dump() == _defaults()
