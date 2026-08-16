@@ -476,3 +476,77 @@ test('B1-4 失败态：模型指向无 key provider → 点「生成」→ pipel
     await app.close();
   }
 });
+
+// ────────────────────────────────────────────────────────────────
+// B1-5 HITL 确认流（#343）：项目 config.supervisor.hitl_roles=['reviser']
+//   → 点「生成」→ supervisor 管线 → 执行到 reviser 前 interrupt → 内联确认卡片
+//   → 点「继续执行」→ resume → 成品落章
+// ────────────────────────────────────────────────────────────────
+test('B1-5 HITL 确认流：supervisor 管线 → 确认卡片 → 继续执行 → 成品落章', async () => {
+  test.skip(!process.env.INKFLOW_LLM_KEY, '需要真实 LLM key（INKFLOW_LLM_KEY 环境变量）');
+  test.skip(!process.env.INKFLOW_LLM_DEFAULT_MODEL, '需要 INKFLOW_LLM_DEFAULT_MODEL（supervisor 决策模型）');
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-管线-HITL-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    const pid = await findProjectId(kernel, name);
+
+    const chRes = await kernelFetch(kernel, `/api/v1/projects/${pid}/chapters`, {
+      method: 'POST',
+      body: { title: 'HITL 测试章', content: '' },
+    });
+    expect(chRes.status).toBe(201);
+
+    // LLM 预置：zhipu key + 角色模型全覆盖 + 项目 config.supervisor（#343 拍板 2A）
+    await setupLlmForProject(kernel, pid);
+    const getRes = await kernelFetch(kernel, `/api/v1/projects/${pid}`);
+    expect(getRes.ok).toBe(true);
+    const project = (await getRes.json()) as { config: Record<string, unknown> };
+    const patchRes = await kernelFetch(kernel, `/api/v1/projects/${pid}`, {
+      method: 'PATCH',
+      body: {
+        config: {
+          ...(project.config ?? {}),
+          supervisor: { hitl_roles: ['reviser'] },
+        },
+      },
+    });
+    expect(patchRes.ok, '项目 config PATCH（supervisor.hitl_roles）应成功').toBe(true);
+
+    // 前端 project store 是启动时快照 → reload 让 usePipeline 读到 supervisor 配置
+    await window.reload();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
+    await gotoNav(window, '项目');
+    // 等待项目列表加载完成（loadProjects 异步——projects 页挂载才触发；确保 config.supervisor 进入 store）
+    await expect(window.getByTestId('project-card').first()).toBeVisible({ timeout: 15_000 });
+    await gotoNav(window, '写作');
+    await expect(window.getByTestId('project-tree')).toBeVisible();
+    await window
+      .getByTestId('project-tree')
+      .getByRole('button', { name: /HITL 测试章/ })
+      .click();
+    await expect(window.getByTestId('chapter-editor')).toHaveValue('');
+
+    // 点「生成」→ supervisor 管线 → 执行到 reviser 前 interrupt → 内联确认卡片
+    const toolbar = window.getByTestId('editor-toolbar');
+    await toolbar.getByRole('button', { name: '生成', exact: true }).click();
+    const confirmCard = window.getByTestId('hitl-confirm-card');
+    await expect(confirmCard).toBeVisible({ timeout: 900_000 });
+    await expect(confirmCard).toContainText('确认执行下一角色');
+
+    // 点「继续执行」→ resume → 完成 → 成品落章
+    await window.getByTestId('hitl-confirm-approve').click();
+    const status = window.getByTestId('pipeline-status');
+    await expect(status).toContainText('生成完成', { timeout: 900_000 });
+
+    // 成品落章（宽松断言：final_output 非空 + 编辑器 = final_output）
+    const executionId = await waitExecutionId(kernel, pid);
+    const finalOutput = await pollExecutionResult(kernel, executionId, 60_000);
+    expect(finalOutput.trim().length).toBeGreaterThan(0);
+    await expect(window.getByTestId('chapter-editor')).toHaveValue(finalOutput, {
+      timeout: 15_000,
+    });
+  } finally {
+    await app.close();
+  }
+});

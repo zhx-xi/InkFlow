@@ -335,6 +335,8 @@ export const zh = {
   'write.pipeline.running': '执行中',
   'write.pipeline.success': '生成完成',
   'write.pipeline.failed': '生成失败: {message}',
+  'write.hitl.approve': '继续执行',
+  'write.hitl.reject': '拒绝并回退',
   'write.retry': '重试',
   // F34 章节审计（Issue #208）
   'audit.accept': '接受',

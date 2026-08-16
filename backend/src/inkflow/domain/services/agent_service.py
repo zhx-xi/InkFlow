@@ -324,6 +324,21 @@ def _apply_agent_relations(
     return result, conditional_edges
 
 
+def _stage_snapshots(stage_results: Sequence[StageResult]) -> list[dict]:
+    """stages JSON 快照（confirm/_run_pipeline 共用，#343 根因 6）。"""
+    return [
+        {
+            "stage_id": sr.stage_id,
+            "status": sr.status.value,
+            "output": sr.output,
+            "error": sr.error,
+            "retry_count": sr.retry_count,
+            "duration_ms": sr.duration_ms,
+        }
+        for sr in stage_results
+    ]
+
+
 def _build_relations_snapshot(
     agent_relations: Sequence[AgentRelation], stage_results: Sequence[StageResult]
 ) -> list[dict]:
@@ -572,23 +587,10 @@ class AgentService:
                 "hitl_pending": e.payload,
                 "final_output": "",
             }
-        # 成功路径：写完整结果（stages/final_output/duration）落库，不只 status
-        # （#343 根因 6：HITL 链路 _run_pipeline interrupt 分支只写 waiting_hitl 状态，
-        # confirm 后必须在此补写成品，否则前端轮询永远等不到 final_output）
-        stages_snapshot = [
-            {
-                "stage_id": sr.stage_id,
-                "status": sr.status.value,
-                "output": sr.output,
-                "error": sr.error,
-                "retry_count": sr.retry_count,
-                "duration_ms": sr.duration_ms,
-            }
-            for sr in result.stages
-        ]
+        # 成功路径：写完整成品落库（#343 根因 6：interrupt 分支只写 waiting_hitl）
         await self._store.update_stages(
             execution_id=execution_id,
-            stages=stages_snapshot,
+            stages=_stage_snapshots(result.stages),
             status=result.status.value,
             final_output=result.final_output,
             total_duration_ms=result.total_duration_ms,
@@ -627,28 +629,14 @@ class AgentService:
         project_config: ProjectConfig,
         role_overrides: dict[str, RoleOverride] | None,
     ) -> list[PipelineStage]:
-        """合并角色配置: 引用式模板装配 + 每角色独立温度链 + prompt 覆盖 +
-        role_overrides 最高优先级。
+        """合并角色配置（spec §9.2.3）：模板装配 + 温度链 + prompt + role_overrides 最高优先级。
 
-        合并策略（spec §9.2.3 引用式生成机制）:
-        1. 项目 config.template_id → _load_template 运行时读取 AgentTemplate；
-           转换失败 / 模板不存在 → 跳过装配（回退内置管线模板）
-        2. 温度解析链（每角色独立，首个非 None 即止）:
-           ① 项目 config 每角色温度字段 role_<role>_temperature（非 None 即覆盖）
-           ② 模板 roles[role].temperature（缺省 key → RoleTemplate()，temperature
-              None 不覆盖）
-           ③ 模板 default_temperature（非 None，全角色兜底）
-           ④ 内置管线模板 AgentRole.temperature（architect=None / writer=0.8 /
-              auditor=0.5 / reviser=0.6）
-           ⑤ 项目 config.temperature（保底；默认 0.7 恒非 None → 链 5 恒有值）
-        3. 模型装配: 模板 role 的 model 仅当 enabled=True 且 model 非 None 时覆盖；
-           随后项目 agent_* 非空仍覆盖（用户拍板 Q1=A，项目优先）；最后
-           role_overrides 覆盖（优先级最高，既有语义不变）
-        4. prompt 覆盖（F42 #295，spec §5.3.4）: 模板 roles[role].prompt 非 None
-           时覆盖 system_prompt（自定义角色 prompt 唯一来源）；role_overrides
-           prompt 优先级更高（最后覆盖）
-        5. 项目角色模型映射 = 内置 agent_* ∪ agent_roles（自定义角色三态字段，
-           key 去 agent_ 前缀 = stage.id）
+        温度解析链（首个非 None 即止）：项目 role_<role>_temperature →
+        模板 roles[role].temperature → 模板 default_temperature → 内置模板
+        AgentRole.temperature → 项目 config.temperature（默认 0.7 保底）。
+        模型装配：模板 role model（enabled 且非 None）→ 项目 agent_* 覆盖
+        （Q1=A 项目优先）→ role_overrides 最高。prompt：模板 roles prompt →
+        role_overrides。角色映射 = 内置 agent_* ∪ agent_roles（key 去前缀）。
         """
         # 引用式模板读取（F42 #295 提取为独立方法 _load_template）
         template = await self._load_template(project_config)
@@ -749,12 +737,7 @@ class AgentService:
         conditional_edges: list[tuple[str, str]] | None = None,
         agent_relations: Sequence[AgentRelation] | None = None,
     ) -> None:
-        """后台执行管线，更新 stages 快照与 relations 元数据到 ExecutionStore。
-
-        pipeline 默认走既有 self._pipeline（static 模式零回归）；supervisor_config
-        非 None 时把配置透传给动态路由管线（supervisor 模式）。conditional_edges/
-        agent_relations 为 F46 #270 新增：条件边透传 + 执行记录 relations 快照回填。
-        """
+        """后台执行管线，更新 stages/relations 快照到 ExecutionStore。"""
         pipeline = pipeline or self._pipeline
         # #366 G1 设定驱动写作：无条件注入设定库摘要（角色/世界观/大纲）
         try:
@@ -780,17 +763,7 @@ class AgentService:
                     stages, context, conditional_edges=conditional_edges or []
                 )
             relations_snapshot = _build_relations_snapshot(agent_relations or [], result.stages)
-            stages_snapshot = [
-                {
-                    "stage_id": sr.stage_id,
-                    "status": sr.status.value,
-                    "output": sr.output,
-                    "error": sr.error,
-                    "retry_count": sr.retry_count,
-                    "duration_ms": sr.duration_ms,
-                }
-                for sr in result.stages
-            ]
+            stages_snapshot = _stage_snapshots(result.stages)
             await self._store.update_stages(
                 execution_id=execution_id,
                 stages=stages_snapshot,
@@ -800,7 +773,7 @@ class AgentService:
                 relations=relations_snapshot,
             )
         except HITLInterrupt as e:
-            # HITL 确认点中断：落 waiting_hitl 状态 + payload 快照，等待人工确认
+            # HITL 中断：落 waiting_hitl + payload 等待确认
             await self._store.update_status(
                 execution_id=execution_id,
                 status="waiting_hitl",

@@ -33,9 +33,7 @@ def _parse_id(id_str: str, detail: str = "资源不存在") -> uuid.UUID:
         raise HTTPException(status_code=404, detail=detail) from err
 
 
-# HITL 进程内共享单例：InMemorySaver checkpointer 存于 SupervisorPipeline 实例内，
-# execute 与 confirm 必须走同一实例才能恢复 checkpoint（#343 实证根因 5；
-# spec §5.6「InMemorySaver 实例存于 SupervisorPipeline（进程内）」）
+# HITL 进程内共享单例：checkpointer 存于实例内，execute/confirm 须同实例（#343 根因 5）
 _supervisor_pipeline: SupervisorPipeline | None = None
 
 

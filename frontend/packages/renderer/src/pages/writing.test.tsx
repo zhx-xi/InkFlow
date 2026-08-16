@@ -36,7 +36,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { WritingPage } from './writing';
 import { apiFetch } from '../api/client';
-import { executePipeline, getExecutionStatus } from '../api/pipeline';
+import { executePipeline, getExecutionStatus, confirmExecution } from '../api/pipeline';
 import { useChapterStore } from '../stores/chapter';
 import { useProjectStore } from '../stores/project';
 import { useThemeStore } from '../stores/theme';
@@ -48,11 +48,13 @@ vi.mock('../api/client', async (importOriginal) => {
 vi.mock('../api/pipeline', () => ({
   executePipeline: vi.fn(),
   getExecutionStatus: vi.fn(),
+  confirmExecution: vi.fn(),
 }));
 
 const apiFetchMock = vi.mocked(apiFetch);
 const executeMock = vi.mocked(executePipeline);
 const statusMock = vi.mocked(getExecutionStatus);
+const confirmMock = vi.mocked(confirmExecution);
 
 /** 与后端对齐的种子数据（mock 与 store 播种共用，防 GREEN 自动加载覆盖种子） */
 const seedVolumes = [
@@ -68,6 +70,7 @@ beforeEach(() => {
   apiFetchMock.mockReset();
   executeMock.mockReset();
   statusMock.mockReset();
+  confirmMock.mockReset();
   executeMock.mockResolvedValue({
     execution_id: 'e1',
     pipeline: 'builtin:write_auto',
@@ -391,5 +394,155 @@ describe('写作页 — 自动保存与工具栏/快捷键兜底分支（#105 �
     expect(patchCalls()).toHaveLength(0);
     expect(executeMock).not.toHaveBeenCalled();
     delete (document as { execCommand?: unknown }).execCommand;
+  });
+});
+
+describe('写作页 — HITL 确认流（#343：waiting_hitl → 内联确认卡片 → 确认/拒绝续跑）', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('管线 waiting_hitl → 内联确认卡片出现（question + 继续/拒绝按钮）', async () => {
+    vi.useFakeTimers();
+    statusMock.mockResolvedValue({
+      execution_id: 'e1',
+      pipeline: 'builtin:write_auto',
+      project_id: 'p1',
+      status: 'waiting_hitl',
+      stages: [],
+      final_output: '',
+      total_duration_ms: 0,
+      error: '',
+      hitl_pending: { question: '确认执行下一角色 reviser？', role: 'reviser' },
+    });
+    render(<WritingPage />);
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    const card = screen.getByTestId('hitl-confirm-card');
+    expect(card).toHaveTextContent('确认执行下一角色 reviser？');
+    expect(screen.getByTestId('hitl-confirm-approve')).toBeInTheDocument();
+    expect(screen.getByTestId('hitl-confirm-reject')).toBeInTheDocument();
+  });
+
+  it('点「继续执行」→ confirmExecution(executionId, true) → 轮询续跑 → 生成完成落章', async () => {
+    vi.useFakeTimers();
+    statusMock
+      .mockResolvedValueOnce({
+        execution_id: 'e1',
+        pipeline: 'builtin:write_auto',
+        project_id: 'p1',
+        status: 'waiting_hitl',
+        stages: [],
+        final_output: '',
+        total_duration_ms: 0,
+        error: '',
+        hitl_pending: { question: '确认执行下一角色 reviser？', role: 'reviser' },
+      })
+      .mockResolvedValueOnce({
+        execution_id: 'e1',
+        pipeline: 'builtin:write_auto',
+        project_id: 'p1',
+        status: 'completed',
+        stages: [],
+        final_output: '确认后成品',
+        total_duration_ms: 3000,
+        error: '',
+      });
+    confirmMock.mockResolvedValue({ execution_id: 'e1', status: 'completed', final_output: '确认后成品' });
+    render(<WritingPage />);
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.getByTestId('hitl-confirm-card')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('hitl-confirm-approve'));
+    await act(async () => {
+      vi.advanceTimersByTime(0);
+    });
+    expect(confirmMock).toHaveBeenCalledWith('e1', true);
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.getByTestId('pipeline-status')).toHaveTextContent('生成完成');
+    expect(useChapterStore.getState().content).toBe('确认后成品');
+  });
+
+  it('点「拒绝并回退」→ confirmExecution(executionId, false) → 轮询续跑 → 生成完成', async () => {
+    vi.useFakeTimers();
+    statusMock
+      .mockResolvedValueOnce({
+        execution_id: 'e1',
+        pipeline: 'builtin:write_auto',
+        project_id: 'p1',
+        status: 'waiting_hitl',
+        stages: [],
+        final_output: '',
+        total_duration_ms: 0,
+        error: '',
+        hitl_pending: { question: '确认执行下一角色 reviser？', role: 'reviser' },
+      })
+      .mockResolvedValueOnce({
+        execution_id: 'e1',
+        pipeline: 'builtin:write_auto',
+        project_id: 'p1',
+        status: 'completed',
+        stages: [],
+        final_output: '拒绝后回退成品',
+        total_duration_ms: 2000,
+        error: '',
+      });
+    confirmMock.mockResolvedValue({ execution_id: 'e1', status: 'completed', final_output: '拒绝后回退成品' });
+    render(<WritingPage />);
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.getByTestId('hitl-confirm-card')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('hitl-confirm-reject'));
+    await act(async () => {
+      vi.advanceTimersByTime(0);
+    });
+    expect(confirmMock).toHaveBeenCalledWith('e1', false);
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.getByTestId('pipeline-status')).toHaveTextContent('生成完成');
+    expect(useChapterStore.getState().content).toBe('拒绝后回退成品');
+  });
+
+  it('项目 config 含 supervisor.hitl_roles → 生成时 execute body 带 mode=supervisor', async () => {
+    vi.useFakeTimers();
+    // 项目 config 携带 supervisor 配置（#343 拍板 2A：ProjectConfig.supervisor）
+    useProjectStore.setState({
+      projects: [
+        {
+          id: 'p1',
+          name: '青云志',
+          genre: '玄幻',
+          language: 'zh-CN',
+          target_words: 800000,
+          config: { supervisor: { hitl_roles: ['reviser'] } },
+          created_at: '2026-08-01T10:00:00Z',
+          updated_at: '2026-08-05T10:00:00Z',
+        },
+      ],
+      currentProjectId: 'p1',
+      loading: false,
+      error: null,
+    });
+    render(<WritingPage />);
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
+    await act(async () => {
+      vi.advanceTimersByTime(0);
+    });
+    expect(executeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pipeline: 'builtin:write_auto',
+        mode: 'supervisor',
+        supervisor: { hitl_roles: ['reviser'] },
+      }),
+    );
   });
 });

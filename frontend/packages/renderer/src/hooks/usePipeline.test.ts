@@ -40,16 +40,18 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { usePipeline } from './usePipeline';
-import { executePipeline, getExecutionStatus } from '../api/pipeline';
+import { executePipeline, getExecutionStatus, confirmExecution } from '../api/pipeline';
 import { useChapterStore } from '../stores/chapter';
 
 vi.mock('../api/pipeline', () => ({
   executePipeline: vi.fn(),
   getExecutionStatus: vi.fn(),
+  confirmExecution: vi.fn(),
 }));
 
 const executeMock = vi.mocked(executePipeline);
 const statusMock = vi.mocked(getExecutionStatus);
+const confirmMock = vi.mocked(confirmExecution);
 
 const OPTS = {
   projectId: 'p1',
@@ -64,6 +66,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   executeMock.mockReset();
   statusMock.mockReset();
+  confirmMock.mockReset();
   executeMock.mockResolvedValue({
     execution_id: 'e1',
     pipeline: 'builtin:write_auto',
@@ -280,5 +283,143 @@ describe('usePipeline — 并发保护 / 卸载清理', () => {
     const serialized = JSON.stringify(useChapterStore.getState());
     expect(serialized).not.toContain('executionId');
     expect(() => JSON.parse(serialized)).not.toThrow();
+  });
+});
+
+describe('usePipeline — HITL interrupt 态（#343：waiting_hitl → awaiting_human + confirm 续跑）', () => {
+  const WAITING_STATUS = {
+    execution_id: 'e1',
+    pipeline: 'builtin:write_auto',
+    project_id: 'p1',
+    status: 'waiting_hitl' as const,
+    stages: [],
+    final_output: '',
+    total_duration_ms: 0,
+    error: '',
+    hitl_pending: { question: '确认执行下一角色 reviser？', role: 'reviser' },
+  };
+
+  it('轮询 waiting_hitl → status=awaiting_human + hitlPending 暴露 + 停止轮询', async () => {
+    statusMock.mockResolvedValue(WAITING_STATUS);
+    const { result } = renderHook(() => usePipeline(OPTS));
+    act(() => {
+      result.current.start('write_auto');
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(result.current.status).toBe('awaiting_human');
+    expect(result.current.hitlPending).toEqual({
+      question: '确认执行下一角色 reviser？',
+      role: 'reviser',
+    });
+    // 终态后不再轮询（无 timer 排程）
+    const statusCalls = statusMock.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(statusMock.mock.calls.length).toBe(statusCalls);
+  });
+
+  it('confirm(true) → confirmExecution 携带 approved + 轮询续跑 → completed 落章', async () => {
+    statusMock
+      .mockResolvedValueOnce(WAITING_STATUS)
+      .mockResolvedValueOnce({
+        execution_id: 'e1',
+        pipeline: 'builtin:write_auto',
+        project_id: 'p1',
+        status: 'completed',
+        stages: [],
+        final_output: '确认后成品',
+        total_duration_ms: 3000,
+        error: '',
+      });
+    confirmMock.mockResolvedValue({
+      execution_id: 'e1',
+      status: 'completed',
+      final_output: '确认后成品',
+    });
+    const { result } = renderHook(() => usePipeline(OPTS));
+    act(() => {
+      result.current.start('write_auto');
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(result.current.status).toBe('awaiting_human');
+    act(() => {
+      result.current.confirm(true);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(confirmMock).toHaveBeenCalledWith('e1', true);
+    // confirm 后继续轮询 → completed → success + 落章
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(result.current.status).toBe('success');
+    expect(result.current.finalOutput).toBe('确认后成品');
+    expect(useChapterStore.getState().content).toBe('确认后成品');
+  });
+
+  it('confirm(false) → confirmExecution approved=false → 拒绝续跑（回退）', async () => {
+    statusMock.mockResolvedValueOnce(WAITING_STATUS).mockResolvedValueOnce({
+      execution_id: 'e1',
+      pipeline: 'builtin:write_auto',
+      project_id: 'p1',
+      status: 'completed',
+      stages: [],
+      final_output: '拒绝后回退成品',
+      total_duration_ms: 2000,
+      error: '',
+    });
+    confirmMock.mockResolvedValue({
+      execution_id: 'e1',
+      status: 'completed',
+      final_output: '拒绝后回退成品',
+    });
+    const { result } = renderHook(() => usePipeline(OPTS));
+    act(() => {
+      result.current.start('write_auto');
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(result.current.status).toBe('awaiting_human');
+    act(() => {
+      result.current.confirm(false);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(confirmMock).toHaveBeenCalledWith('e1', false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(result.current.status).toBe('success');
+    expect(useChapterStore.getState().content).toBe('拒绝后回退成品');
+  });
+
+  it('supervisor 配置存在时 execute body 带 mode=supervisor + hitl_roles', async () => {
+    const { result } = renderHook(() =>
+      usePipeline({ ...OPTS, supervisor: { hitl_roles: ['reviser'] } }),
+    );
+    act(() => {
+      result.current.start('write_auto');
+    });
+    expect(executeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project_id: 'p1',
+        pipeline: 'builtin:write_auto',
+        chapter_id: 'c1',
+        mode: 'supervisor',
+        supervisor: { hitl_roles: ['reviser'] },
+        variables: expect.objectContaining({ chapter_title: '第一章' }),
+      }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
   });
 });
