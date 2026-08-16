@@ -626,3 +626,50 @@ async def test_get_extraction_service_fingerprint_provider_includes_chunking() -
     assert fp["chunking"]["mode"] in {"fixed", "paragraph"}
     assert fp["chunking"]["chunk_size"] >= 100
     assert fp["chunking"]["chunker_version"] == 1
+
+
+async def test_get_vector_status_with_db_reads_chunking_settings() -> None:
+    """E11: get_vector_status(db 非 None) → 从 app_settings 读切片配置并入 configured_fp。
+
+    覆盖 deps.py get_vector_status 的 db 分支（855 行 chunking_dict 组装）+
+    _load_chunking_config 的 db 非 None 路径（786/791 行）——既有 E6 全不传
+    db（走 None 分支），此用例锁「db 传入时 configured_fp.chunking 反映
+    settings 值」（spec §5.6.5 status 端点 stale 联动的前提）。
+    """
+    repo = _repo_with_providers([_embedding_provider()])
+    fake_store = MagicMock()
+    fake_store.read_fingerprint = AsyncMock(return_value=None)
+    fake_store.probe_collection_dimension = AsyncMock(return_value=0)
+    fake_store.embedding_dimension = 384
+
+    # mock db session: SQLiteSettingsRepository 读 settings 表 → 返回切片配置
+    fake_db = MagicMock()
+    rows = MagicMock()
+    rows.all = MagicMock(return_value=[("rag_chunk_mode", '"paragraph"')])
+    fake_db.execute = AsyncMock(return_value=rows)
+
+    with (
+        patch(
+            "inkflow.infrastructure.database.repositories.provider_config_repo.SQLiteProviderConfigRepository",
+            return_value=repo,
+        ),
+        patch.object(APIKeyManager, "load", return_value="sk-test-123"),
+        patch(
+            "inkflow.infrastructure.rag.langchain_vector_store.LangChainVectorStore",
+            return_value=fake_store,
+        ),
+    ):
+        status = await deps.get_vector_status("p1", db=fake_db)
+
+    assert status["configured_fp"] is not None
+    assert status["configured_fp"]["chunking"]["mode"] == "paragraph"
+    assert status["configured_fp"]["chunking"]["chunk_size"] >= 100
+    assert status["stale"] is True  # 无指纹 → unknown
+
+
+async def test_load_chunking_config_none_db_returns_default() -> None:
+    """E12: _load_chunking_config(db=None) → 默认 ChunkingConfig（覆盖 786 行 db None 分支）。"""
+    cfg = await deps._load_chunking_config(None)  # type: ignore[attr-defined]  # 模块级 helper 直接调用
+    assert cfg.mode.value == "fixed"
+    assert cfg.chunk_size == 500
+    assert cfg.overlap_ratio == 0.0

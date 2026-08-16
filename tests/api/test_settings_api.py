@@ -646,8 +646,13 @@ DEFAULT_SETTINGS = {
     "agent_max_steps": 12,
     "agent_token_budget": 32000,
     "agent_max_consecutive_tool": 3,
+    "rag_chunk_mode": "fixed",
+    "rag_chunk_size": 500,
+    "rag_chunk_overlap": False,
+    "rag_chunk_overlap_ratio": 0.15,
 }
-"""10 字段默认值（§2.1 表 + §3.2 空表响应；agent_* 为 F27 #160 Q2 拍板预算键）。"""
+"""14 字段默认值（§2.1 表 + §3.2 空表响应；agent_* 为 F27 #160 Q2 拍板预算键；
+rag_chunk_* 为 #277 M3 切片配置 4 键，spec §5.6.3）。"""
 
 
 @pytest.fixture
