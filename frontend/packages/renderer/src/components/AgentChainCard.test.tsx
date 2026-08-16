@@ -554,3 +554,62 @@ describe('AgentChainCard — F42 #296 自定义角色行（spec §5.3.4）', () 
     });
   });
 });
+// ── F46 #270 依赖入口契约（spec §5.2）─────────
+
+describe('AgentChainCard — F46 #270 依赖入口（spec §5.2）', () => {
+  it('每角色行渲染「依赖」入口按钮（agent-relation-entry-<field>）', async () => {
+    await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    for (const field of ['agent_architect', 'agent_writer', 'agent_auditor', 'agent_reviser']) {
+      expect(
+        within(card).getByTestId(`agent-relation-entry-${field}`),
+      ).toBeInTheDocument();
+    }
+  });
+
+  it('点击依赖入口 → 展开 AgentRelationEditor（agent-relation-editor 出现）', async () => {
+    const user = userEvent.setup();
+    await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    await user.click(within(card).getByTestId('agent-relation-entry-agent_auditor'));
+
+    expect(screen.getByTestId('agent-relation-editor')).toBeInTheDocument();
+  });
+
+  it('依赖编辑即改即存：编辑后 PATCH 结构含 agent_relations（onConfigChange 链路）', async () => {
+    const user = userEvent.setup();
+    const onConfigChange = await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    await user.click(within(card).getByTestId('agent-relation-entry-agent_writer'));
+
+    // 在展开的编辑器中新增一条关系
+    await user.click(screen.getByTestId('agent-relation-add'));
+    await user.click(screen.getByTestId('agent-relation-from-select'));
+    await user.click(await screen.findByRole('option', { name: 'agent_writer' }));
+    await user.click(screen.getByTestId('agent-relation-to-select'));
+    await user.click(await screen.findByRole('option', { name: 'agent_auditor' }));
+    await user.click(screen.getByTestId('agent-relation-confirm'));
+
+    expect(useAgentStore.getState().config.agent_relations).toEqual([
+      { from: 'agent_writer', to: 'agent_auditor', type: 'sequential' },
+    ]);
+    expect(onConfigChange).toHaveBeenCalled();
+  });
+
+  it('回读：config.agent_relations 非空 → 编辑器关系列表回显（重启保持数据面）', async () => {
+    act(() => {
+      useAgentStore.getState().setConfig({
+        agent_relations: [
+          { from: 'agent_auditor', to: 'agent_reviser', type: 'conditional' },
+        ],
+      });
+    });
+    await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    await userEvent.setup().click(within(card).getByTestId('agent-relation-entry-agent_reviser'));
+
+    const editor = screen.getByTestId('agent-relation-editor');
+    expect(within(editor).getByText(/agent_auditor/)).toBeInTheDocument();
+    expect(within(editor).getByText(/conditional/)).toBeInTheDocument();
+  });
+});

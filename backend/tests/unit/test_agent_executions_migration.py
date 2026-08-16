@@ -15,7 +15,10 @@ Connection——同步 create_engine + engine.connect() 传参，与 run_sync �
 
 from sqlalchemy import create_engine, text
 
-from inkflow.core.database import ensure_agent_executions_hitl_payload_column
+from inkflow.core.database import (
+    ensure_agent_executions_hitl_payload_column,
+    ensure_agent_executions_relations_column,
+)
 
 OLD_SCHEMA = """
 CREATE TABLE agent_executions (
@@ -81,6 +84,68 @@ def test_missing_table_noop(tmp_path):
     engine = create_engine(f"sqlite:///{db}")
     with engine.connect() as conn:
         ensure_agent_executions_hitl_payload_column(conn)  # 不应抛错
+    # 未建任何表（函数不应隐式建表）
+    with engine.connect() as conn:
+        tables = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
+        assert tables == []
+    engine.dispose()
+
+
+# ── F46 #270 agent_executions.relations 列迁移契约（spec §5.4 数据面）─────────
+#
+# 背景：执行记录增加 relations 元数据字段（JSON 快照）——既有库（create_all 不重建表）
+# 无该列 → 执行回填 relations 即 sqlite3.OperationalError。本段钉住迁移函数
+# ensure_agent_executions_relations_column（对齐 hitl_payload 先例 #354）：
+# - 旧库（agent_executions 表存在但无 relations 列）→ 调用后列存在（ALTER TABLE 补列）
+# - 新库（create_all 已含列）→ 幂等 no-op
+# - 表不存在 → no-op 不抛错（全新环境等 create_all 建新表）
+#
+# RED 形态：ensure_agent_executions_relations_column 不存在 → 顶部 import 收集期
+# ImportError（cannot import name，exit 2）。
+
+
+def test_old_db_gets_relations_column(tmp_path):
+    """旧库：agent_executions 无 relations → 迁移后补列（幂等可重跑）。"""
+    db = tmp_path / "old.db"
+    engine = create_engine(f"sqlite:///{db}")
+    with engine.begin() as conn:
+        conn.execute(text(OLD_SCHEMA))
+    with engine.connect() as conn:
+        assert "relations" not in _columns(conn, "agent_executions")
+
+        ensure_agent_executions_relations_column(conn)
+        assert "relations" in _columns(conn, "agent_executions")
+
+        # 幂等：再跑一次不抛错、列不重复
+        ensure_agent_executions_relations_column(conn)
+        assert "relations" in _columns(conn, "agent_executions")
+    engine.dispose()
+
+
+def test_new_db_noop_relations(tmp_path):
+    """新库：create_all 已含 relations → no-op 不改变列集。"""
+    db = tmp_path / "new.db"
+    engine = create_engine(f"sqlite:///{db}")
+    new_schema = OLD_SCHEMA.replace(
+        "created_at DATETIME NOT NULL",
+        "relations TEXT, created_at DATETIME NOT NULL",
+    )
+    with engine.begin() as conn:
+        conn.execute(text(new_schema))
+    with engine.connect() as conn:
+        before = _columns(conn, "agent_executions")
+
+        ensure_agent_executions_relations_column(conn)
+        assert _columns(conn, "agent_executions") == before
+    engine.dispose()
+
+
+def test_missing_table_noop_relations(tmp_path):
+    """表不存在（全新环境）→ no-op 不抛错，等 create_all 建新表。"""
+    db = tmp_path / "empty.db"
+    engine = create_engine(f"sqlite:///{db}")
+    with engine.connect() as conn:
+        ensure_agent_executions_relations_column(conn)  # 不应抛错
     # 未建任何表（函数不应隐式建表）
     with engine.connect() as conn:
         tables = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()

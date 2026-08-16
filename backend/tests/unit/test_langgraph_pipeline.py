@@ -582,3 +582,153 @@ async def test_execute_write_continue_template():
     reviser_call = next(c for c in llm.calls if c["stage"] == "reviser")
     assert "续写正文" in reviser_call["messages"][1].content
     assert "审阅意见" in reviser_call["messages"][1].content
+
+
+# ── F46 #270 条件边契约（spec §5.3.2/§5.3.3 + Spike ②）─────────
+
+
+def _conditional_chain() -> list[PipelineStage]:
+    """条件边最小拓扑：writer → auditor（conditional，auditor 终点）。
+
+    - writer: 内容角色，入口，output_to=[auditor]（静态边将跳过，条件边承载）
+    - auditor: 终点（output_to=[]），input_from=[writer]（条件注入）
+    配合 conditional_edges=[("writer", "auditor")]：writer 输出 gate 判定决定 auditor 执行。
+    """
+    writer = _make_stage(
+        "writer",
+        "写手",
+        _make_role("writer", name="写手", system_prompt="独立写作"),
+        input_from=[],
+        output_to=["auditor"],
+    )
+    auditor = _make_stage(
+        "auditor",
+        "审阅",
+        _make_role("auditor", name="审阅", system_prompt="审阅 {writer_output}"),
+        input_from=["writer"],
+        output_to=[],
+    )
+    return [writer, auditor]
+
+
+async def test_execute_accepts_conditional_edges_param():
+    """execute 签名扩展：接受 conditional_edges 关键字参数（spec §5.3.2）。"""
+    llm = RoleMapLLMClient({"writer": "正文内容", "auditor": "审核通过"})
+    result = await LangGraphAgentPipeline(llm).execute(
+        _conditional_chain(),
+        _make_context(),
+        conditional_edges=[("writer", "auditor")],
+    )
+    assert result.status == StageStatus.COMPLETED
+
+
+async def test_conditional_gate_pass_executes_target():
+    """gate 通过（from 输出含「通过」）→ 目标 auditor 执行（Spike ② 两路之一）。"""
+    llm = RoleMapLLMClient({"writer": "审核通过：质量达标", "auditor": "审核通过"})
+    result = await LangGraphAgentPipeline(llm).execute(
+        _conditional_chain(),
+        _make_context(),
+        conditional_edges=[("writer", "auditor")],
+    )
+    # auditor 执行（llm.calls 含 auditor 调用）
+    assert any(c["stage"] == "auditor" for c in llm.calls)
+    assert result.final_output == "审核通过"
+    assert result.status == StageStatus.COMPLETED
+
+
+async def test_conditional_gate_fail_skips_target_and_falls_back():
+    """gate 不通过（from 输出无通过标记）→ 目标 auditor 跳过；终点被跳过 → final_output
+    回退最后执行的内容角色（writer，spec §5.3.3 成品身份回退）。"""
+    llm = RoleMapLLMClient({"writer": "不通过：需要重写", "auditor": "审核通过"})
+    result = await LangGraphAgentPipeline(llm).execute(
+        _conditional_chain(),
+        _make_context(),
+        conditional_edges=[("writer", "auditor")],
+    )
+    # auditor 未执行（llm.calls 无 auditor 调用）
+    assert not any(c["stage"] == "auditor" for c in llm.calls)
+    # 终点被跳过 → 回退 writer 输出（内容角色）
+    assert result.final_output == "不通过：需要重写"
+    assert result.status == StageStatus.COMPLETED
+
+
+async def test_conditional_gate_pass_markers():
+    """gate 通过标记全集：通过 / pass / 通过审核 / 合格（不区分大小写，spec §5.3.3）。"""
+    for marker in ["通过", "PASS", "pass", "通过审核", "合格"]:
+        llm = RoleMapLLMClient({"writer": f"结论：{marker}", "auditor": "审核通过"})
+        result = await LangGraphAgentPipeline(llm).execute(
+            _conditional_chain(),
+            _make_context(),
+            conditional_edges=[("writer", "auditor")],
+        )
+        assert any(c["stage"] == "auditor" for c in llm.calls), f"marker={marker} 应通过"
+        assert result.final_output == "审核通过", f"marker={marker}"
+
+
+async def test_conditional_multiple_edges():
+    """多条条件边（writer→auditor + auditor→reviser）全通过 → 顺序执行。"""
+    writer = _make_stage(
+        "writer",
+        "写手",
+        _make_role("writer", name="写手"),
+        input_from=[],
+        output_to=["auditor"],
+    )
+    auditor = _make_stage(
+        "auditor",
+        "审阅",
+        _make_role("auditor", name="审阅"),
+        input_from=["writer"],
+        output_to=["reviser"],
+    )
+    reviser = _make_stage(
+        "reviser",
+        "修订",
+        _make_role("reviser", name="修订"),
+        input_from=["auditor"],
+        output_to=[],
+    )
+    llm = RoleMapLLMClient({"writer": "审核通过", "auditor": "审核通过", "reviser": "修订稿"})
+    result = await LangGraphAgentPipeline(llm).execute(
+        [writer, auditor, reviser],
+        _make_context(),
+        conditional_edges=[("writer", "auditor"), ("auditor", "reviser")],
+    )
+    assert [c["stage"] for c in llm.calls] == ["writer", "auditor", "reviser"]
+    assert result.final_output == "修订稿"
+
+
+async def test_conditional_middle_gate_fail_skips_downstream():
+    """链中条件边 gate 不通过 → 目标及其下游全部跳过（spec §1.2.1 conditional 语义）。"""
+    writer = _make_stage(
+        "writer",
+        "写手",
+        _make_role("writer", name="写手"),
+        input_from=[],
+        output_to=["auditor"],
+    )
+    auditor = _make_stage(
+        "auditor",
+        "审阅",
+        _make_role("auditor", name="审阅"),
+        input_from=["writer"],
+        output_to=["reviser"],
+    )
+    reviser = _make_stage(
+        "reviser",
+        "修订",
+        _make_role("reviser", name="修订"),
+        input_from=["auditor"],
+        output_to=[],
+    )
+    llm = RoleMapLLMClient({"writer": "审核通过", "auditor": "不通过：重写", "reviser": "修订稿"})
+    result = await LangGraphAgentPipeline(llm).execute(
+        [writer, auditor, reviser],
+        _make_context(),
+        conditional_edges=[("writer", "auditor"), ("auditor", "reviser")],
+    )
+    # writer→auditor 通过（auditor 执行）；auditor→reviser 不通过 → reviser 跳过
+    assert [c["stage"] for c in llm.calls] == ["writer", "auditor"]
+    # 终点 reviser 被跳过 → final_output 回退最后执行的内容角色（writer）
+    assert result.final_output == "审核通过"
+    assert result.status == StageStatus.COMPLETED

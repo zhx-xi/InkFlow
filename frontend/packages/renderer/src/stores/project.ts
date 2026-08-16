@@ -32,6 +32,9 @@ export interface ProjectConfig {
   agent_order?: string[][];
   /** F42 #296：自定义角色三态字段（key 带 agent_ 前缀，value 三态与 agent_* 相同：null=关闭/__default__=跟随默认/provider/model=指定） */
   agent_roles?: Record<string, string | null>;
+  /** F46 #270：Agent 关联关系（DAG 编排，spec §2.1）——from/to 带 agent_ 前缀角色字段名，
+   *  type ∈ sequential/data/conditional；空=纯 agent_order 基线 */
+  agent_relations?: { from: string; to: string; type: string }[];
 }
 
 export interface NewProjectInput {

@@ -76,15 +76,20 @@ class MockPipeline:
         )
         self.errors = errors or []
         self.execute_called = False
+        self.executed_conditional_edges: list[tuple[str, str]] | None = None
         self.executed_stages: list[PipelineStage] = []
         self.executed_context: PipelineContext | None = None
 
     async def execute(
-        self, stages: list[PipelineStage], context: PipelineContext
+        self,
+        stages: list[PipelineStage],
+        context: PipelineContext,
+        conditional_edges: list[tuple[str, str]] | None = None,
     ) -> PipelineResult:
         self.execute_called = True
         self.executed_stages = list(stages)
         self.executed_context = context
+        self.executed_conditional_edges = conditional_edges
         return self.result
 
     def validate(self, stages: list[PipelineStage]) -> list[str]:
@@ -108,6 +113,7 @@ class FakeExecution:
         self.final_output = ""
         self.error = ""
         self.total_duration_ms = 0
+        self.relations: list[dict] | None = None
         self.created_at = datetime.now(UTC)
 
 
@@ -138,6 +144,7 @@ class MockExecutionStore:
         final_output: str = "",
         error: str = "",
         total_duration_ms: int = 0,
+        relations: list[dict] | None = None,
     ) -> None:
         execution = self.executions.get(execution_id)
         if execution is None:
@@ -147,6 +154,7 @@ class MockExecutionStore:
         execution.final_output = final_output
         execution.error = error
         execution.total_duration_ms = total_duration_ms
+        execution.relations = relations
 
     async def list_executions(
         self, project_id: str, limit: int = 20
@@ -898,3 +906,94 @@ class TestExecuteCustomRole:
 
         stages = {s.id: s for s in pipeline.executed_stages}
         assert "researcher" not in stages  # null 关闭 → 未构造/未执行
+
+
+class TestRelationsSnapshot:
+    """F46 #270 relations snapshot contract (spec §5.4)."""
+
+    # ── F46 #270 relations 快照回填契约（spec §5.4 数据面）─────────
+    #
+    # 背景：执行记录增加 relations 元数据字段（JSON 快照）——本次执行的 agent_relations
+    # 边 + conditional 边判定结果（{from, to, type, gate_result: passed|skipped}）。
+    # 落点：_run_pipeline 执行完成后回填 relations 快照（含 gate 判定）；get_status 透出。
+    #
+    # 契约（spec §5.4 + §7 执行记录 relations 快照行）:
+    # 1. execute 装配链：static 模式 conditional_edges 随 stages 传递 → pipeline.execute
+    #    收到 conditional_edges（§5.3.1 步骤 6）
+    # 2. _run_pipeline 完成后 → store.update_stages 收到 relations 快照（含 gate 判定）
+    # 3. get_status → status["relations"] 透出（F29 既有端点扩展 §5.4）
+    #
+    # 测试 helper 扩展（GREEN 适配预警）:
+    # - MockPipeline.execute 签名加 conditional_edges（默认 None）→ 记录 executed_conditional_edges
+    # - FakeExecution 加 relations 属性（默认 None）
+    # - MockExecutionStore.update_stages 加 relations 参数（默认 None）→ 存 execution.relations
+    #
+    # RED 形态：execute 未接线 conditional_edges → executed_conditional_edges 保持 None →
+    # 断言 None != [...] AssertionError；_run_pipeline 未回填 relations → store 记录 relations
+    # 为 None/缺省 → 断言失败；get_status 未透出 relations → KeyError/断言失败。
+
+    async def test_execute_passes_conditional_edges_to_pipeline(self):
+        """static 模式：agent_relations 含 conditional 边 → pipeline.execute 收到
+        conditional_edges=[("writer", "auditor")]（§5.3.1 步骤 6 传递链）。"""
+        project = _make_project(
+            config=ProjectConfig(
+                # 仅启用 writer/auditor 且 order 含两者（避免 _apply_agent_order 缺启用角色回退）；
+                # conditional writer→auditor 满足「auditor 是 writer 唯一后继」（§2.3）
+                agent_writer="openai/gpt-4o",
+                agent_auditor="openai/gpt-4o",
+                agent_order=[["agent_writer"], ["agent_auditor"]],
+                agent_relations=[
+                    {"from": "agent_writer", "to": "agent_auditor", "type": "conditional"}
+                ],
+            )
+        )
+        service, pipeline, _, _, _ = _build_service(project=project)
+        request = PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_chapter")
+        await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        assert pipeline.executed_conditional_edges == [("writer", "auditor")]
+
+    async def test_run_pipeline_records_relations_snapshot(self):
+        """_run_pipeline 完成后 → store.update_stages 收到 relations 快照
+        （含 conditional 边 gate 判定 passed/skipped，§5.4）。"""
+        project = _make_project()
+        # MockPipeline 默认 result：writer completed（正文）/ auditor completed（大纲）
+        service, _, store, _, _ = _build_service(project=project)
+        execution = await store.create_execution(
+            pipeline="builtin:write_chapter", project_id=str(project.id)
+        )
+        from inkflow.domain.models.project import AgentRelation
+
+        relations_config = [
+            AgentRelation(from_="agent_writer", to="agent_auditor", type="conditional")
+        ]
+
+        await service._run_pipeline(
+            execution.id,
+            [],
+            PipelineContext(project_id=str(project.id)),
+            agent_relations=relations_config,
+        )
+
+        record = store.executions[execution.id]
+        assert record.relations is not None
+        # 快照含 conditional 边（from/to 去 agent_ 前缀）+ gate 判定
+        conditional_entry = next(r for r in record.relations if r.get("type") == "conditional")
+        assert conditional_entry["from"] == "writer"
+        assert conditional_entry["to"] == "auditor"
+        assert conditional_entry["gate_result"] in ("passed", "skipped")
+
+    async def test_get_status_exposes_relations(self):
+        """get_status → status["relations"] 透出（F29 端点扩展 §5.4）。"""
+        project = _make_project()
+        service, _, _, _, _ = _build_service(project=project)
+        request = PipelineExecuteRequest(project_id=project.id, pipeline="builtin:write_chapter")
+        result = await service.execute(request)
+        await asyncio.sleep(0.05)
+
+        status = await service.get_status(result["execution_id"])
+
+        assert status is not None
+        # relations 键存在（缺省为 None；配置 relations 后为快照列表）
+        assert "relations" in status

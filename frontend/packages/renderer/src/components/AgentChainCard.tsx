@@ -1,8 +1,8 @@
 /** 写作 Agent 链（spec §4.2.3）：Architect/Writer/Auditor/Reviser 四行开关 ↔ config.agent_*；
  *  #225 三态语义：null=关闭（禁用角色）；字符串=开启且指定模型；
  *  "__default__"（AGENT_DEFAULT_SENTINEL）=跟随默认（预留，前端不暴露中间态 UI） */
-import { useEffect } from 'react';
-import { ClipboardCheck, Network, PenLine, RefreshCw, Sparkles, type LucideIcon } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ClipboardCheck, GitBranch, Network, PenLine, RefreshCw, Sparkles, type LucideIcon } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
 import { useAgentStore } from '../stores/agent';
 import { selectChatModelOptions, useModelsStore } from '../stores/models';
@@ -10,6 +10,7 @@ import { AGENT_DEFAULT_SENTINEL, type ProjectConfig } from '../stores/project';
 import { useTemplatesStore } from '../stores/templates';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Switch } from './ui/switch';
+import { AgentRelationEditor } from './AgentRelationEditor';
 
 type AgentField = 'agent_architect' | 'agent_writer' | 'agent_auditor' | 'agent_reviser';
 
@@ -107,6 +108,8 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
   const config = useAgentStore((s) => s.config);
   const setConfig = useAgentStore((s) => s.setConfig);
   const providers = useModelsStore((s) => s.providers);
+  // F46 #270：依赖关系编辑器展开态（点行内「依赖」入口切换）
+  const [relationOpen, setRelationOpen] = useState(false);
 
   // F42 #268（spec §5.2 Q3）：挂载即加载 provider-configs 数据源，Select 选项随 store 响应式更新
   useEffect(() => {
@@ -303,11 +306,23 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
                   </SelectContent>
                 </Select>
               )}
+              {/* F46 #270：依赖入口（spec §5.2）——切换显示 AgentRelationEditor */}
+              <button
+                type="button"
+                data-testid={`agent-relation-entry-${role.field}`}
+                aria-label={t('ag.relationEntry')}
+                onClick={() => setRelationOpen((v) => !v)}
+                className="flex h-6 w-6 items-center justify-center rounded border border-line text-ink-3 hover:bg-surface-3"
+              >
+                <GitBranch className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
               <Switch checked={checked} onCheckedChange={toggle} aria-label={displayName} />
             </div>
           );
         })}
       </div>
+      {/* F46 #270：依赖关系编辑器（section 内关系列表区，即角色行 </div> 之后、</section> 之前） */}
+      {relationOpen && <AgentRelationEditor onConfigChange={onConfigChange} />}
     </section>
   );
 }

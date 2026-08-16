@@ -91,8 +91,13 @@ class LangGraphAgentPipeline:
         self,
         stages: Sequence[PipelineStage],
         context: PipelineContext,
+        conditional_edges: Sequence[tuple[str, str]] | None = None,
     ) -> PipelineResult:
         """执行管线：构建 StateGraph → 顺序执行 → 汇总结果。
+
+        conditional_edges（F46 #270，spec §5.3.2）：条件边 (from, to) 列表——跳过
+        对应静态 add_edge，改用 add_conditional_edges 构建 gate 路由（通过 → 目标，
+        不通过 → END，跳过目标及其下游）。
 
         Raises:
             PipelineError: 必需阶段重试耗尽（异常携带 result 属性，含各阶段状态）。
@@ -111,9 +116,18 @@ class LangGraphAgentPipeline:
             for stage in stages:
                 if not stage.input_from:
                     workflow.add_edge(START, stage.id)
+            # 静态边：跳过条件边（条件边改用 add_conditional_edges 单独构建，spec §5.3.2）
+            conditional_pairs = {tuple(p) for p in (conditional_edges or [])}
             for stage in stages:
                 for downstream_id in stage.output_to:
+                    if (stage.id, downstream_id) in conditional_pairs:
+                        continue  # 条件边：不 add_edge，下方 add_conditional_edges 处理
                     workflow.add_edge(stage.id, downstream_id)
+            # 条件边：gate 函数读上游 output，PASS → 目标，否则 → END（跳过目标及其下游）
+            for from_id, to_id in conditional_pairs:
+                workflow.add_conditional_edges(
+                    from_id, _make_gate(from_id, to_id), {to_id: to_id, END: END}
+                )
             # 多终点：每个 output_to 为空的阶段连 END
             for stage in stages:
                 if not stage.output_to:
@@ -147,11 +161,25 @@ class LangGraphAgentPipeline:
         # 多终点取 stages 列表中靠后的终点（保持既有 final_output = 终点输出语义）
         terminals = [s for s in stages if not s.output_to]
         terminal = terminals[-1] if terminals else stages[-1]
+        terminal_result = results_map.get(
+            terminal.id, StageResult(stage_id=terminal.id, status=StageStatus.COMPLETED)
+        )
+        # F46 #270（spec §5.3.3 成品身份回退）：终点被条件边跳过（results 无该终点条目）
+        # → final_output 回退最后执行的**内容角色**（writer）输出（architect/auditor 永不作成品）
+        final_output = terminal_result.output
+        if terminal.id not in results_map:
+            content_candidates = [
+                s
+                for s in reversed(stages)
+                if s.id in results_map
+                and results_map[s.id].status == StageStatus.COMPLETED
+                and s.id not in ("architect", "auditor")
+            ]
+            if content_candidates:
+                final_output = results_map[content_candidates[0].id].output
         result = PipelineResult(
             stages=stage_results,
-            final_output=results_map.get(
-                terminal.id, StageResult(stage_id=terminal.id, status=StageStatus.COMPLETED)
-            ).output,
+            final_output=final_output,
             status=StageStatus.FAILED if failed else StageStatus.COMPLETED,
         )
         if failed:
@@ -159,3 +187,21 @@ class LangGraphAgentPipeline:
             error.result = result
             raise error
         return result
+
+
+# F46 #270 gate 通过标记（spec §5.3.3，确定性关键词匹配，不区分大小写）
+_PASS_MARKERS = ("通过", "pass", "通过审核", "合格")
+
+
+def _make_gate(from_id: str, to_id: str):
+    """conditional 边 gate：from 输出含通过标记（且非「不通过」否定）→ to_id；
+    否则 → END（跳过目标及其下游）。"""
+
+    def gate(state: PipelineState) -> str:
+        sr = state["results"].get(from_id)
+        text = (sr.output if sr else "").lower()
+        # 关键词匹配须排除「不通过」否定（否则子串命中「通过」误判放行，spec §5.3.3）
+        passed = "不通过" not in text and any(m in text for m in _PASS_MARKERS)
+        return to_id if passed else END
+
+    return gate

@@ -11,9 +11,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # 225 拍板——字符串 "__default__" = 跟随默认（预留 sentinel，前端本期不暴露中间态 UI）。
 AGENT_DEFAULT_SENTINEL = "__default__"
@@ -33,6 +33,38 @@ class Genre(StrEnum):
     XUANYI = "悬疑"
     QIHUAN = "奇幻"
     QITA = "其他"
+
+
+class AgentRelation(BaseModel):
+    """角色间有向边（#270，spec §1.2.1 依赖类型语义）。"""
+
+    # serialize_by_alias=True：契约 test_roundtrip_model_dump 要求
+    # ProjectConfig.model_dump() 中 agent_relations 输出 "from" 键（spec §2.1 别名口径）
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+
+    from_: str = Field(alias="from", description="源角色字段名（带 agent_ 前缀，如 agent_auditor）")
+    to: str = Field(description="目标角色字段名（带 agent_ 前缀，如 agent_reviser）")
+    type: Literal["sequential", "data", "conditional"] = Field(
+        default="sequential",
+        description="依赖类型：sequential=顺序依赖 / data=数据传递 / conditional=条件分支",
+    )
+
+    @field_validator("from_", "to")
+    @classmethod
+    def _validate_role_ref(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("agent_relations 的 from/to 不能为空")
+        return stripped
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def _validate_type(cls, v: str) -> str:
+        # mode="before"：先于 Literal 校验触发，保证契约报错消息
+        # 「agent_relations 类型非法: xxx」出现（after 模式会被 literal_error 抢先）
+        if v not in ("sequential", "data", "conditional"):
+            raise ValueError(f"agent_relations 类型非法: {v}（应为 sequential/data/conditional）")
+        return v
 
 
 class ProjectConfig(BaseModel):
@@ -91,6 +123,14 @@ class ProjectConfig(BaseModel):
     - 双模式（v1.3 B1）：空列表 = 默认模板模式——agent_* null 不触发真禁用（跟随模板）；
       非空 = 配置驱动模式——null 真禁用（跳过，§2.2）
     - 角色名支持任意字符串（自定义 Agent，v1.2 执行解锁 + v1.3 数据面）
+    """
+    agent_relations: list[AgentRelation] = Field(default_factory=list)
+    """角色间显式关联关系（#270，spec §1.2）。
+
+    - 空列表 = 未配置 → 纯 agent_order 基线（现状零迁移，§1.2.3 线性兼容）
+    - 非空 = 在基线 DAG 上叠加显式边（关系优先，§5.3.1）
+    - 示例: [{"from": "agent_auditor", "to": "agent_reviser", "type": "conditional"}]
+            = reviser 在 auditor 通过后才执行
     """
 
     @field_validator("agent_architect", "agent_writer", "agent_auditor", "agent_reviser")
@@ -154,6 +194,26 @@ class ProjectConfig(BaseModel):
                 layer_items.append(stripped)
             result.append(layer_items)
         return result
+
+    @field_validator("agent_relations", mode="before")
+    @classmethod
+    def validate_agent_relations(cls, v: Any) -> list[AgentRelation]:
+        """存储层校验（spec §2.3）：结构 + 自环 + 重复边 + 类型（类型/非空在
+        AgentRelation 内校验）。"""
+        if not isinstance(v, list):
+            raise ValueError("agent_relations 必须为数组")  # noqa: TRY004  # 契约固定 ValueError（测试断言消息）
+        relations: list[AgentRelation] = []
+        seen: set[tuple[str, str]] = set()
+        for item in v:
+            rel = item if isinstance(item, AgentRelation) else AgentRelation.model_validate(item)
+            key = (rel.from_, rel.to)
+            if rel.from_ == rel.to:
+                raise ValueError(f"agent_relations 自环非法: {rel.from_}")
+            if key in seen:
+                raise ValueError(f"agent_relations 重复边: {rel.from_} -> {rel.to}")
+            seen.add(key)
+            relations.append(rel)
+        return relations
 
 
 class Project(BaseModel):

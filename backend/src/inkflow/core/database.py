@@ -152,6 +152,21 @@ def ensure_agent_executions_hitl_payload_column(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE agent_executions ADD COLUMN hitl_payload TEXT"))
 
 
+def ensure_agent_executions_relations_column(conn: Connection) -> None:
+    """F46 #270 补充：为既有库 agent_executions 表补 relations 列（幂等，配合 conn.run_sync 调用）。
+
+    项目无 alembic 基建（create_all 管理 schema）；SQLite ALTER TABLE ADD COLUMN 幂等，
+    先查 PRAGMA table_info 确认列缺失才执行。表不存在（全新环境）→ no-op 不抛错，
+    等 create_all 建新表（自动含 relations 列）。
+    """
+    cols = conn.execute(text("PRAGMA table_info(agent_executions)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return  # 表不存在（全新环境）→ create_all 建新表（自动含 relations 列）
+    if "relations" not in names:
+        conn.execute(text("ALTER TABLE agent_executions ADD COLUMN relations TEXT"))
+
+
 def ensure_world_parent_id_column(conn: Connection) -> None:
     """#173：为既有库 world_settings 补 parent_id 列 + 替换唯一索引（幂等）.
 
