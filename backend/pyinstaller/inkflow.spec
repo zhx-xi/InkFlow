@@ -4,7 +4,7 @@
 # 运行（backend 目录下）：
 #   uv sync --frozen --extra packaging
 #   uv run pyinstaller pyinstaller/inkflow.spec
-# 产物：backend/dist/inkflow/inkflow.exe + backend/dist/inkflow/_internal/（onedir）
+# 产物：backend/dist/inkflow/inkflow.exe + backend/dist/inkflow-mcp/inkflow-mcp.exe（onedir，各含 _internal/）
 
 import os
 from pathlib import Path
@@ -149,4 +149,60 @@ coll = COLLECT(
     a.datas,
     strip=False,
     name="inkflow",
+)
+
+# #424: 打包产物缺 inkflow-mcp.exe（0.9.0-rc3 实证）。F20 spec §1.2 要求打包产物含
+# inkflow-mcp.exe（PyInstaller 随 CLI 产物，发布验证四件套），但旧 spec 只有单个 EXE。
+# dev venv 有 Scripts/inkflow-mcp.exe 且 MCP 握手 15 工具正常，纯打包缺口。
+# 修复：新增独立 onedir 产物 inkflow-mcp——入口为 src/inkflow/mcp/__main__.py
+# （stdio 薄客户端经 HTTP 连本地内核，不启动 uvicorn；勿用根 __main__.py 的 serve）。
+# 独立 Analysis 保证 a_mcp.scripts 只含 mcp 入口；datas/binaries 复用主 Analysis
+# 结果（MCP 薄客户端与主内核共享依赖）。
+a_mcp = Analysis(
+    [str(ROOT / "src" / "inkflow" / "mcp" / "__main__.py")],
+    pathex=[str(ROOT), str(ROOT / "src")],  # pathex 含 src：mcp 入口解析 inkflow.mcp.server 的前提
+    runtime_hooks=[str(_runtime_hook)],
+    hiddenimports=hiddenimports
+    + _tiktoken_hidden
+    + _tiktoken_ext_hidden
+    + [
+        "inkflow.mcp.server",  # #424: MCP stdio 入口显式依赖，防未来收窄 collect_all 时漏收集
+        "inkflow.mcp.tools",
+    ],
+    excludes=[
+        "onnxruntime",
+        "kubernetes",
+        "tokenizers",
+        "litellm",
+        "torch",
+        "transformers",
+        "sentence_transformers",
+    ],
+    datas=datas + _tiktoken_datas + _tiktoken_ext_datas,
+    binaries=binaries + _tiktoken_binaries + _tiktoken_ext_binaries,
+    noarchive=False,
+    optimize=0,
+)
+
+mcp_pyz = PYZ(a_mcp.pure)
+
+mcp_exe = EXE(
+    mcp_pyz,
+    a_mcp.scripts,
+    [],
+    exclude_binaries=True,  # onedir：与主 inkflow 同模式，依赖二进制交由 COLLECT
+    name="inkflow-mcp",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    console=True,
+    disable_windowed_traceback=False,
+)
+
+mcp_coll = COLLECT(
+    mcp_exe,
+    a.binaries,  # 复用主 Analysis 收集结果：MCP 薄客户端与主内核共享依赖
+    a.datas,
+    strip=False,
+    name="inkflow-mcp",
 )
