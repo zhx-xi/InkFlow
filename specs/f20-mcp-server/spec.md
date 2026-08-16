@@ -7,7 +7,7 @@
 **关联 Issues**: [#49](https://github.com/zhx-xi/InkFlow/issues/49)（本模块）
 **依赖**: ✅ F30（ensure_kernel + kernel.json 冷启动）· ✅ F38（`infrastructure/http/` 传输层 + 零 cli 依赖）· ✅ F26（ToolSpec 契约 + 工具注册表机制）· ✅ F7（JSON 信封/错误码契约）
 **参考 ADR**: [ADR-023](../../adr/ADR-023.md)（MCP 设计 v2）· [ADR-030](../../adr/ADR-030.md)（内核服务化 ④）· [ADR-022](../../adr/ADR-022.md)（skills 双轨）· [ADR-021](../../adr/ADR-021.md)（内核并发契约）· [ADR-019](../../adr/ADR-019.md)（版本里程碑）
-**状态**: 待实现 🔲
+**状态**: ✅ 已实现（PR #400，2026-08-16）
 
 > **Spec 变更**（v1.0 → v1.1，2026-08-16）：待澄清 Q1-Q3 全部拍板（用户拍板 A/A/A）。① Q1 工具粒度 = **聚合 `manage_*`（action 枚举）15 工具**（细粒度 50+ 否决）；② Q2「与 F26 同源」落地 = **契约同源**（复用 ToolSpec + 信封语义，新建 `mcp/tools/` HTTP 工具工厂，非复用 F26 `build_reader_tools`）；③ Q3 write 流式 = **同步返回拼接结果**（走非流式端点 `/writing/generate|continue|revise`，不走 SSE 透传）。联动修订：§2.2/§2.3/§10/§12/待澄清节。
 
