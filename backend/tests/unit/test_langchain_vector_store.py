@@ -556,3 +556,63 @@ async def test_retrieve_dedup_does_not_merge_across_entity_types(
     )
     results = await store.retrieve("苹果", project_id="p1", top_k=10)
     assert {r.entity_type for r in results} == {EntityType.CHARACTER, EntityType.CHAPTER_CHUNK}
+
+
+# ══ #278 M4 追加段（2026-08-16）: list_entities 只读查询（增量跳过白名单） ═══
+# 契约源: specs/f14-extraction-service/spec.md §5.6.7（LLM 增量跳过需读回旧块
+# id/source_hash）+ QA 报告 §P2-2。RED 期 VectorStoreProtocol/LangChainVectorStore
+# 均无 list_entities → AttributeError。
+#
+# 设计假设（GREEN 实现者唯一契约）:
+# - ``async list_entities(project_id, entity_type, *, where=None) -> list[tuple[str, dict]]``
+#   * where: metadata 过滤条件（如 {"chapter_id": "1"}）；None = 不附加过滤
+#   * 恒按 project_id 隔离（内部与 where 合并为 chroma where）
+#   * 返回 [(id, metadata), ...]（无向量内容——增量判定只需 id + source_hash）
+#   * 无匹配 → []
+
+
+async def test_list_entities_returns_id_metadata_pairs(store: LangChainVectorStore) -> None:
+    """list_entities 返回 (id, metadata) 对（project_id 隔离）."""
+    await store.index_batch(
+        [
+            make_entity(
+                "c1:0",
+                EntityType.CHAPTER_CHUNK,
+                "p1",
+                "苹果是一种水果",
+                chapter_id="chap-1",
+                source_hash="h1",
+            ),
+            make_entity(
+                "c2:0",
+                EntityType.CHAPTER_CHUNK,
+                "p1",
+                "苹果在野外生长",
+                chapter_id="chap-2",
+                source_hash="h2",
+            ),
+            make_entity(
+                "c3:0",
+                EntityType.CHAPTER_CHUNK,
+                "p2",
+                "另一个项目",
+                chapter_id="chap-1",
+                source_hash="h3",
+            ),
+        ]
+    )
+    result = await store.list_entities(
+        "p1", EntityType.CHAPTER_CHUNK, where={"chapter_id": "chap-1"}
+    )
+    assert [(eid, md.get("source_hash")) for eid, md in result] == [("c1:0", "h1")]
+    # 无 where → 该项目全部
+    all_ids = {eid for eid, _ in await store.list_entities("p1", EntityType.CHAPTER_CHUNK)}
+    assert all_ids == {"c1:0", "c2:0"}
+
+
+async def test_list_entities_empty_result(store: LangChainVectorStore) -> None:
+    """无匹配 → []（空项目/过滤不命中）."""
+    result = await store.list_entities(
+        "p-empty", EntityType.CHAPTER_CHUNK, where={"chapter_id": "nope"}
+    )
+    assert result == []

@@ -332,3 +332,209 @@ async def test_reindex_chapter_chunk_overlap_uses_triple_part_id() -> None:
     chunks = [e for e in entities if e.entity_type is EntityType.CHAPTER_CHUNK]
     assert len(chunks) >= 2
     assert any(len(e.id.split(":")) == 3 for e in chunks)
+
+
+# ══ #278 M4 追加段（2026-08-16）: LLM 档 analyzer 注入 + source_hash 增量跳过 ═══
+# 契约源: specs/f14-extraction-service/spec.md §5.6.7（LLM 分析切片器）+ §13 M13
+# （「LLM 档内容未变章节不重复调用 analyzer」）+ QA 报告 §P2-2（sha256 增量）。
+# RED 期 ExtractionService 无 llm_chunk_analyzer 参数 → TypeError（签名未扩展）；
+# store 无 list_entities → AttributeError；增量跳过未实现 → analyzer 被调用
+# （assert_not_awaited 失败）。
+#
+# 设计假设（GREEN 实现者唯一契约，spec §5.6.7 逐字为准）:
+# 1. ``ExtractionService.__init__`` 新增 keyword-only 参数
+#    ``llm_chunk_analyzer: Callable[[str], Awaitable[list[int]]] | None = None``
+#    —— LLM 档语义边界提供器（async，复用 F5 LLMClient）；None = 未配置（降级段落）。
+# 2. ``reindex`` CHAPTER_CHUNK 分支（mode=LLM）:
+#    - 增量判定: ``store.list_entities(pid, CHAPTER_CHUNK, where={"chapter_id": str(id)})``
+#      读回该章现有块 (id, metadata)；若全部 ``metadata["source_hash"] == 当前内容
+#      _content_hash → 内容未变 → **跳过 analyzer（不调用）+ 旧 id 全部加入
+#      source_ids 白名单（不重灌、不被差集删除）**（QA §P2-2「直接复用上次切片结果」）
+#    - 无旧块 / 任一 source_hash 不匹配 → await analyzer(ch.content) 得边界 →
+#      构造闭包 analyzer → chunk_text(mode=LLM, analyzer=闭包) → 重灌 +
+#      _project_chapter_chunk(..., source_hash=当前 hash) 写入（下次增量判定依据）
+#    - analyzer 抛异常 / None → logger.warning + 降级段落切片（mode=PARAGRAPH），
+#      **reindex 不中断**（§5.6.7 ③；源侧 id 仍入白名单）
+# 3. ``VectorStoreProtocol.list_entities(project_id, entity_type, *, where=None)
+#    -> list[tuple[str, dict]]``——新增只读方法（chroma collection.get
+#    where 过滤 + metadatas），供增量判定读回旧块 id/source_hash。
+# 4. ``_project_chapter_chunk`` 新增可选参数 ``source_hash: str | None = None``：
+#    None 省略键（非 LLM 档/既有行为不变）；传入时 metadata["source_hash"] 写入。
+
+
+async def test_reindex_llm_mode_injects_analyzer_and_writes_source_hash() -> None:
+    """LLM 档 reindex: 无旧块 → analyzer 调用 + 按边界重灌 + source_hash 写入."""
+    from inkflow.domain.services._chunking import ChunkingConfig, ChunkingMode
+    from inkflow.domain.services.extraction_service import _content_hash
+
+    content = "一二三四五六七八九十甲乙丙丁"  # 14 字符 → analyzer 边界 [5, 12]
+    chapters = [MagicMock(id=1, title="第 1 章", content=content, volume_id=None, order_index=1.0)]
+    store = MagicMock()
+    store.index_batch = AsyncMock()
+    store.delete_stale = AsyncMock(return_value=0)
+    store.probe_embedding_dimension = AsyncMock(return_value=384)
+    store.probe_collection_dimension = AsyncMock(return_value=0)
+    store.recreate_collections = AsyncMock()
+    store.write_fingerprint = AsyncMock()
+    store.list_entities = AsyncMock(return_value=[])  # 无旧块 → 全量分析
+    analyzer = AsyncMock(return_value=[5, 10])
+    svc = _make_service(
+        vector_store=store,
+        chunking=ChunkingConfig(mode=ChunkingMode.LLM, chunk_size=500),
+        llm_chunk_analyzer=analyzer,
+    )
+    svc._chapter_repo.list_chapters = AsyncMock(return_value=(chapters, 1))
+    svc._chapter_repo.list_volumes = AsyncMock(return_value=[])
+
+    await svc.reindex(PID, entity_types=[EntityType.CHAPTER_CHUNK])
+
+    analyzer.assert_awaited_once_with(content)
+    entities = store.index_batch.await_args.args[0]
+    chunks = [e for e in entities if e.entity_type is EntityType.CHAPTER_CHUNK]
+    assert [e.content for e in chunks] == ["一二三四五", "六七八九十", "甲乙丙丁"]
+    # source_hash 写入（增量判定依据）
+    expected_hash = _content_hash(content)
+    assert all(e.metadata.get("source_hash") == expected_hash for e in chunks)
+
+
+async def test_reindex_llm_mode_skips_unchanged_chapter_with_source_ids() -> None:
+    """增量契约: 旧块 source_hash 匹配 → analyzer 不调用 + 旧 id 入白名单（不重灌）."""
+    from inkflow.domain.services._chunking import ChunkingConfig, ChunkingMode
+    from inkflow.domain.services.extraction_service import _content_hash
+
+    content = "第一段。\n\n第二段。"
+    h = _content_hash(content)
+    chapters = [MagicMock(id=1, title="第 1 章", content=content, volume_id=None, order_index=1.0)]
+    store = MagicMock()
+    store.index_batch = AsyncMock()
+    store.delete_stale = AsyncMock(return_value=0)
+    store.probe_embedding_dimension = AsyncMock(return_value=384)
+    store.probe_collection_dimension = AsyncMock(return_value=0)
+    store.recreate_collections = AsyncMock()
+    store.write_fingerprint = AsyncMock()
+    # 旧块存在且 source_hash 匹配 → 跳过 analyzer
+    store.list_entities = AsyncMock(return_value=[("1:0", {"chapter_id": "1", "source_hash": h})])
+    analyzer = AsyncMock(return_value=[5])
+    svc = _make_service(
+        vector_store=store,
+        chunking=ChunkingConfig(mode=ChunkingMode.LLM, chunk_size=500),
+        llm_chunk_analyzer=analyzer,
+    )
+    svc._chapter_repo.list_chapters = AsyncMock(return_value=(chapters, 1))
+    svc._chapter_repo.list_volumes = AsyncMock(return_value=[])
+
+    await svc.reindex(PID, entity_types=[EntityType.CHAPTER_CHUNK])
+
+    analyzer.assert_not_awaited()  # 内容未变 → 不调用 analyzer（M13 增量契约）
+    # 旧 id 进入 source_ids 白名单（差集删除不误删）
+    dele = store.delete_stale.await_args
+    assert dele is not None
+    source_ids = dele.args[1]
+    assert "1:0" in source_ids
+    # 未重灌（index_batch 无该章新块）
+    if store.index_batch.await_count:
+        entities = store.index_batch.await_args.args[0]
+        chunks = [e for e in entities if e.entity_type is EntityType.CHAPTER_CHUNK]
+        assert all(e.metadata.get("chapter_id") != "1" for e in chunks)
+
+
+async def test_reindex_llm_mode_rechunks_when_hash_changed() -> None:
+    """增量契约: 旧块 source_hash 不匹配（内容已变）→ analyzer 调用 + 重灌."""
+    from inkflow.domain.services._chunking import ChunkingConfig, ChunkingMode
+    from inkflow.domain.services.extraction_service import _content_hash
+
+    content = "第一段。\n\n第二段。"
+    chapters = [MagicMock(id=1, title="第 1 章", content=content, volume_id=None, order_index=1.0)]
+    store = MagicMock()
+    store.index_batch = AsyncMock()
+    store.delete_stale = AsyncMock(return_value=0)
+    store.probe_embedding_dimension = AsyncMock(return_value=384)
+    store.probe_collection_dimension = AsyncMock(return_value=0)
+    store.recreate_collections = AsyncMock()
+    store.write_fingerprint = AsyncMock()
+    store.list_entities = AsyncMock(
+        return_value=[("1:0", {"chapter_id": "1", "source_hash": "old-hash"})]
+    )
+    analyzer = AsyncMock(return_value=[3])
+    svc = _make_service(
+        vector_store=store,
+        chunking=ChunkingConfig(mode=ChunkingMode.LLM, chunk_size=500),
+        llm_chunk_analyzer=analyzer,
+    )
+    svc._chapter_repo.list_chapters = AsyncMock(return_value=(chapters, 1))
+    svc._chapter_repo.list_volumes = AsyncMock(return_value=[])
+
+    await svc.reindex(PID, entity_types=[EntityType.CHAPTER_CHUNK])
+
+    analyzer.assert_awaited_once_with(content)
+    entities = store.index_batch.await_args.args[0]
+    chunks = [e for e in entities if e.entity_type is EntityType.CHAPTER_CHUNK]
+    assert chunks
+    expected_hash = _content_hash(content)
+    assert all(e.metadata.get("source_hash") == expected_hash for e in chunks)
+
+
+async def test_reindex_llm_analyzer_failure_degrades_and_continues() -> None:
+    """LLM analyzer 异常 → 降级段落切片 + reindex 不中断（fresh 仍提交）."""
+    from inkflow.domain.services._chunking import ChunkingConfig, ChunkingMode
+
+    content = "第一段。\n\n第二段。"
+    chapters = [MagicMock(id=1, title="第 1 章", content=content, volume_id=None, order_index=1.0)]
+    store = MagicMock()
+    store.index_batch = AsyncMock()
+    store.delete_stale = AsyncMock(return_value=0)
+    store.probe_embedding_dimension = AsyncMock(return_value=384)
+    store.probe_collection_dimension = AsyncMock(return_value=0)
+    store.recreate_collections = AsyncMock()
+    store.write_fingerprint = AsyncMock()
+    store.list_entities = AsyncMock(return_value=[])  # 无旧块 → 需分析
+
+    async def broken_analyzer(text: str) -> list[int]:
+        raise RuntimeError("llm analyzer failed")
+
+    svc = _make_service(
+        vector_store=store,
+        chunking=ChunkingConfig(mode=ChunkingMode.LLM, chunk_size=500),
+        llm_chunk_analyzer=broken_analyzer,
+    )
+    svc._chapter_repo.list_chapters = AsyncMock(return_value=(chapters, 1))
+    svc._chapter_repo.list_volumes = AsyncMock(return_value=[])
+
+    await svc.reindex(PID, entity_types=[EntityType.CHAPTER_CHUNK])  # 不抛
+
+    entities = store.index_batch.await_args.args[0]
+    chunks = [e for e in entities if e.entity_type is EntityType.CHAPTER_CHUNK]
+    assert [e.content for e in chunks] == ["第一段。", "第二段。"]  # 降级段落
+    calls = store.write_fingerprint.await_args_list
+    assert calls[-1].args[2] == "fresh"  # reindex 完成
+
+
+async def test_reindex_llm_analyzer_none_degrades_to_paragraph() -> None:
+    """LLM 档未配置 analyzer（None）→ 降级段落切片 + reindex 完成."""
+    from inkflow.domain.services._chunking import ChunkingConfig, ChunkingMode
+
+    content = "第一段。\n\n第二段。"
+    chapters = [MagicMock(id=1, title="第 1 章", content=content, volume_id=None, order_index=1.0)]
+    store = MagicMock()
+    store.index_batch = AsyncMock()
+    store.delete_stale = AsyncMock(return_value=0)
+    store.probe_embedding_dimension = AsyncMock(return_value=384)
+    store.probe_collection_dimension = AsyncMock(return_value=0)
+    store.recreate_collections = AsyncMock()
+    store.write_fingerprint = AsyncMock()
+    store.list_entities = AsyncMock(return_value=[])
+    svc = _make_service(
+        vector_store=store,
+        chunking=ChunkingConfig(mode=ChunkingMode.LLM, chunk_size=500),
+        llm_chunk_analyzer=None,
+    )
+    svc._chapter_repo.list_chapters = AsyncMock(return_value=(chapters, 1))
+    svc._chapter_repo.list_volumes = AsyncMock(return_value=[])
+
+    await svc.reindex(PID, entity_types=[EntityType.CHAPTER_CHUNK])
+
+    entities = store.index_batch.await_args.args[0]
+    chunks = [e for e in entities if e.entity_type is EntityType.CHAPTER_CHUNK]
+    assert [e.content for e in chunks] == ["第一段。", "第二段。"]
+    calls = store.write_fingerprint.await_args_list
+    assert calls[-1].args[2] == "fresh"

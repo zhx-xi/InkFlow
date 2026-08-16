@@ -18,7 +18,7 @@ from enum import StrEnum
 from pydantic import BaseModel
 
 SCHEMA_VERSION = 1
-CHUNKER_VERSION = 1
+CHUNKER_VERSION = 2
 DEFAULT_CHUNK_SIZE = 500
 DEFAULT_CHUNK_MODE = "fixed"
 DEFAULT_OVERLAP_RATIO = 0.0

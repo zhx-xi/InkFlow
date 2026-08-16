@@ -28,6 +28,7 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from hashlib import sha256
 from typing import Any
 
 from inkflow.domain.models.character import Character
@@ -47,12 +48,22 @@ from inkflow.domain.ports.vector_store import (
     VectorStoreProtocol,
 )
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
-from inkflow.domain.services._chunking import Chunk, ChunkingConfig, chunk_text
+from inkflow.domain.services._chunking import (
+    Chunk,
+    ChunkingConfig,
+    ChunkingMode,
+    chunk_text,
+)
 
 logger = logging.getLogger(__name__)
 
 _REINDEX_PAGE_SIZE = 100
 """reindex 分页循环页大小（spec §5.6: list(limit=100)）。"""
+
+
+def _content_hash(text: str) -> str:
+    """计算源内容 sha256 指纹（UTF-8 hexdigest，LLM 增量跳过判定依据）。"""
+    return sha256(text.encode("utf-8")).hexdigest()
 
 
 def _to_int_id(value: int | uuid.UUID) -> int:
@@ -147,6 +158,7 @@ def _project_chapter_chunk(
     chapter_y: int | None = None,
     volume_title: str | None = None,
     indexed_at: str | None = None,
+    source_hash: str | None = None,
 ) -> IndexableEntity:
     """章节文本块 → IndexableEntity（§5.6 投影表；块 id 三态，spec §5.6.3/§5.6.4）。
 
@@ -174,6 +186,8 @@ def _project_chapter_chunk(
         metadata["volume_title"] = volume_title
     if indexed_at is not None:
         metadata["indexed_at"] = indexed_at
+    if source_hash is not None:
+        metadata["source_hash"] = source_hash
     return IndexableEntity(
         id=entity_id,
         entity_type=EntityType.CHAPTER_CHUNK,
@@ -199,6 +213,7 @@ class _ExtractionRAGMixin:
     _fingerprint_provider: Callable[[], Awaitable[dict | None]] | None
     _reindex_lock: asyncio.Lock
     _chunking: ChunkingConfig
+    _llm_chunk_analyzer: Callable[[str], Awaitable[list[int]]] | None
 
     async def reindex(
         self,
@@ -298,12 +313,29 @@ class _ExtractionRAGMixin:
                             if getattr(ch, "volume_id", None) is not None
                             else None
                         )
-                        chunks = chunk_text(
-                            ch.content,
-                            mode=cfg.mode,
-                            chunk_size=cfg.chunk_size,
-                            overlap_ratio=cfg.overlap_ratio,
-                        )
+                        # #278 M4: LLM 增量跳过（QA §P2-2）——source_hash 匹配
+                        # → 复用上次切片结果（不重灌、不被差集删除）
+                        if cfg.mode is ChunkingMode.LLM:
+                            h = _content_hash(ch.content)
+                            existing = await self._vector_store.list_entities(
+                                pid,
+                                EntityType.CHAPTER_CHUNK,
+                                where={"chapter_id": str(ch.id)},
+                            )
+                            if existing and all(
+                                isinstance(md, dict) and md.get("source_hash") == h
+                                for _, md in existing
+                            ):
+                                source_ids.update(eid for eid, _ in existing)
+                                continue
+                            chunks = await self._chunk_with_llm(ch.content, cfg, h, pid, ch)
+                        else:
+                            chunks = chunk_text(
+                                ch.content,
+                                mode=cfg.mode,
+                                chunk_size=cfg.chunk_size,
+                                overlap_ratio=cfg.overlap_ratio,
+                            )
                         entities.extend(
                             _project_chapter_chunk(
                                 ch.id,
@@ -316,6 +348,11 @@ class _ExtractionRAGMixin:
                                 chapter_y=chapter_y,
                                 volume_title=volume_title,
                                 indexed_at=indexed_at,
+                                source_hash=(
+                                    _content_hash(ch.content)
+                                    if cfg.mode is ChunkingMode.LLM
+                                    else None
+                                ),
                             )
                             for i, chunk in enumerate(chunks)
                         )
@@ -362,6 +399,53 @@ class _ExtractionRAGMixin:
                 warnings=warnings,
                 collections_recreated=recreated,
             )
+
+    async def _chunk_with_llm(
+        self,
+        text: str,
+        cfg: ChunkingConfig,
+        source_hash: str,
+        pid: str,
+        ch: Any,
+    ) -> list[Chunk]:
+        """LLM 档切片: await analyzer 得边界 → 闭包 analyzer → chunk_text；失败降级段落。
+
+        Args:
+            text: 待切分章节内容.
+            cfg: 切片配置（LLM 档；降级段落路径透传 chunk_size/overlap_ratio）.
+            source_hash: 当前内容 sha256（后续 _project_chapter_chunk 写 metadata 用）.
+            pid: 项目 ID 字符串（保留签名完整性，兼容父侧契约）.
+            ch: 章节对象（日志取 id 用）.
+        """
+        if self._llm_chunk_analyzer is None:
+            logger.warning("LLM 切片器未配置，降级段落切片: chapter=%s", getattr(ch, "id", "?"))
+            return chunk_text(
+                text,
+                mode=ChunkingMode.PARAGRAPH,
+                chunk_size=cfg.chunk_size,
+                overlap_ratio=cfg.overlap_ratio,
+            )
+        try:
+            boundaries = await self._llm_chunk_analyzer(text)
+        except Exception:
+            logger.warning(
+                "LLM 切片失败，降级段落切片: chapter=%s",
+                getattr(ch, "id", "?"),
+                exc_info=True,
+            )
+            return chunk_text(
+                text,
+                mode=ChunkingMode.PARAGRAPH,
+                chunk_size=cfg.chunk_size,
+                overlap_ratio=cfg.overlap_ratio,
+            )
+        return chunk_text(
+            text,
+            mode=ChunkingMode.LLM,
+            chunk_size=cfg.chunk_size,
+            overlap_ratio=cfg.overlap_ratio,
+            analyzer=lambda t: boundaries,
+        )
 
     async def _paged_list(self, fn: Callable[..., Any], project_id: int) -> list[Any]:
         """分页循环拉取仓储列表（limit=100，spec §5.6 reindex 分页）。"""

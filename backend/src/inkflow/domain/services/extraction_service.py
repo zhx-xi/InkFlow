@@ -223,6 +223,9 @@ class ExtractionService(_ExtractionRAGMixin):
             持锁（_reindex_lock），先写 reindexing 后 commit-last 写 fresh。
         chunking: 切片配置（#277 M3，spec §5.6.1）——None = 默认
             fixed/500/0.0（向后兼容）。reindex 与增量索引共用该配置。
+        llm_chunk_analyzer: LLM 档语义边界提供器（#278 M4，spec §5.6.7）——
+            async Callable（复用 F5 LLMClient 语义）；None = 未配置（降级段落
+            切片，向后兼容）。仅在 reindex 的 CHAPTER_CHUNK 分支生效。
     """
 
     def __init__(
@@ -245,6 +248,7 @@ class ExtractionService(_ExtractionRAGMixin):
         vector_store: VectorStoreProtocol | None = None,
         fingerprint_provider: Callable[[], Awaitable[dict | None]] | None = None,
         chunking: ChunkingConfig | None = None,
+        llm_chunk_analyzer: Callable[[str], Awaitable[list[int]]] | None = None,
     ) -> None:
         self._project_repo = project_repo
         self._chapter_repo = chapter_repo
@@ -263,6 +267,7 @@ class ExtractionService(_ExtractionRAGMixin):
         self._vector_store = vector_store
         self._fingerprint_provider = fingerprint_provider
         self._chunking = chunking if chunking is not None else ChunkingConfig()
+        self._llm_chunk_analyzer = llm_chunk_analyzer
         self._reindex_lock = asyncio.Lock()
 
         # 类型注册表（spec §6.1: 6 槽全注册；F16 §8.2: STYLE → StyleService.analyze）。

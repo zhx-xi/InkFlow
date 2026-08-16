@@ -133,7 +133,8 @@ def test_build_fingerprint_fills_default_chunking_keys() -> None:
     assert fp.chunking.mode == "fixed"
     assert fp.chunking.chunk_size == 500
     assert fp.chunking.overlap_ratio == 0.0
-    assert fp.chunking.chunker_version == 1
+    # #278 M4 升级: CHUNKER_VERSION 1→2（对话/LLM 真规则算法改版，spec §5.6.5）
+    assert fp.chunking.chunker_version == 2
     assert fp.embedding.dimension is None
     assert fp.schema_version == 1
     assert fp.status == "fresh"

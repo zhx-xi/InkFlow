@@ -395,7 +395,7 @@ async def test_get_vector_status_fresh_when_fingerprint_matches() -> None:
                 "mode": "fixed",
                 "chunk_size": 500,
                 "overlap_ratio": 0.0,
-                "chunker_version": 1,
+                "chunker_version": 2,  # #278 M4: CHUNKER_VERSION bump（indexed 指纹模拟 M4 后）
             },
             "indexed_at": "2026-08-12T08:00:00Z",
             "status": "fresh",
@@ -439,7 +439,7 @@ async def test_get_vector_status_dimension_mismatch_independent() -> None:
                 "mode": "fixed",
                 "chunk_size": 500,
                 "overlap_ratio": 0.0,
-                "chunker_version": 1,
+                "chunker_version": 2,  # #278 M4: CHUNKER_VERSION bump（indexed 指纹模拟 M4 后）
             },
             "indexed_at": "2026-08-12T08:00:00Z",
             "status": "fresh",
@@ -580,7 +580,7 @@ async def test_build_configured_fingerprint_accepts_chunking_override() -> None:
 
 
 async def test_build_configured_fingerprint_chunking_default_unchanged() -> None:
-    """E9 守护: 不传 chunking → 默认 fixed/500/0.0/1（既有行为不变）。"""
+    """E9 守护: 不传 chunking → 默认 fixed/500/0.0/2（CHUNKER_VERSION 随 M4 bump）。"""
     repo = _repo_with_providers([_embedding_provider()])
 
     with (
@@ -597,7 +597,7 @@ async def test_build_configured_fingerprint_chunking_default_unchanged() -> None
         "mode": "fixed",
         "chunk_size": 500,
         "overlap_ratio": 0.0,
-        "chunker_version": 1,
+        "chunker_version": 2,
     }
 
 
@@ -625,7 +625,8 @@ async def test_get_extraction_service_fingerprint_provider_includes_chunking() -
     # chunking 键存在（默认值或 settings 值——db mock 未持久化 → 默认 fixed）
     assert fp["chunking"]["mode"] in {"fixed", "paragraph"}
     assert fp["chunking"]["chunk_size"] >= 100
-    assert fp["chunking"]["chunker_version"] == 1
+    # #278 M4 升级: CHUNKER_VERSION 1→2（对话/LLM 真规则算法改版，spec §5.6.5）
+    assert fp["chunking"]["chunker_version"] == 2
 
 
 async def test_get_vector_status_with_db_reads_chunking_settings() -> None:
@@ -673,3 +674,72 @@ async def test_load_chunking_config_none_db_returns_default() -> None:
     assert cfg.mode.value == "fixed"
     assert cfg.chunk_size == 500
     assert cfg.overlap_ratio == 0.0
+
+
+# ══ #278 M4 追加段（2026-08-16）: LLM 档 analyzer 装配 + chunker_version 常量 ═══
+# 契约源: specs/f14-extraction-service/spec.md §5.6.7（analyzer 装配在 deps/
+# 装配层，复用 F5 LLMClient）+ §5.6.5（chunker_version 手动 bump 触发 stale）。
+# RED 期 get_extraction_service 无 llm_chunk_analyzer 装配 → AttributeError /
+# _chunking_fingerprint_dict 硬编码 1 → E10 已升级 2。
+
+
+async def test_get_extraction_service_injects_llm_chunk_analyzer_when_mode_llm() -> None:
+    """get_extraction_service mode=llm → 装配 llm_chunk_analyzer（async 边界提供器）。"""
+    repo = _repo_with_providers([_embedding_provider()])
+    fake_store = MagicMock()
+    fake_store.embedding_dimension = 768
+
+    fake_db = MagicMock()
+    rows = MagicMock()
+    rows.all = MagicMock(return_value=[("rag_chunk_mode", '"llm"')])
+    fake_db.execute = AsyncMock(return_value=rows)
+
+    with (
+        patch(
+            "inkflow.infrastructure.database.repositories.provider_config_repo.SQLiteProviderConfigRepository",
+            return_value=repo,
+        ),
+        patch.object(APIKeyManager, "load", return_value="sk-test-123"),
+        patch(
+            "inkflow.infrastructure.rag.langchain_vector_store.LangChainVectorStore",
+            return_value=fake_store,
+        ),
+    ):
+        svc = await deps.get_extraction_service(fake_db)
+        # 指纹断言必须在 patch 作用域内（_fingerprint_provider 会访问
+        # provider-configs 注册表——与 E10 同形态，移出 with 会走真实 DB）
+        analyzer = svc._llm_chunk_analyzer  # type: ignore[attr-defined]  # 测试直接访问私有装配属性（同文件 E10 惯例）
+        assert analyzer is not None
+        assert callable(analyzer)
+        # 指纹 chunking 反映 llm 档 + 新 chunker_version（M4 常量）
+        fp = await svc._fingerprint_provider()  # type: ignore[attr-defined]  # 测试直接调用注入闭包（同文件 E10 惯例）
+        assert fp is not None
+        assert fp["chunking"]["mode"] == "llm"
+        assert fp["chunking"]["chunker_version"] == 2
+
+
+async def test_get_extraction_service_llm_analyzer_none_for_fixed_mode() -> None:
+    """get_extraction_service mode=fixed → llm_chunk_analyzer None（零 LLM 开销）。"""
+    repo = _repo_with_providers([_embedding_provider()])
+    fake_store = MagicMock()
+    fake_store.embedding_dimension = 768
+
+    fake_db = MagicMock()
+    rows = MagicMock()
+    rows.all = MagicMock(return_value=[("rag_chunk_mode", '"fixed"')])
+    fake_db.execute = AsyncMock(return_value=rows)
+
+    with (
+        patch(
+            "inkflow.infrastructure.database.repositories.provider_config_repo.SQLiteProviderConfigRepository",
+            return_value=repo,
+        ),
+        patch.object(APIKeyManager, "load", return_value="sk-test-123"),
+        patch(
+            "inkflow.infrastructure.rag.langchain_vector_store.LangChainVectorStore",
+            return_value=fake_store,
+        ),
+    ):
+        svc = await deps.get_extraction_service(fake_db)
+
+    assert svc._llm_chunk_analyzer is None  # type: ignore[attr-defined]  # 测试直接访问私有装配属性（同文件 E10 惯例）

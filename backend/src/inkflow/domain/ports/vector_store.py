@@ -208,6 +208,21 @@ class VectorStoreProtocol(Protocol):
         """
         ...
 
+    async def list_entities(
+        self,
+        project_id: str,
+        entity_type: EntityType,
+        *,
+        where: dict[str, str | int | float] | None = None,
+    ) -> list[tuple[str, dict[str, str | int | float]]]:
+        """列出该类型下（可选 metadata where 过滤）的 (id, metadata) 对。
+
+        LLM 增量跳过用（#278 M4）: 读回旧块 id 与 source_hash 判定内容未变。
+        where 键值按 metadata 精确匹配（如 {"chapter_id": "1"}）；None = 不附加过滤；
+        恒按 project_id 隔离。无匹配 → []。
+        """
+        ...
+
     async def recreate_collections(self, entity_types: list[EntityType] | None = None) -> Path:
         """备份并删除重建集合（维度不匹配时调用）。
 
