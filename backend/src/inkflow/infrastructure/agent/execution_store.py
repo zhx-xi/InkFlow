@@ -50,8 +50,9 @@ class ExecutionStore:
         error: str = "",
         total_duration_ms: int = 0,
         relations: list | None = None,
+        trace: list | None = None,
     ) -> None:
-        """更新 stages 快照和整体状态。"""
+        """更新 stages 快照和整体状态（F47 #379：trace 轨迹快照一并落库）。"""
         execution = await self.get_execution(execution_id)
         if execution is None:
             return
@@ -61,6 +62,7 @@ class ExecutionStore:
         execution.error = error
         execution.total_duration_ms = total_duration_ms
         execution.relations = relations if relations is not None else []
+        execution.trace = trace if trace is not None else []
         await self._session.commit()
 
     async def update_status(

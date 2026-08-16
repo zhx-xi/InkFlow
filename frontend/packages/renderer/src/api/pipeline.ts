@@ -28,7 +28,7 @@ export interface PipelineStageSnapshot {
 }
 
 /** F47 #379（spec §3.1）：执行记录 trace 条目（stage=角色节点执行 / decision=supervisor 路由决策） */
-export interface PipelineTraceEntry {
+export interface TraceEntry {
   node: string;
   type: 'stage' | 'decision';
   reasoning: string;
@@ -38,6 +38,14 @@ export interface PipelineTraceEntry {
   ts: string;
 }
 
+/** F47 #379（spec §3.1）：执行记录 agent_relations 边 + gate 判定快照（F46 数据）。*/
+export interface PipelineRelationEntry {
+  from: string;
+  to: string;
+  type: string;
+  gate_result?: string;
+}
+
 export interface PipelineExecutionStatus {
   execution_id: string;
   pipeline: string;
@@ -45,7 +53,9 @@ export interface PipelineExecutionStatus {
   status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'waiting_hitl';
   stages: PipelineStageSnapshot[];
   /** F47 #379：执行轨迹（后端恒返回，默认 []；可选以兼容既有契约测试 mock） */
-  trace?: PipelineTraceEntry[];
+  trace?: TraceEntry[];
+  /** F47 #379：agent_relations 边 + gate 判定快照（可缺省以兼容既有契约测试 mock）*/
+  relations?: PipelineRelationEntry[];
   final_output: string;
   total_duration_ms: number;
   error: string;

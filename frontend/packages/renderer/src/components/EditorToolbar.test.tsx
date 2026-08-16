@@ -132,3 +132,28 @@ describe('工具栏 — 审计按钮（F34 章节审计 Issue #208，spec §8.1 
     expect(within(toolbar).getByRole('button', { name: '审计' })).toBeDisabled();
   });
 });
+
+describe('工具栏 — 视图切换按钮（#379 F47 §4.2）', () => {
+  it('渲染 view-toggle（editor 视图时 aria-label 为「查看 AI 执行详情」）', () => {
+    renderToolbar({ view: 'editor', onToggleView: vi.fn() });
+    const toolbar = screen.getByTestId('editor-toolbar');
+    const toggle = within(toolbar).getByTestId('view-toggle');
+    expect(toggle).toHaveAttribute('aria-label', '查看 AI 执行详情');
+  });
+
+  it('detail 视图时 aria-label 为「返回正文编辑」', () => {
+    renderToolbar({ view: 'detail', onToggleView: vi.fn() });
+    const toolbar = screen.getByTestId('editor-toolbar');
+    const toggle = within(toolbar).getByTestId('view-toggle');
+    expect(toggle).toHaveAttribute('aria-label', '返回正文编辑');
+  });
+
+  it('点击 view-toggle → onToggleView 被调用', async () => {
+    const user = userEvent.setup();
+    const onToggleView = vi.fn();
+    renderToolbar({ view: 'editor', onToggleView });
+    const toolbar = screen.getByTestId('editor-toolbar');
+    await user.click(within(toolbar).getByTestId('view-toggle'));
+    expect(onToggleView).toHaveBeenCalledTimes(1);
+  });
+});

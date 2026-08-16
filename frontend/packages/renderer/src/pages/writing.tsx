@@ -9,6 +9,7 @@ import { ChapterEditor } from '../components/ChapterEditor';
 import { ChatPanel } from '../components/ChatPanel';
 import { ContextPanel } from '../components/ContextPanel';
 import { EditorToolbar } from '../components/EditorToolbar';
+import { ExecutionDetailPanel } from '../components/ExecutionDetailPanel';
 import { PipelineStatus } from '../components/PipelineStatus';
 import { ProjectTree } from '../components/ProjectTree';
 import { StatusBar } from '../components/StatusBar';
@@ -65,6 +66,8 @@ export function WritingPage() {
   });
   const { status, error, start, hitlPending, confirm } = pipeline;
 
+  // F47 #379（spec §4.2）：正文编辑 ↔ AI 执行详情视图切换，默认 editor
+  const [view, setView] = useState<'editor' | 'detail'>('editor');
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [confirming, setConfirming] = useState(false);
   const dirtyRef = useRef(false);
@@ -232,8 +235,14 @@ export function WritingPage() {
             onContinue={() => start('write_continue')}
             onGenerate={() => start('write_auto')}
             onAudit={() => void handleAudit()}
+            view={view}
+            onToggleView={() => setView((v) => (v === 'editor' ? 'detail' : 'editor'))}
           />
-          <ChapterEditor onEditorKeyDown={handleKeyDown} onContentChange={handleContentChange} />
+          {view === 'editor' ? (
+            <ChapterEditor onEditorKeyDown={handleKeyDown} onContentChange={handleContentChange} />
+          ) : (
+            <ExecutionDetailPanel executionId={null} />
+          )}
           <PipelineStatus
             status={status}
             error={error}

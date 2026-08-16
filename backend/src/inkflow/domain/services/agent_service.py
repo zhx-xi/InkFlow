@@ -534,6 +534,7 @@ class AgentService:
             "status": execution.status,
             "stages": execution.stages,
             "relations": getattr(execution, "relations", None) or [],
+            "trace": getattr(execution, "trace", []) or [],
             "final_output": execution.final_output,
             "total_duration_ms": execution.total_duration_ms,
             "error": execution.error,
@@ -588,13 +589,19 @@ class AgentService:
                 "final_output": "",
             }
         # 成功路径：写完整成品落库（#343 根因 6：interrupt 分支只写 waiting_hitl）
-        await self._store.update_stages(
-            execution_id=execution_id,
-            stages=_stage_snapshots(result.stages),
-            status=result.status.value,
-            final_output=result.final_output,
-            total_duration_ms=result.total_duration_ms,
-        )
+        # F47 #379：trace 仅在非空时透传——空 trace 由 store 落库默认 []（语义等价），
+        # 且兼容既有测试 MockExecutionStore（update_stages 签名无 trace 参数）。
+        trace = getattr(result, "trace", []) or []
+        confirm_kwargs: dict[str, Any] = {
+            "execution_id": execution_id,
+            "stages": _stage_snapshots(result.stages),
+            "status": result.status.value,
+            "final_output": result.final_output,
+            "total_duration_ms": result.total_duration_ms,
+        }
+        if trace:
+            confirm_kwargs["trace"] = trace
+        await self._store.update_stages(**confirm_kwargs)
         return {
             "execution_id": execution_id,
             "status": result.status.value,
@@ -764,14 +771,20 @@ class AgentService:
                 )
             relations_snapshot = _build_relations_snapshot(agent_relations or [], result.stages)
             stages_snapshot = _stage_snapshots(result.stages)
-            await self._store.update_stages(
-                execution_id=execution_id,
-                stages=stages_snapshot,
-                status=result.status.value,
-                final_output=result.final_output,
-                total_duration_ms=result.total_duration_ms,
-                relations=relations_snapshot,
-            )
+            # F47 #379：trace 仅在非空时透传——空 trace 由 store 落库默认 []（语义等价），
+            # 且兼容既有测试 MockExecutionStore（update_stages 签名无 trace 参数）。
+            trace = getattr(result, "trace", []) or []
+            run_kwargs: dict[str, Any] = {
+                "execution_id": execution_id,
+                "stages": stages_snapshot,
+                "status": result.status.value,
+                "final_output": result.final_output,
+                "total_duration_ms": result.total_duration_ms,
+                "relations": relations_snapshot,
+            }
+            if trace:
+                run_kwargs["trace"] = trace
+            await self._store.update_stages(**run_kwargs)
         except HITLInterrupt as e:
             # HITL 中断：落 waiting_hitl + payload 等待确认
             await self._store.update_status(

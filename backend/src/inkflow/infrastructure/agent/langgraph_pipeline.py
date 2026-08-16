@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from functools import partial
 from typing import cast
 
@@ -177,10 +178,26 @@ class LangGraphAgentPipeline:
             ]
             if content_candidates:
                 final_output = results_map[content_candidates[0].id].output
+        # F47 #379（spec §2.1）：执行完成后按 stages 结果组装 trace 条目（每 stage 一条，
+        # type=stage，reasoning=AIMessage content，output 前 500 字符截断）。
+        trace_ts = datetime.now(UTC).isoformat()
+        trace = [
+            {
+                "node": sr.stage_id,
+                "type": "stage",
+                "reasoning": sr.output,
+                "tool_calls": [],
+                "output": sr.output[:500],
+                "duration_ms": sr.duration_ms,
+                "ts": trace_ts,
+            }
+            for sr in stage_results
+        ]
         result = PipelineResult(
             stages=stage_results,
             final_output=final_output,
             status=StageStatus.FAILED if failed else StageStatus.COMPLETED,
+            trace=trace,
         )
         if failed:
             error = PipelineError(f"管线执行失败: 阶段 '{failed[0].stage_id}' 重试耗尽")

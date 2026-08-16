@@ -102,6 +102,11 @@ class PipelineResult:
     stages: list[StageResult]
     """各阶段执行结果列表。"""
 
+    trace: list[dict] = field(default_factory=list)
+    """执行过程 trace 条目列表
+    （TraceEntry：node/type/reasoning/tool_calls/output/duration_ms/ts）。
+    """
+
     final_output: str = ""
     """最终阶段的输出。"""
 
