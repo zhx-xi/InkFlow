@@ -53,8 +53,6 @@ export function usePipeline(options: UsePipelineOptions): UsePipelineResult {
         if (options.genre) vars.genre = options.genre;
         if (options.targetWords > 0) vars.target_words = String(options.targetWords);
       }
-      // 续写：前文内容作为 context 注入（spec §5.6 write_continue prompt 用 {context}）
-      if (mode === 'write_continue') vars.context = useChapterStore.getState().content;
       return vars;
     },
     [options.genre, options.targetWords, options.writingStyle],
