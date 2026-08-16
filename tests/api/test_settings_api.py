@@ -651,18 +651,11 @@ DEFAULT_SETTINGS = {
     "rag_chunk_overlap": False,
     "rag_chunk_overlap_ratio": 0.15,
 }
-"""14 字段默认值（§2.1 表 + §3.2 空表响应；agent_* 为 F27 #160 Q2 拍板预算键；
-rag_chunk_* 为 #277 M3 切片配置 4 键，spec §5.6.3）。"""
 
 
 @pytest.fixture
 def set_token_env(monkeypatch):
-    """设置 INKFLOW_SERVER_TOKEN（test_token_auth.py 同款 env-set fixture）。
-
-    设计假设 #18：401 用例专用；与文件头 client fixture 的 delenv 直通
-    模式互斥（fixture 求值顺序 client 先 delenv、本 fixture 后 setenv
-    → 请求发出时 env 已设置，token 中间件进入校验分支）。
-    """
+    """设置 INKFLOW_SERVER_TOKEN（test_token_auth.py 同款 env-set fixture）。"""
     monkeypatch.setenv(ENV_TOKEN, TEST_TOKEN)
     return TEST_TOKEN
 
