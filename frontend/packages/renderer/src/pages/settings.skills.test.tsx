@@ -3,7 +3,7 @@
  *
  * 契约锚点（spec §8.3 settings.tsx MODIFY / §5.4）：
  * - 五分类导航新增「Skill 管理」分类（CatKey 'skills'，nav 按钮 settings-cat-skills）
- * - 点击 → SkillList 面板挂载（settings-skills-panel）
+ * - 点击 → SkillList 面板挂载（skill-list；GREEN 后挂载为 `{activeCat === 'skills' && <SkillList />}` 单行，无额外包装 div）
  * - 深链 /settings?cat=skills → 直接 Skill 面板
  *
  * 共享 mock 模式：本文件自含副本（#281 拆分惯例），SkillList/SkillUploadDialog 以假实现

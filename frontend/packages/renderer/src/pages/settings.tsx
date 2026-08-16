@@ -49,9 +49,8 @@ const CATS: Array<{ key: CatKey; labelKey: string; icon: typeof SlidersHorizonta
 
 const CAT_KEYS = CATS.map((c) => c.key);
 
-function isCatKey(v: string | null): v is CatKey {
-  return v !== null && (CAT_KEYS as string[]).includes(v);
-}
+const isCatKey = (v: string | null): v is CatKey =>
+  v !== null && (CAT_KEYS as string[]).includes(v);
 
 /** 快捷键一览（spec §7.4：Ctrl+Z/Y/S/Enter 五组；#105 修复批：生成 = Ctrl+Shift+Enter 非 Shift+Enter） */
 const SHORTCUTS: Array<{ combo: string; labelKey: string }> = [
@@ -894,11 +893,7 @@ export function SettingsPage() {
             </div>
           )}
           {activeCat === 'templates' && <TemplatesPanel />}
-          {activeCat === 'skills' && (
-            <div data-testid="settings-skills-panel">
-              <SkillList />
-            </div>
-          )}
+          {activeCat === 'skills' && <SkillList />}
           {activeCat === 'account' && <AccountPanel />}
         </div>
       </div>
