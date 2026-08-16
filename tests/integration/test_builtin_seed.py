@@ -112,7 +112,7 @@ try:
     from inkflow.domain.services.agent_entity_service import seed_builtin_agents
 except ImportError:  # pragma: no cover - RED 阶段 stub
 
-    async def seed_builtin_agents(session, *args, **kwargs):  # type: ignore[no-redef]
+    async def seed_builtin_agents(session, *args, **kwargs):  # type: ignore[no-redef]  # RED stub 与真实 import 同名重定义（GREEN 后真实函数覆盖）
         raise ImportError("seed_builtin_agents 未实现（F39 RED 阶段预期）")
 
 
@@ -120,7 +120,7 @@ try:
     from inkflow.domain.services.skill_service import seed_builtin_skills
 except ImportError:  # pragma: no cover - RED 阶段 stub
 
-    async def seed_builtin_skills(session, *args, **kwargs):  # type: ignore[no-redef]
+    async def seed_builtin_skills(session, *args, **kwargs):  # type: ignore[no-redef]  # RED stub 与真实 import 同名重定义（GREEN 后真实函数覆盖）
         raise ImportError("seed_builtin_skills 未实现（F39 RED 阶段预期）")
 
 
