@@ -137,24 +137,28 @@ test('聊天框：输入 → 发送 → assistant 消息 → 插入正文 → �
     await createProjectViaUi(window, name);
     const pid = await findProjectId(kernel, name);
 
-    // 预置 1 卷 + 1 章（正文空）——项目树有章节可点
-    const volumes = await kernelFetch(kernel, `/api/v1/projects/${pid}/volumes`, { method: 'POST', body: { title: '第一卷 风起', order_index: 0 } });
-    expect(volumes.ok).toBe(true);
+    // 预置 1 卷 + 1 章（正文空）——项目树有章节可点（对齐 e2e-writing 预置写法）
+    const volumes = await kernelFetch(kernel, `/api/v1/projects/${pid}/volumes`, { method: 'POST', body: { title: '第一卷 风起' } });
+    expect(volumes.status).toBe(201);
     const volData = (await volumes.json()) as { id: string };
     const chapters = await kernelFetch(kernel, `/api/v1/projects/${pid}/chapters`, {
       method: 'POST',
-      body: { title: '第1章 初见', volume_id: volData.id, order_index: 0, content: '' },
+      body: { title: '第1章 初见', volume_id: volData.id, content: '' },
     });
-    expect(chapters.ok).toBe(true);
+    expect(chapters.status).toBe(201);
 
-    // 拦截管线 API（确定性）
+    // 重挂载写作页触发 loadChapterTree（加载 API 预置的卷/章）
+    await gotoNav(window, '项目');
+    await gotoNav(window, '写作');
+    await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByTestId('tree-volume')).toBeVisible({ timeout: 15_000 });
+    // 点章节 → 成为当前章（tree-chapter 仅当前章渲染）
+    await window.getByRole('button', { name: /第1章 初见/ }).click();
+    await expect(window.getByTestId('tree-chapter')).toBeVisible({ timeout: 15_000 });
+
+    // 树就绪后再注册管线拦截（避免影响树加载）
     const finalOutput = 'E2E 对话回复内容';
     interceptPipeline(window, 'e-chat-e2e', finalOutput, pid);
-
-    // 进入写作页并选择章节
-    await gotoNav(window, '写作');
-    await expect(window.getByTestId('tree-chapter')).toBeVisible({ timeout: 15_000 });
-    await window.getByTestId('tree-chapter').click();
 
     // 聊天框发送
     const chatInput = window.getByTestId('chat-input');
@@ -180,18 +184,22 @@ test('视图切换：view-toggle → 详情页空态 → 切回 editor', async (
     await createProjectViaUi(window, name);
     const pid = await findProjectId(kernel, name);
 
-    const volumes = await kernelFetch(kernel, `/api/v1/projects/${pid}/volumes`, { method: 'POST', body: { title: '第一卷 风起', order_index: 0 } });
-    expect(volumes.ok).toBe(true);
+    const volumes = await kernelFetch(kernel, `/api/v1/projects/${pid}/volumes`, { method: 'POST', body: { title: '第一卷 风起' } });
+    expect(volumes.status).toBe(201);
     const volData = (await volumes.json()) as { id: string };
     const chapters = await kernelFetch(kernel, `/api/v1/projects/${pid}/chapters`, {
       method: 'POST',
-      body: { title: '第1章 初见', volume_id: volData.id, order_index: 0, content: '正文内容' },
+      body: { title: '第1章 初见', volume_id: volData.id, content: '正文内容' },
     });
-    expect(chapters.ok).toBe(true);
+    expect(chapters.status).toBe(201);
 
+    // 重挂载写作页触发 loadChapterTree
+    await gotoNav(window, '项目');
     await gotoNav(window, '写作');
+    await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByTestId('tree-volume')).toBeVisible({ timeout: 15_000 });
+    await window.getByRole('button', { name: /第1章 初见/ }).click();
     await expect(window.getByTestId('tree-chapter')).toBeVisible({ timeout: 15_000 });
-    await window.getByTestId('tree-chapter').click();
 
     // 默认 editor 视图
     await expect(window.getByTestId('chapter-editor')).toBeVisible({ timeout: 15_000 });
