@@ -959,7 +959,7 @@ jobs:
         run: pnpm --filter inkflow-electron build
 
       - name: E2E settings (Playwright _electron settings page)
-        run: pnpm --filter inkflow-electron test:e2e e2e-settings e2e-settings-templates e2e-settings-agents
+        run: pnpm --filter inkflow-electron test:e2e e2e-settings e2e-settings-templates e2e-settings-agents e2e-settings-skills
 
   # ── Coverage: 后端覆盖率门禁（unit + 顶层合并 --cov-append；RAG 文件 F14 先例排除）──
   # 门槛（2026-08-06 Phase 3 实测 CI 权威口径）：

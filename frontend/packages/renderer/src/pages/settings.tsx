@@ -1,7 +1,7 @@
 /** 设置页（spec §7.4：五分类导航 + 右侧面板 + 即改即存；AgentChainCard 迁移、AppearanceCard 行为并入常规） */
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Bot, Cpu, FileText, SlidersHorizontal, UserRound } from 'lucide-react';
+import { BookOpen, Bot, Cpu, FileText, SlidersHorizontal, UserRound } from 'lucide-react';
 import { AccountPanel } from './AccountPanel';
 import { AgentChainCard } from '../components/AgentChainCard';
 import { AgentList } from '../components/AgentList';
@@ -9,6 +9,7 @@ import { AppearanceCard } from '../components/AppearanceCard';
 import { TemplateDialog } from '../components/TemplateDialog';
 import { Switch } from '../components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { SkillList } from '../components/SkillList';
 import type { CloseBehavior } from '../api/client';
 import {
   errorMessage,
@@ -27,7 +28,7 @@ import { useToastStore } from '../stores/toast';
 import type { FontKey } from '../theme';
 import { cn } from '../lib/cn';
 
-type CatKey = 'general' | 'models' | 'agent' | 'templates' | 'account';
+type CatKey = 'general' | 'models' | 'agent' | 'templates' | 'skills' | 'account';
 
 /** #189：页面顶部保存指示状态（隐藏 / 保存中 / 已保存，参考 Notion/Google Docs 顶部指示模式） */
 type SaveState = 'idle' | 'saving' | 'saved';
@@ -42,14 +43,11 @@ const CATS: Array<{ key: CatKey; labelKey: string; icon: typeof SlidersHorizonta
   { key: 'models', labelKey: 'set.cat.models', icon: Cpu },
   { key: 'agent', labelKey: 'set.cat.agent', icon: Bot },
   { key: 'templates', labelKey: 'set.cat.templates', icon: FileText },
+  { key: 'skills', labelKey: 'set.cat.skills', icon: BookOpen },
   { key: 'account', labelKey: 'set.cat.account', icon: UserRound },
 ];
 
-const CAT_KEYS = CATS.map((c) => c.key);
-
-function isCatKey(v: string | null): v is CatKey {
-  return v !== null && (CAT_KEYS as string[]).includes(v);
-}
+const isCatKey = (v: string | null): v is CatKey => v !== null && (CATS.map((c) => c.key) as string[]).includes(v);
 
 /** 快捷键一览（spec §7.4：Ctrl+Z/Y/S/Enter 五组；#105 修复批：生成 = Ctrl+Shift+Enter 非 Shift+Enter） */
 const SHORTCUTS: Array<{ combo: string; labelKey: string }> = [
@@ -892,6 +890,7 @@ export function SettingsPage() {
             </div>
           )}
           {activeCat === 'templates' && <TemplatesPanel />}
+          {activeCat === 'skills' && <SkillList />}
           {activeCat === 'account' && <AccountPanel />}
         </div>
       </div>
