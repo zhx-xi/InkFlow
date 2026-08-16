@@ -47,10 +47,7 @@ const CATS: Array<{ key: CatKey; labelKey: string; icon: typeof SlidersHorizonta
   { key: 'account', labelKey: 'set.cat.account', icon: UserRound },
 ];
 
-const CAT_KEYS = CATS.map((c) => c.key);
-
-const isCatKey = (v: string | null): v is CatKey =>
-  v !== null && (CAT_KEYS as string[]).includes(v);
+const isCatKey = (v: string | null): v is CatKey => v !== null && (CATS.map((c) => c.key) as string[]).includes(v);
 
 /** 快捷键一览（spec §7.4：Ctrl+Z/Y/S/Enter 五组；#105 修复批：生成 = Ctrl+Shift+Enter 非 Shift+Enter） */
 const SHORTCUTS: Array<{ combo: string; labelKey: string }> = [
