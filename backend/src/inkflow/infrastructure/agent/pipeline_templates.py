@@ -35,12 +35,16 @@ _REVISER_PROMPT = """你是一位专业文稿修订师。根据审阅意见修�
 _AUTO_ARCHITECT_PROMPT = """你是一位资深小说架构师。为一个全新章节从零规划结构与情节：
 - 题材: {genre}
 - 目标字数: {target_words}
+- 设定库摘要: {setting}
+- 本章标题: {chapter_title}
 
 请输出：1) 本章核心冲突 2) 情节节奏（起承转合）3) 关键场景列表"""
 
 _AUTO_WRITER_PROMPT = """你是一位专业小说写手。根据架构师的规划，从零撰写本章完整内容：
 - 架构规划: {architect_output}
 - 写作风格: {writing_style}
+- 设定库摘要: {setting}
+- 本章标题: {chapter_title}
 
 请写出完整章节，语言流畅自然，情节紧扣规划，无需依赖前文。"""
 
@@ -62,6 +66,8 @@ _AUTO_REVISER_PROMPT = """你是一位专业文稿修订师。根据审阅意见
 _CONTINUE_WRITER_PROMPT = """你是一位专业小说写手。根据前文摘要续写下一章节：
 - 前文摘要: {context}
 - 写作风格: {writing_style}
+- 设定库摘要: {setting}
+- 本章标题: {chapter_title}
 
 请续写本章完整内容，保持与前文的情节连贯、人物一致、文风统一。"""
 

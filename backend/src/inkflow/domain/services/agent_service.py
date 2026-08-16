@@ -370,6 +370,9 @@ class AgentService:
         template_repo: Any = None,
         supervisor_pipeline: Any = None,
         summary_service: Any = None,
+        character_repo: Any = None,
+        world_repo: Any = None,
+        outline_repo: Any = None,
     ):
         # 延迟导入避免循环依赖
         from inkflow.infrastructure.agent.execution_store import ExecutionStore
@@ -387,6 +390,9 @@ class AgentService:
         self._pipeline = pipeline
         self._supervisor_pipeline = supervisor_pipeline
         self._summary_service = summary_service
+        self._character_repo = character_repo
+        self._world_repo = world_repo
+        self._outline_repo = outline_repo
         self._store = store or ExecutionStore(db_session)
         self._project_repo = project_repo or SQLiteProjectRepository(db_session)
         self._chapter_repo = chapter_repo or SQLiteChapterRepository(db_session)
@@ -715,6 +721,13 @@ class AgentService:
         agent_relations 为 F46 #270 新增：条件边透传 + 执行记录 relations 快照回填。
         """
         pipeline = pipeline or self._pipeline
+        # #366 G1 设定驱动写作：无条件注入设定库摘要（角色/世界观/大纲）
+        try:
+            context.variables = await self._assemble_setting_context(
+                context.project_id, context.variables
+            )
+        except Exception:
+            logger.warning("设定注入失败，回退请求变量", exc_info=True)
         if continue_context:
             try:
                 context.variables = await self._assemble_continue_context(
@@ -766,6 +779,59 @@ class AgentService:
                 status="failed",
                 error=f"执行异常: {e}",
             )
+
+    async def _assemble_setting_context(
+        self, project_id: str, variables: dict[str, str]
+    ) -> dict[str, str]:
+        """设定库摘要注入（#366 G1 设定驱动写作）。
+
+        角色/世界观/大纲三源读设定库（character_repo/world_repo/outline_repo，
+        均为可选注入，任一 None → 跳过该源；三源全 None → 原样返回）。
+        组装格式（每条非空才注入，跳过空条目）：
+          【角色】{name}：{personality}
+          【世界观】{name}：{content}
+          【大纲】{name}：{description}
+        合并为 variables["setting"]（\n\n 连接）。单源异常 → WARNING + 跳过该源
+        （失败隔离，不阻断管线）；整体异常 → WARNING + 原样返回。
+        """
+        if self._character_repo is None and self._world_repo is None and self._outline_repo is None:
+            return variables
+        try:
+            project_int = uuid.UUID(project_id).int
+            project = await self._project_repo.get(project_int)
+            if project is None:
+                return variables
+            parts: list[str] = []
+            if self._character_repo is not None:
+                try:
+                    characters, _ = await self._character_repo.list(project_int, limit=50)
+                    for ch in characters:
+                        content = ch.personality or ch.background or ch.goals
+                        if content:
+                            parts.append(f"【角色】{ch.name}：{content}")
+                except Exception:
+                    logger.warning("角色设定读取失败，跳过该源", exc_info=True)
+            if self._world_repo is not None:
+                try:
+                    worlds, _ = await self._world_repo.list(project_int, limit=50)
+                    for ws in worlds:
+                        if ws.content:
+                            parts.append(f"【世界观】{ws.name}：{ws.content}")
+                except Exception:
+                    logger.warning("世界观设定读取失败，跳过该源", exc_info=True)
+            if self._outline_repo is not None:
+                try:
+                    outlines, _ = await self._outline_repo.list(project_int, limit=50)
+                    for o in outlines:
+                        if o.description:
+                            parts.append(f"【大纲】{o.name}：{o.description}")
+                except Exception:
+                    logger.warning("大纲设定读取失败，跳过该源", exc_info=True)
+            if parts:
+                variables["setting"] = "\n\n".join(parts)
+        except Exception:
+            logger.warning("设定注入失败，回退请求变量", exc_info=True)
+        return variables
 
     async def _assemble_continue_context(
         self,

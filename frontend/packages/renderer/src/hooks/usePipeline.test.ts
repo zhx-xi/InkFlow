@@ -11,6 +11,7 @@
  *   genre: string;
  *   targetWords: number;
  *   writingStyle: string;
+ *   chapterTitle: string;
  * }
  * export interface UsePipelineResult {
  *   status: PipelineRunStatus;
@@ -23,10 +24,11 @@
  *
  * 行为契约：
  * - start('write_auto') → executePipeline({project_id, pipeline:'builtin:write_auto',
- *   chapter_id, variables:{genre?, target_words?, writing_style?}}（非空才注入）)
+ *   chapter_id, variables:{genre?, target_words?, writing_style?, chapter_title?}}（非空才注入）)
  * - start('write_continue') → executePipeline({pipeline:'builtin:write_continue',
- *   variables:{writing_style?}})（#318：前文摘要由后端生成注入 context，
+ *   variables:{writing_style?, chapter_title?}})（#318：前文摘要由后端生成注入 context，
  *   前端不再传 chapterStore.content 全文）
+ * - chapter_title（当前章节标题）非空才注入，write_auto 与 write_continue 均注入（G1 #366）
  * - 轮询 getExecutionStatus(execution_id)（1s 间隔，setTimeout 递归）：
  *   status==='completed' → chapterStore.setContent(final_output) + status='success'
  *   status==='failed' → status='failed' + error
@@ -55,6 +57,7 @@ const OPTS = {
   genre: '玄幻',
   targetWords: 800000,
   writingStyle: '文笔细腻',
+  chapterTitle: '第一章',
 };
 
 beforeEach(() => {
@@ -112,7 +115,7 @@ describe('usePipeline — 状态机（idle → running → success | failed）',
       project_id: 'p1',
       pipeline: 'builtin:write_auto',
       chapter_id: 'c1',
-      variables: { genre: '玄幻', target_words: '800000', writing_style: '文笔细腻' },
+      variables: { genre: '玄幻', target_words: '800000', writing_style: '文笔细腻', chapter_title: '第一章' },
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
@@ -128,8 +131,21 @@ describe('usePipeline — 状态机（idle → running → success | failed）',
       project_id: 'p1',
       pipeline: 'builtin:write_continue',
       chapter_id: 'c1',
-      variables: { writing_style: '文笔细腻' },
+      variables: { writing_style: '文笔细腻', chapter_title: '第一章' },
     });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+  });
+
+  it('chapterTitle 为空串：variables 不含 chapter_title 键（守护）', async () => {
+    const { result } = renderHook(() => usePipeline({ ...OPTS, chapterTitle: '' }));
+    act(() => {
+      result.current.start('write_auto');
+    });
+    const body = executeMock.mock.calls[0][0];
+    expect(body.variables).toBeDefined();
+    expect(body.variables).not.toHaveProperty('chapter_title');
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });

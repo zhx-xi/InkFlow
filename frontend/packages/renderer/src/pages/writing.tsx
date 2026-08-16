@@ -59,6 +59,7 @@ export function WritingPage() {
     genre: currentProject?.genre ?? '',
     targetWords: currentProject?.target_words ?? 0,
     writingStyle: currentProject?.config?.writing_style ?? '',
+    chapterTitle: chapters.find((c) => c.id === currentChapterId)?.title ?? '',
   });
   const { status, error, start } = pipeline;
 
