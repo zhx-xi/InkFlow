@@ -44,7 +44,7 @@ class ChapterAlreadyWrittenError(Exception):
     """
 
 
-def _outline_to_chapter_dict(o: Outline) -> dict[str, Any]:
+def _outline_to_chapter_dict(o: Outline) -> ChapterDict:
     """Outline 章节点 → 卷级编排图章 dict（契约 §3.5 形态：pipeline 消费字典非领域对象）。
 
     卷级编排图（BookVolumePipeline）按 dict 契约消费章数据（outline_id/chapter_id/name/
@@ -60,11 +60,21 @@ def _outline_to_chapter_dict(o: Outline) -> dict[str, Any]:
     }
 
 
+class ChapterDict(TypedDict):
+    """卷级编排图章 dict（_outline_to_chapter_dict 产物，pipeline 消费形态）。"""
+
+    outline_id: uuid.UUID
+    chapter_id: uuid.UUID | None
+    name: str
+    description: str
+    sort_order: int
+
+
 class VolumeGroup(TypedDict):
-    """卷 planner 拆章产出（镜像契约 §1.2）：volume_id + 其下 chapters（Outline 对象）."""
+    """卷 planner 拆章产出（镜像契约 §1.2）：volume_id + 其下 chapters（章 dict）. """
 
     volume_id: uuid.UUID | None
-    chapters: list[Outline]
+    chapters: list[ChapterDict]
 
 
 class BookService:
@@ -410,7 +420,7 @@ class BookService:
             return bool(await self._content_checker(chapter.chapter_id))
         return False
 
-    async def _check_chapter_written(self, plan: WritingPlan, chapter: dict[str, Any]) -> bool:
+    async def _check_chapter_written(self, plan: WritingPlan, chapter: ChapterDict) -> bool:
         """「内容已写」安全闸（dict 形态，卷级编排用）——镜像 _check_content_written 语义。
 
         volumes[].chapters 为章 dict（_outline_to_chapter_dict 产物）；content_checker 消费
