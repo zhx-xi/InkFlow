@@ -270,3 +270,72 @@ async def test_orm_default_utcnow(db_session):
     # __repr__ 分支（LenientJSON/时间戳不影响）
     assert "WritingPlanORM" in repr(wp)
     assert "PlannerSessionORM" in repr(ps)
+
+
+# ── F44 阶段2（#336）：多章进度/执行引用落库（守护形态）────────
+# 权威来源：spec.md §5.2（章级进度状态机 pending→in_progress→done/failed/skipped，
+# 进度权威 = WritingPlan.progress，§6 R2）、§13.2 M4（3-5 章顺序生成 + 每章状态落库）。
+
+
+@pytest.mark.asyncio
+async def test_update_multi_chapter_progress_progression(repo):
+    """多章混合进度连续落库回读：章1 in_progress → 章1 done + 章2 in_progress → 回读最终态。
+
+    守护形态（RED 期 PASS 刻意）：阶段 1 update_writing_plan 已全字段覆盖写回，
+    顺序派发（M4）的每章进度落库天然支持——本用例锁定「连续 update 多次、回读为
+    最终快照」的落库契约（进度状态机漂移逐次落盘，§6 R2）。
+    """
+    plan = WritingPlan(
+        id=uuid.uuid4(),
+        project_id=uuid.uuid4(),
+        title="多章进度",
+        limits={"max_chapters": 3, "max_agent_calls": 3},
+        created_at=_utcnow(),
+        updated_at=_utcnow(),
+    )
+    await repo.add_writing_plan(plan)
+
+    # 第 1 次落库：章1 进入执行中
+    plan.progress["c1"] = "in_progress"
+    plan.updated_at = _utcnow()
+    await repo.update_writing_plan(plan)
+
+    # 第 2 次落库：章1 完成 + 章2 进入执行中（顺序派发推进）
+    plan.progress["c1"] = "done"
+    plan.progress["c2"] = "in_progress"
+    plan.updated_at = _utcnow()
+    await repo.update_writing_plan(plan)
+
+    got = await repo.get_writing_plan(plan.id)
+    assert got is not None
+    assert got.progress == {"c1": "done", "c2": "in_progress"}
+
+
+@pytest.mark.asyncio
+async def test_update_multi_chapter_execution_refs(repo):
+    """execution_refs 多章 3 条落库回读（M4：每章 execution_id 引用落库）。
+
+    守护形态（RED 期 PASS 刻意）：阶段 1 update 全字段覆盖，3 条引用同批写回即可回读——
+    本用例锁定顺序派发后「章→execution_id」引用快照契约（防 GREEN 只落 progress
+    漏落 execution_refs）。
+    """
+    plan = WritingPlan(
+        id=uuid.uuid4(),
+        project_id=uuid.uuid4(),
+        title="多章引用",
+        limits={"max_chapters": 3, "max_agent_calls": 3},
+        created_at=_utcnow(),
+        updated_at=_utcnow(),
+    )
+    await repo.add_writing_plan(plan)
+
+    plan.status = "completed"
+    plan.progress = {"c1": "done", "c2": "done", "c3": "done"}
+    plan.execution_refs = {"c1": "exec-1", "c2": "exec-2", "c3": "exec-3"}
+    plan.updated_at = _utcnow()
+    await repo.update_writing_plan(plan)
+
+    got = await repo.get_writing_plan(plan.id)
+    assert got is not None
+    assert got.execution_refs == {"c1": "exec-1", "c2": "exec-2", "c3": "exec-3"}
+    assert got.status == "completed"

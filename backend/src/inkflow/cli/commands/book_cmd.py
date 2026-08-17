@@ -67,6 +67,21 @@ def _render_questions(data: dict) -> None:
         typer.echo(f"- {question.get('text', '')}")
 
 
+def _parse_limits(raw: str | None) -> dict[str, int] | None:
+    """解析 --limits 逗号分隔 k=v 串 → dict（"max_chapters=5,max_tokens=200000" → {...}）。"""
+    if not raw:
+        return None
+    result: dict[str, int] = {}
+    for item in raw.split(","):
+        if "=" not in item:
+            continue
+        key, _, value = item.partition("=")
+        key = key.strip()
+        if key:
+            result[key] = int(value.strip())
+    return result
+
+
 @plan_app.command("start")
 def plan_start(
     ctx: typer.Context,
@@ -209,6 +224,38 @@ def plan_run(
                 "/api/v1/agent/books/runs",
                 json={"writing_plan_id": plan_id},
             )
+
+    data = _run_ctx(cli_ctx, _impl)
+
+    def _render(data: dict) -> None:
+        typer.echo(f"✓ 已启动 run_id={data.get('run_id')}")
+
+    _human_or_json(cli_ctx, json_output, data, _render)
+
+
+@app.command("run")
+def book_run(
+    ctx: typer.Context,
+    plan_id: str = typer.Argument(..., help="WritingPlan ID"),
+    limits: str | None = typer.Option(
+        None,
+        "--limits",
+        help="上限 k=v 逗号分隔，如 max_chapters=5,max_tokens=200000",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """启动书级运行（POST /runs -> run_id/status；阶段 2 顺序派发）。"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        body: dict = {"writing_plan_id": plan_id}
+        parsed = _parse_limits(limits)
+        if parsed:
+            body["limits"] = parsed
+        async with client:
+            return await client.post("/api/v1/agent/books/runs", json=body)
 
     data = _run_ctx(cli_ctx, _impl)
 
