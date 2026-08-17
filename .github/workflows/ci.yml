@@ -961,7 +961,9 @@ jobs:
         run: pnpm --filter inkflow-electron build
 
       - name: E2E settings (Playwright _electron settings page)
-        run: pnpm --filter inkflow-electron test:e2e e2e-settings e2e-settings-templates e2e-settings-agents e2e-settings-skills
+        # --retries=1（#450）：该 job 在 Windows runner 环境不稳定（Electron+真实内核时序 + GH Actions 429 限流），
+        # 失败用例自动重跑 1 次吸收环境抖动；真实功能缺陷重跑仍失败不受掩盖
+        run: pnpm --filter inkflow-electron test:e2e e2e-settings e2e-settings-templates e2e-settings-agents e2e-settings-skills --retries=1
 
   # ── Coverage: 后端覆盖率门禁（unit + 顶层合并 --cov-append；RAG 文件 F14 先例排除）──
   # 门槛（2026-08-06 Phase 3 实测 CI 权威口径）：
