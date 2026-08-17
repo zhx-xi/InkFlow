@@ -124,6 +124,15 @@ def _echo_agentic_result(cli_ctx: CliContext, result: dict) -> None:
         f"步骤: {len(steps)} · 工具: [{tools}] · tokens: "
         f"{result.get('token_usage_total')} · 终止: {terminated_by}"
     )
+    # F45 M2（spec §4.2）：语义总结风格指令（API 响应携带 semantic_summaries）
+    summaries = result.get("semantic_summaries")
+    if summaries:
+        proj = summaries.get("project")
+        if proj and proj.get("content"):
+            typer.echo(f"🧠 项目风格：{proj['content']}（AI 语义总结）")
+        usr = summaries.get("user")
+        if usr and usr.get("content"):
+            typer.echo(f"🧠 通用风格：{usr['content']}（AI 语义总结）")
 
 
 @app.command("next")

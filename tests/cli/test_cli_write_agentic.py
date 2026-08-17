@@ -258,3 +258,60 @@ class TestWriteNextAgenticTimeout:
         call = fake_http_client.post.await_args
         assert call.args[0] == "/writing/agentic/generate"
         assert call.kwargs.get("timeout") == 300.0
+# ═══ F45 M2 追加段（2026-08-18，spec §4.2/§5.7 write next 🧠 风格指令输出）═══
+
+
+class TestWriteAgenticSemanticSummaries:
+    """write next --mode agentic 响应含 semantic_summaries → 🧠 输出（M2）.
+
+    契约（spec §4.2/§5.7，父侧定稿文案）: agentic 响应顶层键
+    "semantic_summaries": {"project_id", "project"|None, "user"|None}（层 dict
+    含 content）→ 人类模式追加打印:
+    - project 层 → 「🧠 项目风格：{content}（AI 语义总结）」
+    - user 层 → 「🧠 通用风格：{content}（AI 语义总结）」
+    层为 None / 键缺失 → 不输出对应行；无 semantic_summaries 键 → 零 🧠
+    输出（F27 既有输出零变化，向后兼容）。
+
+    RED 预期: 当前 _echo_agentic_result 不输出 🧠 行 → 前两用例断言 FAILED
+    （stdout 不含 🧠）；test_agentic_no_summaries_no_echo 为守护用例（RED 期
+    即 PASS 刻意——当前实现恰好不输出 🧠，GREEN 后锁向后兼容，防父侧误判
+    「意外绿」）。
+    """
+
+    @pytest.mark.agent
+    def test_agentic_echoes_project_style(self, fake_http_client):
+        """agentic 响应含 semantic_summaries.project → stdout 输出「🧠 项目风格：
+        {content}（AI 语义总结）」。"""
+        fake_http_client.post.return_value = _agentic_run(
+            semantic_summaries={
+                "project_id": PROJECT_ID,
+                "project": {"content": "叙述偏好：用角色全名而非代词"},
+                "user": None,
+            }
+        )
+        result = _next_result("--mode", "agentic")
+        assert result.exit_code == 0
+        assert "🧠 项目风格：叙述偏好：用角色全名而非代词（AI 语义总结）" in result.stdout
+
+    @pytest.mark.agent
+    def test_agentic_echoes_user_style(self, fake_http_client):
+        """agentic 响应含 semantic_summaries.user → stdout 输出「🧠 通用风格：
+        {content}（AI 语义总结）」。"""
+        fake_http_client.post.return_value = _agentic_run(
+            semantic_summaries={
+                "project_id": PROJECT_ID,
+                "project": None,
+                "user": {"content": "句长偏短，避免冗余修饰"},
+            }
+        )
+        result = _next_result("--mode", "agentic")
+        assert result.exit_code == 0
+        assert "🧠 通用风格：句长偏短，避免冗余修饰（AI 语义总结）" in result.stdout
+
+    @pytest.mark.agent
+    def test_agentic_no_summaries_no_echo(self, fake_http_client):
+        """守护: 响应无 semantic_summaries 键 → 不输出 🧠 行（F27 既有输出零变化）。"""
+        fake_http_client.post.return_value = _agentic_run()
+        result = _next_result("--mode", "agentic")
+        assert result.exit_code == 0
+        assert "🧠" not in result.stdout

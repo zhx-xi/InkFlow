@@ -549,3 +549,158 @@ class TestUserPreferencesEndpoint:
             )
         assert resp.status_code == 404
         assert resp.json()["detail"] == "偏好不存在"
+# ═══ F45 M2 追加段（2026-08-18，spec §3.1/§3.2/§3.3 summaries/summarize 端点）═══
+
+
+def _summaries_payload(**overrides) -> dict:
+    """summaries 响应口径（spec §3.2 示例逐字段: content/anchor_count/model/updated_at）."""
+    payload = {
+        "project_id": str(PROJECT_ID),
+        "project": {
+            "content": "叙述偏好：称呼主角用全名「林晚」而非代词；章节开头用场景描写而非直接对话",
+            "anchor_count": 5,
+            "model": "deepseek/deepseek-v4-flash",
+            "updated_at": "2026-08-18T10:00:00",
+        },
+        "user": {
+            "content": "用户通用风格：句长偏短（≤20 字为主）、叙述/对话比例约 6:4、避免冗余修饰",
+            "anchor_count": 12,
+            "model": "deepseek/deepseek-v4-flash",
+            "updated_at": "2026-08-18T10:00:00",
+        },
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _summarize_payload(**overrides) -> dict:
+    """summarize 响应口径（spec §3.2: project_id/summarized/project/user）."""
+    payload = {
+        "project_id": str(PROJECT_ID),
+        "summarized": True,
+        "project": {
+            "content": "叙述偏好：称呼主角用全名「林晚」而非代词",
+            "anchor_hash": "sha256-abc",
+            "anchor_count": 5,
+        },
+        "user": {
+            "content": "用户通用风格：句长偏短、避免冗余修饰",
+            "anchor_hash": "sha256-def",
+            "anchor_count": 12,
+        },
+    }
+    payload.update(overrides)
+    return payload
+
+
+class TestMemorySummariesEndpoint:
+    """GET /api/v1/agent/memory/summaries — 项目级 + 用户级语义总结（M2 新增）.
+
+    契约（spec §3.1/§3.2/§3.3）: svc.get_summaries(project_id) → 200
+    {"project_id", "project"|None, "user"|None}（dict 透传，镜像 stats 形态）；
+    memory_learning=false → 200 空结构（project/user 均 None，零行为语义）。
+
+    RED 预期: 端点未注册 → 真实 app 404 ≠ 200 → 断言 FAILED（镜像
+    TestPreferencesEndpoint 形态）；既有用例不动。
+    """
+
+    async def test_summaries_200(self, memory_svc, clean_overrides):
+        """summaries 200: project/user 两层字段口径（content/anchor_count/model/updated_at）。"""
+        memory_svc.get_summaries = AsyncMock(return_value=_summaries_payload())
+        _override_memory_service(memory_svc)
+        async with _client() as client:
+            resp = await client.get(
+                "/api/v1/agent/memory/summaries",
+                params={"project_id": str(PROJECT_ID)},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["project_id"] == str(PROJECT_ID)
+        assert "project" in data and "user" in data
+        assert data["project"]["content"].startswith("叙述偏好：")
+        assert data["project"]["anchor_count"] == 5
+        assert data["user"]["content"].startswith("用户通用风格：")
+        assert data["user"]["anchor_count"] == 12
+        assert _call_arg(memory_svc.get_summaries, "project_id", 0) == PROJECT_ID
+
+    async def test_summaries_zero_behavior(self, memory_svc, clean_overrides):
+        """summaries 零行为（memory_learning=false）: 200 空结构 project/user 均 None。"""
+        memory_svc.get_summaries = AsyncMock(
+            return_value={"project_id": str(PROJECT_ID), "project": None, "user": None}
+        )
+        _override_memory_service(memory_svc)
+        async with _client() as client:
+            resp = await client.get(
+                "/api/v1/agent/memory/summaries",
+                params={"project_id": str(PROJECT_ID)},
+            )
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "project_id": str(PROJECT_ID),
+            "project": None,
+            "user": None,
+        }
+
+
+class TestMemorySummarizeEndpoint:
+    """POST /api/v1/agent/memory/summarize — 手动触发语义总结（M2 新增，幂等）.
+
+    契约（spec §3.1/§3.2/§3.3）: svc.summarize(project_id, force=bool) → 200
+    {"project_id", "summarized", "project"|None, "user"|None}（幂等——锚点未
+    变化返回既有总结 summarized=false）；force 默认 False，?force=true → True，
+    透传形态 = kwargs（GREEN 以 kwargs 传参，await_args.kwargs 断言）。
+    错误面: SemanticSummaryError（LLM 调用失败/输出不可解析）→ 502，detail =
+    异常消息（镜像 F16 StyleLLMAnalysisError 500 语义，502 表示上游 LLM 故障；
+    GREEN router 内 except SemanticSummaryError → HTTPException(502, detail=str(e))）。
+    SemanticSummaryError 定义位置契约: inkflow.domain.services.semantic_summarizer
+    （M2 新建管线模块，spec §6/§8；GREEN 若裁定他处定义，同步改本用例 import）。
+
+    RED 预期: 200/force 用例 = 端点未注册 → 404 ≠ 200 → 断言 FAILED；
+    test_summarize_502 = 用例体首行惰性 import SemanticSummaryError →
+    ModuleNotFoundError FAILED（双形态，均 FAILED 非 ERROR）；既有用例不动。
+    """
+
+    async def test_summarize_200(self, memory_svc, clean_overrides):
+        """summarize 200: summarized 键 + force 默认 False 透传。"""
+        memory_svc.summarize = AsyncMock(return_value=_summarize_payload())
+        _override_memory_service(memory_svc)
+        async with _client() as client:
+            resp = await client.post(
+                "/api/v1/agent/memory/summarize",
+                params={"project_id": str(PROJECT_ID)},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["summarized"] is True
+        assert data["project"]["anchor_count"] == 5
+        assert data["user"]["anchor_count"] == 12
+        assert _call_arg(memory_svc.summarize, "project_id", 0) == PROJECT_ID
+        assert _call_arg(memory_svc.summarize, "force", 1) is False
+
+    async def test_summarize_force_true(self, memory_svc, clean_overrides):
+        """summarize ?force=true → svc.summarize 收到 force=True。"""
+        memory_svc.summarize = AsyncMock(return_value=_summarize_payload())
+        _override_memory_service(memory_svc)
+        async with _client() as client:
+            resp = await client.post(
+                "/api/v1/agent/memory/summarize",
+                params={"project_id": str(PROJECT_ID), "force": "true"},
+            )
+        assert resp.status_code == 200
+        assert _call_arg(memory_svc.summarize, "force", 1) is True
+
+    async def test_summarize_502(self, memory_svc, clean_overrides):
+        """summarize 502: SemanticSummaryError → 502 + detail 为异常消息。"""
+        from inkflow.domain.services.semantic_summarizer import SemanticSummaryError
+
+        memory_svc.summarize = AsyncMock(
+            side_effect=SemanticSummaryError("LLM 总结失败")
+        )
+        _override_memory_service(memory_svc)
+        async with _client() as client:
+            resp = await client.post(
+                "/api/v1/agent/memory/summarize",
+                params={"project_id": str(PROJECT_ID)},
+            )
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "LLM 总结失败"

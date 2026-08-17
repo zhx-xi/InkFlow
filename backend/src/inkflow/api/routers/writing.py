@@ -13,8 +13,14 @@ from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from inkflow.api.deps import get_agentic_writer_service, get_writing_service
+from inkflow.api.deps import (
+    get_agentic_writer_service,
+    get_db,
+    get_memory_service,
+    get_writing_service,
+)
 from inkflow.domain.models.agent_run import AgenticWriteRequest
 from inkflow.domain.models.writing import (
     ContinueWritingRequest,
@@ -122,13 +128,14 @@ async def revise_content(
 async def agentic_generate(
     data: AgenticWriteRequest,
     svc: AgenticWriterService = Depends(get_agentic_writer_service),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """agentic 生成章节（spec §3.1/§3.3）——guardrail 双形态均 200（ADR-D）."""
     try:
         run = await svc.run(data)
     except Exception as exc:
         raise _map_agentic_service_error(exc) from exc
-    return {
+    result: dict[str, object] = {
         "run_id": run.id,
         "status": run.status.value,
         "draft_id": run.draft_id,
@@ -138,6 +145,15 @@ async def agentic_generate(
         "token_usage_total": run.token_usage_total,
         "terminated_by": run.terminated_by,
     }
+    # F45 M2（spec §5.7）：语义总结透传——CLI/GUI 🧠 展示；失败不阻断 agentic 生成（旁路保底）
+    try:
+        memory_svc = get_memory_service(db)
+        result["semantic_summaries"] = await memory_svc.get_summaries(data.project_id)
+    except Exception:
+        result["semantic_summaries"] = {
+            "project_id": str(data.project_id), "project": None, "user": None,
+        }
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════

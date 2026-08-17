@@ -39,6 +39,7 @@ from inkflow.domain.services.output_service import ExportService
 from inkflow.domain.services.project_service import ProjectService
 from inkflow.domain.services.provider_config_service import ProviderConfigService
 from inkflow.domain.services.search_service import SearchService
+from inkflow.domain.services.semantic_summarizer import SemanticSummarizer
 from inkflow.domain.services.session_service import SessionService
 from inkflow.domain.services.settings_service import SettingsService
 from inkflow.domain.services.style_service import StyleService
@@ -84,6 +85,9 @@ from inkflow.infrastructure.database.repositories.provider_config_repo import (
 )
 from inkflow.infrastructure.database.repositories.search_repo import (
     SQLiteSearchRepository,
+)
+from inkflow.infrastructure.database.repositories.semantic_summary_repo import (
+    SQLiteSemanticSummaryRepository,
 )
 from inkflow.infrastructure.database.repositories.session_repo import (
     SQLiteSessionRepository,
@@ -165,13 +169,21 @@ def get_memory_event_repo(
 def get_memory_service(
     db: AsyncSession = Depends(get_db),
 ) -> MemoryService:
-    """获取 MemoryService 实例（偏好学习编排）."""
+    """获取 MemoryService 实例（偏好学习编排 + M2 语义总结）."""
+    from inkflow.core.config import config
+
     return MemoryService(
         preference_repo=SQLitePreferenceRepository(db),
         event_repo=SQLiteMemoryEventRepository(db),
         project_repo=SQLiteProjectRepository(db),
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
         user_preference_repo=SQLiteUserPreferenceRepository(db),
+        summary_repo=SQLiteSemanticSummaryRepository(db),
+        summarizer=SemanticSummarizer(
+            llm_client=LangChainLLMClient(),
+            prompt_manager=LangChainPromptManager(),
+        ),
+        llm_default_model=config.llm_default_model,
     )
 
 
@@ -281,6 +293,7 @@ def get_context_service(
 ) -> ContextService:
     """获取 ContextService 实例（Phase 1 空实现：Character/World/Foreshadowing 数据源为空，
     Mock count_tokens 生产环境由 F5 LLMClient.count_tokens 替换）."""
+    from inkflow.core.config import config
     from inkflow.domain.models.context import ContextSourceType
     from inkflow.infrastructure.context.preference_source import PreferenceSource
     from inkflow.infrastructure.context.sources import (
@@ -306,6 +319,12 @@ def get_context_service(
             project_repo,
             explicit_texts=_collect_explicit_texts(db),
             user_preference_repo=SQLiteUserPreferenceRepository(db),
+            summary_repo=SQLiteSemanticSummaryRepository(db),
+            summarizer=SemanticSummarizer(
+                llm_client=LangChainLLMClient(),
+                prompt_manager=LangChainPromptManager(),
+            ),
+            llm_default_model=config.llm_default_model,
         ),
     }
 
@@ -334,12 +353,7 @@ def get_summary_service(
 def get_character_service(
     db: AsyncSession,
 ) -> CharacterService:
-    """获取 CharacterService 实例（角色/分组/关系仓储 + AI 提取器）.
-
-    装配 CharacterExtractor（LLM 客户端 + Prompt 模板 + 同一仓储实例），
-    extract 入口的项目存在性校验使用 F1 项目仓储；F43 P5 角色硬删钩子
-    接线 MapService.clear_ref_pins（type=role 关联 pin 显式解除）。
-    """
+    """获取 CharacterService 实例（角色仓储 + CharacterExtractor + F1 校验 + F43 角色硬删钩子）."""
     repo = SQLiteCharacterRepository(db)
     map_svc = get_map_service(db)
 
@@ -362,12 +376,7 @@ def get_character_service(
 def get_world_service(
     db: AsyncSession,
 ) -> WorldService:
-    """获取 WorldService 实例（世界观条目仓储 + AI 提取器）.
-
-    装配 WorldExtractor（LLM 客户端 + Prompt 模板 + 同一仓储实例），
-    extract 入口的项目存在性校验使用 F1 项目仓储；F36 地点硬删钩子接线
-    MapService.clear_location_pins（D10=b 显式级联）。
-    """
+    """获取 WorldService 实例（世界观仓储 + WorldExtractor + F1 项目校验 + F36 地点硬删钩子）."""
     import uuid
 
     repo = SQLiteWorldRepository(db)
@@ -430,11 +439,7 @@ def get_map_service(
 def get_outline_service(
     db: AsyncSession,
 ) -> OutlineService:
-    """获取 OutlineService 实例（大纲/情节点/弧线仓储 + AI 生成器）.
-
-    装配 OutlineGenerator（LLM 客户端 + Prompt 模板 + 同一仓储实例），
-    generate 入口的项目存在性校验使用 F1 项目仓储。
-    """
+    """获取 OutlineService 实例（大纲仓储 + OutlineGenerator + F1 项目校验）."""
     repo = SQLiteOutlineRepository(db)
     return OutlineService(
         repository=repo,
@@ -451,12 +456,7 @@ def get_outline_service(
 def get_timeline_service(
     db: AsyncSession,
 ) -> TimelineService:
-    """获取 TimelineService 实例（时间线事件仓储 + F1 项目仓储）.
-
-    装配 SQLiteTimelineRepository（事件 CRUD + 双线视图 + 一致性检查），
-    项目存在性校验使用 F1 项目仓储（同 F9/F10/F11 模式）；F43 P5 事件
-    硬删钩子接线 MapService.clear_ref_pins（type=event 关联 pin 显式解除）。
-    """
+    """获取 TimelineService 实例（事件仓储 + F1 项目校验 + F43 P5 事件硬删钩子）."""
     map_svc = get_map_service(db)
 
     async def _map_cleanup(event_id: int) -> None:
@@ -473,12 +473,7 @@ def get_timeline_service(
 def get_foreshadowing_service(
     db: AsyncSession,
 ) -> ForeshadowingService:
-    """获取 ForeshadowingService 实例（伏笔仓储 + F1 项目仓储 + F12 时间线仓储）.
-
-    装配 SQLiteForeshadowingRepository（伏笔 CRUD + 状态机），项目存在性
-    校验使用 F1 项目仓储，event_id 事件锚点校验复用 F12 时间线事件仓储
-    （镜像 get_timeline_service 模式）。
-    """
+    """获取 ForeshadowingService 实例（伏笔仓储 + F1 项目校验 + F12 时间线锚点校验）."""
     return ForeshadowingService(
         repository=SQLiteForeshadowingRepository(db),
         project_repo=SQLiteProjectRepository(db),
@@ -489,11 +484,7 @@ def get_foreshadowing_service(
 def get_session_service(
     db: AsyncSession,
 ) -> SessionService:
-    """获取 SessionService 实例（会话仓储 + F1 项目仓储）.
-
-    装配 SQLiteSessionRepository（双实体 CRUD + 状态机 + 履历日志），项目
-    存在性校验复用 F1 SQLiteProjectRepository（同 F12/F13 模式）.
-    """
+    """获取 SessionService 实例（会话仓储 + F1 项目校验，双实体 CRUD + 状态机 + 履历日志）."""
     return SessionService(
         repository=SQLiteSessionRepository(db),
         project_repo=SQLiteProjectRepository(db),
@@ -526,16 +517,8 @@ def get_settings_service(
 async def get_extraction_service(
     db: AsyncSession,
 ) -> ExtractionService:
-    """获取 ExtractionService 实例（F14 统一提取门面，spec §5/§8）.
-
-    装配: 复用 F9/F10/F11/F12 Service（get_character_service 等）+ F14 两条
-    新管线（ForeshadowingExtractor / TimelineExtractor，LLM 客户端 + Prompt
-    模板 + 对应仓储）+ F16 StyleService（get_style_service，STYLE 槽位，
-    §8.2）+ SQLExtractionRunRepository（增量追踪）+ F1/F2 仓储 +
-    懒加载向量存储（get_vector_store，API embedding——从 ProviderConfig
-    注册表读取 embedding 模型，首次调用才初始化，spec f19 §5）+ #276
-    reindex 四步协议指纹提供器（fingerprint_provider，dimension 取 store
-    实测值；None = 不写指纹，向后兼容）。
+    """获取 ExtractionService 实例（F14 统一提取门面，spec §5/§8）:
+    复用 F9-F12 Service + F14 新管线 + F16 风格 + 增量追踪 + 懒加载向量存储 + #276 指纹提供器.
     """
     vector_store = await get_vector_store()
     chunking = await _load_chunking_config(db)
@@ -589,11 +572,7 @@ async def get_extraction_service(
 def get_audit_service(
     db: AsyncSession,
 ) -> AuditService:
-    """获取 AuditService 实例（F15 审计服务，spec §5/§8）.
-
-    装配: 复用 F9/F10/F13/F14/F2/F1 各 SQLite 仓储 + F12 TimelineService
-    （get_timeline_service 先例）——#211 真删后无软删集合查询，全部为既有实现。
-    """
+    """获取 AuditService 实例（F15 审计：F1/F2/F9/F10/F13/F14 仓储 + F12 时间线，spec §5/§8）."""
     return AuditService(
         project_repo=SQLiteProjectRepository(db),
         character_repo=SQLiteCharacterRepository(db),
@@ -608,13 +587,7 @@ def get_audit_service(
 def get_chapter_audit_service(
     db: AsyncSession,
 ) -> ChapterAuditService:
-    """获取 ChapterAuditService 实例（F34 章节审计服务，spec §5/§8）.
-
-    装配: 复用 F1/F2/F9/F10 各 SQLite 仓储 + F15 AuditService
-    （get_audit_service 先例，静态一致性委托）+ F5 LangChainLLMClient
-    （人设/设定漂移 LLM 检查）+ F34 自有 SQLiteAuditLogRepository
-    （审计日志轻量记录，§8.2）——除 audit_log_repo 外全部为既有实现。
-    """
+    """获取 ChapterAuditService 实例（F34 章节审计：F1/F2/F9/F10 仓储 + F15 委托 + F5 LLM 检查）."""
     return ChapterAuditService(
         project_repo=SQLiteProjectRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
@@ -629,11 +602,7 @@ def get_chapter_audit_service(
 def get_export_service(
     db: AsyncSession,
 ) -> ExportService:
-    """获取 ExportService 实例（F21 导出服务，spec §8.2）。
-
-    装配: 复用 F1/F2/F9/F10/F11/F12/F13 各 SQLite 仓储——全部既有实现，
-    零跨模块 MODIFY（§8.2）。
-    """
+    """获取 ExportService 实例（F21 导出服务：F1/F2/F9-F13 仓储，零跨模块 MODIFY，spec §8.2）."""
     return ExportService(
         project_repo=SQLiteProjectRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
@@ -648,13 +617,7 @@ def get_export_service(
 def get_style_service(
     db: AsyncSession,
 ) -> StyleService:
-    """获取 StyleService 实例（F16 风格检测服务，spec §5.1/§8.1）.
-
-    装配: F1 SQLiteProjectRepository（项目校验）+ F2 SQLiteChapterRepository
-    （章节读取）+ 可选 LLM 深度分析器 StyleLLMAnalyzer（LangChainLLMClient +
-    LangChainPromptManager，模板 style_llm_analysis——镜像 F14
-    TimelineExtractor 装配模式，spec §5.6）。
-    """
+    """获取 StyleService 实例（F16 风格检测：F1/F2 仓储 + 可选 StyleLLMAnalyzer）."""
     return StyleService(
         project_repo=SQLiteProjectRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
@@ -668,11 +631,7 @@ def get_style_service(
 async def get_search_service(
     db: AsyncSession,
 ) -> SearchService:
-    """获取 SearchService 实例（F22 全文搜索，spec §8.1）.
-
-    #264：注入 get_vector_store_optional()——未配置 embedding 时 None 兜底，
-    semantic 模式真实可用（原硬编码 vector_store=None 导致 semantic 恒空）。
-    """
+    """获取 SearchService 实例（F22 全文搜索：#264 未配置 embedding 时注入 None 兜底）."""
     return SearchService(
         project_repo=SQLiteProjectRepository(db),
         chapter_repo=SQLiteChapterRepository(db),

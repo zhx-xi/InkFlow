@@ -20,12 +20,33 @@ import uuid
 from inkflow.domain.models.memory_event import MemoryEvent, MemoryEventType
 from inkflow.domain.models.preference import PreferenceCategory, ProjectPreference
 from inkflow.domain.models.project import Project
+from inkflow.domain.models.semantic_summary import SemanticSummary, SummaryScope
 from inkflow.domain.models.user_preference import UserPreference
 from inkflow.domain.services import preference_learner
 from inkflow.domain.services.preference_learner import (
     PreferenceCandidate,
     UserPreferenceCandidate,
 )
+
+
+def _dump_summary(summary: SemanticSummary | None) -> dict | None:
+    """语义总结 → 可序列化字典（手动取字段——测试鸭子对象无 model_dump）.
+
+    Args:
+        summary: 语义总结（SemanticSummary 或鸭子对象）；None → None.
+
+    Returns:
+        {content/anchor_hash/anchor_count/model/updated_at}；None → None.
+    """
+    if summary is None:
+        return None
+    return {
+        "content": summary.content,
+        "anchor_hash": summary.anchor_hash,
+        "anchor_count": summary.anchor_count,
+        "model": summary.model,
+        "updated_at": summary.updated_at,
+    }
 
 
 class PreferenceNotFoundError(Exception):
@@ -47,7 +68,11 @@ class MemoryService:
             int 背书，F6 先例）.
         audit_service: F34 AuditLogService（记录偏好学习/删除动作，可空）.
         learner: 提取算法模块或等价对象（缺省 = preference_learner 模块本身，
-            需 aggregate_candidates/confidence_for）.
+           需 aggregate_candidates/confidence_for）.
+        user_preference_repo: 用户级偏好仓储（鸭子类型，M1 用户级链，可空）.
+        summary_repo: 语义总结仓储（鸭子类型，M2 get/upsert/delete_by_project，可空）.
+        summarizer: 语义总结管线（鸭子类型，M2 summarize → (summary, dropped)，可空）.
+        llm_default_model: LLM 默认模型名（M2 summarizer 传入，#415 唯一默认源，可空）.
     """
 
     def __init__(
@@ -59,6 +84,9 @@ class MemoryService:
         audit_service: object | None = None,
         learner: object | None = None,
         user_preference_repo: object | None = None,
+        summary_repo: object | None = None,
+        summarizer: object | None = None,
+        llm_default_model: str | None = None,
     ) -> None:
         self._preference_repo = preference_repo
         self._event_repo = event_repo
@@ -66,6 +94,9 @@ class MemoryService:
         self._audit_service = audit_service
         self._learner = learner if learner is not None else preference_learner
         self._user_preference_repo = user_preference_repo
+        self._summary_repo = summary_repo
+        self._summarizer = summarizer
+        self._llm_default_model = llm_default_model
         self.last_learned: bool = False  # F28: 本次 record_draft_edit 是否触发新偏好落库
 
     async def is_learning_enabled(
@@ -502,3 +533,195 @@ class MemoryService:
                 project_set.update(up.source_projects)
             result["user_preferences"] = {"count": len(user_items), "projects": len(project_set)}
         return result
+
+    async def get_summaries(self, project_id: uuid.UUID) -> dict:
+        """查询已落库的语义总结（项目级 + 用户级，spec §3.2/§5.4）.
+
+        零行为语义（spec §7 边界表）:
+        - 项目缺失 → summary_repo 非 None 时 delete_by_project(project_id)
+          清理（项目删除级联）+ 空结构;
+        - memory_learning=false → 空结构（不查 summary_repo，零行为）;
+        - summary_repo 未注入 → 空结构.
+
+        Args:
+            project_id: 所属项目 UUID.
+
+        Returns:
+            {"project_id", "project": {content/anchor_hash/anchor_count/model/
+            updated_at}|None, "user": 同构|None}——用户级为全局记录
+            （scope=user, project_id=None，spec §5.3 全局单一性）.
+        """
+        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
+            project_id.int
+        )
+        if project is None:
+            if self._summary_repo is not None:
+                await self._summary_repo.delete_by_project(project_id)  # type: ignore[attr-defined]  # 鸭子类型：summary_repo 按契约提供 delete_by_project
+            return {"project_id": str(project_id), "project": None, "user": None}
+        if not project.config.extra.get("memory_learning"):
+            return {"project_id": str(project_id), "project": None, "user": None}
+        if self._summary_repo is None:
+            return {"project_id": str(project_id), "project": None, "user": None}
+        project_summary: SemanticSummary | None
+        project_summary = await self._summary_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：summary_repo 按契约提供 get
+            scope=SummaryScope.PROJECT, project_id=project_id
+        )
+        user_summary: SemanticSummary | None
+        user_summary = await self._summary_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：summary_repo 按契约提供 get
+            scope=SummaryScope.USER, project_id=None
+        )
+        return {
+            "project_id": str(project_id),
+            "project": _dump_summary(project_summary),
+            "user": _dump_summary(user_summary),
+        }
+
+    async def summarize(
+        self, project_id: uuid.UUID, *, force: bool = False
+    ) -> dict:
+        """触发/复用语义总结（spec §3.2/§5.3/§5.4 幂等 + §5.7 审计）.
+
+        流程:
+        - 项目缺失 → delete_by_project 清理 + summarized=False 空结构;
+        - memory_learning=false → summarized=False 空结构（不调 LLM/不查库/
+          不审计，零行为）;
+        - summary_repo 或 summarizer 未注入 → 空结构;
+        - 每层（项目级先、用户级后）: 当前锚点哈希 == 既有总结哈希且非 force
+          → 复用既有（不调 LLM）；否则 summarizer.summarize → dropped truthy
+          审计 semantic_summary_failed；summary 非 None → upsert 透传产物 +
+          审计 semantic_summary_generated（degraded=True, actor="memory"）;
+        - 用户级锚点 = 全局 user_preferences（project_id=None，与调用项目
+          无关，spec §5.3）.
+
+        Args:
+            project_id: 所属项目 UUID.
+            force: True 时忽略哈希幂等强制重算（默认 False）.
+
+        Returns:
+            {"project_id", "summarized": bool, "project": {…}|None,
+            "user": {…}|None}——summarized = 任一层真调 LLM 且落库.
+        """
+        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
+            project_id.int
+        )
+        if project is None:
+            if self._summary_repo is not None:
+                await self._summary_repo.delete_by_project(project_id)  # type: ignore[attr-defined]  # 鸭子类型：summary_repo 按契约提供 delete_by_project
+            return {
+                "project_id": str(project_id),
+                "summarized": False,
+                "project": None,
+                "user": None,
+            }
+        if not project.config.extra.get("memory_learning"):
+            return {
+                "project_id": str(project_id),
+                "summarized": False,
+                "project": None,
+                "user": None,
+            }
+        if self._summary_repo is None or self._summarizer is None:
+            return {
+                "project_id": str(project_id),
+                "summarized": False,
+                "project": None,
+                "user": None,
+            }
+
+        # ── 项目级层（spec §5.4 幂等: hash 相同且非 force → 复用不调 LLM）──
+        anchors, _total = await self._preference_repo.list_by_project(  # type: ignore[attr-defined]  # 鸭子类型：preference_repo 按契约返回 (list, total) 元组
+            project_id
+        )
+        cur_hash = self._learner.anchor_hash(anchors)  # type: ignore[attr-defined]  # 鸭子类型：learner 按契约提供 anchor_hash
+        existing: SemanticSummary | None = await self._summary_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：summary_repo 按契约提供 get
+            scope=SummaryScope.PROJECT, project_id=project_id
+        )
+        project_result: SemanticSummary | None
+        project_llm_called = False
+        if existing is not None and existing.anchor_hash == cur_hash and not force:
+            project_result = existing
+        else:
+            summary: SemanticSummary | None
+            summary, dropped = await self._summarizer.summarize(  # type: ignore[attr-defined]  # 鸭子类型：summarizer 按契约提供 summarize
+                anchors,
+                scope=SummaryScope.PROJECT,
+                project_id=project_id,
+                anchor_hash=cur_hash,
+                model=self._llm_default_model,
+            )
+            if dropped and self._audit_service is not None:
+                await self._audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                    project_id=project_id,
+                    severity_summary="semantic_summary_failed",
+                    degraded=True,
+                    actor="memory",
+                    note=f"防幻觉校验丢弃 {dropped} 条",
+                )
+            if summary is not None:
+                await self._summary_repo.upsert(summary)  # type: ignore[attr-defined]  # 鸭子类型：summary_repo 按契约提供 upsert
+                if self._audit_service is not None:
+                    await self._audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        project_id=project_id,
+                        severity_summary="semantic_summary_generated",
+                        degraded=True,
+                        actor="memory",
+                    )
+                project_result = summary
+                project_llm_called = True
+            else:
+                project_result = None
+
+        # ── 用户级层（同构；user_preference_repo 未注入时跳过）──
+        user_result: SemanticSummary | None = None
+        user_llm_called = False
+        if self._user_preference_repo is not None:
+            user_anchors, _user_total = await self._user_preference_repo.list_all()  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约返回 (list, total) 元组
+            user_hash = self._learner.anchor_hash(user_anchors)  # type: ignore[attr-defined]  # 鸭子类型：learner 按契约提供 anchor_hash
+            user_existing: SemanticSummary | None = await self._summary_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：summary_repo 按契约提供 get
+                scope=SummaryScope.USER, project_id=None
+            )
+            if (
+                user_existing is not None
+                and user_existing.anchor_hash == user_hash
+                and not force
+            ):
+                user_result = user_existing
+            else:
+                user_summary: SemanticSummary | None
+                user_summary, user_dropped = await self._summarizer.summarize(  # type: ignore[attr-defined]  # 鸭子类型：summarizer 按契约提供 summarize
+                    user_anchors,
+                    scope=SummaryScope.USER,
+                    project_id=None,
+                    anchor_hash=user_hash,
+                    model=self._llm_default_model,
+                )
+                if user_dropped and self._audit_service is not None:
+                    # 用户级总结跨项目无 project_id → None（M1 remove_user_preference 先例）
+                    await self._audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        project_id=None,
+                        severity_summary="semantic_summary_failed",
+                        degraded=True,
+                        actor="memory",
+                        note=f"防幻觉校验丢弃 {user_dropped} 条",
+                    )
+                if user_summary is not None:
+                    await self._summary_repo.upsert(user_summary)  # type: ignore[attr-defined]  # 鸭子类型：summary_repo 按契约提供 upsert
+                    if self._audit_service is not None:
+                        # 用户级总结跨项目无 project_id → None（M1 remove_user_preference 先例）
+                        await self._audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                            project_id=None,
+                            severity_summary="semantic_summary_generated",
+                            degraded=True,
+                            actor="memory",
+                        )
+                    user_result = user_summary
+                    user_llm_called = True
+                else:
+                    user_result = None
+
+        return {
+            "project_id": str(project_id),
+            "summarized": project_llm_called or user_llm_called,
+            "project": _dump_summary(project_result),
+            "user": _dump_summary(user_result),
+        }

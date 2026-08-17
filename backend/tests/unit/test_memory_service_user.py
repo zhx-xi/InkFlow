@@ -651,3 +651,5 @@ async def test_remove_user_preference_without_repo_raises() -> None:
     service, _deps = _make_service(inject_user_repo=False)
     with pytest.raises(PreferenceNotFoundError):
         await service.remove_user_preference("up-1")
+
+

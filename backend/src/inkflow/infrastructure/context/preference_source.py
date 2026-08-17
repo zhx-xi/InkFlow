@@ -18,7 +18,10 @@ from collections.abc import Awaitable, Callable
 
 from inkflow.domain.models.context import ContextItem, ContextSourceType
 from inkflow.domain.models.preference import ProjectPreference
+from inkflow.domain.models.semantic_summary import SemanticSummary, SummaryScope
 from inkflow.domain.models.user_preference import UserPreference
+from inkflow.domain.ports.semantic_summary_errors import SemanticSummaryError
+from inkflow.domain.services.preference_learner import anchor_hash
 
 # 单次注入上限（protected 预算防爆，spec §5.4）
 _MAX_ITEMS = 10
@@ -33,6 +36,11 @@ class PreferenceSource:
         preference_repo: 偏好仓储（list_by_project）.
         project_repo: 项目仓储（get(int) 读 config.extra）.
         explicit_texts: 显式设定文本加载器（Q4 冲突过滤；None = 不加载）.
+        user_preference_repo: 用户级偏好仓储（M1 用户级注入；None = 不注入）.
+        summary_repo: 语义总结仓储（M2 get/upsert；None = 关闭 M2 路径）.
+        summarizer: 语义总结管线（M2 summarize → (summary, dropped)；None = 关闭）.
+        llm_default_model: LLM 默认模型名（M2 summarizer 传入，#415 唯一默认源）.
+        background_refresh: F44 阶段4 后台刷新注入点（None = 同步总结兜底）.
     """
 
     def __init__(
@@ -41,12 +49,23 @@ class PreferenceSource:
         project_repo: object,
         explicit_texts: Callable[[uuid.UUID], Awaitable[list[str]]] | None = None,
         user_preference_repo: object | None = None,
+        summary_repo: object | None = None,
+        summarizer: object | None = None,
+        llm_default_model: str | None = None,
+        background_refresh: Callable[..., Awaitable[None]] | None = None,
     ) -> None:
-        """以两个仓储（可选显式文本加载器 / 用户级偏好仓储）构造注入源."""
+        """以两个仓储（可选显式文本加载器 / 用户级偏好仓储 / M2 语义总结依赖）构造注入源."""
         self._preference_repo = preference_repo
         self._project_repo = project_repo
         self._explicit_texts = explicit_texts
         self._user_preference_repo = user_preference_repo
+        self._summary_repo = summary_repo
+        self._summarizer = summarizer
+        self._llm_default_model = llm_default_model
+        self._background_refresh = background_refresh
+        # M2 pending_summary 审计回调（None = 跳过，F28 异常静默旁路语义）——不是
+        # 构造参数，测试用属性注入（#318 配方）
+        self._audit: Callable[..., Awaitable[None]] | None = None
 
     async def collect(self, project_id: uuid.UUID, chapter_id: uuid.UUID) -> list[ContextItem]:
         """收集已学偏好注入条目（开关 + 冲突过滤 + 上限 10 条）.
@@ -108,6 +127,75 @@ class PreferenceSource:
                     continue  # Q3=A：用户级同规则冲突过滤
                 user_items.append(up)
 
+        # ── M2 语义总结优先（spec §5.4/§5.6，Q2=B 两段式：后台就位前同步总结兜底）──
+        if self._summary_repo is not None and self._summarizer is not None:
+            project_summary: SemanticSummary | None = await self._summary_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：summary_repo 按契约提供 get
+                scope=SummaryScope.PROJECT, project_id=project_id
+            )
+            user_summary: SemanticSummary | None = await self._summary_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：summary_repo 按契约提供 get
+                scope=SummaryScope.USER, project_id=None
+            )
+            project_hash = anchor_hash(project_items)
+            user_hash = anchor_hash(user_items)
+            if project_items and (
+                project_summary is None or project_summary.anchor_hash != project_hash
+            ):
+                if self._background_refresh is None:
+                    refreshed = await self._refresh_summary(
+                        project_items,
+                        scope=SummaryScope.PROJECT,
+                        project_id=project_id,
+                        anchor_hash=project_hash,
+                    )
+                    if refreshed is not None:
+                        project_summary = refreshed
+                else:
+                    if self._audit is not None:
+                        await self._audit(event="pending_summary", degraded=True, actor="memory")
+                    await self._background_refresh(
+                        self._refresh_summary(
+                            project_items,
+                            scope=SummaryScope.PROJECT,
+                            project_id=project_id,
+                            anchor_hash=project_hash,
+                        )
+                    )
+            if user_items and (
+                user_summary is None or user_summary.anchor_hash != user_hash
+            ):
+                if self._background_refresh is None:
+                    refreshed = await self._refresh_summary(
+                        user_items,
+                        scope=SummaryScope.USER,
+                        project_id=None,
+                        anchor_hash=user_hash,
+                    )
+                    if refreshed is not None:
+                        user_summary = refreshed
+                else:
+                    if self._audit is not None:
+                        await self._audit(event="pending_summary", degraded=True, actor="memory")
+                    await self._background_refresh(
+                        self._refresh_summary(
+                            user_items,
+                            scope=SummaryScope.USER,
+                            project_id=None,
+                            anchor_hash=user_hash,
+                        )
+                    )
+            # 注入: 语义总结优先；某层无总结 → 该层回退字面（spec §5.6 步骤 4）
+            project_out: list[ContextItem]
+            if project_summary is not None:
+                project_out = [_to_summary_context_item(project_summary, "🧠 项目风格：")]
+            else:
+                project_out = [_to_context_item(p) for p in project_items]
+            user_out: list[ContextItem]
+            if user_summary is not None:
+                user_out = [_to_summary_context_item(user_summary, "🧠 通用风格：")]
+            else:
+                user_out = [_to_user_context_item(p) for p in user_items]
+            return [*project_out, *user_out][:_MAX_ITEMS]
+
         # 合并排序取前 10（F28 项目级行为等价：排序 + limit 相同）
         combined: list[ProjectPreference | UserPreference] = [*project_items, *user_items]
         combined.sort(key=lambda p: p.count, reverse=True)
@@ -115,6 +203,41 @@ class PreferenceSource:
             _to_context_item(p) if isinstance(p, ProjectPreference) else _to_user_context_item(p)
             for p in combined[:_MAX_ITEMS]
         ]
+
+    async def _refresh_summary(
+        self,
+        anchors: list,
+        *,
+        scope: SummaryScope,
+        project_id: uuid.UUID | None,
+        anchor_hash: str,
+    ) -> SemanticSummary | None:
+        """重新总结并落库（同步兜底 / 后台刷新协程共用，spec §5.4 两段式）.
+
+        Args:
+            anchors: 当前锚点列表（冲突过滤后的 items）.
+            scope: 归属范围（project/user）.
+            project_id: scope=project 时的项目 UUID；scope=user 时为 None.
+            anchor_hash: 当前锚点哈希（spec §5.4）.
+
+        Returns:
+            落库后的新总结；LLM 失败（SemanticSummaryError）或无产物 → None
+            （回退旧总结/字面，不阻断注入）.
+        """
+        if self._summary_repo is None or self._summarizer is None:
+            return None  # M2 依赖未注入时不应被调用（collect 已前置判断；防御性返回）
+        try:
+            new_summary: SemanticSummary | None
+            new_summary, _dropped = await self._summarizer.summarize(  # type: ignore[attr-defined]  # 鸭子类型：summarizer 按契约提供 summarize
+                anchors, scope=scope, project_id=project_id,
+                anchor_hash=anchor_hash, model=self._llm_default_model,
+            )
+        except SemanticSummaryError:
+            return None  # LLM 失败回退旧总结/字面，不阻断注入（spec §5.4）
+        if new_summary is None:
+            return None
+        await self._summary_repo.upsert(new_summary)  # type: ignore[attr-defined]  # 鸭子类型：summary_repo 按契约提供 upsert
+        return new_summary
 
 
 def _to_context_item(pref: ProjectPreference) -> ContextItem:
@@ -165,5 +288,33 @@ def _to_user_context_item(pref: UserPreference) -> ContextItem:
             "preference_id": str(pref.id),
             "category": pref.category.value,
             "count": pref.count,
+        },
+    )
+
+
+def _to_summary_context_item(summary: SemanticSummary, title: str) -> ContextItem:
+    """语义总结 → 注入条目（title「🧠 项目风格：」/「🧠 通用风格：」，spec §5.6 步骤 4）.
+
+    Args:
+        summary: 一条语义总结.
+        title: 注入标题（「🧠 项目风格：」或「🧠 通用风格：」）.
+
+    Returns:
+        ContextItem：content = 总结内容截断 ≤200；priority = anchor_count；
+        metadata 携带 summary_id/category="semantic"/anchor_count（总结条目为
+        抽象指令，不过 Q4 冲突过滤）.
+    """
+    content = summary.content
+    if len(content) > _MAX_CONTENT_LEN:
+        content = content[:_MAX_CONTENT_LEN]
+    return ContextItem(
+        source=ContextSourceType.PREFERENCE,
+        title=title,
+        content=content,
+        priority=summary.anchor_count,
+        metadata={
+            "summary_id": str(summary.id),
+            "category": "semantic",
+            "anchor_count": summary.anchor_count,
         },
     )
