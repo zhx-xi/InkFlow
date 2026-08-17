@@ -8,6 +8,7 @@
  * - booting：渲染 BootGate 封面（data-testid="boot-gate"），主 UI（app-nav）不渲染
  * - ready：渲染主 UI（app-nav 存在），封面消失
  * - failed：渲染 BootGate 错误+重试（「内核连接失败」），主 UI 不渲染
+ *   （#419 阈值语义：启动期连续 3 次失败 ≈10s 才置 failed；单次失败保持 booting）
  *
  * 轮询生命周期归 AppLayout 管：挂载 startPolling / 卸载 stopPolling（useEffect 依赖 []）。
  * RED 预期：GREEN 前 App.tsx 无门控（挂载即渲染主 UI + 本地 kernelOnline state）→
@@ -17,7 +18,7 @@
  * 本文件**不预设 ready**（走真实 booting 流程），故断言必须 findByXxx / waitFor（非同步 getBy）。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { App } from './App';
 import { apiFetch } from './api/client';
 import { useProjectStore } from './stores/project';
@@ -39,7 +40,7 @@ beforeEach(() => {
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
   useProjectStore.setState({ projects: [], currentProjectId: null, loading: false, error: null });
   useChapterStore.setState({ volumes: [], chapters: [], currentChapterId: null, content: '', loading: false, error: null });
-  useKernelStore.setState({ status: 'booting', booted: false });
+  useKernelStore.setState({ status: 'booting', booted: false, healthFailures: 0 });
 });
 
 afterEach(() => {
@@ -74,7 +75,10 @@ describe('AppLayout 启动门控（#384）', () => {
     expect(screen.queryByTestId('boot-gate')).not.toBeInTheDocument();
   });
 
-  it('failed → 封面错误+重试（「内核连接失败」）+ 主 UI 不渲染（/health 失败）', async () => {
+  it('failed（连续失败达阈值 ≈10s）→ 封面错误+重试（「内核连接失败」）+ 主 UI 不渲染（/health 连续失败）', async () => {
+    // #419 阈值语义：单次失败保持 booting；预设 healthFailures=2 模拟前两次轮询失败（t=0/5s），
+    // render 后立即 checkHealth 为第三次失败（t≈10s）→ 达阈值置 failed
+    useKernelStore.setState({ status: 'booting', booted: false, healthFailures: 2 });
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/health') throw new Error('kernel unreachable');
       return { items: [], total: 0, offset: 0, limit: 50 };
@@ -82,6 +86,19 @@ describe('AppLayout 启动门控（#384）', () => {
     render(<App />);
     await screen.findByText('内核连接失败');
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument();
+    expect(screen.queryByTestId('app-nav')).not.toBeInTheDocument();
+  });
+
+  it('启动期首次 /health 失败 → 保持 booting（不闪「内核连接失败」）', async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/health') throw new Error('kernel unreachable');
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    render(<App />);
+    // 等 checkHealth 失败处理完成（计数=1，未达阈值）
+    await waitFor(() => expect(useKernelStore.getState().healthFailures).toBe(1));
+    expect(screen.getByTestId('boot-gate')).toBeInTheDocument();
+    expect(screen.queryByText('内核连接失败')).not.toBeInTheDocument();
     expect(screen.queryByTestId('app-nav')).not.toBeInTheDocument();
   });
 });
