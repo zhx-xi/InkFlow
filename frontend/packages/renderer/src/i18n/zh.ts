@@ -493,6 +493,32 @@ export const zh = {
   // 通用
   'common.loading': '加载中…',
   'common.empty': '暂无数据',
+  // F44：书级编排（#335 阶段1 GUI：单面板访谈 + 子 agent 展开行）
+  'nav.book': '书级编排',
+  'book.empty.title': '选择或新建项目开始书级编排',
+  'book.empty.goProjects': '前往项目页',
+  'book.oneLiner': '一句话描述你要写的书…',
+  'book.start': '开始访谈',
+  'book.question': '问题',
+  'book.template.copy': '使用模板',
+  'book.answer.placeholder': '输入回答…',
+  'book.send': '发送',
+  'book.auto': '全部你决定',
+  'book.plan.ready': '计划就绪',
+  'book.plan.auto': '自动生成',
+  'book.startRun': '开始写作',
+  'book.error': '访谈出错',
+  'book.trace.pending': '待处理',
+  'book.trace.in_progress': '进行中',
+  'book.trace.done': '已完成',
+  'book.trace.failed': '失败',
+  'book.trace.skipped': '已跳过',
+  'book.trace.detail': '执行详情',
+  'book.trace.execution': '执行引用',
+  'book.run.status': '运行状态',
+  'book.run.chapters': '已写章节',
+  'book.run.calls': 'Agent 调用',
+  'book.run.noRun': '暂无运行',
 } as const;
 
 export type ZhKey = keyof typeof zh;

@@ -17,12 +17,14 @@ import { ModelsPage } from './pages/models';
 import { ProjectsPage } from './pages/projects';
 import { LibraryPage } from './pages/library';
 import { SettingsPage } from './pages/settings';
+import { BookPage } from './pages/book';
 
 /** 页面标题随路由变化（顶栏文本元素；正文 h1 承担 heading 语义） */
 const TITLE_BY_PATH: Record<string, string> = {
   '/': 'pj.title',
   '/projects': 'pj.title',
   '/writing': 'nav.writing',
+  '/book': 'nav.book',
   '/library': 'lib.title',
   '/models': 'm.title',
   '/settings': 'set.title',
@@ -110,6 +112,7 @@ function AppLayout() {
             <Route path="/" element={<ProjectsPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/writing" element={<WritingPage />} />
+            <Route path="/book" element={<BookPage />} />
             <Route path="/library" element={<LibraryPage />} />
             <Route path="/models" element={<ModelsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
