@@ -44,6 +44,7 @@ def main(
 from inkflow.cli.commands import (  # noqa: E402  # app 定义后导入
     agent_cmd,
     audit,
+    book_cmd,
     chapter,
     character,
     export,
@@ -87,6 +88,7 @@ app.add_typer(write.app, name="write")
 app.add_typer(llm_app, name="llm")
 app.add_typer(config_app, name="config")
 app.add_typer(agent_cmd.app, name="agent")
+app.add_typer(book_cmd.app, name="book")
 app.add_typer(session.app, name="session")
 app.add_typer(kernel.app, name="kernel")
 app.add_typer(memory_cmd.app, name="memory")
