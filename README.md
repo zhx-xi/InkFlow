@@ -31,7 +31,7 @@
   - **F19-skills 包**：官方 skills/inkflow/ 资产 + 用户自定义轨 skills 命令组（install/list/verify/remove）
   - **CLI 命令面补齐**：provider 管理 / agent template 管理 / project config
   - **设定库 GUI 升级（F43）**：CRUD 闭环 + 角色等级标签 + 世界观地图工作台 + 大纲三级 + 时间线双序
-- **多 Agent 一期 + MCP + RAG 切片 + DAG 编排（0.9.0，2026-08-16 17/17 issues 全关）**：
+- **多 Agent 一期 + MCP + RAG 切片 + DAG 编排（0.9.0，2026-08-17 正式发布，21/21 issues 全关）**：
   - **多 Agent 能力（F39/40/41）**：Agent/Skill 实体 + 能力白名单装配 + 内置出厂配置 + skill 上传绑定 + 自定义 Agent 编辑（分组 checkbox）
   - **F20 MCP Server**：stdio 薄客户端经 HTTP + 15 聚合工具（manage_* action 枚举）+ 冷启动链路
   - **RAG 切片增强**：段落/对话/LLM 三档切片 + 滑动重叠 + 检索元数据 + 指纹联动
@@ -108,7 +108,7 @@ uv run inkflow serve
 | 0.6.0 | 导出 + 全文搜索 + 章节审计 + 世界观三连 + CLI 恒 HTTP + E2E 设置页 | ✅（2026-08-09 里程碑关闭） |
 | 0.7.0 | Agent 化升级（deepagents harness · Writer Agent 闭环 · 记忆系统 · 数据目录设置 · 模型测试 · E2E/bug 批） | ✅（v0.7.0 2026-08-12 正式发布） |
 | 0.8.0 | 编排完全体 + Supervisor + 设定库 + RAG 指纹 + skills + CLI（F42/F29/F43/F19-skills/F10） | ✅（2026-08-13 里程碑 18/18 issues 全关） |
-| 0.9.0 | 多 Agent 一期 + MCP + RAG 切片 + DAG 编排（F39/40/41 + F20 + F46 + 写作管线增强） | ✅（2026-08-16 里程碑 17/17 issues 全关） |
+| 0.9.0 | 多 Agent 一期 + MCP + RAG 切片 + DAG 编排（F39/40/41 + F20 + F46 + 写作管线增强） | ✅（2026-08-17 正式发布，21/21 issues 全关） |
 | 1.0.0 | 本地完全可用（CLI + GUI + skills + MCP） | 🔜 |
 | 2.0.0 | 云端（云存档 + 异地写作） | 🔜 |
 
