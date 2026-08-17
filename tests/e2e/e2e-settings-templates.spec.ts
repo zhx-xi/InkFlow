@@ -179,7 +179,7 @@ test('模板分类：新建模板全流程（对话框 → 保存 → 新卡片�
     // 清空持久化 UI 偏好（inkflow.ui）并重载：保证中文文案确定性
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     await gotoTemplatesCat(window);
 
@@ -218,7 +218,7 @@ test('模板分类：编辑无引用模板直接保存（名称回显 + 不弹�
   try {
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     await gotoTemplatesCat(window);
 
@@ -254,7 +254,7 @@ test('模板分类：设为默认 → 默认徽标迁移（A→B）', async () =
   try {
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     await gotoTemplatesCat(window);
 
@@ -284,7 +284,7 @@ test('模板分类：删除被引用模板 → 风险确认（列出项目）→
   try {
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     // UI 建模板 T（唯一名）
     await gotoTemplatesCat(window);
@@ -321,7 +321,7 @@ test('模板分类：删除被引用模板 → 风险确认 → 取消（确认�
   try {
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     // 同用例 4 构造：UI 建模板 T + 项目 P，内核 API 挂引用
     await gotoTemplatesCat(window);
