@@ -8,6 +8,7 @@
 - list_by_project: project_id + event_type（可空）过滤，created_at desc，
   offset/limit 分页，返回 (列表, 该项目事件总数)
 - list_edited_by_project: 只 DRAFT_EDITED，created_at asc（提取顺序稳定）
+- list_all_edited: 全部项目 DRAFT_EDITED，created_at asc（M1 用户级聚合链数据源）
 - count_by_project: 项目事件总数
 - delete_by_project: 删除该项目全部事件，返回删除行数
 - 领域 UUID → uuid4 字符串转换在仓储层（project_id/chapter_id 列存 str(uuid)，
@@ -139,6 +140,16 @@ class SQLiteMemoryEventRepository:
                 MemoryEventORM.project_id == str(project_id),
                 MemoryEventORM.event_type == MemoryEventType.DRAFT_EDITED.value,
             )
+            .order_by(MemoryEventORM.created_at.asc())
+        )
+        result = await self._session.execute(stmt)
+        return [_orm_to_domain(o) for o in result.scalars().all()]
+
+    async def list_all_edited(self) -> builtins.list[MemoryEvent]:
+        """返回全部项目 DRAFT_EDITED 事件，created_at asc（M1 用户级聚合链数据源）."""
+        stmt = (
+            select(MemoryEventORM)
+            .where(MemoryEventORM.event_type == MemoryEventType.DRAFT_EDITED.value)
             .order_by(MemoryEventORM.created_at.asc())
         )
         result = await self._session.execute(stmt)

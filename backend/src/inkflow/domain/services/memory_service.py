@@ -20,8 +20,12 @@ import uuid
 from inkflow.domain.models.memory_event import MemoryEvent, MemoryEventType
 from inkflow.domain.models.preference import PreferenceCategory, ProjectPreference
 from inkflow.domain.models.project import Project
+from inkflow.domain.models.user_preference import UserPreference
 from inkflow.domain.services import preference_learner
-from inkflow.domain.services.preference_learner import PreferenceCandidate
+from inkflow.domain.services.preference_learner import (
+    PreferenceCandidate,
+    UserPreferenceCandidate,
+)
 
 
 class PreferenceNotFoundError(Exception):
@@ -54,12 +58,14 @@ class MemoryService:
         project_repo: object,
         audit_service: object | None = None,
         learner: object | None = None,
+        user_preference_repo: object | None = None,
     ) -> None:
         self._preference_repo = preference_repo
         self._event_repo = event_repo
         self._project_repo = project_repo
         self._audit_service = audit_service
         self._learner = learner if learner is not None else preference_learner
+        self._user_preference_repo = user_preference_repo
         self.last_learned: bool = False  # F28: 本次 record_draft_edit 是否触发新偏好落库
 
     async def is_learning_enabled(
@@ -166,6 +172,48 @@ class MemoryService:
                             degraded=True,
                             actor="memory",
                         )
+        # ── M1 用户级聚合链（spec §5.1）──
+        if self._user_preference_repo is not None:
+            all_edited: list[MemoryEvent] = await self._event_repo.list_all_edited()  # type: ignore[attr-defined]  # 鸭子类型：event_repo 按契约提供 list_all_edited（M1 新增）
+            user_candidates: list[UserPreferenceCandidate] = (
+                self._learner.aggregate_user_candidates(  # type: ignore[attr-defined]  # 鸭子类型：learner 按契约提供 aggregate_user_candidates
+                    all_edited
+                )
+            )
+            if user_candidates:
+                user_result: tuple[list[UserPreference], int]
+                user_result = await self._user_preference_repo.list_all()  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 list_all
+                existing_user_items, _total = user_result
+                existing_user_by_value = {p.value: p for p in existing_user_items}
+                for uc in user_candidates:
+                    existing_user = existing_user_by_value.get(uc.value)
+                    if existing_user is not None:
+                        await self._user_preference_repo.update(  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 update
+                            existing_user.id,
+                            count=uc.count,
+                            confidence=uc.confidence,
+                            project_count=uc.project_count,
+                            source_projects=uc.source_projects,
+                            source_events=uc.source_events,
+                        )
+                    elif uc.count >= 2 and uc.project_count >= 2:
+                        await self._user_preference_repo.create(  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 create
+                            category=uc.category,
+                            pattern=uc.pattern,
+                            value=uc.value,
+                            confidence=uc.confidence,
+                            count=uc.count,
+                            project_count=uc.project_count,
+                            source_projects=uc.source_projects,
+                            source_events=uc.source_events,
+                        )
+                        if self._audit_service is not None:
+                            await self._audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                                project_id=project_id,
+                                severity_summary="user_preference_learned",
+                                degraded=True,
+                                actor="memory",
+                            )
         return event
 
     async def record_draft_rejected(
@@ -296,6 +344,116 @@ class MemoryService:
         items, _total = result
         return sorted(items, key=lambda p: p.count, reverse=True)
 
+    async def list_user_preferences(
+        self,
+        category: PreferenceCategory | None = None,
+    ) -> tuple[list[UserPreference], int]:
+        """用户级偏好列表 + 惰性重算（Q1=B，spec §7）.
+
+        查全部用户级偏好（user_preference_repo.list_all(category=...)）；逐条
+        检查 source_projects 中项目是否仍存在（project_repo.get(pid.int)）；
+        已删项目 → source_projects 移除、project_count 减 1、update 写回；
+        project_count < 2 → delete 该偏好（不返回）；返回过滤后的 (items,
+        total)——total = 过滤/删除后的条数（= len(items)），user-list 不显示
+        幽灵项目来源。
+
+        Args:
+            category: 分类过滤（不传 = 全部）.
+
+        Returns:
+            (items, total) 元组（total = len(items)）.
+        """
+        if self._user_preference_repo is None:
+            return [], 0
+        result: tuple[list[UserPreference], int]
+        result = await self._user_preference_repo.list_all(  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 list_all
+            category=category
+        )
+        items, _total = result
+        kept: list[UserPreference] = []
+        for pref in items:
+            ghost: list[str] = []
+            for pid_str in pref.source_projects:
+                try:
+                    pid = uuid.UUID(pid_str)
+                except ValueError:
+                    continue
+                project = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
+                    pid.int
+                )
+                if project is None:
+                    ghost.append(pid_str)
+            if not ghost:
+                kept.append(pref)
+                continue
+            new_projects = [p for p in pref.source_projects if p not in ghost]
+            new_project_count = pref.project_count - len(ghost)
+            if new_project_count < 2:
+                await self._user_preference_repo.delete(pref.id)  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 delete
+                continue
+            # update 返回刷新后的偏好；返回 None（鸭子 mock/契约宽松形态）时回退到
+            # 本地重算对象，保证 user-list 不显示幽灵项目来源（Q1=B 契约语义）.
+            pref.project_count = new_project_count
+            pref.source_projects = new_projects
+            updated = await self._user_preference_repo.update(  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 update
+                pref.id,
+                count=pref.count,
+                confidence=pref.confidence,
+                project_count=new_project_count,
+                source_projects=new_projects,
+                source_events=pref.source_events,
+            )
+            kept.append(updated if updated is not None else pref)
+        return kept, len(kept)
+
+    async def remove_user_preference(self, preference_id: str) -> UserPreference:
+        """删除用户级偏好（删除后所有项目立即停止注入，spec §3.1）.
+
+        Args:
+            preference_id: 用户级偏好 UUID 字符串.
+
+        Returns:
+            被删除的用户级偏好（调用方用于回显）.
+
+        Raises:
+            PreferenceNotFoundError: 偏好不存在（404）.
+        """
+        if self._user_preference_repo is None:
+            raise PreferenceNotFoundError()
+        preference: UserPreference | None = await self._user_preference_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 get
+            preference_id
+        )
+        if preference is None:
+            raise PreferenceNotFoundError()
+        await self._user_preference_repo.delete(preference_id)  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 delete
+        if self._audit_service is not None:
+            await self._audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                project_id=None,  # 用户级偏好跨项目无 project_id；F34 record 签名必填 → None
+                severity_summary="user_preference_removed",
+                degraded=True,
+                actor="memory",
+            )
+        return preference
+
+    async def get_user_preferences_for_injection(
+        self, project_id: uuid.UUID
+    ) -> list[UserPreference]:
+        """用户级偏好注入读口（F6 PreferenceSource 调用，spec §5.6 M1）.
+
+        memory_learning=false → []（零行为）；true → 惰性重算后返回 items
+        （count desc 排序）。
+
+        Args:
+            project_id: 所属项目 UUID（开关判定用）.
+
+        Returns:
+            按支撑强度（count desc）排序的用户级偏好列表.
+        """
+        if not await self.is_learning_enabled(project_id):
+            return []
+        items, _total = await self.list_user_preferences()
+        return sorted(items, key=lambda p: p.count, reverse=True)
+
     async def stats(self, project_id: uuid.UUID) -> dict:
         """修改率统计（spec §5.7 口径，测试锁定数学）.
 
@@ -325,7 +483,7 @@ class MemoryService:
         learned_preferences = await self._preference_repo.count_by_project(  # type: ignore[attr-defined]  # 鸭子类型：preference_repo 按契约提供 count_by_project
             project_id
         )
-        return {
+        result = {
             "project_id": str(project_id),
             "agentic": {
                 "chapters": chapters,
@@ -337,3 +495,10 @@ class MemoryService:
             "learned_preferences": learned_preferences,
             "baseline_ref": "docs/agent-baseline-2026-08-10.md",
         }
+        if self._user_preference_repo is not None:
+            user_items, _user_total = await self._user_preference_repo.list_all()  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 list_all
+            project_set: set[str] = set()
+            for up in user_items:
+                project_set.update(up.source_projects)
+            result["user_preferences"] = {"count": len(user_items), "projects": len(project_set)}
+        return result

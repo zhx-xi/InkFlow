@@ -207,3 +207,81 @@ def confidence_for(count: int) -> float:
         置信度浮点值（0-1 区间）.
     """
     return 1 - 1 / (count + 1)
+
+
+@dataclass
+class UserPreferenceCandidate:
+    """用户级聚合候选（spec §5.1 M1 扩展）——跨项目 (category, value) 聚合，
+    project_count≥2 才可落库。
+
+    Attributes:
+        category: 分类维度.
+        pattern: 该组首个片段的 pattern（被替换旧文本）.
+        value: 偏好值（用户反复修改后保留的新文本）.
+        count: 支撑事件数（跨项目累计）.
+        project_count: 支撑项目数.
+        source_projects: 支撑项目 id 字符串列表（去重）.
+        source_events: 支撑事件 id 列表（去重）.
+        confidence: 置信度（confidence_for(count)）.
+    """
+
+    category: PreferenceCategory
+    pattern: str
+    value: str
+    count: int
+    project_count: int
+    source_projects: list[str]
+    source_events: list[str]
+    confidence: float
+
+
+def aggregate_user_candidates(events: list[MemoryEvent]) -> list[UserPreferenceCandidate]:
+    """事件列表 → 用户级候选聚合（跨项目，spec §5.1 M1 扩展）.
+
+    与 aggregate_candidates 共享 extract_edits（零重复 difflib 计算）：
+    1) 只取 event_type == DRAFT_EDITED 且 before_content/after_content 非空
+    2) 每事件 extract_edits(before_content, after_content) 提取片段
+    3) 聚合键 = (category, value)（无 project_id 维度）；同事件内重复同键只计一次
+    4) count = 去重后事件数（跨项目累计）；projects = {event.project_id}；
+       project_count = len(projects)
+    5) source_projects = 支撑项目 id 字符串列表（去重）、source_events = 支撑事件 id 列表（去重）
+    6) 阈值: count >= 2 且 project_count >= 2 才产出（保守规则——仅 1 个项目出现永不升用户级）
+    7) pattern = 该组首个片段的 pattern；confidence = confidence_for(count)
+
+    Args:
+        events: 事件列表（可跨项目——用户级聚合无 project_id 维度）.
+
+    Returns:
+        满足 count>=2 且 project_count>=2 阈值的 UserPreferenceCandidate 列表
+        （按聚合首见序）.
+    """
+    groups: dict[tuple[PreferenceCategory, str], tuple[set[str], set[str], str]] = {}
+    for event in events:
+        if event.event_type != MemoryEventType.DRAFT_EDITED:
+            continue
+        if not event.before_content or not event.after_content:
+            continue
+        seen_in_event: set[tuple[PreferenceCategory, str]] = set()
+        for edit in extract_edits(event.before_content, event.after_content):
+            category = classify_edit(edit.pattern, edit.value)
+            key = (category, edit.value)
+            if key in seen_in_event:
+                continue
+            seen_in_event.add(key)
+            event_ids, project_ids, _ = groups.setdefault(key, (set(), set(), edit.pattern))
+            event_ids.add(event.id)
+            project_ids.add(str(event.project_id))
+    return [
+        UserPreferenceCandidate(
+            category=category,
+            pattern=first_pattern,
+            value=value,
+            count=len(event_ids),
+            project_count=len(project_ids),
+            source_projects=sorted(project_ids),
+            source_events=sorted(event_ids),
+            confidence=confidence_for(len(event_ids)),
+        )
+        for (category, value), (event_ids, project_ids, first_pattern) in groups.items()
+        if len(event_ids) >= 2 and len(project_ids) >= 2
+    ]

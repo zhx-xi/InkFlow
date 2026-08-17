@@ -31,6 +31,19 @@ callback 设 ctx.obj（根 callback 在 inkflow 根 app 上）。
 
 RED 预期: 收集期 ModuleNotFoundError（collected 0 items / exit 2）。
 
+F45 M1 追加契约（2026-08-17，spec §4.1）:
+- inkflow memory user-list [--category ...] [--json]: HTTP GET
+  /agent/user-preferences（params: category 可选）→ 人类模式开头行
+  「共 N 条用户级偏好」+ 每行「[style_word] 说 → 低声道 (confidence 0.75,
+  ×3, 2 项目)」（方括号 category + pattern + → + value + 括号内
+  confidence/count/项目数）；--json 信封 {"ok": true, "data": {items,total}}
+- inkflow memory user-remove <preference_id> [--json]: HTTP DELETE
+  /agent/user-preferences/{id} → 人类模式「✅ 已删除用户级偏好（所有项目
+  生成立即停止注入）」；--json 信封；404 → stderr ❌ + 退出码 1
+  （镜像既有 remove 错误映射）
+- RED 预期: user-list/user-remove 子命令未注册 → Typer "No such command" +
+  exit 2 ≠ 0 → 断言 FAILED（新用例）；既有用例不动
+
 asyncio 模式: 本 venv 实测 asyncio: mode=Mode.AUTO（pyproject
 asyncio_mode = "auto" 生效）；本文件全部同步用例（CliRunner 轨）。
 """
@@ -43,10 +56,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from typer.testing import CliRunner
-
 from inkflow.cli.commands.memory_cmd import app
 from inkflow.cli.context import CliContext
+from typer.testing import CliRunner
 
 runner = CliRunner()
 
@@ -283,3 +295,98 @@ class TestMemoryCoverageGaps:
         assert result.exit_code == 0
         assert "N/A" in result.stdout
         assert "基线对照" in result.stdout
+
+
+# ═══ F45 M1 追加段（2026-08-17，spec §4.1 user-list/user-remove）═══
+
+
+def _user_pref_dict(**overrides) -> dict:
+    """UserPreference dict（spec §3.2 用户级字段口径——无 project_id 键）."""
+    pref = {
+        "id": str(uuid.uuid4()),
+        "category": "style_word",
+        "pattern": "说",
+        "value": "低声道",
+        "confidence": 0.75,
+        "count": 3,
+        "project_count": 2,
+        "source_projects": [str(uuid.uuid4()), str(uuid.uuid4())],
+        "source_events": ["evt-0001", "evt-0002", "evt-0003"],
+        "created_at": "2026-08-17T10:00:00",
+        "updated_at": "2026-08-17T10:00:00",
+    }
+    pref.update(overrides)
+    return pref
+
+
+class TestMemoryUserList:
+    """inkflow memory user-list — 用户级偏好列表（M1 新增，spec §4.1）.
+
+    RED 预期: 子命令未注册 → Typer "No such command 'user-list'." + exit 2
+    ≠ 0 → 断言 FAILED（fake_http_client 无副作用，命令不存在时不被调用）。
+    """
+
+    def test_user_list_human(self, fake_http_client):
+        """user-list 人类模式: GET /agent/user-preferences + 开头行 + 每行格式."""
+        fake_http_client.get.return_value = {
+            "items": [_user_pref_dict()],
+            "total": 1,
+        }
+        result = _invoke("user-list")
+        assert result.exit_code == 0
+        call = fake_http_client.get.await_args
+        assert call.args[0] == "/agent/user-preferences"
+        assert "共 1 条用户级偏好" in result.stdout
+        assert "[style_word] 说 → 低声道 (confidence 0.75, ×3, 2 项目)" in result.stdout
+
+    def test_user_list_json(self, fake_http_client):
+        """user-list --json: stdout 信封 == API 响应原样（{"ok": true, "data"}）."""
+        payload = {"items": [_user_pref_dict()], "total": 1}
+        fake_http_client.get.return_value = payload
+        result = _invoke("user-list", "--json")
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {"ok": True, "data": payload}
+
+    def test_user_list_category_filter(self, fake_http_client):
+        """user-list --category style_word: category 参数透传（params 含 category）."""
+        fake_http_client.get.return_value = {"items": [], "total": 0}
+        result = _invoke("user-list", "--category", "style_word")
+        assert result.exit_code == 0
+        assert (
+            fake_http_client.get.await_args.kwargs["params"]["category"] == "style_word"
+        )
+
+
+class TestMemoryUserRemove:
+    """inkflow memory user-remove — 删除用户级偏好（M1 新增，spec §4.1）.
+
+    RED 预期: 子命令未注册 → Typer "No such command 'user-remove'." + exit 2
+    ≠ 0 → 断言 FAILED。
+    """
+
+    def test_user_remove_human(self, fake_http_client):
+        """user-remove 人类模式: DELETE /agent/user-preferences/{id} + 成功文案."""
+        fake_http_client.delete.return_value = {
+            "preference_id": PREFERENCE_ID,
+            "deleted": True,
+        }
+        result = _invoke("user-remove", PREFERENCE_ID)
+        assert result.exit_code == 0
+        call = fake_http_client.delete.await_args
+        assert call.args[0] == f"/agent/user-preferences/{PREFERENCE_ID}"
+        assert "✅ 已删除用户级偏好（所有项目生成立即停止注入）" in result.stdout
+
+    def test_user_remove_json(self, fake_http_client):
+        """user-remove --json: stdout 信封 == API 响应原样."""
+        payload = {"preference_id": PREFERENCE_ID, "deleted": True}
+        fake_http_client.delete.return_value = payload
+        result = _invoke("user-remove", PREFERENCE_ID, "--json")
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {"ok": True, "data": payload}
+
+    def test_user_remove_http_404(self, fake_http_client):
+        """user-remove 404（偏好不存在）→ stderr ❌ + 退出码 1（镜像 remove 映射）."""
+        fake_http_client.delete.side_effect = _http_err(404, "偏好不存在")
+        result = _invoke("user-remove", PREFERENCE_ID)
+        assert result.exit_code == 1
+        assert "❌ 偏好不存在" in result.stderr

@@ -137,6 +137,11 @@ def memory_stats(
     regenerate_rate = agentic.get("regenerate_rate")
     baseline_ref = data.get("baseline_ref")
     typer.echo(f"已学习偏好: {data.get('learned_preferences', 0)} 条")
+    user_prefs = data.get("user_preferences")
+    if user_prefs:
+        user_pref_count = user_prefs.get("count", 0)
+        user_pref_projects = user_prefs.get("projects", 0)
+        typer.echo(f"用户级偏好: {user_pref_count} 条（跨 {user_pref_projects} 项目）")
     if modify_rate is None:
         typer.echo("修改率: N/A（无修改数据）")
     else:
@@ -149,3 +154,60 @@ def memory_stats(
         typer.echo("基线对照: N/A（无修改率数据）")
     else:
         typer.echo(f"基线对照: {baseline_ref}")
+
+
+@app.command("user-list")
+def memory_user_list(
+    category: str | None = typer.Option(
+        None,
+        "--category",
+        help=_CATEGORY_FILTER_HELP,
+    ),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """列出用户级偏好（全局跨项目，M1）"""
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            params: dict[str, object] = {}
+            if category:
+                params["category"] = category
+            return await client.get("/agent/user-preferences", params=params)
+
+    data = _run(_impl)
+    if data is None:
+        return
+    if json_output:
+        _print_json_envelope(data)
+        return
+    items = data.get("items") or []
+    typer.echo(f"共 {data.get('total', len(items))} 条用户级偏好")
+    for pref in items:
+        typer.echo(
+            f"[{pref['category']}] {pref['pattern']} → {pref['value']} "
+            f"(confidence {pref['confidence']}, ×{pref['count']}, {pref['project_count']} 项目)"
+        )
+
+
+@app.command("user-remove")
+def memory_user_remove(
+    preference_id: str = typer.Argument(..., help="用户级偏好 ID"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """删除用户级偏好（所有项目立即停止注入，M1）"""
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.delete(f"/agent/user-preferences/{preference_id}")
+
+    data = _run(_impl)
+    if data is None:
+        return
+    if json_output:
+        _print_json_envelope(data)
+        return
+    typer.echo("✅ 已删除用户级偏好（所有项目生成立即停止注入）")

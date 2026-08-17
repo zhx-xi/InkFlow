@@ -97,6 +97,9 @@ from inkflow.infrastructure.database.repositories.summary_repo import (
 from inkflow.infrastructure.database.repositories.timeline_repo import (
     SQLiteTimelineRepository,
 )
+from inkflow.infrastructure.database.repositories.user_preference_repo import (
+    SQLiteUserPreferenceRepository,
+)
 from inkflow.infrastructure.database.repositories.world_repo import (
     SQLiteWorldRepository,
 )
@@ -152,6 +155,13 @@ def get_preference_repo(
     return SQLitePreferenceRepository(db)
 
 
+def get_user_preference_repo(
+    db: AsyncSession = Depends(get_db),
+) -> SQLiteUserPreferenceRepository:
+    """获取用户级偏好仓储实例（F45 M1 用户级偏好端点用）"""
+    return SQLiteUserPreferenceRepository(db)
+
+
 def get_memory_event_repo(
     db: AsyncSession = Depends(get_db),
 ) -> SQLiteMemoryEventRepository:
@@ -168,6 +178,7 @@ def get_memory_service(
         event_repo=SQLiteMemoryEventRepository(db),
         project_repo=SQLiteProjectRepository(db),
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
+        user_preference_repo=SQLiteUserPreferenceRepository(db),
     )
 
 
@@ -304,6 +315,7 @@ def get_context_service(
             SQLitePreferenceRepository(db),
             project_repo,
             explicit_texts=_collect_explicit_texts(db),
+            user_preference_repo=SQLiteUserPreferenceRepository(db),
         ),
     }
 

@@ -44,6 +44,18 @@ ASGITransport，不触发 lifespan——全 mock 轨无需 DB）。
   仅锁定 learned 字段存在且为 bool，不锁 True/False 具体值
 - PreferenceNotFoundError 定义位置假设 = domain/services/memory_service.py
   （spec §8 编排服务），GREEN 落地时核对
+
+F45 M1 追加契约（2026-08-17，spec §3.1/§3.2）:
+- GET /api/v1/agent/user-preferences [&category=...] → 200 {"items":
+  [UserPreference dict], "total": N}——UserPreference dict 字段: id/category/
+  pattern/value/confidence/count/project_count/source_projects/source_events/
+  created_at/updated_at（全局表，无 project_id 键）
+- DELETE /api/v1/agent/user-preferences/{preference_id} → 200
+  {"preference_id": str, "deleted": true} / 404（PreferenceNotFoundError）
+- 依赖注入镜像既有: app.dependency_overrides[get_memory_service] 替换 mock
+  service（全 mock 轨，零 DB）；真实 app 装配断言（_memory_route_paths）
+- RED 预期: 端点未注册 → 真实 app 404 ≠ 期望码 → 断言 FAILED（新用例）；
+  既有用例不动
 """
 
 from __future__ import annotations
@@ -53,7 +65,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-
 from inkflow.api.app import app
 from inkflow.api.deps import get_draft_service
 from inkflow.domain.models.draft import Draft, DraftStatus
@@ -417,3 +428,123 @@ class TestMemoryAssembly:
         assert any(
             p.startswith("/api/v1/agent/preferences/") for p in paths
         ), f"缺 preferences 删除路由: {paths}"
+
+    def test_user_preferences_routes_registered_in_app(self):
+        """M1 装配: user-preferences 列表/删除端点必须在真实 app 注册（spec §3.1）。"""
+        paths = _memory_route_paths()
+        assert (
+            "/api/v1/agent/user-preferences" in paths
+        ), f"缺 user-preferences 列表路由: {paths}"
+        assert any(
+            p.startswith("/api/v1/agent/user-preferences/") for p in paths
+        ), f"缺 user-preferences 删除路由: {paths}"
+
+
+# ═══ F45 M1 追加段（2026-08-17，spec §3.1/§3.2 用户级偏好端点）═══
+
+
+def _user_pref_dict(**overrides) -> dict:
+    """UserPreference dict（spec §3.2 用户级字段口径——全局表无 project_id 键）."""
+    pref = {
+        "id": str(uuid.uuid4()),
+        "category": "style_word",
+        "pattern": "说",
+        "value": "低声道",
+        "confidence": 0.75,
+        "count": 3,
+        "project_count": 2,
+        "source_projects": [str(uuid.uuid4()), str(uuid.uuid4())],
+        "source_events": ["evt-0001", "evt-0002", "evt-0003"],
+        "created_at": "2026-08-17T10:00:00",
+        "updated_at": "2026-08-17T10:00:00",
+    }
+    pref.update(overrides)
+    return pref
+
+
+class TestUserPreferencesEndpoint:
+    """GET/DELETE /api/v1/agent/user-preferences — 用户级偏好（M1 新增）.
+
+    RED 预期: 端点未注册 → 真实 app 404 ≠ 期望码 → 断言 FAILED（镜像
+    TestPreferencesEndpoint 形态）；DELETE 404 用例锁 detail「偏好不存在」
+    区分 FastAPI 默认 "Not Found"（防「期望 404 撞上未注册 404」假绿）。
+    """
+
+    async def test_user_preferences_list_200(self, memory_svc, clean_overrides):
+        """GET user-preferences → 200: {"items", "total"} + 字段口径."""
+        memory_svc.list_user_preferences = AsyncMock(
+            return_value=([_user_pref_dict()], 1)
+        )
+        _override_memory_service(memory_svc)
+        async with _client() as client:
+            resp = await client.get("/api/v1/agent/user-preferences")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        item = data["items"][0]
+        for key in (
+            "id",
+            "category",
+            "pattern",
+            "value",
+            "confidence",
+            "count",
+            "project_count",
+            "source_projects",
+            "source_events",
+            "created_at",
+            "updated_at",
+        ):
+            assert key in item
+        assert "project_id" not in item  # 全局表无 project_id 键
+        assert item["pattern"] == "说"
+        assert item["category"] == "style_word"
+        assert memory_svc.list_user_preferences.await_args.kwargs["category"] is None
+
+    async def test_user_preferences_list_category_filter(
+        self, memory_svc, clean_overrides
+    ):
+        """GET user-preferences?category=style_word → category 透传 service."""
+        memory_svc.list_user_preferences = AsyncMock(return_value=([], 0))
+        _override_memory_service(memory_svc)
+        async with _client() as client:
+            resp = await client.get(
+                "/api/v1/agent/user-preferences", params={"category": "style_word"}
+            )
+        assert resp.status_code == 200
+        assert (
+            memory_svc.list_user_preferences.await_args.kwargs["category"]
+            == "style_word"
+        )
+
+    async def test_user_preferences_delete_200(self, memory_svc, clean_overrides):
+        """DELETE user-preferences/{id} → 200: {"preference_id", "deleted": true}."""
+        memory_svc.remove_user_preference = AsyncMock(return_value=None)
+        _override_memory_service(memory_svc)
+        async with _client() as client:
+            resp = await client.delete(
+                f"/api/v1/agent/user-preferences/{PREFERENCE_ID}"
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["preference_id"] == PREFERENCE_ID
+        assert data["deleted"] is True
+        assert (
+            _call_arg(memory_svc.remove_user_preference, "preference_id", 0)
+            == PREFERENCE_ID
+        )
+
+    async def test_user_preferences_delete_404(self, memory_svc, clean_overrides):
+        """DELETE 404: 用户级偏好不存在（PreferenceNotFoundError 映射）."""
+        from inkflow.domain.services.memory_service import PreferenceNotFoundError
+
+        memory_svc.remove_user_preference = AsyncMock(
+            side_effect=PreferenceNotFoundError("偏好不存在")
+        )
+        _override_memory_service(memory_svc)
+        async with _client() as client:
+            resp = await client.delete(
+                f"/api/v1/agent/user-preferences/{PREFERENCE_ID}"
+            )
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "偏好不存在"
