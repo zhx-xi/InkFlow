@@ -430,3 +430,24 @@ class TestSQLiteUserPreferenceRepository:
         assert fetched.source_projects == project_ids
         assert isinstance(fetched.source_events, list)
         assert fetched.source_events == event_ids
+
+
+async def test_orm_repr_includes_id_and_pattern() -> None:
+    """覆盖 UserPreferenceORM.__repr__（coverage 门禁 models/user_preference.py:113）."""
+    from inkflow.infrastructure.database.models.user_preference import (
+        UserPreferenceORM,
+    )
+
+    orm = UserPreferenceORM(
+        category="style_word",
+        pattern="说",
+        value="低声道",
+        confidence=0.5,
+        count=2,
+        project_count=2,
+        source_projects=[str(PROJECT_ID)],
+        source_events=["evt-1"],
+    )
+    text = repr(orm)
+    assert "UserPreferenceORM" in text
+    assert "说" in text

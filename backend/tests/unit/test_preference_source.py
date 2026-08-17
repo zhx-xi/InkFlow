@@ -552,3 +552,42 @@ class TestPreferenceSourceUserLevel:
 
         assert len(items) == 2
         assert all(not i.title.startswith("AI 已记住（全局）") for i in items)
+
+    async def test_user_level_skips_invalid_project_uuid(self):
+        """Q1=B 惰性重算防御: source_projects 含非法 uuid 字符串 → ValueError 跳过，不崩."""
+        project_repo = AsyncMock()
+        project_repo.get.return_value = _project(memory_learning=True)
+        user_pref = _user_preference(
+            "说",
+            "低声道",
+            count=3,
+            project_count=2,
+            source_projects=["not-a-uuid", str(uuid.UUID(int=202))],
+        )
+        preference_repo = AsyncMock()
+        preference_repo.list_by_project.return_value = ([], 0)
+        user_repo = AsyncMock()
+        user_repo.list_all.return_value = ([user_pref], 1)
+        source = PreferenceSource(preference_repo, project_repo)
+        source._user_preference_repo = user_repo  # 属性注入（#318 配方）
+
+        items = await source.collect(PROJECT_ID, CHAPTER_ID)
+
+        assert "AI 已记住（全局）：说" in [i.title for i in items]
+
+    async def test_user_level_content_length_limited_to_200(self):
+        """预算②: 用户级 pattern+value 超长 → content 总长 ≤200（截断）."""
+        project_repo = AsyncMock()
+        project_repo.get.return_value = _project(memory_learning=True)
+        user_pref = _user_preference("长" * 60, "值" * 300, count=3)
+        preference_repo = AsyncMock()
+        preference_repo.list_by_project.return_value = ([], 0)
+        user_repo = AsyncMock()
+        user_repo.list_all.return_value = ([user_pref], 1)
+        source = PreferenceSource(preference_repo, project_repo)
+        source._user_preference_repo = user_repo  # 属性注入（#318 配方）
+
+        items = await source.collect(PROJECT_ID, CHAPTER_ID)
+
+        assert len(items) == 1
+        assert len(items[0].content) <= 200

@@ -616,3 +616,38 @@ async def test_stats_without_user_repo_omits_key() -> None:
     service, _deps = _make_service(inject_user_repo=False)
     stats = await service.stats(PROJECT_ID)
     assert "user_preferences" not in stats
+
+
+# ═══ F45 M1 coverage 补测（2026-08-17：防御分支行覆盖，ADR-027 门禁 98.5/95.0）═══
+
+
+async def test_list_user_preferences_without_repo_returns_empty() -> None:
+    """覆盖 L366-367: user_preference_repo=None（F28 既有构造）→ ([], 0) 早退."""
+    service, _deps = _make_service(inject_user_repo=False)
+    items, total = await service.list_user_preferences()
+    assert items == []
+    assert total == 0
+
+
+async def test_list_user_preferences_skips_invalid_uuid() -> None:
+    """覆盖 L379-380: source_projects 含非法 uuid 字符串 → ValueError 跳过，不崩."""
+    service, deps = _make_service()
+    deps["user_preference_repo"].list_all.return_value = (
+        [
+            _user_pref(
+                pref_id="up-1",
+                source_projects=["not-a-uuid", str(PID_A)],
+            ),
+        ],
+        1,
+    )
+    items, total = await service.list_user_preferences()
+    assert total == 1
+    assert items[0].id == "up-1"
+
+
+async def test_remove_user_preference_without_repo_raises() -> None:
+    """覆盖 L421-422: user_preference_repo=None → remove_user_preference 抛 NotFound."""
+    service, _deps = _make_service(inject_user_repo=False)
+    with pytest.raises(PreferenceNotFoundError):
+        await service.remove_user_preference("up-1")

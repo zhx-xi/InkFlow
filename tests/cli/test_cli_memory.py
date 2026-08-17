@@ -56,10 +56,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from typer.testing import CliRunner
-
 from inkflow.cli.commands.memory_cmd import app
 from inkflow.cli.context import CliContext
+from typer.testing import CliRunner
 
 runner = CliRunner()
 
@@ -391,3 +390,41 @@ class TestMemoryUserRemove:
         result = _invoke("user-remove", PREFERENCE_ID)
         assert result.exit_code == 1
         assert "❌ 偏好不存在" in result.stderr
+
+
+class TestMemoryStatsUserLayer:
+    """inkflow memory stats 人类模式用户级行 + 防御分支（F45 M1 coverage 补测）."""
+
+    def test_stats_human_with_user_preferences(self, fake_http_client):
+        """stats 响应含 user_preferences 键 → 人类模式追加「用户级偏好: N 条（跨 M 项目）」."""
+        fake_http_client.get.return_value = _stats_payload(
+            user_preferences={"count": 3, "projects": 2}
+        )
+        result = _invoke("stats", "--project-id", PROJECT_ID)
+        assert result.exit_code == 0
+        assert "用户级偏好: 3 条（跨 2 项目）" in result.stdout
+
+    def test_stats_human_without_user_preferences_key(self, fake_http_client):
+        """stats 响应无 user_preferences 键 → 不输出用户级行（F28 既有输出零变化）."""
+        fake_http_client.get.return_value = _stats_payload()
+        result = _invoke("stats", "--project-id", PROJECT_ID)
+        assert result.exit_code == 0
+        assert "用户级偏好:" not in result.stdout
+
+
+class TestMemoryUserNoneData:
+    """HTTP 返回 None 的防御早退（F45 M1 coverage 补测：_run 后 data is None → return）."""
+
+    def test_user_list_none_data_returns(self, fake_http_client):
+        """user-list data None → 静默返回（无输出、无异常）."""
+        fake_http_client.get.return_value = None
+        result = _invoke("user-list")
+        assert result.exit_code == 0
+        assert result.stdout == ""
+
+    def test_user_remove_none_data_returns(self, fake_http_client):
+        """user-remove data None → 静默返回（无输出、无异常）."""
+        fake_http_client.delete.return_value = None
+        result = _invoke("user-remove", PREFERENCE_ID)
+        assert result.exit_code == 0
+        assert result.stdout == ""
