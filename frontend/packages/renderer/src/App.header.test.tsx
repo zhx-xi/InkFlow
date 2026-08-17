@@ -27,7 +27,7 @@
  * ⚠️ #384 门控适配（2026-08-16）：
  * - 顶栏内核状态改从 useKernelStore 读（status==='ready' → 已连接，否则 → 未就绪）
  * - 正常用例 beforeEach 预设 status='ready'+booted=true（跳过 booting 封面，同步渲染主 UI）
- * - #192 用例改门控语义：启动期（booted=false）/health 失败 → BootGate 封面错误+重试（非顶栏未就绪）
+ * - #192 用例改门控语义：启动期（booted=false）/health 连续失败达阈值（#419：3 次 ≈10s）→ BootGate 封面错误+重试（非顶栏未就绪）
  * - 新增运行期断连用例：booted=true + status='failed' → 主 UI 保留 + 顶栏「内核未就绪」（门控不回退）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -54,7 +54,7 @@ beforeEach(() => {
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
   useProjectStore.setState({ projects: [], currentProjectId: null, loading: false, error: null });
   // #384 门控适配：预设 ready+booted（跳过 booting 封面，顶栏/主题/语言用例关注非门控）
-  useKernelStore.setState({ status: 'ready', booted: true });
+  useKernelStore.setState({ status: 'ready', booted: true, healthFailures: 0 });
   // 空列表即可——顶栏断言与项目列表内容无关
   apiFetchMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
 });
@@ -138,9 +138,11 @@ describe('App 顶栏 — 主题/语言 Radix Select 契约升级（#106 §8.2⑤
   // 原缺陷：顶栏「内核已连接」恒显（App.tsx 硬编码 t('sb.kernel')），内核启动失败仍显示已连接。
   // #384 后语义升级：启动期（booted=false）/health 失败 → BootGate 门控封面「内核连接失败」+ 重试
   // （不再进入主 UI，顶栏不渲染——彻底消除「内核未就绪期间主界面半可用」）。
-  it('#192 内核状态真实化（#384 门控版）：启动期 /health 失败 → 门控封面「内核连接失败」+ 重试', async () => {
+  it('#192 内核状态真实化（#384 门控版 + #419 阈值）：启动期连续失败达阈值 → 门控封面「内核连接失败」+ 重试', async () => {
     // 覆盖 beforeEach 的 ready 预设：回到启动期（门控开启）
-    useKernelStore.setState({ status: 'booting', booted: false });
+    // #419 阈值语义：单次失败保持 booting；预设 healthFailures=2 模拟前两次轮询失败（t=0/5s），
+    // render 后立即 checkHealth 为第三次失败（t≈10s）→ 达阈值置 failed
+    useKernelStore.setState({ status: 'booting', booted: false, healthFailures: 2 });
     apiFetchMock.mockRejectedValue(new Error('kernel unreachable'));
     render(<App />);
     await screen.findByText('内核连接失败');
