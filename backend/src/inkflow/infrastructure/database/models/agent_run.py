@@ -111,7 +111,7 @@ class AgentRunORM(Base):
         nullable=False,
         default="",
     )
-    """终止原因（llm/max_steps/repeat_tool/empty_content/token_budget）."""
+    """终止原因（llm/max_steps/repeat_tool/total_tool_calls/empty_content/token_budget）."""
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,

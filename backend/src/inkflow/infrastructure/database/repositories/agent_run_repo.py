@@ -139,7 +139,7 @@ class SQLiteAgentRunRepository:
             draft_id: 兜底保存的草稿 id（无则 None）.
             model: 本次运行使用的模型标识.
             token_usage_total: 累计 token 消耗.
-            terminated_by: 终止原因（"llm"/"max_steps"/"repeat_tool"/
+            terminated_by: 终止原因（"llm"/"max_steps"/"repeat_tool"/"total_tool_calls"/
                 "empty_content"/"token_budget"）.
 
         Returns:

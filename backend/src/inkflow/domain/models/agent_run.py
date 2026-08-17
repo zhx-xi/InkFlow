@@ -4,7 +4,7 @@ AgentRun 是一次 agentic 写作运行的全量记录（状态机 + 决策轨�
 - steps: 每步 LLM 决策快照（message_content + tool_calls + tokens），
   run 结束后一次落库（ADR-D 产物保留）.
 - status: 运行状态机（running → completed/failed/terminated_by_guardrail）.
-- terminated_by: 终止原因（"llm"/"max_steps"/"repeat_tool"/
+- terminated_by: 终止原因（"llm"/"max_steps"/"repeat_tool"/"total_tool_calls"/
   "empty_content"/"token_budget"）.
 
 依据: specs/f27-writer-agent/spec.md（父侧契约 test_agent_run_repo.py /
@@ -85,7 +85,7 @@ class AgentRun(BaseModel):
         draft_id: 兜底保存的草稿 id（消息历史含 save_draft 时回填）.
         model: 本次运行使用的模型标识.
         token_usage_total: 累计 token 消耗.
-        terminated_by: 终止原因（"llm"/"max_steps"/"repeat_tool"/
+        terminated_by: 终止原因（"llm"/"max_steps"/"repeat_tool"/"total_tool_calls"/
             "empty_content"/"token_budget"）.
         created_at: 创建时间（UTC）.
         updated_at: 最后更新时间（UTC）.
@@ -103,7 +103,8 @@ class AgentRun(BaseModel):
     draft_id: str | None = None
     model: str = ""
     token_usage_total: int = 0
-    terminated_by: str = ""  # "llm"/"max_steps"/"repeat_tool"/"empty_content"/"token_budget"
+    terminated_by: str = ""  # "llm"/"max_steps"/"repeat_tool"/"total_tool_calls"/
+    # "empty_content"/"token_budget"
     created_at: datetime
     updated_at: datetime
 
@@ -120,6 +121,7 @@ class AgenticWriteRequest(BaseModel):
         style_hint: 风格提示（可选）.
         max_steps: 最大工具步数（None = 读设置/默认 12）.
         token_budget: token 预算（None = 读设置/默认 32K）.
+        max_total_tool_calls: 会话总工具调用上限（None = 读设置/默认 20）.
         memory_learning: F28 记忆学习显式覆盖（None = 读项目配置，F13 同构）.
     """
 
@@ -131,4 +133,5 @@ class AgenticWriteRequest(BaseModel):
     style_hint: str | None = None
     max_steps: int | None = Field(default=None, ge=1)  # None = 读设置/默认 12
     token_budget: int | None = Field(default=None, ge=1)  # None = 读设置/默认 32K
+    max_total_tool_calls: int | None = Field(default=None, ge=1)  # None = 读设置/默认 20
     memory_learning: bool | None = None  # F28: None = 读项目配置 extra["memory_learning"]

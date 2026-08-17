@@ -75,7 +75,7 @@
                chapter_service: object | None = None,  # 确认流用（鸭子类型）
                max_steps_default: int = 12,
                token_budget_default: int = 32000,
-               max_consecutive_tool: int = 3,
+               max_total_tool_calls: int = 20,
                empty_content_retries: int = 1,
            ): ...
            async def run(self, request: AgenticWriteRequest) -> AgentRun
@@ -87,16 +87,20 @@
    - 工具执行在 agent 内建循环（deepagents ToolNode）；服务层从返回的消息历史
      提取决策轨迹并实施护栏（检查最终消息 content / 统计连续同工具 / 步数）。
 
-4. 护栏语义（spec §5.3/§5.4，ADR-D 产物保留）:
+4. 护栏语义（spec §5.3/§5.4，ADR-D 产物保留; #430 语义改造: 单工具连续 → 会话总调用）:
    - 自然终止: 最终 AIMessage content 非空且无 tool_calls → completed / "llm"
-   - 连续同工具: 消息历史中相邻 tool_calls 同一工具连续 >= max_consecutive_tool
-     → terminated_by_guardrail / "repeat_tool"（产物保留）
+   - 会话总调用: 所有 AI 消息 tool_calls 总数 >= max_total_tool_calls（默认 20）
+     且最终无正文（last_content == ""）→ terminated_by_guardrail / "total_tool_calls"
+     （#430: 正常写作中连续调用同一工具（count_words/audit_chapter）是合理行为，
+     旧「单工具连续 >= 3」护栏误杀——改为总调用预算，防死循环由
+     max_steps/token_budget/empty_content 兜底）
    - max_steps: 工具调用步数 >= max_steps 仍无正文 → terminated_by_guardrail / "max_steps"
    - 空 content: 最终消息 content 为空且无 tool_calls → 自动重试 1 次
      （empty_content_retries，追加用户消息「请输出正文」）→ 仍空 →
      terminated_by_guardrail / "empty_content"
    - token: 累计 tokens >= token_budget → terminated_by_guardrail / "token_budget"
    - guardrail 不视为异常抛出：run() 正常返回 AgentRun（status 区分）
+   - 护栏判定顺序: total_tool_calls → max_steps → empty_content → token_budget
 
 5. 草稿兜底（spec §5.3 ADR-D）:
    - LLM 自然终止且消息历史中未调用 save_draft → 服务层兜底 draft_service.create(
@@ -217,10 +221,13 @@ def _make_service(
     responses: list[dict],
     *,
     max_steps: int = 12,
-    max_consecutive_tool: int = 3,
     empty_content_retries: int = 1,
 ) -> tuple[AgenticWriterService, FakeAgent, dict[str, Any]]:
-    """构造服务 + fake agent + 依赖字典（draft_service/audit_service/run_repo 全 AsyncMock）."""
+    """构造服务 + fake agent + 依赖字典（draft_service/audit_service/run_repo 全 AsyncMock）.
+
+    #430: 总调用预算经 request.max_total_tool_calls 覆盖（默认 20 由实现侧构造
+    默认值兜底）；构造不再传 max_consecutive_tool（已废弃为 total_tool_calls）。
+    """
     agent = FakeAgent(responses)
     deps = {
         "draft_service": AsyncMock(),
@@ -238,7 +245,6 @@ def _make_service(
         run_repo=deps["run_repo"],
         chapter_service=deps["chapter_service"],
         max_steps_default=max_steps,
-        max_consecutive_tool=max_consecutive_tool,
         empty_content_retries=empty_content_retries,
     )
     deps["factory_calls"] = factory_calls
@@ -315,36 +321,50 @@ async def test_normal_loop_with_save_draft_tool_no_fallback() -> None:
     assert "save_draft" in tool_names
 
 
-# ── 契约 2: 连续同工具触发护栏 ──
+# ── 契约 2: #430 语义改造——会话总工具调用预算（单工具连续不再触发护栏） ──
 
 
-async def test_repeat_tool_guardrail() -> None:
-    """契约②: 连续 5 次同工具（search_characters）→ terminated_by_guardrail.
+async def test_repeat_same_tool_no_guardrail_with_content() -> None:
+    """契约②(#430 M2): 连续 5 次同工具 + 最终正文 → completed（repeat_tool 不再触发）.
 
-    terminated_by="repeat_tool" / 产物保留（run 正常返回非异常）/
-    run_repo 保存了 steps（决策轨迹不丢）.
+    #430 根因回归: v4-flash 倾向连续调用同一工具（count_words/audit_chapter 等），
+    旧「单工具连续 >= 3」护栏误杀正常写作。新语义 = 会话总调用上限（默认 20）——
+    5 次 < 20 且最终有正文 → 自然终止 completed。
+
+    RED 预期: 当前实现 a 节 repeat_tool 先触发（连续 5 次 >= 3）→
+    TERMINATED_BY_GUARDRAIL ≠ completed → 断言 FAILED（clean，非 ERROR）。
     """
     messages: list[dict] = []
     for _ in range(5):
         messages.append(_ai_msg(tool_calls=[_tool_call("search_characters")]))
         messages.append(_tool_msg("search_characters"))
+    messages.append(_ai_msg(content="连续调用后产出正文。"))
     responses = [_history(*messages)]
-    service, _, deps = _make_service(responses, max_consecutive_tool=3)
+    service, _, deps = _make_service(responses)
+    deps["draft_service"].create.return_value = Draft(
+        id="draft-1",
+        project_id=PROJECT_ID,
+        chapter_id=CHAPTER_ID,
+        content="连续调用后产出正文。",
+        status=DraftStatus.DRAFT,
+        created_at=_utcnow(),
+        confirmed_at=None,
+    )
 
     run = await service.run(_make_request())
 
-    assert run.status == AgentRunStatus.TERMINATED_BY_GUARDRAIL
-    assert run.terminated_by == "repeat_tool"
-    # 决策轨迹保留（steps 含全部工具调用）
+    assert run.status == AgentRunStatus.COMPLETED
+    assert run.terminated_by == "llm"
+    assert run.final_content == "连续调用后产出正文。"
+    # 决策轨迹保留（steps 含全部 5 次工具调用）
     tool_names = [tc.tool_name for step in run.steps for tc in step.tool_calls]
-    assert tool_names.count("search_characters") >= 3
-    deps["run_repo"].save.assert_awaited()  # 产物保留落库
+    assert tool_names.count("search_characters") >= 5
 
 
-async def test_repeat_tool_different_tools_no_guardrail() -> None:
-    """契约②反例: 交替调用不同工具不触发 repeat_tool 护栏（连续语义）.
+async def test_different_tools_no_guardrail() -> None:
+    """契约②反例: 交替调用不同工具（< 20 次）→ completed（总调用预算下正常）.
 
-    search → audit → search → audit → 正文 → completed（非 guardrail）.
+    search → audit → search → audit → 正文 → completed（非 guardrail）。
     """
     responses = [
         _history(
@@ -359,7 +379,7 @@ async def test_repeat_tool_different_tools_no_guardrail() -> None:
             _ai_msg(content="交替工具后正常输出。"),
         )
     ]
-    service, _, deps = _make_service(responses, max_consecutive_tool=3)
+    service, _, deps = _make_service(responses)
     deps["draft_service"].create.return_value = Draft(
         id="draft-1",
         project_id=PROJECT_ID,
@@ -374,6 +394,100 @@ async def test_repeat_tool_different_tools_no_guardrail() -> None:
 
     assert run.status == AgentRunStatus.COMPLETED
     assert run.terminated_by == "llm"
+
+
+async def test_total_tool_calls_guardrail() -> None:
+    """契约②a(#430 M3): 会话总工具调用 >= max_total_tool_calls 且无正文 → total_tool_calls.
+
+    request.max_total_tool_calls=3（覆盖默认 20，验证 request 透传）；4 次同工具
+    调用无正文 → terminated_by="total_tool_calls"（防死循环仍有效）/ 产物保留。
+
+    RED 预期: 当前实现无 total_tool_calls 判定——连续 4 次同工具先触发 a 节
+    repeat_tool → "repeat_tool" ≠ "total_tool_calls" → 断言 FAILED。
+    """
+    messages: list[dict] = []
+    for _ in range(4):
+        messages.append(_ai_msg(tool_calls=[_tool_call("search_characters")]))
+        messages.append(_tool_msg("search_characters"))
+    responses = [_history(*messages)]
+    service, _, deps = _make_service(responses)
+
+    run = await service.run(_make_request(max_total_tool_calls=3))
+
+    assert run.status == AgentRunStatus.TERMINATED_BY_GUARDRAIL
+    assert run.terminated_by == "total_tool_calls"
+    # 决策轨迹保留（steps 含全部工具调用）
+    tool_names = [tc.tool_name for step in run.steps for tc in step.tool_calls]
+    assert len(tool_names) >= 4
+    deps["run_repo"].save.assert_awaited()  # 产物保留落库
+
+
+async def test_total_tool_calls_with_content_not_terminated() -> None:
+    """契约②b(#430 关键语义): 总调用达上限但最终已有正文 → completed（不误杀）.
+
+    request.max_total_tool_calls=3；3 次工具调用后输出正文（total=3 == 上限，
+    但 last_content 非空）→ 新判定带 last_content == "" 条件 → 不触发，
+    自然终止 completed。
+
+    RED 预期: 当前实现 3 次连续同工具触发 repeat_tool →
+    TERMINATED_BY_GUARDRAIL ≠ completed → 断言 FAILED。
+    """
+    responses = [
+        _history(
+            _ai_msg(tool_calls=[_tool_call("search_characters")]),
+            _tool_msg("search_characters"),
+            _ai_msg(tool_calls=[_tool_call("search_characters")]),
+            _tool_msg("search_characters"),
+            _ai_msg(tool_calls=[_tool_call("search_characters")]),
+            _tool_msg("search_characters"),
+            _ai_msg(content="预算用尽但已有正文。"),
+        )
+    ]
+    service, _, deps = _make_service(responses)
+    deps["draft_service"].create.return_value = Draft(
+        id="draft-1",
+        project_id=PROJECT_ID,
+        chapter_id=CHAPTER_ID,
+        content="预算用尽但已有正文。",
+        status=DraftStatus.DRAFT,
+        created_at=_utcnow(),
+        confirmed_at=None,
+    )
+
+    run = await service.run(_make_request(max_total_tool_calls=3))
+
+    assert run.status == AgentRunStatus.COMPLETED
+    assert run.terminated_by == "llm"
+    assert run.final_content == "预算用尽但已有正文。"
+
+
+async def test_terminated_by_legacy_repeat_tool_compat() -> None:
+    """契约②c(#430 M5): terminated_by 历史 repeat_tool 与新 total_tool_calls 均可落库.
+
+    AgentRun.terminated_by 为自由 str（无枚举约束）——历史 repeat_tool 数据读回
+    兼容；新 total_tool_calls 值可持久化。守护用例: RED 阶段即 PASS（刻意——
+    实现不得引入枚举约束）。
+    """
+    legacy = AgentRun(
+        id="r-legacy",
+        project_id=PROJECT_ID,
+        chapter_id=CHAPTER_ID,
+        status=AgentRunStatus.TERMINATED_BY_GUARDRAIL,
+        terminated_by="repeat_tool",
+        created_at=_utcnow(),
+        updated_at=_utcnow(),
+    )
+    new = AgentRun(
+        id="r-new",
+        project_id=PROJECT_ID,
+        chapter_id=CHAPTER_ID,
+        status=AgentRunStatus.TERMINATED_BY_GUARDRAIL,
+        terminated_by="total_tool_calls",
+        created_at=_utcnow(),
+        updated_at=_utcnow(),
+    )
+    assert AgentRun.model_validate(legacy.model_dump()).terminated_by == "repeat_tool"
+    assert AgentRun.model_validate(new.model_dump()).terminated_by == "total_tool_calls"
 
 
 # ── 契约 3: max_steps 超限 → terminated_by_guardrail ──
@@ -594,7 +708,7 @@ async def test_guardrail_returns_run_not_raises() -> None:
         messages.append(_ai_msg(tool_calls=[_tool_call("search_characters")]))
         messages.append(_tool_msg("search_characters"))
     responses = [_history(*messages)]
-    service, _, _ = _make_service(responses, max_consecutive_tool=3)
+    service, _, _ = _make_service(responses)
 
     run = await service.run(_make_request())
 

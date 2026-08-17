@@ -31,7 +31,7 @@ class SettingsKey(StrEnum):
     DEFAULT_WORDS = "default_words"
     AGENT_MAX_STEPS = "agent_max_steps"
     AGENT_TOKEN_BUDGET = "agent_token_budget"
-    AGENT_MAX_CONSECUTIVE_TOOL = "agent_max_consecutive_tool"
+    AGENT_MAX_TOTAL_TOOL_CALLS = "agent_max_total_tool_calls"
     RAG_CHUNK_MODE = "rag_chunk_mode"
     RAG_CHUNK_SIZE = "rag_chunk_size"
     RAG_CHUNK_OVERLAP = "rag_chunk_overlap"
@@ -56,7 +56,7 @@ class AppSettings(BaseModel):
     default_words: int = 800000
     agent_max_steps: int = 12
     agent_token_budget: int = 32000
-    agent_max_consecutive_tool: int = 3
+    agent_max_total_tool_calls: int = 20
     rag_chunk_mode: ChunkMode = "fixed"
     rag_chunk_size: int = 500
     rag_chunk_overlap: bool = False
@@ -98,7 +98,7 @@ class AppSettingsUpdate(BaseModel):
     default_words: int | None = None
     agent_max_steps: int | None = None
     agent_token_budget: int | None = None
-    agent_max_consecutive_tool: int | None = None
+    agent_max_total_tool_calls: int | None = None
     rag_chunk_mode: ChunkMode | None = None
     rag_chunk_size: int | None = None
     rag_chunk_overlap: bool | None = None

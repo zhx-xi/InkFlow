@@ -4,8 +4,8 @@ AgenticWriterService 是 agentic 写入闭环的领域编排层（spec §5.1/§5
 - 每次 run 调一次 agent_factory 获取可 invoke 的 agent（deepagents CompiledStateGraph，
   由 infrastructure 装配层注入——ADR-015: domain 层不感知 deepagents/langchain）
 - invoke 返回完整消息历史（末条为最终 AIMessage）；服务层从历史提取决策轨迹
-  （steps 全量快照）并实施护栏: repeat_tool / max_steps / empty_content（重试）/
-  token_budget
+  （steps 全量快照）并实施护栏: total_tool_calls / max_steps / empty_content（重试）/
+  token_budget（#430: 单工具连续 repeat_tool → 会话总调用上限，保留历史兼容说明）
 - 自然终止且 LLM 未显式调用 save_draft → 服务层兜底落草稿（auto_saved 审计）
 - 全部终态经 run_repo.save 一次写回（崩溃可见性: create 先行落 running 记录）
 
@@ -24,7 +24,6 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
-from itertools import pairwise
 
 from inkflow.domain.models.agent_run import (
     AgenticWriteRequest,
@@ -114,7 +113,7 @@ class AgenticWriterService:
         chapter_service: object | None = None,  # 确认流用（可空）
         max_steps_default: int = 12,
         token_budget_default: int = 32000,
-        max_consecutive_tool: int = 3,
+        max_total_tool_calls: int = 20,
         empty_content_retries: int = 1,
     ) -> None:
         self._agent_factory = agent_factory
@@ -124,7 +123,7 @@ class AgenticWriterService:
         self._chapter_service = chapter_service
         self._max_steps_default = max_steps_default
         self._token_budget_default = token_budget_default
-        self._max_consecutive_tool = max_consecutive_tool
+        self._max_total_tool_calls = max_total_tool_calls
         self._empty_content_retries = empty_content_retries
 
     async def run(self, request: AgenticWriteRequest) -> AgentRun:
@@ -138,6 +137,7 @@ class AgenticWriterService:
         """
         max_steps = request.max_steps or self._max_steps_default
         token_budget = request.token_budget or self._token_budget_default
+        max_total_tool_calls = request.max_total_tool_calls or self._max_total_tool_calls
         now = _utcnow()
         # 崩溃可见性（spec §7）：先落 running 记录，终态一次写回
         created = await self._run_repo.create(
@@ -188,7 +188,10 @@ class AgenticWriterService:
         run.model = self._extract_model(history)
 
         guardrail = self._evaluate_guardrail(
-            history, max_steps=max_steps, token_budget=token_budget
+            history,
+            max_steps=max_steps,
+            token_budget=token_budget,
+            max_total_tool_calls=max_total_tool_calls,
         )
         if guardrail is not None:
             run.status = AgentRunStatus.TERMINATED_BY_GUARDRAIL
@@ -346,8 +349,9 @@ class AgenticWriterService:
         *,
         max_steps: int,
         token_budget: int,
+        max_total_tool_calls: int,
     ) -> str | None:
-        """护栏判定（顺序: repeat_tool → max_steps → empty_content → token_budget）.
+        """护栏判定（顺序: total_tool_calls → max_steps → empty_content → token_budget）.
 
         Returns:
             触发原因字符串；None = 自然终止（completed / "llm"）。
@@ -357,13 +361,10 @@ class AgenticWriterService:
         last_content = _msg_content(last_ai) if last_ai is not None else ""
         last_tool_calls = _tool_calls_of(last_ai) if last_ai is not None else []
 
-        # a. 同工具连续调用 >= max_consecutive_tool（相邻 AI 消息的 tool_calls 连续同名）
-        tool_sequence = [str(tc.get("name", "")) for m in ai_messages for tc in _tool_calls_of(m)]
-        consecutive = 1
-        for previous, current in pairwise(tool_sequence):
-            consecutive = consecutive + 1 if current == previous else 1
-            if consecutive >= self._max_consecutive_tool:
-                return "repeat_tool"
+        # a. 会话总工具调用 >= max_total_tool_calls 且最终无正文（#430: 单工具连续 → 总调用预算）
+        total_tool_calls = sum(1 for m in ai_messages for tc in _tool_calls_of(m))
+        if total_tool_calls >= max_total_tool_calls and last_content == "":
+            return "total_tool_calls"
 
         # b. max_steps：工具调用步数 >= max_steps 且最终无正文
         tool_steps = sum(1 for m in ai_messages if _tool_calls_of(m))

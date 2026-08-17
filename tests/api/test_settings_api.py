@@ -645,7 +645,7 @@ DEFAULT_SETTINGS = {
     "default_words": 800000,
     "agent_max_steps": 12,
     "agent_token_budget": 32000,
-    "agent_max_consecutive_tool": 3,
+    "agent_max_total_tool_calls": 20,
     "rag_chunk_mode": "fixed",
     "rag_chunk_size": 500,
     "rag_chunk_overlap": False,
