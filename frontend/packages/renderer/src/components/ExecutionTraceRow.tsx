@@ -19,10 +19,20 @@ const STATUS_LABEL_KEYS: Record<string, string> = {
   skipped: 'book.trace.skipped',
 };
 
+/** 阶段2 状态徽标语义类（五态可区分；低饱和色块，ui-design-taste 克制原则） */
+const STATUS_BADGE_CLASSES: Record<string, string> = {
+  pending: 'badge-pending',
+  in_progress: 'badge-in_progress',
+  done: 'badge-done',
+  failed: 'badge-failed',
+  skipped: 'badge-skipped',
+};
+
 export function ExecutionTraceRow({ outlineId, status, executionId }: ExecutionTraceRowProps) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const labelKey = STATUS_LABEL_KEYS[status] ?? 'book.trace.pending';
+  const badgeClass = STATUS_BADGE_CLASSES[status] ?? STATUS_BADGE_CLASSES.pending;
 
   return (
     <div data-testid={`trace-row-${outlineId}`} className="rounded-md border border-line bg-surface-2">
@@ -44,7 +54,10 @@ export function ExecutionTraceRow({ outlineId, status, executionId }: ExecutionT
             <ChevronRight className="h-4 w-4" aria-hidden="true" />
           )}
         </button>
-        <span data-testid={`trace-row-status-${outlineId}`} className="text-[12px] text-ink-2">
+        <span
+          data-testid={`trace-row-status-${outlineId}`}
+          className={cn('rounded px-1.5 py-0.5 text-[12px] text-ink-2', badgeClass)}
+        >
           {t(labelKey)}
         </span>
       </div>

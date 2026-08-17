@@ -12,8 +12,13 @@ export function BookRunPanel() {
   const runStatus = useBookStore((s) => s.runStatus);
   const progress = useBookStore((s) => s.progress);
   const counters = useBookStore((s) => s.counters);
+  const progressStats = useBookStore((s) => s.progressStats);
   const loadRunStatus = useBookStore((s) => s.loadRunStatus);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showTokens = counters?.max_tokens !== undefined && counters.tokens_used !== undefined;
+  const barPercent =
+    progressStats.total > 0 ? Math.min(100, Math.round((progressStats.done / progressStats.total) * 100)) : 0;
 
   useEffect(() => {
     if (runId === null) return;
@@ -56,6 +61,32 @@ export function BookRunPanel() {
           <div data-testid="run-counter-calls" className="text-[13px] text-ink-2">
             {t('book.run.calls')}: {counters ? `${counters.agent_calls} / ${counters.max_agent_calls}` : '–'}
           </div>
+          {showTokens && (
+            <div data-testid="run-counter-tokens" className="text-[13px] text-ink-2">
+              {t('book.run.tokens')}: {counters.tokens_used} / {counters.max_tokens}
+            </div>
+          )}
+          {counters?.tokens_warning === true && (
+            <div
+              data-testid="run-token-warning"
+              className="rounded border border-warn/40 bg-warn/10 px-2 py-1 text-[12px] text-warn"
+            >
+              {t('book.run.tokenWarning')}
+            </div>
+          )}
+          {progressStats.total > 0 && (
+            <div className="space-y-1">
+              <div data-testid="run-progress-bar" className="text-[13px] text-ink-2">
+                {t('book.run.chapters')}: {progressStats.done} / {progressStats.total}
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
+                <div
+                  className="h-full rounded-full bg-accent/70 transition-all"
+                  style={{ width: `${barPercent}%` }}
+                />
+              </div>
+            </div>
+          )}
           <div data-testid="run-progress-list" className="space-y-1">
             {Object.entries(progress ?? {}).map(([outlineId, status]) => (
               <ExecutionTraceRow key={outlineId} outlineId={outlineId} status={status} />

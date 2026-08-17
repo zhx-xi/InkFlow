@@ -1,6 +1,7 @@
 /** 书级编排访谈单面板（F44 阶段1）：one-liner 启动 → 轮次问题/模板 → 计划 → 委托运行面板 */
 import { useState } from 'react';
 import { useI18n } from '../i18n/useI18n';
+import { useBookLimits, type BookLimitsValues } from '../hooks/useBookLimits';
 import { useBookStore } from '../stores/book';
 import { BookRunPanel } from './BookRunPanel';
 
@@ -10,6 +11,7 @@ export interface BookPlannerPanelProps {
 
 export function BookPlannerPanel({ projectId }: BookPlannerPanelProps) {
   const { t } = useI18n();
+  const limits = useBookLimits(projectId);
   const sessionStatus = useBookStore((s) => s.sessionStatus);
   const questions = useBookStore((s) => s.questions);
   const answers = useBookStore((s) => s.answers);
@@ -47,6 +49,20 @@ export function BookPlannerPanel({ projectId }: BookPlannerPanelProps) {
   const canSend = answer.trim() !== '';
   const showStart = sessionStatus === 'idle' || sessionStatus === 'drafting';
 
+  /** 数字输入显示值：null → 空串；数字 → 字符串 */
+  const inputValue = (value: number | null): string => (value === null ? '' : String(value));
+
+  const limitFields: Array<{
+    testId: string;
+    field: keyof BookLimitsValues;
+    label: string;
+  }> = [
+    { testId: 'book-limits-chapters', field: 'max_chapters', label: t('book.limits.chapters') },
+    { testId: 'book-limits-calls', field: 'max_agent_calls', label: t('book.limits.calls') },
+    { testId: 'book-limits-tokens', field: 'max_tokens', label: t('book.limits.tokens') },
+    { testId: 'book-limits-sessions', field: 'max_sessions', label: t('book.limits.sessions') },
+  ];
+
   if (sessionStatus === 'completed') {
     return (
       <div data-testid="book-planner-panel" className="space-y-3">
@@ -73,6 +89,40 @@ export function BookPlannerPanel({ projectId }: BookPlannerPanelProps) {
                 {t('book.startRun')}
               </button>
             </div>
+            <div className="mt-4 space-y-2">
+              <p className="text-[13px] font-medium text-ink">{t('book.limits.title')}</p>
+              <div className="grid grid-cols-2 gap-2">
+                {limitFields.map(({ testId, field, label }) => (
+                  <label key={testId} className="flex items-center gap-2 text-[12px] text-ink-2">
+                    <span className="flex-1">{label}</span>
+                    <input
+                      data-testid={testId}
+                      type="number"
+                      min={0}
+                      className="w-24 rounded-md border border-line bg-surface px-2 py-1 text-[13px] text-ink outline-none focus:border-accent"
+                      value={inputValue(limits.values[field])}
+                      onChange={(e) =>
+                        limits.setValue(field, e.target.value === '' ? null : Number(e.target.value))
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+              <button
+                type="button"
+                data-testid="book-limits-save"
+                disabled={limits.saving}
+                className="rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 hover:bg-surface-3 disabled:opacity-40"
+                onClick={() => void limits.save()}
+              >
+                {limits.saving ? t('set.saving') : t('book.limits.save')}
+              </button>
+            </div>
+            {error && (
+              <p data-testid="book-start-error" className="mt-3 text-[13px] text-err">
+                {error}
+              </p>
+            )}
           </div>
         ) : null}
       </div>

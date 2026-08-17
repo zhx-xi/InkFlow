@@ -15,6 +15,16 @@ import {
 
 export type BookSessionStatus = 'idle' | 'drafting' | 'completed' | 'declined';
 
+/** 章级进度状态机派生统计（S2a #445，progress 值计数） */
+export interface ProgressStats {
+  total: number;
+  done: number;
+  inProgress: number;
+  failed: number;
+  skipped: number;
+  pending: number;
+}
+
 interface BookState {
   sessionId: string | null;
   round: number;
@@ -28,6 +38,7 @@ interface BookState {
   runStatus: string | null;
   progress: Record<string, string>;
   counters: RunStatusCounters | null;
+  progressStats: ProgressStats;
   loading: boolean;
   error: string | null;
 
@@ -35,9 +46,29 @@ interface BookState {
   respond: (answers: Record<string, string>) => Promise<void>;
   respondAuto: () => Promise<void>;
   loadSession: (sessionId: string) => Promise<void>;
-  startRun: (planId: string) => Promise<void>;
+  startRun: (planId: string, limits?: Record<string, number>) => Promise<void>;
   loadRunStatus: (runId: string) => Promise<void>;
   reset: () => void;
+}
+
+/** 从 progress 值计数派生章级进度统计（未知值不计入任何分类但计入 total） */
+export function deriveProgressStats(progress: Record<string, string>): ProgressStats {
+  const stats: ProgressStats = {
+    total: Object.keys(progress).length,
+    done: 0,
+    inProgress: 0,
+    failed: 0,
+    skipped: 0,
+    pending: 0,
+  };
+  for (const status of Object.values(progress)) {
+    if (status === 'done') stats.done += 1;
+    else if (status === 'in_progress') stats.inProgress += 1;
+    else if (status === 'failed') stats.failed += 1;
+    else if (status === 'skipped') stats.skipped += 1;
+    else if (status === 'pending') stats.pending += 1;
+  }
+  return stats;
 }
 
 export const useBookStore = create<BookState>((set, get) => ({
@@ -53,6 +84,7 @@ export const useBookStore = create<BookState>((set, get) => ({
   runStatus: null,
   progress: {},
   counters: null,
+  progressStats: { total: 0, done: 0, inProgress: 0, failed: 0, skipped: 0, pending: 0 },
   loading: false,
   error: null,
 
@@ -129,10 +161,12 @@ export const useBookStore = create<BookState>((set, get) => ({
     }
   },
 
-  startRun: async (planId) => {
+  startRun: async (planId, limits) => {
     set({ loading: true, error: null });
     try {
-      const res = await startBookRun({ writing_plan_id: planId });
+      const res = await startBookRun(
+        limits ? { writing_plan_id: planId, limits } : { writing_plan_id: planId },
+      );
       set({ runId: res.run_id, runStatus: res.status, loading: false });
     } catch (err) {
       set({ error: errorMessage(err), loading: false });
@@ -142,7 +176,12 @@ export const useBookStore = create<BookState>((set, get) => ({
   loadRunStatus: async (runId) => {
     try {
       const res = await getBookRunStatus(runId);
-      set({ runStatus: res.status, progress: res.progress, counters: res.counters });
+      set({
+        runStatus: res.status,
+        progress: res.progress,
+        counters: res.counters,
+        progressStats: deriveProgressStats(res.progress),
+      });
     } catch (err) {
       // 失败仅记 error，不覆盖已有 runId/runStatus（轮询由面板按状态决定继续/停止）
       set({ error: errorMessage(err) });
@@ -163,6 +202,7 @@ export const useBookStore = create<BookState>((set, get) => ({
       runStatus: null,
       progress: {},
       counters: null,
+      progressStats: { total: 0, done: 0, inProgress: 0, failed: 0, skipped: 0, pending: 0 },
       loading: false,
       error: null,
     });

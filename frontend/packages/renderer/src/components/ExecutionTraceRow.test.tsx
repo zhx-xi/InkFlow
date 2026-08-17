@@ -70,3 +70,17 @@ describe('ExecutionTraceRow — 状态徽标文案', () => {
     expect(screen.getByTestId(`trace-row-status-o-${status}`)).toHaveTextContent(label);
   });
 });
+
+describe('ExecutionTraceRow — 阶段2 状态徽标视觉（spec §5.2 章级进度状态 UI）', () => {
+  it.each([
+    ['pending', 'badge-pending'],
+    ['in_progress', 'badge-in_progress'],
+    ['done', 'badge-done'],
+    ['failed', 'badge-failed'],
+    ['skipped', 'badge-skipped'],
+  ])('status=%s → 徽标含状态语义 className（badge-<status>，五态可区分）', (status, cls) => {
+    render(<ExecutionTraceRow outlineId={`o-${status}`} status={status} />);
+    // 视觉徽标化：className 带状态语义（GREEN 用色区分；断言只钉语义类不钉色值）
+    expect(screen.getByTestId(`trace-row-status-o-${status}`)).toHaveClass(cls);
+  });
+});
