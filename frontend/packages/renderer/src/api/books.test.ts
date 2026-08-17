@@ -113,6 +113,45 @@
  * - GET /runs/{id} 顶层可选键 waiting_hitl / hitl_payload（waiting_hitl 恒 = status==='waiting_hitl'）
  * - POST /runs/{id}/confirm（200）→ {run_id, status, hitl_payload?}
  *   body: ConfirmRunRequest {approved?: bool, decision?: str}；404 运行不存在 / 422 非 waiting_hitl
+ *
+ * ⚠️ F44 阶段4（#338 S4b 干预 + 回归摘要）增量——GREEN 必须追加：
+ *
+ * export type InterveneAction = 'pause' | 'resume' | 'redirect' | 'edit';
+ * export interface InterveneRequest {
+ *   action: InterveneAction;
+ *   target?: string;                       // redirect/edit：章 outline_id
+ *   to?: string;                           // redirect：skip | retry | mark_failed
+ *   payload?: { brief?: string };          // edit：新描述
+ * }
+ * export interface InterveneDiff {
+ *   target: string;
+ *   from?: string; to?: string;                        // redirect 形态
+ *   before?: string; after?: string; diff?: string;    // edit 形态（difflib unified_diff）
+ * }
+ * export interface InterveneResponse { run_id: string; status: string; diff?: InterveneDiff; }
+ * export interface RunSummaryStep { index: number; outline_id: string; status: string; execution_id: string | null; }
+ * export interface RunSummaryNext {
+ *   volume_index?: number | null;
+ *   total_volumes?: number | null;
+ *   finished: boolean;
+ *   status?: string | null;
+ * }
+ * export interface RunSummaryResponse {
+ *   run_id: string;
+ *   status: string;
+ *   progress: Record<string, string>;
+ *   counters: RunStatusCounters;
+ *   steps: RunSummaryStep[];
+ *   next: RunSummaryNext;
+ * }
+ * export function interveneBookRun(runId: string, body: InterveneRequest): Promise<InterveneResponse>
+ * export function getBookRunSummary(runId: string): Promise<RunSummaryResponse>
+ *
+ * 端点契约（S4a #453 backend books.py intervene/summary 实证，勿重新推断）：
+ * - POST /runs/{run_id}/intervene（200）→ {run_id, status, diff?}
+ *   body: InterveneRequest；404 运行不存在 / 422（已完成章不可干预 / 干预目标不存在 /
+ *   非法干预动作 / 干预参数缺失 / 大纲更新器未装配 / 运行未处于可暂停状态）
+ * - GET /runs/{run_id}/summary（200）→ RunSummaryResponse（无 checkpoint → next:{finished:true}）；404 运行不存在
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
@@ -122,6 +161,8 @@ import {
   startBookRun,
   getBookRunStatus,
   confirmBookRun,
+  interveneBookRun,
+  getBookRunSummary,
 } from './books';
 import { apiFetch } from './client';
 
@@ -303,5 +344,103 @@ describe('getBookRunStatus — 阶段3 HITL 字段透传（确认型：api 层�
     expect(res.waiting_hitl).toBe(true);
     expect(res.hitl_payload?.question).toBe('确认继续下一卷？');
     expect(res.hitl_payload?.progress?.['o-c1']).toBe('done');
+  });
+});
+
+describe('interveneBookRun — POST /runs/{run_id}/intervene（F44 阶段4 #338 干预 API）', () => {
+  it('pause：body {action:"pause"} 透传', async () => {
+    apiFetchMock.mockResolvedValue({ run_id: 'wp-1', status: 'paused' });
+    const res = await interveneBookRun('wp-1', { action: 'pause' });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs/wp-1/intervene', {
+      method: 'POST',
+      body: { action: 'pause' },
+    });
+    expect(res.status).toBe('paused');
+  });
+
+  it('resume：body {action:"resume"} 透传', async () => {
+    apiFetchMock.mockResolvedValue({ run_id: 'wp-1', status: 'running' });
+    const res = await interveneBookRun('wp-1', { action: 'resume' });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs/wp-1/intervene', {
+      method: 'POST',
+      body: { action: 'resume' },
+    });
+    expect(res.status).toBe('running');
+  });
+
+  it('redirect：target + to 透传（to ∈ skip/retry/mark_failed）', async () => {
+    apiFetchMock.mockResolvedValue({
+      run_id: 'wp-1',
+      status: 'running',
+      diff: { target: 'o-c1', from: 'in_progress', to: 'skipped' },
+    });
+    const res = await interveneBookRun('wp-1', { action: 'redirect', target: 'o-c1', to: 'skip' });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs/wp-1/intervene', {
+      method: 'POST',
+      body: { action: 'redirect', target: 'o-c1', to: 'skip' },
+    });
+    expect(res.diff?.to).toBe('skipped');
+  });
+
+  it('edit：target + payload.brief 透传', async () => {
+    apiFetchMock.mockResolvedValue({
+      run_id: 'wp-1',
+      status: 'running',
+      diff: { target: 'o-c1', before: '旧描述', after: '新描述', diff: '-旧描述\n+新描述' },
+    });
+    const res = await interveneBookRun('wp-1', {
+      action: 'edit',
+      target: 'o-c1',
+      payload: { brief: '把主角改为双面间谍' },
+    });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs/wp-1/intervene', {
+      method: 'POST',
+      body: { action: 'edit', target: 'o-c1', payload: { brief: '把主角改为双面间谍' } },
+    });
+    expect(res.diff?.after).toBe('新描述');
+  });
+});
+
+describe('getBookRunSummary — GET /runs/{run_id}/summary（确认型：api 层零加工，RED 期函数未导出 → is-not-a-function）', () => {
+  it('返回 summary 全量（progress/counters/steps/next 透传）', async () => {
+    apiFetchMock.mockResolvedValue({
+      run_id: 'wp-1',
+      status: 'running',
+      progress: { 'o-c1': 'done' },
+      counters: {
+        max_chapters: 3,
+        max_agent_calls: 5,
+        agent_calls: 1,
+        chapters_written: 1,
+        max_tokens: 200000,
+        tokens_used: 12345,
+        tokens_warning: false,
+      },
+      steps: [
+        { index: 0, outline_id: 'o-c1', status: 'done', execution_id: 'e-1' },
+        { index: 1, outline_id: 'o-c2', status: 'pending', execution_id: null },
+      ],
+      next: { volume_index: 0, total_volumes: 3, finished: false, status: 'in_progress' },
+    });
+    const res = await getBookRunSummary('wp-1');
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs/wp-1/summary');
+    // 透传断言（mock 返回啥函数透传啥，GREEN 零加工即可满足）
+    expect(res.steps).toHaveLength(2);
+    expect(res.steps[1].execution_id).toBeNull();
+    expect(res.next.finished).toBe(false);
+    expect(res.counters.tokens_used).toBe(12345);
+  });
+
+  it('无 checkpoint → next={finished:true} 透传', async () => {
+    apiFetchMock.mockResolvedValue({
+      run_id: 'wp-1',
+      status: 'completed',
+      progress: {},
+      counters: { max_chapters: 1, max_agent_calls: 1, agent_calls: 1, chapters_written: 1 },
+      steps: [],
+      next: { finished: true },
+    });
+    const res = await getBookRunSummary('wp-1');
+    expect(res.next.finished).toBe(true);
   });
 });

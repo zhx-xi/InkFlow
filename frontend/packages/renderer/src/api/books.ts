@@ -144,3 +144,70 @@ export async function getBookRunStatus(runId: string): Promise<RunStatusResponse
 export async function confirmBookRun(runId: string, body: ConfirmRunRequest): Promise<ConfirmRunResponse> {
   return apiFetch<ConfirmRunResponse>(`/api/v1/agent/books/runs/${runId}/confirm`, { method: 'POST', body });
 }
+
+/** F44 阶段4 #338：运行干预动作（暂停/继续/重定向/编辑 brief） */
+export type InterveneAction = 'pause' | 'resume' | 'redirect' | 'edit';
+
+/** 运行干预请求体（S4a #453：action + 按动作可选字段） */
+export interface InterveneRequest {
+  action: InterveneAction;
+  /** redirect/edit：章 outline_id */
+  target?: string;
+  /** redirect：skip | retry | mark_failed */
+  to?: string;
+  /** edit：新章 brief */
+  payload?: { brief?: string };
+}
+
+/** 干预 diff 高亮（redirect 形态 from/to；edit 形态 before/after/diff） */
+export interface InterveneDiff {
+  target: string;
+  from?: string;
+  to?: string;
+  before?: string;
+  after?: string;
+  diff?: string;
+}
+
+/** 干预响应（pause/resume 无 diff；redirect/edit 带 diff） */
+export interface InterveneResponse {
+  run_id: string;
+  status: string;
+  diff?: InterveneDiff;
+}
+
+/** 回归摘要步骤行（progress/execution_refs 派生，不含章名） */
+export interface RunSummaryStep {
+  index: number;
+  outline_id: string;
+  status: string;
+  execution_id: string | null;
+}
+
+/** 回归摘要 next 卷信息（无 checkpoint → {finished:true}） */
+export interface RunSummaryNext {
+  volume_index?: number | null;
+  total_volumes?: number | null;
+  finished: boolean;
+  status?: string | null;
+}
+
+/** 回归摘要全量（GET /runs/{id}/summary） */
+export interface RunSummaryResponse {
+  run_id: string;
+  status: string;
+  progress: Record<string, string>;
+  counters: RunStatusCounters;
+  steps: RunSummaryStep[];
+  next: RunSummaryNext;
+}
+
+/** 干预运行（pause/resume/redirect/edit；404 运行不存在 / 422 其他） */
+export async function interveneBookRun(runId: string, body: InterveneRequest): Promise<InterveneResponse> {
+  return apiFetch<InterveneResponse>(`/api/v1/agent/books/runs/${runId}/intervene`, { method: 'POST', body });
+}
+
+/** 回归摘要（progress/counters/steps/next 全量透传） */
+export async function getBookRunSummary(runId: string): Promise<RunSummaryResponse> {
+  return apiFetch<RunSummaryResponse>(`/api/v1/agent/books/runs/${runId}/summary`);
+}

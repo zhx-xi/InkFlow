@@ -27,15 +27,53 @@
  * i18n key（GREEN 补 zh.ts/en.ts）：book.trace.pending / book.trace.in_progress /
  * book.trace.done / book.trace.failed / book.trace.skipped / book.trace.detail /
  * book.trace.execution
+ *
+ * ⚠️ F44 阶段4（#338 S4b 章级干预控件）增量——GREEN 必须追加：
+ *
+ * - 组件读 useBookStore 的 density / interveneDiff（无新 props）
+ * - 仅 density==='performance' 渲染章行内干预控件（⚠️ density 拍板 = 纯前端本地
+ *   Zustand 状态，后端无 density 参数，见契约 §1.3）：
+ *   trace-redirect-skip-<outlineId> / trace-redirect-retry-<outlineId> /
+ *   trace-redirect-markfailed-<outlineId>（→ interveneRun('redirect', id, 'skip'|'retry'|'mark_failed')）
+ *   trace-edit-<outlineId>（点击展开行内 brief 编辑：trace-brief-<outlineId> textarea +
+ *   trace-edit-save-<outlineId> / trace-edit-cancel-<outlineId>；save → interveneRun('edit', id, undefined, {brief})）
+ * - 已完成章（status==='done'）干预控件 disabled（422 已完成章不可干预 防呆）
+ * - interveneDiff.target === outlineId 时行内渲染 trace-diff-<outlineId>（from→to 或 edit diff 文本）
+ *
+ * i18n key（GREEN 补 zh.ts/en.ts）：book.trace.skip / book.trace.retry / book.trace.markFailed /
+ * book.trace.edit / book.trace.editSave / book.trace.editCancel / book.trace.briefPlaceholder
+ * （断言锚 testid，不锚具体文案——缺 key 时 t() 返回 key 本身，避免 RED 期误判）
  */
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ExecutionTraceRow } from './ExecutionTraceRow';
+import { useBookStore } from '../stores/book';
 import { useThemeStore } from '../stores/theme';
+import { apiFetch } from '../api/client';
+
+vi.mock('../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/client')>();
+  return { ...actual, apiFetch: vi.fn() };
+});
+
+const apiFetchMock = vi.mocked(apiFetch);
 
 beforeEach(() => {
+  apiFetchMock.mockReset();
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
+  // F44 阶段4（#338）新字段默认值（RED 期播种合法：Zustand 合并未知键，GREEN 后生效；
+  // density 默认 'dashboard' → 既有用例保持无干预控件形态）
+  useBookStore.setState({
+    runId: null,
+    runStatus: null,
+    progress: {},
+    density: 'dashboard',
+    interveneDiff: null,
+    intervening: false,
+    summary: null,
+    summaryLoading: false,
+  });
 });
 
 describe('ExecutionTraceRow — 展开/折叠', () => {
@@ -82,5 +120,81 @@ describe('ExecutionTraceRow — 阶段2 状态徽标视觉（spec §5.2 章级�
     render(<ExecutionTraceRow outlineId={`o-${status}`} status={status} />);
     // 视觉徽标化：className 带状态语义（GREEN 用色区分；断言只钉语义类不钉色值）
     expect(screen.getByTestId(`trace-row-status-o-${status}`)).toHaveClass(cls);
+  });
+});
+
+describe('ExecutionTraceRow — 阶段4 章级干预控件（#338，仅 performance 密度显示）', () => {
+  const redirectDiff = { target: 'o-c1', from: 'in_progress', to: 'skipped' };
+
+  it('performance 密度 → 行内干预控件渲染（redirect 三档 + edit + cancel）', () => {
+    useBookStore.setState({ density: 'performance' });
+    render(<ExecutionTraceRow outlineId="o-c1" status="in_progress" />);
+    expect(screen.getByTestId('trace-redirect-skip-o-c1')).toBeInTheDocument();
+    expect(screen.getByTestId('trace-redirect-retry-o-c1')).toBeInTheDocument();
+    expect(screen.getByTestId('trace-redirect-markfailed-o-c1')).toBeInTheDocument();
+    expect(screen.getByTestId('trace-edit-o-c1')).toBeInTheDocument();
+    expect(screen.getByTestId('trace-edit-cancel-o-c1')).toBeInTheDocument();
+  });
+
+  it('dashboard 密度 → 无干预控件（现状形态，确认型）', () => {
+    useBookStore.setState({ density: 'dashboard' });
+    render(<ExecutionTraceRow outlineId="o-c1" status="in_progress" />);
+    expect(screen.queryByTestId('trace-redirect-skip-o-c1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('trace-edit-o-c1')).not.toBeInTheDocument();
+  });
+
+  it('done 章 → 干预控件 disabled（422 已完成章不可干预 防呆）', () => {
+    useBookStore.setState({ density: 'performance' });
+    render(<ExecutionTraceRow outlineId="o-c1" status="done" />);
+    expect(screen.getByTestId('trace-redirect-skip-o-c1')).toBeDisabled();
+    expect(screen.getByTestId('trace-redirect-retry-o-c1')).toBeDisabled();
+    expect(screen.getByTestId('trace-redirect-markfailed-o-c1')).toBeDisabled();
+    expect(screen.getByTestId('trace-edit-o-c1')).toBeDisabled();
+  });
+
+  it('in_progress 章 → 干预控件 enabled', () => {
+    useBookStore.setState({ density: 'performance' });
+    render(<ExecutionTraceRow outlineId="o-c1" status="in_progress" />);
+    expect(screen.getByTestId('trace-redirect-skip-o-c1')).toBeEnabled();
+    expect(screen.getByTestId('trace-edit-o-c1')).toBeEnabled();
+  });
+
+  it('interveneDiff.target===outlineId → 行内 trace-diff 高亮（from→to 文本）', () => {
+    useBookStore.setState({ density: 'performance', interveneDiff: redirectDiff });
+    render(<ExecutionTraceRow outlineId="o-c1" status="in_progress" />);
+    const diff = screen.getByTestId('trace-diff-o-c1');
+    expect(diff).toBeInTheDocument();
+    expect(diff).toHaveTextContent('in_progress');
+    expect(diff).toHaveTextContent('skipped');
+  });
+
+  it('点 trace-edit → 行内 brief 编辑 → save → POST /intervene（走真实 store.interveneRun）', async () => {
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/agent/books/runs/wp-1/intervene' && init?.method === 'POST') {
+        return {
+          run_id: 'wp-1',
+          status: 'running',
+          diff: { target: 'o-c1', before: '旧描述', after: '把主角改为双面间谍', diff: '-旧描述\n+把主角改为双面间谍' },
+        };
+      }
+      throw new Error(`unexpected: ${path}`);
+    });
+    useBookStore.setState({ runId: 'wp-1', density: 'performance' });
+    const user = userEvent.setup();
+    render(<ExecutionTraceRow outlineId="o-c1" status="in_progress" />);
+    await user.click(screen.getByTestId('trace-edit-o-c1'));
+    const brief = await screen.findByTestId('trace-brief-o-c1');
+    await user.type(brief, '把主角改为双面间谍');
+    await user.click(screen.getByTestId('trace-edit-save-o-c1'));
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs/wp-1/intervene', {
+        method: 'POST',
+        body: { action: 'edit', target: 'o-c1', payload: { brief: '把主角改为双面间谍' } },
+      });
+    });
+    // save 成功后行内 diff 高亮（store.interveneDiff 更新驱动）
+    await waitFor(() => {
+      expect(screen.getByTestId('trace-diff-o-c1')).toBeInTheDocument();
+    });
   });
 });

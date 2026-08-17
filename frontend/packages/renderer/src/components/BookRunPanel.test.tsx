@@ -34,6 +34,26 @@
  * - runId 非空时渲染 <VolumeHITLDialog />（无 props，读 useBookStore 的 waitingHitl/hitlPayload）
  * - 轮询返回 waiting_hitl=true + hitl_payload → loadRunStatus 更新 store → 对话框出现
  * - confirm 后响应 status 非 waiting_hitl → waitingHitl=false → 对话框消失
+ *
+ * ⚠️ F44 阶段4（#338 S4b 干预工具栏 + 密度切换 + 摘要面板 + diff banner）增量——GREEN 必须追加：
+ *
+ * - 运行工具栏（runId 非空恒显，与密度无关）：
+ *   run-intervene-pause（runStatus==='running' 显示）/ run-intervene-resume（'paused' 显示；
+ *   其他状态两者都不显示，防呆与后端 422 语义同族）
+ *   run-density-performance | run-density-dashboard | run-density-silent（Segmented 三键，
+ *   当前档 aria-pressed=true）
+ *   run-summary-toggle（打开/收起摘要面板，默认收起）
+ *   run-diff-banner（interveneDiff 非空时显示：target + from→to 或 diff 文本 + run-diff-close 关闭按钮）
+ * - 密度渲染层级（⚠️ density 拍板 = 纯前端本地 Zustand 状态，后端无 density 查询参数，见契约 §1.3）：
+ *   silent → 不渲染 run-progress-list（仅进度条+计数+工具栏）
+ *   dashboard → 现状（行列表徽标+展开，无干预控件）
+ *   performance → 行列表 + 章行内干预控件（ExecutionTraceRow 内）
+ * - 摘要面板展开时渲染 <BookSummaryPanel />（RED 期不 import 该组件；测试经
+ *   run-summary-toggle 点击断言面板出现，避免 RED 期文件级 module-not-found 连坐）
+ *
+ * i18n key（GREEN 补 zh.ts/en.ts）：book.run.pause / book.run.resume / book.run.density.performance /
+ * book.run.density.dashboard / book.run.density.silent / book.run.summary / book.diff.close
+ * （断言锚 testid，不锚具体文案——缺 key 时 t() 返回 key 本身，避免 RED 期误判）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
@@ -73,6 +93,13 @@ beforeEach(() => {
     waitingHitl: false,
     hitlPayload: null,
     confirming: false,
+    // F44 阶段4（#338）新字段默认值（RED 期播种合法：Zustand 合并未知键，GREEN 后生效；
+    // density 默认 'dashboard' 与既有 UI 形态一致零视觉回归）
+    density: 'dashboard',
+    interveneDiff: null,
+    intervening: false,
+    summary: null,
+    summaryLoading: false,
   });
 });
 
@@ -271,5 +298,200 @@ describe('BookRunPanel — 阶段3 卷级 HITL 对话框挂载（#337）', () =>
     await waitFor(() => {
       expect(screen.queryByTestId('volume-hitl-dialog')).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('BookRunPanel — 阶段4 干预工具栏 + 密度切换 + 摘要面板 + diff banner（#338 S4b）', () => {
+  const runRunning = {
+    run_id: 'wp-1',
+    status: 'running',
+    progress: { 'o-c1': 'in_progress' },
+    counters: { max_chapters: 1, max_agent_calls: 1, agent_calls: 0, chapters_written: 0 },
+  };
+  const runCompleted = {
+    run_id: 'wp-1',
+    status: 'completed',
+    progress: { 'o-c1': 'done', 'o-c2': 'pending' },
+    counters: { max_chapters: 2, max_agent_calls: 2, agent_calls: 1, chapters_written: 1 },
+  };
+  const summaryResp = {
+    run_id: 'wp-1',
+    status: 'completed',
+    progress: { 'o-c1': 'done' },
+    counters: { max_chapters: 1, max_agent_calls: 1, agent_calls: 1, chapters_written: 1 },
+    steps: [{ index: 0, outline_id: 'o-c1', status: 'done', execution_id: 'e-1' }],
+    next: { finished: true },
+  };
+  const redirectDiff = { target: 'o-c1', from: 'in_progress', to: 'skipped' };
+
+  /** URL 分发 mock：GET /runs/{id}（轮询）+ GET /runs/{id}/summary（摘要面板加载） */
+  function mockApi() {
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/agent/books/runs/wp-1' && (!init?.method || init.method === 'GET')) {
+        return runCompleted;
+      }
+      if (path === '/api/v1/agent/books/runs/wp-1/summary' && (!init?.method || init.method === 'GET')) {
+        return summaryResp;
+      }
+      throw new Error(`unexpected: ${path}`);
+    });
+  }
+
+  it('runStatus=running → 显示 run-intervene-pause（无 resume）', async () => {
+    apiFetchMock.mockResolvedValue(runRunning);
+    useBookStore.setState({ runId: 'wp-1', runStatus: 'running', progress: {}, counters: null });
+    render(<BookRunPanel />);
+    expect(await screen.findByTestId('run-intervene-pause')).toBeInTheDocument();
+    expect(screen.queryByTestId('run-intervene-resume')).not.toBeInTheDocument();
+  });
+
+  it('runStatus=paused → 显示 run-intervene-resume（无 pause）', async () => {
+    apiFetchMock.mockResolvedValue({ ...runRunning, status: 'paused' });
+    useBookStore.setState({ runId: 'wp-1', runStatus: 'paused', progress: {}, counters: null });
+    render(<BookRunPanel />);
+    expect(await screen.findByTestId('run-intervene-resume')).toBeInTheDocument();
+    expect(screen.queryByTestId('run-intervene-pause')).not.toBeInTheDocument();
+  });
+
+  it('runStatus=completed → pause/resume 都不显示（防呆，确认型）', async () => {
+    apiFetchMock.mockResolvedValue(runCompleted);
+    useBookStore.setState({ runId: 'wp-1', runStatus: 'completed', progress: {}, counters: null });
+    render(<BookRunPanel />);
+    await screen.findByTestId('run-status');
+    expect(screen.queryByTestId('run-intervene-pause')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('run-intervene-resume')).not.toBeInTheDocument();
+  });
+
+  it('密度三档按钮渲染 + 当前档 aria-pressed=true', async () => {
+    apiFetchMock.mockResolvedValue(runCompleted);
+    useBookStore.setState({ runId: 'wp-1', runStatus: 'completed', density: 'silent', progress: {}, counters: null });
+    render(<BookRunPanel />);
+    expect(await screen.findByTestId('run-density-performance')).toBeInTheDocument();
+    expect(screen.getByTestId('run-density-dashboard')).toBeInTheDocument();
+    expect(screen.getByTestId('run-density-silent')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('run-density-performance')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('run-density-dashboard')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('点 run-density-silent → store.density=silent + run-progress-list 消失（走真实 store.setDensity）', async () => {
+    apiFetchMock.mockResolvedValue(runCompleted);
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'completed',
+      density: 'performance',
+      progress: { 'o-c1': 'done' },
+      counters: { max_chapters: 1, max_agent_calls: 1, agent_calls: 1, chapters_written: 1 },
+    });
+    const user = userEvent.setup();
+    render(<BookRunPanel />);
+    await screen.findByTestId('run-progress-list');
+    await user.click(screen.getByTestId('run-density-silent'));
+    await waitFor(() => {
+      expect(useBookStore.getState().density).toBe('silent');
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('run-progress-list')).not.toBeInTheDocument();
+    });
+  });
+
+  it('silent 密度 → 不渲染 run-progress-list（仅进度条+计数+工具栏）', async () => {
+    apiFetchMock.mockResolvedValue(runCompleted);
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'completed',
+      density: 'silent',
+      progress: { 'o-c1': 'done' },
+      counters: { max_chapters: 1, max_agent_calls: 1, agent_calls: 1, chapters_written: 1 },
+    });
+    render(<BookRunPanel />);
+    await screen.findByTestId('run-progress-bar');
+    expect(screen.queryByTestId('run-progress-list')).not.toBeInTheDocument();
+  });
+
+  it('performance 密度 → run-progress-list 存在 + 章行内干预控件（trace-redirect-skip）', async () => {
+    apiFetchMock.mockResolvedValue(runCompleted);
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'completed',
+      density: 'performance',
+      progress: { 'o-c1': 'done' },
+      counters: { max_chapters: 1, max_agent_calls: 1, agent_calls: 1, chapters_written: 1 },
+    });
+    render(<BookRunPanel />);
+    expect(await screen.findByTestId('run-progress-list')).toBeInTheDocument();
+    expect(screen.getByTestId('trace-redirect-skip-o-c1')).toBeInTheDocument();
+  });
+
+  it('dashboard 密度 → 列表存在且无干预控件（现状形态，确认型）', async () => {
+    apiFetchMock.mockResolvedValue(runCompleted);
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'completed',
+      density: 'dashboard',
+      progress: { 'o-c1': 'done' },
+      counters: { max_chapters: 1, max_agent_calls: 1, agent_calls: 1, chapters_written: 1 },
+    });
+    render(<BookRunPanel />);
+    expect(await screen.findByTestId('run-progress-list')).toBeInTheDocument();
+    expect(screen.queryByTestId('trace-redirect-skip-o-c1')).not.toBeInTheDocument();
+  });
+
+  it('interveneDiff 非空 → run-diff-banner 显示（target + 变更文本）+ run-diff-close 关闭', async () => {
+    apiFetchMock.mockResolvedValue(runCompleted);
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'completed',
+      interveneDiff: redirectDiff,
+      progress: { 'o-c1': 'in_progress' },
+      counters: null,
+    });
+    const user = userEvent.setup();
+    render(<BookRunPanel />);
+    const banner = await screen.findByTestId('run-diff-banner');
+    expect(banner).toHaveTextContent('o-c1');
+    expect(banner).toHaveTextContent('skipped');
+    await user.click(screen.getByTestId('run-diff-close'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('run-diff-banner')).not.toBeInTheDocument();
+    });
+  });
+
+  it('点 run-summary-toggle → book-summary-panel 出现（RED 期不 import BookSummaryPanel）', async () => {
+    mockApi();
+    useBookStore.setState({ runId: 'wp-1', runStatus: 'completed', progress: {}, counters: null });
+    const user = userEvent.setup();
+    render(<BookRunPanel />);
+    await user.click(await screen.findByTestId('run-summary-toggle'));
+    expect(await screen.findByTestId('book-summary-panel')).toBeInTheDocument();
+  });
+
+  it('摘要面板展开 → 点 book-summary-export 导出（createObjectURL + a[download] 模拟点击）', async () => {
+    mockApi();
+    const createObjectURL = vi.fn(() => 'blob:mock');
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const captured: HTMLAnchorElement[] = [];
+    const realCreateElement = document.createElement.bind(document);
+    const createElementSpy = vi
+      .spyOn(document, 'createElement')
+      .mockImplementation((tag: string, options?: ElementCreationOptions) => {
+        const el = realCreateElement(tag, options);
+        if (tag === 'a') captured.push(el as HTMLAnchorElement);
+        return el;
+      });
+    try {
+      useBookStore.setState({ runId: 'wp-1', runStatus: 'completed', progress: {}, counters: null });
+      const user = userEvent.setup();
+      render(<BookRunPanel />);
+      await user.click(await screen.findByTestId('run-summary-toggle'));
+      await user.click(await screen.findByTestId('book-summary-export'));
+      expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+      expect(clickSpy).toHaveBeenCalled();
+      expect(captured.some((a) => a.download.includes('wp-1'))).toBe(true);
+    } finally {
+      clickSpy.mockRestore();
+      createElementSpy.mockRestore();
+    }
   });
 });
