@@ -22,12 +22,23 @@ class ExecutionStore:
         pipeline: str,
         project_id: str,
         chapter_id: str | None = None,
+        *,
+        thread_id: str | None = None,
+        execution_id: str | None = None,
     ) -> AgentExecutionORM:
-        """创建 pending 状态的执行记录。"""
+        """创建 pending 状态的执行记录。
+
+        F44 阶段 4（#338）：execution_id 给定 → 固定执行记录 id（书级运行 =
+        str(plan.id)）；thread_id 给定 → 落 LangGraph checkpoint thread_id
+        （书级运行 ↔ 图 checkpoint 一一映射）。既有调用（agent_service 等）
+        不传新参数 → 默认 uuid4 / None，行为不变。
+        """
         execution = AgentExecutionORM(
             pipeline=pipeline,
             project_id=project_id,
             chapter_id=chapter_id,
+            id=execution_id,
+            thread_id=thread_id,
         )
         self._session.add(execution)
         await self._session.commit()

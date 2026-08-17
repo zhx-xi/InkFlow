@@ -69,6 +69,9 @@ class AgentExecutionORM(Base):
     node/type/reasoning/tool_calls/output/duration_ms/ts）。
     """
 
+    thread_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    """LangGraph checkpoint thread_id（书级运行 ↔ 图 checkpoint 一一映射；None = 非书级运行）"""
+
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
     """记录创建时间（UTC）."""
 

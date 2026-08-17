@@ -365,6 +365,7 @@ jobs:
       - name: Run agent integration tests
         run: |
           uv run pytest ../tests/integration/test_agent_pipeline.py `
+                 ../tests/integration/test_execution_store_defensive.py `
                  ../tests/api/test_agent_api.py `
                  ../tests/api/test_agents_api.py `
                  ../tests/api/test_books_api.py `

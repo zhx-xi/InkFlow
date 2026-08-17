@@ -15,6 +15,9 @@ resume 从 checkpointer 恢复。图拓扑（Spike ①-④ 实证形态，父侧
 依据: specs/f44-long-task-orchestrator/spec.md §5.3/§12 D1-D3/D9/§13.3 M7-M9
     + .hermes/plans/f44-stage3-contract.md §1（父侧裁定，语义冲突以它为准）
     + docs/f44-orchestrator-spike-2026-08-17.md ①-④（Spike 实证形态）。
+
+F44 阶段 4（#338）扩展：checkpoint_path 装配 AsyncSqliteSaver 文件后端 + thread_id
+语义 + 跨重启 resume（父侧契约 .hermes/plans/f44-stage4-contract.md §1）。
 """
 
 from __future__ import annotations
@@ -24,15 +27,20 @@ import operator
 import uuid
 from collections.abc import Awaitable, Callable
 from functools import partial
-from typing import Annotated, Any, NotRequired, TypedDict, cast
+from pathlib import Path
+from typing import Annotated, Any, NotRequired, TypedDict, TypeVar, cast
 
 from langgraph.channels.untracked_value import UntrackedValue
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Send, interrupt
 
 from inkflow.domain.models.writing_plan import BookLimits, WritingPlan
+
+_R = TypeVar("_R")
 
 
 class VolumeState(TypedDict):
@@ -40,6 +48,9 @@ class VolumeState(TypedDict):
 
     context: dict[str, Any]
     chapters: list[dict]
+    volumes: list[dict]
+    plan: dict
+    limits: dict
     results: Annotated[dict[str, str], operator.or_]
     failed: Annotated[list[str], operator.add]
     volume_index: int
@@ -201,23 +212,32 @@ class BookVolumePipeline:
         draft_service: object | None = None,
         retry_limit: int = 2,
         checkpointer: InMemorySaver | None = None,
+        checkpoint_path: str | Path | None = None,
     ) -> None:
         """构造：llm_client 仅 UntrackedValue 通道传递（镜像 F29 bootstrap 节点），
         不参与执行决策；只在卷级失败 decision="supervisor" 补救时调用 chat。
-        checkpointer 默认 InMemorySaver（进程内）。"""
+        checkpointer 显式传入 → 优先使用（不打开文件）；否则 checkpoint_path →
+        每次 execute/resume 临时打开 AsyncSqliteSaver 文件后端（跨实例/跨进程
+        resume 可行）；两者皆无 → 进程内 InMemorySaver（阶段 3 默认）。"""
         self._llm = llm_client
         self._writer_factory = writer_factory
         self._draft_service = draft_service
         self._retry_limit = retry_limit
-        self._checkpointer = checkpointer or InMemorySaver()
+        if checkpointer is None and checkpoint_path is None:
+            checkpointer = InMemorySaver()
+        self._checkpointer = checkpointer
+        self._checkpoint_path = checkpoint_path
         self._thread_id = ""
         self._plan: WritingPlan | None = None
         self._volumes: list[dict] = []
         self._limits = BookLimits()
 
-    def _build_graph(self) -> CompiledStateGraph[VolumeState, Any, Any, Any]:
+    def _build_graph(
+        self, checkpointer: BaseCheckpointSaver
+    ) -> CompiledStateGraph[VolumeState, Any, Any, Any]:
         """构建卷级图：bootstrap → volume_fan_out → write_chapter（Send 并行）→ join
-        → volume_boundary / volume_failure（Command(goto) 动态路由，镜像 F29）。"""
+        → volume_boundary / volume_failure（Command(goto) 动态路由，镜像 F29）；
+        checkpointer 参数化（显式 InMemorySaver 或临时 AsyncSqliteSaver）。"""
         g = StateGraph(VolumeState)
         g.add_node("bootstrap", partial(_bootstrap_node, llm_client=self._llm))
         g.add_node("volume_fan_out", _volume_fan_out)
@@ -228,28 +248,52 @@ class BookVolumePipeline:
         g.add_edge(START, "bootstrap")
         g.add_edge("bootstrap", "volume_fan_out")
         g.add_edge("write_chapter", "join")
-        return g.compile(checkpointer=self._checkpointer)
+        return g.compile(checkpointer=checkpointer)
+
+    async def _run_with_checkpointer(
+        self,
+        fn: Callable[[CompiledStateGraph[VolumeState, Any, Any, Any]], Awaitable[_R]],
+        *,
+        thread_id: str,
+    ) -> _R:
+        """编译图后执行 fn：显式 checkpointer 优先；否则按 checkpoint_path 临时打开
+        AsyncSqliteSaver 文件后端（async with 生命周期内编译 + 运行 + 落盘）。"""
+        if self._checkpointer is not None:
+            return await fn(self._build_graph(self._checkpointer))
+        async with AsyncSqliteSaver.from_conn_string(str(self._checkpoint_path)) as saver:
+            return await fn(self._build_graph(saver))
 
     async def execute(
-        self, plan: WritingPlan, volumes: list[dict], limits: BookLimits
+        self,
+        plan: WritingPlan,
+        volumes: list[dict],
+        limits: BookLimits,
+        *,
+        thread_id: str | None = None,
     ) -> dict[str, str]:
         """跑一卷/多卷：Send 扇出全部章 → join 回收 → 卷边界 interrupt 暂停。
 
+        thread_id 给定 → 用作图 config thread_id（与 run_id 统一，供 resume/checkpoint
+        定位）；None → 内部生成 uuid4。返回 dict 增加 "thread_id" 键。
+
         Returns:
-            {"run_id": ..., "status": "completed" | "aborted"}（全部卷完成或护栏终止）。
+            {"run_id": ..., "status": "completed" | "aborted", "thread_id": ...}
+            （全部卷完成或护栏终止）。
         Raises:
             VolumeHITLInterrupt: 卷边界/卷级失败暂停（payload 供 BookService 存 waiting_hitl）。
         """
         self._plan = plan
         self._volumes = volumes
         self._limits = limits
-        self._thread_id = str(uuid.uuid4())
-        app = self._build_graph()
+        self._thread_id = thread_id if thread_id is not None else str(uuid.uuid4())
         state = cast(
             VolumeState,
             {
                 "context": {"plan_id": str(plan.id), "project_id": str(plan.project_id)},
                 "chapters": volumes[0]["chapters"] if volumes else [],
+                "volumes": volumes,
+                "plan": plan.model_dump(mode="json"),
+                "limits": limits.model_dump(),
                 "results": {},
                 "failed": [],
                 "volume_index": 0,
@@ -259,50 +303,99 @@ class BookVolumePipeline:
                 "finished": False,
             },
         )
-        final = await app.ainvoke(state, config={"configurable": {"thread_id": self._thread_id}})
-        final_dict = cast(dict[str, Any], final)
-        interrupts = final_dict.get("__interrupt__")
-        if interrupts:
-            raise VolumeHITLInterrupt(interrupts[0].value)
-        return {"run_id": self._thread_id, "status": str(final_dict.get("status", "completed"))}
+
+        async def _run(
+            app: CompiledStateGraph[VolumeState, Any, Any, Any],
+        ) -> dict[str, str]:
+            final = await app.ainvoke(
+                state, config={"configurable": {"thread_id": self._thread_id}}
+            )
+            final_dict = cast(dict[str, Any], final)
+            interrupts = final_dict.get("__interrupt__")
+            if interrupts:
+                raise VolumeHITLInterrupt(interrupts[0].value)
+            return {
+                "run_id": self._thread_id,
+                "status": str(final_dict.get("status", "completed")),
+                "thread_id": self._thread_id,
+            }
+
+        return await self._run_with_checkpointer(_run, thread_id=self._thread_id)
 
     async def resume(
-        self, interrupt_obj: VolumeHITLInterrupt, *, approved: bool = True, decision: str = ""
+        self,
+        interrupt_obj: VolumeHITLInterrupt,
+        *,
+        approved: bool = True,
+        decision: str = "",
+        thread_id: str | None = None,
     ) -> dict[str, str]:
         """卷边界/卷级失败确认后从 checkpointer 恢复（thread_id 沿用 execute 生成值）。
 
+        thread_id 给定 → 用之（跨重启从 plan.thread_id 读取）；None → self._thread_id
+        （向后兼容 execute → resume 隐式传递）。返回 dict 增加 "thread_id" 键。
+
         Returns:
-            {"run_id": ..., "status": "completed" | "aborted"} 或再次抛 VolumeHITLInterrupt。
+            {"run_id": ..., "status": "completed" | "aborted", "thread_id": ...}
+            或再次抛 VolumeHITLInterrupt。
         """
-        app = self._build_graph()
-        final = await app.ainvoke(
-            Command(
-                resume={"approved": approved, "decision": decision},
-                update={"llm_client": self._llm},
-            ),
-            config={"configurable": {"thread_id": self._thread_id}},
-        )
-        final_dict = cast(dict[str, Any], final)
-        interrupts = final_dict.get("__interrupt__")
-        if interrupts:
-            raise VolumeHITLInterrupt(interrupts[0].value)
-        return {"run_id": self._thread_id, "status": str(final_dict.get("status", "completed"))}
+        self._thread_id = thread_id if thread_id is not None else self._thread_id
+
+        async def _run(
+            app: CompiledStateGraph[VolumeState, Any, Any, Any],
+        ) -> dict[str, str]:
+            # 跨重启 resume：从 checkpoint 恢复 plan/limits（fresh 实例无内存装配）
+            snapshot = await app.aget_state(config={"configurable": {"thread_id": self._thread_id}})
+            values: dict = snapshot.values
+            if values.get("plan"):
+                self._plan = WritingPlan(**values["plan"])
+            if values.get("limits"):
+                self._limits = BookLimits(**values["limits"])
+            final = await app.ainvoke(
+                Command(
+                    resume={"approved": approved, "decision": decision},
+                    update={"llm_client": self._llm},
+                ),
+                config={"configurable": {"thread_id": self._thread_id}},
+            )
+            final_dict = cast(dict[str, Any], final)
+            interrupts = final_dict.get("__interrupt__")
+            if interrupts:
+                raise VolumeHITLInterrupt(interrupts[0].value)
+            return {
+                "run_id": self._thread_id,
+                "status": str(final_dict.get("status", "completed")),
+                "thread_id": self._thread_id,
+            }
+
+        return await self._run_with_checkpointer(_run, thread_id=self._thread_id)
 
     async def get_checkpoint_state(self, run_id: str) -> dict | None:
-        """查询图状态（VolumeState 键）；无 checkpoint → None。"""
-        app = self._build_graph()
-        snapshot = await app.aget_state(config={"configurable": {"thread_id": run_id}})
-        values: dict = snapshot.values
-        return values if values else None
+        """查询图状态（VolumeState 键）；无 checkpoint → None。
+
+        checkpoint_path 模式下临时打开文件 saver 读取（fresh 实例可从文件读到
+        中断点状态，供 BookService.get_summary 的 next 数据源）。"""
+
+        async def _read(
+            app: CompiledStateGraph[VolumeState, Any, Any, Any],
+        ) -> dict | None:
+            snapshot = await app.aget_state(config={"configurable": {"thread_id": run_id}})
+            values: dict = snapshot.values
+            return values if values else None
+
+        return await self._run_with_checkpointer(_read, thread_id=run_id)
 
     def _goto_next_volume(self, state: VolumeState) -> Command[Any]:
-        """跳过当前卷推进到下一卷（fan_out）；已是最后一卷 → END（finished=True）。"""
+        """跳过当前卷推进到下一卷（fan_out）；已是最后一卷 → END（finished=True）。
+
+        下一卷章列表从 state["volumes"] 读取（持久化通道：跨重启 resume 的 fresh
+        实例也能继续），不依赖实例内存 _volumes。"""
         next_index = state["volume_index"] + 1
         if next_index >= state["total_volumes"]:
             return Command(update={"finished": True}, goto=END)
         return Command(
             update={
-                "chapters": self._volumes[next_index]["chapters"],
+                "chapters": state["volumes"][next_index]["chapters"],
                 "volume_index": next_index,
             },
             goto="volume_fan_out",
