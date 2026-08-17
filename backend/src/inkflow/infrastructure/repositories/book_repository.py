@@ -41,6 +41,7 @@ def _writing_plan_orm_to_domain(orm: WritingPlanORM) -> WritingPlan:
         progress=orm.progress or {},
         execution_refs=orm.execution_refs or {},
         thread_id=orm.thread_id,
+        hitl_payload=orm.hitl_payload,
         created_at=orm.created_at,
         updated_at=orm.updated_at,
     )
@@ -78,6 +79,7 @@ def _domain_to_writing_plan_orm(plan: WritingPlan) -> WritingPlanORM:
         progress=plan.progress,
         execution_refs=plan.execution_refs,
         thread_id=plan.thread_id,
+        hitl_payload=plan.hitl_payload,
         created_at=plan.created_at,
         updated_at=plan.updated_at,
     )
@@ -142,6 +144,7 @@ class SQLiteBookRepository:
         orm.progress = plan.progress
         orm.execution_refs = plan.execution_refs
         orm.thread_id = plan.thread_id
+        orm.hitl_payload = plan.hitl_payload
         orm.updated_at = plan.updated_at
         await self._session.commit()
 

@@ -645,3 +645,157 @@ async def test_runs_start_no_hard_limit_422_detail(client, override_services):
 
     assert resp.status_code == 422
     assert "至少一道" in resp.json()["detail"]
+
+
+# ════ F44 阶段3 追加段（#337 confirm 端点/命令）════
+# 权威来源：.hermes/plans/f44-stage3-contract.md §3.1/§3.2/§3.5/§5.C +
+# specs/f44-long-task-orchestrator/spec.md §13.3 M8。GREEN 实现须满足：
+# - POST /runs/{run_id}/confirm（body {approved, decision?}）→ 200
+#   {run_id, status, next_checkpoint}；ValueError「运行不存在」→ 404；
+#   ValueError「未处于等待确认状态」→ 422（detail 原样透传）。
+# - POST /runs mode="volume" → svc.write_book_volume；mode 缺省 static
+#   保持既有 write_book 派发（向后兼容）。
+# 用例清单：
+# 1. confirm 200：mock confirm_run 返回 {run_id, status, next_checkpoint}
+#    → 200 + 响应体 + assert_awaited_once_with(run_id, approved=True,
+#    decision="继续下一卷")
+# 2. confirm 404：confirm_run 抛 ValueError("运行不存在") → 404 + detail 含
+#    「不存在」（防假绿：端点未注册时默认 404 的 detail="Not Found" 不含该串）
+# 3. confirm 422：confirm_run 抛 ValueError("运行未处于等待确认状态")
+#    → 422 + detail 锁「未处于等待确认状态」（防假绿，锁字符串区分默认错误）
+# 4. POST /runs mode=volume：write_book_volume 被调用（assert_awaited_once_with
+#    plan_id）+ 202 {run_id, status}
+# 5. POST /runs mode 缺省 static：write_book 既有路径（守护用例 RED 期 PASS 刻意）
+#
+# RED 预期形态：confirm 端点未注册 → FastAPI 默认 404 "Not Found"——用例 1/3
+# 状态断言 FAILED；用例 2 状态恰撞默认 404、detail 锁 "Not Found" 不含「不存在」
+# → detail 断言 FAILED（防假绿生效）；用例 4 阶段 1/2 路由器忽略 mode 恒调
+# write_book → 202/响应体 PASS 后 write_book_volume.assert_awaited_once_with
+# FAILED（AsyncMock 自动创建属性、从未 await，干净 FAILED）；用例 5 守护 PASS。
+# 预期形态：约 4 failed, 1 passed（父侧估「约 3 failed, 2 passed」，按用例清单
+# 逐条推算为 4/1——用例 2 的 404 状态断言在端点未注册时恰好命中默认 404）。
+
+
+# ── POST /runs/{run_id}/confirm ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_confirm_run_200(client, override_services):
+    """确认卷边界 HITL（approved=true）→ 200 + {run_id, status, next_checkpoint}（§3.2/M8）。
+
+    RED 期失败形态：confirm 端点阶段 3 才注册 → 404 "Not Found" →
+    `assert resp.status_code == 200` 断言 FAILED（干净 RED）。
+    """
+    _, book = override_services
+    run_id = str(uuid.uuid4())
+    book.confirm_run.return_value = {
+        "run_id": run_id,
+        "status": "running",
+        "next_checkpoint": "卷 2",
+    }
+
+    resp = await client.post(
+        f"{BASE}/runs/{run_id}/confirm",
+        json={"approved": True, "decision": "继续下一卷"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["run_id"] == run_id
+    assert body["status"] == "running"
+    assert body["next_checkpoint"] == "卷 2"
+    book.confirm_run.assert_awaited_once_with(
+        run_id, approved=True, decision="继续下一卷"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_confirm_run_missing_404(client, override_services):
+    """运行不存在 → 404 + detail 含「不存在」（§3.5 运行不存在 → 404）。
+
+    RED 期失败形态：confirm 端点未注册 → 默认 404 的 detail="Not Found"——
+    状态断言恰命中，detail 锁「不存在」为 False → 断言 FAILED（防假绿生效）。
+    """
+    _, book = override_services
+    book.confirm_run.side_effect = ValueError("运行不存在")
+
+    resp = await client.post(
+        f"{BASE}/runs/{uuid.uuid4()}/confirm",
+        json={"approved": True},
+    )
+
+    assert resp.status_code == 404
+    assert "不存在" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_confirm_run_not_waiting_422(client, override_services):
+    """非 waiting_hitl 确认 → 422 + detail 锁「未处于等待确认状态」（§3.5 防假绿）。
+
+    RED 期失败形态：confirm 端点未注册 → 404 ≠ 422 → 状态断言 FAILED（干净 RED）；
+    防假绿 = detail 锁字符串，区分「期望 422」与 FastAPI 默认 404 错误。
+    """
+    _, book = override_services
+    book.confirm_run.side_effect = ValueError("运行未处于等待确认状态")
+
+    resp = await client.post(
+        f"{BASE}/runs/{uuid.uuid4()}/confirm",
+        json={"approved": True},
+    )
+
+    assert resp.status_code == 422
+    assert "未处于等待确认状态" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_runs_start_mode_volume(client, override_services):
+    """POST /runs mode="volume" → 202 + write_book_volume 被调用（阶段 3 卷级派发）。
+
+    RED 期失败形态：阶段 1/2 路由器忽略 mode 恒调 write_book——为让用例跑到
+    契约断言点，write_book 也预置 dict 返回值（防 FastAPI 序列化 Mock 报 500）；
+    202/响应体断言 PASS 后 `write_book_volume.assert_awaited_once_with` FAILED
+    （AsyncMock 自动创建属性、从未 await，干净 FAILED）。
+    """
+    _, book = override_services
+    plan_id = uuid.uuid4()
+    run_id = str(uuid.uuid4())
+    book.write_book_volume.return_value = {"run_id": run_id, "status": "waiting_hitl"}
+    book.write_book.return_value = {"run_id": run_id, "status": "waiting_hitl"}
+
+    resp = await client.post(
+        f"{BASE}/runs",
+        json={"writing_plan_id": str(plan_id), "mode": "volume"},
+    )
+
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["run_id"] == run_id
+    assert body["status"] == "waiting_hitl"
+    book.write_book_volume.assert_awaited_once_with(plan_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_runs_start_mode_default_static_guard(client, override_services):
+    """POST /runs 无 mode（缺省 static）→ write_book 既有路径（守护用例 RED 期 PASS 刻意）。
+
+    本用例锁定阶段 3 mode 派发装配的向后兼容：缺省 mode 必须仍走 write_book
+    （防 GREEN 把缺省 mode 误派发到 write_book_volume）。
+    """
+    _, book = override_services
+    book.write_book.return_value = {"run_id": str(uuid.uuid4()), "status": "pending"}
+
+    resp = await client.post(
+        f"{BASE}/runs", json={"writing_plan_id": str(uuid.uuid4())}
+    )
+
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["run_id"]
+    assert body["status"] == "pending"
+    book.write_book.assert_awaited_once()
+    book.write_book_volume.assert_not_awaited()
