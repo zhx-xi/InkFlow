@@ -211,3 +211,41 @@ def memory_user_remove(
         _print_json_envelope(data)
         return
     typer.echo("✅ 已删除用户级偏好（所有项目生成立即停止注入）")
+
+@app.command("summarize")
+def memory_summarize(
+    project_id: str = typer.Option(..., "--project-id", help="项目 ID（UUID）"),
+    force: bool = typer.Option(False, "--force", help="忽略锚点哈希强制重新总结"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """手动触发语义总结（M2，spec §4.1）"""
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                "/agent/memory/summarize",
+                params={"project_id": project_id, "force": force},
+            )
+
+    data = _run(_impl)
+    if data is None:
+        return
+    if json_output:
+        _print_json_envelope(data)
+        return
+    project = data.get("project")
+    user = data.get("user")
+    summarized = data.get("summarized")
+    if not summarized and not project and not user:
+        typer.echo("ℹ️ 锚点未变化，复用既有摘要（--force 强制重新总结）")
+        return
+    if project and project.get("anchor_count") is not None:
+        typer.echo(f"✅ 已生成项目级风格摘要（{project.get('anchor_count')} 锚点）")
+    else:
+        typer.echo("ℹ️ 项目级锚点未变化，复用既有摘要（--force 强制重新总结）")
+    if user and user.get("anchor_count") is not None:
+        typer.echo(f"✅ 已生成用户级风格摘要（{user.get('anchor_count')} 锚点）")
+    else:
+        typer.echo("ℹ️ 用户级锚点未变化，复用既有摘要（--force 强制重新总结）")

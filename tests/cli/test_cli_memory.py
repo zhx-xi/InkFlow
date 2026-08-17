@@ -429,3 +429,92 @@ class TestMemoryUserNoneData:
         result = _invoke("user-remove", PREFERENCE_ID)
         assert result.exit_code == 0
         assert result.stdout == ""
+# ═══ F45 M2 追加段（2026-08-18，spec §4.1 summarize 子命令）═══
+
+
+def _summarize_payload(**overrides) -> dict:
+    """memory summarize 响应口径（spec §3.2: project_id/summarized/project/user）."""
+    payload = {
+        "project_id": PROJECT_ID,
+        "summarized": True,
+        "project": {
+            "content": "叙述偏好：称呼主角用全名「林晚」而非代词",
+            "anchor_hash": "sha256-abc",
+            "anchor_count": 5,
+        },
+        "user": {
+            "content": "用户通用风格：句长偏短、避免冗余修饰",
+            "anchor_hash": "sha256-def",
+            "anchor_count": 12,
+        },
+    }
+    payload.update(overrides)
+    return payload
+
+
+class TestMemorySummarize:
+    """inkflow memory summarize — 手动触发语义总结（M2 新增，spec §4.1）.
+
+    HTTP 契约: POST /agent/memory/summarize（params: project_id, force）；
+    --force → force=True（默认 False，幂等语义）。
+    人类模式（spec §4.1 逐字）:
+    - 层新生成: 「✅ 已生成项目级风格摘要（N 锚点）」/「✅ 已生成用户级风格
+      摘要（N 锚点）」（N = 该层 dict 的 anchor_count）
+    - 全部未变（summarized=false）: 「ℹ️ 锚点未变化，复用既有摘要（--force
+      强制重新总结）」
+    - per-layer 未变文案（「ℹ️ 项目级锚点未变化，复用既有摘要（--force 强制
+      重新总结）」/「ℹ️ 用户级锚点未变化，复用既有摘要（--force 强制重新
+      总结）」）为本批未锁定的扩展输出（响应契约仅含全局 summarized 键）——
+      GREEN 按响应实现即可
+    --json: 信封 {"ok": true, "data": <API 响应原样>}
+    错误: HttpApiError（含 502 LLM 故障）→ stderr「❌ {detail}」+ 退出码 1
+    （既有 _run 映射，map_http_error 展示消息 = detail 原样透传）。
+
+    RED 预期: 子命令未注册 → Typer "No such command 'summarize'." + exit 2
+    ≠ 0 → 断言 FAILED（fake_http_client 无副作用，命令不存在时不被调用）；
+    既有用例不动。
+    """
+
+    def test_summarize_human_both_generated(self, fake_http_client):
+        """summarize 人类模式: project/user 均生成 → 两行 ✅（锚点数来自 anchor_count）。"""
+        fake_http_client.post.return_value = _summarize_payload()
+        result = _invoke("summarize", "--project-id", PROJECT_ID)
+        assert result.exit_code == 0
+        call = fake_http_client.post.await_args
+        assert call.args[0] == "/agent/memory/summarize"
+        assert call.kwargs["params"]["project_id"] == PROJECT_ID
+        assert call.kwargs["params"]["force"] is False
+        assert "✅ 已生成项目级风格摘要（5 锚点）" in result.stdout
+        assert "✅ 已生成用户级风格摘要（12 锚点）" in result.stdout
+
+    def test_summarize_human_idempotent(self, fake_http_client):
+        """summarize 幂等: summarized=false（锚点未变化）→ 单行「ℹ️ 锚点未变化，
+        复用既有摘要（--force 强制重新总结）」。"""
+        fake_http_client.post.return_value = _summarize_payload(
+            summarized=False, project=None, user=None
+        )
+        result = _invoke("summarize", "--project-id", PROJECT_ID)
+        assert result.exit_code == 0
+        assert "ℹ️ 锚点未变化，复用既有摘要（--force 强制重新总结）" in result.stdout
+
+    def test_summarize_force_flag(self, fake_http_client):
+        """summarize --force: POST params force=True（忽略锚点哈希强制重新总结）。"""
+        fake_http_client.post.return_value = _summarize_payload()
+        result = _invoke("summarize", "--project-id", PROJECT_ID, "--force")
+        assert result.exit_code == 0
+        assert fake_http_client.post.await_args.kwargs["params"]["force"] is True
+
+    def test_summarize_json(self, fake_http_client):
+        """summarize --json: stdout 信封 == API 响应原样（镜像 list/stats 信封）。"""
+        payload = _summarize_payload()
+        fake_http_client.post.return_value = payload
+        result = _invoke("summarize", "--project-id", PROJECT_ID, "--json")
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {"ok": True, "data": payload}
+
+    def test_summarize_http_502(self, fake_http_client):
+        """summarize 502（LLM 调用失败）→ stderr ❌ + 退出码 1（既有错误映射）。"""
+        fake_http_client.post.side_effect = _http_err(502, "LLM 总结失败")
+        result = _invoke("summarize", "--project-id", PROJECT_ID)
+        assert result.exit_code == 1
+        assert "❌ LLM 总结失败" in result.stderr

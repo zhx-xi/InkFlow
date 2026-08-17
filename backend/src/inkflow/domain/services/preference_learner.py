@@ -285,3 +285,21 @@ def aggregate_user_candidates(events: list[MemoryEvent]) -> list[UserPreferenceC
         for (category, value), (event_ids, project_ids, first_pattern) in groups.items()
         if len(event_ids) >= 2 and len(project_ids) >= 2
     ]
+
+
+def anchor_hash(anchors: list) -> str:
+    """锚点集合确定性指纹（spec §5.4）——SHA-256(排序锚点键列表)。
+
+    锚点键 = f"{category.value}:{value}"；排序后以换行连接再哈希；
+    空列表 → sha256("").hexdigest()（空锚点也有确定性指纹）。
+
+    Args:
+        anchors: 偏好列表（ProjectPreference/UserPreference，均有 category/value）。
+
+    Returns:
+        SHA-256 十六进制摘要（64 字符）。
+    """
+    import hashlib
+
+    keys = sorted(f"{a.category.value}:{a.value}" for a in anchors)
+    return hashlib.sha256("\n".join(keys).encode("utf-8")).hexdigest()

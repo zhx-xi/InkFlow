@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from inkflow.api.deps import get_memory_service
 from inkflow.domain.models.preference import PreferenceCategory
+from inkflow.domain.ports.semantic_summary_errors import SemanticSummaryError
 from inkflow.domain.services.memory_service import (
     MemoryService,
     PreferenceNotFoundError,
@@ -84,3 +85,25 @@ async def memory_stats(
 ) -> dict:
     """修改率统计（对照 F27 基线，spec §5.7）→ stats dict 原样返回."""
     return await svc.stats(project_id=project_id)
+
+
+@router.get("/memory/summaries")
+async def memory_summaries(
+    project_id: uuid.UUID = Query(...),
+    svc: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """语义总结列表（项目级 + 用户级，spec §3.1）→ {"project_id", "project"|None, "user"|None}."""
+    return await svc.get_summaries(project_id=project_id)
+
+
+@router.post("/memory/summarize")
+async def memory_summarize(
+    project_id: uuid.UUID = Query(...),
+    force: bool = Query(False, description="忽略锚点哈希强制重新总结（CLI --force）"),
+    svc: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """手动触发语义总结（幂等——锚点未变化返回既有总结，spec §3.1/§3.2）→ 502."""
+    try:
+        return await svc.summarize(project_id=project_id, force=force)
+    except SemanticSummaryError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
