@@ -13,6 +13,7 @@ import {
   Globe,
   Library,
   ListTree,
+  NotebookPen,
   PenLine,
   Settings,
   Sparkles,
@@ -42,6 +43,7 @@ interface NavItemDef {
 }
 
 const WRITING_ITEMS: NavItemDef[] = [
+  { key: 'book', href: '/book', labelKey: 'nav.book', icon: NotebookPen },
   { key: 'writing', href: '/writing', labelKey: 'nav.writing', icon: PenLine },
   { key: 'projects', href: '/projects', labelKey: 'nav.projects', icon: BookOpen },
 ];
