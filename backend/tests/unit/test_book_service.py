@@ -334,3 +334,98 @@ async def test_get_status_missing_returns_none():
     svc = _service(repo=repo)
 
     assert await svc.get_status(str(uuid.uuid4())) is None
+
+
+# ── Coverage-Gap 补测（2026-08-17 CI coverage-backend 98.39% 缺口）──
+
+
+@pytest.mark.asyncio
+async def test_write_book_outline_repo_none_completes():
+    """outline_repo 未装配 → 无委托、状态 completed（_find_chapter 防御分支）。"""
+    repo = AsyncMock()
+    plan = _plan()
+    repo.get_writing_plan.return_value = plan
+    svc = _service(repo=repo, outline_repo=None)
+
+    result = await svc.write_book(plan.id)
+
+    assert result["status"] == "completed"
+    assert plan.execution_refs == {}
+
+
+@pytest.mark.asyncio
+async def test_write_book_anchored_chapter_preferred():
+    """锚点章优先：root_outline_id 匹配的 chapter 优先于任意 chapter。"""
+    repo = AsyncMock()
+    plan = _plan(root_outline_id=uuid.uuid4())
+    repo.get_writing_plan.return_value = plan
+    outline_repo = AsyncMock()
+    anchored = _outline(parent_id=plan.root_outline_id, description="锚点章")
+    other = _outline(parent_id=None, description="游离章")
+    outline_repo.list.return_value = ([other, anchored], 2)
+    svc = _service(repo=repo, outline_repo=outline_repo)
+
+    result = await svc.write_book(plan.id)
+
+    assert result["status"] == "completed"
+    assert str(anchored.id) in plan.execution_refs
+    assert str(other.id) not in plan.execution_refs
+
+
+@pytest.mark.asyncio
+async def test_write_book_fallback_any_chapter():
+    """无锚点匹配 → 回退任意 chapter（_find_chapter 回退分支）。"""
+    repo = AsyncMock()
+    plan = _plan(root_outline_id=uuid.uuid4())
+    repo.get_writing_plan.return_value = plan
+    outline_repo = AsyncMock()
+    other = _outline(parent_id=None, description="游离章")
+    outline_repo.list.return_value = ([other], 1)
+    svc = _service(repo=repo, outline_repo=outline_repo)
+
+    result = await svc.write_book(plan.id)
+
+    assert result["status"] == "completed"
+    assert str(other.id) in plan.execution_refs
+
+
+@pytest.mark.asyncio
+async def test_delegate_chapter_writer_factory_none_raises():
+    """writer_factory 未装配 → ValueError（委托防御分支）。"""
+    repo = AsyncMock()
+    plan = _plan()
+    chapter = _outline(description="测试章")
+    svc = _service(repo=repo, writer_factory=None)
+
+    with pytest.raises(ValueError, match="writer_factory 未装配"):
+        await svc._delegate_chapter(plan, chapter, STAGE1_LIMITS)
+
+
+@pytest.mark.asyncio
+async def test_write_book_root_outline_none_any_chapter():
+    """root_outline_id 为 None → 跳过锚点逻辑直接取任意 chapter（142->146 分支）。"""
+    repo = AsyncMock()
+    plan = _plan(root_outline_id=None)
+    repo.get_writing_plan.return_value = plan
+    outline_repo = AsyncMock()
+    other = _outline(parent_id=None, description="游离章")
+    outline_repo.list.return_value = ([other], 1)
+    svc = _service(repo=repo, outline_repo=outline_repo)
+
+    result = await svc.write_book(plan.id)
+
+    assert result["status"] == "completed"
+    assert str(other.id) in plan.execution_refs
+
+
+@pytest.mark.asyncio
+async def test_extract_final_content_variants():
+    """_extract_final_content 变体：空 messages → ""；dict 末条；无 content → ""。"""
+    from inkflow.domain.services.book_service import _extract_final_content
+
+    assert _extract_final_content({}) == ""
+    assert _extract_final_content({"messages": []}) == ""
+    # dict 形态末条
+    assert _extract_final_content({"messages": [{"content": "正文A"}]}) == "正文A"
+    # 无 content → ""
+    assert _extract_final_content({"messages": [{"role": "user"}]}) == ""

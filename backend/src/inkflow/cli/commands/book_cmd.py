@@ -38,7 +38,6 @@ def _run_ctx(cli_ctx: CliContext, coro_fn):
         print_error(cli_ctx, code, message)
     except KernelStartupError as exc:
         print_error(cli_ctx, "KERNEL_ERROR", f"内核启动失败: {exc}")
-    return None
 
 
 def _print_json(data) -> None:
@@ -88,8 +87,6 @@ def plan_start(
             )
 
     data = _run_ctx(cli_ctx, _impl)
-    if data is None:
-        return
     _human_or_json(cli_ctx, json_output, data, _render_questions)
 
 
@@ -113,8 +110,6 @@ def plan_respond(
             )
 
     data = _run_ctx(cli_ctx, _impl)
-    if data is None:
-        return
 
     def _render(data: dict) -> None:
         if data.get("completed"):
@@ -155,8 +150,6 @@ def plan_auto(
             )
 
     data = _run_ctx(cli_ctx, _impl)
-    if data is None:
-        return
 
     def _render(data: dict) -> None:
         writing_plan = data.get("writing_plan") or {}
@@ -182,8 +175,6 @@ def plan_show(
             return await client.get(f"/api/v1/agent/books/planner/{session_id}")
 
     data = _run_ctx(cli_ctx, _impl)
-    if data is None:
-        return
 
     def _render(data: dict) -> None:
         questions = data.get("asked_questions") or []
@@ -220,8 +211,6 @@ def plan_run(
             )
 
     data = _run_ctx(cli_ctx, _impl)
-    if data is None:
-        return
 
     def _render(data: dict) -> None:
         typer.echo(f"✓ 已启动 run_id={data.get('run_id')}")
@@ -246,8 +235,6 @@ def book_status(
             return await client.get(f"/api/v1/agent/books/runs/{run_id}")
 
     data = _run_ctx(cli_ctx, _impl)
-    if data is None:
-        return
 
     def _render(data: dict) -> None:
         typer.echo(f"run_id: {data.get('run_id')}")

@@ -213,3 +213,60 @@ def test_book_repository_protocol_exists():
     assert callable(BookRepositoryProtocol.add_planner_session)
     assert callable(BookRepositoryProtocol.get_planner_session)
     assert callable(BookRepositoryProtocol.update_planner_session)
+
+
+# ── Coverage-Gap 补测（2026-08-17 CI coverage-backend 98.39% 缺口）──
+
+
+@pytest.mark.asyncio
+async def test_update_writing_plan_missing_noop(repo):
+    """update 不存在计划 → no-op 不炸（repo 查无分支）。"""
+    plan = WritingPlan(
+        id=uuid.uuid4(),
+        project_id=uuid.uuid4(),
+        title="不存在",
+        created_at=_utcnow(),
+        updated_at=_utcnow(),
+    )
+    await repo.update_writing_plan(plan)  # 不抛即通过
+
+
+@pytest.mark.asyncio
+async def test_update_planner_session_missing_noop(repo):
+    """update 不存在会话 → no-op 不炸（repo 查无分支）。"""
+    session = PlannerSession(
+        id=uuid.uuid4(),
+        project_id=uuid.uuid4(),
+        one_liner="不存在",
+        created_at=_utcnow(),
+        updated_at=_utcnow(),
+    )
+    await repo.update_planner_session(session)  # 不抛即通过
+
+
+@pytest.mark.asyncio
+async def test_orm_default_utcnow(db_session):
+    """ORM 未显式传 created_at → default=_utcnow 生效（模型默认分支）。
+
+    SQLAlchemy Python 端 default 在 flush 时调用——先 add+flush 再断言。
+    """
+    from inkflow.infrastructure.database.models.planner_session import PlannerSessionORM
+    from inkflow.infrastructure.database.models.writing_plan import WritingPlanORM
+
+    wp = WritingPlanORM(
+        id=str(uuid.uuid4()), project_id=str(uuid.uuid4()), title="默认时间"
+    )
+    ps = PlannerSessionORM(
+        id=str(uuid.uuid4()), project_id=str(uuid.uuid4()), one_liner="默认时间"
+    )
+    db_session.add_all([wp, ps])
+    await db_session.flush()
+
+    assert wp.created_at is not None
+    assert wp.updated_at is not None
+    assert ps.created_at is not None
+    assert ps.updated_at is not None
+
+    # __repr__ 分支（LenientJSON/时间戳不影响）
+    assert "WritingPlanORM" in repr(wp)
+    assert "PlannerSessionORM" in repr(ps)

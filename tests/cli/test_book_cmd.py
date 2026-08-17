@@ -421,3 +421,77 @@ def test_book_plan_help():
     assert result.exit_code == 0
     out = _strip_ansi(result.stdout)
     assert "start" in out and "respond" in out and "auto" in out
+
+
+# ── Coverage-Gap 补测（2026-08-17 CI coverage-backend 98.39% 缺口）──
+
+
+def test_kernel_startup_error(fake_http_client):
+    """内核启动失败 → stderr KERNEL_ERROR + exit 1（KernelStartupError 分支）。"""
+    from inkflow.infrastructure.kernel import KernelStartupError
+
+    fake_http_client.post.side_effect = KernelStartupError("内核起不来")
+
+    result = _invoke("plan", "start", "一句话", "--project", "proj-x")
+
+    assert result.exit_code == 1
+    err = _strip_ansi(result.stderr)
+    assert "KERNEL_ERROR" in err or "内核启动失败" in err
+
+
+def test_global_json_output_driver(fake_http_client):
+    """全局 ctx.obj.json_output=True 驱动信封（_human_or_json 全局分支）。"""
+    fake_http_client.get.return_value = {
+        "id": "sess-1",
+        "project_id": "proj-1",
+        "status": "drafting",
+        "one_liner": "一句话",
+        "round": 1,
+        "asked_questions": [],
+        "answers": {},
+        "authorized": [],
+        "writing_plan_id": None,
+    }
+
+    # 不带命令级 --json，但全局 obj.json_output=True
+    result = _invoke("plan", "show", "sess-1", obj=CliContext(json_output=True))
+
+    assert result.exit_code == 0
+    body = json.loads(_strip_ansi(result.stdout))
+    assert body["ok"] is True
+    assert body["data"]["id"] == "sess-1"
+
+
+def test_plan_respond_completed_human_output(fake_http_client):
+    """respond completed 人类输出：✓ 访谈完成 + writing_plan 摘要（渲染分支）。"""
+    fake_http_client.post.return_value = {
+        "session_id": "sess-1",
+        "round": 3,
+        "completed": True,
+        "questions": [],
+        "writing_plan": {
+            "id": "plan-1",
+            "project_id": "proj-1",
+            "title": "一句话",
+            "status": "ready",
+        },
+    }
+
+    result = _invoke("plan", "respond", "sess-1", "3 卷")
+
+    assert result.exit_code == 0
+    out = _strip_ansi(result.stdout)
+    assert "访谈完成" in out
+    assert "ready" in out
+
+
+def test_plan_show_data_none_early_return(fake_http_client):
+    """show HTTP 404 → data None 早退 exit 1（错误路径已由 _run_ctx 处理）。"""
+    from inkflow.infrastructure.http import HttpApiError
+
+    fake_http_client.get.side_effect = HttpApiError(404, "会话不存在", "NOT_FOUND")
+
+    result = _invoke("plan", "show", "nope")
+
+    assert result.exit_code == 1
+    assert "❌" in _strip_ansi(result.stderr)

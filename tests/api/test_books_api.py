@@ -423,3 +423,69 @@ async def test_runs_status_missing_404(client, override_services):
     resp = await client.get(f"{BASE}/runs/{uuid.uuid4()}")
 
     assert resp.status_code == 404
+
+
+# ── Coverage-Gap 补测（2026-08-17 CI coverage-backend 98.39% 缺口）──
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_planner_respond_invalid_uuid_404(client, override_services):
+    """非法 session_id（非 UUID）→ 404（_parse_id ValueError 分支）。"""
+    resp = await client.post(
+        f"{BASE}/planner/not-a-uuid/respond",
+        json={
+            "answers": {"q1": "x"},
+            "auto": False,
+        },
+    )
+
+    assert resp.status_code == 404
+    planner, _ = override_services
+    planner.respond.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_get_planner_service_real_assembly(db_session):
+    """get_planner_service 真实装配：repo 注入 SQLiteBookRepository（依赖函数体覆盖）。
+
+    注：get_planner_service 是普通函数（非 async）——直接调用返回 service。
+    """
+    from inkflow.api.routers.books import get_planner_service
+
+    svc = get_planner_service(db_session)
+    assert svc is not None
+    assert hasattr(svc, "start")
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_get_book_service_real_assembly(db_session):
+    """get_book_service 真实装配：repo 注入 SQLiteBookRepository（依赖函数体覆盖）。
+
+    注：get_book_service 是普通函数（非 async）——直接调用返回 service。
+    """
+    from inkflow.api.routers.books import get_book_service
+
+    svc = get_book_service(db_session)
+    assert svc is not None
+    assert hasattr(svc, "write_book")
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_planner_respond_other_value_error_422(client, override_services):
+    """respond 非「不存在」ValueError（如 write_auto 未装配）→ 422。"""
+    planner, _ = override_services
+    planner.respond.side_effect = ValueError("write_auto 未装配")
+
+    resp = await client.post(
+        f"{BASE}/planner/{SAMPLE_SESSION_ID}/respond",
+        json={
+            "answers": {},
+            "auto": True,
+        },
+    )
+
+    assert resp.status_code == 422

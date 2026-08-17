@@ -371,3 +371,148 @@ async def test_respond_missing_session_raises():
 
     with pytest.raises(ValueError, match="会话不存在"):
         await svc.respond(uuid.uuid4(), {"q1": "x"})
+
+
+# ── Coverage-Gap 补测（2026-08-17 CI coverage-backend 98.39% 缺口）──
+
+
+@pytest.mark.asyncio
+async def test_auto_missing_write_auto_raises():
+    """auto() 未装配 write_auto → ValueError（覆盖 _run_auto 未装配分支）。"""
+    svc = PlannerService(repo=_make_repo(), write_auto=None)
+    with pytest.raises(ValueError, match="write_auto 未装配"):
+        await svc.auto(uuid.uuid4(), "一句话")
+
+
+@pytest.mark.asyncio
+async def test_respond_auto_missing_write_auto_raises():
+    """respond(auto=True) 未装配 write_auto → ValueError。"""
+    repo = _make_repo()
+    session = _session(round=1, asked_questions=list(ROUND1_QUESTIONS))
+    repo.get_planner_session.return_value = session
+    svc = PlannerService(repo=repo, write_auto=None)
+
+    with pytest.raises(ValueError, match="write_auto 未装配"):
+        await svc.respond(session.id, {}, auto=True)
+
+
+@pytest.mark.asyncio
+async def test_respond_blank_answer_skipped():
+    """回答空文本 → 跳过不记录（_merge_answers 空值守卫）。"""
+    repo = _make_repo()
+    session = _session(round=1, asked_questions=list(ROUND1_QUESTIONS))
+    repo.get_planner_session.return_value = session
+    svc = _make_service(repo)
+
+    await svc.respond(session.id, {"q1": "   "})
+
+    assert session.answers == {}
+    repo.update_planner_session.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_respond_free_answer_all_answered_noop():
+    """宽容映射但无未答问题 → 不覆盖已回答（_first_unanswered 返回 None 分支）。
+
+    轮 2 已回答 q4/q5 → respond 时宽容映射 target=None 不覆盖；
+    同时 q4/q5 已答 → 走完成路径（completed=True + WritingPlan）。
+    """
+    repo = _make_repo()
+    session = _session(
+        round=2,
+        asked_questions=list(ROUND2_QUESTIONS),
+        answers={"q4": "3 卷", "q5": "2 个"},
+    )
+    repo.get_planner_session.return_value = session
+    svc = _make_service(repo)
+
+    result = await svc.respond(session.id, {"answer": "多余回答"})
+
+    assert session.answers.get("q4") == "3 卷"
+    assert session.answers.get("q5") == "2 个"
+    assert session.answers.get("q4") != "多余回答"
+    assert result.completed is True
+    assert result.writing_plan is not None
+
+
+@pytest.mark.asyncio
+async def test_respond_complete_character_service_no_id():
+    """character_service 返回无 id 对象 → character_ids 不追加（防御）。"""
+    repo = _make_repo()
+    session = _session(round=2, asked_questions=list(ROUND2_QUESTIONS), answers={})
+    repo.get_planner_session.return_value = session
+    outline_service = AsyncMock(return_value=_outline_dummy())
+    character_service = AsyncMock(return_value=object())  # 无 id 属性
+    svc = _make_service(repo, outline_service=outline_service, character_service=character_service)
+
+    result = await svc.respond(session.id, {"q4": "3 卷", "q5": "配角自定"})
+
+    assert result.completed is True
+    assert result.writing_plan is not None
+    # outline id 回填；character 无 id → 不追加
+    assert result.writing_plan.root_outline_id is not None
+    character_service.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_respond_complete_no_outline_service():
+    """outline_service/character_service 均为 None → 完成跳过产出落库（297->305/305->313）。"""
+    repo = _make_repo()
+    session = _session(round=2, asked_questions=list(ROUND2_QUESTIONS), answers={})
+    repo.get_planner_session.return_value = session
+    svc = PlannerService(repo=repo, write_auto=AsyncMock(return_value=None))
+
+    result = await svc.respond(session.id, {"q4": "3 卷", "q5": "配角自定"})
+
+    assert result.completed is True
+    assert result.writing_plan is not None
+    assert result.writing_plan.root_outline_id is None
+    assert result.writing_plan.character_ids == []
+
+
+@pytest.mark.asyncio
+async def test_protagonist_name_blank_fragment_default():
+    """q3 含「主角是」但片段空白 → 回退默认「主角」（370->372 分支）。"""
+    repo = _make_repo()
+    session = _session(
+        round=2,
+        asked_questions=list(ROUND2_QUESTIONS),
+        answers={"q3": "主角是   "},
+    )
+    repo.get_planner_session.return_value = session
+    character_service = AsyncMock(return_value=_char_dummy())
+    svc = _make_service(repo, character_service=character_service)
+
+    await svc.respond(session.id, {"q4": "3 卷", "q5": "配角自定"})
+
+    call_kwargs = character_service.await_args.kwargs
+    assert call_kwargs["name"] == "主角"
+
+
+@pytest.mark.asyncio
+async def test_protagonist_name_extracted_from_q3():
+    """主角名提取：q3 回答含「主角是 X」→ character 用 X（_protagonist_name）。"""
+    repo = _make_repo()
+    session = _session(
+        round=2,
+        asked_questions=list(ROUND2_QUESTIONS),
+        answers={"q3": "主角是时间旅者"},
+    )
+    repo.get_planner_session.return_value = session
+    character_service = AsyncMock(return_value=_char_dummy())
+    svc = _make_service(repo, character_service=character_service)
+
+    await svc.respond(session.id, {"q4": "3 卷", "q5": "配角自定"})
+
+    call_kwargs = character_service.await_args.kwargs
+    assert call_kwargs["name"] == "时间旅者"
+
+
+# ── Coverage-Gap 收尾（2026-08-17：default_factory 分支）──
+
+
+def test_planner_session_default_utcnow():
+    """PlannerSession 未显式传时间戳 → default_factory=_utcnow 生效（模型默认分支）。"""
+    session = PlannerSession(id=uuid.uuid4(), project_id=uuid.uuid4(), one_liner="默认时间")
+    assert session.created_at is not None
+    assert session.updated_at is not None
