@@ -280,3 +280,26 @@ async def test_mark_failed_missing_raises():
     svc = _service()
     with pytest.raises(ValueError, match="运行不存在"):
         await svc.mark_failed(str(uuid.uuid4()))
+
+
+@pytest.mark.asyncio
+async def test_prepare_run_volume_mode_clean_chapters_returns_running():
+    """契约 1e 补测（book_run_mixin L66 通过路径）：volume 模式安全阀全部通过
+    （content_checker=False）→ has_targets=True → running + 落库（既有 volume 用例
+    只覆盖安全阀 raise 分支，本用例补 has_targets 为真的成功路径）。"""
+    repo = AsyncMock()
+    plan = _plan()
+    repo.get_writing_plan.return_value = plan
+    outline_repo = AsyncMock()
+    vol = _outline(level="volume", name="第一卷", parent_id=None)
+    c1 = _outline(parent_id=vol.id, chapter_id=uuid.uuid4(), name="第一章")
+    outline_repo.list.return_value = ([vol, c1], 2)
+    content_checker = AsyncMock(return_value=False)
+    svc = _service(repo=repo, outline_repo=outline_repo, content_checker=content_checker)
+
+    result = await svc.prepare_run(plan.id, mode="volume")
+
+    assert result == {"run_id": str(plan.id), "status": "running"}
+    assert plan.status == "running"
+    content_checker.assert_awaited_once_with(c1.chapter_id)
+    repo.update_writing_plan.assert_awaited()

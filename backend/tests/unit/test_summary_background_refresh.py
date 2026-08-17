@@ -42,10 +42,20 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from inkflow.core.database import Base
 from inkflow.domain.models.semantic_summary import SemanticSummary, SummaryScope
 from inkflow.domain.ports.semantic_summary_errors import SemanticSummaryError
 from inkflow.infrastructure.context import summary_background_refresh
+from inkflow.infrastructure.database.models.audit_log import (
+    AuditLogORM,  # noqa: F401  # 注册 audit_logs 表（Base.metadata.create_all 依赖）
+)
+from inkflow.infrastructure.database.models.project import ProjectORM
+from inkflow.infrastructure.database.repositories.audit_log_repo import (
+    SQLiteAuditLogRepository,
+)
 
 run_summary_background_refresh = summary_background_refresh.run_summary_background_refresh
 schedule_summary_background_refresh = (
@@ -95,6 +105,45 @@ class _FakeSessionFactory:
 
     async def __aexit__(self, *exc_info) -> bool:
         return False
+
+
+class _RealSessionFactory:
+    """真实 in-memory SQLite 会话工厂——async 上下文管理器（可多次进入；每次进入
+    返回新 AsyncSession；同库连接共享，数据跨 session 可见，照抄 test_audit_log_repo
+    db_session 形态）."""
+
+    def __init__(self, factory: async_sessionmaker) -> None:
+        self._factory = factory
+        self.enters = 0
+
+    async def __aenter__(self):
+        self.enters += 1
+        return self._factory()
+
+    async def __aexit__(self, *exc_info) -> bool:
+        return False
+
+
+@pytest.fixture
+async def real_sqlite_factory():
+    """真实 in-memory SQLite（照抄 test_audit_log_repo.py db_session 形态）：
+    create_async_engine + Base.metadata.create_all + async_sessionmaker →
+    _RealSessionFactory cm（真实装配用例依赖；测试结束 engine.dispose）。"""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        yield _RealSessionFactory(factory)
+    finally:
+        await engine.dispose()
 
 
 class TestRunSummaryBackgroundRefresh:
@@ -195,6 +244,80 @@ class TestRunSummaryBackgroundRefresh:
         summary_repo.upsert.assert_not_awaited()
         audit.record.assert_awaited_once()
         assert _arg(audit.record, "severity_summary", 1) == "semantic_summary_failed"
+
+    async def test_real_assembly_with_empty_anchors_no_llm(self, real_sqlite_factory):
+        """⑤ 真实装配（零网络）: anchors=[] → 真实 SemanticSummarizer 不调 LLM（spec
+        §5.3 ①）→ (None, 0) dropped falsy → 返回 False。双调用覆盖 L61（默认
+        async_session_factory 归一）+ L64（callable / 真实 cm 两分支）+ L65-73（真实
+        summarizer 装配）+ L100-107（真实 repo/audit 装配）+ L124→132（dropped falsy
+        跳过审计直接 False）。"""
+        ok = await run_summary_background_refresh(
+            [], scope=SummaryScope.PROJECT, project_id=PROJECT_ID, anchor_hash="h",
+        )
+        assert ok is False  # 默认 session_factory=async_session_factory（callable 归一）
+
+        ok = await run_summary_background_refresh(
+            [], scope=SummaryScope.PROJECT, project_id=PROJECT_ID, anchor_hash="h",
+            session_factory=real_sqlite_factory,
+        )
+        assert ok is False  # 真实 in-memory cm（非 callable → else 分支）
+
+    async def test_real_audit_failure_path(self, real_sqlite_factory):
+        """⑥ audit=None → 真实 AuditLogService 落库 semantic_summary_failed（L87-94）：
+        SemanticSummaryError → 不抛 + 返回 False + audit_logs 表真实记录（FK 前置
+        projects 行，PRAGMA foreign_keys=ON 下插入成功）；末段补 audit.record 抛异常
+        → _record_failure 吞掉（L95-96 防御分支）。"""
+        async with real_sqlite_factory as session:
+            session.add(ProjectORM(id=PROJECT_ID.int, name="测试项目"))
+            await session.commit()
+        summarizer = AsyncMock()
+        summarizer.summarize.side_effect = SemanticSummaryError("boom")
+
+        ok = await run_summary_background_refresh(
+            [SimpleNamespace(value="林晚")], scope=SummaryScope.PROJECT,
+            project_id=PROJECT_ID, anchor_hash="hash-1",
+            session_factory=real_sqlite_factory, summarizer=summarizer,
+        )
+
+        assert ok is False  # 不抛（若抛出本用例 ERROR）
+        async with real_sqlite_factory as session:
+            logs, total = await SQLiteAuditLogRepository(session).list(PROJECT_ID.int)
+        assert total >= 1
+        assert any(
+            log.severity_summary == "semantic_summary_failed"
+            and log.note == "后台刷新 LLM 总结失败"
+            for log in logs
+        )
+
+        # 防御分支：注入的 audit.record 抛异常 → _record_failure 静默吞掉，仍返回 False
+        broken_audit = AsyncMock()
+        broken_audit.record.side_effect = RuntimeError("审计写失败")
+        ok = await run_summary_background_refresh(
+            [SimpleNamespace(value="林晚")], scope=SummaryScope.PROJECT,
+            project_id=PROJECT_ID, anchor_hash="hash-1",
+            session_factory=real_sqlite_factory, summarizer=summarizer,
+            audit=broken_audit,
+        )
+        assert ok is False
+
+    async def test_dropped_falsy_returns_false(self):
+        """⑦ dropped falsy（空列表）→ 跳过审计分支直接返回 False（L124→132；
+        既有 ② 覆盖 dropped truthy 留痕分支，本用例补空列表无审计路径）。"""
+        factory = _FakeSessionFactory()
+        summarizer = AsyncMock()
+        summarizer.summarize.return_value = (None, [])
+        summary_repo = AsyncMock()
+        audit = AsyncMock()
+
+        ok = await run_summary_background_refresh(
+            [SimpleNamespace(value="林晚")], scope=SummaryScope.PROJECT,
+            project_id=PROJECT_ID, anchor_hash="hash-1", session_factory=factory,
+            summarizer=summarizer, summary_repo=summary_repo, audit=audit,
+        )
+
+        assert ok is False
+        summary_repo.upsert.assert_not_awaited()
+        audit.record.assert_not_awaited()
 
 
 class TestScheduleSummaryBackgroundRefresh:
