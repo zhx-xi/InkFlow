@@ -495,3 +495,99 @@ def test_plan_show_data_none_early_return(fake_http_client):
 
     assert result.exit_code == 1
     assert "❌" in _strip_ansi(result.stderr)
+
+
+# ── 阶段 2（#336）：book run 顶层命令 + 多章状态 ─────────────────
+#
+# 契约（父侧定稿，spec §4 阶段 2 + §5.2 + §13.2 M4/M5）:
+# - `inkflow book run <plan_id> [--limits max_chapters=5,max_tokens=200000] [--json]`
+#     顶层命令（app.command("run")，不在 plan 子组；plan run 保留兼容）
+#     POST /api/v1/agent/books/runs body {writing_plan_id, limits?} →
+#     {run_id, status}
+#     --limits 逗号分隔 k=v 解析为 dict（"max_chapters=5,max_tokens=200000"
+#     → {"max_chapters": 5, "max_tokens": 200000}）；不传则 body 无 limits 键
+#     人类输出含 run_id；--json 信封: {"ok": true, "data": {run_id, status}}
+# - `inkflow book status` 人类输出每章一行状态（progress 行，M4 已满足，
+#   测试只断言 progress 行存在，不锁章名渲染）
+#
+# RED 预期形态（阶段 1 实现）：顶层 run 未注册 → typer 报
+# `No such command 'run'.` + Usage + exit 2 → run 三用例断言 exit_code==0
+# 干净 FAILED；缺参用例（exit 2）与 status 多章用例（progress 行已渲染）
+# RED 期即 PASS（守护，刻意）。
+
+
+def test_book_run_top_level_command(fake_http_client):
+    """book run 顶层命令：POST /api/v1/agent/books/runs body {writing_plan_id}
+    → run_id/status（spec §4 阶段 2：inkflow book run <plan_id>）。"""
+    fake_http_client.post.return_value = {"run_id": "run-1", "status": "pending"}
+
+    result = _invoke("run", "plan-1")
+
+    assert result.exit_code == 0
+    out = _strip_ansi(result.stdout)
+    assert "run-1" in out
+    fake_http_client.post.assert_awaited_once_with(
+        "/api/v1/agent/books/runs",
+        json={"writing_plan_id": "plan-1"},
+    )
+
+
+def test_book_run_with_limits(fake_http_client):
+    """book run --limits：逗号分隔 k=v 解析为 dict 进 body.limits
+    （"max_chapters=5,max_tokens=200000" → {max_chapters: 5, max_tokens: 200000}）。"""
+    fake_http_client.post.return_value = {"run_id": "run-1", "status": "pending"}
+
+    result = _invoke("run", "plan-1", "--limits", "max_chapters=5,max_tokens=200000")
+
+    assert result.exit_code == 0
+    fake_http_client.post.assert_awaited_once_with(
+        "/api/v1/agent/books/runs",
+        json={
+            "writing_plan_id": "plan-1",
+            "limits": {"max_chapters": 5, "max_tokens": 200000},
+        },
+    )
+
+
+def test_book_run_json_envelope(fake_http_client):
+    """book run --json：信封 {ok: true, data: {run_id, status}}（F7 全局约定）。"""
+    fake_http_client.post.return_value = {"run_id": "run-1", "status": "pending"}
+
+    result = _invoke("run", "plan-1", "--json")
+
+    assert result.exit_code == 0
+    body = json.loads(_strip_ansi(result.stdout))
+    assert body["ok"] is True
+    assert body["data"]["run_id"] == "run-1"
+    assert body["data"]["status"] == "pending"
+
+
+def test_book_run_missing_argument():
+    """book run 缺 plan_id → exit 2（守护用例：RED 期顶层 run 未注册时
+    No such command 亦 exit 2 → 本用例 RED 期 PASS 刻意；GREEN 后为 typer
+    参数缺失 exit 2）。"""
+    result = _invoke("run")
+    assert result.exit_code == 2
+
+
+def test_book_status_multi_chapter_progress(fake_http_client):
+    """book status 多章：progress 3 章 → 人类输出每章一行状态（M4 每章状态显示。
+    守护用例：阶段 1 status 已渲染 progress 行 → RED 期 PASS 刻意）。"""
+    fake_http_client.get.return_value = {
+        "run_id": "run-1",
+        "status": "completed",
+        "progress": {"c1": "done", "c2": "done", "c3": "done"},
+        "counters": {
+            "max_chapters": 3,
+            "max_agent_calls": 3,
+            "agent_calls": 3,
+            "chapters_written": 3,
+        },
+    }
+
+    result = _invoke("status", "run-1")
+
+    assert result.exit_code == 0
+    out = _strip_ansi(result.stdout)
+    assert "c1" in out and "c2" in out and "c3" in out
+    assert out.count("done") == 3

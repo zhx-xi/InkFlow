@@ -1,9 +1,10 @@
-"""F44 阶段1 WritingPlan 模型 + 多维上限单测（TDD RED 阶段）。
+"""F44 阶段1+2 WritingPlan 模型 + 多维上限单测（TDD RED 阶段）。
 
 权威来源：specs/f44-long-task-orchestrator/spec.md §2.1/§2.4（v1.1）。
 本文件为 `domain/models/writing_plan.py`（NEW）定义契约：WritingPlan 实体、
 PlanNodeStatus 状态机、BookLimits 上限模型、validate_at_least_one_hard_limit
-「至少一道有限护栏」不变式、阶段1 写死上限常量。
+「至少一道有限护栏」不变式、阶段1 写死上限常量、阶段2 merge_book_limits
+纯函数（Q2=C：ProjectConfig.extra 项目级上限合并，§2.4/D11）。
 
 ════════════════════════════════════════════════════════════════════
 设计假设（GREEN 实现必须满足的契约，逐条对应下方测试）
@@ -37,10 +38,23 @@ PlanNodeStatus 状态机、BookLimits 上限模型、validate_at_least_one_hard_
    - `STAGE1_LIMITS: BookLimits`（#335 上限写死但计数器立起来）：
      max_chapters=1 / max_agent_calls=1（其余取默认）
 
-2. 【RED 预期形态】模块不存在 → 本文件全用例 ImportError 收集期失败
-   （ModuleNotFoundError），即预期失败形态；断言失败也在 ImportError 后。
+2. 【阶段 2 契约：merge_book_limits 纯函数】（模块级，§2.4/D11 读取优先级
+   请求显式 > 项目级 extra > 默认常量；Q2=C 拍板 v1.1）：
+   逐字签名：
+       merge_book_limits(request_limits: BookLimits | None,
+                         project_extra: dict[str, Any] | None = None) -> BookLimits
+   合并链：
+   a. 起点 = 默认 BookLimits()（100/200/200000/5）
+   b. project_extra 键 book_max_chapters / book_max_agent_calls /
+      book_max_tokens / book_max_sessions 覆盖（值 int 转换；缺键跳过）
+   c. request_limits 显式字段覆盖（request.model_fields_set 只覆盖显式键，
+      未显式字段回退项目级/默认）
+   纯函数：不修改入参、无副作用、无 IO。
 
-3. 【时间戳】created_at/updated_at 为 datetime（UTC），GREEN 用
+3. 【RED 预期形态】merge_book_limits 在阶段 1 实现中不存在 → 本文件 merge
+   用例 AttributeError/ImportError 失败；既有用例（阶段 1 已满足）PASS 守护。
+
+4. 【时间戳】created_at/updated_at 为 datetime（UTC），GREEN 用
    `datetime.now(timezone.utc)` 等价实现。
 """
 
@@ -179,3 +193,60 @@ def test_stage1_limits_hardcoded():
     assert STAGE1_LIMITS.max_chapters == 1
     assert STAGE1_LIMITS.max_agent_calls == 1
     validate_at_least_one_hard_limit(STAGE1_LIMITS)
+
+
+# ── merge_book_limits（阶段 2：#336 Q2=C 读取优先级 请求显式 > 项目级 > 默认）──
+
+
+def _merge(request_limits, project_extra=None):
+    """阶段 2 契约：merge_book_limits 模块级纯函数。
+
+    阶段 1 实现不存在该函数 → 属性访问 AttributeError → 本组用例 RED。
+    """
+    import inkflow.domain.models.writing_plan as _wp
+
+    return _wp.merge_book_limits(request_limits, project_extra)
+
+
+def test_merge_book_limits_all_defaults():
+    """全空（无请求无项目级）→ BookLimits() 默认：100/200/200000/5（§2.4）。"""
+    merged = _merge(None)
+    assert merged.max_chapters == 100
+    assert merged.max_agent_calls == 200
+    assert merged.max_tokens == 200_000
+    assert merged.max_sessions == 5
+
+
+def test_merge_book_limits_project_extra_only():
+    """仅项目级 extra：book_max_chapters/book_max_tokens 覆盖，其余字段回退默认（§2.4/D11）。"""
+    merged = _merge(None, {"book_max_chapters": 3, "book_max_tokens": 50_000})
+    assert merged.max_chapters == 3
+    assert merged.max_tokens == 50_000
+    assert merged.max_agent_calls == 200
+    assert merged.max_sessions == 5
+
+
+def test_merge_book_limits_request_overrides_project():
+    """请求显式 > 项目级：extra book_max_chapters=2 + 请求 BookLimits(max_chapters=5)
+    → 5（§2.4 读取优先级）。"""
+    merged = _merge(BookLimits(max_chapters=5), {"book_max_chapters": 2})
+    assert merged.max_chapters == 5
+    assert merged.max_agent_calls == 200
+
+
+def test_merge_book_limits_request_partial_fallback():
+    """请求只显式 max_chapters → 其余字段回退项目级/默认（model_fields_set 语义）。"""
+    merged = _merge(
+        BookLimits(max_chapters=5),
+        {"book_max_agent_calls": 7, "book_max_tokens": 50_000},
+    )
+    assert merged.max_chapters == 5
+    assert merged.max_agent_calls == 7
+    assert merged.max_tokens == 50_000
+    assert merged.max_sessions == 5
+
+
+def test_merge_book_limits_extra_string_int_coercion():
+    """project_extra 值非 int（字符串 "3"）→ int 转换后生效。"""
+    merged = _merge(None, {"book_max_chapters": "3"})
+    assert merged.max_chapters == 3

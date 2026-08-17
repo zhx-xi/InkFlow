@@ -489,3 +489,159 @@ async def test_planner_respond_other_value_error_422(client, override_services):
     )
 
     assert resp.status_code == 422
+
+
+# ── F44 阶段2（#336）：安全阀 409 + limits 传参 + 多章状态/counters 新键 ──
+# 权威来源：spec.md §3.5（「内容已写」安全阀 409）、§5.2（多维上限/进度状态机）、
+# §13.2 M4-M6。GREEN 实现须满足：ChapterAlreadyWrittenError → 409；counters
+# 新增 max_tokens/tokens_used/tokens_warning 三键。
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_runs_start_chapter_already_written_409(client, override_services):
+    """「内容已写」安全阀命中 → 409（§3.5/M6）：write_book 抛 ChapterAlreadyWrittenError。
+
+    RED 期失败形态：ChapterAlreadyWrittenError 为阶段 2 新增（定义于
+    inkflow.domain.services.book_service），阶段 1 尚未定义 → 本用例运行时
+    ImportError（即预期 RED）。detail 锁「已有内容」防假绿（仅断言 409
+    可能被其他异常映射误命中）。
+    """
+    from inkflow.domain.services.book_service import ChapterAlreadyWrittenError
+
+    _, book = override_services
+    book.write_book.side_effect = ChapterAlreadyWrittenError("该章已有内容，拒绝重跑")
+
+    resp = await client.post(
+        f"{BASE}/runs", json={"writing_plan_id": str(uuid.uuid4())}
+    )
+
+    assert resp.status_code == 409
+    assert "已有内容" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_runs_start_limits_passed_to_service(client, override_services):
+    """POST /runs limits 显式传参 → write_book 收到 BookLimits（§2.4/§5.2 多维上限透传契约）。
+
+    守护形态（RED 期 PASS 刻意）：阶段 1 路由器已把 limits dict 转换 BookLimits 并透传——
+    本用例锁定 write_book(writing_plan_id, BookLimits(max_chapters=2, max_agent_calls=2))
+    签名契约（防 GREEN 阶段 2 改动装配时破坏 limits 透传）。
+    """
+    from inkflow.domain.models.writing_plan import BookLimits
+
+    _, book = override_services
+    book.write_book.return_value = {"run_id": str(uuid.uuid4()), "status": "pending"}
+    plan_id = uuid.uuid4()
+
+    resp = await client.post(
+        f"{BASE}/runs",
+        json={
+            "writing_plan_id": str(plan_id),
+            "limits": {"max_chapters": 2, "max_agent_calls": 2},
+        },
+    )
+
+    assert resp.status_code == 202
+    book.write_book.assert_awaited_once_with(
+        plan_id, BookLimits(max_chapters=2, max_agent_calls=2)
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_runs_status_multi_chapter_progress(client, override_services):
+    """GET /runs 多章进度树完整返回 + counters 新键（M4 顺序派发 3 章 + M5 软护栏计数）。
+
+    守护形态（RED 期 PASS 刻意）：阶段 1 路由器为 dict 透传（get_status 原样出）——
+    本用例锁定阶段 2「progress 3 章状态 + counters 含 max_tokens/tokens_used/
+    tokens_warning」返回体契约（防 GREEN 漏键/丢进度）。
+    """
+    _, book = override_services
+    run_id = str(uuid.uuid4())
+    book.get_status.return_value = {
+        "run_id": run_id,
+        "status": "running",
+        "progress": {"c1": "done", "c2": "done", "c3": "in_progress"},
+        "counters": {
+            "max_chapters": 3,
+            "max_agent_calls": 3,
+            "agent_calls": 2,
+            "chapters_written": 2,
+            "max_tokens": 200_000,
+            "tokens_used": 12_000,
+            "tokens_warning": False,
+        },
+    }
+
+    resp = await client.get(f"{BASE}/runs/{run_id}")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "running"
+    assert body["progress"] == {"c1": "done", "c2": "done", "c3": "in_progress"}
+    counters = body["counters"]
+    assert counters["chapters_written"] == 2
+    assert counters["max_tokens"] == 200_000
+    assert counters["tokens_used"] == 12_000
+    assert counters["tokens_warning"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_runs_status_counters_new_keys(client, override_services):
+    """GET /runs counters 新键契约：max_tokens=200000 / tokens_used=0 / tokens_warning=False。
+
+    守护形态（RED 期 PASS 刻意）：dict 透传直出——本用例锁定阶段 2「token 软护栏」
+    计数三键齐备（防 GREEN 只加硬护栏键、漏软护栏三键）。
+    """
+    _, book = override_services
+    run_id = str(uuid.uuid4())
+    book.get_status.return_value = {
+        "run_id": run_id,
+        "status": "running",
+        "progress": {},
+        "counters": {
+            "max_chapters": 3,
+            "max_agent_calls": 3,
+            "agent_calls": 0,
+            "chapters_written": 0,
+            "max_tokens": 200_000,
+            "tokens_used": 0,
+            "tokens_warning": False,
+        },
+    }
+
+    resp = await client.get(f"{BASE}/runs/{run_id}")
+
+    assert resp.status_code == 200
+    counters = resp.json()["counters"]
+    assert counters["max_tokens"] == 200_000
+    assert counters["tokens_used"] == 0
+    assert counters["tokens_warning"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_runs_start_no_hard_limit_422_detail(client, override_services):
+    """全无护栏 → 422 + detail 锁「至少一道」（§3.5 上限校验失败，防假绿：仅 422 不锁文案）。
+
+    守护形态（RED 期 PASS 刻意）：阶段 1 已映射 422 且 detail 透传 ValueError 消息——
+    本用例锁定「至少一道有限护栏」不变式文案契约（M5），防 GREEN 改文案/丢 detail。
+    """
+    _, book = override_services
+    book.write_book.side_effect = ValueError(
+        "至少一道有限护栏：max_chapters 或 max_agent_calls 必须大于 0"
+    )
+
+    resp = await client.post(
+        f"{BASE}/runs",
+        json={
+            "writing_plan_id": str(uuid.uuid4()),
+            "limits": {"max_chapters": 0, "max_agent_calls": 0},
+        },
+    )
+
+    assert resp.status_code == 422
+    assert "至少一道" in resp.json()["detail"]

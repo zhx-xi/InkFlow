@@ -12,6 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -49,7 +50,7 @@ class WritingPlan(BaseModel):
         status: 计划状态（drafting/auto/ready/running/completed/aborted）.
         root_outline_id: 书级大纲（level=overall）UUID - 结构树锚点.
         character_ids: 主角/配角 character 实体 id 列表（planner 产出）.
-        limits: 多维上限（搂2.4）.
+        limits: 多维上限计数器（搂2.4；int 计数 + tokens_warning 布尔告警）.
         progress: 节点进度快照 {outline_id: PlanNodeStatus}（权威进度）.
         execution_refs: 章执行引用 {outline_id: execution_id}.
         thread_id: LangGraph checkpoint thread_id（阶段 4 落库）.
@@ -64,7 +65,7 @@ class WritingPlan(BaseModel):
     status: str = "drafting"
     root_outline_id: uuid.UUID | None = None
     character_ids: list[uuid.UUID] = Field(default_factory=list)
-    limits: dict[str, int] = Field(default_factory=dict)
+    limits: dict[str, int | bool] = Field(default_factory=dict)
     progress: dict[str, str] = Field(default_factory=dict)  # outline_id -> status
     execution_refs: dict[str, str] = Field(default_factory=dict)  # outline_id -> execution_id
     thread_id: str | None = None
@@ -102,6 +103,33 @@ def validate_at_least_one_hard_limit(limits: BookLimits) -> None:
     """
     if not (limits.max_chapters > 0 or limits.max_agent_calls > 0):
         raise ValueError("至少一道有限护栏：max_chapters 或 max_agent_calls 必须大于 0")
+
+
+def merge_book_limits(
+    request_limits: BookLimits | None,
+    project_extra: dict[str, Any] | None = None,
+) -> BookLimits:
+    """多维上限读取优先级 = 请求显式 > 项目级 extra > 默认常量（§2.4/D11 Q2=C）。
+    默认 BookLimits() 起步 → project_extra 键
+        book_max_chapters/book_max_agent_calls/book_max_tokens/book_max_sessions
+    覆盖（值 int() 转换，缺键跳过）→ 请求 BookLimits 显式字段
+        （model_fields_set）覆盖。纯函数：不修改入参、无副作用、无 IO。
+    """
+    merged = BookLimits()
+    if project_extra:
+        extra_keys = {
+            "max_chapters": "book_max_chapters",
+            "max_agent_calls": "book_max_agent_calls",
+            "max_tokens": "book_max_tokens",
+            "max_sessions": "book_max_sessions",
+        }
+        for field, extra_key in extra_keys.items():
+            if extra_key in project_extra and project_extra[extra_key] is not None:
+                setattr(merged, field, int(project_extra[extra_key]))
+    if request_limits is not None:
+        for field in request_limits.model_fields_set:
+            setattr(merged, field, getattr(request_limits, field))
+    return merged
 
 
 STAGE1_LIMITS = BookLimits(max_chapters=1, max_agent_calls=1)
