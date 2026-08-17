@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
+import contextlib
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,6 +15,7 @@ from inkflow.domain.services.book_service import BookService, ChapterAlreadyWrit
 from inkflow.domain.services.planner_service import PlannerService
 from inkflow.infrastructure.agent.book_pipeline import BookVolumePipeline
 from inkflow.infrastructure.agent.execution_store import ExecutionStore
+from inkflow.infrastructure.background.tasks import spawn_background_task
 
 router = APIRouter(prefix="/api/v1/agent/books", tags=["Books"])
 
@@ -68,12 +69,6 @@ def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
 # 模块级单例（镜像 agent.py _supervisor_pipeline 模式）：checkpointer 存实例内，
 # execute/confirm 须同实例——API 每次请求经 get_book_service 复用同一 pipeline
 _book_volume_pipeline: BookVolumePipeline | None = None
-
-
-# 后台任务注册表（S4 占位）：run_id → asyncio.Task。
-# 本批按父侧 b2 裁定不启动真正后台任务（POST /runs 保持同步返回，既有 202
-# 契约优先）；真实长任务后台化与 resume 续跑接线留 M2 冒烟。
-_book_tasks: dict[str, asyncio.Task] = {}
 
 
 def _build_book_service(db: AsyncSession) -> BookService:
@@ -223,15 +218,12 @@ async def start_run(
     data: BookRunRequest,
     svc: BookService = Depends(get_book_service),
 ):
-    """启动书级运行（202 异步语义），返回 {run_id, status}；mode="volume" 走卷级编排。"""
+    """启动书级运行（202 异步语义）：prepare_run 预校验（错误立即 404/409/422）→
+    返回 {run_id, status}；status=running 时后台 asyncio task fire-and-forget
+    执行（#456 F44 阶段4 后台任务）。"""
     limits = BookLimits(**data.limits) if data.limits is not None else None
     try:
-        if data.mode == "volume":
-            # 契约：limits 缺省时只传 plan_id（write_book_volume 缺省回退项目级/默认上限）
-            if limits is None:
-                return await svc.write_book_volume(data.writing_plan_id)
-            return await svc.write_book_volume(data.writing_plan_id, limits)
-        return await svc.write_book(data.writing_plan_id, limits)
+        result = await svc.prepare_run(data.writing_plan_id, limits, mode=data.mode)
     except ChapterAlreadyWrittenError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     except ValueError as e:
@@ -239,6 +231,31 @@ async def start_run(
         if "不存在" in detail:
             raise HTTPException(status_code=404, detail=detail) from e
         raise HTTPException(status_code=422, detail=detail) from e
+    if result["status"] != "running":
+        return result
+    spawn_background_task(
+        _run_book(svc, data.writing_plan_id, limits, mode=data.mode),
+        key=result["run_id"],
+    )
+    return result
+
+
+async def _run_book(
+    svc: BookService,
+    plan_id: uuid.UUID,
+    limits: BookLimits | None,
+    mode: str,
+) -> None:
+    """后台执行体（fire-and-forget）：write_book/write_book_volume 全量执行；
+    未预期异常 → mark_failed 落库（状态映射 running → failed）。"""
+    try:
+        if mode == "volume":
+            await svc.write_book_volume(plan_id, limits)
+        else:
+            await svc.write_book(plan_id, limits)
+    except Exception:
+        with contextlib.suppress(Exception):
+            await svc.mark_failed(str(plan_id))
 
 
 @router.post("/runs/{run_id}/confirm")

@@ -64,6 +64,7 @@
    .session_id/.round/.completed/.questions/.writing_plan 属性）。
 """
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
@@ -454,23 +455,18 @@ class TestCoverageGapApi:
     @pytest.mark.asyncio
     @pytest.mark.api
     async def test_runs_start_mode_volume_with_limits(self, client, override_services):
-        """mode=volume + limits 显式传入 → write_book_volume 收到 BookLimits。
+        """mode=volume + limits 显式传入 → prepare_run(plan_id, BookLimits, mode="volume")
+        + 后台 write_book_volume(plan_id, BookLimits)。
 
-        覆盖 books.py L233（write_book_volume(plan_id, limits) 分支）——
-        既有 test_runs_start_mode_volume 只覆盖 L232（limits 缺省形态）；
-        L231 分支缺口 missing-branches=233 由此闭合。write_book 预置返回值
-        防误派发时 FastAPI 序列化 Mock 报 500（镜像既有 volume 用例手法）。
+        阶段 4 新契约：limits 恒传（构造为 BookLimits 实例）；write_book_volume
+        由后台任务调用，需 sleep(0) 让出事件循环后断言；write_book 不得被调。
         """
         from inkflow.domain.models.writing_plan import BookLimits
 
         _, book = override_services
         plan_id = uuid.uuid4()
         run_id = str(uuid.uuid4())
-        book.write_book_volume.return_value = {
-            "run_id": run_id,
-            "status": "waiting_hitl",
-        }
-        book.write_book.return_value = {"run_id": run_id, "status": "waiting_hitl"}
+        book.prepare_run.return_value = {"run_id": run_id, "status": "running"}
 
         resp = await client.post(
             f"{BASE}/runs",
@@ -482,7 +478,14 @@ class TestCoverageGapApi:
         )
 
         assert resp.status_code == 202
-        assert resp.json()["run_id"] == run_id
+        body = resp.json()
+        assert body["run_id"] == run_id
+        assert body["status"] == "running"
+        book.prepare_run.assert_awaited_once_with(
+            plan_id, BookLimits(max_chapters=3), mode="volume"
+        )
+
+        await asyncio.sleep(0)
         book.write_book_volume.assert_awaited_once_with(
             plan_id, BookLimits(max_chapters=3)
         )
@@ -497,16 +500,15 @@ class TestCoverageGapApi:
 
         锁 BookLimits(**data.limits) 构造语义（books.py L227）：只传
         max_tokens 时 max_chapters/max_agent_calls 保持默认 100/200——
-        防 GREEN 改动 limits 构造形态破坏默认值填充契约。
+        防 GREEN 改动 limits 构造形态破坏默认值填充契约。后台 write_book_volume
+        恒传 limits 实例，sleep(0) 后断言。
         """
         from inkflow.domain.models.writing_plan import BookLimits
 
         _, book = override_services
         plan_id = uuid.uuid4()
-        book.write_book_volume.return_value = {
-            "run_id": str(uuid.uuid4()),
-            "status": "waiting_hitl",
-        }
+        run_id = str(uuid.uuid4())
+        book.prepare_run.return_value = {"run_id": run_id, "status": "running"}
 
         resp = await client.post(
             f"{BASE}/runs",
@@ -518,6 +520,13 @@ class TestCoverageGapApi:
         )
 
         assert resp.status_code == 202
+        body = resp.json()
+        assert body["status"] == "running"
+        book.prepare_run.assert_awaited_once_with(
+            plan_id, BookLimits(max_tokens=50_000), mode="volume"
+        )
+
+        await asyncio.sleep(0)
         book.write_book_volume.assert_awaited_once_with(
             plan_id, BookLimits(max_tokens=50_000)
         )
