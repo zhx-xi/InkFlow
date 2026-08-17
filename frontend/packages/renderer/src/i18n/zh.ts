@@ -534,6 +534,28 @@ export const zh = {
   'book.limits.tokens': 'Token 上限',
   'book.limits.sessions': '最大会话',
   'book.limits.save': '保存上限',
+  // F44 阶段4 #338：运行干预 + 回归摘要 + 观察流密度切换
+  'book.run.pause': '暂停',
+  'book.run.resume': '继续',
+  'book.run.density.performance': '表演',
+  'book.run.density.dashboard': '仪表',
+  'book.run.density.silent': '无声',
+  'book.run.summary': '回归摘要',
+  'book.diff.close': '关闭',
+  'book.summary.loading': '摘要加载中…',
+  'book.summary.empty': '暂无摘要数据',
+  'book.summary.progress': '进度',
+  'book.summary.next': '接下来',
+  'book.summary.nextDone': '全部完成',
+  'book.summary.steps': '结构化运行日志',
+  'book.summary.export': '导出 JSON',
+  'book.trace.skip': '跳过',
+  'book.trace.retry': '重试',
+  'book.trace.markFailed': '标记失败',
+  'book.trace.edit': '编辑 brief',
+  'book.trace.editSave': '保存',
+  'book.trace.editCancel': '取消',
+  'book.trace.briefPlaceholder': '输入新的章 brief…',
 } as const;
 
 export type ZhKey = keyof typeof zh;

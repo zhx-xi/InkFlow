@@ -59,6 +59,27 @@
  * //     否则 → waitingHitl=false + hitlPayload=null；return true
  * //   失败 → error = errorMessage(err) + return false（confirming 请求期间 true，结束后 false）
  * // - reset 清空 waitingHitl/hitlPayload/confirming
+ *
+ * ⚠️ F44 阶段4（#338 S4b 干预 + 回归摘要 + 密度）增量——GREEN 必须追加：
+ *
+ * // state 新增（初始值，⚠️ density 拍板 = 纯前端本地 Zustand 状态——S4a 后端无 density
+ * // 查询参数（books.py 实证），不发明后端参数，见契约 §1.3）：
+ * //   density: 'performance' | 'dashboard' | 'silent'（默认 'dashboard'，与既有 UI 形态一致零视觉回归）
+ * //   interveneDiff: InterveneDiff | null（null）；intervening: boolean（false）
+ * //   summary: RunSummaryResponse | null（null）；summaryLoading: boolean（false）
+ * // action 新增：
+ * //   setDensity(d: 'performance' | 'dashboard' | 'silent'): void（纯本地状态，不发请求）
+ * //   interveneRun(action: InterveneAction, target?: string, to?: string, payload?: {brief?: string}): Promise<boolean>
+ * //   loadSummary(runId: string): Promise<void>
+ * //
+ * // 行为契约（S4a #453 backend books.py intervene/summary 实证）：
+ * // - interveneRun 调 interveneBookRun(get().runId, body)：
+ * //   pause → {action:'pause'}；resume → {action:'resume'}；redirect → {action:'redirect', target, to}；
+ * //   edit → {action:'edit', target, payload:{brief}}
+ * //   成功：pause → runStatus='paused'；resume → runStatus='running'；redirect/edit → runStatus 保持 + interveneDiff=res.diff
+ * //   失败 → error = errorMessage(err) + return false（intervening 请求期间 true，结束后 false）
+ * // - loadSummary 成功 → summary=res + summaryLoading=false；失败 → error + summary 保持
+ * // - reset 清空 5 新字段（density 归 'dashboard' / interveneDiff=null / intervening=false / summary=null / summaryLoading=false）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act } from '@testing-library/react';
@@ -116,6 +137,13 @@ beforeEach(() => {
     waitingHitl: false,
     hitlPayload: null,
     confirming: false,
+    // F44 阶段4（#338）新字段默认值（RED 期播种合法：Zustand 合并未知键，GREEN 后生效；
+    // density 默认 'dashboard' 与既有 UI 形态一致零视觉回归）
+    density: 'dashboard',
+    interveneDiff: null,
+    intervening: false,
+    summary: null,
+    summaryLoading: false,
   });
 });
 
@@ -505,5 +533,202 @@ describe('book store — 阶段3 卷级 HITL（#337 waitingHitl/hitlPayload/conf
     expect(s.waitingHitl).toBe(false);
     expect(s.hitlPayload).toBeNull();
     expect(s.confirming).toBe(false);
+  });
+});
+
+describe('book store — 阶段4 干预 + 回归摘要 + 密度（#338 setDensity/interveneRun/loadSummary）', () => {
+  const redirectDiff = { target: 'o-c1', from: 'in_progress', to: 'skipped' };
+  const editDiff = { target: 'o-c1', before: '旧描述', after: '新描述', diff: '-旧描述\n+新描述' };
+  const summaryResp = {
+    run_id: 'wp-1',
+    status: 'running',
+    progress: { 'o-c1': 'done', 'o-c2': 'in_progress', 'o-c3': 'pending' },
+    counters: {
+      max_chapters: 3,
+      max_agent_calls: 5,
+      agent_calls: 1,
+      chapters_written: 1,
+      max_tokens: 200000,
+      tokens_used: 12345,
+      tokens_warning: false,
+    },
+    steps: [
+      { index: 0, outline_id: 'o-c1', status: 'done', execution_id: 'e-1' },
+      { index: 1, outline_id: 'o-c2', status: 'in_progress', execution_id: null },
+    ],
+    next: { volume_index: 0, total_volumes: 3, finished: false, status: 'in_progress' },
+  };
+
+  /** URL 分发 mock：POST /intervene → 指定响应 */
+  function mockIntervene(res: unknown) {
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/agent/books/runs/wp-1/intervene' && init?.method === 'POST') {
+        return res;
+      }
+      throw new Error(`unexpected: ${path}`);
+    });
+  }
+
+  it('契约面：setDensity / interveneRun / loadSummary 是函数 + 新字段默认值', () => {
+    const s = useBookStore.getState();
+    expect(typeof s.setDensity).toBe('function');
+    expect(typeof s.interveneRun).toBe('function');
+    expect(typeof s.loadSummary).toBe('function');
+    expect(s.density).toBe('dashboard');
+    expect(s.interveneDiff).toBeNull();
+    expect(s.intervening).toBe(false);
+    expect(s.summary).toBeNull();
+    expect(s.summaryLoading).toBe(false);
+  });
+
+  it('setDensity：本地状态切换（不发请求，density 拍板 = 纯前端状态）', async () => {
+    useBookStore.setState({ density: 'performance' });
+    await act(async () => {
+      useBookStore.getState().setDensity('silent');
+    });
+    expect(useBookStore.getState().density).toBe('silent');
+    // 密度切换是纯本地状态，零网络请求
+    expect(apiFetchMock).not.toHaveBeenCalled();
+  });
+
+  it('interveneRun(pause)：POST {action:"pause"} → runStatus=paused', async () => {
+    mockIntervene({ run_id: 'wp-1', status: 'paused' });
+    useBookStore.setState({ runId: 'wp-1', runStatus: 'running' });
+    const ok = await act(async () => {
+      return useBookStore.getState().interveneRun('pause');
+    });
+    expect(ok).toBe(true);
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs/wp-1/intervene', {
+      method: 'POST',
+      body: { action: 'pause' },
+    });
+    const s = useBookStore.getState();
+    expect(s.runStatus).toBe('paused');
+    expect(s.interveneDiff).toBeNull();
+  });
+
+  it('interveneRun(redirect)：body {action,target,to} → runStatus 保持 + interveneDiff=res.diff', async () => {
+    mockIntervene({ run_id: 'wp-1', status: 'running', diff: redirectDiff });
+    useBookStore.setState({ runId: 'wp-1', runStatus: 'running' });
+    const ok = await act(async () => {
+      return useBookStore.getState().interveneRun('redirect', 'o-c1', 'skip');
+    });
+    expect(ok).toBe(true);
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs/wp-1/intervene', {
+      method: 'POST',
+      body: { action: 'redirect', target: 'o-c1', to: 'skip' },
+    });
+    const s = useBookStore.getState();
+    expect(s.runStatus).toBe('running');
+    expect(s.interveneDiff).toEqual(redirectDiff);
+  });
+
+  it('interveneRun(edit)：body {action,target,payload:{brief}} → interveneDiff 含 diff 文本', async () => {
+    mockIntervene({ run_id: 'wp-1', status: 'running', diff: editDiff });
+    useBookStore.setState({ runId: 'wp-1', runStatus: 'running' });
+    const ok = await act(async () => {
+      return useBookStore.getState().interveneRun('edit', 'o-c1', undefined, { brief: '把主角改为双面间谍' });
+    });
+    expect(ok).toBe(true);
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs/wp-1/intervene', {
+      method: 'POST',
+      body: { action: 'edit', target: 'o-c1', payload: { brief: '把主角改为双面间谍' } },
+    });
+    expect(useBookStore.getState().interveneDiff?.after).toBe('新描述');
+  });
+
+  it('interveneRun 失败 → error 设置 + 返回 false + interveneDiff 保持（非默认中间态播种）', async () => {
+    apiFetchMock.mockRejectedValue(new ApiError(422, '已完成章不可干预'));
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'running',
+      // 非默认中间态播种：失败不清零 interveneDiff
+      interveneDiff: redirectDiff,
+    });
+    const ok = await act(async () => {
+      return useBookStore.getState().interveneRun('redirect', 'o-c1', 'skip');
+    });
+    expect(ok).toBe(false);
+    const s = useBookStore.getState();
+    expect(s.error).toBe('已完成章不可干预');
+    expect(s.interveneDiff).toEqual(redirectDiff);
+  });
+
+  it('interveneRun 请求期间 intervening=true（pending promise 中间态）', async () => {
+    let resolveFn!: (v: unknown) => void;
+    apiFetchMock.mockImplementation(() => new Promise((r) => { resolveFn = r; }));
+    useBookStore.setState({ runId: 'wp-1', runStatus: 'running' });
+    let p: Promise<boolean> | undefined;
+    await act(async () => {
+      p = useBookStore.getState().interveneRun('pause');
+    });
+    expect(useBookStore.getState().intervening).toBe(true);
+    await act(async () => {
+      resolveFn({ run_id: 'wp-1', status: 'paused' });
+      await p;
+    });
+    expect(useBookStore.getState().intervening).toBe(false);
+    expect(useBookStore.getState().runStatus).toBe('paused');
+  });
+
+  it('loadSummary 成功：GET /summary → summary 设置 + summaryLoading=false', async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/agent/books/runs/wp-1/summary') {
+        return summaryResp;
+      }
+      throw new Error(`unexpected: ${path}`);
+    });
+    await act(async () => {
+      await useBookStore.getState().loadSummary('wp-1');
+    });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs/wp-1/summary');
+    const s = useBookStore.getState();
+    expect(s.summary?.steps).toHaveLength(2);
+    expect(s.summary?.next.finished).toBe(false);
+    expect(s.summaryLoading).toBe(false);
+  });
+
+  it('loadSummary 失败 → error 设置 + summary 保持（非默认中间态播种）', async () => {
+    apiFetchMock.mockRejectedValue(new ApiError(404, '运行不存在'));
+    useBookStore.setState({ summary: summaryResp });
+    await act(async () => {
+      await useBookStore.getState().loadSummary('wp-1');
+    });
+    const s = useBookStore.getState();
+    expect(s.error).toBe('运行不存在');
+    expect(s.summary?.run_id).toBe('wp-1');
+  });
+
+  it('loadSummary 请求期间 summaryLoading=true（pending promise 中间态）', async () => {
+    let resolveFn!: (v: unknown) => void;
+    apiFetchMock.mockImplementation(() => new Promise((r) => { resolveFn = r; }));
+    let p: Promise<void> | undefined;
+    await act(async () => {
+      p = useBookStore.getState().loadSummary('wp-1');
+    });
+    expect(useBookStore.getState().summaryLoading).toBe(true);
+    await act(async () => {
+      resolveFn(summaryResp);
+      await p;
+    });
+    expect(useBookStore.getState().summaryLoading).toBe(false);
+    expect(useBookStore.getState().summary?.run_id).toBe('wp-1');
+  });
+
+  it('reset 清空 5 新字段（非默认中间态播种 → 清零断言非假绿）', () => {
+    useBookStore.setState({
+      density: 'silent',
+      interveneDiff: redirectDiff,
+      intervening: true,
+      summary: summaryResp,
+      summaryLoading: true,
+    });
+    useBookStore.getState().reset();
+    const s = useBookStore.getState();
+    expect(s.density).toBe('dashboard');
+    expect(s.interveneDiff).toBeNull();
+    expect(s.intervening).toBe(false);
+    expect(s.summary).toBeNull();
+    expect(s.summaryLoading).toBe(false);
   });
 });

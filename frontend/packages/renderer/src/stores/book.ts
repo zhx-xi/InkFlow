@@ -3,15 +3,21 @@ import { create } from 'zustand';
 import { errorMessage } from '../api/client';
 import {
   confirmBookRun,
+  getBookRunSummary,
   getBookRunStatus,
   getPlannerSession,
+  interveneBookRun,
   respondPlanner,
   startBookRun,
   startPlanner,
   type HitlPayload,
+  type InterveneAction,
+  type InterveneDiff,
+  type InterveneRequest,
   type PlannerQuestion,
   type PlannerRespondResponse,
   type RunStatusCounters,
+  type RunSummaryResponse,
   type WritingPlanDto,
 } from '../api/books';
 
@@ -45,6 +51,13 @@ interface BookState {
   waitingHitl: boolean;
   hitlPayload: HitlPayload | null;
   confirming: boolean;
+  /** F44 阶段4 #338：观察流三层密度（纯前端本地 Zustand 状态，后端无 density 参数） */
+  density: 'performance' | 'dashboard' | 'silent';
+  /** 最近一次干预 diff（null = 无高亮） */
+  interveneDiff: InterveneDiff | null;
+  intervening: boolean;
+  summary: RunSummaryResponse | null;
+  summaryLoading: boolean;
   loading: boolean;
   error: string | null;
 
@@ -55,6 +68,15 @@ interface BookState {
   startRun: (planId: string, limits?: Record<string, number>) => Promise<void>;
   loadRunStatus: (runId: string) => Promise<void>;
   confirmRun: (approved: boolean, decision?: string) => Promise<boolean>;
+  setDensity: (density: 'performance' | 'dashboard' | 'silent') => void;
+  interveneRun: (
+    action: InterveneAction,
+    target?: string,
+    to?: string,
+    payload?: { brief?: string },
+  ) => Promise<boolean>;
+  loadSummary: (runId: string) => Promise<void>;
+  clearInterveneDiff: () => void;
   reset: () => void;
 }
 
@@ -95,6 +117,11 @@ export const useBookStore = create<BookState>((set, get) => ({
   waitingHitl: false,
   hitlPayload: null,
   confirming: false,
+  density: 'dashboard',
+  interveneDiff: null,
+  intervening: false,
+  summary: null,
+  summaryLoading: false,
   loading: false,
   error: null,
 
@@ -218,6 +245,48 @@ export const useBookStore = create<BookState>((set, get) => ({
     }
   },
 
+  setDensity: (density) => {
+    set({ density });
+  },
+
+  interveneRun: async (action, target, to, payload) => {
+    const runId = get().runId;
+    if (runId === null) return false;
+    set({ intervening: true, error: null });
+    try {
+      const body: InterveneRequest =
+        action === 'redirect'
+          ? { action, target, to }
+          : action === 'edit'
+            ? { action, target, payload: { brief: payload?.brief } }
+            : { action };
+      const res = await interveneBookRun(runId, body);
+      set({
+        runStatus: res.status,
+        interveneDiff: res.diff ?? null,
+        intervening: false,
+      });
+      return true;
+    } catch (err) {
+      set({ error: errorMessage(err), intervening: false });
+      return false;
+    }
+  },
+
+  loadSummary: async (runId) => {
+    set({ summaryLoading: true, error: null });
+    try {
+      const res = await getBookRunSummary(runId);
+      set({ summary: res, summaryLoading: false });
+    } catch (err) {
+      set({ error: errorMessage(err), summaryLoading: false });
+    }
+  },
+
+  clearInterveneDiff: () => {
+    set({ interveneDiff: null });
+  },
+
   reset: () => {
     set({
       sessionId: null,
@@ -236,6 +305,11 @@ export const useBookStore = create<BookState>((set, get) => ({
       waitingHitl: false,
       hitlPayload: null,
       confirming: false,
+      density: 'dashboard',
+      interveneDiff: null,
+      intervening: false,
+      summary: null,
+      summaryLoading: false,
       loading: false,
       error: null,
     });
