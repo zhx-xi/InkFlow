@@ -521,6 +521,13 @@ export const zh = {
   'book.run.tokens': 'Token 用量',
   'book.run.tokenWarning': 'Token 用量超限，将产生告警',
   'book.run.noRun': '暂无运行',
+  // F44 阶段3 #337：卷级 HITL 确认对话框
+  'book.hitl.approve': '继续下一卷',
+  'book.hitl.reject': '中止',
+  'book.hitl.continue': '继续',
+  'book.hitl.abort': '中止并结束',
+  'book.hitl.supervisor': '授权主 agent 处理',
+  'book.hitl.failedList': '失败章节',
   'book.limits.title': '上限配置（项目级）',
   'book.limits.chapters': '最大章数',
   'book.limits.calls': '最大调用',

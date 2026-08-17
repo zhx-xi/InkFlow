@@ -42,11 +42,28 @@
  * - loadRunStatus(runId) → GET /runs/{runId} → progress + counters + progressStats 派生
  *   progressStats = {total, done, inProgress, failed, skipped, pending}（progress 值计数，阶段2）
  * - 失败 → error 设置（errorMessage），loading=false
+ *
+ * ⚠️ F44 阶段3（#337 卷级 HITL）增量——GREEN 必须追加：
+ *
+ * // state 新增（初始值）：
+ * //   waitingHitl: boolean（false）；hitlPayload: HitlPayload | null（null）；confirming: boolean（false）
+ * // action 新增：
+ * //   confirmRun(approved: boolean, decision?: string): Promise<boolean>
+ * //
+ * // 行为契约（S1a backend api/routers/books.py confirm_run + book_service.get_status 实证）：
+ * // - loadRunStatus 成功透传：waitingHitl = res.waiting_hitl === true；hitlPayload = res.hitl_payload ?? null
+ * // - confirmRun：runId 为 null → 直接 return false；否则 POST /runs/{id}/confirm
+ * //   body = decision ? {approved, decision} : {approved}
+ * //   成功 → runStatus = res.status；
+ * //     res.status==='waiting_hitl' && res.hitl_payload → waitingHitl=true + hitlPayload=新 payload（覆盖）
+ * //     否则 → waitingHitl=false + hitlPayload=null；return true
+ * //   失败 → error = errorMessage(err) + return false（confirming 请求期间 true，结束后 false）
+ * // - reset 清空 waitingHitl/hitlPayload/confirming
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act } from '@testing-library/react';
 import { useBookStore } from './book';
-import { apiFetch } from '../api/client';
+import { apiFetch, ApiError } from '../api/client';
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
@@ -95,6 +112,10 @@ beforeEach(() => {
     progressStats: { total: 0, done: 0, inProgress: 0, failed: 0, skipped: 0, pending: 0 },
     loading: false,
     error: null,
+    // F44 阶段3（#337）新字段默认值（RED 期播种合法：Zustand 合并未知键，GREEN 后生效）
+    waitingHitl: false,
+    hitlPayload: null,
+    confirming: false,
   });
 });
 
@@ -341,5 +362,148 @@ describe('book store — 阶段2 进度状态机 + limits 透传（S2a #445）',
       skipped: 0,
       pending: 0,
     });
+  });
+});
+
+describe('book store — 阶段3 卷级 HITL（#337 waitingHitl/hitlPayload/confirming/confirmRun）', () => {
+  const boundaryPayload = {
+    question: '确认继续下一卷？',
+    volume_index: 0,
+    progress: { 'o-c1': 'done' },
+  };
+  const newBoundaryPayload = {
+    question: '确认继续下一卷？',
+    volume_index: 1,
+    progress: { 'o-c2': 'done' },
+  };
+  const failurePayload = {
+    question: '卷执行失败，如何继续？',
+    failed: ['o-c1', 'o-c2'],
+  };
+
+  it('契约面：confirmRun 是函数 + 初始 waitingHitl=false / hitlPayload=null / confirming=false', () => {
+    const s = useBookStore.getState();
+    expect(typeof s.confirmRun).toBe('function');
+    expect(s.waitingHitl).toBe(false);
+    expect(s.hitlPayload).toBeNull();
+    expect(s.confirming).toBe(false);
+  });
+
+  it('loadRunStatus 透传 waiting_hitl=true + hitl_payload（卷边界形态）', async () => {
+    apiFetchMock.mockResolvedValue({
+      run_id: 'wp-1',
+      status: 'waiting_hitl',
+      progress: { 'o-c1': 'done' },
+      counters: { max_chapters: 1, max_agent_calls: 1, agent_calls: 1, chapters_written: 1 },
+      waiting_hitl: true,
+      hitl_payload: boundaryPayload,
+    });
+    await act(async () => {
+      await useBookStore.getState().loadRunStatus('wp-1');
+    });
+    const s = useBookStore.getState();
+    expect(s.waitingHitl).toBe(true);
+    expect(s.hitlPayload?.question).toBe('确认继续下一卷？');
+    expect(s.hitlPayload?.progress?.['o-c1']).toBe('done');
+  });
+
+  it('confirmRun(true)：POST body {approved:true} → completed → 对话框关闭（waitingHitl=false + hitlPayload=null）', async () => {
+    apiFetchMock.mockResolvedValue({ run_id: 'wp-1', status: 'completed' });
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'waiting_hitl',
+      // 中间态（非默认）播种：等待确认中 waitingHitl=true 成立
+      // → 最终清零断言（false/null）在 RED 期必 FAIL（无该字段实现时清零永不发生），防假绿
+      waitingHitl: true,
+      hitlPayload: boundaryPayload,
+    });
+    const ok = await act(async () => {
+      return useBookStore.getState().confirmRun(true);
+    });
+    expect(ok).toBe(true);
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs/wp-1/confirm', {
+      method: 'POST',
+      body: { approved: true },
+    });
+    const s = useBookStore.getState();
+    expect(s.runStatus).toBe('completed');
+    expect(s.waitingHitl).toBe(false);
+    expect(s.hitlPayload).toBeNull();
+  });
+
+  it('confirmRun(false, abort)：POST body {approved:false, decision:abort} → 返回 true', async () => {
+    apiFetchMock.mockResolvedValue({ run_id: 'wp-1', status: 'aborted' });
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'waiting_hitl',
+      waitingHitl: true,
+      hitlPayload: failurePayload,
+    });
+    const ok = await act(async () => {
+      return useBookStore.getState().confirmRun(false, 'abort');
+    });
+    expect(ok).toBe(true);
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs/wp-1/confirm', {
+      method: 'POST',
+      body: { approved: false, decision: 'abort' },
+    });
+    const s = useBookStore.getState();
+    expect(s.runStatus).toBe('aborted');
+    expect(s.waitingHitl).toBe(false);
+  });
+
+  it('confirmRun(true, supervisor)：响应仍 waiting_hitl + 新 payload → 对话框保持 + payload 覆盖', async () => {
+    apiFetchMock.mockResolvedValue({
+      run_id: 'wp-1',
+      status: 'waiting_hitl',
+      hitl_payload: newBoundaryPayload,
+    });
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'waiting_hitl',
+      waitingHitl: true,
+      hitlPayload: boundaryPayload,
+    });
+    const ok = await act(async () => {
+      return useBookStore.getState().confirmRun(true, 'supervisor');
+    });
+    expect(ok).toBe(true);
+    const s = useBookStore.getState();
+    expect(s.runStatus).toBe('waiting_hitl');
+    expect(s.waitingHitl).toBe(true);
+    // 新 payload 覆盖旧 payload（下一卷边界暂停）
+    expect(s.hitlPayload?.volume_index).toBe(1);
+    expect(s.hitlPayload?.progress?.['o-c2']).toBe('done');
+  });
+
+  it('confirmRun 失败 → error 设置 + 返回 false + waitingHitl 保持', async () => {
+    apiFetchMock.mockRejectedValue(new ApiError(409, '运行不在等待确认状态'));
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'waiting_hitl',
+      waitingHitl: true,
+      hitlPayload: boundaryPayload,
+    });
+    const ok = await act(async () => {
+      return useBookStore.getState().confirmRun(true);
+    });
+    expect(ok).toBe(false);
+    const s = useBookStore.getState();
+    expect(s.error).toBe('运行不在等待确认状态');
+    expect(s.waitingHitl).toBe(true);
+    expect(s.hitlPayload).toEqual(boundaryPayload);
+  });
+
+  it('reset 清空 waitingHitl/hitlPayload/confirming（非默认态播种 → 清零断言非假绿）', () => {
+    useBookStore.setState({
+      waitingHitl: true,
+      hitlPayload: boundaryPayload,
+      confirming: true,
+    });
+    useBookStore.getState().reset();
+    const s = useBookStore.getState();
+    expect(s.waitingHitl).toBe(false);
+    expect(s.hitlPayload).toBeNull();
+    expect(s.confirming).toBe(false);
   });
 });

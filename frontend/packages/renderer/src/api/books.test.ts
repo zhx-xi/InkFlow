@@ -90,6 +90,29 @@
  * - GET /api/v1/agent/books/planner/{session_id}（200）→ PlannerSession 全量
  * - POST /api/v1/agent/books/runs（202）→ {run_id, status}
  * - GET /api/v1/agent/books/runs/{run_id}（200）→ {run_id, status, progress, counters}
+ *
+ * ⚠️ F44 阶段3（#337 卷级 HITL）增量——GREEN 必须追加：
+ *
+ * export interface HitlPayload {
+ *   question: string;
+ *   volume_index?: number;
+ *   progress?: Record<string, string>; // 卷边界：章 outline_id → done/failed
+ *   failed?: string[];                  // 卷失败：failed 章列表
+ * }
+ * // RunStatusResponse 加可选键（向后兼容，勿改必填）：
+ * //   waiting_hitl?: boolean; hitl_payload?: HitlPayload | null;
+ * export interface ConfirmRunRequest { approved?: boolean; decision?: string; }
+ * export interface ConfirmRunResponse {
+ *   run_id: string;
+ *   status: string;
+ *   hitl_payload?: HitlPayload | null;
+ * }
+ * export function confirmBookRun(runId: string, body: ConfirmRunRequest): Promise<ConfirmRunResponse>
+ *
+ * 端点契约（S1a backend api/routers/books.py get_run_status/confirm_run + book_service 实证）：
+ * - GET /runs/{id} 顶层可选键 waiting_hitl / hitl_payload（waiting_hitl 恒 = status==='waiting_hitl'）
+ * - POST /runs/{id}/confirm（200）→ {run_id, status, hitl_payload?}
+ *   body: ConfirmRunRequest {approved?: bool, decision?: str}；404 运行不存在 / 422 非 waiting_hitl
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
@@ -98,6 +121,7 @@ import {
   getPlannerSession,
   startBookRun,
   getBookRunStatus,
+  confirmBookRun,
 } from './books';
 import { apiFetch } from './client';
 
@@ -241,5 +265,43 @@ describe('getBookRunStatus — 阶段2 counters 扩展（S2a #445 确认型：ap
     expect(res.counters.max_tokens).toBe(200000);
     expect(res.counters.tokens_used).toBe(12345);
     expect(res.counters.tokens_warning).toBe(true);
+  });
+});
+
+describe('confirmBookRun — POST /runs/{run_id}/confirm（F44 阶段3 #337 卷级 HITL）', () => {
+  it('approved=true 透传（卷边界确认，decision 省略）', async () => {
+    apiFetchMock.mockResolvedValue({ run_id: 'wp-1', status: 'running' });
+    await confirmBookRun('wp-1', { approved: true });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs/wp-1/confirm', {
+      method: 'POST',
+      body: { approved: true },
+    });
+  });
+
+  it('带 decision 透传（卷失败恢复决策 continue）', async () => {
+    apiFetchMock.mockResolvedValue({ run_id: 'wp-1', status: 'completed' });
+    await confirmBookRun('wp-1', { approved: true, decision: 'continue' });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs/wp-1/confirm', {
+      method: 'POST',
+      body: { approved: true, decision: 'continue' },
+    });
+  });
+});
+
+describe('getBookRunStatus — 阶段3 HITL 字段透传（确认型：api 层零加工，RED 期即 PASS 刻意）', () => {
+  it('waiting_hitl/hitl_payload 透传（卷边界形态）', async () => {
+    apiFetchMock.mockResolvedValue({
+      run_id: 'wp-1',
+      status: 'waiting_hitl',
+      progress: { 'o-c1': 'done' },
+      counters: { max_chapters: 1, max_agent_calls: 1, agent_calls: 1, chapters_written: 1 },
+      waiting_hitl: true,
+      hitl_payload: { question: '确认继续下一卷？', volume_index: 0, progress: { 'o-c1': 'done' } },
+    });
+    const res = await getBookRunStatus('wp-1');
+    // 透传断言（mock 返回啥函数透传啥，GREEN 零加工即可满足）
+    expect(res.waiting_hitl).toBe(true);
+    expect(res.hitl_payload?.question).toBe('确认继续下一卷？');
+    expect(res.hitl_payload?.progress?.['o-c1']).toBe('done');
   });
 });

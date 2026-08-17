@@ -83,6 +83,30 @@ export interface RunStatusResponse {
   status: string;
   progress: Record<string, string>;
   counters: RunStatusCounters;
+  /** F44 阶段3 #337：HITL 暂停标志 + 确认载荷（可选，向后兼容） */
+  waiting_hitl?: boolean;
+  hitl_payload?: HitlPayload | null;
+}
+
+/** F44 阶段3 #337：卷级 HITL 确认载荷（卷边界 / 卷失败两种形态） */
+export interface HitlPayload {
+  question: string;
+  volume_index?: number;
+  /** 卷边界：章 outline_id → done/failed */
+  progress?: Record<string, string>;
+  /** 卷失败：failed 章列表 */
+  failed?: string[];
+}
+
+export interface ConfirmRunRequest {
+  approved?: boolean;
+  decision?: string;
+}
+
+export interface ConfirmRunResponse {
+  run_id: string;
+  status: string;
+  hitl_payload?: HitlPayload | null;
 }
 
 /** 启动书计划访谈（POST /planner → 201 第一轮问题） */
@@ -114,4 +138,9 @@ export async function startBookRun(body: BookRunRequest): Promise<BookRunRespons
 /** 查询运行状态（进度表 outline_id → PlanNodeStatus + 计数器） */
 export async function getBookRunStatus(runId: string): Promise<RunStatusResponse> {
   return apiFetch<RunStatusResponse>(`/api/v1/agent/books/runs/${runId}`);
+}
+
+/** 提交卷级 HITL 确认（approve/reject 或卷失败三决策；响应仍 waiting_hitl → 下一卷再次暂停） */
+export async function confirmBookRun(runId: string, body: ConfirmRunRequest): Promise<ConfirmRunResponse> {
+  return apiFetch<ConfirmRunResponse>(`/api/v1/agent/books/runs/${runId}/confirm`, { method: 'POST', body });
 }
