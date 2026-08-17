@@ -155,13 +155,6 @@ def get_preference_repo(
     return SQLitePreferenceRepository(db)
 
 
-def get_user_preference_repo(
-    db: AsyncSession = Depends(get_db),
-) -> SQLiteUserPreferenceRepository:
-    """获取用户级偏好仓储实例（F45 M1 用户级偏好端点用）"""
-    return SQLiteUserPreferenceRepository(db)
-
-
 def get_memory_event_repo(
     db: AsyncSession = Depends(get_db),
 ) -> SQLiteMemoryEventRepository:
@@ -286,11 +279,8 @@ def _collect_explicit_texts(db: AsyncSession):
 def get_context_service(
     db: AsyncSession,
 ) -> ContextService:
-    """获取 ContextService 实例.
-
-    Phase 1 空实现：Character/World/Foreshadowing 数据源为空。
-    使用 Mock count_tokens（生产环境由 F5 LLMClient.count_tokens 替换）。
-    """
+    """获取 ContextService 实例（Phase 1 空实现：Character/World/Foreshadowing 数据源为空，
+    Mock count_tokens 生产环境由 F5 LLMClient.count_tokens 替换）."""
     from inkflow.domain.models.context import ContextSourceType
     from inkflow.infrastructure.context.preference_source import PreferenceSource
     from inkflow.infrastructure.context.sources import (
@@ -900,12 +890,8 @@ async def get_vector_status(project_id: str, db: AsyncSession | None = None) -> 
 
 
 async def get_vector_store_optional() -> VectorStoreProtocol | None:
-    """获取 RAG 向量存储（可选）——未配置 embedding 时返回 None 而非抛错。
-
-    #264：search semantic 恒空根因——get_search_service 硬编码 vector_store=None。
-    此处兜底为 None：未配置 embedding 模型时 keyword 模式保持正常（懒装配降级），
-    已配置时注入真实 vector_store（semantic 模式可用）。
-    """
+    """获取 RAG 向量存储（可选）——未配置 embedding 时返回 None 而非抛错
+    （#264 懒装配降级，keyword 模式保持正常，已配置时注入真实 vector_store）."""
     try:
         return await get_vector_store()
     except RAGUnavailableError:
