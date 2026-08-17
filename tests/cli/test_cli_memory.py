@@ -56,9 +56,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from typer.testing import CliRunner
+
 from inkflow.cli.commands.memory_cmd import app
 from inkflow.cli.context import CliContext
-from typer.testing import CliRunner
 
 runner = CliRunner()
 
