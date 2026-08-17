@@ -29,9 +29,15 @@
  *
  * i18n key（GREEN 补 zh.ts/en.ts）：book.run.status / book.run.chapters /
  * book.run.calls / book.run.noRun
+ *
+ * ⚠️ F44 阶段3（#337 卷级 HITL）增量——GREEN 必须追加：
+ * - runId 非空时渲染 <VolumeHITLDialog />（无 props，读 useBookStore 的 waitingHitl/hitlPayload）
+ * - 轮询返回 waiting_hitl=true + hitl_payload → loadRunStatus 更新 store → 对话框出现
+ * - confirm 后响应 status 非 waiting_hitl → waitingHitl=false → 对话框消失
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { BookRunPanel } from './BookRunPanel';
 import { useBookStore } from '../stores/book';
 import { useThemeStore } from '../stores/theme';
@@ -63,6 +69,10 @@ beforeEach(() => {
     progressStats: { total: 0, done: 0, inProgress: 0, failed: 0, skipped: 0, pending: 0 },
     loading: false,
     error: null,
+    // F44 阶段3（#337）新字段默认值（RED 期播种合法：Zustand 合并未知键，GREEN 后生效）
+    waitingHitl: false,
+    hitlPayload: null,
+    confirming: false,
   });
 });
 
@@ -209,5 +219,57 @@ describe('BookRunPanel — 阶段2 章进度条 + token 计数（spec §5.2 观�
     });
     render(<BookRunPanel />);
     expect(await screen.findByTestId('run-token-warning')).toBeInTheDocument();
+  });
+});
+
+describe('BookRunPanel — 阶段3 卷级 HITL 对话框挂载（#337）', () => {
+  const hitlRunResponse = {
+    run_id: 'wp-1',
+    status: 'waiting_hitl',
+    progress: { 'o-c1': 'done' },
+    counters: { max_chapters: 1, max_agent_calls: 1, agent_calls: 1, chapters_written: 1 },
+    waiting_hitl: true,
+    hitl_payload: { question: '确认继续下一卷？', volume_index: 0, progress: { 'o-c1': 'done' } },
+  };
+
+  it('轮询返回 waiting_hitl=true + hitl_payload → volume-hitl-dialog 出现', async () => {
+    apiFetchMock.mockResolvedValue(hitlRunResponse);
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'running',
+      progress: {},
+      counters: null,
+    });
+    render(<BookRunPanel />);
+    // 面板内渲染 <VolumeHITLDialog />（runId 非空时）——RED 期无该组件 → element-missing
+    expect(await screen.findByTestId('volume-hitl-dialog')).toBeInTheDocument();
+  });
+
+  it('confirm 后 status=completed → 对话框消失', async () => {
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/agent/books/runs/wp-1' && (!init?.method || init.method === 'GET')) {
+        return hitlRunResponse;
+      }
+      if (path === '/api/v1/agent/books/runs/wp-1/confirm' && init?.method === 'POST') {
+        return { run_id: 'wp-1', status: 'completed' };
+      }
+      throw new Error(`unexpected: ${path}`);
+    });
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'waiting_hitl',
+      waitingHitl: true,
+      hitlPayload: { question: '确认继续下一卷？', volume_index: 0, progress: { 'o-c1': 'done' } },
+      progress: { 'o-c1': 'done' },
+      counters: { max_chapters: 1, max_agent_calls: 1, agent_calls: 1, chapters_written: 1 },
+    });
+    render(<BookRunPanel />);
+    expect(await screen.findByTestId('volume-hitl-dialog')).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('volume-hitl-approve'));
+    // confirm 成功 → confirmRun 置 waitingHitl=false → 对话框卸载
+    await waitFor(() => {
+      expect(screen.queryByTestId('volume-hitl-dialog')).not.toBeInTheDocument();
+    });
   });
 });

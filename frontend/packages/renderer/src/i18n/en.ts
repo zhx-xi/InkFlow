@@ -509,6 +509,13 @@ export const en: Record<string, string> = {
   'book.run.tokens': 'Token usage',
   'book.run.tokenWarning': 'Token usage is over the limit and will warn',
   'book.run.noRun': 'No run yet',
+  // F44 stage-3 #337: volume-level HITL confirmation dialog
+  'book.hitl.approve': 'Continue to next volume',
+  'book.hitl.reject': 'Abort',
+  'book.hitl.continue': 'Continue',
+  'book.hitl.abort': 'Abort and end',
+  'book.hitl.supervisor': 'Delegate to main agent',
+  'book.hitl.failedList': 'Failed chapters',
   'book.limits.title': 'Limits (project level)',
   'book.limits.chapters': 'Max chapters',
   'book.limits.calls': 'Max calls',

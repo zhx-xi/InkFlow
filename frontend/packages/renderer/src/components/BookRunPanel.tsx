@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { useI18n } from '../i18n/useI18n';
 import { useBookStore } from '../stores/book';
 import { ExecutionTraceRow } from './ExecutionTraceRow';
+import { VolumeHITLDialog } from './VolumeHITLDialog';
 
 const POLL_INTERVAL_MS = 1000;
 
@@ -92,6 +93,7 @@ export function BookRunPanel() {
               <ExecutionTraceRow key={outlineId} outlineId={outlineId} status={status} />
             ))}
           </div>
+          <VolumeHITLDialog />
         </div>
       )}
     </div>

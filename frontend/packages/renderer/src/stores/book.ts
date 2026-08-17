@@ -2,11 +2,13 @@
 import { create } from 'zustand';
 import { errorMessage } from '../api/client';
 import {
+  confirmBookRun,
   getBookRunStatus,
   getPlannerSession,
   respondPlanner,
   startBookRun,
   startPlanner,
+  type HitlPayload,
   type PlannerQuestion,
   type PlannerRespondResponse,
   type RunStatusCounters,
@@ -39,6 +41,10 @@ interface BookState {
   progress: Record<string, string>;
   counters: RunStatusCounters | null;
   progressStats: ProgressStats;
+  /** F44 阶段3 #337：卷级 HITL 确认对话框状态（waiting_hitl 时弹出） */
+  waitingHitl: boolean;
+  hitlPayload: HitlPayload | null;
+  confirming: boolean;
   loading: boolean;
   error: string | null;
 
@@ -48,6 +54,7 @@ interface BookState {
   loadSession: (sessionId: string) => Promise<void>;
   startRun: (planId: string, limits?: Record<string, number>) => Promise<void>;
   loadRunStatus: (runId: string) => Promise<void>;
+  confirmRun: (approved: boolean, decision?: string) => Promise<boolean>;
   reset: () => void;
 }
 
@@ -85,6 +92,9 @@ export const useBookStore = create<BookState>((set, get) => ({
   progress: {},
   counters: null,
   progressStats: { total: 0, done: 0, inProgress: 0, failed: 0, skipped: 0, pending: 0 },
+  waitingHitl: false,
+  hitlPayload: null,
+  confirming: false,
   loading: false,
   error: null,
 
@@ -181,10 +191,30 @@ export const useBookStore = create<BookState>((set, get) => ({
         progress: res.progress,
         counters: res.counters,
         progressStats: deriveProgressStats(res.progress),
+        waitingHitl: res.waiting_hitl === true,
+        hitlPayload: res.hitl_payload ?? null,
       });
     } catch (err) {
       // 失败仅记 error，不覆盖已有 runId/runStatus（轮询由面板按状态决定继续/停止）
       set({ error: errorMessage(err) });
+    }
+  },
+
+  confirmRun: async (approved, decision) => {
+    const runId = get().runId;
+    if (runId === null) return false;
+    set({ confirming: true, error: null });
+    try {
+      const res = await confirmBookRun(runId, decision ? { approved, decision } : { approved });
+      if (res.status === 'waiting_hitl' && res.hitl_payload) {
+        set({ runStatus: res.status, waitingHitl: true, hitlPayload: res.hitl_payload, confirming: false });
+      } else {
+        set({ runStatus: res.status, waitingHitl: false, hitlPayload: null, confirming: false });
+      }
+      return true;
+    } catch (err) {
+      set({ error: errorMessage(err), confirming: false });
+      return false;
     }
   },
 
@@ -203,6 +233,9 @@ export const useBookStore = create<BookState>((set, get) => ({
       progress: {},
       counters: null,
       progressStats: { total: 0, done: 0, inProgress: 0, failed: 0, skipped: 0, pending: 0 },
+      waitingHitl: false,
+      hitlPayload: null,
+      confirming: false,
       loading: false,
       error: null,
     });
