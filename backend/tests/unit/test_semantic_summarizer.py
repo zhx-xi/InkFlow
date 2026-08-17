@@ -118,6 +118,7 @@ from inkflow.domain.services import semantic_summarizer
 # 'semantic_summarizer' from 'inkflow.domain.services'（等价 ModuleNotFoundError
 # 收集错误，exit 2）；GREEN 后模块存在 → 别名解析为类，测试体裸名引用镜像 F16。
 SemanticSummarizer = semantic_summarizer.SemanticSummarizer
+_extract_json_fragment = semantic_summarizer._extract_json_fragment
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 TS = datetime(2026, 8, 1, 10, 0, 0, tzinfo=UTC)
@@ -521,3 +522,82 @@ class TestSemanticSummarizer:
         assert summary.content == "叙述偏好：用角色全名而非代词"  # user_general 不进 content
         assert "编造的用户风格" not in summary.content
         assert mock_llm.chat.await_count == 1
+
+    # ── coverage 补测（2026-08-18：coverage-backend 门禁 98.5/95.0，差 0.07/0.21）──
+
+    async def test_extract_json_fragment_escaped_quote(self) -> None:
+        """_extract_json_fragment 字符串内反斜杠转义分支（escaped=True→False + 反斜杠置位）。"""
+        raw = r'{"content": "她说：\"好的\"，继续", "anchor_refs": ["林晚"]}'
+        fragment = _extract_json_fragment(raw)
+        assert fragment is not None
+        assert '"content"' in fragment
+
+    async def test_extract_json_fragment_unclosed_returns_none(self) -> None:
+        """_extract_json_fragment 未闭合对象（深度永不归零）→ None。"""
+        assert _extract_json_fragment('{"content": "未闭合"') is None
+
+    async def test_payload_non_dict_retries(
+        self, summarizer: SemanticSummarizer, mock_llm: MagicMock
+    ) -> None:
+        """顶层 JSON 非对象（数组）→ 修复重试后成功。"""
+        anchors = _anchors(SCOPE_PROJECT, ["林晚"])
+        mock_llm.chat.side_effect = [
+            _ok_response('[{"content": "数组而非对象"}]'),
+            _ok_response(_payload()),
+        ]
+        summary, _ = await summarizer.summarize(
+            anchors, scope=SCOPE_PROJECT, project_id=PID, anchor_hash=ANCHOR_HASH, model=MODEL
+        )
+        assert summary is not None
+        assert mock_llm.chat.await_count == 2
+
+    async def test_entry_not_dict_retries(
+        self, summarizer: SemanticSummarizer, mock_llm: MagicMock
+    ) -> None:
+        """组内元素非对象（字符串）→ 修复重试后成功。"""
+        anchors = _anchors(SCOPE_PROJECT, ["林晚"])
+        mock_llm.chat.side_effect = [
+            _ok_response(
+                project_specific=["纯字符串条目"],
+                user_general=[_entry()],
+            ),
+            _ok_response(_payload()),
+        ]
+        summary, _ = await summarizer.summarize(
+            anchors, scope=SCOPE_PROJECT, project_id=PID, anchor_hash=ANCHOR_HASH, model=MODEL
+        )
+        assert summary is not None
+        assert mock_llm.chat.await_count == 2
+
+    async def test_anchor_refs_non_string_list_retries(
+        self, summarizer: SemanticSummarizer, mock_llm: MagicMock
+    ) -> None:
+        """anchor_refs 含非字符串元素 → 修复重试后成功。"""
+        anchors = _anchors(SCOPE_PROJECT, ["林晚"])
+        mock_llm.chat.side_effect = [
+            _ok_response(
+                project_specific=[{"content": "偏好", "anchor_refs": [123]}],
+                user_general=[_entry()],
+            ),
+            _ok_response(_payload()),
+        ]
+        summary, _ = await summarizer.summarize(
+            anchors, scope=SCOPE_PROJECT, project_id=PID, anchor_hash=ANCHOR_HASH, model=MODEL
+        )
+        assert summary is not None
+        assert mock_llm.chat.await_count == 2
+
+    async def test_json_syntax_error_retries(
+        self, summarizer: SemanticSummarizer, mock_llm: MagicMock
+    ) -> None:
+        """JSON 语法错误（fragment 完整但 json.loads 失败）→ 修复重试后成功。"""
+        anchors = _anchors(SCOPE_PROJECT, ["林晚"])
+        mock_llm.chat.side_effect = [
+            _ok_response('{"project_specific": [broken]}'),
+            _ok_response(_payload()),
+        ]
+        summary, _ = await summarizer.summarize(
+            anchors, scope=SCOPE_PROJECT, project_id=PID, anchor_hash=ANCHOR_HASH, model=MODEL
+        )
+        assert summary is not None
+        assert mock_llm.chat.await_count == 2

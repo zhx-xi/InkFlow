@@ -613,3 +613,70 @@ class TestMemoryServiceM2Summarize:
         with pytest.raises(SemanticSummaryError):
             await service.summarize(PROJECT_ID)
 
+    # ── coverage 补测（2026-08-18：coverage-backend 门禁 98.5/95.0）──
+
+    async def test_summarize_project_missing_cleans(self) -> None:
+        """契约补充: summarize 时 project_repo.get 为 None → delete_by_project 清理 +
+        summarized=False 空结构（spec §7 项目删除级联清理，镜像 get_summaries 同语义）."""
+        service, deps = _make_m2_service(extra={"memory_learning": True})
+        deps["project_repo"].get.return_value = None
+
+        result = await service.summarize(PROJECT_ID)
+
+        assert result == {
+            "project_id": str(PROJECT_ID),
+            "summarized": False,
+            "project": None,
+            "user": None,
+        }
+        deps["summary_repo"].delete_by_project.assert_awaited()
+        deps["summarizer"].summarize.assert_not_awaited()
+
+    async def test_get_summaries_repo_none_defensive(self) -> None:
+        """契约补充: get_summaries 时 summary_repo 未注入 → 空结构（防御分支，不炸）."""
+        service, _deps = _make_m2_service(extra={"memory_learning": True})
+        service._summary_repo = None
+
+        result = await service.get_summaries(PROJECT_ID)
+
+        assert result == {
+            "project_id": str(PROJECT_ID),
+            "project": None,
+            "user": None,
+        }
+
+    async def test_summarize_project_layer_dropped_audits(self) -> None:
+        """契约补充: 项目层 summarizer 返回 (None, N)（防幻觉丢弃）→ audit
+        semantic_summary_failed（degraded=True）+ 项目层不 upsert + summarized=False。"""
+        service, deps = _make_m2_service(extra={"memory_learning": True})
+        proj_anchors = [_anchor("style_word", "低声道")]
+        deps["preference_repo"].list_by_project.return_value = (proj_anchors, 1)
+        deps["user_preference_repo"].list_all.return_value = ([], 0)
+        deps["summary_repo"].get.side_effect = _summary_get_side_effect(None, None)
+        deps["summarizer"].summarize.side_effect = [(None, 2), (None, 0)]
+
+        result = await service.summarize(PROJECT_ID)
+
+        assert result["summarized"] is False
+        assert deps["summary_repo"].upsert.await_count == 0
+        failed_call = _audit_call(deps["audit_service"], "semantic_summary_failed")
+        assert failed_call is not None
+        assert _arg(failed_call, "degraded", 2) is True
+
+    async def test_summarize_repo_or_summarizer_none_defensive(self) -> None:
+        """契约补充: summary_repo 或 summarizer 未注入 → 空结构（防御分支，不炸）."""
+        service, deps = _make_m2_service(extra={"memory_learning": True})
+        # 构造不带 summary_repo/summarizer 的旧形态服务（M1 向后兼容构造）
+        service._summary_repo = None
+        service._summarizer = None
+
+        result = await service.summarize(PROJECT_ID)
+
+        assert result == {
+            "project_id": str(PROJECT_ID),
+            "summarized": False,
+            "project": None,
+            "user": None,
+        }
+        deps["summarizer"].summarize.assert_not_awaited()
+

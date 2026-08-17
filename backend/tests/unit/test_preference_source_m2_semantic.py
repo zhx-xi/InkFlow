@@ -466,3 +466,63 @@ class TestPreferenceSourceM2Semantic:
 
         assert len(items) == 1  # RED: 构造 TypeError → FAILED
         assert len(items[0].content) <= 200
+
+    # ── coverage 补测（2026-08-18：coverage-backend 门禁 98.5/95.0）──
+
+    async def test_lazy_summary_background_refresh_user_layer(self):
+        """㉖ 补: 用户级锚点变化 + background_refresh 注入 → 旧总结注入 + audit
+        pending_summary + background_refresh 以 coroutine 被调（覆盖用户级分支，
+        项目级已由 test_lazy_summary_background_refresh_path 覆盖）。"""
+        import inspect
+
+        project_repo = AsyncMock()
+        project_repo.get.return_value = _project(memory_learning=True)
+        preference_repo = AsyncMock()
+        preference_repo.list_by_project.return_value = ([], 0)
+        user_pref = _user_preference("说", "低声道", count=2)
+        user_repo = AsyncMock()
+        user_repo.list_all.return_value = ([user_pref], 1)
+        old_summary = _semantic_summary(
+            "旧通用风格", scope="user", anchor_hash="old-hash-user", anchor_count=3
+        )
+        summary_repo = AsyncMock()
+        summary_repo.get.side_effect = _summary_get_side_effect({"user": old_summary})
+        summarizer = AsyncMock()
+        background = AsyncMock()
+        source = PreferenceSource(
+            preference_repo,
+            project_repo,
+            None,
+            user_repo,
+            summary_repo=summary_repo,
+            summarizer=summarizer,
+            llm_default_model="deepseek/deepseek-v4-flash",
+            background_refresh=background,
+        )
+        source._audit = AsyncMock()
+
+        items = await source.collect(PROJECT_ID, CHAPTER_ID)
+
+        # 旧总结注入（不等待 LLM）
+        assert any("🧠 通用风格" in i.title for i in items)
+        assert summarizer.summarize.await_count == 0  # 项目级空 + 用户级走后台
+        source._audit.assert_awaited_once_with(
+            event="pending_summary", degraded=True, actor="memory"
+        )
+        assert background.await_count == 1
+        coro = background.await_args.args[0]
+        assert inspect.iscoroutine(coro)
+
+    async def test_refresh_summary_defensive_when_uninjected(self):
+        """_refresh_summary M2 依赖未注入 → None（防御分支，collect 已前置判断）."""
+        project_repo = AsyncMock()
+        project_repo.get.return_value = _project(memory_learning=True)
+        preference_repo = AsyncMock()
+        preference_repo.list_by_project.return_value = ([], 0)
+        source = PreferenceSource(preference_repo, project_repo)  # 无 summary_repo/summarizer
+
+        result = await source._refresh_summary(
+            [], scope="project", project_id=PROJECT_ID, anchor_hash="hash"
+        )
+
+        assert result is None
