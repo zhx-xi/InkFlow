@@ -506,5 +506,13 @@ export const en: Record<string, string> = {
   'book.run.status': 'Run status',
   'book.run.chapters': 'Chapters written',
   'book.run.calls': 'Agent calls',
+  'book.run.tokens': 'Token usage',
+  'book.run.tokenWarning': 'Token usage is over the limit and will warn',
   'book.run.noRun': 'No run yet',
+  'book.limits.title': 'Limits (project level)',
+  'book.limits.chapters': 'Max chapters',
+  'book.limits.calls': 'Max calls',
+  'book.limits.tokens': 'Token limit',
+  'book.limits.sessions': 'Max sessions',
+  'book.limits.save': 'Save limits',
 };

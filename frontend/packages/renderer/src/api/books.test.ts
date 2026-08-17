@@ -66,6 +66,10 @@
  *   max_agent_calls: number;
  *   agent_calls: number;
  *   chapters_written: number;
+ *   // S2a（#445）扩展：可选键（旧后端/旧数据无 → undefined，向后兼容）
+ *   max_tokens?: number;
+ *   tokens_used?: number;
+ *   tokens_warning?: boolean;
  * }
  * export interface RunStatusResponse {
  *   run_id: string;
@@ -212,5 +216,30 @@ describe('getBookRunStatus — GET /runs/{run_id}', () => {
     });
     await getBookRunStatus('wp-1');
     expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs/wp-1');
+  });
+});
+
+describe('getBookRunStatus — 阶段2 counters 扩展（S2a #445 确认型：apiFetch 透传）', () => {
+  it('返回 7 键 counters（max_tokens/tokens_used/tokens_warning 透传）', async () => {
+    const counters = {
+      max_chapters: 5,
+      max_agent_calls: 10,
+      agent_calls: 2,
+      chapters_written: 1,
+      max_tokens: 200000,
+      tokens_used: 12345,
+      tokens_warning: true,
+    };
+    apiFetchMock.mockResolvedValue({
+      run_id: 'wp-1',
+      status: 'running',
+      progress: { 'o-c1': 'done' },
+      counters,
+    });
+    const res = await getBookRunStatus('wp-1');
+    // 透传断言（api 层零加工）；类型契约见文件头 docstring RunStatusCounters
+    expect(res.counters.max_tokens).toBe(200000);
+    expect(res.counters.tokens_used).toBe(12345);
+    expect(res.counters.tokens_warning).toBe(true);
   });
 });

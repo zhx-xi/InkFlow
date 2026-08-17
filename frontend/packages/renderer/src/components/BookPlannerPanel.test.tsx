@@ -11,6 +11,10 @@
  * - 访谈态：book-question-<qid>（问题文本）/ book-template-<qid>（模板按钮，点击填入回答框）
  *   / book-answer（回答输入）/ book-send（发送）/ book-auto（全部你决定按钮）
  * - 完成态：book-plan-title / book-plan-status / book-start-run（开始写作→委托按钮）
+ *   / book-limits-chapters / book-limits-calls / book-limits-tokens / book-limits-sessions
+ *   （阶段2 上限配置数字输入，初始值 = project.config.extra.book_max_*）
+ *   / book-limits-save（阶段2 保存上限按钮）
+ *   / book-start-error（阶段2 startRun 失败内联文案，含 409「该章已有内容，拒绝重跑」）
  * - 运行态：book-run-panel（BookRunPanel 容器，委托后显示）
  *
  * 行为契约（镜像 ChatPanel #379 先例 + S1a respond 语义）：
@@ -19,8 +23,10 @@
  * - 问题即模板：点 book-template-<qid> → 模板文本填入 book-answer（可编辑）
  * - 回答 + 发送 → store.respond({qid: text}) → 下一轮问题（completed=false）或完成态
  * - 点 book-auto → store.respondAuto()（全部你决定）→ 直接完成态
- * - completed → 显示 writingPlan 标题 + 状态徽标 + 「开始写作」按钮
+ * - completed → 显示 writingPlan 标题 + 状态徽标 + 「开始写作」按钮 + 上限配置表单
  * - 点 book-start-run → store.startRun(planId) → 委托后切换渲染 BookRunPanel
+ * - 阶段2：startRun 失败（409 安全阀）→ book-start-error 显示「该章已有内容，拒绝重跑」
+ * - 阶段2：上限保存 → useBookLimits.save → PATCH /projects/{id} {config: {extra}}
  * - 错误 → 错误文案显示（book-planner-error），不切换阶段
  *
  * i18n key（GREEN 补 zh.ts/en.ts）：book.oneLiner / book.start / book.question /
@@ -32,8 +38,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BookPlannerPanel } from './BookPlannerPanel';
 import { useBookStore } from '../stores/book';
+import { useProjectStore, type Project } from '../stores/project';
 import { useThemeStore } from '../stores/theme';
-import { apiFetch } from '../api/client';
+import { apiFetch, ApiError } from '../api/client';
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
@@ -216,5 +223,84 @@ describe('BookPlannerPanel — 全部你决定 + 完成态 + 委托', () => {
     render(<BookPlannerPanel projectId="p1" />);
     expect(screen.getByTestId('book-planner-error')).toHaveTextContent('网络错误');
     expect(screen.queryByTestId('book-start-run')).not.toBeInTheDocument();
+  });
+});
+
+describe('BookPlannerPanel — 阶段2 上限配置 + 409 安全阀文案（spec §5.2）', () => {
+  const projectP1: Project = {
+    id: 'p1',
+    name: '时间旅者',
+    genre: '悬疑',
+    language: 'zh',
+    target_words: 800000,
+    config: { extra: { book_max_chapters: 5, book_max_tokens: 200000 } },
+    created_at: '2026-08-17T10:00:00Z',
+    updated_at: '2026-08-17T10:00:00Z',
+  };
+
+  beforeEach(() => {
+    useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
+  });
+
+  it('完成态显示上限配置表单（初始值来自 project.config.extra）', () => {
+    useBookStore.setState({
+      sessionId: 'sess-1',
+      round: 2,
+      questions: [],
+      sessionStatus: 'completed',
+      writingPlan: wp,
+    });
+    render(<BookPlannerPanel projectId="p1" />);
+    expect(screen.getByTestId('book-plan-title')).toBeInTheDocument();
+    // 4 个上限输入 + 保存按钮；初始值 = project.config.extra.book_max_*
+    expect(screen.getByTestId('book-limits-chapters')).toHaveValue(5);
+    expect(screen.getByTestId('book-limits-calls')).toBeInTheDocument();
+    expect(screen.getByTestId('book-limits-tokens')).toHaveValue(200000);
+    expect(screen.getByTestId('book-limits-sessions')).toBeInTheDocument();
+    expect(screen.getByTestId('book-limits-save')).toBeInTheDocument();
+  });
+
+  it('修改上限 + 保存 → PATCH /projects/p1 {config: {extra}} + 本地 project 更新', async () => {
+    const user = userEvent.setup();
+    useBookStore.setState({
+      sessionId: 'sess-1',
+      round: 2,
+      questions: [],
+      sessionStatus: 'completed',
+      writingPlan: wp,
+    });
+    render(<BookPlannerPanel projectId="p1" />);
+    const chaptersInput = screen.getByTestId('book-limits-chapters');
+    await user.clear(chaptersInput);
+    await user.type(chaptersInput, '8');
+    await user.click(screen.getByTestId('book-limits-save'));
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects/p1', {
+        method: 'PATCH',
+        body: {
+          config: { extra: expect.objectContaining({ book_max_chapters: 8, book_max_tokens: 200000 }) },
+        },
+      });
+    });
+    // 本地 project store 更新（updateConfig 合并）
+    const p = useProjectStore.getState().projects.find((x) => x.id === 'p1');
+    expect(p?.config.extra?.book_max_chapters).toBe(8);
+  });
+
+  it('startRun 409 安全阀 → 完成态显示 book-start-error「该章已有内容，拒绝重跑」', async () => {
+    const user = userEvent.setup();
+    apiFetchMock.mockRejectedValueOnce(new ApiError(409, '该章已有内容，拒绝重跑'));
+    useBookStore.setState({
+      sessionId: 'sess-1',
+      round: 2,
+      questions: [],
+      sessionStatus: 'completed',
+      writingPlan: wp,
+    });
+    render(<BookPlannerPanel projectId="p1" />);
+    await user.click(screen.getByTestId('book-start-run'));
+    expect(await screen.findByTestId('book-start-error')).toHaveTextContent('该章已有内容，拒绝重跑');
+    // 启动按钮仍在（409 提示后用户可修改上限/重试，不隐藏入口）
+    expect(screen.getByTestId('book-start-run')).toBeInTheDocument();
   });
 });

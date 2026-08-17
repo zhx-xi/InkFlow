@@ -18,7 +18,8 @@
  *   runId: string | null;
  *   runStatus: string | null;                 // completed/running/...
  *   progress: Record<string, string>;         // outline_id → PlanNodeStatus
- *   counters: RunStatusCounters | null;
+ *   counters: RunStatusCounters | null;       // S2a 起含 max_tokens/tokens_used/tokens_warning
+ *   progressStats: ProgressStats;             // 阶段2：progress 派生统计（章进度状态机）
  *   loading: boolean;
  *   error: string | null;
  *
@@ -26,8 +27,8 @@
  *   respond(answers: Record<string, string>): Promise<void>;   // 回答当前轮问题
  *   respondAuto(): Promise<void>;                              // 全部你决定 → auto:true
  *   loadSession(sessionId: string): Promise<void>;
- *   startRun(planId: string): Promise<void>;                   // POST /runs → runId
- *   loadRunStatus(runId: string): Promise<void>;               // GET /runs/{id} → progress/counters
+ *   startRun(planId: string, limits?: Record<string, number>): Promise<void>;  // POST /runs → runId（阶段2 可选 limits）
+ *   loadRunStatus(runId: string): Promise<void>;               // GET /runs/{id} → progress/counters/progressStats
  *   reset(): void;                                             // 新一轮访谈前清空
  * }
  *
@@ -37,8 +38,9 @@
  *   completed=false → round/questions 更新（下一轮）；completed=true → writingPlan 设置 + sessionStatus='completed'
  * - respondAuto() → POST /planner/{id}/respond {answers:{}, auto:true} → writingPlan(status=auto) + completed
  * - loadSession → GET /planner/{id} → 恢复会话快照
- * - startRun(planId) → POST /runs {writing_plan_id} → runId + runStatus
- * - loadRunStatus(runId) → GET /runs/{runId} → progress + counters
+ * - startRun(planId, limits?) → POST /runs {writing_plan_id, ...(limits ? {limits} : {})} → runId + runStatus
+ * - loadRunStatus(runId) → GET /runs/{runId} → progress + counters + progressStats 派生
+ *   progressStats = {total, done, inProgress, failed, skipped, pending}（progress 值计数，阶段2）
  * - 失败 → error 设置（errorMessage），loading=false
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -90,6 +92,7 @@ beforeEach(() => {
     runStatus: null,
     progress: {},
     counters: null,
+    progressStats: { total: 0, done: 0, inProgress: 0, failed: 0, skipped: 0, pending: 0 },
     loading: false,
     error: null,
   });
@@ -257,5 +260,86 @@ describe('book store — 运行状态（run = WritingPlan.id）', () => {
     expect(s.writingPlan).toBeNull();
     expect(s.runId).toBeNull();
     expect(s.progress).toEqual({});
+  });
+});
+
+describe('book store — 阶段2 进度状态机 + limits 透传（S2a #445）', () => {
+  it('loadRunStatus 派生 progressStats（5 态计数）+ counters tokens 透传', async () => {
+    apiFetchMock.mockResolvedValue({
+      run_id: 'wp-1',
+      status: 'running',
+      progress: {
+        'o-c1': 'done',
+        'o-c2': 'in_progress',
+        'o-c3': 'pending',
+        'o-c4': 'failed',
+        'o-c5': 'skipped',
+      },
+      counters: {
+        max_chapters: 5,
+        max_agent_calls: 10,
+        agent_calls: 2,
+        chapters_written: 1,
+        max_tokens: 200000,
+        tokens_used: 12345,
+        tokens_warning: false,
+      },
+    });
+    await act(async () => {
+      await useBookStore.getState().loadRunStatus('wp-1');
+    });
+    const s = useBookStore.getState();
+    expect(s.progressStats).toEqual({
+      total: 5,
+      done: 1,
+      inProgress: 1,
+      failed: 1,
+      skipped: 1,
+      pending: 1,
+    });
+    // S2a counters 扩展透传（max_tokens/tokens_used/tokens_warning）
+    expect(s.counters?.max_tokens).toBe(200000);
+    expect(s.counters?.tokens_used).toBe(12345);
+    expect(s.counters?.tokens_warning).toBe(false);
+  });
+
+  it('startRun 可选 limits 参数 → body.limits 透传（Q2=C 请求显式优先级）', async () => {
+    apiFetchMock.mockResolvedValue({ run_id: 'wp-1', status: 'completed' });
+    await act(async () => {
+      await useBookStore.getState().startRun('wp-1', { max_chapters: 5, max_tokens: 200000 });
+    });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs', {
+      method: 'POST',
+      body: { writing_plan_id: 'wp-1', limits: { max_chapters: 5, max_tokens: 200000 } },
+    });
+    const s = useBookStore.getState();
+    expect(s.runId).toBe('wp-1');
+    expect(s.runStatus).toBe('completed');
+  });
+
+  it('startRun 不传 limits → body 无 limits 键（向后兼容）', async () => {
+    apiFetchMock.mockResolvedValue({ run_id: 'wp-1', status: 'completed' });
+    await act(async () => {
+      await useBookStore.getState().startRun('wp-1');
+    });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs', {
+      method: 'POST',
+      body: { writing_plan_id: 'wp-1' },
+    });
+  });
+
+  it('reset 清空 progressStats（新一轮）', () => {
+    useBookStore.setState({
+      progressStats: { total: 3, done: 1, inProgress: 1, failed: 0, skipped: 0, pending: 1 },
+    });
+    useBookStore.getState().reset();
+    expect(useBookStore.getState().progressStats).toEqual({
+      total: 0,
+      done: 0,
+      inProgress: 0,
+      failed: 0,
+      skipped: 0,
+      pending: 0,
+    });
   });
 });

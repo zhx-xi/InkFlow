@@ -35,6 +35,8 @@ export interface ProjectConfig {
   /** F46 #270：Agent 关联关系（DAG 编排，spec §2.1）——from/to 带 agent_ 前缀角色字段名，
    *  type ∈ sequential/data/conditional；空=纯 agent_order 基线 */
   agent_relations?: { from: string; to: string; type: string }[];
+  /** Q2=C：项目级扩展字典（F44 多维上限 book_max_* 键载体） */
+  extra?: Record<string, number | string | boolean>;
   /** #343：Supervisor/HITL 项目级配置（hitl_roles 非空时管线以 supervisor 模式执行，命中角色前中断等确认） */
   supervisor?: { hitl_roles?: string[] } | null;
 }

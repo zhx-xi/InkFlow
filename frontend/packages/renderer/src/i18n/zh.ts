@@ -518,7 +518,15 @@ export const zh = {
   'book.run.status': '运行状态',
   'book.run.chapters': '已写章节',
   'book.run.calls': 'Agent 调用',
+  'book.run.tokens': 'Token 用量',
+  'book.run.tokenWarning': 'Token 用量超限，将产生告警',
   'book.run.noRun': '暂无运行',
+  'book.limits.title': '上限配置（项目级）',
+  'book.limits.chapters': '最大章数',
+  'book.limits.calls': '最大调用',
+  'book.limits.tokens': 'Token 上限',
+  'book.limits.sessions': '最大会话',
+  'book.limits.save': '保存上限',
 } as const;
 
 export type ZhKey = keyof typeof zh;

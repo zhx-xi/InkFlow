@@ -11,12 +11,18 @@
  * - run-status（运行状态徽标：completed/running/...）
  * - run-counter-chapters（章计数：chapters_written / max_chapters）
  * - run-counter-calls（调用计数：agent_calls / max_agent_calls）
+ * - run-counter-tokens（阶段2：token 计数：tokens_used / max_tokens）
+ * - run-token-warning（阶段2：tokens_warning=true 时告警提示）
+ * - run-progress-bar（阶段2：章进度条 done / total）
  * - run-progress-list（progress 展开行列表容器）
  * - run-refresh（手动刷新按钮，可选）
  *
  * 行为契约（镜像 ChatPanel #379 1s 轮询 + S1a 唯一真相 GET /runs/{id}）：
  * - 挂载时加载当前 run（runId 非空 → loadRunStatus(runId)）
  * - 显示 status + counters（chapters_written/max_chapters、agent_calls/max_agent_calls）
+ * - 阶段2：counters 含 tokens → 显示 run-counter-tokens（tokens_used / max_tokens）
+ * - 阶段2：tokens_warning=true → 显示 run-token-warning 告警
+ * - 阶段2：progressStats 派生后渲染 run-progress-bar（done / total）
  * - progress 每章渲染一个 ExecutionTraceRow（outline_id → status）
  * - 轮询：loadRunStatus 非终态（running）时 1s 后再次拉取（卸载清理 timer）
  * - 完成态（completed）停止轮询
@@ -54,6 +60,7 @@ beforeEach(() => {
     runStatus: null,
     progress: {},
     counters: null,
+    progressStats: { total: 0, done: 0, inProgress: 0, failed: 0, skipped: 0, pending: 0 },
     loading: false,
     error: null,
   });
@@ -150,5 +157,57 @@ describe('BookRunPanel — 轮询', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('BookRunPanel — 阶段2 章进度条 + token 计数（spec §5.2 观察流仪表密度）', () => {
+  const counters7 = {
+    max_chapters: 3,
+    max_agent_calls: 5,
+    agent_calls: 1,
+    chapters_written: 1,
+    max_tokens: 200000,
+    tokens_used: 12345,
+    tokens_warning: false,
+  };
+
+  it('渲染章进度条（done / total）+ token 计数（无告警）', async () => {
+    apiFetchMock.mockResolvedValue({
+      run_id: 'wp-1',
+      status: 'completed',
+      progress: { 'o-c1': 'done', 'o-c2': 'in_progress', 'o-c3': 'pending' },
+      counters: counters7,
+    });
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'running',
+      progress: { 'o-c1': 'done', 'o-c2': 'in_progress', 'o-c3': 'pending' },
+      counters: null,
+    });
+    render(<BookRunPanel />);
+    const bar = await screen.findByTestId('run-progress-bar');
+    expect(bar).toHaveTextContent('1');
+    expect(bar).toHaveTextContent('3');
+    const tokens = screen.getByTestId('run-counter-tokens');
+    expect(tokens).toHaveTextContent('12345');
+    expect(tokens).toHaveTextContent('200000');
+    expect(screen.queryByTestId('run-token-warning')).not.toBeInTheDocument();
+  });
+
+  it('tokens_warning=true → 显示告警提示', async () => {
+    apiFetchMock.mockResolvedValue({
+      run_id: 'wp-1',
+      status: 'completed',
+      progress: { 'o-c1': 'done' },
+      counters: { ...counters7, tokens_warning: true },
+    });
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'running',
+      progress: { 'o-c1': 'done' },
+      counters: null,
+    });
+    render(<BookRunPanel />);
+    expect(await screen.findByTestId('run-token-warning')).toBeInTheDocument();
   });
 });

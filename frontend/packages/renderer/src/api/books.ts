@@ -72,6 +72,10 @@ export interface RunStatusCounters {
   max_agent_calls: number;
   agent_calls: number;
   chapters_written: number;
+  /** S2a #445：token 软护栏（可选键向后兼容） */
+  max_tokens?: number;
+  tokens_used?: number;
+  tokens_warning?: boolean;
 }
 
 export interface RunStatusResponse {
