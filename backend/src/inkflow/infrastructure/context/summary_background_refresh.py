@@ -86,7 +86,7 @@ async def run_summary_background_refresh(
                 return
             async with session_cm as session:  # type: ignore[attr-defined]  # 鸭子类型：session_cm 按契约提供 async 上下文
                 await AuditLogService(SQLiteAuditLogRepository(session)).record(
-                    project_id=project_id,
+                    project_id=project_id,  # type: ignore[arg-type]  # 用户级 scope 为 None（memory L700 先例）
                     severity_summary="semantic_summary_failed",
                     degraded=True,
                     actor="memory",

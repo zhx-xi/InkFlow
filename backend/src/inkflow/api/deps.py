@@ -330,11 +330,11 @@ def get_context_service(
         """PreferenceSource._audit 适配器：event=... → audit_logs record（#456）。"""
         audit = AuditLogService(SQLiteAuditLogRepository(db))
         await audit.record(
-            project_id=None,
+            project_id=None,  # type: ignore[arg-type]  # 审计旁路无项目（memory L700 先例）
             severity_summary=str(kw.get("event", "pending_summary")),
             degraded=bool(kw.get("degraded", False)),
             actor=str(kw.get("actor", "memory")),
-            note=str(kw.get("note")) if kw.get("note") is not None else None,
+            note=str(kw.get("note")) if kw.get("note") is not None else "",
         )
 
     pref_source._audit = _preference_pending_audit
