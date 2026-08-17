@@ -56,7 +56,8 @@ def _defaults() -> dict:
     """14 字段默认字典（§2.1 表 + §2.2 AppSettings 默认值）。
 
     F27 扩展（#160 Q2 拍板）：agent_max_steps/agent_token_budget/
-    agent_max_consecutive_tool 预算护栏设置键（ADR-C 默认值 12/32K/3）。
+    agent_max_total_tool_calls 预算护栏设置键（ADR-C 默认值 12/32K/20；
+    #430 语义改造: 单工具连续 → 会话总调用上限）。
     #277 M3 扩展（spec §5.6.1/§5.6.3）：rag_chunk_mode/rag_chunk_size/
     rag_chunk_overlap/rag_chunk_overlap_ratio 切片配置 4 键。
     """
@@ -70,7 +71,7 @@ def _defaults() -> dict:
         "default_words": 800000,
         "agent_max_steps": 12,
         "agent_token_budget": 32000,
-        "agent_max_consecutive_tool": 3,
+        "agent_max_total_tool_calls": 20,
         "rag_chunk_mode": "fixed",
         "rag_chunk_size": 500,
         "rag_chunk_overlap": False,
@@ -97,7 +98,7 @@ class TestAppSettings:
             default_words=5000,
             agent_max_steps=8,
             agent_token_budget=16000,
-            agent_max_consecutive_tool=5,
+            agent_max_total_tool_calls=5,
             rag_chunk_mode="paragraph",
             rag_chunk_size=600,
             rag_chunk_overlap=True,
@@ -113,7 +114,7 @@ class TestAppSettings:
             "default_words": 5000,
             "agent_max_steps": 8,
             "agent_token_budget": 16000,
-            "agent_max_consecutive_tool": 5,
+            "agent_max_total_tool_calls": 5,
             "rag_chunk_mode": "paragraph",
             "rag_chunk_size": 600,
             "rag_chunk_overlap": True,
@@ -182,7 +183,7 @@ class TestSettingsKey:
             "DEFAULT_WORDS": "default_words",
             "AGENT_MAX_STEPS": "agent_max_steps",
             "AGENT_TOKEN_BUDGET": "agent_token_budget",
-            "AGENT_MAX_CONSECUTIVE_TOOL": "agent_max_consecutive_tool",
+            "AGENT_MAX_TOTAL_TOOL_CALLS": "agent_max_total_tool_calls",
             "RAG_CHUNK_MODE": "rag_chunk_mode",
             "RAG_CHUNK_SIZE": "rag_chunk_size",
             "RAG_CHUNK_OVERLAP": "rag_chunk_overlap",
