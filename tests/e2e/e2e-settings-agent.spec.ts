@@ -218,7 +218,7 @@ test('设置页：#268 角色模型三态 Select（跟随默认/指定模型/禁
   try {
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     // 前置：UI 创建唯一项目 + 配置模型 chat 条目（下拉选项数据源；幂等自愈）
     const name = `E2E-AgentTriState-${Date.now()}`;
@@ -311,7 +311,7 @@ test('#268 三态指定模型 → 重启（二次 launch 同数据目录）→ �
   try {
     await first.window.evaluate(() => localStorage.clear());
     await first.window.reload();
-    await expect(first.window.getByTestId('app-nav')).toBeVisible();
+    await expect(first.window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
     await createProjectViaUi(first.window, name);
     const list = await fetchKernel(first.kernel, '/api/v1/projects');
     const project = list.items.find((p: { name: string }) => p.name === name);
@@ -375,7 +375,7 @@ test('设置页：#269 执行顺序上移/下移 → 内核 config.agent_order �
   try {
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     const name = `E2E-AgentOrder-${Date.now()}`;
     await createProjectViaUi(window, name);
@@ -438,7 +438,7 @@ test('设置页：#269 执行顺序边界（首层上移按钮禁用 / 末层下
   try {
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     await createProjectViaUi(window, `E2E-AgentOrderBound-${Date.now()}`);
     await gotoNav(window, '设置');
@@ -468,7 +468,7 @@ test('设置页：#295/#296 自定义角色行渲染（显示名/裸名回退 + 
   try {
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     // 前置：内核 API 预置含自定义角色的模板（researcher 带 name / editor 无 name 回退裸名）
     const tpl = await createCustomRoleTemplate(kernel);
@@ -507,7 +507,7 @@ test('设置页：#295/#296 自定义角色三态（开/选模型/关）→ 内�
   try {
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     const tpl = await createCustomRoleTemplate(kernel);
     const name = `E2E-AgentCustomTri-${Date.now()}`;

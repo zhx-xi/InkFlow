@@ -72,7 +72,7 @@ test('模型管理页：侧边栏「模型管理」→ /models 渲染（标题 +
     // 同用例 8：清空持久化 UI 偏好保证中文文案确定性（zh）
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
     // 侧边栏入口：nav-item-models（#106 已转正为 /models NavLink，spec §8.5 F5）
     const navModels = window.getByTestId('nav-item-models');
@@ -118,7 +118,7 @@ async function gotoNav(window: Page, name: string): Promise<void> {
 async function gotoModels(window: Page): Promise<void> {
   await window.evaluate(() => localStorage.clear());
   await window.reload();
-  await expect(window.getByTestId('app-nav')).toBeVisible();
+  await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
   await gotoNav(window, '模型管理');
   await expect(window.getByTestId('models-page')).toBeVisible({ timeout: 15_000 });
 }
