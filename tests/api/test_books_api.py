@@ -64,6 +64,7 @@
    .session_id/.round/.completed/.questions/.writing_plan 属性）。
 """
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
@@ -75,7 +76,7 @@ import inkflow.api.routers.books  # noqa: F401  # RED 收集断言：模块不�
 from inkflow.api.app import app
 from inkflow.api.routers.books import get_book_service, get_planner_service
 from inkflow.domain.models.planner_session import PlannerSession
-from inkflow.domain.models.writing_plan import WritingPlan
+from inkflow.domain.models.writing_plan import BookLimits, WritingPlan
 from inkflow.domain.services.planner_service import PlannerRespondResult
 
 BASE = "/api/v1/agent/books"
@@ -329,14 +330,22 @@ async def test_planner_get_missing_404(client, override_services):
 @pytest.mark.asyncio
 @pytest.mark.api
 async def test_runs_start_202(client, override_services):
-    """启动书级运行 → 202 + {run_id, status}。"""
+    """启动书级运行 → 202 + {run_id, status: running}（prepare_run 预校验 + 后台任务）。
+
+    F44 阶段4 新契约：POST /runs 先 `await svc.prepare_run(plan_id, limits,
+    mode=...)` 预校验（错误立即 404/409/422），返回 running 后 fire-and-forget
+    后台任务执行 write_book——请求不阻塞。write_book 由后台任务调用，
+    需 `await asyncio.sleep(0)` 让出事件循环后再断言。
+    """
     _, book = override_services
-    book.write_book.return_value = {"run_id": str(uuid.uuid4()), "status": "pending"}
+    plan_id = uuid.uuid4()
+    limits = BookLimits(max_chapters=1, max_agent_calls=1)
+    book.prepare_run.return_value = {"run_id": str(uuid.uuid4()), "status": "running"}
 
     resp = await client.post(
         f"{BASE}/runs",
         json={
-            "writing_plan_id": str(uuid.uuid4()),
+            "writing_plan_id": str(plan_id),
             "limits": {"max_chapters": 1, "max_agent_calls": 1},
         },
     )
@@ -344,16 +353,19 @@ async def test_runs_start_202(client, override_services):
     assert resp.status_code == 202
     body = resp.json()
     assert body["run_id"]
-    assert body["status"] == "pending"
+    assert body["status"] == "running"
+    book.prepare_run.assert_awaited_once_with(plan_id, limits, mode="static")
+
+    await asyncio.sleep(0)
     book.write_book.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 @pytest.mark.api
 async def test_runs_start_plan_missing_404(client, override_services):
-    """计划不存在 → 404。"""
+    """计划不存在 → 404（prepare_run 预校验 ValueError「不存在」→ 404）。"""
     _, book = override_services
-    book.write_book.side_effect = ValueError("计划不存在")
+    book.prepare_run.side_effect = ValueError("计划不存在")
 
     resp = await client.post(
         f"{BASE}/runs", json={"writing_plan_id": str(uuid.uuid4())}
@@ -365,9 +377,9 @@ async def test_runs_start_plan_missing_404(client, override_services):
 @pytest.mark.asyncio
 @pytest.mark.api
 async def test_runs_start_no_hard_limit_422(client, override_services):
-    """上限全无护栏 → 422（§3.5 上限校验失败）。"""
+    """上限全无护栏 → 422（prepare_run 预校验，§3.5 上限校验失败）。"""
     _, book = override_services
-    book.write_book.side_effect = ValueError("至少一道有限护栏")
+    book.prepare_run.side_effect = ValueError("至少一道有限护栏")
 
     resp = await client.post(
         f"{BASE}/runs",
@@ -500,17 +512,19 @@ async def test_planner_respond_other_value_error_422(client, override_services):
 @pytest.mark.asyncio
 @pytest.mark.api
 async def test_runs_start_chapter_already_written_409(client, override_services):
-    """「内容已写」安全阀命中 → 409（§3.5/M6）：write_book 抛 ChapterAlreadyWrittenError。
+    """「内容已写」安全阀命中 → 409（§3.5/M6）：prepare_run 预校验抛 ChapterAlreadyWrittenError。
 
     RED 期失败形态：ChapterAlreadyWrittenError 为阶段 2 新增（定义于
     inkflow.domain.services.book_service），阶段 1 尚未定义 → 本用例运行时
     ImportError（即预期 RED）。detail 锁「已有内容」防假绿（仅断言 409
     可能被其他异常映射误命中）。
+    #456 迁移：安全阀前移到 prepare_run 预校验层（后台任务改造），
+    端点不再直接 await write_book。
     """
     from inkflow.domain.services.book_service import ChapterAlreadyWrittenError
 
     _, book = override_services
-    book.write_book.side_effect = ChapterAlreadyWrittenError("该章已有内容，拒绝重跑")
+    book.prepare_run.side_effect = ChapterAlreadyWrittenError("该章已有内容，拒绝重跑")
 
     resp = await client.post(
         f"{BASE}/runs", json={"writing_plan_id": str(uuid.uuid4())}
@@ -523,16 +537,19 @@ async def test_runs_start_chapter_already_written_409(client, override_services)
 @pytest.mark.asyncio
 @pytest.mark.api
 async def test_runs_start_limits_passed_to_service(client, override_services):
-    """POST /runs limits 显式传参 → write_book 收到 BookLimits（§2.4/§5.2 多维上限透传契约）。
+    """POST /runs limits 显式传参 → prepare_run 预校验 + write_book 后台执行均收到 BookLimits
+    （§2.4/§5.2 多维上限透传契约）。
 
     守护形态（RED 期 PASS 刻意）：阶段 1 路由器已把 limits dict 转换 BookLimits 并透传——
-    本用例锁定 write_book(writing_plan_id, BookLimits(max_chapters=2, max_agent_calls=2))
-    签名契约（防 GREEN 阶段 2 改动装配时破坏 limits 透传）。
+    本用例锁定 prepare_run(writing_plan_id, BookLimits(max_chapters=2, max_agent_calls=2),
+    mode="static") 签名契约 + 后台 write_book 同参透传（#456 后台任务改造后：
+    预校验层与执行层共享 limits）。
     """
     from inkflow.domain.models.writing_plan import BookLimits
 
     _, book = override_services
-    book.write_book.return_value = {"run_id": str(uuid.uuid4()), "status": "pending"}
+    book.prepare_run.return_value = {"run_id": str(uuid.uuid4()), "status": "running"}
+    book.write_book.return_value = {"run_id": str(uuid.uuid4()), "status": "completed"}
     plan_id = uuid.uuid4()
 
     resp = await client.post(
@@ -544,6 +561,10 @@ async def test_runs_start_limits_passed_to_service(client, override_services):
     )
 
     assert resp.status_code == 202
+    book.prepare_run.assert_awaited_once_with(
+        plan_id, BookLimits(max_chapters=2, max_agent_calls=2), mode="static"
+    )
+    await asyncio.sleep(0)
     book.write_book.assert_awaited_once_with(
         plan_id, BookLimits(max_chapters=2, max_agent_calls=2)
     )
@@ -629,9 +650,10 @@ async def test_runs_start_no_hard_limit_422_detail(client, override_services):
 
     守护形态（RED 期 PASS 刻意）：阶段 1 已映射 422 且 detail 透传 ValueError 消息——
     本用例锁定「至少一道有限护栏」不变式文案契约（M5），防 GREEN 改文案/丢 detail。
+    #456 迁移：上限校验在 prepare_run 预校验层（后台任务改造），端点不再直接 await write_book。
     """
     _, book = override_services
-    book.write_book.side_effect = ValueError(
+    book.prepare_run.side_effect = ValueError(
         "至少一道有限护栏：max_chapters 或 max_agent_calls 必须大于 0"
     )
 
@@ -753,18 +775,16 @@ async def test_confirm_run_not_waiting_422(client, override_services):
 @pytest.mark.asyncio
 @pytest.mark.api
 async def test_runs_start_mode_volume(client, override_services):
-    """POST /runs mode="volume" → 202 + write_book_volume 被调用（阶段 3 卷级派发）。
+    """POST /runs mode="volume" → 202 + 后台 write_book_volume(plan_id, None)（阶段 4 新契约）。
 
-    RED 期失败形态：阶段 1/2 路由器忽略 mode 恒调 write_book——为让用例跑到
-    契约断言点，write_book 也预置 dict 返回值（防 FastAPI 序列化 Mock 报 500）；
-    202/响应体断言 PASS 后 `write_book_volume.assert_awaited_once_with` FAILED
-    （AsyncMock 自动创建属性、从未 await，干净 FAILED）。
+    新契约：prepare_run 预校验（mode="volume"）返回 running 后，后台任务
+    fire-and-forget 执行 write_book_volume——恒传 limits 参数，无 limits 传
+    None；write_book_volume 由后台任务调用，需 sleep(0) 让出事件循环再断言。
     """
     _, book = override_services
     plan_id = uuid.uuid4()
     run_id = str(uuid.uuid4())
-    book.write_book_volume.return_value = {"run_id": run_id, "status": "waiting_hitl"}
-    book.write_book.return_value = {"run_id": run_id, "status": "waiting_hitl"}
+    book.prepare_run.return_value = {"run_id": run_id, "status": "running"}
 
     resp = await client.post(
         f"{BASE}/runs",
@@ -774,28 +794,35 @@ async def test_runs_start_mode_volume(client, override_services):
     assert resp.status_code == 202
     body = resp.json()
     assert body["run_id"] == run_id
-    assert body["status"] == "waiting_hitl"
-    book.write_book_volume.assert_awaited_once_with(plan_id)
+    assert body["status"] == "running"
+    book.prepare_run.assert_awaited_once_with(plan_id, None, mode="volume")
+
+    await asyncio.sleep(0)
+    book.write_book_volume.assert_awaited_once_with(plan_id, None)
 
 
 @pytest.mark.asyncio
 @pytest.mark.api
 async def test_runs_start_mode_default_static_guard(client, override_services):
-    """POST /runs 无 mode（缺省 static）→ write_book 既有路径（守护用例 RED 期 PASS 刻意）。
+    """POST /runs 无 mode（缺省 static）→ prepare_run(mode="static") + 后台 write_book（守护）。
 
-    本用例锁定阶段 3 mode 派发装配的向后兼容：缺省 mode 必须仍走 write_book
-    （防 GREEN 把缺省 mode 误派发到 write_book_volume）。
+    本用例锁定 mode 缺省装配的向后兼容：缺省 mode 必须仍走 static 路径
+    （prepare_run mode="static" → 后台 write_book，不派发 write_book_volume）。
     """
     _, book = override_services
-    book.write_book.return_value = {"run_id": str(uuid.uuid4()), "status": "pending"}
+    plan_id = uuid.uuid4()
+    book.prepare_run.return_value = {"run_id": str(uuid.uuid4()), "status": "running"}
 
     resp = await client.post(
-        f"{BASE}/runs", json={"writing_plan_id": str(uuid.uuid4())}
+        f"{BASE}/runs", json={"writing_plan_id": str(plan_id)}
     )
 
     assert resp.status_code == 202
     body = resp.json()
     assert body["run_id"]
-    assert body["status"] == "pending"
-    book.write_book.assert_awaited_once()
+    assert body["status"] == "running"
+    book.prepare_run.assert_awaited_once_with(plan_id, None, mode="static")
+
+    await asyncio.sleep(0)
+    book.write_book.assert_awaited_once_with(plan_id, None)
     book.write_book_volume.assert_not_awaited()

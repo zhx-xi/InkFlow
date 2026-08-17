@@ -1,24 +1,26 @@
 """F44 书级运行服务 - write_book 编排入口、进度状态机、上限校验、委托契约.
 
-BookService 负责：
+BookService 职责：
 - write_book: 启动书级运行（run_id = WritingPlan.id），校验「至少一道有限护栏」，
-  从 outline 表取全部 level=chapter 节点按 sort_order 顺序派发，委托 F27 writer.
+  从 outline 表取全部 level=chapter 节点按 sort_order 顺序派发，委托 F27 writer。
+- prepare_run: 后台任务改造（#456）新增——启动前预校验（计划/护栏/安全阀）+ running
+  落库，不执行章委托；POST /runs 预校验后启后台任务。
 - _delegate_chapter: 委托契约核心 - 章 brief → writer_factory → agent.invoke →
-  save_draft 回收 → Draft 落库 → 返回 execution_id.
-- get_status: 书级运行状态（进度树 + 计数器派生字段）.
+  save_draft 回收 → Draft 落库 → 返回 execution_id。
+- get_status: 书级运行状态（进度树 + 计数器派生字段）。
 
 阶段 1 上限写死 max_chapters=1/max_agent_calls=1（#335「上限写死但计数器立起来」），
 阶段 2 放开配置：读取优先级 = 请求显式 > 项目级 ProjectConfig.extra > 默认常量
-（§2.4/D11 Q2=C）；「内容已写」安全闸先于一切执行（§5.2/D8）.
+（§2.4/D11 Q2=C）；「内容已写」安全闸先于一切执行（§5.2/D8）。
 
 阶段 3 卷级编排（#337）：write_book_volume（安全阀 → 卷 planner 拆章 → 卷图 Send 扇出 →
 卷边界 HITL 暂停落库 waiting_hitl）+ confirm_run（waiting_hitl → pipeline.resume）+
-get_status 顶层 waiting_hitl/hitl_payload（§3/§13.3 M8）.
+get_status 顶层 waiting_hitl/hitl_payload（§3/§13.3 M8）。
 
 仅依赖 domain/models 与注入的 repo/可调用对象（鸭子类型），
-domain/ 零框架 import 门禁天然满足（ADR-002/015）.
+domain/ 零框架 import 门禁天然满足（ADR-002/015）。
 
-依据: specs/f44-long-task-orchestrator/spec.md 搂2.4/搂5.1/搂13.1（v1.1）.
+依据: specs/f44-long-task-orchestrator/spec.md §2.4/§5.1/§13.1（v1.1）.
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ from inkflow.domain.models.writing_plan import (
     merge_book_limits,
     validate_at_least_one_hard_limit,
 )
+from inkflow.domain.services.book_run_mixin import BookRunMixin
 
 
 class ChapterAlreadyWrittenError(Exception):
@@ -79,7 +82,7 @@ class VolumeGroup(TypedDict):
     chapters: list[ChapterDict]
 
 
-class BookService:
+class BookService(BookRunMixin):
     """书级运行服务.
 
     Args:
@@ -137,13 +140,11 @@ class BookService:
     ) -> dict[str, str]:
         """启动书级运行（202 语义）→ {run_id, status}（阶段 2 顺序派发）.
 
-        limits 解析链（§2.4/D11 Q2=C）：默认 BookLimits() → 项目级
-        ProjectConfig.extra（book_max_* 键）→ 请求显式字段（model_fields_set）
-        → validate_at_least_one_hard_limit（全无护栏 → ValueError）.
-        「内容已写」安全闸（§5.2/D8）先于一切执行：任一目标章执行已完成或
-        已有内容 → ChapterAlreadyWrittenError，一个章都不委托.
-        顺序派发：每章 in_progress 落库 → 委托 → done/failed 落库；
-        硬护栏（章数/调用数）超限 → 剩余章 skipped 落库；无章节点 → completed.
+        limits 解析链（§2.4/D11 Q2=C）：默认 → 项目级 ProjectConfig.extra（book_max_* 键）
+        → 请求显式字段（model_fields_set）→ validate_at_least_one_hard_limit.
+        「内容已写」安全闸（§5.2/D8）先于一切执行：任一目标章已有内容/执行完成 →
+        ChapterAlreadyWrittenError，一个章都不委托。顺序派发：每章 in_progress → 委托
+        → done/failed 落库；硬护栏（章数/调用数）超限 → 剩余章 skipped；无章 → completed.
 
         Args:
             plan_id: 计划 UUID（run 载体 = WritingPlan）.
@@ -215,15 +216,14 @@ class BookService:
     ) -> dict[str, str]:
         """卷级编排入口（阶段 3，#337）：安全阀预检 → 卷 planner 拆章 → 卷图 Send 扇出 → 卷边界暂停.
 
-        limits 解析链复用阶段 2（§2.4/D11）：merge_book_limits +
-        validate_at_least_one_hard_limit，生效上限写回 plan.limits（不覆盖 tokens_* 运行计数）.
-        「内容已写」安全阀（§5.2/D8）先于一切执行：任一目标章已有内容/执行完成 →
-        ChapterAlreadyWrittenError，volume_pipeline 零调用.
-        卷 planner 拆章（_find_volumes）：有 level=volume 节点按 parent_id 分组，无卷节点
-        整本书作为一卷；委托 volume_pipeline.execute(plan, volumes, merged) 恰一次.
-        阶段 4（#338）：thread_id = str(plan.id)（书级运行 ↔ 图 checkpoint 一一映射）
-        写回 plan.thread_id 并落库；execution_store 落库书级运行执行记录
-        （pipeline="book:volume"，execution_id/thread_id = str(plan.id)）.
+        limits 解析链复用阶段 2（§2.4/D11）：merge_book_limits + validate_at_least_one_hard_limit，
+        生效上限写回 plan.limits。「内容已写」安全阀（§5.2/D8）先于一切执行：任一目标章已有
+        内容/执行完成 → ChapterAlreadyWrittenError，volume_pipeline 零调用。
+        卷 planner 拆章（_find_volumes）：有 level=volume 节点按 parent_id 分组，无卷节点整本
+        书作为一卷；委托 volume_pipeline.execute(plan, volumes, merged) 恰一次。
+        阶段 4（#338）：thread_id = str(plan.id)（书级运行 ↔ 图 checkpoint 一一映射）写回
+        plan.thread_id 并落库；execution_store 落库书级运行执行记录（pipeline="book:volume"，
+        execution_id/thread_id = str(plan.id)）。
 
         Args:
             plan_id: 计划 UUID（run 载体 = WritingPlan）.
@@ -284,12 +284,10 @@ class BookService:
     async def confirm_run(self, run_id: str, *, approved: bool, decision: str = "") -> dict:
         """卷级 HITL 确认（阶段 3，#337）：waiting_hitl → pipeline.resume 继续 / 再次暂停.
 
-        interrupt_obj 由 plan.hitl_payload 重建（VolumeHITLInterrupt 形态，函数体 import）；
-        resume 再抛 VolumeHITLInterrupt（下一卷边界）→ 更新 hitl_payload + 落库返回
-        waiting_hitl；正常返回 → 按 result.status 更新 plan.status + 落库返回 result.
-        阶段 4（#338）：resume 调用传 thread_id（读 plan.thread_id 兜底 str(plan.id)）；
-        正常返回后 execution_store.update_status(execution_id=str(plan.id),
-        status=result.status) 同步执行记录状态.
+        interrupt_obj 由 plan.hitl_payload 重建（VolumeHITLInterrupt，函数体 import）；
+        resume 再抛 → 更新 hitl_payload + 落库返回 waiting_hitl；正常返回 → 按 result.status
+        更新 plan.status。阶段 4（#338）：resume 传 thread_id（plan.thread_id 兜底
+        str(plan.id)）；正常返回后 execution_store.update_status 同步执行记录状态.
 
         Args:
             run_id: 书级运行 id（= WritingPlan.id 字符串）.
@@ -379,11 +377,10 @@ class BookService:
     ) -> dict:
         """中途干预 API（阶段 4，#338；spec Q3=A/D12）：pause / resume / redirect / edit.
 
-        读 plan 不存在 → ValueError("运行不存在")（先于 action 校验）；
-        pause：仅 running 可暂停；resume（§3.2 裁定锁定）：仅 paused 可恢复为
-        running（续跑逻辑在 resume_run）；redirect：章级被动动作 skip/retry/
-        mark_failed（改 plan.progress + execution_refs，零 LLM）；edit：改
-        outline.description + difflib unified_diff 标注（diff 含 before/after 文本）.
+        读 plan 不存在 → ValueError("运行不存在")；pause：仅 running 可暂停；
+        resume：仅 paused 可恢复为 running（续跑逻辑在 resume_run）；redirect：章级
+        被动动作 skip/retry/mark_failed（改 plan.progress + execution_refs，零 LLM）；
+        edit：改 outline.description + difflib unified_diff 标注。
         已完成章（progress=done）拒绝干预 → ValueError("已完成章不可干预").
 
         Args:
@@ -394,12 +391,10 @@ class BookService:
             payload: edit 载荷 {"brief": str}.
 
         Returns:
-            pause/resume: {"run_id", "status"}；
-            redirect: {"run_id", "status", "diff": {"target", "from", "to"}}；
-            edit: {"run_id", "status", "diff": {"target", "before", "after", "diff"}}.
+            pause/resume: {"run_id", "status"}；redirect/edit 带 "diff" 字段.
 
         Raises:
-            ValueError: 运行不存在 / 非法干预动作 / 运行未处于可暂停状态 /
+            ValueError: 运行不存在 / 非法干预动作 / 未处于可暂停状态 /
                 干预目标不存在 / 已完成章不可干预 / 大纲更新器未装配 / 干预参数缺失.
         """
         plan = await self._repo.get_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 get_writing_plan

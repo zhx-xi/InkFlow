@@ -40,7 +40,9 @@ class PreferenceSource:
         summary_repo: 语义总结仓储（M2 get/upsert；None = 关闭 M2 路径）.
         summarizer: 语义总结管线（M2 summarize → (summary, dropped)；None = 关闭）.
         llm_default_model: LLM 默认模型名（M2 summarizer 传入，#415 唯一默认源）.
-        background_refresh: F44 阶段4 后台刷新注入点（None = 同步总结兜底）.
+        background_refresh: F44 阶段4 后台刷新调度器（签名 anchors, *, scope,
+            project_id, anchor_hash；None = 同步总结兜底）——调度器自持 session
+            后台执行，注入不等待（spec §5.4 Q2=B）.
     """
 
     def __init__(
@@ -153,16 +155,12 @@ class PreferenceSource:
                     if self._audit is not None:
                         await self._audit(event="pending_summary", degraded=True, actor="memory")
                     await self._background_refresh(
-                        self._refresh_summary(
-                            project_items,
-                            scope=SummaryScope.PROJECT,
-                            project_id=project_id,
-                            anchor_hash=project_hash,
-                        )
+                        project_items,
+                        scope=SummaryScope.PROJECT,
+                        project_id=project_id,
+                        anchor_hash=project_hash,
                     )
-            if user_items and (
-                user_summary is None or user_summary.anchor_hash != user_hash
-            ):
+            if user_items and (user_summary is None or user_summary.anchor_hash != user_hash):
                 if self._background_refresh is None:
                     refreshed = await self._refresh_summary(
                         user_items,
@@ -176,12 +174,10 @@ class PreferenceSource:
                     if self._audit is not None:
                         await self._audit(event="pending_summary", degraded=True, actor="memory")
                     await self._background_refresh(
-                        self._refresh_summary(
-                            user_items,
-                            scope=SummaryScope.USER,
-                            project_id=None,
-                            anchor_hash=user_hash,
-                        )
+                        user_items,
+                        scope=SummaryScope.USER,
+                        project_id=None,
+                        anchor_hash=user_hash,
                     )
             # 注入: 语义总结优先；某层无总结 → 该层回退字面（spec §5.6 步骤 4）
             project_out: list[ContextItem]
@@ -229,8 +225,11 @@ class PreferenceSource:
         try:
             new_summary: SemanticSummary | None
             new_summary, _dropped = await self._summarizer.summarize(  # type: ignore[attr-defined]  # 鸭子类型：summarizer 按契约提供 summarize
-                anchors, scope=scope, project_id=project_id,
-                anchor_hash=anchor_hash, model=self._llm_default_model,
+                anchors,
+                scope=scope,
+                project_id=project_id,
+                anchor_hash=anchor_hash,
+                model=self._llm_default_model,
             )
         except SemanticSummaryError:
             return None  # LLM 失败回退旧总结/字面，不阻断注入（spec §5.4）
