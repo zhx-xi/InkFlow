@@ -591,3 +591,103 @@ def test_book_status_multi_chapter_progress(fake_http_client):
     out = _strip_ansi(result.stdout)
     assert "c1" in out and "c2" in out and "c3" in out
     assert out.count("done") == 3
+
+
+# ════ F44 阶段3 追加段（#337 confirm 端点/命令）════
+# 权威来源：.hermes/plans/f44-stage3-contract.md §4 + spec.md §4/§13.3 M8。
+# 契约清单：
+# 6. book confirm <run_id> --approved → POST /api/v1/agent/books/runs/{run_id}/
+#    confirm body {"approved": true, "decision": ""} + exit 0 + 人类输出含状态
+# 7. book confirm <run_id> --reject --decision "中止" → body
+#    {"approved": false, "decision": "中止"} + exit 0
+# 8. book confirm <run_id> --approved --json → 信封 {"ok": true, "data":
+#    {run_id, status, next_checkpoint}}
+# 9. book confirm（无 run_id）→ exit 2（守护用例：RED 期命令未注册时
+#    `No such command 'confirm'.` 亦 exit 2 → PASS 刻意，docstring 注明双阶段语义）
+#
+# RED 预期形态：book confirm 命令未注册 → typer 报 `No such command 'confirm'.`
+# + Usage + exit 2 → 用例 6/7/8 `assert result.exit_code == 0` 干净 FAILED；
+# 用例 9（缺参 exit 2）RED 期即 PASS（守护，刻意）。预期形态 ≈ 3 failed, 1 passed。
+
+
+# ── book confirm ─────────────────────────────────────────────────
+
+
+def test_book_confirm_approved(fake_http_client):
+    """book confirm --approved：POST runs/{run_id}/confirm + exit 0（M8）。
+
+    body {"approved": true, "decision": ""}（--approved 缺省 decision=""）；
+    人类输出含状态（已确认 + run_id + status）。
+    RED 期失败形态：confirm 命令未注册 → typer `No such command 'confirm'.`
+    + Usage + exit 2 → `assert result.exit_code == 0` FAILED（干净 RED）。
+    """
+    fake_http_client.post.return_value = {
+        "run_id": "run-1",
+        "status": "running",
+        "next_checkpoint": "卷 2",
+    }
+
+    result = _invoke("confirm", "run-1", "--approved")
+
+    assert result.exit_code == 0
+    out = _strip_ansi(result.stdout)
+    assert "已确认" in out
+    assert "run-1" in out
+    assert "running" in out
+    fake_http_client.post.assert_awaited_once_with(
+        "/api/v1/agent/books/runs/run-1/confirm",
+        json={"approved": True, "decision": ""},
+    )
+
+
+def test_book_confirm_reject_decision(fake_http_client):
+    """book confirm --reject --decision：approved=false + decision 透传 + exit 0。
+
+    body {"approved": false, "decision": "中止"}（--reject/--decision 组合，
+    §4 互斥/可选语义）。
+    RED 期失败形态：confirm 命令未注册 → typer `No such command 'confirm'.`
+    + Usage + exit 2 → `assert result.exit_code == 0` FAILED（干净 RED）。
+    """
+    fake_http_client.post.return_value = {
+        "run_id": "run-1",
+        "status": "completed",
+        "next_checkpoint": None,
+    }
+
+    result = _invoke("confirm", "run-1", "--reject", "--decision", "中止")
+
+    assert result.exit_code == 0
+    fake_http_client.post.assert_awaited_once_with(
+        "/api/v1/agent/books/runs/run-1/confirm",
+        json={"approved": False, "decision": "中止"},
+    )
+
+
+def test_book_confirm_json_envelope(fake_http_client):
+    """book confirm --approved --json：信封 {ok, data{run_id, status, next_checkpoint}}。
+
+    RED 期失败形态：confirm 命令未注册 → typer `No such command 'confirm'.`
+    + Usage + exit 2 → `assert result.exit_code == 0` FAILED（干净 RED）。
+    """
+    fake_http_client.post.return_value = {
+        "run_id": "run-1",
+        "status": "running",
+        "next_checkpoint": "卷 2",
+    }
+
+    result = _invoke("confirm", "run-1", "--approved", "--json")
+
+    assert result.exit_code == 0
+    body = json.loads(_strip_ansi(result.stdout))
+    assert body["ok"] is True
+    assert body["data"]["run_id"] == "run-1"
+    assert body["data"]["status"] == "running"
+    assert body["data"]["next_checkpoint"] == "卷 2"
+
+
+def test_book_confirm_missing_argument():
+    """book confirm 缺 run_id → exit 2（守护用例：RED 期 confirm 命令未注册时
+    `No such command 'confirm'.` 亦 exit 2 → 本用例 RED 期 PASS 刻意；GREEN 后
+    为 typer 参数缺失 exit 2，双阶段语义）。"""
+    result = _invoke("confirm")
+    assert result.exit_code == 2

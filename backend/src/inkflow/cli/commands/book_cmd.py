@@ -294,3 +294,35 @@ def book_status(
             typer.echo(f"  {key}: {value}")
 
     _human_or_json(cli_ctx, json_output, data, _render)
+
+
+@app.command("confirm")
+def book_confirm(
+    ctx: typer.Context,
+    run_id: str = typer.Argument(..., help="书级运行 ID"),
+    approved: bool = typer.Option(False, "--approved", help="确认继续"),
+    reject: bool = typer.Option(False, "--reject", help="拒绝/中止"),
+    decision: str = typer.Option(
+        "", "--decision", help="决策文本（卷级失败时 continue/abort/supervisor）"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """卷级 HITL 确认（POST /runs/{run_id}/confirm）。"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                f"/api/v1/agent/books/runs/{run_id}/confirm",
+                json={"approved": approved or not reject, "decision": decision},
+            )
+
+    data = _run_ctx(cli_ctx, _impl)
+
+    def _render(data: dict) -> None:
+        status = data.get("status", "?")
+        typer.echo(f"✓ 已确认，继续下一卷（run_id={data.get('run_id')}，status={status}）")
+
+    _human_or_json(cli_ctx, json_output, data, _render)

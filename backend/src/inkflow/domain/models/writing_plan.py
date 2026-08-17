@@ -54,6 +54,7 @@ class WritingPlan(BaseModel):
         progress: 节点进度快照 {outline_id: PlanNodeStatus}（权威进度）.
         execution_refs: 章执行引用 {outline_id: execution_id}.
         thread_id: LangGraph checkpoint thread_id（阶段 4 落库）.
+        hitl_payload: 卷级 HITL 暂停 payload（waiting_hitl 时非空，§3/§13.3 M8）.
         created_at / updated_at: 时间戳.
     """
 
@@ -69,6 +70,7 @@ class WritingPlan(BaseModel):
     progress: dict[str, str] = Field(default_factory=dict)  # outline_id -> status
     execution_refs: dict[str, str] = Field(default_factory=dict)  # outline_id -> execution_id
     thread_id: str | None = None
+    hitl_payload: dict[str, Any] | None = None  # 卷级 HITL 暂停 payload（waiting_hitl 时非空）
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 

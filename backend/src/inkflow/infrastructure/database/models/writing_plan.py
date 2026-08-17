@@ -99,6 +99,13 @@ class WritingPlanORM(Base):
     )
     """LangGraph checkpoint thread_id（阶段 4 落库；可空）."""
 
+    hitl_payload: Mapped[dict | None] = mapped_column(
+        LenientJSON(fallback=None),
+        nullable=True,
+        default=None,
+    )
+    """卷级 HITL 暂停 payload（JSON 列，waiting_hitl 时非空；可空）."""
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

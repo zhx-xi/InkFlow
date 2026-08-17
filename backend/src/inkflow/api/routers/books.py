@@ -12,6 +12,7 @@ from inkflow.api.deps import get_db
 from inkflow.domain.models.writing_plan import BookLimits
 from inkflow.domain.services.book_service import BookService, ChapterAlreadyWrittenError
 from inkflow.domain.services.planner_service import PlannerService
+from inkflow.infrastructure.agent.book_pipeline import BookVolumePipeline
 
 router = APIRouter(prefix="/api/v1/agent/books", tags=["Books"])
 
@@ -38,6 +39,13 @@ class BookRunRequest(BaseModel):
     mode: str = "static"
 
 
+class ConfirmRunRequest(BaseModel):
+    """卷级 HITL 确认请求体。"""
+
+    approved: bool = False
+    decision: str = ""
+
+
 def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
     """获取 PlannerService 实例（repo 注入，测试可 dependency_overrides 覆盖）。"""
     from inkflow.domain.services.planner_service import PlannerService
@@ -46,8 +54,14 @@ def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
     return PlannerService(repo=SQLiteBookRepository(db))
 
 
+# 模块级单例（镜像 agent.py _supervisor_pipeline 模式）：checkpointer 存实例内，
+# execute/confirm 须同实例——API 每次请求经 get_book_service 复用同一 pipeline
+_book_volume_pipeline: BookVolumePipeline | None = None
+
+
 def get_book_service(db: AsyncSession = Depends(get_db)) -> BookService:
     """获取 BookService 实例（repo + outline_repo + 安全闸 + 项目级上限注入）。"""
+    global _book_volume_pipeline
     from inkflow.domain.services.book_service import BookService
     from inkflow.infrastructure.database.repositories.outline_repo import SQLiteOutlineRepository
     from inkflow.infrastructure.repositories.book_repository import SQLiteBookRepository
@@ -100,11 +114,24 @@ def get_book_service(db: AsyncSession = Depends(get_db)) -> BookService:
         except Exception:
             return None
 
+    # 卷级编排单例装配：writer_factory/draft_service 先注入 None（构造零风险，
+    # BookVolumePipeline 执行时缺失才报错）；真实 writer 装配留待 M2 冒烟
+    # （F27 完整装配链，本批先保证 API 契约 + 单例存在）
+    if _book_volume_pipeline is None:
+        from inkflow.infrastructure.llm import LangChainLLMClient
+
+        _book_volume_pipeline = BookVolumePipeline(
+            LangChainLLMClient(),
+            writer_factory=None,
+            draft_service=None,
+        )
+
     return BookService(
         repo=repo,
         outline_repo=outline_repo,
         content_checker=_content_checker,
         project_config_getter=_project_config_getter,
+        volume_pipeline=_book_volume_pipeline,
     )
 
 
@@ -173,9 +200,14 @@ async def start_run(
     data: BookRunRequest,
     svc: BookService = Depends(get_book_service),
 ):
-    """启动书级运行（202 异步语义），返回 {run_id, status}。"""
+    """启动书级运行（202 异步语义），返回 {run_id, status}；mode="volume" 走卷级编排。"""
     limits = BookLimits(**data.limits) if data.limits is not None else None
     try:
+        if data.mode == "volume":
+            # 契约：limits 缺省时只传 plan_id（write_book_volume 缺省回退项目级/默认上限）
+            if limits is None:
+                return await svc.write_book_volume(data.writing_plan_id)
+            return await svc.write_book_volume(data.writing_plan_id, limits)
         return await svc.write_book(data.writing_plan_id, limits)
     except ChapterAlreadyWrittenError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
@@ -183,6 +215,24 @@ async def start_run(
         detail = str(e)
         if "不存在" in detail:
             raise HTTPException(status_code=404, detail=detail) from e
+        raise HTTPException(status_code=422, detail=detail) from e
+
+
+@router.post("/runs/{run_id}/confirm")
+async def confirm_run(
+    run_id: str,
+    data: ConfirmRunRequest,
+    svc: BookService = Depends(get_book_service),
+):
+    """卷级 HITL 确认：waiting_hitl → resume 继续/中止（§3.1/§13.3 M8）。"""
+    try:
+        return await svc.confirm_run(run_id, approved=data.approved, decision=data.decision)
+    except ValueError as e:
+        detail = str(e)
+        if "不存在" in detail:
+            raise HTTPException(status_code=404, detail=detail) from e
+        if "未处于等待确认状态" in detail:
+            raise HTTPException(status_code=422, detail=detail) from e
         raise HTTPException(status_code=422, detail=detail) from e
 
 
