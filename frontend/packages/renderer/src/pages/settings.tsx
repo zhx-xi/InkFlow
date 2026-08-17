@@ -897,3 +897,4 @@ export function SettingsPage() {
     </div>
   );
 }
+// probe: trigger settings E2E on main baseline
