@@ -302,6 +302,9 @@ def get_context_service(
         ProjectConfigOutlineSource,
         WorldSettingSource,
     )
+    from inkflow.infrastructure.context.summary_background_refresh import (
+        schedule_summary_background_refresh,
+    )
     from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
         SQLiteForeshadowingRepository,
     )
@@ -309,23 +312,39 @@ def get_context_service(
     project_repo = SQLiteProjectRepository(db)
     summary_repo = SQLiteSummaryRepository(db)
 
+    pref_source = PreferenceSource(
+        SQLitePreferenceRepository(db),
+        project_repo,
+        explicit_texts=_collect_explicit_texts(db),
+        user_preference_repo=SQLiteUserPreferenceRepository(db),
+        summary_repo=SQLiteSemanticSummaryRepository(db),
+        summarizer=SemanticSummarizer(
+            llm_client=LangChainLLMClient(),
+            prompt_manager=LangChainPromptManager(),
+        ),
+        llm_default_model=config.llm_default_model,
+        background_refresh=schedule_summary_background_refresh,
+    )
+
+    async def _preference_pending_audit(**kw: object) -> None:
+        """PreferenceSource._audit 适配器：event=... → audit_logs record（#456）。"""
+        audit = AuditLogService(SQLiteAuditLogRepository(db))
+        await audit.record(
+            project_id=None,
+            severity_summary=str(kw.get("event", "pending_summary")),
+            degraded=bool(kw.get("degraded", False)),
+            actor=str(kw.get("actor", "memory")),
+            note=str(kw.get("note")) if kw.get("note") is not None else None,
+        )
+
+    pref_source._audit = _preference_pending_audit
+
     sources: dict[ContextSourceType, ContextSourceProtocol] = {
         ContextSourceType.OUTLINE: ProjectConfigOutlineSource(project_repo),
         ContextSourceType.CHARACTER_SETTING: CharacterSettingSource(),
         ContextSourceType.WORLD_SETTING: WorldSettingSource(),
         ContextSourceType.FORESHADOWING: ForeshadowingSource(SQLiteForeshadowingRepository(db)),
-        ContextSourceType.PREFERENCE: PreferenceSource(
-            SQLitePreferenceRepository(db),
-            project_repo,
-            explicit_texts=_collect_explicit_texts(db),
-            user_preference_repo=SQLiteUserPreferenceRepository(db),
-            summary_repo=SQLiteSemanticSummaryRepository(db),
-            summarizer=SemanticSummarizer(
-                llm_client=LangChainLLMClient(),
-                prompt_manager=LangChainPromptManager(),
-            ),
-            llm_default_model=config.llm_default_model,
-        ),
+        ContextSourceType.PREFERENCE: pref_source,
     }
 
     return ContextService(

@@ -17,6 +17,8 @@ import pytest
 
 from inkflow.domain.models.context import ContextSourceType
 from inkflow.domain.models.project import Project, ProjectConfig
+from inkflow.domain.models.semantic_summary import SummaryScope
+from inkflow.domain.services.preference_learner import anchor_hash
 from inkflow.infrastructure.context.preference_source import PreferenceSource
 
 pytestmark = pytest.mark.asyncio  # 实测 mode=Mode.AUTO；显式 mark 兼容 STRICT/AUTO
@@ -328,11 +330,11 @@ class TestPreferenceSourceM2Semantic:
 
     async def test_lazy_summary_background_refresh_path(self):
         """㉖ M2 两段式②（-k lazy_summary 命中，验收 M2-10）: 锚点变化 +
-        background_refresh 注入（F44 阶段4 就位）→ 旧总结注入（不等待 LLM）+
+        background_refresh 注入（F44 后台任务就位）→ 旧总结注入（不等待 LLM）+
         audit pending_summary（degraded=True, actor="memory"）+ background_refresh
-        以单个 coroutine 实参被调（位置/关键字皆可）；summarizer 不被调。"""
-        import inspect
-
+        收到数据参数 (anchors, scope, project_id, anchor_hash)——父侧定稿参数契约
+        （F44 后台任务就位）：调度器自持 session 后台执行，不再传 coroutine；
+        summarizer 不被调。"""
         project_repo = AsyncMock()
         project_repo.get.return_value = _project(memory_learning=True)
         prefs = [_preference("称呼主角为林晚", "林晚", count=3)]
@@ -367,10 +369,12 @@ class TestPreferenceSourceM2Semantic:
         assert _arg(source._audit, "event", 0) == "pending_summary"
         assert _arg(source._audit, "degraded", 2) is True
         assert _arg(source._audit, "actor", 1) == "memory"
-        background_refresh.assert_awaited()
-        args, kwargs = background_refresh.await_args
-        coro = args[0] if args else next(iter(kwargs.values()), None)
-        assert inspect.iscoroutine(coro)
+        # 父侧定稿参数契约（F44 后台任务就位）：background_refresh 收到
+        # (anchors, scope, project_id, anchor_hash)，调度器自持 session 后台执行
+        background_refresh.assert_awaited_once_with(  # RED: 现实现传 coroutine → FAILED
+            prefs, scope=SummaryScope.PROJECT, project_id=PROJECT_ID,
+            anchor_hash=anchor_hash(prefs),
+        )
 
     async def test_llm_failure_falls_back(self):
         """㉗ M2 兜底②: summarizer.summarize 抛 SemanticSummaryError（LLM 失败）
@@ -471,17 +475,18 @@ class TestPreferenceSourceM2Semantic:
 
     async def test_lazy_summary_background_refresh_user_layer(self):
         """㉖ 补: 用户级锚点变化 + background_refresh 注入 → 旧总结注入 + audit
-        pending_summary + background_refresh 以 coroutine 被调（覆盖用户级分支，
-        项目级已由 test_lazy_summary_background_refresh_path 覆盖）。"""
-        import inspect
-
+        pending_summary + background_refresh 收到数据参数 (anchors, scope=USER,
+        project_id=None, anchor_hash)——父侧定稿参数契约（F44 后台任务就位）：
+        调度器自持 session 后台执行，不再传 coroutine（覆盖用户级分支，项目级
+        已由 test_lazy_summary_background_refresh_path 覆盖）。"""
         project_repo = AsyncMock()
         project_repo.get.return_value = _project(memory_learning=True)
         preference_repo = AsyncMock()
         preference_repo.list_by_project.return_value = ([], 0)
         user_pref = _user_preference("说", "低声道", count=2)
+        user_items = [user_pref]
         user_repo = AsyncMock()
-        user_repo.list_all.return_value = ([user_pref], 1)
+        user_repo.list_all.return_value = (user_items, 1)
         old_summary = _semantic_summary(
             "旧通用风格", scope="user", anchor_hash="old-hash-user", anchor_count=3
         )
@@ -509,9 +514,12 @@ class TestPreferenceSourceM2Semantic:
         source._audit.assert_awaited_once_with(
             event="pending_summary", degraded=True, actor="memory"
         )
-        assert background.await_count == 1
-        coro = background.await_args.args[0]
-        assert inspect.iscoroutine(coro)
+        # 父侧定稿参数契约（F44 后台任务就位）：background_refresh 收到
+        # (anchors, scope=USER, project_id=None, anchor_hash)，调度器自持 session
+        background.assert_awaited_once_with(  # RED: 现实现传 coroutine → FAILED
+            user_items, scope=SummaryScope.USER, project_id=None,
+            anchor_hash=anchor_hash(user_items),
+        )
 
     async def test_refresh_summary_defensive_when_uninjected(self):
         """_refresh_summary M2 依赖未注入 → None（防御分支，collect 已前置判断）."""
