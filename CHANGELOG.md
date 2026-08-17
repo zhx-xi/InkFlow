@@ -2,7 +2,30 @@
 
 所有重要变更记录于此文件，格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-> 版本口径以 [ADR-019 v5](adr/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
+> 版本口径以 [ADR-019 v8](adr/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
+
+## [0.9.0] - 2026-08-17
+
+### 新增
+- **F39/40/41 多 Agent 一期（#258/#259/#260，PR #403/#408/#407）**：Agent/Skill 实体 + 能力白名单装配 + 内置出厂配置 + skill 上传绑定（frontmatter + 可用 Agent 指定 + 删除保护）+ 自定义 Agent 编辑（prompt + 函数分组 checkbox）
+- **F20 MCP Server（#49，PR #400）**：stdio 薄客户端经 HTTP + 15 聚合工具（manage_* 同源契约）+ 冷启动自动拉起内核
+- **RAG 切片三档（#277/#278，PR #401/#413）**：段落切片 + 滑动重叠 + 检索元数据增强 + 对话识别/LLM 智能切片（降级 + sha256 增量）+ 指纹联动
+- **F46 DAG 编排（#270，PR #412）**：agent_relations 三类型（sequential/data/conditional）+ 确定性 gate（关键词「通过/PASS」）+ 列表式编辑器
+- **写作管线增强（#318/#343/#366/#379，PR #411/#417/#414/#418）**：write_continue 集成 F6 前文摘要 + HITL 确认流 GUI（usePipeline interrupt 态）+ e2e gaps G1-G4（设定驱动写作）+ 写作页 AI 聊天框/执行详情页
+- **内核门控（#384，PR #398）**：写作页 e2e「内核已连接」strict mode flaky 治理
+- **LLM 默认模型切 deepseek（#415，PR #416）**：生成管线默认 deepseek-v4-flash + E2E 管线模型动态化（e2e-llm.config.ts + env 覆盖）
+
+### 修复
+- 地图简形 resize + 世界观页导航（#388/#389，PR #393/#396）
+- e2e-frontend-settings 三个既有失败（#399，PR #404）
+- library-p3 地图工作台契约未同步 + unit-frontend 假绿（#405，PR #406）
+- 打包收集残留旧版 dist-info → 版本注入失效（#421，PR #422/#423）
+- 打包产物缺 inkflow-mcp.exe——MCP 入口未随 CLI/便携打包（#424，PR #425/#426/#427）
+- embedding 模型 id 带 provider 前缀 → RAG reindex/retrieve 全挂（#428，PR #429）
+- agentic 写作被护栏稳定终止——单工具连续改为会话总工具调用上限（#430，PR #431）
+
+### 变更
+- 0.9.0 预发布迭代 rc1-rc8（2026-08-16 ~ 08-17）：rc 验证发现 4 打包/装配/护栏缺陷（#421/#424/#428/#430）→ 逐轮修复后 rc8 全量验证通过 + GUI 用户复验确认；2026-08-17 正式发布（21/21 issues 全关）
 
 ## [0.8.0] - 2026-08-15
 
