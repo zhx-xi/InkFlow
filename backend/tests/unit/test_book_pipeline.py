@@ -517,3 +517,90 @@ class TestGuardrailScaling:
         assert state is not None
         assert state.get("finished") is True
         assert writer_factory.await_count == 3  # 全部章已尝试（并行扇出）
+# ════ F44 阶段3 coverage-gap 补测（规则 1j，2026-08-17：代码已存在直接通过）════
+# CI coverage-backend TOTAL 98% < 98.5%（book_pipeline.py 87% miss）——补防御分支。
+
+
+class TestCoverageGapPipeline:
+    """book_pipeline.py 防御分支补测（规则 1j：直接通过，非 RED）。"""
+
+    @pytest.mark.asyncio
+    async def test_extract_final_content_defensive_branches(self) -> None:
+        """_extract_final_content 防御：无 messages / 无 content → 空串（L66/70/72）。"""
+        from inkflow.infrastructure.agent.book_pipeline import _extract_final_content
+
+        assert _extract_final_content({}) == ""
+        assert _extract_final_content({"messages": [{"content": None}]}) == ""
+        assert _extract_final_content({"messages": [object()]}) == ""
+
+    def test_parse_supervisor_decision_defensive(self) -> None:
+        """_parse_supervisor_decision 防御：空/非 dict/未知 action → continue（L83-95）。"""
+        from inkflow.infrastructure.agent.book_pipeline import _parse_supervisor_decision
+
+        assert _parse_supervisor_decision("") == "continue"
+        assert _parse_supervisor_decision("not json") == "continue"
+        assert _parse_supervisor_decision("[1,2]") == "continue"
+        assert _parse_supervisor_decision('{"action": "dance"}') == "continue"
+        assert _parse_supervisor_decision('{"action": "abort"}') == "abort"
+
+    @pytest.mark.asyncio
+    async def test_empty_volume_fan_out_direct_to_join(self) -> None:
+        """空卷 → volume_fan_out 直接 goto join 回收（L110），completed 无中断。"""
+        from inkflow.domain.models.writing_plan import BookLimits
+
+        pipeline = _pipeline(_make_deps())
+        result = await pipeline.execute(_plan(), [], BookLimits())
+        assert result["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_resume_again_interrupts_on_next_boundary(self) -> None:
+        """resume 命中下一卷边界 → 再抛 VolumeHITLInterrupt（L288，多卷连续中断）。"""
+        from inkflow.domain.models.writing_plan import BookLimits
+        from inkflow.infrastructure.agent.book_pipeline import VolumeHITLInterrupt
+
+        vol1 = [_chapter(name=f"v1c{i}", sort_order=i) for i in range(2)]
+        vol2 = [_chapter(name=f"v2c{i}", sort_order=i) for i in range(2)]
+        vol3 = [_chapter(name=f"v3c{i}", sort_order=i) for i in range(2)]
+        deps = _make_deps()
+        pipeline = _pipeline(deps)
+        try:
+            await pipeline.execute(
+                _plan(), [_volume(vol1), _volume(vol2), _volume(vol3)], BookLimits()
+            )
+            raise AssertionError("应抛 VolumeHITLInterrupt")
+        except VolumeHITLInterrupt as exc:
+            interrupt = exc
+        # resume 卷 1 → 卷 2 边界再次 interrupt（3 卷：两次暂停）
+        try:
+            await pipeline.resume(interrupt, approved=True)
+            raise AssertionError("应再抛 VolumeHITLInterrupt")
+        except VolumeHITLInterrupt:
+            pass  # 预期：第二卷边界暂停
+        assert deps["writer_factory"].await_count == 4  # 卷1 2 + 卷2 2
+
+    @pytest.mark.asyncio
+    async def test_delegate_chapter_unassembled_raises(self) -> None:
+        """_delegate_chapter 未装配（plan/writer_factory None）→ ValueError（L316/318）。"""
+        pipeline = BookVolumePipeline(
+            AsyncMock(), writer_factory=None, draft_service=None, retry_limit=0
+        )
+        chapter = _chapter()
+        with pytest.raises(ValueError, match="plan 未装配"):
+            await pipeline._delegate_chapter(chapter)
+        # 装配 plan 但无 writer_factory → writer_factory 未装配
+        pipeline._plan = _plan()
+        with pytest.raises(ValueError, match="writer_factory 未装配"):
+            await pipeline._delegate_chapter(chapter)
+class TestCoverageGapPipeline2:
+    """book_pipeline.py 二轮补测：markdown 围栏决策解析（L90-93）。"""
+
+    def test_parse_supervisor_decision_markdown_fence(self) -> None:
+        """markdown 代码块围栏包裹的 JSON → 剥离解析（L90-93）。"""
+        from inkflow.infrastructure.agent.book_pipeline import _parse_supervisor_decision
+
+        assert _parse_supervisor_decision(
+            '```json\n{"action": "abort"}\n```'
+        ) == "abort"
+        assert _parse_supervisor_decision(
+            '```json\n{"action": "continue"}\n```'
+        ) == "continue"

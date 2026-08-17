@@ -584,3 +584,152 @@ async def test_get_status_counters_keys_unchanged():
         "agent_calls",
         "chapters_written",
     }
+# ════ F44 阶段3 coverage-gap 补测（规则 1j，2026-08-17：代码已存在直接通过）════
+# CI coverage-backend TOTAL 98% < 98.5%（book_service.py 93% miss）——补防御分支。
+
+
+class TestCoverageGapService:
+    """book_service.py 阶段3 防御分支补测（规则 1j：直接通过，非 RED）。"""
+
+    @pytest.mark.asyncio
+    async def test_write_book_volume_pipeline_unconfigured_raises(self) -> None:
+        """write_book_volume volume_pipeline 未配置 → ValueError（L246）。"""
+        repo = AsyncMock()
+        plan = _plan(root_outline_id=uuid.uuid4())
+        repo.get_writing_plan.return_value = plan
+        outline_repo = AsyncMock()
+        outline_repo.list.return_value = (_chapters(plan, 1), 1)
+        svc = _service(repo=repo, outline_repo=outline_repo)  # 不注入 volume_pipeline
+
+        with pytest.raises(ValueError, match="volume_pipeline 未配置"):
+            await svc.write_book_volume(plan.id)
+
+    @pytest.mark.asyncio
+    async def test_confirm_run_pipeline_unconfigured_raises(self) -> None:
+        """confirm_run volume_pipeline 未配置 → ValueError（L295）。"""
+        repo = AsyncMock()
+        plan = _plan(status="waiting_hitl", hitl_payload={"question": "x"})
+        repo.get_writing_plan.return_value = plan
+        svc = _service(repo=repo)  # 不注入 volume_pipeline
+
+        with pytest.raises(ValueError, match="volume_pipeline 未配置"):
+            await svc.confirm_run(str(plan.id), approved=True)
+
+    @pytest.mark.asyncio
+    async def test_confirm_run_resume_second_interrupt_updates_payload(self) -> None:
+        """confirm_run resume 再抛 VolumeHITLInterrupt → 更新 hitl_payload + waiting_hitl
+        （L304-310）。"""
+        payload2 = {"question": "下一卷边界", "volume_index": 2}
+        repo = AsyncMock()
+        plan = _plan(status="waiting_hitl", hitl_payload={"question": "第一卷"})
+        repo.get_writing_plan.return_value = plan
+
+        class _ResumePipeline:
+            async def resume(self, interrupt_obj, *, approved, decision):
+                from inkflow.infrastructure.agent.book_pipeline import VolumeHITLInterrupt
+
+                raise VolumeHITLInterrupt(payload2)
+
+        pipeline = _ResumePipeline()
+        svc = _service(repo=repo, volume_pipeline=pipeline)
+
+        result = await svc.confirm_run(str(plan.id), approved=True)
+        assert result["status"] == "waiting_hitl"
+        assert plan.hitl_payload == payload2
+        repo.update_writing_plan.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_check_content_written_content_checker_true(self) -> None:
+        """_check_content_written content_checker 返回 True → 安全阀命中（L374/434）。"""
+
+        repo = AsyncMock()
+        plan = _plan(root_outline_id=uuid.uuid4())
+        repo.get_writing_plan.return_value = plan
+        outline_repo = AsyncMock()
+        chapter = _outline(chapter_id=uuid.uuid4())
+        outline_repo.list.return_value = ([chapter], 1)
+        content_checker = AsyncMock(return_value=True)
+        svc = _service(
+            repo=repo,
+            outline_repo=outline_repo,
+            content_checker=content_checker,
+            volume_pipeline=AsyncMock(),
+        )
+
+        with pytest.raises(ChapterAlreadyWrittenError, match="该章已有内容，拒绝重跑"):
+            await svc.write_book_volume(plan.id)
+        content_checker.assert_awaited_once_with(chapter.chapter_id)
+
+    @pytest.mark.asyncio
+    async def test_check_chapter_written_dict_content_checker_true(self) -> None:
+        """_check_chapter_written dict 形态 content_checker True → 安全阀（L231-232）。"""
+
+        repo = AsyncMock()
+        plan = _plan(root_outline_id=uuid.uuid4())
+        repo.get_writing_plan.return_value = plan
+        outline_repo = AsyncMock()
+        chapter = _outline(chapter_id=uuid.uuid4())
+        outline_repo.list.return_value = ([chapter], 1)
+        content_checker = AsyncMock(return_value=True)
+        svc = _service(
+            repo=repo,
+            outline_repo=outline_repo,
+            content_checker=content_checker,
+            volume_pipeline=AsyncMock(),
+        )
+
+        with pytest.raises(ChapterAlreadyWrittenError, match="该章已有内容，拒绝重跑"):
+            await svc.write_book_volume(plan.id)
+        content_checker.assert_awaited_once_with(chapter.chapter_id)
+class TestCoverageGapService2:
+    """book_service.py 二轮补测：write_book_volume 防御分支。"""
+
+    @pytest.mark.asyncio
+    async def test_write_book_volume_plan_missing_raises(self) -> None:
+        """write_book_volume 计划不存在 → ValueError（L228）。"""
+        repo = AsyncMock()
+        repo.get_writing_plan.return_value = None
+        svc = _service(repo=repo, volume_pipeline=AsyncMock())
+
+        with pytest.raises(ValueError, match="计划不存在"):
+            await svc.write_book_volume(uuid.uuid4())
+
+    @pytest.mark.asyncio
+    async def test_write_book_volume_project_extra_limits(self) -> None:
+        """write_book_volume project_config_getter 分支：项目级上限生效（L231-232）。"""
+        from types import SimpleNamespace
+
+        repo = AsyncMock()
+        plan = _plan(root_outline_id=uuid.uuid4())
+        repo.get_writing_plan.return_value = plan
+        outline_repo = AsyncMock()
+        outline_repo.list.return_value = ([_outline(chapter_id=uuid.uuid4())], 1)
+        project_config_getter = AsyncMock(
+            return_value=SimpleNamespace(extra={"book_max_chapters": 7})
+        )
+        pipeline = MockVolumePipeline(
+            execute_result={"run_id": str(plan.id), "status": "completed"}
+        )
+        svc = _service(
+            repo=repo,
+            outline_repo=outline_repo,
+            project_config_getter=project_config_getter,
+            volume_pipeline=pipeline,
+        )
+
+        result = await svc.write_book_volume(plan.id)
+        assert result["status"] == "completed"
+        assert plan.limits.get("max_chapters") == 7  # 项目级 extra 覆盖默认
+
+    @pytest.mark.asyncio
+    async def test_find_volumes_outline_repo_none_returns_empty(self) -> None:
+        """_find_volumes outline_repo None → 空列表（L374，镜像 _find_chapters 防御）。"""
+        repo = AsyncMock()
+        plan = _plan(root_outline_id=uuid.uuid4())
+        repo.get_writing_plan.return_value = plan
+        svc = _service(  # outline_repo=None（覆盖默认 AsyncMock）
+            repo=repo, outline_repo=None, volume_pipeline=AsyncMock()
+        )
+
+        volumes = await svc._find_volumes(plan)
+        assert volumes == []
