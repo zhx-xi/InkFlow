@@ -1,13 +1,15 @@
 # F44: 长任务编排器（long-task-orchestrator）功能规格
 
-**Spec 版本**: 1.0（起草，2026-08-17）
+**Spec 版本**: 1.1（修订，2026-08-17，拍板固化）
 **日期**: 2026-08-17
 **依据**: 设计定稿 `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §2 全文（唯一真相）+ Issue #335（阶段 1）/ #336（阶段 2）/ #337（阶段 3）/ #338（阶段 4）+ Spike 验证报告 `docs/f44-orchestrator-spike-2026-08-17.md`（M1 门禁，workspace docs）+ 已合入源码核查（F27/F42/F29/F39/F6）
-**所属阶段**: 0.10.0（长任务编排器，F44 四阶段），估算 16-26 人天（#335 阶段 1：3-5 / #336 阶段 2：3-5 / #337 阶段 3：5-8 / #338 阶段 4：5-8，part-time 6-8 周）
+**所属阶段**: 0.10.0（长任务编排器，F44 四阶段），估算 24-39 人天（#335 阶段 1：5-8 / #336 阶段 2：4-6 / #337 阶段 3：7-11 / #338 阶段 4：8-10 + GUI 已含，part-time 8-10 周；v1.1 较 v1.0 的 16-26 人天增加 Q1=C GUI +8-12 与 Q2=C 项目级上限 +0.5-1）
 **关联 Issues**: [#335](https://github.com/zhx-xi/InkFlow/issues/335)（阶段 1：访谈式 Planner + WritingPlan + 委托）· [#336](https://github.com/zhx-xi/InkFlow/issues/336)（阶段 2：顺序派发 + 进度状态机 + 多维上限 + 安全阀）· [#337](https://github.com/zhx-xi/InkFlow/issues/337)（阶段 3：卷级编排 + Send map-reduce + 卷级 HITL + 失败恢复）· [#338](https://github.com/zhx-xi/InkFlow/issues/338)（阶段 4：AsyncSqliteSaver + 跨重启 resume + 干预 API）
 **依赖**: ✅ F39 Agent 实体 + 能力白名单（0.9.0 #258）· ✅ F27 writer-agent（已交付）· ✅ F42 管线 write_auto/write_continue（已交付）· ✅ F29 Supervisor（已交付）· ✅ F6 context（已交付）· ✅ outline 三级结构（F43 P3+P4 已交付）· ⏳ `langgraph-checkpoint-sqlite`（阶段 4 新增依赖，Spike ⑤ 实证缺）
 **参考 ADR**: [adr/ADR-035.md](../adr/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5）· [ADR-006v2](../../adr/ADR-006v2.md)（Agent 编排 LangGraph StateGraph）· [ADR-015](../../adr/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/ADR-019.md)（编号口径）· [ADR-027](../../adr/ADR-027.md)（覆盖率门禁）
 **状态**: 待实现 🔲
+
+> **Spec 变更**（v1.0 → v1.1，2026-08-17 用户拍板固化）：**Q1=C**（阶段 1-4 全含 GUI 面板——主/次面板 + 观察流三层密度 UI + 干预控件，+8-12 人天）· **Q2=C**（多维上限载体 = ProjectConfig.extra 项目级默认，读取优先级 = 请求 > 项目级 > 默认，+0.5-1 人天）· **Q3=A**（卷级锚点 + 章级被动动作，正文 §12 D12 已一致，仅标 ✅）。联动修订：§1 定位「全栈长任务编排器」+ 边界移除 GUI 排除；§5.1-§5.4 每阶段加「GUI 交互设计」小节；§2.4/§8/§11/§12 D11 联动 Q2=C；§8/§9/§10/§13 联动 GUI 纳入；待澄清 Q1-Q3 标 ✅ 留痕不删。
 
 > **模块类型声明**: 本模块为「**长任务编排型**」变体——新建 WritingPlan 编排元数据表 + 访谈式 Planner + 逐卷/逐章 Orchestrator Loop + 复用 F42 管线/F27 writer agent 的 Executor + 多维护栏 + 恢复策略树。与既有编排域差异：F42/F46 是**配置驱动静态/半静态拓扑**（角色链/DAG），F29 是**运行时动态路由**（supervisor 图），本模块是**长任务分层推进**（计划树 + 进度状态机 + 卷级 HITL 锚点 + 跨运行持久化）——三者共用 LangGraph StateGraph 引擎但目标不同（§1.3 边界）。编号依据：按「最新无冲突基线」接续——F38=第 18 变体为最新无冲突基线，本模块声明**第 20 变体**（F20/F46 均已占第 19，双占用冲突以 ADR-019 v6+ 重排为准，F46 spec 笔记 2026-08-16 实录）。
 
@@ -15,7 +17,7 @@
 
 ## 1. 概述
 
-F44 合并覆盖 **#335-#338 四阶段**，作为「一句话→全书」长任务编排器实现的唯一真相来源。定位（设计 §0/§1.1）：**学习 agent 开发 + 个人自用**，非商业产品——planner-executor、HITL、checkpoint、长上下文、多 agent 状态流逐概念落在已交付的 F26-F42 代码上做增量。
+F44 合并覆盖 **#335-#338 四阶段**，作为「一句话→全书」长任务编排器实现的唯一真相来源。定位（设计 §0/§1.1）：**学习 agent 开发 + 个人自用**，非商业产品——planner-executor、HITL、checkpoint、长上下文、多 agent 状态流逐概念落在已交付的 F26-F42 代码上做增量。**交付面 = 全栈**（Q1=C 拍板，v1.1）：后端 API + CLI 之外，阶段 1-4 **全含 GUI 面板**（主面板=主 agent 对话/思考/计划/调用子 agent；次面板=子 agent 详情手动点开；观察流三层密度 UI；干预控件；回归摘要面板）——定位「**全栈长任务编排器**」（后端编排引擎 + 前端交互面板一体交付）。
 
 **一句话 → [Planner 访谈循环] → [Orchestrator Loop（逐章/逐卷推进 + 卷级 checkpoint + 跨运行 resume）] → [Executor（复用 F42 管线 + F27 writer agent）] → [护栏系统] → [恢复策略]**（设计 §2.2 架构）。
 
@@ -32,14 +34,13 @@ F44 合并覆盖 **#335-#338 四阶段**，作为「一句话→全书」长任�
 
 ### 1.2 与样板差异
 
-非 F9 实体 CRUD（WritingPlan 是新表但非普通业务实体）、非 F27 闭环型（多 agent 分层）、非 F29 动态路由型（无 supervisor 决策角色，路由=计划树）、非 F42/F46 配置驱动型（拓扑由计划树+进度驱动，非用户配置）——本模块是**编排元数据 + 计划树驱动执行**：后端新增 WritingPlan 实体/访谈会话/书级运行 API/干预 API；CLI 新增 `inkflow book` 命令组；前端交互（主面板/子 agent 抽屉）见待澄清 Q1。
+非 F9 实体 CRUD（WritingPlan 是新表但非普通业务实体）、非 F27 闭环型（多 agent 分层）、非 F29 动态路由型（无 supervisor 决策角色，路由=计划树）、非 F42/F46 配置驱动型（拓扑由计划树+进度驱动，非用户配置）——本模块是**编排元数据 + 计划树驱动执行**：后端新增 WritingPlan 实体/访谈会话/书级运行 API/干预 API；CLI 新增 `inkflow book` 命令组；前端交互（主面板对话/子 agent 展开行/观察流三层密度/干预控件）**已拍板全含**（Q1=C，v1.1，§5 各阶段 GUI 小节 + §8 frontend 组件）。
 
 ### 1.3 边界声明
 
 - **不含** F45 记忆演进（#339/#340，独立里程碑，M2 依赖本模块阶段 4 之后的长跑证据）
 - **不含** deepagents `task` 工具嵌套委派（F26 已禁用）：阶段 3 委派形态 = LangGraph Send API 并行 fan-out（设计 §2.3-3 硬约束），包装 F27 writer-agent，**不是** deepagents subagent 工具
-- **不含** 章内断点、幂等键框架、唯一索引冲突框架、token 精确核算、双面板精致化、访谈分批状态机、三级 agent（设计 §2.5 苦工清单「先能用再修」）
-- **不含** GUI 交互面板（主面板对话/子 agent 抽屉/观察流三层密度 UI）——待澄清 Q1 拍板前默认 API+CLI 交付
+- **不含** 章内断点、幂等键框架、唯一索引冲突框架、token 精确核算、双面板精致化、访谈分批状态机、三级 agent（设计 §2.5 苦工清单「先能用再修」）；GUI 仅含基础面板交互（§5 各阶段 GUI 小节），品牌动画/视觉打磨等精致化仍按 ui-design-taste 克制原则留范围外（§10）
 - **不含** MCP 表现层（F20 薄客户端经 HTTP，本模块端点经既有 HTTP 通道天然可用，不新增 MCP 工具）
 
 ---
@@ -150,7 +151,7 @@ thread_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=T
 
 ```python
 class BookLimits(BaseModel):
-    """书级运行上限配置（请求体可传，缺省取 F32 设置扩展键，见待澄清 Q2）。
+    """书级运行上限配置（请求体可传；缺省取 ProjectConfig.extra 项目级默认，Q2=C 拍板，v1.1，§12 D11）。
 
     - max_chapters: 硬护栏——章节数上限（默认 100，可配置）
     - max_agent_calls: 硬护栏——子 agent 调用次数上限（默认 200，可配置）
@@ -167,6 +168,8 @@ def validate_at_least_one_hard_limit(limits: BookLimits) -> None:
     """「至少一道有限护栏」不变式（#336 启动前校验）：max_chapters/max_agent_calls
     至少一个为有限值（>0）；全部无上限（0 或 None）→ ValueError 拒绝启动。"""
 ```
+
+**读取优先级（Q2=C 拍板，v1.1）**：请求体 `BookLimits` 显式 > 项目级 `ProjectConfig.extra`（键 `book_max_chapters`/`book_max_agent_calls`/`book_max_tokens`/`book_max_sessions`）> §2.4 默认常量。载体 = **ProjectConfig.extra 项目级扩展字典**（F1 既有字段，零 MODIFY——F43 P1 四层核实：extra 在 domain/ORM/router/service 均已透传；**不是** F32 全局 settings，与 F27 预算护栏「全局设置」语义分道，理由见 §12 D11）。
 
 **计数器**：运行中在 `WritingPlan.progress`/`execution_refs` 旁维护 `counters`（调用数/累计 token/已生成章数）——阶段 1 写死 `max_chapters=1/max_agent_calls=1` 但计数器立起来（#335 要点）；阶段 2 起可配置（§5.2）。
 
@@ -211,7 +214,7 @@ def validate_at_least_one_hard_limit(limits: BookLimits) -> None:
 // 200 { "run_id": "uuid", "status": "running", "next_checkpoint": "卷 2" }
 ```
 
-### 3.3 干预 API（阶段 4，粒度见待澄清 Q3）
+### 3.3 干预 API（阶段 4，粒度=卷级锚点 + 章级被动动作，Q3=A 已拍板 ✅ v1.1，§12 D12）
 
 ```jsonc
 // POST /api/v1/agent/books/runs/{run_id}/intervene
@@ -232,6 +235,8 @@ def validate_at_least_one_hard_limit(limits: BookLimits) -> None:
 | `GET /runs/{run_id}` `trace` 字段 | 三层 | 表演=主 agent 思考/决策/子 agent 调用轨迹全文；仪表=每章状态 + 计数；无声=仅进度树。默认全开，查询参数 `density=performance|dashboard|silent` 可压缩 |
 | `GET /runs/{run_id}/summary` | — | 回归摘要：到哪了（进度树）/接下来（下一卷/章）/已耗（计数）一页说清；结构化运行日志 = `steps` JSON 快照（镜像 F27 AgentStep 序列），可回放复盘导出 |
 | 干预响应 `diff` 字段 | — | 干预后输出带差异标注（edit 前后 brief/大纲文本 diff，difflib 字面 diff 即可，零 LLM） |
+
+> GUI 对接（Q1=C，v1.1）：三层密度切换控件（表演/仪表/无声）消费同一 `density` 查询参数；`trace`/`summary`/`diff` 为 GUI 观察流与回归摘要面板的渲染数据源（§5.4 GUI 交互设计）。
 
 ### 3.5 异常映射
 
@@ -289,6 +294,12 @@ inkflow book summary <run_id> [--export <file.json>]                      # 回�
 
 **上限**：写死 `max_chapters=1/max_agent_calls=1`（#335「上限写死但计数器立起来」）——计数器字段/校验逻辑先存在，阶段 2 放开配置。
 
+**GUI 交互设计**（Q1=C 拍板，v1.1；依据设计 §2.6 自用三件核心 + #379 写作页 AI 聊天框先例 PR #418 已合入）：
+- **单面板对话（访谈）**：写作页域或新 book 页的面板承载访谈对话——先例 = `ChatPanel`（`executePipeline(builtin:chat)` → 1s 轮询 `getExecutionStatus` → completed 消息 + 「插入正文」→ `chapterStore.setContent`），本阶段对接 `POST /planner` + `POST /planner/{id}/respond`（SSE 复用 F23 基建，访谈问题即模板可点击复制）；「全部你决定」（auto=true）一键委托按钮
+- **子 agent 展开行（观察流）**：访谈/委托执行轨迹按 `GET /runs/{run_id}` `trace` 字段渲染可展开行（子 agent 调用/思考/工具调用），默认折叠、手动点开（次面板语义）
+- 状态：`PlannerSession`（drafting/completed/declined）→ `WritingPlan`（drafting/auto）驱动面板阶段切换；聊天消息本地 store（镜像 chapterStore 模式）
+- 落点（写作页域 vs 新 book 页）由实现会话定；本 spec 只定交互语义 + 端点对接 + 状态（§8 frontend 组件清单）
+
 ### 5.2 阶段 2：顺序派发 + 进度状态机 + 多维上限 + 安全阀（#336，→几章）
 
 **计划=数据**：章列表入 `outline` 表（level=chapter + parent_id 挂 volume；level=overall 书级锚点 + level=volume 卷节点，P3+P4 三级结构已就绪零 MODIFY）。
@@ -302,6 +313,11 @@ inkflow book summary <run_id> [--export <file.json>]                      # 回�
 **「内容已写」安全阀**（设计 §2.3-1，最高优先级）：`create_execution` 前查该章已有内容（`Chapter.content` 非空 / `Draft` 存在）/执行已完成（`execution_refs[outline_id]` 存在且 status=done）→ **拒绝重跑**（409，§3.5）——一行 WHERE 拆掉「重复内容 + 双倍费用」。
 
 **章级幂等写**：每章一次 save_draft（同一章执行不重复写；重复调用被安全阀拦截在前）。
+
+**GUI 交互设计**（Q1=C 拍板，v1.1）：
+- **章级进度状态 UI**：`WritingPlan.progress` 渲染（pending/in_progress/done/failed/skipped 状态徽标 + 章进度条/进度树），`GET /runs/{run_id}` 轮询驱动（镜像 `ChatPanel` 1s 轮询模式）；观察流密度=仪表（每章状态 + 计数器）
+- **安全阀 409 文案展示**：「该章已有内容，拒绝重跑」错误 toast/内联提示（防用户重复点击启动）
+- 状态：progress 快照为权威（§6 R2），GUI 只读渲染不持有执行状态
 
 ### 5.3 阶段 3：卷级编排 + Send map-reduce + 卷级 HITL + 失败恢复（#337，→一卷）
 
@@ -336,6 +352,11 @@ Spike ③ 实测：卷内全部章并行写完 → 卷边界 interrupt 暂停（
 
 **F29 护栏复用**：步数/连续调用/fallback 护栏（`SupervisorExecuteConfig.max_steps/max_consecutive/fallback_on_error`），步数上限随计划缩放（`max_agent_calls` 按计划章数换算，防长书超步）。
 
+**GUI 交互设计**（Q1=C 拍板，v1.1）：
+- **卷级 HITL 确认对话框**：`GET /runs/{run_id}` 状态=waiting_hitl 时弹出确认对话框（approve/reject 按钮 + decision 文本输入，镜像 CLI `book confirm` 语义）→ `POST /runs/{run_id}/confirm`；非 waiting_hitl 不显示（对齐 422 防呆语义）
+- **卷内并行进度**：卷内章并行执行在观察流仪表密度聚合展示（章级徽标批量推进，不做动画滚动）
+- 状态：interrupt 暂停点由后端驱动（next checkpoint 提示「卷 2」等），GUI 只消费 `confirm` 端点
+
 ### 5.4 阶段 4：AsyncSqliteSaver + 跨重启 resume + 干预 API（#338，→一本书）
 
 **checkpointer 持久化**（Spike ⑤ 已证实）：InMemorySaver → **AsyncSqliteSaver**（`langgraph-checkpoint-sqlite`，Spike 临时装入实测 v3.1.1 可用）——**独立 SQLite 文件**（`AsyncSqliteSaver.from_conn_string()`），不与业务表挤同一 WAL 连接（#338 要点）。**pyproject 新增依赖**（§11）。
@@ -344,9 +365,15 @@ Spike ③ 实测：卷内全部章并行写完 → 卷边界 interrupt 暂停（
 
 **跨重启续跑**（Spike ⑦ 已证实，#338 验收前置）：章边界续跑（不做章内断点）；resume 时 `Command(update={...})` **重注入 llm_client**——F29 模式复用（`supervisor_pipeline.py` L45-47 实证：`llm_client: Annotated[LLMClientProtocol, UntrackedValue(LLMClientProtocol)]` 不参与 checkpointer 序列化，resume 时注入）。杀进程 → 重启 → resume → 无重复内容（安全阀兜底）。
 
-**干预 API**（粒度见待澄清 Q3）：`POST /runs/{run_id}/intervene`——pause（后台任务挂起，卷边界 checkpoint 已存）/ resume（等价 Command(resume)）/ redirect（跳过章/改序）/ edit（改章 brief，difflib 差异标注）。FastAPI 后台任务承载运行（`BackgroundTasks` 或独立 task 管理，运行中用户可做别的）。
+**干预 API**（粒度=卷级锚点 + 章级被动动作，Q3=A 已拍板 ✅ v1.1，§12 D12）：`POST /runs/{run_id}/intervene`——pause（后台任务挂起，卷边界 checkpoint 已存）/ resume（等价 Command(resume)）/ redirect（跳过章/改序）/ edit（改章 brief，difflib 差异标注）。FastAPI 后台任务承载运行（`BackgroundTasks` 或独立 task 管理，运行中用户可做别的）。
 
 **回归摘要 + 结构化运行日志**（设计 §2.6-3）：`GET /runs/{run_id}/summary`——到哪了/接下来/已耗一页说清；`steps` JSON 快照（镜像 F27 AgentStep 序列）可回放复盘导出（`inkflow book summary --export`）。
+
+**GUI 交互设计**（Q1=C 拍板，v1.1）：
+- **干预控件**：运行工具栏 pause/resume 按钮 + 章行内 redirect（跳过/重试/标记 failed）+ 章 brief 编辑（edit）→ `POST /runs/{run_id}/intervene`；干预响应 `diff` 字段高亮展示（edit 前后差异，difflib 字面 diff）；已完成章干预控件禁用（422 语义防呆）
+- **回归摘要面板**：`GET /runs/{run_id}/summary` 渲染（到哪了/接下来/已耗一页说清 + 结构化运行日志回放/导出按钮，镜像 CLI `--export`）
+- **观察流三层密度切换**：表演（trace 全文）/仪表（章状态+计数）/无声（仅进度树）三档切换 → `density` 查询参数（§3.4 GUI 对接注）
+- **克制原则（ui-design-taste）**：安静纸张感（暖白背景非纯白）、动效 ≤200ms 仅状态变化、SSE 流式是唯一「动态感」来源、写作页核心区域信息密度最低档（面板可折叠/默认收起）
 
 ## 6. 组织规则
 
@@ -401,6 +428,13 @@ backend/src/inkflow/infrastructure/database/models/planner_session.py # PlannerS
 backend/src/inkflow/infrastructure/repositories/book_repository.py    # WritingPlan/PlannerSession 仓储实现
 backend/src/inkflow/api/routers/books.py                # §3 端点
 backend/src/inkflow/cli/commands/book_cmd.py            # §4 inkflow book 命令组
+frontend/packages/renderer/src/api/books.ts             # /api/v1/agent/books 客户端（镜像 pipeline api 模式）
+frontend/packages/renderer/src/stores/book.ts           # book 运行状态 store（镜像 chapterStore 模式）
+frontend/packages/renderer/src/components/BookPlannerPanel.tsx  # 访谈单面板对话（ChatPanel #379 先例 PR #418，阶段 1）
+frontend/packages/renderer/src/components/BookRunPanel.tsx      # 运行状态/进度 UI/干预控件/回归摘要面板（阶段 2-4）
+frontend/packages/renderer/src/components/ExecutionTraceRow.tsx # 子 agent 展开行 + 观察流三层密度切换（trace/density，阶段 1-4）
+frontend/packages/renderer/src/pages/book.tsx           # 新 book 页或并入写作页域（落点实现会话定，阶段 1）
+frontend/packages/renderer/src/components/__tests__/book*.test.tsx  # 前端组件测试（Vitest，§9.1 前端层）
 backend/tests/unit/test_writing_plan_model.py           # 模型/上限校验单测
 backend/tests/unit/test_book_service.py                 # 服务层（安全阀/进度/上限）
 backend/tests/unit/test_planner_service.py              # 访谈循环
@@ -421,6 +455,8 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | `api/routers/__init__.py` 或 app 装配 | 注册 books router | 1 |
 | `FEATURES.md` / `AGENTS.md`（如适用） | 功能清单登记（issue 完成时同步） | 4 |
 
+> Q2=C 注（v1.1）：多维上限默认载体 = **ProjectConfig.extra 项目级扩展字典**（F1 既有字段，四层已透传）——**零 MODIFY**，无需 F32 settings 扩展键（§11 F32 行已改「不 MODIFY」；读取优先级见 §2.4）。
+
 ## 9. 测试策略
 
 ### 9.1 层次（镜像既有三层 + LLM 依赖开关）
@@ -432,6 +468,7 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | API | `tests/api/test_books_api.py` | 端点契约：planner 启谈/回复/auto、runs 启动/状态、confirm、intervene、summary、异常映射（404/409/422） | integration-agent-backend 链登记 |
 | CLI | `tests/cli/test_book_cmd.py` | `inkflow book` 命令组（CliRunner + 临时 SQLite，isolated_db 双 patch 模式） | integration-cli-backend 链登记 |
 | E2E | `tests/e2e/test_book_long_run.py` | 长任务端到端：真实 LLM 走 **e2e-ai-backend 开关模式**（CI 默认 skip，本地 `INKFLOW_E2E_LLM_*` env 真实 API；LLM 依赖测试不放默认 CI 链，F39 实证） | `pytest tests/e2e/` + env |
+| 前端组件（Vitest） | `frontend/packages/renderer/src/components/__tests__/book*.test.tsx` | 访谈对话流、子 agent 展开行、章级进度 UI、HITL 确认对话框、干预控件、三层密度切换、回归摘要面板（mock API，F43 前端测试模式） | `pnpm test`（→ `pnpm --filter renderer test` → `vitest run`，frontend CI job） |
 
 ### 9.2 关键测试场景（每阶段 RED 契约锚点）
 
@@ -443,10 +480,13 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 6. **失败恢复策略树**（阶段 3）：章级失败重试 2 次 → failed 继续；卷级失败 → interrupt 用户决定（mock supervisor 补救）
 7. **跨重启 resume**（阶段 4，真实 AsyncSqliteSaver + 子进程）：进程 1 跑到卷边界 → 进程 2 同文件 resume → 完成无重复（Spike ⑦ 闭环复刻为测试）
 8. **干预 API**（阶段 4）：pause → 状态 paused；resume → 续跑；redirect 跳过章 → progress skipped；edit → diff 标注；干预已完成章 → 422
+9. **GUI 主路径闭环**（阶段 1，Vitest + E2E，Q1=C v1.1）：访谈对话 → 委托 → 子 agent 展开行可见 → 草稿回收（「插入正文」）；E2E 走 e2e-ai-backend 开关模式
+10. **GUI 干预/密度**（阶段 4，Vitest，Q1=C v1.1）：干预控件触发 intervene API + diff 高亮；三层密度切换 → `density` 参数正确传递；HITL 对话框仅 waiting_hitl 显示
 
 ### 9.3 覆盖率与门禁
 
 - 模块 ≥80%（ADR-027 全仓口径 98.5% 行 / 95% 分支不变，新模块按增量纳入）
+- 前端组件测试纳入 frontend CI job（`vitest run`）；GUI 主路径 E2E 走 e2e-ai-backend 开关模式（CI 默认 skip，本地 env 驱动）
 - 不测不存在的功能：阶段划分内的功能按阶段验收，跨阶段功能（如阶段 1 的卷级扇出）不写前置测试（gap 记 issue）
 - 测试文件新增登记 ci.yml（顶层 tests 显式登记模式）；`backend/tests/unit/` 全目录跑零登记（既有）
 
@@ -456,12 +496,11 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 |---|----|----------|
 | 1 | F45 记忆演进（M1 用户级偏好 / M2 语义风格提取） | 独立里程碑 #339/#340；M2 依赖本模块阶段 4 长跑证据 |
 | 2 | deepagents task 工具嵌套委派 | F26 已禁用（工具调用语义无法程序化控制）；委派形态=Send API（设计 §2.3-3） |
-| 3 | GUI 主/次面板、观察流三层密度 UI | 待澄清 Q1 拍板前默认 API+CLI；前端批次化先例 F43 |
-| 4 | 章内断点、幂等键框架、唯一索引冲突框架、token 精确核算、双面板精致化、访谈分批状态机、三级 agent、遥测看板 | 设计 §2.5 苦工清单「先能用再修」 |
-| 5 | 干预粒度升级（章级 checkpoint / 章内暂停） | 设计 §2.3-2 interrupt 只放卷边界；章级干预仅被动动作（跳过/重试/标记） |
-| 6 | 并行 token-aware 规划、记忆回写（阶段 5 打磨） | 设计 §2.4 阶段 5 暂不建 issue，待阶段 1-4 完成后评估 |
-| 7 | MCP 工具面 | F20 薄客户端经 HTTP 天然可用；不新增 MCP 工具 |
-| 8 | 云端部署/多用户 | Constitution P1 本地优先 |
+| 3 | 章内断点、幂等键框架、唯一索引冲突框架、token 精确核算、双面板精致化、访谈分批状态机、三级 agent、遥测看板 | 设计 §2.5 苦工清单「先能用再修」 |
+| 4 | 干预粒度升级（章级 checkpoint / 章内暂停） | 设计 §2.3-2 interrupt 只放卷边界；章级干预仅被动动作（跳过/重试/标记）——Q3=A 拍板确认（v1.1） |
+| 5 | 并行 token-aware 规划、记忆回写（阶段 5 打磨） | 设计 §2.4 阶段 5 暂不建 issue，待阶段 1-4 完成后评估 |
+| 6 | MCP 工具面 | F20 薄客户端经 HTTP 天然可用；不新增 MCP 工具 |
+| 7 | 云端部署/多用户 | Constitution P1 本地优先 |
 
 ## 11. 依赖关系
 
@@ -473,7 +512,7 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | F39 Agent 实体 | 能力白名单（tool_ids/skill_ids）供章 writer 装配 | ✅ 已实现（0.9.0） |
 | F6 context | 上下文注入链（章 brief 变量） | ✅ 已实现 |
 | outline/character 实体（F11/F9 + F43 P3/P4 三级结构） | planner 产出落库（level/parent_id/chapter_id） | ✅ 已实现 |
-| F32 settings | 多维上限默认键（待澄清 Q2 拍板后联动） | ✅ 已实现（拍板后 MODIFY） |
+| F32 settings | 多维上限默认键 —— **不 MODIFY**（Q2=C 拍板，v1.1：上限默认载体改为 ProjectConfig.extra 项目级默认，见 §2.4/§12 D11） | —（仅引用，零改动） |
 | **langgraph-checkpoint-sqlite** | AsyncSqliteSaver（阶段 4） | ⏳ 新增依赖（Spike ⑤ 实证缺失） |
 | 被依赖 | 无（0.10.0 首批模块，F45 M2 依赖本模块阶段 4 证据） | — |
 
@@ -493,12 +532,12 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | D8 | 「内容已写」安全阀 | create_execution 前 WHERE 检查（内容/执行完成 → 拒绝） | 设计 §2.3-1：危险的从来不是丢状态，是缺「这章已写」标记 | 无（不检查=重复内容+双倍费用） |
 | D9 | 恢复策略树 | 章级重试 N → failed 继续；卷级 interrupt 用户/主 agent | 设计 §2.3-4 + 约束 4（用户决定或显式授权主 agent） | 全自动重试（违背约束 4）；全人工（长书不可用） |
 | D10 | 多维上限 | 硬护栏（章数/调用数）+ 软护栏（token）+「至少一道有限护栏」校验 | 设计 §2.1 约束 3 + #336 不变式；F27 预算护栏先例 | 全部无上限（违背不变式）；全部硬上限（token 精确核算=苦工） |
-| D11 | 上限配置载体 | 请求体 BookLimits + F32 settings 默认键（待澄清 Q2 拍板） | F27 Q2 先例（请求>设置>默认读取优先级） | 仅请求体（默认不可改）；仅硬编码（不可配置） |
-| D12 | 干预粒度 | 卷级锚点 + 章级被动动作（skip/retry/标记） | 设计 §2.3-2 interrupt 只放卷边界；章级干预不引入新 checkpoint | 章级精细 checkpoint（违反设计约束 + 大成本） |
+| D11 | 上限配置载体 | **ProjectConfig.extra 项目级默认 + 请求体 BookLimits**（读取优先级 = 请求显式 > 项目级 extra > 默认常量；Q2=C 拍板，v1.1） | 项目级上限语义更贴合「每本书独立约束」（extra 为 F1 既有字段，四层已透传零 MODIFY） | 全局 settings 扩展键（A，否决——与「每本书独立约束」语义分道，徒增跨模块 MODIFY）；仅请求体（B，否决——默认不可改） |
+| D12 | 干预粒度 | 卷级锚点 + 章级被动动作（skip/retry/标记）——Q3=A 拍板确认（v1.1，正文 v1.0 已一致，仅标 ✅） | 设计 §2.3-2 interrupt 只放卷边界；章级干预不引入新 checkpoint | 章级精细 checkpoint（违反设计约束 + 大成本） |
 
 ## 13. 验收标准
 
-按阶段分组（M 里程碑 ↔ #335-#338 验收原文映射）。**所有里程碑验收以本节 M1-Mn 为准**。
+按阶段分组（M 里程碑 ↔ #335-#338 验收原文映射）。**所有里程碑验收以本节 M1-M12（含 GUI 子里程碑 M3b/M6b/M9b/M12b，Q1=C 拍板 v1.1）为准**。
 
 ### 13.1 阶段 1（#335）：M1-M3
 
@@ -507,6 +546,7 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | M1 | 一句话 → 访谈 → 一章草稿端到端（访谈 ≤5 问/轮、问题即模板、授权项记录） | `inkflow book plan start "..."` + `plan respond` + `plan run`；pytest 访谈循环 + 委托契约单测 |
 | M2 | 「全部你决定」路径跑 F42 write_auto；WritingPlan 状态=auto | `inkflow book plan auto "..."`；单测断言 F42 调用 + 状态 |
 | M3 | 上限写死章=1/调用=1 但计数器立起来；WritingPlan/PlannerSession 落库 | `inkflow book status` 显示计数；仓储集成测试 |
+| M3b | GUI：单面板访谈对话可用 + 子 agent 展开行可见（Q1=C 拍板，v1.1） | Vitest 组件测试（mock API，访谈→委托→展开行→草稿回收闭环）+ 手工验收（写作页或 book 页） |
 
 ### 13.2 阶段 2（#336）：M4-M6
 
@@ -515,6 +555,7 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | M4 | 3-5 章顺序生成 + 每章状态显示（pending→done/failed/skipped 落库） | `inkflow book run <plan>` + `book status`；API 轮询断言进度树 |
 | M5 | 上限配置生效（章数/token/调用可配置 + 至少一道有限护栏启动前校验） | limits 参数化测试：全无护栏 422；硬护栏超限终止；token 软超限告警 |
 | M6 | 「内容已写」安全阀拒绝重跑（#336 验收原文） | 已有内容/已完成章 create_execution → 409；安全阀单测 + API 测试 |
+| M6b | GUI：章级进度状态 UI（状态徽标 + 进度条，观察流仪表密度） | Vitest 组件测试（mock runs 状态轮询）+ 手工验收 |
 
 ### 13.3 阶段 3（#337）：M7-M9
 
@@ -523,6 +564,7 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | M7 | 一卷端到端：卷 planner 动态拆章 → Send map-reduce 并行扇出 → join 回收 | pytest 真实 LangGraph 图（3 章并行 + reducer 聚合）；`book run` 一卷 |
 | M8 | 卷边界暂停确认（约束 8 卷级暂停、章级只报告） | `book status` 显示 waiting_hitl + `book confirm --approved`；F29 HITL 双分支测试同构 |
 | M9 | 子 agent 失败 → 报告 → 用户选择 → 主 agent 补救（恢复策略树） | 章级失败重试 N → failed 继续；卷级失败 interrupt 用户决定/授权 supervisor；策略树测试 |
+| M9b | GUI：卷级 HITL 确认对话框（waiting_hitl → approve/reject + decision） | Vitest 组件测试（mock confirm 端点）+ 手工验收 |
 
 ### 13.4 阶段 4（#338）：M10-M12
 
@@ -531,8 +573,9 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | M10 | 杀进程 → 重启 → resume → 断言无重复内容（#338 验收原文） | 子进程测试（Spike ⑦ 闭环复刻）：P1 跑到卷边界 → P2 resume 完成 → 无重复 Draft |
 | M11 | 干预指令生效可见（pause/resume/改向/编辑 + 差异标注） | `book intervene` 各动作 + `diff` 字段断言；已完成章干预 422 |
 | M12 | 回归摘要 + 结构化运行日志（到哪了/接下来/可导出） | `book summary --export <file.json>` 断言 steps JSON 快照 + 进度树 |
+| M12b | GUI：干预控件（pause/resume/redirect/edit + diff 高亮）+ 回归摘要面板 + 观察流三层密度切换 | Vitest 组件测试 + E2E（GUI 主路径闭环）；`pnpm test`（vitest run） |
 
-## 待澄清问题（阻塞级，拍板后升 v1.1）
+## 待澄清问题（阻塞级，已拍板固化 v1.1）
 
 ### Q1（阻塞级）前端交付面：F44 是否含 GUI 交互面板？
 
@@ -542,6 +585,8 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 - **B**：阶段 1 即含最小 GUI（单面板对话 + 子 agent 展开行），后续阶段 GUI 增量。估算影响：+3-5 人天/阶段（前端批次混入后端里程碑）。
 - **C**：阶段 1-4 全含 GUI 面板（主/次面板 + 观察流 UI + 干预控件）。估算影响：+8-12 人天，0.10.0 里程碑膨胀。
 
+> **✅ 已确认（用户拍板：选项 C）**：阶段 1-4 全含 GUI 面板（主/次面板 + 观察流三层密度 UI + 干预控件 + 回归摘要面板）。正文已按拍板结果修订：§1 定位「全栈长任务编排器」+ §1.3 边界移除 GUI 排除；§5.1-§5.4 每阶段加「GUI 交互设计」小节；§8 文件结构加 frontend 组件（api/store/BookPlannerPanel/BookRunPanel/ExecutionTraceRow/book 页）；§9 测试策略加前端 Vitest 层 + 场景 9/10；§10 移除「GUI 不在范围」行；§13 每阶段补 GUI 验收里程碑（M3b/M6b/M9b/M12b）。估算影响 +8-12 人天（已并入头部估算 24-39）。
+
 ### Q2（阻塞级）多维上限配置载体？
 
 #336「多维上限：章数/token/调用可配置」——配置载体影响 §8 文件结构与 §11 依赖（F32 settings 是否 MODIFY）。
@@ -549,6 +594,8 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 - **A（建议）**：请求体 `BookLimits`（`POST /runs` 直接传）+ F32 app_settings 扩展键默认值（`book_max_chapters`/`book_max_agent_calls`/`book_max_tokens`/`book_max_sessions`），读取优先级 = 请求体显式 > 全局设置 > 默认（F27 Q2 预算护栏先例：agent_max_steps 等）。估算影响：+0.5-1 人天（F32 settings 扩展 + 读取链）。
 - **B**：仅请求体 `BookLimits`（默认值写死在 spec §2.4 常量）。估算影响：0 额外人天，但默认不可改。
 - **C**：ProjectConfig.extra 存项目级默认。估算影响：+0.5-1 人天，与 F27 预算护栏（全局设置）语义不统一。
+
+> **✅ 已确认（用户拍板：选项 C）**：多维上限载体 = **ProjectConfig.extra 项目级默认**（非 F32 全局 settings），读取优先级 = 请求体 BookLimits 显式 > 项目级 extra > 默认常量。正文已按拍板结果修订：§2.4 BookLimits 缺省取项目级 extra + 读取优先级说明；§8.2 Q2=C 注（extra 为 F1 既有字段，四层已透传，零 MODIFY）；§11 F32 settings 行改「不 MODIFY」；§12 D11 更新为项目级 extra（否决 A 全局 settings——与 F27 预算护栏「全局设置」语义分道，理由=项目级上限语义更贴合「每本书独立约束」）。估算影响 +0.5-1 人天（已并入头部估算）。
 
 ### Q3（阻塞级）阶段 4 干预 API 干预粒度？
 
@@ -558,4 +605,6 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 - **B**：仅卷级动作（pause/resume/整卷跳过/整卷重跑）。估算影响：-1 人天，但 #338「改向/编辑」验收覆盖变窄。
 - **C**：章级精细 checkpoint（章内可暂停/单章独立恢复）。估算影响：+5-8 人天，违反设计 §2.3-2 硬约束 + §2.5 苦工清单（章内断点）。
 
-> 待澄清留痕：Q1-Q3 均为 🔲 待用户拍板；拍板后按 inkflow-spec-authoring「spec 增量修订 playbook」升 v1.1（联动 §8/§10/§11/§12 + 待澄清区标 ✅ 已确认）。
+> **✅ 已确认（用户拍板：选项 A）**：卷级锚点 + 章级被动动作——pause/resume 运行级（卷边界 checkpoint）；redirect/edit 章级（跳过/重试/标记 failed/编辑章 brief），**不引入章级 checkpoint**。正文 §12 D12 与 §3.3 契约 v1.0 已一致，无需大改——D12 已加「Q3=A 拍板确认（v1.1）」注；§10 第 4 行同步标注。
+
+> 待澄清留痕：Q1-Q3 已于 2026-08-17 用户拍板并固化升 v1.1——Q1=✅ C（阶段 1-4 全含 GUI）/ Q2=✅ C（ProjectConfig.extra 项目级默认）/ Q3=✅ A（卷级锚点+章级被动动作）；正文已按拍板结果全节联动修订（§1/§2.4/§5/§8/§9/§10/§11/§12/§13），留痕不删除。
