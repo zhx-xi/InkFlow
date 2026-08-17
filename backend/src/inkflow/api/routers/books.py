@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,6 +14,7 @@ from inkflow.domain.models.writing_plan import BookLimits
 from inkflow.domain.services.book_service import BookService, ChapterAlreadyWrittenError
 from inkflow.domain.services.planner_service import PlannerService
 from inkflow.infrastructure.agent.book_pipeline import BookVolumePipeline
+from inkflow.infrastructure.agent.execution_store import ExecutionStore
 
 router = APIRouter(prefix="/api/v1/agent/books", tags=["Books"])
 
@@ -46,6 +48,15 @@ class ConfirmRunRequest(BaseModel):
     decision: str = ""
 
 
+class InterveneRequest(BaseModel):
+    """书级运行干预请求体（§3.2）：pause/resume/redirect/edit。"""
+
+    action: str
+    target: str | None = None
+    to: str | None = None
+    payload: dict | None = None
+
+
 def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
     """获取 PlannerService 实例（repo 注入，测试可 dependency_overrides 覆盖）。"""
     from inkflow.domain.services.planner_service import PlannerService
@@ -59,8 +70,14 @@ def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
 _book_volume_pipeline: BookVolumePipeline | None = None
 
 
-def get_book_service(db: AsyncSession = Depends(get_db)) -> BookService:
-    """获取 BookService 实例（repo + outline_repo + 安全闸 + 项目级上限注入）。"""
+# 后台任务注册表（S4 占位）：run_id → asyncio.Task。
+# 本批按父侧 b2 裁定不启动真正后台任务（POST /runs 保持同步返回，既有 202
+# 契约优先）；真实长任务后台化与 resume 续跑接线留 M2 冒烟。
+_book_tasks: dict[str, asyncio.Task] = {}
+
+
+def _build_book_service(db: AsyncSession) -> BookService:
+    """装配真实 BookService（repo + outline_repo + 安全闸 + 项目级上限 + 执行记录仓储）。"""
     global _book_volume_pipeline
     from inkflow.domain.services.book_service import BookService
     from inkflow.infrastructure.database.repositories.outline_repo import SQLiteOutlineRepository
@@ -132,7 +149,13 @@ def get_book_service(db: AsyncSession = Depends(get_db)) -> BookService:
         content_checker=_content_checker,
         project_config_getter=_project_config_getter,
         volume_pipeline=_book_volume_pipeline,
+        execution_store=ExecutionStore(db),
     )
+
+
+def get_book_service(db: AsyncSession = Depends(get_db)) -> BookService:
+    """获取 BookService 实例（薄壳委托 _build_book_service；测试可 dependency_overrides 覆盖）。"""
+    return _build_book_service(db)
 
 
 def _parse_id(id_str: str, detail: str = "会话不存在") -> uuid.UUID:
@@ -243,6 +266,36 @@ async def get_run_status(
 ):
     """查询书级运行状态（进度树 + 计数器）。"""
     result = await svc.get_status(run_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="运行不存在")
+    return result
+
+
+@router.post("/runs/{run_id}/intervene")
+async def intervene_run(
+    run_id: str,
+    data: InterveneRequest,
+    svc: BookService = Depends(get_book_service),
+):
+    """书级运行干预（pause/resume/redirect/edit，§3.2）：快操作状态落库，异常 404/422。"""
+    try:
+        return await svc.intervene(
+            run_id, action=data.action, target=data.target, to=data.to, payload=data.payload
+        )
+    except ValueError as e:
+        detail = str(e)
+        if "运行不存在" in detail:
+            raise HTTPException(status_code=404, detail=detail) from e
+        raise HTTPException(status_code=422, detail=detail) from e
+
+
+@router.get("/runs/{run_id}/summary")
+async def get_run_summary(
+    run_id: str,
+    svc: BookService = Depends(get_book_service),
+):
+    """书级运行回归摘要（§3.3）：进度树 + 计数器 + steps + next。"""
+    result = await svc.get_summary(run_id)
     if result is None:
         raise HTTPException(status_code=404, detail="运行不存在")
     return result

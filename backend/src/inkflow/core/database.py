@@ -182,6 +182,21 @@ def ensure_agent_executions_trace_column(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE agent_executions ADD COLUMN trace TEXT"))
 
 
+def ensure_agent_executions_thread_id_column(conn: Connection) -> None:
+    """F44 阶段 4（#338）：为存量库 agent_executions 表补 thread_id 列（幂等）。
+
+    镜像 ensure_agent_executions_trace_column 形态：先查 PRAGMA table_info 确认
+    列缺失才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，
+    等 create_all 建新表（ORM 已含 thread_id 列）。
+    """
+    cols = conn.execute(text("PRAGMA table_info(agent_executions)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return  # 表不存在（全新环境）→ create_all 建新表（自动含 thread_id 列）
+    if "thread_id" not in names:
+        conn.execute(text("ALTER TABLE agent_executions ADD COLUMN thread_id TEXT"))
+
+
 def ensure_world_parent_id_column(conn: Connection) -> None:
     """#173：为既有库 world_settings 补 parent_id 列 + 替换唯一索引（幂等）.
 
@@ -347,7 +362,7 @@ def _migrate_drop_is_deleted(
     if unique_indexes:
         for index_name, columns in unique_indexes.items():
             conn.execute(
-                text(f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} " f"ON {table} ({columns})")
+                text(f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table} ({columns})")
             )
     # ④ 删列
     conn.execute(text(f"ALTER TABLE {table} DROP COLUMN is_deleted"))

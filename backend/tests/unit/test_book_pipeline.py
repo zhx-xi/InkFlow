@@ -517,6 +517,8 @@ class TestGuardrailScaling:
         assert state is not None
         assert state.get("finished") is True
         assert writer_factory.await_count == 3  # 全部章已尝试（并行扇出）
+
+
 # ════ F44 阶段3 coverage-gap 补测（规则 1j，2026-08-17：代码已存在直接通过）════
 # CI coverage-backend TOTAL 98% < 98.5%（book_pipeline.py 87% miss）——补防御分支。
 
@@ -591,6 +593,8 @@ class TestCoverageGapPipeline:
         pipeline._plan = _plan()
         with pytest.raises(ValueError, match="writer_factory 未装配"):
             await pipeline._delegate_chapter(chapter)
+
+
 class TestCoverageGapPipeline2:
     """book_pipeline.py 二轮补测：markdown 围栏决策解析（L90-93）。"""
 
@@ -598,9 +602,14 @@ class TestCoverageGapPipeline2:
         """markdown 代码块围栏包裹的 JSON → 剥离解析（L90-93）。"""
         from inkflow.infrastructure.agent.book_pipeline import _parse_supervisor_decision
 
-        assert _parse_supervisor_decision(
-            '```json\n{"action": "abort"}\n```'
-        ) == "abort"
-        assert _parse_supervisor_decision(
-            '```json\n{"action": "continue"}\n```'
-        ) == "continue"
+        assert _parse_supervisor_decision('```json\n{"action": "abort"}\n```') == "abort"
+        assert _parse_supervisor_decision('```json\n{"action": "continue"}\n```') == "continue"
+
+    def test_parse_supervisor_decision_fence_extract_still_invalid(self) -> None:
+        """围栏提取后仍非法 JSON：```json 围栏内 {action: continue}（键未加引号）/
+        {"action": }（值非法）→ 提取子串 json.loads 再失败 → data=None → 默认
+        continue（覆盖 L103-104 二次解析失败分支）。"""
+        from inkflow.infrastructure.agent.book_pipeline import _parse_supervisor_decision
+
+        assert _parse_supervisor_decision("```json\n{action: continue}```") == "continue"
+        assert _parse_supervisor_decision('```json\n{"action": }```') == "continue"

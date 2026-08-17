@@ -326,3 +326,103 @@ def book_confirm(
         typer.echo(f"✓ 已确认，继续下一卷（run_id={data.get('run_id')}，status={status}）")
 
     _human_or_json(cli_ctx, json_output, data, _render)
+
+
+_REDIRECT_LABELS: dict[str, str] = {
+    "skip": "跳过",
+    "retry": "重试",
+    "mark_failed": "标记失败",
+}
+
+
+@app.command("intervene")
+def book_intervene(
+    ctx: typer.Context,
+    run_id: str = typer.Argument(..., help="书级运行 ID"),
+    action: str = typer.Option(..., "--action", help="pause|resume|redirect|edit"),
+    target: str | None = typer.Option(None, "--target", help="outline_id（redirect/edit）"),
+    to: str | None = typer.Option(None, "--to", help="skip|retry|mark_failed（redirect）"),
+    brief: str | None = typer.Option(None, "--brief", help="新章 brief（edit）"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """书级运行干预（POST /runs/{run_id}/intervene，§3.2）。"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        body: dict = {
+            "action": action,
+            "target": target,
+            "to": to,
+            "payload": {"brief": brief} if brief else None,
+        }
+        async with client:
+            return await client.post(
+                f"/api/v1/agent/books/runs/{run_id}/intervene",
+                json=body,
+            )
+
+    data = _run_ctx(cli_ctx, _impl)
+
+    def _render(data: dict) -> None:
+        run_id_out = data.get("run_id")
+        if action == "pause":
+            typer.echo(f"✓ 已暂停 run_id={run_id_out}")
+        elif action == "resume":
+            typer.echo(f"✓ 已恢复 run_id={run_id_out}")
+        elif action == "redirect":
+            label = _REDIRECT_LABELS.get(to or "", to or "")
+            typer.echo(f"✓ 已{label}章 {target}")
+        elif action == "edit":
+            diff = data.get("diff") or {}
+            typer.echo(f"✓ 已编辑章 {target} brief")
+            before = diff.get("before")
+            after = diff.get("after")
+            if before is not None:
+                typer.echo(f"  before: {before}")
+            if after is not None:
+                typer.echo(f"  after: {after}")
+
+    _human_or_json(cli_ctx, json_output, data, _render)
+
+
+@app.command("summary")
+def book_summary(
+    ctx: typer.Context,
+    run_id: str = typer.Argument(..., help="书级运行 ID"),
+    export: str | None = typer.Option(None, "--export", help="导出摘要 JSON 到文件"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """书级运行回归摘要（GET /runs/{run_id}/summary，§3.3）。"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/api/v1/agent/books/runs/{run_id}/summary")
+
+    data = _run_ctx(cli_ctx, _impl)
+
+    if export:
+        with open(export, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=2)
+
+    def _render(data: dict) -> None:
+        typer.echo(f"run_id: {data.get('run_id')}")
+        typer.echo(f"status: {data.get('status')}")
+        typer.echo("进度:")
+        for key, value in (data.get("progress") or {}).items():
+            typer.echo(f"  {key}: {value}")
+        typer.echo("计数器:")
+        for key, value in (data.get("counters") or {}).items():
+            typer.echo(f"  {key}: {value}")
+        steps = data.get("steps") or []
+        typer.echo(f"步骤: {len(steps)}")
+        for step in steps:
+            typer.echo(f"  [{step.get('index')}] {step.get('outline_id')}: {step.get('status')}")
+        next_state = data.get("next") or {}
+        typer.echo(f"next: {next_state}")
+
+    _human_or_json(cli_ctx, json_output, data, _render)
