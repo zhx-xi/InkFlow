@@ -97,6 +97,9 @@ from inkflow.infrastructure.database.repositories.summary_repo import (
 from inkflow.infrastructure.database.repositories.timeline_repo import (
     SQLiteTimelineRepository,
 )
+from inkflow.infrastructure.database.repositories.user_preference_repo import (
+    SQLiteUserPreferenceRepository,
+)
 from inkflow.infrastructure.database.repositories.world_repo import (
     SQLiteWorldRepository,
 )
@@ -168,6 +171,7 @@ def get_memory_service(
         event_repo=SQLiteMemoryEventRepository(db),
         project_repo=SQLiteProjectRepository(db),
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
+        user_preference_repo=SQLiteUserPreferenceRepository(db),
     )
 
 
@@ -275,11 +279,8 @@ def _collect_explicit_texts(db: AsyncSession):
 def get_context_service(
     db: AsyncSession,
 ) -> ContextService:
-    """获取 ContextService 实例.
-
-    Phase 1 空实现：Character/World/Foreshadowing 数据源为空。
-    使用 Mock count_tokens（生产环境由 F5 LLMClient.count_tokens 替换）。
-    """
+    """获取 ContextService 实例（Phase 1 空实现：Character/World/Foreshadowing 数据源为空，
+    Mock count_tokens 生产环境由 F5 LLMClient.count_tokens 替换）."""
     from inkflow.domain.models.context import ContextSourceType
     from inkflow.infrastructure.context.preference_source import PreferenceSource
     from inkflow.infrastructure.context.sources import (
@@ -304,6 +305,7 @@ def get_context_service(
             SQLitePreferenceRepository(db),
             project_repo,
             explicit_texts=_collect_explicit_texts(db),
+            user_preference_repo=SQLiteUserPreferenceRepository(db),
         ),
     }
 
@@ -888,12 +890,8 @@ async def get_vector_status(project_id: str, db: AsyncSession | None = None) -> 
 
 
 async def get_vector_store_optional() -> VectorStoreProtocol | None:
-    """获取 RAG 向量存储（可选）——未配置 embedding 时返回 None 而非抛错。
-
-    #264：search semantic 恒空根因——get_search_service 硬编码 vector_store=None。
-    此处兜底为 None：未配置 embedding 模型时 keyword 模式保持正常（懒装配降级），
-    已配置时注入真实 vector_store（semantic 模式可用）。
-    """
+    """获取 RAG 向量存储（可选）——未配置 embedding 时返回 None 而非抛错
+    （#264 懒装配降级，keyword 模式保持正常，已配置时注入真实 vector_store）."""
     try:
         return await get_vector_store()
     except RAGUnavailableError:

@@ -52,6 +52,25 @@ RED 预期
 asyncio 模式: 本 venv pytest-asyncio mode=Mode.AUTO（pyproject
 asyncio_mode = "auto" 生效）；文件级 pytestmark = pytest.mark.asyncio
 双保险（STRICT/AUTO 两种模式均成立），全部用例 async def。
+
+F45 M1 追加契约（2026-08-17，spec §5.6/§7/§9）:
+- PreferenceSource.__init__ 第 4 可选参 user_preference_repo: object | None
+  = None（explicit_texts 之后；F28 既有 3 参构造兼容）→ 存
+  self._user_preference_repo
+- collect 用户级注入（memory_learning=true 时）: user_preference_repo.
+  list_all() → Q1=B 惰性重算（source_projects 含已删项目 → 移除 + 项目数减
+  1 + update 写回；project_count<2 → delete）→ Q3=A 冲突过滤（复用
+  explicit_texts，项目级/用户级同规则）→ 每条 ContextItem: title=
+  「AI 已记住（全局）：{pattern}」/ source=PREFERENCE / content=
+  "{pattern}（{value}）"≤200 / priority=count / metadata 含
+  preference_id/category/count
+- 预算: 项目级 + 用户级合并排序（count desc）最多 10 条（_MAX_ITEMS）；
+  user_preference_repo=None → 不注入用户级（向后兼容）
+- RED 期构造扩展用属性注入（#318 配方）: source._user_preference_repo =
+  fake（构造 4 参 TypeError ERROR 规避）；GREEN 契约 = 构造第 4 参存同名属性
+- RED 预期: 用户级 helper 惰性 import UserPreference（模块未实现）→
+  ImportError FAILED；模块落地后 → 断言失败（无用户级条目/无全局 title）
+  FAILED；守护用例（None 不注入）RED 期即 PASS 刻意（GREEN 后锁行为）
 """
 
 from __future__ import annotations
@@ -341,3 +360,234 @@ class TestPreferenceSourceCollect:
             "count": 3,
         }
         assert items[0].metadata == expected
+
+
+# ═══ F45 M1 追加段（2026-08-17，spec §5.6/§7/§9 用户级注入）═══
+
+
+def _user_preference(pattern, value, *, count, project_count=2, category=None, **kw):
+    """构造用户级偏好领域实体（惰性 import——RED 阶段 user_preference.py 未实现）."""
+    from inkflow.domain.models.preference import PreferenceCategory
+    from inkflow.domain.models.user_preference import UserPreference
+
+    values = {
+        "id": str(uuid.uuid4()),
+        "category": category if category is not None else PreferenceCategory.STYLE_WORD,
+        "pattern": pattern,
+        "value": value,
+        "confidence": 0.75,
+        "count": count,
+        "project_count": project_count,
+        "source_projects": [str(uuid.UUID(int=101)), str(uuid.UUID(int=102))],
+        "source_events": [],
+        "created_at": datetime(2026, 8, 1, tzinfo=UTC),
+        "updated_at": datetime(2026, 8, 1, tzinfo=UTC),
+    }
+    values.update(kw)
+    return UserPreference(**values)
+
+
+class TestPreferenceSourceUserLevel:
+    """PreferenceSource.collect 用户级注入（M1，spec §5.6/§7）.
+
+    构造扩展契约: __init__ 第 4 可选参 user_preference_repo: object | None =
+    None（explicit_texts 之后，F28 既有 3 参构造兼容）→ 存 self._user_preference_repo。
+    RED 期用属性注入（#318 配方）规避构造 TypeError ERROR——source.
+    _user_preference_repo = fake 与 GREEN 构造注入同属性名，实现侧按此实现。
+
+    RED 预期: 用户级 helper 惰性 import UserPreference（模块未实现）→
+    ImportError FAILED；模块落地后 → 断言失败（无用户级条目/无「AI 已记住
+    （全局）」title）FAILED；守护用例（user_preference_repo=None）RED 期即
+    PASS 刻意（GREEN 后锁向后兼容）。
+    """
+
+    async def test_injects_user_level_preferences_with_global_title(self):
+        """⑲ 用户级注入: title=「AI 已记住（全局）：{pattern}」区别于项目级."""
+        project_repo = AsyncMock()
+        project_repo.get.return_value = _project(memory_learning=True)
+        prefs = [_preference("称呼主角为林晚", "林晚", count=2)]
+        preference_repo = AsyncMock()
+        preference_repo.list_by_project.return_value = (prefs, 1)
+        user_pref = _user_preference("说", "低声道", count=3)
+        user_repo = AsyncMock()
+        user_repo.list_all.return_value = ([user_pref], 1)
+        source = PreferenceSource(preference_repo, project_repo)
+        source._user_preference_repo = user_repo  # 属性注入（#318 配方）
+
+        items = await source.collect(PROJECT_ID, CHAPTER_ID)
+
+        titles = [i.title for i in items]
+        assert "AI 已记住（全局）：说" in titles  # RED: 用户级不注入 → FAILED
+        assert "AI 已记住：称呼主角为林晚" in titles
+        user_item = next(i for i in items if i.title.startswith("AI 已记住（全局）"))
+        assert user_item.source == ContextSourceType.PREFERENCE
+        assert user_item.content == "说（低声道）"
+        assert user_item.priority == 3
+        assert user_item.metadata == {
+            "preference_id": str(user_pref.id),
+            "category": "style_word",
+            "count": 3,
+        }
+        user_repo.list_all.assert_awaited_once()
+
+    async def test_user_level_budget_merged_with_project(self):
+        """⑳ 预算合并: 项目级 8 + 用户级 5 → 合并排序后最多 10 条."""
+        project_repo = AsyncMock()
+        project_repo.get.return_value = _project(memory_learning=True)
+        prefs = [_preference(f"P{i:02d}", f"V{i:02d}", count=9 - i) for i in range(1, 9)]
+        preference_repo = AsyncMock()
+        preference_repo.list_by_project.return_value = (prefs, 8)
+        user_prefs = [_user_preference(f"U{i:02d}", f"W{i:02d}", count=13 - i) for i in range(1, 6)]
+        user_repo = AsyncMock()
+        user_repo.list_all.return_value = (user_prefs, len(user_prefs))
+        source = PreferenceSource(preference_repo, project_repo)
+        source._user_preference_repo = user_repo  # 属性注入（#318 配方）
+
+        items = await source.collect(PROJECT_ID, CHAPTER_ID)
+
+        assert len(items) == 10  # RED: 用户级缺失 → 仅项目级 8 条 → FAILED
+        assert items[0].priority == 12
+        assert [i.priority for i in items] == sorted([i.priority for i in items], reverse=True)
+        assert "AI 已记住（全局）：U01" in [i.title for i in items]
+
+    async def test_user_level_conflict_filter_skips_value_in_explicit_texts(self):
+        """㉑ Q3=A: 用户级 value 命中该项目显式设定文本 → 跳过（同规则）."""
+        project_repo = AsyncMock()
+        project_repo.get.return_value = _project(memory_learning=True)
+        explicit_texts = AsyncMock(return_value=["林晚"])
+        preference_repo = AsyncMock()
+        preference_repo.list_by_project.return_value = ([], 0)
+        user_prefs = [
+            _user_preference("她", "林晚", count=5),  # 冲突 → 跳过
+            _user_preference("说", "低声道", count=3),  # 不冲突 → 注入
+        ]
+        user_repo = AsyncMock()
+        user_repo.list_all.return_value = (user_prefs, len(user_prefs))
+        source = PreferenceSource(preference_repo, project_repo, explicit_texts)
+        source._user_preference_repo = user_repo  # 属性注入（#318 配方）
+
+        items = await source.collect(PROJECT_ID, CHAPTER_ID)
+
+        titles = [i.title for i in items]
+        assert "AI 已记住（全局）：说" in titles  # RED: 用户级不注入 → FAILED
+        assert "AI 已记住（全局）：她" not in titles
+        assert explicit_texts.await_args.args[0] == PROJECT_ID
+
+    async def test_user_level_lazy_recompute_deletes_when_below_two_projects(self):
+        """Q1=B 惰性重算①: 移除已删项目后 project_count<2 → delete + 不注入."""
+        deleted = uuid.UUID(int=201)
+        alive = uuid.UUID(int=202)
+        user_pref = _user_preference(
+            "说",
+            "低声道",
+            count=3,
+            project_count=2,
+            source_projects=[str(deleted), str(alive)],
+        )
+        project_repo = AsyncMock()
+        project_repo.get.side_effect = lambda pid: {
+            PROJECT_ID.int: _project(memory_learning=True),
+            deleted.int: None,  # 已删项目
+            alive.int: _project(memory_learning=True),
+        }.get(pid)
+        preference_repo = AsyncMock()
+        preference_repo.list_by_project.return_value = ([], 0)
+        user_repo = AsyncMock()
+        user_repo.list_all.return_value = ([user_pref], 1)
+        source = PreferenceSource(preference_repo, project_repo)
+        source._user_preference_repo = user_repo  # 属性注入（#318 配方）
+
+        items = await source.collect(PROJECT_ID, CHAPTER_ID)
+
+        # RED: 用户级逻辑缺失 → delete 未调用 → expected await not found FAILED
+        user_repo.delete.assert_awaited()
+        assert "AI 已记住（全局）：说" not in [i.title for i in items]
+
+    async def test_user_level_lazy_recompute_updates_when_two_projects_remain(self):
+        """Q1=B 惰性重算②: 移除幽灵项目后仍 ≥2 项目 → update 写回 + 继续注入."""
+        deleted = uuid.UUID(int=201)
+        alive_a = uuid.UUID(int=202)
+        alive_b = uuid.UUID(int=203)
+        user_pref = _user_preference(
+            "说",
+            "低声道",
+            count=3,
+            project_count=3,
+            source_projects=[str(deleted), str(alive_a), str(alive_b)],
+        )
+        project_repo = AsyncMock()
+        project_repo.get.side_effect = lambda pid: {
+            PROJECT_ID.int: _project(memory_learning=True),
+            deleted.int: None,  # 已删项目
+            alive_a.int: _project(memory_learning=True),
+            alive_b.int: _project(memory_learning=True),
+        }.get(pid)
+        preference_repo = AsyncMock()
+        preference_repo.list_by_project.return_value = ([], 0)
+        user_repo = AsyncMock()
+        user_repo.list_all.return_value = ([user_pref], 1)
+        source = PreferenceSource(preference_repo, project_repo)
+        source._user_preference_repo = user_repo  # 属性注入（#318 配方）
+
+        items = await source.collect(PROJECT_ID, CHAPTER_ID)
+
+        # RED: 用户级逻辑缺失 → update 未调用 → expected await not found FAILED
+        user_repo.update.assert_awaited()
+        assert "AI 已记住（全局）：说" in [i.title for i in items]
+
+    async def test_user_preference_repo_none_keeps_project_only(self):
+        """守护: user_preference_repo=None（F28 既有 3 参构造）→ 不注入用户级
+        （向后兼容；RED 期即 PASS 刻意，GREEN 后锁行为）."""
+        project_repo = AsyncMock()
+        project_repo.get.return_value = _project(memory_learning=True)
+        prefs = [
+            _preference("称呼主角为林晚", "林晚", count=3),
+            _preference("用词偏好：低声道", "低声道", count=2),
+        ]
+        preference_repo = AsyncMock()
+        preference_repo.list_by_project.return_value = (prefs, 2)
+        source = PreferenceSource(preference_repo, project_repo)  # 既有 3 参构造
+
+        items = await source.collect(PROJECT_ID, CHAPTER_ID)
+
+        assert len(items) == 2
+        assert all(not i.title.startswith("AI 已记住（全局）") for i in items)
+
+    async def test_user_level_skips_invalid_project_uuid(self):
+        """Q1=B 惰性重算防御: source_projects 含非法 uuid 字符串 → ValueError 跳过，不崩."""
+        project_repo = AsyncMock()
+        project_repo.get.return_value = _project(memory_learning=True)
+        user_pref = _user_preference(
+            "说",
+            "低声道",
+            count=3,
+            project_count=2,
+            source_projects=["not-a-uuid", str(uuid.UUID(int=202))],
+        )
+        preference_repo = AsyncMock()
+        preference_repo.list_by_project.return_value = ([], 0)
+        user_repo = AsyncMock()
+        user_repo.list_all.return_value = ([user_pref], 1)
+        source = PreferenceSource(preference_repo, project_repo)
+        source._user_preference_repo = user_repo  # 属性注入（#318 配方）
+
+        items = await source.collect(PROJECT_ID, CHAPTER_ID)
+
+        assert "AI 已记住（全局）：说" in [i.title for i in items]
+
+    async def test_user_level_content_length_limited_to_200(self):
+        """预算②: 用户级 pattern+value 超长 → content 总长 ≤200（截断）."""
+        project_repo = AsyncMock()
+        project_repo.get.return_value = _project(memory_learning=True)
+        user_pref = _user_preference("长" * 60, "值" * 300, count=3)
+        preference_repo = AsyncMock()
+        preference_repo.list_by_project.return_value = ([], 0)
+        user_repo = AsyncMock()
+        user_repo.list_all.return_value = ([user_pref], 1)
+        source = PreferenceSource(preference_repo, project_repo)
+        source._user_preference_repo = user_repo  # 属性注入（#318 配方）
+
+        items = await source.collect(PROJECT_ID, CHAPTER_ID)
+
+        assert len(items) == 1
+        assert len(items[0].content) <= 200

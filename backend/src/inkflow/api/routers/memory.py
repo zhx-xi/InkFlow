@@ -53,6 +53,30 @@ async def remove_preference(
     return {"preference_id": preference_id, "deleted": True}
 
 
+@router.get("/user-preferences")
+async def list_user_preferences(
+    category: str | None = Query(None),
+    svc: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """用户级偏好列表（全局跨项目，可分类过滤）→ {"items": [...], "total": N}（spec §3.1/§3.2）"""
+    category_enum = PreferenceCategory(category) if category else None
+    items, total = await svc.list_user_preferences(category=category_enum)
+    return {"items": [_dump(p) for p in items], "total": total}
+
+
+@router.delete("/user-preferences/{preference_id}")
+async def remove_user_preference(
+    preference_id: str,
+    svc: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """删除用户级偏好（所有项目立即停止注入）→ {"preference_id", "deleted": true} / 404."""
+    try:
+        await svc.remove_user_preference(preference_id)
+    except PreferenceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"preference_id": preference_id, "deleted": True}
+
+
 @router.get("/memory/stats")
 async def memory_stats(
     project_id: uuid.UUID = Query(...),
