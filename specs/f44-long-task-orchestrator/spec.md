@@ -1,13 +1,15 @@
 # F44: 长任务编排器（long-task-orchestrator）功能规格
 
-**Spec 版本**: 1.1（修订，2026-08-17，拍板固化）
+**Spec 版本**: 1.2（#475 访谈 LLM 动态提问 + 对话式 UI + 会话落库，2026-08-19）
 **日期**: 2026-08-17
-**依据**: 设计定稿 `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §2 全文（唯一真相）+ Issue #335（阶段 1）/ #336（阶段 2）/ #337（阶段 3）/ #338（阶段 4）+ Spike 验证报告 `docs/f44-orchestrator-spike-2026-08-17.md`（M1 门禁，workspace docs）+ 已合入源码核查（F27/F42/F29/F39/F6）
-**所属阶段**: 0.10.0（长任务编排器，F44 四阶段），估算 24-39 人天（#335 阶段 1：5-8 / #336 阶段 2：4-6 / #337 阶段 3：7-11 / #338 阶段 4：8-10 + GUI 已含，part-time 8-10 周；v1.1 较 v1.0 的 16-26 人天增加 Q1=C GUI +8-12 与 Q2=C 项目级上限 +0.5-1）
-**关联 Issues**: [#335](https://github.com/zhx-xi/InkFlow/issues/335)（阶段 1：访谈式 Planner + WritingPlan + 委托）· [#336](https://github.com/zhx-xi/InkFlow/issues/336)（阶段 2：顺序派发 + 进度状态机 + 多维上限 + 安全阀）· [#337](https://github.com/zhx-xi/InkFlow/issues/337)（阶段 3：卷级编排 + Send map-reduce + 卷级 HITL + 失败恢复）· [#338](https://github.com/zhx-xi/InkFlow/issues/338)（阶段 4：AsyncSqliteSaver + 跨重启 resume + 干预 API）
+**依据**: 设计定稿 `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §2 全文（唯一真相）+ Issue #335（阶段 1）/ #336（阶段 2）/ #337（阶段 3）/ #338（阶段 4）+ Spike 验证报告 `docs/f44-orchestrator-spike-2026-08-17.md`（M1 门禁，workspace docs）+ 已合入源码核查（F27/F42/F29/F39/F6）+ Issue #475（访谈 LLM 动态提问，D1 拍板 2026-08-19）+ #486（会话/记忆 UI，D9，下游消费方）
+**所属阶段**: 0.10.0（长任务编排器，F44 四阶段），估算 24-39 人天（#335 阶段 1：5-8 / #336 阶段 2：4-6 / #337 阶段 3：7-11 / #338 阶段 4：8-10 + GUI 已含，part-time 8-10 周；v1.1 较 v1.0 的 16-26 人天增加 Q1=C GUI +8-12 与 Q2=C 项目级上限 +0.5-1）；v1.2 #475 访谈 LLM 动态提问为 0.10.1 增量（估算 5-8 人天，拆 2 PR：后端提问引擎 + 前端对话式 UI，S3 实现轨）
+**关联 Issues**: [#335](https://github.com/zhx-xi/InkFlow/issues/335)（阶段 1：访谈式 Planner + WritingPlan + 委托）· [#336](https://github.com/zhx-xi/InkFlow/issues/336)（阶段 2：顺序派发 + 进度状态机 + 多维上限 + 安全阀）· [#337](https://github.com/zhx-xi/InkFlow/issues/337)（阶段 3：卷级编排 + Send map-reduce + 卷级 HITL + 失败恢复）· [#338](https://github.com/zhx-xi/InkFlow/issues/338)（阶段 4：AsyncSqliteSaver + 跨重启 resume + 干预 API）· [#475](https://github.com/zhx-xi/InkFlow/issues/475)（访谈 LLM 动态提问 + 对话式 UI + 会话落库，0.10.1，本 v1.2 修订）· [#486](https://github.com/zhx-xi/InkFlow/issues/486)（会话/记忆 UI + 归档/删除/提取记忆，0.10.1，下游消费 confirmed_items）
 **依赖**: ✅ F39 Agent 实体 + 能力白名单（0.9.0 #258）· ✅ F27 writer-agent（已交付）· ✅ F42 管线 write_auto/write_continue（已交付）· ✅ F29 Supervisor（已交付）· ✅ F6 context（已交付）· ✅ outline 三级结构（F43 P3+P4 已交付）· ⏳ `langgraph-checkpoint-sqlite`（阶段 4 新增依赖，Spike ⑤ 实证缺）
 **参考 ADR**: [adr/ADR-035.md](../adr/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5）· [ADR-006v2](../../adr/ADR-006v2.md)（Agent 编排 LangGraph StateGraph）· [ADR-015](../../adr/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/ADR-019.md)（编号口径）· [ADR-027](../../adr/ADR-027.md)（覆盖率门禁）
-**状态**: ✅ 已实现（PR #441/#443/#445/#446/#447/#448/#453/#454）
+**状态**: ✅ 已实现（PR #441/#443/#445/#446/#447/#448/#453/#454）——v1.2 #475 访谈 LLM 动态提问扩展待 S3 实现轨（0.10.1）
+
+> **Spec 变更**（v1.1 → v1.2，2026-08-19，#475 D1 拍板）：访谈从「确定性分批提问」（ROUND1/ROUND2 硬编码状态机）升级为**真 LLM 动态提问**。① 通用必答问题（题材/篇幅/主题）与针对性问题（按小说大纲/类型/设定动态生成）并存（§5.1）；② 每次回答后 LLM 提取「已确定项」（confirmed_items）落会话，下轮只问「未确定项」（§5.1/§2.2）；③ 冲突/不合理回答 → 回问用户重新确认（conflicts 记录，§5.1/§2.2/§7）；④ 必答项齐备后进入末尾总体确认（confirming=true，列出全部确定项，§5.1/§3.2）；⑤ 确定项全量落 PlannerSession（供 #486 会话/记忆 UI + 提取记忆/设定库 + 用户审计，§2.2/§11）。**拆 2 PR 边界（用户拍板，Q4 已确认 ✅）**：PR-1 后端提问引擎（PlannerService 问题生成换 LLM 调用 + 确定项提取/冲突检测，§5.1 后端契约）；PR-2 前端对话式 UI（BookPlannerPanel 固定表单 → 对话式消息流，§5.1 前端契约）。正文修订位置：§1.3/§2.2/§3.2/§4/§5.1/§6/§7/§8/§9/§10/§11/§12/§13 + 待澄清 Q4。既有确定性问题常量保留为 **LLM 失败降级兜底**（§7 场景 15），向后兼容。
 
 > **Spec 变更**（v1.0 → v1.1，2026-08-17 用户拍板固化）：**Q1=C**（阶段 1-4 全含 GUI 面板——主/次面板 + 观察流三层密度 UI + 干预控件，+8-12 人天）· **Q2=C**（多维上限载体 = ProjectConfig.extra 项目级默认，读取优先级 = 请求 > 项目级 > 默认，+0.5-1 人天）· **Q3=A**（卷级锚点 + 章级被动动作，正文 §12 D12 已一致，仅标 ✅）。联动修订：§1 定位「全栈长任务编排器」+ 边界移除 GUI 排除；§5.1-§5.4 每阶段加「GUI 交互设计」小节；§2.4/§8/§11/§12 D11 联动 Q2=C；§8/§9/§10/§13 联动 GUI 纳入；待澄清 Q1-Q3 标 ✅ 留痕不删。
 
@@ -40,7 +42,7 @@ F44 合并覆盖 **#335-#338 四阶段**，作为「一句话→全书」长任�
 
 - **不含** F45 记忆演进（#339/#340，独立里程碑，M2 依赖本模块阶段 4 之后的长跑证据）
 - **不含** deepagents `task` 工具嵌套委派（F26 已禁用）：阶段 3 委派形态 = LangGraph Send API 并行 fan-out（设计 §2.3-3 硬约束），包装 F27 writer-agent，**不是** deepagents subagent 工具
-- **不含** 章内断点、幂等键框架、唯一索引冲突框架、token 精确核算、双面板精致化、访谈分批状态机、三级 agent（设计 §2.5 苦工清单「先能用再修」）；GUI 仅含基础面板交互（§5 各阶段 GUI 小节），品牌动画/视觉打磨等精致化仍按 ui-design-taste 克制原则留范围外（§10）
+- **不含** 章内断点、幂等键框架、唯一索引冲突框架、token 精确核算、双面板精致化、三级 agent（设计 §2.5 苦工清单「先能用再修」）；访谈分批状态机已于 v1.2 由 LLM 动态提问取代（§5.1，确定性分批仅保留为 LLM 失败降级兜底，§7 场景 15）；GUI 仅含基础面板交互（§5 各阶段 GUI 小节），品牌动画/视觉打磨等精致化仍按 ui-design-taste 克制原则留范围外（§10）
 - **不含** MCP 表现层（F20 薄客户端经 HTTP，本模块端点经既有 HTTP 通道天然可用，不新增 MCP 工具）
 
 ---
@@ -102,13 +104,13 @@ class WritingPlan(BaseModel):
 | 结构树存储 | **root_outline_id 锚点 + outline 表推导** | outline 已含 level/parent_id/chapter_id 三级结构（P3+P4），重复存树=双份真相漂移；锚点 + 引用即可还原全树 | WritingPlan 内嵌树 JSON（重复内容，违反设计 §2.2「不重复存内容」） |
 | 计划产物归属 | **直接写 outline/character 实体** | 打通设定库与 RAG（outline/character 落库即被检索）；planner 不持有私有副本 | WritingPlan 内嵌大纲副本（隔离于 RAG，需二次同步） |
 
-### 2.2 访谈会话载体（新建 `domain/models/planner_session.py`）
+### 2.2 访谈会话载体（新建 `domain/models/planner_session.py`；v1.2 #475 扩展确定项/冲突/总体确认字段）
 
-访谈式 Planner 的多轮会话（设计 §2.1 约束 5/6：分批 ≤5 问、问题即模板）：
+访谈式 Planner 的多轮会话（设计 §2.1 约束 5/6：分批 ≤5 问、问题即模板；v1.2 起问题由 LLM 动态生成，确定项/冲突/总体确认落会话供 #486 消费）：
 
 ```python
 class PlannerSession(BaseModel):
-    """访谈会话（新建表 planner_sessions，阶段 1）。
+    """访谈会话（新建表 planner_sessions，阶段 1；v1.2 #475 扩展）。
 
     Attributes:
         id: 会话 UUID.
@@ -116,9 +118,19 @@ class PlannerSession(BaseModel):
         status: drafting / completed / declined（「全部你决定」= declined → 直接跑 F42）.
         one_liner: 用户一句话（题材/体裁/篇幅/主角等原始输入）.
         round: 当前轮次（每轮 ≤5 问）.
-        asked_questions: 已问问题快照（JSON，供问题即模板复用）.
+        asked_questions: 已问问题快照（JSON，供问题即模板复用；v1.2 由 LLM 生成）.
         answers: 用户回答快照 {question_id: answer}.
         authorized: 显式授权项（如「配角自定」「细节自定」，设计 §2.1 约束 1 完成度授权）.
+        confirmed_items: 已确定项快照（v1.2 #475 D1 需求 2/5，list[dict]：
+            {"key": 确定项标识, "value": 确定值, "source": "user" | "llm_inferred" | "auto"}）——
+            LLM 每轮从对话提取，只提问未确定项；全量落库供 #486 会话/记忆 UI +
+            提取记忆/设定库 + 用户审计（§5.1 后端契约）.
+        conflicts: 冲突/回问记录（v1.2 #475 D1 需求 3，list[dict]：
+            {"round", "question_id", "answer", "conflict_with", "resolution"}）——
+            回答与已确定项/设定冲突或不合理时回问用户重新确认（§5.1）.
+        confirming: 是否处于末尾总体确认阶段（v1.2 #475 D1 需求 4，bool）——
+            必答项齐备后置 True，向用户列出全部确定项待总体确认；confirm 通过 →
+            completed；用户修改 → 回 questioning 重问（§5.1）.
         writing_plan_id: 会话完成后关联的 WritingPlan UUID（None = 未完成）.
         created_at / updated_at.
     """
@@ -131,10 +143,15 @@ class PlannerSession(BaseModel):
     asked_questions: list[dict] = Field(default_factory=list)
     answers: dict[str, str] = Field(default_factory=dict)
     authorized: list[str] = Field(default_factory=list)
+    confirmed_items: list[dict] = Field(default_factory=list)
+    conflicts: list[dict] = Field(default_factory=list)
+    confirming: bool = False
     writing_plan_id: uuid.UUID | None = None
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 ```
+
+> v1.2 #475 注：`confirmed_items`/`conflicts`/`confirming` 为增量字段——既有 planner_sessions 表加 JSON 列（零迁移，nullable 默认空，§8.2 MODIFY 登记）；既有 drafting/completed/declined 状态语义不变（confirming 为对话阶段标志，非 status 值）。
 
 ### 2.3 AgentExecutionORM 扩展（阶段 4，`infrastructure/database/models/agent.py` MODIFY）
 
@@ -181,9 +198,9 @@ def validate_at_least_one_hard_limit(limits: BookLimits) -> None:
 
 | 方法/路径 | 阶段 | 说明 | 状态码 |
 |-----------|------|------|--------|
-| `POST /planner` | 1 | 启动访谈会话（body 一句话 + project_id）→ 返回会话 + 第一轮 ≤5 问 | 201 |
-| `POST /planner/{session_id}/respond` | 1 | 回复本轮问题（或 `auto=true` 全部你决定）→ 下一轮问 / 完成返回 WritingPlan | 200 |
-| `GET /planner/{session_id}` | 1 | 访谈会话状态（已问问题/回答快照，问题即模板复用） | 200 |
+| `POST /planner` | 1 | 启动访谈会话（body 一句话 + project_id）→ 返回会话 + 第一轮 ≤5 问（v1.2 #475：LLM 动态生成，通用必答 + 针对性并存） | 201 |
+| `POST /planner/{session_id}/respond` | 1 | 回复本轮问题（或 `auto=true` 全部你决定）→ 下一轮问 / 冲突回问 / 末尾总体确认（`confirm`）/ 完成返回 WritingPlan | 200 |
+| `GET /planner/{session_id}` | 1 | 访谈会话状态（已问问题/回答快照 + 确定项/冲突，问题即模板复用；v1.2 供用户审计回溯） | 200 |
 | `POST /runs` | 1/2/3/4 | `write_book` 启动书级运行（body：writing_plan_id 或 one_liner；limits；mode） | 202 |
 | `GET /runs/{run_id}` | 1-4 | 书级运行状态（进度树 + 计数器 + 当前 interrupt + 章级只报告） | 200 |
 | `POST /runs/{run_id}/confirm` | 3 | 卷级 HITL 确认（body `{approved, decision?}`；非 waiting_hitl → 422） | 200 |
@@ -192,22 +209,54 @@ def validate_at_least_one_hard_limit(limits: BookLimits) -> None:
 
 ### 3.2 请求/响应示例（阶段 1 访谈 + 阶段 3 卷确认）
 
+v1.2 #475 注：访谈问题由 LLM 按 `one_liner` + 项目设定动态生成——`questions[]` 含 `kind` 字段（`general` 通用必答 = 题材/篇幅/主题等必须确认项；`targeted` 针对性 = 按小说大纲/类型/设定动态提问），`template` 仍保留（问题即模板，可点击复制）；响应新增 `confirmed_items`/`conflicts`/`confirming`（§2.2 同构）。
+
 ```jsonc
 // POST /api/v1/agent/books/planner
 { "project_id": "uuid", "one_liner": "写一本关于时间旅者的悬疑小说" }
-// 201
+// 201 —— 第一轮：通用必答 + 针对性并存（v1.2 #475 D1 需求 1）
 { "session_id": "uuid", "round": 1,
   "questions": [
-    { "id": "q1", "text": "题材：悬疑为主，还是悬疑+科幻混合？", "template": "悬疑为主，但加入 ___ 元素" },
-    { "id": "q2", "text": "篇幅：预计多少字？", "template": "约 ___ 字" },
-    { "id": "q3", "text": "主角：能否一句话描述主角？", "template": "主角是 ___" }
-  ], "max_rounds": 5 }
+    { "id": "q1", "text": "题材：悬疑为主，还是悬疑+科幻混合？", "template": "悬疑为主，但加入 ___ 元素", "kind": "general" },
+    { "id": "q2", "text": "篇幅：预计多少字？", "template": "约 ___ 字", "kind": "general" },
+    { "id": "q3", "text": "主题：能否一句话描述主题？", "template": "主题是 ___", "kind": "general" },
+    { "id": "q4", "text": "时间旅者的设定：穿越机制是设备还是能力？", "template": "穿越通过 ___ 实现", "kind": "targeted" }
+  ], "max_rounds": 5,
+  "confirmed_items": [], "conflicts": [], "confirming": false }
 
 // POST /api/v1/agent/books/planner/{session_id}/respond
 { "answers": { "q1": "悬疑为主，加入时间悖论科幻元素" }, "auto": false }
-// 200（下一轮或完成）
+// 200 —— LLM 提取已确定项 + 只问未确定项（v1.2 #475 D1 需求 2）
 { "session_id": "uuid", "round": 2, "completed": false,
-  "questions": [ { "id": "q4", "text": "配角：需要几个主要配角？", "template": "___ 个" } ] }
+  "questions": [ { "id": "q5", "text": "配角：需要几个主要配角？", "template": "___ 个", "kind": "general" } ],
+  "confirmed_items": [ { "key": "题材", "value": "悬疑 + 时间悖论科幻", "source": "user" } ],
+  "conflicts": [], "confirming": false }
+
+// POST /api/v1/agent/books/planner/{session_id}/respond （冲突/不合理回问，v1.2 #475 D1 需求 3）
+{ "answers": { "q5": "配角 5 个" } }
+// 200
+{ "session_id": "uuid", "round": 3, "completed": false,
+  "questions": [ { "id": "q6", "text": "5 个配角对 10 万字篇幅偏多，建议 2-3 个——仍按 5 个？", "kind": "conflict" } ],
+  "confirmed_items": [ { "key": "题材", "value": "悬疑 + 时间悖论科幻", "source": "user" } ],
+  "conflicts": [ { "round": 2, "question_id": "q5", "answer": "配角 5 个", "conflict_with": "篇幅/复杂度合理性", "resolution": "pending" } ],
+  "confirming": false }
+
+// POST /api/v1/agent/books/planner/{session_id}/respond （末尾总体确认，v1.2 #475 D1 需求 4）
+{ "answers": { "q6": "那配角 2 个" } }
+// 200 —— 必答项齐备 → confirming=true，questions 空，列全部确定项
+{ "session_id": "uuid", "round": 4, "completed": false, "questions": [],
+  "confirmed_items": [
+    { "key": "题材", "value": "悬疑 + 时间悖论科幻", "source": "user" },
+    { "key": "篇幅", "value": "10 万字", "source": "user" },
+    { "key": "主题", "value": "时间旅者自我救赎", "source": "llm_inferred" },
+    { "key": "配角数", "value": "2 个", "source": "user" }
+  ],
+  "conflicts": [ { "round": 2, "question_id": "q5", "answer": "配角 5 个", "conflict_with": "篇幅/复杂度合理性", "resolution": "resolved" } ],
+  "confirming": true }
+
+// POST /api/v1/agent/books/planner/{session_id}/respond （总体确认通过 → 完成）
+{ "confirm": true }
+// 200 { "session_id": "uuid", "round": 4, "completed": true, "confirming": false, "writing_plan": { ... } }
 
 // POST /api/v1/agent/books/runs/{run_id}/confirm （阶段 3 卷边界 interrupt 时）
 { "approved": true, "decision": "继续下一卷" }
@@ -248,6 +297,7 @@ def validate_at_least_one_hard_limit(limits: BookLimits) -> None:
 | 「内容已写」安全阀命中 | 409 | 该章已有内容/执行已完成（设计 §2.3-1，§5.2） |
 | 非法干预动作/目标 | 422 | 非 pause/resume/redirect/edit；目标 outline 不存在 |
 | 非 waiting_hitl 确认 | 422 | 卷确认仅在 interrupt 暂停点可用（F29 confirm 同构） |
+| 非 confirming 阶段 confirm（v1.2 #475） | 422 | 末尾总体确认仅在 `confirming=true` 时可用（`confirm` 请求体；F29 confirm 同构防呆） |
 | outline 撞名 | 409 | 复用既有唯一索引语义（批量生成撞 IntegrityError → 服务层捕获转 409，见 §6） |
 
 ## 4. CLI 命令签名
@@ -255,11 +305,12 @@ def validate_at_least_one_hard_limit(limits: BookLimits) -> None:
 新命令组 `inkflow book`（`cli/commands/book_cmd.py`，F7 全局约定：`--json` 信封 / 退出码 0/1/2 / 错误码）。访谈/运行全程可脚本化，输出 Rich 进度树。
 
 ```bash
-# 阶段 1：访谈式 Planner
-inkflow book plan start "写一本关于时间旅者的悬疑小说" --project <uuid>   # 启动访谈，打印第一轮问题
-inkflow book plan respond <session> "悬疑为主，加入时间悖论"              # 回复一轮
+# 阶段 1：访谈式 Planner（v1.2 #475：问题由 LLM 动态生成，确定项/冲突/总体确认落会话）
+inkflow book plan start "写一本关于时间旅者的悬疑小说" --project <uuid>   # 启动访谈，打印第一轮问题（通用必答 + 针对性）
+inkflow book plan respond <session> "悬疑为主，加入时间悖论"              # 回复一轮（LLM 提取确定项 → 只问未确定项）
+inkflow book plan confirm <session>                                       # 末尾总体确认通过（列全部确定项后）
 inkflow book plan auto "写一本关于时间旅者的悬疑小说" --project <uuid>    # 「全部你决定」→ 直接跑 F42 write_auto
-inkflow book plan show <session>                                          # 会话状态（问题即模板复用）
+inkflow book plan show <session>                                          # 会话状态（问题即模板复用 + 确定项/冲突快照，v1.2 供审计回溯）
 
 # 阶段 2-4：书级运行
 inkflow book run <plan_id> [--limits max_chapters=5,max_tokens=200000]    # 启动（顺序派发/卷级按进度）
@@ -277,11 +328,31 @@ inkflow book summary <run_id> [--export <file.json>]                      # 回�
 
 ### 5.1 阶段 1：访谈式 Planner + WritingPlan + 委托（#335，一句话→一章）
 
-**访谈循环**（设计 §2.1 约束 5/6/7）：
-- 每轮 ≤5 问，问题**即模板**（可复制修改后作为回复），分批节奏：题材/体裁/篇幅 → 分卷+主角 → 其余自定；全程可跳过/回改
-- 大纲/主角 = **必须对话确认**；配角/细节 = 显式授权后自定（`authorized` 字段，「完成度授权」）
+**访谈循环**（设计 §2.1 约束 5/6/7；**v1.2 #475 起为 LLM 动态提问**，D1 需求 1-5 全落地）：
+- 每轮 ≤5 问，问题**由 LLM 动态生成**（不再硬编码 ROUND1/ROUND2 常量）——**通用必答**（题材/篇幅/主题等必须确认项，`kind=general`）+ **针对性**（按 one_liner/小说大纲/类型/设定动态提问，`kind=targeted`）并存；问题仍带 `template`（问题即模板，可复制修改后作为回复）；全程可跳过/回改
+- **已确定项提取**（D1 需求 2）：每次回答后 LLM 提取「已确定项」→ `PlannerSession.confirmed_items` 落库（key/value/source）；下轮问题**只问未确定项**（prompt 注入 confirmed_items 去重，不重复提问）
+- **冲突/不合理回问**（D1 需求 3）：回答与已确定项/项目设定冲突或不合理 → `conflicts` 记录（含 resolution=pending）+ 生成冲突回问题（`kind=conflict`）请用户重新确认
+- **末尾总体确认**（D1 需求 4）：必答项齐备 + 无 pending 冲突 → `confirming=true`，向用户**列出全部确定项**待总体确认；`confirm=true` → 完成（创建 WritingPlan）；用户修改某项 → 回 questioning 重问
+- 大纲/主角 = **必须对话确认**（通用必答项服务端强约束，见后端契约）；配角/细节 = 显式授权后自定（`authorized` 字段，「完成度授权」）
 - 「全部你决定」= 拒访谈 → 完全自主生成 = 跑 F42 `write_auto`（委托契约见下），WritingPlan 仍创建（状态=auto）
-- 访谈会话载体 = `PlannerSession`（§2.2）；完成后创建 `WritingPlan`（§2.1）+ planner 产出**直接写 outline/character 实体**（§2.1 决策论证表）
+- 访谈会话载体 = `PlannerSession`（§2.2，v1.2 扩展 confirmed_items/conflicts/confirming）；完成后创建 `WritingPlan`（§2.1）+ planner 产出**直接写 outline/character 实体**（§2.1 决策论证表）
+
+**LLM 动态提问引擎**（PR-1 后端契约，S3 实现轨，v1.2 #475）：
+
+```
+问题生成/确定项提取/冲突检测 = PlannerService.start/respond 内单次 LLM 调用（结构化 JSON 输出）：
+  prompt 输入 = one_liner + 项目设定摘要（outline/character 已落库内容 + F28 偏好注入链复用）
+                + 会话历史（answers/confirmed_items/conflicts，已确定项不再重复提问）
+  prompt 输出 = { questions: ≤5 问[{id, text, template?, kind: general|targeted|conflict}],
+                  confirmed_items: [{key, value, source: user|llm_inferred}],
+                  conflicts: [{conflict_with, resolution: pending|resolved}] }
+  服务端强约束：通用必答项（题材/篇幅/主题）未确认时必须出现在 questions 中——LLM 输出校验
+                （缺失必答项 → 该轮拒绝/补问，防 LLM 漏问）；校验失败重试 1 次
+  失败降级：LLM 调用失败/超时 → 重试 1 次 → 仍失败 → 回退 ROUND1/ROUND2 确定性常量
+            （v1.1 兜底保留，§7 场景 15），访谈不阻塞
+  落库：confirmed_items/conflicts/confirming 全量写 PlannerSession（§2.2 字段）；
+        GET /planner/{session_id} 返回快照供用户审计（D1 需求 5 + #486）
+```
 
 **agent 工厂**（复用 F27，换 system prompt）：复用 `build_agentic_writer`（`agentic_writer.py` 签名实证：model/api_key/base_url/deps/system_prompt/tool_ids/skill_ids/profile_key/expected_project_id/expected_chapter_id）——白名单工具 + skill 拼接 + save_draft 回收 + agent_run 轨迹，仅 system_prompt 换为「章 writer」模板（含大纲切片/风格/偏好注入）。
 
@@ -294,10 +365,25 @@ inkflow book summary <run_id> [--export <file.json>]                      # 回�
 
 **上限**：写死 `max_chapters=1/max_agent_calls=1`（#335「上限写死但计数器立起来」）——计数器字段/校验逻辑先存在，阶段 2 放开配置。
 
-**GUI 交互设计**（Q1=C 拍板，v1.1；依据设计 §2.6 自用三件核心 + #379 写作页 AI 聊天框先例 PR #418 已合入）：
-- **单面板对话（访谈）**：写作页域或新 book 页的面板承载访谈对话——先例 = `ChatPanel`（`executePipeline(builtin:chat)` → 1s 轮询 `getExecutionStatus` → completed 消息 + 「插入正文」→ `chapterStore.setContent`），本阶段对接 `POST /planner` + `POST /planner/{id}/respond`（SSE 复用 F23 基建，访谈问题即模板可点击复制）；「全部你决定」（auto=true）一键委托按钮
+**对话式 UI**（PR-2 前端契约，S3 实现轨，v1.2 #475）：
+
+```
+BookPlannerPanel 固定表单 → 对话式消息流（ChatPanel #379 先例）：
+  - 消息列表：assistant（问题/冲突回问/确定项汇总）/ user（one_liner/回答/确认）——LLM 动态提问天然对话式
+  - 输入框 + 发送：自由文本回答（不再逐题表单填写）
+  - 问题即模板保留：消息内嵌 template chip 点击填入输入框
+  - confirmed_items 汇总卡片：confirming=true 时展示全部确定项 + 确认/修改按钮
+    （确认 → respond {confirm:true}；修改 → 输入新值重新回问）
+  - conflicts 警示样式：kind=conflict 消息高亮展示冲突内容 + 待确认
+  - 「全部你决定」（auto=true）一键委托按钮保留
+  - 前端契约扩展（api/books.ts）：PlannerQuestion 加 kind；respond 响应加
+    confirmed_items/conflicts/confirming；PlannerRespondRequest 加 confirm
+```
+
+**GUI 交互设计**（Q1=C 拍板，v1.1；依据设计 §2.6 自用三件核心 + #379 写作页 AI 聊天框先例 PR #418 已合入；**v1.2 #475 起 BookPlannerPanel 为对话式**，PR-2 前端契约见上）：
+- **单面板对话（访谈）**：写作页域或新 book 页的面板承载访谈对话——先例 = `ChatPanel`（`executePipeline(builtin:chat)` → 1s 轮询 `getExecutionStatus` → completed 消息 + 「插入正文」→ `chapterStore.setContent`），本阶段对接 `POST /planner` + `POST /planner/{id}/respond`（SSE 复用 F23 基建，访谈问题即模板可点击复制）；「全部你决定」（auto=true）一键委托按钮；v1.2 对话式增强：确定项汇总卡片（confirming=true 展示 + 确认/修改）、冲突回问警示样式（kind=conflict）
 - **子 agent 展开行（观察流）**：访谈/委托执行轨迹按 `GET /runs/{run_id}` `trace` 字段渲染可展开行（子 agent 调用/思考/工具调用），默认折叠、手动点开（次面板语义）
-- 状态：`PlannerSession`（drafting/completed/declined）→ `WritingPlan`（drafting/auto）驱动面板阶段切换；聊天消息本地 store（镜像 chapterStore 模式）
+- 状态：`PlannerSession`（drafting/completed/declined + v1.2 confirming 对话阶段标志）→ `WritingPlan`（drafting/auto）驱动面板阶段切换；聊天消息本地 store（镜像 chapterStore 模式）
 - 落点（写作页域 vs 新 book 页）由实现会话定；本 spec 只定交互语义 + 端点对接 + 状态（§8 frontend 组件清单）
 
 ### 5.2 阶段 2：顺序派发 + 进度状态机 + 多维上限 + 安全阀（#336，→几章）
@@ -391,6 +477,7 @@ Spike ③ 实测：卷内全部章并行写完 → 卷边界 interrupt 暂停（
 | R8 | **恢复策略树固定** | 章级失败 → 重试 N 次 → failed 继续；卷级失败 → interrupt 用户决定/授权主 agent（§5.3） |
 | R9 | **llm_client 不序列化** | 编排图状态中 llm_client 用 `UntrackedValue` 标注（F29 模式），跨重启 resume 时 `Command(update={...})` 重注入（§5.4） |
 | R10 | **干预效果可见** | 任何干预（redirect/edit）响应带 `diff` 字段（difflib 字面 diff，零 LLM） |
+| R11 | **访谈 LLM 动态提问护栏**（v1.2 #475） | ① 通用必答项（题材/篇幅/主题）服务端强约束——LLM 输出校验缺失必答项 → 拒绝/补问（防漏问）；② 已确定项（confirmed_items）为唯一提问去重依据——只问未确定项；③ 冲突/不合理必须回问（conflicts 记录 + kind=conflict 问题），不允许静默采纳；④ LLM 失败降级到确定性常量（ROUND1/ROUND2 兜底），访谈不阻塞 |
 
 ## 7. 边界情况与错误处理
 
@@ -410,6 +497,9 @@ Spike ③ 实测：卷内全部章并行写完 → 卷边界 interrupt 暂停（
 | 12 | 干预目标不存在/非法动作 | 422（§3.5）；干预不改变已完成章（progress=done 拒绝 redirect/edit） | 4 |
 | 13 | 并行执行中 pause | 卷边界 checkpoint 已存，pause 挂起后台任务；并行分支进行中的章允许完成（不做章内断点） | 4 |
 | 14 | 书级运行与业务表同 WAL 冲突 | 禁止：checkpoint 独立 SQLite 文件（Spike ⑤），业务库连接不受影响 | 4 |
+| 15 | LLM 动态提问失败/超时（v1.2 #475） | 重试 1 次 → 仍失败 → 回退 ROUND1/ROUND2 确定性常量（v1.1 兜底保留，问题即模板、分批节奏不变）→ 访谈不阻塞；LLM 恢复后下轮回到动态提问 | 1 |
+| 16 | 回答与已确定项/设定冲突或不合理（v1.2 #475） | conflicts 记录（resolution=pending）+ 生成 kind=conflict 回问题请用户重新确认；用户新回答 resolve 后继续（不得静默采纳冲突值，§6 R11） | 1 |
+| 17 | 末尾总体确认被用户修改（v1.2 #475） | confirming=true 时用户提交修改项 → 回 questioning 重问该确定项（新值进 confirmed_items，旧值留痕 conflicts 或覆盖并记录历史）→ 重新确认 | 1 |
 
 ## 8. 文件结构
 
@@ -418,7 +508,7 @@ Spike ③ 实测：卷内全部章并行写完 → 卷边界 interrupt 暂停（
 ```
 backend/src/inkflow/domain/models/writing_plan.py      # §2.1 WritingPlan + PlanNodeStatus + BookLimits
 backend/src/inkflow/domain/models/planner_session.py   # §2.2 PlannerSession
-backend/src/inkflow/domain/services/planner_service.py # 访谈循环（≤5 问/轮、问题即模板、分批节奏、授权、auto 兜底）
+backend/src/inkflow/domain/services/planner_service.py # 访谈循环（≤5 问/轮、问题即模板、授权、auto 兜底；v1.2 #475：LLM 动态提问——问题生成/确定项提取/冲突检测/末尾总体确认，确定性常量仅 LLM 失败降级兜底）
 backend/src/inkflow/domain/services/book_service.py    # 书级运行（write_book 编排入口、进度状态机、上限校验、安全阀）
 backend/src/inkflow/domain/ports/book_repository.py    # WritingPlan/PlannerSession 仓储 Protocol（§4.3 模式）
 backend/src/inkflow/infrastructure/agent/book_pipeline.py      # 书级编排图（阶段 2 顺序 / 阶段 3 卷级 Send）
@@ -430,14 +520,14 @@ backend/src/inkflow/api/routers/books.py                # §3 端点
 backend/src/inkflow/cli/commands/book_cmd.py            # §4 inkflow book 命令组
 frontend/packages/renderer/src/api/books.ts             # /api/v1/agent/books 客户端（镜像 pipeline api 模式）
 frontend/packages/renderer/src/stores/book.ts           # book 运行状态 store（镜像 chapterStore 模式）
-frontend/packages/renderer/src/components/BookPlannerPanel.tsx  # 访谈单面板对话（ChatPanel #379 先例 PR #418，阶段 1）
+frontend/packages/renderer/src/components/BookPlannerPanel.tsx  # 访谈对话式面板（ChatPanel #379 先例 PR #418；v1.2 #475：固定表单 → 对话式消息流，确定项汇总卡片 + 冲突警示，阶段 1）
 frontend/packages/renderer/src/components/BookRunPanel.tsx      # 运行状态/进度 UI/干预控件/回归摘要面板（阶段 2-4）
 frontend/packages/renderer/src/components/ExecutionTraceRow.tsx # 子 agent 展开行 + 观察流三层密度切换（trace/density，阶段 1-4）
 frontend/packages/renderer/src/pages/book.tsx           # 新 book 页或并入写作页域（落点实现会话定，阶段 1）
 frontend/packages/renderer/src/components/__tests__/book*.test.tsx  # 前端组件测试（Vitest，§9.1 前端层）
 backend/tests/unit/test_writing_plan_model.py           # 模型/上限校验单测
 backend/tests/unit/test_book_service.py                 # 服务层（安全阀/进度/上限）
-backend/tests/unit/test_planner_service.py              # 访谈循环
+backend/tests/unit/test_planner_service.py              # 访谈循环（v1.2：LLM 动态提问 mock——问题生成/确定项提取/冲突回问/总体确认/失败降级）
 tests/integration/test_book_repository.py               # 仓储集成
 tests/api/test_books_api.py                             # API 契约（新增文件须登记 ci.yml integration 链）
 tests/cli/test_book_cmd.py                              # CLI 契约（登记 ci.yml integration-cli-backend）
@@ -449,6 +539,8 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | 文件 | 变更 | 阶段 |
 |------|------|------|
 | `infrastructure/database/models/agent.py` | AgentExecutionORM 加 `thread_id` 列（§2.3） | 4 |
+| `infrastructure/database/models/planner_session.py` | PlannerSessionORM 加 3 JSON 列：`confirmed_items`/`conflicts`/`confirming`（v1.2 #475，零迁移 nullable 默认空，§2.2） | 1（v1.2） |
+| `frontend/packages/renderer/src/api/books.ts` | 契约扩展（v1.2 #475）：`PlannerQuestion` 加 `kind`；respond 响应加 `confirmed_items`/`conflicts`/`confirming`；`PlannerRespondRequest` 加 `confirm`（§5.1 前端契约） | 1（v1.2） |
 | `backend/pyproject.toml` | 新增依赖 `langgraph-checkpoint-sqlite>=3.1.1,<4` | 4 |
 | `.github/workflows/ci.yml` | integration-agent-backend 链登记 `test_books_api.py`/`test_book_cmd.py`（顶层 tests 显式登记模式，F39 实证） | 1-4 |
 | `cli/commands/__init__.py` | 注册 `book` 命令组 | 1 |
@@ -463,18 +555,18 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 
 | 层 | 文件 | 覆盖 | 命令 |
 |----|------|------|------|
-| 单元 | `backend/tests/unit/test_writing_plan_model.py` / `test_book_service.py` / `test_planner_service.py` | 模型校验、上限校验（至少一道护栏）、进度状态机、安全阀判定（纯逻辑，mock 仓储）、访谈循环（mock LLM） | `pytest tests/unit/` |
-| 集成 | `tests/integration/test_book_repository.py` | WritingPlan/PlannerSession 仓储（in-memory SQLite）、thread_id 落库 | 顶层集成 job |
-| API | `tests/api/test_books_api.py` | 端点契约：planner 启谈/回复/auto、runs 启动/状态、confirm、intervene、summary、异常映射（404/409/422） | integration-agent-backend 链登记 |
+| 单元 | `backend/tests/unit/test_writing_plan_model.py` / `test_book_service.py` / `test_planner_service.py` | 模型校验、上限校验（至少一道护栏）、进度状态机、安全阀判定（纯逻辑，mock 仓储）、访谈循环（mock LLM，v1.2：动态提问/确定项提取/冲突回问/总体确认/失败降级） | `pytest tests/unit/` |
+| 集成 | `tests/integration/test_book_repository.py` | WritingPlan/PlannerSession 仓储（in-memory SQLite）、thread_id 落库、confirmed_items/conflicts JSON 列读写（v1.2） | 顶层集成 job |
+| API | `tests/api/test_books_api.py` | 端点契约：planner 启谈/回复/confirm/auto（LLM mock）、runs 启动/状态、confirm、intervene、summary、异常映射（404/409/422） | integration-agent-backend 链登记 |
 | CLI | `tests/cli/test_book_cmd.py` | `inkflow book` 命令组（CliRunner + 临时 SQLite，isolated_db 双 patch 模式） | integration-cli-backend 链登记 |
 | E2E | `tests/e2e/test_book_long_run.py` | 长任务端到端：真实 LLM 走 **e2e-ai-backend 开关模式**（CI 默认 skip，本地 `INKFLOW_E2E_LLM_*` env 真实 API；LLM 依赖测试不放默认 CI 链，F39 实证） | `pytest tests/e2e/` + env |
-| 前端组件（Vitest） | `frontend/packages/renderer/src/components/__tests__/book*.test.tsx` | 访谈对话流、子 agent 展开行、章级进度 UI、HITL 确认对话框、干预控件、三层密度切换、回归摘要面板（mock API，F43 前端测试模式） | `pnpm test`（→ `pnpm --filter renderer test` → `vitest run`，frontend CI job） |
+| 前端组件（Vitest） | `frontend/packages/renderer/src/components/__tests__/book*.test.tsx` | 访谈对话流（v1.2 对话式：确定项汇总卡片/冲突警示/confirm）、子 agent 展开行、章级进度 UI、HITL 确认对话框、干预控件、三层密度切换、回归摘要面板（mock API，F43 前端测试模式） | `pnpm test`（→ `pnpm --filter renderer test` → `vitest run`，frontend CI job） |
 
 ### 9.2 关键测试场景（每阶段 RED 契约锚点）
 
 1. **安全阀**：章已有内容 → create_execution 拒绝（409 语义）；执行已完成（execution_refs done）→ 拒绝；内容为空 + 无执行 → 放行（#336 验收「安全阀拒绝重跑」）
 2. **至少一道有限护栏**：全 0/None limits → ValueError；max_chapters=0 但 max_agent_calls=5 → 通过（#336）
-3. **访谈循环**：≤5 问/轮；问题即模板（questions[].template 返回）；auto=true → 直接 F42 路径；授权项（配角自定）→ authorized 记录（#335）
+3. **访谈循环**：≤5 问/轮；问题即模板（questions[].template 返回）；auto=true → 直接 F42 路径；授权项（配角自定）→ authorized 记录（#335）——v1.2 #475 扩展：mock LLM 动态提问——通用必答 + 针对性并存（kind 字段断言）；回答后提取 confirmed_items 落库且下轮只问未确定项（不重复提问）；冲突回答 → conflicts 记录 + kind=conflict 回问；必答项齐备 → confirming=true 列全部确定项；confirm=true → 完成；LLM 失败 → 降级 ROUND1/ROUND2 常量兜底
 4. **Send fan-out map-reduce**（阶段 3，真实 LangGraph 图）：3 章并行 → join 回收 3 结果；聚合通道 reducer 生效（Spike ② 断言形态）
 5. **卷边界 HITL**（阶段 3，真实 checkpointer）：卷内章全部写完 → interrupt 暂停 → approve 续卷 / reject 中止（F29 HITL 双分支同构）
 6. **失败恢复策略树**（阶段 3）：章级失败重试 2 次 → failed 继续；卷级失败 → interrupt 用户决定（mock supervisor 补救）
@@ -482,6 +574,7 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 8. **干预 API**（阶段 4）：pause → 状态 paused；resume → 续跑；redirect 跳过章 → progress skipped；edit → diff 标注；干预已完成章 → 422
 9. **GUI 主路径闭环**（阶段 1，Vitest + E2E，Q1=C v1.1）：访谈对话 → 委托 → 子 agent 展开行可见 → 草稿回收（「插入正文」）；E2E 走 e2e-ai-backend 开关模式
 10. **GUI 干预/密度**（阶段 4，Vitest，Q1=C v1.1）：干预控件触发 intervene API + diff 高亮；三层密度切换 → `density` 参数正确传递；HITL 对话框仅 waiting_hitl 显示
+11. **GUI 对话式访谈**（阶段 1，Vitest，v1.2 #475）：消息流渲染 assistant 问题/用户回答；模板 chip 点击填入；confirming=true 渲染确定项汇总卡片（确认 → respond {confirm:true}；修改 → 重新回问）；kind=conflict 消息警示样式；auto 按钮保留
 
 ### 9.3 覆盖率与门禁
 
@@ -496,11 +589,12 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 |---|----|----------|
 | 1 | F45 记忆演进（M1 用户级偏好 / M2 语义风格提取） | 独立里程碑 #339/#340；M2 依赖本模块阶段 4 长跑证据 |
 | 2 | deepagents task 工具嵌套委派 | F26 已禁用（工具调用语义无法程序化控制）；委派形态=Send API（设计 §2.3-3） |
-| 3 | 章内断点、幂等键框架、唯一索引冲突框架、token 精确核算、双面板精致化、访谈分批状态机、三级 agent、遥测看板 | 设计 §2.5 苦工清单「先能用再修」 |
+| 3 | 章内断点、幂等键框架、唯一索引冲突框架、token 精确核算、双面板精致化、三级 agent、遥测看板 | 设计 §2.5 苦工清单「先能用再修」（访谈分批状态机已于 v1.2 #475 由 LLM 动态提问取代，见 §1.3 边界声明） |
 | 4 | 干预粒度升级（章级 checkpoint / 章内暂停） | 设计 §2.3-2 interrupt 只放卷边界；章级干预仅被动动作（跳过/重试/标记）——Q3=A 拍板确认（v1.1） |
 | 5 | 并行 token-aware 规划、记忆回写（阶段 5 打磨） | 设计 §2.4 阶段 5 暂不建 issue，待阶段 1-4 完成后评估 |
 | 6 | MCP 工具面 | F20 薄客户端经 HTTP 天然可用；不新增 MCP 工具 |
 | 7 | 云端部署/多用户 | Constitution P1 本地优先 |
+| 8 | 会话/记忆 UI（#486：会话列表/归档/删除/记忆查看/提取记忆） | 独立 issue #486（0.10.1，D9 拍板）——本模块（#475）只交付访谈确定项**落会话数据**（confirmed_items/conflicts，§2.2），UI 消费与展示由 #486 承接；#486 依赖本模块会话落库 |
 
 ## 11. 依赖关系
 
@@ -514,7 +608,9 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | outline/character 实体（F11/F9 + F43 P3/P4 三级结构） | planner 产出落库（level/parent_id/chapter_id） | ✅ 已实现 |
 | F32 settings | 多维上限默认键 —— **不 MODIFY**（Q2=C 拍板，v1.1：上限默认载体改为 ProjectConfig.extra 项目级默认，见 §2.4/§12 D11） | —（仅引用，零改动） |
 | **langgraph-checkpoint-sqlite** | AsyncSqliteSaver（阶段 4） | ⏳ 新增依赖（Spike ⑤ 实证缺失） |
-| 被依赖 | 无（0.10.0 首批模块，F45 M2 依赖本模块阶段 4 证据） | — |
+| LLM 客户端（llm_client 注入链，F27/F29 模式） | 访谈 LLM 动态提问引擎（v1.2 #475：问题生成/确定项提取/冲突检测）；模型未配置前置校验（#474 已合入） | ✅ 已实现（#498） |
+| #486 会话/记忆 UI | 下游消费方：访谈确定项落会话（confirmed_items/conflicts）→ 会话列表/归档/删除/记忆提取（#486 依赖本模块，§10 第 8 行） | ⏳ 下游 issue（0.10.1） |
+| 被依赖 | 无（0.10.0 首批模块，F45 M2 依赖本模块阶段 4 证据）；#486 为 0.10.1 下游消费方（v1.2 #475） | — |
 
 **编号口径声明**：本模块为「长任务编排型」**第 20 变体**（F38=18 最新无冲突基线；F20/F46 双占第 19 变体，冲突以 ADR-019 v6+ 为准，F46 spec 笔记 2026-08-16 实录）。
 
@@ -534,16 +630,17 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | D10 | 多维上限 | 硬护栏（章数/调用数）+ 软护栏（token）+「至少一道有限护栏」校验 | 设计 §2.1 约束 3 + #336 不变式；F27 预算护栏先例 | 全部无上限（违背不变式）；全部硬上限（token 精确核算=苦工） |
 | D11 | 上限配置载体 | **ProjectConfig.extra 项目级默认 + 请求体 BookLimits**（读取优先级 = 请求显式 > 项目级 extra > 默认常量；Q2=C 拍板，v1.1） | 项目级上限语义更贴合「每本书独立约束」（extra 为 F1 既有字段，四层已透传零 MODIFY） | 全局 settings 扩展键（A，否决——与「每本书独立约束」语义分道，徒增跨模块 MODIFY）；仅请求体（B，否决——默认不可改） |
 | D12 | 干预粒度 | 卷级锚点 + 章级被动动作（skip/retry/标记）——Q3=A 拍板确认（v1.1，正文 v1.0 已一致，仅标 ✅） | 设计 §2.3-2 interrupt 只放卷边界；章级干预不引入新 checkpoint | 章级精细 checkpoint（违反设计约束 + 大成本） |
+| D13 | 访谈提问引擎（v1.2 #475 D1 拍板） | **LLM 动态提问**：单次 LLM 调用返回问题 + 确定项提取 + 冲突标记（结构化 JSON）——通用必答 + 针对性并存；服务端强约束必答项校验；LLM 失败降级到确定性常量（ROUND1/ROUND2） | #475 用户拍板 D1（问题必须感知用户输入：按 one_liner + 项目设定动态生成；提取已确定项只问未确定项；冲突回问；末尾总体确认；确定项落会话供 #486/记忆/审计）；确定性状态机不感知输入（用户否决——v1.1 现状） | 纯确定性状态机（不感知输入，用户否决）；纯 LLM 无服务端校验（必答项可能漏问，违背「大纲/主角必须对话确认」） |
 
 ## 13. 验收标准
 
-按阶段分组（M 里程碑 ↔ #335-#338 验收原文映射）。**所有里程碑验收以本节 M1-M12（含 GUI 子里程碑 M3b/M6b/M9b/M12b，Q1=C 拍板 v1.1）为准**。
+按阶段分组（M 里程碑 ↔ #335-#338 验收原文映射）。**所有里程碑验收以本节 M1-M14（含 GUI 子里程碑 M3b/M6b/M9b/M12b，Q1=C 拍板 v1.1；v1.2 #475 新增 M13/M14）为准**。
 
 ### 13.1 阶段 1（#335）：M1-M3
 
 | M | 验收 | 验证命令/方式 |
 |---|------|--------------|
-| M1 | 一句话 → 访谈 → 一章草稿端到端（访谈 ≤5 问/轮、问题即模板、授权项记录） | `inkflow book plan start "..."` + `plan respond` + `plan run`；pytest 访谈循环 + 委托契约单测 |
+| M1 | 一句话 → 访谈 → 一章草稿端到端（访谈 ≤5 问/轮、问题即模板、授权项记录；v1.2 #475：问题由 LLM 动态生成——通用必答 + 针对性并存） | `inkflow book plan start "..."` + `plan respond` + `plan run`；pytest 访谈循环 + 委托契约单测 |
 | M2 | 「全部你决定」路径跑 F42 write_auto；WritingPlan 状态=auto | `inkflow book plan auto "..."`；单测断言 F42 调用 + 状态 |
 | M3 | 上限写死章=1/调用=1 但计数器立起来；WritingPlan/PlannerSession 落库 | `inkflow book status` 显示计数；仓储集成测试 |
 | M3b | GUI：单面板访谈对话可用 + 子 agent 展开行可见（Q1=C 拍板，v1.1） | Vitest 组件测试（mock API，访谈→委托→展开行→草稿回收闭环）+ 手工验收（写作页或 book 页） |
@@ -575,7 +672,14 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | M12 | 回归摘要 + 结构化运行日志（到哪了/接下来/可导出） | `book summary --export <file.json>` 断言 steps JSON 快照 + 进度树 |
 | M12b | GUI：干预控件（pause/resume/redirect/edit + diff 高亮）+ 回归摘要面板 + 观察流三层密度切换 | Vitest 组件测试 + E2E（GUI 主路径闭环）；`pnpm test`（vitest run） |
 
-## 待澄清问题（阻塞级，已拍板固化 v1.1）
+### 13.5 #475 访谈 LLM 动态提问（v1.2，0.10.1）：M13-M14
+
+| M | 验收 | 验证命令/方式 |
+|---|------|--------------|
+| M13 | 后端提问引擎（PR-1，#475 验收「访谈问题由 LLM 按 one_liner+项目设定动态生成；已确定项不再重复提问；确定项落会话可回溯」） | mock LLM 单测（通用必答 + 针对性并存、提取 confirmed_items 只问未确定项、冲突回问、末尾总体确认 confirm=true 完成、LLM 失败降级 ROUND1/ROUND2）；API 测试（confirm 端点 + confirmed_items/conflicts 响应字段）；`book plan show` 回溯确定项 |
+| M14 | 前端对话式 UI（PR-2，#475 验收「后端+前端测试全绿」） | Vitest 组件测试（对话式消息流、确定项汇总卡片确认/修改、kind=conflict 警示、auto 按钮）；`pnpm test`（vitest run） |
+
+## 待澄清问题（阻塞级，已拍板固化 v1.1 + v1.2 Q4）
 
 ### Q1（阻塞级）前端交付面：F44 是否含 GUI 交互面板？
 
@@ -607,4 +711,13 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 
 > **✅ 已确认（用户拍板：选项 A）**：卷级锚点 + 章级被动动作——pause/resume 运行级（卷边界 checkpoint）；redirect/edit 章级（跳过/重试/标记 failed/编辑章 brief），**不引入章级 checkpoint**。正文 §12 D12 与 §3.3 契约 v1.0 已一致，无需大改——D12 已加「Q3=A 拍板确认（v1.1）」注；§10 第 4 行同步标注。
 
-> 待澄清留痕：Q1-Q3 已于 2026-08-17 用户拍板并固化升 v1.1——Q1=✅ C（阶段 1-4 全含 GUI）/ Q2=✅ C（ProjectConfig.extra 项目级默认）/ Q3=✅ A（卷级锚点+章级被动动作）；正文已按拍板结果全节联动修订（§1/§2.4/§5/§8/§9/§10/§11/§12/§13），留痕不删除。
+> 待澄清留痕：Q1-Q3 已于 2026-08-17 用户拍板并固化升 v1.1——Q1=✅ C（阶段 1-4 全含 GUI）/ Q2=✅ C（ProjectConfig.extra 项目级默认）/ Q3=✅ A（卷级锚点+章级被动动作）；正文已按拍板结果全节联动修订（§1/§2.4/§5/§8/§9/§10/§11/§12/§13），留痕不删除。Q4 已于 2026-08-19 用户拍板（#475 D1）并固化升 v1.2（见下）。
+
+### Q4（阻塞级）#475 访谈 LLM 动态提问拆 2 PR 边界？
+
+#475「访谈 LLM 动态提问 + 对话式 UI + 会话落库」（D1 拍板，0.10.1，估算 5-8 人天）——实现边界影响 §8 文件结构与 §13 验收分组（后端/前端各自独立验收）。
+
+- **A（建议）**：拆 2 个独立 PR——**PR-1 后端提问引擎**（PlannerService 问题生成换 LLM 调用 + 确定项提取/冲突检测 + PlannerSession 扩展字段 + API 契约扩展 + CLI confirm 子命令 + 后端测试）→ **PR-2 前端对话式 UI**（BookPlannerPanel 固定表单 → 对话式消息流 + 确定项汇总卡片 + api/books.ts 契约扩展 + 前端测试），PR-1 先合、PR-2 依赖 PR-1 契约。估算影响：按 5-8 人天拆两批（后端 3-5 / 前端 2-3）。
+- **B**：单 PR 全量实现（后端 + 前端一起）。估算影响：5-8 人天单批，评审面大、回滚粒度粗。
+
+> **✅ 已确认（用户拍板：选项 A）**：拆 2 个独立 PR——后端提问引擎（PR-1）+ 前端对话式 UI（PR-2），后端先合前端依赖其后端契约。正文已按拍板结果修订：§5.1 新增「LLM 动态提问引擎」（PR-1 后端契约）+「对话式 UI」（PR-2 前端契约）；§2.2/§3.2/§4/§8.2/§9/§10/§11/§12 D13/§13.5 全节联动；头部估算并入 5-8 人天（0.10.1）。估算影响 +5-8 人天（0.10.1 增量，未并入 0.10.0 的 24-39）。
