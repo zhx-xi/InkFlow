@@ -3,15 +3,14 @@
  * F44 阶段4（#338 S4b）：干预工具栏（pause/resume + 密度三档 Segmented + 摘要开关）+ diff banner +
  * 回归摘要面板；silent 密度下不渲染 run-progress-list（纯前端本地 density 状态）。
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useI18n } from '../i18n/useI18n';
+import { startPolling } from '../lib/polling';
 import { useBookStore } from '../stores/book';
 import type { InterveneDiff } from '../api/books';
 import { BookSummaryPanel } from './BookSummaryPanel';
 import { ExecutionTraceRow } from './ExecutionTraceRow';
 import { VolumeHITLDialog } from './VolumeHITLDialog';
-
-const POLL_INTERVAL_MS = 1000;
 
 /** 干预 diff 展示文本（redirect：from→to；edit：diff 文本或 before/after；banner 复用） */
 function renderDiffText(diff: InterveneDiff): string {
@@ -35,7 +34,6 @@ export function BookRunPanel() {
   const interveneRun = useBookStore((s) => s.interveneRun);
   const setDensity = useBookStore((s) => s.setDensity);
   const clearInterveneDiff = useBookStore((s) => s.clearInterveneDiff);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showTokens = counters?.max_tokens !== undefined && counters.tokens_used !== undefined;
   const barPercent =
@@ -43,22 +41,14 @@ export function BookRunPanel() {
 
   useEffect(() => {
     if (runId === null) return;
-    let cancelled = false;
-    const poll = async () => {
-      await loadRunStatus(runId);
-      if (cancelled) return;
-      const status = useBookStore.getState().runStatus;
-      if (status === 'running' || status === 'pending') {
-        timerRef.current = setTimeout(() => {
-          void poll();
-        }, POLL_INTERVAL_MS);
-      }
-    };
-    void poll();
-    return () => {
-      cancelled = true;
-      if (timerRef.current !== null) clearTimeout(timerRef.current);
-    };
+    const handle = startPolling(
+      async () => {
+        await loadRunStatus(runId);
+        return useBookStore.getState().runStatus;
+      },
+      (status) => status !== 'running' && status !== 'pending',
+    );
+    return () => handle.cancel();
   }, [runId, loadRunStatus]);
 
   return (
