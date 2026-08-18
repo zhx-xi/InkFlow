@@ -52,7 +52,10 @@ logger = logging.getLogger(__name__)
 
 
 class _BuiltinAgentSpec(TypedDict):
-    """内置 Agent 出厂配置项（spec §5.3）."""
+    """内置 Agent 出厂配置项（spec §5.3）.
+
+    内置链角色键映射（#473 R1）：架构师=architect 等；非链内置 None。
+    """
 
     name: str
     description: str
@@ -60,6 +63,7 @@ class _BuiltinAgentSpec(TypedDict):
     system_prompt: str
     tool_ids: list[str]
     skill_name: str
+    role_key: str | None
 
 
 BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
@@ -70,6 +74,7 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
         "system_prompt": "你是架构师，负责章节结构与大纲规划。",
         "tool_ids": ["search_characters", "check_foreshadowing", "get_prior_summary"],
         "skill_name": "架构方法论",
+        "role_key": "architect",
     },
     {
         "name": "写手",
@@ -83,6 +88,7 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
             "save_draft",
         ],
         "skill_name": "写作方法论",
+        "role_key": "writer",
     },
     {
         "name": "审校员",
@@ -91,6 +97,7 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
         "system_prompt": "你是审校员，负责对章节进行一致性审计，输出 findings。",
         "tool_ids": ["audit_chapter", "count_words", "search_characters"],
         "skill_name": "审校方法论",
+        "role_key": "auditor",
     },
     {
         "name": "修订师",
@@ -99,6 +106,7 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
         "system_prompt": "你是修订师，负责在前文基础上修订打磨章节，完成后保存草稿。",
         "tool_ids": ["get_prior_summary", "count_words", "save_draft"],
         "skill_name": "修订方法论",
+        "role_key": "reviser",
     },
     {
         "name": "世界观顾问",
@@ -107,6 +115,7 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
         "system_prompt": "你是世界观顾问，负责校验角色与伏笔的世界观一致性。",
         "tool_ids": ["search_characters", "check_foreshadowing"],
         "skill_name": "世界观方法论",
+        "role_key": None,
     },
     {
         "name": "润色师",
@@ -115,6 +124,7 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
         "system_prompt": "你是润色师，负责在前文基础上润色文笔。",
         "tool_ids": ["count_words", "get_prior_summary"],
         "skill_name": "润色方法论",
+        "role_key": None,
     },
 ]
 """内置 6 Agent 出厂配置（spec §5.3 出厂表，builtin=True 只读）."""

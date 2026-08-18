@@ -234,7 +234,7 @@ test('设置页：#268 角色模型三态 Select（跟随默认/指定模型/禁
     await window.getByTestId('settings-cat-agent').click();
     const chain = window.getByTestId('agent-chain-card');
     await expect(chain).toBeVisible();
-    const writer = chain.getByRole('switch', { name: 'Writer 执笔' });
+    const writer = chain.getByRole('switch', { name: '写手' });
     await expect(writer).not.toBeChecked(); // 新项目默认 agent_writer=null=关闭
 
     // 三态 1：Switch 开 → 默认「跟随默认」→ 落库 sentinel __default__
@@ -322,7 +322,7 @@ test('#268 三态指定模型 → 重启（二次 launch 同数据目录）→ �
     await gotoNav(first.window, '设置');
     await first.window.getByTestId('settings-cat-agent').click();
     const chain = first.window.getByTestId('agent-chain-card');
-    const writer = chain.getByRole('switch', { name: 'Writer 执笔' });
+    const writer = chain.getByRole('switch', { name: '写手' });
     await writer.click();
     await chain.getByTestId('agent-model-select-agent_writer').click();
     await first.window.getByRole('option', { name: 'deepseek/deepseek-v4-flash', exact: true }).first().click();
@@ -354,7 +354,7 @@ test('#268 三态指定模型 → 重启（二次 launch 同数据目录）→ �
     await gotoNav(second.window, '设置');
     await second.window.getByTestId('settings-cat-agent').click();
     const chain = second.window.getByTestId('agent-chain-card');
-    await expect(chain.getByRole('switch', { name: 'Writer 执笔' })).toBeChecked();
+    await expect(chain.getByRole('switch', { name: '写手' })).toBeChecked();
     await expect(chain.getByTestId('agent-model-select-agent_writer')).toContainText('deepseek/deepseek-v4-flash');
   } finally {
     await second.app.close();
@@ -390,8 +390,8 @@ test('设置页：#269 执行顺序上移/下移 → 内核 config.agent_order �
     await expect(chain).toBeVisible();
 
     // 多角色开启（默认模板模式：config.agent_order 空，开关不写 order，B1 语义）
-    await chain.getByRole('switch', { name: 'Writer 执笔' }).click();
-    await chain.getByRole('switch', { name: 'Auditor 审校' }).click();
+    await chain.getByRole('switch', { name: '写手' }).click();
+    await chain.getByRole('switch', { name: '审校员' }).click();
 
     // Writer 下移：并入 auditor 层（并行组）；writer 原层变空 → 压缩删除
     await chain.getByTestId('agent-order-move-down-agent_writer').click();

@@ -198,6 +198,17 @@ vi.mock('../components/TemplateDialog', async () => {
 });
 
 const apiFetchMock = vi.mocked(apiFetch);
+
+/** #473 R1：后端 BUILTIN_AGENT_SPECS 6 内置镜像（内置角色行派生真源；空列表用例局部覆盖） */
+const BUILTIN_AGENTS = [
+  { id: 101, name: '架构师', description: '章节结构/大纲规划', icon: '🏗️', system_prompt: '你是架构师。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'architect', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 102, name: '写手', description: '正文生成', icon: '✍️', system_prompt: '你是写手。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'writer', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 103, name: '审校员', description: '一致性审计', icon: '🔍', system_prompt: '你是审校员。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'auditor', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 104, name: '修订师', description: '修订打磨', icon: '🛠️', system_prompt: '你是修订师。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'reviser', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 105, name: '世界观顾问', description: '世界观一致', icon: '🌍', system_prompt: '你是世界观顾问。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: null, created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 106, name: '润色师', description: '文笔润色', icon: '✨', system_prompt: '你是润色师。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: null, created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+] as const;
+
 // F32（#152）：theme store 扩展契约的测试侧类型（拆分自 settings.test.tsx F32 段；beforeEach 引用）
 type FontKeyF32 = 'serif' | 'sans' | 'mono';
 type CloseBehaviorF32 = 'tray' | 'quit';
@@ -259,12 +270,13 @@ beforeEach(() => {
   useToastStore.setState({ toasts: [] });
   // F42 #268：默认 mock 按 URL 分发——AgentChainCard 挂载会 loadProviders()
   // （GET /api/v1/provider-configs，spec §5.2 数据源）；其余请求保持 {ok:true}
-  // F41 #260：AgentList 挂载会 loadAgents/loadToolCatalog/loadSkills（3 GET）——同样分发空列表
+  // F41 #260：AgentList 挂载会 loadAgents/loadToolCatalog/loadSkills（3 GET）——同样分发
+  // #473 R1：agents 默认返回 6 内置（内置角色行派生数据源）；空列表用例局部覆盖
   apiFetchMock.mockImplementation(async (path: string) => {
     if (path === '/api/v1/provider-configs') {
       return { items: [], total: 0, offset: 0, limit: 50 };
     }
-    if (path === '/api/v1/agents') return { items: [], total: 0 };
+    if (path === '/api/v1/agents') return { items: BUILTIN_AGENTS, total: 6, offset: 0, limit: 50 };
     if (path === '/api/v1/agents/tools') return { items: [] };
     if (path === '/api/v1/skills') return { items: [], total: 0 };
     return { ok: true };
@@ -547,13 +559,14 @@ describe('设置页 — Agent 分类（迁移自 AgentChainCard，spec §7.4/§7
     });
   }
 
-  it('四行渲染：Architect/Writer/Auditor/Reviser + 描述 + 4 开关', async () => {
+  it('四行渲染：后端真源派生名（架构师/写手/审校员/修订师）+ 描述 + 4 开关（#473 R1）', async () => {
     await openAgentPanel();
     const card = screen.getByTestId('agent-chain-card');
-    expect(within(card).getByText('Architect 大纲架构师')).toBeInTheDocument();
-    expect(within(card).getByText('Writer 执笔')).toBeInTheDocument();
-    expect(within(card).getByText('Auditor 审校')).toBeInTheDocument();
-    expect(within(card).getByText('Reviser 修订')).toBeInTheDocument();
+    // #473 R1：行名从 GET /api/v1/agents 按 role_key 派生（异步加载 → findByText）
+    expect(await within(card).findByText('架构师')).toBeInTheDocument();
+    expect(await within(card).findByText('写手')).toBeInTheDocument();
+    expect(await within(card).findByText('审校员')).toBeInTheDocument();
+    expect(await within(card).findByText('修订师')).toBeInTheDocument();
     expect(within(card).getAllByRole('switch')).toHaveLength(4);
   });
 
@@ -713,7 +726,14 @@ describe('设置页 — Agent 分类（迁移自 AgentChainCard，spec §7.4/§7
   });
 
   it('F41 #260：Agent 管理列表挂载（agent-list 容器）+ 空列表 → 空态提示「暂无自定义 Agent」', async () => {
-    // 默认 mock 3 端点空列表 → 无内置/自定义 Agent → 空态
+    // 默认 mock 已改为 6 内置（#473 R1 派生数据源）→ 本用例局部覆盖回空列表（AgentList 空态语义）
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs') return { items: [], total: 0, offset: 0, limit: 50 };
+      if (path === '/api/v1/agents') return { items: [], total: 0 };
+      if (path === '/api/v1/agents/tools') return { items: [] };
+      if (path === '/api/v1/skills') return { items: [], total: 0 };
+      return { ok: true };
+    });
     await openAgentPanel();
     expect(await screen.findByTestId('agent-list')).toBeInTheDocument();
     expect(screen.getByText('暂无自定义 Agent')).toBeInTheDocument();

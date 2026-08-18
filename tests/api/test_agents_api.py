@@ -135,6 +135,10 @@
     与本文件被测对象不同域）。agent-templates/skills 等端点不在本文件覆盖
     范围（skills 端点契约属 F39 并行批 tests/api/test_skills_api.py）。
 
+17. 【role_key 透出（#473 R1）】内置 Agent 响应含 role_key（链角色键
+    architect/writer/auditor/reviser，非链内置/自定义 → null；列表/详情
+    都透出）。用例见 tests/api/test_agents_role_key.py（900 行护栏拆出）。
+
 ════════════════════════════════════════════════════════════════════
 RED 阶段预期：`inkflow.api.routers.agents` 模块不存在 → 本文件【收集期
 ModuleNotFoundError】collected 0 items（pytest exit 2；router 未注册，请求
@@ -457,7 +461,6 @@ class TestCreateAgent:
         assert data["model_override"] == "zhipu/glm-4.5"
         assert data["temperature_override"] == 0.6
         assert data["builtin"] is False  # 新建恒为自定义 Agent（#11）
-
         # 集成断言：按 name 回查落库，id 与响应一致
         from inkflow.infrastructure.database.models.agent import AgentORM
 

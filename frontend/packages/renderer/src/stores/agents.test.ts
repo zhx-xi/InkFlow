@@ -7,8 +7,10 @@
  * - AgentEntity { id: number; name: string; description: string; icon: string;
  *   system_prompt: string; tool_ids: string[]; skill_ids: string[];
  *   model_override: string | null; temperature_override: number | null;
- *   builtin: boolean; created_at: string | null; updated_at: string | null }
- *   （对齐后端 12 字段，model_dump(mode=json)）
+ *   builtin: boolean; role_key: string | null; created_at: string | null;
+ *   updated_at: string | null }
+ *   （对齐后端 13 字段 model_dump(mode=json)；role_key 为 #473 R1 新增——
+ *   内置链角色键映射 architect/writer/auditor/reviser，非链内置/自定义为 null）
  * - AgentInput { name: string; description: string; icon: string;
  *   system_prompt: string; tool_ids: string[]; skill_ids: string[];
  *   model_override: string | null; temperature_override: number | null }
@@ -58,6 +60,8 @@ interface AgentEntity {
   model_override: string | null;
   temperature_override: number | null;
   builtin: boolean;
+  /** #473 R1：内置链角色键映射（architect/writer/auditor/reviser）；非链内置/自定义为 null */
+  role_key: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -83,6 +87,7 @@ const BUILTIN_AGENT: AgentEntity = {
   model_override: null,
   temperature_override: null,
   builtin: true,
+  role_key: 'architect',
   created_at: '2026-08-16T00:00:00Z',
   updated_at: '2026-08-16T00:00:00Z',
 };
@@ -98,6 +103,7 @@ const CUSTOM_AGENT: AgentEntity = {
   model_override: 'zhipu/glm-4.5',
   temperature_override: 0.6,
   builtin: false,
+  role_key: null,
   created_at: '2026-08-16T01:00:00Z',
   updated_at: '2026-08-16T01:00:00Z',
 };

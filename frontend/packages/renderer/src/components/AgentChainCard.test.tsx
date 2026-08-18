@@ -5,7 +5,8 @@
  *
  * 结构（data-testid 即契约，保留既有）：
  * - agent-chain-card：卡片根容器（既有，不改）
- * - 每行 Switch：role=switch，aria-label=t(role.nameKey)（既有，不改）
+ * - 每行 Switch：role=switch，aria-label=角色显示名（#473 R1 起 = 后端派生名，
+ *   不再是 t(role.nameKey)）
  * - 每行模型 Select（Switch 打开时条件渲染）：data-testid=`agent-model-select-<field>`
  *   （如 agent-model-select-agent_architect），Radix combobox；关闭时不渲染
  * - 既有 tag 展示位（L70 span）承担三种状态：
@@ -13,11 +14,15 @@
  *   * 格式不合规（config 值无 /，裸名）→ 文本 t('ag.modelFormatFix')（警告样式）
  *   * 正常 → 现有逻辑不变（ag.disabled / ag.defaultModel / 模型名）
  *
- * 数据源（spec §5.2 Q3）：
+ * 数据源（spec §5.2 Q3 + #473 R1 角色集合单一来源）：
  * - GET /api/v1/provider-configs → items[].models[type=chat].id，扁平为 <provider>/<model>
  *   （provider 名取 items[].name），经 stores/models.ts selectChatModelOptions 计算
  * - 「跟随默认」选项固定置顶，值 = AGENT_DEFAULT_SENTINEL（'__default__'）
  * - 组件挂载时调 loadProviders()（useModelsStore），Select 选项随 store 更新
+ * - 【#473 R1】组件挂载同时调 loadAgents()（useAgentsStore，GET /api/v1/agents）——
+ *   内置 4 角色行（名称/描述/图标）从后端真源按 role_key 派生（architect/writer/
+ *   auditor/reviser 顺序恒为链顺序，与后端列表顺序无关），不再 hardcode AGENT_ROLES
+ *   字面量 / i18n ag.* 文案 key；role_key 缺失（或 agents 未加载）→ 该行不渲染
  *
  * 三态交互映射（spec §2.2 表）：
  * - Switch off → PATCH null（setConfig({field: null}) + onConfigChange）
@@ -38,6 +43,7 @@ import userEvent from '@testing-library/user-event';
 import { AgentChainCard } from './AgentChainCard';
 import { AGENT_DEFAULT_SENTINEL } from '../stores/project';
 import { useAgentStore } from '../stores/agent';
+import { useAgentsStore } from '../stores/agents';
 import { useModelsStore, type ProviderConfig } from '../stores/models';
 import { useTemplatesStore, type AgentTemplate } from '../stores/templates';
 import { apiFetch } from '../api/client';
@@ -48,6 +54,16 @@ vi.mock('../api/client', async (importOriginal) => {
 });
 
 const apiFetchMock = vi.mocked(apiFetch);
+
+/** #473 R1：后端 BUILTIN_AGENT_SPECS 6 内置镜像（role_key 派生真源的 mock 数据源） */
+const BUILTIN_AGENTS = [
+  { id: 101, name: '架构师', description: '章节结构/大纲规划', icon: '🏗️', system_prompt: '你是架构师。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'architect', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 102, name: '写手', description: '正文生成', icon: '✍️', system_prompt: '你是写手。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'writer', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 103, name: '审校员', description: '一致性审计', icon: '🔍', system_prompt: '你是审校员。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'auditor', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 104, name: '修订师', description: '修订打磨', icon: '🛠️', system_prompt: '你是修订师。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'reviser', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 105, name: '世界观顾问', description: '世界观一致', icon: '🌍', system_prompt: '你是世界观顾问。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: null, created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 106, name: '润色师', description: '文笔润色', icon: '✨', system_prompt: '你是润色师。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: null, created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+] as const;
 
 /** provider-configs mock：openai(gpt-4o chat + embedding) / zhipu(glm-4.5 chat) / ollama(qwen3 chat) */
 const PROVIDERS: ProviderConfig[] = [
@@ -83,9 +99,14 @@ beforeEach(() => {
     if (path === '/api/v1/agent-templates') {
       return { items: [], total: 0, offset: 0, limit: 50 };
     }
+    // #473 R1：挂载 loadAgents()——内置行派生数据源（6 内置 + role_key）
+    if (path === '/api/v1/agents') {
+      return { items: BUILTIN_AGENTS, total: 6, offset: 0, limit: 50 };
+    }
     return { ok: true };
   });
   useAgentStore.setState({ config: {}, apiKeyDraft: '', testStatus: 'idle', testMessage: null });
+  useAgentsStore.setState({ agents: [], tools: [], skills: [], loading: false, error: null });
   useModelsStore.setState({
     providers: [],
     loading: false,
@@ -107,13 +128,14 @@ async function renderCard() {
 }
 
 describe('AgentChainCard — F42 模型选择（spec §5.2）', () => {
-  it('四行渲染保留：Architect/Writer/Auditor/Reviser + 4 开关（既有契约）', async () => {
+  it('四行渲染保留：后端真源派生名（架构师/写手/审校员/修订师）+ 4 开关（#473 R1）', async () => {
     await renderCard();
     const card = screen.getByTestId('agent-chain-card');
-    expect(within(card).getByText('Architect 大纲架构师')).toBeInTheDocument();
-    expect(within(card).getByText('Writer 执笔')).toBeInTheDocument();
-    expect(within(card).getByText('Auditor 审校')).toBeInTheDocument();
-    expect(within(card).getByText('Reviser 修订')).toBeInTheDocument();
+    // #473 R1：行名从 GET /api/v1/agents 按 role_key 派生（异步加载 → findByText）
+    expect(await within(card).findByText('架构师')).toBeInTheDocument();
+    expect(await within(card).findByText('写手')).toBeInTheDocument();
+    expect(await within(card).findByText('审校员')).toBeInTheDocument();
+    expect(await within(card).findByText('修订师')).toBeInTheDocument();
     expect(within(card).getAllByRole('switch')).toHaveLength(4);
   });
 
@@ -438,6 +460,10 @@ describe('AgentChainCard — F42 #296 自定义角色行（spec §5.3.4）', () 
       if (path === '/api/v1/agent-templates') {
         return { items: [TEMPLATE_WITH_CUSTOM], total: 1, offset: 0, limit: 50 };
       }
+      // #473 R1：挂载 loadAgents()（内置行派生数据源）
+      if (path === '/api/v1/agents') {
+        return { items: BUILTIN_AGENTS, total: 6, offset: 0, limit: 50 };
+      }
       return { ok: true };
     });
   }
@@ -553,6 +579,19 @@ describe('AgentChainCard — F42 #296 自定义角色行（spec §5.3.4）', () 
       expect(screen.getByTestId('agent-model-select-agent_researcher')).toHaveTextContent('zhipu/glm-4.5');
     });
   });
+
+  it('R1-4 自定义角色行与内置派生共存（#473：4 内置派生 + 2 自定义 = 6 开关）', async () => {
+    mockTemplatesWithCustom();
+    act(() => useAgentStore.getState().setConfig({ template_id: 2 }));
+    await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    // 等内置派生完成 + 自定义行渲染
+    await within(card).findByText('架构师');
+    expect(within(card).getByText('资料研究员')).toBeInTheDocument();
+    expect(within(card).getByText('editor')).toBeInTheDocument();
+    // 4 内置 + 2 自定义 = 6 开关
+    expect(within(card).getAllByRole('switch')).toHaveLength(6);
+  });
 });
 // ── F46 #270 依赖入口契约（spec §5.2）─────────
 
@@ -611,5 +650,75 @@ describe('AgentChainCard — F46 #270 依赖入口（spec §5.2）', () => {
     const editor = screen.getByTestId('agent-relation-editor');
     expect(within(editor).getByText(/agent_auditor/)).toBeInTheDocument();
     expect(within(editor).getByText(/conditional/)).toBeInTheDocument();
+  });
+});
+
+// ── #473 R1 内置行从后端真源派生（role_key）─────────
+
+describe('AgentChainCard — #473 R1 内置行从后端真源派生（role_key）', () => {
+  it('R1-1 挂载 loadAgents；行名/描述/图标 = 后端 BUILTIN_AGENT_SPECS 值（不再 i18n hardcode）', async () => {
+    await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    // 挂载即 loadAgents（#473 R1 新数据源契约）
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agents');
+    // 名称/描述 = 后端真源值（不再是 'Architect 大纲架构师' 等 i18n 文案）
+    await within(card).findByText('架构师');
+    expect(within(card).getByText('章节结构/大纲规划')).toBeInTheDocument();
+    expect(within(card).getByText('正文生成')).toBeInTheDocument();
+    expect(within(card).getByText('一致性审计')).toBeInTheDocument();
+    expect(within(card).getByText('修订打磨')).toBeInTheDocument();
+    // 图标 = 后端 emoji 文本（不再是 Lucide svg 组件）
+    expect(within(card).getByText('🏗️')).toBeInTheDocument();
+    expect(within(card).getByText('✍️')).toBeInTheDocument();
+    expect(within(card).getByText('🔍')).toBeInTheDocument();
+    expect(within(card).getByText('🛠️')).toBeInTheDocument();
+  });
+
+  it('R1-2 行顺序 = 链角色键顺序（architect/writer/auditor/reviser）——后端列表乱序返回仍恒定', async () => {
+    // 乱序 mock：润色师/写手/世界观顾问/架构师/审校员/修订师（后端按 name 升序，非链序）
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs') {
+        return { items: PROVIDERS, total: 3, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/agent-templates') {
+        return { items: [], total: 0, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/agents') {
+        return {
+          items: [BUILTIN_AGENTS[5], BUILTIN_AGENTS[1], BUILTIN_AGENTS[4], BUILTIN_AGENTS[0], BUILTIN_AGENTS[2], BUILTIN_AGENTS[3]],
+          total: 6, offset: 0, limit: 50,
+        };
+      }
+      return { ok: true };
+    });
+    await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    await within(card).findByText('架构师');
+    // switch aria-label = 派生显示名；行序 = BUILTIN_ROLE_KEYS 顺序（非后端返回顺序）
+    const names = within(card).getAllByRole('switch').map((s) => s.getAttribute('aria-label'));
+    expect(names).toEqual(['架构师', '写手', '审校员', '修订师']);
+  });
+
+  it('R1-3 role_key 缺失（列表缺写手）→ 该行不渲染（派生严格性，不显示占位名）', async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs') {
+        return { items: PROVIDERS, total: 3, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/agent-templates') {
+        return { items: [], total: 0, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/agents') {
+        return {
+          items: [BUILTIN_AGENTS[0], BUILTIN_AGENTS[2], BUILTIN_AGENTS[3], BUILTIN_AGENTS[4], BUILTIN_AGENTS[5]],
+          total: 5, offset: 0, limit: 50,
+        };
+      }
+      return { ok: true };
+    });
+    await renderCard();
+    const card = screen.getByTestId('agent-chain-card');
+    await within(card).findByText('架构师');
+    expect(within(card).queryByText('写手')).not.toBeInTheDocument();
+    expect(within(card).getAllByRole('switch')).toHaveLength(3);
   });
 });

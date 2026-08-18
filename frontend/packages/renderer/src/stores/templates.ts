@@ -6,7 +6,7 @@
 import { create } from 'zustand';
 import { apiFetch, errorMessage } from '../api/client';
 
-/** 角色槽位（Architect/Writer/Auditor/Reviser 四角色；model/temperature null = 跟随默认） */
+/** 角色键（architect/writer/auditor/reviser 为内置链角色键 = 后端 BUILTIN_AGENT_SPECS.role_key；自定义角色键追加在后；model/temperature null = 跟随默认） */
 export interface AgentTemplateRole {
   model: string | null;
   temperature: number | null;
@@ -38,6 +38,7 @@ export interface AgentTemplateInput {
   description: string;
   main_model: string;
   default_temperature: number;
+  // 内置 4 键契约（#473 R1：与后端 role_key 对应；AgentTemplate.roles 放宽为 Record 追加自定义键）
   roles: {
     architect: AgentTemplateRole;
     writer: AgentTemplateRole;
