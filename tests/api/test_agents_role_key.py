@@ -73,12 +73,18 @@ class TestRoleKeyExposure:
             ("审校员", "auditor"),
             ("修订师", "reviser"),
         ):
-            assert by_name[name].get("role_key") == role_key, f"{name} role_key 映射错误"
+            assert (
+                by_name[name].get("role_key") == role_key
+            ), f"{name} role_key 映射错误"
 
-    async def test_list_non_chain_builtin_role_key_none(
+    async def test_list_non_chain_builtin_role_key_exposed_v15(
         self, client, db_session, override_get_db
     ):
-        """非链内置（世界观顾问/润色师）→ role_key 为 None（#484 才动态化）。"""
+        """v1.5 #484 内置可选角色（世界观顾问/润色师）→ role_key = worldview/polisher（§5.7.1）。
+
+        v1.5 由 None 扩展为非 None（6 内置皆可进链）；本用例随 #473 R1 契约升级，
+        替换 v1.4「非链内置 role_key 为 None」语义。
+        """
         for name in ("世界观顾问", "润色师"):
             await _seed_agent(db_session, name=name, builtin=True)
 
@@ -87,8 +93,8 @@ class TestRoleKeyExposure:
         by_name = {it["name"]: it for it in resp.json()["items"]}
         # sentinel 区分「字段缺失」vs「值为 null」——缺失时 get 返回 'MISSING' 才 FAIL
         # （防确认型假绿：字段未透出时「is None」断言天然通过）
-        assert by_name["世界观顾问"].get("role_key", "MISSING") is None
-        assert by_name["润色师"].get("role_key", "MISSING") is None
+        assert by_name["世界观顾问"].get("role_key", "MISSING") == "worldview"
+        assert by_name["润色师"].get("role_key", "MISSING") == "polisher"
 
     async def test_list_custom_agent_role_key_none(
         self, client, db_session, override_get_db
@@ -103,9 +109,7 @@ class TestRoleKeyExposure:
         # sentinel 区分「字段缺失」vs「值为 null」（防确认型假绿）
         assert item.get("role_key", "MISSING") is None
 
-    async def test_detail_exposes_role_key(
-        self, client, db_session, override_get_db
-    ):
+    async def test_detail_exposes_role_key(self, client, db_session, override_get_db):
         """详情端点同样透出 role_key（内置链角色 → 映射；自定义 → None）。"""
         builtin_row = await _seed_agent(db_session, name="架构师", builtin=True)
         custom_row = await _seed_agent(db_session, name="自定义乙")

@@ -325,3 +325,21 @@ class TestValidateAgentRelationsConfig:
         ]  # type: ignore[assignment]  # 契约：裸 dict 元素形态
         with pytest.raises(ValueError, match="agent_relations 引用了不存在的角色: agent_ghost"):
             _validate_agent_relations_config(config)
+
+    def test_v15_worldview_reference_known(self) -> None:
+        """v1.5 #484：from 引用 agent_worldview（内置 6 角色）→ 通过（引用面扩 6，§5.7.2）。"""
+        _validate_agent_relations_config(
+            _cfg(
+                agent_relations=[
+                    {"from": "agent_worldview", "to": "agent_reviser", "type": "sequential"}
+                ]
+            )
+        )
+
+    def test_v15_polisher_reference_known(self) -> None:
+        """v1.5 #484：to 引用 agent_polisher → 通过（F46 依赖编辑器联动 6 角色）。"""
+        _validate_agent_relations_config(
+            _cfg(
+                agent_relations=[{"from": "agent_reviser", "to": "agent_polisher", "type": "data"}]
+            )
+        )

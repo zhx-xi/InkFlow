@@ -165,3 +165,64 @@ class TestAgentRolesField:
         """value 带空白 → strip 规范化（与 agent_* 对齐）。"""
         cfg = ProjectConfig(agent_roles={"agent_researcher": "  zhipu/glm-4.5  "})
         assert cfg.model_dump()["agent_roles"] == {"agent_researcher": "zhipu/glm-4.5"}
+
+
+class TestAgentWorldviewPolisherFields:
+    """v1.5 #484 ProjectConfig 新增 agent_worldview/agent_polisher 三态字段（spec §5.7.1）。
+
+    契约：与 agent_architect 等内置 4 角色完全同三态语义（None=关闭 /
+    "__default__"=跟随默认 / 字符串非空=指定模型），validator 复用 validate_agent_model：
+    - 默认 None（缺省 = 关闭；零迁移——存量 config JSON 无键，Pydantic 默认值兜底）
+    - 显式赋值保留（provider/model 格式）
+    - "__default__"（AGENT_DEFAULT_SENTINEL）保留
+    - 空字符串 → ValueError「Agent 模型不能为空字符串」
+    - 值 strip 规范化（"  zhipu/glm-4.5  " → "zhipu/glm-4.5"）
+
+    字段名 = 链角色字段名（§5.7.1 表）：世界观顾问 → agent_worldview、润色师 → agent_polisher。
+    spec §5.7.2：自定义角色走 agent_roles（不新增命名字段）。
+
+    RED 形态：ProjectConfig 无 agent_worldview/agent_polisher 字段（Pydantic v2
+    extra='ignore' 静默丢弃）→ `"agent_worldview" in model_dump()` AssertionError；
+    非法值用例 pytest.raises DID NOT RAISE。
+    """
+
+    def test_default_none(self) -> None:
+        """默认 agent_worldview/agent_polisher == None（缺省 = 关闭）。"""
+        cfg = ProjectConfig()
+        dumped = cfg.model_dump()
+        assert "agent_worldview" in dumped
+        assert "agent_polisher" in dumped
+        assert dumped["agent_worldview"] is None
+        assert dumped["agent_polisher"] is None
+
+    def test_explicit_values_preserved(self) -> None:
+        """显式赋值保留（provider/model 格式）。"""
+        cfg = ProjectConfig(
+            agent_worldview="zhipu/glm-4.5",
+            agent_polisher="deepseek/deepseek-v4-flash",
+        )
+        dumped = cfg.model_dump()
+        assert dumped["agent_worldview"] == "zhipu/glm-4.5"
+        assert dumped["agent_polisher"] == "deepseek/deepseek-v4-flash"
+
+    def test_sentinel_preserved(self) -> None:
+        """agent_worldview = \"__default__\" = 跟随默认（AGENT_DEFAULT_SENTINEL 语义）。"""
+        cfg = ProjectConfig(agent_worldview="__default__")
+        assert cfg.model_dump()["agent_worldview"] == "__default__"
+
+    def test_empty_string_rejected(self) -> None:
+        """空字符串 → ValueError「Agent 模型不能为空字符串」（三态校验复用）。"""
+        with pytest.raises(ValueError, match="Agent 模型不能为空字符串"):
+            ProjectConfig(agent_worldview="")
+        with pytest.raises(ValueError, match="Agent 模型不能为空字符串"):
+            ProjectConfig(agent_polisher="")
+
+    def test_whitespace_value_stripped(self) -> None:
+        """值带空白 → strip 规范化（与 agent_* 对齐）。"""
+        cfg = ProjectConfig(agent_worldview="  zhipu/glm-4.5  ")
+        assert cfg.model_dump()["agent_worldview"] == "zhipu/glm-4.5"
+
+    def test_null_explicit_disables(self) -> None:
+        """显式 None = 关闭（与内置 4 角色同语义，JSON 落库 null）。"""
+        cfg = ProjectConfig(agent_worldview=None)
+        assert cfg.model_dump()["agent_worldview"] is None

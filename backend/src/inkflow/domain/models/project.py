@@ -87,6 +87,10 @@ class ProjectConfig(BaseModel):
         agent_writer: 写手 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
         agent_auditor: 审阅 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
         agent_reviser: 修订 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
+        agent_worldview: 世界观顾问 Agent 模型（v1.5 #484；None=关闭；字符串=指定模型；
+            "__default__"=跟随默认）.
+        agent_polisher: 润色师 Agent 模型（v1.5 #484；None=关闭；字符串=指定模型；
+            "__default__"=跟随默认）.
         agent_roles: 自定义角色三态字段（key 带 agent_ 前缀，value 三态语义
             与 agent_* 完全一致；spec §5.3.4 数据面）.
         temperature: 生成温度 (0.0 - 2.0).
@@ -106,6 +110,12 @@ class ProjectConfig(BaseModel):
     agent_writer: str | None = None
     agent_auditor: str | None = None
     agent_reviser: str | None = None
+    agent_worldview: str | None = None
+    """世界观顾问 Agent 模型（v1.5 #484，spec §5.7.1；None=关闭 / "__default__"=跟随默认 /
+    字符串=指定模型，与内置 4 角色同三态语义）."""
+    agent_polisher: str | None = None
+    """润色师 Agent 模型（v1.5 #484，spec §5.7.1；None=关闭 / "__default__"=跟随默认 /
+    字符串=指定模型，与内置 4 角色同三态语义）."""
     agent_roles: dict[str, str | None] = Field(default_factory=dict)
     """自定义角色三态字段（F42 #295，spec §5.3.4 数据面第 2 点）.
 
@@ -149,7 +159,14 @@ class ProjectConfig(BaseModel):
             = reviser 在 auditor 通过后才执行
     """
 
-    @field_validator("agent_architect", "agent_writer", "agent_auditor", "agent_reviser")
+    @field_validator(
+        "agent_architect",
+        "agent_writer",
+        "agent_auditor",
+        "agent_reviser",
+        "agent_worldview",
+        "agent_polisher",
+    )
     @classmethod
     def validate_agent_model(cls, v: str | None) -> str | None:
         """agent_* 三态语义校验（#225）：None=关闭；"__default__"=跟随默认；字符串必须非空。"""

@@ -84,12 +84,8 @@ interface AgentTemplate {
   description: string;
   main_model: string;
   default_temperature: number;
-  roles: {
-    architect: AgentTemplateRole;
-    writer: AgentTemplateRole;
-    auditor: AgentTemplateRole;
-    reviser: AgentTemplateRole;
-  };
+  /** v1.5 #484：roles 放宽为任意键（模板可引用任意角色组合，§5.7.5） */
+  roles: Record<string, AgentTemplateRole>;
   default_words: number;
   is_default: boolean;
   used_by?: Array<{ id: string; name: string }>;
@@ -101,12 +97,8 @@ interface AgentTemplateInput {
   description: string;
   main_model: string;
   default_temperature: number;
-  roles: {
-    architect: AgentTemplateRole;
-    writer: AgentTemplateRole;
-    auditor: AgentTemplateRole;
-    reviser: AgentTemplateRole;
-  };
+  /** v1.5 #484：roles 放宽为任意键（与 stores/templates 契约一致） */
+  roles: Record<string, AgentTemplateRole>;
   default_words: number;
 }
 
@@ -143,6 +135,17 @@ const PROVIDERS = [
     updated_at: '2026-08-05T10:00:00Z',
   },
 ];
+
+/** v1.5 #484：角色编辑列表真源派生 mock（6 内置 + 自定义 researcher；BUILTIN_AGENT_SPECS 镜像） */
+const AGENTS = [
+  { id: 101, name: '架构师', description: '章节结构/大纲规划', icon: '🏗️', system_prompt: '你是架构师。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'architect', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 102, name: '写手', description: '正文生成', icon: '✍️', system_prompt: '你是写手。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'writer', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 103, name: '审校员', description: '一致性审计', icon: '🔍', system_prompt: '你是审校员。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'auditor', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 104, name: '修订师', description: '修订打磨', icon: '🛠️', system_prompt: '你是修订师。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'reviser', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 105, name: '世界观顾问', description: '世界观一致', icon: '🌍', system_prompt: '你是世界观顾问。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'worldview', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 106, name: '润色师', description: '文笔润色', icon: '✨', system_prompt: '你是润色师。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'polisher', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 201, name: '研究员', description: '设定核查', icon: '🔬', system_prompt: '你是研究员。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: false, role_key: 'researcher', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+] as const;
 
 const EDITING_TEMPLATE: AgentTemplate = {
   id: 1,
@@ -217,6 +220,10 @@ beforeEach(() => {
   apiFetchMock.mockImplementation(async (path: string) => {
     if (path === '/api/v1/provider-configs') {
       return { items: PROVIDERS, total: 2, offset: 0, limit: 50 };
+    }
+    // v1.5 #484：组件挂载 loadAgents()——角色编辑列表真源派生数据源
+    if (path === '/api/v1/agents') {
+      return { items: AGENTS, total: 7, offset: 0, limit: 50 };
     }
     return { ok: true };
   });
@@ -357,6 +364,10 @@ describe('TemplateDialog — 创建保存（onCreate 完整 payload）', () => {
         writer: ROLE(null, null, true),
         auditor: ROLE(null, null, true),
         reviser: ROLE(null, null, true),
+        // v1.5 #484：角色编辑列表从 agents 真源派生 → payload 含全部角色（任意组合）
+        worldview: ROLE(null, null, true),
+        polisher: ROLE(null, null, true),
+        researcher: ROLE(null, null, true),
       },
       default_words: 500000,
     });
@@ -384,7 +395,17 @@ describe('TemplateDialog — 编辑回显与保存（onUpdate）', () => {
     await user.clear(screen.getByTestId('template-name-input'));
     await user.type(screen.getByTestId('template-name-input'), '经典玄幻改');
     await user.click(screen.getByTestId('template-save'));
-    expect(onUpdate).toHaveBeenCalledWith({ ...EDITING_PAYLOAD, name: '经典玄幻改' });
+    expect(onUpdate).toHaveBeenCalledWith({
+      ...EDITING_PAYLOAD,
+      name: '经典玄幻改',
+      // v1.5 #484：payload roles 含 agents 真源派生角色（默认开启态）
+      roles: {
+        ...EDITING_PAYLOAD.roles,
+        worldview: ROLE(null, null, true),
+        polisher: ROLE(null, null, true),
+        researcher: ROLE(null, null, true),
+      },
+    });
   });
 
   it('温度滑杆联动：调滑杆 → 显示值更新（架构师 0.4 → 0.5；默认 0.7 → 0.8）', () => {
@@ -416,7 +437,140 @@ describe('TemplateDialog — 编辑回显与保存（onUpdate）', () => {
     await user.click(within(dlg).getByTestId('template-save'));
     expect(onUpdate).toHaveBeenCalledWith({
       ...EDITING_PAYLOAD,
-      roles: { ...EDITING_PAYLOAD.roles, architect: ROLE(null, null, false) },
+      roles: {
+        ...EDITING_PAYLOAD.roles,
+        architect: ROLE(null, null, false),
+        // v1.5 #484：payload roles 含 agents 真源派生角色（默认开启态）
+        worldview: ROLE(null, null, true),
+        polisher: ROLE(null, null, true),
+        researcher: ROLE(null, null, true),
+      },
     });
+  });
+});
+
+describe('TemplateDialog — v1.5 #484 模板引用任意角色组合（spec §5.7.5 + §13 M9 ④）', () => {
+  /**
+   * 契约（GREEN 修改 src/components/TemplateDialog.tsx，必须匹配）：
+   *
+   * 角色编辑列表从 GET /api/v1/agents 真源派生（§5.7.2 派生规则三组件统一）——
+   * ROLES 4 键硬编码（architect/writer/auditor/reviser）删除：
+   * - 角色列表 = agents（6 内置 role_key 非 null + 自定义 builtin=false）+ editing.roles 键
+   *   （模板快照补充：已删除 Agent 的键保留显示，§5.7.5 保存语义）
+   * - 每个角色渲染既有交互（行 container template-role-row-<role_key> / 模型 Select
+   *   template-role-<role_key>-model / 温度 Slider template-role-<role_key>-temp /
+   *   开关 template-role-<role_key>-enabled，§5.7.5「勾选启用/关闭 + 模型 Select + 温度 Slider
+   *   既有交互逐角色保留」）
+   * - 显示名 = agents 真源 name（worldview→世界观顾问）；i18n key 缺失时 `${name}模型`/`${name}温度`
+   * - 保存 payload roles = Record<string, AgentTemplateRole>（任意键组合，§5.7.5 数据契约）——
+   *   新增角色默认 ROLE(null, null, true)（enabled + 跟随默认）
+   * - 挂载时 loadAgents()（新数据源；beforeEach 已 mock /api/v1/agents）
+   *
+   * 既有 4 角色行为零回归：template-role-row-architect 等仍渲染、payload 仍含 4 键。
+   *
+   * RED 预期：组件不渲染 worldview/polisher/researcher 行 → element-missing
+   * （Unable to find template-role-row-worldview）；payload 无新角色键 → 断言 FAIL。
+   */
+  it('角色编辑列表从真源派生：worldview/polisher/自定义行出现（不再 4 键硬编码）', async () => {
+    renderDialog();
+    const dlg = screen.getByTestId('template-dialog');
+    // 6 内置 + 1 自定义 = 7 行
+    expect(await within(dlg).findByTestId('template-role-row-worldview')).toBeInTheDocument();
+    expect(within(dlg).getByTestId('template-role-row-polisher')).toBeInTheDocument();
+    expect(within(dlg).getByTestId('template-role-row-researcher')).toBeInTheDocument();
+    // 既有 4 角色行保留
+    for (const role of ['architect', 'writer', 'auditor', 'reviser']) {
+      expect(within(dlg).getByTestId(`template-role-row-${role}`)).toBeInTheDocument();
+    }
+    // 显示名 = agents 真源 name
+    expect(within(dlg).getByText('世界观顾问')).toBeInTheDocument();
+    expect(within(dlg).getByText('润色师')).toBeInTheDocument();
+    expect(within(dlg).getByText('研究员')).toBeInTheDocument();
+  });
+
+  it('新角色行交互保留：模型 Select + 温度 Slider + 开关（template-role-<role>-* 契约）', async () => {
+    renderDialog();
+    const dlg = screen.getByTestId('template-dialog');
+    const worldviewRow = await within(dlg).findByTestId('template-role-row-worldview');
+    expect(within(worldviewRow).getByTestId('template-role-worldview-model')).toBeInTheDocument();
+    expect(within(worldviewRow).getByTestId('template-role-worldview-temp')).toBeInTheDocument();
+    expect(within(worldviewRow).getByTestId('template-role-worldview-enabled')).toBeInTheDocument();
+    expect(within(worldviewRow).getByTestId('template-role-worldview-enabled')).toBeChecked();
+  });
+
+  it('创建保存 → payload roles 含任意角色组合（Record：4 内置 + worldview/polisher/researcher）', async () => {
+    const user = userEvent.setup();
+    const { onCreate } = renderDialog();
+    await user.type(screen.getByTestId('template-name-input'), '任意角色模板');
+    await user.click(screen.getByTestId('template-save'));
+
+    expect(onCreate).toHaveBeenCalledWith({
+      name: '任意角色模板',
+      description: '',
+      main_model: '',
+      default_temperature: 0.7,
+      roles: expect.objectContaining({
+        architect: ROLE(null, null, true),
+        writer: ROLE(null, null, true),
+        auditor: ROLE(null, null, true),
+        reviser: ROLE(null, null, true),
+        worldview: ROLE(null, null, true),
+        polisher: ROLE(null, null, true),
+        researcher: ROLE(null, null, true),
+      }),
+      default_words: 800000,
+    });
+  });
+
+  it('编辑模式回显任意 roles 键（模板快照含 worldview/researcher）→ 行渲染 + 保存保留', async () => {
+    const user = userEvent.setup();
+    const editing: AgentTemplate = {
+      ...EDITING_TEMPLATE,
+      roles: {
+        ...EDITING_TEMPLATE.roles,
+        worldview: ROLE('gpt-4o', 0.4, true),
+        researcher: ROLE('deepseek-chat', 0.5, true),
+      },
+    };
+    const { onUpdate } = renderDialog({ editing });
+    const dlg = screen.getByTestId('template-dialog');
+
+    // 回显：worldview/researcher 行存在且模型回显
+    expect(await within(dlg).findByTestId('template-role-row-worldview')).toBeInTheDocument();
+    expect(within(dlg).getByTestId('template-role-worldview-model')).toHaveTextContent('gpt-4o');
+    expect(within(dlg).getByTestId('template-role-researcher-model')).toHaveTextContent('deepseek-chat');
+
+    await user.click(within(dlg).getByTestId('template-save'));
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roles: expect.objectContaining({
+          worldview: ROLE('gpt-4o', 0.4, true),
+          researcher: ROLE('deepseek-chat', 0.5, true),
+        }),
+      }),
+    );
+  });
+
+  it('模板快照含无 Agent 实体的 roles 键（已删除自定义 Agent）→ 仍显示保留（§5.7.5 快照语义）', async () => {
+    const user = userEvent.setup();
+    const editing: AgentTemplate = {
+      ...EDITING_TEMPLATE,
+      roles: {
+        ...EDITING_TEMPLATE.roles,
+        ghost_role: ROLE('gpt-4o', 0.5, true),
+      },
+    };
+    const { onUpdate } = renderDialog({ editing });
+    const dlg = screen.getByTestId('template-dialog');
+
+    // ghost_role 无 agents 实体 → 快照键仍渲染（模板是快照，§7 边界行）
+    expect(await within(dlg).findByTestId('template-role-row-ghost_role')).toBeInTheDocument();
+
+    await user.click(within(dlg).getByTestId('template-save'));
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roles: expect.objectContaining({ ghost_role: ROLE('gpt-4o', 0.5, true) }),
+      }),
+    );
   });
 });

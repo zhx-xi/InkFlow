@@ -35,12 +35,14 @@ logger = logging.getLogger(__name__)
 
 
 def _project_role_models(config: ProjectConfig) -> dict[str, str | None]:
-    """内置 4 角色字段名 → 项目配置模型值映射（stage.id 不带 agent_ 前缀）。"""
+    """内置 6 角色字段名 → 项目配置模型值映射（stage.id 不带 agent_ 前缀，v1.5 #484）。"""
     return {
         "architect": config.agent_architect,
         "writer": config.agent_writer,
         "auditor": config.agent_auditor,
         "reviser": config.agent_reviser,
+        "worldview": config.agent_worldview,
+        "polisher": config.agent_polisher,
     }
 
 
@@ -49,20 +51,16 @@ def _apply_agent_order(
     agent_order: list[list[str]],
     enabled_roles: set[str],
     template_roles: dict[str, RoleTemplate] | None = None,
+    agent_source: dict[str, dict[str, str]] | None = None,
 ) -> list[PipelineStage]:
     """按 agent_order 层级拓扑重排管线阶段（spec §5.3.1 步骤 2-8 + 裁定 C1-C4）。
 
-    双模式（B1）：
-    - agent_order 空 = 默认模板模式 → 原样返回 stages（null 不触发跳过，v1.0 语义零迁移）
-    - 非空 = 配置驱动模式 → 防御校验 → 跳过过滤 → 层级映射 → 全连接边重建 → 终点角色校验
-
-    防御回退（warning + 原样返回）：
-    - 长度 >10 / 跨层重复 / 缺启用角色（C1）/ 终点角色为 architect/auditor（C2 成品身份）
-
-    软降级（C3）：未来层/同层引用不回退，由 pipeline_nodes 空注入处理。
-    自定义角色（C4 + F42 #295）：agent_order 中非内置角色且模板 stages 无此
-    stage → 从 template_roles（AgentTemplate.roles）装配占位 AgentRole
-    （prompt 非 None 时）；template_roles 无该角色或 prompt 为 None → 跳过 + warning。
+    双模式（B1）：agent_order 空 = 默认模板模式 → 原样返回（null 不触发跳过）；
+    非空 = 配置驱动模式 → 防御校验 → 跳过过滤 → 层级映射 → 全连接边重建 → 终点角色校验。
+    防御回退（warning + 原样返回）：长度 >10 / 跨层重复 / 缺启用角色（C1）/
+    终点为 architect/auditor（C2 成品身份）。软降级（C3）：未来层/同层引用由 pipeline_nodes 空注入。
+    占位 stage 三级来源（C4 + v1.5 #484，spec §5.7.4）：模板 roles prompt 非 None → 模板；
+    agent_source（Agent 实体真源，role_key → {name, system_prompt}）→ 真源；两者皆无 → 跳过。
     """
     if not agent_order:
         return stages
@@ -76,7 +74,7 @@ def _apply_agent_order(
         logger.warning("agent_order 存在跨层重复角色，回退默认拓扑")
         return stages
 
-    # 缺启用角色校验（C1）：启用角色（字段名，去 agent_ 前缀）必须全部出现在 order 展开集
+    # 缺启用角色校验（C1）：启用角色（去 agent_ 前缀）必须全部出现在 order 展开集
     order_roles = {role.removeprefix("agent_") for role in flattened}
     enabled_stage_ids = {role.removeprefix("agent_") for role in enabled_roles}
     missing = enabled_stage_ids - order_roles
@@ -87,11 +85,10 @@ def _apply_agent_order(
         )
         return stages
 
-    # 跳过过滤（Q2+B1）：配置驱动模式下 enabled_roles 不含的角色（null）从 order 摘除；
-    # 层变空保留空层（后续按非空层计算，空槽不影响前序全层成员集合）
+    # 跳过过滤（Q2+B1）：配置驱动模式下 null 角色从 order 摘除；空层保留（不影响前序全层集合）
     filtered_layers = [[role for role in layer if role in enabled_roles] for layer in agent_order]
 
-    # 层级映射：agent_xxx → xxx（stage.id）；非内置角色且模板无此 stage → 跳过 + warning
+    # 层级映射：agent_xxx → stage.id；模板无此 stage → 占位构造（模板/真源/跳过）
     stage_by_id = {s.id: s for s in stages}
     mapped_layers: list[list[str]] = []
     for layer in filtered_layers:
@@ -99,8 +96,10 @@ def _apply_agent_order(
         for role in layer:
             stage_id = role.removeprefix("agent_")
             if stage_id not in stage_by_id:
-                # F42 #295（spec §5.3.4）：从 AgentTemplate.roles 装配占位角色
+                # v1.5 #484（spec §5.7.4）：占位角色三级来源——模板 roles prompt 非 None →
+                # 模板装配；否则 agent_source 真源 → name/prompt 取实体；两者皆无 → 跳过
                 role_template = (template_roles or {}).get(stage_id)
+                source = (agent_source or {}).get(stage_id)
                 if role_template is not None and role_template.prompt is not None:
                     placeholder_agent = AgentRole(
                         id=stage_id,
@@ -115,6 +114,22 @@ def _apply_agent_order(
                         agent=placeholder_agent,
                     )
                     mapped.append(stage_id)
+                elif source is not None:
+                    # model/temperature 不在此硬编码——_merge_role_configs 按默认链装配
+                    placeholder_agent = AgentRole(
+                        id=stage_id,
+                        name=source["name"] or stage_id,
+                        system_prompt=source["system_prompt"],
+                        temperature=(
+                            role_template.temperature if role_template is not None else None
+                        ),
+                    )
+                    stage_by_id[stage_id] = PipelineStage(
+                        id=stage_id,
+                        name=source["name"] or stage_id,
+                        agent=placeholder_agent,
+                    )
+                    mapped.append(stage_id)
                 else:
                     logger.warning(
                         "agent_order 角色 %s 在模板 stages 中无对应阶段（prompt 缺失），跳过",
@@ -124,14 +139,13 @@ def _apply_agent_order(
             mapped.append(stage_id)
         mapped_layers.append(mapped)
 
-    # 空槽（[]）与全部被过滤的层不参与拓扑（非空层计算）
+    # 空槽与全部被过滤的层不参与拓扑（非空层计算）
     non_empty_layers = [layer for layer in mapped_layers if layer]
     if not non_empty_layers:
         # 配置驱动模式全部角色关闭/跳过 → 无可执行角色 → 空管线
         return []
 
-    # 终点角色校验（C2 成品身份）：重排后终点（无 output_to 节点）为 architect/auditor
-    # （非内容产出，永不作为成品）→ 回退默认拓扑 + warning
+    # 终点角色校验（C2 成品身份）：终点为 architect/auditor（非内容产出）→ 回退默认拓扑
     terminal_ids = non_empty_layers[-1]
     if any(sid in ("architect", "auditor") for sid in terminal_ids):
         logger.warning(
@@ -140,8 +154,7 @@ def _apply_agent_order(
         )
         return stages
 
-    # 全连接边重建：第 i 层每节点 input_from = 前序全部非空层所有角色；
-    # output_to = 后序全部非空层所有角色（空槽不改变前序全层成员集合）
+    # 全连接边重建：第 i 层节点 input_from = 前序全部非空层角色；output_to = 后序全部非空层角色
     result: list[PipelineStage] = []
     for i, layer in enumerate(non_empty_layers):
         prev_roles: list[str] = []
@@ -167,7 +180,7 @@ def _apply_agent_order(
 
 
 def _has_cycle(nodes: set[str], edges: Sequence[tuple[str, str]]) -> bool:
-    """Kahn 拓扑排序环检测（spec §5.3.4 算法，域层独立实现，不依赖 infrastructure）。"""
+    """Kahn 拓扑排序环检测（spec §5.3.4，域层独立实现）。"""
     indegree = {node: 0 for node in nodes}
     adjacency: dict[str, list[str]] = {node: [] for node in nodes}
     for src, dst in edges:
@@ -187,7 +200,7 @@ def _has_cycle(nodes: set[str], edges: Sequence[tuple[str, str]]) -> bool:
 
 
 def _transitive_upstream(target_id: str, stages: Sequence[PipelineStage]) -> set[str]:
-    """target 阶段在基线中的 input_from 传递闭包（F46 #270 同层判定，spec §5.3.1 步骤 4）。"""
+    """target 在基线的 input_from 传递闭包（F46 #270 同层判定）。"""
     by_id = {s.id: s for s in stages}
     seen: set[str] = set()
     stack = list(by_id[target_id].input_from) if target_id in by_id else []
@@ -203,7 +216,7 @@ def _transitive_upstream(target_id: str, stages: Sequence[PipelineStage]) -> set
 
 
 def _append_unique(items: Sequence[str], value: str) -> list[str]:
-    """追加去重（spec §5.3.1：B.input_from 已含 A 时不重复追加）。"""
+    """追加去重（spec §5.3.1：input_from 已含时不重复）。"""
     result = list(items)
     if value not in result:
         result.append(value)
@@ -217,14 +230,9 @@ def _apply_agent_relations(
 ) -> tuple[list[PipelineStage], list[tuple[str, str]]]:
     """在 agent_order 基线上叠加 agent_relations 显式边（spec §5.3.1，F46 #270）。
 
-    返回 (叠加后 stages, conditional_edges)——conditional_edges 为 (from_id, to_id)
-    列表（去 agent_ 前缀的 stage.id），供引擎 add_conditional_edges 构建条件路由。
-
-    防御校验（warning + 原样返回 (stages, [])，忽略关系）：
-    - 死角色引用：from/to 去 agent_ 前缀后 ∉ 启用角色集合（stage.id 口径）
-    - agent_relations 自身环（Kahn）
-    - conditional 边多后继（A 除 B 外还有其它出边）
-    合成后环检测（对最终 input_from/output_to 图，Kahn）→ 有环 → 回退纯基线。
+    返回 (叠加后 stages, conditional_edges)——conditional_edges 供引擎 add_conditional_edges
+    构建条件路由。防御校验（warning + 忽略关系）：死角色引用 / 自身环 / conditional 多后继；
+    合成后环检测 → 回退纯基线。
     """
     if not agent_relations:
         return stages, []
@@ -232,7 +240,7 @@ def _apply_agent_relations(
     enabled_ids = {role.removeprefix("agent_") for role in enabled_roles}
     stage_by_id = {s.id: s for s in stages}
 
-    # 防御校验 1：死角色引用（from/to 去 agent_ 前缀后须 ∈ 启用角色且存在于基线 stages）
+    # 防御校验：死角色引用 / 自身环 / conditional 多后继（任一 → 忽略全部关系）
     for rel in agent_relations:
         from_id = rel.from_.removeprefix("agent_")
         if from_id not in enabled_ids or from_id not in stage_by_id:
@@ -243,7 +251,6 @@ def _apply_agent_relations(
             logger.warning("agent_relations 引用了未启用角色 %s，忽略全部关系", rel.to)
             return stages, []
 
-    # 防御校验 2：agent_relations 自身环（Kahn）
     relation_edges = [
         (rel.from_.removeprefix("agent_"), rel.to.removeprefix("agent_")) for rel in agent_relations
     ]
@@ -252,7 +259,7 @@ def _apply_agent_relations(
         logger.warning("agent_relations 自身存在循环依赖，忽略全部关系")
         return stages, []
 
-    # 防御校验 3：conditional 边多后继（A 除 B 外还有其它出边 → 条件 fan-out 归远期）
+    # conditional 边多后继（A 除 B 外还有其它出边 → 条件 fan-out 归远期）
     outgoing_counts: dict[str, int] = {}
     for rel in agent_relations:
         from_id = rel.from_.removeprefix("agent_")
@@ -325,7 +332,7 @@ def _apply_agent_relations(
 
 
 def _stage_snapshots(stage_results: Sequence[StageResult]) -> list[dict]:
-    """stages JSON 快照（confirm/_run_pipeline 共用，#343 根因 6）。"""
+    """stages JSON 快照（confirm/_run_pipeline 共用）。"""
     return [
         {
             "stage_id": sr.stage_id,
@@ -344,10 +351,8 @@ def _build_relations_snapshot(
 ) -> list[dict]:
     """执行记录 relations 快照（spec §5.4）：{from, to, type, gate_result}。
 
-    - sequential/data 边：gate_result 省略（非条件边无判定）
-    - conditional 边：目标 stage 在结果中且 status=COMPLETED（有输出）→ passed；
-      否则（未执行/跳过）→ skipped
-    - from/to 输出去 agent_ 前缀（stage.id 口径）
+    conditional 边：目标 stage COMPLETED 且有输出 → passed，否则 skipped；
+    sequential/data 边 gate_result 省略；from/to 输出去 agent_ 前缀。
     """
     result_by_id = {sr.stage_id: sr for sr in stage_results}
     snapshot: list[dict] = []
@@ -389,6 +394,7 @@ class AgentService:
         character_repo: Any = None,
         world_repo: Any = None,
         outline_repo: Any = None,
+        agent_repo: Any = None,
     ):
         # 延迟导入避免循环依赖
         from inkflow.infrastructure.agent.execution_store import ExecutionStore
@@ -406,6 +412,8 @@ class AgentService:
         self._pipeline = pipeline
         self._supervisor_pipeline = supervisor_pipeline
         self._summary_service = summary_service
+        self._agent_repo = agent_repo
+        self._db_session = db_session
         self._character_repo = character_repo
         self._world_repo = world_repo
         self._outline_repo = outline_repo
@@ -419,9 +427,7 @@ class AgentService:
     async def execute(self, request: PipelineExecuteRequest) -> dict:
         """创建并启动管线执行（异步后台任务）。
 
-        Returns:
-            {"execution_id": str, "pipeline": str, "project_id": str,
-             "status": "pending", "created_at": str}
+        Returns: {"execution_id", "pipeline", "project_id", "status", "created_at"} 初始 pending。
         """
         # 1. 验证项目存在（真实仓储 get 接收 ORM int id，UUID(int=orm_id) 可逆转换）
         project = await self._project_repo.get(request.project_id.int)
@@ -439,24 +445,21 @@ class AgentService:
             if chapter is None:
                 raise AgentServiceError("章节不存在")
 
-        # 4. 执行拓扑装配（F3 定稿）：读 agent_* 得启用集合（字段名）→ _apply_agent_order
-        #    （双模式分派 + 跳过过滤 + 自定义 stage 构造 + 重排 + 边重建 +
-        #    C2 终点角色校验）→ 合并角色配置
+        # 4. 执行拓扑装配（F3 定稿）：读 agent_* 得启用集合 → _apply_agent_order
+        #    （双模式/跳过过滤/自定义 stage 构造/重排/边重建/C2 终点校验）→ 合并角色配置
         project_role_models = _project_role_models(project.config)
         enabled_roles = {f"agent_{k}" for k, v in project_role_models.items() if v is not None}
-        # F42 #295（spec §5.3.4 第 4 点）：启用角色口径 = 内置 agent_* 非 null
-        # ∪ agent_roles 非 null（key 已带 agent_ 前缀，直接并入）
+        # F42 #295：启用角色口径 = 内置 agent_* 非 null ∪ agent_roles 非 null
         for field, value in (project.config.agent_roles or {}).items():
             if value is not None:
                 enabled_roles.add(field)
         project_template = await self._load_template(project.config)
-        # F46 #270（spec §5.1）：static 模式在基线上叠加 agent_relations 显式边并收集
+        # F46 #270（spec §5.1）：static 模式叠加 agent_relations 显式边并收集
         # conditional_edges；supervisor 模式不消费 agent_relations（§5.5，保持空）
         conditional_edges: list[tuple[str, str]] = []
         if request.mode == "supervisor":
-            # supervisor 模式（spec §5.1）：角色池 = 模板 stages（装配模型/温度/prompt，
-            # 不静态重排）；_apply_agent_order 只在 static 模式调用（supervisor 动态路由
-            # 取代静态拓扑）
+            # supervisor 模式（spec §5.1）：角色池 = 模板 stages（装配模型/温度/prompt，不静态重排；
+            # _apply_agent_order 只在 static 模式调用——supervisor 动态路由取代静态拓扑）
             if request.supervisor is None:
                 raise AgentServiceError("supervisor 配置缺失")
             template_stages = list(template.stages)
@@ -467,11 +470,32 @@ class AgentService:
             if pipeline_impl is None:
                 raise AgentServiceError("supervisor 模式未装配")
         else:
+            # v1.5 #484（spec §5.7.4）：装配 Agent 真源（role_key → {name, system_prompt}）
+            # 供 _apply_agent_order 构造模板缺失角色占位 stage；未注入/加载失败 → 降级模板装配
+            agent_source = None
+            # getattr 防御：既有测试以 __new__ 构造（绕过 __init__）时属性缺省 → None
+            agent_repo = getattr(self, "_agent_repo", None)
+            if agent_repo is None and getattr(self, "_db_session", None) is not None:
+                from inkflow.infrastructure.database.repositories.agent_repo import (
+                    SQLiteAgentRepository,
+                )
+
+                agent_repo = SQLiteAgentRepository(self._db_session)
+            if agent_repo is not None:
+                try:
+                    agent_source = {
+                        a.role_key: {"name": a.name, "system_prompt": a.system_prompt}
+                        for a in await agent_repo.list()
+                        if a.role_key
+                    }
+                except Exception:
+                    logger.warning("Agent 真源加载失败，降级模板 roles 装配", exc_info=True)
             stages = _apply_agent_order(
                 template.stages,
                 project.config.agent_order,
                 enabled_roles,
                 project_template.roles if project_template else None,
+                agent_source,
             )
             stages, conditional_edges = _apply_agent_relations(
                 stages, project.config.agent_relations, enabled_roles
@@ -506,11 +530,10 @@ class AgentService:
                 agent_relations=project.config.agent_relations,
             )
         )
-        # fire-and-forget: 持有引用防止任务被 GC 提前回收；异常在 _run_pipeline 内部捕获
         task.add_done_callback(lambda t: t.exception())
         if request.mode == "supervisor":
-            # supervisor 模式：让出事件循环一次，确保动态路由管线在 execute 返回前
-            # 启动并收到 supervisor 配置（HITL 中断时执行记录状态同步写入 waiting_hitl）
+            # supervisor 模式：让出事件循环一次，确保动态路由管线在 execute 返回前启动
+            # 并收到 supervisor 配置（HITL 中断时执行记录状态同步写入 waiting_hitl）
             await asyncio.sleep(0)
 
         return {
@@ -576,7 +599,7 @@ class AgentService:
                 approved=approved,
             )
         except HITLInterrupt as e:
-            # 二次中断：resume 命中下一个 HITL 确认点 → 更新 waiting_hitl + 新 payload
+            # 二次中断：resume 命中下一个确认点 → 更新 waiting_hitl + 新 payload
             await self._store.update_status(
                 execution_id=execution_id,
                 status="waiting_hitl",
@@ -588,8 +611,7 @@ class AgentService:
                 "hitl_pending": e.payload,
                 "final_output": "",
             }
-        # 成功路径：写完整成品落库（#343 根因 6：interrupt 分支只写 waiting_hitl）
-        # F47 #379：trace 非空才透传（空则 store 默认 []；兼容既有 Mock 签名）
+        # 成功路径：写完整成品落库（#343 根因 6）；#379 trace 非空才透传
         trace = getattr(result, "trace", []) or []
         confirm_kwargs: dict[str, Any] = {
             "execution_id": execution_id,
@@ -617,10 +639,7 @@ class AgentService:
         return {"items": self._list_templates()}
 
     async def _load_template(self, project_config: ProjectConfig) -> AgentTemplate | None:
-        """引用式模板读取：config.template_id（str，JSON 存储）→ int 转换 →
-        template_repo.get；转换失败 / 模板不存在 → None（回退内置管线模板，
-        等价无 template_id 旧项目）。
-        """
+        """引用式模板读取：template_id str → int → repo.get；失败/缺失 → None（回退内置模板）。"""
         if project_config.template_id is None:
             return None
         try:
@@ -637,20 +656,13 @@ class AgentService:
     ) -> list[PipelineStage]:
         """合并角色配置（spec §9.2.3）：模板装配 + 温度链 + prompt + role_overrides 最高优先级。
 
-        温度解析链（首个非 None 即止）：项目 role_<role>_temperature →
-        模板 roles[role].temperature → 模板 default_temperature → 内置模板
-        AgentRole.temperature → 项目 config.temperature（默认 0.7 保底）。
-        模型装配：模板 role model（enabled 且非 None）→ 项目 agent_* 覆盖
-        （Q1=A 项目优先）→ role_overrides 最高。prompt：模板 roles prompt →
-        role_overrides。角色映射 = 内置 agent_* ∪ agent_roles（key 去前缀）。
+        温度链（首个非 None 即止）：role_<role>_temperature → 模板 roles → 模板
+        default_temperature → 内置 AgentRole.temperature → config.temperature。
+        模型：模板 role model（enabled）→ 项目 agent_*（Q1=A 项目优先）→ overrides。
         """
-        # 引用式模板读取（F42 #295 提取为独立方法 _load_template）
+        # 引用式模板读取 + 项目配置角色映射（自定义角色三态字段并入，key 去前缀 = stage.id）
         template = await self._load_template(project_config)
-
-        # 项目配置的角色映射
         project_role_models = _project_role_models(project_config)
-        # F42 #295（spec §5.3.4）：自定义角色三态字段并入角色模型映射
-        # （key 带 agent_ 前缀 → 去前缀 = stage.id）
         for field, value in (project_config.agent_roles or {}).items():
             project_role_models[field.removeprefix("agent_")] = value
 
@@ -681,10 +693,8 @@ class AgentService:
             if role_template.enabled and role_template.model is not None:
                 new_agent.model = role_template.model
 
-            # 项目配置覆盖 model（用户拍板 Q1=A：项目 agent_* 非空仍覆盖模板）
+            # 项目配置覆盖 model（Q1=A 项目优先；#367 sentinel=跟随默认 → 回退项目 model）
             project_model = project_role_models.get(stage.id)
-            # #367（spec §5.1 三态语义修正）：sentinel = 跟随默认 → 回退项目配置的 model
-            # （v1.0 缺陷：不覆盖 → 模板 openai/gpt-4o → 无 openai key → architect 重试耗尽）
             if project_model == AGENT_DEFAULT_SENTINEL:
                 new_agent.model = project_config.model
             elif project_model:
@@ -697,11 +707,8 @@ class AgentService:
                 else:
                     new_agent.model = project_model
             elif project_model is None and project_config.template_id is None:
-                # #373（方案 B）：未配置角色（None/缺键 = GUI 默认形态——前端不发
-                # agent_* 键 → ProjectConfig 默认 None）且无模板引用（纯内置模板，
-                # openai/gpt-4o 仅兜底形态）→ 回退项目 model 驱动路由
-                # （v1.0 缺陷：None 落入不覆盖 → 模板 openai/gpt-4o → 无 key 重试耗尽；
-                # template_id 存在时保持既有模板装配语义，spec §9.2.5）
+                # #373（方案 B）：未配置角色且无模板引用 → 回退项目 model 驱动路由
+                # （template_id 存在时保持既有模板装配语义，spec §9.2.5）
                 new_agent.model = project_config.model
 
             # prompt 覆盖（F42 #295，spec §5.3.4）：模板 roles 定义 prompt 时
@@ -809,9 +816,7 @@ class AgentService:
     async def _assemble_setting_context(
         self, project_id: str, variables: dict[str, str]
     ) -> dict[str, str]:
-        """设定库摘要注入（#366 G1）：角色/世界观/大纲三源，任一 None 跳过。
-
-        每条非空才注入（【角色】/【世界观】/【大纲】）→ variables["setting"]（\\n\\n 连接）；
+        """设定库摘要注入（#366 G1）：角色/世界观/大纲三源，非空注入 variables["setting"]。
         单源/整体异常 → WARNING + 回退（失败隔离，不阻断管线）。
         """
         if self._character_repo is None and self._world_repo is None and self._outline_repo is None:
@@ -859,10 +864,8 @@ class AgentService:
         chapter_id: str | None,
         variables: dict[str, str],
     ) -> dict[str, str]:
-        """write_continue 前文摘要注入（#318；#366 G1 设定注入同函数扩展）。
-
-        前序章节（order_index 小于当前）最多 10 章 → SummaryService.ensure_summary →
-        拼接注入 variables["context"]；任一步失败 → WARNING + 回退原 variables（不阻断管线）。
+        """write_continue 前文摘要注入（#318）：前序 ≤10 章 ensure_summary → variables["context"]；
+        任一步失败 → WARNING + 回退（不阻断管线）。
         """
         if self._summary_service is None or not chapter_id:
             return variables

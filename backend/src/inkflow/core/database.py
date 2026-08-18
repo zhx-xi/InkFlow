@@ -197,6 +197,22 @@ def ensure_agent_executions_thread_id_column(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE agent_executions ADD COLUMN thread_id TEXT"))
 
 
+def ensure_agent_role_key_column(conn: Connection) -> None:
+    """F42 v1.5 #484：为存量库 agents 表补 role_key 列（幂等，配合 conn.run_sync 调用）。
+
+    镜像 ensure_agent_executions_trace_column 形态：先查 PRAGMA table_info 确认
+    列缺失才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，
+    等 create_all 建新表（ORM 已含 role_key 列）。存量行 role_key 值由
+    seed_builtin_agents 升级钩子回填（spec §5.7.1 seed 升级钩子）。
+    """
+    cols = conn.execute(text("PRAGMA table_info(agents)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return  # 表不存在（全新环境）→ create_all 建新表（自动含 role_key 列）
+    if "role_key" not in names:
+        conn.execute(text("ALTER TABLE agents ADD COLUMN role_key VARCHAR(100)"))
+
+
 def ensure_world_parent_id_column(conn: Connection) -> None:
     """#173：为既有库 world_settings 补 parent_id 列 + 替换唯一索引（幂等）.
 

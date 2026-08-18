@@ -585,3 +585,69 @@ test('设置页：#295/#296 自定义角色三态（开/选模型/关）→ 内�
     await app.close();
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v1.5 #484 链动态化：添加角色（世界观顾问进链 → 三态 + agent_order 落库；重启保持由 A5-2 模式覆盖）
+// 契约源：components/AgentChainCard.tsx（data-testid 即契约，spec §5.7.3）
+//   agent-chain-add-role：添加角色按钮
+//   agent-chain-role-option-agent_worldview：角色池选项（未在链中的角色）
+//   添加后：config.agent_worldview = '__default__' + config.agent_order 末尾层含 agent_worldview
+// ─────────────────────────────────────────────────────────────────────────────
+test('#484 添加角色：角色池选择世界观顾问 → 内核 config.agent_worldview=sentinel + agent_order 含 agent_worldview', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    await window.evaluate(() => localStorage.clear());
+    await window.reload();
+    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
+
+    const name = `E2E-AddRole-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    const list = await fetchKernel(kernel, '/api/v1/projects');
+    const project = list.items.find((p: { name: string }) => p.name === name);
+    expect(project).toBeTruthy();
+    const projectId = project.id as string;
+    await ensureConfiguredChatModel(kernel);
+
+    // 设置页 → Agent 分类 → 默认链 4 行（世界观顾问不在行中）
+    await gotoNav(window, '设置');
+    await window.getByTestId('settings-cat-agent').click();
+    const chain = window.getByTestId('agent-chain-card');
+    await expect(chain).toBeVisible();
+    await expect(chain.getByRole('switch', { name: '世界观顾问' })).toHaveCount(0);
+
+    // 点添加角色 → 角色池出现世界观顾问选项（未在链中）
+    await chain.getByTestId('agent-chain-add-role').click();
+    const worldviewOption = window.getByTestId('agent-chain-role-option-agent_worldview');
+    await expect(worldviewOption).toBeVisible();
+
+    // 选择 → 世界观顾问行出现（开关）+ 落库三态 sentinel + agent_order 显式化（默认 4 层 + 末尾层）
+    await worldviewOption.click();
+    await expect(chain.getByRole('switch', { name: '世界观顾问' })).toBeVisible();
+    await expect
+      .poll(
+        async () => {
+          const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
+          return r.config?.agent_worldview;
+        },
+        { timeout: 10_000 }
+      )
+      .toBe('__default__');
+    await expect
+      .poll(
+        async () => {
+          const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
+          return r.config?.agent_order;
+        },
+        { timeout: 10_000 }
+      )
+      .toEqual([
+        ['agent_architect'],
+        ['agent_writer'],
+        ['agent_auditor'],
+        ['agent_reviser'],
+        ['agent_worldview'],
+      ]);
+  } finally {
+    await app.close();
+  }
+});

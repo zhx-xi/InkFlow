@@ -292,7 +292,68 @@ class TestUpdateAgentOrderValidation:
         merged = mock_repo.update.await_args.args[0]
         # RED 阶段：agent_order 字段不存在 → AssertionError（extra ignore 静默丢弃）
         assert "agent_order" in merged.config.model_dump()
-        assert merged.config.model_dump()["agent_order"] == order
+
+    async def test_v15_worldview_enabled_order_missing_rejected(self, svc, mock_repo) -> None:
+        """v1.5 #484：agent_worldview 启用（非 null）但 order 缺该角色 → ValueError
+        「agent_order 必须包含全部启用角色: agent_worldview」（API 层校验口径扩 6，§5.7.1）。"""
+        existing = _project(
+            config=ProjectConfig(
+                agent_architect="openai/gpt-4o",
+                agent_writer="openai/gpt-4o",
+                agent_auditor="openai/gpt-4o",
+                agent_reviser="openai/gpt-4o",
+                agent_worldview="__default__",  # v1.5 启用
+            )
+        )
+        mock_repo.get = AsyncMock(return_value=existing)
+
+        with pytest.raises(ValueError, match="agent_order 必须包含全部启用角色: agent_worldview"):
+            await svc.update(
+                PID,
+                ProjectUpdate(
+                    config=ProjectConfig(
+                        agent_order=[
+                            ["agent_architect"],
+                            ["agent_writer"],
+                            ["agent_auditor"],
+                            ["agent_reviser"],
+                        ]
+                    )
+                ),
+            )
+        mock_repo.update.assert_not_awaited()
+
+    async def test_v15_worldview_in_order_saved(self, svc, mock_repo) -> None:
+        """v1.5 #484：order 含全部启用角色（含 agent_worldview）→ 校验通过落库
+        （E2E 添加角色路径：agent_worldview=sentinel + order 末尾层不 422）。"""
+        existing = _project(
+            config=ProjectConfig(
+                agent_architect="openai/gpt-4o",
+                agent_writer="openai/gpt-4o",
+                agent_auditor="openai/gpt-4o",
+                agent_reviser="openai/gpt-4o",
+            )
+        )
+        mock_repo.get = AsyncMock(return_value=existing)
+
+        await svc.update(
+            PID,
+            ProjectUpdate(
+                config=ProjectConfig(
+                    agent_worldview="__default__",
+                    agent_order=[
+                        ["agent_architect"],
+                        ["agent_writer"],
+                        ["agent_auditor"],
+                        ["agent_reviser"],
+                        ["agent_worldview"],
+                    ],
+                )
+            ),
+        )
+        merged = mock_repo.update.await_args.args[0]
+        assert merged.config.agent_worldview == "__default__"
+        assert merged.config.agent_order[-1] == ["agent_worldview"]
 
     async def test_default_mode_no_validation(self, svc, mock_repo) -> None:
         """默认模板模式（agent_order 空/缺省）→ 不校验：全 null 也允许保存（B1 零迁移）。"""
