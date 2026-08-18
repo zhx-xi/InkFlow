@@ -6,7 +6,7 @@
 
 ## ✨ 功能特性
 
-### 已实现（0.1.0 → 0.9.0）
+### 已实现（0.1.0 → 0.10.0）
 
 - **AI 写作管道**：生成 → 续写 → 修订，Agent 角色链编排（架构师 / 写手 / 审阅 / 修订，LangGraph）
 - **创作工具链 8 件套**：
@@ -38,6 +38,9 @@
   - **F46 DAG 编排**：agent_relations 三类型（顺序/数据传递/条件分支）+ 确定性 gate + 列表式编辑器
   - **写作管线增强**：write_continue F6 前文摘要 + HITL GUI + 设定驱动写作（G1）+ 写作页 AI 聊天框/执行详情页
   - **GUI 修复 + 治理**：内核门控封面 + 地图 resize + 世界观导航 + unit-frontend 假绿治本 + LLM 默认切 deepseek
+- **长任务编排器 + 记忆演进（0.10.0，2026-08-18，20/20 issues 全关）**：
+  - **F44 长任务编排器（一句话→全书）**：访谈式 Planner（≤5 问 +「全部你决定」）→ 顺序派发 + 章级进度状态机 + 多维上限 + 内容已写安全阀 → Send map-reduce 卷级编排 + 卷级 HITL + 失败恢复 → AsyncSqliteSaver 持久化 + 跨重启 resume + 干预 API（pause/resume/改向/编辑）
+  - **F45 记忆系统演进**：用户级偏好层 + 归属分层（项目级/用户级）+ 跨项目聚合 + 语义风格提取（difflib 锚点 → LLM 语义总结，替代字面碎片注入，防幻觉双向堵）
 - **上下文智能装配**：写作时自动注入相关角色、世界观、伏笔，分层 Token 预算
 - **多界面战略**：CLI（Typer）✅ + REST API（FastAPI）✅ + GUI（Electron + React）✅ + MCP Server ✅ + 云端 Web（2.0.0）🔜
 
@@ -109,6 +112,7 @@ uv run inkflow serve
 | 0.7.0 | Agent 化升级（deepagents harness · Writer Agent 闭环 · 记忆系统 · 数据目录设置 · 模型测试 · E2E/bug 批） | ✅（v0.7.0 2026-08-12 正式发布） |
 | 0.8.0 | 编排完全体 + Supervisor + 设定库 + RAG 指纹 + skills + CLI（F42/F29/F43/F19-skills/F10） | ✅（2026-08-13 里程碑 18/18 issues 全关） |
 | 0.9.0 | 多 Agent 一期 + MCP + RAG 切片 + DAG 编排（F39/40/41 + F20 + F46 + 写作管线增强） | ✅（2026-08-17 正式发布，21/21 issues 全关） |
+| 0.10.0 | 长任务编排器 + 记忆演进（F44 一句话→全书 + F45 记忆 AI 总结） | ✅（2026-08-18，20/20 issues 全关） |
 | 1.0.0 | 本地完全可用（CLI + GUI + skills + MCP） | 🔜 |
 | 2.0.0 | 云端（云存档 + 异地写作） | 🔜 |
 

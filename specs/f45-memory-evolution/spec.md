@@ -7,7 +7,7 @@
 **关联 Issues**: #339（M1 用户级偏好层 + 归属分层 + 跨项目聚合）· #340（M2 语义风格提取——difflib 锚点 → LLM 语义总结）
 **依赖**: ✅ F28 agent-memory（演进基线：project_preferences/memory_events/learner/memory_service/PreferenceSource，PR #242）· ✅ F6 context-service（注入端口 ContextSourceType/SOURCE_LAYER）· ✅ F16 style-service（LLM 模板管线样板 _style_llm_analyzer）· ✅ F32 settings-persistence（app_settings 分层对照）· ✅ #415（LLM 默认模型 deepseek/deepseek-v4-flash，配置唯一默认源）· ✅ F38（CLI 恒 HTTP）· ✅ F34（audit_logs）· ⏳ M2 依赖 M1（#339 → #340）
 **参考 ADR**: adr/ADR-037.md（记忆提取方式：规则化先行 + LLM 第二阶段）、adr/ADR-038.md（memory_learning 默认 false）、adr/ADR-031.md（双模式开关 extra 键）、ADR-027（覆盖率门禁）
-**状态**: 待实现 🔲
+**状态**: ✅ 已实现（PR #442/#452）
 
 > **Spec 变更**: v1.0→v1.1（2026-08-17 用户拍板固化）：Q1=B（用户级偏好**惰性重算**——删除钩子零成本，查询/collect 时重算 + user-list 幽灵项目过滤，§5.1/§7/§13 联动）· Q2=B（注入前**惰性总结 + 后台异步刷新**——先用旧总结注入不等待 LLM，M2 硬依赖 F44 阶段4 后台任务基建，后台就位前降级同步总结过渡，§5.4/§11 联动）· Q3=A（用户级偏好注入过**显式设定冲突过滤**，§5.6 已覆盖，仅标 ✅）
 

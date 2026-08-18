@@ -7,7 +7,7 @@
 **关联 Issues**: [#335](https://github.com/zhx-xi/InkFlow/issues/335)（阶段 1：访谈式 Planner + WritingPlan + 委托）· [#336](https://github.com/zhx-xi/InkFlow/issues/336)（阶段 2：顺序派发 + 进度状态机 + 多维上限 + 安全阀）· [#337](https://github.com/zhx-xi/InkFlow/issues/337)（阶段 3：卷级编排 + Send map-reduce + 卷级 HITL + 失败恢复）· [#338](https://github.com/zhx-xi/InkFlow/issues/338)（阶段 4：AsyncSqliteSaver + 跨重启 resume + 干预 API）
 **依赖**: ✅ F39 Agent 实体 + 能力白名单（0.9.0 #258）· ✅ F27 writer-agent（已交付）· ✅ F42 管线 write_auto/write_continue（已交付）· ✅ F29 Supervisor（已交付）· ✅ F6 context（已交付）· ✅ outline 三级结构（F43 P3+P4 已交付）· ⏳ `langgraph-checkpoint-sqlite`（阶段 4 新增依赖，Spike ⑤ 实证缺）
 **参考 ADR**: [adr/ADR-035.md](../adr/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5）· [ADR-006v2](../../adr/ADR-006v2.md)（Agent 编排 LangGraph StateGraph）· [ADR-015](../../adr/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/ADR-019.md)（编号口径）· [ADR-027](../../adr/ADR-027.md)（覆盖率门禁）
-**状态**: 待实现 🔲
+**状态**: ✅ 已实现（PR #441/#443/#445/#446/#447/#448/#453/#454）
 
 > **Spec 变更**（v1.0 → v1.1，2026-08-17 用户拍板固化）：**Q1=C**（阶段 1-4 全含 GUI 面板——主/次面板 + 观察流三层密度 UI + 干预控件，+8-12 人天）· **Q2=C**（多维上限载体 = ProjectConfig.extra 项目级默认，读取优先级 = 请求 > 项目级 > 默认，+0.5-1 人天）· **Q3=A**（卷级锚点 + 章级被动动作，正文 §12 D12 已一致，仅标 ✅）。联动修订：§1 定位「全栈长任务编排器」+ 边界移除 GUI 排除；§5.1-§5.4 每阶段加「GUI 交互设计」小节；§2.4/§8/§11/§12 D11 联动 Q2=C；§8/§9/§10/§13 联动 GUI 纳入；待澄清 Q1-Q3 标 ✅ 留痕不删。
 
