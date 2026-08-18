@@ -97,7 +97,7 @@ def plan_start(
         client = InkFlowHTTPClient(handle)
         async with client:
             return await client.post(
-                "/api/v1/agent/books/planner",
+                "/agent/books/planner",
                 json={"project_id": project_id, "one_liner": one_liner},
             )
 
@@ -120,7 +120,7 @@ def plan_respond(
         client = InkFlowHTTPClient(handle)
         async with client:
             return await client.post(
-                f"/api/v1/agent/books/planner/{session_id}/respond",
+                f"/agent/books/planner/{session_id}/respond",
                 json={"answers": {"answer": answer}, "auto": False},
             )
 
@@ -155,12 +155,12 @@ def plan_auto(
         client = InkFlowHTTPClient(handle)
         async with client:
             started = await client.post(
-                "/api/v1/agent/books/planner",
+                "/agent/books/planner",
                 json={"project_id": project_id, "one_liner": one_liner},
             )
             session_id = started["session_id"]
             return await client.post(
-                f"/api/v1/agent/books/planner/{session_id}/respond",
+                f"/agent/books/planner/{session_id}/respond",
                 json={"answers": {}, "auto": True},
             )
 
@@ -187,7 +187,7 @@ def plan_show(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
-            return await client.get(f"/api/v1/agent/books/planner/{session_id}")
+            return await client.get(f"/agent/books/planner/{session_id}")
 
     data = _run_ctx(cli_ctx, _impl)
 
@@ -221,7 +221,7 @@ def plan_run(
         client = InkFlowHTTPClient(handle)
         async with client:
             return await client.post(
-                "/api/v1/agent/books/runs",
+                "/agent/books/runs",
                 json={"writing_plan_id": plan_id},
             )
 
@@ -255,7 +255,7 @@ def book_run(
         if parsed:
             body["limits"] = parsed
         async with client:
-            return await client.post("/api/v1/agent/books/runs", json=body)
+            return await client.post("/agent/books/runs", json=body)
 
     data = _run_ctx(cli_ctx, _impl)
 
@@ -279,7 +279,7 @@ def book_status(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
-            return await client.get(f"/api/v1/agent/books/runs/{run_id}")
+            return await client.get(f"/agent/books/runs/{run_id}")
 
     data = _run_ctx(cli_ctx, _impl)
 
@@ -315,7 +315,7 @@ def book_confirm(
         client = InkFlowHTTPClient(handle)
         async with client:
             return await client.post(
-                f"/api/v1/agent/books/runs/{run_id}/confirm",
+                f"/agent/books/runs/{run_id}/confirm",
                 json={"approved": approved or not reject, "decision": decision},
             )
 
@@ -359,7 +359,7 @@ def book_intervene(
         }
         async with client:
             return await client.post(
-                f"/api/v1/agent/books/runs/{run_id}/intervene",
+                f"/agent/books/runs/{run_id}/intervene",
                 json=body,
             )
 
@@ -401,7 +401,7 @@ def book_summary(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
-            return await client.get(f"/api/v1/agent/books/runs/{run_id}/summary")
+            return await client.get(f"/agent/books/runs/{run_id}/summary")
 
     data = _run_ctx(cli_ctx, _impl)
 
