@@ -109,7 +109,7 @@ except ImportError:
     )
     KnowledgeRelationNotFoundError = type("KnowledgeRelationNotFoundError", (Exception,), {})
 
-import inkflow.api.routers.knowledge_graph  # noqa: F401  # RED 阶段主契约 import（router 未实现 → 收
+import inkflow.api.routers.knowledge_graph  # noqa: F401, I001  # 主契约 import：独立于上方 try/except stub 块（RED 阶段收集期失败点；GREEN 后仍保持显式导入）
 
 from inkflow.api.app import app
 from inkflow.domain.ports.world_errors import ProjectNotFoundError
