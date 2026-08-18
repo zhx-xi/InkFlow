@@ -67,6 +67,17 @@ vi.mock('../api/client', async (importOriginal) => {
 
 const apiFetchMock = vi.mocked(apiFetch);
 
+/** v1.5 #484：角色列表真源派生 mock（6 内置 + 自定义 researcher；BUILTIN_AGENT_SPECS 镜像） */
+const AGENTS = [
+  { id: 101, name: '架构师', description: '章节结构/大纲规划', icon: '🏗️', system_prompt: '你是架构师。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'architect', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 102, name: '写手', description: '正文生成', icon: '✍️', system_prompt: '你是写手。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'writer', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 103, name: '审校员', description: '一致性审计', icon: '🔍', system_prompt: '你是审校员。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'auditor', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 104, name: '修订师', description: '修订打磨', icon: '🛠️', system_prompt: '你是修订师。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'reviser', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 105, name: '世界观顾问', description: '世界观一致', icon: '🌍', system_prompt: '你是世界观顾问。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'worldview', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 106, name: '润色师', description: '文笔润色', icon: '✨', system_prompt: '你是润色师。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'polisher', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 201, name: '研究员', description: '设定核查', icon: '🔬', system_prompt: '你是研究员。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: false, role_key: 'researcher', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+] as const;
+
 /** 契约 fixture：三条关系（三类型各一）+ 自定义角色（researcher） */
 const RELATIONS = [
   { from: 'agent_architect', to: 'agent_writer', type: 'sequential' },
@@ -82,6 +93,10 @@ beforeEach(() => {
     }
     if (path === '/api/v1/agent-templates') {
       return { items: [], total: 0, offset: 0, limit: 50 };
+    }
+    // v1.5 #484：组件挂载 loadAgents()——角色列表真源派生数据源
+    if (path === '/api/v1/agents') {
+      return { items: AGENTS, total: 7, offset: 0, limit: 50 };
     }
     return { ok: true };
   });
@@ -274,5 +289,64 @@ describe('AgentRelationEditor — F46 #270 只读 DAG 预览（spec §1.2.2 + §
     const preview = screen.getByTestId('agent-relation-dag-preview');
     expect(within(preview).queryByTestId('agent-relation-add')).not.toBeInTheDocument();
     expect(within(preview).queryByTestId(/^agent-relation-del-/)).not.toBeInTheDocument();
+  });
+});
+
+describe('AgentRelationEditor — v1.5 #484 角色列表真源联动（spec §5.7.2 派生规则三组件统一）', () => {
+  /**
+   * 契约（GREEN 修改 src/components/AgentRelationEditor.tsx，必须匹配）：
+   *
+   * ROLE_FIELDS 4 键硬编码（agent_architect/agent_writer/agent_auditor/agent_reviser）删除 →
+   * 角色列表从 GET /api/v1/agents 真源派生（§5.7.2 派生规则 2，F46 #270 依赖编辑器联动 6+ 角色）：
+   * - 角色集合 = agents（6 内置 role_key 非 null → agent_<role_key>；自定义 builtin=false）∪
+   *   config.agent_roles keys（既有自定义角色）
+   * - from/to Select 选项 + DAG 预览节点均含新角色（agent_worldview/agent_polisher/agent_researcher）
+   * - 挂载时 loadAgents()（beforeEach 已 mock /api/v1/agents）
+   *
+   * 既有行为零回归：4 内置选项/节点保留、agent_roles 自定义保留、关系 CRUD/预检不变。
+   *
+   * RED 预期：组件不加载 agents（角色列表仍 4 键）→ worldview/polisher 节点缺失
+   * element-missing；Select 选项缺失。
+   */
+  it('角色列表从真源派生：from Select 选项含 agent_worldview/agent_polisher/agent_researcher', async () => {
+    const user = userEvent.setup();
+    await renderEditor();
+    await user.click(screen.getByTestId('agent-relation-add'));
+    await user.click(screen.getByTestId('agent-relation-from-select'));
+
+    // 6 内置 + 1 自定义 = 7 选项（既有 4 + 新增 3）
+    expect(await screen.findByRole('option', { name: 'agent_architect' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'agent_worldview' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'agent_polisher' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'agent_researcher' })).toBeInTheDocument();
+  });
+
+  it('DAG 预览节点含 6 内置 + 自定义（worldview/polisher/researcher）', async () => {
+    await renderEditor();
+    const preview = screen.getByTestId('agent-relation-dag-preview');
+    // 既有 4 保留
+    expect(within(preview).getByTestId('agent-relation-dag-node-architect')).toBeInTheDocument();
+    expect(within(preview).getByTestId('agent-relation-dag-node-reviser')).toBeInTheDocument();
+    // v1.5 新增：6 内置皆可参与关系（F46 依赖编辑器联动）
+    expect(within(preview).getByTestId('agent-relation-dag-node-worldview')).toBeInTheDocument();
+    expect(within(preview).getByTestId('agent-relation-dag-node-polisher')).toBeInTheDocument();
+    expect(within(preview).getByTestId('agent-relation-dag-node-researcher')).toBeInTheDocument();
+  });
+
+  it('关系边可引用新角色：worldview → polisher 确认后 setConfig 落库', async () => {
+    const user = userEvent.setup();
+    seedRelations([]);
+    const onConfigChange = await renderEditor();
+    await user.click(screen.getByTestId('agent-relation-add'));
+    await user.click(screen.getByTestId('agent-relation-from-select'));
+    await user.click(await screen.findByRole('option', { name: 'agent_worldview' }));
+    await user.click(screen.getByTestId('agent-relation-to-select'));
+    await user.click(await screen.findByRole('option', { name: 'agent_polisher' }));
+    await user.click(screen.getByTestId('agent-relation-confirm'));
+
+    expect(useAgentStore.getState().config.agent_relations).toEqual([
+      { from: 'agent_worldview', to: 'agent_polisher', type: 'sequential' },
+    ]);
+    expect(onConfigChange).toHaveBeenCalled();
   });
 });

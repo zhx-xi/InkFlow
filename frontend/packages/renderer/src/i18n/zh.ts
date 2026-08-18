@@ -419,6 +419,8 @@ export const zh = {
   'ag.followDefault': '跟随默认',
   'ag.unregisteredModel': '未注册模型',
   'ag.modelFormatFix': '格式需修正（应为 provider/model）',
+  // v1.5 #484：添加角色（链动态化，spec §5.7.3）
+  'ag.addRole': '添加角色',
   'ag.chainTitle': '写作 Agent 链',
   'ag.chainDesc': 'Architect 规划 → Writer 执笔 → Auditor 审校 → Reviser 修订，可按需开关',
   // F42 #269：Agent 链执行顺序编辑（槽位 + 上移/下移）

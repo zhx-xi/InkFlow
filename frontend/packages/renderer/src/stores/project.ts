@@ -23,6 +23,10 @@ export interface ProjectConfig {
   agent_writer?: string | null;
   agent_auditor?: string | null;
   agent_reviser?: string | null;
+  /** v1.5 #484：世界观顾问三态字段（null=关闭 / __default__=跟随默认 / provider/model=指定） */
+  agent_worldview?: string | null;
+  /** v1.5 #484：润色师三态字段（同 agent_worldview 三态语义） */
+  agent_polisher?: string | null;
   temperature?: number;
   default_words?: number;
   writing_style?: string;

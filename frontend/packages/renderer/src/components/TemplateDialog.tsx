@@ -6,14 +6,15 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../i18n/useI18n';
+import { useAgentsStore } from '../stores/agents';
 import { useModelsStore } from '../stores/models';
 import type { AgentTemplate, AgentTemplateInput, AgentTemplateRole } from '../stores/templates';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Slider } from './ui/slider';
 import { Switch } from './ui/switch';
 
-const ROLES = ['architect', 'writer', 'auditor', 'reviser'] as const;
-type Role = (typeof ROLES)[number];
+/** v1.5 #484：内置 4 角色保留 i18n 文案（m.role.* / tpl.roleModel.* / tpl.roleTemp.*）；其余角色显示名 = agents 真源 name */
+const BUILTIN_ROLE_KEYS = ['architect', 'writer', 'auditor', 'reviser'];
 
 export interface TemplateDialogProps {
   open: boolean;
@@ -33,20 +34,25 @@ function roundTemp(value: number): number {
 export function TemplateDialog({ open, onOpenChange, editing = null, onCreate, onUpdate }: TemplateDialogProps) {
   const { t } = useI18n();
   const providers = useModelsStore((s) => s.providers);
+  // v1.5 #484（spec §5.7.2 派生规则 3）：角色编辑列表从 GET /api/v1/agents 真源派生；
+  // agents 可能为空 → roleKeys 至少含 editing.roles 键（模板快照补充），UI 不崩
+  const agents = useAgentsStore((s) => s.agents) ?? [];
   const [name, setName] = useState(editing?.name ?? '');
   const [description, setDescription] = useState(editing?.description ?? '');
   const [mainModel, setMainModel] = useState(editing?.main_model ?? '');
   const [defaultTemp, setDefaultTemp] = useState(editing?.default_temperature ?? 0.7);
   const [defaultWords, setDefaultWords] = useState(editing?.default_words ?? 800000);
-  const [roles, setRoles] = useState<Record<Role, AgentTemplateRole>>({
-    architect: editing ? { ...editing.roles.architect } : { ...EMPTY_ROLE },
-    writer: editing ? { ...editing.roles.writer } : { ...EMPTY_ROLE },
-    auditor: editing ? { ...editing.roles.auditor } : { ...EMPTY_ROLE },
-    reviser: editing ? { ...editing.roles.reviser } : { ...EMPTY_ROLE },
-  });
+  const [roles, setRoles] = useState<Record<string, AgentTemplateRole>>({});
   const [nameError, setNameError] = useState<string | null>(null);
 
-  // 打开时同步编辑值（editing 变化重开弹窗场景）；挂载时拉取模型注册表（下拉选项源）
+  // v1.5 #484：角色键列表 = agents role_key 非空 → 键；editing.roles 键补充（快照保留，含无实体键）
+  const roleKeys = [...new Set([
+    ...agents.filter((a) => a.role_key).map((a) => a.role_key as string),
+    ...Object.keys(editing?.roles ?? {}),
+  ])];
+  const roleKeyKey = roleKeys.join('\u0000');
+
+  // 打开时同步编辑值（editing 变化重开弹窗场景）；挂载时拉取模型注册表 + agents（角色列表真源）
   useEffect(() => {
     if (!open) return;
     setName(editing?.name ?? '');
@@ -54,15 +60,33 @@ export function TemplateDialog({ open, onOpenChange, editing = null, onCreate, o
     setMainModel(editing?.main_model ?? '');
     setDefaultTemp(editing?.default_temperature ?? 0.7);
     setDefaultWords(editing?.default_words ?? 800000);
-    setRoles({
-      architect: editing ? { ...editing.roles.architect } : { ...EMPTY_ROLE },
-      writer: editing ? { ...editing.roles.writer } : { ...EMPTY_ROLE },
-      auditor: editing ? { ...editing.roles.auditor } : { ...EMPTY_ROLE },
-      reviser: editing ? { ...editing.roles.reviser } : { ...EMPTY_ROLE },
+    // 会话重置：roles 从 editing 快照重建（任意键，§5.7.5）；agents 派生键由下方合并效果补齐
+    setRoles(() => {
+      const next: Record<string, AgentTemplateRole> = {};
+      for (const [key, value] of Object.entries(editing?.roles ?? {})) {
+        next[key] = { ...value };
+      }
+      return next;
     });
     setNameError(null);
     void useModelsStore.getState().loadProviders();
+    void useAgentsStore.getState().loadAgents();
   }, [open, editing]);
+
+  // agents 异步加载完成后：为新增角色键补齐默认行（EMPTY_ROLE 浅拷贝），保留用户已编辑值
+  // 依赖 roleKeyKey（roleKeys 的稳定序列化）避免数组引用变化触发重渲染
+  useEffect(() => {
+    if (!open) return;
+    setRoles((prev) => {
+      const next: Record<string, AgentTemplateRole> = { ...prev };
+      for (const key of roleKeyKey.split('\u0000').filter(Boolean)) {
+        if (!next[key]) {
+          next[key] = editing?.roles?.[key] ? { ...editing.roles[key] } : { ...EMPTY_ROLE };
+        }
+      }
+      return next;
+    });
+  }, [open, roleKeyKey, editing]);
 
   // ESC 关闭：document 级监听；尊重 Radix Select 已 preventDefault 的 Escape
   useEffect(() => {
@@ -81,9 +105,18 @@ export function TemplateDialog({ open, onOpenChange, editing = null, onCreate, o
 
   if (!open) return null;
 
-  const setRole = (role: Role, patch: Partial<AgentTemplateRole>) => {
+  const setRole = (role: string, patch: Partial<AgentTemplateRole>) => {
     setRoles((prev) => ({ ...prev, [role]: { ...prev[role], ...patch } }));
   };
+
+  // 显示名：4 内置保留 i18n（零回归）；新角色/自定义/快照键 = agents 真源 name ?? 裸键
+  const roleName = (key: string) => agents.find((a) => a.role_key === key)?.name ?? key;
+  const isBuiltinRole = (key: string) => BUILTIN_ROLE_KEYS.includes(key);
+  const displayNameOf = (key: string) => (isBuiltinRole(key) ? t(`m.role.${key}`) : roleName(key));
+  const modelLabelOf = (key: string) =>
+    isBuiltinRole(key) ? t(`tpl.roleModel.${key}`) : `${roleName(key)}模型`;
+  const tempLabelOf = (key: string) =>
+    isBuiltinRole(key) ? t(`tpl.roleTemp.${key}`) : `${roleName(key)}温度`;
 
   const handleSave = () => {
     const trimmed = name.trim();
@@ -96,12 +129,10 @@ export function TemplateDialog({ open, onOpenChange, editing = null, onCreate, o
       description,
       main_model: mainModel,
       default_temperature: defaultTemp,
-      roles: {
-        architect: { ...roles.architect },
-        writer: { ...roles.writer },
-        auditor: { ...roles.auditor },
-        reviser: { ...roles.reviser },
-      },
+      // v1.5 #484：payload roles = roles state 全量展开（Record 任意键，§5.7.5 数据契约）
+      roles: Object.fromEntries(
+        Object.entries(roles).map(([key, value]) => [key, { ...value }]),
+      ),
       default_words: defaultWords,
     };
     if (editing) onUpdate(input);
@@ -168,10 +199,13 @@ export function TemplateDialog({ open, onOpenChange, editing = null, onCreate, o
             </Select>
           </div>
 
-          {ROLES.map((role) => {
-            const row = roles[role];
+          {roleKeys.map((role) => {
+            const row = roles[role] ?? (editing?.roles?.[role] ? { ...editing.roles[role] } : { ...EMPTY_ROLE });
             const disabled = !row.enabled;
             const sliderValue = row.temperature ?? defaultTemp;
+            const displayName = displayNameOf(role);
+            const modelLabel = modelLabelOf(role);
+            const tempLabel = tempLabelOf(role);
             return (
               <div
                 key={role}
@@ -179,7 +213,7 @@ export function TemplateDialog({ open, onOpenChange, editing = null, onCreate, o
                 className="rounded-md border border-line p-3"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-[13px] font-medium">{t(`m.role.${role}`)}</span>
+                  <span className="text-[13px] font-medium">{displayName}</span>
                   <Switch
                     data-testid={`template-role-${role}-enabled`}
                     checked={row.enabled}
@@ -189,19 +223,19 @@ export function TemplateDialog({ open, onOpenChange, editing = null, onCreate, o
                         ? setRole(role, { enabled: true })
                         : setRole(role, { enabled: false, model: null, temperature: null })
                     }
-                    aria-label={t(`m.role.${role}`)}
+                    aria-label={displayName}
                   />
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
-                    <span>{t(`tpl.roleModel.${role}`)}</span>
+                    <span>{modelLabel}</span>
                     <Select
                       value={row.model ?? ''}
                       disabled={disabled}
                       onValueChange={(v) => setRole(role, { model: v })}
                     >
                       <SelectTrigger
-                        aria-label={t(`tpl.roleModel.${role}`)}
+                        aria-label={modelLabel}
                         data-testid={`template-role-${role}-model`}
                         className="w-full"
                         disabled={disabled}
@@ -219,14 +253,14 @@ export function TemplateDialog({ open, onOpenChange, editing = null, onCreate, o
                   </div>
                   <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
                     <div className="flex items-center justify-between">
-                      <span>{t(`tpl.roleTemp.${role}`)}</span>
+                      <span>{tempLabel}</span>
                       <span data-testid={`template-role-${role}-value`} className="font-mono text-ink">
                         {sliderValue.toFixed(1)}
                       </span>
                     </div>
                     <Slider
                       data-testid={`template-role-${role}-temp`}
-                      aria-label={t(`tpl.roleTemp.${role}`)}
+                      aria-label={tempLabel}
                       min={0}
                       max={1.5}
                       step={0.1}

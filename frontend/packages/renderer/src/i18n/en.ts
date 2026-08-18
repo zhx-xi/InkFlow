@@ -410,6 +410,8 @@ export const en: Record<string, string> = {
   'ag.followDefault': 'Follow default',
   'ag.unregisteredModel': 'Unregistered model',
   'ag.modelFormatFix': 'Format needs fix (provider/model)',
+  // v1.5 #484: add role (chain dynamic, spec §5.7.3)
+  'ag.addRole': 'Add role',
   'ag.chainTitle': 'Writing agent chain',
   'ag.chainDesc': 'Architect plans → Writer drafts → Auditor reviews → Reviser polishes',
   // F42 #269: agent chain execution order editing (slot + move up/down)
