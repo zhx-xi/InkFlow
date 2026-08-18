@@ -29,9 +29,16 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ChatPanel } from './ChatPanel';
 import { executePipeline, getExecutionStatus, type PipelineExecuteResponse } from '../api/pipeline';
+import { apiFetch } from '../api/client';
 import { useChapterStore } from '../stores/chapter';
 import { useThemeStore } from '../stores/theme';
+import { useModelsStore, type ProviderConfig } from '../stores/models';
+import { useToastStore } from '../stores/toast';
 
+vi.mock('../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/client')>();
+  return { ...actual, apiFetch: vi.fn() };
+});
 vi.mock('../api/pipeline', () => ({
   executePipeline: vi.fn(),
   getExecutionStatus: vi.fn(),
@@ -40,13 +47,41 @@ vi.mock('../api/pipeline', () => ({
 
 const executeMock = vi.mocked(executePipeline);
 const statusMock = vi.mocked(getExecutionStatus);
+const apiFetchMock = vi.mocked(apiFetch);
 
 const OPTS = { projectId: 'p1', chapterId: 'c1', chapterContent: '已有正文第一段。' };
+
+/** #474：已配置模型（key_saved=true + chat 模型）种子 provider——模拟用户在模型管理页保存过 Key */
+const READY_PROVIDER: ProviderConfig = {
+  id: 1,
+  name: 'openai',
+  base_url: 'https://api.openai.com/v1',
+  default_model: 'gpt-4o',
+  models: [{ id: 'gpt-4o', type: 'chat', roles: ['main'] }],
+  key_saved: true,
+  max_retries: 3,
+  timeout: 60,
+  created_at: '2026-08-01T10:00:00Z',
+  updated_at: '2026-08-05T10:00:00Z',
+};
 
 beforeEach(() => {
   vi.useRealTimers();
   executeMock.mockReset();
   statusMock.mockReset();
+  apiFetchMock.mockReset();
+  // #474 前置校验依赖 models store：默认播种「已配置」让既有用例行为不变；
+  // 未配置用例自行 setState 覆盖为空
+  useModelsStore.setState({ providers: [READY_PROVIDER], loading: false, error: null });
+  useToastStore.setState({ toasts: [] });
+  // URL 分发：provider-configs 返回已配置（防 GREEN 挂载/发送时 loadProviders 覆盖播种）；
+  // 其余端点返回通用成功
+  apiFetchMock.mockImplementation(async (path: string) => {
+    if (path === '/api/v1/provider-configs') {
+      return { items: [READY_PROVIDER], total: 1, offset: 0, limit: 50 };
+    }
+    return { ok: true };
+  });
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
   useChapterStore.setState({
     volumes: [],
@@ -195,6 +230,96 @@ describe('ChatPanel — 失败与并发保护', () => {
         status: 'pending',
         created_at: '',
       });
+    });
+  });
+});
+
+describe('ChatPanel — 模型未配置前置校验（#474 P0）', () => {
+  /**
+   * 契约：用户未配置模型（providers 空 / 无 key_saved=true 的 chat provider）时点发送：
+   * - 不发 executePipeline 请求（不发 AI 请求）
+   * - toast 提示（type='warn'，文案引导去配置）
+   * 已配置模型（beforeEach 默认播种 READY_PROVIDER）行为不变：正常 execute。
+   *
+   * i18n key（GREEN 补 zh.ts/en.ts）：common.modelNotConfigured
+   */
+  it('未配置模型（providers 空）→ 点发送 → toast 提示 + 不发 execute 请求', async () => {
+    useModelsStore.setState({ providers: [], loading: false, error: null });
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs') {
+        return { items: [], total: 0, offset: 0, limit: 50 };
+      }
+      return { ok: true };
+    });
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await user.type(screen.getByTestId('chat-input'), '帮我写一段打斗场景');
+    await user.click(screen.getByTestId('chat-send'));
+    // toast 提示（引导去配置）
+    expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
+    expect(useToastStore.getState().toasts.some((t) => t.message.includes('配置'))).toBe(true);
+    // 不发 AI 请求
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it('未配置模型（provider 存在但 key_saved=false）→ 点发送 → toast + 不发 execute', async () => {
+    useModelsStore.setState({
+      providers: [
+        {
+          id: 1,
+          name: 'openai',
+          base_url: 'https://api.openai.com/v1',
+          default_model: 'gpt-4o',
+          models: [{ id: 'gpt-4o', type: 'chat', roles: ['main'] }],
+          key_saved: false,
+          max_retries: 3,
+          timeout: 60,
+          created_at: '2026-08-01T10:00:00Z',
+          updated_at: '2026-08-05T10:00:00Z',
+        },
+      ],
+      loading: false,
+      error: null,
+    });
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs') {
+        return { items: [], total: 0, offset: 0, limit: 50 };
+      }
+      return { ok: true };
+    });
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await user.type(screen.getByTestId('chat-input'), '你好');
+    await user.click(screen.getByTestId('chat-send'));
+    expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it('Enter 键发送同样走前置校验（未配置 → toast + 不发 execute）', async () => {
+    useModelsStore.setState({ providers: [], loading: false, error: null });
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs') {
+        return { items: [], total: 0, offset: 0, limit: 50 };
+      }
+      return { ok: true };
+    });
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await user.type(screen.getByTestId('chat-input'), '回车发送');
+    await user.keyboard('{Enter}');
+    expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it('已配置模型（默认播种）→ 发送正常 execute（行为不变）', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await user.type(screen.getByTestId('chat-input'), '已配置模型对话');
+    await user.click(screen.getByTestId('chat-send'));
+    await waitFor(() => {
+      expect(executeMock).toHaveBeenCalledWith(
+        expect.objectContaining({ pipeline: 'builtin:chat' }),
+      );
     });
   });
 });

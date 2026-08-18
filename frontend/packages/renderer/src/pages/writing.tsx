@@ -17,7 +17,9 @@ import { Skeleton } from '../components/ui/skeleton';
 import { usePipeline } from '../hooks/usePipeline';
 import { useI18n } from '../i18n/useI18n';
 import { useChapterStore } from '../stores/chapter';
+import { ensureModelReady } from '../stores/models';
 import { useProjectStore } from '../stores/project';
+import { useToastStore } from '../stores/toast';
 
 /** 无项目引导态（仅挂载于无项目分支，避免无 Router 上下文的测试报错） */
 function WritingEmptyState() {
@@ -41,6 +43,7 @@ function WritingEmptyState() {
 }
 
 export function WritingPage() {
+  const { t } = useI18n();
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const projects = useProjectStore((s) => s.projects);
   const projectsLoading = useProjectStore((s) => s.loading);
@@ -65,6 +68,18 @@ export function WritingPage() {
     supervisor: currentProject?.config?.supervisor ?? null,
   });
   const { status, error, start, hitlPending, confirm } = pipeline;
+
+  // #474 P0：模型未配置前置校验（续写/生成四触发点共用守卫）
+  const startWithCheck = useCallback(
+    async (mode: 'write_auto' | 'write_continue') => {
+      if (!(await ensureModelReady())) {
+        useToastStore.getState().pushToast('warn', t('common.modelNotConfigured'));
+        return;
+      }
+      start(mode);
+    },
+    [start, t],
+  );
 
   // F47 #379（spec §4.2）：正文编辑 ↔ AI 执行详情视图切换，默认 editor
   const [view, setView] = useState<'editor' | 'detail'>('editor');
@@ -163,7 +178,7 @@ export function WritingPage() {
       const key = e.key.toLowerCase();
       if (e.shiftKey && key === 'enter') {
         e.preventDefault();
-        start('write_auto');
+        startWithCheck('write_auto');
         return;
       }
       switch (key) {
@@ -181,13 +196,13 @@ export function WritingPage() {
           break;
         case 'enter':
           e.preventDefault();
-          start('write_continue');
+          startWithCheck('write_continue');
           break;
         default:
           break;
       }
     },
-    [start, save],
+    [startWithCheck, save],
   );
 
   if (effectiveProjectId === '' && !projectsLoading && !projectsError) {
@@ -232,8 +247,8 @@ export function WritingPage() {
             onUndo={() => document.execCommand('undo')}
             onRedo={() => document.execCommand('redo')}
             onSave={() => void save()}
-            onContinue={() => start('write_continue')}
-            onGenerate={() => start('write_auto')}
+            onContinue={() => startWithCheck('write_continue')}
+            onGenerate={() => startWithCheck('write_auto')}
             onAudit={() => void handleAudit()}
             view={view}
             onToggleView={() => setView((v) => (v === 'editor' ? 'detail' : 'editor'))}

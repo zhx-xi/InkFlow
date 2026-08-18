@@ -170,3 +170,17 @@ export function selectChatModelOptions(
   }
   return options;
 }
+
+/** #474：是否存在可用 chat 模型（provider key_saved=true 且含 chat 类型模型） */
+export function hasChatModel(providers: ProviderConfig[]): boolean {
+  return providers.some((p) => p.key_saved && p.models.some((m) => m.type === 'chat'));
+}
+
+/** #474：发送前确保模型注册表已加载并判定有可用 chat 模型（providers 空时先 loadProviders） */
+export async function ensureModelReady(): Promise<boolean> {
+  const s = useModelsStore.getState();
+  if (s.providers.length === 0 && !s.loading) {
+    await s.loadProviders();
+  }
+  return hasChatModel(useModelsStore.getState().providers);
+}

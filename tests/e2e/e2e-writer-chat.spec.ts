@@ -76,6 +76,36 @@ async function createProjectViaUi(window: Page, name: string): Promise<void> {
   await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
 }
 
+/**
+ * #474 前置校验预置：注册 openai key + 补 chat 模型。
+ * 前端在点发送前校验「存在 key_saved=true 的 chat provider」，seed provider 默认
+ * key_saved=false 且 models 初始为空 → 不预置则点发送被前端拦截（零请求）。
+ * 管线本身被 page.route 拦截（零真实 LLM），key 用假值即可（APIKeyManager 只存不验）。
+ */
+async function presetChatModel(kernel: KernelInfo): Promise<void> {
+  const keyRes = await kernelFetch(kernel, '/api/v1/settings/llm-keys', {
+    method: 'POST',
+    body: { provider: 'openai', api_key: 'sk-e2e-chat-dummy' },
+  });
+  expect(keyRes.ok, 'openai key 注册（POST /settings/llm-keys）应成功').toBe(true);
+
+  const pcRes = await kernelFetch(kernel, '/api/v1/provider-configs');
+  expect(pcRes.ok).toBe(true);
+  const pcs = (await pcRes.json()) as {
+    items: Array<{ id: number; name: string; models: Array<{ id: string; type: string }> }>;
+  };
+  const provider = pcs.items.find((p) => p.name === 'openai');
+  expect(provider, 'seed provider openai 应存在').toBeTruthy();
+  const models = provider!.models.some((m) => m.id === 'gpt-4o' && m.type === 'chat')
+    ? provider!.models
+    : [...(provider!.models ?? []), { id: 'gpt-4o', type: 'chat' }];
+  const patchRes = await kernelFetch(kernel, `/api/v1/provider-configs/${provider!.id}`, {
+    method: 'PATCH',
+    body: { models },
+  });
+  expect(patchRes.ok, 'provider-configs PATCH（补 chat 模型）应成功').toBe(true);
+}
+
 async function findProjectId(kernel: KernelInfo, name: string): Promise<string> {
   const res = await kernelFetch(kernel, '/api/v1/projects');
   expect(res.ok).toBe(true);
@@ -146,6 +176,9 @@ test('聊天框：输入 → 发送 → assistant 消息 → 插入正文 → �
       body: { title: '第1章 初见', volume_id: volData.id, content: '' },
     });
     expect(chapters.status).toBe(201);
+
+    // #474 前置校验预置：注册 openai key + 补 chat 模型（不预置则点发送被前端拦截）
+    await presetChatModel(kernel);
 
     // 重挂载写作页触发 loadChapterTree（加载 API 预置的卷/章）
     await gotoNav(window, '项目');

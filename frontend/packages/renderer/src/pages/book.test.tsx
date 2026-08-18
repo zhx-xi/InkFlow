@@ -31,6 +31,8 @@ import { apiFetch } from '../api/client';
 import { useProjectStore } from '../stores/project';
 import { useBookStore } from '../stores/book';
 import { useThemeStore } from '../stores/theme';
+import { useModelsStore, type ProviderConfig } from '../stores/models';
+import { useToastStore } from '../stores/toast';
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
@@ -38,6 +40,20 @@ vi.mock('../api/client', async (importOriginal) => {
 });
 
 const apiFetchMock = vi.mocked(apiFetch);
+
+/** #474：已配置模型种子 provider（key_saved=true + chat 模型），默认播种让既有主路径用例行为不变 */
+const READY_PROVIDER: ProviderConfig = {
+  id: 1,
+  name: 'openai',
+  base_url: 'https://api.openai.com/v1',
+  default_model: 'gpt-4o',
+  models: [{ id: 'gpt-4o', type: 'chat', roles: ['main'] }],
+  key_saved: true,
+  max_retries: 3,
+  timeout: 60,
+  created_at: '2026-08-01T10:00:00Z',
+  updated_at: '2026-08-05T10:00:00Z',
+};
 
 const q1 = { id: 'q1', text: '题材：悬疑为主，还是悬疑+科幻混合？', template: '悬疑为主，但加入 ___ 元素' };
 const q2 = { id: 'q2', text: '篇幅：预计多少字？', template: '约 ___ 字' };
@@ -62,6 +78,8 @@ const wp = {
 
 beforeEach(() => {
   apiFetchMock.mockReset();
+  // #474：默认播种已配置模型（主路径用例点 book-planner-start 需通过前置校验）
+  useModelsStore.setState({ providers: [READY_PROVIDER], loading: false, error: null });
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
   useProjectStore.setState({ projects: [], currentProjectId: null, loading: false, error: null });
   useBookStore.setState({
@@ -118,6 +136,9 @@ describe('book 页 — 主路径闭环（访谈→委托→展开行→状态）
 
     // URL 分发 mock：访谈 → 回答 → 运行（S1a 端点形状）
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+      if (path === '/api/v1/provider-configs') {
+        return { items: [READY_PROVIDER], total: 1, offset: 0, limit: 50 };
+      }
       if (path === '/api/v1/agent/books/planner' && init?.method === 'POST') {
         return { session_id: 'sess-1', round: 1, questions: round1, max_rounds: 5 };
       }
@@ -207,6 +228,9 @@ describe('book 页 — 主路径闭环（访谈→委托→展开行→状态）
       error: null,
     });
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+      if (path === '/api/v1/provider-configs') {
+        return { items: [READY_PROVIDER], total: 1, offset: 0, limit: 50 };
+      }
       if (path === '/api/v1/agent/books/planner' && init?.method === 'POST') {
         return { session_id: 'sess-1', round: 1, questions: round1, max_rounds: 5 };
       }
@@ -254,5 +278,54 @@ describe('book 页 — 主路径闭环（访谈→委托→展开行→状态）
     await waitFor(() => {
       expect(within(panel).getByTestId('run-status')).toHaveTextContent('completed');
     });
+  });
+});
+
+describe('book 页 — 模型未配置前置校验（#474 P0）', () => {
+  /**
+   * 契约：页面级三入口覆盖——未配置模型（无 key_saved=true 的 chat provider）时
+   * 点 book-planner-start：不发 POST /api/v1/agent/books/planner + toast 提示。
+   * 已配置模型（beforeEach 默认播种 READY_PROVIDER）主路径闭环照常（既有用例）。
+   */
+  it('未配置模型 → 点 book-planner-start → toast + 不发 planner 请求', async () => {
+    const user = userEvent.setup();
+    useModelsStore.setState({ providers: [], loading: false, error: null });
+    useProjectStore.setState({
+      projects: [
+        {
+          id: 'p1',
+          name: '青云志',
+          genre: '玄幻',
+          language: 'zh-CN',
+          target_words: 800000,
+          config: {},
+          created_at: '2026-08-01T10:00:00Z',
+          updated_at: '2026-08-05T10:00:00Z',
+        },
+      ],
+      currentProjectId: 'p1',
+      loading: false,
+      error: null,
+    });
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs') {
+        return { items: [], total: 0, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/projects/p1') return { id: 'p1', config: {} };
+      throw new Error(`unexpected: ${path}`);
+    });
+    render(
+      <MemoryRouter>
+        <BookPage />
+      </MemoryRouter>,
+    );
+    const panel = await screen.findByTestId('book-planner-panel');
+    await user.type(within(panel).getByTestId('book-one-liner'), '写一本关于时间旅者的悬疑小说');
+    await user.click(within(panel).getByTestId('book-planner-start'));
+    const plannerCalls = apiFetchMock.mock.calls.filter(
+      (c) => c[0] === '/api/v1/agent/books/planner' && (c[1] as { method?: string } | undefined)?.method === 'POST',
+    );
+    expect(plannerCalls).toHaveLength(0);
+    expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
   });
 });

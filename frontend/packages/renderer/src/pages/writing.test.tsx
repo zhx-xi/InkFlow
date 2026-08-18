@@ -40,6 +40,8 @@ import { executePipeline, getExecutionStatus, confirmExecution } from '../api/pi
 import { useChapterStore } from '../stores/chapter';
 import { useProjectStore } from '../stores/project';
 import { useThemeStore } from '../stores/theme';
+import { useModelsStore, type ProviderConfig } from '../stores/models';
+import { useToastStore } from '../stores/toast';
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
@@ -65,12 +67,30 @@ const seedChapters = [
   { id: 'c2', title: '第2章 夜谈', volume_id: 'v1', order_index: 1, word_count: 0 },
 ];
 
+/** #474：已配置模型种子 provider（key_saved=true + chat 模型），默认播种让既有用例行为不变 */
+const READY_PROVIDER: ProviderConfig = {
+  id: 1,
+  name: 'openai',
+  base_url: 'https://api.openai.com/v1',
+  default_model: 'gpt-4o',
+  models: [{ id: 'gpt-4o', type: 'chat', roles: ['main'] }],
+  key_saved: true,
+  max_retries: 3,
+  timeout: 60,
+  created_at: '2026-08-01T10:00:00Z',
+  updated_at: '2026-08-05T10:00:00Z',
+};
+
 beforeEach(() => {
   vi.useRealTimers();
   apiFetchMock.mockReset();
   executeMock.mockReset();
   statusMock.mockReset();
   confirmMock.mockReset();
+  // #474 前置校验依赖 models store：默认播种「已配置」+ provider-configs GET 返回同款，
+  // 防 GREEN 挂载/发送时 loadProviders 覆盖为未配置
+  useModelsStore.setState({ providers: [READY_PROVIDER], loading: false, error: null });
+  useToastStore.setState({ toasts: [] });
   executeMock.mockResolvedValue({
     execution_id: 'e1',
     pipeline: 'builtin:write_auto',
@@ -102,6 +122,9 @@ beforeEach(() => {
 
   // REST mock：自动加载/保存路径返回种子或空（防 GREEN 挂载自动加载覆盖）
   apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+    if (path === '/api/v1/provider-configs') {
+      return { items: [READY_PROVIDER], total: 1, offset: 0, limit: 50 };
+    }
     if (path === '/api/v1/projects/p1/volumes') return { items: seedVolumes };
     if (path === '/api/v1/projects/p1/chapters') return { items: seedChapters, total: 2, offset: 0, limit: 50 };
     if (path.startsWith('/api/v1/chapters/') && init?.method === 'PATCH') return { ok: true };
@@ -596,5 +619,78 @@ describe('写作页 — 视图切换（#379 F47 §4.2：正文编辑 ↔ AI 执�
     // 切回 editor 视图 → ChapterEditor 恢复
     await user.click(screen.getByTestId('view-toggle'));
     expect(screen.getByTestId('chapter-editor')).toBeInTheDocument();
+  });
+});
+
+describe('写作页 — 模型未配置前置校验（#474 P0）', () => {
+  /**
+   * 契约：用户未配置模型（无 key_saved=true 的 chat provider）时，续写/生成入口：
+   * - 不发 executePipeline 请求（不发 AI 请求）
+   * - toast 提示（type='warn'，文案引导去配置）
+   * 已配置模型（beforeEach 默认播种 READY_PROVIDER）行为不变：正常 execute。
+   *
+   * i18n key（GREEN 补 zh.ts/en.ts）：common.modelNotConfigured
+   */
+  const unreadyMock = () => {
+    useModelsStore.setState({ providers: [], loading: false, error: null });
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/provider-configs') {
+        return { items: [], total: 0, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/projects/p1/volumes') return { items: seedVolumes };
+      if (path === '/api/v1/projects/p1/chapters') return { items: seedChapters, total: 2, offset: 0, limit: 50 };
+      if (path.startsWith('/api/v1/chapters/') && init?.method === 'PATCH') return { ok: true };
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+  };
+
+  it('未配置模型 → 点「续写」按钮 → toast + 不发 execute', async () => {
+    unreadyMock();
+    render(<WritingPage />);
+    fireEvent.click(screen.getByRole('button', { name: '续写' }));
+    // async 守卫（ensureModelReady → loadProviders）在微任务后写 toast → waitFor 消化
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
+      expect(useToastStore.getState().toasts.some((t) => t.message.includes('配置'))).toBe(true);
+    });
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it('未配置模型 → 点「生成」按钮 → toast + 不发 execute', async () => {
+    unreadyMock();
+    render(<WritingPage />);
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
+    });
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it('未配置模型 → Ctrl+Enter 续写快捷键 → toast + 不发 execute', async () => {
+    unreadyMock();
+    render(<WritingPage />);
+    fireEvent.keyDown(screen.getByTestId('chapter-editor'), { key: 'Enter', ctrlKey: true });
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
+    });
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it('未配置模型 → Ctrl+Shift+Enter 生成快捷键 → toast + 不发 execute', async () => {
+    unreadyMock();
+    render(<WritingPage />);
+    fireEvent.keyDown(screen.getByTestId('chapter-editor'), { key: 'Enter', ctrlKey: true, shiftKey: true });
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
+    });
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it('已配置模型（默认播种）→ 点「生成」→ execute 正常（行为不变）', async () => {
+    render(<WritingPage />);
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
+    await waitFor(() => {
+      expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({ pipeline: 'builtin:write_auto' }));
+    });
   });
 });
