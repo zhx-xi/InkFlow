@@ -24,6 +24,7 @@ from inkflow.api.routers import (
     export,
     extractions,
     foreshadowings,
+    knowledge_graph,
     maps,
     memory,
     outlines,
@@ -179,6 +180,7 @@ app.include_router(world_settings.router)
 app.include_router(outlines.router)
 app.include_router(timeline.router)
 app.include_router(foreshadowings.router)
+app.include_router(knowledge_graph.router)
 app.include_router(extractions.router)
 app.include_router(sessions.router)
 app.include_router(settings.router)

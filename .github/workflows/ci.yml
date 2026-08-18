@@ -458,6 +458,7 @@ jobs:
                  ../tests/cli/test_cli_mcp.py `
                  ../tests/cli/test_cli_agent_entity.py `
                  ../tests/cli/test_cli_skill.py `
+                 ../tests/cli/test_cli_knowledge_graph.py `
                  ../tests/cli/test_book_cmd.py `
                  ../tests/cli/test_book_cmd_stage4.py `
                  -v --tb=short

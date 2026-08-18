@@ -5,6 +5,7 @@ from inkflow.cli.commands import (  # noqa: F401  # 作为包门面 re-export �
     extract,
     foreshadowing,
     kernel,
+    knowledge_graph,
     session,
     timeline,
     vector,

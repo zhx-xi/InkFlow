@@ -54,7 +54,7 @@ const LIBRARY_ITEMS: NavItemDef[] = [
   { key: 'outline', href: '/library?cat=outline', labelKey: 'nav.lib.outline', icon: ListTree },
   { key: 'timeline', href: '/library?cat=timeline', labelKey: 'nav.lib.timeline', icon: Clock },
   { key: 'foreshadow', href: '/library?cat=foreshadow', labelKey: 'nav.lib.foreshadow', icon: Sparkles },
-  { key: 'rag', href: '/library?cat=rag', labelKey: 'nav.lib.rag', icon: Database },
+  { key: 'knowledge', href: '/library?cat=knowledge', labelKey: 'nav.lib.knowledge', icon: Database },
 ];
 
 /** agent 快捷入口直达 /settings?cat=agent */

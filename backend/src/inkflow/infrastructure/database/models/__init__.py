@@ -13,6 +13,7 @@ from inkflow.infrastructure.database.models.character import (
 from inkflow.infrastructure.database.models.context import ChapterSummaryORM
 from inkflow.infrastructure.database.models.extraction_run import ExtractionRunORM
 from inkflow.infrastructure.database.models.foreshadowing import ForeshadowingORM
+from inkflow.infrastructure.database.models.knowledge_graph import KnowledgeRelationORM
 from inkflow.infrastructure.database.models.map import MapORM, MapPinORM
 from inkflow.infrastructure.database.models.outline import (
     OutlineORM,
@@ -43,6 +44,7 @@ __all__ = [
     "DraftORM",
     "ExtractionRunORM",
     "ForeshadowingORM",
+    "KnowledgeRelationORM",
     "MapORM",
     "MapPinORM",
     "OutlineORM",
