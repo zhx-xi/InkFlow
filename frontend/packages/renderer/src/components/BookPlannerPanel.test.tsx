@@ -40,6 +40,8 @@ import { BookPlannerPanel } from './BookPlannerPanel';
 import { useBookStore } from '../stores/book';
 import { useProjectStore, type Project } from '../stores/project';
 import { useThemeStore } from '../stores/theme';
+import { useModelsStore, type ProviderConfig } from '../stores/models';
+import { useToastStore } from '../stores/toast';
 import { apiFetch, ApiError } from '../api/client';
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -48,6 +50,20 @@ vi.mock('../api/client', async (importOriginal) => {
 });
 
 const apiFetchMock = vi.mocked(apiFetch);
+
+/** #474：已配置模型种子 provider（key_saved=true + chat 模型），默认播种让既有用例行为不变 */
+const READY_PROVIDER: ProviderConfig = {
+  id: 1,
+  name: 'openai',
+  base_url: 'https://api.openai.com/v1',
+  default_model: 'gpt-4o',
+  models: [{ id: 'gpt-4o', type: 'chat', roles: ['main'] }],
+  key_saved: true,
+  max_retries: 3,
+  timeout: 60,
+  created_at: '2026-08-01T10:00:00Z',
+  updated_at: '2026-08-05T10:00:00Z',
+};
 
 const q1 = { id: 'q1', text: '题材：悬疑为主，还是悬疑+科幻混合？', template: '悬疑为主，但加入 ___ 元素' };
 const q2 = { id: 'q2', text: '篇幅：预计多少字？', template: '约 ___ 字' };
@@ -72,7 +88,15 @@ const wp = {
 
 beforeEach(() => {
   apiFetchMock.mockReset();
-  apiFetchMock.mockResolvedValue({ run_id: 'wp-1', status: 'completed' });
+  // #474：默认播种已配置模型 + provider-configs GET 返回同款（防 GREEN 挂载/发送时 loadProviders 覆盖）
+  useModelsStore.setState({ providers: [READY_PROVIDER], loading: false, error: null });
+  useToastStore.setState({ toasts: [] });
+  apiFetchMock.mockImplementation(async (path: string) => {
+    if (path === '/api/v1/provider-configs') {
+      return { items: [READY_PROVIDER], total: 1, offset: 0, limit: 50 };
+    }
+    return { run_id: 'wp-1', status: 'completed' };
+  });
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
   useBookStore.setState({
     sessionId: null,
@@ -302,5 +326,59 @@ describe('BookPlannerPanel — 阶段2 上限配置 + 409 安全阀文案（spec
     expect(await screen.findByTestId('book-start-error')).toHaveTextContent('该章已有内容，拒绝重跑');
     // 启动按钮仍在（409 提示后用户可修改上限/重试，不隐藏入口）
     expect(screen.getByTestId('book-start-run')).toBeInTheDocument();
+  });
+});
+
+describe('BookPlannerPanel — 按钮改名 + 模型未配置前置校验（#474 P0）', () => {
+  /**
+   * 契约：
+   * 1. book.start 按钮文案 = 「开始对话」（zh）/ 'Start Conversation'（en）——i18n 改名（GREEN 改 zh.ts/en.ts）
+   * 2. 用户未配置模型（无 key_saved=true 的 chat provider）时点 book-planner-start：
+   *    - 不发 startPlanner 请求（不发 AI 请求）
+   *    - toast 提示（type='warn'，文案引导去配置）
+   * 已配置模型（beforeEach 默认播种 READY_PROVIDER）行为不变：正常 startPlanner。
+   *
+   * i18n key（GREEN 补 zh.ts/en.ts）：common.modelNotConfigured
+   */
+  it('启动按钮文案 = 开始对话（zh）', () => {
+    render(<BookPlannerPanel projectId="p1" />);
+    expect(screen.getByTestId('book-planner-start')).toHaveTextContent('开始对话');
+  });
+
+  it('启动按钮文案 = Start Conversation（en）', () => {
+    useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'en' });
+    render(<BookPlannerPanel projectId="p1" />);
+    expect(screen.getByTestId('book-planner-start')).toHaveTextContent('Start Conversation');
+  });
+
+  it('未配置模型（providers 空）→ 点 book-planner-start → toast + 不发 startPlanner', async () => {
+    useModelsStore.setState({ providers: [], loading: false, error: null });
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs') {
+        return { items: [], total: 0, offset: 0, limit: 50 };
+      }
+      return { run_id: 'wp-1', status: 'completed' };
+    });
+    const user = userEvent.setup();
+    const startSpy = vi.spyOn(useBookStore.getState(), 'startPlanner').mockResolvedValue();
+    render(<BookPlannerPanel projectId="p1" />);
+    await user.type(screen.getByTestId('book-one-liner'), '写一本关于时间旅者的悬疑小说');
+    await user.click(screen.getByTestId('book-planner-start'));
+    expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
+    expect(useToastStore.getState().toasts.some((t) => t.message.includes('配置'))).toBe(true);
+    expect(startSpy).not.toHaveBeenCalled();
+    startSpy.mockRestore();
+  });
+
+  it('已配置模型（默认播种）→ 点 book-planner-start → startPlanner 正常（行为不变）', async () => {
+    const user = userEvent.setup();
+    const startSpy = vi.spyOn(useBookStore.getState(), 'startPlanner').mockResolvedValue();
+    render(<BookPlannerPanel projectId="p1" />);
+    await user.type(screen.getByTestId('book-one-liner'), '写一本关于时间旅者的悬疑小说');
+    await user.click(screen.getByTestId('book-planner-start'));
+    await waitFor(() => {
+      expect(startSpy).toHaveBeenCalledWith('p1', '写一本关于时间旅者的悬疑小说');
+    });
+    startSpy.mockRestore();
   });
 });

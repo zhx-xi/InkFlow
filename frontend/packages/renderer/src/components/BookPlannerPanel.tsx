@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { useI18n } from '../i18n/useI18n';
 import { useBookLimits, type BookLimitsValues } from '../hooks/useBookLimits';
 import { useBookStore } from '../stores/book';
+import { ensureModelReady } from '../stores/models';
+import { useToastStore } from '../stores/toast';
 import { BookRunPanel } from './BookRunPanel';
 
 export interface BookPlannerPanelProps {
@@ -26,9 +28,14 @@ export function BookPlannerPanel({ projectId }: BookPlannerPanelProps) {
   const [oneLiner, setOneLiner] = useState('');
   const [answer, setAnswer] = useState('');
 
-  const handleStart = () => {
+  const handleStart = async () => {
     const text = oneLiner.trim();
     if (!text) return;
+    // #474 P0：模型未配置前置校验（startPlanner 前）
+    if (!(await ensureModelReady())) {
+      useToastStore.getState().pushToast('warn', t('common.modelNotConfigured'));
+      return;
+    }
     void startPlanner(projectId, text);
   };
 

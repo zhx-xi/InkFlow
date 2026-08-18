@@ -16,6 +16,7 @@ import type { PipelineExecuteRequest } from '../api/pipeline';
 import { useExecutionPoll } from '../hooks/useExecutionPoll';
 import { useI18n } from '../i18n/useI18n';
 import { useChapterStore } from '../stores/chapter';
+import { ensureModelReady } from '../stores/models';
 import { useToastStore } from '../stores/toast';
 
 export interface ChatPanelProps {
@@ -39,9 +40,14 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
   const userSeqRef = useRef(0);
   const aiSeqRef = useRef(0);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const prompt = input.trim();
     if (!prompt) return;
+    // #474 P0：模型未配置前置校验（trim 非空后、exec.start 前）
+    if (!(await ensureModelReady())) {
+      useToastStore.getState().pushToast('warn', t('common.modelNotConfigured'));
+      return;
+    }
     setMessages((prev) => [...prev, { kind: 'user', seq: userSeqRef.current++, text: prompt }]);
     setInput('');
     const variables: Record<string, string> = { prompt };
@@ -55,7 +61,7 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
       variables,
     };
     exec.start(body); // 并发保护在 hook 内（running 期间二次 start 无操作）
-  }, [input, projectId, chapterId, chapterContent, exec.start]);
+  }, [input, projectId, chapterId, chapterContent, exec.start, t]);
 
   // 轮询结果消费：status 只在 0→1 次变化（idle→running→success/failed），依赖 [status] 天然防重
   useEffect(() => {
