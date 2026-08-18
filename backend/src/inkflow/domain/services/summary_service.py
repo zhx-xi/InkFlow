@@ -15,6 +15,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Protocol
 
+from inkflow.core.config import config
 from inkflow.domain.models.chapter import Chapter as ChapterDomain
 from inkflow.domain.models.context import ChapterSummary
 from inkflow.domain.ports.context_errors import SummaryGenerationError
@@ -122,7 +123,13 @@ class SummaryService:
             messages = [
                 ChatMessage(role=m["role"], content=m["content"]) for m in rendered.messages
             ]
-            response = await self._llm.chat(messages, model=model)
+
+            # #470: 无 provider 前缀（如新项目默认 "gpt-4o"）→ 回退全局默认（有前缀）
+            resolved_model = model
+            if "/" not in model:
+                resolved_model = config.llm_default_model
+
+            response = await self._llm.chat(messages, model=resolved_model)
             summary = response.content.strip()
 
             # 简单截断保证 ≤ 300 字（LLM 可能不遵守）
