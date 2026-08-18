@@ -12,9 +12,9 @@
  *   characters → /library?cat=characters｜world → /library?cat=world
  *   outline → /library?cat=outline｜timeline → /library?cat=timeline
  *   foreshadow → /library?cat=foreshadow｜rag → /library?cat=rag
- *   models → 占位（#106 未实现：禁用项，点击不导航；新 key nav.models）
  *   agent → /settings?cat=agent（Agent 快捷入口，新 key nav.agent）
  *   settings → /settings（新 key nav.settings）
+ *   #481：nav-item-models 已删除（模型管理合并入设置页模型分类，无独立导航项）
  * - nav-collapse-btn：展开态折叠按钮；nav-expand-btn：折叠态展开按钮
  *
  * 行为：
@@ -25,8 +25,9 @@
  * - 品牌区：app-nav 内 logo（img，装饰性 alt="" aria-hidden="true"，三主题变体 GREEN 自定）
  *   + t('app.brand') 文字
  *
- * 新增 i18n key（GREEN 补 zh.ts/en.ts；nav.agents 随 /agents 路由删除，spec §7.10 Q1=A）：
- * nav.library='设定库' nav.settings='设置' nav.models='模型管理' nav.agent='Agent'
+ * 新增 i18n key（GREEN 补 zh.ts/en.ts；nav.agents 随 /agents 路由删除，spec §7.10 Q1=A；
+ * #481：nav.models 随 /models 路由删除）：
+ * nav.library='设定库' nav.settings='设置' nav.agent='Agent'
  * nav.group.writing='写作区' nav.group.library='设定库' nav.group.system='系统'
  * nav.lib.characters='角色' nav.lib.world='世界观' nav.lib.outline='大纲'
  * nav.lib.timeline='时间线' nav.lib.foreshadow='伏笔' nav.lib.rag='知识库 RAG'
@@ -96,13 +97,13 @@ describe('AppNav — 结构与分组', () => {
     expect(screen.getByTestId('nav-group-system')).toBeInTheDocument();
   });
 
-  it('11 个导航链接：testid 齐全 + NavLink href 与路由契约一致；models 占位项渲染', () => {
+  it('11 个导航链接：testid 齐全 + NavLink href 与路由契约一致；模型管理入口已删除（#481）', () => {
     renderNav();
     for (const [key, href] of NAV_LINKS) {
       expect(screen.getByTestId(`nav-item-${key}`)).toHaveAttribute('href', href);
     }
-    // 模型管理：#106 未实现，占位项渲染（无 href 契约，点击行为见折叠/跳转 describe）
-    expect(screen.getByTestId('nav-item-models')).toBeInTheDocument();
+    // #481：模型管理合并入设置页模型分类，独立导航项 nav-item-models 不存在
+    expect(screen.queryByTestId('nav-item-models')).not.toBeInTheDocument();
   });
 
   it('导航文案：写作/项目用既有 key，设定库/设置/RAG 用新 key', () => {
@@ -158,12 +159,5 @@ describe('AppNav — 跳转', () => {
     renderNav();
     await user.click(screen.getByTestId('nav-item-characters'));
     expect(screen.getByTestId('location-probe')).toHaveTextContent('/library?cat=characters');
-  });
-
-  it('模型管理：#106 转正为导航，点击 → /models', async () => {
-    const user = userEvent.setup();
-    renderNav();
-    await user.click(screen.getByTestId('nav-item-models'));
-    expect(screen.getByTestId('location-probe')).toHaveTextContent('/models');
   });
 });

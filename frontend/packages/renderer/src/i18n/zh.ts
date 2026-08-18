@@ -6,7 +6,6 @@ export const zh = {
   'nav.projects': '项目',
   'nav.library': '设定库',
   'nav.settings': '设置',
-  'nav.models': '模型管理',
   'nav.agent': 'Agent',
   'nav.expand': '展开',
   'nav.collapse': '折叠',
@@ -188,8 +187,6 @@ export const zh = {
   // #189（rc1 发布缺陷）：页面顶部保存指示
   'set.saving': '保存中…',
   'set.saved': '已保存',
-  'set.models.summary': '已配置 Provider',
-  'set.models.placeholder': '模型管理将在后续版本提供',
   // #276（2026-08-12）：RAG 向量检索区块（设置页模型分类）
   'set.rag.title': '向量检索（RAG）',
   'set.rag.model': '当前模型',

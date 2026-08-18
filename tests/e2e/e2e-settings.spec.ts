@@ -206,15 +206,15 @@ test('顶栏：主题/语言 Select 展开全选项可见 + 选择直达生效�
     const langSelect = window.getByTestId('header-lang-select');
     await expect(langSelect).toHaveAttribute('role', 'combobox');
     await langSelect.click();
-    // 选 EN → 界面语言切换（侧边栏 nav 文案变英文）
+    // 选 EN → 界面语言切换（侧边栏 nav 文案变英文；#481：nav-item-models 已删 → 用设置项断言）
     await window.getByRole('option', { name: 'EN', exact: true }).click();
-    await expect(window.getByTestId('nav-item-models')).toContainText('Model Manager');
+    await expect(window.getByTestId('nav-item-settings')).toContainText('Settings');
     await expect(window.getByTestId('nav-item-projects')).toContainText('Projects');
 
     // 切回中文（zh），避免持久化语言影响后续用例（既有用例断言中文文案）
     await langSelect.click();
     await window.getByRole('option', { name: /中文|Chinese/ }).click();
-    await expect(window.getByTestId('nav-item-models')).toContainText('模型管理');
+    await expect(window.getByTestId('nav-item-settings')).toContainText('设置');
   } finally {
     await app.close();
   }

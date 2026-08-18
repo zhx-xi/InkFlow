@@ -7,7 +7,6 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Clock,
-  Cpu,
   Database,
   FolderOpen,
   Globe,
@@ -58,9 +57,8 @@ const LIBRARY_ITEMS: NavItemDef[] = [
   { key: 'rag', href: '/library?cat=rag', labelKey: 'nav.lib.rag', icon: Database },
 ];
 
-/** models = #106 模型管理页（普通页面导航）；agent 快捷入口直达 /settings?cat=agent */
+/** agent 快捷入口直达 /settings?cat=agent */
 const SYSTEM_ITEMS: NavItemDef[] = [
-  { key: 'models', href: '/models', labelKey: 'nav.models', icon: Cpu },
   { key: 'agent', href: '/settings?cat=agent', labelKey: 'nav.agent', icon: Bot },
   { key: 'settings', href: '/settings', labelKey: 'nav.settings', icon: Settings },
 ];
