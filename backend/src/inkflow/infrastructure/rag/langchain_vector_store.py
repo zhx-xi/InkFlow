@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
@@ -44,6 +45,7 @@ class LangChainVectorStore:
     - embeddings 由构造注入（生产 OpenAIEmbeddings——API embedding，模型来自
       ProviderConfig 注册表 type="embedding" 条目；测试 FakeEmbeddings）——懒加载
     - chromadb 同步 API 用 asyncio.to_thread 包装（不阻塞事件循环）
+    - chromadb 操作全程持有 threading.Lock 串行化（PersistentClient 非线程安全，#468）
     - 距离度量 cosine；relevance_score = 1 - distance
     """
 
@@ -62,6 +64,10 @@ class LangChainVectorStore:
         """
         self._persist_dir = persist_dir
         self._embeddings = embeddings
+        # #468: chromadb PersistentClient 非线程安全——asyncio.to_thread 并发触达同一
+        # client/collection 会触发 hnsw segment race（"Nothing found on disk"）。
+        # 所有 chromadb 操作必须持本锁串行执行；embedding 计算（慢）在锁外。
+        self._lock = threading.Lock()
         self._client: chromadb.ClientAPI | None = None
         self._collections: dict[EntityType, chromadb.Collection] = {}
         self._meta_collection: chromadb.Collection | None = None
@@ -160,7 +166,10 @@ class LangChainVectorStore:
     # ── 私有: chromadb 同步操作（由 asyncio.to_thread 包装调用）──
 
     def _get_collection(self, entity_type: EntityType) -> chromadb.Collection:
-        """懒初始化: 首次调用创建 PersistentClient 并 get_or_create 目标 collection。"""
+        """懒初始化: 首次调用创建 PersistentClient 并 get_or_create 目标 collection。
+
+        注意：调用方必须已持有 self._lock（#468），此处不重复加锁（Lock 不可重入）。
+        """
         if entity_type not in self._collections:
             if self._client is None:
                 self._client = chromadb.PersistentClient(path=str(self._persist_dir))
@@ -182,15 +191,16 @@ class LangChainVectorStore:
 
     def _index_sync(self, entity: IndexableEntity) -> None:
         """同步索引单个实体（upsert，同 id 覆盖）。"""
-        collection = self._get_collection(entity.entity_type)
         embedding = self._embeddings.embed_documents([entity.content])[0]
-        collection.upsert(
-            ids=[entity.id],
-            documents=[entity.content],
-            metadatas=[self._to_chroma_metadata(entity)],
-            # chroma stub 对 embeddings 类型过严（实际运行时接受 list[list[float]]）
-            embeddings=cast(Any, [embedding]),
-        )
+        with self._lock:
+            collection = self._get_collection(entity.entity_type)
+            collection.upsert(
+                ids=[entity.id],
+                documents=[entity.content],
+                metadatas=[self._to_chroma_metadata(entity)],
+                # chroma stub 对 embeddings 类型过严（实际运行时接受 list[list[float]]）
+                embeddings=cast(Any, [embedding]),
+            )
 
     def _index_batch_sync(self, entities: list[IndexableEntity]) -> None:
         """同步批量索引: 按类型分组，每 collection 一次 upsert。"""
@@ -198,15 +208,16 @@ class LangChainVectorStore:
         for entity in entities:
             by_type.setdefault(entity.entity_type, []).append(entity)
         for entity_type, group in by_type.items():
-            collection = self._get_collection(entity_type)
             embeddings = self._embeddings.embed_documents([e.content for e in group])
-            collection.upsert(
-                ids=[e.id for e in group],
-                documents=[e.content for e in group],
-                metadatas=[self._to_chroma_metadata(e) for e in group],
-                # chroma stub 对 embeddings 类型过严（实际运行时接受 list[list[float]]）
-                embeddings=cast(Any, embeddings),
-            )
+            with self._lock:
+                collection = self._get_collection(entity_type)
+                collection.upsert(
+                    ids=[e.id for e in group],
+                    documents=[e.content for e in group],
+                    metadatas=[self._to_chroma_metadata(e) for e in group],
+                    # chroma stub 对 embeddings 类型过严（实际运行时接受 list[list[float]]）
+                    embeddings=cast(Any, embeddings),
+                )
 
     def _retrieve_sync(
         self,
@@ -220,73 +231,79 @@ class LangChainVectorStore:
         """同步检索: 每类型查对应 collection（where project_id），去重合并排序截断。"""
         types = list(entity_types) if entity_types else list(EntityType)
         query_embedding = self._embeddings.embed_query(query)
-        merged: list[RetrievedEntity] = []
-        for entity_type in types:
-            collection = self._get_collection(entity_type)
-            result = collection.query(
-                # chroma stub 对 query_embeddings 类型过严（实际运行时接受 list[list[float]]）
-                query_embeddings=cast(Any, [query_embedding]),
-                n_results=top_k,
-                where={"project_id": project_id},
-                include=["documents", "metadatas", "distances"],
-            )
-            ids = result["ids"]
-            if not ids or not ids[0]:
-                continue
-            documents = result["documents"] or []
-            metadatas = result["metadatas"] or []
-            distances = result["distances"] or []
-            for entity_id, document, metadata, distance in zip(
-                ids[0], documents[0], metadatas[0], distances[0], strict=True
-            ):
-                score = 1.0 - distance
-                if score < min_score:
-                    continue
-                merged.append(
-                    RetrievedEntity(
-                        entity_id=entity_id,
-                        entity_type=entity_type,
-                        content=document or "",
-                        relevance_score=score,
-                        metadata=cast(dict[str, str | int | float], metadata or {}),
-                    )
+        with self._lock:
+            merged: list[RetrievedEntity] = []
+            for entity_type in types:
+                collection = self._get_collection(entity_type)
+                result = collection.query(
+                    # chroma stub 对 query_embeddings 类型过严（实际运行时接受 list[list[float]]）
+                    query_embeddings=cast(Any, [query_embedding]),
+                    n_results=top_k,
+                    where={"project_id": project_id},
+                    include=["documents", "metadatas", "distances"],
                 )
-        # #277 M3（spec §5.6.3）: 检索去重——按 (entity_type, 源实体 id) 去重
-        # 取最高分（chapter_chunk 源实体 id = metadata chapter_id 非块 id，
-        # 同章节多块命中只留最高分一条，杜绝相邻重复块刷屏，QA §P1-1）。
-        best: dict[tuple[EntityType, str], RetrievedEntity] = {}
-        for item in merged:
-            if item.entity_type is EntityType.CHAPTER_CHUNK:
-                source_id = str(item.metadata.get("chapter_id") or item.entity_id.split(":")[0])
-            else:
-                source_id = item.entity_id
-            key = (item.entity_type, source_id)
-            prev = best.get(key)
-            if prev is None or item.relevance_score > prev.relevance_score:
-                best[key] = item
-        merged = list(best.values())
-        merged.sort(key=lambda item: item.relevance_score, reverse=True)
-        return merged[:top_k]
+                ids = result["ids"]
+                if not ids or not ids[0]:
+                    continue
+                documents = result["documents"] or []
+                metadatas = result["metadatas"] or []
+                distances = result["distances"] or []
+                for entity_id, document, metadata, distance in zip(
+                    ids[0], documents[0], metadatas[0], distances[0], strict=True
+                ):
+                    score = 1.0 - distance
+                    if score < min_score:
+                        continue
+                    merged.append(
+                        RetrievedEntity(
+                            entity_id=entity_id,
+                            entity_type=entity_type,
+                            content=document or "",
+                            relevance_score=score,
+                            metadata=cast(dict[str, str | int | float], metadata or {}),
+                        )
+                    )
+            # #277 M3（spec §5.6.3）: 检索去重——按 (entity_type, 源实体 id) 去重
+            # 取最高分（chapter_chunk 源实体 id = metadata chapter_id 非块 id，
+            # 同章节多块命中只留最高分一条，杜绝相邻重复块刷屏，QA §P1-1）。
+            best: dict[tuple[EntityType, str], RetrievedEntity] = {}
+            for item in merged:
+                if item.entity_type is EntityType.CHAPTER_CHUNK:
+                    source_id = str(item.metadata.get("chapter_id") or item.entity_id.split(":")[0])
+                else:
+                    source_id = item.entity_id
+                key = (item.entity_type, source_id)
+                prev = best.get(key)
+                if prev is None or item.relevance_score > prev.relevance_score:
+                    best[key] = item
+            merged = list(best.values())
+            merged.sort(key=lambda item: item.relevance_score, reverse=True)
+            return merged[:top_k]
 
     def _delete_sync(self, entity_id: str, entity_type: EntityType) -> None:
         """同步删除单个实体（id 不存在时 chroma no-op）。"""
-        collection = self._get_collection(entity_type)
-        collection.delete(ids=[entity_id])
+        with self._lock:
+            collection = self._get_collection(entity_type)
+            collection.delete(ids=[entity_id])
 
     def _delete_project_sync(self, project_id: str) -> int:
         """同步删除项目全部向量: 遍历 5 个 collection，按 project_id 计数删除。"""
-        total = 0
-        for entity_type in EntityType:
-            collection = self._get_collection(entity_type)
-            fetched = collection.get(where={"project_id": project_id})
-            ids = fetched["ids"]
-            if ids:
-                collection.delete(ids=ids)
-                total += len(ids)
-        return total
+        with self._lock:
+            total = 0
+            for entity_type in EntityType:
+                collection = self._get_collection(entity_type)
+                fetched = collection.get(where={"project_id": project_id})
+                ids = fetched["ids"]
+                if ids:
+                    collection.delete(ids=ids)
+                    total += len(ids)
+            return total
 
     def _get_meta_collection(self) -> chromadb.Collection:
-        """懒初始化: 获取/创建 inkflow_meta collection（指纹存储，无检索语义）。"""
+        """懒初始化: 获取/创建 inkflow_meta collection（指纹存储，无检索语义）。
+
+        注意：调用方必须已持有 self._lock（#468），此处不重复加锁（Lock 不可重入）。
+        """
         if self._meta_collection is None:
             if self._client is None:
                 self._client = chromadb.PersistentClient(path=str(self._persist_dir))
@@ -297,28 +314,30 @@ class LangChainVectorStore:
 
     def _read_fingerprint_sync(self, project_id: str) -> dict | None:
         """同步读取项目指纹: get by id → json.loads(document)；无 doc → None。"""
-        collection = self._get_meta_collection()
-        result = collection.get(ids=[f"{self._FP_ID_PREFIX}{project_id}"])
-        documents = result.get("documents") or []
-        if not result["ids"] or not documents or not documents[0]:
-            return None
-        raw = documents[0]
-        if not isinstance(raw, str):
-            return None
-        parsed = json.loads(raw)
-        return parsed if isinstance(parsed, dict) else None
+        with self._lock:
+            collection = self._get_meta_collection()
+            result = collection.get(ids=[f"{self._FP_ID_PREFIX}{project_id}"])
+            documents = result.get("documents") or []
+            if not result["ids"] or not documents or not documents[0]:
+                return None
+            raw = documents[0]
+            if not isinstance(raw, str):
+                return None
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else None
 
     def _write_fingerprint_sync(self, project_id: str, fingerprint: dict, status: str) -> None:
         """同步写入/覆盖项目指纹（显式 1 维占位向量，meta 不参与语义检索）。"""
         doc = dict(fingerprint)
         doc["status"] = status
-        collection = self._get_meta_collection()
-        collection.upsert(
-            ids=[f"{self._FP_ID_PREFIX}{project_id}"],
-            documents=[json.dumps(doc, ensure_ascii=False)],
-            # chroma stub 对 embeddings 类型过严（实际运行时接受 list[list[float]]）
-            embeddings=cast(Any, [[0.0]]),
-        )
+        with self._lock:
+            collection = self._get_meta_collection()
+            collection.upsert(
+                ids=[f"{self._FP_ID_PREFIX}{project_id}"],
+                documents=[json.dumps(doc, ensure_ascii=False)],
+                # chroma stub 对 embeddings 类型过严（实际运行时接受 list[list[float]]）
+                embeddings=cast(Any, [[0.0]]),
+            )
 
     def _probe_collection_dimension_sync(self, project_id: str) -> int:
         """同步探测现存向量维度: 逐 collection 取首条向量长度，全部为空 → 0。
@@ -328,20 +347,21 @@ class LangChainVectorStore:
         其他项目数据锁定维度时，per-project 探测会误报 0 → 跳过重建 →
         upsert 撞旧维度崩（InvalidArgumentError 384 vs 768 实证）。
         """
-        for entity_type in EntityType:
-            collection = self._get_collection(entity_type)
-            result = collection.get(
-                include=["embeddings"],
-                limit=1,
-            )
-            ids = result["ids"]
-            if not ids:
-                continue
-            embeddings = result.get("embeddings")
-            if embeddings is not None and len(embeddings) > 0:
-                # get 返回形状为 (N, dim)，embeddings[0] 即首条向量
-                return len(embeddings[0])
-        return 0
+        with self._lock:
+            for entity_type in EntityType:
+                collection = self._get_collection(entity_type)
+                result = collection.get(
+                    include=["embeddings"],
+                    limit=1,
+                )
+                ids = result["ids"]
+                if not ids:
+                    continue
+                embeddings = result.get("embeddings")
+                if embeddings is not None and len(embeddings) > 0:
+                    # get 返回形状为 (N, dim)，embeddings[0] 即首条向量
+                    return len(embeddings[0])
+            return 0
 
     def _probe_embedding_dimension_sync(self) -> int:
         """同步探测 embeddings 实测维度（一次性缓存到实例属性，避免重复 embed）。"""
@@ -358,15 +378,16 @@ class LangChainVectorStore:
     ) -> int:
         """同步差集删除: 每 collection 现存 id 减源侧 id 后删除，返回删除总数。"""
         types = list(entity_types) if entity_types else list(EntityType)
-        total = 0
-        for entity_type in types:
-            collection = self._get_collection(entity_type)
-            ids = collection.get(where={"project_id": project_id})["ids"]
-            orphans = [entity_id for entity_id in ids if entity_id not in source_ids]
-            if orphans:
-                collection.delete(ids=orphans)
-                total += len(orphans)
-        return total
+        with self._lock:
+            total = 0
+            for entity_type in types:
+                collection = self._get_collection(entity_type)
+                ids = collection.get(where={"project_id": project_id})["ids"]
+                orphans = [entity_id for entity_id in ids if entity_id not in source_ids]
+                if orphans:
+                    collection.delete(ids=orphans)
+                    total += len(orphans)
+            return total
 
     def _list_entities_sync(
         self,
@@ -375,48 +396,50 @@ class LangChainVectorStore:
         where: dict[str, str | int | float] | None,
     ) -> list[tuple[str, dict[str, str | int | float]]]:
         """同步列出实体: chroma collection.get(where=project_id 合并可选过滤)。"""
-        collection = self._get_collection(entity_type)
-        if where:
-            # chroma where 只接受单一相等条件或操作符节点——project_id 隔离
-            # 与调用方过滤条件须以 $and 组合（直接合并字典会被 chroma 判为
-            # 「多操作符」抛 ValueError，2026-08-16 实测）
-            filter_: dict[str, object] = {"$and": [{"project_id": project_id}, where]}
-        else:
-            filter_ = {"project_id": project_id}
-        result = collection.get(
-            where=cast(Any, filter_),
-            include=["metadatas"],
-        )
-        ids = result["ids"] or []
-        metadatas = result["metadatas"] or []
-        out: list[tuple[str, dict[str, str | int | float]]] = []
-        for entity_id, md in zip(ids, metadatas, strict=True):
-            out.append((entity_id, cast(dict[str, str | int | float], md or {})))
-        return out
+        with self._lock:
+            collection = self._get_collection(entity_type)
+            if where:
+                # chroma where 只接受单一相等条件或操作符节点——project_id 隔离
+                # 与调用方过滤条件须以 $and 组合（直接合并字典会被 chroma 判为
+                # 「多操作符」抛 ValueError，2026-08-16 实测）
+                filter_: dict[str, object] = {"$and": [{"project_id": project_id}, where]}
+            else:
+                filter_ = {"project_id": project_id}
+            result = collection.get(
+                where=cast(Any, filter_),
+                include=["metadatas"],
+            )
+            ids = result["ids"] or []
+            metadatas = result["metadatas"] or []
+            out: list[tuple[str, dict[str, str | int | float]]] = []
+            for entity_id, md in zip(ids, metadatas, strict=True):
+                out.append((entity_id, cast(dict[str, str | int | float], md or {})))
+            return out
 
     def _recreate_collections_sync(self, entity_types: list[EntityType] | None) -> Path:
         """同步重建: 备份持久化目录 → 删除重建实体 collection → 返回备份路径。"""
         types = list(entity_types) if entity_types else list(EntityType)
-        backup_path = self._persist_dir
-        if self._persist_dir.is_dir():
-            # 备份目录名带唯一后缀：同秒两次重建（双向维度切换）会撞名
-            # （2026-08-12 真实冒烟 FileExistsError 实证）
-            base = f"{self._persist_dir}.bak-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            backup_path = Path(base)
-            suffix = 1
-            while backup_path.exists():
-                backup_path = Path(f"{base}-{suffix}")
-                suffix += 1
-            shutil.copytree(str(self._persist_dir), str(backup_path))
-            logger.info("向量集合重建前备份完成: {} -> {}", self._persist_dir, backup_path)
-        if self._client is not None:
-            existing = {collection.name for collection in self._client.list_collections()}
+        with self._lock:
+            backup_path = self._persist_dir
+            if self._persist_dir.is_dir():
+                # 备份目录名带唯一后缀：同秒两次重建（双向维度切换）会撞名
+                # （2026-08-12 真实冒烟 FileExistsError 实证）
+                base = f"{self._persist_dir}.bak-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                backup_path = Path(base)
+                suffix = 1
+                while backup_path.exists():
+                    backup_path = Path(f"{base}-{suffix}")
+                    suffix += 1
+                shutil.copytree(str(self._persist_dir), str(backup_path))
+                logger.info("向量集合重建前备份完成: {} -> {}", self._persist_dir, backup_path)
+            if self._client is not None:
+                existing = {collection.name for collection in self._client.list_collections()}
+                for entity_type in types:
+                    # 必须先清缓存再删除，避免缓存引用已删除的旧 collection
+                    self._collections.pop(entity_type, None)
+                    name = f"inkflow_{entity_type.value}"
+                    if name in existing:
+                        self._client.delete_collection(name=name)
             for entity_type in types:
-                # 必须先清缓存再删除，避免缓存引用已删除的旧 collection
-                self._collections.pop(entity_type, None)
-                name = f"inkflow_{entity_type.value}"
-                if name in existing:
-                    self._client.delete_collection(name=name)
-        for entity_type in types:
-            self._get_collection(entity_type)
-        return backup_path
+                self._get_collection(entity_type)
+            return backup_path
