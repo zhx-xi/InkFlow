@@ -1,10 +1,12 @@
 # F48: 知识图谱（knowledge-graph）— 功能规格
 
-> **Spec 版本**: 1.0 | **日期**: 2026-08-19 | **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
+> **Spec 版本**: 1.1 | **日期**: 2026-08-19 | **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
+>
+> **Spec 变更**（1.0 → 1.1，2026-08-19 拍板）：Q1-Q3 全拍板——**Q1=A**（图谱页允许建角色↔角色关系写 knowledge_relations，聚合去重；C 迁移合并建 #495 挂 1.0.0）；**Q2=A**（图谱渲染定稿 @xyflow/react）；**Q3=A**（提取运行记录不保留；追加需求「统一日志页」建 #496 挂 1.0.0）。同步：§1.2 边界、§2.1 业务规则、§5.2 聚合、§5.4 前端、§8 文件结构、§10 不在范围、§11 依赖、§12 决策表（新增决策 9-11）、§13 验收、待澄清节全标 ✅。
 >
 > **所属阶段**: 0.10.1（UI/产品修复批，D3 前半「知识图谱：关系模型 + 可视化 + 手动修改」，估算 5-8 人天）
 >
-> **关联 Issues**: [#478](https://github.com/zhx-xi/InkFlow/issues/478)（本模块）· #480（知识图谱检索页，**另 issue，依赖本模块**）· #479（定时任务 AI/规则提取，**本 spec §5.5 预留节，挂靠方**）· #174（F36 地图，实体来源之一）· #389（世界观分类，关联登记）
+> **关联 Issues**: [#478](https://github.com/zhx-xi/InkFlow/issues/478)（本模块）· #480（知识图谱检索页，**另 issue，依赖本模块**）· #479（定时任务 AI/规则提取，**本 spec §5.5 预留节，挂靠方**）· #495（character_relations 迁移合并，**Q1-C 后续重构，1.0.0**）· #496（统一日志页，**Q3 追加需求，1.0.0**）· #174（F36 地图，实体来源之一）· #389（世界观分类，关联登记）
 >
 > **依赖**: ✅ F1（projects 表 + ProjectRepositoryProtocol）· ✅ F9（characters + character_relations，图谱合并来源 + 实体校验）· ✅ F10（world_settings 实体校验）· ✅ F11（outlines 实体校验）· ✅ F12（timeline_events 实体校验）· ✅ F13（foreshadowings 实体校验）· ✅ F36/F43 P2（maps + map_pins 实体校验）· ✅ F14（extractions/runs，原 rag tab 数据源——本模块改造其展示面；#479 定时提取挂靠 F14 提取服务）
 >
@@ -46,10 +48,10 @@ F48 增量:    新表 knowledge_relations（通用跨实体关系，含 source �
 ### 1.2 边界声明
 
 - **不做 entity_relations 之外的冗余**：关系只存 `knowledge_relations`（+ 既有 `character_relations` 只读合并），不在角色/世界观等实体表加关系字段（避免「JSON 嵌入 + 关系表」双份真相——F9 §1 同款原则）
-- **character_relations 保留不动**（F9 语义零破坏）：角色页关系管理继续写 character_relations；图谱页读取时合并显示；两表关系是否允许并存（图谱页也可建角色↔角色）见待澄清 Q1
+- **character_relations 保留不动，双轨写入（Q1=A 拍板）**：角色页关系管理继续写 character_relations；图谱页也可建角色↔角色关系（写 knowledge_relations）；图谱聚合合并两表 + 同键去重（§5.2）；长期迁移合并建 #495（1.0.0，Q1-C 后续重构）
 - **不做定时/自动提取**：#479 另 issue（本 spec §5.5 预留接口与数据面，不实现提取逻辑）
 - **不做检索页**：#480 另 issue（RAG 语义检索/向量检索 UI 承接）
-- **不做图谱布局算法自研**：可视化渲染选型见待澄清 Q2（推荐 @xyflow/react）
+- **不做图谱布局算法自研**：渲染选型 @xyflow/react（Q2=A 拍板，§5.4/§12 决策 7）
 - **不做实体详情编辑**：图谱节点点击详情 = 只读摘要 + 跳转对应实体页（角色/世界观/大纲/时间线/伏笔/地图编辑均在各自既有页面）
 - **删除语义**：`knowledge_relations` 为**新表，无 is_deleted 列**——删除 = **真删**（同 F36 拍板 D1=B/D7；普通实体删除收敛真删，归档仅会话保留，#211 关联登记）
 
@@ -78,6 +80,7 @@ F48 增量:    新表 knowledge_relations（通用跨实体关系，含 source �
 1. **实体类型枚举**（EntityType）：`character`（characters 表）/ `world`（world_settings 表）/ `outline`（outlines 表）/ `timeline`（timeline_events 表）/ `foreshadow`（foreshadowings 表）/ `map_pin`（map_pins 表）——与六分类 tab 对齐（rag 除外，rag 是检索面非实体）
 2. **跨实体无 DB FK（D2）**：source_id/target_id 无 ForeignKey 约束（跨 6 张表无法单列 FK）——实体存在性 + 同项目校验由**服务层显式执行**（§5.1 校验链），ORM FK 仅 project_id
 3. **禁止自环**：`source_type == target_type AND source_id == target_id` → 422「关系两端不能是同一实体」（自环在图谱无意义且徒增噪音——F9 §2.3 同款规则）
+3b. **允许角色↔角色（Q1=A 拍板）**：`character→character` 是合法关系（图谱页可建，写 knowledge_relations）——与 F9 character_relations 并存为双轨写入，图谱聚合去重收敛（§5.2）；长期迁移合并见 #495
 4. **唯一约束**：`(project_id, source_type, source_id, target_type, target_id, relation_type)` 全唯一索引（v1.0 手动创建防重复；同键重复创建 → 422「该关系已存在」；#479 AI 提取将按此键做幂等去重）
 5. **source 字段（#479 预留）**：v1.0 手动创建恒为 `manual`；`ai` 值保留给 #479 定时提取写入（§5.5）——v1.0 不限制读取（图谱聚合查询含全部 source）
 6. **实体硬删 → 关系级联删除（D3）**：各实体真删（#211 语义）后，其作为 source/target 的 knowledge_relations 行须删除——服务层/项目删除钩子显式清理（生产连接 FK 不生效，D10=b 先例，§5.3）
@@ -424,16 +427,16 @@ nodes:  = 六类实体全部条目（characters + world_settings + outlines + ti
           + foreshadowings + map_pins，按项目过滤，每表全量返回）
           ——实体条目即使无边也作为节点显示（图谱完整视图，用户可从此建关系）
 edges:  = knowledge_relations（本项目全部，含 source=ai 预留）
-        ∪ character_relations（本项目全部，角色间边只读合并，Q1 拍板后确认）
+        ∪ character_relations（本项目全部，角色间边只读合并——Q1=A 拍板定稿）
 去重:   同键（source_type+source_id+target_type+target_id+relation_type）在两表都出现时
         → 显示 knowledge_relations 行（source_table="knowledge_relations"），character_relations 行折叠
-        （去重规则：Q1=A 时 character_relations 键转成 entity 六元组后比对；Q1=B 时无重叠无需去重）
+        （Q1=A 定稿：character_relations 键转成 entity 六元组（type 恒 character）后比对去重）
 ```
 
 **实现要点**：
 
 - 节点 ID 格式 `"<entity_type>:<entity_uuid>"`（跨表唯一）；图谱边引用节点 ID（GraphNode.id）
-- 查询 = 各实体 repo `list_by_project`（F9-F13/F36 既有方法，只读复用）+ knowledge_relations repo `list_by_project` + character_relations repo `list_by_project`（Q1 后确认）；服务层组装 GraphNode/GraphEdge
+- 查询 = 各实体 repo `list_by_project`（F9-F13/F36 既有方法，只读复用）+ knowledge_relations repo `list_by_project` + character_relations repo `list_by_project`（Q1=A 定稿：deps 注入 CharacterRepositoryProtocol 合并读取）；服务层组装 GraphNode/GraphEdge
 - **性能**：单项目实体量级（本地个人项目，数百~数千条目）——列表查询即可，不做图数据库/缓存（F36 §2.2 同款「本地量级」论证）
 - **孤立边防御**：knowledge_relations 中指向已不存在实体的行（实体硬删清理遗漏）——图谱查询时**跳过该边**（不 500），并记 loguru warning（与 F36 场景 6 同款容错）
 
@@ -461,7 +464,7 @@ tab 改造:   CATS 中 key='rag' → key='knowledge'（labelKey nav.lib.rag → 
             endpoint 从 /extractions/runs → 图谱画布组件（KnowledgeGraphCanvas）
             PATCH/DELETE_ENDPOINTS 继续排除 knowledge（图谱关系编辑走画布内交互，非列表行编辑）
             空态 CTA 从 navigate('/writing') → 图谱建关系引导（无实体时引导去各实体页创建）
-图谱画布:   @xyflow/react（Q2 拍板后确认）——节点=实体（类型着色 + 图标），边=关系（label=relation_type，有向箭头）
+图谱画布:   @xyflow/react（Q2=A 拍板定稿）——节点=实体（类型着色 + 图标），边=关系（label=relation_type，有向箭头）
 交互:       拖拽节点（布局自由排布）/ 滚轮缩放 / 点击节点 → 详情抽屉（只读摘要 + 「去编辑」跳转实体页）
             点击边 → 详情（关系类型/描述/来源）+ 编辑/删除按钮
             工具栏「新建关系」→ 表单（起点类型+搜索实体 / 关系类型 / 终点类型+搜索实体 / 描述）
@@ -503,7 +506,7 @@ tab 改造:   CATS 中 key='rag' → key='knowledge'（labelKey nav.lib.rag → 
 ## 6. 组织规则
 
 - **目录归属**：新模块 `domain/models/knowledge_graph.py` + `domain/ports/knowledge_graph_errors.py` + `domain/ports/knowledge_relation_repository.py` + `domain/services/knowledge_graph_service.py` + `infrastructure/database/models|repositories/knowledge_graph*` + `api/routers/knowledge_graph.py` + `cli/commands/knowledge_graph.py` + 前端 `components/knowledge-graph/`——镜像 F9/F36 骨架（实体 + 仓储 + service + router + CLI + 前端组件）
-- **deps 装配**：`api/deps.py` 新增 `get_knowledge_graph_service(db)`——注入 SQLiteKnowledgeRelationRepository + 六类实体 repo（只读校验）+ ProjectRepositoryProtocol（项目硬删钩子）+ CharacterRepositoryProtocol（character_relations 合并读取，Q1 拍板后确认）
+- **deps 装配**：`api/deps.py` 新增 `get_knowledge_graph_service(db)`——注入 SQLiteKnowledgeRelationRepository + 六类实体 repo（只读校验）+ ProjectRepositoryProtocol（项目硬删钩子）+ CharacterRepositoryProtocol（character_relations 合并读取，Q1=A 拍板定稿）
 - **跨实体校验复用**：实体 repo 只读调用（`get` 方法），**不 import 各实体 service**（防循环依赖——knowledge_graph_service 只依赖 repository 协议层）
 - **日志**：loguru（创建/删除/孤立边 warning/清理回调均记，F9/F10 风格）
 - **前端组件归属**：`components/knowledge-graph/` 新目录（KnowledgeGraphCanvas/RelationForm/RelationList/EntityPicker）；library.tsx rag tab 改造 MODIFY；i18n 文案 `nav.lib.knowledge` + `lib.knowledge.*`
@@ -560,7 +563,7 @@ tab 改造:   CATS 中 key='rag' → key='knowledge'（labelKey nav.lib.rag → 
 | `frontend/packages/renderer/src/pages/library.tsx` | **MODIFY** | rag tab → knowledge tab（CATS key/labelKey/endpoint + 图谱视图挂载 + 空态引导） |
 | `frontend/packages/renderer/src/i18n/*` | **MODIFY** | `nav.lib.knowledge` + `lib.knowledge.*` 文案（zh 主，en 同步） |
 | `frontend/packages/renderer/src/pages/library-kg.test.tsx` | **CREATE** | 前端测试（图谱 tab 渲染/空态/建关系交互——测试文件命名同既有 library-p*.test.tsx 惯例） |
-| `frontend/package.json`（或 renderer package） | **MODIFY** | 新增 `@xyflow/react` 依赖（Q2 拍板后确认） |
+| `frontend/package.json`（或 renderer package） | **MODIFY** | 新增 `@xyflow/react` 依赖（Q2=A 拍板定稿） |
 
 > **⚠️ CI 盲区防范（Issue #59/#61 教训）**：`tests/cli/test_cli_knowledge_graph.py` 是**新文件**，需显式加入 ci.yml `integration-cli-backend` job 文件列表（Windows pytest 不展开 glob）；前端新测试文件确认被现有 vitest 收集（renderer 目录通配，实现期核对）。
 > **⚠️ 900 行护栏（#88）**：`test_knowledge_graph_service.py` 若超 900 行按 class 拆分（F43 P2 先例）。
@@ -608,13 +611,14 @@ CLI:             knowledge 组命令 + graph 输出                             
 |----|------|------|
 | 定时任务 AI/规则提取关系 | 用户拍板 #479 另 issue（本模块仅预留数据面 + 写入端口，§5.5） | #479（0.10.1） |
 | 知识图谱检索页（RAG 语义检索/向量检索 UI） | 用户拍板 #480 另 issue（原 rag tab 检索能力承接） | #480（0.10.1） |
-| character_relations 迁移/合并进 knowledge_relations | 破坏 F9 已交付 API/CLI/GUI；图谱读取合并已满足展示 | 永不（Q1 拍板确认） |
+| character_relations 迁移/合并进 knowledge_relations | Q1=A 拍板先双轨 + 聚合去重；迁移是破坏性重构 | **#495**（1.0.0，Q1-C 后续重构） |
+| 统一日志页（内核/GUI/AI 日志分类展示与查询） | Q3=A 追加需求：提取运行记录不保留在图谱 tab；运行日志统一日志页是独立功能 | **#496**（1.0.0） |
 | 实体详情编辑（图谱内直接改角色/世界观内容） | 各实体编辑在既有页面闭环（图谱节点详情 = 只读摘要 + 跳转） | 后续 |
 | 图谱布局算法自研/力导向自动布局调优 | 选型 @xyflow/react 自带布局；深度调优无场景 | 后续 |
 | 关系类型受控词表/规则引擎 | 自由文本 v1.0 可用；词表归 #479 规则提取 | #479 |
 | 图谱导出/分享 | 本地单机架构（ADR-030）无分享场景 | 永不 |
 | 图谱节点隐藏/筛选（按类型过滤显示） | 实体量级小，v1.0 全量显示；前端可后续加 | 后续 |
-| F14 extraction_runs 列表迁移 | 原 rag tab 数据源；提取运行记录无独立展示面（#480 检索页或后续决定） | #480/后续 |
+| F14 extraction_runs 列表展示 | Q3=A 拍板不保留在图谱 tab；是否并入统一日志页由 #496 决定 | #496（1.0.0） |
 | 多项目关系共享 | 本地单机 + 强 project_id 隔离（F9/F36 同款） | 永不 |
 
 ---
@@ -636,6 +640,8 @@ F48 依赖:
 F48 被依赖:
   #479（定时任务 AI/规则提取）— 依赖 knowledge_relations 表结构 + source 列 + bulk 写入端口（§5.5）
   #480（检索页）— 依赖 rag tab 改造后的定位（#480 承接检索 UI）
+  #495（Q1-C 迁移合并）— 依赖 knowledge_relations 表 + 聚合去重逻辑（合入稳定后动 F9 写入面）
+  #496（统一日志页）— 可选依赖 F14 extraction_runs 数据（#496 决定是否并入）
 ```
 
 **编号口径声明**：本模块为 0.10.1 UI/产品修复批 D3 前半（#478），「F48」编号承接（本地 specs/ 最高 f47，F48 未占用——2026-08-19 核对）。模块类型谱系 **第 21 变体「实体关系图谱型」**（F38=第 18 变体最新无冲突基线；F20/F46 双占第 19、F44/F45 双占第 20——冲突以 ADR-019 v7+ 重排为准）。
@@ -654,6 +660,9 @@ F48 被依赖:
 | 6 | **source 列预留 #479** | manual/ai 枚举 + 唯一索引 = AI 幂等去重键；bulk_create_relations(project_id, relations, source=ai) 写入端口 | 数据面先行（用户拍板「关系来源：手动创建 + 预留 #479」）；#479 实现零 schema 变更 | #479 时再加列（F48 已发布，加列迁移成本） |
 | 7 | **图谱可视化选型 @xyflow/react** | React Flow v12（37.9K stars，MIT，React 19 兼容）——节点/边渲染 + 拖拽/缩放/自定义节点开箱即用 | 最成熟 React 图可视化库；零布局自研；社区活跃（xyflow 官方维护） | 手写 SVG/Canvas（拖拽/缩放/布局全自研，工作量翻倍）；antv G6（重依赖，非 React 原生）；d3-force（无现成交互） |
 | 8 | **rag tab 改造为知识图谱 tab** | CATS key rag→knowledge；图谱画布 + 关系列表；PATCH/DELETE 继续排除 | 用户拍板 D3-2「知识库 RAG → 知识图谱」；RAG 检索能力 #480 承接 | 新增第 7 个 tab（六分类 + 图谱并存——tab 膨胀，且 rag 检索面与图谱混放） |
+| 9 | **Q1=A 拍板：允许图谱建角色↔角色关系（2026-08-19）** | character→character 合法（写 knowledge_relations）；角色页 F9 保留（写 character_relations）；图谱聚合合并 + 同键去重（§5.2） | 图谱手动编辑闭环完整；F9 零破坏；个人项目可接受双轨 | 方案 B（图谱禁止角色关系——编辑流断裂，**用户否决**）；方案 C（迁移合并——破坏性重构，**用户否决**，建 #495 挂 1.0.0 后续做） |
+| 10 | **Q2=A 拍板：图谱渲染定稿 @xyflow/react（2026-08-19）** | React Flow v12（37.9K stars，MIT，React 19 兼容）；拖拽/缩放/自定义节点开箱即用 | 工程化最小；React 生态图可视化事实标准 | 手写 SVG/Canvas（+2-3 人天，**用户否决**）；antv G6/d3-force（**用户否决**） |
+| 11 | **Q3=A 拍板：提取运行记录不保留 + 统一日志页（2026-08-19）** | 图谱 tab 不保留 extractions/runs 展示；运行日志（内核/GUI/AI）统一日志页建 #496 挂 1.0.0 | 图谱 tab 聚焦关系；runs 是过程日志非日常查看对象；日志页独立功能后续排期 | 方案 B（图谱 tab 内嵌提取记录区——三视图拥挤，**用户否决**）；方案 C（等 #480——推迟 D3 落地，**用户否决**） |
 
 ---
 
@@ -662,11 +671,11 @@ F48 被依赖:
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
 | M1 | 数据模型 + 建表（create_all 自动，无 is_deleted） | `pytest backend/tests/unit/test_knowledge_relation_repo.py -v` 全绿；新库表存在（PRAGMA table_list）；knowledge_relations 无 is_deleted 列 |
-| M2 | 服务校验链（六元组/实体存在/同项目/自环/同键冲突） | `pytest backend/tests/unit/test_knowledge_graph_service.py -v` 全绿（Q1 拍板后补角色↔角色分支用例） |
+| M2 | 服务校验链（六元组/实体存在/同项目/自环/同键冲突/角色↔角色合法） | `pytest backend/tests/unit/test_knowledge_graph_service.py -v` 全绿（Q1=A 定稿：character→character 合法分支 + 双轨聚合去重用例） |
 | M3 | API 契约（CRUD + 图谱聚合 + 错误映射） | `pytest backend/tests/unit/test_knowledge_graph_api.py -v` 全绿 |
 | M4 | 图谱聚合合并 + 去重 + 孤立边防御 + 清理回调 | service 聚合测试全绿（合并 character_relations/去重/孤立边跳过/cleanup_for_entity 回调） |
 | M5 | CLI knowledge 组 | `pytest ../tests/cli/test_cli_knowledge_graph.py -v` 全绿（**且已追加 ci.yml integration-cli-backend job**） |
-| M6 | 前端知识图谱 tab（画布/交互/增删改） | `frontend` vitest library-kg.test.tsx 全绿；手工验证：切到知识图谱 tab → 画布渲染节点/边 → 拖拽/缩放 → 点击边详情 → 新建关系 → 删除 |
+| M6 | 前端知识图谱 tab（画布/交互/增删改） | `frontend` vitest library-kg.test.tsx 全绿（@xyflow/react 渲染，Q2=A 定稿）；手工验证：切到知识图谱 tab → 画布渲染节点/边 → 拖拽/缩放 → 点击边详情 → 新建关系 → 删除 |
 | M7 | 手工验证闭环 | 建角色+世界观 → 图谱建「属于」关系 → 图谱显示 → 角色页建角色关系 → 图谱合并显示 → 删关系 → 删实体 → 关系被清理（无悬空边） |
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest` 全绿；ADR-027 门槛（先跑 coverage-backend 等价命令实测留 buffer）；`uv run ruff check src/ tests/unit/ ../tests/` + mypy 通过；前端 `pnpm lint` + `tsc --noEmit` |
 
@@ -678,10 +687,10 @@ F48 被依赖:
 
 | # | 问题 | 影响 | 结论 |
 |---|------|------|------|
-| Q1 | **角色↔角色关系的图谱写入归属**：图谱页是否允许创建角色间关系（写 knowledge_relations）？选项 A（推荐）：允许——图谱页建角色间关系写 knowledge_relations，图谱聚合去重显示（与 F9 character_relations 同键时 knowledge 优先），角色页 F9 关系管理保留不变；选项 B：禁止——图谱页角色间关系只读（详情引导去角色页管理），knowledge_relations 校验拒绝 character→character；选项 C：迁移——F9 写入改为 knowledge_relations（破坏性，已否决） | API 校验规则 + 图谱聚合去重逻辑 + F9 边界 | 🔲 待拍板（推荐 **A**：图谱手动编辑闭环完整；双轨写入口用「图谱页=knowledge / 角色页=character_relations」+ 聚合去重收敛展示，自用项目可接受） |
-| Q2 | **图谱前端渲染方案**：选项 A（推荐）：引入 `@xyflow/react`（React Flow v12，37.9K stars，MIT，React 19 兼容）——节点/边渲染 + 拖拽/缩放/自定义节点开箱即用，工作量最小；选项 B：手写 SVG/Canvas 图渲染（零新依赖，但拖拽/缩放/布局全自研，估算 +2-3 人天）；选项 C：antv G6 / d3-force 等其他库 | 依赖面 + 工作量 + 交互完整度 | 🔲 待拍板（推荐 **A**） |
-| Q3 | **原 rag tab 的提取运行记录列表去向**：改造为知识图谱 tab 后，extractions/runs 列表不再有独立展示面。选项 A（推荐）：不保留——提取运行记录仅 CLI/API 可见（#480 检索页承接检索，不承接 runs 列表）；选项 B：图谱 tab 内保留折叠式「提取记录」区（tab 内双视图：图谱/关系列表/提取记录）；选项 C：等 #480 检索页一起决定 | 前端 tab 结构 + 原 rag 数据可见性 | 🔲 待拍板（推荐 **A**：图谱 tab 聚焦关系；runs 列表无高频使用场景，避免 tab 内三视图膨胀） |
+| Q1 | **角色↔角色关系的图谱写入归属**：图谱页是否允许创建角色间关系（写 knowledge_relations）？选项 A（推荐）：允许——图谱页建角色间关系写 knowledge_relations，图谱聚合去重显示（与 F9 character_relations 同键时 knowledge 优先），角色页 F9 关系管理保留不变；选项 B：禁止——图谱页角色间关系只读（详情引导去角色页管理），knowledge_relations 校验拒绝 character→character；选项 C：迁移——F9 写入改为 knowledge_relations（破坏性） | API 校验规则 + 图谱聚合去重逻辑 + F9 边界 | ✅ 已确认（2026-08-19 用户拍板：**选项 A**）——§2.1 规则 3b / §5.2 聚合 / §8 deps 已定稿；C 建 **#495**（1.0.0）后续重构 |
+| Q2 | **图谱前端渲染方案**：选项 A（推荐）：引入 `@xyflow/react`（React Flow v12，37.9K stars，MIT，React 19 兼容）——节点/边渲染 + 拖拽/缩放/自定义节点开箱即用，工作量最小；选项 B：手写 SVG/Canvas 图渲染（零新依赖，但拖拽/缩放/布局全自研，估算 +2-3 人天）；选项 C：antv G6 / d3-force 等其他库 | 依赖面 + 工作量 + 交互完整度 | ✅ 已确认（2026-08-19 用户拍板：**选项 A**）——§5.4 画布 / §8 package.json / §13 M6 已定稿 |
+| Q3 | **原 rag tab 的提取运行记录列表去向**：改造为知识图谱 tab 后，extractions/runs 列表不再有独立展示面。选项 A（推荐）：不保留——提取运行记录仅 CLI/API 可见（#480 检索页承接检索，不承接 runs 列表）；选项 B：图谱 tab 内保留折叠式「提取记录」区（tab 内双视图：图谱/关系列表/提取记录）；选项 C：等 #480 检索页一起决定 | 前端 tab 结构 + 原 rag 数据可见性 | ✅ 已确认（2026-08-19 用户拍板：**选项 A** + 追加「统一日志页」需求）——§5.4 / §10 已定稿；统一日志页（内核/GUI/AI 日志分类展示查询）建 **#496**（1.0.0） |
 
 ---
 
-> **所有里程碑验收以本节 M1-M8 为准**；Q1-Q3 拍板后正文按拍板结果修订（§5.1 校验链/§5.2 聚合/§5.4 前端/§8 文件结构/§12 决策表联动），Q 条目留痕 ✅ 不删除。
+> **所有里程碑验收以本节 M1-M8 为准**；Q1-Q3 已全拍板（2026-08-19，✅ 留痕），正文已按拍板结果修订（§2.1 规则 3b / §5.2 聚合 / §5.4 前端 / §8 文件结构 / §10 / §11 / §12 决策 9-11 / §13）——S2 实现以 v1.1 为唯一真相来源。
