@@ -6,7 +6,7 @@
 import { create } from 'zustand';
 import { apiFetch, errorMessage } from '../api/client';
 
-/** Agent 实体（对齐后端 12 字段，model_dump(mode=json)） */
+/** Agent 实体（对齐后端 13 字段，model_dump(mode=json)） */
 export interface AgentEntity {
   id: number;
   name: string;
@@ -18,6 +18,8 @@ export interface AgentEntity {
   model_override: string | null;
   temperature_override: number | null;
   builtin: boolean;
+  /** #473 R1：内置链角色键映射（architect/writer/auditor/reviser）；非链内置/自定义为 null */
+  role_key?: string | null;
   created_at: string | null;
   updated_at: string | null;
 }

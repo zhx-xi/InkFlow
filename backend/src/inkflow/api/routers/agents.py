@@ -30,7 +30,10 @@ from inkflow.domain.ports.agent_errors import (
     AgentNotFoundError,
     AgentServiceError,
 )
-from inkflow.domain.services.agent_entity_service import AgentEntityService
+from inkflow.domain.services.agent_entity_service import (
+    BUILTIN_AGENT_SPECS,
+    AgentEntityService,
+)
 from inkflow.infrastructure.agent.tools import TOOL_REGISTRY
 from inkflow.infrastructure.database.repositories.agent_repo import (
     SQLiteAgentRepository,
@@ -73,9 +76,26 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
 
+def _role_key_of(agent: Agent) -> str | None:
+    """内置 Agent 的链角色键映射（#473 R1）；自定义/未命中 → None."""
+    if not agent.builtin:
+        return None
+    for spec in BUILTIN_AGENT_SPECS:
+        if spec["name"] == agent.name:
+            return spec["role_key"]
+    return None
+
+
 def _to_response(agent: Agent) -> dict:
-    """Agent 实体 → 响应字典（12 字段全集，id 原样 int）."""
-    return agent.model_dump(mode="json")
+    """Agent 实体 → 响应字典（12 字段全集 + role_key 透出，id 原样 int）.
+
+    role_key（#473 R1）：内置 Agent 按 name 反查 BUILTIN_AGENT_SPECS 的
+    链角色键映射；非内置/未命中 → None（前端 AgentChainCard 按 role_key
+    派生内置角色行，不再 hardcode 名称/图标/描述）。
+    """
+    resp = agent.model_dump(mode="json")
+    resp["role_key"] = _role_key_of(agent)
+    return resp
 
 
 @router.get("")

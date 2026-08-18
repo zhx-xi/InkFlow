@@ -135,6 +135,13 @@
     与本文件被测对象不同域）。agent-templates/skills 等端点不在本文件覆盖
     范围（skills 端点契约属 F39 并行批 tests/api/test_skills_api.py）。
 
+17. 【role_key 透出（#473 R1，角色集合单一来源前置）】内置 Agent 响应含
+    role_key 字段（str | None）——builtin=True 且名字匹配 BUILTIN_AGENT_SPECS
+    出厂表 → 链角色键映射（架构师=architect、写手=writer、审校员=auditor、
+    修订师=reviser）；非链内置（世界观顾问/润色师）与自定义 Agent → null。
+    列表端点与详情端点都透出（前端 AgentChainCard 按 role_key 派生角色行，
+    不再 hardcode 名称/图标/描述；config.agent_* 持久化契约不变）。
+
 ════════════════════════════════════════════════════════════════════
 RED 阶段预期：`inkflow.api.routers.agents` 模块不存在 → 本文件【收集期
 ModuleNotFoundError】collected 0 items（pytest exit 2；router 未注册，请求
@@ -457,7 +464,6 @@ class TestCreateAgent:
         assert data["model_override"] == "zhipu/glm-4.5"
         assert data["temperature_override"] == 0.6
         assert data["builtin"] is False  # 新建恒为自定义 Agent（#11）
-
         # 集成断言：按 name 回查落库，id 与响应一致
         from inkflow.infrastructure.database.models.agent import AgentORM
 
@@ -894,3 +900,81 @@ class TestAgentEntityServiceUpdateEdges:
         with pytest.raises(AgentNotFoundError, match="不存在"):
             await svc.update(1, AgentUpdate(description="d2"))
         agent_repo.update.assert_awaited_once()
+
+
+# ── #473 R1 role_key 透出（角色集合单一来源前置）──
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+class TestRoleKeyExposure:
+    """内置 Agent role_key 透出契约（#473 R1，角色集合单一来源前置）。
+
+    设计假设 #17：内置 Agent 响应含 role_key 字段（str | None）——builtin=True
+    且名字匹配 BUILTIN_AGENT_SPECS 出厂表 → 链角色键映射（架构师=architect、
+    写手=writer、审校员=auditor、修订师=reviser）；非链内置（世界观顾问/
+    润色师）与自定义 Agent → null。列表端点与详情端点都透出（前端
+    AgentChainCard 按 role_key 派生角色行，不再 hardcode 名称/图标/描述）。
+    """
+
+    async def test_list_builtin_chain_roles_expose_role_key(
+        self, client, db_session, override_get_db
+    ):
+        """seed 4 链内置（架构师/写手/审校员/修订师）→ 列表透出 role_key 映射。"""
+        for name in ("架构师", "写手", "审校员", "修订师"):
+            await _seed_agent(db_session, name=name, builtin=True)
+
+        resp = await client.get(ENDPOINT)
+        assert resp.status_code == 200
+        by_name = {it["name"]: it for it in resp.json()["items"]}
+        for name, role_key in (
+            ("架构师", "architect"),
+            ("写手", "writer"),
+            ("审校员", "auditor"),
+            ("修订师", "reviser"),
+        ):
+            assert by_name[name].get("role_key") == role_key, f"{name} role_key 映射错误"
+
+    async def test_list_non_chain_builtin_role_key_none(
+        self, client, db_session, override_get_db
+    ):
+        """非链内置（世界观顾问/润色师）→ role_key 为 None（#484 才动态化）。"""
+        for name in ("世界观顾问", "润色师"):
+            await _seed_agent(db_session, name=name, builtin=True)
+
+        resp = await client.get(ENDPOINT)
+        assert resp.status_code == 200
+        by_name = {it["name"]: it for it in resp.json()["items"]}
+        # sentinel 区分「字段缺失」vs「值为 null」——缺失时 get 返回 'MISSING' 才 FAIL
+        # （防确认型假绿：字段未透出时「is None」断言天然通过）
+        assert by_name["世界观顾问"].get("role_key", "MISSING") is None
+        assert by_name["润色师"].get("role_key", "MISSING") is None
+
+    async def test_list_custom_agent_role_key_none(
+        self, client, db_session, override_get_db
+    ):
+        """自定义 Agent → role_key 为 None（非内置无链映射）。"""
+        await _seed_agent(db_session, name="自定义甲")
+
+        resp = await client.get(ENDPOINT)
+        assert resp.status_code == 200
+        item = resp.json()["items"][0]
+        assert item["builtin"] is False
+        # sentinel 区分「字段缺失」vs「值为 null」（防确认型假绿）
+        assert item.get("role_key", "MISSING") is None
+
+    async def test_detail_exposes_role_key(
+        self, client, db_session, override_get_db
+    ):
+        """详情端点同样透出 role_key（内置链角色 → 映射；自定义 → None）。"""
+        builtin_row = await _seed_agent(db_session, name="架构师", builtin=True)
+        custom_row = await _seed_agent(db_session, name="自定义乙")
+
+        resp = await client.get(f"{ENDPOINT}/{builtin_row.id}")
+        assert resp.status_code == 200
+        assert resp.json().get("role_key") == "architect"
+
+        resp = await client.get(f"{ENDPOINT}/{custom_row.id}")
+        assert resp.status_code == 200
+        # sentinel 区分「字段缺失」vs「值为 null」（防确认型假绿）
+        assert resp.json().get("role_key", "MISSING") is None

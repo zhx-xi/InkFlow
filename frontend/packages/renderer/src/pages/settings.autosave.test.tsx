@@ -198,6 +198,17 @@ vi.mock('../components/TemplateDialog', async () => {
 });
 
 const apiFetchMock = vi.mocked(apiFetch);
+
+/** #473 R1：后端 BUILTIN_AGENT_SPECS 6 内置镜像（内置角色行派生真源；AgentChainCard 用 switches[i] 的用例依赖） */
+const BUILTIN_AGENTS = [
+  { id: 101, name: '架构师', description: '章节结构/大纲规划', icon: '🏗️', system_prompt: '你是架构师。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'architect', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 102, name: '写手', description: '正文生成', icon: '✍️', system_prompt: '你是写手。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'writer', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 103, name: '审校员', description: '一致性审计', icon: '🔍', system_prompt: '你是审校员。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'auditor', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 104, name: '修订师', description: '修订打磨', icon: '🛠️', system_prompt: '你是修订师。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: 'reviser', created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 105, name: '世界观顾问', description: '世界观一致', icon: '🌍', system_prompt: '你是世界观顾问。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: null, created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+  { id: 106, name: '润色师', description: '文笔润色', icon: '✨', system_prompt: '你是润色师。', tool_ids: [], skill_ids: [], model_override: null, temperature_override: null, builtin: true, role_key: null, created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z' },
+] as const;
+
 // F32（#152）：theme store 扩展契约的测试侧类型（拆分自 settings.test.tsx F32 段；beforeEach 引用）
 type FontKeyF32 = 'serif' | 'sans' | 'mono';
 type CloseBehaviorF32 = 'tray' | 'quit';
@@ -259,12 +270,13 @@ beforeEach(() => {
   useToastStore.setState({ toasts: [] });
   // F42 #268：默认 mock 按 URL 分发——AgentChainCard 挂载会 loadProviders()
   // （GET /api/v1/provider-configs，spec §5.2 数据源）；其余请求保持 {ok:true}
-  // F41 #260：AgentList 挂载会 loadAgents/loadToolCatalog/loadSkills（3 GET）——同样分发空列表
+  // F41 #260：AgentList 挂载会 loadAgents/loadToolCatalog/loadSkills（3 GET）——同样分发
+  // #473 R1：agents 默认返回 6 内置（内置角色行派生数据源）
   apiFetchMock.mockImplementation(async (path: string) => {
     if (path === '/api/v1/provider-configs') {
       return { items: [], total: 0, offset: 0, limit: 50 };
     }
-    if (path === '/api/v1/agents') return { items: [], total: 0 };
+    if (path === '/api/v1/agents') return { items: BUILTIN_AGENTS, total: 6, offset: 0, limit: 50 };
     if (path === '/api/v1/agents/tools') return { items: [] };
     if (path === '/api/v1/skills') return { items: [], total: 0 };
     return { ok: true };
@@ -526,7 +538,8 @@ describe('设置页 — AgentPanel persist 并发守卫（#105 补测）', () =>
         throw new Error('network down');
       }
       // F41 #260：AgentList 挂载 3 GET 分发（行内覆盖 variant 同 beforeEach）
-      if (path === '/api/v1/agents') return { items: [], total: 0 };
+      // #473 R1：agents 返回 6 内置（内置角色行派生数据源，switches[i] 用例依赖）
+      if (path === '/api/v1/agents') return { items: BUILTIN_AGENTS, total: 6, offset: 0, limit: 50 };
       if (path === '/api/v1/agents/tools') return { items: [] };
       if (path === '/api/v1/skills') return { items: [], total: 0 };
       return { ok: true };
@@ -559,7 +572,8 @@ describe('设置页 — AgentPanel persist 并发守卫（#105 补测）', () =>
         });
       }
       // F41 #260：AgentList 挂载 3 GET 分发（行内覆盖 variant 同 beforeEach）
-      if (path === '/api/v1/agents') return { items: [], total: 0 };
+      // #473 R1：agents 返回 6 内置（内置角色行派生数据源，switches[i] 用例依赖）
+      if (path === '/api/v1/agents') return { items: BUILTIN_AGENTS, total: 6, offset: 0, limit: 50 };
       if (path === '/api/v1/agents/tools') return { items: [] };
       if (path === '/api/v1/skills') return { items: [], total: 0 };
       return { ok: true };

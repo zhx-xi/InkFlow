@@ -117,10 +117,10 @@ test('设置页：Agent 分类 → AgentChainCard（四角色+四开关）与默
     const chain = window.getByTestId('agent-chain-card');
     await expect(chain).toBeVisible();
     await expect(chain.getByRole('switch')).toHaveCount(4);
-    await expect(chain).toContainText('Architect 大纲架构师');
-    await expect(chain).toContainText('Writer 执笔');
-    await expect(chain).toContainText('Auditor 审校');
-    await expect(chain).toContainText('Reviser 修订');
+    await expect(chain).toContainText('架构师');
+    await expect(chain).toContainText('写手');
+    await expect(chain).toContainText('审校员');
+    await expect(chain).toContainText('修订师');
 
     // 默认模型下拉（#106 前 AgentLlmCard 不挂载，不做断言）
     await expect(window.getByRole('combobox', { name: '默认模型' })).toBeVisible();
@@ -349,7 +349,7 @@ test('设置页：Agent 链四角色开关逐个切换（无项目纯 UI 状态�
 
     // 无当前项目：agent store 纯内存 config={} → 初始全 off 可稳定断言；
     // 逐个角色：初始 off → 点开 on → 再点回 off（getByRole name 子串匹配在 card 内唯一）
-    const roles = ['Architect 大纲架构师', 'Writer 执笔', 'Auditor 审校', 'Reviser 修订'];
+    const roles = ['架构师', '写手', '审校员', '修订师'];
     for (const name of roles) {
       const sw = chain.getByRole('switch', { name });
       await expect(sw).not.toBeChecked();
@@ -460,7 +460,7 @@ test('设置页：Agent 链开关即改即存（#225 三态语义：null=关闭 
     await window.getByTestId('settings-cat-agent').click();
     const chain = window.getByTestId('agent-chain-card');
     await expect(chain).toBeVisible();
-    const writer = chain.getByRole('switch', { name: 'Writer 执笔' });
+    const writer = chain.getByRole('switch', { name: '写手' });
 
     // #225 语义：新项目默认 config.agent_* = null = 关闭 → 初始 off
     // （旧实现 checked = value !== undefined → null 误显示 on，#225 根因）
@@ -523,7 +523,7 @@ test('#225 M2：Agent 链开关关闭 → 重启（二次 launch 同数据目录
 
     await gotoNav(first.window, '设置');
     await first.window.getByTestId('settings-cat-agent').click();
-    const writer = first.window.getByTestId('agent-chain-card').getByRole('switch', { name: 'Writer 执笔' });
+    const writer = first.window.getByTestId('agent-chain-card').getByRole('switch', { name: '写手' });
     await expect(writer).not.toBeChecked(); // 新项目默认 null = 关闭
 
     // 开 → 关（关闭 = 显式 null 落库）
@@ -560,7 +560,7 @@ test('#225 M2：Agent 链开关关闭 → 重启（二次 launch 同数据目录
     await gotoNav(second.window, '设置');
     await second.window.getByTestId('settings-cat-agent').click();
     await expect(
-      second.window.getByTestId('agent-chain-card').getByRole('switch', { name: 'Writer 执笔' })
+      second.window.getByTestId('agent-chain-card').getByRole('switch', { name: '写手' })
     ).not.toBeChecked();
   } finally {
     await second.app.close();
