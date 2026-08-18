@@ -80,12 +80,12 @@ test('模型管理：设置 → 模型分类 → 模型管理渲染（面板 + P
     await expect(window.getByTestId('settings-page')).toBeVisible({ timeout: 15_000 });
     await window.getByTestId('settings-cat-models').click();
 
-    // 路由 + 面板骨架渲染（设置页 h1 = set.title；模型管理面板 h2 = m.title）
+    // 路由 + 面板骨架渲染（设置页 h1 = set.title；模型管理面板 h2 = m.title，面板内共 3 个 h2：模型管理/模型表/角色绑定）
     expect(await window.evaluate(() => location.hash)).toContain('/settings');
     expect(await window.evaluate(() => location.hash)).toContain('cat=models');
     const panel = window.getByTestId('models-panel');
     await expect(panel).toBeVisible({ timeout: 15_000 });
-    await expect(panel.getByRole('heading', { level: 2 })).toContainText('模型管理');
+    await expect(panel.getByRole('heading', { level: 2, name: '模型管理' })).toBeVisible();
 
     // Provider 列表区：lifespan seed 内置 4 provider（openai/deepseek/zhipu/ollama）
     // ⚠️ 不断言总数（frontend/data/inkflow.db 为持久文件，跨轮次累积 e2e-* provider）：
