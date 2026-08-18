@@ -5,7 +5,7 @@
  * pages/settings.tsx）必须匹配以下路由/testid/i18n key；既有 testid 契约
  * （project-card / editor / project-tree 等）不删不改。
  *
- * 路由（HashRouter；/agents 删除——spec §7.10 Q1=A 拍板）：
+ * 路由（HashRouter；/agents 删除——spec §7.10 Q1=A 拍板；#481：/models 删除——模型管理合并入设置页模型分类）：
  *   /writing /projects /library /settings，默认 /
  *
  * 侧边导航（AppNav，容器 data-testid="app-nav"）：
@@ -14,6 +14,13 @@
  * - Agent 快捷入口：系统分组 link（data-testid="nav-item-agent"，可访问名「Agent」）→ 进入设置页 Agent 分类。
  *   ⚠️ #105 修复批契约：测试点击 link 本身（不再点 appnav-agent-shortcut 包装 div——App.tsx 不得有
  *   jsdom 专用事件委托；包装 div 仅作 testid 锚点，点击它不产生导航）
+ * - #481：nav-item-models 已删除（模型管理合并入设置页模型分类，无独立导航项）
+ *
+ * #481 契约（模型/设置合并）：
+ * - /models 路由不存在：直接访问 #/models → fallback 重定向项目页（Navigate to /projects），
+ *   且页面不渲染 models-page（GREEN 前该路由存在 → 渲染 ModelsPage，断言 FAIL）
+ * - 设置页模型分类（settings-cat-models）：完整模型管理渲染——models-panel（原 models-page 面板化）+
+ *   provider-list + model-table + role-binding 并存（GREEN 前 ModelsPanel 为占位 → element-missing）
  *
  * 设定库页（pages/library.tsx，根 data-testid="library-page"）：
  * - 未选择项目空态：data-testid="library-empty" + 文案 t('lib.empty.title')（「选择或新建项目开始构建设定」）
@@ -194,5 +201,28 @@ describe('App 路由集成（HashRouter 四页 + 侧边导航）', () => {
     await user.click(screen.getByRole('link', { name: '项目' }));
     expect(screen.getByRole('heading', { name: '我的项目' })).toBeInTheDocument();
     expect(await screen.findByTestId('project-card')).toBeInTheDocument();
+  });
+
+  it('#481 /models 路由已删除：直接访问 #/models → fallback 重定向项目页（不渲染 models-page）', async () => {
+    // 直接 hash 到 /models（GREEN 前该路由存在 → 渲染 ModelsPage；GREEN 后无此路由 → * fallback）
+    window.location.hash = '#/models';
+    render(<App />);
+    // fallback：Navigate to /projects → 项目页卡片出现
+    expect(await screen.findByTestId('project-card')).toBeInTheDocument();
+    // #481：/models 路由与 models-page 根容器均不存在
+    expect(screen.queryByTestId('models-page')).not.toBeInTheDocument();
+  });
+
+  it('#481 设置页模型分类：完整模型管理渲染（models-panel + provider-list + model-table + role-binding）', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole('link', { name: '设置' }));
+    const page = await screen.findByTestId('settings-page');
+    await user.click(within(page).getByTestId('settings-cat-models'));
+    expect(await screen.findByTestId('models-panel')).toBeInTheDocument();
+    // 模型管理三件套（GREEN 前 ModelsPanel 为占位 → element-missing）
+    expect(within(page).getByTestId('provider-list')).toBeInTheDocument();
+    expect(within(page).getByTestId('model-table')).toBeInTheDocument();
+    expect(within(page).getByTestId('role-binding')).toBeInTheDocument();
   });
 });

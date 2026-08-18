@@ -13,12 +13,26 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Switch } from './ui/switch';
 import { AgentRelationEditor } from './AgentRelationEditor';
 
-type AgentField = 'agent_architect' | 'agent_writer' | 'agent_auditor' | 'agent_reviser';
+type AgentField =
+  | 'agent_architect'
+  | 'agent_writer'
+  | 'agent_auditor'
+  | 'agent_reviser'
+  | 'agent_worldview'
+  | 'agent_polisher';
 
-/** F42 #296：内置四角色键（模板 roles 中过滤这些键，其余视为自定义角色） */
+/** v1.5 #484：内置链角色键（模板 roles 过滤用——模板自定义键但无 Agent 实体仍渲染，§5.7.2 兼容既有模板；
+ *  内置 4 键即使 agents 缺实体也不降级为自定义行） */
 const BUILTIN_ROLE_KEYS = ['architect', 'writer', 'auditor', 'reviser'] as const;
-/** F42 #296：内置字段写顶层 config.agent_*；自定义字段写 config.agent_roles */
-const BUILTIN_FIELDS = ['agent_architect', 'agent_writer', 'agent_auditor', 'agent_reviser'];
+/** F42 #296 / v1.5 #484：内置字段写顶层 config.agent_*（6 键）；自定义字段写 config.agent_roles */
+const BUILTIN_FIELDS = [
+  'agent_architect',
+  'agent_writer',
+  'agent_auditor',
+  'agent_reviser',
+  'agent_worldview',
+  'agent_polisher',
+];
 
 /** 内置角色行（#473 R1：name/desc/icon 从 GET /api/v1/agents 按 role_key 派生；builtin=true → 读 config.agent_*） */
 type BuiltinChainRow = {
@@ -48,12 +62,14 @@ const DEFAULT_AGENT_ORDER: string[][] = [
   ['agent_reviser'],
 ];
 
-/** 角色 → 默认槽位（开启角色时写入 agent_order 的目标槽位，spec §5.3/M6） */
+/** 角色 → 默认槽位（开启角色时写入 agent_order 的目标槽位，spec §5.3/M6；v1.5 #484 扩展 6 内置） */
 const DEFAULT_SLOTS: Record<string, number> = {
   agent_architect: 0,
   agent_writer: 1,
   agent_auditor: 2,
   agent_reviser: 3,
+  agent_worldview: 4,
+  agent_polisher: 5,
 };
 
 export interface AgentChainCardProps {
@@ -104,6 +120,8 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
   const providers = useModelsStore((s) => s.providers);
   // F46 #270：依赖关系编辑器展开态（点行内「依赖」入口切换）
   const [relationOpen, setRelationOpen] = useState(false);
+  // v1.5 #484：角色池展开态（点「添加角色」切换，spec §5.7.3）
+  const [rolePoolOpen, setRolePoolOpen] = useState(false);
 
   // F42 #268（spec §5.2 Q3）：挂载即加载 provider-configs 数据源，Select 选项随 store 响应式更新
   useEffect(() => {
@@ -124,9 +142,19 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
   // #473 R1：内置行从后端真源派生——按链角色键顺序匹配 role_key（与后端列表顺序无关）；
   // role_key 缺失（agents 未加载/缺该内置）→ 该行不渲染（派生严格性）
   const agents = useAgentsStore((s) => s.agents) ?? [];
-  const builtinRows: BuiltinChainRow[] = BUILTIN_ROLE_KEYS.map((roleKey) =>
-    agents.find((a) => a.builtin && a.role_key === roleKey),
-  )
+  const chain = deriveOrder(config);
+  const chainFields = chain.flat();
+
+  // v1.5 #484（spec §5.7.1/§5.7.2）：内置行 = 默认 4 链角色（既有零回归：关闭后行保留、可重开）
+  // ∪ 配置 order 中的新内置角色（worldview/polisher 进链后渲染）；显示顺序按 DEFAULT_SLOTS（M6 契约）
+  const builtinFields = [...new Set([...DEFAULT_AGENT_ORDER.flat(), ...chainFields])];
+  const builtinRows: BuiltinChainRow[] = builtinFields
+    .sort(
+      (a, b) =>
+        (DEFAULT_SLOTS[a] ?? Number.MAX_SAFE_INTEGER) -
+        (DEFAULT_SLOTS[b] ?? Number.MAX_SAFE_INTEGER),
+    )
+    .map((field) => agents.find((a) => a.builtin && a.role_key === field.replace(/^agent_/, '')))
     .filter((a): a is NonNullable<typeof a> => a != null)
     .map((a) => ({
       field: `agent_${a.role_key}` as AgentField,
@@ -135,9 +163,28 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
       icon: a.icon,
       builtin: true,
     }));
-  const customRoles: CustomChainRow[] = template
+
+  // v1.5 #484：自定义 Agent 行 = 链中角色在 agents 匹配 builtin=false（仅进链后渲染，§5.7.2）
+  const customAgentRows: CustomChainRow[] = chainFields
+    .map((field) => {
+      const agent = agents.find(
+        (a) => a.role_key === field.replace(/^agent_/, '') && !a.builtin,
+      );
+      return agent
+        ? { field, name: agent.name, icon: Sparkles, builtin: false }
+        : null;
+    })
+    .filter((r): r is CustomChainRow => r != null);
+
+  // F42 #296 兼容（§5.7.2 注）：模板 roles 非内置键且无 agents 实体 → 自定义角色行（显示名 = role.name ?? 裸名）
+  const agentRoleKeys = new Set(agents.filter((a) => a.role_key).map((a) => a.role_key));
+  const templateCustomRows: CustomChainRow[] = template
     ? Object.entries(template.roles)
-        .filter(([key]) => !(BUILTIN_ROLE_KEYS as readonly string[]).includes(key))
+        .filter(
+          ([key]) =>
+            !agentRoleKeys.has(key) &&
+            !(BUILTIN_ROLE_KEYS as readonly string[]).includes(key),
+        )
         .map(([bareName, role]) => ({
           field: `agent_${bareName}`,
           name: role.name ?? bareName,
@@ -145,8 +192,26 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
           builtin: false,
         }))
     : [];
-  const customRoleFields = customRoles.map((r) => r.field);
-  const allRows: ChainRow[] = [...builtinRows, ...customRoles];
+
+  const customRoleFields = [...customAgentRows, ...templateCustomRows].map((r) => r.field);
+  const allRows: ChainRow[] = [...builtinRows, ...customAgentRows, ...templateCustomRows];
+  const renderedFields = new Set(allRows.map((r) => r.field));
+
+  // v1.5 #484（spec §5.7.2/§5.7.3）：角色池 = agents 真源全量（role_key 非空）− 已渲染行字段
+  const rolePoolOptions = agents
+    .filter((a) => a.role_key && !renderedFields.has(`agent_${a.role_key}`))
+    .map((a) => ({ field: `agent_${a.role_key as string}`, name: a.name }));
+
+  const addRole = (field: string) => {
+    // ① 写入三态字段 = sentinel（跟随默认；内置 → 顶层 agent_*，自定义 → agent_roles）
+    // ② agent_order 显式化：未在链中 → 追加末尾层（配置驱动模式显式化，B1 语义）
+    const patch = agentPatch(field, AGENT_DEFAULT_SENTINEL, config);
+    const base = deriveOrder(config).map((layer) => [...layer]);
+    if (!base.some((layer) => layer.includes(field))) base.push([field]);
+    setConfig({ ...patch, agent_order: base });
+    setRolePoolOpen(false);
+    onConfigChange?.();
+  };
 
   return (
     <section data-testid="agent-chain-card" className="rounded-lg border border-line bg-surface p-6 shadow-card">
@@ -332,6 +397,32 @@ export function AgentChainCard({ onConfigChange }: AgentChainCardProps = {}) {
             </div>
           );
         })}
+      </div>
+      {/* v1.5 #484：添加角色（spec §5.7.3）——角色行列表之后、依赖编辑器之前 */}
+      <div className="mt-3">
+        <button
+          type="button"
+          data-testid="agent-chain-add-role"
+          onClick={() => setRolePoolOpen((v) => !v)}
+          className="flex items-center gap-1 rounded-md border border-line px-2.5 py-1 text-[12px] text-ink-3 transition-colors hover:bg-surface-3"
+        >
+          + {t('ag.addRole')}
+        </button>
+        {rolePoolOpen && (
+          <div className="mt-2 flex flex-wrap gap-2" data-testid="agent-chain-role-pool">
+            {rolePoolOptions.map((option) => (
+              <button
+                key={option.field}
+                type="button"
+                data-testid={`agent-chain-role-option-${option.field}`}
+                onClick={() => addRole(option.field)}
+                className="rounded-md border border-line bg-surface px-2 py-1 text-[12px] text-ink-3 transition-colors hover:bg-surface-3"
+              >
+                {option.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       {/* F46 #270：依赖关系编辑器（section 内关系列表区，即角色行 </div> 之后、</section> 之前） */}
       {relationOpen && <AgentRelationEditor onConfigChange={onConfigChange} />}

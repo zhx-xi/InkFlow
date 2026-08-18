@@ -39,6 +39,7 @@ class Agent(BaseModel):
         model_override: 模型覆盖（provider/model 格式，None = 跟随默认）.
         temperature_override: 温度覆盖（None = 跟随默认）.
         builtin: 是否内置（True = 只读，出厂 seed；False = 用户自定义）.
+        role_key: 链角色稳定标识（§5.7.1；None = 非链角色/未分配）.
         created_at: 创建时间 (UTC)（服务层落库时填充）.
         updated_at: 最后更新时间 (UTC).
     """
@@ -55,6 +56,8 @@ class Agent(BaseModel):
     model_override: str | None = None
     temperature_override: float | None = Field(default=None, ge=0.0, le=2.0)
     builtin: bool = False
+    role_key: str | None = None
+    """链角色稳定标识（§5.7.1；None = 非链角色/未分配，服务层自动分配不可变）."""
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

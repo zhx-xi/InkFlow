@@ -1,10 +1,11 @@
 /** F46 #270：Agent 关联关系编辑器（spec §5.2 Q3=A 列表式编辑 + 只读 DAG 预览）：
  *  关系列表增删 + 新增选择器（from/to/type + 自环/重复预检）+ 只读 DAG 节点-边预览；
  *  变更走 setConfig + onConfigChange（F42 即改即存 PATCH 链路） */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
 import { useAgentStore } from '../stores/agent';
+import { useAgentsStore } from '../stores/agents';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 export interface AgentRelationEditorProps {
@@ -12,8 +13,6 @@ export interface AgentRelationEditorProps {
   onConfigChange?: () => void;
 }
 
-/** F46 #270：内置角色字段（下拉/节点数据源 = 内置 4 + agent_roles keys，spec §5.2） */
-const ROLE_FIELDS = ['agent_architect', 'agent_writer', 'agent_auditor', 'agent_reviser'];
 /** F46 #270：边类型三选（spec §2.1：sequential/data/conditional） */
 const RELATION_TYPES = ['sequential', 'data', 'conditional'];
 
@@ -33,9 +32,17 @@ export function AgentRelationEditor({ onConfigChange }: AgentRelationEditorProps
   const { t } = useI18n();
   const config = useAgentStore((s) => s.config);
   const setConfig = useAgentStore((s) => s.setConfig);
+  const agents = useAgentsStore((s) => s.agents) ?? [];
 
-  // F46 #270：角色数据源 = 内置 4 + agent_roles keys（自定义角色）
-  const roleFields = [...ROLE_FIELDS, ...Object.keys(config.agent_roles ?? {})];
+  // v1.5 #484（spec §5.7.2 派生规则 2）：角色列表从 GET /api/v1/agents 真源派生
+  // （role_key 非空 → agent_<role_key>）∪ config.agent_roles keys（既有自定义角色）
+  useEffect(() => {
+    void useAgentsStore.getState().loadAgents();
+  }, []);
+  const agentFields = agents.filter((a) => a.role_key).map((a) => `agent_${a.role_key}`);
+  const roleFields = [...agentFields, ...Object.keys(config.agent_roles ?? {})].filter(
+    (f, i, arr) => arr.indexOf(f) === i,
+  );
   const relations = config.agent_relations ?? [];
 
   const [adding, setAdding] = useState(false);

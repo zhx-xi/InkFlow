@@ -30,6 +30,8 @@ RED 形态：_apply_agent_order 不存在 → 本文件顶部 import → 收集�
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from inkflow.domain.ports.agent_pipeline import PipelineStage
 from inkflow.domain.services.agent_service import _apply_agent_order
 from inkflow.infrastructure.agent.pipeline_templates import get_template
@@ -366,3 +368,165 @@ class TestCustomRoleConstruction:
         result = _apply_agent_order(list(DEFAULT_STAGES), order, enabled, template_roles)
 
         assert _stage_ids(result) == ["architect", "writer"]
+
+
+class TestAgentSourceStageV15:
+    """v1.5 #484 _apply_agent_order 第 5 参 agent_source 占位 stage 构造（spec §5.7.4）。
+
+    现状局限：agent_order 含世界观顾问/润色师（内置 6 新增 2）或自定义 Agent 时，模板
+    stages（write_chapter 4 阶段）无对应 stage → 既有 TestCustomRoleConstruction 只能从
+    template_roles 装配，无 Agent 真源 → 新角色无法构造执行。
+
+    v1.5 契约：_apply_agent_order 新增第 5 参 agent_source（role_key → 真源信息字典）：
+        agent_source: dict[str, dict[str, str]] | None —— key = role_key（worldview/polisher/
+        自定义 role_key），value = {"name": str, "system_prompt": str}（来自 GET /api/v1/agents
+        / Agent 实体真源；execute 层装配传入）。
+    对模板 stages 缺失的角色构造占位 stage，优先级（模板优先，spec §5.7.4）：
+        template_roles[role].prompt/name 非 None → 覆盖 agent_source（模板是场景化覆盖层）；
+        否则 agent_source 有该角色 → system_prompt/name 从真源取（内置 = AgentEntity 出厂
+        prompt；自定义 = AgentEntity.system_prompt）；
+        两者都无 → 跳过 + warning（既有 C4 防御保持）。
+    占位 stage 参与层级重排/全连接边（与既有角色同等待遇）；model/temperature 跟随默认链
+    （_merge_role_configs 后续装配，占位 AgentRole.model 不硬编码 openai/gpt-4o）。
+
+    成品身份扩展（spec §5.7.4）：worldview/polisher 是内容角色（输出可作成品）——
+    worldview 排最后不触发 C2 回退；architect/auditor 排最后仍回退（既有）。
+
+    RED 形态：_apply_agent_order 当前签名 4 参 → 多传第 5 参 TypeError（签名未扩）；
+    GREEN 后 4 参调用（第 5 参默认 None）保持既有兼容。
+    """
+
+    WORLDVIEW_SOURCE: ClassVar[dict[str, str]] = {
+        "name": "世界观顾问",
+        "system_prompt": "你是世界观顾问，负责校验角色与伏笔的世界观一致性。",
+    }
+    POLISHER_SOURCE: ClassVar[dict[str, str]] = {
+        "name": "润色师",
+        "system_prompt": "你是润色师，负责在前文基础上润色文笔。",
+    }
+    F_WORLDVIEW = "agent_worldview"
+    F_POLISHER = "agent_polisher"
+
+    def test_worldview_stage_built_from_agent_source(self) -> None:
+        """agent_order 含 agent_worldview（模板 stages 无此 stage）+ agent_source 有真源
+        → 构造占位 stage（name/system_prompt 从 AgentEntity 真源取）。"""
+        order = [[F_ARCHITECT], [F_WRITER], [F_AUDITOR], [F_REVISER], [self.F_WORLDVIEW]]
+        enabled = ALL_ENABLED | {self.F_WORLDVIEW}
+        result = _apply_agent_order(
+            list(DEFAULT_STAGES),
+            order,
+            enabled,
+            agent_source={"worldview": self.WORLDVIEW_SOURCE},
+        )
+
+        assert _stage_ids(result) == ["architect", "writer", "auditor", "reviser", "worldview"]
+        by_id = {s.id: s for s in result}
+        assert by_id["worldview"].agent.name == "世界观顾问"
+        assert by_id["worldview"].agent.system_prompt == self.WORLDVIEW_SOURCE["system_prompt"]
+        # 终点（层 4）→ input_from = 前序全部（set 比较，不锁实现排列序）；output_to 空
+        assert set(by_id["worldview"].input_from) == {"architect", "writer", "auditor", "reviser"}
+        assert by_id["worldview"].output_to == []
+
+    def test_polisher_stage_built_from_agent_source(self) -> None:
+        """agent_order 含 agent_polisher + agent_source 真源 → 构造占位 stage。"""
+        order = [[F_ARCHITECT], [F_WRITER], [F_AUDITOR], [F_REVISER], [self.F_POLISHER]]
+        enabled = ALL_ENABLED | {self.F_POLISHER}
+        result = _apply_agent_order(
+            list(DEFAULT_STAGES),
+            order,
+            enabled,
+            agent_source={"polisher": self.POLISHER_SOURCE},
+        )
+
+        assert _stage_ids(result) == ["architect", "writer", "auditor", "reviser", "polisher"]
+        by_id = {s.id: s for s in result}
+        assert by_id["polisher"].agent.name == "润色师"
+        assert by_id["polisher"].agent.system_prompt == self.POLISHER_SOURCE["system_prompt"]
+
+    def test_custom_role_built_from_agent_source(self) -> None:
+        """自定义角色（agent_roles 路径）+ agent_source 真源（AgentEntity.system_prompt）
+        → 构造占位 stage，无 template_roles 也执行（spec §5.7.4 自定义角色 prompt 真源）。"""
+        order = [[F_ARCHITECT], [F_WRITER], ["agent_researcher"]]
+        enabled = {F_ARCHITECT, F_WRITER, "agent_researcher"}
+        result = _apply_agent_order(
+            list(DEFAULT_STAGES),
+            order,
+            enabled,
+            agent_source={
+                "researcher": {
+                    "name": "研究员",
+                    "system_prompt": "你是研究员，负责核查章节设定一致性。",
+                }
+            },
+        )
+
+        assert _stage_ids(result) == ["architect", "writer", "researcher"]
+        by_id = {s.id: s for s in result}
+        assert by_id["researcher"].agent.system_prompt == "你是研究员，负责核查章节设定一致性。"
+        assert by_id["researcher"].agent.name == "研究员"
+
+    def test_template_roles_override_agent_source(self) -> None:
+        """模板 roles 同名键覆盖 agent_source（模板优先，spec §5.7.4）：
+        RoleTemplate.prompt/name 非 None 时覆盖真源。"""
+        from inkflow.domain.models.agent_template import RoleTemplate
+
+        order = [[F_ARCHITECT], [F_WRITER], ["agent_researcher"]]
+        enabled = {F_ARCHITECT, F_WRITER, "agent_researcher"}
+        template_roles = {
+            "researcher": RoleTemplate(prompt="模板覆盖的 prompt", name="模板研究员"),
+        }
+        result = _apply_agent_order(
+            list(DEFAULT_STAGES),
+            order,
+            enabled,
+            template_roles,
+            agent_source={
+                "researcher": {"name": "真源研究员", "system_prompt": "真源 prompt"},
+            },
+        )
+
+        by_id = {s.id: s for s in result}
+        assert by_id["researcher"].agent.system_prompt == "模板覆盖的 prompt"
+        assert by_id["researcher"].agent.name == "模板研究员"
+
+    def test_agent_source_missing_skipped(self) -> None:
+        """agent_source 无该角色且 template_roles 无 prompt → 跳过 + warning（C4 防御保持）。"""
+        order = [[F_ARCHITECT], [F_WRITER], ["agent_researcher"]]
+        enabled = {F_ARCHITECT, F_WRITER, "agent_researcher"}
+        result = _apply_agent_order(list(DEFAULT_STAGES), order, enabled, {}, agent_source={})
+
+        assert _stage_ids(result) == ["architect", "writer"]
+
+    def test_worldview_terminal_valid(self) -> None:
+        """成品身份扩展（spec §5.7.4）：worldview 是内容角色——排最后不触发 C2 回退。"""
+        order = [[F_ARCHITECT], [F_WRITER], [F_AUDITOR], [F_REVISER], [self.F_WORLDVIEW]]
+        enabled = ALL_ENABLED | {self.F_WORLDVIEW}
+        result = _apply_agent_order(
+            list(DEFAULT_STAGES),
+            order,
+            enabled,
+            agent_source={"worldview": self.WORLDVIEW_SOURCE},
+        )
+
+        # 不回退：worldview 终点保留（不同于 architect/auditor 终点回退）
+        assert _stage_ids(result) == ["architect", "writer", "auditor", "reviser", "worldview"]
+
+    def test_polisher_terminal_valid(self) -> None:
+        """成品身份扩展：polisher 排最后 → 合法（内容角色，输出可作成品）。"""
+        order = [[F_ARCHITECT], [F_WRITER], [F_AUDITOR], [F_REVISER], [self.F_POLISHER]]
+        enabled = ALL_ENABLED | {self.F_POLISHER}
+        result = _apply_agent_order(
+            list(DEFAULT_STAGES),
+            order,
+            enabled,
+            agent_source={"polisher": self.POLISHER_SOURCE},
+        )
+
+        assert _stage_ids(result) == ["architect", "writer", "auditor", "reviser", "polisher"]
+
+    def test_architect_terminal_still_falls_back(self) -> None:
+        """architect 排最后仍回退（既有成品身份语义不变，v1.5 不放宽）。"""
+        order = [[F_WRITER], [F_AUDITOR], [F_REVISER], [F_ARCHITECT]]
+        result = _apply_agent_order(list(DEFAULT_STAGES), order, ALL_ENABLED)
+
+        assert _stage_ids(result) == ["architect", "writer", "auditor", "reviser"]

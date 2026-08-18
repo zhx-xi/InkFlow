@@ -6,7 +6,6 @@ export const zh = {
   'nav.projects': '项目',
   'nav.library': '设定库',
   'nav.settings': '设置',
-  'nav.models': '模型管理',
   'nav.agent': 'Agent',
   'nav.expand': '展开',
   'nav.collapse': '折叠',
@@ -216,8 +215,6 @@ export const zh = {
   // #189（rc1 发布缺陷）：页面顶部保存指示
   'set.saving': '保存中…',
   'set.saved': '已保存',
-  'set.models.summary': '已配置 Provider',
-  'set.models.placeholder': '模型管理将在后续版本提供',
   // #276（2026-08-12）：RAG 向量检索区块（设置页模型分类）
   'set.rag.title': '向量检索（RAG）',
   'set.rag.model': '当前模型',
@@ -447,6 +444,8 @@ export const zh = {
   'ag.followDefault': '跟随默认',
   'ag.unregisteredModel': '未注册模型',
   'ag.modelFormatFix': '格式需修正（应为 provider/model）',
+  // v1.5 #484：添加角色（链动态化，spec §5.7.3）
+  'ag.addRole': '添加角色',
   'ag.chainTitle': '写作 Agent 链',
   'ag.chainDesc': 'Architect 规划 → Writer 执笔 → Auditor 审校 → Reviser 修订，可按需开关',
   // F42 #269：Agent 链执行顺序编辑（槽位 + 上移/下移）

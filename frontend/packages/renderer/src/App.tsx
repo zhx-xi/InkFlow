@@ -13,7 +13,6 @@ import { WindowControls } from './components/WindowControls';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
 import { ToastHost } from './components/ui/toast';
 import { WritingPage } from './pages/writing';
-import { ModelsPage } from './pages/models';
 import { ProjectsPage } from './pages/projects';
 import { LibraryPage } from './pages/library';
 import { SettingsPage } from './pages/settings';
@@ -26,7 +25,6 @@ const TITLE_BY_PATH: Record<string, string> = {
   '/writing': 'nav.writing',
   '/book': 'nav.book',
   '/library': 'lib.title',
-  '/models': 'm.title',
   '/settings': 'set.title',
 };
 
@@ -114,7 +112,6 @@ function AppLayout() {
             <Route path="/writing" element={<WritingPage />} />
             <Route path="/book" element={<BookPage />} />
             <Route path="/library" element={<LibraryPage />} />
-            <Route path="/models" element={<ModelsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/projects" replace />} />
           </Routes>

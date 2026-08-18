@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import builtins
 import logging
+import re
 from datetime import UTC, datetime
 from typing import TypedDict
 
@@ -115,7 +116,7 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
         "system_prompt": "你是世界观顾问，负责校验角色与伏笔的世界观一致性。",
         "tool_ids": ["search_characters", "check_foreshadowing"],
         "skill_name": "世界观方法论",
-        "role_key": None,
+        "role_key": "worldview",
     },
     {
         "name": "润色师",
@@ -124,7 +125,7 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
         "system_prompt": "你是润色师，负责在前文基础上润色文笔。",
         "tool_ids": ["count_words", "get_prior_summary"],
         "skill_name": "润色方法论",
-        "role_key": None,
+        "role_key": "polisher",
     },
 ]
 """内置 6 Agent 出厂配置（spec §5.3 出厂表，builtin=True 只读）."""
@@ -133,6 +134,12 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
 def _utcnow() -> datetime:
     """返回当前 UTC 时间（时区感知）."""
     return datetime.now(UTC)
+
+
+def _slugify_role_key(name: str) -> str:
+    """name slug 化（§5.7.2）：小写 + 非 [a-z0-9_] 替换为 _ + 去首尾 _；结果为空 → 'agent'."""
+    slug = re.sub(r"[^a-z0-9_]+", "_", name.lower()).strip("_")
+    return slug or "agent"
 
 
 def _validate_tool_ids(tool_ids: list[str]) -> None:
@@ -164,13 +171,21 @@ class AgentEntityService:
         """创建自定义 Agent（同名冲突 → 422；tool/skill 白名单校验）.
 
         查重未命中 → 白名单全过 → 构造实体（id=None、builtin=False、时间戳
-        填充为 now(UTC)）→ 委托 repo.add。
+        填充为 now(UTC)、role_key 自动分配）→ 委托 repo.add。
         """
         existing = await self._agent_repo.get_by_name(data.name)
         if existing is not None:
             raise AgentNameConflictError()
         _validate_tool_ids(data.tool_ids)
         await self._validate_skill_ids(data.skill_ids)
+        # v1.5 #484（spec §5.7.2）：role_key = name slug 化 base，冲突追加数字后缀
+        existing_keys = {a.role_key for a in await self._agent_repo.list() if a.role_key}
+        base = _slugify_role_key(data.name)
+        assigned = base
+        suffix = 1
+        while assigned in existing_keys:
+            assigned = f"{base}_{suffix}"
+            suffix += 1
         now = _utcnow()
         entity = Agent(
             id=None,
@@ -183,6 +198,7 @@ class AgentEntityService:
             model_override=data.model_override,
             temperature_override=data.temperature_override,
             builtin=False,
+            role_key=assigned,
             created_at=now,
             updated_at=now,
         )
@@ -266,7 +282,13 @@ async def seed_builtin_agents(session: AsyncSession) -> int:
     inserted = 0
     for spec in BUILTIN_AGENT_SPECS:
         name = spec["name"]
-        if await agent_repo.get_by_name(name) is not None:
+        existing = await agent_repo.get_by_name(name)
+        if existing is not None:
+            # v1.5 #484 seed 升级钩子：存量同名（v1.5 前已 seed）role_key 为空且
+            # spec 有 role_key → 补值 UPDATE（不重复插入）
+            if existing.role_key is None and spec["role_key"] is not None:
+                existing.role_key = spec["role_key"]
+                await agent_repo.update(existing)
             continue
         skill_name = spec["skill_name"]
         skill = await skill_repo.get_by_name(skill_name)
@@ -283,6 +305,7 @@ async def seed_builtin_agents(session: AsyncSession) -> int:
                 tool_ids=list(spec["tool_ids"]),
                 skill_ids=[skill_id],
                 builtin=True,
+                role_key=spec["role_key"],
             )
         )
         inserted += 1

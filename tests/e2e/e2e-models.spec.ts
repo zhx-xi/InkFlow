@@ -64,9 +64,9 @@ async function launchApp(): Promise<{ app: ElectronApplication; window: Page; ke
 test.describe.configure({ timeout: 120_000 });
 
 // ────────────────────────────────────────────────────────────────
-// 9. 模型管理页：侧边栏入口可达 + 页面渲染（#106 F5，spec §8.5 L968）
+// 9. 模型管理（#481 合并入设置页模型分类）：设置 → 模型分类 → 完整模型管理渲染
 // ────────────────────────────────────────────────────────────────
-test('模型管理页：侧边栏「模型管理」→ /models 渲染（标题 + Provider 列表）', async () => {
+test('模型管理：设置 → 模型分类 → 模型管理渲染（面板 + Provider 列表）', async () => {
   const { app, window } = await launchApp();
   try {
     // 同用例 8：清空持久化 UI 偏好保证中文文案确定性（zh）
@@ -74,17 +74,18 @@ test('模型管理页：侧边栏「模型管理」→ /models 渲染（标题 +
     await window.reload();
     await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
-    // 侧边栏入口：nav-item-models（#106 已转正为 /models NavLink，spec §8.5 F5）
-    const navModels = window.getByTestId('nav-item-models');
-    await expect(navModels).toBeVisible();
-    await expect(navModels).toContainText('模型管理');
-    await navModels.click();
+    // #481：模型管理无独立导航项（nav-item-models 已删除）→ 经「设置」→ 模型分类进入
+    await expect(window.getByTestId('nav-item-models')).toHaveCount(0);
+    await gotoNav(window, '设置');
+    await expect(window.getByTestId('settings-page')).toBeVisible({ timeout: 15_000 });
+    await window.getByTestId('settings-cat-models').click();
 
-    // 路由 + 页面骨架渲染（页标题 h1 = m.title）
-    expect(await window.evaluate(() => location.hash)).toContain('/models');
-    const page = window.getByTestId('models-page');
-    await expect(page).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('模型管理');
+    // 路由 + 面板骨架渲染（设置页 h1 = set.title；模型管理面板 h2 = m.title，面板内共 3 个 h2：模型管理/模型表/角色绑定）
+    expect(await window.evaluate(() => location.hash)).toContain('/settings');
+    expect(await window.evaluate(() => location.hash)).toContain('cat=models');
+    const panel = window.getByTestId('models-panel');
+    await expect(panel).toBeVisible({ timeout: 15_000 });
+    await expect(panel.getByRole('heading', { level: 2, name: '模型管理' })).toBeVisible();
 
     // Provider 列表区：lifespan seed 内置 4 provider（openai/deepseek/zhipu/ollama）
     // ⚠️ 不断言总数（frontend/data/inkflow.db 为持久文件，跨轮次累积 e2e-* provider）：
@@ -114,13 +115,15 @@ async function gotoNav(window: Page, name: string): Promise<void> {
   await window.getByRole('link', { name }).click();
 }
 
-/** 进入模型管理页：清空持久化 UI 偏好（中文确定性）→ 侧边栏导航 → 等页面骨架 */
+/** 进入模型管理（设置页模型分类）：清空持久化 UI 偏好（中文确定性）→ 设置 → 模型分类 → 等面板骨架 */
 async function gotoModels(window: Page): Promise<void> {
   await window.evaluate(() => localStorage.clear());
   await window.reload();
   await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
-  await gotoNav(window, '模型管理');
-  await expect(window.getByTestId('models-page')).toBeVisible({ timeout: 15_000 });
+  await gotoNav(window, '设置');
+  await expect(window.getByTestId('settings-page')).toBeVisible({ timeout: 15_000 });
+  await window.getByTestId('settings-cat-models').click();
+  await expect(window.getByTestId('models-panel')).toBeVisible({ timeout: 15_000 });
 }
 
 /**

@@ -38,13 +38,8 @@ export interface AgentTemplateInput {
   description: string;
   main_model: string;
   default_temperature: number;
-  // 内置 4 键契约（#473 R1：与后端 role_key 对应；AgentTemplate.roles 放宽为 Record 追加自定义键）
-  roles: {
-    architect: AgentTemplateRole;
-    writer: AgentTemplateRole;
-    auditor: AgentTemplateRole;
-    reviser: AgentTemplateRole;
-  };
+  /** v1.5 #484：roles 放宽为 Record<string, AgentTemplateRole>（模板可引用任意角色组合） */
+  roles: Record<string, AgentTemplateRole>;
   default_words: number;
 }
 

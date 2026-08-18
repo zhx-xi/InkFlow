@@ -100,6 +100,12 @@ class AgentORM(Base):
     )
     """是否内置（True = 只读，出厂 seed；False = 用户自定义）."""
 
+    role_key: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+    """链角色稳定标识（§5.7.1；None = 非链角色/未分配，服务层自动分配不可变）."""
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
