@@ -1,16 +1,30 @@
-/** 设定库页（spec §7.3：项目上下文 + 面包屑 + 六分类 tab + 空态引导；F43：行编辑/删除 + 保存指示） */
+/** 设定库页（spec §7.3：项目上下文 + 面包屑 + 六分类 tab + 空态引导；F43：行编辑/删除 + 保存指示；F48：知识图谱 tab） */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronRight, Copy, Library, Pencil, Trash2 } from 'lucide-react';
+import { Copy, Library } from 'lucide-react';
 import { apiFetch, ensureApiReady, errorMessage } from '../api/client';
+import {
+  createKnowledgeRelation,
+  deleteKnowledgeRelation,
+  fetchKnowledgeGraph,
+  listKnowledgeRelations,
+  updateKnowledgeRelation,
+  type GraphEdge,
+  type GraphNode,
+  type KnowledgeRelation,
+} from '../api/knowledge-graph';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { CopyDialog } from '../components/CopyDialog';
+import { KnowledgeGraphView } from '../components/knowledge-graph/KnowledgeGraphView';
+import { RelationForm, type KnowledgeRelationFormData } from '../components/knowledge-graph/RelationForm';
 import { LibraryCreateDialog, type LibraryItemDTO } from '../components/LibraryCreateDialog';
+import { LibraryItemList } from '../components/LibraryItemList';
 import { MapWorkbench, type WorldMapDTO } from '../components/MapWorkbench';
 import { OutlineTree } from '../components/OutlineTree';
 import { TimelineView, type TimelineEventDTO, type TimelineViewData } from '../components/TimelineView';
 import { WorldCatActionButtons } from '../components/WorldCatActionButtons';
 import { WorldCategoryDialog } from '../components/WorldCategoryDialog';
+import { buildWorldTree, WorldNodeView } from '../components/WorldNodeView';
 import { Skeleton } from '../components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
@@ -19,7 +33,7 @@ import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
 import { cn } from '../lib/cn';
 
-type CatKey = 'characters' | 'world' | 'outline' | 'timeline' | 'foreshadow' | 'rag';
+type CatKey = 'characters' | 'world' | 'outline' | 'timeline' | 'foreshadow' | 'knowledge';
 
 interface ListResponse {
   items: LibraryItemDTO[];
@@ -40,13 +54,13 @@ const CATS: Array<{
   { key: 'outline', labelKey: 'nav.lib.outline', endpoint: (id) => `/api/v1/projects/${id}/outlines` },
   { key: 'timeline', labelKey: 'nav.lib.timeline', endpoint: (id) => `/api/v1/projects/${id}/timeline` },
   { key: 'foreshadow', labelKey: 'nav.lib.foreshadow', endpoint: (id) => `/api/v1/projects/${id}/foreshadowings` },
-  { key: 'rag', labelKey: 'nav.lib.rag', endpoint: (id) => `/api/v1/projects/${id}/extractions/runs` },
+  { key: 'knowledge', labelKey: 'nav.lib.knowledge', endpoint: (id) => `/api/v1/projects/${id}/knowledge-graph` },
 ];
 
 const CAT_KEYS = CATS.map((c) => c.key);
 
 /** F43 §3.1：编辑保存 PATCH 扁平端点（按 activeCat，已核实 backend/api/routers） */
-const PATCH_ENDPOINTS: Record<Exclude<CatKey, 'rag'>, (id: string | number) => string> = {
+const PATCH_ENDPOINTS: Record<Exclude<CatKey, 'knowledge'>, (id: string | number) => string> = {
   characters: (id) => `/api/v1/characters/${id}`,
   world: (id) => `/api/v1/world-settings/${id}`,
   outline: (id) => `/api/v1/outlines/${id}`,
@@ -55,12 +69,18 @@ const PATCH_ENDPOINTS: Record<Exclude<CatKey, 'rag'>, (id: string | number) => s
 };
 
 /** F43 §3.1：删除端点（世界观统一 ?cascade=true，D11 拍板） */
-const DELETE_ENDPOINTS: Record<Exclude<CatKey, 'rag'>, (id: string | number) => string> = {
+const DELETE_ENDPOINTS: Record<Exclude<CatKey, 'knowledge'>, (id: string | number) => string> = {
   characters: (id) => `/api/v1/characters/${id}`,
   world: (id) => `/api/v1/world-settings/${id}?cascade=true`,
   outline: (id) => `/api/v1/outlines/${id}`,
   timeline: (id) => `/api/v1/timeline/events/${id}`,
   foreshadow: (id) => `/api/v1/foreshadowings/${id}`,
+};
+
+/** F48 §5.4：图谱节点类型 → 实体编辑分类 tab（map_pin 归属世界观地图工作台） */
+const KG_ENTITY_CAT: Record<GraphNode['type'], CatKey> = {
+  character: 'characters', world: 'world', outline: 'outline',
+  timeline: 'timeline', foreshadow: 'foreshadow', map_pin: 'world',
 };
 
 /** #189 模式：「已保存」指示自动隐藏间隔（ms） */
@@ -80,125 +100,6 @@ interface WorldCopyResult {
 
 /** F43 P1（§5.5/§5.3）：复制对话框状态 + 前端建树节点（parent_id 树） */
 interface CopyState { open: boolean; mode: 'subtree' | 'all'; rootId?: string | number }
-interface WorldTreeNode { item: LibraryItemDTO; children: WorldTreeNode[] }
-
-/** F43 P1（§5.3）：items → 树——顶层 = parent_id null/缺失；按序保序；孤儿降级顶层（E18） */
-function buildWorldTree(items: LibraryItemDTO[]): WorldTreeNode[] {
-  const nodes = new Map<string | number, WorldTreeNode>();
-  for (const item of items) {
-    nodes.set(item.id, { item, children: [] });
-  }
-  const roots: WorldTreeNode[] = [];
-  for (const item of items) {
-    const node = nodes.get(item.id);
-    if (!node) continue;
-    const parentId = item.parent_id;
-    if (parentId !== null && parentId !== undefined && nodes.has(parentId)) {
-      nodes.get(parentId)!.children.push(node);
-    } else {
-      roots.push(node);
-    }
-  }
-  return roots;
-}
-
-/** F43 P1（§5.3）：递归树节点视图——toggle 仅渲染在有子节点行；操作按钮随 D12 悬停显示 */
-function WorldNodeView({
-  node,
-  depth,
-  collapsed,
-  onToggle,
-  onEdit,
-  onDelete,
-  onCopy,
-}: {
-  node: WorldTreeNode;
-  depth: number;
-  collapsed: Set<string | number>;
-  onToggle: (id: string | number) => void;
-  onEdit: (item: LibraryItemDTO) => void;
-  onDelete: (item: LibraryItemDTO) => void;
-  onCopy: (item: LibraryItemDTO) => void;
-}) {
-  const { t } = useI18n();
-  const { item, children } = node;
-  const hasChildren = children.length > 0;
-  const isCollapsed = collapsed.has(item.id);
-  return (
-    <div className="tree-node">
-      <div
-        className="tree-row group flex items-center gap-2 px-3 py-2 text-[13px] text-ink transition-colors duration-150 hover:bg-surface-2/60"
-        style={{ paddingLeft: depth * 18 + 12 }}
-      >
-        {hasChildren ? (
-          <button
-            type="button"
-            data-testid={`world-tree-toggle-${item.id}`}
-            aria-label={isCollapsed ? t('nav.expand') : t('nav.collapse')}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-3 transition duration-150 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => onToggle(item.id)}
-          >
-            <ChevronRight
-              className={cn('h-3.5 w-3.5 transition-transform duration-180', !isCollapsed && 'rotate-90')}
-              aria-hidden="true"
-            />
-          </button>
-        ) : (
-          <span className="h-5 w-5 shrink-0" aria-hidden="true" />
-        )}
-        <span className="min-w-0 flex-1 truncate">{item.name ?? ''}</span>
-        {item.category ? (
-          <span className="shrink-0 rounded-full bg-surface-3 px-2 py-0.5 text-[11px] text-ink-2">
-            {item.category}
-          </span>
-        ) : null}
-        {/* F43 P1：行内操作按钮（D12 悬停显示；P0 编辑/删除 testid 不变 + 复制 world-copy-<id>） */}
-        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-180 group-hover:opacity-100 focus-within:opacity-100">
-          <button
-            type="button"
-            data-testid={`lib-edit-${item.id}`}
-            aria-label={`${t('lib.edit')} ${item.name ?? ''}`}
-            className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => onEdit(item)}
-          >
-            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            data-testid={`lib-delete-${item.id}`}
-            aria-label={`${t('lib.delete')} ${item.name ?? ''}`}
-            className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => onDelete(item)}
-          >
-            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            data-testid={`world-copy-${item.id}`}
-            aria-label={`${t('lib.copy.title')} ${item.name ?? ''}`}
-            className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => onCopy(item)}
-          >
-            <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-      {!isCollapsed &&
-        children.map((child) => (
-          <WorldNodeView
-            key={String(child.item.id)}
-            node={child}
-            depth={depth + 1}
-            collapsed={collapsed}
-            onToggle={onToggle}
-            onEdit={onEdit}
-            onDelete={onDelete}
-            onCopy={onCopy}
-          />
-        ))}
-    </div>
-  );
-}
 
 function isCatKey(v: string | null): v is CatKey {
   return v !== null && (CAT_KEYS as string[]).includes(v);
@@ -222,7 +123,7 @@ export function LibraryPage() {
   const [loading, setLoading] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  // #196：分类实体手动创建对话框开关（仅非 RAG 分类空态 CTA 打开）
+  // #196：分类实体手动创建对话框开关（仅非 knowledge 分类空态 CTA 打开）
   const [createOpen, setCreateOpen] = useState(false);
   // F43：行编辑对象（非空 = 编辑模式预填；随对话框关闭重置）
   const [editing, setEditing] = useState<LibraryItemDTO | null>(null);
@@ -245,10 +146,18 @@ export function LibraryPage() {
   const [timelineNarrative, setTimelineNarrative] = useState<TimelineEventDTO[]>([]);
   // F43 P3（§5.15）：章节标题映射（chapter_id → title，大纲 tab 加载时拉取）
   const [chapterTitles, setChapterTitles] = useState<Record<string, string>>({});
+  // F48：知识图谱 tab——图谱视图/关系列表切换 + 图谱数据 + 关系增删改表单态
+  const [kgView, setKgView] = useState<'graph' | 'list'>('graph');
+  const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
+  const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
+  const [relations, setRelations] = useState<KnowledgeRelation[]>([]);
+  const [relationFormOpen, setRelationFormOpen] = useState(false);
+  const [editingRelation, setEditingRelation] = useState<KnowledgeRelation | null>(null);
+  const [pendingRelationDelete, setPendingRelationDelete] = useState<KnowledgeRelation | null>(null);
 
   const cat = CATS.find((c) => c.key === activeCat) ?? CATS[0];
-  // rag 无创建端点（CTA 已走跳转分支），对话框仅在五个可创建分类下渲染
-  const createCat = activeCat === 'rag' ? null : activeCat;
+  // knowledge 无创建端点（图谱关系编辑走画布/列表内交互），对话框仅在五个可创建分类下渲染
+  const createCat = activeCat === 'knowledge' ? null : activeCat;
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? null;
 
   // #389：世界观分类实体列表 + 新建分类（state/加载/保存逻辑集中在 hook）
@@ -366,17 +275,44 @@ export function LibraryPage() {
     if (isCatKey(p) && p !== activeCat) setActiveCat(p);
   }, [searchParams, activeCat]);
 
-  // 拉取分类端点（timeline 特例 TimelineView 双数组；失败 → error 态可重试）
+  // 拉取分类端点（timeline 特例 TimelineView 双数组；knowledge 特例图谱聚合 nodes+edges；失败 → error 态可重试）
   useEffect(() => {
     if (!currentProjectId) {
       setItems([]);
       setTimelineNarrative([]);
+      setGraphNodes([]);
+      setGraphEdges([]);
       setLoading(false);
       setLoadFailed(false);
       return;
     }
     const current = CATS.find((c) => c.key === activeCat) ?? CATS[0];
     let cancelled = false;
+    if (current.key === 'knowledge') {
+      // F48 §5.4：图谱视图一次拉取 nodes+edges（非列表端点；不动 loading——列表局部刷新不 unmount）
+      setLoadFailed(false);
+      void fetchKnowledgeGraph(currentProjectId)
+        .then((view) => {
+          if (cancelled) return;
+          setGraphNodes(view.nodes ?? []);
+          setGraphEdges(view.edges ?? []);
+          setItems([]);
+          setTimelineNarrative([]);
+          setLoading(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setGraphNodes([]);
+          setGraphEdges([]);
+          setItems([]);
+          setTimelineNarrative([]);
+          setLoading(false);
+          setLoadFailed(true);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
     setLoading(true);
     setLoadFailed(false);
     void apiFetch<CatResponse>(current.endpoint(currentProjectId))
@@ -404,6 +340,25 @@ export function LibraryPage() {
     };
   }, [currentProjectId, activeCat, reloadKey]);
 
+  // F48 §5.4：关系列表视图激活时拉取（分页响应 {items,...}；增删改后经 reloadKey 局部刷新）
+  useEffect(() => {
+    if (!currentProjectId || activeCat !== 'knowledge' || kgView !== 'list') {
+      setRelations([]);
+      return;
+    }
+    let cancelled = false;
+    void listKnowledgeRelations(currentProjectId)
+      .then((data) => {
+        if (!cancelled) setRelations(data.items ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setRelations([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProjectId, activeCat, kgView, reloadKey]);
+
   // 卸载清理「已保存」自动隐藏计时器（防卸载后 timer 回调 setState）
   useEffect(
     () => () => {
@@ -425,13 +380,13 @@ export function LibraryPage() {
   const handleSave = async (input: Record<string, unknown>) => {
     if (!currentProjectId) return;
     const current = CATS.find((c) => c.key === activeCat) ?? CATS[0];
-    // rag 不适用（无创建/编辑端点；CTA 已走跳转分支，此处防御性早退）
-    if (current.key === 'rag') return;
+    // knowledge 不适用（无创建/编辑端点；图谱关系编辑走画布/列表内交互，此处防御性早退）
+    if (current.key === 'knowledge') return;
     try {
       if (editing) {
         // F43 §5.2：编辑保存 → PATCH 扁平端点（spec §3.1 表）→ 关闭 + 刷新 + 顶部「已保存」指示
         setSaveState('saving');
-        await apiFetch(PATCH_ENDPOINTS[current.key as Exclude<CatKey, 'rag'>](editing.id), {
+        await apiFetch(PATCH_ENDPOINTS[current.key as Exclude<CatKey, 'knowledge'>](editing.id), {
           method: 'PATCH',
           body: input,
         });
@@ -457,15 +412,14 @@ export function LibraryPage() {
     }
   };
 
-  // F43 §5.3：删除确认 → DELETE（世界观 ?cascade=true）→ 关闭 + 刷新 + ok toast；
-  // 失败同样关闭确认框（E2：失败后不再重复确认），err toast
+  // F43 §5.3：删除确认 → DELETE（世界观 ?cascade=true）→ 关闭 + 刷新 + ok toast；失败同样关闭确认框（E2），err toast
   const handleDelete = async () => {
     if (!pendingDelete || !currentProjectId) return;
     const target = pendingDelete;
     const current = CATS.find((c) => c.key === activeCat) ?? CATS[0];
-    if (current.key === 'rag') return;
+    if (current.key === 'knowledge') return;
     try {
-      await apiFetch(DELETE_ENDPOINTS[current.key as Exclude<CatKey, 'rag'>](target.id), {
+      await apiFetch(DELETE_ENDPOINTS[current.key as Exclude<CatKey, 'knowledge'>](target.id), {
         method: 'DELETE',
       });
       setPendingDelete(null);
@@ -477,8 +431,59 @@ export function LibraryPage() {
     }
   };
 
-  // F43 P1（§5.5/§3.3）：复制确认 → POST F37 copy 端点 → 结果 toast；
-  // 成功关框；失败 err toast + 对话框保持打开可重试（E24）
+  // F48 §5.4：图谱关系保存（create → POST /projects/{pid}/knowledge-relations；edit → PATCH /knowledge-relations/{rid}）→ 关表单 + reloadKey 局部刷新
+  const handleRelationSave = async (data: KnowledgeRelationFormData) => {
+    if (!currentProjectId) return;
+    try {
+      if (editingRelation) await updateKnowledgeRelation(editingRelation.id, data);
+      else await createKnowledgeRelation(currentProjectId, data);
+      setRelationFormOpen(false);
+      setEditingRelation(null);
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      useToastStore.getState().pushToast('err', errorMessage(err));
+    }
+  };
+
+  // F48 §5.4：关系删除确认 → DELETE /knowledge-relations/{rid}（真删）→ 刷新 + ok toast
+  const handleRelationDelete = async () => {
+    if (!pendingRelationDelete) return;
+    try {
+      await deleteKnowledgeRelation(pendingRelationDelete.id);
+      setPendingRelationDelete(null);
+      setReloadKey((k) => k + 1);
+      useToastStore.getState().pushToast('ok', t('toast.saved'));
+    } catch (err) {
+      setPendingRelationDelete(null);
+      useToastStore.getState().pushToast('err', errorMessage(err));
+    }
+  };
+
+  // F48 §5.4：图谱边 → 关系行（仅 knowledge_relations 可编辑；cr: 行 F9 只读）
+  const relationFromEdge = (edge: GraphEdge): KnowledgeRelation | null => {
+    if (edge.source_table !== 'knowledge_relations') return null;
+    const src = graphNodes.find((n) => n.id === edge.source);
+    const tgt = graphNodes.find((n) => n.id === edge.target);
+    if (!src || !tgt) return null;
+    return {
+      id: edge.id.replace(/^kr:/, ''),
+      project_id: currentProjectId ?? '',
+      source_type: src.type,
+      source_id: src.entity_id,
+      target_type: tgt.type,
+      target_id: tgt.entity_id,
+      relation_type: edge.label,
+      description: edge.description ?? '',
+      source: 'manual',
+      created_at: '',
+      updated_at: '',
+    };
+  };
+
+  // F48 §5.4：图谱节点「去编辑」→ 对应实体分类 tab（map_pin 归属世界观地图工作台）
+  const handleOpenKgEntity = (node: GraphNode) => handleTabChange(KG_ENTITY_CAT[node.type]);
+
+  // F43 P1（§5.5/§3.3）：复制确认 → POST F37 copy 端点 → 结果 toast；成功关框；失败 err toast + 对话框保持打开可重试（E24）
   const handleCopy = async (targetId: string, selfOnly: boolean, state: CopyState) => {
     if (!currentProjectId) return;
     const targetProject = projects.find((p) => p.id === targetId);
@@ -571,7 +576,7 @@ export function LibraryPage() {
         </div>
       ) : (
         <>
-          {/* 六分类 tab（角色/世界观/大纲/时间线/伏笔/知识库 RAG） */}
+          {/* 六分类 tab（角色/世界观/大纲/时间线/伏笔/知识图谱） */}
           <div
             data-testid="library-tabs"
             role="tablist"
@@ -619,9 +624,39 @@ export function LibraryPage() {
                   {t('lib.retry')}
                 </button>
               </div>
+            ) : activeCat === 'knowledge' ? (
+              /* F48 §5.4：知识图谱 tab 装配（视图 UI 在独立组件文件，library.tsx 只做状态与回调接线） */
+              <KnowledgeGraphView
+                nodes={graphNodes}
+                edges={graphEdges}
+                relations={relations}
+                view={kgView}
+                onViewChange={setKgView}
+                onCreateRelation={() => {
+                  setEditingRelation(null);
+                  setRelationFormOpen(true);
+                }}
+                onEditRelation={(relation) => {
+                  setEditingRelation(relation);
+                  setRelationFormOpen(true);
+                }}
+                onDeleteRelation={setPendingRelationDelete}
+                onOpenEntity={handleOpenKgEntity}
+                onEditEdge={(edge) => {
+                  const relation = relationFromEdge(edge);
+                  if (relation) {
+                    setEditingRelation(relation);
+                    setRelationFormOpen(true);
+                  }
+                }}
+                onDeleteEdge={(edge) => {
+                  const relation = relationFromEdge(edge);
+                  if (relation) setPendingRelationDelete(relation);
+                }}
+                onGoEntities={() => handleTabChange('characters')}
+              />
             ) : activeCat === 'world' && workbenchActive && (items.length > 0 || maps.length > 0) ? (
-              /* F43 P2（§5.8）：地图工作台——左树（#378 目录树 + P1/P2 兼容徽标）+ 右画布/pin 列表；
-                 #378：世界条目为空但已有地图时仍进入工作台（地图为树主体） */
+              /* F43 P2（§5.8）：地图工作台——左树（#378 目录树 + P1/P2 兼容徽标）+ 右画布/pin 列表；#378：世界条目为空但已有地图时仍进入工作台 */
               <MapWorkbench
                 projectId={currentProjectId}
                 worldItems={items}
@@ -654,7 +689,7 @@ export function LibraryPage() {
                   type="button"
                   data-testid="library-tab-empty-cta"
                   className="mt-4 rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                  onClick={() => (cat.key === 'rag' ? navigate('/writing') : setCreateOpen(true))}
+                  onClick={() => setCreateOpen(true)}
                 >
                   {t('lib.empty.create')}
                 </button>
@@ -670,8 +705,7 @@ export function LibraryPage() {
               </div>
             ) : activeCat === 'world' ? (
               <>
-                {/* F43 P1（§5.4）：世界观分类筛选工具栏——默认分组 + 数据自定义 chips（无「全部」，
-                    未选 = 展示所有，再点同 chip 取消）；右上角顶部整体复制（E21 单项目 disabled） */}
+                {/* F43 P1（§5.4）：世界观分类筛选工具栏——默认分组 + 数据自定义 chips（无「全部」，未选 = 展示所有，再点同 chip 取消）；右上角顶部整体复制（E21） */}
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   <span className="text-[12px] text-ink-2">{t('lib.worldCat.label')}</span>
                   {worldCategories.map((cat) => (
@@ -757,82 +791,21 @@ export function LibraryPage() {
                 narrativeOrder={timelineNarrative}
               />
             ) : (
-              <ul
-                data-testid="library-list"
-                className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface shadow-card"
-              >
-                {items.map((item) => {
-                  // F43 P1（§5.1/§5.2）：角色行等级徽标 + 标签 chips（缺省不渲染）
-                  const isCharacters = activeCat === 'characters';
-                  const rank = isCharacters ? String(item.extra?.role_rank ?? '') : '';
-                  const groups =
-                    isCharacters && Array.isArray(item.extra?.groups)
-                      ? (item.extra!.groups as unknown[]).filter(
-                          (g): g is string => typeof g === 'string',
-                        )
-                      : [];
-                  return (
-                    <li
-                      key={String(item.id)}
-                      className="group lib-item flex items-center gap-3 px-4 py-2.5 text-[13px] text-ink"
-                    >
-                      <span className="min-w-0 flex-1 truncate">{item.title ?? item.name ?? ''}</span>
-                      {rank !== '' && (
-                        <span
-                          data-testid={`lib-rank-${item.id}`}
-                          className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] text-accent"
-                        >
-                          {t(`lib.rank.${rank}`)}
-                        </span>
-                      )}
-                      {groups.length > 0 && (
-                        <div data-testid={`lib-tags-${item.id}`} className="flex shrink-0 items-center gap-1">
-                          {groups.map((tag) => (
-                            <span
-                              key={tag}
-                              className="rounded-full bg-surface-3 px-2 py-0.5 text-[11px] text-ink-2"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {/* F43 §5.1（D12）：悬停显示操作按钮；focus-within 保证键盘可达可见 */}
-                      {activeCat !== 'rag' && (
-                        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-180 group-hover:opacity-100 focus-within:opacity-100">
-                          <button
-                            type="button"
-                            data-testid={`lib-edit-${item.id}`}
-                            aria-label={`${t('lib.edit')} ${item.title ?? item.name ?? ''}`}
-                            className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            onClick={() => {
-                              setEditing(item);
-                              setCreateOpen(true);
-                            }}
-                          >
-                            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            data-testid={`lib-delete-${item.id}`}
-                            aria-label={`${t('lib.delete')} ${item.title ?? item.name ?? ''}`}
-                            className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            onClick={() => setPendingDelete(item)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
+              <LibraryItemList
+                items={items}
+                withCharacterExtras={activeCat === 'characters'}
+                onEdit={(item) => {
+                  setEditing(item);
+                  setCreateOpen(true);
+                }}
+                onDelete={(item) => setPendingDelete(item)}
+              />
             )}
           </div>
         </>
       )}
 
-      {/* #196 + F43：创建/编辑双模式对话框（挂在页面根部，open 受控；RAG 分类不渲染） */}
+      {/* #196 + F43：创建/编辑双模式对话框（挂在页面根部，open 受控；knowledge 分类不渲染） */}
       {createCat !== null && (
         <LibraryCreateDialog
           open={createOpen}
@@ -863,6 +836,36 @@ export function LibraryPage() {
           onCopy={(targetId, selfOnly) => handleCopy(targetId, selfOnly, copyState)}
           onOpenChange={(open) => {
             if (!open) setCopyState(null);
+          }}
+        />
+      )}
+
+      {/* F48 §5.4：新建/编辑关系表单（遮罩弹层；列表/画布视图保持挂载，保存后局部刷新） */}
+      {relationFormOpen && (
+        <RelationForm
+          mode={editingRelation ? 'edit' : 'create'}
+          initial={editingRelation}
+          entities={graphNodes}
+          onSubmit={(data) => void handleRelationSave(data)}
+          onCancel={() => {
+            setRelationFormOpen(false);
+            setEditingRelation(null);
+          }}
+        />
+      )}
+
+      {/* F48 §5.4：关系删除二次确认（真删；testid 契约 library-kg-confirm-*） */}
+      {pendingRelationDelete && (
+        <ConfirmDialog
+          open
+          title={t('lib.delete.title', { name: pendingRelationDelete.relation_type })}
+          message={t('lib.delete.confirm')}
+          confirmText={t('lib.delete.ok')}
+          danger
+          testidPrefix="library-kg-confirm"
+          onConfirm={() => void handleRelationDelete()}
+          onOpenChange={(open) => {
+            if (!open) setPendingRelationDelete(null);
           }}
         />
       )}

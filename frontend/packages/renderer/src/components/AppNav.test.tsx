@@ -29,7 +29,7 @@
  * nav.library='设定库' nav.settings='设置' nav.models='模型管理' nav.agent='Agent'
  * nav.group.writing='写作区' nav.group.library='设定库' nav.group.system='系统'
  * nav.lib.characters='角色' nav.lib.world='世界观' nav.lib.outline='大纲'
- * nav.lib.timeline='时间线' nav.lib.foreshadow='伏笔' nav.lib.rag='知识库 RAG'
+ * nav.lib.timeline='时间线' nav.lib.foreshadow='伏笔' nav.lib.knowledge='知识图谱'（F48：rag tab 改造）
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -68,7 +68,7 @@ const NAV_LINKS: Array<[string, string]> = [
   ['outline', '/library?cat=outline'],
   ['timeline', '/library?cat=timeline'],
   ['foreshadow', '/library?cat=foreshadow'],
-  ['rag', '/library?cat=rag'],
+  ['knowledge', '/library?cat=knowledge'],
   ['agent', '/settings?cat=agent'],
   ['settings', '/settings'],
 ];
@@ -111,7 +111,7 @@ describe('AppNav — 结构与分组', () => {
     expect(screen.getByTestId('nav-item-projects')).toHaveTextContent('项目');
     expect(screen.getByTestId('nav-item-library')).toHaveTextContent('设定库');
     expect(screen.getByTestId('nav-item-settings')).toHaveTextContent('设置');
-    expect(screen.getByTestId('nav-item-rag')).toHaveTextContent('知识库 RAG');
+    expect(screen.getByTestId('nav-item-knowledge')).toHaveTextContent('知识图谱');
   });
 });
 

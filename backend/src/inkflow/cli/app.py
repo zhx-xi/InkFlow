@@ -51,6 +51,7 @@ from inkflow.cli.commands import (  # noqa: E402  # app 定义后导入
     extract,
     foreshadowing,
     kernel,
+    knowledge_graph,
     memory_cmd,
     outline,
     project,
@@ -91,6 +92,7 @@ app.add_typer(agent_cmd.app, name="agent")
 app.add_typer(book_cmd.app, name="book")
 app.add_typer(session.app, name="session")
 app.add_typer(kernel.app, name="kernel")
+app.add_typer(knowledge_graph.app, name="knowledge")
 app.add_typer(memory_cmd.app, name="memory")
 app.add_typer(context_app, name="context")
 app.add_typer(skill_app, name="skill")

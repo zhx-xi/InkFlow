@@ -8,7 +8,7 @@
  * - library-project-select：当前项目选择器（Radix Select，trigger aria-label=t('lib.projectSelect')）
  * - library-breadcrumb：面包屑「设定库 · 项目名 / 分类」（文本包含项目名与当前分类）
  * - library-tabs：六 tab 容器；tab 元素 role="tab"（shadcn Tabs 或 button+role=tab），
- *   标签文案用 nav.lib.* key：角色/世界观/大纲/时间线/伏笔/知识库 RAG
+ *   标签文案用 nav.lib.* key：角色/世界观/大纲/时间线/伏笔/知识图谱
  * - library-list：当前分类列表（列表项渲染分类 DTO 的 name 字段）
  * - library-empty：未选择项目空态（文案 + 「前往项目页」按钮）
  * - library-tab-empty：分类空态引导（「还没有{name}，去创建」+ CTA library-tab-empty-cta）
@@ -21,7 +21,7 @@
  *   大纲 → GET /api/v1/projects/{id}/outlines
  *   时间线 → GET /api/v1/projects/{id}/timeline
  *   伏笔 → GET /api/v1/projects/{id}/foreshadowings
- *   知识库 RAG → GET /api/v1/projects/{id}/extractions/runs（索引状态列表，渲染细节 #106 细化）
+ *   知识图谱 → GET /api/v1/projects/{id}/knowledge-graph（图谱画布 nodes+edges，F48 §5.4；原 rag tab 改造）
  * - 未选择项目（currentProjectId=null，无论 projects 是否有数据）→ library-empty
  *   「选择或新建项目开始构建设定」+ 前往项目页按钮 → 路由 /projects
  * - 切换项目（选择器）→ useProjectStore.selectProject + 内容重载（重新拉取新项目分类端点）
@@ -62,7 +62,7 @@ const projectP2 = {
   created_at: '2026-08-02T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
 };
 
-const TABS = ['角色', '世界观', '大纲', '时间线', '伏笔', '知识库 RAG'];
+const TABS = ['角色', '世界观', '大纲', '时间线', '伏笔', '知识图谱'];
 
 function LocationProbe() {
   const location = useLocation();
@@ -96,7 +96,7 @@ beforeEach(() => {
     if (path === '/api/v1/projects/p1/characters') return { items: [{ id: 'c1', name: '林晚' }], total: 1, offset: 0, limit: 50 };
     if (path === '/api/v1/projects/p2/characters') return { items: [{ id: 'c2', name: '沈砚' }], total: 1, offset: 0, limit: 50 };
     if (path === '/api/v1/projects/p1/outlines') return { items: [{ id: 'o1', name: '卷一 风起' }], total: 1, offset: 0, limit: 50 };
-    if (path === '/api/v1/projects/p1/extractions/runs') return { items: [{ id: 1, status: 'success' }], total: 1, offset: 0, limit: 50 };
+    if (path === '/api/v1/projects/p1/knowledge-graph') return { nodes: [], edges: [] };
     // 时间线 = TimelineView 形状（backend timeline.py L365-377：event_timeline/narrative_order，无 items）
     if (path === '/api/v1/projects/p1/timeline')
       return { project_id: 'p1', total: 1, event_timeline: [{ id: 't1', title: '决战昆仑' }], narrative_order: [] };
@@ -173,16 +173,16 @@ describe('设定库页 — 项目上下文（spec §7.3）', () => {
     });
   });
 
-  it('知识库 RAG tab：拉取索引状态端点 /extractions/runs', async () => {
+  it('知识图谱 tab：拉取图谱端点 /knowledge-graph（F48：原 rag tab 改造）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
     });
     const user = userEvent.setup();
     renderLibrary();
 
-    await user.click(screen.getByRole('tab', { name: '知识库 RAG' }));
+    await user.click(screen.getByRole('tab', { name: '知识图谱' }));
     await waitFor(() => {
-      expect(fetchCalled('/api/v1/projects/p1/extractions/runs')).toBe(true);
+      expect(fetchCalled('/api/v1/projects/p1/knowledge-graph')).toBe(true);
     });
   });
 
@@ -342,12 +342,12 @@ describe('设定库页 — 分类端点全覆盖与失败兜底（#105 补测）
  * - 对话框字段按分类渲染（后端 DTO 已核实，见 spec §2.1 表）；名称/标题必填
  * - 保存成功 → POST 对应分类端点 → 对话框关闭 + 列表实时刷新（重新拉取当前分类端点）
  * - 保存失败 → err toast（errorMessage）+ 对话框保持打开
- * - 知识库 RAG 分类无创建端点（extractions/runs = AI 提取运行列表）→ 空态 CTA 保持跳 /writing 引导
+ * - 知识图谱分类无创建端点（图谱关系编辑走画布/列表内交互）→ 空态 CTA 改图谱空态引导（F48 §5.4，不跳 /writing）
  * GREEN 契约：library.tsx 渲染 <LibraryCreateDialog>（新组件 components/LibraryCreateDialog.tsx）；
  * data-testid=library-create-dialog；字段经 label/aria-label 关联（i18n lib.create.* 由 GREEN 补 zh/en）；
  * 创建按钮 data-testid=library-create-save。
  * RED 预期：现状 CTA navigate('/writing') → 无对话框 → element-missing FAIL；
- * RAG 保持用例为确认型（现状即跳转）。
+ * 知识图谱 tab 空态用例改 F48 语义（图谱空态引导，不跳 /writing）。
  */
 describe('设定库页 — #196 分类实体手动创建', () => {
   /** 播种 p1 + 切到指定 tab + 点击空态 CTA 打开对话框 */
@@ -355,14 +355,13 @@ describe('设定库页 — #196 分类实体手动创建', () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
     });
-    // 空态前提：当前分类端点 mock 为空（beforeEach 默认对角色/大纲/时间线/RAG 有数据 → 无空态）
+    // 空态前提：当前分类端点 mock 为空（beforeEach 默认对角色/大纲/时间线/知识图谱有数据 → 无空态）
     const emptyByTab: Record<string, string | null> = {
       '角色': '/api/v1/projects/p1/characters',
       '世界观': '/api/v1/projects/p1/world-settings',
       '大纲': '/api/v1/projects/p1/outlines',
       '时间线': null, // TimelineView 特例（event_timeline）
       '伏笔': '/api/v1/projects/p1/foreshadowings',
-      '知识库 RAG': '/api/v1/projects/p1/extractions/runs',
     };
     const emptyTarget = emptyByTab[tabName];
     if (emptyTarget !== undefined) {
@@ -506,22 +505,26 @@ describe('设定库页 — #196 分类实体手动创建', () => {
     expect(screen.getByTestId('library-create-dialog')).toBeInTheDocument();
   });
 
-  it('知识库 RAG 分类空态 CTA → 仍跳 /writing（无创建端点，保持 AI 提取引导）', async () => {
+  it('知识图谱 tab 空态 → 图谱空态引导（F48：不再跳 /writing，改图谱空态 library-kg-empty）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
     });
-    // RAG 默认 mock 有数据 → 先 mock 空（空态前提）
+    // 图谱默认 mock 有数据（nodes 非空）→ 先 mock 空（空态前提：graph 返回 nodes=[] edges=[]）
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/extractions/runs') return { items: [], total: 0, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/knowledge-graph') return { nodes: [], edges: [] };
       return { items: [], total: 0, offset: 0, limit: 50 };
     });
     const user = userEvent.setup();
     renderLibrary();
-    await user.click(screen.getByRole('tab', { name: '知识库 RAG' }));
-    const empty = await screen.findByTestId('library-tab-empty');
-    await user.click(within(empty).getByTestId('library-tab-empty-cta'));
-    expect(await screen.findByTestId('location-probe')).toHaveTextContent('/writing');
+    await user.click(screen.getByRole('tab', { name: '知识图谱' }));
+    const empty = await screen.findByTestId('library-kg-empty');
+    // F48 §5.4：空态 CTA 不再跳 /writing（图谱空态引导去实体页/建关系）。
+    // LocationProbe 只在 /projects 或 /writing 路由渲染——probe 不存在 = 未发生跳转。
+    expect(empty).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByTestId('location-probe')).toBeNull();
+    });
   });
 });
 
@@ -530,7 +533,7 @@ describe('设定库页 — #196 分类实体手动创建', () => {
  * 六分类列表项编辑/删除（P0 批次）。
  *
  * GREEN 契约（library.tsx + LibraryCreateDialog.tsx + ConfirmDialog.tsx + i18n zh/en）：
- * - 列表行（非 RAG）操作按钮：lib-edit-<id>（编辑）/ lib-delete-<id>（删除）
+ * - 列表行（非知识图谱）操作按钮：lib-edit-<id>（编辑）/ lib-delete-<id>（删除）
  * - 行编辑 → LibraryCreateDialog 双模式（editing prop 预填现值，data-testid=library-create-dialog 不变；
  *   保存按钮 library-create-save 不变）→ 保存 → PATCH 扁平端点（§3.1 表）→ 关框 + 刷新 + lib-save-indicator「已保存」
  * - 行删除 → ConfirmDialog（testidPrefix='lib-confirm'）：lib-confirm-dialog / lib-confirm-cancel / lib-confirm-ok；
@@ -538,10 +541,10 @@ describe('设定库页 — #196 分类实体手动创建', () => {
  *   世界观追加 lib.delete.worldCascade「该条目及其全部子条目将级联删除，不可恢复」+ DELETE ?cascade=true
  * - #195：遮罩点击不关闭；关闭仅 取消/Esc/确认成功
  * - 删除成功 → reloadKey 刷新 + ok toast（toast.saved）；失败 → err toast + 列表不变
- * - RAG 分类行无操作按钮（无 PATCH/DELETE 端点）
+ * - 知识图谱 tab 无列表行操作按钮（图谱画布视图，F48 改造——L10 用例改断言 library-kg-canvas）
  *
  * RED 预期：lib-edit-x / lib-delete-x / lib-confirm-dialog / lib-save-indicator 均不存在 →
- * element-missing（类 3 契约缺口）；L10 为确认型（现状 RAG 行本就无按钮 → 预期直接绿）。
+ * element-missing（类 3 契约缺口）；L10 改断言 library-kg-canvas（F48 图谱视图，非确认型）。
  */
 describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
   /** 角色列表完整 DTO（编辑预填需要全字段，spec §2.1；P1 契约升级 2026-08-13：含等级/标签 extra——编辑保存 enabled 前提） */
@@ -782,23 +785,25 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
     });
   });
 
-  it('L10 RAG 分类行无操作按钮（无 PATCH/DELETE 端点，确认型）', async () => {
+  it('L10 知识图谱 tab 无列表行操作按钮（图谱画布视图 library-kg-canvas，F48 改造）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
     });
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/extractions/runs') {
-        return { items: [{ id: 1, status: 'success' }], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/knowledge-graph') {
+        return { nodes: [], edges: [] };
       }
       return { items: [], total: 0, offset: 0, limit: 50 };
     });
     const user = userEvent.setup();
     renderLibrary();
 
-    await user.click(screen.getByRole('tab', { name: '知识库 RAG' }));
-    const list = await screen.findByTestId('library-list');
-    expect(within(list).queryAllByTestId(/^lib-edit-/)).toHaveLength(0);
-    expect(within(list).queryAllByTestId(/^lib-delete-/)).toHaveLength(0);
+    await user.click(screen.getByRole('tab', { name: '知识图谱' }));
+    const canvas = await screen.findByTestId('library-kg-canvas');
+    expect(canvas).toBeInTheDocument();
+    // 图谱视图非列表：F43 列表行编辑/删除按钮不存在（F48 关系编辑走画布/关系列表内交互）
+    expect(within(canvas).queryAllByTestId(/^lib-edit-/)).toHaveLength(0);
+    expect(within(canvas).queryAllByTestId(/^lib-delete-/)).toHaveLength(0);
   });
 });

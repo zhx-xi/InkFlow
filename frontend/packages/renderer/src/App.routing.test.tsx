@@ -21,9 +21,9 @@
  * - 项目选择器：data-testid="library-project-select"，aria-label「当前项目」（原生 <select> 或 Radix combobox；
  *   option 可访问名 = 项目名如「青云志」；原生 select 时 option value = 项目 id）
  * - 选择项目后：data-testid="library-breadcrumb" 含项目名与当前分类（如「设定库 · 青云志 / 角色」）
- *   + data-testid="library-tabs" 六分类 tab：角色/世界观/大纲/时间线/伏笔/知识库 RAG
+ *   + data-testid="library-tabs" 六分类 tab：角色/世界观/大纲/时间线/伏笔/知识图谱
  *   （i18n keys：lib.tab.characters / lib.tab.world / lib.tab.outline / lib.tab.timeline /
- *   lib.tab.foreshadow / lib.tab.rag）
+ *   lib.tab.foreshadow / lib.tab.knowledge）
  *
  * 设置页（pages/settings.tsx，根 data-testid="settings-page"）：
  * - 左侧分类导航 data-testid="settings-nav"，五分类文案：常规/模型/Agent/模板/账户
@@ -141,7 +141,7 @@ describe('App 路由集成（HashRouter 四页 + 侧边导航）', () => {
     });
     // 六分类 tab
     const tabs = within(library).getByTestId('library-tabs');
-    for (const tab of ['角色', '世界观', '大纲', '时间线', '伏笔', '知识库 RAG']) {
+    for (const tab of ['角色', '世界观', '大纲', '时间线', '伏笔', '知识图谱']) {
       expect(within(tabs).getByText(tab)).toBeInTheDocument();
     }
   });

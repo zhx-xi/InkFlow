@@ -76,6 +76,17 @@ from inkflow.domain.ports.foreshadowing_errors import (
     ForeshadowingServiceError,
 )
 from inkflow.domain.ports.foreshadowing_repository import ForeshadowingRepositoryProtocol
+from inkflow.domain.ports.knowledge_graph_errors import (
+    KnowledgeEntityNotFoundError,
+    KnowledgeGraphServiceError,
+    KnowledgeRelationConflictError,
+    KnowledgeRelationNotFoundError,
+    KnowledgeRelationSelfLoopError,
+    KnowledgeRelationValidationError,
+)
+from inkflow.domain.ports.knowledge_relation_repository import (
+    KnowledgeRelationRepositoryProtocol,
+)
 from inkflow.domain.ports.llm_client import (
     ChatMessage,
     ChatResponse,
@@ -166,6 +177,13 @@ __all__ = [
     "GroupNameConflictError",
     "GroupNotInProjectError",
     "IndexableEntity",
+    "KnowledgeEntityNotFoundError",
+    "KnowledgeGraphServiceError",
+    "KnowledgeRelationConflictError",
+    "KnowledgeRelationNotFoundError",
+    "KnowledgeRelationRepositoryProtocol",
+    "KnowledgeRelationSelfLoopError",
+    "KnowledgeRelationValidationError",
     "LLMClientProtocol",
     "LLMRequestError",
     "OutlineGenerationError",

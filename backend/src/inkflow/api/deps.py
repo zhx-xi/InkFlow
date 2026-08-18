@@ -32,6 +32,7 @@ from inkflow.domain.services.copy_service import WorldCopyService
 from inkflow.domain.services.draft_service import DraftService
 from inkflow.domain.services.extraction_service import ExtractionService
 from inkflow.domain.services.foreshadowing_service import ForeshadowingService
+from inkflow.domain.services.knowledge_graph_service import KnowledgeGraphService
 from inkflow.domain.services.map_service import MapService
 from inkflow.domain.services.memory_service import MemoryService
 from inkflow.domain.services.outline_service import OutlineService
@@ -150,20 +151,6 @@ def get_agent_run_repo(
 ) -> SQLiteAgentRunRepository:
     """获取 AgentRun 仓储实例（run 查询端点用）."""
     return SQLiteAgentRunRepository(db)
-
-
-def get_preference_repo(
-    db: AsyncSession = Depends(get_db),
-) -> SQLitePreferenceRepository:
-    """获取偏好仓储实例（F28 偏好查询端点用）."""
-    return SQLitePreferenceRepository(db)
-
-
-def get_memory_event_repo(
-    db: AsyncSession = Depends(get_db),
-) -> SQLiteMemoryEventRepository:
-    """获取记忆事件仓储实例（F28 事件查询端点用）."""
-    return SQLiteMemoryEventRepository(db)
 
 
 def get_memory_service(
@@ -672,11 +659,8 @@ _vector_store: VectorStoreProtocol | None = None
 async def _resolve_embedding_spec() -> tuple[str, str, str]:
     """解析 embedding 装配选型 → (provider, model_id, base_url)（#276 G3）.
 
-    选型规则（用户拍板 2026-08-13 #330 D1=b）: ProviderConfig 注册表首个
-    type="embedding" 模型为唯一真相源（API embedding）；注册表无 embedding →
-    RAGUnavailableError「未配置 embedding 模型，请先在 Provider 配置中添加
-    embedding 模型」。base_url 为 None 时归一化为空串（指纹 dict 与 OpenAI
-    构造共用同一元组）。
+    选型规则（#330 D1=b）: 注册表首个 type="embedding" 模型为唯一真相源；
+    无 → RAGUnavailableError（文案见下方 raise）；base_url None → 归一化空串。
     """
     from inkflow.domain.models.provider_config import ProviderConfig, ProviderModel
     from inkflow.domain.ports.extraction_errors import RAGUnavailableError
@@ -705,8 +689,7 @@ async def _build_store() -> VectorStoreProtocol:
     """按当前配置装配新向量存储（不赋值全局单例，供 get/refresh 复用）.
 
     与 _resolve_embedding_spec 共用选型段: API embedding（OpenAIEmbeddings）；
-    embedding 或 LangChainVectorStore 构造失败 → RAGUnavailableError（500
-    RAG 前缀，spec §3.4/§5.5 B1）。
+    构造失败 → RAGUnavailableError（500 RAG 前缀，spec §3.4/§5.5 B1）。
     """
     provider, model_id, base_url = await _resolve_embedding_spec()
     from langchain_core.embeddings import Embeddings
@@ -742,11 +725,9 @@ async def _build_store() -> VectorStoreProtocol:
 async def get_vector_store() -> VectorStoreProtocol:
     """获取 RAG 向量存储（模块级单例，懒加载，spec f19 §5）.
 
-    LangChainVectorStore（Chroma 持久化到 config.vector_store_dir）+ embedding
-    装配（#276 G3）: 注册表首个 type="embedding" 模型为唯一真相源（API
-    embedding，spec f19 §5.2/§5.4）；注册表无 embedding → RAGUnavailableError
-    未配置 embedding 模型（500「RAG 向量库不可用」前缀，§5.5 B1/B6）。
-    仅首次调用时初始化，懒加载单例语义不变。
+    LangChainVectorStore（Chroma 持久化到 config.vector_store_dir）+ 选型
+    （#276 G3，同 _resolve_embedding_spec）；无 embedding → RAGUnavailableError
+    （500「RAG 向量库不可用」前缀，§5.5 B1/B6）。仅首次调用时初始化。
     """
     global _vector_store
     if _vector_store is None:
@@ -757,9 +738,8 @@ async def get_vector_store() -> VectorStoreProtocol:
 async def refresh_vector_store() -> VectorStoreProtocol:
     """刷新向量存储单例（#276 G3 契约 14）——重建失败保留旧实例.
 
-    用当前配置重建 store（重新走选型 + 构造）；成功 → 原子替换模块级
-    _vector_store；失败 → RAGUnavailableError 上抛，旧实例保留不动
-    （不允许半替换/静默回退，防 reindex 用旧模型重写旧向量假成功）。
+    成功 → 原子替换模块级 _vector_store；失败 → RAGUnavailableError 上抛，
+    旧实例保留不动（防 reindex 用旧模型重写旧向量假成功）。
     """
     global _vector_store
     new_store = await _build_store()
@@ -874,3 +854,44 @@ async def get_vector_store_optional() -> VectorStoreProtocol | None:
         return await get_vector_store()
     except RAGUnavailableError:
         return None
+
+
+def get_knowledge_graph_service(
+    db: AsyncSession,
+) -> KnowledgeGraphService:
+    """获取 KnowledgeGraphService 实例（F48 八仓储装配：关系 + 六类实体 + 项目）."""
+    from inkflow.infrastructure.database.repositories.character_repo import (
+        SQLiteCharacterRepository,
+    )
+    from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
+        SQLiteForeshadowingRepository,
+    )
+    from inkflow.infrastructure.database.repositories.knowledge_relation_repo import (
+        SQLiteKnowledgeRelationRepository,
+    )
+    from inkflow.infrastructure.database.repositories.map_repo import (
+        SQLiteMapRepository,
+    )
+    from inkflow.infrastructure.database.repositories.outline_repo import (
+        SQLiteOutlineRepository,
+    )
+    from inkflow.infrastructure.database.repositories.project_repo import (
+        SQLiteProjectRepository,
+    )
+    from inkflow.infrastructure.database.repositories.timeline_repo import (
+        SQLiteTimelineRepository,
+    )
+    from inkflow.infrastructure.database.repositories.world_repo import (
+        SQLiteWorldRepository,
+    )
+
+    return KnowledgeGraphService(
+        relation_repo=SQLiteKnowledgeRelationRepository(db),
+        project_repo=SQLiteProjectRepository(db),
+        character_repo=SQLiteCharacterRepository(db),
+        world_repo=SQLiteWorldRepository(db),
+        outline_repo=SQLiteOutlineRepository(db),
+        timeline_repo=SQLiteTimelineRepository(db),
+        foreshadow_repo=SQLiteForeshadowingRepository(db),
+        map_repo=SQLiteMapRepository(db),
+    )
