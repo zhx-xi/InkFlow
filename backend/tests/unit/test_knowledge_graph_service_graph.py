@@ -561,3 +561,30 @@ def test_error_class_hierarchy():
     assert issubclass(KnowledgeEntityNotFoundError, KnowledgeGraphServiceError)
     assert issubclass(KnowledgeRelationValidationError, KnowledgeGraphServiceError)
     assert not issubclass(KnowledgeRelationNotFoundError, KnowledgeGraphServiceError)
+
+
+class TestGraphCoverageGap:
+    """coverage-gap 补测（F48 CI coverage-backend 门禁）— graph 聚合缺失分支。"""
+
+    async def test_orphan_character_relation_skipped(
+        self,
+        service,
+        mock_character_repo,
+        mock_world_repo,
+        mock_relation_repo,
+    ):
+        """character_relation 孤立边（端点角色不在 nodes 集）→ warning + 跳过 + 不抛错
+        （§7 边界 10；kr 孤立边既有用例已覆盖，本用例补 cr 段）。"""
+        char_a = _char("林尘")
+        world_w = _world("清河县")
+        mock_character_repo.list = AsyncMock(return_value=([char_a], 1))
+        mock_world_repo.list = AsyncMock(return_value=([world_w], 1))
+        ghost_a = _char("幽灵甲")
+        ghost_b = _char("幽灵乙")
+        orphan_cr = _cr(ghost_a, ghost_b, relation_type="悬空师徒")
+        mock_relation_repo.list_by_project = AsyncMock(return_value=[])
+        mock_character_repo.list_relations = AsyncMock(return_value=[orphan_cr])
+
+        view = await service.graph(PID)  # 不 500
+
+        assert view.edges == []

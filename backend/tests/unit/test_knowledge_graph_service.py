@@ -776,3 +776,59 @@ class TestListRelations:
         )
 
 # ── 已拆分至 test_knowledge_graph_service_graph.py ──
+
+
+class TestEntityRepoDispatch:
+    """coverage-gap 补测（F48 CI coverage-backend 门禁）— _repo_for 分派兜底。"""
+
+    async def test_repo_for_map_pin_returns_none(self, service):
+        """map_pin 走 _validate_entity 专用链路，无独立 repo 分支 → _repo_for 兜底 None。"""
+        assert service._repo_for(EntityType.MAP_PIN) is None
+
+
+class TestUpdateRelationCoverageGap:
+    """coverage-gap 补测（F48 CI coverage-backend 门禁）— update_relation 缺失分支。"""
+
+    async def test_update_source_key_success(
+        self, service, mock_relation_repo, mock_character_repo, mock_outline_repo
+    ):
+        """改 source 端点（source_type/source_id 变更分支 + source 端实体校验）→ 成功更新。"""
+        src_char = _char("林尘")
+        tgt_world = _world("清河县")
+        existing = _kr(source_id=src_char.id, target_id=tgt_world.id, relation_type="属于")
+        mock_relation_repo.get = AsyncMock(return_value=existing)
+        new_outline = _outline("第一卷")
+        mock_outline_repo.get = AsyncMock(return_value=new_outline)
+
+        updated = await service.update_relation(
+            existing.id, source_type="outline", source_id=new_outline.id
+        )
+        assert updated.source_type == EntityType.OUTLINE
+        assert updated.source_id == new_outline.id
+        mock_outline_repo.get.assert_awaited_once_with(new_outline.id.int)
+
+    async def test_update_self_loop_raises(self, service, mock_relation_repo):
+        """改键成自环（target 改指向 source 同实体）→ KnowledgeRelationSelfLoopError。"""
+        src_char = _char("林尘")
+        tgt_world = _world("清河县")
+        existing = _kr(source_id=src_char.id, target_id=tgt_world.id, relation_type="属于")
+        mock_relation_repo.get = AsyncMock(return_value=existing)
+
+        with pytest.raises(KnowledgeRelationSelfLoopError):
+            await service.update_relation(
+                existing.id, target_type="character", target_id=src_char.id
+            )
+        mock_relation_repo.update.assert_not_awaited()
+
+    async def test_update_no_fields_rebuilds_dto(self, service, mock_relation_repo):
+        """空 updates → else 分支重建 DTO（仅刷 updated_at 落库）。"""
+        src_char = _char("林尘")
+        tgt_world = _world("清河县")
+        existing = _kr(source_id=src_char.id, target_id=tgt_world.id, relation_type="属于")
+        mock_relation_repo.get = AsyncMock(return_value=existing)
+
+        updated = await service.update_relation(existing.id)
+        assert updated.id == existing.id
+        assert updated.relation_type == "属于"
+        assert updated.source == RelationSource.MANUAL
+        mock_relation_repo.update.assert_awaited_once()

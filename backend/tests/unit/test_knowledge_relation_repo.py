@@ -539,3 +539,47 @@ class TestKnowledgeRelationRepository:
 
         count = await db_session.execute(select(func.count()).select_from(KnowledgeRelationORM))
         assert count.scalar_one() == 0
+
+
+    # ── coverage-gap 补测（F48 CI coverage-backend 门禁）──────────────────
+
+    async def test_utcnow_returns_aware_datetime(self):
+        """ORM 模块 _utcnow() 直接调用 → 时区感知 UTC datetime。"""
+        from inkflow.infrastructure.database.models.knowledge_graph import _utcnow
+
+        now = _utcnow()
+        assert isinstance(now, datetime)
+        assert now.tzinfo is not None
+        assert now.utcoffset() is not None
+
+    async def test_repr_contains_id_and_key(self, db_session, project):
+        """KnowledgeRelationORM.__repr__ → 含 id 与六元组键摘要。"""
+        repo = SQLiteKnowledgeRelationRepository(db_session)
+        r = await repo.add(
+            _rel(
+                project,
+                source_id=uuid.UUID(int=149),
+                target_id=uuid.UUID(int=150),
+                relation_type="属于",
+            )
+        )
+        row = await db_session.execute(
+            select(KnowledgeRelationORM).where(KnowledgeRelationORM.id == r.id.int)
+        )
+        orm = row.scalar_one()
+        text = repr(orm)
+        assert f"id={orm.id}" in text
+        assert "character" in text
+        assert "属于" in text
+
+    async def test_update_missing_raises_value_error(self, db_session, project):
+        """update 不存在的 id → ValueError（rowcount == 0 分支）。"""
+        repo = SQLiteKnowledgeRelationRepository(db_session)
+        ghost = _rel(
+            project,
+            source_id=uuid.UUID(int=151),
+            target_id=uuid.UUID(int=152),
+            relation_type="幽灵关系",
+        )
+        with pytest.raises(ValueError):
+            await repo.update(ghost)

@@ -68,6 +68,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
@@ -260,6 +261,19 @@ class TestKnowledgeRelationListCmd:
         assert params["target_type"] == "world"
         assert params["relation_type"] == "属于"
 
+    def test_relation_list_no_filters(self, cli_runner, fake_http_client):
+        """coverage-gap 补测（F48 CI coverage-backend 门禁）— list 不带过滤参数 →
+        GET 不传 params（三个过滤 if 的 False 分支）。"""
+        fake_http_client.get.return_value = {"items": [], "total": 0}
+        result = cli_runner.invoke(
+            _kg().app,
+            ["relation", "list", str(PID)],
+            obj=_ctx(json_output=True),
+        )
+        assert result.exit_code == 0
+        call = fake_http_client.get.await_args
+        assert call.kwargs.get("params") is None
+
 
 class TestKnowledgeRelationAddCmd:
     """inkflow knowledge relation add <project_id> --source-type ... --relation-type ..."""
@@ -450,3 +464,199 @@ class TestKnowledgeRelationDeleteCmd:
         assert data["ok"] is False
         assert data["error"]["code"] == "VALIDATION_ERROR"
         fake_http_client.delete.assert_not_awaited()
+
+
+# ── coverage-gap 补测（F48 CI coverage-backend 门禁）────────────────────────
+
+
+class TestKnowledgeGraphCmdErrorPaths:
+    """coverage-gap 补测（F48 CI coverage-backend 门禁）— graph 命令错误路径（_run 信封）。"""
+
+    def test_graph_invalid_uuid_not_found(self, cli_runner, fake_http_client):
+        """_parse_uuid 非法 UUID → NOT_FOUND 信封 + 退出码 1（spec §7 无效 UUID → 404 语义）。"""
+        result = cli_runner.invoke(
+            _kg().app,
+            ["graph", "not-a-uuid"],
+            obj=_ctx(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "NOT_FOUND"
+        assert data["error"]["message"] == "项目不存在"
+        fake_http_client.get.assert_not_awaited()
+
+    def test_graph_reraises_typer_exit(self, cli_runner, fake_http_client):
+        """_run 透传内层 typer.Exit（不吞成错误信封）。"""
+        fake_http_client.get.side_effect = typer.Exit(2)
+        result = cli_runner.invoke(
+            _kg().app,
+            ["graph", str(PID)],
+            obj=_ctx(json_output=True),
+        )
+        assert result.exit_code == 2
+
+    def test_graph_kernel_startup_error(self, cli_runner, fake_http_client):
+        """内核冷启动失败 → KERNEL_ERROR 信封 + 退出码 1。"""
+        from inkflow.infrastructure.kernel import KernelStartupError
+
+        fake_http_client.get.side_effect = KernelStartupError("内核未启动")
+        result = cli_runner.invoke(
+            _kg().app,
+            ["graph", str(PID)],
+            obj=_ctx(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "KERNEL_ERROR"
+        assert "内核启动失败" in data["error"]["message"]
+
+    def test_graph_pydantic_validation_error(self, cli_runner, fake_http_client):
+        """pydantic ValidationError → VALIDATION_ERROR 信封（errors msg 拼接）。"""
+        from pydantic import ValidationError
+
+        fake_http_client.get.side_effect = ValidationError.from_exception_data(
+            "graph",
+            [
+                {
+                    "type": "string_too_short",
+                    "loc": ("field",),
+                    "msg": "字段太短",
+                    "input": "ab",
+                    "ctx": {"min_length": 3},
+                }
+            ],
+        )
+        result = cli_runner.invoke(
+            _kg().app,
+            ["graph", str(PID)],
+            obj=_ctx(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        # from_exception_data 忽略自定义 msg，按 type 生成标准消息
+        assert "String should have at least 3 characters" in data["error"]["message"]
+
+    def test_graph_unexpected_error_db_error(self, cli_runner, fake_http_client):
+        """未预期异常 → DB_ERROR 信封（内部错误兜底）。"""
+        fake_http_client.get.side_effect = RuntimeError("boom")
+        result = cli_runner.invoke(
+            _kg().app,
+            ["graph", str(PID)],
+            obj=_ctx(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "DB_ERROR"
+        assert "boom" in data["error"]["message"]
+
+
+class TestKnowledgeRelationAddCmdText:
+    """coverage-gap 补测（F48 CI coverage-backend 门禁）— add 文本模式输出。"""
+
+    def test_relation_add_text_success(self, cli_runner, fake_http_client):
+        """add 人类模式 → `✅ 关系已创建: [relation_type]` 摘要行。"""
+        fake_http_client.post.return_value = _make_relation()
+        result = cli_runner.invoke(
+            _kg().app,
+            [
+                "relation",
+                "add",
+                str(PID),
+                "--source-type",
+                "character",
+                "--source-id",
+                str(SRC_ID),
+                "--target-type",
+                "world",
+                "--target-id",
+                str(TGT_ID),
+                "--relation-type",
+                "属于",
+            ],
+            obj=_ctx(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "关系已创建: [属于]" in result.output
+
+
+class TestKnowledgeRelationGetCmdText:
+    """coverage-gap 补测（F48 CI coverage-backend 门禁）— get 文本模式输出。"""
+
+    def test_relation_get_text_success(self, cli_runner, fake_http_client):
+        """get 人类模式 → `✅ 关系: [relation_type]` 摘要行。"""
+        fake_http_client.get.return_value = _make_relation()
+        result = cli_runner.invoke(
+            _kg().app,
+            ["relation", "get", str(RID)],
+            obj=_ctx(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "关系: [属于]" in result.output
+
+
+class TestKnowledgeRelationUpdateCmdFullFields:
+    """coverage-gap 补测（F48 CI coverage-backend 门禁）— update 六元组全字段 + 文本模式。"""
+
+    def test_relation_update_all_fields_json(self, cli_runner, fake_http_client):
+        """update 传六元组全部字段 → PATCH body 六键全含（source/target 变更分支）。"""
+        fake_http_client.patch.return_value = _make_relation(relation_type="出身")
+        result = cli_runner.invoke(
+            _kg().app,
+            [
+                "relation",
+                "update",
+                str(RID),
+                "--source-type",
+                "character",
+                "--source-id",
+                str(SRC_ID),
+                "--target-type",
+                "world",
+                "--target-id",
+                str(TGT_ID),
+                "--relation-type",
+                "出身",
+                "--description",
+                "新说明",
+            ],
+            obj=_ctx(json_output=True),
+        )
+        assert result.exit_code == 0
+        body = fake_http_client.patch.await_args.kwargs["json"]
+        assert body == {
+            "source_type": "character",
+            "source_id": str(SRC_ID),
+            "target_type": "world",
+            "target_id": str(TGT_ID),
+            "relation_type": "出身",
+            "description": "新说明",
+        }
+
+    def test_relation_update_text_success(self, cli_runner, fake_http_client):
+        """update 人类模式 → `✅ 关系已更新: [relation_type]` 摘要行。"""
+        fake_http_client.patch.return_value = _make_relation(relation_type="出身")
+        result = cli_runner.invoke(
+            _kg().app,
+            ["relation", "update", str(RID), "--relation-type", "出身"],
+            obj=_ctx(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "关系已更新: [出身]" in result.output
+
+    def test_relation_update_description_only(self, cli_runner, fake_http_client):
+        """coverage-gap 补测（F48 CI coverage-backend 门禁）— update 仅传 --description
+        （不传 relation_type）→ PATCH body 只含 description（relation_type if False 分支）。"""
+        fake_http_client.patch.return_value = _make_relation(description="仅改说明")
+        result = cli_runner.invoke(
+            _kg().app,
+            ["relation", "update", str(RID), "--description", "仅改说明"],
+            obj=_ctx(json_output=True),
+        )
+        assert result.exit_code == 0
+        body = fake_http_client.patch.await_args.kwargs["json"]
+        assert body == {"description": "仅改说明"}
