@@ -5,7 +5,6 @@ export const en: Record<string, string> = {
   'nav.projects': 'Projects',
   'nav.library': 'Library',
   'nav.settings': 'Settings',
-  'nav.models': 'Model Manager',
   'nav.agent': 'Agent',
   'nav.expand': 'Expand',
   'nav.collapse': 'Collapse',
@@ -183,8 +182,6 @@ export const en: Record<string, string> = {
   // #189（rc1 发布缺陷）：页面顶部保存指示
   'set.saving': 'Saving…',
   'set.saved': 'Saved',
-  'set.models.summary': 'Configured Providers',
-  'set.models.placeholder': 'Model management will be available in a later version',
   // #276 (2026-08-12): RAG vector search block (settings > models)
   'set.rag.title': 'Vector Search (RAG)',
   'set.rag.model': 'Current model',

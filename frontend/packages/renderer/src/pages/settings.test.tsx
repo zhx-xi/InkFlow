@@ -776,14 +776,58 @@ describe('设置页 — Agent 分类（迁移自 AgentChainCard，spec §7.4/§7
   });
 });
 
-describe('设置页 — 模型/账户分类（占位，spec §7.4）', () => {
-  it('模型分类：Provider 摘要 + 占位（#106 前不实现管理）', async () => {
+describe('设置页 — 模型/账户分类', () => {
+  it('#481 模型分类：完整模型管理渲染（provider 列表 + 模型表 + 角色绑定 + RAG 卡并存）', async () => {
+    // #481：provider-configs mock 带数据（beforeEach 默认空列表 → 覆盖为 1 provider 1 chat 模型）
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs') {
+        return {
+          items: [
+            {
+              id: 1, name: 'openai', base_url: 'https://api.openai.com/v1', default_model: 'gpt-4o',
+              models: [{ id: 'gpt-4o', type: 'chat', roles: ['main', 'writer'] }],
+              key_saved: true, max_retries: 3, timeout: 60,
+              created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
+            },
+          ],
+          total: 1, offset: 0, limit: 50,
+        };
+      }
+      return { ok: true };
+    });
+    // #276 RAG 卡保留：beforeEach 默认未设 vectorStatusMock → 用例内补 fresh 状态
+    vectorStatusMock.mockResolvedValue({
+      configured_fp: {
+        schema_version: 1,
+        embedding: { provider: 'openai', model_id: 'text-embedding-3-small', base_url: 'http://api.test/v1', dimension: 384 },
+        chunking: { mode: 'fixed', chunk_size: 500, overlap_ratio: 0, chunker_version: 1 },
+        indexed_at: '2026-08-12T08:00:00Z',
+        status: 'fresh',
+      },
+      indexed_fp: {
+        schema_version: 1,
+        embedding: { provider: 'openai', model_id: 'text-embedding-3-small', base_url: 'http://api.test/v1', dimension: 384 },
+        chunking: { mode: 'fixed', chunk_size: 500, overlap_ratio: 0, chunker_version: 1 },
+        indexed_at: '2026-08-12T08:00:00Z',
+        status: 'fresh',
+      },
+      stale: false,
+      reason: null,
+      dimension_mismatch: false,
+    });
     const user = userEvent.setup();
     renderSettings();
     await user.click(within(screen.getByTestId('settings-nav')).getByRole('button', { name: '模型' }));
     const panel = screen.getByTestId('settings-panel');
-    expect(panel).toHaveTextContent('已配置 Provider');
-    expect(panel).toHaveTextContent('模型管理将在后续版本提供');
+    // 模型管理三件套（GREEN 前 ModelsPanel 为占位 → element-missing）
+    expect(await screen.findByTestId('models-panel')).toBeInTheDocument();
+    expect(within(panel).getByTestId('provider-list')).toBeInTheDocument();
+    expect(within(panel).getByTestId('provider-card-1')).toHaveTextContent('openai');
+    expect(within(panel).getByTestId('model-table')).toBeInTheDocument();
+    expect(within(panel).getByTestId('model-row-gpt-4o')).toBeInTheDocument();
+    expect(within(panel).getByTestId('role-binding')).toBeInTheDocument();
+    // #481：RAG 状态卡保留（与模型管理并存）
+    expect(await screen.findByTestId('rag-status-card')).toBeInTheDocument();
   });
 
   it('账户分类：数据目录 + 关于', async () => {

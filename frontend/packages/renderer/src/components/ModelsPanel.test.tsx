@@ -1,10 +1,11 @@
 /**
- * ⚠️ 契约文件（Issue #106 模型管理页 RED 阶段，spec §8.2③ / §8.3 / §8.6 M2-M4b）
+ * ⚠️ 契约文件（Issue #106 模型管理页 RED 阶段，spec §8.2③ / §8.3 / §8.6 M2-M4b；
+ * #481 迁移：独立页 /models → 设置页模型分类面板，ModelsPage → components/ModelsPanel.tsx）
  *
- * GREEN 新建 src/pages/models.tsx（命名导出 ModelsPage），必须匹配：
+ * GREEN 创建 src/components/ModelsPanel.tsx（命名导出 ModelsPanel，#481 从独立页迁入设置页），必须匹配：
  *
  * 结构（data-testid 即契约）：
- * - models-page：页面根容器
+ * - models-panel：面板根容器（原 models-page，页面 → 设置页模型分类面板）
  * - provider-list：Provider 列表容器
  * - provider-card-<id>：Provider 卡片（id = provider id；名称文本渲染）
  * - provider-key-badge-<id>：key 徽标（key_saved=true →「Key 已存」，false →「未存 Key」）
@@ -60,8 +61,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
-import { ModelsPage } from './models';
+import { ModelsPanel } from './ModelsPanel';
 import { apiFetch } from '../api/client';
 import { useModelsStore } from '../stores/models';
 import { useToastStore } from '../stores/toast';
@@ -127,12 +127,8 @@ const PROVIDER_LIST: { items: ProviderConfig[]; total: number; offset: number; l
 
 const EMPTY_BINDING = { main: '', architect: '', writer: '', auditor: '', reviser: '', embedding: '' };
 
-function renderModelsPage() {
-  return render(
-    <MemoryRouter initialEntries={['/models']}>
-      <ModelsPage />
-    </MemoryRouter>,
-  );
+function renderModelsPanel() {
+  return render(<ModelsPanel />);
 }
 
 beforeEach(() => {
@@ -152,13 +148,13 @@ beforeEach(() => {
 describe('模型管理页 — Provider 列表（spec §8.2③）', () => {
   it('挂载 → GET /api/v1/provider-configs；列表渲染 4 个内置 provider（名称/模型数/key 徽标）', async () => {
     apiFetchMock.mockResolvedValue(PROVIDER_LIST);
-    renderModelsPage();
+    renderModelsPanel();
     await waitFor(() => expect(useModelsStore.getState().loading).toBe(false));
 
     // 挂载拉取（宽容形式：不约束 init 形状）
     expect(apiFetchMock.mock.calls.some((c) => c[0] === '/api/v1/provider-configs')).toBe(true);
 
-    expect(screen.getByTestId('models-page')).toBeInTheDocument();
+    expect(screen.getByTestId('models-panel')).toBeInTheDocument();
     const list = screen.getByTestId('provider-list');
     for (const name of ['openai', 'deepseek', 'zhipu', 'ollama']) {
       expect(within(list).getByText(name)).toBeInTheDocument();
@@ -174,7 +170,7 @@ describe('模型管理页 — Provider 列表（spec §8.2③）', () => {
   it('点击添加 Provider → ProviderDialog 打开（role=dialog +「添加 Provider」标题）', async () => {
     apiFetchMock.mockResolvedValue(PROVIDER_LIST);
     const user = userEvent.setup();
-    renderModelsPage();
+    renderModelsPanel();
     await waitFor(() => expect(useModelsStore.getState().loading).toBe(false));
 
     await user.click(screen.getByTestId('add-provider-btn'));
@@ -185,7 +181,7 @@ describe('模型管理页 — Provider 列表（spec §8.2③）', () => {
   it('F4：Provider 卡片「编辑」按钮 → ProviderDialog 编辑模式（「编辑 Provider」标题 + 名称预填）', async () => {
     apiFetchMock.mockResolvedValue(PROVIDER_LIST);
     const user = userEvent.setup();
-    renderModelsPage();
+    renderModelsPanel();
     await waitFor(() => expect(useModelsStore.getState().loading).toBe(false));
 
     // 编辑入口存在（F4：曾硬编码 editing={null}，编辑入口缺失）
@@ -201,7 +197,7 @@ describe('模型管理页 — 添加模型入口（F3 评审新增，spec §8.2�
   it('「添加模型」按钮存在 → 点击打开模型添加 UI（role=dialog +「添加模型」标题）', async () => {
     apiFetchMock.mockResolvedValue(PROVIDER_LIST);
     const user = userEvent.setup();
-    renderModelsPage();
+    renderModelsPanel();
     await waitFor(() => expect(useModelsStore.getState().loading).toBe(false));
 
     const btn = screen.getByTestId('add-model-btn');
@@ -215,7 +211,7 @@ describe('模型管理页 — 添加模型入口（F3 评审新增，spec §8.2�
 describe('模型管理页 — 模型表（spec §8.2③ / §8.6 M3）', () => {
   it('chat / embedding 类型标记 + 角色用途徽标（roles 原文）', async () => {
     apiFetchMock.mockResolvedValue(PROVIDER_LIST);
-    renderModelsPage();
+    renderModelsPanel();
     await waitFor(() => expect(useModelsStore.getState().loading).toBe(false));
 
     const table = screen.getByTestId('model-table');
@@ -250,7 +246,7 @@ describe('模型管理页 — 角色绑定区（spec §8.2③ / §8.6 M4b，#107
         },
       });
     });
-    renderModelsPage();
+    renderModelsPanel();
     await waitFor(() => expect(useModelsStore.getState().loading).toBe(false));
 
     const binding = screen.getByTestId('role-binding');
@@ -271,7 +267,7 @@ describe('模型管理页 — 删除 Provider（确认弹窗，spec §8.6 M4b）
   it('点击删除按钮 → 确认弹窗（标题 + 确认文案含 provider 名与模型数 + 取消/删除按钮）', async () => {
     apiFetchMock.mockResolvedValue(PROVIDER_LIST);
     const user = userEvent.setup();
-    renderModelsPage();
+    renderModelsPanel();
     await screen.findByTestId('provider-card-1');
 
     await user.click(screen.getByTestId('provider-delete-1'));
@@ -284,7 +280,7 @@ describe('模型管理页 — 删除 Provider（确认弹窗，spec §8.6 M4b）
   it('取消 → 弹窗关闭 + DELETE 未调用 + Provider 卡片仍在', async () => {
     apiFetchMock.mockResolvedValue(PROVIDER_LIST);
     const user = userEvent.setup();
-    renderModelsPage();
+    renderModelsPanel();
     await screen.findByTestId('provider-card-1');
 
     await user.click(screen.getByTestId('provider-delete-1'));
@@ -297,7 +293,7 @@ describe('模型管理页 — 删除 Provider（确认弹窗，spec §8.6 M4b）
   it('遮罩点击 → 弹窗关闭（不删除）', async () => {
     apiFetchMock.mockResolvedValue(PROVIDER_LIST);
     const user = userEvent.setup();
-    renderModelsPage();
+    renderModelsPanel();
     await screen.findByTestId('provider-card-1');
 
     await user.click(screen.getByTestId('provider-delete-1'));
@@ -310,7 +306,7 @@ describe('模型管理页 — 删除 Provider（确认弹窗，spec §8.6 M4b）
   it('确认删除 → DELETE /api/v1/provider-configs/{id} + 卡片移除 + toast ok「已删除」', async () => {
     apiFetchMock.mockResolvedValue(PROVIDER_LIST);
     const user = userEvent.setup();
-    renderModelsPage();
+    renderModelsPanel();
     await screen.findByTestId('provider-card-1');
 
     await user.click(screen.getByTestId('provider-delete-1'));
@@ -333,7 +329,7 @@ describe('模型管理页 — 删除 Provider（确认弹窗，spec §8.6 M4b）
       return PROVIDER_LIST;
     });
     const user = userEvent.setup();
-    renderModelsPage();
+    renderModelsPanel();
     await screen.findByTestId('provider-card-1');
 
     await user.click(screen.getByTestId('provider-delete-1'));
@@ -355,7 +351,7 @@ describe('模型管理页 — 添加模型保存（F3 全量 PATCH 语义 + toas
       return PROVIDER_LIST;
     });
     const user = userEvent.setup();
-    renderModelsPage();
+    renderModelsPanel();
     await screen.findByTestId('provider-card-1');
 
     await user.click(screen.getByTestId('add-model-btn'));
@@ -396,7 +392,7 @@ describe('模型管理页 — 添加模型保存（F3 全量 PATCH 语义 + toas
       return PROVIDER_LIST;
     });
     const user = userEvent.setup();
-    renderModelsPage();
+    renderModelsPanel();
     await screen.findByTestId('provider-card-1');
 
     await user.click(screen.getByTestId('add-model-btn'));
@@ -427,7 +423,7 @@ describe('模型管理页 — Provider 保存成功后重新拉取（handleSaved
       return PROVIDER_LIST;
     });
     const user = userEvent.setup();
-    renderModelsPage();
+    renderModelsPanel();
     await screen.findByTestId('provider-card-1');
     const getCountBefore = apiFetchMock.mock.calls.filter(
       (c) => c[0] === '/api/v1/provider-configs' && !c[1]?.method,
