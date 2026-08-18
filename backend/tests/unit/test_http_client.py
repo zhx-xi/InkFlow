@@ -457,10 +457,18 @@ class TestImportSurface:
 
     def test_no_cli_import_on_http_import(self):
         """import inkflow.infrastructure.http 不得连带 import inkflow.cli。"""
-        # 本文件顶部 import 已加载 http 包；tests/unit 套件无其它 test_cli_* 文件、
-        # conftest 亦不 import inkflow.cli，且本类定义序先于下方 test_cli_* 用例——
-        # 裸 not in sys.modules 断言在 unit 套件内稳健。
-        assert "inkflow.cli" not in sys.modules
+        # 快照差集（#458 修订）：本文件顶部 import 已加载 http 包；tests/unit 套件
+        # 允许存在合法的 CLI 测试文件（如 test_book_cli_paths.py——book CLI 路径契约，
+        # 惰性 import inkflow.cli.commands.book_cmd 在**执行期**加载）——裸 not in
+        # sys.modules 断言会被同套件先执行的其他 CLI 测试破坏（CI 4069+1 实证）。
+        # 守护真实意图 = http import 自身不得连带加载 cli：差集断言 cli 模块集合
+        # 在「import http」前后无新增（若 http 连带 cli，新增必然出现）。
+        cli_prefix = "inkflow.cli"
+        before = {m for m in sys.modules if m.startswith(cli_prefix)}
+        importlib.import_module("inkflow.infrastructure.http")
+        after = {m for m in sys.modules if m.startswith(cli_prefix)}
+        leaked = after - before
+        assert leaked == set(), f"import http 连带加载了 cli 模块: {leaked}"
 
     def test_cli_project_command_import_surface(self):
         """import inkflow.cli.commands.project 不得连带加载 domain.services/llm/database。"""

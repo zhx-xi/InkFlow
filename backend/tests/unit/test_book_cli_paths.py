@@ -17,11 +17,21 @@ InkFlowHTTPClient 类（`inkflow.cli.commands.book_cmd.InkFlowHTTPClient`），
 
 from __future__ import annotations
 
+import importlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from inkflow.cli.commands import book_cmd
+
+def _book_cmd():
+    """执行期惰性 import（镜像 test_skills_parser.py sp fixture 模式）。
+
+    不能顶部 import：tests/unit 套件守护契约
+    test_http_client.py::TestImportSurface::test_no_cli_import_on_http_import
+    断言 'inkflow.cli' not in sys.modules——顶部 import 在收集期载入 inkflow.cli
+    会破坏该守护（CI unit-backend 4069 passed + 1 failed 实证）。
+    """
+    return importlib.import_module("inkflow.cli.commands.book_cmd")
 
 
 def _patch_client():
@@ -31,6 +41,7 @@ def _patch_client():
     client.post/get 返回 dict（AsyncMock 自动）。kernel handle 由 ensure_kernel
     mock 返回 MagicMock（port/token 字段访问不炸）。
     """
+    book_cmd = _book_cmd()
     patcher = patch.object(book_cmd, "InkFlowHTTPClient")
     mock_cls = patcher.start()
     mock_inst = AsyncMock()
@@ -46,6 +57,7 @@ def _patch_client():
 
 def _patch_kernel():
     """patch ensure_kernel → 假 handle（KernelHandle 鸭子：port/token/pid/version）。"""
+    book_cmd = _book_cmd()
     patcher = patch.object(book_cmd, "ensure_kernel")
     mock_handle = MagicMock()
     mock_handle.port = 38291
@@ -81,7 +93,7 @@ def test_plan_start_path_no_api_v1_prefix():
     patcher2 = _patch_kernel()
     patchers = [patcher, patcher2]
     try:
-        _call(book_cmd.plan_start, "测试故事", project_id="00000000-0000-0000-0000-000000000001")
+        _call(_book_cmd().plan_start, "测试故事", project_id="00000000-0000-0000-0000-000000000001")
         path = mock_inst.post.await_args.args[0]
         msg = f"plan start path={path!r} 必须相对 base_url（不含 /api/v1）"
         assert path == "/agent/books/planner", msg
@@ -96,7 +108,7 @@ def test_plan_respond_path_no_api_v1_prefix():
     patcher2 = _patch_kernel()
     patchers = [patcher, patcher2]
     try:
-        _call(book_cmd.plan_respond, "sess-1", "主角是林晚")
+        _call(_book_cmd().plan_respond, "sess-1", "主角是林晚")
         path = mock_inst.post.await_args.args[0]
         assert path == "/agent/books/planner/sess-1/respond", f"path={path!r}"
         assert "/api/v1" not in path
@@ -110,7 +122,9 @@ def test_plan_auto_path_no_api_v1_prefix():
     patcher2 = _patch_kernel()
     patchers = [patcher, patcher2]
     try:
-        _call(book_cmd.plan_auto, "一句话故事", project_id="00000000-0000-0000-0000-000000000001")
+        _call(
+            _book_cmd().plan_auto, "一句话故事", project_id="00000000-0000-0000-0000-000000000001"
+        )
         # auto 内部两次 post：第一次 /planner，第二次 /planner/{sid}/respond
         calls = mock_inst.post.await_args_list
         assert len(calls) == 2
@@ -129,7 +143,7 @@ def test_plan_show_path_no_api_v1_prefix():
     patcher2 = _patch_kernel()
     patchers = [patcher, patcher2]
     try:
-        _call(book_cmd.plan_show, "sess-1")
+        _call(_book_cmd().plan_show, "sess-1")
         path = mock_inst.get.await_args.args[0]
         assert path == "/agent/books/planner/sess-1", f"path={path!r}"
         assert "/api/v1" not in path
@@ -143,7 +157,7 @@ def test_plan_run_path_no_api_v1_prefix():
     patcher2 = _patch_kernel()
     patchers = [patcher, patcher2]
     try:
-        _call(book_cmd.plan_run, "plan-1")
+        _call(_book_cmd().plan_run, "plan-1")
         path = mock_inst.post.await_args.args[0]
         assert path == "/agent/books/runs", f"path={path!r}"
         assert "/api/v1" not in path
@@ -157,7 +171,7 @@ def test_book_run_path_no_api_v1_prefix():
     patcher2 = _patch_kernel()
     patchers = [patcher, patcher2]
     try:
-        _call(book_cmd.book_run, "plan-1", limits=None)
+        _call(_book_cmd().book_run, "plan-1", limits=None)
         path = mock_inst.post.await_args.args[0]
         assert path == "/agent/books/runs", f"path={path!r}"
         assert "/api/v1" not in path
@@ -171,7 +185,7 @@ def test_book_status_path_no_api_v1_prefix():
     patcher2 = _patch_kernel()
     patchers = [patcher, patcher2]
     try:
-        _call(book_cmd.book_status, "run-1")
+        _call(_book_cmd().book_status, "run-1")
         path = mock_inst.get.await_args.args[0]
         assert path == "/agent/books/runs/run-1", f"path={path!r}"
         assert "/api/v1" not in path
@@ -185,7 +199,7 @@ def test_book_confirm_path_no_api_v1_prefix():
     patcher2 = _patch_kernel()
     patchers = [patcher, patcher2]
     try:
-        _call(book_cmd.book_confirm, "run-1")
+        _call(_book_cmd().book_confirm, "run-1")
         path = mock_inst.post.await_args.args[0]
         assert path == "/agent/books/runs/run-1/confirm", f"path={path!r}"
         assert "/api/v1" not in path
@@ -199,7 +213,7 @@ def test_book_intervene_path_no_api_v1_prefix():
     patcher2 = _patch_kernel()
     patchers = [patcher, patcher2]
     try:
-        _call(book_cmd.book_intervene, "run-1", action="pause")
+        _call(_book_cmd().book_intervene, "run-1", action="pause")
         path = mock_inst.post.await_args.args[0]
         assert path == "/agent/books/runs/run-1/intervene", f"path={path!r}"
         assert "/api/v1" not in path
@@ -213,7 +227,7 @@ def test_book_summary_path_no_api_v1_prefix():
     patcher2 = _patch_kernel()
     patchers = [patcher, patcher2]
     try:
-        _call(book_cmd.book_summary, "run-1", export=None)
+        _call(_book_cmd().book_summary, "run-1", export=None)
         path = mock_inst.get.await_args.args[0]
         assert path == "/agent/books/runs/run-1/summary", f"path={path!r}"
         assert "/api/v1" not in path
