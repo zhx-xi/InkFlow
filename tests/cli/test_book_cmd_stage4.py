@@ -6,13 +6,13 @@
 ════════════════════════════════════════════════════════════════════
 命令契约（父侧定稿，spec §4，写进 docstring 供 GREEN）:
 - `inkflow book plan start "<一句话>" --project <uuid> [--json]`
-    启动访谈会话（POST /api/v1/agent/books/planner body
+    启动访谈会话（POST /agent/books/planner body
     {project_id, one_liner}）→ 打印第一轮问题（≤5 问 + template）
     退出码: 0 成功 / 1 运行错误 / 2 参数错误
     --json 信封: {"ok": true, "data": {session_id, round, questions, max_rounds}}
     人类输出: 每问一行或等价形态——只断言 q1 的 id/text 出现在 stdout
 - `inkflow book plan respond <session> "<回答>" [--json]`
-    回复本轮（POST /api/v1/agent/books/planner/{session}/respond body
+    回复本轮（POST /agent/books/planner/{session}/respond body
     {answers: {"answer": <回答>}, auto: false}）→ 下一轮问 / 完成
     （宽容映射契约见 test_planner_service.py：单字符串回答 → 第一个必答）
     --json 信封: {"ok": true, "data": {session_id, round, completed,
@@ -25,26 +25,26 @@
     --json 信封: {"ok": true, "data": {session_id, round, completed: true,
     questions: [], writing_plan: {...}}}
 - `inkflow book plan show <session> [--json]`
-    会话状态（GET /api/v1/agent/books/planner/{session}）→ asked_questions/
+    会话状态（GET /agent/books/planner/{session}）→ asked_questions/
     answers 快照
     --json 信封: {"ok": true, "data": <完整 PlannerSession>}
 - `inkflow book plan run <plan_id> [--json]`
-    委托一章（POST /api/v1/agent/books/runs body {writing_plan_id}）→
+    委托一章（POST /agent/books/runs body {writing_plan_id}）→
     202 {run_id, status}（M1：plan start + plan respond + plan run）
     --json 信封: {"ok": true, "data": {run_id, status}}
 - `inkflow book status <run_id> [--density performance|dashboard|silent] [--json]`
-    书级运行状态（GET /api/v1/agent/books/runs/{run_id}）→ 进度树 + 计数器
+    书级运行状态（GET /agent/books/runs/{run_id}）→ 进度树 + 计数器
     （M3：上限写死章=1/调用=1 但计数器立起来——人类输出含 max/agent_calls/
     chapters_written 字样）
     --json 信封: {"ok": true, "data": {run_id, status, progress, counters}}
 
 HTTP 契约（F38 恒经 HTTP，路径相对 base_url）:
-- plan start → POST /api/v1/agent/books/planner
-- plan respond → POST /api/v1/agent/books/planner/{session}/respond
-- plan auto → POST /api/v1/agent/books/planner + POST .../respond (auto=true)
-- plan show → GET /api/v1/agent/books/planner/{session}
-- plan run → POST /api/v1/agent/books/runs
-- book status → GET /api/v1/agent/books/runs/{run_id}
+- plan start → POST /agent/books/planner
+- plan respond → POST /agent/books/planner/{session}/respond
+- plan auto → POST /agent/books/planner + POST .../respond (auto=true)
+- plan show → GET /agent/books/planner/{session}
+- plan run → POST /agent/books/runs
+- book status → GET /agent/books/runs/{run_id}
 - 错误映射（map_http_error）: 404 → NOT_FOUND / 422 → VALIDATION_ERROR /
   其余 → INTERNAL_ERROR；KernelStartupError → KERNEL_ERROR
 
@@ -191,7 +191,7 @@ def test_book_intervene_pause_human(fake_http_client):
     assert "已暂停" in out
     assert "run-1" in out
     fake_http_client.post.assert_awaited_once_with(
-        "/api/v1/agent/books/runs/run-1/intervene",
+        "/agent/books/runs/run-1/intervene",
         json={"action": "pause", "target": None, "to": None, "payload": None},
     )
 
@@ -216,7 +216,7 @@ def test_book_intervene_redirect_skip(fake_http_client):
     out = _strip_ansi(result.stdout)
     assert "已跳过" in out
     fake_http_client.post.assert_awaited_once_with(
-        "/api/v1/agent/books/runs/run-1/intervene",
+        "/agent/books/runs/run-1/intervene",
         json={"action": "redirect", "target": "c1", "to": "skip", "payload": None},
     )
 
@@ -257,7 +257,7 @@ def test_book_intervene_edit_json(fake_http_client):
     assert body["data"]["run_id"] == "run-1"
     assert body["data"]["diff"]["after"] == "新简介"
     fake_http_client.post.assert_awaited_once_with(
-        "/api/v1/agent/books/runs/run-1/intervene",
+        "/agent/books/runs/run-1/intervene",
         json={
             "action": "edit",
             "target": "c1",
@@ -301,9 +301,7 @@ def test_book_summary_human(fake_http_client):
     out = _strip_ansi(result.stdout)
     assert "c1" in out
     assert "agent_calls" in out
-    fake_http_client.get.assert_awaited_once_with(
-        "/api/v1/agent/books/runs/run-1/summary"
-    )
+    fake_http_client.get.assert_awaited_once_with("/agent/books/runs/run-1/summary")
 
 
 def test_book_summary_export_json(fake_http_client, tmp_path):
@@ -365,7 +363,7 @@ class TestCoverageGapCli:
         assert "已恢复" in out
         assert "run-1" in out
         fake_http_client.post.assert_awaited_once_with(
-            "/api/v1/agent/books/runs/run-1/intervene",
+            "/agent/books/runs/run-1/intervene",
             json={"action": "resume", "target": None, "to": None, "payload": None},
         )
 
@@ -400,7 +398,7 @@ class TestCoverageGapCli:
         assert "before: 旧梗概" in out
         assert "after: 新梗概" in out
         fake_http_client.post.assert_awaited_once_with(
-            "/api/v1/agent/books/runs/run-1/intervene",
+            "/agent/books/runs/run-1/intervene",
             json={
                 "action": "edit",
                 "target": "c1",
@@ -433,7 +431,7 @@ class TestCoverageGapCli:
         assert "已标记失败" in out
         assert "c1" in out
         fake_http_client.post.assert_awaited_once_with(
-            "/api/v1/agent/books/runs/run-1/intervene",
+            "/agent/books/runs/run-1/intervene",
             json={
                 "action": "redirect",
                 "target": "c1",
