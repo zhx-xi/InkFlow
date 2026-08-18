@@ -83,6 +83,23 @@
 | F10 删除语义统一（v1.1） | [`f10-world-service/spec.md`](f10-world-service/spec.md) | ✅ 已实现（PR #57 v1.0 + #312 v1.1 删除语义统一） |
 | F14 提取门面拆分 | [`f14-extraction-service/spec.md`](f14-extraction-service/spec.md) | ✅ 已实现（PR #72 + #316 拆分） |
 
+### 多 Agent 一期 + MCP + RAG 切片 + DAG 编排（0.9.0，已交付 ✅）
+
+| Feature | 规格 | 状态 |
+|---------|------|------|
+| F39 多 Agent 一期（F39/40/41 合并） | [`f39-multi-agent/spec.md`](f39-multi-agent/spec.md) | ✅ 已实现（实现 PR #403/#408/#407） |
+| F20 MCP Server | [`f20-mcp-server/spec.md`](f20-mcp-server/spec.md) | ✅ 已实现（PR #400/#402） |
+| F46 DAG 编排 | [`f46-dag-orchestration/spec.md`](f46-dag-orchestration/spec.md) | ✅ 已实现（PR #412） |
+| F47 写作页聊天框/执行详情页 | [`f47-writer-chat-detail/spec.md`](f47-writer-chat-detail/spec.md) | ✅ 已实现（PR #418） |
+| F14 RAG 切片扩展（v1.2） | [`f14-extraction-service/spec.md`](f14-extraction-service/spec.md) | ✅ 已实现（PR #401/#413） |
+
+### 长任务编排器 + 记忆演进（0.10.0，已交付 ✅）
+
+| Feature | 规格 | 状态 |
+|---------|------|------|
+| F44 长任务编排器 | [`f44-long-task-orchestrator/spec.md`](f44-long-task-orchestrator/spec.md) | ✅ 已实现（spec PR #436/#440 + 实现 PR #441/#443/#445/#446/#447/#448/#453/#454） |
+| F45 记忆系统演进 | [`f45-memory-evolution/spec.md`](f45-memory-evolution/spec.md) | ✅ 已实现（spec PR #435/#439 + 实现 PR #442/#452） |
+
 ---
 
 > F17 空置（PRD §6.2 标题残留编号）；F18 云端（2.0.0）、F20 MCP（0.9.0）；F25 daemon 已移除（ADR-029）不复用。
