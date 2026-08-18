@@ -50,6 +50,7 @@ def _orm_to_domain(orm: AgentORM) -> Agent:
         model_override=orm.model_override,
         temperature_override=orm.temperature_override,
         builtin=orm.builtin,
+        role_key=orm.role_key,
         created_at=orm.created_at,
         updated_at=orm.updated_at,
     )
@@ -67,6 +68,7 @@ def _domain_to_orm(domain: Agent) -> AgentORM:
         model_override=domain.model_override,
         temperature_override=domain.temperature_override,
         builtin=domain.builtin,
+        role_key=domain.role_key,
     )
 
 

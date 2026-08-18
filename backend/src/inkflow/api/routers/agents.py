@@ -77,7 +77,13 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
 
 
 def _role_key_of(agent: Agent) -> str | None:
-    """内置 Agent 的链角色键映射（#473 R1）；自定义/未命中 → None."""
+    """Agent 的链角色键（#473 R1 + v1.5 #484）.
+
+    实体 role_key 非空优先返回；存量 DB（v1.5 前已 seed，role_key 列缺省/为空）
+    内置 Agent 按 name 反查 BUILTIN_AGENT_SPECS 保底；其余（自定义未分配/未命中）→ None.
+    """
+    if agent.role_key:
+        return agent.role_key
     if not agent.builtin:
         return None
     for spec in BUILTIN_AGENT_SPECS:
@@ -89,9 +95,9 @@ def _role_key_of(agent: Agent) -> str | None:
 def _to_response(agent: Agent) -> dict:
     """Agent 实体 → 响应字典（12 字段全集 + role_key 透出，id 原样 int）.
 
-    role_key（#473 R1）：内置 Agent 按 name 反查 BUILTIN_AGENT_SPECS 的
-    链角色键映射；非内置/未命中 → None（前端 AgentChainCard 按 role_key
-    派生内置角色行，不再 hardcode 名称/图标/描述）。
+    role_key（#473 R1 + v1.5 #484）：实体 role_key 非空优先（Agent 真源）；
+    存量内置未补值前按 name 反查 BUILTIN_AGENT_SPECS 保底；其余 → None
+    （前端 AgentChainCard 按 role_key 派生内置角色行，不再 hardcode 名称/图标/描述）。
     """
     resp = agent.model_dump(mode="json")
     resp["role_key"] = _role_key_of(agent)

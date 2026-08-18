@@ -419,3 +419,141 @@ class TestAgentErrorsGuard:
         assert not hasattr(agent_errors_module, "AgentTemplateNameConflictError")
         # F39 基类必须是本模块自有的，禁止复用 F4 管线同名类（遮蔽防护）
         assert agent_errors_module.AgentServiceError is not F4AgentServiceError
+
+
+class TestRoleKeyV15:
+    """v1.5 #484 role_key 契约（spec §5.7.1 + §5.7.2 + §13 M9 ①③）。
+
+    契约：
+    1. BUILTIN_AGENT_SPECS role_key 全集 = 6（内置稳定映射）：
+       architect/writer/auditor/reviser/worldview/polisher —— 世界观顾问="worldview"、
+       润色师="polisher"（v1.5 由 None 扩展，§5.7.1 表）
+    2. Agent 领域模型新增 role_key: str | None = None 字段（链角色稳定标识；
+       None = 非链角色/未分配）
+    3. AgentEntityService.create 自动分配 role_key（§5.7.2）：
+       - name slug 化（小写 + 非 [a-z0-9_] 替换为 _ + 去首尾 _）为 base；
+         base 为空（全非 ASCII，如「校对助手」）→ 回退 "agent"
+       - 与既有 role_key 冲突 → 追加数字后缀（base_1, base_2, ...）；
+         查重用 repo.list() 的 role_key 集合
+       - role_key 一经分配不可变更：AgentUpdate 无 role_key 字段，
+         update 后实体 role_key 保持创建时值（不可变，§5.7.2）
+    4. seed_builtin_agents 写入 role_key（新建内置带出厂 role_key；
+       存量同名已存在且 role_key 为空 → 补值 UPDATE，§5.7.1 seed 升级钩子）
+
+    RED 形态：Agent 无 role_key 字段 → create 断言 at.role_key AttributeError /
+    BUILTIN_AGENT_SPECS worldview/polisher 仍 None → 断言失败（实际为 None）。
+    """
+
+    def test_builtin_specs_role_key_fullset(self) -> None:
+        """BUILTIN_AGENT_SPECS 6 内置 role_key 全集（世界观顾问/润色师 v1.5 扩展）。"""
+        from inkflow.domain.services.agent_entity_service import BUILTIN_AGENT_SPECS
+
+        mapping = {spec["name"]: spec["role_key"] for spec in BUILTIN_AGENT_SPECS}
+        assert mapping["架构师"] == "architect"
+        assert mapping["写手"] == "writer"
+        assert mapping["审校员"] == "auditor"
+        assert mapping["修订师"] == "reviser"
+        # v1.5 扩展：None → worldview/polisher（6 内置皆可进链）
+        assert mapping["世界观顾问"] == "worldview"
+        assert mapping["润色师"] == "polisher"
+        # 全集恰好 6 个且 role_key 全部非 None 且唯一
+        assert len(mapping) == 6
+        role_keys = [spec["role_key"] for spec in BUILTIN_AGENT_SPECS]
+        assert all(k is not None for k in role_keys)
+        assert len(role_keys) == len(set(role_keys))
+
+    def test_agent_model_has_role_key_field(self) -> None:
+        """Agent 领域模型新增 role_key 字段（默认 None；非链角色/未分配）。"""
+        agent = Agent(name="测试", role_key=None)
+        assert agent.role_key is None
+        agent2 = Agent(name="测试2", role_key="custom_role")
+        assert agent2.role_key == "custom_role"
+
+    async def test_create_assigns_role_key_from_ascii_name(self, service, mock_agent_repo):
+        """create 自动分配 role_key：ASCII name slug 化（Proofreader → proofreader）。"""
+        saved = await service.create(AgentCreate(name="Proofreader"))
+        at = _arg(mock_agent_repo.add.await_args, "agent", 0)
+        assert at.role_key == "proofreader"
+        assert saved is at
+
+    async def test_create_role_key_conflict_appends_suffix(self, service, mock_agent_repo):
+        """role_key 冲突 → 追加数字后缀（已有 proofreader → 新建 proofreader_1）。"""
+        existing = _agent(1, "既有角色", role_key="proofreader")
+        mock_agent_repo.list.return_value = [existing]
+        await service.create(AgentCreate(name="Proofreader"))
+        at = _arg(mock_agent_repo.add.await_args, "agent", 0)
+        assert at.role_key == "proofreader_1"
+
+    async def test_create_non_ascii_name_falls_back_to_agent(self, service, mock_agent_repo):
+        """全非 ASCII name（slug 为空）→ 回退 "agent"（§5.7.2 slug 化规则）。"""
+        await service.create(AgentCreate(name="校对助手"))
+        at = _arg(mock_agent_repo.add.await_args, "agent", 0)
+        assert at.role_key == "agent"
+
+    async def test_create_role_key_stable_on_update(self, service, mock_agent_repo):
+        """role_key 不可变：AgentUpdate 无 role_key 字段，update 后保持创建时值。"""
+        existing = _agent(7, "研究员", role_key="researcher")
+        mock_agent_repo.get.return_value = existing
+        merged = await service.update(7, AgentUpdate(description="新描述"))
+        assert merged.role_key == "researcher"
+        assert "role_key" not in AgentUpdate.model_fields
+
+
+class TestSeedRoleKeyV15:
+    """v1.5 #484 seed_builtin_agents role_key 落库 + 存量补值（spec §5.7.1 seed 升级钩子）。
+
+    契约：seed_builtin_agents 新建内置时写入出厂 role_key（BUILTIN_AGENT_SPECS 透传）；
+    存量 DB（v1.5 前已 seed，role_key 列缺省/为空）同名已存在 → 补值 UPDATE（不重复插入）。
+    RED 形态：AgentORM 无 role_key 列 → create_all 无该列 / 断言 AttributeError。
+    """
+
+    @pytest.fixture
+    async def db_session(self):
+        """独立 in-memory SQLite（镜像 test_agent_repo fixture；Base.metadata.create_all）。"""
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from inkflow.core.database import Base
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            yield session
+        await engine.dispose()
+
+    async def test_seed_writes_role_key(self, db_session) -> None:
+        """新建内置 6 Agent → role_key 全部落库（含 worldview/polisher）。"""
+        from inkflow.domain.services.agent_entity_service import seed_builtin_agents
+        from inkflow.infrastructure.database.repositories.agent_repo import (
+            SQLiteAgentRepository,
+        )
+
+        inserted = await seed_builtin_agents(db_session)
+        assert inserted == 6
+        repo = SQLiteAgentRepository(db_session)
+        agents = await repo.list()
+        by_name = {a.name: a for a in agents}
+        assert by_name["世界观顾问"].role_key == "worldview"
+        assert by_name["润色师"].role_key == "polisher"
+        assert by_name["架构师"].role_key == "architect"
+        for a in agents:
+            assert a.role_key is not None
+
+    async def test_seed_backfills_existing_role_key(self, db_session) -> None:
+        """存量（v1.5 前已 seed，role_key 为空）→ 同名跳过插入 + 补值 UPDATE。"""
+        from inkflow.domain.models.agent import Agent
+        from inkflow.domain.services.agent_entity_service import seed_builtin_agents
+        from inkflow.infrastructure.database.repositories.agent_repo import (
+            SQLiteAgentRepository,
+        )
+
+        repo = SQLiteAgentRepository(db_session)
+        # 模拟存量：世界观顾问已存在但 role_key 为空（v1.5 前 seed 形态）
+        await repo.add(Agent(name="世界观顾问", builtin=True, system_prompt="旧 prompt"))
+        inserted = await seed_builtin_agents(db_session)
+        assert inserted == 5  # 世界观顾问已存在 → 不重复插入，其余 5 个新建
+
+        agents = await repo.list()
+        worldview = next(a for a in agents if a.name == "世界观顾问")
+        assert worldview.role_key == "worldview"  # 补值
