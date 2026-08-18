@@ -120,7 +120,7 @@ _book_volume_pipeline: BookVolumePipeline | None = None
 
 
 def _build_book_service(db: AsyncSession) -> BookService:
-    """装配真实 BookService（repo + outline_repo + 安全闸 + 项目级上限 + 执行记录仓储）。"""
+    """装配真实 BookService（repo + outline_repo + 安全闸 + 上限 + 执行记录 + F27 writer）。"""
     global _book_volume_pipeline
     from inkflow.domain.services.book_service import BookService
     from inkflow.infrastructure.database.repositories.outline_repo import SQLiteOutlineRepository
@@ -174,16 +174,85 @@ def _build_book_service(db: AsyncSession) -> BookService:
         except Exception:
             return None
 
-    # 卷级编排单例装配：writer_factory/draft_service 先注入 None（构造零风险，
-    # BookVolumePipeline 执行时缺失才报错）；真实 writer 装配留待 M2 冒烟
-    # （F27 完整装配链，本批先保证 API 契约 + 单例存在）
+    # F27 真实装配（镜像 deps.py get_agentic_writer_service）：writer_factory 每次
+    # 委托按传入 system_prompt/expected ids 构造真实 deepagents 写作 agent（读/审计/
+    # save_draft 工具），draft_service 供委托回收获草稿——修复 #464 book run 章全 failed
+    # （零 token/execution_id=null）静默失败。
+    from inkflow.api.deps import (
+        get_chapter_audit_service,
+        get_chapter_service,
+        get_character_service,
+        get_foreshadowing_service,
+        get_memory_service,
+        get_summary_service,
+    )
+    from inkflow.core.config import config
+    from inkflow.domain.services.audit_log_service import AuditLogService
+    from inkflow.domain.services.draft_service import DraftService
+    from inkflow.infrastructure.agent.agentic_writer import (
+        AgenticWriterDeps,
+        build_agentic_writer,
+    )
+    from inkflow.infrastructure.database.repositories.audit_log_repo import (
+        SQLiteAuditLogRepository,
+    )
+    from inkflow.infrastructure.database.repositories.draft_repo import (
+        SQLiteDraftRepository,
+    )
+    from inkflow.infrastructure.llm.provider_config import (
+        get_provider_config,
+        parse_model_string,
+    )
+
+    draft_service = DraftService(
+        draft_repo=SQLiteDraftRepository(db),
+        chapter_service=get_chapter_service(db),
+        audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
+        memory_service=get_memory_service(db),
+    )
+    deps = AgenticWriterDeps(
+        character_service=get_character_service(db),
+        foreshadowing_service=get_foreshadowing_service(db),
+        summary_service=get_summary_service(db),
+        chapter_audit_service=get_chapter_audit_service(db),
+        draft_service=draft_service,
+        audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
+    )
+    model = config.llm_default_model
+    api_key = ""
+    base_url = ""
+    try:
+        provider, _ = parse_model_string(model)
+        provider_cfg = get_provider_config(provider)
+        api_key = provider_cfg.api_key
+        base_url = provider_cfg.base_url or ""
+    except ValueError:
+        pass
+
+    async def _writer_factory(
+        *,
+        system_prompt: str,
+        expected_project_id: uuid.UUID | None,
+        expected_chapter_id: uuid.UUID | None,
+    ) -> object:
+        """构造真实 F27 writer agent（镜像 deps.py _build_agent：deepagents ReAct 链）。"""
+        return build_agentic_writer(
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            deps=deps,
+            system_prompt=system_prompt,
+            expected_project_id=expected_project_id,
+            expected_chapter_id=expected_chapter_id,
+        )
+
     if _book_volume_pipeline is None:
         from inkflow.infrastructure.llm import LangChainLLMClient
 
         _book_volume_pipeline = BookVolumePipeline(
             LangChainLLMClient(),
-            writer_factory=None,
-            draft_service=None,
+            writer_factory=_writer_factory,
+            draft_service=draft_service,
         )
 
     return BookService(
