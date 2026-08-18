@@ -262,6 +262,8 @@ def _build_book_service(db: AsyncSession) -> BookService:
         project_config_getter=_project_config_getter,
         volume_pipeline=_book_volume_pipeline,
         execution_store=ExecutionStore(db),
+        writer_factory=_writer_factory,
+        draft_service=draft_service,
     )
 
 
