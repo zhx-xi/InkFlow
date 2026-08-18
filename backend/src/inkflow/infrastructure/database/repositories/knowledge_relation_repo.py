@@ -229,7 +229,8 @@ class SQLiteKnowledgeRelationRepository:
         """真删关系（无 is_deleted）；不存在返回 False."""
         stmt = sa_delete(KnowledgeRelationORM).where(KnowledgeRelationORM.id == relation_id)
         result = await self._session.execute(stmt)
-        return result.rowcount > 0  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
+        rowcount: int = result.rowcount  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
+        return rowcount > 0
 
     async def list_by_project(self, project_id: int) -> builtins.list[KnowledgeRelation]:
         """列出项目全部关系（图谱聚合全量，created_at ASC 供 graph 稳定排序）."""
@@ -258,7 +259,8 @@ class SQLiteKnowledgeRelationRepository:
             )
         )
         result = await self._session.execute(stmt)
-        return result.rowcount  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
+        rowcount: int = result.rowcount  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
+        return rowcount
 
     async def cleanup_for_entity(self, entity_type: str, entity_id: int) -> int:
         """实体硬删级联清理 —— delete_by_entity 别名（§5.3，语义一致）."""
