@@ -6,13 +6,13 @@
 ════════════════════════════════════════════════════════════════════
 命令契约（父侧定稿，spec §4，写进 docstring 供 GREEN）:
 - `inkflow book plan start "<一句话>" --project <uuid> [--json]`
-    启动访谈会话（POST /api/v1/agent/books/planner body
+    启动访谈会话（POST /agent/books/planner body
     {project_id, one_liner}）→ 打印第一轮问题（≤5 问 + template）
     退出码: 0 成功 / 1 运行错误 / 2 参数错误
     --json 信封: {"ok": true, "data": {session_id, round, questions, max_rounds}}
     人类输出: 每问一行或等价形态——只断言 q1 的 id/text 出现在 stdout
 - `inkflow book plan respond <session> "<回答>" [--json]`
-    回复本轮（POST /api/v1/agent/books/planner/{session}/respond body
+    回复本轮（POST /agent/books/planner/{session}/respond body
     {answers: {"answer": <回答>}, auto: false}）→ 下一轮问 / 完成
     （宽容映射契约见 test_planner_service.py：单字符串回答 → 第一个必答）
     --json 信封: {"ok": true, "data": {session_id, round, completed,
@@ -25,26 +25,26 @@
     --json 信封: {"ok": true, "data": {session_id, round, completed: true,
     questions: [], writing_plan: {...}}}
 - `inkflow book plan show <session> [--json]`
-    会话状态（GET /api/v1/agent/books/planner/{session}）→ asked_questions/
+    会话状态（GET /agent/books/planner/{session}）→ asked_questions/
     answers 快照
     --json 信封: {"ok": true, "data": <完整 PlannerSession>}
 - `inkflow book plan run <plan_id> [--json]`
-    委托一章（POST /api/v1/agent/books/runs body {writing_plan_id}）→
+    委托一章（POST /agent/books/runs body {writing_plan_id}）→
     202 {run_id, status}（M1：plan start + plan respond + plan run）
     --json 信封: {"ok": true, "data": {run_id, status}}
 - `inkflow book status <run_id> [--density performance|dashboard|silent] [--json]`
-    书级运行状态（GET /api/v1/agent/books/runs/{run_id}）→ 进度树 + 计数器
+    书级运行状态（GET /agent/books/runs/{run_id}）→ 进度树 + 计数器
     （M3：上限写死章=1/调用=1 但计数器立起来——人类输出含 max/agent_calls/
     chapters_written 字样）
     --json 信封: {"ok": true, "data": {run_id, status, progress, counters}}
 
 HTTP 契约（F38 恒经 HTTP，路径相对 base_url）:
-- plan start → POST /api/v1/agent/books/planner
-- plan respond → POST /api/v1/agent/books/planner/{session}/respond
-- plan auto → POST /api/v1/agent/books/planner + POST .../respond (auto=true)
-- plan show → GET /api/v1/agent/books/planner/{session}
-- plan run → POST /api/v1/agent/books/runs
-- book status → GET /api/v1/agent/books/runs/{run_id}
+- plan start → POST /agent/books/planner
+- plan respond → POST /agent/books/planner/{session}/respond
+- plan auto → POST /agent/books/planner + POST .../respond (auto=true)
+- plan show → GET /agent/books/planner/{session}
+- plan run → POST /agent/books/runs
+- book status → GET /agent/books/runs/{run_id}
 - 错误映射（map_http_error）: 404 → NOT_FOUND / 422 → VALIDATION_ERROR /
   其余 → INTERNAL_ERROR；KernelStartupError → KERNEL_ERROR
 
@@ -175,7 +175,7 @@ def test_plan_start_human(fake_http_client):
     out = _strip_ansi(result.stdout)
     assert "题材" in out
     fake_http_client.post.assert_awaited_once_with(
-        "/api/v1/agent/books/planner",
+        "/agent/books/planner",
         json={"project_id": "proj-1", "one_liner": "写一本关于时间旅者的悬疑小说"},
     )
 
@@ -207,7 +207,7 @@ def test_plan_respond(fake_http_client):
 
     assert result.exit_code == 0
     fake_http_client.post.assert_awaited_once_with(
-        "/api/v1/agent/books/planner/sess-1/respond",
+        "/agent/books/planner/sess-1/respond",
         json={"answers": {"answer": "悬疑为主，加入时间悖论"}, "auto": False},
     )
 
@@ -268,7 +268,7 @@ def test_plan_auto_calls_write_auto_path(fake_http_client):
     assert len(calls) == 2
     # 第二步：respond auto=true（「全部你决定」→ F42 委托）
     second = calls[1]
-    assert second.args[0] == "/api/v1/agent/books/planner/sess-1/respond"
+    assert second.args[0] == "/agent/books/planner/sess-1/respond"
     assert second.kwargs["json"] == {"answers": {}, "auto": True}
 
 
@@ -329,7 +329,7 @@ def test_plan_show(fake_http_client):
     assert result.exit_code == 0
     out = _strip_ansi(result.stdout)
     assert "题材" in out
-    fake_http_client.get.assert_awaited_once_with("/api/v1/agent/books/planner/sess-1")
+    fake_http_client.get.assert_awaited_once_with("/agent/books/planner/sess-1")
 
 
 # ── plan run ──────────────────────────────────────────────────────
@@ -345,7 +345,7 @@ def test_plan_run_returns_run_id(fake_http_client):
     out = _strip_ansi(result.stdout)
     assert "run-1" in out
     fake_http_client.post.assert_awaited_once_with(
-        "/api/v1/agent/books/runs",
+        "/agent/books/runs",
         json={"writing_plan_id": "plan-1"},
     )
 
@@ -375,7 +375,7 @@ def test_book_status_shows_counters(fake_http_client):
     out = _strip_ansi(result.stdout)
     assert "run-1" in out
     assert "max_chapters" in out or "max_agent_calls" in out or "agent_calls" in out
-    fake_http_client.get.assert_awaited_once_with("/api/v1/agent/books/runs/run-1")
+    fake_http_client.get.assert_awaited_once_with("/agent/books/runs/run-1")
 
 
 def test_book_status_json_counters(fake_http_client):
@@ -502,7 +502,7 @@ def test_plan_show_data_none_early_return(fake_http_client):
 # 契约（父侧定稿，spec §4 阶段 2 + §5.2 + §13.2 M4/M5）:
 # - `inkflow book run <plan_id> [--limits max_chapters=5,max_tokens=200000] [--json]`
 #     顶层命令（app.command("run")，不在 plan 子组；plan run 保留兼容）
-#     POST /api/v1/agent/books/runs body {writing_plan_id, limits?} →
+#     POST /agent/books/runs body {writing_plan_id, limits?} →
 #     {run_id, status}
 #     --limits 逗号分隔 k=v 解析为 dict（"max_chapters=5,max_tokens=200000"
 #     → {"max_chapters": 5, "max_tokens": 200000}）；不传则 body 无 limits 键
@@ -517,7 +517,7 @@ def test_plan_show_data_none_early_return(fake_http_client):
 
 
 def test_book_run_top_level_command(fake_http_client):
-    """book run 顶层命令：POST /api/v1/agent/books/runs body {writing_plan_id}
+    """book run 顶层命令：POST /agent/books/runs body {writing_plan_id}
     → run_id/status（spec §4 阶段 2：inkflow book run <plan_id>）。"""
     fake_http_client.post.return_value = {"run_id": "run-1", "status": "pending"}
 
@@ -527,7 +527,7 @@ def test_book_run_top_level_command(fake_http_client):
     out = _strip_ansi(result.stdout)
     assert "run-1" in out
     fake_http_client.post.assert_awaited_once_with(
-        "/api/v1/agent/books/runs",
+        "/agent/books/runs",
         json={"writing_plan_id": "plan-1"},
     )
 
@@ -541,7 +541,7 @@ def test_book_run_with_limits(fake_http_client):
 
     assert result.exit_code == 0
     fake_http_client.post.assert_awaited_once_with(
-        "/api/v1/agent/books/runs",
+        "/agent/books/runs",
         json={
             "writing_plan_id": "plan-1",
             "limits": {"max_chapters": 5, "max_tokens": 200000},
@@ -596,7 +596,7 @@ def test_book_status_multi_chapter_progress(fake_http_client):
 # ════ F44 阶段3 追加段（#337 confirm 端点/命令）════
 # 权威来源：.hermes/plans/f44-stage3-contract.md §4 + spec.md §4/§13.3 M8。
 # 契约清单：
-# 6. book confirm <run_id> --approved → POST /api/v1/agent/books/runs/{run_id}/
+# 6. book confirm <run_id> --approved → POST /agent/books/runs/{run_id}/
 #    confirm body {"approved": true, "decision": ""} + exit 0 + 人类输出含状态
 # 7. book confirm <run_id> --reject --decision "中止" → body
 #    {"approved": false, "decision": "中止"} + exit 0
@@ -635,7 +635,7 @@ def test_book_confirm_approved(fake_http_client):
     assert "run-1" in out
     assert "running" in out
     fake_http_client.post.assert_awaited_once_with(
-        "/api/v1/agent/books/runs/run-1/confirm",
+        "/agent/books/runs/run-1/confirm",
         json={"approved": True, "decision": ""},
     )
 
@@ -658,7 +658,7 @@ def test_book_confirm_reject_decision(fake_http_client):
 
     assert result.exit_code == 0
     fake_http_client.post.assert_awaited_once_with(
-        "/api/v1/agent/books/runs/run-1/confirm",
+        "/agent/books/runs/run-1/confirm",
         json={"approved": False, "decision": "中止"},
     )
 
