@@ -2,7 +2,24 @@
 
 所有重要变更记录于此文件，格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-> 版本口径以 [ADR-019 v8](adr/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
+> 版本口径以 [ADR-019 v9](adr/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
+
+## [0.10.0] - 2026-08-18
+
+### 新增
+- **F44 长任务编排器（一句话→全书，#335-#338，PR #441/#443/#445/#446/#447/#448/#453/#454）**：访谈式 Planner（每轮 ≤5 问 +「全部你决定」= 跑 F42 write_auto）→ 顺序派发 + 章级进度状态机 + 多维上限 +「内容已写」安全阀 → Send map-reduce 卷级编排 + 卷级 HITL + 失败恢复策略树 → AsyncSqliteSaver 持久化 + 跨重启 resume + 干预 API（pause/resume/改向/编辑 + 差异标注）
+- **F45 记忆系统演进（#339/#340，PR #442/#452）**：用户级偏好层 + 归属分层（项目级/用户级）+ 跨项目聚合 + 语义风格提取（difflib 锚点 → LLM 语义总结，替代字面碎片注入，防幻觉双向堵）
+- **FastAPI 后台任务（#456，PR #457）**：长任务异步运行 + 运行中干预 API 可用
+- **GUI 面板（Q1=C 拍板）**：单面板访谈对话 + 子 agent 展开行 + 章级进度 UI + 卷级 HITL 确认对话框 + 干预控件 + 回归摘要面板 + 观察流三层密度
+
+### 修复
+- coverage-backend chromadb hnsw 竞态（#409，PR #434）+ e2e-frontend-writing promise GC flaky retries 兜底（#455）
+- e2e-frontend-settings app-nav 门控竞态（#410）+ Agent 卡片更新 flaky（#444）+ e2e 整体不稳定 retries 兜底（#450，PR #451）
+- GUI 启动门控 10s 阈值（#419，PR #438）
+- rc 运行缺陷（#458/#460/#462/#464/#466/#468/#470，PR #459/#461/#463/#465/#467/#469/#471）：book 命令双前缀 / planner 装配缺口 / writer_factory 未装配 / RAG hnsw 小数据集竞态 / summary 模型回退
+
+### 变更
+- 0.10.0 里程碑 20/20 issues 全关（2026-08-18）；ADR-019 v9 修订（长任务编排器 + 记忆演进）
 
 ## [0.9.0] - 2026-08-17
 
