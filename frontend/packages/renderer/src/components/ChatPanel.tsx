@@ -1,9 +1,9 @@
 /**
  * 底部 AI 聊天框（spec §4.1）：builtin:chat 单轮对话
- * - 发送 → executePipeline({pipeline:'builtin:chat', project_id, variables:{prompt, chapter_context?}})
- * - 轮询 getExecutionStatus（1s 间隔 setTimeout 递归，卸载清理 timer）
+ * - 发送 → useExecutionPoll.start({pipeline:'builtin:chat', project_id, variables:{prompt, chapter_context?}})
+ * - 轮询/并发保护/错误态统一由 useExecutionPoll 承担（#472 R0，1s 间隔）
  * - completed → assistant 消息 + 「插入正文」→ chapterStore.setContent(final_output)
- * - failed → 错误文案（不插入正文）；发送中 inFlight 并发保护
+ * - failed → 错误文案（不插入正文）
  */
 import {
   useCallback,
@@ -12,12 +12,8 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
-import { errorMessage } from '../api/client';
-import {
-  executePipeline,
-  getExecutionStatus,
-  type PipelineExecuteRequest,
-} from '../api/pipeline';
+import type { PipelineExecuteRequest } from '../api/pipeline';
+import { useExecutionPoll } from '../hooks/useExecutionPoll';
 import { useI18n } from '../i18n/useI18n';
 import { useChapterStore } from '../stores/chapter';
 import { useToastStore } from '../stores/toast';
@@ -35,64 +31,17 @@ interface ChatEntry {
   finalOutput?: string;
 }
 
-const POLL_INTERVAL_MS = 1000;
-
 export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelProps) {
   const { t } = useI18n();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatEntry[]>([]);
-  const inFlightRef = useRef(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exec = useExecutionPoll();
   const userSeqRef = useRef(0);
   const aiSeqRef = useRef(0);
 
-  const poll = useCallback(
-    (executionId: string) => {
-      getExecutionStatus(executionId)
-        .then((s) => {
-          if (s.status === 'completed') {
-            setMessages((prev) => [
-              ...prev,
-              {
-                kind: 'ai',
-                seq: aiSeqRef.current++,
-                text: s.final_output,
-                finalOutput: s.final_output,
-              },
-            ]);
-          } else if (s.status === 'failed') {
-            setMessages((prev) => [
-              ...prev,
-              {
-                kind: 'ai',
-                seq: aiSeqRef.current++,
-                text: t('write.chat.failed', { message: s.error || '执行失败' }),
-              },
-            ]);
-          } else {
-            timerRef.current = setTimeout(() => {
-              void poll(executionId);
-            }, POLL_INTERVAL_MS);
-          }
-        })
-        .catch((err) => {
-          setMessages((prev) => [
-            ...prev,
-            {
-              kind: 'ai',
-              seq: aiSeqRef.current++,
-              text: t('write.chat.failed', { message: errorMessage(err) }),
-            },
-          ]);
-        });
-    },
-    [t],
-  );
-
   const handleSend = useCallback(() => {
     const prompt = input.trim();
-    if (!prompt || inFlightRef.current) return;
-    inFlightRef.current = true;
+    if (!prompt) return;
     setMessages((prev) => [...prev, { kind: 'user', seq: userSeqRef.current++, text: prompt }]);
     setInput('');
     const variables: Record<string, string> = { prompt };
@@ -105,23 +54,32 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
       ...(chapterId ? { chapter_id: chapterId } : {}),
       variables,
     };
-    executePipeline(body)
-      .then((res) => {
-        inFlightRef.current = false;
-        void poll(res.execution_id);
-      })
-      .catch((err) => {
-        inFlightRef.current = false;
-        setMessages((prev) => [
-          ...prev,
-          {
-            kind: 'ai',
-            seq: aiSeqRef.current++,
-            text: t('write.chat.failed', { message: errorMessage(err) }),
-          },
-        ]);
-      });
-  }, [input, projectId, chapterId, chapterContent, poll, t]);
+    exec.start(body); // 并发保护在 hook 内（running 期间二次 start 无操作）
+  }, [input, projectId, chapterId, chapterContent, exec.start]);
+
+  // 轮询结果消费：status 只在 0→1 次变化（idle→running→success/failed），依赖 [status] 天然防重
+  useEffect(() => {
+    if (exec.status === 'success') {
+      setMessages((prev) => [
+        ...prev,
+        {
+          kind: 'ai',
+          seq: aiSeqRef.current++,
+          text: exec.finalOutput,
+          finalOutput: exec.finalOutput,
+        },
+      ]);
+    } else if (exec.status === 'failed') {
+      setMessages((prev) => [
+        ...prev,
+        {
+          kind: 'ai',
+          seq: aiSeqRef.current++,
+          text: t('write.chat.failed', { message: exec.error || '执行失败' }),
+        },
+      ]);
+    }
+  }, [exec.status]);
 
   const handleInsert = useCallback(
     (finalOutput: string) => {
@@ -140,12 +98,6 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
     },
     [handleSend],
   );
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current !== null) clearTimeout(timerRef.current);
-    };
-  }, []);
 
   const canSend = input.trim() !== '';
 
