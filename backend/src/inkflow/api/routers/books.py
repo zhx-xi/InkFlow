@@ -75,15 +75,17 @@ def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
     async def _write_auto(project_id: uuid.UUID, one_liner: str) -> object:
         """「全部你决定」委托：复用 AgentService 执行 F42 builtin:write_auto 管线。"""
         from inkflow.api.routers.agent import _svc
+        from inkflow.core.database import async_session_factory
         from inkflow.domain.models.agent_pipeline import PipelineExecuteRequest
 
-        await _svc(db).execute(
-            PipelineExecuteRequest(
-                project_id=project_id,
-                pipeline="builtin:write_auto",
-                variables={"chapter_title": one_liner},
+        async with async_session_factory() as session:
+            await _svc(session).execute(
+                PipelineExecuteRequest(
+                    project_id=project_id,
+                    pipeline="builtin:write_auto",
+                    variables={"chapter_title": one_liner},
+                )
             )
-        )
         return None
 
     async def _outline_service(
