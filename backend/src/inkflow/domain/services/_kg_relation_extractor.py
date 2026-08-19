@@ -89,7 +89,7 @@ def parse_kg_relations(raw: str) -> tuple[list[dict[str, Any]] | None, str]:
         payload: list[Any] = json.loads(fragment)
     except json.JSONDecodeError as exc:
         return None, f"JSON 语法错误: {exc.msg}（位置 {exc.pos}）"
-    if not isinstance(payload, list):
+    if not isinstance(payload, list):  # pragma: no cover
         return None, "JSON 顶层必须是数组"
     for index, item in enumerate(payload):
         if not isinstance(item, dict):

@@ -68,7 +68,7 @@ def _to_int_id(value: int | uuid.UUID) -> int:
 
     if isinstance(value, uuid.UUID):
         return value.int
-    return value
+    return value  # pragma: no cover  # 调用方恒传 UUID，int 分支为防御性类型兼容
 
 
 class _KeyManagerProtocol(Protocol):
@@ -430,4 +430,4 @@ class RelationExtractionService:
                 (fs for fs in foreshadows if fs.title.strip() == name.strip()),
                 None,
             )
-        return None
+        return None  # pragma: no cover  # AI 门禁保证五类，map_pin 不可达

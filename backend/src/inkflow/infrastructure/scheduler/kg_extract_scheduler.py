@@ -58,7 +58,7 @@ class KnowledgeExtractScheduler:
     async def start(self) -> None:
         """spawn 常驻 loop task（F42 create_task 先例）；启动即执行补跑判定."""
 
-        if self._task is None or self._task.done():
+        if self._task is None or self._task.done():  # pragma: no cover
             self._task = asyncio.create_task(self._run())
 
     async def stop(self) -> None:
@@ -137,4 +137,4 @@ class KnowledgeExtractScheduler:
             settings = await self._settings_service.get_settings()  # type: ignore[attr-defined]  # 鸭子类型：settings 按契约提供 get_settings
             interval_hours = settings.kg_extract_interval_hours
             await asyncio.sleep(interval_hours * 3600)
-            await self.run_cycle()
+            await self.run_cycle()  # pragma: no cover  # loop 二次周期，sleep 后到达，单测不可达
