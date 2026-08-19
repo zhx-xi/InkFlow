@@ -5,8 +5,9 @@
  * pages/settings.tsx）必须匹配以下路由/testid/i18n key；既有 testid 契约
  * （project-card / editor / project-tree 等）不删不改。
  *
- * 路由（HashRouter；/agents 删除——spec §7.10 Q1=A 拍板；#481：/models 删除——模型管理合并入设置页模型分类）：
- *   /writing /projects /library /settings，默认 /
+ * 路由（HashRouter；/agents 删除——spec §7.10 Q1=A 拍板；#481：/models 删除——模型管理合并入设置页模型分类；
+ * #482：/settings/project 项目聚合设置页——pages/project-settings.tsx）：
+ *   /writing /projects /library /settings /settings/project，默认 /
  *
  * 侧边导航（AppNav，容器 data-testid="app-nav"）：
  * - 四个主入口 link，可访问名 = t('nav.writing'|'nav.projects'|'nav.library'|'nav.settings')
@@ -21,6 +22,12 @@
  *   且页面不渲染 models-page（GREEN 前该路由存在 → 渲染 ModelsPage，断言 FAIL）
  * - 设置页模型分类（settings-cat-models）：完整模型管理渲染——models-panel（原 models-page 面板化）+
  *   provider-list + model-table + role-binding 并存（GREEN 前 ModelsPanel 为占位 → element-missing）
+ *
+ * #482 契约（项目聚合设置页）：
+ * - /settings/project 路由存在：直接访问 #/settings/project → 渲染 project-settings-page
+ *   （pages/project-settings.tsx，根 data-testid="project-settings-page"；GREEN 前无该路由 → * fallback
+ *   重定向项目页，findByTestId 超时 FAIL = 合法 RED）
+ * - 精确路由：/settings/project 不得同时渲染 settings-page（防子路径误匹配）
  *
  * 设定库页（pages/library.tsx，根 data-testid="library-page"）：
  * - 未选择项目空态：data-testid="library-empty" + 文案 t('lib.empty.title')（「选择或新建项目开始构建设定」）
@@ -88,6 +95,11 @@ beforeEach(() => {
     }
     if (path === '/api/v1/projects/p1/chapters') return { items: seedChapters, total: 2, offset: 0, limit: 50 };
     if (path === '/api/v1/projects/p1/volumes') return { items: seedVolumes };
+    // #482：ProjectSettingsPage 挂载后 AgentChainCard 的 3 GET（provider-configs / agent-templates / agents）——
+    // 显式分支（default 兜底同形状但显式更稳），GREEN 后空列表即可、页面不崩
+    if (path === '/api/v1/provider-configs') return { items: [], total: 0, offset: 0, limit: 50 };
+    if (path === '/api/v1/agent-templates') return { items: [], total: 0, offset: 0, limit: 50 };
+    if (path === '/api/v1/agents') return { items: [], total: 0, offset: 0, limit: 50 };
     return { items: [], total: 0, offset: 0, limit: 50 };
   });
 });
@@ -224,5 +236,15 @@ describe('App 路由集成（HashRouter 四页 + 侧边导航）', () => {
     expect(within(page).getByTestId('provider-list')).toBeInTheDocument();
     expect(within(page).getByTestId('model-table')).toBeInTheDocument();
     expect(within(page).getByTestId('role-binding')).toBeInTheDocument();
+  });
+
+  it('#482 /settings/project 项目聚合设置页路由存在：直接访问 → 渲染 project-settings-page', async () => {
+    // 直接 hash 到 /settings/project（GREEN 前无此路由 → * fallback 重定向项目页；GREEN 后渲染 ProjectSettingsPage）
+    window.location.hash = '#/settings/project';
+    render(<App />);
+    // 路由契约：project-settings-page 根容器必须渲染（RED：findByTestId 超时 → element-missing FAIL）
+    expect(await screen.findByTestId('project-settings-page')).toBeInTheDocument();
+    // 精确路由契约：/settings 页不得同时渲染（防子路径误匹配）
+    expect(screen.queryByTestId('settings-page')).not.toBeInTheDocument();
   });
 });
