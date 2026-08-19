@@ -35,6 +35,17 @@
  * set.agents.deleteConfirm='确定删除自定义 Agent「{name}」？此操作不可恢复'
  * toast.agentSaved='已保存' toast.agentDeleted='已删除'
  *
+ * #485 内置 Agent 详情 + 复制（追加契约，2026-08-19）：
+ * - 内置卡片（builtin=true）新增「详情」按钮 data-testid=agent-detail-{id}、「复制」按钮
+ *   data-testid=agent-copy-{id}；自定义卡片（builtin=false）不渲染 agent-detail- / agent-copy- 前缀
+ * - 「详情」→ 弹层 data-testid=agent-detail-dialog（role=dialog 或 aria-modal=true 二者满足其一）：
+ *   system_prompt 全文 data-testid=agent-detail-prompt、工具列表 data-testid=agent-detail-tool-{toolName}
+ *   （每工具一项）、skill 列表 data-testid=agent-detail-skill-{skillId}；弹层数据用 store agents
+ *   数组本地渲染——零新请求（详情交互不得触发额外 fetch）；关闭按钮 data-testid=agent-detail-close
+ * - 「复制」→ store copyAgent(id)：POST /api/v1/agents/{id}/duplicate → 成功 toast
+ *   t('toast.agentCopied')「已复制」（新 i18n key，GREEN 补 zh/en）；失败 → t('toast.saveFailed')「保存失败」
+ *   （刷新实现不锁：copyAgent 内部追加或 loadAgents 重拉均可，测试只锁 POST 调用 + toast）
+ *
  * RED 预期：./AgentList 模块不存在 → module-not-found（类 1 契约缺口）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -137,9 +148,12 @@ const SKILL_ITEMS: SkillSummary[] = [
   { id: 3, name: 'web-research', description: '网络调研方法论', source: 'user_upload', agent_ids: [] },
 ];
 
-/** 默认 mock：URL 分发（挂载 3 GET + 业务请求） */
+/** 默认 mock：URL 分发（挂载 3 GET + 业务请求 + #485 duplicate 副本） */
 function mockDefault() {
-  apiFetchMock.mockImplementation(async (path: string) => {
+  apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+    if (path === '/api/v1/agents/1/duplicate' && init?.method === 'POST') {
+      return { ...BUILTIN_AGENT, id: 10, name: '架构师 副本', builtin: false };
+    }
     if (path === '/api/v1/agents') return { items: [BUILTIN_AGENT, CUSTOM_AGENT], total: 2 };
     if (path === '/api/v1/agents/tools') return { items: TOOL_ITEMS };
     if (path === '/api/v1/skills') return { items: SKILL_ITEMS, total: 2 };
@@ -247,5 +261,84 @@ describe('AgentList — 管理列表（内置只读 / 自定义可编辑）', ()
     await user.click(screen.getByTestId('agent-delete-cancel'));
     expect(screen.queryByTestId('agent-delete-dialog')).not.toBeInTheDocument();
     expect(screen.getByTestId('agent-card-2')).toBeInTheDocument();
+  });
+});
+
+describe('AgentList — 内置详情 + 复制（#485）', () => {
+  it('内置卡片有详情+复制按钮；自定义卡片无（agent-detail-/agent-copy- 前缀仅 builtin）', async () => {
+    render(<AgentList />);
+    await screen.findByTestId('agent-card-1');
+    const card1 = screen.getByTestId('agent-card-1');
+    expect(within(card1).getByTestId('agent-detail-1')).toBeInTheDocument();
+    expect(within(card1).getByTestId('agent-copy-1')).toBeInTheDocument();
+    const card2 = screen.getByTestId('agent-card-2');
+    expect(within(card2).queryByTestId('agent-detail-2')).not.toBeInTheDocument();
+    expect(within(card2).queryByTestId('agent-copy-2')).not.toBeInTheDocument();
+  });
+
+  it('点详情 → 弹层：system_prompt 全文 + 工具列表 + skill 列表（零新请求）', async () => {
+    const user = userEvent.setup();
+    render(<AgentList />);
+    await screen.findByTestId('agent-card-1');
+    const fetchCountBefore = apiFetchMock.mock.calls.length;
+    await user.click(screen.getByTestId('agent-detail-1'));
+    const dlg = await screen.findByTestId('agent-detail-dialog');
+    expect(dlg.getAttribute('role') === 'dialog' || dlg.getAttribute('aria-modal') === 'true').toBe(true);
+    expect(screen.getByTestId('agent-detail-prompt').textContent).toContain(BUILTIN_AGENT.system_prompt);
+    expect(screen.getByTestId('agent-detail-tool-search_characters')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-detail-tool-check_foreshadowing')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-detail-tool-get_prior_summary')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-detail-skill-1')).toBeInTheDocument();
+    // 详情弹层零新请求（数据来自 store agents 本地渲染）——等挂载 GET 全部落定后再比对
+    await waitFor(() => {
+      expect(apiFetchMock.mock.calls.length).toBe(fetchCountBefore);
+    });
+  });
+
+  it('点详情后再点关闭按钮（agent-detail-close）→ 弹层消失', async () => {
+    const user = userEvent.setup();
+    render(<AgentList />);
+    await screen.findByTestId('agent-card-1');
+    await user.click(screen.getByTestId('agent-detail-1'));
+    await screen.findByTestId('agent-detail-dialog');
+    await user.click(screen.getByTestId('agent-detail-close'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('agent-detail-dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  it('点复制 → POST /api/v1/agents/1/duplicate → toast「已复制」', async () => {
+    const user = userEvent.setup();
+    render(<AgentList />);
+    await screen.findByTestId('agent-card-1');
+    await user.click(screen.getByTestId('agent-copy-1'));
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/agents/1/duplicate',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.message.includes('已复制'))).toBe(true);
+    });
+  });
+
+  it('复制失败 → 错误 toast（toast.saveFailed）', async () => {
+    const user = userEvent.setup();
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/agents/1/duplicate' && init?.method === 'POST') {
+        throw new Error('duplicate failed');
+      }
+      if (path === '/api/v1/agents') return { items: [BUILTIN_AGENT, CUSTOM_AGENT], total: 2 };
+      if (path === '/api/v1/agents/tools') return { items: TOOL_ITEMS };
+      if (path === '/api/v1/skills') return { items: SKILL_ITEMS, total: 2 };
+      return { ok: true };
+    });
+    render(<AgentList />);
+    await screen.findByTestId('agent-card-1');
+    await user.click(screen.getByTestId('agent-copy-1'));
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.message.includes('保存失败'))).toBe(true);
+    });
   });
 });

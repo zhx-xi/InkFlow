@@ -37,6 +37,7 @@ interface SkillsState {
   loadSkills: () => Promise<void>;
   uploadSkill: (content: string) => Promise<Skill>;
   deleteSkill: (id: number) => Promise<void>;
+  copySkill: (id: number) => Promise<Skill>;
 }
 
 export const useSkillsStore = create<SkillsState>((set) => ({
@@ -77,6 +78,20 @@ export const useSkillsStore = create<SkillsState>((set) => ({
     } catch (err) {
       // 失败（409 内置只读）：error + 列表不变（不 rethrow，同 templates.deleteTemplate）
       set({ error: errorMessage(err) });
+    }
+  },
+
+  copySkill: async (id) => {
+    try {
+      const created = await apiFetch<Skill>(`/api/v1/skills/${id}/duplicate`, {
+        method: 'POST',
+      });
+      set((s) => ({ skills: [...s.skills, created], error: null }));
+      return created;
+    } catch (err) {
+      // 失败：error 设置 + 列表不变 + rethrow（复制流程需感知失败）
+      set({ error: errorMessage(err) });
+      throw err;
     }
   },
 }));

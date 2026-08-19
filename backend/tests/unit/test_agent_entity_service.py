@@ -557,3 +557,143 @@ class TestSeedRoleKeyV15:
         agents = await repo.list()
         worldview = next(a for a in agents if a.name == "世界观顾问")
         assert worldview.role_key == "worldview"  # 补值
+
+
+class TestDuplicate:
+    """duplicate — 复制 Agent（镜像 agent_template_service.duplicate，#485）。
+
+    契约（设计假设，GREEN 实现者唯一参考）：
+
+    1. 签名: ``async duplicate(self, agent_id: int, *, name: str | None = None)
+       -> Agent``。
+    2. 语义: ``agent_repository.get(agent_id)`` 目标不存在 →
+       AgentNotFoundError（404）；新 name（指定或 f"{原 name} 副本"，空格
+       分隔）经 ``agent_repository.get_by_name`` 查重，命中 →
+       AgentNameConflictError（422）；成功 → 构造副本并委托
+       ``agent_repository.add``，直接返回其结果。
+    3. 原样复制字段: description/icon/system_prompt/tool_ids/skill_ids/
+       model_override/temperature_override 与源完全一致（tool_ids/skill_ids
+       列表内容相等）。⚠️ duplicate 也做白名单校验（同 create）：tool_ids
+       目录外 → ToolReferenceError；skill_ids 任一 skill_repository.get 缺失
+       → SkillReferenceError。测试构造源时 tool_ids 须用 VALID_TOOL_IDS、
+       skill_ids 须 mock skill_repo.get 返回 _skill_ref。
+    4. 重置字段: id=None；builtin=False（副本为用户态，可改可删）；
+       role_key 不继承源值——按 create 同名逻辑重新分配（_slugify_role_key(
+       新 name) 冲突追加数字后缀；「写手 副本」全非 ASCII → slug 空回退
+       "agent"）；created_at = updated_at = datetime.now(UTC)（时区感知，
+       断言用动态 now 不锁固定值）。
+
+    RED 形态: 当前服务无 duplicate 方法 → 每个用例 AttributeError:
+    'AgentEntityService' object has no attribute 'duplicate'。
+    """
+
+    async def test_duplicate_default_name_appends_suffix(self, service, mock_agent_repo):
+        """duplicate 默认副本名 = f"{源 name} 副本"；id/builtin/role_key/
+        时间戳重置（role_key 不继承源值；时间戳同一批次 now 且时区感知）。"""
+        mock_agent_repo.get.return_value = _agent(1, "写手", role_key="writer")
+        await service.duplicate(1)
+
+        mock_agent_repo.get.assert_awaited_once_with(1)
+        mock_agent_repo.get_by_name.assert_awaited_once()
+        assert _arg(mock_agent_repo.get_by_name.await_args, "name", 0) == "写手 副本"
+        mock_agent_repo.add.assert_awaited_once()
+        at = _arg(mock_agent_repo.add.await_args, "agent", 0)
+        assert at.id is None  # id 由 repo 分配
+        assert at.name == "写手 副本"
+        assert at.builtin is False  # 副本为用户态，可改可删
+        assert at.role_key != "writer"  # role_key 不继承源值，按 create 逻辑重分配
+        assert at.created_at == at.updated_at
+        assert at.created_at.tzinfo is not None  # datetime.now(UTC) 时区感知
+
+    async def test_duplicate_copies_all_fields(self, service, mock_agent_repo, mock_skill_repo):
+        """复制字段原样：description/icon/system_prompt/tool_ids/skill_ids/
+        model_override/temperature_override 与源一致；name 参数指定副本名。"""
+        source = _agent(
+            1,
+            "写手",
+            description="正文生成",
+            icon="✍️",
+            system_prompt="你是写手，负责正文。",
+            tool_ids=list(VALID_TOOL_IDS),
+            skill_ids=["3"],
+            model_override="zhipu/glm-4.5",
+            temperature_override=0.6,
+        )
+        mock_agent_repo.get.return_value = source
+        mock_skill_repo.get = AsyncMock(
+            side_effect=lambda sid: _skill_ref(int(sid)) if str(sid) == "3" else None
+        )
+        await service.duplicate(1, name="指定名")
+
+        mock_skill_repo.get.assert_awaited()  # skill_ids 白名单校验查询
+        at = _arg(mock_agent_repo.add.await_args, "agent", 0)
+        assert at.name == "指定名"  # name 参数生效
+        assert at.description == source.description
+        assert at.icon == source.icon
+        assert at.system_prompt == source.system_prompt
+        assert at.tool_ids == list(VALID_TOOL_IDS)  # 列表内容相等
+        assert at.skill_ids == ["3"]
+        assert at.model_override == source.model_override
+        assert at.temperature_override == source.temperature_override
+        assert at.id is None
+        assert at.builtin is False
+
+    async def test_duplicate_missing_raises_not_found(self, service, mock_agent_repo):
+        """目标不存在 → AgentNotFoundError（404），且不落库、不查重。"""
+        mock_agent_repo.get.return_value = None
+        with pytest.raises(AgentNotFoundError, match="不存在"):
+            await service.duplicate(999)
+        mock_agent_repo.add.assert_not_called()
+        mock_agent_repo.get_by_name.assert_not_called()  # 目标缺失即短路
+
+    async def test_duplicate_name_conflict_raises(self, service, mock_agent_repo):
+        """副本名已存在 → AgentNameConflictError（422），且不落库。"""
+        mock_agent_repo.get.return_value = _agent(1, "写手")
+        mock_agent_repo.get_by_name.return_value = _agent(99, "写手 副本")  # 其他 id 已占用
+        with pytest.raises(AgentNameConflictError, match="同名"):
+            await service.duplicate(1)
+        mock_agent_repo.add.assert_not_called()
+
+    async def test_duplicate_custom_agent_also_works(self, service, mock_agent_repo):
+        """复制不区分内置/自定义：builtin=False 源同样可复制，副本保持
+        builtin=False（用户态）。"""
+        mock_agent_repo.get.return_value = _agent(1, "自定义写手")
+        await service.duplicate(1)
+        at = _arg(mock_agent_repo.add.await_args, "agent", 0)
+        assert at.name == "自定义写手 副本"
+        assert at.builtin is False
+
+    async def test_duplicate_unknown_tool_rejected(self, service, mock_agent_repo):
+        """源 tool_ids 含目录外工具名 → ToolReferenceError（422），且不落库。"""
+        mock_agent_repo.get.return_value = _agent(1, "写手", tool_ids=["ghost_tool"])
+        with pytest.raises(ToolReferenceError, match="目录外"):
+            await service.duplicate(1)
+        mock_agent_repo.add.assert_not_called()
+
+    async def test_duplicate_unknown_skill_rejected(
+        self, service, mock_agent_repo, mock_skill_repo
+    ):
+        """源 skill_ids 含不存在 skill → SkillReferenceError（422），且不落库。"""
+        mock_agent_repo.get.return_value = _agent(1, "写手", skill_ids=["999"])
+        mock_skill_repo.get.return_value = None  # fixture 默认即 None，显式声明意图
+        with pytest.raises(SkillReferenceError, match="不存在的 Skill"):
+            await service.duplicate(1)
+        mock_agent_repo.add.assert_not_called()
+
+    async def test_duplicate_role_key_reassigned_with_suffix(self, service, mock_agent_repo):
+        """role_key 按 create 同名逻辑重新分配：副本名 slug 与既有 role_key
+        冲突 → 追加数字后缀（镜像 TestRoleKeyV15 冲突契约）。"""
+        mock_agent_repo.get.return_value = _agent(1, "Proofreader", role_key="proofreader")
+        mock_agent_repo.list.return_value = [_agent(2, "既有角色", role_key="proofreader")]
+        await service.duplicate(1)
+        at = _arg(mock_agent_repo.add.await_args, "agent", 0)
+        # 副本名 "Proofreader 副本" slug 化 = "proofreader"（非 ASCII 段替换为 _）
+        # → 与既有 role_key 冲突 → proofreader_1
+        assert at.role_key == "proofreader_1"
+
+    async def test_duplicate_preserves_add_result(self, service, mock_agent_repo):
+        """成功路径直接返回 repo.add 结果（不二次包装）。"""
+        mock_agent_repo.get.return_value = _agent(1, "写手")
+        saved = await service.duplicate(1)
+        at = _arg(mock_agent_repo.add.await_args, "agent", 0)
+        assert saved is at  # fixture: add side_effect=lambda a: a

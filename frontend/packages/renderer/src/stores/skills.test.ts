@@ -28,6 +28,9 @@
  * - deleteSkill(id: number): Promise<void>
  *     DELETE /api/v1/skills/{id}；成功 → 从列表移除；失败（409 内置只读）→ error +
  *     列表不变（不 rethrow，同 templates.deleteTemplate 语义）
+ * - copySkill(id: number): Promise<Skill>
+ *     POST /api/v1/skills/{id}/duplicate → 201 新 Skill（source='user_upload'、name=f"{原名} 副本"、
+ *     content 原样）→ skills 追加 + return；失败 error + rethrow（镜像 uploadSkill 语义）
  *
  * RED 预期：./skills 模块不存在 → module-not-found（类 1 契约缺口，suite 级失败）。
  *
@@ -142,6 +145,45 @@ describe('useSkillsStore.deleteSkill', () => {
     await useSkillsStore.getState().deleteSkill(2);
     const s = useSkillsStore.getState();
     expect(s.error).toContain('内置');
+    expect(s.skills.map((x) => x.id)).toEqual([1, 2]);
+  });
+});
+
+describe('useSkillsStore.copySkill（#485 内置 Skill 复制）', () => {
+  /** 副本实体（后端契约：source='user_upload'、name=f"{原名} 副本"、content 原样） */
+  const COPIED_SKILL: Skill = {
+    ...SKILLS[1],
+    id: 10,
+    name: '架构方法论 副本',
+    source: 'user_upload',
+    agent_ids: [],
+  };
+
+  /** store 缺 copySkill action → 类型 cast（#106 先例，tsc --noEmit 绿；GREEN 后 cast 可留可删） */
+  type SkillsStoreWithCopy = ReturnType<typeof useSkillsStore.getState> & {
+    copySkill: (id: number) => Promise<Skill>;
+  };
+  const storeWithCopy = () => useSkillsStore.getState() as SkillsStoreWithCopy;
+
+  it('copySkill 成功：POST /api/v1/skills/2/duplicate → 副本追加列表尾部 + return', async () => {
+    apiFetchMock.mockResolvedValue(COPIED_SKILL);
+    const created = await storeWithCopy().copySkill(2);
+    expect(apiFetchMock).toHaveBeenCalledWith(
+      '/api/v1/skills/2/duplicate',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(created).toEqual(COPIED_SKILL);
+    expect(created.source).toBe('user_upload');
+    expect(created.content).toBe(SKILLS[1].content);
+    expect(useSkillsStore.getState().skills).toContainEqual(COPIED_SKILL);
+  });
+
+  it('copySkill 失败：error 设置 + rethrow + 列表不变', async () => {
+    useSkillsStore.setState({ skills: SKILLS });
+    apiFetchMock.mockRejectedValue(new Error('duplicate failed'));
+    await expect(storeWithCopy().copySkill(2)).rejects.toThrow('duplicate failed');
+    const s = useSkillsStore.getState();
+    expect(s.error).not.toBeNull();
     expect(s.skills.map((x) => x.id)).toEqual([1, 2]);
   });
 });

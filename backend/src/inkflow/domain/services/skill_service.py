@@ -299,6 +299,35 @@ class SkillService:
             raise SkillNotFoundError()
         logger.info("删除 Skill: skill_id=%s", skill_id)
 
+    async def duplicate(self, skill_id: int, *, name: str | None = None) -> Skill:
+        """复制 Skill（镜像 agent_template_service.duplicate，#485）.
+
+        目标不存在 → SkillNotFoundError；新 name = 指定名或 f"{原 name} 副本"
+        （中文合法——duplicate 不走 _parse_frontmatter，区别于 create 的
+        frontmatter 校验）；经 skill_repository.get_by_name 查重命中 →
+        SkillNameConflictError；成功 → 构造副本（id=None、source="user_upload"、
+        description/content 原样）并委托 skill_repository.add，直接返回其结果.
+        """
+        existing = await self._skill_repo.get(skill_id)
+        if existing is None:
+            raise SkillNotFoundError()
+        new_name = name or f"{existing.name} 副本"
+        dup = await self._skill_repo.get_by_name(new_name)
+        if dup is not None:
+            raise SkillNameConflictError()
+        now = _utcnow()
+        clone = existing.model_copy(
+            update={
+                "id": None,
+                "name": new_name,
+                "source": "user_upload",
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+        logger.info("复制 Skill: skill_id=%s → name=%s", skill_id, new_name)
+        return await self._skill_repo.add(clone)
+
 
 async def seed_builtin_skills(session: AsyncSession) -> int:
     """幂等 seed 内置 6 Skill（spec §5.3，source="builtin" 只读）.

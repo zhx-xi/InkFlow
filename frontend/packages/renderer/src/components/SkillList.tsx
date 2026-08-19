@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
 import { useI18n } from '../i18n/useI18n';
 import { useAgentsStore } from '../stores/agents';
 import { useSkillsStore, type Skill } from '../stores/skills';
+import { useToastStore } from '../stores/toast';
 import { ConfirmDialog } from './ConfirmDialog';
 import { SkillUploadDialog } from './SkillUploadDialog';
 
@@ -16,8 +17,10 @@ export function SkillList() {
   const skills = useSkillsStore((s) => s.skills);
   const loading = useSkillsStore((s) => s.loading);
   const skillsError = useSkillsStore((s) => s.error);
+  const pushToast = useToastStore((s) => s.pushToast);
   const [confirming, setConfirming] = useState<Skill | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [detailSkill, setDetailSkill] = useState<Skill | null>(null);
 
   // 挂载时加载列表 + Agent 候选（反查引用名兜底；列表端点 agent_ids 已含 name）
   useEffect(() => {
@@ -31,6 +34,15 @@ export function SkillList() {
     const target = confirming;
     await useSkillsStore.getState().deleteSkill(target.id);
     setConfirming(null);
+  };
+
+  const handleCopy = async (skill: Skill) => {
+    try {
+      await useSkillsStore.getState().copySkill(skill.id);
+      pushToast('ok', t('skill.copied'));
+    } catch {
+      pushToast('err', t('toast.saveFailed'));
+    }
   };
 
   const namesText = (skill: Skill): string =>
@@ -120,6 +132,26 @@ export function SkillList() {
                   {t('lib.delete')}
                 </button>
               )}
+              {skill.source === 'builtin' && (
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    type="button"
+                    data-testid={`skill-detail-${skill.id}`}
+                    className="rounded border border-line px-2.5 py-1 text-[12px] text-ink-2 transition duration-180 hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => setDetailSkill(skill)}
+                  >
+                    {t('skill.detail')}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`skill-copy-${skill.id}`}
+                    className="rounded border border-line px-2.5 py-1 text-[12px] text-ink-2 transition duration-180 hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => void handleCopy(skill)}
+                  >
+                    {t('skill.copy')}
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -146,6 +178,38 @@ export function SkillList() {
             if (!v) setConfirming(null);
           }}
         />
+      )}
+
+      {detailSkill && (
+        <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={detailSkill.name}
+            data-testid="skill-detail-dialog"
+            className="max-h-[85vh] w-[560px] overflow-y-auto rounded-lg border border-line bg-surface p-6 shadow-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="font-serif text-[18px] font-semibold">{detailSkill.name}</h2>
+              <button
+                type="button"
+                data-testid="skill-detail-close"
+                aria-label="关闭"
+                className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-surface-3"
+                onClick={() => setDetailSkill(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <pre
+              data-testid="skill-detail-content"
+              className="mt-3 whitespace-pre-wrap rounded-md border border-line bg-surface-2 p-3 font-mono text-[12px] text-ink"
+            >
+              {detailSkill.content}
+            </pre>
+          </div>
+        </div>
       )}
     </section>
   );
