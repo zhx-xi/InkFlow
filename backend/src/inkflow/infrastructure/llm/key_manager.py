@@ -85,6 +85,17 @@ class APIKeyManager:
         data = self._read_json(provider)
         return self.decrypt(provider, encrypted_data=data)
 
+    def get_key(self, provider: str) -> str | None:
+        """安全读取已存 API Key；无 key 文件/解密失败 → None（模型发现 keychain 回退）.
+
+        镜像 provider_config._load_stored_key 语义：缺 key 不算错误，调用方回退为
+        无 Authorization 的上游请求（兼容本地 Ollama）。
+        """
+        try:
+            return self.load(provider)
+        except Exception:
+            return None
+
     def delete(self, provider: str) -> None:
         """删除指定 Provider 的 Key 文件。"""
         for ext in (".key", ".json", ".enc"):

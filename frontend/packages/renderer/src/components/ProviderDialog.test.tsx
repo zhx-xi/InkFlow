@@ -44,7 +44,7 @@
  * RED 预期：./ProviderDialog 模块不存在 → module-not-found（类 1 契约缺口）。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ProviderDialog } from './ProviderDialog';
 import { apiFetch } from '../api/client';
@@ -417,5 +417,113 @@ describe('ProviderDialog — 保存（onSaved 回调）', () => {
         (c) => c[0] === '/api/v1/provider-configs' && c[1]?.method === 'POST',
       ),
     ).toBe(true);
+  });
+});
+
+/**
+ * Issue #483 RED 契约：ProviderDialog 模型发现（「获取模型」按钮）。
+ *
+ * GREEN 契约（新增，src/components/ProviderDialog.tsx 必须匹配）：
+ * - 新增「获取模型」按钮（文案 = t('m.fetchModels') zh '获取模型'，拉取中 = '获取中'，
+ *   i18n key 由 GREEN 补）；Base URL 为空时 disabled，填入后 enabled；拉取中 disabled。
+ * - 点击 → POST /api/v1/provider-configs/models，body { base_url, api_key?, provider? }
+ *   （base_url / api_key 取当前表单值，provider 取名称输入；api_key 未填则缺键）。
+ * - 响应 { ok: true, models: string[] } → 渲染模型候选（role=option 或可点击文本均可）；
+ *   点击候选 → 「模型」输入框 value = 该模型名。
+ * - 响应 { ok: false, message } → toast err（message 含后端原因），「模型」字段保持原值。
+ *
+ * RED 预期：新用例 element-missing（按钮/候选不存在）；回归护栏用例 RED 期 PASS 刻意。
+ */
+describe('ProviderDialog — 模型发现（POST /provider-configs/models）', () => {
+  it('「获取模型」按钮渲染：Base URL 为空时 disabled，填入后 enabled', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    const fetchBtn = screen.getByRole('button', { name: '获取模型' });
+    expect(fetchBtn).toBeDisabled();
+    await user.type(screen.getByLabelText('Base URL'), 'https://api.openai.com/v1');
+    expect(fetchBtn).toBeEnabled();
+  });
+
+  it('#483: 点「获取模型」→ POST /provider-configs/models（body 含 base_url/api_key/provider）→ 候选出现 → 点选填入「模型」字段', async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs/models') {
+        return { ok: true, models: ['gpt-4o', 'gpt-4o-mini'] };
+      }
+      return { ok: true };
+    });
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(screen.getByLabelText('名称'), 'openai');
+    await user.type(screen.getByLabelText('Base URL'), 'https://api.openai.com/v1');
+    await user.type(screen.getByLabelText('API Key'), 'sk-x');
+    await user.click(screen.getByRole('button', { name: '获取模型' }));
+
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/provider-configs/models',
+        expect.objectContaining({
+          method: 'POST',
+          body: {
+            base_url: 'https://api.openai.com/v1',
+            api_key: 'sk-x',
+            provider: 'openai',
+          },
+        }),
+      );
+    });
+
+    // 模型候选出现 → 点选 gpt-4o-mini → 「模型」字段填入
+    await user.click(await screen.findByText('gpt-4o-mini'));
+    expect(screen.getByLabelText('模型')).toHaveValue('gpt-4o-mini');
+  });
+
+  it('#483: 拉取失败 {ok:false, message} → toast err 含原因 + 「模型」字段保持原值', async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs/models') {
+        return { ok: false, message: 'API Key 无效' };
+      }
+      return { ok: true };
+    });
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(screen.getByLabelText('模型'), 'gpt-4o');
+    await user.type(screen.getByLabelText('Base URL'), 'https://api.openai.com/v1');
+    await user.type(screen.getByLabelText('API Key'), 'sk-x');
+    await user.click(screen.getByRole('button', { name: '获取模型' }));
+
+    await waitFor(() => {
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts.length).toBeGreaterThan(0);
+      const last = toasts[toasts.length - 1];
+      expect(last.type).toBe('err');
+      expect(last.message).toContain('API Key 无效');
+    });
+    expect(screen.getByLabelText('模型')).toHaveValue('gpt-4o');
+  });
+
+  it('#483: 拉取中 → 「获取模型」按钮 disabled（防重复请求）', async () => {
+    let resolveFetch!: (value: unknown) => void;
+    apiFetchMock.mockImplementation(
+      async () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(screen.getByLabelText('Base URL'), 'https://api.openai.com/v1');
+    const fetchBtn = screen.getByRole('button', { name: '获取模型' });
+    await user.click(fetchBtn);
+    expect(fetchBtn).toBeDisabled();
+    await act(async () => {
+      resolveFetch({ ok: true, models: [] });
+    });
+  });
+
+  it('#483 回归护栏：既有「模型」字段仍可手动输入（组合框不破坏手输）', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(screen.getByLabelText('模型'), 'my-manual-model');
+    expect(screen.getByLabelText('模型')).toHaveValue('my-manual-model');
   });
 });

@@ -16,6 +16,13 @@ interface LlmTestResponse {
   error?: string;
 }
 
+interface FetchModelsResponse {
+  ok: boolean;
+  models?: string[];
+  message?: string;
+  error?: string;
+}
+
 export interface ProviderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -48,6 +55,8 @@ export function ProviderDialog({ open, onOpenChange, editing = null, onSaved }: 
   const [apiKey, setApiKey] = useState('');
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [fetchedModels, setFetchedModels] = useState<string[]>([]);
 
   // 打开时同步编辑值（editing 变化重开弹窗场景）
   useEffect(() => {
@@ -56,6 +65,8 @@ export function ProviderDialog({ open, onOpenChange, editing = null, onSaved }: 
     setBaseUrl(editing?.base_url ?? '');
     setModel(editing?.default_model ?? '');
     setApiKey('');
+    setFetchingModels(false);
+    setFetchedModels([]);
   }, [open, editing]);
 
   // ESC 关闭：document 级监听；尊重 Radix Select 已 preventDefault 的 Escape
@@ -110,6 +121,35 @@ export function ProviderDialog({ open, onOpenChange, editing = null, onSaved }: 
       pushToast('err', t('m.dialog.testFail', { reason: errorMessage(err) }));
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleFetchModels = async () => {
+    if (fetchingModels || !baseUrl.trim()) return;
+    setFetchingModels(true);
+    try {
+      const res = await apiFetch<FetchModelsResponse>('/api/v1/provider-configs/models', {
+        method: 'POST',
+        body: {
+          base_url: baseUrl,
+          ...(apiKey ? { api_key: apiKey } : {}),
+          ...(trimmedName ? { provider: trimmedName } : {}),
+        },
+      });
+      if (res.ok) {
+        setFetchedModels(res.models ?? []);
+      } else {
+        pushToast(
+          'err',
+          t('m.fetchModelsFailed', {
+            reason: res.message ?? res.error ?? t('m.dialog.testUnknown'),
+          }),
+        );
+      }
+    } catch (err) {
+      pushToast('err', t('m.fetchModelsFailed', { reason: errorMessage(err) }));
+    } finally {
+      setFetchingModels(false);
     }
   };
 
@@ -228,6 +268,20 @@ export function ProviderDialog({ open, onOpenChange, editing = null, onSaved }: 
             />
           </label>
         </div>
+        {fetchedModels.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {fetchedModels.map((m) => (
+              <button
+                key={m}
+                type="button"
+                className="rounded-md border border-line px-3 py-1 text-[13px] text-ink-2 transition duration-180 hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                onClick={() => setModel(m)}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="mt-6 flex justify-end gap-2">
           <button
             type="button"
@@ -235,6 +289,14 @@ export function ProviderDialog({ open, onOpenChange, editing = null, onSaved }: 
             onClick={() => onOpenChange(false)}
           >
             {t('dlg.cancel')}
+          </button>
+          <button
+            type="button"
+            disabled={fetchingModels || !baseUrl.trim()}
+            className="rounded-md border border-line px-4 py-1.5 text-sm text-ink-2 transition duration-180 hover:bg-surface-3 disabled:opacity-50"
+            onClick={() => void handleFetchModels()}
+          >
+            {fetchingModels ? t('m.fetchingModels') : t('m.fetchModels')}
           </button>
           <button
             type="button"

@@ -374,6 +374,7 @@ jobs:
                  ../tests/api/test_books_api_v12.py `
                  ../tests/api/test_skills_api.py `
                  ../tests/api/test_skills_cascade.py `
+                 ../tests/api/test_model_discovery_api.py `
                  ../tests/integration/test_builtin_seed.py `
                  ../tests/cli/test_cli_agent.py `
                  -v --tb=short
