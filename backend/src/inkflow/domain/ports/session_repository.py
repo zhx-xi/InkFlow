@@ -57,8 +57,9 @@ class SessionRepositoryProtocol(Protocol):
         search: str | None = None,
         offset: int = 0,
         limit: int = 50,
+        include_deleted: bool = False,
     ) -> tuple[builtins.list[Session], int]:
-        """分页查询活动会话列表，支持类型/状态/项目过滤与标题模糊搜索.
+        """分页查询会话列表，支持类型/状态/项目过滤与标题模糊搜索.
 
         Args:
             session_type: 会话类型精确过滤（writing / task；不传 = 全部）.
@@ -67,6 +68,8 @@ class SessionRepositoryProtocol(Protocol):
             search: 标题不区分大小写子串匹配（可选）.
             offset: 分页偏移.
             limit: 分页大小.
+            include_deleted: True = 含已归档全量（活动 + 归档一起返回）；默认 False
+                保持既有活动列表语义.
 
         Returns:
             (会话列表, 总数) 元组；列表按 created_at DESC 排序.

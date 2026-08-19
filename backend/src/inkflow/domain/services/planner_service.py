@@ -242,6 +242,18 @@ class PlannerService:
             session_id
         )
 
+    async def list(
+        self,
+        project_id: uuid.UUID | None = None,
+        status: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> tuple[list[PlannerSession], int]:
+        """访谈会话列表（#486 会话页）."""
+        return await self._repo.list_planner_sessions(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 list_planner_sessions
+            project_id=project_id, status=status, offset=offset, limit=limit
+        )
+
     async def auto(self, project_id: uuid.UUID, one_liner: str) -> WritingPlan:
         """「全部你决定」直达路径：declined 会话 + write_auto 委托.
 

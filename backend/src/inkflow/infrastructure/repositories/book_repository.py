@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.planner_session import PlannerSession
@@ -194,3 +194,41 @@ class SQLiteBookRepository:
         )
         orm.updated_at = session.updated_at
         await self._session.commit()
+
+    async def list_planner_sessions(
+        self,
+        project_id: uuid.UUID | None = None,
+        status: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> tuple[list[PlannerSession], int]:
+        """分页查询访谈会话列表（#486 会话页）.
+
+        列表按 created_at DESC 排序（最新在前）；project_id / status 精确过滤；
+        total = 未分页过滤总数（镜像 session_repo.list 模式）.
+
+        Args:
+            project_id: 所属项目 UUID 精确过滤（不传 = 全部）.
+            status: 会话状态精确过滤（drafting / completed / declined；不传 = 全部）.
+            offset: 分页偏移.
+            limit: 分页大小.
+
+        Returns:
+            (访谈会话列表, 总数) 元组.
+        """
+        base = select(PlannerSessionORM)
+        if project_id is not None:
+            base = base.where(PlannerSessionORM.project_id == str(project_id))
+        if status is not None:
+            base = base.where(PlannerSessionORM.status == status)
+
+        # 总数（分页前）
+        count_stmt = select(func.count()).select_from(base.subquery())
+        count_result = await self._session.execute(count_stmt)
+        total = count_result.scalar_one()
+
+        # 排序 + 分页
+        stmt = base.order_by(PlannerSessionORM.created_at.desc()).offset(offset).limit(limit)
+        result = await self._session.execute(stmt)
+        orms = result.scalars().all()
+        return [_planner_session_orm_to_domain(o) for o in orms], total

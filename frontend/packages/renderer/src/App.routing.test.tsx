@@ -8,6 +8,8 @@
  * 路由（HashRouter；/agents 删除——spec §7.10 Q1=A 拍板；#481：/models 删除——模型管理合并入设置页模型分类；
  * #482：/settings/project 项目聚合设置页——pages/project-settings.tsx）：
  *   /writing /projects /library /settings /settings/project，默认 /
+ * #486：/sessions 会话页——pages/sessions.tsx；/memory 记忆页——pages/memory.tsx
+ *   （会话/记忆 UI，Issue #486）
  *
  * 侧边导航（AppNav，容器 data-testid="app-nav"）：
  * - 四个主入口 link，可访问名 = t('nav.writing'|'nav.projects'|'nav.library'|'nav.settings')
@@ -100,6 +102,14 @@ beforeEach(() => {
     if (path === '/api/v1/provider-configs') return { items: [], total: 0, offset: 0, limit: 50 };
     if (path === '/api/v1/agent-templates') return { items: [], total: 0, offset: 0, limit: 50 };
     if (path === '/api/v1/agents') return { items: [], total: 0, offset: 0, limit: 50 };
+    // #486：会话/记忆页挂载请求（sessions 页拉含归档会话列表 + 访谈会话；memory 页拉总结/偏好）
+    if (path.startsWith('/api/v1/sessions')) return { items: [], total: 0, offset: 0, limit: 50 };
+    if (path.startsWith('/api/v1/agent/books/planner')) return { items: [], total: 0, offset: 0, limit: 50 };
+    if (path.startsWith('/api/v1/agent/memory/summaries')) {
+          return { project_id: 'p1', project: null, user: null };
+        }
+    if (path.startsWith('/api/v1/agent/preferences')) return { items: [], total: 0 };
+    if (path.startsWith('/api/v1/agent/user-preferences')) return { items: [], total: 0 };
     return { items: [], total: 0, offset: 0, limit: 50 };
   });
 });
@@ -126,7 +136,7 @@ describe('App 路由集成（HashRouter 四页 + 侧边导航）', () => {
     await waitFor(() => {
       expect(screen.getByTestId('project-tree')).toHaveTextContent('第一卷 风起');
       expect(screen.getByTestId('project-tree')).toHaveTextContent('第1章 初见');
-    });
+});
   });
 
   it('侧边导航「设定库」→ 设定库页：无项目空态 + 前往项目页按钮回项目页', async () => {
@@ -157,7 +167,7 @@ describe('App 路由集成（HashRouter 四页 + 侧边导航）', () => {
     // 面包屑「设定库 · 项目名 / 分类」
     await waitFor(() => {
       expect(within(library).getByTestId('library-breadcrumb')).toHaveTextContent('青云志');
-    });
+});
     // 六分类 tab
     const tabs = within(library).getByTestId('library-tabs');
     for (const tab of ['角色', '世界观', '大纲', '时间线', '伏笔', '知识图谱']) {
@@ -246,5 +256,17 @@ describe('App 路由集成（HashRouter 四页 + 侧边导航）', () => {
     expect(await screen.findByTestId('project-settings-page')).toBeInTheDocument();
     // 精确路由契约：/settings 页不得同时渲染（防子路径误匹配）
     expect(screen.queryByTestId('settings-page')).not.toBeInTheDocument();
+  });
+
+  it('#486 会话页路由存在：直接访问 #/sessions → 渲染 sessions-page', async () => {
+        window.location.hash = '#/sessions';
+        render(<App />);
+        expect(await screen.findByTestId('sessions-page')).toBeInTheDocument();
+  });
+
+  it('#486 记忆页路由存在：直接访问 #/memory → 渲染 memory-page', async () => {
+        window.location.hash = '#/memory';
+        render(<App />);
+        expect(await screen.findByTestId('memory-page')).toBeInTheDocument();
   });
 });

@@ -10,7 +10,8 @@
   任意组合 AND；全缺省 = 全部未归档会话（is_deleted=0）
 - 软删除 = UPDATE is_deleted=1；restore 解除归档；hard_delete 物理删除
   （日志随 FK CASCADE 级联删除，spec §2.5）
-- get/list 一律排除已归档会话；list_include_deleted 详情可追档
+- get 一律排除已归档会话；list 默认排除（include_deleted=True 时含归档全量）；
+  list_include_deleted 详情可追档
   （归档也可读，spec §7 #7）
 - 日志 seq 分配: next_seq = 会话内 max(seq)+1（无日志 = 1，会话间隔离）
 - list_logs 不因会话归档过滤（归档 404 由服务层判定，仓储只做物理查询
@@ -178,10 +179,12 @@ class SQLiteSessionRepository:
         search: str | None = None,
         offset: int = 0,
         limit: int = 50,
+        include_deleted: bool = False,
     ) -> tuple[builtins.list[Session], int]:
-        """分页查询活动会话列表，支持类型/状态/项目过滤与标题模糊搜索.
+        """分页查询会话列表，支持类型/状态/项目过滤与标题模糊搜索.
 
-        过滤组合 AND；全缺省 = 全部未归档会话；total = 未分页过滤总数；
+        include_deleted=False 时全缺省 = 全部未归档会话（既有语义）；True = 活动 + 归档
+        全量（#486 会话页需列出/恢复已归档会话）；total = 未分页过滤总数；
         列表按 created_at DESC 排序（最新在前，spec §6.2）.
 
         Args:
@@ -195,7 +198,9 @@ class SQLiteSessionRepository:
         Returns:
             (会话列表, 总数) 元组；列表按 created_at DESC 排序.
         """
-        base = select(SessionORM).where(~SessionORM.is_deleted)
+        base = select(SessionORM)
+        if not include_deleted:
+            base = base.where(~SessionORM.is_deleted)
 
         if session_type is not None:
             base = base.where(SessionORM.session_type == session_type)

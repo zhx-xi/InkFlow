@@ -234,13 +234,14 @@ class TestListSessionsAPI:
         assert data["items"][0]["session"]["title"] == "第三章续写"
         assert data["items"][0]["log_count"] == 5
         svc.list.assert_awaited_once_with(
-            session_type="task",
-            status="completed",
-            project_id=PID,
-            search="每日",
-            offset=0,
-            limit=20,
-        )
+                    session_type="task",
+                    status="completed",
+                    project_id=PID,
+                    search="每日",
+                    offset=0,
+                    limit=20,
+                    include_deleted=False,
+                )
 
     @patch("inkflow.api.routers.sessions.get_session_service")
     def test_list_sessions_default_params(self, mock_get_svc: MagicMock) -> None:
@@ -252,8 +253,14 @@ class TestListSessionsAPI:
         assert response.status_code == 200
         assert response.json() == {"items": [], "total": 0, "offset": 0, "limit": 50}
         svc.list.assert_awaited_once_with(
-            session_type=None, status=None, project_id=None, search=None, offset=0, limit=50
-        )
+                    session_type=None,
+                    status=None,
+                    project_id=None,
+                    search=None,
+                    offset=0,
+                    limit=50,
+                    include_deleted=False,
+                )
 
     def test_list_sessions_invalid_pagination_422(self) -> None:
         """分页越界（limit=0 / limit=201）返回 422（spec §6.3: limit 默认 50 上限 200）."""
@@ -622,3 +629,21 @@ class TestRunServiceExceptBranch:
             await _run_service(_raise(SessionServiceError("x")))
         assert ei.value.status_code == 422
         assert "x" in ei.value.detail
+
+
+class TestListSessionsIncludeDeleted:
+    """#486 会话 UI：列表端点 include_deleted 查询参数（会话页需列出/恢复已归档会话）。"""
+
+    @patch("inkflow.api.routers.sessions.get_session_service")
+    def test_list_sessions_include_deleted_true(self, mock_get_svc: MagicMock) -> None:
+        """?include_deleted=true → 服务 list 收到 include_deleted=True（活动+归档列表）。"""
+        svc = _mock_svc(mock_get_svc)
+        svc.list = AsyncMock(return_value=([], 0))
+
+        response = client.get("/api/v1/sessions", params={"include_deleted": True})
+        assert response.status_code == 200
+        assert response.json() == {"items": [], "total": 0, "offset": 0, "limit": 50}
+        svc.list.assert_awaited_once_with(
+            session_type=None, status=None, project_id=None, search=None, offset=0, limit=50,
+            include_deleted=True,
+        )

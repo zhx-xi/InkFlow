@@ -10,6 +10,7 @@ get_writing_plan / get_planner_session 入参接受 uuid.UUID 或 str
 
 from __future__ import annotations
 
+import builtins
 import uuid
 from typing import Protocol
 
@@ -85,5 +86,28 @@ class BookRepositoryProtocol(Protocol):
 
         Args:
             session: 含待更新字段的完整 PlannerSession 对象.
+        """
+        ...
+
+    async def list_planner_sessions(
+        self,
+        project_id: uuid.UUID | None = None,
+        status: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> tuple[builtins.list[PlannerSession], int]:
+        """分页查询访谈会话列表（#486 会话页）.
+
+        列表按 created_at DESC 排序；project_id / status 精确过滤；
+        total = 未分页过滤总数.
+
+        Args:
+            project_id: 所属项目 UUID 精确过滤（不传 = 全部）.
+            status: 会话状态精确过滤（drafting / completed / declined；不传 = 全部）.
+            offset: 分页偏移.
+            limit: 分页大小.
+
+        Returns:
+            (访谈会话列表, 总数) 元组.
         """
         ...
