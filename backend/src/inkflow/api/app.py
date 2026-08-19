@@ -96,7 +96,34 @@ async def lifespan(app: FastAPI):
         # skill 未落库时按出厂列表序预测主键，与调用顺序无关）
         await seed_builtin_agents(session)
         await seed_builtin_skills(session)
+    # #479 G2: 知识图谱定时提取调度器装配（应用级 session 长活，shutdown 关闭；
+    # 手动触发端点与定时触发共用 RelationExtractionService，G1 契约
+    # extraction_run_repo=None，run 记录落盘归 #496 承接）
+    from inkflow.api.deps_kg_extract import get_relation_extraction_service
+    from inkflow.domain.services.settings_service import SettingsService
+    from inkflow.infrastructure.database.repositories.project_repo import (
+        SQLiteProjectRepository,
+    )
+    from inkflow.infrastructure.database.repositories.settings_repo import (
+        SQLiteSettingsRepository,
+    )
+    from inkflow.infrastructure.scheduler.kg_extract_scheduler import (
+        KnowledgeExtractScheduler,
+    )
+
+    scheduler_session = async_session_factory()
+    scheduler = KnowledgeExtractScheduler(
+        settings_service=SettingsService(SQLiteSettingsRepository(scheduler_session)),
+        project_repository=SQLiteProjectRepository(scheduler_session),
+        relation_extraction_service=get_relation_extraction_service(scheduler_session),
+        extraction_run_repo=None,
+    )
+    await scheduler.start()
+    app.state.kg_scheduler = scheduler
+    app.state.kg_session = scheduler_session
     yield
+    await scheduler.stop()
+    await scheduler_session.close()
     # TODO: 关闭数据库连接
 
 

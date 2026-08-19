@@ -6,13 +6,14 @@ import { AccountPanel } from './AccountPanel';
 import { AgentChainCard } from '../components/AgentChainCard';
 import { AgentList } from '../components/AgentList';
 import { AppearanceCard } from '../components/AppearanceCard';
+import { KnowledgeExtractCard } from '../components/knowledge-graph/KnowledgeExtractCard';
 import { ModelsPanel } from '../components/ModelsPanel';
 import { RagStatusCard } from '../components/RagStatusCard';
 import { TemplateDialog } from '../components/TemplateDialog';
 import { Switch } from '../components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { SkillList } from '../components/SkillList';
-import type { CloseBehavior } from '../api/client';
+import type { AppSettings, CloseBehavior } from '../api/client';
 import {
   errorMessage,
   fetchSettings,
@@ -78,6 +79,9 @@ function GeneralPanel() {
     const p = s.projects.find((x) => x.id === s.currentProjectId);
     return p?.config.default_words;
   });
+  // #479：全局设置全量快照（KnowledgeExtractCard 回显数据源）——复用本面板既有
+  // fetchSettings 单次拉取，避免卡片二次 GET 抢走测试 mockResolvedValueOnce（#198 同源）
+  const [globalSettings, setGlobalSettings] = useState<AppSettings | null>(null);
 
   // F32（#152，spec §5.4 Q3=C）：default_words ref 镜像 + dirty 跟踪——
   // 卸载 cleanup 闭包依赖 []，经 ref 读最新值（评审 🟡-7：防陈旧 state 捕获）
@@ -202,29 +206,35 @@ function GeneralPanel() {
   // #198（2026-08-09，rc4 复验缺陷）：无项目/项目无级值时读全局 fetchSettings().default_words 回显
   //（项目级覆盖优先；fetch 失败静默保持 800000 兜底；cleanup cancelled 防卸载/切项目后 setState）
   useEffect(() => {
-    const state = useProjectStore.getState();
-    const p = state.projects.find((x) => x.id === state.currentProjectId);
-    const projectWords = p?.config.default_words;
-    let cancelled = false;
-    const apply = (v: string) => {
-      valueRef.current = v;
-      dirtyRef.current = false;
-      setDefaultWords(v);
-      setDirty(false);
-      // #189：丢弃旧项目 pending 防抖（防旧 timer 对已切换的项目补存）
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-        debounceTimerRef.current = null;
-      }
-    };
-    if (projectWords !== undefined && projectWords !== null) {
-      apply(String(projectWords));
-    } else {
+      const state = useProjectStore.getState();
+      const p = state.projects.find((x) => x.id === state.currentProjectId);
+      const projectWords = p?.config.default_words;
       const fallback = String(projectWords ?? 800000);
-      apply(fallback);
+      let cancelled = false;
+      const apply = (v: string) => {
+        valueRef.current = v;
+        dirtyRef.current = false;
+        setDefaultWords(v);
+        setDirty(false);
+        // #189：丢弃旧项目 pending 防抖（防旧 timer 对已切换的项目补存）
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = null;
+        }
+      };
+      if (projectWords !== undefined && projectWords !== null) {
+        apply(String(projectWords));
+      } else {
+        apply(fallback);
+      }
+      // #479：无条件拉取全局设置快照——既是 KnowledgeExtractCard 三键回显数据源，
+      // 也是无项目级 default_words 时的兜底。原来 fetch 只挂在 else 分支（无项目级
+      // 值才拉取），项目配置了 default_words 时（常见）Never fetch → 卡片拿不到
+      // settings 三键不回显。现外提为单次无条件 fetch，default_words 兜底行为不变。
       void fetchSettings()
         .then((s) => {
           if (cancelled) return;
+          setGlobalSettings(s);
           const st = useProjectStore.getState();
           const cur = st.projects.find((x) => x.id === st.currentProjectId);
           if (cur?.config.default_words !== undefined && cur?.config.default_words !== null) return;
@@ -234,11 +244,10 @@ function GeneralPanel() {
           apply(String(s.default_words));
         })
         .catch(() => {});
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [currentProjectId]);
+      return () => {
+        cancelled = true;
+      };
+    }, [currentProjectId]);
 
   // #399：订阅式重读——store 外部合并（PATCH 在途完成）→ 输入框自动同步；
   // 守卫：#198 dirty（用户输入中不覆盖）/ String 相等（已同步）跳过；不清 dirty（外部更新非用户输入）
@@ -361,6 +370,8 @@ function GeneralPanel() {
             ))}
           </div>
         </div>
+        {/* #479：知识图谱定时提取卡片（spec §5.5.7，挂载于常规分类） */}
+        <KnowledgeExtractCard settings={globalSettings} />
       </section>
     </div>
   );

@@ -36,6 +36,9 @@ class SettingsKey(StrEnum):
     RAG_CHUNK_SIZE = "rag_chunk_size"
     RAG_CHUNK_OVERLAP = "rag_chunk_overlap"
     RAG_CHUNK_OVERLAP_RATIO = "rag_chunk_overlap_ratio"
+    KG_EXTRACT_ENABLED = "kg_extract_enabled"
+    KG_EXTRACT_INTERVAL_HOURS = "kg_extract_interval_hours"
+    KG_EXTRACT_METHOD = "kg_extract_method"
 
 
 class AppSettings(BaseModel):
@@ -61,6 +64,9 @@ class AppSettings(BaseModel):
     rag_chunk_size: int = 500
     rag_chunk_overlap: bool = False
     rag_chunk_overlap_ratio: float = 0.15
+    kg_extract_enabled: bool = False
+    kg_extract_interval_hours: int = 24
+    kg_extract_method: Literal["rule", "ai", "both"] = "rule"
 
     @field_validator("rag_chunk_size")
     @classmethod
@@ -76,6 +82,14 @@ class AppSettings(BaseModel):
         """重叠比例越界校验（spec §5.6.3: [0.10, 0.20]，越界 → 422）。"""
         if not 0.10 <= v <= 0.20:
             raise ValueError("rag_chunk_overlap_ratio 必须在 0.10-0.20 之间")
+        return v
+
+    @field_validator("kg_extract_interval_hours")
+    @classmethod
+    def _validate_kg_interval(cls, v: int) -> int:
+        """知识图谱定时提取间隔越界校验（spec f48 §5.5.2: 1-168 小时）。"""
+        if not 1 <= v <= 168:
+            raise ValueError("kg_extract_interval_hours 必须在 1-168 之间")
         return v
 
 
@@ -103,6 +117,9 @@ class AppSettingsUpdate(BaseModel):
     rag_chunk_size: int | None = None
     rag_chunk_overlap: bool | None = None
     rag_chunk_overlap_ratio: float | None = None
+    kg_extract_enabled: bool | None = None
+    kg_extract_interval_hours: int | None = None
+    kg_extract_method: Literal["rule", "ai", "both"] | None = None
 
     @field_validator("rag_chunk_size")
     @classmethod
@@ -118,4 +135,12 @@ class AppSettingsUpdate(BaseModel):
         """更新 DTO 重叠比例越界校验（None 放行——部分更新语义）。"""
         if v is not None and not 0.10 <= v <= 0.20:
             raise ValueError("rag_chunk_overlap_ratio 必须在 0.10-0.20 之间")
+        return v
+
+    @field_validator("kg_extract_interval_hours")
+    @classmethod
+    def _validate_update_kg_interval(cls, v: int | None) -> int | None:
+        """更新 DTO 提取间隔越界校验（None 放行——部分更新语义）。"""
+        if v is not None and not 1 <= v <= 168:
+            raise ValueError("kg_extract_interval_hours 必须在 1-168 之间")
         return v
