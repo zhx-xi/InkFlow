@@ -339,3 +339,91 @@ async def test_update_multi_chapter_execution_refs(repo):
     assert got is not None
     assert got.execution_refs == {"c1": "exec-1", "c2": "exec-2", "c3": "exec-3"}
     assert got.status == "completed"
+
+
+# ── v1.2 #475：PlannerSession 确定项/冲突/总体确认 JSON 列落库 ────
+# 权威来源：spec.md §2.2（v1.2 注：PlannerSessionORM 加 3 JSON 列——
+# confirmed_items/conflicts/confirming，零迁移 nullable 默认空）、
+# §8.2 MODIFY 登记、§9.1 集成层（confirmed_items/conflicts JSON 列读写）。
+
+
+@pytest.mark.asyncio
+async def test_planner_session_v12_fields_roundtrip(repo):
+    """confirmed_items/conflicts/confirming 落库回读（M13：确定项落会话可回溯）。"""
+    session = PlannerSession(
+        id=uuid.uuid4(),
+        project_id=uuid.uuid4(),
+        one_liner="写一本关于时间旅者的悬疑小说",
+        round=1,
+        confirmed_items=[
+            {"key": "题材", "value": "悬疑 + 时间悖论科幻", "source": "user"},
+            {"key": "篇幅", "value": "10 万字", "source": "user"},
+            {"key": "主题", "value": "时间旅者自我救赎", "source": "llm_inferred"},
+        ],
+        conflicts=[
+            {
+                "round": 1,
+                "question_id": "q5",
+                "answer": "配角 5 个",
+                "conflict_with": "篇幅/复杂度合理性",
+                "resolution": "pending",
+            }
+        ],
+        confirming=False,
+        created_at=_utcnow(),
+        updated_at=_utcnow(),
+    )
+
+    saved = await repo.add_planner_session(session)
+    got = await repo.get_planner_session(session.id)
+
+    assert got is not None
+    assert got.confirmed_items == session.confirmed_items
+    assert got.conflicts == session.conflicts
+    assert got.confirming is False
+    assert saved.confirmed_items == session.confirmed_items
+
+
+@pytest.mark.asyncio
+async def test_planner_session_v12_fields_default_empty(repo):
+    """未显式传 v1.2 字段 → 默认空落库回读（向后兼容，零迁移）。"""
+    session = PlannerSession(
+        id=uuid.uuid4(),
+        project_id=uuid.uuid4(),
+        one_liner="一句话",
+        created_at=_utcnow(),
+        updated_at=_utcnow(),
+    )
+    await repo.add_planner_session(session)
+
+    got = await repo.get_planner_session(session.id)
+
+    assert got is not None
+    assert got.confirmed_items == []
+    assert got.conflicts == []
+    assert got.confirming is False
+
+
+@pytest.mark.asyncio
+async def test_update_planner_session_v12_fields(repo):
+    """update 全字段覆写：confirming/confirmed_items 变更落库回读。"""
+    session = PlannerSession(
+        id=uuid.uuid4(),
+        project_id=uuid.uuid4(),
+        one_liner="一句话",
+        created_at=_utcnow(),
+        updated_at=_utcnow(),
+    )
+    await repo.add_planner_session(session)
+
+    session.confirming = True
+    session.confirmed_items = [
+        {"key": "题材", "value": "悬疑", "source": "user"}
+    ]
+    session.updated_at = _utcnow()
+    await repo.update_planner_session(session)
+
+    got = await repo.get_planner_session(session.id)
+    assert got is not None
+    assert got.confirming is True
+    assert got.confirmed_items == [{"key": "题材", "value": "悬疑", "source": "user"}]

@@ -2,12 +2,14 @@
 
 使用 SQLAlchemy 2.0 Mapped + mapped_column 新式映射语法（同 agent_run.py 先例）.
 
-设计约定（spec §2.2/§8.1）：
+设计约定（spec §2.2/§8.1/§8.2 v1.2）：
 - id 主键存 uuid4 字符串（String(36)），默认由 ORM 生成 str(uuid.uuid4())
 - project_id 为 uuid4 字符串列（String(36) + index，存 str(uuid)），
   领域 UUID → 字符串转换在 repo 层
 - asked_questions / answers / authorized 存 LenientJSON 列
   （fallback=[] / {}，容错空串与损坏 JSON，见 #261），转换函数在 repo 层
+- v1.2 #475 新增 confirmed_items / conflicts / confirming 三 JSON 列
+  （LenientJSON fallback=[] / False，零迁移 nullable 默认空）
 - 本文件为纯 ORM 映射，不包含任何领域转换函数（转换在 repo 层，防 ruff F821/UP037）
 """
 
@@ -86,6 +88,27 @@ class PlannerSessionORM(Base):
         default=list,
     )
     """显式授权项（JSON 列表，如「配角自定」「细节自定」）."""
+
+    confirmed_items: Mapped[list] = mapped_column(
+        LenientJSON(fallback=[]),
+        nullable=False,
+        default=list,
+    )
+    """已确定项快照（v1.2 #475：JSON 列，{"key","value","source"}）."""
+
+    conflicts: Mapped[list] = mapped_column(
+        LenientJSON(fallback=[]),
+        nullable=False,
+        default=list,
+    )
+    """冲突/回问记录（v1.2 #475：JSON 列，含 resolution）."""
+
+    confirming: Mapped[bool] = mapped_column(
+        LenientJSON(fallback=False),
+        nullable=False,
+        default=False,
+    )
+    """末尾总体确认标志（v1.2 #475：JSON 列存 bool）."""
 
     writing_plan_id: Mapped[str | None] = mapped_column(
         String(36),
