@@ -53,12 +53,13 @@ from inkflow.domain.services.settings_service import SettingsService
 
 
 def _defaults() -> dict:
-    """14 字段默认字典（与 AppSettings 默认值一致，独立字面量防实现偏差）。
+    """17 字段默认字典（与 AppSettings 默认值一致，独立字面量防实现偏差）。
 
     F27 扩展（#160 Q2 拍板）：agent_max_steps/agent_token_budget/
     agent_max_total_tool_calls 预算护栏设置键（ADR-C 默认值 12/32K/20；
     #430 语义改造: 单工具连续 → 会话总调用上限）。
     #277 M3 扩展（spec §5.6.1/§5.6.3）：rag_chunk_* 切片配置 4 键。
+    #479 扩展（spec f48 §5.5.2）：kg_extract_* 定时提取三键。
     """
     return {
         "theme": "paper",
@@ -75,6 +76,9 @@ def _defaults() -> dict:
         "rag_chunk_size": 500,
         "rag_chunk_overlap": False,
         "rag_chunk_overlap_ratio": 0.15,
+        "kg_extract_enabled": False,
+        "kg_extract_interval_hours": 24,
+        "kg_extract_method": "rule",
     }
 
 

@@ -20,24 +20,39 @@ mock 服务层。
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Awaitable
-from typing import Any
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from inkflow.api.deps import get_db, get_knowledge_graph_service
+from inkflow.api.deps import (
+    get_db,
+    get_knowledge_graph_service,
+    get_settings_service,
+)
+from inkflow.api.deps_kg_extract import (
+    get_kg_extract_scheduler,
+    get_relation_extraction_service,
+)
 from inkflow.domain.models.knowledge_graph import (
     KnowledgeRelationCreate,
     KnowledgeRelationUpdate,
 )
+from inkflow.domain.models.settings import AppSettings
 from inkflow.domain.ports.knowledge_graph_errors import (
     KnowledgeGraphServiceError,
     KnowledgeRelationNotFoundError,
+    LLMNotConfiguredError,
 )
 from inkflow.domain.ports.world_errors import ProjectNotFoundError
 from inkflow.domain.services.knowledge_graph_service import KnowledgeGraphService
+from inkflow.domain.services.relation_extraction_service import RelationExtractionService
+from inkflow.domain.services.settings_service import SettingsService
+from inkflow.infrastructure.scheduler.kg_extract_scheduler import KnowledgeExtractScheduler
 
 router = APIRouter(prefix="/api/v1", tags=["知识图谱"])
 
@@ -158,9 +173,7 @@ async def update_relation(
     svc = _get_svc(db)
     # F48 契约（F9 惯例）：DTO 解包展开字段调 service——exclude_unset
     # 保证未传字段不出现在调用参数中（测试锁定）
-    relation = await _run_service(
-        svc.update_relation(rid, **data.model_dump(exclude_unset=True))
-    )
+    relation = await _run_service(svc.update_relation(rid, **data.model_dump(exclude_unset=True)))
     return relation.model_dump(mode="json")
 
 
@@ -173,3 +186,58 @@ async def delete_relation(
     rid = _parse_id(relation_id, detail="关系不存在")
     svc = _get_svc(db)
     await _run_service(svc.delete_relation(rid))
+
+
+# ---------------------------------------------------------------------------
+# #479 定时知识图谱提取: POST /knowledge/extract + GET /knowledge/extract/status
+# （spec §5.5.6；与 scheduler 共用 extract_for_project 单一执行体）
+# ---------------------------------------------------------------------------
+
+
+class KnowledgeExtractRequest(BaseModel):
+    """POST /knowledge/extract 请求体（spec §5.5.6）。"""
+
+    project_id: uuid.UUID
+    method: Literal["rule", "ai", "both"] | None = None
+
+
+@router.post("/knowledge/extract")
+async def extract_knowledge(
+    data: KnowledgeExtractRequest,
+    svc: RelationExtractionService = Depends(get_relation_extraction_service),
+    settings: SettingsService = Depends(get_settings_service),
+):
+    """手动触发知识图谱关系提取（spec §5.5.6；method 缺省跟随设置）。
+
+    异常映射: LLMNotConfiguredError → 422（detail 含「未配置」）；
+    ProjectNotFoundError → 404「项目不存在」；ValueError 详情含「不存在」→ 404，
+    否则 422（F44 prepare_run 守卫同款语义）。
+    """
+    raw_settings = settings.get_settings()
+    if asyncio.iscoroutine(raw_settings):
+        settings_obj = await raw_settings
+    else:
+        # 双形态防御: 测试 mock 同步返回 SimpleNamespace，真实 SettingsService 为 async
+        settings_obj = cast(AppSettings, raw_settings)
+    method = data.method or settings_obj.kg_extract_method
+    try:
+        result = await svc.extract_for_project(project_id=data.project_id, method=method)
+    except LLMNotConfiguredError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except ProjectNotFoundError as e:
+        raise HTTPException(status_code=404, detail="项目不存在") from e
+    except ValueError as e:
+        detail = str(e)
+        raise HTTPException(
+            status_code=404 if "不存在" in detail else 422,
+            detail=detail,
+        ) from e
+    return result.model_dump(mode="json") if hasattr(result, "model_dump") else result
+
+
+@router.get("/knowledge/extract/status")
+async def extract_status(
+    scheduler: KnowledgeExtractScheduler = Depends(get_kg_extract_scheduler),
+):
+    """查询定时提取运行状态 + 最近一次 run 摘要（spec §5.5.6）。"""
+    return {"running": scheduler.is_running, "last_run": scheduler.last_run}

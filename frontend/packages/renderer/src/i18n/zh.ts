@@ -259,6 +259,17 @@ export const zh = {
   'set.account.dataMgrPlaceholder': '导出 / 备份功能即将推出',
   'set.account.version': '版本',
   'set.shortcuts.title': '快捷键一览',
+  // #479：知识图谱定时提取卡片（specs/f48-knowledge-graph/spec.md §5.5.7）
+  'settings.kgExtract.title': '知识图谱提取',
+  'settings.kgExtract.enabled': '启用定时提取',
+  'settings.kgExtract.interval': '提取频率',
+  'settings.kgExtract.method': '提取方式',
+  'settings.kgExtract.rule': '仅规则',
+  'settings.kgExtract.ai': '仅 AI',
+  'settings.kgExtract.both': '规则+AI',
+  'settings.kgExtract.needModel': '需先在模型设置中配置大模型',
+  'settings.kgExtract.runNow': '立即运行',
+  'settings.kgExtract.running': '提取中…',
   // F40 #259：Skill 上传与绑定（spec §5.4 / §5.6）
   'skill.upload': '上传 Skill',
   'skill.content': 'SKILL.md 内容',

@@ -255,6 +255,17 @@ export const en: Record<string, string> = {
   'set.account.dataMgrPlaceholder': 'Export and backup coming soon',
   'set.account.version': 'Version',
   'set.shortcuts.title': 'Keyboard Shortcuts',
+  // #479: Knowledge graph scheduled extraction card (specs/f48-knowledge-graph/spec.md §5.5.7)
+  'settings.kgExtract.title': 'Knowledge Graph Extraction',
+  'settings.kgExtract.enabled': 'Enable scheduled extraction',
+  'settings.kgExtract.interval': 'Extraction frequency',
+  'settings.kgExtract.method': 'Extraction method',
+  'settings.kgExtract.rule': 'Rules only',
+  'settings.kgExtract.ai': 'AI only',
+  'settings.kgExtract.both': 'Rules + AI',
+  'settings.kgExtract.needModel': 'Configure a model in Model Settings first',
+  'settings.kgExtract.runNow': 'Run now',
+  'settings.kgExtract.running': 'Extracting…',
   // F40 #259: Skill upload & binding (spec §5.4 / §5.6)
   'skill.upload': 'Upload Skill',
   'skill.content': 'SKILL.md Content',

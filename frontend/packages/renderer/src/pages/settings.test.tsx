@@ -319,8 +319,10 @@ describe('设置页 — 常规分类', () => {
     const panel = screen.getByTestId('settings-panel');
 
     expect(within(panel).getByRole('combobox', { name: '语言' })).toBeInTheDocument();
-    expect(within(panel).getAllByRole('radio')).toHaveLength(3);
-    expect(within(panel).getByRole('combobox', { name: '背景' })).toBeInTheDocument();
+        // 主题 radio ×3（#479 后 GeneralPanel 新增知识图谱提取卡片的 method radio，
+        // 故收窄到 theme-preview testid 前缀，避免把提取方式 radio 计入——语义仍忠实「主题 radio×3」）
+        expect(within(panel).getAllByTestId(/^theme-preview-/)).toHaveLength(3);
+        expect(within(panel).getByRole('combobox', { name: '背景' })).toBeInTheDocument();
     expect(within(panel).getByRole('combobox', { name: '编辑器字体' })).toBeInTheDocument();
     expect(within(panel).getByLabelText('新章节默认字数')).toBeInTheDocument();
 

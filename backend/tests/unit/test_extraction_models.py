@@ -30,11 +30,11 @@ TS = datetime(2026, 8, 1, 10, 0, 0, tzinfo=UTC)
 
 
 class TestExtractionTypeEnum:
-    """ExtractionType 枚举（§2.1）— 6 种提取类型."""
+    """ExtractionType 枚举（§2.1）— 7 种提取类型（#479 新增 KNOWLEDGE_RELATION）."""
 
-    def test_six_members(self):
-        """枚举恰好包含 6 个成员."""
-        assert len(ExtractionType) == 6
+    def test_seven_members(self):
+        """枚举恰好包含 7 个成员（#479: 原 6 值 + KNOWLEDGE_RELATION，spec f48 §5.5.5）."""
+        assert len(ExtractionType) == 7
 
     def test_member_values(self):
         """6 种类型的 value 与 spec §2.1 一一对应."""
@@ -44,6 +44,11 @@ class TestExtractionTypeEnum:
         assert ExtractionType.TIMELINE.value == "timeline"
         assert ExtractionType.FORESHADOWING.value == "foreshadowing"
         assert ExtractionType.STYLE.value == "style"
+
+    def test_knowledge_relation_member(self):
+        """#479 第 7 值: KNOWLEDGE_RELATION（extraction_runs 复用，spec f48 §5.5.5）."""
+        assert ExtractionType.KNOWLEDGE_RELATION.value == "knowledge_relation"
+        assert str(ExtractionType.KNOWLEDGE_RELATION) == "knowledge_relation"
 
     def test_str_equals_value(self):
         """StrEnum: str() 返回 value（可直接序列化为 API 字符串）."""
