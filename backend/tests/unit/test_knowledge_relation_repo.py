@@ -540,7 +540,6 @@ class TestKnowledgeRelationRepository:
         count = await db_session.execute(select(func.count()).select_from(KnowledgeRelationORM))
         assert count.scalar_one() == 0
 
-
     # ── coverage-gap 补测（F48 CI coverage-backend 门禁）──────────────────
 
     async def test_utcnow_returns_aware_datetime(self):
@@ -583,3 +582,115 @@ class TestKnowledgeRelationRepository:
         )
         with pytest.raises(ValueError):
             await repo.update(ghost)
+
+    # ── #515 跨 session 持久化（写操作必须 commit，真实 HTTP 请求间隔离可见）──
+
+    async def _new_file_engine(self, tmp_path):
+        """独立文件型 SQLite（跨 session 共享数据，镜像生产多请求隔离）。"""
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/kg.db")
+
+        @event.listens_for(engine.sync_engine, "connect")
+        def _set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        return engine
+
+    async def test_add_persists_across_sessions(self, tmp_path):
+        """#515 回归: add 必须 commit——新 session（模拟新 HTTP 请求）可查得。
+
+        现状（缺 commit）: add 返回 201 但事务未提交 → 新 session 查询为 None（RED）。
+        """
+        engine = await self._new_file_engine(tmp_path)
+        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        saved = None
+        async with factory() as s1:
+            p = ProjectORM(name="测试项目")
+            s1.add(p)
+            await s1.commit()
+            await s1.refresh(p)
+            repo = SQLiteKnowledgeRelationRepository(s1)
+            saved = await repo.add(
+                _rel(
+                    p,
+                    source_id=uuid.UUID(int=201),
+                    target_id=uuid.UUID(int=202),
+                    relation_type="属于",
+                    description="跨 session 持久化",
+                )
+            )
+        async with factory() as s2:
+            row = await s2.execute(
+                select(KnowledgeRelationORM).where(KnowledgeRelationORM.id == saved.id.int)
+            )
+            orm = row.scalar_one_or_none()
+            assert orm is not None, "#515: add 未 commit，新 session 查不到"
+            assert orm.relation_type == "属于"
+            assert orm.description == "跨 session 持久化"
+        await engine.dispose()
+
+    async def test_update_persists_across_sessions(self, tmp_path):
+        """#515 回归: update 必须 commit——新 session 读到更新后的字段。"""
+        engine = await self._new_file_engine(tmp_path)
+        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        rid = None
+        async with factory() as s1:
+            p = ProjectORM(name="测试项目")
+            s1.add(p)
+            await s1.commit()
+            await s1.refresh(p)
+            repo = SQLiteKnowledgeRelationRepository(s1)
+            r = await repo.add(
+                _rel(
+                    p,
+                    source_id=uuid.UUID(int=203),
+                    target_id=uuid.UUID(int=204),
+                    relation_type="属于",
+                )
+            )
+            rid = r.id.int
+            await s1.commit()  # 前置 add 已持久化——本用例精确锁定 update 的 commit 缺失
+            await repo.update(
+                r.model_copy(update={"relation_type": "出身", "description": "更新后"})
+            )
+        async with factory() as s2:
+            row = await s2.execute(
+                select(KnowledgeRelationORM).where(KnowledgeRelationORM.id == rid)
+            )
+            orm = row.scalar_one_or_none()
+            assert orm is not None, "#515: 前置 add 未持久化"
+            assert orm.relation_type == "出身", "#515: update 未 commit，新 session 读到旧值"
+            assert orm.description == "更新后"
+        await engine.dispose()
+
+    async def test_delete_persists_across_sessions(self, tmp_path):
+        """#515 回归: delete 必须 commit——新 session 查无该行。"""
+        engine = await self._new_file_engine(tmp_path)
+        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        rid = None
+        async with factory() as s1:
+            p = ProjectORM(name="测试项目")
+            s1.add(p)
+            await s1.commit()
+            await s1.refresh(p)
+            repo = SQLiteKnowledgeRelationRepository(s1)
+            r = await repo.add(
+                _rel(
+                    p,
+                    source_id=uuid.UUID(int=205),
+                    target_id=uuid.UUID(int=206),
+                    relation_type="属于",
+                )
+            )
+            rid = r.id.int
+            await s1.commit()  # 前置 add 已持久化——本用例精确锁定 delete 的 commit 缺失
+            assert await repo.delete(rid) is True
+        async with factory() as s2:
+            row = await s2.execute(
+                select(KnowledgeRelationORM).where(KnowledgeRelationORM.id == rid)
+            )
+            assert row.scalar_one_or_none() is None, "#515: delete 未 commit，新 session 仍可见"
+        await engine.dispose()
