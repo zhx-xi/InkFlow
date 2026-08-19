@@ -92,6 +92,7 @@ class SQLiteKnowledgeRelationRepository:
         orm = _domain_to_orm(relation)
         self._session.add(orm)
         await self._session.flush()
+        await self._session.commit()
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
@@ -214,6 +215,7 @@ class SQLiteKnowledgeRelationRepository:
             )
         )
         result = await self._session.execute(stmt)
+        await self._session.commit()
         if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             raise ValueError(f"KnowledgeRelation {rel_id} not found")
         stmt2 = select(KnowledgeRelationORM).where(KnowledgeRelationORM.id == rel_id)
@@ -229,6 +231,7 @@ class SQLiteKnowledgeRelationRepository:
         """真删关系（无 is_deleted）；不存在返回 False."""
         stmt = sa_delete(KnowledgeRelationORM).where(KnowledgeRelationORM.id == relation_id)
         result = await self._session.execute(stmt)
+        await self._session.commit()
         rowcount: int = result.rowcount  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
         return rowcount > 0
 
