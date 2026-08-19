@@ -21,11 +21,26 @@
  *   unhandledRejection 逸出）、新增部分失败 / 多行全部失败（for 循环中断 + onDone 不调用）；
  *   保持绿 = 渲染 / open=false / 行增删 / 空行 no-op / 无 provider no-op / 取消 / 遮罩。
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AddModelDialog } from './AddModelDialog';
+import { apiFetch } from '../api/client';
 import type { ProviderConfig, ProviderModel } from '../stores/models';
+
+vi.mock('../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/client')>();
+  return { ...actual, apiFetch: vi.fn() };
+});
+
+const apiFetchMock = vi.mocked(apiFetch);
+
+// #483：GREEN 后组件在选择 Provider / 挂载时可能触发模型拉取（POST /provider-configs/models）——
+// 默认 mock 返回空候选列表，保证既有用例（含 Provider 切换）在 GREEN 后不受新请求影响。
+beforeEach(() => {
+  apiFetchMock.mockReset();
+  apiFetchMock.mockResolvedValue({ ok: true, models: [] });
+});
 
 const PROVIDERS: ProviderConfig[] = [
   {
@@ -298,6 +313,116 @@ describe('AddModelDialog — 关闭路径', () => {
 
     // 完成保存 → onDone（携带全部成功结果）+ 关闭
     await act(async () => { resolveAdd(); });
+    expect(onDone).toHaveBeenCalledWith({ succeeded: 1, failed: 0, errors: [] });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});
+
+/**
+ * Issue #483 RED 契约：AddModelDialog 模型 ID 组合框（可搜索下拉 + 手动输入）。
+ *
+ * GREEN 契约（新增，src/components/AddModelDialog.tsx 必须匹配）：
+ * - 「模型 ID」输入框（aria-label「模型 ID N」）保留，仍可手动输入任意自定义值。
+ * - 选择 Provider → 自动 POST /api/v1/provider-configs/models，body 含该 provider 的
+ *   base_url（{ base_url, api_key?, provider? }，api_key/provider 由 GREEN 视可用性决定）。
+ * - 成功 { ok: true, models: string[] } → 候选下拉出现；点击候选 → 该行模型 ID = 候选名。
+ * - 可搜索：在模型 ID 框输入关键字 → 候选仅剩含关键字的项。
+ * - 失败 { ok: false, message } → 不崩溃、无候选、手动输入仍可用。
+ * - 手输 + 保存沿用既有 onAdd 契约（providerId + { id, type, roles }）。
+ *
+ * RED 预期：新用例 FAIL（apiFetch 未被调用 / 候选不存在）；护栏用例（手输 / 手输+保存）
+ * RED 期 PASS 刻意——锁定「组合框不破坏既有手输与保存」。
+ */
+describe('AddModelDialog — 模型 ID 组合框（可点选可手输）', () => {
+  it('#483: 「模型 ID」输入框仍存在且可手动输入自定义值', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(screen.getByLabelText('模型 ID 1'), 'my-custom-model');
+    expect(screen.getByLabelText('模型 ID 1')).toHaveValue('my-custom-model');
+  });
+
+  it('#483: 选择 Provider → 自动拉取模型列表（POST /provider-configs/models，body 含 base_url）', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByRole('combobox', { name: '选择 Provider' }));
+    await user.click(await screen.findByRole('option', { name: 'deepseek' }));
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/provider-configs/models',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.objectContaining({ base_url: 'https://api.deepseek.com' }),
+        }),
+      );
+    });
+  });
+
+  it('#483: 拉取成功 → 候选出现 → 点击候选 → 模型 ID 填入', async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs/models') {
+        return { ok: true, models: ['deepseek-chat', 'deepseek-reasoner'] };
+      }
+      return { ok: true, models: [] };
+    });
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByRole('combobox', { name: '选择 Provider' }));
+    await user.click(await screen.findByRole('option', { name: 'deepseek' }));
+    await user.click(await screen.findByText('deepseek-reasoner'));
+    expect(screen.getByLabelText('模型 ID 1')).toHaveValue('deepseek-reasoner');
+  });
+
+  it('#483: 可搜索——在模型 ID 框输入关键字 → 候选仅剩含关键字的项', async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs/models') {
+        return { ok: true, models: ['deepseek-chat', 'deepseek-reasoner'] };
+      }
+      return { ok: true, models: [] };
+    });
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByRole('combobox', { name: '选择 Provider' }));
+    await user.click(await screen.findByRole('option', { name: 'deepseek' }));
+    // 候选出现
+    expect(await screen.findByText('deepseek-reasoner')).toBeInTheDocument();
+    // 输入过滤：只剩含 'reason' 的候选
+    await user.type(screen.getByLabelText('模型 ID 1'), 'reason');
+    expect(screen.getByText('deepseek-reasoner')).toBeInTheDocument();
+    expect(screen.queryByText('deepseek-chat')).not.toBeInTheDocument();
+  });
+
+  it('#483: 拉取失败 → 不崩溃、无候选、手动输入仍可用', async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs/models') {
+        return { ok: false, message: 'API Key 无效' };
+      }
+      return { ok: true, models: [] };
+    });
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByRole('combobox', { name: '选择 Provider' }));
+    await user.click(await screen.findByRole('option', { name: 'deepseek' }));
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/provider-configs/models',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+    expect(screen.queryByText('deepseek-chat')).not.toBeInTheDocument();
+    expect(screen.queryByText('deepseek-reasoner')).not.toBeInTheDocument();
+    // 手动输入仍可用
+    await user.type(screen.getByLabelText('模型 ID 1'), 'my-custom-model');
+    expect(screen.getByLabelText('模型 ID 1')).toHaveValue('my-custom-model');
+  });
+
+  it('#483: 手输自定义模型 ID + 保存 → onAdd 携带该 ID（沿用既有保存断言模式）', async () => {
+    const user = userEvent.setup();
+    const { onAdd, onDone, onOpenChange } = renderDialog();
+    await user.type(screen.getByLabelText('模型 ID 1'), 'my-custom-model');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => {
+      expect(onAdd).toHaveBeenCalledWith(1, { id: 'my-custom-model', type: 'chat', roles: [] });
+    });
     expect(onDone).toHaveBeenCalledWith({ succeeded: 1, failed: 0, errors: [] });
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });

@@ -362,6 +362,9 @@ export const zh = {
   'm.dialog.testOk': '连接成功',
   'm.dialog.testFail': '连接失败: {reason}',
   'm.dialog.testUnknown': '未知错误',
+  'm.fetchModels': '获取模型',
+  'm.fetchingModels': '获取中…',
+  'm.fetchModelsFailed': '获取模型失败: {reason}',
   // 写作页
   'write.newChapter': '新建章节',
   'write.empty.title': '选择或新建项目开始写作',

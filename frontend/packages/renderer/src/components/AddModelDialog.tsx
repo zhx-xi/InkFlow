@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { errorMessage } from '../api/client';
+import { apiFetch, errorMessage } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import type { ProviderConfig, ProviderModel } from '../stores/models';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -15,6 +15,12 @@ interface ModelDraftRow {
   id: string;
   type: 'chat' | 'embedding';
   roles: string;
+}
+
+interface FetchModelsResponse {
+  ok: boolean;
+  models?: string[];
+  message?: string;
 }
 
 /** #125 批量保存结果：逐行成功/失败计数 + errorMessage(err) 后的错误字符串数组 */
@@ -43,6 +49,23 @@ export function AddModelDialog({
   const [providerId, setProviderId] = useState<number | null>(null);
   const [rows, setRows] = useState<ModelDraftRow[]>([]);
   const [saving, setSaving] = useState(false);
+  const [candidates, setCandidates] = useState<string[]>([]);
+
+  const fetchModels = async (provider: ProviderConfig) => {
+    try {
+      const res = await apiFetch<FetchModelsResponse>('/api/v1/provider-configs/models', {
+        method: 'POST',
+        body: {
+          base_url: provider.base_url,
+          ...(provider.name ? { provider: provider.name } : {}),
+        },
+      });
+      setCandidates(res.ok ? (res.models ?? []) : []);
+    } catch {
+      // 拉取失败不崩溃：无候选列表，手动输入仍可用
+      setCandidates([]);
+    }
+  };
 
   // 打开时重置草稿：默认第一个 Provider + 一行空条目
   useEffect(() => {
@@ -50,6 +73,9 @@ export function AddModelDialog({
     setProviderId(providers[0]?.id ?? null);
     setRows([{ id: '', type: 'chat', roles: '' }]);
     setSaving(false);
+    setCandidates([]);
+    const first = providers[0];
+    if (first) void fetchModels(first);
   }, [open, providers]);
 
   if (!open) return null;
@@ -126,7 +152,12 @@ export function AddModelDialog({
             <span>{t('m.providerSelect')}</span>
             <Select
               value={activeProviderId === null ? undefined : String(activeProviderId)}
-              onValueChange={(v) => setProviderId(Number(v))}
+              onValueChange={(v) => {
+                const pid = Number(v);
+                setProviderId(pid);
+                const provider = providers.find((p) => p.id === pid);
+                if (provider) void fetchModels(provider);
+              }}
             >
               <SelectTrigger aria-label={t('m.providerSelect')} className="w-full">
                 <SelectValue placeholder={t('m.providerSelect')} />
@@ -155,6 +186,26 @@ export function AddModelDialog({
                   onChange={(e) => updateRow(index, { id: e.target.value })}
                   placeholder="gpt-4o-mini"
                 />
+                {candidates.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {candidates
+                      .filter(
+                        (m) =>
+                          row.id.trim() === '' ||
+                          m.toLowerCase().includes(row.id.trim().toLowerCase()),
+                      )
+                      .map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          className="rounded-md border border-line px-2.5 py-1 text-[12px] text-ink-2 transition duration-180 hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                          onClick={() => updateRow(index, { id: m })}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                  </div>
+                )}
               </label>
               <label className="flex w-[120px] flex-col gap-1.5 text-[13px]">
                 <span>{t('m.table.type')}</span>
