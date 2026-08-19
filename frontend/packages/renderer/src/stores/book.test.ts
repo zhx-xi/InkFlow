@@ -732,3 +732,162 @@ describe('book store — 阶段4 干预 + 回归摘要 + 密度（#338 setDensit
     expect(s.summaryLoading).toBe(false);
   });
 });
+
+describe('book store — v1.2 #475 对话式访谈（messages/confirmedItems/conflicts/sessionConfirming/respondConfirm）', () => {
+  /**
+   * 契约（spec v1.2 §5.1 PR-2 + §13 M14）：
+   *
+   * state 新增（初始值）：messages（[]）/ confirmedItems（[]）/ conflicts（[]）/ sessionConfirming（false）
+   * action 新增：respondConfirm() —— 末尾总体确认通过（POST respond body {confirm:true}）
+   *
+   * 消息流构建（store 本地构建，不依赖后端回传消息）：
+   * - startPlanner 成功 → messages = [user(one_liner)] + 每个问题一条 assistant(question)
+   * - respond 成功 → messages 追加 [user(answer)] + 下一轮问题每条 assistant(question)；
+   *   响应 confirming=true → 追加 [assistant(confirm_summary, confirmedItems=响应 confirmed_items)]
+   * - respondConfirm 成功 → messages 追加 [user(confirm)] + completed → sessionStatus='completed'
+   * - respondAuto 成功 → messages 追加 [user(auto)] + completed
+   *
+   * confirmed_items/conflicts/confirming 落库（D1 需求 2/3/4）：
+   * - startPlanner/respond 响应含 confirmed_items → store.confirmedItems 覆盖
+   * - 响应含 conflicts → store.conflicts 覆盖
+   * - 响应 confirming=true → store.sessionConfirming=true（confirm 通过/修改后回 questioning 时复位 false）
+   * - reset 清空 4 新字段
+   */
+
+  it('契约面：初始 messages=[] / confirmedItems=[] / conflicts=[] / sessionConfirming=false + respondConfirm 是函数', () => {
+    const s = useBookStore.getState();
+    expect(s.messages).toEqual([]);
+    expect(s.confirmedItems).toEqual([]);
+    expect(s.conflicts).toEqual([]);
+    expect(s.sessionConfirming).toBe(false);
+    expect(typeof s.respondConfirm).toBe('function');
+  });
+
+  it('startPlanner：响应含 confirmed_items/confirming → 落库 + 消息流构建（user one_liner + assistant 问题）', async () => {
+    apiFetchMock.mockResolvedValue({
+      session_id: 'sess-1',
+      round: 1,
+      questions: round1,
+      max_rounds: 5,
+      confirmed_items: [{ key: '题材', value: '悬疑', source: 'user' }],
+      conflicts: [],
+      confirming: false,
+    });
+    await act(async () => {
+      await useBookStore.getState().startPlanner('p1', '写一本关于时间旅者的悬疑小说');
+    });
+    const s = useBookStore.getState();
+    expect(s.sessionStatus).toBe('drafting');
+    expect(s.confirmedItems).toEqual([{ key: '题材', value: '悬疑', source: 'user' }]);
+    expect(s.sessionConfirming).toBe(false);
+    // 消息流：user one_liner + 每条问题一条 assistant（kind=question）
+    const userMsgs = s.messages.filter((m) => m.role === 'user');
+    expect(userMsgs).toHaveLength(1);
+    expect(userMsgs[0].kind).toBe('one_liner');
+    expect(userMsgs[0].text).toBe('写一本关于时间旅者的悬疑小说');
+    const qMsgs = s.messages.filter((m) => m.kind === 'question');
+    expect(qMsgs).toHaveLength(3);
+    expect(qMsgs[0].questionId).toBe('q1');
+    expect(qMsgs[0].template).toContain('___');
+  });
+
+  it('respond：completed=false + confirming=true → 追加 user 回答 + confirm_summary + sessionConfirming=true', async () => {
+    apiFetchMock.mockResolvedValue({
+      session_id: 'sess-1',
+      round: 4,
+      completed: false,
+      questions: [],
+      writing_plan: null,
+      confirmed_items: [
+        { key: '题材', value: '悬疑', source: 'user' },
+        { key: '篇幅', value: '10 万字', source: 'user' },
+      ],
+      conflicts: [],
+      confirming: true,
+    });
+    useBookStore.setState({
+      sessionId: 'sess-1',
+      round: 3,
+      questions: [{ id: 'q6', text: '配角 2 个？', template: '___', kind: 'conflict' }],
+      sessionStatus: 'drafting',
+      messages: [{ id: 'm1', role: 'user', kind: 'one_liner', text: '写一本悬疑小说' }],
+    });
+    await act(async () => {
+      await useBookStore.getState().respond({ q6: '配角 2 个' });
+    });
+    const s = useBookStore.getState();
+    expect(s.sessionConfirming).toBe(true);
+    expect(s.confirmedItems).toHaveLength(2);
+    expect(s.confirmedItems[1].key).toBe('篇幅');
+    // 消息流追加：user answer + assistant confirm_summary（确认卡片）
+    const roles = s.messages.map((m) => `${m.role}:${m.kind}`);
+    expect(roles).toContain('user:answer');
+    expect(roles).toContain('assistant:confirm_summary');
+    const summaryMsg = s.messages.find((m) => m.kind === 'confirm_summary');
+    expect(summaryMsg?.confirmedItems).toHaveLength(2);
+  });
+
+  it('respondConfirm：POST body {confirm:true} → completed + writingPlan', async () => {
+    apiFetchMock.mockResolvedValue({
+      session_id: 'sess-1',
+      round: 4,
+      completed: true,
+      confirming: false,
+      questions: [],
+      writing_plan: wpCompleted,
+    });
+    useBookStore.setState({
+      sessionId: 'sess-1',
+      round: 4,
+      questions: [],
+      sessionStatus: 'drafting',
+      sessionConfirming: true,
+      confirmedItems: [{ key: '题材', value: '悬疑', source: 'user' }],
+    });
+    await act(async () => {
+      await useBookStore.getState().respondConfirm();
+    });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/planner/sess-1/respond', {
+      method: 'POST',
+      body: { confirm: true },
+    });
+    const s = useBookStore.getState();
+    expect(s.sessionStatus).toBe('completed');
+    expect(s.writingPlan?.id).toBe('wp-1');
+    expect(s.sessionConfirming).toBe(false);
+    // 消息流追加 user confirm
+    expect(s.messages.some((m) => m.role === 'user' && m.kind === 'confirm')).toBe(true);
+  });
+
+  it('respondAuto：追加 user auto 消息 + completed（消息流含 auto 记录）', async () => {
+    apiFetchMock.mockResolvedValue({
+      session_id: 'sess-1',
+      round: 1,
+      completed: true,
+      questions: [],
+      writing_plan: { ...wpCompleted, status: 'auto' },
+    });
+    useBookStore.setState({ sessionId: 'sess-1', round: 1, questions: round1, sessionStatus: 'drafting' });
+    await act(async () => {
+      await useBookStore.getState().respondAuto();
+    });
+    const s = useBookStore.getState();
+    expect(s.sessionStatus).toBe('completed');
+    expect(s.messages.some((m) => m.role === 'user' && m.kind === 'auto')).toBe(true);
+  });
+
+  it('reset 清空 messages/confirmedItems/conflicts/sessionConfirming（非默认中间态播种 → 清零断言非假绿）', () => {
+    useBookStore.setState({
+      messages: [{ id: 'm1', role: 'user', kind: 'one_liner', text: 'x' }],
+      confirmedItems: [{ key: '题材', value: '悬疑', source: 'user' }],
+      conflicts: [{ round: 2, question_id: 'q5', answer: '5 个', conflict_with: '篇幅', resolution: 'pending' }],
+      sessionConfirming: true,
+    });
+    useBookStore.getState().reset();
+    const s = useBookStore.getState();
+    expect(s.messages).toEqual([]);
+    expect(s.confirmedItems).toEqual([]);
+    expect(s.conflicts).toEqual([]);
+    expect(s.sessionConfirming).toBe(false);
+  });
+});

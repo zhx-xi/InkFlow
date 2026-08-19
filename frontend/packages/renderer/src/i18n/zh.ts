@@ -528,6 +528,12 @@ export const zh = {
   'book.plan.auto': '自动生成',
   'book.startRun': '开始写作',
   'book.error': '访谈出错',
+  // F44 v1.2 #475：对话式访谈末尾总体确认（confirm_summary 卡片）
+  'book.confirm.title': '确认以下设定？',
+  'book.confirm.ok': '确认',
+  'book.confirm.edit': '修改',
+  'book.confirm.editSubmit': '提交修改',
+  'book.conflict.label': '冲突确认',
   'book.trace.pending': '待处理',
   'book.trace.in_progress': '进行中',
   'book.trace.done': '已完成',
