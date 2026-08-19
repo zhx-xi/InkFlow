@@ -55,3 +55,10 @@ class KnowledgeRelationValidationError(KnowledgeGraphServiceError):
 
     def __init__(self, message: str = "六元组非法（字段校验）") -> None:
         super().__init__(message)
+
+
+class LLMNotConfiguredError(Exception):
+    """未配置大模型 — AI 提取前置门禁失败（#479 D3 拍板）。"""
+
+    def __init__(self, message: str = "未配置大模型，无法进行 AI 提取") -> None:
+        super().__init__(message)

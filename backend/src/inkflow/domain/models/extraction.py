@@ -42,6 +42,7 @@ class ExtractionType(StrEnum):
     TIMELINE = "timeline"
     FORESHADOWING = "foreshadowing"
     STYLE = "style"
+    KNOWLEDGE_RELATION = "knowledge_relation"
 
 
 class ExtractionStatus(StrEnum):

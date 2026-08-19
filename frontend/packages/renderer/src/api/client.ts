@@ -26,6 +26,12 @@ export interface AppSettings {
   tray_hint_dismissed: boolean;
   /** #189：全局默认目标字数（无项目时保存 / 新建项目初始化用；默认 800000 后端补齐） */
   default_words: number;
+  /** #479：知识图谱定时提取开关（spec §5.5.2，默认 false） */
+  kg_extract_enabled: boolean;
+  /** #479：知识图谱定时提取频率（小时；默认 24，spec §5.5.2） */
+  kg_extract_interval_hours: number;
+  /** #479：知识图谱提取方式（rule=仅规则 / ai=仅 AI / both=规则+AI，spec §5.5.2） */
+  kg_extract_method: 'rule' | 'ai' | 'both';
 }
 
 /** F32（#152）：PATCH /settings 请求体——部分更新，只发用户改动字段（响应恒为合并后全量） */
