@@ -190,3 +190,47 @@ def test_builtin_templates_model_follows_config_default() -> None:
     for tid, tpl in BUILTIN_TEMPLATES.items():
         for stage in tpl.stages:
             assert stage.agent.model == config.llm_default_model, f"{tid}/{stage.id}"
+
+
+# ── #477 chat 意图分离 prompt 契约（2026-08-19）────────────────────────
+
+
+class TestChatIntentSeparationPrompt:
+    """builtin:chat 单 stage prompt 的意图分离标记契约（#477）。
+
+    方案：#477「插入正文」意图分离——后端 chat prompt 约束 LLM：
+    - 产出正文类回复时用 <<<CONTENT>>> ... <<<END>>> 包裹正文
+    - 对话类回复（问答/闲聊）不包裹
+    前端 parseChatReply 解析标记判定意图（content / conversation）。
+
+    RED 形态：现 prompt 无标记约束 → 标记/指令断言 AssertionError；
+    {prompt} 占位符与对话语义断言为守护（现值已满足 → PASS）。
+    """
+
+    def _chat_prompt(self) -> str:
+        stages = get_template("builtin:chat").stages
+        assert len(stages) == 1, "builtin:chat 应为单 stage"
+        return stages[0].agent.system_prompt
+
+    def test_chat_prompt_contains_content_markers(self) -> None:
+        """prompt 含 <<<CONTENT>>> 与 <<<END>>> 标记（产出正文的包裹标记）。"""
+        prompt = self._chat_prompt()
+        assert "<<<CONTENT>>>" in prompt
+        assert "<<<END>>>" in prompt
+
+    def test_chat_prompt_has_wrap_and_no_wrap_instructions(self) -> None:
+        """prompt 含「包裹」正向指令与「不要包裹」负向指令（问答/闲聊不包裹）。"""
+        prompt = self._chat_prompt()
+        assert "包裹" in prompt
+        assert "不要包裹" in prompt
+
+    def test_chat_prompt_keeps_user_prompt_placeholder(self) -> None:
+        """prompt 仍含 {prompt} 占位符（用户提问渲染不回归）。"""
+        prompt = self._chat_prompt()
+        assert "{prompt}" in prompt
+
+    def test_chat_prompt_keeps_assistant_semantics(self) -> None:
+        """守护既有语义：prompt 仍含「对话」「助手」「回答」至少其一
+        （对应 test_chat_pipeline.py::test_chat_role_prompt_assistant_semantics）。"""
+        prompt = self._chat_prompt()
+        assert any(kw in prompt for kw in ("对话", "助手", "回答"))
