@@ -258,6 +258,46 @@ class AgentEntityService:
             raise AgentNotFoundError()
         logger.info("删除 Agent: agent_id=%s", agent_id)
 
+    async def duplicate(self, agent_id: int, *, name: str | None = None) -> Agent:
+        """复制 Agent（镜像 agent_template_service.duplicate，#485）.
+
+        目标不存在 → AgentNotFoundError；新 name = 指定名或 f"{原 name} 副本"
+        （空格分隔）；经 agent_repository.get_by_name 查重命中 →
+        AgentNameConflictError；成功 → 构造副本（id=None、builtin=False、
+        role_key 按 create 同名逻辑重分配、白名单校验同 create）并委托
+        agent_repository.add，直接返回其结果.
+        """
+        existing = await self._agent_repo.get(agent_id)
+        if existing is None:
+            raise AgentNotFoundError()
+        new_name = name or f"{existing.name} 副本"
+        dup = await self._agent_repo.get_by_name(new_name)
+        if dup is not None:
+            raise AgentNameConflictError()
+        _validate_tool_ids(existing.tool_ids)
+        await self._validate_skill_ids(existing.skill_ids)
+        # role_key 按 create 同名逻辑重新分配（中文副本名 slug 回退 "agent"）
+        existing_keys = {a.role_key for a in await self._agent_repo.list() if a.role_key}
+        base = _slugify_role_key(new_name)
+        assigned = base
+        suffix = 1
+        while assigned in existing_keys:
+            assigned = f"{base}_{suffix}"
+            suffix += 1
+        now = _utcnow()
+        clone = existing.model_copy(
+            update={
+                "id": None,
+                "name": new_name,
+                "builtin": False,
+                "role_key": assigned,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+        logger.info("复制 Agent: agent_id=%s → name=%s", agent_id, new_name)
+        return await self._agent_repo.add(clone)
+
     async def _validate_skill_ids(self, skill_ids: builtins.list[str]) -> None:
         """skill 引用校验：任一 skill id 不存在 → SkillReferenceError（422）."""
         for skill_id in skill_ids:

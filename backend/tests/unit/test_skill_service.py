@@ -413,3 +413,112 @@ class TestSkillErrorsGuard:
         assert not hasattr(skill_errors_module, "AgentNotFoundError")
         assert not hasattr(skill_errors_module, "AgentNameConflictError")
         assert not hasattr(skill_errors_module, "AgentBuiltinError")
+
+
+class TestDuplicate:
+    """duplicate — 复制 Skill（镜像 agent_template_service.duplicate，#485）。
+
+    契约（设计假设，GREEN 实现者唯一参考）：
+
+    1. 签名: ``async duplicate(self, skill_id: int, *, name: str | None = None)
+       -> Skill``。
+    2. 语义: ``skill_repository.get(skill_id)`` 目标不存在 →
+       SkillNotFoundError（404）；新 name（指定或 f"{原 name} 副本"）经
+       ``skill_repository.get_by_name`` 查重，命中 → SkillNameConflictError
+       （422）；成功 → 构造副本并委托 ``skill_repository.add``，直接返回
+       其结果。
+    3. 原样复制字段: description/content 与源完全一致（content 含 frontmatter
+       原文逐字相等）。🔴 duplicate 不走 _parse_frontmatter！内置 skill 名
+       是中文「架构方法论」，副本名「架构方法论 副本」中文合法（
+       _NAME_PATTERN 只在 create 时校验 frontmatter name 的 [a-z0-9-] 格式，
+       duplicate 直接构造实体不受限）；content 原样拷贝（content frontmatter
+       内 name 仍是原名，这是复制语义的预期产物）——GREEN 禁止误走 create
+       复用。
+    4. 重置字段: id=None；source="user_upload"（内置复制后转用户态可改可删，
+       issue #485 验收核心）；created_at = updated_at = datetime.now(UTC)
+       （时区感知，动态 now 不锁固定值）。
+
+    RED 形态: 当前服务无 duplicate 方法 → 每个用例 AttributeError:
+    'SkillService' object has no attribute 'duplicate'。
+    """
+
+    async def test_duplicate_default_name_appends_suffix(self, service, mock_skill_repo):
+        """duplicate 默认副本名 = f"{源 name} 副本"；id 重置；source 转
+        user_upload（#485 核心验收）；时间戳同一批次 now 且时区感知。"""
+        mock_skill_repo.get.return_value = _skill(2, "架构方法论", source="builtin")
+        await service.duplicate(2)
+
+        mock_skill_repo.get.assert_awaited_once_with(2)
+        mock_skill_repo.get_by_name.assert_awaited_once()
+        assert _arg(mock_skill_repo.get_by_name.await_args, "name", 0) == "架构方法论 副本"
+        mock_skill_repo.add.assert_awaited_once()
+        sk = _arg(mock_skill_repo.add.await_args, "skill", 0)
+        assert sk.id is None  # id 由 repo 分配
+        assert sk.name == "架构方法论 副本"  # 中文副本名合法（不走 frontmatter 校验）
+        assert sk.source == "user_upload"  # 内置复制后转用户态，可改可删
+        assert sk.created_at == sk.updated_at
+        assert sk.created_at.tzinfo is not None  # datetime.now(UTC) 时区感知
+
+    async def test_duplicate_copies_content_and_description(self, service, mock_skill_repo):
+        """description/content 与源完全一致（content 逐字相等，含 frontmatter
+        原文；frontmatter 内 name 仍是原名 = 复制预期产物）。"""
+        cn_content = (
+            "---\nname: 架构方法论\ndescription: 章节结构/大纲规划\n---\n"
+            "# 架构方法论\n\n1. 明确章节目标\n2. 规划大纲结构\n"
+        )
+        source = Skill(
+            id=2,
+            name="架构方法论",
+            description="章节结构/大纲规划",
+            content=cn_content,
+            source="builtin",
+            created_at=TS,
+            updated_at=TS,
+        )
+        mock_skill_repo.get.return_value = source
+        await service.duplicate(2)
+
+        sk = _arg(mock_skill_repo.add.await_args, "skill", 0)
+        assert sk.content == cn_content  # 逐字相等（含 frontmatter 原名）
+        assert sk.description == "章节结构/大纲规划"
+
+    async def test_duplicate_accepts_custom_name(self, service, mock_skill_repo):
+        """传入 name= 指定副本名（中文合法，不走 frontmatter 校验）。"""
+        mock_skill_repo.get.return_value = _skill(2, "架构方法论", source="builtin")
+        await service.duplicate(2, name="我的方法论")
+        sk = _arg(mock_skill_repo.add.await_args, "skill", 0)
+        assert sk.name == "我的方法论"
+        # 查重用指定名而非「原名 副本」
+        assert _arg(mock_skill_repo.get_by_name.await_args, "name", 0) == "我的方法论"
+
+    async def test_duplicate_missing_raises_not_found(self, service, mock_skill_repo):
+        """目标不存在 → SkillNotFoundError（404），且不落库、不查重。"""
+        mock_skill_repo.get.return_value = None
+        with pytest.raises(SkillNotFoundError, match="不存在"):
+            await service.duplicate(999)
+        mock_skill_repo.add.assert_not_called()
+        mock_skill_repo.get_by_name.assert_not_called()  # 目标缺失即短路
+
+    async def test_duplicate_name_conflict_raises(self, service, mock_skill_repo):
+        """副本名已存在 → SkillNameConflictError（422），且不落库。"""
+        mock_skill_repo.get.return_value = _skill(2, "架构方法论", source="builtin")
+        mock_skill_repo.get_by_name.return_value = _skill(99, "架构方法论 副本")  # 其他 id 已占用
+        with pytest.raises(SkillNameConflictError, match="同名"):
+            await service.duplicate(2)
+        mock_skill_repo.add.assert_not_called()
+
+    async def test_duplicate_user_skill_also_works(self, service, mock_skill_repo):
+        """用户态 skill（source="user_upload"）同样可复制，副本保持
+        user_upload（可改可删）。"""
+        mock_skill_repo.get.return_value = _skill(2, "我的方法论", source="user_upload")
+        await service.duplicate(2)
+        sk = _arg(mock_skill_repo.add.await_args, "skill", 0)
+        assert sk.name == "我的方法论 副本"
+        assert sk.source == "user_upload"
+
+    async def test_duplicate_returns_add_result(self, service, mock_skill_repo):
+        """成功路径直接返回 repo.add 结果（不二次包装）。"""
+        mock_skill_repo.get.return_value = _skill(2, "架构方法论", source="builtin")
+        saved = await service.duplicate(2)
+        sk = _arg(mock_skill_repo.add.await_args, "skill", 0)
+        assert saved is sk  # fixture: add side_effect=lambda s: s

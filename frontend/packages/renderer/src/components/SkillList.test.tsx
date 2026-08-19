@@ -30,6 +30,16 @@
  * skill.deleteReferenced='该 Skill 被 {n} 个 Agent 引用：{names}。删除后引用将自动移除，不可恢复'
  * skill.empty='还没有 Skill，点击上传' skill.listTitle='Skill 管理'
  *
+ * #485 内置 Skill 详情 + 复制（追加契约，2026-08-19）：
+ * - 内置 skill 卡片（source='builtin'）新增「详情」data-testid=skill-detail-{id}、「复制」
+ *   data-testid=skill-copy-{id}；user_upload 卡片不渲染 skill-detail- / skill-copy- 前缀
+ * - 「详情」→ 弹层 data-testid=skill-detail-dialog：content 全文 data-testid=skill-detail-content
+ *   （textContent 含该 skill.content 逐字）；关闭按钮 data-testid=skill-detail-close
+ * - 「复制」→ store copySkill(id)：POST /api/v1/skills/{id}/duplicate → 成功 toast
+ *   t('skill.copied')「已复制」（新 i18n key，GREEN 补 zh/en）+ 副本进列表（source=user_upload →
+ *   skill-source-user-{id} 可删）；失败 → t('toast.saveFailed')「保存失败」
+ *   （刷新实现不锁：copySkill 内部追加或 loadSkills 重拉均可；状态化 mock 保证两条路径都能看到副本卡）
+ *
  * RED 预期：./SkillList 模块不存在 → module-not-found（类 1 契约缺口，suite 级失败）。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -38,6 +48,7 @@ import userEvent from '@testing-library/user-event';
 import { SkillList } from './SkillList';
 import { useSkillsStore, type Skill } from '../stores/skills';
 import { useAgentsStore } from '../stores/agents';
+import { useToastStore } from '../stores/toast';
 import { apiFetch } from '../api/client';
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -84,6 +95,7 @@ beforeEach(() => {
   apiFetchMock.mockReset();
   useSkillsStore.setState({ skills: [], loading: false, error: null });
   useAgentsStore.setState({ agents: [], loading: false, error: null });
+  useToastStore.setState({ toasts: [] });
 });
 
 describe('SkillList — 列表渲染', () => {
@@ -183,5 +195,83 @@ describe('SkillList — 上传入口', () => {
     await screen.findByTestId('skill-add-btn');
     await user.click(screen.getByTestId('skill-add-btn'));
     expect(await screen.findByTestId('skill-upload-dialog')).toBeInTheDocument();
+  });
+});
+
+describe('SkillList — 内置详情 + 复制（#485）', () => {
+  it('内置 skill 卡片有详情+复制按钮；user_upload 卡片无（skill-detail-/skill-copy- 前缀仅 builtin）', async () => {
+    apiFetchMock.mockResolvedValue({ items: [BUILTIN_SKILL, USER_SKILL], total: 2 });
+    render(<SkillList />);
+    await screen.findByTestId('skill-card-2');
+    const card2 = screen.getByTestId('skill-card-2');
+    expect(within(card2).getByTestId('skill-detail-2')).toBeInTheDocument();
+    expect(within(card2).getByTestId('skill-copy-2')).toBeInTheDocument();
+    const card3 = screen.getByTestId('skill-card-3');
+    expect(within(card3).queryByTestId('skill-detail-3')).not.toBeInTheDocument();
+    expect(within(card3).queryByTestId('skill-copy-3')).not.toBeInTheDocument();
+  });
+
+  it('点详情 → 弹层：content 全文 + 关闭按钮可关闭', async () => {
+    const user = userEvent.setup();
+    apiFetchMock.mockResolvedValue({ items: [BUILTIN_SKILL], total: 1 });
+    render(<SkillList />);
+    await screen.findByTestId('skill-card-2');
+    await user.click(screen.getByTestId('skill-detail-2'));
+    const dlg = await screen.findByTestId('skill-detail-dialog');
+    expect(dlg).toBeInTheDocument();
+    expect(screen.getByTestId('skill-detail-content').textContent).toContain(BUILTIN_SKILL.content);
+    await user.click(screen.getByTestId('skill-detail-close'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('skill-detail-dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  it('点复制 → POST /api/v1/skills/2/duplicate → toast「已复制」+ 副本卡进列表（skill-source-user-10）', async () => {
+    const user = userEvent.setup();
+    // 状态化 mock：POST duplicate 后副本进入共享数组，GET /skills 读同一数组——
+    // 「copySkill 内部追加」与「loadSkills 重拉」两种刷新实现都能看到副本卡
+    const stateSkills: Skill[] = [BUILTIN_SKILL];
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/skills/2/duplicate' && init?.method === 'POST') {
+        const copied: Skill = { ...BUILTIN_SKILL, id: 10, name: '架构方法论 副本', source: 'user_upload', agent_ids: [] };
+        stateSkills.push(copied);
+        return copied;
+      }
+      if (path === '/api/v1/skills') return { items: [...stateSkills], total: stateSkills.length };
+      if (path === '/api/v1/agents') return { items: [], total: 0 };
+      return { ok: true };
+    });
+    render(<SkillList />);
+    await screen.findByTestId('skill-card-2');
+    await user.click(screen.getByTestId('skill-copy-2'));
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/skills/2/duplicate',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.message.includes('已复制'))).toBe(true);
+    });
+    expect(await screen.findByTestId('skill-card-10')).toBeInTheDocument();
+    expect(screen.getByTestId('skill-source-user-10')).toHaveTextContent('用户上传');
+  });
+
+  it('复制失败 → 错误 toast（toast.saveFailed）', async () => {
+    const user = userEvent.setup();
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/skills/2/duplicate' && init?.method === 'POST') {
+        throw new Error('duplicate failed');
+      }
+      if (path === '/api/v1/skills') return { items: [BUILTIN_SKILL], total: 1 };
+      if (path === '/api/v1/agents') return { items: [], total: 0 };
+      return { ok: true };
+    });
+    render(<SkillList />);
+    await screen.findByTestId('skill-card-2');
+    await user.click(screen.getByTestId('skill-copy-2'));
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.message.includes('保存失败'))).toBe(true);
+    });
   });
 });

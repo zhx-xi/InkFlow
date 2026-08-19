@@ -81,6 +81,7 @@ interface AgentsState {
   createAgent: (input: AgentInput) => Promise<AgentEntity>;
   updateAgent: (id: number, patch: Partial<AgentInput>) => Promise<AgentEntity>;
   deleteAgent: (id: number) => Promise<void>;
+  copyAgent: (id: number) => Promise<AgentEntity>;
 }
 
 export const useAgentsStore = create<AgentsState>((set) => ({
@@ -158,6 +159,20 @@ export const useAgentsStore = create<AgentsState>((set) => ({
     } catch (err) {
       // 失败（409 内置等）：列表不变，错误上抛到 error 状态
       set({ error: errorMessage(err) });
+    }
+  },
+
+  copyAgent: async (id) => {
+    try {
+      const created = await apiFetch<AgentEntity>(`/api/v1/agents/${id}/duplicate`, {
+        method: 'POST',
+      });
+      set((s) => ({ agents: [...s.agents, created], error: null }));
+      return created;
+    } catch (err) {
+      // 失败：error 设置 + 列表不变 + rethrow（复制流程需感知失败）
+      set({ error: errorMessage(err) });
+      throw err;
     }
   },
 }));

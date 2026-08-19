@@ -23,10 +23,12 @@ export function AgentList() {
   const createAgent = useAgentsStore((s) => s.createAgent);
   const updateAgent = useAgentsStore((s) => s.updateAgent);
   const deleteAgent = useAgentsStore((s) => s.deleteAgent);
+  const copyAgent = useAgentsStore((s) => s.copyAgent);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<AgentEntity | null>(null);
   const [pendingDelete, setPendingDelete] = useState<AgentEntity | null>(null);
+  const [detailAgent, setDetailAgent] = useState<AgentEntity | null>(null);
 
   // 挂载加载 3 端点（工具目录 + 技能列表为双向视图映射数据源）
   useEffect(() => {
@@ -76,6 +78,15 @@ export function AgentList() {
     // 列表刷新（服务端权威：DELETE 后重新 GET）
     await loadAgents();
     pushToast('ok', t('toast.agentDeleted'));
+  };
+
+  const handleCopy = async (agent: AgentEntity) => {
+    try {
+      await copyAgent(agent.id);
+      pushToast('ok', t('toast.agentCopied'));
+    } catch {
+      pushToast('err', t('toast.saveFailed'));
+    }
   };
 
   return (
@@ -136,6 +147,26 @@ export function AgentList() {
                   </button>
                 </div>
               )}
+              {agent.builtin && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    data-testid={`agent-detail-${agent.id}`}
+                    className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 transition duration-180 hover:bg-surface-3"
+                    onClick={() => setDetailAgent(agent)}
+                  >
+                    {t('set.agents.detail')}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`agent-copy-${agent.id}`}
+                    className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 transition duration-180 hover:bg-surface-3"
+                    onClick={() => void handleCopy(agent)}
+                  >
+                    {t('set.agents.copy')}
+                  </button>
+                </div>
+              )}
             </div>
 
             {agent.description && (
@@ -192,6 +223,78 @@ export function AgentList() {
           if (!open) setPendingDelete(null);
         }}
       />
+
+      {detailAgent && (
+        <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={detailAgent.name}
+            data-testid="agent-detail-dialog"
+            className="max-h-[85vh] w-[560px] overflow-y-auto rounded-lg border border-line bg-surface p-6 shadow-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="font-serif text-[18px] font-semibold">
+                {detailAgent.icon} {detailAgent.name}
+              </h2>
+              <button
+                type="button"
+                data-testid="agent-detail-close"
+                aria-label="关闭"
+                className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-surface-3"
+                onClick={() => setDetailAgent(null)}
+              >
+                ✕
+              </button>
+            </div>
+            {detailAgent.description && (
+              <p className="mt-1 text-[13px] text-ink-2">{detailAgent.description}</p>
+            )}
+            <div className="mt-3">
+              <div className="text-[12px] font-medium text-ink-2">{t('set.agents.prompt')}</div>
+              <pre
+                data-testid="agent-detail-prompt"
+                className="mt-1 whitespace-pre-wrap rounded-md border border-line bg-surface-2 p-3 text-[12px] text-ink"
+              >
+                {detailAgent.system_prompt}
+              </pre>
+            </div>
+            {detailAgent.tool_ids.length > 0 && (
+              <div className="mt-3">
+                <div className="text-[12px] font-medium text-ink-2">{t('set.agents.tools')}</div>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {detailAgent.tool_ids.map((toolId) => (
+                    <span
+                      key={toolId}
+                      data-testid={`agent-detail-tool-${toolId}`}
+                      className="rounded bg-surface-3 px-1.5 py-0.5 text-[11px] text-ink-2"
+                    >
+                      {toolLabel(toolId)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {detailAgent.skill_ids.length > 0 && (
+              <div className="mt-3">
+                <div className="text-[12px] font-medium text-ink-2">{t('set.agents.skills')}</div>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {detailAgent.skill_ids.map((skillId) => (
+                    <span
+                      key={skillId}
+                      data-testid={`agent-detail-skill-${skillId}`}
+                      className="rounded bg-surface-3 px-1.5 py-0.5 text-[11px] text-ink-2"
+                    >
+                      {skillLabel(skillId)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
