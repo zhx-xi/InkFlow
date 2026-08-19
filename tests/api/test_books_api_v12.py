@@ -256,3 +256,215 @@ async def test_planner_get_response_has_v12_fields(client, override_planner):
     assert body["confirmed_items"] == _CONFIRMED
     assert body["conflicts"] == []
     assert body["confirming"] is True
+
+
+# ── Coverage-Gap 补测（2026-08-19 CI coverage-backend 98.34% 缺口）──
+# 缺失行映射：books.py _project_context_getter 成功空数据 + except 分支 +
+# planner_service 模板渲染路径（540-554）+ 装配闭包 _outline_service/
+# _character_service（125/134）+ BookService 回调（172-205）真实执行。
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_get_planner_service_llm_start_real_assembly(db_session):
+    """真实装配 + mock LLM：start 走 _project_context_getter（空库 → ""）+
+    模板渲染路径（540-554 真实 PromptManager）。"""
+    import json as _json
+    from unittest.mock import AsyncMock
+
+    from inkflow.api.routers.books import get_planner_service
+    from inkflow.domain.ports.llm_client import ChatResponse
+
+    svc = get_planner_service(db_session)
+    assert svc is not None
+    svc._llm_client = AsyncMock()
+    svc._llm_client.chat.return_value = ChatResponse(
+        content=_json.dumps(
+            {
+                "questions": [
+                    {
+                        "id": "q1",
+                        "text": "题材：悬疑为主还是悬疑+科幻混合？",
+                        "template": "悬疑为主，但加入 ___ 元素",
+                        "kind": "general",
+                    },
+                    {
+                        "id": "q2",
+                        "text": "篇幅：预计多少字？",
+                        "template": "约 ___ 字",
+                        "kind": "general",
+                    },
+                    {
+                        "id": "q3",
+                        "text": "主题：能否一句话描述主题？",
+                        "template": "主题是 ___",
+                        "kind": "general",
+                    },
+                ],
+                "confirmed_items": [],
+                "conflicts": [],
+            },
+            ensure_ascii=False,
+        ),
+        model="test",
+    )
+
+    session = await svc.start(uuid.uuid4(), "写一本关于时间旅者的悬疑小说")
+
+    assert session.status == "drafting"
+    assert len(session.asked_questions) == 3
+    assert all(q.get("kind") == "general" for q in session.asked_questions)
+    svc._llm_client.chat.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_get_planner_service_context_getter_exception(db_session, monkeypatch):
+    """_project_context_getter 异常 → 返回空串（books.py except 分支）。"""
+    import json as _json
+    from unittest.mock import AsyncMock
+
+    from inkflow.api.routers.books import get_planner_service
+    from inkflow.domain.ports.llm_client import ChatResponse
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("repo down")
+
+    monkeypatch.setattr(
+        "inkflow.infrastructure.database.repositories.outline_repo.SQLiteOutlineRepository.list",
+        _boom,
+    )
+
+    svc = get_planner_service(db_session)
+    svc._llm_client = AsyncMock()
+    svc._llm_client.chat.return_value = ChatResponse(
+        content=_json.dumps(
+            {
+                "questions": [
+                    {
+                        "id": "q1",
+                        "text": "题材：悬疑为主还是悬疑+科幻混合？",
+                        "template": "悬疑为主，但加入 ___ 元素",
+                        "kind": "general",
+                    }
+                ],
+                "confirmed_items": [],
+                "conflicts": [],
+            },
+            ensure_ascii=False,
+        ),
+        model="test",
+    )
+
+    session = await svc.start(uuid.uuid4(), "写一本关于时间旅者的悬疑小说")
+
+    assert session.status == "drafting"
+    # LLM 返回 1 问缺必答项 → 重试 1 次 → 仍缺 → 服务端补问 → 题材/篇幅/主题 齐备
+    assert len(session.asked_questions) == 3
+    assert svc._llm_client.chat.await_count == 2  # 必答项缺失 → 重试 1 次
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_get_planner_service_real_assembly_complete(db_session):
+    """真实装配 + mock LLM：完整访谈 → confirm → 装配闭包 _outline_service/
+    _character_service 真实落库（books.py 125/134 行覆盖）。
+
+    注：project_id 用小值 uuid.UUID(int=1)（outline/character 表 project_id
+    为 SQLite INTEGER，uuid4 128 位溢出，F48 已知坑）。
+    """
+    import json as _json
+    from unittest.mock import AsyncMock
+
+    from inkflow.api.routers.books import get_planner_service
+    from inkflow.domain.ports.llm_client import ChatResponse
+
+    svc = get_planner_service(db_session)
+    llm = AsyncMock()
+    llm.chat.side_effect = [
+        ChatResponse(
+            content=_json.dumps(
+                {
+                    "questions": [
+                        {
+                            "id": "q1",
+                            "text": "题材：悬疑为主还是悬疑+科幻混合？",
+                            "template": "悬疑为主，但加入 ___ 元素",
+                            "kind": "general",
+                        },
+                        {
+                            "id": "q2",
+                            "text": "篇幅：预计多少字？",
+                            "template": "约 ___ 字",
+                            "kind": "general",
+                        },
+                        {
+                            "id": "q3",
+                            "text": "主题：能否一句话描述主题？",
+                            "template": "主题是 ___",
+                            "kind": "general",
+                        },
+                    ],
+                    "confirmed_items": [],
+                    "conflicts": [],
+                },
+                ensure_ascii=False,
+            ),
+            model="test",
+        ),
+        ChatResponse(
+            content=_json.dumps(
+                {
+                    "questions": [],
+                    "confirmed_items": [
+                        {"key": "题材", "value": "悬疑 + 时间悖论科幻", "source": "user"},
+                        {"key": "篇幅", "value": "10 万字", "source": "user"},
+                        {"key": "主题", "value": "时间旅者自我救赎", "source": "user"},
+                    ],
+                    "conflicts": [],
+                },
+                ensure_ascii=False,
+            ),
+            model="test",
+        ),
+    ]
+    svc._llm_client = llm
+
+    session = await svc.start(uuid.UUID(int=1), "写一本关于时间旅者的悬疑小说")
+    r1 = await svc.respond(
+        session.id,
+        {"q1": "悬疑为主", "q2": "约 10 万字", "q3": "主题是自我救赎"},
+    )
+    assert r1.confirming is True
+
+    r2 = await svc.respond(session.id, {}, confirm=True)
+
+    assert r2.completed is True
+    assert r2.writing_plan is not None
+    assert r2.writing_plan.status == "ready"
+    assert r2.writing_plan.root_outline_id is not None  # _outline_service 真实落库
+    assert r2.writing_plan.character_ids  # _character_service 真实落库
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_get_book_service_real_assembly_callbacks(db_session):
+    """真实装配 BookService 装配回调：content_checker/project_config_getter/
+    outline 适配器真实执行（books.py 172-205 行覆盖，空库 → False/None/空）。"""
+    from inkflow.api.routers.books import get_book_service
+
+    svc = get_book_service(db_session)
+    assert svc is not None
+    # 安全阀内容检查：空库 → chapter None → False（私有属性 _content_checker）
+    checker = getattr(svc, "_content_checker", None)
+    assert checker is not None
+    assert await checker(uuid.UUID(int=1)) is False
+    # 项目级上限：空库 → project None → None（_project_config_getter）
+    getter = getattr(svc, "_project_config_getter", None)
+    assert getter is not None
+    assert await getter(uuid.UUID(int=1)) is None
+    # _OutlineListAdapter.list：UUID → int 适配（空库 → ([], 0)）
+    outline_repo = getattr(svc, "_outline_repo", None)
+    if outline_repo is not None:
+        outlines, total = await outline_repo.list(uuid.UUID(int=1))
+        assert outlines == [] and total == 0

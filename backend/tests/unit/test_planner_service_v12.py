@@ -607,3 +607,194 @@ async def test_respond_llm_prompt_includes_context():
     assert "设定摘要：时间旅者" in content  # project_context_getter 注入
     assert "篇幅" in content  # 会话历史（已确定项）
     context_getter.assert_awaited_once_with(session.project_id)
+
+
+# ── Coverage-Gap 补测（2026-08-19 CI coverage-backend 98.34% 缺口）──
+# 缺失行映射：418-420（主角从确定项提取）/ 490（无 llm_client 早退）/
+# 506-511（垃圾 JSON 重试）/ 536（无 context getter）/ 540-554（模板路径）/
+# 611/614-617/626/630/635（解析失败分支）/ 679-680（空 answers 冲突）/
+# 686->685（resolved 无 pending 匹配）。
+
+
+@pytest.mark.asyncio
+async def test_protagonist_name_from_confirmed_items():
+    """主角名提取：confirmed_items 含「主角」key → value 用之（418-420）。"""
+    repo = _make_repo()
+    session = _session(
+        round=2,
+        asked_questions=list(ROUND2_QUESTIONS),
+        answers={},
+        confirmed_items=[{"key": "主角", "value": "时间旅者", "source": "user"}],
+    )
+    repo.get_planner_session.return_value = session
+    character_service = AsyncMock(return_value=_char_dummy())
+    svc = PlannerService(
+        repo=repo,
+        write_auto=AsyncMock(return_value=None),
+        outline_service=AsyncMock(return_value=_outline_dummy()),
+        character_service=character_service,
+    )
+
+    await svc.respond(session.id, {"q4": "3 卷", "q5": "配角自定"})
+
+    call_kwargs = character_service.await_args.kwargs
+    assert call_kwargs["name"] == "时间旅者"
+
+
+@pytest.mark.asyncio
+async def test_protagonist_name_confirmed_value_blank_falls_back():
+    """主角 key 存在但 value 空白 → 回退 q3 提取（419->416 分支）。"""
+    repo = _make_repo()
+    session = _session(
+        round=2,
+        asked_questions=list(ROUND2_QUESTIONS),
+        answers={"q3": "主角是时间旅者"},
+        confirmed_items=[{"key": "主角", "value": "   ", "source": "user"}],
+    )
+    repo.get_planner_session.return_value = session
+    character_service = AsyncMock(return_value=_char_dummy())
+    svc = PlannerService(
+        repo=repo,
+        write_auto=AsyncMock(return_value=None),
+        outline_service=AsyncMock(return_value=_outline_dummy()),
+        character_service=character_service,
+    )
+
+    await svc.respond(session.id, {"q4": "3 卷", "q5": "配角自定"})
+
+    call_kwargs = character_service.await_args.kwargs
+    assert call_kwargs["name"] == "时间旅者"
+
+
+@pytest.mark.asyncio
+async def test_llm_output_invalid_json_retries_then_fallback():
+    """LLM 输出垃圾文本（无 JSON）→ 重试 1 次 → 仍失败 → ROUND1 兜底（506-511/611）。"""
+    repo = _make_repo()
+    llm = _make_llm_client("这不是 JSON，只是闲聊")
+    svc = _make_service(repo, llm_client=llm)
+
+    session = await svc.start(_pid(), "写一本关于时间旅者的悬疑小说")
+
+    assert [q["id"] for q in session.asked_questions] == [
+        q["id"] for q in ROUND1_QUESTIONS
+    ]
+    assert llm.chat.await_count == 2  # 输出不合格 → 重试 1 次
+
+
+@pytest.mark.asyncio
+async def test_llm_payload_unparsable_variants():
+    """_parse_llm_payload 各失败分支（611/614-617/626/630/635）+ 成功路径。"""
+    svc = PlannerService(repo=_make_repo())
+
+    assert svc._parse_llm_payload("无花括号") is None  # 611 fragment None
+    assert svc._parse_llm_payload('{"a": }') is None  # 614-615 JSONDecodeError
+    assert svc._parse_llm_payload("[1, 2]") is None  # 617 非 dict（fragment None 路径）
+    assert svc._parse_llm_payload('{"questions": {}}') is None  # 626 非 list
+    bad_item = '{"questions": [1], "confirmed_items": [], "conflicts": []}'
+    assert svc._parse_llm_payload(bad_item) is None  # 630 item 非 dict
+    bad_fields = '{"questions": [{"id": "x"}], "confirmed_items": [], "conflicts": []}'
+    assert svc._parse_llm_payload(bad_fields) is None  # 635 缺 text/kind
+
+    ok = svc._parse_llm_payload(
+        '{"questions": [{"id": "q1", "text": "题材？", "template": "___", "kind": "general"}], '
+        '"confirmed_items": [{"key": "题材", "value": "悬疑", "source": "user"}], '
+        '"conflicts": []}'
+    )
+    assert ok is not None
+    assert ok[0][0]["id"] == "q1"
+    assert ok[1][0]["key"] == "题材"
+
+
+@pytest.mark.asyncio
+async def test_start_llm_without_context_getter():
+    """llm_client 装配 + project_context_getter=None → ctx 空串路径（536）。"""
+    repo = _make_repo()
+    llm = _make_llm_client(
+        _llm_json(
+            questions=[
+                {
+                    "id": "q1",
+                    "text": "题材：悬疑为主还是悬疑+科幻混合？",
+                    "template": "悬疑为主，但加入 ___ 元素",
+                    "kind": "general",
+                },
+                {
+                    "id": "q2",
+                    "text": "篇幅：预计多少字？",
+                    "template": "约 ___ 字",
+                    "kind": "general",
+                },
+                {
+                    "id": "q3",
+                    "text": "主题：能否一句话描述主题？",
+                    "template": "主题是 ___",
+                    "kind": "general",
+                },
+            ]
+        )
+    )
+    svc = PlannerService(
+        repo=repo,
+        write_auto=AsyncMock(return_value=None),
+        llm_client=llm,
+        project_context_getter=None,  # 未装配
+        prompt_manager=None,
+    )
+
+    session = await svc.start(_pid(), "写一本关于时间旅者的悬疑小说")
+
+    assert session.status == "drafting"
+    assert len(session.asked_questions) == 3
+    llm.chat.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_generate_questions_no_llm_client_returns_none():
+    """_generate_questions 私有方法：llm_client=None → None（490 防御早退）。"""
+    repo = _make_repo()
+    svc = PlannerService(repo=repo, write_auto=AsyncMock(return_value=None))
+    session = _session(round=1, asked_questions=list(ROUND1_QUESTIONS))
+
+    assert await svc._generate_questions(session) is None
+
+
+@pytest.mark.asyncio
+async def test_apply_conflicts_resolved_no_pending_match():
+    """resolved 冲突但既有记录无 pending 匹配 → 686 内层 False 分支 + 仍追加。"""
+    session = _session(
+        round=2,
+        answers={"q5": "配角 5 个"},
+        conflicts=[
+            {
+                "round": 1,
+                "question_id": "q5",
+                "answer": "配角 5 个",
+                "conflict_with": "篇幅/复杂度合理性",
+                "resolution": "resolved",  # 已是 resolved，非 pending
+            }
+        ],
+    )
+    PlannerService._apply_conflicts(
+        session,
+        {"q6": "那配角 2 个"},
+        [{"conflict_with": "篇幅/复杂度合理性", "resolution": "resolved"}],
+    )
+
+    assert session.conflicts[0]["resolution"] == "resolved"
+    assert len(session.conflicts) == 2  # 新记录追加
+    assert session.conflicts[1]["conflict_with"] == "篇幅/复杂度合理性"
+
+
+@pytest.mark.asyncio
+async def test_apply_conflicts_empty_answers():
+    """answers 空 → first_qid/answer_text 空串分支（679-680）。"""
+    session = _session(round=1)
+    PlannerService._apply_conflicts(
+        session,
+        {},
+        [{"conflict_with": "篇幅/复杂度合理性", "resolution": "pending"}],
+    )
+
+    assert session.conflicts[0]["question_id"] == ""
+    assert session.conflicts[0]["answer"] == ""
+    assert session.conflicts[0]["round"] == 1
