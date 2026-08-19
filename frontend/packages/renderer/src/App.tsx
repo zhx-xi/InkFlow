@@ -19,6 +19,8 @@ import { SearchPage } from './pages/search';
 import { ProjectSettingsPage } from './pages/project-settings';
 import { SettingsPage } from './pages/settings';
 import { BookPage } from './pages/book';
+import { SessionsPage } from './pages/sessions';
+import { MemoryPage } from './pages/memory';
 
 /** 页面标题随路由变化（顶栏文本元素；正文 h1 承担 heading 语义） */
 const TITLE_BY_PATH: Record<string, string> = {
@@ -28,6 +30,8 @@ const TITLE_BY_PATH: Record<string, string> = {
   '/book': 'nav.book',
   '/library': 'lib.title',
   '/search': 'search.title',
+  '/sessions': 'nav.sessions',
+  '/memory': 'nav.memory',
   '/settings': 'set.title',
   '/settings/project': 'ps.title',
 };
@@ -117,6 +121,8 @@ function AppLayout() {
             <Route path="/book" element={<BookPage />} />
             <Route path="/library" element={<LibraryPage />} />
             <Route path="/search" element={<SearchPage />} />
+            <Route path="/sessions" element={<SessionsPage />} />
+            <Route path="/memory" element={<MemoryPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/settings/project" element={<ProjectSettingsPage />} />
             <Route path="*" element={<Navigate to="/projects" replace />} />

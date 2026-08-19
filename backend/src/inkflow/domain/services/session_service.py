@@ -148,6 +148,7 @@ class SessionService:
         search: str | None = None,
         offset: int = 0,
         limit: int = 50,
+        include_deleted: bool = False,
     ) -> tuple[builtins.list[SessionView], int]:
         """分页查询活动会话列表（过滤透传 + 每项视图聚合）.
 
@@ -158,6 +159,8 @@ class SessionService:
             search: 标题不区分大小写子串匹配（可选）.
             offset: 分页偏移.
             limit: 分页大小.
+            include_deleted: True = 含已归档全量（活动 + 归档一起返回）；默认 False
+                保持既有活动列表语义（#486 会话页需列出/恢复已归档会话）.
 
         Returns:
             (当前页 SessionView 列表, 符合条件的总记录数).
@@ -169,6 +172,7 @@ class SessionService:
             search,
             offset,
             limit,
+            include_deleted=include_deleted,
         )
         views = [await self._to_view(s) for s in sessions]
         return views, total

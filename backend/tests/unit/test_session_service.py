@@ -315,14 +315,18 @@ class TestList:
         assert isinstance(views[0], SessionView)
         assert views[0].session.title == "每日定时写作"
         assert views[1].session.status == SessionStatus.COMPLETED
-        mock_repo.list.assert_awaited_once_with("task", "completed", PID.int, "每日", 0, 20)
+        mock_repo.list.assert_awaited_once_with(
+            "task", "completed", PID.int, "每日", 0, 20, include_deleted=False
+        )
         assert mock_repo.count_logs.await_count == 2
         assert mock_repo.last_log.await_count == 2
 
     async def test_list_defaults(self, service: SessionService, mock_repo: MagicMock) -> None:
         """全缺省 → repo.list(None, None, None, None, 0, 50)（全量未归档）."""
         await service.list()
-        mock_repo.list.assert_awaited_once_with(None, None, None, None, 0, 50)
+        mock_repo.list.assert_awaited_once_with(
+            None, None, None, None, 0, 50, include_deleted=False
+        )
 
 
 class TestUpdate:
@@ -700,3 +704,23 @@ class TestDeleteRestore:
         """会话不存在 → None."""
         assert await service.restore(SID) is None
         mock_repo.restore.assert_not_awaited()
+
+
+class TestListIncludeDeleted:
+    """#486 会话 UI：list include_deleted 透传契约（会话页需列出/恢复已归档会话）。"""
+
+    async def test_list_default_excludes_deleted(
+        self, service: SessionService, mock_repo: MagicMock
+    ) -> None:
+        """默认 include_deleted=False → repo.list 收到 False（保持既有活动列表语义）。"""
+        await service.list()
+        mock_repo.list.assert_awaited_once_with(
+            None, None, None, None, 0, 50, include_deleted=False
+        )
+
+    async def test_list_include_deleted_true(
+        self, service: SessionService, mock_repo: MagicMock
+    ) -> None:
+        """include_deleted=True → repo.list 收到 True（活动+归档全量返回）。"""
+        await service.list(include_deleted=True)
+        mock_repo.list.assert_awaited_once_with(None, None, None, None, 0, 50, include_deleted=True)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -325,6 +325,28 @@ async def start_planner(
         "confirmed_items": session.confirmed_items,
         "conflicts": session.conflicts,
         "confirming": session.confirming,
+    }
+
+
+@router.get("/planner")
+async def list_planner_sessions(
+    project_id: str | None = Query(None),
+    status: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    svc: PlannerService = Depends(get_planner_service),
+):
+    """访谈会话列表（#486 会话页）→ {items, total, offset, limit}.
+
+    project_id / status 精确过滤；items 为 PlannerSession JSON（model_dump mode=json）.
+    """
+    pid = uuid.UUID(project_id) if project_id is not None else None
+    items, total = await svc.list(project_id=pid, status=status, offset=offset, limit=limit)
+    return {
+        "items": [s.model_dump(mode="json") for s in items],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
     }
 
 

@@ -4,12 +4,14 @@ import { Link, NavLink } from 'react-router-dom';
 import {
   BookOpen,
   Bot,
+  Brain,
   ChevronsLeft,
   ChevronsRight,
   Clock,
   Database,
   FolderOpen,
   Globe,
+  History,
   Library,
   ListTree,
   NotebookPen,
@@ -62,6 +64,8 @@ const LIBRARY_ITEMS: NavItemDef[] = [
 /** agent 快捷入口直达 /settings?cat=agent */
 const SYSTEM_ITEMS: NavItemDef[] = [
   { key: 'agent', href: '/settings?cat=agent', labelKey: 'nav.agent', icon: Bot },
+  { key: 'sessions', href: '/sessions', labelKey: 'nav.sessions', icon: History },
+  { key: 'memory', href: '/memory', labelKey: 'nav.memory', icon: Brain },
   { key: 'settings', href: '/settings', labelKey: 'nav.settings', icon: Settings },
 ];
 

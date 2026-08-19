@@ -489,3 +489,49 @@ class TestSessionRepository:
         s2 = await repo.add(_session(project, "另一会话"))
         e = await repo.add_log(_log(s2.id, 1))
         assert e.seq == 1
+
+
+class TestListIncludeDeleted:
+    """#486 会话 UI：list include_deleted 参数（会话页需列出/恢复已归档会话）。"""
+
+    async def test_list_default_excludes_archived(self, db_session, project):
+        """默认 list 不含已归档（既有活动列表语义不变）。"""
+        repo = SQLiteSessionRepository(db_session)
+        await repo.add(_session(project, "活动会话"))
+        archived = await repo.add(_session(project, "已归档会话"))
+        await repo.soft_delete(archived.id.int)
+
+        items, total = await repo.list()
+        assert total == 1
+        assert [s.title for s in items] == ["活动会话"]
+
+    async def test_list_include_deleted_returns_archived(self, db_session, project):
+        """include_deleted=True → 活动+归档全量（created_at DESC 排序保持）。"""
+        repo = SQLiteSessionRepository(db_session)
+        await repo.add(_session(project, "活动会话", created_at=_dt(2)))
+        archived = await repo.add(_session(project, "已归档会话", created_at=_dt(1)))
+        await repo.soft_delete(archived.id.int)
+
+        items, total = await repo.list(include_deleted=True)
+        assert total == 2
+        assert [s.title for s in items] == ["活动会话", "已归档会话"]
+        assert items[1].is_deleted is True
+
+    async def test_list_include_deleted_filter_combination(self, db_session, project):
+        """include_deleted=True 与过滤参数组合：类型过滤 + 分页仍生效。"""
+        repo = SQLiteSessionRepository(db_session)
+        await repo.add(_session(project, "写作一", created_at=_dt(3)))
+        archived = await repo.add(_session(project, "写作归档", created_at=_dt(2)))
+        await repo.soft_delete(archived.id.int)
+        await repo.add(
+            _session(project, "任务一", session_type=SessionType.TASK, created_at=_dt(1))
+        )
+
+        items, total = await repo.list(session_type="writing", include_deleted=True)
+        assert total == 2
+        assert [s.title for s in items] == ["写作一", "写作归档"]
+
+        items2, total2 = await repo.list(session_type="writing", include_deleted=True, limit=1)
+        assert total2 == 2
+        assert len(items2) == 1
+        assert items2[0].title == "写作一"

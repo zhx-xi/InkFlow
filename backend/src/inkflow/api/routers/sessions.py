@@ -124,9 +124,13 @@ async def list_sessions(
     search: str | None = Query(None),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
+    include_deleted: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
-    """会话列表（过滤 + 分页，spec §3.1/§6.3；project_id 解析为 UUID 透传）。"""
+    """会话列表（过滤 + 分页，spec §3.1/§6.3；project_id 解析为 UUID 透传）。
+
+    include_deleted=true 时活动 + 归档全量返回（#486 会话页需列出/恢复已归档会话）。
+    """
     pid = _parse_id(project_id, detail="会话不存在") if project_id is not None else None
     svc = _get_svc(db)
     items, total = await _run_service(
@@ -137,6 +141,7 @@ async def list_sessions(
             search=search,
             offset=offset,
             limit=limit,
+            include_deleted=include_deleted,
         )
     )
     return {
