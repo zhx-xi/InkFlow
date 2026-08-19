@@ -40,20 +40,20 @@ def _dt(day: int) -> datetime:
 def _session(**kw: object) -> PlannerSession:
     """构造 PlannerSession 领域对象（键值覆盖默认值）。"""
     return PlannerSession(
-        id=kw.pop("id", uuid.uuid4()),  # type: ignore[misc]
-        project_id=kw.pop("project_id", uuid.uuid4()),  # type: ignore[misc]
-        status=kw.pop("status", "drafting"),  # type: ignore[misc]
-        one_liner=kw.pop("one_liner", "测试一句话"),  # type: ignore[misc]
-        round=kw.pop("round", 2),  # type: ignore[misc]
-        asked_questions=kw.pop("asked_questions", []),  # type: ignore[misc]
-        answers=kw.pop("answers", {}),  # type: ignore[misc]
-        authorized=kw.pop("authorized", []),  # type: ignore[misc]
-        confirmed_items=kw.pop("confirmed_items", []),  # type: ignore[misc]
-        conflicts=kw.pop("conflicts", []),  # type: ignore[misc]
-        confirming=kw.pop("confirming", False),  # type: ignore[misc]
-        writing_plan_id=kw.pop("writing_plan_id", None),  # type: ignore[misc]
-        created_at=kw.pop("created_at", _dt(1)),  # type: ignore[misc]
-        updated_at=kw.pop("updated_at", _dt(1)),  # type: ignore[misc]
+        id=kw.pop("id", uuid.uuid4()),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
+        project_id=kw.pop("project_id", uuid.uuid4()),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
+        status=kw.pop("status", "drafting"),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
+        one_liner=kw.pop("one_liner", "测试一句话"),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
+        round=kw.pop("round", 2),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
+        asked_questions=kw.pop("asked_questions", []),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
+        answers=kw.pop("answers", {}),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
+        authorized=kw.pop("authorized", []),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
+        confirmed_items=kw.pop("confirmed_items", []),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
+        conflicts=kw.pop("conflicts", []),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
+        confirming=kw.pop("confirming", False),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
+        writing_plan_id=kw.pop("writing_plan_id", None),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
+        created_at=kw.pop("created_at", _dt(1)),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
+        updated_at=kw.pop("updated_at", _dt(1)),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
     )
 
 
