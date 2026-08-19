@@ -15,6 +15,7 @@ import { ToastHost } from './components/ui/toast';
 import { WritingPage } from './pages/writing';
 import { ProjectsPage } from './pages/projects';
 import { LibraryPage } from './pages/library';
+import { SearchPage } from './pages/search';
 import { ProjectSettingsPage } from './pages/project-settings';
 import { SettingsPage } from './pages/settings';
 import { BookPage } from './pages/book';
@@ -26,6 +27,7 @@ const TITLE_BY_PATH: Record<string, string> = {
   '/writing': 'nav.writing',
   '/book': 'nav.book',
   '/library': 'lib.title',
+  '/search': 'search.title',
   '/settings': 'set.title',
   '/settings/project': 'ps.title',
 };
@@ -114,6 +116,7 @@ function AppLayout() {
             <Route path="/writing" element={<WritingPage />} />
             <Route path="/book" element={<BookPage />} />
             <Route path="/library" element={<LibraryPage />} />
+            <Route path="/search" element={<SearchPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/settings/project" element={<ProjectSettingsPage />} />
             <Route path="*" element={<Navigate to="/projects" replace />} />

@@ -18,6 +18,7 @@ export const zh = {
   'nav.lib.timeline': '时间线',
   'nav.lib.foreshadow': '伏笔',
   'nav.lib.knowledge': '知识图谱',
+  'nav.search': '检索',
   // 状态栏
   'sb.kernel': '内核已连接',
   'sb.kernelOffline': '内核未就绪',
@@ -193,6 +194,21 @@ export const zh = {
   'lib.knowledge.graphSummary': '图谱数据摘要',
   'lib.knowledge.node.goEdit': '去编辑',
   'lib.knowledge.edge.source': '来源',
+  // #480：检索页（RAG embedding 语义/关键词检索）
+  'search.title': '检索',
+  'search.sub': '基于 RAG embedding 的语义/关键词检索',
+  'search.placeholder': '输入要检索的内容…',
+  'search.mode.label': '检索模式',
+  'search.mode.keyword': '关键词',
+  'search.mode.semantic': '语义',
+  'search.project.label': '项目',
+  'search.project.placeholder': '选择项目',
+  'search.btn': '检索',
+  'search.empty': '未找到相关内容',
+  'search.noProject': '请先创建或选择项目',
+  'search.loading': '检索中…',
+  'search.error': '检索失败，请重试',
+  'search.results': '共 {total} 条结果',
   // 设置页
   // #482：项目聚合设置页（/settings/project）
   'ps.title': '项目设置',
