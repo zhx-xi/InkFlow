@@ -11,7 +11,7 @@ system_prompt: |
       {"id": "q1", "text": "问题文本", "template": "问题即模板（___ 为填空）", "kind": "general|targeted|conflict"}
     ],
     "confirmed_items": [
-      {"key": "确定项 key", "value": "确定值", "source": "user|llm_inferred"}
+      {"key": "确定项 key（必须中文：题材/篇幅/主题/主角/配角/结局/世界观 等；通用必答项 key 恒为「题材」「篇幅」「主题」）", "value": "确定值", "source": "user|llm_inferred"}
     ],
     "conflicts": [
       {"conflict_with": "冲突项", "resolution": "pending|resolved"}

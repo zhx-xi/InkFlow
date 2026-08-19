@@ -84,6 +84,19 @@ _AUTHORIZE_MARKERS = ("配角自定", "自定")
 _MUST_ANSWER_KEYS = ("题材", "篇幅", "主题")
 """通用必答项 key（服务端强约束，搂6 R11 ②）：LLM 输出必须覆盖未确认必答项."""
 
+_KEY_NORMALIZE = {
+    "genre": "题材",
+    "length": "篇幅",
+    "theme": "主题",
+    "ending": "结局",
+    "protagonist_name": "主角",
+    "protagonist": "主角",
+    "worldview": "世界观",
+    "sect": "门派",
+    "supporting_character": "配角",
+}
+"""英文 key → 中文必答项（#517 兜底：LLM 输出自由，合并前收敛；未知英文 key 原样保留）."""
+
 _LLM_TEMPLATE_NAME = "planner_interview"
 """LLM 动态提问模板名（infrastructure/llm/templates/planner_interview.yaml）."""
 
@@ -455,9 +468,7 @@ class PlannerService:
 
         confirmed_keys = {str(item.get("key", "")) for item in session.confirmed_items}
         filtered = [
-            q
-            for q in llm_result
-            if not any(k in str(q.get("text", "")) for k in confirmed_keys)
+            q for q in llm_result if not any(k in str(q.get("text", "")) for k in confirmed_keys)
         ]
 
         if self._must_answers_ready(session) and not self._has_pending_conflict(session):
@@ -642,8 +653,7 @@ class PlannerService:
             if not isinstance(item, dict):
                 return None
             if not all(
-                isinstance(item.get(key), str) and item.get(key)
-                for key in ("id", "text", "kind")
+                isinstance(item.get(key), str) and item.get(key) for key in ("id", "text", "kind")
             ):
                 return None
             questions.append(item)
@@ -671,13 +681,18 @@ class PlannerService:
     def _merge_confirmed_items(session: PlannerSession, incoming: builtins.list[dict]) -> None:
         """按 key 合并 confirmed_items：新 key 追加、已存在 key 覆盖 value/source."""
         for item in incoming:
-            key = item.get("key")
+            raw_key = item.get("key")
+            key = (
+                _KEY_NORMALIZE.get(raw_key, raw_key) if isinstance(raw_key, str) else raw_key
+            )  # #517 英文→中文兜底
             existing = next(
                 (candidate for candidate in session.confirmed_items if candidate.get("key") == key),
                 None,
             )
             if existing is None:
-                session.confirmed_items.append(dict(item))
+                merged = dict(item)
+                merged["key"] = key
+                session.confirmed_items.append(merged)
             else:
                 existing["value"] = item.get("value")
                 existing["source"] = item.get("source", existing.get("source"))
@@ -756,4 +771,3 @@ def _first_unanswered(questions: list[dict], answers: dict[str, str]) -> str | N
         if isinstance(qid, str) and qid not in answers:
             return qid
     return None
-
