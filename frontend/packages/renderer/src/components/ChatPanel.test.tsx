@@ -23,9 +23,21 @@
  *
  * i18n key（GREEN 补）：write.chat.placeholder / write.chat.send / write.chat.insert /
  * write.chat.inserted / write.chat.failed
+ *
+ * 展开/收缩/拖动契约（#476 D2，2026-08-19 追加）：
+ * - chat-expand（展开对话按钮，aria-label = write.chat.expand「展开对话」）
+ * - chat-collapse（收起对话按钮，aria-label = write.chat.collapse「收起对话」）
+ * - chat-messages（消息区容器，条件渲染：有消息且展开时才存在）
+ * - chat-resize-handle（拖动把手，展开态渲染）
+ * - 默认折叠（chat-messages 不渲染）；点 chat-expand 展开；点 chat-collapse 收起
+ * - 折叠态发送消息 → 自动展开（chat-messages 出现，消息可见）
+ * - 收缩再展开 → 历史消息保留
+ * - 鼠标拖动调整高度：mousedown(handle) → mousemove(window) → chat-messages 的
+ *   data-height 属性变化（px 字符串，向上拖 = 增大）；mouseup(window) 结束
+ * i18n key（GREEN 补）：write.chat.expand / write.chat.collapse
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ChatPanel } from './ChatPanel';
 import { executePipeline, getExecutionStatus, type PipelineExecuteResponse } from '../api/pipeline';
@@ -321,5 +333,65 @@ describe('ChatPanel — 模型未配置前置校验（#474 P0）', () => {
         expect.objectContaining({ pipeline: 'builtin:chat' }),
       );
     });
+  });
+});
+
+describe('ChatPanel — 展开/收缩/拖动（#476 D2：对话区高度交互）', () => {
+  /**
+   * 契约：#476 底部 chat 搬入工具栏栏后，对话区支持展开/收缩/鼠标拖动调整高度。
+   * 布局与交互语义见文件头 docstring（chat-expand / chat-collapse / chat-messages /
+   * chat-resize-handle / 默认折叠 / 发送自动展开 / 拖动改 data-height）。
+   *
+   * 拖动模拟（#388 窗口级拖拽模式）：mousedown 打 handle 元素、mousemove/mouseup 打 window。
+   * 高度断言只锁「变化 + 变大」（clamp 上下限由 GREEN 定，默认展开高度须低于上限）。
+   */
+  it('默认折叠：chat-messages 不渲染；chat-expand 可见', () => {
+    render(<ChatPanel {...OPTS} />);
+    expect(screen.getByTestId('chat-expand')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-messages')).not.toBeInTheDocument();
+  });
+
+  it('折叠态发送消息 → 自动展开：chat-messages 出现 + 用户消息可见 + chat-collapse 可见', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    expect(screen.queryByTestId('chat-messages')).not.toBeInTheDocument();
+    await user.type(screen.getByTestId('chat-input'), '自动展开测试');
+    await user.click(screen.getByTestId('chat-send'));
+    expect(screen.getByTestId('chat-messages')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-msg-user-0')).toHaveTextContent('自动展开测试');
+    expect(screen.getByTestId('chat-collapse')).toBeInTheDocument();
+  });
+
+  it('收缩 → chat-messages 隐藏；再展开 → 历史消息保留', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await user.type(screen.getByTestId('chat-input'), '保留测试');
+    await user.click(screen.getByTestId('chat-send'));
+    expect(screen.getByTestId('chat-messages')).toBeInTheDocument();
+    // 收缩
+    await user.click(screen.getByTestId('chat-collapse'));
+    expect(screen.queryByTestId('chat-messages')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-expand')).toBeInTheDocument();
+    // 再展开 → 消息保留
+    await user.click(screen.getByTestId('chat-expand'));
+    expect(screen.getByTestId('chat-messages')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-msg-user-0')).toHaveTextContent('保留测试');
+  });
+
+  it('鼠标拖动调整对话区高度（handle mousedown → window mousemove 向上拖 → data-height 增大）', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await user.type(screen.getByTestId('chat-input'), '拖拽高度');
+    await user.click(screen.getByTestId('chat-send'));
+    const messages = screen.getByTestId('chat-messages');
+    const before = messages.getAttribute('data-height');
+    expect(before).toBeTruthy();
+    const handle = screen.getByTestId('chat-resize-handle');
+    fireEvent.mouseDown(handle, { clientX: 100, clientY: 120 });
+    fireEvent.mouseMove(window, { clientX: 100, clientY: 80 }); // 向上拖 40px → 高度增大
+    fireEvent.mouseUp(window);
+    const after = messages.getAttribute('data-height');
+    expect(after).toBeTruthy();
+    expect(Number(after)).toBeGreaterThan(Number(before));
   });
 });
