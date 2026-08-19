@@ -22,6 +22,7 @@ domain/ 零框架 import 门禁天然满足（ADR-002/015）.
 
 from __future__ import annotations
 
+import builtins
 import json
 import uuid
 from collections.abc import Awaitable, Callable
@@ -29,7 +30,6 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
-import builtins
 from inkflow.domain.models.planner_session import PlannerSession
 from inkflow.domain.models.writing_plan import STAGE1_LIMITS, WritingPlan
 from inkflow.domain.services._outline_generator import _extract_json_fragment
