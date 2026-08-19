@@ -368,6 +368,8 @@ export const zh = {
   'write.chat.insert': '插入正文',
   'write.chat.inserted': '已插入正文，按 Ctrl+S 保存',
   'write.chat.failed': '对话失败: {message}',
+  'write.chat.expand': '展开对话',
+  'write.chat.collapse': '收起对话',
   'write.view.toDetail': '查看 AI 执行详情',
   'write.view.toEditor': '返回正文编辑',
   'write.detail.empty': '暂无执行记录',

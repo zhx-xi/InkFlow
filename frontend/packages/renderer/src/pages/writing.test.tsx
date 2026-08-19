@@ -570,12 +570,22 @@ describe('写作页 — HITL 确认流（#343：waiting_hitl → 内联确认卡
   });
 });
 
-describe('写作页 — 底部 AI 聊天框（#379 F47 §4.1）', () => {
+describe('写作页 — 顶部工具栏区 AI 聊天框（#476 D2：chat 搬入工具栏栏）', () => {
   it('渲染 chat-panel（聊天输入框 + 发送按钮；空输入发送禁用）', () => {
     render(<WritingPage />);
     expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
     expect(screen.getByTestId('chat-input')).toBeInTheDocument();
     expect(screen.getByTestId('chat-send')).toBeDisabled();
+  });
+
+  it('chat 位于工具栏栏：editor main 内 editor-toolbar 之后（非页面底部 StatusBar 区）', () => {
+    render(<WritingPage />);
+    const editor = screen.getByTestId('editor');
+    const toolbar = screen.getByTestId('editor-toolbar');
+    // #476 契约：chat-panel 必须渲染在 editor main 内（旧实现是 main 外的底部兄弟节点）
+    const chat = within(editor).getByTestId('chat-panel');
+    // 且文档顺序上位于 editor-toolbar 之后（紧贴工具栏栏下方）
+    expect(toolbar.compareDocumentPosition(chat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
