@@ -650,6 +650,9 @@ DEFAULT_SETTINGS = {
     "rag_chunk_size": 500,
     "rag_chunk_overlap": False,
     "rag_chunk_overlap_ratio": 0.15,
+    "kg_extract_enabled": False,
+    "kg_extract_interval_hours": 24,
+    "kg_extract_method": "rule",
 }
 
 

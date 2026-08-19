@@ -104,6 +104,39 @@ def graph_cmd(
 
 
 # ---------------------------------------------------------------------------
+# extract — inkflow knowledge extract --project <uuid> [--method rule|ai|both]
+# ---------------------------------------------------------------------------
+
+
+@app.command("extract")
+def extract_cmd(
+    ctx: typer.Context,
+    project_id: str = typer.Option(..., "--project", help="项目 ID (UUID)"),
+    method: str | None = typer.Option(
+        None, "--method", help="提取方式 rule/ai/both（缺省跟随设置）"
+    ),
+) -> None:
+    """手动触发知识图谱关系提取"""
+    cli_ctx: CliContext = ctx.obj
+    pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
+
+    async def _impl() -> dict:
+        body: dict[str, str] = {"project_id": str(pid)}
+        if method is not None:
+            body["method"] = method
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post("/knowledge/extract", json=body)
+
+    data = _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, data)
+    else:
+        typer.echo(f"✅ 提取完成: 新增 {data.get('created', 0)} 条关系（{data.get('status', '')}）")
+
+
+# ---------------------------------------------------------------------------
 # relation list — inkflow knowledge relation list <project_id> [--source-type]
 #                 [--target-type] [--relation-type]
 # ---------------------------------------------------------------------------

@@ -53,13 +53,15 @@ from inkflow.domain.models.settings import (
 
 
 def _defaults() -> dict:
-    """14 字段默认字典（§2.1 表 + §2.2 AppSettings 默认值）。
+    """17 字段默认字典（§2.1 表 + §2.2 AppSettings 默认值）。
 
     F27 扩展（#160 Q2 拍板）：agent_max_steps/agent_token_budget/
     agent_max_total_tool_calls 预算护栏设置键（ADR-C 默认值 12/32K/20；
     #430 语义改造: 单工具连续 → 会话总调用上限）。
     #277 M3 扩展（spec §5.6.1/§5.6.3）：rag_chunk_mode/rag_chunk_size/
     rag_chunk_overlap/rag_chunk_overlap_ratio 切片配置 4 键。
+    #479 扩展（spec f48 §5.5.2）：kg_extract_enabled/interval_hours/method
+    知识图谱定时提取三键（默认 False/24/rule，开箱零成本零风险）。
     """
     return {
         "theme": "paper",
@@ -76,6 +78,9 @@ def _defaults() -> dict:
         "rag_chunk_size": 500,
         "rag_chunk_overlap": False,
         "rag_chunk_overlap_ratio": 0.15,
+        "kg_extract_enabled": False,
+        "kg_extract_interval_hours": 24,
+        "kg_extract_method": "rule",
     }
 
 
@@ -119,6 +124,9 @@ class TestAppSettings:
             "rag_chunk_size": 600,
             "rag_chunk_overlap": True,
             "rag_chunk_overlap_ratio": 0.18,
+            "kg_extract_enabled": False,
+            "kg_extract_interval_hours": 24,
+            "kg_extract_method": "rule",
         }
 
     def test_json_roundtrip(self):
@@ -172,7 +180,7 @@ class TestSettingsKey:
     """SettingsKey 枚举契约（§2.2，service 白名单依赖 value 构造）。"""
 
     def test_members_and_values(self):
-        """14 成员 + value 与 §2.1 设置键名一一对应。"""
+        """17 成员 + value 与 §2.1 设置键名一一对应（#479 追加 kg_extract_* 三键）。"""
         assert {k.name: k.value for k in SettingsKey} == {
             "THEME": "theme",
             "BG": "bg",
@@ -188,6 +196,9 @@ class TestSettingsKey:
             "RAG_CHUNK_SIZE": "rag_chunk_size",
             "RAG_CHUNK_OVERLAP": "rag_chunk_overlap",
             "RAG_CHUNK_OVERLAP_RATIO": "rag_chunk_overlap_ratio",
+            "KG_EXTRACT_ENABLED": "kg_extract_enabled",
+            "KG_EXTRACT_INTERVAL_HOURS": "kg_extract_interval_hours",
+            "KG_EXTRACT_METHOD": "kg_extract_method",
         }
 
     def test_construct_by_value(self):
@@ -235,3 +246,72 @@ class TestChunkSettingsValidation:
     def test_accepts_valid_chunk_settings(self, kwargs):
         """切片配置合法边界值可构造（防实现收窄）。"""
         AppSettingsUpdate(**kwargs)
+
+
+class TestKgExtractSettings:
+    """#479 知识图谱定时提取三键（spec f48 §5.5.2）— SettingsKey / AppSettings / Update。
+
+    RED 形态: SettingsKey 新枚举成员 / AppSettings 新字段缺失 → AttributeError；
+    AppSettingsUpdate 新字段缺失（extra='forbid' 拒绝一切值）→ 合法值用例抛
+    ValidationError（假绿防护核心）；默认值断言失败 → AssertionError。
+    """
+
+    def test_settings_key_new_members(self):
+        """SettingsKey 新增三枚举成员（spec f48 §5.5.2 键名表）。"""
+        assert SettingsKey.KG_EXTRACT_ENABLED.value == "kg_extract_enabled"
+        assert SettingsKey.KG_EXTRACT_INTERVAL_HOURS.value == "kg_extract_interval_hours"
+        assert SettingsKey.KG_EXTRACT_METHOD.value == "kg_extract_method"
+
+    def test_construct_new_keys_by_value(self):
+        """新键按 value 构造（service 白名单 SettingsKey(field) 依赖）。"""
+        assert SettingsKey("kg_extract_enabled") is SettingsKey.KG_EXTRACT_ENABLED
+        assert SettingsKey("kg_extract_method") is SettingsKey.KG_EXTRACT_METHOD
+
+    def test_app_settings_defaults(self):
+        """AppSettings 三键默认值: False / 24 / 'rule'（开箱零成本零风险，§5.5.2）。"""
+        s = AppSettings()
+        assert s.kg_extract_enabled is False
+        assert s.kg_extract_interval_hours == 24
+        assert s.kg_extract_method == "rule"
+
+    def test_app_settings_custom_values(self):
+        """三键显式构造 + JSON roundtrip。"""
+        s = AppSettings(
+            kg_extract_enabled=True,
+            kg_extract_interval_hours=6,
+            kg_extract_method="both",
+        )
+        assert s.kg_extract_enabled is True
+        assert s.kg_extract_interval_hours == 6
+        assert s.kg_extract_method == "both"
+        assert AppSettings.model_validate(s.model_dump()) == s
+
+    def test_guard_existing_defaults_unchanged(self):
+        """守护: 既有字段默认值不变（theme/rag_chunk_size/default_words 抽查）——
+        当前应 PASS。"""
+        s = AppSettings()
+        assert s.theme == "paper"
+        assert s.rag_chunk_size == 500
+        assert s.default_words == 800000
+
+    def test_update_accepts_valid_values(self):
+        """AppSettingsUpdate 三键合法值可构造（RED 期字段缺失 + extra='forbid' →
+        ValidationError——本用例是假绿防护核心，GREEN 后必须放行）。"""
+        u1 = AppSettingsUpdate(kg_extract_enabled=True)
+        assert u1.kg_extract_enabled is True
+        u2 = AppSettingsUpdate(kg_extract_interval_hours=168)
+        assert u2.kg_extract_interval_hours == 168
+        u3 = AppSettingsUpdate(kg_extract_method="ai")
+        assert u3.kg_extract_method == "ai"
+
+    @pytest.mark.parametrize("interval", [0, 169, -1, 1000])
+    def test_update_rejects_interval_out_of_range(self, interval):
+        """kg_extract_interval_hours 越界（1 ≤ v ≤ 168，§5.5.2 约束表）→ ValidationError。"""
+        with pytest.raises(ValidationError):
+            AppSettingsUpdate(kg_extract_interval_hours=interval)
+
+    @pytest.mark.parametrize("method", ["llm", "ai_only", "rule+ai", ""])
+    def test_update_rejects_invalid_method(self, method):
+        """kg_extract_method 非法值（Literal rule/ai/both 外）→ ValidationError（422）。"""
+        with pytest.raises(ValidationError):
+            AppSettingsUpdate(kg_extract_method=method)

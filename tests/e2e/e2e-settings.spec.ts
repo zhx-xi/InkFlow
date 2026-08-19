@@ -148,8 +148,10 @@ test('设置页：常规分类主题 radio 切换生效（html data-theme）', a
     expect(await window.evaluate(() => location.hash)).toContain('/settings');
     await expect(window.getByTestId('settings-panel')).toBeVisible();
 
-    // 主题三选 radio（素笺/夜航/墨韵）
-    const radios = window.getByRole('radio');
+    // 主题三选 radio（素笺/夜航/墨韵）——#479 后常规分类新增知识图谱提取卡片的
+    // method radio（仅规则/仅 AI/规则+AI），故收窄到主题预览卡 testid，避免把
+    // 提取方式 radio 计入「主题 radio=3」的断言
+    const radios = window.getByTestId(/^theme-preview-/);
     await expect(radios).toHaveCount(3);
     await expect(window.getByRole('radio', { name: /素笺/ })).toBeVisible();
     await expect(window.getByRole('radio', { name: /夜航/ })).toBeVisible();
