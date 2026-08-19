@@ -5,6 +5,24 @@ export interface PlannerQuestion {
   id: string;
   text: string;
   template: string;
+  /** F44 v1.2 #475：问题类型（conflict=冲突回问；可选，既有 seed 无 kind 向后兼容） */
+  kind?: 'general' | 'targeted' | 'conflict';
+}
+
+/** F44 v1.2 #475：末尾总体确认阶段确定项（wire 契约） */
+export interface ConfirmedItem {
+  key: string;
+  value: string;
+  source: 'user' | 'llm_inferred' | 'auto';
+}
+
+/** F44 v1.2 #475：冲突记录（round/question_id/answer 可选，向后兼容） */
+export interface ConflictRecord {
+  round?: number;
+  question_id?: string;
+  answer?: string;
+  conflict_with: string;
+  resolution: 'pending' | 'resolved';
 }
 
 export interface PlannerStartResponse {
@@ -12,11 +30,18 @@ export interface PlannerStartResponse {
   round: number;
   questions: PlannerQuestion[];
   max_rounds: number;
+  /** F44 v1.2 #475：末尾总体确认数据（可选，向后兼容） */
+  confirmed_items?: ConfirmedItem[];
+  conflicts?: ConflictRecord[];
+  confirming?: boolean;
 }
 
 export interface PlannerRespondRequest {
-  answers: Record<string, string>;
+  /** v1.2 #475：confirm=true（末尾总体确认）时无 answers 键 */
+  answers?: Record<string, string>;
   auto?: boolean;
+  /** F44 v1.2 #475：末尾总体确认（confirm=true 时请求体不含 auto 键） */
+  confirm?: boolean;
 }
 
 export interface WritingPlanDto {
@@ -40,6 +65,10 @@ export interface PlannerRespondResponse {
   completed: boolean;
   questions: PlannerQuestion[];
   writing_plan: WritingPlanDto | null;
+  /** F44 v1.2 #475：末尾总体确认数据（可选，向后兼容） */
+  confirmed_items?: ConfirmedItem[];
+  conflicts?: ConflictRecord[];
+  confirming?: boolean;
 }
 
 export interface PlannerSessionDto {
@@ -54,6 +83,10 @@ export interface PlannerSessionDto {
   writing_plan_id: string | null;
   created_at: string;
   updated_at: string;
+  /** F44 v1.2 #475：末尾总体确认数据（可选，向后兼容） */
+  confirmed_items?: ConfirmedItem[];
+  conflicts?: ConflictRecord[];
+  confirming?: boolean;
 }
 
 export interface BookRunRequest {
@@ -121,7 +154,8 @@ export async function respondPlanner(
 ): Promise<PlannerRespondResponse> {
   return apiFetch<PlannerRespondResponse>(`/api/v1/agent/books/planner/${sessionId}/respond`, {
     method: 'POST',
-    body: { ...body, auto: body.auto ?? false },
+    // v1.2 #475：confirm=true（末尾总体确认）时 body 精确为 {confirm:true}，不注入 auto 键
+    body: { ...body, ...(body.confirm === true ? {} : { auto: body.auto ?? false }) },
   });
 }
 

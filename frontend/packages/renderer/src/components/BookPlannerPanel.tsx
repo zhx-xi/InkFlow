@@ -17,16 +17,21 @@ export function BookPlannerPanel({ projectId }: BookPlannerPanelProps) {
   const sessionStatus = useBookStore((s) => s.sessionStatus);
   const questions = useBookStore((s) => s.questions);
   const answers = useBookStore((s) => s.answers);
+  const messages = useBookStore((s) => s.messages);
   const error = useBookStore((s) => s.error);
   const writingPlan = useBookStore((s) => s.writingPlan);
   const runId = useBookStore((s) => s.runId);
   const startPlanner = useBookStore((s) => s.startPlanner);
   const respond = useBookStore((s) => s.respond);
   const respondAuto = useBookStore((s) => s.respondAuto);
+  const respondConfirm = useBookStore((s) => s.respondConfirm);
   const startRun = useBookStore((s) => s.startRun);
 
   const [oneLiner, setOneLiner] = useState('');
   const [answer, setAnswer] = useState('');
+  /** F44 v1.2 #475：确认卡片修改编辑态（key + 新值） */
+  const [editKey, setEditKey] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
 
   const handleStart = async () => {
     const text = oneLiner.trim();
@@ -51,6 +56,22 @@ export function BookPlannerPanel({ projectId }: BookPlannerPanelProps) {
 
   const handleTemplate = (template: string) => {
     setAnswer(template);
+  };
+
+  /** 进入修改编辑态：从空值开始输入（提交回问 answers 键 = 确定项 key） */
+  const startEdit = (key: string) => {
+    setEditKey(key);
+    setEditValue('');
+  };
+
+  /** 提交修改：respond({key: 新值}) 回 questioning 重问，随后清空编辑态 */
+  const submitEdit = () => {
+    if (editKey === null) return;
+    const text = editValue.trim();
+    if (!text) return;
+    void respond({ [editKey]: text });
+    setEditKey(null);
+    setEditValue('');
   };
 
   const canSend = answer.trim() !== '';
@@ -164,21 +185,113 @@ export function BookPlannerPanel({ projectId }: BookPlannerPanelProps) {
 
       {sessionStatus === 'drafting' && (
         <div className="rounded-md border border-line bg-surface-2 p-3">
-          {questions.map((q) => (
-            <div key={q.id} className="mb-3 last:mb-0">
-              <p data-testid={`book-question-${q.id}`} className="text-[13px] text-ink">
-                {q.text}
-              </p>
-              <button
-                type="button"
-                data-testid={`book-template-${q.id}`}
-                className="mt-1 rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
-                onClick={() => handleTemplate(q.template)}
-              >
-                {t('book.template.copy')}
-              </button>
-            </div>
-          ))}
+          {/* F44 v1.2 #475：对话式消息流（spec §5.1 PR-2；user 消息 + assistant 问题 + 确认卡片） */}
+          <div data-testid="book-msg-list" className="space-y-3">
+            {messages.map((m, index) => {
+              if (m.role === 'user') {
+                return (
+                  <div
+                    key={m.id}
+                    data-testid={`book-msg-user-${index}`}
+                    className="rounded-md bg-surface px-3 py-2 text-[13px] text-ink"
+                  >
+                    {m.text}
+                  </div>
+                );
+              }
+              if (m.kind === 'question') {
+                const isConflict = m.questionKind === 'conflict';
+                return (
+                  <div
+                    key={m.id}
+                    data-testid={isConflict ? `book-msg-conflict-${m.questionId}` : undefined}
+                    className={
+                      isConflict
+                        ? 'rounded-md border border-err/40 bg-err/10 px-3 py-2'
+                        : 'rounded-md bg-surface px-3 py-2'
+                    }
+                  >
+                    <p data-testid={`book-question-${m.questionId}`} className="text-[13px] text-ink">
+                      {m.text}
+                    </p>
+                    {isConflict && (
+                      <span className="mt-1 inline-block text-[12px] text-err">{t('book.conflict.label')}</span>
+                    )}
+                    <button
+                      type="button"
+                      data-testid={`book-template-${m.questionId}`}
+                      className="mt-1 rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
+                      onClick={() => handleTemplate(m.template ?? '')}
+                    >
+                      {t('book.template.copy')}
+                    </button>
+                  </div>
+                );
+              }
+              if (m.kind === 'confirm_summary') {
+                return (
+                  <div
+                    key={m.id}
+                    data-testid="book-confirm-card"
+                    className="rounded-md border border-accent/40 bg-accent-weak px-3 py-2"
+                  >
+                    <p className="text-[13px] font-medium text-ink">{m.text || t('book.confirm.title')}</p>
+                    <ul className="mt-2 space-y-1">
+                      {m.confirmedItems?.map((item) => (
+                        <li
+                          key={item.key}
+                          data-testid={`book-confirm-item-${item.key}`}
+                          className="text-[13px] text-ink-2"
+                        >
+                          {item.key}：{item.value}
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        data-testid="book-confirm-ok"
+                        className="rounded-md bg-accent px-3 py-1 text-[12px] text-accent-ink hover:bg-accent-hover"
+                        onClick={() => void respondConfirm()}
+                      >
+                        {t('book.confirm.ok')}
+                      </button>
+                      {m.confirmedItems?.map((item) => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          data-testid={`book-confirm-edit-${item.key}`}
+                          className="rounded-md border border-line px-2 py-1 text-[12px] text-ink-2 hover:bg-surface-3"
+                          onClick={() => startEdit(item.key)}
+                        >
+                          {t('book.confirm.edit')}
+                        </button>
+                      ))}
+                    </div>
+                    {editKey !== null && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          data-testid={`book-confirm-edit-input-${editKey}`}
+                          className="flex-1 rounded-md border border-line bg-surface px-2 py-1 text-[13px] text-ink outline-none focus:border-accent"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          data-testid={`book-confirm-edit-submit-${editKey}`}
+                          className="rounded-md bg-accent px-3 py-1 text-[12px] text-accent-ink hover:bg-accent-hover"
+                          onClick={submitEdit}
+                        >
+                          {t('book.confirm.editSubmit')}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              return null;
+            })}
+          </div>
 
           {error && (
             <p data-testid="book-planner-error" className="mt-3 text-[13px] text-err">

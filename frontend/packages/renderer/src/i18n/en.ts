@@ -519,6 +519,12 @@ export const en: Record<string, string> = {
   'book.plan.auto': 'Auto-generated',
   'book.startRun': 'Start Writing',
   'book.error': 'Interview error',
+  // F44 v1.2 #475: conversation-style interview final confirmation (confirm_summary card)
+  'book.confirm.title': 'Confirm these settings?',
+  'book.confirm.ok': 'Confirm',
+  'book.confirm.edit': 'Edit',
+  'book.confirm.editSubmit': 'Submit',
+  'book.conflict.label': 'Conflict',
   'book.trace.pending': 'Pending',
   'book.trace.in_progress': 'In progress',
   'book.trace.done': 'Done',
