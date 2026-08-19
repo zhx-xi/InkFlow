@@ -31,10 +31,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import (
     get_db,
-    get_kg_extract_scheduler,
     get_knowledge_graph_service,
-    get_relation_extraction_service,
     get_settings_service,
+)
+from inkflow.api.deps_kg_extract import (
+    get_kg_extract_scheduler,
+    get_relation_extraction_service,
 )
 from inkflow.domain.models.knowledge_graph import (
     KnowledgeRelationCreate,

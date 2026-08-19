@@ -99,7 +99,7 @@ async def lifespan(app: FastAPI):
     # #479 G2: 知识图谱定时提取调度器装配（应用级 session 长活，shutdown 关闭；
     # 手动触发端点与定时触发共用 RelationExtractionService，G1 契约
     # extraction_run_repo=None，run 记录落盘归 #496 承接）
-    from inkflow.api.deps import get_relation_extraction_service
+    from inkflow.api.deps_kg_extract import get_relation_extraction_service
     from inkflow.domain.services.settings_service import SettingsService
     from inkflow.infrastructure.database.repositories.project_repo import (
         SQLiteProjectRepository,
