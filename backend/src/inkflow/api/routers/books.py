@@ -28,10 +28,12 @@ class PlannerStartRequest(BaseModel):
 
 
 class PlannerRespondRequest(BaseModel):
-    """回复本轮问题请求体（或 auto=true 全部你决定）。"""
+    """回复本轮问题请求体（或 auto=true 全部你决定；confirm=true 末尾总体确认）。"""
 
     answers: dict[str, str] = Field(default_factory=dict)
     auto: bool = False
+    confirm: bool = False
+    """末尾总体确认（v1.2 #475：confirming=true 时可用，§3.2）。"""
 
 
 class BookRunRequest(BaseModel):
@@ -59,7 +61,7 @@ class InterveneRequest(BaseModel):
 
 
 def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
-    """获取 PlannerService 实例（repo + write_auto/outline/character 装配，#460）。"""
+    """获取 PlannerService 实例（repo + write_auto/outline/character/LLM 提问装配，#460/#475）。"""
     from inkflow.domain.services.character_service import CharacterService
     from inkflow.domain.services.outline_service import OutlineService
     from inkflow.domain.services.planner_service import PlannerService
@@ -67,10 +69,35 @@ def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
         SQLiteCharacterRepository,
     )
     from inkflow.infrastructure.database.repositories.outline_repo import SQLiteOutlineRepository
+    from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+    from inkflow.infrastructure.llm.prompt_manager import LangChainPromptManager
     from inkflow.infrastructure.repositories.book_repository import SQLiteBookRepository
 
     outline_svc = OutlineService(repository=SQLiteOutlineRepository(db))
     character_svc = CharacterService(repository=SQLiteCharacterRepository(db))
+
+    async def _project_context_getter(project_id: uuid.UUID) -> str:
+        """项目设定摘要：outline/character 已落库内容拼接（供 LLM 针对性提问，§5.1）。"""
+        try:
+            outline_repo = SQLiteOutlineRepository(db)
+            character_repo = SQLiteCharacterRepository(db)
+            pid = project_id.int if isinstance(project_id, uuid.UUID) else project_id
+            outlines, _ = await outline_repo.list(pid, offset=0, limit=50)
+            chars, _ = await character_repo.list(pid, offset=0, limit=50)
+            parts: list[str] = []
+            for outline in outlines or []:
+                name = getattr(outline, "name", "")
+                desc = getattr(outline, "description", "")
+                if name:
+                    parts.append(f"大纲：{name}（{desc}）" if desc else f"大纲：{name}")
+            for character in chars or []:
+                name = getattr(character, "name", "")
+                brief = getattr(character, "brief", "")
+                if name:
+                    parts.append(f"角色：{name}（{brief}）" if brief else f"角色：{name}")
+            return "；".join(parts)[:2000]
+        except Exception:
+            return ""
 
     async def _write_auto(project_id: uuid.UUID, one_liner: str) -> object:
         """「全部你决定」委托：复用 AgentService 执行 F42 builtin:write_auto 管线。"""
@@ -111,6 +138,9 @@ def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
         write_auto=_write_auto,
         outline_service=_outline_service,
         character_service=_character_service,
+        llm_client=LangChainLLMClient(),
+        project_context_getter=_project_context_getter,
+        prompt_manager=LangChainPromptManager(),
     )
 
 
@@ -292,6 +322,9 @@ async def start_planner(
         "round": session.round,
         "questions": session.asked_questions,
         "max_rounds": 5,
+        "confirmed_items": session.confirmed_items,
+        "conflicts": session.conflicts,
+        "confirming": session.confirming,
     }
 
 
@@ -303,7 +336,12 @@ async def respond_planner(
 ):
     """回复本轮问题，返回下一轮问题或完成结果（WritingPlan）。"""
     try:
-        result = await svc.respond(_parse_id(session_id), data.answers, auto=data.auto)
+        result = await svc.respond(
+            _parse_id(session_id),
+            data.answers,
+            auto=data.auto,
+            confirm=data.confirm,
+        )
     except ValueError as e:
         detail = str(e)
         if "不存在" in detail:
@@ -314,6 +352,9 @@ async def respond_planner(
         "round": result.round,
         "completed": result.completed,
         "questions": result.questions,
+        "confirmed_items": result.confirmed_items,
+        "conflicts": result.conflicts,
+        "confirming": result.confirming,
         "writing_plan": (
             result.writing_plan.model_dump(mode="json") if result.writing_plan is not None else None
         ),

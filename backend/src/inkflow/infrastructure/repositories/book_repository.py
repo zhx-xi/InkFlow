@@ -58,6 +58,9 @@ def _planner_session_orm_to_domain(orm: PlannerSessionORM) -> PlannerSession:
         asked_questions=orm.asked_questions or [],
         answers=orm.answers or {},
         authorized=orm.authorized or [],
+        confirmed_items=orm.confirmed_items or [],
+        conflicts=orm.conflicts or [],
+        confirming=bool(orm.confirming or False),
         writing_plan_id=(
             uuid.UUID(orm.writing_plan_id) if orm.writing_plan_id is not None else None
         ),
@@ -96,6 +99,9 @@ def _domain_to_planner_session_orm(session: PlannerSession) -> PlannerSessionORM
         asked_questions=session.asked_questions,
         answers=session.answers,
         authorized=session.authorized,
+        confirmed_items=session.confirmed_items,
+        conflicts=session.conflicts,
+        confirming=session.confirming,
         writing_plan_id=(
             str(session.writing_plan_id) if session.writing_plan_id is not None else None
         ),
@@ -180,6 +186,9 @@ class SQLiteBookRepository:
         orm.asked_questions = session.asked_questions
         orm.answers = session.answers
         orm.authorized = session.authorized
+        orm.confirmed_items = session.confirmed_items
+        orm.conflicts = session.conflicts
+        orm.confirming = session.confirming
         orm.writing_plan_id = (
             str(session.writing_plan_id) if session.writing_plan_id is not None else None
         )

@@ -691,3 +691,92 @@ def test_book_confirm_missing_argument():
     为 typer 参数缺失 exit 2，双阶段语义）。"""
     result = _invoke("confirm")
     assert result.exit_code == 2
+
+
+# ── v1.2 #475：plan confirm（末尾总体确认）+ show 确定项回溯 ─────
+#
+# 契约（父侧定稿，spec §4 v1.2 + §5.1 后端契约 + §13.5 M13）:
+# - `inkflow book plan confirm <session> [--json]`
+#     末尾总体确认通过（必答项齐备 + confirming=true 后列全部确定项再确认）
+#     POST /agent/books/planner/{session}/respond body {answers: {}, confirm: true}
+#     → {session_id, round, completed: true, writing_plan}
+#     人类输出含「完成」；--json 信封: {"ok": true, "data": {...}}
+# - `inkflow book plan show` 人类输出含已确定项（confirmed_items 回溯，M13）
+# RED 预期形态：plan confirm 子命令未注册 → typer `No such command 'confirm'.`
+# + exit 2 → exit_code==0 断言 FAILED（干净 RED）；show 无确定项 → 断言失败。
+
+
+def test_plan_confirm_human(fake_http_client):
+    """plan confirm：POST respond {answers: {}, confirm: true} + 完成输出 + exit 0。"""
+    fake_http_client.post.return_value = {
+        "session_id": "sess-1",
+        "round": 4,
+        "completed": True,
+        "questions": [],
+        "writing_plan": {
+            "id": "plan-1",
+            "project_id": "proj-1",
+            "title": "一句话",
+            "status": "ready",
+        },
+    }
+
+    result = _invoke("plan", "confirm", "sess-1")
+
+    assert result.exit_code == 0
+    fake_http_client.post.assert_awaited_once_with(
+        "/agent/books/planner/sess-1/respond",
+        json={"answers": {}, "confirm": True},
+    )
+    assert "完成" in _strip_ansi(result.stdout)
+
+
+def test_plan_confirm_json(fake_http_client):
+    """plan confirm --json：信封含 writing_plan（status=ready）。"""
+    fake_http_client.post.return_value = {
+        "session_id": "sess-1",
+        "round": 4,
+        "completed": True,
+        "questions": [],
+        "writing_plan": {
+            "id": "plan-1",
+            "project_id": "proj-1",
+            "title": "一句话",
+            "status": "ready",
+        },
+    }
+
+    result = _invoke("plan", "confirm", "sess-1", "--json")
+
+    assert result.exit_code == 0
+    body = json.loads(_strip_ansi(result.stdout))
+    assert body["ok"] is True
+    assert body["data"]["completed"] is True
+    assert body["data"]["writing_plan"]["status"] == "ready"
+
+
+def test_plan_show_confirmed_items(fake_http_client):
+    """plan show 人类输出含已确定项（M13：确定项落会话可回溯）。"""
+    fake_http_client.get.return_value = {
+        "id": "sess-1",
+        "project_id": "proj-1",
+        "status": "drafting",
+        "one_liner": "写一本关于时间旅者的悬疑小说",
+        "round": 2,
+        "asked_questions": [],
+        "answers": {"q1": "悬疑为主，加入时间悖论"},
+        "authorized": [],
+        "confirmed_items": [
+            {"key": "题材", "value": "悬疑 + 时间悖论科幻", "source": "user"}
+        ],
+        "conflicts": [],
+        "confirming": False,
+        "writing_plan_id": None,
+    }
+
+    result = _invoke("plan", "show", "sess-1")
+
+    assert result.exit_code == 0
+    out = _strip_ansi(result.stdout)
+    assert "题材" in out
+    assert "悬疑 + 时间悖论科幻" in out

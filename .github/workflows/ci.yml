@@ -371,6 +371,7 @@ jobs:
                  ../tests/api/test_books_api.py `
                  ../tests/api/test_books_api_stage4.py `
                  ../tests/api/test_books_api_background.py `
+                 ../tests/api/test_books_api_v12.py `
                  ../tests/api/test_skills_api.py `
                  ../tests/api/test_skills_cascade.py `
                  ../tests/integration/test_builtin_seed.py `

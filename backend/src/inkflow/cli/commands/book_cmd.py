@@ -203,6 +203,43 @@ def plan_show(
         typer.echo(f"回答数: {len(answers)}")
         for question in questions:
             typer.echo(f"- {question.get('text', '')}")
+        confirmed_items = data.get("confirmed_items") or []
+        for item in confirmed_items:
+            typer.echo(f"{item.get('key', '')}: {item.get('value', '')}")
+
+    _human_or_json(cli_ctx, json_output, data, _render)
+
+
+@plan_app.command("confirm")
+def plan_confirm(
+    ctx: typer.Context,
+    session_id: str = typer.Argument(..., help="访谈会话 ID"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """末尾总体确认通过（v1.2 #475：confirming=true 后列出全部确定项再确认）。"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                f"/agent/books/planner/{session_id}/respond",
+                json={"answers": {}, "confirm": True},
+            )
+
+    data = _run_ctx(cli_ctx, _impl)
+
+    def _render(data: dict) -> None:
+        if data.get("completed"):
+            typer.echo("✓ 访谈完成。")
+            writing_plan = data.get("writing_plan") or {}
+            typer.echo(
+                f"writing_plan: {writing_plan.get('id', '-')} "
+                f"(status={writing_plan.get('status', '-')})"
+            )
+            return
+        _render_questions(data)
 
     _human_or_json(cli_ctx, json_output, data, _render)
 
