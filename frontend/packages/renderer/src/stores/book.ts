@@ -10,6 +10,8 @@ import {
   respondPlanner,
   startBookRun,
   startPlanner,
+  type ConfirmedItem,
+  type ConflictRecord,
   type HitlPayload,
   type InterveneAction,
   type InterveneDiff,
@@ -31,6 +33,18 @@ export interface ProgressStats {
   failed: number;
   skipped: number;
   pending: number;
+}
+
+/** F44 v1.2 #475：对话式访谈消息（store 本地构建，无后端回传） */
+export interface PlannerChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  kind: 'one_liner' | 'question' | 'answer' | 'confirm_summary' | 'confirm' | 'auto';
+  text: string;
+  questionId?: string;
+  template?: string;
+  questionKind?: 'general' | 'targeted' | 'conflict';
+  confirmedItems?: ConfirmedItem[];
 }
 
 interface BookState {
@@ -60,10 +74,16 @@ interface BookState {
   summaryLoading: boolean;
   loading: boolean;
   error: string | null;
+  /** F44 v1.2 #475：对话式消息流 + 末尾总体确认阶段状态（与 #337 HITL confirming 区分） */
+  messages: PlannerChatMessage[];
+  confirmedItems: ConfirmedItem[];
+  conflicts: ConflictRecord[];
+  sessionConfirming: boolean;
 
   startPlanner: (projectId: string, oneLiner: string) => Promise<void>;
   respond: (answers: Record<string, string>) => Promise<void>;
   respondAuto: () => Promise<void>;
+  respondConfirm: () => Promise<void>;
   loadSession: (sessionId: string) => Promise<void>;
   startRun: (planId: string, limits?: Record<string, number>) => Promise<void>;
   loadRunStatus: (runId: string) => Promise<void>;
@@ -100,6 +120,13 @@ export function deriveProgressStats(progress: Record<string, string>): ProgressS
   return stats;
 }
 
+/** 消息 id 自增序列（store 本地生成；测试不检查具体 id） */
+let msgSeq = 0;
+function nextMsgId(): string {
+  msgSeq += 1;
+  return `m-${msgSeq}`;
+}
+
 export const useBookStore = create<BookState>((set, get) => ({
   sessionId: null,
   round: 0,
@@ -124,16 +151,38 @@ export const useBookStore = create<BookState>((set, get) => ({
   summaryLoading: false,
   loading: false,
   error: null,
+  messages: [],
+  confirmedItems: [],
+  conflicts: [],
+  sessionConfirming: false,
 
   startPlanner: async (projectId, oneLiner) => {
     set({ loading: true, error: null, oneLiner });
     try {
       const res = await startPlanner({ project_id: projectId, one_liner: oneLiner });
+      const questionMsgs: PlannerChatMessage[] = res.questions.map(
+        (q): PlannerChatMessage => ({
+          id: nextMsgId(),
+          role: 'assistant',
+          kind: 'question',
+          questionId: q.id,
+          text: q.text,
+          template: q.template,
+          questionKind: q.kind,
+        }),
+      );
       set({
         sessionId: res.session_id,
         round: res.round,
         questions: res.questions,
         sessionStatus: 'drafting',
+        confirmedItems: res.confirmed_items ?? [],
+        conflicts: res.conflicts ?? [],
+        sessionConfirming: res.confirming === true,
+        messages: [
+          { id: nextMsgId(), role: 'user', kind: 'one_liner', text: oneLiner },
+          ...questionMsgs,
+        ],
         loading: false,
       });
     } catch (err) {
@@ -147,10 +196,36 @@ export const useBookStore = create<BookState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const res: PlannerRespondResponse = await respondPlanner(sessionId, { answers, auto: false });
+      const questionMsgs: PlannerChatMessage[] = res.questions.map(
+        (q): PlannerChatMessage => ({
+          id: nextMsgId(),
+          role: 'assistant',
+          kind: 'question',
+          questionId: q.id,
+          text: q.text,
+          template: q.template,
+          questionKind: q.kind,
+        }),
+      );
+      const summaryMsg: PlannerChatMessage = {
+        id: nextMsgId(),
+        role: 'assistant',
+        kind: 'confirm_summary',
+        text: '确认以下设定？',
+        confirmedItems: res.confirmed_items ?? [],
+      };
       set((s) => ({
         round: res.round,
         questions: res.questions,
         answers: { ...s.answers, ...answers },
+        confirmedItems: res.confirmed_items ?? [],
+        conflicts: res.conflicts ?? [],
+        sessionConfirming: res.confirming === true,
+        messages: [
+          ...s.messages,
+          { id: nextMsgId(), role: 'user', kind: 'answer', text: Object.values(answers)[0] ?? '' },
+          ...(res.confirming === true ? [summaryMsg] : questionMsgs),
+        ],
         ...(res.completed
           ? { sessionStatus: 'completed' as const, writingPlan: res.writing_plan ?? null }
           : {}),
@@ -167,14 +242,39 @@ export const useBookStore = create<BookState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const res: PlannerRespondResponse = await respondPlanner(sessionId, { answers: {}, auto: true });
-      set({
+      set((s) => ({
         round: res.round,
         questions: res.questions,
+        messages: [
+          ...s.messages,
+          { id: nextMsgId(), role: 'user', kind: 'auto', text: '全部你决定' },
+        ],
         ...(res.completed
           ? { sessionStatus: 'completed' as const, writingPlan: res.writing_plan ?? null }
           : {}),
         loading: false,
-      });
+      }));
+    } catch (err) {
+      set({ error: errorMessage(err), loading: false });
+    }
+  },
+
+  respondConfirm: async () => {
+    const sessionId = get().sessionId;
+    if (sessionId === null) return;
+    set({ loading: true, error: null });
+    try {
+      const res: PlannerRespondResponse = await respondPlanner(sessionId, { confirm: true });
+      set((s) => ({
+        messages: [
+          ...s.messages,
+          { id: nextMsgId(), role: 'user', kind: 'confirm', text: '确认以下设定？' },
+        ],
+        sessionStatus: 'completed',
+        writingPlan: res.writing_plan ?? null,
+        sessionConfirming: false,
+        loading: false,
+      }));
     } catch (err) {
       set({ error: errorMessage(err), loading: false });
     }
@@ -191,6 +291,9 @@ export const useBookStore = create<BookState>((set, get) => ({
         answers: dto.answers,
         authorized: dto.authorized,
         sessionStatus: dto.status as BookSessionStatus,
+        confirmedItems: dto.confirmed_items ?? [],
+        conflicts: dto.conflicts ?? [],
+        sessionConfirming: dto.confirming === true,
         loading: false,
       });
     } catch (err) {
@@ -312,6 +415,10 @@ export const useBookStore = create<BookState>((set, get) => ({
       summaryLoading: false,
       loading: false,
       error: null,
+      messages: [],
+      confirmedItems: [],
+      conflicts: [],
+      sessionConfirming: false,
     });
   },
 }));

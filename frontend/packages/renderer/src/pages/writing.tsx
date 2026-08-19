@@ -253,6 +253,13 @@ export function WritingPage() {
             view={view}
             onToggleView={() => setView((v) => (v === 'editor' ? 'detail' : 'editor'))}
           />
+          {effectiveProjectId !== '' && currentChapterId !== null ? (
+            <ChatPanel
+              projectId={effectiveProjectId}
+              chapterId={currentChapterId ?? undefined}
+              chapterContent={content}
+            />
+          ) : null}
           {view === 'editor' ? (
             <ChapterEditor onEditorKeyDown={handleKeyDown} onContentChange={handleContentChange} />
           ) : (
@@ -277,13 +284,6 @@ export function WritingPage() {
         onConfirm={(a, n) => void handleConfirm(a, n)}
         confirming={auditConfirming}
       />
-      {effectiveProjectId !== '' && currentChapterId !== null ? (
-        <ChatPanel
-          projectId={effectiveProjectId}
-          chapterId={currentChapterId ?? undefined}
-          chapterContent={content}
-        />
-      ) : null}
       <StatusBar model={model} wordCount={displayWords} savedAt={savedAt} />
     </div>
   );

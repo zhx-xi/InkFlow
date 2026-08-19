@@ -329,3 +329,96 @@ describe('book 页 — 模型未配置前置校验（#474 P0）', () => {
     expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
   });
 });
+
+describe('book 页 — v1.2 #475 末尾总体确认主路径（confirming → 确认卡片 → respondConfirm → 完成）', () => {
+  /**
+   * 契约（spec v1.2 §3.2 示例 + §13 M14）：
+   * - 真实 store + URL 分发 mock：启动访谈 → 回答 → 响应 confirming=true + questions 空
+   *   + confirmed_items 全量 → 渲染 book-confirm-card + book-confirm-item-<key>
+   * - 点 book-confirm-ok → respondConfirm → POST respond {confirm:true}
+   *   → 响应 completed + writing_plan → 计划展示（book-plan-title）
+   */
+  it('确认卡片 → 点确认 → 完成计划展示（确认卡片主路径闭环）', async () => {
+    const user = userEvent.setup();
+    useProjectStore.setState({
+      projects: [
+        {
+          id: 'p1',
+          name: '青云志',
+          genre: '玄幻',
+          language: 'zh-CN',
+          target_words: 800000,
+          config: {},
+          created_at: '2026-08-01T10:00:00Z',
+          updated_at: '2026-08-05T10:00:00Z',
+        },
+      ],
+      currentProjectId: 'p1',
+      loading: false,
+      error: null,
+    });
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+      if (path === '/api/v1/provider-configs') {
+        return { items: [READY_PROVIDER], total: 1, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/agent/books/planner' && init?.method === 'POST') {
+        return {
+          session_id: 'sess-1',
+          round: 1,
+          questions: round1,
+          max_rounds: 5,
+          confirmed_items: [],
+          conflicts: [],
+          confirming: false,
+        };
+      }
+      if (path === '/api/v1/agent/books/planner/sess-1/respond' && init?.method === 'POST') {
+        const body = init.body as { confirm?: boolean; answers?: Record<string, string> };
+        if (body?.confirm) {
+          return { session_id: 'sess-1', round: 4, completed: true, confirming: false, questions: [], writing_plan: wp };
+        }
+        if (body?.answers?.q1) {
+          // 回答后 → confirming=true：questions 空 + 确定项全量（v1.2 §3.2 示例）
+          return {
+            session_id: 'sess-1',
+            round: 4,
+            completed: false,
+            questions: [],
+            writing_plan: null,
+            confirmed_items: [
+              { key: '题材', value: '悬疑 + 时间悖论科幻', source: 'user' },
+              { key: '篇幅', value: '10 万字', source: 'llm_inferred' },
+            ],
+            conflicts: [],
+            confirming: true,
+          };
+        }
+        throw new Error(`unexpected respond body: ${JSON.stringify(body)}`);
+      }
+      throw new Error(`unexpected: ${path}`);
+    });
+
+    render(
+      <MemoryRouter>
+        <BookPage />
+      </MemoryRouter>,
+    );
+    const panel = await screen.findByTestId('book-planner-panel');
+    await user.type(within(panel).getByTestId('book-one-liner'), '写一本关于时间旅者的悬疑小说');
+    await user.click(within(panel).getByTestId('book-planner-start'));
+    await within(panel).findByTestId('book-question-q1');
+
+    // 回答 → confirming=true → 确认卡片
+    await user.type(within(panel).getByTestId('book-answer'), '悬疑为主');
+    await user.click(within(panel).getByTestId('book-send'));
+    const card = await within(panel).findByTestId('book-confirm-card');
+    expect(within(card).getByTestId('book-confirm-item-题材')).toHaveTextContent('悬疑 + 时间悖论科幻');
+    expect(within(card).getByTestId('book-confirm-item-篇幅')).toHaveTextContent('10 万字');
+
+    // 点确认 → respondConfirm → completed → 计划展示
+    await user.click(within(panel).getByTestId('book-confirm-ok'));
+    await waitFor(() => {
+      expect(within(panel).getByTestId('book-plan-title')).toHaveTextContent('写一本关于时间旅者的悬疑小说');
+    });
+  });
+});

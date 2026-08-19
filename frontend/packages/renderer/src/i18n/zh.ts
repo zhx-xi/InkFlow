@@ -194,6 +194,10 @@ export const zh = {
   'lib.knowledge.node.goEdit': '去编辑',
   'lib.knowledge.edge.source': '来源',
   // 设置页
+  // #482：项目聚合设置页（/settings/project）
+  'ps.title': '项目设置',
+  'ps.empty': '请先在项目页选择项目',
+  'ps.worldview': '世界观顾问',
   'set.title': '设置',
   'set.cat.general': '常规',
   'set.cat.models': '模型',
@@ -368,6 +372,8 @@ export const zh = {
   'write.chat.insert': '插入正文',
   'write.chat.inserted': '已插入正文，按 Ctrl+S 保存',
   'write.chat.failed': '对话失败: {message}',
+  'write.chat.expand': '展开对话',
+  'write.chat.collapse': '收起对话',
   'write.view.toDetail': '查看 AI 执行详情',
   'write.view.toEditor': '返回正文编辑',
   'write.detail.empty': '暂无执行记录',
@@ -528,6 +534,12 @@ export const zh = {
   'book.plan.auto': '自动生成',
   'book.startRun': '开始写作',
   'book.error': '访谈出错',
+  // F44 v1.2 #475：对话式访谈末尾总体确认（confirm_summary 卡片）
+  'book.confirm.title': '确认以下设定？',
+  'book.confirm.ok': '确认',
+  'book.confirm.edit': '修改',
+  'book.confirm.editSubmit': '提交修改',
+  'book.conflict.label': '冲突确认',
   'book.trace.pending': '待处理',
   'book.trace.in_progress': '进行中',
   'book.trace.done': '已完成',
