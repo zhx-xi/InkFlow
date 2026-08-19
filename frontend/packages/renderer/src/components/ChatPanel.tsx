@@ -2,7 +2,8 @@
  * 底部 AI 聊天框（spec §4.1）：builtin:chat 单轮对话
  * - 发送 → useExecutionPoll.start({pipeline:'builtin:chat', project_id, variables:{prompt, chapter_context?}})
  * - 轮询/并发保护/错误态统一由 useExecutionPoll 承担（#472 R0，1s 间隔）
- * - completed → assistant 消息 + 「插入正文」→ chapterStore.setContent(final_output)
+ * - completed → parseChatReply 解析意图（#477）：content 只显示提取 body（可选中）；
+ *   conversation 显示完整原文；共享「插入选中正文」→ chapterStore.setContent(选中条 body)
  * - failed → 错误文案（不插入正文）
  */
 import {
@@ -16,6 +17,7 @@ import {
 import type { PipelineExecuteRequest } from '../api/pipeline';
 import { useExecutionPoll } from '../hooks/useExecutionPoll';
 import { useI18n } from '../i18n/useI18n';
+import { parseChatReply, type ChatIntent } from '../lib/chatIntent';
 import { useChapterStore } from '../stores/chapter';
 import { ensureModelReady } from '../stores/models';
 import { useToastStore } from '../stores/toast';
@@ -30,7 +32,8 @@ interface ChatEntry {
   kind: 'user' | 'ai';
   seq: number;
   text: string;
-  finalOutput?: string;
+  /** #477：AI 回复意图（content=可插入正文 / conversation=纯对话） */
+  intent?: ChatIntent;
 }
 
 /** #476：对话区展开默认高度 + 拖动高度上下限（px） */
@@ -42,6 +45,8 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
   const { t } = useI18n();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatEntry[]>([]);
+  // #477：当前选中的 content 消息 seq（单选互斥，新 content 到达自动成为选中条）
+  const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [height, setHeight] = useState(CHAT_DEFAULT_HEIGHT);
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
@@ -74,18 +79,27 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
     exec.start(body); // 并发保护在 hook 内（running 期间二次 start 无操作）
   }, [input, projectId, chapterId, chapterContent, exec.start, t]);
 
-  // 轮询结果消费：status 只在 0→1 次变化（idle→running→success/failed），依赖 [status] 天然防重
+  // 轮询结果消费：status 单次 0→1 变化（idle→running→success/failed）；
+  // 依赖同时含 finalOutput——同批次内 start+轮询完成被合并渲染时 status 不变化
+  // （如连续两轮都 success），靠 finalOutput 变化驱动消费，天然防重
   useEffect(() => {
     if (exec.status === 'success') {
+      // #477：意图分离——解析标记判定 content/conversation，正文类只显示提取 body
+      const parsed = parseChatReply(exec.finalOutput);
+      const seq = aiSeqRef.current++;
       setMessages((prev) => [
         ...prev,
         {
           kind: 'ai',
-          seq: aiSeqRef.current++,
-          text: exec.finalOutput,
-          finalOutput: exec.finalOutput,
+          seq,
+          text: parsed.body,
+          intent: parsed.intent,
         },
       ]);
+      if (parsed.intent === 'content') {
+        // 新 content 消息到达自动成为选中条（最新优先）
+        setSelectedSeq(seq);
+      }
     } else if (exec.status === 'failed') {
       setMessages((prev) => [
         ...prev,
@@ -96,7 +110,7 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
         },
       ]);
     }
-  }, [exec.status]);
+  }, [exec.status, exec.finalOutput]);
 
   // #476 窗口级拖拽：#388 模式 —— mousedown(handle) 记录起点，window mousemove 更新高度，window mouseup 收尾
   const handleWindowMouseMove = useCallback((e: MouseEvent) => {
@@ -135,11 +149,16 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
   }, [handleWindowMouseMove, handleWindowMouseUp]);
 
   const handleInsert = useCallback(
-    (finalOutput: string) => {
-      useChapterStore.getState().setContent(finalOutput);
+    () => {
+      // #477：只插入选中条的 body（content 意图消息）
+      const selected = messages.find(
+        (m) => m.kind === 'ai' && m.intent === 'content' && m.seq === selectedSeq,
+      );
+      if (!selected) return;
+      useChapterStore.getState().setContent(selected.text);
       useToastStore.getState().pushToast('ok', t('write.chat.inserted'));
     },
-    [t],
+    [messages, selectedSeq, t],
   );
 
   const handleInputKeyDown = useCallback(
@@ -153,6 +172,8 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
   );
 
   const canSend = input.trim() !== '';
+  // #477：共享插入按钮仅当存在至少一条 content 消息时渲染
+  const hasContentMessage = messages.some((m) => m.kind === 'ai' && m.intent === 'content');
 
   return (
     <div data-testid="chat-panel" className="flex flex-col gap-2 border-b border-line bg-surface-2 px-4 py-3">
@@ -180,21 +201,35 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
                   className="text-ink-2"
                 >
                   <div className="whitespace-pre-wrap">{m.text}</div>
-                  {m.finalOutput !== undefined && (
+                  {/* #477：仅 content 意图消息渲染选择控件（单选互斥） */}
+                  {m.intent === 'content' && (
                     <button
                       type="button"
-                      data-testid={`chat-insert-${m.seq}`}
-                      aria-label={t('write.chat.insert')}
+                      data-testid={`chat-select-${m.seq}`}
+                      data-selected={selectedSeq === m.seq ? 'true' : 'false'}
+                      aria-label={t('write.chat.select')}
+                      aria-pressed={selectedSeq === m.seq}
                       className="mt-1 rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
-                      onClick={() => handleInsert(m.finalOutput as string)}
+                      onClick={() => setSelectedSeq(m.seq)}
                     >
-                      {t('write.chat.insert')}
+                      {t('write.chat.select')}
                     </button>
                   )}
                 </div>
               ),
             )}
           </div>
+          {hasContentMessage && (
+            <button
+              type="button"
+              data-testid="chat-insert-selected"
+              aria-label={t('write.chat.insert')}
+              className="rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
+              onClick={handleInsert}
+            >
+              {t('write.chat.insert')}
+            </button>
+          )}
           <div
             data-testid="chat-resize-handle"
             className="flex h-1.5 cursor-ns-resize items-center justify-center"

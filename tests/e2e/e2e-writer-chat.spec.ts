@@ -1,5 +1,13 @@
 /**
- * 写作页 AI 聊天框 + 视图切换 E2E（#379 F47，spec §6.3）
+ * 写作页 AI 聊天框 + 视图切换 E2E（#379 F47，spec §6.3；#477 契约升级 2026-08-19）
+ *
+ * #477 契约（意图分离 + 单选插入）：
+ * - AI 回复解析标记：`<<<CONTENT>>>` ... `<<<END>>>` 包裹 = 产出正文（content 意图，可插入）；
+ *   无 start 标记 = 对话（conversation，无插入控件）。
+ * - content 消息显示解析后 body（不含标记/前言）；每条渲染选择控件 chat-select-<seq>
+ *   （data-selected="true"|"false"），新 content 消息到达自动选中最新一条。
+ * - 共享插入按钮 chat-insert-selected 仅当存在 ≥1 条 content 消息时渲染，点击 → setContent(选中条 body)。
+ * - conversation 消息无任何选择/插入控件；旧 per-message 按钮 chat-insert-<seq> 已删除，任何场景不再渲染。
  *
  * 确定性方案（D5=A）：page.route 拦截管线 API，零真实 LLM 调用。
  * - POST /api/v1/agent/pipelines/execute → 202 + execution_id（拦截）
@@ -7,8 +15,9 @@
  * 其余（项目创建/章节树）走真实内核。
  *
  * 用例：
- * 1. 聊天框：输入 → 发送 → assistant 消息（轮询 completed）→ 插入正文 → 编辑器 value 更新
- * 2. 视图切换：view-toggle → 详情页空态（exec-detail-empty）→ 切回 editor
+ * 1. 聊天框：输入 → 发送 → content 意图回复（标记包裹）→ 自动选中 → 插入选中正文 → 编辑器 value 更新
+ * 2. 对话类回复（无标记）→ 不渲染选择/插入控件
+ * 3. 视图切换：view-toggle → 详情页空态（exec-detail-empty）→ 切回 editor
  *
  * 基建复用 e2e-writing.spec.ts 模式（launchApp/waitKernelInfo/createProjectViaUi/findProjectId）。
  */
@@ -190,7 +199,8 @@ test('聊天框：输入 → 发送 → assistant 消息 → 插入正文 → �
     await expect(window.getByTestId('tree-chapter')).toBeVisible({ timeout: 15_000 });
 
     // 树就绪后再注册管线拦截（避免影响树加载）
-    const finalOutput = 'E2E 对话回复内容';
+    // #477：<<<CONTENT>>>...<<<END>>> 包裹 = content 意图（产出正文，可插入）
+    const finalOutput = '<<<CONTENT>>>\nE2E 续写正文内容\n<<<END>>>';
     interceptPipeline(window, 'e-chat-e2e', finalOutput, pid);
 
     // 聊天框发送
@@ -199,12 +209,75 @@ test('聊天框：输入 → 发送 → assistant 消息 → 插入正文 → �
     await chatInput.fill('帮我写一段打斗场景');
     await window.getByTestId('chat-send').click();
 
-    // assistant 消息 + 插入正文按钮
-    await expect(window.getByTestId('chat-msg-ai-0')).toContainText(finalOutput, { timeout: 15_000 });
-    await window.getByTestId('chat-insert-0').click();
+    // #477：assistant 消息显示解析后 body（不含标记/前言）
+    const aiMsg = window.getByTestId('chat-msg-ai-0');
+    await expect(aiMsg).toContainText('E2E 续写正文内容', { timeout: 15_000 });
+    await expect(aiMsg).not.toContainText('<<<CONTENT>>>');
+    await expect(aiMsg).not.toContainText('<<<END>>>');
 
-    // 插入正文 → 编辑器 value 更新（setContent）
-    await expect(window.getByTestId('chapter-editor')).toHaveValue(finalOutput, { timeout: 15_000 });
+    // 选择控件：content 消息渲染 chat-select-0 且自动选中（data-selected="true"）
+    const select0 = window.getByTestId('chat-select-0');
+    await expect(select0).toBeVisible({ timeout: 15_000 });
+    await expect(select0).toHaveAttribute('data-selected', 'true');
+
+    // 旧 per-message 按钮 chat-insert-0 已删除（#477：任何场景不再渲染）
+    await expect(window.getByTestId('chat-insert-0')).toHaveCount(0);
+
+    // 共享「插入选中正文」按钮 → setContent(选中条 body) → 编辑器 value 更新
+    await window.getByTestId('chat-insert-selected').click();
+    await expect(window.getByTestId('chapter-editor')).toHaveValue('E2E 续写正文内容', { timeout: 15_000 });
+  } finally {
+    await app.close();
+  }
+});
+
+test('对话类回复（无 content 标记）不渲染选择/插入控件', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-聊天-对话-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    const pid = await findProjectId(kernel, name);
+
+    // 预置 1 卷 + 1 章（正文空）——项目树有章节可点（对齐用例 1 预置写法）
+    const volumes = await kernelFetch(kernel, `/api/v1/projects/${pid}/volumes`, { method: 'POST', body: { title: '第一卷 风起' } });
+    expect(volumes.status).toBe(201);
+    const volData = (await volumes.json()) as { id: string };
+    const chapters = await kernelFetch(kernel, `/api/v1/projects/${pid}/chapters`, {
+      method: 'POST',
+      body: { title: '第1章 初见', volume_id: volData.id, content: '' },
+    });
+    expect(chapters.status).toBe(201);
+
+    // #474 前置校验预置：注册 openai key + 补 chat 模型
+    await presetChatModel(kernel);
+
+    // 重挂载写作页触发 loadChapterTree（加载 API 预置的卷/章）
+    await gotoNav(window, '项目');
+    await gotoNav(window, '写作');
+    await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByTestId('tree-volume')).toBeVisible({ timeout: 15_000 });
+    // 点章节 → 成为当前章（tree-chapter 仅当前章渲染）
+    await window.getByRole('button', { name: /第1章 初见/ }).click();
+    await expect(window.getByTestId('tree-chapter')).toBeVisible({ timeout: 15_000 });
+
+    // 树就绪后再注册管线拦截（避免影响树加载）
+    // #477：无 start 标记 = conversation 意图（纯对话，无插入控件）
+    const finalOutput = '这是一段纯对话回复，不包含正文。';
+    interceptPipeline(window, 'e-chat-e2e-conv', finalOutput, pid);
+
+    // 聊天框发送
+    const chatInput = window.getByTestId('chat-input');
+    await expect(chatInput).toBeVisible({ timeout: 15_000 });
+    await chatInput.fill('这本书怎么样？');
+    await window.getByTestId('chat-send').click();
+
+    // conversation：assistant 消息显示原文（无解析/无标记）
+    await expect(window.getByTestId('chat-msg-ai-0')).toContainText(finalOutput, { timeout: 15_000 });
+
+    // 无任何选择/插入控件（新契约 chat-select-*/chat-insert-selected + 旧 chat-insert-<seq> 均不渲染）
+    await expect(window.getByTestId('chat-select-0')).toHaveCount(0);
+    await expect(window.getByTestId('chat-insert-selected')).toHaveCount(0);
+    await expect(window.getByTestId('chat-insert-0')).toHaveCount(0);
   } finally {
     await app.close();
   }

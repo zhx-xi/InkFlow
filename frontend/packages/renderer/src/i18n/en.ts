@@ -365,6 +365,7 @@ export const en: Record<string, string> = {
   'write.chat.placeholder': 'Chat with AI, e.g. "write a fight scene"',
   'write.chat.send': 'Send',
   'write.chat.insert': 'Insert into chapter',
+  'write.chat.select': 'Select this reply',
   'write.chat.inserted': 'Inserted. Press Ctrl+S to save',
   'write.chat.failed': 'Chat failed: {message}',
   'write.chat.expand': 'Expand chat',

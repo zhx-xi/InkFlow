@@ -370,6 +370,7 @@ export const zh = {
   'write.chat.placeholder': '与 AI 对话，如「帮我写一段打斗场景」',
   'write.chat.send': '发送',
   'write.chat.insert': '插入正文',
+  'write.chat.select': '选中此回复',
   'write.chat.inserted': '已插入正文，按 Ctrl+S 保存',
   'write.chat.failed': '对话失败: {message}',
   'write.chat.expand': '展开对话',
