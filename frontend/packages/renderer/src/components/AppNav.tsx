@@ -14,6 +14,7 @@ import {
   ListTree,
   NotebookPen,
   PenLine,
+  Search,
   Settings,
   Sparkles,
   Users,
@@ -55,6 +56,7 @@ const LIBRARY_ITEMS: NavItemDef[] = [
   { key: 'timeline', href: '/library?cat=timeline', labelKey: 'nav.lib.timeline', icon: Clock },
   { key: 'foreshadow', href: '/library?cat=foreshadow', labelKey: 'nav.lib.foreshadow', icon: Sparkles },
   { key: 'knowledge', href: '/library?cat=knowledge', labelKey: 'nav.lib.knowledge', icon: Database },
+  { key: 'search', href: '/search', labelKey: 'nav.search', icon: Search },
 ];
 
 /** agent 快捷入口直达 /settings?cat=agent */

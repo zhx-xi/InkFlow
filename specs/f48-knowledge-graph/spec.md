@@ -1,12 +1,14 @@
 # F48: 知识图谱（knowledge-graph）— 功能规格
 
-> **Spec 版本**: 1.1 | **日期**: 2026-08-19 | **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
+> **Spec 版本**: 1.2 | **日期**: 2026-08-19 | **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
+>
+> **Spec 变更**（1.1 → 1.2，2026-08-19 #479 契约定稿）：§5.5 由占位升级为具体契约——定时任务形态（进程内 asyncio loop + lifespan 启停 + 启动补跑）、设置三键（`kg_extract_enabled`/`kg_extract_interval_hours`/`kg_extract_method`，F32 settings 扩展）、RelationExtractionService（规则三规则集 + AI 模板提取 + 名称解析）、KnowledgeExtractScheduler（run_cycle 可单测 + 每周期重读设置）、extract 端点 + CLI + 设置页 KnowledgeExtractCard 契约、运行记录复用 extraction_runs（ExtractionType 第 7 值 KNOWLEDGE_RELATION，F14 既有 6 值断言同步改 7）。同步：§1.2 边界、§10 不在范围、§12 决策 12。**#479 实现以 §5.5 为唯一真相**；F48（本模块）交付范围不变。
 >
 > **Spec 变更**（1.0 → 1.1，2026-08-19 拍板）：Q1-Q3 全拍板——**Q1=A**（图谱页允许建角色↔角色关系写 knowledge_relations，聚合去重；C 迁移合并建 #495 挂 1.0.0）；**Q2=A**（图谱渲染定稿 @xyflow/react）；**Q3=A**（提取运行记录不保留；追加需求「统一日志页」建 #496 挂 1.0.0）。同步：§1.2 边界、§2.1 业务规则、§5.2 聚合、§5.4 前端、§8 文件结构、§10 不在范围、§11 依赖、§12 决策表（新增决策 9-11）、§13 验收、待澄清节全标 ✅。
 >
 > **所属阶段**: 0.10.1（UI/产品修复批，D3 前半「知识图谱：关系模型 + 可视化 + 手动修改」，估算 5-8 人天）
 >
-> **关联 Issues**: [#478](https://github.com/zhx-xi/InkFlow/issues/478)（本模块）· #480（知识图谱检索页，**另 issue，依赖本模块**）· #479（定时任务 AI/规则提取，**本 spec §5.5 预留节，挂靠方**）· #495（character_relations 迁移合并，**Q1-C 后续重构，1.0.0**）· #496（统一日志页，**Q3 追加需求，1.0.0**）· #174（F36 地图，实体来源之一）· #389（世界观分类，关联登记）
+> **关联 Issues**: [#478](https://github.com/zhx-xi/InkFlow/issues/478)（本模块）· #480（知识图谱检索页，**另 issue，依赖本模块**）· #479（定时任务 AI/规则提取，**本 spec §5.5 契约（v1.2 定稿），挂靠方**）· #495（character_relations 迁移合并，**Q1-C 后续重构，1.0.0**）· #496（统一日志页，**Q3 追加需求，1.0.0**）· #174（F36 地图，实体来源之一）· #389（世界观分类，关联登记）
 >
 > **依赖**: ✅ F1（projects 表 + ProjectRepositoryProtocol）· ✅ F9（characters + character_relations，图谱合并来源 + 实体校验）· ✅ F10（world_settings 实体校验）· ✅ F11（outlines 实体校验）· ✅ F12（timeline_events 实体校验）· ✅ F13（foreshadowings 实体校验）· ✅ F36/F43 P2（maps + map_pins 实体校验）· ✅ F14（extractions/runs，原 rag tab 数据源——本模块改造其展示面；#479 定时提取挂靠 F14 提取服务）
 >
@@ -29,7 +31,7 @@ F48 增量:    新表 knowledge_relations（通用跨实体关系，含 source �
              + 关系 CRUD（API + CLI + 前端）
              + 前端「知识图谱」tab（图谱画布：拖拽/缩放/点击详情/增删改）
              + 原「知识库 RAG」tab 改造（#480 检索页承接检索）
-             + §5.5 预留节（#479 定时任务 AI/规则提取挂靠）
+             + §5.5 #479 契约（v1.2 定稿：定时任务 + 规则/AI 提取；F48 只交付数据面与写入端口）
 ```
 
 ### 1.1 模块类型定位（第 21 变体「实体关系图谱型」）
@@ -49,7 +51,7 @@ F48 增量:    新表 knowledge_relations（通用跨实体关系，含 source �
 
 - **不做 entity_relations 之外的冗余**：关系只存 `knowledge_relations`（+ 既有 `character_relations` 只读合并），不在角色/世界观等实体表加关系字段（避免「JSON 嵌入 + 关系表」双份真相——F9 §1 同款原则）
 - **character_relations 保留不动，双轨写入（Q1=A 拍板）**：角色页关系管理继续写 character_relations；图谱页也可建角色↔角色关系（写 knowledge_relations）；图谱聚合合并两表 + 同键去重（§5.2）；长期迁移合并建 #495（1.0.0，Q1-C 后续重构）
-- **不做定时/自动提取**：#479 另 issue（本 spec §5.5 预留接口与数据面，不实现提取逻辑）
+- **不做定时/自动提取（本模块）**：#479 另 issue——v1.2 已在 §5.5 定稿具体契约（定时任务 + 规则/AI 提取 + 设置页）；F48 只实现其数据面 + 写入端口（`bulk_create_relations`），不实现提取逻辑
 - **不做检索页**：#480 另 issue（RAG 语义检索/向量检索 UI 承接）
 - **不做图谱布局算法自研**：渲染选型 @xyflow/react（Q2=A 拍板，§5.4/§12 决策 7）
 - **不做实体详情编辑**：图谱节点点击详情 = 只读摘要 + 跳转对应实体页（角色/世界观/大纲/时间线/伏笔/地图编辑均在各自既有页面）
@@ -473,27 +475,143 @@ tab 改造:   CATS 中 key='rag' → key='knowledge'（labelKey nav.lib.rag → 
 
 > **前端数据流**：图谱视图加载调 `GET /projects/{pid}/knowledge-graph`（一次拿 nodes+edges）；增删改后**局部刷新**（重拉 graph 或本地 patch 边列表——实现期定，测试契约见 §9）。
 
-### 5.5 预留节：#479 定时任务 AI/规则提取挂靠（本模块不实现）
+### 5.5 #479 定时任务 + 规则/AI 关系提取（v1.2 定稿契约，#479 实现唯一真相）
 
-> 本模块为 #479 预留**数据面 + 写入端口**，不实现提取逻辑；#479 实现时承接本节省略细节。
+> 用户拍板 D3：定时任务设置放设置页；**用户必须设置大模型后才能用 AI 提取**。F48 已交付本节数据面 + 写入端口（source 列/六元组唯一索引/bulk_create_relations）；#479 实现时**零 schema 变更**，只补调度 + 提取服务 + 设置 + 端点/CLI/前端。
+
+#### 5.5.1 范围与形态
+
+- **调度形态**：进程内 asyncio 调度器（`KnowledgeExtractScheduler`），随内核 lifespan 启停——本地单机架构（§1.2），不引入 APScheduler/系统 cron 等外部依赖（可逆性：后续如需跨平台系统级调度，调度器接口不变只换驱动）
+- **触发粒度**：小时级（`interval_hours`），每个周期遍历全部未删除项目各跑一次提取
+- **提取方式**：`rule`（规则，确定性，无需模型）/ `ai`（LLM 模板提取，需已配置模型）/ `both`（先 rule 后 ai）
+- **不做**：分钟级调度、分布式锁（单机无并发调度）、提取结果人工审核队列（ai 行直接落库，靠六元组幂等 + 图谱页手动删除兜底）、对 `character_relations`（F9 双轨）的写入——AI/规则提取**只写 `knowledge_relations`**
+
+#### 5.5.2 设置契约（F32 settings 扩展，三键）
+
+`SettingsKey` 枚举 + `AppSettings` 字段 + `AppSettingsUpdate` 同步新增：
+
+| 键 | 类型 | 默认 | 约束 |
+|----|------|------|------|
+| `kg_extract_enabled` | `bool` | `False` | 总开关；默认关闭（用户显式开启才调度） |
+| `kg_extract_interval_hours` | `int` | `24` | 1 ≤ v ≤ 168（1 小时 ~ 7 天），越界 PATCH → 422 |
+| `kg_extract_method` | `Literal["rule","ai","both"]` | `"rule"` | 提取方式；非法值 → 422 |
+
+- 设置经既有 `GET/PATCH /api/v1/settings` 读写（零新端点）；调度器**每周期重读设置**（开关/频率/方式热生效，无需重启内核）
+- 默认 `enabled=False` + `method=rule`：开箱零成本零风险（不调 LLM、不产生意外数据）
+
+#### 5.5.3 调度器契约（`infrastructure/scheduler/kg_extract_scheduler.py` CREATE）
 
 ```text
-数据面预留:
-  - knowledge_relations.source 列（manual/ai 枚举）——#479 写入时置 ai
-  - source_type/source_id/target_type/target_id/relation_type 六元组 + 唯一索引
-    ——#479 幂等去重键（AI 重复提取同键关系 → 不重复插入）
-  - 无独立批次表：批量提取的 run 记录可挂 F14 extraction_runs（ExtractionType 扩展）
-    ｜或 #479 建自有表——#479 spec 拍板，本模块不预建
-
-写入端口预留（实现期提供，供 #479 直接调用）:
-  - KnowledgeGraphService.bulk_create_relations(project_id, relations, source=ai)
-    ——单事务批量 + 同键幂等（已存在跳过/更新，#479 拍板语义）
-  - 实体名称 → id 解析辅助（#479 AI 提取产出名称引用，需按 EntityType 解析到实体
-    ——F9 ExtractedRelation 先例：from_name/to_name 解析为 id 落库）
-
-#479 挂靠验收（本 spec 的 M 行不覆盖 #479）:
-  - #479 完成时：ai 行可写入、图谱聚合显示 ai 边、关系列表 ?source=ai 可过滤、去重生效
+class KnowledgeExtractScheduler:
+    __init__(*, settings_service, project_repository, relation_extraction_service,
+             session_factory)     # 调度器自持 session 生命周期（F45 M2 先例，不绑请求 session）
+    async start()                 # lifespan startup 调用：spawn loop task（F42 create_task + done_callback 先例）
+    async stop()                  # lifespan shutdown 调用：cancel + await（幂等）
+    async run_cycle() -> list[dict]   # ★ 单周期执行体（RED 单测直调，不依赖 sleep）：
+                                  #   1. 读 settings；enabled=False → 返回 [] 不执行
+                                  #   2. project_repository.list_all()（未删除项目）
+                                  #   3. 逐项目 relation_extraction_service.extract_for_project(
+                                  #        project_id, method=kg_extract_method)
+                                  #   4. 单项目异常捕获记入结果（不中断其他项目），汇总返回
+    loop:                         # while True: await asyncio.sleep(interval*3600); await run_cycle()
+                                  #   interval 每周期从 settings 重读（5.5.2）
+    startup catch-up:             # start() 时查 extraction_runs 最近一次 knowledge_relation run：
+                                  #   距今 ≥ interval_hours → 立即 run_cycle()（补跑）；否则等待
+                                  #   无任何 run 记录（首启）→ 立即 run_cycle()
 ```
+
+- **lifespan 接线**（`api/app.py` MODIFY）：startup `scheduler.start()` / shutdown `scheduler.stop()`；装配在 `api/deps.py`（`get_kg_extract_scheduler`）
+- 防重：同一周期内用 F44 `spawn_background_task` key 注册表语义——`run_cycle` 进行中再次触发（手动端点并发）→ 跳过并返回 skipped 语义（不抛错）
+
+#### 5.5.4 提取服务契约（`domain/services/relation_extraction_service.py` CREATE）
+
+```text
+class RelationExtractionService:
+    __init__(*, knowledge_graph_service, character_repo, world_repo, outline_repo,
+             timeline_repo, foreshadow_repo, map_pin_repo, chapter_repo,
+             provider_config_service, llm_client_factory=None,
+             llm_default_model=None, extraction_run_repo=None)
+    async extract_for_project(project_id, method) -> ExtractionResult
+    # method=None 时由调用方读 settings 传入（服务不读设置，保持纯领域）
+```
+
+**规则提取（method 含 rule）——确定性三规则集，零 LLM，只读结构化字段**：
+
+| # | 信号（真实字段） | 产出关系 | relation_type |
+|---|-----------------|---------|---------------|
+| R1 | `WorldSetting.parent_id` 非空 | world(child) → world(parent) | 「属于」 |
+| R2 | `Foreshadowing.event_id` 非空 | foreshadow → timeline | 「锚定于」 |
+| R3 | `MapPin.location_id` 非空 | map_pin → world | 「位于」 |
+| R3b | `MapPin.ref_id` 非空且 `type=role` | map_pin → character | 「出现于地图」 |
+| R3c | `MapPin.ref_id` 非空且 `type=event` | map_pin → timeline | 「出现于地图」 |
+
+- 实体跨项目/已删（repo 查不到）→ 该条跳过 + warnings 汇总（不报错）
+- 规则集封闭枚举：新增规则必须改本表 + 测试断言（防自由发挥）；测试断言规则集数量 = 3（R1/R2/R3，R3b/R3c 属 R3 分支）
+
+**AI 提取（method 含 ai）——模板 LLM 提取，需已配置模型**：
+
+- **前置门禁（D3 拍板核心）**：`provider_config_service.list()` 中**无任何 `key_saved=True` 的 provider** → 判定「未配置模型」→ 抛 `LLMNotConfiguredError`（新错误类，`domain/ports/knowledge_graph_errors.py` 追加）；端点映射 422；调度器 method=ai 时记 run error 并跳过该项目，method=both 时**降级为仅 rule**（warnings 记「AI 提取跳过：未配置模型」）
+- **输入**：项目全部章节正文（chapter_repo，按 narrative 顺序拼接，截断上限 50000 字符——与 ExtractionRequest.text 上限一致）；无章节 → status=skipped（skipped_reason「无章节内容」）
+- **LLM 契约**：复用 F14 extractor 模式（`_character_extractor.py` 先例：JSON 输出 + `_extract_json_fragment` 容错解析 + 校验失败重试一次）；prompt 模板内置于 `_kg_relation_extractor.py`（CREATE，私有模块同 F14 命名惯例），产出 `[{from_name, from_type, to_name, to_type, relation_type, description}]`；relation_type 1-20 字符约束同 §2.1
+- **模型选择**：`config.llm_default_model` 唯一默认源（#415 先例，deps 注入），零硬编码
+- **实体名称 → id 解析**（占位节预留的解析辅助，本节定稿）：统一 `_resolve_entity(project_id, type, name)`——character/world/outline 走各 repo `get_by_name`；timeline 无 get_by_name → `list_all` 后 **title 精确匹配**（去首尾空白）；foreshadow 同 title 精确匹配；map_pin 不参与 AI 解析（AI 只产出五类：character/world/outline/timeline/foreshadow）。解析失败 → 该条关系丢弃 + warnings 汇总（F9 ExtractedRelation from_name/to_name 解析同款语义）
+- **写入**：解析成功的关系统一走 `knowledge_graph_service.bulk_create_relations(project_id, relations, source=RelationSource.AI)`
+
+**幂等语义（占位节待拍板项，本节定稿：跳过不覆盖）**：六元组已存在 → 跳过，不更新 description——AI 重复提取不覆盖用户手动调整过的描述；`ExtractionResult.updated` 口径 = 0（ai 提取恒不更新），`created` = 实际新增行数，跳过数进 warnings（「N 条关系已存在，跳过」）。
+
+#### 5.5.5 运行记录（复用 F14 extraction_runs，占位节拍板项定稿）
+
+- **不建自有表**：复用 `extraction_runs`——`ExtractionType` 新增第 7 值 `KNOWLEDGE_RELATION = "knowledge_relation"`（`backend/tests/unit/test_extraction_models.py` 既有 `len(ExtractionType) == 6` 断言**同步改 7**，RED 第一批）
+- run 记录字段口径：`type=knowledge_relation`；`source_key=f"kg:{method}"`（rule/ai/both）；`status` success（created>0 或全幂等跳过）/ skipped（无章节/未启用）/ error（LLM 失败/未配模型走 error + error 文案）；手动触发与定时触发**同表同口径**（触发源不区分——Q3=A 拍板运行记录不做 GUI 展示面，#496 统一日志页承接）
+- 定时触发每项目一条 run；手动触发同（project + method 一条）
+
+#### 5.5.6 API + CLI 契约
+
+```text
+POST /api/v1/knowledge/extract            # knowledge_graph.py router 追加（tags 不变）
+  body: { project_id: UUID, method?: "rule"|"ai"|"both" }   # method 缺省 = 跟随 settings
+  200 → ExtractionResult 信封（同 POST /extract 形态：type/status/created/updated/warnings/model）
+  404 项目不存在｜422 未配置模型（method 含 ai，detail 指明）｜422 method 非法
+GET /api/v1/knowledge/extract/status      # 设置页「立即运行」按钮状态 + 最近一次 run 摘要
+  200 → { running: bool, last_run: { status, created, run_at } | null }
+```
+
+- 手动触发端点与调度器共用 `run_cycle`/`extract_for_project`（单一执行体）；运行中再次 POST → 422「提取正在进行」（F44 prepare_run 守卫同款语义）
+- CLI：`inkflow knowledge extract --project <uuid> [--method rule|ai|both]`（`cli/commands/knowledge_graph.py` 追加，信封/退出码同既有 knowledge 组；--method 缺省跟随 settings）
+
+#### 5.5.7 前端设置页契约（`pages/settings.tsx` MODIFY）
+
+- 新增「知识图谱提取」设置卡片（i18n `settings.kgExtract.*`，zh 主 en 同步）：
+  1. **启用开关**（kg_extract_enabled，Switch）
+  2. **提取频率**（kg_extract_interval_hours，Select：1/6/12/24/72/168 小时）
+  3. **提取方式**（kg_extract_method，Radio：仅规则 / 仅 AI / 规则+AI）
+  4. **「立即运行」按钮** → POST /knowledge/extract（当前无「当前项目」上下文时按全部项目跑一轮同调度周期语义；运行中禁用 + loading 态，轮询 extract/status）
+- **未配置模型门禁（D3）**：前端以 models store `hasChatModel`（既有）判定——无已配置模型时「仅 AI」「规则+AI」选项 disabled + 提示文案「需先在模型设置中配置大模型」；已启用且 method 含 ai 时切走模型配置 → 设置卡片顶部 warning 条
+- **900 行护栏（#88）**：settings.tsx 现 752 行，本卡片独立为 `components/knowledge-graph/KnowledgeExtractCard.tsx`（CREATE），settings.tsx 只挂载——防贴线
+
+#### 5.5.8 测试与 CI 登记契约
+
+| 测试文件 | 层 | 覆盖 | CI 登记 |
+|---------|-----|------|---------|
+| `backend/tests/unit/test_relation_extraction_service.py` | unit | 规则三规则集逐条 + 跨项目/已删跳过 + AI mock LLM 解析/重试 + 未配模型 LLMNotConfiguredError + 名称解析失败 warnings + 幂等跳过 + both 降级 | tests/unit/ glob 自动收集（零登记） |
+| `backend/tests/unit/test_kg_extract_scheduler.py` | unit | run_cycle：disabled 跳过/逐项目执行/单项目异常不中断 + 每周期重读设置 + startup 补跑/首启立跑 + stop 幂等 | 同上 |
+| `backend/tests/unit/test_extraction_models.py`（MODIFY） | unit | `len(ExtractionType) == 7` + KNOWLEDGE_RELATION 值断言 | 既有文件零登记 |
+| `tests/api/test_knowledge_extract_api.py` | api | extract 端点契约（200/404/422 未配模型/422 非法 method）+ status 端点 | tests/api/ glob 自动收集（零登记） |
+| `tests/cli/test_cli_knowledge_extract.py` | cli | extract 命令信封/退出码/--method 透传 | ⚠️ **显式追加 ci.yml `integration-cli-backend` job 文件列表**（Windows pytest 不展开 glob，§8 CI 盲区防范同款） |
+| `frontend/.../settings-kg-extract.test.tsx` | 前端 vitest | 开关/频率/方式渲染 + AI 选项未配模型 disabled+提示 + 立即运行按钮（vi.mock API，同 library-p*.test.tsx 模式） | renderer 目录通配自动收集（实现期核对） |
+| `frontend/.../components/knowledge-graph/KnowledgeExtractCard.tsx` | 组件 | 见 5.5.7 | — |
+
+- 覆盖率：新模块行覆盖 ≥ 80%，全仓门禁 ADR-027 同款
+- 后台任务 RED 陷阱（F44 先例）：scheduler 测试不得泄漏 pending task（teardown cancel）；断言后台调用须 `await asyncio.sleep(0)`
+
+#### 5.5.9 #479 验收（本 spec 的 M 行不覆盖，映射 #479 自身门禁）
+
+1. 设置页三键可读写（开关/频率/方式），PATCH 越界 422；调度器热生效（改频率后下一周期按新值）
+2. 规则提取无需模型：mock 零 provider 配置 → rule 提取正常产出 R1/R2/R3 边（source=ai 列值恒 ai——规则与 AI 提取统一 source=ai 语义，区分靠 run 的 source_key）
+3. 未配置模型：AI 提取禁用——端点 422 + 前端选项 disabled + 提示；both 降级 rule + warning
+4. 幂等：重复运行 → created=0，关系数不增
+5. 图谱聚合显示提取边 + 关系列表 `?source=ai` 可过滤（F48 既有能力，#479 只验数据面打通）
+6. 测试全绿 + ci.yml CLI 登记 + 900 行护栏合规
 
 ### 5.6 排序与确定性
 
@@ -567,6 +685,7 @@ tab 改造:   CATS 中 key='rag' → key='knowledge'（labelKey nav.lib.rag → 
 
 > **⚠️ CI 盲区防范（Issue #59/#61 教训）**：`tests/cli/test_cli_knowledge_graph.py` 是**新文件**，需显式加入 ci.yml `integration-cli-backend` job 文件列表（Windows pytest 不展开 glob）；前端新测试文件确认被现有 vitest 收集（renderer 目录通配，实现期核对）。
 > **⚠️ 900 行护栏（#88）**：`test_knowledge_graph_service.py` 若超 900 行按 class 拆分（F43 P2 先例）。
+> **ℹ️ #479 文件不在本表**：定时任务/提取服务/设置扩展/前端设置卡片的文件结构与 CI 登记见 §5.5.8（v1.2 定稿），由 #479 实现期交付，F48 不涉及。
 
 ---
 
@@ -663,6 +782,7 @@ F48 被依赖:
 | 9 | **Q1=A 拍板：允许图谱建角色↔角色关系（2026-08-19）** | character→character 合法（写 knowledge_relations）；角色页 F9 保留（写 character_relations）；图谱聚合合并 + 同键去重（§5.2） | 图谱手动编辑闭环完整；F9 零破坏；个人项目可接受双轨 | 方案 B（图谱禁止角色关系——编辑流断裂，**用户否决**）；方案 C（迁移合并——破坏性重构，**用户否决**，建 #495 挂 1.0.0 后续做） |
 | 10 | **Q2=A 拍板：图谱渲染定稿 @xyflow/react（2026-08-19）** | React Flow v12（37.9K stars，MIT，React 19 兼容）；拖拽/缩放/自定义节点开箱即用 | 工程化最小；React 生态图可视化事实标准 | 手写 SVG/Canvas（+2-3 人天，**用户否决**）；antv G6/d3-force（**用户否决**） |
 | 11 | **Q3=A 拍板：提取运行记录不保留 + 统一日志页（2026-08-19）** | 图谱 tab 不保留 extractions/runs 展示；运行日志（内核/GUI/AI）统一日志页建 #496 挂 1.0.0 | 图谱 tab 聚焦关系；runs 是过程日志非日常查看对象；日志页独立功能后续排期 | 方案 B（图谱 tab 内嵌提取记录区——三视图拥挤，**用户否决**）；方案 C（等 #480——推迟 D3 落地，**用户否决**） |
+| 12 | **#479 契约定稿（v1.2，2026-08-19）：进程内调度 + 复用 extraction_runs + 幂等跳过** | ① 进程内 asyncio 调度器（lifespan 启停 + 启动补跑 + 每周期重读设置），不引入 APScheduler/系统 cron；② run 记录复用 F14 extraction_runs（ExtractionType 第 7 值），不建自有表；③ 六元组幂等 = 跳过不覆盖（AI 不覆盖手动调整的 description）；④ 规则提取三规则集只读结构化字段（WorldSetting.parent_id / Foreshadowing.event_id / MapPin.location_id+ref_id），零 LLM；⑤ AI/规则提取只写 knowledge_relations（不碰 F9 双轨）；⑥ 未配置模型（provider_config 无 key_saved=True）→ AI 禁用：端点 422 + 前端选项 disabled + both 降级 rule | 本地单机架构进程内调度最简单可逆；复用 run 表面零新表零 GUI 面（Q3=A 已拍 runs 无展示面）；跳过不覆盖保护用户手动编辑；规则集确定性可测试 | 系统 cron/schtasks（跨平台三套 + 内核外生命周期失控）；自建 kg_extraction_runs 表（无展示面纯属冗余）；幂等覆盖更新（破坏用户手动编辑）；AI 提取写 character_relations（破坏 F9 契约 + 双轨污染） |
 
 ---
 
@@ -679,7 +799,7 @@ F48 被依赖:
 | M7 | 手工验证闭环 | 建角色+世界观 → 图谱建「属于」关系 → 图谱显示 → 角色页建角色关系 → 图谱合并显示 → 删关系 → 删实体 → 关系被清理（无悬空边） |
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest` 全绿；ADR-027 门槛（先跑 coverage-backend 等价命令实测留 buffer）；`uv run ruff check src/ tests/unit/ ../tests/` + mypy 通过；前端 `pnpm lint` + `tsc --noEmit` |
 
-> Issue #478 验收标准映射：关系数据模型 = M1-M2；可视化 = M4/M6；手动增删改 = M3/M6；前端测试全绿 = M6/M8；#479 预留 = §5.5 数据面（M 行不覆盖——由 #479 验收，见 §5.5 挂靠验收）。
+> Issue #478 验收标准映射：关系数据模型 = M1-M2；可视化 = M4/M6；手动增删改 = M3/M6；前端测试全绿 = M6/M8；#479 预留 = §5.5 数据面（M 行不覆盖——由 #479 验收，见 §5.5.9）。
 
 ---
 
@@ -693,4 +813,4 @@ F48 被依赖:
 
 ---
 
-> **所有里程碑验收以本节 M1-M8 为准**；Q1-Q3 已全拍板（2026-08-19，✅ 留痕），正文已按拍板结果修订（§2.1 规则 3b / §5.2 聚合 / §5.4 前端 / §8 文件结构 / §10 / §11 / §12 决策 9-11 / §13）——S2 实现以 v1.1 为唯一真相来源。
+> **所有里程碑验收以本节 M1-M8 为准**；Q1-Q3 已全拍板（2026-08-19，✅ 留痕），正文已按拍板结果修订（§2.1 规则 3b / §5.2 聚合 / §5.4 前端 / §8 文件结构 / §10 / §11 / §12 决策 9-11 / §13）——F48 实现以 v1.1 为唯一真相来源。v1.2（2026-08-19）补定 §5.5 #479 具体契约（决策 12），#479 实现以 §5.5 为唯一真相。

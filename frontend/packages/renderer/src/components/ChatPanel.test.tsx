@@ -9,20 +9,26 @@
  * 结构 testid：
  * - chat-panel（容器）/ chat-input（textarea）/ chat-send（发送按钮）
  * - chat-msg-user-<n>（用户消息）/ chat-msg-ai-<n>（AI 回复消息）
- * - chat-insert-<n>（该条 AI 消息的「插入正文」按钮）
+ * - chat-select-<n>（content 意图消息的选择控件，data-selected="true"|"false" 选中态）
+ * - chat-insert-selected（共享「插入选中正文」按钮，仅存在 content 消息时渲染）
  *
  * 行为契约：
  * - 空输入（trim 后空）→ chat-send disabled
  * - 输入 + 发送 → executePipeline({pipeline:'builtin:chat', project_id, variables:{prompt, chapter_context?}})
  *   chapter_context 仅在 chapterContent 非空时注入
  * - 轮询 getExecutionStatus(execution_id)（1s 间隔）→ status==='completed'
- *   → assistant 消息展示 final_output + 「插入正文」按钮
- * - 点「插入正文」→ chapterStore.setContent(final_output)（不自动保存，F27 save 流）
+ *   → 用 parseChatReply(final_output) 解析意图（#477，src/lib/chatIntent.ts GREEN 建）：
+ *     content（含成对标记）→ 消息只显示提取 body（标记与前言隐藏）+ chat-select-<n> 控件
+ *     conversation（无标记）→ 消息显示完整原文，无选择/插入控件
+ * - 单选互斥：点 chat-select-<n> 切换选中；新 content 消息到达自动成为选中条（最新优先）
+ * - 点 chat-insert-selected → chapterStore.setContent(选中条 body)（不自动保存，F27 save 流）
+ *   + toast（write.chat.inserted）
+ * - 旧 per-message chat-insert-<n> 按钮已删除（#477：新契约下任何场景都不应出现）
  * - status==='failed' → 消息区显示错误文案（含「对话失败」），不插入正文
  * - 发送中并发保护：execute 未 resolve 时再次发送不触发第二次 execute
  *
  * i18n key（GREEN 补）：write.chat.placeholder / write.chat.send / write.chat.insert /
- * write.chat.inserted / write.chat.failed
+ * write.chat.inserted / write.chat.failed / write.chat.select（选中此回复，选择控件 aria-label）
  *
  * 展开/收缩/拖动契约（#476 D2，2026-08-19 追加）：
  * - chat-expand（展开对话按钮，aria-label = write.chat.expand「展开对话」）
@@ -62,6 +68,22 @@ const statusMock = vi.mocked(getExecutionStatus);
 const apiFetchMock = vi.mocked(apiFetch);
 
 const OPTS = { projectId: 'p1', chapterId: 'c1', chapterContent: '已有正文第一段。' };
+
+/** #477：构造一条 completed 轮询响应（final_output 可变），形状与 beforeEach 默认 mock 一致。 */
+type ChatStatusReply = Awaited<ReturnType<typeof getExecutionStatus>>;
+function completedReply(finalOutput: string): ChatStatusReply {
+  return {
+    execution_id: 'e-chat-1',
+    pipeline: 'builtin:chat',
+    project_id: 'p1',
+    status: 'completed',
+    stages: [],
+    trace: [],
+    final_output: finalOutput,
+    total_duration_ms: 900,
+    error: '',
+  };
+}
 
 /** #474：已配置模型（key_saved=true + chat 模型）种子 provider——模拟用户在模型管理页保存过 Key */
 const READY_PROVIDER: ProviderConfig = {
@@ -167,7 +189,9 @@ describe('ChatPanel — 聊天输入与发送', () => {
 });
 
 describe('ChatPanel — 回复与插入正文', () => {
-  it('轮询 completed → assistant 消息 + 插入正文按钮', async () => {
+  it('轮询 completed → content 意图：assistant 消息只显示 body + 自动选中 + 共享插入按钮', async () => {
+    // #477：带标记的产出正文（LLM 按 prompt 约定用标记包裹正文）
+    statusMock.mockResolvedValue(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n他握紧了剑。\n<<<END>>>'));
     vi.useFakeTimers();
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
@@ -179,11 +203,21 @@ describe('ChatPanel — 回复与插入正文', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
-    expect(screen.getByTestId('chat-msg-ai-0')).toHaveTextContent('对话回复内容');
-    expect(screen.getByTestId('chat-insert-0')).toBeInTheDocument();
+    // 只显示提取的 body，不显示标记与前言
+    expect(screen.getByTestId('chat-msg-ai-0')).toHaveTextContent('他握紧了剑。');
+    expect(screen.getByTestId('chat-msg-ai-0')).not.toHaveTextContent('好的，以下是续写内容');
+    expect(screen.getByTestId('chat-msg-ai-0')).not.toHaveTextContent('<<<CONTENT>>>');
+    expect(screen.getByTestId('chat-msg-ai-0')).not.toHaveTextContent('<<<END>>>');
+    // content 消息：选择控件存在且自动选中
+    expect(screen.getByTestId('chat-select-0')).toHaveAttribute('data-selected', 'true');
+    // 共享插入按钮存在；旧 per-message 按钮不存在（#477 已删除）
+    expect(screen.getByTestId('chat-insert-selected')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-insert-0')).toBeNull();
   });
 
-  it('点「插入正文」→ chapterStore.setContent(final_output)', async () => {
+  it('点共享「插入选中」→ chapterStore.setContent(选中条 body，纯 body 无标记无前言)', async () => {
+    // #477：带标记的产出正文；默认最新选中 → 插入提取后的纯 body
+    statusMock.mockResolvedValue(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n他握紧了剑。\n<<<END>>>'));
     vi.useFakeTimers();
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
@@ -192,8 +226,8 @@ describe('ChatPanel — 回复与插入正文', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
-    await user.click(screen.getByTestId('chat-insert-0'));
-    expect(useChapterStore.getState().content).toBe('对话回复内容');
+    await user.click(screen.getByTestId('chat-insert-selected'));
+    expect(useChapterStore.getState().content).toBe('他握紧了剑。');
   });
 });
 
@@ -393,5 +427,159 @@ describe('ChatPanel — 展开/收缩/拖动（#476 D2：对话区高度交互�
     const after = messages.getAttribute('data-height');
     expect(after).toBeTruthy();
     expect(Number(after)).toBeGreaterThan(Number(before));
+  });
+});
+
+describe('ChatPanel — 意图分离（#477 D8）', () => {
+  /**
+   * 契约：#477 聊天回复意图分离——success 到达时用 parseChatReply(final_output)
+   * 判定意图（src/lib/chatIntent.ts，GREEN 建）：
+   * - content 意图（含成对 <<<CONTENT>>> / <<<END>>> 标记）：消息只显示提取 body，
+   *   渲染选择控件 chat-select-<n>（data-selected 选中态），可插入
+   * - conversation 意图（无标记）：消息显示完整原文，无选择/插入控件
+   * - chat-insert-selected 仅当存在至少一条 content 消息时渲染
+   *
+   * i18n key（GREEN 补 zh.ts/en.ts）：write.chat.select（选中此回复，选择控件 aria-label）
+   */
+  it('无标记回复（默认 final_output）→ conversation：显示原文，无选择控件、无插入按钮', async () => {
+    vi.useFakeTimers();
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await user.type(screen.getByTestId('chat-input'), '聊聊角色设定');
+    await user.click(screen.getByTestId('chat-send'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    // conversation：完整原文展示
+    expect(screen.getByTestId('chat-msg-ai-0')).toHaveTextContent('对话回复内容');
+    // 无选择控件 / 无共享插入按钮
+    expect(screen.queryByTestId('chat-select-0')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-insert-selected')).not.toBeInTheDocument();
+  });
+
+  it('混合：第 1 条 content + 第 2 条 conversation → 仅 content 条可选，选中仍在 seq 0', async () => {
+    vi.useFakeTimers();
+    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n他握紧了剑。\n<<<END>>>'));
+    statusMock.mockResolvedValueOnce(completedReply('对话回复内容'));
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    // 第一次发送 → content 回复
+    await user.type(screen.getByTestId('chat-input'), '写一段打斗');
+    await user.click(screen.getByTestId('chat-send'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(screen.getByTestId('chat-select-0')).toHaveAttribute('data-selected', 'true');
+    // 第二次发送 → conversation 回复（无标记）
+    await user.type(screen.getByTestId('chat-input'), '谢谢');
+    await user.click(screen.getByTestId('chat-send'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    // 第 2 条为 conversation：无选择控件
+    expect(screen.queryByTestId('chat-select-1')).not.toBeInTheDocument();
+    // 共享插入按钮仍渲染（存在 content 消息）；选中保持在 seq 0
+    expect(screen.getByTestId('chat-insert-selected')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-select-0')).toHaveAttribute('data-selected', 'true');
+  });
+});
+
+describe('ChatPanel — 多生成单选插入（#477）', () => {
+  /**
+   * 契约：多条 content 回复时单选互斥——每条渲染 chat-select-<n>（data-selected
+   * 选中态），新到达的 content 消息自动成为选中条（最新优先）；共享
+   * chat-insert-selected 只插入选中条的 body；旧 per-message chat-insert-<n>
+   * 按钮已删除（任何场景都不应出现）。
+   */
+  it('两条 content → 均渲染选择控件；新到第 2 条自动选中（互斥）', async () => {
+    vi.useFakeTimers();
+    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n第一段正文。\n<<<END>>>'));
+    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n第二段正文。\n<<<END>>>'));
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await user.type(screen.getByTestId('chat-input'), '写第一段');
+    await user.click(screen.getByTestId('chat-send'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await user.type(screen.getByTestId('chat-input'), '写第二段');
+    await user.click(screen.getByTestId('chat-send'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    // 两条 content 均渲染选择控件
+    expect(screen.getByTestId('chat-select-0')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-select-1')).toBeInTheDocument();
+    // 最新到达的第 2 条自动选中（data-selected 互斥）
+    expect(screen.getByTestId('chat-select-1')).toHaveAttribute('data-selected', 'true');
+    expect(screen.getByTestId('chat-select-0')).toHaveAttribute('data-selected', 'false');
+    // 共享插入按钮存在；旧 per-message 按钮不存在
+    expect(screen.getByTestId('chat-insert-selected')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-insert-0')).toBeNull();
+  });
+
+  it('点 chat-select-0 → 选中切换到第 1 条（互斥）', async () => {
+    vi.useFakeTimers();
+    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n第一段正文。\n<<<END>>>'));
+    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n第二段正文。\n<<<END>>>'));
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await user.type(screen.getByTestId('chat-input'), '写第一段');
+    await user.click(screen.getByTestId('chat-send'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await user.type(screen.getByTestId('chat-input'), '写第二段');
+    await user.click(screen.getByTestId('chat-send'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await user.click(screen.getByTestId('chat-select-0'));
+    expect(screen.getByTestId('chat-select-0')).toHaveAttribute('data-selected', 'true');
+    expect(screen.getByTestId('chat-select-1')).toHaveAttribute('data-selected', 'false');
+  });
+
+  it('选中第 1 条后点插入 → 只插入选中条 body（+ toast 已插入正文）', async () => {
+    vi.useFakeTimers();
+    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n第一段正文。\n<<<END>>>'));
+    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n第二段正文。\n<<<END>>>'));
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await user.type(screen.getByTestId('chat-input'), '写第一段');
+    await user.click(screen.getByTestId('chat-send'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await user.type(screen.getByTestId('chat-input'), '写第二段');
+    await user.click(screen.getByTestId('chat-send'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    // 手动切到第 1 条 → 插入第 1 条 body
+    await user.click(screen.getByTestId('chat-select-0'));
+    await user.click(screen.getByTestId('chat-insert-selected'));
+    expect(useChapterStore.getState().content).toBe('第一段正文。');
+    expect(useToastStore.getState().toasts.some((t) => t.message.includes('已插入正文'))).toBe(true);
+  });
+
+  it('不手动切换（默认最新选中）点插入 → 插入第 2 条 body', async () => {
+    vi.useFakeTimers();
+    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n第一段正文。\n<<<END>>>'));
+    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n第二段正文。\n<<<END>>>'));
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await user.type(screen.getByTestId('chat-input'), '写第一段');
+    await user.click(screen.getByTestId('chat-send'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await user.type(screen.getByTestId('chat-input'), '写第二段');
+    await user.click(screen.getByTestId('chat-send'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    // 默认最新选中（第 2 条）→ 插入第 2 条 body
+    await user.click(screen.getByTestId('chat-insert-selected'));
+    expect(useChapterStore.getState().content).toBe('第二段正文。');
   });
 });
