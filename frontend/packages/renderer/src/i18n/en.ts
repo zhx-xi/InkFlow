@@ -363,6 +363,8 @@ export const en: Record<string, string> = {
   'write.chat.insert': 'Insert into chapter',
   'write.chat.inserted': 'Inserted. Press Ctrl+S to save',
   'write.chat.failed': 'Chat failed: {message}',
+  'write.chat.expand': 'Expand chat',
+  'write.chat.collapse': 'Collapse chat',
   'write.view.toDetail': 'View AI execution details',
   'write.view.toEditor': 'Back to editor',
   'write.detail.empty': 'No execution records',
