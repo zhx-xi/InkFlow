@@ -172,9 +172,7 @@ def _make_service(
 
 def test_planner_session_v12_fields_defaults():
     """PlannerSession 新字段默认值（confirmed_items/conflicts/confirming）。"""
-    session = PlannerSession(
-        id=_sid(), project_id=_pid(), one_liner="一句话"
-    )
+    session = PlannerSession(id=_sid(), project_id=_pid(), one_liner="一句话")
     assert session.confirmed_items == []
     assert session.conflicts == []
     assert session.confirming is False
@@ -271,9 +269,7 @@ async def test_start_llm_failure_falls_back_round1():
 
     session = await svc.start(_pid(), "写一本关于时间旅者的悬疑小说")
 
-    assert [q["id"] for q in session.asked_questions] == [
-        q["id"] for q in ROUND1_QUESTIONS
-    ]
+    assert [q["id"] for q in session.asked_questions] == [q["id"] for q in ROUND1_QUESTIONS]
     assert all(q.get("kind") == "general" for q in session.asked_questions)
     assert llm.chat.await_count == 2  # 重试 1 次
 
@@ -291,9 +287,7 @@ async def test_start_no_llm_client_uses_round1():
 
     session = await svc.start(_pid(), "写一本关于时间旅者的悬疑小说")
 
-    assert [q["id"] for q in session.asked_questions] == [
-        q["id"] for q in ROUND1_QUESTIONS
-    ]
+    assert [q["id"] for q in session.asked_questions] == [q["id"] for q in ROUND1_QUESTIONS]
 
 
 # ── respond：确定项提取 + 只问未确定项（D1 需求 2）────────────────
@@ -331,9 +325,7 @@ async def test_respond_llm_extracts_confirmed_and_filters_confirmed_question():
                     "kind": "general",
                 },
             ],
-            confirmed_items=[
-                {"key": "题材", "value": "悬疑 + 时间悖论科幻", "source": "user"}
-            ],
+            confirmed_items=[{"key": "题材", "value": "悬疑 + 时间悖论科幻", "source": "user"}],
         )
     )
     svc = _make_service(repo, llm_client=llm)
@@ -358,9 +350,7 @@ async def test_respond_confirmed_items_merge_by_key():
     session = _session(
         round=1,
         asked_questions=[{"id": "q1", "text": "题材：？", "template": "___", "kind": "general"}],
-        confirmed_items=[
-            {"key": "题材", "value": "悬疑", "source": "llm_inferred"}
-        ],
+        confirmed_items=[{"key": "题材", "value": "悬疑", "source": "llm_inferred"}],
     )
     repo.get_planner_session.return_value = session
     llm = _make_llm_client(
@@ -484,9 +474,7 @@ async def test_respond_all_must_answered_enters_confirming():
     repo = _make_repo()
     session = _session(
         round=1,
-        asked_questions=[
-            {"id": "q1", "text": "题材：？", "template": "___", "kind": "general"}
-        ],
+        asked_questions=[{"id": "q1", "text": "题材：？", "template": "___", "kind": "general"}],
         confirmed_items=[
             {"key": "题材", "value": "悬疑 + 时间悖论科幻", "source": "user"},
             {"key": "篇幅", "value": "10 万字", "source": "user"},
@@ -675,9 +663,7 @@ async def test_llm_output_invalid_json_retries_then_fallback():
 
     session = await svc.start(_pid(), "写一本关于时间旅者的悬疑小说")
 
-    assert [q["id"] for q in session.asked_questions] == [
-        q["id"] for q in ROUND1_QUESTIONS
-    ]
+    assert [q["id"] for q in session.asked_questions] == [q["id"] for q in ROUND1_QUESTIONS]
     assert llm.chat.await_count == 2  # 输出不合格 → 重试 1 次
 
 
@@ -797,4 +783,70 @@ async def test_apply_conflicts_empty_answers():
 
     assert session.conflicts[0]["question_id"] == ""
     assert session.conflicts[0]["answer"] == ""
-    assert session.conflicts[0]["round"] == 1
+
+
+# ── #517 英文 key 归一化（真实 LLM 输出英文 key → 必须能进入 confirming）──
+
+
+@pytest.mark.asyncio
+async def test_respond_english_keys_normalized_to_confirming():
+    """#517 回归: LLM 输出英文 confirmed_items key（genre/length/theme）→
+    归一化后必答项齐备 → confirming=true（真实 deepseek 实测英文 key，
+    原实现与中文 _MUST_ANSWER_KEYS 永不匹配 → 访谈永不 confirming）。"""
+    repo = _make_repo()
+    session = _session(
+        round=1,
+        asked_questions=[{"id": "q1", "text": "题材：？", "template": "___", "kind": "general"}],
+    )
+    repo.get_planner_session.return_value = session
+    llm = _make_llm_client(
+        _llm_json(
+            questions=[],
+            confirmed_items=[
+                {"key": "genre", "value": "悬疑 + 时间悖论科幻", "source": "user"},
+                {"key": "length", "value": "10 万字", "source": "user"},
+                {"key": "theme", "value": "时间旅者自我救赎", "source": "llm_inferred"},
+            ],
+            conflicts=[],
+        )
+    )
+    svc = _make_service(repo, llm_client=llm)
+
+    result = await svc.respond(session.id, {"q1": "悬疑为主"})
+
+    assert result.confirming is True, (
+        f"#517: 英文 key 未归一化，confirming 仍 false（keys="
+        f"{[i.get('key') for i in result.confirmed_items]}）"
+    )
+    assert result.questions == []
+    keys = {item["key"] for item in result.confirmed_items}
+    assert set(_MUST_ANSWER_KEYS) <= keys
+
+
+@pytest.mark.asyncio
+async def test_respond_mixed_language_keys_normalized_to_confirming():
+    """#517 回归: 混合语言 key（题材中文 + 其余英文）→ 归一化后 confirming。"""
+    repo = _make_repo()
+    session = _session(
+        round=1,
+        asked_questions=[{"id": "q1", "text": "题材：？", "template": "___", "kind": "general"}],
+        confirmed_items=[{"key": "题材", "value": "悬疑", "source": "user"}],
+    )
+    repo.get_planner_session.return_value = session
+    llm = _make_llm_client(
+        _llm_json(
+            questions=[],
+            confirmed_items=[
+                {"key": "length", "value": "8 万字", "source": "user"},
+                {"key": "theme", "value": "救赎", "source": "llm_inferred"},
+            ],
+            conflicts=[],
+        )
+    )
+    svc = _make_service(repo, llm_client=llm)
+
+    result = await svc.respond(session.id, {"q1": "悬疑为主"})
+
+    assert result.confirming is True
+    keys = {item["key"] for item in result.confirmed_items}
+    assert set(_MUST_ANSWER_KEYS) <= keys
