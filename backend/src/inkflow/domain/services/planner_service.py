@@ -29,6 +29,7 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
+import builtins
 from inkflow.domain.models.planner_session import PlannerSession
 from inkflow.domain.models.writing_plan import STAGE1_LIMITS, WritingPlan
 from inkflow.domain.services._outline_generator import _extract_json_fragment
@@ -248,9 +249,9 @@ class PlannerService:
         status: str | None = None,
         offset: int = 0,
         limit: int = 50,
-    ) -> tuple[list[PlannerSession], int]:
+    ) -> tuple[builtins.list[PlannerSession], int]:
         """访谈会话列表（#486 会话页）."""
-        return await self._repo.list_planner_sessions(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 list_planner_sessions
+        return await self._repo.list_planner_sessions(  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 list_planner_sessions
             project_id=project_id, status=status, offset=offset, limit=limit
         )
 
@@ -491,7 +492,7 @@ class PlannerService:
         self,
         session: PlannerSession,
         answers: dict[str, str] | None = None,
-    ) -> list[dict] | None:
+    ) -> builtins.list[dict] | None:
         """调用 LLM 生成本轮问题（含确定项/冲突提取副作用暂存）.
 
         重试 1 次（搂7 场景 15）：chat 异常 / 输出不合格 / start 缺失必答项；
@@ -542,7 +543,7 @@ class PlannerService:
             return questions
         return None
 
-    async def _build_prompt_messages(self, session: PlannerSession) -> list[dict]:
+    async def _build_prompt_messages(self, session: PlannerSession) -> builtins.list[dict]:
         """构建 LLM prompt 消息列表：模板装配优先，未装配手工最小 prompt."""
         ctx = ""
         if self._project_context_getter is not None:
@@ -560,7 +561,7 @@ class PlannerService:
                     "session_history": hist,
                 },
             )
-            messages: list[dict] = [
+            messages: builtins.list[dict] = [
                 _PromptMessage(role=m["role"], content=m["content"]) for m in rendered.messages
             ]
             return messages
@@ -582,7 +583,7 @@ class PlannerService:
         ]
 
     @staticmethod
-    def _retry_messages(content: str, hint: str) -> list[dict]:
+    def _retry_messages(content: str, hint: str) -> builtins.list[dict]:
         """构建重试消息（assistant 原输出 + user 修复提示）."""
         return [
             _PromptMessage(role="assistant", content=content),
@@ -592,7 +593,7 @@ class PlannerService:
     @staticmethod
     def _build_session_history(session: PlannerSession) -> str:
         """序列化会话历史（answers/confirmed_items/conflicts）为紧凑文本供 LLM 感知."""
-        parts: list[str] = []
+        parts: builtins.list[str] = []
         if session.answers:
             parts.append("已回答：" + "；".join(f"{k}: {v}" for k, v in session.answers.items()))
         if session.confirmed_items:
@@ -616,7 +617,7 @@ class PlannerService:
     @staticmethod
     def _parse_llm_payload(
         content: str,
-    ) -> tuple[list[dict], list[dict], list[dict]] | None:
+    ) -> tuple[builtins.list[dict], builtins.list[dict], builtins.list[dict]] | None:
         """解析 LLM 结构化 JSON 输出（questions/confirmed_items/conflicts），失败返回 None."""
         fragment = _extract_json_fragment(content)
         if fragment is None:
@@ -636,7 +637,7 @@ class PlannerService:
             or not isinstance(conflicts_raw, list)
         ):
             return None
-        questions: list[dict] = []
+        questions: builtins.list[dict] = []
         for item in questions_raw:
             if not isinstance(item, dict):
                 return None
@@ -653,9 +654,9 @@ class PlannerService:
     @staticmethod
     def _missing_must_answer_keys(
         session: PlannerSession,
-        questions: list[dict],
-        confirmed_items: list[dict],
-    ) -> list[str]:
+        questions: builtins.list[dict],
+        confirmed_items: builtins.list[dict],
+    ) -> builtins.list[str]:
         """计算缺失必答项：未确认且本轮问题文本未覆盖的通用必答项 key."""
         confirmed_keys = {str(item.get("key", "")) for item in confirmed_items}
         confirmed_keys.update(str(item.get("key", "")) for item in session.confirmed_items)
@@ -667,7 +668,7 @@ class PlannerService:
         ]
 
     @staticmethod
-    def _merge_confirmed_items(session: PlannerSession, incoming: list[dict]) -> None:
+    def _merge_confirmed_items(session: PlannerSession, incoming: builtins.list[dict]) -> None:
         """按 key 合并 confirmed_items：新 key 追加、已存在 key 覆盖 value/source."""
         for item in incoming:
             key = item.get("key")
@@ -685,7 +686,7 @@ class PlannerService:
     def _apply_conflicts(
         session: PlannerSession,
         answers: dict[str, str],
-        conflicts: list[dict],
+        conflicts: builtins.list[dict],
     ) -> None:
         """LLM 冲突记录补 round/question_id/answer 后追加；resolved 同步标记既有 pending."""
         first_qid = next(iter(answers), "") if answers else ""
@@ -755,3 +756,4 @@ def _first_unanswered(questions: list[dict], answers: dict[str, str]) -> str | N
         if isinstance(qid, str) and qid not in answers:
             return qid
     return None
+
