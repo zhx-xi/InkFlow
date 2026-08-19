@@ -113,6 +113,18 @@ async def create_skill(
     return _to_response(skill)
 
 
+@router.post("/{skill_id}/duplicate", status_code=201)
+async def duplicate_skill(
+    skill_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """复制 Skill — 201 + 完整实体（source 恒 user_upload，agent_ids=[]）."""
+    sid = _parse_id(skill_id)
+    svc = _get_service(db)
+    skill = await _run_service(svc.duplicate(sid))
+    return _to_response(skill, agent_ids=[])
+
+
 @router.get("/{skill_id}")
 async def get_skill(
     skill_id: str,

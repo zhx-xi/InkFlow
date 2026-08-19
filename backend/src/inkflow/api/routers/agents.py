@@ -145,6 +145,18 @@ async def create_agent(
     return _to_response(agent)
 
 
+@router.post("/{agent_id}/duplicate", status_code=201)
+async def duplicate_agent(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """复制 Agent — 201 + 完整实体（name 加「 副本」后缀，builtin 恒 False）."""
+    aid = _parse_id(agent_id)
+    svc = _get_service(db)
+    agent = await _run_service(svc.duplicate(aid))
+    return _to_response(agent)
+
+
 @router.get("/{agent_id}")
 async def get_agent(
     agent_id: str,

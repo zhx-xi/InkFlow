@@ -289,6 +289,9 @@ export const zh = {
   'skill.deleteReferenced': '该 Skill 被 {n} 个 Agent 引用：{names}。删除后引用将自动移除，不可恢复',
   'skill.empty': '还没有 Skill，点击上传',
   'skill.listTitle': 'Skill 管理',
+  'skill.detail': '查看详情',
+  'skill.copy': '复制',
+  'skill.copied': '已复制',
   // Agent 模板（Issue #107）
   'tpl.title': '模板',
   'tpl.new': '新建',
@@ -511,6 +514,8 @@ export const zh = {
   'set.agents.skills': '技能',
   'set.agents.noCustom': '暂无自定义 Agent',
   'set.agents.deleteConfirm': '确定删除自定义 Agent「{name}」？此操作不可恢复',
+  'set.agents.detail': '查看详情',
+  'set.agents.copy': '复制',
   'set.agents.newAgent': '新建 Agent',
   'set.agents.editAgent': '编辑 Agent',
   'set.agents.name': '名称',
@@ -530,6 +535,7 @@ export const zh = {
   'set.agents.modelPlaceholder': 'provider/model，留空跟随默认',
   'toast.agentSaved': '已保存',
   'toast.agentDeleted': '已删除',
+  'toast.agentCopied': '已复制',
   // 外观
   'ap.title': '外观',
   'ap.theme': '主题',

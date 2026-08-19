@@ -32,6 +32,8 @@
  * - updateAgent(id, patch): PATCH /api/v1/agents/{id} body=Partial<AgentInput> → 200 → agents 替换 + return；
  *   失败 error + rethrow
  * - deleteAgent(id): DELETE /api/v1/agents/{id}（204）→ agents 过滤；失败 error（不 rethrow，镜像 templates.deleteTemplate）
+ * - copyAgent(id): POST /api/v1/agents/{id}/duplicate → 201 完整实体（name=f"{原名} 副本"、builtin=false、
+ *   role_key=null）→ agents 追加到列表尾部 + return created；失败 error + rethrow（镜像 createAgent 语义）
  *
  * 端点信封（后端实证）：列表 {items,total}；tools {items}；POST/PATCH 返回完整实体（无信封）
  *
@@ -218,5 +220,44 @@ describe('useAgentsStore — CRUD', () => {
     expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agents/2', expect.objectContaining({ method: 'DELETE' }));
     expect(useAgentsStore.getState().agents).toHaveLength(1);
     expect(useAgentsStore.getState().agents[0].name).toBe('架构师');
+  });
+});
+
+describe('useAgentsStore — copyAgent（#485 内置 Agent 复制）', () => {
+  /** 副本实体（后端契约：name=f"{原名} 副本"、builtin=false、role_key=null） */
+  const COPIED_AGENT: AgentEntity = {
+    ...BUILTIN_AGENT,
+    id: 10,
+    name: '架构师 副本',
+    builtin: false,
+    role_key: null,
+  };
+
+  /** store 缺 copyAgent action → 类型 cast（#106 先例，tsc --noEmit 绿；GREEN 后 cast 可留可删） */
+  type AgentsStoreWithCopy = ReturnType<typeof useAgentsStore.getState> & {
+    copyAgent: (id: number) => Promise<AgentEntity>;
+  };
+  const storeWithCopy = () => useAgentsStore.getState() as AgentsStoreWithCopy;
+
+  it('copyAgent 成功：POST /api/v1/agents/1/duplicate → 副本追加列表尾部 + return', async () => {
+    apiFetchMock.mockResolvedValue(COPIED_AGENT);
+    const created = await storeWithCopy().copyAgent(1);
+    expect(apiFetchMock).toHaveBeenCalledWith(
+      '/api/v1/agents/1/duplicate',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(created).toEqual(COPIED_AGENT);
+    expect(created.name).toBe('架构师 副本');
+    expect(created.builtin).toBe(false);
+    expect(useAgentsStore.getState().agents).toHaveLength(1);
+    expect(useAgentsStore.getState().agents[0].name).toBe('架构师 副本');
+  });
+
+  it('copyAgent 失败：error 设置 + rethrow + 列表不变', async () => {
+    useAgentsStore.setState({ agents: [BUILTIN_AGENT] });
+    apiFetchMock.mockRejectedValue(new Error('duplicate failed'));
+    await expect(storeWithCopy().copyAgent(1)).rejects.toThrow('duplicate failed');
+    expect(useAgentsStore.getState().error).not.toBeNull();
+    expect(useAgentsStore.getState().agents).toHaveLength(1);
   });
 });
