@@ -192,6 +192,10 @@ export const en: Record<string, string> = {
   'lib.knowledge.node.goEdit': 'Edit',
   'lib.knowledge.edge.source': 'Source',
   'set.title': 'Settings',
+  // #482: project aggregate settings page (/settings/project)
+  'ps.title': 'Project Settings',
+  'ps.empty': 'Select a project first',
+  'ps.worldview': 'Worldview advisor',
   'set.cat.general': 'General',
   'set.cat.models': 'Models',
   'set.cat.agent': 'Agent',

@@ -121,10 +121,10 @@ export function ProjectsPage() {
 
   // F43 §5.5：项目删除确认 → store.deleteProject（DELETE）→ 成功/失败均关闭确认框；
   // 成功 ok toast（卡片消失由 store 驱动），失败 err toast（store rethrow 不吞错）
-  // #351：卡片菜单「修改」→ 锚定项目 + 跳设置页（D1=A：设置页项目选择器锚定）
+  // #482：项目卡片「修改」→ 锚定项目 + 跳转项目聚合设置页（D4：聚合项目级 config）
   const handleProjectEdit = (project: Project) => {
     selectProject(project.id);
-    navigate('/settings?cat=general');
+    navigate('/settings/project');
   };
 
   const handleProjectDelete = async () => {

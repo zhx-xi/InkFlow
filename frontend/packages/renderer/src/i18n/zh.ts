@@ -194,6 +194,10 @@ export const zh = {
   'lib.knowledge.node.goEdit': '去编辑',
   'lib.knowledge.edge.source': '来源',
   // 设置页
+  // #482：项目聚合设置页（/settings/project）
+  'ps.title': '项目设置',
+  'ps.empty': '请先在项目页选择项目',
+  'ps.worldview': '世界观顾问',
   'set.title': '设置',
   'set.cat.general': '常规',
   'set.cat.models': '模型',
