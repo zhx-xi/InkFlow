@@ -22,6 +22,7 @@ from inkflow.domain.models.provider_config import (
     ProviderConfig,
     ProviderConfigCreate,
     ProviderConfigUpdate,
+    ProviderModel,
 )
 from inkflow.domain.ports.provider_config_errors import (
     ProviderConfigNameConflictError,
@@ -81,6 +82,46 @@ class ProviderConfigService:
     async def list(self) -> builtins.list[ProviderConfig]:
         """列出全部 Provider（按 name 升序，委托 repo）."""
         return await self._repo.list()
+
+    async def set_embedding_model(self, provider: str, model_id: str) -> ProviderConfig:
+        """将指定模型设为唯一激活的 embedding 模型。
+
+        目标 provider/model 必须存在（否则 ProviderConfigNotFoundError）；
+        目标模型 type 置为 "embedding"（id/roles 保留）；其他所有 provider
+        （含同 provider 其他模型）的 type=="embedding" 条目降级为 "chat"
+        （唯一激活语义，对齐装配 _resolve_embedding_spec 取首个 embedding）。
+        返回更新后的目标 ProviderConfig。
+        """
+        all_pcs = await self._repo.list()
+        target_pc = next((pc for pc in all_pcs if pc.name == provider), None)
+        if target_pc is None:
+            raise ProviderConfigNotFoundError()
+        if not any(m.id == model_id for m in target_pc.models):
+            raise ProviderConfigNotFoundError()
+        updated_target: ProviderConfig | None = None
+        for existing in all_pcs:
+            new_models: list[ProviderModel] = []
+            changed = False
+            for m in existing.models:
+                if existing.name == provider and m.id == model_id:
+                    if m.type != "embedding":
+                        changed = True
+                    new_models.append(m.model_copy(update={"type": "embedding"}))
+                elif m.type == "embedding":
+                    changed = True
+                    new_models.append(m.model_copy(update={"type": "chat"}))
+                else:
+                    new_models.append(m)
+            if changed:
+                merged_pc = existing.model_copy(
+                    update={"models": new_models, "updated_at": _utcnow()}
+                )
+                updated: ProviderConfig = await self._repo.update(merged_pc)
+                if existing.name == provider:
+                    updated_target = updated
+        if updated_target is None:
+            updated_target = target_pc
+        return updated_target
 
     async def update(self, provider_config_id: int, data: ProviderConfigUpdate) -> ProviderConfig:
         """部分更新 Provider（exclude_unset 浅合并，同 F1/F13）.

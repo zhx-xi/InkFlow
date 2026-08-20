@@ -251,6 +251,9 @@ export const zh = {
   'set.rag.reason.modelChanged': '模型已变更',
   'set.rag.reason.chunkingChanged': '切片参数已变更',
   'set.rag.reason.schemaOld': '数据版本过旧',
+  // #525/#526（2026-08-20）：向量模型选择器 + 全局默认模型
+  'set.rag.selectModel': '向量模型',
+  'set.globalModel.label': '全局默认模型',
   'set.templates.placeholder': '模板功能将在后续版本提供',
   'set.account.dataDir': '数据目录',
   'set.account.dataDirSave': '保存',

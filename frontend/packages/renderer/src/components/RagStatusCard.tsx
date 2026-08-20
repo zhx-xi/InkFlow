@@ -2,11 +2,13 @@
  * #276 RAG 向量检索状态卡（#481 从 settings.tsx ModelsPanel 迁出为独立组件）：
  * 挂载于设置页模型分类，展示当前 embedding 模型 + 匹配状态，支持确认后全量重建。
  */
-import { useEffect, useState } from 'react';
-import { fetchVectorStatus, postVectorReindex, type VectorStatusDto } from '../api/vector';
+import { useEffect, useMemo, useState } from 'react';
+import { fetchVectorStatus, postVectorReindex, putEmbeddingModel, type VectorStatusDto } from '../api/vector';
 import { useI18n } from '../i18n/useI18n';
+import { useModelsStore } from '../stores/models';
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 export function RagStatusCard() {
   const { t } = useI18n();
@@ -15,6 +17,9 @@ export function RagStatusCard() {
   const [status, setStatus] = useState<VectorStatusDto | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [reindexing, setReindexing] = useState(false);
+  // #525：embedding 模型切换保存中（防并发 PUT）
+  const [saving, setSaving] = useState(false);
+  const providers = useModelsStore((s) => s.providers);
 
   // #276：挂载 / 切换项目 → 查询向量库状态；内核未就绪等失败静默（不炸 UI）
   useEffect(() => {
@@ -50,6 +55,40 @@ export function RagStatusCard() {
     }
   };
 
+  /** #525：注册表 embedding 模型扁平化选项（value/label = provider/model） */
+  const embeddingOptions = useMemo(
+    () =>
+      providers.flatMap((p) =>
+        p.models
+          .filter((m) => m.type === 'embedding')
+          .map((m) => ({ value: `${p.name}/${m.id}`, label: `${p.name}/${m.id}` })),
+      ),
+    [providers],
+  );
+
+  /** #525：当前生效 embedding 模型（provider/model；未配置 → undefined） */
+  const currentEmbedding = status?.configured_fp
+    ? `${status.configured_fp.embedding.provider}/${status.configured_fp.embedding.model_id}`
+    : undefined;
+
+  /** #525：切换激活 embedding 模型 → PUT 全局设置 → 刷新向量状态 + 注册表 */
+  const handleEmbeddingChange = async (value: string) => {
+    const [provider, ...rest] = value.split('/');
+    const modelId = rest.join('/');
+    if (!provider || !modelId || saving) return;
+    setSaving(true);
+    try {
+      await putEmbeddingModel(provider, modelId);
+      const data = await fetchVectorStatus(currentProjectId!);
+      setStatus(data ?? null);
+      void useModelsStore.getState().loadProviders();
+    } catch {
+      pushToast('err', t('toast.saveFailed'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   /** #276：确认 → 全量重建 → 刷新状态；失败 → err toast */
   const handleReindex = async () => {
     if (!currentProjectId || reindexing) return;
@@ -81,6 +120,32 @@ export function RagStatusCard() {
               {status.configured_fp?.embedding.model_id ?? '—'}
             </span>
           </div>
+
+          {/* #525：切换激活 embedding 模型（无 embedding 模型 → 不渲染 Select） */}
+          {embeddingOptions.length > 0 && (
+            <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
+              <span>{t('set.rag.selectModel')}</span>
+              <Select
+                value={currentEmbedding}
+                onValueChange={(v) => void handleEmbeddingChange(v)}
+              >
+                <SelectTrigger
+                  data-testid="rag-embedding-select"
+                  aria-label={t('set.rag.selectModel')}
+                  className="w-56"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {embeddingOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {status.reason === 'no_embedding' && (
             <div data-testid="rag-no-embedding" className="text-[12px] text-ink-3">

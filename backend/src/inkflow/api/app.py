@@ -39,6 +39,9 @@ from inkflow.api.routers import (
     world_settings,
     writing,
 )
+from inkflow.api.routers import (
+    config as config_router,
+)
 from inkflow.core.config import config
 from inkflow.core.database import (
     async_session_factory,
@@ -196,6 +199,7 @@ app.include_router(project.router)
 app.include_router(provider_configs.router)
 app.include_router(agent_templates.router)
 app.include_router(style.router)
+app.include_router(config_router.router)
 app.include_router(chapter.router)
 app.include_router(chapter_audit.router)
 app.include_router(characters.router)

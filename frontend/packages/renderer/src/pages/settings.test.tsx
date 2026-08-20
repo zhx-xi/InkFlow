@@ -56,6 +56,19 @@ vi.mock('../api/vector', () => ({
   postVectorReindex: vectorReindexMock,
 }));
 
+// #526（2026-08-20）：全局默认模型卡片契约 mock（GREEN 创建 src/api/config.ts）。
+// RED 阶段组件未挂载 → 本 mock 惰性不生效；GREEN 挂载 GlobalDefaultModelCard 后
+// fetchConfig/patchConfig 走假实现（PATCH /api/v1/config {llm_default_model}）。
+const { fetchConfigMock526, patchConfigMock526 } = vi.hoisted(() => ({
+  fetchConfigMock526: vi.fn(),
+  patchConfigMock526: vi.fn(),
+}));
+
+vi.mock('../api/config', () => ({
+  fetchConfig: fetchConfigMock526,
+  patchConfig: patchConfigMock526,
+}));
+
 // ⚠️ #107 RED 阶段 mock：stores/templates 与 components/TemplateDialog 由 GREEN 创建，
 // 本文件以测试内假实现提供（保证既有用例可运行）。假 store 行为与 stores/templates.test.ts
 // 契约一致；假 dialog 为受控表单壳（open/editing 回显 + 保存走 onCreate/onUpdate 回调）。
@@ -831,6 +844,8 @@ describe('设置页 — 模型/账户分类', () => {
         expect(within(panel).queryByTestId('role-binding')).not.toBeInTheDocument();
     // #481：RAG 状态卡保留（与模型管理并存）
     expect(await screen.findByTestId('rag-status-card')).toBeInTheDocument();
+    // #526：全局默认模型卡片（GREEN 前未挂载 → RED element-missing）
+    expect(await screen.findByTestId('global-model-select')).toBeInTheDocument();
   });
 
   it('账户分类：数据目录 + 关于', async () => {
