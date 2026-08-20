@@ -285,6 +285,34 @@ class TestExtract:
             await service.extract(WorldExtractRequest(project_id=PID, text="第一章正文"))
         mock_extractor.extract.assert_not_awaited()
 
+    async def test_extract_project_model_none_falls_back_to_llm_default_model(
+        self, mock_project_repo, mock_extractor
+    ) -> None:
+        """#520 D1=C：project.config.model=None → default_model 回退注入的 llm_default_model。"""
+        project = Project(
+            id=PID,
+            name="测试项目",
+            config=ProjectConfig(model=None),
+            created_at=TS,
+            updated_at=TS,
+        )
+        mock_project_repo.get = AsyncMock(return_value=project)
+        fallback = "deepseek/deepseek-v4-flash"
+        result = WorldExtractionResult(created=[], updated=[], warnings=[], model=fallback)
+        mock_extractor.extract = AsyncMock(return_value=result)
+        svc = WorldService(
+            repository=MagicMock(),
+            extractor=mock_extractor,
+            project_repo=mock_project_repo,
+            llm_default_model=fallback,
+        )
+
+        request = WorldExtractRequest(project_id=PID, text="第一章正文")
+        outcome = await svc.extract(request)
+
+        assert outcome == result
+        mock_extractor.extract.assert_awaited_once_with(request, default_model=fallback)
+
     async def test_extract_unconfigured_extractor_raises(self, mock_repo) -> None:
         """extractor 未注入 → WorldServiceError（配置错误，防静默降级）。"""
         svc = WorldService(repository=mock_repo)

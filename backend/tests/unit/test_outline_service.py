@@ -532,6 +532,34 @@ class TestGenerate:
             await service.generate(OutlineGenerateRequest(project_id=PID))
         mock_generator.generate.assert_not_awaited()
 
+    async def test_generate_project_model_none_falls_back_to_llm_default_model(
+        self, mock_project_repo, mock_generator
+    ) -> None:
+        """#520 D1=C：project.config.model=None → default_model 回退注入的 llm_default_model。"""
+        project = Project(
+            id=PID,
+            name="测试项目",
+            config=ProjectConfig(model=None),
+            created_at=TS,
+            updated_at=TS,
+        )
+        mock_project_repo.get = AsyncMock(return_value=project)
+        fallback = "deepseek/deepseek-v4-flash"
+        result = OutlineGenerationResult(saved=True, model=fallback)
+        mock_generator.generate = AsyncMock(return_value=result)
+        svc = OutlineService(
+            repository=MagicMock(),
+            generator=mock_generator,
+            project_repo=mock_project_repo,
+            llm_default_model=fallback,
+        )
+
+        request = OutlineGenerateRequest(project_id=PID, name="第一卷大纲")
+        outcome = await svc.generate(request)
+
+        assert outcome == result
+        assert mock_generator.generate.await_args.kwargs["default_model"] == fallback
+
     async def test_generate_missing_dependencies_raise(self, mock_repo) -> None:
         """generator / project_repo 未注入 → OutlineServiceError（配置错误）。"""
         bare = OutlineService(repository=mock_repo)

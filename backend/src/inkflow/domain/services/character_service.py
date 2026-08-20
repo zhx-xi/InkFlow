@@ -28,6 +28,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from inkflow.core.config import config
 from inkflow.domain.models.character import (
     Character,
     CharacterExtractionResult,
@@ -76,6 +77,8 @@ class CharacterService:
         project_repo: 项目仓储（F1），extract 入口校验项目存在并读取默认模型.
         map_cleanup: 角色硬删钩子（F43 P5）：删除成功后解除 map_pins.ref_id
             （type=role）关联；失败由 deps 闭包处理，不阻断主流程.
+        llm_default_model: 全局默认模型（#520 D1=C）——project.config.model 为
+            None 时回退该值（deps.py 注入 config.llm_default_model）.
     """
 
     def __init__(
@@ -85,11 +88,13 @@ class CharacterService:
         extractor: CharacterExtractor | None = None,
         project_repo: ProjectRepositoryProtocol | None = None,
         map_cleanup: Callable[[int], Awaitable[None]] | None = None,
+        llm_default_model: str = config.llm_default_model,
     ) -> None:
         self._repo = repository
         self._extractor = extractor
         self._project_repo = project_repo
         self._map_cleanup = map_cleanup
+        self._llm_default_model = llm_default_model
 
     # ── Character ──────────────────────────────────────────────────
 
@@ -488,4 +493,6 @@ class CharacterService:
             request.project_id,
             request.model or project.config.model,
         )
-        return await self._extractor.extract(request, default_model=project.config.model)
+        return await self._extractor.extract(
+            request, default_model=project.config.model or self._llm_default_model
+        )

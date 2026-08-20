@@ -31,6 +31,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
+from inkflow.core.config import config
 from inkflow.domain.models.outline import (
     Outline,
     OutlineGenerateRequest,
@@ -106,6 +107,8 @@ class OutlineService:
         project_repo: 项目仓储（F1），generate 入口校验项目存在并读取默认模型.
         chapter_repo: 章节仓储（F2），F43 P3 校验 chapter_id 存在且同项目；
             可选注入，None 跳过校验（向后兼容）。
+        llm_default_model: 全局默认模型（#520 D1=C）——project.config.model 为
+            None 时回退该值（deps.py 注入 config.llm_default_model）.
     """
 
     def __init__(
@@ -115,11 +118,13 @@ class OutlineService:
         generator: OutlineGenerator | None = None,
         project_repo: ProjectRepositoryProtocol | None = None,
         chapter_repo: ChapterRepositoryProtocol | None = None,
+        llm_default_model: str = config.llm_default_model,
     ) -> None:
         self._repo = repository
         self._generator = generator
         self._project_repo = project_repo
         self._chapter_repo = chapter_repo
+        self._llm_default_model = llm_default_model
 
     # ── Outline ────────────────────────────────────────────────
 
@@ -561,5 +566,5 @@ class OutlineService:
         return await self._generator.generate(
             request,
             project_info=_build_project_info(project),
-            default_model=project.config.model,
+            default_model=project.config.model or self._llm_default_model,
         )

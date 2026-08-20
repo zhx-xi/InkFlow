@@ -360,6 +360,8 @@ def get_character_service(
     db: AsyncSession,
 ) -> CharacterService:
     """获取 CharacterService 实例（角色仓储 + CharacterExtractor + F1 校验 + F43 角色硬删钩子）."""
+    from inkflow.core.config import config
+
     repo = SQLiteCharacterRepository(db)
     map_svc = get_map_service(db)
 
@@ -376,6 +378,7 @@ def get_character_service(
         ),
         project_repo=SQLiteProjectRepository(db),
         map_cleanup=_map_cleanup,
+        llm_default_model=config.llm_default_model,
     )
 
 
@@ -384,6 +387,8 @@ def get_world_service(
 ) -> WorldService:
     """获取 WorldService 实例（世界观仓储 + WorldExtractor + F1 项目校验 + F36 地点硬删钩子）."""
     import uuid
+
+    from inkflow.core.config import config
 
     repo = SQLiteWorldRepository(db)
     map_svc = get_map_service(db)
@@ -401,6 +406,7 @@ def get_world_service(
         ),
         project_repo=SQLiteProjectRepository(db),
         location_cleanup=_location_cleanup,
+        llm_default_model=config.llm_default_model,
     )
 
 
@@ -446,6 +452,8 @@ def get_outline_service(
     db: AsyncSession,
 ) -> OutlineService:
     """获取 OutlineService 实例（大纲仓储 + OutlineGenerator + F1 项目校验）."""
+    from inkflow.core.config import config
+
     repo = SQLiteOutlineRepository(db)
     return OutlineService(
         repository=repo,
@@ -456,6 +464,7 @@ def get_outline_service(
         ),
         project_repo=SQLiteProjectRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
+        llm_default_model=config.llm_default_model,
     )
 
 
@@ -526,6 +535,8 @@ async def get_extraction_service(
     """获取 ExtractionService 实例（F14 统一提取门面，spec §5/§8）:
     复用 F9-F12 Service + F14 新管线 + F16 风格 + 增量追踪 + 懒加载向量存储 + #276 指纹提供器.
     """
+    from inkflow.core.config import config
+
     vector_store = await get_vector_store()
     chunking = await _load_chunking_config(db)
     llm_chunk_analyzer = None
@@ -572,6 +583,7 @@ async def get_extraction_service(
         fingerprint_provider=_fingerprint_provider,
         chunking=chunking,
         llm_chunk_analyzer=llm_chunk_analyzer,
+        llm_default_model=config.llm_default_model,
     )
 
 
@@ -624,12 +636,15 @@ def get_style_service(
     db: AsyncSession,
 ) -> StyleService:
     """获取 StyleService 实例（F16 风格检测：F1/F2 仓储 + 可选 StyleLLMAnalyzer）."""
+    from inkflow.core.config import config
+
     return StyleService(
         project_repo=SQLiteProjectRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
         llm_analyzer=StyleLLMAnalyzer(
             llm_client=LangChainLLMClient(),
             prompt_manager=LangChainPromptManager(),
+            llm_default_model=config.llm_default_model,
         ),
     )
 

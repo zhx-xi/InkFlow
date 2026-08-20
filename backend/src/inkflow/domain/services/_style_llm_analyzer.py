@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from inkflow.core.config import config
 from inkflow.domain.models.project import Project
 from inkflow.domain.models.style import StyleLLMAssessment
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
@@ -123,6 +124,8 @@ class StyleLLMAnalyzer:
     Args:
         llm_client: LLM 客户端（F5）.
         prompt_manager: Prompt 模板管理器（F5）.
+        llm_default_model: 全局默认模型（#520 D1=C）——project.config.model 为
+            None 时回退该值（deps.py 注入 config.llm_default_model）.
     """
 
     def __init__(
@@ -130,9 +133,11 @@ class StyleLLMAnalyzer:
         *,
         llm_client: LLMClientProtocol,
         prompt_manager: PromptTemplateProtocol,
+        llm_default_model: str = config.llm_default_model,
     ) -> None:
         self._llm = llm_client
         self._prompts = prompt_manager
+        self._llm_default_model = llm_default_model
 
     # ── 公共入口 ────────────────────────────────────────────────
 
@@ -162,7 +167,7 @@ class StyleLLMAnalyzer:
         if not text.strip():
             return None
 
-        resolved_model = model or project.config.model
+        resolved_model = model or project.config.model or self._llm_default_model
 
         # ② 渲染模板（变量: text）
         template = self._prompts.load(_TEMPLATE_NAME)
