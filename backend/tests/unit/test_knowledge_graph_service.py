@@ -703,6 +703,32 @@ class TestUpdateRelation:
         assert isinstance(merged, KnowledgeRelation)
         assert merged.project_id == PID
 
+    async def test_description_only_update_self_key_no_conflict(
+        self,
+        service,
+        mock_relation_repo,
+        mock_character_repo,
+        mock_outline_repo,
+    ):
+        """⑤ 键不变仅改 description → get_by_key 查到自身 ≠ 冲突（#537 阻断缺陷）.
+
+        同键唯一检查按六元组查到的那行就是自身（键未变）——必须排除自身，
+        否则「手动改关系」只改描述/注释的任何操作都 422（#478 核心交付不可用）。
+        """
+        src_char = _char("林尘")
+        tgt_world = _world("清河县")
+        existing = _kr(source_id=src_char.id, target_id=tgt_world.id, relation_type="属于")
+        mock_relation_repo.get = AsyncMock(return_value=existing)
+        mock_relation_repo.get_by_key = AsyncMock(return_value=existing)
+
+        updated = await service.update_relation(
+            existing.id, description="修订后的关系描述"
+        )
+
+        assert updated.id == existing.id
+        assert updated.description == "修订后的关系描述"
+        mock_relation_repo.update.assert_awaited_once()
+
 
 class TestDeleteRelation:
     """delete_relation 真删（§5.1 + §7 边界 8）."""

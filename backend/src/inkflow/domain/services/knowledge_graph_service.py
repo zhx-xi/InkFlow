@@ -362,15 +362,18 @@ class KnowledgeGraphService:
             await self._validate_entity(
                 pid_int, dto.target_type, _to_int_id(dto.target_id), "target"
             )
-        # ③ 同键唯一（改键后与另一行冲突 → 422）
-        if await self._relation_repo.get_by_key(
+        # ③ 同键唯一（改键后与另一行冲突 → 422；查到自身 = 键未变，放行，#537）
+        existing_by_key: KnowledgeRelation | None = await self._relation_repo.get_by_key(
             pid_int,
             dto.source_type.value,
             _to_int_id(dto.source_id),
             dto.target_type.value,
             _to_int_id(dto.target_id),
             dto.relation_type,
-        ) is not None:
+        )
+        if existing_by_key is not None and _to_int_id(existing_by_key.id) != _to_int_id(
+            relation_id
+        ):
             raise KnowledgeRelationConflictError()
         merged = merged.model_copy(update={"updated_at": _utcnow()})
         logger.info("更新图谱关系: relation_id=%s", relation_id)
