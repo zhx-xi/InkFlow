@@ -260,11 +260,8 @@ def get_agentic_writer_service(
 
 
 def _collect_explicit_texts(db: AsyncSession):
-    """收集显式设定文本（冲突过滤用）：角色档案 name 列表.
-
-    调用 get_character_service(db).list_characters(project_id) 取角色名；
-    返回形态以真实实现为准（tuple (list, total) 或 list——宽松兼容）。
-    """
+    """收集显式设定文本（冲突过滤用）：角色档案 name 列表；
+    list_characters 返回 tuple/list 均宽松兼容。"""
 
     async def loader(project_id: uuid.UUID) -> list[str]:
         svc = get_character_service(db)
@@ -360,6 +357,8 @@ def get_character_service(
     db: AsyncSession,
 ) -> CharacterService:
     """获取 CharacterService 实例（角色仓储 + CharacterExtractor + F1 校验 + F43 角色硬删钩子）."""
+    from inkflow.core.config import config
+
     repo = SQLiteCharacterRepository(db)
     map_svc = get_map_service(db)
 
@@ -376,6 +375,7 @@ def get_character_service(
         ),
         project_repo=SQLiteProjectRepository(db),
         map_cleanup=_map_cleanup,
+        llm_default_model=config.llm_default_model,
     )
 
 
@@ -384,6 +384,8 @@ def get_world_service(
 ) -> WorldService:
     """获取 WorldService 实例（世界观仓储 + WorldExtractor + F1 项目校验 + F36 地点硬删钩子）."""
     import uuid
+
+    from inkflow.core.config import config
 
     repo = SQLiteWorldRepository(db)
     map_svc = get_map_service(db)
@@ -401,6 +403,7 @@ def get_world_service(
         ),
         project_repo=SQLiteProjectRepository(db),
         location_cleanup=_location_cleanup,
+        llm_default_model=config.llm_default_model,
     )
 
 
@@ -446,6 +449,8 @@ def get_outline_service(
     db: AsyncSession,
 ) -> OutlineService:
     """获取 OutlineService 实例（大纲仓储 + OutlineGenerator + F1 项目校验）."""
+    from inkflow.core.config import config
+
     repo = SQLiteOutlineRepository(db)
     return OutlineService(
         repository=repo,
@@ -456,6 +461,7 @@ def get_outline_service(
         ),
         project_repo=SQLiteProjectRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
+        llm_default_model=config.llm_default_model,
     )
 
 
@@ -509,12 +515,8 @@ def get_provider_config_service(
 def get_settings_service(
     db: AsyncSession = Depends(get_db),
 ) -> SettingsService:
-    """获取 SettingsService 实例（app_settings 键值仓储，F32 #152）.
-
-    显式 Depends(get_db) 依赖链：测试经 app.dependency_overrides[get_db]
-    替换 session（tests/api/conftest.py override_get_db 生效前提），
-    镜像 get_writing_service 形态（spec §3.5 评审修订）。
-    """
+    """获取 SettingsService 实例（app_settings 键值仓储，F32 #152；显式 Depends(get_db)
+    供测试 override_get_db 替换 session，镜像 get_writing_service 形态）。"""
     return SettingsService(
         repository=SQLiteSettingsRepository(db),
     )
@@ -523,9 +525,10 @@ def get_settings_service(
 async def get_extraction_service(
     db: AsyncSession,
 ) -> ExtractionService:
-    """获取 ExtractionService 实例（F14 统一提取门面，spec §5/§8）:
-    复用 F9-F12 Service + F14 新管线 + F16 风格 + 增量追踪 + 懒加载向量存储 + #276 指纹提供器.
-    """
+    """获取 ExtractionService 实例（F14 统一提取门面，spec §5/§8）：
+    复用 F9-F12 + F16 风格 + 增量追踪 + 懒加载向量存储 + #276 指纹提供器。"""
+    from inkflow.core.config import config
+
     vector_store = await get_vector_store()
     chunking = await _load_chunking_config(db)
     llm_chunk_analyzer = None
@@ -572,6 +575,7 @@ async def get_extraction_service(
         fingerprint_provider=_fingerprint_provider,
         chunking=chunking,
         llm_chunk_analyzer=llm_chunk_analyzer,
+        llm_default_model=config.llm_default_model,
     )
 
 
@@ -624,12 +628,15 @@ def get_style_service(
     db: AsyncSession,
 ) -> StyleService:
     """获取 StyleService 实例（F16 风格检测：F1/F2 仓储 + 可选 StyleLLMAnalyzer）."""
+    from inkflow.core.config import config
+
     return StyleService(
         project_repo=SQLiteProjectRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
         llm_analyzer=StyleLLMAnalyzer(
             llm_client=LangChainLLMClient(),
             prompt_manager=LangChainPromptManager(),
+            llm_default_model=config.llm_default_model,
         ),
     )
 
@@ -657,11 +664,8 @@ _vector_store: VectorStoreProtocol | None = None
 
 
 async def _resolve_embedding_spec() -> tuple[str, str, str]:
-    """解析 embedding 装配选型 → (provider, model_id, base_url)（#276 G3）.
-
-    选型规则（#330 D1=b）: 注册表首个 type="embedding" 模型为唯一真相源；
-    无 → RAGUnavailableError（文案见下方 raise）；base_url None → 归一化空串。
-    """
+    """解析 embedding 装配选型（#276 G3）：注册表首个 type="embedding" 模型为唯一真相源；
+    无 → RAGUnavailableError；base_url None → 归一化空串。"""
     from inkflow.domain.models.provider_config import ProviderConfig, ProviderModel
     from inkflow.domain.ports.extraction_errors import RAGUnavailableError
     from inkflow.infrastructure.database.repositories.provider_config_repo import (
@@ -686,11 +690,8 @@ async def _resolve_embedding_spec() -> tuple[str, str, str]:
 
 
 async def _build_store() -> VectorStoreProtocol:
-    """按当前配置装配新向量存储（不赋值全局单例，供 get/refresh 复用）.
-
-    与 _resolve_embedding_spec 共用选型段: API embedding（OpenAIEmbeddings）；
-    构造失败 → RAGUnavailableError（500 RAG 前缀，spec §3.4/§5.5 B1）。
-    """
+    """按当前配置装配新向量存储（不赋值全局单例，供 get/refresh 复用）；
+    API embedding（OpenAIEmbeddings），失败 → RAGUnavailableError（spec §5.5 B1）。"""
     provider, model_id, base_url = await _resolve_embedding_spec()
     from langchain_core.embeddings import Embeddings
 
@@ -848,8 +849,7 @@ async def get_vector_status(project_id: str, db: AsyncSession | None = None) -> 
 
 
 async def get_vector_store_optional() -> VectorStoreProtocol | None:
-    """获取 RAG 向量存储（可选）——未配置 embedding 时返回 None 而非抛错
-    （#264 懒装配降级，keyword 模式保持正常，已配置时注入真实 vector_store）."""
+    """获取 RAG 向量存储（可选）：未配置 embedding 返回 None（#264 懒装配降级）。"""
     try:
         return await get_vector_store()
     except RAGUnavailableError:

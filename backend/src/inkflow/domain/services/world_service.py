@@ -23,6 +23,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
+from inkflow.core.config import config
 from inkflow.domain.models.world import (
     WorldCategory,
     WorldExtractionResult,
@@ -69,6 +70,8 @@ class WorldService:
         project_repo: 项目仓储（F1），extract 入口校验项目存在并读取默认模型.
         location_cleanup: 地点硬删钩子（F36 D10=b）：真删地点后清理关联地图 pin
             （MapService.clear_location_pins）；失败仅 log warning 不阻断主流程.
+        llm_default_model: 全局默认模型（#520 D1=C）——project.config.model 为
+            None 时回退该值（deps.py 注入 config.llm_default_model）.
     """
 
     def __init__(
@@ -78,11 +81,13 @@ class WorldService:
         extractor: WorldExtractor | None = None,
         project_repo: ProjectRepositoryProtocol | None = None,
         location_cleanup: Callable[[list[int]], Awaitable[None]] | None = None,
+        llm_default_model: str = config.llm_default_model,
     ) -> None:
         self._repo = repository
         self._extractor = extractor
         self._project_repo = project_repo
         self._location_cleanup = location_cleanup
+        self._llm_default_model = llm_default_model
 
     # ── WorldSetting ─────────────────────────────────────────────
 
@@ -488,4 +493,6 @@ class WorldService:
             request.project_id,
             request.model or project.config.model,
         )
-        return await self._extractor.extract(request, default_model=project.config.model)
+        return await self._extractor.extract(
+            request, default_model=project.config.model or self._llm_default_model
+        )

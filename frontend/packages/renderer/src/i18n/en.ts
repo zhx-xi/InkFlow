@@ -25,6 +25,7 @@ export const en: Record<string, string> = {
   'sb.model': 'Model',
   'sb.words': 'Words',
   'sb.autosave': 'Autosaved',
+  'sb.modelUnset': 'Not set',
   // Boot gate (#384)
   'gate.booting': 'Starting kernel…',
   'gate.failed': 'Kernel connection failed',

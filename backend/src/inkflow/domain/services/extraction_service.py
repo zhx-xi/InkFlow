@@ -50,6 +50,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Any
 
+from inkflow.core.config import config
 from inkflow.domain.models.character import (
     CharacterExtractionResult,
     CharacterExtractRequest,
@@ -226,6 +227,8 @@ class ExtractionService(_ExtractionRAGMixin):
         llm_chunk_analyzer: LLM 档语义边界提供器（#278 M4，spec §5.6.7）——
             async Callable（复用 F5 LLMClient 语义）；None = 未配置（降级段落
             切片，向后兼容）。仅在 reindex 的 CHAPTER_CHUNK 分支生效。
+        llm_default_model: 全局默认模型（#520 D1=C）——project.config.model 为
+            None 时回退该值（deps.py 注入 config.llm_default_model）.
     """
 
     def __init__(
@@ -249,6 +252,7 @@ class ExtractionService(_ExtractionRAGMixin):
         fingerprint_provider: Callable[[], Awaitable[dict | None]] | None = None,
         chunking: ChunkingConfig | None = None,
         llm_chunk_analyzer: Callable[[str], Awaitable[list[int]]] | None = None,
+        llm_default_model: str = config.llm_default_model,
     ) -> None:
         self._project_repo = project_repo
         self._chapter_repo = chapter_repo
@@ -268,6 +272,7 @@ class ExtractionService(_ExtractionRAGMixin):
         self._fingerprint_provider = fingerprint_provider
         self._chunking = chunking if chunking is not None else ChunkingConfig()
         self._llm_chunk_analyzer = llm_chunk_analyzer
+        self._llm_default_model = llm_default_model
         self._reindex_lock = asyncio.Lock()
 
         # 类型注册表（spec §6.1: 6 槽全注册；F16 §8.2: STYLE → StyleService.analyze）。
@@ -585,7 +590,7 @@ class ExtractionService(_ExtractionRAGMixin):
                     text=source.text or "",
                     model=request.model,
                 ),
-                default_model=project.config.model,
+                default_model=project.config.model or self._llm_default_model,
             )
         elif request.type is ExtractionType.STYLE:
             # F16 落地（§8.2 表 #6）: 委托 StyleService.analyze——门面恒确定性
@@ -632,7 +637,7 @@ class ExtractionService(_ExtractionRAGMixin):
                     text=source.text or "",
                     model=request.model,
                 ),
-                default_model=project.config.model,
+                default_model=project.config.model or self._llm_default_model,
             )
         return await self._timeline_service.check_consistency(
             request.project_id, include_flashbacks=request.include_flashbacks

@@ -79,10 +79,7 @@ def _apply_agent_order(
     enabled_stage_ids = {role.removeprefix("agent_") for role in enabled_roles}
     missing = enabled_stage_ids - order_roles
     if missing:
-        logger.warning(
-            "agent_order 缺少启用角色: %s，回退默认拓扑",
-            ", ".join(sorted(missing)),
-        )
+        logger.warning("agent_order 缺少启用角色: %s，回退默认拓扑", ", ".join(sorted(missing)))
         return stages
 
     # 跳过过滤（Q2+B1）：配置驱动模式下 null 角色从 order 摘除；空层保留（不影响前序全层集合）
@@ -349,11 +346,8 @@ def _stage_snapshots(stage_results: Sequence[StageResult]) -> list[dict]:
 def _build_relations_snapshot(
     agent_relations: Sequence[AgentRelation], stage_results: Sequence[StageResult]
 ) -> list[dict]:
-    """执行记录 relations 快照（spec §5.4）：{from, to, type, gate_result}。
-
-    conditional 边：目标 stage COMPLETED 且有输出 → passed，否则 skipped；
-    sequential/data 边 gate_result 省略；from/to 输出去 agent_ 前缀。
-    """
+    """执行记录 relations 快照（spec §5.4）：{from, to, type, gate_result}；
+    conditional 目标 COMPLETED 且有输出 → passed 否则 skipped；from/to 去 agent_ 前缀。"""
     result_by_id = {sr.stage_id: sr for sr in stage_results}
     snapshot: list[dict] = []
     for rel in agent_relations:
@@ -660,6 +654,8 @@ class AgentService:
         default_temperature → 内置 AgentRole.temperature → config.temperature。
         模型：模板 role model（enabled）→ 项目 agent_*（Q1=A 项目优先）→ overrides。
         """
+        from inkflow.core.config import config  # #520: 项目 model=None 时回退全局默认
+
         # 引用式模板读取 + 项目配置角色映射（自定义角色三态字段并入，key 去前缀 = stage.id）
         template = await self._load_template(project_config)
         project_role_models = _project_role_models(project_config)
@@ -696,7 +692,7 @@ class AgentService:
             # 项目配置覆盖 model（Q1=A 项目优先；#367 sentinel=跟随默认 → 回退项目 model）
             project_model = project_role_models.get(stage.id)
             if project_model == AGENT_DEFAULT_SENTINEL:
-                new_agent.model = project_config.model
+                new_agent.model = project_config.model or config.llm_default_model
             elif project_model:
                 if "/" not in project_model:
                     logger.warning(
@@ -709,7 +705,7 @@ class AgentService:
             elif project_model is None and project_config.template_id is None:
                 # #373（方案 B）：未配置角色且无模板引用 → 回退项目 model 驱动路由
                 # （template_id 存在时保持既有模板装配语义，spec §9.2.5）
-                new_agent.model = project_config.model
+                new_agent.model = project_config.model or config.llm_default_model
 
             # prompt 覆盖（F42 #295，spec §5.3.4）：模板 roles 定义 prompt 时
             # 覆盖 system_prompt（role_overrides 仍为最高优先级，在下方覆盖）

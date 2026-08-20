@@ -82,7 +82,7 @@ class ProjectConfig(BaseModel):
     """项目 AI 写作配置，可序列化为 JSON 进行导入/导出.
 
     Attributes:
-        model: 默认 AI 模型名称.
+        model: 默认 AI 模型名称（None=未配置，装配时回退全局默认）.
         agent_architect: 架构师 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
         agent_writer: 写手 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
         agent_auditor: 审阅 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
@@ -105,7 +105,9 @@ class ProjectConfig(BaseModel):
         extra: 扩展配置字典.
     """
 
-    model: str = Field(default="gpt-4o", description="默认 AI 模型")
+    model: str | None = Field(
+        default=None, description="默认 AI 模型（None=未配置，装配时回退全局默认）"
+    )
     agent_architect: str | None = None
     agent_writer: str | None = None
     agent_auditor: str | None = None

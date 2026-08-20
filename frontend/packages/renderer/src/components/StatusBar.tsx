@@ -15,7 +15,7 @@ export function StatusBar({ model, wordCount, savedAt }: StatusBarProps) {
     <div data-testid="statusbar" className="flex items-center gap-5 border-t border-line bg-surface px-4 py-1.5 text-[11px] text-ink-3">
       <span>{kernelReady ? t('sb.kernel') : t('sb.kernelOffline')}</span>
       <span>
-        {t('sb.model')}: {model || '—'}
+        {t('sb.model')}: {model || t('sb.modelUnset')}
       </span>
       <span>
         {t('sb.words')}: {wordCount.toLocaleString()}

@@ -258,6 +258,28 @@ class TestStyleLLMAnalyzer:
         assert mock_llm.chat.await_args.kwargs["model"] == DEFAULT_MODEL
         assert result.model == DEFAULT_MODEL
 
+    async def test_project_model_none_falls_back_to_llm_default_model(
+        self, mock_llm: MagicMock, mock_prompt_manager: MagicMock
+    ) -> None:
+        """#520 D1=C：project.config.model=None → 回退注入的 llm_default_model。"""
+        fallback = "deepseek/deepseek-v4-flash"
+        analyzer = StyleLLMAnalyzer(
+            llm_client=mock_llm,
+            prompt_manager=mock_prompt_manager,
+            llm_default_model=fallback,
+        )
+        project = Project(
+            id=PID,
+            name="测试项目",
+            config=ProjectConfig(model=None),
+            created_at=TS,
+            updated_at=TS,
+        )
+        mock_llm.chat.return_value = _ok_response(_payload())
+        result = await analyzer.analyze(project, TEXT)
+        assert mock_llm.chat.await_args.kwargs["model"] == fallback
+        assert result.model == fallback
+
     async def test_uses_style_llm_analysis_template_and_temperature(
         self,
         analyzer: StyleLLMAnalyzer,

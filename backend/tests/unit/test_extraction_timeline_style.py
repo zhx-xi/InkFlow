@@ -68,7 +68,7 @@ def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _project(*, extra: dict[str, Any] | None = None, model: str = DEFAULT_MODEL) -> Project:
+def _project(*, extra: dict[str, Any] | None = None, model: str | None = DEFAULT_MODEL) -> Project:
     """构造测试项目（config.extra 可注入 timeline_auto_extract 设置项）。"""
     return Project(
         id=PID,
@@ -392,9 +392,14 @@ class _Deps:
         self.vector_store.delete_stale = AsyncMock(return_value=0)
         self.vector_store.write_fingerprint = AsyncMock()
 
-    def service(self, *, vector_store: Any = _NO_VECTOR) -> ExtractionService:
+    def service(
+        self, *, vector_store: Any = _NO_VECTOR, llm_default_model: str | None = None
+    ) -> ExtractionService:
         """装配门面；vector_store 传 None 模拟 RAG 未装配。"""
         vs = self.vector_store if vector_store is _NO_VECTOR else vector_store
+        extra_kwargs: dict[str, Any] = {}
+        if llm_default_model is not None:
+            extra_kwargs["llm_default_model"] = llm_default_model
         return ExtractionService(
             project_repo=self.project_repo,
             chapter_repo=self.chapter_repo,
@@ -411,6 +416,7 @@ class _Deps:
             timeline_repo=self.timeline_repo,
             foreshadowing_repo=self.foreshadowing_repo,
             vector_store=vs,
+            **extra_kwargs,
         )
 
     def stub_chapter(self, chapter: Chapter | None) -> None:
@@ -461,6 +467,22 @@ async def test_timeline_config_on_uses_extractor() -> None:
     deps.timeline_service.check_consistency.assert_not_awaited()
     runs = _upserted_runs(deps)
     assert runs[0].source_key == str(CH1)
+
+
+async def test_timeline_project_model_none_falls_back_to_llm_default_model() -> None:
+    """#520 D1=C：项目 model=None → timeline extractor 收到注入的全局默认模型。"""
+    deps = _Deps(_project(model=None, extra={"timeline_auto_extract": True}))
+    deps.stub_chapter(_chapter(CH1, CONTENT_1))
+    deps.timeline_extractor.extract = AsyncMock(return_value=_timeline_result(created=1))
+    fallback = "deepseek/deepseek-v4-flash"
+    svc = deps.service(llm_default_model=fallback)
+
+    result = await svc.extract(_req(ExtractionType.TIMELINE, chapter_ids=[CH1]))
+
+    deps.timeline_extractor.extract.assert_awaited_once()
+    kwargs = deps.timeline_extractor.extract.await_args.kwargs
+    assert kwargs["default_model"] == fallback
+    assert result.created == 1
 
 
 async def test_timeline_request_auto_extract_overrides_off_config() -> None:
