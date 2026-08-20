@@ -558,3 +558,287 @@ async def test_stats_empty_project_zero_guards() -> None:
     assert agentic["avg_diff_chars"] == 0
     assert agentic["regenerate_rate"] == 0.0
     assert stats["learned_preferences"] == 0
+
+
+# ── 契约 8: #521 手动创建/编辑记忆（create_preference / create_user_preference /
+#    update_preference / update_user_preference；决策 2026-08-20 拍板） ──
+
+
+def _user_pref(
+    value="低声道",
+    *,
+    pref_id="upref-1",
+    count=2,
+    confidence=0.67,
+    project_count=1,
+    source_projects=None,
+    source_events=None,
+    category="style_word",
+    pattern="说",
+) -> SimpleNamespace:
+    """用户级偏好鸭子对象（UserPreference 语义，#521）."""
+    return SimpleNamespace(
+        id=pref_id,
+        category=category,
+        pattern=pattern,
+        value=value,
+        confidence=confidence,
+        count=count,
+        project_count=project_count,
+        source_projects=list(source_projects or []),
+        source_events=list(source_events or []),
+    )
+
+
+def _make_service_manual(*, pref=None, user_pref=None, user_repo_installed=True):
+    """#521 手动创建/编辑轨构造（镜像 _make_service，叠加 user_preference_repo）.
+
+    pref/user_pref 非 None → 对应 repo.get 返回该既有偏好（update 前读取）;
+    user_repo_installed=False → user_preference_repo=None（未装配轨）.
+    """
+    deps = {
+        "preference_repo": AsyncMock(),
+        "event_repo": AsyncMock(),
+        "project_repo": AsyncMock(),
+        "audit_service": AsyncMock(),
+    }
+    deps["preference_repo"].list_by_project.return_value = ([], 0)
+    deps["preference_repo"].count_by_project.return_value = 0
+    deps["preference_repo"].get.return_value = pref
+    deps["preference_repo"].create.return_value = _pref(pref_id="pref-new")
+    deps["preference_repo"].update.return_value = _pref(pref_id="pref-updated")
+    deps["preference_repo"].delete.return_value = True
+    deps["event_repo"].create.return_value = SimpleNamespace(id="evt-1", event_type="draft_edited")
+    deps["event_repo"].list_by_project.return_value = ([], 0)
+    deps["project_repo"].get.return_value = _project({})
+    if user_repo_installed:
+        deps["user_preference_repo"] = AsyncMock()
+        deps["user_preference_repo"].get.return_value = user_pref
+        deps["user_preference_repo"].create.return_value = _user_pref(pref_id="upref-new")
+        deps["user_preference_repo"].update.return_value = _user_pref(pref_id="upref-updated")
+        deps["user_preference_repo"].list_all.return_value = ([], 0)
+    else:
+        deps["user_preference_repo"] = None
+    service = MemoryService(
+        preference_repo=deps["preference_repo"],
+        event_repo=deps["event_repo"],
+        project_repo=deps["project_repo"],
+        audit_service=deps["audit_service"],
+        learner=FakeLearner(),
+        user_preference_repo=deps["user_preference_repo"],
+    )
+    return service, deps
+
+
+async def test_create_preference_persists_via_repo() -> None:
+    """契约⑫a (#521): create_preference 手动创建项目偏好——confidence/count
+    缺省落 1.0/1，source_events=[]，透传 repo.create 返回值.
+
+    设计假设（父侧定稿，逐字签名）:
+
+        async def create_preference(
+            self, *, project_id: uuid.UUID,
+            category: PreferenceCategory, pattern: str, value: str,
+            confidence: float | None = None, count: int | None = None,
+        ) -> ProjectPreference: ...
+
+    语义: confidence 缺省 1.0、count 缺省 1、source_events=[]；调
+    self._preference_repo.create(project_id=..., category=..., pattern=...,
+    value=..., confidence=..., count=..., source_events=[])；返回落库偏好.
+    """
+    # 惰性：StrEnum 枚举类型（顶层唯一 inkflow import = 主契约模块惯例）
+    from inkflow.domain.models.preference import PreferenceCategory
+
+    service, deps = _make_service_manual()
+    result = await service.create_preference(
+        project_id=PROJECT_ID,
+        category=PreferenceCategory.STYLE_WORD,
+        pattern="说",
+        value="低声道",
+    )
+    deps["preference_repo"].create.assert_awaited_once_with(
+        project_id=PROJECT_ID,
+        category=PreferenceCategory.STYLE_WORD,
+        pattern="说",
+        value="低声道",
+        confidence=1.0,
+        count=1,
+        source_events=[],
+    )
+    assert result is deps["preference_repo"].create.return_value  # 透传落库偏好
+
+
+async def test_create_user_preference_persists_via_repo() -> None:
+    """契约⑫b (#521): create_user_preference 手动创建用户级偏好——confidence
+    缺省 1.0、count 缺省 1、project_count=1、source_projects/source_events=[].
+
+    设计假设（父侧定稿，逐字签名）:
+
+        async def create_user_preference(
+            self, *, category: PreferenceCategory, pattern: str, value: str,
+            confidence: float | None = None, count: int | None = None,
+        ) -> UserPreference: ...
+
+    语义: 调 self._user_preference_repo.create(category=..., pattern=...,
+    value=..., confidence=..., count=..., project_count=1,
+    source_projects=[], source_events=[])；返回落库偏好.
+    """
+    from inkflow.domain.models.preference import PreferenceCategory
+
+    service, deps = _make_service_manual()
+    result = await service.create_user_preference(
+        category=PreferenceCategory.STYLE_WORD,
+        pattern="说",
+        value="低声道",
+    )
+    deps["user_preference_repo"].create.assert_awaited_once_with(
+        category=PreferenceCategory.STYLE_WORD,
+        pattern="说",
+        value="低声道",
+        confidence=1.0,
+        count=1,
+        project_count=1,
+        source_projects=[],
+        source_events=[],
+    )
+    assert result is deps["user_preference_repo"].create.return_value
+
+
+async def test_create_user_preference_uninstalled_raises() -> None:
+    """契约⑫c (#521): user_preference_repo 未装配 → PreferenceNotFoundError."""
+    service, _ = _make_service_manual(user_repo_installed=False)
+    with pytest.raises(PreferenceNotFoundError):
+        await service.create_user_preference(category="style_word", pattern="说", value="低声道")
+
+
+async def test_update_preference_edits_fields_and_forwards_stats() -> None:
+    """契约⑬a (#521): update_preference 编辑 category/pattern/value，透传既有
+    统计字段（count/confidence/source_events）给 repo.update.
+
+    设计假设（父侧定稿，逐字签名）:
+
+        async def update_preference(
+            self, preference_id: str, *,
+            category: PreferenceCategory | None = None,
+            pattern: str | None = None, value: str | None = None,
+        ) -> ProjectPreference: ...
+
+    语义: self._preference_repo.get(preference_id) → None →
+    PreferenceNotFoundError；否则调 self._preference_repo.update(
+    preference_id, count=pref.count, confidence=pref.confidence,
+    source_events=pref.source_events, category=category, pattern=pattern,
+    value=value)；返回更新后偏好.
+    """
+    from inkflow.domain.models.preference import PreferenceCategory
+
+    pref = _pref(pref_id="pref-1", count=2, confidence=0.67, source_events=["e1"])
+    service, deps = _make_service_manual(pref=pref)
+    updated = _pref(
+        pref_id="pref-1",
+        count=2,
+        confidence=0.67,
+        source_events=["e1"],
+        category="style_word",
+        pattern="说",
+        value="低声道",
+    )
+    deps["preference_repo"].update.return_value = updated
+    result = await service.update_preference(
+        "pref-1",
+        category=PreferenceCategory.STYLE_WORD,
+        pattern="说",
+        value="低声道",
+    )
+    deps["preference_repo"].get.assert_awaited_once_with("pref-1")
+    deps["preference_repo"].update.assert_awaited_once_with(
+        "pref-1",
+        count=2,
+        confidence=0.67,
+        source_events=["e1"],
+        category=PreferenceCategory.STYLE_WORD,
+        pattern="说",
+        value="低声道",
+    )
+    assert result is updated  # 返回更新后偏好
+
+
+async def test_update_preference_missing_raises_without_update() -> None:
+    """契约⑬b (#521): get → None → PreferenceNotFoundError 且 update 未调用."""
+    service, deps = _make_service_manual(pref=None)
+    with pytest.raises(PreferenceNotFoundError):
+        await service.update_preference(
+            "pref-missing", category="style_word", pattern="说", value="低声道"
+        )
+    deps["preference_repo"].update.assert_not_awaited()
+
+
+async def test_update_user_preference_edits_fields_and_forwards_stats() -> None:
+    """契约⑭a (#521): update_user_preference 编辑字段 + 透传 user 版统计字段
+    （count/confidence/project_count/source_projects/source_events）.
+
+    设计假设（父侧定稿，逐字签名）:
+
+        async def update_user_preference(
+            self, preference_id: str, *,
+            category: PreferenceCategory | None = None,
+            pattern: str | None = None, value: str | None = None,
+        ) -> UserPreference: ...
+
+    语义: self._user_preference_repo is None → PreferenceNotFoundError；
+    get → None → PreferenceNotFoundError；调 self._user_preference_repo.update(
+    preference_id, count=pref.count, confidence=pref.confidence,
+    project_count=pref.project_count, source_projects=pref.source_projects,
+    source_events=pref.source_events, category=category, pattern=pattern,
+    value=value)；返回更新后偏好.
+    """
+    from inkflow.domain.models.preference import PreferenceCategory
+
+    user_pref = _user_pref(
+        pref_id="upref-1",
+        count=2,
+        confidence=0.67,
+        project_count=2,
+        source_projects=["proj-a"],
+        source_events=["e1"],
+    )
+    service, deps = _make_service_manual(user_pref=user_pref)
+    updated = _user_pref(
+        pref_id="upref-1",
+        count=2,
+        confidence=0.67,
+        project_count=2,
+        source_projects=["proj-a"],
+        source_events=["e1"],
+        category="style_word",
+        pattern="说",
+        value="低声道",
+    )
+    deps["user_preference_repo"].update.return_value = updated
+    result = await service.update_user_preference(
+        "upref-1",
+        category=PreferenceCategory.STYLE_WORD,
+        pattern="说",
+        value="低声道",
+    )
+    deps["user_preference_repo"].get.assert_awaited_once_with("upref-1")
+    deps["user_preference_repo"].update.assert_awaited_once_with(
+        "upref-1",
+        count=2,
+        confidence=0.67,
+        project_count=2,
+        source_projects=["proj-a"],
+        source_events=["e1"],
+        category=PreferenceCategory.STYLE_WORD,
+        pattern="说",
+        value="低声道",
+    )
+    assert result is updated  # 返回更新后偏好
+
+
+async def test_update_user_preference_uninstalled_raises() -> None:
+    """契约⑭b (#521): user_preference_repo 未装配 → PreferenceNotFoundError."""
+    service, _ = _make_service_manual(user_repo_installed=False)
+    with pytest.raises(PreferenceNotFoundError):
+        await service.update_user_preference(
+            "upref-1", category="style_word", pattern="说", value="低声道"
+        )

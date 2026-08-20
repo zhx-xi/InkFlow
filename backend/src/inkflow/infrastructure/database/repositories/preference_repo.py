@@ -154,14 +154,20 @@ class SQLitePreferenceRepository:
         count: int,
         confidence: float,
         source_events: list[str],
+        category: PreferenceCategory | None = None,
+        pattern: str | None = None,
+        value: str | None = None,
     ) -> ProjectPreference | None:
-        """更新 count/confidence/source_events；preference_id 不存在 → None.
+        """更新 count/confidence/source_events 及编辑字段（#521）；preference_id 不存在 → None.
 
         Args:
             preference_id: 偏好 id（uuid4 字符串）.
             count: 新的支持事件数.
             confidence: 新的置信度.
             source_events: 新的支持事件 id 列表.
+            category: 编辑字段（非 None 覆盖；存枚举 value 字符串）.
+            pattern: 编辑字段（非 None 覆盖）.
+            value: 编辑字段（非 None 覆盖）.
 
         Returns:
             更新后的 ProjectPreference（updated_at 由 ORM onupdate 自动刷新）；
@@ -173,6 +179,12 @@ class SQLitePreferenceRepository:
         orm.count = count
         orm.confidence = confidence
         orm.source_events = source_events
+        if category is not None:
+            orm.category = category.value
+        if pattern is not None:
+            orm.pattern = pattern
+        if value is not None:
+            orm.value = value
         await self._session.commit()
         await self._session.refresh(orm)
         return _orm_to_domain(orm)

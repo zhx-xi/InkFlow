@@ -28,6 +28,17 @@
  * - removeUserPreference(preferenceId: string): Promise<void>
  *   → DELETE /api/v1/agent/user-preferences/{id}
  *
+ * #521 追加（2026-08-20 拍板：手动添加/编辑记忆）：
+ * - interface PreferenceInput { category: string; pattern: string; value: string }
+ * - createProjectPreference(projectId: string, input: PreferenceInput): Promise<ProjectPreferenceDto>
+ *   → POST /api/v1/agent/preferences，body { project_id: projectId, ...input }
+ * - createUserPreference(input: PreferenceInput): Promise<UserPreferenceDto>
+ *   → POST /api/v1/agent/user-preferences，body input（无 project_id）
+ * - updateProjectPreference(preferenceId: string, input: PreferenceInput): Promise<ProjectPreferenceDto>
+ *   → PATCH /api/v1/agent/preferences/{preferenceId}，body input
+ * - updateUserPreference(preferenceId: string, input: PreferenceInput): Promise<UserPreferenceDto>
+ *   → PATCH /api/v1/agent/user-preferences/{preferenceId}，body input
+ *
  * 测试策略：镜像 api/search.test.ts —— 不 mock ../api/client，直接 spy 全局 fetch。
  *
  * RED 预期：./memory 模块不存在 → 收集期 module-not-found（类 1 契约缺口）。
@@ -36,12 +47,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from './client';
 import {
+  createProjectPreference,
+  createUserPreference,
   fetchMemorySummaries,
   fetchProjectPreferences,
   fetchUserPreferences,
   removeProjectPreference,
   removeUserPreference,
   summarizeMemory,
+  updateProjectPreference,
+  updateUserPreference,
 } from './memory';
 
 const BASE = 'http://api.test';
@@ -190,5 +205,80 @@ describe('偏好 — 项目级 / 用户级', () => {
   it('HTTP 非 2xx → ApiError（404 透传）', async () => {
     mockFetchOnce({ detail: '偏好不存在' }, 404);
     await expect(fetchProjectPreferences(PID)).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe('偏好 — 手动添加 / 编辑（#521）', () => {
+  it('createProjectPreference → POST /api/v1/agent/preferences，body 含 project_id + category/pattern/value', async () => {
+    mockFetchOnce({ ...prefDto, id: 'pref-new' });
+    const input = { category: 'addressing', pattern: '她', value: '林晚' };
+    const result = await createProjectPreference(PID, input);
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(init?.method).toBe('POST');
+    expect(new URL(String(url)).pathname).toBe('/api/v1/agent/preferences');
+    expect(JSON.parse(String(init?.body))).toEqual({ project_id: PID, ...input });
+    expect(result.project_id).toBe(PID);
+    expect(result.pattern).toBe('说');
+  });
+
+  it('createUserPreference → POST /api/v1/agent/user-preferences，body 无 project_id', async () => {
+    mockFetchOnce({
+      id: 'upref-new',
+      category: 'style_word',
+      pattern: '说',
+      value: '低声道',
+      confidence: 0.7,
+      count: 1,
+      project_count: 1,
+      source_projects: [PID],
+      source_events: [],
+      created_at: '2026-08-20T08:00:00Z',
+      updated_at: '2026-08-20T08:00:00Z',
+    });
+    const input = { category: 'style_word', pattern: '说', value: '低声道' };
+    const result = await createUserPreference(input);
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(init?.method).toBe('POST');
+    expect(new URL(String(url)).pathname).toBe('/api/v1/agent/user-preferences');
+    expect(JSON.parse(String(init?.body))).toEqual(input);
+    expect(result.value).toBe('低声道');
+  });
+
+  it('updateProjectPreference → PATCH /api/v1/agent/preferences/{id}，body = input', async () => {
+    mockFetchOnce({ ...prefDto, value: '轻声道' });
+    const input = { category: 'style_word', pattern: '说', value: '轻声道' };
+    const result = await updateProjectPreference(PREF_ID, input);
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(init?.method).toBe('PATCH');
+    expect(new URL(String(url)).pathname).toBe(`/api/v1/agent/preferences/${PREF_ID}`);
+    expect(JSON.parse(String(init?.body))).toEqual(input);
+    expect(result.value).toBe('轻声道');
+  });
+
+  it('updateUserPreference → PATCH /api/v1/agent/user-preferences/{id}，body = input', async () => {
+    mockFetchOnce({
+      id: 'up-1',
+      category: 'addressing',
+      pattern: '她',
+      value: '晚晚',
+      confidence: 0.8,
+      count: 4,
+      project_count: 2,
+      source_projects: [PID, 'p2'],
+      source_events: ['ev1'],
+      created_at: '2026-08-10T08:00:00Z',
+      updated_at: '2026-08-20T09:00:00Z',
+    });
+    const input = { category: 'addressing', pattern: '她', value: '晚晚' };
+    const result = await updateUserPreference('up-1', input);
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(init?.method).toBe('PATCH');
+    expect(new URL(String(url)).pathname).toBe('/api/v1/agent/user-preferences/up-1');
+    expect(JSON.parse(String(init?.body))).toEqual(input);
+    expect(result.value).toBe('晚晚');
   });
 });

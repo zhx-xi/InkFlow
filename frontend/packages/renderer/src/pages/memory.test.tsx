@@ -51,6 +51,26 @@
  * memory.cat.user.addressing='称呼' memory.cat.user.style_word='用词'
  * memory.cat.user.structure='结构' memory.cat.user.other='其他'
  *
+ * #521 手动添加/编辑记忆契约（2026-08-20 拍板，GREEN 必须实现）：
+ * - 「添加记忆」按钮 memory-add-btn（文案 t('memory.add.title')='添加记忆'），
+ *   点击展开表单容器 memory-add-form
+ * - 表单字段（testid 即契约，label/placeholder GREEN 自定）：
+ *   memory-add-scope（作用域 Select：项目级/全局级，默认项目级）
+ *   memory-add-category（分类 Select：addressing | style_word | structure | other）
+ *   memory-add-pattern（模式输入）、memory-add-value（偏好值输入）
+ *   memory-add-submit（提交）、memory-add-cancel（取消）
+ * - scope=全局级 → 渲染 memory-add-user-hint（t('memory.add.user.hint')，用户级偏好影响所有项目——spec §5.3 注入语义）
+ * - 提交：项目级 → createProjectPreference(pid, { category, pattern, value }) →
+ *   项目偏好列表出现新行；全局级 → createUserPreference(input) → 用户级列表新行
+ * - 编辑入口：行内 memory-pref-edit-<id> / memory-userpref-edit-<id>（删除按钮旁），
+ *   点击 → 表单出现且预填该行 pattern/value/category（编辑态作用域固定）→ 提交 →
+ *   updateProjectPreference(id, {...}) / updateUserPreference(id, {...}) → 行更新
+ * - 取消：关闭表单且不调任何 create/update API
+ * - i18n key（GREEN 补 zh/en）：memory.add.title / memory.add.scope.label /
+ *   memory.add.scope.project / memory.add.scope.user / memory.add.category.label /
+ *   memory.add.pattern.label / memory.add.value.label / memory.add.submit /
+ *   memory.add.cancel / memory.add.user.hint / memory.prefs.edit（='编辑'）
+ *
  * RED 预期：./memory 模块不存在 → 收集期 module-not-found（类 1 契约缺口）。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -59,12 +79,16 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { MemoryPage } from './memory';
 import {
+  createProjectPreference,
+  createUserPreference,
   fetchMemorySummaries,
   fetchProjectPreferences,
   fetchUserPreferences,
   removeProjectPreference,
   removeUserPreference,
   summarizeMemory,
+  updateProjectPreference,
+  updateUserPreference,
 } from '../api/memory';
 import { useProjectStore, type Project } from '../stores/project';
 import { useThemeStore } from '../stores/theme';
@@ -76,6 +100,10 @@ vi.mock('../api/memory', () => ({
   removeProjectPreference: vi.fn(),
   fetchUserPreferences: vi.fn(),
   removeUserPreference: vi.fn(),
+  createProjectPreference: vi.fn(),
+  createUserPreference: vi.fn(),
+  updateProjectPreference: vi.fn(),
+  updateUserPreference: vi.fn(),
 }));
 
 const fetchMemorySummariesMock = vi.mocked(fetchMemorySummaries);
@@ -84,6 +112,10 @@ const fetchProjectPreferencesMock = vi.mocked(fetchProjectPreferences);
 const removeProjectPreferenceMock = vi.mocked(removeProjectPreference);
 const fetchUserPreferencesMock = vi.mocked(fetchUserPreferences);
 const removeUserPreferenceMock = vi.mocked(removeUserPreference);
+const createProjectPreferenceMock = vi.mocked(createProjectPreference);
+const createUserPreferenceMock = vi.mocked(createUserPreference);
+const updateProjectPreferenceMock = vi.mocked(updateProjectPreference);
+const updateUserPreferenceMock = vi.mocked(updateUserPreference);
 
 /** 契约结构镜像（GREEN 类型从 api/memory.ts 导出） */
 interface MemorySummaryDto {
@@ -125,6 +157,13 @@ interface UserPreferenceDto {
   source_events: string[];
   created_at: string;
   updated_at: string;
+}
+
+/** #521 契约：手动添加/编辑偏好输入（GREEN 从 api/memory.ts 导出 PreferenceInput） */
+interface PreferenceInput {
+  category: string;
+  pattern: string;
+  value: string;
 }
 
 let summaries: MemorySummariesResponse;
@@ -220,6 +259,10 @@ beforeEach(() => {
   removeProjectPreferenceMock.mockReset();
   fetchUserPreferencesMock.mockReset();
   removeUserPreferenceMock.mockReset();
+  createProjectPreferenceMock.mockReset();
+  createUserPreferenceMock.mockReset();
+  updateProjectPreferenceMock.mockReset();
+  updateUserPreferenceMock.mockReset();
 
   // 状态化 mock：fetch* 读共享数组/对象；操作 mock 同步改写共享数据（两种实现最终态一致）
   fetchMemorySummariesMock.mockImplementation(async () => ({
@@ -256,6 +299,85 @@ beforeEach(() => {
   }));
   removeUserPreferenceMock.mockImplementation(async (id: string) => {
     userPrefs = userPrefs.filter((p) => p.id !== id);
+  });
+  // #521 状态化 mock：create* 往 prefs/userPrefs 追加带新 id 的项；update* 替换并返回新对象（本地更新/重拉两种实现最终态一致）
+  createProjectPreferenceMock.mockImplementation(async (projectId: string, input: PreferenceInput) => {
+    const created: ProjectPreferenceDto = {
+      id: 'pref-new',
+      project_id: projectId,
+      category: input.category,
+      pattern: input.pattern,
+      value: input.value,
+      confidence: 0.9,
+      count: 1,
+      source_events: [],
+      created_at: '2026-08-20T08:00:00Z',
+      updated_at: '2026-08-20T08:00:00Z',
+    };
+    prefs = [...prefs, created];
+    return created;
+  });
+  createUserPreferenceMock.mockImplementation(async (input: PreferenceInput) => {
+    const created: UserPreferenceDto = {
+      id: 'upref-new',
+      category: input.category,
+      pattern: input.pattern,
+      value: input.value,
+      confidence: 0.9,
+      count: 1,
+      project_count: 1,
+      source_projects: ['p1'],
+      source_events: [],
+      created_at: '2026-08-20T08:00:00Z',
+      updated_at: '2026-08-20T08:00:00Z',
+    };
+    userPrefs = [...userPrefs, created];
+    return created;
+  });
+  updateProjectPreferenceMock.mockImplementation(async (preferenceId: string, input: PreferenceInput) => {
+    const existing = prefs.find((p) => p.id === preferenceId);
+    const updated: ProjectPreferenceDto = {
+      ...(existing ?? {
+        id: preferenceId,
+        project_id: 'p1',
+        category: input.category,
+        pattern: input.pattern,
+        value: input.value,
+        confidence: 0.5,
+        count: 1,
+        source_events: [],
+        created_at: '2026-08-20T08:00:00Z',
+      }),
+      category: input.category,
+      pattern: input.pattern,
+      value: input.value,
+      updated_at: '2026-08-20T09:00:00Z',
+    };
+    prefs = prefs.map((p) => (p.id === preferenceId ? updated : p));
+    return updated;
+  });
+  updateUserPreferenceMock.mockImplementation(async (preferenceId: string, input: PreferenceInput) => {
+    const existing = userPrefs.find((p) => p.id === preferenceId);
+    const updated: UserPreferenceDto = {
+      ...(existing ?? {
+        id: preferenceId,
+        category: input.category,
+        pattern: input.pattern,
+        value: input.value,
+        confidence: 0.5,
+        count: 1,
+        project_count: 1,
+        source_projects: [],
+        source_events: [],
+        created_at: '2026-08-20T08:00:00Z',
+      }),
+      category: input.category,
+      pattern: input.pattern,
+      value: input.value,
+      updated_at: '2026-08-20T09:00:00Z',
+    };
+    userPrefs = userPrefs.map((p) => (p.id === preferenceId ? updated : p));
+    return updated;
   });
 });
 
@@ -380,5 +502,133 @@ describe('记忆页 — 偏好列表与删除', () => {
     renderMemoryPage();
     expect(await screen.findByTestId('memory-prefs-empty')).toBeInTheDocument();
     expect(await screen.findByTestId('memory-userprefs-empty')).toBeInTheDocument();
+  });
+});
+
+describe('记忆页 — 手动添加/编辑记忆（#521）', () => {
+  it('添加项目级偏好：展开表单（默认项目级）→ 填 addressing/她/林晚 → 提交 → 项目列表出现新行', async () => {
+    const user = userEvent.setup();
+    seedProjects();
+    renderMemoryPage();
+    await screen.findByTestId('memory-prefs-section');
+
+    await user.click(screen.getByTestId('memory-add-btn'));
+    expect(screen.getByTestId('memory-add-form')).toBeInTheDocument();
+    // 默认作用域 = 项目级：作用域 Select 显示「项目级」且无用户级提示
+    expect(screen.getByTestId('memory-add-scope')).toHaveTextContent('项目级');
+    expect(screen.queryByTestId('memory-add-user-hint')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('memory-add-category'));
+    await user.click(await screen.findByRole('option', { name: '称呼' }));
+    await user.type(screen.getByTestId('memory-add-pattern'), '她');
+    await user.type(screen.getByTestId('memory-add-value'), '林晚');
+    await user.click(screen.getByTestId('memory-add-submit'));
+
+    expect(createProjectPreferenceMock).toHaveBeenCalledWith('p1', {
+      category: 'addressing',
+      pattern: '她',
+      value: '林晚',
+    });
+    // 状态化 mock：create 同步追加 → 列表出现新行（本地更新/重拉两种实现最终态一致）
+    await waitFor(() => {
+      expect(screen.getByTestId('memory-pref-value-pref-new')).toHaveTextContent('林晚');
+    });
+  });
+
+  it('添加全局级偏好：切作用域为全局级 → 出现用户级提示 → 提交 → 用户级列表出现新行', async () => {
+    const user = userEvent.setup();
+    seedProjects();
+    renderMemoryPage();
+    await screen.findByTestId('memory-userprefs-section');
+
+    await user.click(screen.getByTestId('memory-add-btn'));
+    await user.click(screen.getByTestId('memory-add-scope'));
+    await user.click(await screen.findByRole('option', { name: '全局级' }));
+    expect(screen.getByTestId('memory-add-user-hint')).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('memory-add-category'));
+    await user.click(await screen.findByRole('option', { name: '用词' }));
+    await user.type(screen.getByTestId('memory-add-pattern'), '说');
+    await user.type(screen.getByTestId('memory-add-value'), '低声道');
+    await user.click(screen.getByTestId('memory-add-submit'));
+
+    expect(createUserPreferenceMock).toHaveBeenCalledWith({
+      category: 'style_word',
+      pattern: '说',
+      value: '低声道',
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('memory-userpref-value-upref-new')).toHaveTextContent('低声道');
+    });
+  });
+
+  it('编辑项目偏好：点行内编辑 → 表单预填 pattern/value/category → 改 value 提交 → 行更新', async () => {
+    const user = userEvent.setup();
+    seedProjects();
+    renderMemoryPage();
+    await screen.findByTestId('memory-prefs-section');
+
+    await user.click(screen.getByTestId('memory-pref-edit-pref-1'));
+    expect(screen.getByTestId('memory-add-form')).toBeInTheDocument();
+    // 编辑态预填当前行值（category 经 Select 文案回显）
+    expect(screen.getByTestId('memory-add-category')).toHaveTextContent('用词');
+    expect(screen.getByTestId('memory-add-pattern')).toHaveValue('说');
+    expect(screen.getByTestId('memory-add-value')).toHaveValue('低声道');
+    // 编辑态作用域固定为项目级（无用户级提示）
+    expect(screen.queryByTestId('memory-add-user-hint')).not.toBeInTheDocument();
+
+    await user.clear(screen.getByTestId('memory-add-value'));
+    await user.type(screen.getByTestId('memory-add-value'), '轻声道');
+    await user.click(screen.getByTestId('memory-add-submit'));
+
+    expect(updateProjectPreferenceMock).toHaveBeenCalledWith('pref-1', {
+      category: 'style_word',
+      pattern: '说',
+      value: '轻声道',
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('memory-pref-value-pref-1')).toHaveTextContent('轻声道');
+    });
+  });
+
+  it('编辑用户级偏好：点行内编辑 → 改 value 提交 → 行更新', async () => {
+    const user = userEvent.setup();
+    seedProjects();
+    renderMemoryPage();
+    await screen.findByTestId('memory-userprefs-section');
+
+    await user.click(screen.getByTestId('memory-userpref-edit-upref-1'));
+    expect(screen.getByTestId('memory-add-form')).toBeInTheDocument();
+    expect(screen.getByTestId('memory-add-value')).toHaveValue('林晚');
+
+    await user.clear(screen.getByTestId('memory-add-value'));
+    await user.type(screen.getByTestId('memory-add-value'), '晚晚');
+    await user.click(screen.getByTestId('memory-add-submit'));
+
+    expect(updateUserPreferenceMock).toHaveBeenCalledWith('upref-1', {
+      category: 'addressing',
+      pattern: '她',
+      value: '晚晚',
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('memory-userpref-value-upref-1')).toHaveTextContent('晚晚');
+    });
+  });
+
+  it('取消：点添加 → 点取消 → 表单关闭且不调任何 create/update API', async () => {
+    const user = userEvent.setup();
+    seedProjects();
+    renderMemoryPage();
+    await screen.findByTestId('memory-prefs-section');
+
+    await user.click(screen.getByTestId('memory-add-btn'));
+    expect(screen.getByTestId('memory-add-form')).toBeInTheDocument();
+    await user.click(screen.getByTestId('memory-add-cancel'));
+    expect(screen.queryByTestId('memory-add-form')).not.toBeInTheDocument();
+
+    expect(createProjectPreferenceMock).not.toHaveBeenCalled();
+    expect(createUserPreferenceMock).not.toHaveBeenCalled();
+    expect(updateProjectPreferenceMock).not.toHaveBeenCalled();
+    expect(updateUserPreferenceMock).not.toHaveBeenCalled();
   });
 });

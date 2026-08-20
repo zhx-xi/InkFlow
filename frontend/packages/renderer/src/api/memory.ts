@@ -107,3 +107,51 @@ export async function fetchUserPreferences(): Promise<PreferencesResponse<UserPr
 export async function removeUserPreference(preferenceId: string): Promise<void> {
   return apiFetch<void>(`/api/v1/agent/user-preferences/${preferenceId}`, { method: 'DELETE' });
 }
+
+/** #521：手动添加/编辑偏好输入（category/pattern/value，project_id 由项目级接口单独携带） */
+export interface PreferenceInput {
+  category: string;
+  pattern: string;
+  value: string;
+}
+
+/** 创建项目级偏好：POST /api/v1/agent/preferences（body = { project_id, ...input }） */
+export async function createProjectPreference(
+  projectId: string,
+  input: PreferenceInput,
+): Promise<ProjectPreferenceDto> {
+  return apiFetch<ProjectPreferenceDto>('/api/v1/agent/preferences', {
+    method: 'POST',
+    body: { project_id: projectId, ...input },
+  });
+}
+
+/** 创建用户级偏好：POST /api/v1/agent/user-preferences（body = input，无 project_id） */
+export async function createUserPreference(input: PreferenceInput): Promise<UserPreferenceDto> {
+  return apiFetch<UserPreferenceDto>('/api/v1/agent/user-preferences', {
+    method: 'POST',
+    body: input,
+  });
+}
+
+/** 更新项目级偏好：PATCH /api/v1/agent/preferences/{preferenceId}（body = input） */
+export async function updateProjectPreference(
+  preferenceId: string,
+  input: PreferenceInput,
+): Promise<ProjectPreferenceDto> {
+  return apiFetch<ProjectPreferenceDto>(`/api/v1/agent/preferences/${preferenceId}`, {
+    method: 'PATCH',
+    body: input,
+  });
+}
+
+/** 更新用户级偏好：PATCH /api/v1/agent/user-preferences/{preferenceId}（body = input） */
+export async function updateUserPreference(
+  preferenceId: string,
+  input: PreferenceInput,
+): Promise<UserPreferenceDto> {
+  return apiFetch<UserPreferenceDto>(`/api/v1/agent/user-preferences/${preferenceId}`, {
+    method: 'PATCH',
+    body: input,
+  });
+}
