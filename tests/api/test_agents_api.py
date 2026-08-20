@@ -2,19 +2,16 @@
 
 本文件为 `api/routers/agents.py`（NEW，spec §3 API 契约 + §5.3 seed 表 +
 §13 M1/M2/M5 验收）定义 API 契约测试，覆盖 6 组端点（前缀 /api/v1/agents）：
-
 - `GET    /api/v1/agents`          — Agent 列表（{items, total} 信封）
 - `GET    /api/v1/agents/tools`    — 工具目录（6 工具 + group 分组；路由顺序硬契约）
 - `POST   /api/v1/agents`          — 创建自定义 Agent（201 完整实体）
 - `GET    /api/v1/agents/{agent_id}` — 详情（200 完整实体）/ 404
 - `PATCH  /api/v1/agents/{agent_id}` — 部分更新（exclude_unset）/ 404 / 内置 409
 - `DELETE /api/v1/agents/{agent_id}` — 删除（204）/ 404 / 内置 409
-
 权威来源：specs/f39-multi-agent/spec.md §3（§3.1 端点总览、§3.2 请求/响应
 示例、§3.3 异常映射表）+ §5.3（6 Agent 出厂配置 seed）+ §13（M1/M2/M5）。
 测试方式镜像 tests/api/test_agent_templates_api.py（F19，契约 docstring 风格
 + 无 token 模式 + ASGITransport + override_get_db 真实 DB 模式）。
-
 ════════════════════════════════════════════════════════════════════
 设计假设（GREEN 实现必须满足的契约，逐条对应下方测试）
 ════════════════════════════════════════════════════════════════════
@@ -26,11 +23,9 @@
    收集断言（模块不存在 → 全文件收集期 ModuleNotFoundError，即预期失败
    形态）。所有用例类显式 `@pytest.mark.asyncio` + `@pytest.mark.api`
    （免疫 pytest-asyncio auto 模式差异，镜像 F19 惯例）。
-
 2. 【无 token 模式——硬性契约】本文件所有用例依赖 env `INKFLOW_SERVER_TOKEN`
    未设置时中间件直通：client fixture 内显式 monkeypatch.delenv，免疫开发者
    本机 shell 的 env 残留导致假失败（test_settings_api.py 设计假设 #2 同款）。
-
 3. 【模块契约】`inkflow.api.routers.agents` 必须暴露：
    - `router = APIRouter(prefix="/api/v1/agents", tags=["Agents"])`
      （app.py 需 `app.include_router(agents.router)`，与既有 router 模块级
@@ -39,7 +34,6 @@
      之前（FastAPI 按声明顺序匹配：反序时 "tools" 被吞进 {agent_id} 路径
      参数 → _parse_id 404「Agent 不存在」→ 工具目录用例全红；镜像 F19
      `/default` 契约 #3，spec §3.1 明示约束）。
-
 4. 【响应实体契约（spec §2.1 实体字段）】Agent 响应 12 键：
    `{id, name, description, icon, system_prompt, tool_ids, skill_ids,
    model_override, temperature_override, builtin, created_at, updated_at}`：
@@ -54,12 +48,10 @@
    - created_at/updated_at：ISO 8601 字符串（datetime.fromisoformat 可解析）
    - 响应可含实体额外字段，本文件只断言契约键存在 + 值语义，【不做整 dict
      全等】（容忍 GREEN 输出额外字段）
-
 5. 【列表端点】GET /api/v1/agents → 200 + `{items: [...], total: N}`（repo
    列表端点惯例 envelope）。本契约只约束 items/total 两键（GREEN 可额外
    输出 offset/limit 等分页字段）；无数据时 total=0、items=[]；每项满足
    基础响应契约（含 builtin 值回显）。
-
 6. 【工具目录端点】GET /api/v1/agents/tools → 200 + `{items: [{name,
    description, group, input_schema}]}`（spec §2.3/§5.1）：
    - 完整 6 工具目录：save_draft（writing）/ search_characters（retrieval）/
@@ -72,7 +64,6 @@
    - input_schema 为 dict（Pydantic model_json_schema() 产物）
    - 本端点 200 即路由顺序契约的验证：若 /tools 声明在 /{agent_id} 之后 →
      "tools" 被 _parse_id → 404「Agent 不存在」→ 200 断言 FAIL
-
 7. 【seed 辅助契约（#522：skill 不再落 DB）】
    - Agent 造数经 `inkflow.infrastructure.database.models.agent.AgentORM`
      （`agents` 表），构造 kwargs name/description/icon/system_prompt/
