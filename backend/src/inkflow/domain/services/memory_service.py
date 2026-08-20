@@ -480,7 +480,7 @@ class MemoryService:
 
         透传 repo.create（source_events=[]），返回落库偏好.
         """
-        return await self._preference_repo.create(  # type: ignore[attr-defined]  # 鸭子类型：preference_repo 按契约提供 create
+        created: ProjectPreference = await self._preference_repo.create(  # type: ignore[attr-defined]  # 鸭子类型：preference_repo 按契约提供 create
             project_id=project_id,
             category=category,
             pattern=pattern,
@@ -489,6 +489,7 @@ class MemoryService:
             count=count if count is not None else 1,
             source_events=[],
         )
+        return created
 
     async def create_user_preference(
         self,
@@ -505,7 +506,7 @@ class MemoryService:
         """
         if self._user_preference_repo is None:
             raise PreferenceNotFoundError()
-        return await self._user_preference_repo.create(  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 create
+        created: UserPreference = await self._user_preference_repo.create(  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 create
             category=category,
             pattern=pattern,
             value=value,
@@ -515,6 +516,7 @@ class MemoryService:
             source_projects=[],
             source_events=[],
         )
+        return created
 
     async def update_preference(
         self,
@@ -533,7 +535,7 @@ class MemoryService:
         )
         if pref is None:
             raise PreferenceNotFoundError()
-        return await self._preference_repo.update(  # type: ignore[attr-defined]  # 鸭子类型：preference_repo 按契约提供 update
+        updated: ProjectPreference = await self._preference_repo.update(  # type: ignore[attr-defined]  # 鸭子类型：preference_repo 按契约提供 update
             preference_id,
             count=pref.count,
             confidence=pref.confidence,
@@ -542,6 +544,7 @@ class MemoryService:
             pattern=pattern,
             value=value,
         )
+        return updated
 
     async def update_user_preference(
         self,
@@ -562,7 +565,7 @@ class MemoryService:
         )
         if pref is None:
             raise PreferenceNotFoundError()
-        return await self._user_preference_repo.update(  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 update
+        updated: UserPreference = await self._user_preference_repo.update(  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 update
             preference_id,
             count=pref.count,
             confidence=pref.confidence,
@@ -573,6 +576,7 @@ class MemoryService:
             pattern=pattern,
             value=value,
         )
+        return updated
 
     async def get_user_preferences_for_injection(
         self, project_id: uuid.UUID
