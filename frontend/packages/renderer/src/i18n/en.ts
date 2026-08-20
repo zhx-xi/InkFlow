@@ -478,6 +478,13 @@ export const en: Record<string, string> = {
   'ag.followDefault': 'Follow default',
   'ag.unregisteredModel': 'Unregistered model',
   'ag.modelFormatFix': 'Format needs fix (provider/model)',
+  // #523: Agent template selection (project settings page; 3 builtin + custom templates)
+  'ag.templateTitle': 'Agent template',
+  'ag.templatePlaceholder': 'Select agent template',
+  'ag.templateNone': 'No template',
+  'ag.tplWriteAuto': 'Full auto writing',
+  'ag.tplWriteContinue': 'Continue writing',
+  'ag.tplChat': 'AI chat',
   // v1.5 #484: add role (chain dynamic, spec §5.7.3)
   'ag.addRole': 'Add role',
   'ag.chainTitle': 'Writing agent chain',

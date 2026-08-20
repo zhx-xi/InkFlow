@@ -486,6 +486,13 @@ export const zh = {
   'ag.followDefault': '跟随默认',
   'ag.unregisteredModel': '未注册模型',
   'ag.modelFormatFix': '格式需修正（应为 provider/model）',
+  // #523：Agent 模板选择（项目设置页；builtin 三件 + 自定义模板）
+  'ag.templateTitle': 'Agent 模板',
+  'ag.templatePlaceholder': '选择 Agent 模板',
+  'ag.templateNone': '不使用模板',
+  'ag.tplWriteAuto': '全自动写作',
+  'ag.tplWriteContinue': '续写',
+  'ag.tplChat': 'AI 对话',
   // v1.5 #484：添加角色（链动态化，spec §5.7.3）
   'ag.addRole': '添加角色',
   'ag.chainTitle': '写作 Agent 链',

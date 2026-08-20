@@ -235,7 +235,7 @@ describe('App 路由集成（HashRouter 四页 + 侧边导航）', () => {
     expect(screen.queryByTestId('models-page')).not.toBeInTheDocument();
   });
 
-  it('#481 设置页模型分类：完整模型管理渲染（models-panel + provider-list + model-table + role-binding）', async () => {
+  it('#481 设置页模型分类：完整模型管理渲染（models-panel + provider-list + model-table；#523 角色绑定 UI 已移除）', async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole('link', { name: '设置' }));
@@ -245,7 +245,8 @@ describe('App 路由集成（HashRouter 四页 + 侧边导航）', () => {
     // 模型管理三件套（GREEN 前 ModelsPanel 为占位 → element-missing）
     expect(within(page).getByTestId('provider-list')).toBeInTheDocument();
     expect(within(page).getByTestId('model-table')).toBeInTheDocument();
-    expect(within(page).getByTestId('role-binding')).toBeInTheDocument();
+    // #523：角色绑定 UI 已移除（模板已含角色组合+模型设置）→ role-binding 区块不存在
+    expect(within(page).queryByTestId('role-binding')).not.toBeInTheDocument();
   });
 
   it('#482 /settings/project 项目聚合设置页路由存在：直接访问 → 渲染 project-settings-page', async () => {
@@ -259,14 +260,14 @@ describe('App 路由集成（HashRouter 四页 + 侧边导航）', () => {
   });
 
   it('#486 会话页路由存在：直接访问 #/sessions → 渲染 sessions-page', async () => {
-        window.location.hash = '#/sessions';
-        render(<App />);
-        expect(await screen.findByTestId('sessions-page')).toBeInTheDocument();
+      window.location.hash = '#/sessions';
+      render(<App />);
+      expect(await screen.findByTestId('sessions-page')).toBeInTheDocument();
   });
 
   it('#486 记忆页路由存在：直接访问 #/memory → 渲染 memory-page', async () => {
-        window.location.hash = '#/memory';
-        render(<App />);
-        expect(await screen.findByTestId('memory-page')).toBeInTheDocument();
+      window.location.hash = '#/memory';
+      render(<App />);
+      expect(await screen.findByTestId('memory-page')).toBeInTheDocument();
   });
 });

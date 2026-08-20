@@ -1,5 +1,6 @@
-/** 项目聚合设置页（Issue #482，D4 拍板）：聚合项目级 config 四区块——模型绑定 + Agent 链 + 字数 + 世界观；
- *  保存统一走 useAgentStore.saveConfig（PATCH /api/v1/projects/{id} body { config: 全量 }） */
+/** 项目聚合设置页（Issue #482，D4 拍板）：聚合项目级 config 五区块——模型绑定 + Agent 模板 + Agent 链 + 字数 + 世界观；
+ *  #523：Agent 模板选择保存 config.template_id（str），模板已含角色组合+模型设置；保存统一走
+ *  useAgentStore.saveConfig（PATCH /api/v1/projects/{id} body { config: 全量 }） */
 import { useEffect, useRef, useState } from 'react';
 import { AgentChainCard } from '../components/AgentChainCard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -8,6 +9,7 @@ import { useI18n } from '../i18n/useI18n';
 import { useAgentStore } from '../stores/agent';
 import { selectChatModelOptions, useModelsStore } from '../stores/models';
 import { AGENT_DEFAULT_SENTINEL, useProjectStore } from '../stores/project';
+import { useTemplatesStore } from '../stores/templates';
 
 export function ProjectSettingsPage() {
   const { t } = useI18n();
@@ -15,6 +17,8 @@ export function ProjectSettingsPage() {
   const project = useProjectStore((s) => s.projects.find((p) => p.id === s.currentProjectId));
   const config = useAgentStore((s) => s.config);
   const setConfig = useAgentStore((s) => s.setConfig);
+  // #523：Agent 模板列表（本区块数据源；挂载即加载，Select 选项随 store 响应式更新）
+  const templates = useTemplatesStore((s) => s.templates);
   // F42 #268：默认模型/世界观模型选项 = provider-configs chat 模型扁平化（AgentChainCard 挂载会加载，直接订阅）
   const chatModelOptions = selectChatModelOptions(useModelsStore((s) => s.providers));
   // 字数输入：本地受控草稿 + dirty 标记（blur 才 setConfig + persist；镜像 GeneralPanel valueRef/dirty 语义）
@@ -29,6 +33,11 @@ export function ProjectSettingsPage() {
     const p = state.projects.find((x) => x.id === state.currentProjectId);
     if (p) useAgentStore.getState().loadFromProject(p.config);
   }, [currentProjectId]);
+
+  // #523：Agent 模板数据源（挂载即加载——与 AgentChainCard 同款，本区块生命周期内确保模板列表可用）
+  useEffect(() => {
+    void useTemplatesStore.getState().loadTemplates();
+  }, []);
 
   // 切项目重读字数草稿（跨项目残留丢弃 = 上下文切换，与 GeneralPanel 同语义）
   useEffect(() => {
@@ -81,6 +90,34 @@ export function ProjectSettingsPage() {
                   <SelectItem key={o.value} value={o.value}>
                     {o.label}
                   </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </section>
+
+        {/* Agent 模板（#523）：builtin 三件 + 自定义模板；保存 config.template_id（str） */}
+        <section data-testid="ps-template-section" className="rounded-lg border border-line bg-surface p-6 shadow-card">
+          <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
+            <span>{t('ag.templateTitle')}</span>
+            <Select
+              value={config.template_id == null ? '' : String(config.template_id)}
+              onValueChange={(v) => {
+                // '' = 不使用模板（解除引用 → null）；否则保存 str（builtin 键或 String(自定义 id)）
+                setConfig({ template_id: v === '' ? null : v });
+                persist();
+              }}
+            >
+              <SelectTrigger data-testid="ps-template-select" aria-label={t('ag.templateTitle')} className="w-72">
+                <SelectValue placeholder={t('ag.templatePlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">{t('ag.templateNone')}</SelectItem>
+                <SelectItem value="builtin:write_auto">{t('ag.tplWriteAuto')}</SelectItem>
+                <SelectItem value="builtin:write_continue">{t('ag.tplWriteContinue')}</SelectItem>
+                <SelectItem value="builtin:chat">{t('ag.tplChat')}</SelectItem>
+                {templates.map((tpl) => (
+                  <SelectItem key={tpl.id} value={String(tpl.id)}>{tpl.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

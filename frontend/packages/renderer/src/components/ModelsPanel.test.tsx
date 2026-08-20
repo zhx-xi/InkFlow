@@ -231,8 +231,8 @@ describe('模型管理页 — 模型表（spec §8.2③ / §8.6 M3）', () => {
   });
 });
 
-describe('模型管理页 — 角色绑定区（spec §8.2③ / §8.6 M4b，#107 未合入 → 只读）', () => {
-  it('6 下拉（主模型/四角色/RAG embedding）只读展示（disabled）+ 草稿回显 + 「保存需 Agent 模板功能」标注', async () => {
+describe('模型管理页 — 角色绑定区已移除（#523：模板已含角色组合+模型设置，UI 区块删除）', () => {
+  it('role-binding 区块不渲染（6 槽位 aria-label 不出现）+ 其余区块（provider 列表/模型表）保留', async () => {
     apiFetchMock.mockResolvedValue(PROVIDER_LIST);
     act(() => {
       useModelsStore.setState({
@@ -249,17 +249,14 @@ describe('模型管理页 — 角色绑定区（spec §8.2③ / §8.6 M4b，#107
     renderModelsPanel();
     await waitFor(() => expect(useModelsStore.getState().loading).toBe(false));
 
-    const binding = screen.getByTestId('role-binding');
-    // 六个下拉（#107 未合入 → 只读：disabled / aria-disabled）
+    // #523：移除角色绑定 UI——区块与 6 个下拉均不存在
+    expect(screen.queryByTestId('role-binding')).not.toBeInTheDocument();
     for (const label of ['主模型', '大纲架构师', '执笔', '审校', '修订', 'RAG embedding']) {
-      expect(within(binding).getByRole('combobox', { name: label })).toBeDisabled();
+      expect(screen.queryByRole('combobox', { name: label })).not.toBeInTheDocument();
     }
-    // 草稿回显（值来自 models store roleBinding）
-    expect(within(binding).getByRole('combobox', { name: '主模型' })).toHaveTextContent('gpt-4o');
-    expect(within(binding).getByRole('combobox', { name: '执笔' })).toHaveTextContent('deepseek-chat');
-    expect(within(binding).getByRole('combobox', { name: 'RAG embedding' })).toHaveTextContent('text-embedding-3-small');
-    // #107 依赖标注（M4b：保存需 Agent 模板功能）
-    expect(within(binding).getByText('保存需 Agent 模板功能')).toBeInTheDocument();
+    // 其余区块保留：provider 列表 + 模型表
+    expect(screen.getByTestId('provider-list')).toBeInTheDocument();
+    expect(screen.getByTestId('model-table')).toBeInTheDocument();
   });
 });
 
