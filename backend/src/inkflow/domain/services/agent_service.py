@@ -79,10 +79,7 @@ def _apply_agent_order(
     enabled_stage_ids = {role.removeprefix("agent_") for role in enabled_roles}
     missing = enabled_stage_ids - order_roles
     if missing:
-        logger.warning(
-            "agent_order 缺少启用角色: %s，回退默认拓扑",
-            ", ".join(sorted(missing)),
-        )
+        logger.warning("agent_order 缺少启用角色: %s，回退默认拓扑", ", ".join(sorted(missing)))
         return stages
 
     # 跳过过滤（Q2+B1）：配置驱动模式下 null 角色从 order 摘除；空层保留（不影响前序全层集合）
@@ -349,11 +346,8 @@ def _stage_snapshots(stage_results: Sequence[StageResult]) -> list[dict]:
 def _build_relations_snapshot(
     agent_relations: Sequence[AgentRelation], stage_results: Sequence[StageResult]
 ) -> list[dict]:
-    """执行记录 relations 快照（spec §5.4）：{from, to, type, gate_result}。
-
-    conditional 边：目标 stage COMPLETED 且有输出 → passed，否则 skipped；
-    sequential/data 边 gate_result 省略；from/to 输出去 agent_ 前缀。
-    """
+    """执行记录 relations 快照（spec §5.4）：{from, to, type, gate_result}；
+    conditional 目标 COMPLETED 且有输出 → passed 否则 skipped；from/to 去 agent_ 前缀。"""
     result_by_id = {sr.stage_id: sr for sr in stage_results}
     snapshot: list[dict] = []
     for rel in agent_relations:
