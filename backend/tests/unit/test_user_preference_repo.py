@@ -431,6 +431,98 @@ class TestSQLiteUserPreferenceRepository:
         assert isinstance(fetched.source_events, list)
         assert fetched.source_events == event_ids
 
+    async def test_update_edits_category_pattern_value(self, db_session):
+        """契约⑭ (#521): update 追加 category/pattern/value 编辑字段——create 后
+        update(..., category=STRUCTURE, pattern='新模式', value='新值') → 返回对象
+        三字段已更新 + get 复查持久化.
+
+        设计假设（父侧定稿，实现侧后续扩展）: SQLiteUserPreferenceRepository.update
+        追加尾部 3 个可选参数（None=不覆盖；category 非 None → orm.category =
+        category.value），前 5 个必填参数不变:
+
+            async def update(
+                self, preference_id: str, *, count: int, confidence: float,
+                project_count: int, source_projects: list[str],
+                source_events: list[str],
+                category: PreferenceCategory | None = None,
+                pattern: str | None = None, value: str | None = None,
+            ) -> UserPreference | None: ...
+        """
+        # 惰性：RED 阶段实现未落地
+        from inkflow.domain.models.user_preference import PreferenceCategory
+
+        repo = SQLiteUserPreferenceRepository(db_session)
+        pref = await _create_pref(
+            repo,
+            pattern="P1",
+            category=PreferenceCategory.ADDRESSING,
+            count=2,
+            confidence=0.67,
+            project_count=2,
+            source_projects=[str(PROJECT_ID)],
+            source_events=["evt-1"],
+        )
+
+        updated = await repo.update(
+            pref.id,
+            count=1,
+            confidence=1.0,
+            project_count=1,
+            source_projects=[],
+            source_events=[],
+            category=PreferenceCategory.STRUCTURE,
+            pattern="新模式",
+            value="新值",
+        )
+
+        assert updated is not None
+        assert updated.category == PreferenceCategory.STRUCTURE
+        assert updated.pattern == "新模式"
+        assert updated.value == "新值"
+        # 持久化读回
+        fetched = await repo.get(pref.id)
+        assert fetched is not None
+        assert fetched.category == PreferenceCategory.STRUCTURE
+        assert fetched.pattern == "新模式"
+        assert fetched.value == "新值"
+
+    async def test_update_without_edit_fields_keeps_values(self, db_session):
+        """契约⑮ (#521): 不传 category/pattern/value → 三字段保持原值
+        （None 不覆盖语义；count/confidence/project_count/source_projects/
+        source_events 必填传值）."""
+        # 惰性：RED 阶段实现未落地
+        from inkflow.domain.models.user_preference import PreferenceCategory
+
+        repo = SQLiteUserPreferenceRepository(db_session)
+        pref = await _create_pref(
+            repo,
+            pattern="P1",
+            category=PreferenceCategory.ADDRESSING,
+            count=2,
+            confidence=0.67,
+            project_count=2,
+            source_projects=[str(PROJECT_ID)],
+            source_events=["evt-1"],
+        )
+
+        updated = await repo.update(
+            pref.id,
+            count=3,
+            confidence=0.75,
+            project_count=2,
+            source_projects=[str(PROJECT_ID)],
+            source_events=["evt-2"],
+        )
+
+        assert updated is not None
+        assert updated.category == PreferenceCategory.ADDRESSING
+        assert updated.pattern == "P1"
+        assert updated.value == "value-P1"  # _create_pref value=f"value-{pattern}"
+        # 统计字段仍更新
+        assert updated.count == 3
+        assert updated.confidence == 0.75
+        assert updated.project_count == 2
+
 
 async def test_orm_repr_includes_id_and_pattern() -> None:
     """覆盖 UserPreferenceORM.__repr__（coverage 门禁 models/user_preference.py:113）."""

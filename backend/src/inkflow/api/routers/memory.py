@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 from inkflow.api.deps import get_memory_service
 from inkflow.domain.models.preference import PreferenceCategory
@@ -27,6 +27,45 @@ def _dump(obj: BaseModel | dict) -> dict:
     if isinstance(obj, dict):
         return obj
     return dict(obj.model_dump(mode="json"))
+
+
+class ProjectPreferenceCreate(BaseModel):
+    """手动创建项目偏好请求体（#521）."""
+
+    project_id: uuid.UUID
+    category: PreferenceCategory
+    pattern: str = Field(min_length=1)
+    value: str = Field(min_length=1)
+    confidence: float | None = None
+    count: int | None = None
+
+
+class UserPreferenceCreate(BaseModel):
+    """手动创建用户级偏好请求体（#521）."""
+
+    category: PreferenceCategory
+    pattern: str = Field(min_length=1)
+    value: str
+    confidence: float | None = None
+    count: int | None = None
+
+
+class PreferenceUpdate(BaseModel):
+    """偏好编辑请求体（#521）：至少提供一个编辑字段."""
+
+    category: PreferenceCategory | None = None
+    pattern: str | None = None
+    value: str | None = None
+
+    @model_validator(mode="after")
+    def _check_not_all_empty(self) -> PreferenceUpdate:
+        if not any((self.category is not None, self.pattern, self.value)):
+            raise ValueError("至少提供一个编辑字段")
+        if self.pattern is not None and not self.pattern.strip():
+            raise ValueError("pattern 不能为空")
+        if self.value is not None and not self.value.strip():
+            raise ValueError("value 不能为空")
+        return self
 
 
 @router.get("/preferences")
@@ -76,6 +115,56 @@ async def remove_user_preference(
     except PreferenceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"preference_id": preference_id, "deleted": True}
+
+
+@router.post("/preferences", status_code=201)
+async def create_preference(
+    body: ProjectPreferenceCreate,
+    svc: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """手动创建项目偏好（#521）→ 201 flat ProjectPreference dict."""
+    pref = await svc.create_preference(**body.model_dump())
+    return _dump(pref)
+
+
+@router.post("/user-preferences", status_code=201)
+async def create_user_preference(
+    body: UserPreferenceCreate,
+    svc: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """手动创建用户级偏好（#521）→ 201 flat UserPreference dict."""
+    pref = await svc.create_user_preference(**body.model_dump())
+    return _dump(pref)
+
+
+@router.patch("/preferences/{preference_id}")
+async def update_preference(
+    preference_id: str,
+    body: PreferenceUpdate,
+    svc: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """编辑项目偏好（#521）→ 200 flat ProjectPreference dict / 404."""
+    try:
+        pref = await svc.update_preference(preference_id, **body.model_dump(exclude_unset=True))
+    except PreferenceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _dump(pref)
+
+
+@router.patch("/user-preferences/{preference_id}")
+async def update_user_preference(
+    preference_id: str,
+    body: PreferenceUpdate,
+    svc: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """编辑用户级偏好（#521）→ 200 flat UserPreference dict / 404."""
+    try:
+        pref = await svc.update_user_preference(
+            preference_id, **body.model_dump(exclude_unset=True)
+        )
+    except PreferenceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _dump(pref)
 
 
 @router.get("/memory/stats")

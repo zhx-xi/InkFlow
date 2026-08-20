@@ -5,14 +5,19 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  createProjectPreference,
+  createUserPreference,
   fetchMemorySummaries,
   fetchProjectPreferences,
   fetchUserPreferences,
   removeProjectPreference,
   removeUserPreference,
   summarizeMemory,
+  updateProjectPreference,
+  updateUserPreference,
   type MemorySummariesResponse,
   type MemorySummaryDto,
+  type PreferenceInput,
   type ProjectPreferenceDto,
   type UserPreferenceDto,
 } from '../api/memory';
@@ -90,6 +95,12 @@ export function MemoryPage() {
   const [userPrefs, setUserPrefs] = useState<UserPreferenceDto[]>([]);
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [scope, setScope] = useState<'project' | 'user'>('project');
+  const [editing, setEditing] = useState<{ kind: 'project' | 'user'; id: string } | null>(null);
+  const [addCategory, setAddCategory] = useState('addressing');
+  const [addPattern, setAddPattern] = useState('');
+  const [addValue, setAddValue] = useState('');
 
   /** 无项目态：projects 为空或 currentProjectId 为 null 时不出任何请求 */
   const hasProject = projects.length > 0 && currentProjectId !== null && pid !== null;
@@ -148,6 +159,42 @@ export function MemoryPage() {
     } catch (err) {
       pushToast('err', errorMessage(err));
     }
+  };
+
+  /** #521：手动添加/编辑偏好（项目级/全局级双作用域；编辑态更新原行，新增态追加新行） */
+  const handleAddSubmit = async (): Promise<void> => {
+    const input: PreferenceInput = { category: addCategory, pattern: addPattern, value: addValue };
+    try {
+      if (editing) {
+        if (editing.kind === 'project') {
+          const updated = await updateProjectPreference(editing.id, input);
+          setPrefs((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+        } else {
+          const updated = await updateUserPreference(editing.id, input);
+          setUserPrefs((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+        }
+      } else if (scope === 'project' && pid) {
+        const created = await createProjectPreference(pid, input);
+        setPrefs((prev) => [...prev, created]);
+      } else {
+        const created = await createUserPreference(input);
+        setUserPrefs((prev) => [...prev, created]);
+      }
+      setAddOpen(false);
+      setEditing(null);
+      setAddPattern('');
+      setAddValue('');
+    } catch (err) {
+      pushToast('err', errorMessage(err));
+    }
+  };
+
+  /** #521：取消 = 关闭表单 + 清空 pattern/value + 退出编辑态（不调任何 create/update API） */
+  const handleAddCancel = (): void => {
+    setAddOpen(false);
+    setAddPattern('');
+    setAddValue('');
+    setEditing(null);
   };
 
   if (!hasProject) {
@@ -243,12 +290,108 @@ export function MemoryPage() {
         >
           {t('memory.extract')}
         </button>
+        <button
+          type="button"
+          data-testid="memory-add-btn"
+          className="rounded-md border border-line bg-surface px-4 py-1.5 text-[13px] text-ink transition-colors duration-180 hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+          onClick={() => setAddOpen(true)}
+        >
+          {t('memory.add.title')}
+        </button>
         {extracting && (
           <span data-testid="memory-extract-loading" className="text-[13px] text-ink-2">
             {t('memory.extract.loading')}
           </span>
         )}
       </div>
+      {addOpen && (
+        <div
+          data-testid="memory-add-form"
+          className="mt-4 rounded-lg border border-line bg-surface p-4"
+        >
+          {editing === null && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[12px] text-ink-3">{t('memory.add.scope.label')}</label>
+              <Select
+                value={scope}
+                onValueChange={(v) => setScope(v === 'user' ? 'user' : 'project')}
+              >
+                <SelectTrigger
+                  data-testid="memory-add-scope"
+                  aria-label={t('memory.add.scope.label')}
+                  className="w-56"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="project">{t('memory.add.scope.project')}</SelectItem>
+                  <SelectItem value="user">{t('memory.add.scope.user')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {scope === 'user' && editing === null && (
+            <p data-testid="memory-add-user-hint" className="mt-3 text-[12px] text-ink-2">
+              {t('memory.add.user.hint')}
+            </p>
+          )}
+          <div className="mt-3 flex flex-col gap-1.5">
+            <label className="text-[12px] text-ink-3">{t('memory.add.category.label')}</label>
+            <Select value={addCategory} onValueChange={setAddCategory}>
+              <SelectTrigger
+                data-testid="memory-add-category"
+                aria-label={t('memory.add.category.label')}
+                className="w-56"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(CATEGORY_LABEL).map(([value, labelKey]) => (
+                  <SelectItem key={value} value={value}>
+                    {t(labelKey)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="mt-3 flex flex-col gap-1.5">
+            <label className="text-[12px] text-ink-3">{t('memory.add.pattern.label')}</label>
+            <input
+              data-testid="memory-add-pattern"
+              value={addPattern}
+              onChange={(e) => setAddPattern(e.target.value)}
+              className="rounded-md border border-line bg-surface-2 px-3 py-1.5 text-[13px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+            />
+          </div>
+          <div className="mt-3 flex flex-col gap-1.5">
+            <label className="text-[12px] text-ink-3">{t('memory.add.value.label')}</label>
+            <input
+              data-testid="memory-add-value"
+              value={addValue}
+              onChange={(e) => setAddValue(e.target.value)}
+              className="rounded-md border border-line bg-surface-2 px-3 py-1.5 text-[13px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+            />
+          </div>
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              type="button"
+              data-testid="memory-add-submit"
+              className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              onClick={() => void handleAddSubmit()}
+            >
+              {t('memory.add.submit')}
+            </button>
+            <button
+              type="button"
+              data-testid="memory-add-cancel"
+              className="rounded-md border border-line bg-surface px-4 py-1.5 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              onClick={handleAddCancel}
+            >
+              {t('memory.add.cancel')}
+            </button>
+          </div>
+        </div>
+      )}
       {extractError && (
         <div
           data-testid="memory-extract-error"
@@ -301,14 +444,30 @@ export function MemoryPage() {
                   <span className="mx-1.5 text-ink-3">→</span>
                   <span data-testid={`memory-pref-value-${p.id}`}>{p.value}</span>
                 </p>
-                <button
-                  type="button"
-                  data-testid={`memory-pref-del-${p.id}`}
-                  className="mt-2 rounded-md border border-line bg-surface px-3 py-1 text-[12px] text-ink-2 transition-colors duration-180 hover:border-err/50 hover:text-err"
-                  onClick={() => void handleRemovePref(p.id)}
-                >
-                  {t('memory.prefs.delete')}
-                </button>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid={`memory-pref-edit-${p.id}`}
+                    className="rounded-md border border-line bg-surface px-3 py-1 text-[12px] text-ink-2 transition-colors duration-180 hover:bg-surface-3"
+                    onClick={() => {
+                      setEditing({ kind: 'project', id: p.id });
+                      setAddCategory(p.category);
+                      setAddPattern(p.pattern);
+                      setAddValue(p.value);
+                      setAddOpen(true);
+                    }}
+                  >
+                    {t('memory.prefs.edit')}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`memory-pref-del-${p.id}`}
+                    className="rounded-md border border-line bg-surface px-3 py-1 text-[12px] text-ink-2 transition-colors duration-180 hover:border-err/50 hover:text-err"
+                    onClick={() => void handleRemovePref(p.id)}
+                  >
+                    {t('memory.prefs.delete')}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -348,14 +507,30 @@ export function MemoryPage() {
                   <span className="mx-1.5 text-ink-3">→</span>
                   <span data-testid={`memory-userpref-value-${p.id}`}>{p.value}</span>
                 </p>
-                <button
-                  type="button"
-                  data-testid={`memory-userpref-del-${p.id}`}
-                  className="mt-2 rounded-md border border-line bg-surface px-3 py-1 text-[12px] text-ink-2 transition-colors duration-180 hover:border-err/50 hover:text-err"
-                  onClick={() => void handleRemoveUserPref(p.id)}
-                >
-                  {t('memory.prefs.delete')}
-                </button>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid={`memory-userpref-edit-${p.id}`}
+                    className="rounded-md border border-line bg-surface px-3 py-1 text-[12px] text-ink-2 transition-colors duration-180 hover:bg-surface-3"
+                    onClick={() => {
+                      setEditing({ kind: 'user', id: p.id });
+                      setAddCategory(p.category);
+                      setAddPattern(p.pattern);
+                      setAddValue(p.value);
+                      setAddOpen(true);
+                    }}
+                  >
+                    {t('memory.prefs.edit')}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`memory-userpref-del-${p.id}`}
+                    className="rounded-md border border-line bg-surface px-3 py-1 text-[12px] text-ink-2 transition-colors duration-180 hover:border-err/50 hover:text-err"
+                    onClick={() => void handleRemoveUserPref(p.id)}
+                  >
+                    {t('memory.prefs.delete')}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

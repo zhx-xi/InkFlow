@@ -466,6 +466,114 @@ class MemoryService:
             )
         return preference
 
+    async def create_preference(
+        self,
+        *,
+        project_id: uuid.UUID,
+        category: PreferenceCategory,
+        pattern: str,
+        value: str,
+        confidence: float | None = None,
+        count: int | None = None,
+    ) -> ProjectPreference:
+        """手动创建项目偏好（#521）：用户显式录入 → confidence/count 缺省 1.0/1.
+
+        透传 repo.create（source_events=[]），返回落库偏好.
+        """
+        return await self._preference_repo.create(  # type: ignore[attr-defined]  # 鸭子类型：preference_repo 按契约提供 create
+            project_id=project_id,
+            category=category,
+            pattern=pattern,
+            value=value,
+            confidence=confidence if confidence is not None else 1.0,
+            count=count if count is not None else 1,
+            source_events=[],
+        )
+
+    async def create_user_preference(
+        self,
+        *,
+        category: PreferenceCategory,
+        pattern: str,
+        value: str,
+        confidence: float | None = None,
+        count: int | None = None,
+    ) -> UserPreference:
+        """手动创建用户级偏好（#521）：缺省 confidence=1.0、count=1、project_count=1.
+
+        透传 repo.create（source_projects/source_events=[]），返回落库偏好.
+        """
+        if self._user_preference_repo is None:
+            raise PreferenceNotFoundError()
+        return await self._user_preference_repo.create(  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 create
+            category=category,
+            pattern=pattern,
+            value=value,
+            confidence=confidence if confidence is not None else 1.0,
+            count=count if count is not None else 1,
+            project_count=1,
+            source_projects=[],
+            source_events=[],
+        )
+
+    async def update_preference(
+        self,
+        preference_id: str,
+        *,
+        category: PreferenceCategory | None = None,
+        pattern: str | None = None,
+        value: str | None = None,
+    ) -> ProjectPreference:
+        """编辑项目偏好字段（#521）：get 缺失 → PreferenceNotFoundError.
+
+        None 不覆盖由 repo 端处理；透传既有统计字段 + 编辑字段.
+        """
+        pref: ProjectPreference | None = await self._preference_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：preference_repo 按契约提供 get
+            preference_id
+        )
+        if pref is None:
+            raise PreferenceNotFoundError()
+        return await self._preference_repo.update(  # type: ignore[attr-defined]  # 鸭子类型：preference_repo 按契约提供 update
+            preference_id,
+            count=pref.count,
+            confidence=pref.confidence,
+            source_events=pref.source_events,
+            category=category,
+            pattern=pattern,
+            value=value,
+        )
+
+    async def update_user_preference(
+        self,
+        preference_id: str,
+        *,
+        category: PreferenceCategory | None = None,
+        pattern: str | None = None,
+        value: str | None = None,
+    ) -> UserPreference:
+        """编辑用户级偏好字段（#521）：repo 未装配/get 缺失 → PreferenceNotFoundError.
+
+        None 不覆盖由 repo 端处理；透传既有统计字段 + 编辑字段.
+        """
+        if self._user_preference_repo is None:
+            raise PreferenceNotFoundError()
+        pref: UserPreference | None = await self._user_preference_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 get
+            preference_id
+        )
+        if pref is None:
+            raise PreferenceNotFoundError()
+        return await self._user_preference_repo.update(  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 update
+            preference_id,
+            count=pref.count,
+            confidence=pref.confidence,
+            project_count=pref.project_count,
+            source_projects=pref.source_projects,
+            source_events=pref.source_events,
+            category=category,
+            pattern=pattern,
+            value=value,
+        )
+
     async def get_user_preferences_for_injection(
         self, project_id: uuid.UUID
     ) -> list[UserPreference]:
@@ -576,9 +684,7 @@ class MemoryService:
             "user": _dump_summary(user_summary),
         }
 
-    async def summarize(
-        self, project_id: uuid.UUID, *, force: bool = False
-    ) -> dict:
+    async def summarize(self, project_id: uuid.UUID, *, force: bool = False) -> dict:
         """触发/复用语义总结（spec §3.2/§5.3/§5.4 幂等 + §5.7 审计）.
 
         流程:
@@ -680,11 +786,7 @@ class MemoryService:
             user_existing: SemanticSummary | None = await self._summary_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：summary_repo 按契约提供 get
                 scope=SummaryScope.USER, project_id=None
             )
-            if (
-                user_existing is not None
-                and user_existing.anchor_hash == user_hash
-                and not force
-            ):
+            if user_existing is not None and user_existing.anchor_hash == user_hash and not force:
                 user_result = user_existing
             else:
                 user_summary: SemanticSummary | None
