@@ -570,7 +570,7 @@ describe('写作页 — HITL 确认流（#343：waiting_hitl → 内联确认卡
   });
 });
 
-describe('写作页 — 顶部工具栏区 AI 聊天框（#476 D2：chat 搬入工具栏栏）', () => {
+describe('写作页 — 底部续写栏 AI 聊天框（#519 S6a：chat 移到 ChapterEditor 之后）', () => {
   it('渲染 chat-panel（聊天输入框 + 发送按钮；空输入发送禁用）', () => {
     render(<WritingPage />);
     expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
@@ -578,14 +578,20 @@ describe('写作页 — 顶部工具栏区 AI 聊天框（#476 D2：chat 搬入�
     expect(screen.getByTestId('chat-send')).toBeDisabled();
   });
 
-  it('chat 位于工具栏栏：editor main 内 editor-toolbar 之后（非页面底部 StatusBar 区）', () => {
+  it('chat 位于编辑器底部续写栏：ChapterEditor 之后、PipelineStatus 之前', () => {
     render(<WritingPage />);
     const editor = screen.getByTestId('editor');
     const toolbar = screen.getByTestId('editor-toolbar');
     // #476 契约：chat-panel 必须渲染在 editor main 内（旧实现是 main 外的底部兄弟节点）
     const chat = within(editor).getByTestId('chat-panel');
-    // 且文档顺序上位于 editor-toolbar 之后（紧贴工具栏栏下方）
+    // #476 契约：文档顺序上位于 editor-toolbar 之后
     expect(toolbar.compareDocumentPosition(chat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // #519 契约（RED 主失败点）：chat 必须位于 ChapterEditor 之后（当前实现渲染在编辑器上方）
+    const chapterEditor = screen.getByTestId('chapter-editor');
+    expect(chapterEditor.compareDocumentPosition(chat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // #519 契约（确认型）：chat 位于 PipelineStatus 之前（管线状态栏在 chat 之后）
+    const pipelineStatus = screen.getByTestId('pipeline-status');
+    expect(chat.compareDocumentPosition(pipelineStatus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
