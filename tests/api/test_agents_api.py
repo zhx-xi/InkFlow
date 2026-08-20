@@ -47,7 +47,7 @@
      `str(data["id"])` 比对
    - name：str 非空白；description/icon/system_prompt：str（默认 ""）
    - tool_ids：list[str]（工具目录 name 白名单）；skill_ids：list[str]
-     （Skill.id 字符串化白名单）
+     （skill 目录名列表，#522：不再含数字主键字符串）
    - model_override：str | None（provider/model 格式）；temperature_override：
      float | None ∈ [0.0, 2.0]
    - builtin：bool —— 内置出厂 Agent 只读（PATCH/DELETE → 409）
@@ -73,16 +73,17 @@
    - 本端点 200 即路由顺序契约的验证：若 /tools 声明在 /{agent_id} 之后 →
      "tools" 被 _parse_id → 404「Agent 不存在」→ 200 断言 FAIL
 
-7. 【ORM 契约（seed 辅助用）】
-   - `inkflow.infrastructure.database.models.agent.AgentORM`（`agents` 表），
-     构造 kwargs name/description/icon/system_prompt/tool_ids/skill_ids/
-     model_override/temperature_override/builtin（tool_ids/skill_ids 为
-     LenientJSON 列，镜像 ProjectORM.config 形态），id 由 DB 默认生成
-     （注意：该文件已含 F27 AgentExecutionORM，AgentORM 为 F39 新增类）
-   - `inkflow.infrastructure.database.models.skill.SkillORM`（`skills` 表），
-     构造 kwargs name/description/content/source（name 唯一列）
-   - 两者需在 `infrastructure/database/models/__init__.py` 导出（注册进
-     Base.metadata，test_engine fixture 的 create_all 才会建表）
+7. 【seed 辅助契约（#522：skill 不再落 DB）】
+   - Agent 造数经 `inkflow.infrastructure.database.models.agent.AgentORM`
+     （`agents` 表），构造 kwargs name/description/icon/system_prompt/
+     tool_ids/skill_ids/model_override/temperature_override/builtin
+     （tool_ids/skill_ids 为 LenientJSON 列，镜像 ProjectORM.config 形态），
+     id 由 DB 默认生成（该文件已含 F27 AgentExecutionORM，AgentORM 为
+     F39 新增类）
+   - skill 造数写 `skills_root/<name>/SKILL.md`（#522：skills 表/SkillORM
+     删除）；skills_root 由本文件 skills_root fixture monkeypatch
+     `inkflow.core.config.config.data_dir` → tmp_path 解析（镜像
+     test_skills_api.py 设计假设 #9）
 
 8. 【422 校验——Pydantic 层】POST：name 必填且去空白非空（缺失 / "   " →
    422）；temperature_override ∈ [0.0, 2.0]（越界 → 422）；多余字段忽略
@@ -92,7 +93,7 @@
 
 9. 【422 校验——业务层（spec §3.3 异常映射）】同名 → AgentNameConflictError
    → 422（创建同名 / PATCH 改名撞名皆然）；tool_ids 含目录外工具名 →
-   ToolReferenceError → 422；skill_ids 含不存在 skill id → SkillReferenceError
+   ToolReferenceError → 422；skill_ids 含不存在 skill 目录名 → SkillReferenceError
    → 422。业务层 422 detail 为服务层消息（str），本文件只断言状态码 + detail
    非空，【不锁精确文案与 detail 类型】。
 
@@ -106,7 +107,7 @@
     id 与响应一致（集成断言）。最小 body 仅 {name} 即可创建——默认值
     description=""、icon=""、system_prompt=""、tool_ids=[]、skill_ids=[]、
     model_override=None、temperature_override=None。注意 skill_ids 引用
-    校验（#9）：成功用例的 skill_ids 必须指向真实预插 skill（见 #14）。
+    校验（#9）：成功用例的 skill_ids 必须指向真实预插 skill 目录（见 #14）。
 
 12. 【PATCH 语义】exclude_unset 浅合并：仅更新提供字段，未提供字段原样
     保留；空 body {} → 200 不变；内置 Agent（builtin=True）→ 409（#13）。
@@ -118,11 +119,11 @@
     宽松变体）。
 
 14. 【白名单引用校验的确定性方案（本契约定稿）】走真实 repo 轨而非 patch
-    service：skill_ids 合法引用用例先经 `_seed_skill`（SkillORM 真实落库）
-    预插 skill 行拿 id；不存在引用用例用确定不存在的大整数 id（如
-    "999999"）；tool_ids 合法性由实现对照 TOOL_REGISTRY（静态 6 工具目录）
-    判定，用例直接传目录外名（如 "no_such_tool"）。全链路真实 DB + 真实
-    service，无 mock。
+    service：skill_ids 合法引用用例先经 `_seed_skill`（写 skills_root/<name>/
+    SKILL.md，#522 文件系统真源）预插 skill 目录；不存在引用用例用确定
+    不存在的目录名（如 "no-such-skill"）；tool_ids 合法性由实现对照
+    TOOL_REGISTRY（静态 6 工具目录）判定，用例直接传目录外名（如
+    "no_such_tool"）。全链路真实 DB + 真实 service，无 mock。
 
 15. 【lifespan/建表】ASGITransport 不触发 lifespan（test_chapter_api.py
     同款），建表由 test_engine fixture（tests/conftest.py）完成；本文件
@@ -140,19 +141,19 @@
     都透出）。用例见 tests/api/test_agents_role_key.py（900 行护栏拆出）。
 
 ════════════════════════════════════════════════════════════════════
-RED 阶段预期：`inkflow.api.routers.agents` 模块不存在 → 本文件【收集期
-ModuleNotFoundError】collected 0 items（pytest exit 2；router 未注册，请求
-亦 404）。GREEN 阶段：按上述契约实现 spec §8.1 CREATE（domain/models/
-agent.py、domain/ports/agent_repository.py + agent_errors.py、domain/services/
-agent_service.py、infrastructure/database/models/skill.py、infrastructure/
-database/repositories/agent_repo.py、api/routers/agents.py）+ §8.2 MODIFY
-（domain/models/agent_tools.py ToolSpec.group、tools/__init__.py TOOL_REGISTRY
-6 工具、database/models/__init__.py、api/app.py include_router）后全绿。
+RED 阶段预期（#522 补修，src 未改）：旧实现以 skill_repository 注入 +
+skill_ids 数字主键字符串——skill_ids 目录名用例 int() 解析失败 → 500
+（201/422 断言 FAIL）；TestAgentEntityServiceUpdateEdges 以 skills_root=
+构造 → TypeError FAIL。GREEN 阶段：删除 SkillORM/SkillRepositoryProtocol/
+SQLiteSkillRepository，AgentEntityService(agent_repository, skills_root)
+校验 skills_root/<name>/SKILL.md 存在后本文件全绿。
 """
 
 from __future__ import annotations
 
+import importlib
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -169,7 +170,6 @@ from inkflow.domain.ports.agent_errors import (
     AgentNotFoundError,
 )
 from inkflow.domain.ports.agent_repository import AgentRepositoryProtocol
-from inkflow.domain.ports.skill_repository import SkillRepositoryProtocol
 from inkflow.domain.services.agent_entity_service import AgentEntityService
 
 # ── 契约常量 ──
@@ -211,7 +211,7 @@ FULL_AGENT_PAYLOAD = {
 """完整创建载荷基座（#11 roundtrip 契约）。
 
 skill_ids 不在此常量内：skill_ids 引用校验（设计假设 #9/#14）要求引用
-真实预插 skill，用例内经 _seed_skill 拿 id 后动态补入。
+真实预插 skill 目录，用例内经 _seed_skill 写目录后动态补入。
 """
 
 
@@ -229,6 +229,17 @@ async def client(monkeypatch):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+
+@pytest.fixture
+def skills_root(monkeypatch, tmp_path) -> Path:
+    """文件系统 skill 真源根（#522）：monkeypatch config.data_dir → tmp_path，
+    GREEN 服务层经 `config.data_dir / "skills"` 解析（镜像 test_skills_api.py #9）。"""
+    core_config_mod = importlib.import_module("inkflow.core.config")
+    monkeypatch.setattr(core_config_mod.config, "data_dir", tmp_path)
+    root = tmp_path / "skills"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 # ── Seed / 断言辅助 ──
@@ -273,26 +284,23 @@ async def _seed_agent(
 
 
 async def _seed_skill(
-    db_session,
+    skills_root: Path,
     *,
     name: str,
     description: str = "",
     content: str = "",
-    source: str = "user_upload",
-):
-    """经 ORM 注入一条 Skill 记录（设计假设 #7/#14）。
+) -> str:
+    """写文件系统 skill 目录（设计假设 #7/#14；真源 = skills_root/<name>/SKILL.md）。
 
-    ORM 契约：inkflow.infrastructure.database.models.skill.SkillORM（skills
-    表），构造 kwargs name/description/content/source；id 由 DB 默认生成。
-    供 skill_ids 引用校验用例的确定性造数（#14）。
+    目录名（= Agent.skill_ids 引用值）可任意（如 "web-research"）；返回
+    name 供用例直接引用（不再有 DB 主键）。
     """
-    from inkflow.infrastructure.database.models.skill import SkillORM
-
-    row = SkillORM(name=name, description=description, content=content, source=source)
-    db_session.add(row)
-    await db_session.commit()
-    await db_session.refresh(row)
-    return row
+    d = skills_root / name
+    d.mkdir(parents=True, exist_ok=True)
+    body = content or "# 正文\n1. 步骤一\n"
+    md = f"---\nname: {name}\ndescription: {description}\n---\n\n{body}"
+    (d / "SKILL.md").write_text(md, encoding="utf-8")
+    return name
 
 
 def _assert_response_contract(data: dict) -> None:
@@ -439,13 +447,19 @@ class TestToolCatalog:
 class TestCreateAgent:
     """新建端点契约（设计假设 #8/#9/#11/#14）。"""
 
-    async def test_create_201_contract(self, client, db_session, override_get_db):
-        """成功：201 + 完整响应；字段原样回显（skill_ids 引用真实 seed）；DB 落库。"""
-        skill_a = await _seed_skill(db_session, name="润色方法论")
-        skill_b = await _seed_skill(db_session, name="修订方法论")
+    async def test_create_201_contract(
+        self, client, db_session, override_get_db, skills_root
+    ):
+        """成功：201 + 完整响应；字段原样回显（skill_ids 引用真实 skill 目录）；DB 落库。"""
+        await _seed_skill(
+            skills_root, name="web-research", description="网络调研方法论"
+        )
+        await _seed_skill(
+            skills_root, name="revision-methodology", description="修订打磨方法论"
+        )
         payload = {
             **FULL_AGENT_PAYLOAD,
-            "skill_ids": [str(skill_a.id), str(skill_b.id)],
+            "skill_ids": ["web-research", "revision-methodology"],
         }
 
         resp = await client.post(ENDPOINT, json=payload)
@@ -457,7 +471,7 @@ class TestCreateAgent:
         assert data["icon"] == FULL_AGENT_PAYLOAD["icon"]
         assert data["system_prompt"] == FULL_AGENT_PAYLOAD["system_prompt"]
         assert data["tool_ids"] == FULL_AGENT_PAYLOAD["tool_ids"]
-        assert data["skill_ids"] == [str(skill_a.id), str(skill_b.id)]
+        assert data["skill_ids"] == ["web-research", "revision-methodology"]
         assert data["model_override"] == "zhipu/glm-4.5"
         assert data["temperature_override"] == 0.6
         assert data["builtin"] is False  # 新建恒为自定义 Agent（#11）
@@ -471,7 +485,7 @@ class TestCreateAgent:
         ).scalar_one()
         assert str(row.id) == str(data["id"])
         assert row.tool_ids == FULL_AGENT_PAYLOAD["tool_ids"]
-        assert row.skill_ids == [str(skill_a.id), str(skill_b.id)]
+        assert row.skill_ids == ["web-research", "revision-methodology"]
 
     async def test_create_minimal_name_only(self, client, db_session, override_get_db):
         """最小 body 仅 {name} → 201；其余字段默认值语义（#11）。"""
@@ -545,28 +559,30 @@ class TestCreateAgent:
     async def test_create_skill_ids_missing_422(
         self, client, db_session, override_get_db
     ):
-        """skill_ids 含不存在 skill id → 422（SkillReferenceError，#9）。"""
+        """skill_ids 含不存在 skill 目录名 → 422（SkillReferenceError，#9）。"""
         resp = await client.post(
-            ENDPOINT, json={"name": "skill 错配", "skill_ids": ["999999"]}
+            ENDPOINT, json={"name": "skill 错配", "skill_ids": ["no-such-skill"]}
         )
         assert resp.status_code == 422
-        assert resp.json()["detail"], "不存在 skill id 422 detail 应为非空消息（#9）"
+        assert resp.json()[
+            "detail"
+        ], "不存在 skill 目录名 422 detail 应为非空消息（#9）"
 
     async def test_create_with_seeded_skill_201(
-        self, client, db_session, override_get_db
+        self, client, db_session, override_get_db, skills_root
     ):
-        """skill_ids 引用真实预插 skill → 201 且回显（#14 确定性造数）。"""
-        skill = await _seed_skill(
-            db_session, name="世界观方法论", description="世界观一致性方法论"
+        """skill_ids 引用真实预插 skill 目录 → 201 且回显（#14 确定性造数）。"""
+        await _seed_skill(
+            skills_root, name="web-research", description="世界观一致性方法论"
         )
 
         resp = await client.post(
-            ENDPOINT, json={"name": "世界观顾问", "skill_ids": [str(skill.id)]}
+            ENDPOINT, json={"name": "世界观顾问", "skill_ids": ["web-research"]}
         )
         assert resp.status_code == 201
         data = resp.json()
         _assert_response_contract(data)
-        assert data["skill_ids"] == [str(skill.id)]
+        assert data["skill_ids"] == ["web-research"]
 
 
 # ── GET /api/v1/agents/{agent_id}（spec §3.1 详情）──
@@ -864,20 +880,16 @@ class TestAgentRouterMockCoverage:
 @pytest.mark.asyncio
 class TestAgentEntityServiceUpdateEdges:
     """服务层边界：update 竞态分支（agent_entity_service L210/L221）。
-
     真实 DB 下两分支不可达且 unit 未覆盖——直接构造 service + mock 仓储补记。
     """
 
     async def test_update_rename_no_conflict_merges(self) -> None:
         """name 变更但查重未命中 → 走 merged（L210 False 分支）。"""
         agent_repo = MagicMock(spec=AgentRepositoryProtocol)
-        skill_repo = MagicMock(spec=SkillRepositoryProtocol)
         agent_repo.get = AsyncMock(return_value=_mock_agent(1))
         agent_repo.get_by_name = AsyncMock(return_value=None)
         agent_repo.update = AsyncMock(side_effect=lambda a: a)
-        svc = AgentEntityService(
-            agent_repository=agent_repo, skill_repository=skill_repo
-        )
+        svc = AgentEntityService(agent_repository=agent_repo, skills_root=Path("."))
 
         merged = await svc.update(1, AgentUpdate(name="new-name"))
         assert merged.name == "new-name"
@@ -886,13 +898,10 @@ class TestAgentEntityServiceUpdateEdges:
     async def test_update_repo_returns_none_raises_not_found(self) -> None:
         """repo.update 返回 None（竞态已删）→ AgentNotFoundError（L220-221）。"""
         agent_repo = MagicMock(spec=AgentRepositoryProtocol)
-        skill_repo = MagicMock(spec=SkillRepositoryProtocol)
         agent_repo.get = AsyncMock(return_value=_mock_agent(1))
         agent_repo.get_by_name = AsyncMock(return_value=None)
         agent_repo.update = AsyncMock(return_value=None)
-        svc = AgentEntityService(
-            agent_repository=agent_repo, skill_repository=skill_repo
-        )
+        svc = AgentEntityService(agent_repository=agent_repo, skills_root=Path("."))
 
         with pytest.raises(AgentNotFoundError, match="不存在"):
             await svc.update(1, AgentUpdate(description="d2"))

@@ -13,8 +13,9 @@
   updated_at 刷新为 now(UTC)，created_at 保留）；不存在 → None
   （builtin 只读保护在服务层）
 - delete 不存在 → False
-- list_agents_by_skill：Python 过滤实现（契约只定返回值；skill_ids 精确
-  含 str(skill_id)，同 agent_template_repo.list_projects_by_template 模式）
+- list_agents_by_skill(skill_name)：Python 过滤实现（契约只定返回值；
+  skill_ids 精确含 skill 目录名，#522 目录名语义——同
+  agent_template_repo.list_projects_by_template 模式）
 
 注: 方法名 ``list`` 会遮蔽类作用域中的内置 ``list``，返回注解统一
 写作 ``builtins.list[...]``（与 domain/ports/agent_repository.py 一致）。
@@ -145,15 +146,15 @@ class SQLiteAgentRepository:
         await self._session.commit()
         return True
 
-    async def list_agents_by_skill(self, skill_id: int) -> builtins.list[Agent]:
-        """列出引用指定 Skill 的 Agent（skill_ids 精确含 str(skill_id)），按 name 升序.
+    async def list_agents_by_skill(self, skill_name: str) -> builtins.list[Agent]:
+        """列出引用指定 Skill 的 Agent（skill_ids 精确含该目录名），按 name 升序.
 
         实现方式：Python 过滤（契约只定返回值；精确相等 str 匹配，同
         agent_template_repo.list_projects_by_template 模式）。
         """
         stmt = select(AgentORM).order_by(AgentORM.name.asc())
         result = await self._session.execute(stmt)
-        target = str(skill_id)
+        target = skill_name
         agents = []
         for orm in result.scalars().all():
             if target in (orm.skill_ids or []):

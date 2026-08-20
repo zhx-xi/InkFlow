@@ -1,136 +1,128 @@
-"""#258 F39 后端核心 — Skill API 测试契约（TDD RED 阶段）。
+"""#522 Skill 存储架构重构（DB → 文件系统真源）— Skill API 契约测试（TDD RED 阶段）。
 
-本文件为 `api/routers/skills.py`（NEW，spec §2.2 Skill 实体 + §3 API 契约 +
-§5.6 删除保护 + §13 M1/M4/M5 验收）定义 API 测试契约，覆盖 5 组端点：
+背景：skill 从 DB 表（int id、source 列）改为 `data_dir/skills/<name>/SKILL.md`
+文件真源（#522）。本文件为 `api/routers/skills.py` 定义新契约，覆盖 5 组端点：
 
-- `GET    /api/v1/skills`      — Skill 列表（{items, total} 信封 + agent_ids 反查）
-- `POST   /api/v1/skills`      — 上传/创建（body {content}，frontmatter 解析，201）
-- `GET    /api/v1/skills/{id}` — 详情（完整实体含反查）/ 404「Skill 不存在」
-- `PATCH  /api/v1/skills/{id}` — 部分更新（exclude_unset）/ 404 / 内置 409 / 改名同名 422
-- `DELETE /api/v1/skills/{id}` — 删除（204）/ 404 / 内置 409 / 被引用级联清引用
+- `GET    /api/v1/skills`            — Skill 列表（{items, total} 信封，按 name 升序）
+- `POST   /api/v1/skills`            — 上传（body {content}，frontmatter 解析 name=目录名，201）
+- `GET    /api/v1/skills/{skill_name}` — 详情 / 404「Skill 不存在」
+- `PATCH  /api/v1/skills/{skill_name}` — 更新（content 写回文件）/ 内置 409「内置 skill 只读」
+- `DELETE /api/v1/skills/{skill_name}` — 删除（删目录 + 级联清 Agent 引用）/ 内置 409
 
-权威来源：specs/f39-multi-agent/spec.md §2.2（Skill 实体字段 + frontmatter 契约）、
-§3（API 契约表 + 异常映射表）、§5.6（删除保护语义：内置 409 / 用户 skill 被引用
-级联清引用）、§13 M1/M4/M5（验收锚点）。测试方式镜像 tests/api/
-test_agent_templates_api.py（#107 F19：契约 docstring 风格 + 无 token 模式 +
-ASGITransport + override_get_db 真实 DB 模式）。
+权威来源：父侧统一契约 2026-08-20（#522 定稿，跨文件漂移将导致 GREEN 失败）。
 
 ════════════════════════════════════════════════════════════════════
 设计假设（GREEN 实现必须满足的契约，逐条对应下方测试）
 ════════════════════════════════════════════════════════════════════
 
-1. 【测试方式】ASGITransport + AsyncClient 直连真实 app 对象（import
-   inkflow.api.app），`override_get_db` fixture（tests/api/conftest.py）将
-   get_db 替换为测试 db_session（tests/conftest.py 内存 SQLite），app 与测试
-   共享同一数据库。本文件模块级 `from inkflow.api.routers import skills`
-   为 RED 收集断言（skills 模块不存在 → cannot import name → 全文件收集期
-   ImportError，即预期失败形态，等价 ModuleNotFoundError 收集错误）。
-   所有用例显式 `@pytest.mark.asyncio` + `@pytest.mark.api`（免疫
-   pytest-asyncio auto 模式差异——顶层 tests/ 运行 rootdir 无 ini 配置）。
+1. 【路径标识——硬性契约】`/api/v1/skills/{skill_name}`：skill_name = 目录名
+   （= frontmatter name，N2 规则：小写字母数字 + 单连字符）。非法格式/不存在
+   → 404 detail「Skill 不存在」（镜像旧 `_parse_id` 语义：非法格式不 422）。
+   禁止 `skill_id: int` FastAPI 类型声明（非整数会被自动 422）。
 
-2. 【无 token 模式——硬性契约】本文件所有用例依赖 env `INKFLOW_SERVER_TOKEN`
-   未设置时中间件直通（test_settings_api.py 设计假设 #2 同款）：client fixture
-   内显式 monkeypatch.delenv，免疫开发者本机 shell 的 env 残留导致假失败。
+2. 【响应实体】Skill 实体含 id 字段但【值 = name】（兼容层，前端 P2 再对齐）；
+   其余字段 name/description/content/source/created_at/updated_at/agent_ids。
+   content 与文件内容逐字 roundtrip。
 
-3. 【模块契约】`inkflow.api.routers.skills` 必须暴露：
-   - `router = APIRouter(prefix="/api/v1/skills", tags=["Skills"])`
-     （app.py 需 `app.include_router(skills.router)`，与既有 router 模块级
-     模式一致，spec §8.2）
-   - 【id 解析——硬性契约】路径参数必须走 `_parse_id` 语义（str 声明 +
-     手动 int()，非法 → 404「Skill 不存在」），禁止 `skill_id: int` FastAPI
-     类型声明（非整数会被 FastAPI 自动 422，破坏 §3.3 契约「非法 id → 404」）。
+3. 【source 推导——硬性契约】目录名 ∈ BUILTIN_SKILL_NAMES（6 英文 slug）
+   → "builtin"（PATCH/DELETE → 409 detail「内置 skill 只读」）；否则
+   "user_upload"。source 不再来自 DB 列。
 
-4. 【响应结构——实体契约（spec §2.2 字段）】详情/创建响应 8 键：
-   `{id, name, description, content, source, created_at, updated_at,
-   agent_ids}`：
-   - id：str 或 int 均可，测试一律以 `str(data["id"])` 驱动 URL、比对
-   - name：frontmatter name 提取（去冗余索引列）；description 同理
-   - content：完整 SKILL.md 原样存储（frontmatter + 正文，逐字 roundtrip）
-   - source：`"builtin" | "user_upload"`（创建产物恒 "user_upload"）
-   - created_at/updated_at：ISO 8601 字符串（datetime.fromisoformat 可解析）
-   - agent_ids：`[{id, name}]` 反查列表（引用该 skill 的 Agent；无引用 = []）
-   - 响应可含实体额外字段，本文件只断言契约键存在 + 值语义，
-     【不做整 dict 全等】（容忍 GREEN 输出额外字段）
+4. 【POST 上传】body 仅 {content} → 201 + frontmatter 解析 name=目录名，写出
+   `skills_root/<name>/SKILL.md`（content 原样）；同名已存在 → 422 detail
+   「同名 skill 已存在」；frontmatter 缺失/非法（缺 name/description、name
+   含大写/空格/双连字符/超长）→ 422 detail「frontmatter 不合法」。
 
-5. 【列表端点】GET /api/v1/skills → 200 + `{items: [...], total: N}`。
-   本契约只约束 items/total 两键；无数据时 total=0、items=[]。每项契约键
-   = `{id, name, description, source, agent_ids}`（spec §3.2 列表示例不含
-   content/created_at/updated_at，不要求也不禁止——只断言 5 键存在）。
-   列表项同样含 agent_ids 反查（§5.4 管理列表「被哪些 Agent 引用」数据源）。
+5. 【列表】GET /api/v1/skills → 200 + {items, total}，items 按 name 升序；
+   无数据 total=0、items=[]。列表项契约键 = {id, name, description, source,
+   agent_ids}（容忍额外字段）。
 
-6. 【frontmatter 契约（spec §2.2/§5.4，F40 上传解析）】POST body 仅
-   `{content}`，后端解析 frontmatter：
-   - name：必选，1-64 小写字母数字+连字符（`^[a-z0-9-]{1,64}$` 语义）
-   - description：必选
-   - tags：可选，本 spec 不落列、保留在 content frontmatter 内
-   - 缺失 name/description 或 name 格式非法 → `SkillFrontmatterError` 422
-   - 同名（name 唯一）→ `SkillNameConflictError` 422
-   - content 完整 SKILL.md 原样落库（真相源 blob，§2.2）
+6. 【PATCH】user_upload 可改：description 变更 → 响应更新；content 变更 →
+   写回文件（文件内容 = 新 content）；内置 → 409「内置 skill 只读」且文件
+   原样保留；不存在 → 404。
 
-7. 【ORM 契约（seed 辅助用）】`SkillORM`（`skills` 表，构造 kwargs
-   name/description/content/source，name 唯一，id 由 DB 默认生成）——测试经
-   `from inkflow.infrastructure.database.models import SkillORM` 惰性导入，
-   GREEN 必须在 `infrastructure/database/models/__init__.py` 导出（注册进
-   Base.metadata，测试 db_session fixture 的 create_all 才会建表）。
+7. 【DELETE】user_upload → 204 空响应体 + 删除目录 + 级联清 Agent.skill_ids
+   中该目录名（契约见 test_skills_cascade.py）；内置 → 409 且目录保留；
+   不存在 → 404。
 
-8. 【404 语义】id 不存在或非法格式（非整数）→ 404 +
-   `{"detail": "Skill 不存在"}`（父侧定稿文案；镜像 foreshadowings `_parse_id`
-   404 语义，非法格式不 422）。【409/422 detail 文案未钉死】——只断言状态码 +
-   detail 非空（GREEN 以业务异常 str(exc) 为 detail 即可满足）。
+8. 【agent_ids 反查】按 Agent.skill_ids 精确含目录名反查（[{id, name}]，
+   无引用 = []）；Agent 由测试经 AgentORM 直接造数（skill_ids 存目录名
+   列表，spec §2.1 字符串化惯例的 #522 形态）。
 
-9. 【PATCH 语义】exclude_unset 浅合并（spec §9.1 F19 同款）：仅更新提供
-   字段，未提供字段原样保留。改名为其他已存在 skill 的 name → 422
-   （SkillNameConflictError）。source="builtin" → 409（SkillBuiltinError，
-   §5.6 内置只读），409 后记录原样保留。
+9. 【skills_root 解析】GREEN 的 router/服务层经 `config.data_dir / "skills"`
+   解析真源根（镜像 cli/commands/skills.py::_skills_root 既有惯例：config
+   单例动态读取，测试 monkeypatch 实例属性）。本文件 skills_root fixture
+   monkeypatch `inkflow.core.config.config.data_dir` → tmp_path，并在
+   tmp_path/skills 下造目录/文件。
 
-10. 【删除契约（spec §5.6）】DELETE → 204 空响应体；不存在 → 404；
-    source="builtin" → 409（记录仍存在）；被引用 user skill → 服务层先移除
-    所有 Agent.skill_ids 中的该 id（级联清引用）再删 → 204。
-
-11. 【agent_ids 反查全链路（§5.4 双向视图）】创建 skill（POST /skills）→
-    创建引用它的 Agent（POST /api/v1/agents body {name, skill_ids:
-    [str(skill_id)]}，spec §3.2 示例）→ GET /skills 列表 / GET /skills/{id}
-    详情反查含该 agent `{id, name}`；无引用 → agent_ids = []。依赖
-    `/api/v1/agents` 端点（F39 同批实现，spec §8.1 api/routers/agents.py）。
+10. 【测试方式】ASGITransport + AsyncClient 直连真实 app；override_get_db
+    fixture（tests/api/conftest.py）替换 get_db 为测试 db_session
+    （tests/conftest.py 内存 SQLite，Agent 造数用）。无 token 模式：
+    client fixture 显式 delenv INKFLOW_SERVER_TOKEN。所有用例显式
+    @pytest.mark.asyncio + @pytest.mark.api。
 
 ════════════════════════════════════════════════════════════════════
-RED 阶段预期：`inkflow.api.routers.skills` 模块不存在 → 本文件
-【收集期 ImportError】（cannot import name 'skills'，收集错误形态，collected
-0 items；router 未注册，请求亦 404）。GREEN 阶段：按上述契约实现 §8.1
-NEW（domain/models/skill.py、
-domain/ports/skill_errors.py + skill_repository.py、domain/services/
-skill_service.py、infrastructure/database/models/skill.py +
-repositories/skill_repo.py、api/routers/skills.py）+ §8.2 MODIFY（app.py
-include_router + lifespan seed_builtin_skills）后全绿。
+RED 阶段预期（旧实现：DB 形态 + int id + 中文内置名，src 未改）
+════════════════════════════════════════════════════════════════════
+- 全部 name 路径用例：旧 router `_parse_id` 对非整数 → 404「Skill 不存在」，
+  成功用例断言 200/201/204 → FAIL；内置 409 用例断言 409 → 实际 404 → FAIL
+- POST 创建：旧实现落 DB（201、id=int），id==name 断言 → FAIL；文件系统断言
+  （skills_root/<name>/SKILL.md 存在）→ FAIL
+- frontmatter 422：旧实现 422（旧 detail 文案），detail == 「frontmatter 不合法」
+  → FAIL（状态码假绿，detail 为 RED 守护）
+- 同名 422：旧实现不查 fs → 201 → 断言 422 → FAIL
+- 404 守护用例（不存在/非法名）：旧实现同返 404 → 假绿 PASS（守护断言）
+预期形态约 13 failed / 5 passed；GREEN 按上述契约实现后全绿。
 """
 
 from __future__ import annotations
 
+import importlib
+import re
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 
 from inkflow.api.app import app
 from inkflow.api.routers import (
-    skills,  # noqa: F401  # RED 收集断言：模块存在性契约（GREEN 实现后即被使用）
+    skills,  # noqa: F401  # 模块存在性契约（既有模块，GREEN 在其内改实现）
 )
 
 # ── 契约常量 ──
 
 ENDPOINT = "/api/v1/skills"
-"""Skill 端点前缀（spec §3.1）。"""
-
-ENDPOINT_AGENTS = "/api/v1/agents"
-"""Agent 端点前缀（agent_ids 反查/级联清引用全链路用，设计假设 #11）。"""
+"""Skill 端点前缀（#522 契约 #1）。"""
 
 ENV_TOKEN = "INKFLOW_SERVER_TOKEN"
-"""token 来源环境变量（spec §2.3.1）：本文件全部用例依赖未设置 → 直通。"""
+"""token 来源环境变量：本文件全部用例依赖未设置 → 中间件直通。"""
 
 DETAIL_NOT_FOUND = "Skill 不存在"
-"""id 不存在/非法格式的 404 detail（设计假设 #8，父侧定稿文案）。"""
+"""skill_name 不存在/非法格式的 404 detail（父侧定稿文案，契约 #1）。"""
+
+DETAIL_BUILTIN = "内置 skill 只读"
+"""内置 skill PATCH/DELETE 的 409 detail（父侧定稿文案，契约 #3）。"""
+
+DETAIL_CONFLICT = "同名 skill 已存在"
+"""同名 skill 上传/复制的 422 detail（父侧定稿文案，契约 #4）。"""
+
+DETAIL_FRONTMATTER = "frontmatter 不合法"
+"""frontmatter 缺失/非法的 422 detail（父侧定稿文案，契约 #4）。"""
+
+BUILTIN_SKILL_NAMES = [
+    "architecture-methodology",
+    "writing-methodology",
+    "audit-methodology",
+    "revision-methodology",
+    "worldview-methodology",
+    "polishing-methodology",
+]
+"""内置 6 Skill 英文 slug（父侧定稿，契约 #3；顺序 = 出厂序）。"""
+
+_N2_PATTERN = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+"""N2 名称规则：小写字母数字 + 单连字符（契约 #1/#4）。"""
 
 SKILL_MD = (
     "---\n"
@@ -142,7 +134,7 @@ SKILL_MD = (
     "1. 确定关键词\n"
     "2. 检索与筛选\n"
 )
-"""合法 SKILL.md 样例（frontmatter 含 name/description/tags + 正文，设计假设 #6）。"""
+"""合法 SKILL.md 样例（frontmatter name=web-research 满足 N2，契约 #4）。"""
 
 SKILL_MD_2 = (
     "---\n"
@@ -152,7 +144,7 @@ SKILL_MD_2 = (
     "# 大纲\n"
     "- 三幕结构\n"
 )
-"""第二个合法 SKILL.md 样例（改名冲突/列表用例用，name 与 SKILL_MD 不同）。"""
+"""第二个合法 SKILL.md 样例（列表排序/多 skill 用例用）。"""
 
 
 # ── Fixtures ──
@@ -160,41 +152,83 @@ SKILL_MD_2 = (
 
 @pytest_asyncio.fixture
 async def client(monkeypatch):
-    """ASGI 测试客户端（函数级，test_chapter_api.py 同款 + 无 token 模式）。
-
-    设计假设 #1/#2：显式 delenv INKFLOW_SERVER_TOKEN → token 中间件直通；
-    ASGITransport 不触发 lifespan（F19 同款），建表由 db_session fixture 完成。
-    """
+    """ASGI 测试客户端（函数级，无 token 模式：delenv INKFLOW_SERVER_TOKEN）。"""
     monkeypatch.delenv(ENV_TOKEN, raising=False)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
 
+@pytest.fixture
+def skills_root(monkeypatch, tmp_path) -> Path:
+    """文件系统 skill 真源根 = tmp_path/skills + config.data_dir 重定向。
+
+    设计假设 #9：monkeypatch `inkflow.core.config.config.data_dir` → tmp_path，
+    GREEN 的 router/服务层经 `config.data_dir / "skills"` 解析真源根（镜像
+    cli/commands/skills.py::_skills_root「测试可 monkeypatch 实例属性」惯例）。
+    测试经 _write_skill 在根下造 skill 目录。
+    """
+    core_config_mod = importlib.import_module("inkflow.core.config")
+    monkeypatch.setattr(core_config_mod.config, "data_dir", tmp_path)
+    root = tmp_path / "skills"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
 # ── Seed / 断言辅助 ──
 
 
-async def _seed_skill(
+def _write_skill(
+    root: Path,
+    name: str,
+    *,
+    description: str = "方法论描述",
+    body: str = "# 正文\n1. 步骤一\n",
+) -> Path:
+    """向 skills_root 写入 `skills/<name>/SKILL.md`（frontmatter name=目录名）。
+
+    frontmatter name 必须满足 N2（_N2_PATTERN），否则 GREEN 读取时 422。
+    """
+    assert _N2_PATTERN.fullmatch(name), f"测试造数 name 必须满足 N2: {name!r}"
+    d = root / name
+    d.mkdir(parents=True, exist_ok=True)
+    content = f"---\nname: {name}\ndescription: {description}\n---\n\n{body}"
+    (d / "SKILL.md").write_text(content, encoding="utf-8")
+    return d
+
+
+def _write_builtin(root: Path, name: str = "architecture-methodology") -> Path:
+    """写入内置 skill 目录（name ∈ BUILTIN_SKILL_NAMES → source=builtin，契约 #3）。"""
+    assert name in BUILTIN_SKILL_NAMES
+    return _write_skill(
+        root,
+        name,
+        description="章节结构/大纲规划方法论",
+        body="# 架构方法论\n- 规划章节结构、冲突推进。\n",
+    )
+
+
+async def _seed_agent(
     db_session,
     *,
     name: str,
+    skill_ids: list[str] | None = None,
     description: str = "",
-    content: str = "",
-    source: str = "user_upload",
+    icon: str = "",
+    system_prompt: str = "",
+    builtin: bool = False,
 ):
-    """经 ORM 注入一条 Skill 记录（设计假设 #7）。
+    """经 ORM 注入一条 Agent 记录（skill_ids 存目录名列表，契约 #8）。"""
+    from inkflow.infrastructure.database.models import AgentORM
 
-    source 参数用于内置只读用例（"builtin"）——内置行不依赖 seed 函数，
-    保证 API 契约文件自包含（seed 幂等契约见 tests/integration/
-    test_builtin_seed.py）。
-    """
-    from inkflow.infrastructure.database.models import SkillORM
-
-    row = SkillORM(
+    row = AgentORM(
         name=name,
         description=description,
-        content=content,
-        source=source,
+        icon=icon,
+        system_prompt=system_prompt,
+        tool_ids=[],
+        skill_ids=skill_ids or [],
+        builtin=builtin,
     )
     db_session.add(row)
     await db_session.commit()
@@ -203,11 +237,7 @@ async def _seed_skill(
 
 
 def _assert_list_item_contract(item: dict) -> None:
-    """列表项契约（设计假设 #5）：5 键存在 + 值语义，容忍额外字段。
-
-    spec §3.2 列表示例不含 content/created_at/updated_at —— 只断言
-    父侧钉死的 {id, name, description, source, agent_ids}。
-    """
+    """列表项契约（设计假设 #5）：5 键存在 + 值语义，容忍额外字段。"""
     for key in ("id", "name", "description", "source", "agent_ids"):
         assert key in item, f"列表项缺少契约字段 {key}"
     assert isinstance(item["name"], str) and item["name"]
@@ -220,7 +250,7 @@ def _assert_list_item_contract(item: dict) -> None:
 
 
 def _assert_detail_contract(data: dict) -> None:
-    """详情/创建响应契约（设计假设 #4）：8 键存在 + 值语义，不做整 dict 全等。"""
+    """详情/创建响应契约（设计假设 #2）：8 键 + id==name + 值语义，不做整 dict 全等。"""
     for key in (
         "id",
         "name",
@@ -232,6 +262,7 @@ def _assert_detail_contract(data: dict) -> None:
         "agent_ids",
     ):
         assert key in data, f"响应缺少契约字段 {key}"
+    assert data["id"] == data["name"], "id must equal name (#2)"
     assert isinstance(data["name"], str) and data["name"]
     assert isinstance(data["description"], str)
     assert isinstance(data["content"], str) and data["content"]
@@ -244,29 +275,7 @@ def _assert_detail_contract(data: dict) -> None:
         assert "id" in entry and "name" in entry
 
 
-async def _create_skill_via_api(client, content: str = SKILL_MD) -> str:
-    """经 POST /api/v1/skills 创建 user skill，返回 str 化 id。"""
-    resp = await client.post(ENDPOINT, json={"content": content})
-    assert resp.status_code == 201
-    return str(resp.json()["id"])
-
-
-async def _create_referencing_agent(client, skill_id: str, name: str) -> str:
-    """经 POST /api/v1/agents 创建引用 skill 的 Agent，返回 str 化 id。
-
-    设计假设 #11：AgentCreate.skill_ids 存 str(skill_id)（spec §2.1），
-    POST /agents 对 skill_ids 做 SkillReferenceError 校验（§3.3）——
-    先建 skill 后建 agent，引用恒合法。
-    """
-    resp = await client.post(
-        ENDPOINT_AGENTS,
-        json={"name": name, "skill_ids": [skill_id]},
-    )
-    assert resp.status_code == 201
-    return str(resp.json()["id"])
-
-
-# ── GET /api/v1/skills（spec §3.1 列表，含反查）──
+# ── GET /api/v1/skills（契约 #5 列表，按 name 升序）──
 
 
 @pytest.mark.asyncio
@@ -274,70 +283,75 @@ async def _create_referencing_agent(client, skill_id: str, name: str) -> str:
 class TestListSkills:
     """Skill 列表端点契约（设计假设 #5）。"""
 
-    async def test_list_empty_when_no_skills(self, client, db_session, override_get_db):
-        """无 skill → 200 + {items: [], total: 0}（不隐式造数，#5）。"""
+    async def test_list_empty_when_no_skills(
+        self, client, db_session, override_get_db, skills_root
+    ):
+        """skills_root 为空 → 200 + {items: [], total: 0}。"""
         resp = await client.get(ENDPOINT)
         assert resp.status_code == 200
         body = resp.json()
         assert body["items"] == []
         assert body["total"] == 0
 
-    async def test_list_returns_created_skills(
-        self, client, db_session, override_get_db
+    async def test_list_sorted_by_name_and_source_derivation(
+        self, client, db_session, override_get_db, skills_root
     ):
-        """POST 2 条 → 200 + {items, total: 2}；每项满足列表项契约（#5）。"""
-        sid_a = await _create_skill_via_api(client, SKILL_MD)
-        sid_b = await _create_skill_via_api(client, SKILL_MD_2)
+        """fs 造 2 user + 1 builtin → total 3；items 按 name 升序；source 由目录名推导（#3/#5）。"""
+        _write_builtin(skills_root)  # architecture-methodology（builtin）
+        _write_skill(skills_root, "web-research", description="网络调研方法论")
+        _write_skill(skills_root, "outline-arch", description="大纲架构方法论")
 
         resp = await client.get(ENDPOINT)
         assert resp.status_code == 200
         body = resp.json()
-        assert body["total"] == 2
-        assert len(body["items"]) == 2
-        assert {str(it["id"]) for it in body["items"]} == {sid_a, sid_b}
+        assert body["total"] == 3
+        names = [it["name"] for it in body["items"]]
+        assert names == sorted(names), f"items 必须按 name 升序: {names}"
+        assert names == ["architecture-methodology", "outline-arch", "web-research"]
         for item in body["items"]:
             _assert_list_item_contract(item)
-            assert item["source"] == "user_upload"
+            assert item["id"] == item["name"], f"列表项 id 必须 = name: {item['id']!r}"
+        by_name = {it["name"]: it for it in body["items"]}
+        assert by_name["architecture-methodology"]["source"] == "builtin"
+        assert by_name["web-research"]["source"] == "user_upload"
+        assert by_name["outline-arch"]["source"] == "user_upload"
 
 
-# ── POST /api/v1/skills（spec §3.1 上传/创建，frontmatter 解析）──
+# ── POST /api/v1/skills（契约 #4 上传，frontmatter 解析 name=目录名）──
 
 
 @pytest.mark.asyncio
 @pytest.mark.api
 class TestCreateSkill:
-    """上传/创建端点契约（设计假设 #4/#6）。"""
+    """上传/创建端点契约（设计假设 #2/#4）。"""
 
-    async def test_create_201_contract(self, client, db_session, override_get_db):
-        """成功：201 + 完整响应；frontmatter 解析 name/description；content 原样；
-        source=user_upload；agent_ids=[]；DB 落库（#4/#6）。"""
+    async def test_create_201_contract(
+        self, client, db_session, override_get_db, skills_root
+    ):
+        """Create 201: id==name, content written to SKILL.md."""
         resp = await client.post(ENDPOINT, json={"content": SKILL_MD})
         assert resp.status_code == 201
         data = resp.json()
         _assert_detail_contract(data)
         assert data["name"] == "web-research"
         assert data["description"] == "网络调研方法论"
-        assert data["content"] == SKILL_MD  # 完整 SKILL.md 原样存储
+        assert data["content"] == SKILL_MD
         assert data["source"] == "user_upload"
         assert data["agent_ids"] == []
 
-        # 集成断言：DB 按 name 回查落库且 id 与响应一致
-        from inkflow.infrastructure.database.models import SkillORM
-
-        rows = (await db_session.execute(select(SkillORM))).scalars().all()
-        assert len(rows) == 1
-        assert str(rows[0].id) == str(data["id"])
-        assert rows[0].name == "web-research"
-        assert rows[0].content == SKILL_MD
-        assert rows[0].source == "user_upload"
+        # 文件系统真源断言：目录 + SKILL.md 原样 roundtrip
+        f = skills_root / "web-research" / "SKILL.md"
+        assert f.is_file(), f"上传后必须写出文件: {f}"
+        assert f.read_text(encoding="utf-8") == SKILL_MD  # 完整 SKILL.md 原样存储
 
     @pytest.mark.parametrize(
         "content",
         [
             "---\ndescription: 缺 name\n---\n正文",  # 缺失 name
             "---\nname: web-research\n---\n正文",  # 缺失 description
-            "---\nname: Web-Research\ndescription: 大写非法\n---\n正文",  # name 大写
+            "---\nname: Web-Research\ndescription: 大写非法\n---\n正文",  # name 含大写
             "---\nname: web research\ndescription: 含空格非法\n---\n正文",  # name 含空格
+            "---\nname: web--research\ndescription: 双连字符非法\n---\n正文",  # N2 单连字符
             "---\nname: "
             + "a" * 65
             + "\ndescription: 超长非法\n---\n正文",  # name 超 64
@@ -347,241 +361,271 @@ class TestCreateSkill:
             "missing_description",
             "uppercase_name",
             "space_in_name",
+            "double_hyphen_name",
             "name_too_long",
         ],
     )
     async def test_create_frontmatter_invalid_422(
-        self, client, db_session, override_get_db, content
+        self, client, db_session, override_get_db, skills_root, content
     ):
-        """frontmatter 缺失 name/description 或 name 格式非法 → 422
-        SkillFrontmatterError（#6；detail 文案未钉死，只断言非空）。"""
+        """Missing/invalid frontmatter (N2) -> 422."""
         resp = await client.post(ENDPOINT, json={"content": content})
         assert resp.status_code == 422
-        assert resp.json()["detail"]
+        assert resp.json()["detail"] == DETAIL_FRONTMATTER
 
-    async def test_create_duplicate_name_422(self, client, db_session, override_get_db):
-        """同名（name 唯一）→ 422 SkillNameConflictError（#6）。"""
-        await _create_skill_via_api(client, SKILL_MD)
+    async def test_create_duplicate_name_422(
+        self, client, db_session, override_get_db, skills_root
+    ):
+        """同名（目录已存在）→ 422 detail「同名 skill 已存在」（契约 #4）。"""
+        _write_skill(skills_root, "web-research", description="已存在")
         resp = await client.post(ENDPOINT, json={"content": SKILL_MD})
         assert resp.status_code == 422
-        assert resp.json()["detail"]
+        assert resp.json()["detail"] == DETAIL_CONFLICT
 
 
-# ── GET /api/v1/skills/{skill_id}（spec §3.1 详情，含反查）──
+# ── GET /api/v1/skills/{skill_name}（契约 #1/#2/#3 详情）──
 
 
 @pytest.mark.asyncio
 @pytest.mark.api
 class TestGetSkill:
-    """Skill 详情端点契约（设计假设 #4/#8/#11）。"""
+    """Skill 详情端点契约（设计假设 #1/#2/#3/#8）。"""
 
-    async def test_get_detail_contract(self, client, db_session, override_get_db):
-        """成功：200 + 完整 8 键响应；content 原样；无引用 agent_ids=[]（#4/#11）。"""
-        sid = await _create_skill_via_api(client)
-        resp = await client.get(f"{ENDPOINT}/{sid}")
+    async def test_get_detail_contract(
+        self, client, db_session, override_get_db, skills_root
+    ):
+        """成功：200 + id==name；content 与文件逐字一致；无引用 agent_ids=[]（#2/#8）。"""
+        _write_skill(skills_root, "web-research", description="网络调研方法论")
+        resp = await client.get(f"{ENDPOINT}/web-research")
         assert resp.status_code == 200
         data = resp.json()
         _assert_detail_contract(data)
-        assert str(data["id"]) == sid
         assert data["name"] == "web-research"
-        assert data["content"] == SKILL_MD
+        assert data["id"] == "web-research"
+        assert data["source"] == "user_upload"
         assert data["agent_ids"] == []
+        assert data["content"] == (skills_root / "web-research" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
 
-    async def test_get_not_found_404(self, client, db_session, override_get_db):
-        """不存在的 id → 404 + detail「Skill 不存在」（#8）。"""
-        resp = await client.get(f"{ENDPOINT}/99999")
+    async def test_get_builtin_source(
+        self, client, db_session, override_get_db, skills_root
+    ):
+        """内置目录名 → 200 + source=builtin（目录名 ∈ BUILTIN 推导，#3）。"""
+        _write_builtin(skills_root)
+        resp = await client.get(f"{ENDPOINT}/architecture-methodology")
+        assert resp.status_code == 200
+        data = resp.json()
+        _assert_detail_contract(data)
+        assert data["source"] == "builtin"
+
+    async def test_get_not_found_404(
+        self, client, db_session, override_get_db, skills_root
+    ):
+        """不存在的 skill_name → 404 + detail「Skill 不存在」（#1）。"""
+        resp = await client.get(f"{ENDPOINT}/no-such-skill")
         assert resp.status_code == 404
         assert resp.json()["detail"] == DETAIL_NOT_FOUND
 
-    async def test_get_invalid_id_404(self, client, db_session, override_get_db):
-        """非法 id 格式（非整数）→ 404（非 422，_parse_id 语义，#8）。"""
-        resp = await client.get(f"{ENDPOINT}/not-an-int")
+    @pytest.mark.parametrize(
+        "name",
+        ["Web-Research", "web research", "web--research"],
+        ids=["uppercase", "space", "double_hyphen"],
+    )
+    async def test_get_invalid_name_404(
+        self, client, db_session, override_get_db, skills_root, name
+    ):
+        """非法 skill_name 格式（N2 违规）→ 404（非 422，#1）。"""
+        resp = await client.get(f"{ENDPOINT}/{name}")
         assert resp.status_code == 404
         assert resp.json()["detail"] == DETAIL_NOT_FOUND
 
 
-# ── PATCH /api/v1/skills/{skill_id}（spec §3.1 部分更新）──
+# ── PATCH /api/v1/skills/{skill_name}（契约 #6 更新）──
 
 
 @pytest.mark.asyncio
 @pytest.mark.api
 class TestPatchSkill:
-    """部分更新端点契约（设计假设 #8/#9）。"""
+    """更新端点契约（设计假设 #6）。"""
 
-    async def test_patch_update_200(self, client, db_session, override_get_db):
-        """成功：200 + 完整响应；仅更新提供字段（exclude_unset），未提供字段
-        原样保留（#9）。"""
-        sid = await _create_skill_via_api(client)
+    async def test_patch_description_200(
+        self, client, db_session, override_get_db, skills_root
+    ):
+        """user_upload：PATCH description → 200；description 更新；name/id 不变（#6）。"""
+        _write_skill(skills_root, "web-research", description="网络调研方法论")
         resp = await client.patch(
-            f"{ENDPOINT}/{sid}", json={"description": "修订后的描述"}
+            f"{ENDPOINT}/web-research", json={"description": "修订后的描述"}
         )
         assert resp.status_code == 200
         data = resp.json()
         _assert_detail_contract(data)
         assert data["description"] == "修订后的描述"
-        assert data["name"] == "web-research"  # 未提供字段保留
-        assert data["content"] == SKILL_MD  # 未提供字段保留
+        assert data["name"] == "web-research"
+        assert data["id"] == "web-research"
 
-    async def test_patch_rename_conflict_422(self, client, db_session, override_get_db):
-        """改名与其他已存在 skill 同名 → 422 SkillNameConflictError（#9）。"""
-        sid_a = await _create_skill_via_api(client, SKILL_MD)
-        await _create_skill_via_api(client, SKILL_MD_2)
-        resp = await client.patch(f"{ENDPOINT}/{sid_a}", json={"name": "outline-arch"})
-        assert resp.status_code == 422
-        assert resp.json()["detail"]
-
-    async def test_patch_builtin_409(self, client, db_session, override_get_db):
-        """source="builtin" → 409（内置只读，§5.6）；409 后记录原样保留（#9）。"""
-        row = await _seed_skill(
-            db_session,
-            name="builtin-skill",
-            description="内置技能描述",
-            content=SKILL_MD,
-            source="builtin",
+    async def test_patch_content_written_back(
+        self, client, db_session, override_get_db, skills_root
+    ):
+        """user_upload：PATCH content → 200；响应 content 与文件均 = 新 content（写回，#6）。"""
+        _write_skill(skills_root, "web-research", description="网络调研方法论")
+        new_md = (
+            "---\n"
+            "name: web-research\n"
+            "description: 网络调研方法论\n"
+            "---\n"
+            "# 修订版正文\n"
+            "1. 第一步\n"
+            "2. 第二步\n"
         )
-        resp = await client.patch(f"{ENDPOINT}/{row.id}", json={"description": "篡改"})
+        resp = await client.patch(f"{ENDPOINT}/web-research", json={"content": new_md})
+        assert resp.status_code == 200
+        data = resp.json()
+        _assert_detail_contract(data)
+        f = skills_root / "web-research" / "SKILL.md"
+        assert f.read_text(encoding="utf-8") == new_md  # content written back to file
+
+    async def test_patch_with_references_returns_agent_ids(
+        self, client, db_session, override_get_db, skills_root
+    ):
+        """coverage-gap #522 (routers/skills.py L153): referenced PATCH
+        response includes agent_ids reverse lookup."""
+        _write_skill(skills_root, "web-research", description="network research")
+        await _seed_agent(
+            db_session,
+            name="ReferringAgent",
+            skill_ids=["web-research"],
+        )
+
+        resp = await client.patch(
+            f"{ENDPOINT}/web-research",
+            json={"description": "revised-after-ref"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        _assert_detail_contract(data)
+        names = [a["name"] for a in data["agent_ids"]]
+        assert "ReferringAgent" in names, f"agent_ids should include ref agent: {names}"
+
+    async def test_patch_builtin_409(
+        self, client, db_session, override_get_db, skills_root
+    ):
+        """内置目录名 → 409 detail「内置 skill 只读」；文件原样保留（#3/#6）。"""
+        d = _write_builtin(skills_root)
+        original = (d / "SKILL.md").read_text(encoding="utf-8")
+        resp = await client.patch(
+            f"{ENDPOINT}/architecture-methodology", json={"description": "篡改"}
+        )
         assert resp.status_code == 409
-        assert resp.json()["detail"]
+        assert resp.json()["detail"] == DETAIL_BUILTIN
 
-        resp2 = await client.get(f"{ENDPOINT}/{row.id}")
+        resp2 = await client.get(f"{ENDPOINT}/architecture-methodology")
         assert resp2.status_code == 200
-        assert resp2.json()["description"] == "内置技能描述"
+        assert resp2.json()["source"] == "builtin"
+        assert (d / "SKILL.md").read_text(
+            encoding="utf-8"
+        ) == original, "内置文件不得被改写"
 
-    async def test_patch_not_found_404(self, client, db_session, override_get_db):
-        """不存在的 id → 404（#8）。"""
-        resp = await client.patch(f"{ENDPOINT}/99999", json={"description": "x"})
+    async def test_patch_not_found_404(
+        self, client, db_session, override_get_db, skills_root
+    ):
+        """不存在的 skill_name → 404（#1）。"""
+        resp = await client.patch(
+            f"{ENDPOINT}/no-such-skill", json={"description": "x"}
+        )
         assert resp.status_code == 404
         assert resp.json()["detail"] == DETAIL_NOT_FOUND
 
 
-# ── DELETE /api/v1/skills/{skill_id}（spec §3.1 删除 + §5.6 保护）──
+# ── DELETE /api/v1/skills/{skill_name}（契约 #7 删除）──
 
 
 @pytest.mark.asyncio
 @pytest.mark.api
 class TestDeleteSkill:
-    """删除端点契约（设计假设 #8/#10）。"""
+    """删除端点契约（设计假设 #7；级联清引用见 test_skills_cascade.py）。"""
 
-    async def test_delete_204_and_gone(self, client, db_session, override_get_db):
-        """成功：204 空响应体；删除后 GET → 404（#10）。"""
-        sid = await _create_skill_via_api(client)
-        resp = await client.delete(f"{ENDPOINT}/{sid}")
+    async def test_delete_204_and_gone(
+        self, client, db_session, override_get_db, skills_root
+    ):
+        """成功：204 空响应体；目录被删；GET → 404（#7）。"""
+        _write_skill(skills_root, "web-research", description="网络调研方法论")
+        resp = await client.delete(f"{ENDPOINT}/web-research")
         assert resp.status_code == 204
         assert resp.content == b""
 
-        resp2 = await client.get(f"{ENDPOINT}/{sid}")
+        assert not (skills_root / "web-research").exists(), "删除后目录必须移除（真源）"
+        resp2 = await client.get(f"{ENDPOINT}/web-research")
         assert resp2.status_code == 404
         assert resp2.json()["detail"] == DETAIL_NOT_FOUND
 
-    async def test_delete_not_found_404(self, client, db_session, override_get_db):
-        """不存在的 id → 404（#8）。"""
-        resp = await client.delete(f"{ENDPOINT}/99999")
-        assert resp.status_code == 404
-        assert resp.json()["detail"] == DETAIL_NOT_FOUND
-
-    async def test_delete_invalid_id_404(self, client, db_session, override_get_db):
-        """非法 id 格式 → 404（非 422，镜像 _parse_id，#8）。"""
-        resp = await client.delete(f"{ENDPOINT}/not-an-int")
-        assert resp.status_code == 404
-        assert resp.json()["detail"] == DETAIL_NOT_FOUND
-
-    async def test_delete_builtin_409(self, client, db_session, override_get_db):
-        """source="builtin" → 409；409 后记录仍存在（#10）。"""
-        row = await _seed_skill(
-            db_session,
-            name="builtin-skill",
-            description="内置技能描述",
-            content=SKILL_MD,
-            source="builtin",
-        )
-        resp = await client.delete(f"{ENDPOINT}/{row.id}")
-        assert resp.status_code == 409
-        assert resp.json()["detail"]
-
-        resp2 = await client.get(f"{ENDPOINT}/{row.id}")
-        assert resp2.status_code == 200
-        assert resp2.json()["name"] == "builtin-skill"
-
-    async def test_delete_referenced_skill_cascades_clear(
-        self, client, db_session, override_get_db
+    async def test_delete_builtin_409(
+        self, client, db_session, override_get_db, skills_root
     ):
-        """删除被引用 user skill → 204；Agent.skill_ids 级联清引用（#10/#11）。"""
-        sid = await _create_skill_via_api(client)
-        aid = await _create_referencing_agent(client, sid, name="引用Agent甲")
+        """内置目录名 → 409 detail「内置 skill 只读」；目录保留（#3/#7）。"""
+        d = _write_builtin(skills_root)
+        resp = await client.delete(f"{ENDPOINT}/architecture-methodology")
+        assert resp.status_code == 409
+        assert resp.json()["detail"] == DETAIL_BUILTIN
 
-        # 引用确认：Agent 详情 skill_ids 含该 skill id
-        resp = await client.get(f"{ENDPOINT_AGENTS}/{aid}")
-        assert resp.status_code == 200
-        assert sid in resp.json()["skill_ids"]
+        assert d.is_dir(), "内置目录不得被删除"
+        resp2 = await client.get(f"{ENDPOINT}/architecture-methodology")
+        assert resp2.status_code == 200
+        assert resp2.json()["source"] == "builtin"
 
-        # 删除 → 204
-        resp2 = await client.delete(f"{ENDPOINT}/{sid}")
-        assert resp2.status_code == 204
-
-        # 级联：Agent.skill_ids 不再含该 id（服务层显式清理，非 FK）
-        resp3 = await client.get(f"{ENDPOINT_AGENTS}/{aid}")
-        assert resp3.status_code == 200
-        assert sid not in resp3.json()["skill_ids"]
-
-        # skill 已删除
-        resp4 = await client.get(f"{ENDPOINT}/{sid}")
-        assert resp4.status_code == 404
-        assert resp4.json()["detail"] == DETAIL_NOT_FOUND
+    async def test_delete_not_found_404(
+        self, client, db_session, override_get_db, skills_root
+    ):
+        """不存在的 skill_name → 404（#1）。"""
+        resp = await client.delete(f"{ENDPOINT}/no-such-skill")
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == DETAIL_NOT_FOUND
 
 
-# ── agent_ids 反查（spec §5.4 双向视图数据源）──
+# ── agent_ids 反查（契约 #8，Agent.skill_ids 精确含目录名）──
 
 
 @pytest.mark.asyncio
 @pytest.mark.api
 class TestSkillAgentReferences:
-    """agent_ids 反查契约（设计假设 #11）。"""
+    """agent_ids 反查契约（设计假设 #8）。"""
 
-    async def test_list_agent_ids_reverse_lookup(
-        self, client, db_session, override_get_db
+    async def test_agent_ids_reverse_lookup(
+        self, client, db_session, override_get_db, skills_root
     ):
-        """skill 被 Agent 引用 → GET /skills 列表项 agent_ids 含 {id, name}（#11）。"""
-        sid = await _create_skill_via_api(client)
-        aid = await _create_referencing_agent(client, sid, name="列表引用Agent")
-
-        resp = await client.get(ENDPOINT)
-        assert resp.status_code == 200
-        matches = [it for it in resp.json()["items"] if str(it["id"]) == sid]
-        assert len(matches) == 1
-        item = matches[0]
-        _assert_list_item_contract(item)
-        assert any(
-            str(entry["id"]) == aid and entry["name"] == "列表引用Agent"
-            for entry in item["agent_ids"]
+        """skill 被 Agent 引用（skill_ids=[目录名]）→ 详情与列表项 agent_ids 含该 agent（#8）。"""
+        _write_skill(skills_root, "web-research", description="网络调研方法论")
+        agent = await _seed_agent(
+            db_session, name="引用Agent甲", skill_ids=["web-research"]
         )
 
-    async def test_detail_agent_ids_reverse_lookup(
-        self, client, db_session, override_get_db
-    ):
-        """skill 被 Agent 引用 → GET /skills/{id} 详情 agent_ids 含该 agent（#11）。"""
-        sid = await _create_skill_via_api(client)
-        aid = await _create_referencing_agent(client, sid, name="详情引用Agent")
-
-        resp = await client.get(f"{ENDPOINT}/{sid}")
+        resp = await client.get(f"{ENDPOINT}/web-research")
         assert resp.status_code == 200
         data = resp.json()
         _assert_detail_contract(data)
         assert any(
-            str(entry["id"]) == aid and entry["name"] == "详情引用Agent"
+            str(entry["id"]) == str(agent.id) and entry["name"] == "引用Agent甲"
             for entry in data["agent_ids"]
+        ), f"详情 agent_ids 应含引用 Agent: {data['agent_ids']}"
+
+        resp2 = await client.get(ENDPOINT)
+        matches = [it for it in resp2.json()["items"] if it["name"] == "web-research"]
+        assert len(matches) == 1
+        assert any(
+            str(entry["id"]) == str(agent.id) and entry["name"] == "引用Agent甲"
+            for entry in matches[0]["agent_ids"]
         )
 
     async def test_agent_ids_empty_when_unreferenced(
-        self, client, db_session, override_get_db
+        self, client, db_session, override_get_db, skills_root
     ):
-        """无引用的 skill → 列表项与详情 agent_ids 均为 []（#4/#11）。"""
-        sid = await _create_skill_via_api(client)
+        """无引用的 skill → 详情与列表项 agent_ids 均为 []（#2/#8）。"""
+        _write_skill(skills_root, "web-research", description="网络调研方法论")
+        resp = await client.get(f"{ENDPOINT}/web-research")
+        assert resp.status_code == 200
+        assert resp.json()["agent_ids"] == []
 
-        resp = await client.get(ENDPOINT)
-        matches = [it for it in resp.json()["items"] if str(it["id"]) == sid]
+        resp2 = await client.get(ENDPOINT)
+        matches = [it for it in resp2.json()["items"] if it["name"] == "web-research"]
         assert len(matches) == 1
         assert matches[0]["agent_ids"] == []
-
-        resp2 = await client.get(f"{ENDPOINT}/{sid}")
-        assert resp2.status_code == 200
-        assert resp2.json()["agent_ids"] == []

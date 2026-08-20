@@ -13,19 +13,22 @@
  * - 每个用例独立 launch app（workers=1，串行）+ try/finally app.close()
  *
  * 数据隔离约定（内核 DB 为持久文件 frontend/inkflow.db，跨用例残留）：
- * - 内置 6 Agent（架构师/执笔/审校/修订/世界观/润色）+ 6 Skill 由 lifespan seed（#403，幂等）
+ * - 内置 6 Agent（架构师/执笔/审校/修订/世界观/润色）+ 6 Skill 由 lifespan seed（#403，幂等；
+ *   #522 后 Skill 目录名 = 英文 slug）
  * - 自定义 Agent 名唯一（E2E-AG-<场景>-${Date.now()}）；定位卡片一律
  *   locator('[data-testid^="agent-card-"]').filter({ hasText: 名称 })（禁硬编码 id，DB 自增持久累积），
  *   卡片 id 从 data-testid 提取（剥离 agent-card- 前缀）
- * - skill 勾选定位用「写作方法论」（内置 seed 名，label 容器含 name 文本）：
- *   dialog.locator('[data-testid^="agent-skill-"]').filter({ hasText: '写作方法论' })
+ * - skill 勾选定位用 'writing-methodology'（内置 seed 目录名 = 英文 slug，#522，
+ *   label 容器含 name 文本）：
+ *   dialog.locator('[data-testid^="agent-skill-"]').filter({ hasText: 'writing-methodology' })
  *
  * testid 契约（#260 F41）：agent-list / agent-new-btn / agent-card-<id> /
  * agent-builtin-badge-<id> / agent-edit-<id>（仅自定义）/ agent-del-<id>（仅自定义）/
- * agent-tool-chip-<toolName> / agent-skill-chip-<skillId>；agent-dialog（role=dialog）/
+ * agent-tool-chip-<toolName> / agent-skill-chip-<skillName>（#522 skill_ids = 目录名）；
+ * agent-dialog（role=dialog）/
  * agent-name-input / agent-desc-input / agent-icon-input / agent-prompt-input /
  * agent-tool-group-<group> / agent-tool-<toolName> / agent-skill-search /
- * agent-skill-<skillId> / agent-model-input / agent-temp-input /
+ * agent-skill-<skillName> / agent-model-input / agent-temp-input /
  * agent-dialog-save / agent-dialog-cancel；agent-delete-dialog / agent-delete-ok /
  * agent-delete-cancel
  *
@@ -159,9 +162,9 @@ test('Agent 管理：创建自定义 Agent 全流程（新建 → 填表 + 勾�
     await dialog.getByTestId('agent-tool-save_draft').click();
     await dialog.getByTestId('agent-tool-group-retrieval').click(); // 展开无副作用，仅确认组存在
 
-    // skill 绑定：搜索「写作方法论」→ 过滤 → 勾选 label 容器
-    await dialog.getByTestId('agent-skill-search').fill('写作方法论');
-    const skillLabel = dialog.locator('[data-testid^="agent-skill-"]').filter({ hasText: '写作方法论' });
+    // skill 绑定：搜索 writing-methodology（#522 内置目录名）→ 过滤 → 勾选 label 容器
+    await dialog.getByTestId('agent-skill-search').fill('writing-methodology');
+    const skillLabel = dialog.locator('[data-testid^="agent-skill-"]').filter({ hasText: 'writing-methodology' });
     await expect(skillLabel).toBeVisible();
     await skillLabel.click();
 
@@ -176,10 +179,10 @@ test('Agent 管理：创建自定义 Agent 全流程（新建 → 填表 + 勾�
     const card = window.locator('[data-testid^="agent-card-"]').filter({ hasText: name });
     await expect(card).toBeVisible();
     await expect(card).toContainText('E2E 创建描述');
-    // 函数/skill 白名单展示（双向视图）：save_draft 工具 chip + 写作方法论 skill chip
+    // 函数/skill 白名单展示（双向视图）：save_draft 工具 chip + writing-methodology skill chip
     await expect(card.getByTestId('agent-tool-chip-save_draft')).toBeVisible();
     await expect(
-      card.locator('[data-testid^="agent-skill-chip-"]').filter({ hasText: '写作方法论' })
+      card.locator('[data-testid^="agent-skill-chip-"]').filter({ hasText: 'writing-methodology' })
     ).toBeVisible();
     // 自定义可编辑：编辑/删除按钮存在 + 无 builtin 徽标
     await expect(card.getByTestId(/^agent-edit-/)).toHaveCount(1);

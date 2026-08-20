@@ -1,10 +1,10 @@
 """Agent 领域模型 — Agent 实体与请求 DTO.
 
 Agent 是持久化实体（对应 agents 表，通过 SQLAlchemy ORM 映射），承载
-能力白名单（tool_ids 工具目录 name 列表 / skill_ids Skill.id 字符串化
-列表）与自定义配置（名称唯一，去空白非空）。AgentCreate / AgentUpdate
-为请求 DTO；Create 无 id/builtin/时间戳字段，Update 全字段可选
-（exclude_unset 语义，同 F1/F13）。
+能力白名单（tool_ids 工具目录 name 列表 / skill_ids skill 目录名列表，
+ADR-039 #522）与自定义配置（名称唯一，去空白非空）。AgentCreate /
+AgentUpdate 为请求 DTO；Create 无 id/builtin/时间戳字段，Update 全字段
+可选（exclude_unset 语义，同 F1/F13）。
 
 依据: specs/f39-multi-agent/spec.md §2.1。
 领域层保持纯净：仅依赖 Pydantic v2，不感知 ORM / 框架。
@@ -35,7 +35,7 @@ class Agent(BaseModel):
         icon: 图标（emoji 字符或图标键；空串 = 默认图标）.
         system_prompt: system prompt（内置 Agent 只读；自定义 Agent 可编辑）.
         tool_ids: 能力白名单，工具目录 name 列表.
-        skill_ids: 能力白名单，Skill.id 字符串化列表.
+        skill_ids: 能力白名单，skill 目录名列表（#522 文件系统真源引用）.
         model_override: 模型覆盖（provider/model 格式，None = 跟随默认）.
         temperature_override: 温度覆盖（None = 跟随默认）.
         builtin: 是否内置（True = 只读，出厂 seed；False = 用户自定义）.
