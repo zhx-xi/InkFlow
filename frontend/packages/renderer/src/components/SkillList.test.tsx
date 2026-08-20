@@ -41,6 +41,21 @@
  *   （刷新实现不锁：copySkill 内部追加或 loadSkills 重拉均可；状态化 mock 保证两条路径都能看到副本卡）
  *
  * RED 预期：./SkillList 模块不存在 → module-not-found（类 1 契约缺口，suite 级失败）。
+ *
+ * #522 P2 Skills 管理 UI 增强（追加契约，2026-08-20，详情滚动 + user_upload 编辑入口）：
+ * - 详情弹窗 data-testid="skill-detail-content" 容器加滚动语义（className 含
+ *   overflow-y-auto 或 max-h-* 之一，max-height 限制 + 纵向滚动）
+ * - user_upload 卡片新增「编辑」按钮 data-testid="skill-edit-<id>"（仅 user_upload
+ *   渲染，builtin 不渲染——镜像 detail/copy 只对 builtin、delete 只对 user_upload
+ *   的分流）；按钮文案 t('skill.edit')（zh「编辑」/ en「Edit」，新 i18n key）
+ * - 编辑弹窗 data-testid="skill-edit-dialog"（独立弹窗，与 skill-upload-dialog 并存）：
+ *   textarea data-testid="skill-edit-content" 预填 skill.content 逐字；保存
+ *   data-testid="skill-edit-save" → store.updateSkill(name, { content }) →
+ *   PATCH /api/v1/skills/{name}（用 skill.name）→ 成功关弹窗 + loadSkills 重拉；
+ *   取消 data-testid="skill-edit-cancel" → 关闭不保存（零 PATCH/POST）
+ * - store 新增 updateSkill(name: string, patch: { content: string })（本批只组件级契约）
+ * - 设计假设与 RED 预期详见文件尾 #522 describe 块注释
+
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, within, waitFor } from '@testing-library/react';
@@ -273,5 +288,132 @@ describe('SkillList — 内置详情 + 复制（#485）', () => {
     await waitFor(() => {
       expect(useToastStore.getState().toasts.some((t) => t.message.includes('保存失败'))).toBe(true);
     });
+  });
+});
+/*
+ * #522 P2 Skills 管理 UI 增强（追加契约，2026-08-20，详情滚动 + user_upload 编辑入口）：
+ *
+ * 设计假设（GREEN 契约，Codex 照此实现）：
+ * 1. 详情弹窗 content 滚动容器：data-testid="skill-detail-content" 元素（pre 或其
+ *    包裹容器）className 含 overflow-y-auto 或 max-h-*（max-height + 纵向滚动语义）；
+ *    既有 textContent 全文契约不变。
+ * 2. user_upload 卡片新增「编辑」按钮 data-testid="skill-edit-<id>"（仅
+ *    source === 'user_upload' 渲染；builtin 卡片不渲染 skill-edit- 前缀——镜像
+ *    detail/copy 只对 builtin、delete 只对 user_upload 的分流逻辑）；
+ *    按钮文案 t('skill.edit')（zh「编辑」/ en「Edit」，新 i18n key，GREEN 补 zh/en）。
+ * 3. 点击编辑 → 独立编辑弹窗 data-testid="skill-edit-dialog"（不复用上传弹窗
+ *    skill-upload-dialog 的 testid，两弹窗并存）；弹窗内 textarea
+ *    data-testid="skill-edit-content"（aria-label 可复用 t('skill.content')），
+ *    初始值 = 该 skill.content 逐字（预填）。
+ * 4. 保存按钮 data-testid="skill-edit-save"、取消按钮 data-testid="skill-edit-cancel"
+ *    （文案可用 t('dlg.cancel')）。
+ * 5. 保存 → store.updateSkill(name: string, patch: { content: string })
+ *    （GREEN 在 stores/skills.ts 新增；前端 Skill 类型 id 仍为 number，API 路径
+ *    用 skill.name）：PATCH /api/v1/skills/{name} body={content} → 成功 →
+ *    弹窗关闭 + loadSkills() 重拉列表；失败 → 弹窗不关 + 错误提示（本批不锁失败形态）。
+ * 6. 取消 → 弹窗关闭，不发任何 PATCH/POST。
+ *
+ * RED 预期：滚动断言 assert 类（className 无滚动类）/ skill-edit-<id> 缺失
+ * element-missing / skill-edit-dialog 缺失 element-missing / updateSkill 未实现
+ * （保存用例在点编辑处即 element-missing，PATCH 断言不达）。
+ */
+describe('SkillList — P2 详情滚动 + user_upload 编辑（#522）', () => {
+  it('详情弹窗 content 容器有滚动语义（overflow-y-auto 或 max-h-*）', async () => {
+    const user = userEvent.setup();
+    apiFetchMock.mockResolvedValue({ items: [BUILTIN_SKILL], total: 1 });
+    render(<SkillList />);
+    await screen.findByTestId('skill-card-2');
+    await user.click(screen.getByTestId('skill-detail-2'));
+    const dlg = await screen.findByTestId('skill-detail-dialog');
+    expect(dlg).toBeInTheDocument();
+    const content = screen.getByTestId('skill-detail-content');
+    expect(content.className).toMatch(/overflow-y-auto|max-h-/);
+  });
+
+  it('user_upload 卡片渲染编辑按钮 skill-edit-<id>（文案「编辑」）；builtin 卡片不渲染', async () => {
+    apiFetchMock.mockResolvedValue({ items: [BUILTIN_SKILL, USER_SKILL], total: 2 });
+    render(<SkillList />);
+    await screen.findByTestId('skill-card-2');
+    const card3 = screen.getByTestId('skill-card-3');
+    const editBtn = within(card3).getByTestId('skill-edit-3');
+    expect(editBtn).toHaveTextContent('编辑');
+    const card2 = screen.getByTestId('skill-card-2');
+    expect(within(card2).queryByTestId('skill-edit-2')).not.toBeInTheDocument();
+  });
+
+  it('点编辑 → skill-edit-dialog 打开 + textarea 预填 skill.content（独立弹窗）', async () => {
+    const user = userEvent.setup();
+    apiFetchMock.mockResolvedValue({ items: [USER_SKILL], total: 1 });
+    render(<SkillList />);
+    await screen.findByTestId('skill-card-3');
+    await user.click(screen.getByTestId('skill-edit-3'));
+    const dlg = await screen.findByTestId('skill-edit-dialog');
+    expect(dlg).toBeInTheDocument();
+    // 独立弹窗契约：编辑弹窗不复用上传弹窗 testid
+    expect(screen.queryByTestId('skill-upload-dialog')).not.toBeInTheDocument();
+    const textarea = within(dlg).getByTestId('skill-edit-content');
+    expect(textarea).toHaveValue(USER_SKILL.content);
+  });
+
+  it('保存 → PATCH /api/v1/skills/{name} body={content} → 弹窗关闭 + loadSkills 重拉', async () => {
+    const user = userEvent.setup();
+    const EDITED_CONTENT =
+      '---\nname: web-research\ndescription: 网络调研方法论 v2\n---\n# 调研 v2';
+    const stateSkills: Skill[] = [{ ...USER_SKILL }];
+    apiFetchMock.mockImplementation(
+      async (path: string, init?: { method?: string; body?: { content?: string } }) => {
+        if (path === '/api/v1/skills/web-research' && init?.method === 'PATCH') {
+          const patched: Skill = {
+            ...stateSkills[0],
+            content: init.body?.content ?? stateSkills[0].content,
+            updated_at: '2026-08-20T00:00:00Z',
+          };
+          stateSkills[0] = patched;
+          return patched;
+        }
+        if (path === '/api/v1/skills') return { items: [...stateSkills], total: stateSkills.length };
+        if (path === '/api/v1/agents') return { items: [], total: 0 };
+        return { ok: true };
+      },
+    );
+    render(<SkillList />);
+    await screen.findByTestId('skill-card-3');
+    await user.click(screen.getByTestId('skill-edit-3'));
+    const dlg = await screen.findByTestId('skill-edit-dialog');
+    const textarea = within(dlg).getByTestId('skill-edit-content');
+    await user.clear(textarea);
+    await user.type(textarea, EDITED_CONTENT);
+    await user.click(within(dlg).getByTestId('skill-edit-save'));
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/skills/web-research',
+        expect.objectContaining({ method: 'PATCH', body: { content: EDITED_CONTENT } }),
+      );
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('skill-edit-dialog')).not.toBeInTheDocument();
+    });
+    // 保存成功后列表刷新（loadSkills 重拉）：GET /skills 至少 2 次（挂载 + 刷新）
+    const getCalls = apiFetchMock.mock.calls.filter(
+      (c) => c[0] === '/api/v1/skills' && c[1]?.method === undefined,
+    );
+    expect(getCalls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('取消 → 弹窗关闭且不发任何 PATCH/POST', async () => {
+    const user = userEvent.setup();
+    apiFetchMock.mockResolvedValue({ items: [USER_SKILL], total: 1 });
+    render(<SkillList />);
+    await screen.findByTestId('skill-card-3');
+    await user.click(screen.getByTestId('skill-edit-3'));
+    const dlg = await screen.findByTestId('skill-edit-dialog');
+    await user.click(within(dlg).getByTestId('skill-edit-cancel'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('skill-edit-dialog')).not.toBeInTheDocument();
+    });
+    const writeCalls = apiFetchMock.mock.calls.filter(
+      (c) => c[1]?.method === 'PATCH' || c[1]?.method === 'POST',
+    );
+    expect(writeCalls.length).toBe(0);
   });
 });
