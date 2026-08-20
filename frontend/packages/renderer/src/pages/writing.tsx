@@ -253,6 +253,11 @@ export function WritingPage() {
             view={view}
             onToggleView={() => setView((v) => (v === 'editor' ? 'detail' : 'editor'))}
           />
+          {view === 'editor' ? (
+            <ChapterEditor onEditorKeyDown={handleKeyDown} onContentChange={handleContentChange} />
+          ) : (
+            <ExecutionDetailPanel executionId={null} />
+          )}
           {effectiveProjectId !== '' && currentChapterId !== null ? (
             <ChatPanel
               projectId={effectiveProjectId}
@@ -260,11 +265,6 @@ export function WritingPage() {
               chapterContent={content}
             />
           ) : null}
-          {view === 'editor' ? (
-            <ChapterEditor onEditorKeyDown={handleKeyDown} onContentChange={handleContentChange} />
-          ) : (
-            <ExecutionDetailPanel executionId={null} />
-          )}
           <PipelineStatus
             status={status}
             error={error}
