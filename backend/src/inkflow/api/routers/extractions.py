@@ -40,7 +40,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from inkflow.api.deps import get_db, get_extraction_service, get_vector_status, refresh_vector_store
+from inkflow.api.deps import (
+    get_db,
+    get_extraction_service,
+    get_provider_config_service,
+    get_vector_status,
+    refresh_vector_store,
+)
 from inkflow.domain.models.extraction import ExtractionRequest, ExtractionType
 from inkflow.domain.ports.character_errors import (
     CharacterExtractionError,
@@ -149,6 +155,45 @@ class RetrieveBody(BaseModel):
         if not 0.0 <= v <= 1.0:
             raise ValueError("min_score 必须在 0-1 之间")
         return v
+
+
+class EmbeddingModelRequest(BaseModel):
+    """PUT /vector/embedding-model 请求体 — provider/model_id 必填非空白。"""
+
+    provider: str
+    model_id: str
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("provider 不能为空")
+        return stripped
+
+    @field_validator("model_id")
+    @classmethod
+    def validate_model_id(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("model_id 不能为空")
+        return stripped
+
+
+@router.put("/vector/embedding-model")
+async def set_embedding_model(
+    data: EmbeddingModelRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """切换激活 embedding 模型（#525）— 存在性校验 + 服务层唯一激活。"""
+    svc = get_provider_config_service(db)
+    pc = await svc.get_by_name(data.provider)
+    if pc is None:
+        raise HTTPException(status_code=404, detail="Provider 不存在")
+    if not any(m.id == data.model_id for m in pc.models):
+        raise HTTPException(status_code=404, detail="模型不存在")
+    await svc.set_embedding_model(data.provider, data.model_id)
+    return {"ok": True, "provider": data.provider, "model_id": data.model_id}
 
 
 # ── 统一提取（扁平路径）────────────────────────────────────

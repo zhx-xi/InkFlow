@@ -52,3 +52,14 @@ export async function postVectorReindex(
     body: { entity_types: entityTypes ?? null },
   });
 }
+
+/** #525：切换激活 embedding 模型 — PUT /api/v1/vector/embedding-model（全局设置，无项目前缀） */
+export async function putEmbeddingModel(
+  provider: string,
+  modelId: string,
+): Promise<{ ok: boolean; provider: string; model_id: string }> {
+  return apiFetch<{ ok: boolean; provider: string; model_id: string }>(
+    '/api/v1/vector/embedding-model',
+    { method: 'PUT', body: { provider, model_id: modelId } },
+  );
+}

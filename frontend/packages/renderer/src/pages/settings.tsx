@@ -6,6 +6,7 @@ import { AccountPanel } from './AccountPanel';
 import { AgentChainCard } from '../components/AgentChainCard';
 import { AgentList } from '../components/AgentList';
 import { AppearanceCard } from '../components/AppearanceCard';
+import { GlobalDefaultModelCard } from '../components/GlobalDefaultModelCard';
 import { KnowledgeExtractCard } from '../components/knowledge-graph/KnowledgeExtractCard';
 import { ModelsPanel } from '../components/ModelsPanel';
 import { RagStatusCard } from '../components/RagStatusCard';
@@ -744,6 +745,7 @@ export function SettingsPage() {
           {activeCat === 'general' && <GeneralPanel />}
           {activeCat === 'models' && (
             <div className="space-y-5">
+              <GlobalDefaultModelCard />
               <ModelsPanel />
               <RagStatusCard />
             </div>

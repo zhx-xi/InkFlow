@@ -247,6 +247,9 @@ export const en: Record<string, string> = {
   'set.rag.reason.modelChanged': 'Model changed',
   'set.rag.reason.chunkingChanged': 'Chunking config changed',
   'set.rag.reason.schemaOld': 'Data schema outdated',
+  // #525/#526 (2026-08-20): vector model selector + global default model
+  'set.rag.selectModel': 'Vector model',
+  'set.globalModel.label': 'Global default model',
   'set.templates.placeholder': 'Template management will be available in a later version',
   'set.account.dataDir': 'Data Directory',
   'set.account.dataDirSave': 'Save',
