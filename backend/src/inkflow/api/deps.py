@@ -529,7 +529,7 @@ async def get_extraction_service(
     复用 F9-F12 + F16 风格 + 增量追踪 + 懒加载向量存储 + #276 指纹提供器。"""
     from inkflow.core.config import config
 
-    vector_store = await get_vector_store()
+    vector_store = await get_vector_store_optional()
     chunking = await _load_chunking_config(db)
     llm_chunk_analyzer = None
     if chunking.mode is ChunkingMode.LLM:
