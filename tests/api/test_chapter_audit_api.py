@@ -458,6 +458,8 @@ class TestAuditLogs:
         )
 
         assert response.status_code == 422
+        # 🔒 强化（#524）：Pydantic 422 detail 为 list（区分参数校验与业务 422）
+        assert isinstance(response.json()["detail"], list)
         svc.list_logs.assert_not_awaited()
 
     @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")
@@ -471,6 +473,7 @@ class TestAuditLogs:
         )
 
         assert response.status_code == 422
+        assert isinstance(response.json()["detail"], list)
         svc.list_logs.assert_not_awaited()
 
     @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")
@@ -484,6 +487,7 @@ class TestAuditLogs:
         )
 
         assert response.status_code == 422
+        assert isinstance(response.json()["detail"], list)
         svc.list_logs.assert_not_awaited()
 
     @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")

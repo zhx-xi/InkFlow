@@ -31,10 +31,10 @@ class TestSupervisorExecuteConfig:
     def test_import_exists(self) -> None:
         """SupervisorExecuteConfig 可从 domain.models.agent_pipeline import。"""
         from inkflow.domain.models.agent_pipeline import (
-            SupervisorExecuteConfig,  # noqa: F401  # 契约存在性导入（用例体 lazy，防收集期错误）
+            SupervisorExecuteConfig,  # 契约存在性导入（用例体 lazy，防收集期错误）
         )
 
-        assert True
+        assert SupervisorExecuteConfig is not None  # 存在性断言（#524：assert True 恒真无意义）
 
     def test_defaults(self) -> None:
         """默认值：max_steps=30 / max_consecutive=3 / hitl_roles=[] / fallback_on_error=True。"""

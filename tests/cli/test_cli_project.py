@@ -246,6 +246,8 @@ def test_delete_soft(fake_http_client):
 def test_delete_not_found(fake_http_client):
     result = runner.invoke(app, ["project", "delete", "--id", "999", "--force"])
     assert result.exit_code == 1
+    # 🔒 强化（#524）：人类模式错误必须向用户说明失败原因（stderr 含「不存在」）
+    assert "不存在" in (result.output + result.stderr)
 
 
 @pytest.mark.project
@@ -276,6 +278,7 @@ def test_restore_after_delete(fake_http_client):
 def test_restore_not_found(fake_http_client):
     result = runner.invoke(app, ["project", "restore", "--id", "999"])
     assert result.exit_code == 1
+    assert "不存在" in (result.output + result.stderr)
 
 
 # ── serve ───────────────────────────────────────────────────────

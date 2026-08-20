@@ -229,6 +229,8 @@ async def test_update_writing_plan_missing_noop(repo):
         updated_at=_utcnow(),
     )
     await repo.update_writing_plan(plan)  # 不抛即通过
+    # ⚠️ 补强（#524）：no-op 语义必须锚定「未写入」——若实现改成 upsert（无则插入）此处变红
+    assert await repo.get_writing_plan(plan.id) is None
 
 
 @pytest.mark.asyncio
@@ -242,6 +244,8 @@ async def test_update_planner_session_missing_noop(repo):
         updated_at=_utcnow(),
     )
     await repo.update_planner_session(session)  # 不抛即通过
+    # ⚠️ 补强（#524）：同上——update 不存在会话 → 查无仍为 None（禁隐式 upsert）
+    assert await repo.get_planner_session(session.id) is None
 
 
 @pytest.mark.asyncio
@@ -417,9 +421,7 @@ async def test_update_planner_session_v12_fields(repo):
     await repo.add_planner_session(session)
 
     session.confirming = True
-    session.confirmed_items = [
-        {"key": "题材", "value": "悬疑", "source": "user"}
-    ]
+    session.confirmed_items = [{"key": "题材", "value": "悬疑", "source": "user"}]
     session.updated_at = _utcnow()
     await repo.update_planner_session(session)
 

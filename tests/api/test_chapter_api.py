@@ -670,6 +670,8 @@ async def test_move_chapter_invalid_target_volume_404(
             f"/api/v1/chapters/{chapter_id}/move?target_volume_id=bad-id"
         )
     assert resp.status_code == 404
+    # 🔒 强化（#524）：锁 detail（router _parse_id 默认文案「资源不存在」）
+    assert resp.json()["detail"] == "资源不存在"
 
 
 class TestChapterAPIMockedSuccess:

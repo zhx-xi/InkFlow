@@ -309,7 +309,7 @@ describe('BookPlannerPanel — 全部你决定 + 完成态 + 委托', () => {
     render(<BookPlannerPanel projectId="p1" />);
     await user.click(screen.getByTestId('book-auto'));
     await waitFor(() => {
-      expect(autoSpy).toHaveBeenCalled();
+      expect(autoSpy).toHaveBeenCalledTimes(1); // ⚠️ 补强（#524）：锚定恰好一次（重复绑定/重复触发变红）
     });
   });
 

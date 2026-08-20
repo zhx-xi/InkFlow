@@ -39,7 +39,10 @@ def mock_agent_service():
         "total_duration_ms": 100,
         "error": "",
     }
-    svc.list_executions.return_value = {"items": [], "total": 0}
+    svc.list_executions.return_value = {
+        "items": [{"execution_id": "abc-123", "status": "running"}],
+        "total": 1,
+    }
     # validate_pipeline / list_templates 是同步方法 — 用 MagicMock 而非 AsyncMock
     svc.validate_pipeline = MagicMock(return_value={"valid": True, "errors": []})
     svc.list_templates = MagicMock(
@@ -58,37 +61,48 @@ def patch_svc(mock_agent_service):
 
 
 class TestAgentAPI:
-    async def test_execute_pipeline(self, client, patch_svc):
+    async def test_execute_pipeline(self, client, patch_svc, mock_agent_service):
         """POST /api/v1/agent/pipelines/execute → 202 + execution_id。"""
+        req_id = str(uuid.uuid4())
         resp = await client.post(
             "/api/v1/agent/pipelines/execute",
-            json={"project_id": str(uuid.uuid4())},
+            json={"project_id": req_id},
         )
         assert resp.status_code == 202
         data = resp.json()
         assert data["execution_id"] == "abc-123"
         assert data["status"] == "pending"
+        mock_agent_service.execute.assert_awaited_once()
+        assert mock_agent_service.execute.await_args.args[0].project_id == uuid.UUID(
+            req_id
+        )
 
     async def test_execute_missing_project_id(self, client):
         """缺 project_id → 422（Pydantic 验证）。"""
         resp = await client.post("/api/v1/agent/pipelines/execute", json={})
         assert resp.status_code == 422
+        assert isinstance(resp.json()["detail"], list)  # Pydantic 校验错误形态
 
-    async def test_get_execution_status(self, client, patch_svc):
+    async def test_get_execution_status(self, client, patch_svc, mock_agent_service):
         """GET /api/v1/agent/pipelines/executions/{id} → 200 + status。"""
         resp = await client.get("/api/v1/agent/pipelines/executions/abc-123")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "completed"
         assert data["final_output"] == "test"
+        mock_agent_service.get_status.assert_awaited_once_with("abc-123")
 
     async def test_get_execution_not_found(self, client, patch_svc, mock_agent_service):
         """GET 不存在 execution → 404。"""
         mock_agent_service.get_status.return_value = None
         resp = await client.get("/api/v1/agent/pipelines/executions/nonexistent-1")
         assert resp.status_code == 404
+        assert (
+            resp.json()["detail"] == "执行记录不存在"
+        )  # 防「任何 404 来源」假绿（#524）
+        mock_agent_service.get_status.assert_awaited_once_with("nonexistent-1")
 
-    async def test_list_executions(self, client, patch_svc):
+    async def test_list_executions(self, client, patch_svc, mock_agent_service):
         """GET /api/v1/agent/pipelines/executions?project_id=xxx → 200 + items。"""
         resp = await client.get(
             "/api/v1/agent/pipelines/executions",
@@ -96,9 +110,14 @@ class TestAgentAPI:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data == {"items": [], "total": 0}
+        assert data["total"] == 1
+        assert data["items"][0]["execution_id"] == "abc-123"
+        mock_agent_service.list_executions.assert_awaited_once()
+        call = mock_agent_service.list_executions.await_args
+        assert call.args[0] == "3f2e1d4a-0000-0000-0000-000000000001"  # project_id 透传
+        assert call.args[1] == 20  # limit 默认值
 
-    async def test_validate_pipeline(self, client, patch_svc):
+    async def test_validate_pipeline(self, client, patch_svc, mock_agent_service):
         """POST /api/v1/agent/pipelines/validate → 200 + valid/errors。"""
         body = {
             "name": "测试管线",
@@ -122,13 +141,17 @@ class TestAgentAPI:
         data = resp.json()
         assert data["valid"] is True
         assert data["errors"] == []
+        mock_agent_service.validate_pipeline.assert_called_once()  # 同步 MagicMock
+        config_arg = mock_agent_service.validate_pipeline.call_args.args[0]
+        assert config_arg.stages[0].id == "writer"  # body 的 stages 透传
 
-    async def test_list_templates(self, client, patch_svc):
+    async def test_list_templates(self, client, patch_svc, mock_agent_service):
         """GET /api/v1/agent/pipelines/templates → 200 + builtin:write_chapter。"""
         resp = await client.get("/api/v1/agent/pipelines/templates")
         assert resp.status_code == 200
         data = resp.json()
         assert data["items"][0]["id"] == "builtin:write_chapter"
+        mock_agent_service.list_templates.assert_called_once()  # 同步
 
 
 # ═══════════════════════════════════════════════════════════════════════════

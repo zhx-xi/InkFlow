@@ -167,6 +167,8 @@ class TestTokenAuthRequired:
         """
         resp = client.get("/api/v1/projects")
         assert resp.status_code == 401
+        # 🔒 强化（#524）：锁精确 body（同文件 test_unauthorized_response_contract 已示范）
+        assert resp.json() == {"detail": "Unauthorized"}
 
     def test_wrong_token_returns_401(self, client, set_token_env):
         """GET /api/v1/projects 带错误 token → 401。
@@ -175,6 +177,7 @@ class TestTokenAuthRequired:
         """
         resp = client.get("/api/v1/projects", headers={TOKEN_HEADER: WRONG_TOKEN})
         assert resp.status_code == 401
+        assert resp.json() == {"detail": "Unauthorized"}
 
     def test_correct_token_returns_200(
         self, client, set_token_env, patched_project_list_service
@@ -197,6 +200,7 @@ class TestTokenAuthRequired:
         """
         resp = client.get("/health")
         assert resp.status_code == 401
+        assert resp.json() == {"detail": "Unauthorized"}
 
     def test_health_correct_token_returns_200(self, client, set_token_env):
         """GET /health 带正确 token → 200 + status=ok。
@@ -228,6 +232,7 @@ class TestTokenAuthRequired:
         """
         resp = client.get("/api/v1/projects", headers={TOKEN_HEADER: WRONG_TOKEN})
         assert resp.status_code == 401
+        assert resp.json() == {"detail": "Unauthorized"}
         patched_project_list_service.list_projects.assert_not_awaited()
 
 

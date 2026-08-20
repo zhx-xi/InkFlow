@@ -291,6 +291,8 @@ async def test_planner_respond_missing_404(client, override_services):
     )
 
     assert resp.status_code == 404
+    # 🔒 强化（#524）：锁 detail 含「不存在」——区分期望 404 与 FastAPI 默认 404
+    assert "不存在" in resp.json()["detail"]
 
 
 # ── GET /planner/{id} ─────────────────────────────────────────────
@@ -322,6 +324,8 @@ async def test_planner_get_missing_404(client, override_services):
     resp = await client.get(f"{BASE}/planner/{SAMPLE_SESSION_ID}")
 
     assert resp.status_code == 404
+    # 🔒 强化（#524）：锁 detail（router 404 静态文案「会话不存在」）
+    assert "不存在" in resp.json()["detail"]
 
 
 # ── POST /runs ────────────────────────────────────────────────────
@@ -372,6 +376,8 @@ async def test_runs_start_plan_missing_404(client, override_services):
     )
 
     assert resp.status_code == 404
+    # 🔒 强化（#524）：锁 detail 含「不存在」（prepare_run ValueError 消息透传）
+    assert "不存在" in resp.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -435,6 +441,8 @@ async def test_runs_status_missing_404(client, override_services):
     resp = await client.get(f"{BASE}/runs/{uuid.uuid4()}")
 
     assert resp.status_code == 404
+    # 🔒 强化（#524）：锁 detail 含「不存在」（router 静态文案「运行不存在」）
+    assert "不存在" in resp.json()["detail"]
 
 
 # ── Coverage-Gap 补测（2026-08-17 CI coverage-backend 98.39% 缺口）──
@@ -501,6 +509,8 @@ async def test_planner_respond_other_value_error_422(client, override_services):
     )
 
     assert resp.status_code == 422
+    # 🔒 强化（#524）：锁「非『不存在』ValueError → 422」分支文案（router 透传 str(e)）
+    assert "未装配" in resp.json()["detail"]
 
 
 # ── F44 阶段2（#336）：安全阀 409 + limits 传参 + 多章状态/counters 新键 ──
@@ -813,9 +823,7 @@ async def test_runs_start_mode_default_static_guard(client, override_services):
     plan_id = uuid.uuid4()
     book.prepare_run.return_value = {"run_id": str(uuid.uuid4()), "status": "running"}
 
-    resp = await client.post(
-        f"{BASE}/runs", json={"writing_plan_id": str(plan_id)}
-    )
+    resp = await client.post(f"{BASE}/runs", json={"writing_plan_id": str(plan_id)})
 
     assert resp.status_code == 202
     body = resp.json()
