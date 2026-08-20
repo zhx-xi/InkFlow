@@ -36,6 +36,12 @@ interface SkillsState {
 
   loadSkills: () => Promise<void>;
   uploadSkill: (content: string) => Promise<Skill>;
+  /** #522 P2：PATCH 更新 skill（API 路径用 name，成功更新列表对应项） */
+  updateSkill: (name: string, patch: { content: string }) => Promise<Skill>;
+  /** #522 P2：zip 包上传（multipart，后端解压 SKILL.md） */
+  uploadZip: (file: File) => Promise<Skill>;
+  /** #522 P2：URL 上传（后端下载 SKILL.md 文本） */
+  uploadUrl: (url: string) => Promise<Skill>;
   deleteSkill: (id: number) => Promise<void>;
   copySkill: (id: number) => Promise<Skill>;
 }
@@ -66,6 +72,57 @@ export const useSkillsStore = create<SkillsState>((set) => ({
       return created;
     } catch (err) {
       // 失败（422 / 同名 / 409）：error + rethrow（上传流程需感知失败）
+      set({ error: errorMessage(err) });
+      throw err;
+    }
+  },
+
+  updateSkill: async (name, patch) => {
+    try {
+      const updated = await apiFetch<Skill>(`/api/v1/skills/${name}`, {
+        method: 'PATCH',
+        body: patch,
+      });
+      // 成功：按 name 更新列表对应项 + error 清空 + return Skill
+      set((s) => ({
+        skills: s.skills.map((skill) => (skill.name === name ? updated : skill)),
+        error: null,
+      }));
+      return updated;
+    } catch (err) {
+      // 失败：error 设置 + rethrow（保存流程需感知失败，镜像 uploadSkill 语义）
+      set({ error: errorMessage(err) });
+      throw err;
+    }
+  },
+
+  uploadZip: async (file) => {
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const created = await apiFetch<Skill>('/api/v1/skills/upload-zip', {
+        method: 'POST',
+        body: form,
+      });
+      set((s) => ({ skills: [...s.skills, created], error: null }));
+      return created;
+    } catch (err) {
+      // 失败：error 设置 + rethrow（镜像 uploadSkill 语义）
+      set({ error: errorMessage(err) });
+      throw err;
+    }
+  },
+
+  uploadUrl: async (url) => {
+    try {
+      const created = await apiFetch<Skill>('/api/v1/skills/upload-url', {
+        method: 'POST',
+        body: { url },
+      });
+      set((s) => ({ skills: [...s.skills, created], error: null }));
+      return created;
+    } catch (err) {
+      // 失败：error 设置 + rethrow（镜像 uploadSkill 语义）
       set({ error: errorMessage(err) });
       throw err;
     }

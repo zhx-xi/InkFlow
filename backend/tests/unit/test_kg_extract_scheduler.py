@@ -334,10 +334,17 @@ class TestStartStop:
         sched = scheduler_harness()
 
         await sched.stop()  # 未 start → 空操作
+        assert sched._task is None  # 无 task 可停
+
         await sched.start()
         await _let_tasks_run()
+        task_ref = sched._task
+        assert task_ref is not None  # 后台 loop task 已 spawn
+
         await sched.stop()  # 取消 loop task
-        await sched.stop()  # 重复 stop → 幂等
+        assert task_ref.cancelled()  # ✅ 补强：loop task 确已被取消（stop 语义锚定）
+        assert sched._task is None  # 引用已清
+        await sched.stop()  # 重复 stop → 幂等（不抛）
 
 
 class TestGuardEnv:

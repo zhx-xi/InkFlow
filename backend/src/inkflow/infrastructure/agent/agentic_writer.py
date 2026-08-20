@@ -42,8 +42,8 @@ class AgenticWriterDeps:
     draft_service: object
     audit_service: object
     skill_lookup: Callable[[str], object | None] | None = None
-    """skill 查表函数（F39 M3）：按 skill id 取 Skill 鸭子对象（含 name/content），
-    None = 未注入（仅 skill_ids 非 None 时读取）。"""
+    """skill 查表函数（F39 M3 + #522）：按 skill 目录名取 Skill 鸭子对象
+    （含 name/content），None = 未注入（仅 skill_ids 非 None 时读取）。"""
 
 
 def build_writer_agent_system_prompt(
@@ -115,9 +115,9 @@ def build_agentic_writer(
         tool_ids: 工具白名单（工具目录 name 列表）；None = 全量 5 只读 +
             save_draft（F27 现行为，向后兼容）；[names] = 只 build 白名单命中项，
             save_draft 仅当白名单含 "save_draft" 时追加.
-        skill_ids: skill 白名单（Skill.id 字符串化列表）；None = 不拼 skill
-            （F27 现行为）；[ids] = 按白名单顺序把命中 skill content 追加到
-            system_prompt 之后（base 前 skill 后，查不到跳过）.
+        skill_ids: skill 白名单（skill 目录名列表，#522）；None = 不拼 skill
+            （F27 现行为）；[names] = 按白名单顺序把命中 skill content 追加
+            到 system_prompt 之后（base 前 skill 后，查不到跳过）.
         profile_key: deepagents HarnessProfile key（None = 按模型名自动确保）.
         expected_project_id: #275 期望项目上下文——save_draft 工具防御用
             （每次 run 由装配层注入请求真实值，工具参数不符 → 拒绝）.
@@ -162,8 +162,8 @@ def build_agentic_writer(
     return DeepAgentInvokeAdapter(agent)
 
 
-def _no_skill_lookup(_skill_id: str) -> object | None:
-    """默认 skill 查表函数：装配层未注入时任何 id 均查不到（防御语义）."""
+def _no_skill_lookup(_skill_name: str) -> object | None:
+    """默认 skill 查表函数：装配层未注入时任何目录名均查不到（防御语义）."""
     return None
 
 
@@ -176,17 +176,17 @@ def _append_skills(
 
     Args:
         base_prompt: 基础 system prompt（恒在前）.
-        skill_ids: skill 白名单（Skill.id 字符串化列表，顺序固定）.
-        skill_lookup: 按 skill id 取 Skill 鸭子对象（含 name/content）的查表函数；
-            查不到该 id → 跳过（防御语义，契约疑点 2）.
+        skill_ids: skill 白名单（skill 目录名列表，顺序固定，#522）.
+        skill_lookup: 按 skill 目录名取 Skill 鸭子对象（含 name/content）的
+            查表函数；查不到该目录名 → 跳过（防御语义，契约疑点 2）.
 
     Returns:
         拼接后的完整 system prompt：base + 每个命中 skill 追加
         '\\n\\n# 技能：<name>\\n\\n<content>\\n\\n---\\n'.
     """
     parts = [base_prompt]
-    for skill_id in skill_ids:
-        skill = skill_lookup(skill_id)
+    for skill_name in skill_ids:
+        skill = skill_lookup(skill_name)
         if skill is None:
             continue
         name = getattr(skill, "name", "")

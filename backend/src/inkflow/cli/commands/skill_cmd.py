@@ -2,8 +2,9 @@
 
 薄层设计：仅做参数解析/结果格式化，业务经 ensure_kernel() + InkFlowHTTPClient
 调用内核 REST API（F38 恒经 HTTP，路径相对 base_url——/skills 不含 /api/v1
-前缀，#246 教训）。命名区分：单数 `skill` = DB Skill 实体域；F19-skills
-复数 `skills` = 文件系统导入域（互不消费）。
+前缀，#246 教训）。命名区分：单数 `skill` = F39 Skill 实体域（文件系统
+真源 data_dir/skills/，ADR-039 #522）；F19-skills 复数 `skills` = 文件系统
+导入域（共用 data_dir/skills/ 目录）。
 
 错误映射（F38 §5.3）：HttpApiError 404/422 等 → NOT_FOUND/VALIDATION_ERROR/
 其余 INTERNAL_ERROR；KernelStartupError → KERNEL_ERROR；exit 1。--json

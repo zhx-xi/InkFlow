@@ -279,24 +279,24 @@ class TestAgentRepository:
     # ── list_agents_by_skill 反查 ──
 
     async def test_list_agents_by_skill_hit_and_sort(self, db_session):
-        """skill_ids 精确含 str(skill_id) 的 Agent 命中，按 name 升序."""
+        """Skill_ids exact directory-name match (#522 fs source)."""
         repo = SQLiteAgentRepository(db_session)
-        await repo.add(_agent("c-调试", skill_ids=["3", "5"]))
-        await repo.add(_agent("a-写作", skill_ids=["1"]))
-        await repo.add(_agent("b-综合", skill_ids=["1", "3"]))
+        await repo.add(_agent("c-调试", skill_ids=["web-research", "revision-methodology"]))
+        await repo.add(_agent("a-写作", skill_ids=["writing-methodology"]))
+        await repo.add(_agent("b-综合", skill_ids=["writing-methodology", "web-research"]))
 
-        refs = await repo.list_agents_by_skill(3)
+        refs = await repo.list_agents_by_skill("web-research")
         assert [a.name for a in refs] == ["b-综合", "c-调试"]
         assert all(isinstance(a, Agent) for a in refs)
 
     async def test_list_agents_by_skill_exact_match_and_miss(self, db_session):
-        """匹配为精确 str 相等："33" 不命中 3；空 skill_ids 不命中."""
+        """Exact match semantics: substring/partial names miss (#522)."""
         repo = SQLiteAgentRepository(db_session)
-        await repo.add(_agent("长号", skill_ids=["33"]))
+        await repo.add(_agent("长号", skill_ids=["writing-methodology"]))
         await repo.add(_agent("空", skill_ids=[]))
 
-        assert await repo.list_agents_by_skill(3) == []
-        assert [a.name for a in await repo.list_agents_by_skill(33)] == ["长号"]
+        assert await repo.list_agents_by_skill("audit-methodology") == []
+        assert [a.name for a in await repo.list_agents_by_skill("writing-methodology")] == ["长号"]
 
     async def test_list_agents_by_skill_empty_table(self, db_session):
         """空表 → 空列表."""

@@ -184,6 +184,8 @@ async def test_delete_project(mock_get_service, client, mock_project):
 
     resp = client.delete(f"/api/v1/projects/{mock_project.id}")
     assert resp.status_code == 204
+    # 🔒 强化（#524）：软删除敏感路径——必须确认 service.soft_delete 被调用且 pid 透传
+    mock_service.soft_delete.assert_awaited_once_with(mock_project.id)
 
 
 # ── POST /api/v1/projects/{id}/restore ──
@@ -232,6 +234,8 @@ async def test_update_project_not_found(mock_get_service, client):
     pid = uuid.uuid4()
     resp = client.patch(f"/api/v1/projects/{pid}", json={"name": "新名称"})
     assert resp.status_code == 404
+    # 🔒 强化（#524）：锁 detail 区分「期望 404」与 FastAPI 默认 404（detail="Not Found"）
+    assert resp.json()["detail"] == "项目不存在"
 
 
 @patch("inkflow.api.routers.project.get_project_service")
@@ -244,6 +248,8 @@ async def test_delete_project_not_found(mock_get_service, client):
     pid = uuid.uuid4()
     resp = client.delete(f"/api/v1/projects/{pid}")
     assert resp.status_code == 404
+    assert resp.json()["detail"] == "项目不存在"
+    mock_service.soft_delete.assert_awaited_once_with(pid)
 
 
 @patch("inkflow.api.routers.project.get_project_service")
@@ -256,6 +262,7 @@ async def test_restore_project_not_found(mock_get_service, client):
     pid = uuid.uuid4()
     resp = client.post(f"/api/v1/projects/{pid}/restore")
     assert resp.status_code == 404
+    assert resp.json()["detail"] == "项目不存在"
 
 
 # ── 非法 UUID 格式 ──

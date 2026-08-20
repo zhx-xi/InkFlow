@@ -1,9 +1,9 @@
-"""F39 Agent 实体服务单元测试 — Mock Repository（RED 批，#258）。
+"""#522 skill 存储架构重构 P1 RED — Agent 实体服务单元测试（目录名语义 + 文件系统真源）。
 
 覆盖 spec §2.1（Agent 实体）/§3.3（异常映射）/§5.6（删除保护）/§7（边界
 与错误）的服务层（镜像 test_agent_template_service.py 的 Mock 注入模式，
 ADR-015）:
-- create：同名查重 → tool_ids 目录外工具名 → skill_ids 含不存在 id →
+- create：同名查重 → tool_ids 目录外工具名 → skill_ids 目录名存在性 →
   构造实体（id=None、builtin=False、时间戳填充）→ repo.add
 - get / list 委托 repo；get 不存在 → AgentNotFoundError（404）
 - update：exclude_unset 部分合并；builtin=True → AgentBuiltinError（409）；
@@ -11,89 +11,58 @@ ADR-015）:
 - delete：不存在 → AgentNotFoundError（404）；builtin=True →
   AgentBuiltinError（409）；成功 repo.delete；repo.delete 返回 False
   （竞态已删）→ NotFound
+- duplicate：复制（#485）；skill_ids 目录名原样复制 + 存在性校验
 - 错误类守卫：默认消息逐字 + 继承关系 + 不导出 AgentTemplate 系错误类
 
 依据: specs/f39-multi-agent/spec.md §2.1 + §3.3（异常映射表）+ §5.6
-（删除保护）+ §7（边界情况与错误处理）。
+（删除保护）+ §7（边界情况与错误处理）；#522 skill 存储架构重构（P1）。
 
-══════════════════════ 设计假设（GREEN 实现者唯一契约）══════════════════════
+══════════════════════ 设计假设（#522 新契约，GREEN 实现者唯一契约）══════════════════════
 
-模块与类（本批新建，当前不存在 → 收集期 ModuleNotFoundError 即预期 RED）:
+#522 统一契约（父侧定稿 2026-08-20；旧实现下本文件确定性 RED，形态见文末）:
+- skill 从 DB 表改为 data_dir/skills/<name>/SKILL.md 文件系统真源；
+  ``Agent.skill_ids`` 语义 = **skill 目录名列表**（不再是 DB 主键字符串化
+  "1"/"2"）。
+- ``AgentEntityService`` 构造签名改为 ``__init__(self, *, agent_repository:
+  AgentRepositoryProtocol, skills_root: Path) -> None``——**不再注入
+  skill_repository**；``_validate_skill_ids(skill_ids: list[str])`` 逐个检查
+  ``skills_root/<name>/SKILL.md`` 存在，任一缺失 → SkillReferenceError（422）。
+- ``BUILTIN_AGENT_SPECS[].skill_name`` 改为英文 slug 目录名（内置 6 个）:
+  architecture-methodology / writing-methodology / audit-methodology /
+  revision-methodology / worldview-methodology / polishing-methodology
+  （对应 架构师/写手/审校员/修订师/世界观顾问/润色师，出厂表序）。
+- ``seed_builtin_agents(session)``: skill_ids=[spec.skill_name]（目录名），
+  不再按 BUILTIN_SKILL_NAMES.index 预测主键；签名/幂等语义不变。
+- ``agent_repo.list_agents_by_skill(skill_name: str)``: 按 Agent.skill_ids
+  精确含目录名反查（不再是 int 主键）。
 
-1. ``inkflow.domain.models.agent``（spec §2.1 逐字）:
-   - ``Agent``: id:int|None=None / name:str（唯一，去空白非空）/
-     description:str="" / icon:str="" / system_prompt:str="" /
-     tool_ids:list[str]=[]（工具目录 name 列表）/ skill_ids:list[str]=[]
-     （str(skill_id) 字符串化列表）/ model_override:str|None=None /
-     temperature_override:float|None=None（ge=0.0 le=2.0）/
-     builtin:bool=False / created_at / updated_at
-   - ``AgentCreate``: name 必填 + 上述可编辑字段（无 id/builtin/时间戳）
-   - ``AgentUpdate``: 全字段可选（exclude_unset 语义；None = 不修改，
-     合并前剔除，镜像 AgentTemplateService）
+模块与类（#258 F39 已建，本批为语义变更 → 收集期正常，RED 为用例级）:
+- inkflow.domain.models.agent（Agent/AgentCreate/AgentUpdate；skill_ids
+  字段类型 list[str] 不变，语义改为目录名）
+- inkflow.domain.ports.agent_errors（错误类与默认消息不变——
+  SkillReferenceError 默认消息仍为「skill_ids 含不存在的 Skill」）
+- inkflow.domain.ports.agent_repository.AgentRepositoryProtocol
+- inkflow.domain.services.agent_entity_service.AgentEntityService
 
-2. ``inkflow.domain.ports.agent_repository.AgentRepositoryProtocol``:
-   add / get / get_by_name / list / update / delete / list_agents_by_skill
+✅ 契约已裁定（2026-08-16 父侧，F39）: 实体服务放
+   ``inkflow.domain.services.agent_entity_service`` + 类 ``AgentEntityService``；
+   2026-08-20 父侧定稿 #522 统一契约第 1-5 条（本文件锁定对象）。
 
-3. ``inkflow.domain.ports.skill_repository.SkillRepositoryProtocol``:
-   add / get / get_by_name / list / update / delete（skill_ids 白名单查询用）
-
-4. ``inkflow.domain.ports.agent_errors`` 错误类（基类 AgentServiceError）:
-   - ``AgentServiceError(Exception)`` — 业务校验基类（422/409 映射）
-   - ``AgentNotFoundError(Exception)`` — 404；默认消息精确为 **"Agent 不存在"**
-     （镜像 agent_template_errors.py：NotFound 不继承 ServiceError）
-   - ``AgentNameConflictError(AgentServiceError)`` — 422；默认消息精确为
-     **"同名 Agent 已存在（Agent 名称必须唯一）"**
-   - ``AgentBuiltinError(AgentServiceError)`` — 409；默认消息精确为
-     **"内置 Agent 不可修改或删除"**
-   - ``ToolReferenceError(AgentServiceError)`` — 422；默认消息精确为
-     **"tool_ids 含目录外工具名"**
-   - ``SkillReferenceError(AgentServiceError)`` — 422；默认消息精确为
-     **"skill_ids 含不存在的 Skill"**
-
-5. ``inkflow.domain.services.agent_entity_service.AgentEntityService``:
-   - ``__init__(self, *, agent_repository: AgentRepositoryProtocol,
-     skill_repository: SkillRepositoryProtocol) -> None``
-     （双仓储注入：skill_repository 供 skill_ids 白名单校验查询）
-   - ``async create(self, data: AgentCreate) -> Agent``:
-     先 ``agent_repository.get_by_name(data.name)`` 查重，命中 →
-     AgentNameConflictError；tool_ids 逐个对工具目录（服务内部 import
-     TOOL_REGISTRY 常量）校验，含目录外工具名 → ToolReferenceError
-     （只锁错误语义，不锁校验实现细节）；skill_ids 逐个
-     ``skill_repository.get(int(skill_id))`` 查询，任一缺失 →
-     SkillReferenceError；构造 ``Agent(id=None, builtin=False, ...)``，
-     ``created_at = updated_at = datetime.now(UTC)``；委托 repo.add
-   - ``async get(self, agent_id: int) -> Agent``:
-     委托 repo.get；None → AgentNotFoundError（404 语义）
-   - ``async list(self) -> builtins.list[Agent]``: 委托 repo
-   - ``async update(self, agent_id: int, data: AgentUpdate) -> Agent``:
-     先 repo.get，None → NotFound；``builtin=True`` → AgentBuiltinError
-     （只读保护）；``data.model_fields_set`` 取已设字段且剔除 None 后
-     model_copy 合并；仅当 name 变更时 get_by_name 查重（命中且 id 不同 →
-     NameConflictError）；tool_ids/skill_ids 白名单校验同 create
-     （仅校验本次传入的字段）；updated_at = datetime.now(UTC) 刷新，
-     created_at 保留；委托 repo.update(merged)
-   - ``async delete(self, agent_id: int) -> None``:
-     先 repo.get，None → NotFound；``builtin=True`` → AgentBuiltinError；
-     委托 repo.delete(agent_id)，返回 False（竞态已删）→ NotFound；
-     成功返回 None（自定义 Agent 无引用面直接删，spec §5.6/§7 ⑧）
-
-6. 时间戳契约: create/update 填充 created_at/updated_at 为时区感知
-   datetime（datetime.now(UTC)）；断言 tzinfo 非空 + create 时
-   created_at == updated_at / update 时 created_at 保留。
-
-✅ 契约已裁定（2026-08-16 父侧）: F4 已占用
-   ``inkflow.domain.services.agent_service``（编排 AgentService），F39 实体服务放新模块
-   ``agent_entity_service`` + 类 ``AgentEntityService``（选项 a），本文件 import 已随之更新。
-
-⚠️ RED 预期: 被测新模块全部不存在 → 文件顶部 import 报 ModuleNotFoundError
-   （首个缺失 = inkflow.domain.models.agent）→ 收集期错误（pytest exit 2 /
-   collected 0 items / 2 errors，两文件各一）。GREEN 后本文件应全绿。
+⚠️ RED 预期（当前旧实现: 构造签名含 skill_repository、skill_ids 数字字符串）:
+- service fixture 以 skills_root= 注入 → TypeError: __init__() got an
+  unexpected keyword argument 'skills_root' → 依赖 fixture 的用例全部
+  ERROR（确定性 RED，TypeError 形态）
+- BUILTIN_AGENT_SPECS skill_name 仍为中文 → test_builtin_specs_skill_name_
+  english_slugs 断言失败（FAILED）
+- seed_builtin_agents 仍写 skill_ids=["1"]..["6"]（主键字符串化）→ seed
+  用例 skill_ids 断言失败（FAILED）
+- 错误类守卫 / role_key 契约（#484，本批不变）仍 PASS（守护用例）
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from types import SimpleNamespace
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -108,7 +77,6 @@ from inkflow.domain.ports.agent_errors import (
     ToolReferenceError,
 )
 from inkflow.domain.ports.agent_repository import AgentRepositoryProtocol
-from inkflow.domain.ports.skill_repository import SkillRepositoryProtocol
 from inkflow.domain.services.agent_entity_service import AgentEntityService as AgentService
 
 TS = datetime(2026, 8, 1, 10, 0, 0)
@@ -130,9 +98,12 @@ def _agent(agent_id: int, name: str, **kw) -> Agent:
     return Agent(id=agent_id, name=name, created_at=TS, updated_at=TS, **kw)
 
 
-def _skill_ref(skill_id: int) -> SimpleNamespace:
-    """skill 仓储返回值（鸭子对象：服务层仅判存在性，规则 1m 第三轨）。"""
-    return SimpleNamespace(id=skill_id, name=f"skill-{skill_id}")
+def _create_skill_dir(skills_root: Path, name: str) -> Path:
+    """#522 在 skills_root 下创建 <name>/SKILL.md（文件系统真源存在性校验用）。"""
+    skill_dir = skills_root / name
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(f"# {name}\n", encoding="utf-8")
+    return skill_dir
 
 
 @pytest.fixture
@@ -150,35 +121,30 @@ def mock_agent_repo() -> MagicMock:
 
 
 @pytest.fixture
-def mock_skill_repo() -> MagicMock:
-    """Mock SkillRepositoryProtocol — skill_ids 白名单校验查询。"""
-    repo = MagicMock(spec=SkillRepositoryProtocol)
-    repo.add = AsyncMock(side_effect=lambda s: s)
-    repo.get = AsyncMock(return_value=None)
-    repo.get_by_name = AsyncMock(return_value=None)
-    repo.list = AsyncMock(return_value=[])
-    repo.update = AsyncMock(side_effect=lambda s: s)
-    repo.delete = AsyncMock(return_value=True)
-    return repo
+def skills_root(tmp_path: Path) -> Path:
+    """#522 skill 文件系统真源根：skills_root/<name>/SKILL.md 为 skill 真源。
+
+    默认空目录（未建任何 skill）——缺失目录名 → SkillReferenceError 的基准态。
+    """
+    root = tmp_path / "skills"
+    root.mkdir()
+    return root
 
 
 @pytest.fixture
-def service(mock_agent_repo: MagicMock, mock_skill_repo: MagicMock) -> AgentService:
-    """被测服务实例（双 Mock 仓储注入，ADR-015）。"""
-    return AgentService(agent_repository=mock_agent_repo, skill_repository=mock_skill_repo)
+def service(mock_agent_repo: MagicMock, skills_root: Path) -> AgentService:
+    """被测服务实例（agent_repository mock + skills_root 文件系统注入，#522）。"""
+    return AgentService(agent_repository=mock_agent_repo, skills_root=skills_root)
 
 
 class TestCreate:
     """创建 — 白名单校验 / 同名冲突 / 默认字段编排。"""
 
-    async def test_create_builds_entity_and_delegates(
-        self, service, mock_agent_repo, mock_skill_repo
-    ):
+    async def test_create_builds_entity_and_delegates(self, service, mock_agent_repo, skills_root):
         """create：查重未命中 → 白名单全过 → 构造实体（id=None、builtin=False、
-        时间戳填充）→ repo.add；skill_ids 逐个查询 skill 仓储。"""
-        mock_skill_repo.get = AsyncMock(
-            side_effect=lambda sid: _skill_ref(int(sid)) if str(sid) in {"3", "7"} else None
-        )
+        时间戳填充）→ repo.add；skill_ids 目录名逐个做文件存在性校验（#522）。"""
+        _create_skill_dir(skills_root, "writing-methodology")
+        _create_skill_dir(skills_root, "polishing-methodology")
         saved = await service.create(
             AgentCreate(
                 name="我的润色师",
@@ -186,14 +152,13 @@ class TestCreate:
                 icon="✨",
                 system_prompt="你是润色师",
                 tool_ids=list(VALID_TOOL_IDS),
-                skill_ids=["3", "7"],
+                skill_ids=["writing-methodology", "polishing-methodology"],
                 model_override="zhipu/glm-4.5",
                 temperature_override=0.6,
             )
         )
         mock_agent_repo.get_by_name.assert_awaited_once()
         assert _arg(mock_agent_repo.get_by_name.await_args, "name", 0) == "我的润色师"
-        assert mock_skill_repo.get.await_count == 2  # 逐 id 查询
         mock_agent_repo.add.assert_awaited_once()
         at = _arg(mock_agent_repo.add.await_args, "agent", 0)
         assert at.id is None  # id 由 repo 分配
@@ -202,7 +167,7 @@ class TestCreate:
         assert at.icon == "✨"
         assert at.system_prompt == "你是润色师"
         assert at.tool_ids == list(VALID_TOOL_IDS)
-        assert at.skill_ids == ["3", "7"]
+        assert at.skill_ids == ["writing-methodology", "polishing-methodology"]  # 目录名列表
         assert at.model_override == "zhipu/glm-4.5"
         assert at.temperature_override == 0.6
         assert at.builtin is False  # 用户创建的行默认非内置
@@ -211,15 +176,16 @@ class TestCreate:
         assert saved is at  # 直接返回 repo.add 结果
 
     async def test_create_defaults_no_whitelist_queries(
-        self, service, mock_agent_repo, mock_skill_repo
+        self, service, mock_agent_repo, skills_root
     ):
-        """未传 tool_ids/skill_ids → 实体默认空列表，且不触发白名单查询。"""
+        """未传 tool_ids/skill_ids → 实体默认空列表；skill_ids 空 → 不触碰文件系统
+        （skills_root 下无任何目录也可创建）。"""
         await service.create(AgentCreate(name="默认白名单"))
         at = _arg(mock_agent_repo.add.await_args, "agent", 0)
         assert at.tool_ids == []
         assert at.skill_ids == []
         assert at.builtin is False
-        mock_skill_repo.get.assert_not_called()
+        assert list(skills_root.iterdir()) == []  # 空 skill_ids 不读取/不创建目录
 
     async def test_create_name_conflict_raises(self, service, mock_agent_repo):
         """同名已存在 → AgentNameConflictError（422），且不落库。"""
@@ -234,15 +200,14 @@ class TestCreate:
             await service.create(AgentCreate(name="a", tool_ids=["count_words", "ghost_tool"]))
         mock_agent_repo.add.assert_not_called()
 
-    async def test_create_unknown_skill_id_rejected(
-        self, service, mock_agent_repo, mock_skill_repo
-    ):
-        """skill_ids 含不存在 skill id → SkillReferenceError（422），且不落库。"""
-        mock_skill_repo.get = AsyncMock(
-            side_effect=lambda sid: _skill_ref(int(sid)) if str(sid) == "3" else None
-        )
+    async def test_create_unknown_skill_rejected(self, service, mock_agent_repo, skills_root):
+        """skill_ids 含不存在的目录名（skills_root 下无 <name>/SKILL.md）→
+        SkillReferenceError（422），且不落库。"""
+        _create_skill_dir(skills_root, "writing-methodology")  # 存在一个，另一个缺失
         with pytest.raises(SkillReferenceError, match="不存在的 Skill"):
-            await service.create(AgentCreate(name="a", skill_ids=["3", "999"]))
+            await service.create(
+                AgentCreate(name="a", skill_ids=["writing-methodology", "ghost-skill"])
+            )
         mock_agent_repo.add.assert_not_called()
 
 
@@ -298,7 +263,7 @@ class TestUpdate:
             description="d1",
             icon="😀",
             tool_ids=["count_words"],
-            skill_ids=["3"],
+            skill_ids=["writing-methodology"],
             model_override="zhipu/glm-4.5",
             temperature_override=0.5,
         )
@@ -313,7 +278,7 @@ class TestUpdate:
         assert updated.description == "d2"
         assert updated.icon == "😀"
         assert updated.tool_ids == ["count_words"]
-        assert updated.skill_ids == ["3"]  # 未传 skill_ids → 不校验不修改
+        assert updated.skill_ids == ["writing-methodology"]  # 未传 skill_ids → 不校验不修改
         assert updated.model_override == "zhipu/glm-4.5"
         assert updated.temperature_override == 0.5
         assert updated.builtin is False
@@ -352,11 +317,11 @@ class TestUpdate:
             await service.update(7, AgentUpdate(tool_ids=["ghost_tool"]))
         mock_agent_repo.update.assert_not_called()
 
-    async def test_update_invalid_skill_rejected(self, service, mock_agent_repo, mock_skill_repo):
-        """update 传入 skill_ids 含不存在 id → SkillReferenceError。"""
+    async def test_update_invalid_skill_rejected(self, service, mock_agent_repo):
+        """update 传入 skill_ids 含不存在目录名（skills_root 空）→ SkillReferenceError。"""
         mock_agent_repo.get.return_value = _agent(7, "旧名")
         with pytest.raises(SkillReferenceError, match="不存在的 Skill"):
-            await service.update(7, AgentUpdate(skill_ids=["999"]))
+            await service.update(7, AgentUpdate(skill_ids=["ghost-skill"]))
         mock_agent_repo.update.assert_not_called()
 
 
@@ -499,6 +464,28 @@ class TestRoleKeyV15:
         assert "role_key" not in AgentUpdate.model_fields
 
 
+class TestSkillSlugContractV522:
+    """#522 内置 skill 英文 slug 目录名契约（BUILTIN_AGENT_SPECS.skill_name）。
+
+    BUILTIN_AGENT_SPECS 出厂表（spec §5.3）的 skill_name 字段 = skill 目录名
+    （英文 slug，不再是中文名）——Agent.skill_ids 的键空间由此定义。
+    RED 形态: 旧实现 skill_name 仍为中文 → 断言失败。
+    """
+
+    def test_builtin_specs_skill_name_english_slugs(self) -> None:
+        """6 内置 skill_name 全部为英文 slug 目录名（出厂表序）。"""
+        from inkflow.domain.services.agent_entity_service import BUILTIN_AGENT_SPECS
+
+        assert [spec["skill_name"] for spec in BUILTIN_AGENT_SPECS] == [
+            "architecture-methodology",
+            "writing-methodology",
+            "audit-methodology",
+            "revision-methodology",
+            "worldview-methodology",
+            "polishing-methodology",
+        ]
+
+
 class TestSeedRoleKeyV15:
     """v1.5 #484 seed_builtin_agents role_key 落库 + 存量补值（spec §5.7.1 seed 升级钩子）。
 
@@ -523,7 +510,8 @@ class TestSeedRoleKeyV15:
         await engine.dispose()
 
     async def test_seed_writes_role_key(self, db_session) -> None:
-        """新建内置 6 Agent → role_key 全部落库（含 worldview/polisher）。"""
+        """新建内置 6 Agent → role_key 全部落库（含 worldview/polisher）；
+        #522 skill_ids = 英文 slug 目录名（不再是主键字符串化）。"""
         from inkflow.domain.services.agent_entity_service import seed_builtin_agents
         from inkflow.infrastructure.database.repositories.agent_repo import (
             SQLiteAgentRepository,
@@ -539,6 +527,17 @@ class TestSeedRoleKeyV15:
         assert by_name["架构师"].role_key == "architect"
         for a in agents:
             assert a.role_key is not None
+        # #522: skill_ids = 目录名（英文 slug，出厂表序）
+        expected_skill_ids = {
+            "架构师": ["architecture-methodology"],
+            "写手": ["writing-methodology"],
+            "审校员": ["audit-methodology"],
+            "修订师": ["revision-methodology"],
+            "世界观顾问": ["worldview-methodology"],
+            "润色师": ["polishing-methodology"],
+        }
+        for a in agents:
+            assert a.skill_ids == expected_skill_ids[a.name]
 
     async def test_seed_backfills_existing_role_key(self, db_session) -> None:
         """存量（v1.5 前已 seed，role_key 为空）→ 同名跳过插入 + 补值 UPDATE。"""
@@ -557,6 +556,9 @@ class TestSeedRoleKeyV15:
         agents = await repo.list()
         worldview = next(a for a in agents if a.name == "世界观顾问")
         assert worldview.role_key == "worldview"  # 补值
+        # #522: 新建内置 skill_ids = 英文 slug 目录名（补值分支不影响）
+        writer = next(a for a in agents if a.name == "写手")
+        assert writer.skill_ids == ["writing-methodology"]
 
 
 class TestDuplicate:
@@ -573,18 +575,19 @@ class TestDuplicate:
        ``agent_repository.add``，直接返回其结果。
     3. 原样复制字段: description/icon/system_prompt/tool_ids/skill_ids/
        model_override/temperature_override 与源完全一致（tool_ids/skill_ids
-       列表内容相等）。⚠️ duplicate 也做白名单校验（同 create）：tool_ids
-       目录外 → ToolReferenceError；skill_ids 任一 skill_repository.get 缺失
-       → SkillReferenceError。测试构造源时 tool_ids 须用 VALID_TOOL_IDS、
-       skill_ids 须 mock skill_repo.get 返回 _skill_ref。
+       列表内容相等，#522: skill_ids = 目录名列表）。⚠️ duplicate 也做白名单
+       校验（同 create）：tool_ids 目录外 → ToolReferenceError；skill_ids
+       任一目录名在 skills_root 下无 <name>/SKILL.md → SkillReferenceError。
+       测试构造源时 tool_ids 须用 VALID_TOOL_IDS、skill_ids 须在 skills_root
+       下建对应目录（_create_skill_dir）。
     4. 重置字段: id=None；builtin=False（副本为用户态，可改可删）；
        role_key 不继承源值——按 create 同名逻辑重新分配（_slugify_role_key(
        新 name) 冲突追加数字后缀；「写手 副本」全非 ASCII → slug 空回退
        "agent"）；created_at = updated_at = datetime.now(UTC)（时区感知，
        断言用动态 now 不锁固定值）。
 
-    RED 形态: 当前服务无 duplicate 方法 → 每个用例 AttributeError:
-    'AgentEntityService' object has no attribute 'duplicate'。
+    RED 形态（#522）: service fixture skills_root= 注入 → TypeError（构造签名
+    未改）→ 依赖 fixture 用例 ERROR；目录名语义断言失败。
     """
 
     async def test_duplicate_default_name_appends_suffix(self, service, mock_agent_repo):
@@ -605,7 +608,7 @@ class TestDuplicate:
         assert at.created_at == at.updated_at
         assert at.created_at.tzinfo is not None  # datetime.now(UTC) 时区感知
 
-    async def test_duplicate_copies_all_fields(self, service, mock_agent_repo, mock_skill_repo):
+    async def test_duplicate_copies_all_fields(self, service, mock_agent_repo, skills_root):
         """复制字段原样：description/icon/system_prompt/tool_ids/skill_ids/
         model_override/temperature_override 与源一致；name 参数指定副本名。"""
         source = _agent(
@@ -615,24 +618,21 @@ class TestDuplicate:
             icon="✍️",
             system_prompt="你是写手，负责正文。",
             tool_ids=list(VALID_TOOL_IDS),
-            skill_ids=["3"],
+            skill_ids=["writing-methodology"],
             model_override="zhipu/glm-4.5",
             temperature_override=0.6,
         )
         mock_agent_repo.get.return_value = source
-        mock_skill_repo.get = AsyncMock(
-            side_effect=lambda sid: _skill_ref(int(sid)) if str(sid) == "3" else None
-        )
+        _create_skill_dir(skills_root, "writing-methodology")  # #522 目录名存在性
         await service.duplicate(1, name="指定名")
 
-        mock_skill_repo.get.assert_awaited()  # skill_ids 白名单校验查询
         at = _arg(mock_agent_repo.add.await_args, "agent", 0)
         assert at.name == "指定名"  # name 参数生效
         assert at.description == source.description
         assert at.icon == source.icon
         assert at.system_prompt == source.system_prompt
         assert at.tool_ids == list(VALID_TOOL_IDS)  # 列表内容相等
-        assert at.skill_ids == ["3"]
+        assert at.skill_ids == ["writing-methodology"]  # 目录名原样复制
         assert at.model_override == source.model_override
         assert at.temperature_override == source.temperature_override
         assert at.id is None
@@ -670,12 +670,10 @@ class TestDuplicate:
             await service.duplicate(1)
         mock_agent_repo.add.assert_not_called()
 
-    async def test_duplicate_unknown_skill_rejected(
-        self, service, mock_agent_repo, mock_skill_repo
-    ):
-        """源 skill_ids 含不存在 skill → SkillReferenceError（422），且不落库。"""
-        mock_agent_repo.get.return_value = _agent(1, "写手", skill_ids=["999"])
-        mock_skill_repo.get.return_value = None  # fixture 默认即 None，显式声明意图
+    async def test_duplicate_unknown_skill_rejected(self, service, mock_agent_repo):
+        """源 skill_ids 含不存在目录名（skills_root 空）→ SkillReferenceError
+        （422），且不落库。"""
+        mock_agent_repo.get.return_value = _agent(1, "写手", skill_ids=["ghost-skill"])
         with pytest.raises(SkillReferenceError, match="不存在的 Skill"):
             await service.duplicate(1)
         mock_agent_repo.add.assert_not_called()

@@ -182,11 +182,18 @@ def _cfg(**overrides: object) -> ProjectConfig:
 
 
 class TestValidateAgentRelationsConfig:
-    """_validate_agent_relations_config（spec §2.3 API 层）→ ValueError（router 转 422）。"""
+    """_validate_agent_relations_config（spec §2.3 API 层）→ ValueError（router 转 422）。
+
+    ⚠️ 合法路径用例（empty/custom_role/disabled/acyclic/conditional_single/dict_normalized/
+    v15_worldview/v15_polisher）与同文件 raises 用例（dead_role/cycle/multi_successor）是
+    契约组合：合法路径只防「过严」（校验误拒绝合法输入），校验删除由 raises 用例锚定
+    （#524 审计结论：P0 清零 = 显式结果断言 + 互锁注释）。
+    """
 
     def test_empty_relations_noop(self) -> None:
         """空 relations → 不抛错（零迁移）。"""
-        _validate_agent_relations_config(_cfg(agent_relations=[]))
+        result = _validate_agent_relations_config(_cfg(agent_relations=[]))
+        assert result is None
 
     def test_dead_role_reference_rejected(self) -> None:
         """from/to 引用未知角色（非内置4非agent_roles）→ ValueError「引用了不存在的角色」。"""
@@ -212,7 +219,7 @@ class TestValidateAgentRelationsConfig:
 
     def test_custom_role_from_agent_roles_known(self) -> None:
         """引用 agent_roles 自定义角色 → 通过（agent_roles 是引用面，F42 #295）。"""
-        _validate_agent_relations_config(
+        result = _validate_agent_relations_config(
             _cfg(
                 agent_roles={"agent_researcher": "openai/gpt-4o"},
                 agent_relations=[
@@ -220,10 +227,11 @@ class TestValidateAgentRelationsConfig:
                 ],
             )
         )
+        assert result is None
 
     def test_disabled_role_reference_allowed(self) -> None:
         """引用存在但未启用角色（agent_*=null）→ 允许保存（§2.3 软降级，前端提示）。"""
-        _validate_agent_relations_config(
+        result = _validate_agent_relations_config(
             _cfg(
                 agent_auditor=None,  # 存在但未启用
                 agent_relations=[
@@ -231,6 +239,7 @@ class TestValidateAgentRelationsConfig:
                 ],
             )
         )
+        assert result is None
 
     def test_self_cycle_rejected(self) -> None:
         """relations 图自身有环（a→b, b→a）→ ValueError「存在循环依赖」。"""
@@ -259,7 +268,7 @@ class TestValidateAgentRelationsConfig:
 
     def test_acyclic_relations_pass(self) -> None:
         """无环 DAG（architect→writer→auditor→reviser）→ 通过。"""
-        _validate_agent_relations_config(
+        result = _validate_agent_relations_config(
             _cfg(
                 agent_relations=[
                     {"from": "agent_architect", "to": "agent_writer", "type": "sequential"},
@@ -268,6 +277,7 @@ class TestValidateAgentRelationsConfig:
                 ]
             )
         )
+        assert result is None
 
     def test_conditional_multi_successor_rejected(self) -> None:
         """conditional 边 A→B 但 A 有其它出边（relations 出边，基线同层）→ ValueError
@@ -294,13 +304,14 @@ class TestValidateAgentRelationsConfig:
 
     def test_conditional_single_successor_pass(self) -> None:
         """conditional 边 A→B 且 A 仅此一条出边 → 通过。"""
-        _validate_agent_relations_config(
+        result = _validate_agent_relations_config(
             _cfg(
                 agent_relations=[
                     {"from": "agent_auditor", "to": "agent_reviser", "type": "conditional"}
                 ]
             )
         )
+        assert result is None
 
     def test_dict_elements_normalized(self) -> None:
         """PATCH 合并路径（model_copy 不触发 validator）→ 元素是裸 dict 也能校验。
@@ -315,7 +326,8 @@ class TestValidateAgentRelationsConfig:
             {"from": "agent_auditor", "to": "agent_reviser", "type": "conditional"}
         ]  # type: ignore[assignment]  # 契约：裸 dict 元素形态（model_copy 产物）
         # 不应抛 AttributeError；死引用仍应 422 语义
-        _validate_agent_relations_config(config)
+        result = _validate_agent_relations_config(config)
+        assert result is None
 
     def test_dict_elements_dead_ref_still_rejected(self) -> None:
         """裸 dict 元素 + 死引用 → 仍拒绝（规范化后校验语义不变）。"""
@@ -328,18 +340,20 @@ class TestValidateAgentRelationsConfig:
 
     def test_v15_worldview_reference_known(self) -> None:
         """v1.5 #484：from 引用 agent_worldview（内置 6 角色）→ 通过（引用面扩 6，§5.7.2）。"""
-        _validate_agent_relations_config(
+        result = _validate_agent_relations_config(
             _cfg(
                 agent_relations=[
                     {"from": "agent_worldview", "to": "agent_reviser", "type": "sequential"}
                 ]
             )
         )
+        assert result is None
 
     def test_v15_polisher_reference_known(self) -> None:
         """v1.5 #484：to 引用 agent_polisher → 通过（F46 依赖编辑器联动 6 角色）。"""
-        _validate_agent_relations_config(
+        result = _validate_agent_relations_config(
             _cfg(
                 agent_relations=[{"from": "agent_reviser", "to": "agent_polisher", "type": "data"}]
             )
         )
+        assert result is None

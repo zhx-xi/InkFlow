@@ -86,7 +86,8 @@ class MockSummaryRepo:
         return cs
 
     async def list_recent(self, project_id: int, limit: int = 10) -> list[ChapterSummary]:
-        return list(self._store.values())[:limit]
+        # ⚠️ 补强（#524）：镜像真实 repo order_by desc 语义——Mock 无排序则「排序契约」无法在测试断言
+        return sorted(self._store.values(), key=lambda s: s.updated_at, reverse=True)[:limit]
 
 
 class MockLLMClient:
@@ -256,8 +257,11 @@ class TestSummaryService:
             updated_at="2099-12-31T23:59:59+00:00",
         )
         llm.chat_calls.clear()
-        await svc.ensure_summary(chapter.id, "openai/gpt-4o", force=True)
+        result = await svc.ensure_summary(chapter.id, "openai/gpt-4o", force=True)
         assert len(llm.chat_calls) >= 1
+        # ⚠️ 补强（#524）：force 忽略缓存——返回新生成摘要而非「缓存摘要」
+        assert result != "缓存摘要"
+        assert result == llm.response_text  # MockLLMClient 默认 response_text="测试摘要"
 
     async def test_chapter_not_found_raises(self, svc: SummaryService) -> None:
         """章节不存在应抛出 ValueError."""
@@ -270,9 +274,18 @@ class TestSummaryService:
     ) -> None:
         """list_recent 返回缓存摘要列表."""
         chapter_id_int = int(chapter.id) if isinstance(chapter.id, uuid.UUID) else chapter.id
-        repo._store[chapter_id_int] = _summary(chapter.id)
+        older = _summary(chapter.id)
+        older.updated_at = "2020-01-01T00:00:00+00:00"
+        newer = _summary(chapter.id)
+        newer.updated_at = "2099-12-31T23:59:59+00:00"
+        repo._store[chapter_id_int] = older
+        repo._store[chapter_id_int + 1] = newer
         results = await svc.list_recent(chapter.project_id)
-        assert len(results) >= 1
+        # ⚠️ 补强（#524）：断言「按最新在前」排序（真实 repo order_by order_index desc 的 Mock 镜像）
+        assert [r.updated_at for r in results] == sorted(
+            [r.updated_at for r in results], reverse=True
+        )
+        assert len(results) == 2
         assert isinstance(results[0], ChapterSummary)
 
     # ── Phase 3 覆盖率补齐（#104）──────────────────────────────────

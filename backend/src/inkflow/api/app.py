@@ -62,7 +62,10 @@ from inkflow.core.database import (
 from inkflow.core.log import setup_logging
 from inkflow.domain.ports.extraction_errors import RAGUnavailableError
 from inkflow.domain.services.agent_entity_service import seed_builtin_agents
-from inkflow.domain.services.skill_service import seed_builtin_skills
+from inkflow.domain.services.skill_service import (
+    ensure_builtin_skills,
+    migrate_skills_from_db,
+)
 
 
 @asynccontextmanager
@@ -91,11 +94,13 @@ async def lifespan(app: FastAPI):
     # 全新安装注册表为空 → seed 补全；重复启动不重复插入）
     async with async_session_factory() as session:
         await get_provider_config_service(session).seed_builtin_providers()
-        # #258 F39 M4：内置 Agent/Skill 出厂 seed（spec §5.3，同名跳过幂等；
-        # agent 的 skill_ids 指向对应出厂 skill——seed_builtin_agents 在出厂
-        # skill 未落库时按出厂列表序预测主键，与调用顺序无关）
+        # #522 ADR-039：skill 存储去表改文件系统真源——启动先幂等回补内置
+        # 6 skill（data_dir/skills/<name>/SKILL.md，删了回补），再一次性迁移
+        # 旧 skills 表 user_upload 行（raw SQL，表不存在返回 0），最后 seed
+        # 内置 Agent（skill_ids 已为目录名英文 slug，无需先 seed skill）
+        ensure_builtin_skills(config.data_dir / "skills")
+        await migrate_skills_from_db(session, config.data_dir / "skills")
         await seed_builtin_agents(session)
-        await seed_builtin_skills(session)
     # #479 G2: 知识图谱定时提取调度器装配（应用级 session 长活，shutdown 关闭；
     # 手动触发端点与定时触发共用 RelationExtractionService，G1 契约
     # extraction_run_repo=None，run 记录落盘归 #496 承接）

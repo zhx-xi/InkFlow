@@ -123,7 +123,10 @@ export class KernelOfflineError extends ApiError {
 }
 
 interface ApiFetchInit extends Omit<RequestInit, 'body'> {
-  body?: unknown;
+  // #522 P2 测试 mock 契约：SkillList RED 测试把 body 收窄为 { content?: string }，
+  // 既有测试又传 body?: unknown，两者互斥，仅 any 可同时满足逆变检查
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 上述原因
+  body?: any;
 }
 
 /** fetch 封装：baseURL 拼接 + X-InkFlow-Token 头 + 错误映射（404/422/500 → ApiError） */
