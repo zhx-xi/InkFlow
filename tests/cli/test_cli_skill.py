@@ -242,3 +242,76 @@ class TestSkillGuard:
         result = _invoke(["skills", "--help"])
         assert result.exit_code == 0
         assert "list" in _strip_ansi(result.stdout)
+
+
+@pytest.fixture
+def kernel_startup_failure():
+    """ensure_kernel 抛 KernelStartupError → _run_ctx except 双分支（L55-58）。
+
+    镜像 fake_http_client 的 patch 形态，但 ensure_kernel 用 side_effect 抛错——
+    _impl 第一行 await ensure_kernel() 即抛，InkFlowHTTPClient 不会被构造。
+    """
+    from inkflow.infrastructure.kernel import KernelStartupError
+
+    with patch(
+        f"{SKILL_MOD}.ensure_kernel",
+        AsyncMock(side_effect=KernelStartupError("内核冷启动超时")),
+    ):
+        yield
+
+
+class TestSkillListErrorBranches:
+    """`skill list` 错误分支补齐（CI coverage-backend branch ≥95% 门禁，#522）。
+
+    覆盖 skill_cmd.py _run_ctx 的人类模式分支（L49 else → L52、L55 else → L58）
+    与 skill_list 的 data is None 防御分支（L77 → L78）。
+    """
+
+    def test_list_http_error_human(self, fake_http_client):
+        """HTTP 404 + 非 --json → exit 1 + stderr 人类错误消息（L49 False 分支 → L52）。
+
+        覆盖 skill_cmd.py L49 `if json_output:` 的 else 分支：
+        typer.echo(f"❌ {message}", err=True)；404 → NOT_FOUND 映射随行覆盖。
+        """
+        fake_http_client.get.side_effect = _http_error(404, "Skill 不存在")
+        result = _invoke(["skill", "list"])
+        assert result.exit_code == 1
+        err = _strip_ansi(result.output)
+        assert "❌" in err
+        assert "Skill 不存在" in err
+
+    def test_list_kernel_error_json(self, kernel_startup_failure):
+        """KernelStartupError + --json → exit 1 + KERNEL_ERROR 信封（L55 True 分支 → L56）。
+
+        覆盖 skill_cmd.py L55 `if json_output:` 的 True 分支：
+        _print_json_error("KERNEL_ERROR", f"内核启动失败: {exc}")。
+        """
+        result = _invoke(["skill", "list"], json_output=True)
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "KERNEL_ERROR"
+        assert "内核启动失败" in data["error"]["message"]
+
+    def test_list_kernel_error_human(self, kernel_startup_failure):
+        """KernelStartupError + 非 --json → exit 1 + stderr 人类错误（L55 False 分支 → L58）。
+
+        覆盖 skill_cmd.py L55 `if json_output:` 的 else 分支：
+        typer.echo(f"❌ 内核启动失败: {exc}", err=True)。
+        """
+        result = _invoke(["skill", "list"])
+        assert result.exit_code == 1
+        err = _strip_ansi(result.output)
+        assert "❌" in err
+        assert "内核启动失败" in err
+
+    def test_list_data_none(self, fake_http_client):
+        """GET /skills 返回 None → data is None 防御分支 return（L77 True 分支 → L78）。
+
+        覆盖 skill_cmd.py L77 `if data is None: return`：_run_ctx 透传 _impl 返回值
+        （mock get 返回 None 触发），exit 0 且无输出。防御分支，正常服务器响应不会命中。
+        """
+        fake_http_client.get.return_value = None
+        result = _invoke(["skill", "list"])
+        assert result.exit_code == 0
+        assert result.output == ""
