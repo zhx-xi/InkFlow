@@ -2,11 +2,11 @@
 
 AgentRepositoryProtocol 定义 Agent 的 CRUD 操作与 skill 反向查询
 （list_agents_by_skill：删除 Skill 级联清引用反查用），基础设施层
-（SQLite / mock / memory）实现此 Protocol。仓储层方法入参用 int（与
-ORM 层一致），list / list_agents_by_skill 返回领域 Agent 对象列表
-（非 dict）。
+（SQLite / mock / memory）实现此 Protocol。list /
+list_agents_by_skill 返回领域 Agent 对象列表（非 dict）。
 
-依据: specs/f39-multi-agent/spec.md §2.1 + §5.6。
+依据: specs/f39-multi-agent/spec.md §2.1 + §5.6 + adr/ADR-039.md
+（#522：skill 引用 = 目录名，list_agents_by_skill 入参为 skill_name）。
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ class AgentRepositoryProtocol(Protocol):
         """物理删除 Agent；不存在返回 False."""
         ...
 
-    async def list_agents_by_skill(self, skill_id: int) -> builtins.list[Agent]:
-        """列出引用指定 Skill 的 Agent（skill_ids 精确含 str(skill_id)），
-        按 name 升序（删除 Skill 级联清引用反查用）."""
+    async def list_agents_by_skill(self, skill_name: str) -> builtins.list[Agent]:
+        """列出引用指定 Skill 的 Agent（skill_ids 精确含该目录名），
+        按 name 升序（删除 Skill 级联清引用反查用，#522 目录名语义）."""
         ...

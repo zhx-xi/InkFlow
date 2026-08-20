@@ -239,8 +239,8 @@ test('Skill 管理：内置 Skill 只读（无删除按钮）+ 内置 Agent 绑�
   try {
     await gotoSkillCat(window);
 
-    // 内置 seed Skill（架构方法论）卡片存在，但无删除按钮（只读）
-    const builtinCard = skillCard(window, '架构方法论');
+    // 内置 seed Skill（architecture-methodology，#522 目录名 = 英文 slug）卡片存在，但无删除按钮（只读）
+    const builtinCard = skillCard(window, 'architecture-methodology');
     await expect(builtinCard).toBeVisible();
     await expect(builtinCard.locator('[data-testid^="skill-source-builtin-"]')).toBeVisible();
     await expect(builtinCard.locator('[data-testid^="skill-delete-"]')).toHaveCount(0);

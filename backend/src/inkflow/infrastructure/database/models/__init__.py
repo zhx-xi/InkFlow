@@ -25,7 +25,6 @@ from inkflow.infrastructure.database.models.project import ProjectORM
 from inkflow.infrastructure.database.models.provider_config import ProviderConfigORM
 from inkflow.infrastructure.database.models.session import SessionLogORM, SessionORM
 from inkflow.infrastructure.database.models.settings import SettingsORM
-from inkflow.infrastructure.database.models.skill import SkillORM
 from inkflow.infrastructure.database.models.timeline import TimelineEventORM
 from inkflow.infrastructure.database.models.world import WorldCategoryORM, WorldSettingORM
 from inkflow.infrastructure.database.models.writing_plan import WritingPlanORM
@@ -55,7 +54,6 @@ __all__ = [
     "SessionLogORM",
     "SessionORM",
     "SettingsORM",
-    "SkillORM",
     "StoryArcORM",
     "TimelineEventORM",
     "VolumeORM",

@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_db
+from inkflow.core.config import config
 from inkflow.domain.models.agent import Agent, AgentCreate, AgentUpdate
 from inkflow.domain.ports.agent_errors import (
     AgentBuiltinError,
@@ -37,9 +38,6 @@ from inkflow.domain.services.agent_entity_service import (
 from inkflow.infrastructure.agent.tools import TOOL_REGISTRY
 from inkflow.infrastructure.database.repositories.agent_repo import (
     SQLiteAgentRepository,
-)
-from inkflow.infrastructure.database.repositories.skill_repo import (
-    SQLiteSkillRepository,
 )
 
 router = APIRouter(prefix="/api/v1/agents", tags=["Agents"])
@@ -57,10 +55,10 @@ def _parse_id(id_str: str, detail: str = DETAIL_NOT_FOUND) -> int:
 
 
 def _get_service(db: AsyncSession) -> AgentEntityService:
-    """获取 AgentEntityService 实例（Agent + Skill 双仓储注入）."""
+    """获取 AgentEntityService 实例（Agent 仓储 + skill 文件系统真源根注入，#522）."""
     return AgentEntityService(
         agent_repository=SQLiteAgentRepository(db),
-        skill_repository=SQLiteSkillRepository(db),
+        skills_root=config.data_dir / "skills",
     )
 
 
