@@ -30,8 +30,8 @@ export interface ProjectConfig {
   temperature?: number;
   default_words?: number;
   writing_style?: string;
-  /** #107：项目内绑定 Agent 模板（config JSON 零迁移，null = 解除引用） */
-  template_id?: number | null;
+  /** #107：项目内绑定 Agent 模板（config JSON 零迁移，null = 解除引用；#523 起支持 builtin: 字符串键与自定义 id str） */
+  template_id?: string | number | null;
   /** F42 #269：Agent 链执行拓扑（层级嵌套，外层=槽位 0-9、同层并行；空=默认模板模式） */
   agent_order?: string[][];
   /** F42 #296：自定义角色三态字段（key 带 agent_ 前缀，value 三态与 agent_* 相同：null=关闭/__default__=跟随默认/provider/model=指定） */
@@ -51,8 +51,8 @@ export interface NewProjectInput {
   language?: string;
   target_words?: number;
   config?: ProjectConfig;
-  /** #107：新建项目选模板，POST body 透传（null/缺省 = 默认模板） */
-  template_id?: number | null;
+  /** #107：新建项目选模板，POST body 透传（null/缺省 = 默认模板；#523 起支持 builtin: 字符串键与自定义 id str） */
+  template_id?: string | number | null;
 }
 
 import { create } from 'zustand';

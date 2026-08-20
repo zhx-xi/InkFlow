@@ -1,33 +1,21 @@
 /**
  * 模型管理面板（Issue #106，spec §8.2③ / §8.3 / §8.6 M2-M4b；#481 从独立页 /models 迁入设置页模型分类）：
- * Provider 列表（名称/模型数/key_saved 徽标）+ 添加弹窗 + 模型表 + 角色绑定只读区。
- * #107 未合入 → 角色绑定区仅只读展示（M4b 依赖声明）。
+ * Provider 列表（名称/模型数/key_saved 徽标）+ 添加弹窗 + 模型表。
+ * #523：角色绑定 UI 已移除（模板已含角色组合+模型设置，功能重复）；store roleBinding 数据面保留（历史项目回退兼容）。
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { AddModelDialog, type AddModelsResult } from './AddModelDialog';
 import { ProviderDialog } from './ProviderDialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { useI18n } from '../i18n/useI18n';
-import type { ProviderConfig, ProviderModel, RoleBindingDraft } from '../stores/models';
+import type { ProviderConfig, ProviderModel } from '../stores/models';
 import { useModelsStore } from '../stores/models';
 import { useToastStore } from '../stores/toast';
-
-/** 角色绑定六槽位：写作主模型 + 四角色 + RAG embedding */
-const ROLE_SLOTS: Array<{ key: keyof RoleBindingDraft; labelKey: string; kind: 'chat' | 'embedding' }> = [
-  { key: 'main', labelKey: 'm.role.main', kind: 'chat' },
-  { key: 'architect', labelKey: 'm.role.architect', kind: 'chat' },
-  { key: 'writer', labelKey: 'm.role.writer', kind: 'chat' },
-  { key: 'auditor', labelKey: 'm.role.auditor', kind: 'chat' },
-  { key: 'reviser', labelKey: 'm.role.reviser', kind: 'chat' },
-  { key: 'embedding', labelKey: 'm.role.embedding', kind: 'embedding' },
-];
 
 export function ModelsPanel() {
   const { t } = useI18n();
   const providers = useModelsStore((s) => s.providers);
   const loading = useModelsStore((s) => s.loading);
-  const roleBinding = useModelsStore((s) => s.roleBinding);
   const loadProviders = useModelsStore((s) => s.loadProviders);
   const addModel = useModelsStore((s) => s.addModel);
   const deleteProvider = useModelsStore((s) => s.deleteProvider);
@@ -41,7 +29,7 @@ export function ModelsPanel() {
     void loadProviders();
   }, [loadProviders]);
 
-  /** 全量模型行（跨 provider 展开，供模型表 + 角色绑定下拉联动） */
+  /** 全量模型行（跨 provider 展开，供模型表渲染） */
   const allModels = useMemo(
     () =>
       providers.flatMap((p) =>
@@ -52,15 +40,6 @@ export function ModelsPanel() {
         })),
       ),
     [providers],
-  );
-
-  const chatModelIds = useMemo(
-    () => [...new Set(allModels.filter((m) => m.type === 'chat').map((m) => m.id))],
-    [allModels],
-  );
-  const embeddingModelIds = useMemo(
-    () => [...new Set(allModels.filter((m) => m.type === 'embedding').map((m) => m.id))],
-    [allModels],
   );
 
   const handleSaved = () => {
@@ -221,39 +200,6 @@ export function ModelsPanel() {
             ))}
           </tbody>
         </table>
-      </section>
-
-      <section
-        data-testid="role-binding"
-        className="rounded-lg border border-line bg-surface p-5 shadow-card"
-      >
-        <h2 className="font-serif text-[17px] font-semibold">{t('m.roleBindingTitle')}</h2>
-        <p className="mt-1 text-[12px] text-ink-3">{t('m.roleBindingDesc')}</p>
-        <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-3 xl:grid-cols-3">
-          {ROLE_SLOTS.map((slot) => {
-            const options = slot.kind === 'chat' ? chatModelIds : embeddingModelIds;
-            const value = roleBinding[slot.key];
-            return (
-              <div key={slot.key} className="flex flex-col gap-1.5 text-[12px] text-ink-2">
-                <span>{t(slot.labelKey)}</span>
-                {/* #107 未合入：只读展示（disabled），保存需 Agent 模板功能 */}
-                <Select value={value || undefined} disabled>
-                  <SelectTrigger aria-label={t(slot.labelKey)} className="w-full" disabled>
-                    <SelectValue>{value || ''}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {options.map((id) => (
-                      <SelectItem key={id} value={id}>
-                        {id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            );
-          })}
-        </div>
-        <p className="mt-3 text-[12px] text-ink-3">{t('m.role.saveNote')}</p>
       </section>
 
       <ProviderDialog

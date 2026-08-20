@@ -827,7 +827,8 @@ describe('设置页 — 模型/账户分类', () => {
     expect(within(panel).getByTestId('provider-card-1')).toHaveTextContent('openai');
     expect(within(panel).getByTestId('model-table')).toBeInTheDocument();
     expect(within(panel).getByTestId('model-row-gpt-4o')).toBeInTheDocument();
-    expect(within(panel).getByTestId('role-binding')).toBeInTheDocument();
+        // #523：角色绑定 UI 已移除（模板已含角色组合+模型设置）→ role-binding 区块不存在
+        expect(within(panel).queryByTestId('role-binding')).not.toBeInTheDocument();
     // #481：RAG 状态卡保留（与模型管理并存）
     expect(await screen.findByTestId('rag-status-card')).toBeInTheDocument();
   });

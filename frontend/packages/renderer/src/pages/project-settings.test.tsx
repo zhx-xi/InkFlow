@@ -299,3 +299,150 @@ describe('ProjectSettingsPage — #482 项目聚合设置页', () => {
     expect(screen.getByTestId('ps-words-input')).toHaveValue(500000);
   });
 });
+
+/**
+ * #523 Agent 模板选择（2026-08-20 拍板：项目设置页新增「Agent 模板」Select，
+ * 枚举 builtin:write_auto/write_continue/chat + 自定义模板；保存 config.template_id（str）。
+ * 数据面：agent_templates 表自定义模板经 useTemplatesStore 加载（id 数字 → Select value 用 String(id)）；
+ * builtin 模板后端 BUILTIN_TEMPLATES 键（非数字 → int() 失败回退内置装配，数据面标记语义）。
+ * 模板联动：#484 已交付——AgentChainCard L141 按 String(t.id) === String(config.template_id) 匹配自定义模板 roles。
+ */
+describe('ProjectSettingsPage — #523 Agent 模板选择', () => {
+  /** 自定义模板 mock（id=2，AgentChainCard.test.tsx TEMPLATE_WITH_CUSTOM 同源形态） */
+  const CUSTOM_TEMPLATE = {
+    id: 2,
+    name: '我的模板',
+    description: '自定义角色组合',
+    main_model: 'zhipu/glm-4.5',
+    default_temperature: 0.7,
+    roles: {
+      architect: { model: null, temperature: null, enabled: true },
+      writer: { model: null, temperature: null, enabled: true, name: '资深执笔', prompt: '你负责正文' },
+    },
+    default_words: 600000,
+    is_default: false,
+    used_by: [],
+    created_at: '2026-08-01T00:00:00Z',
+    updated_at: '2026-08-01T00:00:00Z',
+  };
+
+  /** 覆盖 beforeEach 默认：agent-templates 返回含自定义模板的列表（Select 选项数据源） */
+  function mockTemplatesWithCustom() {
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/provider-configs') {
+        return { items: PROVIDERS, total: 3, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/agent-templates') {
+        return { items: [CUSTOM_TEMPLATE], total: 1, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/agents') {
+        return { items: BUILTIN_AGENTS, total: 6, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/projects' && !init?.method) {
+        return { items: [], total: 0, offset: 0, limit: 50 };
+      }
+      return { ok: true };
+    });
+  }
+
+  it('渲染契约：Agent 模板 Select（data-testid=ps-template-select，aria-label=ag.templateTitle）', async () => {
+    seedProjectConfig({});
+    render(<ProjectSettingsPage />);
+
+    const trigger = await screen.findByTestId('ps-template-select');
+    expect(trigger).toBeInTheDocument();
+    expect(trigger).toHaveAttribute('aria-label', 'Agent 模板');
+  });
+
+  it('选项契约：不使用模板 + builtin 三件（write_auto/write_continue/chat）+ 自定义模板名', async () => {
+    mockTemplatesWithCustom();
+    seedProjectConfig({});
+    const user = userEvent.setup();
+    render(<ProjectSettingsPage />);
+
+    await user.click(await screen.findByTestId('ps-template-select'));
+    expect(await screen.findByRole('option', { name: '不使用模板' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '全自动写作' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '续写' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'AI 对话' })).toBeInTheDocument();
+    // 自定义模板（来自 agent-templates store）
+    expect(screen.getByRole('option', { name: '我的模板' })).toBeInTheDocument();
+  });
+
+  it('选择自定义模板 → setConfig({template_id:"2"}) + PATCH body.config.template_id="2"（str）', async () => {
+    mockTemplatesWithCustom();
+    seedProjectConfig({});
+    const user = userEvent.setup();
+    render(<ProjectSettingsPage />);
+
+    await user.click(await screen.findByTestId('ps-template-select'));
+    await user.click(await screen.findByRole('option', { name: '我的模板' }));
+
+    expect(useAgentStore.getState().config.template_id).toBe('2');
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/projects/p1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.objectContaining({
+            config: expect.objectContaining({ template_id: '2' }),
+          }),
+        }),
+      );
+    });
+  });
+
+  it('选择 builtin:write_auto → config.template_id="builtin:write_auto" + PATCH', async () => {
+    seedProjectConfig({});
+    const user = userEvent.setup();
+    render(<ProjectSettingsPage />);
+
+    await user.click(await screen.findByTestId('ps-template-select'));
+    await user.click(await screen.findByRole('option', { name: '全自动写作' }));
+
+    expect(useAgentStore.getState().config.template_id).toBe('builtin:write_auto');
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/projects/p1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.objectContaining({
+            config: expect.objectContaining({ template_id: 'builtin:write_auto' }),
+          }),
+        }),
+      );
+    });
+  });
+
+  it('选择「不使用模板」→ config.template_id=null + PATCH（解除引用）', async () => {
+    seedProjectConfig({ template_id: '2' as unknown as number });
+    render(<ProjectSettingsPage />);
+
+    // 播种守卫放行（config 无 agent_* / model 键）→ template_id 载入
+    expect(useAgentStore.getState().config.template_id).toBe('2');
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('ps-template-select'));
+    await user.click(await screen.findByRole('option', { name: '不使用模板' }));
+
+    expect(useAgentStore.getState().config.template_id).toBeNull();
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/projects/p1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.objectContaining({
+            config: expect.objectContaining({ template_id: null }),
+          }),
+        }),
+      );
+    });
+  });
+
+  it('回显：config.template_id="builtin:write_continue" → Select 显示「续写」', async () => {
+    seedProjectConfig({ template_id: 'builtin:write_continue' as unknown as number });
+    render(<ProjectSettingsPage />);
+
+    expect(await screen.findByTestId('ps-template-select')).toHaveTextContent('续写');
+  });
+});
