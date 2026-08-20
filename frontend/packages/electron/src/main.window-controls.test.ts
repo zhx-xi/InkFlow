@@ -497,14 +497,23 @@ describe('内核启动/失败/退出路径（boot 全量执行）', () => {
     expect(holdingFetch).toHaveBeenCalledTimes(1);
   });
 
-  it('健康检查 fetch 抛异常 → catch 分支（ok=false）不崩溃', async () => {
+  it('健康检查 fetch 抛异常 → catch 分支累计失败计数，3 次后触发失败处理（不崩溃）', async () => {
     vi.useFakeTimers();
     await freshInstance();
     const failingFetch = vi.fn(() => Promise.reject(new Error('ECONNREFUSED')));
     vi.stubGlobal('fetch', failingFetch);
+    const killBefore = fakeChild.kill.mock.calls.length;
+    const spawnBefore = kernelSpawnCount();
     emitReady(51234, 'a');
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0); // 立即检查 → 失败 1（reject → catch → ok=false）
     expect(failingFetch).toHaveBeenCalled();
+    // ⚠️ 补强（#524）：reject 路径与组 D 的 ok:false 路径共享同一 onKernelFailure——
+    // 连续 3 次失败 → kill + 退避重启（删 catch / catch 静默吞掉此处变红）
+    await vi.advanceTimersByTimeAsync(2_000); // tick 1 → 失败 2
+    await vi.advanceTimersByTimeAsync(2_000); // tick 2 → 失败 3 → 达阈值 → onKernelFailure
+    expect(fakeChild.kill.mock.calls.length).toBe(killBefore + 1);
+    await vi.advanceTimersByTimeAsync(1_000); // 失败 #1 退避 → spawn
+    expect(kernelSpawnCount()).toBe(spawnBefore + 1);
   });
 
   // ── 组 E：连续 6 次失败 → dialog（新实例，fail 1→6 精确）──

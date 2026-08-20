@@ -256,6 +256,8 @@ class TestPatchDraftEndpoint:
                 f"/api/v1/agent/drafts/{DRAFT_ID}", json={"content": UPDATED_CONTENT}
             )
         assert resp.status_code == 409
+        # 🔒 强化（#524）：锁 detail（router 将 DraftStateError 消息透传为 409 detail）
+        assert resp.json()["detail"] == "草稿已确认"
 
     async def test_patch_draft_422_empty_content(self, override_draft_svc):
         """PATCH 422: content 空串（Pydantic 校验，不触达服务）。"""
@@ -264,12 +266,15 @@ class TestPatchDraftEndpoint:
                 f"/api/v1/agent/drafts/{DRAFT_ID}", json={"content": ""}
             )
         assert resp.status_code == 422
+        # 🔒 强化（#524）：Pydantic 422 detail 为 list（区分参数校验与业务 422）
+        assert isinstance(resp.json()["detail"], list)
 
     async def test_patch_draft_422_missing_content(self, override_draft_svc):
         """PATCH 422: content 缺失（必填字段）。"""
         async with _client() as client:
             resp = await client.patch(f"/api/v1/agent/drafts/{DRAFT_ID}", json={})
         assert resp.status_code == 422
+        assert isinstance(resp.json()["detail"], list)
 
 
 class TestPreferencesEndpoint:
@@ -549,6 +554,8 @@ class TestUserPreferencesEndpoint:
             )
         assert resp.status_code == 404
         assert resp.json()["detail"] == "偏好不存在"
+
+
 # ═══ F45 M2 追加段（2026-08-18，spec §3.1/§3.2/§3.3 summaries/summarize 端点）═══
 
 

@@ -128,7 +128,9 @@ class TestWordCount:
 
     async def test_get_project_word_count_sums_chapters(self, svc, project) -> None:
         ch = await svc.create_chapter(uuid.UUID(int=project.id), "第一章", content="第一章内容")
-        assert await svc.get_project_word_count(uuid.UUID(int=project.id).int) == ch.word_count
+        # ⚠️ 补强（#524）：手算值而非 ch.word_count 自引用 —— count_words("第一章内容") = 5
+        # （5 个中文字符，无 markdown/英文）
+        assert await svc.get_project_word_count(uuid.UUID(int=project.id).int) == 5
         assert ch.word_count > 0
 
     async def test_get_volume_word_count(self, svc, project) -> None:

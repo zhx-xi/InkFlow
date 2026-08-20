@@ -229,7 +229,6 @@ const getTrayMenuTemplate = (): MenuItemTemplate[] | null =>
 
 let getCloseBehaviorHandler: IpcHandleHandler;
 let setCloseBehaviorHandler: IpcHandleHandler;
-let dismissTrayHintHandler: IpcHandleHandler;
 
 /** 冲刷微任务（stopKernel 的 once('exit') 注册 / shutdown 续体） */
 const flushMicrotasks = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
@@ -254,9 +253,6 @@ beforeAll(() => {
   )?.[1] as unknown as IpcHandleHandler;
   setCloseBehaviorHandler = handleMock.mock.calls.find(
     (c) => c[0] === 'settings:set-close-behavior'
-  )?.[1] as unknown as IpcHandleHandler;
-  dismissTrayHintHandler = handleMock.mock.calls.find(
-    (c) => c[0] === 'settings:dismiss-tray-hint'
   )?.[1] as unknown as IpcHandleHandler;
 });
 
@@ -291,8 +287,11 @@ afterEach(() => {
 });
 
 describe('单实例锁与 second-instance（spec §5.5 / 边界#7-9）', () => {
-  it('启动时序：requestSingleInstanceLock 在 whenReady 启动回调内被调用（§5.5 时序约束）', () => {
-    expect(appMock.requestSingleInstanceLock).toHaveBeenCalled();
+  it('启动时调用单实例锁恰一次（§5.5；冒烟）', () => {
+    // ⚠️ 冒烟（#524）：whenReady 立即 resolve 的 mock 下，「锁调用在回调内」的时序约束
+    // 不可验证（挪到模块顶层仍绿）——本用例仅锚定「启动链路上调用了锁」且恰一次。
+    // 本用例是文件首个用例（beforeEach 不清锁 mock）→ import 时启动回调的 1 次调用即全部记录。
+    expect(appMock.requestSingleInstanceLock).toHaveBeenCalledTimes(1);
   });
 
   it('second-instance（窗口存在）→ show() + focus()；非最小化不 restore()', () => {
@@ -359,9 +358,24 @@ describe('settings:* IPC handler（spec §2.3 / M6 / M7）', () => {
     expect(await getCloseBehaviorHandler(null)).toBe('tray');
   });
 
-  it('dismiss-tray-hint 幂等可调用（置 trayHintDismissed，§2.3 通道语义）', async () => {
-    expect(dismissTrayHintHandler).toBeDefined();
-    await dismissTrayHintHandler(null);
+  it('dismiss-tray-hint 置 trayHintDismissed（后续 close 不再发 inkflow:tray-hint，§2.3/§5.2）', async () => {
+    // ⚠️ 补强（#524）：副作用断言——dismiss 后 close 拦截不再推送 tray 提示（handler 变空实现此处变红）。
+    // 用独立新实例隔离 dismiss 状态（末尾再 freshInstance 还原），避免污染后续
+    // 「首次 close 应发 tray-hint」用例；filter + pop 取「最新注册」的 handler，
+    // 与 close 拦截同一模块实例，状态才一致。
+    await freshInstance();
+    const handleMock = vi.mocked(ipcMain.handle);
+    const dismissHandler = handleMock.mock.calls
+      .filter((c) => c[0] === 'settings:dismiss-tray-hint')
+      .pop()?.[1] as unknown as IpcHandleHandler;
+    expect(dismissHandler).toBeDefined();
+    await dismissHandler(null);
+    const event = { preventDefault: vi.fn() };
+    windowEventHandlers['close']?.(event);
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(win.hide).toHaveBeenCalledTimes(1);
+    expect(win.webContents.send).not.toHaveBeenCalledWith('inkflow:tray-hint');
+    await freshInstance(); // 还原：后续「首次提示」用例需要 trayHintDismissed=false 的新实例
   });
 });
 

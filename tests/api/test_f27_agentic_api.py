@@ -260,6 +260,8 @@ async def test_agentic_generate_404(overrides):
             "/api/v1/writing/agentic/generate", json=_generate_payload()
         )
     assert resp.status_code == 404
+    # 🔒 强化（#524）：锁 detail（router 将 AgenticWriteNotFoundError 消息透传为 404 detail）
+    assert resp.json()["detail"] == "章节不存在"
 
 
 async def test_agentic_generate_422_invalid_max_steps():
@@ -269,6 +271,11 @@ async def test_agentic_generate_422_invalid_max_steps():
         payload["max_steps"] = 0
         resp = await client.post("/api/v1/writing/agentic/generate", json=payload)
     assert resp.status_code == 422
+    # 🔒 强化（#524）：Pydantic 422 detail 为 list 形态——锁形态区分「参数校验 422」与「业务 422」
+    assert isinstance(resp.json()["detail"], list)
+    assert any(
+        "max_steps" in str(item.get("loc", "")) for item in resp.json()["detail"]
+    )
 
 
 # ── agent runs 端点 ─────────────────────────────────────────────────
@@ -307,6 +314,8 @@ async def test_runs_get_404(overrides):
     async with _client() as client:
         resp = await client.get(f"/api/v1/agent/runs/{RUN_ID}")
     assert resp.status_code == 404
+    # 🔒 强化（#524）：锁 detail（router 静态文案「运行记录不存在」）
+    assert resp.json()["detail"] == "运行记录不存在"
 
 
 # ── agent drafts 端点 ───────────────────────────────────────────────
@@ -345,6 +354,8 @@ async def test_drafts_confirm_409(overrides):
     async with _client() as client:
         resp = await client.post(f"/api/v1/agent/drafts/{DRAFT_ID}/confirm")
     assert resp.status_code == 409
+    # 🔒 强化（#524）：锁 detail（router 将 DraftStateError 消息透传为 409 detail）
+    assert resp.json()["detail"] == "草稿已确认"
 
 
 async def test_drafts_confirm_404(overrides):
@@ -356,6 +367,8 @@ async def test_drafts_confirm_404(overrides):
     async with _client() as client:
         resp = await client.post(f"/api/v1/agent/drafts/{DRAFT_ID}/confirm")
     assert resp.status_code == 404
+    # 🔒 强化（#524）：锁 detail 含「不存在」（DraftNotFoundError 消息透传）
+    assert resp.json()["detail"] == "草稿不存在"
 
 
 async def test_drafts_reject(overrides):
