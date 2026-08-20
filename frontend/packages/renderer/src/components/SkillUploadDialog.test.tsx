@@ -44,9 +44,30 @@
  * skill.uploadBtn='上传' skill.bindFail='上传成功，绑定失败' skill.bindEmpty='请先粘贴 SKILL.md 内容'
  *
  * RED 预期：./SkillUploadDialog 模块不存在 → module-not-found（类 1 契约缺口，suite 级失败）。
+ *
+ * P2 #522 多形态上传 RED 追加（2026-08-20 父侧定稿；本批 6 个新用例当前实现下全部预期 element-missing）：
+ *
+ * 设计假设（契约二选一已定稿，GREEN 按此实现）：
+ * - 文件/文件夹 = 前端读取 SKILL.md 填充 textarea（预览复用既有 frontmatter 解析），不走独立上传端点；
+ * - zip 包 = 前端不解析，选择即把 zip 文件传后端解压（POST /api/v1/skills/upload-zip，multipart FormData 键 file）；
+ * - URL = 前端不下载，只把 url 传后端下载（POST /api/v1/skills/upload-url，JSON body { url }）；
+ * - 三端点成功均 201 返回 Skill 实体（与 POST /skills 同响应形状）；GREEN 建议扩展 useSkillsStore
+ *   （uploadZip / uploadUrl 镜像 uploadSkill 追加 skills 列表），弹窗层契约只锁关闭 + onUploaded。
+ *
+ * 新契约 testid（GREEN 必须渲染）：
+ * - 来源入口 x4：skill-upload-file / skill-upload-folder / skill-upload-zip / skill-upload-url（按钮或 label）
+ * - 点击来源入口 → 显示对应输入控件：skill-upload-file-input（type=file）/
+ *   skill-upload-folder-input（type=file + webkitdirectory）/ skill-upload-zip-input（type=file accept .zip）/
+ *   skill-upload-url-input（text）
+ * - zip 选择即触发上传（无预览阶段）；URL 模式下提交走主上传按钮 skill-upload-submit
+ * - 新 i18n key（GREEN 补 zh/en）：skill.uploadFile / skill.uploadFolder / skill.uploadZip / skill.uploadUrl
+ *   （测试只锁 testid 不锁文案，免 i18n 键存在断言）
+ *
+ * RED 预期：当前实现无来源入口 → 6 个新用例全 element-missing（Unable to find an element by
+ * [data-testid="skill-upload-..."]），既有 14 用例保持绿。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SkillUploadDialog } from './SkillUploadDialog';
 import { useSkillsStore, type Skill } from '../stores/skills';
@@ -313,5 +334,121 @@ describe('SkillUploadDialog — 提交流程', () => {
     const err = await screen.findByTestId('skill-upload-error');
     expect(err.textContent).toContain('frontmatter');
     expect(onOpenChange).not.toHaveBeenCalled();
+  });
+});
+
+describe('SkillUploadDialog — 多形态上传（P2 #522）', () => {
+  // 点击来源入口 → 显示对应输入控件（RED 期入口缺失 → element-missing 主失败点）
+  async function openSource(
+    user: ReturnType<typeof userEvent.setup>,
+    entry: string,
+    input: string,
+  ) {
+    await user.click(screen.getByTestId(entry));
+    return await screen.findByTestId(input);
+  }
+
+  it('来源入口渲染：文件 / 文件夹 / zip / URL 四个入口存在', async () => {
+    renderDialog(true);
+    await screen.findByTestId('skill-bind-agent-5'); // 等弹窗挂载完成（GET /agents）
+    expect(screen.getByTestId('skill-upload-file')).toBeInTheDocument();
+    expect(screen.getByTestId('skill-upload-folder')).toBeInTheDocument();
+    expect(screen.getByTestId('skill-upload-zip')).toBeInTheDocument();
+    expect(screen.getByTestId('skill-upload-url')).toBeInTheDocument();
+  });
+
+  it('文件选择（前端读取）→ textarea 填充 + frontmatter 预览出现', async () => {
+    const user = userEvent.setup();
+    renderDialog(true);
+    const file = new File([VALID_CONTENT], 'SKILL.md', { type: 'text/markdown' });
+    const input = await openSource(user, 'skill-upload-file', 'skill-upload-file-input');
+    expect(input).toHaveAttribute('type', 'file');
+    await user.upload(input, file);
+    await waitFor(() => {
+      expect(screen.getByTestId('skill-upload-content')).toHaveValue(VALID_CONTENT);
+    });
+    const previewName = await screen.findByTestId('skill-upload-preview-name');
+    expect(previewName).toHaveTextContent('outline-method');
+  });
+
+  it('文件夹选择（webkitdirectory）→ 读取 SKILL.md 填充 textarea + 预览', async () => {
+    const user = userEvent.setup();
+    renderDialog(true);
+    const file = new File([VALID_CONTENT], 'SKILL.md', { type: 'text/markdown' });
+    const input = await openSource(user, 'skill-upload-folder', 'skill-upload-folder-input');
+    expect(input).toHaveAttribute('webkitdirectory');
+    await user.upload(input, file);
+    await waitFor(() => {
+      expect(screen.getByTestId('skill-upload-content')).toHaveValue(VALID_CONTENT);
+    });
+    const previewName = await screen.findByTestId('skill-upload-preview-name');
+    expect(previewName).toHaveTextContent('outline-method');
+  });
+
+  it('zip 选择 → POST /api/v1/skills/upload-zip（FormData 含 file 键）', async () => {
+    const user = userEvent.setup();
+    renderDialog(true);
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/agents') return { items: AGENTS, total: 2 };
+      if (path === '/api/v1/skills/upload-zip') return NEW_SKILL;
+      if (path === '/api/v1/skills') return { items: [], total: 0 }; // 上传后列表刷新（GREEN 可能 loadSkills）
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+    const zip = new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], 'outline-method.zip', {
+      type: 'application/zip',
+    });
+    const input = await openSource(user, 'skill-upload-zip', 'skill-upload-zip-input');
+    await user.upload(input, zip);
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/skills/upload-zip',
+        expect.objectContaining({ method: 'POST', body: expect.any(FormData) }),
+      );
+    });
+    const zipCall = apiFetchMock.mock.calls.find(([p]) => p === '/api/v1/skills/upload-zip')!;
+    const body = zipCall[1]?.body;
+    expect(body).toBeInstanceOf(FormData);
+    expect((body as FormData).get('file')).toBe(zip);
+  });
+
+  it('URL 输入 + 提交 → POST /api/v1/skills/upload-url（body { url }）', async () => {
+    const user = userEvent.setup();
+    renderDialog(true);
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/agents') return { items: AGENTS, total: 2 };
+      if (path === '/api/v1/skills/upload-url') return NEW_SKILL;
+      if (path === '/api/v1/skills') return { items: [], total: 0 };
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+    const url = 'https://example.com/skills/outline-method/SKILL.md';
+    const input = await openSource(user, 'skill-upload-url', 'skill-upload-url-input');
+    await user.type(input, url);
+    await user.click(screen.getByTestId('skill-upload-submit'));
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/skills/upload-url', {
+        method: 'POST',
+        body: { url },
+      });
+    });
+  });
+
+  it('多形态上传成功（zip）→ 关闭弹窗 + onUploaded(新 Skill)（镜像既有 upload 成功流程）', async () => {
+    const user = userEvent.setup();
+    const { onOpenChange, onUploaded } = renderDialog(true);
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/agents') return { items: AGENTS, total: 2 };
+      if (path === '/api/v1/skills/upload-zip') return NEW_SKILL;
+      if (path === '/api/v1/skills') return { items: [], total: 0 };
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+    const zip = new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], 'outline-method.zip', {
+      type: 'application/zip',
+    });
+    const input = await openSource(user, 'skill-upload-zip', 'skill-upload-zip-input');
+    await user.upload(input, zip);
+    await waitFor(() => {
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+    expect(onUploaded).toHaveBeenCalledWith(NEW_SKILL);
   });
 });

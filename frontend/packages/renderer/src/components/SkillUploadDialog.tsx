@@ -4,6 +4,7 @@
  * D1 铁律：绑定候选默认全部不勾选；内置 Agent 只读（checkbox disabled）。
  */
 import { useEffect, useMemo, useState } from 'react';
+import type { ChangeEvent } from 'react';
 import { useI18n } from '../i18n/useI18n';
 import { errorMessage } from '../api/client';
 import { parseSkillFrontmatter, SkillFrontmatterError } from '../lib/skill-frontmatter';
@@ -17,10 +18,26 @@ export interface SkillUploadDialogProps {
   onUploaded?: (skill: Skill) => void;
 }
 
+/** 多形态上传来源（#522 P2）：文本粘贴 / 文件 / 文件夹 / zip 包 / URL */
+type UploadSource = 'content' | 'file' | 'folder' | 'zip' | 'url';
+
+/** 前端读取文件文本（优先 File.text()，jsdom 等环境回退 FileReader） */
+function readFileAsText(file: File): Promise<string> {
+  if (typeof file.text === 'function') return file.text();
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(reader.error ?? new Error('读取文件失败'));
+    reader.readAsText(file);
+  });
+}
+
 export function SkillUploadDialog({ open, onOpenChange, onUploaded }: SkillUploadDialogProps) {
   const { t } = useI18n();
   const agents = useAgentsStore((s) => s.agents);
   const [content, setContent] = useState('');
+  const [source, setSource] = useState<UploadSource>('content');
+  const [urlValue, setUrlValue] = useState('');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<number[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -31,6 +48,8 @@ export function SkillUploadDialog({ open, onOpenChange, onUploaded }: SkillUploa
   useEffect(() => {
     if (!open) return;
     setContent('');
+    setSource('content');
+    setUrlValue('');
     setSearch('');
     setSelected([]);
     setSubmitting(false);
@@ -68,6 +87,7 @@ export function SkillUploadDialog({ open, onOpenChange, onUploaded }: SkillUploa
   const allNonBuiltinSelected =
     nonBuiltinIds.length > 0 && nonBuiltinIds.every((id) => selected.includes(id));
   const canUpload = parsed.fm !== null && !submitting;
+  const canSubmit = source === 'url' ? urlValue.trim() !== '' && !submitting : canUpload;
 
   const toggleAgent = (agentId: number) => {
     setSelected((prev) =>
@@ -84,9 +104,63 @@ export function SkillUploadDialog({ open, onOpenChange, onUploaded }: SkillUploa
     }
   };
 
+  // 文件选择（前端读取 File.text() 填充 textarea，复用 frontmatter 预览）
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setContent(await readFileAsText(file));
+  };
+
+  // 文件夹选择（webkitdirectory）：在 FileList 中找 SKILL.md 并读取填充
+  const handleFolderChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    e.target.value = '';
+    if (!files) return;
+    const skillFile = Array.from(files).find((f) => f.name === 'SKILL.md');
+    if (!skillFile) return;
+    setContent(await readFileAsText(skillFile));
+  };
+
+  // zip 选择即触发上传：前端不解析，直接调 store.uploadZip（POST /upload-zip multipart）
+  const handleZipChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const created = await useSkillsStore.getState().uploadZip(file);
+      onOpenChange(false);
+      onUploaded?.(created);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // 提交流程（async 链）：POST /skills → 勾选非空 Agent 逐个 PATCH；任一步失败不关闭
   const handleSubmit = async () => {
-    if (!parsed.fm || submitting) return;
+    if (submitting) return;
+    // URL 模式：前端不下载，只把 url 传后端下载（POST /upload-url body {url}）
+    if (source === 'url') {
+      const url = urlValue.trim();
+      if (!url) return;
+      setSubmitting(true);
+      setError(null);
+      try {
+        const created = await useSkillsStore.getState().uploadUrl(url);
+        onOpenChange(false);
+        onUploaded?.(created);
+      } catch (err) {
+        setError(errorMessage(err));
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+    if (!parsed.fm) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -126,6 +200,93 @@ export function SkillUploadDialog({ open, onOpenChange, onUploaded }: SkillUploa
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="font-serif text-[18px] font-semibold">{t('skill.upload')}</h2>
+
+        {/* 多形态来源入口（#522 P2）：文件/文件夹前端读取；zip/URL 走后端端点 */}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            data-testid="skill-upload-file"
+            className="rounded border border-line px-2.5 py-1 text-[12px] text-ink-2 transition duration-180 hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setSource('file')}
+          >
+            {t('skill.uploadFile')}
+          </button>
+          <button
+            type="button"
+            data-testid="skill-upload-folder"
+            className="rounded border border-line px-2.5 py-1 text-[12px] text-ink-2 transition duration-180 hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setSource('folder')}
+          >
+            {t('skill.uploadFolder')}
+          </button>
+          <button
+            type="button"
+            data-testid="skill-upload-zip"
+            className="rounded border border-line px-2.5 py-1 text-[12px] text-ink-2 transition duration-180 hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setSource('zip')}
+          >
+            {t('skill.uploadZip')}
+          </button>
+          <button
+            type="button"
+            data-testid="skill-upload-url"
+            className="rounded border border-line px-2.5 py-1 text-[12px] text-ink-2 transition duration-180 hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setSource('url')}
+          >
+            {t('skill.uploadUrl')}
+          </button>
+        </div>
+
+        {/* 对应来源输入控件：文件 / 文件夹 / zip / URL（仅激活来源渲染） */}
+        {source === 'file' && (
+          <div className="mt-2">
+            <input
+              type="file"
+              data-testid="skill-upload-file-input"
+              onChange={(e) => void handleFileChange(e)}
+              className="block w-full text-[12px] text-ink-2 file:mr-3 file:rounded file:border-0 file:bg-surface-3 file:px-3 file:py-1.5 file:text-[12px] file:text-ink"
+            />
+          </div>
+        )}
+        {source === 'folder' && (
+          <div className="mt-2">
+            <input
+              type="file"
+              // webkitdirectory 不在 React 属性类型里，用 ref 回调落真实 DOM 属性
+              ref={(el) => {
+                if (el && !el.hasAttribute('webkitdirectory')) {
+                  el.setAttribute('webkitdirectory', '');
+                }
+              }}
+              data-testid="skill-upload-folder-input"
+              onChange={(e) => void handleFolderChange(e)}
+              className="block w-full text-[12px] text-ink-2 file:mr-3 file:rounded file:border-0 file:bg-surface-3 file:px-3 file:py-1.5 file:text-[12px] file:text-ink"
+            />
+          </div>
+        )}
+        {source === 'zip' && (
+          <div className="mt-2">
+            <input
+              type="file"
+              accept=".zip"
+              data-testid="skill-upload-zip-input"
+              onChange={(e) => void handleZipChange(e)}
+              className="block w-full text-[12px] text-ink-2 file:mr-3 file:rounded file:border-0 file:bg-surface-3 file:px-3 file:py-1.5 file:text-[12px] file:text-ink"
+            />
+          </div>
+        )}
+        {source === 'url' && (
+          <div className="mt-2">
+            <input
+              type="text"
+              data-testid="skill-upload-url-input"
+              value={urlValue}
+              onChange={(e) => setUrlValue(e.target.value)}
+              placeholder="https://…/SKILL.md"
+              className="w-full rounded-md border border-line bg-surface px-3 py-1.5 text-[12px] text-ink outline-none focus:border-accent"
+            />
+          </div>
+        )}
 
         {/* 上传区：SKILL.md 全文 + frontmatter 实时预览 */}
         <div className="mt-4">
@@ -240,7 +401,7 @@ export function SkillUploadDialog({ open, onOpenChange, onUploaded }: SkillUploa
           <button
             type="button"
             data-testid="skill-upload-submit"
-            disabled={!canUpload}
+            disabled={!canSubmit}
             className="rounded-md bg-accent px-4 py-1.5 text-sm text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50"
             onClick={() => void handleSubmit()}
           >

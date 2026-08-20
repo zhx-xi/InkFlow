@@ -291,6 +291,12 @@ export const en: Record<string, string> = {
   'skill.detail': 'View Details',
   'skill.copy': 'Copy',
   'skill.copied': 'Copied',
+  // #522 P2: detail scroll + user_upload edit + multi-source upload
+  'skill.edit': 'Edit',
+  'skill.uploadFile': 'Upload File',
+  'skill.uploadFolder': 'Upload Folder',
+  'skill.uploadZip': 'Upload ZIP',
+  'skill.uploadUrl': 'Upload from URL',
   'tpl.title': 'Templates',
   'tpl.new': 'New',
   'tpl.edit': 'Edit',

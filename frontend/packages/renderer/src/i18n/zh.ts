@@ -294,6 +294,12 @@ export const zh = {
   'skill.detail': '查看详情',
   'skill.copy': '复制',
   'skill.copied': '已复制',
+  // #522 P2：详情滚动 + user_upload 编辑 + 多形态上传
+  'skill.edit': '编辑',
+  'skill.uploadFile': '上传文件',
+  'skill.uploadFolder': '上传文件夹',
+  'skill.uploadZip': '上传 ZIP 包',
+  'skill.uploadUrl': '从 URL 上传',
   // Agent 模板（Issue #107）
   'tpl.title': '模板',
   'tpl.new': '新建',

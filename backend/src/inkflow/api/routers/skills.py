@@ -18,10 +18,14 @@ agent_ids 反查（spec §5.4 双向视图数据源）：经 SQLiteAgentReposito
 
 from __future__ import annotations
 
+import io
+import zipfile
 from collections.abc import Awaitable
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from httpx import AsyncClient, HTTPStatusError, RequestError
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_db
@@ -51,6 +55,33 @@ DETAIL_CONFLICT = "同名 skill 已存在"
 
 DETAIL_FRONTMATTER = "frontmatter 不合法"
 """frontmatter 缺失/非法的 422 detail（#522 定稿文案）."""
+
+MAX_SKILL_MD_SIZE = 10 * 1024 * 1024
+"""zip 内 SKILL.md 解压后大小上限（10MB，防 zip bomb，§3.4）."""
+
+DETAIL_ZIP_ONLY = "仅支持 zip 包"
+"""非 .zip 上传文件的 422 detail（#522 P2 §3.4）."""
+
+DETAIL_ZIP_NO_SKILL = "zip 包内未找到 SKILL.md"
+"""zip 内无 SKILL.md（含路径穿越条目被跳过）的 422 detail（#522 P2 §3.4）."""
+
+DETAIL_ZIP_TOO_LARGE = "SKILL.md 超过 10MB 上限"
+"""zip 内 SKILL.md 超限的 422 detail（#522 P2 §3.4）."""
+
+DETAIL_ZIP_INVALID = "zip 包解析失败"
+"""zip 损坏/编码非法的 422 detail（#522 P2 §3.4）."""
+
+DETAIL_URL_EMPTY = "URL 不能为空"
+"""upload-url 空 URL 的 422 detail（#522 P2 §3.4）."""
+
+DETAIL_URL_NETWORK = "下载失败，请检查 URL"
+"""upload-url 网络/超时失败的 422 detail（#522 P2 §3.4）."""
+
+
+class SkillUploadUrlRequest(BaseModel):
+    """upload-url 请求体（router 层 DTO：仅 url，不入 domain）."""
+
+    url: str
 
 
 def _get_service(db: AsyncSession) -> SkillService:
@@ -112,6 +143,79 @@ async def create_skill(
     source 恒 user_upload，agent_ids=[]；同名 → 422「同名 skill 已存在」）."""
     svc = _get_service(db)
     skill = await _run_service(svc.create(data))
+    return _to_response(skill)
+
+
+@router.post("/upload-zip", status_code=201)
+async def upload_skill_zip(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """上传 zip 包 → 内存解压读取 SKILL.md → 复用 create 流程 → 201 实体（§3.4）.
+
+    安全：只用 ZipFile.open + read 内存读取（不解压落盘）；文件名含 `..`
+    的条目跳过（防 zip-slip）；SKILL.md 大小限 10MB；同名/frontmatter
+    非法语义与 POST /skills 一致（422）。
+    """
+    filename = file.filename or ""
+    if not filename.lower().endswith(".zip"):
+        raise HTTPException(status_code=422, detail=DETAIL_ZIP_ONLY)
+    raw = await file.read()
+    target: zipfile.ZipInfo | None = None
+    content_bytes = b""
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            for info in zf.infolist():
+                if info.is_dir() or ".." in info.filename:
+                    continue
+                if info.filename.endswith("SKILL.md"):
+                    target = info
+                    break
+            if target is not None and target.file_size <= MAX_SKILL_MD_SIZE:
+                with zf.open(target) as handle:
+                    content_bytes = handle.read()
+    except (zipfile.BadZipFile, OSError, UnicodeDecodeError) as err:
+        raise HTTPException(status_code=422, detail=DETAIL_ZIP_INVALID) from err
+    if target is None:
+        raise HTTPException(status_code=422, detail=DETAIL_ZIP_NO_SKILL)
+    if target.file_size > MAX_SKILL_MD_SIZE:
+        raise HTTPException(status_code=422, detail=DETAIL_ZIP_TOO_LARGE)
+    try:
+        content = content_bytes.decode("utf-8")
+    except UnicodeDecodeError as err:
+        raise HTTPException(status_code=422, detail=DETAIL_ZIP_INVALID) from err
+    svc = _get_service(db)
+    skill: Skill = await _run_service(svc.create(SkillCreate(content=content)))
+    return _to_response(skill)
+
+
+@router.post("/upload-url", status_code=201)
+async def upload_skill_url(
+    data: SkillUploadUrlRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """下载远端 SKILL.md 文本 → 复用 create 流程 → 201 实体（§3.4）.
+
+    httpx 异步下载（timeout=30s）；HTTP/网络失败 → 422（detail 可读）；
+    同名/frontmatter 非法语义与 POST /skills 一致（422）。
+    """
+    url = data.url.strip()
+    if not url:
+        raise HTTPException(status_code=422, detail=DETAIL_URL_EMPTY)
+    try:
+        async with AsyncClient() as client:
+            resp = await client.get(url, timeout=30)
+            resp.raise_for_status()
+            content = resp.text
+    except HTTPStatusError as err:
+        raise HTTPException(
+            status_code=422,
+            detail=f"下载失败（HTTP {err.response.status_code}）",
+        ) from err
+    except RequestError as err:
+        raise HTTPException(status_code=422, detail=DETAIL_URL_NETWORK) from err
+    svc = _get_service(db)
+    skill: Skill = await _run_service(svc.create(SkillCreate(content=content)))
     return _to_response(skill)
 
 
