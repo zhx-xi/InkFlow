@@ -46,12 +46,12 @@ class TestProjectCreateValidation:
             ProjectCreate(name="长" * 101)
 
     def test_create_defaults(self):
-        """默认值：genre='其他', language='zh-CN', target_words=0, config.model='gpt-4o'."""
+        """默认值：genre='其他', language='zh-CN', target_words=0, model=None（#520 未配置）."""
         project = ProjectCreate(name="默认测试")
         assert project.genre == Genre.QITA
         assert project.language == "zh-CN"
         assert project.target_words == 0
-        assert project.config.model == "gpt-4o"
+        assert project.config.model is None
 
 
 class TestProjectUpdateValidation:

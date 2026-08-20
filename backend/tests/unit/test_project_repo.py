@@ -84,7 +84,7 @@ class TestProjectRepositoryCoverageGaps:
         assert got is not None
         assert got.id == saved.id
         assert got.genre == Genre.XUANHUAN
-        assert got.config.model == "gpt-4o"
+        assert got.config.model is None  # #520: ProjectConfig 默认 model=None
 
     # ── _get_config_dict 兜底 ──
 

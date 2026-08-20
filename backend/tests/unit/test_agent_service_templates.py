@@ -136,6 +136,19 @@ async def _merge(
 class TestTemperatureChain:
     """温度优先级链 5 级逐级验证（每角色独立，首个命中即止）。"""
 
+    async def test_unconfigured_model_falls_back_to_global_default(self):
+        """#520：ProjectConfig() 默认 model=None（未配置）→ 各角色 stage model
+        回退全局默认 config.llm_default_model（BUILTIN_MODEL）。当前实现默认
+        model="gpt-4o" → 装配后各 stage model == "gpt-4o"（≠ BUILTIN_MODEL）→ RED。"""
+        fake = FakeTemplateRepo()
+        service = _build_service(fake)
+        merged = await _merge(service, ProjectConfig())
+
+        for sid in ("architect", "writer", "auditor", "reviser"):
+            assert (
+                merged[sid].agent.model == BUILTIN_MODEL
+            ), f"#520 未配置项目应回退全局默认模型，实际 {sid}={merged[sid].agent.model}"
+
     async def test_m3_old_project_equivalence(self):
         """M3 旧项目等价（无 template_id、无每角色温度字段）：
         architect=项目 config.temperature、writer=0.8、auditor=0.5、

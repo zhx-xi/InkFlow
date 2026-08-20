@@ -286,7 +286,8 @@ class TestExecute:
         assert stages["architect"].agent.temperature == 0.9
         # 未覆盖角色保持模板温度；#373 方案 B：未配置角色 model 跟随项目 model（非模板值）
         assert stages["auditor"].agent.temperature == 0.5
-        assert stages["reviser"].agent.model == project.config.model
+        # #520: ProjectConfig 默认 model=None → 装配回退全局默认（config.llm_default_model）
+        assert stages["reviser"].agent.model == "deepseek/deepseek-v4-flash"
 
     async def test_execute_runs_pipeline_async(self):
         """execute() 立即返回（fire-and-forget），后台任务调用 pipeline.execute()。"""
@@ -440,7 +441,8 @@ class TestRoleOverridePartials:
         assert writer.agent.system_prompt == "只改提示词"
         # #373 方案 B：未配置角色 model 跟随项目 model（非模板 openai/gpt-4o）；
         # temperature 保持模板值（模板 writer=0.8，非 0.7 不触发项目替换）
-        assert writer.agent.model == project.config.model
+        # #520: ProjectConfig 默认 model=None → 装配回退全局默认（config.llm_default_model）
+        assert writer.agent.model == "deepseek/deepseek-v4-flash"
         assert writer.agent.temperature == template_stages["writer"].agent.temperature
         assert writer.agent.temperature != 0.9
 

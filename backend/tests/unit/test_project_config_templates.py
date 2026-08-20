@@ -167,9 +167,9 @@ class TestProjectConfigJsonRoundtrip:
         assert reloaded == config
 
     def test_existing_fields_zero_regression(self):
-        """既有字段默认值与约束零回归。"""
+        """既有字段默认值与约束零回归（#520: model 默认 None 替代硬编码 gpt-4o）。"""
         config = ProjectConfig()
-        assert config.model == "gpt-4o"
+        assert config.model is None
         assert config.temperature == 0.7
         assert config.writing_style == ""
         assert config.default_words == 800000

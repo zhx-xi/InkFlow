@@ -3,8 +3,8 @@
  *
  * ⚠️ 本文件 = 契约。GREEN 实现 StatusBar 必须匹配（行为断言，不测样式）：
  *
- * - model 空字符串 '' 与 null 统一显示「—」（现状 null 已处理、'' 未处理 → RED 缺口）
- *   - '' 时渲染「模型: —」，不得渲染「模型: 」空值残留
+ * - model 空字符串 '' 与 null 统一显示「未设置」（#520 拍板：非 '—'；i18n sb.modelUnset）
+ *   - '' 时渲染「模型: 未设置」，不得渲染「模型: 」空值残留
  * - 内核连接项状态值：从 useKernelStore 读（#384 单一真相源）——**移除 kernelConnected prop**
  *   - status='ready' → t('sb.kernel')「内核已连接」
  *   - status='failed'（或 booting）→ t('sb.kernelOffline')「内核未就绪」
@@ -34,14 +34,16 @@ afterEach(() => {
 });
 
 describe('StatusBar — 空值契约（#98 §5.2.7）', () => {
-  it('model 空字符串 → 显示「—」（不显示「模型: 」空值残留）', () => {
+  it('model 空字符串 → 显示「未设置」（#520，非「—」）', () => {
     render(<StatusBar model="" wordCount={0} savedAt={null} />);
-    expect(screen.getByText('模型: —')).toBeInTheDocument();
+    expect(screen.getByText('模型: 未设置')).toBeInTheDocument();
+    expect(screen.queryByText('模型: —')).not.toBeInTheDocument();
   });
 
-  it('model null → 显示「—」（既有 null 处理保持）', () => {
+  it('model null → 显示「未设置」（#520，非「—」）', () => {
     render(<StatusBar model={null} wordCount={0} savedAt={null} />);
-    expect(screen.getByText('模型: —')).toBeInTheDocument();
+    expect(screen.getByText('模型: 未设置')).toBeInTheDocument();
+    expect(screen.queryByText('模型: —')).not.toBeInTheDocument();
   });
 
   it('model 正常值 → 显示「模型: {model}」', () => {

@@ -27,6 +27,7 @@ export const zh = {
   'sb.model': '模型',
   'sb.words': '字数',
   'sb.autosave': '自动保存',
+  'sb.modelUnset': '未设置',
   // 启动门控（#384）
   'gate.booting': '正在启动内核…',
   'gate.failed': '内核连接失败',
