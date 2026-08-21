@@ -132,9 +132,7 @@ class TestAddMessage:
     async def test_add_message_intent_passthrough(self, service, fake_repo):
         """intent="conversation" 显式透传至实体与 repo.add。"""
         created = await service.add_message(
-            ChatMessageCreate(
-                project_id=PID, role="ai", content="好的。", intent="conversation"
-            )
+            ChatMessageCreate(project_id=PID, role="ai", content="好的。", intent="conversation")
         )
         assert created.intent == "conversation"
         fake_repo.add.assert_awaited_once()
@@ -143,9 +141,7 @@ class TestAddMessage:
         """content 纯空白 → ChatMessageCreate 构造期 ValueError（DTO validator，
         service 不重复校验）→ repo.add 不被调用。"""
         with pytest.raises(ValueError, match="chat 消息内容不能为空"):
-            await service.add_message(
-                ChatMessageCreate(project_id=PID, role="user", content="   ")
-            )
+            await service.add_message(ChatMessageCreate(project_id=PID, role="user", content="   "))
         fake_repo.add.assert_not_awaited()
 
 
@@ -197,7 +193,7 @@ class TestArchiveDeleteRestore:
 
     async def test_archive_message_delegates_to_repo(self, service, fake_repo):
         """archive_message → repo.archive(message_id.int) 位置透传，返回 bool。"""
-        message_id = uuid.uuid4()
+        message_id = uuid.UUID(int=42)
         result = await service.archive_message(message_id)
         assert result is True
         fake_repo.archive.assert_awaited_once_with(message_id.int)
@@ -205,11 +201,11 @@ class TestArchiveDeleteRestore:
     async def test_archive_message_not_found_false(self, service, fake_repo):
         """repo.archive 返回 False（不存在/已归档）→ service 原样透传 False。"""
         fake_repo.archive = AsyncMock(return_value=False)
-        assert await service.archive_message(uuid.uuid4()) is False
+        assert await service.archive_message(uuid.UUID(int=42)) is False
 
     async def test_force_delete_message_delegates_to_repo(self, service, fake_repo):
         """force_delete_message → repo.force_delete(message_id.int) 位置透传。"""
-        message_id = uuid.uuid4()
+        message_id = uuid.UUID(int=42)
         result = await service.force_delete_message(message_id)
         assert result is True
         fake_repo.force_delete.assert_awaited_once_with(message_id.int)
@@ -217,11 +213,11 @@ class TestArchiveDeleteRestore:
     async def test_force_delete_message_not_found_false(self, service, fake_repo):
         """repo.force_delete 返回 False → service 原样透传 False。"""
         fake_repo.force_delete = AsyncMock(return_value=False)
-        assert await service.force_delete_message(uuid.uuid4()) is False
+        assert await service.force_delete_message(uuid.UUID(int=42)) is False
 
     async def test_restore_message_returns_entity(self, service, fake_repo):
         """restore_message → repo.restore(message_id.int)；返回 ChatMessage。"""
-        message_id = uuid.uuid4()
+        message_id = uuid.UUID(int=42)
         restored = _message(id=str(message_id))
         fake_repo.restore = AsyncMock(return_value=restored)
         result = await service.restore_message(message_id)
@@ -230,16 +226,75 @@ class TestArchiveDeleteRestore:
 
     async def test_restore_message_not_found_none(self, service, fake_repo):
         """repo.restore 返回 None（不存在/未归档）→ service 原样透传 None。"""
-        assert await service.restore_message(uuid.uuid4()) is None
+        assert await service.restore_message(uuid.UUID(int=42)) is None
 
     async def test_archive_conversation_delegates_to_repo(self, service, fake_repo):
         """archive_conversation → repo.archive_by_project(project_id.int) 位置透传，返回 int。"""
-        result = await service.archive_conversation(uuid.uuid4())
+        result = await service.archive_conversation(uuid.UUID(int=42))
         assert result == 2
         fake_repo.archive_by_project.assert_awaited_once()
 
     async def test_force_delete_conversation_delegates_to_repo(self, service, fake_repo):
         """force_delete_conversation → repo.force_delete_by_project(project_id.int) 位置透传。"""
-        result = await service.force_delete_conversation(uuid.uuid4())
+        result = await service.force_delete_conversation(uuid.UUID(int=42))
         assert result == 2
         fake_repo.force_delete_by_project.assert_awaited_once()
+
+
+class Test578ServiceOverflowGuard:
+    """#578 RED：service 层 128 位溢出预检。
+
+    契约（修复方案：service 层预检短路）:
+    - 收到超出 SQLite 64 位 INTEGER 主键范围的 id（随机 uuid4 的 int 表示
+      > 2**63-1）→ 必然不存在 → 直接返回等价「不存在」语义，**不调用 repo**:
+      * archive_message -> False
+      * force_delete_message -> False
+      * restore_message -> None
+      * archive_conversation -> 0
+      * force_delete_conversation -> 0
+    - 小值 id（64 位范围内，如 uuid.UUID(int=42)）正常透传 repo（防过度防御）。
+
+    RED 预期: 当前 service 无条件 _to_int_id 后透传 repo（fake 不溢出，返回
+    默认值）→「repo 未被调用」断言 FAILED；修复后预检短路 → PASS。
+    """
+
+    async def test_archive_message_overflow_uuid_skips_repo(self, service, fake_repo):
+        """随机 uuid4（int > 2**63-1）→ 返回 False 且 repo.archive 未被调用。"""
+        result = await service.archive_message(uuid.uuid4())
+        fake_repo.archive.assert_not_awaited()
+        assert result is False
+
+    async def test_force_delete_message_overflow_uuid_skips_repo(self, service, fake_repo):
+        """随机 uuid4 → 返回 False 且 repo.force_delete 未被调用。"""
+        result = await service.force_delete_message(uuid.uuid4())
+        fake_repo.force_delete.assert_not_awaited()
+        assert result is False
+
+    async def test_restore_message_overflow_uuid_skips_repo(self, service, fake_repo):
+        """随机 uuid4 → 返回 None 且 repo.restore 未被调用。"""
+        result = await service.restore_message(uuid.uuid4())
+        fake_repo.restore.assert_not_awaited()
+        assert result is None
+
+    async def test_archive_conversation_overflow_uuid_skips_repo(self, service, fake_repo):
+        """随机 uuid4 → 返回 0 且 repo.archive_by_project 未被调用。"""
+        result = await service.archive_conversation(uuid.uuid4())
+        fake_repo.archive_by_project.assert_not_awaited()
+        assert result == 0
+
+    async def test_force_delete_conversation_overflow_uuid_skips_repo(self, service, fake_repo):
+        """随机 uuid4 → 返回 0 且 repo.force_delete_by_project 未被调用。"""
+        result = await service.force_delete_conversation(uuid.uuid4())
+        fake_repo.force_delete_by_project.assert_not_awaited()
+        assert result == 0
+
+    async def test_archive_message_small_id_still_delegates(self, service, fake_repo):
+        """对照: uuid.UUID(int=42)（64 位范围内）→ repo.archive 照常调用，返回值透传。"""
+        result = await service.archive_message(uuid.UUID(int=42))
+        assert result is True
+        fake_repo.archive.assert_awaited_once_with(42)
+
+    async def test_restore_message_small_id_still_delegates(self, service, fake_repo):
+        """对照: uuid.UUID(int=42) → repo.restore 照常调用一次。"""
+        await service.restore_message(uuid.UUID(int=42))
+        fake_repo.restore.assert_awaited_once_with(42)
