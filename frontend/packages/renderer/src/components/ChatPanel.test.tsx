@@ -412,6 +412,22 @@ describe('ChatPanel — 展开/收缩/拖动（#476 D2：对话区高度交互�
     expect(screen.getByTestId('chat-msg-user-0')).toHaveTextContent('保留测试');
   });
 
+  it('展开/收缩按钮在消息区之前（#542：按钮应在对话区顶部）', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await user.type(screen.getByTestId('chat-input'), '按钮位置');
+    await user.click(screen.getByTestId('chat-send'));
+    const btn = screen.getByTestId('chat-collapse');
+    const msgs = screen.getByTestId('chat-messages');
+    // 按钮必须位于消息区之前（DOM 顺序：顶部）
+    expect(btn.compareDocumentPosition(msgs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 折叠态：chat-expand 也在输入区之前（顶部行）
+    await user.click(screen.getByTestId('chat-collapse'));
+    const btn2 = screen.getByTestId('chat-expand');
+    const input = screen.getByTestId('chat-input');
+    expect(btn2.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('鼠标拖动调整对话区高度（handle mousedown → window mousemove 向上拖 → data-height 增大）', async () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
