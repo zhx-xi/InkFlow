@@ -16,12 +16,14 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import {
+  deleteChatMessage,
   fetchChatMessages,
   saveChatMessage,
   streamChat,
   type ChatMessageDto,
   type ChatStreamBody,
 } from '../api/chat';
+import { errorMessage } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import { parseChatReply, type ChatIntent } from '../lib/chatIntent';
 import { useChapterStore } from '../stores/chapter';
@@ -38,6 +40,8 @@ interface ChatEntry {
   kind: 'user' | 'ai';
   seq: number;
   text: string;
+  /** #566：历史消息 id（来自 ChatMessageDto；流式新消息无 id 不渲染删除按钮） */
+  id?: string;
   /** #477：AI 回复意图（content=可插入正文 / conversation=纯对话） */
   intent?: ChatIntent;
 }
@@ -77,8 +81,14 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
         let aiSeq = 0;
         const history: ChatEntry[] = res.items.map((msg: ChatMessageDto) =>
           msg.role === 'user'
-            ? { kind: 'user', seq: userSeq++, text: msg.content }
-            : { kind: 'ai', seq: aiSeq++, text: msg.content, intent: msg.intent ?? undefined },
+            ? { kind: 'user', seq: userSeq++, text: msg.content, id: msg.id }
+            : {
+                kind: 'ai',
+                seq: aiSeq++,
+                text: msg.content,
+                intent: msg.intent ?? undefined,
+                id: msg.id,
+              },
         );
         // 历史最新 content 消息自动选中（仅存在 content 消息时）
         let latestContentSeq: number | null = null;
@@ -252,6 +262,16 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
     [handleSend],
   );
 
+  /** #566：删除历史消息（真删 force=true），成功后本地移除该条 */
+  const handleDeleteMessage = useCallback(async (id: string): Promise<void> => {
+    try {
+      await deleteChatMessage(id);
+      setMessages((prev) => prev.filter((m) => m.id !== id));
+    } catch (err) {
+      useToastStore.getState().pushToast('err', errorMessage(err));
+    }
+  }, []);
+
   const canSend = input.trim() !== '';
   // #477：共享插入按钮仅当存在至少一条 content 消息时渲染
   const hasContentMessage = messages.some((m) => m.kind === 'ai' && m.intent === 'content');
@@ -295,8 +315,9 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
             className="max-h-[480px] space-y-3 overflow-y-auto text-[13px]"
             style={{ height }}
           >
-            {messages.map((m) =>
-              m.kind === 'user' ? (
+            {messages.map((m) => {
+              const id = m.id;
+              return m.kind === 'user' ? (
                 <div
                   key={`user-${m.seq}`}
                   data-testid={`chat-msg-user-${m.seq}`}
@@ -308,6 +329,17 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
                       {t('write.chat.user')}
                     </span>
                     <span className="whitespace-pre-wrap">{m.text}</span>
+                    {id && (
+                      <button
+                        type="button"
+                        data-testid={`chat-msg-delete-${id}`}
+                        aria-label={t('write.chat.delete')}
+                        className="ml-2 rounded px-1 text-[11px] text-ink-3 hover:text-err"
+                        onClick={() => void handleDeleteMessage(id)}
+                      >
+                        {t('write.chat.delete')}
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -322,6 +354,17 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
                       {t('write.chat.ai')}
                     </span>
                     <span className="whitespace-pre-wrap">{m.text}</span>
+                    {id && (
+                      <button
+                        type="button"
+                        data-testid={`chat-msg-delete-${id}`}
+                        aria-label={t('write.chat.delete')}
+                        className="ml-2 rounded px-1 text-[11px] text-ink-3 hover:text-err"
+                        onClick={() => void handleDeleteMessage(id)}
+                      >
+                        {t('write.chat.delete')}
+                      </button>
+                    )}
                     {/* #477：仅 content 意图消息渲染选择控件（单选互斥） */}
                     {m.intent === 'content' && (
                       <button
@@ -338,8 +381,8 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
                     )}
                   </div>
                 </div>
-              ),
-            )}
+              );
+            })}
           </div>
           {hasContentMessage && (
             <button

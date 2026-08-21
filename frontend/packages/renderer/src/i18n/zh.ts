@@ -423,6 +423,8 @@ export const zh = {
   // #541：hermes 风格对话角色标签
   'write.chat.user': '你',
   'write.chat.ai': 'AI',
+  // #566：删除历史消息
+  'write.chat.delete': '删除',
   'write.view.toDetail': '查看 AI 执行详情',
   'write.view.toEditor': '返回正文编辑',
   'write.detail.empty': '暂无执行记录',

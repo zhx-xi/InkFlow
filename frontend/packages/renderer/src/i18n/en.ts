@@ -418,6 +418,8 @@ export const en: Record<string, string> = {
   // #541: hermes-style chat role labels
   'write.chat.user': 'You',
   'write.chat.ai': 'AI',
+  // #566: delete history message
+  'write.chat.delete': 'Delete',
   'write.view.toDetail': 'View AI execution details',
   'write.view.toEditor': 'Back to editor',
   'write.detail.empty': 'No execution records',
