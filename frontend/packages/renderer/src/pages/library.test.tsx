@@ -825,3 +825,38 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
     expect(within(canvas).queryAllByTestId(/^lib-delete-/)).toHaveLength(0);
   });
 });
+
+/**
+ * #567 世界观根条目单例：已有根条目时隐藏「创建」入口（空态 CTA + 新建分类按钮），
+ * 保留地图视图。0.12.0 #568 会重设计入口交互，本次只隐藏。
+ */
+describe('设定库页 — 世界观根条目隐藏创建入口（#567）', () => {
+  it('已有根世界观条目：不渲染空态 CTA 与「新建分类」创建按钮（保留地图视图）', async () => {
+    act(() => {
+      useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
+    });
+    // 世界观端点返回已有根条目（parent_id=null）
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/world-settings')
+        return {
+          items: [
+            { id: 'w1', name: '世界观', parent_id: null, category: '', content: '公元 2048 年灵气复苏。', created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-01T10:00:00Z' },
+          ],
+          total: 1, offset: 0, limit: 50,
+        };
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    const user = userEvent.setup();
+    renderLibrary();
+    await user.click(screen.getByRole('tab', { name: '世界观' }));
+    // 根条目存在 → 树视图渲染（非空态）
+    await waitFor(() => expect(screen.getByTestId('library-list')).toBeInTheDocument());
+    // RED：当前世界树工具栏恒渲染 WorldCatActionButtons（含 world-cat-add）→ 下面 FAIL
+    expect(screen.queryByTestId('world-cat-add')).not.toBeInTheDocument();
+    // 空态 CTA 不渲染（根条目存在 → 非空态）
+    expect(screen.queryByTestId('library-tab-empty-cta')).not.toBeInTheDocument();
+    // 地图视图入口保留（视图非创建）
+    expect(screen.getByTestId('map-view-entry')).toBeInTheDocument();
+  });
+});

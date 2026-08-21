@@ -172,7 +172,8 @@ export function LibraryPage() {
     [activeCat, worldCategoryList],
   );
 
-  // F43 P1（§5.3）：世界观树（parent_id 前端建树，顶层保序 + 孤儿降级）
+  // F43 P1 §5.3 世界观树；#567 已有根条目（parent_id===null）时隐藏「创建」入口（严格 === 防 undefined 误判，library-p2 #389）
+  const hasRootWorld = activeCat === 'world' && items.some((it) => it.parent_id === null);
   const worldRoots = useMemo(
     () => (activeCat === 'world' ? buildWorldTree(items) : []),
     [activeCat, items],
@@ -595,8 +596,8 @@ export function LibraryPage() {
           </div>
 
           <div className="mt-5">
-            {/* #545：列表非空时保留常态"新建"入口（knowledge 无创建端点不渲染；空态 CTA 覆盖空列表） */}
-            {createCat !== null && !loading && !loadFailed && items.length > 0 && !(activeCat === 'world' && workbenchActive) && (
+            {/* #545：列表非空时保留常态"新建"入口（knowledge 无创建端点不渲染；空态 CTA 覆盖空列表）；#567：world 已有根条目时隐藏（避免再建根） */}
+            {createCat !== null && !loading && !loadFailed && items.length > 0 && !(activeCat === 'world' && workbenchActive) && !(activeCat === 'world' && hasRootWorld) && (
               <div className="mb-3 flex items-center justify-end">
                 <button type="button" data-testid="library-create-btn" className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60" onClick={() => setCreateOpen(true)}>
                   {t('lib.empty.create')}
@@ -693,7 +694,7 @@ export function LibraryPage() {
                 >
                   {t('lib.empty.create')}
                 </button>
-                {/* #389：世界观空态也提供「新建分类」+「地图视图」入口（列表页工具栏同款） */}
+                {/* #389：世界观空态也提供「新建分类」+「地图视图」入口（列表页工具栏同款）；空态无根条目 → showCreate 恒 true 无需传 */}
                 {cat.key === 'world' && (
                   <div className="mt-4 flex items-center gap-2">
                     <WorldCatActionButtons
@@ -725,10 +726,10 @@ export function LibraryPage() {
                       {cat}
                     </button>
                   ))}
-                  {/* #389：新建分类入口 + 地图视图独立入口（进工作台唯一入口；map-bc-world 返回列表页） */}
                   <WorldCatActionButtons
                     onAddCategory={() => setWorldCatDialogOpen(true)}
                     onOpenMapView={() => setWorkbenchActive(true)}
+                    showCreate={!hasRootWorld}
                   />
                   <button
                     type="button"
