@@ -67,7 +67,7 @@ export function WritingPage() {
     chapterTitle: chapters.find((c) => c.id === currentChapterId)?.title ?? '',
     supervisor: currentProject?.config?.supervisor ?? null,
   });
-  const { status, error, start, hitlPending, confirm } = pipeline;
+  const { status, error, start, hitlPending, confirm, executionId } = pipeline;
 
   // #474 P0：模型未配置前置校验（续写/生成四触发点共用守卫）
   const startWithCheck = useCallback(
@@ -256,7 +256,7 @@ export function WritingPage() {
           {view === 'editor' ? (
             <ChapterEditor onEditorKeyDown={handleKeyDown} onContentChange={handleContentChange} />
           ) : (
-            <ExecutionDetailPanel executionId={null} />
+            <ExecutionDetailPanel executionId={executionId} />
           )}
           {effectiveProjectId !== '' && currentChapterId !== null ? (
             <ChatPanel
