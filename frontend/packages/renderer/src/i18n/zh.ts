@@ -420,6 +420,9 @@ export const zh = {
   'write.chat.failed': '对话失败: {message}',
   'write.chat.expand': '展开对话',
   'write.chat.collapse': '收起对话',
+  // #541：hermes 风格对话角色标签
+  'write.chat.user': '你',
+  'write.chat.ai': 'AI',
   'write.view.toDetail': '查看 AI 执行详情',
   'write.view.toEditor': '返回正文编辑',
   'write.detail.empty': '暂无执行记录',

@@ -128,41 +128,24 @@ async function gotoNav(window: Page, name: string): Promise<void> {
   await window.getByRole('link', { name }).click();
 }
 
-/** 拦截管线 API：execute → 202；executions/{id} → completed + final_output（确定性，零真实 LLM） */
-function interceptPipeline(window: Page, executionId: string, finalOutput: string, projectId: string): void {
-  void window.route('**/api/v1/agent/pipelines/execute', (route) => {
-    void route.fulfill({
-      status: 202,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        execution_id: executionId,
-        pipeline: 'builtin:chat',
-        project_id: projectId,
-        status: 'pending',
-        created_at: '',
-      }),
-    });
-  });
-  void window.route(`**/api/v1/agent/pipelines/executions/${executionId}`, (route) => {
+/** 拦截 chat 流式端点：POST /api/v1/chat/stream → SSE 帧（确定性，零真实 LLM）.
+ * #541：ChatPanel 已从 executePipeline+轮询 改为 streamChat SSE 消费；
+ * 帧协议 = data: {json}\n\n（delta 帧 {delta, done:false} × N → {done:true} 终帧）。
+ */
+function interceptChatStream(window: Page, finalOutput: string): void {
+  // 拆两段 delta 模拟流式渐进（E2E 断言终态；流式渐进细节由单测覆盖）
+  const mid = Math.ceil(finalOutput.length / 2);
+  const frame = (payload: Record<string, unknown>): string =>
+    `data: ${JSON.stringify(payload)}\n\n`;
+  const body =
+    frame({ delta: finalOutput.slice(0, mid), done: false }) +
+    frame({ delta: finalOutput.slice(mid), done: false }) +
+    frame({ done: true });
+  void window.route('**/api/v1/chat/stream', (route) => {
     void route.fulfill({
       status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        execution_id: executionId,
-        pipeline: 'builtin:chat',
-        project_id: projectId,
-        status: 'completed',
-        stages: [
-          { stage_id: 'chat', status: 'completed', output: finalOutput, error: '', retry_count: 0, duration_ms: 300 },
-        ],
-        trace: [
-          { node: 'chat', type: 'stage', reasoning: '回答用户提问', tool_calls: [], output: finalOutput, duration_ms: 300, ts: '2026-08-16T10:00:00Z' },
-        ],
-        relations: [],
-        final_output: finalOutput,
-        total_duration_ms: 300,
-        error: '',
-      }),
+      contentType: 'text/event-stream',
+      body,
     });
   });
 }
@@ -201,7 +184,7 @@ test('聊天框：输入 → 发送 → assistant 消息 → 插入正文 → �
     // 树就绪后再注册管线拦截（避免影响树加载）
     // #477：<<<CONTENT>>>...<<<END>>> 包裹 = content 意图（产出正文，可插入）
     const finalOutput = '<<<CONTENT>>>\nE2E 续写正文内容\n<<<END>>>';
-    interceptPipeline(window, 'e-chat-e2e', finalOutput, pid);
+    interceptChatStream(window, finalOutput);
 
     // 聊天框发送
     const chatInput = window.getByTestId('chat-input');
@@ -263,7 +246,7 @@ test('对话类回复（无 content 标记）不渲染选择/插入控件', asyn
     // 树就绪后再注册管线拦截（避免影响树加载）
     // #477：无 start 标记 = conversation 意图（纯对话，无插入控件）
     const finalOutput = '这是一段纯对话回复，不包含正文。';
-    interceptPipeline(window, 'e-chat-e2e-conv', finalOutput, pid);
+    interceptChatStream(window, finalOutput);
 
     // 聊天框发送
     const chatInput = window.getByTestId('chat-input');
