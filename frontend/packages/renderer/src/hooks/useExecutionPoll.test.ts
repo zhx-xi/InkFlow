@@ -85,13 +85,36 @@ afterEach(() => {
 });
 
 describe('useExecutionPoll — 状态机（idle → running → success | failed | awaiting_human）', () => {
-  it('初始状态：idle / 无错误 / 空成品 / 无 HITL', () => {
+  it('初始状态：idle / 无错误 / 空成品 / 无 HITL / 无 executionId', () => {
     const { result } = renderHook(() => useExecutionPoll());
     expect(result.current.status).toBe('idle');
     expect(result.current.error).toBeNull();
     expect(result.current.finalOutput).toBe('');
     expect(result.current.totalDurationMs).toBe(0);
     expect(result.current.hitlPending).toBeNull();
+    // #543：初始无 executionId（执行详情页数据源）
+    expect(result.current.executionId).toBeNull();
+  });
+
+  it('start 后暴露 executionId（#543：执行详情页数据源接线）', async () => {
+    statusMock
+      .mockResolvedValueOnce(PENDING)
+      .mockResolvedValueOnce({ ...PENDING, status: 'completed', final_output: 'x', total_duration_ms: 100 });
+    const { result } = renderHook(() => useExecutionPoll());
+    act(() => {
+      result.current.start(BODY);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // start 后 executionId = executePipeline 响应 id
+    expect(result.current.executionId).toBe('e1');
+    // 终态后 executionId 保留（详情页可回溯最近一次执行）
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+    expect(result.current.status).toBe('success');
+    expect(result.current.executionId).toBe('e1');
   });
 
   it('start(body)：status=running + executePipeline(body) 精确 body + 自动轮询', async () => {

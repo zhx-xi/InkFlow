@@ -25,6 +25,10 @@ class PlannerStartRequest(BaseModel):
 
     project_id: uuid.UUID
     one_liner: str
+    mode: str = "new"
+    """起点模式（#544）：new / continue / branch。"""
+    source_outline_id: uuid.UUID | None = None
+    """起点源大纲 id（continue/branch 用）。"""
 
 
 class PlannerRespondRequest(BaseModel):
@@ -141,6 +145,7 @@ def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
         llm_client=LangChainLLMClient(),
         project_context_getter=_project_context_getter,
         prompt_manager=LangChainPromptManager(),
+        outline_repo=SQLiteOutlineRepository(db),
     )
 
 
@@ -316,7 +321,15 @@ async def start_planner(
     svc: PlannerService = Depends(get_planner_service),
 ):
     """启动访谈会话，返回第一轮问题（≤5 问）。"""
-    session = await svc.start(data.project_id, data.one_liner)
+    try:
+        session = await svc.start(
+            data.project_id,
+            data.one_liner,
+            mode=data.mode,
+            source_outline_id=data.source_outline_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     return {
         "session_id": str(session.id),
         "round": session.round,

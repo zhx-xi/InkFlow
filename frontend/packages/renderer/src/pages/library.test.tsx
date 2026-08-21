@@ -173,6 +173,24 @@ describe('设定库页 — 项目上下文（spec §7.3）', () => {
     });
   });
 
+  it('列表非空时仍有「新建」按钮（#545：创建实体后无常态创建入口）', async () => {
+    act(() => {
+      useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
+    });
+    const user = userEvent.setup();
+    renderLibrary();
+    // 角色 tab 已有 1 条（林晚）——非空态
+    await waitFor(() => {
+      expect(screen.getByTestId('library-list')).toHaveTextContent('林晚');
+    });
+    // 列表态必须存在「新建」按钮（非空态 CTA 之外的第二入口）
+    const createBtn = screen.getByTestId('library-create-btn');
+    expect(createBtn).toBeInTheDocument();
+    // 点击 → 打开创建对话框
+    await user.click(createBtn);
+    expect(screen.getByTestId('library-create-dialog')).toBeInTheDocument();
+  });
+
   it('知识图谱 tab：拉取图谱端点 /knowledge-graph（F48：原 rag tab 改造）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });

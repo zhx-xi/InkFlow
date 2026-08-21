@@ -559,18 +559,10 @@ export function LibraryPage() {
       </div>
 
       {currentProjectId === null ? (
-        <div
-          data-testid="library-empty"
-          className="mt-8 flex flex-col items-center justify-center rounded-lg border border-dashed border-line bg-surface px-6 py-16 text-center"
-        >
+        <div data-testid="library-empty" className="mt-8 flex flex-col items-center justify-center rounded-lg border border-dashed border-line bg-surface px-6 py-16 text-center">
           <Library className="h-10 w-10 text-ink-3" aria-hidden="true" />
           <p className="mt-3 font-serif text-[17px] font-semibold text-ink">{t('lib.empty.noProject')}</p>
-          <button
-            type="button"
-            data-testid="library-go-projects"
-            className="mt-5 rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-            onClick={() => navigate('/projects')}
-          >
+          <button type="button" data-testid="library-go-projects" className="mt-5 rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60" onClick={() => navigate('/projects')}>
             {t('lib.empty.goProjects')}
           </button>
         </div>
@@ -603,6 +595,14 @@ export function LibraryPage() {
           </div>
 
           <div className="mt-5">
+            {/* #545：列表非空时保留常态"新建"入口（knowledge 无创建端点不渲染；空态 CTA 覆盖空列表） */}
+            {createCat !== null && !loading && !loadFailed && items.length > 0 && !(activeCat === 'world' && workbenchActive) && (
+              <div className="mb-3 flex items-center justify-end">
+                <button type="button" data-testid="library-create-btn" className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60" onClick={() => setCreateOpen(true)}>
+                  {t('lib.empty.create')}
+                </button>
+              </div>
+            )}
             {loading ? (
               <div data-testid="library-list" className="space-y-2">
                 <Skeleton className="h-11 w-full" />

@@ -30,6 +30,7 @@ export interface UsePipelineResult {
   finalOutput: string;
   totalDurationMs: number;
   hitlPending: { question: string; role: string } | null;
+  executionId: string | null; // #543：透传 useExecutionPoll 的 executionId（执行详情页数据源）
   start: (mode: PipelineMode) => void;
   confirm: (approved: boolean) => void;
 }
@@ -89,6 +90,7 @@ export function usePipeline(options: UsePipelineOptions): UsePipelineResult {
     finalOutput: pollState.finalOutput,
     totalDurationMs: pollState.totalDurationMs,
     hitlPending: pollState.hitlPending,
+    executionId: pollState.executionId,
     start,
     confirm,
   };

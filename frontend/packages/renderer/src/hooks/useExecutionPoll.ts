@@ -29,6 +29,7 @@ export interface UseExecutionPollResult {
   finalOutput: string;
   totalDurationMs: number;
   hitlPending: { question: string; role: string } | null;
+  executionId: string | null; // #543：执行详情页数据源（初始 null，start 成功后为 execution_id，终态保留）
   start: (body: PipelineExecuteRequest) => void; // 并发保护：执行中再次调用 = 无操作
   confirm: (approved: boolean) => void; // HITL 确认；无 executionId = 无操作
   poll: (executionId: string) => void; // 手动启动轮询（同时记录 executionId 供 confirm）
@@ -40,12 +41,14 @@ export function useExecutionPoll(): UseExecutionPollResult {
   const [finalOutput, setFinalOutput] = useState('');
   const [totalDurationMs, setTotalDurationMs] = useState(0);
   const [hitlPending, setHitlPending] = useState<{ question: string; role: string } | null>(null);
+  const [executionId, setExecutionId] = useState<string | null>(null);
   const inFlightRef = useRef(false);
   const executionIdRef = useRef<string | null>(null);
   const pollHandleRef = useRef<{ cancel: () => void } | null>(null);
 
   const poll = useCallback((executionId: string) => {
     executionIdRef.current = executionId;
+    setExecutionId(executionId);
     pollHandleRef.current?.cancel();
     pollHandleRef.current = startPolling<PipelineExecutionStatus>(
       async () => {
@@ -98,6 +101,7 @@ export function useExecutionPoll(): UseExecutionPollResult {
       executePipeline(body)
         .then((res) => {
           executionIdRef.current = res.execution_id;
+          setExecutionId(res.execution_id);
           poll(res.execution_id);
         })
         .catch((err) => {
@@ -133,5 +137,5 @@ export function useExecutionPoll(): UseExecutionPollResult {
     };
   }, []);
 
-  return { status, error, finalOutput, totalDurationMs, hitlPending, start, confirm, poll };
+  return { status, error, finalOutput, totalDurationMs, hitlPending, executionId, start, confirm, poll };
 }

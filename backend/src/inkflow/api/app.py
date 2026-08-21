@@ -20,6 +20,7 @@ from inkflow.api.routers import (
     chapter,
     chapter_audit,
     characters,
+    chat_stream,
     context,
     export,
     extractions,
@@ -205,6 +206,7 @@ app.include_router(chapter_audit.router)
 app.include_router(characters.router)
 app.include_router(maps.router)
 app.include_router(writing.router)
+app.include_router(chat_stream.router)
 app.include_router(agent.router)
 app.include_router(books.router)
 app.include_router(agent_runs.router)

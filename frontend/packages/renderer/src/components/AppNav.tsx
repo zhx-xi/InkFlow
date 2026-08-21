@@ -1,6 +1,6 @@
 /** 侧边导航（spec §7.2：三分组 / 52px 可折叠窄条 / Agent 快捷入口 / NavLink active 态） */
 import { useState, type ReactNode } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useSearchParams } from 'react-router-dom';
 import {
   BookOpen,
   Bot,
@@ -112,6 +112,8 @@ export function AppNav({ showBrand = true }: { showBrand?: boolean }) {
   const { t } = useI18n();
   const theme = useThemeStore((s) => s.theme);
   const [collapsed, setCollapsed] = useState(false);
+  const [searchParams] = useSearchParams();
+  const activeCat = searchParams.get('cat');
 
   return (
     <nav
@@ -142,17 +144,36 @@ export function AppNav({ showBrand = true }: { showBrand?: boolean }) {
         </NavGroup>
 
         <NavGroup testKey="library" labelKey="nav.group.library" icon={Library} collapsed={collapsed}>
-          {LIBRARY_ITEMS.map((item) => (
-            <NavLink
-              key={item.key}
-              to={item.href!}
-              className={({ isActive }) => cn(navCls({ isActive }), item.key === 'library' && 'font-medium')}
-              data-testid={`nav-item-${item.key}`}
-            >
-              <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-              {!collapsed && <span className="truncate">{t(item.labelKey)}</span>}
-            </NavLink>
-          ))}
+          {LIBRARY_ITEMS.map((item) => {
+            // 分类项（/library?cat=xxx）按 query cat 判定 active，避免 NavLink path 前缀匹配全选中（#548）
+            const isCategory = item.key !== 'library' && (item.href?.includes('?cat=') ?? false);
+            const isCatActive = isCategory && activeCat === item.key;
+            if (item.key === 'library') {
+              return (
+                <NavLink
+                  key={item.key}
+                  end
+                  to="/library"
+                  className={({ isActive }) => cn(navCls({ isActive }), 'font-medium')}
+                  data-testid={`nav-item-${item.key}`}
+                >
+                  <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  {!collapsed && <span className="truncate">{t(item.labelKey)}</span>}
+                </NavLink>
+              );
+            }
+            return (
+              <NavLink
+                key={item.key}
+                to={item.href!}
+                className={isCategory ? navCls({ isActive: isCatActive }) : navCls}
+                data-testid={`nav-item-${item.key}`}
+              >
+                <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {!collapsed && <span className="truncate">{t(item.labelKey)}</span>}
+              </NavLink>
+            );
+          })}
         </NavGroup>
 
         <NavGroup testKey="system" labelKey="nav.group.system" icon={Settings} collapsed={collapsed}>

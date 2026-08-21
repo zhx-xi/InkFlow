@@ -177,6 +177,35 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
 
   return (
     <div data-testid="chat-panel" className="flex flex-col gap-2 border-b border-line bg-surface-2 px-4 py-3">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          data-testid={expanded ? 'chat-collapse' : 'chat-expand'}
+          aria-label={expanded ? t('write.chat.collapse') : t('write.chat.expand')}
+          className="shrink-0 rounded px-1.5 text-ink-3 hover:bg-surface-3 hover:text-ink"
+          onClick={() => setExpanded((v) => !v)}
+        >
+          …
+        </button>
+        <textarea
+          data-testid="chat-input"
+          className="min-h-[40px] flex-1 resize-none rounded-md border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleInputKeyDown}
+          placeholder={t('write.chat.placeholder')}
+          rows={1}
+        />
+        <button
+          type="button"
+          data-testid="chat-send"
+          disabled={!canSend}
+          className="rounded-md bg-accent px-4 py-2 text-[13px] text-accent-ink hover:bg-accent-hover disabled:opacity-40"
+          onClick={handleSend}
+        >
+          {t('write.chat.send')}
+        </button>
+      </div>
       {expanded && messages.length > 0 && (
         <>
           <div
@@ -239,35 +268,6 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
           </div>
         </>
       )}
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          data-testid={expanded ? 'chat-collapse' : 'chat-expand'}
-          aria-label={expanded ? t('write.chat.collapse') : t('write.chat.expand')}
-          className="shrink-0 rounded px-1.5 text-ink-3 hover:bg-surface-3 hover:text-ink"
-          onClick={() => setExpanded((v) => !v)}
-        >
-          …
-        </button>
-        <textarea
-          data-testid="chat-input"
-          className="min-h-[40px] flex-1 resize-none rounded-md border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleInputKeyDown}
-          placeholder={t('write.chat.placeholder')}
-          rows={1}
-        />
-        <button
-          type="button"
-          data-testid="chat-send"
-          disabled={!canSend}
-          className="rounded-md bg-accent px-4 py-2 text-[13px] text-accent-ink hover:bg-accent-hover disabled:opacity-40"
-          onClick={handleSend}
-        >
-          {t('write.chat.send')}
-        </button>
-      </div>
     </div>
   );
 }

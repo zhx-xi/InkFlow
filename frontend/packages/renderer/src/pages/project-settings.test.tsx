@@ -354,7 +354,7 @@ describe('ProjectSettingsPage — #523 Agent 模板选择', () => {
     expect(trigger).toHaveAttribute('aria-label', 'Agent 模板');
   });
 
-  it('选项契约：不使用模板 + builtin 三件（write_auto/write_continue/chat）+ 自定义模板名', async () => {
+  it('选项契约：不使用模板 + 自定义模板名；builtin 三件不出现（#549：builtin 存 template_id 后端 int() 失败静默失效）', async () => {
     mockTemplatesWithCustom();
     seedProjectConfig({});
     const user = userEvent.setup();
@@ -362,9 +362,11 @@ describe('ProjectSettingsPage — #523 Agent 模板选择', () => {
 
     await user.click(await screen.findByTestId('ps-template-select'));
     expect(await screen.findByRole('option', { name: '不使用模板' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: '全自动写作' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: '续写' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'AI 对话' })).toBeInTheDocument();
+    // #549：内置管线（全自动写作/续写/AI 对话）不是模板，存 template_id 后端 _load_template
+    // int("builtin:write_auto") 抛 ValueError → 静默回退内置模板（选了没效果）——从选择器移除
+    expect(screen.queryByRole('option', { name: '全自动写作' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '续写' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'AI 对话' })).not.toBeInTheDocument();
     // 自定义模板（来自 agent-templates store）
     expect(screen.getByRole('option', { name: '我的模板' })).toBeInTheDocument();
   });
@@ -392,26 +394,16 @@ describe('ProjectSettingsPage — #523 Agent 模板选择', () => {
     });
   });
 
-  it('选择 builtin:write_auto → config.template_id="builtin:write_auto" + PATCH', async () => {
+  it('builtin 选项已移除（#549：选择内置管线无效，不再展示）', async () => {
     seedProjectConfig({});
     const user = userEvent.setup();
     render(<ProjectSettingsPage />);
 
     await user.click(await screen.findByTestId('ps-template-select'));
-    await user.click(await screen.findByRole('option', { name: '全自动写作' }));
-
-    expect(useAgentStore.getState().config.template_id).toBe('builtin:write_auto');
-    await waitFor(() => {
-      expect(apiFetchMock).toHaveBeenCalledWith(
-        '/api/v1/projects/p1',
-        expect.objectContaining({
-          method: 'PATCH',
-          body: expect.objectContaining({
-            config: expect.objectContaining({ template_id: 'builtin:write_auto' }),
-          }),
-        }),
-      );
-    });
+    // 无「全自动写作/续写/AI 对话」选项（内置管线由执行入口决定，非模板）
+    expect(screen.queryByRole('option', { name: '全自动写作' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '续写' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'AI 对话' })).not.toBeInTheDocument();
   });
 
   it('选择「不使用模板」→ config.template_id=null + PATCH（解除引用）', async () => {
@@ -439,10 +431,11 @@ describe('ProjectSettingsPage — #523 Agent 模板选择', () => {
     });
   });
 
-  it('回显：config.template_id="builtin:write_continue" → Select 显示「续写」', async () => {
-    seedProjectConfig({ template_id: 'builtin:write_continue' as unknown as number });
+  it('回显：config.template_id="2"（自定义模板）→ Select 显示「我的模板」', async () => {
+    mockTemplatesWithCustom();
+    seedProjectConfig({ template_id: 2 });
     render(<ProjectSettingsPage />);
 
-    expect(await screen.findByTestId('ps-template-select')).toHaveTextContent('续写');
+    expect(await screen.findByTestId('ps-template-select')).toHaveTextContent('我的模板');
   });
 });
