@@ -415,6 +415,9 @@ export const en: Record<string, string> = {
   'write.chat.failed': 'Chat failed: {message}',
   'write.chat.expand': 'Expand chat',
   'write.chat.collapse': 'Collapse chat',
+  // #541: hermes-style chat role labels
+  'write.chat.user': 'You',
+  'write.chat.ai': 'AI',
   'write.view.toDetail': 'View AI execution details',
   'write.view.toEditor': 'Back to editor',
   'write.detail.empty': 'No execution records',
@@ -579,6 +582,11 @@ export const en: Record<string, string> = {
   'book.plan.auto': 'Auto-generated',
   'book.startRun': 'Start Writing',
   'book.error': 'Interview error',
+  // #544: starting mode (new/continue/branch) + source outline picker
+  'book.startMode.new': 'New',
+  'book.startMode.continue': 'Continue',
+  'book.startMode.branch': 'Branch',
+  'book.startMode.selectOutline': 'Select outline…',
   // F44 v1.2 #475: conversation-style interview final confirmation (confirm_summary card)
   'book.confirm.title': 'Confirm these settings?',
   'book.confirm.ok': 'Confirm',

@@ -420,6 +420,9 @@ export const zh = {
   'write.chat.failed': '对话失败: {message}',
   'write.chat.expand': '展开对话',
   'write.chat.collapse': '收起对话',
+  // #541：hermes 风格对话角色标签
+  'write.chat.user': '你',
+  'write.chat.ai': 'AI',
   'write.view.toDetail': '查看 AI 执行详情',
   'write.view.toEditor': '返回正文编辑',
   'write.detail.empty': '暂无执行记录',
@@ -590,6 +593,11 @@ export const zh = {
   'book.plan.auto': '自动生成',
   'book.startRun': '开始写作',
   'book.error': '访谈出错',
+  // #544：起点模板（new/continue/branch）+ 源大纲选择器
+  'book.startMode.new': '新书',
+  'book.startMode.continue': '续写',
+  'book.startMode.branch': '分支',
+  'book.startMode.selectOutline': '选择源大纲…',
   // F44 v1.2 #475：对话式访谈末尾总体确认（confirm_summary 卡片）
   'book.confirm.title': '确认以下设定？',
   'book.confirm.ok': '确认',

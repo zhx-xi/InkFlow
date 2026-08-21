@@ -30,6 +30,7 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
+from inkflow.domain.models.outline import Outline
 from inkflow.domain.models.planner_session import PlannerSession
 from inkflow.domain.models.writing_plan import STAGE1_LIMITS, WritingPlan
 from inkflow.domain.services._outline_generator import _extract_json_fragment
@@ -151,6 +152,8 @@ class PlannerService:
             None = 空上下文.
         prompt_manager: PromptTemplateProtocol 鸭子对象（load/render）；
             None = 不渲染模板、直接构建最小 prompt.
+        outline_repo: 鸭子对象（async get(id) / list(project_id, offset, limit)
+            -> (items, total)）；None = 分支起点不可用（#544）.
     """
 
     def __init__(
@@ -163,6 +166,7 @@ class PlannerService:
         llm_client: object | None = None,
         project_context_getter: Callable[[uuid.UUID], Awaitable[str]] | None = None,
         prompt_manager: object | None = None,
+        outline_repo: object | None = None,
     ) -> None:
         self._repo = repo
         self._write_auto = write_auto
@@ -171,22 +175,44 @@ class PlannerService:
         self._llm_client = llm_client
         self._project_context_getter = project_context_getter
         self._prompt_manager = prompt_manager
+        self._outline_repo = outline_repo
         self._last_llm_confirmed_items: list[dict] = []
         """最近一轮 _generate_questions 提取的 confirmed_items（副作用暂存）."""
         self._last_llm_conflicts: list[dict] = []
         """最近一轮 _generate_questions 提取的 conflicts（副作用暂存）."""
 
-    async def start(self, project_id: uuid.UUID, one_liner: str) -> PlannerSession:
+    async def start(
+        self,
+        project_id: uuid.UUID,
+        one_liner: str,
+        mode: str = "new",
+        source_outline_id: uuid.UUID | None = None,
+    ) -> PlannerSession:
         """创建 drafting 会话 + 返回第一轮问题（round=1，<=5 问）.
 
         Args:
             project_id: 所属项目 UUID.
             one_liner: 用户一句话（题材/体裁/篇幅/主题等原始输入）.
+            mode: 起点模式（#544）：new / continue / branch.
+            source_outline_id: 起点源大纲 id（continue/branch 用；new 为 None）.
 
         Returns:
             已落库的 PlannerSession（round=1；装配 llm_client 时
             asked_questions=LLM 生成，失败/未装配降级 ROUND1_QUESTIONS）.
+
+        Raises:
+            ValueError: mode 非法；branch 缺源大纲；源大纲不存在.
         """
+        if mode not in {"new", "continue", "branch"}:
+            raise ValueError(f"不支持的起点模式: {mode}")
+        copied_outline_id: uuid.UUID | None = None
+        if mode == "branch":
+            if source_outline_id is None:
+                raise ValueError("分支起点需要源大纲")
+            copied_outline_id = await self._copy_outline_tree(project_id, source_outline_id)
+        if mode == "continue" and source_outline_id is None:
+            # 防御：continue 也要求源大纲（契约未显式覆盖，保持宽容不抛——文档注明）
+            pass
         now = _utcnow()
         session = PlannerSession(
             id=uuid.uuid4(),
@@ -197,6 +223,9 @@ class PlannerService:
             asked_questions=list(ROUND1_QUESTIONS),
             answers={},
             authorized=[],
+            start_type=mode,
+            source_outline_id=source_outline_id,
+            copied_outline_id=copied_outline_id,
             writing_plan_id=None,
             created_at=now,
             updated_at=now,
@@ -209,6 +238,48 @@ class PlannerService:
             session
         )
         return session
+
+    async def _copy_outline_tree(
+        self,
+        project_id: uuid.UUID,
+        source_outline_id: uuid.UUID,
+    ) -> uuid.UUID:
+        """分支起点：复制源大纲子树（根 + 全部后代，无关大纲不复制），返回新根 id."""
+        if self._outline_repo is None:
+            raise ValueError("源大纲不存在")
+        root: Outline | None = await self._outline_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：构造注入
+            source_outline_id
+        )
+        if root is None:
+            raise ValueError("源大纲不存在")
+        items, _total = await self._outline_repo.list(  # type: ignore[attr-defined]  # 鸭子类型：构造注入
+            project_id, offset=0, limit=50
+        )
+        ordered: list[Outline] = [root]
+        index = 0
+        while index < len(ordered):
+            parent = ordered[index]
+            ordered.extend(o for o in items if o.parent_id == parent.id)
+            index += 1
+        outline_service = self._outline_service
+        if outline_service is None:
+            raise ValueError("分支复制未装配大纲服务")
+        id_map: dict[uuid.UUID, uuid.UUID] = {}
+        for node in ordered:
+            name = node.name + "（分支）" if node.parent_id is None else node.name
+            created = await outline_service(  # type: ignore[operator]  # 鸭子类型：outline_service 为可调用，产出 outline 实体（含 id）
+                project_id,
+                name=name,
+                description=node.description,
+                sort_order=node.sort_order,
+                level=node.level,
+                parent_id=(id_map[node.parent_id] if node.parent_id is not None else None),
+            )
+            created_id: uuid.UUID | None = getattr(created, "id", None)
+            if created_id is None:
+                raise ValueError("分支复制失败：大纲服务未返回 id")
+            id_map[node.id] = created_id
+        return id_map[root.id]
 
     async def respond(
         self,
@@ -306,6 +377,7 @@ class PlannerService:
             project_id=project_id,
             title=one_liner,
             status="auto",
+            start_type=session.start_type,
             limits={
                 "max_chapters": STAGE1_LIMITS.max_chapters,
                 "max_agent_calls": STAGE1_LIMITS.max_agent_calls,
@@ -334,6 +406,7 @@ class PlannerService:
             project_id=session.project_id,
             title=session.one_liner,
             status="auto",
+            start_type=session.start_type,
             limits={
                 "max_chapters": STAGE1_LIMITS.max_chapters,
                 "max_agent_calls": STAGE1_LIMITS.max_agent_calls,
@@ -363,6 +436,9 @@ class PlannerService:
             project_id=session.project_id,
             title=session.one_liner,
             status="ready",
+            start_type=session.start_type,
+            source_outline_id=session.source_outline_id,
+            copied_outline_id=session.copied_outline_id,
             limits={
                 "max_chapters": STAGE1_LIMITS.max_chapters,
                 "max_agent_calls": STAGE1_LIMITS.max_agent_calls,
@@ -370,7 +446,11 @@ class PlannerService:
             created_at=now,
             updated_at=now,
         )
-        if self._outline_service is not None:
+        if session.start_type == "branch" and session.copied_outline_id is not None:
+            plan.root_outline_id = session.copied_outline_id
+        elif session.start_type == "continue" and session.source_outline_id is not None:
+            plan.root_outline_id = session.source_outline_id
+        elif self._outline_service is not None:
             outline = await self._outline_service(  # type: ignore[operator]  # 鸭子类型：outline_service 为可调用，产出 outline 实体（含 id）
                 project_id=session.project_id,
                 name=self._outline_name(session),

@@ -1,10 +1,11 @@
 /**
- * 底部 AI 聊天框（spec §4.1）：builtin:chat 单轮对话
- * - 发送 → useExecutionPoll.start({pipeline:'builtin:chat', project_id, variables:{prompt, chapter_context?}})
- * - 轮询/并发保护/错误态统一由 useExecutionPoll 承担（#472 R0，1s 间隔）
- * - completed → parseChatReply 解析意图（#477）：content 只显示提取 body（可选中）；
- *   conversation 显示完整原文；共享「插入选中正文」→ chapterStore.setContent(选中条 body)
- * - failed → 错误文案（不插入正文）
+ * 底部 AI 聊天框（spec §4.1，#541 流式版）：streamChat SSE 驱动
+ * - 发送 → streamChat({project_id, prompt, chapter_id?, chapter_context?}, callbacks)
+ * - 流式渐进：onDelta 逐字追加当前 ai 消息；onDone → parseChatReply 解析意图（#477 保留）
+ * - onError → 错误文案（write.chat.failed），不插入正文
+ * - 并发保护：流式 in-flight 时再次发送不触发第二次 streamChat；done/error 后可继续
+ * - abort 清理：卸载时调用 streamChat 返回的 abort
+ * - hermes 风格：user 靠右 / ai 靠左 + 角色标签 + space-y-3 空行
  */
 import {
   useCallback,
@@ -14,8 +15,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
-import type { PipelineExecuteRequest } from '../api/pipeline';
-import { useExecutionPoll } from '../hooks/useExecutionPoll';
+import { streamChat, type ChatStreamBody } from '../api/chat';
 import { useI18n } from '../i18n/useI18n';
 import { parseChatReply, type ChatIntent } from '../lib/chatIntent';
 import { useChapterStore } from '../stores/chapter';
@@ -50,67 +50,96 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
   const [expanded, setExpanded] = useState(false);
   const [height, setHeight] = useState(CHAT_DEFAULT_HEIGHT);
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
-  const exec = useExecutionPoll();
   const userSeqRef = useRef(0);
   const aiSeqRef = useRef(0);
+  // #541 流式状态：并发保护 + 当前 ai 消息渐进累计（ref 持有，避免回调闭包陈旧）
+  const streamingRef = useRef(false);
+  const streamSeqRef = useRef<number | null>(null);
+  const streamTextRef = useRef('');
+  const abortRef = useRef<(() => void) | null>(null);
 
-  const handleSend = useCallback(async () => {
-    const prompt = input.trim();
-    if (!prompt) return;
-    // #476：折叠态发送 → 自动展开，保证消息可见
-    setExpanded(true);
-    // #474 P0：模型未配置前置校验（trim 非空后、exec.start 前）
-    if (!(await ensureModelReady())) {
-      useToastStore.getState().pushToast('warn', t('common.modelNotConfigured'));
-      return;
+  /** 流式 delta：追加到当前 ai 消息（首个 delta 创建消息占位） */
+  const onDelta = useCallback((delta: string) => {
+    streamTextRef.current += delta;
+    if (streamSeqRef.current === null) {
+      streamSeqRef.current = aiSeqRef.current++;
     }
-    setMessages((prev) => [...prev, { kind: 'user', seq: userSeqRef.current++, text: prompt }]);
-    setInput('');
-    const variables: Record<string, string> = { prompt };
-    if (chapterContent) {
-      variables.chapter_context = chapterContent;
-    }
-    const body: PipelineExecuteRequest = {
-      project_id: projectId,
-      pipeline: 'builtin:chat',
-      ...(chapterId ? { chapter_id: chapterId } : {}),
-      variables,
-    };
-    exec.start(body); // 并发保护在 hook 内（running 期间二次 start 无操作）
-  }, [input, projectId, chapterId, chapterContent, exec.start, t]);
+    const seq = streamSeqRef.current;
+    setMessages((prev) => {
+      const next: ChatEntry = { kind: 'ai', seq, text: streamTextRef.current };
+      const exists = prev.some((m) => m.kind === 'ai' && m.seq === seq);
+      if (!exists) return [...prev, next];
+      return prev.map((m) => (m.kind === 'ai' && m.seq === seq ? next : m));
+    });
+  }, []);
 
-  // 轮询结果消费：status 单次 0→1 变化（idle→running→success/failed）；
-  // 依赖同时含 finalOutput——同批次内 start+轮询完成被合并渲染时 status 不变化
-  // （如连续两轮都 success），靠 finalOutput 变化驱动消费，天然防重
-  useEffect(() => {
-    if (exec.status === 'success') {
-      // #477：意图分离——解析标记判定 content/conversation，正文类只显示提取 body
-      const parsed = parseChatReply(exec.finalOutput);
-      const seq = aiSeqRef.current++;
-      setMessages((prev) => [
-        ...prev,
-        {
-          kind: 'ai',
-          seq,
-          text: parsed.body,
-          intent: parsed.intent,
-        },
-      ]);
+  /** 流式 done：对完整文本 parseChatReply 解析意图并落定消息形态 */
+  const onDone = useCallback(() => {
+    const seq = streamSeqRef.current;
+    const raw = streamTextRef.current;
+    if (seq !== null) {
+      const parsed = parseChatReply(raw);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.kind === 'ai' && m.seq === seq ? { ...m, text: parsed.body, intent: parsed.intent } : m,
+        ),
+      );
       if (parsed.intent === 'content') {
         // 新 content 消息到达自动成为选中条（最新优先）
         setSelectedSeq(seq);
       }
-    } else if (exec.status === 'failed') {
-      setMessages((prev) => [
-        ...prev,
-        {
-          kind: 'ai',
-          seq: aiSeqRef.current++,
-          text: t('write.chat.failed', { message: exec.error || '执行失败' }),
-        },
-      ]);
     }
-  }, [exec.status, exec.finalOutput]);
+    streamingRef.current = false;
+    streamSeqRef.current = null;
+    streamTextRef.current = '';
+    abortRef.current = null;
+  }, []);
+
+  /** 流式 error：AI 消息显示错误文案（write.chat.failed），不插入正文 */
+  const onError = useCallback(
+    (message: string) => {
+      const seq = streamSeqRef.current ?? aiSeqRef.current++;
+      const entry: ChatEntry = {
+        kind: 'ai',
+        seq,
+        text: t('write.chat.failed', { message }),
+      };
+      setMessages((prev) => {
+        const exists = prev.some((m) => m.kind === 'ai' && m.seq === seq);
+        if (!exists) return [...prev, entry];
+        return prev.map((m) => (m.kind === 'ai' && m.seq === seq ? entry : m));
+      });
+      streamingRef.current = false;
+      streamSeqRef.current = null;
+      streamTextRef.current = '';
+      abortRef.current = null;
+    },
+    [t],
+  );
+
+  const handleSend = useCallback(async () => {
+    const prompt = input.trim();
+    if (!prompt || streamingRef.current) return;
+    // #476：折叠态发送 → 自动展开，保证消息可见
+    setExpanded(true);
+    // #474 P0：模型未配置前置校验（trim 非空后、streamChat 前）
+    if (!(await ensureModelReady())) {
+      useToastStore.getState().pushToast('warn', t('common.modelNotConfigured'));
+      return;
+    }
+    streamingRef.current = true;
+    setMessages((prev) => [...prev, { kind: 'user', seq: userSeqRef.current++, text: prompt }]);
+    setInput('');
+    const body: ChatStreamBody = {
+      project_id: projectId,
+      prompt,
+      ...(chapterId ? { chapter_id: chapterId } : {}),
+      ...(chapterContent ? { chapter_context: chapterContent } : {}),
+    };
+    void streamChat(body, { onDelta, onDone, onError }).then((abort) => {
+      abortRef.current = abort;
+    });
+  }, [input, projectId, chapterId, chapterContent, onDelta, onDone, onError, t]);
 
   // #476 窗口级拖拽：#388 模式 —— mousedown(handle) 记录起点，window mousemove 更新高度，window mouseup 收尾
   const handleWindowMouseMove = useCallback((e: MouseEvent) => {
@@ -139,6 +168,13 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
     [height, handleWindowMouseMove, handleWindowMouseUp],
   );
 
+  // 卸载时中止在途流式请求（streamChat 返回的 abort）
+  useEffect(() => {
+    return () => {
+      abortRef.current?.();
+    };
+  }, []);
+
   // 卸载时清理拖拽监听，避免组件销毁后窗口残留监听
   useEffect(() => {
     return () => {
@@ -148,24 +184,21 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
     };
   }, [handleWindowMouseMove, handleWindowMouseUp]);
 
-  const handleInsert = useCallback(
-    () => {
-      // #477：只插入选中条的 body（content 意图消息）
-      const selected = messages.find(
-        (m) => m.kind === 'ai' && m.intent === 'content' && m.seq === selectedSeq,
-      );
-      if (!selected) return;
-      useChapterStore.getState().setContent(selected.text);
-      useToastStore.getState().pushToast('ok', t('write.chat.inserted'));
-    },
-    [messages, selectedSeq, t],
-  );
+  const handleInsert = useCallback(() => {
+    // #477：只插入选中条的 body（content 意图消息）
+    const selected = messages.find(
+      (m) => m.kind === 'ai' && m.intent === 'content' && m.seq === selectedSeq,
+    );
+    if (!selected) return;
+    useChapterStore.getState().setContent(selected.text);
+    useToastStore.getState().pushToast('ok', t('write.chat.inserted'));
+  }, [messages, selectedSeq, t]);
 
   const handleInputKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        handleSend();
+        void handleSend();
       }
     },
     [handleSend],
@@ -201,7 +234,7 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
           data-testid="chat-send"
           disabled={!canSend}
           className="rounded-md bg-accent px-4 py-2 text-[13px] text-accent-ink hover:bg-accent-hover disabled:opacity-40"
-          onClick={handleSend}
+          onClick={() => void handleSend()}
         >
           {t('write.chat.send')}
         </button>
@@ -211,7 +244,7 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
           <div
             data-testid="chat-messages"
             data-height={String(height)}
-            className="max-h-[480px] space-y-1.5 overflow-y-auto text-[13px]"
+            className="max-h-[480px] space-y-3 overflow-y-auto text-[13px]"
             style={{ height }}
           >
             {messages.map((m) =>
@@ -219,31 +252,43 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
                 <div
                   key={`user-${m.seq}`}
                   data-testid={`chat-msg-user-${m.seq}`}
-                  className="text-ink"
+                  data-side="user"
+                  className="flex justify-end"
                 >
-                  {m.text}
+                  <div className="max-w-[85%] rounded-lg bg-surface-3 px-3 py-2 text-ink">
+                    <span data-testid="chat-msg-role" className="mr-2 text-[11px] text-ink-3">
+                      {t('write.chat.user')}
+                    </span>
+                    <span className="whitespace-pre-wrap">{m.text}</span>
+                  </div>
                 </div>
               ) : (
                 <div
                   key={`ai-${m.seq}`}
                   data-testid={`chat-msg-ai-${m.seq}`}
-                  className="text-ink-2"
+                  data-side="ai"
+                  className="flex justify-start"
                 >
-                  <div className="whitespace-pre-wrap">{m.text}</div>
-                  {/* #477：仅 content 意图消息渲染选择控件（单选互斥） */}
-                  {m.intent === 'content' && (
-                    <button
-                      type="button"
-                      data-testid={`chat-select-${m.seq}`}
-                      data-selected={selectedSeq === m.seq ? 'true' : 'false'}
-                      aria-label={t('write.chat.select')}
-                      aria-pressed={selectedSeq === m.seq}
-                      className="mt-1 rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
-                      onClick={() => setSelectedSeq(m.seq)}
-                    >
-                      {t('write.chat.select')}
-                    </button>
-                  )}
+                  <div className="max-w-[85%] rounded-lg border border-line bg-surface px-3 py-2 text-ink-2">
+                    <span data-testid="chat-msg-role" className="mr-2 text-[11px] text-ink-3">
+                      {t('write.chat.ai')}
+                    </span>
+                    <span className="whitespace-pre-wrap">{m.text}</span>
+                    {/* #477：仅 content 意图消息渲染选择控件（单选互斥） */}
+                    {m.intent === 'content' && (
+                      <button
+                        type="button"
+                        data-testid={`chat-select-${m.seq}`}
+                        data-selected={selectedSeq === m.seq ? 'true' : 'false'}
+                        aria-label={t('write.chat.select')}
+                        aria-pressed={selectedSeq === m.seq}
+                        className="mt-1 block rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
+                        onClick={() => setSelectedSeq(m.seq)}
+                      >
+                        {t('write.chat.select')}
+                      </button>
+                    )}
+                  </div>
                 </div>
               ),
             )}

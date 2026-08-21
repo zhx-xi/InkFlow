@@ -1,53 +1,43 @@
 /**
- * 聊天框契约（spec §4.1）：底部 AI 聊天框 ChatPanel
+ * 聊天框契约（spec §4.1）：底部 AI 聊天框 ChatPanel（#541 流式重写版）
  *
  * ⚠️ 本文件 = 契约。GREEN 实现 ChatPanel 必须匹配（行为断言，不测样式）。
  *
- * 导出契约：
- * - export function ChatPanel(props: { projectId: string; chapterId?: string; chapterContent?: string })
+ * #541 机制变更（相对 #477 轮询版）：
+ * - 发送 = streamChat({project_id, prompt, chapter_id?, chapter_context?}, callbacks)
+ *   （POST /api/v1/chat/stream，SSE 帧 {delta, done, error}，src/api/chat.ts GREEN 建）
+ * - 流式渐进追加：delta 帧逐字追加到当前 ai 消息（不是 done 一次性出现）
+ * - done 帧 → 最终文本用 parseChatReply 解析意图（#477 保留）
+ * - error 帧 → 错误文案（write.chat.failed 含「对话失败」），不插入正文
+ * - 并发保护：流式 in-flight 时再次发送不触发第二次 streamChat；done/error 后可继续对话
  *
- * 结构 testid：
- * - chat-panel（容器）/ chat-input（textarea）/ chat-send（发送按钮）
- * - chat-msg-user-<n>（用户消息）/ chat-msg-ai-<n>（AI 回复消息）
- * - chat-select-<n>（content 意图消息的选择控件，data-selected="true"|"false" 选中态）
- * - chat-insert-selected（共享「插入选中正文」按钮，仅存在 content 消息时渲染）
+ * hermes 风格 UI 契约（#541 新增）：
+ * - 消息容器分列：user 消息 data-side="user"（靠右），ai 消息 data-side="ai"（靠左）
+ * - 每条消息含角色标签 data-testid="chat-msg-role"
+ *   （user → t('write.chat.user')='你'，ai → t('write.chat.ai')='AI'）
+ * - chat-messages 容器 className 含 space-y-3（消息间空行；只锁工具类，不锁完整 class 串）
  *
- * 行为契约：
- * - 空输入（trim 后空）→ chat-send disabled
- * - 输入 + 发送 → executePipeline({pipeline:'builtin:chat', project_id, variables:{prompt, chapter_context?}})
- *   chapter_context 仅在 chapterContent 非空时注入
- * - 轮询 getExecutionStatus(execution_id)（1s 间隔）→ status==='completed'
- *   → 用 parseChatReply(final_output) 解析意图（#477，src/lib/chatIntent.ts GREEN 建）：
- *     content（含成对标记）→ 消息只显示提取 body（标记与前言隐藏）+ chat-select-<n> 控件
- *     conversation（无标记）→ 消息显示完整原文，无选择/插入控件
- * - 单选互斥：点 chat-select-<n> 切换选中；新 content 消息到达自动成为选中条（最新优先）
- * - 点 chat-insert-selected → chapterStore.setContent(选中条 body)（不自动保存，F27 save 流）
- *   + toast（write.chat.inserted）
- * - 旧 per-message chat-insert-<n> 按钮已删除（#477：新契约下任何场景都不应出现）
- * - status==='failed' → 消息区显示错误文案（含「对话失败」），不插入正文
- * - 发送中并发保护：execute 未 resolve 时再次发送不触发第二次 execute
+ * 结构 testid：chat-panel / chat-input / chat-send / chat-msg-user-<n> / chat-msg-ai-<n>
+ * / chat-select-<n>（content 意图选择控件，data-selected 选中态）/ chat-insert-selected
  *
- * i18n key（GREEN 补）：write.chat.placeholder / write.chat.send / write.chat.insert /
- * write.chat.inserted / write.chat.failed / write.chat.select（选中此回复，选择控件 aria-label）
+ * 保留契约（#474/#476/#477，GREEN 必须保持）：
+ * - 空输入发送禁用；折叠态发送自动展开；展开/收缩/拖动（data-height）
+ * - 模型未配置前置校验：ensureModelReady 失败 → toast（common.modelNotConfigured）+ 不发请求
+ * - 意图分离：content → 只显示 body + chat-select-<n> 自动选中；conversation → 完整原文无控件
+ * - chat-insert-selected 只插入选中条 body（不自动保存，F27 save 流）
  *
- * 展开/收缩/拖动契约（#476 D2，2026-08-19 追加）：
- * - chat-expand（展开对话按钮，aria-label = write.chat.expand「展开对话」）
- * - chat-collapse（收起对话按钮，aria-label = write.chat.collapse「收起对话」）
- * - chat-messages（消息区容器，条件渲染：有消息且展开时才存在）
- * - chat-resize-handle（拖动把手，展开态渲染）
- * - 默认折叠（chat-messages 不渲染）；点 chat-expand 展开；点 chat-collapse 收起
- * - 折叠态发送消息 → 自动展开（chat-messages 出现，消息可见）
- * - 收缩再展开 → 历史消息保留
- * - 鼠标拖动调整高度：mousedown(handle) → mousemove(window) → chat-messages 的
- *   data-height 属性变化（px 字符串，向上拖 = 增大）；mouseup(window) 结束
- * i18n key（GREEN 补）：write.chat.expand / write.chat.collapse
+ * i18n key（GREEN 补）：write.chat.user='你' / write.chat.ai='AI'
+ * （write.chat.placeholder/send/insert/inserted/failed/select/expand/collapse 已存在）
+ *
+ * mock 方式：vi.mock('../api/chat') → streamChat 捕获 body+callbacks（模块级 capturedStreams），
+ * 用例手动驱动 onDelta/onDone/onError（镜像 useExecutionPoll mock 套路；SSE 手动驱动约定）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ChatPanel } from './ChatPanel';
-import { executePipeline, getExecutionStatus, type PipelineExecuteResponse } from '../api/pipeline';
 import { apiFetch } from '../api/client';
+import { executePipeline, getExecutionStatus } from '../api/pipeline';
 import { useChapterStore } from '../stores/chapter';
 import { useThemeStore } from '../stores/theme';
 import { useModelsStore, type ProviderConfig } from '../stores/models';
@@ -57,33 +47,43 @@ vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
   return { ...actual, apiFetch: vi.fn() };
 });
+// #541：轮询已替换为 SSE 流式。pipeline mock 保留仅为让旧实现惰性（GREEN 删除轮询后由流式契约接管）
 vi.mock('../api/pipeline', () => ({
   executePipeline: vi.fn(),
   getExecutionStatus: vi.fn(),
   confirmExecution: vi.fn(),
 }));
 
+const streamChatMock = vi.hoisted(() => vi.fn());
+vi.mock('../api/chat', () => ({ streamChat: streamChatMock }));
+
 const executeMock = vi.mocked(executePipeline);
 const statusMock = vi.mocked(getExecutionStatus);
 const apiFetchMock = vi.mocked(apiFetch);
 
-const OPTS = { projectId: 'p1', chapterId: 'c1', chapterContent: '已有正文第一段。' };
-
-/** #477：构造一条 completed 轮询响应（final_output 可变），形状与 beforeEach 默认 mock 一致。 */
-type ChatStatusReply = Awaited<ReturnType<typeof getExecutionStatus>>;
-function completedReply(finalOutput: string): ChatStatusReply {
-  return {
-    execution_id: 'e-chat-1',
-    pipeline: 'builtin:chat',
-    project_id: 'p1',
-    status: 'completed',
-    stages: [],
-    trace: [],
-    final_output: finalOutput,
-    total_duration_ms: 900,
-    error: '',
-  };
+/** 与 src/api/chat.ts 契约一致（GREEN 建）：本地镜像类型，避免依赖未建模块 */
+interface ChatStreamBody {
+  project_id: string;
+  prompt: string;
+  chapter_id?: string;
+  chapter_context?: string;
 }
+interface ChatStreamFrame {
+  done: boolean;
+  delta?: string;
+  error?: string;
+}
+interface ChatStreamCallbacks {
+  onDelta: (delta: string) => void;
+  onDone: (frame: ChatStreamFrame) => void;
+  onError: (message: string) => void;
+}
+interface CapturedChatStream {
+  body: ChatStreamBody;
+  callbacks: ChatStreamCallbacks;
+}
+
+const OPTS = { projectId: 'p1', chapterId: 'c1', chapterContent: '已有正文第一段。' };
 
 /** #474：已配置模型（key_saved=true + chat 模型）种子 provider——模拟用户在模型管理页保存过 Key */
 const READY_PROVIDER: ProviderConfig = {
@@ -99,33 +99,80 @@ const READY_PROVIDER: ProviderConfig = {
   updated_at: '2026-08-05T10:00:00Z',
 };
 
+/** 每次 streamChat 调用的捕获（body + callbacks），用例手动驱动 SSE 帧 */
+let capturedStreams: CapturedChatStream[] = [];
+
+/** 输入 + 点发送；等待第 index+1 次 streamChat 被调用（index 默认 0 = 最近一次） */
+async function sendAndAwaitStream(
+  user: ReturnType<typeof userEvent.setup>,
+  text: string,
+  index = 0,
+) {
+  await user.type(screen.getByTestId('chat-input'), text);
+  await user.click(screen.getByTestId('chat-send'));
+  await waitFor(() => {
+    expect(streamChatMock).toHaveBeenCalledTimes(index + 1);
+  });
+}
+
+/** 手动驱动第 index 次流的 delta 帧（渐进追加契约核心） */
+function emitDelta(index: number, delta: string) {
+  act(() => {
+    capturedStreams[index].callbacks.onDelta(delta);
+  });
+}
+
+/** 手动驱动第 index 次流的 done 帧 */
+function emitDone(index: number, frame?: Partial<ChatStreamFrame>) {
+  act(() => {
+    capturedStreams[index].callbacks.onDone({ done: true, ...frame });
+  });
+}
+
+/** 手动驱动第 index 次流的 error 帧 */
+function emitError(index: number, message: string) {
+  act(() => {
+    capturedStreams[index].callbacks.onError(message);
+  });
+}
+
+/** content 意图回复：delta 分两帧累积（含标记）+ done */
+function driveContentReply(index: number, body: string) {
+  emitDelta(index, '好的，以下是续写内容：');
+  emitDelta(index, `\n<<<CONTENT>>>\n${body}\n<<<END>>>`);
+  emitDone(index);
+}
+
+/** conversation 意图回复：单帧 delta + done */
+function driveConversationReply(index: number, text: string) {
+  emitDelta(index, text);
+  emitDone(index);
+}
+
 beforeEach(() => {
-  vi.useRealTimers();
+  streamChatMock.mockReset();
+  capturedStreams = [];
+  // 默认 mock：返回 abort 函数 + 捕获 callbacks 供用例手动驱动（镜像 useExecutionPoll mock 套路）
+  streamChatMock.mockImplementation(
+    (body: ChatStreamBody, callbacks: ChatStreamCallbacks) => {
+      capturedStreams.push({ body, callbacks });
+      return Promise.resolve(() => {});
+    },
+  );
   executeMock.mockReset();
   statusMock.mockReset();
   apiFetchMock.mockReset();
-  // #474 前置校验依赖 models store：默认播种「已配置」让既有用例行为不变；
-  // 未配置用例自行 setState 覆盖为空
+  // #474 前置校验依赖 models store：默认播种「已配置」让既有用例行为不变；未配置用例自行 setState 覆盖为空
   useModelsStore.setState({ providers: [READY_PROVIDER], loading: false, error: null });
   useToastStore.setState({ toasts: [] });
-  // URL 分发：provider-configs 返回已配置（防 GREEN 挂载/发送时 loadProviders 覆盖播种）；
-  // 其余端点返回通用成功
+  // URL 分发：provider-configs 返回已配置（防 GREEN 挂载/发送时 loadProviders 覆盖播种）；其余端点返回通用成功
   apiFetchMock.mockImplementation(async (path: string) => {
     if (path === '/api/v1/provider-configs') {
       return { items: [READY_PROVIDER], total: 1, offset: 0, limit: 50 };
     }
     return { ok: true };
   });
-  useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
-  useChapterStore.setState({
-    volumes: [],
-    chapters: [],
-    treeProjectId: 'p1',
-    currentChapterId: 'c1',
-    content: '已有正文第一段。',
-    loading: false,
-    error: null,
-  });
+  // 旧轮询 mock 惰性化（GREEN 前的当前实现走 useExecutionPoll）：execute 正常、轮询永不完成
   executeMock.mockResolvedValue({
     execution_id: 'e-chat-1',
     pipeline: 'builtin:chat',
@@ -137,12 +184,22 @@ beforeEach(() => {
     execution_id: 'e-chat-1',
     pipeline: 'builtin:chat',
     project_id: 'p1',
-    status: 'completed',
+    status: 'pending',
     stages: [],
     trace: [],
-    final_output: '对话回复内容',
-    total_duration_ms: 900,
+    final_output: '',
+    total_duration_ms: 0,
     error: '',
+  });
+  useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
+  useChapterStore.setState({
+    volumes: [],
+    chapters: [],
+    treeProjectId: 'p1',
+    currentChapterId: 'c1',
+    content: '已有正文第一段。',
+    loading: false,
+    error: null,
   });
 });
 
@@ -154,56 +211,60 @@ describe('ChatPanel — 聊天输入与发送', () => {
     expect(screen.getByTestId('chat-send')).toBeDisabled();
   });
 
-  it('输入文本后发送按钮可用；点发送 → executePipeline(builtin:chat + prompt + chapter_context)', async () => {
+  it('输入 + 发送 → streamChat 调用（body: project_id/prompt/chapter_id/chapter_context + callbacks）', async () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
-    const input = screen.getByTestId('chat-input') as HTMLTextAreaElement;
-    await user.type(input, '帮我写一段打斗场景');
-    expect(screen.getByTestId('chat-send')).not.toBeDisabled();
-    await user.click(screen.getByTestId('chat-send'));
-    await waitFor(() => {
-      expect(executeMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          pipeline: 'builtin:chat',
-          project_id: 'p1',
-          variables: expect.objectContaining({
-            prompt: '帮我写一段打斗场景',
-            chapter_context: '已有正文第一段。',
-          }),
-        }),
-      );
+    await sendAndAwaitStream(user, '帮我写一段打斗场景');
+
+    expect(capturedStreams[0].body).toEqual({
+      project_id: 'p1',
+      prompt: '帮我写一段打斗场景',
+      chapter_id: 'c1',
+      chapter_context: '已有正文第一段。',
     });
+    // callbacks 三回调齐备（GREEN 由 streamChat 驱动）
+    expect(typeof capturedStreams[0].callbacks.onDelta).toBe('function');
+    expect(typeof capturedStreams[0].callbacks.onDone).toBe('function');
+    expect(typeof capturedStreams[0].callbacks.onError).toBe('function');
   });
 
-  it('chapterContent 为空 → 不注入 chapter_context 变量', async () => {
+  it('chapterContent 为空 → body 无 chapter_context 字段', async () => {
     const user = userEvent.setup();
     render(<ChatPanel projectId="p1" chapterId="c1" chapterContent="" />);
-    await user.type(screen.getByTestId('chat-input'), '你好');
-    await user.click(screen.getByTestId('chat-send'));
-    await waitFor(() => {
-      const call = executeMock.mock.calls[0][0] as { variables?: Record<string, string> };
-      expect(call.variables?.prompt).toBe('你好');
-      expect(call.variables?.chapter_context).toBeUndefined();
-    });
+    await sendAndAwaitStream(user, '你好');
+
+    expect(capturedStreams[0].body.prompt).toBe('你好');
+    expect(capturedStreams[0].body.chapter_context).toBeUndefined();
   });
 });
 
-describe('ChatPanel — 回复与插入正文', () => {
-  it('轮询 completed → content 意图：assistant 消息只显示 body + 自动选中 + 共享插入按钮', async () => {
-    // #477：带标记的产出正文（LLM 按 prompt 约定用标记包裹正文）
-    statusMock.mockResolvedValue(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n他握紧了剑。\n<<<END>>>'));
-    vi.useFakeTimers();
+describe('ChatPanel — 流式回复（#541 SSE 渐进追加）', () => {
+  it('渐进追加：onDelta("你") → ai 消息显示 "你"；再 onDelta("好") → "你好"（不是 done 一次性出现）', async () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
-    await user.type(screen.getByTestId('chat-input'), '解释这个角色的动机');
-    await user.click(screen.getByTestId('chat-send'));
+    await sendAndAwaitStream(user, '写一个开头');
     // 用户消息立即展示
-    expect(screen.getByTestId('chat-msg-user-0')).toHaveTextContent('解释这个角色的动机');
-    // 轮询 1s → completed
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    // 只显示提取的 body，不显示标记与前言
+    expect(screen.getByTestId('chat-msg-user-0')).toHaveTextContent('写一个开头');
+    // 第一个 delta 到达 → ai 消息出现且只含 '你'
+    emitDelta(0, '你');
+    expect(screen.getByTestId('chat-msg-ai-0')).toHaveTextContent('你');
+    // 第二个 delta → 追加为 '你好'
+    emitDelta(0, '好');
+    expect(screen.getByTestId('chat-msg-ai-0')).toHaveTextContent('你好');
+    // done 收尾 → 文本保持完整
+    emitDone(0);
+    expect(screen.getByTestId('chat-msg-ai-0')).toHaveTextContent('你好');
+  });
+
+  it('done 帧 → 最终文本用 parseChatReply 解析意图：content 只显示 body + 自动选中 + 共享插入按钮', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await sendAndAwaitStream(user, '解释这个角色的动机');
+    // 流式原文渐进累积（done 前展示原文，含标记）
+    emitDelta(0, '好的，以下是续写内容：');
+    emitDelta(0, '\n<<<CONTENT>>>\n他握紧了剑。\n<<<END>>>');
+    emitDone(0);
+    // done 后意图分离：只显示提取 body，不显示标记与前言
     expect(screen.getByTestId('chat-msg-ai-0')).toHaveTextContent('他握紧了剑。');
     expect(screen.getByTestId('chat-msg-ai-0')).not.toHaveTextContent('好的，以下是续写内容');
     expect(screen.getByTestId('chat-msg-ai-0')).not.toHaveTextContent('<<<CONTENT>>>');
@@ -215,81 +276,125 @@ describe('ChatPanel — 回复与插入正文', () => {
     expect(screen.queryByTestId('chat-insert-0')).toBeNull();
   });
 
-  it('点共享「插入选中」→ chapterStore.setContent(选中条 body，纯 body 无标记无前言)', async () => {
-    // #477：带标记的产出正文；默认最新选中 → 插入提取后的纯 body
-    statusMock.mockResolvedValue(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n他握紧了剑。\n<<<END>>>'));
-    vi.useFakeTimers();
+  it('conversation 回复（无标记）→ 显示完整原文，无选择控件、无插入按钮', async () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
-    await user.type(screen.getByTestId('chat-input'), '帮我写一段打斗场景');
-    await user.click(screen.getByTestId('chat-send'));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    await user.click(screen.getByTestId('chat-insert-selected'));
-    expect(useChapterStore.getState().content).toBe('他握紧了剑。');
+    await sendAndAwaitStream(user, '聊聊角色设定');
+    emitDelta(0, '对话回复内容');
+    emitDone(0);
+    expect(screen.getByTestId('chat-msg-ai-0')).toHaveTextContent('对话回复内容');
+    expect(screen.queryByTestId('chat-select-0')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-insert-selected')).not.toBeInTheDocument();
   });
-});
 
-describe('ChatPanel — 失败与并发保护', () => {
-  it('轮询 failed → 显示错误（含「对话失败」），不插入正文', async () => {
-    statusMock.mockResolvedValue({
-      execution_id: 'e-chat-1',
-      pipeline: 'builtin:chat',
-      project_id: 'p1',
-      status: 'failed',
-      stages: [],
-      trace: [],
-      final_output: '',
-      total_duration_ms: 500,
-      error: 'LLM 调用失败',
-    });
-    vi.useFakeTimers();
+  it('onError → 错误文案（write.chat.failed 含「对话失败」），不插入正文', async () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
-    await user.type(screen.getByTestId('chat-input'), '你好');
-    await user.click(screen.getByTestId('chat-send'));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
+    await sendAndAwaitStream(user, '你好');
+    emitError(0, '模型超时');
     expect(screen.getByTestId('chat-panel')).toHaveTextContent(/对话失败/);
+    expect(screen.getByTestId('chat-panel')).toHaveTextContent('模型超时');
     expect(useChapterStore.getState().content).toBe('已有正文第一段。');
   });
+});
 
-  it('发送中并发保护：execute 挂起时再次发送不触发第二次 execute', async () => {
-    let resolveExec!: (v: PipelineExecuteResponse) => void;
-    executeMock.mockReturnValue(new Promise((r) => { resolveExec = r; }));
+describe('ChatPanel — hermes 风格 UI（#541）', () => {
+  it('消息分列：user 消息 data-side="user"（靠右），ai 消息 data-side="ai"（靠左）', async () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
-    await user.type(screen.getByTestId('chat-input'), '第一条');
-    await user.click(screen.getByTestId('chat-send'));
-    await waitFor(() => expect(executeMock).toHaveBeenCalledTimes(1));
-    // 发送中：输入第二条并再次发送 → 无第二次 execute
-    await user.type(screen.getByTestId('chat-input'), '第二条');
-    await user.click(screen.getByTestId('chat-send'));
-    expect(executeMock).toHaveBeenCalledTimes(1);
-    await act(async () => {
-      resolveExec({
-        execution_id: 'e-chat-1',
-        pipeline: 'builtin:chat',
-        project_id: 'p1',
-        status: 'pending',
-        created_at: '',
-      });
-    });
+    await sendAndAwaitStream(user, '分列测试');
+    emitDelta(0, 'AI 回复');
+    expect(screen.getByTestId('chat-msg-user-0')).toHaveAttribute('data-side', 'user');
+    expect(screen.getByTestId('chat-msg-ai-0')).toHaveAttribute('data-side', 'ai');
+  });
+
+  it('角色标签 chat-msg-role：user 显示 t("write.chat.user")="你"，ai 显示 t("write.chat.ai")="AI"', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await sendAndAwaitStream(user, '角色标签');
+    emitDelta(0, 'AI 回复');
+    expect(within(screen.getByTestId('chat-msg-user-0')).getByTestId('chat-msg-role')).toHaveTextContent(
+      '你',
+    );
+    expect(within(screen.getByTestId('chat-msg-ai-0')).getByTestId('chat-msg-role')).toHaveTextContent(
+      'AI',
+    );
+  });
+
+  it('消息间空行：chat-messages 容器 className 含 space-y-3', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await sendAndAwaitStream(user, '空行测试');
+    expect(screen.getByTestId('chat-messages').className).toContain('space-y-3');
   });
 });
 
-describe('ChatPanel — 模型未配置前置校验（#474 P0）', () => {
-  /**
-   * 契约：用户未配置模型（providers 空 / 无 key_saved=true 的 chat provider）时点发送：
-   * - 不发 executePipeline 请求（不发 AI 请求）
-   * - toast 提示（type='warn'，文案引导去配置）
-   * 已配置模型（beforeEach 默认播种 READY_PROVIDER）行为不变：正常 execute。
-   *
-   * i18n key（GREEN 补 zh.ts/en.ts）：common.modelNotConfigured
-   */
-  it('未配置模型（providers 空）→ 点发送 → toast 提示 + 不发 execute 请求', async () => {
+describe('ChatPanel — 展开/收缩/拖动（#476 保留契约）', () => {
+  it('默认折叠：chat-messages 不渲染；chat-expand 可见', () => {
+    render(<ChatPanel {...OPTS} />);
+    expect(screen.getByTestId('chat-expand')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-messages')).not.toBeInTheDocument();
+  });
+
+  it('折叠态发送消息 → 自动展开：chat-messages 出现 + 用户消息可见 + chat-collapse 可见', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    expect(screen.queryByTestId('chat-messages')).not.toBeInTheDocument();
+    await user.type(screen.getByTestId('chat-input'), '自动展开测试');
+    await user.click(screen.getByTestId('chat-send'));
+    expect(screen.getByTestId('chat-messages')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-msg-user-0')).toHaveTextContent('自动展开测试');
+    expect(screen.getByTestId('chat-collapse')).toBeInTheDocument();
+  });
+
+  it('收缩 → chat-messages 隐藏；再展开 → 历史消息保留', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await user.type(screen.getByTestId('chat-input'), '保留测试');
+    await user.click(screen.getByTestId('chat-send'));
+    expect(screen.getByTestId('chat-messages')).toBeInTheDocument();
+    await user.click(screen.getByTestId('chat-collapse'));
+    expect(screen.queryByTestId('chat-messages')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-expand')).toBeInTheDocument();
+    await user.click(screen.getByTestId('chat-expand'));
+    expect(screen.getByTestId('chat-messages')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-msg-user-0')).toHaveTextContent('保留测试');
+  });
+
+  it('展开/收缩按钮在消息区之前（#542：按钮应在对话区顶部）', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await user.type(screen.getByTestId('chat-input'), '按钮位置');
+    await user.click(screen.getByTestId('chat-send'));
+    const btn = screen.getByTestId('chat-collapse');
+    const msgs = screen.getByTestId('chat-messages');
+    expect(btn.compareDocumentPosition(msgs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await user.click(screen.getByTestId('chat-collapse'));
+    const btn2 = screen.getByTestId('chat-expand');
+    const input = screen.getByTestId('chat-input');
+    expect(btn2.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('鼠标拖动调整对话区高度（handle mousedown → window mousemove 向上拖 → data-height 增大）', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await user.type(screen.getByTestId('chat-input'), '拖拽高度');
+    await user.click(screen.getByTestId('chat-send'));
+    const messages = screen.getByTestId('chat-messages');
+    const before = messages.getAttribute('data-height');
+    expect(before).toBeTruthy();
+    const handle = screen.getByTestId('chat-resize-handle');
+    fireEvent.mouseDown(handle, { clientX: 100, clientY: 120 });
+    fireEvent.mouseMove(window, { clientX: 100, clientY: 80 }); // 向上拖 40px → 高度增大
+    fireEvent.mouseUp(window);
+    const after = messages.getAttribute('data-height');
+    expect(after).toBeTruthy();
+    expect(Number(after)).toBeGreaterThan(Number(before));
+  });
+});
+
+describe('ChatPanel — 模型未配置前置校验（#474 保留契约）', () => {
+  it('未配置模型（providers 空）→ 点发送 → toast 提示 + 不调 streamChat', async () => {
     useModelsStore.setState({ providers: [], loading: false, error: null });
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/provider-configs') {
@@ -301,14 +406,12 @@ describe('ChatPanel — 模型未配置前置校验（#474 P0）', () => {
     render(<ChatPanel {...OPTS} />);
     await user.type(screen.getByTestId('chat-input'), '帮我写一段打斗场景');
     await user.click(screen.getByTestId('chat-send'));
-    // toast 提示（引导去配置）
     expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
     expect(useToastStore.getState().toasts.some((t) => t.message.includes('配置'))).toBe(true);
-    // 不发 AI 请求
-    expect(executeMock).not.toHaveBeenCalled();
+    expect(streamChatMock).not.toHaveBeenCalled();
   });
 
-  it('未配置模型（provider 存在但 key_saved=false）→ 点发送 → toast + 不发 execute', async () => {
+  it('未配置模型（provider 存在但 key_saved=false）→ 点发送 → toast + 不调 streamChat', async () => {
     useModelsStore.setState({
       providers: [
         {
@@ -338,10 +441,10 @@ describe('ChatPanel — 模型未配置前置校验（#474 P0）', () => {
     await user.type(screen.getByTestId('chat-input'), '你好');
     await user.click(screen.getByTestId('chat-send'));
     expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
-    expect(executeMock).not.toHaveBeenCalled();
+    expect(streamChatMock).not.toHaveBeenCalled();
   });
 
-  it('Enter 键发送同样走前置校验（未配置 → toast + 不发 execute）', async () => {
+  it('Enter 键发送同样走前置校验（未配置 → toast + 不调 streamChat）', async () => {
     useModelsStore.setState({ providers: [], loading: false, error: null });
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/provider-configs') {
@@ -354,224 +457,67 @@ describe('ChatPanel — 模型未配置前置校验（#474 P0）', () => {
     await user.type(screen.getByTestId('chat-input'), '回车发送');
     await user.keyboard('{Enter}');
     expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
-    expect(executeMock).not.toHaveBeenCalled();
+    expect(streamChatMock).not.toHaveBeenCalled();
   });
 
-  it('已配置模型（默认播种）→ 发送正常 execute（行为不变）', async () => {
+  it('已配置模型（默认播种）→ 发送 → streamChat 调用（body 含 project_id + prompt）', async () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
-    await user.type(screen.getByTestId('chat-input'), '已配置模型对话');
-    await user.click(screen.getByTestId('chat-send'));
-    await waitFor(() => {
-      expect(executeMock).toHaveBeenCalledWith(
-        expect.objectContaining({ pipeline: 'builtin:chat' }),
-      );
-    });
+    await sendAndAwaitStream(user, '已配置模型对话');
+    expect(capturedStreams[0].body).toEqual(
+      expect.objectContaining({ project_id: 'p1', prompt: '已配置模型对话' }),
+    );
   });
 });
 
-describe('ChatPanel — 展开/收缩/拖动（#476 D2：对话区高度交互）', () => {
-  /**
-   * 契约：#476 底部 chat 搬入工具栏栏后，对话区支持展开/收缩/鼠标拖动调整高度。
-   * 布局与交互语义见文件头 docstring（chat-expand / chat-collapse / chat-messages /
-   * chat-resize-handle / 默认折叠 / 发送自动展开 / 拖动改 data-height）。
-   *
-   * 拖动模拟（#388 窗口级拖拽模式）：mousedown 打 handle 元素、mousemove/mouseup 打 window。
-   * 高度断言只锁「变化 + 变大」（clamp 上下限由 GREEN 定，默认展开高度须低于上限）。
-   */
-  it('默认折叠：chat-messages 不渲染；chat-expand 可见', () => {
-    render(<ChatPanel {...OPTS} />);
-    expect(screen.getByTestId('chat-expand')).toBeInTheDocument();
-    expect(screen.queryByTestId('chat-messages')).not.toBeInTheDocument();
-  });
-
-  it('折叠态发送消息 → 自动展开：chat-messages 出现 + 用户消息可见 + chat-collapse 可见', async () => {
-    const user = userEvent.setup();
-    render(<ChatPanel {...OPTS} />);
-    expect(screen.queryByTestId('chat-messages')).not.toBeInTheDocument();
-    await user.type(screen.getByTestId('chat-input'), '自动展开测试');
-    await user.click(screen.getByTestId('chat-send'));
-    expect(screen.getByTestId('chat-messages')).toBeInTheDocument();
-    expect(screen.getByTestId('chat-msg-user-0')).toHaveTextContent('自动展开测试');
-    expect(screen.getByTestId('chat-collapse')).toBeInTheDocument();
-  });
-
-  it('收缩 → chat-messages 隐藏；再展开 → 历史消息保留', async () => {
-    const user = userEvent.setup();
-    render(<ChatPanel {...OPTS} />);
-    await user.type(screen.getByTestId('chat-input'), '保留测试');
-    await user.click(screen.getByTestId('chat-send'));
-    expect(screen.getByTestId('chat-messages')).toBeInTheDocument();
-    // 收缩
-    await user.click(screen.getByTestId('chat-collapse'));
-    expect(screen.queryByTestId('chat-messages')).not.toBeInTheDocument();
-    expect(screen.getByTestId('chat-expand')).toBeInTheDocument();
-    // 再展开 → 消息保留
-    await user.click(screen.getByTestId('chat-expand'));
-    expect(screen.getByTestId('chat-messages')).toBeInTheDocument();
-    expect(screen.getByTestId('chat-msg-user-0')).toHaveTextContent('保留测试');
-  });
-
-  it('展开/收缩按钮在消息区之前（#542：按钮应在对话区顶部）', async () => {
-    const user = userEvent.setup();
-    render(<ChatPanel {...OPTS} />);
-    await user.type(screen.getByTestId('chat-input'), '按钮位置');
-    await user.click(screen.getByTestId('chat-send'));
-    const btn = screen.getByTestId('chat-collapse');
-    const msgs = screen.getByTestId('chat-messages');
-    // 按钮必须位于消息区之前（DOM 顺序：顶部）
-    expect(btn.compareDocumentPosition(msgs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // 折叠态：chat-expand 也在输入区之前（顶部行）
-    await user.click(screen.getByTestId('chat-collapse'));
-    const btn2 = screen.getByTestId('chat-expand');
-    const input = screen.getByTestId('chat-input');
-    expect(btn2.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
-  it('鼠标拖动调整对话区高度（handle mousedown → window mousemove 向上拖 → data-height 增大）', async () => {
-    const user = userEvent.setup();
-    render(<ChatPanel {...OPTS} />);
-    await user.type(screen.getByTestId('chat-input'), '拖拽高度');
-    await user.click(screen.getByTestId('chat-send'));
-    const messages = screen.getByTestId('chat-messages');
-    const before = messages.getAttribute('data-height');
-    expect(before).toBeTruthy();
-    const handle = screen.getByTestId('chat-resize-handle');
-    fireEvent.mouseDown(handle, { clientX: 100, clientY: 120 });
-    fireEvent.mouseMove(window, { clientX: 100, clientY: 80 }); // 向上拖 40px → 高度增大
-    fireEvent.mouseUp(window);
-    const after = messages.getAttribute('data-height');
-    expect(after).toBeTruthy();
-    expect(Number(after)).toBeGreaterThan(Number(before));
-  });
-});
-
-describe('ChatPanel — 意图分离（#477 D8）', () => {
-  /**
-   * 契约：#477 聊天回复意图分离——success 到达时用 parseChatReply(final_output)
-   * 判定意图（src/lib/chatIntent.ts，GREEN 建）：
-   * - content 意图（含成对 <<<CONTENT>>> / <<<END>>> 标记）：消息只显示提取 body，
-   *   渲染选择控件 chat-select-<n>（data-selected 选中态），可插入
-   * - conversation 意图（无标记）：消息显示完整原文，无选择/插入控件
-   * - chat-insert-selected 仅当存在至少一条 content 消息时渲染
-   *
-   * i18n key（GREEN 补 zh.ts/en.ts）：write.chat.select（选中此回复，选择控件 aria-label）
-   */
-  it('无标记回复（默认 final_output）→ conversation：显示原文，无选择控件、无插入按钮', async () => {
-    vi.useFakeTimers();
-    const user = userEvent.setup();
-    render(<ChatPanel {...OPTS} />);
-    await user.type(screen.getByTestId('chat-input'), '聊聊角色设定');
-    await user.click(screen.getByTestId('chat-send'));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    // conversation：完整原文展示
-    expect(screen.getByTestId('chat-msg-ai-0')).toHaveTextContent('对话回复内容');
-    // 无选择控件 / 无共享插入按钮
-    expect(screen.queryByTestId('chat-select-0')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('chat-insert-selected')).not.toBeInTheDocument();
-  });
-
+describe('ChatPanel — 意图分离与多生成单选插入（#477 保留契约，流式版）', () => {
   it('混合：第 1 条 content + 第 2 条 conversation → 仅 content 条可选，选中仍在 seq 0', async () => {
-    vi.useFakeTimers();
-    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n他握紧了剑。\n<<<END>>>'));
-    statusMock.mockResolvedValueOnce(completedReply('对话回复内容'));
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
-    // 第一次发送 → content 回复
-    await user.type(screen.getByTestId('chat-input'), '写一段打斗');
-    await user.click(screen.getByTestId('chat-send'));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
+    await sendAndAwaitStream(user, '写一段打斗', 0);
+    driveContentReply(0, '他握紧了剑。');
     expect(screen.getByTestId('chat-select-0')).toHaveAttribute('data-selected', 'true');
-    // 第二次发送 → conversation 回复（无标记）
-    await user.type(screen.getByTestId('chat-input'), '谢谢');
-    await user.click(screen.getByTestId('chat-send'));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    // 第 2 条为 conversation：无选择控件
+    await sendAndAwaitStream(user, '谢谢', 1);
+    driveConversationReply(1, '不客气，随时再聊');
     expect(screen.queryByTestId('chat-select-1')).not.toBeInTheDocument();
-    // 共享插入按钮仍渲染（存在 content 消息）；选中保持在 seq 0
     expect(screen.getByTestId('chat-insert-selected')).toBeInTheDocument();
     expect(screen.getByTestId('chat-select-0')).toHaveAttribute('data-selected', 'true');
   });
-});
 
-describe('ChatPanel — 多生成单选插入（#477）', () => {
-  /**
-   * 契约：多条 content 回复时单选互斥——每条渲染 chat-select-<n>（data-selected
-   * 选中态），新到达的 content 消息自动成为选中条（最新优先）；共享
-   * chat-insert-selected 只插入选中条的 body；旧 per-message chat-insert-<n>
-   * 按钮已删除（任何场景都不应出现）。
-   */
   it('两条 content → 均渲染选择控件；新到第 2 条自动选中（互斥）', async () => {
-    vi.useFakeTimers();
-    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n第一段正文。\n<<<END>>>'));
-    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n第二段正文。\n<<<END>>>'));
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
-    await user.type(screen.getByTestId('chat-input'), '写第一段');
-    await user.click(screen.getByTestId('chat-send'));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    await user.type(screen.getByTestId('chat-input'), '写第二段');
-    await user.click(screen.getByTestId('chat-send'));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    // 两条 content 均渲染选择控件
+    await sendAndAwaitStream(user, '写第一段', 0);
+    driveContentReply(0, '第一段正文。');
+    await sendAndAwaitStream(user, '写第二段', 1);
+    driveContentReply(1, '第二段正文。');
     expect(screen.getByTestId('chat-select-0')).toBeInTheDocument();
     expect(screen.getByTestId('chat-select-1')).toBeInTheDocument();
-    // 最新到达的第 2 条自动选中（data-selected 互斥）
     expect(screen.getByTestId('chat-select-1')).toHaveAttribute('data-selected', 'true');
     expect(screen.getByTestId('chat-select-0')).toHaveAttribute('data-selected', 'false');
-    // 共享插入按钮存在；旧 per-message 按钮不存在
     expect(screen.getByTestId('chat-insert-selected')).toBeInTheDocument();
     expect(screen.queryByTestId('chat-insert-0')).toBeNull();
   });
 
   it('点 chat-select-0 → 选中切换到第 1 条（互斥）', async () => {
-    vi.useFakeTimers();
-    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n第一段正文。\n<<<END>>>'));
-    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n第二段正文。\n<<<END>>>'));
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
-    await user.type(screen.getByTestId('chat-input'), '写第一段');
-    await user.click(screen.getByTestId('chat-send'));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    await user.type(screen.getByTestId('chat-input'), '写第二段');
-    await user.click(screen.getByTestId('chat-send'));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
+    await sendAndAwaitStream(user, '写第一段', 0);
+    driveContentReply(0, '第一段正文。');
+    await sendAndAwaitStream(user, '写第二段', 1);
+    driveContentReply(1, '第二段正文。');
     await user.click(screen.getByTestId('chat-select-0'));
     expect(screen.getByTestId('chat-select-0')).toHaveAttribute('data-selected', 'true');
     expect(screen.getByTestId('chat-select-1')).toHaveAttribute('data-selected', 'false');
   });
 
   it('选中第 1 条后点插入 → 只插入选中条 body（+ toast 已插入正文）', async () => {
-    vi.useFakeTimers();
-    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n第一段正文。\n<<<END>>>'));
-    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n第二段正文。\n<<<END>>>'));
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
-    await user.type(screen.getByTestId('chat-input'), '写第一段');
-    await user.click(screen.getByTestId('chat-send'));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    await user.type(screen.getByTestId('chat-input'), '写第二段');
-    await user.click(screen.getByTestId('chat-send'));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    // 手动切到第 1 条 → 插入第 1 条 body
+    await sendAndAwaitStream(user, '写第一段', 0);
+    driveContentReply(0, '第一段正文。');
+    await sendAndAwaitStream(user, '写第二段', 1);
+    driveContentReply(1, '第二段正文。');
     await user.click(screen.getByTestId('chat-select-0'));
     await user.click(screen.getByTestId('chat-insert-selected'));
     expect(useChapterStore.getState().content).toBe('第一段正文。');
@@ -579,23 +525,38 @@ describe('ChatPanel — 多生成单选插入（#477）', () => {
   });
 
   it('不手动切换（默认最新选中）点插入 → 插入第 2 条 body', async () => {
-    vi.useFakeTimers();
-    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n第一段正文。\n<<<END>>>'));
-    statusMock.mockResolvedValueOnce(completedReply('好的，以下是续写内容：\n<<<CONTENT>>>\n第二段正文。\n<<<END>>>'));
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
-    await user.type(screen.getByTestId('chat-input'), '写第一段');
-    await user.click(screen.getByTestId('chat-send'));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    await user.type(screen.getByTestId('chat-input'), '写第二段');
-    await user.click(screen.getByTestId('chat-send'));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    // 默认最新选中（第 2 条）→ 插入第 2 条 body
+    await sendAndAwaitStream(user, '写第一段', 0);
+    driveContentReply(0, '第一段正文。');
+    await sendAndAwaitStream(user, '写第二段', 1);
+    driveContentReply(1, '第二段正文。');
     await user.click(screen.getByTestId('chat-insert-selected'));
     expect(useChapterStore.getState().content).toBe('第二段正文。');
+  });
+});
+
+describe('ChatPanel — 失败与并发保护（#541 流式版）', () => {
+  it('流式 in-flight 时再次发送 → 不触发第二次 streamChat', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await sendAndAwaitStream(user, '第一条', 0);
+    // 流式进行中（未 onDone）：再次输入并发送 → 无第二次 streamChat
+    await user.type(screen.getByTestId('chat-input'), '第二条');
+    await user.click(screen.getByTestId('chat-send'));
+    expect(streamChatMock).toHaveBeenCalledTimes(1);
+    // 收尾：done 结束流
+    emitDone(0);
+  });
+
+  it('onDone 结束后再次发送 → 触发第二次 streamChat（对话可继续）', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await sendAndAwaitStream(user, '第一条', 0);
+    driveConversationReply(0, '回复一');
+    await sendAndAwaitStream(user, '第二条', 1);
+    driveConversationReply(1, '回复二');
+    expect(screen.getByTestId('chat-msg-ai-0')).toHaveTextContent('回复一');
+    expect(screen.getByTestId('chat-msg-ai-1')).toHaveTextContent('回复二');
   });
 });

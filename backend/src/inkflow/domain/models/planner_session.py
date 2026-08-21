@@ -38,6 +38,9 @@ class PlannerSession(BaseModel):
             {"round", "question_id", "answer", "conflict_with", "resolution"}）.
         confirming: 末尾总体确认阶段标志（v1.2 #475：必答项齐备后置 True，
             非 status 值）.
+        start_type: 起点模式（#544）：new / continue / branch.
+        source_outline_id: 起点源大纲（continue/branch 用；new 为 None）.
+        copied_outline_id: branch 复制出的新大纲根 id（#544 命名裁定）.
         writing_plan_id: 会话完成后关联的 WritingPlan UUID（None = 未完成）.
         created_at / updated_at: 时间戳.
     """
@@ -60,6 +63,12 @@ class PlannerSession(BaseModel):
     "conflict_with", "resolution"}）."""
     confirming: bool = False
     """末尾总体确认阶段标志（v1.2 #475：必答项齐备后置 True，非 status 值）."""
+    start_type: str = "new"
+    """起点模式（#544）：new / continue / branch。"""
+    source_outline_id: uuid.UUID | None = None
+    """起点源大纲（continue/branch 用；new 为 None）。"""
+    copied_outline_id: uuid.UUID | None = None
+    """branch 复制出的新大纲根 id（#544 命名裁定，避免与 source 混淆）。"""
     writing_plan_id: uuid.UUID | None = None
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
