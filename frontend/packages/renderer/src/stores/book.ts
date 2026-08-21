@@ -80,7 +80,12 @@ interface BookState {
   conflicts: ConflictRecord[];
   sessionConfirming: boolean;
 
-  startPlanner: (projectId: string, oneLiner: string) => Promise<void>;
+  startPlanner: (
+    projectId: string,
+    oneLiner: string,
+    mode?: string,
+    sourceOutlineId?: string | null,
+  ) => Promise<void>;
   respond: (answers: Record<string, string>) => Promise<void>;
   respondAuto: () => Promise<void>;
   respondConfirm: () => Promise<void>;
@@ -156,10 +161,17 @@ export const useBookStore = create<BookState>((set, get) => ({
   conflicts: [],
   sessionConfirming: false,
 
-  startPlanner: async (projectId, oneLiner) => {
+  startPlanner: async (projectId, oneLiner, mode, sourceOutlineId) => {
     set({ loading: true, error: null, oneLiner });
     try {
-      const res = await startPlanner({ project_id: projectId, one_liner: oneLiner });
+      // #544：mode 恒有值（组件恒传 4 参；store 兜底 'new'）→ 请求体恒含 mode；
+      // source_outline_id 仅选中（truthy）时包含
+      const res = await startPlanner({
+        project_id: projectId,
+        one_liner: oneLiner,
+        ...(mode ? { mode } : { mode: 'new' }),
+        ...(sourceOutlineId ? { source_outline_id: sourceOutlineId } : {}),
+      });
       const questionMsgs: PlannerChatMessage[] = res.questions.map(
         (q): PlannerChatMessage => ({
           id: nextMsgId(),

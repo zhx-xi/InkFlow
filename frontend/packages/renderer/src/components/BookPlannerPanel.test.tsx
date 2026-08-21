@@ -175,7 +175,8 @@ describe('BookPlannerPanel — 启动访谈', () => {
     await user.type(screen.getByTestId('book-one-liner'), '写一本关于时间旅者的悬疑小说');
     await user.click(screen.getByTestId('book-planner-start'));
     await waitFor(() => {
-      expect(startSpy).toHaveBeenCalledWith('p1', '写一本关于时间旅者的悬疑小说');
+      // #544 契约升级：组件恒传 4 参（projectId, oneLiner, mode='new', sourceOutlineId=null）
+      expect(startSpy).toHaveBeenCalledWith('p1', '写一本关于时间旅者的悬疑小说', 'new', null);
     });
     // 消息流容器 + 消息内嵌问题（保留既有 book-question-<qid>）
     expect(screen.getByTestId('book-msg-list')).toBeInTheDocument();
@@ -482,8 +483,278 @@ describe('BookPlannerPanel — 按钮改名 + 模型未配置前置校验（#474
     await user.type(screen.getByTestId('book-one-liner'), '写一本关于时间旅者的悬疑小说');
     await user.click(screen.getByTestId('book-planner-start'));
     await waitFor(() => {
-      expect(startSpy).toHaveBeenCalledWith('p1', '写一本关于时间旅者的悬疑小说');
+      // #544 契约升级：组件恒传 4 参（projectId, oneLiner, mode='new', sourceOutlineId=null）
+      expect(startSpy).toHaveBeenCalledWith('p1', '写一本关于时间旅者的悬疑小说', 'new', null);
     });
     startSpy.mockRestore();
+  });
+});
+
+/**
+ * #544：书级编排项目可选 + 起点模板（new/continue/branch）+ 源大纲选择器（RED 契约测试）
+ *
+ * 契约（GREEN 实现必须匹配；实现域：BookPlannerPanel.tsx / stores/book.ts / api/books.ts / zh.ts / en.ts）：
+ * 1. 项目 Select（data-testid="book-project-select"，面板顶部原生 <select>）：
+ *    - 选项来自 useProjectStore.projects（label=name / value=id）
+ *    - 默认值 = 传入的 projectId prop
+ *    - 切换选择不改变 useProjectStore.currentProjectId（独立选择，不联动全局）；点启动后 startPlanner 以选中项目 id 调用
+ * 2. 起点模板（data-testid="book-start-mode"，原生 <select>，选项 value=new/continue/branch）：
+ *    - 文案 i18n：book.startMode.new='新书' / book.startMode.continue='续写' / book.startMode.branch='分支'
+ *    - 默认 new
+ * 3. 源大纲选择器（data-testid="book-source-outline"，原生 <select>）：
+ *    - 仅 mode=continue 或 branch 时渲染（new 隐藏）
+ *    - 选项来自选中项目的 outlines：GET /api/v1/projects/{selectedProjectId}/outlines → { items: [{id, name}] }
+ *    - 未选时 start 不传 source_outline_id
+ * 4. startPlanner 透传（组件→store）：startPlanner(projectId, oneLiner, mode, sourceOutlineId)
+ *    - new → ('p1', text, 'new', null)；continue/branch → ('p1', text, mode, sourceOutlineId | null)
+ * 5. store→api 请求体：startPlanner({ project_id, one_liner, ...(mode ? {mode} : {}), ...(sourceOutlineId ? {source_outline_id} : {}) })
+ *    —— mode 恒有值（默认 new 也传 'new'）→ 请求体恒含 mode；source_outline_id 仅选中时含
+ *
+ * ⚠️ GREEN 联动既有用例：本文件「启动访谈」L178 与「#474 P0」L485 断言 startSpy 2 参调用
+ * （toHaveBeenCalledWith('p1', text)），按新契约组件将恒传 4 参（'p1', text, 'new', null）——GREEN 时必须同步改为 4 参断言。
+ * ⚠️ i18n 补键（zh.ts/en.ts）：book.startMode.new / book.startMode.continue / book.startMode.branch。
+ * ⚠️ api/books.ts 补类型：startPlanner body 参数（PlannerStartRequest）加可选 mode?: string、source_outline_id?: string。
+ *
+ * 守护用例（RED 期 PASS，防回归）：mode=new 隐藏 book-source-outline；api/books.startPlanner 请求体透传
+ * （运行时已透传，RED 缺的是类型——vitest 不查类型故 PASS，GREEN 补类型后仍 PASS）。
+ *
+ * 数据源 mock：项目 = useProjectStore.setState 播种（beforeEach）；源大纲 = apiFetchMock 应答
+ * /api/v1/projects/{id}/outlines（沿用文件既有 ../api/client apiFetch mock 形态）。
+ */
+describe('BookPlannerPanel — 项目选择 + 起点模板 + 源大纲（#544）', () => {
+  const projectP1: Project = {
+    id: 'p1',
+    name: '时间旅者',
+    genre: '悬疑',
+    language: 'zh',
+    target_words: 800000,
+    config: {},
+    created_at: '2026-08-17T10:00:00Z',
+    updated_at: '2026-08-17T10:00:00Z',
+  };
+  const projectP2: Project = {
+    id: 'p2',
+    name: '星际拓荒',
+    genre: '科幻',
+    language: 'zh',
+    target_words: 600000,
+    config: {},
+    created_at: '2026-08-17T10:00:00Z',
+    updated_at: '2026-08-17T10:00:00Z',
+  };
+  const projectP3: Project = {
+    id: 'p3',
+    name: '雾都侦探',
+    genre: '推理',
+    language: 'zh',
+    target_words: 500000,
+    config: {},
+    created_at: '2026-08-17T10:00:00Z',
+    updated_at: '2026-08-17T10:00:00Z',
+  };
+
+  /** 源大纲 seed（LibraryItemDTO 形态：GET /projects/{id}/outlines → { items }） */
+  const outlinesP1 = [
+    { id: 'o-1', name: '第一卷 大纲' },
+    { id: 'o-2', name: '全书总纲' },
+  ];
+  const outlinesP2 = [{ id: 'o-9', name: '第二书大纲' }];
+
+  beforeEach(() => {
+    // 清理文件内先前 describe 遗留的 store 方法 spy（恢复真实实现，走真实 store→api 链）；
+    // restoreAllMocks 会清空 apiFetchMock 实现，需重设（含 outlines 应答）
+    vi.restoreAllMocks();
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/provider-configs') {
+        return { items: [READY_PROVIDER], total: 1, offset: 0, limit: 50 };
+      }
+      if (path === '/api/v1/projects/p1/outlines') {
+        return { items: outlinesP1 };
+      }
+      if (path === '/api/v1/projects/p2/outlines') {
+        return { items: outlinesP2 };
+      }
+      return { run_id: 'wp-1', status: 'completed' };
+    });
+    useProjectStore.setState({ projects: [projectP1, projectP2, projectP3], currentProjectId: 'p1' });
+  });
+
+  it('项目 Select：选项来自 useProjectStore.projects（label=name/value=id），默认值=传入 projectId prop', () => {
+    render(<BookPlannerPanel projectId="p1" />);
+    const select = screen.getByTestId('book-project-select') as HTMLSelectElement;
+    expect(select).toBeInTheDocument();
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['p1', 'p2', 'p3']);
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['时间旅者', '星际拓荒', '雾都侦探']);
+    expect(select.value).toBe('p1');
+  });
+
+  it('切换项目选择 → useProjectStore.currentProjectId 不变（独立选择）；startPlanner 以选中项目 id 调用', async () => {
+    const user = userEvent.setup();
+    const startSpy = vi.spyOn(useBookStore.getState(), 'startPlanner').mockResolvedValue();
+    render(<BookPlannerPanel projectId="p1" />);
+    await user.selectOptions(screen.getByTestId('book-project-select'), 'p2');
+    expect(useProjectStore.getState().currentProjectId).toBe('p1');
+    await user.type(screen.getByTestId('book-one-liner'), '写一本关于时间旅者的悬疑小说');
+    await user.click(screen.getByTestId('book-planner-start'));
+    await waitFor(() => {
+      expect(startSpy).toHaveBeenCalledWith('p2', '写一本关于时间旅者的悬疑小说', 'new', null);
+    });
+  });
+
+  it('起点模板：book-start-mode 三选项（new/continue/branch，文案 新书/续写/分支），默认 new', () => {
+    render(<BookPlannerPanel projectId="p1" />);
+    const modeSelect = screen.getByTestId('book-start-mode') as HTMLSelectElement;
+    expect(Array.from(modeSelect.options).map((o) => o.value)).toEqual(['new', 'continue', 'branch']);
+    expect(Array.from(modeSelect.options).map((o) => o.textContent)).toEqual(['新书', '续写', '分支']);
+    expect(modeSelect.value).toBe('new');
+  });
+
+  it('mode=new（默认）→ book-source-outline 不渲染（守护用例：RED 期 PASS，GREEN 后防回归）', () => {
+    render(<BookPlannerPanel projectId="p1" />);
+    expect(screen.queryByTestId('book-source-outline')).not.toBeInTheDocument();
+  });
+
+  it('mode=continue → 渲染 book-source-outline，选项来自选中项目 outlines（GET /projects/p1/outlines）', async () => {
+    const user = userEvent.setup();
+    render(<BookPlannerPanel projectId="p1" />);
+    await user.selectOptions(screen.getByTestId('book-start-mode'), 'continue');
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects/p1/outlines');
+    });
+    const outlineSelect = screen.getByTestId('book-source-outline') as HTMLSelectElement;
+    expect(outlineSelect).toBeInTheDocument();
+    const labels = Array.from(outlineSelect.options).map((o) => o.textContent);
+    expect(labels).toContain('第一卷 大纲');
+    expect(labels).toContain('全书总纲');
+  });
+
+  it('切换项目选择 → 源大纲按新选中项目重拉（GET /projects/p2/outlines，选项=第二书大纲）', async () => {
+    const user = userEvent.setup();
+    render(<BookPlannerPanel projectId="p1" />);
+    await user.selectOptions(screen.getByTestId('book-project-select'), 'p2');
+    await user.selectOptions(screen.getByTestId('book-start-mode'), 'continue');
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects/p2/outlines');
+    });
+    const outlineSelect = screen.getByTestId('book-source-outline') as HTMLSelectElement;
+    expect(Array.from(outlineSelect.options).map((o) => o.textContent)).toContain('第二书大纲');
+  });
+
+  it('startPlanner 透传：mode=new（默认）→ (projectId, oneLiner, "new", null)', async () => {
+    const user = userEvent.setup();
+    const startSpy = vi.spyOn(useBookStore.getState(), 'startPlanner').mockResolvedValue();
+    render(<BookPlannerPanel projectId="p1" />);
+    await user.type(screen.getByTestId('book-one-liner'), '写一本关于时间旅者的悬疑小说');
+    await user.click(screen.getByTestId('book-planner-start'));
+    await waitFor(() => {
+      expect(startSpy).toHaveBeenCalledWith('p1', '写一本关于时间旅者的悬疑小说', 'new', null);
+    });
+  });
+
+  it('startPlanner 透传：mode=continue + 选源大纲 → (projectId, oneLiner, "continue", sourceOutlineId)', async () => {
+    const user = userEvent.setup();
+    const startSpy = vi.spyOn(useBookStore.getState(), 'startPlanner').mockResolvedValue();
+    render(<BookPlannerPanel projectId="p1" />);
+    await user.selectOptions(screen.getByTestId('book-start-mode'), 'continue');
+    const outlineSelect = (await screen.findByTestId('book-source-outline')) as HTMLSelectElement;
+    await waitFor(() => {
+      expect(Array.from(outlineSelect.options).map((o) => o.value)).toContain('o-1');
+    });
+    await user.selectOptions(outlineSelect, 'o-1');
+    await user.type(screen.getByTestId('book-one-liner'), '写一本关于时间旅者的悬疑小说');
+    await user.click(screen.getByTestId('book-planner-start'));
+    await waitFor(() => {
+      expect(startSpy).toHaveBeenCalledWith('p1', '写一本关于时间旅者的悬疑小说', 'continue', 'o-1');
+    });
+  });
+
+  it('startPlanner 透传：mode=continue 未选源大纲 → (projectId, oneLiner, "continue", null)', async () => {
+    const user = userEvent.setup();
+    const startSpy = vi.spyOn(useBookStore.getState(), 'startPlanner').mockResolvedValue();
+    render(<BookPlannerPanel projectId="p1" />);
+    await user.selectOptions(screen.getByTestId('book-start-mode'), 'continue');
+    await screen.findByTestId('book-source-outline');
+    await user.type(screen.getByTestId('book-one-liner'), '写一本关于时间旅者的悬疑小说');
+    await user.click(screen.getByTestId('book-planner-start'));
+    await waitFor(() => {
+      expect(startSpy).toHaveBeenCalledWith('p1', '写一本关于时间旅者的悬疑小说', 'continue', null);
+    });
+  });
+
+  it('startPlanner 透传：mode=branch + 选源大纲 → (projectId, oneLiner, "branch", sourceOutlineId)', async () => {
+    const user = userEvent.setup();
+    const startSpy = vi.spyOn(useBookStore.getState(), 'startPlanner').mockResolvedValue();
+    render(<BookPlannerPanel projectId="p1" />);
+    await user.selectOptions(screen.getByTestId('book-start-mode'), 'branch');
+    const outlineSelect = (await screen.findByTestId('book-source-outline')) as HTMLSelectElement;
+    await waitFor(() => {
+      expect(Array.from(outlineSelect.options).map((o) => o.value)).toContain('o-1');
+    });
+    await user.selectOptions(outlineSelect, 'o-1');
+    await user.type(screen.getByTestId('book-one-liner'), '写一本关于时间旅者的悬疑小说');
+    await user.click(screen.getByTestId('book-planner-start'));
+    await waitFor(() => {
+      expect(startSpy).toHaveBeenCalledWith('p1', '写一本关于时间旅者的悬疑小说', 'branch', 'o-1');
+    });
+  });
+
+  it('store→api 请求体：mode=continue + source_outline_id=o-1 → POST /planner body 含两者（真实 store 链）', async () => {
+    // 不 spy startPlanner：走真实 store → api/books.startPlanner → apiFetchMock（beforeEach restoreAllMocks 已恢复真实实现）
+    const user = userEvent.setup();
+    render(<BookPlannerPanel projectId="p1" />);
+    await user.type(screen.getByTestId('book-one-liner'), '写一本关于时间旅者的悬疑小说');
+    await user.selectOptions(screen.getByTestId('book-start-mode'), 'continue');
+    const outlineSelect = (await screen.findByTestId('book-source-outline')) as HTMLSelectElement;
+    await waitFor(() => {
+      expect(Array.from(outlineSelect.options).map((o) => o.value)).toContain('o-1');
+    });
+    await user.selectOptions(outlineSelect, 'o-1');
+    await user.click(screen.getByTestId('book-planner-start'));
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/planner', {
+        method: 'POST',
+        body: expect.objectContaining({
+          project_id: 'p1',
+          one_liner: '写一本关于时间旅者的悬疑小说',
+          mode: 'continue',
+          source_outline_id: 'o-1',
+        }),
+      });
+    });
+  });
+
+  it('store→api 请求体：默认 new → body 含 mode:"new" 且无 source_outline_id（仅在有值时包含）', async () => {
+    const user = userEvent.setup();
+    render(<BookPlannerPanel projectId="p1" />);
+    await user.type(screen.getByTestId('book-one-liner'), '写一本关于时间旅者的悬疑小说');
+    await user.click(screen.getByTestId('book-planner-start'));
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/planner', {
+        method: 'POST',
+        body: expect.objectContaining({
+          project_id: 'p1',
+          one_liner: '写一本关于时间旅者的悬疑小说',
+          mode: 'new',
+        }),
+      });
+    });
+    const plannerCalls = apiFetchMock.mock.calls.filter((c) => c[0] === '/api/v1/agent/books/planner');
+    const body = plannerCalls[plannerCalls.length - 1]?.[1]?.body as Record<string, unknown>;
+    expect(body).not.toHaveProperty('source_outline_id');
+  });
+
+  it('api/books.startPlanner 请求体透传（守护用例：运行时已透传 RED PASS；GREEN 补 mode?/source_outline_id? 类型）', async () => {
+    const { startPlanner: apiStartPlanner } = await import('../api/books');
+    // 有值 → 透传
+    await apiStartPlanner({ project_id: 'p1', one_liner: 'x', mode: 'continue', source_outline_id: 'o-1' } as never);
+    expect(apiFetchMock).toHaveBeenLastCalledWith('/api/v1/agent/books/planner', {
+      method: 'POST',
+      body: { project_id: 'p1', one_liner: 'x', mode: 'continue', source_outline_id: 'o-1' },
+    });
+    // 缺省 → 请求体不含 mode/source_outline_id 键
+    await apiStartPlanner({ project_id: 'p1', one_liner: 'x' } as never);
+    const calls = apiFetchMock.mock.calls.filter((c) => c[0] === '/api/v1/agent/books/planner');
+    const body = calls[calls.length - 1]?.[1]?.body as Record<string, unknown>;
+    expect(body).toEqual({ project_id: 'p1', one_liner: 'x' });
   });
 });

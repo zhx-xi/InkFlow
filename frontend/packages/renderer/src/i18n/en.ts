@@ -579,6 +579,11 @@ export const en: Record<string, string> = {
   'book.plan.auto': 'Auto-generated',
   'book.startRun': 'Start Writing',
   'book.error': 'Interview error',
+  // #544: starting mode (new/continue/branch) + source outline picker
+  'book.startMode.new': 'New',
+  'book.startMode.continue': 'Continue',
+  'book.startMode.branch': 'Branch',
+  'book.startMode.selectOutline': 'Select outline…',
   // F44 v1.2 #475: conversation-style interview final confirmation (confirm_summary card)
   'book.confirm.title': 'Confirm these settings?',
   'book.confirm.ok': 'Confirm',
