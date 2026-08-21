@@ -71,6 +71,22 @@ def _make_message(
     )
 
 
+class TestChatMessageCreateValidation:
+    """DTO 校验分支（coverage 补测：>10000 字符分支）。"""
+
+    async def test_content_too_long_raises(self):
+        from inkflow.domain.models.chat_message import ChatMessageCreate
+
+        with pytest.raises(ValueError, match="不能超过 10000"):
+            ChatMessageCreate(project_id=PROJECT_ID, role="user", content="x" * 10001)
+
+    async def test_content_blank_raises(self):
+        from inkflow.domain.models.chat_message import ChatMessageCreate
+
+        with pytest.raises(ValueError, match="chat 消息内容不能为空"):
+            ChatMessageCreate(project_id=PROJECT_ID, role="user", content="   ")
+
+
 class TestAdd:
     """add — 落库 + int↔UUID 转换 + intent 透传。"""
 
