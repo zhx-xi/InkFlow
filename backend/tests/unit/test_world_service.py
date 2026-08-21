@@ -22,6 +22,7 @@ import pytest
 
 from inkflow.domain.models.project import Project, ProjectConfig
 from inkflow.domain.models.world import (
+    WorldCategory,
     WorldExtractionResult,
     WorldExtractRequest,
     WorldSetting,
@@ -30,6 +31,7 @@ from inkflow.domain.models.world import (
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.world_errors import (
     ProjectNotFoundError,
+    WorldCategoryNameConflictError,
     WorldNameConflictError,
     WorldServiceError,
 )
@@ -50,7 +52,10 @@ except ImportError:  # pragma: no cover - RED 阶段占位分支
     WorldReparentTargetError = type("WorldReparentTargetError", (Exception,), {})
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
 from inkflow.domain.services._world_extractor import WorldExtractor
-from inkflow.domain.services.world_service import WorldService
+from inkflow.domain.services.world_service import (
+    WorldService,
+    _to_int_id,
+)
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 OTHER_PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000002")  # F35: 跨项目校验用
@@ -824,3 +829,71 @@ class TestP5DeleteSettingReparentTriggersLocationCleanup:
         location_cleanup.assert_awaited_once()
         call = location_cleanup.await_args
         assert call is not None and call.args[0] == [setting.id.int]
+
+
+# ══ #576 coverage 补测（CI coverage-backend branch 门禁红，非 RED）══
+#
+# 补测清单（src/inkflow/domain/services/world_service.py）:
+# - L60 _to_int_id int 输入分支（UUID 分支已有用例覆盖）
+# - L215-218 has_root_setting（整方法未覆盖）
+# - L370-371 _notify_location_cleanup except 分支（成功路径已覆盖）
+# - L415-416 rename_category 撞名冲突分支
+
+
+class Test576WorldServiceCoverageGaps:
+    """#576 coverage 补测（非 RED）— 世界观服务层未覆盖分支补齐。"""
+
+    def test_to_int_id_int_passthrough(self) -> None:
+        """#576 补测：_to_int_id int 输入直通（L60 return value 分支）。"""
+        assert _to_int_id(42) == 42
+
+    async def test_has_root_setting_true_when_root_exists(self, service, mock_repo) -> None:
+        """#576 补测：has_root_setting 有根条目 → True（L215-218 主路径）。"""
+        mock_repo.list = AsyncMock(return_value=([_setting(name="大越国")], 1))
+
+        assert await service.has_root_setting(PID) is True
+        mock_repo.list.assert_awaited_once_with(PID.int, top_level_only=True, limit=1)
+
+    async def test_has_root_setting_false_when_no_root(self, service, mock_repo) -> None:
+        """#576 补测：has_root_setting 无根条目 → False（L218 len>0 反分支）。"""
+        mock_repo.list = AsyncMock(return_value=([], 0))
+
+        assert await service.has_root_setting(PID) is False
+        mock_repo.list.assert_awaited_once_with(PID.int, top_level_only=True, limit=1)
+
+    async def test_delete_setting_location_cleanup_failure_swallowed(
+        self, mock_repo, mock_project_repo, mock_extractor
+    ) -> None:
+        """#576 补测：location_cleanup 抛异常 → 仅 log warning，删除不中断（L370-371）。"""
+        location_cleanup = AsyncMock(side_effect=RuntimeError("boom"))
+        svc = WorldService(
+            repository=mock_repo,
+            extractor=mock_extractor,
+            project_repo=mock_project_repo,
+            location_cleanup=location_cleanup,
+        )
+        setting = _setting(name="清河县城")
+        mock_repo.get = AsyncMock(return_value=setting)
+        mock_repo.list = AsyncMock(return_value=([], 0))
+        mock_repo.hard_delete = AsyncMock(return_value=True)
+
+        result = await svc.delete_setting(setting.id)
+
+        assert result is True
+        location_cleanup.assert_awaited_once_with([setting.id.int])
+
+    async def test_rename_category_name_conflict_raises(self, service, mock_repo) -> None:
+        """#576 补测：rename_category 撞名 → WorldCategoryNameConflictError（L415-416）。"""
+        cat_a = WorldCategory(
+            id=uuid.uuid4(), project_id=PID, name="势力", created_at=TS, updated_at=TS
+        )
+        cat_b = WorldCategory(
+            id=uuid.uuid4(), project_id=PID, name="设定", created_at=TS, updated_at=TS
+        )
+        mock_repo.get_category = AsyncMock(return_value=cat_a)
+        mock_repo.get_category_by_name = AsyncMock(return_value=cat_b)
+
+        with pytest.raises(WorldCategoryNameConflictError):
+            await service.rename_category(cat_a.id, "设定")
+
+        mock_repo.rename_category.assert_not_awaited()

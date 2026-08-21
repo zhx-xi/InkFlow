@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from inkflow.core.database import Base
 from inkflow.domain.models.world import WorldSetting
 from inkflow.infrastructure.database.models.project import ProjectORM
-from inkflow.infrastructure.database.models.world import WorldSettingORM
+from inkflow.infrastructure.database.models.world import WorldCategoryORM, WorldSettingORM
 from inkflow.infrastructure.database.repositories.world_repo import (
     SQLiteWorldRepository,
     _int_to_uuid,
@@ -370,6 +370,20 @@ class TestWorldRepositoryCoverageGaps:
                 await repo.update(s.model_copy(update={"name": "改名"}))
         finally:
             db_session.execute = real_execute
+
+    def test_world_setting_orm_repr(self):
+        """WorldSettingORM.__repr__ 含 id 与 name（#576 coverage 补测 L123）。"""
+        orm = WorldSettingORM(project_id=1, name="灵气复苏")
+        s = repr(orm)
+        assert "WorldSettingORM" in s
+        assert "灵气复苏" in s
+
+    def test_world_category_orm_repr(self):
+        """WorldCategoryORM.__repr__ 含 id 与 name（#576 coverage 补测 L182）。"""
+        orm = WorldCategoryORM(project_id=1, name="地理")
+        s = repr(orm)
+        assert "WorldCategoryORM" in s
+        assert "地理" in s
 
 
 # ── F35 地点树（#173）：parent_id 邻接表 / 递归 CTE / 同级唯一 / 列表过滤 ──
