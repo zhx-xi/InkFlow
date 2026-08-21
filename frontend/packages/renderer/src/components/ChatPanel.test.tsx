@@ -67,6 +67,10 @@ const chatApiMocks = vi.hoisted(() => ({
   fetchChatMessages: vi.fn(),
   saveChatMessage: vi.fn(),
   fetchChatConversations: vi.fn(),
+  // #566：两级删除（归档/真删/恢复）——api/chat.ts GREEN 补
+  archiveChatMessage: vi.fn(),
+  deleteChatMessage: vi.fn(),
+  restoreChatMessage: vi.fn(),
 }));
 vi.mock('../api/chat', () => chatApiMocks);
 
@@ -182,7 +186,11 @@ beforeEach(() => {
   chatApiMocks.fetchChatMessages.mockReset();
   chatApiMocks.saveChatMessage.mockReset();
   chatApiMocks.fetchChatConversations.mockReset();
+  chatApiMocks.archiveChatMessage.mockReset();
+  chatApiMocks.deleteChatMessage.mockReset();
+  chatApiMocks.restoreChatMessage.mockReset();
   chatApiMocks.fetchChatMessages.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
+  chatApiMocks.deleteChatMessage.mockResolvedValue(undefined);
   chatApiMocks.saveChatMessage.mockResolvedValue({
     id: 'm-new',
     project_id: 'p1',
@@ -700,5 +708,33 @@ describe('ChatPanel — 历史加载与消息持久化（#547）', () => {
       expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledWith('p2');
     });
     expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * #566 消息删除：历史消息渲染删除按钮（chat-msg-delete-<id>），点击 → deleteChatMessage(id) + 本地移除。
+ */
+describe('ChatPanel — 消息删除（#566）', () => {
+  const HIST: ChatMessageDto[] = [
+    { id: 'm1', project_id: 'p1', role: 'user', content: '之前的提问', intent: null, created_at: '2026-08-20T08:00:00Z' },
+    { id: 'm2', project_id: 'p1', role: 'ai', content: '之前的对话回答', intent: 'conversation', created_at: '2026-08-20T08:01:00Z' },
+    { id: 'm3', project_id: 'p1', role: 'ai', content: '可插入正文', intent: 'content', created_at: '2026-08-20T08:02:00Z' },
+  ];
+
+  it('历史消息渲染删除按钮；点击 → deleteChatMessage(id) + 本地移除该条', async () => {
+    chatApiMocks.fetchChatMessages.mockResolvedValue({ items: HIST, total: 3, offset: 0, limit: 50 });
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await waitFor(() => {
+      expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledWith('p1');
+    });
+    await user.click(screen.getByTestId('chat-expand'));
+    // RED：当前 ChatPanel 无删除按钮 → 下面两行 FAIL（queryByTestId 找不到 chat-msg-delete-*）
+    expect(screen.getByTestId('chat-msg-delete-m1')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-msg-delete-m2')).toBeInTheDocument();
+    // 点击删除 → deleteChatMessage(id) 调用 + 本地移除该条（m1 = user seq 0）
+    await user.click(screen.getByTestId('chat-msg-delete-m1'));
+    expect(chatApiMocks.deleteChatMessage).toHaveBeenCalledWith('m1');
+    expect(screen.queryByTestId('chat-msg-user-0')).not.toBeInTheDocument();
   });
 });

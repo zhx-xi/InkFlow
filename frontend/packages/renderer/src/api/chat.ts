@@ -154,3 +154,28 @@ export async function fetchChatConversations(): Promise<{
 }> {
   return apiFetch('/api/v1/chat/conversations');
 }
+
+/** #566：归档 chat 消息：DELETE /api/v1/chat/messages/{id}（无 force = 软删，204） */
+export async function archiveChatMessage(id: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/chat/messages/${id}`, { method: 'DELETE' });
+}
+
+/** #566：真删 chat 消息：DELETE /api/v1/chat/messages/{id}?force=true（204） */
+export async function deleteChatMessage(id: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/chat/messages/${id}?force=true`, { method: 'DELETE' });
+}
+
+/** #566：恢复 chat 消息：POST /api/v1/chat/messages/{id}/restore → ChatMessage */
+export async function restoreChatMessage(id: string): Promise<ChatMessageDto> {
+  return apiFetch<ChatMessageDto>(`/api/v1/chat/messages/${id}/restore`, { method: 'POST' });
+}
+
+/** #566：归档整个项目 chat 会话（sessions 页对话区块用）：DELETE /api/v1/chat/conversations/{projectId}（204） */
+export async function archiveChatConversation(projectId: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/chat/conversations/${projectId}`, { method: 'DELETE' });
+}
+
+/** #566：真删整个项目 chat 会话：DELETE /api/v1/chat/conversations/{projectId}?force=true（204） */
+export async function deleteChatConversation(projectId: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/chat/conversations/${projectId}?force=true`, { method: 'DELETE' });
+}

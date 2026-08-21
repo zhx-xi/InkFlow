@@ -15,6 +15,8 @@ import {
   type SessionViewDto,
 } from '../api/sessions';
 import {
+  archiveChatConversation,
+  deleteChatConversation,
   fetchChatConversations,
   type ChatConversationDto,
 } from '../api/chat';
@@ -130,6 +132,28 @@ export function SessionsPage() {
     try {
       await deleteSession(id);
       setSessions((prev) => prev.filter((v) => v.session.id !== id));
+      pushToast('ok', t('sessions.deletedToast'));
+    } catch (err) {
+      pushToast('err', errorMessage(err));
+    }
+  };
+
+  /** #566：AI 对话会话归档（软删），成功后本地移除该卡片 */
+  const handleArchiveConversation = async (projectId: string): Promise<void> => {
+    try {
+      await archiveChatConversation(projectId);
+      setConversations((prev) => prev.filter((c) => c.project_id !== projectId));
+      pushToast('ok', t('sessions.archivedToast'));
+    } catch (err) {
+      pushToast('err', errorMessage(err));
+    }
+  };
+
+  /** #566：AI 对话会话真删（force=true），成功后本地移除该卡片 */
+  const handleDeleteConversation = async (projectId: string): Promise<void> => {
+    try {
+      await deleteChatConversation(projectId);
+      setConversations((prev) => prev.filter((c) => c.project_id !== projectId));
       pushToast('ok', t('sessions.deletedToast'));
     } catch (err) {
       pushToast('err', errorMessage(err));
@@ -335,6 +359,24 @@ export function SessionsPage() {
                   </span>
                 </div>
                 <p className="mt-2 truncate text-[13px] text-ink-2">{conv.last_message}</p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    data-testid={`chat-conv-archive-${conv.project_id}`}
+                    className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink"
+                    onClick={() => void handleArchiveConversation(conv.project_id)}
+                  >
+                    {t('sessions.archive')}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`chat-conv-delete-${conv.project_id}`}
+                    className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:border-err/50 hover:text-err"
+                    onClick={() => void handleDeleteConversation(conv.project_id)}
+                  >
+                    {t('sessions.delete')}
+                  </button>
+                </div>
                 <span
                   data-testid={`chat-conversation-updated-${conv.project_id}`}
                   className="mt-2 block text-[11px] text-ink-3"

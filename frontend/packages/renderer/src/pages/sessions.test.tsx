@@ -362,3 +362,30 @@ describe('会话页 — AI 对话会话区块（#547）', () => {
     expect(runsSection.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
+
+/**
+ * #566 AI 对话区块归档/删除：会话卡片补归档/删除按钮（对齐执行会话区块），
+ * 点归档 → DELETE /api/v1/chat/conversations/{project_id} + 卡片本地移除。
+ */
+describe('会话页 — AI 对话区块归档/删除（#566）', () => {
+  it('会话卡片渲染归档/删除按钮；点归档 → DELETE conversations/{project_id} + 卡片移除', async () => {
+    const user = userEvent.setup();
+    renderSessionsPage();
+    // 两张会话卡片（p1/p2）——findAllByTestId 防「Found multiple」
+    const cards = await screen.findAllByTestId('chat-conversation-card');
+    expect(cards).toHaveLength(2);
+    // RED：当前会话卡片无归档/删除按钮 → 下面 FAIL
+    expect(screen.getByTestId('chat-conv-archive-p1')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-conv-delete-p1')).toBeInTheDocument();
+    // 点归档 → DELETE /api/v1/chat/conversations/p1（archiveChatConversation 走 apiFetch）
+    await user.click(screen.getByTestId('chat-conv-archive-p1'));
+    const delCall = apiFetchMock.mock.calls.find(
+      ([p, init]) => p === '/api/v1/chat/conversations/p1' && (init as RequestInit)?.method === 'DELETE',
+    );
+    expect(delCall).toBeTruthy();
+    // 卡片本地移除（列表刷新）
+    await waitFor(() => {
+      expect(screen.queryByTestId('chat-conv-archive-p1')).not.toBeInTheDocument();
+    });
+  });
+});
