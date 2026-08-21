@@ -348,10 +348,12 @@ describe('写作页 — 空态（#98 §5.2.6）', () => {
     expect(editor.placeholder).toBe('还没有章节，点击左侧「新建章节」创建');
   });
 
-  it('回归：有章节时编辑器 placeholder 保持 write.stream.idle 语义', () => {
+  it('回归：有章节时编辑器 placeholder 改为 chat 引导（#540 chat 替代续写栏）', () => {
     render(<WritingPage />);
     const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
-    expect(editor.placeholder).toBe('点击「续写」或 Ctrl+Enter 开始 AI 续写');
+    // #540：AI 对话栏替代续写栏后，编辑器不再提示「点击续写或 Ctrl+Enter 开始 AI 续写」
+    expect(editor.placeholder).toBe('在下方对话框与 AI 对话，开始创作');
+    expect(editor.placeholder).not.toContain('Ctrl+Enter');
   });
 });
 
