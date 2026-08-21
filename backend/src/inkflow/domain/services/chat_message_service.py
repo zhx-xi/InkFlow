@@ -13,6 +13,11 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def _to_int_id(value: int | uuid.UUID) -> int:
+    """将领域 UUID 转换为存储层 int id（沿用 F1 `_to_int_id` 模式）。"""
+    return value.int if isinstance(value, uuid.UUID) else int(value)
+
+
 class ChatMessageService:
     """chat 消息持久化服务（repo 为鸭子对象）。
 
@@ -50,3 +55,23 @@ class ChatMessageService:
     async def list_conversations(self) -> list[dict[str, Any]]:
         """会话页聚合（repo 聚合结果原样透传）。"""
         return await self._repo.list_conversations()  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 list_conversations
+
+    async def archive_message(self, message_id: uuid.UUID) -> bool:
+        """归档消息（软删 is_deleted=true）。repo.archive 收到 int 主键。"""
+        return await self._repo.archive(_to_int_id(message_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 archive
+
+    async def force_delete_message(self, message_id: uuid.UUID) -> bool:
+        """真删消息。repo.force_delete 收到 int 主键。"""
+        return await self._repo.force_delete(_to_int_id(message_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 force_delete
+
+    async def restore_message(self, message_id: uuid.UUID) -> ChatMessage | None:
+        """解除归档。repo.restore 收到 int 主键；返回 ChatMessage | None。"""
+        return await self._repo.restore(_to_int_id(message_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 restore
+
+    async def archive_conversation(self, project_id: uuid.UUID) -> int:
+        """归档整项目活跃消息（会话级软删）。repo.archive_by_project 收到 int 主键。"""
+        return await self._repo.archive_by_project(_to_int_id(project_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 archive_by_project
+
+    async def force_delete_conversation(self, project_id: uuid.UUID) -> int:
+        """物理删除整项目消息（会话级真删）。repo.force_delete_by_project 收到 int 主键。"""
+        return await self._repo.force_delete_by_project(_to_int_id(project_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 force_delete_by_project

@@ -213,6 +213,23 @@ def ensure_agent_role_key_column(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE agents ADD COLUMN role_key VARCHAR(100)"))
 
 
+def ensure_chat_messages_is_deleted_column(conn: Connection) -> None:
+    """#566：为既有库 chat_messages 表补 is_deleted 列（幂等，配合 conn.run_sync 调用）。
+
+    镜像 ensure_agent_role_key_column 形态：先查 PRAGMA table_info 确认列缺失
+    才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，
+    等 create_all 建新表（ORM 已含 is_deleted 列）。
+    """
+    cols = conn.execute(text("PRAGMA table_info(chat_messages)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return  # 表不存在（全新环境）→ create_all 建新表（自动含 is_deleted 列）
+    if "is_deleted" not in names:
+        conn.execute(
+            text("ALTER TABLE chat_messages ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT 0")
+        )
+
+
 def ensure_world_parent_id_column(conn: Connection) -> None:
     """#173：为既有库 world_settings 补 parent_id 列 + 替换唯一索引（幂等）.
 

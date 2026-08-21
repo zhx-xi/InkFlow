@@ -88,6 +88,15 @@ def fake_repo() -> MagicMock:
     repo.add = AsyncMock(side_effect=lambda m: m)
     repo.list_by_project = AsyncMock(return_value=([], 0))
     repo.list_conversations = AsyncMock(return_value=[])
+    # #566 两级删除（镜像 session_repo soft_delete/restore/hard_delete）：
+    # archive = 软删（is_deleted=true）返回 bool；force_delete = 硬删返回 bool；
+    # restore = 解除归档返回 ChatMessage | None。
+    repo.archive = AsyncMock(return_value=True)
+    repo.force_delete = AsyncMock(return_value=True)
+    repo.restore = AsyncMock(return_value=None)
+    # #566 会话级（per-project）归档/真删
+    repo.archive_by_project = AsyncMock(return_value=2)
+    repo.force_delete_by_project = AsyncMock(return_value=2)
     return repo
 
 
@@ -169,3 +178,68 @@ class TestListConversations:
         result = await service.list_conversations()
         assert result == convs
         fake_repo.list_conversations.assert_awaited_once()
+
+
+class TestArchiveDeleteRestore:
+    """#566 两级删除 — archive_message / force_delete_message / restore_message。
+
+    契约（镜像 session_service.delete/restore 模式）:
+    - archive_message(message_id: uuid.UUID) -> bool
+      （软删 is_deleted=true；repo.archive 收到 int 主键；False = 不存在/已归档）
+    - force_delete_message(message_id: uuid.UUID) -> bool
+      （真删；repo.force_delete 收到 int 主键；False = 不存在）
+    - restore_message(message_id: uuid.UUID) -> ChatMessage | None
+      （解除归档；repo.restore 收到 int 主键；None = 不存在/未归档）
+
+    RED 预期: service 无这三方法 → AttributeError（'ChatMessageService' object has
+    no attribute 'archive_message'）→ 用例 FAILED。
+    """
+
+    async def test_archive_message_delegates_to_repo(self, service, fake_repo):
+        """archive_message → repo.archive(message_id.int) 位置透传，返回 bool。"""
+        message_id = uuid.uuid4()
+        result = await service.archive_message(message_id)
+        assert result is True
+        fake_repo.archive.assert_awaited_once_with(message_id.int)
+
+    async def test_archive_message_not_found_false(self, service, fake_repo):
+        """repo.archive 返回 False（不存在/已归档）→ service 原样透传 False。"""
+        fake_repo.archive = AsyncMock(return_value=False)
+        assert await service.archive_message(uuid.uuid4()) is False
+
+    async def test_force_delete_message_delegates_to_repo(self, service, fake_repo):
+        """force_delete_message → repo.force_delete(message_id.int) 位置透传。"""
+        message_id = uuid.uuid4()
+        result = await service.force_delete_message(message_id)
+        assert result is True
+        fake_repo.force_delete.assert_awaited_once_with(message_id.int)
+
+    async def test_force_delete_message_not_found_false(self, service, fake_repo):
+        """repo.force_delete 返回 False → service 原样透传 False。"""
+        fake_repo.force_delete = AsyncMock(return_value=False)
+        assert await service.force_delete_message(uuid.uuid4()) is False
+
+    async def test_restore_message_returns_entity(self, service, fake_repo):
+        """restore_message → repo.restore(message_id.int)；返回 ChatMessage。"""
+        message_id = uuid.uuid4()
+        restored = _message(id=str(message_id))
+        fake_repo.restore = AsyncMock(return_value=restored)
+        result = await service.restore_message(message_id)
+        assert result is restored
+        fake_repo.restore.assert_awaited_once_with(message_id.int)
+
+    async def test_restore_message_not_found_none(self, service, fake_repo):
+        """repo.restore 返回 None（不存在/未归档）→ service 原样透传 None。"""
+        assert await service.restore_message(uuid.uuid4()) is None
+
+    async def test_archive_conversation_delegates_to_repo(self, service, fake_repo):
+        """archive_conversation → repo.archive_by_project(project_id.int) 位置透传，返回 int。"""
+        result = await service.archive_conversation(uuid.uuid4())
+        assert result == 2
+        fake_repo.archive_by_project.assert_awaited_once()
+
+    async def test_force_delete_conversation_delegates_to_repo(self, service, fake_repo):
+        """force_delete_conversation → repo.force_delete_by_project(project_id.int) 位置透传。"""
+        result = await service.force_delete_conversation(uuid.uuid4())
+        assert result == 2
+        fake_repo.force_delete_by_project.assert_awaited_once()
