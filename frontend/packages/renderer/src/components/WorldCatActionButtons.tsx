@@ -11,17 +11,22 @@ const BTN_CLS =
 export function WorldCatActionButtons({
   onAddCategory,
   onOpenMapView,
+  showCreate = true,
 }: {
   onAddCategory: () => void;
   onOpenMapView: () => void;
+  showCreate?: boolean;
 }) {
   const { t } = useI18n();
   return (
     <>
-      <button type="button" data-testid="world-cat-add" className={BTN_CLS} onClick={onAddCategory}>
-        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-        {t('lib.worldCat.add')}
-      </button>
+      {/* #567：已有根世界观条目时隐藏「新建分类」入口（保留地图视图） */}
+      {showCreate && (
+        <button type="button" data-testid="world-cat-add" className={BTN_CLS} onClick={onAddCategory}>
+          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+          {t('lib.worldCat.add')}
+        </button>
+      )}
       <button type="button" data-testid="map-view-entry" className={BTN_CLS} onClick={onOpenMapView}>
         <Map className="h-3.5 w-3.5" aria-hidden="true" />
         {t('lib.worldMap')}
