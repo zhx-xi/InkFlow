@@ -51,6 +51,15 @@
  * sessions.archivedToast='已归档' sessions.restoredToast='已恢复' sessions.deletedToast='已删除'
  *
  * RED 预期：./sessions 模块不存在 → 收集期 module-not-found（类 1 契约缺口）。
+ *
+ * #547 AI 对话会话区块（本文件「AI 对话会话区块」describe 锁定，GREEN 追加实现）：
+ * - 区块 data-testid="chat-conversations-section"，位于执行会话区块（sessions-section）之后
+ * - 挂载时 fetchChatConversations()（走 apiFetch GET /api/v1/chat/conversations，无查询参数）
+ * - 会话卡片 data-testid="chat-conversation-card"：project_name（null 回退「未知项目」）、
+ *   last_message、message_count（t('sessions.chat.count', {n}) 模板）、updated_at
+ *   （chat-conversation-updated-<project_id> 元素非空）；空态 chat-conversations-empty
+ * - i18n key（GREEN 补 zh.ts/en.ts）：sessions.chat.title='AI 对话' / sessions.chat.empty
+ *   / sessions.chat.count='{n} 条' / sessions.chat.unknownProject='未知项目'
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within, waitFor } from '@testing-library/react';
@@ -64,6 +73,7 @@ import {
   fetchSessions,
   restoreSession,
 } from '../api/sessions';
+import { apiFetch } from '../api/client';
 import { useThemeStore } from '../stores/theme';
 
 vi.mock('../api/sessions', () => ({
@@ -73,17 +83,34 @@ vi.mock('../api/sessions', () => ({
   deleteSession: vi.fn(),
   restoreSession: vi.fn(),
 }));
+// #547：fetchChatConversations 走 apiFetch（GREEN sessions.tsx 从 ../api/chat 导入真实实现）
+vi.mock('../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/client')>();
+  return { ...actual, apiFetch: vi.fn() };
+});
 
 const fetchSessionsMock = vi.mocked(fetchSessions);
 const fetchPlannerSessionsMock = vi.mocked(fetchPlannerSessions);
 const archiveSessionMock = vi.mocked(archiveSession);
 const deleteSessionMock = vi.mocked(deleteSession);
 const restoreSessionMock = vi.mocked(restoreSession);
+const apiFetchMock = vi.mocked(apiFetch);
 import type { PlannerSessionDto, SessionDto, SessionViewDto } from '../api/sessions';
+
+/** #547：ChatConversationDto 本地镜像（GREEN 建 src/api/chat.ts 导出；形状对齐后端 GET /api/v1/chat/conversations 契约） */
+interface ChatConversationDto {
+  project_id: string;
+  project_name: string | null;
+  last_message: string;
+  message_count: number;
+  updated_at: string;
+}
 
 /** 状态化会话数组（fetch* 读同一数组；archive/restore/delete 改写同一数组） */
 let sessions: SessionViewDto[];
 let plannerItems: PlannerSessionDto[];
+/** #547：AI 对话会话数组（apiFetchMock 对 /api/v1/chat/conversations 应答；空态用例置空） */
+let conversations: ChatConversationDto[];
 
 function makeSession(overrides: Partial<SessionDto> = {}): SessionViewDto {
   const s: SessionDto = {
@@ -171,6 +198,18 @@ beforeEach(() => {
   });
   deleteSessionMock.mockImplementation(async (id: string) => {
     sessions = sessions.filter((v) => v.session.id !== id);
+  });
+  // #547：AI 对话会话（GET /api/v1/chat/conversations 走 apiFetch mock；数组状态化供空态用例改写）
+  conversations = [
+    { project_id: 'p1', project_name: '仙侠长篇', last_message: '帮我写一段打斗场景', message_count: 3, updated_at: '2026-08-21T10:00:00Z' },
+    { project_id: 'p2', project_name: null, last_message: '聊聊角色设定', message_count: 1, updated_at: '2026-08-20T09:00:00Z' },
+  ];
+  apiFetchMock.mockReset();
+  apiFetchMock.mockImplementation(async (path: string) => {
+    if (path === '/api/v1/chat/conversations') {
+      return { items: conversations, total: conversations.length };
+    }
+    return { ok: true };
   });
 });
 
@@ -284,5 +323,42 @@ describe('会话页 — 归档 / 恢复 / 删除', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('session-title-s-active')).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('会话页 — AI 对话会话区块（#547）', () => {
+  it('挂载即拉取 AI 对话：apiFetch GET /api/v1/chat/conversations（无查询参数）；渲染会话卡片（项目名/最后消息/条数/时间）', async () => {
+    renderSessionsPage();
+    const cards = await screen.findAllByTestId('chat-conversation-card');
+    expect(cards).toHaveLength(2);
+
+    // fetchChatConversations 走 apiFetch：路径精确 = 无查询参数（GET 语义）
+    const call = apiFetchMock.mock.calls.find(([p]) => p === '/api/v1/chat/conversations');
+    expect(call).toBeTruthy();
+    const [, init] = call as [string, RequestInit];
+    expect(init?.method ?? 'GET').toBe('GET');
+
+    // p1 卡片：project_name / last_message / message_count（t('sessions.chat.count', {n})='3 条'）/ updated_at 非空
+    const p1Card = cards.find((c) => c.textContent?.includes('仙侠长篇'));
+    expect(p1Card).toBeTruthy();
+    expect(within(p1Card as HTMLElement).getByText('帮我写一段打斗场景')).toBeInTheDocument();
+    expect(within(p1Card as HTMLElement).getByText('3 条')).toBeInTheDocument();
+    expect(within(p1Card as HTMLElement).getByTestId('chat-conversation-updated-p1')).not.toHaveTextContent('');
+
+    // p2 卡片：project_name 为 null → 回退「未知项目」（sessions.chat.unknownProject）
+    const p2Card = cards.find((c) => c.textContent?.includes('未知项目'));
+    expect(p2Card).toBeTruthy();
+    expect(within(p2Card as HTMLElement).getByText('1 条')).toBeInTheDocument();
+    expect(within(p2Card as HTMLElement).getByTestId('chat-conversation-updated-p2')).not.toHaveTextContent('');
+  });
+
+  it('AI 对话区块位于执行会话区块之后；无会话 → 空态 chat-conversations-empty；标题 sessions.chat.title="AI 对话"', async () => {
+    conversations.length = 0;
+    renderSessionsPage();
+    const section = await screen.findByTestId('chat-conversations-section');
+    expect(screen.getByTestId('chat-conversations-empty')).toBeInTheDocument();
+    expect(within(section).getByText('AI 对话')).toBeInTheDocument();
+    const runsSection = screen.getByTestId('sessions-section');
+    expect(runsSection.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

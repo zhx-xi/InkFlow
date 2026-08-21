@@ -14,6 +14,10 @@ import {
   type PlannerSessionDto,
   type SessionViewDto,
 } from '../api/sessions';
+import {
+  fetchChatConversations,
+  type ChatConversationDto,
+} from '../api/chat';
 import { errorMessage } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import { useToastStore } from '../stores/toast';
@@ -55,6 +59,8 @@ export function SessionsPage() {
   const [plannerItems, setPlannerItems] = useState<PlannerSessionDto[]>([]);
   const [plannerLoading, setPlannerLoading] = useState(true);
   const [sessions, setSessions] = useState<SessionViewDto[]>([]);
+  // #547：AI 对话聚合列表
+  const [conversations, setConversations] = useState<ChatConversationDto[]>([]);
   const [filter, setFilter] = useState<SessionFilter>('all');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
@@ -72,6 +78,15 @@ export function SessionsPage() {
       .then((res) => setSessions(res.items))
       .catch((err) => pushToast('err', errorMessage(err)));
   }, [pushToast]);
+
+  // #547：AI 对话聚合列表（失败静默）
+  useEffect(() => {
+    void fetchChatConversations()
+      .then((res) => setConversations(res.items))
+      .catch(() => {
+        // 契约：加载失败静默，不打扰页面主体
+      });
+  }, []);
 
   /** 过滤后可见执行会话（全部 = 不过滤；活动 = 未归档；已归档 = is_deleted） */
   const visibleSessions = useMemo(() => {
@@ -289,6 +304,45 @@ export function SessionsPage() {
                 </li>
               );
             })}
+          </ul>
+        )}
+      </section>
+
+      {/* #547：AI 对话区块 */}
+      <section data-testid="chat-conversations-section" className="mt-10">
+        <h2 className="text-[15px] font-semibold text-ink">{t('sessions.chat.title')}</h2>
+        {conversations.length === 0 ? (
+          <div
+            data-testid="chat-conversations-empty"
+            className="mt-3 rounded-lg border border-dashed border-line bg-surface px-6 py-12 text-center text-[13px] text-ink-2"
+          >
+            {t('sessions.chat.empty')}
+          </div>
+        ) : (
+          <ul className="mt-3 space-y-3">
+            {conversations.map((conv) => (
+              <li
+                key={conv.project_id}
+                data-testid="chat-conversation-card"
+                className="rounded-lg border border-line bg-surface p-4"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-serif text-[15px] font-semibold text-ink">
+                    {conv.project_name ?? t('sessions.chat.unknownProject')}
+                  </h3>
+                  <span className="ml-auto rounded bg-surface-3 px-2 py-0.5 text-[12px] text-ink-2">
+                    {t('sessions.chat.count', { n: conv.message_count })}
+                  </span>
+                </div>
+                <p className="mt-2 truncate text-[13px] text-ink-2">{conv.last_message}</p>
+                <span
+                  data-testid={`chat-conversation-updated-${conv.project_id}`}
+                  className="mt-2 block text-[11px] text-ink-3"
+                >
+                  {conv.updated_at}
+                </span>
+              </li>
+            ))}
           </ul>
         )}
       </section>

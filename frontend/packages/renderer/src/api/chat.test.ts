@@ -12,6 +12,13 @@
  *
  * mock 方式：全局 fetch 返回可控 body reader（手动 push/end/fail 驱动，
  * frontend-testing 约定：手动触发替代 fake timers；参考 src/api/sse.test.ts 模式）
+ *
+ * #547 消息 CRUD 客户端（「chat 消息 CRUD 客户端」describe 锁定，GREEN 追加实现）：
+ * - fetchChatMessages(projectId, offset?, limit?) → GET /api/v1/chat/messages?project_id=&offset=&limit=
+ * - saveChatMessage(body) → POST /api/v1/chat/messages（body 逐字；intent 缺省不携带）
+ * - fetchChatConversations() → GET /api/v1/chat/conversations（无参数）
+ * 均走 apiFetch（token 头 / 错误映射复用）；新用例用动态 import 引用，避免 RED 期缺导出
+ * 把既有 streamChat 用例一起拖挂。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { streamChat, type ChatStreamBody } from './chat';
@@ -318,5 +325,95 @@ describe('streamChat — abort', () => {
 
     expect(cbs.onError).not.toHaveBeenCalled();
     expect(cbs.onDone).not.toHaveBeenCalled();
+  });
+});
+
+/** #547：消息 CRUD 客户端（GREEN 建 fetchChatMessages / saveChatMessage / fetchChatConversations） */
+describe('chat 消息 CRUD 客户端（#547）', () => {
+  /** apiFetch 走全局 fetch（res.json 解析）：stub 一个返回固定 JSON 的 fetch */
+  function stubJsonFetch(response: unknown, status = 200) {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => response,
+    } as unknown as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('fetchChatMessages：GET {baseURL}/api/v1/chat/messages?project_id=&offset=&limit= + token 头，返回 {items,total,offset,limit}', async () => {
+    const { fetchChatMessages } = await import('./chat');
+    const payload = {
+      items: [
+        { id: 'm1', project_id: 'p1', role: 'user', content: '之前的提问', intent: null, created_at: '2026-08-20T08:00:00Z' },
+        { id: 'm2', project_id: 'p1', role: 'ai', content: '之前的回答', intent: 'conversation', created_at: '2026-08-20T08:01:00Z' },
+      ],
+      total: 2,
+      offset: 0,
+      limit: 20,
+    };
+    const fetchMock = stubJsonFetch(payload);
+    const res = await fetchChatMessages('p1', 0, 20);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${BASE}/api/v1/chat/messages?project_id=p1&offset=0&limit=20`);
+    expect(init?.method).toBe('GET');
+    const headers = init?.headers as Headers;
+    expect(headers.get('X-InkFlow-Token')).toBe('tok-1');
+    expect(res).toEqual(payload);
+  });
+
+  it('saveChatMessage：POST {baseURL}/api/v1/chat/messages + body 逐字（intent 缺省不携带）→ 返回 ChatMessageDto', async () => {
+    const { saveChatMessage } = await import('./chat');
+    const saved = {
+      id: 'm9',
+      project_id: 'p1',
+      role: 'user',
+      content: '帮我写一段打斗场景',
+      intent: null,
+      created_at: '2026-08-21T10:00:00Z',
+    };
+    const fetchMock = stubJsonFetch(saved, 201);
+    const res = await saveChatMessage({ project_id: 'p1', role: 'user', content: '帮我写一段打斗场景' });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${BASE}/api/v1/chat/messages`);
+    expect(init?.method).toBe('POST');
+    const headers = init?.headers as Headers;
+    expect(headers.get('Content-Type')).toBe('application/json');
+    expect(headers.get('X-InkFlow-Token')).toBe('tok-1');
+    // body 逐字：intent 缺省时请求体不含 intent 键
+    expect(JSON.parse(String(init?.body))).toEqual({ project_id: 'p1', role: 'user', content: '帮我写一段打斗场景' });
+    expect(res).toEqual(saved);
+  });
+
+  it('saveChatMessage 携带 intent：body 含 intent:"content"', async () => {
+    const { saveChatMessage } = await import('./chat');
+    const fetchMock = stubJsonFetch(
+      { id: 'm10', project_id: 'p1', role: 'ai', content: '正文', intent: 'content', created_at: '2026-08-21T10:01:00Z' },
+      201,
+    );
+    await saveChatMessage({ project_id: 'p1', role: 'ai', content: '正文', intent: 'content' });
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(String(init?.body))).toEqual({ project_id: 'p1', role: 'ai', content: '正文', intent: 'content' });
+  });
+
+  it('fetchChatConversations：GET {baseURL}/api/v1/chat/conversations（无参数）→ {items,total}', async () => {
+    const { fetchChatConversations } = await import('./chat');
+    const payload = {
+      items: [
+        { project_id: 'p1', project_name: '仙侠长篇', last_message: '帮我写一段打斗场景', message_count: 3, updated_at: '2026-08-21T10:00:00Z' },
+      ],
+      total: 1,
+    };
+    const fetchMock = stubJsonFetch(payload);
+    const res = await fetchChatConversations();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${BASE}/api/v1/chat/conversations`);
+    expect(init?.method ?? 'GET').toBe('GET');
+    expect(res).toEqual(payload);
   });
 });
