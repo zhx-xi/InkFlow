@@ -116,6 +116,18 @@ class TestWorldUpdate:
         assert "category" in clear_update.model_fields_set
         assert WorldUpdate().model_fields_set == set()
 
+    def test_update_all_defaults_none(self):
+        """#576 补测（非 RED）：全默认/显式 None 构造成功，validator None 直通（L192/208）。"""
+        empty = WorldUpdate()
+        assert empty.name is None
+        assert empty.content is None
+        assert empty.model_fields_set == set()
+
+        explicit = WorldUpdate(name=None, content=None)
+        assert explicit.name is None
+        assert explicit.content is None
+        assert explicit.model_fields_set == {"name", "content"}
+
 
 class TestExtractedWorldSetting:
     """LLM 提取结果 schema 校验测试."""

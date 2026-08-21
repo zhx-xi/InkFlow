@@ -11,7 +11,7 @@ coverage 补测（#562 CI：chat_message_repo.py 33% → 补齐 add/list/convers
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -346,3 +346,16 @@ class TestChatMessageAssemblyAndOrm:
         await db_session.commit()
         assert orm.created_at is not None
         assert "ChatMessageORM" in repr(orm)
+
+    async def test_repo_utcnow_helper(self):
+        """chat_message_repo._utcnow 返回 UTC 时区感知时间（#576 coverage 补测 L20）。"""
+        from inkflow.infrastructure.database.repositories.chat_message_repo import _utcnow
+
+        assert _utcnow().tzinfo is not None
+        assert _utcnow().tzinfo.utcoffset(_utcnow()) == timedelta(0)
+
+    async def test_domain_model_utcnow_helper(self):
+        """chat_message 领域模型 _utcnow 返回 UTC 时区感知时间（#576 coverage 补测 L13）。"""
+        from inkflow.domain.models.chat_message import _utcnow
+
+        assert _utcnow().tzinfo is not None
