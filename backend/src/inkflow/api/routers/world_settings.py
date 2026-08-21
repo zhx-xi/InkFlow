@@ -194,11 +194,14 @@ async def create_world_setting(
     data: WorldSettingCreateBody,
     db: AsyncSession = Depends(get_db),
 ):
-    """创建世界观条目（spec §3.2）。"""
+    """创建世界观条目（spec §3.2；#567 根条目单例：一个项目一个根）。"""
     pid = _parse_id(project_id, detail="项目不存在")
     svc = _get_svc(db)
     # F35: parent_id 缺省不传键（既有测试契约）；提供时按关键字透传
     if data.parent_id is None:
+        # #567 单例校验：parent_id 为空（根条目）时该项目已有根 → 422
+        if await svc.has_root_setting(pid):
+            raise HTTPException(status_code=422, detail="该项目已存在世界观根条目")
         setting = await _run_service(
             svc.create_setting(pid, data.name, data.category, data.content)
         )
