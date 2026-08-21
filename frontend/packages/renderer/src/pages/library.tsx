@@ -24,7 +24,7 @@ import { OutlineTree } from '../components/OutlineTree';
 import { TimelineView, type TimelineEventDTO, type TimelineViewData } from '../components/TimelineView';
 import { WorldCatActionButtons } from '../components/WorldCatActionButtons';
 import { WorldCategoryDialog } from '../components/WorldCategoryDialog';
-import { buildWorldTree, WorldNodeView } from '../components/WorldNodeView';
+import { buildWorldTree, filterWorldTree, WorldNodeView } from '../components/WorldNodeView';
 import { Skeleton } from '../components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
@@ -178,13 +178,13 @@ export function LibraryPage() {
     () => (activeCat === 'world' ? buildWorldTree(items) : []),
     [activeCat, items],
   );
-  // §5.4：分类筛选作用于顶层节点（含其子树整体显隐，树不拆散）
+  // §5.4：分类筛选作用于整棵树（#567 单例：一项目一根，分类元素为根的子孙→保留匹配节点+子树）
   const filteredWorldRoots = useMemo(
     () =>
-      activeWorldCat === null
-        ? worldRoots
-        : worldRoots.filter((node) => node.item.category === activeWorldCat),
-    [activeWorldCat, worldRoots],
+      activeCat === 'world'
+        ? filterWorldTree(worldRoots, activeWorldCat)
+        : [],
+    [activeCat, worldRoots, activeWorldCat],
   );
 
   // F43 P1（D-13）：建议标签 = 当前项目角色 extra.groups 并集（数据驱动，供创建/编辑对话框）
