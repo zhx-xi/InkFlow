@@ -20,6 +20,7 @@ from inkflow.api.routers import (
     chapter,
     chapter_audit,
     characters,
+    chat_messages,
     context,
     export,
     extractions,
@@ -219,6 +220,7 @@ app.include_router(foreshadowings.router)
 app.include_router(knowledge_graph.router)
 app.include_router(extractions.router)
 app.include_router(sessions.router)
+app.include_router(chat_messages.router)
 app.include_router(settings.router)
 app.include_router(search.router)
 
