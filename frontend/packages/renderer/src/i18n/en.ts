@@ -678,6 +678,8 @@ export const en: Record<string, string> = {
   'memory.extract': 'Extract Memory',
   'memory.extract.loading': 'Extracting…',
   'memory.extract.error': 'Extraction failed, check model config',
+  'memory.extract.success': 'Memory extraction complete',
+  'memory.extract.noContent': 'No memory content to extract',
   'memory.prefs.title': 'Project Preferences',
   'memory.prefs.empty': 'No learned preferences yet',
   'memory.userPrefs.title': 'User-level Preferences',

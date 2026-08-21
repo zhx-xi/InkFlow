@@ -689,6 +689,8 @@ export const zh = {
   'memory.extract': '提取记忆',
   'memory.extract.loading': '提取中…',
   'memory.extract.error': '提取失败，请检查模型配置',
+  'memory.extract.success': '记忆提取完成',
+  'memory.extract.noContent': '暂无可提取的记忆内容',
   'memory.prefs.title': '项目偏好',
   'memory.prefs.empty': '暂无已学偏好',
   'memory.userPrefs.title': '用户级偏好',
