@@ -5,7 +5,7 @@
  * - 停止: AbortController.abort() → 服务端终止生成器
  * - 行为镜像 src/api/sse.ts streamWriting：行缓冲按 \n\n 切帧取 data: 行
  */
-import { getApiConfig } from './client';
+import { apiFetch, getApiConfig } from './client';
 
 export interface ChatStreamBody {
   project_id: string;
@@ -93,4 +93,64 @@ export async function streamChat(
 
   void run();
   return () => controller.abort();
+}
+
+/** #547：chat 消息实体（对齐后端 GET/POST /api/v1/chat/messages 契约） */
+export interface ChatMessageDto {
+  id: string;
+  project_id: string;
+  role: 'user' | 'ai';
+  content: string;
+  intent: 'content' | 'conversation' | null;
+  created_at: string;
+}
+
+/** #547：会话聚合实体（对齐后端 GET /api/v1/chat/conversations 契约） */
+export interface ChatConversationDto {
+  project_id: string;
+  project_name: string | null;
+  last_message: string;
+  message_count: number;
+  updated_at: string;
+}
+
+/** 拉取项目 chat 消息历史（时间升序，分页） */
+export async function fetchChatMessages(
+  projectId: string,
+  offset = 0,
+  limit = 50,
+): Promise<{ items: ChatMessageDto[]; total: number; offset: number; limit: number }> {
+  const qs = new URLSearchParams({
+    project_id: projectId,
+    offset: String(offset),
+    limit: String(limit),
+  });
+  return apiFetch(`/api/v1/chat/messages?${qs.toString()}`, { method: 'GET' });
+}
+
+/** 追加 chat 消息（落库） */
+export async function saveChatMessage(body: {
+  project_id: string;
+  role: 'user' | 'ai';
+  content: string;
+  intent?: 'content' | 'conversation' | null;
+}): Promise<ChatMessageDto> {
+  const payload: {
+    project_id: string;
+    role: 'user' | 'ai';
+    content: string;
+    intent?: 'content' | 'conversation' | null;
+  } = { ...body };
+  if (body.intent === undefined) {
+    delete payload.intent;
+  }
+  return apiFetch('/api/v1/chat/messages', { method: 'POST', body: payload });
+}
+
+/** 会话页聚合列表 */
+export async function fetchChatConversations(): Promise<{
+  items: ChatConversationDto[];
+  total: number;
+}> {
+  return apiFetch('/api/v1/chat/conversations');
 }

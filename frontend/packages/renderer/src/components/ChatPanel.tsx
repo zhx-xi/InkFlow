@@ -15,7 +15,13 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
-import { streamChat, type ChatStreamBody } from '../api/chat';
+import {
+  fetchChatMessages,
+  saveChatMessage,
+  streamChat,
+  type ChatMessageDto,
+  type ChatStreamBody,
+} from '../api/chat';
 import { useI18n } from '../i18n/useI18n';
 import { parseChatReply, type ChatIntent } from '../lib/chatIntent';
 import { useChapterStore } from '../stores/chapter';
@@ -57,6 +63,40 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
   const streamSeqRef = useRef<number | null>(null);
   const streamTextRef = useRef('');
   const abortRef = useRef<(() => void) | null>(null);
+  // #547：发送时的 projectId 快照（onDone/onError 保存 AI 消息仍落到原项目，避免闭包陈旧）
+  const projectIdRef = useRef(projectId);
+
+  /** #547：挂载 / projectId 变化 → 加载历史（失败静默，不打扰后续发送） */
+  useEffect(() => {
+    let cancelled = false;
+    projectIdRef.current = projectId;
+    void fetchChatMessages(projectId)
+      .then((res) => {
+        if (cancelled) return;
+        let userSeq = 0;
+        let aiSeq = 0;
+        const history: ChatEntry[] = res.items.map((msg: ChatMessageDto) =>
+          msg.role === 'user'
+            ? { kind: 'user', seq: userSeq++, text: msg.content }
+            : { kind: 'ai', seq: aiSeq++, text: msg.content, intent: msg.intent ?? undefined },
+        );
+        // 历史最新 content 消息自动选中（仅存在 content 消息时）
+        let latestContentSeq: number | null = null;
+        for (const m of history) {
+          if (m.kind === 'ai' && m.intent === 'content') latestContentSeq = m.seq;
+        }
+        userSeqRef.current = userSeq;
+        aiSeqRef.current = aiSeq;
+        setMessages(history);
+        setSelectedSeq(latestContentSeq);
+      })
+      .catch(() => {
+        // 契约：历史加载失败静默，不弹 toast，后续发送仍可用
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
 
   /** 流式 delta：追加到当前 ai 消息（首个 delta 创建消息占位） */
   const onDelta = useCallback((delta: string) => {
@@ -76,9 +116,8 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
   /** 流式 done：对完整文本 parseChatReply 解析意图并落定消息形态 */
   const onDone = useCallback(() => {
     const seq = streamSeqRef.current;
-    const raw = streamTextRef.current;
     if (seq !== null) {
-      const parsed = parseChatReply(raw);
+      const parsed = parseChatReply(streamTextRef.current);
       setMessages((prev) =>
         prev.map((m) =>
           m.kind === 'ai' && m.seq === seq ? { ...m, text: parsed.body, intent: parsed.intent } : m,
@@ -88,6 +127,13 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
         // 新 content 消息到达自动成为选中条（最新优先）
         setSelectedSeq(seq);
       }
+      // #547：AI 回复落库（fire-and-forget；契约 = ChatPanel.test.tsx #547 describe）
+      void saveChatMessage({
+        project_id: projectIdRef.current,
+        role: 'ai',
+        content: parsed.body,
+        intent: parsed.intent,
+      }).catch(() => {});
     }
     streamingRef.current = false;
     streamSeqRef.current = null;
@@ -129,6 +175,8 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
     }
     streamingRef.current = true;
     setMessages((prev) => [...prev, { kind: 'user', seq: userSeqRef.current++, text: prompt }]);
+    // #547：用户消息落库（fire-and-forget，不 await 不阻塞发送）
+    void saveChatMessage({ project_id: projectId, role: 'user', content: prompt }).catch(() => {});
     setInput('');
     const body: ChatStreamBody = {
       project_id: projectId,

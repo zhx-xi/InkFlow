@@ -31,6 +31,13 @@
  *
  * mock 方式：vi.mock('../api/chat') → streamChat 捕获 body+callbacks（模块级 capturedStreams），
  * 用例手动驱动 onDelta/onDone/onError（镜像 useExecutionPoll mock 套路；SSE 手动驱动约定）
+ *
+ * #547 持久化契约（「历史加载与消息持久化」describe 锁定，GREEN 追加实现）：
+ * - 挂载 / projectId 变化 → fetchChatMessages(projectId) 加载历史（beforeEach 默认空列表）；
+ *   历史 AI 消息 intent 保留（content → chat-select 最新自动选中；conversation → 无控件）
+ * - 历史加载失败静默：不发 toast，后续发送仍可用
+ * - 发送用户消息 → saveChatMessage({project_id, role:'user', content: prompt})（fire-and-forget）
+ * - AI 回复 done → saveChatMessage({project_id, role:'ai', content: 最终文本, intent: 解析后意图})
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -54,8 +61,17 @@ vi.mock('../api/pipeline', () => ({
   confirmExecution: vi.fn(),
 }));
 
-const streamChatMock = vi.hoisted(() => vi.fn());
-vi.mock('../api/chat', () => ({ streamChat: streamChatMock }));
+/** #547：chat api 模块 mock 聚合（streamChat + 消息 CRUD），vi.hoisted 供 vi.mock 工厂引用 */
+const chatApiMocks = vi.hoisted(() => ({
+  streamChat: vi.fn(),
+  fetchChatMessages: vi.fn(),
+  saveChatMessage: vi.fn(),
+  fetchChatConversations: vi.fn(),
+}));
+vi.mock('../api/chat', () => chatApiMocks);
+
+// #541 既有引用别名（既有 26 用例的 streamChatMock 行为不变）
+const streamChatMock = chatApiMocks.streamChat;
 
 const executeMock = vi.mocked(executePipeline);
 const statusMock = vi.mocked(getExecutionStatus);
@@ -81,6 +97,16 @@ interface ChatStreamCallbacks {
 interface CapturedChatStream {
   body: ChatStreamBody;
   callbacks: ChatStreamCallbacks;
+}
+
+/** #547：ChatMessageDto 本地镜像（GREEN 建 src/api/chat.ts 导出；形状对齐后端 GET/POST /api/v1/chat/messages 契约） */
+interface ChatMessageDto {
+  id: string;
+  project_id: string;
+  role: 'user' | 'ai';
+  content: string;
+  intent: 'content' | 'conversation' | null;
+  created_at: string;
 }
 
 const OPTS = { projectId: 'p1', chapterId: 'c1', chapterContent: '已有正文第一段。' };
@@ -152,6 +178,20 @@ function driveConversationReply(index: number, text: string) {
 beforeEach(() => {
   streamChatMock.mockReset();
   capturedStreams = [];
+  // #547：历史加载/持久化 mock 默认值——历史空列表（既有用例行为不变）；save 默认成功返回（fire-and-forget 不消费返回值）
+  chatApiMocks.fetchChatMessages.mockReset();
+  chatApiMocks.saveChatMessage.mockReset();
+  chatApiMocks.fetchChatConversations.mockReset();
+  chatApiMocks.fetchChatMessages.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
+  chatApiMocks.saveChatMessage.mockResolvedValue({
+    id: 'm-new',
+    project_id: 'p1',
+    role: 'user',
+    content: '',
+    intent: null,
+    created_at: '2026-08-21T10:00:00Z',
+  });
+  chatApiMocks.fetchChatConversations.mockResolvedValue({ items: [], total: 0 });
   // 默认 mock：返回 abort 函数 + 捕获 callbacks 供用例手动驱动（镜像 useExecutionPoll mock 套路）
   streamChatMock.mockImplementation(
     (body: ChatStreamBody, callbacks: ChatStreamCallbacks) => {
@@ -558,5 +598,107 @@ describe('ChatPanel — 失败与并发保护（#541 流式版）', () => {
     driveConversationReply(1, '回复二');
     expect(screen.getByTestId('chat-msg-ai-0')).toHaveTextContent('回复一');
     expect(screen.getByTestId('chat-msg-ai-1')).toHaveTextContent('回复二');
+  });
+});
+
+describe('ChatPanel — 历史加载与消息持久化（#547）', () => {
+  /** 历史消息 fixture（后端 GET /api/v1/chat/messages 时间升序；seq 按 role 独立从 0 起） */
+  const HISTORY: ChatMessageDto[] = [
+    { id: 'm1', project_id: 'p1', role: 'user', content: '之前的提问', intent: null, created_at: '2026-08-20T08:00:00Z' },
+    { id: 'm2', project_id: 'p1', role: 'ai', content: '之前的对话回答', intent: 'conversation', created_at: '2026-08-20T08:01:00Z' },
+    { id: 'm3', project_id: 'p1', role: 'ai', content: '可插入正文', intent: 'content', created_at: '2026-08-20T08:02:00Z' },
+  ];
+
+  it('挂载即加载历史：fetchChatMessages(projectId)；已存 user/ai 消息按 role 独立 seq 渲染', async () => {
+    chatApiMocks.fetchChatMessages.mockResolvedValue({ items: HISTORY, total: 3, offset: 0, limit: 50 });
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    // 挂载（projectId 变化同理）→ 以 projectId 拉取历史
+    await waitFor(() => {
+      expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledWith('p1');
+    });
+    // 历史消息落入消息区（seq 从 0 起：user/ai 各自独立计数）
+    await user.click(screen.getByTestId('chat-expand'));
+    expect(screen.getByTestId('chat-msg-user-0')).toHaveTextContent('之前的提问');
+    expect(screen.getByTestId('chat-msg-ai-0')).toHaveTextContent('之前的对话回答');
+    expect(screen.getByTestId('chat-msg-ai-1')).toHaveTextContent('可插入正文');
+  });
+
+  it('历史 AI 消息 intent 保留：content → chat-select 渲染且最新自动选中；conversation → 无选择控件', async () => {
+    chatApiMocks.fetchChatMessages.mockResolvedValue({ items: HISTORY, total: 3, offset: 0, limit: 50 });
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await waitFor(() => {
+      expect(chatApiMocks.fetchChatMessages).toHaveBeenCalled();
+    });
+    await user.click(screen.getByTestId('chat-expand'));
+    // conversation 条（ai seq 0）无选择控件
+    expect(screen.queryByTestId('chat-select-0')).not.toBeInTheDocument();
+    // content 条（ai seq 1）有选择控件且为最新 content 自动选中；共享插入按钮出现
+    expect(screen.getByTestId('chat-select-1')).toHaveAttribute('data-selected', 'true');
+    expect(screen.getByTestId('chat-insert-selected')).toBeInTheDocument();
+  });
+
+  it('历史加载失败静默：无 toast；发送仍可用（streamChat 正常触发）', async () => {
+    chatApiMocks.fetchChatMessages.mockRejectedValue(new Error('network down'));
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await waitFor(() => {
+      expect(chatApiMocks.fetchChatMessages).toHaveBeenCalled();
+    });
+    // 契约：失败不打扰——不发 toast
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+    // 后续发送仍可用
+    await sendAndAwaitStream(user, '故障后仍可对话');
+    expect(capturedStreams[0].body.prompt).toBe('故障后仍可对话');
+  });
+
+  it('发送用户消息 → saveChatMessage({project_id, role:"user", content})（fire-and-forget，intent 缺省）', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await sendAndAwaitStream(user, '帮我写一段打斗场景');
+    expect(chatApiMocks.saveChatMessage).toHaveBeenCalledWith({
+      project_id: 'p1',
+      role: 'user',
+      content: '帮我写一段打斗场景',
+    });
+  });
+
+  it('AI conversation 回复完成（onDone）→ saveChatMessage({project_id, role:"ai", content: 完整文本, intent:"conversation"})', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await sendAndAwaitStream(user, '聊聊角色设定');
+    driveConversationReply(0, '对话回复内容');
+    expect(chatApiMocks.saveChatMessage).toHaveBeenCalledWith({
+      project_id: 'p1',
+      role: 'ai',
+      content: '对话回复内容',
+      intent: 'conversation',
+    });
+  });
+
+  it('AI content 回复完成（onDone）→ saveChatMessage({project_id, role:"ai", content: 解析后 body, intent:"content"})', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await sendAndAwaitStream(user, '写一段打斗');
+    driveContentReply(0, '他握紧了剑。');
+    expect(chatApiMocks.saveChatMessage).toHaveBeenCalledWith({
+      project_id: 'p1',
+      role: 'ai',
+      content: '他握紧了剑。',
+      intent: 'content',
+    });
+  });
+
+  it('projectId 变化 → 以新 projectId 重新加载历史（fetchChatMessages 再次调用）', async () => {
+    const { rerender } = render(<ChatPanel projectId="p1" />);
+    await waitFor(() => {
+      expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledWith('p1');
+    });
+    rerender(<ChatPanel projectId="p2" />);
+    await waitFor(() => {
+      expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledWith('p2');
+    });
+    expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledTimes(2);
   });
 });

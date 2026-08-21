@@ -43,6 +43,7 @@ from inkflow.domain.models.character import (
     ExtractedCharacter,
     ExtractedRelation,
 )
+from inkflow.domain.models.chat_message import ChatMessage, ChatMessageCreate
 from inkflow.domain.models.context import (
     ChapterSummary,
     ContextAssemblyResult,
@@ -172,6 +173,8 @@ __all__ = [
     "CharacterRelation",
     "CharacterRelationCreate",
     "CharacterUpdate",
+    "ChatMessage",
+    "ChatMessageCreate",
     "ConsistencyReport",
     "ContextAssemblyResult",
     "ContextBlock",
