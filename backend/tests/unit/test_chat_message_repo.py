@@ -198,3 +198,151 @@ class TestListConversations:
     async def test_empty(self, db_session):
         repo = SQLiteChatMessageRepository(db_session)
         assert await repo.list_conversations() == []
+
+
+class TestArchiveDeleteRestore:
+    """#566 两级删除 — archive / force_delete / restore + is_deleted 过滤。
+
+    契约（镜像 SQLiteSessionRepository soft_delete/restore/hard_delete）:
+    - archive(message_id: int) -> bool（软删 is_deleted=true；False = 不存在/已归档）
+    - force_delete(message_id: int) -> bool（真删；False = 不存在）
+    - restore(message_id: int) -> ChatMessage | None（解除归档；None = 不存在/未归档）
+    - list_by_project / list_conversations 过滤已归档（is_deleted=false）
+
+    RED 预期: repo 无 archive/force_delete/restore 方法 + domain ChatMessage 无
+    is_deleted 字段 + list_by_project 无 is_deleted 过滤 → 本类用例 FAILED。
+    """
+
+    async def test_archive_soft_deletes_and_list_excludes(self, db_session):
+        """archive → is_deleted=true；list_by_project 不再返回该条。"""
+        repo = SQLiteChatMessageRepository(db_session)
+        created = await repo.add(_make_message(content="待归档"))
+        # list_by_project 仍含（未归档）
+        _items, total = await repo.list_by_project(PROJECT_ID)
+        assert total == 1
+
+        ok = await repo.archive(created.id.int)
+        assert ok is True
+
+        items, total = await repo.list_by_project(PROJECT_ID)
+        assert total == 0
+        assert items == []
+
+    async def test_archive_not_found_false(self, db_session):
+        """archive 不存在的 id → False。"""
+        repo = SQLiteChatMessageRepository(db_session)
+        assert await repo.archive(999_999) is False
+
+    async def test_archive_already_archived_false(self, db_session):
+        """已归档消息再次 archive → False（幂等，镜像 session soft_delete）。"""
+        repo = SQLiteChatMessageRepository(db_session)
+        created = await repo.add(_make_message(content="待归档"))
+        assert await repo.archive(created.id.int) is True
+        assert await repo.archive(created.id.int) is False
+
+    async def test_force_delete_removes_row(self, db_session):
+        """force_delete → 物理删除；list_by_project 不再返回。"""
+        repo = SQLiteChatMessageRepository(db_session)
+        created = await repo.add(_make_message(content="待真删"))
+        ok = await repo.force_delete(created.id.int)
+        assert ok is True
+        _items, total = await repo.list_by_project(PROJECT_ID)
+        assert total == 0
+
+    async def test_force_delete_not_found_false(self, db_session):
+        """force_delete 不存在的 id → False。"""
+        repo = SQLiteChatMessageRepository(db_session)
+        assert await repo.force_delete(999_999) is False
+
+    async def test_restore_reappears_in_list(self, db_session):
+        """archive → restore → list_by_project 重新包含该条。"""
+        repo = SQLiteChatMessageRepository(db_session)
+        created = await repo.add(_make_message(content="待恢复"))
+        await repo.archive(created.id.int)
+        assert (await repo.list_by_project(PROJECT_ID))[1] == 0
+
+        restored = await repo.restore(created.id.int)
+        assert restored is not None
+        assert restored.id == created.id
+        assert restored.is_deleted is False
+        items, total = await repo.list_by_project(PROJECT_ID)
+        assert total == 1
+        assert items[0].content == "待恢复"
+
+    async def test_restore_not_found_none(self, db_session):
+        """restore 不存在的 id → None。"""
+        repo = SQLiteChatMessageRepository(db_session)
+        assert await repo.restore(999_999) is None
+
+    async def test_restore_not_archived_none(self, db_session):
+        """restore 未归档消息 → None（无副作用，镜像 session restore）。"""
+        repo = SQLiteChatMessageRepository(db_session)
+        created = await repo.add(_make_message(content="活跃"))
+        assert await repo.restore(created.id.int) is None
+
+    async def test_list_conversations_excludes_archived(self, db_session):
+        """list_conversations 聚合排除已归档消息（is_deleted=false）。"""
+        repo = SQLiteChatMessageRepository(db_session)
+        created = await repo.add(_make_message(content="将归档"))
+        # 归档前聚合含 1 条
+        convs_before = await repo.list_conversations()
+        assert any(c["project_id"] == str(PROJECT_ID) for c in convs_before)
+
+        await repo.archive(created.id.int)
+        convs_after = await repo.list_conversations()
+        assert not any(c["project_id"] == str(PROJECT_ID) for c in convs_after)
+
+
+class TestArchiveDeleteByProject:
+    """#566 会话级（per-project）归档/真删 — archive_by_project / force_delete_by_project。"""
+
+    async def test_archive_by_project_marks_all(self, db_session):
+        """archive_by_project 归档整项目活跃消息，返回受影响行数。"""
+        repo = SQLiteChatMessageRepository(db_session)
+        await repo.add(_make_message(content="一"))
+        await repo.add(_make_message(content="二"))
+        n = await repo.archive_by_project(PROJECT_ID.int)
+        assert n == 2
+        _items, total = await repo.list_by_project(PROJECT_ID)
+        assert total == 0
+
+    async def test_archive_by_project_only_active(self, db_session):
+        """archive_by_project 仅归档未归档消息（已归档不计入）。"""
+        repo = SQLiteChatMessageRepository(db_session)
+        c1 = await repo.add(_make_message(content="一"))
+        await repo.archive(c1.id.int)  # 已归档
+        await repo.add(_make_message(content="二"))
+        n = await repo.archive_by_project(PROJECT_ID.int)
+        assert n == 1  # 仅「二」被归档
+
+    async def test_force_delete_by_project(self, db_session):
+        """force_delete_by_project 物理删除整项目消息，返回受影响行数。"""
+        repo = SQLiteChatMessageRepository(db_session)
+        await repo.add(_make_message(content="一"))
+        await repo.add(_make_message(content="二"))
+        n = await repo.force_delete_by_project(PROJECT_ID.int)
+        assert n == 2
+        _items, total = await repo.list_by_project(PROJECT_ID)
+        assert total == 0
+
+
+class TestChatMessageAssemblyAndOrm:
+    """#566 覆盖率补测：get_chat_message_service 真实装配 + ORM 默认值/__repr__。"""
+
+    async def test_get_chat_message_service_assembly(self, db_session):
+        """get_chat_message_service(真实 session) → ChatMessageService 实例（#177 L33 覆盖）。"""
+        from inkflow.api.routers.chat_messages import get_chat_message_service
+        from inkflow.domain.services.chat_message_service import ChatMessageService
+
+        svc = get_chat_message_service(db_session)
+        assert isinstance(svc, ChatMessageService)
+
+    async def test_orm_created_at_default_and_repr(self, db_session):
+        """ChatMessageORM 不传 created_at → 默认 _utcnow；__repr__ 可用（#177 L14/L38 覆盖）。"""
+        from inkflow.infrastructure.database.models.chat_message import ChatMessageORM
+
+        orm = ChatMessageORM(project_id=PROJECT_ID.int, role="user", content="hi")
+        db_session.add(orm)
+        await db_session.commit()
+        assert orm.created_at is not None
+        assert "ChatMessageORM" in repr(orm)

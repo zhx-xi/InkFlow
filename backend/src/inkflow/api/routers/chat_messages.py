@@ -86,3 +86,54 @@ async def list_conversations(
     svc = get_chat_message_service(db)
     items = await svc.list_conversations()
     return {"items": items, "total": len(items)}
+
+
+@router.delete("/messages/{message_id}", status_code=204)
+async def delete_message(
+    message_id: str,
+    force: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """删除 chat 消息（默认归档；?force=true 真实删除，镜像 sessions 两级删除）。"""
+    try:
+        mid = uuid.UUID(message_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="chat 消息不存在") from None
+    svc = get_chat_message_service(db)
+    ok = await svc.force_delete_message(mid) if force else await svc.archive_message(mid)
+    if not ok:
+        raise HTTPException(status_code=404, detail="chat 消息不存在")
+
+
+@router.post("/messages/{message_id}/restore")
+async def restore_message(
+    message_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """解除归档 chat 消息（未归档幂等）。"""
+    try:
+        mid = uuid.UUID(message_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="chat 消息不存在") from None
+    svc = get_chat_message_service(db)
+    message = await svc.restore_message(mid)
+    if message is None:
+        raise HTTPException(status_code=404, detail="chat 消息不存在")
+    return _message_to_json(message)
+
+
+@router.delete("/conversations/{project_id}", status_code=204)
+async def delete_conversation(
+    project_id: str,
+    force: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """删除整项目 chat 会话（默认归档；?force=true 真实删除，per-project 会话卡片清理）。"""
+    try:
+        pid = uuid.UUID(project_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="chat 会话不存在") from None
+    svc = get_chat_message_service(db)
+    ok = await svc.force_delete_conversation(pid) if force else await svc.archive_conversation(pid)
+    if not ok:
+        raise HTTPException(status_code=404, detail="chat 会话不存在")
