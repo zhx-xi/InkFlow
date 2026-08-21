@@ -113,9 +113,6 @@ export function ProjectSettingsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="">{t('ag.templateNone')}</SelectItem>
-                <SelectItem value="builtin:write_auto">{t('ag.tplWriteAuto')}</SelectItem>
-                <SelectItem value="builtin:write_continue">{t('ag.tplWriteContinue')}</SelectItem>
-                <SelectItem value="builtin:chat">{t('ag.tplChat')}</SelectItem>
                 {templates.map((tpl) => (
                   <SelectItem key={tpl.id} value={String(tpl.id)}>{tpl.name}</SelectItem>
                 ))}
