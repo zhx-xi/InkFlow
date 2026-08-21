@@ -117,6 +117,28 @@ async def test_chapter_context_none_keeps_user_content_as_prompt(svc_and_llm) ->
 
 
 @pytest.mark.asyncio
+async def test_stream_async_generator_path(svc_and_llm) -> None:
+    """真实客户端路径：llm_client.chat_stream 为 async 生成器（LangChainLLMClient 形态）。
+
+    #541 coverage 补测：既有 fake 是普通方法返回同步生成器（走 sync 分支）；
+    本用例覆盖 async for 分支（hasattr(stream, '__aiter__') 为真）。
+    """
+
+    class _AsyncLLM:
+        def __init__(self, chunks: list[str]) -> None:
+            self._chunks = chunks
+
+        async def chat_stream(self, messages: list[ChatMessage], **kwargs):
+            for c in self._chunks:
+                yield StreamEvent(content=c)
+
+    svc = ChatService(llm_client=_AsyncLLM(["你", "好"]), system_prompt=SYSTEM_PROMPT)
+    events = [ev async for ev in svc.stream(prompt="你好")]
+    assert [ev.delta for ev in events[:-1]] == ["你", "好"]
+    assert events[-1].done is True
+
+
+@pytest.mark.asyncio
 async def test_stream_propagates_llm_error() -> None:
     """LLM 抛 LLMRequestError → 向上传播（router 层转 SSE error 帧）。"""
     llm = _FakeLLM(chunks=["你"], error=LLMRequestError("API key invalid"))
