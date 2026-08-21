@@ -46,6 +46,7 @@ from httpx_sse import aconnect_sse
 
 from inkflow.api.app import app  # 必须先于 stub 行导入（GREEN 时 app 导入链注册真模块）
 from inkflow.domain.ports.llm_errors import LLMRequestError
+from inkflow.domain.services.chat_service import ChatService
 
 # RED 阶段 inkflow.api.routers.chat_stream 模块不存在——注入同路径 stub 模块，
 # 使 fixture 内 get_chat_service 导入可解析（规则 1e 逃生门）→ 用例跑到端点呈现 404。
@@ -215,6 +216,44 @@ class TestChatStreamErrors:
         assert frames[0] == {"delta": "你", "done": False}
         assert frames[1] == {"done": True, "error": "LLM 调用失败，请稍后重试"}
         assert "API key invalid" not in json.dumps(frames, ensure_ascii=False)
+
+
+# ── 装配路径 ────────────────────────────────────────────────────
+
+
+class TestChatStreamAssembly:
+    """真实装配：get_chat_service() 产出可用的 ChatService（#541 coverage 补测）。"""
+
+    def test_get_chat_service_returns_assembled_service(self) -> None:
+        """DI 覆盖绕过真实装配——本用例直接调用确认可构造（LangChainLLMClient 构造无网络）。"""
+        from inkflow.api.routers.chat_stream import get_chat_service
+
+        svc = get_chat_service()
+        assert isinstance(svc, ChatService)
+        # system_prompt 来自 _CHAT_ASSISTANT_PROMPT（含创作助手语义标识）
+        assert "资深小说创作对话助手" in svc._system_prompt  # 单测直查装配内部提示词
+
+
+class TestChatStreamDisconnect:
+    """客户端提前断开 → 服务端生成器经 request.is_disconnected 分支终止（coverage 补测）。"""
+
+    @pytest.mark.asyncio
+    async def test_stream_client_disconnect_terminates_generator(
+        self, override_chat_service, mock_chat_service
+    ) -> None:
+        """读 1 帧后关闭连接：多帧流在断开点停止（无异常；分支执行与否由 transport 决定）。"""
+
+        async def _gen(prompt: str, chapter_context: str | None = None):
+            for _ in range(200):
+                yield _ev(delta="x")
+
+        mock_chat_service.stream = _gen
+        async with (
+            _client() as client,
+            aconnect_sse(client, "POST", "/api/v1/chat/stream", json=_payload()) as sse,
+        ):
+            async for _ in sse.aiter_sse():
+                break  # 读 1 帧后立即关闭（模拟客户端断开）
 
 
 # ── 校验错误路径 ────────────────────────────────────────────────

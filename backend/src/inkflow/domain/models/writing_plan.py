@@ -49,6 +49,9 @@ class WritingPlan(BaseModel):
         title: 书名/计划名（planner 访谈产出，或用户一句话标题）.
         status: 计划状态（drafting/auto/ready/running/completed/aborted）.
         root_outline_id: 书级大纲（level=overall）UUID - 结构树锚点.
+        start_type: 起点模式（#544）：new / continue / branch.
+        source_outline_id: 起点源大纲（continue/branch 用；new 为 None）.
+        copied_outline_id: branch 复制出的新大纲根 id（#544 命名裁定）.
         character_ids: 主角/配角 character 实体 id 列表（planner 产出）.
         limits: 多维上限计数器（搂2.4；int 计数 + tokens_warning 布尔告警）.
         progress: 节点进度快照 {outline_id: PlanNodeStatus}（权威进度）.
@@ -65,6 +68,9 @@ class WritingPlan(BaseModel):
     title: str
     status: str = "drafting"
     root_outline_id: uuid.UUID | None = None
+    start_type: str = "new"
+    source_outline_id: uuid.UUID | None = None
+    copied_outline_id: uuid.UUID | None = None
     character_ids: list[uuid.UUID] = Field(default_factory=list)
     limits: dict[str, int | bool] = Field(default_factory=dict)
     progress: dict[str, str] = Field(default_factory=dict)  # outline_id -> status
