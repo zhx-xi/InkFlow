@@ -358,6 +358,23 @@ describe('写作页 — 空态（#98 §5.2.6）', () => {
 });
 
 /**
+ * #565 执行详情页隐藏 ChatPanel：view=detail 不渲染底部 AI 对话栏（仅 editor 视图有）。
+ */
+describe('写作页 — 执行详情页隐藏 ChatPanel（#565）', () => {
+  it('view=detail 不渲染 ChatPanel（仅 editor 视图有）', () => {
+    render(<WritingPage />);
+    // editor 视图渲染 ChatPanel
+    expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+    // 切到 detail 视图
+    fireEvent.click(screen.getByTestId('view-toggle'));
+    // RED：当前两种 view 都渲染 ChatPanel → 这里 FAIL（queryByTestId 仍找到 chat-panel）
+    expect(screen.queryByTestId('chat-panel')).not.toBeInTheDocument();
+    // 执行详情面板渲染（无 executionId → 空态），布局不混杂 chat
+    expect(screen.getByTestId('exec-detail-empty')).toBeInTheDocument();
+  });
+});
+
+/**
  * #105 Coverage-Gap 补测（非 RED）：自动保存防抖定时器分支 + 快捷键 switch default 兜底。
  */
 describe('写作页 — 自动保存与工具栏/快捷键兜底分支（#105 补测）', () => {
