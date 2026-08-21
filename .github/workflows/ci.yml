@@ -327,6 +327,7 @@ jobs:
       - name: Run writing integration tests
         run: |
           uv run pytest ../tests/api/test_writing_api.py `
+                 ../tests/api/test_chat_stream_api.py `
                  ../tests/cli/test_cli_writing.py `
                  -v --tb=short
 
