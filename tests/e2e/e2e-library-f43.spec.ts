@@ -375,11 +375,13 @@ test('设定库：世界观分类筛选 toggle（E2E-A4）——点 chip 仅显�
     const pid = await findProjectId(kernel, name);
     // #389：先建分类实体（chips 来源 = world_categories），再建条目（category 匹配分类实体）
     await presetWorldCategories(kernel, pid, ['势力', '组织', '门派']);
+    // #567 单例：一项目一根——根「世界观」+ 分类元素作其子孙（多根已废）
     await presetWorldNodes(kernel, pid, [
-      { name: '九州', category: '势力' },
+      { name: '世界观', category: '' },
+      { name: '九州', category: '势力', parent: '世界观' },
       { name: '中州', category: '势力', parent: '九州' },
-      { name: '宗门', category: '组织' },
-      { name: '昆仑派', category: '门派' },
+      { name: '宗门', category: '组织', parent: '世界观' },
+      { name: '昆仑派', category: '门派', parent: '世界观' },
     ]);
 
     await gotoNav(window, '设定库');
@@ -425,10 +427,12 @@ test('设定库：世界观行内复制到目标项目（E2E-A5）——subtree 
     });
     expect(targetRes.status).toBe(201);
     const targetPid = ((await targetRes.json()) as { id: string }).id;
+    // #567 单例：一项目一根——根「世界观」+ 分类元素作其子孙（多根已废）
     const ids = await presetWorldNodes(kernel, pid, [
-      { name: '九州', category: '地图' },
+      { name: '世界观', category: '' },
+      { name: '九州', category: '地图', parent: '世界观' },
       { name: '中州', category: '地图', parent: '九州' },
-      { name: '宗门', category: '组织' },
+      { name: '宗门', category: '组织', parent: '世界观' },
     ]);
 
     await gotoNav(window, '设定库');

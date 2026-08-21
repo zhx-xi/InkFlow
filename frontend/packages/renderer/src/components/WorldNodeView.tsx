@@ -30,6 +30,23 @@ export function buildWorldTree(items: LibraryItemDTO[]): WorldTreeNode[] {
   return roots;
 }
 
+/** F43 P1（§5.3，#567 单例）：分类筛选作用于整棵树——保留匹配节点及其子树；
+ * 不匹配且无匹配后代的节点剪除（一项目一根下，分类元素为根的子孙，筛选需沿树）。 */
+export function filterWorldTree(
+  nodes: WorldTreeNode[],
+  category: string | null,
+): WorldTreeNode[] {
+  if (category === null) return nodes;
+  const out: WorldTreeNode[] = [];
+  for (const node of nodes) {
+    const children = filterWorldTree(node.children, category);
+    if (node.item.category === category || children.length > 0) {
+      out.push({ ...node, children });
+    }
+  }
+  return out;
+}
+
 /** F43 P1（§5.3）：递归树节点视图——toggle 仅渲染在有子节点行；操作按钮随 D12 悬停显示 */
 export function WorldNodeView({
   node,
