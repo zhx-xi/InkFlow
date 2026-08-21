@@ -395,7 +395,7 @@ export const en: Record<string, string> = {
   'write.context.expand': 'Expand context',
   'write.stream.generating': 'Generating',
   'write.stream.stop': 'Stop',
-  'write.stream.idle': 'Click "Continue" or press Ctrl+Enter to continue writing',
+  'write.stream.idle': 'Chat with AI below to start writing',
   'write.stream.done': '{words} words · {model} · format {valid}',
   'write.stream.valid': 'valid',
   'write.stream.invalid': 'invalid',

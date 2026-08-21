@@ -400,7 +400,7 @@ export const zh = {
   'write.context.expand': '展开上下文',
   'write.stream.generating': '生成中',
   'write.stream.stop': '停止',
-  'write.stream.idle': '点击「续写」或 Ctrl+Enter 开始 AI 续写',
+  'write.stream.idle': '在下方对话框与 AI 对话，开始创作',
   'write.stream.done': '已生成 {words} 字 · 模型 {model} · 格式校验{valid}',
   'write.stream.valid': '通过',
   'write.stream.invalid': '未通过',
