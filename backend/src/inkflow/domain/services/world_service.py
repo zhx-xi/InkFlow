@@ -207,6 +207,16 @@ class WorldService:
         """
         return await self._repo.list_categories(_to_int_id(project_id))
 
+    async def has_root_setting(self, project_id: int | uuid.UUID) -> bool:
+        """项目是否已有根世界观条目（parent_id IS NULL）。
+
+        #567 单例校验：创建根条目前判重。repo.list top_level_only=True limit=1 判空。
+        """
+        roots, _ = await self._repo.list(
+            _to_int_id(project_id), top_level_only=True, limit=1
+        )
+        return len(roots) > 0
+
     async def update_setting(
         self, setting_id: int | uuid.UUID, update: WorldUpdate
     ) -> WorldSetting | None:

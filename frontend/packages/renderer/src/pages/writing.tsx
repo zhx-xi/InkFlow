@@ -258,7 +258,7 @@ export function WritingPage() {
           ) : (
             <ExecutionDetailPanel executionId={executionId} />
           )}
-          {effectiveProjectId !== '' && currentChapterId !== null ? (
+          {view === 'editor' && effectiveProjectId !== '' && currentChapterId !== null ? (
             <ChatPanel
               projectId={effectiveProjectId}
               chapterId={currentChapterId ?? undefined}
