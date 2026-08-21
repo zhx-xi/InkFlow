@@ -415,6 +415,9 @@ export const en: Record<string, string> = {
   'write.chat.failed': 'Chat failed: {message}',
   'write.chat.expand': 'Expand chat',
   'write.chat.collapse': 'Collapse chat',
+  // #541: hermes-style chat role labels
+  'write.chat.user': 'You',
+  'write.chat.ai': 'AI',
   'write.view.toDetail': 'View AI execution details',
   'write.view.toEditor': 'Back to editor',
   'write.detail.empty': 'No execution records',
