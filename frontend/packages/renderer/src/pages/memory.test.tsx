@@ -517,7 +517,6 @@ describe('记忆页 — 手动添加/编辑记忆（#521）', () => {
     // 默认作用域 = 项目级：作用域 Select 显示「项目级」且无用户级提示
     expect(screen.getByTestId('memory-add-scope')).toHaveTextContent('项目级');
     expect(screen.queryByTestId('memory-add-user-hint')).not.toBeInTheDocument();
-
     await user.click(screen.getByTestId('memory-add-category'));
     await user.click(await screen.findByRole('option', { name: '称呼' }));
     await user.type(screen.getByTestId('memory-add-pattern'), '她');
@@ -630,5 +629,18 @@ describe('记忆页 — 手动添加/编辑记忆（#521）', () => {
     expect(createUserPreferenceMock).not.toHaveBeenCalled();
     expect(updateProjectPreferenceMock).not.toHaveBeenCalled();
     expect(updateUserPreferenceMock).not.toHaveBeenCalled();
+  });
+
+  it('添加记忆表单为弹框（role=dialog，#546：内联表单改 Dialog）', async () => {
+    const user = userEvent.setup();
+    seedProjects();
+    renderMemoryPage();
+    await screen.findByTestId('memory-prefs-section');
+
+    await user.click(screen.getByTestId('memory-add-btn'));
+    const form = screen.getByTestId('memory-add-form');
+    expect(form).toBeInTheDocument();
+    // #546：添加记忆必须是弹框（role=dialog）而非内联展开
+    expect(form).toHaveAttribute('role', 'dialog');
   });
 });

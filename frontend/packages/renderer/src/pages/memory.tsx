@@ -2,7 +2,7 @@
  * #486 会话/记忆 UI — 记忆页（语义总结展示 + 提取记忆 + 项目/用户级偏好管理）.
  * 无项目态不发任何请求；有项目态并行加载总结/偏好，切换项目重拉项目级数据.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   createProjectPreference,
@@ -133,9 +133,15 @@ export function MemoryPage() {
     setExtracting(true);
     setExtractError(null);
     try {
-      await summarizeMemory(pid, true);
+      const result = await summarizeMemory(pid, true);
       // 提取成功后刷新 summaries（也可直接 set 返回的 project/user，两种实现最终态一致）
       setSummaries(await fetchMemorySummaries(pid));
+      // #546：提取反馈——有内容成功 toast；无内容（summarized=false）提示暂无内容
+      if (result.summarized) {
+        pushToast('ok', t('memory.extract.success'));
+      } else {
+        pushToast('warn', t('memory.extract.noContent'));
+      }
     } catch (err) {
       setExtractError(errorMessage(err));
     } finally {
@@ -190,12 +196,22 @@ export function MemoryPage() {
   };
 
   /** #521：取消 = 关闭表单 + 清空 pattern/value + 退出编辑态（不调任何 create/update API） */
-  const handleAddCancel = (): void => {
+  const handleAddCancel = useCallback((): void => {
     setAddOpen(false);
     setAddPattern('');
     setAddValue('');
     setEditing(null);
-  };
+  }, []);
+
+  /** #546：弹框 Esc 关闭（document 级监听；尊重 Radix Select 等已 preventDefault 的 Escape） */
+  useEffect(() => {
+    if (!addOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) handleAddCancel();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [addOpen, handleAddCancel]);
 
   if (!hasProject) {
     return (
@@ -305,90 +321,96 @@ export function MemoryPage() {
         )}
       </div>
       {addOpen && (
-        <div
-          data-testid="memory-add-form"
-          className="mt-4 rounded-lg border border-line bg-surface p-4"
-        >
-          {editing === null && (
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[12px] text-ink-3">{t('memory.add.scope.label')}</label>
-              <Select
-                value={scope}
-                onValueChange={(v) => setScope(v === 'user' ? 'user' : 'project')}
-              >
+        <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('memory.add.title')}
+            data-testid="memory-add-form"
+            className="w-[420px] rounded-lg border border-line bg-surface p-4 shadow-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {editing === null && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[12px] text-ink-3">{t('memory.add.scope.label')}</label>
+                <Select
+                  value={scope}
+                  onValueChange={(v) => setScope(v === 'user' ? 'user' : 'project')}
+                >
+                  <SelectTrigger
+                    data-testid="memory-add-scope"
+                    aria-label={t('memory.add.scope.label')}
+                    className="w-56"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="project">{t('memory.add.scope.project')}</SelectItem>
+                    <SelectItem value="user">{t('memory.add.scope.user')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {scope === 'user' && editing === null && (
+              <p data-testid="memory-add-user-hint" className="mt-3 text-[12px] text-ink-2">
+                {t('memory.add.user.hint')}
+              </p>
+            )}
+            <div className="mt-3 flex flex-col gap-1.5">
+              <label className="text-[12px] text-ink-3">{t('memory.add.category.label')}</label>
+              <Select value={addCategory} onValueChange={setAddCategory}>
                 <SelectTrigger
-                  data-testid="memory-add-scope"
-                  aria-label={t('memory.add.scope.label')}
+                  data-testid="memory-add-category"
+                  aria-label={t('memory.add.category.label')}
                   className="w-56"
                 >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="project">{t('memory.add.scope.project')}</SelectItem>
-                  <SelectItem value="user">{t('memory.add.scope.user')}</SelectItem>
+                  {Object.entries(CATEGORY_LABEL).map(([value, labelKey]) => (
+                    <SelectItem key={value} value={value}>
+                      {t(labelKey)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-          )}
-          {scope === 'user' && editing === null && (
-            <p data-testid="memory-add-user-hint" className="mt-3 text-[12px] text-ink-2">
-              {t('memory.add.user.hint')}
-            </p>
-          )}
-          <div className="mt-3 flex flex-col gap-1.5">
-            <label className="text-[12px] text-ink-3">{t('memory.add.category.label')}</label>
-            <Select value={addCategory} onValueChange={setAddCategory}>
-              <SelectTrigger
-                data-testid="memory-add-category"
-                aria-label={t('memory.add.category.label')}
-                className="w-56"
+            <div className="mt-3 flex flex-col gap-1.5">
+              <label className="text-[12px] text-ink-3">{t('memory.add.pattern.label')}</label>
+              <input
+                data-testid="memory-add-pattern"
+                value={addPattern}
+                onChange={(e) => setAddPattern(e.target.value)}
+                className="rounded-md border border-line bg-surface-2 px-3 py-1.5 text-[13px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              />
+            </div>
+            <div className="mt-3 flex flex-col gap-1.5">
+              <label className="text-[12px] text-ink-3">{t('memory.add.value.label')}</label>
+              <input
+                data-testid="memory-add-value"
+                value={addValue}
+                onChange={(e) => setAddValue(e.target.value)}
+                className="rounded-md border border-line bg-surface-2 px-3 py-1.5 text-[13px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              />
+            </div>
+            <div className="mt-4 flex items-center gap-3">
+              <button
+                type="button"
+                data-testid="memory-add-submit"
+                className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                onClick={() => void handleAddSubmit()}
               >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(CATEGORY_LABEL).map(([value, labelKey]) => (
-                  <SelectItem key={value} value={value}>
-                    {t(labelKey)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="mt-3 flex flex-col gap-1.5">
-            <label className="text-[12px] text-ink-3">{t('memory.add.pattern.label')}</label>
-            <input
-              data-testid="memory-add-pattern"
-              value={addPattern}
-              onChange={(e) => setAddPattern(e.target.value)}
-              className="rounded-md border border-line bg-surface-2 px-3 py-1.5 text-[13px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-            />
-          </div>
-          <div className="mt-3 flex flex-col gap-1.5">
-            <label className="text-[12px] text-ink-3">{t('memory.add.value.label')}</label>
-            <input
-              data-testid="memory-add-value"
-              value={addValue}
-              onChange={(e) => setAddValue(e.target.value)}
-              className="rounded-md border border-line bg-surface-2 px-3 py-1.5 text-[13px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-            />
-          </div>
-          <div className="mt-4 flex items-center gap-3">
-            <button
-              type="button"
-              data-testid="memory-add-submit"
-              className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-              onClick={() => void handleAddSubmit()}
-            >
-              {t('memory.add.submit')}
-            </button>
-            <button
-              type="button"
-              data-testid="memory-add-cancel"
-              className="rounded-md border border-line bg-surface px-4 py-1.5 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-              onClick={handleAddCancel}
-            >
-              {t('memory.add.cancel')}
-            </button>
+                {t('memory.add.submit')}
+              </button>
+              <button
+                type="button"
+                data-testid="memory-add-cancel"
+                className="rounded-md border border-line bg-surface px-4 py-1.5 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                onClick={handleAddCancel}
+              >
+                {t('memory.add.cancel')}
+              </button>
+            </div>
           </div>
         </div>
       )}
