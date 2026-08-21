@@ -272,6 +272,33 @@ async def test_start_branch_source_not_found_raises():
         )
 
 
+@pytest.mark.asyncio
+async def test_start_branch_outline_repo_missing_raises():
+    """branch + 源大纲非空但 outline_repo 未装配 → ValueError("源大纲不存在")
+    （#544 coverage 补测）。"""
+    svc = _make_service(_make_repo())  # 未注入 outline_repo
+
+    with pytest.raises(ValueError, match="源大纲不存在"):
+        await svc.start(
+            _pid(), "写一本关于时间旅者的悬疑小说", mode="branch", source_outline_id=uuid.uuid4()
+        )
+
+
+@pytest.mark.asyncio
+async def test_start_branch_outline_service_missing_raises():
+    """branch + outline_repo 就绪但 outline_service 未装配 → ValueError("分支复制未装配大纲服务")
+    （#544 coverage 补测）。"""
+    root, _child1, _child2, _other = _outline_tree()
+    svc = _make_service(
+        _make_repo(), outline_repo=_FakeOutlineRepo([root]), outline_service=None
+    )
+
+    with pytest.raises(ValueError, match="分支复制未装配大纲服务"):
+        await svc.start(
+            _pid(), "写一本关于时间旅者的悬疑小说", mode="branch", source_outline_id=root.id
+        )
+
+
 # ── start：continue（#544）─────────────────────────────────────────
 
 
