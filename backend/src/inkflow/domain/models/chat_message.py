@@ -33,6 +33,7 @@ class ChatMessage(BaseModel):
     content: str
     intent: Literal["content", "conversation"] | None = None
     created_at: datetime
+    is_deleted: bool = False
 
 
 class ChatMessageCreate(BaseModel):

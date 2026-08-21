@@ -6,7 +6,9 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.chat_message import ChatMessage
@@ -29,6 +31,7 @@ def _orm_to_domain(row: ChatMessageORM) -> ChatMessage:
         content=row.content,
         intent=cast(Literal["content", "conversation"] | None, row.intent),
         created_at=row.created_at if row.created_at.tzinfo else row.created_at.replace(tzinfo=UTC),
+        is_deleted=row.is_deleted,
     )
 
 
@@ -57,6 +60,7 @@ class SQLiteChatMessageRepository:
         stmt = (
             select(ChatMessageORM)
             .where(ChatMessageORM.project_id == project_id.int)
+            .where(~ChatMessageORM.is_deleted)
             .order_by(ChatMessageORM.created_at.asc(), ChatMessageORM.id.asc())
             .offset(offset)
             .limit(limit)
@@ -65,7 +69,8 @@ class SQLiteChatMessageRepository:
         total = (
             await self._db.execute(
                 select(func.count()).select_from(ChatMessageORM).where(
-                    ChatMessageORM.project_id == project_id.int
+                    ChatMessageORM.project_id == project_id.int,
+                    ~ChatMessageORM.is_deleted,
                 )
             )
         ).scalar_one()
@@ -75,6 +80,7 @@ class SQLiteChatMessageRepository:
         """按项目聚合（最新消息/条数/更新时间降序；project_name 可空 join）。"""
         stmt = (
             select(ChatMessageORM)
+            .where(~ChatMessageORM.is_deleted)
             .order_by(ChatMessageORM.created_at.desc(), ChatMessageORM.id.desc())
         )
         rows = (await self._db.execute(stmt)).scalars().all()
@@ -111,3 +117,60 @@ class SQLiteChatMessageRepository:
         ]
         items.sort(key=lambda x: x["updated_at"], reverse=True)
         return items
+
+    async def archive(self, message_id: int) -> bool:
+        """归档消息（is_deleted=true）。返回 True 表示成功归档，False 表示未找到/已归档。"""
+        stmt = (
+            sa_update(ChatMessageORM)
+            .where(ChatMessageORM.id == message_id, ~ChatMessageORM.is_deleted)
+            .values(is_deleted=True)
+        )
+        result = await self._db.execute(stmt)
+        await self._db.commit()
+        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
+
+    async def force_delete(self, message_id: int) -> bool:
+        """物理删除消息。返回 True 表示删除成功，False 表示不存在。"""
+        stmt = select(ChatMessageORM).where(ChatMessageORM.id == message_id)
+        result = await self._db.execute(stmt)
+        orm = result.scalar_one_or_none()
+        if orm is None:
+            return False
+        await self._db.delete(orm)
+        await self._db.commit()
+        return True
+
+    async def restore(self, message_id: int) -> ChatMessage | None:
+        """解除归档（is_deleted=false）。返回解除后的消息；不存在/未归档返回 None。"""
+        stmt = (
+            sa_update(ChatMessageORM)
+            .where(ChatMessageORM.id == message_id, ChatMessageORM.is_deleted)
+            .values(is_deleted=False)
+        )
+        result = await self._db.execute(stmt)
+        if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
+            await self._db.commit()
+            return None
+        await self._db.commit()
+        row = (await self._db.execute(
+            select(ChatMessageORM).where(ChatMessageORM.id == message_id)
+        )).scalar_one_or_none()
+        return _orm_to_domain(row) if row else None
+
+    async def archive_by_project(self, project_id: int) -> int:
+        """归档整项目活跃 chat 消息（会话级软删，is_deleted=true）。返回受影响行数。"""
+        stmt = (
+            sa_update(ChatMessageORM)
+            .where(ChatMessageORM.project_id == project_id, ~ChatMessageORM.is_deleted)
+            .values(is_deleted=True)
+        )
+        result = await self._db.execute(stmt)
+        await self._db.commit()
+        return result.rowcount  # type: ignore[no-any-return, attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
+
+    async def force_delete_by_project(self, project_id: int) -> int:
+        """物理删除整项目 chat 消息（会话级真删）。返回受影响行数。"""
+        stmt = sa_delete(ChatMessageORM).where(ChatMessageORM.project_id == project_id)
+        result = await self._db.execute(stmt)
+        await self._db.commit()
+        return result.rowcount  # type: ignore[no-any-return, attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
