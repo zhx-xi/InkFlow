@@ -1,9 +1,11 @@
 /** 书级编排访谈单面板（F44 阶段1）：one-liner 启动 → 轮次问题/模板 → 计划 → 委托运行面板 */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { apiFetch } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import { useBookLimits, type BookLimitsValues } from '../hooks/useBookLimits';
 import { useBookStore } from '../stores/book';
 import { ensureModelReady } from '../stores/models';
+import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
 import { BookRunPanel } from './BookRunPanel';
 
@@ -21,6 +23,7 @@ export function BookPlannerPanel({ projectId }: BookPlannerPanelProps) {
   const error = useBookStore((s) => s.error);
   const writingPlan = useBookStore((s) => s.writingPlan);
   const runId = useBookStore((s) => s.runId);
+  const projects = useProjectStore((s) => s.projects);
   const startPlanner = useBookStore((s) => s.startPlanner);
   const respond = useBookStore((s) => s.respond);
   const respondAuto = useBookStore((s) => s.respondAuto);
@@ -29,9 +32,40 @@ export function BookPlannerPanel({ projectId }: BookPlannerPanelProps) {
 
   const [oneLiner, setOneLiner] = useState('');
   const [answer, setAnswer] = useState('');
+  /** #544：独立项目选择（初始 = 传入 prop；切换不联动 useProjectStore.currentProjectId） */
+  const [selectedProjectId, setSelectedProjectId] = useState(projectId);
+  /** #544：起点模板（new 默认 / continue 续写 / branch 分支） */
+  const [startMode, setStartMode] = useState<'new' | 'continue' | 'branch'>('new');
+  /** #544：选中源大纲 id（'' = 未选；仅 continue/branch 生效） */
+  const [sourceOutlineId, setSourceOutlineId] = useState('');
+  const [outlines, setOutlines] = useState<Array<{ id: string; name: string }>>([]);
   /** F44 v1.2 #475：确认卡片修改编辑态（key + 新值） */
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+
+  /** #544：continue/branch 时拉取选中项目的大纲列表（切换项目/模板重拉；new 隐藏不拉） */
+  useEffect(() => {
+    if (startMode === 'new') {
+      setOutlines([]);
+      setSourceOutlineId('');
+      return;
+    }
+    let cancelled = false;
+    setSourceOutlineId('');
+    void apiFetch<{ items: Array<{ id: string; name: string }> }>(
+      `/api/v1/projects/${selectedProjectId}/outlines`,
+    )
+      .then((data) => {
+        if (!cancelled) setOutlines(data.items);
+      })
+      .catch(() => {
+        // 拉取失败仅清空选项（未选时 start 不传 source_outline_id，不阻塞启动）
+        if (!cancelled) setOutlines([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProjectId, startMode]);
 
   const handleStart = async () => {
     const text = oneLiner.trim();
@@ -41,7 +75,13 @@ export function BookPlannerPanel({ projectId }: BookPlannerPanelProps) {
       useToastStore.getState().pushToast('warn', t('common.modelNotConfigured'));
       return;
     }
-    void startPlanner(projectId, text);
+    // #544：恒传 4 参——new 无源大纲传 null；continue/branch 传选中源大纲 id（未选 null）
+    void startPlanner(
+      selectedProjectId,
+      text,
+      startMode,
+      startMode === 'new' ? null : sourceOutlineId || null,
+    );
   };
 
   const handleSend = () => {
@@ -161,6 +201,45 @@ export function BookPlannerPanel({ projectId }: BookPlannerPanelProps) {
     <div data-testid="book-planner-panel" className="space-y-3">
       {showStart && (
         <div className="rounded-md border border-line bg-surface-2 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              data-testid="book-project-select"
+              className="rounded-md border border-line bg-surface px-2 py-1 text-[13px] text-ink outline-none focus:border-accent"
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <select
+              data-testid="book-start-mode"
+              className="rounded-md border border-line bg-surface px-2 py-1 text-[13px] text-ink outline-none focus:border-accent"
+              value={startMode}
+              onChange={(e) => setStartMode(e.target.value as 'new' | 'continue' | 'branch')}
+            >
+              <option value="new">{t('book.startMode.new')}</option>
+              <option value="continue">{t('book.startMode.continue')}</option>
+              <option value="branch">{t('book.startMode.branch')}</option>
+            </select>
+            {startMode !== 'new' && (
+              <select
+                data-testid="book-source-outline"
+                className="rounded-md border border-line bg-surface px-2 py-1 text-[13px] text-ink outline-none focus:border-accent"
+                value={sourceOutlineId}
+                onChange={(e) => setSourceOutlineId(e.target.value)}
+              >
+                <option value="">{t('book.startMode.selectOutline')}</option>
+                {outlines.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
           <textarea
             data-testid="book-one-liner"
             className="min-h-[64px] w-full resize-none rounded-md border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"

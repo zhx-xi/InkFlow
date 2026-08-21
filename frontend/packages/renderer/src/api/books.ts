@@ -36,6 +36,14 @@ export interface PlannerStartResponse {
   confirming?: boolean;
 }
 
+/** #544：启动书级计划请求体（mode=new/continue/branch；source_outline_id 仅续写/分支选中源大纲时含） */
+export interface PlannerStartRequest {
+  project_id: string;
+  one_liner: string;
+  mode?: string;
+  source_outline_id?: string;
+}
+
 export interface PlannerRespondRequest {
   /** v1.2 #475：confirm=true（末尾总体确认）时无 answers 键 */
   answers?: Record<string, string>;
@@ -143,7 +151,7 @@ export interface ConfirmRunResponse {
 }
 
 /** 启动书计划访谈（POST /planner → 201 第一轮问题） */
-export async function startPlanner(body: { project_id: string; one_liner: string }): Promise<PlannerStartResponse> {
+export async function startPlanner(body: PlannerStartRequest): Promise<PlannerStartResponse> {
   return apiFetch<PlannerStartResponse>('/api/v1/agent/books/planner', { method: 'POST', body });
 }
 
