@@ -58,6 +58,24 @@ describe('AppNav — 会话导航项（#486）', () => {
   });
 });
 
+describe('AppNav — 设定库分类选中态（#548）', () => {
+  it('路径 /library?cat=characters 时仅 characters 选中（其余分类不 active）', () => {
+    renderNav('/library?cat=characters');
+    const chars = screen.getByTestId('nav-item-characters');
+    const world = screen.getByTestId('nav-item-world');
+    expect(chars.className).toContain('bg-accent-weak');
+    expect(world.className).not.toContain('bg-accent-weak');
+  });
+
+  it('路径 /library?cat=world 时仅 world 选中', () => {
+    renderNav('/library?cat=world');
+    const chars = screen.getByTestId('nav-item-characters');
+    const world = screen.getByTestId('nav-item-world');
+    expect(world.className).toContain('bg-accent-weak');
+    expect(chars.className).not.toContain('bg-accent-weak');
+  });
+});
+
 describe('AppNav — 记忆导航项（#486）', () => {
   it('nav-item-memory 存在且 href=/memory', () => {
     renderNav();
