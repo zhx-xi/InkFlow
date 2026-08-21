@@ -429,8 +429,9 @@ test('写作页：工具栏 6 按钮齐全且可用 + 续写/生成（AI）按�
     }
 
     // pipeline-status idle 引导文案（deterministic 模式，未生成；#540 chat 替代续写栏）
+    // #564：文案中性化——不再提示「在下方对话框与 AI 对话」
     await expect(window.getByTestId('pipeline-status')).toContainText(
-      '在下方对话框与 AI 对话，开始创作'
+      'AI 已就绪，开始创作'
     );
 
     // 状态栏：内核已连接 + 模型占位 + 字数（scope 到 statusbar，消除顶栏+底部双「内核已连接」撞名）

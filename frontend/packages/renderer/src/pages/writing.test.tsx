@@ -352,7 +352,9 @@ describe('写作页 — 空态（#98 §5.2.6）', () => {
     render(<WritingPage />);
     const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
     // #540：AI 对话栏替代续写栏后，编辑器不再提示「点击续写或 Ctrl+Enter 开始 AI 续写」
-    expect(editor.placeholder).toBe('在下方对话框与 AI 对话，开始创作');
+    // #564：空态文案中性化——不再提示「在下方对话框与 AI 对话」（与底部 AI 对话栏并存易混淆）
+    expect(editor.placeholder).toBe('AI 已就绪，开始创作');
+    expect(editor.placeholder).not.toContain('在下方对话框');
     expect(editor.placeholder).not.toContain('Ctrl+Enter');
   });
 });
