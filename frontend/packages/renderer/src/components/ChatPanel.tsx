@@ -16,6 +16,8 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import {
+  archiveChatConversation,
+  deleteChatConversation,
   deleteChatMessage,
   fetchChatMessages,
   saveChatMessage,
@@ -40,7 +42,7 @@ interface ChatEntry {
   kind: 'user' | 'ai';
   seq: number;
   text: string;
-  /** #566：历史消息 id（来自 ChatMessageDto；流式新消息无 id 不渲染删除按钮） */
+  /** #566/#581：历史消息 id（来自 ChatMessageDto；无 id = 流式新消息，删除按钮用 kind-seq testid 并仅本地移除） */
   id?: string;
   /** #477：AI 回复意图（content=可插入正文 / conversation=纯对话） */
   intent?: ChatIntent;
@@ -262,15 +264,43 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
     [handleSend],
   );
 
-  /** #566：删除历史消息（真删 force=true），成功后本地移除该条 */
-  const handleDeleteMessage = useCallback(async (id: string): Promise<void> => {
+  /** #581：删除消息（有 id 真删 force=true；流式新消息无 id 仅本地移除） */
+  const handleDeleteMessage = useCallback(async (entry: ChatEntry): Promise<void> => {
     try {
-      await deleteChatMessage(id);
-      setMessages((prev) => prev.filter((m) => m.id !== id));
+      if (entry.id) {
+        await deleteChatMessage(entry.id);
+      }
+      setMessages((prev) =>
+        entry.id
+          ? prev.filter((m) => m.id !== entry.id)
+          : prev.filter((m) => !(m.kind === entry.kind && m.seq === entry.seq)),
+      );
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
     }
   }, []);
+
+  /** #581：整轮归档（复用会话页归档 API：DELETE conversations/{projectId} 软删全部消息） */
+  const handleArchiveRound = useCallback(async (): Promise<void> => {
+    try {
+      await archiveChatConversation(projectIdRef.current);
+      setMessages([]);
+      useToastStore.getState().pushToast('ok', t('sessions.archivedToast'));
+    } catch (err) {
+      useToastStore.getState().pushToast('err', errorMessage(err));
+    }
+  }, [t]);
+
+  /** #581：整轮删除（force=true 物理删除，api/chat.ts deleteChatConversation 内部带 force） */
+  const handleDeleteRound = useCallback(async (): Promise<void> => {
+    try {
+      await deleteChatConversation(projectIdRef.current);
+      setMessages([]);
+      useToastStore.getState().pushToast('ok', t('sessions.deletedToast'));
+    } catch (err) {
+      useToastStore.getState().pushToast('err', errorMessage(err));
+    }
+  }, [t]);
 
   const canSend = input.trim() !== '';
   // #477：共享插入按钮仅当存在至少一条 content 消息时渲染
@@ -329,17 +359,15 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
                       {t('write.chat.user')}
                     </span>
                     <span className="whitespace-pre-wrap">{m.text}</span>
-                    {id && (
-                      <button
-                        type="button"
-                        data-testid={`chat-msg-delete-${id}`}
-                        aria-label={t('write.chat.delete')}
-                        className="ml-2 rounded px-1 text-[11px] text-ink-3 hover:text-err"
-                        onClick={() => void handleDeleteMessage(id)}
-                      >
-                        {t('write.chat.delete')}
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      data-testid={id ? `chat-msg-delete-${id}` : `chat-msg-delete-user-${m.seq}`}
+                      aria-label={t('write.chat.delete')}
+                      className="ml-2 rounded px-1 text-[11px] text-ink-3 hover:text-err"
+                      onClick={() => void handleDeleteMessage(m)}
+                    >
+                      {t('write.chat.delete')}
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -354,17 +382,15 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
                       {t('write.chat.ai')}
                     </span>
                     <span className="whitespace-pre-wrap">{m.text}</span>
-                    {id && (
-                      <button
-                        type="button"
-                        data-testid={`chat-msg-delete-${id}`}
-                        aria-label={t('write.chat.delete')}
-                        className="ml-2 rounded px-1 text-[11px] text-ink-3 hover:text-err"
-                        onClick={() => void handleDeleteMessage(id)}
-                      >
-                        {t('write.chat.delete')}
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      data-testid={id ? `chat-msg-delete-${id}` : `chat-msg-delete-ai-${m.seq}`}
+                      aria-label={t('write.chat.delete')}
+                      className="ml-2 rounded px-1 text-[11px] text-ink-3 hover:text-err"
+                      onClick={() => void handleDeleteMessage(m)}
+                    >
+                      {t('write.chat.delete')}
+                    </button>
                     {/* #477：仅 content 意图消息渲染选择控件（单选互斥） */}
                     {m.intent === 'content' && (
                       <button
@@ -384,6 +410,28 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
               );
             })}
           </div>
+          {messages.length > 0 && (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                data-testid="chat-round-archive"
+                aria-label={t('write.chat.archiveRound')}
+                className="rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
+                onClick={() => void handleArchiveRound()}
+              >
+                {t('write.chat.archiveRound')}
+              </button>
+              <button
+                type="button"
+                data-testid="chat-round-delete"
+                aria-label={t('write.chat.deleteRound')}
+                className="rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:border-err/50 hover:text-err"
+                onClick={() => void handleDeleteRound()}
+              >
+                {t('write.chat.deleteRound')}
+              </button>
+            </div>
+          )}
           {hasContentMessage && (
             <button
               type="button"

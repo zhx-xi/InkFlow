@@ -424,6 +424,9 @@ export const zh = {
   'write.chat.ai': 'AI',
   // #566：删除历史消息
   'write.chat.delete': '删除',
+  // #581：整轮归档/删除（ChatPanel 消息区操作）
+  'write.chat.archiveRound': '整轮归档',
+  'write.chat.deleteRound': '整轮删除',
   'write.view.toDetail': '查看 AI 执行详情',
   'write.view.toEditor': '返回正文编辑',
   'write.detail.empty': '暂无执行记录',

@@ -414,7 +414,7 @@ describe('会话页 — AI 对话区块归档/删除（#566）', () => {
     await waitFor(() => {
       expect(screen.getByTestId('chat-conv-archived-p1')).toBeInTheDocument();
       expect(screen.getByTestId('chat-conv-restore-p1')).toBeInTheDocument();
-      expect(screen.getByTestId('chat-conv-archive-p1')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('chat-conv-archive-p1')).not.toBeInTheDocument();
     });
   });
 });
@@ -474,9 +474,13 @@ describe('会话页 — AI 对话归档视图（#581）', () => {
     renderSessionsPage();
     const cards = await screen.findAllByTestId('chat-conversation-card');
     expect(cards).toHaveLength(2);
+    // 活动对话（p1）：归档按钮 + 删除按钮
     expect(screen.getByTestId('chat-conv-archive-p1')).toBeInTheDocument();
     expect(screen.getByTestId('chat-conv-delete-p1')).toBeInTheDocument();
-    expect(screen.getByTestId('chat-conv-archive-p2')).toBeInTheDocument();
+    // 归档对话（p2）：不渲染归档按钮（渲染徽标 + 恢复按钮），删除按钮保持（#581 契约）
+    expect(screen.queryByTestId('chat-conv-archive-p2')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-conv-archived-p2')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-conv-restore-p2')).toBeInTheDocument();
     expect(screen.getByTestId('chat-conv-delete-p2')).toBeInTheDocument();
   });
 });
