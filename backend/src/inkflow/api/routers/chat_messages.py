@@ -141,3 +141,24 @@ async def delete_conversation(
     ok = await svc.force_delete_conversation(pid) if force else await svc.archive_conversation(pid)
     if not ok:
         raise HTTPException(status_code=404, detail="chat 会话不存在")
+
+
+@router.post("/conversations/{project_id}/restore")
+async def restore_conversation(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """解除归档整项目 chat 会话（无已归档消息 → 404，镜像 delete_conversation）。"""
+    try:
+        pid = uuid.UUID(project_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="chat 会话不存在") from None
+    svc = get_chat_message_service(db)
+    restored = await svc.restore_conversation(pid)
+    if restored == 0:
+        raise HTTPException(status_code=404, detail="chat 会话不存在")
+    convs = await svc.list_conversations(include_deleted=True)
+    agg = next((c for c in convs if c["project_id"] == str(pid)), None)
+    if agg is not None:
+        return {**agg, "is_deleted": False}
+    return {"project_id": str(pid), "is_deleted": False}

@@ -97,6 +97,8 @@ def fake_repo() -> MagicMock:
     # #566 会话级（per-project）归档/真删
     repo.archive_by_project = AsyncMock(return_value=2)
     repo.force_delete_by_project = AsyncMock(return_value=2)
+    # #587 会话级（per-project）恢复
+    repo.restore_by_project = AsyncMock(return_value=2)
     return repo
 
 
@@ -314,3 +316,39 @@ class Test578ServiceOverflowGuard:
         """对照: uuid.UUID(int=42) → repo.restore 照常调用一次。"""
         await service.restore_message(uuid.UUID(int=42))
         fake_repo.restore.assert_awaited_once_with(42)
+
+
+class TestRestoreConversation:
+    """#587 会话级恢复 — restore_conversation 解除整项目归档（is_deleted=false）。
+
+    契约（镜像 archive_conversation 反操作）:
+    - restore_conversation(project_id: uuid.UUID) -> int
+      （repo.restore_by_project 收到 int 主键；返回受影响行数；0 = 不存在/未归档）
+    - > 2**63-1（随机 uuid4）→ 短路返回 0，不调用 repo（镜像 #578 溢出预检）
+
+    RED 预期: service 无 restore_conversation 方法 → AttributeError
+    （'ChatMessageService' object has no attribute 'restore_conversation'）
+    → 本类用例 FAILED。
+    """
+
+    async def test_restore_conversation_delegates_to_repo(self, service, fake_repo):
+        """restore_conversation → repo.restore_by_project(project_id.int) 位置透传，返回 int。"""
+        result = await service.restore_conversation(uuid.UUID(int=42))
+        assert result == 2
+        fake_repo.restore_by_project.assert_awaited_once_with(42)
+
+    async def test_restore_conversation_not_found_zero(self, service, fake_repo):
+        """repo.restore_by_project 返回 0（不存在/未归档）→ service 原样透传 0。"""
+        fake_repo.restore_by_project = AsyncMock(return_value=0)
+        assert await service.restore_conversation(uuid.UUID(int=42)) == 0
+
+    async def test_restore_conversation_overflow_uuid_skips_repo(self, service, fake_repo):
+        """随机 uuid4（int > 2**63-1）→ 返回 0 且 repo.restore_by_project 未被调用。"""
+        result = await service.restore_conversation(uuid.uuid4())
+        fake_repo.restore_by_project.assert_not_awaited()
+        assert result == 0
+
+    async def test_restore_conversation_small_id_still_delegates(self, service, fake_repo):
+        """对照: uuid.UUID(int=42)（64 位范围内）→ repo.restore_by_project 照常调用一次。"""
+        await service.restore_conversation(uuid.UUID(int=42))
+        fake_repo.restore_by_project.assert_awaited_once_with(42)

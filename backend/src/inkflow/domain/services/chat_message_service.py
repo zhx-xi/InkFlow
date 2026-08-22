@@ -85,3 +85,9 @@ class ChatMessageService:
         if _to_int_id(project_id) > 2**63 - 1:
             return 0
         return await self._repo.force_delete_by_project(_to_int_id(project_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 force_delete_by_project
+
+    async def restore_conversation(self, project_id: uuid.UUID) -> int:
+        """解除归档整项目消息（会话级软恢复）。repo.restore_by_project 收到 int 主键。"""
+        if _to_int_id(project_id) > 2**63 - 1:
+            return 0
+        return await self._repo.restore_by_project(_to_int_id(project_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 restore_by_project
