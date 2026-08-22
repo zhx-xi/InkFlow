@@ -348,12 +348,14 @@ describe('写作页 — 空态（#98 §5.2.6）', () => {
     expect(editor.placeholder).toBe('还没有章节，点击左侧「新建章节」创建');
   });
 
-  it('回归：有章节时编辑器 placeholder 改为 chat 引导（#540 chat 替代续写栏）', () => {
+  it('回归：有章节时编辑器 placeholder 不含 idle 空态文案（#580 删除「AI 已就绪，开始创作」）', () => {
     render(<WritingPage />);
     const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
     // #540：AI 对话栏替代续写栏后，编辑器不再提示「点击续写或 Ctrl+Enter 开始 AI 续写」
     // #564：空态文案中性化——不再提示「在下方对话框与 AI 对话」（与底部 AI 对话栏并存易混淆）
-    expect(editor.placeholder).toBe('AI 已就绪，开始创作');
+    // #580：idle 空态栏整栏删除——有章节时 placeholder 不得再是「AI 已就绪，开始创作」（当前实现仍渲染 → RED）
+    expect(editor.placeholder).not.toBe('AI 已就绪，开始创作');
+    expect(editor.placeholder).not.toContain('AI 已就绪');
     expect(editor.placeholder).not.toContain('在下方对话框');
     expect(editor.placeholder).not.toContain('Ctrl+Enter');
   });

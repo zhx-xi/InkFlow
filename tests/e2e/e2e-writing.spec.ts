@@ -428,9 +428,8 @@ test('写作页：工具栏 6 按钮齐全且可用 + 续写/生成（AI）按�
       await expect(btn).toBeEnabled();
     }
 
-    // pipeline-status idle 引导文案（deterministic 模式，未生成；#540 chat 替代续写栏）
-    // #564：文案中性化——不再提示「在下方对话框与 AI 对话」
-    await expect(window.getByTestId('pipeline-status')).toContainText(
+    // #580：idle 空态栏整栏删除——pipeline-status 不再渲染「AI 已就绪，开始创作」（当前实现仍渲染 → RED）
+    await expect(window.getByTestId('pipeline-status')).not.toContainText(
       'AI 已就绪，开始创作'
     );
 
@@ -438,6 +437,46 @@ test('写作页：工具栏 6 按钮齐全且可用 + 续写/生成（AI）按�
     const statusbar = window.getByTestId('statusbar');
     await expect(statusbar.getByText('内核已连接')).toBeVisible();
     await expect(statusbar.getByText(/字数: /)).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// 10. #580：idle 空态栏整栏删除——有章节时编辑器 placeholder 与 pipeline-status 均不含「AI 已就绪，开始创作」
+// ────────────────────────────────────────────────────────────────
+test('写作页：有章节时编辑器 placeholder 与 pipeline-status 均不显示 idle 空态文案（#580）', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-580空态-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    const pid = await findProjectId(kernel, name);
+
+    // 内核 API 预置一章（有章节 → 编辑器 placeholder 走有章节分支）
+    const r = await kernelFetch(kernel, `/api/v1/projects/${pid}/chapters`, {
+      method: 'POST',
+      body: { title: '580空态测试章', content: '580空态正文。' },
+    });
+    expect(r.status).toBe(201);
+
+    // 重挂载写作页触发 loadChapterTree（#379：NavLink 已激活不重载，必须离开再回来）
+    await gotoNav(window, '项目');
+    await gotoNav(window, '写作');
+    await expect(window.getByTestId('project-tree')).toBeVisible();
+
+    // 选中章节（currentChapter 非空 → placeholder 走有章节分支）
+    await window
+      .getByTestId('project-tree')
+      .getByRole('button', { name: /580空态测试章/ })
+      .click();
+    await expect(window.getByTestId('chapter-editor')).toHaveValue('580空态正文。');
+
+    // RED：当前实现有章节时 placeholder='AI 已就绪，开始创作' 且 pipeline-status idle 渲染该文案 → 断言 FAIL
+    await expect(window.getByTestId('chapter-editor')).not.toHaveAttribute(
+      'placeholder',
+      'AI 已就绪，开始创作'
+    );
+    await expect(window.getByTestId('pipeline-status')).not.toContainText('AI 已就绪，开始创作');
   } finally {
     await app.close();
   }

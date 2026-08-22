@@ -29,7 +29,7 @@ export function ChapterEditor({ onEditorKeyDown, onContentChange }: ChapterEdito
           className="h-full w-full resize-none bg-transparent px-8 py-6 text-[16px] leading-[1.85] text-ink outline-none [text-indent:2em]"
           value={content}
           onChange={(e) => onContentChange(e.target.value)}
-          placeholder={currentChapter ? t('write.stream.idle') : t('write.empty.noChapter')}
+          placeholder={currentChapter ? '' : t('write.empty.noChapter')}
         />
       </div>
     </div>
