@@ -68,6 +68,21 @@ export interface PipelineConfirmResponse {
   final_output: string;
 }
 
+/** #586: backend list_executions list item */
+export interface PipelineExecutionListItem {
+  execution_id: string;
+  pipeline: string;
+  status: string;
+  created_at: string;
+  total_duration_ms: number;
+}
+
+/** #586: backend list_executions list response */
+export interface PipelineExecutionListResponse {
+  items: PipelineExecutionListItem[];
+  total: number;
+}
+
 /** 发起管线执行（异步后台任务，返回 execution_id 供轮询） */
 export async function executePipeline(body: PipelineExecuteRequest): Promise<PipelineExecuteResponse> {
   return apiFetch<PipelineExecuteResponse>('/api/v1/agent/pipelines/execute', { method: 'POST', body });
@@ -76,6 +91,13 @@ export async function executePipeline(body: PipelineExecuteRequest): Promise<Pip
 /** 查询执行状态（status ∈ pending/completed/failed） */
 export async function getExecutionStatus(executionId: string): Promise<PipelineExecutionStatus> {
   return apiFetch<PipelineExecutionStatus>(`/api/v1/agent/pipelines/executions/${executionId}`);
+}
+
+/** #586: list executions for a project */
+export async function listExecutions(projectId: string): Promise<PipelineExecutionListResponse> {
+  return apiFetch<PipelineExecutionListResponse>(
+    `/api/v1/agent/pipelines/executions?project_id=${projectId}`,
+  );
 }
 
 /** HITL 人工确认：approved=true 继续执行；false 拒绝（回退固定链） */

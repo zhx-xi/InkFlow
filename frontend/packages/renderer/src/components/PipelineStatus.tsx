@@ -18,6 +18,8 @@ export function PipelineStatus({
   confirming = false,
 }: PipelineStatusProps) {
   const { t } = useI18n();
+  // #585: idle status renders nothing (removes 84px empty box on writing page)
+  if (status === 'idle') return null;
   return (
     <div data-testid="pipeline-status" className="min-h-[84px] border-t border-line bg-surface px-6 py-3 text-[13px]">
       {status === 'running' && (

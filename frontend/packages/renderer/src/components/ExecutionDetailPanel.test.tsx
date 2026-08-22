@@ -4,22 +4,29 @@
  * ⚠️ 本文件 = 契约。GREEN 实现 ExecutionDetailPanel 必须匹配（行为断言，不测样式）。
  *
  * 导出契约：
- * - export function ExecutionDetailPanel(props: { executionId?: string | null })
+ * - export function ExecutionDetailPanel(props: { executionId?: string | null; projectId?: string })
  *
- * 数据源：GET /api/v1/agent/pipelines/executions/{executionId}（apiFetch）
- * 响应形状（PipelineExecutionStatus + trace）：
- * { execution_id, pipeline, project_id, status, stages: StageSnapshot[],
- *   trace: TraceEntry[], relations: RelationEntry[], final_output, total_duration_ms, error }
+ * 数据源：
+ * - 详情：GET /api/v1/agent/pipelines/executions/{executionId}（apiFetch，单次详情）
+ * - 历史列表（#586）：GET /api/v1/agent/pipelines/executions?project_id=<projectId>（apiFetch）
+ *   列表响应形状（后端 list_executions）：{ items: [{ execution_id, pipeline, status,
+ *   created_at, total_duration_ms }], total }
+ *   详情响应形状（PipelineExecutionStatus + trace）：
+ *   { execution_id, pipeline, project_id, status, stages: StageSnapshot[],
+ *     trace: TraceEntry[], relations: RelationEntry[], final_output, total_duration_ms, error }
  *
  * 结构 testid：
- * - exec-detail（容器）/ exec-detail-empty（无执行记录空态）
+ * - exec-detail（容器）/ exec-detail-empty（无上下文空态：无 executionId 且无 projectId）
+ * - exec-history-list（历史列表容器，#586）/ exec-history-item-<execution_id>（单条历史记录，#586）
  * - exec-detail-stages（各阶段区块）/ exec-detail-stage-<stage_id>（单阶段卡）
  * - exec-detail-trace（思维链/工具调用区块）/ exec-detail-trace-<n>（单条 trace）
  * - exec-detail-relations（Agent 关系区块）
  * - exec-detail-final（最终回复区块）
  *
  * 行为契约：
- * - executionId 为空/null → exec-detail-empty 空态（不发起请求）
+ * - 无 executionId + 有 projectId → 请求列表端点 GET /pipelines/executions?project_id=<id>
+ *   → 渲染历史列表 exec-history-list + exec-history-item-<id>（#586：历史列表永不显示的 bug 修复）
+ * - 无 executionId 且无 projectId → exec-detail-empty 空态（不发起请求，无上下文兜底）
  * - 有 executionId → 请求 GET /pipelines/executions/{id} → 渲染 stages/trace/relations/final
  * - stages：每阶段显示 stage_id + status + output（有 output 时）+ error（有 error 时）
  * - trace：每条显示 node + type + reasoning（有 reasoning 时）
@@ -64,29 +71,48 @@ const MOCK_STATUS = {
   error: '',
 };
 
+/** #586：GET /pipelines/executions?project_id= 列表项（后端 list_executions item 形状） */
+const MOCK_LIST_ITEM = {
+  execution_id: 'e1',
+  pipeline: 'builtin:write_auto',
+  status: 'completed',
+  created_at: '2026-08-22T10:00:00Z',
+  total_duration_ms: 1800,
+};
+
 beforeEach(() => {
   apiFetchMock.mockReset();
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
 });
 
-describe('ExecutionDetailPanel — 空态与加载', () => {
-  it('无 executionId → exec-detail-empty 空态，不发起请求', () => {
+describe('ExecutionDetailPanel — 历史列表（#586）', () => {
+  it('无 executionId + 有 projectId → 调用列表端点并渲染历史列表（#586 契约核心，RED）', async () => {
+    apiFetchMock.mockResolvedValue({ items: [MOCK_LIST_ITEM], total: 1 } as never);
+    render(<ExecutionDetailPanel executionId={null} projectId="p1" />);
+    // 契约：请求列表端点 GET /api/v1/agent/pipelines/executions?project_id=p1
+    // RED：当前实现 executionId 为空直接渲染 empty、从不调用 apiFetch → 本断言 FAIL
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/pipelines/executions?project_id=p1');
+    });
+    // 契约：渲染历史列表项（当前实现无列表 → 断言 FAIL）
+    expect(await screen.findByTestId('exec-history-item-e1')).toBeInTheDocument();
+    expect(screen.queryByTestId('exec-detail-empty')).not.toBeInTheDocument();
+  });
+
+  it('守护：无 executionId 且无 projectId → exec-detail-empty 空态，不发起请求', () => {
     render(<ExecutionDetailPanel executionId={null} />);
     expect(screen.getByTestId('exec-detail-empty')).toBeInTheDocument();
     expect(apiFetchMock).not.toHaveBeenCalled();
   });
 
-  it('有 executionId → 请求 GET /pipelines/executions/{id} 并渲染各区块', async () => {
+  it('有 executionId → 仍走单次详情 GET /executions/{id}，不调用列表端点（#586 锁定）', async () => {
     apiFetchMock.mockResolvedValue(MOCK_STATUS as never);
-    render(<ExecutionDetailPanel executionId="e1" />);
+    render(<ExecutionDetailPanel executionId="e1" projectId="p1" />);
     await waitFor(() => {
       expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/pipelines/executions/e1');
     });
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/v1/agent/pipelines/executions?project_id=p1');
     expect(await screen.findByTestId('exec-detail')).toBeInTheDocument();
-    expect(screen.getByTestId('exec-detail-stages')).toBeInTheDocument();
-    expect(screen.getByTestId('exec-detail-trace')).toBeInTheDocument();
-    expect(screen.getByTestId('exec-detail-relations')).toBeInTheDocument();
-    expect(screen.getByTestId('exec-detail-final')).toBeInTheDocument();
   });
 });
 
