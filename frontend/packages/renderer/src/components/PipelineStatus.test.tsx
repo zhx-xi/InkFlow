@@ -90,3 +90,36 @@ describe('PipelineStatus — HITL 确认卡片（#343）', () => {
     expect(screen.getByTestId('pipeline-status')).toHaveTextContent('执行中');
   });
 });
+
+/**
+ * #580 拍板：删除 idle 空态栏「AI 已就绪，开始创作」（写作页 3 处渲染之一：PipelineStatus idle 分支）
+ */
+describe('PipelineStatus — idle 空态栏删除（#580）', () => {
+  it('status=idle → 不渲染「AI 已就绪，开始创作」空态文案', () => {
+    render(
+      <PipelineStatus
+        status="idle"
+        error={null}
+        hitlPending={null}
+        onConfirm={() => {}}
+        confirming={false}
+      />,
+    );
+    // RED：当前实现 idle 分支渲染 t('write.stream.idle') → 断言 FAIL
+    expect(screen.getByTestId('pipeline-status')).not.toHaveTextContent('AI 已就绪，开始创作');
+    expect(screen.queryByText('AI 已就绪，开始创作')).not.toBeInTheDocument();
+  });
+
+  it('守护：status=success → 渲染「生成完成」（既有四态保持）', () => {
+    render(
+      <PipelineStatus
+        status="success"
+        error={null}
+        hitlPending={null}
+        onConfirm={() => {}}
+        confirming={false}
+      />,
+    );
+    expect(screen.getByTestId('pipeline-status')).toHaveTextContent('生成完成');
+  });
+});

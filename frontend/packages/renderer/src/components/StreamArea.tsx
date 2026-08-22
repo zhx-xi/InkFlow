@@ -35,7 +35,6 @@ export function StreamArea({ status, text, wordCount, summary, error, onStop, on
         </div>
       )}
       {text && <div className="whitespace-pre-wrap leading-[1.85]">{text}</div>}
-      {status === 'idle' && !text && <div className="text-ink-3">{t('write.stream.idle')}</div>}
       {status === 'done' && summary && (
         <div className="mt-2 border-t border-line pt-2">
           <div className="flex items-center gap-3">
