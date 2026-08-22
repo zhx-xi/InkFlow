@@ -361,6 +361,57 @@ class TestArchiveDeleteByProject:
         assert total == 0
 
 
+class TestRestoreByProject:
+    """#587 会话级恢复 — restore_by_project 解除整项目归档（is_deleted=false）。
+
+    契约（镜像 archive_by_project 反操作，服务层 restore_conversation 的 repo 落点）:
+    - restore_by_project(project_id: int) -> int
+      （整项目 is_deleted=true → false；返回受影响行数；0 = 无已归档消息）
+    - 恢复后 list_conversations 重新包含该项目且 is_deleted=false；
+      list_by_project 重新返回消息（is_deleted 过滤解除）。
+
+    RED 预期: repo 无 restore_by_project 方法 → AttributeError
+    （'SQLiteChatMessageRepository' object has no attribute 'restore_by_project'）
+    → 本类用例 FAILED。
+    """
+
+    async def test_restore_by_project_restores_whole_project(self, db_session):
+        """归档后 restore_by_project 使整项目 list_conversations 恢复（is_deleted=false）。"""
+        repo = SQLiteChatMessageRepository(db_session)
+        await repo.add(_make_message(content="一"))
+        await repo.add(_make_message(content="二"))
+        await repo.archive_by_project(PROJECT_ID.int)
+        # 归档后默认聚合排除该项目
+        assert not any(
+            c["project_id"] == str(PROJECT_ID) for c in await repo.list_conversations()
+        )
+
+        n = await repo.restore_by_project(PROJECT_ID.int)
+        assert n == 2
+        convs = await repo.list_conversations()
+        p1 = next(c for c in convs if c["project_id"] == str(PROJECT_ID))
+        assert p1["is_deleted"] is False
+        # list_by_project 同步恢复（is_deleted 过滤解除）
+        items, total = await repo.list_by_project(PROJECT_ID)
+        assert total == 2
+        assert [m.content for m in items] == ["一", "二"]
+
+    async def test_restore_by_project_only_archived(self, db_session):
+        """restore_by_project 仅解除已归档消息（活跃消息不受影响，行数只计已归档）。"""
+        repo = SQLiteChatMessageRepository(db_session)
+        c1 = await repo.add(_make_message(content="一"))
+        await repo.add(_make_message(content="二"))
+        await repo.archive(c1.id.int)  # 仅归档「一」
+
+        n = await repo.restore_by_project(PROJECT_ID.int)
+        assert n == 1  # 仅「一」被恢复
+        convs = await repo.list_conversations()
+        p1 = next(c for c in convs if c["project_id"] == str(PROJECT_ID))
+        assert p1["is_deleted"] is False
+        _items, total = await repo.list_by_project(PROJECT_ID)
+        assert total == 2
+
+
 class TestChatMessageAssemblyAndOrm:
     """#566 覆盖率补测：get_chat_message_service 真实装配 + ORM 默认值/__repr__。"""
 

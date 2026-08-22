@@ -182,3 +182,14 @@ class SQLiteChatMessageRepository:
         result = await self._db.execute(stmt)
         await self._db.commit()
         return result.rowcount  # type: ignore[no-any-return, attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
+
+    async def restore_by_project(self, project_id: int) -> int:
+        """解除归档整项目 chat 消息（会话级软恢复，is_deleted=false）。返回受影响行数。"""
+        stmt = (
+            sa_update(ChatMessageORM)
+            .where(ChatMessageORM.project_id == project_id, ChatMessageORM.is_deleted)
+            .values(is_deleted=False)
+        )
+        result = await self._db.execute(stmt)
+        await self._db.commit()
+        return result.rowcount  # type: ignore[no-any-return, attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）

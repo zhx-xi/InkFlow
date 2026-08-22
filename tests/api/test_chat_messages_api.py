@@ -59,8 +59,6 @@ _stub_chat_router = ModuleType("inkflow.api.routers.chat_messages")
 _stub_chat_router.get_chat_message_service = MagicMock()
 sys.modules.setdefault("inkflow.api.routers.chat_messages", _stub_chat_router)
 
-pytestmark = pytest.mark.asyncio  # F27 实测必写（asyncio_mode=auto 双保险）
-
 PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 CONTENT = "你好，请续写第三章。"
 CREATED_AT = "2026-08-20T10:00:00Z"
@@ -155,6 +153,8 @@ def override_chat_svc(chat_svc):
 class TestPostMessageEndpoint:
     """POST /api/v1/chat/messages — 追加 chat 消息（spec 待定稿）. """
 
+    pytestmark = pytest.mark.asyncio  # 根目录 STRICT 模式显式标记（backend pyproject 为 auto）
+
     async def test_post_message_201(self, chat_svc, override_chat_svc):
         """POST 201: 响应五字段口径 + add_message 参数逐字断言。"""
         msg = _message_dict(role="user", content=CONTENT, intent="conversation")
@@ -215,6 +215,8 @@ class TestPostMessageEndpoint:
 class TestListMessagesEndpoint:
     """GET /api/v1/chat/messages — 项目消息列表（按时间升序，分页透传）。"""
 
+    pytestmark = pytest.mark.asyncio  # 根目录 STRICT 模式显式标记（backend pyproject 为 auto）
+
     async def test_list_messages_200(self, chat_svc, override_chat_svc):
         """GET 200: {items, total, offset, limit} + list_messages 参数透传。"""
         msg = _message_dict()
@@ -246,6 +248,8 @@ class TestListMessagesEndpoint:
 
 class TestConversationsEndpoint:
     """GET /api/v1/chat/conversations — 会话页聚合列表（按 updated_at 降序）。"""
+
+    pytestmark = pytest.mark.asyncio  # 根目录 STRICT 模式显式标记（backend pyproject 为 auto）
 
     async def test_list_conversations_200(self, chat_svc, override_chat_svc):
         """GET 200: {items, total}，items 形状逐字断言（service 聚合透传）。"""
@@ -317,3 +321,58 @@ class TestChatAssembly:
         """app.routes 含 /api/v1/chat/conversations。"""
         paths = _chat_route_paths()
         assert "/api/v1/chat/conversations" in paths, f"缺 conversations 路由: {paths}"
+
+
+class TestRestoreConversationEndpoint:
+    """#587 POST /api/v1/chat/conversations/{project_id}/restore — 整项目会话恢复。
+
+    父侧定稿契约（镜像 DELETE /conversations/{project_id} 反操作 + restore_message 形态）:
+    - POST /api/v1/chat/conversations/{project_id}/restore → 200
+      请求: 路径参数 project_id: UUID str（小值 UUID——64 位范围内，
+      不触发 service 溢出短路，完整走 repo 轨）
+      响应: {project_id: UUID str, is_deleted: false}（归档解除后语义）
+      服务调用: svc.restore_conversation(project_id)（参数逐字，收到 UUID）
+    - 服务返回 0（项目不存在/无已归档消息）→ 404「chat 会话不存在」
+      （镜像 delete_conversation 的 404 文案）
+
+    RED 预期: router 无该端点 → 404 → status_code 断言 FAILED；
+    不存在用例 detail 为 FastAPI 默认 "Not Found" → detail 断言 FAILED；
+    装配用例 FAILED（新路由未注册）。无收集错误（router 模块已注册）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_restore_conversation_200(self, chat_svc, override_chat_svc):
+        """归档项目 POST restore → 200（含 is_deleted=false）+ restore_conversation 收到 UUID。
+
+        RED 预期: 路由未注册 → 404 → status_code 断言失败。
+        """
+        pid = uuid.UUID(int=42)  # 小值 UUID（64 位范围内，完整走 repo 轨）
+        chat_svc.restore_conversation = AsyncMock(return_value=2)
+        async with _client() as client:
+            resp = await client.post(f"/api/v1/chat/conversations/{pid}/restore")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["project_id"] == str(pid)
+        assert data["is_deleted"] is False
+        chat_svc.restore_conversation.assert_awaited_once_with(pid)
+
+    @pytest.mark.asyncio
+    async def test_restore_conversation_not_found_404(self, chat_svc, override_chat_svc):
+        """restore_conversation 返回 0（项目不存在/未归档）→ 404「chat 会话不存在」。
+
+        RED 预期: 路由未注册 → detail 为 "Not Found" → detail 断言失败。
+        """
+        chat_svc.restore_conversation = AsyncMock(return_value=0)
+        async with _client() as client:
+            resp = await client.post(
+                f"/api/v1/chat/conversations/{uuid.UUID(int=43)}/restore"
+            )
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "chat 会话不存在"
+
+    def test_chat_restore_conversation_route_registered_in_app(self):
+        """app.routes 含 /api/v1/chat/conversations/{project_id}/restore（装配契约）。"""
+        paths = _chat_route_paths()
+        assert any(
+            p.endswith("/chat/conversations/{project_id}/restore") for p in paths
+        ), f"缺 chat restore conversation 路由: {sorted(paths)}"
