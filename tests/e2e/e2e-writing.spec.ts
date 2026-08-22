@@ -428,10 +428,8 @@ test('写作页：工具栏 6 按钮齐全且可用 + 续写/生成（AI）按�
       await expect(btn).toBeEnabled();
     }
 
-    // #580：idle 空态栏整栏删除——pipeline-status 不再渲染「AI 已就绪，开始创作」（当前实现仍渲染 → RED）
-    await expect(window.getByTestId('pipeline-status')).not.toContainText(
-      'AI 已就绪，开始创作'
-    );
+    // #585：idle 态不再渲染 pipeline-status 空框容器（进一步删除整个空容器，非仅文案）
+    await expect(window.getByTestId('pipeline-status')).toHaveCount(0);
 
     // 状态栏：内核已连接 + 模型占位 + 字数（scope 到 statusbar，消除顶栏+底部双「内核已连接」撞名）
     const statusbar = window.getByTestId('statusbar');
@@ -471,12 +469,12 @@ test('写作页：有章节时编辑器 placeholder 与 pipeline-status 均不�
       .click();
     await expect(window.getByTestId('chapter-editor')).toHaveValue('580空态正文。');
 
-    // RED：当前实现有章节时 placeholder='AI 已就绪，开始创作' 且 pipeline-status idle 渲染该文案 → 断言 FAIL
+    // #585：idle 态 pipeline-status 不渲染（空框整栏删除），placehoder 也不含空态文案
     await expect(window.getByTestId('chapter-editor')).not.toHaveAttribute(
       'placeholder',
       'AI 已就绪，开始创作'
     );
-    await expect(window.getByTestId('pipeline-status')).not.toContainText('AI 已就绪，开始创作');
+    await expect(window.getByTestId('pipeline-status')).toHaveCount(0);
   } finally {
     await app.close();
   }
