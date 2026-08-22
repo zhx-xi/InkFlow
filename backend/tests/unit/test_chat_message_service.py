@@ -175,6 +175,22 @@ class TestListConversations:
         assert result == convs
         fake_repo.list_conversations.assert_awaited_once()
 
+    async def test_list_conversations_include_deleted_passthrough(
+        self, service, fake_repo
+    ):
+        """#581 include_deleted=True → 关键字透传 repo.list_conversations(include_deleted=True)。
+
+        镜像 sessions 的 include_deleted 先例：默认排除已归档，
+        include_deleted=true 时活动 + 归档全量返回。
+        """
+        convs = [_conversation_dict()]
+        fake_repo.list_conversations = AsyncMock(return_value=convs)
+
+        result = await service.list_conversations(include_deleted=True)
+
+        assert result == convs
+        fake_repo.list_conversations.assert_awaited_once_with(include_deleted=True)
+
 
 class TestArchiveDeleteRestore:
     """#566 两级删除 — archive_message / force_delete_message / restore_message。
