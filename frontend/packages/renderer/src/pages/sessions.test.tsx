@@ -54,12 +54,22 @@
  *
  * #547 AI 对话会话区块（本文件「AI 对话会话区块」describe 锁定，GREEN 追加实现）：
  * - 区块 data-testid="chat-conversations-section"，位于执行会话区块（sessions-section）之后
- * - 挂载时 fetchChatConversations()（走 apiFetch GET /api/v1/chat/conversations，无查询参数）
+ * - 挂载时 fetchChatConversations()（走 apiFetch GET /api/v1/chat/conversations?include_deleted=true，
+ *   #581 起拉取含已归档全量——GREEN fetchChatConversations 带 includeDeleted 参数）
  * - 会话卡片 data-testid="chat-conversation-card"：project_name（null 回退「未知项目」）、
  *   last_message、message_count（t('sessions.chat.count', {n}) 模板）、updated_at
  *   （chat-conversation-updated-<project_id> 元素非空）；空态 chat-conversations-empty
  * - i18n key（GREEN 补 zh.ts/en.ts）：sessions.chat.title='AI 对话' / sessions.chat.empty
  *   / sessions.chat.count='{n} 条' / sessions.chat.unknownProject='未知项目'
+ *
+ * #581 AI 对话归档视图闭环（本文件「会话页 — AI 对话归档视图（#581）」describe 锁定）：
+ * - conversations 区块接 FILTERS all/active/archived（当前 FILTERS 只作用执行会话）：
+ *   archived → 只显示已归档对话（is_deleted=true）；active → 只显示活动对话（is_deleted=false）
+ * - 已归档对话卡片渲染归档徽标 chat-conv-archived-<project_id> + 恢复按钮
+ *   chat-conv-restore-<project_id>；点恢复 → POST /api/v1/chat/conversations/{project_id}/restore
+ *   （restoreChatConversation 走 apiFetch，镜像 archiveChatConversation；api/chat.ts GREEN 补）
+ *   + 本地恢复（is_deleted=false → 回活动列表）
+ * - #566 归档/删除按钮（chat-conv-archive-<pid>/chat-conv-delete-<pid>）保持不回归
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within, waitFor } from '@testing-library/react';
@@ -103,6 +113,8 @@ interface ChatConversationDto {
   project_name: string | null;
   last_message: string;
   message_count: number;
+  /** #581：后端 include_deleted=true 响应 items 含 is_deleted（true=已归档对话） */
+  is_deleted: boolean;
   updated_at: string;
 }
 
@@ -200,14 +212,27 @@ beforeEach(() => {
     sessions = sessions.filter((v) => v.session.id !== id);
   });
   // #547：AI 对话会话（GET /api/v1/chat/conversations 走 apiFetch mock；数组状态化供空态用例改写）
+  // #581：p1 = 活动（is_deleted=false），p2 = 已归档（is_deleted=true）
   conversations = [
-    { project_id: 'p1', project_name: '仙侠长篇', last_message: '帮我写一段打斗场景', message_count: 3, updated_at: '2026-08-21T10:00:00Z' },
-    { project_id: 'p2', project_name: null, last_message: '聊聊角色设定', message_count: 1, updated_at: '2026-08-20T09:00:00Z' },
+    { project_id: 'p1', project_name: '仙侠长篇', last_message: '帮我写一段打斗场景', message_count: 3, is_deleted: false, updated_at: '2026-08-21T10:00:00Z' },
+    { project_id: 'p2', project_name: null, last_message: '聊聊角色设定', message_count: 1, is_deleted: true, updated_at: '2026-08-20T09:00:00Z' },
   ];
   apiFetchMock.mockReset();
-  apiFetchMock.mockImplementation(async (path: string) => {
-    if (path === '/api/v1/chat/conversations') {
-      return { items: conversations, total: conversations.length };
+  // #581：列表 GET 带 include_deleted=true（GREEN）；restore 走 POST {pid}/restore（镜像 archive 模式）
+  apiFetchMock.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path.startsWith('/api/v1/chat/conversations')) {
+      // 列表 GET（含 include_deleted=true 查询参数）→ 返回 conversations
+      if ((init?.method ?? 'GET') === 'GET') {
+        return { items: conversations, total: conversations.length };
+      }
+      // POST /api/v1/chat/conversations/{projectId}/restore → 恢复后 conversation
+      const restoreMatch = path.match(/^\/api\/v1\/chat\/conversations\/([^/]+)\/restore$/);
+      if (restoreMatch) {
+        const conv = conversations.find((c) => c.project_id === restoreMatch[1]);
+        return conv ? { ...conv, is_deleted: false } : { ok: true };
+      }
+      // DELETE（归档/真删，含 ?force=true）→ 204 语义
+      return { ok: true };
     }
     return { ok: true };
   });
@@ -327,13 +352,15 @@ describe('会话页 — 归档 / 恢复 / 删除', () => {
 });
 
 describe('会话页 — AI 对话会话区块（#547）', () => {
-  it('挂载即拉取 AI 对话：apiFetch GET /api/v1/chat/conversations（无查询参数）；渲染会话卡片（项目名/最后消息/条数/时间）', async () => {
+  it('挂载即拉取 AI 对话：apiFetch GET /api/v1/chat/conversations?include_deleted=true（#581 含已归档全量）；渲染会话卡片（项目名/最后消息/条数/时间）', async () => {
     renderSessionsPage();
     const cards = await screen.findAllByTestId('chat-conversation-card');
     expect(cards).toHaveLength(2);
 
-    // fetchChatConversations 走 apiFetch：路径精确 = 无查询参数（GET 语义）
-    const call = apiFetchMock.mock.calls.find(([p]) => p === '/api/v1/chat/conversations');
+    // fetchChatConversations 走 apiFetch：路径含 include_deleted=true（#581：拉取含已归档对话全量）
+    const call = apiFetchMock.mock.calls.find(
+      ([p]) => p.startsWith('/api/v1/chat/conversations') && p.includes('include_deleted=true'),
+    );
     expect(call).toBeTruthy();
     const [, init] = call as [string, RequestInit];
     expect(init?.method ?? 'GET').toBe('GET');
@@ -383,9 +410,73 @@ describe('会话页 — AI 对话区块归档/删除（#566）', () => {
       ([p, init]) => p === '/api/v1/chat/conversations/p1' && (init as RequestInit)?.method === 'DELETE',
     );
     expect(delCall).toBeTruthy();
-    // 卡片本地移除（列表刷新）
+    // #581 迁移：归档不再移除卡片——置 is_deleted=true 转归档态（归档徽标 + 恢复按钮出现，卡片仍在）
     await waitFor(() => {
-      expect(screen.queryByTestId('chat-conv-archive-p1')).not.toBeInTheDocument();
+      expect(screen.getByTestId('chat-conv-archived-p1')).toBeInTheDocument();
+      expect(screen.getByTestId('chat-conv-restore-p1')).toBeInTheDocument();
+      expect(screen.getByTestId('chat-conv-archive-p1')).not.toBeInTheDocument();
     });
+  });
+});
+
+/**
+ * #581 归档视图闭环（用户拍板方案，RED 契约）：conversations 区块接 FILTERS all/active/archived，
+ * fetch 带 include_deleted=true；归档视图显示已归档对话 + 恢复入口（restoreChatConversation 新 API，
+ * 镜像 api/sessions.ts restoreSession；api/chat.ts GREEN 补）。
+ */
+describe('会话页 — AI 对话归档视图（#581）', () => {
+  it('点 sessions-filter-archived → 只显示已归档对话卡片（p2 在、p1 不在）+ 归档徽标 + 恢复按钮', async () => {
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findAllByTestId('chat-conversation-card');
+    // RED：当前 conversations 区块不受 filter 影响（永远显示全部）→ p1 卡片仍在 → FAIL
+    await user.click(screen.getByTestId('sessions-filter-archived'));
+    expect(screen.getByTestId('chat-conversation-updated-p2')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-conversation-updated-p1')).not.toBeInTheDocument();
+    // 归档徽标 + 恢复按钮（#581 契约：chat-conv-archived-<pid> / chat-conv-restore-<pid>）
+    expect(screen.getByTestId('chat-conv-archived-p2')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-conv-restore-p2')).toBeInTheDocument();
+  });
+
+  it('归档视图恢复：点 chat-conv-restore-p2 → POST /api/v1/chat/conversations/p2/restore + 本地恢复回活动列表', async () => {
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findAllByTestId('chat-conversation-card');
+    await user.click(screen.getByTestId('sessions-filter-archived'));
+    // RED：当前无恢复按钮 → getByTestId FAIL
+    const restoreBtn = screen.getByTestId('chat-conv-restore-p2');
+    await user.click(restoreBtn);
+    // restoreChatConversation 走 apiFetch：POST /api/v1/chat/conversations/p2/restore（镜像 archive 模式）
+    const restoreCall = apiFetchMock.mock.calls.find(
+      ([p, init]) => p === '/api/v1/chat/conversations/p2/restore' && (init as RequestInit)?.method === 'POST',
+    );
+    expect(restoreCall).toBeTruthy();
+    // 本地恢复：归档视图下 p2 卡片移除（恢复按钮消失）
+    await waitFor(() => {
+      expect(screen.queryByTestId('chat-conv-restore-p2')).not.toBeInTheDocument();
+    });
+    // 回活动列表：active 视图下 p2 重新可见（is_deleted=false）
+    await user.click(screen.getByTestId('sessions-filter-active'));
+    expect(screen.getByTestId('chat-conversation-updated-p2')).toBeInTheDocument();
+  });
+
+  it('点 sessions-filter-active → 只显示活动对话卡片（p1 在、p2 不在）', async () => {
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findAllByTestId('chat-conversation-card');
+    // RED：当前 conversations 区块不受 filter 影响 → p2 卡片仍在 → FAIL
+    await user.click(screen.getByTestId('sessions-filter-active'));
+    expect(screen.getByTestId('chat-conversation-updated-p1')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-conversation-updated-p2')).not.toBeInTheDocument();
+  });
+
+  it('守护：filter=all 显示全部对话卡片；#566 归档/删除按钮（chat-conv-archive-<pid>/chat-conv-delete-<pid>）保持', async () => {
+    renderSessionsPage();
+    const cards = await screen.findAllByTestId('chat-conversation-card');
+    expect(cards).toHaveLength(2);
+    expect(screen.getByTestId('chat-conv-archive-p1')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-conv-delete-p1')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-conv-archive-p2')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-conv-delete-p2')).toBeInTheDocument();
   });
 });

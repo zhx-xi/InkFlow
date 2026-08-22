@@ -18,6 +18,8 @@
  * 1. 聊天框：输入 → 发送 → content 意图回复（标记包裹）→ 自动选中 → 插入选中正文 → 编辑器 value 更新
  * 2. 对话类回复（无标记）→ 不渲染选择/插入控件
  * 3. 视图切换：view-toggle → 详情页空态（exec-detail-empty）→ 切回 editor
+ * 4. 流式新消息删除按钮（#581-1）：发送 → 新消息渲染删除按钮 chat-msg-delete-user-0
+ *    → 点击删除 → 消息消失（当前流式新消息无 id 不渲染删除按钮 → RED）
  *
  * 基建复用 e2e-writing.spec.ts 模式（launchApp/waitKernelInfo/createProjectViaUi/findProjectId）。
  */
@@ -300,6 +302,55 @@ test('视图切换：view-toggle → 详情页空态 → 切回 editor', async (
     // 切回 editor 视图
     await window.getByTestId('view-toggle').click();
     await expect(window.getByTestId('chapter-editor')).toBeVisible({ timeout: 15_000 });
+  } finally {
+    await app.close();
+  }
+});
+
+test('流式新消息渲染删除按钮：发送 → chat-msg-delete-user-0 存在 → 点击删除 → 消息消失（#581-1）', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-聊天-删除-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    const pid = await findProjectId(kernel, name);
+
+    // 预置 1 卷 + 1 章（正文空）——项目树有章节可点（对齐用例 1 预置写法）
+    const volumes = await kernelFetch(kernel, `/api/v1/projects/${pid}/volumes`, { method: 'POST', body: { title: '第一卷 风起' } });
+    expect(volumes.status).toBe(201);
+    const volData = (await volumes.json()) as { id: string };
+    const chapters = await kernelFetch(kernel, `/api/v1/projects/${pid}/chapters`, {
+      method: 'POST',
+      body: { title: '第1章 初见', volume_id: volData.id, content: '' },
+    });
+    expect(chapters.status).toBe(201);
+
+    // #474 前置校验预置：注册 openai key + 补 chat 模型
+    await presetChatModel(kernel);
+
+    // 重挂载写作页触发 loadChapterTree
+    await gotoNav(window, '项目');
+    await gotoNav(window, '写作');
+    await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByTestId('tree-volume')).toBeVisible({ timeout: 15_000 });
+    await window.getByRole('button', { name: /第1章 初见/ }).click();
+    await expect(window.getByTestId('tree-chapter')).toBeVisible({ timeout: 15_000 });
+
+    // 树就绪后再注册流式拦截（对话类回复，无 content 标记）
+    interceptChatStream(window, '这是一段纯对话回复。');
+
+    // 发送一条消息 → 流式新消息（无 id）渲染删除按钮（#581-1）
+    const chatInput = window.getByTestId('chat-input');
+    await expect(chatInput).toBeVisible({ timeout: 15_000 });
+    await chatInput.fill('帮我写一段打斗场景');
+    await window.getByTestId('chat-send').click();
+
+    // RED：当前流式新消息无 id 不渲染删除按钮 → chat-msg-delete-user-0 永不出现 → FAIL
+    await expect(window.getByTestId('chat-msg-user-0')).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByTestId('chat-msg-delete-user-0')).toBeVisible({ timeout: 15_000 });
+
+    // 点击删除 → 该消息消失（删除按钮随之消失）
+    await window.getByTestId('chat-msg-delete-user-0').click();
+    await expect(window.getByTestId('chat-msg-user-0')).toHaveCount(0);
   } finally {
     await app.close();
   }
