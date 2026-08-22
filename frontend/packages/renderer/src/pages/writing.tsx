@@ -256,7 +256,7 @@ export function WritingPage() {
           {view === 'editor' ? (
             <ChapterEditor onEditorKeyDown={handleKeyDown} onContentChange={handleContentChange} />
           ) : (
-            <ExecutionDetailPanel executionId={executionId} />
+            <ExecutionDetailPanel executionId={executionId} projectId={effectiveProjectId} />
           )}
           {view === 'editor' && effectiveProjectId !== '' && currentChapterId !== null ? (
             <ChatPanel

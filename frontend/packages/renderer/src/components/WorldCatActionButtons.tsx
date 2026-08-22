@@ -20,7 +20,7 @@ export function WorldCatActionButtons({
   const { t } = useI18n();
   return (
     <>
-      {/* #567：已有根世界观条目时隐藏「新建分类」入口（保留地图视图） */}
+      {/* #588：已有根世界观条目时仍保留「新建分类」入口（允许创建子分类） */}
       {showCreate && (
         <button type="button" data-testid="world-cat-add" className={BTN_CLS} onClick={onAddCategory}>
           <Plus className="h-3.5 w-3.5" aria-hidden="true" />

@@ -6,34 +6,89 @@
  */
 import { useEffect, useState } from 'react';
 import { apiFetch, errorMessage } from '../api/client';
-import { type PipelineExecutionStatus } from '../api/pipeline';
+import { type PipelineExecutionListItem, type PipelineExecutionStatus } from '../api/pipeline';
 import { useI18n } from '../i18n/useI18n';
 
 export interface ExecutionDetailPanelProps {
   executionId?: string | null;
+  projectId?: string;
 }
 
-export function ExecutionDetailPanel({ executionId }: ExecutionDetailPanelProps) {
+export function ExecutionDetailPanel({ executionId, projectId }: ExecutionDetailPanelProps) {
   const { t } = useI18n();
   const [status, setStatus] = useState<PipelineExecutionStatus | null>(null);
+  const [executions, setExecutions] = useState<PipelineExecutionListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!executionId) return;
-    let cancelled = false;
+    if (executionId) {
+      // #586: detail mode keeps GET /executions/{id}; never calls list endpoint
+      let cancelled = false;
+      setStatus(null);
+      setError(null);
+      apiFetch<PipelineExecutionStatus>(`/api/v1/agent/pipelines/executions/${executionId}`)
+        .then((data) => {
+          if (!cancelled) setStatus(data);
+        })
+        .catch((err) => {
+          if (!cancelled) setError(errorMessage(err));
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (projectId) {
+      // #586: no executionId + projectId -> history list GET /executions?project_id=<id>
+      let cancelled = false;
+      setExecutions([]);
+      setError(null);
+      apiFetch<{ items?: PipelineExecutionListItem[] }>(
+        `/api/v1/agent/pipelines/executions?project_id=${projectId}`,
+      )
+        .then((data) => {
+          if (!cancelled) setExecutions(data?.items ?? []);
+        })
+        .catch((err) => {
+          if (!cancelled) setError(errorMessage(err));
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
     setStatus(null);
+    setExecutions([]);
     setError(null);
-    apiFetch<PipelineExecutionStatus>(`/api/v1/agent/pipelines/executions/${executionId}`)
-      .then((data) => {
-        if (!cancelled) setStatus(data);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(errorMessage(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [executionId]);
+  }, [executionId, projectId]);
+
+  // #586: no executionId + projectId -> render execution history list
+  if (!executionId && projectId) {
+    return (
+      <div data-testid="exec-history-list" className="h-full overflow-y-auto px-4 py-3 text-[13px]">
+        {error ? (
+          <p className="text-err">{error}</p>
+        ) : executions.length === 0 ? (
+          <div data-testid="exec-detail-empty">{t('write.detail.empty')}</div>
+        ) : (
+          executions.map((item) => (
+            <div
+              key={item.execution_id}
+              data-testid={`exec-history-item-${item.execution_id}`}
+              className="mb-2 rounded-md border border-line bg-surface-2 p-2"
+            >
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-ink">{item.pipeline}</span>
+                <span className="text-ink-3">{item.status}</span>
+              </div>
+              <div className="mt-1 flex items-center gap-3 text-ink-2">
+                <span>{item.created_at}</span>
+                <span>{item.total_duration_ms} ms</span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    );
+  }
 
   if (!executionId) {
     return <div data-testid="exec-detail-empty">{t('write.detail.empty')}</div>;

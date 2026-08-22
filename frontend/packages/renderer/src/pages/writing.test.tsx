@@ -612,9 +612,8 @@ describe('写作页 — 底部续写栏 AI 聊天框（#519 S6a：chat 移到 Ch
     // #519 契约（RED 主失败点）：chat 必须位于 ChapterEditor 之后（当前实现渲染在编辑器上方）
     const chapterEditor = screen.getByTestId('chapter-editor');
     expect(chapterEditor.compareDocumentPosition(chat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // #519 契约（确认型）：chat 位于 PipelineStatus 之前（管线状态栏在 chat 之后）
-    const pipelineStatus = screen.getByTestId('pipeline-status');
-    expect(chat.compareDocumentPosition(pipelineStatus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // #585：idle 态不再渲染 PipelineStatus（空框）——此处不再断言「chat 在 PipelineStatus 之前」
+    // （该顺序仅在 PipelineStatus 有状态时才有意义；本用例聚焦 chat 在编辑器内的位置）
   });
 });
 

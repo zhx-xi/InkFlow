@@ -827,11 +827,11 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
 });
 
 /**
- * #567 世界观根条目单例：已有根条目时隐藏「创建」入口（空态 CTA + 新建分类按钮），
- * 保留地图视图。0.12.0 #568 会重设计入口交互，本次只隐藏。
+ * #567/#588 世界观：已有根条目时仍需保留「创建」入口（可创建子分类，仅禁止再建根），
+ * 保留地图视图。#567 曾隐藏入口 → #588 推翻为「可见」（回归修复）。
  */
-describe('设定库页 — 世界观根条目隐藏创建入口（#567）', () => {
-  it('已有根世界观条目：不渲染空态 CTA 与「新建分类」创建按钮（保留地图视图）', async () => {
+describe('设定库页 — 世界观已有根条目后仍可创建（#567/#588）', () => {
+  it('已有根世界观条目：渲染「新建分类」创建按钮（可创建子分类，保留地图视图）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
     });
@@ -852,8 +852,8 @@ describe('设定库页 — 世界观根条目隐藏创建入口（#567）', () =
     await user.click(screen.getByRole('tab', { name: '世界观' }));
     // 根条目存在 → 树视图渲染（非空态）
     await waitFor(() => expect(screen.getByTestId('library-list')).toBeInTheDocument());
-    // RED：当前世界树工具栏恒渲染 WorldCatActionButtons（含 world-cat-add）→ 下面 FAIL
-    expect(screen.queryByTestId('world-cat-add')).not.toBeInTheDocument();
+    // #588 契约：已有根条目时仍渲染「新建分类」（可创建子分类，仅禁再建根）
+    expect(screen.getByTestId('world-cat-add')).toBeInTheDocument();
     // 空态 CTA 不渲染（根条目存在 → 非空态）
     expect(screen.queryByTestId('library-tab-empty-cta')).not.toBeInTheDocument();
     // 地图视图入口保留（视图非创建）
