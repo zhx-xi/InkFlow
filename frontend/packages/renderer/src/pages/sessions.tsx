@@ -18,6 +18,7 @@ import {
   archiveChatConversation,
   deleteChatConversation,
   fetchChatConversations,
+  restoreChatConversation,
   type ChatConversationDto,
 } from '../api/chat';
 import { errorMessage } from '../api/client';
@@ -81,9 +82,9 @@ export function SessionsPage() {
       .catch((err) => pushToast('err', errorMessage(err)));
   }, [pushToast]);
 
-  // #547：AI 对话聚合列表（失败静默）
+  // #547/#581：AI 对话聚合列表（含已归档全量，失败静默）
   useEffect(() => {
-    void fetchChatConversations()
+    void fetchChatConversations({ includeDeleted: true })
       .then((res) => setConversations(res.items))
       .catch(() => {
         // 契约：加载失败静默，不打扰页面主体
@@ -96,6 +97,13 @@ export function SessionsPage() {
     if (filter === 'archived') return sessions.filter((v) => v.session.is_deleted);
     return sessions;
   }, [sessions, filter]);
+
+  /** #581：过滤后可见 AI 对话（全部 = 不过滤；活动 = 未归档；已归档 = is_deleted） */
+  const visibleConversations = useMemo(() => {
+    if (filter === 'active') return conversations.filter((c) => !c.is_deleted);
+    if (filter === 'archived') return conversations.filter((c) => c.is_deleted);
+    return conversations;
+  }, [conversations, filter]);
 
   const handleArchive = async (id: string): Promise<void> => {
     try {
@@ -138,12 +146,27 @@ export function SessionsPage() {
     }
   };
 
-  /** #566：AI 对话会话归档（软删），成功后本地移除该卡片 */
+  /** #581：AI 对话会话归档（软删），成功后本地置 is_deleted=true 转归档态 */
   const handleArchiveConversation = async (projectId: string): Promise<void> => {
     try {
       await archiveChatConversation(projectId);
-      setConversations((prev) => prev.filter((c) => c.project_id !== projectId));
+      setConversations((prev) =>
+        prev.map((c) => (c.project_id === projectId ? { ...c, is_deleted: true } : c)),
+      );
       pushToast('ok', t('sessions.archivedToast'));
+    } catch (err) {
+      pushToast('err', errorMessage(err));
+    }
+  };
+
+  /** #581：AI 对话会话恢复：POST conversations/{projectId}/restore → 本地置 is_deleted=false 回活动态 */
+  const handleRestoreConversation = async (projectId: string): Promise<void> => {
+    try {
+      await restoreChatConversation(projectId);
+      setConversations((prev) =>
+        prev.map((c) => (c.project_id === projectId ? { ...c, is_deleted: false } : c)),
+      );
+      pushToast('ok', t('sessions.restoredToast'));
     } catch (err) {
       pushToast('err', errorMessage(err));
     }
@@ -335,7 +358,7 @@ export function SessionsPage() {
       {/* #547：AI 对话区块 */}
       <section data-testid="chat-conversations-section" className="mt-10">
         <h2 className="text-[15px] font-semibold text-ink">{t('sessions.chat.title')}</h2>
-        {conversations.length === 0 ? (
+        {visibleConversations.length === 0 ? (
           <div
             data-testid="chat-conversations-empty"
             className="mt-3 rounded-lg border border-dashed border-line bg-surface px-6 py-12 text-center text-[13px] text-ink-2"
@@ -344,7 +367,7 @@ export function SessionsPage() {
           </div>
         ) : (
           <ul className="mt-3 space-y-3">
-            {conversations.map((conv) => (
+            {visibleConversations.map((conv) => (
               <li
                 key={conv.project_id}
                 data-testid="chat-conversation-card"
@@ -360,14 +383,33 @@ export function SessionsPage() {
                 </div>
                 <p className="mt-2 truncate text-[13px] text-ink-2">{conv.last_message}</p>
                 <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    data-testid={`chat-conv-archive-${conv.project_id}`}
-                    className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink"
-                    onClick={() => void handleArchiveConversation(conv.project_id)}
-                  >
-                    {t('sessions.archive')}
-                  </button>
+                  {!conv.is_deleted ? (
+                    <button
+                      type="button"
+                      data-testid={`chat-conv-archive-${conv.project_id}`}
+                      className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink"
+                      onClick={() => void handleArchiveConversation(conv.project_id)}
+                    >
+                      {t('sessions.archive')}
+                    </button>
+                  ) : (
+                    <>
+                      <span
+                        data-testid={`chat-conv-archived-${conv.project_id}`}
+                        className="rounded bg-surface-3 px-2 py-0.5 text-[11px] text-ink-3"
+                      >
+                        {t('sessions.archived')}
+                      </span>
+                      <button
+                        type="button"
+                        data-testid={`chat-conv-restore-${conv.project_id}`}
+                        className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink"
+                        onClick={() => void handleRestoreConversation(conv.project_id)}
+                      >
+                        {t('sessions.restore')}
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
                     data-testid={`chat-conv-delete-${conv.project_id}`}

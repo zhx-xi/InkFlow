@@ -38,6 +38,14 @@
  * - 历史加载失败静默：不发 toast，后续发送仍可用
  * - 发送用户消息 → saveChatMessage({project_id, role:'user', content: prompt})（fire-and-forget）
  * - AI 回复 done → saveChatMessage({project_id, role:'ai', content: 最终文本, intent: 解析后意图})
+ *
+ * #581 删除按钮稳定 + 整轮归档/删除（「ChatPanel — 删除按钮稳定 + 整轮归档/删除（#581）」describe 锁定）：
+ * - 删除按钮稳定渲染：流式新消息（无 id）也渲染删除按钮，testid = chat-msg-delete-<kind>-<seq>
+ *   （kind=user/ai，seq 为 role 独立序号；有 id 的历史消息保持 chat-msg-delete-<id>，#566 兼容不回归）
+ * - 整轮操作：消息区渲染 chat-round-archive / chat-round-delete，
+ *   点归档 → archiveChatConversation(projectId)；点删除 → deleteChatConversation(projectId)
+ *   （force=true 在 api/chat.ts 内部，测试只断言调用 projectId）；操作后本轮消息清空 + toast
+ *   （文案宽松：归档类/删除类 ok toast；GREEN 若用 write.chat.archived 需补 i18n key）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -71,6 +79,9 @@ const chatApiMocks = vi.hoisted(() => ({
   archiveChatMessage: vi.fn(),
   deleteChatMessage: vi.fn(),
   restoreChatMessage: vi.fn(),
+  // #581：整轮归档/删除会话——GREEN ChatPanel 整轮操作按钮 wire
+  archiveChatConversation: vi.fn(),
+  deleteChatConversation: vi.fn(),
 }));
 vi.mock('../api/chat', () => chatApiMocks);
 
@@ -189,8 +200,12 @@ beforeEach(() => {
   chatApiMocks.archiveChatMessage.mockReset();
   chatApiMocks.deleteChatMessage.mockReset();
   chatApiMocks.restoreChatMessage.mockReset();
+  chatApiMocks.archiveChatConversation.mockReset();
+  chatApiMocks.deleteChatConversation.mockReset();
   chatApiMocks.fetchChatMessages.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
   chatApiMocks.deleteChatMessage.mockResolvedValue(undefined);
+  chatApiMocks.archiveChatConversation.mockResolvedValue(undefined);
+  chatApiMocks.deleteChatConversation.mockResolvedValue(undefined);
   chatApiMocks.saveChatMessage.mockResolvedValue({
     id: 'm-new',
     project_id: 'p1',
@@ -736,5 +751,68 @@ describe('ChatPanel — 消息删除（#566）', () => {
     await user.click(screen.getByTestId('chat-msg-delete-m1'));
     expect(chatApiMocks.deleteChatMessage).toHaveBeenCalledWith('m1');
     expect(screen.queryByTestId('chat-msg-user-0')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * #581 删除按钮稳定 + 整轮归档/删除（用户拍板方案，RED 契约）：
+ * - #581-1 删除按钮稳定渲染：流式新消息（无 id）也渲染删除按钮，
+ *   testid 契约 = `chat-msg-delete-<kind>-<seq>`（kind=user/ai，seq 为 role 独立序号）；
+ *   有 id 的历史消息保持 `chat-msg-delete-<id>`（#566 兼容，不回归）。
+ * - #581-2 整轮归档/删除按钮：消息区渲染 chat-round-archive / chat-round-delete，
+ *   点击 → archiveChatConversation(projectId) / deleteChatConversation(projectId)
+ *   （delete 的 force=true 在 api/chat.ts 内部，断言调用 projectId 即可）
+ *   + 本轮消息清空 + toast（write.chat.archived 或 sessions.archivedToast 均可，文案宽松）。
+ */
+describe('ChatPanel — 删除按钮稳定 + 整轮归档/删除（#581）', () => {
+  it('流式新消息（无 id）渲染删除按钮：user seq 0 → chat-msg-delete-user-0；ai seq 0 → chat-msg-delete-ai-0', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await sendAndAwaitStream(user, '新的提问');
+    emitDelta(0, '新的回答');
+    emitDone(0);
+    // RED：当前实现仅 {id && ...} 渲染删除按钮（流式新消息无 id）→ 下面两行 FAIL
+    expect(screen.getByTestId('chat-msg-delete-user-0')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-msg-delete-ai-0')).toBeInTheDocument();
+  });
+
+  it('整轮归档：消息区渲染 chat-round-archive；点击 → archiveChatConversation(projectId) + 本轮清空 + toast', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await sendAndAwaitStream(user, '问一句');
+    driveConversationReply(0, '答一句');
+    // RED：当前实现无整轮归档按钮 → getByTestId FAIL
+    expect(screen.getByTestId('chat-round-archive')).toBeInTheDocument();
+    await user.click(screen.getByTestId('chat-round-archive'));
+    expect(chatApiMocks.archiveChatConversation).toHaveBeenCalledWith('p1');
+    // 本轮消息清空
+    await waitFor(() => {
+      expect(screen.queryByTestId('chat-msg-user-0')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('chat-msg-ai-0')).not.toBeInTheDocument();
+    });
+    // toast 出现（文案宽松：归档类 ok toast）
+    expect(
+      useToastStore.getState().toasts.some((t) => t.type === 'ok' && /归档/.test(t.message)),
+    ).toBe(true);
+  });
+
+  it('整轮删除：消息区渲染 chat-round-delete；点击 → deleteChatConversation(projectId)（force=true 在 api 内部）+ 本轮清空 + toast', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await sendAndAwaitStream(user, '问一句');
+    driveConversationReply(0, '答一句');
+    // RED：当前实现无整轮删除按钮 → getByTestId FAIL
+    expect(screen.getByTestId('chat-round-delete')).toBeInTheDocument();
+    await user.click(screen.getByTestId('chat-round-delete'));
+    expect(chatApiMocks.deleteChatConversation).toHaveBeenCalledWith('p1');
+    // 本轮消息清空
+    await waitFor(() => {
+      expect(screen.queryByTestId('chat-msg-user-0')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('chat-msg-ai-0')).not.toBeInTheDocument();
+    });
+    // toast 出现（文案宽松：删除类 ok toast）
+    expect(
+      useToastStore.getState().toasts.some((t) => t.type === 'ok' && /删除/.test(t.message)),
+    ).toBe(true);
   });
 });

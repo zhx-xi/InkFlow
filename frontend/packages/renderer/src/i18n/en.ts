@@ -419,6 +419,9 @@ export const en: Record<string, string> = {
   'write.chat.ai': 'AI',
   // #566: delete history message
   'write.chat.delete': 'Delete',
+  // #581: archive/delete the whole round (ChatPanel message area)
+  'write.chat.archiveRound': 'Archive Round',
+  'write.chat.deleteRound': 'Delete Round',
   'write.view.toDetail': 'View AI execution details',
   'write.view.toEditor': 'Back to editor',
   'write.detail.empty': 'No execution records',

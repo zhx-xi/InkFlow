@@ -111,6 +111,8 @@ export interface ChatConversationDto {
   project_name: string | null;
   last_message: string;
   message_count: number;
+  /** #581：true=已归档对话（后端 include_deleted=true 聚合输出，镜像 sessions.is_deleted） */
+  is_deleted: boolean;
   updated_at: string;
 }
 
@@ -147,12 +149,21 @@ export async function saveChatMessage(body: {
   return apiFetch('/api/v1/chat/messages', { method: 'POST', body: payload });
 }
 
-/** 会话页聚合列表 */
-export async function fetchChatConversations(): Promise<{
-  items: ChatConversationDto[];
-  total: number;
-}> {
-  return apiFetch('/api/v1/chat/conversations');
+/** 会话页聚合列表（#581：includeDeleted=true 时含已归档全量，镜像 api/sessions.ts fetchSessions） */
+export async function fetchChatConversations(params?: {
+  includeDeleted?: boolean;
+}): Promise<{ items: ChatConversationDto[]; total: number }> {
+  const qs = new URLSearchParams();
+  if (params?.includeDeleted) qs.set('include_deleted', 'true');
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return apiFetch(`/api/v1/chat/conversations${suffix}`);
+}
+
+/** #581：恢复已归档 chat 会话：POST /api/v1/chat/conversations/{projectId}/restore → ChatConversation */
+export async function restoreChatConversation(projectId: string): Promise<ChatConversationDto> {
+  return apiFetch<ChatConversationDto>(`/api/v1/chat/conversations/${projectId}/restore`, {
+    method: 'POST',
+  });
 }
 
 /** #566：归档 chat 消息：DELETE /api/v1/chat/messages/{id}（无 force = 软删，204） */
