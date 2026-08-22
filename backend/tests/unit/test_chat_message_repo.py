@@ -376,7 +376,7 @@ class TestRestoreByProject:
     """
 
     async def test_restore_by_project_restores_whole_project(self, db_session):
-        """archive_by_project 归档整项目 → restore_by_project → list_conversations 恢复（is_deleted=false）。"""
+        """归档后 restore_by_project 使整项目 list_conversations 恢复（is_deleted=false）。"""
         repo = SQLiteChatMessageRepository(db_session)
         await repo.add(_make_message(content="一"))
         await repo.add(_make_message(content="二"))
