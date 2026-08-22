@@ -267,6 +267,43 @@ class TestConversationsEndpoint:
             assert key in data["items"][0]
         chat_svc.list_conversations.assert_awaited_once()
 
+    async def test_list_conversations_include_deleted_200(
+        self, chat_svc, override_chat_svc
+    ):
+        """#581 GET ?include_deleted=true → 200 + svc.list_conversations(include_deleted=True)。
+
+        镜像 sessions 先例（sessions.py L127 include_deleted: bool = Query(False)）：
+        include_deleted=true 时活动 + 归档全量返回（会话页恢复已归档会话入口）。
+        """
+        conv = _conversation_dict()
+        chat_svc.list_conversations.return_value = [conv]
+        async with _client() as client:
+            resp = await client.get(
+                "/api/v1/chat/conversations",
+                params={"include_deleted": "true"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["items"] == [conv]
+        assert data["total"] == 1
+        chat_svc.list_conversations.assert_awaited_once_with(include_deleted=True)
+
+    async def test_list_conversations_include_deleted_has_is_deleted_key(
+        self, chat_svc, override_chat_svc
+    ):
+        """#581 include_deleted=true 响应 items 带 is_deleted 键（前端归档视图过滤依赖）。"""
+        conv = _conversation_dict(is_deleted=True)
+        chat_svc.list_conversations.return_value = [conv]
+        async with _client() as client:
+            resp = await client.get(
+                "/api/v1/chat/conversations",
+                params={"include_deleted": "true"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "is_deleted" in data["items"][0]
+        assert data["items"][0]["is_deleted"] is True
+
 
 class TestChatAssembly:
     """#245 装配契约：chat_messages router 必须在真实 app 注册（不再手动安装）。"""

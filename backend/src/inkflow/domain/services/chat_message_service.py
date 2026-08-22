@@ -52,9 +52,9 @@ class ChatMessageService:
         )
         return items, total
 
-    async def list_conversations(self) -> list[dict[str, Any]]:
-        """会话页聚合（repo 聚合结果原样透传）。"""
-        return await self._repo.list_conversations()  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 list_conversations
+    async def list_conversations(self, include_deleted: bool = False) -> list[dict[str, Any]]:
+        """会话页聚合（repo 聚合结果原样透传；include_deleted 控制是否含已归档）。"""
+        return await self._repo.list_conversations(include_deleted=include_deleted)  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 list_conversations
 
     async def archive_message(self, message_id: uuid.UUID) -> bool:
         """归档消息（软删 is_deleted=true）。repo.archive 收到 int 主键。"""

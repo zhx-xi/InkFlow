@@ -76,13 +76,18 @@ class SQLiteChatMessageRepository:
         ).scalar_one()
         return [_orm_to_domain(r) for r in rows], int(total)
 
-    async def list_conversations(self) -> list[dict[str, Any]]:
-        """按项目聚合（最新消息/条数/更新时间降序；project_name 可空 join）。"""
+    async def list_conversations(self, include_deleted: bool = False) -> list[dict[str, Any]]:
+        """按项目聚合（最新消息/条数/更新时间降序；project_name 可空 join）。
+
+        include_deleted=True 时含已归档消息（#581 会话页归档视图）。
+        输出含 is_deleted 标志（镜像 sessions.is_deleted）。
+        """
         stmt = (
             select(ChatMessageORM)
-            .where(~ChatMessageORM.is_deleted)
             .order_by(ChatMessageORM.created_at.desc(), ChatMessageORM.id.desc())
         )
+        if not include_deleted:
+            stmt = stmt.where(~ChatMessageORM.is_deleted)
         rows = (await self._db.execute(stmt)).scalars().all()
         aggregated: dict[int, dict[str, Any]] = {}
         for r in rows:
@@ -90,9 +95,11 @@ class SQLiteChatMessageRepository:
                 r.project_id,
                 {"project_id": r.project_id, "project_name": None,
                  "last_message": r.content, "message_count": 0,
-                 "updated_at": r.created_at},
+                 "deleted_count": 0, "updated_at": r.created_at},
             )
             agg["message_count"] += 1
+            if r.is_deleted:
+                agg["deleted_count"] += 1
         # project_name join（项目不存在/失败 → None 可空）
         if aggregated:
             ids = list(aggregated.keys())
@@ -107,6 +114,7 @@ class SQLiteChatMessageRepository:
                 "project_name": v["project_name"],
                 "last_message": v["last_message"],
                 "message_count": v["message_count"],
+                "is_deleted": v["deleted_count"] == v["message_count"],
                 "updated_at": (
                     v["updated_at"].isoformat()
                     if hasattr(v["updated_at"], "isoformat")

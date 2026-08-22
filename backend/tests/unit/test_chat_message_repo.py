@@ -199,6 +199,41 @@ class TestListConversations:
         repo = SQLiteChatMessageRepository(db_session)
         assert await repo.list_conversations() == []
 
+    async def test_list_conversations_include_deleted_true(self, db_session):
+        """#581 include_deleted=True → 聚合包含已归档项目（会话页恢复入口）。
+
+        镜像 sessions 的 include_deleted 先例：默认排除已归档，
+        include_deleted=true 时活动 + 归档全量返回。
+        """
+        repo = SQLiteChatMessageRepository(db_session)
+        created = await repo.add(_make_message(content="将归档"))
+        await repo.archive(created.id.int)
+
+        convs = await repo.list_conversations(include_deleted=True)
+
+        assert any(c["project_id"] == str(PROJECT_ID) for c in convs)
+
+    async def test_list_conversations_is_deleted_flag(self, db_session):
+        """#581 聚合结果带 is_deleted 标志（镜像 sessions.is_deleted 语义，归档视图区分用）。
+
+        判定 = 该项目聚合的消息是否全部 is_deleted（archive_by_project 整轮归档语义）：
+        - 活动项目（有任一活动消息）→ is_deleted=False
+        - 归档项目（全部消息已归档）→ is_deleted=True
+        """
+        repo = SQLiteChatMessageRepository(db_session)
+        # P1：1 条活动消息
+        await repo.add(_make_message(content="活动"))
+        # P2：1 条消息 → 归档
+        archived = await repo.add(
+            _make_message(project_id=PROJECT_ID_2, content="已归档")
+        )
+        await repo.archive(archived.id.int)
+
+        convs = await repo.list_conversations(include_deleted=True)
+        by_id = {c["project_id"]: c for c in convs}
+        assert by_id[str(PROJECT_ID)]["is_deleted"] is False
+        assert by_id[str(PROJECT_ID_2)]["is_deleted"] is True
+
 
 class TestArchiveDeleteRestore:
     """#566 两级删除 — archive / force_delete / restore + is_deleted 过滤。

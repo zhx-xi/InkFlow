@@ -80,11 +80,15 @@ async def list_messages(
 
 @router.get("/conversations")
 async def list_conversations(
+    include_deleted: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """会话页聚合列表（按 updated_at 降序；total=len(items)）。"""
+    """会话页聚合列表（按 updated_at 降序；total=len(items)）。
+
+    include_deleted=true 时含已归档消息（#581 会话页归档视图，镜像 sessions）。
+    """
     svc = get_chat_message_service(db)
-    items = await svc.list_conversations()
+    items = await svc.list_conversations(include_deleted=include_deleted)
     return {"items": items, "total": len(items)}
 
 
