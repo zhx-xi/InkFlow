@@ -10,9 +10,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_db
+from inkflow.domain.models.agent_book import AgenticBookConfig
 from inkflow.domain.models.writing_plan import BookLimits
 from inkflow.domain.services.book_service import BookService, ChapterAlreadyWrittenError
 from inkflow.domain.services.planner_service import PlannerService
+from inkflow.infrastructure.agent.book_agentic_pipeline import BookAgenticPipeline
 from inkflow.infrastructure.agent.book_pipeline import BookVolumePipeline
 from inkflow.infrastructure.agent.execution_store import ExecutionStore
 from inkflow.infrastructure.background.tasks import spawn_background_task
@@ -46,6 +48,8 @@ class BookRunRequest(BaseModel):
     writing_plan_id: uuid.UUID
     limits: dict[str, int] | None = None
     mode: str = "static"
+    config: dict | None = None
+    """agentic 模式配置透传（仅 mode="agentic" 生效；None → 默认 AgenticBookConfig）。"""
 
 
 class ConfirmRunRequest(BaseModel):
@@ -154,9 +158,14 @@ def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
 _book_volume_pipeline: BookVolumePipeline | None = None
 
 
+# F49 自主编排单例（镜像 _book_volume_pipeline）：checkpointer 存实例内，execute/resume
+# 须同实例——API 每次请求经 get_book_service 复用同一 pipeline
+_book_agentic_pipeline: BookAgenticPipeline | None = None
+
+
 def _build_book_service(db: AsyncSession) -> BookService:
     """装配真实 BookService（repo + outline_repo + 安全闸 + 上限 + 执行记录 + F27 writer）。"""
-    global _book_volume_pipeline
+    global _book_volume_pipeline, _book_agentic_pipeline
     from inkflow.domain.services.book_service import BookService
     from inkflow.infrastructure.database.repositories.outline_repo import SQLiteOutlineRepository
     from inkflow.infrastructure.repositories.book_repository import SQLiteBookRepository
@@ -290,6 +299,16 @@ def _build_book_service(db: AsyncSession) -> BookService:
             draft_service=draft_service,
         )
 
+    if _book_agentic_pipeline is None:
+        from inkflow.infrastructure.llm import LangChainLLMClient
+
+        _book_agentic_pipeline = BookAgenticPipeline(
+            LangChainLLMClient(),
+            writer_factory=_writer_factory,
+            draft_service=draft_service,
+            audit_callable=LangChainLLMClient().chat,
+        )
+
     return BookService(
         repo=repo,
         outline_repo=outline_repo,
@@ -299,6 +318,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
         execution_store=ExecutionStore(db),
         writer_factory=_writer_factory,
         draft_service=draft_service,
+        agentic_pipeline=_book_agentic_pipeline,
     )
 
 
@@ -417,6 +437,7 @@ async def start_run(
     返回 {run_id, status}；status=running 时后台 asyncio task fire-and-forget
     执行（#456 F44 阶段4 后台任务）。"""
     limits = BookLimits(**data.limits) if data.limits is not None else None
+    agentic_config = AgenticBookConfig(**data.config) if data.config is not None else None
     try:
         result = await svc.prepare_run(data.writing_plan_id, limits, mode=data.mode)
     except ChapterAlreadyWrittenError as e:
@@ -429,7 +450,9 @@ async def start_run(
     if result["status"] != "running":
         return result
     spawn_background_task(
-        _run_book(svc, data.writing_plan_id, limits, mode=data.mode),
+        _run_book(
+            svc, data.writing_plan_id, limits, mode=data.mode, config=agentic_config
+        ),
         key=result["run_id"],
     )
     return result
@@ -440,11 +463,14 @@ async def _run_book(
     plan_id: uuid.UUID,
     limits: BookLimits | None,
     mode: str,
+    config: AgenticBookConfig | None = None,
 ) -> None:
-    """后台执行体（fire-and-forget）：write_book/write_book_volume 全量执行；
-    未预期异常 → mark_failed 落库（状态映射 running → failed）。"""
+    """后台执行体（fire-and-forget）：write_book/write_book_volume/write_book_agentic
+    全量执行；未预期异常 → mark_failed 落库（状态映射 running → failed）。"""
     try:
-        if mode == "volume":
+        if mode == "agentic":
+            await svc.write_book_agentic(plan_id, limits, config)
+        elif mode == "volume":
             await svc.write_book_volume(plan_id, limits)
         else:
             await svc.write_book(plan_id, limits)
