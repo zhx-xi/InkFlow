@@ -10,7 +10,7 @@ from inkflow.domain.ports.agent_pipeline import AgentRole, PipelineStage
 
 # 内置角色默认 Prompt（中文）
 _ARCHITECT_PROMPT = """你是一位资深小说架构师。根据以下信息规划章节结构和情节走向：
-- 题材: {genre}
+- 题材: {tags}
 - 目标字数: {target_words}
 - 前文摘要: {context}
 
@@ -36,7 +36,7 @@ _REVISER_PROMPT = """你是一位专业文稿修订师。根据审阅意见修�
 请输出修订后的完整章节，保持原有优点，针对性地改进问题。"""
 
 _AUTO_ARCHITECT_PROMPT = """你是一位资深小说架构师。为一个全新章节从零规划结构与情节：
-- 题材: {genre}
+- 题材: {tags}
 - 目标字数: {target_words}
 - 设定库摘要: {setting}
 - 本章标题: {chapter_title}

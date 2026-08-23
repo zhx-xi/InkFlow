@@ -1,9 +1,15 @@
 # F1: 项目/书籍管理 (project_service) — 功能规格
 
-> **Spec 版本**: 1.0 | **日期**: 2026-07-31 | **依据**: PRD v2.1 §6.1 F1, Constitution P1-P6
+> **Spec 版本**: 1.1 | **日期**: 2026-08-23 | **依据**: PRD v2.1 §6.1 F1, Constitution P1-P6
 > **所属阶段**: Phase 1 — 核心引擎
-> **关联 Issues**: [#1](https://github.com/zhx-xi/InkFlow/issues/1)
-> **状态**: 已实现 (PR #8 merged) ✅
+> **关联 Issues**: [#1](https://github.com/zhx-xi/InkFlow/issues/1), [#595](https://github.com/zhx-xi/InkFlow/issues/595)
+> **状态**: 已实现 (PR #8 merged) ✅（#595 破坏性重构：genre → tags，2026-08-23 拍板 D6=B/D7=A）
+>
+> **Spec 变更**（2026-08-23 @ v1.1，#595）：
+> - 删除 `Genre` 枚举；`Project` 增加 `tags: list[str]`（多值标签）
+> - 旧项目 `genre` 值迁移为 `tags` 的**初始数据**（`{genre_value}` → `tags=["{genre_value}"]`）
+> - write_auto 题材变量 = `tags` 全拼串（不再读 `genre`）；输出/大纲的「类型」字段改从 `tags` 派生
+> - tags 三处 GUI 入口：新建（多选+自定义新增）/ 项目设置页（编辑）/ 项目卡（展示）+ 轻量注册表（跨项目聚合已用 tags）
 
 ---
 
@@ -17,22 +23,17 @@
 
 ## 2. 数据模型
 
-### 2.1 Genre 枚举 — 11 种小说分类
+### 2.1 标签（tags）— 多值项目标签（取代 genre 枚举，#595）
 
-```python
-class Genre(StrEnum):
-    XUANHUAN = "玄幻"
-    KEHUAN   = "科幻"
-    YANQING  = "言情"
-    XIANXIA  = "仙侠"
-    WUXIA    = "武侠"
-    DUSHI    = "都市"
-    LISHI    = "历史"
-    YOUXI    = "游戏"
-    XUANYI   = "悬疑"
-    QIHUAN   = "奇幻"
-    QITA     = "其他"  # 默认值
-```
+> **破坏性重构（v1.1，2026-08-23 拍板 D6=B）**：删除 `Genre` 枚举（原 11 种小说分类），改为自由多值标签 `tags: list[str]`。`write_auto` 题材不再读 `genre`，改从 `tags` 全拼串取。
+
+**tags 语义**：
+- `tags` 为 `list[str]`，每项是项目的一个标签（如 `["玄幻", "热血", "升级流"]`）
+- **不限枚举**——用户可多选预设标签，也可自定义新增任意标签
+- 每项校验：`str.strip()` 后非空；去重（保留首次出现顺序）；单标签长度上限 50
+- **旧值迁移**：已存在项目的 `genre` 值映射为 tags 初始数据 `tags=["{genre_value}"]`（如原 `genre="玄幻"` → `tags=["玄幻"]`）；空/其他 值 → `tags=["其他"]`
+
+**预设标签源（GUI 轻量注册表，D7=A）**：前端维护一个跨项目聚合的标签注册表，收集「本项目已用 tags ∪ 旧 genre 枚举值」作为新建对话框多选的建议项；仅作建议，不约束自定义输入。
 
 ### 2.2 Project（项目）
 
@@ -40,7 +41,7 @@ class Genre(StrEnum):
 |------|------|------|------|
 | id | UUID | PK | 领域层 UUID，数据库 int 自增映射 |
 | name | str | NOT NULL, 1-100 字符, 去空白, 已索引 | 项目名称 |
-| genre | Genre | NOT NULL, DEFAULT "其他" | 小说分类 |
+| tags | list[str] | NOT NULL, DEFAULT [], JSON 列 | 项目标签（多值；由旧 genre 枚举值迁移而来，#595） |
 | language | str | NOT NULL, DEFAULT "zh-CN" | 写作语言 |
 | target_words | int | NOT NULL, DEFAULT 0 | 目标字数（0=不限） |
 | config | ProjectConfig | NOT NULL, DEFAULT {} | AI 写作配置（JSON 序列化） |
@@ -73,7 +74,7 @@ class Genre(StrEnum):
 | 字段 | 类型 | 默认值 | 验证 |
 |------|------|--------|------|
 | name | str | **必填** | 1-100 非空白 |
-| genre | Genre | QITA | — |
+| tags | list[str] | [] | 多值；每项 strip 非空、去重、单标签 ≤50 |
 | language | str | "zh-CN" | — |
 | target_words | int | 0 | — |
 | config | ProjectConfig | ProjectConfig() | — |
@@ -83,11 +84,23 @@ class Genre(StrEnum):
 | 字段 | 类型 | 默认值 | 验证 |
 |------|------|--------|------|
 | name | str? | None | 如果提供：1-100 非空白 |
-| genre | Genre? | None | — |
+| tags | list[str]? | None | 如果提供：整体替换（全量），每项 strip 非空、去重 |
 | language | str? | None | — |
 | target_words | int? | None | — |
 | config | ProjectConfig? | None | — |
 | is_deleted | bool? | None | — |
+
+### 2.6 tags 消费方契约（#595）
+
+**write_auto 题材变量（D6-a1 拍板）**: F3 写作管线 / 前端 `usePipeline` 的 `write_auto` 生成请求不再注入 `genre` 变量，改注入 `tags` 变量，值 = 项目 `tags` 的**全拼字符串**（`" ".join(tags)`，空格分隔；空 tags → 空串）。
+
+- 前端 `usePipeline`：`write_auto` 分支 `vars.tags = options.tags.join(" ")`（`options.tags` 来自项目 `tags`）
+- 后端内置模板：`pipeline_templates.py` 中 `_ARCHITECT_PROMPT` / `_AUTO_ARCHITECT_PROMPT` 的 `{genre}` 占位符改为 `{tags}`（`- 题材: {tags}`）
+- **题材引导**：删 `genre` 字段后，若 `tags` 空，生成仍无题材引导（契约允许，但 D6=B 取舍：自由标签不强制单选）
+
+**输出/大纲「类型」字段**（旧 `project.genre.value` 的消费者）:
+- `output_service` 的 `BookMeta.genre`：改从 `tags` 派生（`" ".join(tags)`，空 → 空串）
+- `outline_service` 的 `project_info`：「类型: {genre}」→「类型: {",".join(tags)}」
 
 ---
 
@@ -113,7 +126,7 @@ Content-Type: application/json
 
 {
   "name": "星辰变",
-  "genre": "玄幻",
+  "tags": ["玄幻", "热血"],
   "language": "zh-CN",
   "target_words": 1000000,
   "config": {
@@ -128,7 +141,7 @@ Content-Type: application/json
 {
   "id": "3f2e1d4a-...",
   "name": "星辰变",
-  "genre": "玄幻",
+  "tags": ["玄幻", "热血"],
   "language": "zh-CN",
   "target_words": 1000000,
   "config": { "model": "deepseek/deepseek-chat", ... },
@@ -210,7 +223,7 @@ POST /api/v1/projects/3f2e1d4a-.../restore
 ```bash
 inkflow project create \
     --name "星辰变" \
-    --genre 玄幻 \
+    --tags 玄幻 --tags 热血 \
     --language zh-CN \
     --target-words 1000000 \
     [--json]
@@ -237,10 +250,10 @@ inkflow project restore \
 
 ```bash
 # 默认人类可读
-✅ 项目创建成功: [星辰变] (玄幻)
+✅ 项目创建成功: [星辰变] (玄幻, 热血)
 
 # --json 输出
-inkflow project create --name "星辰变" --genre 玄幻 --json
+inkflow project create --name "星辰变" --tags 玄幻 --tags 热血 --json
 → {"id": "3f2e1d4a-...", "name": "星辰变", ...}
 
 inkflow project list --json
@@ -343,7 +356,7 @@ ProjectConfig 使用 Pydantic 模型验证，通过 `model_dump(mode="json")` �
 | 恢复未被删除的项目 | 正常返回（重复操作无毒） |
 | 软删除已软删除的项目 | 404: "项目不存在" |
 | 创建项目不传 name | 422: "Field required" (FastAPI 自动) |
-| 传无效的 genre 字符串 | 422: "Input should be ..." (枚举验证) |
+| 传 tags 含空白/空串项 | 422: "项目标签不能为空" |
 | temperature 超出 [0, 2] 范围 | 422: "Input should be ..." |
 | 搜索返回 0 结果 | 200: `{"items": [], "total": 0}` |
 | 分页超出范围 | 200: `{"items": [], "total": N, "offset": M}` — 空列表 |
@@ -360,7 +373,7 @@ ProjectConfig 使用 Pydantic 模型验证，通过 `model_dump(mode="json")` �
 backend/src/inkflow/
 ├── domain/
 │   ├── models/
-│   │   ├── project.py           ← Genre, Project, ProjectConfig, ProjectCreate, ProjectUpdate
+│   │   ├── project.py           ← Project, ProjectConfig, ProjectCreate, ProjectUpdate (tags 取代 Genre)
 │   │   └── __init__.py          ← 导出
 │   ├── ports/
 │   │   └── project_repository.py ← ProjectRepositoryProtocol (7 methods)
@@ -408,7 +421,7 @@ backend/tests/
 | `test_create_empty_name_raises` | 空名称 → ValidationError |
 | `test_create_whitespace_name_raises` | 纯空格 → ValidationError |
 | `test_create_name_too_long_raises` | 超长 → ValidationError |
-| `test_create_defaults` | 默认值正确 (genre=其他, language=zh-CN, target_words=0, model=gpt-4o) |
+| `test_create_defaults` | 默认值正确 (tags=[], language=zh-CN, target_words=0, model=gpt-4o) |
 | `test_update_partial` | 部分更新未设字段为 None |
 | `test_update_empty_name_raises` | 更新空名称 → ValidationError |
 
@@ -455,7 +468,6 @@ backend/tests/
 ## 10. 不在范围内
 
 - ❌ 项目封面图/图标上传（Phase 2+ 媒体管理）
-- ❌ 项目标签/分类多级（Phase 2+）
 - ❌ 项目级权限/共享（Phase 4 云端功能）
 - ❌ 项目的统计分析（写作速度、时间线 — Phase 3+）
 - ❌ 项目模板（从模板创建 — Phase 2+）
@@ -493,3 +505,4 @@ F1 被依赖:
 | ORM 映射 | `_orm_to_domain()` 手动转换 | 清理 ORM 与非 ORM 的边界，避免泄露 |
 | Service 依赖 | 直接实例化 Repository | 单人开发，暂时不需要 IoC 容器 |
 | UUID 解析 | 自定义 `_parse_project_id` | 统一处理无效格式为 404 |
+| tags 取代 genre（#595，D6=B 拍板） | 删 `Genre` 枚举；`tags: list[str]`（JSON 列） | 单用户未上线，删枚举重建可接受；自由标签比 11 固定分类更贴合创作，write_auto 题材改从 tags 全拼取（D6-a1） |

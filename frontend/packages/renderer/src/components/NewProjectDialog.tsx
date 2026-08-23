@@ -1,14 +1,14 @@
-/** 新建项目对话框（spec §4.2.2）：书名必填 1-100 / Genre 11 枚举 / 语言 / 目标字数默认 800000
+/** 新建项目对话框（spec §4.2.2）：书名必填 1-100 / tags 多选 + 自定义新增（#595 D7=A）/ 语言 / 目标字数默认 800000
  * #189：目标字数初始值读全局 default_words（方案 A 闭环）；#195：清空可重输 + 遮罩点击不关闭 */
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { errorMessage, fetchSettings } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import { useProjectStore } from '../stores/project';
+import { useTagsStore } from '../stores/tags';
 import { useTemplatesStore } from '../stores/templates';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
-const GENRES = ['玄幻', '科幻', '言情', '仙侠', '武侠', '都市', '历史', '游戏', '悬疑', '奇幻', '其他'];
 const LANGUAGES = ['zh-CN', 'en'];
 
 export interface NewProjectDialogProps {
@@ -22,7 +22,10 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
   const templates = useTemplatesStore((s) => s.templates);
   const loadTemplates = useTemplatesStore((s) => s.loadTemplates);
   const [name, setName] = useState('');
-  const [genre, setGenre] = useState(GENRES[0]);
+  // #595：tags 多选（自由多值；预设建议来自轻量注册表 stores/tags.ts）
+  const tagSuggestions = useTagsStore((s) => s.suggestions);
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagsInput, setTagsInput] = useState('');
   const [language, setLanguage] = useState('zh-CN');
   // #195：目标字数用字符串本地 state——type="number" + Number('')=0 会让清空瞬间变 '0'，
   // 无法重输（rc3 复验）；字符串态允许清空显示 ''，提交时再 Number 转换
@@ -48,6 +51,11 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
   useEffect(() => {
     if (templates.length === 0) void loadTemplates();
   }, [loadTemplates, templates.length]);
+
+  // #595：预设建议 = 轻量注册表（本项目已用 tags ∪ 旧 genre 枚举值；纯前端聚合，无网络）
+  useEffect(() => {
+    useTagsStore.getState().loadSuggestions(useProjectStore.getState().projects);
+  }, []);
 
   // #189（方案 A 闭环）：挂载时读全局 default_words 作为目标字数初始值；
   // fetch 失败保持 800000 兜底（初始 state 即兜底值）；用户已输入 → 不覆盖
@@ -89,6 +97,10 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
       setError(t('dlg.nameTooLong'));
       return;
     }
+    if (tags.length === 0) {
+      setError(t('dlg.tagRequired'));
+      return;
+    }
     setError(null);
     setSubmitting(true);
     // #195：提交时字符串 → 数字——空串 → 0（Number('')=0）；非法（非数字）→ 800000 默认兜底
@@ -97,7 +109,7 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
     try {
       await createProject({
         name: trimmed,
-        genre,
+        tags,
         language,
         target_words: targetWords,
         ...(templateId != null ? { template_id: templateId } : {}),
@@ -137,22 +149,63 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
           </label>
           {error && <div className="text-[13px] text-err">{error}</div>}
           <div className="flex flex-col gap-1.5 text-[13px]">
-            <span>{t('dlg.genre')}</span>
+            <span>{t('dlg.tags')}</span>
+            {/* 已选 tags chips（每 chip 可移除，#595） */}
+            {tags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map((tag) => (
+                  <span
+                    key={tag}
+                    data-testid={`tags-chip-${tag}`}
+                    className="inline-flex items-center gap-1 rounded-full bg-surface-3 px-2.5 py-0.5 text-[12px] text-ink"
+                  >
+                    {tag}
+                    <button
+                      type="button"
+                      aria-label={tag}
+                      className="flex h-4 w-4 items-center justify-center rounded-full text-ink-3 transition duration-150 hover:bg-surface hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => setTags((prev) => prev.filter((x) => x !== tag))}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {/* 预设标签多选（Radix Select，点选切换选中态） */}
             <Select
-              value={genre}
-              onValueChange={(v) => setGenre(v)}
+              onValueChange={(v) =>
+                setTags((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]))
+              }
             >
-              <SelectTrigger aria-label={t('dlg.genre')} className="w-full">
-                <SelectValue />
+              <SelectTrigger data-testid="tags-select" aria-label={t('dlg.tags')} className="w-full">
+                <SelectValue placeholder={t('dlg.tagsPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
-                {GENRES.map((g) => (
-                  <SelectItem key={g} value={g}>
-                    {g}
+                {tagSuggestions.map((tag) => (
+                  <SelectItem key={tag} value={tag}>
+                    {tag}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {/* 自定义新增：输入 + Enter 确认（去重、非空） */}
+            <input
+              data-testid="tags-input"
+              aria-label={t('dlg.addTag')}
+              className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
+              placeholder={t('dlg.tagsPlaceholder')}
+              value={tagsInput}
+              onChange={(e) => setTagsInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                const tag = tagsInput.trim();
+                if (!tag || tags.includes(tag)) return;
+                setTags((prev) => [...prev, tag]);
+                setTagsInput('');
+              }}
+            />
           </div>
           <div className="flex flex-col gap-1.5 text-[13px]">
             <span>{t('dlg.lang')}</span>

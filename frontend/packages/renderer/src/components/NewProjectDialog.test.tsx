@@ -16,7 +16,7 @@
  * - 对话框保持打开（用户可修正后重试）
  *
  * 既有行为保持（迁移自 projects.test.tsx）：
- * - 创建成功 → POST /api/v1/projects（body {name, genre, language, target_words}）→ navigate('/writing')
+ * - 创建成功 → POST /api/v1/projects（body {name, tags, language, target_words}）→ navigate('/writing')
  * - 书名空校验「书名不能为空」不发 POST（既有）
  *
  * ⚠️ #105 修复批契约（评审 findings 驱动，2026-08-06）：
@@ -287,6 +287,11 @@ describe('新建项目对话框 — 创建失败错误展示（Issue #105 §6.3�
 
     await user.click(screen.getByTestId('open-trigger'));
     await user.type(within(screen.getByRole('dialog')).getByLabelText('书名'), '青山入我怀');
+
+    // #595 契约：创建须 ≥1 个题材/标签（tags 多选勾选预设标签）
+    await user.click(screen.getByTestId('tags-select'));
+    await user.click(await screen.findByRole('option', { name: '玄幻' }));
+
     await user.click(screen.getByRole('button', { name: '创建' }));
 
     // GREEN 契约：新 i18n key `dlg.createFailed`（如「创建失败: 内核未就绪」）内联展示
@@ -311,7 +316,7 @@ describe('新建项目对话框 — 提交中状态与 ESC 交互（#105 修复�
   const createdProject = {
     id: 'p9',
     name: '青山入我怀',
-    genre: '玄幻',
+    tags: ['玄幻'],
     language: 'zh-CN',
     target_words: 800000,
     config: {},
@@ -340,6 +345,11 @@ describe('新建项目对话框 — 提交中状态与 ESC 交互（#105 修复�
 
     await user.click(screen.getByTestId('open-trigger'));
     await user.type(within(screen.getByRole('dialog')).getByLabelText('书名'), '青山入我怀');
+
+    // #595 契约：创建须 ≥1 个题材/标签（tags 多选勾选预设标签）
+    await user.click(screen.getByTestId('tags-select'));
+    await user.click(await screen.findByRole('option', { name: '玄幻' }));
+
     const createBtn = screen.getByRole('button', { name: '创建' });
     await user.click(createBtn);
     // 第一击后立即第二击（双击场景；RED：无 submitting 保护 → 并发两次 POST + 按钮未禁用）
@@ -359,6 +369,9 @@ describe('新建项目对话框 — 提交中状态与 ESC 交互（#105 修复�
 
     await user.click(screen.getByTestId('open-trigger'));
     await user.type(within(screen.getByRole('dialog')).getByLabelText('书名'), '青山入我怀');
+    // #595 契约：创建须 ≥1 个题材/标签（tags 多选勾选预设标签）
+    await user.click(screen.getByTestId('tags-select'));
+    await user.click(await screen.findByRole('option', { name: '玄幻' }));
     await user.click(screen.getByRole('button', { name: '创建' }));
 
     // in-flight 中按 ESC（RED：当前实现直接 onClose → 对话框卸载，本断言失败）
@@ -370,13 +383,13 @@ describe('新建项目对话框 — 提交中状态与 ESC 交互（#105 修复�
     expect(await screen.findByTestId('writing-probe')).toBeInTheDocument();
   });
 
-  it('题材下拉打开时按 ESC：仅关闭下拉面板，对话框保留', async () => {
+  it('tags 多选打开时按 ESC：仅关闭下拉面板，对话框保留', async () => {
     const user = userEvent.setup();
     renderHarness();
 
     await user.click(screen.getByTestId('open-trigger'));
-    // 打开题材下拉（Radix Select，trigger aria-label=题材）
-    await user.click(screen.getByRole('combobox', { name: '题材' }));
+    // 打开 tags 多选（Radix Select，trigger testid=tags-select）
+    await user.click(screen.getByTestId('tags-select'));
     expect(await screen.findByRole('option', { name: '玄幻' })).toBeInTheDocument();
 
     // 按 ESC：Radix 面板关闭（capture 阶段 preventDefault → 对话框 ESC 监听应跳过，不得误关）
@@ -393,7 +406,7 @@ describe('新建项目对话框 — 创建成功（既有行为保持）', () =>
     const created = {
       id: 'p9',
       name: '青山入我怀',
-      genre: '玄幻',
+      tags: ['玄幻'],
       language: 'zh-CN',
       target_words: 800000,
       config: {},
@@ -409,15 +422,31 @@ describe('新建项目对话框 — 创建成功（既有行为保持）', () =>
 
     await user.click(screen.getByTestId('open-trigger'));
     await user.type(within(screen.getByRole('dialog')).getByLabelText('书名'), '青山入我怀');
+
+    // #595 契约：创建须 ≥1 个题材/标签（tags 多选勾选预设标签）
+    await user.click(screen.getByTestId('tags-select'));
+    await user.click(await screen.findByRole('option', { name: '玄幻' }));
+
     await user.click(screen.getByRole('button', { name: '创建' }));
 
     await waitFor(() => {
       expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects', {
         method: 'POST',
-        body: { name: '青山入我怀', genre: '玄幻', language: 'zh-CN', target_words: 800000 },
+        body: { name: '青山入我怀', tags: ['玄幻'], language: 'zh-CN', target_words: 800000 },
       });
     });
     expect(await screen.findByTestId('writing-probe')).toBeInTheDocument();
+  });
+
+  // #595 契约（2026-08-23）：创建须 ≥1 个题材/标签（题材为空 → 显示错误 + 不调 POST）
+  it('未选择题材/标签 → 显示错误「请至少选择一个题材/标签」+ 不调 POST', async () => {
+    const user = userEvent.setup();
+    renderHarness();
+    await user.click(screen.getByTestId('open-trigger'));
+    await user.type(within(screen.getByRole('dialog')).getByLabelText('书名'), '青山入我怀');
+    await user.click(screen.getByRole('button', { name: '创建' }));
+    expect(await screen.findByText('请至少选择一个题材/标签')).toBeInTheDocument();
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/v1/projects', expect.objectContaining({ method: 'POST' }));
   });
 });
 
@@ -450,6 +479,10 @@ describe('新建项目对话框 — Agent 模板下拉（#107 RED 契约）', ()
     await user.click(screen.getByTestId('open-trigger'));
     await user.type(within(screen.getByRole('dialog')).getByLabelText('书名'), '青山入我怀');
 
+    // #595 契约：创建须 ≥1 个题材/标签（tags 多选勾选预设标签）
+    await user.click(screen.getByTestId('tags-select'));
+    await user.click(await screen.findByRole('option', { name: '玄幻' }));
+
     await user.click(screen.getByRole('combobox', { name: 'Agent 模板' }));
     await user.click(await screen.findByRole('option', { name: '悬疑推理' }));
     await user.click(screen.getByRole('button', { name: '创建' }));
@@ -457,7 +490,7 @@ describe('新建项目对话框 — Agent 模板下拉（#107 RED 契约）', ()
     await waitFor(() => {
       expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects', {
         method: 'POST',
-        body: { name: '青山入我怀', genre: '玄幻', language: 'zh-CN', target_words: 800000, template_id: 2 },
+        body: { name: '青山入我怀', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, template_id: 2 },
       });
     });
     expect(await screen.findByTestId('writing-probe')).toBeInTheDocument();
@@ -469,6 +502,10 @@ describe('新建项目对话框 — Agent 模板下拉（#107 RED 契约）', ()
     await user.click(screen.getByTestId('open-trigger'));
     await user.type(within(screen.getByRole('dialog')).getByLabelText('书名'), '青山入我怀');
 
+    // #595 契约：创建须 ≥1 个题材/标签（tags 多选勾选预设标签）
+    await user.click(screen.getByTestId('tags-select'));
+    await user.click(await screen.findByRole('option', { name: '玄幻' }));
+
     await user.click(screen.getByRole('combobox', { name: 'Agent 模板' }));
     await user.click(await screen.findByRole('option', { name: '默认模板' }));
     await user.click(screen.getByRole('button', { name: '创建' }));
@@ -476,7 +513,50 @@ describe('新建项目对话框 — Agent 模板下拉（#107 RED 契约）', ()
     await waitFor(() => {
       expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects', {
         method: 'POST',
-        body: { name: '青山入我怀', genre: '玄幻', language: 'zh-CN', target_words: 800000 },
+        body: { name: '青山入我怀', tags: ['玄幻'], language: 'zh-CN', target_words: 800000 },
+      });
+    });
+    expect(await screen.findByTestId('writing-probe')).toBeInTheDocument();
+  });
+});
+
+describe('新建项目对话框 — tags 多选 + 自定义新增（#595 拍板 D7=A）', () => {
+  it('选择预设标签 + 自定义新增 → POST body 含 tags 数组（多值），不再含 genre', async () => {
+    const created = {
+      id: 'p9',
+      name: '青山入我怀',
+      tags: ['玄幻', '仙侠', '热血'],
+      language: 'zh-CN',
+      target_words: 800000,
+      config: {},
+      created_at: '2026-08-06T10:00:00Z',
+      updated_at: '2026-08-06T10:00:00Z',
+    };
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects') return created;
+      return { ok: true };
+    });
+    const user = userEvent.setup();
+    renderHarness();
+
+    await user.click(screen.getByTestId('open-trigger'));
+    await user.type(within(screen.getByRole('dialog')).getByLabelText('书名'), '青山入我怀');
+
+    // 打开 tags 多选（combobox，testid tags-select），勾选预设标签（旧 genre 枚举值）
+    await user.click(screen.getByTestId('tags-select'));
+    await user.click(await screen.findByRole('option', { name: '玄幻' }));
+    await user.click(screen.getByTestId('tags-select'));
+    await user.click(await screen.findByRole('option', { name: '仙侠' }));
+
+    // 自定义新增标签（tags-input 输入 + Enter 确认）
+    await user.type(screen.getByTestId('tags-input'), '热血{Enter}');
+
+    await user.click(screen.getByRole('button', { name: '创建' }));
+
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects', {
+        method: 'POST',
+        body: { name: '青山入我怀', tags: ['玄幻', '仙侠', '热血'], language: 'zh-CN', target_words: 800000 },
       });
     });
     expect(await screen.findByTestId('writing-probe')).toBeInTheDocument();

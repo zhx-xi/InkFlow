@@ -41,12 +41,12 @@ class ProjectORM(Base):
     )
     """项目名称 (1–100 字符，已索引)."""
 
-    genre: Mapped[str] = mapped_column(
-        String(50),
+    tags: Mapped[list] = mapped_column(
+        LenientJSON(fallback=[]),
         nullable=False,
-        default="其他",
+        default=list,
     )
-    """小说分类，同 Genre 枚举值，默认"其他"."""
+    """项目标签（多值字符串数组，JSON 序列化存储，默认空列表）."""
 
     language: Mapped[str] = mapped_column(
         String(10),

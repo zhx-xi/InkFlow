@@ -10,7 +10,7 @@
  *   / 写作中标记（data-testid="writing-badge"，文案「写作中」；依据 currentProjectId === project.id）
  * - 双入口：主按钮 data-testid="new-project-btn" + 网格末位虚线卡片 data-testid="new-project-card"（均打开新建对话框）
  * - 新建对话框（role="dialog"）：书名必填 1-100（空 → 「书名不能为空」，不发 POST）
- *   / 题材 11 枚举（Genre） / 语言（含 zh-CN） / 目标字数默认 800000
+ *   / tags 多选（旧题材枚举为预设建议，#595）/ 语言（含 zh-CN） / 目标字数默认 800000
  * - 「创建」→ POST /api/v1/projects → 201 → navigate('/writing')（渲染于 MemoryRouter 下断言）
  * - #232 点击项目卡片 → selectProject(p.id)（store currentProjectId 切换）+ navigate('/writing')：
  *   ① ProjectCard 根元素可点击——GREEN 必须：onClick prop（ProjectsPage 传入）+ role="button" +
@@ -37,13 +37,14 @@ vi.mock('../api/client', async (importOriginal) => {
 
 const apiFetchMock = vi.mocked(apiFetch);
 
-const GENRES = ['玄幻', '科幻', '言情', '仙侠', '武侠', '都市', '历史', '游戏', '悬疑', '奇幻', '其他'];
+/** #595：预设建议 = 旧题材枚举（与 stores/tags.ts PROJECT_GENRE_LEGACY 同源） */
+const PRESET_TAGS = ['玄幻', '科幻', '言情', '仙侠', '武侠', '都市', '历史', '游戏', '悬疑', '奇幻', '其他'];
 
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: 'p1',
     name: '青云志',
-    genre: '玄幻',
+    tags: ['玄幻'],
     language: 'zh-CN',
     target_words: 800000,
     config: {},
@@ -75,7 +76,7 @@ beforeEach(() => {
     if (path === '/api/v1/projects' && (!init?.method || init.method === 'GET')) {
       return {
         items: [makeProject({ id: 'p1', name: '青云志', updated_at: new Date(Date.now() - 30_000).toISOString() }),
-          makeProject({ id: 'p2', name: '山海经', genre: '神话', updated_at: new Date(Date.now() - 5 * 86_400_000).toISOString() })],
+          makeProject({ id: 'p2', name: '山海经', tags: ['神话'], updated_at: new Date(Date.now() - 5 * 86_400_000).toISOString() })],
         total: 2, offset: 0, limit: 50,
       };
     }
@@ -163,12 +164,12 @@ describe('项目页 — 新建对话框', () => {
 
     const dlg = screen.getByRole('dialog');
     expect(within(dlg).getByLabelText('书名')).toBeInTheDocument();
-    // Radix Select（#98 Q1=A 契约升级）：trigger 是 combobox，选项打开面板后 portal 渲染
-    const genre = within(dlg).getByRole('combobox', { name: '题材' });
-    expect(genre).toBeInTheDocument();
-    await user.click(genre);
-    // 11 种 Genre 枚举全量存在（打开的面板只渲染当前 select 的 option）
-    for (const g of GENRES) {
+    // #595 tags 多选（Radix Select，trigger testid=tags-select，选项打开面板后 portal 渲染）
+    const tagsSelect = within(dlg).getByTestId('tags-select');
+    expect(tagsSelect).toBeInTheDocument();
+    await user.click(tagsSelect);
+    // 11 种旧题材枚举作为预设建议全量存在（打开的面板只渲染当前 select 的 option）
+    for (const g of PRESET_TAGS) {
       expect(await screen.findByRole('option', { name: g })).toBeInTheDocument();
     }
     await user.keyboard('{Escape}');
@@ -191,7 +192,7 @@ describe('项目页 — 新建对话框', () => {
 
   it('创建成功：POST /api/v1/projects → 201 → 跳转写作页', async () => {
     const user = userEvent.setup();
-    const created = makeProject({ id: 'p9', name: '青山入我怀', genre: '言情' });
+    const created = makeProject({ id: 'p9', name: '青山入我怀', tags: ['言情'] });
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
       if (path === '/api/v1/projects' && init?.method === 'POST') return created;
       if (path === '/api/v1/projects' && (!init?.method || init.method === 'GET')) {
@@ -205,14 +206,14 @@ describe('项目页 — 新建对话框', () => {
     renderProjectsPage();
     await user.click(screen.getByTestId('new-project-btn'));
     await user.type(within(screen.getByRole('dialog')).getByLabelText('书名'), '青山入我怀');
-    await user.click(within(screen.getByRole('dialog')).getByRole('combobox', { name: '题材' }));
+    await user.click(within(screen.getByRole('dialog')).getByTestId('tags-select'));
     await user.click(await screen.findByRole('option', { name: '言情' }));
     await user.click(screen.getByRole('button', { name: '创建' }));
 
     await waitFor(() => {
       expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects', {
         method: 'POST',
-        body: { name: '青山入我怀', genre: '言情', language: 'zh-CN', target_words: 800000 },
+        body: { name: '青山入我怀', tags: ['言情'], language: 'zh-CN', target_words: 800000 },
       });
     });
     // 201 后跳转写作页

@@ -241,7 +241,7 @@ beforeEach(() => {
 describe('会话页 — 访谈会话区块', () => {
   it('挂载渲染访谈卡片：one_liner / status 文案 / confirmed 数', async () => {
     plannerItems[0].confirmed_items = [
-      { key: 'genre', value: '仙侠', source: 'user' },
+      { key: 'tags', value: '仙侠', source: 'user' },
       { key: 'length', value: '80万字', source: 'user' },
     ];
     renderSessionsPage();

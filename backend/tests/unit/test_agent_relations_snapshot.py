@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 
 from inkflow.domain.models.agent_pipeline import PipelineExecuteRequest
 from inkflow.domain.models.chapter import Chapter
-from inkflow.domain.models.project import Genre, Project, ProjectConfig
+from inkflow.domain.models.project import Project, ProjectConfig
 from inkflow.domain.ports.agent_pipeline import (
     PipelineContext,
     PipelineResult,
@@ -40,7 +40,7 @@ def _make_project(
     return Project(
         id=project_id or uuid.uuid4(),
         name="测试项目",
-        genre=Genre.XUANHUAN,
+        tags=["玄幻"],
         language="zh-CN",
         target_words=100000,
         config=config or ProjectConfig(),

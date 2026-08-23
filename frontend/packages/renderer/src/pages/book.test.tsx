@@ -121,7 +121,7 @@ describe('book 页 — 主路径闭环（访谈→委托→展开行→状态）
         {
           id: 'p1',
           name: '青云志',
-          genre: '玄幻',
+          tags: ['玄幻'],
           language: 'zh-CN',
           target_words: 800000,
           config: {},
@@ -215,7 +215,7 @@ describe('book 页 — 主路径闭环（访谈→委托→展开行→状态）
         {
           id: 'p1',
           name: '青云志',
-          genre: '玄幻',
+          tags: ['玄幻'],
           language: 'zh-CN',
           target_words: 800000,
           config: {},
@@ -295,7 +295,7 @@ describe('book 页 — 模型未配置前置校验（#474 P0）', () => {
         {
           id: 'p1',
           name: '青云志',
-          genre: '玄幻',
+          tags: ['玄幻'],
           language: 'zh-CN',
           target_words: 800000,
           config: {},
@@ -345,7 +345,7 @@ describe('book 页 — v1.2 #475 末尾总体确认主路径（confirming → �
         {
           id: 'p1',
           name: '青云志',
-          genre: '玄幻',
+          tags: ['玄幻'],
           language: 'zh-CN',
           target_words: 800000,
           config: {},

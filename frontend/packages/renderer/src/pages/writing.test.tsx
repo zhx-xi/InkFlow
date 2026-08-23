@@ -116,7 +116,7 @@ beforeEach(() => {
     volumes: seedVolumes, chapters: seedChapters, treeProjectId: 'p1', currentChapterId: 'c1', content: '已有正文第一段。', loading: false, error: null,
   });
   useProjectStore.setState({
-    projects: [{ id: 'p1', name: '青云志', genre: '玄幻', language: 'zh-CN', target_words: 800000, config: {}, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' }],
+    projects: [{ id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {}, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' }],
     currentProjectId: 'p1', loading: false, error: null,
   });
 
@@ -566,7 +566,7 @@ describe('写作页 — HITL 确认流（#343：waiting_hitl → 内联确认卡
         {
           id: 'p1',
           name: '青云志',
-          genre: '玄幻',
+          tags: ['玄幻'],
           language: 'zh-CN',
           target_words: 800000,
           config: { supervisor: { hitl_roles: ['reviser'] } },

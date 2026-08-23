@@ -3,7 +3,8 @@
 export interface Project {
   id: string;
   name: string;
-  genre: string;
+  /** #595：项目标签（自由多值，空数组 = 未设置；write_auto 题材 = tags 全拼） */
+  tags: string[];
   language: string;
   target_words: number;
   config: ProjectConfig;
@@ -47,7 +48,7 @@ export interface ProjectConfig {
 
 export interface NewProjectInput {
   name: string;
-  genre?: string;
+  tags?: string[];
   language?: string;
   target_words?: number;
   config?: ProjectConfig;
@@ -96,6 +97,8 @@ interface ProjectState {
   updateConfig: (id: string, patch: ProjectConfig) => Promise<void>;
   /** F43：项目重命名（PATCH body { name } → 本地更新；失败 rethrow，页面 catch → err toast） */
   renameProject: (id: string, name: string) => Promise<void>;
+  /** #595：项目标签更新（PATCH body { tags } → 本地同步；失败 rethrow，页面 catch） */
+  updateTags: (id: string, tags: string[]) => Promise<void>;
   /** F43：项目删除（DELETE → 本地移除 + currentProjectId 条件置 null + 清理 chapterProgress；失败 rethrow） */
   deleteProject: (id: string) => Promise<void>;
   selectProject: (id: string | null) => void;
@@ -161,6 +164,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     await apiFetch(`/api/v1/projects/${id}`, { method: 'PATCH', body: { name } });
     set((s) => ({
       projects: s.projects.map((p) => (p.id === id ? { ...p, name } : p)),
+    }));
+  },
+
+  // #595：项目标签（PATCH body { tags } → 本地 projects 同步；失败 rethrow，页面 catch）
+  updateTags: async (id, tags) => {
+    await apiFetch(`/api/v1/projects/${id}`, { method: 'PATCH', body: { tags } });
+    set((s) => ({
+      projects: s.projects.map((p) => (p.id === id ? { ...p, tags } : p)),
     }));
   },
 

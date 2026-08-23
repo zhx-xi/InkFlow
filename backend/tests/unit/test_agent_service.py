@@ -17,7 +17,6 @@ from inkflow.domain.models.agent_pipeline import (
 from inkflow.domain.models.chapter import Chapter
 from inkflow.domain.models.project import (
     AGENT_DEFAULT_SENTINEL,
-    Genre,
     Project,
     ProjectConfig,
 )
@@ -40,7 +39,7 @@ def _make_project(
     return Project(
         id=project_id or uuid.uuid4(),
         name="测试项目",
-        genre=Genre.XUANHUAN,
+        tags=["玄幻"],
         language="zh-CN",
         target_words=100000,
         config=config or ProjectConfig(),

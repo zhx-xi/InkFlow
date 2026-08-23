@@ -234,3 +234,29 @@ class TestChatIntentSeparationPrompt:
         （对应 test_chat_pipeline.py::test_chat_role_prompt_assistant_semantics）。"""
         prompt = self._chat_prompt()
         assert any(kw in prompt for kw in ("对话", "助手", "回答"))
+
+
+class TestWriteAutoTagsSubject:
+    """#595 write_auto 题材 = tags 全拼（2026-08-23 拍板 D6=B / D6-a1）。
+
+    契约：write_auto（及 write_chapter）architect prompt 的题材占位符由 {genre}
+    改为 {tags}（`- 题材: {tags}`），前端 usePipeline 注入 `vars.tags = " ".join(tags)`；
+    删 genre 枚举后题材引导从 tags 全拼取（不再读 genre）。
+
+    RED 预期：当前 prompt 仍用 `- 题材: {genre}` → `{tags}` not in prompt 断言 FAIL、
+    `{genre}` not in prompt 断言 FAIL；GREEN 后全部转绿。
+    """
+
+    def test_write_auto_architect_prompt_uses_tags(self) -> None:
+        """write_auto architect prompt 用 {tags} 而非 {genre}（题材引导 = tags 全拼）。"""
+        prompt = _by_id(get_template("builtin:write_auto").stages)["architect"].agent.system_prompt
+        assert "题材" in prompt  # 守护：题材行仍在
+        assert "{tags}" in prompt, "write_auto architect prompt 缺 {tags} 占位符"
+        assert "{genre}" not in prompt, "write_auto 不应再读 {genre}（已删枚举）"
+
+    def test_write_chapter_architect_prompt_uses_tags(self) -> None:
+        """write_chapter architect prompt 同迁移（{genre} → {tags}）。"""
+        architect = _by_id(get_template("builtin:write_chapter").stages)["architect"]
+        prompt = architect.agent.system_prompt
+        assert "{tags}" in prompt
+        assert "{genre}" not in prompt

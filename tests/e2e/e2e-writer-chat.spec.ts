@@ -83,6 +83,9 @@ async function createProjectViaUi(window: Page, name: string): Promise<void> {
   await window.getByTestId('new-project-btn').click();
   const dlg = window.getByRole('dialog');
   await window.getByLabel('书名').fill(name);
+  // #595 契约：创建须 ≥1 个题材/标签（tags 多选勾选预设标签；Radix option 渲染于 portal，用 window 级查询）
+  await window.getByTestId('tags-select').click();
+  await window.getByRole('option', { name: '玄幻' }).click();
   await dlg.getByRole('button', { name: '创建' }).click();
   await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
 }

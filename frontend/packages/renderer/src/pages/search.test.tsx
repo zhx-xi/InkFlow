@@ -79,7 +79,7 @@ function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: 'p1',
     name: '青云志',
-    genre: '玄幻',
+    tags: ['玄幻'],
     language: 'zh-CN',
     target_words: 800000,
     config: {},

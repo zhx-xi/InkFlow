@@ -7,7 +7,6 @@ import pytest
 from pydantic import ValidationError
 
 from inkflow.domain.models.project import (
-    Genre,
     ProjectConfig,
     ProjectCreate,
     ProjectUpdate,
@@ -21,12 +20,12 @@ class TestProjectCreateValidation:
         """正常创建，所有字段合法."""
         project = ProjectCreate(
             name="测试小说",
-            genre=Genre.XUANHUAN,
+            tags=["玄幻"],
             language="zh-CN",
             target_words=100000,
         )
         assert project.name == "测试小说"
-        assert project.genre == Genre.XUANHUAN
+        assert project.tags == ["玄幻"]
         assert project.language == "zh-CN"
         assert project.target_words == 100000
 
@@ -46,9 +45,9 @@ class TestProjectCreateValidation:
             ProjectCreate(name="长" * 101)
 
     def test_create_defaults(self):
-        """默认值：genre='其他', language='zh-CN', target_words=0, model=None（#520 未配置）."""
+        """默认值：tags=[], language='zh-CN', target_words=0, model=None（#520 未配置）."""
         project = ProjectCreate(name="默认测试")
-        assert project.genre == Genre.QITA
+        assert project.tags == []
         assert project.language == "zh-CN"
         assert project.target_words == 0
         assert project.config.model is None
@@ -61,7 +60,7 @@ class TestProjectUpdateValidation:
         """部分更新：未提供的字段应为 None."""
         update = ProjectUpdate(name="新名称")
         assert update.name == "新名称"
-        assert update.genre is None
+        assert update.tags is None
         assert update.language is None
         assert update.target_words is None
         assert update.config is None
@@ -183,3 +182,51 @@ class TestProjectConfigSupervisor:
         """supervisor.hitl_roles 非 list → ValidationError（类型安全）."""
         with pytest.raises(ValidationError):
             ProjectConfig(supervisor={"hitl_roles": "reviser"})
+
+
+class TestProjectTags:
+    """#595 tags 多值标签取代 genre 枚举契约（2026-08-23 拍板 D6=B / D7=A）。
+
+    契约：
+    - ProjectCreate(tags=[...]) → tags 保留（多选 + 自定义新增）
+    - ProjectCreate 默认 tags=[]（不再有 genre 字段）
+    - tags 每项 strip 后非空；空白/空串项 → ValidationError「项目标签不能为空」
+    - tags 去重（保留首次出现序）；单标签长度 > 50 → ValidationError
+    - ProjectUpdate(tags=[...]) → tags 整体替换（全量）
+
+    RED 预期：ProjectCreate/ProjectUpdate 当前只有 genre 字段（无 tags）→ 构造后
+    project.tags / update.tags 抛 AttributeError；tags 校验未实现 → pytest.raises
+    DID NOT RAISE。干净断言 FAIL，GREEN 后全部转绿。
+    """
+
+    def test_create_accepts_tags(self):
+        """正常创建携带多值 tags（多选 + 自定义）→ 保留。"""
+        project = ProjectCreate(name="测试小说", tags=["玄幻", "热血", "升级流"])
+        assert project.tags == ["玄幻", "热血", "升级流"]
+
+    def test_create_default_tags_empty(self):
+        """默认 tags=[]，且不再有 genre 字段。"""
+        project = ProjectCreate(name="默认测试")
+        assert project.tags == []
+        assert not hasattr(project, "genre")
+
+    def test_create_tags_whitespace_raises(self):
+        """tags 项为纯空白 → ValidationError「项目标签不能为空」。"""
+        with pytest.raises(ValidationError, match="项目标签不能为空"):
+            ProjectCreate(name="测试小说", tags=["   "])
+
+    def test_create_tags_dedup(self):
+        """tags 重复项去重，保留首次出现顺序。"""
+        project = ProjectCreate(name="测试小说", tags=["玄幻", "玄幻", "热血"])
+        assert project.tags == ["玄幻", "热血"]
+
+    def test_create_tags_too_long_raises(self):
+        """单标签长度 > 50 → ValidationError。"""
+        with pytest.raises(ValidationError):
+            ProjectCreate(name="测试小说", tags=["长" * 51])
+
+    def test_update_tags_replaces_whole(self):
+        """ProjectUpdate.tags 整体替换（全量语义，非增量合并）。"""
+        update = ProjectUpdate(tags=["仙侠", "东方玄幻"])
+        assert update.tags == ["仙侠", "东方玄幻"]
+        assert not hasattr(update, "genre")

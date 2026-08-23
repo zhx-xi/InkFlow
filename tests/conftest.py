@@ -13,7 +13,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from inkflow.core.database import Base
-from inkflow.domain.models.project import Genre, ProjectCreate
+from inkflow.domain.models.project import ProjectCreate
 from inkflow.infrastructure.database.models.project import ProjectORM
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -52,7 +52,7 @@ def sample_project_data() -> ProjectCreate:
     """返回 ProjectCreate 实例，用于创建项目测试。"""
     return ProjectCreate(
         name="测试小说",
-        genre=Genre.XUANHUAN,
+        tags=["玄幻"],
         language="zh-CN",
         target_words=100000,
     )
@@ -65,7 +65,7 @@ async def sample_project(db_session) -> ProjectORM:
 
     project = ProjectORM(
         name="测试小说",
-        genre="xuanhuan",
+        tags=["玄幻"],
         language="zh-CN",
         target_words=100000,
     )
@@ -80,7 +80,7 @@ def sample_project_data2() -> ProjectCreate:
     """第二个项目数据，用于列表测试。"""
     return ProjectCreate(
         name="科幻新作",
-        genre=Genre.KEHUAN,
+        tags=["科幻"],
         language="zh-CN",
         target_words=80000,
     )

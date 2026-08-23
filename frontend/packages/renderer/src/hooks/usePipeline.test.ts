@@ -8,7 +8,7 @@
  * export interface UsePipelineOptions {
  *   projectId: string;
  *   chapterId: string;
- *   genre: string;
+ *   tags: string[];
  *   targetWords: number;
  *   writingStyle: string;
  *   chapterTitle: string;
@@ -24,7 +24,7 @@
  *
  * 行为契约：
  * - start('write_auto') → executePipeline({project_id, pipeline:'builtin:write_auto',
- *   chapter_id, variables:{genre?, target_words?, writing_style?, chapter_title?}}（非空才注入）)
+ *   chapter_id, variables:{tags?, target_words?, writing_style?, chapter_title?}}（非空才注入）)
  * - start('write_continue') → executePipeline({pipeline:'builtin:write_continue',
  *   variables:{writing_style?, chapter_title?}})（#318：前文摘要由后端生成注入 context，
  *   前端不再传 chapterStore.content 全文）
@@ -56,7 +56,7 @@ const confirmMock = vi.mocked(confirmExecution);
 const OPTS = {
   projectId: 'p1',
   chapterId: 'c1',
-  genre: '玄幻',
+  tags: ['玄幻'],
   targetWords: 800000,
   writingStyle: '文笔细腻',
   chapterTitle: '第一章',
@@ -118,7 +118,7 @@ describe('usePipeline — 状态机（idle → running → success | failed）',
       project_id: 'p1',
       pipeline: 'builtin:write_auto',
       chapter_id: 'c1',
-      variables: { genre: '玄幻', target_words: '800000', writing_style: '文笔细腻', chapter_title: '第一章' },
+      variables: { tags: '玄幻', target_words: '800000', writing_style: '文笔细腻', chapter_title: '第一章' },
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
@@ -418,6 +418,43 @@ describe('usePipeline — HITL interrupt 态（#343：waiting_hitl → awaiting_
         variables: expect.objectContaining({ chapter_title: '第一章' }),
       }),
     );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+  });
+});
+
+describe('usePipeline — #595 write_auto 题材 = tags 全拼（2026-08-23 拍板 D6=B / D6-a1）', () => {
+  const TAGS_OPTS = {
+    projectId: 'p1',
+    chapterId: 'c1',
+    tags: ['玄幻', '热血'],
+    targetWords: 800000,
+    writingStyle: '文笔细腻',
+    chapterTitle: '第一章',
+  };
+
+  it('start(write_auto)：variables.tags = " ".join(tags)，不再注入 genre', async () => {
+    const { result } = renderHook(() => usePipeline(TAGS_OPTS));
+    act(() => {
+      result.current.start('write_auto');
+    });
+    const body = executeMock.mock.calls[0][0];
+    expect(body.variables).toHaveProperty('tags', '玄幻 热血');
+    expect(body.variables).not.toHaveProperty('genre');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+  });
+
+  it('tags 空数组：write_auto 注入 tags 空串（自由标签不强制题材），不注入 genre', async () => {
+    const { result } = renderHook(() => usePipeline({ ...TAGS_OPTS, tags: [] }));
+    act(() => {
+      result.current.start('write_auto');
+    });
+    const body = executeMock.mock.calls[0][0];
+    expect(body.variables).toHaveProperty('tags', '');
+    expect(body.variables).not.toHaveProperty('genre');
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });

@@ -46,7 +46,7 @@ function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: 'p1',
     name: '青云志',
-    genre: '玄幻',
+    tags: ['玄幻'],
     language: 'zh-CN',
     target_words: 800000,
     config: {},
@@ -144,7 +144,7 @@ describe('project store — 状态与状态转换', () => {
   it('createProject：POST /api/v1/projects → 新项目插入头部并选中', async () => {
     const created = makeProject({ id: 'p9', name: '青山入我怀' });
     apiFetchMock.mockResolvedValue(created);
-    const input: NewProjectInput = { name: '青山入我怀', genre: '言情', language: 'zh-CN', target_words: 800000 };
+    const input: NewProjectInput = { name: '青山入我怀', tags: ['言情'], language: 'zh-CN', target_words: 800000 };
 
     let returned!: Project;
     await act(async () => {
@@ -153,7 +153,7 @@ describe('project store — 状态与状态转换', () => {
 
     expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects', {
       method: 'POST',
-      body: { name: '青山入我怀', genre: '言情', language: 'zh-CN', target_words: 800000 },
+      body: { name: '青山入我怀', tags: ['言情'], language: 'zh-CN', target_words: 800000 },
     });
     expect(returned.id).toBe('p9');
     const s = useProjectStore.getState();
@@ -242,7 +242,7 @@ describe('project store — #107 模板引用（template_id）', () => {
     apiFetchMock.mockResolvedValue(created);
     const input: NewProjectInputWithTemplate = {
       name: '青山入我怀',
-      genre: '言情',
+      tags: ['言情'],
       language: 'zh-CN',
       target_words: 800000,
       template_id: 2,
@@ -255,7 +255,7 @@ describe('project store — #107 模板引用（template_id）', () => {
 
     expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects', {
       method: 'POST',
-      body: { name: '青山入我怀', genre: '言情', language: 'zh-CN', target_words: 800000, template_id: 2 },
+      body: { name: '青山入我怀', tags: ['言情'], language: 'zh-CN', target_words: 800000, template_id: 2 },
     });
     expect(returned.id).toBe('p9');
     const s = useProjectStore.getState();

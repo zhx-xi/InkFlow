@@ -89,7 +89,7 @@ def _build_project_info(project: Project) -> str:
     """
     parts = [
         f"项目名: {project.name}",
-        f"类型: {project.genre.value}",
+        f"类型: {','.join(project.tags)}",
         f"目标字数: {project.target_words}",
         f"写作风格: {project.config.writing_style or '未指定'}",
     ]

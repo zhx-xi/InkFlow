@@ -28,7 +28,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
 from inkflow.api.app import app
-from inkflow.domain.models.project import Genre, Project, ProjectConfig
+from inkflow.domain.models.project import Project, ProjectConfig
 
 client = TestClient(app)
 
@@ -40,7 +40,7 @@ def _project(project_id: int, name: str, config: ProjectConfig | None = None) ->
     return Project(
         id=uuid.UUID(int=project_id),
         name=name,
-        genre=Genre.QITA,
+        tags=[],
         language="zh-CN",
         target_words=0,
         config=config or ProjectConfig(),
@@ -65,7 +65,7 @@ class TestProjectCreateTemplateAPI:
             "/api/v1/projects",
             json={
                 "name": "模板项目",
-                "genre": "玄幻",
+                "tags": ["玄幻"],
                 "language": "zh-CN",
                 "target_words": 800000,
                 "template_id": 7,
@@ -87,7 +87,12 @@ class TestProjectCreateTemplateAPI:
 
         response = client.post(
             "/api/v1/projects",
-            json={"name": "默认项目", "genre": "玄幻", "language": "zh-CN", "target_words": 800000},
+            json={
+                "name": "默认项目",
+                "tags": ["玄幻"],
+                "language": "zh-CN",
+                "target_words": 800000,
+            },
         )
         assert response.status_code == 201
         data = response.json()

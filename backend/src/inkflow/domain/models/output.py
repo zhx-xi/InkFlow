@@ -31,7 +31,7 @@ class BookMeta(BaseModel):
 
     Attributes:
         title: 书名（project.name）.
-        genre: 类型中文字面量（project.genre.value）.
+        genre: 类型中文字面量（" ".join(project.tags)）.
         language: 写作语言（默认 zh-CN）.
         target_words: 目标字数.
         updated_at: 最后更新时间.

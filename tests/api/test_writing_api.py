@@ -616,7 +616,7 @@ def real_writing_service():
     project = Project(
         id=uuid.uuid4(),
         name="测试小说",
-        genre="玄幻",
+        tags=["玄幻"],
         language="zh-CN",
         target_words=100000,
         config=ProjectConfig(model="deepseek/deepseek-chat", temperature=0.7),

@@ -14,7 +14,7 @@ write / audit / extract / export / search / manage_session / tool_search。
 session_tools.py 并列于 mcp/tools/）：
 - 类名与 action 枚举（逐字对齐）：
   ManageProjectParams:      action=create/list/get/update/delete/restore
-                            id, name, genre, language, target_words, search, force, permanent
+                            id, name, tags, language, target_words, search, force, permanent
   ManageChapterParams:      action=create/list/get/update/delete/move
                             project_id, id, volume_id, title, order, content, status, to_volume
   ManageCharacterParams:    action=create/list/get/update/delete/restore
@@ -95,7 +95,7 @@ from inkflow.mcp.tools.schemas import (
 _CONTRACT: dict[str, tuple[list[str], list[str]]] = {
     "ManageProjectParams": (
         ["create", "list", "get", "update", "delete", "restore"],
-        ["id", "name", "genre", "language", "target_words", "search", "force", "permanent"],
+        ["id", "name", "tags", "language", "target_words", "search", "force", "permanent"],
     ),
     "ManageChapterParams": (
         ["create", "list", "get", "update", "delete", "move"],
@@ -313,7 +313,7 @@ class TestActionValidation:
 
     def test_valid_action_constructs(self):
         """合法 action 构造成功（正例守护）。"""
-        p = ManageProjectParams(action="create", name="新项目", genre="玄幻")
+        p = ManageProjectParams(action="create", name="新项目", tags=["玄幻"])
         assert p.action == "create"
         assert p.name == "新项目"
 

@@ -17,7 +17,8 @@ export type { PipelineRunStatus } from './useExecutionPoll';
 export interface UsePipelineOptions {
   projectId: string;
   chapterId: string;
-  genre: string;
+  /** #595：项目标签（write_auto 题材 = tags 全拼，space join） */
+  tags: string[];
   targetWords: number;
   writingStyle: string;
   chapterTitle: string;
@@ -46,12 +47,13 @@ export function usePipeline(options: UsePipelineOptions): UsePipelineResult {
       if (options.chapterTitle) vars.chapter_title = options.chapterTitle;
       // 全自动生成：题材与目标字数作为生成约束注入（spec §5.6 write_auto）
       if (mode === 'write_auto') {
-        if (options.genre) vars.genre = options.genre;
+        // #595：题材 = tags 全拼（空数组注入空串——RED 契约「自由标签不强制题材」）
+        vars.tags = options.tags.join(' ');
         if (options.targetWords > 0) vars.target_words = String(options.targetWords);
       }
       return vars;
     },
-    [options.genre, options.targetWords, options.writingStyle, options.chapterTitle],
+    [options.tags, options.targetWords, options.writingStyle, options.chapterTitle],
   );
 
   const start = useCallback(

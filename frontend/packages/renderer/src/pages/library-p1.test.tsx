@@ -68,11 +68,11 @@ vi.mock('../api/client', async (importOriginal) => {
 const apiFetchMock = vi.mocked(apiFetch);
 
 const projectP1 = {
-  id: 'p1', name: '青云志', genre: '玄幻', language: 'zh-CN', target_words: 800000, config: {},
+  id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {},
   created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
 };
 const projectP2 = {
-  id: 'p2', name: '归墟记', genre: '仙侠', language: 'zh-CN', target_words: 500000, config: {},
+  id: 'p2', name: '归墟记', tags: ['仙侠'], language: 'zh-CN', target_words: 500000, config: {},
   created_at: '2026-08-02T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
 };
 

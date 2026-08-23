@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from inkflow.domain.models.project import Genre, Project, ProjectConfig
+from inkflow.domain.models.project import Project, ProjectConfig
 from inkflow.infrastructure.database.models.project import ProjectORM
 
 
@@ -31,7 +31,7 @@ def _orm_to_domain(orm: ProjectORM) -> Project:
     return Project(
         id=uuid.UUID(int=orm.id) if isinstance(orm.id, int) else orm.id,
         name=orm.name,
-        genre=Genre(orm.genre) if isinstance(orm.genre, str) else orm.genre,
+        tags=orm.tags or [],
         language=orm.language,
         target_words=orm.target_words,
         config=ProjectConfig(**orm.config) if orm.config else ProjectConfig(),
@@ -50,13 +50,6 @@ def _get_config_dict(config: Any) -> dict:
     return {}
 
 
-def _get_genre_str(genre: Any) -> str:
-    """Extract string value from Genre enum or str."""
-    if isinstance(genre, Genre):
-        return genre.value
-    return str(genre) if genre else "其他"
-
-
 class SQLiteProjectRepository:
     """SQLite 项目仓储 — 实现 ProjectRepositoryProtocol 接口."""
 
@@ -70,7 +63,7 @@ class SQLiteProjectRepository:
         """
         orm = ProjectORM(
             name=project.name,
-            genre=_get_genre_str(project.genre),
+            tags=project.tags,
             language=project.language,
             target_words=project.target_words,
             config=_get_config_dict(project.config),
@@ -142,7 +135,7 @@ class SQLiteProjectRepository:
 
         values: dict[str, Any] = {
             "name": project.name,
-            "genre": _get_genre_str(project.genre),
+            "tags": project.tags,
             "language": project.language,
             "target_words": project.target_words,
             "config": _get_config_dict(project.config),

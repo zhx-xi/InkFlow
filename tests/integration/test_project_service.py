@@ -6,7 +6,6 @@
 
 import pytest
 
-from inkflow.domain.models.project import Genre
 from inkflow.domain.services.project_service import ProjectService
 
 
@@ -20,7 +19,7 @@ class TestProjectService:
         service = ProjectService(db_session)
         project = await service.create_project(
             name="服务测试",
-            genre=Genre.XUANHUAN,
+            tags=["玄幻"],
             target_words=100000,
         )
         assert project.id is not None

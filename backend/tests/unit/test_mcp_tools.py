@@ -32,7 +32,7 @@ func 签名：async def func(**kwargs) -> str（信封 JSON 字符串，对齐 F
      "内核启动失败: ..."；其余异常 → str(exc)（对齐 F26 _fail）。
 
 3. 端点映射（method/path/body/params，实证 F38 §3.1 + router 源码）：
-   manage_project:  create→POST /projects json{name,genre,language,target_words}
+   manage_project:  create→POST /projects json{name,tags,language,target_words}
                     list→GET /projects params{search} | get→GET /projects/{id}
                     update→PATCH /projects/{id} json | delete→DELETE /projects/{id}
                     params{permanent} | restore→POST /projects/{id}/restore
@@ -271,13 +271,17 @@ class TestManageProject:
         tool = build_manage_project_tool()
         env = _parse_envelope(
             await tool.func(
-                action="create", name="星辰变", genre="玄幻", language="zh-CN", target_words=50000
+                action="create",
+                name="星辰变",
+                tags=["玄幻"],
+                language="zh-CN",
+                target_words=50000,
             )
         )
         assert env["ok"] is True
         method, path, _, body = _last_call(fake_env.client)
         assert (method, path) == ("POST", "/projects")
-        assert body["name"] == "星辰变" and body["genre"] == "玄幻"
+        assert body["name"] == "星辰变" and body["tags"] == ["玄幻"]
         assert body["language"] == "zh-CN" and body["target_words"] == 50000
 
     @pytest.mark.asyncio
