@@ -84,4 +84,4 @@ InkFlow 是一个本地 AI 辅助小说创作工具（单机应用）。本 skil
 
 ## MCP
 
-InkFlow MCP Server 发布后，本文件将补充 MCP 接入指引（见 `references/mcp-setup.md` 占位）。
+InkFlow 提供 MCP Server（`inkflow-mcp`，薄客户端经 HTTP 直连常驻内核）：宿主支持 MCP 时优先结构化调用，工具集与 CLI 语义一一对应。接入指引（三形态客户端路径 + Claude/Cursor/Hermes 配置模板 + 使用策略）见 `references/mcp-setup.md`；不支持的场景回退 CLI `--json` 执行契约。

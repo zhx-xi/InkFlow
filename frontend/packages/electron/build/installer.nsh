@@ -55,6 +55,10 @@ Var _f33InstallMode
 !macro customInstall
   StrCpy $_f33InstallMode "$installMode"
   ${If} $addCliToPath == "1"
+    ; kernel（既有行为）→ 追加 mcp 子目录（spec §5.4，同幂等去重逻辑二次调用）
+    StrCpy $1 "$INSTDIR\resources\kernel"
+    Call AddKernelDirToPath
+    StrCpy $1 "$INSTDIR\resources\kernel\mcp"
     Call AddKernelDirToPath
   ${EndIf}
 !macroend
@@ -62,14 +66,17 @@ Var _f33InstallMode
 ; 卸载开头：按精确条目清理 PATH（spec §4.4，幂等；不依赖安装时是否勾选）
 !macro customUnInstall
   StrCpy $_f33InstallMode "$installMode"
+  ; 按精确条目清理两目录（spec §5.4；幂等，不依赖安装时是否勾选）
+  StrCpy $1 "$INSTDIR\resources\kernel"
+  Call un.RemoveKernelDirFromPath
+  StrCpy $1 "$INSTDIR\resources\kernel\mcp"
   Call un.RemoveKernelDirFromPath
 !macroend
 
 !ifndef BUILD_UNINSTALLER
   ; === 安装侧：PATH 写入（spec §4.3）===
   Function AddKernelDirToPath
-    ; 目标条目 = GUI 内嵌内核即 CLI（spec §4.3 D6，不复制第二份内核）
-    StrCpy $1 "$INSTDIR\resources\kernel"
+    ; 目标条目由调用方写入 $1（spec §4.3 内核目录 + §5.4 mcp 子目录二次调用）
 
     ; SHELL_CONTEXT 跟随安装模式（spec §4.3 / §12 D11）：
     ; per-user（默认）→ HKCU\Environment；per-machine（"all"）→ HKLM\...\Environment
@@ -173,8 +180,7 @@ Var _f33InstallMode
 !ifdef BUILD_UNINSTALLER
   ; === 卸载侧：PATH 清理（spec §4.4）===
   Function un.RemoveKernelDirFromPath
-    ; 目标条目与安装写入完全同构；不依赖安装时是否勾选（幂等清理）
-    StrCpy $1 "$INSTDIR\resources\kernel"
+    ; 目标条目由调用方写入 $1（与安装写入完全同构；不依赖安装时是否勾选，幂等清理）
 
     ${If} $_f33InstallMode == "all"
       SetRegView 64
