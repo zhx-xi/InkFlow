@@ -442,6 +442,14 @@ export const zh = {
   'write.detail.relations': 'Agent 关系',
   'write.detail.final': '最终回复',
   'write.detail.unknown': '未知',
+  // #599：统一执行视图（链式静态 + agentic 动态双时间线）
+  'write.detail.steps': 'AI 决策步骤',
+  'write.detail.stepsEmpty': '暂无决策记录',
+  'write.detail.toolCall': '工具调用',
+  'write.detail.run': 'Agent 运行',
+  'write.detail.workflow': '工作流',
+  'write.detail.chain': '链式',
+  'write.detail.agentic': '智能体',
   // F34 章节审计（Issue #208）
   'audit.accept': '接受',
   'audit.reject': '拒绝',
