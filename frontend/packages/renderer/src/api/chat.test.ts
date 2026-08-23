@@ -2,13 +2,21 @@
  * SSE 流式聊天客户端契约（#541，GREEN 建 src/api/chat.ts）
  *
  * ⚠️ 本文件 = 契约。GREEN 实现 streamChat 必须匹配（行为镜像 src/api/sse.ts streamWriting）：
- * - POST {baseURL}/api/v1/chat/stream + JSON body + X-InkFlow-Token 头（token 空时不带）
- * - 帧 {delta, done, error}：delta 帧 → onDelta；error 帧 → onError + return；
- *   done 帧 → onDone + return（后续帧忽略）
+ * - POST {baseURL}/api/v1/chat/agent/stream + JSON body + X-InkFlow-Token 头（token 空时不带）
+ * - 帧 {type, delta, done, error}：#597 起 SSE 帧带 type 字段——
+ *   type='delta' 帧 → onDelta(delta)；type='error' 帧 → onError(error) + return；
+ *   type='done' 帧 → onDone(frame) + return（后续帧忽略）
  * - 非 ok 响应 / 无 body → onError(`HTTP <status>`)
  * - 流结束无 done 帧 → onError('Stream ended unexpectedly')
  * - abort：返回的 abort 函数 → signal.aborted；catch 内 aborted → 静默 return（不报错）
  * - fetch reject → catch → onError(err.message)
+ *
+ * #597 agent 端点升级（streamChat 保留函数名，仅升级端点 + 帧协议）：
+ * - POST URL 由 /api/v1/chat/stream 改为 /api/v1/chat/agent/stream（deepagents 系统级 Agent 流式端点）
+ * - ChatStreamFrame 增 type 字段（'delta'/'tool_call'/'tool_result'/'done'/'error'）+ id/name/args/result
+ * - ChatStreamCallbacks 增可选 onToolCall/onToolResult：
+ *   type='tool_call' 帧 → onToolCall({id, name, args})；
+ *   type='tool_result' 帧 → onToolResult({id, name, result})
  *
  * mock 方式：全局 fetch 返回可控 body reader（手动 push/end/fail 驱动，
  * frontend-testing 约定：手动触发替代 fake timers；参考 src/api/sse.test.ts 模式）
@@ -86,7 +94,14 @@ function frame(payload: Record<string, unknown>): Uint8Array {
 }
 
 function makeCallbacks() {
-  return { onDelta: vi.fn(), onDone: vi.fn(), onError: vi.fn() };
+  return {
+    onDelta: vi.fn(),
+    onDone: vi.fn(),
+    onError: vi.fn(),
+    // #597：agent 工具流回调（可选——GREEN 实现 type='tool_call'/'tool_result' 帧时分发）
+    onToolCall: vi.fn(),
+    onToolResult: vi.fn(),
+  };
 }
 
 /** 等待微任务链跑完（reader 续体全部在 microtask 内） */
@@ -109,7 +124,7 @@ afterEach(() => {
 });
 
 describe('streamChat — 请求形态', () => {
-  it('POST {baseURL}/api/v1/chat/stream：Content-Type + token 头 + body 序列化，返回 abort 函数', async () => {
+  it('POST {baseURL}/api/v1/chat/agent/stream：Content-Type + token 头 + body 序列化，返回 abort 函数', async () => {
     const calls: FetchCall[] = [];
     stubStreamFetch(calls);
     const cbs = makeCallbacks();
@@ -118,7 +133,7 @@ describe('streamChat — 请求形态', () => {
     await flush();
 
     expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe(`${BASE}/api/v1/chat/stream`);
+    expect(calls[0].url).toBe(`${BASE}/api/v1/chat/agent/stream`);
     expect(calls[0].init.method).toBe('POST');
     const headers = calls[0].init.headers as Record<string, string>;
     expect(headers['Content-Type']).toBe('application/json');
@@ -149,18 +164,18 @@ describe('streamChat — 帧状态机', () => {
     await streamChat(body, cbs);
     await flush();
 
-    calls[0].api.push(frame({ delta: '第一段', done: false }));
+    calls[0].api.push(frame({ type: 'delta', delta: '第一段', done: false }));
     await flush();
     expect(cbs.onDelta).toHaveBeenCalledWith('第一段');
 
-    calls[0].api.push(frame({ done: true }));
+    calls[0].api.push(frame({ type: 'done', done: true }));
     await flush();
     expect(cbs.onDone).toHaveBeenCalledTimes(1);
-    expect(cbs.onDone.mock.calls[0][0]).toEqual({ done: true });
+    expect(cbs.onDone.mock.calls[0][0]).toEqual({ type: 'done', done: true });
     expect(cbs.onError).not.toHaveBeenCalled();
 
     // done 后已 return：后续帧不再处理
-    calls[0].api.push(frame({ delta: '多余', done: false }));
+    calls[0].api.push(frame({ type: 'delta', delta: '多余', done: false }));
     await flush();
     expect(cbs.onDelta).toHaveBeenCalledTimes(1);
   });
@@ -173,15 +188,15 @@ describe('streamChat — 帧状态机', () => {
     await streamChat(body, cbs);
     await flush();
 
-    calls[0].api.push(frame({ delta: '前文', done: false }));
+    calls[0].api.push(frame({ type: 'delta', delta: '前文', done: false }));
     await flush();
-    calls[0].api.push(frame({ done: true, error: '模型超时' }));
+    calls[0].api.push(frame({ type: 'error', error: '模型超时', done: true }));
     await flush();
 
     expect(cbs.onError).toHaveBeenCalledWith('模型超时');
     expect(cbs.onDone).not.toHaveBeenCalled();
 
-    calls[0].api.push(frame({ delta: '忽略我', done: false }));
+    calls[0].api.push(frame({ type: 'delta', delta: '忽略我', done: false }));
     await flush();
     expect(cbs.onDelta).toHaveBeenCalledTimes(1);
   });
@@ -195,7 +210,7 @@ describe('streamChat — 帧状态机', () => {
     await flush();
 
     const twoFrames = new TextEncoder().encode(
-      `data: ${JSON.stringify({ delta: '甲', done: false })}\n\ndata: ${JSON.stringify({ delta: '乙', done: false })}\n\n`,
+      `data: ${JSON.stringify({ type: 'delta', delta: '甲', done: false })}\n\ndata: ${JSON.stringify({ type: 'delta', delta: '乙', done: false })}\n\n`,
     );
     calls[0].api.push(twoFrames);
     await flush();
@@ -214,7 +229,7 @@ describe('streamChat — 帧状态机', () => {
     await flush();
 
     // 第一个 chunk 只有半个 data 行（无 \n\n 分隔，且字符串值引号未闭合）
-    calls[0].api.push(new TextEncoder().encode('data: {"delta":"第'));
+    calls[0].api.push(new TextEncoder().encode('data: {"type":"delta","delta":"第'));
     await flush();
     expect(cbs.onDelta).not.toHaveBeenCalled();
 
@@ -233,7 +248,7 @@ describe('streamChat — 帧状态机', () => {
     await streamChat(body, cbs);
     await flush();
 
-    calls[0].api.push(frame({ delta: '部分内容', done: false }));
+    calls[0].api.push(frame({ type: 'delta', delta: '部分内容', done: false }));
     await flush();
     calls[0].api.end();
     await flush();
@@ -257,6 +272,88 @@ describe('streamChat — 帧状态机', () => {
     // V8 的 JSON.parse 报错文案（Node 20: "Expected property name or '}' in JSON at position 1"）
     expect(cbs.onError.mock.calls[0][0]).toContain('position');
     expect(cbs.onDone).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #597 agent 工具帧：streamChat 升级为 agent 端点后，SSE 帧协议扩展 type 字段——
+ * type='tool_call' 帧 → onToolCall({id, name, args})；
+ * type='tool_result' 帧 → onToolResult({id, name, result})；
+ * 混合序列（tool_call → tool_result → delta → done）依次触发对应回调。
+ */
+describe('streamChat — agent 工具帧（#597）', () => {
+  it('tool_call 帧 → onToolCall({id, name, args})', async () => {
+    const calls: FetchCall[] = [];
+    stubStreamFetch(calls);
+    const cbs = makeCallbacks();
+
+    await streamChat(body, cbs);
+    await flush();
+
+    calls[0].api.push(
+      frame({ type: 'tool_call', id: 'call_1', name: 'search_characters', args: { project_id: 'p1' }, done: false }),
+    );
+    await flush();
+
+    expect(cbs.onToolCall).toHaveBeenCalledWith({
+      id: 'call_1',
+      name: 'search_characters',
+      args: { project_id: 'p1' },
+    });
+    expect(cbs.onDone).not.toHaveBeenCalled();
+    expect(cbs.onError).not.toHaveBeenCalled();
+  });
+
+  it('tool_result 帧 → onToolResult({id, name, result})', async () => {
+    const calls: FetchCall[] = [];
+    stubStreamFetch(calls);
+    const cbs = makeCallbacks();
+
+    await streamChat(body, cbs);
+    await flush();
+
+    calls[0].api.push(
+      frame({ type: 'tool_result', id: 'call_1', name: 'search_characters', result: '{"ok":true}', done: false }),
+    );
+    await flush();
+
+    expect(cbs.onToolResult).toHaveBeenCalledWith({
+      id: 'call_1',
+      name: 'search_characters',
+      result: '{"ok":true}',
+    });
+    expect(cbs.onDelta).not.toHaveBeenCalled();
+  });
+
+  it('混合帧序列：tool_call → tool_result → delta → done 依次触发对应回调', async () => {
+    const calls: FetchCall[] = [];
+    stubStreamFetch(calls);
+    const cbs = makeCallbacks();
+
+    await streamChat(body, cbs);
+    await flush();
+
+    calls[0].api.push(
+      frame({ type: 'tool_call', id: 'call_1', name: 'search_characters', args: { project_id: 'p1' }, done: false }),
+    );
+    await flush();
+    expect(cbs.onToolCall).toHaveBeenCalledTimes(1);
+
+    calls[0].api.push(
+      frame({ type: 'tool_result', id: 'call_1', name: 'search_characters', result: '{"ok":true}', done: false }),
+    );
+    await flush();
+    expect(cbs.onToolResult).toHaveBeenCalledTimes(1);
+
+    calls[0].api.push(frame({ type: 'delta', delta: '最终回复文本', done: false }));
+    await flush();
+    expect(cbs.onDelta).toHaveBeenCalledWith('最终回复文本');
+
+    calls[0].api.push(frame({ type: 'done', done: true }));
+    await flush();
+    expect(cbs.onDone).toHaveBeenCalledTimes(1);
+    expect(cbs.onDone.mock.calls[0][0]).toEqual({ type: 'done', done: true });
+    expect(cbs.onError).not.toHaveBeenCalled();
   });
 });
 

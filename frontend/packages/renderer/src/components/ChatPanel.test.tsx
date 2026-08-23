@@ -46,6 +46,13 @@
  *   点归档 → archiveChatConversation(projectId)；点删除 → deleteChatConversation(projectId)
  *   （force=true 在 api/chat.ts 内部，测试只断言调用 projectId）；操作后本轮消息清空 + toast
  *   （文案宽松：归档类/删除类 ok toast；GREEN 若用 write.chat.archived 需补 i18n key）
+ *
+ * #597 系统级 Agent 工具流式（「ChatPanel — 系统级 Agent 工具流式（#597）」describe 锁定）：
+ * - streamChat 保留函数名升级为 agent 端点（POST /api/v1/chat/agent/stream），callbacks 增可选
+ *   onToolCall/onToolResult（api/chat.ts GREEN 补）；ChatPanel 仍调 streamChat(同名) → 既有用例零破坏
+ * - onToolCall({id,name,args}) → 渲染工具调用卡片 chat-tool-call-<n>（data-name=工具名）
+ * - onToolResult({id,name,result}) → 渲染工具结果卡片 chat-tool-result-<n>
+ * - 工具流进行中（onToolCall 后未 done）仍受 #541 并发保护：再次发送不触发第二次 streamChat
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -108,6 +115,9 @@ interface ChatStreamCallbacks {
   onDelta: (delta: string) => void;
   onDone: (frame: ChatStreamFrame) => void;
   onError: (message: string) => void;
+  /** #597：agent 工具流回调（可选——GREEN ChatPanel 订阅后渲染工具调用/结果卡片） */
+  onToolCall?: (call: { id: string; name: string; args: unknown }) => void;
+  onToolResult?: (result: { id: string; name: string; result: string }) => void;
 }
 interface CapturedChatStream {
   body: ChatStreamBody;
@@ -814,5 +824,85 @@ describe('ChatPanel — 删除按钮稳定 + 整轮归档/删除（#581）', () 
     expect(
       useToastStore.getState().toasts.some((t) => t.type === 'ok' && /删除/.test(t.message)),
     ).toBe(true);
+  });
+});
+
+/**
+ * #597 Chat 接入 deepagents 系统级 Agent（工具流式 RED 契约）：
+ * - streamChat 保留函数名升级为 agent 端点（POST /api/v1/chat/agent/stream），
+ *   callbacks 增可选 onToolCall/onToolResult（api/chat.ts GREEN 补，本文件 mock 捕获同对象）
+ * - onToolCall({id,name,args}) → 工具调用卡片 chat-tool-call-<n>（data-name=工具名）
+ * - onToolResult({id,name,result}) → 工具结果卡片 chat-tool-result-<n>
+ * - 工具流进行中（onToolCall 后未 done）仍受 #541 并发保护（守护用例，RED 期 PASS 合法）
+ */
+describe('ChatPanel — 系统级 Agent 工具流式（#597）', () => {
+  it('onToolCall → 工具调用卡片 chat-tool-call-0（data-name=search_characters）；onToolResult → 工具结果卡片 chat-tool-result-0', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await sendAndAwaitStream(user, '查一下有哪些角色');
+    // RED：当前实现无工具流 → ChatPanel 未传 onToolCall/onToolResult → 卡片不渲染 → getByTestId FAIL
+    act(() => {
+      capturedStreams[0].callbacks.onToolCall?.({
+        id: 'call_1',
+        name: 'search_characters',
+        args: { project_id: 'p1' },
+      });
+    });
+    const callCard = screen.getByTestId('chat-tool-call-0');
+    expect(callCard).toHaveAttribute('data-name', 'search_characters');
+
+    act(() => {
+      capturedStreams[0].callbacks.onToolResult?.({
+        id: 'call_1',
+        name: 'search_characters',
+        result: '{"ok":true}',
+      });
+    });
+    expect(screen.getByTestId('chat-tool-result-0')).toBeInTheDocument();
+
+    // 收尾：done 结束流（RED 期无工具卡片，此步仅清理流状态）
+    emitDone(0);
+  });
+
+  it('onToolCall 后 onDelta("最终回复文本") → ai 消息 chat-msg-ai-0 含该文本（工具流后最终回复仍渐进渲染）', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await sendAndAwaitStream(user, '查角色并写一段');
+
+    act(() => {
+      capturedStreams[0].callbacks.onToolCall?.({
+        id: 'call_1',
+        name: 'search_characters',
+        args: { project_id: 'p1' },
+      });
+    });
+    // RED：当前实现不渲染工具卡片 → FAIL
+    expect(screen.getByTestId('chat-tool-call-0')).toBeInTheDocument();
+
+    emitDelta(0, '最终回复文本');
+    expect(screen.getByTestId('chat-msg-ai-0')).toHaveTextContent('最终回复文本');
+
+    emitDone(0);
+  });
+
+  it('工具流进行中（onToolCall 后未 done）再次发送 → 不触发第二次 streamChat（#541 并发保护延续，守护用例）', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await sendAndAwaitStream(user, '第一条');
+
+    act(() => {
+      capturedStreams[0].callbacks.onToolCall?.({
+        id: 'call_1',
+        name: 'search_characters',
+        args: { project_id: 'p1' },
+      });
+    });
+
+    // 工具流尚未 done：再次发送被并发保护拦截 → 第二次 streamChat 不触发
+    await user.type(screen.getByTestId('chat-input'), '第二条');
+    await user.click(screen.getByTestId('chat-send'));
+    expect(streamChatMock).toHaveBeenCalledTimes(1);
+
+    emitDone(0);
   });
 });

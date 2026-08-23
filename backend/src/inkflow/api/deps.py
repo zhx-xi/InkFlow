@@ -1,7 +1,10 @@
 """FastAPI 依赖注入 — 数据库 session 和 Service 获取."""
 
+from __future__ import annotations
+
 import uuid
 from collections.abc import AsyncGenerator
+from typing import TYPE_CHECKING
 
 from fastapi import Depends
 from pydantic import SecretStr
@@ -48,6 +51,10 @@ from inkflow.domain.services.summary_service import SummaryService
 from inkflow.domain.services.timeline_service import TimelineService
 from inkflow.domain.services.world_service import WorldService
 from inkflow.domain.services.writing_service import WritingService
+from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent
+from inkflow.infrastructure.agent.pipeline_templates import _CHAT_SYSTEM_AGENT_PROMPT
+from inkflow.infrastructure.agent.tools.reader_tools import build_reader_tools
+from inkflow.infrastructure.agent.tools.save_draft_tool import build_save_draft_tool
 from inkflow.infrastructure.database.repositories.agent_run_repo import (
     SQLiteAgentRunRepository,
 )
@@ -109,6 +116,13 @@ from inkflow.infrastructure.database.repositories.world_repo import (
     SQLiteWorldRepository,
 )
 from inkflow.infrastructure.llm import LangChainLLMClient, LangChainPromptManager
+
+if TYPE_CHECKING:
+    # #597 循环依赖：get_chat_agent_service 签名注解名仅供静态检查——运行时由
+    # chat_stream.py 在模块级把 ChatStreamRequest 注册进本模块全局（FastAPI 依赖
+    # 签名解析用），ChatAgentService 在函数体惰性 import（见 get_chat_agent_service）。
+    from inkflow.api.routers.chat_stream import ChatStreamRequest
+    from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -257,6 +271,64 @@ def get_agentic_writer_service(
         run_repo=SQLiteAgentRunRepository(db),
         chapter_service=get_chapter_service(db),
     )
+
+
+def get_chat_agent_service(
+    data: ChatStreamRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ChatAgentService:
+    """获取 ChatAgentService 实例（#597 chat 系统级 Agent：全量 5 只读 + save_draft）.
+
+    chat_stream.py 顶层导入本函数（绑定名同一性 → dependency_overrides 命中）；
+    模型/密钥/base_url 解析镜像 get_agentic_writer_service（provider_config 同源）。
+    """
+    from inkflow.core.config import config
+    from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+    from inkflow.infrastructure.agent.tools.reader_tools import ReaderToolDeps
+    from inkflow.infrastructure.agent.tools.save_draft_tool import SaveDraftToolDeps
+    from inkflow.infrastructure.llm.provider_config import (
+        get_provider_config,
+        parse_model_string,
+    )
+
+    # 模型/密钥/base_url 同源装配（F5 provider_config）：默认模型解析 provider，
+    # 未配置 key/base_url 时回退空串（harness 支持空 key/base_url 走 ChatOpenAI 默认）
+    model = config.llm_default_model
+    api_key = ""
+    base_url = ""
+    try:
+        provider, _ = parse_model_string(model)
+        provider_cfg = get_provider_config(provider)
+        api_key = provider_cfg.api_key
+        base_url = provider_cfg.base_url or ""
+    except ValueError:
+        pass
+
+    reader_tools = build_reader_tools(
+        ReaderToolDeps(
+            character_service=get_character_service(db),
+            foreshadowing_service=get_foreshadowing_service(db),
+            summary_service=get_summary_service(db),
+            chapter_audit_service=get_chapter_audit_service(db),
+        )
+    )
+    save_draft_tool = build_save_draft_tool(
+        SaveDraftToolDeps(
+            draft_service=get_draft_service(db),
+            audit_service=get_audit_service(db),
+            expected_project_id=uuid.UUID(data.project_id),
+            expected_chapter_id=uuid.UUID(data.chapter_id) if data.chapter_id else None,
+        )
+    )
+    agent = build_deep_agent(
+        model=model,
+        api_key=api_key,
+        base_url=base_url,
+        tools=[*reader_tools, save_draft_tool],
+        system_prompt=_CHAT_SYSTEM_AGENT_PROMPT,
+        profile_key=None,
+    )
+    return ChatAgentService(agent=agent, system_prompt=_CHAT_SYSTEM_AGENT_PROMPT)
 
 
 def _collect_explicit_texts(db: AsyncSession):
