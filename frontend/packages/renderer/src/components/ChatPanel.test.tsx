@@ -1,8 +1,6 @@
 /**
  * 聊天框契约（spec §4.1）：底部 AI 聊天框 ChatPanel（#541 流式重写版）
- *
  * ⚠️ 本文件 = 契约。GREEN 实现 ChatPanel 必须匹配（行为断言，不测样式）。
- *
  * #541 机制变更（相对 #477 轮询版）：
  * - 发送 = streamChat({project_id, prompt, chapter_id?, chapter_context?}, callbacks)
  *   （POST /api/v1/chat/stream，SSE 帧 {delta, done, error}，src/api/chat.ts GREEN 建）
@@ -10,35 +8,28 @@
  * - done 帧 → 最终文本用 parseChatReply 解析意图（#477 保留）
  * - error 帧 → 错误文案（write.chat.failed 含「对话失败」），不插入正文
  * - 并发保护：流式 in-flight 时再次发送不触发第二次 streamChat；done/error 后可继续对话
- *
  * hermes 风格 UI 契约（#541 新增）：
  * - 消息容器分列：user 消息 data-side="user"（靠右），ai 消息 data-side="ai"（靠左）
  * - 每条消息含角色标签 data-testid="chat-msg-role"
  *   （user → t('write.chat.user')='你'，ai → t('write.chat.ai')='AI'）
  * - chat-messages 容器 className 含 space-y-3（消息间空行；只锁工具类，不锁完整 class 串）
- *
  * 结构 testid：chat-panel / chat-input / chat-send / chat-msg-user-<n> / chat-msg-ai-<n>
  * / chat-select-<n>（content 意图选择控件，data-selected 选中态）/ chat-insert-selected
- *
  * 保留契约（#474/#476/#477，GREEN 必须保持）：
  * - 空输入发送禁用；折叠态发送自动展开；展开/收缩/拖动（data-height）
  * - 模型未配置前置校验：ensureModelReady 失败 → toast（common.modelNotConfigured）+ 不发请求
  * - 意图分离：content → 只显示 body + chat-select-<n> 自动选中；conversation → 完整原文无控件
  * - chat-insert-selected 只插入选中条 body（不自动保存，F27 save 流）
- *
  * i18n key（GREEN 补）：write.chat.user='你' / write.chat.ai='AI'
  * （write.chat.placeholder/send/insert/inserted/failed/select/expand/collapse 已存在）
- *
  * mock 方式：vi.mock('../api/chat') → streamChat 捕获 body+callbacks（模块级 capturedStreams），
  * 用例手动驱动 onDelta/onDone/onError（镜像 useExecutionPoll mock 套路；SSE 手动驱动约定）
- *
  * #547 持久化契约（「历史加载与消息持久化」describe 锁定，GREEN 追加实现）：
  * - 挂载 / projectId 变化 → fetchChatMessages(projectId) 加载历史（beforeEach 默认空列表）；
  *   历史 AI 消息 intent 保留（content → chat-select 最新自动选中；conversation → 无控件）
  * - 历史加载失败静默：不发 toast，后续发送仍可用
  * - 发送用户消息 → saveChatMessage({project_id, role:'user', content: prompt})（fire-and-forget）
  * - AI 回复 done → saveChatMessage({project_id, role:'ai', content: 最终文本, intent: 解析后意图})
- *
  * #581 删除按钮稳定 + 整轮归档/删除（「ChatPanel — 删除按钮稳定 + 整轮归档/删除（#581）」describe 锁定）：
  * - 删除按钮稳定渲染：流式新消息（无 id）也渲染删除按钮，testid = chat-msg-delete-<kind>-<seq>
  *   （kind=user/ai，seq 为 role 独立序号；有 id 的历史消息保持 chat-msg-delete-<id>，#566 兼容不回归）
@@ -46,7 +37,6 @@
  *   点归档 → archiveChatConversation(projectId)；点删除 → deleteChatConversation(projectId)
  *   （force=true 在 api/chat.ts 内部，测试只断言调用 projectId）；操作后本轮消息清空 + toast
  *   （文案宽松：归档类/删除类 ok toast；GREEN 若用 write.chat.archived 需补 i18n key）
- *
  * #597 系统级 Agent 工具流式（「ChatPanel — 系统级 Agent 工具流式（#597）」describe 锁定）：
  * - streamChat 保留函数名升级为 agent 端点（POST /api/v1/chat/agent/stream），callbacks 增可选
  *   onToolCall/onToolResult（api/chat.ts GREEN 补）；ChatPanel 仍调 streamChat(同名) → 既有用例零破坏

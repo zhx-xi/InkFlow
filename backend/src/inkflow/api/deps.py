@@ -10,6 +10,7 @@ from fastapi import Depends
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from inkflow.api.deps_chat_agent import get_chat_agent_service
 from inkflow.core.database import async_session_factory, get_session
 from inkflow.domain.models.agent_run import AgenticWriteRequest
 from inkflow.domain.models.vector_fingerprint import CHUNKER_VERSION
@@ -52,7 +53,6 @@ from inkflow.domain.services.timeline_service import TimelineService
 from inkflow.domain.services.world_service import WorldService
 from inkflow.domain.services.writing_service import WritingService
 from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent
-from inkflow.infrastructure.agent.pipeline_templates import _CHAT_SYSTEM_AGENT_PROMPT
 from inkflow.infrastructure.agent.tools.reader_tools import build_reader_tools
 from inkflow.infrastructure.agent.tools.save_draft_tool import build_save_draft_tool
 from inkflow.infrastructure.database.repositories.agent_run_repo import (
@@ -118,11 +118,16 @@ from inkflow.infrastructure.database.repositories.world_repo import (
 from inkflow.infrastructure.llm import LangChainLLMClient, LangChainPromptManager
 
 if TYPE_CHECKING:
-    # #597 循环依赖：get_chat_agent_service 签名注解名仅供静态检查——运行时由
-    # chat_stream.py 在模块级把 ChatStreamRequest 注册进本模块全局（FastAPI 依赖
-    # 签名解析用），ChatAgentService 在函数体惰性 import（见 get_chat_agent_service）。
-    from inkflow.api.routers.chat_stream import ChatStreamRequest
-    from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+    from inkflow.api.routers.chat_stream import ChatStreamRequest  # noqa: F401  # mypy 注解解析
+
+
+# f27 绑定名快照 re-export：单测 patch 目标 inkflow.api.deps.<名>（#597 迁移后保持可命中）
+__all__ = [
+    "build_deep_agent",
+    "build_reader_tools",
+    "build_save_draft_tool",
+    "get_chat_agent_service",
+]
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -135,8 +140,6 @@ def get_project_service(
     db: AsyncSession,
 ) -> ProjectService:
     """获取 ProjectService 实例（注入数据库 session + F36 项目硬删钩子）."""
-    import uuid
-
     map_svc = get_map_service(db)
     return ProjectService(db, map_cleanup=lambda pid: map_svc.cleanup_project(uuid.UUID(int=pid)))
 
@@ -273,64 +276,6 @@ def get_agentic_writer_service(
     )
 
 
-def get_chat_agent_service(
-    data: ChatStreamRequest,
-    db: AsyncSession = Depends(get_db),
-) -> ChatAgentService:
-    """获取 ChatAgentService 实例（#597 chat 系统级 Agent：全量 5 只读 + save_draft）.
-
-    chat_stream.py 顶层导入本函数（绑定名同一性 → dependency_overrides 命中）；
-    模型/密钥/base_url 解析镜像 get_agentic_writer_service（provider_config 同源）。
-    """
-    from inkflow.core.config import config
-    from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
-    from inkflow.infrastructure.agent.tools.reader_tools import ReaderToolDeps
-    from inkflow.infrastructure.agent.tools.save_draft_tool import SaveDraftToolDeps
-    from inkflow.infrastructure.llm.provider_config import (
-        get_provider_config,
-        parse_model_string,
-    )
-
-    # 模型/密钥/base_url 同源装配（F5 provider_config）：默认模型解析 provider，
-    # 未配置 key/base_url 时回退空串（harness 支持空 key/base_url 走 ChatOpenAI 默认）
-    model = config.llm_default_model
-    api_key = ""
-    base_url = ""
-    try:
-        provider, _ = parse_model_string(model)
-        provider_cfg = get_provider_config(provider)
-        api_key = provider_cfg.api_key
-        base_url = provider_cfg.base_url or ""
-    except ValueError:
-        pass
-
-    reader_tools = build_reader_tools(
-        ReaderToolDeps(
-            character_service=get_character_service(db),
-            foreshadowing_service=get_foreshadowing_service(db),
-            summary_service=get_summary_service(db),
-            chapter_audit_service=get_chapter_audit_service(db),
-        )
-    )
-    save_draft_tool = build_save_draft_tool(
-        SaveDraftToolDeps(
-            draft_service=get_draft_service(db),
-            audit_service=get_audit_service(db),
-            expected_project_id=uuid.UUID(data.project_id),
-            expected_chapter_id=uuid.UUID(data.chapter_id) if data.chapter_id else None,
-        )
-    )
-    agent = build_deep_agent(
-        model=model,
-        api_key=api_key,
-        base_url=base_url,
-        tools=[*reader_tools, save_draft_tool],
-        system_prompt=_CHAT_SYSTEM_AGENT_PROMPT,
-        profile_key=None,
-    )
-    return ChatAgentService(agent=agent, system_prompt=_CHAT_SYSTEM_AGENT_PROMPT)
-
-
 def _collect_explicit_texts(db: AsyncSession):
     """收集显式设定文本（冲突过滤用）：角色档案 name 列表；
     list_characters 返回 tuple/list 均宽松兼容。"""
@@ -413,10 +358,6 @@ def get_summary_service(
     db: AsyncSession,
 ) -> SummaryService:
     """获取 SummaryService 实例."""
-    from inkflow.infrastructure.database.repositories.chapter_repo import (
-        SQLiteChapterRepository,
-    )
-
     return SummaryService(
         summary_repo=SQLiteSummaryRepository(db),
         llm_client=LangChainLLMClient(),
@@ -455,8 +396,6 @@ def get_world_service(
     db: AsyncSession,
 ) -> WorldService:
     """获取 WorldService 实例（世界观仓储 + WorldExtractor + F1 项目校验 + F36 地点硬删钩子）."""
-    import uuid
-
     from inkflow.core.config import config
 
     repo = SQLiteWorldRepository(db)
@@ -932,29 +871,11 @@ def get_knowledge_graph_service(
     db: AsyncSession,
 ) -> KnowledgeGraphService:
     """获取 KnowledgeGraphService 实例（F48 八仓储装配：关系 + 六类实体 + 项目）."""
-    from inkflow.infrastructure.database.repositories.character_repo import (
-        SQLiteCharacterRepository,
-    )
-    from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
-        SQLiteForeshadowingRepository,
-    )
     from inkflow.infrastructure.database.repositories.knowledge_relation_repo import (
         SQLiteKnowledgeRelationRepository,
     )
     from inkflow.infrastructure.database.repositories.map_repo import (
         SQLiteMapRepository,
-    )
-    from inkflow.infrastructure.database.repositories.outline_repo import (
-        SQLiteOutlineRepository,
-    )
-    from inkflow.infrastructure.database.repositories.project_repo import (
-        SQLiteProjectRepository,
-    )
-    from inkflow.infrastructure.database.repositories.timeline_repo import (
-        SQLiteTimelineRepository,
-    )
-    from inkflow.infrastructure.database.repositories.world_repo import (
-        SQLiteWorldRepository,
     )
 
     return KnowledgeGraphService(
