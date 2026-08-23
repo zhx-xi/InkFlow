@@ -304,6 +304,22 @@ def ensure_outline_columns(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE outlines ADD COLUMN chapter_id INTEGER"))
 
 
+def ensure_outline_volume_id_column(conn: Connection) -> None:
+    """#592：为既有库 outlines 表补 volume_id 列 + 建唯一索引（幂等）.
+
+    表不存在（全新环境）-> no-op，等 create_all 建新表（ORM 已含列+索引）。
+    """
+    cols = conn.execute(text("PRAGMA table_info(outlines)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return
+    if "volume_id" not in names:
+        conn.execute(text("ALTER TABLE outlines ADD COLUMN volume_id INTEGER"))
+    conn.execute(
+        text("CREATE UNIQUE INDEX IF NOT EXISTS uq_outlines_volume_id ON outlines(volume_id)")
+    )
+
+
 def ensure_world_drop_is_deleted(conn: Connection) -> None:
     """#211 v1.1：world_settings 软删语义 → 真删迁移（幂等，spec §8.3）.
 

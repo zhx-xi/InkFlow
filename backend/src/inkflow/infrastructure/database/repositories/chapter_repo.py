@@ -101,6 +101,11 @@ class SQLiteChapterRepository:
 
     async def delete_volume(self, volume_id: int) -> bool:
         await self._session.execute(
+            sa_update(OutlineORM)
+            .where(OutlineORM.volume_id == volume_id)
+            .values(volume_id=None)
+        )
+        await self._session.execute(
             sa_update(ChapterORM)
             .where(ChapterORM.volume_id == volume_id)
             .values(volume_id=None, updated_at=_utcnow())
