@@ -132,7 +132,7 @@ def mock_chat_agent_service() -> MagicMock:
 
 @pytest.fixture
 def override_agent_run_repo():
-    """#615 契约升级：端点现依赖 get_agent_run_repo → mock repo（create 返回 run，save 接受终态）。"""
+    """#615 契约升级：端点依赖 get_agent_run_repo → mock repo（create/save）。"""
     now = datetime.now(UTC)
     run = AgentRun(
         id="chat-run-0001",
@@ -180,7 +180,9 @@ class TestChatAgentStreamSuccess:
     """POST /api/v1/chat/agent/stream — 200 + SSE 帧类型表（spec §14.2）。"""
 
     @pytest.mark.asyncio
-    async def test_agent_stream_frame_types(self, override_chat_agent_service, override_agent_run_repo):
+    async def test_agent_stream_frame_types(
+        self, override_chat_agent_service, override_agent_run_repo
+    ):
         """帧类型表：delta / tool_call / tool_result / done 逐帧 JSON 精确锁定。"""
         body = _payload()
         async with (
