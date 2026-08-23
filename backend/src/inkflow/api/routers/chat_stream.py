@@ -1,19 +1,26 @@
-"""#541 chat 流式端点 + #597 chat 系统级 Agent 端点 — SSE 帧协议（镜像 writing.py F23）。"""
+"""#541 chat 流式端点 + #597 chat 系统级 Agent 端点 + #615 chat run 可重放落库 — SSE 帧协议."""
 
 from __future__ import annotations
 
 import json
+import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 import inkflow.api.deps as deps_module
-from inkflow.api.deps import get_chat_agent_service
+from inkflow.api.deps import get_agent_run_repo, get_chat_agent_service
+from inkflow.core.config import config
+from inkflow.domain.models.agent_run import AgentRun, AgentRunStatus, AgentStep
 from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.services.chat_service import ChatService, ChatStreamEvent
 from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
 from inkflow.infrastructure.agent.pipeline_templates import _CHAT_ASSISTANT_PROMPT
+from inkflow.infrastructure.database.repositories.agent_run_repo import (
+    SQLiteAgentRunRepository,
+)
 from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 from inkflow.infrastructure.llm.redact import load_known_keys, redact_secrets
 
@@ -59,12 +66,12 @@ def _encode_legacy_frame(ev: ChatStreamEvent) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-def _encode_frame(ev: ChatStreamEvent) -> str:
-    """ChatStreamEvent → SSE 帧字符串（#597 type 键扩展，spec f47 §14.2 帧表）：
+def _encode_frame(ev: ChatStreamEvent, run_id: str | None = None) -> str:
+    """ChatStreamEvent → SSE 帧字符串（#597 type 键扩展 + #615 done 帧 run_id 回传）：
     - delta → {"type": "delta", "delta": str, "done": false}
     - tool_call → {"type": "tool_call", "id"/"name"/"args", "done": false}
     - tool_result → {"type": "tool_result", "id"/"name"/"result", "done": false}
-    - done → {"type": "done", "done": true}
+    - done → {"type": "done", "done": true[, "run_id": <run id>]}
     - error → {"type": "error", "error": str, "done": true}
     """
     type_field = ev.type or "delta"
@@ -72,6 +79,8 @@ def _encode_frame(ev: ChatStreamEvent) -> str:
         payload: dict = {"type": "error", "error": ev.error, "done": True}
     elif type_field == "done":
         payload = {"type": "done", "done": True}
+        if run_id is not None:
+            payload["run_id"] = run_id
     elif type_field == "tool_call":
         payload = {
             "type": "tool_call",
@@ -91,6 +100,56 @@ def _encode_frame(ev: ChatStreamEvent) -> str:
     else:
         payload = {"type": "delta", "delta": ev.delta, "done": False}
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _build_chat_run(
+    run: AgentRun,
+    data: ChatStreamRequest,
+    *,
+    status: AgentRunStatus,
+    steps: list[AgentStep],
+    final_content: str,
+    token_usage_total: int,
+    model: str,
+    terminated_by: str,
+) -> AgentRun:
+    """#615 终态 AgentRun 组装（completed/failed 共用；created_at 保留 create 回填值）。"""
+    return AgentRun(
+        id=run.id,
+        project_id=uuid.UUID(data.project_id),
+        chapter_id=uuid.UUID(data.chapter_id) if data.chapter_id else None,
+        mode="chat",
+        status=status,
+        steps=steps,
+        final_content=final_content,
+        token_usage_total=token_usage_total,
+        model=model,
+        terminated_by=terminated_by,
+        created_at=run.created_at,
+        updated_at=datetime.now(UTC),
+    )
+
+
+async def _save_failed_run(
+    repo: SQLiteAgentRunRepository,
+    svc: ChatAgentService,
+    run: AgentRun,
+    data: ChatStreamRequest,
+) -> None:
+    """#615 防御：流中异常 → 保存 failed 终态（保留已收集的 steps/final_content/tokens）。"""
+    steps, final_content, token_total = svc.consume_trace()
+    await repo.save(
+        _build_chat_run(
+            run,
+            data,
+            status=AgentRunStatus.FAILED,
+            steps=steps,
+            final_content=final_content,
+            token_usage_total=token_total,
+            model=config.llm_default_model,
+            terminated_by="",
+        )
+    )
 
 
 @router.post("/stream")
@@ -130,23 +189,57 @@ async def stream_chat_agent(
     data: ChatStreamRequest,
     request: Request,
     svc: ChatAgentService = Depends(get_chat_agent_service),
+    repo: SQLiteAgentRunRepository = Depends(get_agent_run_repo),
 ) -> StreamingResponse:
-    """chat 系统级 Agent 流式对话 — SSE 逐帧推送（spec f47 §14.2 帧表）。"""
+    """chat 系统级 Agent 流式对话 — SSE 逐帧推送 + #615 落 AgentRun(mode="chat")。
+
+    spec f47 §14.2 帧表；#615 增量：repo.create 前置取 run_id → 流中收集
+    steps（on_chat_model_end + on_tool_end）→ 流结束 repo.save(completed) →
+    done 帧回传 run_id；LLMRequestError → error 帧 + save(failed) 防御。
+    """
     prompt = (data.prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=422, detail="chat 流式请求需要 prompt")
     prompt = redact_secrets(prompt, load_known_keys())
 
     async def _event_stream():
+        run: AgentRun | None = None
         try:
+            run = await repo.create(
+                project_id=uuid.UUID(data.project_id),
+                chapter_id=uuid.UUID(data.chapter_id) if data.chapter_id else None,
+                mode="chat",
+            )
             async for ev in svc.stream_events(prompt=prompt, chapter_context=data.chapter_context):
                 if await request.is_disconnected():
                     return
-                yield _encode_frame(ev)
+                if ev.done or ev.type == "done":
+                    steps, final_content, token_total = svc.consume_trace()
+                    await repo.save(
+                        _build_chat_run(
+                            run,
+                            data,
+                            status=AgentRunStatus.COMPLETED,
+                            steps=steps,
+                            final_content=final_content,
+                            token_usage_total=token_total,
+                            model=config.llm_default_model,
+                            terminated_by="llm",
+                        )
+                    )
+                    yield _encode_frame(ev, run_id=run.id)
+                else:
+                    yield _encode_frame(ev)
         except LLMRequestError:
+            if run is not None:
+                await _save_failed_run(repo, svc, run, data)
             yield _encode_frame(
                 ChatStreamEvent(type="error", done=True, error="LLM 调用失败，请稍后重试")
             )
+        except Exception:
+            if run is not None:
+                await _save_failed_run(repo, svc, run, data)
+            raise
 
     return StreamingResponse(
         _event_stream(),
