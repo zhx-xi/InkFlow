@@ -133,9 +133,9 @@ async function gotoNav(window: Page, name: string): Promise<void> {
   await window.getByRole('link', { name }).click();
 }
 
-/** 拦截 chat 流式端点：POST /api/v1/chat/stream → SSE 帧（确定性，零真实 LLM）.
+/** 拦截 chat 流式端点：POST /api/v1/chat/agent/stream → SSE 帧（确定性，零真实 LLM）.
  * #541：ChatPanel 已从 executePipeline+轮询 改为 streamChat SSE 消费；
- * 帧协议 = data: {json}\n\n（delta 帧 {delta, done:false} × N → {done:true} 终帧）。
+ * 帧协议 = data: {json}\n\n（帧带 type 键：delta 帧 {type:'delta',delta,done:false} × N → {type:'done',done:true} 终帧）。
  */
 function interceptChatStream(window: Page, finalOutput: string): void {
   // 拆两段 delta 模拟流式渐进（E2E 断言终态；流式渐进细节由单测覆盖）
@@ -143,10 +143,10 @@ function interceptChatStream(window: Page, finalOutput: string): void {
   const frame = (payload: Record<string, unknown>): string =>
     `data: ${JSON.stringify(payload)}\n\n`;
   const body =
-    frame({ delta: finalOutput.slice(0, mid), done: false }) +
-    frame({ delta: finalOutput.slice(mid), done: false }) +
-    frame({ done: true });
-  void window.route('**/api/v1/chat/stream', (route) => {
+    frame({ type: 'delta', delta: finalOutput.slice(0, mid), done: false }) +
+    frame({ type: 'delta', delta: finalOutput.slice(mid), done: false }) +
+    frame({ type: 'done', done: true });
+  void window.route('**/api/v1/chat/agent/stream', (route) => {
     void route.fulfill({
       status: 200,
       contentType: 'text/event-stream',
