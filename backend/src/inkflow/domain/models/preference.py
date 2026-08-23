@@ -49,6 +49,7 @@ class ProjectPreference(BaseModel):
         confidence: 置信度（0-1，随 count 增长单调递增，公式见 spec §5.2）.
         count: 支撑事件数（≥2 才落库）.
         source_events: 支撑事件 id 列表（memory_events.id，可追溯）.
+        active_watermark_at_last_access: 上次注入/访问时的项目活跃水位（用于 Δt_active 计算）.
         created_at: 创建时间（UTC）.
         updated_at: 最后更新时间（UTC）.
     """
@@ -63,5 +64,7 @@ class ProjectPreference(BaseModel):
     confidence: float
     count: int
     source_events: list[str] = []
+    active_watermark_at_last_access: float = 0.0
+    """上次注入/访问时的项目活跃水位（用于 Δt_active 计算）；旧数据缺省 0"""
     created_at: datetime
     updated_at: datetime

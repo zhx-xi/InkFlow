@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from inkflow.core.database import Base, LenientJSON
@@ -68,6 +68,13 @@ class ProjectORM(Base):
         default=dict,
     )
     """AI 写作配置，JSON 序列化存储."""
+
+    active_watermark: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0,
+    )
+    """活跃基准（单调累计，只随用户活跃推进）"""
 
     is_deleted: Mapped[bool] = mapped_column(
         Boolean,

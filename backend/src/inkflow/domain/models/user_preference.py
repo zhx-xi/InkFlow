@@ -34,6 +34,7 @@ class UserPreference(BaseModel):
         project_count: 支撑项目数（>=2 才落库，防单项目特有设定混算）.
         source_projects: 支撑项目 id 字符串列表（去重，惰性重算用）.
         source_events: 支撑事件 id 列表（memory_events.id，可追溯）.
+        active_watermark_at_last_access: 上次注入/访问时的项目活跃水位（用于 Δt_active 计算）.
         created_at: 创建时间（UTC）.
         updated_at: 最后更新时间（UTC）.
     """
@@ -49,5 +50,7 @@ class UserPreference(BaseModel):
     project_count: int
     source_projects: list[str] = []
     source_events: list[str] = []
+    active_watermark_at_last_access: float = 0.0
+    """上次注入/访问时的项目活跃水位（用于 Δt_active 计算）；旧数据缺省 0"""
     created_at: datetime
     updated_at: datetime

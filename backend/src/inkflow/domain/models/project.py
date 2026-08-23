@@ -257,6 +257,31 @@ class ProjectConfig(BaseModel):
             relations.append(rel)
         return relations
 
+    @field_validator("extra", mode="before")
+    @classmethod
+    def validate_extra_decay_keys(cls, v: Any) -> Any:
+        """存储层校验（F49 #617 spec §3.1）：extra 内 decay 键缺省零迁移.
+
+        - memory_decay_enabled 必须为 bool（缺失/None 跳过）;
+        - memory_decay_half_life 必须为 int 且在 1-365（排除 bool——bool 是
+          int 子类）; 缺失/None 跳过.
+        """
+        if not isinstance(v, dict):
+            raise ValueError("extra 必须为对象")  # noqa: TRY004  # 契约固定 ValueError（测试断言 ValueError）
+        if (
+            "memory_decay_enabled" in v
+            and v["memory_decay_enabled"] is not None
+            and not isinstance(v["memory_decay_enabled"], bool)
+        ):
+            raise ValueError("memory_decay_enabled 必须为布尔值")
+        if "memory_decay_half_life" in v and v["memory_decay_half_life"] is not None:
+            hl = v["memory_decay_half_life"]
+            if isinstance(hl, bool) or not isinstance(hl, int):
+                raise ValueError("memory_decay_half_life 必须为整数")
+            if not (1 <= hl <= 365):
+                raise ValueError("memory_decay_half_life 必须在 1-365 天范围内")
+        return v
+
 
 class Project(BaseModel):
     """项目/书籍领域实体.
@@ -283,6 +308,8 @@ class Project(BaseModel):
     language: str = "zh-CN"
     target_words: int = 0
     config: ProjectConfig = Field(default_factory=ProjectConfig)
+    active_watermark: float = 0.0
+    """活跃基准（单调累计，只随用户实际使用项目推进；闲置不推进）"""
     is_deleted: bool = False
     created_at: datetime
     updated_at: datetime

@@ -35,6 +35,7 @@ def _orm_to_domain(orm: ProjectORM) -> Project:
         language=orm.language,
         target_words=orm.target_words,
         config=ProjectConfig(**orm.config) if orm.config else ProjectConfig(),
+        active_watermark=orm.active_watermark,
         is_deleted=orm.is_deleted,
         created_at=orm.created_at,
         updated_at=orm.updated_at,
@@ -67,6 +68,7 @@ class SQLiteProjectRepository:
             language=project.language,
             target_words=project.target_words,
             config=_get_config_dict(project.config),
+            active_watermark=project.active_watermark,
         )
         self._session.add(orm)
         await self._session.commit()
@@ -139,6 +141,7 @@ class SQLiteProjectRepository:
             "language": project.language,
             "target_words": project.target_words,
             "config": _get_config_dict(project.config),
+            "active_watermark": project.active_watermark,
             "updated_at": _utcnow(),
         }
 

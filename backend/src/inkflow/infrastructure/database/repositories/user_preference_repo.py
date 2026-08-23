@@ -44,6 +44,7 @@ def _orm_to_domain(orm: UserPreferenceORM) -> UserPreference:
         project_count=orm.project_count,
         source_projects=orm.source_projects,
         source_events=orm.source_events,
+        active_watermark_at_last_access=orm.active_watermark_at_last_access,
         created_at=orm.created_at,
         updated_at=orm.updated_at,
     )
@@ -67,6 +68,7 @@ class SQLiteUserPreferenceRepository:
         project_count: int,
         source_projects: list[str],
         source_events: list[str],
+        active_watermark_at_last_access: float = 0.0,
     ) -> UserPreference:
         """创建用户级偏好（id 由 ORM default 生成 uuid4 字符串），单次 commit + refresh.
 
@@ -79,6 +81,7 @@ class SQLiteUserPreferenceRepository:
             project_count: 支撑项目数.
             source_projects: 支撑项目 id 字符串列表（JSON 快照）.
             source_events: 支撑事件 id 列表（JSON 快照）.
+            active_watermark_at_last_access: 上次注入/访问时的项目活跃水位（float，默认 0.0）.
 
         Returns:
             已落库的 UserPreference（id 为 uuid4 字符串，created_at/updated_at
@@ -93,6 +96,7 @@ class SQLiteUserPreferenceRepository:
             project_count=project_count,
             source_projects=source_projects,
             source_events=source_events,
+            active_watermark_at_last_access=active_watermark_at_last_access,
         )
         self._session.add(orm)
         await self._session.commit()
@@ -139,6 +143,7 @@ class SQLiteUserPreferenceRepository:
         project_count: int,
         source_projects: list[str],
         source_events: list[str],
+        active_watermark_at_last_access: float | None = None,
         category: PreferenceCategory | None = None,
         pattern: str | None = None,
         value: str | None = None,
@@ -152,6 +157,7 @@ class SQLiteUserPreferenceRepository:
             project_count: 新的支撑项目数.
             source_projects: 新的支撑项目 id 列表.
             source_events: 新的支撑事件 id 列表.
+            active_watermark_at_last_access: 刷新水位字段（非 None 覆盖；F49 #617「用即保鲜」）.
             category: 编辑字段（非 None 覆盖；存枚举 value 字符串）.
             pattern: 编辑字段（非 None 覆盖）.
             value: 编辑字段（非 None 覆盖）.
@@ -168,6 +174,8 @@ class SQLiteUserPreferenceRepository:
         orm.project_count = project_count
         orm.source_projects = source_projects
         orm.source_events = source_events
+        if active_watermark_at_last_access is not None:
+            orm.active_watermark_at_last_access = active_watermark_at_last_access
         if category is not None:
             orm.category = category.value
         if pattern is not None:

@@ -29,6 +29,14 @@ from inkflow.domain.services.preference_learner import (
 )
 
 
+def _score_pref(pref: object, active_watermark_now: float, half_life: float) -> float:
+    """时间衰减动态分：score = count × 0.5^(Δt_active / half_life)."""
+    # 鸭子类型：pref 按契约提供 active_watermark_at_last_access / count（测试用 SimpleNamespace）
+    delta = active_watermark_now - float(getattr(pref, "active_watermark_at_last_access", 0.0))
+    decay: float = 0.5 ** (delta / half_life)
+    return int(getattr(pref, "count", 1)) * decay
+
+
 def _dump_summary(summary: SemanticSummary | None) -> dict | None:
     """语义总结 → 可序列化字典（手动取字段——测试鸭子对象无 model_dump）.
 
@@ -355,16 +363,9 @@ class MemoryService:
         return preference
 
     async def get_preferences_for_injection(self, project_id: uuid.UUID) -> list[ProjectPreference]:
-        """已学偏好注入读口（F6 PreferenceSource 调用，spec §5.4）.
-
-        memory_learning=false → []（零注入）; true → 实时查库（无缓存），
-        按 count desc 排序返回——删除偏好后下次生成立即生效（验收判据③）.
-
-        Args:
-            project_id: 所属项目 UUID.
-
-        Returns:
-            按支撑强度（count desc）排序的偏好列表.
+        """已学偏好注入读口（F6 PreferenceSource 调用，spec §5.4/§5.3 F49）.
+        memory_learning=false → []（零注入）；decay 关闭 → count desc（回归零影响）；
+        decay 开启 → score desc + 过滤 score<0.05 + 注入即刷新水位（用即保鲜）.
         """
         if not await self.is_learning_enabled(project_id):
             return []
@@ -373,7 +374,37 @@ class MemoryService:
             project_id
         )
         items, _total = result
-        return sorted(items, key=lambda p: p.count, reverse=True)
+        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
+            project_id.int
+        )
+        if project is None:
+            return []
+        config = project.config.extra
+        if not config.get("memory_decay_enabled", False):
+            # legacy：count desc（回归零影响，不读 active_watermark/不刷新）
+            return sorted(items, key=lambda p: p.count, reverse=True)
+        half_life: float = float(config.get("memory_decay_half_life", 30))
+        watermark_now: float = float(getattr(project, "active_watermark", 0.0))
+        scored: list[tuple[ProjectPreference, float]] = []
+        for pref in items:
+            score = _score_pref(pref, watermark_now, half_life)
+            if score >= 0.05:
+                scored.append((pref, score))
+        scored.sort(key=lambda pair: pair[1], reverse=True)
+        for pref, _score in scored:
+            await self._bump_access_watermark(pref, watermark_now)
+        return [pref for pref, _score in scored]
+
+    async def _bump_access_watermark(self, pref: object, active_watermark_now: float) -> None:
+        """写回偏好活跃水位（用即保鲜）：更新 pref 水位字段并经 repo 持久化."""
+        pref.active_watermark_at_last_access = active_watermark_now  # type: ignore[attr-defined]  # 鸭子类型：pref 按契约提供可写水位字段
+        await self._preference_repo.update(  # type: ignore[attr-defined]  # 鸭子类型：preference_repo 按契约提供 update
+            pref.id,  # type: ignore[attr-defined]  # 鸭子类型：pref 按契约提供 id
+            count=pref.count,  # type: ignore[attr-defined]  # 鸭子类型：pref 按契约提供 count
+            confidence=pref.confidence,  # type: ignore[attr-defined]  # 鸭子类型：pref 按契约提供 confidence
+            source_events=pref.source_events,  # type: ignore[attr-defined]  # 鸭子类型：pref 按契约提供 source_events
+            active_watermark_at_last_access=active_watermark_now,
+        )
 
     async def list_user_preferences(
         self,
@@ -581,21 +612,47 @@ class MemoryService:
     async def get_user_preferences_for_injection(
         self, project_id: uuid.UUID
     ) -> list[UserPreference]:
-        """用户级偏好注入读口（F6 PreferenceSource 调用，spec §5.6 M1）.
-
-        memory_learning=false → []（零行为）；true → 惰性重算后返回 items
-        （count desc 排序）。
-
-        Args:
-            project_id: 所属项目 UUID（开关判定用）.
-
-        Returns:
-            按支撑强度（count desc）排序的用户级偏好列表.
+        """用户级偏好注入读口（F6 PreferenceSource 调用，spec §5.6 M1/§5.3 F49）.
+        memory_learning=false → []（零行为）；decay 关闭 → count desc（回归零影响）；
+        decay 开启 → score desc + 过滤 score<0.05 + 注入即刷新水位（用户级同构）.
         """
         if not await self.is_learning_enabled(project_id):
             return []
         items, _total = await self.list_user_preferences()
-        return sorted(items, key=lambda p: p.count, reverse=True)
+        if self._user_preference_repo is None:
+            return sorted(items, key=lambda p: p.count, reverse=True)
+        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
+            project_id.int
+        )
+        if project is None:
+            return sorted(items, key=lambda p: p.count, reverse=True)
+        config = project.config.extra
+        if not config.get("memory_decay_enabled", False):
+            return sorted(items, key=lambda p: p.count, reverse=True)
+        half_life: float = float(config.get("memory_decay_half_life", 30))
+        watermark_now: float = float(getattr(project, "active_watermark", 0.0))
+        scored: list[tuple[UserPreference, float]] = []
+        for pref in items:
+            score = _score_pref(pref, watermark_now, half_life)
+            if score >= 0.05:
+                scored.append((pref, score))
+        scored.sort(key=lambda pair: pair[1], reverse=True)
+        for pref, _score in scored:
+            await self._bump_user_access_watermark(pref, watermark_now)
+        return [pref for pref, _score in scored]
+
+    async def _bump_user_access_watermark(self, pref: object, active_watermark_now: float) -> None:
+        """写回用户级偏好活跃水位（用即保鲜）：更新 pref 水位字段并经 repo 持久化."""
+        pref.active_watermark_at_last_access = active_watermark_now  # type: ignore[attr-defined]  # 鸭子类型：pref 按契约提供可写水位字段
+        await self._user_preference_repo.update(  # type: ignore[union-attr]  # 鸭子类型：user_preference_repo 按契约提供 update（object|None 未收窄）
+            pref.id,  # type: ignore[attr-defined]  # 鸭子类型：pref 按契约提供 id
+            count=pref.count,  # type: ignore[attr-defined]  # 鸭子类型：pref 按契约提供 count
+            confidence=pref.confidence,  # type: ignore[attr-defined]  # 鸭子类型：pref 按契约提供 confidence
+            project_count=pref.project_count,  # type: ignore[attr-defined]  # 鸭子类型：pref 按契约提供 project_count
+            source_projects=pref.source_projects,  # type: ignore[attr-defined]  # 鸭子类型：pref 按契约提供 source_projects
+            source_events=pref.source_events,  # type: ignore[attr-defined]  # 鸭子类型：pref 按契约提供 source_events
+            active_watermark_at_last_access=active_watermark_now,
+        )
 
     async def stats(self, project_id: uuid.UUID) -> dict:
         """修改率统计（spec §5.7 口径，测试锁定数学）.
