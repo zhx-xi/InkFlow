@@ -284,7 +284,12 @@ export function WritingPage() {
             confirming={confirming}
           />
         </main>
-        <ContextPanel />
+        <ContextPanel
+          projectId={effectiveProjectId}
+          chapterId={currentChapterId}
+          model={model}
+          writingRequirements={currentProject?.config?.writing_style ?? '上下文预览'}
+        />
       </div>
       <AuditDialog
         open={auditOpen}
