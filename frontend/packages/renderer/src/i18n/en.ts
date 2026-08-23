@@ -478,6 +478,7 @@ export const en: Record<string, string> = {
   'dlg.create': 'Create',
   'dlg.nameRequired': 'Title is required',
   'dlg.nameTooLong': 'Title cannot exceed 100 characters',
+  'dlg.tagRequired': 'Please select at least one tag',
   'dlg.createFailed': 'Create failed: {reason}',
   'dlg.template': 'Agent Template',
   'dlg.templateDefault': 'Default Template',

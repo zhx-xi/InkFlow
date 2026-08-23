@@ -97,6 +97,10 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
       setError(t('dlg.nameTooLong'));
       return;
     }
+    if (tags.length === 0) {
+      setError(t('dlg.tagRequired'));
+      return;
+    }
     setError(null);
     setSubmitting(true);
     // #195：提交时字符串 → 数字——空串 → 0（Number('')=0）；非法（非数字）→ 800000 默认兜底

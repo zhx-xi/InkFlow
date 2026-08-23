@@ -75,6 +75,9 @@ async function createProjectViaUi(window: Page, name: string): Promise<void> {
   const dlg = window.getByRole('dialog');
   // getByLabel 通过关联 label / aria-label 查找（dialog 内唯一）
   await window.getByLabel('书名').fill(name);
+  // #595 契约：创建须 ≥1 个题材/标签（tags 多选勾选预设标签；Radix option 渲染于 portal，用 window 级查询）
+  await window.getByTestId('tags-select').click();
+  await window.getByRole('option', { name: '玄幻' }).click();
   await dlg.getByRole('button', { name: '创建' }).click();
   await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
 }
@@ -180,6 +183,9 @@ test('项目页：模板下拉选 Agent 模板创建 → 卡片出现 + config.t
     await dlg.getByLabel('Agent 模板').click();
     await window.getByRole('option', { name: tplName }).click();
     await window.getByLabel('书名').fill(name);
+    // #595 契约：创建须 ≥1 个题材/标签（tags 多选勾选预设标签）
+    await window.getByTestId('tags-select').click();
+    await window.getByRole('option', { name: '玄幻' }).click();
     await dlg.getByRole('button', { name: '创建', exact: true }).click();
     await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
 

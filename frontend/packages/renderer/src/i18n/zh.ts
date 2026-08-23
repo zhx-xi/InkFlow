@@ -485,6 +485,7 @@ export const zh = {
   'dlg.create': '创建',
   'dlg.nameRequired': '书名不能为空',
   'dlg.nameTooLong': '书名不能超过 100 字',
+  'dlg.tagRequired': '请至少选择一个题材/标签',
   'dlg.createFailed': '创建失败: {reason}',
   'dlg.template': 'Agent 模板',
   'dlg.templateDefault': '默认模板',
