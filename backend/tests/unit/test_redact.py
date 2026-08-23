@@ -10,7 +10,9 @@
 避免被上层输出脱敏机制污染测试夹具。RED 状态：redact.py 未创建 → import 即失败（门禁 M1）。
 """
 
-from inkflow.infrastructure.llm.redact import redact_secrets
+from unittest.mock import MagicMock, patch
+
+from inkflow.infrastructure.llm.redact import load_known_keys, redact_secrets
 
 # ── 拼接构造（运行时值正确，源码不含连续敏感形态）──
 SK_KEY = "sk-" + ("a" * 16)  # sk-aaa...aaa（16 位体）
@@ -72,3 +74,20 @@ def test_known_keys_defaults_to_empty():
     """known_keys 缺省（None）→ 等同空列表，仅 A 生效。"""
     result = redact_secrets(SK_KEY)
     assert SK_MASKED in result
+
+
+def test_load_known_keys_returns_provider_keys_and_skips_failure():
+    """load_known_keys：正常返回各 provider 明文；单个解密失败跳过该项，不抛错。"""
+    mgr = MagicMock()
+    mgr.list_providers.return_value = ["p1", "p2", "p3"]
+    mgr.load.side_effect = ["key1", Exception("decrypt fail"), "key3"]
+    with patch("inkflow.infrastructure.llm.redact.APIKeyManager", return_value=mgr):
+        assert load_known_keys() == ["key1", "key3"]
+
+
+def test_load_known_keys_empty_when_no_provider():
+    """load_known_keys：无任何已存 provider → 空列表。"""
+    mgr = MagicMock()
+    mgr.list_providers.return_value = []
+    with patch("inkflow.infrastructure.llm.redact.APIKeyManager", return_value=mgr):
+        assert load_known_keys() == []
