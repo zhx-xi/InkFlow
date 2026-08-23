@@ -108,6 +108,9 @@ class BookService(BookRunMixin):
             跳过执行记录落库（防御分支）.
         outline_updater: 可调用（async (outline_id: uuid.UUID, description: str) →
             object | None，改 outline.description）；None = edit 干预拒绝.
+        agentic_pipeline: book-level 自主编排引擎（鸭子类型，镜像 BookAgenticPipeline：
+            async execute(plan, chapters, limits, *, config, thread_id)）；None =
+            write_book_agentic 拒绝（防静默降级）.
     """
 
     def __init__(
@@ -123,6 +126,7 @@ class BookService(BookRunMixin):
         volume_pipeline: object | None = None,  # 新增：卷级编排引擎（BookVolumePipeline 鸭子类型）
         execution_store: object | None = None,  # 新增：执行记录仓储（ExecutionStore 鸭子类型）
         outline_updater: Callable[[uuid.UUID, str], Awaitable[object | None]] | None = None,
+        agentic_pipeline: object | None = None,  # 新增：book-level 自主编排引擎（鸭子类型）
     ) -> None:
         self._repo = repo
         self._writer_factory = writer_factory
@@ -134,6 +138,7 @@ class BookService(BookRunMixin):
         self._volume_pipeline = volume_pipeline
         self._execution_store = execution_store
         self._outline_updater = outline_updater
+        self._agentic_pipeline = agentic_pipeline
 
     async def write_book(
         self, plan_id: uuid.UUID, limits: BookLimits | None = None

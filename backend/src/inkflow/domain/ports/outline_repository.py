@@ -67,6 +67,20 @@ class OutlineRepositoryProtocol(Protocol):
         """
         ...
 
+    async def get_outline_by_volume(
+        self, volume_id: int, exclude_outline_id: int | None = None
+    ) -> Outline | None:
+        """按 volume_id 查关联卷纲（level=volume）；exclude_outline_id 排除自身（一双一校验）.
+
+        Args:
+            volume_id: 卷主键（int）.
+            exclude_outline_id: 排除的大纲主键（int，更新场景排除自身）.
+
+        Returns:
+            若命中则返回 Outline，否则返回 None.
+        """
+        ...
+
     async def list(
         self,
         project_id: int,

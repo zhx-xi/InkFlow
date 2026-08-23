@@ -53,6 +53,7 @@ from inkflow.domain.ports.outline_errors import (
     OutlineNameConflictError,
     OutlineNotFoundError,
     OutlineServiceError,
+    OutlineVolumeRefError,
     ProjectNotFoundError,
 )
 from inkflow.domain.ports.outline_repository import OutlineRepositoryProtocol
@@ -134,6 +135,8 @@ class OutlineService:
         level: str,
         parent_id: uuid.UUID | None,
         chapter_id: uuid.UUID | None,
+        volume_id: uuid.UUID | None = None,
+        exclude_outline_id: int | None = None,
     ) -> None:
         """F43 P3 大纲三级 + 章关联层级校验（严格，spec §2.8 决策点 2.A）.
 
@@ -176,6 +179,18 @@ class OutlineService:
                 chapter = await self._chapter_repo.get_chapter(_to_int_id(chapter_id))
                 if chapter is None or chapter.project_id != project_id:
                     raise OutlineChapterRefError("关联章节不存在或不属于该项目")
+        if volume_id is not None and level != "volume":
+            raise OutlineVolumeRefError("仅卷级大纲可关联写作卷")
+        if volume_id is not None and level == "volume":
+            if self._chapter_repo is not None:
+                volume = await self._chapter_repo.get_volume(_to_int_id(volume_id))
+                if volume is None or volume.project_id != project_id:
+                    raise OutlineVolumeRefError("关联卷不存在或不属于该项目")
+            existing = await self._repo.get_outline_by_volume(
+                _to_int_id(volume_id), exclude_outline_id=exclude_outline_id
+            )
+            if existing is not None:
+                raise OutlineVolumeRefError("卷已关联卷纲")
 
     async def create_outline(
         self,
@@ -186,6 +201,7 @@ class OutlineService:
         level: str = "chapter",
         parent_id: uuid.UUID | None = None,
         chapter_id: uuid.UUID | None = None,
+        volume_id: uuid.UUID | None = None,
     ) -> Outline:
         """创建大纲（spec §7: 同名活动大纲 → 422；F43 P3 三级层级校验）.
 
@@ -216,6 +232,8 @@ class OutlineService:
             level=level,
             parent_id=parent_id,
             chapter_id=chapter_id,
+            volume_id=volume_id,
+            exclude_outline_id=None,
         )
         now = _utcnow()
         outline = Outline(
@@ -227,6 +245,7 @@ class OutlineService:
             level=level,
             parent_id=parent_id,
             chapter_id=chapter_id,
+            volume_id=volume_id,
             created_at=now,
             updated_at=now,
         )
@@ -236,6 +255,10 @@ class OutlineService:
     async def get_outline(self, outline_id: int | uuid.UUID) -> Outline | None:
         """按主键获取大纲；不存在返回 None（router 转 404）."""
         return await self._repo.get(_to_int_id(outline_id))
+
+    async def get_volume_outline(self, volume_id: int | uuid.UUID) -> Outline | None:
+        """解析链：当前卷 -> 关联卷纲（level=volume）；无则返回 None."""
+        return await self._repo.get_outline_by_volume(_to_int_id(volume_id))
 
     async def list_outlines(
         self,
@@ -305,12 +328,17 @@ class OutlineService:
         if "chapter_id" in update.model_fields_set and not isinstance(update.chapter_id, uuid.UUID):
             # None / "" → 清除章关联
             updates["chapter_id"] = None
+        if "volume_id" in update.model_fields_set and not isinstance(update.volume_id, uuid.UUID):
+            # None / "" → 清除卷关联
+            updates["volume_id"] = None
         merged = existing.model_copy(update=updates)
         await self._validate_outline_hierarchy(
             project_id=merged.project_id,
             level=merged.level,
             parent_id=merged.parent_id,
             chapter_id=merged.chapter_id,
+            volume_id=merged.volume_id,
+            exclude_outline_id=_to_int_id(merged.id),
         )
         logger.info("更新大纲: outline_id=%s", outline_id)
         return await self._repo.update(merged)

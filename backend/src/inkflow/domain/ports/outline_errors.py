@@ -111,3 +111,10 @@ class OutlineChapterRefError(OutlineServiceError):
 
     def __init__(self, message: str = "章关联约束违反") -> None:
         super().__init__(message)
+
+
+class OutlineVolumeRefError(OutlineServiceError):
+    """卷关联约束违反（volume_id 仅 volume 可设 / 卷不存在或跨项目 / 卷已关联卷纲）— 422."""
+
+    def __init__(self, message: str = "卷关联约束违反") -> None:
+        super().__init__(message)

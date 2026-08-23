@@ -100,6 +100,12 @@
 | F44 长任务编排器 | [`f44-long-task-orchestrator/spec.md`](f44-long-task-orchestrator/spec.md) | ✅ 已实现（spec PR #436/#440 + 实现 PR #441/#443/#445/#446/#447/#448/#453/#454） |
 | F45 记忆系统演进 | [`f45-memory-evolution/spec.md`](f45-memory-evolution/spec.md) | ✅ 已实现（spec PR #435/#439 + 实现 PR #442/#452） |
 
+### 卷概念统一（0.12.0，P0）
+
+| Feature | 规格 | 状态 |
+|---------|------|------|
+| 卷数据模型统一（Volume↔卷纲） | [`volume-unify/spec.md`](volume-unify/spec.md) | 📝 草案（#592） |
+
 ---
 
 > F17 空置（PRD §6.2 标题残留编号）；F18 云端（2.0.0）、F20 MCP（0.9.0）；F25 daemon 已移除（ADR-029）不复用。
