@@ -336,6 +336,38 @@ def ensure_project_watermark_column(conn: Connection) -> None:
         )
 
 
+def ensure_preference_superseded_column(conn: Connection) -> None:
+    """#618：为存量库 project_preferences 表补 superseded_by 列（幂等，镜像
+    ensure_project_watermark_column）."""
+    cols = conn.execute(text("PRAGMA table_info(project_preferences)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return  # 表不存在（全新环境）→ create_all 建新表（自动含列）
+    if "superseded_by" not in names:
+        conn.execute(
+            text(
+                "ALTER TABLE project_preferences ADD COLUMN superseded_by "
+                "TEXT NOT NULL DEFAULT ''"
+            )
+        )
+
+
+def ensure_user_preference_superseded_column(conn: Connection) -> None:
+    """#618：为存量库 user_preferences 表补 superseded_by 列（幂等，镜像
+    ensure_project_watermark_column）."""
+    cols = conn.execute(text("PRAGMA table_info(user_preferences)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return
+    if "superseded_by" not in names:
+        conn.execute(
+            text(
+                "ALTER TABLE user_preferences ADD COLUMN superseded_by "
+                "TEXT NOT NULL DEFAULT ''"
+            )
+        )
+
+
 def ensure_outline_volume_id_column(conn: Connection) -> None:
     """#592：为既有库 outlines 表补 volume_id 列 + 建唯一索引（幂等）.
 

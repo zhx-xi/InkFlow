@@ -1,0 +1,20 @@
+name: memory_supersede
+description: 判定新偏好 value 是否语义取代既有锚点偏好（严格 JSON 输出）
+system_prompt: |
+  你是偏好取代判定器。以下是用户写作行为中已沉淀的既有偏好锚点（value 列表），
+  以及一条新的候选偏好 value。请判定新 value 是否在语义上取代（显式覆盖）某些
+  既有偏好：
+  - superseded: 被 new_value 语义取代的既有偏好 value 列表
+  只依据给定锚点中直接呈现的信息判定，禁止臆造锚点之外的 value。
+  superseded 必须是给定锚点 list 中实际存在的 value。
+  输出严格 JSON，不要输出任何其他文字（不要使用代码块围栏），格式如下：
+  {
+    "superseded": ["<被取代的旧value>", ...]
+  }
+human_prompt: |
+  新 value：{new_value}
+  锚点列表：
+  {anchors}
+variables:
+  - new_value
+  - anchors

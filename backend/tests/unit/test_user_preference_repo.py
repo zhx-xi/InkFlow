@@ -348,6 +348,42 @@ class TestSQLiteUserPreferenceRepository:
         assert fetched.source_projects == [str(PROJECT_ID), str(PROJECT_ID_2)]
         assert fetched.source_events == ["evt-1", "evt-2"]
 
+    async def test_update_superseded_by_persists(self, db_session):
+        """契约⑯ (#618): update 传 superseded_by 覆盖旧用户偏好，get + list_all 读回."""
+        from inkflow.domain.models.user_preference import PreferenceCategory
+
+        repo = SQLiteUserPreferenceRepository(db_session)
+        pref = await _create_pref(
+            repo,
+            pattern="P1",
+            category=PreferenceCategory.STYLE_WORD,
+            count=2,
+            confidence=0.67,
+            project_count=2,
+            source_projects=[str(PROJECT_ID)],
+            source_events=["evt-1"],
+        )
+        assert pref.superseded_by == ""
+
+        updated = await repo.update(
+            pref.id,
+            count=2,
+            confidence=0.67,
+            project_count=2,
+            source_projects=[str(PROJECT_ID)],
+            source_events=["evt-1"],
+            superseded_by="新user词",
+        )
+        assert updated is not None
+        assert updated.superseded_by == "新user词"
+
+        fetched = await repo.get(pref.id)
+        assert fetched is not None
+        assert fetched.superseded_by == "新user词"
+
+        items, _total = await repo.list_all()
+        assert items[0].superseded_by == "新user词"
+
     async def test_update_missing_returns_none(self, db_session):
         """契约⑨: update 对缺失偏好返回 None."""
         repo = SQLiteUserPreferenceRepository(db_session)

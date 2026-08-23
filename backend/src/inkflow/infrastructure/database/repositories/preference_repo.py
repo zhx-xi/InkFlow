@@ -45,6 +45,7 @@ def _orm_to_domain(orm: ProjectPreferenceORM) -> ProjectPreference:
         count=orm.count,
         source_events=orm.source_events,
         active_watermark_at_last_access=orm.active_watermark_at_last_access,
+        superseded_by=orm.superseded_by,
         created_at=orm.created_at,
         updated_at=orm.updated_at,
     )
@@ -68,6 +69,7 @@ class SQLitePreferenceRepository:
         count: int,
         source_events: list[str],
         active_watermark_at_last_access: float = 0.0,
+        superseded_by: str = "",
     ) -> ProjectPreference:
         """创建偏好（id 由 ORM default 生成 uuid4 字符串），单次 commit + refresh.
 
@@ -80,6 +82,7 @@ class SQLitePreferenceRepository:
             count: 支持事件数.
             source_events: 支持事件 id 列表（JSON 快照）.
             active_watermark_at_last_access: 上次注入/访问时的项目活跃水位（float，默认 0.0）.
+            superseded_by: 被取代时指向新偏好 value（#618 显式覆盖标记；空 = 未取代）.
 
         Returns:
             已落库的 ProjectPreference（id 为 uuid4 字符串，created_at/updated_at
@@ -94,6 +97,7 @@ class SQLitePreferenceRepository:
             count=count,
             source_events=source_events,
             active_watermark_at_last_access=active_watermark_at_last_access,
+            superseded_by=superseded_by,
         )
         self._session.add(orm)
         await self._session.commit()
@@ -162,6 +166,7 @@ class SQLitePreferenceRepository:
         category: PreferenceCategory | None = None,
         pattern: str | None = None,
         value: str | None = None,
+        superseded_by: str | None = None,
     ) -> ProjectPreference | None:
         """更新 count/confidence/source_events 及编辑字段（#521）；preference_id 不存在 → None.
 
@@ -174,6 +179,7 @@ class SQLitePreferenceRepository:
             category: 编辑字段（非 None 覆盖；存枚举 value 字符串）.
             pattern: 编辑字段（非 None 覆盖）.
             value: 编辑字段（非 None 覆盖）.
+            superseded_by: 被取代时指向新偏好 value（非 None 覆盖；#618）.
 
         Returns:
             更新后的 ProjectPreference（updated_at 由 ORM onupdate 自动刷新）；
@@ -193,6 +199,8 @@ class SQLitePreferenceRepository:
             orm.pattern = pattern
         if value is not None:
             orm.value = value
+        if superseded_by is not None:
+            orm.superseded_by = superseded_by
         await self._session.commit()
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
