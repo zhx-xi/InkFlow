@@ -206,3 +206,19 @@ export async function fetchDataDir(): Promise<DataDirInfo> {
 export async function updateDataDir(body: { data_dir: string }): Promise<DataDirInfo> {
   return apiFetch<DataDirInfo>('/api/v1/settings/data-dir', { method: 'PUT', body });
 }
+
+/** F50（#563）：MCP 自发现信息（GET /api/v1/mcp/info 响应，spec f50 §3.2） */
+export interface McpInfo {
+  client_path: string;
+  version: string;
+  config_template: {
+    claude: { mcpServers: { inkflow: { command: string } } };
+    cursor: { mcpServers: { inkflow: { command: string } } };
+    hermes: { mcpServers: { inkflow: { command: string } } };
+  };
+}
+
+/** F50（#563）：GET /api/v1/mcp/info——MCP 客户端路径 + 版本 + 三宿主配置模板 */
+export async function fetchMcpInfo(): Promise<McpInfo> {
+  return apiFetch<McpInfo>('/api/v1/mcp/info');
+}

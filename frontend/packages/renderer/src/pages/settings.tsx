@@ -8,6 +8,7 @@ import { AgentList } from '../components/AgentList';
 import { AppearanceCard } from '../components/AppearanceCard';
 import { GlobalDefaultModelCard } from '../components/GlobalDefaultModelCard';
 import { KnowledgeExtractCard } from '../components/knowledge-graph/KnowledgeExtractCard';
+import { McpSettingsCard } from '../components/McpSettingsCard';
 import { ModelsPanel } from '../components/ModelsPanel';
 import { RagStatusCard } from '../components/RagStatusCard';
 import { TemplateDialog } from '../components/TemplateDialog';
@@ -373,6 +374,8 @@ function GeneralPanel() {
         </div>
         {/* #479：知识图谱定时提取卡片（spec §5.5.7，挂载于常规分类） */}
         <KnowledgeExtractCard settings={globalSettings} />
+        {/* F50 #563：MCP 接入面板（spec §5.2 方案 A，挂载于常规分类） */}
+        <McpSettingsCard />
       </section>
     </div>
   );
