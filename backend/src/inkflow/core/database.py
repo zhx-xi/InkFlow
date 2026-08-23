@@ -319,6 +319,23 @@ def ensure_characters_brief_column(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE characters ADD COLUMN brief TEXT NOT NULL DEFAULT ''"))
 
 
+def ensure_project_watermark_column(conn: Connection) -> None:
+    """#617 Q1=A：为存量库 projects 表补 active_watermark 列（幂等，配合 conn.run_sync 调用）.
+
+    镜像 ensure_characters_brief_column 幂等模式：先查 PRAGMA table_info 确认列缺失
+    才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，等
+    create_all 建新表（ORM 已含 active_watermark 列）。首迁水位 0 初始化（Q1=A 拍板）.
+    """
+    cols = conn.execute(text("PRAGMA table_info(projects)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return  # 表不存在（全新环境）→ create_all 建新表（自动含 active_watermark 列）
+    if "active_watermark" not in names:
+        conn.execute(
+            text("ALTER TABLE projects ADD COLUMN active_watermark FLOAT NOT NULL DEFAULT 0.0")
+        )
+
+
 def ensure_outline_volume_id_column(conn: Connection) -> None:
     """#592：为既有库 outlines 表补 volume_id 列 + 建唯一索引（幂等）.
 

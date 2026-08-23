@@ -88,6 +88,13 @@ class ProjectPreferenceORM(Base):
     )
     """支持事件 id 列表 JSON 快照（memory_events.id，可追源）"""
 
+    active_watermark_at_last_access: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0,
+    )
+    """上次访问时的项目活跃水位（float，默认 0.0）"""
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
