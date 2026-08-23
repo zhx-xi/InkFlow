@@ -1,6 +1,6 @@
 # F49: 长期记忆衰减（memory-decay）功能规格
 
-**Spec 版本**: 1.0
+**Spec 版本**: 1.1（Q1=A/Q2=B/Q3=A 拍板固化）
 **日期**: 2026-08-23
 **依据**: 设计定稿（docs/agentic-orchestrator-and-memory-design-2026-08-14.md §3 记忆系统演进，唯一真相）+ Issue #617（① 时间衰减）/ #618（② LLM 显式覆盖）/ #619（③ GUI）+ 用户拍板（2026-08-23 五点决策）+ F28 spec v1.0（specs/f28-agent-memory/spec.md）+ F45 spec v1.1（specs/f45-memory-evolution/spec.md，两段式基线）
 **所属阶段**: 0.12.0（长期记忆衰减，F49），估算 ① 3-5 人天 + ② 4-6 人天 + ③ 3-5 人天（合计 10-16 人天）
@@ -9,6 +9,8 @@
 **参考 ADR**: adr/ADR-037.md（记忆提取：规则化先行 + LLM 第二阶段）、adr/ADR-038.md（memory_learning 默认 false）、adr/ADR-031.md（双模式开关 extra 键）、ADR-027（覆盖率门禁）
 **状态**: 待实现 🔲
 
+> **Spec 变更**: v1.1（2026-08-23 用户拍板固化）：Q1=A（活跃基准落 projects 表新列）/ Q2=B（memory_learning=false 仍可显式删除总结，越闸）/ Q3=A（list 全量 + injection 排除 superseded + LLM 判定失败降级审计）；§12 新增 D7-D9；§7/§3.4/§5.3 交叉引用更新。
+>
 > **Spec 变更**: v1.0 初稿（2026-08-23）。基于用户五点拍板 + #617 拆分（①②③ 三子 issue）+ 母 feature 评论留痕。
 
 > **模块类型声明**: 本模块为「**偏好学习闭环型（记忆衰减演进）**」变体——F28（第 12 变体）与 F45（第 20 变体）之上的遗忘机制增量，补上长期记忆「只增不衰」的短板。与 F45 的「AI 语义总结」不同：本模块新增**时间衰减**（活跃时钟 + 注入动态分）与**显式覆盖**（LLM 判定冲突 → superseded）。编号依据：按「最新无冲突基线」接续——F48=第 21 变体（实体关系图谱型）为当前最新无冲突基线，本模块声明**第 22 变体**（冲突以 ADR-019 v5+ 为准）。
@@ -72,7 +74,7 @@ F49 交付 F28/F45 长期记忆的**遗忘机制**：当前记忆只增量累积
 **Project / ProjectConfig（项目级活跃基准）**——`domain/models/project.py`：
 
 - `ProjectConfig.extra` 新增 `memory_decay_enabled`（bool，默认 false）+ `memory_decay_half_life`（int，默认 30 天）——与 `memory_learning` 同层（零迁移，旧 config JSON 缺键 → 默认值）。
-- **活跃基准** `active_watermark`（float，单调累积）：落点建议为 `Project` 级别字段（`projects` 表加列）或作为 `ProjectConfig.extra` 键。**决策点见 §14 Q1**（影响迁移形态 + 多个读端）。
+- **活跃基准** `active_watermark`（float，单调累积）：落点 **Q1=A 已拍板 → `projects` 表新列**（`Project.active_watermark` 领域字段 + ORM 列 + `ensure_project_watermark_column` 迁移；见 §14 Q1）。
 
 ### 2.2 活跃时钟（A 核心设计）
 
@@ -164,8 +166,8 @@ Response `200`:
 |------|--------|------|
 | 半衰期越界 | 422 | `memory_decay_half_life` 不在 1-365 |
 | 项目不存在（删除总结） | 404 | ProjectNotFoundError |
-| memory_learning=false 且显式删除总结 | 200 | 零行为（no-op，不删不报错）？——见 §14 Q2 |
-| LLM 冲突判定防幻觉丢弃 | 502? | 见 §14 Q3（沿 F45 semantic_summary_failed 审计语义） |
+| memory_learning=false 且显式删除总结 | 200 | 仍可删（越闸，Q2=B 已拍板 ✅） |
+| LLM 冲突判定防幻觉丢弃 | 降级审计（不 502） | 沿 F45 semantic_summary_failed 审计语义，Q3=A 已拍板 ✅ |
 
 ## 4. CLI 命令签名
 
@@ -178,7 +180,7 @@ Response `200`:
 | `inkflow memory user-list` | 不变 | 同 list，用户级 |
 | `inkflow project config set --project-id <uuid> --key memory_decay_enabled --value true` | 透传 extra | 走既有 project config CLI（若存在）；否则经 GUI 设置项 |
 
-> `--remove` 语义：删除后复用 `get_summaries` 幂等（锚点未变 → 下次 summarize 可复用既有逻辑，删除只是清当前快照）。与 `remove_preference` 的分歧点见 §14 Q2。
+> `--remove` 语义：删除后复用 `get_summaries` 幂等（锚点未变 → 下次 summarize 可复用既有逻辑，删除只是清当前快照）。与 `remove_preference` 的分歧点：Q2=B 已拍板（显式删除越闸仍可删）。
 
 ## 5. 关键差异节：记忆衰减机制型
 
@@ -212,7 +214,7 @@ score = count × 0.5^(Δt_active / half_life)
 `memory_service.py`：
 - `get_preferences_for_injection` / `get_user_preferences_for_injection`：排序 `count desc`→`score desc`，过滤 superseded + score<阈值。
 - 新增 `_score_pref`（纯函数）+ `_bump_access_watermark`（写回水位）。
-- `list_preferences` / `list_user_preferences`：过滤 superseded 由是否展示决定（list 展示全部含 superseded 供 GUI；injection 排除）——见 §14 Q3。
+- `list_preferences` / `list_user_preferences`：过滤 superseded 由是否展示决定——**Q3=A 已拍板**（list 展示全部含 superseded 供 GUI；injection 排除）。
 
 ## 6. 组织规则
 
@@ -226,7 +228,7 @@ score = count × 0.5^(Δt_active / half_life)
 | `memory_learning=false` | 全路径零行为（不算分/不判定/不刷新/排序 count desc/删除总结 no-op） | 回归零影响 |
 | 项目闲置（无活跃） | Δt_active=0 → 记忆不衰减 | 「用即保鲜」核心 |
 | 偏好 count 支撑但久未强化 | 按半衰期降权 → score<0.05 退出注入（数不删） | 可查可恢复 |
-| 旧库偏好（active_watermark=0） | Δt_active = 当前水位 - 0 → 若已累积多，score 自然衰减；**决策点见 §14 Q1（首次回溯）** | 迁移安全 |
+| 旧库偏好（active_watermark=0） | Δt_active = 当前水位 - 0 → 若已累积多，score 自然衰减；**首迁水位=0 初始化（Q1=A 已拍板，见 §14 Q1 影响）** | 迁移安全 |
 | 同 (category,pattern) 不同 value 并存 | LLM 判定是否取代；并存无关则不标 | 防误判 |
 | LLM 判定不可解析/防幻觉 B 失败 | 重试 ≤2 → 仍失败丢弃该条（审计）或 502 | 沿 F45 |
 | 删除语义总结时 summary 不存在 | deleted:true（幂等 no-op） | 不 404 |
@@ -280,7 +282,7 @@ score = count × 0.5^(Δt_active / half_life)
 | 向量化记忆衰减 | 本次偏好/总结为结构化 + 语义总结，不含向量库衰减（F14 归 RAG 域） |
 | 回收站完整化 | 只提供被覆盖/降权状态展示 + 查看/恢复入口；完整回收站另立 |
 | 跨项目偏好分层扩展 | 超出本次（F45 M1 已交付归属分层，本次只加遗忘） |
-| 活跃时钟的具体推进点枚举 | spec 定方向（用户行为推进），实现期定推进点清单（见 §14 Q1） |
+| 活跃时钟的具体推进点枚举 | spec 定方向（用户行为推进），实现期定推进点清单（Q1=A 已拍板：落表列，推进点实现期定） |
 
 ## 11. 依赖关系
 
@@ -303,6 +305,9 @@ score = count × 0.5^(Δt_active / half_life)
 | D4 | 显式覆盖判定 | **LLM 语义判定**取代（用户级同规则） | 字面 (category,pattern) 匹配（误判，用户否决） |
 | D5 | summary 删除 | 补 remove 端点 + GUI 按钮 | 不补（用户控制缺口保留） |
 | D6 | 交付面 | 后端 + GUI | 仅后端（用户否决） |
+| D7 | 活跃基准落点 | Q1=A：`projects` 表新列 | B（config.extra，跨书复制污染活跃度，用户否决） |
+| D8 | 关开关删总结 | Q2=B：仍可删（越闸） | A（no-op，用户控制优先级更高） |
+| D9 | superseded 展示 / LLM 失败 | Q3=A：list 全量 + injection 排除 + 降级审计 | B（list 过滤 + LLM 502，脆弱且冲突 #619，用户否决） |
 
 ## 13. 验收标准（M 里程碑）
 
@@ -331,19 +336,19 @@ score = count × 0.5^(Δt_active / half_life)
 **Q1（阻塞级）**——活跃基准 `active_watermark` 的落点与推进点：
 - 选项 A：落 `projects` 表新列（`Project.active_watermark` 领域字段 + ORM 列 + `ensure_project_watermark_column` 迁移），推进点 = 用户行为（触发写作/手编/chat/打开项目）。
 - 选项 B：落 `ProjectConfig.extra`（零迁移，但归属在 config JSON 而非项目表）。
-- **建议：A**（活跃基准是项目级事实，非配置，进表列语义清晰；迁移沿 `ensure_*_column` 幂等模式）。
+- **✅ 已确认（用户拍板：选项 A——`projects` 表新列）**。理由：活跃基准是项目级事实非配置；config.extra 会被跨书复制污染活跃度（硬伤）；迁移沿 `ensure_*_column` 幂等模式，先例多。**风险注记**：① 写放大——水位只随用户活跃事件（触发写作/手编/chat/打开项目）推进，非每次注入读写；② 首迁水位=0 初始化，开启衰减时以当前水位重算。
 - **影响**：旧库首迁后 `active_watermark_at_last_access=0` → 首次 Δt_active=当前水位（可能立即衰减）；建议首迁时 `active_watermark` 初始化 = 0 并在开启衰减时以当前水位重算（见 §7「旧库偏好」）。
 
 **Q2（阻塞级）**——`memory_learning=false` 时显式删除总结的语义：
 - 选项 A：no-op（返回 deleted:false，不删不报错）——与 ② 零行为铁律一致。
 - 选项 B：仍可删（用户显式操作越闸）。
-- **建议：A**（`memory_learning` 是全局闭源铁律，false 时记忆子域全路径零行为，含显式删除——除非用户需要强制清理，见下）。
+- **✅ 已确认（用户拍板：选项 B——仍可删，越闸）**。理由：显式删除是用户主动维护性操作，不受「是否学习」闸；真实场景=曾开学习→关→留总结想清。**例外边界**：仅此端点越闸，其余记忆路径保持零行为（ADR-038 铁律）；ADR 决策记录 D8 写清边界。
 - 备注：用户主动清理需求与开关冲突时，可另设「强制删除」标志（本期不做，登记 §10）。
 
 **Q3（阻塞级）**——list 展示 vs injection 排除 superseded 的分界 + LLM 判定失败语义：
 - 选项 A：list 展示全部（含 superseded），injection 排除 superseded；LLM 判定失败 → 该条标记「待判定」不入注入 + 审计（不 502）。
 - 选项 B：list 也默认过滤 superseded（需 `--all` 查看）；LLM 失败 → 502。
-- **建议：A**（GUI 需展示被覆盖状态；判定失败降级为「不取消注入」+ 审计，避免一次 LLM 抖动阻断整个记忆注入）。
+- **✅ 已确认（用户拍板：选项 A——list 全量 + injection 排除 + 降级审计）**。理由：默认展示 superseded 是 #619 GUI 管理需求硬前提；LLM 失败降级审计避免一次抖动 502 阻断整个生成。**风险注记**：待判定条目不注入=宁少勿误；GUI 显示「待判定」状态 + 审计 semantic_summary_failed。
 
 ---
 
