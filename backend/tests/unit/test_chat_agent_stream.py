@@ -378,3 +378,64 @@ class TestGetChatAgentService:
         assert save_deps.expected_chapter_id is None
         tools = _kwarg_or_positional(m_da.call_args, "tools", 3, None)
         assert [tool.spec.name for tool in tools] == [*EXPECTED_READER_NAMES, "save_draft"]
+
+
+# ── TestGetChatAgentServiceDbAndParseFallback: coverage-gap 补测（deps_chat_agent.py） ──
+
+
+def _session_gen(*sessions):
+    """单/多 session 的 async generator——mock deps.get_db 的返回物。"""
+
+    async def _gen():
+        for s in sessions:
+            yield s
+
+    return _gen()
+
+
+class TestGetChatAgentServiceDbAndParseFallback:
+    """deps_chat_agent.py 覆盖缺口补测（#597 新文件 LINE 84.4% / BRANCH 0.0%，非 RED 直通）：
+
+    - _get_db（L32-37）：deps.get_db 惰性代理，async for 逐 session yield；
+    - get_chat_agent_service except ValueError（L70-71）：parse_model_string 抛
+      ValueError → api_key/base_url 回退空串，装配继续不抛异常。
+    """
+
+    @pytest.mark.asyncio
+    async def test_get_db_delegates_to_deps_get_db(self) -> None:
+        """_get_db 调用期 from deps import get_db，async for 逐 session yield。"""
+        from inkflow.api.deps_chat_agent import _get_db
+
+        fake_session = MagicMock()
+        with patch("inkflow.api.deps.get_db") as m_get_db:
+            m_get_db.return_value = _session_gen(fake_session)
+            sessions = [s async for s in _get_db()]
+
+        assert sessions == [fake_session]
+        m_get_db.assert_called_once_with()
+
+    @patch("inkflow.api.deps.build_deep_agent")
+    @patch("inkflow.api.deps.build_save_draft_tool")
+    @patch("inkflow.api.deps.build_reader_tools")
+    @patch("inkflow.api.deps.get_chapter_audit_service")
+    @patch("inkflow.api.deps.get_audit_service")
+    @patch("inkflow.api.deps.get_draft_service")
+    @patch("inkflow.api.deps.get_summary_service")
+    @patch("inkflow.api.deps.get_foreshadowing_service")
+    @patch("inkflow.api.deps.get_character_service")
+    @patch("inkflow.infrastructure.llm.provider_config.parse_model_string", side_effect=ValueError)
+    def test_parse_model_string_value_error_falls_back_to_defaults(
+        self, m_parse, m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_rt, m_sd, m_da
+    ) -> None:
+        """parse_model_string 抛 ValueError → except 分支：api_key/base_url 回退空串，
+        装配继续，get_chat_agent_service 正常返回 ChatAgentService（不抛异常）。"""
+        data = ChatStreamRequest(project_id=PROJECT_ID, prompt="你好")
+
+        svc = _get_chat_agent_service()(data=data, db=MagicMock())
+
+        m_parse.assert_called_once()
+        chat_agent_cls = _get_chat_agent_service_cls()
+        assert isinstance(svc, chat_agent_cls)
+        # 回退空串 → build_deep_agent 收到 api_key="" / base_url=""
+        assert _kwarg_or_positional(m_da.call_args, "api_key", 1, None) == ""
+        assert _kwarg_or_positional(m_da.call_args, "base_url", 2, None) == ""
