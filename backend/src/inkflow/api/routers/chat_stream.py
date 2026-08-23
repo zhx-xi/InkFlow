@@ -15,6 +15,7 @@ from inkflow.domain.services.chat_service import ChatService, ChatStreamEvent
 from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
 from inkflow.infrastructure.agent.pipeline_templates import _CHAT_ASSISTANT_PROMPT
 from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+from inkflow.infrastructure.llm.redact import load_known_keys, redact_secrets
 
 router = APIRouter(prefix="/api/v1/chat", tags=["AI 对话"])
 
@@ -102,6 +103,7 @@ async def stream_chat(
     prompt = (data.prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=422, detail="chat 流式请求需要 prompt")
+    prompt = redact_secrets(prompt, load_known_keys())
 
     async def _event_stream():
         try:
@@ -133,6 +135,7 @@ async def stream_chat_agent(
     prompt = (data.prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=422, detail="chat 流式请求需要 prompt")
+    prompt = redact_secrets(prompt, load_known_keys())
 
     async def _event_stream():
         try:
