@@ -543,3 +543,45 @@ class TestCoverageGapDefensiveBranches:
         assert updated.name == "web-research"
         assert updated.description == "网络调研方法论"
         assert (tmp_path / "web-research" / "SKILL.md").read_text(encoding="utf-8") == before
+
+
+class TestBuiltinSkillContentContract:
+    """#550 内置 skill 提示词补全契约（参考 mattpocock/skills 结构化方法论风格）。
+
+    契约：6 个 BUILTIN_SKILL_SPECS 的 content 从精简描述（原本 5-8 行）扩写为
+    结构化方法论——包含「方法步骤 / 边界 / 示例」三个小节，且整体行数显著增加，
+    使内置 skill 对 LLM 的指导力达到社区 skills 市场（多文件结构 + 详细方法论）
+    的颗粒度。
+
+    RED 形态: 当前各 content 仅 ~10 行且不含「方法步骤/边界/示例」小节 →
+    行数断言与小节断言均失败（确定性 RED）。
+    """
+
+    def test_each_builtin_content_has_min_lines(self) -> None:
+        """每个内置 content ≥ 20 行（splitlines；当前 ~10 行 → FAIL）。"""
+        for spec in BUILTIN_SKILL_SPECS:
+            lines = spec["content"].splitlines()
+            assert len(lines) >= 20, (
+                f"{spec['name']} content 仅 {len(lines)} 行，提示词过短（应 ≥20 行）"
+            )
+
+    def test_each_builtin_content_has_method_steps_section(self) -> None:
+        """每个内置 content 含「## 方法步骤」小节（结构化方法论步骤）。"""
+        for spec in BUILTIN_SKILL_SPECS:
+            assert "## 方法步骤" in spec["content"], (
+                f"{spec['name']} content 缺「方法步骤」小节"
+            )
+
+    def test_each_builtin_content_has_boundaries_section(self) -> None:
+        """每个内置 content 含「## 边界」小节（方法论边界/注意事项）。"""
+        for spec in BUILTIN_SKILL_SPECS:
+            assert "## 边界" in spec["content"], (
+                f"{spec['name']} content 缺「边界」小节"
+            )
+
+    def test_each_builtin_content_has_example_section(self) -> None:
+        """每个内置 content 含「## 示例」小节（应用示例）。"""
+        for spec in BUILTIN_SKILL_SPECS:
+            assert "## 示例" in spec["content"], (
+                f"{spec['name']} content 缺「示例」小节"
+            )
