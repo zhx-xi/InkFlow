@@ -12,7 +12,7 @@ coverage 盲区），覆盖 src/inkflow/api/routers/chat_stream.py 第 67-69 行
 """
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from inkflow.api.routers.chat_stream import ChatStreamRequest, stream_chat
 from inkflow.domain.services.chat_service import ChatStreamEvent
@@ -65,3 +65,34 @@ async def test_stream_chat_disconnected_false_yields_frames():
 
     assert len(frames) == len(events)
     assert '"delta"' in frames[0]
+
+
+async def test_stream_chat_redacts_secret_before_sending_to_svc():
+    """#614 端点级脱敏：prompt 进 svc.stream 前经 redact_secrets 替换（spec §3.2/§4.1 回调语义）。
+
+    RED 状态：redact_secrets 尚未接线进 chat_stream.py——patch 后 router 不会调用它，
+    因此 mock_redact.assert_called_once 失败、svc 收到的是原始明文 prompt = 预期 FAIL（门禁 M1）。
+    """
+    data = ChatStreamRequest(project_id=str(uuid.uuid4()), prompt="使用密钥 sk-abcdefghijklm 测试")
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=False)
+
+    captured_prompts = []
+
+    async def _svc_stream(**kwargs):
+        captured_prompts.append(kwargs.get("prompt"))
+        yield ChatStreamEvent(done=True)
+
+    svc = MagicMock()
+    svc.stream = _svc_stream
+
+    with patch(
+        "inkflow.api.routers.chat_stream.redact_secrets",
+        return_value="使用密钥 sk-**** 测试",
+    ) as mock_redact:
+        resp = await stream_chat(data=data, request=request, svc=svc)
+        frames = [frame async for frame in resp.body_iterator]
+
+    mock_redact.assert_called_once()
+    assert captured_prompts == ["使用密钥 sk-**** 测试"]
+    assert frames  # 脱敏不改变流式出帧行为
