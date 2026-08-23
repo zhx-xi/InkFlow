@@ -433,6 +433,14 @@ export const en: Record<string, string> = {
   'write.detail.relations': 'Agent relations',
   'write.detail.final': 'Final output',
   'write.detail.unknown': 'Unknown',
+  // #599：统一执行视图（链式静态 + agentic 动态双时间线）
+  'write.detail.steps': 'AI steps',
+  'write.detail.stepsEmpty': 'No decision steps yet',
+  'write.detail.toolCall': 'Tool call',
+  'write.detail.run': 'Agent run',
+  'write.detail.workflow': 'Workflow',
+  'write.detail.chain': 'Chain',
+  'write.detail.agentic': 'Agentic',
   // F34 chapter audit (Issue #208)
   'audit.accept': 'Accept',
   'audit.reject': 'Reject',
