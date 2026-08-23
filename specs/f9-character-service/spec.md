@@ -1,11 +1,13 @@
 # F9: 角色管理 (character_service) — 功能规格
 
-> **Spec 版本**: 1.0 | **日期**: 2026-08-01 | **依据**: PRD v2.1 §6.2 P1-01, Constitution P1-P6, ADR-019
+> **Spec 版本**: 1.1 | **日期**: 2026-08-23 | **依据**: PRD v2.1 §6.2 P1-01, Constitution P1-P6, ADR-019
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第一个模块，估算 4-6 人天）
-> **关联 Issues**: [#39](https://github.com/zhx-xi/InkFlow/issues/39)
+> **关联 Issues**: [#39](https://github.com/zhx-xi/InkFlow/issues/39), [#593](https://github.com/zhx-xi/InkFlow/issues/593)（brief 字段）
 > **依赖**: F1 ✅, F2 ✅, F5 ✅（前置）；F6 ✅（数据源集成点，见 §11 与待澄清 Q1）
 > **参考 ADR**: [ADR-001](../../adr/ADR-001.md) (模块化单体), [ADR-002](../../adr/ADR-002.md) (六边形分层), [ADR-003](../../adr/ADR-003.md) (Repository), [ADR-004](../../adr/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/ADR-007v2.md) (包结构), [ADR-010](../../adr/ADR-010.md) (上下文分层), [ADR-012](../../adr/ADR-012.md) (错误处理), [ADR-014](../../adr/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/ADR-016.md) (loguru), [ADR-017](../../adr/ADR-017.md) (CI 门禁), [ADR-018](../../adr/ADR-018.md) (测试分层), [ADR-019](../../adr/ADR-019.md) (版本里程碑)
 > **状态**: ✅ 已实现（PR #56）
+
+> **Spec 变更（v1.1，2026-08-23，issue #593）**: `Character` 新增 **`brief`** 字段（一句话简介，≤500 字符，默认空串）——F6 上下文注入采用「名 + brief」轻量化（D5=A），未填 brief 时 F6 降级截 `personality`。新增于 §2.1 字段表 / §2.5 领域模型 / CharacterCreate / CharacterUpdate，DB 侧列由 `ensure_characters_brief_column` 幂等迁移补齐（§8）。
 
 >
 > **快速导航**（2026-08-08 #201）：
@@ -50,6 +52,7 @@
 | personality | str | NOT NULL, DEFAULT "", ≤ 5000 字符 | 性格描述 |
 | background | str | NOT NULL, DEFAULT "", ≤ 20000 字符 | 背景故事 |
 | goals | str | NOT NULL, DEFAULT "", ≤ 5000 字符 | 目标/动机 |
+| brief | str | NOT NULL, DEFAULT "", ≤ 500 字符 | **v1.1（#593）** 一句话简介（F6 上下文轻量化注入用，名+brief；未填时 F6 降级截 personality） |
 | group_id | UUID? | NULLABLE, FK→character_groups.id (SET NULL), 已索引 | 所属分组（一对一；多对多标签见 §10） |
 | extra | dict[str, Any] | NOT NULL, DEFAULT {} | 扩展字典（外貌/口头禅等 Phase 2+ 字段预留） |
 | is_deleted | bool | NOT NULL, DEFAULT False, 已索引 | 软删除标记 |
@@ -131,6 +134,7 @@ class Character(BaseModel):
     personality: str = ""
     background: str = ""
     goals: str = ""
+    brief: str = ""  # v1.1（#593）：一句话简介，F6 上下文轻量化注入
     group_id: uuid.UUID | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
     is_deleted: bool = False
@@ -145,6 +149,7 @@ class CharacterCreate(BaseModel):
     personality: str = ""
     background: str = ""
     goals: str = ""
+    brief: str = ""  # v1.1（#593）
     group_id: uuid.UUID | None = None
 
     @field_validator("name")
@@ -157,6 +162,15 @@ class CharacterCreate(BaseModel):
             raise ValueError("角色名不能超过 50 个字符")
         return stripped
 
+    @field_validator("brief")
+    @classmethod
+    def validate_brief(cls, v: str) -> str:
+        """v1.1（#593）：brief 去空白, ≤ 500 字符（F6 注入轻量化）. """
+        stripped = v.strip()
+        if len(stripped) > 500:
+            raise ValueError("角色简介不能超过 500 个字符")
+        return stripped
+
 
 class CharacterUpdate(BaseModel):
     """更新角色请求 DTO — 所有字段可选（exclude_unset 语义，同 F1）.
@@ -167,6 +181,7 @@ class CharacterUpdate(BaseModel):
     personality: str | None = None
     background: str | None = None
     goals: str | None = None
+    brief: str | None = None  # v1.1（#593）
     group_id: uuid.UUID | None = None
 
     # name 复用 CharacterCreate.validate_name 的校验逻辑（None 时直接返回）

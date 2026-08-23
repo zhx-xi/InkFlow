@@ -19,6 +19,7 @@ from inkflow.domain.models.context import (
     ContextBlock,
     ContextItem,
     ContextLayer,
+    ContextOverride,
     ContextRequest,
     ContextSourceType,
     DroppedItem,
@@ -92,6 +93,7 @@ class ContextService:
         for source_type, source in self._sources.items():
             try:
                 items = await source.collect(request.project_id, request.chapter_id)
+                items = _apply_override(items, source_type, request.override)
                 layer = SOURCE_LAYER[source_type]
                 all_items[layer].extend(items)
             except Exception:
@@ -278,6 +280,44 @@ class ContextService:
 
 
 # ── 辅助 ────────────────────────────────────────────────────────────
+
+
+def _apply_override(
+    items: list[ContextItem],
+    source_type: ContextSourceType,
+    override: ContextOverride | None,
+) -> list[ContextItem]:
+    """override 通道过滤 — 只过滤 character_setting / foreshadowing 两类来源.
+
+    - override.character_ids 非空 → 仅保留 metadata.character_id 命中的角色 item
+    - override.foreshadowing_ids 非空 → 仅保留 metadata.foreshadowing_id 命中的伏笔 item
+    - override 为 None / 列表为空 / 其他来源 → 原样返回（不过滤）
+
+    Args:
+        items: 数据源产出的上下文条目.
+        source_type: 数据源类型.
+        override: 显式勾选通道（v1.1 #593）.
+
+    Returns:
+        过滤后的上下文条目列表.
+    """
+    if override is None:
+        return items
+    if source_type == ContextSourceType.CHARACTER_SETTING and override.character_ids:
+        allowed = {str(i) for i in override.character_ids}
+        return [
+            item
+            for item in items
+            if str(item.metadata.get("character_id", "")) in allowed
+        ]
+    if source_type == ContextSourceType.FORESHADOWING and override.foreshadowing_ids:
+        allowed = {str(i) for i in override.foreshadowing_ids}
+        return [
+            item
+            for item in items
+            if str(item.metadata.get("foreshadowing_id", "")) in allowed
+        ]
+    return items
 
 
 async def _char_count(text: str, _model: str = "") -> int:

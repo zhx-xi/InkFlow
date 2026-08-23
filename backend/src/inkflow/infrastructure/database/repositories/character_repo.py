@@ -57,6 +57,7 @@ def _char_orm_to_domain(orm: CharacterORM) -> Character:
         personality=orm.personality,
         background=orm.background,
         goals=orm.goals,
+        brief=orm.brief,
         group_id=_int_to_uuid(orm.group_id),
         extra=orm.extra or {},
         created_at=orm.created_at,
@@ -72,6 +73,7 @@ def _char_domain_to_orm(domain: Character) -> CharacterORM:
         personality=domain.personality,
         background=domain.background,
         goals=domain.goals,
+        brief=domain.brief,
         group_id=_uuid_to_int(domain.group_id) if domain.group_id is not None else None,
         extra=domain.extra,
     )
@@ -207,6 +209,7 @@ class SQLiteCharacterRepository:
                 personality=character.personality,
                 background=character.background,
                 goals=character.goals,
+                brief=character.brief,
                 group_id=(
                     _uuid_to_int(character.group_id) if character.group_id is not None else None
                 ),

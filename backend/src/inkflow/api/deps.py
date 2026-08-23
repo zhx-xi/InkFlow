@@ -347,7 +347,7 @@ def _collect_explicit_texts(db: AsyncSession):
 def get_context_service(
     db: AsyncSession,
 ) -> ContextService:
-    """获取 ContextService 实例（Phase 1 空实现：Character/World/Foreshadowing 数据源为空，
+    """获取 ContextService 实例（#593：Character/World/Outline 数据源接真实表，
     Mock count_tokens 生产环境由 F5 LLMClient.count_tokens 替换）."""
     from inkflow.core.config import config
     from inkflow.domain.models.context import ContextSourceType
@@ -355,7 +355,7 @@ def get_context_service(
     from inkflow.infrastructure.context.sources import (
         CharacterSettingSource,
         ForeshadowingSource,
-        ProjectConfigOutlineSource,
+        OutlineSource,
         WorldSettingSource,
     )
     from inkflow.infrastructure.context.summary_background_refresh import (
@@ -396,9 +396,9 @@ def get_context_service(
     pref_source._audit = _preference_pending_audit
 
     sources: dict[ContextSourceType, ContextSourceProtocol] = {
-        ContextSourceType.OUTLINE: ProjectConfigOutlineSource(project_repo),
-        ContextSourceType.CHARACTER_SETTING: CharacterSettingSource(),
-        ContextSourceType.WORLD_SETTING: WorldSettingSource(),
+        ContextSourceType.OUTLINE: OutlineSource(SQLiteOutlineRepository(db)),
+        ContextSourceType.CHARACTER_SETTING: CharacterSettingSource(SQLiteCharacterRepository(db)),
+        ContextSourceType.WORLD_SETTING: WorldSettingSource(SQLiteWorldRepository(db)),
         ContextSourceType.FORESHADOWING: ForeshadowingSource(SQLiteForeshadowingRepository(db)),
         ContextSourceType.PREFERENCE: pref_source,
     }

@@ -771,9 +771,11 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
   });
 
   it('#389 分类可新建：点新建分类 → 输入 name → POST /world-categories → chips 出现', async () => {
-    // 状态化分类 mock：POST 追加 + GET 读取（刷新后 chips 出现）
-    const categories: Array<{ id: string; name: string; count: number }> = [];
+    mockMapWorkbench(worldTree, []);
+    // ⚠️ 顺序：先 mockMapWorkbench（基础 world/projects/maps mock），再叠加分类 mock（覆盖 world-categories）——
+    //    分类 POST/GET 端点 mockMapWorkbench 不处理，须在其后设置才能命中（baseImpl = mockMapWorkbench 实现）。
     const baseImpl = apiFetchMock.getMockImplementation();
+    const categories: Array<{ id: string; name: string; count: number }> = [];
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
       if (path === '/api/v1/projects/p1/world-categories' && init?.method === 'POST') {
         const cat = { id: `wc${categories.length + 1}`, name: (init.body as { name: string }).name, count: 0 };
@@ -785,14 +787,15 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
       }
       return baseImpl!(path, init);
     });
-    mockMapWorkbench(worldTree, []);
     renderLibrary();
     const user = userEvent.setup();
     await user.click(screen.getByRole('tab', { name: '世界观' }));
+    // 非空态（w1 顶层存在）→ library-list 渲染；world-cat-add（新建分类实体）恒显示
     await screen.findByTestId('library-list');
+    expect(screen.getByTestId('world-cat-add')).toBeInTheDocument();
     // 初始无「势力」分类 chip
     expect(screen.queryByTestId('world-cat-filter-势力')).not.toBeInTheDocument();
-    // 新建分类按钮 → 对话框 → 输入 → 保存
+    // 新建分类按钮 → 对话框（WorldCategoryDialog）→ 输入 → 保存
     await user.click(screen.getByTestId('world-cat-add'));
     const nameInput = await screen.findByTestId('world-cat-name');
     await user.type(nameInput, '势力');

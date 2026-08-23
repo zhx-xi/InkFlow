@@ -1,11 +1,10 @@
-"""上下文数据源实现 — 收集各数据源产出的 ContextItem.
+"""上下文数据源实现 — 收集各数据源产出的 ContextItem（issue #593 F6 数据源补齐）.
 
-Phase 1:
-    - ProjectConfigOutlineSource: 从 project.config.extra["outline"] 读取大纲
-    - CharacterSettingSource / WorldSettingSource: 空实现，
-      机制与注入格式先行，待 F9/F10 落地后替换
-
-Phase 2:
+    - OutlineSource: 从 outlines 表读取大纲（overall→volume→chapter 三级，缺级降级；
+      旧 ProjectConfigOutlineSource 读取 project.config.extra["outline"] 已移除）
+    - CharacterSettingSource: 从 characters 表读取角色（名 + brief 轻量化，D5=A；
+      brief 未填降级 personality）
+    - WorldSettingSource: 从 world_settings 表读取世界观条目
     - ForeshadowingSource: 已由 F13（伏笔管理）实现 — 注入未回收伏笔提醒
       （ADR-019 编号口径：F13=伏笔管理，F14=统一提取）
 
@@ -17,53 +16,114 @@ from __future__ import annotations
 
 import uuid
 
+from inkflow.domain.models.character import Character
 from inkflow.domain.models.context import ContextItem, ContextSourceType
 from inkflow.domain.models.foreshadowing import Foreshadowing
+from inkflow.domain.models.world import WorldSetting
+from inkflow.domain.ports.character_repository import CharacterRepositoryProtocol
 from inkflow.domain.ports.foreshadowing_repository import ForeshadowingRepositoryProtocol
-from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
+from inkflow.domain.ports.outline_repository import OutlineRepositoryProtocol
+from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
+
+_LEVEL_ORDER = {"overall": 0, "volume": 1, "chapter": 2}
+_LEVEL_LABEL = {"overall": "总体", "volume": "卷", "chapter": "章"}
 
 
-class ProjectConfigOutlineSource:
-    """大纲数据源 — 读取 project.config.extra["outline"].
+class OutlineSource:
+    """大纲数据源 — 从 outlines 表读取大纲（overall→volume→chapter 三级，缺级降级）.
 
     Args:
-        project_repo: 项目仓储（get 接受 int 主键，域内 UUID 以 project_id.int 转换）.
+        outline_repo: 大纲仓储（list 接受 int 主键，域内 UUID 以 project_id.int 转换）.
     """
 
-    def __init__(self, project_repo: ProjectRepositoryProtocol) -> None:
-        self._project_repo = project_repo
+    def __init__(self, outline_repo: OutlineRepositoryProtocol) -> None:
+        self._outline_repo = outline_repo
 
     async def collect(self, project_id: uuid.UUID, chapter_id: uuid.UUID) -> list[ContextItem]:
-        """收集大纲条目；项目不存在或大纲缺失/为空 → 空列表（跳过，不报错）."""
-        project = await self._project_repo.get(project_id.int)
-        if project is None:
+        """收集大纲条目；项目无大纲 → 空列表（跳过，不报错）.
+
+        按 level（overall→volume→chapter）再 sort_order 排序，合并渲染为单个条目。
+        """
+        outlines, _total = await self._outline_repo.list(project_id.int)
+        if not outlines:
             return []
-        outline = project.config.extra.get("outline")
-        if not outline:
-            return []
+        ordered = sorted(outlines, key=lambda o: (_LEVEL_ORDER[o.level], o.sort_order))
+        content = "\n".join(
+            f"{_LEVEL_LABEL[o.level]}：{o.name} —— {o.description}" for o in ordered
+        )
         return [
             ContextItem(
                 source=ContextSourceType.OUTLINE,
                 title="大纲",
-                content=outline,
+                content=content,
+                metadata={"outline_ids": [str(o.id) for o in outlines]},
             )
         ]
 
 
 class CharacterSettingSource:
-    """角色设定数据源 — Phase 1 空实现."""
+    """角色设定数据源 — 从 characters 表读角色（D5=A：名 + brief 轻量化注入）.
+
+    Args:
+        character_repo: 角色仓储（list 接受 int 主键，域内 UUID 以 project_id.int 转换）.
+    """
+
+    def __init__(self, character_repo: CharacterRepositoryProtocol) -> None:
+        self._character_repo = character_repo
 
     async def collect(self, project_id: uuid.UUID, chapter_id: uuid.UUID) -> list[ContextItem]:
-        # TODO: Phase 2: F8 角色设定数据源
-        return []
+        """收集项目全部角色的设定条目；项目无角色 → 空列表（跳过，不报错）."""
+        chars, _total = await self._character_repo.list(project_id.int)
+        return [
+            ContextItem(
+                source=ContextSourceType.CHARACTER_SETTING,
+                title=f"角色：{c.name}",
+                content=_render_character(c),
+                metadata={"character_id": str(c.id)},
+            )
+            for c in chars
+        ]
+
+
+def _render_character(c: Character) -> str:
+    """角色注入文本确定性模板 — 名 + brief 轻量化（D5=A）.
+
+    brief 非空 → 「名：brief」；brief 为空降级 personality；
+    两者皆空 → 仅角色名（避免空内容条目）。
+    """
+    summary = c.brief if c.brief else (c.personality or c.name)
+    if summary == c.name:
+        return c.name
+    return f"{c.name}：{summary}"
 
 
 class WorldSettingSource:
-    """世界设定数据源 — Phase 1 空实现."""
+    """世界设定数据源 — 从 world_settings 表读条目.
+
+    Args:
+        world_repo: 世界观仓储（list 接受 int 主键，域内 UUID 以 project_id.int 转换）.
+    """
+
+    def __init__(self, world_repo: WorldRepositoryProtocol) -> None:
+        self._world_repo = world_repo
 
     async def collect(self, project_id: uuid.UUID, chapter_id: uuid.UUID) -> list[ContextItem]:
-        # TODO: Phase 2: F9 世界设定数据源
-        return []
+        """收集项目全部世界观条目；项目无条目 → 空列表（跳过，不报错）."""
+        settings, _total = await self._world_repo.list(project_id.int)
+        return [
+            ContextItem(
+                source=ContextSourceType.WORLD_SETTING,
+                title=f"世界观：{w.name}",
+                content=_render_world(w),
+                metadata={"world_setting_id": str(w.id), "category": w.category},
+            )
+            for w in settings
+        ]
+
+
+def _render_world(w: WorldSetting) -> str:
+    """世界观条目注入文本确定性模板 — 「名：内容」（content 可为空，仍保留冒号）."""
+    return f"{w.name}：{w.content}"
 
 
 class ForeshadowingSource:

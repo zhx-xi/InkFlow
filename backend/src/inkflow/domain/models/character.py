@@ -90,6 +90,7 @@ class Character(BaseModel):
         personality: 性格描述.
         background: 背景设定.
         goals: 目标/动机.
+        brief: 一句话简介（F6 上下文轻量化注入用，未填时降级 personality）.
         group_id: 所属角色分组 UUID（None 表示未分组）.
         extra: 扩展属性字典.
         created_at: 创建时间.
@@ -104,6 +105,7 @@ class Character(BaseModel):
     personality: str = ""
     background: str = ""
     goals: str = ""
+    brief: str = ""  # v1.1（#593）：一句话简介，F6 上下文轻量化注入
     group_id: uuid.UUID | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
@@ -119,6 +121,7 @@ class CharacterCreate(BaseModel):
         personality: 性格描述，默认为空串.
         background: 背景设定，默认为空串.
         goals: 目标/动机，默认为空串.
+        brief: 一句话简介，默认为空串，≤ 500 字符（去空白）.
         group_id: 所属角色分组 UUID（None 表示未分组）.
         extra: 扩展属性字典（如 role_rank/groups），默认为空 dict.
     """
@@ -128,6 +131,7 @@ class CharacterCreate(BaseModel):
     personality: str = ""
     background: str = ""
     goals: str = ""
+    brief: str = ""
     group_id: uuid.UUID | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
 
@@ -136,6 +140,15 @@ class CharacterCreate(BaseModel):
     def validate_name(cls, v: str) -> str:
         """验证角色名：去空白后非空且不超过 50 字符."""
         return _validate_name(v)
+
+    @field_validator("brief")
+    @classmethod
+    def validate_brief(cls, v: str) -> str:
+        """v1.1（#593）：brief 去空白且不超过 500 字符（F6 注入轻量化）."""
+        stripped = v.strip()
+        if len(stripped) > 500:
+            raise ValueError("角色简介不能超过 500 个字符")
+        return stripped
 
 
 class CharacterUpdate(BaseModel):
@@ -150,6 +163,7 @@ class CharacterUpdate(BaseModel):
     personality: str | None = None
     background: str | None = None
     goals: str | None = None
+    brief: str | None = None  # v1.1（#593）
     group_id: uuid.UUID | None = None
     extra: dict[str, Any] | None = None
 

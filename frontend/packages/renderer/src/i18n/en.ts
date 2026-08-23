@@ -55,6 +55,7 @@ export const en: Record<string, string> = {
   // F36 (#196): library category manual-create dialog
   'lib.create.title.characters': 'Create Character',
   'lib.create.title.world': 'Create World',
+  'lib.create.title.worldCategory': 'Create Category',
   'lib.create.title.outline': 'Create Outline',
   'lib.create.title.timeline': 'Create Timeline Event',
   'lib.create.title.foreshadow': 'Create Foreshadowing',
@@ -88,6 +89,7 @@ export const en: Record<string, string> = {
   'lib.worldCat.add': 'New Category',
   'lib.worldCat.name': 'Category name',
   'lib.worldCat.nameEmpty': 'Category name is required',
+  'lib.worldNode.childCount': '{count} children',
   'lib.copy.title': 'Copy to Project',
   'lib.copy.scope': 'Copy scope',
   'lib.copy.scope.subtree': 'Self + all children',
