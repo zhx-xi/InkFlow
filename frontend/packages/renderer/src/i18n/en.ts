@@ -389,6 +389,13 @@ export const en: Record<string, string> = {
   'write.toolbar.generate': 'Generate',
   'write.toolbar.save': 'Save',
   'write.toolbar.audit': 'Audit',
+  // #598: project-level auto-write switch (right of the execution-detail toggle)
+  'write.toolbar.autoToggle': 'Auto write',
+  'write.autoAuth.title': 'Enable auto writing?',
+  'write.autoAuth.body':
+    'Auto writing plans, writes, self-reviews, and revises autonomously — a high-risk action. You can turn it off anytime next to the execution details.',
+  'write.autoAuth.confirm': 'Authorize',
+  'write.autoAuth.cancel': 'Cancel',
   'write.context.title': 'Context',
   'write.context.collapse': 'Collapse',
   'write.context.characters': 'Characters',

@@ -44,6 +44,8 @@ export interface ProjectConfig {
   extra?: Record<string, number | string | boolean>;
   /** #343：Supervisor/HITL 项目级配置（hitl_roles 非空时管线以 supervisor 模式执行，命中角色前中断等确认） */
   supervisor?: { hitl_roles?: string[] } | null;
+  /** #598：项目级「是否全自动」开关（D9-a1，与 supervisor 同层；默认 false=AI 自动化默认关闭） */
+  auto_write_enabled?: boolean;
 }
 
 export interface NewProjectInput {
