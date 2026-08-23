@@ -154,6 +154,7 @@ class OutlineCreateBody(BaseModel):
     level: str = "chapter"  # F43 P3：overall/volume/chapter
     parent_id: uuid.UUID | None = None  # F43 P3：父大纲
     chapter_id: uuid.UUID | None = None  # F43 P3：关联写作章节（仅 chapter）
+    volume_id: uuid.UUID | None = None  # 仅 level=volume 可设
 
     @field_validator("name")
     @classmethod
@@ -185,15 +186,21 @@ async def create_outline(
     """创建大纲（spec §3.2）。"""
     pid = _parse_id(project_id, detail="项目不存在")
     svc = _get_svc(db)
+    create_kwargs: dict[str, Any] = {
+        "level": data.level,
+        "parent_id": data.parent_id,
+        "chapter_id": data.chapter_id,
+    }
+    if data.volume_id is not None:
+        # 仅在显式提供时透传（None 即服务默认值，保持既有精确签名契约）
+        create_kwargs["volume_id"] = data.volume_id
     outline = await _run_service(
         svc.create_outline(
             pid,
             data.name,
             data.description,
             data.sort_order,
-            level=data.level,
-            parent_id=data.parent_id,
-            chapter_id=data.chapter_id,
+            **create_kwargs,
         )
     )
     return outline.model_dump(mode="json")
@@ -229,6 +236,17 @@ async def list_outlines(
         item["point_count"] = len(points)
         items.append(item)
     return {"items": items, "total": total, "offset": offset, "limit": limit}
+
+
+@router.get("/outlines/by-volume/{volume_id}")
+async def get_outline_by_volume(volume_id: str, db: AsyncSession = Depends(get_db)):
+    """解析当前卷 -> 关联卷纲（level=volume）；无关联 -> 404."""
+    vid = _parse_id(volume_id, detail="卷不存在")
+    svc = _get_svc(db)
+    outline = await _run_service(svc.get_volume_outline(vid))
+    if outline is None:
+        raise HTTPException(status_code=404, detail="卷纲不存在")
+    return outline.model_dump(mode="json")
 
 
 @router.get("/outlines/{outline_id}")

@@ -54,6 +54,11 @@ class OutlineORM(Base):
             "name",
             unique=True,
         ),
+        Index(
+            "uq_outlines_volume_id",
+            "volume_id",
+            unique=True,
+        ),
     )
     """项目内大纲名唯一（v1.1 全唯一索引，spec §2.4）."""
 
@@ -114,6 +119,15 @@ class OutlineORM(Base):
         index=True,
     )
     """关联写作章节（仅 level=chapter 可设；章节删除置 NULL，已索引，F43 P3）."""
+
+    volume_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("volumes.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    """关联写作卷（仅 level=volume 可设；卷删除置 NULL；唯一索引保证
+    一卷一纲，F43 P3 镜像 chapter_id）."""
 
     extra: Mapped[dict] = mapped_column(
         LenientJSON(fallback={}),

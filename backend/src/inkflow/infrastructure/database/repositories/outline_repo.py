@@ -60,6 +60,7 @@ def _outline_orm_to_domain(orm: OutlineORM) -> Outline:
         level=orm.level,
         parent_id=_int_to_uuid(orm.parent_id),
         chapter_id=_int_to_uuid(orm.chapter_id),
+        volume_id=_int_to_uuid(orm.volume_id),
         extra=orm.extra or {},
         created_at=orm.created_at,
         updated_at=orm.updated_at,
@@ -76,6 +77,7 @@ def _outline_domain_to_orm(domain: Outline) -> OutlineORM:
         level=domain.level,
         parent_id=_uuid_to_int(domain.parent_id) if domain.parent_id is not None else None,
         chapter_id=_uuid_to_int(domain.chapter_id) if domain.chapter_id is not None else None,
+        volume_id=_uuid_to_int(domain.volume_id) if domain.volume_id is not None else None,
         extra=domain.extra,
     )
 
@@ -165,6 +167,20 @@ class SQLiteOutlineRepository:
         orm = result.scalar_one_or_none()
         return _outline_orm_to_domain(orm) if orm else None
 
+    async def get_outline_by_volume(
+        self, volume_id: int, exclude_outline_id: int | None = None
+    ) -> Outline | None:
+        """按 volume_id 查关联卷纲（level=volume）；exclude_outline_id 排除自身."""
+        stmt = select(OutlineORM).where(
+            OutlineORM.volume_id == volume_id,
+            OutlineORM.level == "volume",
+        )
+        if exclude_outline_id is not None:
+            stmt = stmt.where(OutlineORM.id != exclude_outline_id)
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
+        return _outline_orm_to_domain(orm) if orm else None
+
     async def list(
         self,
         project_id: int,
@@ -215,6 +231,9 @@ class SQLiteOutlineRepository:
                 else None,
                 chapter_id=_uuid_to_int(outline.chapter_id)
                 if outline.chapter_id is not None
+                else None,
+                volume_id=_uuid_to_int(outline.volume_id)
+                if outline.volume_id is not None
                 else None,
                 extra=outline.extra,
                 updated_at=_utcnow(),

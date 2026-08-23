@@ -123,6 +123,7 @@ class Outline(BaseModel):
     level: str = "chapter"  # F43 P3：overall/volume/chapter
     parent_id: uuid.UUID | None = None  # F43 P3：父大纲
     chapter_id: uuid.UUID | None = None  # F43 P3：关联写作章节（仅 chapter 可设）
+    volume_id: uuid.UUID | None = None  # 卷关联（仅 level=volume 可设；本 spec #592）
     extra: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
@@ -208,6 +209,7 @@ class OutlineCreate(BaseModel):
     level: str = "chapter"
     parent_id: uuid.UUID | None = None
     chapter_id: uuid.UUID | None = None
+    volume_id: uuid.UUID | None = None  # 仅 level=volume 可设
 
     @field_validator("name")
     @classmethod
@@ -252,6 +254,7 @@ class OutlineUpdate(BaseModel):
     level: str | None = None
     parent_id: uuid.UUID | str | None = None  # str "" = 清除父大纲
     chapter_id: uuid.UUID | str | None = None  # str "" = 清除章关联
+    volume_id: uuid.UUID | str | None = None  # str "" = 清除卷关联
 
     @field_validator("name")
     @classmethod
