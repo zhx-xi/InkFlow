@@ -19,11 +19,10 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from inkflow.core.database import Base
-from inkflow.domain.models.project import Genre, Project, ProjectConfig
+from inkflow.domain.models.project import Project, ProjectConfig
 from inkflow.infrastructure.database.repositories.project_repo import (
     SQLiteProjectRepository,
     _get_config_dict,
-    _get_genre_str,
 )
 
 
@@ -71,19 +70,19 @@ class TestProjectRepositoryCoverageGaps:
         """add 落库并返回领域对象；get 按 int 主键读回，字段映射正确."""
         repo = SQLiteProjectRepository(db_session)
         saved = await repo.add(
-            _project("测试项目", genre=Genre.XUANHUAN, target_words=100000, language="zh-CN")
+            _project("测试项目", tags=["玄幻"], target_words=100000, language="zh-CN")
         )
 
         assert isinstance(saved.id, uuid.UUID)
         assert saved.name == "测试项目"
-        assert saved.genre == Genre.XUANHUAN
+        assert saved.tags == ["玄幻"]
         assert saved.target_words == 100000
         assert saved.is_deleted is False
 
         got = await repo.get(saved.id.int)
         assert got is not None
         assert got.id == saved.id
-        assert got.genre == Genre.XUANHUAN
+        assert got.tags == ["玄幻"]
         assert got.config.model is None  # #520: ProjectConfig 默认 model=None
 
     # ── _get_config_dict 兜底 ──
@@ -121,13 +120,6 @@ class TestProjectRepositoryCoverageGaps:
 
     # ── 其余行补齐（原由 api/integration 测试覆盖，本 worktree 只有 unit） ──
 
-    def test_get_genre_str_fallback(self):
-        """_get_genre_str：Genre 枚举取 value；字符串直通；空值回退「其他」."""
-        assert _get_genre_str(Genre.WUXIA) == "武侠"
-        assert _get_genre_str("科幻") == "科幻"
-        assert _get_genre_str("") == "其他"
-        assert _get_genre_str(None) == "其他"
-
     async def test_get_missing_returns_none(self, db_session):
         """get 对不存在的 id 返回 None."""
         repo = SQLiteProjectRepository(db_session)
@@ -163,11 +155,11 @@ class TestProjectRepositoryCoverageGaps:
         created = await repo.add(_project("旧名"))
 
         updated = await repo.update(
-            created.model_copy(update={"name": "新名", "genre": Genre.KEHUAN})
+            created.model_copy(update={"name": "新名", "tags": ["科幻"]})
         )
         assert updated.id == created.id
         assert updated.name == "新名"
-        assert updated.genre == Genre.KEHUAN
+        assert updated.tags == ["科幻"]
         assert updated.updated_at >= created.updated_at
 
         got = await repo.get(created.id.int)

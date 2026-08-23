@@ -360,7 +360,7 @@ describe('BookPlannerPanel — 阶段2 上限配置 + 409 安全阀文案（spec
   const projectP1: Project = {
     id: 'p1',
     name: '时间旅者',
-    genre: '悬疑',
+    tags: ['悬疑'],
     language: 'zh',
     target_words: 800000,
     config: { extra: { book_max_chapters: 5, book_max_tokens: 200000 } },
@@ -525,7 +525,7 @@ describe('BookPlannerPanel — 项目选择 + 起点模板 + 源大纲（#544）
   const projectP1: Project = {
     id: 'p1',
     name: '时间旅者',
-    genre: '悬疑',
+    tags: ['悬疑'],
     language: 'zh',
     target_words: 800000,
     config: {},
@@ -535,7 +535,7 @@ describe('BookPlannerPanel — 项目选择 + 起点模板 + 源大纲（#544）
   const projectP2: Project = {
     id: 'p2',
     name: '星际拓荒',
-    genre: '科幻',
+    tags: ['科幻'],
     language: 'zh',
     target_words: 600000,
     config: {},
@@ -545,7 +545,7 @@ describe('BookPlannerPanel — 项目选择 + 起点模板 + 源大纲（#544）
   const projectP3: Project = {
     id: 'p3',
     name: '雾都侦探',
-    genre: '推理',
+    tags: ['推理'],
     language: 'zh',
     target_words: 500000,
     config: {},

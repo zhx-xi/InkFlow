@@ -1,4 +1,4 @@
-/** 项目卡片（spec §4.2.2 + F43 §5.5）：书名/题材/目标字数/章节进度/相对更新时间/进度条/写作中标记 + 卡片菜单 */
+/** 项目卡片（spec §4.2.2 + F43 §5.5）：书名/标签/目标字数/章节进度/相对更新时间/进度条/写作中标记 + 卡片菜单 */
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { MoreHorizontal } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
@@ -154,7 +154,8 @@ export function ProjectCard({ project, progress, isCurrent, onClick, onRename, o
       </div>
       <h3 className="font-serif text-[18px] font-semibold">{project.name}</h3>
       <div className="mt-3 space-y-1 text-[13px] text-ink-2">
-        <div>{project.genre}</div>
+        {/* #595：标签全拼展示（逗号分隔）；空标签不渲染该行 */}
+        {project.tags.length > 0 && <div>{project.tags.join('，')}</div>}
         <div>{project.target_words.toLocaleString('zh-CN')}</div>
         <div>{progressLabel}</div>
         <div className="text-ink-3">{relativeTime(project.updated_at, t)}</div>

@@ -40,7 +40,7 @@ from inkflow.domain.models.output import (
     BookSetting,
     BookVolume,
 )
-from inkflow.domain.models.project import Genre, Project
+from inkflow.domain.models.project import Project
 from inkflow.domain.models.timeline import TimelineEvent
 from inkflow.domain.models.world import WorldSetting
 from inkflow.domain.ports.chapter_repository import ChapterRepositoryProtocol
@@ -240,8 +240,8 @@ class ExportService:
         ]
 
     def _assemble_meta(self, project: Project) -> BookMeta:
-        """Project → BookMeta 字段映射（genre 枚举 → 中文字面量）."""
-        genre = project.genre.value if isinstance(project.genre, Genre) else str(project.genre)
+        """Project → BookMeta 字段映射（genre 字段名保留，值从 tags 全拼派生）."""
+        genre = " ".join(project.tags)
         return BookMeta(
             title=project.name,
             genre=genre,

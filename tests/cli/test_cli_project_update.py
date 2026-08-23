@@ -4,7 +4,7 @@
 
 HTTP 契约（实现者以本文件为准，project.py PATCH 端点 + project_service 合并语义）:
 - update → PATCH /projects/{id}
-  - 顶层字段: name/genre/language/target_words（exclude_unset 浅合并）
+  - 顶层字段: name/tags/language/target_words（exclude_unset 浅合并）
   - config 字段级: body {"config": {字段...}}（服务层 model_copy 合并，字段级生效）
   - 三态（#225）: "null" → None（关闭）/ "__default__" → sentinel（跟随默认）/
     字符串（provider/model 指定模型）；数字值 → int/float；JSON 数组/对象解析
@@ -73,7 +73,7 @@ def _make_project(**overrides) -> dict:
     defaults = dict(
         id="1",
         name="星辰变",
-        genre="玄幻",
+        tags=["玄幻"],
         language="zh-CN",
         target_words=100000,
         config={
@@ -151,19 +151,19 @@ class TestProjectUpdateBasic:
         assert result.exit_code == 0
         assert "新书名" in result.output
 
-    def test_update_genre(self, cli_runner, fake_http_client):
-        """--genre 中文枚举值 → 原样进 body."""
+    def test_update_tags(self, cli_runner, fake_http_client):
+        """--tags 多值标签 → 原样进 body."""
         from inkflow.cli.commands.project import app
 
-        fake_http_client.patch.return_value = _make_project(genre="科幻")
+        fake_http_client.patch.return_value = _make_project(tags=["科幻"])
         result = cli_runner.invoke(
             app,
-            ["update", "--id", "1", "--genre", "科幻"],
+            ["update", "--id", "1", "--tags", "科幻"],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
         call = fake_http_client.patch.await_args
-        assert call.kwargs["json"] == {"genre": "科幻"}
+        assert call.kwargs["json"] == {"tags": ["科幻"]}
 
     def test_update_language(self, cli_runner, fake_http_client):
         """--language 透传进 body."""

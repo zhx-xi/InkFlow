@@ -6,7 +6,6 @@ prompt 模板渲染无错、输出可落回 WritingResult。断言宽松（非�
 
 import pytest
 
-from inkflow.domain.models.project import Genre
 from inkflow.domain.models.writing import WritingRequest
 from inkflow.domain.services.chapter_service import ChapterService
 from inkflow.domain.services.project_service import ProjectService
@@ -29,7 +28,7 @@ async def test_writing_generate_real(db_session, llm_env):
     # —— 勿自行构造 uuid4()：128 位 int 超出 SQLite INTEGER 范围）
     project_svc = ProjectService(db_session)
     project = await project_svc.create_project(
-        name="e2e-ai-测试", genre=Genre.KEHUAN, language="zh-CN", target_words=50000
+        name="e2e-ai-测试", tags=["科幻"], language="zh-CN", target_words=50000
     )
     project_id = project.id
 

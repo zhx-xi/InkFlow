@@ -21,7 +21,7 @@ class ManageProjectParams(BaseModel):
     action: Literal["create", "list", "get", "update", "delete", "restore"]
     id: str | None = None
     name: str | None = None
-    genre: str | None = None
+    tags: list[str] | None = None
     language: str | None = None
     target_words: int | None = None
     search: str | None = None

@@ -29,7 +29,7 @@ from fastapi.testclient import TestClient
 
 from inkflow.api.app import app
 from inkflow.domain.models.agent_template import AgentTemplate, RoleTemplate
-from inkflow.domain.models.project import Genre, Project, ProjectConfig
+from inkflow.domain.models.project import Project, ProjectConfig
 from inkflow.domain.ports.agent_template_errors import (
     AgentTemplateBuiltinError,
     AgentTemplateNameConflictError,
@@ -57,7 +57,7 @@ def _project(project_id: int, name: str, template_id: str | None) -> Project:
     return Project(
         id=uuid.UUID(int=project_id),
         name=name,
-        genre=Genre.QITA,
+        tags=[],
         language="zh-CN",
         target_words=0,
         config=ProjectConfig(template_id=template_id),

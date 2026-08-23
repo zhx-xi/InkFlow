@@ -91,7 +91,7 @@ def fake_http_client():
             item = {
                 "id": item_id,
                 "name": data.get("name", ""),
-                "genre": data.get("genre", "其他"),
+                "tags": data.get("tags", []),
                 "language": data.get("language", "zh-CN"),
                 "target_words": data.get("target_words", 0),
                 "is_deleted": False,
@@ -136,7 +136,7 @@ def fake_http_client():
 @pytest.mark.project
 def test_create_output(fake_http_client):
     result = runner.invoke(
-        app, ["project", "create", "--name", "测试小说", "--genre", "玄幻"]
+        app, ["project", "create", "--name", "测试小说", "--tags", "玄幻"]
     )
     assert result.exit_code == 0, result.output
     assert "✅" in result.output
@@ -146,7 +146,7 @@ def test_create_output(fake_http_client):
 @pytest.mark.project
 def test_create_json_output(fake_http_client):
     result = runner.invoke(
-        app, ["--json", "project", "create", "--name", "星辰", "--genre", "科幻"]
+        app, ["--json", "project", "create", "--name", "星辰", "--tags", "科幻"]
     )
     assert result.exit_code == 0, result.output
     data = _parse_json_output(result.output)
@@ -175,8 +175,8 @@ def test_list_empty(fake_http_client):
 
 @pytest.mark.project
 def test_list_with_projects(fake_http_client):
-    runner.invoke(app, ["project", "create", "--name", "A项目", "--genre", "玄幻"])
-    runner.invoke(app, ["project", "create", "--name", "B项目", "--genre", "科幻"])
+    runner.invoke(app, ["project", "create", "--name", "A项目", "--tags", "玄幻"])
+    runner.invoke(app, ["project", "create", "--name", "B项目", "--tags", "科幻"])
     result = runner.invoke(app, ["project", "list"])
     assert result.exit_code == 0
     assert "2 个项目" in result.output
@@ -185,7 +185,7 @@ def test_list_with_projects(fake_http_client):
 
 @pytest.mark.project
 def test_list_json_output(fake_http_client):
-    runner.invoke(app, ["project", "create", "--name", "唯一", "--genre", "悬疑"])
+    runner.invoke(app, ["project", "create", "--name", "唯一", "--tags", "悬疑"])
     result = runner.invoke(app, ["--json", "project", "list"])
     assert result.exit_code == 0
     data = _parse_json_output(result.output)
@@ -194,8 +194,8 @@ def test_list_json_output(fake_http_client):
 
 @pytest.mark.project
 def test_list_search(fake_http_client):
-    runner.invoke(app, ["project", "create", "--name", "玄幻大作", "--genre", "玄幻"])
-    runner.invoke(app, ["project", "create", "--name", "科幻巨作", "--genre", "科幻"])
+    runner.invoke(app, ["project", "create", "--name", "玄幻大作", "--tags", "玄幻"])
+    runner.invoke(app, ["project", "create", "--name", "科幻巨作", "--tags", "科幻"])
     result = runner.invoke(app, ["--json", "project", "list", "--search", "科幻"])
     data = _parse_json_output(result.output)
     assert len(data) == 1
@@ -207,7 +207,7 @@ def test_list_search(fake_http_client):
 
 @pytest.mark.project
 def test_get_existing(fake_http_client):
-    runner.invoke(app, ["project", "create", "--name", "详情测试", "--genre", "仙侠"])
+    runner.invoke(app, ["project", "create", "--name", "详情测试", "--tags", "仙侠"])
     result = runner.invoke(app, ["project", "get", "--id", "1"])
     assert result.exit_code == 0, result.output
     assert "详情测试" in result.output
@@ -215,7 +215,7 @@ def test_get_existing(fake_http_client):
 
 @pytest.mark.project
 def test_get_json_output(fake_http_client):
-    runner.invoke(app, ["project", "create", "--name", "JSON测试", "--genre", "都市"])
+    runner.invoke(app, ["project", "create", "--name", "JSON测试", "--tags", "都市"])
     result = runner.invoke(app, ["--json", "project", "get", "--id", "1"])
     assert result.exit_code == 0
     data = _parse_json_output(result.output)
@@ -234,7 +234,7 @@ def test_get_not_found(fake_http_client):
 
 @pytest.mark.project
 def test_delete_soft(fake_http_client):
-    runner.invoke(app, ["project", "create", "--name", "删除测试", "--genre", "历史"])
+    runner.invoke(app, ["project", "create", "--name", "删除测试", "--tags", "历史"])
     result = runner.invoke(app, ["project", "delete", "--id", "1", "--force"])
     assert result.exit_code == 0, result.output
     assert "已删除" in result.output
@@ -252,7 +252,7 @@ def test_delete_not_found(fake_http_client):
 
 @pytest.mark.project
 def test_delete_permanent(fake_http_client):
-    runner.invoke(app, ["project", "create", "--name", "永久删除", "--genre", "武侠"])
+    runner.invoke(app, ["project", "create", "--name", "永久删除", "--tags", "武侠"])
     result = runner.invoke(
         app, ["project", "delete", "--id", "1", "--permanent", "--force"]
     )
@@ -265,7 +265,7 @@ def test_delete_permanent(fake_http_client):
 
 @pytest.mark.project
 def test_restore_after_delete(fake_http_client):
-    runner.invoke(app, ["project", "create", "--name", "恢复测试", "--genre", "游戏"])
+    runner.invoke(app, ["project", "create", "--name", "恢复测试", "--tags", "游戏"])
     runner.invoke(app, ["project", "delete", "--id", "1", "--force"])
     result = runner.invoke(app, ["project", "restore", "--id", "1"])
     assert result.exit_code == 0, result.output

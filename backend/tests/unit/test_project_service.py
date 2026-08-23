@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from inkflow.domain.models.project import Genre, Project, ProjectConfig, ProjectUpdate
+from inkflow.domain.models.project import Project, ProjectConfig, ProjectUpdate
 from inkflow.domain.services.project_service import ProjectService
 from inkflow.infrastructure.database.repositories.project_repo import SQLiteProjectRepository
 
@@ -29,7 +29,7 @@ def _project(**overrides: object) -> Project:
     defaults: dict[str, object] = {
         "id": PID,
         "name": "旧名字",
-        "genre": Genre.XUANHUAN,
+        "tags": ["玄幻"],
         "language": "zh-CN",
         "target_words": 100_000,
         "config": ProjectConfig(model="gpt-4o", temperature=0.7),
@@ -85,7 +85,7 @@ class TestProjectUpdate:
         assert merged.id == PID
         assert merged.name == "新名字"  # 传入字段已更新
         assert merged.target_words == 500_000  # 传入字段已更新
-        assert merged.genre == Genre.XUANHUAN  # 未传字段保持不变
+        assert merged.tags == ["玄幻"]  # 未传字段保持不变
         assert merged.language == "zh-CN"  # 未传字段保持不变
         assert merged.config == existing.config
         assert merged.created_at == TS
@@ -108,10 +108,10 @@ class TestProjectUpdate:
         mock_repo.get = AsyncMock(return_value=existing)
 
         new_config = ProjectConfig(model="deepseek-v3", temperature=0.3, writing_style="冷峻")
-        result = await svc.update(PID, ProjectUpdate(genre=Genre.KEHUAN, config=new_config))
+        result = await svc.update(PID, ProjectUpdate(tags=["科幻"], config=new_config))
 
         merged = mock_repo.update.await_args.args[0]
-        assert merged.genre == Genre.KEHUAN
+        assert merged.tags == ["科幻"]
         # 字段级合并：merged.config 为 ProjectConfig 实例（非 dict），显式传入字段更新
         assert isinstance(merged.config, ProjectConfig)
         assert merged.config.model == "deepseek-v3"
@@ -174,7 +174,7 @@ class TestProjectServiceBasics:
         """创建项目 → repo.add 收到完整实体（默认 config、未软删）。"""
         created = await svc.create_project(
             name="新书",
-            genre=Genre.KEHUAN,
+            tags=["科幻"],
             language="en-US",
             target_words=50_000,
         )
@@ -182,7 +182,7 @@ class TestProjectServiceBasics:
         added = mock_repo.add.await_args.args[0]
         assert isinstance(added, Project)
         assert isinstance(added.id, uuid.UUID)
-        assert added.genre == Genre.KEHUAN
+        assert added.tags == ["科幻"]
         assert added.language == "en-US"
         assert added.target_words == 50_000
         assert added.is_deleted is False

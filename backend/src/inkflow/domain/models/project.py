@@ -1,7 +1,6 @@
 """
 项目/书籍领域模型 — 定义核心领域实体与数据传输对象.
 
-Genre 枚举包含 11 种中文网络小说分类，
 ProjectConfig 管理各项目的独立 AI 写作配置，
 Project 是持久化实体，ProjectCreate/ProjectUpdate 是请求 DTO。
 """
@@ -10,7 +9,6 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -19,20 +17,24 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 AGENT_DEFAULT_SENTINEL = "__default__"
 
 
-class Genre(StrEnum):
-    """中文网络小说分类枚举."""
-
-    XUANHUAN = "玄幻"
-    KEHUAN = "科幻"
-    YANQING = "言情"
-    XIANXIA = "仙侠"
-    WUXIA = "武侠"
-    DUSHI = "都市"
-    LISHI = "历史"
-    YOUXI = "游戏"
-    XUANYI = "悬疑"
-    QIHUAN = "奇幻"
-    QITA = "其他"
+def _normalize_tags(v: Any) -> list[str]:
+    """规范化项目标签（#595）：非 list 报错；逐项 strip；空白项/超长报错；去重保序。"""
+    if not isinstance(v, list):
+        raise ValueError("项目标签必须为数组")  # noqa: TRY004  # 契约固定 ValueError（测试断言消息）
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in v:
+        if not isinstance(item, str):
+            raise ValueError("项目标签必须为数组")  # noqa: TRY004  # 契约固定 ValueError（测试断言消息）
+        stripped = item.strip()
+        if not stripped:
+            raise ValueError("项目标签不能为空")
+        if len(stripped) > 50:
+            raise ValueError("项目标签长度不能超过 50 字符")
+        if stripped not in seen:
+            seen.add(stripped)
+            result.append(stripped)
+    return result
 
 
 class AgentRelation(BaseModel):
@@ -259,7 +261,7 @@ class Project(BaseModel):
     Attributes:
         id: 主键 UUID.
         name: 项目名称.
-        genre: 小说分类.
+        tags: 项目标签（自由多值，空列表 = 未设置）.
         language: 写作语言（默认为 zh-CN）.
         target_words: 目标字数.
         config: AI 写作配置.
@@ -272,7 +274,7 @@ class Project(BaseModel):
 
     id: uuid.UUID
     name: str
-    genre: Genre = Genre.QITA
+    tags: list[str] = Field(default_factory=list)
     language: str = "zh-CN"
     target_words: int = 0
     config: ProjectConfig = Field(default_factory=ProjectConfig)
@@ -280,13 +282,19 @@ class Project(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @field_validator("tags", mode="before")
+    @classmethod
+    def validate_tags(cls, v: Any) -> list[str]:
+        """项目标签规范化（非 list/空白项/超长报错；去重保序）."""
+        return _normalize_tags(v)
+
 
 class ProjectCreate(BaseModel):
     """创建项目请求 DTO.
 
     Attributes:
         name: 项目名称，必填，1-100 字符，不能为空白.
-        genre: 小说分类 默认为“其他”.
+        tags: 项目标签（自由多值，默认为空列表）.
         language: 写作语言，默认为 zh-CN.
         target_words: 目标字数，默认为 0（不限）.
         config: AI 写作配置.
@@ -294,11 +302,17 @@ class ProjectCreate(BaseModel):
     """
 
     name: str
-    genre: Genre = Genre.QITA
+    tags: list[str] = Field(default_factory=list)
     language: str = "zh-CN"
     target_words: int = 0
     config: ProjectConfig = Field(default_factory=ProjectConfig)
     template_id: int | None = None
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def validate_tags(cls, v: Any) -> list[str]:
+        """项目标签规范化（非 list/空白项/超长报错；去重保序）."""
+        return _normalize_tags(v)
 
     @field_validator("name")
     @classmethod
@@ -319,11 +333,19 @@ class ProjectUpdate(BaseModel):
     """
 
     name: str | None = None
-    genre: Genre | None = None
+    tags: list[str] | None = None
     language: str | None = None
     target_words: int | None = None
     config: ProjectConfig | None = None
     is_deleted: bool | None = None
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def validate_tags(cls, v: Any) -> list[str] | None:
+        """项目标签规范化；None 原样返回（未提供 = 不修改）."""
+        if v is None:
+            return v
+        return _normalize_tags(v)
 
     @field_validator("name")
     @classmethod

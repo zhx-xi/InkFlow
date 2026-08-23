@@ -42,7 +42,7 @@ const apiFetchMock = vi.mocked(apiFetch);
 const projectP1: Project = {
   id: 'p1',
   name: '时间旅者',
-  genre: '悬疑',
+  tags: ['悬疑'],
   language: 'zh',
   target_words: 800000,
   config: {

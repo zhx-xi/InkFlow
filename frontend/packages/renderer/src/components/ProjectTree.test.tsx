@@ -53,7 +53,7 @@ const chapters: ChapterMeta[] = [
 const project: Project = {
   id: 'p1',
   name: '长安十二时辰',
-  genre: '历史',
+  tags: ['历史'],
   language: 'zh',
   target_words: 100000,
   config: {},

@@ -124,7 +124,7 @@ docstring 风格 + 无 token 模式 + ASGITransport + override_get_db 真实 DB 
 
 15. 【风险确认数据 + 级联清空（spec §9.2.4/§9.8 Q3=A）】
     - used_by 断言全链路：POST /api/v1/agent-templates 建模板 → POST
-      /api/v1/projects body {name, genre, language, target_words,
+      /api/v1/projects body {name, tags, language, target_words,
       config: {"template_id": str(模板 id)}}（**#107 ProjectConfig 扩展
       契约**：`ProjectConfig.template_id: str | None = None`，spec §9.2.2
       MODIFY domain/models/project.py —— RED 阶段该字段不存在，extra 被
@@ -841,7 +841,7 @@ class TestUsedByReference:
             ENDPOINT_PROJECTS,
             json={
                 "name": name,
-                "genre": "玄幻",
+                "tags": ["玄幻"],
                 "language": "zh-CN",
                 "target_words": 100000,
                 "config": {"template_id": template_id},

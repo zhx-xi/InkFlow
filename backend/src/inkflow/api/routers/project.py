@@ -46,7 +46,7 @@ async def create_project(
         config = config.model_copy(update={"template_id": str(data.template_id)})
     project = await service.create_project(
         name=data.name,
-        genre=data.genre,
+        tags=data.tags,
         language=data.language,
         target_words=data.target_words,
         config=config,

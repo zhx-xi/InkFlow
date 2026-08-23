@@ -276,7 +276,7 @@ beforeEach(() => {
     font: 'sans', closeBehavior: 'tray', trayHintDismissed: false,
   } as unknown as Partial<ThemeStoreF32>);
   useProjectStore.setState({
-    projects: [{ id: 'p1', name: '青云志', genre: '玄幻', language: 'zh-CN', target_words: 800000, config: {}, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' }],
+    projects: [{ id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {}, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' }],
     currentProjectId: 'p1', loading: false, error: null,
   });
   useAgentStore.setState({ config: {}, apiKeyDraft: '', testStatus: 'idle', testMessage: null });
@@ -504,7 +504,7 @@ describe('设置页 — 常规分类', () => {
   it('#198 有项目 config.default_words=60000 → 项目级优先（fetchSettings 全局值不覆盖）', async () => {
     useProjectStore.setState({
       projects: [{
-        id: 'p1', name: '青云志', genre: '玄幻', language: 'zh-CN', target_words: 800000,
+        id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000,
         config: { default_words: 60000 },
         created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
       }],
@@ -566,7 +566,7 @@ describe('设置页 — Agent 分类（迁移自 AgentChainCard，spec §7.4/§7
     useProjectStore.setState({
       projects: [
         {
-          id: 'p1', name: '青云志', genre: '玄幻', language: 'zh-CN', target_words: 800000,
+          id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000,
           config,
           created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
         },

@@ -72,7 +72,7 @@ def mock_project_repo() -> MagicMock:
     project = Project(
         id=uuid.uuid4(),
         name="测试小说",
-        genre="玄幻",
+        tags=["玄幻"],
         language="zh-CN",
         target_words=100000,
         config=ProjectConfig(model="openai/gpt-4o", temperature=0.7, writing_style="热血少年"),

@@ -36,7 +36,7 @@ def mock_project():
     return Project(
         id=uuid.uuid4(),
         name="测试项目",
-        genre="玄幻",
+        tags=["玄幻"],
         language="zh-CN",
         target_words=100000,
         config=ProjectConfig(),
@@ -56,7 +56,7 @@ async def test_create_project(mock_get_service, client, mock_project):
     mock_service.create_project = AsyncMock(return_value=mock_project)
     mock_get_service.return_value = mock_service
 
-    resp = client.post("/api/v1/projects", json={"name": "测试项目", "genre": "玄幻"})
+    resp = client.post("/api/v1/projects", json={"name": "测试项目", "tags": ["玄幻"]})
     assert resp.status_code == 201
     data = resp.json()
     assert data["name"] == "测试项目"
@@ -69,7 +69,7 @@ async def test_create_project_empty_name(mock_get_service, client):
     mock_service = AsyncMock()
     mock_get_service.return_value = mock_service
 
-    resp = client.post("/api/v1/projects", json={"name": "", "genre": "玄幻"})
+    resp = client.post("/api/v1/projects", json={"name": "", "tags": ["玄幻"]})
     assert resp.status_code == 422
 
 

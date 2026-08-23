@@ -254,7 +254,7 @@ beforeEach(() => {
     visualTouched: false,
   } as unknown as Partial<ThemeStoreF32>);
   useProjectStore.setState({
-    projects: [{ id: 'p1', name: '青云志', genre: '玄幻', language: 'zh-CN', target_words: 800000, config: {}, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' }],
+    projects: [{ id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {}, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' }],
     currentProjectId: 'p1', loading: false, error: null,
   });
   useAgentStore.setState({ config: {}, apiKeyDraft: '', testStatus: 'idle', testMessage: null });
@@ -573,8 +573,8 @@ describe('设置页 — default_words 卸载 flush（F32 §5.4 RED 契约）', (
   it('currentProjectId 变化 → 输入框重读新项目 config.default_words + 清 dirty（缺陷 #2 修复）', async () => {
     useProjectStore.setState({
       projects: [
-        { id: 'p1', name: '青云志', genre: '玄幻', language: 'zh-CN', target_words: 800000, config: { default_words: 30000 }, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' },
-        { id: 'p2', name: '归墟记', genre: '仙侠', language: 'zh-CN', target_words: 600000, config: { default_words: 60000 }, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' },
+        { id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: { default_words: 30000 }, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' },
+        { id: 'p2', name: '归墟记', tags: ['仙侠'], language: 'zh-CN', target_words: 600000, config: { default_words: 60000 }, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' },
       ],
       currentProjectId: 'p1',
     });

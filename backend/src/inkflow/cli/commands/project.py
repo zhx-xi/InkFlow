@@ -9,7 +9,6 @@ import typer
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
-from inkflow.domain.models.project import Genre
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 
@@ -18,6 +17,7 @@ app = typer.Typer(name="project", help="项目/书籍管理", no_args_is_help=Tr
 # 模块级已有命令函数 `list`，会在字符串注解求值时遮蔽内置 list（Typer eval_str=True），
 # 故此处用别名承载 list[str] 泛型供 update 命令注解使用
 ConfigList = list[str]
+TagsList = list[str]
 
 
 # ---------------------------------------------------------------------------
@@ -42,7 +42,7 @@ def _run(cli_ctx: CliContext, coro_fn):
 
 
 # ---------------------------------------------------------------------------
-# create  —  inkflow project create --name "xxx" --genre 玄幻
+# create  —  inkflow project create --name "xxx" --tags 玄幻 --tags 热血
 # ---------------------------------------------------------------------------
 
 
@@ -50,7 +50,7 @@ def _run(cli_ctx: CliContext, coro_fn):
 def create(
     ctx: typer.Context,
     name: str = typer.Option(..., "--name", "-n", help="项目名称"),
-    genre: str = typer.Option("其他", "--genre", "-g", help="小说分类"),
+    tags: TagsList = typer.Option([], "--tags", help="项目标签，可多次传入"),
     language: str = typer.Option("zh-CN", "--language", "-l", help="写作语言"),
     target_words: int = typer.Option(0, "--target-words", "-w", help="目标字数"),
 ) -> None:
@@ -65,7 +65,7 @@ def create(
                 "/projects",
                 json={
                     "name": name,
-                    "genre": Genre(genre).value,
+                    "tags": tags,
                     "language": language,
                     "target_words": target_words,
                 },
@@ -75,7 +75,7 @@ def create(
     if cli_ctx.json_output:
         print_result(cli_ctx, project)
     else:
-        typer.echo(f"✅ 项目创建成功: [{project['name']}] ({project['genre']})")
+        typer.echo(f"✅ 项目创建成功: [{project['name']}] ({', '.join(project['tags'])})")
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +145,7 @@ def get(
     else:
         typer.echo(f"ID:         {project['id']}")
         typer.echo(f"名称:       {project['name']}")
-        typer.echo(f"分类:       {project['genre']}")
+        typer.echo(f"标签:       {', '.join(project['tags'])}")
         typer.echo(f"语言:       {project['language']}")
         typer.echo(f"目标字数:   {project['target_words']}")
         typer.echo(f"创建时间:   {project['created_at']}")
@@ -209,7 +209,7 @@ def restore(
     if cli_ctx.json_output:
         print_result(cli_ctx, project)
     else:
-        typer.echo(f"✅ 项目已恢复: [{project['name']}] ({project['genre']})")
+        typer.echo(f"✅ 项目已恢复: [{project['name']}] ({', '.join(project['tags'])})")
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +243,7 @@ def update(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--id", "-i", help="项目 ID（int 或 UUID）"),
     name: str | None = typer.Option(None, "--name", "-n", help="项目名称"),
-    genre: str | None = typer.Option(None, "--genre", "-g", help="小说分类"),
+    tags: TagsList | None = typer.Option(None, "--tags", help="项目标签，可多次传入"),
     language: str | None = typer.Option(None, "--language", "-l", help="写作语言"),
     target_words: int | None = typer.Option(None, "--target-words", "-w", help="目标字数"),
     config: ConfigList = typer.Option(
@@ -258,8 +258,8 @@ def update(
     body: dict = {}
     if name is not None:
         body["name"] = name
-    if genre is not None:
-        body["genre"] = genre
+    if tags is not None:
+        body["tags"] = tags
     if language is not None:
         body["language"] = language
     if target_words is not None:

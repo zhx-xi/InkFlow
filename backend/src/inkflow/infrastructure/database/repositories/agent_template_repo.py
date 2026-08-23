@@ -34,7 +34,7 @@ from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.agent_template import AgentTemplate, RoleTemplate
-from inkflow.domain.models.project import Genre, Project, ProjectConfig
+from inkflow.domain.models.project import Project, ProjectConfig
 from inkflow.infrastructure.database.models.agent_template import AgentTemplateORM
 from inkflow.infrastructure.database.models.project import ProjectORM
 
@@ -78,7 +78,7 @@ def _project_orm_to_domain(orm: ProjectORM) -> Project:
     return Project(
         id=uuid.UUID(int=orm.id) if isinstance(orm.id, int) else orm.id,
         name=orm.name,
-        genre=Genre(orm.genre) if isinstance(orm.genre, str) else orm.genre,
+        tags=orm.tags or [],
         language=orm.language,
         target_words=orm.target_words,
         config=ProjectConfig(**orm.config) if orm.config else ProjectConfig(),

@@ -69,7 +69,7 @@ describe('executePipeline — POST /pipelines/execute', () => {
       project_id: 'p1',
       pipeline: 'builtin:write_auto',
       chapter_id: 'c1',
-      variables: { genre: '玄幻', target_words: '800000' },
+      variables: { tags: '玄幻', target_words: '800000' },
     });
     expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/pipelines/execute', {
       method: 'POST',
@@ -77,7 +77,7 @@ describe('executePipeline — POST /pipelines/execute', () => {
         project_id: 'p1',
         pipeline: 'builtin:write_auto',
         chapter_id: 'c1',
-        variables: { genre: '玄幻', target_words: '800000' },
+        variables: { tags: '玄幻', target_words: '800000' },
       },
     });
   });

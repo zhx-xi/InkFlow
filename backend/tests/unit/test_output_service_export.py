@@ -35,7 +35,7 @@ from inkflow.domain.models.chapter import Chapter, Volume
 from inkflow.domain.models.character import Character
 from inkflow.domain.models.foreshadowing import Foreshadowing, ForeshadowingStatus
 from inkflow.domain.models.outline import Outline, PlotPoint
-from inkflow.domain.models.project import Genre, Project
+from inkflow.domain.models.project import Project
 from inkflow.domain.models.timeline import TimelineEvent
 from inkflow.domain.models.world import WorldSetting
 from inkflow.domain.services._txt_exporter import to_txt
@@ -53,7 +53,7 @@ def _project() -> Project:
     return Project(
         id=PID,
         name="我的小说",
-        genre=Genre.XUANHUAN,
+        tags=["玄幻"],
         language="zh-CN",
         target_words=100_000,
         created_at=TS,

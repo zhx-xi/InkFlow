@@ -73,7 +73,7 @@ from inkflow.domain.models.chapter import Chapter, Volume
 from inkflow.domain.models.character import Character
 from inkflow.domain.models.foreshadowing import Foreshadowing, ForeshadowingStatus
 from inkflow.domain.models.outline import Outline, PlotPoint
-from inkflow.domain.models.project import Genre, Project
+from inkflow.domain.models.project import Project
 from inkflow.domain.models.timeline import TimelineEvent
 from inkflow.domain.models.world import WorldSetting
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
@@ -98,7 +98,7 @@ SETTING_TYPE_ORDER = ["character", "world", "outline", "timeline", "foreshadowin
 def _project(
     name: str = "我的小说",
     *,
-    genre: Genre = Genre.XUANHUAN,
+    tags: list[str] | None = None,
     language: str = "zh-CN",
     target_words: int = 100_000,
 ) -> Project:
@@ -106,7 +106,7 @@ def _project(
     return Project(
         id=PID,
         name=name,
-        genre=genre,
+        tags=tags or [],
         language=language,
         target_words=target_words,
         created_at=TS,
@@ -380,7 +380,7 @@ async def test_export_accepts_int_project_id():
 
 async def test_export_meta_mapping():
     """project 字段映射 BookMeta（title←name / genre / language / target_words / updated_at）。"""
-    deps = _Deps(_project(name="星辰大海", genre=Genre.KEHUAN, target_words=500_000))
+    deps = _Deps(_project(name="星辰大海", tags=["科幻"], target_words=500_000))
 
     doc = await deps.service().export(PID)
 
@@ -389,6 +389,32 @@ async def test_export_meta_mapping():
     assert doc.meta.language == "zh-CN"
     assert doc.meta.target_words == 500_000
     assert doc.meta.updated_at == TS
+
+
+async def test_migrated_genre_value_to_tags_initial_data():
+    """#595 旧 genre 值迁移为 tags 初始数据（2026-08-23 拍板 D6=B）。
+
+    迁移契约：删 genre 枚举后，项目 tags 的「类型」消费者（BookMeta.genre 字段名保留）
+    改从 project.tags 全拼串派生（`" ".join(tags)`；空 tags → 空串），不再读 project.genre。
+
+    RED 预期：当前 Project 只有 genre 字段（无 tags）→ Project(tags=[...]) 忽略 extra，
+    且 export 时 output_service 读取 project.genre.value → tags 值不被采纳 →
+    断言 `meta.genre == "科幻 星际"` 失败（实际为默认「其他」）。GREEN 后转绿。
+    """
+    proj = Project(
+        id=PID,
+        name="星辰大海",
+        tags=["科幻", "星际"],
+        language="zh-CN",
+        target_words=500_000,
+        created_at=TS,
+        updated_at=TS,
+    )
+    deps = _Deps(proj)
+
+    doc = await deps.service().export(PID)
+
+    assert doc.meta.genre == "科幻 星际"
 
 
 async def test_export_aggregates_volumes_and_chapters():

@@ -14,7 +14,6 @@ from datetime import UTC, datetime
 
 from inkflow.domain.models.project import (
     AgentRelation,
-    Genre,
     Project,
     ProjectConfig,
     ProjectUpdate,
@@ -187,7 +186,7 @@ class ProjectService:
     async def create_project(
         self,
         name: str,
-        genre: Genre = Genre.QITA,
+        tags: list[str] | None = None,
         language: str = "zh-CN",
         target_words: int = 0,
         config: ProjectConfig | None = None,
@@ -196,7 +195,7 @@ class ProjectService:
 
         Args:
             name: 项目名称.
-            genre: 小说分类，默认为 QITA（其他）.
+            tags: 项目标签，默认为空列表.
             language: 写作语言，默认为 zh-CN.
             target_words: 目标字数，默认为 0（不限）.
             config: AI 写作配置，默认为空配置.
@@ -207,7 +206,7 @@ class ProjectService:
         project = Project(
             id=uuid.uuid4(),
             name=name,
-            genre=genre,
+            tags=tags or [],
             language=language,
             target_words=target_words,
             config=config or ProjectConfig(),

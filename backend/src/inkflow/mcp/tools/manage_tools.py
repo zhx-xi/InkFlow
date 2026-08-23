@@ -89,7 +89,7 @@ async def _route_project(client: _HTTPClient, params: ManageProjectParams) -> ob
             json=_compact(
                 {
                     "name": params.name,
-                    "genre": params.genre,
+                    "tags": params.tags,
                     "language": params.language,
                     "target_words": params.target_words,
                 }
@@ -105,7 +105,7 @@ async def _route_project(client: _HTTPClient, params: ManageProjectParams) -> ob
             json=_compact(
                 {
                     "name": params.name,
-                    "genre": params.genre,
+                    "tags": params.tags,
                     "language": params.language,
                     "target_words": params.target_words,
                 }

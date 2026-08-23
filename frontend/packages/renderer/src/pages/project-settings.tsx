@@ -9,6 +9,7 @@ import { useI18n } from '../i18n/useI18n';
 import { useAgentStore } from '../stores/agent';
 import { selectChatModelOptions, useModelsStore } from '../stores/models';
 import { AGENT_DEFAULT_SENTINEL, useProjectStore } from '../stores/project';
+import { useTagsStore } from '../stores/tags';
 import { useTemplatesStore } from '../stores/templates';
 
 export function ProjectSettingsPage() {
@@ -24,6 +25,10 @@ export function ProjectSettingsPage() {
   // 字数输入：本地受控草稿 + dirty 标记（blur 才 setConfig + persist；镜像 GeneralPanel valueRef/dirty 语义）
   const [wordsDraft, setWordsDraft] = useState(() => String(project?.config.default_words ?? 800000));
   const wordsDirtyRef = useRef(false);
+  // #595：项目标签（多选 + 自定义新增，变更即 PATCH {tags}；镜像 NewProjectDialog tags 交互）
+  const tagSuggestions = useTagsStore((s) => s.suggestions);
+  const [tagsDraft, setTagsDraft] = useState<string[]>(() => project?.tags ?? []);
+  const [tagsInput, setTagsInput] = useState('');
 
   // 播种守卫（镜像 settings.tsx AgentPanel）：agent store config 不含 agent_*/model 键时按项目 config 播种
   useEffect(() => {
@@ -45,6 +50,8 @@ export function ProjectSettingsPage() {
     const p = state.projects.find((x) => x.id === state.currentProjectId);
     setWordsDraft(String(p?.config.default_words ?? 800000));
     wordsDirtyRef.current = false;
+    setTagsDraft(p?.tags ?? []);
+    setTagsInput('');
   }, [currentProjectId]);
 
   // 保存 = saveConfig(currentProjectId)（store 内部 PATCH 全量 config；无当前项目时静默跳过）
@@ -52,6 +59,19 @@ export function ProjectSettingsPage() {
     const id = useProjectStore.getState().currentProjectId;
     if (!id) return;
     void useAgentStore.getState().saveConfig(id);
+  };
+
+  // #595：预设建议 = 轻量注册表（项目已用 tags ∪ 旧 genre 枚举值；项目切换时刷新）
+  useEffect(() => {
+    useTagsStore.getState().loadSuggestions(useProjectStore.getState().projects);
+  }, [project]);
+
+  // #595：标签变更即保存（PATCH /projects/{id} body {tags}；镜像页面其它区块「变更即 persist」）
+  const updateTagsDraft = (next: string[]) => {
+    const id = useProjectStore.getState().currentProjectId;
+    setTagsDraft(next);
+    if (!id) return;
+    void useProjectStore.getState().updateTags(id, next);
   };
 
   if (!currentProjectId || !project) {
@@ -145,6 +165,69 @@ export function ProjectSettingsPage() {
                 if (wordsDraft === '' || !Number.isFinite(n)) return;
                 setConfig({ default_words: n });
                 persist();
+              }}
+            />
+          </div>
+        </section>
+
+        {/* ③-2 #595：项目标签（多选 + 自定义新增，变更即 PATCH {tags}；镜像 NewProjectDialog tags 交互） */}
+        <section data-testid="ps-tags-section" className="rounded-lg border border-line bg-surface p-6 shadow-card">
+          <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
+            <span>{t('ps.tags')}</span>
+            {tagsDraft.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {tagsDraft.map((tag) => (
+                  <span
+                    key={tag}
+                    data-testid={`ps-tag-chip-${tag}`}
+                    className="inline-flex items-center gap-1 rounded-full bg-surface-3 px-2.5 py-0.5 text-[12px] text-ink"
+                  >
+                    {tag}
+                    <button
+                      type="button"
+                      aria-label={tag}
+                      className="flex h-4 w-4 items-center justify-center rounded-full text-ink-3 transition duration-150 hover:bg-surface hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => updateTagsDraft(tagsDraft.filter((x) => x !== tag))}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <Select
+              onValueChange={(v) =>
+                updateTagsDraft(
+                  tagsDraft.includes(v) ? tagsDraft.filter((x) => x !== v) : [...tagsDraft, v],
+                )
+              }
+            >
+              <SelectTrigger data-testid="ps-tags-select" aria-label={t('ps.tags')} className="w-full">
+                <SelectValue placeholder={t('dlg.tagsPlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                {tagSuggestions.map((tag) => (
+                  <SelectItem key={tag} value={tag}>
+                    {tag}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <input
+              type="text"
+              data-testid="ps-tags-input"
+              aria-label={t('ps.tags')}
+              className="w-56 rounded-md border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
+              placeholder={t('dlg.tagsPlaceholder')}
+              value={tagsInput}
+              onChange={(e) => setTagsInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                const tag = tagsInput.trim();
+                if (!tag || tagsDraft.includes(tag)) return;
+                updateTagsDraft([...tagsDraft, tag]);
+                setTagsInput('');
               }}
             />
           </div>

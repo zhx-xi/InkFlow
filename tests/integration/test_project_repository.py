@@ -20,7 +20,7 @@ class TestProjectRepository:
         )
 
         repo = SQLiteProjectRepository(db_session)
-        orm = ProjectORM(name="测试小说", genre="玄幻", language="zh-CN")
+        orm = ProjectORM(name="测试小说", tags=["玄幻"], language="zh-CN")
         db_session.add(orm)
         await db_session.commit()
         await db_session.refresh(orm)
@@ -39,8 +39,8 @@ class TestProjectRepository:
         )
 
         repo = SQLiteProjectRepository(db_session)
-        p1 = ProjectORM(name="小说A", genre="玄幻", language="zh-CN")
-        p2 = ProjectORM(name="科幻巨作", genre="科幻", language="zh-CN")
+        p1 = ProjectORM(name="小说A", tags=["玄幻"], language="zh-CN")
+        p2 = ProjectORM(name="科幻巨作", tags=["科幻"], language="zh-CN")
         db_session.add_all([p1, p2])
         await db_session.commit()
 
@@ -58,8 +58,8 @@ class TestProjectRepository:
         )
 
         repo = SQLiteProjectRepository(db_session)
-        p1 = ProjectORM(name="小说A", genre="玄幻", language="zh-CN")
-        p2 = ProjectORM(name="科幻巨作", genre="科幻", language="zh-CN")
+        p1 = ProjectORM(name="小说A", tags=["玄幻"], language="zh-CN")
+        p2 = ProjectORM(name="科幻巨作", tags=["科幻"], language="zh-CN")
         db_session.add_all([p1, p2])
         await db_session.commit()
 
@@ -76,7 +76,7 @@ class TestProjectRepository:
         )
 
         repo = SQLiteProjectRepository(db_session)
-        orm = ProjectORM(name="原始名称", genre="其他", language="zh-CN")
+        orm = ProjectORM(name="原始名称", tags=[], language="zh-CN")
         db_session.add(orm)
         await db_session.commit()
         await db_session.refresh(orm)
@@ -95,7 +95,7 @@ class TestProjectRepository:
         )
 
         repo = SQLiteProjectRepository(db_session)
-        orm = ProjectORM(name="待删除项目", genre="其他", language="zh-CN")
+        orm = ProjectORM(name="待删除项目", tags=[], language="zh-CN")
         db_session.add(orm)
         await db_session.commit()
         await db_session.refresh(orm)

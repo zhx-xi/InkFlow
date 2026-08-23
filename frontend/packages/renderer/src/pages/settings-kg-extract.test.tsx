@@ -176,7 +176,7 @@ beforeEach(() => {
   // 扩展重置：models/project/theme/toast 播种默认（测试间隔离，防「上一用例改 store → 下一用例初值漂移」）
   useModelsStore.setState({ providers: [], loading: false, error: null });
   useProjectStore.setState({
-    projects: [{ id: 'p1', name: '青云志', genre: '玄幻', language: 'zh-CN', target_words: 800000, config: {}, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' }],
+    projects: [{ id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {}, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' }],
     currentProjectId: 'p1', loading: false, error: null,
   });
   useThemeStore.setState({
