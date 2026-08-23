@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { auditChapter, confirmAudit, type AuditReportDto } from '../api/audit';
 import { errorMessage } from '../api/client';
 import { AuditDialog } from '../components/AuditDialog';
+import { AutoAuthorizationDialog } from '../components/AutoAuthorizationDialog';
 import { ChapterEditor } from '../components/ChapterEditor';
 import { ChatPanel } from '../components/ChatPanel';
 import { ContextPanel } from '../components/ContextPanel';
@@ -85,6 +86,8 @@ export function WritingPage() {
   const [view, setView] = useState<'editor' | 'detail'>('editor');
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [confirming, setConfirming] = useState(false);
+  // #598 D9-a1：首次授权弹框开关（默认关闭；「触发全自动且未授权」时置 true）
+  const [autoAuthOpen, setAutoAuthOpen] = useState(false);
   const dirtyRef = useRef(false);
   const loadedRef = useRef<string | null>(null);
 
@@ -252,6 +255,14 @@ export function WritingPage() {
             onAudit={() => void handleAudit()}
             view={view}
             onToggleView={() => setView((v) => (v === 'editor' ? 'detail' : 'editor'))}
+            autoWriteEnabled={currentProject?.config?.auto_write_enabled === true}
+            onToggleAuto={() => {
+              if (currentProject) {
+                void useProjectStore.getState().updateConfig(currentProject.id, {
+                  auto_write_enabled: !(currentProject.config?.auto_write_enabled === true),
+                });
+              }
+            }}
           />
           {view === 'editor' ? (
             <ChapterEditor onEditorKeyDown={handleKeyDown} onContentChange={handleContentChange} />
@@ -283,6 +294,14 @@ export function WritingPage() {
         onClose={() => setAuditOpen(false)}
         onConfirm={(a, n) => void handleConfirm(a, n)}
         confirming={auditConfirming}
+      />
+      {/* #598 D9-a1：首次授权弹框 —— 默认关闭；由「触发全自动且未授权」动作置 true。
+          注：全自动实际从 chat 触发的接线在后续里程碑（#597 已删书级入口），
+          本批保证组件可用 + 不干扰写作页加载（未授权不自动弹框）。 */}
+      <AutoAuthorizationDialog
+        projectId={effectiveProjectId}
+        open={autoAuthOpen}
+        onClose={() => setAutoAuthOpen(false)}
       />
       <StatusBar model={model} wordCount={displayWords} savedAt={savedAt} />
     </div>

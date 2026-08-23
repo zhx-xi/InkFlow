@@ -157,3 +157,36 @@ describe('工具栏 — 视图切换按钮（#379 F47 §4.2）', () => {
     expect(onToggleView).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('工具栏 — 是否全自动切换按钮（#598 D9-a1）', () => {
+  it('渲染 auto-toggle（aria-label 为「是否全自动」，位于 view-toggle 右侧）', () => {
+    renderToolbar({ view: 'editor', onToggleView: vi.fn(), autoWriteEnabled: false, onToggleAuto: vi.fn() });
+    const toolbar = screen.getByTestId('editor-toolbar');
+    const toggle = within(toolbar).getByTestId('auto-toggle');
+    expect(toggle).toHaveAttribute('aria-label', '是否全自动');
+    // 位置：在 view-toggle 右侧（DOM 顺序）
+    const viewToggle = within(toolbar).getByTestId('view-toggle');
+    expect(viewToggle.compareDocumentPosition(toggle)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('autoWriteEnabled=false → aria-pressed=false（未授权态）', () => {
+    renderToolbar({ autoWriteEnabled: false, onToggleAuto: vi.fn() });
+    const toolbar = screen.getByTestId('editor-toolbar');
+    expect(within(toolbar).getByTestId('auto-toggle')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('autoWriteEnabled=true → aria-pressed=true（已授权态）', () => {
+    renderToolbar({ autoWriteEnabled: true, onToggleAuto: vi.fn() });
+    const toolbar = screen.getByTestId('editor-toolbar');
+    expect(within(toolbar).getByTestId('auto-toggle')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('点击 auto-toggle → onToggleAuto 被调用', async () => {
+    const user = userEvent.setup();
+    const onToggleAuto = vi.fn();
+    renderToolbar({ autoWriteEnabled: false, onToggleAuto });
+    const toolbar = screen.getByTestId('editor-toolbar');
+    await user.click(within(toolbar).getByTestId('auto-toggle'));
+    expect(onToggleAuto).toHaveBeenCalledTimes(1);
+  });
+});

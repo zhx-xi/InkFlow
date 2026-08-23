@@ -156,3 +156,47 @@ class TestBookRunRequestMode:
 
         req = BookRunRequest(writing_plan_id=uuid.uuid4(), mode="agentic")
         assert req.mode == "agentic"
+
+
+class TestAgenticAuthorizationGate:
+    """#598 全自动授权门禁契约（D9-a1：prepare_run mode=agentic 前置授权检查）。
+
+    契约（放 prepare_run 同步预校验，与计划存在/护栏/安全阀同层）：
+    - project_config_getter 返回 None（无项目 config）-> 放行（向后兼容 CLI/旧路径）
+    - config 存在且 auto_write_enabled=True -> 放行（授权后）
+    - config 存在且 auto_write_enabled=False -> ValueError（未授权拒绝）
+
+    RED 预期：prepare_run(mode=agentic) 无授权检查 -> 未授权用例 pytest.raises
+    DID NOT RAISE（干净断言 FAIL）；GREEN 后全部转绿。
+    """
+
+    async def test_prepare_run_agentic_unauthorized_raises(self) -> None:
+        """config.auto_write_enabled=False（未授权）-> prepare_run(mode=agentic) 拒绝。"""
+        from inkflow.domain.models.project import ProjectConfig
+
+        plan = _plan(status="ready")
+        svc = _make_service()
+        svc._repo.get_writing_plan.return_value = plan
+        svc._project_config_getter = AsyncMock(return_value=ProjectConfig(auto_write_enabled=False))
+        with pytest.raises(ValueError):
+            await svc.prepare_run(plan.id, limits=None, mode="agentic")
+
+    async def test_prepare_run_agentic_authorized_passes(self) -> None:
+        """config.auto_write_enabled=True（已授权）-> prepare_run(mode=agentic) 放行 running。"""
+        from inkflow.domain.models.project import ProjectConfig
+
+        plan = _plan(status="ready")
+        svc = _make_service()
+        svc._repo.get_writing_plan.return_value = plan
+        svc._project_config_getter = AsyncMock(return_value=ProjectConfig(auto_write_enabled=True))
+        result = await svc.prepare_run(plan.id, limits=None, mode="agentic")
+        assert result["status"] == "running"
+
+    async def test_prepare_run_agentic_no_config_passes(self) -> None:
+        """project_config_getter 返回 None（无 config）-> 放行（向后兼容 CLI/旧路径）。"""
+        plan = _plan(status="ready")
+        svc = _make_service()
+        svc._repo.get_writing_plan.return_value = plan
+        svc._project_config_getter = AsyncMock(return_value=None)
+        result = await svc.prepare_run(plan.id, limits=None, mode="agentic")
+        assert result["status"] == "running"

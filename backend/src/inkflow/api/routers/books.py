@@ -446,13 +446,13 @@ async def start_run(
         detail = str(e)
         if "不存在" in detail:
             raise HTTPException(status_code=404, detail=detail) from e
+        if "未授权" in detail:
+            raise HTTPException(status_code=403, detail=detail) from e
         raise HTTPException(status_code=422, detail=detail) from e
     if result["status"] != "running":
         return result
     spawn_background_task(
-        _run_book(
-            svc, data.writing_plan_id, limits, mode=data.mode, config=agentic_config
-        ),
+        _run_book(svc, data.writing_plan_id, limits, mode=data.mode, config=agentic_config),
         key=result["run_id"],
     )
     return result
