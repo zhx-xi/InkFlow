@@ -101,6 +101,13 @@ class UserPreferenceORM(Base):
     )
     """上次访问时的项目活跃水位（float，默认 0.0）"""
 
+    superseded_by: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default="",
+    )
+    """被取代时指向新偏好 value（#618 显式覆盖标记）；空 = 未取代"""
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,

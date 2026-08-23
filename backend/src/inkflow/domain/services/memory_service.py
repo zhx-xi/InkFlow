@@ -23,6 +23,7 @@ from inkflow.domain.models.project import Project
 from inkflow.domain.models.semantic_summary import SemanticSummary, SummaryScope
 from inkflow.domain.models.user_preference import UserPreference
 from inkflow.domain.services import preference_learner
+from inkflow.domain.services.memory_supersede_mixin import MemorySupersedeMixin
 from inkflow.domain.services.preference_learner import (
     PreferenceCandidate,
     UserPreferenceCandidate,
@@ -64,7 +65,7 @@ class PreferenceNotFoundError(Exception):
         super().__init__(message)
 
 
-class MemoryService:
+class MemoryService(MemorySupersedeMixin):
     """记忆编排服务（spec §5）— 事件捕获/偏好 CRUD/统计查询.
 
     Args:
@@ -81,6 +82,8 @@ class MemoryService:
         summary_repo: 语义总结仓储（鸭子类型，M2 get/upsert/delete_by_project，可空）.
         summarizer: 语义总结管线（鸭子类型，M2 summarize → (summary, dropped)，可空）.
         llm_default_model: LLM 默认模型名（M2 summarizer 传入，#415 唯一默认源，可空）.
+        supersede_determiner: 偏好取代判定器（鸭子类型，F49 ② determine →
+            (superseded_values, dropped)，可空；None = 未装配不判定，向后兼容）.
     """
 
     def __init__(
@@ -95,6 +98,7 @@ class MemoryService:
         summary_repo: object | None = None,
         summarizer: object | None = None,
         llm_default_model: str | None = None,
+        supersede_determiner: object | None = None,
     ) -> None:
         self._preference_repo = preference_repo
         self._event_repo = event_repo
@@ -105,6 +109,7 @@ class MemoryService:
         self._summary_repo = summary_repo
         self._summarizer = summarizer
         self._llm_default_model = llm_default_model
+        self._supersede_determiner = supersede_determiner
         self.last_learned: bool = False  # F28: 本次 record_draft_edit 是否触发新偏好落库
 
     async def is_learning_enabled(
@@ -194,23 +199,13 @@ class MemoryService:
                         source_events=[*existing.source_events, event.id],
                     )
                 elif candidate.count >= 2:
-                    await self._preference_repo.create(  # type: ignore[attr-defined]  # 鸭子类型：preference_repo 按契约提供 create
+                    await self._supersede_project_candidate(
+                        candidate=candidate,
+                        existing_items=existing_items,
+                        existing_by_value=existing_by_value,
                         project_id=project_id,
-                        category=candidate.category,
-                        pattern=candidate.pattern,
-                        value=candidate.value,
-                        confidence=candidate.confidence,
-                        count=candidate.count,
-                        source_events=[event.id],
+                        event=event,
                     )
-                    self.last_learned = True  # F28: 新偏好落库 → 本次编辑触发学习
-                    if self._audit_service is not None:
-                        await self._audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                            project_id=project_id,
-                            severity_summary="preference_learned",
-                            degraded=True,
-                            actor="memory",
-                        )
         # ── M1 用户级聚合链（spec §5.1）──
         if self._user_preference_repo is not None:
             all_edited: list[MemoryEvent] = await self._event_repo.list_all_edited()  # type: ignore[attr-defined]  # 鸭子类型：event_repo 按契约提供 list_all_edited（M1 新增）
@@ -236,23 +231,12 @@ class MemoryService:
                             source_events=uc.source_events,
                         )
                     elif uc.count >= 2 and uc.project_count >= 2:
-                        await self._user_preference_repo.create(  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 create
-                            category=uc.category,
-                            pattern=uc.pattern,
-                            value=uc.value,
-                            confidence=uc.confidence,
-                            count=uc.count,
-                            project_count=uc.project_count,
-                            source_projects=uc.source_projects,
-                            source_events=uc.source_events,
+                        await self._supersede_user_candidate(
+                            uc=uc,
+                            existing_user_items=existing_user_items,
+                            existing_user_by_value=existing_user_by_value,
+                            project_id=project_id,
                         )
-                        if self._audit_service is not None:
-                            await self._audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                                project_id=project_id,
-                                severity_summary="user_preference_learned",
-                                degraded=True,
-                                actor="memory",
-                            )
         return event
 
     async def record_draft_rejected(
@@ -365,7 +349,8 @@ class MemoryService:
     async def get_preferences_for_injection(self, project_id: uuid.UUID) -> list[ProjectPreference]:
         """已学偏好注入读口（F6 PreferenceSource 调用，spec §5.4/§5.3 F49）.
         memory_learning=false → []（零注入）；decay 关闭 → count desc（回归零影响）；
-        decay 开启 → score desc + 过滤 score<0.05 + 注入即刷新水位（用即保鲜）.
+        decay 开启 → score desc + 过滤 score<0.05 + 注入即刷新水位（用即保鲜）；
+        两个分支都排除 superseded_by != "" 的被取代偏好（F49 ②，contract §3.1）.
         """
         if not await self.is_learning_enabled(project_id):
             return []
@@ -381,12 +366,19 @@ class MemoryService:
             return []
         config = project.config.extra
         if not config.get("memory_decay_enabled", False):
-            # legacy：count desc（回归零影响，不读 active_watermark/不刷新）
-            return sorted(items, key=lambda p: p.count, reverse=True)
+            # legacy：count desc（回归零影响，不读 active_watermark/不刷新）；
+            # F49 ②: 注入排除被取代偏好（contract §3.1）
+            return [
+                p
+                for p in sorted(items, key=lambda p: p.count, reverse=True)
+                if getattr(p, "superseded_by", "") == ""
+            ]
         half_life: float = float(config.get("memory_decay_half_life", 30))
         watermark_now: float = float(getattr(project, "active_watermark", 0.0))
         scored: list[tuple[ProjectPreference, float]] = []
         for pref in items:
+            if getattr(pref, "superseded_by", "") != "":
+                continue
             score = _score_pref(pref, watermark_now, half_life)
             if score >= 0.05:
                 scored.append((pref, score))
@@ -614,25 +606,40 @@ class MemoryService:
     ) -> list[UserPreference]:
         """用户级偏好注入读口（F6 PreferenceSource 调用，spec §5.6 M1/§5.3 F49）.
         memory_learning=false → []（零行为）；decay 关闭 → count desc（回归零影响）；
-        decay 开启 → score desc + 过滤 score<0.05 + 注入即刷新水位（用户级同构）.
+        decay 开启 → score desc + 过滤 score<0.05 + 注入即刷新水位（用户级同构）；
+        全部分支都排除 superseded_by != "" 的被取代偏好（F49 ②，contract §3.1）.
         """
         if not await self.is_learning_enabled(project_id):
             return []
         items, _total = await self.list_user_preferences()
         if self._user_preference_repo is None:
-            return sorted(items, key=lambda p: p.count, reverse=True)
+            return [
+                p
+                for p in sorted(items, key=lambda p: p.count, reverse=True)
+                if getattr(p, "superseded_by", "") == ""
+            ]
         project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
             project_id.int
         )
         if project is None:
-            return sorted(items, key=lambda p: p.count, reverse=True)
+            return [
+                p
+                for p in sorted(items, key=lambda p: p.count, reverse=True)
+                if getattr(p, "superseded_by", "") == ""
+            ]
         config = project.config.extra
         if not config.get("memory_decay_enabled", False):
-            return sorted(items, key=lambda p: p.count, reverse=True)
+            return [
+                p
+                for p in sorted(items, key=lambda p: p.count, reverse=True)
+                if getattr(p, "superseded_by", "") == ""
+            ]
         half_life: float = float(config.get("memory_decay_half_life", 30))
         watermark_now: float = float(getattr(project, "active_watermark", 0.0))
         scored: list[tuple[UserPreference, float]] = []
         for pref in items:
+            if getattr(pref, "superseded_by", "") != "":
+                continue
             score = _score_pref(pref, watermark_now, half_life)
             if score >= 0.05:
                 scored.append((pref, score))
