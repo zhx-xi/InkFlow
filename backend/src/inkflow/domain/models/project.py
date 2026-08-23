@@ -154,6 +154,11 @@ class ProjectConfig(BaseModel):
         default=None,
         description="Supervisor/HITL 项目级配置（None = 未启用，零迁移）",
     )
+    auto_write_enabled: bool = Field(
+        default=False,
+        description="项目级「是否全自动」开关（#598 D9-a1）：True=允许全自动写书（mode=agentic）；"
+        "False=禁止（默认，AI 自动化默认关闭，首次触发弹授权框）。与 supervisor 同层。",
+    )
     agent_relations: list[AgentRelation] = Field(default_factory=list)
     """角色间显式关联关系（#270，spec §1.2）。
 

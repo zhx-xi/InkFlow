@@ -394,6 +394,12 @@ export const zh = {
   'write.toolbar.generate': '生成',
   'write.toolbar.save': '保存',
   'write.toolbar.audit': '审计',
+  // #598：项目级「是否全自动」开关（执行详情按钮右侧）
+  'write.toolbar.autoToggle': '是否全自动',
+  'write.autoAuth.title': '确认开启全自动写作？',
+  'write.autoAuth.body': '全自动写作将自主规划→写作→自查→修订，属高风险动作；授权后可在执行详情旁随时关闭。',
+  'write.autoAuth.confirm': '确认授权',
+  'write.autoAuth.cancel': '取消',
   'write.context.title': '上下文注入',
   'write.context.collapse': '折叠',
   'write.context.characters': '角色',

@@ -230,3 +230,37 @@ class TestProjectTags:
         update = ProjectUpdate(tags=["仙侠", "东方玄幻"])
         assert update.tags == ["仙侠", "东方玄幻"]
         assert not hasattr(update, "genre")
+
+
+class TestProjectConfigAutoWriteEnabled:
+    """#598 全自动授权开关契约（D9-a1：开关存项目 config，与 supervisor 同层）。
+
+    契约：
+    - 缺省 = False（AI 自动化默认关闭——用户偏好显式开启）
+    - True 显式赋值 -> model_dump roundtrip 保留
+    - 旧 config JSON（无 auto_write_enabled 键解析）-> 缺省 False（零迁移）
+
+    RED 预期：ProjectConfig 无 auto_write_enabled 字段 -> config.auto_write_enabled
+    抛 AttributeError（干净断言 FAIL）；GREEN 后全部转绿。
+    """
+
+    def test_auto_write_enabled_default_false(self):
+        """未配置 auto_write_enabled -> False（AI 自动化默认关闭）。"""
+        config = ProjectConfig()
+        assert config.auto_write_enabled is False
+
+    def test_auto_write_enabled_true_roundtrip(self):
+        """auto_write_enabled=True 显式赋值 -> model_dump roundtrip 保留。"""
+        config = ProjectConfig(auto_write_enabled=True)
+        assert config.auto_write_enabled is True
+        assert config.model_dump()["auto_write_enabled"] is True
+
+    def test_auto_write_enabled_false_roundtrip(self):
+        """auto_write_enabled=False 显式赋值 -> model_dump 序列化保留（取消授权语义）。"""
+        config = ProjectConfig(auto_write_enabled=False)
+        assert config.model_dump()["auto_write_enabled"] is False
+
+    def test_old_config_json_no_key_defaults_false(self):
+        """旧 config JSON（无 auto_write_enabled 键）解析 -> 缺省 False（零迁移）。"""
+        config = ProjectConfig.model_validate({"model": "deepseek/deepseek-chat"})
+        assert config.auto_write_enabled is False

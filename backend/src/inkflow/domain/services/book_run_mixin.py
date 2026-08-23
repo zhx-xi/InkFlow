@@ -69,6 +69,7 @@ class BookRunMixin:
                         raise ChapterAlreadyWrittenError("该章已有内容，拒绝重跑")
             has_targets = bool(volumes)
         elif mode == "agentic":
+            await self._check_agentic_authorized(plan)
             chapters = await self._find_chapters(plan)  # type: ignore[attr-defined]  # 混入类：方法由 BookService 提供
             for chapter in chapters:
                 if await self._check_content_written(plan, chapter):  # type: ignore[attr-defined]  # 混入类：方法由 BookService 提供
@@ -94,6 +95,15 @@ class BookRunMixin:
             plan
         )
         return {"run_id": str(plan.id), "status": "running"}
+
+    async def _check_agentic_authorized(self, plan) -> None:
+        """#598 全自动授权门禁：config 明确存在且 auto_write_enabled=False → 拒绝。
+        config 不存在（None）或 auto_write_enabled=True → 放行（向后兼容 CLI/旧路径）。"""
+        if self._project_config_getter is None:  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供
+            return
+        config = await self._project_config_getter(plan.project_id)  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供
+        if config is not None and getattr(config, "auto_write_enabled", False) is False:
+            raise ValueError("全自动写作未授权，请先在执行详情旁开启「是否全自动」开关")
 
     async def mark_failed(self, run_id: str) -> dict:
         """后台任务异常兜底：运行标记 failed 落库（#456 状态映射 running → failed）.

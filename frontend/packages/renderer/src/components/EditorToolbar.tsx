@@ -1,5 +1,5 @@
 /** 编辑器工具栏（spec §4.2.1 Q2 拍板 C）：默认 opacity 0.35、hover 编辑器区域全显 + 快捷键 */
-import { Eye, Redo2, Save, ScanSearch, Sparkles, Undo2, Wand2 } from 'lucide-react';
+import { Eye, Redo2, Save, ScanSearch, Sparkles, Undo2, Wand2, Zap } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
 
 export interface EditorToolbarProps {
@@ -14,6 +14,9 @@ export interface EditorToolbarProps {
   /** F47 #379（spec §4.2）：视图切换（editor → detail）；缺省 editor、onToggleView 可选以兼容既有用法 */
   view?: 'editor' | 'detail';
   onToggleView?: () => void;
+  /** #598 D9-a1：项目级「是否全自动」开关状态与切换回调（可选，兼容既有用法） */
+  autoWriteEnabled?: boolean;
+  onToggleAuto?: () => void;
 }
 
 const ICON_BTN_CLS =
@@ -29,6 +32,8 @@ export function EditorToolbar({
   onAudit,
   view = 'editor',
   onToggleView,
+  autoWriteEnabled,
+  onToggleAuto,
 }: EditorToolbarProps) {
   const { t } = useI18n();
   return (
@@ -106,6 +111,17 @@ export function EditorToolbar({
         onClick={onToggleView}
       >
         <Eye className="h-4 w-4" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        data-testid="auto-toggle"
+        aria-label={t('write.toolbar.autoToggle')}
+        title={t('write.toolbar.autoToggle')}
+        aria-pressed={autoWriteEnabled === true}
+        className={ICON_BTN_CLS}
+        onClick={onToggleAuto}
+      >
+        <Zap className="h-4 w-4" aria-hidden="true" />
       </button>
     </div>
   );
