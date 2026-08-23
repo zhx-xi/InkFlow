@@ -58,6 +58,7 @@ export const zh = {
   // F36（#196）：分类实体手动创建对话框
   'lib.create.title.characters': '创建角色',
   'lib.create.title.world': '创建世界观',
+  'lib.create.title.worldCategory': '创建分类',
   'lib.create.title.outline': '创建大纲',
   'lib.create.title.timeline': '创建时间线事件',
   'lib.create.title.foreshadow': '创建伏笔',
@@ -91,6 +92,7 @@ export const zh = {
   'lib.worldCat.add': '新建分类',
   'lib.worldCat.name': '分类名',
   'lib.worldCat.nameEmpty': '分类名不能为空',
+  'lib.worldNode.childCount': '{count} 子条目',
   'lib.copy.title': '复制到项目',
   'lib.copy.scope': '复制范围',
   'lib.copy.scope.subtree': '本体 + 全部子级',

@@ -40,6 +40,8 @@ export interface LibraryCreateDialogProps {
   editing?: LibraryItemDTO | null;
   /** F43 P1：建议标签 = 当前项目角色 extra.groups 并集（父级聚合，D-13 数据驱动） */
   tagSuggestions?: string[];
+  /** #568：world 选中分类时预填类别（创建子条目）；编辑模式优先 editing.category */
+  initialCategory?: string;
   /** F43：onCreate 改名 onSave——语义 = 保存回调，父级分支 PATCH/POST */
   onSave: (input: Record<string, unknown>) => Promise<void>;
   onOpenChange: (open: boolean) => void;
@@ -72,6 +74,7 @@ export function LibraryCreateDialog({
   cat,
   editing = null,
   tagSuggestions = [],
+  initialCategory,
   onSave,
   onOpenChange,
 }: LibraryCreateDialogProps) {
@@ -102,7 +105,7 @@ export function LibraryCreateDialog({
     setPersonality(editing?.personality ?? '');
     setBackground(editing?.background ?? '');
     setGoals(editing?.goals ?? '');
-    setCategory(editing?.category ?? '');
+    setCategory(editing?.category ?? initialCategory ?? '');
     setContent(editing?.content ?? '');
     setTimeDisplay(editing?.time_display ?? '');
     setPriority(editing?.priority ?? 50);
@@ -117,7 +120,7 @@ export function LibraryCreateDialog({
         : [],
     );
     setSaving(false);
-  }, [open, cat, editing]);
+  }, [open, cat, editing, initialCategory]);
 
   // ESC 关闭（尊重 Radix Select 等已 preventDefault 的 Escape；参照 TemplateDialog 既有交互）
   useEffect(() => {
@@ -134,6 +137,13 @@ export function LibraryCreateDialog({
   const requiredValue = cat === 'timeline' || cat === 'foreshadow' ? title.trim() : name.trim();
   // F43 P1（D1）：角色分类等级必填无默认——名称/标题 + 等级双必填才 enabled（E13）
   const canSave = requiredValue !== '' && !saving && (cat !== 'characters' || rank !== '');
+
+  // #568：world 新建模式下选中分类时用「创建分类」标题（语义 = 在选中分类下创建子条目）
+  const titleKey = editing
+    ? `lib.edit.title.${cat}`
+    : cat === 'world' && initialCategory
+      ? 'lib.create.title.worldCategory'
+      : `lib.create.title.${cat}`;
 
   const buildBody = (): Record<string, unknown> => {
     switch (cat) {
@@ -175,13 +185,13 @@ export function LibraryCreateDialog({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={editing ? t(`lib.edit.title.${cat}`) : t(`lib.create.title.${cat}`)}
+        aria-label={t(titleKey)}
         data-testid="library-create-dialog"
         className="max-h-[85vh] w-[520px] overflow-y-auto rounded-lg border border-line bg-surface p-6 shadow-card"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="font-serif text-[18px] font-semibold">
-          {editing ? t(`lib.edit.title.${cat}`) : t(`lib.create.title.${cat}`)}
+          {t(titleKey)}
         </h2>
         <div className="mt-4 space-y-4">
           {cat === 'characters' && (

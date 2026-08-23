@@ -831,7 +831,7 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
  * 保留地图视图。#567 曾隐藏入口 → #588 推翻为「可见」（回归修复）。
  */
 describe('设定库页 — 世界观已有根条目后仍可创建（#567/#588）', () => {
-  it('已有根世界观条目：渲染「新建分类」创建按钮（可创建子分类，保留地图视图）', async () => {
+  it('已有根世界观条目：「去创建」隐藏 + 「新建分类」保留（#567/#588 已反转，#568 定稿）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
     });
@@ -852,11 +852,13 @@ describe('设定库页 — 世界观已有根条目后仍可创建（#567/#588�
     await user.click(screen.getByRole('tab', { name: '世界观' }));
     // 根条目存在 → 树视图渲染（非空态）
     await waitFor(() => expect(screen.getByTestId('library-list')).toBeInTheDocument());
-    // #588 契约：已有根条目时仍渲染「新建分类」（可创建子分类，仅禁再建根）
+    // #568 定稿：根态（未选分类）隐藏「去创建」（根单例，不能建根；#545 入口随 #568 收敛）
+    expect(screen.queryByTestId('library-create-btn')).not.toBeInTheDocument();
+    // 「新建分类」world-cat-add 保留（新建分类实体，分类树可扩展；非根条目）
     expect(screen.getByTestId('world-cat-add')).toBeInTheDocument();
     // 空态 CTA 不渲染（根条目存在 → 非空态）
     expect(screen.queryByTestId('library-tab-empty-cta')).not.toBeInTheDocument();
     // 地图视图入口保留（视图非创建）
     expect(screen.getByTestId('map-view-entry')).toBeInTheDocument();
   });
-});
+});

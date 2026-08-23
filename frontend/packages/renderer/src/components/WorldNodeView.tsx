@@ -47,7 +47,8 @@ export function filterWorldTree(
   return out;
 }
 
-/** F43 P1（§5.3）：递归树节点视图——toggle 仅渲染在有子节点行；操作按钮随 D12 悬停显示 */
+/** F43 P1（§5.3）+ #568：递归树节点视图——两行式信息卡行（名称 + 描述预览 + 子条目数徽标）；
+ * toggle 仅渲染在有子节点行；操作按钮随 D12 悬停显示 */
 export function WorldNodeView({
   node,
   depth,
@@ -91,12 +92,30 @@ export function WorldNodeView({
         ) : (
           <span className="h-5 w-5 shrink-0" aria-hidden="true" />
         )}
-        <span className="min-w-0 flex-1 truncate">{item.name ?? ''}</span>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="block truncate font-medium">{item.name ?? ''}</span>
+          {item.content && item.content.trim() !== '' && (
+            <span
+              data-testid={`world-node-desc-${item.id}`}
+              className="block truncate text-[12px] text-ink-2"
+            >
+              {item.content}
+            </span>
+          )}
+        </div>
         {item.category ? (
           <span className="shrink-0 rounded-full bg-surface-3 px-2 py-0.5 text-[11px] text-ink-2">
             {item.category}
           </span>
         ) : null}
+        {hasChildren && (
+          <span
+            data-testid={`world-node-childcount-${item.id}`}
+            className="shrink-0 rounded-full bg-surface-3 px-2 py-0.5 text-[11px] text-ink-2"
+          >
+            {t('lib.worldNode.childCount', { count: children.length })}
+          </span>
+        )}
         {/* F43 P1：行内操作按钮（D12 悬停显示；P0 编辑/删除 testid 不变 + 复制 world-copy-<id>） */}
         <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-180 group-hover:opacity-100 focus-within:opacity-100">
           <button

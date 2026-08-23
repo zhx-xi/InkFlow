@@ -595,8 +595,8 @@ export function LibraryPage() {
           </div>
 
           <div className="mt-5">
-            {/* #545：列表非空时保留常态"新建"入口（knowledge 无创建端点不渲染；空态 CTA 覆盖空列表）；#588：world 已有根条目时仍保留（可创建子分类） */}
-            {createCat !== null && !loading && !loadFailed && items.length > 0 && !(activeCat === 'world' && workbenchActive) && (
+            {/* #545 + #568：列表非空保留常态"新建"入口（knowledge 无端点不渲染；空态 CTA 覆盖空列表；world 根态隐藏、选中分类显示） */}
+            {createCat !== null && !loading && !loadFailed && items.length > 0 && !(activeCat === 'world' && workbenchActive) && (activeCat !== 'world' || activeWorldCat !== null) && (
               <div className="mb-3 flex items-center justify-end">
                 <button type="button" data-testid="library-create-btn" className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60" onClick={() => setCreateOpen(true)}>
                   {t('lib.empty.create')}
@@ -804,13 +804,14 @@ export function LibraryPage() {
         </>
       )}
 
-      {/* #196 + F43：创建/编辑双模式对话框（挂在页面根部，open 受控；knowledge 分类不渲染） */}
+      {/* #196 + F43 + #568：创建/编辑双模式对话框（挂在页面根部，open 受控；knowledge 分类不渲染；world 选中分类 initialCategory 预填） */}
       {createCat !== null && (
         <LibraryCreateDialog
           open={createOpen}
           cat={createCat}
           editing={editing}
           tagSuggestions={tagSuggestions}
+          initialCategory={activeCat === 'world' ? (activeWorldCat ?? undefined) : undefined}
           onSave={handleSave}
           onOpenChange={(open) => {
             setCreateOpen(open);

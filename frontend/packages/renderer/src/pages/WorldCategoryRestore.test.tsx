@@ -84,18 +84,17 @@ describe('设定库页 — 世界观根条目后仍可创建子分类（#588）'
     });
   }
 
-  it('#588 已有根世界观条目：新建分类入口仍可见（可创建子分类）', async () => {
+  it('#568 有根世界观条目 + 未选分类（根态）：「去创建」隐藏（#567/#588 行为反转）', async () => {
     mockWorldWithRoot();
     const user = userEvent.setup();
     renderLibrary();
     await user.click(screen.getByRole('tab', { name: '世界观' }));
     // 根条目存在 → 树视图渲染（非空态）
     await waitFor(() => expect(screen.getByTestId('library-list')).toBeInTheDocument());
-    // RED 核心：当前实现 hasRootWorld 隐藏两处创建入口 → 以下断言 FAIL
-    // 工具栏「新建分类」（WorldCatActionButtons 容器内）
+    // #568 入口反转：根态（未选分类）隐藏「去创建」（根世界观单例，不能再建根）
+    expect(screen.queryByTestId('library-create-btn')).not.toBeInTheDocument();
+    // 新建分类实体（world-cat-add）恒显示（分类树可扩展，非根条目）
     expect(screen.getByTestId('world-cat-add')).toBeInTheDocument();
-    // 列表态右上「新建」入口
-    expect(screen.getByTestId('library-create-btn')).toBeInTheDocument();
     // 守护：地图视图入口保留（非创建类，不应受影响）
     expect(screen.getByTestId('map-view-entry')).toBeInTheDocument();
   });
