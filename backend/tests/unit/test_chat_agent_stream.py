@@ -62,13 +62,16 @@ ChatStreamEvent 新字段）：
 
 from __future__ import annotations
 
+import json
 import uuid
+from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from inkflow.api.routers.chat_stream import ChatStreamRequest
+from inkflow.api.routers.chat_stream import ChatStreamRequest, stream_chat_agent
+from inkflow.domain.models.agent_run import AgentRun
 from inkflow.domain.models.agent_tools import ToolSpec
 from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.services.chat_service import ChatStreamEvent
@@ -297,6 +300,48 @@ class TestChatAgentStreamEvents:
             async for _ in svc.stream_events(prompt="你好"):
                 pass
 
+    @pytest.mark.asyncio
+    async def test_on_chat_model_end_collects_steps_via_consume_trace(self) -> None:
+        """#615 契约①：on_chat_model_end（完整 AIMessage，含 tool_calls + usage）+
+        随后的 on_tool_end → stream_events 累积收集 steps；流结束后 consume_trace()
+        返回 (steps, final_content, token_usage_total)。
+
+        工具结果按 tool_call_id（AIMessage.tool_calls[].id ↔ on_tool_end.run_id）回填；
+        tokens 取 response_metadata.usage.total_tokens。RED 期 consume_trace()
+        不存在 → AttributeError FAILED（正确 RED）。
+        """
+        output = SimpleNamespace(
+            content="介绍主角",
+            tool_calls=[
+                {"name": "search_characters", "args": {"project_id": PROJECT_ID}, "id": "call_1"}
+            ],
+            response_metadata={"usage": {"total_tokens": 25}},
+        )
+        events = [
+            {
+                "event": "on_chat_model_end",
+                "name": "ChatOpenAI",
+                "run_id": "llm_1",
+                "data": {"output": output},
+            },
+            _tool_end_event("call_1", "search_characters", '{"ok":true,"data":[]}'),
+        ]
+        svc, _ = _make_svc(events=events)
+        frames = [ev async for ev in svc.stream_events(prompt="找主角")]
+        assert frames[-1].done is True  # 流完整结束（含 done 终帧）后再取 trace
+
+        steps, final_content, token_usage_total = svc.consume_trace()
+
+        assert len(steps) == 1
+        assert steps[0].message_content == "介绍主角"
+        assert steps[0].tool_calls[0].tool_name == "search_characters"
+        assert steps[0].tool_calls[0].arguments == {"project_id": PROJECT_ID}
+        assert steps[0].tool_calls[0].result == '{"ok":true,"data":[]}'
+        assert steps[0].tool_calls[0].is_error is False
+        assert steps[0].tokens == 25
+        assert token_usage_total == 25
+        assert final_content == "介绍主角"
+
 
 # ── TestGetChatAgentService: 装配 ──
 
@@ -439,3 +484,84 @@ class TestGetChatAgentServiceDbAndParseFallback:
         # 回退空串 → build_deep_agent 收到 api_key="" / base_url=""
         assert _kwarg_or_positional(m_da.call_args, "api_key", 1, None) == ""
         assert _kwarg_or_positional(m_da.call_args, "base_url", 2, None) == ""
+
+
+# ── TestStreamChatAgentPersistsRun: #615 端点落 run ──
+
+
+class TestStreamChatAgentPersistsRun:
+    """#615 契约②：stream_chat_agent 落 run（mode=chat）+ done 帧回传 run_id。
+
+    直接调用端点函数并注入 repo（test_chat_stream_api.py 同款：SSE 端点不走
+    HTTP 层），另 patch deps.get_agent_run_repo（f27 绑定名快照惯例）兜底
+    运行时取仓路径。run_id 来自 repo.create 返回值。
+
+    RED 期端点未接 repo 参数 → TypeError（unexpected keyword argument 'repo'）
+    FAILED = 正确 RED（落库未接线）。
+    """
+
+    @patch("inkflow.api.deps.get_agent_run_repo")
+    @pytest.mark.asyncio
+    async def test_stream_chat_agent_persists_run_with_chat_mode(self, m_get_repo) -> None:
+        """repo.create(project_id/chapter_id, mode='chat') → 流式（steps 收集）→
+        repo.save(completed run, steps 非空) → done 帧含 run_id。"""
+        run_id = "chat-run-0001"
+        now = datetime.now(UTC)
+        mock_run = AgentRun(
+            id=run_id,
+            project_id=uuid.UUID(PROJECT_ID),
+            chapter_id=uuid.UUID(CHAPTER_ID),
+            mode="chat",
+            created_at=now,
+            updated_at=now,
+        )
+        mock_repo = MagicMock()
+        mock_repo.create = AsyncMock(return_value=mock_run)
+        mock_repo.save = AsyncMock(return_value=None)
+        m_get_repo.return_value = mock_repo
+
+        # 事件序列复用契约①：on_chat_model_end + on_tool_end → steps 非空
+        output = SimpleNamespace(
+            content="介绍主角",
+            tool_calls=[
+                {"name": "search_characters", "args": {"project_id": PROJECT_ID}, "id": "call_1"}
+            ],
+            response_metadata={"usage": {"total_tokens": 25}},
+        )
+        svc, _ = _make_svc(
+            events=[
+                {
+                    "event": "on_chat_model_end",
+                    "name": "ChatOpenAI",
+                    "run_id": "llm_1",
+                    "data": {"output": output},
+                },
+                _tool_end_event("call_1", "search_characters", '{"ok":true,"data":[]}'),
+            ]
+        )
+
+        data = ChatStreamRequest(project_id=PROJECT_ID, chapter_id=CHAPTER_ID, prompt="找主角")
+        request = MagicMock()
+        request.is_disconnected = AsyncMock(return_value=False)
+
+        resp = await stream_chat_agent(data=data, request=request, svc=svc, repo=mock_repo)
+        frames = [frame async for frame in resp.body_iterator]
+
+        # ① 前置落 running run：create(mode="chat")
+        mock_repo.create.assert_awaited_once_with(
+            project_id=uuid.UUID(PROJECT_ID),
+            chapter_id=uuid.UUID(CHAPTER_ID),
+            mode="chat",
+        )
+        # ② 流结束 save 终态：completed + steps 非空 + final_content/token 回填
+        mock_repo.save.assert_awaited_once()
+        saved_run = _kwarg_or_positional(mock_repo.save.await_args, "run", 0)
+        assert saved_run.status == "completed"
+        assert saved_run.steps
+        assert saved_run.final_content == "介绍主角"
+        assert saved_run.token_usage_total == 25
+        # ③ done 帧回传 run_id（前端 #599 存 runId → 点开详情）
+        done_payload = json.loads(frames[-1].removeprefix("data: ").strip())
+        assert done_payload["type"] == "done"
+        assert done_payload["done"] is True
+        assert done_payload["run_id"] == run_id
