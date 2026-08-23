@@ -40,8 +40,9 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -50,6 +51,7 @@ from httpx_sse import aconnect_sse
 
 import inkflow.api.deps as _deps
 from inkflow.api.app import app  # 必须先于 stub 行导入（GREEN 时 app 导入链注册真模块/真 deps）
+from inkflow.domain.models.agent_run import AgentRun
 from inkflow.domain.ports.llm_errors import LLMRequestError
 
 # RED 阶段 inkflow.api.deps.get_chat_agent_service 属性尚不存在——补 MagicMock 占位，
@@ -124,7 +126,28 @@ def mock_chat_agent_service() -> MagicMock:
             _ev("done", done=True),
         )
     )
+    svc.consume_trace = MagicMock(return_value=([], "介绍主角", 0))
     return svc
+
+
+@pytest.fixture
+def override_agent_run_repo():
+    """#615 契约升级：端点依赖 get_agent_run_repo → mock repo（create/save）。"""
+    now = datetime.now(UTC)
+    run = AgentRun(
+        id="chat-run-0001",
+        project_id=uuid.UUID("550e8400-e29b-41d4-a716-446655440000"),
+        created_at=now,
+        updated_at=now,
+    )
+    repo = MagicMock()
+    repo.create = AsyncMock(return_value=run)
+    repo.save = AsyncMock(return_value=None)
+    from inkflow.api.deps import get_agent_run_repo
+
+    app.dependency_overrides[get_agent_run_repo] = lambda: repo
+    yield repo
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture
@@ -157,7 +180,9 @@ class TestChatAgentStreamSuccess:
     """POST /api/v1/chat/agent/stream — 200 + SSE 帧类型表（spec §14.2）。"""
 
     @pytest.mark.asyncio
-    async def test_agent_stream_frame_types(self, override_chat_agent_service):
+    async def test_agent_stream_frame_types(
+        self, override_chat_agent_service, override_agent_run_repo
+    ):
         """帧类型表：delta / tool_call / tool_result / done 逐帧 JSON 精确锁定。"""
         body = _payload()
         async with (
@@ -183,11 +208,11 @@ class TestChatAgentStreamSuccess:
             "result": '{"ok": true, "data": []}',
             "done": False,
         }
-        assert frames[3] == {"type": "done", "done": True}
+        assert frames[3] == {"type": "done", "done": True, "run_id": "chat-run-0001"}
 
     @pytest.mark.asyncio
     async def test_agent_stream_calls_service_with_prompt_and_context(
-        self, override_chat_agent_service, mock_chat_agent_service
+        self, override_chat_agent_service, mock_chat_agent_service, override_agent_run_repo
     ):
         """mock stream_events() 收到 prompt + chapter_context（keyword 透传）。"""
         body = {
@@ -217,7 +242,7 @@ class TestChatAgentStreamErrors:
 
     @pytest.mark.asyncio
     async def test_agent_stream_llm_error_yields_error_frame(
-        self, override_chat_agent_service, mock_chat_agent_service
+        self, override_chat_agent_service, mock_chat_agent_service, override_agent_run_repo
     ):
         """首帧 delta 后抛 LLMRequestError → error 终帧，不泄漏内部细节。"""
 
