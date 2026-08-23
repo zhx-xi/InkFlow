@@ -77,7 +77,12 @@ from inkflow.domain.ports.agent_errors import (
     ToolReferenceError,
 )
 from inkflow.domain.ports.agent_repository import AgentRepositoryProtocol
-from inkflow.domain.services.agent_entity_service import AgentEntityService as AgentService
+from inkflow.domain.services.agent_entity_service import (
+    BUILTIN_AGENT_SPECS,
+)
+from inkflow.domain.services.agent_entity_service import (
+    AgentEntityService as AgentService,
+)
 
 TS = datetime(2026, 8, 1, 10, 0, 0)
 # 工具目录已注册 name（spec §2.3 表；save_draft 为 F39 MODIFY 待补，不引用）
@@ -695,3 +700,37 @@ class TestDuplicate:
         saved = await service.duplicate(1)
         at = _arg(mock_agent_repo.add.await_args, "agent", 0)
         assert saved is at  # fixture: add side_effect=lambda a: a
+
+
+class TestBuiltinAgentPromptContract:
+    """#550 内置 agent prompt 补全契约（角色职责/工具使用/输出规范）。
+
+    契约：6 个 BUILTIN_AGENT_SPECS 的 system_prompt 从单行精简文案扩写为结构化
+    多行提示词——明确「角色职责 / 工具使用 / 输出规范」三要素，使内置角色对
+    agentic 决策的指导力与细节颗粒度提升（参考 mattpocock/skills 方法论风格）。
+
+    RED 形态: 当前各 system_prompt 均为单行（如「你是架构师，负责章节结构与
+    大纲规划。」，<40 字符且不含「工具/输出/职责」）→ 长度与关键字断言失败。
+    """
+
+    def test_each_builtin_system_prompt_has_min_length(self) -> None:
+        """每个内置 system_prompt ≥ 80 字符（当前单行 <40 → FAIL）。"""
+        for spec in BUILTIN_AGENT_SPECS:
+            assert len(spec["system_prompt"]) >= 80, (
+                f"{spec['name']} system_prompt 仅 {len(spec['system_prompt'])} 字符，过短"
+            )
+
+    def test_each_builtin_system_prompt_contains_role_duty(self) -> None:
+        """每个内置 system_prompt 含角色职责说明（含「职责」）。"""
+        for spec in BUILTIN_AGENT_SPECS:
+            assert "职责" in spec["system_prompt"], f"{spec['name']} system_prompt 缺「职责」"
+
+    def test_each_builtin_system_prompt_contains_tool_usage(self) -> None:
+        """每个内置 system_prompt 含工具使用说明（含「工具」）。"""
+        for spec in BUILTIN_AGENT_SPECS:
+            assert "工具" in spec["system_prompt"], f"{spec['name']} system_prompt 缺「工具」"
+
+    def test_each_builtin_system_prompt_contains_output_spec(self) -> None:
+        """每个内置 system_prompt 含输出规范说明（含「输出」）。"""
+        for spec in BUILTIN_AGENT_SPECS:
+            assert "输出" in spec["system_prompt"], f"{spec['name']} system_prompt 缺「输出」"
