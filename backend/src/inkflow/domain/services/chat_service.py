@@ -13,6 +13,14 @@ class ChatStreamEvent:
     delta: str = ""
     done: bool = False
     error: str | None = None
+    # #597 chat 系统级 Agent 扩展字段（保留既有 delta/done/error，向后兼容）：
+    # type 区分帧类型（delta/tool_call/tool_result/done/error），id/name/args/result
+    # 供工具调用帧透传（spec f47 §14.2 帧表）。
+    type: str = "delta"
+    id: str | None = None
+    name: str | None = None
+    args: dict | None = None
+    result: str | None = None
 
 
 class ChatService:

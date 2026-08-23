@@ -48,6 +48,14 @@ interface ChatEntry {
   intent?: ChatIntent;
 }
 
+/** #597：agent 工具流条目（onToolCall 追加，onToolResult 按 id 填充 result） */
+interface ToolEntry {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+  result: string | null;
+}
+
 /** #476：对话区展开默认高度 + 拖动高度上下限（px） */
 const CHAT_DEFAULT_HEIGHT = 160;
 const CHAT_MIN_HEIGHT = 80;
@@ -57,6 +65,8 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
   const { t } = useI18n();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatEntry[]>([]);
+  // #597：本轮 agent 工具调用/结果卡片（下标 = 数组内 index，首个工具调用 = 0）
+  const [toolEntries, setToolEntries] = useState<ToolEntry[]>([]);
   // #477：当前选中的 content 消息 seq（单选互斥，新 content 到达自动成为选中条）
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -100,6 +110,8 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
         userSeqRef.current = userSeq;
         aiSeqRef.current = aiSeq;
         setMessages(history);
+        // #597：切换项目/重载历史时清空上一轮工具卡片
+        setToolEntries([]);
         setSelectedSeq(latestContentSeq);
       })
       .catch(() => {
@@ -175,6 +187,16 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
     [t],
   );
 
+  /** #597：工具调用帧 → 追加工具条目（result 待 tool_result 填充） */
+  const onToolCall = useCallback((call: { id: string; name: string; args: Record<string, unknown> }) => {
+    setToolEntries((prev) => [...prev, { ...call, result: null }]);
+  }, []);
+
+  /** #597：工具结果帧 → 按 id 匹配填充 result */
+  const onToolResult = useCallback((res: { id: string; name: string; result: string }) => {
+    setToolEntries((prev) => prev.map((e) => (e.id === res.id ? { ...e, result: res.result } : e)));
+  }, []);
+
   const handleSend = useCallback(async () => {
     const prompt = input.trim();
     if (!prompt || streamingRef.current) return;
@@ -196,10 +218,10 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
       ...(chapterId ? { chapter_id: chapterId } : {}),
       ...(chapterContent ? { chapter_context: chapterContent } : {}),
     };
-    void streamChat(body, { onDelta, onDone, onError }).then((abort) => {
+    void streamChat(body, { onDelta, onDone, onError, onToolCall, onToolResult }).then((abort) => {
       abortRef.current = abort;
     });
-  }, [input, projectId, chapterId, chapterContent, onDelta, onDone, onError, t]);
+  }, [input, projectId, chapterId, chapterContent, onDelta, onDone, onError, onToolCall, onToolResult, t]);
 
   // #476 窗口级拖拽：#388 模式 —— mousedown(handle) 记录起点，window mousemove 更新高度，window mouseup 收尾
   const handleWindowMouseMove = useCallback((e: MouseEvent) => {
@@ -285,6 +307,7 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
     try {
       await archiveChatConversation(projectIdRef.current);
       setMessages([]);
+      setToolEntries([]);
       useToastStore.getState().pushToast('ok', t('sessions.archivedToast'));
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
@@ -296,6 +319,7 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
     try {
       await deleteChatConversation(projectIdRef.current);
       setMessages([]);
+      setToolEntries([]);
       useToastStore.getState().pushToast('ok', t('sessions.deletedToast'));
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
@@ -345,6 +369,27 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
             className="max-h-[480px] space-y-3 overflow-y-auto text-[13px]"
             style={{ height }}
           >
+            {/* #597：agent 工具调用/结果卡片（在 ai 消息前展示） */}
+            {toolEntries.map((entry, index) => (
+              <div key={`tool-${entry.id}-${index}`} className="space-y-1">
+                <div
+                  data-testid={`chat-tool-call-${index}`}
+                  data-name={entry.name}
+                  className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] text-ink-2"
+                >
+                  <span className="font-medium text-ink">{entry.name}</span>
+                  <span className="ml-2 truncate">{JSON.stringify(entry.args)}</span>
+                </div>
+                {entry.result !== null && (
+                  <div
+                    data-testid={`chat-tool-result-${index}`}
+                    className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] text-ink-2"
+                  >
+                    {entry.result}
+                  </div>
+                )}
+              </div>
+            ))}
             {messages.map((m) => {
               const id = m.id;
               return m.kind === 'user' ? (

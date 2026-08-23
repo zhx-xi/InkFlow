@@ -104,6 +104,8 @@ describe('AppNav — 结构与分组', () => {
     }
     // #481：模型管理合并入设置页模型分类，独立导航项 nav-item-models 不存在
     expect(screen.queryByTestId('nav-item-models')).not.toBeInTheDocument();
+    // #597 D11=A：书级编排入口已从侧边栏删除（导航入口删除，/book 路由仍保留直达），nav-item-book 不存在
+    expect(screen.queryByTestId('nav-item-book')).not.toBeInTheDocument();
   });
 
   it('导航文案：写作/项目用既有 key，设定库/设置/RAG 用新 key', () => {

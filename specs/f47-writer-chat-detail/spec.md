@@ -1,5 +1,7 @@
 # F47 写作页底部 AI 聊天框 + AI 执行详情页（#379）
 
+> **Spec 变更**（v1.0 → v1.1，2026-08-23，#597 增量）：本版将聊天框从「纯 LLM 对话 + 意图解析」（#541 streamChat，单轮对话、无工具）升级为 **ChatPanel 驱动 deepagents 系统级 Agent**（#551 C1，拍板 D8=A）——消息发出后走 deepagents agent loop（system agent 全量暴露工具），流式返回「工具调用 + 结果 + 最终回复」；同时**删除侧边栏 `nav.book` 书级编排入口**（拍板 D11=A），`/book` 路由与 BookPlannerPanel 保留（F44 编排能力迁移为对话内触发的全自动编排流程，非物理删除）。本增量明确新增后端 chat agent 端点 + SSE 帧协议扩展（见 §14）。
+
 ## 1. 概述
 
 写作页底部横栏从被动状态条改造为 **AI 聊天框**（可与 AI 对话，结果经用户确认落章），
@@ -267,3 +269,109 @@ write.detail.unknown        // 未知
   ExecutionDetailPanel + 视图切换 + E2E + i18n。
 - 门禁：M1 RED 全 FAIL · M2 前端测试全绿 · M3 聊天框（轮询 + 插入正文）· M4 切换按钮 ·
   M5 详情页（stages/trace/relations/子 agent）· M6 落章不变 · M7 PR 合入 CI 绿 · M8 #379 closed。
+
+---
+
+## 14. chat 系统级 Agent（#597，2026-08-23 增量）
+
+> 本模块在 v1.1 引入 `ChatPanel 驱动 deepagents 系统级 Agent`（#551 C1）。§4.1（v1.0 的「轮询 builtin:chat 聊天框」）经 #541 streamChat（纯 LLM 对话）迭代后，由本 §14 再次升级为 **agent loop 工具流式**。§4.1 §4.4 的 testid/i18n 契约在 #541-#581 已落地并扩充，本 §14 只做增量（工具流 + 删入口 + 能力迁移），不推翻既有契约。
+
+### 14.1 拍板记录（2026-08-23，用户拍板）
+
+| 决策 | 结论 | 说明 |
+|------|------|------|
+| D8 | **A：ChatPanel 跑 deepagents agent loop**（复用 `build_deep_agent` harness，聊天即 agent） | system agent 全量暴露工具（5 只读 + save_draft），消息发出后 agent 自主决定工具调用序列 |
+| D11 | **A：删 nav.book 入口，F44 编排能力迁移进对话** | 删除侧边栏 `nav.book` 导航项；`/book` 路由 + BookPage + BookPlannerPanel + 后端 books.py **全部保留**（能力迁移，非物理删除） |
+
+### 14.2 后端契约：chat agent 流式端点（新增）
+
+**新增 `POST /api/v1/chat/agent/stream`**（SSE 流式，与既有 `POST /api/v1/chat/stream` 并存；后者为 #541 纯 LLM 对话端点，保留向后兼容，ChatPanel 改用 agent 端点）。
+
+- **装配**（`get_chat_agent_service`，deps.py 新增）：`build_deep_agent(model=config.llm_default_model, api_key, base_url, tools=全量工具, system_prompt=chat_system_agent_prompt, profile_key=None)`。
+  - `tools` = `build_reader_tools(ReaderToolDeps(character_service, foreshadowing_service, summary_service, chapter_audit_service))`（全量 5 只读）+ `build_save_draft_tool(SaveDraftToolDeps(draft_service, audit_service, expected_project_id=data.project_id, expected_chapter_id=data.chapter_id))`。
+  - `system_prompt` = **全新「系统级 Agent」提示**（区别于 §1 `_CHAT_ASSISTANT_PROMPT` 纯对话提示）：声明拥有全部工具（检索/写入/审计），可自主完成创作任务，输出正文。
+  - 模型/密钥/base_url 装配镜像 `get_agentic_writer_service`（deps.py L241-252 同源 provider_config 解析）。
+- **执行**：`agent.astream_events({"messages": [SystemMessage(system_prompt), HumanMessage(prompt + 章节上下文)]}, version="v2")` 迭代事件流 → SSE 帧。技术路径 spike 已确认（deepagents 0.7.5 编译图为 `CompiledStateGraph`，支持 `astream_events`）。
+- **SSE 帧协议扩展**（`_encode_frame` 增 `type` 键，区分帧类型）：
+
+```jsonc
+// data: <JSON>\n\n
+{ "type": "delta",      "delta": "文本增量",            "done": false }
+{ "type": "tool_call",  "id": "call_1", "name": "search_characters", "args": { "project_id": "..." }, "done": false }
+{ "type": "tool_result","id": "call_1", "name": "search_characters", "result": "{\"ok\": true,...}", "done": false }
+{ "type": "done",       "done": true }
+{ "type": "error",      "error": "LLM 调用失败，请稍后重试", "done": true }
+```
+
+- 事件映射（astream_events → SSE 帧）：
+  - `on_chat_model_stream`（run_type=llm + chunk）→ `delta` 帧（LLM token 增量）
+  - `on_tool_start` → `tool_call` 帧（工具名 + 参数）
+  - `on_tool_end` → `tool_result` 帧（工具输出 JSON 信封）
+  - agent loop 结束 → `done` 帧
+  - `LLMRequestError` / `RAGUnavailableError` → `error` 帧
+- **错误语义**：prompt 空白 → 422（复用既有 `ChatStreamRequest` 校验）；工具内部错误 → `error` 帧（不中断整体，工具信封 `{"ok": false}` 已含业务错误）。
+
+### 14.3 前端契约：ChatPanel 工具流式（MODIFY）
+
+- `api/chat.ts` 的 `streamChat` **保留函数名**、仅升级为 agent 端点（POST `/api/v1/chat/agent/stream`），`ChatStreamFrame` 扩展 `type` 字段 + `id`/`name`/`args`/`result`；callbacks 新增 `onToolCall` / `onToolResult`。
+- `ChatPanel.tsx`：流式渲染工具调用卡片 + 结果卡片 + 最终 delta。testid 新增：
+  - `chat-tool-call-<n>`（工具调用卡片：工具名 + 参数摘要，data-name 属性）
+  - `chat-tool-result-<n>`（工具结果卡片：结果 JSON 摘要 / `tool-error` 样式）
+- 既有契约保留：#541 并发保护（inFlight）、#474 模型未配置 guard、#477 意图解析（仅对最终回复 delta 文本 parse）、#547 持久化、#581 删除/归档。
+
+### 14.4 删 nav.book 入口 + F44 能力迁移（D11=A）
+
+- `AppNav.tsx` `WRITING_ITEMS` 删除 `{ key: 'book', href: '/book', labelKey: 'nav.book', icon: NotebookPen }`；`NotebookPen` 图标 import 若无其他使用则一并删除（避免 unused import）。
+- **保留**：`App.tsx` `/book` 路由（`<Route path="/book" element={<BookPage />} />`）+ `TITLE_BY_PATH['/book'] = 'nav.book'`；`BookPage.tsx` + `BookPlannerPanel`；后端 `books.py`（F44 编排逻辑）；i18n `nav.book`（供 TITLE_BY_PATH / BookPage 页面标题）。
+- **能力迁移语义**：`/book` 不再从侧边栏进入；F44 的「访谈→计划→运行」全自动编排未来由对话内 system agent 触发（#598/#599 实现 tool 触发，非本增量范围）；本增量仅删导航入口 + 保证 `/book` 路由仍直达。
+- 测试同步：`AppNav.test.tsx` 新增 `expect(screen.queryByTestId('nav-item-book')).not.toBeInTheDocument()`（正向守卫）；`book.test.tsx` 保留（BookPage/路由可达性不受导航删除影响）；`App.routing.test.tsx` 若有 `nav-item-book` 断言同步删除。
+
+### 14.5 测试策略（RED 契约）
+
+**后端（pytest）**：
+- `tests/unit/test_chat_agent_stream.py`（NEW，RED）：`get_chat_agent_service` 装配全量工具（5 只读 + save_draft，mock service）；SSE 帧协议三形态（delta / tool_call+tool_result / done）；错误帧（LLMRequestError → error）；astream_events 事件流 → 帧映射（on_chat_model_stream → delta，on_tool_start → tool_call，on_tool_end → tool_result）；prompt 空白 422。
+- `tests/api/test_chat_agent_api.py`（NEW，RED）：POST `/api/v1/chat/agent/stream` 冒烟（mock harness，帧类型表）。
+
+**前端（Vitest + RTL）**：
+- `ChatPanel.test.tsx`（MODIFY RED）：新增 describe——工具流渲染：mock `streamChat`（保留函数名升级）驱动 onToolCall → 工具卡片 `chat-tool-call-<n>` / onToolResult → 结果卡片 `chat-tool-result-<n>` / 最终 delta → ai 消息；并发保护（inFlight 仍适用）；空输入禁用发送。
+- `AppNav.test.tsx`（MODIFY RED）：新增 `nav-item-book` 不存在守卫。
+- `book.test.tsx`：不改（BookPage/路由可达性保持）。
+
+### 14.6 文件结构
+
+**后端**：
+| 文件 | 变更 |
+|------|------|
+| `backend/src/inkflow/api/routers/chat_stream.py` | MODIFY：新增 `/chat/agent/stream` 端点 + `_encode_frame` 扩展 type 帧 |
+| `backend/src/inkflow/infrastructure/agent/chat_agent_service.py` | NEW：`ChatAgentService`（astream_events 事件→帧映射，infrastructure 层，可 import deepagents；ADR-015 隔离） |
+| `backend/src/inkflow/infrastructure/agent/pipeline_templates.py` | MODIFY：新增 `_CHAT_SYSTEM_AGENT_PROMPT` 常量 |
+| `backend/src/inkflow/api/deps.py` | MODIFY：新增 `get_chat_agent_service`（全量工具装配） |
+| `backend/tests/unit/test_chat_agent_stream.py` | NEW（RED） |
+| `tests/api/test_chat_agent_api.py` | NEW（RED） |
+
+**前端**：
+| 文件 | 变更 |
+|------|------|
+| `frontend/packages/renderer/src/api/chat.ts` | MODIFY：`streamChat`（保留函数名升级 agent 端点）+ `ChatStreamFrame.type/id/name/args/result` + `onToolCall/onToolResult` |
+| `frontend/packages/renderer/src/components/ChatPanel.tsx` | MODIFY：工具流渲染（tool_call/result 卡片） |
+| `frontend/packages/renderer/src/components/AppNav.tsx` | MODIFY：删 `nav.book` 入口 + NotebookPen import |
+| `frontend/packages/renderer/src/components/ChatPanel.test.tsx` | MODIFY（RED）：工具流 describe |
+| `frontend/packages/renderer/src/components/AppNav.test.tsx` | MODIFY（RED）：nav-item-book 不存在守卫 |
+
+### 14.7 关键架构决策记录
+
+| 决策 | 方案 | 理由/备选否决 |
+|------|------|------|
+| 工具流式技术路径 | **`agent.astream_events(version="v2")`** | deepagents 0.7.5 编译图为 `CompiledStateGraph`（spike 已证支持 astream_events）；产出 on_chat_model_stream/on_tool_start/on_tool_end 标准事件，天然映射 SSE 帧。备选 `astream(stream_mode="updates")` 粒度偏粗（节点级非 token/tool 级），否决 |
+| chat agent 端点形态 | **新增 `/api/v1/chat/agent/stream`**，与既有 `/chat/stream` 并存 | 保留 #541 纯对话端点（向后兼容 + 降级路径）；agent 端点独立演进而非破坏旧契约。备选「改造 `/chat/stream` 为 agent」破坏既有测试与 api/chat.test.ts 契约，否决 |
+| 系统 agent 工具面 | **全量 5 只读 + save_draft** | 复用 F26/F27 工具工厂（build_reader_tools + build_save_draft_tool），system agent 全量暴露；白名单过滤（tool_ids）供 #598/#599 后续按需收敛 |
+| 工具内部错误隔离 | **工具信封 `{"ok": false}` 吞异常** | 工具工厂既有语义（F26/F27 约束），agent loop 不因单工具失败中断；HTTP 层仅 LLM/基础设施异常转 error 帧 |
+
+### 14.8 验收里程碑（M 门禁，叠加 v1.0 M1-M8）
+
+- **N1**：`POST /api/v1/chat/agent/stream` 流式返回 delta/tool_call/tool_result/done 帧（pytest 契约）。
+- **N2**：ChatPanel 发送消息 → deepagents agent loop → 流式渲染工具调用卡片 + 结果卡片 + 最终回复。
+- **N3**：AppNav 无 `nav-item-book`；`/book` 路由仍直达 BookPage。
+- **N4**：前端 vitest + tsc 全绿；后端 pytest + ruff + mypy 全绿。
+- **N5**：PR 合入（Part of #551，#551 保持 OPEN；Closes #597）。
+

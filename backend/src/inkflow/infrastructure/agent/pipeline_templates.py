@@ -107,6 +107,12 @@ _CHAT_ASSISTANT_PROMPT = (
     "<<<END>>>"
 )
 
+_CHAT_SYSTEM_AGENT_PROMPT = (
+    "你是 InkFlow 系统级写作 Agent，拥有全部创作工具（搜索角色、检查伏笔、"
+    "获取前文摘要、审计章节、统计字数、保存草稿）。用户提出创作任务时，"
+    "可自主调用工具检索设定/审计文本，完成后输出正文。"
+)
+
 
 def _build_write_chapter_template() -> PipelineConfig:
     """构建 builtin:write_chapter 模板 — Architect→Writer→Auditor→Reviser 四阶段链。"""

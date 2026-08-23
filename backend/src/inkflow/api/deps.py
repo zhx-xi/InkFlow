@@ -1,12 +1,16 @@
 """FastAPI 依赖注入 — 数据库 session 和 Service 获取."""
 
+from __future__ import annotations
+
 import uuid
 from collections.abc import AsyncGenerator
+from typing import TYPE_CHECKING
 
 from fastapi import Depends
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from inkflow.api.deps_chat_agent import get_chat_agent_service
 from inkflow.core.database import async_session_factory, get_session
 from inkflow.domain.models.agent_run import AgenticWriteRequest
 from inkflow.domain.models.vector_fingerprint import CHUNKER_VERSION
@@ -48,6 +52,9 @@ from inkflow.domain.services.summary_service import SummaryService
 from inkflow.domain.services.timeline_service import TimelineService
 from inkflow.domain.services.world_service import WorldService
 from inkflow.domain.services.writing_service import WritingService
+from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent
+from inkflow.infrastructure.agent.tools.reader_tools import build_reader_tools
+from inkflow.infrastructure.agent.tools.save_draft_tool import build_save_draft_tool
 from inkflow.infrastructure.database.repositories.agent_run_repo import (
     SQLiteAgentRunRepository,
 )
@@ -110,6 +117,18 @@ from inkflow.infrastructure.database.repositories.world_repo import (
 )
 from inkflow.infrastructure.llm import LangChainLLMClient, LangChainPromptManager
 
+if TYPE_CHECKING:
+    from inkflow.api.routers.chat_stream import ChatStreamRequest  # noqa: F401  # mypy 注解解析
+
+
+# f27 绑定名快照 re-export：单测 patch 目标 inkflow.api.deps.<名>（#597 迁移后保持可命中）
+__all__ = [
+    "build_deep_agent",
+    "build_reader_tools",
+    "build_save_draft_tool",
+    "get_chat_agent_service",
+]
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """获取数据库 session（FastAPI 依赖）."""
@@ -121,8 +140,6 @@ def get_project_service(
     db: AsyncSession,
 ) -> ProjectService:
     """获取 ProjectService 实例（注入数据库 session + F36 项目硬删钩子）."""
-    import uuid
-
     map_svc = get_map_service(db)
     return ProjectService(db, map_cleanup=lambda pid: map_svc.cleanup_project(uuid.UUID(int=pid)))
 
@@ -341,10 +358,6 @@ def get_summary_service(
     db: AsyncSession,
 ) -> SummaryService:
     """获取 SummaryService 实例."""
-    from inkflow.infrastructure.database.repositories.chapter_repo import (
-        SQLiteChapterRepository,
-    )
-
     return SummaryService(
         summary_repo=SQLiteSummaryRepository(db),
         llm_client=LangChainLLMClient(),
@@ -383,8 +396,6 @@ def get_world_service(
     db: AsyncSession,
 ) -> WorldService:
     """获取 WorldService 实例（世界观仓储 + WorldExtractor + F1 项目校验 + F36 地点硬删钩子）."""
-    import uuid
-
     from inkflow.core.config import config
 
     repo = SQLiteWorldRepository(db)
@@ -860,29 +871,11 @@ def get_knowledge_graph_service(
     db: AsyncSession,
 ) -> KnowledgeGraphService:
     """获取 KnowledgeGraphService 实例（F48 八仓储装配：关系 + 六类实体 + 项目）."""
-    from inkflow.infrastructure.database.repositories.character_repo import (
-        SQLiteCharacterRepository,
-    )
-    from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
-        SQLiteForeshadowingRepository,
-    )
     from inkflow.infrastructure.database.repositories.knowledge_relation_repo import (
         SQLiteKnowledgeRelationRepository,
     )
     from inkflow.infrastructure.database.repositories.map_repo import (
         SQLiteMapRepository,
-    )
-    from inkflow.infrastructure.database.repositories.outline_repo import (
-        SQLiteOutlineRepository,
-    )
-    from inkflow.infrastructure.database.repositories.project_repo import (
-        SQLiteProjectRepository,
-    )
-    from inkflow.infrastructure.database.repositories.timeline_repo import (
-        SQLiteTimelineRepository,
-    )
-    from inkflow.infrastructure.database.repositories.world_repo import (
-        SQLiteWorldRepository,
     )
 
     return KnowledgeGraphService(

@@ -1,7 +1,11 @@
 /**
  * SSE 流式聊天客户端（#541，契约 = api/chat.test.ts）
- * - POST /api/v1/chat/stream + fetch ReadableStream（EventSource 不支持 POST/自定义头）
- * - 帧: data: {delta, done:false} × N → {done:true}；流中错误: {done:true, error}
+ * - POST /api/v1/chat/agent/stream（#597 deepagents 系统级 Agent 流式端点）
+ *   + fetch ReadableStream（EventSource 不支持 POST/自定义头）
+ * - 帧: data: {type, delta, done:false} × N → {type:'done', done:true}；流中错误: {type:'error', error}
+ * - #597 帧协议扩展：type='tool_call' → onToolCall；type='tool_result' → onToolResult；
+ *   type='delta'（或 type 缺省的旧帧）→ onDelta；type='error' → onError + return；
+ *   type='done'（或无 error 的终帧）→ onDone + return
  * - 停止: AbortController.abort() → 服务端终止生成器
  * - 行为镜像 src/api/sse.ts streamWriting：行缓冲按 \n\n 切帧取 data: 行
  */
@@ -15,15 +19,24 @@ export interface ChatStreamBody {
 }
 
 export interface ChatStreamFrame {
+  type: 'delta' | 'tool_call' | 'tool_result' | 'done' | 'error';
   done: boolean;
   delta?: string;
   error?: string;
+  /** #597：工具帧字段（tool_call / tool_result） */
+  id?: string;
+  name?: string;
+  args?: Record<string, unknown>;
+  result?: string;
 }
 
 export interface ChatStreamCallbacks {
   onDelta: (delta: string) => void;
   onDone: (frame: ChatStreamFrame) => void;
   onError: (message: string) => void;
+  /** #597：agent 工具流回调（可选） */
+  onToolCall?: (call: { id: string; name: string; args: Record<string, unknown> }) => void;
+  onToolResult?: (res: { id: string; name: string; result: string }) => void;
 }
 
 /** 发起 chat 流式请求；返回 abort 函数（组件卸载时调用） */
@@ -36,7 +49,7 @@ export async function streamChat(
 
   const run = async () => {
     try {
-      const res = await fetch(`${baseURL}/api/v1/chat/stream`, {
+      const res = await fetch(`${baseURL}/api/v1/chat/agent/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -72,15 +85,24 @@ export async function streamChat(
             .trim();
           if (!dataLine) continue;
           const frame = JSON.parse(dataLine) as ChatStreamFrame;
-          if (frame.delta) callbacks.onDelta(frame.delta);
-          if (frame.error) {
-            callbacks.onError(frame.error);
+          // #597 帧 type 分发（兼容无 type 的旧帧：按 delta/done/error 字段兜底）
+          if (frame.type === 'tool_call') {
+            callbacks.onToolCall?.({ id: frame.id ?? '', name: frame.name ?? '', args: frame.args ?? {} });
+            continue;
+          }
+          if (frame.type === 'tool_result') {
+            callbacks.onToolResult?.({ id: frame.id ?? '', name: frame.name ?? '', result: frame.result ?? '' });
+            continue;
+          }
+          if (frame.type === 'error' || frame.error) {
+            callbacks.onError(frame.error ?? '');
             return;
           }
-          if (frame.done) {
+          if (frame.type === 'done' || frame.done) {
             callbacks.onDone(frame);
             return;
           }
+          if (frame.delta) callbacks.onDelta(frame.delta);
         }
       }
       // 流结束但无 done 帧（异常断开）
