@@ -164,6 +164,18 @@ class TokenBudgetConfig(BaseModel):
         return v
 
 
+class ContextOverride(BaseModel):
+    """上下文注入的显式勾选通道（v1.1 #593）.
+
+    - character_ids 非空 → 只注入 metadata.character_id 命中的角色 item；空 → 注入全部
+    - foreshadowing_ids 非空 → 只注入 metadata.foreshadowing_id 命中的伏笔 item；空 → 注入全部
+    - 只过滤 character_setting / foreshadowing 两类来源，不影响 outline/summary/世界设定等
+    """
+
+    character_ids: list[uuid.UUID] = Field(default_factory=list)
+    foreshadowing_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
 class ContextRequest(BaseModel):
     """上下文组装请求 — API 输入 / F3 调用参数.
 
@@ -173,6 +185,7 @@ class ContextRequest(BaseModel):
         model: 目标模型名（provider/model_name 格式）.
         writing_requirements: 必填，写作要求 / 任务指令.
         max_tokens: 覆盖预算；None = 模型窗口 × max_ratio.
+        override: 显式勾选通道（v1.1 #593）；None = 全部注入（默认行为）.
     """
 
     project_id: uuid.UUID
@@ -180,6 +193,7 @@ class ContextRequest(BaseModel):
     model: str
     writing_requirements: str = Field(..., min_length=1)
     max_tokens: int | None = None
+    override: ContextOverride | None = None
 
 
 class ContextAssemblyResult(BaseModel):

@@ -3,13 +3,13 @@
 from inkflow.infrastructure.context.sources import (
     CharacterSettingSource,
     ForeshadowingSource,
-    ProjectConfigOutlineSource,
+    OutlineSource,
     WorldSettingSource,
 )
 
 __all__ = [
     "CharacterSettingSource",
     "ForeshadowingSource",
-    "ProjectConfigOutlineSource",
+    "OutlineSource",
     "WorldSettingSource",
 ]
