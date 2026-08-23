@@ -95,6 +95,13 @@ class CharacterORM(Base):
     )
     """目标/动机 (≤ 5000 字符)."""
 
+    brief: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="",
+    )
+    """一句话简介 (v1.1 #593，≤ 500 字符；F6 上下文轻量化注入)."""
+
     group_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("character_groups.id", ondelete="SET NULL"),

@@ -1,11 +1,16 @@
 # F6: 上下文管理 (context_service) — 功能规格
 
-> **Spec 版本**: 1.0 | **日期**: 2026-07-31 | **依据**: PRD v2.1 §6.1 F6, Constitution P1-P6, ADR-010
-> **所属阶段**: Phase 1 — 核心引擎
-> **关联 Issues**: [#6](https://github.com/zhx-xi/InkFlow/issues/6)
-> **依赖**: F1 (project_service), F2 (chapter_service), F5 (llm_service)
+> **Spec 版本**: 1.1 | **日期**: 2026-08-23 | **依据**: PRD v2.1 §6.1 F6, Constitution P1-P6, ADR-010, issue #593 (F6 上下文数据源补齐)
+> **所属阶段**: Phase 1 — 核心引擎（v1.1 数据源补齐）
+> **关联 Issues**: [#6](https://github.com/zhx-xi/InkFlow/issues/6), [#593](https://github.com/zhx-xi/InkFlow/issues/593)
+> **依赖**: F1 (project_service), F2 (chapter_service), F5 (llm_service), F9 (character_service ✅), F10 (world_service ✅), F11 (outline_service ✅), F13 (foreshadowing_service ✅)
 > **参考 ADR**: [ADR-010](../../adr/ADR-010.md) (分层 Token 预算 → RAG 增强), [ADR-013](../../adr/ADR-013.md) (Phase 2 RAG), [ADR-014](../../adr/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/ADR-015.md) (LangChain 隔离), [ADR-007v2](../../adr/ADR-007v2.md) (包结构)
 > **状态**: ✅ 已实现（PR #27）
+
+---
+
+> **Spec 变更（v1.1，2026-08-23，issue #593）— F6 上下文数据源补齐**：
+> ① CharacterSettingSource / WorldSettingSource 从 Phase 1 空实现改为**接真表**（characters / world_settings）；② OutlineSource 从读 `project.config.extra["outline"]` 改为**读 outlines 表**（overall→volume→chapter 三级，缺级降级）；③ 新增 `ContextRequest.override` 通道（`character_ids` / `foreshadowing_ids`，勾选时才注入，未勾选不注入）；④ 依赖 F9/F10/F11/F13 数据源（§10 已从「不在范围」移除对应项）。**角色注入轻量化 D5=A（名 + brief）**，`Character` 新增 `brief` 字段（D5-a1，见 f9 v1.1）。
 
 ---
 
@@ -60,11 +65,11 @@ class ContextLayer(StrEnum):
 | 值 | 层 | 说明 | Phase 1 数据来源 |
 |----|----|------|-----------------|
 | `writing_requirements` | protected | 本次写作要求（任务指令） | F3 调用时必传入参 |
-| `outline` | protected | 大纲 | `project.config.extra["outline"]`（F10 落地后替换） |
-| `character_setting` | compressible | 角色设定 | F8 依赖 — Phase 1 空实现 |
-| `world_setting` | compressible | 世界设定 | F9 依赖 — Phase 1 空实现 |
+| `outline` | protected | 大纲 | `outlines` 表（F11；overall→volume→chapter 三级，缺级降级） |
+| `character_setting` | compressible | 角色设定 | `characters` 表（F9；名+brief 轻量化，D5=A） |
+| `world_setting` | compressible | 世界设定 | `world_settings` 表（F10） |
 | `chapter_summary` | dynamic | 前文摘要 | 本模块 LLM 生成 + 缓存表 |
-| `foreshadowing` | dynamic | 未解决伏笔提醒 | F14 依赖 — Phase 1 空实现 |
+| `foreshadowing` | dynamic | 未解决伏笔提醒 | `foreshadowings` 表（F13） |
 
 ### 3.3 ContextItem / ContextBlock / ContextRequest / ContextAssemblyResult
 
@@ -100,6 +105,18 @@ class ContextRequest:
     model: str                    # 目标模型，格式 provider/model_name（同 F5）
     writing_requirements: str     # 必填：写作要求（protected 层核心输入）
     max_tokens: int | None = None # 覆盖预算；None = 模型窗口 × max_ratio
+    override: ContextOverride | None = None  # v1.1（#593）：勾选的角色/伏笔才注入
+
+@dataclass
+class ContextOverride:
+    """v1.1（#593）：上下文注入的显式勾选通道（UI「勾选」语义）.
+
+    - character_ids 非空 → 只注入 metadata.character_id 命中的角色 item；空 → 注入全部
+    - foreshadowing_ids 非空 → 只注入 metadata.foreshadowing_id 命中的伏笔 item；空 → 注入全部
+    - 只过滤 character_setting / foreshadowing 两类来源，不影响 outline/summary/世界设定等
+    """
+    character_ids: list[UUID] = field(default_factory=list)
+    foreshadowing_ids: list[UUID] = field(default_factory=list)
 
 @dataclass
 class ContextAssemblyResult:
@@ -163,6 +180,8 @@ class TokenBudgetConfig(BaseModel):
 ```
 1. 收集: writing_requirements（请求必填） + OutlineSource + CharacterSource
          + WorldSource + SummarySource + ForeshadowingSource 各自产出 ContextItem
+   （v1.1 #593：override.character_ids/foreshadowing_ids 非空时，仅保留勾选命中的
+    character_setting / foreshadowing item，未勾选不注入；不影响其他来源）
 2. 预算: budget = get_budget(model, max_tokens)；layer_cap = ...
 3. PROTECTED 层（§4.3）: 全量注入，超 cap → ContextBudgetExceededError
 4. COMPRESSIBLE 层（§4.4）: 按 priority 降序累积；超 cap → 逐项 LLM 压缩；
@@ -410,10 +429,10 @@ backend/tests/
 | 项 | 原因 |
 |----|------|
 | RAG 语义检索（替换压缩层摘要注入） | Phase 2，ADR-013 |
-| 角色设定数据源实现 | F8（Phase 2）依赖，本模块只留 Port 空实现 |
-| 世界设定数据源实现 | F9（Phase 2）依赖，本模块只留 Port 空实现 |
-| 伏笔管理数据源实现 | F14（Phase 2）依赖，本模块只留 Port 空实现 |
-| 大纲管理（结构化大纲/多级大纲） | F10（Phase 2）；Phase 1 读取 `config.extra["outline"]` 纯文本 |
+| 角色设定数据源实现 | v1.1（#593）已实现：`CharacterSettingSource` 接 `characters` 表 |
+| 世界设定数据源实现 | v1.1（#593）已实现：`WorldSettingSource` 接 `world_settings` 表 |
+| 伏笔管理数据源实现 | 已实现（F13）：`ForeshadowingSource` 接 `foreshadowings` 表 |
+| 大纲管理（结构化大纲/多级大纲） | 已实现（F11）：`OutlineSource` 读 `outlines` 表（overall→volume→chapter 三级） |
 | 摘要质量评估/多级摘要 | Phase 2+ |
 | 上下文可视化调试 UI | Phase 2 Web UI |
 | 独立 `context` CLI 命令组 | Phase 1 通过 `write --show-context` + API 调试 |
@@ -424,10 +443,14 @@ backend/tests/
 
 ```text
 F6 依赖:
-  F1 (project_service) — 项目配置（config.extra["outline"], config.extra["context"] 预算配置）
+  F1 (project_service) — 项目配置（config.extra["context"] 预算配置）
   F2 (chapter_service) — 章节内容（摘要生成输入）、章节元数据（chapter_index/updated_at）
   F5 (llm_service)     — LLMClientProtocol.chat / count_tokens、PromptTemplateProtocol
                          （context_summary / context_compress 模板）
+  F9 (character_service)  — characters 表（v1.1，CharacterSettingSource，名+brief）
+  F10 (world_service)     — world_settings 表（v1.1，WorldSettingSource）
+  F11 (outline_service)   — outlines 表（v1.1，OutlineSource，overall→volume→chapter）
+  F13 (foreshadowing_service) — foreshadowings 表（ForeshadowingSource，open 伏笔提醒）
 
 F6 被依赖:
   F3 (writing_service) — 写作前调用 build_context 组装上下文注入 Prompt
