@@ -18,7 +18,7 @@ from inkflow.domain.services.memory_service import MemoryService, PreferenceNotF
 
 pytestmark = pytest.mark.asyncio
 
-PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
+PROJECT_ID = uuid.UUID(int=100)
 
 
 class FakeLearner:

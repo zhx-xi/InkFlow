@@ -91,3 +91,18 @@ def test_load_known_keys_empty_when_no_provider():
     mgr.list_providers.return_value = []
     with patch("inkflow.infrastructure.llm.redact.APIKeyManager", return_value=mgr):
         assert load_known_keys() == []
+
+
+def test_b_known_key_dot_separated_no_tail_leak():
+    """B：已存密钥为 `<32hex>.<16char>`（含 `.` 分隔）→ 整串 key（含 `.`）+ 16char 尾部均不泄漏。
+
+    #632 回归测试：旧实现先长串正则（_LONG_RUN_PATTERN 把 32hex 打成 ****）→
+    known-keys 的 key.replace(整串) 匹配失败 → 16char 尾部残留。契约：known-keys
+    整串替换必须先于长串正则兜底，保证已存密钥无论是否被部分命中都完整遮蔽。
+    """
+    key = ("a" * 32) + "." + ("b" * 16)  # <32hex>.<16char> 已存密钥形态
+    tail = ("b" * 16)
+    prompt = "Authorization: " + key
+    result = redact_secrets(prompt, [key])
+    assert key not in result
+    assert tail not in result

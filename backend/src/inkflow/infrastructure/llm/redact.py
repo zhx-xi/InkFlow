@@ -21,12 +21,12 @@ def redact_secrets(prompt: str, known_keys: list[str] | None = None) -> str:
       - 连续 >=24 位 [A-Za-z0-9_-]（疑似 token）-> 整体 '****'
     B（已存密钥）：known_keys 非空时逐个明文字符串子串替换。
     """
-    result = _SK_PATTERN.sub("sk-****", prompt)
-    result = _BEARER_PATTERN.sub(r"\1****", result)
-    result = _LONG_RUN_PATTERN.sub("****", result)
+    result = prompt
     for key in known_keys or []:
         result = result.replace(key, "****")
-    return result
+    result = _SK_PATTERN.sub("sk-****", result)
+    result = _BEARER_PATTERN.sub(r"\1****", result)
+    return _LONG_RUN_PATTERN.sub("****", result)
 
 
 def load_known_keys() -> list[str]:
