@@ -1,9 +1,7 @@
 """F28 M2 编排服务 RED 契约测试 — MemoryService（事件捕获/偏好 CRUD/统计，全 mock 轨）.
-
 依据: specs/f28-agent-memory/spec.md（§5.1 事件捕获 / §5.2 提取 / §5.3 存储 /
 §5.6 审计 / §5.7 统计 / §9 测试策略 / §13 M2 验收），父侧定稿契约同源
 （test_memory_service.py docstring 即契约载体）。
-
 被测模块（未实现，1c 整模块 RED 形态；顶层唯一 inkflow import = 主契约模块——
 收集期整文件失败是预期（pytest exit 2 / collected 0 items / 1 error），GREEN 落地后
 整文件自动收集）:
@@ -13,25 +11,18 @@
 inkflow.domain.models.preference / memory_event 同缺但不顶层 import——测试体全 mock
 轨 + SimpleNamespace 鸭子对象（service 依赖全鸭子类型，零模型构造），断言走 StrEnum
 字符串字面量——收集错误只报主契约模块单一缺失。
-
 设计假设（父侧定稿契约，GREEN 按此实现）
 ----------------------------------------
 1. 错误类（domain/services/memory_service.py 内）:
-
        class PreferenceNotFoundError(Exception):
            # 默认消息「偏好不存在」（删除不存在偏好时抛出）
-
 2. MemoryService 构造（全鸭子类型依赖）:
-
        def __init__(self, *, preference_repo, event_repo, project_repo,
                     audit_service=None, learner=None): ...
-
 3. 方法契约（父侧定稿，逐字）:
-
        async def is_learning_enabled(self, project_id,
                                       override: bool | None = None) -> bool
            # override 显式 > project.config.extra["memory_learning"] > 默认 False
-
        async def record_draft_edit(self, *, draft_id, project_id,
                                    chapter_id=None, before, after,
                                    agent_run_id=None) -> MemoryEvent | None
@@ -42,27 +33,21 @@ inkflow.domain.models.preference / memory_event 同缺但不顶层 import——�
            #   source_events 追加)；不在库且 count>=2 → create(count=候选 count)；
            # 新偏好 create 时审计 audit_service.record(actor="memory",
            #   severity_summary="preference_learned", ...)；返回落库的 MemoryEvent。
-
        async def record_draft_rejected(self, *, draft_id, project_id,
                                        chapter_id=None) -> MemoryEvent | None
            # 落 MemoryEvent(DRAFT_REJECTED)；关闭 → None（零行为）
            # rejected 不提取（spec §5.2）——本文件不锁聚合调用
-
        async def record_draft_confirmed(self, *, draft_id, project_id,
                                         chapter_id=None) -> MemoryEvent | None
            # 落 MemoryEvent(DRAFT_CONFIRMED)；关闭 → None（零行为）
-
        async def list_preferences(self, project_id, category=None
                                   ) -> tuple[list[ProjectPreference], int]
            # 透传 preference_repo.list_by_project(project_id, category=category)
-
        async def remove_preference(self, preference_id) -> ProjectPreference
            # 不存在 → PreferenceNotFoundError；删除后审计 preference_removed
-
        async def get_preferences_for_injection(self, project_id
                                                ) -> list[ProjectPreference]
            # 开关 false → []；实时查库无缓存；count desc 排序
-
        async def stats(self, project_id) -> dict
            # {"project_id": str, "agentic": {"chapters": int,
            #   "direct_confirms": int, "avg_diff_chars": int,
@@ -74,9 +59,7 @@ inkflow.domain.models.preference / memory_event 同缺但不顶层 import——�
            # avg_diff_chars = Σ|diff_chars| / edited 事件数（0 事件→0）
            # regenerate_rate = rejected/chapters（0→0.0）
            # learned_preferences = 库中偏好总数
-
 4. 测试侧钉死的依赖形态（全鸭子类型，repo 命名镜像 F27 draft_repo 惯例）:
-
        project_repo.get(project_id) -> Project | None
            # 读取 project.config.extra["memory_learning"]（缺失 → False）
        event_repo.create(event) -> MemoryEvent          # 单位置参数，返回落库事件
@@ -92,29 +75,23 @@ inkflow.domain.models.preference / memory_event 同缺但不顶层 import——�
        preference_repo.count_by_project(project_id) -> int
        audit_service.record(*, project_id, ..., severity_summary, actor, ...)
            # F34 签名；本文件只钉 actor / severity_summary 两 kwarg
-
 5. 学习器注入（learner 注入 fake，隔离提取算法——本文件不 import preference_learner，
    RED 时模块缺失；GREEN 时服务经 learner 调用真实实现）:
-
        fake.aggregate_candidates(events) -> list[候选]
            # 候选 = (category, pattern, value, count, confidence) 鸭子对象
        fake.confidence_for(count) -> float  # 1 - 1/(count+1)（update 重算用）
-
 6. 级联不在本批（父侧契约 8 方法无 delete_by_project 入口）:
    项目删除级联（偏好/事件清理）归跨模块钩子批（规则 1k，MODIFY project_service
    接线，spec §5.3/§8）——本文件不测，GREEN 批另行覆盖。
-
 RED 预期
 --------
 全文件收集期失败（1c 整模块 RED 形态: pytest exit 2 / collected 0 items / 1 error）:
     ModuleNotFoundError: No module named 'inkflow.domain.services.memory_service'
 （父包 inkflow.domain.services 已存在、子模块文件缺失 → ModuleNotFoundError）
-
 asyncio 模式: 本 venv（pytest-asyncio）实测头部 asyncio: mode=Mode.AUTO
 （pyproject asyncio_mode = "auto" 生效）；文件级 pytestmark = pytest.mark.asyncio
 双保险（STRICT/AUTO 两种模式均成立），全部用例 async def。
 """
-
 from __future__ import annotations
 
 import uuid
@@ -129,14 +106,10 @@ from inkflow.domain.services.memory_service import (
 )
 
 pytestmark = pytest.mark.asyncio  # 实测 mode=Mode.AUTO；显式 mark 兼容 STRICT/AUTO
-
 PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 CHAPTER_ID = uuid.UUID("87654321-4321-8765-4321-876543218765")
-
-
 class FakeLearner:
     """注入 fake（隔离提取算法；本文件不 import preference_learner）.
-
     results: 每次 aggregate_candidates 依次弹出的候选列表，耗尽后返回 []。
     confidence_for: 复刻契约公式 1 - 1/(count+1)。
     """
@@ -842,3 +815,82 @@ async def test_update_user_preference_uninstalled_raises() -> None:
         await service.update_user_preference(
             "upref-1", category="style_word", pattern="说", value="低声道"
         )
+
+
+
+# ── 契约 15: remove_summaries（#619 F49 ③ 语义总结删除，Q2=B 越闸） ──
+
+
+def _make_service_with_summary(extra: dict | None = None) -> tuple[MemoryService, dict]:
+    """#619 删除轨构造（镜像 _make_service，叠加 summary_repo 注入）。
+
+    summary_repo.delete_by_project 默认返回 0（幂等语义——无行可删也成功）。
+    """
+    deps = {
+        "preference_repo": AsyncMock(),
+        "event_repo": AsyncMock(),
+        "project_repo": AsyncMock(),
+        "audit_service": AsyncMock(),
+        "summary_repo": AsyncMock(),
+    }
+    deps["preference_repo"].list_by_project.return_value = ([], 0)
+    deps["preference_repo"].count_by_project.return_value = 0
+    deps["preference_repo"].get.return_value = None
+    deps["preference_repo"].create.return_value = _pref(pref_id="pref-new")
+    deps["preference_repo"].update.return_value = None
+    deps["preference_repo"].delete.return_value = True
+    deps["event_repo"].create.return_value = SimpleNamespace(id="evt-1", event_type="draft_edited")
+    deps["event_repo"].list_by_project.return_value = ([], 0)
+    deps["project_repo"].get.return_value = _project(extra or {})
+    deps["summary_repo"].delete_by_project.return_value = 0
+    service = MemoryService(
+        preference_repo=deps["preference_repo"],
+        event_repo=deps["event_repo"],
+        project_repo=deps["project_repo"],
+        audit_service=deps["audit_service"],
+        learner=FakeLearner(),
+        summary_repo=deps["summary_repo"],
+    )
+    return service, deps
+
+
+async def test_remove_summaries_existing_project_deletes() -> None:
+    """契约⑮a (#619): 项目存在 → 返回 {"project_id", "deleted": True}，
+    且 delete_by_project(project_id) 被调（删除 scope=project 行）。"""
+    service, deps = _make_service_with_summary(extra={"memory_learning": True})
+    result = await service.remove_summaries(PROJECT_ID)
+    assert result == {"project_id": str(PROJECT_ID), "deleted": True}
+    deps["summary_repo"].delete_by_project.assert_awaited_once()
+    call = deps["summary_repo"].delete_by_project.await_args
+    assert _arg(call, "project_id", 0) == PROJECT_ID
+
+
+async def test_remove_summaries_project_missing_raises() -> None:
+    """契约⑮b (#619): 项目不存在（project_repo.get → None）→
+    ProjectNotFoundError，默认消息「项目不存在」。"""
+    from inkflow.domain.ports.character_errors import ProjectNotFoundError
+
+    service, deps = _make_service_with_summary()
+    deps["project_repo"].get.return_value = None
+    with pytest.raises(ProjectNotFoundError) as exc:
+        await service.remove_summaries(PROJECT_ID)
+    assert "项目不存在" in str(exc.value)
+    deps["summary_repo"].delete_by_project.assert_not_awaited()
+
+
+async def test_remove_summaries_disabled_still_deletes() -> None:
+    """契约⑮c (#619, Q2=B 越闸): memory_learning=false 【仍可删】——
+    方法【不】检查 memory_learning 开关，直接删除。"""
+    service, deps = _make_service_with_summary(extra={"memory_learning": False})
+    result = await service.remove_summaries(PROJECT_ID)
+    assert result == {"project_id": str(PROJECT_ID), "deleted": True}
+    deps["summary_repo"].delete_by_project.assert_awaited_once()
+
+
+async def test_remove_summaries_idempotent_zero_rows() -> None:
+    """契约⑮d (#619): 幂等——delete_by_project 返回 0（summary 不存在）→
+    仍返回 deleted:True，不抛错、不 404。"""
+    service, deps = _make_service_with_summary()
+    deps["summary_repo"].delete_by_project.return_value = 0
+    result = await service.remove_summaries(PROJECT_ID)
+    assert result == {"project_id": str(PROJECT_ID), "deleted": True}

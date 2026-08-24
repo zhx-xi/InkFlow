@@ -201,6 +201,9 @@ def memory_svc():
     svc.list_preferences = AsyncMock(return_value=([], 0))
     svc.remove_preference = AsyncMock(return_value=None)
     svc.stats = AsyncMock(return_value=_stats_payload())
+    svc.remove_summaries = AsyncMock(
+        return_value={"project_id": str(PROJECT_ID), "deleted": True}
+    )
     return svc
 
 
@@ -711,3 +714,50 @@ class TestMemorySummarizeEndpoint:
             )
         assert resp.status_code == 502
         assert resp.json()["detail"] == "LLM 总结失败"
+
+
+
+# ═══ F49 ③ 追加段（#619，DELETE /api/v1/agent/memory/summaries 删除端点）═══
+
+
+class TestMemorySummariesDeleteEndpoint:
+    """DELETE /api/v1/agent/memory/summaries — 语义总结删除（#619 F49 ③）.
+
+    契约: svc.remove_summaries(project_id) → 200 {"project_id": str,
+    "deleted": True}（project_id query 必填）；项目不存在 →
+    ProjectNotFoundError → 404 detail「项目不存在」。
+
+    RED 预期: 端点未注册 → 真实 app 404（detail "Not Found"）≠ 200 →
+    断言 FAILED；404 用例 detail 断言「项目不存在」≠ "Not Found" → FAILED
+    （防「期望 404 撞上未注册 404」假绿）；既有用例不动。
+    """
+
+    async def test_summaries_delete_200(self, memory_svc, clean_overrides):
+        """DELETE summaries 200: URL path/searchParams project_id + 响应口径
+        + svc.remove_summaries 收到 project_id。"""
+        _override_memory_service(memory_svc)
+        async with _client() as client:
+            resp = await client.delete(
+                "/api/v1/agent/memory/summaries",
+                params={"project_id": str(PROJECT_ID)},
+            )
+        assert resp.status_code == 200
+        assert resp.url.path == "/api/v1/agent/memory/summaries"
+        assert resp.url.params["project_id"] == str(PROJECT_ID)
+        assert resp.json() == {"project_id": str(PROJECT_ID), "deleted": True}
+        assert _call_arg(memory_svc.remove_summaries, "project_id", 0) == PROJECT_ID
+
+    async def test_summaries_delete_404(self, memory_svc, clean_overrides):
+        """DELETE summaries 404: 项目不存在（ProjectNotFoundError → 404
+        detail「项目不存在」）——detail 断言提供 RED 区分力。"""
+        from inkflow.domain.ports.character_errors import ProjectNotFoundError
+
+        memory_svc.remove_summaries.side_effect = ProjectNotFoundError()
+        _override_memory_service(memory_svc)
+        async with _client() as client:
+            resp = await client.delete(
+                "/api/v1/agent/memory/summaries",
+                params={"project_id": str(PROJECT_ID)},
+            )
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "项目不存在"

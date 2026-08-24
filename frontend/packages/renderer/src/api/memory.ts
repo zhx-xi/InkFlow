@@ -40,6 +40,8 @@ export interface ProjectPreferenceDto {
   source_events: string[];
   created_at: string;
   updated_at: string;
+  /** #F49：被取代的偏好 id，'' = 未被取代（后端 list 已含） */
+  superseded_by: string;
 }
 
 /** 用户级偏好 DTO（对齐后端 UserPreferenceDto） */
@@ -55,6 +57,8 @@ export interface UserPreferenceDto {
   source_events: string[];
   created_at: string;
   updated_at: string;
+  /** #F49：被取代的偏好 id，'' = 未被取代（后端 list 已含） */
+  superseded_by: string;
 }
 
 /** 偏好列表响应（items 泛型：项目级默认 / 用户级显式 UserPreferenceDto） */
@@ -80,6 +84,18 @@ export async function summarizeMemory(
   if (force === true) qs.set('force', 'true');
   return apiFetch<SummarizeMemoryResponse>(`/api/v1/agent/memory/summarize?${qs.toString()}`, {
     method: 'POST',
+  });
+}
+
+/** 删除语义总结：DELETE /api/v1/agent/memory/summaries?project_id= */
+export interface RemoveMemorySummaryResponse {
+  project_id: string;
+  deleted: boolean;
+}
+export async function removeMemorySummary(projectId: string): Promise<RemoveMemorySummaryResponse> {
+  const qs = new URLSearchParams({ project_id: projectId });
+  return apiFetch<RemoveMemorySummaryResponse>(`/api/v1/agent/memory/summaries?${qs.toString()}`, {
+    method: 'DELETE',
   });
 }
 
