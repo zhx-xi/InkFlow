@@ -71,7 +71,9 @@ def mock_prompt_manager() -> MagicMock:
     return pm
 
 
-def _make_analyzer(mock_llm: MagicMock, mock_prompt_manager: MagicMock, **kwargs) -> LLMChunkAnalyzer:
+def _make_analyzer(
+    mock_llm: MagicMock, mock_prompt_manager: MagicMock, **kwargs
+) -> LLMChunkAnalyzer:
     return LLMChunkAnalyzer(
         llm_client=mock_llm,  # type: ignore[arg-type]
         prompt_manager=mock_prompt_manager,  # type: ignore[arg-type]

@@ -21,16 +21,22 @@ import pytest
 
 from inkflow.mcp.tools.manage_tools import (
     _HTTPClient as ManageHTTPClient,
+)
+from inkflow.mcp.tools.manage_tools import (
     _serialize_data as _manage_serialize,
 )
 from inkflow.mcp.tools.operation_tools import (
     _HTTPClient as OpHTTPClient,
+)
+from inkflow.mcp.tools.operation_tools import (
     _serialize_data,
 )
 from inkflow.mcp.tools.session_tools import (
-    _HTTPClient as SessionHTTPClient,
     _actions_of,
     build_tool_search_tool,
+)
+from inkflow.mcp.tools.session_tools import (
+    _HTTPClient as SessionHTTPClient,
 )
 
 tools_pkg = importlib.import_module("inkflow.mcp.tools")

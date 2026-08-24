@@ -250,7 +250,7 @@ class TestAgentRunExecution:
 
     @pytest.mark.agent
     def test_run_override_unknown_field_ignored(self, fake_http_client):
-        """--override 未知字段（非 temperature/model/prompt）→ 静默忽略（覆盖 L157->146 False 弧）。"""
+        """--override 未知字段 → 静默忽略（覆盖 L157->146 False 弧）。"""
         fake_http_client.post.return_value = self._EXEC_RESULT
         result = _run_result("--override", "writer.custom=1")
         assert result.exit_code == 0

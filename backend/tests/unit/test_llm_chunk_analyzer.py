@@ -42,7 +42,6 @@ from inkflow.domain.ports.prompt_template import (
 from inkflow.domain.services._llm_chunk_analyzer import (
     LLMChunkAnalyzer,
     LLMChunkAnalyzerError,
-    _extract_json_fragment,
 )
 
 DEFAULT_MODEL = "deepseek/deepseek-v4-flash"  # #415 G1 伪契约同步：mock 数据跟随默认
