@@ -51,3 +51,21 @@ class TestRunServiceErrorMapping:
             await _run_service(_raise(ProviderConfigNotFoundError("x")))
         assert ei.value.status_code == 404
         assert "x" in ei.value.detail
+
+
+class TestExtractModelIdsCoverage:
+    """#627 补测：_extract_model_ids（provider_configs.py L91-106）两种归一化
+    失败的兜底分支（L96->97 非 dict / L102->106 两格式都拿不到）。"""
+
+    def test_non_dict_body_returns_none(self):
+        """body 非 dict → None（L96->97，line 97）。"""
+        from inkflow.api.routers.provider_configs import _extract_model_ids
+
+        assert _extract_model_ids("not-a-dict") is None
+        assert _extract_model_ids([1, 2]) is None
+
+    def test_no_recognized_format_returns_none(self):
+        """data 非 list 且 models 非 list → None（L102->106，line 106）。"""
+        from inkflow.api.routers.provider_configs import _extract_model_ids
+
+        assert _extract_model_ids({"data": "x", "models": "y"}) is None

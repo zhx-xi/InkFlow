@@ -142,3 +142,26 @@ class TestAgentToolsCLI:
         result = runner.invoke(app, ["agent", "run", "--help"])
         assert result.exit_code == 0
         assert "--project-id" in self._strip_ansi(result.stdout)
+
+    @pytest.mark.agent
+    def test_tools_list_import_failure_exit_1(self):
+        """TOOL_REGISTRY import 失败 → stderr「❌ 工具注册表加载失败」+ 退出码 1（覆盖 511-515）。
+
+        sys.modules 注入替身模块：from ...tools import TOOL_REGISTRY 时
+        __getattr__ 抛 ImportError → 落入 except Exception 分支。
+        """
+        import sys
+
+        class _BoomToolsModule:
+            """属性访问恒抛 ImportError 的 sys.modules 替身。"""
+
+            def __getattr__(self, name):
+                raise ImportError(f"cannot import name {name!r} from boom")
+
+        with patch.dict(
+            sys.modules,
+            {"inkflow.infrastructure.agent.tools": _BoomToolsModule()},
+        ):
+            result = runner.invoke(app, ["agent", "tools", "list"])
+        assert result.exit_code == 1
+        assert "❌ 工具注册表加载失败" in result.stderr

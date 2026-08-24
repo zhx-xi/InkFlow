@@ -344,6 +344,25 @@ class TestUploadSkillZip:
         assert resp.status_code == 422
         assert resp.json()["detail"] == DETAIL_ZIP_INVALID
 
+    async def test_upload_zip_non_utf8_skill_md_422(
+        self, client, db_session, override_get_db, skills_root
+    ):
+        """coverage-gap: SKILL.md 内容非 UTF-8 → decode UnicodeDecodeError →
+        422「zip 包解析失败」（routers/skills.py L185-186 分支）。"""
+        resp = await client.post(
+            f"{ENDPOINT}/upload-zip",
+            files={
+                "file": (
+                    "bad-encoding.zip",
+                    _make_zip({"SKILL.md": b"\xff\xfe\x00\x01invalid"}),
+                    "application/zip",
+                )
+            },
+        )
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == DETAIL_ZIP_INVALID
+        assert list(skills_root.iterdir()) == []
+
 
 # ── POST /api/v1/skills/upload-url（§3.4 契约）──
 

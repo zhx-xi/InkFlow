@@ -680,3 +680,74 @@ class TestMemoryServiceM2Summarize:
         }
         deps["summarizer"].summarize.assert_not_awaited()
 
+    # ── coverage 补测（2026-08-24：ADR-027 门禁 98.5/95.0 缺口行覆盖）──
+
+    async def test_get_summaries_project_missing_repo_none_skips_delete(self) -> None:
+        """覆盖 L719->721: 项目缺失且 summary_repo 未注入 → 跳过 delete_by_project，
+        返回空结构（不炸）。"""
+        service, deps = _make_m2_service(extra={"memory_learning": True})
+        service._summary_repo = None
+        deps["project_repo"].get.return_value = None
+
+        result = await service.get_summaries(PROJECT_ID)
+
+        assert result == {"project_id": str(PROJECT_ID), "project": None, "user": None}
+        deps["summary_repo"].delete_by_project.assert_not_awaited()
+
+    async def test_summarize_project_missing_repo_none_skips_delete(self) -> None:
+        """覆盖 L756->758: summarize 项目缺失且 summary_repo 未注入 → 跳过清理，
+        summarized=False 空结构。"""
+        service, deps = _make_m2_service(extra={"memory_learning": True})
+        service._summary_repo = None
+        deps["project_repo"].get.return_value = None
+
+        result = await service.summarize(PROJECT_ID)
+
+        assert result == {
+            "project_id": str(PROJECT_ID),
+            "summarized": False,
+            "project": None,
+            "user": None,
+        }
+        deps["summary_repo"].delete_by_project.assert_not_awaited()
+
+    async def test_summarize_without_audit_service_skips_generated_audit(self) -> None:
+        """覆盖 L810->817 + L853->861: audit_service 未注入 → 项目层/用户层落库
+        但跳过 semantic_summary_generated 审计（upsert 仍执行）。"""
+        service, deps = _make_m2_service(extra={"memory_learning": True})
+        service._audit_service = None
+        proj_anchors = [_anchor("style_word", "低声道")]
+        user_anchors = [_anchor("addressing", "林晚")]
+        deps["preference_repo"].list_by_project.return_value = (proj_anchors, 1)
+        deps["user_preference_repo"].list_all.return_value = (user_anchors, 1)
+        deps["summary_repo"].get.side_effect = _summary_get_side_effect(None, None)
+        s1 = _summary_duck(summary_id="sum-p", anchor_hash="h1")
+        s2 = _summary_duck(
+            summary_id="sum-u", scope="user", project_id=None, anchor_hash="h2"
+        )
+        deps["summarizer"].summarize.side_effect = [(s1, 0), (s2, 0)]
+
+        result = await service.summarize(PROJECT_ID)
+
+        assert result["summarized"] is True
+        assert result["project"] is not None and result["user"] is not None
+        assert deps["summary_repo"].upsert.await_count == 2
+
+    async def test_summarize_without_user_repo_skips_user_layer(self) -> None:
+        """覆盖 L825->866: user_preference_repo 未注入 → 跳过用户级层
+        （仅项目层重算 + 落库），不崩溃。"""
+        service, deps = _make_m2_service(extra={"memory_learning": True})
+        service._user_preference_repo = None
+        proj_anchors = [_anchor("style_word", "低声道")]
+        deps["preference_repo"].list_by_project.return_value = (proj_anchors, 1)
+        deps["summary_repo"].get.return_value = None
+        s1 = _summary_duck(summary_id="sum-p", anchor_hash="h1")
+        deps["summarizer"].summarize.return_value = (s1, 0)
+
+        result = await service.summarize(PROJECT_ID)
+
+        assert result["summarized"] is True
+        assert result["user"] is None
+        assert deps["summary_repo"].upsert.await_count == 1
+
+

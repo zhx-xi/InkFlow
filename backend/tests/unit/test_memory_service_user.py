@@ -653,3 +653,63 @@ async def test_remove_user_preference_without_repo_raises() -> None:
         await service.remove_user_preference("up-1")
 
 
+# ═══ coverage 补测（2026-08-24：ADR-027 门禁 98.5/95.0 缺口行覆盖）═══
+
+
+async def test_get_user_preferences_for_injection_repo_none_sorted() -> None:
+    """覆盖 L610->611: user_preference_repo 未注入 + 开关开启 → []
+    （list_user_preferences 早退 ([], 0) 后走 repo None 分支）."""
+    service, _deps = _make_service(
+        extra={"memory_learning": True}, inject_user_repo=False
+    )
+    assert await service.get_user_preferences_for_injection(PROJECT_ID) == []
+
+
+async def test_get_user_preferences_for_injection_project_missing_sorted() -> None:
+    """覆盖 L619->620: 仓库已注入 + 开关开启（首次 get 命中）但注入读口再查项目时
+    缺失（二次 get → None）→ count desc 过滤列表。"""
+    service, deps = _make_service(extra={"memory_learning": True})
+    deps["user_preference_repo"].list_all.return_value = ([], 0)  # 惰性重算不触发额外 get
+    deps["project_repo"].get.side_effect = [_project({"memory_learning": True}), None]
+    assert await service.get_user_preferences_for_injection(PROJECT_ID) == []
+
+
+async def test_get_user_preferences_for_injection_decay_full_path() -> None:
+    """覆盖 L632-644 + L639->635 + L648-649: 用户级衰减分支——superseded 排除 +
+    score 过滤（低分条目走 if 假分支后循环继续）+ 排序 + 注入即刷新水位。"""
+    service, deps = _make_service(
+        extra={
+            "memory_learning": True,
+            "memory_decay_enabled": True,
+            "memory_decay_half_life": 30,
+        }
+    )
+    project = _project(
+        {
+            "memory_learning": True,
+            "memory_decay_enabled": True,
+            "memory_decay_half_life": 30,
+        }
+    )
+    project.active_watermark = 500.0  # 高分条目水位同值 → score=count；陈旧条目 → 衰减趋零
+    deps["project_repo"].get.return_value = project
+    superseded = _user_pref(pref_id="up-sup", count=9)
+    superseded.superseded_by = "up-high"  # F49 ② 被取代 → 注入排除
+    stale = _user_pref(count=1, pref_id="up-stale")  # 无水位 → delta 500 → score < 0.05
+    low = _user_pref(count=2, pref_id="up-low")
+    low.active_watermark_at_last_access = 500.0
+    high = _user_pref(count=5, pref_id="up-high", value="林晚")
+    high.active_watermark_at_last_access = 500.0
+    deps["user_preference_repo"].list_all.return_value = (
+        [superseded, stale, low, high],
+        4,
+    )
+    result = await service.get_user_preferences_for_injection(PROJECT_ID)
+    assert [p.id for p in result] == ["up-high", "up-low"]  # 排除 superseded/低分 + score desc
+    # 注入即刷新水位：仅被注入的两条写回 active_watermark_at_last_access
+    assert deps["user_preference_repo"].update.await_count == 2
+    assert high.active_watermark_at_last_access == 500.0
+    assert low.active_watermark_at_last_access == 500.0
+
+
+

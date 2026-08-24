@@ -40,11 +40,13 @@ inkflow.mcp.tools 包不存在 → 顶部 import 收集期 ModuleNotFoundError�
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
+import runpy
 import sys
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import mcp.types as mt
 import pytest
@@ -239,3 +241,98 @@ class TestImportSurface:
         assert not any(m.startswith("inkflow.domain.services") for m in added)
         assert not any(m.startswith("inkflow.infrastructure.llm") for m in added)
         assert not any(m.startswith("inkflow.infrastructure.database") for m in added)
+
+
+# ── 覆盖率补测（#627，规则 1j：新用例直接通过，无 RED 阶段）───────────────
+# 补 server.py 漏覆盖分支：call_tool_result 的 json.loads except（41-42）、
+# build_mcp_server 内 on_list_tools/on_call_tool 闭包（51/54）、main（61-63）、
+# run（68）、inkflow.mcp.__main__（python -m inkflow.mcp 入口）。
+
+
+class TestCallToolInvalidJson:
+    """call_tool_result 对工具 func 返回非法 JSON 文本（非 JSON 信封）→ ok=False。"""
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_text_is_error(self):
+        from inkflow.mcp.server import call_tool_result
+
+        bad_tool = SimpleNamespace(
+            spec=SimpleNamespace(name="bad"),
+            func=AsyncMock(return_value="这不是合法 JSON {"),
+        )
+        result = await call_tool_result([bad_tool], "bad", {})
+        assert result.is_error is True
+        # call_tool_result 的 json.loads 解析失败 → ok=False，text 原样透传（不 re-parse）
+        assert result.content[0].text == "这不是合法 JSON {"
+
+
+class TestBuildServerCallbacks:
+    """build_mcp_server 装配的 on_list_tools / on_call_tool 闭包（#627 覆盖率）。"""
+
+    def test_invoke_list_tools_callback(self, monkeypatch):
+        from inkflow.mcp import server as server_mod
+
+        captured: dict[str, object] = {}
+
+        def _fake_server(name, **kwargs):
+            captured.update(kwargs)
+            return MagicMock()
+
+        monkeypatch.setattr(server_mod, "Server", _fake_server)
+        server_mod.build_mcp_server([])
+        assert "on_list_tools" in captured and "on_call_tool" in captured
+        result = asyncio.run(captured["on_list_tools"](None, None))  # type: ignore[arg-type]
+        assert result.tools == []
+
+    def test_invoke_call_tool_callback(self, monkeypatch):
+        from inkflow.mcp import server as server_mod
+
+        captured: dict[str, object] = {}
+
+        def _fake_server(name, **kwargs):
+            captured.update(kwargs)
+            return MagicMock()
+
+        monkeypatch.setattr(server_mod, "Server", _fake_server)
+        server_mod.build_mcp_server([])
+        params = SimpleNamespace(name="no_such_tool", arguments={})
+        result = asyncio.run(captured["on_call_tool"](None, params))  # type: ignore[arg-type]
+        assert result.is_error is True
+
+
+class TestEntryPointRunners:
+    """main / run / python -m inkflow.mcp 入口（#627 覆盖率）。"""
+
+    @pytest.mark.asyncio
+    async def test_main_uses_stdio_server(self, monkeypatch):
+        from inkflow.mcp import server as server_mod
+
+        read, write = object(), object()
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=(read, write))
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_server = MagicMock()
+        mock_server.run = AsyncMock()
+        mock_server.create_initialization_options = MagicMock(return_value="opts")
+
+        monkeypatch.setattr(server_mod, "stdio_server", lambda: mock_cm)
+        monkeypatch.setattr(server_mod, "build_mcp_server", lambda: mock_server)
+
+        await server_mod.main()
+        mock_server.run.assert_awaited_once_with(read, write, "opts")
+
+    def test_run_invokes_anyio(self, monkeypatch):
+        from inkflow.mcp import server as server_mod
+
+        mock_run = MagicMock()
+        monkeypatch.setattr(server_mod.anyio, "run", mock_run)
+        server_mod.run()
+        mock_run.assert_called_once()
+
+    def test_python_dash_m_invokes_run(self, monkeypatch):
+        from inkflow.mcp import server as server_mod
+
+        mock_run = MagicMock()
+        monkeypatch.setattr(server_mod, "run", mock_run)
+        runpy.run_module("inkflow.mcp.__main__", run_name="__main__")
+        mock_run.assert_called_once()
