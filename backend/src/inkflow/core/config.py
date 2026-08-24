@@ -147,6 +147,9 @@ class InkFlowConfig(BaseSettings):
     langsmith_enabled: bool = False
     """是否启用 LangSmith 追踪。"""
 
+    langsmith_endpoint: str = ""
+    """LangSmith 自托管端点。空 = SaaS smith.langchain.com。"""
+
     # ---- Embedding 模型 ----
     embedding_model: str = ""
     """Embedding 模型（已弃用本地 embedding，空 = 未配置；装配以 ProviderConfig

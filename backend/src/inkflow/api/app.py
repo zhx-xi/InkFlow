@@ -83,6 +83,9 @@ from inkflow.domain.services.skill_service import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理——启动/关闭钩子。"""
+    from inkflow.core.langsmith_tracing import apply_langsmith_tracing
+
+    apply_langsmith_tracing()
     setup_logging()
     await create_tables()
     # #126 A1：旧库轻量列迁移 —— create_tables 之后、seed 之前补 builtin_key 列，
