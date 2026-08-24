@@ -10,16 +10,20 @@ def map_http_error(status_code: int, detail: str, header_code: str | None) -> tu
     - 404 → ("NOT_FOUND", detail)
     - 422 → ("VALIDATION_ERROR", detail)
     - 401 → ("CONFIG_ERROR", detail)
+    - 403 → ("INTERNAL_ERROR", detail)
     - 500 + X-InkFlow-Error-Code: LLM_ERROR → ("LLM_ERROR", detail)
     - 其余状态码（含 500 无 header_code）→ ("INTERNAL_ERROR", detail)
-    展示消息 = detail 原样透传。
+    展示消息 = detail 原样透传；detail 为空时使用兜底诊断文案（#634，
+    避免 MCP/CLI 暴露 "INTERNAL_ERROR: " 这类空消息）。
     """
     if status_code == 404:
-        return "NOT_FOUND", detail
+        return "NOT_FOUND", detail or "资源不存在"
     if status_code == 422:
-        return "VALIDATION_ERROR", detail
+        return "VALIDATION_ERROR", detail or "参数校验失败"
     if status_code == 401:
-        return "CONFIG_ERROR", detail
+        return "CONFIG_ERROR", detail or "鉴权失败"
+    if status_code == 403:
+        return "INTERNAL_ERROR", detail or "无权限"
     if status_code == 500 and header_code == "LLM_ERROR":
-        return "LLM_ERROR", detail
-    return "INTERNAL_ERROR", detail
+        return "LLM_ERROR", detail or "内部错误（无详情）"
+    return "INTERNAL_ERROR", detail or "内部错误（无详情）"

@@ -293,3 +293,63 @@ class TestErrorMappingAllTools:
         bad_args["action"] = "frobnicate"
         env = _parse_envelope(await tool.func(**bad_args))
         assert env["ok"] is False
+
+
+class TestMeaningfulErrorMessages:
+    """#634：MCP 工具错误信封必须非空、可诊断（500 空 detail / 401 / 空 str(exc)）。"""
+
+    @pytest.mark.asyncio
+    async def test_http_500_empty_detail_returns_diagnostic_error(self, fake_env, monkeypatch):
+        """HttpApiError(500, detail="") → ok=False + error 非空且含「内部错误」（#634）。"""
+        tool = build_manage_project_tool()
+
+        class FailingClient(FakeClient):
+            async def get(self, path, *, params=None, json=None) -> dict:
+                from inkflow.infrastructure.http import HttpApiError
+
+                raise HttpApiError(status_code=500, detail="")
+
+        monkeypatch.setattr(http_mod, "InkFlowHTTPClient", FailingClient)
+        env = _parse_envelope(await tool.func(action="list"))
+        assert env["ok"] is False
+        assert env["error"] != "INTERNAL_ERROR: "
+        assert "内部错误" in env["error"]
+
+    @pytest.mark.asyncio
+    async def test_http_401_empty_detail_mentions_auth(self, fake_env, monkeypatch):
+        """HttpApiError(401, detail="") → error 提及鉴权（auth 诊断）。"""
+        tool = build_manage_project_tool()
+
+        class FailingClient(FakeClient):
+            async def get(self, path, *, params=None, json=None) -> dict:
+                from inkflow.infrastructure.http import HttpApiError
+
+                raise HttpApiError(status_code=401, detail="")
+
+        monkeypatch.setattr(http_mod, "InkFlowHTTPClient", FailingClient)
+        env = _parse_envelope(await tool.func(action="list"))
+        assert env["ok"] is False
+        assert "鉴权" in env["error"]
+
+    @pytest.mark.asyncio
+    async def test_unexpected_exception_empty_message_fallback(self, fake_env, monkeypatch):
+        """str(exc)=="" 的未知异常 → error 非空且含异常类型（对齐 #634 连接/传输错误兜底）。"""
+        tool = build_manage_project_tool()
+
+        class BoomClient(FakeClient):
+            async def get(self, path, *, params=None, json=None) -> dict:
+                raise RuntimeError()  # str() == ""
+
+        monkeypatch.setattr(http_mod, "InkFlowHTTPClient", BoomClient)
+        env = _parse_envelope(await tool.func(action="list"))
+        assert env["ok"] is False
+        assert env["error"].strip()
+        assert "RuntimeError" in env["error"]
+
+    @pytest.mark.asyncio
+    async def test_success_envelope_unchanged(self, fake_env):
+        """正常成功仍返回 {"ok": true, "data": ...}（#634 不改成功信封）。"""
+        tool = build_manage_project_tool()
+        env = _parse_envelope(await tool.func(action="list"))
+        assert env["ok"] is True
+        assert env["data"] == {"id": "x", "name": "resp"}

@@ -155,6 +155,8 @@ F20 的 MCP 工具沿用同一 `ToolSpec` 结构（`name`/`description`/`input_s
 
 > **不重定义错误码表**：MCP 工具错误码沿用 F7 表 + F38 `map_http_error` 复用。MCP 层 `error` 为纯文本（语义已含错误信息），结构化错误码字段本期不引入（云端 Streamable HTTP 需要时再扩展，登记 §10）。
 
+> **空消息兜底（#634）**：detail 为空时 `map_http_error` 返回兜底诊断文案（F38 §5.3）；未知异常 `str(exc)` 为空时返回异常类型 + 「内核调用失败」，保证 `error` 永不为空。
+
 ---
 
 ## 4. 工具面清单与渐进式发现
