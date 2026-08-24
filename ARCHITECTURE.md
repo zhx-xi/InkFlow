@@ -166,6 +166,6 @@ flowchart LR
 
 ## 7. 代码依赖图谱
 
-- **`docs/code-map.md`** —— 模块级 **import 依赖图谱**（谁依赖谁）。2026-08-24 从 `backend/src/inkflow` 全量扫描生成（模块聚合到 2 级目录），含分层依赖图 + 完整依赖边表 + 架构收益分析。
-- 本文档 §6 是 **数据流**（一次请求怎么走）；`docs/code-map.md` 是 **依赖方向**（谁 import 谁），两者互补。
-- **值得注意**：`domain.services` 直接 import `infrastructure.database`/`infrastructure.agent`/`infrastructure.assets`（7/5/2 处），是干净架构（ADR-015）的潜在偏离信号，应经 `domain.ports` 反转——详见 `docs/code-map.md` §4。
+- **`design/code-map.md`** —— 模块级 **import 依赖图谱**（谁依赖谁）。2026-08-24 从 `backend/src/inkflow` 全量扫描生成（模块聚合到 2 级目录），含分层依赖图 + 完整依赖边表 + 架构收益分析。
+- 本文档 §6 是 **数据流**（一次请求怎么走）；`design/code-map.md` 是 **依赖方向**（谁 import 谁），两者互补。
+- **值得注意**：`domain.services` 直接 import `infrastructure.database`/`infrastructure.agent`/`infrastructure.assets`（7/5/2 处），是干净架构（ADR-015）的潜在偏离信号，应经 `domain.ports` 反转——详见 `design/code-map.md` §4。
