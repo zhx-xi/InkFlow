@@ -75,8 +75,8 @@ def _make_analyzer(
     mock_llm: MagicMock, mock_prompt_manager: MagicMock, **kwargs
 ) -> LLMChunkAnalyzer:
     return LLMChunkAnalyzer(
-        llm_client=mock_llm,  # type: ignore[arg-type]
-        prompt_manager=mock_prompt_manager,  # type: ignore[arg-type]
+        llm_client=mock_llm,  # type: ignore[arg-type]  # Mock 注入 Protocol 端口
+        prompt_manager=mock_prompt_manager,  # type: ignore[arg-type]  # Mock 注入 Protocol 端口
         **kwargs,
     )
 

@@ -281,7 +281,7 @@ class TestBuildServerCallbacks:
         monkeypatch.setattr(server_mod, "Server", _fake_server)
         server_mod.build_mcp_server([])
         assert "on_list_tools" in captured and "on_call_tool" in captured
-        result = asyncio.run(captured["on_list_tools"](None, None))  # type: ignore[arg-type]
+        result = asyncio.run(captured["on_list_tools"](None, None))  # type: ignore[arg-type]  # params 由闭包忽略
         assert result.tools == []
 
     def test_invoke_call_tool_callback(self, monkeypatch):
@@ -296,7 +296,7 @@ class TestBuildServerCallbacks:
         monkeypatch.setattr(server_mod, "Server", _fake_server)
         server_mod.build_mcp_server([])
         params = SimpleNamespace(name="no_such_tool", arguments={})
-        result = asyncio.run(captured["on_call_tool"](None, params))  # type: ignore[arg-type]
+        result = asyncio.run(captured["on_call_tool"](None, params))  # type: ignore[arg-type]  # ctx 由闭包忽略
         assert result.is_error is True
 
 
