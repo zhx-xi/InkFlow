@@ -305,6 +305,8 @@ inkflow write next --project-id ... --outline ...
 
 > **F7 错误码表扩展说明**：`INTERNAL_ERROR`/`KERNEL_ERROR` 为 HTTP 化**新增**错误码（F7 原表：NOT_FOUND/VALIDATION_ERROR/LLM_ERROR/CONTEXT_BUDGET_EXCEEDED/CONFIG_ERROR/DB_ERROR）。**DB_ERROR 在恒 HTTP 后不再由 CLI 产生**（DB 访问全部在内核侧，CLI 只见 500）——F7 表保留 DB_ERROR 行（向后兼容文档），标注「恒 HTTP 后由 INTERNAL_ERROR 替代」。CONTEXT_BUDGET_EXCEEDED 同理（write 命令经 HTTP 后由内核校验，500 兜底）。
 
+> **兜底文案（#634）**：detail 为空时按场景返回诊断文案——401→「鉴权失败」、403→「无权限」、404→「资源不存在」、422→「参数校验失败」、500/其余→「内部错误（无详情）」，避免 CLI/MCP 暴露 `INTERNAL_ERROR: ` 空消息。
+
 ### 5.4 SSE 流式转发（write 命令，F23 §6 帧协议）
 
 ```python

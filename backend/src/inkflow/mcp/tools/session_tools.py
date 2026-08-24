@@ -45,8 +45,9 @@ def _ok(data: object) -> str:
 
 
 def _fail(exc: Exception) -> str:
-    """失败信封：{"ok": False, "error": "<异常消息>"}（对齐 F26）。"""
-    return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+    """失败信封：{"ok": False, "error": "<异常消息>"}；str(exc) 为空时兜底异常类型（#634）。"""
+    message = str(exc) or f"{type(exc).__name__}: 内核调用失败"
+    return json.dumps({"ok": False, "error": message}, ensure_ascii=False)
 
 
 def _fail_text(text: str) -> str:

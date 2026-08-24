@@ -357,6 +357,7 @@ class TestErrorHandling:
             (404, None, "NOT_FOUND"),
             (422, None, "VALIDATION_ERROR"),
             (401, None, "CONFIG_ERROR"),
+            (403, None, "INTERNAL_ERROR"),
             (500, "LLM_ERROR", "LLM_ERROR"),
             (500, None, "INTERNAL_ERROR"),
             (503, None, "INTERNAL_ERROR"),
@@ -367,6 +368,26 @@ class TestErrorHandling:
         code, message = map_http_error(status_code, "展示详情", header_code)
         assert code == expected_code
         assert message == "展示详情"
+
+    @pytest.mark.parametrize(
+        ("status_code", "header_code", "expected_code", "expected_message"),
+        [
+            (401, None, "CONFIG_ERROR", "鉴权失败"),
+            (403, None, "INTERNAL_ERROR", "无权限"),
+            (404, None, "NOT_FOUND", "资源不存在"),
+            (422, None, "VALIDATION_ERROR", "参数校验失败"),
+            (500, None, "INTERNAL_ERROR", "内部错误（无详情）"),
+            (500, "LLM_ERROR", "LLM_ERROR", "内部错误（无详情）"),
+            (503, None, "INTERNAL_ERROR", "内部错误（无详情）"),
+        ],
+    )
+    def test_map_http_error_empty_detail_fallback(
+        self, status_code, header_code, expected_code, expected_message
+    ):
+        """detail 为空时返回兜底诊断文案（#634，MCP/CLI 不暴露空消息）。"""
+        code, message = map_http_error(status_code, "", header_code)
+        assert code == expected_code
+        assert message == expected_message
 
 
 class TestStreamSse:
