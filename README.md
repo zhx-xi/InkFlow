@@ -86,11 +86,11 @@ uv run inkflow serve
 
 **现状架构（模块化单体 + Clean Architecture）**：
 
-![InkFlow 系统架构图](docs/images/inkflow-architecture.png)
+![InkFlow 系统架构图](design/images/inkflow-architecture.png)
 
 **2.0.0 云端目标架构（云存档 + 异地写作，规划中，[ADR-024](adr/ADR-024.md)）**：
 
-![InkFlow 2.0.0 云端目标架构图](docs/images/inkflow-cloud-architecture-2.0.0.png)
+![InkFlow 2.0.0 云端目标架构图](design/images/inkflow-cloud-architecture-2.0.0.png)
 
 > 交互版（浅色/暗色主题切换）见 [`design/inkflow-architecture.html`](design/inkflow-architecture.html) 与 [`design/inkflow-cloud-architecture-2.0.0.html`](design/inkflow-cloud-architecture-2.0.0.html)（浏览器打开）。
 

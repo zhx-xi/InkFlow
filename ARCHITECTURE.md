@@ -62,20 +62,24 @@ D:\develop\projects\
 │   │   │   ├── infrastructure\      # 基础设施层（实现 domain/ports）
 │   │   │   │   ├── database\        #   SQLAlchemy + SQLite（models\ ORM + repositories\）
 │   │   │   │   ├── llm\             #   LangChain LLM（ChatOpenAI 路由 + templates\）
-│   │   │   │   ├── agent\           #   LangGraph StateGraph 管道
+│   │   │   │   ├── agent\           #   LangGraph StateGraph 管道（+ tools\ + deepagents\）
 │   │   │   │   ├── rag\             #   RAG 检索（Chroma + BGE，F14 落地）
-│   │   │   │   └── context\         #   F6 上下文数据源（sources.py，F13 伏笔注入）
+│   │   │   │   ├── context\         #   F6 上下文数据源（sources.py，F13 伏笔注入）
+│   │   │   │   ├── kernel\          #   内核进程（HTTP 内核，GUI/CLI serve）
+│   │   │   │   ├── scheduler\       #   后台任务调度（F44 run/refresh，F45 M2）
+│   │   │   │   ├── background\      #   后台任务辅助（background_refresh coroutine 契约）
+│   │   │   │   └── assets\          #   静态资源/资产存储
 │   │   │   ├── api\                 # ★ 表现层：REST API（app.py / deps.py / routers\）
 │   │   │   ├── cli\                 # ★ 表现层：CLI（app.py / context.py / output.py / commands\）
-│   │   │   └── mcp\                 # ★ 表现层：MCP Server（1.0.0 F20 建立，ADR-023）
+│   │   │   └── mcp\                 # ★ 表现层：MCP Server（F20 已实现，ADR-023；含 tools\）
 │   │   └── tests\                   # ★ 单元测试（纯后端，无 I/O）
-│   │       └── unit\                #   54 个测试文件（纯函数 + Mock + DTO 校验）
+│   │       └── unit\                #   255 个测试文件（纯函数 + Mock + DTO 校验）
 │   ├── tests\                       # ★ 集成 + E2E 测试（顶层，跨后端/前端）
 │   │   ├── conftest.py              #   共享 DB fixture（db_session, sample_project, ...）
 │   │   ├── integration\             #   仓储 + 服务层集成测试
 │   │   ├── api\                     #   FastAPI HTTP 集成测试（ASGITransport）
 │   │   ├── cli\                     #   CLI 集成测试（CliRunner + 临时 SQLite）
-│   │   └── e2e\                     #   全栈端到端（未来）
+│   │   └── e2e\                     #   全栈端到端（真实 LLM，e2e-ai 开关，4 文件）
 │   └── .github\                     # CI 配置
 │       └── workflows\ci.yml
 │
@@ -96,9 +100,13 @@ D:\develop\projects\
 | **infrastructure/agent** | `src/inkflow/infrastructure/agent/` | LangGraph StateGraph 管线（F4 角色链） |
 | **infrastructure/rag** | `src/inkflow/infrastructure/rag/` | Chroma + BGE 向量检索（F14，ADR-013） |
 | **infrastructure/context** | `src/inkflow/infrastructure/context/` | F6 上下文数据源（sources.py：角色/世界观/伏笔/时间线注入） |
+| **infrastructure/kernel** | `src/inkflow/infrastructure/kernel/` | 内核子进程：HTTP 内核（GUI/CLI serve 共用内核 API） |
+| **infrastructure/scheduler** | `src/inkflow/infrastructure/scheduler/` | 后台任务调度（F44 run/refresh，F45 M2 后台刷新） |
+| **infrastructure/background** | `src/inkflow/infrastructure/background/` | 后台任务辅助（background_refresh coroutine 参数契约） |
+| **infrastructure/assets** | `src/inkflow/infrastructure/assets/` | 静态资源/资产存储 |
 | **api** | `src/inkflow/api/` | FastAPI app + deps 装配 + routers\（每模块一个 router） |
 | **cli** | `src/inkflow/cli/` | Typer app + commands\（每模块一组命令）；JSON 信封 + 退出码契约（F7 spec §5） |
-| **mcp** | `src/inkflow/mcp/` | MCP Server（1.0.0 F20 建立，当前未实现） |
+| **mcp** | `src/inkflow/mcp/` | MCP Server（F20 已实现：server/tools/ + DTO；经 cloud/mcp_transport 上云） |
 
 ## 4. 模块类型谱系（新模块落地导航）
 
@@ -155,3 +163,9 @@ flowchart LR
     PORT --> RAG
     SVC --> CTX
 ```
+
+## 7. 代码依赖图谱
+
+- **`design/code-map.md`** —— 模块级 **import 依赖图谱**（谁依赖谁）。2026-08-24 从 `backend/src/inkflow` 全量扫描生成（模块聚合到 2 级目录），含分层依赖图 + 完整依赖边表 + 架构收益分析。
+- 本文档 §6 是 **数据流**（一次请求怎么走）；`design/code-map.md` 是 **依赖方向**（谁 import 谁），两者互补。
+- **值得注意**：`domain.services` 直接 import `infrastructure.database`/`infrastructure.agent`/`infrastructure.assets`（7/5/2 处），是干净架构（ADR-015）的潜在偏离信号，应经 `domain.ports` 反转——详见 `design/code-map.md` §4。
