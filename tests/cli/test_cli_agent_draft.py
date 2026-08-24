@@ -287,3 +287,46 @@ class TestAgentDraftExecution:
         result = _draft_result("prune-orphans")
         assert result.exit_code == 1
         assert "❌ 内核错误" in result.stderr
+
+    # ── #627 覆盖率补齐：mock 返回 None → data None → 静默 return / reject --json 信封 ──
+
+    @pytest.mark.agent
+    def test_draft_list_none_result_returns(self, fake_http_client):
+        """GET /agent/drafts 返回 None → 直接 return，不输出（覆盖 L642->643）。"""
+        fake_http_client.get.return_value = None
+        result = _draft_result("list", "--project-id", PROJECT_ID)
+        assert result.exit_code == 0
+        assert result.stdout == ""
+
+    @pytest.mark.agent
+    def test_draft_confirm_none_result_returns(self, fake_http_client):
+        """POST confirm 返回 None → 直接 return，不输出（覆盖 L671->672）。"""
+        fake_http_client.post.return_value = None
+        result = _draft_result("confirm", DRAFT_ID)
+        assert result.exit_code == 0
+        assert result.stdout == ""
+
+    @pytest.mark.agent
+    def test_draft_reject_none_result_returns(self, fake_http_client):
+        """POST reject 返回 None → 直接 return，不输出（覆盖 L694->695）。"""
+        fake_http_client.post.return_value = None
+        result = _draft_result("reject", DRAFT_ID)
+        assert result.exit_code == 0
+        assert result.stdout == ""
+
+    @pytest.mark.agent
+    def test_draft_reject_json(self, fake_http_client):
+        """draft reject --json：stdout 信封 == API 响应（覆盖 L696->697、L697-698）。"""
+        payload = {"draft_id": DRAFT_ID, "status": "rejected"}
+        fake_http_client.post.return_value = payload
+        result = _draft_result("reject", DRAFT_ID, "--json")
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {"ok": True, "data": payload}
+
+    @pytest.mark.agent
+    def test_draft_prune_orphans_none_result_returns(self, fake_http_client):
+        """prune-orphans 返回 None → 直接 return，不输出（覆盖 L716->717）。"""
+        fake_http_client.post.return_value = None
+        result = _draft_result("prune-orphans")
+        assert result.exit_code == 0
+        assert result.stdout == ""

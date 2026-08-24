@@ -237,6 +237,31 @@ class TestAgentRunExecution:
         assert result.exit_code == 1
         assert "❌ 内核启动失败: 启动超时" in result.stderr
 
+    @pytest.mark.agent
+    def test_run_var_without_equals_ignored(self, fake_http_client):
+        """--var 无 '=' 的条目被静默忽略（不进入 variables，覆盖 L140->139 False 弧）。"""
+        fake_http_client.post.return_value = self._EXEC_RESULT
+        result = _run_result("--var", "novalue")
+        assert result.exit_code == 0
+        req = PipelineExecuteRequest.model_validate(
+            fake_http_client.post.await_args.kwargs["json"]
+        )
+        assert req.variables == {}
+
+    @pytest.mark.agent
+    def test_run_override_unknown_field_ignored(self, fake_http_client):
+        """--override 未知字段 → 静默忽略（覆盖 L157->146 False 弧）。"""
+        fake_http_client.post.return_value = self._EXEC_RESULT
+        result = _run_result("--override", "writer.custom=1")
+        assert result.exit_code == 0
+        req = PipelineExecuteRequest.model_validate(
+            fake_http_client.post.await_args.kwargs["json"]
+        )
+        ro = req.role_overrides["writer"]
+        assert ro.temperature is None
+        assert ro.model is None
+        assert ro.prompt is None
+
 
 class TestAgentStatusExecution:
     """agent status 真实执行路径：成功/无记录/--json/error 行。"""
@@ -389,6 +414,22 @@ class TestAgentValidateExecution:
         assert data["ok"] is True
         assert data["data"]["valid"] is True
 
+    @pytest.mark.agent
+    def test_validate_missing_file_json_exit_1(self, fake_http_client, monkeypatch):
+        """根级 --json + 文件不存在 → exit 1，不调 POST（覆盖 L246）。
+
+        print_error 恒 raise typer.Exit → 其后 `raise typer.Exit(1)` 为死代码；
+        测试内 no-op patch print_error，由 L246 自身抛出 Exit(1) 使其可达。
+        """
+        from inkflow.cli.commands import agent_cmd as _agent_cmd
+
+        monkeypatch.setattr(_agent_cmd, "print_error", lambda *a, **k: None)
+        result = runner.invoke(
+            app, ["--json", "agent", "validate", "--file", "nonexistent.yaml"]
+        )
+        assert result.exit_code == 1
+        fake_http_client.post.assert_not_awaited()
+
 
 class TestAgentTemplateExecution:
     """agent template pipelines 真实执行路径：有/无模板 + --json
@@ -437,3 +478,25 @@ class TestAgentTemplateExecution:
         assert result.exit_code == 0
         assert "[1] 模板A" in result.output
         assert "⭐ 默认" in result.output
+
+
+class TestAgentListShowNoneExecution:
+    """agent list / show 的 mock 返回 None → data None → 静默 return（覆盖 L77-78 / L108-109）。"""
+
+    @pytest.mark.agent
+    def test_list_none_result_returns(self, fake_http_client):
+        """GET /agents 返回 None → 直接 return，不输出、不抛错。"""
+        fake_http_client.get.return_value = None
+        result = runner.invoke(app, ["agent", "list"])
+        assert result.exit_code == 0
+        assert result.stdout == ""
+        fake_http_client.get.assert_awaited_once_with("/agents")
+
+    @pytest.mark.agent
+    def test_show_none_result_returns(self, fake_http_client):
+        """GET /agents/{id} 返回 None → 直接 return，不输出、不抛错。"""
+        fake_http_client.get.return_value = None
+        result = runner.invoke(app, ["agent", "show", "--id", "1"])
+        assert result.exit_code == 0
+        assert result.stdout == ""
+        fake_http_client.get.assert_awaited_once_with("/agents/1")

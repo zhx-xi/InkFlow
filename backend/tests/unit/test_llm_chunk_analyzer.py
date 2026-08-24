@@ -39,7 +39,10 @@ from inkflow.domain.ports.prompt_template import (
     PromptTemplateProtocol,
     RenderedPrompt,
 )
-from inkflow.domain.services._llm_chunk_analyzer import LLMChunkAnalyzer, LLMChunkAnalyzerError
+from inkflow.domain.services._llm_chunk_analyzer import (
+    LLMChunkAnalyzer,
+    LLMChunkAnalyzerError,
+)
 
 DEFAULT_MODEL = "deepseek/deepseek-v4-flash"  # #415 G1 伪契约同步：mock 数据跟随默认
 TEMPLATE_NAME = "llm_chunk"

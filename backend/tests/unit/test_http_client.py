@@ -802,3 +802,57 @@ class TestNoContent204:
                     await client.put_file("/map/x", data={}, filename="a.png", content=b"x")
         assert exc_info.value.status_code == 404
         assert exc_info.value.detail == "地图不存在"
+
+
+class TestPostFileAndGetBytes:
+    """#627 覆盖率补测：post_file（_request_file POST 路径，line 140）+
+    get_bytes（F36 地图图片下载，line 154-161）。
+
+    背景：既有测试覆盖 put_file（_request_file PUT）但缺 post_file 的 POST
+    入口；get_bytes 完全未覆盖（2xx 返回字节 + 非 2xx 抛 HttpApiError）。
+    """
+
+    async def test_post_file_returns_json_body(self, handle):
+        """post_file → _request_file(POST) → 2xx json body（line 140）。"""
+        body = {"ok": True, "id": "img1"}
+
+        def _handler(request):
+            assert request.method == "POST"
+            assert request.headers["content-type"].startswith("multipart/form-data")
+            return _json_response(200, body)
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                result = await client.post_file("/map/img", data={}, filename="a.png", content=b"x")
+        assert result == body
+
+    async def test_get_bytes_returns_content(self, handle):
+        """get_bytes 2xx → 返回原始字节（content，line 154/161）。"""
+        payload = b"fake-png-bytes-content"
+
+        def _handler(request):
+            assert request.method == "GET"
+            return httpx.Response(
+                200,
+                content=payload,
+                headers={"content-type": "image/png"},
+                request=httpx.Request("GET", f"{BASE_URL}/map/img"),
+            )
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                result = await client.get_bytes("/map/img")
+        assert result == payload
+
+    async def test_get_bytes_404_raises_http_api_error(self, handle):
+        """get_bytes 非 2xx → HttpApiError（line 155-160 错误分支）。"""
+
+        def _handler(request):
+            return _json_response(404, {"detail": "图片不存在"})
+
+        with _mock_http(handle, _handler) as (make_client, _captured):
+            async with make_client() as client:
+                with pytest.raises(HttpApiError) as exc_info:
+                    await client.get_bytes("/map/img")
+        assert exc_info.value.status_code == 404
+        assert exc_info.value.detail == "图片不存在"

@@ -244,3 +244,64 @@ class TestAgentRunsExecution:
             result = _run_result("list", "--project-id", PROJECT_ID)
         assert result.exit_code == 1
         assert "❌ 内核启动失败: 启动超时" in result.stderr
+
+    @pytest.mark.agent
+    def test_runs_list_none_result_returns(self, fake_http_client):
+        """GET /agent/runs 返回 None → data None → 直接 return，不输出（覆盖 L583->584）。"""
+        fake_http_client.get.return_value = None
+        result = _run_result("list", "--project-id", PROJECT_ID)
+        assert result.exit_code == 0
+        assert result.stdout == ""
+
+    @pytest.mark.agent
+    def test_runs_show_none_result_returns(self, fake_http_client):
+        """GET /agent/runs/{id} 返回 None → 直接 return，不输出（覆盖 L611->612）。"""
+        fake_http_client.get.return_value = None
+        result = _run_result("show", RUN_ID)
+        assert result.exit_code == 0
+        assert result.stdout == ""
+
+    @pytest.mark.agent
+    def test_runs_show_tool_sequence_skips_unnamed_and_duplicate(self, fake_http_client):
+        """_tool_sequence 跳过无名（无 tool_name）/重复工具调用（覆盖 L547->545 False 弧）。"""
+        fake_http_client.get.return_value = _run_dict(
+            steps=[
+                {
+                    "index": 0,
+                    "message_content": "",
+                    "tool_calls": [
+                        {
+                            "step_index": 0,
+                            "tool_name": "search_characters",
+                            "arguments": {},
+                            "result": "",
+                            "is_error": False,
+                        },
+                        {
+                            "step_index": 1,
+                            "arguments": {},
+                            "result": "",
+                            "is_error": False,
+                        },
+                    ],
+                    "tokens": 100,
+                },
+                {
+                    "index": 1,
+                    "message_content": "",
+                    "tool_calls": [
+                        {
+                            "step_index": 0,
+                            "tool_name": "search_characters",
+                            "arguments": {},
+                            "result": "",
+                            "is_error": False,
+                        }
+                    ],
+                    "tokens": 200,
+                },
+            ]
+        )
+        result = _run_result("show", RUN_ID)
+        assert result.exit_code == 0
+        assert "工具: search_characters" in result.stdout

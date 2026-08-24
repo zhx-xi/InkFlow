@@ -38,6 +38,7 @@ RED 状态说明
 import dataclasses
 import json
 import os
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -196,3 +197,40 @@ def test_is_process_alive_current_true_nonexistent_and_nonpositive_false():
     assert is_process_alive(2147483647) is False  # 2**31-1：Windows 上不存在的 pid
     assert is_process_alive(0) is False
     assert is_process_alive(-1) is False
+
+
+class TestIsProcessAliveBranches:
+    """#627 覆盖率补测：is_process_alive 的 win32 GetExitCodeProcess 失败分支
+    （line 121）与非 win32 POSIX os.kill 分支（line 125-129）。
+
+    CI 跑 Windows（sys.platform == win32）→ POSIX 分支恒未执行；line 121 的
+    GetExitCodeProcess 返回 0（失败）分支也需 mock 才能覆盖。
+    """
+
+    def test_win32_getexitcode_false_returns_false(self, monkeypatch):
+        """GetExitCodeProcess 返回 0（查询失败）→ return False（line 121）。"""
+        import ctypes
+
+        monkeypatch.setattr(ctypes.windll.kernel32, "OpenProcess", lambda a, b, c: 0x1234)
+        monkeypatch.setattr(ctypes.windll.kernel32, "GetExitCodeProcess", lambda h, byref_code: 0)
+        monkeypatch.setattr(ctypes.windll.kernel32, "CloseHandle", lambda h: None)
+        assert is_process_alive(12345) is False
+
+    def test_posix_kill_success_returns_true(self, monkeypatch):
+        """非 win32：os.kill 成功 → True（line 126/129）。"""
+        import inkflow.infrastructure.kernel.state as st
+
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(st.os, "kill", lambda pid, sig: None)
+        assert is_process_alive(999) is True
+
+    def test_posix_kill_oserror_returns_false(self, monkeypatch):
+        """非 win32：os.kill 抛 OSError → False（line 127-128）。"""
+        import inkflow.infrastructure.kernel.state as st
+
+        def _raise(pid, sig):
+            raise OSError(3, "no such process")
+
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(st.os, "kill", _raise)
+        assert is_process_alive(999) is False
