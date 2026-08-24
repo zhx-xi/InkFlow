@@ -11,6 +11,7 @@ import {
   fetchProjectPreferences,
   fetchUserPreferences,
   removeProjectPreference,
+  removeMemorySummary,
   removeUserPreference,
   summarizeMemory,
   updateProjectPreference,
@@ -146,6 +147,18 @@ export function MemoryPage() {
       setExtractError(errorMessage(err));
     } finally {
       setExtracting(false);
+    }
+  };
+
+  /** #F49：删除语义总结（成功 → 重拉 summaries 走空态 + 成功 toast；失败 → 错误 toast 且卡片仍在） */
+  const handleRemoveSummary = async (): Promise<void> => {
+    if (!pid) return;
+    try {
+      await removeMemorySummary(pid);
+      setSummaries(await fetchMemorySummaries(pid));
+      pushToast('ok', t('memory.summary.deleteSuccess'));
+    } catch (err) {
+      pushToast('err', errorMessage(err));
     }
   };
 
@@ -293,6 +306,16 @@ export function MemoryPage() {
             ) : null}
           </div>
         )}
+        {summaries?.project ? (
+          <button
+            type="button"
+            data-testid="memory-summary-delete"
+            className="mt-3 rounded-md border border-line bg-surface px-3 py-1.5 text-[12px] text-ink-2 transition-colors duration-180 hover:border-err/50 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+            onClick={() => void handleRemoveSummary()}
+          >
+            {t('memory.summary.delete')}
+          </button>
+        ) : null}
       </section>
 
       {/* 提取记忆入口 */}
@@ -467,6 +490,15 @@ export function MemoryPage() {
                   <span data-testid={`memory-pref-value-${p.id}`}>{p.value}</span>
                 </p>
                 <div className="mt-2 flex items-center gap-2">
+                  {p.superseded_by ? (
+                    <span
+                      data-testid={`memory-pref-superseded-${p.id}`}
+                      className="rounded bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-ink-2"
+                    >
+                      {t('memory.prefs.superseded')}
+                      <span data-testid={`memory-pref-superseded-by-${p.id}`}>{p.superseded_by}</span>
+                    </span>
+                  ) : null}
                   <button
                     type="button"
                     data-testid={`memory-pref-edit-${p.id}`}
@@ -530,6 +562,15 @@ export function MemoryPage() {
                   <span data-testid={`memory-userpref-value-${p.id}`}>{p.value}</span>
                 </p>
                 <div className="mt-2 flex items-center gap-2">
+                  {p.superseded_by ? (
+                    <span
+                      data-testid={`memory-userpref-superseded-${p.id}`}
+                      className="rounded bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-ink-2"
+                    >
+                      {t('memory.prefs.superseded')}
+                      <span data-testid={`memory-userpref-superseded-by-${p.id}`}>{p.superseded_by}</span>
+                    </span>
+                  ) : null}
                   <button
                     type="button"
                     data-testid={`memory-userpref-edit-${p.id}`}

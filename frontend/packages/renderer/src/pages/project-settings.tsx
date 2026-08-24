@@ -25,6 +25,13 @@ export function ProjectSettingsPage() {
   // 字数输入：本地受控草稿 + dirty 标记（blur 才 setConfig + persist；镜像 GeneralPanel valueRef/dirty 语义）
   const [wordsDraft, setWordsDraft] = useState(() => String(project?.config.default_words ?? 800000));
   const wordsDirtyRef = useRef(false);
+  // #F49 记忆衰减：config.extra 载体（开关即时 persist；半衰期草稿 blur 校验后保存，镜像 wordsDraft/dirty 语义）
+  const memoryDecayEnabled = config.extra?.memory_decay_enabled === true;
+  const [decayDraft, setDecayDraft] = useState(() =>
+    String(project?.config.extra?.memory_decay_half_life ?? 30),
+  );
+  const decayDirtyRef = useRef(false);
+  const [decayError, setDecayError] = useState(false);
   // #595：项目标签（多选 + 自定义新增，变更即 PATCH {tags}；镜像 NewProjectDialog tags 交互）
   const tagSuggestions = useTagsStore((s) => s.suggestions);
   const [tagsDraft, setTagsDraft] = useState<string[]>(() => project?.tags ?? []);
@@ -50,6 +57,9 @@ export function ProjectSettingsPage() {
     const p = state.projects.find((x) => x.id === state.currentProjectId);
     setWordsDraft(String(p?.config.default_words ?? 800000));
     wordsDirtyRef.current = false;
+    setDecayDraft(String(p?.config.extra?.memory_decay_half_life ?? 30));
+    decayDirtyRef.current = false;
+    setDecayError(false);
     setTagsDraft(p?.tags ?? []);
     setTagsInput('');
   }, [currentProjectId]);
@@ -273,6 +283,50 @@ export function ProjectSettingsPage() {
               </Select>
             </div>
           )}
+        </section>
+
+        {/* ⑤ 记忆衰减（#F49）：config.extra 载体；开关变更即 persist，半衰期 blur 校验（1-365）后保存 */}
+        <section className="rounded-lg border border-line bg-surface p-6 shadow-card">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[12px] text-ink-2">{t('ps.memoryDecay.title')}</span>
+            <Switch
+              data-testid="ps-memory-decay-switch"
+              checked={memoryDecayEnabled}
+              onCheckedChange={(checked) => {
+                setConfig({ extra: { ...config.extra, memory_decay_enabled: checked } });
+                persist();
+              }}
+              aria-label={t('ps.memoryDecay.enabled')}
+            />
+          </div>
+          <div className="mt-4 flex flex-col gap-1.5 text-[12px] text-ink-2">
+            <span>{t('ps.memoryDecay.halfLife')}</span>
+            <input
+              type="number"
+              data-testid="ps-memory-decay-half-life"
+              value={decayDraft}
+              onChange={(e) => {
+                setDecayDraft(e.target.value);
+                decayDirtyRef.current = true;
+              }}
+              onBlur={() => {
+                if (!decayDirtyRef.current) return;
+                decayDirtyRef.current = false;
+                const n = Number(decayDraft);
+                if (decayDraft === '' || !Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > 365) {
+                  setDecayError(true); // 越界 → 不保存（无 PATCH）
+                  return;
+                }
+                setDecayError(false);
+                setConfig({ extra: { ...config.extra, memory_decay_half_life: n } });
+                persist();
+              }}
+              className="w-32 rounded-md border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
+            />
+            {decayError && (
+              <p data-testid="ps-memory-decay-error" className="text-[12px] text-err">{t('ps.memoryDecay.invalid')}</p>
+            )}
+          </div>
         </section>
       </div>
     </div>

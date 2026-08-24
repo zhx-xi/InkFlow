@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from inkflow.api.deps import get_memory_service
 from inkflow.domain.models.preference import PreferenceCategory
+from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.ports.semantic_summary_errors import SemanticSummaryError
 from inkflow.domain.services.memory_service import (
     MemoryService,
@@ -196,3 +197,15 @@ async def memory_summarize(
         return await svc.summarize(project_id=project_id, force=force)
     except SemanticSummaryError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.delete("/memory/summaries")
+async def remove_memory_summaries(
+    project_id: uuid.UUID = Query(...),
+    svc: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """删除语义总结（spec §3.3；项目不存在 → 404；幂等；Q2=B 越闸）."""
+    try:
+        return await svc.remove_summaries(project_id=project_id)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

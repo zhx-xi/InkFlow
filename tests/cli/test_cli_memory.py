@@ -518,3 +518,43 @@ class TestMemorySummarize:
         result = _invoke("summarize", "--project-id", PROJECT_ID)
         assert result.exit_code == 1
         assert "❌ LLM 总结失败" in result.stderr
+
+
+
+class TestMemorySummarizeRemove:
+    """inkflow memory summarize --remove — 删除语义总结（#619 F49 ③）.
+
+    HTTP 契约: --remove 标志存在时调用 DELETE /agent/memory/summaries
+    （params: project_id）而非 POST /summarize。
+    人类模式: 「✅ 已删除语义总结」（锁定稳定子串）；
+    --json: 信封 {"ok": true, "data": {"project_id", "deleted": true}}。
+
+    RED 预期: summarize 命令当前无 --remove 标志 → Typer
+    "No such option: --remove." + exit 2 ≠ 0 → 断言 FAILED
+    （fake_http_client 无副作用，选项不存在时命令不被调用）；
+    既有用例不动。
+    """
+
+    def test_summarize_remove_human(self, fake_http_client):
+        """--remove 人类模式: DELETE /agent/memory/summaries（params
+        project_id）+ 成功文案「✅ 已删除语义总结」。"""
+        fake_http_client.delete.return_value = {
+            "project_id": PROJECT_ID,
+            "deleted": True,
+        }
+        result = _invoke("summarize", "--project-id", PROJECT_ID, "--remove")
+        assert result.exit_code == 0
+        call = fake_http_client.delete.await_args
+        assert call.args[0] == "/agent/memory/summaries"
+        assert call.kwargs["params"]["project_id"] == PROJECT_ID
+        assert "✅ 已删除语义总结" in result.stdout
+
+    def test_summarize_remove_json(self, fake_http_client):
+        """--remove --json: stdout 信封 == API 响应原样。"""
+        payload = {"project_id": PROJECT_ID, "deleted": True}
+        fake_http_client.delete.return_value = payload
+        result = _invoke(
+            "summarize", "--project-id", PROJECT_ID, "--remove", "--json"
+        )
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {"ok": True, "data": payload}

@@ -439,3 +439,177 @@ describe('ProjectSettingsPage — #523 Agent 模板选择', () => {
     expect(await screen.findByTestId('ps-template-select')).toHaveTextContent('我的模板');
   });
 });
+
+/**
+ * #F49 记忆衰减 ③GUI（2026-08-24 拍板）：项目设置页新增「记忆衰减」区块（config.extra 载体）：
+ * - 开关 Switch data-testid="ps-memory-decay-switch"：checked = config.extra.memory_decay_enabled === true；
+ *   切换 → setConfig({ extra: { ...config.extra, memory_decay_enabled: checked } }) + persist
+ *   （extra 整包 spread 覆盖，其余 extra 键保留——任务明确写路径）
+ * - 半衰期 τ 天数输入 data-testid="ps-memory-decay-half-life"（type=number，默认 30）：
+ *   读 config.extra.memory_decay_half_life；合法（1-365 整数）blur 保存 →
+ *   setConfig({ extra: { ...config.extra, memory_decay_half_life: v } }) + persist
+ * - 校验：τ ∈ [1, 365]，越界（0 / 366 / 清空非数字）→ 不保存（无 PATCH /api/v1/projects/{id}）
+ *   + 显示错误提示 data-testid="ps-memory-decay-error"
+ * - 保存统一走 useAgentStore.saveConfig(currentProjectId) → PATCH /api/v1/projects/p1
+ *   body { config: 全量 }（镜像既有区块断言形态）
+ * - i18n key（GREEN 补 zh/en）：ps.memoryDecay.title / ps.memoryDecay.enabled /
+ *   ps.memoryDecay.halfLife / ps.memoryDecay.invalid
+ *
+ * RED 预期：src/pages/project-settings.tsx 无该区块 → 新用例逐条失败
+ * （getByTestId 找不到 ps-memory-decay-switch / ps-memory-decay-half-life）。
+ */
+describe('ProjectSettingsPage — #F49 记忆衰减区块', () => {
+  /** 断言未发起任何项目 PATCH（校验失败禁止保存） */
+  function expectNoProjectPatch() {
+    const patches = apiFetchMock.mock.calls.filter(
+      ([path, init]) => path === '/api/v1/projects/p1' && init?.method === 'PATCH',
+    );
+    expect(patches).toHaveLength(0);
+  }
+
+  it('开关初始 = config.extra.memory_decay_enabled（true → checked）；切换 → setConfig spread + PATCH', async () => {
+    const user = userEvent.setup();
+    seedProjectConfig({ extra: { memory_decay_enabled: true, memory_decay_half_life: 30 } });
+    render(<ProjectSettingsPage />);
+
+    const sw = await screen.findByTestId('ps-memory-decay-switch');
+    expect(sw).toBeChecked();
+
+    await user.click(sw);
+
+    // setConfig 整包 spread：enabled 翻转，half_life 保留
+    const cfg = useAgentStore.getState().config;
+    expect(cfg.extra?.memory_decay_enabled).toBe(false);
+    expect(cfg.extra?.memory_decay_half_life).toBe(30);
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/projects/p1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.objectContaining({
+            config: expect.objectContaining({
+              extra: expect.objectContaining({ memory_decay_enabled: false, memory_decay_half_life: 30 }),
+            }),
+          }),
+        }),
+      );
+    });
+  });
+
+  it('开关缺省（extra 无 memory_decay_enabled）→ unchecked；开启 → extra 写入 true', async () => {
+    const user = userEvent.setup();
+    seedProjectConfig({ extra: {} });
+    render(<ProjectSettingsPage />);
+
+    const sw = await screen.findByTestId('ps-memory-decay-switch');
+    expect(sw).not.toBeChecked();
+
+    await user.click(sw);
+    expect(useAgentStore.getState().config.extra?.memory_decay_enabled).toBe(true);
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/projects/p1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.objectContaining({
+            config: expect.objectContaining({
+              extra: expect.objectContaining({ memory_decay_enabled: true }),
+            }),
+          }),
+        }),
+      );
+    });
+  });
+
+  it('τ 输入初始 = config.extra.memory_decay_half_life（45）；type=number', async () => {
+    seedProjectConfig({ extra: { memory_decay_enabled: true, memory_decay_half_life: 45 } });
+    render(<ProjectSettingsPage />);
+
+    const input = await screen.findByTestId('ps-memory-decay-half-life');
+    expect(input).toHaveAttribute('type', 'number');
+    expect(input).toHaveValue(45);
+  });
+
+  it('τ 输入缺省默认 30（extra 无 memory_decay_half_life）', async () => {
+    seedProjectConfig({ extra: { memory_decay_enabled: true } });
+    render(<ProjectSettingsPage />);
+
+    expect(await screen.findByTestId('ps-memory-decay-half-life')).toHaveValue(30);
+  });
+
+  it('τ=400 越界（>365）→ ps-memory-decay-error 且不保存（无 PATCH）', async () => {
+    const user = userEvent.setup();
+    seedProjectConfig({ extra: { memory_decay_enabled: true, memory_decay_half_life: 30 } });
+    render(<ProjectSettingsPage />);
+    await screen.findByTestId('ps-memory-decay-half-life');
+
+    const input = screen.getByTestId('ps-memory-decay-half-life');
+    await user.clear(input);
+    await user.type(input, '400');
+    await user.tab(); // blur → 校验
+
+    expect(screen.getByTestId('ps-memory-decay-error')).toBeInTheDocument();
+    expectNoProjectPatch();
+  });
+
+  it('τ=0 越界（<1）→ ps-memory-decay-error 且不保存', async () => {
+    const user = userEvent.setup();
+    seedProjectConfig({ extra: { memory_decay_enabled: true, memory_decay_half_life: 30 } });
+    render(<ProjectSettingsPage />);
+    await screen.findByTestId('ps-memory-decay-half-life');
+
+    const input = screen.getByTestId('ps-memory-decay-half-life');
+    await user.clear(input);
+    await user.type(input, '0');
+    await user.tab();
+
+    expect(screen.getByTestId('ps-memory-decay-error')).toBeInTheDocument();
+    expectNoProjectPatch();
+  });
+
+  it('清空（非数字 → NaN）→ ps-memory-decay-error 且不保存', async () => {
+    const user = userEvent.setup();
+    seedProjectConfig({ extra: { memory_decay_enabled: true, memory_decay_half_life: 30 } });
+    render(<ProjectSettingsPage />);
+    await screen.findByTestId('ps-memory-decay-half-life');
+
+    const input = screen.getByTestId('ps-memory-decay-half-life');
+    await user.clear(input);
+    await user.tab();
+
+    expect(screen.getByTestId('ps-memory-decay-error')).toBeInTheDocument();
+    expectNoProjectPatch();
+  });
+
+  it('合法 τ=60 → blur 保存：setConfig spread（enabled 保留）+ PATCH body.config.extra', async () => {
+    const user = userEvent.setup();
+    seedProjectConfig({ extra: { memory_decay_enabled: true, memory_decay_half_life: 30 } });
+    render(<ProjectSettingsPage />);
+    await screen.findByTestId('ps-memory-decay-half-life');
+
+    const input = screen.getByTestId('ps-memory-decay-half-life');
+    await user.clear(input);
+    await user.type(input, '60');
+    await user.tab();
+
+    // 无错误提示
+    expect(screen.queryByTestId('ps-memory-decay-error')).not.toBeInTheDocument();
+    const cfg = useAgentStore.getState().config;
+    expect(cfg.extra?.memory_decay_half_life).toBe(60);
+    // spread 契约：enabled 保留
+    expect(cfg.extra?.memory_decay_enabled).toBe(true);
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/projects/p1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.objectContaining({
+            config: expect.objectContaining({
+              extra: expect.objectContaining({ memory_decay_half_life: 60, memory_decay_enabled: true }),
+            }),
+          }),
+        }),
+      );
+    });
+  });
+});

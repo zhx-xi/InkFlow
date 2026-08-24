@@ -71,6 +71,20 @@
  *   memory.add.pattern.label / memory.add.value.label / memory.add.submit /
  *   memory.add.cancel / memory.add.user.hint / memory.prefs.edit（='编辑'）
  *
+ * #F49 记忆衰减 ③GUI（2026-08-24）：
+ * - 删除语义总结：summaries.project 存在时渲染删除按钮 memory-summary-delete；
+ *   点击 → removeMemorySummary(pid)（本文件 vi.mock 工厂已加）→ 成功后卡片消失
+ *   （memory-summary-card 不再渲染；project/user 均 null → memory-summary-empty）
+ *   + 成功 toast（type='ok'；失败 → type='err' 且卡片仍在）
+ * - 被覆盖/降权状态（Q3=A：list 展示全部含 superseded）：项目偏好行 superseded_by
+ *   非空 → 渲染 memory-pref-superseded-<id> 标记 + memory-pref-superseded-by-<id>
+ *   显示被取代的偏好 id；superseded_by='' → 不渲染标记；用户级同理
+ *   memory-userpref-superseded-<id> / memory-userpref-superseded-by-<id>
+ * - 类型扩展（GREEN src/api/memory.ts）：ProjectPreferenceDto / UserPreferenceDto
+ *   追加必填 superseded_by: string（后端 list 已含，'' = 未被取代）
+ * - i18n key（GREEN 补 zh/en）：memory.summary.delete='删除'
+ *   memory.summary.deleteSuccess='已删除语义总结' memory.prefs.superseded='被覆盖'
+ *
  * RED 预期：./memory 模块不存在 → 收集期 module-not-found（类 1 契约缺口）。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -84,6 +98,7 @@ import {
   fetchMemorySummaries,
   fetchProjectPreferences,
   fetchUserPreferences,
+  removeMemorySummary,
   removeProjectPreference,
   removeUserPreference,
   summarizeMemory,
@@ -92,6 +107,7 @@ import {
 } from '../api/memory';
 import { useProjectStore, type Project } from '../stores/project';
 import { useThemeStore } from '../stores/theme';
+import { useToastStore } from '../stores/toast';
 
 vi.mock('../api/memory', () => ({
   fetchMemorySummaries: vi.fn(),
@@ -104,6 +120,7 @@ vi.mock('../api/memory', () => ({
   createUserPreference: vi.fn(),
   updateProjectPreference: vi.fn(),
   updateUserPreference: vi.fn(),
+  removeMemorySummary: vi.fn(),
 }));
 
 const fetchMemorySummariesMock = vi.mocked(fetchMemorySummaries);
@@ -116,6 +133,7 @@ const createProjectPreferenceMock = vi.mocked(createProjectPreference);
 const createUserPreferenceMock = vi.mocked(createUserPreference);
 const updateProjectPreferenceMock = vi.mocked(updateProjectPreference);
 const updateUserPreferenceMock = vi.mocked(updateUserPreference);
+const removeMemorySummaryMock = vi.mocked(removeMemorySummary);
 
 /** 契约结构镜像（GREEN 类型从 api/memory.ts 导出） */
 interface MemorySummaryDto {
@@ -143,6 +161,8 @@ interface ProjectPreferenceDto {
   source_events: string[];
   created_at: string;
   updated_at: string;
+  /** #F49：被取代的偏好 id（'' = 未被取代；GUI 渲染「被覆盖」标记） */
+  superseded_by: string;
 }
 
 interface UserPreferenceDto {
@@ -157,6 +177,8 @@ interface UserPreferenceDto {
   source_events: string[];
   created_at: string;
   updated_at: string;
+  /** #F49：被取代的偏好 id（'' = 未被取代；GUI 渲染「被覆盖」标记） */
+  superseded_by: string;
 }
 
 /** #521 契约：手动添加/编辑偏好输入（GREEN 从 api/memory.ts 导出 PreferenceInput） */
@@ -235,6 +257,7 @@ beforeEach(() => {
       source_events: ['ev1'],
       created_at: '2026-08-10T08:00:00Z',
       updated_at: '2026-08-10T08:00:00Z',
+      superseded_by: '',
     },
   ];
   userPrefs = [
@@ -250,6 +273,7 @@ beforeEach(() => {
       source_events: ['ev1'],
       created_at: '2026-08-10T08:00:00Z',
       updated_at: '2026-08-10T08:00:00Z',
+      superseded_by: '',
     },
   ];
 
@@ -263,6 +287,7 @@ beforeEach(() => {
   createUserPreferenceMock.mockReset();
   updateProjectPreferenceMock.mockReset();
   updateUserPreferenceMock.mockReset();
+  removeMemorySummaryMock.mockReset();
 
   // 状态化 mock：fetch* 读共享数组/对象；操作 mock 同步改写共享数据（两种实现最终态一致）
   fetchMemorySummariesMock.mockImplementation(async () => ({
@@ -313,6 +338,7 @@ beforeEach(() => {
       source_events: [],
       created_at: '2026-08-20T08:00:00Z',
       updated_at: '2026-08-20T08:00:00Z',
+      superseded_by: '',
     };
     prefs = [...prefs, created];
     return created;
@@ -330,6 +356,7 @@ beforeEach(() => {
       source_events: [],
       created_at: '2026-08-20T08:00:00Z',
       updated_at: '2026-08-20T08:00:00Z',
+      superseded_by: '',
     };
     userPrefs = [...userPrefs, created];
     return created;
@@ -347,6 +374,7 @@ beforeEach(() => {
         count: 1,
         source_events: [],
         created_at: '2026-08-20T08:00:00Z',
+        superseded_by: '',
       }),
       category: input.category,
       pattern: input.pattern,
@@ -370,6 +398,7 @@ beforeEach(() => {
         source_projects: [],
         source_events: [],
         created_at: '2026-08-20T08:00:00Z',
+        superseded_by: '',
       }),
       category: input.category,
       pattern: input.pattern,
@@ -378,6 +407,11 @@ beforeEach(() => {
     };
     userPrefs = userPrefs.map((p) => (p.id === preferenceId ? updated : p));
     return updated;
+  });
+  // #F49 状态化 mock：删除语义总结 → summaries.project 置 null（删除后走空态/无卡片两种实现最终态一致）
+  removeMemorySummaryMock.mockImplementation(async () => {
+    summaries = { project_id: summaries.project_id, project: null, user: null };
+    return { project_id: summaries.project_id, deleted: true };
   });
 });
 
@@ -642,5 +676,80 @@ describe('记忆页 — 手动添加/编辑记忆（#521）', () => {
     expect(form).toBeInTheDocument();
     // #546：添加记忆必须是弹框（role=dialog）而非内联展开
     expect(form).toHaveAttribute('role', 'dialog');
+  });
+});
+
+describe('记忆页 — F49 记忆衰减（删除语义总结 / 被覆盖状态）', () => {
+  it('有项目总结 → 渲染删除按钮；点击 → removeMemorySummary(p1) → 卡片消失 + 空态 + 成功 toast', async () => {
+    const user = userEvent.setup();
+    seedProjects();
+    renderMemoryPage();
+    await screen.findByTestId('memory-summary-card');
+
+    expect(screen.getByTestId('memory-summary-delete')).toBeInTheDocument();
+    await user.click(screen.getByTestId('memory-summary-delete'));
+
+    expect(removeMemorySummaryMock).toHaveBeenCalledWith('p1');
+    await waitFor(() => {
+      expect(screen.queryByTestId('memory-summary-card')).not.toBeInTheDocument();
+    });
+    // project/user 均 null → 空态（删除后最终态一致）
+    expect(await screen.findByTestId('memory-summary-empty')).toBeInTheDocument();
+    // 成功反馈 toast（type='ok'）
+    await waitFor(() => {
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts[toasts.length - 1].type).toBe('ok');
+    });
+  });
+
+  it('无项目总结（project=null）→ 不渲染删除按钮', async () => {
+    summaries.project = null;
+    seedProjects();
+    renderMemoryPage();
+    await screen.findByTestId('memory-summary-empty');
+    expect(screen.queryByTestId('memory-summary-delete')).not.toBeInTheDocument();
+  });
+
+  it('删除失败 → 错误 toast（type=err）且卡片仍在', async () => {
+    const user = userEvent.setup();
+    removeMemorySummaryMock.mockRejectedValue(new Error('删除失败'));
+    seedProjects();
+    renderMemoryPage();
+    await screen.findByTestId('memory-summary-card');
+
+    await user.click(screen.getByTestId('memory-summary-delete'));
+    await waitFor(() => {
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts[toasts.length - 1].type).toBe('err');
+    });
+    expect(screen.getByTestId('memory-summary-card')).toBeInTheDocument();
+  });
+
+  it('项目偏好 superseded_by 非空 → 渲染「被覆盖」标记 + 显示被取代偏好 id', async () => {
+    prefs[0] = { ...prefs[0], superseded_by: 'pref-2' };
+    seedProjects();
+    renderMemoryPage();
+    await screen.findByTestId('memory-prefs-section');
+
+    expect(screen.getByTestId('memory-pref-superseded-pref-1')).toBeInTheDocument();
+    expect(screen.getByTestId('memory-pref-superseded-by-pref-1')).toHaveTextContent('pref-2');
+  });
+
+  it('项目偏好 superseded_by 为空 \'\' → 不渲染「被覆盖」标记', async () => {
+    seedProjects();
+    renderMemoryPage();
+    await screen.findByTestId('memory-prefs-section');
+
+    expect(screen.queryByTestId('memory-pref-superseded-pref-1')).not.toBeInTheDocument();
+  });
+
+  it('用户级偏好 superseded_by 非空 → 渲染「被覆盖」标记 + 显示被取代偏好 id', async () => {
+    userPrefs[0] = { ...userPrefs[0], superseded_by: 'upref-2' };
+    seedProjects();
+    renderMemoryPage();
+    await screen.findByTestId('memory-userprefs-section');
+
+    expect(screen.getByTestId('memory-userpref-superseded-upref-1')).toBeInTheDocument();
+    expect(screen.getByTestId('memory-userpref-superseded-by-upref-1')).toHaveTextContent('upref-2');
   });
 });

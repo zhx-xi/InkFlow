@@ -216,6 +216,7 @@ def memory_user_remove(
 def memory_summarize(
     project_id: str = typer.Option(..., "--project-id", help="项目 ID（UUID）"),
     force: bool = typer.Option(False, "--force", help="忽略锚点哈希强制重新总结"),
+    remove: bool = typer.Option(False, "--remove", help="删除语义总结（替代总结动作）"),
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
 ) -> None:
     """手动触发语义总结（M2，spec §4.1）"""
@@ -224,6 +225,11 @@ def memory_summarize(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
+            if remove:
+                return await client.delete(
+                    "/agent/memory/summaries",
+                    params={"project_id": project_id},
+                )
             return await client.post(
                 "/agent/memory/summarize",
                 params={"project_id": project_id, "force": force},
@@ -234,6 +240,9 @@ def memory_summarize(
         return
     if json_output:
         _print_json_envelope(data)
+        return
+    if remove:
+        typer.echo("✅ 已删除语义总结")
         return
     project = data.get("project")
     user = data.get("user")

@@ -6,6 +6,7 @@ MemoryService 是偏好学习闭环的编排核心（调 repo 不碰 ORM，ADR-F
 - list_preferences / remove_preference: 偏好透明管理（删除即停止注入，无缓存）;
 - get_preferences_for_injection: F6 PreferenceSource 注入读口（实时查库）;
 - stats: 修改率统计（对照 F27 基线，spec §5.7）.
+- remove_summaries: 删除项目级语义总结（幂等 + Q2=B 越闸，spec §3.3）.
 
 依赖全部鸭子类型注入（preference_repo / event_repo / project_repo /
 audit_service / learner），不感知 ORM/框架——domain/ 零框架 import 门禁
@@ -22,6 +23,7 @@ from inkflow.domain.models.preference import PreferenceCategory, ProjectPreferen
 from inkflow.domain.models.project import Project
 from inkflow.domain.models.semantic_summary import SemanticSummary, SummaryScope
 from inkflow.domain.models.user_preference import UserPreference
+from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.services import preference_learner
 from inkflow.domain.services.memory_supersede_mixin import MemorySupersedeMixin
 from inkflow.domain.services.preference_learner import (
@@ -39,14 +41,7 @@ def _score_pref(pref: object, active_watermark_now: float, half_life: float) -> 
 
 
 def _dump_summary(summary: SemanticSummary | None) -> dict | None:
-    """语义总结 → 可序列化字典（手动取字段——测试鸭子对象无 model_dump）.
-
-    Args:
-        summary: 语义总结（SemanticSummary 或鸭子对象）；None → None.
-
-    Returns:
-        {content/anchor_hash/anchor_count/model/updated_at}；None → None.
-    """
+    """语义总结 → 可序列化字典（手动取字段——测试鸭子对象无 model_dump）."""
     if summary is None:
         return None
     return {
@@ -713,19 +708,9 @@ class MemoryService(MemorySupersedeMixin):
     async def get_summaries(self, project_id: uuid.UUID) -> dict:
         """查询已落库的语义总结（项目级 + 用户级，spec §3.2/§5.4）.
 
-        零行为语义（spec §7 边界表）:
-        - 项目缺失 → summary_repo 非 None 时 delete_by_project(project_id)
-          清理（项目删除级联）+ 空结构;
-        - memory_learning=false → 空结构（不查 summary_repo，零行为）;
-        - summary_repo 未注入 → 空结构.
-
-        Args:
-            project_id: 所属项目 UUID.
-
-        Returns:
-            {"project_id", "project": {content/anchor_hash/anchor_count/model/
-            updated_at}|None, "user": 同构|None}——用户级为全局记录
-            （scope=user, project_id=None，spec §5.3 全局单一性）.
+        零行为（spec §7 边界表）: 项目缺失 → delete_by_project 清理 + 空结构;
+        memory_learning=false / summary_repo 未注入 → 空结构（不查 summary_repo）;
+        用户级 = 全局记录（scope=user, project_id=None，spec §5.3 全局单一性）.
         """
         project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
             project_id.int
@@ -755,25 +740,14 @@ class MemoryService(MemorySupersedeMixin):
     async def summarize(self, project_id: uuid.UUID, *, force: bool = False) -> dict:
         """触发/复用语义总结（spec §3.2/§5.3/§5.4 幂等 + §5.7 审计）.
 
-        流程:
-        - 项目缺失 → delete_by_project 清理 + summarized=False 空结构;
-        - memory_learning=false → summarized=False 空结构（不调 LLM/不查库/
-          不审计，零行为）;
-        - summary_repo 或 summarizer 未注入 → 空结构;
-        - 每层（项目级先、用户级后）: 当前锚点哈希 == 既有总结哈希且非 force
-          → 复用既有（不调 LLM）；否则 summarizer.summarize → dropped truthy
-          审计 semantic_summary_failed；summary 非 None → upsert 透传产物 +
-          审计 semantic_summary_generated（degraded=True, actor="memory"）;
-        - 用户级锚点 = 全局 user_preferences（project_id=None，与调用项目
-          无关，spec §5.3）.
+        流程: 项目缺失 → delete_by_project 清理 + summarized=False 空结构;
+        memory_learning=false 或 summary_repo/summarizer 未注入 → 空结构;
+        每层（项目级先、用户级后）: 锚点哈希相同且非 force → 复用；否则
+        summarizer.summarize → dropped 审计 failed / summary 非 None → upsert +
+        审计 generated（degraded=True, actor="memory"）; 用户级锚点 = 全局
+        user_preferences（project_id=None，与调用项目无关，spec §5.3）.
 
-        Args:
-            project_id: 所属项目 UUID.
-            force: True 时忽略哈希幂等强制重算（默认 False）.
-
-        Returns:
-            {"project_id", "summarized": bool, "project": {…}|None,
-            "user": {…}|None}——summarized = 任一层真调 LLM 且落库.
+        Returns: {"project_id", "summarized", "project"|None, "user"|None}.
         """
         project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
             project_id.int
@@ -895,3 +869,19 @@ class MemoryService(MemorySupersedeMixin):
             "project": _dump_summary(project_result),
             "user": _dump_summary(user_result),
         }
+
+    async def remove_summaries(self, project_id: uuid.UUID) -> dict:
+        """删除项目级语义总结（幂等 + Q2=B 越闸）.
+
+        - 项目缺失 → ProjectNotFoundError;
+        - 幂等：summary 不存在（delete_by_project 返回 0）→ 仍返回 deleted:True;
+        - memory_learning=false 仍可删（Q2=B，不检查开关）。
+        """
+        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
+            project_id.int
+        )
+        if project is None:
+            raise ProjectNotFoundError()
+        if self._summary_repo is not None:
+            await self._summary_repo.delete_by_project(project_id)  # type: ignore[attr-defined]  # 鸭子类型：summary_repo 按契约提供 delete_by_project
+        return {"project_id": str(project_id), "deleted": True}

@@ -52,6 +52,7 @@ import {
   fetchMemorySummaries,
   fetchProjectPreferences,
   fetchUserPreferences,
+  removeMemorySummary,
   removeProjectPreference,
   removeUserPreference,
   summarizeMemory,
@@ -280,5 +281,37 @@ describe('偏好 — 手动添加 / 编辑（#521）', () => {
     expect(new URL(String(url)).pathname).toBe('/api/v1/agent/user-preferences/up-1');
     expect(JSON.parse(String(init?.body))).toEqual(input);
     expect(result.value).toBe('晚晚');
+  });
+});
+
+/**
+ * #F49 记忆衰减 ③GUI（2026-08-24）：
+ * - removeMemorySummary(projectId: string): Promise<{ project_id: string; deleted: boolean }>
+ *   → DELETE /api/v1/agent/memory/summaries?project_id=
+ *   （后端 DELETE /api/v1/agent/memory/summaries 语义总结删除端点；删除后 summaries.project 置 null）
+ * - interface ProjectPreferenceDto / UserPreferenceDto 追加必填字段 superseded_by: string
+ *   （后端 list 已含该字段，值 '' = 未被取代；GUI 据此渲染「被覆盖」状态标记）
+ *
+ * RED 预期：./memory 模块不导出 removeMemorySummary → vitest 收集期报
+ * 「does not provide an export named 'removeMemorySummary'」；superseded_by 缺失同理。
+ */
+describe('F49 记忆衰减 — 删除语义总结', () => {
+  it('removeMemorySummary → DELETE /api/v1/agent/memory/summaries?project_id=', async () => {
+    mockFetchOnce({ project_id: PID, deleted: true });
+    const result = await removeMemorySummary(PID);
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(init?.method).toBe('DELETE');
+    const parsed = new URL(String(url));
+    expect(parsed.pathname).toBe('/api/v1/agent/memory/summaries');
+    expect(parsed.searchParams.get('project_id')).toBe(PID);
+    // 契约：返回体透传 { project_id, deleted }
+    expect(result.project_id).toBe(PID);
+    expect(result.deleted).toBe(true);
+  });
+
+  it('removeMemorySummary 非 2xx → ApiError（如 404 语义总结不存在）', async () => {
+    mockFetchOnce({ detail: '语义总结不存在' }, 404);
+    await expect(removeMemorySummary(PID)).rejects.toBeInstanceOf(ApiError);
   });
 });
