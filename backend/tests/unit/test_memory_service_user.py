@@ -121,7 +121,7 @@ from inkflow.domain.services.memory_service import (
 
 pytestmark = pytest.mark.asyncio  # 实测 mode=Mode.AUTO；显式 mark 兼容 STRICT/AUTO
 
-PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
+PROJECT_ID = uuid.UUID(int=100)
 CHAPTER_ID = uuid.UUID("87654321-4321-8765-4321-876543218765")
 # 惰性重算测试用项目 id（PID_A/PID_B 存活，GHOST 已删除）
 PID_A = uuid.UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")

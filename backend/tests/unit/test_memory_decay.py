@@ -55,7 +55,7 @@ from inkflow.domain.services.memory_service import MemoryService
 
 pytestmark = pytest.mark.asyncio  # 实测 mode=Mode.AUTO；显式 mark 兼容 STRICT/AUTO
 
-PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
+PROJECT_ID = uuid.UUID(int=100)
 
 
 def _pref(
