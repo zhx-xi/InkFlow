@@ -19,7 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from inkflow.core.database import Base
 from inkflow.domain.models.chapter import ChapterUpdate, VolumeUpdate
-from inkflow.domain.services.chapter_service import ChapterService
+from inkflow.domain.services.chapter_service import (
+    ChapterService,
+    VolumeMoveError,
+    VolumeNotEmptyError,
+)
 from inkflow.infrastructure.database.models.project import ProjectORM
 
 
@@ -140,3 +144,89 @@ class TestWordCount:
         )
         assert await svc.get_volume_word_count(vol.id.int) == ch.word_count
         assert ch.word_count > 0
+
+
+class TestDeleteVolume:
+    """卷删除 — #648 delete_volume 全分支覆盖（overflow/not-found/empty/cascade/move/raise）。"""
+
+    @pytest.mark.asyncio
+    async def test_delete_volume_overflow_vid_returns_false(self, svc) -> None:
+        """vid > 2**63-1 → 守卫直接返回 False，不查库。"""
+        assert await svc.delete_volume(2**63) is False
+
+    @pytest.mark.asyncio
+    async def test_delete_volume_not_found_returns_false(self, svc) -> None:
+        """卷不存在 → 返回 False。"""
+        assert await svc.delete_volume(999999) is False
+
+    @pytest.mark.asyncio
+    async def test_delete_volume_empty_volume_true(self, svc, project) -> None:
+        """空卷 → 删除成功且卷已消失。"""
+        vol = await svc.create_volume(uuid.UUID(int=project.id), "空卷")
+        assert await svc.delete_volume(vol.id) is True
+        assert await svc.get_volume(vol.id) is None
+
+    @pytest.mark.asyncio
+    async def test_delete_volume_cascade_deletes_chapters(self, svc, project) -> None:
+        """级联删除：卷下 2 章全部删除，卷一并删除。"""
+        pid = uuid.UUID(int=project.id)
+        vol = await svc.create_volume(pid, "级联卷")
+        ch1 = await svc.create_chapter(pid, "章一", volume_id=vol.id)
+        ch2 = await svc.create_chapter(pid, "章二", volume_id=vol.id)
+        assert await svc.delete_volume(vol.id, delete_chapters=True) is True
+        assert await svc.get_volume(vol.id) is None
+        assert await svc.get_chapter(ch1.id) is None
+        assert await svc.get_chapter(ch2.id) is None
+
+    @pytest.mark.asyncio
+    async def test_delete_volume_move_to_target(self, svc, project) -> None:
+        """移动到目标卷：章节改挂 v2，源卷删除。"""
+        pid = uuid.UUID(int=project.id)
+        v1 = await svc.create_volume(pid, "源卷")
+        v2 = await svc.create_volume(pid, "目标卷")
+        ch1 = await svc.create_chapter(pid, "章一", volume_id=v1.id)
+        ch2 = await svc.create_chapter(pid, "章二", volume_id=v1.id)
+        assert await svc.delete_volume(v1.id, move_to=v2.id) is True
+        assert await svc.get_volume(v1.id) is None
+        moved1 = await svc.get_chapter(ch1.id)
+        moved2 = await svc.get_chapter(ch2.id)
+        assert moved1 is not None and moved1.volume_id == v2.id
+        assert moved2 is not None and moved2.volume_id == v2.id
+
+    @pytest.mark.asyncio
+    async def test_delete_volume_move_to_self_raises(self, svc, project) -> None:
+        """move_to 指向自身 → VolumeMoveError。"""
+        pid = uuid.UUID(int=project.id)
+        vol = await svc.create_volume(pid, "自身卷")
+        await svc.create_chapter(pid, "章一", volume_id=vol.id)
+        with pytest.raises(VolumeMoveError):
+            await svc.delete_volume(vol.id, move_to=vol.id)
+
+    @pytest.mark.asyncio
+    async def test_delete_volume_move_to_overflow_raises(self, svc, project) -> None:
+        """move_to > 2**63-1 → VolumeMoveError（目标卷不存在守卫）。"""
+        pid = uuid.UUID(int=project.id)
+        vol = await svc.create_volume(pid, "溢出目标卷")
+        await svc.create_chapter(pid, "章一", volume_id=vol.id)
+        with pytest.raises(VolumeMoveError):
+            await svc.delete_volume(vol.id, move_to=2**63)
+
+    @pytest.mark.asyncio
+    async def test_delete_volume_chapters_no_params_raises(self, svc, project) -> None:
+        """卷下有章节且未指定处理方式 → VolumeNotEmptyError，卷与章均保留。"""
+        pid = uuid.UUID(int=project.id)
+        vol = await svc.create_volume(pid, "非空卷")
+        ch = await svc.create_chapter(pid, "章一", volume_id=vol.id)
+        with pytest.raises(VolumeNotEmptyError):
+            await svc.delete_volume(vol.id)
+        assert await svc.get_volume(vol.id) is not None
+        assert await svc.get_chapter(ch.id) is not None
+
+    @pytest.mark.asyncio
+    async def test_delete_volume_move_to_nonexistent_raises(self, svc, project) -> None:
+        """move_to 指向不存在的 64-bit 卷 id → VolumeMoveError。"""
+        pid = uuid.UUID(int=project.id)
+        vol = await svc.create_volume(pid, "目标不存在卷")
+        await svc.create_chapter(pid, "章一", volume_id=vol.id)
+        with pytest.raises(VolumeMoveError):
+            await svc.delete_volume(vol.id, move_to=987654321)
