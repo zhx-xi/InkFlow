@@ -214,6 +214,28 @@ export const zh = {
   'search.loading': '检索中…',
   'search.error': '检索失败，请重试',
   'search.results': '共 {total} 条结果',
+  // #657：检索页索引维护（异步重建全文 FTS5 + 向量索引，后端 #659 配套）
+  'search.maintenance.title': '索引维护',
+  'search.maintenance.desc': '一键重建全文与向量索引，修复检索结果过期或缺失的问题',
+  'search.maintenance.project.label': '项目范围',
+  'search.maintenance.project.current': '当前项目',
+  'search.maintenance.project.all': '全部项目',
+  'search.maintenance.index.label': '索引类型',
+  'search.maintenance.index.both': '两者（全文 + 向量）',
+  'search.maintenance.index.fulltext': '仅全文（FTS5）',
+  'search.maintenance.index.vector': '仅向量',
+  'search.maintenance.rebuild': '重建索引',
+  'search.maintenance.confirm.title': '确认重建索引？',
+  'search.maintenance.confirm.body':
+    '重建将重新生成全文（FTS5）与向量索引；向量化会调用 embedding 模型，可能产生 API 费用。',
+  'search.maintenance.confirm.ok': '确定重建',
+  'search.maintenance.loading': '正在重建索引…',
+  'search.maintenance.progress': '进度 {done}/{total} 项目',
+  'search.maintenance.step.fulltext': '全文（FTS5）',
+  'search.maintenance.step.vector': '向量（embedding）',
+  'search.maintenance.done': '索引重建完成',
+  'search.maintenance.projects': '{n} 个项目',
+  'search.maintenance.fail': '索引重建失败',
   // 设置页
   // #482：项目聚合设置页（/settings/project）
   'ps.title': '项目设置',
