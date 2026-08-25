@@ -85,6 +85,19 @@
  * - i18n key（GREEN 补 zh/en）：memory.summary.delete='删除'
  *   memory.summary.deleteSuccess='已删除语义总结' memory.prefs.superseded='被覆盖'
  *
+ * #658 记忆统计概览（2026-08-25）：
+ * - MemoryPage 必须 import fetchMemoryStats 自 '../api/memory'（vi.mock 工厂已加）；
+ *   有项目挂载时调用 fetchMemoryStats(pid)（GET /api/v1/agent/memory/stats）
+ * - 页面顶部「统计概览」区块 memory-stats-section：数字卡 memory-stats-total
+ *   （= learned_preferences + user_preferences.count + 语义总结数）、
+ *   memory-stats-project-prefs、memory-stats-user-prefs、memory-stats-summaries
+ *   + agentic 明细卡 memory-stats-chapters / memory-stats-direct-confirms /
+ *   memory-stats-modify-rate（百分比）/ memory-stats-regenerate-rate（百分比）/
+ *   memory-stats-avg-diff-chars
+ * - 统计加载失败不阻断页面（总结/偏好照常渲染）：memory-stats-unavailable 弱提示
+ * - 用户级偏好行内详情升级：memory-userpref-count-<id>（count）/
+ *   memory-userpref-conf-<id>（confidence）/ memory-userpref-projects-<id>（project_count）
+ *
  * RED 预期：./memory 模块不存在 → 收集期 module-not-found（类 1 契约缺口）。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -95,6 +108,7 @@ import { MemoryPage } from './memory';
 import {
   createProjectPreference,
   createUserPreference,
+  fetchMemoryStats,
   fetchMemorySummaries,
   fetchProjectPreferences,
   fetchUserPreferences,
@@ -110,6 +124,7 @@ import { useThemeStore } from '../stores/theme';
 import { useToastStore } from '../stores/toast';
 
 vi.mock('../api/memory', () => ({
+  fetchMemoryStats: vi.fn(),
   fetchMemorySummaries: vi.fn(),
   summarizeMemory: vi.fn(),
   fetchProjectPreferences: vi.fn(),
@@ -123,6 +138,7 @@ vi.mock('../api/memory', () => ({
   removeMemorySummary: vi.fn(),
 }));
 
+const fetchMemoryStatsMock = vi.mocked(fetchMemoryStats);
 const fetchMemorySummariesMock = vi.mocked(fetchMemorySummaries);
 const summarizeMemoryMock = vi.mocked(summarizeMemory);
 const fetchProjectPreferencesMock = vi.mocked(fetchProjectPreferences);
@@ -188,9 +204,25 @@ interface PreferenceInput {
   value: string;
 }
 
+/** #658 契约：记忆统计响应镜像（GREEN 从 api/memory.ts 导出 MemoryStatsResponse） */
+interface MemoryStatsResponse {
+  project_id: string;
+  agentic: {
+    chapters: number;
+    direct_confirms: number;
+    avg_diff_chars: number;
+    modify_rate: number;
+    regenerate_rate: number;
+  };
+  learned_preferences: number;
+  baseline_ref: string;
+  user_preferences?: { count: number; projects: number } | null;
+}
+
 let summaries: MemorySummariesResponse;
 let prefs: ProjectPreferenceDto[];
 let userPrefs: UserPreferenceDto[];
+let memoryStats: MemoryStatsResponse;
 
 const summaryContent = '用户偏好使用「低声道」替代「说」，主角称呼为林晚。';
 const extractedContent = '提取后：用户偏好「林晚」「低声道」，段落结构三段式。';
@@ -276,7 +308,21 @@ beforeEach(() => {
       superseded_by: '',
     },
   ];
+  memoryStats = {
+    project_id: 'p1',
+    agentic: {
+      chapters: 10,
+      direct_confirms: 3,
+      avg_diff_chars: 48,
+      modify_rate: 0.34,
+      regenerate_rate: 0.2,
+    },
+    learned_preferences: 3,
+    baseline_ref: 'docs/agent-baseline-2026-08-10.md',
+    user_preferences: { count: 5, projects: 2 },
+  };
 
+  fetchMemoryStatsMock.mockReset();
   fetchMemorySummariesMock.mockReset();
   summarizeMemoryMock.mockReset();
   fetchProjectPreferencesMock.mockReset();
@@ -290,6 +336,13 @@ beforeEach(() => {
   removeMemorySummaryMock.mockReset();
 
   // 状态化 mock：fetch* 读共享数组/对象；操作 mock 同步改写共享数据（两种实现最终态一致）
+  fetchMemoryStatsMock.mockImplementation(async () => ({
+    ...memoryStats,
+    agentic: { ...memoryStats.agentic },
+    user_preferences: memoryStats.user_preferences
+      ? { ...memoryStats.user_preferences }
+      : null,
+  }));
   fetchMemorySummariesMock.mockImplementation(async () => ({
     ...summaries,
     project: summaries.project ? { ...summaries.project } : null,
@@ -522,6 +575,10 @@ describe('记忆页 — 偏好列表与删除', () => {
     await screen.findByTestId('memory-userprefs-section');
 
     expect(screen.getByTestId('memory-userpref-value-upref-1')).toHaveTextContent('林晚');
+    // #658：用户级偏好行内详情升级（count/confidence/project_count）
+    expect(screen.getByTestId('memory-userpref-count-upref-1')).toHaveTextContent('4');
+    expect(screen.getByTestId('memory-userpref-conf-upref-1')).toHaveTextContent('0.8');
+    expect(screen.getByTestId('memory-userpref-projects-upref-1')).toHaveTextContent('2');
     await user.click(screen.getByTestId('memory-userpref-del-upref-1'));
     expect(removeUserPreferenceMock).toHaveBeenCalledWith('upref-1');
     await waitFor(() => {
@@ -751,5 +808,79 @@ describe('记忆页 — F49 记忆衰减（删除语义总结 / 被覆盖状态�
 
     expect(screen.getByTestId('memory-userpref-superseded-upref-1')).toBeInTheDocument();
     expect(screen.getByTestId('memory-userpref-superseded-by-upref-1')).toHaveTextContent('upref-2');
+  });
+});
+
+/**
+ * #658 记忆统计概览（2026-08-25）：
+ * - 页面顶部「统计概览」区块 memory-stats-section（有项目时渲染）；数字卡
+ *   memory-stats-total（= learned_preferences + user_preferences.count +
+ *   语义总结数）、memory-stats-project-prefs（learned_preferences）、
+ *   memory-stats-user-prefs（user_preferences.count）、memory-stats-summaries
+ *   （语义总结数）与 agentic 明细卡 memory-stats-chapters /
+ *   memory-stats-direct-confirms / memory-stats-modify-rate（百分比） /
+ *   memory-stats-regenerate-rate（百分比）/ memory-stats-avg-diff-chars
+ * - 统计加载失败不阻断页面（总结/偏好照常渲染）：memory-stats-unavailable 弱提示
+ * - MemoryPage 必须 import fetchMemoryStats 自 '../api/memory'
+ *   （本文件 vi.mock 工厂已加）→ 有项目挂载时调用 fetchMemoryStats(pid)
+ *
+ * RED 预期：当前实现无统计区块 → memory-stats-* 元素不存在（元素级 FAIL）；
+ * 用户级偏好行内详情 testid 同理。
+ */
+describe('记忆页 — 统计概览（#658）', () => {
+  it('有项目挂载 → fetchMemoryStats(pid) 被调用', async () => {
+    seedProjects();
+    renderMemoryPage();
+    await screen.findByTestId('memory-stats-section');
+    expect(fetchMemoryStatsMock).toHaveBeenCalledWith('p1');
+  });
+
+  it('渲染概览数字卡（total=learned+user+总结 / 项目偏好 / 用户偏好 / agentic 明细）', async () => {
+    seedProjects();
+    renderMemoryPage();
+    await screen.findByTestId('memory-stats-section');
+
+    // total = learned_preferences 3 + user_preferences.count 5 + 语义总结 1（summaries.project 存在）= 9
+    expect(screen.getByTestId('memory-stats-total')).toHaveTextContent('9');
+    expect(screen.getByTestId('memory-stats-project-prefs')).toHaveTextContent('3');
+    expect(screen.getByTestId('memory-stats-user-prefs')).toHaveTextContent('5');
+    expect(screen.getByTestId('memory-stats-summaries')).toHaveTextContent('1');
+    // agentic 明细（modify/regenerate 以百分比展示）
+    expect(screen.getByTestId('memory-stats-chapters')).toHaveTextContent('10');
+    expect(screen.getByTestId('memory-stats-direct-confirms')).toHaveTextContent('3');
+    expect(screen.getByTestId('memory-stats-modify-rate')).toHaveTextContent('34%');
+    expect(screen.getByTestId('memory-stats-regenerate-rate')).toHaveTextContent('20%');
+    expect(screen.getByTestId('memory-stats-avg-diff-chars')).toHaveTextContent('48');
+  });
+
+  it('统计加载失败降级：页面不阻断（总结照常渲染）+ memory-stats-unavailable 弱提示', async () => {
+    fetchMemoryStatsMock.mockRejectedValue(new Error('503'));
+    seedProjects();
+    renderMemoryPage();
+    // 统计失败不影响总结/偏好区块（页面仍完整可用）
+    expect(await screen.findByTestId('memory-summary-card')).toBeInTheDocument();
+    expect(await screen.findByTestId('memory-stats-unavailable')).toBeInTheDocument();
+  });
+
+  it('空态：stats 全 0 且无总结 → memory-stats-total 显示 0', async () => {
+    memoryStats = {
+      project_id: 'p1',
+      agentic: {
+        chapters: 0,
+        direct_confirms: 0,
+        avg_diff_chars: 0,
+        modify_rate: 0,
+        regenerate_rate: 0,
+      },
+      learned_preferences: 0,
+      baseline_ref: 'docs/agent-baseline-2026-08-10.md',
+      user_preferences: null,
+    };
+    // 无总结 → 总数 0（与 total=learned+user+总结数 的契约一致）
+    summaries.project = null;
+    summaries.user = null;
+    seedProjects();
+    renderMemoryPage();
+    expect(await screen.findByTestId('memory-stats-total')).toHaveTextContent('0');
   });
 });

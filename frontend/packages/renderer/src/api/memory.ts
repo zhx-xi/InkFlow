@@ -99,6 +99,29 @@ export async function removeMemorySummary(projectId: string): Promise<RemoveMemo
   });
 }
 
+/** #658：记忆统计响应（GET /api/v1/agent/memory/stats） */
+export interface MemoryStatsResponse {
+  project_id: string;
+  agentic: {
+    chapters: number;
+    direct_confirms: number;
+    avg_diff_chars: number;
+    modify_rate: number;
+    regenerate_rate: number;
+  };
+  learned_preferences: number;
+  baseline_ref: string;
+  user_preferences: { count: number; projects: number } | null;
+}
+
+/** 记忆统计：GET /api/v1/agent/memory/stats?project_id= */
+export async function fetchMemoryStats(projectId: string): Promise<MemoryStatsResponse> {
+  const qs = new URLSearchParams({ project_id: projectId });
+  return apiFetch<MemoryStatsResponse>(`/api/v1/agent/memory/stats?${qs.toString()}`, {
+    method: 'GET',
+  });
+}
+
 /** 项目级偏好：GET /api/v1/agent/preferences?project_id= */
 export async function fetchProjectPreferences(projectId: string): Promise<PreferencesResponse> {
   const qs = new URLSearchParams({ project_id: projectId });

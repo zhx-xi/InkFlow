@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   createProjectPreference,
   createUserPreference,
+  fetchMemoryStats,
   fetchMemorySummaries,
   fetchProjectPreferences,
   fetchUserPreferences,
@@ -18,6 +19,7 @@ import {
   updateUserPreference,
   type MemorySummariesResponse,
   type MemorySummaryDto,
+  type MemoryStatsResponse,
   type PreferenceInput,
   type ProjectPreferenceDto,
   type UserPreferenceDto,
@@ -83,6 +85,18 @@ function SummaryCard({ summary }: { summary: MemorySummaryDto }) {
   );
 }
 
+/** #658：统计数字卡（只读，label + 值） */
+function StatCard({ label, testid, value }: { label: string; testid: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-line bg-surface p-3">
+      <p className="text-[12px] text-ink-3">{label}</p>
+      <p data-testid={testid} className="mt-1 font-serif text-[20px] font-semibold text-ink">
+        {value}
+      </p>
+    </div>
+  );
+}
+
 export function MemoryPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -94,6 +108,8 @@ export function MemoryPage() {
   const [summaries, setSummaries] = useState<MemorySummariesResponse | null>(null);
   const [prefs, setPrefs] = useState<ProjectPreferenceDto[]>([]);
   const [userPrefs, setUserPrefs] = useState<UserPreferenceDto[]>([]);
+  const [memoryStats, setMemoryStats] = useState<MemoryStatsResponse | null>(null);
+  const [statsError, setStatsError] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -123,6 +139,14 @@ export function MemoryPage() {
       })
       .catch((err) => {
         if (!cancelled) pushToast('err', errorMessage(err));
+      });
+    // #658：统计 fetch 单独 fire（不并入 Promise.all，失败只置 statsError，不弹 err toast、不阻断页面）
+    fetchMemoryStats(pid)
+      .then((s) => {
+        if (!cancelled) setMemoryStats(s);
+      })
+      .catch(() => {
+        if (!cancelled) setStatsError(true);
       });
     return () => {
       cancelled = true;
@@ -273,52 +297,82 @@ export function MemoryPage() {
         </Select>
       </div>
 
-      {/* 语义总结区块 */}
-      <section data-testid="memory-summary-section" className="mt-8">
-        <h2 className="text-[15px] font-semibold text-ink">{t('memory.summary.title')}</h2>
-        {summaries === null ? (
-          <div className="mt-3 text-[13px] text-ink-2">{t('memory.summary.empty')}</div>
-        ) : summaries.project === null && summaries.user === null ? (
-          <div
-            data-testid="memory-summary-empty"
-            className="mt-3 rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center text-[13px] text-ink-2"
-          >
-            {t('memory.summary.empty')}
-          </div>
-        ) : (
-          <div className="mt-3 space-y-3">
-            {summaries.project ? <SummaryCard summary={summaries.project} /> : null}
-            {summaries.user ? (
-              <div
-                data-testid="memory-summary-user"
-                className="rounded-lg border border-line bg-surface p-4"
-              >
-                <h3 className="text-[13px] font-semibold text-ink-2">
-                  {t('memory.summary.userLabel')}
-                </h3>
-                <p
-                  data-testid="memory-summary-user-content"
-                  className="mt-1 text-[13px] leading-relaxed text-ink"
-                >
-                  {summaries.user.content}
-                </p>
+      {/* #658：统计概览（只读数字卡；fetch 未 resolve 前不渲染，防止 total 预览为 0 破坏 findByTestId 时序） */}
+      {(memoryStats !== null || statsError) && (
+        <section data-testid="memory-stats-section" className="mt-8">
+          <h2 className="text-[15px] font-semibold text-ink">{t('memory.stats.title')}</h2>
+          {statsError && (
+            <div
+              data-testid="memory-stats-unavailable"
+              className="mt-3 rounded-lg border border-dashed border-line bg-surface px-6 py-4 text-center text-[13px] text-ink-2"
+            >
+              {t('memory.stats.unavailable')}
+            </div>
+          )}
+          {memoryStats && (
+            <>
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+                <StatCard
+                  label={t('memory.stats.total')}
+                  testid="memory-stats-total"
+                  value={String(
+                    memoryStats.learned_preferences +
+                      (memoryStats.user_preferences?.count ?? 0) +
+                      ((summaries?.project ? 1 : 0) + (summaries?.user ? 1 : 0)),
+                  )}
+                />
+                <StatCard
+                  label={t('memory.stats.projectPrefs')}
+                  testid="memory-stats-project-prefs"
+                  value={String(memoryStats.learned_preferences)}
+                />
+                <StatCard
+                  label={t('memory.stats.userPrefs')}
+                  testid="memory-stats-user-prefs"
+                  value={String(memoryStats.user_preferences?.count ?? 0)}
+                />
+                <StatCard
+                  label={t('memory.stats.summaries')}
+                  testid="memory-stats-summaries"
+                  value={String((summaries?.project ? 1 : 0) + (summaries?.user ? 1 : 0))}
+                />
               </div>
-            ) : null}
-          </div>
-        )}
-        {summaries?.project ? (
-          <button
-            type="button"
-            data-testid="memory-summary-delete"
-            className="mt-3 rounded-md border border-line bg-surface px-3 py-1.5 text-[12px] text-ink-2 transition-colors duration-180 hover:border-err/50 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-            onClick={() => void handleRemoveSummary()}
-          >
-            {t('memory.summary.delete')}
-          </button>
-        ) : null}
-      </section>
+              <h3 className="mt-5 text-[13px] font-semibold text-ink-2">
+                {t('memory.stats.agentic')}
+              </h3>
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+                <StatCard
+                  label={t('memory.stats.chapters')}
+                  testid="memory-stats-chapters"
+                  value={String(memoryStats.agentic.chapters)}
+                />
+                <StatCard
+                  label={t('memory.stats.directConfirms')}
+                  testid="memory-stats-direct-confirms"
+                  value={String(memoryStats.agentic.direct_confirms)}
+                />
+                <StatCard
+                  label={t('memory.stats.modifyRate')}
+                  testid="memory-stats-modify-rate"
+                  value={Math.round(memoryStats.agentic.modify_rate * 100) + '%'}
+                />
+                <StatCard
+                  label={t('memory.stats.regenerateRate')}
+                  testid="memory-stats-regenerate-rate"
+                  value={Math.round(memoryStats.agentic.regenerate_rate * 100) + '%'}
+                />
+                <StatCard
+                  label={t('memory.stats.avgDiffChars')}
+                  testid="memory-stats-avg-diff-chars"
+                  value={String(memoryStats.agentic.avg_diff_chars)}
+                />
+              </div>
+            </>
+          )}
+        </section>
+      )}
 
-      {/* 提取记忆入口 */}
+      {/* 提取记忆入口（#658：动作行上移到统计概览之后、语义总结之前） */}
       <div className="mt-4 flex items-center gap-3">
         <button
           type="button"
@@ -446,6 +500,51 @@ export function MemoryPage() {
         </div>
       )}
 
+      {/* 语义总结区块 */}
+      <section data-testid="memory-summary-section" className="mt-8">
+        <h2 className="text-[15px] font-semibold text-ink">{t('memory.summary.title')}</h2>
+        {summaries === null ? (
+          <div className="mt-3 text-[13px] text-ink-2">{t('memory.summary.empty')}</div>
+        ) : summaries.project === null && summaries.user === null ? (
+          <div
+            data-testid="memory-summary-empty"
+            className="mt-3 rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center text-[13px] text-ink-2"
+          >
+            {t('memory.summary.empty')}
+          </div>
+        ) : (
+          <div className="mt-3 space-y-3">
+            {summaries.project ? <SummaryCard summary={summaries.project} /> : null}
+            {summaries.user ? (
+              <div
+                data-testid="memory-summary-user"
+                className="rounded-lg border border-line bg-surface p-4"
+              >
+                <h3 className="text-[13px] font-semibold text-ink-2">
+                  {t('memory.summary.userLabel')}
+                </h3>
+                <p
+                  data-testid="memory-summary-user-content"
+                  className="mt-1 text-[13px] leading-relaxed text-ink"
+                >
+                  {summaries.user.content}
+                </p>
+              </div>
+            ) : null}
+          </div>
+        )}
+        {summaries?.project ? (
+          <button
+            type="button"
+            data-testid="memory-summary-delete"
+            className="mt-3 rounded-md border border-line bg-surface px-3 py-1.5 text-[12px] text-ink-2 transition-colors duration-180 hover:border-err/50 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+            onClick={() => void handleRemoveSummary()}
+          >
+            {t('memory.summary.delete')}
+          </button>
+        ) : null}
+      </section>
+
       {/* 项目偏好区块 */}
       <section data-testid="memory-prefs-section" className="mt-10">
         <h2 className="text-[15px] font-semibold text-ink">{t('memory.prefs.title')}</h2>
@@ -554,6 +653,24 @@ export function MemoryPage() {
                     {USER_CATEGORY_LABEL[p.category]
                       ? t(USER_CATEGORY_LABEL[p.category])
                       : p.category}
+                  </span>
+                  <span
+                    data-testid={`memory-userpref-count-${p.id}`}
+                    className="ml-auto text-[12px] text-ink-3"
+                  >
+                    {p.count}
+                  </span>
+                  <span
+                    data-testid={`memory-userpref-conf-${p.id}`}
+                    className="text-[12px] text-ink-3"
+                  >
+                    {p.confidence}
+                  </span>
+                  <span
+                    data-testid={`memory-userpref-projects-${p.id}`}
+                    className="text-[12px] text-ink-3"
+                  >
+                    {p.project_count}
                   </span>
                 </div>
                 <p className="mt-2 text-[13px] text-ink">
