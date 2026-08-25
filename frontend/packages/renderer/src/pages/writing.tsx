@@ -274,6 +274,7 @@ export function WritingPage() {
               projectId={effectiveProjectId}
               chapterId={currentChapterId ?? undefined}
               chapterContent={content}
+              agentOutput={pipeline.status === 'success' ? pipeline.finalOutput : null}
             />
           ) : null}
           <PipelineStatus

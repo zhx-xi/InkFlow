@@ -74,10 +74,25 @@ export function useWorldCategories(
     [currentProjectId, onSaved, t],
   );
 
+  // #641-3：删除分类 → DELETE /world-categories/{id} → 成功本地移除 + ok toast；失败 err toast
+  const handleWorldCatDelete = useCallback(
+    async (id: string | number) => {
+      try {
+        await apiFetch(`/api/v1/world-categories/${id}`, { method: 'DELETE' });
+        setWorldCategoryList((prev) => prev.filter((c) => c.id !== id));
+        useToastStore.getState().pushToast('ok', t('toast.saved'));
+      } catch (err) {
+        useToastStore.getState().pushToast('err', errorMessage(err));
+      }
+    },
+    [t],
+  );
+
   return {
     worldCategoryList,
     worldCatDialogOpen,
     setWorldCatDialogOpen,
     handleWorldCatSave,
+    handleWorldCatDelete,
   };
 }
