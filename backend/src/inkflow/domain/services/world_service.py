@@ -217,6 +217,17 @@ class WorldService:
         )
         return len(roots) > 0
 
+    async def get_root_setting(self, project_id: int | uuid.UUID) -> WorldSetting | None:
+        """项目根世界观条目（parent_id IS NULL）；无根返回 None。
+
+        #641：create_world_setting 对 body 无 parent_id 时先取根——有根则自动挂根，
+        无根则建根（保留一项目一根硬语义）。repo.list top_level_only=True limit=1 取根。
+        """
+        roots, _ = await self._repo.list(
+            _to_int_id(project_id), top_level_only=True, limit=1
+        )
+        return roots[0] if roots else None
+
     async def update_setting(
         self, setting_id: int | uuid.UUID, update: WorldUpdate
     ) -> WorldSetting | None:
