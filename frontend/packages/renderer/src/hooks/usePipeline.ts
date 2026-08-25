@@ -6,10 +6,10 @@
  * - 轮询/confirm/并发保护/卸载清理统一由 useExecutionPoll 承担（#472 R0）
  * - completed → chapterStore.setContent(final_output) + status='success'（落章保留在本 hook）
  */
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, type MutableRefObject } from 'react';
 import type { PipelineExecuteRequest } from '../api/pipeline';
 import { useChapterStore } from '../stores/chapter';
-import { useExecutionPoll, type PipelineRunStatus } from './useExecutionPoll';
+import { useExecutionPoll, type PipelineRunStatus, type PipelineStreamSink } from './useExecutionPoll';
 
 export type PipelineMode = 'write_auto' | 'write_continue';
 export type { PipelineRunStatus } from './useExecutionPoll';
@@ -32,6 +32,8 @@ export interface UsePipelineResult {
   totalDurationMs: number;
   hitlPending: { question: string; role: string } | null;
   executionId: string | null; // #543：透传 useExecutionPoll 的 executionId（执行详情页数据源）
+  /** #642-1：透传 useExecutionPoll 的 streamSinkRef（写作页传给 ChatPanel 复用流式渲染） */
+  streamSinkRef: MutableRefObject<PipelineStreamSink>;
   start: (mode: PipelineMode) => void;
   confirm: (approved: boolean) => void;
 }
@@ -93,6 +95,7 @@ export function usePipeline(options: UsePipelineOptions): UsePipelineResult {
     totalDurationMs: pollState.totalDurationMs,
     hitlPending: pollState.hitlPending,
     executionId: pollState.executionId,
+    streamSinkRef: pollState.streamSinkRef,
     start,
     confirm,
   };
