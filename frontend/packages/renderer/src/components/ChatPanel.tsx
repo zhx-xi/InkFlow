@@ -377,12 +377,14 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
           …
         </button>
         {/* #642-2：resize-handle 从底部移到顶部行（toggle 之后；拖动逻辑不变） */}
-        <div
-          data-testid="chat-resize-handle"
-          className="flex h-1.5 cursor-ns-resize items-center justify-center"
-          onMouseDown={handleResizeMouseDown}
-        >
-          <span className="block h-0.5 w-8 rounded-full bg-line" />
+        <div className="flex-1 flex justify-center">
+          <div
+            data-testid="chat-resize-handle"
+            className="flex h-1.5 cursor-ns-resize items-center justify-center"
+            onMouseDown={handleResizeMouseDown}
+          >
+            <span className="block h-0.5 w-8 rounded-full bg-line" />
+          </div>
         </div>
       </div>
       {expanded && messages.length > 0 && (
