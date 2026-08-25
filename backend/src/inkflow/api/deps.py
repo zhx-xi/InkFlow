@@ -176,7 +176,6 @@ def get_memory_service(
 ) -> MemoryService:
     """获取 MemoryService 实例（偏好学习编排 + M2 语义总结）."""
     from inkflow.core.config import config
-
     return MemoryService(
         preference_repo=SQLitePreferenceRepository(db),
         event_repo=SQLiteMemoryEventRepository(db),
@@ -218,7 +217,6 @@ def get_agentic_writer_service(
         get_provider_config,
         parse_model_string,
     )
-
     # 循环依赖注意：不重复调 get_draft_service(db)（直接 Python 调用无 FastAPI
     # 依赖缓存）——草稿服务在同一函数内联构建，deps 与 service 共享同源实例
     draft_service = DraftService(
@@ -237,7 +235,6 @@ def get_agentic_writer_service(
         audit_service=audit_service,
     )
     prompt_manager = LangChainPromptManager()
-
     def _build_agent(request: AgenticWriteRequest) -> object:
         """每次 run 构建 agent——系统提示与工具期望上下文按请求注入（#275）."""
         system_prompt = build_writer_agent_system_prompt(
@@ -254,7 +251,6 @@ def get_agentic_writer_service(
             expected_project_id=request.project_id,
             expected_chapter_id=request.chapter_id,
         )
-
     # 模型/密钥/base_url 同源装配（F5 provider_config）：默认模型解析 provider，
     # 未配置 key/base_url 时回退空串（harness 支持空 key/base_url 走 ChatOpenAI 默认）
     model = config.llm_default_model
@@ -279,13 +275,11 @@ def get_agentic_writer_service(
 def _collect_explicit_texts(db: AsyncSession):
     """收集显式设定文本（冲突过滤用）：角色档案 name 列表；
     list_characters 返回 tuple/list 均宽松兼容。"""
-
     async def loader(project_id: uuid.UUID) -> list[str]:
         svc = get_character_service(db)
         result = await svc.list_characters(project_id)
         characters = result[0] if isinstance(result, tuple) else result
         return [c.name for c in characters if getattr(c, "name", "")]
-
     return loader
 
 
@@ -309,7 +303,6 @@ def get_context_service(
     from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
         SQLiteForeshadowingRepository,
     )
-
     project_repo = SQLiteProjectRepository(db)
     summary_repo = SQLiteSummaryRepository(db)
     pref_source = PreferenceSource(
@@ -325,7 +318,6 @@ def get_context_service(
         llm_default_model=config.llm_default_model,
         background_refresh=schedule_summary_background_refresh,
     )
-
     async def _preference_pending_audit(**kw: object) -> None:
         """PreferenceSource._audit 适配器：event=... → audit_logs record（#456）。"""
         audit = AuditLogService(SQLiteAuditLogRepository(db))
@@ -336,7 +328,6 @@ def get_context_service(
             actor=str(kw.get("actor", "memory")),
             note=str(kw.get("note")) if kw.get("note") is not None else "",
         )
-
     pref_source._audit = _preference_pending_audit
     sources: dict[ContextSourceType, ContextSourceProtocol] = {
         ContextSourceType.OUTLINE: OutlineSource(SQLiteOutlineRepository(db)),
@@ -368,14 +359,11 @@ def get_character_service(
 ) -> CharacterService:
     """获取 CharacterService 实例（角色仓储 + CharacterExtractor + F1 校验 + F43 角色硬删钩子）."""
     from inkflow.core.config import config
-
     repo = SQLiteCharacterRepository(db)
     map_svc = get_map_service(db)
-
     async def _map_cleanup(role_id: int) -> None:
         """角色硬删钩子：解除 type=role 关联 pin（F43 P5 显式清理）."""
         await map_svc.clear_ref_pins("role", [uuid.UUID(int=role_id)])
-
     return CharacterService(
         repository=repo,
         extractor=CharacterExtractor(
@@ -394,14 +382,11 @@ def get_world_service(
 ) -> WorldService:
     """获取 WorldService 实例（世界观仓储 + WorldExtractor + F1 项目校验 + F36 地点硬删钩子）."""
     from inkflow.core.config import config
-
     repo = SQLiteWorldRepository(db)
     map_svc = get_map_service(db)
-
     async def _location_cleanup(location_ids: list[int]) -> None:
         """地点硬删钩子：pin SET NULL（D10=b 显式级联；mypy 契约 Awaitable[None]）."""
         await map_svc.clear_location_pins([uuid.UUID(int=i) for i in location_ids])
-
     return WorldService(
         repository=repo,
         extractor=WorldExtractor(
@@ -424,7 +409,6 @@ def get_copy_service(
     from inkflow.infrastructure.database.repositories.map_repo import (
         SQLiteMapRepository,
     )
-
     return WorldCopyService(
         repository=SQLiteWorldRepository(db),
         project_repo=SQLiteProjectRepository(db),
@@ -442,7 +426,6 @@ def get_map_service(
     from inkflow.infrastructure.database.repositories.map_repo import (
         SQLiteMapRepository,
     )
-
     return MapService(
         repository=SQLiteMapRepository(db),
         asset_store=LocalMapAssetStore(config.data_dir),
@@ -458,7 +441,6 @@ def get_outline_service(
 ) -> OutlineService:
     """获取 OutlineService 实例（大纲仓储 + OutlineGenerator + F1 项目校验）."""
     from inkflow.core.config import config
-
     repo = SQLiteOutlineRepository(db)
     return OutlineService(
         repository=repo,
@@ -478,11 +460,9 @@ def get_timeline_service(
 ) -> TimelineService:
     """获取 TimelineService 实例（事件仓储 + F1 项目校验 + F43 P5 事件硬删钩子）."""
     map_svc = get_map_service(db)
-
     async def _map_cleanup(event_id: int) -> None:
         """事件硬删钩子：解除 type=event 关联 pin（F43 P5 显式清理）."""
         await map_svc.clear_ref_pins("event", [uuid.UUID(int=event_id)])
-
     return TimelineService(
         repository=SQLiteTimelineRepository(db),
         project_repo=SQLiteProjectRepository(db),
@@ -536,7 +516,6 @@ async def get_extraction_service(
     """获取 ExtractionService 实例（F14 统一提取门面，spec §5/§8）：
     复用 F9-F12 + F16 风格 + 增量追踪 + 懒加载向量存储 + #276 指纹提供器。"""
     from inkflow.core.config import config
-
     vector_store = await get_vector_store_optional()
     chunking = await _load_chunking_config(db)
     llm_chunk_analyzer = None
@@ -545,7 +524,6 @@ async def get_extraction_service(
             llm_client=LangChainLLMClient(),
             prompt_manager=LangChainPromptManager(),
         ).analyze
-
     async def _fingerprint_provider() -> dict | None:
         """reindex 指纹提供器（#276 + #277 M3）— configured 指纹 + store 实测维度。"""
         dimension = (
@@ -555,7 +533,6 @@ async def get_extraction_service(
             dimension=dimension,
             chunking=_chunking_fingerprint_dict(chunking),
         )
-
     return ExtractionService(
         project_repo=SQLiteProjectRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
@@ -637,7 +614,6 @@ def get_style_service(
 ) -> StyleService:
     """获取 StyleService 实例（F16 风格检测：F1/F2 仓储 + 可选 StyleLLMAnalyzer）."""
     from inkflow.core.config import config
-
     return StyleService(
         project_repo=SQLiteProjectRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
@@ -677,12 +653,10 @@ async def get_index_rebuild_service(
     TODO(#659 后续): 向量装配在 get_extraction_service 基础上逐项目 reindex，
     本批先保证 fulltext + status 端点可测（单元测试对 vector 路径自建 mock）。
     """
-
     async def _fulltext_rebuild(project_ids: list[int] | None) -> None:
         """全文重建：复用 SearchService.rebuild（返回 dict，此处丢弃 → None）."""
         search_svc = await get_search_service(db)
         await search_svc.rebuild(project_ids)
-
     async def _vector_rebuild_all(project_ids: list[int] | None) -> None:
         """向量重建：按 project_ids 逐个调 extraction_service.reindex（RAG 侧 per-project 签名）."""
         extraction_svc = await get_extraction_service(db)
@@ -693,7 +667,6 @@ async def get_index_rebuild_service(
             projects, _ = await SQLiteProjectRepository(db).list_all(offset=0, limit=50)
             for project in projects:
                 await extraction_svc.reindex(uuid.UUID(int=project.id.int))
-
     vector: Callable[[list[int] | None], Awaitable[None]] | None = None
     if await get_vector_store_optional() is not None:
         vector = _vector_rebuild_all
@@ -716,7 +689,6 @@ async def _resolve_embedding_spec() -> tuple[str, str, str]:
     from inkflow.infrastructure.database.repositories.provider_config_repo import (
         SQLiteProviderConfigRepository,
     )
-
     # 读 ProviderConfig 注册表取首个 type="embedding" 模型（spec f19 §5.4）
     found: tuple[ProviderConfig, ProviderModel] | None = None
     async with async_session_factory() as session:
@@ -745,12 +717,10 @@ async def _build_store() -> VectorStoreProtocol:
     from inkflow.infrastructure.rag.langchain_vector_store import (
         LangChainVectorStore,
     )
-
     try:
         # 显式类型注解：OpenAIEmbeddings 赋值——保留 Embeddings Protocol 契约
         embeddings: Embeddings
         from langchain_openai import OpenAIEmbeddings
-
         key = APIKeyManager(
             secret_key=config.secret_key,
             storage_dir=config.data_dir / "keys",
