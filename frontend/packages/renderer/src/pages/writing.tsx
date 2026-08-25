@@ -3,17 +3,21 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKe
 import { Compass } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { auditChapter, confirmAudit, type AuditReportDto } from '../api/audit';
+import { analyzeStyle, type StyleReportDto } from '../api/style';
 import { errorMessage } from '../api/client';
 import { AuditDialog } from '../components/AuditDialog';
 import { AutoAuthorizationDialog } from '../components/AutoAuthorizationDialog';
 import { ChapterEditor } from '../components/ChapterEditor';
 import { ChatPanel } from '../components/ChatPanel';
+import { ChapterSummaryPanel } from '../components/ChapterSummaryPanel';
 import { ContextPanel } from '../components/ContextPanel';
+import { DraftApprovalPanel } from '../components/DraftApprovalPanel';
 import { EditorToolbar } from '../components/EditorToolbar';
 import { ExecutionDetailPanel } from '../components/ExecutionDetailPanel';
 import { PipelineStatus } from '../components/PipelineStatus';
 import { ProjectTree } from '../components/ProjectTree';
 import { StatusBar } from '../components/StatusBar';
+import { StyleAnalyzeDialog } from '../components/StyleAnalyzeDialog';
 import { Skeleton } from '../components/ui/skeleton';
 import { usePipeline } from '../hooks/usePipeline';
 import { useI18n } from '../i18n/useI18n';
@@ -115,6 +119,12 @@ export function WritingPage() {
   const [auditError, setAuditError] = useState<string | null>(null);
   const [auditConfirming, setAuditConfirming] = useState(false);
 
+  // T2 风格检测（Issue #655）：报告为瞬态 UI 状态（镜像 F34 审计，不新增 store）
+  const [styleOpen, setStyleOpen] = useState(false);
+  const [styleReport, setStyleReport] = useState<StyleReportDto | null>(null);
+  const [styleLoading, setStyleLoading] = useState(false);
+  const [styleError, setStyleError] = useState<string | null>(null);
+
   const handleAudit = useCallback(async () => {
     if (!effectiveProjectId || !currentChapterId) return;
     setAuditOpen(true);
@@ -128,6 +138,22 @@ export function WritingPage() {
       setAuditError(errorMessage(err));
     } finally {
       setAuditLoading(false);
+    }
+  }, [effectiveProjectId, currentChapterId]);
+
+  const handleStyleAnalyze = useCallback(async () => {
+    if (!effectiveProjectId || !currentChapterId) return;
+    setStyleOpen(true);
+    setStyleLoading(true);
+    setStyleError(null);
+    setStyleReport(null);
+    try {
+      const r = await analyzeStyle(effectiveProjectId, { chapter_ids: [currentChapterId] });
+      setStyleReport(r);
+    } catch (err) {
+      setStyleError(errorMessage(err));
+    } finally {
+      setStyleLoading(false);
     }
   }, [effectiveProjectId, currentChapterId]);
 
@@ -253,6 +279,7 @@ export function WritingPage() {
             onContinue={() => startWithCheck('write_continue')}
             onGenerate={() => startWithCheck('write_auto')}
             onAudit={() => void handleAudit()}
+            onStyleAnalyze={() => void handleStyleAnalyze()}
             view={view}
             onToggleView={() => setView((v) => (v === 'editor' ? 'detail' : 'editor'))}
             autoWriteEnabled={currentProject?.config?.auto_write_enabled === true}
@@ -285,12 +312,19 @@ export function WritingPage() {
             confirming={confirming}
           />
         </main>
-        <ContextPanel
-          projectId={effectiveProjectId}
-          chapterId={currentChapterId}
-          model={model}
-          writingRequirements={currentProject?.config?.writing_style ?? '上下文预览'}
-        />
+        <aside
+          data-testid="right-rail"
+          className="flex w-[240px] shrink-0 flex-col border-l border-line bg-surface-2"
+        >
+          <ContextPanel
+            projectId={effectiveProjectId}
+            chapterId={currentChapterId}
+            model={model}
+            writingRequirements={currentProject?.config?.writing_style ?? '上下文预览'}
+          />
+          <ChapterSummaryPanel projectId={effectiveProjectId} chapterId={currentChapterId} />
+          <DraftApprovalPanel projectId={effectiveProjectId} />
+        </aside>
       </div>
       <AuditDialog
         open={auditOpen}
@@ -300,6 +334,15 @@ export function WritingPage() {
         onClose={() => setAuditOpen(false)}
         onConfirm={(a, n) => void handleConfirm(a, n)}
         confirming={auditConfirming}
+      />
+      <StyleAnalyzeDialog
+        open={styleOpen}
+        report={styleReport}
+        loading={styleLoading}
+        error={styleError}
+        onClose={() => {
+          setStyleOpen(false);
+        }}
       />
       {/* #598 D9-a1：首次授权弹框 —— 默认关闭；由「触发全自动且未授权」动作置 true。
           注：全自动实际从 chat 触发的接线在后续里程碑（#597 已删书级入口），

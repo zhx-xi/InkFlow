@@ -131,7 +131,7 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
     return (
       <aside
         data-testid="context-panel"
-        className="flex w-[26px] shrink-0 border-l border-line bg-surface-2"
+        className="flex w-[26px] shrink-0 flex-col"
       >
         <button
           type="button"
@@ -149,7 +149,7 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
   return (
     <aside
       data-testid="context-panel"
-      className="flex w-[240px] shrink-0 flex-col border-l border-line bg-surface-2"
+      className="flex min-h-0 flex-col"
     >
       <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <span className="text-[13px] font-semibold">{t('write.context.title')}</span>

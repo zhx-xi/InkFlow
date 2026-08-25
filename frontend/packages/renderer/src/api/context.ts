@@ -66,3 +66,20 @@ export interface ContextAssemblyResult {
 export async function assembleContext(body: AssembleContextRequest): Promise<ContextAssemblyResult> {
   return apiFetch<ContextAssemblyResult>('/api/v1/context/assemble', { method: 'POST', body });
 }
+/** 章节摘要 DTO（Issue #656）：与后端 context.py 契约对齐 */
+export interface ChapterSummaryDto {
+  summary: string;
+  chapter_id: string;
+}
+
+/** 获取章节摘要（GET /api/v1/context/chapters/{chapterId}/summary，后端 ensure_summary 惰性生成） */
+export async function getChapterSummary(chapterId: string): Promise<ChapterSummaryDto> {
+  return apiFetch<ChapterSummaryDto>(`/api/v1/context/chapters/${chapterId}/summary`);
+}
+
+/** 强制刷新章节摘要（POST /api/v1/context/chapters/{chapterId}/summary/refresh，无 body） */
+export async function refreshChapterSummary(chapterId: string): Promise<ChapterSummaryDto> {
+  return apiFetch<ChapterSummaryDto>(`/api/v1/context/chapters/${chapterId}/summary/refresh`, {
+    method: 'POST',
+  });
+}
