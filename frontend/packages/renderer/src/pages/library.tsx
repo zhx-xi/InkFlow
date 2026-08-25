@@ -20,7 +20,7 @@ import { RelationForm, type KnowledgeRelationFormData } from '../components/know
 import { LibraryCreateDialog, type LibraryItemDTO } from '../components/LibraryCreateDialog';
 import { LibraryItemList } from '../components/LibraryItemList';
 import { MapWorkbench, type WorldMapDTO } from '../components/MapWorkbench';
-import { OutlineTree } from '../components/OutlineTree';
+import { OutlineTree, type OutlineItemDTO } from '../components/OutlineTree';
 import { TimelineView, type TimelineEventDTO, type TimelineViewData } from '../components/TimelineView';
 import { WorldCatActionButtons } from '../components/WorldCatActionButtons';
 import { WorldCategoryDialog } from '../components/WorldCategoryDialog';
@@ -367,14 +367,9 @@ export function LibraryPage() {
     [],
   );
 
-  const handleTabChange = (key: CatKey) => {
-    setActiveCat(key);
-    setSearchParams({ cat: key });
-  };
+  const handleTabChange = (key: CatKey) => { setActiveCat(key); setSearchParams({ cat: key }); };
 
-  const handleProjectChange = (id: string) => {
-    selectProject(id);
-  };
+  const handleProjectChange = (id: string) => selectProject(id);
   // #196 + F43：保存回调——editing 非空 → PATCH 扁平端点；为空 → POST 创建端点（#196 现状保留）
   const handleSave = async (input: Record<string, unknown>) => {
     if (!currentProjectId) return;
@@ -517,13 +512,14 @@ export function LibraryPage() {
   const toggleCollapsed = (id: string | number) => {
     setCollapsedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  };
+
+  // #649：AI 生成成功 → 新大纲插入树顶部（OutlineTree 回调；不做整表 reload，避免响应竞态覆盖新大纲）
+  const handleOutlineGenerated = (outline: OutlineItemDTO) => {
+    setItems((prev) => [outline, ...prev.filter((i) => String(i.id) !== String(outline.id))]);
   };
 
   return (
@@ -773,6 +769,8 @@ export function LibraryPage() {
               <OutlineTree
                 outlines={items}
                 chapterTitles={chapterTitles}
+                projectId={currentProjectId}
+                onOutlineGenerated={handleOutlineGenerated}
                 onEdit={(item) => {
                   setEditing(item);
                   setCreateOpen(true);
