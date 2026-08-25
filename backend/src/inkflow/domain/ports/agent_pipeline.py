@@ -134,6 +134,29 @@ class PipelineContext:
     """用户定义的变量，可在 Prompt 中使用 {variable} 引用。"""
 
 
+class PipelineStreamEvent:
+    """管线执行流式事件（#642-1 SSE 帧源）。"""
+
+    def __init__(
+        self,
+        *,
+        type: str = "delta",        # delta / done
+        done: bool = False,
+        delta: str = "",
+        final_output: str = "",
+        intent: str | None = None,  # done 帧：'content'（管线产物为章节内容）
+        error: str = "",
+        execution_id: str = "",  # done 帧：执行记录 id（供 getExecutionStatus 对齐）
+    ) -> None:
+        self.type = type
+        self.done = done
+        self.delta = delta
+        self.final_output = final_output
+        self.intent = intent
+        self.error = error
+        self.execution_id = execution_id
+
+
 class AgentPipelineProtocol(Protocol):
     """Agent 管线端口 — 编排多阶段 Agent 执行流程。
 

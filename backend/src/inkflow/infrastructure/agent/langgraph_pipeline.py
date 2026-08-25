@@ -11,18 +11,20 @@
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Sequence
+from collections.abc import AsyncGenerator, Sequence
 from datetime import UTC, datetime
 from functools import partial
-from typing import cast
+from typing import Any, cast
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from inkflow.domain.ports.agent_pipeline import (
     PipelineContext,
     PipelineError,
     PipelineResult,
     PipelineStage,
+    PipelineStreamEvent,
     StageResult,
     StageStatus,
 )
@@ -108,43 +110,8 @@ class LangGraphAgentPipeline:
             raise PipelineError(f"管线配置无效: {'; '.join(errors)}")
 
         try:
-            # TypedDict + 嵌套 results dict：动态 stage key 收进 results（reducer 增量合并）
-            workflow = StateGraph(PipelineState)
-            for stage in stages:
-                # 通用节点绑定 stage_id（v1.2 白名单删除：任意 stage.id 可执行）
-                workflow.add_node(stage.id, partial(pipeline_nodes.generic_node, stage_id=stage.id))
-            # 多入口（F42 #269 §5.3.2）：每个 input_from 为空的阶段连 START
-            for stage in stages:
-                if not stage.input_from:
-                    workflow.add_edge(START, stage.id)
-            # 静态边：跳过条件边（条件边改用 add_conditional_edges 单独构建，spec §5.3.2）
-            conditional_pairs = {tuple(p) for p in (conditional_edges or [])}
-            for stage in stages:
-                for downstream_id in stage.output_to:
-                    if (stage.id, downstream_id) in conditional_pairs:
-                        continue  # 条件边：不 add_edge，下方 add_conditional_edges 处理
-                    workflow.add_edge(stage.id, downstream_id)
-            # 条件边：gate 函数读上游 output，PASS → 目标，否则 → END（跳过目标及其下游）
-            for from_id, to_id in conditional_pairs:
-                workflow.add_conditional_edges(
-                    from_id, _make_gate(from_id, to_id), {to_id: to_id, END: END}
-                )
-            # 多终点：每个 output_to 为空的阶段连 END
-            for stage in stages:
-                if not stage.output_to:
-                    workflow.add_edge(stage.id, END)
-
-            app = workflow.compile()
-            # 输入仅含三个不可变键；results 通道由首个节点写入创建（reducer 增量合并）
-            initial_state: PipelineState = cast(
-                PipelineState,
-                {
-                    "context": context,
-                    "stages": {s.id: s for s in stages},
-                    "llm_client": self._llm,
-                },
-            )
-            final_state = await app.ainvoke(initial_state)
+            app = self._compile(stages, conditional_edges)
+            final_state = await app.ainvoke(self._build_initial_state(stages, context))
         except PipelineError:
             raise
         except Exception as e:
@@ -204,6 +171,90 @@ class LangGraphAgentPipeline:
             error.result = result
             raise error
         return result
+
+    def _compile(
+        self,
+        stages: Sequence[PipelineStage],
+        conditional_edges: Sequence[tuple[str, str]] | None = None,
+    ) -> CompiledStateGraph:
+        """构建并编译 StateGraph（execute/stream 共用装配，spec §5.3.2）。"""
+        # TypedDict + 嵌套 results dict：动态 stage key 收进 results（reducer 增量合并）
+        workflow = StateGraph(PipelineState)
+        for stage in stages:
+            # 通用节点绑定 stage_id（v1.2 白名单删除：任意 stage.id 可执行）
+            workflow.add_node(stage.id, partial(pipeline_nodes.generic_node, stage_id=stage.id))
+        # 多入口（F42 #269 §5.3.2）：每个 input_from 为空的阶段连 START
+        for stage in stages:
+            if not stage.input_from:
+                workflow.add_edge(START, stage.id)
+        # 静态边：跳过条件边（条件边改用 add_conditional_edges 单独构建，spec §5.3.2）
+        conditional_pairs = {tuple(p) for p in (conditional_edges or [])}
+        for stage in stages:
+            for downstream_id in stage.output_to:
+                if (stage.id, downstream_id) in conditional_pairs:
+                    continue  # 条件边：不 add_edge，下方 add_conditional_edges 处理
+                workflow.add_edge(stage.id, downstream_id)
+        # 条件边：gate 函数读上游 output，PASS → 目标，否则 → END（跳过目标及其下游）
+        for from_id, to_id in conditional_pairs:
+            workflow.add_conditional_edges(
+                from_id, _make_gate(from_id, to_id), {to_id: to_id, END: END}
+            )
+        # 多终点：每个 output_to 为空的阶段连 END
+        for stage in stages:
+            if not stage.output_to:
+                workflow.add_edge(stage.id, END)
+        return workflow.compile()
+
+    def _build_initial_state(
+        self, stages: Sequence[PipelineStage], context: PipelineContext
+    ) -> PipelineState:
+        """组装图初始状态（execute/stream 共用：三个不可变键）。"""
+        return cast(
+            PipelineState,
+            {
+                "context": context,
+                "stages": {s.id: s for s in stages},
+                "llm_client": self._llm,
+            },
+        )
+
+    async def stream(
+        self,
+        stages: Sequence[PipelineStage],
+        context: PipelineContext,
+        conditional_edges: Sequence[tuple[str, str]] | None = None,
+    ) -> AsyncGenerator[PipelineStreamEvent, None]:
+        """#642-1：astream_events v2 流式执行管线 → PipelineStreamEvent 帧序列。
+
+        - 装配与 execute 相同（_compile + _build_initial_state）
+        - on_chat_model_end（run_type=llm）→ delta 帧（该阶段 LLM 完整输出 .content）
+        - 流结束 → done(final_output=最后非空 content, intent='content')
+        - 异常（重试耗尽等）→ done(error=...)，由端点转 error 帧
+        """
+        errors = self.validate(stages)
+        if errors:
+            raise PipelineError(f"管线配置无效: {'; '.join(errors)}")
+        app = self._compile(stages, conditional_edges)
+        final_output = ""
+        try:
+            async for ev in app.astream_events(
+                self._build_initial_state(stages, context), version="v2"
+            ):
+                ev_dict = cast(dict[str, Any], ev)
+                if (
+                    ev_dict.get("event") == "on_chat_model_end"
+                    and ev_dict.get("run_type") == "llm"
+                ):
+                    output = ev_dict.get("data", {}).get("output")
+                    content = getattr(output, "content", "") or ""
+                    if content:
+                        final_output = content
+                        yield PipelineStreamEvent(type="delta", delta=content)
+            yield PipelineStreamEvent(
+                type="done", done=True, final_output=final_output, intent="content"
+            )
+        except Exception as e:
+            yield PipelineStreamEvent(type="done", done=True, error=str(e))
 
 
 # F46 #270 gate 通过标记（spec §5.3.3，确定性关键词匹配，不区分大小写）
