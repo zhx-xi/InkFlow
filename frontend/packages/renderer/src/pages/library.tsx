@@ -28,7 +28,7 @@ import { buildWorldTree, filterWorldTree, WorldNodeView } from '../components/Wo
 import { Skeleton } from '../components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
-import { useWorldCategories } from '../hooks/useWorldCategories';
+import { useWorldCategories, type WorldCategoryEntity } from '../hooks/useWorldCategories';
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
 import { cn } from '../lib/cn';
@@ -159,19 +159,22 @@ export function LibraryPage() {
   // knowledge 无创建端点（图谱关系编辑走画布/列表内交互），对话框仅在五个可创建分类下渲染
   const createCat = activeCat === 'knowledge' ? null : activeCat;
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? null;
-
   // #389：世界观分类实体列表 + 新建分类（state/加载/保存逻辑集中在 hook）
-  const { worldCategoryList, worldCatDialogOpen, setWorldCatDialogOpen, handleWorldCatSave } = useWorldCategories(currentProjectId, activeCat, reloadKey, () => {
+  const { worldCategoryList, worldCatDialogOpen, setWorldCatDialogOpen, handleWorldCatSave, handleWorldCatDelete } = useWorldCategories(currentProjectId, activeCat, reloadKey, () => {
     setReloadKey((k) => k + 1);
     setActiveWorldCat(null);
   });
-
-  // #389：世界观分类 chips = 分类实体名列表（不再含默认分组与条目 category 去重）
-  const worldCategories = useMemo(
-    () => (activeCat === 'world' ? worldCategoryList.map((c) => c.name) : []),
-    [activeCat, worldCategoryList],
-  );
-
+  const worldCatEntities = useMemo<WorldCategoryEntity[]>(() => {
+    if (activeCat !== 'world') return [];
+    const seen = new Set<string>();
+    return worldCategoryList.filter((c) => {
+      const name = c.name.trim();
+      if (!name || seen.has(name)) return false;
+      seen.add(name);
+      return true;
+    });
+  }, [activeCat, worldCategoryList]);
+  const worldCategories = useMemo(() => worldCatEntities.map((c) => c.name), [worldCatEntities]);
   // F43 P1 §5.3 世界观树；#588：已有根条目（parent_id===null）时仍保留「创建」入口，允许创建子分类
   const worldRoots = useMemo(
     () => (activeCat === 'world' ? buildWorldTree(items) : []),
@@ -179,10 +182,7 @@ export function LibraryPage() {
   );
   // §5.4：分类筛选作用于整棵树（#567 单例：一项目一根，分类元素为根的子孙→保留匹配节点+子树）
   const filteredWorldRoots = useMemo(
-    () =>
-      activeCat === 'world'
-        ? filterWorldTree(worldRoots, activeWorldCat)
-        : [],
+    () => (activeCat === 'world' ? filterWorldTree(worldRoots, activeWorldCat) : []),
     [activeCat, worldRoots, activeWorldCat],
   );
 
@@ -375,7 +375,6 @@ export function LibraryPage() {
   const handleProjectChange = (id: string) => {
     selectProject(id);
   };
-
   // #196 + F43：保存回调——editing 非空 → PATCH 扁平端点；为空 → POST 创建端点（#196 现状保留）
   const handleSave = async (input: Record<string, unknown>) => {
     if (!currentProjectId) return;
@@ -708,26 +707,27 @@ export function LibraryPage() {
                 {/* F43 P1（§5.4）：世界观分类筛选工具栏——默认分组 + 数据自定义 chips（无「全部」，未选 = 展示所有，再点同 chip 取消）；右上角顶部整体复制（E21） */}
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   <span className="text-[12px] text-ink-2">{t('lib.worldCat.label')}</span>
-                  {worldCategories.map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      data-testid={`world-cat-filter-${cat}`}
-                      aria-pressed={activeWorldCat === cat}
-                      className={cn(
-                        'rounded-full border px-3 py-1 text-[12px] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                        activeWorldCat === cat
-                          ? 'border-accent bg-accent/10 text-accent'
-                          : 'border-line text-ink-2 hover:border-accent hover:text-accent',
-                      )}
-                      onClick={() => setActiveWorldCat(activeWorldCat === cat ? null : cat)}
-                    >
-                      {cat}
-                    </button>
+                  {worldCatEntities.map((catEntity) => (
+                    <span key={catEntity.name} className="inline-flex items-center gap-1">
+                      <button
+                        type="button"
+                        data-testid={`world-cat-filter-${catEntity.name}`}
+                        aria-pressed={activeWorldCat === catEntity.name}
+                        className={cn(
+                          'rounded-full border px-3 py-1 text-[12px] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          activeWorldCat === catEntity.name ? 'border-accent bg-accent/10 text-accent' : 'border-line text-ink-2 hover:border-accent hover:text-accent',
+                        )}
+                        onClick={() => setActiveWorldCat(activeWorldCat === catEntity.name ? null : catEntity.name)}
+                      >
+                        {catEntity.name}
+                      </button>
+                      <button type="button" data-testid={`world-cat-delete-${catEntity.name}`} aria-label={t('lib.delete')} className="rounded-full px-1.5 py-1 text-[12px] text-ink-3 transition duration-150 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => void handleWorldCatDelete(catEntity.id)}>×</button>
+                    </span>
                   ))}
                   <WorldCatActionButtons
                     onAddCategory={() => setWorldCatDialogOpen(true)}
                     onOpenMapView={() => setWorkbenchActive(true)}
+                    onCreateWorld={activeWorldCat ? () => setCreateOpen(true) : undefined}
                   />
                   <button
                     type="button"

@@ -36,6 +36,8 @@ export interface ChatPanelProps {
   projectId: string;
   chapterId?: string;
   chapterContent?: string;
+  /** #642-1：外部 Agent 产物（写作管线 final_output）→ 注入为一条 AI content 消息 */
+  agentOutput?: string | null;
 }
 
 interface ChatEntry {
@@ -61,7 +63,7 @@ const CHAT_DEFAULT_HEIGHT = 160;
 const CHAT_MIN_HEIGHT = 80;
 const CHAT_MAX_HEIGHT = 480;
 
-export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelProps) {
+export function ChatPanel({ projectId, chapterId, chapterContent, agentOutput }: ChatPanelProps) {
   const { t } = useI18n();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatEntry[]>([]);
@@ -121,6 +123,18 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
       cancelled = true;
     };
   }, [projectId]);
+
+  // #642-1：外部 Agent 产物（写作管线 final_output）→ 注入为一条 AI content 消息（与详情页 AgentRun 一致）
+  const injectedAgentOutputsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!agentOutput) return;
+    if (injectedAgentOutputsRef.current.has(agentOutput)) return;
+    injectedAgentOutputsRef.current.add(agentOutput);
+    setExpanded(true);
+    const seq = aiSeqRef.current++;
+    setMessages((prev) => [...prev, { kind: 'ai', seq, text: agentOutput, intent: 'content' }]);
+    setSelectedSeq(seq);
+  }, [agentOutput]);
 
   /** 流式 delta：追加到当前 ai 消息（首个 delta 创建消息占位） */
   const onDelta = useCallback((delta: string) => {
@@ -342,6 +356,102 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
         >
           …
         </button>
+      </div>
+      {expanded && messages.length > 0 && (
+        <div
+          data-testid="chat-messages"
+          data-height={String(height)}
+          className="max-h-[480px] space-y-3 overflow-y-auto text-[13px]"
+          style={{ height }}
+        >
+          {/* #597：agent 工具调用/结果卡片（在 ai 消息前展示） */}
+          {toolEntries.map((entry, index) => (
+            <div key={`tool-${entry.id}-${index}`} className="space-y-1">
+              <div
+                data-testid={`chat-tool-call-${index}`}
+                data-name={entry.name}
+                className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] text-ink-2"
+              >
+                <span className="font-medium text-ink">{entry.name}</span>
+                <span className="ml-2 truncate">{JSON.stringify(entry.args)}</span>
+              </div>
+              {entry.result !== null && (
+                <div
+                  data-testid={`chat-tool-result-${index}`}
+                  className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] text-ink-2"
+                >
+                  {entry.result}
+                </div>
+              )}
+            </div>
+          ))}
+          {messages.map((m) => {
+            const id = m.id;
+            return m.kind === 'user' ? (
+              <div
+                key={`user-${m.seq}`}
+                data-testid={`chat-msg-user-${m.seq}`}
+                data-side="user"
+                className="flex justify-end"
+              >
+                <div className="max-w-[85%] rounded-lg bg-surface-3 px-3 py-2 text-ink">
+                  <span data-testid="chat-msg-role" className="mr-2 text-[11px] text-ink-3">
+                    {t('write.chat.user')}
+                  </span>
+                  <span className="whitespace-pre-wrap">{m.text}</span>
+                  <button
+                    type="button"
+                    data-testid={id ? `chat-msg-delete-${id}` : `chat-msg-delete-user-${m.seq}`}
+                    aria-label={t('write.chat.delete')}
+                    className="ml-2 rounded px-1 text-[11px] text-ink-3 hover:text-err"
+                    onClick={() => void handleDeleteMessage(m)}
+                  >
+                    {t('write.chat.delete')}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div
+                key={`ai-${m.seq}`}
+                data-testid={`chat-msg-ai-${m.seq}`}
+                data-side="ai"
+                className="flex justify-start"
+              >
+                <div className="max-w-[85%] rounded-lg border border-line bg-surface px-3 py-2 text-ink-2">
+                  <span data-testid="chat-msg-role" className="mr-2 text-[11px] text-ink-3">
+                    {t('write.chat.ai')}
+                  </span>
+                  <span className="whitespace-pre-wrap">{m.text}</span>
+                  <button
+                    type="button"
+                    data-testid={id ? `chat-msg-delete-${id}` : `chat-msg-delete-ai-${m.seq}`}
+                    aria-label={t('write.chat.delete')}
+                    className="ml-2 rounded px-1 text-[11px] text-ink-3 hover:text-err"
+                    onClick={() => void handleDeleteMessage(m)}
+                  >
+                    {t('write.chat.delete')}
+                  </button>
+                  {/* #477：仅 content 意图消息渲染选择控件（单选互斥） */}
+                  {m.intent === 'content' && (
+                    <button
+                      type="button"
+                      data-testid={`chat-select-${m.seq}`}
+                      data-selected={selectedSeq === m.seq ? 'true' : 'false'}
+                      aria-label={t('write.chat.select')}
+                      aria-pressed={selectedSeq === m.seq}
+                      className="mt-1 block rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
+                      onClick={() => setSelectedSeq(m.seq)}
+                    >
+                      {t('write.chat.select')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div className="flex items-center gap-2">
         <textarea
           data-testid="chat-input"
           className="min-h-[40px] flex-1 resize-none rounded-md border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
@@ -363,98 +473,6 @@ export function ChatPanel({ projectId, chapterId, chapterContent }: ChatPanelPro
       </div>
       {expanded && messages.length > 0 && (
         <>
-          <div
-            data-testid="chat-messages"
-            data-height={String(height)}
-            className="max-h-[480px] space-y-3 overflow-y-auto text-[13px]"
-            style={{ height }}
-          >
-            {/* #597：agent 工具调用/结果卡片（在 ai 消息前展示） */}
-            {toolEntries.map((entry, index) => (
-              <div key={`tool-${entry.id}-${index}`} className="space-y-1">
-                <div
-                  data-testid={`chat-tool-call-${index}`}
-                  data-name={entry.name}
-                  className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] text-ink-2"
-                >
-                  <span className="font-medium text-ink">{entry.name}</span>
-                  <span className="ml-2 truncate">{JSON.stringify(entry.args)}</span>
-                </div>
-                {entry.result !== null && (
-                  <div
-                    data-testid={`chat-tool-result-${index}`}
-                    className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] text-ink-2"
-                  >
-                    {entry.result}
-                  </div>
-                )}
-              </div>
-            ))}
-            {messages.map((m) => {
-              const id = m.id;
-              return m.kind === 'user' ? (
-                <div
-                  key={`user-${m.seq}`}
-                  data-testid={`chat-msg-user-${m.seq}`}
-                  data-side="user"
-                  className="flex justify-end"
-                >
-                  <div className="max-w-[85%] rounded-lg bg-surface-3 px-3 py-2 text-ink">
-                    <span data-testid="chat-msg-role" className="mr-2 text-[11px] text-ink-3">
-                      {t('write.chat.user')}
-                    </span>
-                    <span className="whitespace-pre-wrap">{m.text}</span>
-                    <button
-                      type="button"
-                      data-testid={id ? `chat-msg-delete-${id}` : `chat-msg-delete-user-${m.seq}`}
-                      aria-label={t('write.chat.delete')}
-                      className="ml-2 rounded px-1 text-[11px] text-ink-3 hover:text-err"
-                      onClick={() => void handleDeleteMessage(m)}
-                    >
-                      {t('write.chat.delete')}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div
-                  key={`ai-${m.seq}`}
-                  data-testid={`chat-msg-ai-${m.seq}`}
-                  data-side="ai"
-                  className="flex justify-start"
-                >
-                  <div className="max-w-[85%] rounded-lg border border-line bg-surface px-3 py-2 text-ink-2">
-                    <span data-testid="chat-msg-role" className="mr-2 text-[11px] text-ink-3">
-                      {t('write.chat.ai')}
-                    </span>
-                    <span className="whitespace-pre-wrap">{m.text}</span>
-                    <button
-                      type="button"
-                      data-testid={id ? `chat-msg-delete-${id}` : `chat-msg-delete-ai-${m.seq}`}
-                      aria-label={t('write.chat.delete')}
-                      className="ml-2 rounded px-1 text-[11px] text-ink-3 hover:text-err"
-                      onClick={() => void handleDeleteMessage(m)}
-                    >
-                      {t('write.chat.delete')}
-                    </button>
-                    {/* #477：仅 content 意图消息渲染选择控件（单选互斥） */}
-                    {m.intent === 'content' && (
-                      <button
-                        type="button"
-                        data-testid={`chat-select-${m.seq}`}
-                        data-selected={selectedSeq === m.seq ? 'true' : 'false'}
-                        aria-label={t('write.chat.select')}
-                        aria-pressed={selectedSeq === m.seq}
-                        className="mt-1 block rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
-                        onClick={() => setSelectedSeq(m.seq)}
-                      >
-                        {t('write.chat.select')}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
           {messages.length > 0 && (
             <div className="flex gap-2">
               <button
