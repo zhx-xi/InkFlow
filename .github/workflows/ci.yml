@@ -370,6 +370,7 @@ jobs:
                  ../tests/integration/test_execution_store_defensive.py `
                  ../tests/api/test_agent_api.py `
                  ../tests/api/test_agents_api.py `
+                 ../tests/api/test_pipeline_stream_api.py `
                  ../tests/api/test_books_api.py `
                  ../tests/api/test_books_api_stage4.py `
                  ../tests/api/test_books_api_background.py `
