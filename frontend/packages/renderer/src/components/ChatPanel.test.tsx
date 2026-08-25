@@ -14,12 +14,14 @@
  *   （user → t('write.chat.user')='你'，ai → t('write.chat.ai')='AI'）
  * - chat-messages 容器 className 含 space-y-3（消息间空行；只锁工具类，不锁完整 class 串）
  * 结构 testid：chat-panel / chat-input / chat-send / chat-msg-user-<n> / chat-msg-ai-<n>
- * / chat-select-<n>（content 意图选择控件，data-selected 选中态）/ chat-insert-selected
+ * 结构 testid：chat-panel / chat-input / chat-send / chat-msg-user-<n> / chat-msg-ai-<n>
+ * / chat-select-<n>（content 意图选择控件，data-selected 选中态）/ chat-copy-<n>（复制对话，
+ * 每条 AI 回复）/ chat-insert-<n>（插入到正文，每条 content 意图 AI 回复，per-message #642-2）
  * 保留契约（#474/#476/#477，GREEN 必须保持）：
- * - 空输入发送禁用；折叠态发送自动展开；展开/收缩/拖动（data-height）
  * - 模型未配置前置校验：ensureModelReady 失败 → toast（common.modelNotConfigured）+ 不发请求
  * - 意图分离：content → 只显示 body + chat-select-<n> 自动选中；conversation → 完整原文无控件
- * - chat-insert-selected 只插入选中条 body（不自动保存，F27 save 流）
+ * - chat-insert-<n> 只插入该条 content 消息 body（不自动保存，F27 save 流）；
+ *   每条 AI 回复有 chat-copy-<n>（复制对话）#642-2
  * i18n key（GREEN 补）：write.chat.user='你' / write.chat.ai='AI'
  * （write.chat.placeholder/send/insert/inserted/failed/select/expand/collapse 已存在）
  * mock 方式：vi.mock('../api/chat') → streamChat 捕获 body+callbacks（模块级 capturedStreams），
@@ -334,9 +336,9 @@ describe('ChatPanel — 流式回复（#541 SSE 渐进追加）', () => {
     expect(screen.getByTestId('chat-msg-ai-0')).not.toHaveTextContent('<<<END>>>');
     // content 消息：选择控件存在且自动选中
     expect(screen.getByTestId('chat-select-0')).toHaveAttribute('data-selected', 'true');
-    // 共享插入按钮存在；旧 per-message 按钮不存在（#477 已删除）
-    expect(screen.getByTestId('chat-insert-selected')).toBeInTheDocument();
-    expect(screen.queryByTestId('chat-insert-0')).toBeNull();
+    // #642-2：per-message 插入/复制按钮存在（原全局 chat-insert-selected 已移除）
+    expect(screen.getByTestId('chat-insert-0')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-copy-0')).toBeInTheDocument();
   });
 
   it('conversation 回复（无标记）→ 显示完整原文，无选择控件、无插入按钮', async () => {
@@ -347,7 +349,9 @@ describe('ChatPanel — 流式回复（#541 SSE 渐进追加）', () => {
     emitDone(0);
     expect(screen.getByTestId('chat-msg-ai-0')).toHaveTextContent('对话回复内容');
     expect(screen.queryByTestId('chat-select-0')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('chat-insert-selected')).not.toBeInTheDocument();
+    // conversation 无插入按钮，但有复制按钮（每条 AI 回复均有 copy，#642-2）
+    expect(screen.queryByTestId('chat-insert-0')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-copy-0')).toBeInTheDocument();
   });
 
   it('onError → 错误文案（write.chat.failed 含「对话失败」），不插入正文', async () => {
@@ -543,7 +547,10 @@ describe('ChatPanel — 意图分离与多生成单选插入（#477 保留契约
     await sendAndAwaitStream(user, '谢谢', 1);
     driveConversationReply(1, '不客气，随时再聊');
     expect(screen.queryByTestId('chat-select-1')).not.toBeInTheDocument();
-    expect(screen.getByTestId('chat-insert-selected')).toBeInTheDocument();
+    // #642-2：content 条 per-message 插入按钮；conversation 条无插入但有复制
+    expect(screen.getByTestId('chat-insert-0')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-insert-1')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-copy-1')).toBeInTheDocument();
     expect(screen.getByTestId('chat-select-0')).toHaveAttribute('data-selected', 'true');
   });
 
@@ -558,8 +565,11 @@ describe('ChatPanel — 意图分离与多生成单选插入（#477 保留契约
     expect(screen.getByTestId('chat-select-1')).toBeInTheDocument();
     expect(screen.getByTestId('chat-select-1')).toHaveAttribute('data-selected', 'true');
     expect(screen.getByTestId('chat-select-0')).toHaveAttribute('data-selected', 'false');
-    expect(screen.getByTestId('chat-insert-selected')).toBeInTheDocument();
-    expect(screen.queryByTestId('chat-insert-0')).toBeNull();
+    // #642-2：两条 content 各有 per-message 插入/复制按钮
+    expect(screen.getByTestId('chat-insert-0')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-insert-1')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-copy-0')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-copy-1')).toBeInTheDocument();
   });
 
   it('点 chat-select-0 → 选中切换到第 1 条（互斥）', async () => {
@@ -574,15 +584,15 @@ describe('ChatPanel — 意图分离与多生成单选插入（#477 保留契约
     expect(screen.getByTestId('chat-select-1')).toHaveAttribute('data-selected', 'false');
   });
 
-  it('选中第 1 条后点插入 → 只插入选中条 body（+ toast 已插入正文）', async () => {
+  it('点第 1 条 per-message 插入按钮 → 插入该条 body（+ toast 已插入正文）', async () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
     await sendAndAwaitStream(user, '写第一段', 0);
     driveContentReply(0, '第一段正文。');
     await sendAndAwaitStream(user, '写第二段', 1);
     driveContentReply(1, '第二段正文。');
-    await user.click(screen.getByTestId('chat-select-0'));
-    await user.click(screen.getByTestId('chat-insert-selected'));
+    // #642-2：per-message 插入（点击该条 content 的 chat-insert-0 直接插入该条 body）
+    await user.click(screen.getByTestId('chat-insert-0'));
     expect(useChapterStore.getState().content).toBe('第一段正文。');
     expect(useToastStore.getState().toasts.some((t) => t.message.includes('已插入正文'))).toBe(true);
   });
@@ -594,7 +604,8 @@ describe('ChatPanel — 意图分离与多生成单选插入（#477 保留契约
     driveContentReply(0, '第一段正文。');
     await sendAndAwaitStream(user, '写第二段', 1);
     driveContentReply(1, '第二段正文。');
-    await user.click(screen.getByTestId('chat-insert-selected'));
+    // #642-2：per-message 插入（点击第 2 条 content 的 chat-insert-1 → 插入该条 body）
+    await user.click(screen.getByTestId('chat-insert-1'));
     expect(useChapterStore.getState().content).toBe('第二段正文。');
   });
 });
@@ -657,9 +668,9 @@ describe('ChatPanel — 历史加载与消息持久化（#547）', () => {
     await user.click(screen.getByTestId('chat-expand'));
     // conversation 条（ai seq 0）无选择控件
     expect(screen.queryByTestId('chat-select-0')).not.toBeInTheDocument();
-    // content 条（ai seq 1）有选择控件且为最新 content 自动选中；共享插入按钮出现
+    // content 条（ai seq 1）有选择控件且为最新 content 自动选中；per-message 插入按钮出现
     expect(screen.getByTestId('chat-select-1')).toHaveAttribute('data-selected', 'true');
-    expect(screen.getByTestId('chat-insert-selected')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-insert-1')).toBeInTheDocument();
   });
 
   it('历史加载失败静默：无 toast；发送仍可用（streamChat 正常触发）', async () => {

@@ -280,15 +280,24 @@ export function ChatPanel({ projectId, chapterId, chapterContent, agentOutput }:
     };
   }, [handleWindowMouseMove, handleWindowMouseUp]);
 
-  const handleInsert = useCallback(() => {
-    // #477：只插入选中条的 body（content 意图消息）
-    const selected = messages.find(
-      (m) => m.kind === 'ai' && m.intent === 'content' && m.seq === selectedSeq,
-    );
-    if (!selected) return;
-    useChapterStore.getState().setContent(selected.text);
-    useToastStore.getState().pushToast('ok', t('write.chat.inserted'));
-  }, [messages, selectedSeq, t]);
+  /** #642-2：per-message 插入（点击该条 content 消息直接插入该条 body，不再依赖 selectedSeq） */
+  const handleInsertMessage = useCallback(
+    (entry: ChatEntry) => {
+      useChapterStore.getState().setContent(entry.text);
+      useToastStore.getState().pushToast('ok', t('write.chat.inserted'));
+    },
+    [t],
+  );
+
+  /** #642-2：per-message 复制对话（防御性：jsdom 无 navigator.clipboard，静默；toast 提示已复制） */
+  const handleCopyMessage = useCallback((entry: ChatEntry) => {
+    try {
+      void navigator.clipboard?.writeText?.(entry.text);
+    } catch {
+      /* 测试环境无 clipboard，静默 */
+    }
+    useToastStore.getState().pushToast('ok', t('write.chat.copied'));
+  }, [t]);
 
   const handleInputKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -341,8 +350,6 @@ export function ChatPanel({ projectId, chapterId, chapterContent, agentOutput }:
   }, [t]);
 
   const canSend = input.trim() !== '';
-  // #477：共享插入按钮仅当存在至少一条 content 消息时渲染
-  const hasContentMessage = messages.some((m) => m.kind === 'ai' && m.intent === 'content');
 
   return (
     <div data-testid="chat-panel" className="flex flex-col gap-2 border-b border-line bg-surface-2 px-4 py-3">
@@ -356,6 +363,14 @@ export function ChatPanel({ projectId, chapterId, chapterContent, agentOutput }:
         >
           …
         </button>
+        {/* #642-2：resize-handle 从底部移到顶部行（toggle 之后；拖动逻辑不变） */}
+        <div
+          data-testid="chat-resize-handle"
+          className="flex h-1.5 cursor-ns-resize items-center justify-center"
+          onMouseDown={handleResizeMouseDown}
+        >
+          <span className="block h-0.5 w-8 rounded-full bg-line" />
+        </div>
       </div>
       {expanded && messages.length > 0 && (
         <div
@@ -431,6 +446,28 @@ export function ChatPanel({ projectId, chapterId, chapterContent, agentOutput }:
                   >
                     {t('write.chat.delete')}
                   </button>
+                  {/* #642-2：每条 AI 回复后跟复制按钮（复制对话） */}
+                  <button
+                    type="button"
+                    data-testid={`chat-copy-${m.seq}`}
+                    aria-label={t('write.chat.copy')}
+                    className="ml-2 rounded px-1 text-[11px] text-ink-3 hover:text-ink"
+                    onClick={() => void handleCopyMessage(m)}
+                  >
+                    {t('write.chat.copy')}
+                  </button>
+                  {/* #642-2：仅 content 意图消息渲染 per-message 插入按钮（替代原全局 chat-insert-selected） */}
+                  {m.intent === 'content' && (
+                    <button
+                      type="button"
+                      data-testid={`chat-insert-${m.seq}`}
+                      aria-label={t('write.chat.insert')}
+                      className="ml-2 rounded px-1 text-[11px] text-ink-3 hover:text-ink"
+                      onClick={() => void handleInsertMessage(m)}
+                    >
+                      {t('write.chat.insert')}
+                    </button>
+                  )}
                   {/* #477：仅 content 意图消息渲染选择控件（单选互斥） */}
                   {m.intent === 'content' && (
                     <button
@@ -472,48 +509,26 @@ export function ChatPanel({ projectId, chapterId, chapterContent, agentOutput }:
         </button>
       </div>
       {expanded && messages.length > 0 && (
-        <>
-          {messages.length > 0 && (
-            <div className="flex gap-2">
-              <button
-                type="button"
-                data-testid="chat-round-archive"
-                aria-label={t('write.chat.archiveRound')}
-                className="rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
-                onClick={() => void handleArchiveRound()}
-              >
-                {t('write.chat.archiveRound')}
-              </button>
-              <button
-                type="button"
-                data-testid="chat-round-delete"
-                aria-label={t('write.chat.deleteRound')}
-                className="rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:border-err/50 hover:text-err"
-                onClick={() => void handleDeleteRound()}
-              >
-                {t('write.chat.deleteRound')}
-              </button>
-            </div>
-          )}
-          {hasContentMessage && (
-            <button
-              type="button"
-              data-testid="chat-insert-selected"
-              aria-label={t('write.chat.insert')}
-              className="rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
-              onClick={handleInsert}
-            >
-              {t('write.chat.insert')}
-            </button>
-          )}
-          <div
-            data-testid="chat-resize-handle"
-            className="flex h-1.5 cursor-ns-resize items-center justify-center"
-            onMouseDown={handleResizeMouseDown}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            data-testid="chat-round-archive"
+            aria-label={t('write.chat.archiveRound')}
+            className="rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
+            onClick={() => void handleArchiveRound()}
           >
-            <span className="block h-0.5 w-8 rounded-full bg-line" />
-          </div>
-        </>
+            {t('write.chat.archiveRound')}
+          </button>
+          <button
+            type="button"
+            data-testid="chat-round-delete"
+            aria-label={t('write.chat.deleteRound')}
+            className="rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:border-err/50 hover:text-err"
+            onClick={() => void handleDeleteRound()}
+          >
+            {t('write.chat.deleteRound')}
+          </button>
+        </div>
       )}
     </div>
   );
