@@ -51,6 +51,12 @@ interface ChapterState {
   selectChapter: (chapterId: string) => Promise<void>;
   saveContent: () => Promise<void>;
   createChapter: (projectId: string, title: string, volumeId?: string) => Promise<ChapterMeta>;
+  createVolume: (projectId: string, title: string) => Promise<Volume>;
+  patchVolume: (volumeId: string, title: string) => Promise<Volume>;
+  deleteVolume: (
+    volumeId: string,
+    mode: { delete_chapters?: boolean; move_to?: string },
+  ) => Promise<void>;
 }
 
 export const useChapterStore = create<ChapterState>((set, get) => ({
@@ -116,5 +122,37 @@ export const useChapterStore = create<ChapterState>((set, get) => ({
     });
     set((s) => ({ chapters: [...s.chapters, created], currentChapterId: created.id }));
     return created;
+  },
+
+  createVolume: async (projectId, title) => {
+    const created = await apiFetch<Volume>(`/api/v1/projects/${projectId}/volumes`, {
+      method: 'POST',
+      body: { title },
+    });
+    set((s) => ({ volumes: [...s.volumes, created] }));
+    return created;
+  },
+
+  patchVolume: async (volumeId, title) => {
+    const patched = await apiFetch<Volume>(`/api/v1/volumes/${volumeId}`, {
+      method: 'PATCH',
+      body: { title },
+    });
+    set((s) => ({ volumes: s.volumes.map((v) => (v.id === patched.id ? patched : v)) }));
+    return patched;
+  },
+
+  deleteVolume: async (volumeId, mode) => {
+    const query = mode.delete_chapters
+      ? `?delete_chapters=true`
+      : mode.move_to
+        ? `?move_to=${mode.move_to}`
+        : '';
+    await apiFetch(`/api/v1/volumes/${volumeId}${query}`, { method: 'DELETE' });
+    set((s) => ({ volumes: s.volumes.filter((v) => v.id !== volumeId) }));
+    const { treeProjectId } = get();
+    if (treeProjectId) {
+      await get().loadChapterTree(treeProjectId);
+    }
   },
 }));

@@ -17,6 +17,14 @@ from inkflow.infrastructure.database.repositories.chapter_repo import (
 )
 
 
+class VolumeNotEmptyError(Exception):
+    """卷下存在章节且未指定级联/移动处理方式（#648 禁止静默解绑）。"""
+
+
+class VolumeMoveError(Exception):
+    """目标卷非法（不存在或等于当前卷）。"""
+
+
 def _utcnow() -> datetime:
     return datetime.now(UTC)
 
@@ -74,8 +82,37 @@ class ChapterService:
         updated = existing.model_copy(update=dto.model_dump(exclude_unset=True))
         return await self._repo.update_volume(updated)
 
-    async def delete_volume(self, volume_id: int | uuid.UUID) -> bool:
-        return await self._repo.delete_volume(_to_int(volume_id))
+    async def delete_volume(
+        self,
+        volume_id: int | uuid.UUID,
+        *,
+        delete_chapters: bool = False,
+        move_to: int | uuid.UUID | None = None,
+    ) -> bool:
+        vid = _to_int(volume_id)
+        if vid > 2**63 - 1:
+            return False
+        existing: Volume | None = await self._repo.get_volume(vid)
+        if existing is None:
+            return False
+        count = await self._repo.count_chapters_by_volume(vid)
+        if count > 0:
+            if delete_chapters:
+                for cid in await self._repo.list_chapter_ids_by_volume(vid):
+                    await self._repo.delete_chapter(cid)
+            elif move_to is not None:
+                target = _to_int(move_to)
+                if target == vid:
+                    raise VolumeMoveError("目标卷不能是当前卷")
+                if target > 2**63 - 1:
+                    raise VolumeMoveError("目标卷不存在")
+                target_vol: Volume | None = await self._repo.get_volume(target)
+                if target_vol is None:
+                    raise VolumeMoveError("目标卷不存在")
+                await self._repo.move_chapters_to_volume(vid, target)
+            else:
+                raise VolumeNotEmptyError("卷下存在章节，请选择级联删除或移动到其他卷")
+        return await self._repo.delete_volume(vid)
 
     # ---- Chapter ----
 

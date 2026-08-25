@@ -118,6 +118,26 @@ class SQLiteChapterRepository:
         await self._session.commit()
         return True
 
+    async def count_chapters_by_volume(self, volume_id: int) -> int:
+        stmt = select(func.count()).select_from(ChapterORM).where(ChapterORM.volume_id == volume_id)
+        result = await self._session.execute(stmt)
+        return int(result.scalar_one() or 0)
+
+    async def list_chapter_ids_by_volume(self, volume_id: int) -> list[int]:
+        stmt = select(ChapterORM.id).where(ChapterORM.volume_id == volume_id)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def move_chapters_to_volume(self, source_volume_id: int, target_volume_id: int) -> int:
+        result = await self._session.execute(
+            sa_update(ChapterORM)
+            .where(ChapterORM.volume_id == source_volume_id)
+            .values(volume_id=target_volume_id, updated_at=_utcnow())
+        )
+        await self._session.commit()
+        count: int = result.rowcount if result.rowcount is not None else 0  # type: ignore[attr-defined]  # SQLAlchemy execute() 静态类型为 Result，rowcount 仅在 CursorResult 上声明，运行时实际可用
+        return count
+
     async def get_next_volume_order(self, project_id: int) -> float:
         stmt = select(func.max(VolumeORM.order_index)).where(VolumeORM.project_id == project_id)
         result = await self._session.execute(stmt)

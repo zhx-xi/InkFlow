@@ -14,7 +14,7 @@
  * （state 由 vi.hoisted 持有，测试内直接改写；zustand 组件测试约定见 frontend-testing 技能）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ProjectTree } from './ProjectTree';
 import { useThemeStore } from '../stores/theme';
 import type { ChapterMeta, Volume } from '../stores/chapter';
@@ -27,6 +27,10 @@ const mocks = vi.hoisted(() => ({
     currentChapterId: null as string | null,
     selectChapter: vi.fn(),
     createChapter: vi.fn(),
+    // #648 卷管理 GUI CRUD：卷入口依赖的 store 方法（mock 声明防组件引用 undefined 崩溃）
+    createVolume: vi.fn(),
+    patchVolume: vi.fn(),
+    deleteVolume: vi.fn(),
   },
   projectState: {
     projects: [] as Project[],
@@ -64,6 +68,9 @@ const project: Project = {
 beforeEach(() => {
   mocks.chapterState.selectChapter.mockReset();
   mocks.chapterState.createChapter.mockReset();
+  mocks.chapterState.createVolume.mockReset();
+  mocks.chapterState.patchVolume.mockReset();
+  mocks.chapterState.deleteVolume.mockReset();
   mocks.chapterState.createChapter.mockResolvedValue({ id: 'c4', title: '新章节', volume_id: null, order_index: 3, word_count: 0 });
   mocks.chapterState.volumes = [];
   mocks.chapterState.chapters = [];
@@ -205,5 +212,28 @@ describe('ProjectTree — 创建章节流程', () => {
     expect(mocks.chapterState.createChapter).not.toHaveBeenCalled();
     // 输入保留、创建态未关闭
     expect(inputEl().value).toBe('孤儿章节');
+  });
+});
+
+describe('ProjectTree — 卷节点入口（#648 卷管理 GUI CRUD，RED 契约）', () => {
+  it('每卷节点（tree-volume）提供「编辑卷标题」与「删除卷」按钮（按卷节点内查找）', () => {
+    mocks.chapterState.volumes = [
+      { id: 'v1', title: '第一卷 风起', order_index: 0 },
+      { id: 'v2', title: '第二卷 云涌', order_index: 1 },
+    ];
+    mocks.chapterState.chapters = [];
+    renderTree();
+
+    const volumeNodes = screen.getAllByTestId('tree-volume');
+    expect(volumeNodes).toHaveLength(2);
+    for (const node of volumeNodes) {
+      expect(within(node).getByRole('button', { name: '编辑卷标题' })).toBeInTheDocument();
+      expect(within(node).getByRole('button', { name: '删除卷' })).toBeInTheDocument();
+    }
+  });
+
+  it('底部栏提供「＋ 新建卷」按钮（与「＋ 新建章节」并列）', () => {
+    renderTree();
+    expect(screen.getByRole('button', { name: /\+ 新建卷/ })).toBeInTheDocument();
   });
 });

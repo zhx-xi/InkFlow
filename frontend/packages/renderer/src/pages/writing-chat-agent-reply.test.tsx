@@ -156,7 +156,7 @@ describe('写作页 — AI 生成后 chat 流式显示 Agent 回复（#642-1）'
     // 切到详情页 view（ChatPanel 卸载重挂）
     fireEvent.click(screen.getByRole('button', { name: /详情/ }));
     // 切回编辑视图 → ChatPanel 重挂 → 从历史拉取已持久化 AI 回复
-    fireEvent.click(screen.getByRole('button', { name: /编辑/ }));
+    fireEvent.click(screen.getByTestId('view-toggle'));
     const aiMsg = await screen.findByTestId('chat-msg-ai-0');
     expect(aiMsg).toHaveTextContent('他握紧了剑。');
   });
