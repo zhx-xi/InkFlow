@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from fastapi import Depends
@@ -36,6 +36,7 @@ from inkflow.domain.services.copy_service import WorldCopyService
 from inkflow.domain.services.draft_service import DraftService
 from inkflow.domain.services.extraction_service import ExtractionService
 from inkflow.domain.services.foreshadowing_service import ForeshadowingService
+from inkflow.domain.services.index_rebuild_service import IndexRebuildService
 from inkflow.domain.services.knowledge_graph_service import KnowledgeGraphService
 from inkflow.domain.services.map_service import MapService
 from inkflow.domain.services.memory_service import MemoryService
@@ -239,7 +240,6 @@ def get_agentic_writer_service(
 
     def _build_agent(request: AgenticWriteRequest) -> object:
         """每次 run 构建 agent——系统提示与工具期望上下文按请求注入（#275）."""
-
         system_prompt = build_writer_agent_system_prompt(
             prompt_manager,
             project_id=request.project_id,
@@ -312,7 +312,6 @@ def get_context_service(
 
     project_repo = SQLiteProjectRepository(db)
     summary_repo = SQLiteSummaryRepository(db)
-
     pref_source = PreferenceSource(
         SQLitePreferenceRepository(db),
         project_repo,
@@ -339,7 +338,6 @@ def get_context_service(
         )
 
     pref_source._audit = _preference_pending_audit
-
     sources: dict[ContextSourceType, ContextSourceProtocol] = {
         ContextSourceType.OUTLINE: OutlineSource(SQLiteOutlineRepository(db)),
         ContextSourceType.CHARACTER_SETTING: CharacterSettingSource(SQLiteCharacterRepository(db)),
@@ -347,7 +345,6 @@ def get_context_service(
         ContextSourceType.FORESHADOWING: ForeshadowingSource(SQLiteForeshadowingRepository(db)),
         ContextSourceType.PREFERENCE: pref_source,
     }
-
     return ContextService(
         sources=sources,
         summary_repo=summary_repo,
@@ -667,6 +664,43 @@ async def get_search_service(
         search_repo=SQLiteSearchRepository(db),
         # #264: 注入可选 vector_store（未配置 embedding 时 None → keyword 正常）
         vector_store=await get_vector_store_optional(),
+    )
+
+
+async def get_index_rebuild_service(
+    db: AsyncSession,
+) -> IndexRebuildService:
+    """获取 IndexRebuildService 实例（#659 统一异步重建）.
+    fulltext 复用 get_search_service 产出的 service.rebuild（接受 list[int] | None）；
+    vector 为「按 project_ids 逐个调 reindex」的懒加载闭包（RAG reindex 是 per-project
+    签名，故逐项目封装；未配 embedding 时 vector=None → vector/both scope 前置 422）。
+    TODO(#659 后续): 向量装配在 get_extraction_service 基础上逐项目 reindex，
+    本批先保证 fulltext + status 端点可测（单元测试对 vector 路径自建 mock）。
+    """
+
+    async def _fulltext_rebuild(project_ids: list[int] | None) -> None:
+        """全文重建：复用 SearchService.rebuild（返回 dict，此处丢弃 → None）."""
+        search_svc = await get_search_service(db)
+        await search_svc.rebuild(project_ids)
+
+    async def _vector_rebuild_all(project_ids: list[int] | None) -> None:
+        """向量重建：按 project_ids 逐个调 extraction_service.reindex（RAG 侧 per-project 签名）."""
+        extraction_svc = await get_extraction_service(db)
+        if project_ids is not None:
+            for pid in project_ids:
+                await extraction_svc.reindex(uuid.UUID(int=pid))
+        else:
+            projects, _ = await SQLiteProjectRepository(db).list_all(offset=0, limit=50)
+            for project in projects:
+                await extraction_svc.reindex(uuid.UUID(int=project.id.int))
+
+    vector: Callable[[list[int] | None], Awaitable[None]] | None = None
+    if await get_vector_store_optional() is not None:
+        vector = _vector_rebuild_all
+    return IndexRebuildService(
+        project_repo=SQLiteProjectRepository(db),
+        fulltext=_fulltext_rebuild,
+        vector=vector,
     )
 
 
