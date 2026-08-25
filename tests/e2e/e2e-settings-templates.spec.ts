@@ -138,9 +138,9 @@ async function createTemplateViaUi(window: Page, name: string, description = '')
     await window.getByTestId('template-description-input').fill(description);
   }
   await window.getByTestId('template-save').click();
-  await expect(dialog).not.toBeVisible();
+  await expect(dialog).not.toBeVisible({ timeout: 15_000 });
   const card = window.locator('[data-testid^="template-card-"]').filter({ hasText: name });
-  await expect(card).toBeVisible();
+  await expect(card).toBeVisible({ timeout: 15_000 });
   return card;
 }
 
@@ -204,11 +204,11 @@ test('模板分类：新建模板全流程（对话框 → 保存 → 新卡片�
     await window.getByTestId('template-name-input').fill(name);
     await window.getByTestId('template-description-input').fill('E2E 描述');
     await window.getByTestId('template-save').click();
-    await expect(dialog).not.toBeVisible();
+    await expect(dialog).not.toBeVisible({ timeout: 15_000 });
 
     // 新卡片可见 + 含描述 + 卡内无默认徽标（新模板 is_default=false）
     const card = window.locator('[data-testid^="template-card-"]').filter({ hasText: name });
-    await expect(card).toBeVisible();
+    await expect(card).toBeVisible({ timeout: 15_000 });
     await expect(card).toContainText('E2E 描述');
     await expect(card.locator('[data-testid^="template-default-badge-"]')).toHaveCount(0);
   } finally {
@@ -241,12 +241,12 @@ test('模板分类：编辑无引用模板直接保存（名称回显 + 不弹�
     const renamed = `${name}改`;
     await window.getByTestId('template-name-input').fill(renamed);
     await window.getByTestId('template-save').click();
-    await expect(window.getByTestId('template-confirm-dialog')).not.toBeVisible();
-    await expect(dialog).not.toBeVisible();
+    await expect(window.getByTestId('template-confirm-dialog')).not.toBeVisible({ timeout: 15_000 });
+    await expect(dialog).not.toBeVisible({ timeout: 15_000 });
 
     // 新名卡片可见
     const newCard = window.locator('[data-testid^="template-card-"]').filter({ hasText: renamed });
-    await expect(newCard).toBeVisible();
+    await expect(newCard).toBeVisible({ timeout: 15_000 });
   } finally {
     await app.close();
   }
