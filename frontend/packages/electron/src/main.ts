@@ -19,6 +19,7 @@ import {
 } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import {
@@ -531,6 +532,25 @@ function registerSettingsHandlers(): void {
   });
 }
 
+/** 导出/文件对话框 IPC（F21 导出服务 GUI）：默认目录/目录选择/文件保存三通道，whenReady 内幂等注册一次 */
+function registerExportHandlers(): void {
+  ipcMain.handle('file:get-default-location', () => app.getPath('desktop'));
+  ipcMain.handle('dialog:choose-directory', async () => {
+    const r = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+    return r.canceled ? null : r.filePaths[0];
+  });
+  ipcMain.handle(
+    'file:save-export',
+    async (_event, payload: { path: string; filename: string; content: string }) => {
+      const { path: dir, filename, content } = payload;
+      if (!dir || !filename) throw new Error('invalid export destination');
+      const fullPath = path.join(dir, filename);
+      await writeFile(fullPath, content, 'utf8');
+      return { path: fullPath, filename };
+    }
+  );
+}
+
 function createMainWindow(): void {
   const win = new BrowserWindow({
     width: 1440,
@@ -751,6 +771,7 @@ app.whenReady().then(async () => {
   setupAppMenu(app.isPackaged);
   registerWindowControlsHandlers();
   registerSettingsHandlers();
+  registerExportHandlers();
   createMainWindow();
   // 内核连接：先复用判定（kernel.json + pid 存活 + /health 200），失败回落 spawn（spec f31 §5.1）
   kernelStatePath = resolveKernelStatePath();

@@ -500,6 +500,18 @@ export const zh = {
   'pj.delete.title': '删除项目「{name}」？',
   'pj.delete.range': '其章节、设定、大纲、时间线数据将全部删除',
   'pj.delete.ok': '确认删除',
+  // #654：项目导出 GUI（renderer 侧）
+  'pj.export': '导出',
+  'export.title': '导出项目',
+  'export.body': '正文',
+  'export.includeSettings': '设定档案附录',
+  'export.location': '导出位置',
+  'export.filename': '文件名',
+  'export.browse': '浏览',
+  'export.submit': '导出',
+  'export.cancel': '取消',
+  'export.loading': '导出中…',
+  'export.ok': '导出成功',
   // 新建项目对话框
   'dlg.newTitle': '新建项目',
   'dlg.name': '书名',
