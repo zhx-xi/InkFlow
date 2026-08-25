@@ -14,7 +14,7 @@ import {
   type KnowledgeRelation,
 } from '../api/knowledge-graph';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { CharacterDetailPanel } from '../components/CharacterDetailPanel';
+import { LibraryCharacterDetail, type LibraryCharacterDetailHandle } from '../components/LibraryCharacterDetail';
 import { CopyDialog } from '../components/CopyDialog';
 import { KnowledgeGraphView } from '../components/knowledge-graph/KnowledgeGraphView';
 import { RelationForm, type KnowledgeRelationFormData } from '../components/knowledge-graph/RelationForm';
@@ -35,16 +35,13 @@ import { useToastStore } from '../stores/toast';
 import { cn } from '../lib/cn';
 
 type CatKey = 'characters' | 'world' | 'outline' | 'timeline' | 'foreshadow' | 'knowledge';
-
 interface ListResponse {
   items: LibraryItemDTO[];
   total: number;
   offset: number;
   limit: number;
 }
-
 type CatResponse = ListResponse;
-
 const CATS: Array<{
   key: CatKey;
   labelKey: string;
@@ -57,9 +54,7 @@ const CATS: Array<{
   { key: 'foreshadow', labelKey: 'nav.lib.foreshadow', endpoint: (id) => `/api/v1/projects/${id}/foreshadowings` },
   { key: 'knowledge', labelKey: 'nav.lib.knowledge', endpoint: (id) => `/api/v1/projects/${id}/knowledge-graph` },
 ];
-
 const CAT_KEYS = CATS.map((c) => c.key);
-
 /** F43 §3.1：编辑保存 PATCH 扁平端点（按 activeCat，已核实 backend/api/routers） */
 const PATCH_ENDPOINTS: Record<Exclude<CatKey, 'knowledge'>, (id: string | number) => string> = {
   characters: (id) => `/api/v1/characters/${id}`,
@@ -68,7 +63,6 @@ const PATCH_ENDPOINTS: Record<Exclude<CatKey, 'knowledge'>, (id: string | number
   timeline: (id) => `/api/v1/timeline/events/${id}`,
   foreshadow: (id) => `/api/v1/foreshadowings/${id}`,
 };
-
 /** F43 §3.1：删除端点（世界观统一 ?cascade=true，D11 拍板） */
 const DELETE_ENDPOINTS: Record<Exclude<CatKey, 'knowledge'>, (id: string | number) => string> = {
   characters: (id) => `/api/v1/characters/${id}`,
@@ -77,19 +71,15 @@ const DELETE_ENDPOINTS: Record<Exclude<CatKey, 'knowledge'>, (id: string | numbe
   timeline: (id) => `/api/v1/timeline/events/${id}`,
   foreshadow: (id) => `/api/v1/foreshadowings/${id}`,
 };
-
 /** F48 §5.4：图谱节点类型 → 实体编辑分类 tab（map_pin 归属世界观地图工作台） */
 const KG_ENTITY_CAT: Record<GraphNode['type'], CatKey> = {
   character: 'characters', world: 'world', outline: 'outline',
   timeline: 'timeline', foreshadow: 'foreshadow', map_pin: 'world',
 };
-
 /** #189 模式：「已保存」指示自动隐藏间隔（ms） */
 const SAVE_INDICATOR_HIDE_MS = 2_000;
-
 /** #189 模式：页面顶部保存指示状态（idle 不渲染 / saving / saved） */
 type SaveState = 'idle' | 'saving' | 'saved';
-
 /** F43 P1（§3.3）：世界观复制结果（F37 既有响应，前端消费 created/skipped/warnings） */
 interface WorldCopyResult {
   created: Array<Record<string, unknown>>;
@@ -98,10 +88,8 @@ interface WorldCopyResult {
   pins_created: number;
   warnings: string[];
 }
-
 /** F43 P1（§5.5/§5.3）：复制对话框状态 + 前端建树节点（parent_id 树） */
 interface CopyState { open: boolean; mode: 'subtree' | 'all'; rootId?: string | number }
-
 function isCatKey(v: string | null): v is CatKey {
   return v !== null && (CAT_KEYS as string[]).includes(v);
 }
@@ -155,8 +143,7 @@ export function LibraryPage() {
   const [relationFormOpen, setRelationFormOpen] = useState(false);
   const [editingRelation, setEditingRelation] = useState<KnowledgeRelation | null>(null);
   const [pendingRelationDelete, setPendingRelationDelete] = useState<KnowledgeRelation | null>(null);
-  // #650/#651：角色详情面板（角色行点名字打开；关闭/切 tab/切项目时重置）
-  const [detailItem, setDetailItem] = useState<LibraryItemDTO | null>(null);
+  const characterDetailRef = useRef<LibraryCharacterDetailHandle>(null);
 
   const cat = CATS.find((c) => c.key === activeCat) ?? CATS[0];
   // knowledge 无创建端点（图谱关系编辑走画布/列表内交互），对话框仅在五个可创建分类下渲染
@@ -373,12 +360,12 @@ export function LibraryPage() {
   const handleTabChange = (key: CatKey) => {
     setActiveCat(key);
     setSearchParams({ cat: key });
-    setDetailItem(null); // 切换分类时卸载角色详情面板
+    characterDetailRef.current?.reset(); // 切换分类时卸载角色详情面板
   };
 
   const handleProjectChange = (id: string) => {
     selectProject(id);
-    setDetailItem(null); // 切换项目时卸载角色详情面板
+    characterDetailRef.current?.reset(); // 切换项目时卸载角色详情面板
   };
   // #196 + F43：保存回调——editing 非空 → PATCH 扁平端点；为空 → POST 创建端点（#196 现状保留）
   const handleSave = async (input: Record<string, unknown>) => {
@@ -806,7 +793,7 @@ export function LibraryPage() {
                   setCreateOpen(true);
                 }}
                 onDelete={(item) => setPendingDelete(item)}
-                onOpenDetail={activeCat === 'characters' ? (item) => setDetailItem(item) : undefined}
+                onOpenDetail={activeCat === 'characters' ? (item) => characterDetailRef.current?.openDetail(item) : undefined}
               />
             )}
           </div>
@@ -904,15 +891,7 @@ export function LibraryPage() {
         />
       )}
 
-      {/* #650/#651：角色详情面板（关系区 + 分组区；关闭即卸载，仅角色分类可打开） */}
-      {currentProjectId !== null && detailItem && (
-        <CharacterDetailPanel
-          item={items.find((i) => String(i.id) === String(detailItem.id)) ?? detailItem}
-          projectId={currentProjectId}
-          onClose={() => setDetailItem(null)}
-          onUpdated={() => setReloadKey((k) => k + 1)}
-        />
-      )}
+      <LibraryCharacterDetail ref={characterDetailRef} currentProjectId={currentProjectId} items={items} reload={() => setReloadKey((k) => k + 1)} />
     </div>
   );
 }
