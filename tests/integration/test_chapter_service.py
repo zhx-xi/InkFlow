@@ -63,7 +63,9 @@ class TestChapterService:
 
     @pytest.mark.asyncio
     @pytest.mark.chapter
-    async def test_delete_volume_with_chapters_raises_volume_not_empty(self, db_session, sample_project):
+    async def test_delete_volume_with_chapters_raises_volume_not_empty(
+        self, db_session, sample_project
+    ):
         """#648 新语义：卷下有章节且未指定处理方式 → 抛 VolumeNotEmptyError（禁止静默解绑）."""
         from inkflow.domain.services.chapter_service import VolumeNotEmptyError
 
