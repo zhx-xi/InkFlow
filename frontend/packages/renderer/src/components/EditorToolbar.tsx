@@ -1,5 +1,5 @@
 /** 编辑器工具栏（spec §4.2.1 Q2 拍板 C）：默认 opacity 0.35、hover 编辑器区域全显 + 快捷键 */
-import { Eye, Gauge, Redo2, Save, ScanSearch, Sparkles, Undo2, Wand2, Zap } from 'lucide-react';
+import { Eye, FileSearch, Gauge, Redo2, Save, ScanSearch, Sparkles, Undo2, Wand2, Zap } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
 
 export interface EditorToolbarProps {
@@ -19,6 +19,8 @@ export interface EditorToolbarProps {
   /** #598 D9-a1：项目级「是否全自动」开关状态与切换回调（可选，兼容既有用法） */
   autoWriteEnabled?: boolean;
   onToggleAuto?: () => void;
+  /** #652：AI 提取（打开提取弹窗；仅传入时渲染图标，兼容既有调用点） */
+  onExtract?: () => void;
 }
 
 const ICON_BTN_CLS =
@@ -37,6 +39,7 @@ export function EditorToolbar({
   onToggleView,
   autoWriteEnabled,
   onToggleAuto,
+  onExtract,
 }: EditorToolbarProps) {
   const { t } = useI18n();
   return (
@@ -137,6 +140,18 @@ export function EditorToolbar({
       >
         <Zap className="h-4 w-4" aria-hidden="true" />
       </button>
+      {onExtract && (
+        <button
+          type="button"
+          data-testid="extract-entry-write"
+          aria-label={t('write.toolbar.extract')}
+          title={t('write.toolbar.extract')}
+          className={ICON_BTN_CLS}
+          onClick={onExtract}
+        >
+          <FileSearch className="h-4 w-4" aria-hidden="true" />
+        </button>
+      )}
     </div>
   );
 }

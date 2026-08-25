@@ -568,6 +568,7 @@ export const zh = {
   'write.summary.empty': '暂无摘要',
   'write.summary.loading': '摘要生成中',
   'write.summary.error': '摘要获取失败',
+
   // 项目页
   'pj.title': '我的项目',
   'pj.sub': '本地存储 · 自动存档 · 断网可用',

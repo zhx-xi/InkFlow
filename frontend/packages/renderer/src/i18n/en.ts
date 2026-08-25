@@ -564,6 +564,7 @@ export const en: Record<string, string> = {
   'write.summary.empty': 'No summary yet',
   'write.summary.loading': 'Generating summary',
   'write.summary.error': 'Failed to load summary',
+
   'pj.title': 'My Projects',
   'pj.sub': 'Local storage · autosave · works offline',
   'pj.new': 'New project',

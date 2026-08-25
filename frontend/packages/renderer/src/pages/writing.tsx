@@ -14,6 +14,7 @@ import { ContextPanel } from '../components/ContextPanel';
 import { DraftApprovalPanel } from '../components/DraftApprovalPanel';
 import { EditorToolbar } from '../components/EditorToolbar';
 import { ExecutionDetailPanel } from '../components/ExecutionDetailPanel';
+import { AIExtractDialog } from '../components/extract/AIExtractDialog';
 import { PipelineStatus } from '../components/PipelineStatus';
 import { ProjectTree } from '../components/ProjectTree';
 import { StatusBar } from '../components/StatusBar';
@@ -124,6 +125,8 @@ export function WritingPage() {
   const [styleReport, setStyleReport] = useState<StyleReportDto | null>(null);
   const [styleLoading, setStyleLoading] = useState(false);
   const [styleError, setStyleError] = useState<string | null>(null);
+  // #652：AI 提取弹窗开关
+  const [extractOpen, setExtractOpen] = useState(false);
 
   const handleAudit = useCallback(async () => {
     if (!effectiveProjectId || !currentChapterId) return;
@@ -290,6 +293,7 @@ export function WritingPage() {
                 });
               }
             }}
+            onExtract={() => setExtractOpen(true)}
           />
           {view === 'editor' ? (
             <ChapterEditor onEditorKeyDown={handleKeyDown} onContentChange={handleContentChange} />
@@ -351,6 +355,14 @@ export function WritingPage() {
         projectId={effectiveProjectId}
         open={autoAuthOpen}
         onClose={() => setAutoAuthOpen(false)}
+      />
+      {/* #652：AI 提取弹窗（默认写作页当前章 + 当前正文，避免重复拉取） */}
+      <AIExtractDialog
+        open={extractOpen}
+        onClose={() => setExtractOpen(false)}
+        projectId={effectiveProjectId}
+        defaultChapterId={currentChapterId ?? undefined}
+        defaultText={content}
       />
       <StatusBar model={model} wordCount={displayWords} savedAt={savedAt} />
     </div>
