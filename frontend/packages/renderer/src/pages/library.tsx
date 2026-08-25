@@ -14,6 +14,7 @@ import {
   type KnowledgeRelation,
 } from '../api/knowledge-graph';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { CharacterDetailPanel } from '../components/CharacterDetailPanel';
 import { CopyDialog } from '../components/CopyDialog';
 import { KnowledgeGraphView } from '../components/knowledge-graph/KnowledgeGraphView';
 import { RelationForm, type KnowledgeRelationFormData } from '../components/knowledge-graph/RelationForm';
@@ -154,6 +155,8 @@ export function LibraryPage() {
   const [relationFormOpen, setRelationFormOpen] = useState(false);
   const [editingRelation, setEditingRelation] = useState<KnowledgeRelation | null>(null);
   const [pendingRelationDelete, setPendingRelationDelete] = useState<KnowledgeRelation | null>(null);
+  // #650/#651：角色详情面板（角色行点名字打开；关闭/切 tab/切项目时重置）
+  const [detailItem, setDetailItem] = useState<LibraryItemDTO | null>(null);
 
   const cat = CATS.find((c) => c.key === activeCat) ?? CATS[0];
   // knowledge 无创建端点（图谱关系编辑走画布/列表内交互），对话框仅在五个可创建分类下渲染
@@ -367,9 +370,16 @@ export function LibraryPage() {
     [],
   );
 
-  const handleTabChange = (key: CatKey) => { setActiveCat(key); setSearchParams({ cat: key }); };
+  const handleTabChange = (key: CatKey) => {
+    setActiveCat(key);
+    setSearchParams({ cat: key });
+    setDetailItem(null); // 切换分类时卸载角色详情面板
+  };
 
-  const handleProjectChange = (id: string) => selectProject(id);
+  const handleProjectChange = (id: string) => {
+    selectProject(id);
+    setDetailItem(null); // 切换项目时卸载角色详情面板
+  };
   // #196 + F43：保存回调——editing 非空 → PATCH 扁平端点；为空 → POST 创建端点（#196 现状保留）
   const handleSave = async (input: Record<string, unknown>) => {
     if (!currentProjectId) return;
@@ -796,6 +806,7 @@ export function LibraryPage() {
                   setCreateOpen(true);
                 }}
                 onDelete={(item) => setPendingDelete(item)}
+                onOpenDetail={activeCat === 'characters' ? (item) => setDetailItem(item) : undefined}
               />
             )}
           </div>
@@ -890,6 +901,16 @@ export function LibraryPage() {
           onOpenChange={(open) => {
             if (!open) setPendingDelete(null);
           }}
+        />
+      )}
+
+      {/* #650/#651：角色详情面板（关系区 + 分组区；关闭即卸载，仅角色分类可打开） */}
+      {currentProjectId !== null && detailItem && (
+        <CharacterDetailPanel
+          item={items.find((i) => String(i.id) === String(detailItem.id)) ?? detailItem}
+          projectId={currentProjectId}
+          onClose={() => setDetailItem(null)}
+          onUpdated={() => setReloadKey((k) => k + 1)}
         />
       )}
     </div>
