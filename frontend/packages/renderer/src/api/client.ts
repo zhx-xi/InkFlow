@@ -45,6 +45,17 @@ export interface SettingsApi {
   dismissTrayHint: () => Promise<void>;
 }
 
+/** #654 项目导出：preload file 命名空间（GUI 导出写盘到用户选择路径，renderer 只经 IPC 操作） */
+export interface FileApi {
+  getDefaultLocation: () => Promise<string>;
+  chooseDirectory: () => Promise<string | null>;
+  saveExport: (opts: {
+    path: string;
+    filename: string;
+    content: string;
+  }) => Promise<{ path: string; filename: string }>;
+}
+
 export interface ApiConfig {
   baseURL: string;
   token: string;
@@ -52,6 +63,8 @@ export interface ApiConfig {
   windowControls?: WindowControls;
   /** #167 F31：关闭窗口行为设置（renderer 只经 IPC 读写，不持久化） */
   settings?: SettingsApi;
+  /** #654：项目导出文件操作（preload file 命名空间；未注入时 undefined，组件可选链兜底） */
+  file?: FileApi;
 }
 
 declare global {

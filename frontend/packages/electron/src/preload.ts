@@ -72,6 +72,17 @@ ipcRenderer.on(
             ipcRenderer.invoke('settings:set-close-behavior', value),
           dismissTrayHint: (): Promise<void> => ipcRenderer.invoke('settings:dismiss-tray-hint'),
         }),
+        // F21 导出服务（GUI）：默认目录/目录选择/导出保存转发（file 命名空间）
+        file: Object.freeze({
+          getDefaultLocation: (): Promise<string> => ipcRenderer.invoke('file:get-default-location'),
+          chooseDirectory: (): Promise<string | null> => ipcRenderer.invoke('dialog:choose-directory'),
+          saveExport: (opts: {
+            path: string;
+            filename: string;
+            content: string;
+          }): Promise<{ path: string; filename: string }> =>
+            ipcRenderer.invoke('file:save-export', opts),
+        }),
       })
     );
     dispatchApiReady();

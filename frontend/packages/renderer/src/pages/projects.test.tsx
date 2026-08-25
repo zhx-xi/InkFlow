@@ -531,3 +531,42 @@ describe('项目页 — F43 卡片菜单重命名/删除（P0）', () => {
     expect(apiFetchMock.mock.calls.some((c) => c[1]?.method === 'DELETE')).toBe(false);
   });
 });
+
+/**
+ * 项目导出入口（RED 阶段契约，GREEN 未实现）：
+ * - ProjectCard 卡片菜单「导出」（data-testid=`project-export-${id}`）→ ProjectsPage 打开 ExportDialog
+ * - ExportDialog 容器 data-testid="project-export-dialog"，由 ProjectsPage 渲染（onExport 绑定当前 project）
+ * - 文件名输入 data-testid="export-filename-input" 默认值 = `<project.name>.txt`（p1 青云志 → '青云志.txt'）
+ * - ExportDialog 内部 fetch 走全局 fetch（vi.stubGlobal 桩，不落真实网络）
+ *
+ * RED 预期：菜单无导出项 + ExportDialog 未实现 → 本 describe FAIL。
+ */
+describe('项目页 — 导出入口', () => {
+  beforeEach(() => {
+    // ExportDialog 内部 fetch（GREEN 后）桩掉，避免真实网络
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({}) })));
+  });
+
+  it('卡片菜单「导出」→ 打开 ExportDialog（project-export-dialog）', async () => {
+    const user = userEvent.setup();
+    renderProjectsPage();
+    await screen.findAllByTestId('project-card');
+
+    await user.click(screen.getByTestId('project-card-menu-p1'));
+    await user.click(screen.getByTestId('project-export-p1'));
+
+    expect(await screen.findByTestId('project-export-dialog')).toBeInTheDocument();
+  });
+
+  it('ExportDialog 绑定当前 project=p1：export-filename-input 默认值「青云志.txt」', async () => {
+    const user = userEvent.setup();
+    renderProjectsPage();
+    await screen.findAllByTestId('project-card');
+
+    await user.click(screen.getByTestId('project-card-menu-p1'));
+    await user.click(screen.getByTestId('project-export-p1'));
+
+    const dialog = await screen.findByTestId('project-export-dialog');
+    expect(within(dialog).getByTestId('export-filename-input')).toHaveValue('青云志.txt');
+  });
+});

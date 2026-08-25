@@ -5,6 +5,7 @@ import { BookOpen } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { errorMessage, ensureApiReady } from '../api/client';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { ExportDialog } from '../components/ExportDialog';
 import { NewProjectDialog } from '../components/NewProjectDialog';
 import { ProjectCard } from '../components/ProjectCard';
 import { Skeleton } from '../components/ui/skeleton';
@@ -109,6 +110,8 @@ export function ProjectsPage() {
   // F43：卡片菜单重命名 / 删除确认对象（非空 = 对应对话框打开）
   const [renaming, setRenaming] = useState<Project | null>(null);
   const [deleting, setDeleting] = useState<Project | null>(null);
+  // #654：卡片菜单「导出」→ 打开导出对话框（非空 = 对话框打开）
+  const [exporting, setExporting] = useState<Project | null>(null);
 
   useEffect(() => {
     // #98 修复：Electron 下等待 preload 注入 INKFLOW_API（'inkflow:api-ready'）后再发首请求，
@@ -204,6 +207,7 @@ export function ProjectsPage() {
               onRename={setRenaming}
               onDelete={setDeleting}
               onEdit={handleProjectEdit}
+              onExport={setExporting}
               onClick={() => {
                 selectProject(p.id);
                 navigate('/writing');
@@ -245,6 +249,9 @@ export function ProjectsPage() {
           }}
         />
       )}
+
+      {/* #654：项目导出对话框（关闭 = 取消/成功；遮罩点击不关闭 #195） */}
+      {exporting && <ExportDialog project={exporting} onClose={() => setExporting(null)} />}
     </div>
   );
 }
