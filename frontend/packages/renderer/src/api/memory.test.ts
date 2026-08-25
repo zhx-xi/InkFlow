@@ -49,6 +49,7 @@ import { ApiError } from './client';
 import {
   createProjectPreference,
   createUserPreference,
+  fetchMemoryStats,
   fetchMemorySummaries,
   fetchProjectPreferences,
   fetchUserPreferences,
@@ -313,5 +314,50 @@ describe('F49 记忆衰减 — 删除语义总结', () => {
   it('removeMemorySummary 非 2xx → ApiError（如 404 语义总结不存在）', async () => {
     mockFetchOnce({ detail: '语义总结不存在' }, 404);
     await expect(removeMemorySummary(PID)).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+/**
+ * #658 记忆统计概览（2026-08-25）：
+ * - fetchMemoryStats(projectId: string): Promise<MemoryStatsResponse>
+ *   → GET /api/v1/agent/memory/stats?project_id=
+ * - 响应契约字段：project_id / agentic{ chapters, direct_confirms,
+ *   avg_diff_chars, modify_rate, regenerate_rate } / learned_preferences /
+ *   baseline_ref / user_preferences{ count, projects }
+ *
+ * RED 预期：./memory 模块不导出 fetchMemoryStats → vitest 收集期报
+ * 「does not provide an export named 'fetchMemoryStats'」。
+ */
+describe('记忆统计 — stats', () => {
+  it('fetchMemoryStats → GET /api/v1/agent/memory/stats?project_id=（agentic/learned/user_preferences 解析）', async () => {
+    mockFetchOnce({
+      project_id: PID,
+      agentic: {
+        chapters: 10,
+        direct_confirms: 3,
+        avg_diff_chars: 48,
+        modify_rate: 0.34,
+        regenerate_rate: 0.2,
+      },
+      learned_preferences: 3,
+      baseline_ref: 'docs/agent-baseline-2026-08-10.md',
+      user_preferences: { count: 5, projects: 2 },
+    });
+    const result = await fetchMemoryStats(PID);
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(init?.method).toBe('GET');
+    const parsed = new URL(String(url));
+    expect(parsed.pathname).toBe('/api/v1/agent/memory/stats');
+    expect(parsed.searchParams.get('project_id')).toBe(PID);
+    expect(result.agentic.chapters).toBe(10);
+    expect(result.agentic.modify_rate).toBe(0.34);
+    expect(result.learned_preferences).toBe(3);
+    expect(result.user_preferences?.count).toBe(5);
+  });
+
+  it('fetchMemoryStats 非 2xx → ApiError（404 透传）', async () => {
+    mockFetchOnce({ detail: '统计不存在' }, 404);
+    await expect(fetchMemoryStats(PID)).rejects.toBeInstanceOf(ApiError);
   });
 });
