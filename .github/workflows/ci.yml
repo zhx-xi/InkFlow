@@ -291,6 +291,7 @@ jobs:
                  ../tests/api/test_export_api.py `
                  ../tests/cli/test_cli_project.py `
                  ../tests/api/test_search_api.py `
+                 ../tests/api/test_index_rebuild_api.py `
                  -v --tb=short
 
   # ── Integration: Writing (API + CLI) ──
