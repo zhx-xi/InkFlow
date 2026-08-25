@@ -593,3 +593,96 @@ class TestStreamChatAgentPersistsRun:
         assert done_payload["type"] == "done"
         assert done_payload["done"] is True
         assert done_payload["run_id"] == run_id
+
+
+class TestStreamChatAgentBranchCoverageGaps:
+    """#645 stream_chat_agent 分支补测。"""
+
+    @pytest.mark.asyncio
+    async def test_disconnected_returns_empty_body(self):
+        """is_disconnected=True（agent 流）→ 首帧前 return，body 为空（L214-215）。"""
+        svc, _ = _make_svc(events=[_llm_chunk_event("你")])
+        request = MagicMock()
+        request.is_disconnected = AsyncMock(return_value=True)
+        mock_repo = MagicMock()
+        mock_repo.create = AsyncMock(
+            return_value=SimpleNamespace(id="r1", created_at=datetime.now(UTC))
+        )
+        with patch("inkflow.api.deps.get_agent_run_repo", return_value=mock_repo):
+            resp = await stream_chat_agent(
+                data=ChatStreamRequest(project_id=PROJECT_ID, prompt="hi"),
+                request=request,
+                svc=svc,
+                repo=mock_repo,
+            )
+        frames = [frame async for frame in resp.body_iterator]
+        assert frames == []
+
+    @pytest.mark.asyncio
+    async def test_llm_request_error_saves_failed_and_emits_error_frame(self):
+        """LLMRequestError（run 已建）→ _save_failed_run + error 帧。"""
+        svc, _ = _make_svc(error=LLMRequestError("API down"), error_after=0)
+        mock_repo = MagicMock()
+        mock_repo.create = AsyncMock(
+            return_value=SimpleNamespace(id="r1", created_at=datetime.now(UTC))
+        )
+        mock_repo.save = AsyncMock(return_value=None)
+        request = MagicMock()
+        request.is_disconnected = AsyncMock(return_value=False)
+        with patch("inkflow.api.deps.get_agent_run_repo", return_value=mock_repo):
+            resp = await stream_chat_agent(
+                data=ChatStreamRequest(project_id=PROJECT_ID, prompt="hi"),
+                request=request,
+                svc=svc,
+                repo=mock_repo,
+            )
+        frames = [frame async for frame in resp.body_iterator]
+        payload = json.loads(frames[0].removeprefix("data: ").strip())
+        assert payload["type"] == "error"
+        assert payload["done"] is True
+        mock_repo.save.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_llm_request_error_before_run_create_skips_save(self):
+        """repo.create 抛 LLMRequestError（run 未建）→ 不 save，仅 error 帧。"""
+        svc, _ = _make_svc(events=[_llm_chunk_event("你")])
+        mock_repo = MagicMock()
+        mock_repo.create = AsyncMock(side_effect=LLMRequestError("create fail"))
+        mock_repo.save = AsyncMock(return_value=None)
+        request = MagicMock()
+        request.is_disconnected = AsyncMock(return_value=False)
+        with patch("inkflow.api.deps.get_agent_run_repo", return_value=mock_repo):
+            resp = await stream_chat_agent(
+                data=ChatStreamRequest(project_id=PROJECT_ID, prompt="hi"),
+                request=request,
+                svc=svc,
+                repo=mock_repo,
+            )
+        frames = [frame async for frame in resp.body_iterator]
+        payload = json.loads(frames[0].removeprefix("data: ").strip())
+        assert payload["type"] == "error"
+        assert payload["done"] is True
+        mock_repo.save.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_generic_exception_saves_failed_then_rethrows(self):
+        """stream_events 抛 RuntimeError（非 LLM）→ _save_failed_run + 重抛（L239-242）。"""
+        svc, _ = _make_svc(error=RuntimeError("weird"), error_after=0)
+        mock_repo = MagicMock()
+        mock_repo.create = AsyncMock(
+            return_value=SimpleNamespace(id="r1", created_at=datetime.now(UTC))
+        )
+        mock_repo.save = AsyncMock(return_value=None)
+        request = MagicMock()
+        request.is_disconnected = AsyncMock(return_value=False)
+        with patch("inkflow.api.deps.get_agent_run_repo", return_value=mock_repo):
+            resp = await stream_chat_agent(
+                data=ChatStreamRequest(project_id=PROJECT_ID, prompt="hi"),
+                request=request,
+                svc=svc,
+                repo=mock_repo,
+            )
+        with pytest.raises(RuntimeError):
+            async for _ in resp.body_iterator:
+                pass
+        mock_repo.save.assert_awaited_once()
