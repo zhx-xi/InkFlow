@@ -425,6 +425,17 @@ describe('ChatPanel — 展开/收缩/拖动（#476 保留契约）', () => {
     expect(after).toBeTruthy();
     expect(Number(after)).toBeGreaterThan(Number(before));
   });
+
+  it('resize-handle 居中容器（父级 flex-1 justify-center，非紧挨 toggle）——#642 布局', () => {
+    render(<ChatPanel {...OPTS} />);
+    const handle = screen.getByTestId('chat-resize-handle');
+    const wrapper = handle.parentElement;
+    expect(wrapper).not.toBeNull();
+    // jsdom 无真实布局 → 用结构契约锁「居中容器」：handle 不应是顶部行第一个直接子元素，
+    // 其父容器应带 flex-1 + justify-center（Codex 按任务书实现的居中包裹层）
+    expect(wrapper!.className).toMatch(/flex-1/);
+    expect(wrapper!.className).toMatch(/justify-center/);
+  });
 });
 
 describe('ChatPanel — 模型未配置前置校验（#474 保留契约）', () => {

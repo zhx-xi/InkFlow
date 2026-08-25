@@ -223,6 +223,34 @@ class TestChatAgentStreamEvents:
         assert events[-1].type == "done"
 
     @pytest.mark.asyncio
+    async def test_model_end_full_response_streams_delta_via_sleep(self) -> None:
+        """#642：仅 on_chat_model_end（完整 AIMessage、无 on_chat_model_stream）时，
+        stream_events 仍应产 ≥2 个 delta 帧（sleep 分块模拟流式）——前端 onDelta 逐字累积
+        才能显示。RED：当前实现（chat_agent_service.py L65-67）只在 on_chat_model_stream
+        时产 delta，本用例只产 on_chat_model_end → 仅 done、0 delta → FAIL（正确 RED）。"""
+        content = "这是一个较长的完整回复，用于验证非流式响应也会被切块流式输出，界面能逐字显示。"
+        output = SimpleNamespace(
+            content=content,
+            tool_calls=[],
+            response_metadata={"usage": {"total_tokens": 30}},
+        )
+        events = [
+            {
+                "event": "on_chat_model_end",
+                "name": "ChatOpenAI",
+                "run_id": "llm_1",
+                "data": {"output": output},
+            }
+        ]
+        svc, _ = _make_svc(events=events)
+        frames = [ev async for ev in svc.stream_events(prompt="你好")]
+        delta_frames = [ev for ev in frames if ev.type == "delta"]
+        # 完整响应也应被切成 ≥2 块流式送出（否则前端 onDelta 无触发 → UI 空白）
+        assert len(delta_frames) >= 2
+        assert "".join(ev.delta for ev in delta_frames) == content
+        assert frames[-1].done is True
+
+    @pytest.mark.asyncio
     async def test_tool_start_end_maps_to_tool_call_result(self) -> None:
         """on_tool_start → tool_call（id=run_id/name/args）；on_tool_end →
         tool_result（id/name/result）。"""

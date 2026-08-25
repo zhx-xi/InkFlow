@@ -10,12 +10,18 @@ consume_trace() 取回 (steps, final_content, token_usage_total) 落 AgentRun。
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from inkflow.domain.models.agent_run import AgentStep, AgentToolCall
 from inkflow.domain.services.chat_service import ChatStreamEvent
+
+
+def _chunk_stream(text: str, size: int = 6) -> list[str]:
+    """#642：完整响应按固定大小切块，模拟流式增量输出。"""
+    return [text[i : i + size] for i in range(0, len(text), size)]
 
 
 class ChatAgentService:
@@ -46,7 +52,7 @@ class ChatAgentService:
         HumanMessage(prompt + 章节上下文)]；事件映射：
         - on_chat_model_stream（run_type=llm）→ delta 帧
         - on_chat_model_end（完整 AIMessage）→ 收集 AgentStep（message_content +
-          tool_calls + tokens），不产帧
+          tool_calls + tokens）；若无流式 delta，则将完整 content 切块产出 delta 帧
         - on_tool_start → tool_call 帧（id=run_id / name / args）
         - on_tool_end → tool_result 帧（id=run_id / name / result），并按 run_id
           回填已收集 step 的 tool_calls[].result/is_error
@@ -59,14 +65,22 @@ class ChatAgentService:
         if chapter_context:
             user_content = f"{prompt}\n\n章节上下文：\n{chapter_context}"
         messages = [SystemMessage(self._system_prompt), HumanMessage(user_content)]
+        streamed_any = False
         async for ev in self._agent.astream_events(  # type: ignore[attr-defined]  # 鸭子类型：deepagents CompiledStateGraph 提供 astream_events（v2 事件 dict 流）
             {"messages": messages}, version="v2"
         ):
             if ev.get("event") == "on_chat_model_stream" and ev.get("run_type") == "llm":
                 chunk = ev.get("data", {}).get("chunk")
                 yield ChatStreamEvent(type="delta", delta=chunk.content)
+                streamed_any = True
             elif ev.get("event") == "on_chat_model_end":
-                self._collect_model_end(ev.get("data", {}).get("output"))
+                output = ev.get("data", {}).get("output")
+                content = getattr(output, "content", "") or ""
+                if content and not streamed_any:
+                    for c in _chunk_stream(content, size=6):
+                        await asyncio.sleep(0.05)
+                        yield ChatStreamEvent(type="delta", delta=c)
+                self._collect_model_end(output)
             elif ev.get("event") == "on_tool_start":
                 yield ChatStreamEvent(
                     type="tool_call",
