@@ -21,7 +21,11 @@ from inkflow.domain.models.chapter import (
     VolumeCreate,
     VolumeUpdate,
 )
-from inkflow.domain.services.chapter_service import ChapterService
+from inkflow.domain.services.chapter_service import (
+    ChapterService,
+    VolumeMoveError,
+    VolumeNotEmptyError,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["章节"])
 
@@ -82,10 +86,21 @@ async def update_volume(volume_id: str, data: VolumeUpdate, db: AsyncSession = D
 
 
 @router.delete("/volumes/{volume_id}", status_code=204)
-async def delete_volume(volume_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_volume(
+    volume_id: str,
+    delete_chapters: bool = Query(False),
+    move_to: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
     svc = _svc(db)
     vid = _parse_id(volume_id, detail="卷不存在")
-    ok = await svc.delete_volume(vid)
+    mvid = _parse_id(move_to, detail="目标卷不存在") if move_to else None
+    try:
+        ok = await svc.delete_volume(vid, delete_chapters=delete_chapters, move_to=mvid)
+    except VolumeNotEmptyError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except VolumeMoveError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     if not ok:
         raise HTTPException(status_code=404, detail="卷不存在")
 

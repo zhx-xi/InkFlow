@@ -1,11 +1,12 @@
-/** 项目树（spec §4.2.1）：卷/章 + 字数 + 当前章高亮 + 底部新建章节 */
+/** 项目树（spec §4.2.1）：卷/章 + 字数 + 当前章高亮 + 底部新建章节（#648 卷管理：新建卷/编辑标题/删除卷） */
 import { useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { Check, Pencil, Trash2, X } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
-import type { ChapterMeta } from '../stores/chapter';
+import type { ChapterMeta, Volume } from '../stores/chapter';
 import { useChapterStore } from '../stores/chapter';
 import { useProjectStore } from '../stores/project';
 import { ProjectSeal } from './ProjectSeal';
+import { VolumeDeleteDialog } from './VolumeDeleteDialog';
 
 export function ProjectTree() {
   const { t } = useI18n();
@@ -14,11 +15,19 @@ export function ProjectTree() {
   const currentChapterId = useChapterStore((s) => s.currentChapterId);
   const selectChapter = useChapterStore((s) => s.selectChapter);
   const createChapter = useChapterStore((s) => s.createChapter);
+  const createVolume = useChapterStore((s) => s.createVolume);
+  const patchVolume = useChapterStore((s) => s.patchVolume);
+  const deleteVolume = useChapterStore((s) => s.deleteVolume);
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const projects = useProjectStore((s) => s.projects);
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? projects[0];
   const [creating, setCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
+  const [creatingVolume, setCreatingVolume] = useState(false);
+  const [newVolumeTitle, setNewVolumeTitle] = useState('');
+  const [editingVolumeId, setEditingVolumeId] = useState<string | null>(null);
+  const [editVolumeTitle, setEditVolumeTitle] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<Volume | null>(null);
 
   const renderChapter = (ch: ChapterMeta) => {
     const isCurrent = ch.id === currentChapterId;
@@ -49,13 +58,71 @@ export function ProjectTree() {
     setCreating(false);
   };
 
+  const handleCreateVolume = async () => {
+    if (!currentProjectId) return;
+    await createVolume(currentProjectId, newVolumeTitle.trim() || '新卷');
+    setNewVolumeTitle('');
+    setCreatingVolume(false);
+  };
+
+  const handlePatchVolume = async (v: Volume) => {
+    const title = editVolumeTitle.trim();
+    setEditingVolumeId(null);
+    setEditVolumeTitle('');
+    if (title === '' || title === v.title) return;
+    await patchVolume(v.id, title);
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <ProjectSeal project={currentProject} />
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {volumes.map((v) => (
-          <div key={v.id} data-testid="tree-volume" className="mb-2">
-            <div className="px-2 py-1 text-[12px] font-semibold text-ink-3">{v.title}</div>
+          <div key={v.id} data-testid="tree-volume" className="group mb-2">
+            <div className="vol-row flex items-center gap-1 px-2 py-1">
+              {editingVolumeId === v.id ? (
+                <input
+                  autoFocus
+                  className="min-w-0 flex-1 rounded border border-line bg-surface px-1.5 py-0.5 text-[12px] font-semibold text-ink outline-none"
+                  value={editVolumeTitle}
+                  onChange={(e) => setEditVolumeTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handlePatchVolume(v);
+                    if (e.key === 'Escape') {
+                      setEditingVolumeId(null);
+                      setEditVolumeTitle('');
+                    }
+                  }}
+                />
+              ) : (
+                <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-ink-3">
+                  {v.title}
+                </span>
+              )}
+              <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-180 group-hover:opacity-100 focus-within:opacity-100">
+                <button
+                  type="button"
+                  aria-label="编辑卷标题"
+                  data-testid="vol-edit"
+                  className="rounded p-1 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                  onClick={() => {
+                    setEditingVolumeId(v.id);
+                    setEditVolumeTitle(v.title);
+                  }}
+                >
+                  <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="删除卷"
+                  data-testid="vol-del-btn"
+                  className="rounded p-1 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                  onClick={() => setDeleteTarget(v)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
             <div className="space-y-0.5">
               {chapters
                 .filter((c) => c.volume_id === v.id)
@@ -66,6 +133,51 @@ export function ProjectTree() {
         {ungrouped.length > 0 && <div className="space-y-0.5">{ungrouped.map(renderChapter)}</div>}
       </div>
       <div className="border-t border-line p-2">
+        {creatingVolume ? (
+          <div className="flex gap-1">
+            <input
+              autoFocus
+              className="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1 text-[13px] outline-none"
+              value={newVolumeTitle}
+              onChange={(e) => setNewVolumeTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleCreateVolume();
+                if (e.key === 'Escape') {
+                  setCreatingVolume(false);
+                  setNewVolumeTitle('');
+                }
+              }}
+              placeholder="新建卷标题"
+            />
+            <button
+              type="button"
+              aria-label="创建卷"
+              className="rounded p-1.5 text-ok transition duration-180 hover:bg-surface-3 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              onClick={() => void handleCreateVolume()}
+            >
+              <Check className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label={t('dlg.cancel')}
+              className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-ink active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              onClick={() => {
+                setCreatingVolume(false);
+                setNewVolumeTitle('');
+              }}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="mb-1 w-full rounded px-2 py-1.5 text-[13px] text-ink-2 hover:bg-surface-3"
+            onClick={() => setCreatingVolume(true)}
+          >
+            + 新建卷
+          </button>
+        )}
         {creating ? (
           <div className="flex gap-1">
             <input
@@ -112,6 +224,21 @@ export function ProjectTree() {
           </button>
         )}
       </div>
+      {deleteTarget && (
+        <VolumeDeleteDialog
+          open
+          volume={deleteTarget}
+          otherVolumes={volumes.filter((v) => v.id !== deleteTarget.id)}
+          chapterCount={chapters.filter((c) => c.volume_id === deleteTarget.id).length}
+          onConfirm={(opts) => {
+            setDeleteTarget(null);
+            void deleteVolume(deleteTarget.id, opts);
+          }}
+          onOpenChange={(o) => {
+            if (!o) setDeleteTarget(null);
+          }}
+        />
+      )}
     </div>
   );
 }

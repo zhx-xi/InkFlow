@@ -247,6 +247,7 @@ jobs:
           uv run pytest ../tests/integration/test_chapter_repository.py `
                  ../tests/integration/test_chapter_service.py `
                  ../tests/api/test_chapter_api.py `
+                 ../tests/api/test_volume_delete_api.py `
                  ../tests/cli/test_cli_chapter.py `
                  -v --tb=short
 

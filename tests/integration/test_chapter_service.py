@@ -63,17 +63,22 @@ class TestChapterService:
 
     @pytest.mark.asyncio
     @pytest.mark.chapter
-    async def test_delete_volume_orphans(self, db_session, sample_project):
-        """删卷 → 章节变未分类."""
+    async def test_delete_volume_with_chapters_raises_volume_not_empty(self, db_session, sample_project):
+        """#648 新语义：卷下有章节且未指定处理方式 → 抛 VolumeNotEmptyError（禁止静默解绑）."""
+        from inkflow.domain.services.chapter_service import VolumeNotEmptyError
+
         svc = ChapterService(db_session)
         v = await svc.create_volume(sample_project.id, "临时")
         ch = await svc.create_chapter(
             sample_project.id, "孤儿", volume_id=v.id, content="x"
         )
 
-        await svc.delete_volume(v.id)
+        with pytest.raises(VolumeNotEmptyError):
+            await svc.delete_volume(v.id)
+        # 卷未被删除，章节仍在原卷
         ch_after = await svc.get_chapter(ch.id)
-        assert ch_after.volume_id is None
+        assert ch_after is not None
+        assert ch_after.volume_id == v.id
 
     @pytest.mark.asyncio
     @pytest.mark.chapter
