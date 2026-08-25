@@ -1,5 +1,5 @@
 /** 编辑器工具栏（spec §4.2.1 Q2 拍板 C）：默认 opacity 0.35、hover 编辑器区域全显 + 快捷键 */
-import { Eye, Redo2, Save, ScanSearch, Sparkles, Undo2, Wand2, Zap } from 'lucide-react';
+import { Eye, Gauge, Redo2, Save, ScanSearch, Sparkles, Undo2, Wand2, Zap } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
 
 export interface EditorToolbarProps {
@@ -11,6 +11,8 @@ export interface EditorToolbarProps {
   onGenerate: () => void;
   /** F34 章节审计（Issue #208）：打开审计报告弹层 */
   onAudit: () => void;
+  /** T2 风格检测（Issue #655）：打开风格分析报告弹层 */
+  onStyleAnalyze?: () => void;
   /** F47 #379（spec §4.2）：视图切换（editor → detail）；缺省 editor、onToggleView 可选以兼容既有用法 */
   view?: 'editor' | 'detail';
   onToggleView?: () => void;
@@ -30,6 +32,7 @@ export function EditorToolbar({
   onContinue,
   onGenerate,
   onAudit,
+  onStyleAnalyze,
   view = 'editor',
   onToggleView,
   autoWriteEnabled,
@@ -100,6 +103,17 @@ export function EditorToolbar({
         onClick={onAudit}
       >
         <ScanSearch className="h-4 w-4" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        data-testid="toolbar-style-analyze"
+        aria-label={t('write.toolbar.style')}
+        title={t('write.toolbar.style')}
+        className={ICON_BTN_CLS}
+        disabled={disabled}
+        onClick={onStyleAnalyze}
+      >
+        <Gauge className="h-4 w-4" aria-hidden="true" />
       </button>
       <span className="mx-1 h-4 w-px bg-line" />
       <button

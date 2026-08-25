@@ -42,6 +42,7 @@ function renderToolbar(overrides: Partial<Parameters<typeof EditorToolbar>[0]> =
     onContinue: vi.fn(),
     onGenerate: vi.fn(),
     onAudit: vi.fn(), // F34 #208：审计按钮回调（GREEN 前为多余键，无害）
+    onStyleAnalyze: vi.fn(), // T2 风格检测：风格检测按钮回调（GREEN 前为多余键，无害）
     ...overrides,
   };
   render(<EditorToolbar {...props} />);
@@ -188,5 +189,31 @@ describe('工具栏 — 是否全自动切换按钮（#598 D9-a1）', () => {
     const toolbar = screen.getByTestId('editor-toolbar');
     await user.click(within(toolbar).getByTestId('auto-toggle'));
     expect(onToggleAuto).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('工具栏 — 风格检测按钮（T2 风格检测）', () => {
+  it('渲染：风格检测按钮（testid toolbar-style-analyze，aria-label「风格检测」）', () => {
+    renderToolbar();
+    const toolbar = screen.getByTestId('editor-toolbar');
+    const styleBtn = within(toolbar).getByTestId('toolbar-style-analyze');
+    expect(styleBtn).toBeInTheDocument();
+    expect(styleBtn).toHaveAttribute('aria-label', '风格检测');
+  });
+
+  it('点击风格检测按钮 → onStyleAnalyze 被调用', async () => {
+    const user = userEvent.setup();
+    const props = renderToolbar();
+    const toolbar = screen.getByTestId('editor-toolbar');
+    await user.click(within(toolbar).getByTestId('toolbar-style-analyze'));
+    expect(props.onStyleAnalyze).toHaveBeenCalledTimes(1);
+  });
+
+  it('位置：在审计按钮右侧（DOM 顺序 FOLLOWING）', () => {
+    renderToolbar();
+    const toolbar = screen.getByTestId('editor-toolbar');
+    const auditBtn = within(toolbar).getByRole('button', { name: '审计' });
+    const styleBtn = within(toolbar).getByTestId('toolbar-style-analyze');
+    expect(auditBtn.compareDocumentPosition(styleBtn)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 });
