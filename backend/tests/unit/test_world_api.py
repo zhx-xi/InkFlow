@@ -74,10 +74,10 @@ def _setting(name: str, *, project_id: uuid.UUID = PID) -> WorldSetting:
 def _mock_svc(mock_get_svc: MagicMock) -> MagicMock:
     """构造默认可用的 Mock WorldService。"""
     svc = MagicMock()
-    # #567：router create_world_setting 对根条目先查 has_root_setting——既有用例
-    # 不配置该属性会命中 MagicMock 自动子 mock（非 awaitable）→ TypeError。
-    # 默认无根（False）使既有创建用例正常走到 create_setting；单例用例显式覆盖。
-    svc.has_root_setting = AsyncMock(return_value=False)
+    # #641：router create_world_setting 对 body 无 parent_id 先查 get_root_setting——
+    # 既有用例不配置该属性会命中 MagicMock 自动子 mock（非 awaitable）→ TypeError。
+    # 默认无根（None）使既有创建用例正常走到 create_setting（建根/挂根）；根单例用例显式覆盖。
+    svc.get_root_setting = AsyncMock(return_value=None)
     mock_get_svc.return_value = svc
     return svc
 
@@ -618,47 +618,54 @@ class TestWorldLocationTreeAPI:
 
 
 class TestWorldRootSingletonAPI:
-    """#567 世界观根条目单例校验 — 一个项目一个根（parent_id IS NULL）。
+    """#641 世界观根条目单例 + 自动挂根（方案 1 后端），复写 #567（一项目一根）。
 
     契约（实现者以本文件为准）:
-    - 服务新增方法: has_root_setting(project_id: uuid.UUID) -> bool
-      （repo.list top_level_only=True limit=1 判空）
-    - create_world_setting 内: parent_id 为空（根条目）时查该项目是否已有根条目
-      → 有则 422「该项目已存在世界观根条目」（HTTPException）；非根条目（parent_id
-      有值）不受限仍 201。
+    - 服务新增方法: get_root_setting(project_id: uuid.UUID) -> WorldSetting | None
+      （repo.list top_level_only=True limit=1 取根；无根返回 None）——上游已存在
+      has_root_setting（保留）。
+    - create_world_setting 内（body 未传 parent_id，即 parent_id=None）:
+      * 已有根 → get_root_setting(pid) 返回根实体 → create_setting(pid, name, category,
+        content, parent_id=根.id) → 201（自动挂到根下，不再 422「该项目已存在世界观根条目」）
+      * 无根 → get_root_setting(pid) 返回 None → create_setting(pid, name, category,
+        content) → 201（创建根）
+    - body 带 parent_id（显式子节点）不受单例限制 → create_setting 带 parent_id → 201。
 
-    RED 预期: 当前 router create_world_setting 无单例校验 → 第二个根仍 201 →
-    test_create_root_when_root_exists_422 断言失败；has_root_setting 未在 mock 上
-    配置时 MagicMock 自动建子 mock（truthy）会误报 422——本类用例均显式配置。
+    RED 预期: 当前 router 对 parent_id 为空走 has_root_setting → 根存在时 422 →
+    test_create_with_root_auto_attach_201 断言失败；get_root_setting 未在 mock 上
+    配置时 MagicMock 自动建子 mock（truthy）会误判有根——本类用例均显式配置。
     """
 
     @patch("inkflow.api.routers.world_settings.get_world_service")
-    def test_create_root_when_root_exists_422(self, mock_get_svc: MagicMock) -> None:
-        """已有根条目时再建根 → 422 + detail 精确文案。
+    def test_create_with_root_auto_attach_201(self, mock_get_svc: MagicMock) -> None:
+        """已有根条目时建「分类下条目」（body 无 parent_id）→ 201 + 自动挂根（parent_id=根.id）。
 
-        RED 预期: 当前无单例校验 → 201 → status_code 断言失败。
+        RED 预期: 当前 router 对无 parent_id 走 has_root_setting → 根存在 → 422 →
+        status_code 断言失败。
         """
         svc = _mock_svc(mock_get_svc)
-        svc.has_root_setting = AsyncMock(return_value=True)
-        # 当前 router 不查 has_root_setting 直接调 create_setting → 201；
-        # GREEN 后先查 has_root_setting → 422 短路，create_setting 不 await。
-        svc.create_setting = AsyncMock(return_value=_setting("第二个世界观"))
+        root = _setting("世界观", project_id=PID)
+        new_setting = _setting("清河县城", project_id=PID)
+        svc.get_root_setting = AsyncMock(return_value=root)
+        svc.create_setting = AsyncMock(return_value=new_setting)
 
         response = client.post(
             f"/api/v1/projects/{PID}/world-settings",
-            json={"name": "第二个世界观"},
+            json={"name": "清河县城", "category": "门派"},
         )
-        assert response.status_code == 422
-        assert response.json()["detail"] == "该项目已存在世界观根条目"
-        svc.has_root_setting.assert_awaited_once_with(PID)
-        svc.create_setting.assert_not_awaited()
+        assert response.status_code == 201
+        assert response.json()["name"] == "清河县城"
+        svc.get_root_setting.assert_awaited_once_with(PID)
+        svc.create_setting.assert_awaited_once_with(
+            PID, "清河县城", "门派", "", parent_id=root.id
+        )
 
     @patch("inkflow.api.routers.world_settings.get_world_service")
     def test_create_root_when_no_root_201(self, mock_get_svc: MagicMock) -> None:
-        """无根条目时建根 → 201（正常创建）。"""
+        """无根条目时建根（body 无 parent_id）→ 201（get_root_setting 返回 None）。"""
         svc = _mock_svc(mock_get_svc)
         setting = _setting("世界观")
-        svc.has_root_setting = AsyncMock(return_value=False)
+        svc.get_root_setting = AsyncMock(return_value=None)
         svc.create_setting = AsyncMock(return_value=setting)
 
         response = client.post(
@@ -667,15 +674,15 @@ class TestWorldRootSingletonAPI:
         )
         assert response.status_code == 201
         assert response.json()["name"] == "世界观"
-        svc.has_root_setting.assert_awaited_once_with(PID)
+        svc.get_root_setting.assert_awaited_once_with(PID)
         svc.create_setting.assert_awaited_once_with(PID, "世界观", "", "")
 
     @patch("inkflow.api.routers.world_settings.get_world_service")
     def test_create_child_when_root_exists_201(self, mock_get_svc: MagicMock) -> None:
-        """已有根条目时建非根（分类树子节点）→ 201 不受限。"""
+        """已有根条目时建显式子节点（body 带 parent_id）→ 201 不受单例限制。"""
         svc = _mock_svc(mock_get_svc)
         setting = _setting("清河县城")
-        svc.has_root_setting = AsyncMock(return_value=True)
+        svc.get_root_setting = AsyncMock(return_value=_setting("世界观", project_id=PID))
         svc.create_setting = AsyncMock(return_value=setting)
 
         response = client.post(
@@ -684,6 +691,7 @@ class TestWorldRootSingletonAPI:
         )
         assert response.status_code == 201
         assert response.json()["name"] == "清河县城"
+        svc.get_root_setting.assert_not_awaited()
         svc.create_setting.assert_awaited_once_with(
             PID, "清河县城", "", "", parent_id=PARENT_ID
         )

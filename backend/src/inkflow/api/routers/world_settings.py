@@ -199,12 +199,23 @@ async def create_world_setting(
     svc = _get_svc(db)
     # F35: parent_id 缺省不传键（既有测试契约）；提供时按关键字透传
     if data.parent_id is None:
-        # #567 单例校验：parent_id 为空（根条目）时该项目已有根 → 422
-        if await svc.has_root_setting(pid):
-            raise HTTPException(status_code=422, detail="该项目已存在世界观根条目")
-        setting = await _run_service(
-            svc.create_setting(pid, data.name, data.category, data.content)
-        )
+        # #641：#567 单例语义改「自动挂根」——无 parent_id 时先取项目根，
+        # 已有根 → 挂到根下（create_setting 带 parent_id=根.id）；无根 → 建根。
+        root = await _run_service(svc.get_root_setting(pid))
+        if root is not None:
+            setting = await _run_service(
+                svc.create_setting(
+                    pid,
+                    data.name,
+                    data.category,
+                    data.content,
+                    parent_id=root.id,
+                )
+            )
+        else:
+            setting = await _run_service(
+                svc.create_setting(pid, data.name, data.category, data.content)
+            )
     else:
         setting = await _run_service(
             svc.create_setting(

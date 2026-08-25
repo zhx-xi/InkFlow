@@ -6,8 +6,9 @@
  *   无 start 标记 = 对话（conversation，无插入控件）。
  * - content 消息显示解析后 body（不含标记/前言）；每条渲染选择控件 chat-select-<seq>
  *   （data-selected="true"|"false"），新 content 消息到达自动选中最新一条。
- * - 共享插入按钮 chat-insert-selected 仅当存在 ≥1 条 content 消息时渲染，点击 → setContent(选中条 body)。
- * - conversation 消息无任何选择/插入控件；旧 per-message 按钮 chat-insert-<seq> 已删除，任何场景不再渲染。
+ * - per-message 插入按钮 chat-insert-<seq> 仅当该条 content 意图时渲染，点击 → setContent(该条 body)
+ *   （#642-2 布局）；每条 AI 回复渲染 chat-copy-<seq>（复制对话）。全局 chat-insert-selected 已移除。
+ * - conversation 消息无任何选择/插入控件（仅 chat-copy-<seq>）。
  *
  * 确定性方案（D5=A）：page.route 拦截管线 API，零真实 LLM 调用。
  * - POST /api/v1/agent/pipelines/execute → 202 + execution_id（拦截）
@@ -208,11 +209,11 @@ test('聊天框：输入 → 发送 → assistant 消息 → 插入正文 → �
     await expect(select0).toBeVisible({ timeout: 15_000 });
     await expect(select0).toHaveAttribute('data-selected', 'true');
 
-    // 旧 per-message 按钮 chat-insert-0 已删除（#477：任何场景不再渲染）
-    await expect(window.getByTestId('chat-insert-0')).toHaveCount(0);
+    // per-message 插入按钮 chat-insert-0（content 意图渲染，点它直接插入该条 body，#642-2）
+    await expect(window.getByTestId('chat-insert-0')).toHaveCount(1);
 
-    // 共享「插入选中正文」按钮 → setContent(选中条 body) → 编辑器 value 更新
-    await window.getByTestId('chat-insert-selected').click();
+    // 点 per-message 插入按钮 → setContent(该条 body) → 编辑器 value 更新
+    await window.getByTestId('chat-insert-0').click();
     await expect(window.getByTestId('chapter-editor')).toHaveValue('E2E 续写正文内容', { timeout: 15_000 });
   } finally {
     await app.close();

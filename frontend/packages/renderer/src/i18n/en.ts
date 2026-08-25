@@ -438,6 +438,9 @@ export const en: Record<string, string> = {
   'write.chat.ai': 'AI',
   // #566: delete history message
   'write.chat.delete': 'Delete',
+  // #642-2: per-message copy conversation
+  'write.chat.copy': 'Copy',
+  'write.chat.copied': 'Copied',
   // #581: archive/delete the whole round (ChatPanel message area)
   'write.chat.archiveRound': 'Archive Round',
   'write.chat.deleteRound': 'Delete Round',

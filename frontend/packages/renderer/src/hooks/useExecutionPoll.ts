@@ -10,18 +10,27 @@
  * - execute/轮询网络失败 → failed + error
  * - 生命周期（timer/executionId）不入任何 store；卸载停止轮询
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { errorMessage } from '../api/client';
 import {
   confirmExecution,
-  executePipeline,
   getExecutionStatus,
+  streamPipeline,
   type PipelineExecuteRequest,
   type PipelineExecutionStatus,
+  type PipelineStreamFrame,
 } from '../api/pipeline';
 import { startPolling } from '../lib/polling';
 
 export type PipelineRunStatus = 'idle' | 'running' | 'success' | 'failed' | 'awaiting_human';
+
+/** #642-1：管线流式回调 sink（ChatPanel 注册既有流式 handler，streamPipeline 驱动复用） */
+export interface PipelineStreamSink {
+  onDelta?: (d: string) => void;
+  onDone?: (f: PipelineStreamFrame) => void;
+  onToolCall?: (c: { id: string; name: string; args: Record<string, unknown> }) => void;
+  onToolResult?: (r: { id: string; name: string; result: string }) => void;
+}
 
 export interface UseExecutionPollResult {
   status: PipelineRunStatus;
@@ -30,6 +39,8 @@ export interface UseExecutionPollResult {
   totalDurationMs: number;
   hitlPending: { question: string; role: string } | null;
   executionId: string | null; // #543：执行详情页数据源（初始 null，start 成功后为 execution_id，终态保留）
+  /** #642-1：管线流式回调 sink（透传 usePipeline/writing → ChatPanel 复用流式渲染） */
+  streamSinkRef: MutableRefObject<PipelineStreamSink>;
   start: (body: PipelineExecuteRequest) => void; // 并发保护：执行中再次调用 = 无操作
   confirm: (approved: boolean) => void; // HITL 确认；无 executionId = 无操作
   poll: (executionId: string) => void; // 手动启动轮询（同时记录 executionId 供 confirm）
@@ -45,6 +56,7 @@ export function useExecutionPoll(): UseExecutionPollResult {
   const inFlightRef = useRef(false);
   const executionIdRef = useRef<string | null>(null);
   const pollHandleRef = useRef<{ cancel: () => void } | null>(null);
+  const streamSinkRef = useRef<PipelineStreamSink>({});
 
   const poll = useCallback((executionId: string) => {
     executionIdRef.current = executionId;
@@ -88,30 +100,33 @@ export function useExecutionPoll(): UseExecutionPollResult {
     );
   }, []);
 
-  const start = useCallback(
-    (body: PipelineExecuteRequest) => {
-      if (inFlightRef.current) return; // 防并发
-      inFlightRef.current = true;
-      setError(null);
-      setFinalOutput('');
-      setTotalDurationMs(0);
-      setHitlPending(null);
-      setStatus('running');
+  const start = useCallback((body: PipelineExecuteRequest) => {
+    if (inFlightRef.current) return; // 防并发
+    inFlightRef.current = true;
+    setError(null);
+    setFinalOutput('');
+    setTotalDurationMs(0);
+    setHitlPending(null);
+    setStatus('running');
 
-      executePipeline(body)
-        .then((res) => {
-          executionIdRef.current = res.execution_id;
-          setExecutionId(res.execution_id);
-          poll(res.execution_id);
-        })
-        .catch((err) => {
-          setError(errorMessage(err));
-          setStatus('failed');
-          inFlightRef.current = false;
-        });
-    },
-    [poll],
-  );
+    streamPipeline(body, {
+      onDelta: (d) => streamSinkRef.current.onDelta?.(d),
+      onDone: (f) => {
+        streamSinkRef.current.onDone?.(f);
+        setFinalOutput(f.final_output ?? '');
+        setError(null);
+        setStatus('success');
+        inFlightRef.current = false;
+      },
+      onToolCall: (c) => streamSinkRef.current.onToolCall?.(c),
+      onToolResult: (r) => streamSinkRef.current.onToolResult?.(r),
+      onError: (m) => {
+        setError(m);
+        setStatus('failed');
+        inFlightRef.current = false;
+      },
+    }).catch(() => {});
+  }, []);
 
   const confirm = useCallback(
     (approved: boolean) => {
@@ -137,5 +152,16 @@ export function useExecutionPoll(): UseExecutionPollResult {
     };
   }, []);
 
-  return { status, error, finalOutput, totalDurationMs, hitlPending, executionId, start, confirm, poll };
+  return {
+    status,
+    error,
+    finalOutput,
+    totalDurationMs,
+    hitlPending,
+    executionId,
+    streamSinkRef,
+    start,
+    confirm,
+    poll,
+  };
 }

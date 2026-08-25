@@ -1,7 +1,7 @@
 /**
  * 写作页测试契约（#298 语义反转批：GUI 写作入口管线化，spec §5.6 + §13 M8）
  *
- * ⚠️ 本文件 = 契约。GREEN 实现 WritingPage 必须匹配（行为断言，不测样式）。
+ * ⚠️ 本文件 = 契约。#642-1（缺陷 A）后「AI 生成」由 executePipeline+轮询 改为 streamPipeline SSE 流式。
  *
  * 结构 testid（既有保留）：
  * - 三栏: project-tree / editor / context-panel
@@ -11,24 +11,25 @@
  * - 编辑器: chapter-editor（textarea，段落化纯文本）
  * - 上下文: context-collapse / context-panel-content / context-expand-bar
  *
- * 管线执行状态区（替换原 SSE 流式区，spec §5.6）：
+ * 管线执行状态区（spec §5.6 + #642-1 流式）：
  * - data-testid="pipeline-status"
  * - running → 文案「执行中」（write.pipeline.running）
  * - success → 文案「生成完成」（write.pipeline.success）
  * - failed  → 文案「生成失败: ...」（write.pipeline.failed）
  *
- * 管线接线契约（#298 核心）：
- * - 「续写」按钮 / Ctrl+Enter → executePipeline({pipeline:'builtin:write_continue', ...})
- * - 「生成」按钮 / Ctrl+Shift+Enter → executePipeline({pipeline:'builtin:write_auto', ...})
- * - 轮询 getExecutionStatus(execution_id) → status==='completed' 时 chapterStore.setContent(final_output)
- *   （成品落章：编辑器内容 = reviser 输出 final_output）
- * - status==='failed' → 展示错误（不崩溃、不落章）
+ * 管线接线契约（#298 + #642-1 核心）：
+ * - 「续写」按钮 / Ctrl+Enter → streamPipeline({pipeline:'builtin:write_continue', ...})
+ * - 「生成」按钮 / Ctrl+Shift+Enter → streamPipeline({pipeline:'builtin:write_auto', ...})
+ * - onDone(final_output) → status='success' → chapterStore.setContent(final_output)
+ *   （成品落章：编辑器内容 = final_output）；onError → 展示错误（不崩溃、不落章）
+ * - #642-1：start 走 SSE 流式（onDelta 渐进 / onDone 落定 / onError 失败）；
+ *   流式帧无 hitl 类型 → 生成过程不出现 HITL 确认卡片（HITL 机器保留在 useExecutionPoll poll 路径）
  *
  * 快捷键（Q2 拍板 C，监听在编辑器容器）：
  * - Ctrl+Z → execCommand('undo')；Ctrl+Y → execCommand('redo')
  * - Ctrl+S → chapterStore.saveContent()（PATCH /api/v1/chapters/{id}）
- * - Ctrl+Enter → 续写（executePipeline builtin:write_continue）
- * - Ctrl+Shift+Enter → 生成（executePipeline builtin:write_auto）
+ * - Ctrl+Enter → 续写（streamPipeline builtin:write_continue）
+ * - Ctrl+Shift+Enter → 生成（streamPipeline builtin:write_auto）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -36,7 +37,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { WritingPage } from './writing';
 import { apiFetch } from '../api/client';
-import { executePipeline, getExecutionStatus, confirmExecution } from '../api/pipeline';
+import { streamPipeline, executePipeline, confirmExecution } from '../api/pipeline';
 import { useChapterStore } from '../stores/chapter';
 import { useProjectStore } from '../stores/project';
 import { useThemeStore } from '../stores/theme';
@@ -48,15 +49,36 @@ vi.mock('../api/client', async (importOriginal) => {
   return { ...actual, apiFetch: vi.fn() };
 });
 vi.mock('../api/pipeline', () => ({
+  streamPipeline: vi.fn(),
   executePipeline: vi.fn(),
   getExecutionStatus: vi.fn(),
   confirmExecution: vi.fn(),
 }));
 
 const apiFetchMock = vi.mocked(apiFetch);
+const streamPipelineMock = vi.mocked(streamPipeline);
 const executeMock = vi.mocked(executePipeline);
-const statusMock = vi.mocked(getExecutionStatus);
 const confirmMock = vi.mocked(confirmExecution);
+
+/** #642-1：每次 streamPipeline 调用的 body/callbacks 捕获（用例手动驱动 SSE 帧） */
+interface CapturedPipelineStream {
+  body: {
+    project_id: string;
+    pipeline: string;
+    chapter_id?: string;
+    variables?: Record<string, string>;
+    mode?: string;
+    supervisor?: { hitl_roles: string[] };
+  };
+  callbacks: {
+    onDelta: (delta: string) => void;
+    onDone: (frame: { done: boolean; final_output?: string }) => void;
+    onError: (message: string) => void;
+    onToolCall?: (call: { id: string; name: string; args: Record<string, unknown> }) => void;
+    onToolResult?: (res: { id: string; name: string; result: string }) => void;
+  };
+}
+let capturedStream: CapturedPipelineStream | null = null;
 
 /** 与后端对齐的种子数据（mock 与 store 播种共用，防 GREEN 自动加载覆盖种子） */
 const seedVolumes = [
@@ -84,29 +106,21 @@ const READY_PROVIDER: ProviderConfig = {
 beforeEach(() => {
   vi.useRealTimers();
   apiFetchMock.mockReset();
+  streamPipelineMock.mockReset();
   executeMock.mockReset();
-  statusMock.mockReset();
   confirmMock.mockReset();
+  capturedStream = null;
   // #474 前置校验依赖 models store：默认播种「已配置」+ provider-configs GET 返回同款，
   // 防 GREEN 挂载/发送时 loadProviders 覆盖为未配置
   useModelsStore.setState({ providers: [READY_PROVIDER], loading: false, error: null });
   useToastStore.setState({ toasts: [] });
-  executeMock.mockResolvedValue({
-    execution_id: 'e1',
-    pipeline: 'builtin:write_auto',
-    project_id: 'p1',
-    status: 'pending',
-    created_at: '',
-  });
-  statusMock.mockResolvedValue({
-    execution_id: 'e1',
-    pipeline: 'builtin:write_auto',
-    project_id: 'p1',
-    status: 'completed',
-    stages: [],
-    final_output: '管线成品章节内容',
-    total_duration_ms: 1200,
-    error: '',
+  // #642-1：默认 streamPipeline 捕获 callbacks，不自动 emit（用例手动驱动帧）
+  streamPipelineMock.mockImplementation((_body, callbacks) => {
+    capturedStream = {
+      body: _body as CapturedPipelineStream['body'],
+      callbacks: callbacks as CapturedPipelineStream['callbacks'],
+    };
+    return Promise.resolve(() => {});
   });
   window.INKFLOW_API = { baseURL: 'http://test.local', token: 'tok-1' };
   localStorage.clear();
@@ -135,6 +149,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   delete window.INKFLOW_API;
+  capturedStream = null;
 });
 
 describe('写作页 — 三栏与项目树', () => {
@@ -227,51 +242,53 @@ describe('写作页 — 工具栏与快捷键（Q2 拍板 C）', () => {
     });
   });
 
-  it('Ctrl+Enter 续写：触发管线 execute（builtin:write_continue）', async () => {
+  it('Ctrl+Enter 续写：触发 streamPipeline（builtin:write_continue）', async () => {
     render(<WritingPage />);
     fireEvent.keyDown(screen.getByTestId('chapter-editor'), { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
-      expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({ pipeline: 'builtin:write_continue' }));
+      expect(streamPipelineMock).toHaveBeenCalledWith(
+        expect.objectContaining({ pipeline: 'builtin:write_continue' }),
+        expect.any(Object),
+      );
     });
   });
 
-  it('Ctrl+Shift+Enter 生成：触发管线 execute（builtin:write_auto）', async () => {
+  it('Ctrl+Shift+Enter 生成：触发 streamPipeline（builtin:write_auto）', async () => {
     render(<WritingPage />);
     fireEvent.keyDown(screen.getByTestId('chapter-editor'), { key: 'Enter', ctrlKey: true, shiftKey: true });
     await waitFor(() => {
-      expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({ pipeline: 'builtin:write_auto' }));
+      expect(streamPipelineMock).toHaveBeenCalledWith(
+        expect.objectContaining({ pipeline: 'builtin:write_auto' }),
+        expect.any(Object),
+      );
     });
   });
 });
 
-describe('写作页 — 管线执行状态与成品落章（#298 §5.6）', () => {
-  it('「续写」按钮 → executePipeline（builtin:write_continue）', async () => {
+describe('写作页 — 管线执行状态与成品落章（#298 §5.6 + #642-1 流式）', () => {
+  it('「续写」按钮 → streamPipeline（builtin:write_continue）', async () => {
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '续写' }));
     await waitFor(() => {
-      expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({ pipeline: 'builtin:write_continue' }));
+      expect(streamPipelineMock).toHaveBeenCalledWith(
+        expect.objectContaining({ pipeline: 'builtin:write_continue' }),
+        expect.any(Object),
+      );
     });
   });
 
-  it('「生成」按钮 → executePipeline（builtin:write_auto）', async () => {
+  it('「生成」按钮 → streamPipeline（builtin:write_auto）', async () => {
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => {
-      expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({ pipeline: 'builtin:write_auto' }));
+      expect(streamPipelineMock).toHaveBeenCalledWith(
+        expect.objectContaining({ pipeline: 'builtin:write_auto' }),
+        expect.any(Object),
+      );
     });
   });
 
   it('执行中：running 状态展示「执行中」', async () => {
-    statusMock.mockResolvedValue({
-      execution_id: 'e1',
-      pipeline: 'builtin:write_auto',
-      project_id: 'p1',
-      status: 'pending',
-      stages: [],
-      final_output: '',
-      total_duration_ms: 0,
-      error: '',
-    });
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => {
@@ -279,35 +296,25 @@ describe('写作页 — 管线执行状态与成品落章（#298 §5.6）', () =
     });
   });
 
-  it('成品落章：completed → 编辑器内容 = final_output + 展示「生成完成」', async () => {
-    vi.useFakeTimers();
+  it('成品落章：onDone(final_output) → 编辑器内容 = final_output + 展示「生成完成」', async () => {
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
-    // 轮询（1s 间隔）到 completed
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
+    await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
+    // 驱动 SSE done 帧（#642-1：final_output 落定）
+    act(() => {
+      capturedStream?.callbacks.onDone({ done: true, final_output: '管线成品章节内容' });
     });
     const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
-    expect(editor.value).toBe('管线成品章节内容');
+    await waitFor(() => expect(editor.value).toBe('管线成品章节内容'));
     expect(screen.getByTestId('pipeline-status')).toHaveTextContent('生成完成');
   });
 
-  it('失败：failed → 展示错误（不崩溃、不落章）', async () => {
-    statusMock.mockResolvedValue({
-      execution_id: 'e1',
-      pipeline: 'builtin:write_auto',
-      project_id: 'p1',
-      status: 'failed',
-      stages: [],
-      final_output: '',
-      total_duration_ms: 800,
-      error: '管线执行失败: 阶段 writer 重试耗尽',
-    });
-    vi.useFakeTimers();
+  it('失败：onError → 展示错误（不崩溃、不落章）', async () => {
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
+    await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
+    act(() => {
+      capturedStream?.callbacks.onError('管线执行失败: 阶段 writer 重试耗尽');
     });
     expect(screen.getByTestId('pipeline-status')).toHaveTextContent(/生成失败/);
     expect(screen.getByTestId('pipeline-status')).toHaveTextContent('管线执行失败');
@@ -438,128 +445,59 @@ describe('写作页 — 自动保存与工具栏/快捷键兜底分支（#105 �
     fireEvent.keyDown(screen.getByTestId('chapter-editor'), { key: 'a', ctrlKey: true });
     expect(execMock).not.toHaveBeenCalled();
     expect(patchCalls()).toHaveLength(0);
-    expect(executeMock).not.toHaveBeenCalled();
+    expect(streamPipelineMock).not.toHaveBeenCalled();
     delete (document as { execCommand?: unknown }).execCommand;
   });
 });
 
-describe('写作页 — HITL 确认流（#343：waiting_hitl → 内联确认卡片 → 确认/拒绝续跑）', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('管线 waiting_hitl → 内联确认卡片出现（question + 继续/拒绝按钮）', async () => {
-    vi.useFakeTimers();
-    statusMock.mockResolvedValue({
-      execution_id: 'e1',
-      pipeline: 'builtin:write_auto',
-      project_id: 'p1',
-      status: 'waiting_hitl',
-      stages: [],
-      final_output: '',
-      total_duration_ms: 0,
-      error: '',
-      hitl_pending: { question: '确认执行下一角色 reviser？', role: 'reviser' },
-    });
+/**
+ * #343 HITL 确认流（#642-1 迁移）：
+ * - start 走 SSE 流式（帧类型 delta/tool_call/tool_result/done/error，无 hitl 帧）
+ *   → 生成过程不出现 awaiting_human / HITL 确认卡片，confirmExecution 不被调用
+ * - HITL 中断 + confirm 续跑机器保留在 useExecutionPoll 的 poll/confirm 路径
+ *   （getExecutionStatus/confirmExecution 契约见 useExecutionPoll.test.ts）
+ */
+describe('写作页 — HITL 确认流（#343 + #642-1：流式 start 无 HITL 帧）', () => {
+  it('#642-1 流式执行不出现 HITL 确认卡片（流式帧无 hitl 类型）', async () => {
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
-    await act(async () => {
-      vi.advanceTimersByTime(1000);
+    await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
+    // running 态：无确认卡片
+    expect(screen.queryByTestId('hitl-confirm-card')).not.toBeInTheDocument();
+    expect(screen.getByTestId('pipeline-status')).toHaveTextContent('执行中');
+    // done 帧直达 success：依然无确认卡片
+    act(() => {
+      capturedStream?.callbacks.onDone({ done: true, final_output: '成品' });
     });
-    const card = screen.getByTestId('hitl-confirm-card');
-    expect(card).toHaveTextContent('确认执行下一角色 reviser？');
-    expect(screen.getByTestId('hitl-confirm-approve')).toBeInTheDocument();
-    expect(screen.getByTestId('hitl-confirm-reject')).toBeInTheDocument();
+    expect(screen.queryByTestId('hitl-confirm-card')).not.toBeInTheDocument();
+    expect(screen.getByTestId('pipeline-status')).toHaveTextContent('生成完成');
   });
 
-  it('点「继续执行」→ confirmExecution(executionId, true) → 轮询续跑 → 生成完成落章', async () => {
-    vi.useFakeTimers();
-    statusMock
-      .mockResolvedValueOnce({
-        execution_id: 'e1',
-        pipeline: 'builtin:write_auto',
-        project_id: 'p1',
-        status: 'waiting_hitl',
-        stages: [],
-        final_output: '',
-        total_duration_ms: 0,
-        error: '',
-        hitl_pending: { question: '确认执行下一角色 reviser？', role: 'reviser' },
-      })
-      .mockResolvedValueOnce({
-        execution_id: 'e1',
-        pipeline: 'builtin:write_auto',
-        project_id: 'p1',
-        status: 'completed',
-        stages: [],
-        final_output: '确认后成品',
-        total_duration_ms: 3000,
-        error: '',
-      });
-    confirmMock.mockResolvedValue({ execution_id: 'e1', status: 'completed', final_output: '确认后成品' });
+  it('done 帧直达 success：不触发 confirmExecution（流式路径无 executionId）', async () => {
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
-    await act(async () => {
-      vi.advanceTimersByTime(1000);
-    });
-    expect(screen.getByTestId('hitl-confirm-card')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('hitl-confirm-approve'));
-    await act(async () => {
-      vi.advanceTimersByTime(0);
-    });
-    expect(confirmMock).toHaveBeenCalledWith('e1', true);
-    await act(async () => {
-      vi.advanceTimersByTime(1000);
+    await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
+    act(() => {
+      capturedStream?.callbacks.onDone({ done: true, final_output: '确认后成品' });
     });
     expect(screen.getByTestId('pipeline-status')).toHaveTextContent('生成完成');
     expect(useChapterStore.getState().content).toBe('确认后成品');
+    expect(confirmMock).not.toHaveBeenCalled();
   });
 
-  it('点「拒绝并回退」→ confirmExecution(executionId, false) → 轮询续跑 → 生成完成', async () => {
-    vi.useFakeTimers();
-    statusMock
-      .mockResolvedValueOnce({
-        execution_id: 'e1',
-        pipeline: 'builtin:write_auto',
-        project_id: 'p1',
-        status: 'waiting_hitl',
-        stages: [],
-        final_output: '',
-        total_duration_ms: 0,
-        error: '',
-        hitl_pending: { question: '确认执行下一角色 reviser？', role: 'reviser' },
-      })
-      .mockResolvedValueOnce({
-        execution_id: 'e1',
-        pipeline: 'builtin:write_auto',
-        project_id: 'p1',
-        status: 'completed',
-        stages: [],
-        final_output: '拒绝后回退成品',
-        total_duration_ms: 2000,
-        error: '',
-      });
-    confirmMock.mockResolvedValue({ execution_id: 'e1', status: 'completed', final_output: '拒绝后回退成品' });
+  it('onError 帧 → 生成失败展示；confirmExecution 不被调用', async () => {
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
-    await act(async () => {
-      vi.advanceTimersByTime(1000);
+    await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
+    act(() => {
+      capturedStream?.callbacks.onError('管线执行失败: 阶段 writer 重试耗尽');
     });
-    expect(screen.getByTestId('hitl-confirm-card')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('hitl-confirm-reject'));
-    await act(async () => {
-      vi.advanceTimersByTime(0);
-    });
-    expect(confirmMock).toHaveBeenCalledWith('e1', false);
-    await act(async () => {
-      vi.advanceTimersByTime(1000);
-    });
-    expect(screen.getByTestId('pipeline-status')).toHaveTextContent('生成完成');
-    expect(useChapterStore.getState().content).toBe('拒绝后回退成品');
+    expect(screen.getByTestId('pipeline-status')).toHaveTextContent(/生成失败/);
+    expect(screen.queryByTestId('hitl-confirm-card')).not.toBeInTheDocument();
+    expect(confirmMock).not.toHaveBeenCalled();
   });
 
-  it('项目 config 含 supervisor.hitl_roles → 生成时 execute body 带 mode=supervisor', async () => {
-    vi.useFakeTimers();
+  it('项目 config 含 supervisor.hitl_roles → 生成时 streamPipeline body 带 mode=supervisor', async () => {
     // 项目 config 携带 supervisor 配置（#343 拍板 2A：ProjectConfig.supervisor）
     useProjectStore.setState({
       projects: [
@@ -580,15 +518,14 @@ describe('写作页 — HITL 确认流（#343：waiting_hitl → 内联确认卡
     });
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
-    await act(async () => {
-      vi.advanceTimersByTime(0);
-    });
-    expect(executeMock).toHaveBeenCalledWith(
+    await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
+    expect(streamPipelineMock).toHaveBeenCalledWith(
       expect.objectContaining({
         pipeline: 'builtin:write_auto',
         mode: 'supervisor',
         supervisor: { hitl_roles: ['reviser'] },
       }),
+      expect.any(Object),
     );
   });
 });
@@ -663,9 +600,9 @@ describe('写作页 — 视图切换（#379 F47 §4.2：正文编辑 ↔ AI 执�
 describe('写作页 — 模型未配置前置校验（#474 P0）', () => {
   /**
    * 契约：用户未配置模型（无 key_saved=true 的 chat provider）时，续写/生成入口：
-   * - 不发 executePipeline 请求（不发 AI 请求）
+   * - 不发 streamPipeline 请求（不发 AI 请求）
    * - toast 提示（type='warn'，文案引导去配置）
-   * 已配置模型（beforeEach 默认播种 READY_PROVIDER）行为不变：正常 execute。
+   * 已配置模型（beforeEach 默认播种 READY_PROVIDER）行为不变：正常 streamPipeline。
    *
    * i18n key（GREEN 补 zh.ts/en.ts）：common.modelNotConfigured
    */
@@ -682,7 +619,7 @@ describe('写作页 — 模型未配置前置校验（#474 P0）', () => {
     });
   };
 
-  it('未配置模型 → 点「续写」按钮 → toast + 不发 execute', async () => {
+  it('未配置模型 → 点「续写」按钮 → toast + 不发 streamPipeline', async () => {
     unreadyMock();
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '续写' }));
@@ -691,44 +628,49 @@ describe('写作页 — 模型未配置前置校验（#474 P0）', () => {
       expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
       expect(useToastStore.getState().toasts.some((t) => t.message.includes('配置'))).toBe(true);
     });
-    expect(executeMock).not.toHaveBeenCalled();
+    expect(streamPipelineMock).not.toHaveBeenCalled();
   });
 
-  it('未配置模型 → 点「生成」按钮 → toast + 不发 execute', async () => {
+  it('未配置模型 → 点「生成」按钮 → toast + 不发 streamPipeline', async () => {
     unreadyMock();
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => {
       expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
     });
-    expect(executeMock).not.toHaveBeenCalled();
+    expect(streamPipelineMock).not.toHaveBeenCalled();
   });
 
-  it('未配置模型 → Ctrl+Enter 续写快捷键 → toast + 不发 execute', async () => {
+  it('未配置模型 → Ctrl+Enter 续写快捷键 → toast + 不发 streamPipeline', async () => {
     unreadyMock();
     render(<WritingPage />);
     fireEvent.keyDown(screen.getByTestId('chapter-editor'), { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
     });
-    expect(executeMock).not.toHaveBeenCalled();
+    expect(streamPipelineMock).not.toHaveBeenCalled();
   });
 
-  it('未配置模型 → Ctrl+Shift+Enter 生成快捷键 → toast + 不发 execute', async () => {
+  it('未配置模型 → Ctrl+Shift+Enter 生成快捷键 → toast + 不发 streamPipeline', async () => {
     unreadyMock();
     render(<WritingPage />);
     fireEvent.keyDown(screen.getByTestId('chapter-editor'), { key: 'Enter', ctrlKey: true, shiftKey: true });
     await waitFor(() => {
       expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
     });
-    expect(executeMock).not.toHaveBeenCalled();
+    expect(streamPipelineMock).not.toHaveBeenCalled();
   });
 
-  it('已配置模型（默认播种）→ 点「生成」→ execute 正常（行为不变）', async () => {
+  it('已配置模型（默认播种）→ 点「生成」→ streamPipeline 正常（#642-1）', async () => {
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => {
-      expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({ pipeline: 'builtin:write_auto' }));
+      expect(streamPipelineMock).toHaveBeenCalledWith(
+        expect.objectContaining({ pipeline: 'builtin:write_auto' }),
+        expect.any(Object),
+      );
     });
+    // 旧 executePipeline 入口不再被调用（#642-1 替换断言）
+    expect(executeMock).not.toHaveBeenCalled();
   });
 });

@@ -1,12 +1,13 @@
 /**
  * #642-2 契约（前端组件测试，TDD RED→GREEN）：chat 面板 DOM 布局顺序修正。
- * 现状（BUG）：chat 输入框渲染在消息区之上（[toggle|input|send] → messages → controls），
- * 与「输入框在消息区下方、控制块在输入框下方」的设计布局相反（rc4 报告「位置反了」）。
- * 目标布局（自上而下，满足 #542「按钮应在对话区顶部」不回归）：
- *   [chat-expand/chat-collapse toggle] → [chat-messages] → [chat-input|chat-send] → [round-actions] → [chat-resize-handle]
- *
- * ⚠️ 本文件 = #642-2 契约。当前实现 FAIL（输入框在消息区之前），GREEN 实现必须匹配。
- * compareDocumentPosition 语义：A.compareDocumentPosition(B) & FOLLOWING = B 在 A 之后（A 在 B 之前）。
+ * 用户确认布局（自上而下）:
+ *   ① 顶部行: [chat-collapse/chat-expand toggle] + [chat-resize-handle]
+ *   ② 消息区: [chat-messages]（每条 AI 回复后跟 [复制对话][插入到正文] per-message）
+ *   ③ 输入行: [chat-input][chat-send]
+ *   ④ 底部: [chat-round-archive][chat-round-delete]
+ * 现状（BUG）：resize 在底部（输入框下方），insert 是底部全局 chat-insert-selected，
+ *   与「resize 在顶部、插入 per-message、底部仅整轮操作」的布局相反。
+ * compareDocumentPosition 语义：A.compareDocumentPosition(B) & FOLLOWING = B 在 A 之后。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -60,24 +61,25 @@ beforeEach(() => {
   chatApiMocks.streamChat.mockReset();
   chatApiMocks.saveChatMessage.mockReset();
   chatApiMocks.fetchChatMessages.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
-  // #547：ChatPanel 发送时 fire-and-forget 调 saveChatMessage(...).catch(noop)；mock 必须 resolve 不然 unhandled rejection
   chatApiMocks.saveChatMessage.mockResolvedValue({ id: 'm-new', project_id: 'p1', role: 'ai', content: '', intent: null, created_at: '' });
-  chatApiMocks.streamChat.mockImplementation((
-    _body: { project_id: string; prompt: string; chapter_id?: string; chapter_context?: string },
-    callbacks: { onDelta: (delta: string) => void; onDone: (frame: { done: boolean }) => void },
-  ) => {
-    callbacks.onDelta('AI 回复');
-    callbacks.onDone({ done: true });
-    return Promise.resolve(() => {});
-  });
+  // #642-2：流式产出 content 意图消息（含 >>>CONTENT>>> 标记），使 per-message 复制/插入按钮都渲染
+  chatApiMocks.streamChat.mockImplementation(
+    (_body: { project_id: string; prompt: string; chapter_id?: string; chapter_context?: string },
+     callbacks: { onDelta: (delta: string) => void; onDone: (frame: { done: boolean }) => void; onError: (message: string) => void },
+    ) => {
+      callbacks.onDelta('\n<<<CONTENT>>>\n他握紧了剑。\n<<<END>>>');
+      callbacks.onDone({ done: true });
+      return Promise.resolve(() => {});
+    },
+  );
 });
 
 describe('ChatPanel — 布局顺序修正（#642-2）', () => {
-  it('输入框位于消息区下方；控制块（round-actions/resize）位于输入框下方；按钮开关在顶部', async () => {
+  it('①顶部行=toggle+resize / ②输入框在消息区下方 / ③底部=整轮操作 / 每条 AI 回复后跟复制+插入', async () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
-    // 发送一条消息，展开消息区
-    await user.type(screen.getByTestId('chat-input'), '你好');
+    // 发送一条消息（content 意图），展开消息区 + 渲染 per-message 复制/插入
+    await user.type(screen.getByTestId('chat-input'), '写一段正文');
     await user.click(screen.getByTestId('chat-send'));
     await screen.findByTestId('chat-messages');
 
@@ -87,15 +89,20 @@ describe('ChatPanel — 布局顺序修正（#642-2）', () => {
     const roundDelete = screen.getByTestId('chat-round-delete');
     const resize = screen.getByTestId('chat-resize-handle');
     const toggle = screen.getByTestId('chat-collapse');
+    const copy0 = screen.getByTestId('chat-copy-0');
+    const insert0 = screen.getByTestId('chat-insert-0');
 
-    // RED：当前输入框在消息区之前（row1）→ messages.compareDocumentPosition(input) & FOLLOWING 为 0 → FAIL
-    //      （messages 在 input 之后，input 前置 messages）
+    // RED：① resize 当前在 input 之后（底部）→ resize 在 messages 之前断言 FAIL；
+    //      toggle 在 messages 之前（#542 回归，保持）
+    expect(toggle.compareDocumentPosition(messages) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(resize.compareDocumentPosition(messages) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // ② 消息区在 input 之前（输入框在消息区下方）
     expect(messages.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // 控制块在输入框下方（round-actions / resize 在 input 之后）
+    // ③ 底部整轮操作在 input 之后
     expect(input.compareDocumentPosition(roundArchive) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(input.compareDocumentPosition(roundDelete) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(input.compareDocumentPosition(resize) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // 回归守护（#542）：展开/收缩控制按钮在输入框之前（对话区顶部）
-    expect(toggle.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // per-message：每条 AI 回复后跟复制 + 插入按钮（现状无 per-message 按钮 → getByTestId FAIL）
+    expect(copy0).toBeInTheDocument();
+    expect(insert0).toBeInTheDocument();
   });
 });

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_db, get_summary_service
 from inkflow.domain.models.agent_pipeline import PipelineConfig, PipelineExecuteRequest
+from inkflow.domain.ports.agent_pipeline import PipelineStreamEvent
 from inkflow.domain.services.agent_service import AgentService, AgentServiceError
 from inkflow.infrastructure.agent.langgraph_pipeline import LangGraphAgentPipeline
 from inkflow.infrastructure.agent.supervisor_pipeline import SupervisorPipeline
@@ -58,6 +61,64 @@ def _svc(db: AsyncSession) -> AgentService:
         world_repo=SQLiteWorldRepository(db),
         outline_repo=SQLiteOutlineRepository(db),
         supervisor_pipeline=_supervisor_pipeline,
+    )
+
+
+def _encode_frame_pipeline(ev: PipelineStreamEvent) -> str:
+    """PipelineStreamEvent → SSE 帧字符串（#642-1，镜像 chat_stream._encode_frame）：
+    delta → {"type":"delta","delta":...,"done":false}
+    done → {"type":"done","done":true,"final_output":...,"intent":"content"[, "execution_id"]}
+    error → {"type":"error","error":...,"done":true}
+    """
+    if ev.error:
+        payload: dict = {"type": "error", "error": ev.error, "done": True}
+    elif ev.done:
+        payload = {"type": "done", "done": True}
+        if ev.final_output:
+            payload["final_output"] = ev.final_output
+        if ev.intent:
+            payload["intent"] = ev.intent
+        if ev.execution_id:
+            payload["execution_id"] = ev.execution_id
+    else:
+        payload = {"type": "delta", "delta": ev.delta, "done": False}
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _encode_pipeline_error(message: str) -> str:
+    """异常兜底 → SSE error 帧（done=true，协议 §5）。"""
+    return _encode_frame_pipeline(PipelineStreamEvent(type="done", done=True, error=message))
+
+
+@router.post("/pipelines/stream")
+async def stream_pipeline(
+    data: PipelineExecuteRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """#642-1：管线 SSE 流式执行。done 帧携带 final_output + intent='content'。"""
+    # 校验（镜像 execute_pipeline：builtin:chat 单轮对话必须携带非空 variables.prompt）
+    if data.pipeline == "builtin:chat" and not ((data.variables or {}).get("prompt") or "").strip():
+        raise HTTPException(status_code=422, detail="chat 管线需要 variables.prompt")
+    svc = _svc(db)
+
+    async def _event_stream():
+        try:
+            async for ev in svc.stream_pipeline(data):
+                if await request.is_disconnected():
+                    return
+                yield _encode_frame_pipeline(ev)
+        except Exception as e:
+            yield _encode_pipeline_error(str(e))
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

@@ -12,6 +12,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type MutableRefObject,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
@@ -26,6 +27,7 @@ import {
   type ChatStreamBody,
 } from '../api/chat';
 import { errorMessage } from '../api/client';
+import type { PipelineStreamSink } from '../hooks/useExecutionPoll';
 import { useI18n } from '../i18n/useI18n';
 import { parseChatReply, type ChatIntent } from '../lib/chatIntent';
 import { useChapterStore } from '../stores/chapter';
@@ -36,8 +38,8 @@ export interface ChatPanelProps {
   projectId: string;
   chapterId?: string;
   chapterContent?: string;
-  /** #642-1：外部 Agent 产物（写作管线 final_output）→ 注入为一条 AI content 消息 */
-  agentOutput?: string | null;
+  /** #642-1：管线流式回调 sink（streamPipeline 的 delta/done 复用 ChatPanel 流式渲染管线） */
+  streamSink?: MutableRefObject<PipelineStreamSink> | null;
 }
 
 interface ChatEntry {
@@ -63,7 +65,7 @@ const CHAT_DEFAULT_HEIGHT = 160;
 const CHAT_MIN_HEIGHT = 80;
 const CHAT_MAX_HEIGHT = 480;
 
-export function ChatPanel({ projectId, chapterId, chapterContent, agentOutput }: ChatPanelProps) {
+export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: ChatPanelProps) {
   const { t } = useI18n();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatEntry[]>([]);
@@ -115,6 +117,8 @@ export function ChatPanel({ projectId, chapterId, chapterContent, agentOutput }:
         // #597：切换项目/重载历史时清空上一轮工具卡片
         setToolEntries([]);
         setSelectedSeq(latestContentSeq);
+        // #642-1：写作页（带 streamSink）挂载后历史非空 → 自动展开（管线回复重挂后仍可见）
+        if (streamSink && history.length > 0) setExpanded(true);
       })
       .catch(() => {
         // 契约：历史加载失败静默，不弹 toast，后续发送仍可用
@@ -122,19 +126,7 @@ export function ChatPanel({ projectId, chapterId, chapterContent, agentOutput }:
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
-
-  // #642-1：外部 Agent 产物（写作管线 final_output）→ 注入为一条 AI content 消息（与详情页 AgentRun 一致）
-  const injectedAgentOutputsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!agentOutput) return;
-    if (injectedAgentOutputsRef.current.has(agentOutput)) return;
-    injectedAgentOutputsRef.current.add(agentOutput);
-    setExpanded(true);
-    const seq = aiSeqRef.current++;
-    setMessages((prev) => [...prev, { kind: 'ai', seq, text: agentOutput, intent: 'content' }]);
-    setSelectedSeq(seq);
-  }, [agentOutput]);
+  }, [projectId, streamSink]);
 
   /** 流式 delta：追加到当前 ai 消息（首个 delta 创建消息占位） */
   const onDelta = useCallback((delta: string) => {
@@ -211,6 +203,27 @@ export function ChatPanel({ projectId, chapterId, chapterContent, agentOutput }:
     setToolEntries((prev) => prev.map((e) => (e.id === res.id ? { ...e, result: res.result } : e)));
   }, []);
 
+  // #642-1：把 ChatPanel 既有流式 handler 挂到管线 streamSink，供 streamPipeline 复用
+  useEffect(() => {
+    const sink = streamSink?.current;
+    if (!sink) return;
+    // 复用 ChatPanel 既有 onDelta/onDone/onToolCall/onToolResult（流式渲染 + parseChatReply + saveChatMessage）
+    // #642-1：管线 delta 到达 → 自动展开（与旧 agentOutput 注入 setExpanded(true) 行为一致）
+    sink.onDelta = (d) => {
+      setExpanded(true);
+      onDelta(d);
+    };
+    sink.onDone = onDone;
+    sink.onToolCall = onToolCall;
+    sink.onToolResult = onToolResult;
+    return () => {
+      sink.onDelta = undefined;
+      sink.onDone = undefined;
+      sink.onToolCall = undefined;
+      sink.onToolResult = undefined;
+    };
+  }, [streamSink, onDelta, onDone, onToolCall, onToolResult]);
+
   const handleSend = useCallback(async () => {
     const prompt = input.trim();
     if (!prompt || streamingRef.current) return;
@@ -280,15 +293,24 @@ export function ChatPanel({ projectId, chapterId, chapterContent, agentOutput }:
     };
   }, [handleWindowMouseMove, handleWindowMouseUp]);
 
-  const handleInsert = useCallback(() => {
-    // #477：只插入选中条的 body（content 意图消息）
-    const selected = messages.find(
-      (m) => m.kind === 'ai' && m.intent === 'content' && m.seq === selectedSeq,
-    );
-    if (!selected) return;
-    useChapterStore.getState().setContent(selected.text);
-    useToastStore.getState().pushToast('ok', t('write.chat.inserted'));
-  }, [messages, selectedSeq, t]);
+  /** #642-2：per-message 插入（点击该条 content 消息直接插入该条 body，不再依赖 selectedSeq） */
+  const handleInsertMessage = useCallback(
+    (entry: ChatEntry) => {
+      useChapterStore.getState().setContent(entry.text);
+      useToastStore.getState().pushToast('ok', t('write.chat.inserted'));
+    },
+    [t],
+  );
+
+  /** #642-2：per-message 复制对话（防御性：jsdom 无 navigator.clipboard，静默；toast 提示已复制） */
+  const handleCopyMessage = useCallback((entry: ChatEntry) => {
+    try {
+      void navigator.clipboard?.writeText?.(entry.text);
+    } catch {
+      /* 测试环境无 clipboard，静默 */
+    }
+    useToastStore.getState().pushToast('ok', t('write.chat.copied'));
+  }, [t]);
 
   const handleInputKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -341,8 +363,6 @@ export function ChatPanel({ projectId, chapterId, chapterContent, agentOutput }:
   }, [t]);
 
   const canSend = input.trim() !== '';
-  // #477：共享插入按钮仅当存在至少一条 content 消息时渲染
-  const hasContentMessage = messages.some((m) => m.kind === 'ai' && m.intent === 'content');
 
   return (
     <div data-testid="chat-panel" className="flex flex-col gap-2 border-b border-line bg-surface-2 px-4 py-3">
@@ -356,6 +376,14 @@ export function ChatPanel({ projectId, chapterId, chapterContent, agentOutput }:
         >
           …
         </button>
+        {/* #642-2：resize-handle 从底部移到顶部行（toggle 之后；拖动逻辑不变） */}
+        <div
+          data-testid="chat-resize-handle"
+          className="flex h-1.5 cursor-ns-resize items-center justify-center"
+          onMouseDown={handleResizeMouseDown}
+        >
+          <span className="block h-0.5 w-8 rounded-full bg-line" />
+        </div>
       </div>
       {expanded && messages.length > 0 && (
         <div
@@ -431,6 +459,28 @@ export function ChatPanel({ projectId, chapterId, chapterContent, agentOutput }:
                   >
                     {t('write.chat.delete')}
                   </button>
+                  {/* #642-2：每条 AI 回复后跟复制按钮（复制对话） */}
+                  <button
+                    type="button"
+                    data-testid={`chat-copy-${m.seq}`}
+                    aria-label={t('write.chat.copy')}
+                    className="ml-2 rounded px-1 text-[11px] text-ink-3 hover:text-ink"
+                    onClick={() => void handleCopyMessage(m)}
+                  >
+                    {t('write.chat.copy')}
+                  </button>
+                  {/* #642-2：仅 content 意图消息渲染 per-message 插入按钮（替代原全局 chat-insert-selected） */}
+                  {m.intent === 'content' && (
+                    <button
+                      type="button"
+                      data-testid={`chat-insert-${m.seq}`}
+                      aria-label={t('write.chat.insert')}
+                      className="ml-2 rounded px-1 text-[11px] text-ink-3 hover:text-ink"
+                      onClick={() => void handleInsertMessage(m)}
+                    >
+                      {t('write.chat.insert')}
+                    </button>
+                  )}
                   {/* #477：仅 content 意图消息渲染选择控件（单选互斥） */}
                   {m.intent === 'content' && (
                     <button
@@ -472,48 +522,26 @@ export function ChatPanel({ projectId, chapterId, chapterContent, agentOutput }:
         </button>
       </div>
       {expanded && messages.length > 0 && (
-        <>
-          {messages.length > 0 && (
-            <div className="flex gap-2">
-              <button
-                type="button"
-                data-testid="chat-round-archive"
-                aria-label={t('write.chat.archiveRound')}
-                className="rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
-                onClick={() => void handleArchiveRound()}
-              >
-                {t('write.chat.archiveRound')}
-              </button>
-              <button
-                type="button"
-                data-testid="chat-round-delete"
-                aria-label={t('write.chat.deleteRound')}
-                className="rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:border-err/50 hover:text-err"
-                onClick={() => void handleDeleteRound()}
-              >
-                {t('write.chat.deleteRound')}
-              </button>
-            </div>
-          )}
-          {hasContentMessage && (
-            <button
-              type="button"
-              data-testid="chat-insert-selected"
-              aria-label={t('write.chat.insert')}
-              className="rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
-              onClick={handleInsert}
-            >
-              {t('write.chat.insert')}
-            </button>
-          )}
-          <div
-            data-testid="chat-resize-handle"
-            className="flex h-1.5 cursor-ns-resize items-center justify-center"
-            onMouseDown={handleResizeMouseDown}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            data-testid="chat-round-archive"
+            aria-label={t('write.chat.archiveRound')}
+            className="rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
+            onClick={() => void handleArchiveRound()}
           >
-            <span className="block h-0.5 w-8 rounded-full bg-line" />
-          </div>
-        </>
+            {t('write.chat.archiveRound')}
+          </button>
+          <button
+            type="button"
+            data-testid="chat-round-delete"
+            aria-label={t('write.chat.deleteRound')}
+            className="rounded-md border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:border-err/50 hover:text-err"
+            onClick={() => void handleDeleteRound()}
+          >
+            {t('write.chat.deleteRound')}
+          </button>
+        </div>
       )}
     </div>
   );

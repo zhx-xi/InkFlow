@@ -442,6 +442,9 @@ export const zh = {
   'write.chat.ai': 'AI',
   // #566：删除历史消息
   'write.chat.delete': '删除',
+  // #642-2：per-message 复制对话
+  'write.chat.copy': '复制对话',
+  'write.chat.copied': '已复制对话',
   // #581：整轮归档/删除（ChatPanel 消息区操作）
   'write.chat.archiveRound': '整轮归档',
   'write.chat.deleteRound': '整轮删除',
