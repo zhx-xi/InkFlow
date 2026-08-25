@@ -10,6 +10,8 @@ export interface LibraryItemListProps {
   withCharacterExtras?: boolean;
   onEdit: (item: LibraryItemDTO) => void;
   onDelete: (item: LibraryItemDTO) => void;
+  /** #650/#651：characters 分类行名字可点击 → 打开角色详情面板（缺省保持纯 span 展示） */
+  onOpenDetail?: (item: LibraryItemDTO) => void;
 }
 
 export function LibraryItemList({
@@ -17,6 +19,7 @@ export function LibraryItemList({
   withCharacterExtras = false,
   onEdit,
   onDelete,
+  onOpenDetail,
 }: LibraryItemListProps) {
   const { t } = useI18n();
   return (
@@ -36,7 +39,19 @@ export function LibraryItemList({
             key={String(item.id)}
             className="group lib-item flex items-center gap-3 px-4 py-2.5 text-[13px] text-ink"
           >
-            <span className="min-w-0 flex-1 truncate">{item.title ?? item.name ?? ''}</span>
+            {withCharacterExtras && onOpenDetail ? (
+              <button
+                type="button"
+                data-testid={`lib-name-${item.id}`}
+                title={t('lib.charDetail.open')}
+                className="min-w-0 flex-1 truncate rounded text-left transition-colors duration-150 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                onClick={() => onOpenDetail(item)}
+              >
+                {item.title ?? item.name ?? ''}
+              </button>
+            ) : (
+              <span className="min-w-0 flex-1 truncate">{item.title ?? item.name ?? ''}</span>
+            )}
             {rank !== '' && (
               <span
                 data-testid={`lib-rank-${item.id}`}

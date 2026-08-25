@@ -1,9 +1,13 @@
 import { useThemeStore } from '../stores/theme';
 import { en } from './en';
+import { roleEnhanceEn, roleEnhanceZh } from './role-enhance';
 import { zh } from './zh';
 
 type Dict = Record<string, string>;
-const dicts: Record<'zh' | 'en', Dict> = { zh: zh as Dict, en };
+const dicts: Record<'zh' | 'en', Dict> = {
+  zh: { ...zh, ...roleEnhanceZh } as Dict,
+  en: { ...en, ...roleEnhanceEn },
+};
 
 /** 简单占位替换: t('write.stream.done', { words: 342, model: 'x', valid: '通过' }) */
 function interpolate(template: string, params?: Record<string, string | number>): string {
