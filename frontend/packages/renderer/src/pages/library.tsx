@@ -16,6 +16,7 @@ import {
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { LibraryCharacterDetail, type LibraryCharacterDetailHandle } from '../components/LibraryCharacterDetail';
 import { CopyDialog } from '../components/CopyDialog';
+import { AIExtractEntry } from '../components/extract/AIExtractEntry';
 import { KnowledgeGraphView } from '../components/knowledge-graph/KnowledgeGraphView';
 import { RelationForm, type KnowledgeRelationFormData } from '../components/knowledge-graph/RelationForm';
 import { LibraryCreateDialog, type LibraryItemDTO } from '../components/LibraryCreateDialog';
@@ -33,7 +34,6 @@ import { useWorldCategories, type WorldCategoryEntity } from '../hooks/useWorldC
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
 import { cn } from '../lib/cn';
-
 type CatKey = 'characters' | 'world' | 'outline' | 'timeline' | 'foreshadow' | 'knowledge';
 interface ListResponse {
   items: LibraryItemDTO[];
@@ -588,11 +588,14 @@ export function LibraryPage() {
 
           <div className="mt-5">
             {/* #545 + #568：列表非空保留常态"新建"入口（knowledge 无端点不渲染；空态 CTA 覆盖空列表；world 根态隐藏、选中分类显示） */}
-            {createCat !== null && !loading && !loadFailed && items.length > 0 && !(activeCat === 'world' && workbenchActive) && (activeCat !== 'world' || activeWorldCat !== null) && (
-              <div className="mb-3 flex items-center justify-end">
-                <button type="button" data-testid="library-create-btn" className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60" onClick={() => setCreateOpen(true)}>
-                  {t('lib.empty.create')}
-                </button>
+            {currentProjectId !== null && (
+              <div className="mb-3 flex items-center justify-end gap-2">
+                {createCat !== null && !loading && !loadFailed && items.length > 0 && !(activeCat === 'world' && workbenchActive) && (activeCat !== 'world' || activeWorldCat !== null) && (
+                  <button type="button" data-testid="library-create-btn" className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60" onClick={() => setCreateOpen(true)}>
+                    {t('lib.empty.create')}
+                  </button>
+                )}
+                <AIExtractEntry />
               </div>
             )}
             {loading ? (

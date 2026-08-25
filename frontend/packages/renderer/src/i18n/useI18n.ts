@@ -1,12 +1,13 @@
 import { useThemeStore } from '../stores/theme';
 import { en } from './en';
+import { extractEn, extractZh } from './extract-keys';
 import { roleEnhanceEn, roleEnhanceZh } from './role-enhance';
 import { zh } from './zh';
 
 type Dict = Record<string, string>;
 const dicts: Record<'zh' | 'en', Dict> = {
-  zh: { ...zh, ...roleEnhanceZh } as Dict,
-  en: { ...en, ...roleEnhanceEn },
+  zh: { ...zh, ...roleEnhanceZh, ...extractZh } as Dict,
+  en: { ...en, ...roleEnhanceEn, ...extractEn },
 };
 
 /** 简单占位替换: t('write.stream.done', { words: 342, model: 'x', valid: '通过' }) */
