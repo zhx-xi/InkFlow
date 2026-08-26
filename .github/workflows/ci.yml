@@ -910,8 +910,6 @@ jobs:
         shell: bash
         working-directory: ${{ github.workspace }}
         run: |
-          # Debug: list downloaded files
-          find cov -type f | sort
           for dir in unit api cli integration; do
             if [ -f "cov/$dir/coverage.dat" ]; then
               cp "cov/$dir/coverage.dat" "backend/.coverage-$dir"
@@ -925,10 +923,6 @@ jobs:
           done
           cd backend
           uv run coverage combine .coverage-unit .coverage-api .coverage-cli .coverage-integration
-          uv run coverage xml -o coverage.xml 2>&1 || true
-          # Debug: check output
-          ls -la coverage.xml .coverage 2>&1 || true
-          # Re-run with proper exit code
           uv run coverage xml -o coverage.xml
 
       - name: Coverage gate (line >= 98.5%, branch >= 95%)
