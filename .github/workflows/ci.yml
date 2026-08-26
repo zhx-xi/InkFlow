@@ -200,18 +200,21 @@ jobs:
         # chromadb 测试直接进 --cov 口径（与 coverage-backend 一致），不再单独无 --cov 跑。
         # --reruns 2：chromadb 1.5.9 Windows CI 上 hnsw 段读取偶发竞态（写入后立即 retrieve，
         # 本地稳定复现不了，CI 两次失败用例不同 = 非确定性）；pytest-rerunfailures 兜底重试
+        # #685: 生成 .coverage 数据文件供 coverage-backend 下载合并，不再重跑 unit 测试
         run: |
-          uv run pytest tests/unit/ -v --tb=short --cov=inkflow --cov-report=xml --reruns 2 --reruns-delay 1
+          uv run pytest tests/unit/ -v --tb=short --cov=inkflow --cov-report= --reruns 2 --reruns-delay 1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v7
+      - name: Upload coverage data
+        uses: actions/upload-artifact@v7
         with:
-          file: backend/coverage.xml
-          fail_ci_if_error: false
+          name: coverage-unit-backend
+          path: backend/.coverage
+          retention-days: 1
 
-  # ── Integration: Chapter (repo + service + API + CLI) ──
-  # 只要修改代码（核心或测试）都触发
-  integration-chapter-backend:
+  # ── Unit API tests (mock 式 API 测试，#685 拆分自原 coverage-backend 全量) ──
+  # 包含原 integration-chapter/project/writing/agent 的 API 测试 + 原孤儿 API 测试
+  unit-api-backend:
     # 第二批：按需触发（core/tests/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
     needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
     if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
@@ -242,17 +245,23 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra dev
 
-      - name: Run chapter integration tests
+      - name: Run API tests
+        # #685: 所有 tests/api/ 测试 + coverage 数据上传供合并
+        # 多行 run 必须逐行检查 $LASTEXITCODE（#214 假绿坑）
+        # --reruns 2：chromadb 1.5.9 Windows CI 上 hnsw 段读取偶发竞态（#409，与 unit-backend 对齐）
         run: |
-          uv run pytest ../tests/integration/test_chapter_repository.py `
-                 ../tests/integration/test_chapter_service.py `
-                 ../tests/api/test_chapter_api.py `
-                 ../tests/api/test_volume_delete_api.py `
-                 ../tests/cli/test_cli_chapter.py `
-                 -v --tb=short
+          uv run pytest ../tests/api/ --cov=inkflow --cov-report= -q --reruns 2 --reruns-delay 1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  # ── Integration: Project (repo + service + API + CLI) ──
-  integration-project-backend:
+      - name: Upload coverage data
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-api-backend
+          path: backend/.coverage
+          retention-days: 1
+
+  # ── Unit CLI tests (mock 式 CLI 测试，#685 拆分自原 coverage-backend 全量) ──
+  unit-cli-backend:
     # 第二批：按需触发（core/tests/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
     needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
     if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
@@ -283,19 +292,21 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra dev
 
-      - name: Run project integration tests
+      - name: Run CLI tests
+        # #685: 所有 tests/cli/ 测试 + coverage 数据上传供合并
         run: |
-          uv run pytest ../tests/integration/test_project_repository.py `
-                 ../tests/integration/test_project_service.py `
-                 ../tests/api/test_project_api.py `
-                 ../tests/api/test_export_api.py `
-                 ../tests/cli/test_cli_project.py `
-                 ../tests/api/test_search_api.py `
-                 ../tests/api/test_index_rebuild_api.py `
-                 -v --tb=short
+          uv run pytest ../tests/cli/ --cov=inkflow --cov-report= -q --reruns 2 --reruns-delay 1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  # ── Integration: Writing (API + CLI) ──
-  integration-writing-backend:
+      - name: Upload coverage data
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-cli-backend
+          path: backend/.coverage
+          retention-days: 1
+
+  # ── Unit integration tests (repo + service，#685 拆分自原 coverage-backend 全量) ──
+  unit-integration-backend:
     # 第二批：按需触发（core/tests/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
     needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
     if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
@@ -326,187 +337,18 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra dev
 
-      - name: Run writing integration tests
+      - name: Run integration tests
+        # #685: 所有 tests/integration/ 测试 + coverage 数据上传供合并
         run: |
-          uv run pytest ../tests/api/test_writing_api.py `
-                 ../tests/api/test_chat_messages_api.py `
-                 ../tests/api/test_chat_stream_api.py `
-                 ../tests/cli/test_cli_writing.py `
-                 -v --tb=short
+          uv run pytest ../tests/integration/ --cov=inkflow --cov-report= -q --reruns 2 --reruns-delay 1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  # ── Integration: Agent (pipeline + API + CLI) ──
-  integration-agent-backend:
-    # 第二批：按需触发（core/tests/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
-    permissions:
-      contents: read
-    runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: backend
-
-    steps:
-      - uses: actions/checkout@v7
+      - name: Upload coverage data
+        uses: actions/upload-artifact@v7
         with:
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.11"
-
-      - uses: astral-sh/setup-uv@v5
-        with:
-          version: "0.11.14"
-          enable-cache: true
-          prune-cache: false
-          cache-dependency-glob: backend/uv.lock
-
-      - name: Install dependencies
-        run: uv sync --frozen --extra dev
-
-      - name: Run agent integration tests
-        run: |
-          uv run pytest ../tests/integration/test_agent_pipeline.py `
-                 ../tests/integration/test_execution_store_defensive.py `
-                 ../tests/api/test_agent_api.py `
-                 ../tests/api/test_agents_api.py `
-                 ../tests/api/test_pipeline_stream_api.py `
-                 ../tests/api/test_books_api.py `
-                 ../tests/api/test_books_api_stage4.py `
-                 ../tests/api/test_books_api_background.py `
-                 ../tests/api/test_books_api_v12.py `
-                 ../tests/api/test_books_api_start_mode.py `
-                 ../tests/api/test_skills_api.py `
-                 ../tests/api/test_skills_cascade.py `
-                 ../tests/api/test_agent_skill_duplicate_api.py `
-                 ../tests/api/test_model_discovery_api.py `
-                 ../tests/integration/test_builtin_seed.py `
-                 ../tests/cli/test_cli_agent.py `
-                 -v --tb=short
-
-  # ── Integration: CLI（迁移后 tests/cli/ mock 式 CLI 测试，Issue #61 目录治理）──
-  integration-cli-backend:
-    # 第二批：按需触发（core/tests/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
-    permissions:
-      contents: read
-    runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: backend
-
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.11"
-
-      - uses: astral-sh/setup-uv@v5
-        with:
-          version: "0.11.14"
-          enable-cache: true
-          prune-cache: false
-          cache-dependency-glob: backend/uv.lock
-
-      - name: Install dependencies
-        run: uv sync --frozen --extra dev
-
-      - name: Run CLI integration tests
-        run: |
-          uv run pytest ../tests/cli/test_cli_chapter_mock.py `
-                 ../tests/cli/test_cli_write.py `
-                 ../tests/cli/test_cli_output.py `
-                 ../tests/cli/test_cli_serve.py `
-                 ../tests/cli/test_cli_config.py `
-                 ../tests/cli/test_cli_llm.py `
-                 ../tests/cli/test_cli_character_crud.py `
-                 ../tests/cli/test_cli_character_relations.py `
-                 ../tests/cli/test_cli_character_errors.py `
-                 ../tests/cli/test_cli_world.py `
-                 ../tests/cli/test_cli_world_tree.py `
-                 ../tests/cli/test_cli_world_copy.py `
-                 ../tests/cli/test_cli_map.py `
-                 ../tests/cli/test_cli_map_coverage.py `
-                 ../tests/cli/test_cli_outline.py `
-                 ../tests/cli/test_cli_timeline_crud.py `
-                 ../tests/cli/test_cli_timeline_ops.py `
-                 ../tests/cli/test_cli_foreshadowing.py `
-                 ../tests/cli/test_cli_extraction_crud.py `
-                 ../tests/cli/test_cli_extraction_errors.py `
-                 ../tests/cli/test_cli_vector.py `
-                 ../tests/cli/test_cli_audit.py `
-                 ../tests/cli/test_cli_audit_chapter.py `
-                 ../tests/cli/test_cli_style.py `
-                 ../tests/cli/test_cli_session.py `
-                 ../tests/cli/test_cli_session_coverage.py `
-                 ../tests/cli/test_cli_kernel.py `
-                 ../tests/cli/test_cli_http_kernel.py `
-                 ../tests/cli/test_cli_outline_http.py `
-                 ../tests/cli/test_cli_display_helpers.py `
-                 ../tests/cli/test_cli_run_fallback.py `
-                 ../tests/cli/test_cli_export.py `
-                 ../tests/cli/test_cli_search.py `
-                 ../tests/cli/test_cli_agent_tools.py `
-                 ../tests/cli/test_cli_agent_run.py `
-                 ../tests/cli/test_cli_agent_draft.py `
-                 ../tests/cli/test_cli_write_agentic.py `
-                 ../tests/cli/test_cli_memory.py `
-                 ../tests/cli/test_cli_llm_provider.py `
-                 ../tests/cli/test_cli_agent_template.py `
-                 ../tests/cli/test_cli_project_update.py `
-                 ../tests/cli/test_cli_chapter_summary.py `
-                 ../tests/cli/test_cli_context_assemble.py `
-                 ../tests/cli/test_cli_skills.py `
-                 ../tests/cli/test_cli_mcp.py `
-                 ../tests/cli/test_cli_agent_entity.py `
-                 ../tests/cli/test_cli_skill.py `
-                 ../tests/cli/test_cli_knowledge_graph.py `
-                 ../tests/cli/test_cli_knowledge_extract.py `
-                 ../tests/cli/test_book_cmd.py `
-                 ../tests/cli/test_book_cmd_stage4.py `
-                 -v --tb=short
-
-  # ── Smoke: health check (fastest) ──
-  smoke-backend:
-    # 第二批：按需触发（core/tests/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
-    permissions:
-      contents: read
-    runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: backend
-
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.11"
-
-      - uses: astral-sh/setup-uv@v5
-        with:
-          version: "0.11.14"
-          enable-cache: true
-          prune-cache: false
-          cache-dependency-glob: backend/uv.lock
-
-      - name: Install dependencies
-        run: uv sync --frozen --extra dev
-
-      - name: Health check
-        run: uv run pytest ../tests/api/test_health.py ../tests/api/test_token_auth.py -v --tb=short
+          name: coverage-integration-backend
+          path: backend/.coverage
+          retention-days: 1
 
   # ── Frontend unit: Vitest（renderer + electron 双包，第一批恒跑）──
   unit-frontend:
@@ -539,11 +381,26 @@ jobs:
 
       # 拆独立 step（#405）：多行 run 无退出码传播 → renderer vitest 失败被 electron 段成功掩盖
       # （job 假绿，#214 coverage-backend 同族）。每 step 独立退出码，vitest 失败真实红。
+      # #685: 加 --coverage，vitest 生成覆盖率报告 + threshold 自检（不达标即红）
       - name: Unit tests (Vitest, renderer)
-        run: pnpm --filter renderer test
+        run: pnpm --filter renderer test --coverage
 
       - name: Unit tests (Vitest, electron)
-        run: pnpm --filter inkflow-electron test
+        run: pnpm --filter inkflow-electron test --coverage
+
+      - name: Upload renderer coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-frontend-renderer
+          path: frontend/packages/renderer/coverage/
+          retention-days: 1
+
+      - name: Upload electron coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-frontend-electron
+          path: frontend/packages/electron/coverage/
+          retention-days: 1
 
   # ── Frontend lint: ESLint + typecheck + compile check（静态检查，第一批恒跑）──
   lint-frontend:
@@ -982,18 +839,18 @@ jobs:
         # 失败用例自动重跑 1 次吸收环境抖动；真实功能缺陷重跑仍失败不受掩盖
         run: pnpm --filter inkflow-electron test:e2e e2e-settings e2e-settings-templates e2e-settings-agents e2e-settings-skills --retries=1
 
-  # ── Coverage: 后端覆盖率门禁（unit + 顶层合并 --cov-append；RAG 文件 F14 先例排除）──
+  # ── Coverage: 后端覆盖率门禁（#685：下载 4 个 .coverage artifact 合并，不重跑测试）──
   # 门槛（2026-08-06 Phase 3 实测 CI 权威口径）：
   #   行 98.90% / 分支 96.32% —— 写入 98.5/95.0（留 0.4/1.3 余量防环境抖动）。
   # 剩余 miss 均为物理不可达防御分支（payload 非 dict / for 循环耗尽弧 / except 重抛），
   # 已由 C 方案 exclude_lines 排除 Protocol 接口方法体；目标 99/90 已达（98.90 ≥ 目标线）。
   coverage-backend:
-    # 第二批：按需触发（core/tests/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
+    # 第三批：needs 第二批的 3 个 unit job（coverage artifact 产出者）
+    needs: [changes, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend]
     if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend
@@ -1018,19 +875,39 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra dev
 
-      - name: Coverage (unit + top-level merged)
-        # unit 与顶层 tests 不能同命令（conftest 命名冲突，0.2.0 收尾实测）——分两条 + --cov-append
-        # #273: chromadb 与 coverage 同进程冲突已修复（#276 hnsw:sync_threshold=3 + chromadb 1.5.9），
-        # 不再 --ignore test_langchain_vector_store.py —— langchain_vector_store 真实覆盖 99% 进 cov 口径
-        # 多行 run 必须逐行检查 $LASTEXITCODE（#214 假绿坑：coverage xml 成功掩盖 pytest 失败）
-        # --reruns 2：chromadb 1.5.9 Windows CI 上 hnsw 段读取偶发竞态（#409，与 unit-backend 对齐）；pytest-rerunfailures 兜底重试
+      # #685: 下载 4 个 .coverage 数据文件，重命名后 coverage combine 合并
+      # 每个 artifact 下载到独立子目录避免同名冲突
+      - name: Download unit coverage data
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-unit-backend
+          path: cov/unit
+
+      - name: Download API coverage data
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-api-backend
+          path: cov/api
+
+      - name: Download CLI coverage data
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-cli-backend
+          path: cov/cli
+
+      - name: Download integration coverage data
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-integration-backend
+          path: cov/integration
+
+      - name: Combine coverage data
+        # coverage combine 接受多个 .coverage 文件，合并为 .coverage（基于 pyproject.toml 配置）
+        # ubuntu runner 默认 bash shell（#685：coverage job 从 windows 迁到 ubuntu——只做合并+gate 不跑测试）
+        shell: bash
         run: |
-          uv run pytest tests/unit/ --cov=inkflow --cov-append -q --reruns 2 --reruns-delay 1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          uv run pytest ../tests/api/ ../tests/integration/ ../tests/cli/ --cov=inkflow --cov-append -q --reruns 2 --reruns-delay 1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv run coverage combine cov/unit/.coverage cov/api/.coverage cov/cli/.coverage cov/integration/.coverage
           uv run coverage xml -o coverage.xml
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Coverage gate (line >= 98.5%, branch >= 95%)
         run: uv run python ../ci_cd/check_coverage.py 98.5 95.0 coverage.xml
@@ -1041,48 +918,33 @@ jobs:
           name: backend-coverage
           path: backend/coverage.xml
 
-  # ── Coverage: 前端覆盖率门禁（renderer + electron；thresholds 内置于 vitest.config.ts）──
+  # ── Coverage: 前端覆盖率报告收集（#685：threshold 已在 unit-frontend 自检，此 job 只收集 artifact）──
   coverage-frontend:
-    # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
+    # 第三批：needs unit-frontend（artifact 产出者）
+    needs: [changes, unit-frontend]
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
-    runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: frontend
+    runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v7
+      - name: Download renderer coverage
+        uses: actions/download-artifact@v7
         with:
-          fetch-depth: 0
+          name: coverage-frontend-renderer
+          path: frontend-coverage/renderer
 
-      - uses: pnpm/action-setup@v4
+      - name: Download electron coverage
+        uses: actions/download-artifact@v7
         with:
-          version: 11
+          name: coverage-frontend-electron
+          path: frontend-coverage/electron
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "24"
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Coverage (renderer + electron)
-        run: |
-          pnpm --filter renderer test --coverage
-          pnpm --filter inkflow-electron test --coverage
-
-      - name: Upload coverage reports
+      - name: Re-bundle coverage reports
         uses: actions/upload-artifact@v7
         with:
           name: frontend-coverage
-          path: |
-            frontend/packages/renderer/coverage/
-            frontend/packages/electron/coverage/
+          path: frontend-coverage/
 
   # ── Build: wheel（依赖第一批 lint/unit，与第二批集成/E2E 并行；为后续打包 job 腾名）──
   build:

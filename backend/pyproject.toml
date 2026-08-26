@@ -91,6 +91,8 @@ markers = [
 [tool.coverage.run]
 branch = true
 source = ["inkflow"]
+# #685: 存储相对路径，使 Windows runner 生成的 .coverage 数据文件可在 ubuntu runner 上合并
+relative_files = true
 # #273: F14「chromadb 与 coverage 同进程冲突」已修复（#276 hnsw:sync_threshold=3 + chromadb 1.5.9），
 # test_langchain_vector_store.py 不再 --ignore，真实覆盖进 cov 口径（ci_cd/api-coverage.md 已更新登记）
 omit = ["*/test_*.py", "*/tests/*"]
