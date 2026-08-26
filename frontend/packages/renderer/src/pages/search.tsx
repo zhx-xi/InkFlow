@@ -9,6 +9,7 @@ import {
   type IndexRebuildStatusDto,
 } from '../api/index';
 import { errorMessage } from '../api/client';
+import { useChapterStore } from '../stores/chapter';
 import { useProjectStore } from '../stores/project';
 import { useI18n } from '../i18n/useI18n';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -88,6 +89,32 @@ export function SearchPage() {
       setError(errorMessage(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleHitClick = (entityType: string, entityId: string) => {
+    switch (entityType) {
+      case 'chapter':
+        navigate('/writing');
+        void useChapterStore.getState().selectChapter(entityId);
+        break;
+      case 'character':
+        navigate('/library?cat=characters');
+        break;
+      case 'world':
+        navigate('/library?cat=world');
+        break;
+      case 'outline':
+        navigate('/library?cat=outline');
+        break;
+      case 'timeline':
+        navigate('/library?cat=timeline');
+        break;
+      case 'foreshadow':
+        navigate('/library?cat=foreshadow');
+        break;
+      default:
+        break;
     }
   };
 
@@ -370,7 +397,9 @@ export function SearchPage() {
                     <li
                       key={hit.entity_id}
                       data-testid="search-hit"
-                      className="rounded-lg border border-line bg-surface p-4"
+                      onClick={() => handleHitClick(hit.entity_type, hit.entity_id)}
+                      aria-label={'跳转到' + hit.title}
+                      className="cursor-pointer rounded-lg border border-line bg-surface p-4 hover:bg-surface-3"
                     >
                       <div className="flex items-center gap-2">
                         <span className="rounded bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-ink-2">

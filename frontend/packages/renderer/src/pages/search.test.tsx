@@ -31,12 +31,13 @@
  *
  * RED 预期：./search 模块不存在 → 收集期 module-not-found（类 1 契约缺口）。
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { SearchPage } from './search';
 import { fetchSearch } from '../api/search';
+import { useChapterStore } from '../stores/chapter';
 import { useProjectStore, type Project } from '../stores/project';
 import { useThemeStore } from '../stores/theme';
 
@@ -99,10 +100,16 @@ function seedProjects(currentProjectId: string | null = 'p1') {
   });
 }
 
+function LocationDisplay() {
+  const location = useLocation();
+  return <div data-testid="location-display">{location.pathname}{location.search}</div>;
+}
+
 function renderSearchPage() {
   return render(
     <MemoryRouter>
       <SearchPage />
+      <LocationDisplay />
     </MemoryRouter>,
   );
 }
@@ -112,6 +119,10 @@ beforeEach(() => {
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
   useProjectStore.setState({ projects: [], currentProjectId: null, loading: false, error: null });
   fetchSearchMock.mockReset();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe('检索页 — 无项目态', () => {
@@ -244,5 +255,62 @@ describe('检索页 — 检索交互（#480）', () => {
     resolveSearch(searchResponseDto);
     expect(await screen.findByTestId('search-results')).toBeInTheDocument();
     expect(screen.queryByTestId('search-loading')).not.toBeInTheDocument();
+  });
+});
+
+describe('检索页 — 命中跳转（#683）', () => {
+  const makeHit = (entity_type: string, entity_id: string, title: string): SearchHitDto => ({
+    entity_type,
+    entity_id,
+    project_id: 'p1',
+    title,
+    snippet: `${title} 的相关片段…`,
+    score: 0.5,
+  });
+
+  /** 播种项目 + mock 检索响应 + 渲染 + 输入/检索 → 返回出现首条命中 */
+  async function searchHits(hits: SearchHitDto[]) {
+    fetchSearchMock.mockResolvedValue({ ...searchResponseDto, hits });
+    renderSearchPage();
+    const user = userEvent.setup();
+    await user.type(screen.getByRole('textbox', { name: /检索/ }), '青云');
+    await user.click(screen.getByRole('button', { name: '检索' }));
+    await screen.findByTestId('search-hit');
+  }
+
+  it('命中卡片可点击：带 cursor-pointer + hover 态 + aria-label', async () => {
+    seedProjects();
+    await searchHits([makeHit('character', 'e1', '林惊羽')]);
+    const hit = screen.getByTestId('search-hit');
+    expect(hit.className).toContain('cursor-pointer');
+    expect(hit.className).toContain('hover:bg-');
+    expect(hit).toHaveAttribute('aria-label');
+    expect(hit.getAttribute('aria-label')?.trim().length ?? 0).toBeGreaterThan(0);
+  });
+
+  it('点击章节命中 → navigate(/writing) + useChapterStore.selectChapter(entity_id)', async () => {
+    seedProjects();
+    const selectChapterSpy = vi
+      .spyOn(useChapterStore.getState(), 'selectChapter')
+      .mockResolvedValue();
+    await searchHits([makeHit('chapter', 'e2', '第一章 青云山')]);
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('search-hit'));
+    expect(screen.getByTestId('location-display')).toHaveTextContent('/writing');
+    expect(selectChapterSpy).toHaveBeenCalledWith('e2');
+  });
+
+  it.each([
+    ['character', 'characters'],
+    ['world', 'world'],
+    ['outline', 'outline'],
+    ['timeline', 'timeline'],
+    ['foreshadow', 'foreshadow'],
+  ])('点击 %s 命中 → navigate(/library?cat=%s)', async (entityType, cat) => {
+    seedProjects();
+    await searchHits([makeHit(entityType, `id-${entityType}`, `${entityType} 条目`)]);
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('search-hit'));
+    expect(screen.getByTestId('location-display')).toHaveTextContent(`/library?cat=${cat}`);
   });
 });
