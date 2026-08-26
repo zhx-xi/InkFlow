@@ -51,6 +51,7 @@ interface ChapterState {
   selectChapter: (chapterId: string) => Promise<void>;
   saveContent: () => Promise<void>;
   createChapter: (projectId: string, title: string, volumeId?: string) => Promise<ChapterMeta>;
+  moveChapter: (chapterId: string, targetVolumeId: string | null) => Promise<ChapterMeta>;
   createVolume: (projectId: string, title: string) => Promise<Volume>;
   patchVolume: (volumeId: string, title: string) => Promise<Volume>;
   deleteVolume: (
@@ -122,6 +123,15 @@ export const useChapterStore = create<ChapterState>((set, get) => ({
     });
     set((s) => ({ chapters: [...s.chapters, created], currentChapterId: created.id }));
     return created;
+  },
+
+  moveChapter: async (chapterId, targetVolumeId) => {
+    const query = targetVolumeId ? `?target_volume_id=${encodeURIComponent(targetVolumeId)}` : '';
+    const updated = await apiFetch<ChapterMeta>(`/api/v1/chapters/${chapterId}/move${query}`, {
+      method: 'POST',
+    });
+    set((s) => ({ chapters: s.chapters.map((c) => (c.id === updated.id ? updated : c)) }));
+    return updated;
   },
 
   createVolume: async (projectId, title) => {

@@ -7,6 +7,7 @@ import { useChapterStore } from '../stores/chapter';
 import { useProjectStore } from '../stores/project';
 import { ProjectSeal } from './ProjectSeal';
 import { VolumeDeleteDialog } from './VolumeDeleteDialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 export function ProjectTree() {
   const { t } = useI18n();
@@ -18,6 +19,7 @@ export function ProjectTree() {
   const createVolume = useChapterStore((s) => s.createVolume);
   const patchVolume = useChapterStore((s) => s.patchVolume);
   const deleteVolume = useChapterStore((s) => s.deleteVolume);
+  const moveChapter = useChapterStore((s) => s.moveChapter);
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const projects = useProjectStore((s) => s.projects);
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? projects[0];
@@ -28,6 +30,8 @@ export function ProjectTree() {
   const [editingVolumeId, setEditingVolumeId] = useState<string | null>(null);
   const [editVolumeTitle, setEditVolumeTitle] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Volume | null>(null);
+  const [newVolumeId, setNewVolumeId] = useState<string | null>(null); // 新建章节目标卷（null=未分组）
+  const [dragOverVolumeId, setDragOverVolumeId] = useState<string | null>(null); // 拖拽经过的卷高亮
 
   const renderChapter = (ch: ChapterMeta) => {
     const isCurrent = ch.id === currentChapterId;
@@ -35,6 +39,11 @@ export function ProjectTree() {
       <button
         key={ch.id}
         type="button"
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer?.setData('text/plain', ch.id);
+          e.dataTransfer!.effectAllowed = 'move';
+        }}
         // 契约断言 getByTestId('tree-chapter') 唯一且为当前章（data-current 标记）
         data-testid={isCurrent ? 'tree-chapter' : undefined}
         data-current={isCurrent ? 'true' : undefined}
@@ -53,8 +62,14 @@ export function ProjectTree() {
 
   const handleCreate = async () => {
     if (!currentProjectId) return;
-    await createChapter(currentProjectId, newTitle.trim() || '新章节');
+    const title = newTitle.trim() || '新章节';
+    if (newVolumeId) {
+      await createChapter(currentProjectId, title, newVolumeId);
+    } else {
+      await createChapter(currentProjectId, title);
+    }
     setNewTitle('');
+    setNewVolumeId(null);
     setCreating(false);
   };
 
@@ -78,7 +93,22 @@ export function ProjectTree() {
       <ProjectSeal project={currentProject} />
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {volumes.map((v) => (
-          <div key={v.id} data-testid="tree-volume" className="group mb-2">
+          <div
+            key={v.id}
+            data-testid="tree-volume"
+            className={`group mb-2 ${dragOverVolumeId === v.id ? 'rounded bg-surface-3 ring-1 ring-accent' : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOverVolumeId(v.id);
+            }}
+            onDragLeave={() => setDragOverVolumeId((id) => (id === v.id ? null : id))}
+            onDrop={(e) => {
+              e.preventDefault();
+              const cid = e.dataTransfer?.getData('text/plain');
+              if (cid) void moveChapter(cid, v.id);
+              setDragOverVolumeId(null);
+            }}
+          >
             <div className="vol-row flex items-center gap-1 px-2 py-1">
               {editingVolumeId === v.id ? (
                 <input
@@ -130,11 +160,23 @@ export function ProjectTree() {
             </div>
           </div>
         ))}
-        {ungrouped.length > 0 && <div className="space-y-0.5">{ungrouped.map(renderChapter)}</div>}
+        <div
+          data-testid="tree-ungrouped"
+          onDragOver={(e) => {
+            e.preventDefault();
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const cid = e.dataTransfer?.getData('text/plain');
+            if (cid) void moveChapter(cid, null);
+          }}
+        >
+          {ungrouped.length > 0 && <div className="space-y-0.5">{ungrouped.map(renderChapter)}</div>}
+        </div>
       </div>
-      <div className="border-t border-line p-2">
+      <div data-testid="tree-actions" className="flex items-center gap-2 border-t border-line p-2">
         {creatingVolume ? (
-          <div className="flex gap-1">
+          <div className="flex min-w-0 flex-1 gap-1">
             <input
               autoFocus
               className="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1 text-[13px] outline-none"
@@ -172,14 +214,30 @@ export function ProjectTree() {
         ) : (
           <button
             type="button"
-            className="mb-1 w-full rounded px-2 py-1.5 text-[13px] text-ink-2 hover:bg-surface-3"
+            className="flex-1 rounded px-2 py-1.5 text-[13px] text-ink-2 hover:bg-surface-3"
             onClick={() => setCreatingVolume(true)}
           >
             + 新建卷
           </button>
         )}
         {creating ? (
-          <div className="flex gap-1">
+          <div className="flex min-w-0 flex-1 gap-1">
+            <Select
+              value={newVolumeId ?? '__ungrouped__'}
+              onValueChange={(val) => setNewVolumeId(val === '__ungrouped__' ? null : val)}
+            >
+              <SelectTrigger data-testid="chapter-volume-select" className="h-8 w-auto shrink-0">
+                <SelectValue placeholder="未分组" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__ungrouped__">未分组</SelectItem>
+                {volumes.map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <input
               autoFocus
               className="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1 text-[13px] outline-none"
@@ -217,7 +275,7 @@ export function ProjectTree() {
         ) : (
           <button
             type="button"
-            className="w-full rounded px-2 py-1.5 text-[13px] text-ink-2 hover:bg-surface-3"
+            className="flex-1 rounded px-2 py-1.5 text-[13px] text-ink-2 hover:bg-surface-3"
             onClick={() => setCreating(true)}
           >
             + {t('write.newChapter')}
