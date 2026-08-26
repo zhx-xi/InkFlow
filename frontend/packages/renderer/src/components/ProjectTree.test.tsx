@@ -31,6 +31,8 @@ const mocks = vi.hoisted(() => ({
     createVolume: vi.fn(),
     patchVolume: vi.fn(),
     deleteVolume: vi.fn(),
+    // #674 拖拽归卷：章节 drop 到卷容器依赖的 store 方法
+    moveChapter: vi.fn(),
   },
   projectState: {
     projects: [] as Project[],
@@ -70,6 +72,7 @@ beforeEach(() => {
   mocks.chapterState.createChapter.mockReset();
   mocks.chapterState.createVolume.mockReset();
   mocks.chapterState.patchVolume.mockReset();
+  mocks.chapterState.moveChapter.mockReset();
   mocks.chapterState.deleteVolume.mockReset();
   mocks.chapterState.createChapter.mockResolvedValue({ id: 'c4', title: '新章节', volume_id: null, order_index: 3, word_count: 0 });
   mocks.chapterState.volumes = [];
@@ -235,5 +238,56 @@ describe('ProjectTree — 卷节点入口（#648 卷管理 GUI CRUD，RED 契约
   it('底部栏提供「＋ 新建卷」按钮（与「＋ 新建章节」并列）', () => {
     renderTree();
     expect(screen.getByRole('button', { name: /\+ 新建卷/ })).toBeInTheDocument();
+  });
+});
+
+describe('ProjectTree — #674 卷章树按钮并排/拖拽归卷/新建选卷（RED 契约）', () => {
+  it('底部容器两按钮「+ 新建卷」与「+ 新建章节」并排（同一 flex 容器内，非块级堆叠）', () => {
+    renderTree();
+    // GREEN 须给底部容器加 data-testid="tree-actions" 与 flex 布局类（flex items-center gap-2）
+    const footer = screen.getByTestId('tree-actions');
+    expect(footer).toBeInTheDocument();
+    expect(footer.className).toMatch(/(^|\s)flex(\s|$)/);
+    const volBtn = screen.getByRole('button', { name: /\+ 新建卷/ });
+    const chBtn = screen.getByRole('button', { name: /\+ 新建章节/ });
+    // 两按钮是同一兄弟容器（非块级上下堆叠）
+    expect(volBtn.parentElement).toBe(footer);
+    expect(chBtn.parentElement).toBe(footer);
+  });
+
+  it('章节行 draggable，onDragStart 设置 dataTransfer(text/plain=chapter id)', () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    renderTree();
+    const ch = screen.getByText('第1章 初见').closest('button') as HTMLButtonElement;
+    expect(ch).toHaveAttribute('draggable', 'true');
+    const dt = { setData: vi.fn(), effectAllowed: '' };
+    fireEvent.dragStart(ch, { dataTransfer: dt });
+    expect(dt.setData).toHaveBeenCalledWith('text/plain', 'c1');
+  });
+
+  it('卷容器（tree-volume）onDragOver preventDefault，onDrop 调 moveChapter(chapterId, volumeId)', () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    mocks.chapterState.moveChapter.mockResolvedValue(undefined);
+    renderTree();
+    const vol = screen.getAllByTestId('tree-volume')[0];
+    // onDragOver：jsdom DragEvent 的 defaultPrevented 不可靠，改断言 dragOver 后组件进入高亮态
+    fireEvent.dragOver(vol, { dataTransfer: {}, cancelable: true });
+    expect(vol.className).toContain('ring-1 ring-accent');
+    // onDrop：jsdom DragEvent 从 init 读 dataTransfer，handler 经 getData('text/plain') 调 moveChapter
+    fireEvent.drop(vol, { dataTransfer: { getData: () => 'c1' }, cancelable: true });
+    expect(mocks.chapterState.moveChapter).toHaveBeenCalledWith('c1', 'v1');
+  });
+
+  it('新建章节输入行有卷 <Select> 下拉（默认「未分组」）', () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.projectState.currentProjectId = 'p1';
+    renderTree();
+    openCreator();
+    // GREEN 须给卷 Select trigger 加 data-testid="chapter-volume-select"
+    const select = screen.getByTestId('chapter-volume-select');
+    expect(select).toBeInTheDocument();
+    expect(select).toHaveTextContent(/未分组/);
   });
 });
