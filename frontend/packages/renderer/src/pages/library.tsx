@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Copy, Library } from 'lucide-react';
+import { listCharacterGroups, type CharacterGroup } from '../api/character';
 import { apiFetch, ensureApiReady, errorMessage } from '../api/client';
 import {
   createKnowledgeRelation,
@@ -137,6 +138,8 @@ export function LibraryPage() {
   const [timelineNarrative, setTimelineNarrative] = useState<TimelineEventDTO[]>([]);
   // F43 P3（§5.15）：章节标题映射（chapter_id → title，大纲 tab 加载时拉取）
   const [chapterTitles, setChapterTitles] = useState<Record<string, string>>({});
+  // #679：角色分组（characters 分类分组卡片数据源；失败静默空列表）
+  const [characterGroups, setCharacterGroups] = useState<CharacterGroup[]>([]);
   // F48：知识图谱 tab——图谱视图/关系列表切换 + 图谱数据 + 关系增删改表单态
   const [kgView, setKgView] = useState<'graph' | 'list'>('graph');
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
@@ -255,6 +258,25 @@ export function LibraryPage() {
       })
       .catch(() => {
         if (!cancelled) setChapterTitles({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProjectId, activeCat]);
+
+  // #679：角色分组列表（characters 分类分组卡片数据源；失败静默空列表）
+  useEffect(() => {
+    if (!currentProjectId || activeCat !== 'characters') {
+      setCharacterGroups([]);
+      return;
+    }
+    let cancelled = false;
+    void listCharacterGroups(currentProjectId)
+      .then((data) => {
+        if (!cancelled) setCharacterGroups(data.items ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setCharacterGroups([]);
       });
     return () => {
       cancelled = true;
@@ -787,6 +809,7 @@ export function LibraryPage() {
               <LibraryItemList
                 items={items}
                 withCharacterExtras={activeCat === 'characters'}
+                characterGroups={characterGroups}
                 onEdit={(item) => {
                   setEditing(item);
                   setCreateOpen(true);
