@@ -3,7 +3,7 @@
  * 整体 → 卷 → 章 → 情节点（level/parent_id 前端建树；孤立章降级顶层；未知 level 按整体兜底）；
  * 三级展开收起（有子节点才渲染 toggle，叶子不渲染）；各层新增按钮（本批占位，创建入口后置）；
  * 章关联徽标（chapter_id 非空 → 📎 + 章节标题，title=lib.chapterRefTip；未关联 → 「关联章节」按钮，
- * 点击仅 toast lib.chapterLinkPick，不打开选择器 D9）；
+ * 点击打开章节选择器 lib.chapterLinkPick，选中后 PATCH chapter_id 并即时显示徽标（#676 解除 D9 占位））；
  * 情节点首次展开按需拉取 GET /outlines/{id}/plot-points + 前端本地缓存（收起再展开不重拉）。
  *
  * #649 大纲子项写操作（specs/f11-outline-service/spec.md §3 + #649 拍板）：
@@ -16,7 +16,6 @@
  *   进行中 outline-generate-loading 反馈、完成 toast ok + onOutlineGenerated（父级插入树顶部）、失败 err toast。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
 import { ChevronRight, Loader2, Pencil, Trash2, Wand2 } from 'lucide-react';
 import { apiFetch, errorMessage } from '../api/client';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -24,6 +23,16 @@ import { useI18n } from '../i18n/useI18n';
 import { cn } from '../lib/cn';
 import { useToastStore } from '../stores/toast';
 import type { LibraryItemDTO } from './LibraryCreateDialog';
+import {
+  ArcDialog,
+  ChapterLinkDialog,
+  GenerateOutlineDialog,
+  PlotPointDialog,
+  type PlotPointDTO,
+  type PlotPointFormValues,
+  type StoryArcDTO,
+} from './outline-dialogs';
+export type { PlotPointDTO, StoryArcDTO } from './outline-dialogs';
 
 export type OutlineLevel = 'overall' | 'volume' | 'chapter';
 
@@ -34,25 +43,6 @@ export interface OutlineItemDTO extends LibraryItemDTO {
   level?: OutlineLevel | string;
   parent_id?: string | number | null;
   chapter_id?: string | number | null;
-  point_count?: number;
-}
-
-/** 情节点 DTO（spec §2.8：GET /outlines/{id}/plot-points；arc_id/outline_id 供编辑/删除刷新） */
-export interface PlotPointDTO {
-  id: string | number;
-  name?: string;
-  type?: string;
-  description?: string;
-  position?: number;
-  arc_id?: string | number | null;
-  outline_id?: string | number | null;
-}
-
-/** 故事弧 DTO（#649：GET /projects/{pid}/story-arcs → { items, total }，point_count 后端聚合） */
-export interface StoryArcDTO {
-  id: string | number;
-  name?: string;
-  description?: string;
   point_count?: number;
 }
 
@@ -69,7 +59,8 @@ export interface OutlineTreeProps {
   onEdit: (item: LibraryItemDTO) => void;
   onDelete: (item: LibraryItemDTO) => void;
   /** 「＋卷」/「＋章」新增入口（打开父级创建对话框；「＋情节点」本轨改走情节节点对话框） */
-  onAdd?: () => void;
+  /** 「＋整本」/「＋卷」/「＋章细纲」新增入口（打开父级创建对话框并预填 level/parent_id；「＋情节点」本轨改走情节节点对话框） */
+  onAdd?: (ctx: { level: OutlineLevel; parentId?: string | number | null }) => void;
   /** #649：故事弧列表（情节点对话框弧线下拉；不传时按 projectId 自行拉取） */
   arcs?: StoryArcDTO[];
   /** #649：当前项目 id（故事弧拉取 + AI 生成 project_id） */
@@ -103,207 +94,13 @@ function buildOutlineTree(items: OutlineItemDTO[]): OutlineTreeNode[] {
   return roots;
 }
 
-const INPUT_CLS =
-  'w-full rounded-md border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent';
-const BTN_SECONDARY =
-  'rounded-md border border-line px-4 py-1.5 text-sm text-ink-2 transition duration-180 hover:bg-surface-3';
-const BTN_PRIMARY =
-  'rounded-md bg-accent px-4 py-1.5 text-sm text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50';
-
-/** 情节点表单值（对话框内受控状态；arc_id 空串 = 不挂弧线） */
-interface PlotPointFormValues {
-  name: string;
-  type: string;
-  description: string;
-  arc_id: string;
-}
-
-/** 字段行：label + 控件 */
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1.5 text-[13px]">
-      <span>{label}</span>
-      {children}
-    </label>
-  );
-}
-
-/** 子实体对话框外壳（#649：三个对话框共用的遮罩/标题/主体/底部按钮布局） */
-function DialogShell({
-  title,
-  testid,
-  width,
-  children,
-  footer,
-}: {
-  title: string;
-  testid: string;
-  width: string;
-  children: ReactNode;
-  footer: ReactNode;
-}) {
-  return (
-    <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-      <div role="dialog" aria-modal="true" aria-label={title} data-testid={testid} className={`${width} rounded-lg border border-line bg-surface p-6 shadow-card`} onClick={(e) => e.stopPropagation()}>
-        <h2 className="font-serif text-[18px] font-semibold">{title}</h2>
-        <div className="mt-4 space-y-3">{children}</div>
-        <div className="mt-6 flex justify-end gap-2">{footer}</div>
-      </div>
-    </div>
-  );
-}
-
-/** 情节节点创建/编辑对话框（#649：编辑模式预填现值；名称必填 gate；保存中禁用防重复提交） */
-function PlotPointDialog({ editing, arcs, saving, onSave, onCancel }: {
-  editing: PlotPointDTO | null;
-  arcs: StoryArcDTO[];
-  saving: boolean;
-  onSave: (values: PlotPointFormValues) => Promise<void> | void;
-  onCancel: () => void;
-}) {
-  const { t } = useI18n();
-  const [name, setName] = useState(editing?.name ?? '');
-  const [type, setType] = useState(editing?.type ?? '');
-  const [description, setDescription] = useState(editing?.description ?? '');
-  const [arcId, setArcId] = useState(editing?.arc_id !== null && editing?.arc_id !== undefined ? String(editing.arc_id) : '');
-  const title = editing ? t('lib.point.editTitle') : t('lib.point.createTitle');
-  const canSave = name.trim() !== '' && !saving;
-  return (
-    <DialogShell
-      title={title}
-      testid="outline-point-dialog"
-      width="w-[460px]"
-      footer={
-        <>
-          <button type="button" data-testid="outline-point-cancel" className={BTN_SECONDARY} onClick={onCancel}>
-            {t('lib.point.cancel')}
-          </button>
-          <button
-            type="button"
-            data-testid="outline-point-save"
-            disabled={!canSave}
-            className={BTN_PRIMARY}
-            onClick={() => void onSave({ name: name.trim(), type: type.trim(), description: description.trim(), arc_id: arcId })}
-          >
-            {saving ? t('lib.saving') : t('lib.point.save')}
-          </button>
-        </>
-      }
-    >
-      <Field label={t('lib.point.name')}>
-        <input data-testid="outline-point-name" aria-label={t('lib.point.name')} className={INPUT_CLS} value={name} onChange={(e) => setName(e.target.value)} />
-      </Field>
-      <Field label={t('lib.point.type')}>
-        <input data-testid="outline-point-type" aria-label={t('lib.point.type')} className={INPUT_CLS} value={type} onChange={(e) => setType(e.target.value)} />
-      </Field>
-      <Field label={t('lib.point.desc')}>
-        <textarea data-testid="outline-point-desc" aria-label={t('lib.point.desc')} rows={3} className={INPUT_CLS} value={description} onChange={(e) => setDescription(e.target.value)} />
-      </Field>
-      <Field label={t('lib.point.arc')}>
-        <select data-testid="outline-point-arc" aria-label={t('lib.point.arc')} className={INPUT_CLS} value={arcId} onChange={(e) => setArcId(e.target.value)}>
-          <option value="">{t('lib.point.arcNone')}</option>
-          {arcs.map((arc) => (
-            <option key={String(arc.id)} value={String(arc.id)}>{arc.name ?? ''}</option>
-          ))}
-        </select>
-      </Field>
-    </DialogShell>
-  );
-}
-
-/** 故事弧创建/编辑对话框（#649：名称必填 gate；编辑模式预填现值） */
-function ArcDialog({ editing, saving, onSave, onCancel }: {
-  editing: StoryArcDTO | null;
-  saving: boolean;
-  onSave: (values: { name: string; description: string }) => Promise<void> | void;
-  onCancel: () => void;
-}) {
-  const { t } = useI18n();
-  const [name, setName] = useState(editing?.name ?? '');
-  const [description, setDescription] = useState(editing?.description ?? '');
-  const title = editing ? t('lib.arcs.editTitle') : t('lib.arcs.createTitle');
-  const canSave = name.trim() !== '' && !saving;
-  return (
-    <DialogShell
-      title={title}
-      testid="outline-arc-dialog"
-      width="w-[460px]"
-      footer={
-        <>
-          <button type="button" data-testid="outline-arc-cancel" className={BTN_SECONDARY} onClick={onCancel}>
-            {t('lib.arcs.cancel')}
-          </button>
-          <button
-            type="button"
-            data-testid="outline-arc-save"
-            disabled={!canSave}
-            className={BTN_PRIMARY}
-            onClick={() => void onSave({ name: name.trim(), description: description.trim() })}
-          >
-            {saving ? t('lib.saving') : t('lib.arcs.save')}
-          </button>
-        </>
-      }
-    >
-      <Field label={t('lib.arcs.name')}>
-        <input data-testid="outline-arc-name" aria-label={t('lib.arcs.name')} className={INPUT_CLS} value={name} onChange={(e) => setName(e.target.value)} />
-      </Field>
-      <Field label={t('lib.arcs.desc')}>
-        <textarea data-testid="outline-arc-desc" aria-label={t('lib.arcs.desc')} rows={3} className={INPUT_CLS} value={description} onChange={(e) => setDescription(e.target.value)} />
-      </Field>
-    </DialogShell>
-  );
-}
-
-/** AI 生成大纲对话框（#649：name/prompt 均可选；进行中渲染 outline-generate-loading 反馈） */
-function GenerateOutlineDialog({ saving, onSave, onCancel }: {
-  saving: boolean;
-  onSave: (values: { name: string; prompt: string }) => Promise<void> | void;
-  onCancel: () => void;
-}) {
-  const { t } = useI18n();
-  const [name, setName] = useState('');
-  const [prompt, setPrompt] = useState('');
-  return (
-    <DialogShell
-      title={t('lib.generate.title')}
-      testid="outline-generate-dialog"
-      width="w-[520px]"
-      footer={
-        <>
-          <button type="button" data-testid="outline-generate-cancel" className={BTN_SECONDARY} onClick={onCancel}>
-            {t('lib.generate.cancel')}
-          </button>
-          <button
-            type="button"
-            data-testid="outline-generate-submit"
-            disabled={saving}
-            className={BTN_PRIMARY}
-            onClick={() => void onSave({ name: name.trim(), prompt: prompt.trim() })}
-          >
-            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
-            {saving ? t('lib.generate.loading') : t('lib.generate.submit')}
-          </button>
-        </>
-      }
-    >
-      {saving && <div data-testid="outline-generate-loading" className="text-[12px] text-ink-2">{t('lib.generate.loading')}</div>}
-      <Field label={t('lib.generate.name')}>
-        <input data-testid="outline-generate-name" aria-label={t('lib.generate.name')} className={INPUT_CLS} value={name} onChange={(e) => setName(e.target.value)} />
-      </Field>
-      <Field label={t('lib.generate.prompt')}>
-        <textarea data-testid="outline-generate-prompt" aria-label={t('lib.generate.prompt')} rows={4} className={INPUT_CLS} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
-      </Field>
-    </DialogShell>
-  );
-}
-
 function OutlineNodeView({
   node,
   depth,
   collapsed,
   pointsByChapter,
   chapterTitles,
+  chapterRefs,
   onToggle,
   onEdit,
   onDelete,
@@ -321,11 +118,12 @@ function OutlineNodeView({
   onToggle: (id: string | number) => void;
   onEdit: (item: LibraryItemDTO) => void;
   onDelete: (item: LibraryItemDTO) => void;
-  onAdd: () => void;
+  onAdd: (ctx: { level: OutlineLevel; parentId?: string | number | null }) => void;
   onAddPoint: (outlineId: string | number) => void;
   onEditPoint: (point: PlotPointDTO) => void;
   onDeletePoint: (point: PlotPointDTO) => void;
-  onLinkChapter: () => void;
+  chapterRefs: Record<string, string | number>;
+  onLinkChapter: (item: OutlineItemDTO) => void;
 }) {
   const { t } = useI18n();
   const { item, children } = node;
@@ -336,8 +134,9 @@ function OutlineNodeView({
   const hasChildren =
     children.length > 0 || (isChapter && ((item.point_count ?? 0) > 0 || points.length > 0));
   const isCollapsed = collapsed.has(item.id);
-  const hasChapterRef = isChapter && item.chapter_id !== null && item.chapter_id !== undefined;
-  const chapterTitle = hasChapterRef ? (chapterTitles[String(item.chapter_id)] ?? '') : '';
+  const refId = item.chapter_id ?? chapterRefs[String(item.id)];
+  const hasChapterRef = isChapter && refId !== null && refId !== undefined;
+  const chapterTitle = hasChapterRef ? (chapterTitles[String(refId)] ?? '') : '';
   return (
     <div data-testid={`outline-${level}-${item.id}`} className="tree-node">
       <div
@@ -379,7 +178,7 @@ function OutlineNodeView({
               type="button"
               data-testid={`outline-chapter-link-${item.id}`}
               className="inline-flex shrink-0 items-center rounded-md border border-dashed border-accent/50 px-2 py-0.5 text-[11px] text-accent transition duration-150 hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={onLinkChapter}
+              onClick={() => onLinkChapter(item)}
             >
               {t('lib.chapterLink')}
             </button>
@@ -390,7 +189,7 @@ function OutlineNodeView({
             data-testid={`outline-add-volume-${item.id}`}
             aria-label={`${t('lib.addVolume')} ${item.name ?? ''}`}
             className="shrink-0 rounded-md border border-line px-2 py-0.5 text-[11px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={onAdd}
+            onClick={() => onAdd({ level: 'volume', parentId: item.id })}
           >
             {t('lib.addVolume')}
           </button>
@@ -401,7 +200,7 @@ function OutlineNodeView({
             data-testid={`outline-add-chapter-${item.id}`}
             aria-label={`${t('lib.addChapter')} ${item.name ?? ''}`}
             className="shrink-0 rounded-md border border-line px-2 py-0.5 text-[11px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={onAdd}
+            onClick={() => onAdd({ level: 'chapter', parentId: item.id })}
           >
             {t('lib.addChapter')}
           </button>
@@ -454,6 +253,7 @@ function OutlineNodeView({
             onAddPoint={onAddPoint}
             onEditPoint={onEditPoint}
             onDeletePoint={onDeletePoint}
+            chapterRefs={chapterRefs}
             onLinkChapter={onLinkChapter}
           />
         ))}
@@ -533,6 +333,10 @@ export function OutlineTree({
   // #649：AI 生成
   const [generateOpen, setGenerateOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
+  // #676：章节关联选择器（chapterLinkTarget 非空 = 打开对话框；chapterRefs 本地回写即时显示徽标）
+  const [chapterLinkTarget, setChapterLinkTarget] = useState<OutlineItemDTO | null>(null);
+  const [chapterSaving, setChapterSaving] = useState(false);
+  const [chapterRefs, setChapterRefs] = useState<Record<string, string | number>>({});
 
   const fetchPlotPoints = useCallback(async (chapterId: string | number) => {
     const key = String(chapterId);
@@ -590,11 +394,25 @@ export function OutlineTree({
     });
   };
 
-  const handleLinkChapter = () => {
-    useToastStore.getState().pushToast('warn', t('lib.chapterLinkPick'));
+  const handleLinkChapter = (item: OutlineItemDTO) => setChapterLinkTarget(item);
+
+  // #676：选中章节 → PATCH /outlines/{id} { chapter_id }，成功本地回写 chapterRefs（树内即时显示徽标）
+  const handleChapterPick = async (chapterId: string) => {
+    if (!chapterLinkTarget) return;
+    const target = chapterLinkTarget;
+    setChapterSaving(true);
+    try {
+      await apiFetch('/api/v1/outlines/' + target.id, { method: 'PATCH', body: { chapter_id: chapterId } });
+      setChapterRefs((prev) => ({ ...prev, [String(target.id)]: chapterId }));
+      setChapterLinkTarget(null);
+    } catch (err) {
+      useToastStore.getState().pushToast('err', errorMessage(err));
+    } finally {
+      setChapterSaving(false);
+    }
   };
 
-  const handleAdd = () => onAdd?.();
+  const handleAdd = (ctx: { level: OutlineLevel; parentId?: string | number | null }) => onAdd?.(ctx);
 
   // #649：情节节点保存——创建 POST /outlines/{id}/plot-points；编辑 PATCH 仅变化字段；成功后刷新该章情节点
   const handlePointSave = async (values: PlotPointFormValues) => {
@@ -701,7 +519,8 @@ export function OutlineTree({
     }
   };
 
-  // #649：AI 生成（A 方案：生成到新大纲，save:true；成功 toast + 回调父级插树顶；失败 err toast）
+  // #677：AI 生成（save:true）→ 成功后回填新大纲的情节点/弧线（不切 tab 立即可见），
+  // 再回调父级插树顶；失败 err toast
   const handleGenerate = async (values: { name: string; prompt: string }) => {
     if (!projectId) return;
     setGenerating(true);
@@ -709,13 +528,48 @@ export function OutlineTree({
       const body: Record<string, unknown> = { project_id: projectId, save: true };
       if (values.name) body.name = values.name;
       if (values.prompt) body.prompt = values.prompt;
-      const result = await apiFetch<{ outline?: OutlineItemDTO }>('/api/v1/outlines/generate', {
-        method: 'POST',
-        body,
-      });
+      const result = await apiFetch<{
+        outline?: OutlineItemDTO;
+        plot_points?: PlotPointDTO[];
+        arcs?: StoryArcDTO[];
+        point_count?: number;
+      }>('/api/v1/outlines/generate', { method: 'POST', body });
       useToastStore.getState().pushToast('ok', t('lib.generate.done'));
       setGenerateOpen(false);
-      if (result?.outline) onOutlineGenerated?.(result.outline);
+      if (result?.outline) {
+        const newOutline = result.outline;
+        const enriched: OutlineItemDTO = {
+          ...newOutline,
+          point_count:
+            result.point_count ?? result.plot_points?.length ?? newOutline.point_count ?? 0,
+        };
+        // 回填 pointsByChapter：新大纲情节点立即可见（无需再拉取/切 tab）
+        const plotPoints = result.plot_points;
+        if (plotPoints && plotPoints.length > 0 && newOutline.id !== undefined) {
+          const map: Record<string, PlotPointDTO[]> = {};
+          for (const pt of plotPoints) {
+            const key = String(pt.outline_id ?? newOutline.id);
+            const bucket = map[key] ?? [];
+            bucket.push(pt);
+            map[key] = bucket;
+          }
+          setPointsByChapter((prev) => ({ ...prev, ...map }));
+          // 标记已拉取，避免自动拉取 effect 重复加载
+          fetchedRef.current.add(String(newOutline.id));
+        }
+        // 合并生成的故事弧（按 id 去重）
+        const arcs = result.arcs;
+        if (arcs && arcs.length > 0) {
+          setStoryArcs((prev) => {
+            const merged = [...prev];
+            for (const arc of arcs) {
+              if (!merged.some((a) => String(a.id) === String(arc.id))) merged.push(arc);
+            }
+            return merged;
+          });
+        }
+        onOutlineGenerated?.(enriched);
+      }
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
     } finally {
@@ -732,6 +586,14 @@ export function OutlineTree({
         {/* #649：大纲 tab 顶部工具栏——AI 生成（进行中禁用 + 转圈反馈） */}
         {projectId && (
           <div className="flex items-center justify-end gap-2 border-b border-line px-4 py-2.5">
+            <button
+              type="button"
+              data-testid="outline-add-overall"
+              className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => handleAdd({ level: 'overall', parentId: null })}
+            >
+              {t('lib.addOverall')}
+            </button>
             <button
               type="button"
               data-testid="library-ai-generate"
@@ -767,6 +629,7 @@ export function OutlineTree({
                 onAddPoint={(outlineId) => setPointDialog({ outlineId, editing: null })}
                 onEditPoint={(pt) => setPointDialog({ outlineId: pt.outline_id ?? '', editing: pt })}
                 onDeletePoint={setPendingPointDelete}
+                chapterRefs={chapterRefs}
                 onLinkChapter={handleLinkChapter}
               />
             ))
@@ -888,6 +751,16 @@ export function OutlineTree({
           saving={generating}
           onSave={handleGenerate}
           onCancel={() => setGenerateOpen(false)}
+        />
+      )}
+
+      {/* #676：章节关联选择器（解除 D9 占位；chapterSaving 时禁用选项防重复提交） */}
+      {chapterLinkTarget && (
+        <ChapterLinkDialog
+          titles={chapterTitles}
+          saving={chapterSaving}
+          onPick={handleChapterPick}
+          onCancel={() => setChapterLinkTarget(null)}
         />
       )}
     </>
