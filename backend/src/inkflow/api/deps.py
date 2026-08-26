@@ -643,8 +643,12 @@ async def get_search_service(
     )
 
 
+_index_rebuild_service_instance: IndexRebuildService | None = None
+"""模块级 IndexRebuildService 单例 — 懒加载（首次调用构建，跨请求复用，#682）。"""
+
+
 async def get_index_rebuild_service(
-    db: AsyncSession,
+    db: AsyncSession | None = None,
 ) -> IndexRebuildService:
     """获取 IndexRebuildService 实例（#659 统一异步重建）.
     fulltext 复用 get_search_service 产出的 service.rebuild（接受 list[int] | None）；
@@ -653,28 +657,32 @@ async def get_index_rebuild_service(
     TODO(#659 后续): 向量装配在 get_extraction_service 基础上逐项目 reindex，
     本批先保证 fulltext + status 端点可测（单元测试对 vector 路径自建 mock）。
     """
-    async def _fulltext_rebuild(project_ids: list[int] | None) -> None:
-        """全文重建：复用 SearchService.rebuild（返回 dict，此处丢弃 → None）."""
-        search_svc = await get_search_service(db)
-        await search_svc.rebuild(project_ids)
-    async def _vector_rebuild_all(project_ids: list[int] | None) -> None:
-        """向量重建：按 project_ids 逐个调 extraction_service.reindex（RAG 侧 per-project 签名）."""
-        extraction_svc = await get_extraction_service(db)
-        if project_ids is not None:
-            for pid in project_ids:
-                await extraction_svc.reindex(uuid.UUID(int=pid))
-        else:
-            projects, _ = await SQLiteProjectRepository(db).list_all(offset=0, limit=50)
-            for project in projects:
-                await extraction_svc.reindex(uuid.UUID(int=project.id.int))
-    vector: Callable[[list[int] | None], Awaitable[None]] | None = None
-    if await get_vector_store_optional() is not None:
-        vector = _vector_rebuild_all
-    return IndexRebuildService(
-        project_repo=SQLiteProjectRepository(db),
-        fulltext=_fulltext_rebuild,
-        vector=vector,
-    )
+    global _index_rebuild_service_instance
+    if _index_rebuild_service_instance is None:
+        db = db or async_session_factory()
+        async def _fulltext_rebuild(project_ids: list[int] | None) -> None:
+            """全文重建：复用 SearchService.rebuild（返回 dict，此处丢弃 → None）."""
+            search_svc = await get_search_service(db)
+            await search_svc.rebuild(project_ids)
+        async def _vector_rebuild_all(project_ids: list[int] | None) -> None:
+            """向量重建：按 project_ids 逐个调 extraction_service.reindex（per-project 签名）."""
+            extraction_svc = await get_extraction_service(db)
+            if project_ids is not None:
+                for pid in project_ids:
+                    await extraction_svc.reindex(uuid.UUID(int=pid))
+            else:
+                projects, _ = await SQLiteProjectRepository(db).list_all(offset=0, limit=50)
+                for project in projects:
+                    await extraction_svc.reindex(uuid.UUID(int=project.id.int))
+        vector: Callable[[list[int] | None], Awaitable[None]] | None = None
+        if await get_vector_store_optional() is not None:
+            vector = _vector_rebuild_all
+        _index_rebuild_service_instance = IndexRebuildService(
+            project_repo=SQLiteProjectRepository(db),
+            fulltext=_fulltext_rebuild,
+            vector=vector,
+        )
+    return _index_rebuild_service_instance
 
 
 _vector_store: VectorStoreProtocol | None = None
@@ -740,7 +748,6 @@ async def _build_store() -> VectorStoreProtocol:
 
 async def get_vector_store() -> VectorStoreProtocol:
     """获取 RAG 向量存储（模块级单例，懒加载，spec f19 §5）.
-
     LangChainVectorStore（Chroma 持久化到 config.vector_store_dir）+ 选型
     （#276 G3，同 _resolve_embedding_spec）；无 embedding → RAGUnavailableError
     （500「RAG 向量库不可用」前缀，§5.5 B1/B6）。仅首次调用时初始化。
@@ -753,7 +760,6 @@ async def get_vector_store() -> VectorStoreProtocol:
 
 async def refresh_vector_store() -> VectorStoreProtocol:
     """刷新向量存储单例（#276 G3 契约 14）——重建失败保留旧实例.
-
     成功 → 原子替换模块级 _vector_store；失败 → RAGUnavailableError 上抛，
     旧实例保留不动（防 reindex 用旧模型重写旧向量假成功）。
     """

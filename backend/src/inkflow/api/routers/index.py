@@ -18,7 +18,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from inkflow.api.deps import get_index_rebuild_service
-from inkflow.core.database import async_session_factory
+from inkflow.core.database import (
+    async_session_factory,  # noqa: F401  # 保留：API 测试 patch 此模块属性
+)
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.services.index_rebuild_service import IndexRebuildService
 
@@ -38,7 +40,7 @@ async def _get_svc() -> IndexRebuildService:
     生产路径经 deps.get_index_rebuild_service 装配（自建会话，与端点同源
     async_session_factory）；测试经 `patch("inkflow.api.routers.index._get_svc")` 注入 mock。
     """
-    return await get_index_rebuild_service(async_session_factory())
+    return await get_index_rebuild_service()
 
 
 def _resolve_project_ids(raw: list[str] | None) -> list[uuid.UUID] | None:
