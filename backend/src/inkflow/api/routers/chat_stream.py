@@ -210,10 +210,17 @@ async def stream_chat_agent(
                 chapter_id=uuid.UUID(data.chapter_id) if data.chapter_id else None,
                 mode="chat",
             )
-            async for ev in svc.stream_events(prompt=prompt, chapter_context=data.chapter_context):
+            async for ev in svc.stream_events(
+                prompt=prompt,
+                project_id=data.project_id,
+                chapter_context=data.chapter_context,
+            ):
                 if await request.is_disconnected():
                     return
-                if ev.done or ev.type == "done":
+                # #680/#615：agent 终帧按帧协议以 type=="done" 判定（f47 §14.2，
+                # ChatAgentService 终帧恒为 type="done"）；done=True 但 type 非
+                # "done"（如 legacy ChatStreamEvent(done=True)）不进入落库分支。
+                if ev.type == "done":
                     steps, final_content, token_total = svc.consume_trace()
                     await repo.save(
                         _build_chat_run(

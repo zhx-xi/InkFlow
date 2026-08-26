@@ -39,7 +39,11 @@ class OutlineSource:
     def __init__(self, outline_repo: OutlineRepositoryProtocol) -> None:
         self._outline_repo = outline_repo
 
-    async def collect(self, project_id: uuid.UUID, chapter_id: uuid.UUID) -> list[ContextItem]:
+    async def collect(
+        self,
+        project_id: uuid.UUID,
+        chapter_id: uuid.UUID | None,
+    ) -> list[ContextItem]:
         """收集大纲条目；项目无大纲 → 空列表（跳过，不报错）.
 
         按 level（overall→volume→chapter）再 sort_order 排序，合并渲染为单个条目。
@@ -71,7 +75,11 @@ class CharacterSettingSource:
     def __init__(self, character_repo: CharacterRepositoryProtocol) -> None:
         self._character_repo = character_repo
 
-    async def collect(self, project_id: uuid.UUID, chapter_id: uuid.UUID) -> list[ContextItem]:
+    async def collect(
+        self,
+        project_id: uuid.UUID,
+        chapter_id: uuid.UUID | None,
+    ) -> list[ContextItem]:
         """收集项目全部角色的设定条目；项目无角色 → 空列表（跳过，不报错）."""
         chars, _total = await self._character_repo.list(project_id.int)
         return [
@@ -107,7 +115,11 @@ class WorldSettingSource:
     def __init__(self, world_repo: WorldRepositoryProtocol) -> None:
         self._world_repo = world_repo
 
-    async def collect(self, project_id: uuid.UUID, chapter_id: uuid.UUID) -> list[ContextItem]:
+    async def collect(
+        self,
+        project_id: uuid.UUID,
+        chapter_id: uuid.UUID | None,
+    ) -> list[ContextItem]:
         """收集项目全部世界观条目；项目无条目 → 空列表（跳过，不报错）."""
         settings, _total = await self._world_repo.list(project_id.int)
         return [
@@ -136,7 +148,11 @@ class ForeshadowingSource:
     def __init__(self, foreshadowing_repo: ForeshadowingRepositoryProtocol) -> None:
         self._repo = foreshadowing_repo
 
-    async def collect(self, project_id: uuid.UUID, chapter_id: uuid.UUID) -> list[ContextItem]:
+    async def collect(
+        self,
+        project_id: uuid.UUID,
+        chapter_id: uuid.UUID | None,
+    ) -> list[ContextItem]:
         """收集全部未回收伏笔的提醒条目.
 
         - 项目不存在/无 open 伏笔 → 空列表（跳过，不报错，同 F6 数据源惯例）

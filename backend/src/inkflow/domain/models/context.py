@@ -189,7 +189,7 @@ class ContextRequest(BaseModel):
     """
 
     project_id: uuid.UUID
-    chapter_id: uuid.UUID
+    chapter_id: uuid.UUID | None = None
     model: str
     writing_requirements: str = Field(..., min_length=1)
     max_tokens: int | None = None

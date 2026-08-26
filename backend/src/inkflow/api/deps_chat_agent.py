@@ -44,7 +44,9 @@ def get_chat_agent_service(
     """获取 ChatAgentService 实例（#597 chat 系统级 Agent：全量 5 只读 + save_draft）.
 
     chat_stream.py 顶层导入本函数（绑定名同一性 → dependency_overrides 命中）；
-    模型/密钥/base_url 解析镜像 get_agentic_writer_service（provider_config 同源）。
+    模型/密钥/base_url 解析镜像 get_agentic_writer_service（provider_config 同源）；
+    #680: reader tools 装配期注入 project_id（闭包绑定，LLM 无需自报），并注入
+    project_context_getter（context_service 7 源渲染 → 系统提示词增强）。
     """
     import uuid
 
@@ -70,13 +72,32 @@ def get_chat_agent_service(
     except ValueError:
         pass
 
+    context_svc = deps_module.get_context_service(db)
+
+    async def _project_context_getter(prompt: str, project_id: str) -> str:
+        """#680 渲染项目上下文段：context_service.build_context + render_system_prompt."""
+        from inkflow.domain.models.context import ContextRequest
+
+        result = await context_svc.build_context(
+            ContextRequest(
+                project_id=uuid.UUID(project_id),
+                # ContextRequest.chapter_id 可选（#680）：data.chapter_id 缺省时传 None，
+                # 当前 5 源均忽略 chapter_id（仅按项目注入），无章节 chat 也能注入上下文
+                chapter_id=uuid.UUID(data.chapter_id) if data.chapter_id else None,
+                model=model,
+                writing_requirements=prompt,
+            )
+        )
+        return context_svc.render_system_prompt(result)
+
     reader_tools = deps_module.build_reader_tools(
         ReaderToolDeps(
             character_service=deps_module.get_character_service(db),
             foreshadowing_service=deps_module.get_foreshadowing_service(db),
             summary_service=deps_module.get_summary_service(db),
             chapter_audit_service=deps_module.get_chapter_audit_service(db),
-        )
+        ),
+        project_id=uuid.UUID(data.project_id),
     )
     save_draft_tool = deps_module.build_save_draft_tool(
         SaveDraftToolDeps(
@@ -94,4 +115,8 @@ def get_chat_agent_service(
         system_prompt=_CHAT_SYSTEM_AGENT_PROMPT,
         profile_key=None,
     )
-    return ChatAgentService(agent=agent, system_prompt=_CHAT_SYSTEM_AGENT_PROMPT)
+    return ChatAgentService(
+        agent=agent,
+        system_prompt=_CHAT_SYSTEM_AGENT_PROMPT,
+        project_context_getter=_project_context_getter,
+    )

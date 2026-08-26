@@ -11,7 +11,7 @@ consume_trace() 取回 (steps, final_content, token_usage_total) 落 AgentRun。
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -30,11 +30,23 @@ class ChatAgentService:
     Args:
         agent: deepagents CompiledStateGraph 鸭子对象（提供 astream_events v2）。
         system_prompt: 系统级 Agent 提示词（注入 SystemMessage）。
+        project_context_getter: #680 可选注入——async fn(prompt, project_id) -> str
+            （渲染好的项目上下文段）；stream_events 组装 SystemMessage 前调用增强
+            系统提示词，失败回退基础提示词（失败隔离，不阻断流）。
     """
 
-    def __init__(self, *, agent: object, system_prompt: str) -> None:
+    def __init__(
+        self,
+        *,
+        agent: object,
+        system_prompt: str,
+        project_context_getter: Callable[[str, str], Awaitable[str]] | None = None,
+    ) -> None:
         self._agent = agent
         self._system_prompt = system_prompt
+        self._project_context_getter: Callable[[str, str], Awaitable[str]] | None = (
+            project_context_getter
+        )
         # #615 trace 收集器（每次 stream_events 独立，consume_trace 消费后清空防跨请求污染）
         self._trace: list[AgentStep] = []
         self._final_content: str = ""
@@ -44,9 +56,16 @@ class ChatAgentService:
         self._tool_call_index: dict[str, tuple[int, int]] = {}
 
     async def stream_events(
-        self, prompt: str, chapter_context: str | None = None
+        self,
+        prompt: str,
+        project_id: str | None = None,
+        chapter_context: str | None = None,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
         """astream_events v2 事件流 → ChatStreamEvent 帧序列 + #615 steps 收集。
+
+        #680: project_id 非空且注入 project_context_getter 时，先渲染项目上下文段
+        并追加到系统提示词（`{system_prompt}\n\n{ctx}`）；getter 异常 → 回退基础
+        提示词（失败隔离，不阻断流）。
 
         messages 组装镜像 ChatService.stream：[SystemMessage(system_prompt),
         HumanMessage(prompt + 章节上下文)]；事件映射：
@@ -61,10 +80,18 @@ class ChatAgentService:
         LLMRequestError 原样传播（service 不吞异常，端点层转 error 帧）。
         """
         self._reset_trace()
+        system_prompt = self._system_prompt
+        if self._project_context_getter is not None and project_id is not None:
+            try:
+                ctx = await self._project_context_getter(prompt, project_id)
+                if ctx:
+                    system_prompt = f"{system_prompt}\n\n{ctx}"
+            except Exception:
+                pass  # 失败隔离：回退基础 system_prompt，不阻断流
         user_content = prompt
         if chapter_context:
             user_content = f"{prompt}\n\n章节上下文：\n{chapter_context}"
-        messages = [SystemMessage(self._system_prompt), HumanMessage(user_content)]
+        messages = [SystemMessage(system_prompt), HumanMessage(user_content)]
         streamed_any = False
         async for ev in self._agent.astream_events(  # type: ignore[attr-defined]  # 鸭子类型：deepagents CompiledStateGraph 提供 astream_events（v2 事件 dict 流）
             {"messages": messages}, version="v2"

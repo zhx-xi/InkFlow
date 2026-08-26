@@ -686,3 +686,40 @@ class TestStreamChatAgentBranchCoverageGaps:
             async for _ in resp.body_iterator:
                 pass
         mock_repo.save.assert_awaited_once()
+
+# ── TestStreamChatAgentPassesProjectId: #680 端点透传 project_id ──
+
+
+class TestStreamChatAgentPassesProjectId:
+    """#680 数据面断链修复：stream_chat_agent 调用 svc.stream_events 必须透传 data.project_id。
+
+    当前实现（chat_stream.py:213）调 svc.stream_events(prompt=prompt,
+    chapter_context=data.chapter_context)——只传 prompt/chapter_context，
+    data.project_id 仅用于落 AgentRun 与 save_draft 守卫；Agent 拿不到 project_id →
+    reader tools 收不到绑定 → Agent 反问用户。本用例锁定端点透传 project_id 契约。
+    """
+
+    @pytest.mark.asyncio
+    async def test_passes_project_id_to_stream_events(self) -> None:
+        data = ChatStreamRequest(project_id=PROJECT_ID, prompt="hi")
+        request = MagicMock()
+        request.is_disconnected = AsyncMock(return_value=False)
+        mock_repo = MagicMock()
+        mock_repo.create = AsyncMock(
+            return_value=SimpleNamespace(id="r1", created_at=datetime.now(UTC))
+        )
+        captured: dict[str, object] = {}
+
+        async def _stream_events(**kwargs):
+            captured.update(kwargs)
+            yield ChatStreamEvent(done=True)
+
+        svc = MagicMock()
+        svc.stream_events = _stream_events
+        svc.consume_trace = MagicMock(return_value=([], "", 0))
+        with patch("inkflow.api.deps.get_agent_run_repo", return_value=mock_repo):
+            resp = await stream_chat_agent(data=data, request=request, svc=svc, repo=mock_repo)
+        frames = [frame async for frame in resp.body_iterator]
+
+        assert captured.get("project_id") == PROJECT_ID
+        assert frames  # 透传不破坏出帧
