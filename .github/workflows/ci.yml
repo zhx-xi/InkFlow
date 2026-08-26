@@ -204,15 +204,14 @@ jobs:
         run: |
           uv run pytest tests/unit/ -v --tb=short --cov=inkflow --reruns 2 --reruns-delay 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          # Debug: find .coverage file
-          Write-Host "CWD: $PWD"
-          Get-ChildItem -Path . -Filter ".coverage*" -Force -Recurse -Depth 2 | ForEach-Object { Write-Host "Found: $($_.FullName)" }
+          # upload-artifact 忽略 . 开头文件（hidden files），重命名为 coverage.dat
+          Rename-Item .coverage coverage.dat
 
       - name: Upload coverage data
         uses: actions/upload-artifact@v7
         with:
           name: coverage-unit-backend
-          path: backend/.coverage
+          path: backend/coverage.dat
           retention-days: 1
 
   # ── Unit API tests (mock 式 API 测试，#685 拆分自原 coverage-backend 全量) ──
@@ -253,12 +252,13 @@ jobs:
         run: |
           uv run pytest ../tests/api/ --cov=inkflow -q --reruns 2 --reruns-delay 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Rename-Item .coverage coverage.dat
 
       - name: Upload coverage data
         uses: actions/upload-artifact@v7
         with:
           name: coverage-api-backend
-          path: backend/.coverage
+          path: backend/coverage.dat
           retention-days: 1
 
   # ── Unit CLI tests (mock 式 CLI 测试，#685 拆分自原 coverage-backend 全量) ──
@@ -297,12 +297,13 @@ jobs:
         run: |
           uv run pytest ../tests/cli/ --cov=inkflow -q --reruns 2 --reruns-delay 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Rename-Item .coverage coverage.dat
 
       - name: Upload coverage data
         uses: actions/upload-artifact@v7
         with:
           name: coverage-cli-backend
-          path: backend/.coverage
+          path: backend/coverage.dat
           retention-days: 1
 
   # ── Unit integration tests (repo + service，#685 拆分自原 coverage-backend 全量) ──
@@ -341,12 +342,13 @@ jobs:
         run: |
           uv run pytest ../tests/integration/ --cov=inkflow -q --reruns 2 --reruns-delay 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Rename-Item .coverage coverage.dat
 
       - name: Upload coverage data
         uses: actions/upload-artifact@v7
         with:
           name: coverage-integration-backend
-          path: backend/.coverage
+          path: backend/coverage.dat
           retention-days: 1
 
   # ── Frontend unit: Vitest（renderer + electron 双包，第一批恒跑）──
@@ -874,8 +876,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra dev
 
-      # #685: 下载 4 个 .coverage 数据文件，coverage combine 合并
-      # 每个 artifact 下载到独立子目录避免同名冲突（各 job 都生成 backend/.coverage）
+      # #685: 下载 4 个 coverage.dat 数据文件，coverage combine 合并
+      # upload-artifact 忽略 . 开头文件，各 job 重命名为 coverage.dat
       - name: Download unit coverage data
         uses: actions/download-artifact@v7
         with:
@@ -901,12 +903,16 @@ jobs:
           path: cov/integration
 
       - name: Combine coverage data
-        # coverage combine 接受多个 .coverage 文件，合并为 .coverage（基于 pyproject.toml 配置）
+        # coverage combine 接受多个数据文件，合并为 .coverage（基于 pyproject.toml 配置）
         # ubuntu runner 默认 bash shell（#685：coverage job 从 windows 迁到 ubuntu——只做合并+gate 不跑测试）
-        # 各 job 的 .coverage 文件在独立子目录（cov/unit/.coverage 等），combine 直接引用
+        # 各 job 的 coverage.dat 在独立子目录，combine 前需重命名为 .coverage（coverage.py 默认数据文件名）
         shell: bash
         run: |
-          uv run coverage combine cov/unit/.coverage cov/api/.coverage cov/cli/.coverage cov/integration/.coverage
+          cp cov/unit/coverage.dat .coverage-unit
+          cp cov/api/coverage.dat .coverage-api
+          cp cov/cli/coverage.dat .coverage-cli
+          cp cov/integration/coverage.dat .coverage-integration
+          uv run coverage combine .coverage-unit .coverage-api .coverage-cli .coverage-integration
           uv run coverage xml -o coverage.xml
 
       - name: Coverage gate (line >= 98.5%, branch >= 95%)
