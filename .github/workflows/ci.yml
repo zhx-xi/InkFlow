@@ -905,23 +905,25 @@ jobs:
       - name: Combine coverage data
         # coverage combine 接受多个数据文件，合并为 .coverage（基于 pyproject.toml 配置）
         # ubuntu runner 默认 bash shell（#685：coverage job 从 windows 迁到 ubuntu——只做合并+gate 不跑测试）
-        # 各 job 的 coverage.dat 在独立子目录，combine 前需重命名为 .coverage-*（coverage.py 接受任意文件名）
+        # 各 job 的 coverage.dat 在独立子目录，combine 前需重命名为 .coverage-*
+        # download-artifact 下载到 $GITHUB_WORKSPACE/cov/，但 working-directory=backend → 需用绝对路径
         shell: bash
+        working-directory: ${{ github.workspace }}
         run: |
           # Debug: list downloaded files
-          find cov -type f -name "*.dat" -o -name ".coverage*" | sort
-          # Try both coverage.dat (flat) and backend/coverage.dat (nested)
+          find cov -type f | sort
           for dir in unit api cli integration; do
             if [ -f "cov/$dir/coverage.dat" ]; then
-              cp "cov/$dir/coverage.dat" ".coverage-$dir"
+              cp "cov/$dir/coverage.dat" "backend/.coverage-$dir"
             elif [ -f "cov/$dir/backend/coverage.dat" ]; then
-              cp "cov/$dir/backend/coverage.dat" ".coverage-$dir"
+              cp "cov/$dir/backend/coverage.dat" "backend/.coverage-$dir"
             else
               echo "ERROR: no coverage.dat found in cov/$dir/"
               find "cov/$dir" -type f
               exit 1
             fi
           done
+          cd backend
           uv run coverage combine .coverage-unit .coverage-api .coverage-cli .coverage-integration
           uv run coverage xml -o coverage.xml
 
