@@ -69,7 +69,11 @@ class PreferenceSource:
         # 构造参数，测试用属性注入（#318 配方）
         self._audit: Callable[..., Awaitable[None]] | None = None
 
-    async def collect(self, project_id: uuid.UUID, chapter_id: uuid.UUID) -> list[ContextItem]:
+    async def collect(
+        self,
+        project_id: uuid.UUID,
+        chapter_id: uuid.UUID | None,
+    ) -> list[ContextItem]:
         """收集已学偏好注入条目（开关 + 冲突过滤 + 上限 10 条）.
 
         Args:

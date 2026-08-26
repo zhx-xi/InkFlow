@@ -1,6 +1,9 @@
 """F26 只读 Agent 工具 — 5 个领域只读工具（search_characters / check_foreshadowing /
 get_prior_summary / audit_chapter / count_words），输出统一 JSON 信封.
 
+#680: 检索工具 schema 移除 project_id——装配期闭包绑定（仿 save_draft_tool
+expected_project_id 先例），LLM 无需自报项目 ID（防编造全零 UUID 孤儿数据）。
+
 本模块承载工具工厂与静态注册表数据源，不 import LangChain/deepagents 任何模块
 （ADR-015 隔离不变式由 tools 包边界承担）。
 """
@@ -26,7 +29,6 @@ _PAGE_SIZE = 50
 class SearchCharactersParams(BaseModel):
     """search_characters 工具参数."""
 
-    project_id: uuid.UUID
     search: str | None = None
     group_id: uuid.UUID | None = None
 
@@ -34,21 +36,18 @@ class SearchCharactersParams(BaseModel):
 class CheckForeshadowingParams(BaseModel):
     """check_foreshadowing 工具参数."""
 
-    project_id: uuid.UUID
     status: str | None = None
 
 
 class GetPriorSummaryParams(BaseModel):
     """get_prior_summary 工具参数."""
 
-    project_id: uuid.UUID
     limit: int = 10
 
 
 class AuditChapterParams(BaseModel):
     """audit_chapter 工具参数."""
 
-    project_id: uuid.UUID
     chapter_id: uuid.UUID
     include_static: bool = True
 
@@ -114,12 +113,13 @@ def _fail(exc: Exception) -> str:
 
 async def _fetch_all_pages(
     fetch: Callable[..., Awaitable[object]],
-    project_id: uuid.UUID,
+    project_id: uuid.UUID | None,
     **kwargs: object,
 ) -> list[object]:
     """分页循环取全：limit=50，offset 递增（0, 50, 100, ...）直到单次返回 < 50 条或空.
 
     兼容真实 service 的 tuple[list, int] 返回（当前页, 总数）与裸列表两种形态。
+    project_id 可为 None（#680 防御：装配期未注入时传给 service，异常走 _fail 信封）。
     """
     items: list[object] = []
     offset = 0
@@ -171,27 +171,33 @@ _TOOL_SPECS: list[ToolSpec] = [
 ]
 
 
-def build_reader_tools(deps: ReaderToolDeps, include: list[str] | None = None) -> list[Tool]:
+def build_reader_tools(
+    deps: ReaderToolDeps,
+    project_id: uuid.UUID | str | None = None,
+    include: list[str] | None = None,
+) -> list[Tool]:
     """构建只读工具（顺序固定：search_characters → count_words），func 闭包绑定 service.
 
     Args:
         deps: 工具依赖（service 实例注入）.
+        project_id: 装配期项目 ID（可为 None）——#680 闭包绑定：检索工具自动作用于
+            当前项目，func 调用不再接收 project_id 参数；None 时向 service 传 None，
+            异常走 _fail 信封（防御性）.
         include: 白名单工具名列表；None = 全量 5 只读（向后兼容）；传入
             [names] = 只返回白名单命中项（按 _TOOL_SPECS 目录原序，未知名忽略）.
     """
+    bound_project_id = _coerce_uuid(project_id) if project_id is not None else None
 
     async def _search_characters(
-        project_id: uuid.UUID,
         search: str | None = None,
         group_id: uuid.UUID | None = None,
     ) -> str:
-        project_id = _coerce_uuid(project_id)
         if group_id is not None:
             group_id = _coerce_uuid(group_id)
         try:
             items = await _fetch_all_pages(
                 deps.character_service.list_characters,  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
-                project_id,
+                bound_project_id,
                 search=search,
                 group_id=group_id,
             )
@@ -199,38 +205,34 @@ def build_reader_tools(deps: ReaderToolDeps, include: list[str] | None = None) -
         except Exception as exc:
             return _fail(exc)
 
-    async def _check_foreshadowing(project_id: uuid.UUID, status: str | None = None) -> str:
-        project_id = _coerce_uuid(project_id)
+    async def _check_foreshadowing(status: str | None = None) -> str:
         try:
             items = await _fetch_all_pages(
                 deps.foreshadowing_service.list,  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
-                project_id,
+                bound_project_id,
                 status=status,
             )
             return _ok(_serialize_data(items))
         except Exception as exc:
             return _fail(exc)
 
-    async def _get_prior_summary(project_id: uuid.UUID, limit: int = 10) -> str:
-        project_id = _coerce_uuid(project_id)
+    async def _get_prior_summary(limit: int = 10) -> str:
         try:
             result = await deps.summary_service.list_recent(  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
-                project_id, limit=limit
+                bound_project_id, limit=limit
             )
             return _ok(_serialize_data(result))
         except Exception as exc:
             return _fail(exc)
 
     async def _audit_chapter(
-        project_id: uuid.UUID,
         chapter_id: uuid.UUID,
         include_static: bool = True,
     ) -> str:
-        project_id = _coerce_uuid(project_id)
         chapter_id = _coerce_uuid(chapter_id)
         try:
             result = await deps.chapter_audit_service.audit(  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
-                project_id,
+                bound_project_id,
                 chapter_id,
                 include_static=include_static,
             )
