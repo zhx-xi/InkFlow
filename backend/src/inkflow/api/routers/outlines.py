@@ -139,7 +139,9 @@ async def generate_outline(
     """AI 生成大纲（spec §3.4）：save=true 落库，save=false 仅预览。"""
     svc = _get_svc(db)
     result = await _run_service(svc.generate(request))
-    return result.model_dump(mode="json")
+    payload = result.model_dump(mode="json")
+    payload["point_count"] = len(result.plot_points)
+    return payload
 
 
 # ── Outline ──────────────────────────────────────────────────

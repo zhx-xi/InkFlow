@@ -588,6 +588,23 @@ class TestGenerateAPI:
         assert req.num_chapters == 30
 
     @patch("inkflow.api.routers.outlines.get_outline_service")
+    def test_generate_success_includes_point_count(self, mock_get_svc: MagicMock) -> None:
+        """生成响应聚合 point_count（#677：前端凭 point_count 判定章节是否有子节点）。"""
+        svc = _mock_svc(mock_get_svc)
+        result = _generation_result(saved=True)
+        svc.generate = AsyncMock(return_value=result)
+
+        response = client.post(
+            "/api/v1/outlines/generate",
+            json={"project_id": str(PID), "name": "第一卷大纲"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        # point_count = plot_points.length 聚合（API 层聚合，不入库）
+        assert data["point_count"] == len(data["plot_points"])
+        assert data["point_count"] == 1
+
+    @patch("inkflow.api.routers.outlines.get_outline_service")
     def test_generate_success_preview(self, mock_get_svc: MagicMock) -> None:
         """仅预览返回 200（save=false：outline 为 null，preview 非空）。"""
         svc = _mock_svc(mock_get_svc)

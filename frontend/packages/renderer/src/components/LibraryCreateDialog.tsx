@@ -42,6 +42,10 @@ export interface LibraryCreateDialogProps {
   tagSuggestions?: string[];
   /** #568：world 选中分类时预填类别（创建子条目）；编辑模式优先 editing.category */
   initialCategory?: string;
+  /** #675：outline 创建上下文——层级预填（overall/volume/chapter） */
+  initialLevel?: 'overall' | 'volume' | 'chapter';
+  /** #675：outline 创建上下文——父级 id（＋卷 → parent=overall；＋章细纲 → parent=volume；＋整本 → null） */
+  initialParentId?: string | number | null;
   /** F43：onCreate 改名 onSave——语义 = 保存回调，父级分支 PATCH/POST */
   onSave: (input: Record<string, unknown>) => Promise<void>;
   onOpenChange: (open: boolean) => void;
@@ -75,6 +79,8 @@ export function LibraryCreateDialog({
   editing = null,
   tagSuggestions = [],
   initialCategory,
+  initialLevel,
+  initialParentId,
   onSave,
   onOpenChange,
 }: LibraryCreateDialogProps) {
@@ -90,6 +96,8 @@ export function LibraryCreateDialog({
   const [timeDisplay, setTimeDisplay] = useState('');
   const [priority, setPriority] = useState(50);
   const [location, setLocation] = useState('');
+  // #675：outline 层级（overall/volume/chapter，创建对话框内可切换；初始值来自父级上下文）
+  const [level, setLevel] = useState<'overall' | 'volume' | 'chapter'>('overall');
   // F43 P1：角色等级（D1 必填无默认，初始 '' → 保存 gate 拦截）+ 分组标签（D2）
   const [rank, setRank] = useState('');
   const [rankTags, setRankTags] = useState<string[]>([]);
@@ -110,6 +118,7 @@ export function LibraryCreateDialog({
     setTimeDisplay(editing?.time_display ?? '');
     setPriority(editing?.priority ?? 50);
     setLocation(editing?.location ?? '');
+    setLevel(initialLevel ?? 'overall');
     // F43 P1：等级预填 editing.extra.role_rank ?? ''（旧数据无等级 → 占位重选，E14）；
     // 标签预填 extra.groups（非数组兜底 []，E26），去重保序
     setRank(String(editing?.extra?.role_rank ?? ''));
@@ -120,7 +129,7 @@ export function LibraryCreateDialog({
         : [],
     );
     setSaving(false);
-  }, [open, cat, editing, initialCategory]);
+  }, [open, cat, editing, initialCategory, initialLevel]);
 
   // ESC 关闭（尊重 Radix Select 等已 preventDefault 的 Escape；参照 TemplateDialog 既有交互）
   useEffect(() => {
@@ -159,7 +168,7 @@ export function LibraryCreateDialog({
       case 'world':
         return { name: name.trim(), category, content };
       case 'outline':
-        return { name: name.trim(), description };
+        return { name: name.trim(), description, level, parent_id: initialParentId ?? null };
       case 'timeline':
         return { title: title.trim(), time_display: timeDisplay, description };
       case 'foreshadow':
@@ -287,6 +296,21 @@ export function LibraryCreateDialog({
 
           {cat === 'outline' && (
             <>
+              <Field label={t('lib.create.level')}>
+                <select
+                  data-testid="library-create-level"
+                  aria-label={t('lib.create.level')}
+                  className={INPUT_CLS}
+                  value={level}
+                  onChange={(e) => setLevel(e.target.value as 'overall' | 'volume' | 'chapter')}
+                >
+                  {(['overall', 'volume', 'chapter'] as const).map((v) => (
+                    <option key={v} value={v}>
+                      {t(`lib.level.${v}`)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
               <Field label={t('lib.create.name')}>
                 <input
                   data-testid="library-create-name"

@@ -22,7 +22,7 @@ import { RelationForm, type KnowledgeRelationFormData } from '../components/know
 import { LibraryCreateDialog, type LibraryItemDTO } from '../components/LibraryCreateDialog';
 import { LibraryItemList } from '../components/LibraryItemList';
 import { MapWorkbench, type WorldMapDTO } from '../components/MapWorkbench';
-import { OutlineTree, type OutlineItemDTO } from '../components/OutlineTree';
+import { OutlineTree, type OutlineItemDTO, type OutlineLevel } from '../components/OutlineTree';
 import { TimelineView, type TimelineEventDTO, type TimelineViewData } from '../components/TimelineView';
 import { WorldCatActionButtons } from '../components/WorldCatActionButtons';
 import { WorldCategoryDialog } from '../components/WorldCategoryDialog';
@@ -116,6 +116,8 @@ export function LibraryPage() {
   const [createOpen, setCreateOpen] = useState(false);
   // F43：行编辑对象（非空 = 编辑模式预填；随对话框关闭重置）
   const [editing, setEditing] = useState<LibraryItemDTO | null>(null);
+  // #675：outline 分级创建上下文（＋整本/＋卷/＋章细纲 → 预填 level + parent_id）
+  const [addCtx, setAddCtx] = useState<{ level: OutlineLevel; parentId?: string | number | null } | null>(null);
   // F43：行删除确认对象（非空 = ConfirmDialog 打开）
   const [pendingDelete, setPendingDelete] = useState<LibraryItemDTO | null>(null);
   // #189 模式：顶部保存指示状态 + 自动隐藏计时器 ref（clearTimeout 防重叠）
@@ -356,13 +358,11 @@ export function LibraryPage() {
     },
     [],
   );
-
   const handleTabChange = (key: CatKey) => {
     setActiveCat(key);
     setSearchParams({ cat: key });
     characterDetailRef.current?.reset(); // 切换分类时卸载角色详情面板
   };
-
   const handleProjectChange = (id: string) => {
     selectProject(id);
     characterDetailRef.current?.reset(); // 切换项目时卸载角色详情面板
@@ -402,7 +402,6 @@ export function LibraryPage() {
       useToastStore.getState().pushToast('err', errorMessage(err));
     }
   };
-
   // F43 §5.3：删除确认 → DELETE（世界观 ?cascade=true）→ 关闭 + 刷新 + ok toast；失败同样关闭确认框（E2），err toast
   const handleDelete = async () => {
     if (!pendingDelete || !currentProjectId) return;
@@ -421,7 +420,6 @@ export function LibraryPage() {
       useToastStore.getState().pushToast('err', errorMessage(err));
     }
   };
-
   // F48 §5.4：图谱关系保存（create → POST /projects/{pid}/knowledge-relations；edit → PATCH /knowledge-relations/{rid}）→ 关表单 + reloadKey 局部刷新
   const handleRelationSave = async (data: KnowledgeRelationFormData) => {
     if (!currentProjectId) return;
@@ -435,7 +433,6 @@ export function LibraryPage() {
       useToastStore.getState().pushToast('err', errorMessage(err));
     }
   };
-
   // F48 §5.4：关系删除确认 → DELETE /knowledge-relations/{rid}（真删）→ 刷新 + ok toast
   const handleRelationDelete = async () => {
     if (!pendingRelationDelete) return;
@@ -449,7 +446,6 @@ export function LibraryPage() {
       useToastStore.getState().pushToast('err', errorMessage(err));
     }
   };
-
   // F48 §5.4：图谱边 → 关系行（仅 knowledge_relations 可编辑；cr: 行 F9 只读）
   const relationFromEdge = (edge: GraphEdge): KnowledgeRelation | null => {
     if (edge.source_table !== 'knowledge_relations') return null;
@@ -470,10 +466,8 @@ export function LibraryPage() {
       updated_at: '',
     };
   };
-
   // F48 §5.4：图谱节点「去编辑」→ 对应实体分类 tab（map_pin 归属世界观地图工作台）
   const handleOpenKgEntity = (node: GraphNode) => handleTabChange(KG_ENTITY_CAT[node.type]);
-
   // F43 P1（§5.5/§3.3）：复制确认 → POST F37 copy 端点 → 结果 toast；成功关框；失败 err toast + 对话框保持打开可重试（E24）
   const handleCopy = async (targetId: string, selfOnly: boolean, state: CopyState) => {
     if (!currentProjectId) return;
@@ -505,7 +499,6 @@ export function LibraryPage() {
       useToastStore.getState().pushToast('err', errorMessage(err));
     }
   };
-
   const toggleCollapsed = (id: string | number) => {
     setCollapsedIds((prev) => {
       const next = new Set(prev);
@@ -513,10 +506,16 @@ export function LibraryPage() {
       return next;
     });
   };
-
   // #649：AI 生成成功 → 新大纲插入树顶部（OutlineTree 回调；不做整表 reload，避免响应竞态覆盖新大纲）
   const handleOutlineGenerated = (outline: OutlineItemDTO) => {
     setItems((prev) => [outline, ...prev.filter((i) => String(i.id) !== String(outline.id))]);
+  };
+
+  // #675：outline 新增入口（＋整本/＋卷/＋章细纲）→ 打开创建对话框并预填层级上下文
+  const handleOutlineAdd = (ctx: { level: OutlineLevel; parentId?: string | number | null }) => {
+    setEditing(null);
+    setAddCtx(ctx);
+    setCreateOpen(true);
   };
 
   return (
@@ -776,10 +775,7 @@ export function LibraryPage() {
                   setCreateOpen(true);
                 }}
                 onDelete={(item) => setPendingDelete(item)}
-                onAdd={() => {
-                  setEditing(null);
-                  setCreateOpen(true);
-                }}
+                onAdd={handleOutlineAdd}
               />
             ) : activeCat === 'timeline' ? (
               <TimelineView
@@ -811,10 +807,13 @@ export function LibraryPage() {
           editing={editing}
           tagSuggestions={tagSuggestions}
           initialCategory={activeCat === 'world' ? (activeWorldCat ?? undefined) : undefined}
+          initialLevel={addCtx?.level}
+          initialParentId={addCtx?.parentId ?? null}
           onSave={handleSave}
           onOpenChange={(open) => {
             setCreateOpen(open);
             if (!open) setEditing(null);
+            if (!open) setAddCtx(null);
           }}
         />
       )}
