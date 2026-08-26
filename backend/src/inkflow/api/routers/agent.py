@@ -66,12 +66,21 @@ def _svc(db: AsyncSession) -> AgentService:
 
 def _encode_frame_pipeline(ev: PipelineStreamEvent) -> str:
     """PipelineStreamEvent → SSE 帧字符串（#642-1，镜像 chat_stream._encode_frame）：
+    stage → {"type":"stage","stage_id":...,"stage_name":...,"done":false}
     delta → {"type":"delta","delta":...,"done":false}
     done → {"type":"done","done":true,"final_output":...,"intent":"content"[, "execution_id"]}
     error → {"type":"error","error":...,"done":true}
     """
-    if ev.error:
-        payload: dict = {"type": "error", "error": ev.error, "done": True}
+    if getattr(ev, "type", "") == "stage":
+        # #681：阶段切换帧——必须在 error/done 分支之前（stage 帧 done=False 否则落入 delta 分支）
+        payload: dict = {
+            "type": "stage",
+            "stage_id": ev.stage_id,
+            "stage_name": ev.stage_name,
+            "done": False,
+        }
+    elif ev.error:
+        payload = {"type": "error", "error": ev.error, "done": True}
     elif ev.done:
         payload = {"type": "done", "done": True}
         if ev.final_output:

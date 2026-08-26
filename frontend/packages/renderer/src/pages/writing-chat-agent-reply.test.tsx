@@ -1,15 +1,14 @@
 /**
- * #642-1 契约（前端组件测试，TDD RED→GREEN）：写作页「AI 写作/生成」后，chat 页应
- * **流式**显示 Agent 回复（与详情页 AgentRun 的 final_output 一致），而非等 completed 后一次性注入。
+ * #642-1 契约（前端组件测试）：写作页「AI 写作/生成」后，管线 delta 应**流式**进入 chat 区。
  *
- * 现状（BUG）：writing.tsx 以 `agentOutput={pipeline.status==='success'?finalOutput:null}` 一次性注入；
- * 且用户「看详情页 completed → 切回编辑视图」时 ChatPanel 重挂，注入消息被历史加载覆盖丢失
- * （injectedAgentOutputsRef 使注入永不再触发）。本契约锁 GREEN 流式行为。
+ * ⚠️ #681 契约翻转（2026-08-26）：管线产物**不再**以 chat-msg-ai-<seq> 渲染、**不再** saveChatMessage
+ * 落库——改为独立「管线输出」区（pipeline-output-<seq>，带「管线输出」标签），符合 #681
+ * 「管线阶段输出不污染 chat 历史」。编辑器仍落章（final_output = 编辑器内容）。
  *
- * GREEN 目标（本文件 = #642-1 契约，当前实现 FAIL，GREEN 实现必须匹配）:
- * - 生成触点 → 调 streamPipeline（SSE 流式），onDelta 渐进累积到 chat-msg-ai-<seq>
- * - onDone → parseChatReply 落定 + saveChatMessage 持久化 + 落章（编辑器 = final_output）
- * - 切 view（editor→detail→editor）后 chat 仍显示该 AI 回复（历史持久化，不因重挂丢失）
+ * GREEN 目标（本文件 = #681 新契约）:
+ * - 生成触点 → 调 streamPipeline（SSE 流式），onDelta 渐进取「管线输出」区（pipeline-output-<seq>）
+ * - onDone → 不调 saveChatMessage 落管线产物；仅落章（编辑器 = final_output）
+ * - 管线产物不持久化到 chat 历史（切 view 重挂后 chat 区无管线产物，符合「不污染 chat」语义）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -111,43 +110,46 @@ afterEach(() => {
   capturedPipelineStream = null;
 });
 
-describe('写作页 — AI 生成后 chat 流式显示 Agent 回复（#642-1）', () => {
-  it('「生成」→ 调 streamPipeline → onDelta 渐进显示 Agent 回复（流式，非 completed 后注入）', async () => {
+describe('写作页 — AI 生成后管线输出与 chat 区分渲染（#681 翻转 #642-1）', () => {
+  it('「生成」→ 调 streamPipeline → onDelta 渐进显示在「管线输出」区（非 chat-msg-ai）', async () => {
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     // streamPipeline 被调用（体含 pipeline=builtin:write_auto）
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
     expect(capturedPipelineStream?.body.pipeline).toBe('builtin:write_auto');
-    // 驱动 SSE delta：渐进累积到 chat-msg-ai-0
-    // RED：当前实现不调 streamPipeline（走 executePipeline 轮询 + agentOutput 注入）→ 失败
+    // 驱动 SSE delta：渐进取「管线输出」区（每条管线 delta 独立一条，seq 递增）
     act(() => { capturedPipelineStream?.callbacks.onDelta('管线成品'); });
     act(() => { capturedPipelineStream?.callbacks.onDelta('章节内容'); });
-    const aiMsg = await screen.findByTestId('chat-msg-ai-0');
-    expect(aiMsg).toHaveTextContent('管线成品章节内容');
+    // #681：管线产物以 pipeline-output-<seq> 逐条渲染（带「管线输出」标签），非 chat-msg-ai
+    const outMsg = await screen.findByTestId('pipeline-output-0');
+    expect(outMsg).toHaveTextContent('管线输出');
+    expect(outMsg).toHaveTextContent('管线成品');
+    // 第二条管线 delta 独立条目
+    expect(screen.getByTestId('pipeline-output-1')).toHaveTextContent('章节内容');
+    // 管线产物不应以 AI 消息出现（不污染 chat）
+    expect(screen.queryByTestId('chat-msg-ai-0')).not.toBeInTheDocument();
   });
 
-  it('done → parseChatReply 落定 + saveChatMessage 持久化 + 落章（编辑器 = final_output）', async () => {
+  it('done → 不 saveChatMessage 落管线产物；仅落章（编辑器 = final_output）', async () => {
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
     act(() => { capturedPipelineStream?.callbacks.onDelta('\n<<<CONTENT>>>\n他握紧了剑。\n<<<END>>>'); });
     act(() => { capturedPipelineStream?.callbacks.onDone({ done: true, final_output: '他握紧了剑。' }); });
-    // saveChatMessage 落库 AI 回复（intent=content）
-    await waitFor(() => {
-      expect(apiFetchMock).toHaveBeenCalledWith(
-        '/api/v1/chat/messages',
-        expect.objectContaining({
-          method: 'POST',
-          body: expect.objectContaining({ project_id: 'p1', role: 'ai', content: '他握紧了剑。', intent: 'content' }),
-        }),
-      );
-    });
+    // #681：管线产物不落 chat 历史——saveChatMessage 不被调（chat 消息落库仅限用户驱动 chat 流）
+    expect(apiFetchMock).not.toHaveBeenCalledWith(
+      '/api/v1/chat/messages',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.objectContaining({ project_id: 'p1', role: 'ai', content: '他握紧了剑。', intent: 'content' }),
+      }),
+    );
     // 落章：编辑器内容 = final_output
     const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
     await waitFor(() => expect(editor.value).toBe('他握紧了剑。'));
   });
 
-  it('切 view（editor→detail→editor）后 chat 仍显示该 AI 回复（历史持久化，不因重挂丢失）', async () => {
+  it('切 view（editor→detail→editor）后 chat 区无管线产物（管线输出不持久化到 chat 历史）', async () => {
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
@@ -155,9 +157,11 @@ describe('写作页 — AI 生成后 chat 流式显示 Agent 回复（#642-1）'
     act(() => { capturedPipelineStream?.callbacks.onDone({ done: true, final_output: '他握紧了剑。' }); });
     // 切到详情页 view（ChatPanel 卸载重挂）
     fireEvent.click(screen.getByRole('button', { name: /详情/ }));
-    // 切回编辑视图 → ChatPanel 重挂 → 从历史拉取已持久化 AI 回复
+    // 切回编辑视图 → ChatPanel 重挂
     fireEvent.click(screen.getByTestId('view-toggle'));
-    const aiMsg = await screen.findByTestId('chat-msg-ai-0');
-    expect(aiMsg).toHaveTextContent('他握紧了剑。');
+    // #681：管线产物不落 chat 历史 → 重挂后 chat-msg-ai-0 不应出现（若出现则污染了 chat 历史）
+    await waitFor(() => {
+      expect(screen.queryByTestId('chat-msg-ai-0')).not.toBeInTheDocument();
+    });
   });
 });

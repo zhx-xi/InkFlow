@@ -32,6 +32,14 @@ export interface UsePipelineResult {
   totalDurationMs: number;
   hitlPending: { question: string; role: string } | null;
   executionId: string | null; // #543：透传 useExecutionPoll 的 executionId（执行详情页数据源）
+  /** #681：当前管线阶段 id */
+  currentStage: string | null;
+  /** #681：当前管线阶段 display name */
+  stageName: string | null;
+  /** #681：阶段进度估算（百分比整数） */
+  stageProgress: number;
+  /** #681：生成整体耗时（ms） */
+  stageElapsedMs: number;
   /** #642-1：透传 useExecutionPoll 的 streamSinkRef（写作页传给 ChatPanel 复用流式渲染） */
   streamSinkRef: MutableRefObject<PipelineStreamSink>;
   start: (mode: PipelineMode) => void;
@@ -95,6 +103,10 @@ export function usePipeline(options: UsePipelineOptions): UsePipelineResult {
     totalDurationMs: pollState.totalDurationMs,
     hitlPending: pollState.hitlPending,
     executionId: pollState.executionId,
+    currentStage: pollState.currentStage,
+    stageName: pollState.stageName,
+    stageProgress: pollState.stageProgress,
+    stageElapsedMs: pollState.stageElapsedMs,
     streamSinkRef: pollState.streamSinkRef,
     start,
     confirm,

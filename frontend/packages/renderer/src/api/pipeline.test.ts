@@ -52,6 +52,9 @@ vi.mock('./client', async (importOriginal) => {
 
 const apiFetchMock = vi.mocked(apiFetch);
 
+/** 等待微任务链跑完（reader 续体全部在 microtask 内） */
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
 beforeEach(() => {
   apiFetchMock.mockReset();
 });
@@ -142,5 +145,130 @@ describe('getExecutionStatus — GET /pipelines/executions/{id}', () => {
     };
     apiFetchMock.mockResolvedValue(failed);
     await expect(getExecutionStatus('e9')).resolves.toEqual(failed);
+  });
+});
+
+/**
+ * #681 streamPipeline SSE 流式（#642-1 现状）+ 进度帧 + 超时兜底 RED
+ *
+ * G5a 实锤：streamPipeline（api/pipeline.ts:141-215）fetch 无超时（仅 AbortController 供主动 abort），
+ * SSE 帧无 stage/无「生成较慢」提示。RED 锁定：
+ * - onDone 帧可携带 execution_id（#681 执行详情页数据源，透传 useExecutionPoll.onDone 捕获）
+ * - type='stage' 帧 → onStage({stage_id, stage_name})（管线进度帧）
+ * - fetch 加 AbortController timeout（超时 → onError('模型生成较慢') 类提示）
+ */
+describe('streamPipeline — 管线进度帧 + 超时兜底（#681）', () => {
+  const BASE = 'http://api.test';
+
+  function makeReader() {
+    const pending: { resolve: (r: { done: boolean; value?: Uint8Array }) => void; reject: (e: unknown) => void }[] = [];
+    const reader = {
+      read: () =>
+        new Promise<{ done: boolean; value?: Uint8Array }>((resolve, reject) => {
+          pending.push({ resolve, reject });
+        }),
+    } as ReadableStreamDefaultReader;
+    const api = {
+      push(chunk: Uint8Array) {
+        pending.shift()?.resolve({ done: false, value: chunk });
+      },
+      end() {
+        pending.shift()?.resolve({ done: true });
+      },
+      fail(err: unknown) {
+        pending.shift()?.reject(err);
+      },
+    };
+    return { reader, api };
+  }
+
+  interface FetchCall {
+    url: string;
+    init: RequestInit;
+    api: ReturnType<typeof makeReader>['api'];
+  }
+
+  function stubStreamFetch(calls: FetchCall[]) {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      const { reader, api } = makeReader();
+      calls.push({ url, init: init ?? {}, api });
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        body: { getReader: () => reader },
+      } as unknown as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  function frame(payload: Record<string, unknown>): Uint8Array {
+    return new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`);
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.INKFLOW_API = { baseURL: BASE, token: 'tok-1' };
+  });
+
+  afterEach(() => {
+    delete window.INKFLOW_API;
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('type="stage" 帧 → onStage({stage_id, stage_name})；type="done" 帧携带 execution_id', async () => {
+    const { streamPipeline } = await import('./pipeline');
+    const calls: FetchCall[] = [];
+    stubStreamFetch(calls);
+    const callbacks = {
+      onStage: vi.fn(),
+      onDelta: vi.fn(),
+      onDone: vi.fn(),
+      onError: vi.fn(),
+    };
+    const body = { project_id: 'p1', pipeline: 'builtin:write_auto' };
+
+    await streamPipeline(body, callbacks);
+    await flush();
+
+    const reader = calls[0].api;
+    reader.push(frame({ type: 'stage', stage_id: 'writer', stage_name: '写手', done: false }));
+    await flush();
+    expect(callbacks.onStage).toHaveBeenCalledWith({ stage_id: 'writer', stage_name: '写手' });
+
+    reader.push(frame({ type: 'delta', delta: '正', done: false }));
+    await flush();
+    expect(callbacks.onDelta).toHaveBeenCalledWith('正');
+
+    reader.push(frame({ type: 'done', done: true, final_output: '成品', execution_id: 'exec-9' }));
+    await flush();
+    expect(callbacks.onDone).toHaveBeenCalledWith(
+      expect.objectContaining({ final_output: '成品', execution_id: 'exec-9' }),
+    );
+  });
+
+  it('fetch 超时 → onError「模型生成较慢」提示（AbortController timeout 兜底）', async () => {
+    const { streamPipeline } = await import('./pipeline');
+    const calls: FetchCall[] = [];
+    stubStreamFetch(calls);
+    const callbacks = {
+      onStage: vi.fn(),
+      onDelta: vi.fn(),
+      onDone: vi.fn(),
+      onError: vi.fn(),
+    };
+    const body = { project_id: 'p1', pipeline: 'builtin:write_auto' };
+
+    await streamPipeline(body, callbacks);
+    await flush();
+
+    // 进入读取但无帧到达（超时窗口内无任何 SSE 帧）→ 触发超时 onError
+    vi.advanceTimersByTime(60000);
+    await flush();
+
+    expect(callbacks.onError).toHaveBeenCalled();
+    expect(String(callbacks.onError.mock.calls[0][0])).toContain('生成较慢');
+    expect(callbacks.onDone).not.toHaveBeenCalled();
   });
 });

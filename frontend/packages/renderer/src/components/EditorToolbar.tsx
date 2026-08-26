@@ -4,6 +4,8 @@ import { useI18n } from '../i18n/useI18n';
 
 export interface EditorToolbarProps {
   disabled: boolean;
+  /** #681：管线生成中（generate 按钮 loading 态） */
+  generating?: boolean;
   onUndo: () => void;
   onRedo: () => void;
   onSave: () => void;
@@ -28,6 +30,7 @@ const ICON_BTN_CLS =
 
 export function EditorToolbar({
   disabled,
+  generating = false,
   onUndo,
   onRedo,
   onSave,
@@ -91,10 +94,13 @@ export function EditorToolbar({
         aria-label={t('write.toolbar.generate')}
         title={`${t('write.toolbar.generate')} (Ctrl+Shift+Enter)`}
         className={ICON_BTN_CLS}
-        disabled={disabled}
+        disabled={disabled || generating}
         onClick={onGenerate}
       >
-        <Sparkles className="h-4 w-4" aria-hidden="true" />
+        <Sparkles
+          className={generating ? 'h-4 w-4 animate-pulse text-accent' : 'h-4 w-4'}
+          aria-hidden="true"
+        />
       </button>
       <span className="mx-1 h-4 w-px bg-line" />
       <button

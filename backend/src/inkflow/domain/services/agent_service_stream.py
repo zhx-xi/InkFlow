@@ -49,8 +49,8 @@ class AgentServiceStreamMixin:
         self, request: PipelineExecuteRequest
     ) -> AsyncGenerator[PipelineStreamEvent, None]:
         """#642-1：管线 SSE 流式执行（static → pipeline.stream 帧流；supervisor 降级轮询）。"""
-        stages, context, pipeline_impl, conditional_edges, _ = (
-            await self._build_pipeline_context(request)
+        stages, context, pipeline_impl, conditional_edges, _ = await self._build_pipeline_context(
+            request
         )
         stream_fn = getattr(pipeline_impl, "stream", None)
         if stream_fn is None:
@@ -80,21 +80,40 @@ class AgentServiceStreamMixin:
             ),
         )
         final_output = ""
+        stage_snapshots: list[dict] = []
         try:
             async for ev in stream_fn(stages, context, conditional_edges=conditional_edges):
-                if ev.done:
+                if getattr(ev, "type", "") == "stage":
+                    # #681：stage 帧 → 阶段快照（status=running，其余字段默认值；后端无总阶段数）
+                    stage_snapshots.append(
+                        {
+                            "stage_id": ev.stage_id,
+                            "status": "running",
+                            "output": "",
+                            "error": "",
+                            "retry_count": 0,
+                            "duration_ms": 0,
+                        }
+                    )
+                    yield ev
+                elif ev.done:
                     final_output = ev.final_output
                     ev.execution_id = execution.id
-                yield ev
+                    yield ev
+                else:
+                    yield ev
             await self._store.update_stages(
                 execution_id=execution.id,
-                stages=[],
+                stages=stage_snapshots,
                 status="completed",
                 final_output=final_output,
             )
         except Exception as e:
             await self._store.update_stages(
-                execution_id=execution.id, stages=[], status="failed", error=str(e)
+                execution_id=execution.id,
+                stages=stage_snapshots,
+                status="failed",
+                error=str(e),
             )
             yield PipelineStreamEvent(type="done", done=True, error=str(e))
 
@@ -202,9 +221,7 @@ class AgentServiceStreamMixin:
             project.config.agent_relations,
         )
 
-    async def _inject_context(
-        self, context: PipelineContext, *, continue_context: bool
-    ) -> None:
+    async def _inject_context(self, context: PipelineContext, *, continue_context: bool) -> None:
         """设定库/前文摘要注入（_run_pipeline 与 stream_pipeline 共用，#366 G1/#318）。"""
         # #366 G1 设定驱动写作：无条件注入设定库摘要（角色/世界观/大纲）
         try:

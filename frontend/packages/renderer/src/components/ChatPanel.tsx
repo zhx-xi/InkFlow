@@ -74,10 +74,14 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
   // #477：当前选中的 content 消息 seq（单选互斥，新 content 到达自动成为选中条）
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
+  /** #681：管线输出区（管线 delta 独立渲染，非 chat AI 消息、不落库） */
+  const [pipelineOutputEntries, setPipelineOutputEntries] = useState<{ seq: number; text: string }[]>([]);
   const [height, setHeight] = useState(CHAT_DEFAULT_HEIGHT);
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const userSeqRef = useRef(0);
   const aiSeqRef = useRef(0);
+  /** #681：管线输出条目 seq（onDone 清空 → 下一轮管线重新起 seq） */
+  const pipelineSeqRef = useRef<number | null>(null);
   // #541 流式状态：并发保护 + 当前 ai 消息渐进累计（ref 持有，避免回调闭包陈旧）
   const streamingRef = useRef(false);
   const streamSeqRef = useRef<number | null>(null);
@@ -203,17 +207,28 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
     setToolEntries((prev) => prev.map((e) => (e.id === res.id ? { ...e, result: res.result } : e)));
   }, []);
 
-  // #642-1：把 ChatPanel 既有流式 handler 挂到管线 streamSink，供 streamPipeline 复用
+  // #681：管线帧与 chat 帧区分渲染——管线 delta/done 走独立「管线输出」区，
+  // 不进入 chat messages、不调 saveChatMessage（chat 流 #547 落库契约不受影响）
   useEffect(() => {
     const sink = streamSink?.current;
     if (!sink) return;
-    // 复用 ChatPanel 既有 onDelta/onDone/onToolCall/onToolResult（流式渲染 + parseChatReply + saveChatMessage）
-    // #642-1：管线 delta 到达 → 自动展开（与旧 agentOutput 注入 setExpanded(true) 行为一致）
     sink.onDelta = (d) => {
       setExpanded(true);
-      onDelta(d);
+      // 管线产物累积到 pipelineOutputEntries（非 AI 消息，不落 chat 历史）
+      // 每条管线 delta 独立一个条目（seq 递增；ref 在 updater 外推进，保持 updater 纯净）
+      if (pipelineSeqRef.current === null) pipelineSeqRef.current = 0;
+      const seq = pipelineSeqRef.current;
+      pipelineSeqRef.current += 1;
+      setPipelineOutputEntries((prev) => {
+        const exists = prev.find((e) => e.seq === seq);
+        if (!exists) return [...prev, { seq, text: d }];
+        return prev.map((e) => (e.seq === seq ? { ...e, text: e.text + d } : e));
+      });
     };
-    sink.onDone = onDone;
+    sink.onDone = () => {
+      // 管线完成：不调 saveChatMessage，仅清管线 seq（下次管线 delta 重新起 seq）
+      pipelineSeqRef.current = null;
+    };
     sink.onToolCall = onToolCall;
     sink.onToolResult = onToolResult;
     return () => {
@@ -222,7 +237,7 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
       sink.onToolCall = undefined;
       sink.onToolResult = undefined;
     };
-  }, [streamSink, onDelta, onDone, onToolCall, onToolResult]);
+  }, [streamSink, onToolCall, onToolResult]);
 
   const handleSend = useCallback(async () => {
     const prompt = input.trim();
@@ -501,6 +516,24 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
               </div>
             );
           })}
+        </div>
+      )}
+      {/* #681：管线输出区——管线 delta/done 独立渲染（与 chat messages 分离，不落 chat 历史） */}
+      {expanded && pipelineOutputEntries.length > 0 && (
+        <div
+          data-testid="pipeline-output-area"
+          className="max-h-[240px] space-y-2 overflow-y-auto text-[13px]"
+        >
+          {pipelineOutputEntries.map((entry) => (
+            <div
+              key={`pipeline-${entry.seq}`}
+              data-testid={`pipeline-output-${entry.seq}`}
+              className="rounded-md border border-accent/30 bg-accent/5 px-3 py-2 text-ink-2"
+            >
+              <span className="mr-2 text-[11px] text-ink-3">管线输出</span>
+              <span className="whitespace-pre-wrap">{entry.text}</span>
+            </div>
+          ))}
         </div>
       )}
       <div className="flex items-center gap-2">

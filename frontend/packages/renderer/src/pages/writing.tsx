@@ -73,7 +73,18 @@ export function WritingPage() {
     chapterTitle: chapters.find((c) => c.id === currentChapterId)?.title ?? '',
     supervisor: currentProject?.config?.supervisor ?? null,
   });
-  const { status, error, start, hitlPending, confirm, executionId } = pipeline;
+  const {
+    status,
+    error,
+    start,
+    hitlPending,
+    confirm,
+    executionId,
+    currentStage,
+    stageName,
+    stageProgress,
+    stageElapsedMs,
+  } = pipeline;
 
   // #474 P0：模型未配置前置校验（续写/生成四触发点共用守卫）
   const startWithCheck = useCallback(
@@ -276,6 +287,7 @@ export function WritingPage() {
         <main data-testid="editor" className="group flex min-w-0 flex-1 flex-col bg-surface">
           <EditorToolbar
             disabled={generating}
+            generating={generating}
             onUndo={() => document.execCommand('undo')}
             onRedo={() => document.execCommand('redo')}
             onSave={() => void save()}
@@ -314,6 +326,10 @@ export function WritingPage() {
             hitlPending={hitlPending}
             onConfirm={handleHitlConfirm}
             confirming={confirming}
+            currentStage={currentStage}
+            stageName={stageName}
+            stageProgress={stageProgress}
+            stageElapsedMs={stageElapsedMs}
           />
         </main>
         <aside

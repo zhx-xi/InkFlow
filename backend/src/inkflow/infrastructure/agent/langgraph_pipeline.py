@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import deque
 from collections.abc import AsyncGenerator, Sequence
 from datetime import UTC, datetime
@@ -31,6 +32,11 @@ from inkflow.domain.ports.agent_pipeline import (
 from inkflow.domain.ports.llm_client import LLMClientProtocol
 from inkflow.infrastructure.agent import pipeline_nodes
 from inkflow.infrastructure.agent.pipeline_nodes import PipelineState
+
+
+def _chunk_stream(text: str, size: int = 6) -> list[str]:
+    """#681：#642 镜像（chat_agent_service）——完整响应按固定大小切块，模拟流式增量输出。"""
+    return [text[i : i + size] for i in range(0, len(text), size)]
 
 
 class LangGraphAgentPipeline:
@@ -224,10 +230,12 @@ class LangGraphAgentPipeline:
         context: PipelineContext,
         conditional_edges: Sequence[tuple[str, str]] | None = None,
     ) -> AsyncGenerator[PipelineStreamEvent, None]:
-        """#642-1：astream_events v2 流式执行管线 → PipelineStreamEvent 帧序列。
+        """#681：astream_events v2 流式执行管线 → 帧序列（token delta + 阶段切换帧）。
 
         - 装配与 execute 相同（_compile + _build_initial_state）
-        - on_chat_model_end（run_type=llm）→ delta 帧（该阶段 LLM 完整输出 .content）
+        - on_chat_model_stream（run_type=llm）→ token 级 delta 帧
+        - on_chat_model_end（run_type=llm，完整 output）→ 非流式时 _chunk_stream 切块 delta
+        - metadata['langgraph_node'] 变化 → type='stage' 帧（每阶段进入仅一次）
         - 流结束 → done(final_output=最后非空 content, intent='content')
         - 异常（重试耗尽等）→ done(error=...)，由端点转 error 帧
         """
@@ -236,20 +244,54 @@ class LangGraphAgentPipeline:
             raise PipelineError(f"管线配置无效: {'; '.join(errors)}")
         app = self._compile(stages, conditional_edges)
         final_output = ""
+        stage_name_map = {s.id: s.name for s in stages}
+        current_stage: str | None = None
+        streamed_any = False
         try:
             async for ev in app.astream_events(
                 self._build_initial_state(stages, context), version="v2"
             ):
                 ev_dict = cast(dict[str, Any], ev)
+                node = (ev_dict.get("metadata") or {}).get("langgraph_node")
                 if (
-                    ev_dict.get("event") == "on_chat_model_end"
+                    ev_dict.get("event") == "on_chat_model_stream"
                     and ev_dict.get("run_type") == "llm"
                 ):
-                    output = ev_dict.get("data", {}).get("output")
-                    content = getattr(output, "content", "") or ""
+                    chunk = (ev_dict.get("data") or {}).get("chunk")
+                    content = getattr(chunk, "content", "") or ""
                     if content:
+                        if node and node != current_stage:
+                            current_stage = node
+                            yield PipelineStreamEvent(
+                                type="stage",
+                                stage_id=node,
+                                stage_name=stage_name_map.get(node, node),
+                            )
                         final_output = content
                         yield PipelineStreamEvent(type="delta", delta=content)
+                        streamed_any = True
+                elif (
+                    ev_dict.get("event") == "on_chat_model_end" and ev_dict.get("run_type") == "llm"
+                ):
+                    output = (ev_dict.get("data") or {}).get("output")
+                    content = getattr(output, "content", "") or ""
+                    if content:
+                        if node and node != current_stage:
+                            current_stage = node
+                            yield PipelineStreamEvent(
+                                type="stage",
+                                stage_id=node,
+                                stage_name=stage_name_map.get(node, node),
+                            )
+                        final_output = content
+                        if not streamed_any:
+                            # 非流式完整响应 → _chunk_stream 切块模拟 token 级流
+                            for c in _chunk_stream(content):
+                                await asyncio.sleep(0.05)
+                                yield PipelineStreamEvent(type="delta", delta=c)
+                        else:
+                            yield PipelineStreamEvent(type="delta", delta=content)
+                        streamed_any = True
             yield PipelineStreamEvent(
                 type="done", done=True, final_output=final_output, intent="content"
             )

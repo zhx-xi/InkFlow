@@ -8,6 +8,14 @@ export interface PipelineStatusProps {
   hitlPending?: { question: string; role: string } | null;
   onConfirm?: (approved: boolean) => void;
   confirming?: boolean;
+  /** #681：当前管线阶段 id（stage 帧） */
+  currentStage?: string | null;
+  /** #681：当前管线阶段 display name */
+  stageName?: string | null;
+  /** #681：阶段进度估算（百分比整数） */
+  stageProgress?: number;
+  /** #681：生成整体耗时（ms） */
+  stageElapsedMs?: number;
 }
 
 export function PipelineStatus({
@@ -16,6 +24,10 @@ export function PipelineStatus({
   hitlPending,
   onConfirm,
   confirming = false,
+  currentStage,
+  stageName,
+  stageProgress,
+  stageElapsedMs,
 }: PipelineStatusProps) {
   const { t } = useI18n();
   // #585: idle status renders nothing (removes 84px empty box on writing page)
@@ -28,6 +40,26 @@ export function PipelineStatus({
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-err" />
             {t('write.pipeline.running')}
           </span>
+          {/* #681：阶段名 / 进度 / 耗时子行（无阶段数据时回退「执行中」基线） */}
+          {stageName && (
+            <span
+              className="text-ink-2"
+              data-testid="pipeline-current-stage"
+              data-current-stage={currentStage ?? ''}
+            >
+              {stageName}
+            </span>
+          )}
+          {typeof stageProgress === 'number' && (
+            <span className="text-ink-3" data-testid="pipeline-stage-progress">
+              {stageProgress}%
+            </span>
+          )}
+          {typeof stageElapsedMs === 'number' && stageElapsedMs > 0 && (
+            <span className="text-ink-3" data-testid="pipeline-elapsed">
+              {Math.round(stageElapsedMs / 1000)} 秒
+            </span>
+          )}
         </div>
       )}
       {status === 'success' && <div className="text-ok">{t('write.pipeline.success')}</div>}
