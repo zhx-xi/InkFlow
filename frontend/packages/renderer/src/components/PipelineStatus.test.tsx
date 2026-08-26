@@ -135,3 +135,67 @@ describe('PipelineStatus — idle 空容器删除（#585）', () => {
     expect(screen.getByTestId('hitl-confirm-card')).toBeInTheDocument();
   });
 });
+
+/**
+ * #681 写作生成进度反馈：running 态渲染管线 stage 帧（阶段名/进度/耗时）
+ *
+ * G5a 实锤：running 态仅「执行中 + 脉冲点」（PipelineStatus.tsx:25-32），无阶段名/进度/耗时。
+ * RED 锁定：PipelineStatusProps 扩展 currentStage/stageProgress/stageElapsedMs（可选，兼容既有调用），
+ * running 态渲染当前阶段名 + 阶段进度 + 累积耗时；无阶段数据时回退「执行中」基线（不破既有）。
+ */
+describe('PipelineStatus — running 态渲染生成进度（#681）', () => {
+  it('running + currentStage → 渲染当前阶段名（如「正在写作…」）', () => {
+    render(
+      <PipelineStatus
+        status="running"
+        error={null}
+        currentStage="writer"
+        stageName="写手"
+        stageProgress={50}
+        stageElapsedMs={12000}
+      />,
+    );
+    expect(screen.getByTestId('pipeline-status')).toHaveTextContent('执行中');
+    // 当前阶段名渲染（读手/写手）
+    expect(screen.getByTestId('pipeline-status')).toHaveTextContent('写手');
+  });
+
+  it('running + stageProgress → 渲染阶段进度（如 50%）', () => {
+    render(
+      <PipelineStatus
+        status="running"
+        error={null}
+        currentStage="writer"
+        stageName="写手"
+        stageProgress={50}
+        stageElapsedMs={12000}
+      />,
+    );
+    expect(screen.getByTestId('pipeline-status')).toHaveTextContent('50%');
+  });
+
+  it('running + stageElapsedMs → 渲染累积耗时（秒）', () => {
+    render(
+      <PipelineStatus
+        status="running"
+        error={null}
+        currentStage="writer"
+        stageName="写手"
+        stageProgress={50}
+        stageElapsedMs={12000}
+      />,
+    );
+    // 12s → 显示「12 秒」或「12s」（含 12）
+    expect(screen.getByTestId('pipeline-status')).toHaveTextContent('12');
+  });
+
+  it('running + status 基线保持：无阶段数据仍渲染「执行中」', () => {
+    render(<PipelineStatus status="running" error={null} />);
+    expect(screen.getByTestId('pipeline-status')).toHaveTextContent('执行中');
+  });
+
+  it('running + 无阶段数据不崩（currentStage/stageName 可选）', () => {
+    render(<PipelineStatus status="running" error={null} />);
+    expect(screen.getByTestId('pipeline-status')).toBeInTheDocument();
+  });
+});

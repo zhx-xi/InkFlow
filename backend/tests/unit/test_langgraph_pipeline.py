@@ -3,6 +3,9 @@
 覆盖顺序执行 / 输出传递 / validate 校验 / 重试 / 跳过 / 失败传播。
 """
 
+from types import SimpleNamespace
+from unittest.mock import patch
+
 import pytest
 
 from inkflow.domain.ports.agent_pipeline import (
@@ -732,3 +735,129 @@ async def test_conditional_middle_gate_fail_skips_downstream():
     # 终点 reviser 被跳过 → final_output 回退最后执行的内容角色（writer）
     assert result.final_output == "审核通过"
     assert result.status == StageStatus.COMPLETED
+
+
+# ── #681 流式进度契约：token 级 delta + 阶段切换帧 ──────────────────────
+#
+# 探针实证（2026-08-26）：mock LLM（非 LangChain Runnable）下 LangGraph 真实编译图的
+# astream_events **不产生** on_chat_model_* 事件 → 直接驱动 stream() 只能拿到空 done。
+# 故本类 patch _compile 返回 fake compiled graph（astream_events 为 async generator，
+# 按预置 v2 事件 dict 流 yield），锁定 stream() 的「事件 → 帧」映射逻辑：
+#   - on_chat_model_stream(run_type='llm') → token 级 delta 帧
+#   - on_chat_model_end(run_type='llm') 完整 content（无 stream 时）→ _chunk_stream 切块 delta
+#   - metadata['langgraph_node'] 变化 → type='stage' 帧（stage_id + stage_name）
+# 与 chat_agent_service 的 _chunk_stream 兜底先例一致（chat_agent_service.py:22-24,76-83）。
+
+
+class _FakeCompiledGraph:
+    """fake LangGraph compiled graph——astream_events 按预置 v2 事件 dict 列表 yield。"""
+
+    def __init__(self, events: list[dict]) -> None:
+        self._events = events
+        self.calls: list[dict] = []
+
+    async def astream_events(self, state, version="v2"):
+        self.calls.append({"state": state, "version": version})
+        for ev in self._events:
+            yield ev
+
+
+def _llm_stream_event(stage_id: str, content: str) -> dict:
+    """on_chat_model_stream（run_type='llm'，metadata.langgraph_node）→ token delta 源。"""
+    return {
+        "event": "on_chat_model_stream",
+        "run_type": "llm",
+        "metadata": {"langgraph_node": stage_id},
+        "data": {"chunk": SimpleNamespace(content=content)},
+    }
+
+
+def _llm_end_event(stage_id: str, content: str) -> dict:
+    """on_chat_model_end（run_type='llm'，完整 output）→ 兜底切块 delta 源。"""
+    return {
+        "event": "on_chat_model_end",
+        "run_type": "llm",
+        "metadata": {"langgraph_node": stage_id},
+        "data": {
+            "output": SimpleNamespace(
+                content=content, tool_calls=[], response_metadata={"usage": {"total_tokens": 20}}
+            )
+        },
+    }
+
+
+async def _drive_stream(events: list[dict]):
+    """装配 LangGraphAgentPipeline + patch _compile 返回 fake graph，收集 stream 帧。"""
+    pipeline = LangGraphAgentPipeline(MockLLMClient())
+    fake_graph = _FakeCompiledGraph(events)
+    with patch.object(pipeline, "_compile", return_value=fake_graph):
+        frames = [
+            ev
+            async for ev in pipeline.stream(
+                _builtin_chain(), _make_context(), conditional_edges=None
+            )
+        ]
+    return frames, fake_graph
+
+
+class TestStreamTokenAndStageFrames:
+    """#681：stream() 产生 token 级 delta + 阶段切换帧（GREEN 前当前实现只 yield 空 done）。"""
+
+    @pytest.mark.asyncio
+    async def test_stream_yields_token_delta_on_chat_model_stream(self) -> None:
+        """on_chat_model_stream 每 chunk → 一个 delta 帧（token 级，非整段一次）。"""
+        frames, _ = await _drive_stream(
+            [
+                _llm_stream_event("writer", "风"),
+                _llm_stream_event("writer", "起"),
+                _llm_stream_event("writer", "云"),
+            ]
+        )
+        delta_frames = [ev for ev in frames if ev.type == "delta"]
+        # RED：当前实现（只监听 on_chat_model_end）→ 0 个 delta → assert 0 == 3 失败
+        assert [ev.delta for ev in delta_frames] == ["风", "起", "云"]
+        assert frames[-1].done is True
+
+    @pytest.mark.asyncio
+    async def test_stream_model_end_full_content_chunks_to_multiple_delta(self) -> None:
+        """on_chat_model_end（完整 content，无 stream）→ _chunk_stream 切块成 ≥2 个 delta。"""
+        content = "这是一个较长的完整回复，用于验证非流式响应也会被切块流式输出，界面能逐字显示。"
+        frames, _ = await _drive_stream([_llm_end_event("writer", content)])
+        delta_frames = [ev for ev in frames if ev.type == "delta"]
+        # RED：当前实现 yield 整段 1 个 delta → assert len(1) >= 2 失败
+        assert len(delta_frames) >= 2
+        assert "".join(ev.delta for ev in delta_frames) == content
+        assert frames[-1].done is True
+
+    @pytest.mark.asyncio
+    async def test_stream_stage_frame_emitted_on_node_transition(self) -> None:
+        """metadata.langgraph_node 变化 → 每个 stage 首帧前发 type='stage' 帧。"""
+        frames, _ = await _drive_stream(
+            [
+                _llm_end_event("architect", "架构大纲"),
+                _llm_end_event("writer", "章节正文"),
+            ]
+        )
+        stage_frames = [ev for ev in frames if ev.type == "stage"]
+        # RED：当前实现不 yield stage 帧 → assert [] == [...architect, writer] 失败
+        assert [ev.stage_id for ev in stage_frames] == ["architect", "writer"]
+        assert stage_frames[0].stage_name == "架构师"
+        assert stage_frames[1].stage_name == "写手"
+        # stage 帧之前必须已有进入该阶段的首个产物（架构师产物在 writer 阶段前出现）
+        frame_types = [ev.type for ev in frames]
+        assert frame_types.index("stage") < frame_types.index("delta")
+
+    @pytest.mark.asyncio
+    async def test_stream_stage_frame_once_per_node(self) -> None:
+        """同一 stage 内多个事件 → 仅该 stage 进入时发一次 stage 帧（不重复）。"""
+        frames, _ = await _drive_stream(
+            [
+                _llm_end_event("writer", "第一段"),
+                _llm_end_event("writer", "第二段"),
+                _llm_end_event("writer", "第三段"),
+            ]
+        )
+        stage_frames = [ev for ev in frames if ev.type == "stage"]
+        assert len(stage_frames) == 1
+        assert stage_frames[0].stage_id == "writer"
+        assert stage_frames[0].stage_name == "写手"

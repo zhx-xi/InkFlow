@@ -113,7 +113,7 @@ export async function confirmExecution(
 
 /** #642-1：管线 SSE 流式帧（镜像 chat.ts ChatStreamFrame；done 帧携带 final_output） */
 export interface PipelineStreamFrame {
-  type: 'delta' | 'tool_call' | 'tool_result' | 'done' | 'error';
+  type: 'delta' | 'tool_call' | 'tool_result' | 'stage' | 'done' | 'error';
   done: boolean;
   delta?: string;
   error?: string;
@@ -123,6 +123,12 @@ export interface PipelineStreamFrame {
   result?: string;
   /** #642-1：done 帧携带管线 final_output（与 getExecutionStatus 一致） */
   final_output?: string;
+  /** #681：done 帧携带执行记录 id（供执行详情页） */
+  execution_id?: string;
+  /** #681：stage 帧阶段 id */
+  stage_id?: string;
+  /** #681：stage 帧阶段名 */
+  stage_name?: string;
 }
 
 export interface PipelineStreamCallbacks {
@@ -131,6 +137,8 @@ export interface PipelineStreamCallbacks {
   onError: (message: string) => void;
   onToolCall?: (call: { id: string; name: string; args: Record<string, unknown> }) => void;
   onToolResult?: (res: { id: string; name: string; result: string }) => void;
+  /** #681：管线阶段切换帧（stage_id + stage_name）→ 前端 PipelineStatus 进度数据源 */
+  onStage?: (stage: { stage_id: string; stage_name: string }) => void;
 }
 
 /** #642-1：管线 SSE 流式执行。POST /api/v1/agent/pipelines/stream，返回 abort。 */
@@ -140,8 +148,32 @@ export async function streamPipeline(
 ): Promise<() => void> {
   const { baseURL, token } = getApiConfig();
   const controller = new AbortController();
+  // #681：无帧到达超时兜底——60s 无任何 SSE 帧 → 视为生成过慢（区别于用户主动 abort）
+  const timeoutMs = 60000;
+  let timedOut = false;
+  let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearTimeoutTimer = () => {
+    if (timeoutTimer !== null) {
+      clearTimeout(timeoutTimer);
+      timeoutTimer = null;
+    }
+  };
+
+  const resetTimeout = () => {
+    clearTimeoutTimer();
+    timeoutTimer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+      clearTimeoutTimer();
+      // 直接 onError：mock reader 在 abort 后不 reject，真实 fetch/reader reject 进
+      // catch 时按 signal.aborted 静默返回（避免重复提示）
+      callbacks.onError('模型生成较慢，请稍候或检查网络');
+    }, timeoutMs);
+  };
 
   const run = async () => {
+    resetTimeout();
     try {
       const res = await fetch(`${baseURL}/api/v1/agent/pipelines/stream`, {
         method: 'POST',
@@ -153,6 +185,7 @@ export async function streamPipeline(
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
+        clearTimeoutTimer();
         callbacks.onError(`HTTP ${res.status}`);
         return;
       }
@@ -178,6 +211,16 @@ export async function streamPipeline(
             .trim();
           if (!dataLine) continue;
           const frame = JSON.parse(dataLine) as PipelineStreamFrame;
+          // 有帧到达 → 重置无帧超时（inactivity timeout）
+          resetTimeout();
+          // #681：管线进度帧（stage_id + stage_name）→ onStage，不落 chat
+          if (frame.type === 'stage') {
+            callbacks.onStage?.({
+              stage_id: frame.stage_id ?? '',
+              stage_name: frame.stage_name ?? '',
+            });
+            continue;
+          }
           // 帧分发（镜像 streamChat：#597 工具帧 + #541 delta/done/error）
           if (frame.type === 'tool_call') {
             callbacks.onToolCall?.({ id: frame.id ?? '', name: frame.name ?? '', args: frame.args ?? {} });
@@ -192,10 +235,12 @@ export async function streamPipeline(
             continue;
           }
           if (frame.type === 'error' || frame.error) {
+            clearTimeoutTimer();
             callbacks.onError(frame.error ?? '');
             return;
           }
           if (frame.type === 'done' || frame.done) {
+            clearTimeoutTimer();
             callbacks.onDone(frame);
             return;
           }
@@ -203,9 +248,14 @@ export async function streamPipeline(
         }
       }
       // 流结束但无 done 帧（异常断开）
+      clearTimeoutTimer();
       callbacks.onError('Stream ended unexpectedly');
     } catch (err) {
-      if (controller.signal.aborted) return; // 主动停止，不算错误
+      clearTimeoutTimer();
+      if (controller.signal.aborted) {
+        if (timedOut) return; // 超时（已在 timeout 回调 onError，避免重复）
+        return; // 用户主动 abort → 静默，不算错误
+      }
       callbacks.onError(err instanceof Error ? err.message : String(err));
     }
   };

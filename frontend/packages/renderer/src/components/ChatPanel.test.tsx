@@ -19,6 +19,7 @@ import userEvent from '@testing-library/user-event';
 import { ChatPanel } from './ChatPanel';
 import { apiFetch } from '../api/client';
 import { executePipeline, getExecutionStatus } from '../api/pipeline';
+import type { PipelineStreamFrame, PipelineStreamSink } from '../hooks/useExecutionPoll';
 import { useChapterStore } from '../stores/chapter';
 import { useThemeStore } from '../stores/theme';
 import { useModelsStore, type ProviderConfig } from '../stores/models';
@@ -883,5 +884,60 @@ describe('ChatPanel — 系统级 Agent 工具流式（#597）', () => {
     expect(streamChatMock).toHaveBeenCalledTimes(1);
 
     emitDone(0);
+  });
+});
+
+/**
+ * #681 管线帧与 chat 帧区分渲染（G5a 实锤：#642-1 把管线 delta 当 AI 消息渲染并 saveChatMessage 落库）
+ *
+ * 数据流：useExecutionPoll 把 streamPipeline 的帧透传给 streamSinkRef → ChatPanel streamSink prop。
+ * RED 锁定两处真实 bug：
+ * 1. 管线 delta 命中 sink.onDelta → 当前实现把它当 chat AI 消息（chat-msg-ai-0）渲染 → 断言
+ *    应出现「管线输出」标签（pipeline-output-0）而非 AI 消息 → FAIL。
+ * 2. 管线 delta + onDone → 当前实现复用 chat onDone → saveChatMessage 被调用 → 断言管线产物
+ *    不落 chat 历史（saveChatMessage 不被调）→ FAIL。
+ * GREEN 方向：ChatPanel 内部维护管线输出区（pipelineOutputEntries，data-testid=pipeline-output-<n>，
+ *   带「管线输出」标签），与 chat messages 区分离；管线 sink 的 onDone 只落管线输出，不调 saveChatMessage。
+ */
+describe('ChatPanel — 管线帧与 chat 帧区分渲染（#681）', () => {
+  /** 模拟 useExecutionPoll 的 streamSinkRef（ChatPanel 经 streamSink prop 注册复用） */
+  let sinkRef: { current: PipelineStreamSink };
+  beforeEach(() => {
+    sinkRef = { current: {} as PipelineStreamSink };
+  });
+
+  it('管线 delta 命中 sink.onDelta → 以「管线输出」标签渲染，非普通 AI 消息（不污染 chat 历史）', async () => {
+    render(<ChatPanel {...OPTS} streamSink={sinkRef} />);
+    // 管线 delta 经 sink（非 streamChat callbacks）
+    act(() => {
+      sinkRef.current.onDelta?.('管线输出文本');
+    });
+    // RED：当前实现把管线 delta 当 AI 消息（chat-msg-ai-0）渲染、无 pipeline-output 区 →
+    // 下面管线标签断言 FAIL
+    expect(screen.getByTestId('pipeline-output-0')).toHaveTextContent('管线输出文本');
+  });
+
+  it('管线 delta + onDone → 不调 saveChatMessage（管线产物不落 chat 历史）', async () => {
+    render(<ChatPanel {...OPTS} streamSink={sinkRef} />);
+    // 管线 delta（建 ChatPanel 流式 seq）→ 管线 onDone
+    act(() => {
+      sinkRef.current.onDelta?.('管线成品');
+    });
+    act(() => {
+      sinkRef.current.onDone?.({ type: 'done', done: true, final_output: '管线成品' } as PipelineStreamFrame);
+    });
+    // RED：当前实现管线 onDone 复用 chat onDone（streamSeq 非空时）→ saveChatMessage 被调用 →
+    // 断言 not.toHaveBeenCalled 失败
+    expect(chatApiMocks.saveChatMessage).not.toHaveBeenCalled();
+  });
+
+  it('chat 帧（streamChat 路径）仍正常渲染 AI 消息并落库（#681 回归不破 chat 基线）', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} streamSink={sinkRef} />);
+    await sendAndAwaitStream(user, '正常对话');
+    driveConversationReply(0, '聊天回复');
+    // chat 流仍渲染为 AI 消息 + 落库（#547 契约保持）
+    expect(screen.getByTestId('chat-msg-ai-0')).toHaveTextContent('聊天回复');
+    expect(chatApiMocks.saveChatMessage).toHaveBeenCalled();
   });
 });

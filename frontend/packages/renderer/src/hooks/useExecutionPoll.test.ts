@@ -67,7 +67,8 @@ interface CapturedPipelineStream {
   };
   callbacks: {
     onDelta: (delta: string) => void;
-    onDone: (frame: { done: boolean; final_output?: string }) => void;
+    /** #681：done 帧可携带 execution_id（onDone 捕获供执行详情页） */
+    onDone: (frame: { done: boolean; final_output?: string; execution_id?: string }) => void;
     onError: (message: string) => void;
     onToolCall?: (call: { id: string; name: string; args: Record<string, unknown> }) => void;
     onToolResult?: (res: { id: string; name: string; result: string }) => void;
@@ -354,6 +355,19 @@ describe('useExecutionPoll — confirm / 并发保护 / 失败路径', () => {
     });
     expect(result.current.status).toBe('failed');
     expect(result.current.error).toBe('Kernel unreachable');
+  });
+
+  it('#681 onDone 帧携带 execution_id → executionId 被捕获（执行详情页数据源）', async () => {
+    const { result } = renderHook(() => useExecutionPoll());
+    act(() => {
+      result.current.start(BODY);
+    });
+    // RED：当前 onDone 不读 f.execution_id → executionId 保持 null → 断言 'exec-681' 失败
+    act(() => {
+      capturedStream?.callbacks.onDone({ done: true, final_output: 'x', execution_id: 'exec-681' });
+    });
+    expect(result.current.status).toBe('success');
+    expect(result.current.executionId).toBe('exec-681');
   });
 
   it('streamPipeline 异常 rejection 被 .catch 吞掉：不崩溃（错误经 onError 帧表达）', async () => {

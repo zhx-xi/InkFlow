@@ -140,13 +140,15 @@ class PipelineStreamEvent:
     def __init__(
         self,
         *,
-        type: str = "delta",        # delta / done
+        type: str = "delta",  # delta / stage / done
         done: bool = False,
         delta: str = "",
         final_output: str = "",
         intent: str | None = None,  # done 帧：'content'（管线产物为章节内容）
         error: str = "",
         execution_id: str = "",  # done 帧：执行记录 id（供 getExecutionStatus 对齐）
+        stage_id: str = "",  # 新增 #681：阶段切换帧的阶段 id
+        stage_name: str = "",  # 新增 #681：阶段切换帧的阶段 display name
     ) -> None:
         self.type = type
         self.done = done
@@ -155,6 +157,8 @@ class PipelineStreamEvent:
         self.intent = intent
         self.error = error
         self.execution_id = execution_id
+        self.stage_id = stage_id
+        self.stage_name = stage_name
 
 
 class AgentPipelineProtocol(Protocol):

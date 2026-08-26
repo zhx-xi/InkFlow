@@ -509,3 +509,101 @@ class TestInjectContext:
 
         assert context.variables["x"] == "1"
         svc._assemble_continue_context.assert_awaited_once()
+
+
+# ── #681 流式进度：update_stages 写真实 stage 快照（agent_service_stream.py:89-94）─────
+#
+# G5a 实锤：stream_pipeline 内 `update_stages(..., stages=[], ...)` 恒写空 stages（:89-94），
+# 前端 PipelineStatus 无阶段数据可渲染。RED 锁定：pipeline stream 产出 type='stage' 帧时，
+# update_stages 应收到真实 stage 快照（非空，stage_id 保留）。无 stage 帧（纯 delta/done）
+# 的既有用例保持 stages=[] 兼容（GREEN 用 getattr 防御收集）。
+
+
+class TestStreamPipelineStageSnapshot:
+    """#681：stream_pipeline 收集 stage 帧 → update_stages 写真实 stage 快照。"""
+
+    def _stage_ev(self, stage_id: str, stage_name: str):
+        return SimpleNamespace(
+            type="stage",
+            done=False,
+            delta="",
+            final_output="",
+            intent=None,
+            error="",
+            execution_id="",
+            stage_id=stage_id,
+            stage_name=stage_name,
+        )
+
+    def _delta_ev(self, delta: str):
+        return SimpleNamespace(
+            type="delta",
+            done=False,
+            delta=delta,
+            final_output="",
+            intent=None,
+            error="",
+            execution_id="",
+        )
+
+    def _done_ev(self, final_output: str):
+        return SimpleNamespace(
+            type="done",
+            done=True,
+            delta="",
+            final_output=final_output,
+            intent="content",
+            error="",
+            execution_id="",
+        )
+
+    async def test_update_stages_collects_stage_frames_to_snapshot(self) -> None:
+        """stream 产出 stage 帧 → update_stages 的 stages 非空且 stage_id 按序保留。"""
+        events = [
+            self._stage_ev("architect", "架构师"),
+            self._delta_ev("架构大纲"),
+            self._stage_ev("writer", "写手"),
+            self._delta_ev("章节正文"),
+            self._done_ev("修订稿"),
+        ]
+        pipeline_impl = MockStreamPipeline(events=events)
+        svc, store, _, _ = _build_svc(pipeline=pipeline_impl)
+        svc._build_pipeline_context = AsyncMock(
+            return_value=([], PipelineContext(project_id=str(PROJECT_ID)), pipeline_impl, [], [])
+        )
+        svc._inject_context = AsyncMock()
+
+        frames = [ev async for ev in svc.stream_pipeline(_request())]
+
+        # RED：当前实现 update_stages(stages=[]) → store.update_calls[-1]['stages'] 为空
+        assert store.update_calls[-1]["status"] == "completed"
+        stages = store.update_calls[-1]["stages"]
+        assert stages != []
+        assert [s["stage_id"] for s in stages] == ["architect", "writer"]
+        # 每个 stage 快照含 status 字段（running/complete 语义由 GREEN 定，此处锁字段存在）
+        assert all("status" in s for s in stages)
+        # 帧序保留（stage/delta 均透传前端）
+        assert [ev.type for ev in frames if ev.type in ("stage", "delta")] == [
+            "stage",
+            "delta",
+            "stage",
+            "delta",
+        ]
+
+    async def test_update_stages_no_stage_frames_keeps_empty(self) -> None:
+        """无 stage 帧（纯 delta/done）→ stages 保持 []（既有路径兼容，不破坏）。"""
+        events = [
+            self._delta_ev("你好"),
+            self._done_ev("你好"),
+        ]
+        pipeline_impl = MockStreamPipeline(events=events)
+        svc, store, _, _ = _build_svc(pipeline=pipeline_impl)
+        svc._build_pipeline_context = AsyncMock(
+            return_value=([], PipelineContext(project_id=str(PROJECT_ID)), pipeline_impl, [], [])
+        )
+        svc._inject_context = AsyncMock()
+
+        _ = [ev async for ev in svc.stream_pipeline(_request())]
+
+        assert store.update_calls[-1]["status"] == "completed"
+        assert store.update_calls[-1]["stages"] == []
