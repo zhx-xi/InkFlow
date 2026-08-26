@@ -50,7 +50,6 @@ def _audit_call(audit_service: AsyncMock, summary: str):
     return None
 
 
-
 # ═══ F45 M2 语义总结编排（#340：spec §5.3 管线 / §5.4 anchor_hash 幂等 /
 # §5.7 审计 / §9 第 3 行 ⑪-⑰ / §13 M2-3）═══
 
@@ -722,9 +721,7 @@ class TestMemoryServiceM2Summarize:
         deps["user_preference_repo"].list_all.return_value = (user_anchors, 1)
         deps["summary_repo"].get.side_effect = _summary_get_side_effect(None, None)
         s1 = _summary_duck(summary_id="sum-p", anchor_hash="h1")
-        s2 = _summary_duck(
-            summary_id="sum-u", scope="user", project_id=None, anchor_hash="h2"
-        )
+        s2 = _summary_duck(summary_id="sum-u", scope="user", project_id=None, anchor_hash="h2")
         deps["summarizer"].summarize.side_effect = [(s1, 0), (s2, 0)]
 
         result = await service.summarize(PROJECT_ID)
@@ -749,5 +746,3 @@ class TestMemoryServiceM2Summarize:
         assert result["summarized"] is True
         assert result["user"] is None
         assert deps["summary_repo"].upsert.await_count == 1
-
-

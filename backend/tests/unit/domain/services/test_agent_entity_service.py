@@ -716,9 +716,9 @@ class TestBuiltinAgentPromptContract:
     def test_each_builtin_system_prompt_has_min_length(self) -> None:
         """每个内置 system_prompt ≥ 80 字符（当前单行 <40 → FAIL）。"""
         for spec in BUILTIN_AGENT_SPECS:
-            assert len(spec["system_prompt"]) >= 80, (
-                f"{spec['name']} system_prompt 仅 {len(spec['system_prompt'])} 字符，过短"
-            )
+            assert (
+                len(spec["system_prompt"]) >= 80
+            ), f"{spec['name']} system_prompt 仅 {len(spec['system_prompt'])} 字符，过短"
 
     def test_each_builtin_system_prompt_contains_role_duty(self) -> None:
         """每个内置 system_prompt 含角色职责说明（含「职责」）。"""

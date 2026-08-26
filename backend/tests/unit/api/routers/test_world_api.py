@@ -656,9 +656,7 @@ class TestWorldRootSingletonAPI:
         assert response.status_code == 201
         assert response.json()["name"] == "清河县城"
         svc.get_root_setting.assert_awaited_once_with(PID)
-        svc.create_setting.assert_awaited_once_with(
-            PID, "清河县城", "门派", "", parent_id=root.id
-        )
+        svc.create_setting.assert_awaited_once_with(PID, "清河县城", "门派", "", parent_id=root.id)
 
     @patch("inkflow.api.routers.world_settings.get_world_service")
     def test_create_root_when_no_root_201(self, mock_get_svc: MagicMock) -> None:
@@ -692,6 +690,4 @@ class TestWorldRootSingletonAPI:
         assert response.status_code == 201
         assert response.json()["name"] == "清河县城"
         svc.get_root_setting.assert_not_awaited()
-        svc.create_setting.assert_awaited_once_with(
-            PID, "清河县城", "", "", parent_id=PARENT_ID
-        )
+        svc.create_setting.assert_awaited_once_with(PID, "清河县城", "", "", parent_id=PARENT_ID)

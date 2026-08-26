@@ -226,9 +226,7 @@ async def test_start_branch_mode_copies_outline_tree():
             SimpleNamespace(id=new_child2_id),
         ]
     )
-    svc = _make_service(
-        repo, outline_repo=outline_repo, outline_service=outline_service
-    )
+    svc = _make_service(repo, outline_repo=outline_repo, outline_service=outline_service)
 
     session = await svc.start(
         _pid(), "写一本关于时间旅者的悬疑小说", mode="branch", source_outline_id=root.id
@@ -289,9 +287,7 @@ async def test_start_branch_outline_service_missing_raises():
     """branch + outline_repo 就绪但 outline_service 未装配 → ValueError("分支复制未装配大纲服务")
     （#544 coverage 补测）。"""
     root, _child1, _child2, _other = _outline_tree()
-    svc = _make_service(
-        _make_repo(), outline_repo=_FakeOutlineRepo([root]), outline_service=None
-    )
+    svc = _make_service(_make_repo(), outline_repo=_FakeOutlineRepo([root]), outline_service=None)
 
     with pytest.raises(ValueError, match="分支复制未装配大纲服务"):
         await svc.start(

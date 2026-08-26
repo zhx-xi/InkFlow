@@ -561,27 +561,21 @@ class TestBuiltinSkillContentContract:
         """每个内置 content ≥ 20 行（splitlines；当前 ~10 行 → FAIL）。"""
         for spec in BUILTIN_SKILL_SPECS:
             lines = spec["content"].splitlines()
-            assert len(lines) >= 20, (
-                f"{spec['name']} content 仅 {len(lines)} 行，提示词过短（应 ≥20 行）"
-            )
+            assert (
+                len(lines) >= 20
+            ), f"{spec['name']} content 仅 {len(lines)} 行，提示词过短（应 ≥20 行）"
 
     def test_each_builtin_content_has_method_steps_section(self) -> None:
         """每个内置 content 含「## 方法步骤」小节（结构化方法论步骤）。"""
         for spec in BUILTIN_SKILL_SPECS:
-            assert "## 方法步骤" in spec["content"], (
-                f"{spec['name']} content 缺「方法步骤」小节"
-            )
+            assert "## 方法步骤" in spec["content"], f"{spec['name']} content 缺「方法步骤」小节"
 
     def test_each_builtin_content_has_boundaries_section(self) -> None:
         """每个内置 content 含「## 边界」小节（方法论边界/注意事项）。"""
         for spec in BUILTIN_SKILL_SPECS:
-            assert "## 边界" in spec["content"], (
-                f"{spec['name']} content 缺「边界」小节"
-            )
+            assert "## 边界" in spec["content"], f"{spec['name']} content 缺「边界」小节"
 
     def test_each_builtin_content_has_example_section(self) -> None:
         """每个内置 content 含「## 示例」小节（应用示例）。"""
         for spec in BUILTIN_SKILL_SPECS:
-            assert "## 示例" in spec["content"], (
-                f"{spec['name']} content 缺「示例」小节"
-            )
+            assert "## 示例" in spec["content"], f"{spec['name']} content 缺「示例」小节"

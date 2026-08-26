@@ -41,7 +41,6 @@ def _project(memory_learning: bool | None = None) -> Project:
     )
 
 
-
 def _preference(pattern, value, *, count, category=None, **kw):
     """构造领域偏好（惰性 import——RED 阶段 domain/models/preference.py 未实现）."""
     # 惰性：RED 阶段模块未实现
@@ -61,7 +60,6 @@ def _preference(pattern, value, *, count, category=None, **kw):
     }
     values.update(kw)
     return ProjectPreference(**values)
-
 
 
 def _user_preference(pattern, value, *, count, project_count=2, category=None, **kw):
@@ -86,13 +84,11 @@ def _user_preference(pattern, value, *, count, project_count=2, category=None, *
     return UserPreference(**values)
 
 
-
 # ═══ F45 M2 追加段（2026-08-18，spec §5.4/§5.6/§7/§9 M2-4/M2-10 语义总结注入）═══
 
 
 def _semantic_summary(
-    content, *, scope="project", project_id=None, anchor_hash="anchor-hash",
-    anchor_count=3, **kw
+    content, *, scope="project", project_id=None, anchor_hash="anchor-hash", anchor_count=3, **kw
 ):
     """构造语义总结领域实体（惰性 import——RED 阶段 semantic_summary.py 未实现）."""
     from inkflow.domain.models.semantic_summary import SemanticSummary, SummaryScope
@@ -203,7 +199,9 @@ class TestPreferenceSourceM2Semantic:
         preference_repo = AsyncMock()
         preference_repo.list_by_project.return_value = (prefs, 1)
         project_summary = _semantic_summary(
-            "叙述偏好：用角色全名而非代词", scope="project", project_id=PROJECT_ID,
+            "叙述偏好：用角色全名而非代词",
+            scope="project",
+            project_id=PROJECT_ID,
             anchor_count=5,
         )
         summary_repo = AsyncMock()
@@ -302,8 +300,11 @@ class TestPreferenceSourceM2Semantic:
             "旧总结内容", scope="project", project_id=PROJECT_ID, anchor_hash="old-hash"
         )
         new_summary = _semantic_summary(
-            "叙述偏好：用角色全名而非代词", scope="project", project_id=PROJECT_ID,
-            anchor_hash="new-hash", anchor_count=5,
+            "叙述偏好：用角色全名而非代词",
+            scope="project",
+            project_id=PROJECT_ID,
+            anchor_hash="new-hash",
+            anchor_count=5,
         )
         summary_repo = AsyncMock()
         summary_repo.get.side_effect = _summary_get_side_effect({"project": old_summary})
@@ -372,7 +373,9 @@ class TestPreferenceSourceM2Semantic:
         # 父侧定稿参数契约（F44 后台任务就位）：background_refresh 收到
         # (anchors, scope, project_id, anchor_hash)，调度器自持 session 后台执行
         background_refresh.assert_awaited_once_with(  # RED: 现实现传 coroutine → FAILED
-            prefs, scope=SummaryScope.PROJECT, project_id=PROJECT_ID,
+            prefs,
+            scope=SummaryScope.PROJECT,
+            project_id=PROJECT_ID,
             anchor_hash=anchor_hash(prefs),
         )
 
@@ -517,7 +520,9 @@ class TestPreferenceSourceM2Semantic:
         # 父侧定稿参数契约（F44 后台任务就位）：background_refresh 收到
         # (anchors, scope=USER, project_id=None, anchor_hash)，调度器自持 session
         background.assert_awaited_once_with(  # RED: 现实现传 coroutine → FAILED
-            user_items, scope=SummaryScope.USER, project_id=None,
+            user_items,
+            scope=SummaryScope.USER,
+            project_id=None,
             anchor_hash=anchor_hash(user_items),
         )
 

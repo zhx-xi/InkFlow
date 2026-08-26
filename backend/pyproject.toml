@@ -72,7 +72,7 @@ web = [
 asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --import-mode=importlib"
 markers = [
     "unit: 单元测试 — 无 I/O，无数据库，快速（< 100ms/条）",
     "integration: 集成测试 — 真实数据库（in-memory SQLite）",
