@@ -21,12 +21,12 @@ from inkflow.domain.services.context_service import ContextService
 
 
 async def _mock_count_tokens(text: str, _model: str = "") -> int:
-    """基于字符数的 Token 估算（与 test_context_service 一致的 char/4 兜底）. """
+    """基于字符数的 Token 估算（与 test_context_service 一致的 char/4 兜底）."""
     return max(1, len(text) // 4)
 
 
 class MockSource:
-    """返回固定 items 的 Mock 数据源（带 metadata）. """
+    """返回固定 items 的 Mock 数据源（带 metadata）."""
 
     def __init__(self, items: list[ContextItem]) -> None:
         self._items = items
@@ -73,7 +73,7 @@ def _character_svc(id_a: uuid.UUID, id_b: uuid.UUID) -> ContextService:
 
 
 class TestContextOverride:
-    """override 通道 — 勾选的角色/伏笔才注入. """
+    """override 通道 — 勾选的角色/伏笔才注入."""
 
     @staticmethod
     def _character_blocks(result) -> list[ContextItem]:
@@ -82,7 +82,7 @@ class TestContextOverride:
         ]
 
     async def test_character_override_keeps_only_selected(self) -> None:
-        """character_ids 指定后，只注入命中 id 的角色 item；未勾选不注入. """
+        """character_ids 指定后，只注入命中 id 的角色 item；未勾选不注入."""
         id_a = uuid.uuid4()
         id_b = uuid.uuid4()
         svc = _character_svc(id_a, id_b)
@@ -94,7 +94,7 @@ class TestContextOverride:
         assert character_items[0].metadata["character_id"] == str(id_a)
 
     async def test_foreshadowing_override_keeps_only_selected(self) -> None:
-        """foreshadowing_ids 指定后，只注入命中 id 的伏笔 item. """
+        """foreshadowing_ids 指定后，只注入命中 id 的伏笔 item."""
         id_x = uuid.uuid4()
         id_y = uuid.uuid4()
         svc = ContextService(
@@ -126,7 +126,7 @@ class TestContextOverride:
         assert foreshadowing_items[0].metadata["foreshadowing_id"] == str(id_x)
 
     async def test_override_none_injects_all(self) -> None:
-        """override 为 None → 注入全部（默认行为不受影响）. """
+        """override 为 None → 注入全部（默认行为不受影响）."""
         id_a = uuid.uuid4()
         id_b = uuid.uuid4()
         svc = _character_svc(id_a, id_b)
@@ -136,7 +136,7 @@ class TestContextOverride:
         assert len(self._character_blocks(result)) == 2
 
     async def test_override_empty_lists_injects_all(self) -> None:
-        """override 提供但列表为空 → 视为未勾选，注入全部. """
+        """override 提供但列表为空 → 视为未勾选，注入全部."""
         id_a = uuid.uuid4()
         id_b = uuid.uuid4()
         svc = _character_svc(id_a, id_b)
@@ -146,7 +146,7 @@ class TestContextOverride:
         assert len(self._character_blocks(result)) == 2
 
     async def test_override_does_not_affect_other_sources(self) -> None:
-        """override 只过滤 character/foreshadowing，不影响 chapter_summary 等其他数据源. """
+        """override 只过滤 character/foreshadowing，不影响 chapter_summary 等其他数据源."""
         id_a = uuid.uuid4()
         svc = ContextService(
             sources={

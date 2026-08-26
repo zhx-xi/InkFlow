@@ -659,9 +659,7 @@ async def test_remove_user_preference_without_repo_raises() -> None:
 async def test_get_user_preferences_for_injection_repo_none_sorted() -> None:
     """覆盖 L610->611: user_preference_repo 未注入 + 开关开启 → []
     （list_user_preferences 早退 ([], 0) 后走 repo None 分支）."""
-    service, _deps = _make_service(
-        extra={"memory_learning": True}, inject_user_repo=False
-    )
+    service, _deps = _make_service(extra={"memory_learning": True}, inject_user_repo=False)
     assert await service.get_user_preferences_for_injection(PROJECT_ID) == []
 
 
@@ -710,6 +708,3 @@ async def test_get_user_preferences_for_injection_decay_full_path() -> None:
     assert deps["user_preference_repo"].update.await_count == 2
     assert high.active_watermark_at_last_access == 500.0
     assert low.active_watermark_at_last_access == 500.0
-
-
-

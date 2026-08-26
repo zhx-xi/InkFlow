@@ -20,7 +20,11 @@ import asyncio
 
 from inkflow.domain.models.agent_pipeline import PipelineExecuteRequest
 from inkflow.domain.models.project import ProjectConfig
-from tests.unit.test_agent_service import MockPipeline, _build_service, _make_project
+from tests.unit.domain.services.test_agent_service import (
+    MockPipeline,
+    _build_service,
+    _make_project,
+)
 
 
 class MockAgentRepo:

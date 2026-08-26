@@ -721,9 +721,7 @@ class TestUpdateRelation:
         mock_relation_repo.get = AsyncMock(return_value=existing)
         mock_relation_repo.get_by_key = AsyncMock(return_value=existing)
 
-        updated = await service.update_relation(
-            existing.id, description="修订后的关系描述"
-        )
+        updated = await service.update_relation(existing.id, description="修订后的关系描述")
 
         assert updated.id == existing.id
         assert updated.description == "修订后的关系描述"
@@ -800,6 +798,7 @@ class TestListRelations:
             offset=10,
             limit=20,
         )
+
 
 # ── 已拆分至 test_knowledge_graph_service_graph.py ──
 

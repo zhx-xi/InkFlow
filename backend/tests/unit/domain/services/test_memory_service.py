@@ -92,6 +92,7 @@ asyncio 模式: 本 venv（pytest-asyncio）实测头部 asyncio: mode=Mode.AUTO
 （pyproject asyncio_mode = "auto" 生效）；文件级 pytestmark = pytest.mark.asyncio
 双保险（STRICT/AUTO 两种模式均成立），全部用例 async def。
 """
+
 from __future__ import annotations
 
 import uuid
@@ -108,6 +109,8 @@ from inkflow.domain.services.memory_service import (
 pytestmark = pytest.mark.asyncio  # 实测 mode=Mode.AUTO；显式 mark 兼容 STRICT/AUTO
 PROJECT_ID = uuid.UUID(int=100)
 CHAPTER_ID = uuid.UUID("87654321-4321-8765-4321-876543218765")
+
+
 class FakeLearner:
     """注入 fake（隔离提取算法；本文件不 import preference_learner）.
     results: 每次 aggregate_candidates 依次弹出的候选列表，耗尽后返回 []。
@@ -815,7 +818,6 @@ async def test_update_user_preference_uninstalled_raises() -> None:
         await service.update_user_preference(
             "upref-1", category="style_word", pattern="说", value="低声道"
         )
-
 
 
 # ── 契约 15: remove_summaries（#619 F49 ③ 语义总结删除，Q2=B 越闸） ──

@@ -177,9 +177,7 @@ class TestListConversations:
         assert result == convs
         fake_repo.list_conversations.assert_awaited_once()
 
-    async def test_list_conversations_include_deleted_passthrough(
-        self, service, fake_repo
-    ):
+    async def test_list_conversations_include_deleted_passthrough(self, service, fake_repo):
         """#581 include_deleted=True → 关键字透传 repo.list_conversations(include_deleted=True)。
 
         镜像 sessions 的 include_deleted 先例：默认排除已归档，

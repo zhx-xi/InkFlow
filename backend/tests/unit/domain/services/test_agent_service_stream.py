@@ -201,16 +201,31 @@ class TestStreamPipeline:
         """delta 逐帧产生 + done 帧携带 final_output/intent/execution_id；落库 completed。"""
         events = [
             SimpleNamespace(
-                type="delta", done=False, delta="风起", final_output="", intent=None,
-                error="", execution_id="",
+                type="delta",
+                done=False,
+                delta="风起",
+                final_output="",
+                intent=None,
+                error="",
+                execution_id="",
             ),
             SimpleNamespace(
-                type="delta", done=False, delta="云涌", final_output="", intent=None,
-                error="", execution_id="",
+                type="delta",
+                done=False,
+                delta="云涌",
+                final_output="",
+                intent=None,
+                error="",
+                execution_id="",
             ),
             SimpleNamespace(
-                type="done", done=True, delta="", final_output="风起云涌", intent="content",
-                error="", execution_id="",
+                type="done",
+                done=True,
+                delta="",
+                final_output="风起云涌",
+                intent="content",
+                error="",
+                execution_id="",
             ),
         ]
         pipeline_impl = MockStreamPipeline(events=events)
@@ -271,7 +286,8 @@ class TestStreamPipelineSupervisor:
         )
 
         frames = [
-            ev async for ev in svc.stream_pipeline(
+            ev
+            async for ev in svc.stream_pipeline(
                 _request(mode="supervisor", supervisor=SupervisorExecuteConfig())
             )
         ]
@@ -328,7 +344,6 @@ class TestBuildPipelineContextValidation:
                 _request(mode="supervisor", supervisor=SupervisorExecuteConfig())
             )
 
-
     async def test_supervisor_assembled_returns_pipeline_and_stages(self):
         """mode=supervisor 且 _supervisor_pipeline 已装配 → 返回装配元组（stages/context 等）。
 
@@ -336,16 +351,12 @@ class TestBuildPipelineContextValidation:
         落入 L192 return）未覆盖——supervisor 缺配置/未装配之外的成功装配路径。
         """
         supervisor_pipeline = MockStreamPipeline()
-        svc, _, _, _ = _build_svc(
-            project=_make_project(), supervisor_pipeline=supervisor_pipeline
-        )
+        svc, _, _, _ = _build_svc(project=_make_project(), supervisor_pipeline=supervisor_pipeline)
         svc._get_template = lambda name: _make_template()
         svc._merge_role_configs = AsyncMock(return_value=[_make_stage()])
 
-        stages, context, pipeline_impl, conditional_edges, _ = await (
-            svc._build_pipeline_context(
-                _request(mode="supervisor", supervisor=SupervisorExecuteConfig())
-            )
+        stages, context, pipeline_impl, conditional_edges, _ = await svc._build_pipeline_context(
+            _request(mode="supervisor", supervisor=SupervisorExecuteConfig())
         )
 
         assert pipeline_impl is supervisor_pipeline
@@ -361,16 +372,12 @@ class TestBuildPipelineContextStatic:
         """_agent_repo=None + _db_session 设置 → 用 SQLiteAgentRepository 兜底；
         其 list() 抛异常 → warning 回退模板装配（装配继续，不阻断）。"""
         stage = _make_stage()
-        svc, _, _, _ = _build_svc(
-            project=_make_project(), db_session=MagicMock(), agent_repo=None
-        )
+        svc, _, _, _ = _build_svc(project=_make_project(), db_session=MagicMock(), agent_repo=None)
         svc._get_template = lambda name: _make_template()
         svc._load_template = AsyncMock(return_value=None)
         svc._merge_role_configs = AsyncMock(return_value=[stage])
         with (
-            patch(
-                "inkflow.domain.services.agent_service._apply_agent_order", return_value=[stage]
-            ),
+            patch("inkflow.domain.services.agent_service._apply_agent_order", return_value=[stage]),
             patch(
                 "inkflow.domain.services.agent_service._apply_agent_relations",
                 return_value=([stage], []),
@@ -381,9 +388,7 @@ class TestBuildPipelineContextStatic:
         ):
             m_repo_cls.return_value.list = AsyncMock(side_effect=RuntimeError("db down"))
 
-            _, context, pipeline_impl, _, _ = await svc._build_pipeline_context(
-                _request()
-            )
+            _, context, pipeline_impl, _, _ = await svc._build_pipeline_context(_request())
 
         assert pipeline_impl is svc._pipeline
         assert context.project_id == str(PROJECT_ID)
@@ -445,9 +450,13 @@ class TestBuildPipelineContextStatic:
                 return_value=([_make_stage()], []),
             ),
         ):
-            stages, context, pipeline_impl, conditional_edges, _ = await (
-                svc._build_pipeline_context(_request(chapter_id=CHAPTER_ID))
-            )
+            (
+                stages,
+                context,
+                pipeline_impl,
+                conditional_edges,
+                _,
+            ) = await svc._build_pipeline_context(_request(chapter_id=CHAPTER_ID))
 
         assert pipeline_impl is svc._pipeline
         assert len(stages) == 1
