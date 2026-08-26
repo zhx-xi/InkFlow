@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from inkflow.domain.services._chunking import chunk_text
+from inkflow.domain.services._chunking import ChunkingMode, chunk_text
 
 
 class TestChunkText:
@@ -86,3 +86,26 @@ class TestChunkText:
             chunk_text("内容", chunk_size=0)
         with pytest.raises(ValueError):
             chunk_text("内容", chunk_size=-5)
+
+
+class TestChunkingModeBranches:
+    """#687 coverage-gap 补测：paragraph 超长降级 / llm 边界回边。"""
+
+    def test_paragraph_superlong_degrades_to_fixed(self) -> None:
+        """覆盖 _chunking L140 br=[148]：单段超 chunk_size -> 降级 FIXED 标点回溯。"""
+        text = "甲" * 60 + "。" + "乙" * 60  # 121 字符，chunk_size=50 -> 每段超长
+        chunks = chunk_text(text, mode=ChunkingMode.PARAGRAPH, chunk_size=50)
+        assert "".join(c.text for c in chunks) == text
+        assert all(len(c.text) <= 50 for c in chunks)
+
+    def test_llm_analyzer_multiple_boundaries(self) -> None:
+        """覆盖 _chunking L287 br=[286] 回边：analyzer 返回多个升序边界。"""
+        text = "abcdef"
+        chunks = chunk_text(text, mode=ChunkingMode.LLM, analyzer=lambda _t: [2, 4])
+        assert [c.text for c in chunks] == ["ab", "cd", "ef"]
+        assert [c.start_offset for c in chunks] == [0, 2, 4]
+
+    def test_llm_analyzer_none_degrades_to_paragraph(self) -> None:
+        """覆盖 _chunking L274-276：analyzer None -> 降级段落切片。"""
+        chunks = chunk_text("abc", mode=ChunkingMode.LLM, analyzer=None)
+        assert "".join(c.text for c in chunks) == "abc"

@@ -184,3 +184,69 @@ async def test_get_status_unknown_returns_none(project_repo, spawned):
     """未注册 task_id -> None (router 映射 404)。"""
     svc = _svc(project_repo)
     assert await svc.get_status("nope") is None
+
+
+@pytest.mark.asyncio
+async def test_start_rebuild_invalid_scope_raises(project_repo, spawned):
+    """覆盖 L61-62：scope 非法 -> ValueError(invalid scope)。"""
+    svc = _svc(project_repo)
+    with pytest.raises(ValueError, match="invalid scope"):
+        await svc.start_rebuild([PID_A], scope="bogus")
+
+
+@pytest.mark.asyncio
+async def test_start_rebuild_all_projects_via_list_all(spawned):
+    """覆盖 L66-False/75/149-157：project_ids=None -> 走 _list_all_project_ids 分页。"""
+    repo = AsyncMock()
+    proj = AsyncMock()
+    repo.list_all = AsyncMock(side_effect=[([proj], 2), ([proj], 2)])
+    svc = IndexRebuildService(project_repo=repo, fulltext=AsyncMock(), vector=None)
+    result = await svc.start_rebuild(None, scope="fulltext")
+    assert result["status"] == "running"
+    status = await svc.get_status(result["task_id"])
+    assert status["progress_total"] == 2
+    assert repo.list_all.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_run_vector_scope_skips_fulltext(project_repo, spawned):
+    """覆盖 L113-False 弧：scope=vector 且 vector 已配 -> 跳过 fulltext 直接 vector。"""
+    svc = _svc(project_repo, vector=AsyncMock())
+    await svc.start_rebuild([PID_A], scope="vector")
+    task, _ = spawned.recorded[0]
+    await task()
+    assert svc._fulltext.await_count == 0
+    assert svc._vector.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_run_vector_none_defensive_failed(project_repo):
+    """覆盖 L122-123：_run 内 vector is None 防御 -> RuntimeError -> failed。"""
+    svc = _svc(project_repo, vector=None)
+    svc._tasks["t-id"] = {
+        "status": "running",
+        "step": "vector",
+        "progress_done": 0,
+        "progress_total": 1,
+        "rebuilt_at": None,
+        "error": None,
+    }
+    await svc._run("t-id", [PID_A], scope="vector")
+    assert svc._tasks["t-id"]["status"] == "failed"
+    assert "embedding 模型不可用" in svc._tasks["t-id"]["error"]
+
+
+@pytest.mark.asyncio
+async def test_run_project_ids_none(project_repo):
+    """覆盖 L109-False/121-False：_run project_ids=None -> 不解析 pid，fulltext-only 落 done。"""
+    svc = _svc(project_repo)
+    svc._tasks["t-id"] = {
+        "status": "running",
+        "step": "fulltext",
+        "progress_done": 0,
+        "progress_total": None,
+        "rebuilt_at": None,
+        "error": None,
+    }
+    await svc._run("t-id", None, scope="fulltext")
+    assert svc._tasks["t-id"]["status"] == "done"
