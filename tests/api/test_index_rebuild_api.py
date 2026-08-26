@@ -199,3 +199,62 @@ def test_status_not_found_404(client, mock_svc):
     mock_svc.get_status.return_value = None
     resp = client.get("/api/v1/index/rebuild/status", params={"task_id": "nope"})
     assert resp.status_code == 404
+
+
+# ── #682 单例化契约（跨请求 task 状态共享）──
+
+
+@pytest.mark.asyncio
+async def test_get_svc_returns_singleton():
+    """#682: _get_svc() 每次返回同一进程级单例。
+
+    修复前 deps.get_index_rebuild_service 每请求 new 实例 → is False；
+    修复后工厂缓存单例 → is True。
+    """
+    from inkflow.api.routers import index as idx
+
+    project_repo = AsyncMock()
+    project_repo.get = AsyncMock(return_value=AsyncMock())
+    with patch(
+        "inkflow.api.deps.SQLiteProjectRepository", return_value=project_repo
+    ), patch(
+        "inkflow.api.deps.get_vector_store_optional", AsyncMock(return_value=None)
+    ), patch("inkflow.api.deps.get_search_service", AsyncMock()), patch(
+        "inkflow.api.deps.get_extraction_service", AsyncMock()
+    ), patch(
+        "inkflow.api.routers.index.async_session_factory", return_value=AsyncMock()
+    ), patch("inkflow.api.deps._index_rebuild_service_instance", None, create=True):
+        svc1 = await idx._get_svc()
+        svc2 = await idx._get_svc()
+    assert svc1 is svc2
+
+
+@pytest.mark.asyncio
+async def test_rebuild_then_status_not_404():
+    """#682: POST 注册 task → GET status 不 404（同一单例共享 _tasks）。
+
+    修复前 GET 落新实例 → _tasks 空 → 404；修复后单例 → 命中。
+    """
+    from inkflow.api.routers import index as idx
+    from inkflow.domain.services import index_rebuild_service as irs
+
+    project_repo = AsyncMock()
+    project_repo.get = AsyncMock(return_value=AsyncMock())
+    project_repo.list_all = AsyncMock(return_value=([], 0))
+    with patch(
+        "inkflow.api.deps.SQLiteProjectRepository", return_value=project_repo
+    ), patch(
+        "inkflow.api.deps.get_vector_store_optional", AsyncMock(return_value=None)
+    ), patch("inkflow.api.deps.get_search_service", AsyncMock()), patch(
+        "inkflow.api.deps.get_extraction_service", AsyncMock()
+    ), patch(
+        "inkflow.api.routers.index.async_session_factory", return_value=AsyncMock()
+    ), patch.object(irs, "spawn_background_task", AsyncMock()), patch(
+        "inkflow.api.deps._index_rebuild_service_instance", None, create=True
+    ):
+        svc1 = await idx._get_svc()
+        task = await svc1.start_rebuild(project_ids=[PROJECT_A], scope="fulltext")
+        svc2 = await idx._get_svc()
+        status = await svc2.get_status(task["task_id"])
+    assert status is not None
+    assert status["status"] == "running"

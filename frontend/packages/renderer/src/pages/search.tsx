@@ -114,8 +114,12 @@ export function SearchPage() {
       } else {
         setRebuildPhase({ phase: 'running', taskId, status });
       }
-    } catch {
-      // 单次状态查询失败：保持 loading，等待下一轮（不炸 UI）
+    } catch (err) {
+      if (pollRef.current !== null) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      setRebuildPhase({ phase: 'error', message: errorMessage(err) });
     }
   };
 
