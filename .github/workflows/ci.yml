@@ -201,23 +201,24 @@ jobs:
         # --reruns 2：chromadb 1.5.9 Windows CI 上 hnsw 段读取偶发竞态（写入后立即 retrieve，
         # 本地稳定复现不了，CI 两次失败用例不同 = 非确定性）；pytest-rerunfailures 兜底重试
         # #685: 生成 .coverage 数据文件供 coverage-backend 下载合并，不再重跑 unit 测试
+        # COVERAGE_FILE 指定绝对路径（防 uv run 子进程 CWD 漂移导致 .coverage 写到意外位置）
+        env:
+          COVERAGE_FILE: ${{ github.workspace }}/.coverage-unit
         run: |
-          uv run pytest tests/unit/ -v --tb=short --cov=inkflow --cov-report= --reruns 2 --reruns-delay 1
+          uv run pytest tests/unit/ -v --tb=short --cov=inkflow --reruns 2 --reruns-delay 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload coverage data
         uses: actions/upload-artifact@v7
         with:
           name: coverage-unit-backend
-          path: backend/.coverage
+          path: ${{ github.workspace }}/.coverage-unit
           retention-days: 1
 
   # ── Unit API tests (mock 式 API 测试，#685 拆分自原 coverage-backend 全量) ──
-  # 包含原 integration-chapter/project/writing/agent 的 API 测试 + 原孤儿 API 测试
+  # 第一批恒跑（required check）：与 unit-backend 同批并行
   unit-api-backend:
-    # 第二批：按需触发（core/tests/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
+    needs: [changes]
     permissions:
       contents: read
     runs-on: windows-latest
@@ -249,22 +250,23 @@ jobs:
         # #685: 所有 tests/api/ 测试 + coverage 数据上传供合并
         # 多行 run 必须逐行检查 $LASTEXITCODE（#214 假绿坑）
         # --reruns 2：chromadb 1.5.9 Windows CI 上 hnsw 段读取偶发竞态（#409，与 unit-backend 对齐）
+        env:
+          COVERAGE_FILE: ${{ github.workspace }}/.coverage-api
         run: |
-          uv run pytest ../tests/api/ --cov=inkflow --cov-report= -q --reruns 2 --reruns-delay 1
+          uv run pytest ../tests/api/ --cov=inkflow -q --reruns 2 --reruns-delay 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload coverage data
         uses: actions/upload-artifact@v7
         with:
           name: coverage-api-backend
-          path: backend/.coverage
+          path: ${{ github.workspace }}/.coverage-api
           retention-days: 1
 
   # ── Unit CLI tests (mock 式 CLI 测试，#685 拆分自原 coverage-backend 全量) ──
+  # 第一批恒跑（required check）：与 unit-backend 同批并行
   unit-cli-backend:
-    # 第二批：按需触发（core/tests/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
+    needs: [changes]
     permissions:
       contents: read
     runs-on: windows-latest
@@ -294,22 +296,23 @@ jobs:
 
       - name: Run CLI tests
         # #685: 所有 tests/cli/ 测试 + coverage 数据上传供合并
+        env:
+          COVERAGE_FILE: ${{ github.workspace }}/.coverage-cli
         run: |
-          uv run pytest ../tests/cli/ --cov=inkflow --cov-report= -q --reruns 2 --reruns-delay 1
+          uv run pytest ../tests/cli/ --cov=inkflow -q --reruns 2 --reruns-delay 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload coverage data
         uses: actions/upload-artifact@v7
         with:
           name: coverage-cli-backend
-          path: backend/.coverage
+          path: ${{ github.workspace }}/.coverage-cli
           retention-days: 1
 
   # ── Unit integration tests (repo + service，#685 拆分自原 coverage-backend 全量) ──
+  # 第一批恒跑（required check）：与 unit-backend 同批并行
   unit-integration-backend:
-    # 第二批：按需触发（core/tests/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
+    needs: [changes]
     permissions:
       contents: read
     runs-on: windows-latest
@@ -339,15 +342,17 @@ jobs:
 
       - name: Run integration tests
         # #685: 所有 tests/integration/ 测试 + coverage 数据上传供合并
+        env:
+          COVERAGE_FILE: ${{ github.workspace }}/.coverage-integration
         run: |
-          uv run pytest ../tests/integration/ --cov=inkflow --cov-report= -q --reruns 2 --reruns-delay 1
+          uv run pytest ../tests/integration/ --cov=inkflow -q --reruns 2 --reruns-delay 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload coverage data
         uses: actions/upload-artifact@v7
         with:
           name: coverage-integration-backend
-          path: backend/.coverage
+          path: ${{ github.workspace }}/.coverage-integration
           retention-days: 1
 
   # ── Frontend unit: Vitest（renderer + electron 双包，第一批恒跑）──
@@ -443,7 +448,7 @@ jobs:
   # ── Frontend integration: renderer API client ↔ 真实内核往返（spec §4.7 集成层）──
   integration-frontend:
     # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
+    needs: [changes, lint-backend, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend, lint-frontend, unit-frontend]
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
@@ -552,7 +557,7 @@ jobs:
 
   e2e-frontend-projects:
     # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
+    needs: [changes, lint-backend, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend, lint-frontend, unit-frontend]
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.e2e == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
@@ -609,7 +614,7 @@ jobs:
 
   e2e-frontend-writing:
     # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
+    needs: [changes, lint-backend, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend, lint-frontend, unit-frontend]
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.e2e == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
@@ -668,7 +673,7 @@ jobs:
 
   e2e-frontend-library:
     # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
+    needs: [changes, lint-backend, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend, lint-frontend, unit-frontend]
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.e2e == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
@@ -725,7 +730,7 @@ jobs:
 
   e2e-frontend-models:
     # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
+    needs: [changes, lint-backend, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend, lint-frontend, unit-frontend]
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.e2e == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
@@ -782,7 +787,7 @@ jobs:
 
   e2e-frontend-settings:
     # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, lint-frontend, unit-frontend]
+    needs: [changes, lint-backend, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend, lint-frontend, unit-frontend]
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.e2e == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
@@ -845,7 +850,7 @@ jobs:
   # 剩余 miss 均为物理不可达防御分支（payload 非 dict / for 循环耗尽弧 / except 重抛），
   # 已由 C 方案 exclude_lines 排除 Protocol 接口方法体；目标 99/90 已达（98.90 ≥ 目标线）。
   coverage-backend:
-    # 第三批：needs 第二批的 3 个 unit job（coverage artifact 产出者）
+    # 第二批：needs 第一批的 4 个 coverage artifact 产出 job
     needs: [changes, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend]
     if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
@@ -877,6 +882,7 @@ jobs:
 
       # #685: 下载 4 个 .coverage 数据文件，重命名后 coverage combine 合并
       # 每个 artifact 下载到独立子目录避免同名冲突
+      # COVERAGE_FILE 指定了非默认文件名（.coverage-unit/.coverage-api 等），下载后需重命名为 .coverage
       - name: Download unit coverage data
         uses: actions/download-artifact@v7
         with:
@@ -904,9 +910,14 @@ jobs:
       - name: Combine coverage data
         # coverage combine 接受多个 .coverage 文件，合并为 .coverage（基于 pyproject.toml 配置）
         # ubuntu runner 默认 bash shell（#685：coverage job 从 windows 迁到 ubuntu——只做合并+gate 不跑测试）
+        # 各 job 用 COVERAGE_FILE 指定了非默认文件名，下载后需统一重命名为 .coverage 再 combine
         shell: bash
         run: |
-          uv run coverage combine cov/unit/.coverage cov/api/.coverage cov/cli/.coverage cov/integration/.coverage
+          cp cov/unit/.coverage-unit .coverage-unit
+          cp cov/api/.coverage-api .coverage-api
+          cp cov/cli/.coverage-cli .coverage-cli
+          cp cov/integration/.coverage-integration .coverage-integration
+          uv run coverage combine .coverage-unit .coverage-api .coverage-cli .coverage-integration
           uv run coverage xml -o coverage.xml
 
       - name: Coverage gate (line >= 98.5%, branch >= 95%)
@@ -950,7 +961,7 @@ jobs:
   build:
     # 第一批恒跑（lint/unit 全 required）→ 默认 needs 语义即可：
     # 任一 failure → build skip → required pending → BLOCKED（正确门禁）；cancelled → skip
-    needs: [lint-backend, unit-backend, lint-frontend, unit-frontend]
+    needs: [lint-backend, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend, lint-frontend, unit-frontend]
     permissions:
       contents: read
     runs-on: windows-latest
