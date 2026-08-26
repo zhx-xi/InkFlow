@@ -1,9 +1,9 @@
 /** 设定库扁平分类通用列表（角色/伏笔；F43 P1：角色等级徽标 + 标签 chips + 行内编辑/删除，D12 悬停显示；
  *  2026-08-19 自 pages/library.tsx 机械搬移——900 行护栏 #88；
  *  #679：characters 分类等级选项卡（总览/分览）+ group_id 分组卡片 + 五档等级徽标分色） */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
-import type { CharacterGroup } from '../api/character';
+import { listCharacterGroups, type CharacterGroup } from '../api/character';
 import type { LibraryItemDTO } from './LibraryCreateDialog';
 import { useI18n } from '../i18n/useI18n';
 
@@ -14,8 +14,10 @@ export interface LibraryItemListProps {
   items: LibraryItemDTO[];
   /** characters 分类渲染等级徽标 + 标签 chips（其余分类缺省不渲染） */
   withCharacterExtras?: boolean;
-  /** #679：角色分组列表（characters 分类分组卡片数据源；数组顺序 = 分组渲染顺序） */
+  /** #679：角色分组列表（characters 分类分组卡片数据源；数组顺序 = 分组渲染顺序）。可注入（测试）或经 projectId 内部拉取。 */
   characterGroups?: CharacterGroup[];
+  /** #679：characters 分类内部拉取角色分组（当 characterGroups 未注入时）所需的项目 id */
+  projectId?: string;
   onEdit: (item: LibraryItemDTO) => void;
   onDelete: (item: LibraryItemDTO) => void;
   /** #650/#651：characters 分类行名字可点击 → 打开角色详情面板（缺省保持纯 span 展示） */
@@ -38,7 +40,8 @@ const IDLE = 'bg-surface-3 text-ink-2';
 export function LibraryItemList({
   items,
   withCharacterExtras = false,
-  characterGroups = [],
+  characterGroups,
+  projectId,
   onEdit,
   onDelete,
   onOpenDetail,
@@ -46,6 +49,23 @@ export function LibraryItemList({
   const { t } = useI18n();
   // #679：等级选项卡（'all' = 全部·总览，常驻默认项；点击当前等级不取消，需点「全部」）
   const [selectedRank, setSelectedRank] = useState<string>('all');
+  // #679：- 分组数据源 = 注入的 characterGroups（测试/受控）或按 projectId 内部拉取（受控缺省）
+  const [fetchedGroups, setFetchedGroups] = useState<CharacterGroup[]>([]);
+  useEffect(() => {
+    if (!withCharacterExtras || characterGroups || !projectId) return;
+    let cancelled = false;
+    void listCharacterGroups(projectId)
+      .then((data) => {
+        if (!cancelled) setFetchedGroups(data.items ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setFetchedGroups([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [withCharacterExtras, characterGroups, projectId]);
+  const effectiveGroups = characterGroups ?? fetchedGroups;
   // #679：等级选项卡顺序（总览 → 主角 → 重要配角 → 配角 → 场景角色 → 一次性角色）
   const RANK_OPTIONS = ['all', 'protagonist', 'major', 'minor', 'scene', 'walkon'].map((key) => ({
     key,
@@ -58,7 +78,7 @@ export function LibraryItemList({
       : items.filter((i) => String((i.extra as Record<string, unknown>)?.role_rank ?? '') === selectedRank);
   // #679：分组卡片（仅 characters；按 characterGroups 数组顺序，空组隐藏；未分组收尾）
   const groupSections = withCharacterExtras
-    ? characterGroups
+    ? effectiveGroups
         .map((g) => ({
           group: g,
           members: visibleItems.filter((i) => String((i as LibraryItemWithGroup).group_id) === String(g.id)),
