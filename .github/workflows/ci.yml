@@ -201,9 +201,6 @@ jobs:
         # --reruns 2：chromadb 1.5.9 Windows CI 上 hnsw 段读取偶发竞态（写入后立即 retrieve，
         # 本地稳定复现不了，CI 两次失败用例不同 = 非确定性）；pytest-rerunfailures 兜底重试
         # #685: 生成 .coverage 数据文件供 coverage-backend 下载合并，不再重跑 unit 测试
-        # COVERAGE_FILE 指定绝对路径（防 uv run 子进程 CWD 漂移导致 .coverage 写到意外位置）
-        env:
-          COVERAGE_FILE: ${{ github.workspace }}/.coverage-unit
         run: |
           uv run pytest tests/unit/ -v --tb=short --cov=inkflow --reruns 2 --reruns-delay 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -212,7 +209,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: coverage-unit-backend
-          path: ${{ github.workspace }}/.coverage-unit
+          path: backend/.coverage
           retention-days: 1
 
   # ── Unit API tests (mock 式 API 测试，#685 拆分自原 coverage-backend 全量) ──
@@ -250,8 +247,6 @@ jobs:
         # #685: 所有 tests/api/ 测试 + coverage 数据上传供合并
         # 多行 run 必须逐行检查 $LASTEXITCODE（#214 假绿坑）
         # --reruns 2：chromadb 1.5.9 Windows CI 上 hnsw 段读取偶发竞态（#409，与 unit-backend 对齐）
-        env:
-          COVERAGE_FILE: ${{ github.workspace }}/.coverage-api
         run: |
           uv run pytest ../tests/api/ --cov=inkflow -q --reruns 2 --reruns-delay 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -260,7 +255,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: coverage-api-backend
-          path: ${{ github.workspace }}/.coverage-api
+          path: backend/.coverage
           retention-days: 1
 
   # ── Unit CLI tests (mock 式 CLI 测试，#685 拆分自原 coverage-backend 全量) ──
@@ -296,8 +291,6 @@ jobs:
 
       - name: Run CLI tests
         # #685: 所有 tests/cli/ 测试 + coverage 数据上传供合并
-        env:
-          COVERAGE_FILE: ${{ github.workspace }}/.coverage-cli
         run: |
           uv run pytest ../tests/cli/ --cov=inkflow -q --reruns 2 --reruns-delay 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -306,7 +299,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: coverage-cli-backend
-          path: ${{ github.workspace }}/.coverage-cli
+          path: backend/.coverage
           retention-days: 1
 
   # ── Unit integration tests (repo + service，#685 拆分自原 coverage-backend 全量) ──
@@ -342,8 +335,6 @@ jobs:
 
       - name: Run integration tests
         # #685: 所有 tests/integration/ 测试 + coverage 数据上传供合并
-        env:
-          COVERAGE_FILE: ${{ github.workspace }}/.coverage-integration
         run: |
           uv run pytest ../tests/integration/ --cov=inkflow -q --reruns 2 --reruns-delay 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -352,7 +343,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: coverage-integration-backend
-          path: ${{ github.workspace }}/.coverage-integration
+          path: backend/.coverage
           retention-days: 1
 
   # ── Frontend unit: Vitest（renderer + electron 双包，第一批恒跑）──
@@ -880,9 +871,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra dev
 
-      # #685: 下载 4 个 .coverage 数据文件，重命名后 coverage combine 合并
-      # 每个 artifact 下载到独立子目录避免同名冲突
-      # COVERAGE_FILE 指定了非默认文件名（.coverage-unit/.coverage-api 等），下载后需重命名为 .coverage
+      # #685: 下载 4 个 .coverage 数据文件，coverage combine 合并
+      # 每个 artifact 下载到独立子目录避免同名冲突（各 job 都生成 backend/.coverage）
       - name: Download unit coverage data
         uses: actions/download-artifact@v7
         with:
@@ -910,14 +900,10 @@ jobs:
       - name: Combine coverage data
         # coverage combine 接受多个 .coverage 文件，合并为 .coverage（基于 pyproject.toml 配置）
         # ubuntu runner 默认 bash shell（#685：coverage job 从 windows 迁到 ubuntu——只做合并+gate 不跑测试）
-        # 各 job 用 COVERAGE_FILE 指定了非默认文件名，下载后需统一重命名为 .coverage 再 combine
+        # 各 job 的 .coverage 文件在独立子目录（cov/unit/.coverage 等），combine 直接引用
         shell: bash
         run: |
-          cp cov/unit/.coverage-unit .coverage-unit
-          cp cov/api/.coverage-api .coverage-api
-          cp cov/cli/.coverage-cli .coverage-cli
-          cp cov/integration/.coverage-integration .coverage-integration
-          uv run coverage combine .coverage-unit .coverage-api .coverage-cli .coverage-integration
+          uv run coverage combine cov/unit/.coverage cov/api/.coverage cov/cli/.coverage cov/integration/.coverage
           uv run coverage xml -o coverage.xml
 
       - name: Coverage gate (line >= 98.5%, branch >= 95%)
