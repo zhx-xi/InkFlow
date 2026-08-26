@@ -34,6 +34,7 @@ export const roleEnhanceZh: Record<string, string> = {
   'lib.charGroup.deleteConfirm': '确认删除该分组？成员将变为未分组',
   'lib.charGroup.members': '{count} 人',
   'lib.charGroup.empty': '暂无分组',
+  'lib.rank.all': '全部·总览',
 };
 
 export const roleEnhanceEn: Record<string, string> = {
@@ -71,4 +72,5 @@ export const roleEnhanceEn: Record<string, string> = {
   'lib.charGroup.deleteConfirm': 'Delete this group? Members will become ungrouped.',
   'lib.charGroup.members': '{count} members',
   'lib.charGroup.empty': 'No groups yet',
+  'lib.rank.all': 'All',
 };

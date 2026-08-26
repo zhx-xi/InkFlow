@@ -787,6 +787,7 @@ export function LibraryPage() {
               <LibraryItemList
                 items={items}
                 withCharacterExtras={activeCat === 'characters'}
+                projectId={currentProjectId}
                 onEdit={(item) => {
                   setEditing(item);
                   setCreateOpen(true);

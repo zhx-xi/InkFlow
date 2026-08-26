@@ -355,7 +355,7 @@ export function CharacterDetailPanel({ item, projectId, onClose, onUpdated }: Ch
                     className="group flex items-center gap-3 px-4 py-2.5 text-[13px] text-ink"
                   >
                     <div className="min-w-0 flex-1">
-                      <span className="font-medium">{r.to_name}</span>
+                      <span className="font-medium">{String(r.to_character_id) === characterId ? r.from_name : r.to_name}</span>
                       <span className="mx-1.5 text-ink-3">·</span>
                       <span className="text-accent">{r.relation_type}</span>
                       {r.description ? (
