@@ -9,9 +9,9 @@
  *     无数据才空态 context-empty。
  *  2. 勾选/取消注入项 → assembleContext 被再次调用且 override.character_ids 变化（白名单生效）。
  *  3. 三级大纲（总体/卷/章）自动注入 context-outline，缺级降级透传。
- * 守护用例（当前实现天然 PASS）：折叠态 26px 条；无 projectId/chapterId/model 时空态。
+ * 守护用例（当前实现天然 PASS）：无 projectId/chapterId/model 时空态。
  *
- * 结构 testid（gui-panel.md §3.2）：context-panel / context-collapse / context-expand-bar /
+ * 结构 testid（gui-panel.md §3.2）：context-panel /
  *  context-panel-content / context-empty / context-error /
  *  context-block-<source> / context-outline / context-character-<n> / context-foreshadow-<n> /
  *  context-item-toggle-<n> / context-dropped / context-dropped-<n>。
@@ -237,15 +237,7 @@ describe('ContextPanel — 角色/伏笔勾选 override（#594）', () => {
   });
 });
 
-describe('ContextPanel — 折叠条与错误（守护）', () => {
-  it('折叠态：仅 context-expand-bar，无 context-panel-content', () => {
-    render(<ContextPanel {...OPTS} />);
-    // 展开态默认 → 点折叠
-    fireEvent.click(screen.getByTestId('context-collapse'));
-    expect(screen.getByTestId('context-expand-bar')).toBeInTheDocument();
-    expect(screen.queryByTestId('context-panel-content')).not.toBeInTheDocument();
-  });
-
+describe('ContextPanel — 错误（守护）', () => {
   it('assemble 失败 → context-error 显示错误文案，不崩溃', async () => {
     assembleMock.mockRejectedValue(new Error('内核未就绪'));
     render(<ContextPanel {...OPTS} />);
