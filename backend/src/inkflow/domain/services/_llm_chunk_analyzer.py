@@ -28,6 +28,7 @@ from typing import Any
 from inkflow.core.config import config
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
 from inkflow.domain.ports.prompt_template import PromptTemplateProtocol
+from inkflow.domain.services.model_resolution import resolve_model
 
 _TEMPLATE_NAME = "llm_chunk"
 """LLM 切片边界分析模板名（infrastructure/llm/templates/llm_chunk.yaml）。"""
@@ -152,7 +153,9 @@ class LLMChunkAnalyzer:
         if not text.strip():
             return []
 
-        resolved_model = self._model or config.llm_default_model
+        resolved_model = resolve_model(
+            self._model, None, config.llm_default_model
+        ) or ""
 
         # ② 渲染模板（变量: text）
         template = self._prompts.load(_TEMPLATE_NAME)

@@ -18,6 +18,8 @@ import builtins
 import logging
 from datetime import UTC, datetime
 
+from inkflow.core.config import InkFlowConfig, save_config_json
+from inkflow.core.config import config as default_config
 from inkflow.domain.models.provider_config import (
     ProviderConfig,
     ProviderConfigCreate,
@@ -45,8 +47,14 @@ class ProviderConfigService:
         repository: Provider 注册表仓储端口.
     """
 
-    def __init__(self, *, repository: ProviderConfigRepositoryProtocol) -> None:
+    def __init__(
+        self,
+        *,
+        repository: ProviderConfigRepositoryProtocol,
+        config: InkFlowConfig = default_config,
+    ) -> None:
         self._repo = repository
+        self._config = config
 
     async def create(self, data: ProviderConfigCreate) -> ProviderConfig:
         """创建 Provider（同名冲突 → 422；时间戳由服务层填充）."""
@@ -66,7 +74,16 @@ class ProviderConfigService:
             updated_at=now,
         )
         logger.info("创建 Provider: name=%s", data.name)
-        return await self._repo.add(pc)
+        pc = await self._repo.add(pc)
+        # #735 D2: 首个含 >=1 个 chat 模型的 provider 新增且全局默认为空 → 自动设为该模型。
+        if not self._config.llm_default_model:
+            chat_models = [m for m in data.models if m.type == "chat"]
+            if chat_models:
+                model_id = f"{data.name}/{chat_models[0].id}"
+                self._config.llm_default_model = model_id
+                save_config_json(self._config.data_dir, {"llm_default_model": model_id})
+                logger.info("自动设置全局默认模型: %s", model_id)
+        return pc
 
     async def get(self, provider_config_id: int) -> ProviderConfig:
         """按主键获取 Provider；不存在 → ProviderConfigNotFoundError（404）."""

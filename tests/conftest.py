@@ -4,9 +4,17 @@
 """
 
 import asyncio
+import os
 import tempfile
 from collections.abc import AsyncGenerator
 from pathlib import Path
+
+# #735 D1: config.llm_default_model 全局默认已改空。顶层 integration/api/cli 测试的
+# 历史用例依赖「未指定 model 时回退到 deepseek 默认」契约，此处统一经环境变量
+# INKFLOW_LLM_DEFAULT_MODEL（env_prefix INKFLOW_ + 字段名 llm_default_model）
+# 注入该值（「mock config 回退」）；D1 空默认契约由 test_model_resolution.py 用
+# InkFlowConfig.model_fields（class 默认，免疫 env）单独断言。
+os.environ.setdefault("INKFLOW_LLM_DEFAULT_MODEL", "deepseek/deepseek-v4-flash")
 
 import pytest
 import pytest_asyncio

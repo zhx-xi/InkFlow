@@ -55,17 +55,18 @@ def test_save_config_json_merges_existing(tmp_path) -> None:
     assert load_config_json(tmp_path) == {"a": 1, "b": 2}
 
 
-# ── G1 默认模型契约（#415，2026-08-16）─────────────────────────────
+# ── G1 默认模型契约（#415，2026-08-16 / #735 D1，2026-08-28）─────────────────
 # 用户拍板：生成管线默认模型切 deepseek/deepseek-v4-flash（便宜），仅 embedding 保留
 # zhipu。config.py 是唯一默认源（代码不写第二份默认值）；INKFLOW_* env 优先覆盖。
-# 契约值 = 用户拍板的产品决策（非配置来源断言）。
+# #735 D1：全局默认改空（移除内置 deepseek/deepseek-v4-flash 硬编码），未配 provider
+# 时由项目/全局解析 + ensureModelReady 守卫兜底。契约值 = 用户拍板的产品决策。
 
 
-def test_llm_default_model_defaults_to_deepseek_v4_flash(tmp_path, monkeypatch) -> None:
-    """默认生成模型 = deepseek/deepseek-v4-flash（#415 G1；现值 openai/gpt-4o → FAIL）。"""
+def test_llm_default_model_defaults_empty(tmp_path, monkeypatch) -> None:
+    """默认生成模型为空（#735 D1；移除内置 deepseek/deepseek-v4-flash 硬编码）。"""
     monkeypatch.delenv("INKFLOW_LLM_DEFAULT_MODEL", raising=False)
     cfg = InkFlowConfig(_env_file=None, data_dir=tmp_path)
-    assert cfg.llm_default_model == "deepseek/deepseek-v4-flash"
+    assert cfg.llm_default_model == ""
 
 
 def test_model_routing_writing_revision_defaults_to_deepseek_v4_flash(
