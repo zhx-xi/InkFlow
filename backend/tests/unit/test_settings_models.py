@@ -135,6 +135,24 @@ class TestAppSettings:
         original = AppSettings(theme="night", font="mono", tray_hint_dismissed=True)
         assert AppSettings.model_validate(original.model_dump()) == original
 
+    @pytest.mark.parametrize("chunk_size", [50, 2001, 0, -1])
+    def test_rejects_chunk_size_out_of_range(self, chunk_size):
+        """rag_chunk_size 越界（非 100-2000）→ ValidationError（spec §5.6.2）。"""
+        with pytest.raises(ValidationError):
+            AppSettings(rag_chunk_size=chunk_size)
+
+    @pytest.mark.parametrize("ratio", [0.05, 0.25, 0.0, 1.0])
+    def test_rejects_overlap_ratio_out_of_range(self, ratio):
+        """rag_chunk_overlap_ratio 越界（非 [0.10, 0.20]）→ ValidationError（spec §5.6.3）。"""
+        with pytest.raises(ValidationError):
+            AppSettings(rag_chunk_overlap_ratio=ratio)
+
+    @pytest.mark.parametrize("hours", [0, 169, -1, 1000])
+    def test_rejects_kg_interval_out_of_range(self, hours):
+        """kg_extract_interval_hours 越界（非 1-168）→ ValidationError（spec f48 §5.5.2）。"""
+        with pytest.raises(ValidationError):
+            AppSettings(kg_extract_interval_hours=hours)
+
 
 class TestAppSettingsUpdate:
     """AppSettingsUpdate DTO 校验契约（枚举 / 未知字段 / 空对象）。"""

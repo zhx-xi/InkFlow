@@ -701,6 +701,87 @@ async def test_semantic_retrieve_failure_returns_empty_not_keyword(repos):
     repos.search_repo.query.assert_not_awaited()
 
 
+async def test_keyword_search_empty_tokens_returns_empty(repos):
+    """#708 补测：分词后无有效词 → 200 空结果，不发查询（140->142）。"""
+    pid = uuid.UUID(int=1000)
+    _given_project(repos, pid)
+
+    result = await _make_service(repos).search(_query("...", [pid]))
+
+    assert result.total == 0
+    repos.search_repo.query.assert_not_awaited()
+
+
+async def test_ensure_index_second_stale_check_false_returns(repos):
+    """#708 补测：锁内二次 is_stale False → 直接返回（201->202）。"""
+    repos.search_repo.is_stale.side_effect = [True, False]
+
+    await _make_service(repos)._ensure_index(None)
+
+    repos.search_repo.rebuild.assert_not_awaited()
+    repos.search_repo.incremental_sync.assert_not_awaited()
+
+
+async def test_rebuild_none_lists_all_projects(repos):
+    """#708 补测：_rebuild(None) → 枚举全部项目（218->219）。"""
+    proj = _project(uuid.UUID(int=1000))
+    repos.project_repo.list_all = AsyncMock(return_value=([proj], 1))
+
+    await _make_service(repos)._rebuild(None)
+
+    repos.search_repo.rebuild.assert_awaited_once()
+
+
+async def test_incremental_sync_none_lists_all_projects(repos):
+    """#708 补测：_incremental_sync(None) → 枚举全部项目（228->229）。"""
+    proj = _project(uuid.UUID(int=1000))
+    repos.project_repo.list_all = AsyncMock(return_value=([proj], 1))
+
+    await _make_service(repos)._incremental_sync(None)
+
+    repos.search_repo.incremental_sync.assert_awaited_once()
+
+
+async def test_semantic_without_vector_store_returns_empty(repos):
+    """#708 补测：vector_store 未装配 → semantic 空结果（242->243）。"""
+    pid = uuid.UUID(int=1000)
+    _given_project(repos, pid)
+
+    result = await _make_service(repos, vector_store=None).search(
+        _query("龙", [pid], mode="semantic")
+    )
+
+    assert result.total == 0
+    repos.search_repo.query.assert_not_awaited()
+
+
+async def test_list_all_projects_paginates_loop_back(repos):
+    """#708 补测：分页首轮 offset<total → 循环回边继续取第二批（438->434）。"""
+    proj = _project(uuid.UUID(int=1000))
+    repos.project_repo.list_all = AsyncMock(
+        side_effect=[
+            ([proj] * 50, 100),
+            ([proj] * 50, 100),
+        ]
+    )
+
+    projects = await _make_service(repos)._list_all_projects()
+
+    assert len(projects) == 100
+    assert repos.project_repo.list_all.await_count == 2
+
+
+async def test_iter_pages_loop_back(repos):
+    """#708 补测：_iter_pages 分页循环回边（454->449）。"""
+
+    async def _fetcher(pid, *, offset, limit):
+        return ([1] * 50, 100)
+
+    items = [x async for x in _make_service(repos)._iter_pages(_fetcher, 1)]
+
+    assert len(items) == 100
+
+
 class TestSearchServiceAssembly:
     """#264 装配契约：get_search_service 必须注入 vector_store（非 None——semantic 模式真实可用）。
 

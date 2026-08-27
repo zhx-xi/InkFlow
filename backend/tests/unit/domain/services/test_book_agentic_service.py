@@ -200,3 +200,107 @@ class TestAgenticAuthorizationGate:
         svc._project_config_getter = AsyncMock(return_value=None)
         result = await svc.prepare_run(plan.id, limits=None, mode="agentic")
         assert result["status"] == "running"
+
+
+class Test708BookRunMixinCoverageGaps:
+    """#708 coverage 补测 — book_run_mixin 未覆盖分支。"""
+
+    async def test_prepare_run_agentic_loops_over_multiple_chapters(self) -> None:
+        """agentic 预校验多章节全未写 → 循环走完（74->75 / 75->74 / 75->76）。"""
+        plan = _plan(status="ready")
+        svc = _make_service()
+        svc._repo.get_writing_plan.return_value = plan
+        svc._outline_repo.list.return_value = (
+            [
+                SimpleNamespace(
+                    id=uuid.uuid4(), level="chapter", sort_order=0, chapter_id=uuid.uuid4()
+                ),
+                SimpleNamespace(
+                    id=uuid.uuid4(), level="chapter", sort_order=1, chapter_id=uuid.uuid4()
+                ),
+            ],
+            2,
+        )
+
+        result = await svc.prepare_run(plan.id, limits=None, mode="agentic")
+
+        assert result["status"] == "running"
+
+    async def test_prepare_run_agentic_written_chapter_raises(self) -> None:
+        """agentic 预校验命中已写章节 → ChapterAlreadyWrittenError（75->76 + L76）。"""
+        from inkflow.domain.services.book_service import ChapterAlreadyWrittenError
+
+        plan = _plan(status="ready")
+        svc = _make_service(content_checker=AsyncMock(return_value=True))
+        svc._repo.get_writing_plan.return_value = plan
+        svc._outline_repo.list.return_value = (
+            [
+                SimpleNamespace(
+                    id=uuid.uuid4(), level="chapter", sort_order=0, chapter_id=uuid.uuid4()
+                ),
+            ],
+            1,
+        )
+
+        with pytest.raises(ChapterAlreadyWrittenError):
+            await svc.prepare_run(plan.id, limits=None, mode="agentic")
+
+    async def test_prepare_run_agentic_no_config_getter_passes(self) -> None:
+        """project_config_getter=None → 授权检查直接放行（102->103）。"""
+        plan = _plan(status="ready")
+        svc = _make_service(project_config_getter=None)
+        svc._repo.get_writing_plan.return_value = plan
+
+        result = await svc.prepare_run(plan.id, limits=None, mode="agentic")
+
+        assert result["status"] == "running"
+
+    async def test_write_book_agentic_plan_missing_raises(self) -> None:
+        """计划不存在 → ValueError（163->164）。"""
+        svc = _make_service(agentic_pipeline=AsyncMock())
+        svc._repo.get_writing_plan.return_value = None
+
+        with pytest.raises(ValueError):
+            await svc.write_book_agentic(_pid(), _limits(max_chapters=5, max_agent_calls=50))
+
+    async def test_write_book_agentic_written_chapter_raises(self) -> None:
+        """首个章节已写 → ChapterAlreadyWrittenError（169->170 True 分支）。"""
+        from inkflow.domain.services.book_service import ChapterAlreadyWrittenError
+
+        plan = _plan(status="ready")
+        svc = _make_service(
+            agentic_pipeline=AsyncMock(),
+            content_checker=AsyncMock(return_value=True),
+        )
+        svc._repo.get_writing_plan.return_value = plan
+        chapter = SimpleNamespace(
+            id=uuid.uuid4(), level="chapter", sort_order=0, chapter_id=uuid.uuid4()
+        )
+        svc._outline_repo.list.return_value = ([chapter], 1)
+
+        with pytest.raises(ChapterAlreadyWrittenError):
+            await svc.write_book_agentic(plan.id, _limits(max_chapters=5, max_agent_calls=50))
+
+    async def test_write_book_agentic_loops_all_chapters(self) -> None:
+        """多章节全未写 → 循环回边 + 退出（170->169 / 170->171）并委托 pipeline。"""
+        plan = _plan(status="ready")
+        pipeline = AsyncMock()
+        pipeline.execute.return_value = {"run_id": str(plan.id), "status": "completed"}
+        svc = _make_service(agentic_pipeline=pipeline)
+        svc._repo.get_writing_plan.return_value = plan
+        svc._outline_repo.list.return_value = (
+            [
+                SimpleNamespace(
+                    id=uuid.uuid4(), level="chapter", sort_order=0, chapter_id=uuid.uuid4()
+                ),
+                SimpleNamespace(
+                    id=uuid.uuid4(), level="chapter", sort_order=1, chapter_id=uuid.uuid4()
+                ),
+            ],
+            2,
+        )
+
+        result = await svc.write_book_agentic(plan.id, _limits(max_chapters=5, max_agent_calls=50))
+
+        assert result["status"] == "completed"
+        pipeline.execute.assert_awaited_once()

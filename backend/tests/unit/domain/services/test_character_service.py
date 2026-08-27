@@ -689,6 +689,22 @@ class TestUpdateCharacterGroup:
         assert merged.group_ids == [g_new.id]  # 全量替换，不含 g_old
         mock_repo.get_group.assert_awaited_once_with(g_new.id.int)
 
+    async def test_update_character_group_ids_none_means_no_change(
+        self, service, mock_repo
+    ) -> None:
+        """group_ids 显式 None → merge_updates 剔除 None，保持既有分组（212->214）。"""
+        group = _group(name="主角团")
+        existing = _char(name="林尘", group_ids=[group.id])
+        mock_repo.get = AsyncMock(return_value=existing)
+        mock_repo.update = AsyncMock(side_effect=lambda c: c)
+
+        updated = await service.update_character(existing.id, CharacterUpdate(group_ids=None))
+
+        assert updated is not None
+        merged = mock_repo.update.await_args.args[0]
+        assert merged.group_ids == [group.id]
+        mock_repo.get_group.assert_not_awaited()
+
 
 class TestUpdateRelationVariants:
     """update_relation 的类型不变/冲突分支。"""

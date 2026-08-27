@@ -267,6 +267,20 @@ class TestCharacterRepository:
         got = await repo.get(c.id.int)
         assert got is not None and got.name == "林尘·改"
 
+    async def test_update_character_with_groups_reinserts_members(self, db_session, project):
+        """#708 补测：update 时 character.group_ids 非空 → 循环重建成员关联行（L269-270）。"""
+        repo = SQLiteCharacterRepository(db_session)
+        group = await repo.add_group(_group(project, "主角团"))
+        c = await repo.add(_char(project, "林尘", group_ids=[group.id]))
+
+        updated = await repo.update(
+            c.model_copy(update={"name": "林尘·改", "group_ids": [group.id]})
+        )
+
+        assert updated.group_ids == [group.id]
+        got = await repo.get(c.id.int)
+        assert got is not None and got.group_ids == [group.id]
+
     async def test_hard_delete_character(self, db_session, project):
         """hard_delete 物理删除角色行；重复删除返回 False."""
         repo = SQLiteCharacterRepository(db_session)
