@@ -405,8 +405,13 @@ describe('设定库页 — #196 分类实体手动创建', () => {
     const user = userEvent.setup();
     renderLibrary();
     await user.click(screen.getByRole('tab', { name: tabName }));
-    const empty = await screen.findByTestId('library-tab-empty');
-    await user.click(within(empty).getByTestId('library-tab-empty-cta'));
+    if (tabName === '大纲') {
+      // #698：大纲空态不再渲染 library-tab-empty（重排后恒渲染 OutlineTree），全局「新建大纲」= outline-add-overall
+      await user.click(await screen.findByTestId('outline-add-overall'));
+    } else {
+      const empty = await screen.findByTestId('library-tab-empty');
+      await user.click(within(empty).getByTestId('library-tab-empty-cta'));
+    }
     const dialog = await screen.findByTestId('library-create-dialog');
     return { user, dialog };
   }
@@ -861,4 +866,4 @@ describe('设定库页 — 世界观已有根条目后仍可创建（#567/#588�
     // 地图视图入口保留（视图非创建）
     expect(screen.getByTestId('map-view-entry')).toBeInTheDocument();
   });
-});
+});

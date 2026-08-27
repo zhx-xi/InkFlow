@@ -54,6 +54,10 @@ function makeState(): State {
   return { outlines: [outlineRoot, outlineVol, outlineChap], points: [pointA, pointB] };
 }
 
+function makeEmptyState(): State {
+  return { outlines: [], points: [] };
+}
+
 function renderLibrary() {
   return render(
     <MemoryRouter initialEntries={['/library']}>
@@ -125,8 +129,8 @@ function mockOutlineApi(state: State, opts?: { generate?: () => Promise<unknown>
 }
 
 describe('#675 大纲分级创建（＋整本/＋卷/＋章细纲 预填 level+parent）', () => {
-  it('T675-1「＋整本」→ 对话框预填 level=overall → POST body {level,parent_id:null}', async () => {
-    const state = makeState();
+  it('T675-1「＋整本」→ 无整本时空态下全局入口可见 → 对话框预填 level=overall → POST body {level,parent_id:null}', async () => {
+    const state = makeEmptyState();
     mockOutlineApi(state);
     renderLibrary();
     const user = userEvent.setup();
@@ -290,5 +294,50 @@ describe('#677 大纲生成刷新 + 进度', () => {
     await waitFor(() => {
       expect(useToastStore.getState().toasts.some((t) => t.type === 'ok')).toBe(true);
     });
+  });
+});
+
+describe('#698 大纲创建入口精简（单全局入口 + 整本后隐藏）', () => {
+  it('T698-1 无整本（空态）→ 顶部仅一个全局「新建大纲」入口（outline-add-overall），页头 library-create-btn 隐藏，点击弹窗层级=[overall]', async () => {
+    const state = makeEmptyState();
+    mockOutlineApi(state);
+    renderLibrary();
+    const user = userEvent.setup();
+    await enterOutlineTab(user);
+    // 唯一全局创建入口（outline-add-overall）+ 页头 create-btn 不出现
+    expect(screen.getByTestId('outline-add-overall')).toBeInTheDocument();
+    expect(screen.queryByTestId('library-create-btn')).not.toBeInTheDocument();
+    // 点击 → 弹窗层级仅 [overall]
+    await user.click(screen.getByTestId('outline-add-overall'));
+    const dialog = await screen.findByTestId('library-create-dialog');
+    const options = Array.from(within(dialog).getByTestId('library-create-level').querySelectorAll('option')).map((o) => o.value);
+    expect(options).toEqual(['overall']);
+  });
+
+  it('T698-2 已有整本（o1）→ 全局「新建大纲」入口隐藏 + 页头 create-btn 隐藏 + 行内 ＋卷保留', async () => {
+    const state = makeState();
+    mockOutlineApi(state);
+    renderLibrary();
+    const user = userEvent.setup();
+    await enterOutlineTab(user);
+    // 全局创建入口已隐藏（降级行内）
+    expect(screen.queryByTestId('outline-add-overall')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('library-create-btn')).not.toBeInTheDocument();
+    // 行内 ＋卷/＋章 保留
+    expect(screen.getByTestId('outline-add-volume-o1')).toBeInTheDocument();
+    expect(screen.getByTestId('outline-add-chapter-v1')).toBeInTheDocument();
+  });
+
+  it('T698-3 已有整本时行内「＋卷」→ 弹窗层级仅 [volume, chapter] 不含 overall', async () => {
+    const state = makeState();
+    mockOutlineApi(state);
+    renderLibrary();
+    const user = userEvent.setup();
+    await enterOutlineTab(user);
+    await user.click(screen.getByTestId('outline-add-volume-o1'));
+    const dialog = await screen.findByTestId('library-create-dialog');
+    const options = Array.from(within(dialog).getByTestId('library-create-level').querySelectorAll('option')).map((o) => o.value);
+    expect(options).toEqual(['volume', 'chapter']);
+    expect(options).not.toContain('overall');
   });
 });

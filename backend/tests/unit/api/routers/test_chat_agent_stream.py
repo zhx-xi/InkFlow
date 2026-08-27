@@ -665,8 +665,9 @@ class TestStreamChatAgentBranchCoverageGaps:
         mock_repo.save.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_generic_exception_saves_failed_then_rethrows(self):
-        """stream_events 抛 RuntimeError（非 LLM）→ _save_failed_run + 重抛（L239-242）。"""
+    async def test_generic_exception_emits_error_frame_and_saves_failed(self):
+        """#697 stream_events 内工具异常（RuntimeError 非 LLM）→ 端点产 error 帧 + done 帧，
+        不 raise 500（前端不再 network error），run 落 FAILED 终态。"""
         svc, _ = _make_svc(error=RuntimeError("weird"), error_after=0)
         mock_repo = MagicMock()
         mock_repo.create = AsyncMock(
@@ -682,10 +683,15 @@ class TestStreamChatAgentBranchCoverageGaps:
                 svc=svc,
                 repo=mock_repo,
             )
-        with pytest.raises(RuntimeError):
-            async for _ in resp.body_iterator:
-                pass
+        frames = [frame async for frame in resp.body_iterator]
+        payloads = [json.loads(f.removeprefix("data: ").strip()) for f in frames]
+        # 不抛异常：流可正常消费完，含 error 帧 + done 帧（前端不再 network error）
+        assert any(p["type"] == "error" for p in payloads)
+        assert payloads[-1]["type"] == "done"
         mock_repo.save.assert_awaited_once()
+        saved_run = _kwarg_or_positional(mock_repo.save.await_args, "run", 0)
+        assert saved_run.status == "failed"
+
 
 # ── TestStreamChatAgentPassesProjectId: #680 端点透传 project_id ──
 

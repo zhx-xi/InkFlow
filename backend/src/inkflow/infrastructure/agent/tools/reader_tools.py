@@ -192,9 +192,9 @@ def build_reader_tools(
         search: str | None = None,
         group_id: uuid.UUID | None = None,
     ) -> str:
-        if group_id is not None:
-            group_id = _coerce_uuid(group_id)
         try:
+            if group_id is not None:
+                group_id = _coerce_uuid(group_id)
             items = await _fetch_all_pages(
                 deps.character_service.list_characters,  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
                 bound_project_id,

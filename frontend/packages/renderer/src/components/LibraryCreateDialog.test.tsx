@@ -40,13 +40,20 @@ beforeEach(() => {
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
 });
 
-describe('#675 大纲分级创建（level 字段 + 父级上下文）', () => {
-  it('R1 outline 创建表单有 level 字段（overall/volume/chapter 三选）', () => {
-    renderOutlineDialog();
+describe('#698 大纲层级限制（overallExists 控制可选项）', () => {
+  it('R1a 创建整本（initialLevel=overall）→ 层级下拉仅 [overall]', () => {
+    renderOutlineDialog({ initialLevel: 'overall' });
     const levelSelect = screen.getByTestId('library-create-level');
-    expect(levelSelect).toBeInTheDocument();
     const options = Array.from(levelSelect.querySelectorAll('option')).map((o) => o.value);
-    expect(options).toEqual(['overall', 'volume', 'chapter']);
+    expect(options).toEqual(['overall']);
+  });
+
+  it('R1b 已有整本（initialLevel=volume）→ 层级下拉仅 [volume, chapter]，无 overall', () => {
+    renderOutlineDialog({ initialLevel: 'volume' });
+    const levelSelect = screen.getByTestId('library-create-level');
+    const options = Array.from(levelSelect.querySelectorAll('option')).map((o) => o.value);
+    expect(options).toEqual(['volume', 'chapter']);
+    expect(options).not.toContain('overall');
   });
 
   it('R2「＋卷」预填 parent=overall + level=volume → POST body 含 level=volume+parent_id', async () => {
@@ -83,11 +90,13 @@ describe('#675 大纲分级创建（level 字段 + 父级上下文）', () => {
     expect(body.parent_id).toBeNull();
   });
 
-  it('R5 用户可切换 level（overall/volume/chapter 三选）', async () => {
-    renderOutlineDialog({ initialLevel: 'chapter' });
+  it('R5 已有整本时用户无法切换到 overall（选项缺失，仅 volume/chapter 可选）', async () => {
+    renderOutlineDialog({ initialLevel: 'volume' });
     const user = userEvent.setup();
     const levelSelect = screen.getByTestId('library-create-level');
-    await user.selectOptions(levelSelect, 'overall');
-    expect((levelSelect as HTMLSelectElement).value).toBe('overall');
+    const options = Array.from(levelSelect.querySelectorAll('option')).map((o) => o.value);
+    expect(options).not.toContain('overall');
+    await user.selectOptions(levelSelect, 'chapter');
+    expect((levelSelect as HTMLSelectElement).value).toBe('chapter');
   });
 });

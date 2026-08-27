@@ -168,3 +168,58 @@ class TestStreamEventsBackwardCompat:
         )
         assert "继续写" in inputs["messages"][1].content
         assert "第一章：初入宗门" in inputs["messages"][1].content
+
+
+class _RaisingToolAgent:
+    """#697 fake agent — 先产 tool_call 事件，随后抛 RuntimeError（模拟工具异常）。"""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    async def astream_events(self, inputs, version="v2"):
+        self.calls.append({"inputs": inputs, "version": version})
+        yield {
+            "event": "on_tool_start",
+            "run_id": "tool_1",
+            "name": "search_characters",
+            "data": {"input": {}},
+        }
+        raise RuntimeError("工具执行失败: search_characters boom")
+
+
+class TestStreamEventsToolExceptionTerminal:
+    """#697 工具执行异常 → 保证产出 error 帧 + done 帧（不裸断流）。"""
+
+    @pytest.mark.asyncio
+    async def test_tool_exception_yields_error_and_done_frames(self) -> None:
+        """astream_events 迭代中抛 RuntimeError → 仍产出 error 帧 + done 帧作为终帧。"""
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        agent = _RaisingToolAgent()
+        svc = ChatAgentService(agent=agent, system_prompt=BASE_PROMPT)
+        frames = [ev async for ev in svc.stream_events(prompt="查角色", project_id=PROJECT_ID)]
+        # 终帧必须是 done（流不裸断）
+        assert frames[-1].type == "done"
+        assert frames[-1].done is True
+        # 含恰好一个 error 帧，携带工具执行失败信息
+        error_frames = [ev for ev in frames if ev.type == "error"]
+        assert len(error_frames) == 1
+        assert error_frames[0].done is True
+        assert "工具执行失败" in error_frames[0].error
+
+    @pytest.mark.asyncio
+    async def test_tool_exception_without_tool_start_still_guarantees_terminal(self) -> None:
+        """agent 直接抛异常（无 tool_call 事件）→ 仍产出 error + done 终帧。"""
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        class _BoomAgent:
+            async def astream_events(self, inputs, version="v2"):
+                raise RuntimeError("boom")
+                yield  # unreachable
+
+        svc = ChatAgentService(agent=_BoomAgent(), system_prompt=BASE_PROMPT)
+        frames = [ev async for ev in svc.stream_events(prompt="你好", project_id=PROJECT_ID)]
+        assert frames[-1].type == "done"
+        assert frames[-1].done is True
+        error_frames = [ev for ev in frames if ev.type == "error"]
+        assert len(error_frames) == 1
