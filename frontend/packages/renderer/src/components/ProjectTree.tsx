@@ -5,6 +5,7 @@ import { useI18n } from '../i18n/useI18n';
 import type { ChapterMeta, Volume } from '../stores/chapter';
 import { useChapterStore } from '../stores/chapter';
 import { useProjectStore } from '../stores/project';
+import { ConfirmDialog } from './ConfirmDialog';
 import { ProjectSeal } from './ProjectSeal';
 import { VolumeDeleteDialog } from './VolumeDeleteDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -31,6 +32,8 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
   const patchVolume = useChapterStore((s) => s.patchVolume);
   const deleteVolume = useChapterStore((s) => s.deleteVolume);
   const moveChapter = useChapterStore((s) => s.moveChapter);
+  const patchChapter = useChapterStore((s) => s.patchChapter);
+  const deleteChapter = useChapterStore((s) => s.deleteChapter);
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const projects = useProjectStore((s) => s.projects);
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? projects[0];
@@ -41,6 +44,9 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
   const [editingVolumeId, setEditingVolumeId] = useState<string | null>(null);
   const [editVolumeTitle, setEditVolumeTitle] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Volume | null>(null);
+  const [editingChapterId, setEditingChapterId] = useState<string | null>(null);
+  const [editChapterTitle, setEditChapterTitle] = useState('');
+  const [deleteChapterTarget, setDeleteChapterTarget] = useState<ChapterMeta | null>(null);
   const [newVolumeId, setNewVolumeId] = useState<string | null>(null); // 新建章节目标卷（null=未分组）
   const [dragOverVolumeId, setDragOverVolumeId] = useState<string | null>(null); // 拖拽经过的卷高亮
   // #702：col-resize 拖拽起点（clientX + 起点宽度），mouseup 清空
@@ -66,26 +72,76 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
 
   const renderChapter = (ch: ChapterMeta) => {
     const isCurrent = ch.id === currentChapterId;
+    const isEditing = editingChapterId === ch.id;
     return (
-      <button
+      <div
         key={ch.id}
-        type="button"
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer?.setData('text/plain', ch.id);
-          e.dataTransfer!.effectAllowed = 'move';
-        }}
         // 契约断言 getByTestId('tree-chapter') 唯一且为当前章（data-current 标记）
         data-testid={isCurrent ? 'tree-chapter' : undefined}
         data-current={isCurrent ? 'true' : undefined}
-        onClick={() => void selectChapter(ch.id)}
-        className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-[13px] ${
-          isCurrent ? 'bg-accent-weak text-ink' : 'text-ink-2 hover:bg-surface-3'
-        }`}
+        className={`group flex w-full items-center gap-2 rounded px-2 py-1.5 ${isCurrent ? 'bg-accent-weak' : ''}`}
       >
-        <span className="truncate">{ch.title}</span>
+        {isEditing ? (
+          <input
+            autoFocus
+            data-testid="chapter-edit-input"
+            className="min-w-0 flex-1 rounded border border-line bg-surface px-1.5 py-0.5 text-[12px] text-ink outline-none"
+            value={editChapterTitle}
+            onChange={(e) => setEditChapterTitle(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handlePatchChapter(ch);
+              if (e.key === 'Escape') {
+                setEditingChapterId(null);
+                setEditChapterTitle('');
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer?.setData('text/plain', ch.id);
+              e.dataTransfer!.effectAllowed = 'move';
+            }}
+            onClick={() => void selectChapter(ch.id)}
+            className={`min-w-0 flex-1 truncate text-left ${isCurrent ? 'text-ink' : 'text-ink-2'}`}
+          >
+            <span className="truncate">{ch.title}</span>
+          </button>
+        )}
         <span className="shrink-0 text-[11px] text-ink-3">{ch.word_count.toLocaleString()}</span>
-      </button>
+        {!isEditing && (
+          <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-180 group-hover:opacity-100 focus-within:opacity-100">
+            <button
+              type="button"
+              data-testid={`chapter-edit-${ch.id}`}
+              aria-label="编辑章节"
+              className="rounded p-1 text-ink-3 transition duration-150 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditingChapterId(ch.id);
+                setEditChapterTitle(ch.title);
+              }}
+            >
+              <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              data-testid={`chapter-delete-${ch.id}`}
+              aria-label="删除章节"
+              className="rounded p-1 text-ink-3 transition duration-150 hover:bg-surface-3 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDeleteChapterTarget(ch);
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -117,6 +173,14 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
     setEditVolumeTitle('');
     if (title === '' || title === v.title) return;
     await patchVolume(v.id, title);
+  };
+
+  const handlePatchChapter = async (ch: ChapterMeta) => {
+    const title = editChapterTitle.trim();
+    setEditingChapterId(null);
+    setEditChapterTitle('');
+    if (title === '' || title === ch.title) return;
+    await patchChapter(ch.id, title);
   };
 
   return (
@@ -325,6 +389,24 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
           }}
           onOpenChange={(o) => {
             if (!o) setDeleteTarget(null);
+          }}
+        />
+      )}
+      {deleteChapterTarget && (
+        <ConfirmDialog
+          open
+          title={t('lib.delete.title', { name: deleteChapterTarget.title })}
+          message={t('lib.delete.confirm')}
+          confirmText={t('lib.delete.ok')}
+          danger
+          testidPrefix="chapter-del"
+          onConfirm={() => {
+            const target = deleteChapterTarget;
+            setDeleteChapterTarget(null);
+            void deleteChapter(target.id);
+          }}
+          onOpenChange={(open) => {
+            if (!open) setDeleteChapterTarget(null);
           }}
         />
       )}

@@ -225,3 +225,73 @@ describe('chapter store — 失败兜底与 setter 组（#105 补测）', () => 
     expect(s.error).toBe('临时错误');
   });
 });
+/**
+ * #723 章节行删除/重命名（GREEN 必须提供 deleteChapter / patchChapter）
+ * deleteChapter：DELETE /api/v1/chapters/{id} → 过滤列表；当前章被删 → 切同卷其它章（拉正文）或置空
+ * patchChapter：PATCH /api/v1/chapters/{id} { title } → 列表回写新标题
+ */
+describe('chapter store — #723 章节删除与重命名（GREEN 必须提供）', () => {
+  it('暴露 deleteChapter / patchChapter actions', () => {
+    const s = useChapterStore.getState();
+    expect(typeof s.deleteChapter).toBe('function');
+    expect(typeof s.patchChapter).toBe('function');
+  });
+
+  it('deleteChapter：DELETE /chapters/{id} → 过滤列表；当前章被删则切同卷其它章（拉正文）', async () => {
+    const chaptersWithContent = [
+      { id: 'c1', title: '第1章 初见', volume_id: 'v1', order_index: 0, word_count: 2347 },
+      { id: 'c2', title: '第2章 夜谈', volume_id: 'v1', order_index: 1, word_count: 0 },
+    ];
+    apiFetchMock
+      .mockResolvedValueOnce(undefined) // DELETE /chapters/c1
+      .mockResolvedValueOnce({ id: 'c2', project_id: 'p1', volume_id: 'v1', title: '第2章 夜谈', content: '第二章正文', word_count: 0, order_index: 1 }); // selectChapter GET
+    useChapterStore.setState({ chapters: chaptersWithContent, currentChapterId: 'c1', content: '旧正文', treeProjectId: 'p1' });
+
+    await act(async () => {
+      await useChapterStore.getState().deleteChapter('c1');
+    });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/chapters/c1', { method: 'DELETE' });
+    const s = useChapterStore.getState();
+    expect(s.chapters.some((c) => c.id === 'c1')).toBe(false);
+    expect(s.currentChapterId).toBe('c2');
+    expect(s.content).toContain('第二章正文');
+  });
+
+  it('deleteChapter：删非当前章 → 列表过滤但当前章不变', async () => {
+    apiFetchMock.mockResolvedValue(undefined);
+    useChapterStore.setState({ chapters, currentChapterId: 'c2', content: '正文', treeProjectId: 'p1' });
+    await act(async () => {
+      await useChapterStore.getState().deleteChapter('c1');
+    });
+    const s = useChapterStore.getState();
+    expect(s.chapters.some((c) => c.id === 'c1')).toBe(false);
+    expect(s.currentChapterId).toBe('c2');
+    expect(s.content).toBe('正文');
+  });
+
+  it('deleteChapter：删最后一个当前章 → 置空 currentChapterId + content', async () => {
+    apiFetchMock.mockResolvedValue(undefined);
+    useChapterStore.setState({
+      chapters: [{ id: 'c1', title: '唯一章', volume_id: null, order_index: 0, word_count: 0 }],
+      currentChapterId: 'c1', content: '正文', treeProjectId: 'p1',
+    });
+    await act(async () => {
+      await useChapterStore.getState().deleteChapter('c1');
+    });
+    const s = useChapterStore.getState();
+    expect(s.chapters).toEqual([]);
+    expect(s.currentChapterId).toBeNull();
+    expect(s.content).toBe('');
+  });
+
+  it('patchChapter：PATCH /chapters/{id} { title } → 列表回写新标题', async () => {
+    const updated: ChapterMeta = { id: 'c1', title: '重命名后', volume_id: 'v1', order_index: 0, word_count: 2347 };
+    apiFetchMock.mockResolvedValue(updated);
+    useChapterStore.setState({ chapters });
+    await act(async () => {
+      await useChapterStore.getState().patchChapter('c1', '重命名后');
+    });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/chapters/c1', { method: 'PATCH', body: { title: '重命名后' } });
+    expect(useChapterStore.getState().chapters.find((c) => c.id === 'c1')?.title).toBe('重命名后');
+  });
+});
