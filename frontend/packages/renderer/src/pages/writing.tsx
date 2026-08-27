@@ -11,6 +11,7 @@ import { Compass } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { auditChapter, confirmAudit, type AuditReportDto } from '../api/audit';
 import { analyzeStyle, type StyleReportDto } from '../api/style';
+import { fetchConfig } from '../api/config';
 import { errorMessage } from '../api/client';
 import { AuditDialog } from '../components/AuditDialog';
 import { AutoAuthorizationDialog } from '../components/AutoAuthorizationDialog';
@@ -120,6 +121,9 @@ export function WritingPage() {
   // #720：右栏整栏收起/展开 + 宽度受控（col-resize 边界手柄，镜像 #702 左栏）
   const [railWidth, setRailWidth] = useState(240);
   const [railCollapsed, setRailCollapsed] = useState(false);
+  // #724：全局默认模型（配置无项目级 model 时，上下文注入等回退到它）
+  const [globalDefaultModel, setGlobalDefaultModel] = useState('');
+
 
   // #703：右栏 row-resize 拖拽 — target 指定被拖高的上一面板（context / summary）
   const startRailResize = useCallback(
@@ -259,6 +263,22 @@ export function WritingPage() {
     }
   }, [currentProjectId, projects, selectProject, loadChapterTree]);
 
+  // #724：拉取全局默认模型（配置无项目级 model 时，上下文注入等回退到它；失败静默）
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await fetchConfig();
+        if (!cancelled && data?.default_model) setGlobalDefaultModel(data.default_model);
+      } catch {
+        // 静默：内核未就绪等，保持空，ContextPanel 走空态
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // 自动保存：用户编辑后 2s 防抖落盘（SSE done 帧提交 content 不触发）
   useEffect(() => {
     if (!dirtyRef.current) return;
@@ -313,7 +333,8 @@ export function WritingPage() {
 
   const currentChapter = chapters.find((c) => c.id === currentChapterId);
   const displayWords = currentChapter?.word_count ?? 0;
-  const model = currentProject?.config?.model ?? null;
+  // #724：上下文注入等从项目 model 开始，项目未设时回退全局默认模型
+  const model = currentProject?.config?.model || globalDefaultModel || null;
   const generating = status === 'running';
 
   return (

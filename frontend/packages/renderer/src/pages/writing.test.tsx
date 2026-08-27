@@ -724,3 +724,57 @@ describe('写作页 — 右栏三面板拖拽分隔 + 草稿审批最小高度�
     expect(after).toBeGreaterThan(before);
   });
 });
+
+describe('写作页 — #724 项目无 model 回退全局默认（上下文注入）', () => {
+  it('项目 config 无 model 时，上下文注入用全局默认模型 assemble 并渲染角色', async () => {
+    // 捕获 assemble 请求 body，验证回退 model（{} 初始避免 TS 收窄为 null）
+    let capturedAssemble: Record<string, unknown> = {};
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: string }) => {
+      if (path === '/api/v1/config') {
+        return {
+          default_model: 'openai/gpt-4o',
+          default_temperature: 0.8,
+          context_max_ratio: 0.8,
+          context_default_window: 128000,
+          server_host: '127.0.0.1',
+          server_port: 8000,
+          data_dir: '',
+        };
+      }
+      if (path === '/api/v1/projects/p1/volumes') return { items: seedVolumes };
+      if (path === '/api/v1/projects/p1/chapters') return { items: seedChapters, total: 2, offset: 0, limit: 50 };
+      if (path === '/api/v1/context/assemble') {
+        // mock 的 apiFetch 不透传 JSON.stringify → init.body 是对象，勿 JSON.parse
+        capturedAssemble = (init?.body ?? {}) as Record<string, unknown>;
+        return {
+          blocks: [
+            {
+              item: {
+                source: 'character_setting',
+                title: '角色：林晚',
+                content: '林晚：冷傲大小姐',
+                priority: 0,
+                metadata: { character_id: 'c-a' },
+              },
+              layer: 'compressible',
+              token_count: 30,
+              compressed: false,
+            },
+          ],
+          budget_tokens: 51200,
+          total_tokens: 1000,
+          model: 'openai/gpt-4o',
+          dropped: [],
+        };
+      }
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+
+    render(<WritingPage />);
+
+    // #724：项目 config={}（无 model），但全局默认存在 → 上下文注入应回退它并渲染角色
+    const charItem = await screen.findByTestId('context-character-0');
+    expect(charItem).toHaveTextContent('林晚');
+    expect(capturedAssemble.model).toBe('openai/gpt-4o');
+  });
+});
