@@ -83,13 +83,14 @@ CID = uuid.UUID("3f2e1d4a-0000-4000-8000-0000000000c1")
 TS = datetime(2026, 8, 1, 10, 0, 0)
 
 
-def _category(name: str, *, project_id: uuid.UUID = PID) -> WorldCategory:
-    """构造测试用世界观分类实体（固定时间戳）。"""
+def _category(name: str, *, project_id: uuid.UUID = PID, kind: str = "geo") -> WorldCategory:
+    """构造测试用世界观分类实体（固定时间戳；kind 默认 geo）."""
     assert WorldCategory is not None, "WorldCategory 未实现（RED 预期）"
     return WorldCategory(
         id=uuid.uuid4(),
         project_id=project_id,
         name=name,
+        kind=kind,
         created_at=TS,
         updated_at=TS,
     )
@@ -111,11 +112,23 @@ class TestWorldCategoryModel:
         assert c.id is not None
 
     def test_world_category_serialization(self) -> None:
-        """序列化含五字段，无多余字段."""
+        """序列化含六字段（含 kind），无多余字段."""
         c = _category("功法")
         dumped = c.model_dump(mode="json")
-        assert set(dumped.keys()) == {"id", "project_id", "name", "created_at", "updated_at"}
+        expected_keys = {"id", "project_id", "name", "created_at", "updated_at", "kind"}
+        assert set(dumped.keys()) == expected_keys
         assert dumped["name"] == "功法"
+        assert dumped["kind"] == "geo"
+
+    def test_world_category_kind_default_geo(self) -> None:
+        """未指定 kind → 默认 geo（地理类）."""
+        c = _category("势力")
+        assert c.kind == "geo"
+
+    def test_world_category_kind_abstract(self) -> None:
+        """kind=abstract（抽象类）可显式设置."""
+        c = _category("门派", kind="abstract")
+        assert c.kind == "abstract"
 
     def test_validate_category_name_empty(self) -> None:
         """空/全空白分类名 → ValueError「分类名不能为空」."""
@@ -162,14 +175,24 @@ class TestWorldCategoryService:
         return svc, repo
 
     async def test_create_category_success(self) -> None:
-        """create_category 成功 → 返回 WorldCategory（repo.create_category 被调）."""
+        """create_category 成功（kind 缺省 geo）→ 返回 WorldCategory（repo 收到 kind='geo'）."""
         svc, repo = self._svc()
         created = _category("势力")
         repo.get_category_by_name = AsyncMock(return_value=None)
         repo.create_category = AsyncMock(return_value=created)
         result = await svc.create_category(PID, "势力")
         assert result == created
-        repo.create_category.assert_awaited_once_with(PID, "势力")
+        repo.create_category.assert_awaited_once_with(PID, "势力", "geo")
+
+    async def test_create_category_with_kind_abstract(self) -> None:
+        """create_category 显式 kind='abstract' → repo 收到 kind='abstract'."""
+        svc, repo = self._svc()
+        created = _category("势力", kind="abstract")
+        repo.get_category_by_name = AsyncMock(return_value=None)
+        repo.create_category = AsyncMock(return_value=created)
+        result = await svc.create_category(PID, "势力", "abstract")
+        assert result == created
+        repo.create_category.assert_awaited_once_with(PID, "势力", "abstract")
 
     async def test_create_category_name_conflict(self) -> None:
         """同名分类已存在 → WorldCategoryNameConflictError."""
@@ -235,7 +258,21 @@ class TestWorldCategoryAPI:
         assert resp.status_code == 201
         body = resp.json()
         assert body["name"] == "势力"
-        svc.create_category.assert_awaited_once()
+        assert body["kind"] == "geo"
+        svc.create_category.assert_awaited_once_with(PID, "势力", "geo")
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_create_category_with_kind_201(self, mock_get_svc: MagicMock) -> None:
+        """POST body 含 kind='abstract' → 201 + 响应含 kind + create_category 收到 kind."""
+        svc = MagicMock()
+        mock_get_svc.return_value = svc
+        svc.create_category = AsyncMock(return_value=_category("势力", kind="abstract"))
+        resp = client.post(
+            f"/api/v1/projects/{PID}/world-categories", json={"name": "势力", "kind": "abstract"}
+        )
+        assert resp.status_code == 201
+        assert resp.json()["kind"] == "abstract"
+        svc.create_category.assert_awaited_once_with(PID, "势力", "abstract")
 
     @patch("inkflow.api.routers.world_settings.get_world_service")
     def test_create_category_422_conflict(self, mock_get_svc: MagicMock) -> None:
@@ -260,6 +297,7 @@ class TestWorldCategoryAPI:
         assert body["total"] == 1
         assert body["items"][0]["name"] == "势力"
         assert body["items"][0]["count"] == 3
+        assert body["items"][0]["kind"] == "geo"
 
     @patch("inkflow.api.routers.world_settings.get_world_service")
     def test_rename_category_200(self, mock_get_svc: MagicMock) -> None:

@@ -12,15 +12,19 @@ export function WorldCategoryDialog({
   onOpenChange,
 }: {
   open: boolean;
-  onSave: (name: string) => void;
+  onSave: (name: string, kind: 'geo' | 'abstract') => void;
   onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useI18n();
   const [name, setName] = useState('');
+  const [kind, setKind] = useState<'geo' | 'abstract'>('geo');
 
   // 打开时重置表单（创建模式清空，避免残留上次输入）
   useEffect(() => {
-    if (open) setName('');
+    if (open) {
+      setName('');
+      setKind('geo');
+    }
   }, [open]);
 
   // ESC 关闭（与 PinDialog/ConfirmDialog 同款：尊重已 preventDefault 的 Escape）
@@ -65,6 +69,32 @@ export function WorldCategoryDialog({
             )}
           </label>
         </div>
+        <div className="mt-4">
+          <span className="text-[13px]">{t('lib.worldCat.kind')}</span>
+          <div className="mt-2 flex gap-4">
+            <label className="flex items-center gap-1.5 text-[13px]">
+              <input
+                type="radio"
+                name="world-cat-kind"
+                data-testid="world-cat-kind-geo"
+                checked={kind === 'geo'}
+                onChange={() => setKind('geo')}
+              />
+              {t('lib.worldCat.kindGeo')}
+            </label>
+            <label className="flex items-center gap-1.5 text-[13px]">
+              <input
+                type="radio"
+                name="world-cat-kind"
+                data-testid="world-cat-kind-abstract"
+                checked={kind === 'abstract'}
+                onChange={() => setKind('abstract')}
+              />
+              {t('lib.worldCat.kindAbstract')}
+            </label>
+          </div>
+          <p className="mt-2 text-[12px] text-ink-3">{t('lib.worldCat.kindTip')}</p>
+        </div>
         <div className="mt-6 flex justify-end gap-2">
           <button
             type="button"
@@ -79,7 +109,7 @@ export function WorldCategoryDialog({
             data-testid="world-cat-save"
             className="rounded-md bg-accent px-4 py-1.5 text-sm text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!canSave}
-            onClick={() => onSave(trimmed)}
+            onClick={() => onSave(trimmed, kind)}
           >
             {t('lib.create.save')}
           </button>

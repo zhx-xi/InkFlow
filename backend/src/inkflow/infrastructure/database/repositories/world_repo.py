@@ -78,6 +78,7 @@ def _category_orm_to_domain(orm: WorldCategoryORM) -> WorldCategory:
         id=uuid.UUID(int=orm.id),
         project_id=uuid.UUID(int=orm.project_id),
         name=orm.name,
+        kind=orm.kind,
         created_at=orm.created_at,
         updated_at=orm.updated_at,
     )
@@ -88,6 +89,7 @@ def _category_domain_to_orm(domain: WorldCategory) -> WorldCategoryORM:
     return WorldCategoryORM(
         project_id=_uuid_to_int(domain.project_id),
         name=domain.name,
+        kind=domain.kind,
     )
 
 
@@ -366,7 +368,9 @@ class SQLiteWorldRepository:
 
     # ── WorldCategory（v1.2，issue #389）──────────────────────────
 
-    async def create_category(self, project_id: int | uuid.UUID, name: str) -> WorldCategory:
+    async def create_category(
+        self, project_id: int | uuid.UUID, name: str, kind: str = "geo"
+    ) -> WorldCategory:
         """创建分类（id 由 DB 自增分配；(project_id, name) 全唯一索引兜底同名冲突）.
 
         返回领域实体 WorldCategory（id 为 UUID，映射惯例同条目 `_orm_to_domain`；
@@ -377,6 +381,7 @@ class SQLiteWorldRepository:
             id=uuid.uuid4(),
             project_id=uuid.UUID(int=pid),
             name=name,
+            kind=kind,
             created_at=_utcnow(),
             updated_at=_utcnow(),
         )

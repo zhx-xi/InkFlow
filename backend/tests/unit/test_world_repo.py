@@ -739,14 +739,25 @@ class TestWorldCategoryRepository:
     """
 
     async def test_create_and_get_category_roundtrip(self, db_session, project):
-        """create_category 落库 + get_category 读回（name/UUID 映射正确）."""
+        """create_category 落库 + get_category 读回（name/UUID 映射正确；kind 缺省 geo）."""
         repo = SQLiteWorldRepository(db_session)
         created = await repo.create_category(project.id, "势力")
         assert created.name == "势力"
+        assert created.kind == "geo"
         assert created.project_id == uuid.UUID(int=project.id)
         fetched = await repo.get_category(created.id.int)
         assert fetched is not None
         assert fetched.name == "势力"
+        assert fetched.kind == "geo"
+
+    async def test_create_category_with_kind_roundtrip(self, db_session, project):
+        """create_category 显式 kind='abstract' → 落库 + 读回 kind='abstract'."""
+        repo = SQLiteWorldRepository(db_session)
+        created = await repo.create_category(project.id, "势力", "abstract")
+        assert created.kind == "abstract"
+        fetched = await repo.get_category(created.id.int)
+        assert fetched is not None
+        assert fetched.kind == "abstract"
 
     async def test_get_category_by_name_hit_and_miss(self, db_session, project):
         """get_category_by_name 命中 / 未命中."""

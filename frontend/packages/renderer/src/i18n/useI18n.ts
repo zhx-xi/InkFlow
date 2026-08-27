@@ -1,13 +1,14 @@
 import { useThemeStore } from '../stores/theme';
 import { en } from './en';
-import { extractEn, extractZh } from './extract-keys';
 import { roleEnhanceEn, roleEnhanceZh } from './role-enhance';
+import { extractEn, extractZh } from './extract-keys';
+import { worldCatKindEn, worldCatKindZh } from './world-cat-kind';
 import { zh } from './zh';
 
 type Dict = Record<string, string>;
 const dicts: Record<'zh' | 'en', Dict> = {
-  zh: { ...zh, ...roleEnhanceZh, ...extractZh } as Dict,
-  en: { ...en, ...roleEnhanceEn, ...extractEn },
+  zh: { ...zh, ...roleEnhanceZh, ...extractZh, ...worldCatKindZh } as Dict,
+  en: { ...en, ...roleEnhanceEn, ...extractEn, ...worldCatKindEn },
 };
 
 /** 简单占位替换: t('write.stream.done', { words: 342, model: 'x', valid: '通过' }) */

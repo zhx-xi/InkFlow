@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Awaitable
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
@@ -129,6 +129,7 @@ class WorldCategoryCreateBody(BaseModel):
     """创建世界观分类请求体（spec §3.1，v1.2）."""
 
     name: str
+    kind: Literal["geo", "abstract"] = "geo"
 
     @field_validator("name")
     @classmethod
@@ -372,7 +373,7 @@ async def create_world_category(
     """创建世界观分类（spec §3.1，v1.2；同名 → 422）."""
     pid = _parse_id(project_id, detail="项目不存在")
     svc = _get_svc(db)
-    category = await _run_service(svc.create_category(pid, data.name))
+    category = await _run_service(svc.create_category(pid, data.name, data.kind))
     return category.model_dump(mode="json")
 
 
@@ -385,7 +386,7 @@ async def list_project_world_categories(
     pid = _parse_id(project_id, detail="项目不存在")
     svc = _get_svc(db)
     categories = await _run_service(svc.list_world_categories(pid))
-    items = [{"id": str(c.id), "name": c.name, "count": n} for c, n in categories]
+    items = [{"id": str(c.id), "name": c.name, "kind": c.kind, "count": n} for c, n in categories]
     return {"items": items, "total": len(items)}
 
 

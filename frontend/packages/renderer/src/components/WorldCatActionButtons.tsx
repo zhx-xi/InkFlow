@@ -13,11 +13,14 @@ export function WorldCatActionButtons({
   onAddCategory,
   onOpenMapView,
   showCreate = true,
+  showMapEntry = true,
   onCreateWorld,
 }: {
   onAddCategory: () => void;
   onOpenMapView: () => void;
   showCreate?: boolean;
+  /** #699：false 时不渲染地图视图入口（选中抽象类分类时由调用方门控） */
+  showMapEntry?: boolean;
   /** #568：选中分类时 world-cat-add 改开 LibraryCreateDialog（创建子条目）；未提供则保持 onAddCategory（空态建分类实体） */
   onCreateWorld?: () => void;
 }) {
@@ -31,10 +34,12 @@ export function WorldCatActionButtons({
           {t('lib.worldCat.add')}
         </button>
       )}
-      <button type="button" data-testid="map-view-entry" className={BTN_CLS} onClick={onOpenMapView}>
-        <Map className="h-3.5 w-3.5" aria-hidden="true" />
-        {t('lib.worldMap')}
-      </button>
+      {showMapEntry && (
+        <button type="button" data-testid="map-view-entry" className={BTN_CLS} onClick={onOpenMapView}>
+          <Map className="h-3.5 w-3.5" aria-hidden="true" />
+          {t('lib.worldMap')}
+        </button>
+      )}
     </>
   );
 }
