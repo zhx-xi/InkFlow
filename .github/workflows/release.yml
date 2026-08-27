@@ -211,6 +211,22 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # #711: cache electron download artifacts (electron binary via @electron/get + electron-builder
+      #   tools/NSIS/winCodeSign/7zip). GH Actions runner is fresh each run, re-downloads ~200MB+
+      #   per release; cache hit avoids that (#709 measured 'Package Windows artifacts' = 1233s).
+      #   Cache paths (source-verified): @electron/get envPaths('electron').cache = %LOCALAPPDATA%\electron\Cache
+      #   electron-builder getCacheDirectory() win32 = %LOCALAPPDATA%\electron-builder\Cache. On the
+      #   hosted runner that resolves to C:\Users\runneradmin\AppData\Local\...
+      - name: Cache electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\Users\runneradmin\AppData\Local\electron\Cache
+            C:\Users\runneradmin\AppData\Local\electron-builder\Cache
+          key: electron-builder-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml', 'frontend/packages/electron/package.json') }}
+          restore-keys: |
+            electron-builder-${{ runner.os }}-
+
       - name: Download kernel artifact
         uses: actions/download-artifact@v7
         with:
