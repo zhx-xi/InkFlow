@@ -223,3 +223,122 @@ class TestStreamEventsToolExceptionTerminal:
         assert frames[-1].done is True
         error_frames = [ev for ev in frames if ev.type == "error"]
         assert len(error_frames) == 1
+
+
+class _ModelEndAgent:
+    """fake agent 产出 on_chat_model_end 事件（完整 AIMessage 雏形）。"""
+
+    def __init__(self, *, output: object, stream_first: bool = False) -> None:
+        self.output = output
+        self.stream_first = stream_first
+
+    async def astream_events(self, inputs, version="v2"):
+        if self.stream_first:
+            yield {
+                "event": "on_chat_model_stream",
+                "run_type": "llm",
+                "data": {"chunk": SimpleNamespace(content="hello")},
+            }
+        yield {
+            "event": "on_chat_model_end",
+            "data": {"output": self.output},
+        }
+
+
+class _ToolFlowAgent:
+    """fake agent 产出 tool_start → tool_end → tool_start → 未知事件。"""
+
+    async def astream_events(self, inputs, version="v2"):
+        yield {
+            "event": "on_tool_start",
+            "run_id": "tool_1",
+            "name": "search_characters",
+            "data": {"input": {}},
+        }
+        yield {
+            "event": "on_tool_end",
+            "run_id": "tool_1",
+            "name": "search_characters",
+            "data": {"output": "found"},
+        }
+        yield {
+            "event": "on_tool_start",
+            "run_id": "tool_2",
+            "name": "read_chapter",
+            "data": {"input": {}},
+        }
+        yield {"event": "on_chain_end", "data": {}}
+
+
+class TestStreamEventsCoverageGaps:
+    """#708 coverage-backend 分支缺口补测（只补测试，不改功能代码）。"""
+
+    @pytest.mark.asyncio
+    async def test_getter_returns_empty_string_keeps_base_prompt(self) -> None:
+        """getter 返回空串/falsy → system_prompt 保持不变（88->92 False 分支）。"""
+
+        async def _getter(prompt: str, project_id: str) -> str:
+            return ""
+
+        svc, agent = _make_svc(project_context_getter=_getter)
+        _, inputs = await _drain(svc, agent, prompt="你好", project_id=PROJECT_ID)
+        assert inputs["messages"][0].content == BASE_PROMPT
+
+    @pytest.mark.asyncio
+    async def test_model_end_after_stream_skips_chunk_stream(self) -> None:
+        """已产出 stream delta 后 on_chat_model_end 有 content → 不再切块补发 delta。"""
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        output = SimpleNamespace(content="hello world", tool_calls=[], response_metadata={})
+        agent = _ModelEndAgent(output=output, stream_first=True)
+        svc = ChatAgentService(agent=agent, system_prompt=BASE_PROMPT)
+        frames = [ev async for ev in svc.stream_events(prompt="你好", project_id=PROJECT_ID)]
+        assert [ev.type for ev in frames] == ["delta", "done"]
+        assert frames[0].delta == "hello"
+        steps, final_content, _ = svc.consume_trace()
+        assert len(steps) == 1
+        assert steps[0].message_content == "hello world"
+        assert final_content == "hello world"
+
+    @pytest.mark.asyncio
+    async def test_model_end_output_none_is_noop(self) -> None:
+        """on_chat_model_end 的 output 为 None → _collect_model_end 直接返回。"""
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        svc = ChatAgentService(agent=_ModelEndAgent(output=None), system_prompt=BASE_PROMPT)
+        frames = [ev async for ev in svc.stream_events(prompt="你好", project_id=PROJECT_ID)]
+        assert [ev.type for ev in frames] == ["done"]
+        steps, final_content, token_total = svc.consume_trace()
+        assert steps == []
+        assert final_content == ""
+        assert token_total == 0
+
+    @pytest.mark.asyncio
+    async def test_empty_tool_call_id_not_indexed(self) -> None:
+        """tool_call id 为空串 → 不加入 _tool_call_index，on_tool_end 不回填 result。"""
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        output = SimpleNamespace(
+            content="",
+            tool_calls=[{"id": "", "name": "search", "args": {"q": "x"}}],
+            response_metadata={},
+        )
+        svc = ChatAgentService(agent=_FakeAgent(), system_prompt=BASE_PROMPT)
+        svc._collect_model_end(output)
+        svc._collect_tool_result("", "found")
+        steps, _, _ = svc.consume_trace()
+        assert len(steps) == 1
+        assert len(steps[0].tool_calls) == 1
+        assert steps[0].tool_calls[0].result == ""
+        assert steps[0].tool_calls[0].is_error is False
+
+    @pytest.mark.asyncio
+    async def test_tool_start_then_end_loop_back_edge(self) -> None:
+        """tool_start → tool_end → tool_start → 未知事件 → 覆盖循环回边与 fall-through 分支。"""
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        svc = ChatAgentService(agent=_ToolFlowAgent(), system_prompt=BASE_PROMPT)
+        frames = [ev async for ev in svc.stream_events(prompt="查询角色", project_id=PROJECT_ID)]
+        assert [ev.type for ev in frames] == ["tool_call", "tool_result", "tool_call", "done"]
+        assert frames[1].result == "found"
+        assert frames[2].id == "tool_2"

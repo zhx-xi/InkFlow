@@ -23,6 +23,7 @@ from inkflow.domain.models.character import (
     ExtractedCharacter,
     ExtractedRelation,
 )
+from inkflow.infrastructure.database.models.character import CharacterGroupMemberORM
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 TS = datetime(2026, 8, 1, 10, 0, 0)
@@ -232,3 +233,13 @@ class TestCharacterExtraContract:
         update = CharacterUpdate(name="林尘", extra={"role_rank": "major", "groups": ["主角团"]})
         assert update.extra == {"role_rank": "major", "groups": ["主角团"]}
         assert "extra" in update.model_fields_set
+
+
+class TestCharacterGroupMemberORMRepr:
+    """#708 补测：CharacterGroupMemberORM.__repr__（models/character.py L228-232）。"""
+
+    def test_repr_includes_character_and_group_ids(self) -> None:
+        """repr 输出含 character_id 与 group_id。"""
+        member = CharacterGroupMemberORM(character_id=1, group_id=2)
+
+        assert "<CharacterGroupMemberORM character_id=1 group_id=2>" in repr(member)
