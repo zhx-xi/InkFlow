@@ -19,7 +19,7 @@ export interface ChatStreamBody {
 }
 
 export interface ChatStreamFrame {
-  type: 'delta' | 'tool_call' | 'tool_result' | 'done' | 'error';
+  type: 'delta' | 'tool_call' | 'tool_result' | 'done' | 'error' | 'run_started' | 'reasoning';
   done: boolean;
   delta?: string;
   error?: string;
@@ -37,6 +37,10 @@ export interface ChatStreamCallbacks {
   /** #597：agent 工具流回调（可选） */
   onToolCall?: (call: { id: string; name: string; args: Record<string, unknown> }) => void;
   onToolResult?: (res: { id: string; name: string; result: string }) => void;
+  /** #719：run_started 帧 → 携带 run_id（前端据此调后端 abort） */
+  onRunStart?: (runId: string) => void;
+  /** #727：reasoning 帧 → 思考过程块 */
+  onReasoning?: (text: string) => void;
 }
 
 /** 发起 chat 流式请求；返回 abort 函数（组件卸载时调用） */
@@ -94,6 +98,14 @@ export async function streamChat(
             callbacks.onToolResult?.({ id: frame.id ?? '', name: frame.name ?? '', result: frame.result ?? '' });
             continue;
           }
+          if (frame.type === 'run_started') {
+            callbacks.onRunStart?.(frame.id ?? '');
+            continue;
+          }
+          if (frame.type === 'reasoning') {
+            callbacks.onReasoning?.(frame.delta ?? '');
+            continue;
+          }
           if (frame.type === 'error' || frame.error) {
             callbacks.onError(frame.error ?? '');
             return;
@@ -115,6 +127,11 @@ export async function streamChat(
 
   void run();
   return () => controller.abort();
+}
+
+/** #719：后端中断端点——POST /api/v1/chat/agent/stream/{runId}/abort */
+export async function abortChatRun(runId: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/api/v1/chat/agent/stream/${runId}/abort`, { method: 'POST' });
 }
 
 /** #547：chat 消息实体（对齐后端 GET/POST /api/v1/chat/messages 契约） */

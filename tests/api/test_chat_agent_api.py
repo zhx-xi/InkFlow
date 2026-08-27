@@ -36,7 +36,7 @@ GREEN 实现契约（Codex 按此实现，spec §14.2/§14.6）：
 RED 预期：全部用例 `assert 200 == 404` / `assert 422 == 404` 纯断言失败。
 """
 
-from __future__ import annotationsimport jsonimport uuidfrom datetime import UTC, datetimefrom types import SimpleNamespacefrom unittest.mock import AsyncMock, MagicMockimport httpximport pytestfrom httpx import ASGITransport, AsyncClientfrom httpx_sse import aconnect_sseimport inkflow.api.deps as _depsfrom inkflow.api.app import app  # 必须先于 stub 行导入（GREEN 时 app 导入链注册真模块/真 deps）from inkflow.domain.models.agent_run import AgentRunfrom inkflow.domain.ports.llm_errors import LLMRequestError# RED 阶段 inkflow.api.deps.get_chat_agent_service 属性尚不存在——补 MagicMock 占位，
+from __future__ import annotationsimport jsonimport uuidfrom datetime import UTC, datetimefrom types import SimpleNamespacefrom unittest.mock import ANY, AsyncMock, MagicMockimport httpximport pytestfrom httpx import ASGITransport, AsyncClientfrom httpx_sse import aconnect_sseimport inkflow.api.deps as _depsfrom inkflow.api.app import app  # 必须先于 stub 行导入（GREEN 时 app 导入链注册真模块/真 deps）from inkflow.domain.models.agent_run import AgentRunfrom inkflow.domain.ports.llm_errors import LLMRequestError# RED 阶段 inkflow.api.deps.get_chat_agent_service 属性尚不存在——补 MagicMock 占位，
 # 使 fixture 内 import 可解析（missing-module-stub-patch 规则 1e 变体：父模块已存在、
 # 仅属性缺失 → setattr 逃生门）。GREEN 期真函数已定义 → hasattr 为真 → 零改动转绿。
 if not hasattr(_deps, "get_chat_agent_service"):
@@ -79,7 +79,12 @@ def _stream_stub(*events):
     签名锁定 GREEN 契约：`svc.stream_events(prompt=..., chapter_context=...)`。
     """
 
-    async def _gen(prompt: str, project_id: str | None = None, chapter_context: str | None = None):
+    async def _gen(
+        prompt: str,
+        project_id: str | None = None,
+        chapter_context: str | None = None,
+        cancel_event=None,
+    ):
         for ev in events:
             yield ev
 
@@ -174,23 +179,24 @@ class TestChatAgentStreamSuccess:
             status = sse.response.status_code
             assert status == 200  # RED：路由未注册 → 404，此处断言失败
             frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
-        assert len(frames) == 4
-        assert frames[0] == {"type": "delta", "delta": "你", "done": False}
-        assert frames[1] == {
+        assert len(frames) == 5
+        assert frames[0] == {"type": "run_started", "id": "chat-run-0001", "done": False}
+        assert frames[1] == {"type": "delta", "delta": "你", "done": False}
+        assert frames[2] == {
             "type": "tool_call",
             "id": "call_1",
             "name": "search_characters",
             "args": {"project_id": "550e8400-e29b-41d4-a716-446655440000"},
             "done": False,
         }
-        assert frames[2] == {
+        assert frames[3] == {
             "type": "tool_result",
             "id": "call_1",
             "name": "search_characters",
             "result": '{"ok": true, "data": []}',
             "done": False,
         }
-        assert frames[3] == {"type": "done", "done": True, "run_id": "chat-run-0001"}
+        assert frames[4] == {"type": "done", "done": True, "run_id": "chat-run-0001"}
 
     @pytest.mark.asyncio
     async def test_agent_stream_calls_service_with_prompt_and_context(
@@ -215,6 +221,7 @@ class TestChatAgentStreamSuccess:
             prompt="帮我写一段打斗场景",
             project_id=payload["project_id"],
             chapter_context="第一章：主角初入宗门，遭遇同门挑衅。",
+            cancel_event=ANY,
         )
 
 
@@ -234,6 +241,7 @@ class TestChatAgentStreamErrors:
             prompt: str,
             project_id: str | None = None,
             chapter_context: str | None = None,
+            cancel_event=None,
         ):
             yield _ev("delta", delta="你")
             raise LLMRequestError("API key invalid")
@@ -248,9 +256,10 @@ class TestChatAgentStreamErrors:
             status = sse.response.status_code
             assert status == 200
             frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
-        assert len(frames) == 2
-        assert frames[0] == {"type": "delta", "delta": "你", "done": False}
-        assert frames[1] == {"type": "error", "done": True, "error": "LLM 调用失败，请稍后重试"}
+        assert len(frames) == 3
+        assert frames[0] == {"type": "run_started", "id": "chat-run-0001", "done": False}
+        assert frames[1] == {"type": "delta", "delta": "你", "done": False}
+        assert frames[2] == {"type": "error", "done": True, "error": "LLM 调用失败，请稍后重试"}
         assert "API key invalid" not in json.dumps(frames, ensure_ascii=False)
 
 
@@ -261,7 +270,7 @@ class TestChatAgentStreamErrors:
         """#710/#697：工具执行失败（非 LLMRequestError 的 generic Exception——如打包版
         asyncio.run in running loop 抛 RuntimeError）→ 端点仍产出终帧 error（done:true）
         不裸断流（前端不因 SSE 无终帧误判 network error）。"""
-        async def _gen(prompt, project_id=None, chapter_context=None):
+        async def _gen(prompt, project_id=None, chapter_context=None, cancel_event=None):
             raise RuntimeError("asyncio.run() cannot be called from a running event loop")
             yield  # pragma: no cover
 
@@ -289,7 +298,7 @@ class TestChatAgentStreamErrors:
         TypeError: Object of type ToolMessage is not JSON serializable → error 帧。"""
         msg = SimpleNamespace(content='{"ok": true, "data": []}')
 
-        async def _gen(prompt, project_id=None, chapter_context=None):
+        async def _gen(prompt, project_id=None, chapter_context=None, cancel_event=None):
             yield _ev("tool_call", id_="call_1", name="search_characters", args={})
             yield _ev("tool_result", id_="call_1", name="search_characters", result=msg)
             yield _ev("done", done=True)
@@ -303,10 +312,11 @@ class TestChatAgentStreamErrors:
             status = sse.response.status_code
             assert status == 200
             frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
-        assert len(frames) == 3
-        assert frames[1]["type"] == "tool_result"
-        assert frames[1]["result"] == '{"ok": true, "data": []}'
-        assert frames[2]["type"] == "done"
+        assert len(frames) == 4
+        assert frames[0]["type"] == "run_started"
+        assert frames[2]["type"] == "tool_result"
+        assert frames[2]["result"] == '{"ok": true, "data": []}'
+        assert frames[3]["type"] == "done"
 
 # ── 校验错误路径 ────────────────────────────────────────────────
 

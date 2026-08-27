@@ -3,12 +3,13 @@ import { en } from './en';
 import { roleEnhanceEn, roleEnhanceZh } from './role-enhance';
 import { extractEn, extractZh } from './extract-keys';
 import { worldCatKindEn, worldCatKindZh } from './world-cat-kind';
+import { chatUxEn, chatUxZh } from './chat-ux';
 import { zh } from './zh';
 
 type Dict = Record<string, string>;
 const dicts: Record<'zh' | 'en', Dict> = {
-  zh: { ...zh, ...roleEnhanceZh, ...extractZh, ...worldCatKindZh } as Dict,
-  en: { ...en, ...roleEnhanceEn, ...extractEn, ...worldCatKindEn },
+  zh: { ...zh, ...roleEnhanceZh, ...extractZh, ...worldCatKindZh, ...chatUxZh } as Dict,
+  en: { ...en, ...roleEnhanceEn, ...extractEn, ...worldCatKindEn, ...chatUxEn },
 };
 
 /** 简单占位替换: t('write.stream.done', { words: 342, model: 'x', valid: '通过' }) */

@@ -45,7 +45,6 @@ const chatApiMocks = vi.hoisted(() => ({
   archiveChatMessage: vi.fn(),
   deleteChatMessage: vi.fn(),
   restoreChatMessage: vi.fn(),
-  // #581：整轮归档/删除会话——GREEN ChatPanel 整轮操作按钮 wire
   archiveChatConversation: vi.fn(),
   deleteChatConversation: vi.fn(),
 }));
@@ -589,14 +588,13 @@ describe('ChatPanel — 意图分离与多生成单选插入（#477 保留契约
 });
 
 describe('ChatPanel — 失败与并发保护（#541 流式版）', () => {
-  it('流式 in-flight 时再次发送 → 不触发第二次 streamChat', async () => {
+  it('流式 in-flight 时发送按钮变中断按钮（#719）→ 无 chat-send，无法二次发送', async () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
     await sendAndAwaitStream(user, '第一条', 0);
-    // 流式进行中（未 onDone）：再次输入并发送 → 无第二次 streamChat
-    await user.type(screen.getByTestId('chat-input'), '第二条');
-    await user.click(screen.getByTestId('chat-send'));
-    expect(streamChatMock).toHaveBeenCalledTimes(1);
+    // 流式进行中（未 onDone）：chat-send 由 chat-interrupt 替代 → 结构上无法二次发送
+    expect(screen.queryByTestId('chat-send')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-interrupt')).toBeInTheDocument();
     // 收尾：done 结束流
     emitDone(0);
   });
@@ -864,7 +862,7 @@ describe('ChatPanel — 系统级 Agent 工具流式（#597）', () => {
     emitDone(0);
   });
 
-  it('工具流进行中（onToolCall 后未 done）再次发送 → 不触发第二次 streamChat（#541 并发保护延续，守护用例）', async () => {
+  it('工具流进行中（onToolCall 后未 done）发送按钮为 chat-interrupt（#719，守护用例）', async () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
     await sendAndAwaitStream(user, '第一条');
@@ -877,10 +875,9 @@ describe('ChatPanel — 系统级 Agent 工具流式（#597）', () => {
       });
     });
 
-    // 工具流尚未 done：再次发送被并发保护拦截 → 第二次 streamChat 不触发
-    await user.type(screen.getByTestId('chat-input'), '第二条');
-    await user.click(screen.getByTestId('chat-send'));
-    expect(streamChatMock).toHaveBeenCalledTimes(1);
+    // 工具流尚未 done：chat-send 由 chat-interrupt 替代 → 结构上无法二次发送
+    expect(screen.queryByTestId('chat-send')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-interrupt')).toBeInTheDocument();
 
     emitDone(0);
   });
