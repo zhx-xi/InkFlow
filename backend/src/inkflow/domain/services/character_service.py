@@ -209,7 +209,7 @@ class CharacterService:
                 if group is None or group.project_id != existing.project_id:
                     raise GroupNotInProjectError()
         merge_updates = update.model_dump(exclude_unset=True)
-        if merge_updates.get("group_ids") is None:
+        if "group_ids" in merge_updates and merge_updates["group_ids"] is None:
             # None = 不修改（Character.group_ids 必须为列表，不能落 None）
             merge_updates.pop("group_ids")
         merged = existing.model_copy(update=merge_updates)

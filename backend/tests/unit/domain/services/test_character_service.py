@@ -300,6 +300,23 @@ class TestCharacterCrud:
         assert merged.created_at == TS
         assert result == merged
 
+    async def test_update_no_group_ids_preserves_existing(self, service, mock_repo) -> None:
+        """#701：PATCH body 不含 group_ids（仅改 name/extra）→ 不报 KeyError，group_ids 保持既有值.
+
+        回归：e2e「编辑保存闭环」PATCH {name, extra}（无 group_ids）修复前抛 KeyError→500。
+        """
+        group = _group(name="主角团")
+        existing = _char(name="林尘", group_ids=[group.id])
+        mock_repo.get = AsyncMock(return_value=existing)
+        mock_repo.update = AsyncMock(side_effect=lambda c: c)
+
+        result = await service.update_character(
+            existing.id, CharacterUpdate(name="林尘·改", personality="新性格")
+        )
+        assert result is not None
+        assert result.name == "林尘·改"
+        assert result.group_ids == [group.id]  # 未提供 group_ids → 保持既有
+
     async def test_update_character_returns_none_when_missing(self, service, mock_repo) -> None:
         """角色不存在 → None（router 层转 404），不触发仓储更新。"""
         mock_repo.get = AsyncMock(return_value=None)
