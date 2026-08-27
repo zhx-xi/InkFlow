@@ -51,6 +51,7 @@ from inkflow.domain.ports.character_errors import (
 from inkflow.domain.ports.character_repository import CharacterRepositoryProtocol
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.services._character_extractor import CharacterExtractor
+from inkflow.domain.services.model_resolution import resolve_model
 
 logger = logging.getLogger(__name__)
 
@@ -500,5 +501,9 @@ class CharacterService:
             request.model or project.config.model,
         )
         return await self._extractor.extract(
-            request, default_model=project.config.model or self._llm_default_model
+            request,
+            default_model=resolve_model(
+                None, project.config.model, self._llm_default_model
+            )
+            or "",
         )

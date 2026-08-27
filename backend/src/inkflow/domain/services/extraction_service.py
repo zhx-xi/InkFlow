@@ -106,6 +106,7 @@ from inkflow.domain.services._extraction_rag import (
 from inkflow.domain.services._foreshadowing_extractor import ForeshadowingExtractor
 from inkflow.domain.services._timeline_extractor import TimelineExtractor
 from inkflow.domain.services.character_service import CharacterService
+from inkflow.domain.services.model_resolution import resolve_model
 from inkflow.domain.services.outline_service import OutlineService
 from inkflow.domain.services.style_service import StyleService
 from inkflow.domain.services.timeline_service import TimelineService
@@ -590,7 +591,10 @@ class ExtractionService(_ExtractionRAGMixin):
                     text=source.text or "",
                     model=request.model,
                 ),
-                default_model=project.config.model or self._llm_default_model,
+                default_model=resolve_model(
+                    None, project.config.model, self._llm_default_model
+                )
+                or "",
             )
         elif request.type is ExtractionType.STYLE:
             # F16 落地（§8.2 表 #6）: 委托 StyleService.analyze——门面恒确定性
@@ -637,7 +641,10 @@ class ExtractionService(_ExtractionRAGMixin):
                     text=source.text or "",
                     model=request.model,
                 ),
-                default_model=project.config.model or self._llm_default_model,
+                default_model=resolve_model(
+                    None, project.config.model, self._llm_default_model
+                )
+                or "",
             )
         return await self._timeline_service.check_consistency(
             request.project_id, include_flashbacks=request.include_flashbacks

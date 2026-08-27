@@ -109,8 +109,9 @@ class InkFlowConfig(BaseSettings):
     """CORS 白名单（仅放行本地来源，ADR-021；spec §2.3.2）。"""
 
     # ---- LLM Provider ----
-    llm_default_model: str = "deepseek/deepseek-v4-flash"
-    """默认 LLM 模型（LiteLLM 格式：provider/model_name）。"""
+    llm_default_model: str = ""
+    """默认 LLM 模型（LiteLLM 格式：provider/model_name）；空 = 未配置，经 provider
+    注册表 / 项目模型解析（#735）。"""
 
     llm_temperature: float = 0.7
     """LLM 默认温度参数。"""
