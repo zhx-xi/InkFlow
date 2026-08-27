@@ -1,63 +1,30 @@
-"""F27 M2 写工具 RED 契约测试 — save_draft（agent 唯一写面，草稿落库 + 单事务 + 审计）.
+"""#718 RED 契约测试 — save_draft 写工具绑定项目上下文（不再要求 LLM 自报 project_id）.
 
-被测模块（全部未实现，1c 整模块 RED 形态；全部顶部 import——全文件收集期失败是
-预期（pytest exit 2 / collected 0 items / 1 error），GREEN 落地后整文件自动收集）:
-    from inkflow.infrastructure.agent.tools.save_draft_tool import (
-        SaveDraftParams, build_save_draft_tool,
-    )
+背景（根因实证）: #680 已让 5 个只读工具 schema 移除 project_id（装配期闭包绑定），
+但 save_draft 仍保留 project_id 必填（save_draft_tool.py:26-34 SaveDraftParams），
+与 chat 系统提示词 `_CHAT_SYSTEM_AGENT_PROMPT`（"当前项目已绑定…无需用户提供项目 ID"）
+矛盾 → LLM 或省略 project_id（_save_draft 缺参 TypeError，实测）或误报 project_id
+（_validate_context 校验不符 → {ok:False}，实测）→ 工具失败 → agent 循环无法收敛 →
+前端无限 running。
 
-设计假设（父侧定稿契约，GREEN 按此实现）
-----------------------------------------
-1. save_draft 工具（infrastructure/agent/tools/save_draft_tool.py 新建）:
+本文件锁定的契约（决策已拍板）:
+1. `SaveDraftParams` 移除 `project_id`/`chapter_id` 字段（LLM 不感知、无需自报）。
+2. `_save_draft` 在 `deps.expected_project_id/chapter_id` 注入时 **总是使用绑定值**
+   （LLM 无法编造/误报 id → 消灭 {ok:False} 循环来源）；未注入时回退 caller 传入值
+   （MCP / F27 writer 兼容，shim 保留 project_id/chapter_id 可选参）。
+3. 工具吞一切异常 → {ok:False} 信封（不抛出）。
+4. 成功: {"ok": True, "draft_id", "status": "draft", "word_count"}；草稿落库+审计。
 
-       class SaveDraftParams(BaseModel):
-           '''save_draft 工具参数（spec §5.2）.'''
-           project_id: uuid.UUID
-           chapter_id: uuid.UUID | None = None   # 目标章节（可选，确认时指定）
-           content: str                          # 草稿正文（Markdown）
-           summary: str | None = None            # 一句话说明（用户确认时展示）
-
-       @dataclass
-       class SaveDraftToolDeps:
-           '''写工具工厂依赖 — service 实例注入（鸭子类型，镜像 ReaderToolDeps）.'''
-           draft_service: object    # 有 create(*, project_id, chapter_id, content,
-                                    #   summary="", agent_run_id=None) -> Draft
-           audit_service: object    # 有 record(...)（F34 audit 日志）
-
-       def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool: ...
-
-2. Tool 复用 F26 形态（infrastructure/agent/tools/reader_tools.py 既有）:
-
-       @dataclass
-       class Tool:
-           spec: ToolSpec
-           func: Callable[..., Awaitable[str]]   # 异步执行，返回文本结果
-
-3. 工具契约（spec §5.2 工程约束）:
-   - spec.name == "save_draft"（固定，LLM 按名调用）
-   - 成功: 返回 {"ok": True, "draft_id": "<id>", "status": "draft", "word_count": N}
-     （json.dumps ensure_ascii=False）
-   - 失败: 返回 {"ok": False, "error": "<异常消息>"}（工具内部捕获一切 Exception，
-     不抛出——F26 工具异常语义，is_error 由循环层判定）
-   - 调 service 层不碰 ORM（ADR-F 约束①: 仅经 draft_service.create）
-   - 单工具单事务（ADR-F 约束②: 每次调用 draft_service.create 恰一次 =
-     独立事务提交点；测试断言 create 恰 await 1 次）
-   - 写操作落审计日志（ADR-F 约束③: audit_service.record 被调，含
-     actor="agent:writer" 与草稿摘要）
-
-4. word_count 语义: 复用 domain/services/_word_count.count_words（既有纯函数）。
-
-RED 预期
---------
-全文件收集期失败（1c 整模块 RED 形态: pytest exit 2 / collected 0 items / 1 error）:
-    ModuleNotFoundError: No module named 'inkflow.infrastructure.agent.tools.save_draft_tool'
-（字母序: inkflow.infrastructure.agent.tools.save_draft_tool 唯一缺失模块）
-
-asyncio 模式: 本 venv（pytest-asyncio 1.4.0）实测头部 asyncio: mode=Mode.AUTO
-（pyproject asyncio_mode = "auto" 生效）；文件级 pytestmark = pytest.mark.asyncio
-双保险（STRICT/AUTO 两种模式均成立），全部用例 async def。
+RED 预期（对照当前实现）:
+- test_save_draft_tool_spec: schema["properties"] 当前含 project_id → 断言"不在" FAILED。
+- test_save_draft_params_validation: SaveDraftParams(project_id=...) 当前合法 → 断言
+  project_id 字段不存在 FAILED。
+- test_save_draft_without_self_reported_id: 当前 _save_draft 缺 project_id → TypeError FAILED。
+- test_uses_bound_expected_project_id: 当前要求 caller 传 project_id（省略则 TypeError）
+  → FAILED。
+- test_ignores_conflicting_caller_project_id: 当前 caller 传错 id → {ok:False}（拒绝）；
+  断言"使用绑定值成功" FAILED。
 """
-
 from __future__ import annotations
 
 import json
@@ -83,6 +50,7 @@ pytestmark = pytest.mark.asyncio  # 实测 mode=Mode.AUTO；显式 mark 兼容 S
 
 PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 CHAPTER_ID = uuid.UUID("87654321-4321-8765-4321-876543218765")
+WRONG_ID = uuid.UUID("99999999-9999-4999-8999-999999999999")
 
 CONTENT = "第一章 测试内容。这是草稿正文，用于验证 save_draft 工具契约。"
 
@@ -119,10 +87,7 @@ def _make_deps(**overrides) -> SaveDraftToolDeps:
 
 
 def test_save_draft_tool_spec() -> None:
-    """契约①: 工具 spec.name 固定为 save_draft，description 含草稿/确认语义.
-
-    描述应引导 LLM「正文完成后必须调用本工具保存草稿」（spec §5.2 工具描述）.
-    """
+    """契约①: spec.name 固定 save_draft；schema 不再暴露 project_id/chapter_id."""
     deps = _make_deps()
     tool = build_save_draft_tool(deps)
 
@@ -130,57 +95,98 @@ def test_save_draft_tool_spec() -> None:
     assert tool.spec.name == "save_draft"
     assert "草稿" in tool.spec.description
     assert "确认" in tool.spec.description
-    # input_schema 由 SaveDraftParams.model_json_schema() 生成
+    # #718: LLM 不感知 project_id/chapter_id（绑定在装配期 deps）
     schema = tool.spec.input_schema
-    assert "content" in schema["properties"]
-    assert "project_id" in schema["properties"]
+    properties = schema.get("properties", {})
+    assert "content" in properties
+    assert "project_id" not in properties
+    assert "chapter_id" not in properties
+    assert schema.get("required") == ["content"]
 
 
 def test_save_draft_params_validation() -> None:
-    """契约②: SaveDraftParams 字段契约（content 必填，chapter_id 可选）."""
-    params = SaveDraftParams(project_id=PROJECT_ID, content=CONTENT)
-    assert params.chapter_id is None
-
-    params2 = SaveDraftParams(project_id=PROJECT_ID, chapter_id=CHAPTER_ID, content=CONTENT)
-    assert params2.chapter_id == CHAPTER_ID
+    """契约②: SaveDraftParams 仅 content 必填、summary 可选（无 project_id/chapter_id）. """
+    params = SaveDraftParams(content=CONTENT)
+    assert params.summary is None
+    # project_id/chapter_id 字段已移除
+    assert not hasattr(params, "project_id")
+    assert not hasattr(params, "chapter_id")
 
     with pytest.raises(ValidationError):
-        SaveDraftParams(project_id=PROJECT_ID)  # content 必填
+        SaveDraftParams()  # content 必填
 
 
-# ── 契约: 成功路径（草稿落库 + 审计 + 单事务） ──
+# ── 契约: 成功路径（绑定 project_id + 草稿落库 + 审计 + 单事务） ──
 
 
-async def test_save_draft_success() -> None:
-    """契约③: 成功落库 → 返回 ok 信封含 draft_id/status/word_count.
-
-    断言: draft_service.create 恰 await 1 次（单工具单事务，ADR-F 约束②）/
-    入参内容正确 / audit_service.record 被调（约束③）.
-    """
-    deps = _make_deps()
+async def test_save_draft_without_self_reported_id_does_not_raise() -> None:
+    """契约③: LLM 省略 project_id（chat 提示词"无需提供"）→ 工具不抛 TypeError，成功落库."""
+    deps = _make_deps(expected_project_id=PROJECT_ID, expected_chapter_id=CHAPTER_ID)
     deps.draft_service.create.return_value = _make_draft()
     tool = build_save_draft_tool(deps)
 
-    result = await tool.func(project_id=PROJECT_ID, chapter_id=CHAPTER_ID, content=CONTENT)
+    # 不传 project_id/chapter_id —— 当前实现会 TypeError（缺必填参）→ RED
+    result = await tool.func(content=CONTENT)
 
     payload = json.loads(result)
     assert payload["ok"] is True
     assert payload["draft_id"] == "draft-1"
     assert payload["status"] == "draft"
     assert payload["word_count"] == count_words(CONTENT)
-
-    # 单事务: create 恰一次，入参正确
     deps.draft_service.create.assert_awaited_once()
+
+
+async def test_uses_bound_expected_project_id() -> None:
+    """契约④: deps 注入 expected_project_id → 工具总是使用绑定值（非 caller 缺省）."""
+    deps = _make_deps(expected_project_id=PROJECT_ID, expected_chapter_id=CHAPTER_ID)
+    deps.draft_service.create.return_value = _make_draft()
+    tool = build_save_draft_tool(deps)
+
+    result = await tool.func(content=CONTENT)
+
+    payload = json.loads(result)
+    assert payload["ok"] is True
+    create_call = deps.draft_service.create.await_args
+    # 绑定值 = deps.expected_*（LLM 无需/不能指定 project/chapter）
+    assert create_call.kwargs["project_id"] == PROJECT_ID
+    assert create_call.kwargs["chapter_id"] == CHAPTER_ID
+
+
+async def test_ignores_conflicting_caller_project_id_uses_bound() -> None:
+    """契约⑤: caller 误传错 project_id，但 deps 已绑定 → 工具用绑定值成功（不 reject）.
+
+    #718 根因: 旧实现 _validate_context 对不符 project_id 拒绝 → {ok:False} → LLM
+    循环失败。修复后绑定值优先，LLM 无法注入错误 id → 不再 {ok:False} 循环。
+    """
+    deps = _make_deps(expected_project_id=PROJECT_ID, expected_chapter_id=CHAPTER_ID)
+    deps.draft_service.create.return_value = _make_draft()
+    tool = build_save_draft_tool(deps)
+
+    result = await tool.func(project_id=WRONG_ID, chapter_id=WRONG_ID, content=CONTENT)
+
+    payload = json.loads(result)
+    assert payload["ok"] is True  # 旧实现: {ok:False}（不符拒绝）→ RED
     create_call = deps.draft_service.create.await_args
     assert create_call.kwargs["project_id"] == PROJECT_ID
     assert create_call.kwargs["chapter_id"] == CHAPTER_ID
-    assert create_call.kwargs["content"] == CONTENT
-    # 审计: 写操作落日志（actor=agent:writer）
-    deps.audit_service.record.assert_awaited_once()
 
 
-async def test_save_draft_without_chapter() -> None:
-    """契约④: chapter_id 可选（None = 确认时指定目标章节）."""
+async def test_binds_expected_chapter_id_when_omitted() -> None:
+    """契约⑥: deps 绑定 expected_chapter_id，LLM 省略 chapter_id → 工具用绑定章节."""
+    deps = _make_deps(expected_project_id=PROJECT_ID, expected_chapter_id=CHAPTER_ID)
+    deps.draft_service.create.return_value = _make_draft()
+    tool = build_save_draft_tool(deps)
+
+    result = await tool.func(content=CONTENT)
+
+    payload = json.loads(result)
+    assert payload["ok"] is True
+    create_call = deps.draft_service.create.await_args
+    assert create_call.kwargs["chapter_id"] == CHAPTER_ID
+
+
+async def test_no_expected_context_falls_back_to_caller() -> None:
+    """契约⑦: deps 未注入 expected（None）→ 回退 caller 传入值（MCP/F27 writer 兼容）."""
     deps = _make_deps()
     deps.draft_service.create.return_value = _make_draft(chapter_id=None)
     tool = build_save_draft_tool(deps)
@@ -190,23 +196,16 @@ async def test_save_draft_without_chapter() -> None:
     payload = json.loads(result)
     assert payload["ok"] is True
     create_call = deps.draft_service.create.await_args
-    assert create_call.kwargs["chapter_id"] is None
+    assert create_call.kwargs["project_id"] == PROJECT_ID
 
 
-# ── 契约: 失败路径（service 抛错 → is_error 信封，不中断） ──
-
-
-async def test_save_draft_service_error() -> None:
-    """契约⑤: draft_service 抛异常 → {"ok": false, "error": "..."} 不抛出.
-
-    断言: 返回信封 is_error 语义（ok=False + 错误消息）/ 不向上抛异常 /
-    审计仍记录失败（约束③: 成功/失败均落审计）.
-    """
-    deps = _make_deps()
+async def test_save_draft_service_error_returns_ok_false() -> None:
+    """契约⑧: draft_service 抛异常 → {"ok": false, "error": "..."} 不抛出（吞异常回信封）."""
+    deps = _make_deps(expected_project_id=PROJECT_ID, expected_chapter_id=CHAPTER_ID)
     deps.draft_service.create.side_effect = RuntimeError("数据库连接失败")
     tool = build_save_draft_tool(deps)
 
-    result = await tool.func(project_id=PROJECT_ID, chapter_id=CHAPTER_ID, content=CONTENT)
+    result = await tool.func(content=CONTENT)
 
     payload = json.loads(result)
     assert payload["ok"] is False
@@ -214,143 +213,31 @@ async def test_save_draft_service_error() -> None:
     deps.audit_service.record.assert_awaited()  # 失败亦落审计
 
 
-async def test_save_draft_empty_content_rejected() -> None:
-    """契约⑥: 空 content 应被 draft_service 拒绝（service 层校验，工具透传错误）.
-
-    领域规则（字数/内容校验）在 service 层不破（ADR-F 约束①: 工具不自行实现
-    领域校验，service 抛 ValueError → 错误信封回填）.
-    """
-    deps = _make_deps()
+async def test_save_draft_empty_content_error_envelope() -> None:
+    """契约⑨: 空 content 被 service 拒 → {ok:False} 信封（service 层校验，工具透传）."""
+    deps = _make_deps(expected_project_id=PROJECT_ID)
     deps.draft_service.create.side_effect = ValueError("草稿内容不能为空")
     tool = build_save_draft_tool(deps)
 
-    result = await tool.func(project_id=PROJECT_ID, content="")
+    result = await tool.func(content="")
 
     payload = json.loads(result)
     assert payload["ok"] is False
     assert "不能为空" in payload["error"]
 
 
-# ── #275: 工具参数 = 请求上下文防御（期望 project_id/chapter_id 注入） ──
-
-WRONG_ID = uuid.UUID("99999999-9999-4999-8999-999999999999")  # #275: 与请求上下文不符的伪造 id
+# ── 契约: 标题/审计 ──
 
 
-async def test_save_draft_rejects_wrong_project_id() -> None:
-    """#275 防御契约①: deps 注入期望上下文后，工具参数 project_id 与期望不符
-    → {\"ok\": false, \"error\" 含 project_id} 且不落库.
-
-    RED 预期: 当前实现无期望上下文校验 → 错误 id 照常落库 → ok 断言 FAILED
-    （clean FAILED，非 ERROR）。
-    """
-    deps = _make_deps(
-        expected_project_id=PROJECT_ID,
-        expected_chapter_id=CHAPTER_ID,
-    )
+async def test_save_draft_audit_records_on_success() -> None:
+    """契约⑩: 成功路径 audit_service.record 被调（actor=agent:writer，含草稿摘要）."""
+    deps = _make_deps(expected_project_id=PROJECT_ID)
     deps.draft_service.create.return_value = _make_draft()
     tool = build_save_draft_tool(deps)
 
-    result = await tool.func(project_id=WRONG_ID, chapter_id=CHAPTER_ID, content=CONTENT)
+    await tool.func(content=CONTENT)
 
-    payload = json.loads(result)
-    assert payload["ok"] is False
-    assert "project_id" in payload["error"]
-    deps.draft_service.create.assert_not_awaited()
-
-
-async def test_save_draft_accepts_matching_project_id() -> None:
-    """#275 防御契约②: 工具参数与期望上下文一致 → 正常落库（守护用例，RED 阶段 PASS）."""
-    deps = _make_deps(
-        expected_project_id=PROJECT_ID,
-        expected_chapter_id=CHAPTER_ID,
-    )
-    deps.draft_service.create.return_value = _make_draft()
-    tool = build_save_draft_tool(deps)
-
-    result = await tool.func(project_id=PROJECT_ID, chapter_id=CHAPTER_ID, content=CONTENT)
-
-    payload = json.loads(result)
-    assert payload["ok"] is True
-    deps.draft_service.create.assert_awaited_once()
-
-
-async def test_save_draft_no_expected_context_passes_through() -> None:
-    """#275 防御契约③: 未注入期望上下文（默认 None）→ 任意 project_id 照常落库
-    （向后兼容，守护用例，RED 阶段 PASS）."""
-    deps = _make_deps()
-    deps.draft_service.create.return_value = _make_draft()
-    tool = build_save_draft_tool(deps)
-
-    result = await tool.func(project_id=WRONG_ID, content=CONTENT)
-
-    payload = json.loads(result)
-    assert payload["ok"] is True
-    deps.draft_service.create.assert_awaited_once()
-
-
-async def test_save_draft_rejects_wrong_chapter_id() -> None:
-    """#275 防御契约④: 期望 chapter_id 与工具参数不符 → 拒绝（不落库）.
-
-    RED 预期: 当前实现无校验 → 错误 chapter 照常落库 → ok 断言 FAILED。
-    """
-    deps = _make_deps(
-        expected_project_id=PROJECT_ID,
-        expected_chapter_id=CHAPTER_ID,
-    )
-    deps.draft_service.create.return_value = _make_draft()
-    tool = build_save_draft_tool(deps)
-
-    result = await tool.func(project_id=PROJECT_ID, chapter_id=WRONG_ID, content=CONTENT)
-
-    payload = json.loads(result)
-    assert payload["ok"] is False
-    assert "chapter_id" in payload["error"]
-    deps.draft_service.create.assert_not_awaited()
-
-
-# ── #275 冒烟补充契约: LLM 字符串参数规范化（deepagents 透传 JSON 原值） ──
-
-
-async def test_save_draft_accepts_string_project_id() -> None:
-    """#275 冒烟补充①: LLM 工具参数为字符串形态（实测 arguments.project_id
-    恒为 str）——防御比较前必须规范化，正确字符串值应放行且 create 收到
-    uuid.UUID 对象.
-
-    冒烟实锤（2026-08-12）: 错误消息「期望 ...0003，收到 ...0003」——str 与
-    uuid.UUID 显示相同却比较不等，防御误拒真实草稿保存。
-
-    RED 预期: 当前实现 str != uuid.UUID 恒真 → 拒绝 → ok 断言 FAILED。
-    """
-    deps = _make_deps(
-        expected_project_id=PROJECT_ID,
-        expected_chapter_id=CHAPTER_ID,
-    )
-    deps.draft_service.create.return_value = _make_draft()
-    tool = build_save_draft_tool(deps)
-
-    result = await tool.func(
-        project_id=str(PROJECT_ID), chapter_id=str(CHAPTER_ID), content=CONTENT
-    )
-
-    payload = json.loads(result)
-    assert payload["ok"] is True
-    create_call = deps.draft_service.create.await_args
-    assert create_call.kwargs["project_id"] == PROJECT_ID
-    assert create_call.kwargs["chapter_id"] == CHAPTER_ID
-
-
-async def test_save_draft_rejects_wrong_string_project_id() -> None:
-    """#275 冒烟补充②: 错误的字符串 project_id 同样被防御拒绝（规范化后比较）."""
-    deps = _make_deps(
-        expected_project_id=PROJECT_ID,
-        expected_chapter_id=CHAPTER_ID,
-    )
-    deps.draft_service.create.return_value = _make_draft()
-    tool = build_save_draft_tool(deps)
-
-    result = await tool.func(project_id=str(WRONG_ID), chapter_id=str(CHAPTER_ID), content=CONTENT)
-
-    payload = json.loads(result)
-    assert payload["ok"] is False
-    assert "project_id" in payload["error"]
-    deps.draft_service.create.assert_not_awaited()
+    deps.audit_service.record.assert_awaited_once()
+    call = deps.audit_service.record.await_args
+    assert call.kwargs["project_id"] == PROJECT_ID
+    assert call.kwargs["actor"] == "agent:writer"

@@ -264,11 +264,13 @@ def test_build_writer_agent_system_prompt_injects_project_context() -> None:
 
 
 async def test_build_agentic_writer_forwards_context_to_save_draft_tool() -> None:
-    """#275 装配契约: build_agentic_writer 注入期望上下文 → save_draft 工具拒绝
-    错误 project_id、接受正确 project_id（工具参数 = 请求上下文的集成契约）。
+    """#718 装配契约: build_agentic_writer 注入期望上下文 → save_draft 工具绑定上下文
+    （LLM 传入的 project_id 被忽略，工具总是使用 deps.expected_*——比 #275 防御更强，
+    杜绝编造全零 UUID 落孤儿数据）。
 
-    RED 预期: 当前签名无 expected_project_id → TypeError → pytest.fail
-    （干净 FAILED，非 ERROR）。
+    #718 语义变更: 旧 #275 是「参数与期望不符 → 拒绝 {ok:false}」；新契约是「装配期
+    绑定，工具总是使用 deps.expected_*（忽略 caller 传入的冲突 id）」——这个变更消除了
+    chat 写工具因 LLM 误报 project_id 导致 {ok:false} → 循环失败的「无限 running」根因。
     """
     from inkflow.domain.models.draft import Draft, DraftStatus
     from inkflow.infrastructure.agent.agentic_writer import (
@@ -300,21 +302,11 @@ async def test_build_agentic_writer_forwards_context_to_save_draft_tool() -> Non
                 expected_chapter_id=CHAPTER_ID,
             )
         except TypeError as exc:
-            pytest.fail(f"build_agentic_writer 应支持 expected_project_id（#275）: {exc}")
+            pytest.fail(f"build_agentic_writer 应支持 expected_project_id（#718）: {exc}")
 
     tools = mock_build.call_args.kwargs["tools"]
     save_tool = next(t for t in tools if t.spec.name == "save_draft")
 
-    # 错误 project_id → 拒绝（不落库）
-    wrong = await save_tool.func(
-        project_id=WRONG_ID,
-        chapter_id=CHAPTER_ID,
-        content="正文",
-    )
-    assert '"ok": false' in wrong
-    deps.draft_service.create.assert_not_awaited()
-
-    # 正确 project_id → 落库成功（单事务恰一次）
     deps.draft_service.create.return_value = Draft(
         id="draft-275",
         project_id=PROJECT_ID,
@@ -324,6 +316,21 @@ async def test_build_agentic_writer_forwards_context_to_save_draft_tool() -> Non
         created_at=_utcnow(),
         confirmed_at=None,
     )
+
+    # 传入「错误」project_id：工具忽略 caller 值，绑定 deps.expected_project_id → 成功落库
+    # （旧 #275 契约: {ok:false} 拒绝 → 本测试已翻转）
+    result = await save_tool.func(
+        project_id=WRONG_ID,
+        chapter_id=CHAPTER_ID,
+        content="正文",
+    )
+    assert '"ok": true' in result
+    create_call = deps.draft_service.create.await_args
+    assert create_call.kwargs["project_id"] == PROJECT_ID  # 绑定到装配期期望值（忽略 WRONG_ID）
+    assert create_call.kwargs["chapter_id"] == CHAPTER_ID
+
+    # 正确 project_id（或省略）→ 同样绑定期望值 → 成功
+    deps.draft_service.create.reset_mock()
     right = await save_tool.func(
         project_id=PROJECT_ID,
         chapter_id=CHAPTER_ID,
