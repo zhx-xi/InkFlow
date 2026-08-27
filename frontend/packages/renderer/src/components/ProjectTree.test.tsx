@@ -242,17 +242,19 @@ describe('ProjectTree — 卷节点入口（#648 卷管理 GUI CRUD，RED 契约
 });
 
 describe('ProjectTree — #674 卷章树按钮并排/拖拽归卷/新建选卷（RED 契约）', () => {
-  it('底部容器两按钮「+ 新建卷」与「+ 新建章节」并排（同一 flex 容器内，非块级堆叠）', () => {
+  it('底部容器两按钮「+ 新建卷」与「+ 新建章节」并排（同一 actions-row flex 容器内，非块级堆叠）', () => {
     renderTree();
-    // GREEN 须给底部容器加 data-testid="tree-actions" 与 flex 布局类（flex items-center gap-2）
+    // #702：按钮行 = footer 内独立的 actions-row（flex 容器），两按钮为其兄弟
     const footer = screen.getByTestId('tree-actions');
     expect(footer).toBeInTheDocument();
     expect(footer.className).toMatch(/(^|\s)flex(\s|$)/);
+    const btnRow = screen.getByTestId('tree-action-row');
+    expect(btnRow.className).toMatch(/(^|\s)flex(\s|$)/);
     const volBtn = screen.getByRole('button', { name: /\+ 新建卷/ });
     const chBtn = screen.getByRole('button', { name: /\+ 新建章节/ });
-    // 两按钮是同一兄弟容器（非块级上下堆叠）
-    expect(volBtn.parentElement).toBe(footer);
-    expect(chBtn.parentElement).toBe(footer);
+    // 两按钮是同一 actions-row 的兄弟（非块级上下堆叠）
+    expect(volBtn.parentElement).toBe(btnRow);
+    expect(chBtn.parentElement).toBe(btnRow);
   });
 
   it('章节行 draggable，onDragStart 设置 dataTransfer(text/plain=chapter id)', () => {
@@ -289,5 +291,50 @@ describe('ProjectTree — #674 卷章树按钮并排/拖拽归卷/新建选卷�
     const select = screen.getByTestId('chapter-volume-select');
     expect(select).toBeInTheDocument();
     expect(select).toHaveTextContent(/未分组/);
+  });
+});
+describe('ProjectTree — #702 左栏创建输入整行 + 调宽手柄', () => {
+  it('点「＋ 新建卷」→ 创建输入行整行弹出（含 ✓/✕），位于按钮行上方', () => {
+    renderTree();
+    fireEvent.click(screen.getByRole('button', { name: /\+ 新建卷/ }));
+    const row = screen.getByTestId('tree-create-volume-row');
+    expect(screen.getByPlaceholderText('新建卷标题')).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: '创建卷' })).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: '取消' })).toBeInTheDocument();
+    // 输入行位于按钮行上方（DOM 文档序：row 先于 tree-action-row）
+    const btnRow = screen.getByTestId('tree-action-row');
+    expect(row.compareDocumentPosition(btnRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('点「＋ 新建卷」→ Enter 创建卷 / Esc 取消卷', async () => {
+    mocks.projectState.currentProjectId = 'p1';
+    mocks.chapterState.createVolume.mockResolvedValue(undefined);
+    renderTree();
+    fireEvent.click(screen.getByRole('button', { name: /\+ 新建卷/ }));
+    fireEvent.change(screen.getByPlaceholderText('新建卷标题'), { target: { value: '第二卷' } });
+    fireEvent.keyDown(screen.getByPlaceholderText('新建卷标题'), { key: 'Enter' });
+    await waitFor(() => expect(mocks.chapterState.createVolume).toHaveBeenCalledWith('p1', '第二卷'));
+    // Esc 取消：关闭输入行
+    fireEvent.click(screen.getByRole('button', { name: /\+ 新建卷/ }));
+    fireEvent.change(screen.getByPlaceholderText('新建卷标题'), { target: { value: '待取消' } });
+    fireEvent.keyDown(screen.getByPlaceholderText('新建卷标题'), { key: 'Escape' });
+    expect(screen.queryByTestId('tree-create-volume-row')).not.toBeInTheDocument();
+    expect(mocks.chapterState.createVolume).toHaveBeenCalledTimes(1);
+  });
+
+  it('左栏提供 col-resize 拖拽手柄（拖动调宽，min 160 / max 360）', () => {
+    const onResize = vi.fn();
+    render(<ProjectTree width={208} onResizeWidth={onResize} />);
+    const handle = screen.getByTestId('tree-resize-handle');
+    expect(handle).toBeInTheDocument();
+    expect(handle.className).toMatch(/col-resize/);
+    // mousedown 记录起点 → mousemove 更新宽度（208 + (300-208) = 300，在 [160,360] 内）
+    fireEvent.mouseDown(handle, { clientX: 208 });
+    fireEvent.mouseMove(window, { clientX: 300 });
+    expect(onResize).toHaveBeenCalledWith(300);
+    // 超出上限 clamp 到 360
+    fireEvent.mouseDown(handle, { clientX: 0 });
+    fireEvent.mouseMove(window, { clientX: 500 });
+    expect(onResize).toHaveBeenLastCalledWith(360);
   });
 });

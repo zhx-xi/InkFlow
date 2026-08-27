@@ -674,3 +674,37 @@ describe('写作页 — 模型未配置前置校验（#474 P0）', () => {
     expect(executeMock).not.toHaveBeenCalled();
   });
 });
+describe('写作页 — 右栏三面板拖拽分隔 + 草稿审批最小高度（#703）', () => {
+  it('右栏三个面板之间各有 row-resize 拖拽分隔条', () => {
+    render(<WritingPage />);
+    const rail = screen.getByTestId('right-rail');
+    expect(within(rail).getByTestId('rail-panel-context')).toBeInTheDocument();
+    expect(within(rail).getByTestId('rail-panel-summary')).toBeInTheDocument();
+    expect(within(rail).getByTestId('rail-panel-drafts')).toBeInTheDocument();
+    const sp0 = within(rail).getByTestId('rail-resize-handle-0');
+    const sp1 = within(rail).getByTestId('rail-resize-handle-1');
+    expect(sp0).toBeInTheDocument();
+    expect(sp1).toBeInTheDocument();
+    expect(sp0.className).toMatch(/row-resize/);
+    expect(sp1.className).toMatch(/row-resize/);
+  });
+
+  it('草稿审批面板有最小高度保护（min-height ≥ 120px）', () => {
+    render(<WritingPage />);
+    const drafts = screen.getByTestId('rail-panel-drafts');
+    // #703：草稿审批 panel 设 min-height:120px 保护，不被上下文 flex:1 压瘪
+    expect(drafts.className).toMatch(/min-h-\[120px\]/);
+  });
+
+  it('拖拽分隔条调整上一面板高度（mousedown→mousemove）', () => {
+    render(<WritingPage />);
+    const sp0 = screen.getByTestId('rail-resize-handle-0');
+    const context = screen.getByTestId('rail-panel-context');
+    const before = parseInt(context.style.height, 10) || 0;
+    fireEvent.mouseDown(sp0, { clientY: 100 });
+    fireEvent.mouseMove(window, { clientY: 200 });
+    const after = parseInt(context.style.height, 10) || 0;
+    // 向下拖 100px → 上一面板高度增加
+    expect(after).toBeGreaterThan(before);
+  });
+});

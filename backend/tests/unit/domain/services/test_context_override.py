@@ -185,3 +185,35 @@ class TestContextOverride:
         assert len(summary_blocks) == 1  # summary 不受 override 影响
         # 角色被过滤到只剩 1 条
         assert len(self._character_blocks(result)) == 1
+
+    async def test_world_override_keeps_only_selected(self) -> None:
+        """world_ids 指定后，只注入命中 world_setting_id 的世界观 item."""
+        id_w = uuid.uuid4()
+        id_v = uuid.uuid4()
+        svc = ContextService(
+            sources={
+                ContextSourceType.WORLD_SETTING: MockSource(
+                    [
+                        _item(
+                            ContextSourceType.WORLD_SETTING,
+                            f"世界观A-{id_w}",
+                            {"world_setting_id": str(id_w)},
+                        ),
+                        _item(
+                            ContextSourceType.WORLD_SETTING,
+                            f"世界观B-{id_v}",
+                            {"world_setting_id": str(id_v)},
+                        ),
+                    ]
+                )
+            },
+            count_tokens=_mock_count_tokens,
+        )
+
+        result = await svc.build_context(_req(override=ContextOverride(world_ids=[id_w])))
+
+        world_items = [
+            b.item for b in result.blocks if b.item.source == ContextSourceType.WORLD_SETTING
+        ]
+        assert len(world_items) == 1
+        assert world_items[0].metadata["world_setting_id"] == str(id_w)

@@ -287,16 +287,17 @@ def _apply_override(
     source_type: ContextSourceType,
     override: ContextOverride | None,
 ) -> list[ContextItem]:
-    """override 通道过滤 — 只过滤 character_setting / foreshadowing 两类来源.
+    """override 通道过滤 — 只过滤 character_setting / foreshadowing / world_setting 三类来源.
 
     - override.character_ids 非空 → 仅保留 metadata.character_id 命中的角色 item
     - override.foreshadowing_ids 非空 → 仅保留 metadata.foreshadowing_id 命中的伏笔 item
+    - override.world_ids 非空 → 仅保留 metadata.world_setting_id 命中的世界观 item
     - override 为 None / 列表为空 / 其他来源 → 原样返回（不过滤）
 
     Args:
         items: 数据源产出的上下文条目.
         source_type: 数据源类型.
-        override: 显式勾选通道（v1.1 #593）.
+        override: 显式勾选通道（v1.1 #593 / #704 追加世界观）.
 
     Returns:
         过滤后的上下文条目列表.
@@ -305,18 +306,13 @@ def _apply_override(
         return items
     if source_type == ContextSourceType.CHARACTER_SETTING and override.character_ids:
         allowed = {str(i) for i in override.character_ids}
-        return [
-            item
-            for item in items
-            if str(item.metadata.get("character_id", "")) in allowed
-        ]
+        return [item for item in items if str(item.metadata.get("character_id", "")) in allowed]
     if source_type == ContextSourceType.FORESHADOWING and override.foreshadowing_ids:
         allowed = {str(i) for i in override.foreshadowing_ids}
-        return [
-            item
-            for item in items
-            if str(item.metadata.get("foreshadowing_id", "")) in allowed
-        ]
+        return [item for item in items if str(item.metadata.get("foreshadowing_id", "")) in allowed]
+    if source_type == ContextSourceType.WORLD_SETTING and override.world_ids:
+        allowed = {str(i) for i in override.world_ids}
+        return [item for item in items if str(item.metadata.get("world_setting_id", "")) in allowed]
     return items
 
 

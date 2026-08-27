@@ -31,10 +31,11 @@ export interface ContextBlock {
   compressed: boolean;
 }
 
-/** override 白名单：character_ids 非空 → 只注入命中角色；空 → 注入全部（仅过滤 character_setting/foreshadowing） */
+/** override 白名单：character_ids/foreshadowing_ids/world_ids 非空 → 只注入命中项；空 → 注入全部 */
 export interface ContextOverride {
   character_ids: string[];
   foreshadowing_ids: string[];
+  world_ids: string[];
 }
 
 /** 组装请求（writing_requirements 必填 min_length=1；max_tokens 可缺省或为 null） */
@@ -66,6 +67,37 @@ export interface ContextAssemblyResult {
 export async function assembleContext(body: AssembleContextRequest): Promise<ContextAssemblyResult> {
   return apiFetch<ContextAssemblyResult>('/api/v1/context/assemble', { method: 'POST', body });
 }
+
+/** 世界观条目列表行（#704：选择注入搜索选择器数据源） */
+export interface WorldSettingItem {
+  id: string;
+  name: string;
+  category: string;
+}
+
+/** GET /api/v1/projects/{projectId}/world-settings——项目世界观条目列表 */
+export async function listProjectWorldSettings(
+  projectId: string,
+): Promise<{ items: WorldSettingItem[]; total: number; offset: number; limit: number }> {
+  return apiFetch(`/api/v1/projects/${projectId}/world-settings`);
+}
+
+/** 伏笔条目列表行（#704：选择注入搜索选择器数据源） */
+export interface ForeshadowingItem {
+  id: string;
+  title: string;
+  status: string;
+  priority: number;
+  location: string;
+}
+
+/** GET /api/v1/projects/{projectId}/foreshadowings——项目伏笔列表 */
+export async function listProjectForeshadowings(
+  projectId: string,
+): Promise<{ items: ForeshadowingItem[]; total: number; offset: number; limit: number }> {
+  return apiFetch(`/api/v1/projects/${projectId}/foreshadowings`);
+}
+
 /** 章节摘要 DTO（Issue #656）：与后端 context.py 契约对齐 */
 export interface ChapterSummaryDto {
   summary: string;
