@@ -101,22 +101,6 @@ function fetchCalled(path: string): boolean {
 }
 
 /** 下拉/combobox 选择（原生 select 与 Radix 双分支兼容；选项可访问名 = optionText） */
-async function selectCombo(
-  el: HTMLElement,
-  optionText: string,
-  user: ReturnType<typeof userEvent.setup>,
-) {
-  if (el.tagName === 'SELECT') {
-    const opt = Array.from(el.querySelectorAll('option')).find(
-      (o) => o.textContent?.trim() === optionText,
-    );
-    await user.selectOptions(el, opt ?? optionText);
-  } else {
-    await user.click(el);
-    await user.click(await screen.findByRole('option', { name: optionText }));
-  }
-}
-
 /** 打开角色详情面板（角色行名字点击 → 面板；GREEN 后名字可点击） */
 async function openDetailPanel(user: ReturnType<typeof userEvent.setup>, charName = '林晚') {
   await screen.findByTestId('library-list');
@@ -188,20 +172,19 @@ describe('T2 角色分组 #651（角色详情面板分组区契约）', () => {
     const panel = await openDetailPanel(user);
     // 面板标题 = 角色名
     expect(panel).toHaveTextContent('林晚');
-    // 分组下拉渲染 + 显示当前分组名（c1.group_id='g1' → 主角团）
-    const groupSelect = within(panel).getByTestId('character-group-select');
-    expect(groupSelect).toHaveTextContent('主角团');
-    // 下拉选项 = GET /projects/p1/character-groups（含「未分组」清空项）
-    await user.click(groupSelect);
-    expect(await screen.findByRole('option', { name: '青云宗' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: '未分组' })).toBeInTheDocument();
+    // 分组多选 checkbox 渲染：容器 character-group-multi，c1.group_id='g1' → 主角团项勾选
+    const multi = within(panel).getByTestId('character-group-multi');
+    expect(within(within(multi).getByTestId('character-group-option-g1')).getByRole('checkbox')).toBeChecked();
+    // 选项 = GET /projects/p1/character-groups（含「未分组」清空项）
+    expect(within(multi).getByTestId('character-group-option-g2')).toBeInTheDocument();
+    expect(within(multi).getByTestId('character-group-option-ungrouped')).toBeInTheDocument();
     await waitFor(() => {
       expect(fetchCalled('/api/v1/projects/p1/character-groups')).toBe(true);
     });
   });
 
-  it('T2-2 选分组 → PATCH /characters/{cid} body {group_id} → 面板显示新分组名', async () => {
-    // 预期 FAIL：无详情面板/分组下拉——character-detail-panel element-missing（类 3 契约缺口）
+  it('T2-2 勾选分组 → PATCH /characters/{cid} body {group_ids}（全量数组）→ 面板勾选新分组', async () => {
+    // 预期 FAIL：无详情面板/下拉——character-detail-panel element-missing（类 3 契约缺口）
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
     });
@@ -209,8 +192,8 @@ describe('T2 角色分组 #651（角色详情面板分组区契约）', () => {
     renderLibrary();
 
     const panel = await openDetailPanel(user);
-    // 选「青云宗」（g2）→ PATCH /api/v1/characters/c1 body {group_id: 'g2'}
-    await selectCombo(within(panel).getByTestId('character-group-select'), '青云宗', user);
+    // 勾选「青云宗」（g2）→ PATCH /api/v1/characters/c1 body {group_ids: ['g1','g2']}
+    await user.click(within(within(panel).getByTestId('character-group-option-g2')).getByRole('checkbox'));
 
     await waitFor(() => {
       const call = apiFetchMock.mock.calls.find(
@@ -221,11 +204,11 @@ describe('T2 角色分组 #651（角色详情面板分组区契约）', () => {
     const patchCall = apiFetchMock.mock.calls.find(
       (c) => c[0] === '/api/v1/characters/c1' && c[1]?.method === 'PATCH',
     )!;
-    // §T2：body = {group_id}（角色表 group_id 字段赋值）
-    expect(patchCall[1]?.body).toEqual(expect.objectContaining({ group_id: 'g2' }));
-    // 面板显示当前分组名更新（状态化 mock PATCH 合并回写 → 重拉/本地更新均显示新值）
+    // §T2：#701 多分组 body = {group_ids}（全量数组，既有 g1 + 新增 g2）
+    expect(patchCall[1]?.body).toEqual(expect.objectContaining({ group_ids: ['g1', 'g2'] }));
+    // 面板勾选状态更新（g2 被勾选）
     await waitFor(() => {
-      expect(within(panel).getByTestId('character-group-select')).toHaveTextContent('青云宗');
+      expect(within(within(panel).getByTestId('character-group-option-g2')).getByRole('checkbox')).toBeChecked();
     });
   });
 
@@ -374,8 +357,8 @@ describe('T2 角色分组 #651（角色详情面板分组区契约）', () => {
     const dialog = await screen.findByTestId('library-create-dialog');
     // 等级下拉存在（F43 P1 已实现）
     expect(within(dialog).getByTestId('library-create-rank')).toBeInTheDocument();
-    // 分组选择不合并进创建对话框（分组归属详情面板 character-group-select，正交）
-    expect(within(dialog).queryByTestId('character-group-select')).not.toBeInTheDocument();
+    // 分组选择不合并进创建对话框（分组归属详情面板 character-group-multi，正交）
+    expect(within(dialog).queryByTestId('character-group-multi')).not.toBeInTheDocument();
     // 等级下拉选项 = 五档等级显示名，不含分组名（分组不并入等级控件）
     await user.click(within(dialog).getByTestId('library-create-rank'));
     const optionLabels = (await screen.findAllByRole('option')).map((o) => o.textContent ?? '');

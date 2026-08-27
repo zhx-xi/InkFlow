@@ -101,7 +101,7 @@ class CharacterCreateBody(BaseModel):
     personality: str = ""
     background: str = ""
     goals: str = ""
-    group_id: uuid.UUID | None = None
+    group_ids: list[uuid.UUID] = []
     extra: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("name")
@@ -189,7 +189,7 @@ async def create_character(
             data.personality,
             data.background,
             data.goals,
-            data.group_id,
+            data.group_ids,
             extra=data.extra,
         )
     )
@@ -222,8 +222,15 @@ async def list_characters(
             limit=limit,
         )
     )
+    groups = await _run_service(svc.list_groups(pid))
+    name_by_id = {g.id: g.name for g in groups}
+    items_json = []
+    for c in items:
+        item = c.model_dump(mode="json")
+        item["group_names"] = [name_by_id[g] for g in c.group_ids if g in name_by_id]
+        items_json.append(item)
     return {
-        "items": [c.model_dump(mode="json") for c in items],
+        "items": items_json,
         "total": total,
         "offset": offset,
         "limit": limit,
@@ -241,8 +248,11 @@ async def get_character(
     character = await _run_service(svc.get_character(cid))
     if character is None:
         raise HTTPException(status_code=404, detail="角色不存在")
+    groups = await _run_service(svc.list_groups(character.project_id))
+    name_by_id = {g.id: g.name for g in groups}
     relations = await _run_service(svc.list_relations(cid))
     payload = character.model_dump(mode="json")
+    payload["group_names"] = [name_by_id[g] for g in character.group_ids if g in name_by_id]
     payload["relations"] = []
     for rel in relations:
         other_id = (

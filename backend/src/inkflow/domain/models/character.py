@@ -91,7 +91,7 @@ class Character(BaseModel):
         background: 背景设定.
         goals: 目标/动机.
         brief: 一句话简介（F6 上下文轻量化注入用，未填时降级 personality）.
-        group_id: 所属角色分组 UUID（None 表示未分组）.
+        group_ids: 所属角色分组 UUID 列表（可为空；N:M，v1.1 #701）.
         extra: 扩展属性字典.
         created_at: 创建时间.
         updated_at: 最后更新时间.
@@ -106,7 +106,7 @@ class Character(BaseModel):
     background: str = ""
     goals: str = ""
     brief: str = ""  # v1.1（#593）：一句话简介，F6 上下文轻量化注入
-    group_id: uuid.UUID | None = None
+    group_ids: list[uuid.UUID] = []
     extra: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
@@ -122,7 +122,7 @@ class CharacterCreate(BaseModel):
         background: 背景设定，默认为空串.
         goals: 目标/动机，默认为空串.
         brief: 一句话简介，默认为空串，≤ 500 字符（去空白）.
-        group_id: 所属角色分组 UUID（None 表示未分组）.
+        group_ids: 所属角色分组 UUID 列表（可为空；N:M，v1.1 #701）.
         extra: 扩展属性字典（如 role_rank/groups），默认为空 dict.
     """
 
@@ -132,7 +132,7 @@ class CharacterCreate(BaseModel):
     background: str = ""
     goals: str = ""
     brief: str = ""
-    group_id: uuid.UUID | None = None
+    group_ids: list[uuid.UUID] = []
     extra: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("name")
@@ -154,7 +154,7 @@ class CharacterCreate(BaseModel):
 class CharacterUpdate(BaseModel):
     """更新角色请求 DTO — 所有字段均为可选项（exclude_unset 语义，同 F1）.
 
-    group_id: None 表示清除分组；不传该字段表示不修改。
+    group_ids: None 表示不修改；[] 表示清空全部分组；[uuid1, uuid2] 表示全量替换。
     只有传入的字段会被更新，未传入的字段保持不变。
     extra: 传 dict 整体替换；不传该字段表示不修改（exclude_unset 语义）。
     """
@@ -164,7 +164,7 @@ class CharacterUpdate(BaseModel):
     background: str | None = None
     goals: str | None = None
     brief: str | None = None  # v1.1（#593）
-    group_id: uuid.UUID | None = None
+    group_ids: list[uuid.UUID] | None = None
     extra: dict[str, Any] | None = None
 
     @field_validator("name")

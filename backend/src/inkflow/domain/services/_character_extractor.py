@@ -433,7 +433,7 @@ def _merge_character_fields(existing: Character, ec: ExtractedCharacter) -> Char
     """非空字段覆盖合并（personality/background/goals 独立判断）.
 
     无任何变化时返回 None（幂等跳过，不更新 updated_at）；否则
-    保留 existing 的 id / group_id / extra / 时间戳等无关字段。
+    保留 existing 的 id / group_ids / extra / 时间戳等无关字段。
 
     Args:
         existing: 库中同名角色.
@@ -458,7 +458,7 @@ def _merge_character_fields(existing: Character, ec: ExtractedCharacter) -> Char
         personality=new_personality,
         background=new_background,
         goals=new_goals,
-        group_id=existing.group_id,
+        group_ids=existing.group_ids,
         extra=existing.extra,
         created_at=existing.created_at,
         updated_at=_utcnow(),

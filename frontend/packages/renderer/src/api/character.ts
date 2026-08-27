@@ -1,11 +1,25 @@
 /** 角色详情 API 客户端（#650 角色关系 + #651 角色分组，specs/f9-character-service/gui-role-enhance-red-contract.md；apiFetch 封装同 knowledge-graph.ts 模式） */
 import { apiFetch } from './client';
 
-/** 项目角色列表行（T1 对方角色下拉选项来源；角色 model 含 group_id，T2 归属分组字段） */
+/** 项目角色列表行（T1 对方角色下拉选项来源；#701 N:M 归属分组 group_ids，group_id 仅过渡兼容） */
 export interface ProjectCharacter {
   id: string | number;
   name: string;
   group_id?: string | number | null;
+  /** #701 N:M：角色所属全部分组 id（后端 list/get 响应字段） */
+  group_ids?: (string | number)[];
+  /** #701 N:M：角色所属分组名（后端 list 响应解析填充） */
+  group_names?: string[];
+}
+
+/** #701 角色详情面板 item 类型：多分组 N:M（group_id 仅作旧数据过渡兜底读取） */
+export interface CharacterDetailModel {
+  id: string | number;
+  name?: string;
+  title?: string;
+  group_id?: string | number | null;
+  group_ids?: (string | number)[] | null;
+  group_names?: string[];
 }
 
 /** 角色关系行（T1：GET /characters/{cid}/relations 响应行） */
@@ -119,15 +133,15 @@ export async function updateCharacterGroup(
   return apiFetch<CharacterGroup>(`/api/v1/character-groups/${gid}`, { method: 'PATCH', body });
 }
 
-/** DELETE /api/v1/character-groups/{gid}——真删（成员 group_id 置空） */
+/** DELETE /api/v1/character-groups/{gid}——真删（成员与分组的 N:M 关联一并删除） */
 export async function deleteCharacterGroup(gid: string | number): Promise<void> {
   return apiFetch<void>(`/api/v1/character-groups/${gid}`, { method: 'DELETE' });
 }
 
-/** PATCH /api/v1/characters/{cid}——角色部分更新（T2 归属分组 body={group_id}） */
+/** PATCH /api/v1/characters/{cid}——角色部分更新（#701 归属分组 body={group_ids:[...]} 全量数组） */
 export async function updateCharacter(
   cid: string | number,
-  body: { group_id: string | number | null },
+  body: { group_ids: (string | number)[] },
 ): Promise<Record<string, unknown>> {
   return apiFetch<Record<string, unknown>>(`/api/v1/characters/${cid}`, { method: 'PATCH', body });
 }

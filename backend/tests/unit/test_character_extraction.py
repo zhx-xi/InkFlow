@@ -213,14 +213,14 @@ class TestCharacterExtractor:
         assert mock_repo.add.await_count == 0
 
     async def test_update_preserves_unrelated_fields(self, extractor, mock_llm, mock_repo) -> None:
-        """更新时保留 group_id / extra / created_at 等无关字段。"""
+        """更新时保留 group_ids / extra / created_at 等无关字段。"""
         group_id = uuid.uuid4()
         existing = Character(
             id=uuid.UUID("9b1c2d3e-0000-4000-8000-000000000001"),
             project_id=PID,
             name="林尘",
             personality="旧性格",
-            group_id=group_id,
+            group_ids=[group_id],
             extra={"tags": ["主角"]},
             created_at=TS,
             updated_at=TS,
@@ -235,7 +235,7 @@ class TestCharacterExtractor:
         merged = result.updated[0]
         assert merged.id == existing.id
         assert merged.name == "林尘"
-        assert merged.group_id == group_id
+        assert merged.group_ids == [group_id]
         assert merged.extra == {"tags": ["主角"]}
         assert merged.created_at == TS
 

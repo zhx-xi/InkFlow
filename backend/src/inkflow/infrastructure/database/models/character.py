@@ -8,8 +8,8 @@
 - 全唯一索引 (project_id, name) / (project_id, from, to, relation_type)
   保证「项目内同名/同关系键唯一」的语义（v1.1 真删语义移除 is_deleted 列
   与 partial unique，spec §2.4）
-- FK 级联: 项目删除 → 角色/分组/关系级联删除；分组删除 → 成员 group_id 置 NULL；
-  角色硬删除 → 关系物理删除
+- FK 级联: 项目删除 → 角色/分组/关系级联删除；角色/分组硬删除 → 关联表
+  character_group_members 行级联删除（N:M #701，角色/分组本身语义不变）
 """
 
 from __future__ import annotations
@@ -101,14 +101,6 @@ class CharacterORM(Base):
         default="",
     )
     """一句话简介 (v1.1 #593，≤ 500 字符；F6 上下文轻量化注入)."""
-
-    group_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("character_groups.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    """所属分组（分组删除时置 NULL，已索引）."""
 
     extra: Mapped[dict] = mapped_column(
         LenientJSON(fallback={}),
@@ -207,6 +199,37 @@ class CharacterGroupORM(Base):
 
     def __repr__(self) -> str:
         return f"<CharacterGroupORM id={self.id} name={self.name!r}>"
+
+
+class CharacterGroupMemberORM(Base):
+    """角色-分组 N:M 关联表模型 — 映射到 character_group_members 表.
+
+    Maps to the ``character_group_members`` join table. Each row links one
+    character to one group; (character_id, group_id) 复合主键保证不重复，
+    角色/分组硬删除时关联行由 FK CASCADE 级联移除（v1.1 #701）。
+    """
+
+    __tablename__ = "character_group_members"
+
+    character_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("characters.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    """关联角色主键（角色硬删除级联删除）."""
+
+    group_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("character_groups.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    """关联分组主键（分组硬删除级联删除）."""
+
+    def __repr__(self) -> str:
+        return (
+            f"<CharacterGroupMemberORM character_id={self.character_id} "
+            f"group_id={self.group_id}>"
+        )
 
 
 class CharacterRelationORM(Base):

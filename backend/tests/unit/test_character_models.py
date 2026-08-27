@@ -32,7 +32,7 @@ class TestCharacterModel:
     """Character 领域实体测试."""
 
     def test_character_defaults(self):
-        """默认值：personality='', group_id=None, extra={}."""
+        """默认值：personality='', group_ids=[], extra={}."""
         char = Character(
             id=uuid.UUID("9b1c2d3e-0000-4000-8000-000000000001"),
             project_id=PID,
@@ -44,7 +44,7 @@ class TestCharacterModel:
         assert char.personality == ""
         assert char.background == ""
         assert char.goals == ""
-        assert char.group_id is None
+        assert char.group_ids == []
         assert char.extra == {}
 
     def test_character_required_fields(self):
@@ -68,7 +68,7 @@ class TestCharacterCreateValidation:
         assert char.personality == ""
         assert char.background == ""
         assert char.goals == ""
-        assert char.group_id is None
+        assert char.group_ids == []
 
     def test_create_empty_name_raises(self):
         """空名称应抛出 ValidationError."""
@@ -96,14 +96,17 @@ class TestCharacterUpdate:
         assert update.personality is None
         assert update.background is None
         assert update.goals is None
-        assert update.group_id is None
+        assert update.group_ids is None
         assert update.model_fields_set == {"name"}
 
     def test_update_explicit_none_group_id_clears(self):
-        """显式传入 group_id=None（清除分组）与不传该字段可区分."""
-        update = CharacterUpdate(group_id=None)
-        assert update.group_id is None
-        assert "group_id" in update.model_fields_set
+        """N:M 新语义: group_ids=None（不传=不修改）与 group_ids=[]（显式清空）可区分."""
+        update = CharacterUpdate(name="新名字")
+        assert update.group_ids is None
+        assert "group_ids" not in update.model_fields_set
+        cleared = CharacterUpdate(group_ids=[])
+        assert cleared.group_ids == []
+        assert "group_ids" in cleared.model_fields_set
         assert CharacterUpdate().model_fields_set == set()
 
 

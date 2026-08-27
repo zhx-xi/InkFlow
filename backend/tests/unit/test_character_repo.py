@@ -4,7 +4,7 @@
 - Character / CharacterGroup / CharacterRelation CRUD 往返
 - 全唯一索引: 同名唯一；真删后重建同名
 - 真删后 get 返回 None
-- 分组删除后成员 group_id 置 NULL
+- 分组删除后成员关联行消失（角色本身保留）
 - list_relations 双向查询、分页与搜索排序
 - 硬删除 FK 级联（角色/项目物理删除后关联行消失）
 
@@ -138,7 +138,7 @@ class TestCharacterRepository:
         assert saved.personality == "沉稳"
         assert saved.background == "青云宗弟子"
         assert saved.goals == "成仙"
-        assert saved.group_id is None
+        assert saved.group_ids == []
         assert saved.extra == {"外貌": "青衫"}
 
         # 持久化验证：直接查表
@@ -207,12 +207,13 @@ class TestCharacterRepository:
         """group_id 过滤仅返回该分组内的活动角色."""
         repo = SQLiteCharacterRepository(db_session)
         g = await repo.add_group(_group(project, "主角团"))
-        c1 = await repo.add(_char(project, "林尘", group_id=g.id))
+        c1 = await repo.add(_char(project, "林尘", group_ids=[g.id]))
         await repo.add(_char(project, "阿澈"))
 
         chars, total = await repo.list(project.id, group_id=g.id.int)
         assert total == 1
         assert [c.id for c in chars] == [c1.id]
+        assert c1.group_ids == [g.id]
 
     async def test_list_sort_by_name_and_created_at(self, db_session, project):
         """sort_by=name/created_at 与 sort_desc 生效."""
@@ -321,16 +322,17 @@ class TestCharacterRepository:
         assert await repo.get_group(g2.id.int) is None
         assert [g.name for g in await repo.list_groups(project.id)] == ["主角团·改"]
 
-    async def test_hard_delete_group_sets_member_group_id_null(self, db_session, project):
-        """分组硬删后，成员角色 group_id 置 NULL，分组行物理消失."""
+    async def test_hard_delete_group_removes_memberships(self, db_session, project):
+        """分组硬删后，关联行消失（成员角色 group_ids 清空），分组行物理消失."""
         repo = SQLiteCharacterRepository(db_session)
         g = await repo.add_group(_group(project, "主角团"))
-        c = await repo.add(_char(project, "林尘", group_id=g.id))
+        c = await repo.add(_char(project, "林尘", group_ids=[g.id]))
+        assert c.group_ids == [g.id]
 
         assert await repo.hard_delete_group(g.id.int) is True
         assert await repo.get_group(g.id.int) is None
         got = await repo.get(c.id.int)
-        assert got is not None and got.group_id is None
+        assert got is not None and got.group_ids == []
         assert await repo.hard_delete_group(g.id.int) is False
 
     # ── CharacterRelation ──
@@ -418,7 +420,7 @@ class TestCharacterRepository:
         repo = SQLiteCharacterRepository(db_session)
         await repo.add(_char(project, "林尘"))
         g = await repo.add_group(_group(project, "主角团"))
-        await repo.add(_char(project, "阿澈", group_id=g.id))
+        await repo.add(_char(project, "阿澈", group_ids=[g.id]))
 
         p_row = await db_session.execute(select(ProjectORM).where(ProjectORM.id == project.id))
         await db_session.delete(p_row.scalar_one())

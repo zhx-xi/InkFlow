@@ -1,8 +1,8 @@
 /** 角色详情面板（#650 角色关系 + #651 角色分组，specs/f9-character-service/gui-role-enhance-red-contract.md）
  * - 入口：library.tsx 角色行点名字打开；容器 character-detail-panel，标题 = 角色名，关闭 character-detail-close
  * - T1 关系区：GET/POST/PATCH/DELETE /characters/{cid}/relations（from=路径角色；编辑 from/to 不变）
- * - T2 分组区：分组下拉 PATCH /characters/{cid} {group_id}；管理面板 CRUD /projects/{pid}/character-groups
- * - 正交约束：group_id（归属派系）与 extra.role_rank（等级）独立，分组控件仅存在于本面板，不进创建对话框
+ * - T2 分组区：多选 checkbox 列表 PATCH /characters/{cid} {group_ids:[...]}；管理面板 CRUD /projects/{pid}/character-groups
+ * - 正交约束：group_ids（归属派系 N:M）与 extra.role_rank（等级）独立，分组控件仅存在于本面板，不进创建对话框
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -19,6 +19,7 @@ import {
   updateCharacterGroup,
   updateCharacterRelation,
   type CharacterGroup,
+  type CharacterDetailModel,
   type CharacterRelation,
   type ProjectCharacter,
 } from '../api/character';
@@ -26,15 +27,10 @@ import { errorMessage } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import { useToastStore } from '../stores/toast';
 import { ConfirmDialog } from './ConfirmDialog';
-import type { LibraryItemDTO } from './LibraryCreateDialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-
-/** 未分组哨兵值（Radix Select 不接受空字符串 value；选中 → PATCH {group_id: null}） */
-const UNGROUPED = '__ungrouped__';
 
 export interface CharacterDetailPanelProps {
   /** 打开面板的角色（列表行对象；group_id 为 T2 归属分组字段，角色 model 有该字段） */
-  item: LibraryItemDTO & { group_id?: string | number | null };
+  item: CharacterDetailModel;
   projectId: string;
   onClose: () => void;
   /** 角色归属等变更成功后通知父级（刷新列表，可选） */
@@ -73,7 +69,9 @@ export function CharacterDetailPanel({ item, projectId, onClose, onUpdated }: Ch
   const [pendingRelDelete, setPendingRelDelete] = useState<CharacterRelation | null>(null);
 
   // ── T2 分组区状态 ──
-  const [character, setCharacter] = useState(item);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<(string | number)[]>(
+    item.group_ids ?? (item.group_id != null ? [item.group_id] : []),
+  );
   const [characters, setCharacters] = useState<ProjectCharacter[]>([]);
   const [groups, setGroups] = useState<CharacterGroup[]>([]);
   const [groupsLoaded, setGroupsLoaded] = useState(false);
@@ -200,13 +198,26 @@ export function CharacterDetailPanel({ item, projectId, onClose, onUpdated }: Ch
   };
 
   // ── T2 分组 CRUD ──
-  const handleGroupChange = async (value: string) => {
-    // 未分组 → PATCH {group_id: null} 清空归属；其余 → 分组 id
-    const groupId = value === UNGROUPED ? null : value;
+  /** #701：勾选/取消某分组 → 全量替换 group_ids（立即 PATCH，成功后通知父级 + toast） */
+  const toggleGroup = (gid: string | number, checked: boolean) => {
+    const next = checked
+      ? Array.from(new Set([...selectedGroupIds, gid]))
+      : selectedGroupIds.filter((id) => String(id) !== String(gid));
+    setSelectedGroupIds(next);
+    void patchGroupIds(next);
+  };
+
+  /** #701：「未分组」勾选 → 清空全部分组（group_ids: []）；已处于未分组时 no-op */
+  const handleUngroupedToggle = () => {
+    if (selectedGroupIds.length === 0) return;
+    setSelectedGroupIds([]);
+    void patchGroupIds([]);
+  };
+
+  /** #701：PATCH /characters/{cid} body={group_ids:[...]}（全量数组） */
+  const patchGroupIds = async (ids: (string | number)[]) => {
     try {
-      const updated = await updateCharacter(characterId, { group_id: groupId });
-      const updatedGroupId = (updated.group_id as string | number | null | undefined) ?? groupId;
-      setCharacter((prev) => ({ ...prev, group_id: updatedGroupId }));
+      await updateCharacter(characterId, { group_ids: ids });
       onUpdated?.();
       useToastStore.getState().pushToast('ok', t('toast.saved'));
     } catch (err) {
@@ -266,10 +277,6 @@ export function CharacterDetailPanel({ item, projectId, onClose, onUpdated }: Ch
     }
   };
 
-  // 当前角色归属分组：null/undefined → 未分组哨兵；否则分组 id
-  const groupId = character?.group_id ?? null;
-  const currentGroupValue = groupId === null ? UNGROUPED : String(groupId);
-
   return (
     <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
       <div
@@ -294,7 +301,7 @@ export function CharacterDetailPanel({ item, projectId, onClose, onUpdated }: Ch
           </button>
         </div>
 
-        {/* T2 分组区：归属分组下拉 + 管理入口（与等级 role_rank 正交，独立控件） */}
+        {/* T2 分组区：多选 checkbox 列表（#701 N:M）+ 管理入口（与等级 role_rank 正交，独立控件） */}
         <section className="mt-5">
           <div className="flex items-center justify-between gap-3">
             <h3 className="font-serif text-[15px] font-semibold">{t('lib.charGroup.title')}</h3>
@@ -307,20 +314,37 @@ export function CharacterDetailPanel({ item, projectId, onClose, onUpdated }: Ch
               {t('lib.charGroup.manage')}
             </button>
           </div>
-          <div className="mt-2">
-            <Select value={currentGroupValue} onValueChange={(v) => void handleGroupChange(v)}>
-              <SelectTrigger data-testid="character-group-select" aria-label={t('lib.charGroup.title')}>
-                <SelectValue placeholder={t('lib.charGroup.placeholder')} />
-              </SelectTrigger>
-              <SelectContent>
-                {groups.map((g) => (
-                  <SelectItem key={String(g.id)} value={String(g.id)}>
-                    {g.name}
-                  </SelectItem>
-                ))}
-                <SelectItem value={UNGROUPED}>{t('lib.charGroup.ungrouped')}</SelectItem>
-              </SelectContent>
-            </Select>
+          <div data-testid="character-group-multi" className="mt-2 space-y-1.5">
+            {groups.map((g) => {
+              const checked = selectedGroupIds.some((id) => String(id) === String(g.id));
+              return (
+                <label
+                  key={String(g.id)}
+                  data-testid={`character-group-option-${g.id}`}
+                  className="flex cursor-pointer items-center gap-2 rounded-md border border-line bg-surface-2 px-3 py-2 text-[13px] text-ink"
+                >
+                  <input
+                    type="checkbox"
+                    data-testid={`character-group-option-${g.id}-check`}
+                    checked={checked}
+                    onChange={(e) => toggleGroup(g.id, e.target.checked)}
+                  />
+                  <span>{g.name}</span>
+                </label>
+              );
+            })}
+            <label
+              data-testid="character-group-option-ungrouped"
+              className="flex cursor-pointer items-center gap-2 rounded-md border border-line bg-surface-2 px-3 py-2 text-[13px] text-ink"
+            >
+              <input
+                type="checkbox"
+                data-testid="character-group-option-ungrouped-check"
+                checked={selectedGroupIds.length === 0}
+                onChange={handleUngroupedToggle}
+              />
+              <span>{t('lib.charGroup.ungrouped')}</span>
+            </label>
           </div>
         </section>
 

@@ -3,9 +3,9 @@
 转换函数（_orm_to_domain / _domain_to_orm / int↔UUID 辅助）按项目惯例
 放在本仓储层（参照 project_repo.py / chapter_repo.py）。
 
-级联语义（spec §2.3/§6/§7，v1.1 真删）:
-- 角色真删 → 其全部关系（双向）物理删除（DB FK CASCADE）
-- 分组真删 → 成员角色 group_id 置 NULL（角色本身保留）
+级联语义（spec §2.3/§6/§7，v1.1 真删，N:M #701）:
+- 角色真删 → 其全部关系（双向）物理删除（DB FK CASCADE）+ 关联表行显式删除
+- 分组真删 → 关联表行显式删除（角色本身保留，分组归属随关联行消失）
 - 项目内同名/同关系键全唯一（全唯一索引，spec §2.4）
 
 注: 方法名 ``list`` 会遮蔽类作用域中的内置 ``list``，返回注解统一
@@ -20,11 +20,13 @@ from datetime import UTC, datetime
 
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, or_, select
+from sqlalchemy import insert as sa_insert
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.character import Character, CharacterGroup, CharacterRelation
 from inkflow.infrastructure.database.models.character import (
+    CharacterGroupMemberORM,
     CharacterGroupORM,
     CharacterORM,
     CharacterRelationORM,
@@ -36,20 +38,21 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _int_to_uuid(value: int | uuid.UUID | None) -> uuid.UUID | None:
-    """DB int → 领域 UUID（F1 映射: uuid.UUID(int=...)）."""
-    if value is None:
-        return None
-    return value if isinstance(value, uuid.UUID) else uuid.UUID(int=value)
-
-
 def _uuid_to_int(value: uuid.UUID | int) -> int:
     """领域 UUID → DB int（F1 映射: uuid.int）."""
     return value.int if isinstance(value, uuid.UUID) else int(value)
 
 
-def _char_orm_to_domain(orm: CharacterORM) -> Character:
-    """角色 ORM 行 → 领域实体（int PK → UUID）."""
+def _char_orm_to_domain(orm: CharacterORM, group_ids: list[uuid.UUID] | None = None) -> Character:
+    """角色 ORM 行 → 领域实体（int PK → UUID）.
+
+    Args:
+        orm: 角色 ORM 行.
+        group_ids: 该角色的分组 UUID 列表（N:M #701，由关联表查询填充）.
+
+    Returns:
+        领域角色实体（group_ids 缺省为空列表）.
+    """
     return Character(
         id=uuid.UUID(int=orm.id),
         project_id=uuid.UUID(int=orm.project_id),
@@ -58,7 +61,7 @@ def _char_orm_to_domain(orm: CharacterORM) -> Character:
         background=orm.background,
         goals=orm.goals,
         brief=orm.brief,
-        group_id=_int_to_uuid(orm.group_id),
+        group_ids=group_ids or [],
         extra=orm.extra or {},
         created_at=orm.created_at,
         updated_at=orm.updated_at,
@@ -66,7 +69,7 @@ def _char_orm_to_domain(orm: CharacterORM) -> Character:
 
 
 def _char_domain_to_orm(domain: Character) -> CharacterORM:
-    """角色领域实体 → ORM 行（UUID → int；id 由 DB 自增分配，不落库）."""
+    """角色领域实体 → ORM 行（UUID → int；id 由 DB 自增分配，group_ids 走关联表）."""
     return CharacterORM(
         project_id=_uuid_to_int(domain.project_id),
         name=domain.name,
@@ -74,7 +77,6 @@ def _char_domain_to_orm(domain: Character) -> CharacterORM:
         background=domain.background,
         goals=domain.goals,
         brief=domain.brief,
-        group_id=_uuid_to_int(domain.group_id) if domain.group_id is not None else None,
         extra=domain.extra,
     )
 
@@ -135,20 +137,47 @@ class SQLiteCharacterRepository:
 
     # ── Character ──
 
+    async def _list_group_ids(self, character_ids: list[int]) -> dict[int, list[uuid.UUID]]:
+        """批量查询角色 → 分组 UUID 映射（N:M 关联表，避免逐角色 N+1 查询）."""
+        if not character_ids:
+            return {}
+        stmt = (
+            select(CharacterGroupMemberORM.character_id, CharacterGroupMemberORM.group_id)
+            .where(CharacterGroupMemberORM.character_id.in_(character_ids))
+            .order_by(CharacterGroupMemberORM.group_id.asc())
+        )
+        result = await self._session.execute(stmt)
+        mapping: dict[int, list[uuid.UUID]] = {cid: [] for cid in character_ids}
+        for char_id, group_int in result.all():
+            mapping[char_id].append(uuid.UUID(int=group_int))
+        return mapping
+
     async def add(self, character: Character) -> Character:
-        """插入新角色（id 由 DB 自增分配，读回时映射为 UUID）."""
+        """插入新角色（id 由 DB 自增分配；group_ids 逐个写关联表）."""
         orm = _char_domain_to_orm(character)
         self._session.add(orm)
         await self._session.commit()
         await self._session.refresh(orm)
-        return _char_orm_to_domain(orm)
+        for group_id in character.group_ids:
+            self._session.add(
+                CharacterGroupMemberORM(
+                    character_id=orm.id,
+                    group_id=_uuid_to_int(group_id),
+                )
+            )
+        if character.group_ids:
+            await self._session.commit()
+        return _char_orm_to_domain(orm, list(character.group_ids))
 
     async def get(self, character_id: int) -> Character | None:
         """按主键查询角色."""
         stmt = select(CharacterORM).where(CharacterORM.id == character_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
-        return _char_orm_to_domain(orm) if orm else None
+        if orm is None:
+            return None
+        group_ids = await self._list_group_ids([character_id])
+        return _char_orm_to_domain(orm, group_ids.get(character_id, []))
 
     async def get_by_name(self, project_id: int, name: str) -> Character | None:
         """按项目内角色名查询角色."""
@@ -158,7 +187,10 @@ class SQLiteCharacterRepository:
         )
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
-        return _char_orm_to_domain(orm) if orm else None
+        if orm is None:
+            return None
+        group_ids = await self._list_group_ids([orm.id])
+        return _char_orm_to_domain(orm, group_ids.get(orm.id, []))
 
     async def list(
         self,
@@ -180,9 +212,12 @@ class SQLiteCharacterRepository:
         # 搜索: name icontains
         if search:
             base = base.where(CharacterORM.name.icontains(search))
-        # 分组过滤
+        # 分组过滤: join character_group_members（该组内角色，N:M #701）
         if group_id is not None:
-            base = base.where(CharacterORM.group_id == group_id)
+            base = base.join(
+                CharacterGroupMemberORM,
+                CharacterGroupMemberORM.character_id == CharacterORM.id,
+            ).where(CharacterGroupMemberORM.group_id == group_id)
 
         # 总数（分页前）
         count_stmt = select(func.count()).select_from(base.subquery())
@@ -196,10 +231,11 @@ class SQLiteCharacterRepository:
 
         result = await self._session.execute(base)
         orms = result.scalars().all()
-        return [_char_orm_to_domain(o) for o in orms], total
+        group_ids_map = await self._list_group_ids([o.id for o in orms])
+        return [_char_orm_to_domain(o, group_ids_map.get(o.id, [])) for o in orms], total
 
     async def update(self, character: Character) -> Character:
-        """更新角色（按 id 定位，updated_at 自动刷新）."""
+        """更新角色（按 id 定位；group_ids 全量替换关联表，先删后插）."""
         char_id = _uuid_to_int(character.id)
         stmt = (
             sa_update(CharacterORM)
@@ -210,9 +246,6 @@ class SQLiteCharacterRepository:
                 background=character.background,
                 goals=character.goals,
                 brief=character.brief,
-                group_id=(
-                    _uuid_to_int(character.group_id) if character.group_id is not None else None
-                ),
                 extra=character.extra,
                 updated_at=_utcnow(),
             )
@@ -227,13 +260,29 @@ class SQLiteCharacterRepository:
         orm = result2.scalar_one_or_none()
         if orm is None:
             raise ValueError(f"Character {char_id} not found after update")
-        return _char_orm_to_domain(orm)
+        # 全量替换关联: 先删该角色全部关联行，再按新 group_ids 插入
+        await self._session.execute(
+            sa_delete(CharacterGroupMemberORM).where(
+                CharacterGroupMemberORM.character_id == char_id
+            )
+        )
+        for group_id in character.group_ids:
+            self._session.add(
+                CharacterGroupMemberORM(
+                    character_id=char_id,
+                    group_id=_uuid_to_int(group_id),
+                )
+            )
+        await self._session.commit()
+        group_ids_map = await self._list_group_ids([char_id])
+        return _char_orm_to_domain(orm, group_ids_map.get(char_id, []))
 
     async def hard_delete(self, character_id: int) -> bool:
-        """物理删除角色（先显式删除其双向关系，foreign_keys=OFF 下不依赖 FK）.
+        """物理删除角色（先显式删除其双向关系与关联表行，foreign_keys=OFF 下不依赖 FK）.
 
         F43 P5（spec §2.10/§5.18）: 生产连接未开 foreign_keys=ON，显式
-        DELETE character_relations（from/to 双向）与主删除同一事务。
+        DELETE character_relations（from/to 双向）+ character_group_members
+        与主删除同一事务（兼 FK CASCADE）。
         """
         stmt = select(CharacterORM).where(CharacterORM.id == character_id)
         result = await self._session.execute(stmt)
@@ -248,9 +297,66 @@ class SQLiteCharacterRepository:
                 )
             )
         )
+        await self._session.execute(
+            sa_delete(CharacterGroupMemberORM).where(
+                CharacterGroupMemberORM.character_id == character_id
+            )
+        )
         await self._session.delete(orm)
         await self._session.commit()
         return True
+
+    # ── CharacterGroupMember（N:M #701）────────────────────────
+
+    async def add_group_member(self, character_id: int, group_id: int) -> None:
+        """插入角色-分组关联行（复合主键幂等，重复插入不报错）."""
+        stmt = (
+            sa_insert(CharacterGroupMemberORM)
+            .values(character_id=character_id, group_id=group_id)
+            .prefix_with("OR IGNORE")
+        )
+        await self._session.execute(stmt)
+        await self._session.commit()
+
+    async def remove_group_member(self, character_id: int, group_id: int) -> None:
+        """移除单条角色-分组关联行（不存在则无操作）."""
+        stmt = sa_delete(CharacterGroupMemberORM).where(
+            CharacterGroupMemberORM.character_id == character_id,
+            CharacterGroupMemberORM.group_id == group_id,
+        )
+        await self._session.execute(stmt)
+        await self._session.commit()
+
+    async def list_members_by_group(self, group_id: int) -> builtins.list[Character]:
+        """按分组查询角色列表（N 端）."""
+        stmt = (
+            select(CharacterORM)
+            .join(
+                CharacterGroupMemberORM,
+                CharacterGroupMemberORM.character_id == CharacterORM.id,
+            )
+            .where(CharacterGroupMemberORM.group_id == group_id)
+            .order_by(CharacterORM.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        orms = result.scalars().all()
+        group_ids_map = await self._list_group_ids([o.id for o in orms])
+        return [_char_orm_to_domain(o, group_ids_map.get(o.id, [])) for o in orms]
+
+    async def list_groups_by_character(self, character_id: int) -> builtins.list[CharacterGroup]:
+        """按角色查询分组列表（M 端，N:M）."""
+        stmt = (
+            select(CharacterGroupORM)
+            .join(
+                CharacterGroupMemberORM,
+                CharacterGroupMemberORM.group_id == CharacterGroupORM.id,
+            )
+            .where(CharacterGroupMemberORM.character_id == character_id)
+            .order_by(CharacterGroupORM.sort_order.asc(), CharacterGroupORM.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        orms = result.scalars().all()
+        return [_group_orm_to_domain(o) for o in orms]
 
     # ── CharacterGroup ──
 
@@ -306,16 +412,14 @@ class SQLiteCharacterRepository:
         return _group_orm_to_domain(orm)
 
     async def hard_delete_group(self, group_id: int) -> bool:
-        """物理删除分组，成员角色 group_id 置 NULL（角色本身保留，v1.1 默认真删语义）."""
+        """物理删除分组，关联表行显式移除（角色本身保留，v1.1 默认真删语义）."""
         stmt = select(CharacterGroupORM).where(CharacterGroupORM.id == group_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:
             return False
         await self._session.execute(
-            sa_update(CharacterORM)
-            .where(CharacterORM.group_id == group_id)
-            .values(group_id=None, updated_at=_utcnow())
+            sa_delete(CharacterGroupMemberORM).where(CharacterGroupMemberORM.group_id == group_id)
         )
         await self._session.delete(orm)
         await self._session.commit()

@@ -3,11 +3,11 @@
 覆盖 spec §9 服务测试 + §7 边界表:
 - 创建/更新/真删全流程（Mock Repository）
 - 同名活动角色创建 → CharacterNameConflictError（422 语义）
-- group_id 跨项目 → GroupNotInProjectError
+- group_ids 跨项目 → GroupNotInProjectError
 - 关系自环 / 重复 / 跨项目 → SelfRelationError / RelationConflictError / CrossProjectRelationError
 - 角色不存在各操作 → None（router 层转 404；create_relation 抛 CharacterNotFoundError）
 - 删除编排（委托 hard_delete / hard_delete_group / hard_delete_relation，关系由 DB FK CASCADE）
-- 分组删除 → 成员 group_id 置 NULL 的编排（委托 hard_delete_group）
+- 分组删除 → 移除成员关联的编排（委托 hard_delete_group）
 - extract 入口：校验项目存在 → 调用 CharacterExtractor → 返回 CharacterExtractionResult
 
 依据: specs/f9-character-service/spec.md §7 + §9 测试策略。
@@ -58,7 +58,7 @@ def _char(
     personality: str = "",
     background: str = "",
     goals: str = "",
-    group_id: uuid.UUID | None = None,
+    group_ids: list[uuid.UUID] | None = None,
     project_id: uuid.UUID = PID,
 ) -> Character:
     """构造测试用角色实体（固定时间戳，便于断言）。"""
@@ -69,7 +69,7 @@ def _char(
         personality=personality,
         background=background,
         goals=goals,
-        group_id=group_id,
+        group_ids=group_ids or [],
         created_at=TS,
         updated_at=TS,
     )
@@ -182,7 +182,7 @@ class TestCharacterCrud:
         assert added.personality == "坚韧"
         assert added.background == "山村少年"
         assert added.goals == "变强"
-        assert added.group_id is None
+        assert added.group_ids == []
 
     async def test_create_character_duplicate_active_name_raises_conflict(
         self, service, mock_repo
@@ -194,22 +194,44 @@ class TestCharacterCrud:
         mock_repo.add.assert_not_awaited()
 
     async def test_create_character_with_group_success(self, service, mock_repo) -> None:
-        """分组属于该项目 → 角色归属该分组。"""
+        """分组属于该项目 → 角色归属该分组（数组入参）。"""
         group = _group(name="主角团")
         mock_repo.get_group = AsyncMock(return_value=group)
-        created = await service.create_character(project_id=PID, name="林尘", group_id=group.id)
+        created = await service.create_character(project_id=PID, name="林尘", group_ids=[group.id])
         mock_repo.get_group.assert_awaited_once_with(group.id.int)
-        assert created.group_id == group.id
+        assert created.group_ids == [group.id]
+
+    async def test_create_character_with_multiple_groups_success(self, service, mock_repo) -> None:
+        """多分组：group_ids 数组全部属于该项目 → 角色同时归属多个分组（N:M）。"""
+        g1 = _group(name="主角团")
+        g2 = _group(name="青云宗")
+        mock_repo.get_group = AsyncMock(side_effect=[g1, g2])
+        created = await service.create_character(
+            project_id=PID, name="林尘", group_ids=[g1.id, g2.id]
+        )
+        assert created.group_ids == [g1.id, g2.id]
+        assert mock_repo.get_group.await_count == 2
+        added = mock_repo.add.await_args.args[0]
+        assert added.group_ids == [g1.id, g2.id]
 
     async def test_create_character_group_not_in_project_raises(self, service, mock_repo) -> None:
-        """分组缺失或属于其他项目 → GroupNotInProjectError（422 语义）。"""
+        """分组缺失/属于其他项目/数组中任一跨项目 → GroupNotInProjectError（422 语义）。"""
+        own_group = _group(name="主角团")
         foreign_group = _group(name="敌方分组", project_id=PID_OTHER)
         mock_repo.get_group = AsyncMock(return_value=foreign_group)
         with pytest.raises(GroupNotInProjectError):
-            await service.create_character(project_id=PID, name="林尘", group_id=foreign_group.id)
+            await service.create_character(
+                project_id=PID, name="林尘", group_ids=[foreign_group.id]
+            )
         mock_repo.get_group = AsyncMock(return_value=None)
         with pytest.raises(GroupNotInProjectError):
-            await service.create_character(project_id=PID, name="林尘", group_id=uuid.uuid4())
+            await service.create_character(project_id=PID, name="林尘", group_ids=[uuid.uuid4()])
+        # 多分组中任一不属于该项目 → 422
+        mock_repo.get_group = AsyncMock(side_effect=[own_group, foreign_group])
+        with pytest.raises(GroupNotInProjectError):
+            await service.create_character(
+                project_id=PID, name="林尘", group_ids=[own_group.id, foreign_group.id]
+            )
         mock_repo.add.assert_not_awaited()
 
     async def test_get_character_returns_none_when_missing(self, service, mock_repo) -> None:
@@ -251,20 +273,20 @@ class TestCharacterCrud:
         assert kwargs["limit"] == 5
 
     async def test_update_character_merges_provided_fields(self, service, mock_repo) -> None:
-        """部分更新：仅覆盖传入字段；同名自更不冲突；group_id=None 清除分组。"""
+        """部分更新：仅覆盖传入字段；同名自更不冲突；group_ids=[] 清空全部分组。"""
         group = _group(name="主角团")
         existing = _char(
             name="林尘",
             personality="旧性格",
             background="旧背景",
             goals="旧目标",
-            group_id=group.id,
+            group_ids=[group.id],
         )
         mock_repo.get = AsyncMock(return_value=existing)
         mock_repo.get_by_name = AsyncMock(return_value=existing)  # 同名自更 → 不冲突
         mock_repo.update = AsyncMock(side_effect=lambda c: c)
 
-        update = CharacterUpdate(name="林尘", personality="新性格", goals="新目标", group_id=None)
+        update = CharacterUpdate(name="林尘", personality="新性格", goals="新目标", group_ids=[])
         result = await service.update_character(existing.id, update)
 
         merged = mock_repo.update.await_args.args[0]
@@ -274,7 +296,7 @@ class TestCharacterCrud:
         assert merged.personality == "新性格"
         assert merged.goals == "新目标"
         assert merged.background == "旧背景"  # 未传入字段保持不变
-        assert merged.group_id is None  # 显式清除
+        assert merged.group_ids == []  # [] 显式清空
         assert merged.created_at == TS
         assert result == merged
 
@@ -303,10 +325,12 @@ class TestCharacterCrud:
 
         mock_repo.get_group = AsyncMock(return_value=foreign_group)
         with pytest.raises(GroupNotInProjectError):
-            await service.update_character(existing.id, CharacterUpdate(group_id=foreign_group.id))
+            await service.update_character(
+                existing.id, CharacterUpdate(group_ids=[foreign_group.id])
+            )
         mock_repo.get_group = AsyncMock(return_value=None)
         with pytest.raises(GroupNotInProjectError):
-            await service.update_character(existing.id, CharacterUpdate(group_id=uuid.uuid4()))
+            await service.update_character(existing.id, CharacterUpdate(group_ids=[uuid.uuid4()]))
         mock_repo.update.assert_not_awaited()
 
     async def test_delete_character_hard_deletes(self, service, mock_repo) -> None:
@@ -615,22 +639,38 @@ class TestIntIdConversion:
 
 
 class TestUpdateCharacterGroup:
-    """update_character 的 group_id 合法分支。"""
+    """update_character 的 group_ids 合法分支。"""
 
     async def test_update_character_with_valid_group(self, service, mock_repo) -> None:
-        """group_id 指向同项目分组 → 校验通过，合并更新。"""
+        """group_ids 指向同项目分组 → 校验通过，合并更新。"""
         char = _char(name="林尘")
         group = _group(name="主角团")
         mock_repo.get = AsyncMock(return_value=char)
         mock_repo.get_group = AsyncMock(return_value=group)
         mock_repo.update = AsyncMock(side_effect=lambda c: c)
 
-        updated = await service.update_character(char.id, CharacterUpdate(group_id=group.id))
+        updated = await service.update_character(char.id, CharacterUpdate(group_ids=[group.id]))
 
         assert updated is not None
         merged = mock_repo.update.await_args.args[0]
-        assert merged.group_id == group.id
+        assert merged.group_ids == [group.id]
         mock_repo.get_group.assert_awaited_once_with(group.id.int)
+
+    async def test_update_character_replaces_group_ids_wholesale(self, service, mock_repo) -> None:
+        """全量替换：原有多分组 → 更新为另一分组集合（旧分组不再保留）。"""
+        g_old = _group(name="主角团")
+        g_new = _group(name="青云宗")
+        existing = _char(name="林尘", group_ids=[g_old.id])
+        mock_repo.get = AsyncMock(return_value=existing)
+        mock_repo.get_group = AsyncMock(return_value=g_new)
+        mock_repo.update = AsyncMock(side_effect=lambda c: c)
+
+        updated = await service.update_character(existing.id, CharacterUpdate(group_ids=[g_new.id]))
+
+        assert updated is not None
+        merged = mock_repo.update.await_args.args[0]
+        assert merged.group_ids == [g_new.id]  # 全量替换，不含 g_old
+        mock_repo.get_group.assert_awaited_once_with(g_new.id.int)
 
 
 class TestUpdateRelationVariants:
