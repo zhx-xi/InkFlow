@@ -98,6 +98,12 @@ export function LibraryCreateDialog({
   const [location, setLocation] = useState('');
   // #675：outline 层级（overall/volume/chapter，创建对话框内可切换；初始值来自父级上下文）
   const [level, setLevel] = useState<'overall' | 'volume' | 'chapter'>('overall');
+  const levelOptions: ('overall' | 'volume' | 'chapter')[] =
+    initialLevel === 'overall'
+      ? ['overall']
+      : initialLevel === 'volume' || initialLevel === 'chapter'
+        ? ['volume', 'chapter']
+        : ['overall', 'volume', 'chapter'];
   // F43 P1：角色等级（D1 必填无默认，初始 '' → 保存 gate 拦截）+ 分组标签（D2）
   const [rank, setRank] = useState('');
   const [rankTags, setRankTags] = useState<string[]>([]);
@@ -304,7 +310,7 @@ export function LibraryCreateDialog({
                   value={level}
                   onChange={(e) => setLevel(e.target.value as 'overall' | 'volume' | 'chapter')}
                 >
-                  {(['overall', 'volume', 'chapter'] as const).map((v) => (
+                  {levelOptions.map((v) => (
                     <option key={v} value={v}>
                       {t(`lib.level.${v}`)}
                     </option>

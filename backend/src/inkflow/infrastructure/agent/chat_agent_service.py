@@ -16,6 +16,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from inkflow.domain.models.agent_run import AgentStep, AgentToolCall
+from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.services.chat_service import ChatStreamEvent
 
 
@@ -93,38 +94,44 @@ class ChatAgentService:
             user_content = f"{prompt}\n\n章节上下文：\n{chapter_context}"
         messages = [SystemMessage(system_prompt), HumanMessage(user_content)]
         streamed_any = False
-        async for ev in self._agent.astream_events(  # type: ignore[attr-defined]  # 鸭子类型：deepagents CompiledStateGraph 提供 astream_events（v2 事件 dict 流）
-            {"messages": messages}, version="v2"
-        ):
-            if ev.get("event") == "on_chat_model_stream" and ev.get("run_type") == "llm":
-                chunk = ev.get("data", {}).get("chunk")
-                yield ChatStreamEvent(type="delta", delta=chunk.content)
-                streamed_any = True
-            elif ev.get("event") == "on_chat_model_end":
-                output = ev.get("data", {}).get("output")
-                content = getattr(output, "content", "") or ""
-                if content and not streamed_any:
-                    for c in _chunk_stream(content, size=6):
-                        await asyncio.sleep(0.05)
-                        yield ChatStreamEvent(type="delta", delta=c)
-                self._collect_model_end(output)
-            elif ev.get("event") == "on_tool_start":
-                yield ChatStreamEvent(
-                    type="tool_call",
-                    id=ev.get("run_id"),
-                    name=ev.get("name"),
-                    args=ev.get("data", {}).get("input"),
-                )
-            elif ev.get("event") == "on_tool_end":
-                result = ev.get("data", {}).get("output")
-                self._collect_tool_result(ev.get("run_id"), result)
-                yield ChatStreamEvent(
-                    type="tool_result",
-                    id=ev.get("run_id"),
-                    name=ev.get("name"),
-                    result=result,
-                )
-        yield ChatStreamEvent(type="done", done=True)
+        try:
+            async for ev in self._agent.astream_events(  # type: ignore[attr-defined]  # 鸭子类型：deepagents CompiledStateGraph 提供 astream_events（v2 事件 dict 流）
+                {"messages": messages}, version="v2"
+            ):
+                if ev.get("event") == "on_chat_model_stream" and ev.get("run_type") == "llm":
+                    chunk = ev.get("data", {}).get("chunk")
+                    yield ChatStreamEvent(type="delta", delta=chunk.content)
+                    streamed_any = True
+                elif ev.get("event") == "on_chat_model_end":
+                    output = ev.get("data", {}).get("output")
+                    content = getattr(output, "content", "") or ""
+                    if content and not streamed_any:
+                        for c in _chunk_stream(content, size=6):
+                            await asyncio.sleep(0.05)
+                            yield ChatStreamEvent(type="delta", delta=c)
+                    self._collect_model_end(output)
+                elif ev.get("event") == "on_tool_start":
+                    yield ChatStreamEvent(
+                        type="tool_call",
+                        id=ev.get("run_id"),
+                        name=ev.get("name"),
+                        args=ev.get("data", {}).get("input"),
+                    )
+                elif ev.get("event") == "on_tool_end":
+                    result = ev.get("data", {}).get("output")
+                    self._collect_tool_result(ev.get("run_id"), result)
+                    yield ChatStreamEvent(
+                        type="tool_result",
+                        id=ev.get("run_id"),
+                        name=ev.get("name"),
+                        result=result,
+                    )
+            yield ChatStreamEvent(type="done", done=True)
+        except LLMRequestError:
+            raise
+        except Exception as exc:
+            yield ChatStreamEvent(type="error", done=True, error=f"工具执行失败: {exc}")
+            yield ChatStreamEvent(type="done", done=True)
 
     def consume_trace(self) -> tuple[list[AgentStep], str, int]:
         """#615：消费 trace 收集器 → (steps, final_content, token_usage_total) 并清空。

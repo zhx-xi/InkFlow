@@ -210,6 +210,7 @@ async def stream_chat_agent(
                 chapter_id=uuid.UUID(data.chapter_id) if data.chapter_id else None,
                 mode="chat",
             )
+            error_occurred = False
             async for ev in svc.stream_events(
                 prompt=prompt,
                 project_id=data.project_id,
@@ -220,13 +221,22 @@ async def stream_chat_agent(
                 # #680/#615：agent 终帧按帧协议以 type=="done" 判定（f47 §14.2，
                 # ChatAgentService 终帧恒为 type="done"）；done=True 但 type 非
                 # "done"（如 legacy ChatStreamEvent(done=True)）不进入落库分支。
-                if ev.type == "done":
+                # #697：error 帧在此消费（标记 error_occurred），done 帧据标记落
+                # FAILED/COMPLETED，保证工具异常场景 SSE 仍产出终帧。
+                if ev.type == "error":
+                    error_occurred = True
+                    yield _encode_frame(ev)
+                elif ev.type == "done":
                     steps, final_content, token_total = svc.consume_trace()
                     await repo.save(
                         _build_chat_run(
                             run,
                             data,
-                            status=AgentRunStatus.COMPLETED,
+                            status=(
+                                AgentRunStatus.FAILED
+                                if error_occurred
+                                else AgentRunStatus.COMPLETED
+                            ),
                             steps=steps,
                             final_content=final_content,
                             token_usage_total=token_total,
@@ -246,7 +256,9 @@ async def stream_chat_agent(
         except Exception:
             if run is not None:
                 await _save_failed_run(repo, svc, run, data)
-            raise
+            yield _encode_frame(
+                ChatStreamEvent(type="error", done=True, error="Agent 执行失败，请稍后重试")
+            )
 
     return StreamingResponse(
         _event_stream(),

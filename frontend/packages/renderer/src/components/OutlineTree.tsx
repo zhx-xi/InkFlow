@@ -316,6 +316,7 @@ export function OutlineTree({
   onOutlineGenerated,
 }: OutlineTreeProps) {
   const { t } = useI18n();
+  const hasOverall = outlines.some((o) => normalizeLevel(o.level) === 'overall');
   const roots = useMemo(() => buildOutlineTree(outlines), [outlines]);
   const [collapsed, setCollapsed] = useState<Set<string | number>>(new Set());
   const [pointsByChapter, setPointsByChapter] = useState<Record<string, PlotPointDTO[]>>({});
@@ -586,14 +587,16 @@ export function OutlineTree({
         {/* #649：大纲 tab 顶部工具栏——AI 生成（进行中禁用 + 转圈反馈） */}
         {projectId && (
           <div className="flex items-center justify-end gap-2 border-b border-line px-4 py-2.5">
-            <button
-              type="button"
-              data-testid="outline-add-overall"
-              className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => handleAdd({ level: 'overall', parentId: null })}
-            >
-              {t('lib.addOverall')}
-            </button>
+            {projectId && !hasOverall && (
+              <button
+                type="button"
+                data-testid="outline-add-overall"
+                className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => handleAdd({ level: 'overall', parentId: null })}
+              >
+                {t('lib.addOverall')}
+              </button>
+            )}
             <button
               type="button"
               data-testid="library-ai-generate"

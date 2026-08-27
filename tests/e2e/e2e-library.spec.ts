@@ -244,7 +244,7 @@ test('设定库：内核预置角色 → 角色分类列表渲染条目', async 
   }
 });
 
-test('设定库：大纲分类无数据 → 空态引导 + 「去创建」→ 打开创建对话框（#196，不跳 /writing）', async () => {
+test('设定库：大纲分类无数据 → OutlineTree 全局「＋整本」→ 打开创建对话框（#698，#196 不跳 /writing）', async () => {
   const { app, window } = await launchApp();
   try {
     const name = `E2E-空态-${Date.now()}`;
@@ -253,18 +253,19 @@ test('设定库：大纲分类无数据 → 空态引导 + 「去创建」→ �
 
     const tabs = window.getByTestId('library-tabs');
     await expect(tabs).toBeVisible({ timeout: 15_000 });
-    // 大纲分类无预置数据 → 分类空态
+    // 大纲分类无预置数据 → 恒渲染 OutlineTree（#698 重排），全局「新建大纲」= outline-add-overall
     // ⚠️ 不用「知识库 RAG」分类：RAG 未配置 embedding 模型时 get_vector_store() 抛
     //    RAGUnavailableError → 500 → 页面显示加载失败（正确产品行为），非空态
     await tabs.getByRole('tab', { name: '大纲' }).click();
-    await expect(window.getByTestId('library-tab-empty')).toBeVisible({ timeout: 15_000 });
-    await expect(window.getByTestId('library-tab-empty-cta')).toBeVisible();
-    await window.getByTestId('library-tab-empty-cta').click();
+    await expect(window.getByTestId('outline-add-overall')).toBeVisible({ timeout: 15_000 });
+    await window.getByTestId('outline-add-overall').click();
     // #196（2026-08-09）：非 RAG 分类空态 CTA 打开分类创建对话框，不跳 /writing
     await expect(window.getByTestId('library-create-dialog')).toBeVisible({ timeout: 15_000 });
     // 大纲分类对话框字段：名称（必填）+ 描述
     await expect(window.getByLabel('名称')).toBeVisible();
     await expect(window.getByLabel('描述')).toBeVisible();
+    // #698：无整本时层级下拉仅为「整体」
+    await expect(window.getByTestId('library-create-level')).toHaveValue('overall');
     // 取消关闭（关闭路径仅取消/Esc/成功，#195）
     await window.getByRole('button', { name: '取消' }).click();
     await expect(window.getByTestId('library-create-dialog')).toBeHidden();
