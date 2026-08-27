@@ -52,6 +52,8 @@ interface ChapterState {
   saveContent: () => Promise<void>;
   createChapter: (projectId: string, title: string, volumeId?: string) => Promise<ChapterMeta>;
   moveChapter: (chapterId: string, targetVolumeId: string | null) => Promise<ChapterMeta>;
+  patchChapter: (chapterId: string, title: string) => Promise<ChapterMeta>;
+  deleteChapter: (chapterId: string) => Promise<void>;
   createVolume: (projectId: string, title: string) => Promise<Volume>;
   patchVolume: (volumeId: string, title: string) => Promise<Volume>;
   deleteVolume: (
@@ -132,6 +134,34 @@ export const useChapterStore = create<ChapterState>((set, get) => ({
     });
     set((s) => ({ chapters: s.chapters.map((c) => (c.id === updated.id ? updated : c)) }));
     return updated;
+  },
+
+  patchChapter: async (chapterId, title) => {
+    const patched = await apiFetch<ChapterMeta>(`/api/v1/chapters/${chapterId}`, {
+      method: 'PATCH',
+      body: { title },
+    });
+    set((s) => ({ chapters: s.chapters.map((c) => (c.id === patched.id ? patched : c)) }));
+    return patched;
+  },
+
+  deleteChapter: async (chapterId) => {
+    const { currentChapterId, chapters } = get();
+    const target = chapters.find((c) => c.id === chapterId);
+    const prevVolumeId = target?.volume_id ?? null;
+    await apiFetch(`/api/v1/chapters/${chapterId}`, { method: 'DELETE' });
+    const rest = chapters.filter((c) => c.id !== chapterId);
+    set({ chapters: rest });
+    if (currentChapterId === chapterId) {
+      // 当前章被删：优先同卷下一个，其次任意剩余，皆无则置空
+      const nextInVolume = rest.find((c) => c.volume_id === prevVolumeId) ?? rest[0] ?? null;
+      if (nextInVolume) {
+        set({ currentChapterId: nextInVolume.id });
+        await get().selectChapter(nextInVolume.id); // 拉取新章正文
+      } else {
+        set({ currentChapterId: null, content: '' });
+      }
+    }
   },
 
   createVolume: async (projectId, title) => {
