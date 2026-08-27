@@ -163,6 +163,13 @@ class WorldCategoryORM(Base):
     )
     """分类名 (1–50 字符，去空白；项目内唯一)."""
 
+    kind: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="geo",
+    )
+    """分类类型 (#699): geo=地理类可挂地图 / abstract=抽象类不可挂地图."""
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,

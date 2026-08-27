@@ -212,9 +212,7 @@ class WorldService:
 
         #567 单例校验：创建根条目前判重。repo.list top_level_only=True limit=1 判空。
         """
-        roots, _ = await self._repo.list(
-            _to_int_id(project_id), top_level_only=True, limit=1
-        )
+        roots, _ = await self._repo.list(_to_int_id(project_id), top_level_only=True, limit=1)
         return len(roots) > 0
 
     async def get_root_setting(self, project_id: int | uuid.UUID) -> WorldSetting | None:
@@ -223,9 +221,7 @@ class WorldService:
         #641：create_world_setting 对 body 无 parent_id 时先取根——有根则自动挂根，
         无根则建根（保留一项目一根硬语义）。repo.list top_level_only=True limit=1 取根。
         """
-        roots, _ = await self._repo.list(
-            _to_int_id(project_id), top_level_only=True, limit=1
-        )
+        roots, _ = await self._repo.list(_to_int_id(project_id), top_level_only=True, limit=1)
         return roots[0] if roots else None
 
     async def update_setting(
@@ -383,7 +379,9 @@ class WorldService:
 
     # ── WorldCategory（v1.2，issue #389）──────────────────────────
 
-    async def create_category(self, project_id: uuid.UUID, name: str) -> WorldCategory:
+    async def create_category(
+        self, project_id: uuid.UUID, name: str, kind: str = "geo"
+    ) -> WorldCategory:
         """创建世界观分类（spec §2.6：项目内分类名唯一）.
 
         Args:
@@ -400,7 +398,7 @@ class WorldService:
         if existing is not None:
             raise WorldCategoryNameConflictError()
         logger.info("创建世界观分类: project=%s name=%s", project_id, name)
-        return await self._repo.create_category(project_id, name)
+        return await self._repo.create_category(project_id, name, kind)
 
     async def list_world_categories(self, project_id: uuid.UUID) -> list[tuple[WorldCategory, int]]:
         """分类实体列表 + 每个分类名匹配的条目计数（spec §3.1/§6.1）."""

@@ -163,7 +163,9 @@ class WorldRepositoryProtocol(Protocol):
     # 由实现层负责 int↔UUID 转换（与 WorldSetting 的 int 仓储约定不同——
     # 测试契约锚定 service → repo 传 UUID，见 tests/unit/test_world_categories.py）。
 
-    async def create_category(self, project_id: uuid.UUID, name: str) -> WorldCategory:
+    async def create_category(
+        self, project_id: uuid.UUID, name: str, kind: str = "geo"
+    ) -> WorldCategory:
         """创建分类（项目内同名由 (project_id, name) 全唯一索引兜底）.
 
         Args:

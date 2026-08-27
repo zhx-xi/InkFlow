@@ -285,5 +285,14 @@ class WorldCategory(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
     name: str
+    kind: str = "geo"  # geo=地理类可挂地图 / abstract=抽象类不可挂地图
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, v: str) -> str:
+        """验证分类类型：只允许 geo / abstract（默认 geo）."""
+        if v not in ("geo", "abstract"):
+            raise ValueError("分类类型必须为 geo 或 abstract")
+        return v

@@ -10,6 +10,7 @@ import { useToastStore } from '../stores/toast';
 export interface WorldCategoryEntity {
   id: string | number;
   name: string;
+  kind?: 'geo' | 'abstract';
   count?: number;
 }
 
@@ -51,18 +52,18 @@ export function useWorldCategories(
 
   // 新建分类 → POST /world-categories → 成功关框 + reloadKey 刷新 + ok toast；失败 err toast
   const handleWorldCatSave = useCallback(
-    async (name: string) => {
+    async (name: string, kind?: 'geo' | 'abstract') => {
       if (!currentProjectId) return;
       try {
-        await apiFetch(
+        const created = await apiFetch<{ id: string | number; kind?: 'geo' | 'abstract' }>(
           `/api/v1/projects/${currentProjectId}/world-categories`,
-          { method: 'POST', body: { name } },
+          { method: 'POST', body: { name, kind } },
         );
-        // 乐观更新：POST 成功后用输入名本地追加 chips（无需依赖响应实体/GET 往返），reloadKey GET 仅作校准
+        // 乐观更新：#699 用 POST 响应真实 id 追加 chips（不再用 wc-{Date.now()} 临时 id，避免 DELETE 404），reloadKey GET 仅作校准
         optimisticRef.current = true;
         setWorldCategoryList((prev) => [
           ...prev,
-          { id: `wc-${Date.now()}`, name, count: 0 },
+          { id: created.id, name, kind: kind ?? 'geo', count: 0 },
         ]);
         setWorldCatDialogOpen(false);
         onSaved?.();

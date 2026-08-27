@@ -1,7 +1,7 @@
 /** 设定库页（spec §7.3：项目上下文 + 面包屑 + 六分类 tab + 空态引导；F43：行编辑/删除 + 保存指示；F48：知识图谱 tab） */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Copy, Library } from 'lucide-react';
+import { Library } from 'lucide-react';
 import { apiFetch, ensureApiReady, errorMessage } from '../api/client';
 import {
   createKnowledgeRelation,
@@ -26,6 +26,7 @@ import { OutlineTree, type OutlineItemDTO, type OutlineLevel } from '../componen
 import { TimelineView, type TimelineEventDTO, type TimelineViewData } from '../components/TimelineView';
 import { WorldCatActionButtons } from '../components/WorldCatActionButtons';
 import { WorldCategoryDialog } from '../components/WorldCategoryDialog';
+import { WorldCategoryToolbar } from '../components/WorldCategoryToolbar';
 import { buildWorldTree, filterWorldTree, WorldNodeView } from '../components/WorldNodeView';
 import { Skeleton } from '../components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -712,43 +713,19 @@ export function LibraryPage() {
               </div>
             ) : activeCat === 'world' ? (
               <>
-                {/* F43 P1（§5.4）：世界观分类筛选工具栏——默认分组 + 数据自定义 chips（无「全部」，未选 = 展示所有，再点同 chip 取消）；右上角顶部整体复制（E21） */}
-                <div className="mb-3 flex flex-wrap items-center gap-2">
-                  <span className="text-[12px] text-ink-2">{t('lib.worldCat.label')}</span>
-                  {worldCatEntities.map((catEntity) => (
-                    <span key={catEntity.name} className="inline-flex items-center gap-1">
-                      <button
-                        type="button"
-                        data-testid={`world-cat-filter-${catEntity.name}`}
-                        aria-pressed={activeWorldCat === catEntity.name}
-                        className={cn(
-                          'rounded-full border px-3 py-1 text-[12px] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                          activeWorldCat === catEntity.name ? 'border-accent bg-accent/10 text-accent' : 'border-line text-ink-2 hover:border-accent hover:text-accent',
-                        )}
-                        onClick={() => setActiveWorldCat(activeWorldCat === catEntity.name ? null : catEntity.name)}
-                      >
-                        {catEntity.name}
-                      </button>
-                      <button type="button" data-testid={`world-cat-delete-${catEntity.name}`} aria-label={t('lib.delete')} className="rounded-full px-1.5 py-1 text-[12px] text-ink-3 transition duration-150 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => void handleWorldCatDelete(catEntity.id)}>×</button>
-                    </span>
-                  ))}
-                  <WorldCatActionButtons
-                    onAddCategory={() => setWorldCatDialogOpen(true)}
-                    onOpenMapView={() => setWorkbenchActive(true)}
-                    onCreateWorld={activeWorldCat ? () => setCreateOpen(true) : undefined}
-                  />
-                  <button
-                    type="button"
-                    data-testid="world-copy-all"
-                    title={copyTargetOptions.length === 0 ? t('lib.copy.needTwo') : undefined}
-                    disabled={copyTargetOptions.length === 0}
-                    className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                    onClick={() => setCopyState({ open: true, mode: 'all' })}
-                  >
-                    <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-                    {t('lib.copy.all')}
-                  </button>
-                </div>
+                {/* #699：世界观分类工具栏（chips kind 图标 + 地图入口门控 + 整体复制）拆至 WorldCategoryToolbar */}
+                <WorldCategoryToolbar
+                  categories={worldCatEntities}
+                  activeWorldCat={activeWorldCat}
+                  onSelect={setActiveWorldCat}
+                  onDelete={(id) => void handleWorldCatDelete(id)}
+                  onAddCategory={() => setWorldCatDialogOpen(true)}
+                  onOpenMapView={() => setWorkbenchActive(true)}
+                  onCreateWorld={activeWorldCat ? () => setCreateOpen(true) : undefined}
+                  copyDisabled={copyTargetOptions.length === 0}
+                  copyNeedTwoTitle={copyTargetOptions.length === 0 ? t('lib.copy.needTwo') : undefined}
+                  onCopyAll={() => setCopyState({ open: true, mode: 'all' })}
+                />
                 {/* F43 P1（§5.3）：世界观树视图（library-list testid 不变；筛选无匹配 → 轻空态 E19） */}
                 <div
                   data-testid="library-list"
@@ -822,7 +799,7 @@ export function LibraryPage() {
       {/* #389：新建分类对话框（仅世界观 tab 工具栏入口打开；保存成功父级关框 + 刷新） */}
       <WorldCategoryDialog
         open={worldCatDialogOpen}
-        onSave={(name) => void handleWorldCatSave(name)}
+        onSave={(name, kind) => void handleWorldCatSave(name, kind)}
         onOpenChange={setWorldCatDialogOpen}
       />
 

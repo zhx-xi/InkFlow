@@ -431,6 +431,20 @@ def ensure_world_categories(conn: Connection) -> None:
     Base.metadata.create_all(conn)
 
 
+def ensure_world_categories_kind_column(conn: Connection) -> None:
+    """#699: add kind column to world_categories (idempotent)."""
+    cols = conn.execute(text("PRAGMA table_info(world_categories)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return  # table missing (fresh env) -> create_all builds it with the column
+    if "kind" not in names:
+        conn.execute(
+            text(
+                "ALTER TABLE world_categories " "ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'geo'"
+            )
+        )
+
+
 def _migrate_drop_is_deleted(
     conn: Connection,
     table: str,
