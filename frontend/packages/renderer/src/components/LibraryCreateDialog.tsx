@@ -36,6 +36,8 @@ export interface LibraryItemDTO {
 export interface LibraryCreateDialogProps {
   open: boolean;
   cat: LibraryCreateCat;
+  /** #722: root world create - hide the category input (roots should have no category) */
+  isRoot?: boolean;
   /** F43：非空 = 编辑模式（预填现值），空 = 创建模式（#196 行为） */
   editing?: LibraryItemDTO | null;
   /** F43 P1：建议标签 = 当前项目角色 extra.groups 并集（父级聚合，D-13 数据驱动） */
@@ -81,6 +83,7 @@ export function LibraryCreateDialog({
   initialCategory,
   initialLevel,
   initialParentId,
+  isRoot,
   onSave,
   onOpenChange,
 }: LibraryCreateDialogProps) {
@@ -280,14 +283,16 @@ export function LibraryCreateDialog({
                   onChange={(e) => setName(e.target.value)}
                 />
               </Field>
-              <Field label={t('lib.create.category')}>
-                <input
-                  aria-label={t('lib.create.category')}
-                  className={INPUT_CLS}
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                />
-              </Field>
+              {!isRoot && (
+                <Field label={t('lib.create.category')}>
+                  <input
+                    aria-label={t('lib.create.category')}
+                    className={INPUT_CLS}
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                  />
+                </Field>
+              )}
               <Field label={t('lib.create.content')}>
                 <textarea
                   aria-label={t('lib.create.content')}

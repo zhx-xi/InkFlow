@@ -661,6 +661,7 @@ export function LibraryPage() {
                 onExitWorkbench={() => setWorkbenchActive(false)}
                 onClearMap={() => setActiveMapId(null)}
                 worldCategories={worldCategories}
+                worldCatEntities={worldCatEntities}
                 activeWorldCat={activeWorldCat}
                 onWorldCatChange={setActiveWorldCat}
                 collapsedIds={collapsedIds}
