@@ -9,6 +9,7 @@ import { useMemo, useRef, useState } from 'react';
 import { ChevronRight, Copy, GripVertical, Map as MapIcon, MapPlus, Pencil, Trash2 } from 'lucide-react';
 import { cn } from '../lib/cn';
 import { useI18n } from '../i18n/useI18n';
+import type { WorldCategoryEntity } from '../hooks/useWorldCategories';
 import type { LibraryItemDTO } from './LibraryCreateDialog';
 import type { WorldMapDTO } from './MapWorkbench';
 
@@ -24,7 +25,7 @@ export interface MapDirectoryTreeProps {
   /** 当前选中地图 id */
   activeMapId: string | null;
   onSelectMap: (mapId: string) => void;
-  onCreateChild: (map: WorldMapDTO) => void;
+  onCreateChild: (target: WorldMapDTO | LibraryItemDTO) => void;
   onDeleteMap: (map: WorldMapDTO) => void;
   onRenameMap: (map: WorldMapDTO, name?: string) => void;
   /** 拖拽改挂：parentMapId=null 表示变为根图 */
@@ -33,6 +34,8 @@ export interface MapDirectoryTreeProps {
   onCycleReject: () => void;
   // —— 兼容 P1/P2 树契约（library-p1/p2 既有断言；可缺省）——
   worldItems?: LibraryItemDTO[];
+  /** #721：世界观分类实体（kind 分流——abstract 分类的条目不进树）；缺省 = 全量进树 */
+  worldCategories?: WorldCategoryEntity[];
   collapsedIds?: Set<string | number>;
   onToggle?: (id: string | number) => void;
   onEdit?: (item: LibraryItemDTO) => void;
@@ -86,7 +89,7 @@ function MapTreeNodeRow({
   dragOverId: string | null;
   pinCounts: Record<string, number>;
   onSelectMap: (mapId: string) => void;
-  onCreateChild: (map: WorldMapDTO) => void;
+  onCreateChild: (target: WorldMapDTO | LibraryItemDTO) => void;
   onDeleteMap: (map: WorldMapDTO) => void;
   onRenameMap: (map: WorldMapDTO, name?: string) => void;
   onDragStart: (mapId: string) => void;
@@ -163,7 +166,7 @@ function MapTreeNodeRow({
           <span aria-hidden="true">🗺</span>
           <span>{pinCounts[mapId] ?? 0}</span>
         </button>
-        <span className="min-w-0 flex-1 truncate">{map.name}</span>
+        <span className="min-w-0 flex-1 whitespace-nowrap">{map.name}</span>
         {/* hover 操作区（#378 契约：map-tree-child/del/edit-<id>） */}
         <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-180 group-hover:opacity-100 focus-within:opacity-100">
           <button
@@ -266,7 +269,7 @@ function WorldNodeRow({
   onDelete?: (item: LibraryItemDTO) => void;
   onCopy?: (item: LibraryItemDTO) => void;
   onSelectMap: (mapId: string) => void;
-  onCreateChild: (map: WorldMapDTO) => void;
+  onCreateChild: (target: WorldMapDTO | LibraryItemDTO) => void;
   onDeleteMap: (map: WorldMapDTO) => void;
   onRenameMap: (map: WorldMapDTO, name?: string) => void;
   onDragStart: (mapId: string) => void;
@@ -368,8 +371,16 @@ function WorldNodeRow({
             </button>
           </>
         )}
+        {/* #721：未挂图的世界观条目（geo）按地图根节点渲染——🗺 图标 + 可新建子图；不参与选中/拖拽 */}
+        {!linkedMap && (
+          <span className="shrink-0 text-[13px]" aria-hidden="true">
+            🗺
+          </span>
+        )}
         {/* 名称：linkedMap 命中显示地图名（#368），否则显示条目名（P1 契约） */}
-        <span className="min-w-0 flex-1 truncate">{linkedMap ? linkedMap.name : (item.name ?? '')}</span>
+        <span className="min-w-0 flex-1 whitespace-nowrap">
+          {linkedMap ? linkedMap.name : (item.name ?? '')}
+        </span>
         {!linkedMap && item.category ? (
           <span className="shrink-0 rounded-full bg-surface-3 px-2 py-0.5 text-[11px] text-ink-2">
             {item.category}
@@ -428,6 +439,29 @@ function WorldNodeRow({
             </>
           ) : (
             <>
+              {/* #721：无挂载图的世界观条目（geo）渲染为地图根节点——新建子图双 testid 同语义 */}
+              <span
+                data-testid={`map-create-child-${item.id}`}
+                title={t('lib.map.createChild')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCreateChild(item);
+                }}
+                className="flex"
+              >
+                <button
+                  type="button"
+                  data-testid={`map-tree-child-${item.id}`}
+                  aria-label={`${t('lib.map.createChild')} ${item.name ?? ''}`}
+                  className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCreateChild(item);
+                  }}
+                >
+                  <MapPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </span>
               <button
                 type="button"
                 data-testid={`lib-edit-${item.id}`}
@@ -531,6 +565,7 @@ export function MapDirectoryTree({
   onReparent,
   onCycleReject,
   worldItems = [],
+  worldCategories,
   collapsedIds,
   onToggle,
   onEdit,
@@ -567,8 +602,24 @@ export function MapDirectoryTree({
     return map;
   }, [maps]);
 
-  const worldRoots = useMemo(() => buildWorldTree(worldItems), [worldItems]);
-  const worldItemIds = useMemo(() => new Set(worldItems.map((i) => String(i.id))), [worldItems]);
+  // #721：分类 kind 分流——abstract 分类的条目不进树；空/未知分类按 geo 处理（根/未分类世界观仍显示）
+  const visibleWorldItems = useMemo(() => {
+    const kindByCategory = new Map<string, 'geo' | 'abstract' | undefined>();
+    for (const c of worldCategories ?? []) {
+      kindByCategory.set(c.name, c.kind);
+    }
+    return worldItems.filter((item) => {
+      const category = item.category ?? '';
+      if (category === '') return true;
+      return kindByCategory.get(category) !== 'abstract';
+    });
+  }, [worldItems, worldCategories]);
+
+  const worldRoots = useMemo(() => buildWorldTree(visibleWorldItems), [visibleWorldItems]);
+  const worldItemIds = useMemo(
+    () => new Set(visibleWorldItems.map((i) => String(i.id))),
+    [visibleWorldItems],
+  );
   // 独立根图（无 parent_map_id 且未挂任何世界观条目 → 树顶层节点）
   const orphanMaps = useMemo(
     () =>
@@ -641,7 +692,7 @@ export function MapDirectoryTree({
   };
 
   return (
-    <div data-testid="map-directory-tree" className="flex min-h-0 flex-col">
+    <div data-testid="map-directory-tree" className="flex min-h-0 flex-col overflow-x-auto">
       <div className="min-h-0 flex-1">
         {worldRoots.length === 0 && orphanMaps.length === 0 ? (
           <div className="px-4 py-8 text-center text-[13px] text-ink-2">{t('common.empty')}</div>
