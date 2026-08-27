@@ -66,6 +66,20 @@ def _encode_legacy_frame(ev: ChatStreamEvent) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _result_to_str(result: object) -> str:
+    """序列化 tool_result 帧 result——message-like（LangChain ToolMessage/BaseMessage）取 .content，
+    其余能 JSON 序列化则序列化（ensure_ascii=False），兜底 str(result)。"""
+    if isinstance(result, str):
+        return result
+    content = getattr(result, "content", None)
+    if content is not None:
+        return content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+    try:
+        return json.dumps(result, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(result)
+
+
 def _encode_frame(ev: ChatStreamEvent, run_id: str | None = None) -> str:
     """ChatStreamEvent → SSE 帧字符串（#597 type 键扩展 + #615 done 帧 run_id 回传）：
     - delta → {"type": "delta", "delta": str, "done": false}
@@ -94,7 +108,7 @@ def _encode_frame(ev: ChatStreamEvent, run_id: str | None = None) -> str:
             "type": "tool_result",
             "id": ev.id,
             "name": ev.name,
-            "result": ev.result,
+            "result": _result_to_str(ev.result),
             "done": False,
         }
     else:
