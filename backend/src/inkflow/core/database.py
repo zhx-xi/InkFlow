@@ -362,8 +362,7 @@ def ensure_user_preference_superseded_column(conn: Connection) -> None:
     if "superseded_by" not in names:
         conn.execute(
             text(
-                "ALTER TABLE user_preferences ADD COLUMN superseded_by "
-                "TEXT NOT NULL DEFAULT ''"
+                "ALTER TABLE user_preferences ADD COLUMN superseded_by " "TEXT NOT NULL DEFAULT ''"
             )
         )
 
@@ -506,6 +505,52 @@ def ensure_character_drop_is_deleted(conn: Connection) -> None:
             )
         },
     )
+
+
+def ensure_character_group_members_migration(conn: Connection) -> None:
+    """#701：角色分组 N:M 关联表迁移（幂等，配合 conn.run_sync 调用）.
+
+    步骤（load-bearing 顺序）:
+    ① CREATE TABLE IF NOT EXISTS character_group_members（复合主键 + 双 FK
+       CASCADE，角色/分组硬删级联移除关联行）；
+    ② 旧库 characters 表若仍含 group_id 列：先把存量分组归属 INSERT 到关联表，
+       再枚举并 DROP 依赖 group_id 的索引（sqlite_master），最后
+       ALTER TABLE characters DROP COLUMN group_id；
+    ③ 全新库（create_all 已建关联表且 characters 无 group_id 列）→ no-op。
+    """
+    conn.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS character_group_members ("
+            "character_id INTEGER NOT NULL, "
+            "group_id INTEGER NOT NULL, "
+            "PRIMARY KEY(character_id, group_id), "
+            "FOREIGN KEY(character_id) REFERENCES characters(id) ON DELETE CASCADE, "
+            "FOREIGN KEY(group_id) REFERENCES character_groups(id) ON DELETE CASCADE"
+            ")"
+        )
+    )
+    cols = conn.execute(text("PRAGMA table_info(characters)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names or "group_id" not in names:
+        return  # 表不存在（全新环境）或列已移除 → no-op
+    # ① 存量分组归属回填到关联表
+    conn.execute(
+        text(
+            "INSERT INTO character_group_members(character_id, group_id) "
+            "SELECT id, group_id FROM characters WHERE group_id IS NOT NULL"
+        )
+    )
+    # ② 枚举并 DROP 依赖 group_id 的索引（SQLite DROP COLUMN 要求列不被索引引用）
+    index_rows = conn.execute(
+        text(
+            "SELECT name FROM sqlite_master "
+            "WHERE type = 'index' AND tbl_name = 'characters' AND sql LIKE '%group_id%'"
+        )
+    ).fetchall()
+    for (index_name,) in index_rows:
+        conn.execute(text(f'DROP INDEX IF EXISTS "{index_name}"'))
+    # ③ 移除旧列（新 schema 由 create_all 维护，无 group_id 列）
+    conn.execute(text("ALTER TABLE characters DROP COLUMN group_id"))
 
 
 def ensure_outline_drop_is_deleted(conn: Connection) -> None:

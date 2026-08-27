@@ -60,7 +60,7 @@ def _char(
     name: str,
     *,
     project_id: uuid.UUID = PID,
-    group_id: uuid.UUID | None = None,
+    group_ids: list[uuid.UUID] | None = None,
 ) -> Character:
     """构造测试用角色实体（固定时间戳，便于断言）。"""
     return Character(
@@ -70,7 +70,7 @@ def _char(
         personality="坚韧隐忍",
         background="废柴体质觉醒者",
         goals="成为强者",
-        group_id=group_id,
+        group_ids=group_ids or [],
         created_at=TS,
         updated_at=TS,
     )
@@ -126,9 +126,14 @@ class TestCharacterCRUDAPI:
         char = _char("林尘")
         svc.create_character = AsyncMock(return_value=char)
 
+        g1, g2 = uuid.uuid4(), uuid.uuid4()
         response = client.post(
             f"/api/v1/projects/{PID}/characters",
-            json={"name": "林尘", "personality": "坚韧隐忍", "group_id": None},
+            json={
+                "name": "林尘",
+                "personality": "坚韧隐忍",
+                "group_ids": [str(g1), str(g2)],
+            },
         )
         assert response.status_code == 201
         data = response.json()
@@ -136,7 +141,7 @@ class TestCharacterCRUDAPI:
         assert data["personality"] == "坚韧隐忍"
         assert data["project_id"] == str(PID)
         svc.create_character.assert_awaited_once_with(
-            PID, "林尘", "坚韧隐忍", "", "", None, extra={}
+            PID, "林尘", "坚韧隐忍", "", "", [g1, g2], extra={}
         )
 
     @patch("inkflow.api.routers.characters.get_character_service")
@@ -157,7 +162,7 @@ class TestCharacterCRUDAPI:
 
         response = client.post(
             f"/api/v1/projects/{PID}/characters",
-            json={"name": "林尘", "group_id": str(uuid.uuid4())},
+            json={"name": "林尘", "group_ids": [str(uuid.uuid4())]},
         )
         assert response.status_code == 422
         assert response.json()["detail"] == "分组不存在于该项目"
@@ -171,8 +176,10 @@ class TestCharacterCRUDAPI:
     def test_list_characters_success(self, mock_get_svc: MagicMock) -> None:
         """角色列表返回 200 + {items, total, offset, limit}."""
         svc = _mock_svc(mock_get_svc)
-        char = _char("林尘")
+        group = _group("主角团")
+        char = _char("林尘", group_ids=[group.id])
         svc.list_characters = AsyncMock(return_value=([char], 1))
+        svc.list_groups = AsyncMock(return_value=[group])
 
         gid = uuid.uuid4()
         response = client.get(
@@ -192,6 +199,8 @@ class TestCharacterCRUDAPI:
         assert data["offset"] == 0
         assert data["limit"] == 20
         assert data["items"][0]["name"] == "林尘"
+        assert data["items"][0]["group_ids"] == [str(group.id)]
+        assert data["items"][0]["group_names"] == ["主角团"]
         svc.list_characters.assert_awaited_once_with(
             PID,
             search="林",
@@ -211,16 +220,20 @@ class TestCharacterCRUDAPI:
     def test_get_character_success_with_relations(self, mock_get_svc: MagicMock) -> None:
         """角色详情返回 200，含 relations 双向聚合（spec §3.4）."""
         svc = _mock_svc(mock_get_svc)
-        char = _char("林尘")
+        group = _group("主角团")
+        char = _char("林尘", group_ids=[group.id])
         other = _char("青云真人")
         rel = _rel(char, other, relation_type="师徒", description="关门弟子")
         svc.get_character = AsyncMock(side_effect=[char, other])
         svc.list_relations = AsyncMock(return_value=[rel])
+        svc.list_groups = AsyncMock(return_value=[group])
 
         response = client.get(f"/api/v1/characters/{char.id}")
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "林尘"
+        assert data["group_ids"] == [str(group.id)]
+        assert data["group_names"] == ["主角团"]
         assert len(data["relations"]) == 1
         item = data["relations"][0]
         assert item["to_character_id"] == str(other.id)
@@ -249,15 +262,21 @@ class TestCharacterCRUDAPI:
         """更新角色返回 200 + Character JSON."""
         svc = _mock_svc(mock_get_svc)
         char = _char("林尘")
-        updated = char.model_copy(update={"goals": "成为青云宗首席弟子"})
+        g1, g2 = uuid.uuid4(), uuid.uuid4()
+        updated = char.model_copy(update={"goals": "成为青云宗首席弟子", "group_ids": [g1, g2]})
         svc.update_character = AsyncMock(return_value=updated)
 
         response = client.patch(
             f"/api/v1/characters/{char.id}",
-            json={"goals": "成为青云宗首席弟子", "group_id": None},
+            json={"goals": "成为青云宗首席弟子", "group_ids": [str(g1), str(g2)]},
         )
         assert response.status_code == 200
-        assert response.json()["goals"] == "成为青云宗首席弟子"
+        data = response.json()
+        assert data["goals"] == "成为青云宗首席弟子"
+        assert data["group_ids"] == [str(g1), str(g2)]
+        update = svc.update_character.await_args.args[1]
+        assert update.group_ids == [g1, g2]
+        assert "group_ids" in update.model_fields_set
 
     @patch("inkflow.api.routers.characters.get_character_service")
     def test_delete_character_204(self, mock_get_svc: MagicMock) -> None:
@@ -676,7 +695,7 @@ class TestCharacterExtraAPI:
             "坚韧",
             "",
             "",
-            None,
+            [],
             extra={"role_rank": "major", "groups": ["主角团"]},
         )
 

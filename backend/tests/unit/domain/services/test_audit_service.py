@@ -64,13 +64,13 @@ def _project() -> Project:
     return Project(id=PID, name="测试项目", created_at=TS, updated_at=TS)
 
 
-def _char(cid: uuid.UUID, name: str, *, group_id: uuid.UUID | None = None) -> Character:
+def _char(cid: uuid.UUID, name: str, *, group_ids: list[uuid.UUID] | None = None) -> Character:
     """构造测试角色实体。"""
     return Character(
         id=cid,
         project_id=PID,
         name=name,
-        group_id=group_id,
+        group_ids=group_ids or [],
         created_at=TS,
         updated_at=TS,
     )
@@ -389,7 +389,9 @@ async def test_rc1_empty_relations_no_finding():
 
 async def test_rc2_group_id_active_no_finding():
     deps = _Deps(_project())
-    deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "林晚", group_id=G_ACTIVE)], 1))
+    deps.character_repo.list = AsyncMock(
+        return_value=([_char(C_A, "林晚", group_ids=[G_ACTIVE])], 1)
+    )
     deps.character_repo.list_groups = AsyncMock(return_value=[_group(G_ACTIVE)])
 
     report = await deps.service().run_audit(PID)
@@ -399,7 +401,7 @@ async def test_rc2_group_id_active_no_finding():
 
 async def test_rc2_group_id_dangling_error():
     deps = _Deps(_project())
-    char = _char(C_A, "沈砚", group_id=G_DELETED)
+    char = _char(C_A, "沈砚", group_ids=[G_DELETED])
     deps.character_repo.list = AsyncMock(return_value=([char], 1))
     deps.character_repo.list_groups = AsyncMock(return_value=[])
 
@@ -421,7 +423,7 @@ async def test_rc2_group_id_dangling_error():
 
 async def test_rc2_group_id_missing_error():
     deps = _Deps(_project())
-    char = _char(C_A, "林晚", group_id=G_MISSING)
+    char = _char(C_A, "林晚", group_ids=[G_MISSING])
     deps.character_repo.list = AsyncMock(return_value=([char], 1))
     deps.character_repo.list_groups = AsyncMock(return_value=[])
 
@@ -438,7 +440,7 @@ async def test_rc2_group_id_missing_error():
 
 async def test_rc2_group_id_none_skipped():
     deps = _Deps(_project())
-    deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "林晚", group_id=None)], 1))
+    deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "林晚", group_ids=[])], 1))
     deps.character_repo.list_groups = AsyncMock(return_value=[])
 
     report = await deps.service().run_audit(PID)

@@ -105,10 +105,10 @@ class CharacterService:
         personality: str = "",
         background: str = "",
         goals: str = "",
-        group_id: uuid.UUID | None = None,
+        group_ids: list[uuid.UUID] | None = None,
         extra: dict[str, Any] | None = None,
     ) -> Character:
-        """创建角色（spec §7: 同名活动角色 → 422；分组跨项目 → 422）.
+        """创建角色（spec §7: 同名活动角色 → 422；分组跨项目 → 422；N:M #701）.
 
         Args:
             project_id: 所属项目 UUID（router 解析路径参数后传入）.
@@ -116,7 +116,7 @@ class CharacterService:
             personality: 性格描述.
             background: 背景设定.
             goals: 目标/动机.
-            group_id: 所属分组 UUID（None 表示未分组）.
+            group_ids: 所属分组 UUID 列表（None/空列表表示未分组；N:M）.
             extra: 扩展属性字典（role_rank/groups 等）；None 落库为空 dict.
 
         Returns:
@@ -130,8 +130,8 @@ class CharacterService:
         existing = await self._repo.get_by_name(pid_int, name)
         if existing is not None:
             raise CharacterNameConflictError()
-        if group_id is not None:
-            group = await self._repo.get_group(_to_int_id(group_id))
+        for gid in group_ids or []:
+            group = await self._repo.get_group(_to_int_id(gid))
             if group is None or group.project_id != project_id:
                 raise GroupNotInProjectError()
         now = _utcnow()
@@ -142,7 +142,7 @@ class CharacterService:
             personality=personality,
             background=background,
             goals=goals,
-            group_id=group_id,
+            group_ids=group_ids or [],
             extra=extra or {},
             created_at=now,
             updated_at=now,
@@ -184,8 +184,9 @@ class CharacterService:
     ) -> Character | None:
         """部分更新角色（exclude_unset 语义，同 F1）.
 
-        业务校验（spec §7）: 改名撞项目内其他活动角色 → 422；group_id 指派
-        的分组不存在或跨项目 → 422；group_id 显式置 None 表示清除分组。
+        业务校验（spec §7，N:M #701）: 改名撞项目内其他活动角色 → 422；
+        group_ids 指派的分组任一不存在或跨项目 → 422；group_ids=None 表示
+        不修改，[] 表示清空全部分组，[uuid1, uuid2] 表示全量替换。
 
         Args:
             character_id: 角色主键（支持 int 或 UUID）.
@@ -202,11 +203,16 @@ class CharacterService:
             dup = await self._repo.get_by_name(_to_int_id(existing.project_id), update.name)
             if dup is not None and dup.id != existing.id:
                 raise CharacterNameConflictError()
-        if "group_id" in update.model_fields_set and update.group_id is not None:
-            group = await self._repo.get_group(_to_int_id(update.group_id))
-            if group is None or group.project_id != existing.project_id:
-                raise GroupNotInProjectError()
-        merged = existing.model_copy(update=update.model_dump(exclude_unset=True))
+        if "group_ids" in update.model_fields_set and update.group_ids:
+            for gid in update.group_ids:
+                group = await self._repo.get_group(_to_int_id(gid))
+                if group is None or group.project_id != existing.project_id:
+                    raise GroupNotInProjectError()
+        merge_updates = update.model_dump(exclude_unset=True)
+        if "group_ids" in merge_updates and merge_updates["group_ids"] is None:
+            # None = 不修改（Character.group_ids 必须为列表，不能落 None）
+            merge_updates.pop("group_ids")
+        merged = existing.model_copy(update=merge_updates)
         logger.info("更新角色: character_id=%s", character_id)
         return await self._repo.update(merged)
 

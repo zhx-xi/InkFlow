@@ -65,13 +65,13 @@ def _project() -> Project:
     return Project(id=PID, name="测试项目", created_at=TS, updated_at=TS)
 
 
-def _char(cid: uuid.UUID, name: str, *, group_id: uuid.UUID | None = None) -> Character:
+def _char(cid: uuid.UUID, name: str, *, group_ids: list[uuid.UUID] | None = None) -> Character:
     """构造测试角色实体。"""
     return Character(
         id=cid,
         project_id=PID,
         name=name,
-        group_id=group_id,
+        group_ids=group_ids or [],
         created_at=TS,
         updated_at=TS,
     )
@@ -632,7 +632,7 @@ async def test_counts_all_keys():
 async def test_consistent_true_with_warning_info_only():
     """仅 warning/info findings → consistent=True（spec §6.2: consistent 仅由 error 决定）。"""
     deps = _Deps(_project(), events=[_event(EV_1, "林晚入宫")])
-    deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "沈砚", group_id=None)], 1))
+    deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "沈砚", group_ids=[])], 1))
     deps.world_repo.list = AsyncMock(return_value=([_setting(uuid.uuid4(), "青云城")], 1))
     deps.chapter_repo.list_chapters = AsyncMock(
         return_value=([_chapter(CH_1, "第一章"), _chapter(CH_2, "第二章")], 2)
@@ -656,7 +656,9 @@ async def test_consistent_true_with_warning_info_only():
 async def test_consistent_false_with_error():
     """任一 error finding → consistent=False（混合数据集，见排序测试同款）。"""
     deps = _Deps(_project(), events=[_event(EV_1, "林晚入宫")])
-    deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "林晚", group_id=G_MISSING)], 1))
+    deps.character_repo.list = AsyncMock(
+        return_value=([_char(C_A, "林晚", group_ids=[G_MISSING])], 1)
+    )
 
     report = await deps.service().run_audit(PID)
 
@@ -671,8 +673,8 @@ async def test_findings_sorted_stable_order():
         "entity_name) 稳定排序（spec §6.3）。"
     )
     deps = _Deps(_project(), events=[_event(EV_1, "林晚入宫")])
-    c_shen = _char(C_A, "沈砚", group_id=G_MISSING)  # R-C2 error（悬空分组）
-    c_lin = _char(C_B, "林晚", group_id=G_DELETED)  # R-C2 error（悬空分组，真删无 warning 档）
+    c_shen = _char(C_A, "沈砚", group_ids=[G_MISSING])  # R-C2 error（悬空分组）
+    c_lin = _char(C_B, "林晚", group_ids=[G_DELETED])  # R-C2 error（悬空分组，真删无 warning 档）
     deps.character_repo.list = AsyncMock(return_value=([c_shen, c_lin], 2))
     deps.character_repo.list_groups = AsyncMock(return_value=[])
     setting = _setting(uuid.uuid4(), "青云城")
@@ -716,7 +718,9 @@ async def test_findings_sorted_stable_order():
 async def test_deterministic_snapshot():
     """同一 Mock 数据集两次 run_audit → summary/findings/timeline_check 逐字段相等（spec §6.4）。"""
     deps = _Deps(_project(), events=[_event(EV_1, "林晚入宫")])
-    deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "林晚", group_id=G_MISSING)], 1))
+    deps.character_repo.list = AsyncMock(
+        return_value=([_char(C_A, "林晚", group_ids=[G_MISSING])], 1)
+    )
     deps.world_repo.list = AsyncMock(return_value=([_setting(uuid.uuid4(), "青云城")], 1))
     deps.chapter_repo.list_chapters = AsyncMock(return_value=([_chapter(CH_1, "第一章")], 1))
     deps.run_repo.list = AsyncMock(return_value=([], 0))

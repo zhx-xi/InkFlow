@@ -271,8 +271,8 @@ class AuditService:
         #211 真删语义: F9 删除为硬删除，无软删集合；引用目标不在活动集合即
         悬空 → error（无「软删 → warning」档）。
         R-C1: 活动关系的 from/to 端指向不存在的角色（悬空）→ error「不存在」。
-        R-C2: 活动角色的 group_id 指向不存在分组（悬空）→ error；
-        group_id=None（未分组）跳过。
+        R-C2: 活动角色的 group_ids 任一指向不存在分组（悬空）→ error；
+        group_ids 为空（未分组）跳过（N:M #701）。
 
         Args:
             chars: 活动角色列表（分页循环全量）.
@@ -321,29 +321,30 @@ class AuditService:
                     )
                 )
 
-        # R-C2 分组引用完整性（§5.4: 对每条已分组角色的 group_id 判定）
+        # R-C2 分组引用完整性（§5.4: 对每个角色的 group_ids 逐一判定，N:M #701）
         for char in chars:
-            if char.group_id is None:
+            if not char.group_ids:
                 continue
-            if char.group_id in active_groups:
-                continue
-            findings.append(
-                AuditFinding(
-                    id=f"character.group_ref:{char.id}",
-                    rule_id="character.group_ref",
-                    dimension=AuditDimension.CHARACTER,
-                    severity=AuditSeverity.ERROR,
-                    message=(
-                        f"角色 {char.name} 的分组引用指向不存在的分组"
-                        "（悬空引用，请修正分组或删除该角色）"
-                    ),
-                    entity_type="character",
-                    entity_id=char.id,
-                    entity_name=char.name,
-                    ref_type="group",
-                    ref_id=char.group_id,
+            for gid in char.group_ids:
+                if gid in active_groups:
+                    continue
+                findings.append(
+                    AuditFinding(
+                        id=f"character.group_ref:{char.id}",
+                        rule_id="character.group_ref",
+                        dimension=AuditDimension.CHARACTER,
+                        severity=AuditSeverity.ERROR,
+                        message=(
+                            f"角色 {char.name} 的分组引用指向不存在的分组"
+                            "（悬空引用，请修正分组或删除该角色）"
+                        ),
+                        entity_type="character",
+                        entity_id=char.id,
+                        entity_name=char.name,
+                        ref_type="group",
+                        ref_id=gid,
+                    )
                 )
-            )
         return findings
 
     def _audit_timeline(self, report: ConsistencyReport | None) -> list[AuditFinding]:

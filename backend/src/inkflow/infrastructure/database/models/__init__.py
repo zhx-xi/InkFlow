@@ -6,6 +6,7 @@ from inkflow.infrastructure.database.models.agent_run import AgentRunORM, DraftO
 from inkflow.infrastructure.database.models.audit_log import AuditLogORM
 from inkflow.infrastructure.database.models.chapter import ChapterORM, VolumeORM
 from inkflow.infrastructure.database.models.character import (
+    CharacterGroupMemberORM,
     CharacterGroupORM,
     CharacterORM,
     CharacterRelationORM,
@@ -38,6 +39,7 @@ __all__ = [
     "AuditLogORM",
     "ChapterORM",
     "ChapterSummaryORM",
+    "CharacterGroupMemberORM",
     "CharacterGroupORM",
     "CharacterORM",
     "CharacterRelationORM",

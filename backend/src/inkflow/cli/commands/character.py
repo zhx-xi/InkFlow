@@ -107,7 +107,7 @@ def create_character(
                     "personality": personality,
                     "background": background,
                     "goals": goals,
-                    "group_id": str(gid) if gid is not None else None,
+                    "group_ids": [str(gid)] if gid is not None else [],
                 },
             )
 
@@ -199,7 +199,10 @@ def get_character(
         typer.echo(f"性格:       {character['personality']}")
         typer.echo(f"背景:       {character['background']}")
         typer.echo(f"目标:       {character['goals']}")
-        typer.echo(f"分组:       {character['group_id']}")
+        group_display = character.get("group_names")
+        if group_display is None:
+            group_display = character.get("group_ids") or []
+        typer.echo(f"分组:       {', '.join(group_display)}")
         typer.echo(f"创建时间:   {character['created_at']}")
         typer.echo(f"更新时间:   {character['updated_at']}")
 
@@ -236,8 +239,8 @@ def update_character(
         if goals is not None:
             update_fields["goals"] = goals
         if group_id is not None:
-            update_fields["group_id"] = (
-                None if group_id == "" else str(_parse_uuid(cli_ctx, group_id, "分组不存在"))
+            update_fields["group_ids"] = (
+                [] if group_id == "" else [str(_parse_uuid(cli_ctx, group_id, "分组不存在"))]
             )
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
@@ -567,7 +570,7 @@ def delete_group_cmd(
     group_id: str = typer.Option(..., "--id", "-i", help="分组 ID (UUID)"),
     force: bool = typer.Option(False, "--force", "-f", help="跳过确认"),
 ) -> None:
-    """删除分组（成员角色 group_id 置 NULL，角色保留）"""
+    """删除分组（成员角色 group_ids 从中移除，角色保留）"""
     cli_ctx: CliContext = ctx.obj
     gid = _parse_uuid(cli_ctx, group_id, "分组不存在")
     if not force:

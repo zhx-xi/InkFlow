@@ -164,3 +164,46 @@ describe('#679 角色列表等级选项卡(总览/分览) + 分组卡片 + 等�
     expect(screen.getByTestId('lib-rank-c1')).toHaveClass('bg-accent'); // 分组不吞掉分色
   });
 });
+
+describe('#701 角色多分组 N:M：group_ids 数组跨分组卡片', () => {
+  /**
+   * N:M 种子：group_ids 数组替代单值 group_id（group_id 保留仅为过渡兼容，断言一律以 group_ids 为准）。
+   * - c1 林晚：group_ids 含 g1+g2 → 应同时出现在 g1/g2 两个卡片（N:M 判据）
+   * - c6 双面人：group_id=null 但 group_ids=['g2'] → 按 group_ids 归 g2，绝不进未分组
+   */
+  const NM_ITEMS: Array<
+    LibraryItemDTO & { group_id?: string | number | null; group_ids?: (string | number)[] | null }
+  > = [
+    { id: 'c1', name: '林晚', group_id: 'g1', group_ids: ['g1', 'g2'], extra: { role_rank: 'protagonist' } },
+    { id: 'c2', name: '沈砚', group_id: 'g2', group_ids: ['g2'], extra: { role_rank: 'major' } },
+    { id: 'c3', name: '路人甲', group_ids: [], extra: { role_rank: 'scene' } },
+    { id: 'c4', name: '路人乙', extra: { role_rank: 'walkon' } },
+    { id: 'c5', name: '路人丙', group_ids: null, extra: { role_rank: 'minor' } },
+    { id: 'c6', name: '双面人', group_id: null, group_ids: ['g2'], extra: { role_rank: 'major' } },
+  ];
+
+  it('N:M：同一角色（group_ids 含 g1+g2）在 lib-group-g1 与 lib-group-g2 两个分组卡片中都出现', () => {
+    renderList({ items: NM_ITEMS, withCharacterExtras: true });
+    const g1 = screen.getByTestId('lib-group-g1');
+    const g2 = screen.getByTestId('lib-group-g2');
+    expect(within(g1).getByText('林晚')).toBeInTheDocument();
+    // 旧实现按单值 group_id='g1' 分组 → 林晚只进 g1，g2 卡片找不到 → FAIL
+    expect(within(g2).getByText('林晚')).toBeInTheDocument();
+    expect(within(g2).getByText('沈砚')).toBeInTheDocument();
+  });
+
+  it('未分组卡片只收 group_ids 为空/undefined/null 的角色；非空者（即使 group_id 为 null）不进未分组', () => {
+    renderList({ items: NM_ITEMS, withCharacterExtras: true });
+    const ungrouped = screen.getByTestId('lib-group-ungrouped');
+    // group_ids 为空数组/undefined/null → 归入未分组
+    expect(within(ungrouped).getByText('路人甲')).toBeInTheDocument(); // []
+    expect(within(ungrouped).getByText('路人乙')).toBeInTheDocument(); // undefined
+    expect(within(ungrouped).getByText('路人丙')).toBeInTheDocument(); // null
+    // group_ids 非空 → 绝不进未分组（旧实现：双面人 group_id=null 被误收进未分组 → FAIL）
+    expect(within(ungrouped).queryByText('双面人')).not.toBeInTheDocument();
+    expect(within(ungrouped).queryByText('林晚')).not.toBeInTheDocument();
+    expect(within(ungrouped).queryByText('沈砚')).not.toBeInTheDocument();
+    // 双面人按 group_ids=['g2'] 归入 g2 卡片（旧实现 g2 无此人 → FAIL）
+    expect(within(screen.getByTestId('lib-group-g2')).getByText('双面人')).toBeInTheDocument();
+  });
+});

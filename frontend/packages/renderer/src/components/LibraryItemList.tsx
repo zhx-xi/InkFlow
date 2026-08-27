@@ -7,8 +7,18 @@ import { listCharacterGroups, type CharacterGroup } from '../api/character';
 import type { LibraryItemDTO } from './LibraryCreateDialog';
 import { useI18n } from '../i18n/useI18n';
 
-/** #679：角色行含 group_id（后端 Character model 字段；LibraryItemDTO 未声明，此处本地补全类型） */
-type LibraryItemWithGroup = LibraryItemDTO & { group_id?: string | number | null };
+/** #679/#701：角色行含 group_id（旧单选过渡）与 group_ids（N:M 多分组）；LibraryItemDTO 未声明，此处本地补全类型 */
+type LibraryItemWithGroup = LibraryItemDTO & {
+  group_id?: string | number | null;
+  group_ids?: (string | number)[] | null;
+};
+
+/** #701：角色归属分组 ids —— group_ids 数组优先（N:M 权威）；缺失时兜底旧单选 group_id */
+const groupIdsOf = (item: LibraryItemDTO): (string | number)[] => {
+  const withGroup = item as LibraryItemWithGroup;
+  if (Array.isArray(withGroup.group_ids)) return withGroup.group_ids;
+  return withGroup.group_id == null ? [] : [withGroup.group_id];
+};
 
 export interface LibraryItemListProps {
   items: LibraryItemDTO[];
@@ -81,15 +91,12 @@ export function LibraryItemList({
     ? effectiveGroups
         .map((g) => ({
           group: g,
-          members: visibleItems.filter((i) => String((i as LibraryItemWithGroup).group_id) === String(g.id)),
+          members: visibleItems.filter((i) => groupIdsOf(i).map(String).includes(String(g.id))),
         }))
         .filter((sec) => sec.members.length > 0)
     : [];
   const ungroupedItems = withCharacterExtras
-    ? visibleItems.filter((i) => {
-        const groupId = (i as LibraryItemWithGroup).group_id;
-        return groupId === null || groupId === undefined;
-      })
+    ? visibleItems.filter((i) => groupIdsOf(i).length === 0)
     : [];
 
   // F43 P1（§5.1/§5.2）：角色行等级徽标 + 标签 chips（缺省不渲染）
