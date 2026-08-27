@@ -74,7 +74,6 @@ const PICKER_SOURCES: ReadonlySet<ContextSourceType> = new Set([
 
 export function ContextPanel({ projectId, chapterId, model, writingRequirements }: ContextPanelProps) {
   const { t } = useI18n();
-  const [collapsed, setCollapsed] = useState(false);
   const [data, setData] = useState<ContextAssemblyResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -243,42 +242,13 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
     return pickerOptions.filter((opt) => opt.label.toLowerCase().includes(query));
   }, [pickerOptions, pickerSearch]);
 
-  if (collapsed) {
-    return (
-      <aside
-        data-testid="context-panel"
-        className="flex w-[26px] shrink-0 flex-col"
-      >
-        <button
-          type="button"
-          data-testid="context-expand-bar"
-          aria-label={t('write.context.expand')}
-          className="flex w-[26px] items-center justify-center text-ink-3 hover:text-ink"
-          onClick={() => setCollapsed(false)}
-        >
-          ›
-        </button>
-      </aside>
-    );
-  }
-
   return (
-    <>
-      <aside
-        data-testid="context-panel"
-        className="relative flex min-h-0 flex-1 flex-col"
-      >
+    <aside
+      data-testid="context-panel"
+      className="relative flex min-h-0 flex-1 flex-col"
+    >
       <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <span className="text-[13px] font-semibold">{t('write.context.title')}</span>
-        <button
-          type="button"
-          data-testid="context-collapse"
-          aria-label={t('write.context.collapse')}
-          className="rounded px-1.5 text-ink-3 hover:bg-surface-3 hover:text-ink"
-          onClick={() => setCollapsed(true)}
-        >
-          ›
-        </button>
       </div>
       <div
         data-testid="context-panel-content"
@@ -479,7 +449,6 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
           </div>
         </div>
       ) : null}
-      </aside>
-    </>
+    </aside>
   );
 }

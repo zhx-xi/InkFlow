@@ -117,6 +117,9 @@ export function WritingPage() {
   const [treeWidth, setTreeWidth] = useState(208);
   const [contextPanelH, setContextPanelH] = useState(240);
   const [summaryPanelH, setSummaryPanelH] = useState(160);
+  // #720：右栏整栏收起/展开 + 宽度受控（col-resize 边界手柄，镜像 #702 左栏）
+  const [railWidth, setRailWidth] = useState(240);
+  const [railCollapsed, setRailCollapsed] = useState(false);
 
   // #703：右栏 row-resize 拖拽 — target 指定被拖高的上一面板（context / summary）
   const startRailResize = useCallback(
@@ -139,6 +142,28 @@ export function WritingPage() {
       window.addEventListener('mouseup', onUp);
     },
     [contextPanelH, summaryPanelH],
+  );
+
+  // #720：右栏 col-resize 拖拽调宽（镜像 ProjectTree 左栏；90~540px）
+  const startRailColResize = useCallback(
+    (e: ReactMouseEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = railWidth;
+      document.body.style.userSelect = 'none';
+      const onMove = (ev: MouseEvent) => {
+        const next = Math.max(90, Math.min(540, startW + (ev.clientX - startX)));
+        setRailWidth(next);
+      };
+      const onUp = () => {
+        document.body.style.userSelect = '';
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    },
+    [railWidth],
   );
 
   const handleHitlConfirm = useCallback(
@@ -369,45 +394,76 @@ export function WritingPage() {
         </main>
         <aside
           data-testid="right-rail"
-          className="flex w-[240px] shrink-0 flex-col border-l border-line bg-surface-2"
+          data-collapsed={railCollapsed ? 'true' : 'false'}
+          className="relative flex shrink-0 flex-col border-l border-line bg-surface-2"
+          style={{ width: railCollapsed ? 26 : railWidth }}
         >
           <div
-            data-testid="rail-panel-context"
-            style={{ height: `${contextPanelH}px` }}
-            className="min-h-0 shrink-0 flex flex-col"
+            data-testid="right-col-handle"
+            className="absolute left-0 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-md border border-line bg-surface shadow-sm"
           >
-            <ContextPanel
-              projectId={effectiveProjectId}
-              chapterId={currentChapterId}
-              model={model}
-              writingRequirements={currentProject?.config?.writing_style ?? '上下文预览'}
-            />
+            <button
+              type="button"
+              data-testid="right-col-drag"
+              aria-label="拖拽调整右栏宽度"
+              disabled={railCollapsed}
+              onMouseDown={railCollapsed ? undefined : startRailColResize}
+              className="flex h-7 w-7 cursor-col-resize items-center justify-center border-r border-line text-[10px] text-ink-3 hover:bg-surface-3 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              &nbsp;
+            </button>
+            <button
+              type="button"
+              data-testid="right-col-toggle"
+              aria-label={railCollapsed ? '展开右栏' : '收起右栏'}
+              onClick={() => setRailCollapsed((c) => !c)}
+              className="flex h-7 w-7 items-center justify-center text-[12px] text-ink-3 hover:bg-surface-3 hover:text-ink"
+            >
+              {railCollapsed ? '«' : '»'}
+            </button>
           </div>
-          <div
-            data-testid="rail-resize-handle-0"
-            className="h-2 shrink-0 cursor-row-resize select-none border-t border-line bg-surface-3"
-            onMouseDown={startRailResize('context')}
-            aria-hidden="true"
-          />
-          <div
-            data-testid="rail-panel-summary"
-            style={{ height: `${summaryPanelH}px` }}
-            className="min-h-0 shrink-0 flex flex-col"
-          >
-            <ChapterSummaryPanel projectId={effectiveProjectId} chapterId={currentChapterId} />
-          </div>
-          <div
-            data-testid="rail-resize-handle-1"
-            className="h-2 shrink-0 cursor-row-resize select-none border-t border-line bg-surface-3"
-            onMouseDown={startRailResize('summary')}
-            aria-hidden="true"
-          />
-          <div
-            data-testid="rail-panel-drafts"
-            className="min-h-[120px] shrink-0 flex flex-col"
-          >
-            <DraftApprovalPanel projectId={effectiveProjectId} />
-          </div>
+
+          {railCollapsed ? null : (
+            <>
+              <div
+                data-testid="rail-panel-context"
+                style={{ height: `${contextPanelH}px` }}
+                className="min-h-0 shrink-0 flex flex-col"
+              >
+                <ContextPanel
+                  projectId={effectiveProjectId}
+                  chapterId={currentChapterId}
+                  model={model}
+                  writingRequirements={currentProject?.config?.writing_style ?? '上下文预览'}
+                />
+              </div>
+              <div
+                data-testid="rail-resize-handle-0"
+                className="h-2 shrink-0 cursor-row-resize select-none border-t border-line bg-surface-3"
+                onMouseDown={startRailResize('context')}
+                aria-hidden="true"
+              />
+              <div
+                data-testid="rail-panel-summary"
+                style={{ height: `${summaryPanelH}px` }}
+                className="min-h-0 shrink-0 flex flex-col"
+              >
+                <ChapterSummaryPanel projectId={effectiveProjectId} chapterId={currentChapterId} />
+              </div>
+              <div
+                data-testid="rail-resize-handle-1"
+                className="h-2 shrink-0 cursor-row-resize select-none border-t border-line bg-surface-3"
+                onMouseDown={startRailResize('summary')}
+                aria-hidden="true"
+              />
+              <div
+                data-testid="rail-panel-drafts"
+                className="min-h-[120px] shrink-0 flex flex-col"
+              >
+                <DraftApprovalPanel projectId={effectiveProjectId} />
+              </div>
+            </>
+          )}
         </aside>
       </div>
       <AuditDialog

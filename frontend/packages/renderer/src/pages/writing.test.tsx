@@ -9,7 +9,7 @@
  * - 项目印章: project-seal（文本 = 书名关键字）
  * - 工具栏: editor-toolbar；撤销/重做/保存（toolbar-save）/续写/生成（i18n 文案）
  * - 编辑器: chapter-editor（textarea，段落化纯文本）
- * - 上下文: context-collapse / context-panel-content / context-expand-bar
+ * - 右栏: right-rail / right-col-handle / right-col-drag / right-col-toggle（整栏收起/展开，面板隐藏）
  *
  * 管线执行状态区（spec §5.6 + #642-1 流式）：
  * - data-testid="pipeline-status"
@@ -190,19 +190,35 @@ describe('写作页 — 项目印章常驻（三主题）', () => {
   });
 });
 
-describe('写作页 — 上下文面板折叠/展开闭环', () => {
-  it('折叠 → 展开条出现、内容区消失；点击展开条 → 内容区恢复', async () => {
+describe('写作页 — 右栏整栏收起/展开（#720 分裂式手柄）', () => {
+  it('渲染右栏边界分裂手柄（左半拖拽 + 右半收起/展开）', () => {
+    render(<WritingPage />);
+    expect(screen.getByTestId('right-col-handle')).toBeInTheDocument();
+    expect(screen.getByTestId('right-col-drag')).toBeInTheDocument();
+    expect(screen.getByTestId('right-col-toggle')).toBeInTheDocument();
+  });
+
+  it('点右半「»」→ 整栏收起（三面板全隐藏 + data-collapsed=true）；再点「«」→ 展开', async () => {
     const user = userEvent.setup();
     render(<WritingPage />);
-    expect(screen.getByTestId('context-panel-content')).toBeInTheDocument();
+    // 展开态：三个面板均在
+    expect(screen.getByTestId('rail-panel-context')).toBeInTheDocument();
+    expect(screen.getByTestId('rail-panel-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('rail-panel-drafts')).toBeInTheDocument();
 
-    await user.click(screen.getByTestId('context-collapse'));
-    expect(screen.queryByTestId('context-panel-content')).not.toBeInTheDocument();
-    expect(screen.getByTestId('context-expand-bar')).toBeInTheDocument();
+    // 收起整栏
+    await user.click(screen.getByTestId('right-col-toggle'));
+    expect(screen.getByTestId('right-rail')).toHaveAttribute('data-collapsed', 'true');
+    expect(screen.queryByTestId('rail-panel-context')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('rail-panel-summary')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('rail-panel-drafts')).not.toBeInTheDocument();
 
-    await user.click(screen.getByTestId('context-expand-bar'));
-    expect(screen.getByTestId('context-panel-content')).toBeInTheDocument();
-    expect(screen.queryByTestId('context-expand-bar')).not.toBeInTheDocument();
+    // 展开整栏
+    await user.click(screen.getByTestId('right-col-toggle'));
+    expect(screen.getByTestId('right-rail')).not.toHaveAttribute('data-collapsed', 'true');
+    expect(screen.getByTestId('rail-panel-context')).toBeInTheDocument();
+    expect(screen.getByTestId('rail-panel-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('rail-panel-drafts')).toBeInTheDocument();
   });
 });
 
