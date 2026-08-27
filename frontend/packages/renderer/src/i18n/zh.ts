@@ -469,6 +469,9 @@ export const zh = {
   'write.context.required': '写作要求',
   'write.context.dropped': '已裁剪',
   'write.context.tokens': '{total}/{budget} tokens',
+  'write.context.injectSelect': '＋ 选择注入',
+  'write.context.pickerSearch': '搜索已有设定…',
+  'write.context.pickerAppend': '追加注入',
   'write.stream.generating': '生成中',
   'write.stream.stop': '停止',
   'write.stream.done': '已生成 {words} 字 · 模型 {model} · 格式校验{valid}',
@@ -567,7 +570,6 @@ export const zh = {
   'write.summary.empty': '暂无摘要',
   'write.summary.loading': '摘要生成中',
   'write.summary.error': '摘要获取失败',
-
   // 项目页
   'pj.title': '我的项目',
   'pj.sub': '本地存储 · 自动存档 · 断网可用',

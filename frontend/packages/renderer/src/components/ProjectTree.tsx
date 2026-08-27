@@ -1,5 +1,5 @@
 /** 项目树（spec §4.2.1）：卷/章 + 字数 + 当前章高亮 + 底部新建章节（#648 卷管理：新建卷/编辑标题/删除卷） */
-import { useState } from 'react';
+import { useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { Check, Pencil, Trash2, X } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
 import type { ChapterMeta, Volume } from '../stores/chapter';
@@ -9,7 +9,18 @@ import { ProjectSeal } from './ProjectSeal';
 import { VolumeDeleteDialog } from './VolumeDeleteDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
-export function ProjectTree() {
+/** #702：左栏宽度拖拽边界（最小 160 / 最大 360） */
+export const RESIZE_MIN = 160;
+export const RESIZE_MAX = 360;
+
+export interface ProjectTreeProps {
+  /** 左栏宽度（px），由写作页受控持有 */
+  width?: number;
+  /** 拖拽调宽回调（仅传入时生效） */
+  onResizeWidth?: (w: number) => void;
+}
+
+export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
   const { t } = useI18n();
   const volumes = useChapterStore((s) => s.volumes);
   const chapters = useChapterStore((s) => s.chapters);
@@ -32,6 +43,26 @@ export function ProjectTree() {
   const [deleteTarget, setDeleteTarget] = useState<Volume | null>(null);
   const [newVolumeId, setNewVolumeId] = useState<string | null>(null); // 新建章节目标卷（null=未分组）
   const [dragOverVolumeId, setDragOverVolumeId] = useState<string | null>(null); // 拖拽经过的卷高亮
+  // #702：col-resize 拖拽起点（clientX + 起点宽度），mouseup 清空
+  const dragStartRef = useRef<{ startX: number; startW: number } | null>(null);
+
+  const startResize = (e: ReactMouseEvent) => {
+    e.preventDefault();
+    dragStartRef.current = { startX: e.clientX, startW: width };
+    const onMove = (ev: MouseEvent) => {
+      const drag = dragStartRef.current;
+      if (!drag) return;
+      const newW = Math.max(RESIZE_MIN, Math.min(RESIZE_MAX, drag.startW + (ev.clientX - drag.startX)));
+      onResizeWidth?.(newW);
+    };
+    const onUp = () => {
+      dragStartRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
 
   const renderChapter = (ch: ChapterMeta) => {
     const isCurrent = ch.id === currentChapterId;
@@ -89,7 +120,7 @@ export function ProjectTree() {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <ProjectSeal project={currentProject} />
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {volumes.map((v) => (
@@ -174,9 +205,9 @@ export function ProjectTree() {
           {ungrouped.length > 0 && <div className="space-y-0.5">{ungrouped.map(renderChapter)}</div>}
         </div>
       </div>
-      <div data-testid="tree-actions" className="flex items-center gap-2 border-t border-line p-2">
-        {creatingVolume ? (
-          <div className="flex min-w-0 flex-1 gap-1">
+      <div data-testid="tree-actions" className="flex flex-col gap-2 border-t border-line p-2">
+        {creatingVolume && (
+          <div data-testid="tree-create-volume-row" className="flex items-center gap-1">
             <input
               autoFocus
               className="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1 text-[13px] outline-none"
@@ -211,17 +242,9 @@ export function ProjectTree() {
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
-        ) : (
-          <button
-            type="button"
-            className="flex-1 rounded px-2 py-1.5 text-[13px] text-ink-2 hover:bg-surface-3"
-            onClick={() => setCreatingVolume(true)}
-          >
-            + 新建卷
-          </button>
         )}
-        {creating ? (
-          <div className="flex min-w-0 flex-1 gap-1">
+        {creating && (
+          <div data-testid="tree-create-chapter-row" className="flex items-center gap-1">
             <Select
               value={newVolumeId ?? '__ungrouped__'}
               onValueChange={(val) => setNewVolumeId(val === '__ungrouped__' ? null : val)}
@@ -272,7 +295,15 @@ export function ProjectTree() {
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
-        ) : (
+        )}
+        <div data-testid="tree-action-row" className="flex items-center gap-2">
+          <button
+            type="button"
+            className="flex-1 rounded px-2 py-1.5 text-[13px] text-ink-2 hover:bg-surface-3"
+            onClick={() => setCreatingVolume(true)}
+          >
+            + 新建卷
+          </button>
           <button
             type="button"
             className="flex-1 rounded px-2 py-1.5 text-[13px] text-ink-2 hover:bg-surface-3"
@@ -280,7 +311,7 @@ export function ProjectTree() {
           >
             + {t('write.newChapter')}
           </button>
-        )}
+        </div>
       </div>
       {deleteTarget && (
         <VolumeDeleteDialog
@@ -297,6 +328,12 @@ export function ProjectTree() {
           }}
         />
       )}
+      <div
+        data-testid="tree-resize-handle"
+        className="absolute inset-y-0 right-0 z-10 w-1 cursor-col-resize select-none"
+        onMouseDown={startResize}
+        aria-hidden="true"
+      />
     </div>
   );
 }

@@ -20,16 +20,22 @@
  *  用例手动改写 resolved 值。本地类型镜像，避免依赖未建 api 模块（ChatPanel.test 同款套路）。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ContextPanel } from './ContextPanel';
 import { useThemeStore } from '../stores/theme';
+import { listProjectCharacters } from '../api/character';
 
 /** api/context 模块 mock 聚合（GREEN 建 src/api/context.ts），vi.hoisted 供 vi.mock 工厂引用 */
 const contextApiMocks = vi.hoisted(() => ({
   assembleContext: vi.fn(),
+  listProjectWorldSettings: vi.fn(),
+  listProjectForeshadowings: vi.fn(),
 }));
 vi.mock('../api/context', () => contextApiMocks);
+vi.mock('../api/character', () => ({
+  listProjectCharacters: vi.fn(),
+}));
 
 const assembleMock = contextApiMocks.assembleContext;
 
@@ -245,5 +251,84 @@ describe('ContextPanel — 折叠条与错误（守护）', () => {
     render(<ContextPanel {...OPTS} />);
     const err = await screen.findByTestId('context-error');
     expect(err).toHaveTextContent('内核未就绪');
+  });
+});
+/** #704 分组「选择注入」搜索选择器多选追加（RED 契约） */
+function worldBlock(id: string, name: string): ContextBlock {
+  return {
+    item: {
+      source: 'world_setting',
+      title: `世界观：${name}`,
+      content: `${name}：${name}的设定`,
+      priority: 0,
+      metadata: { world_setting_id: id },
+    },
+    layer: 'compressible',
+    token_count: 30,
+    compressed: false,
+  };
+}
+function foreshadowBlock(id: string, title: string): ContextBlock {
+  return {
+    item: {
+      source: 'foreshadowing',
+      title: `伏笔：${title}`,
+      content: `${title}：伏笔内容`,
+      priority: 0,
+      metadata: { foreshadowing_id: id },
+    },
+    layer: 'dynamic',
+    token_count: 20,
+    compressed: false,
+  };
+}
+
+describe('ContextPanel — 分组「＋ 选择注入」搜索选择器多选追加（#704）', () => {
+  it('角色/世界观/伏笔分组标题行右侧各有「＋ 选择注入」按钮', async () => {
+    assembleMock.mockResolvedValue(result([characterBlock('c-a', '林晚'), worldBlock('w-a', '李家'), foreshadowBlock('f-a', '归墟之约')]));
+    render(<ContextPanel {...OPTS} />);
+    await screen.findByTestId('context-block-character_setting');
+    expect(within(screen.getByTestId('context-block-character_setting')).getByRole('button', { name: /选择注入/ })).toBeInTheDocument();
+    expect(within(screen.getByTestId('context-block-world_setting')).getByRole('button', { name: /选择注入/ })).toBeInTheDocument();
+    expect(within(screen.getByTestId('context-block-foreshadowing')).getByRole('button', { name: /选择注入/ })).toBeInTheDocument();
+  });
+
+  it('点「＋ 选择注入」→ 弹出搜索选择器（搜索框 + 多选列表）', async () => {
+    assembleMock.mockResolvedValue(result([characterBlock('c-a', '林晚')]));
+    vi.mocked(listProjectCharacters).mockResolvedValue({ items: [{ id: 'c-a', name: '林晚' }, { id: 'c-b', name: '顾沉' }, { id: 'c-c', name: '白小宛' }], total: 3, offset: 0, limit: 50 });
+    render(<ContextPanel {...OPTS} />);
+    await screen.findByTestId('context-block-character_setting');
+    fireEvent.click(within(screen.getByTestId('context-block-character_setting')).getByRole('button', { name: /选择注入/ }));
+    await screen.findByTestId('context-picker');
+    expect(screen.getByTestId('context-picker-search')).toBeInTheDocument();
+    expect(screen.getAllByTestId(/context-picker-opt-/)).toHaveLength(3);
+  });
+
+  it('搜索框过滤选项', async () => {
+    assembleMock.mockResolvedValue(result([characterBlock('c-a', '林晚')]));
+    vi.mocked(listProjectCharacters).mockResolvedValue({ items: [{ id: 'c-a', name: '林晚' }, { id: 'c-b', name: '顾沉' }], total: 2, offset: 0, limit: 50 });
+    render(<ContextPanel {...OPTS} />);
+    await screen.findByTestId('context-block-character_setting');
+    fireEvent.click(within(screen.getByTestId('context-block-character_setting')).getByRole('button', { name: /选择注入/ }));
+    await screen.findByTestId('context-picker');
+    fireEvent.change(screen.getByTestId('context-picker-search'), { target: { value: '林' } });
+    expect(screen.getByText('林晚')).toBeInTheDocument();
+    expect(screen.queryByText('顾沉')).not.toBeInTheDocument();
+  });
+
+  it('勾选后确认 → 追加到对应分组，assemble 重新调用且 override 含新增 id', async () => {
+    assembleMock.mockResolvedValue(result([characterBlock('c-a', '林晚')]));
+    vi.mocked(listProjectCharacters).mockResolvedValue({ items: [{ id: 'c-a', name: '林晚' }, { id: 'c-b', name: '顾沉' }], total: 2, offset: 0, limit: 50 });
+    const user = userEvent.setup();
+    render(<ContextPanel {...OPTS} />);
+    await screen.findByTestId('context-block-character_setting');
+    fireEvent.click(within(screen.getByTestId('context-block-character_setting')).getByRole('button', { name: /选择注入/ }));
+    await screen.findByTestId('context-picker');
+    await user.click(screen.getByTestId('context-picker-opt-c-b'));
+    await user.click(screen.getByTestId('context-picker-confirm'));
+    await waitFor(() => expect(assembleMock).toHaveBeenCalledTimes(2));
+    const req = assembleMock.mock.calls[1][0] as AssembleRequest;
+    expect(req.override?.character_ids).toContain('c-b');
+    expect(req.override?.character_ids).toContain('c-a');
   });
 });

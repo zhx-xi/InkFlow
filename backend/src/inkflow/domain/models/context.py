@@ -169,11 +169,13 @@ class ContextOverride(BaseModel):
 
     - character_ids 非空 → 只注入 metadata.character_id 命中的角色 item；空 → 注入全部
     - foreshadowing_ids 非空 → 只注入 metadata.foreshadowing_id 命中的伏笔 item；空 → 注入全部
-    - 只过滤 character_setting / foreshadowing 两类来源，不影响 outline/summary/世界设定等
+    - world_ids 非空 → 只注入 metadata.world_setting_id 命中的世界观 item；空 → 注入全部
+    - 只过滤 character_setting / foreshadowing / world_setting 三类来源，不影响 outline/summary 等
     """
 
     character_ids: list[uuid.UUID] = Field(default_factory=list)
     foreshadowing_ids: list[uuid.UUID] = Field(default_factory=list)
+    world_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 class ContextRequest(BaseModel):

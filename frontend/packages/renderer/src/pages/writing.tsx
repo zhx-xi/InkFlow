@@ -1,5 +1,12 @@
 /** 写作页（spec §4.2.1）：三栏 + 工具栏快捷键 + SSE 流式区 + 上下文折叠 + 印章常驻 + 状态栏 */
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from 'react';
 import { Compass } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { auditChapter, confirmAudit, type AuditReportDto } from '../api/audit';
@@ -106,6 +113,33 @@ export function WritingPage() {
   const [autoAuthOpen, setAutoAuthOpen] = useState(false);
   const dirtyRef = useRef(false);
   const loadedRef = useRef<string | null>(null);
+  // #702：左栏宽度受控（ProjectTree col-resize 手柄回调）；#703：右栏面板高度
+  const [treeWidth, setTreeWidth] = useState(208);
+  const [contextPanelH, setContextPanelH] = useState(240);
+  const [summaryPanelH, setSummaryPanelH] = useState(160);
+
+  // #703：右栏 row-resize 拖拽 — target 指定被拖高的上一面板（context / summary）
+  const startRailResize = useCallback(
+    (target: 'context' | 'summary') => (e: ReactMouseEvent) => {
+      e.preventDefault();
+      const startY = e.clientY;
+      const startH = target === 'context' ? contextPanelH : summaryPanelH;
+      const setH = target === 'context' ? setContextPanelH : setSummaryPanelH;
+      document.body.style.userSelect = 'none';
+      const onMove = (ev: MouseEvent) => {
+        const next = Math.max(90, Math.min(540, startH + (ev.clientY - startY)));
+        setH(next);
+      };
+      const onUp = () => {
+        document.body.style.userSelect = '';
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    },
+    [contextPanelH, summaryPanelH],
+  );
 
   const handleHitlConfirm = useCallback(
     (approved: boolean) => {
@@ -262,7 +296,8 @@ export function WritingPage() {
       <div className="flex min-h-0 flex-1">
         <aside
           data-testid="project-tree"
-          className="flex w-[208px] shrink-0 flex-col border-r border-line bg-surface-2"
+          className="flex shrink-0 flex-col border-r border-line bg-surface-2"
+          style={{ width: treeWidth }}
         >
           {chaptersLoading && chapters.length === 0 ? (
             <div className="flex min-h-0 flex-1 flex-col">
@@ -281,7 +316,7 @@ export function WritingPage() {
               </div>
             </div>
           ) : (
-            <ProjectTree />
+            <ProjectTree width={treeWidth} onResizeWidth={setTreeWidth} />
           )}
         </aside>
         <main data-testid="editor" className="group flex min-w-0 flex-1 flex-col bg-surface">
@@ -336,14 +371,43 @@ export function WritingPage() {
           data-testid="right-rail"
           className="flex w-[240px] shrink-0 flex-col border-l border-line bg-surface-2"
         >
-          <ContextPanel
-            projectId={effectiveProjectId}
-            chapterId={currentChapterId}
-            model={model}
-            writingRequirements={currentProject?.config?.writing_style ?? '上下文预览'}
+          <div
+            data-testid="rail-panel-context"
+            style={{ height: `${contextPanelH}px` }}
+            className="min-h-0 shrink-0 flex flex-col"
+          >
+            <ContextPanel
+              projectId={effectiveProjectId}
+              chapterId={currentChapterId}
+              model={model}
+              writingRequirements={currentProject?.config?.writing_style ?? '上下文预览'}
+            />
+          </div>
+          <div
+            data-testid="rail-resize-handle-0"
+            className="h-2 shrink-0 cursor-row-resize select-none border-t border-line bg-surface-3"
+            onMouseDown={startRailResize('context')}
+            aria-hidden="true"
           />
-          <ChapterSummaryPanel projectId={effectiveProjectId} chapterId={currentChapterId} />
-          <DraftApprovalPanel projectId={effectiveProjectId} />
+          <div
+            data-testid="rail-panel-summary"
+            style={{ height: `${summaryPanelH}px` }}
+            className="min-h-0 shrink-0 flex flex-col"
+          >
+            <ChapterSummaryPanel projectId={effectiveProjectId} chapterId={currentChapterId} />
+          </div>
+          <div
+            data-testid="rail-resize-handle-1"
+            className="h-2 shrink-0 cursor-row-resize select-none border-t border-line bg-surface-3"
+            onMouseDown={startRailResize('summary')}
+            aria-hidden="true"
+          />
+          <div
+            data-testid="rail-panel-drafts"
+            className="min-h-[120px] shrink-0 flex flex-col"
+          >
+            <DraftApprovalPanel projectId={effectiveProjectId} />
+          </div>
         </aside>
       </div>
       <AuditDialog

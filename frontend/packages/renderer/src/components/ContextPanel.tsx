@@ -1,7 +1,10 @@
 /** 上下文面板（spec §4.2.1 + f6-context-service/gui-panel.md #594）：静态占位 → 接 assemble API 渲染真实条目 + 三级大纲 + 角色/伏笔勾选 override */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { listProjectCharacters } from '../api/character';
 import {
   assembleContext,
+  listProjectForeshadowings,
+  listProjectWorldSettings,
   type ContextAssemblyResult,
   type ContextBlock,
   type ContextOverride,
@@ -56,6 +59,19 @@ function collectIds(blocks: ContextBlock[], source: ContextSourceType, metaKey: 
     .filter((id) => id !== '');
 }
 
+/** #704：搜索选择器本地选项行 */
+interface PickerOption {
+  id: string;
+  label: string;
+}
+
+/** #704：带「＋ 选择注入」按钮的分组（仅 character_setting / world_setting / foreshadowing） */
+const PICKER_SOURCES: ReadonlySet<ContextSourceType> = new Set([
+  'character_setting',
+  'world_setting',
+  'foreshadowing',
+]);
+
 export function ContextPanel({ projectId, chapterId, model, writingRequirements }: ContextPanelProps) {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
@@ -64,6 +80,13 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
   const [error, setError] = useState<string | null>(null);
   const [checkedCharacterIds, setCheckedCharacterIds] = useState<string[]>([]);
   const [checkedForeshadowingIds, setCheckedForeshadowingIds] = useState<string[]>([]);
+  const [checkedWorldIds, setCheckedWorldIds] = useState<string[]>([]);
+  // #704：分组「选择注入」搜索选择器状态
+  const [pickerSource, setPickerSource] = useState<ContextSourceType | null>(null);
+  const [pickerOptions, setPickerOptions] = useState<PickerOption[] | null>(null);
+  const [pickerSelection, setPickerSelection] = useState<string[]>([]);
+  const [pickerSearch, setPickerSearch] = useState('');
+  const [pickerError, setPickerError] = useState<string | null>(null);
 
   /** 调 assemble：override 由当前勾选集构建（全注入 = 空数组） */
   const runAssemble = useCallback(
@@ -83,6 +106,7 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
         // 勾选状态 = 当前响应中已注入的角色/伏笔条目（初始全注入）
         setCheckedCharacterIds(collectIds(result.blocks, 'character_setting', 'character_id'));
         setCheckedForeshadowingIds(collectIds(result.blocks, 'foreshadowing', 'foreshadowing_id'));
+        setCheckedWorldIds(collectIds(result.blocks, 'world_setting', 'world_setting_id'));
       } catch (err) {
         setData(null);
         setError(errorMessage(err));
@@ -97,8 +121,9 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
   useEffect(() => {
     setCheckedCharacterIds([]);
     setCheckedForeshadowingIds([]);
+    setCheckedWorldIds([]);
     if (projectId && chapterId && model) {
-      void runAssemble({ character_ids: [], foreshadowing_ids: [] });
+      void runAssemble({ character_ids: [], foreshadowing_ids: [], world_ids: [] });
     } else {
       setData(null);
       setError(null);
@@ -117,15 +142,106 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
         ? checkedCharacterIds.filter((candidate) => candidate !== id)
         : [...checkedCharacterIds, id];
       setCheckedCharacterIds(next);
-      void runAssemble({ character_ids: next, foreshadowing_ids: checkedForeshadowingIds });
+      void runAssemble({
+        character_ids: next,
+        foreshadowing_ids: checkedForeshadowingIds,
+        world_ids: checkedWorldIds,
+      });
     } else {
       const next = checkedForeshadowingIds.includes(id)
         ? checkedForeshadowingIds.filter((candidate) => candidate !== id)
         : [...checkedForeshadowingIds, id];
       setCheckedForeshadowingIds(next);
-      void runAssemble({ character_ids: checkedCharacterIds, foreshadowing_ids: next });
+      void runAssemble({
+        character_ids: checkedCharacterIds,
+        foreshadowing_ids: next,
+        world_ids: checkedWorldIds,
+      });
     }
   };
+
+  /** #704：打开分组搜索选择器 — 加载该组全量列表，本地选择以当前注入集合为预勾选 */
+  const openPicker = async (source: ContextSourceType) => {
+    if (!projectId) return;
+    const prechecked =
+      source === 'character_setting'
+        ? checkedCharacterIds
+        : source === 'foreshadowing'
+          ? checkedForeshadowingIds
+          : checkedWorldIds;
+    setPickerSource(source);
+    setPickerSearch('');
+    setPickerSelection(prechecked);
+    setPickerOptions(null);
+    setPickerError(null);
+    try {
+      let options: PickerOption[] = [];
+      if (source === 'character_setting') {
+        const res = await listProjectCharacters(projectId);
+        options = res.items.map((c) => ({ id: String(c.id), label: c.name }));
+      } else if (source === 'world_setting') {
+        const res = await listProjectWorldSettings(projectId);
+        options = res.items.map((w) => ({ id: String(w.id), label: w.name }));
+      } else {
+        const res = await listProjectForeshadowings(projectId);
+        options = res.items.map((f) => ({ id: String(f.id), label: f.title }));
+      }
+      setPickerOptions(options);
+    } catch (err) {
+      setPickerError(errorMessage(err));
+    }
+  };
+
+  /** 勾选/取消本地选择 */
+  const togglePickerOption = (id: string) => {
+    setPickerSelection((prev) =>
+      prev.includes(id) ? prev.filter((candidate) => candidate !== id) : [...prev, id],
+    );
+  };
+
+  /** 关闭选择器（不提交） */
+  const closePicker = () => {
+    setPickerSource(null);
+    setPickerOptions(null);
+    setPickerSelection([]);
+    setPickerSearch('');
+    setPickerError(null);
+  };
+
+  /** #704：确认 → 覆盖对应 override 白名单并重新 assemble（token 数 / 分组条目随之刷新） */
+  const confirmPicker = () => {
+    if (pickerSource === 'character_setting') {
+      setCheckedCharacterIds(pickerSelection);
+      void runAssemble({
+        character_ids: pickerSelection,
+        foreshadowing_ids: checkedForeshadowingIds,
+        world_ids: checkedWorldIds,
+      });
+    } else if (pickerSource === 'foreshadowing') {
+      setCheckedForeshadowingIds(pickerSelection);
+      void runAssemble({
+        character_ids: checkedCharacterIds,
+        foreshadowing_ids: pickerSelection,
+        world_ids: checkedWorldIds,
+      });
+    } else if (pickerSource === 'world_setting') {
+      setCheckedWorldIds(pickerSelection);
+      void runAssemble({
+        character_ids: checkedCharacterIds,
+        foreshadowing_ids: checkedForeshadowingIds,
+        world_ids: pickerSelection,
+      });
+    }
+    closePicker();
+  };
+
+  /** 搜索过滤（按名称/标题，大小写不敏感） */
+  const filteredPickerOptions = useMemo(() => {
+    if (!pickerOptions) return [];
+    const query = pickerSearch.trim().toLowerCase();
+    if (!query) return pickerOptions;
+    return pickerOptions.filter((opt) => opt.label.toLowerCase().includes(query));
+  }, [pickerOptions, pickerSearch]);
 
   if (collapsed) {
     return (
@@ -147,10 +263,11 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
   }
 
   return (
-    <aside
-      data-testid="context-panel"
-      className="flex min-h-0 flex-col"
-    >
+    <>
+      <aside
+        data-testid="context-panel"
+        className="relative flex min-h-0 flex-1 flex-col"
+      >
       <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <span className="text-[13px] font-semibold">{t('write.context.title')}</span>
         <button
@@ -193,7 +310,20 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
                   data-testid={`context-block-${source}`}
                   className="rounded-md border border-line bg-surface p-3"
                 >
-                  <div className="text-[13px] font-medium">{title}</div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate text-[13px] font-medium">{title}</span>
+                    {PICKER_SOURCES.has(source) && (
+                      <button
+                        type="button"
+                        data-testid={`context-pick-${source}`}
+                        aria-label={t('write.context.injectSelect')}
+                        className="shrink-0 rounded border border-line px-1.5 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                        onClick={() => void openPicker(source)}
+                      >
+                        {t('write.context.injectSelect')}
+                      </button>
+                    )}
+                  </div>
                   {source === 'outline' ? (
                     <div
                       data-testid="context-outline"
@@ -278,6 +408,78 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
           </>
         )}
       </div>
-    </aside>
+      {pickerSource !== null && pickerOptions !== null ? (
+        <div
+          data-testid="context-picker"
+          className="absolute inset-x-2 top-12 z-40 flex max-h-[calc(100%-4rem)] flex-col rounded-lg border border-line bg-surface shadow-xl"
+        >
+          <div className="flex items-center justify-between border-b border-line px-3 py-2">
+            <span className="text-[13px] font-semibold">
+              {pickerSource === 'character_setting'
+                ? t('write.context.characters')
+                : pickerSource === 'world_setting'
+                  ? t('write.context.world')
+                  : t('write.context.foreshadow')}
+            </span>
+          </div>
+          <div className="p-2">
+            <input
+              data-testid="context-picker-search"
+              placeholder={t('write.context.pickerSearch')}
+              value={pickerSearch}
+              onChange={(e) => setPickerSearch(e.target.value)}
+              autoFocus
+              className="w-full rounded border border-line bg-surface px-2 py-1 text-[12px] outline-none"
+            />
+          </div>
+          <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
+            {pickerError !== null ? (
+              <div className="rounded-md border border-line bg-surface p-3 text-[12px] leading-relaxed text-ink-3">
+                {pickerError}
+              </div>
+            ) : filteredPickerOptions.length === 0 ? (
+              <div className="rounded-md border border-line bg-surface p-3 text-[12px] leading-relaxed text-ink-3">
+                {t('common.empty')}
+              </div>
+            ) : (
+              filteredPickerOptions.map((opt) => (
+                <label
+                  key={opt.id}
+                  data-testid={`context-picker-opt-${opt.id}`}
+                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-[12px] text-ink-2 hover:bg-surface-3"
+                >
+                  <input
+                    type="checkbox"
+                    className="shrink-0"
+                    checked={pickerSelection.includes(opt.id)}
+                    onChange={() => togglePickerOption(opt.id)}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{opt.label}</span>
+                </label>
+              ))
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t border-line p-2">
+            <button
+              type="button"
+              data-testid="context-picker-cancel"
+              className="rounded border border-line px-2 py-1 text-[12px] text-ink-2 hover:bg-surface-3"
+              onClick={closePicker}
+            >
+              {t('dlg.cancel')}
+            </button>
+            <button
+              type="button"
+              data-testid="context-picker-confirm"
+              className="rounded bg-accent px-2 py-1 text-[12px] text-accent-ink hover:bg-accent/90"
+              onClick={confirmPicker}
+            >
+              {t('write.context.pickerAppend')}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      </aside>
+    </>
   );
 }
