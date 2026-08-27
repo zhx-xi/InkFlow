@@ -342,3 +342,47 @@ class TestStreamEventsCoverageGaps:
         assert [ev.type for ev in frames] == ["tool_call", "tool_result", "tool_call", "done"]
         assert frames[1].result == "found"
         assert frames[2].id == "tool_2"
+
+
+class _WriteToolFlowAgent:
+    """#718 fake agent - 产 save_draft 工具调用 + {ok:True} 结果，验证写工具流终止于 done."""
+
+    async def astream_events(self, inputs, version="v2"):
+        yield {
+            "event": "on_tool_start",
+            "run_id": "tool_1",
+            "name": "save_draft",
+            "data": {"input": {"content": "正文"}},
+        }
+        yield {
+            "event": "on_tool_end",
+            "run_id": "tool_1",
+            "name": "save_draft",
+            "data": {"output": '{"ok": true, "draft_id": "draft-1"}'},
+        }
+        yield {
+            "event": "on_chat_model_end",
+            "data": {"output": SimpleNamespace(
+                content="草稿已保存", tool_calls=[], response_metadata={}
+            )},
+        }
+
+
+class TestStreamEventsWriteToolTerminal:
+    """#718 写工具流必须终止于 done 帧（不无限 running），并回显工具结果."""
+
+    @pytest.mark.asyncio
+    async def test_save_draft_stream_reaches_done_and_echoes_result(self) -> None:
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        svc = ChatAgentService(agent=_WriteToolFlowAgent(), system_prompt=BASE_PROMPT)
+        frames = [ev async for ev in svc.stream_events(prompt="保存草稿", project_id=PROJECT_ID)]
+        # 终帧必须是 done（流不裸断 / 不无限运行）
+        assert frames[-1].type == "done"
+        assert frames[-1].done is True
+        # 写工具结果（{ok:True} 信封）被回吐到 tool_result 帧
+        tool_results = [ev for ev in frames if ev.type == "tool_result"]
+        assert len(tool_results) == 1
+        assert tool_results[0].name == "save_draft"
+        assert '"ok": true' in tool_results[0].result
+        assert "draft-1" in tool_results[0].result
