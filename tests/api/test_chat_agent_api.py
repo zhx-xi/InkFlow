@@ -79,7 +79,12 @@ def _stream_stub(*events):
     签名锁定 GREEN 契约：`svc.stream_events(prompt=..., chapter_context=...)`。
     """
 
-    async def _gen(prompt: str, project_id: str | None = None, chapter_context: str | None = None, cancel_event=None):
+    async def _gen(
+        prompt: str,
+        project_id: str | None = None,
+        chapter_context: str | None = None,
+        cancel_event=None,
+    ):
         for ev in events:
             yield ev
 
