@@ -119,6 +119,8 @@ class ChatAgentService:
                     )
                 elif ev.get("event") == "on_tool_end":
                     result = ev.get("data", {}).get("output")
+                    if not isinstance(result, str):
+                        result = getattr(result, "content", str(result))
                     self._collect_tool_result(ev.get("run_id"), result)
                     yield ChatStreamEvent(
                         type="tool_result",

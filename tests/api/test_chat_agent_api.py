@@ -254,6 +254,60 @@ class TestChatAgentStreamErrors:
         assert "API key invalid" not in json.dumps(frames, ensure_ascii=False)
 
 
+    @pytest.mark.asyncio
+    async def test_agent_stream_generic_exception_yields_terminal_error_frame(
+        self, override_chat_agent_service, mock_chat_agent_service, override_agent_run_repo
+    ):
+        """#710/#697：工具执行失败（非 LLMRequestError 的 generic Exception——如打包版
+        asyncio.run in running loop 抛 RuntimeError）→ 端点仍产出终帧 error（done:true）
+        不裸断流（前端不因 SSE 无终帧误判 network error）。"""
+        async def _gen(prompt, project_id=None, chapter_context=None):
+            raise RuntimeError("asyncio.run() cannot be called from a running event loop")
+            yield  # pragma: no cover
+
+        mock_chat_agent_service.stream_events = _gen
+        body = _payload()
+        async with (
+            _client() as client,
+            aconnect_sse(client, "POST", "/api/v1/chat/agent/stream", json=body) as sse,
+        ):
+            status = sse.response.status_code
+            assert status == 200
+            frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
+        assert len(frames) == 1
+        assert frames[0]["type"] == "error"
+        assert frames[0]["done"] is True
+        assert frames[0]["error"] == "Agent 执行失败，请稍后重试"
+
+    @pytest.mark.asyncio
+    async def test_agent_stream_tool_result_message_like_serialized_to_content(
+        self, override_chat_agent_service, mock_chat_agent_service, override_agent_run_repo
+    ):
+        """#710：on_tool_end 产出 LangChain ToolMessage（非 str）时，_encode_frame
+        仍应序列化其 .content 为 tool_result 帧 result（而非 TypeError → error 帧）。
+        RED：当前 _encode_frame 对 message-like result 直接 json.dumps →
+        TypeError: Object of type ToolMessage is not JSON serializable → error 帧。"""
+        msg = SimpleNamespace(content='{"ok": true, "data": []}')
+
+        async def _gen(prompt, project_id=None, chapter_context=None):
+            yield _ev("tool_call", id_="call_1", name="search_characters", args={})
+            yield _ev("tool_result", id_="call_1", name="search_characters", result=msg)
+            yield _ev("done", done=True)
+
+        mock_chat_agent_service.stream_events = _gen
+        body = _payload()
+        async with (
+            _client() as client,
+            aconnect_sse(client, "POST", "/api/v1/chat/agent/stream", json=body) as sse,
+        ):
+            status = sse.response.status_code
+            assert status == 200
+            frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
+        assert len(frames) == 3
+        assert frames[1]["type"] == "tool_result"
+        assert frames[1]["result"] == '{"ok": true, "data": []}'
+        assert frames[2]["type"] == "done"
+
 # ── 校验错误路径 ────────────────────────────────────────────────
 
 
