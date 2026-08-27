@@ -62,12 +62,14 @@ class AgentRunStatus(StrEnum):
         RUNNING: 运行中（初始态）.
         COMPLETED: LLM 自然终止（产出最终正文）.
         FAILED: 异常失败（异常抛出路径）.
+        TERMINATED: 用户中断（chat 流 abort，#719）.
         TERMINATED_BY_GUARDRAIL: 护栏终止（产物保留，非异常）.
     """
 
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    TERMINATED = "terminated"
     TERMINATED_BY_GUARDRAIL = "terminated_by_guardrail"
 
 

@@ -25,6 +25,25 @@ def _chunk_stream(text: str, size: int = 6) -> list[str]:
     return [text[i : i + size] for i in range(0, len(text), size)]
 
 
+def _extract_reasoning_content(output: object) -> str:
+    """从 on_chat_model_end 的 AIMessage 提取思考内容（reasoning_content，#727）。
+
+    DeepSeek 等推理模型把思考过程放进 additional_kwargs["reasoning_content"]，
+    个别实现直接暴露 reasoning_content 属性；均用 getattr 守卫，缺失时返回空串。
+    """
+    if output is None:
+        return ""
+    additional = getattr(output, "additional_kwargs", None)
+    if isinstance(additional, dict):
+        reasoning = additional.get("reasoning_content")
+        if isinstance(reasoning, str) and reasoning:
+            return reasoning
+    reasoning = getattr(output, "reasoning_content", None)
+    if isinstance(reasoning, str) and reasoning:
+        return reasoning
+    return ""
+
+
 class ChatAgentService:
     """deepagents 系统级 Agent 流式服务（组装消息 → astream_events v2 → 帧映射 + trace 收集）。
 
@@ -61,6 +80,7 @@ class ChatAgentService:
         prompt: str,
         project_id: str | None = None,
         chapter_context: str | None = None,
+        cancel_event: asyncio.Event | None = None,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
         """astream_events v2 事件流 → ChatStreamEvent 帧序列 + #615 steps 收集。
 
@@ -94,16 +114,25 @@ class ChatAgentService:
             user_content = f"{prompt}\n\n章节上下文：\n{chapter_context}"
         messages = [SystemMessage(system_prompt), HumanMessage(user_content)]
         streamed_any = False
+        cancelled = False
         try:
             async for ev in self._agent.astream_events(  # type: ignore[attr-defined]  # 鸭子类型：deepagents CompiledStateGraph 提供 astream_events（v2 事件 dict 流）
                 {"messages": messages}, version="v2"
             ):
+                # #719：用户中断 → 停止继续 yield 事件（done 终帧由路由层落 TERMINATED 后自行发出）
+                if cancel_event is not None and cancel_event.is_set():
+                    cancelled = True
+                    break
                 if ev.get("event") == "on_chat_model_stream" and ev.get("run_type") == "llm":
                     chunk = ev.get("data", {}).get("chunk")
                     yield ChatStreamEvent(type="delta", delta=chunk.content)
                     streamed_any = True
                 elif ev.get("event") == "on_chat_model_end":
                     output = ev.get("data", {}).get("output")
+                    # #727：思考过程帧在 done/delta 之前产出（无思考时不影响原有行为）
+                    reasoning = _extract_reasoning_content(output)
+                    if reasoning:
+                        yield ChatStreamEvent(type="reasoning", delta=reasoning, done=False)
                     content = getattr(output, "content", "") or ""
                     if content and not streamed_any:
                         for c in _chunk_stream(content, size=6):
@@ -128,7 +157,8 @@ class ChatAgentService:
                         name=ev.get("name"),
                         result=result,
                     )
-            yield ChatStreamEvent(type="done", done=True)
+            if not cancelled:
+                yield ChatStreamEvent(type="done", done=True)
         except LLMRequestError:
             raise
         except Exception as exc:

@@ -386,3 +386,49 @@ class TestStreamEventsWriteToolTerminal:
         assert tool_results[0].name == "save_draft"
         assert '"ok": true' in tool_results[0].result
         assert "draft-1" in tool_results[0].result
+
+
+# ── #727 reasoning 帧 ──
+
+
+class _ReasoningAgent:
+    """fake agent 只产 on_chat_model_end，output 可含 additional_kwargs.reasoning_content。"""
+
+    def __init__(self, output: object) -> None:
+        self.output = output
+
+    async def astream_events(self, inputs, version="v2"):
+        yield {"event": "on_chat_model_end", "data": {"output": self.output}}
+
+
+class TestStreamEventsReasoningFrame:
+    """#727 思考过程：on_chat_model_end 消息含思考字段（reasoning_content）→ emit reasoning 帧。"""
+
+    @pytest.mark.asyncio
+    async def test_model_end_with_reasoning_content_emits_reasoning_frame(self) -> None:
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        output = SimpleNamespace(
+            content="最终答案",
+            tool_calls=[],
+            response_metadata={},
+            additional_kwargs={"reasoning_content": "让我想想…"},
+        )
+        svc = ChatAgentService(agent=_ReasoningAgent(output), system_prompt=BASE_PROMPT)
+        frames = [ev async for ev in svc.stream_events(prompt="你好", project_id=PROJECT_ID)]
+        reasoning_frames = [ev for ev in frames if ev.type == "reasoning"]
+        assert len(reasoning_frames) == 1
+        assert reasoning_frames[0].delta == "让我想想…"
+        # 思考帧序列后仍应正常收尾（done 终帧，不裸断）
+        assert frames[-1].done is True
+        assert frames[-1].type == "done"
+
+    @pytest.mark.asyncio
+    async def test_model_end_without_reasoning_yields_no_reasoning_frame(self) -> None:
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        # output 无 additional_kwargs（常见模型不返回思考）→ 不 emit reasoning 帧
+        output = SimpleNamespace(content="无思考回复", tool_calls=[], response_metadata={})
+        svc = ChatAgentService(agent=_ReasoningAgent(output), system_prompt=BASE_PROMPT)
+        frames = [ev async for ev in svc.stream_events(prompt="你好", project_id=PROJECT_ID)]
+        assert not any(ev.type == "reasoning" for ev in frames)
