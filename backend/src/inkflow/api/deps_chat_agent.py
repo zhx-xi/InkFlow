@@ -41,12 +41,14 @@ def get_chat_agent_service(
     data: deps_module.ChatStreamRequest,
     db: AsyncSession = Depends(_get_db),
 ) -> ChatAgentService:
-    """获取 ChatAgentService 实例（#597 chat 系统级 Agent：全量 5 只读 + save_draft）.
+    """获取 ChatAgentService 实例（#597：5 只读 + save_draft + 3 设定库写入）.
 
     chat_stream.py 顶层导入本函数（绑定名同一性 → dependency_overrides 命中）；
     模型/密钥/base_url 解析镜像 get_agentic_writer_service（provider_config 同源）；
     #680: reader tools 装配期注入 project_id（闭包绑定，LLM 无需自报），并注入
-    project_context_getter（context_service 7 源渲染 → 系统提示词增强）。
+    project_context_getter（context_service 7 源渲染 → 系统提示词增强）；
+    #748: 新增 3 个设定库写入工具（create_character/world_setting/outline）+ 注入
+    history_getter（ChatMessageService 加载项目历史消息 → 多轮对话有记忆）。
     """
     import uuid
 
@@ -57,6 +59,7 @@ def get_chat_agent_service(
     from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
     from inkflow.infrastructure.agent.tools.reader_tools import ReaderToolDeps
     from inkflow.infrastructure.agent.tools.save_draft_tool import SaveDraftToolDeps
+    from inkflow.infrastructure.agent.tools.setting_write_tools import SettingWriteToolDeps
     from inkflow.infrastructure.llm.provider_config import (
         _BUILTIN_PROVIDERS,
         get_provider_config,
@@ -115,6 +118,17 @@ def get_chat_agent_service(
         )
         return context_svc.render_system_prompt(result)
 
+    async def _history_getter(project_id: str) -> list:
+        """#748 加载项目最近 chat 历史（角色 user/ai 消息 → 多轮记忆注入）。"""
+        from inkflow.domain.services.chat_message_service import ChatMessageService
+        from inkflow.infrastructure.database.repositories.chat_message_repo import (
+            SQLiteChatMessageRepository,
+        )
+
+        cm_svc = ChatMessageService(repo=SQLiteChatMessageRepository(db))
+        items, _total = await cm_svc.list_messages(uuid.UUID(project_id), offset=0, limit=20)
+        return list(items)
+
     reader_tools = deps_module.build_reader_tools(
         ReaderToolDeps(
             character_service=deps_module.get_character_service(db),
@@ -132,11 +146,20 @@ def get_chat_agent_service(
             expected_chapter_id=uuid.UUID(data.chapter_id) if data.chapter_id else None,
         )
     )
+    setting_write_tools = deps_module.build_setting_write_tools(
+        SettingWriteToolDeps(
+            character_service=deps_module.get_character_service(db),
+            world_service=deps_module.get_world_service(db),
+            outline_service=deps_module.get_outline_service(db),
+            audit_service=deps_module.get_audit_service(db),
+            expected_project_id=uuid.UUID(data.project_id),
+        )
+    )
     agent = deps_module.build_deep_agent(
         model=model,
         api_key=api_key,
         base_url=base_url,
-        tools=[*reader_tools, save_draft_tool],
+        tools=[*reader_tools, save_draft_tool, *setting_write_tools],
         system_prompt=_CHAT_SYSTEM_AGENT_PROMPT,
         profile_key=None,
     )
@@ -144,4 +167,5 @@ def get_chat_agent_service(
         agent=agent,
         system_prompt=_CHAT_SYSTEM_AGENT_PROMPT,
         project_context_getter=_project_context_getter,
+        history_getter=_history_getter,
     )

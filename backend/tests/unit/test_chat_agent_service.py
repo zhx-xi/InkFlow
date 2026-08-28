@@ -432,3 +432,111 @@ class TestStreamEventsReasoningFrame:
         svc = ChatAgentService(agent=_ReasoningAgent(output), system_prompt=BASE_PROMPT)
         frames = [ev async for ev in svc.stream_events(prompt="你好", project_id=PROJECT_ID)]
         assert not any(ev.type == "reasoning" for ev in frames)
+
+
+class TestChatAgentMemoryInjection:
+    """#748 会话记忆注入 — history_getter 加载历史 messages 进消息链（多轮对话有记忆）。
+
+    契约（D5=A 三合一之「会话记忆」）:
+    1. ChatAgentService(..., history_getter=None) 构造可注入 history_getter。
+    2. history_getter(project_id) -> list[history message]（role=user/ai）。
+    3. stream_events 组装消息链：[System, 历史 user/ai..., 当前 Human]。
+    4. getter 抛异常 → 历史注入失败隔离，回退 [System, 当前 Human]（不阻断流）。
+    5. project_id=None → 不调 history_getter。
+    """
+
+    @pytest.mark.asyncio
+    async def test_history_messages_injected_between_system_and_current_user(self) -> None:
+        """history_getter 返回历史 → 消息链 = [System, 历史user, 历史ai, 当前Human]。"""
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        async def _getter(project_id: str) -> list:
+            return [
+                SimpleNamespace(role="user", content="第一轮：我的主角是林晚"),
+                SimpleNamespace(role="ai", content="好的，林晚作为主角加入主线"),
+            ]
+
+        agent = _FakeAgent()
+        svc = ChatAgentService(
+            agent=agent, system_prompt=BASE_PROMPT, history_getter=_getter
+        )
+        _, inputs = await _drain(svc, agent, prompt="第二轮：写他的背景", project_id=PROJECT_ID)
+        messages = inputs["messages"]
+        # 位置与角色映射：user→HumanMessage，ai→AIMessage
+        assert [m.content for m in messages] == [
+            BASE_PROMPT,
+            "第一轮：我的主角是林晚",
+            "好的，林晚作为主角加入主线",
+            "第二轮：写他的背景",
+        ]
+        assert isinstance(messages[1], HumanMessage)
+        assert isinstance(messages[2], AIMessage)
+
+    @pytest.mark.asyncio
+    async def test_history_getter_receives_project_id(self) -> None:
+        """history_getter 接收 project_id。"""
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        received: list[str] = []
+
+        async def _getter(project_id: str) -> list:
+            received.append(project_id)
+            return []
+
+        agent = _FakeAgent()
+        svc = ChatAgentService(
+            agent=agent, system_prompt=BASE_PROMPT, history_getter=_getter
+        )
+        await _drain(svc, agent, prompt="你好", project_id=PROJECT_ID)
+        assert received == [PROJECT_ID]
+
+    @pytest.mark.asyncio
+    async def test_history_getter_failure_falls_back_to_no_history(self) -> None:
+        """getter 抛异常 → 历史注入失败隔离，消息链回退 [System, 当前Human]。"""
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        async def _getter(project_id: str) -> list:
+            raise RuntimeError("history load failed")
+
+        agent = _FakeAgent()
+        svc = ChatAgentService(
+            agent=agent, system_prompt=BASE_PROMPT, history_getter=_getter
+        )
+        frames, inputs = await _drain(svc, agent, prompt="你好", project_id=PROJECT_ID)
+        assert [m.content for m in inputs["messages"]] == [BASE_PROMPT, "你好"]
+        assert frames[-1].done is True
+
+    @pytest.mark.asyncio
+    async def test_single_turn_when_history_getter_absent(self) -> None:
+        """未注入 history_getter（None）→ 消息链仍是 [System, 当前Human]（向后兼容）。"""
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        agent = _FakeAgent()
+        svc = ChatAgentService(agent=agent, system_prompt=BASE_PROMPT)
+        _, inputs = await _drain(svc, agent, prompt="你好", project_id=PROJECT_ID)
+        assert [m.content for m in inputs["messages"]] == [BASE_PROMPT, "你好"]
+
+    @pytest.mark.asyncio
+    async def test_history_getter_skipped_when_project_id_none(self) -> None:
+        """project_id=None → 不调 history_getter（无可追溯项目）。"""
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        called = False
+
+        async def _getter(project_id: str) -> list:
+            nonlocal called
+            called = True
+            return []
+
+        agent = _FakeAgent()
+        svc = ChatAgentService(
+            agent=agent, system_prompt=BASE_PROMPT, history_getter=_getter
+        )
+        await _drain(svc, agent, prompt="你好", project_id=None)
+        assert called is False
+        assert [m.content for m in agent.calls[0]["inputs"]["messages"]] == [
+            BASE_PROMPT,
+            "你好",
+        ]

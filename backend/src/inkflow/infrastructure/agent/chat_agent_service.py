@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Callable
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from inkflow.domain.models.agent_run import AgentStep, AgentToolCall
 from inkflow.domain.ports.llm_errors import LLMRequestError
@@ -53,6 +53,11 @@ class ChatAgentService:
         project_context_getter: #680 可选注入——async fn(prompt, project_id) -> str
             （渲染好的项目上下文段）；stream_events 组装 SystemMessage 前调用增强
             系统提示词，失败回退基础提示词（失败隔离，不阻断流）。
+        history_getter: #748 可选注入——async fn(project_id) -> list[历史消息对象]
+            （对象含 .role（"user"/"ai"）与 .content）；stream_events 组装消息链时
+            按序插入 SystemMessage 之后：role=user → HumanMessage、role=ai →
+            AIMessage，随后追加当前 HumanMessage；getter 异常 → 回退
+            [System, Human(current)]（失败隔离，不阻断流）。
     """
 
     def __init__(
@@ -61,12 +66,14 @@ class ChatAgentService:
         agent: object,
         system_prompt: str,
         project_context_getter: Callable[[str, str], Awaitable[str]] | None = None,
+        history_getter: Callable[[str], Awaitable[list[object]]] | None = None,
     ) -> None:
         self._agent = agent
         self._system_prompt = system_prompt
         self._project_context_getter: Callable[[str, str], Awaitable[str]] | None = (
             project_context_getter
         )
+        self._history_getter: Callable[[str], Awaitable[list[object]]] | None = history_getter
         # #615 trace 收集器（每次 stream_events 独立，consume_trace 消费后清空防跨请求污染）
         self._trace: list[AgentStep] = []
         self._final_content: str = ""
@@ -89,7 +96,8 @@ class ChatAgentService:
         提示词（失败隔离，不阻断流）。
 
         messages 组装镜像 ChatService.stream：[SystemMessage(system_prompt),
-        HumanMessage(prompt + 章节上下文)]；事件映射：
+        HumanMessage(prompt + 章节上下文)]；#748 注入 history_getter 时，消息链变为
+        [System, 历史 user/ai..., Human(current)]（失败隔离回退无历史形态）；事件映射：
         - on_chat_model_stream（run_type=llm）→ delta 帧
         - on_chat_model_end（完整 AIMessage）→ 收集 AgentStep（message_content +
           tool_calls + tokens）；若无流式 delta，则将完整 content 切块产出 delta 帧
@@ -112,7 +120,28 @@ class ChatAgentService:
         user_content = prompt
         if chapter_context:
             user_content = f"{prompt}\n\n章节上下文：\n{chapter_context}"
-        messages = [SystemMessage(system_prompt), HumanMessage(user_content)]
+        messages: list[object] = [SystemMessage(system_prompt), HumanMessage(user_content)]
+        if self._history_getter is not None and project_id is not None:
+            try:
+                history = await self._history_getter(project_id)
+                history_messages: list[object] = []
+                for item in history:
+                    # 防御：已归档历史跳过（对象无 is_deleted 属性则不过滤）
+                    if getattr(item, "is_deleted", False):
+                        continue
+                    role = getattr(item, "role", None)
+                    content = getattr(item, "content", "")
+                    if role == "user":
+                        history_messages.append(HumanMessage(content=content))
+                    elif role == "ai":
+                        history_messages.append(AIMessage(content=content))
+                messages = [
+                    SystemMessage(system_prompt),
+                    *history_messages,
+                    HumanMessage(user_content),
+                ]
+            except Exception:
+                pass  # 失败隔离：回退 [System, Human(current)]，不阻断流
         streamed_any = False
         cancelled = False
         try:
