@@ -35,6 +35,8 @@ const chatApiMocks = vi.hoisted(() => ({
   restoreChatMessage: vi.fn(),
   archiveChatConversation: vi.fn(),
   deleteChatConversation: vi.fn(),
+  // #744：新线程创建（GREEN api/chat.ts 新增 createChatConversation）
+  createChatConversation: vi.fn(),
   // #719：后端 abort 端点（api/chat.ts GREEN 新增 abortChatRun）
   abortChatRun: vi.fn(),
 }));
@@ -122,6 +124,7 @@ beforeEach(() => {
   chatApiMocks.restoreChatMessage.mockReset();
   chatApiMocks.archiveChatConversation.mockReset();
   chatApiMocks.deleteChatConversation.mockReset();
+  chatApiMocks.createChatConversation.mockReset();
   chatApiMocks.fetchChatMessages.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
   chatApiMocks.deleteChatMessage.mockResolvedValue(undefined);
   chatApiMocks.archiveChatConversation.mockResolvedValue(undefined);
@@ -130,6 +133,16 @@ beforeEach(() => {
     id: 'm-new', project_id: 'p1', role: 'user', content: '', intent: null, created_at: '2026-08-21T10:00:00Z',
   });
   chatApiMocks.fetchChatConversations.mockResolvedValue({ items: [], total: 0 });
+  // #744：无活动线程时 createChatConversation 建新（mock 返回 conv-<projectId> 线程）
+  chatApiMocks.createChatConversation.mockImplementation(async (projectId: string) => ({
+    conversation_id: `conv-${projectId}`,
+    project_id: projectId,
+    project_name: null,
+    last_message: '',
+    message_count: 0,
+    is_deleted: false,
+    updated_at: '2026-08-21T10:00:00Z',
+  }));
   streamChatMock.mockImplementation((body: ChatStreamBody, callbacks: ChatStreamCallbacks) => {
     capturedStreams.push({ body, callbacks });
     return Promise.resolve(() => {});

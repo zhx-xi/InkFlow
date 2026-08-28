@@ -230,6 +230,45 @@ def ensure_chat_messages_is_deleted_column(conn: Connection) -> None:
         )
 
 
+def ensure_chat_messages_conversation_id_column(conn: Connection) -> None:
+    """#744：为存量库 chat_messages 补 conversation_id 列 + 回填（幂等）。
+
+    镜像 ensure_chat_messages_is_deleted_column 形态：先查 PRAGMA table_info 确认
+    列缺失才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，等
+    create_all 建新表（自动含 conversation_id 列 + conversations 表）。
+
+    回填（幂等，仅首次缺列时执行）：
+    (1) 为还有 NULL conversation_id 消息的项目各建一条 conversation，并链接
+        （每项目取最早一条 conversation）；
+    (2) UPDATE chat_messages SET conversation_id = 该项目最早 conversation.id。
+    """
+    cols = conn.execute(text("PRAGMA table_info(chat_messages)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return  # 表不存在（全新环境）→ create_all 建新表（自动含 conversation_id 列）
+    if "conversation_id" not in names:
+        conn.execute(text("ALTER TABLE chat_messages ADD COLUMN conversation_id INTEGER"))
+    # 回填：为还有 NULL conversation_id 消息的项目各建一条 conversation，并链接
+    # （幂等，仅首次缺列时执行）
+    # ① 建 conversation
+    conn.execute(
+        text(
+            "INSERT INTO conversations (project_id, created_at, is_deleted) "
+            "SELECT DISTINCT project_id, CURRENT_TIMESTAMP, 0 FROM chat_messages "
+            "WHERE conversation_id IS NULL"
+        )
+    )
+    # ② 链接（每项目取其最早一条 conversation）
+    conn.execute(
+        text(
+            "UPDATE chat_messages SET conversation_id = ("
+            "  SELECT c.id FROM conversations c WHERE c.project_id = chat_messages.project_id "
+            "ORDER BY c.id LIMIT 1"
+            ") WHERE conversation_id IS NULL"
+        )
+    )
+
+
 def ensure_world_parent_id_column(conn: Connection) -> None:
     """#173：为既有库 world_settings 补 parent_id 列 + 替换唯一索引（幂等）.
 

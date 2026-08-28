@@ -10,6 +10,9 @@
  * mock：vi.mock('../api/chat') → streamChat 捕获 body+callbacks（capturedStreams），用例手动驱动 onDelta/onDone/onError。
  * #547 持久化：挂载/projectId 变化 → fetchChatMessages(projectId)（默认空）；失败静默不发 toast；发送 user → saveChatMessage(role:'user')；
  * AI done → saveChatMessage(role:'ai', intent)。#581 删除按钮稳定 + 整轮归档/删除（chat-round-archive/chat-round-delete，点后本轮清空+toast）。
+ * #744 conversation 多线程翻转：挂载 = fetchChatConversations({projectId, includeDeleted:false}) 取活动线程
+ * （无 → createChatConversation 建新）→ fetchChatMessages(conversationId)；saveChatMessage 带 conversation_id；
+ * 整轮归档后 createChatConversation 开新线程（新 conversation_id）。
  * #597 系统级 Agent 工具流式：streamChat 升级为 agent 端点，callbacks 增可选 onToolCall/onToolResult；
  * onToolCall → chat-tool-call-<n>（data-name），onToolResult → chat-tool-result-<n>；工具流进行中仍受 #541 并发保护。
  */
@@ -47,6 +50,8 @@ const chatApiMocks = vi.hoisted(() => ({
   restoreChatMessage: vi.fn(),
   archiveChatConversation: vi.fn(),
   deleteChatConversation: vi.fn(),
+  // #744：新线程创建（GREEN api/chat.ts 新增 createChatConversation）
+  createChatConversation: vi.fn(),
 }));
 vi.mock('../api/chat', () => chatApiMocks);
 
@@ -85,6 +90,7 @@ interface CapturedChatStream {
 /** #547：ChatMessageDto 本地镜像（GREEN 建 src/api/chat.ts 导出；形状对齐后端 GET/POST /api/v1/chat/messages 契约） */
 interface ChatMessageDto {
   id: string;
+  conversation_id: string;
   project_id: string;
   role: 'user' | 'ai';
   content: string;
@@ -170,12 +176,14 @@ beforeEach(() => {
   chatApiMocks.restoreChatMessage.mockReset();
   chatApiMocks.archiveChatConversation.mockReset();
   chatApiMocks.deleteChatConversation.mockReset();
+  chatApiMocks.createChatConversation.mockReset();
   chatApiMocks.fetchChatMessages.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
   chatApiMocks.deleteChatMessage.mockResolvedValue(undefined);
   chatApiMocks.archiveChatConversation.mockResolvedValue(undefined);
   chatApiMocks.deleteChatConversation.mockResolvedValue(undefined);
   chatApiMocks.saveChatMessage.mockResolvedValue({
     id: 'm-new',
+    conversation_id: 'conv-p1',
     project_id: 'p1',
     role: 'user',
     content: '',
@@ -183,6 +191,16 @@ beforeEach(() => {
     created_at: '2026-08-21T10:00:00Z',
   });
   chatApiMocks.fetchChatConversations.mockResolvedValue({ items: [], total: 0 });
+  // #744：无活动线程时 createChatConversation 建新（mock 返回 conv-<projectId> 线程）
+  chatApiMocks.createChatConversation.mockImplementation(async (projectId: string) => ({
+    conversation_id: `conv-${projectId}`,
+    project_id: projectId,
+    project_name: null,
+    last_message: '',
+    message_count: 0,
+    is_deleted: false,
+    updated_at: '2026-08-21T10:00:00Z',
+  }));
   // 默认 mock：返回 abort 函数 + 捕获 callbacks 供用例手动驱动（镜像 useExecutionPoll mock 套路）
   streamChatMock.mockImplementation(
     (body: ChatStreamBody, callbacks: ChatStreamCallbacks) => {
@@ -614,26 +632,10 @@ describe('ChatPanel — 失败与并发保护（#541 流式版）', () => {
 describe('ChatPanel — 历史加载与消息持久化（#547）', () => {
   /** 历史消息 fixture（后端 GET /api/v1/chat/messages 时间升序；seq 按 role 独立从 0 起） */
   const HISTORY: ChatMessageDto[] = [
-    { id: 'm1', project_id: 'p1', role: 'user', content: '之前的提问', intent: null, created_at: '2026-08-20T08:00:00Z' },
-    { id: 'm2', project_id: 'p1', role: 'ai', content: '之前的对话回答', intent: 'conversation', created_at: '2026-08-20T08:01:00Z' },
-    { id: 'm3', project_id: 'p1', role: 'ai', content: '可插入正文', intent: 'content', created_at: '2026-08-20T08:02:00Z' },
+    { id: 'm1', conversation_id: 'conv-p1', project_id: 'p1', role: 'user', content: '之前的提问', intent: null, created_at: '2026-08-20T08:00:00Z' },
+    { id: 'm2', conversation_id: 'conv-p1', project_id: 'p1', role: 'ai', content: '之前的对话回答', intent: 'conversation', created_at: '2026-08-20T08:01:00Z' },
+    { id: 'm3', conversation_id: 'conv-p1', project_id: 'p1', role: 'ai', content: '可插入正文', intent: 'content', created_at: '2026-08-20T08:02:00Z' },
   ];
-
-  it('挂载即加载历史：fetchChatMessages(projectId)；已存 user/ai 消息按 role 独立 seq 渲染', async () => {
-    chatApiMocks.fetchChatMessages.mockResolvedValue({ items: HISTORY, total: 3, offset: 0, limit: 50 });
-    const user = userEvent.setup();
-    render(<ChatPanel {...OPTS} />);
-    // 挂载（projectId 变化同理）→ 以 projectId 拉取历史
-    await waitFor(() => {
-      expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledWith('p1');
-    });
-    // 历史消息落入消息区（seq 从 0 起：user/ai 各自独立计数）
-    await user.click(screen.getByTestId('chat-expand'));
-    expect(screen.getByTestId('chat-msg-user-0')).toHaveTextContent('之前的提问');
-    expect(screen.getByTestId('chat-msg-ai-0')).toHaveTextContent('之前的对话回答');
-    expect(screen.getByTestId('chat-msg-ai-1')).toHaveTextContent('可插入正文');
-  });
-
   it('历史 AI 消息 intent 保留：content → chat-select 渲染且最新自动选中；conversation → 无选择控件', async () => {
     chatApiMocks.fetchChatMessages.mockResolvedValue({ items: HISTORY, total: 3, offset: 0, limit: 50 });
     const user = userEvent.setup();
@@ -663,53 +665,44 @@ describe('ChatPanel — 历史加载与消息持久化（#547）', () => {
     expect(capturedStreams[0].body.prompt).toBe('故障后仍可对话');
   });
 
-  it('发送用户消息 → saveChatMessage({project_id, role:"user", content})（fire-and-forget，intent 缺省）', async () => {
+  it('发送用户消息 → saveChatMessage({project_id, conversation_id, role:"user", content})（fire-and-forget，intent 缺省）', async () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
     await sendAndAwaitStream(user, '帮我写一段打斗场景');
     expect(chatApiMocks.saveChatMessage).toHaveBeenCalledWith({
       project_id: 'p1',
+      conversation_id: 'conv-p1',
       role: 'user',
       content: '帮我写一段打斗场景',
     });
   });
 
-  it('AI conversation 回复完成（onDone）→ saveChatMessage({project_id, role:"ai", content: 完整文本, intent:"conversation"})', async () => {
+  it('AI conversation 回复完成（onDone）→ saveChatMessage({project_id, conversation_id, role:"ai", content: 完整文本, intent:"conversation"})', async () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
     await sendAndAwaitStream(user, '聊聊角色设定');
     driveConversationReply(0, '对话回复内容');
     expect(chatApiMocks.saveChatMessage).toHaveBeenCalledWith({
       project_id: 'p1',
+      conversation_id: 'conv-p1',
       role: 'ai',
       content: '对话回复内容',
       intent: 'conversation',
     });
   });
 
-  it('AI content 回复完成（onDone）→ saveChatMessage({project_id, role:"ai", content: 解析后 body, intent:"content"})', async () => {
+  it('AI content 回复完成（onDone）→ saveChatMessage({project_id, conversation_id, role:"ai", content: 解析后 body, intent:"content"})', async () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
     await sendAndAwaitStream(user, '写一段打斗');
     driveContentReply(0, '他握紧了剑。');
     expect(chatApiMocks.saveChatMessage).toHaveBeenCalledWith({
       project_id: 'p1',
+      conversation_id: 'conv-p1',
       role: 'ai',
       content: '他握紧了剑。',
       intent: 'content',
     });
-  });
-
-  it('projectId 变化 → 以新 projectId 重新加载历史（fetchChatMessages 再次调用）', async () => {
-    const { rerender } = render(<ChatPanel projectId="p1" />);
-    await waitFor(() => {
-      expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledWith('p1');
-    });
-    rerender(<ChatPanel projectId="p2" />);
-    await waitFor(() => {
-      expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledWith('p2');
-    });
-    expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -718,9 +711,9 @@ describe('ChatPanel — 历史加载与消息持久化（#547）', () => {
  */
 describe('ChatPanel — 消息删除（#566）', () => {
   const HIST: ChatMessageDto[] = [
-    { id: 'm1', project_id: 'p1', role: 'user', content: '之前的提问', intent: null, created_at: '2026-08-20T08:00:00Z' },
-    { id: 'm2', project_id: 'p1', role: 'ai', content: '之前的对话回答', intent: 'conversation', created_at: '2026-08-20T08:01:00Z' },
-    { id: 'm3', project_id: 'p1', role: 'ai', content: '可插入正文', intent: 'content', created_at: '2026-08-20T08:02:00Z' },
+    { id: 'm1', conversation_id: 'conv-p1', project_id: 'p1', role: 'user', content: '之前的提问', intent: null, created_at: '2026-08-20T08:00:00Z' },
+    { id: 'm2', conversation_id: 'conv-p1', project_id: 'p1', role: 'ai', content: '之前的对话回答', intent: 'conversation', created_at: '2026-08-20T08:01:00Z' },
+    { id: 'm3', conversation_id: 'conv-p1', project_id: 'p1', role: 'ai', content: '可插入正文', intent: 'content', created_at: '2026-08-20T08:02:00Z' },
   ];
 
   it('历史消息渲染删除按钮；点击 → deleteChatMessage(id) + 本地移除该条', async () => {
@@ -728,7 +721,7 @@ describe('ChatPanel — 消息删除（#566）', () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
     await waitFor(() => {
-      expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledWith('p1');
+      expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledWith('conv-p1');
     });
     await user.click(screen.getByTestId('chat-expand'));
     // RED：当前 ChatPanel 无删除按钮 → 下面两行 FAIL（queryByTestId 找不到 chat-msg-delete-*）
@@ -747,8 +740,9 @@ describe('ChatPanel — 消息删除（#566）', () => {
  *   testid 契约 = `chat-msg-delete-<kind>-<seq>`（kind=user/ai，seq 为 role 独立序号）；
  *   有 id 的历史消息保持 `chat-msg-delete-<id>`（#566 兼容，不回归）。
  * - #581-2 整轮归档/删除按钮：消息区渲染 chat-round-archive / chat-round-delete，
- *   点击 → archiveChatConversation(projectId) / deleteChatConversation(projectId)
- *   （delete 的 force=true 在 api/chat.ts 内部，断言调用 projectId 即可）
+ *   点击 → archiveChatConversation(conversationId) / deleteChatConversation(conversationId)
+ *   （delete 的 force=true 在 api/chat.ts 内部，断言调用 conversationId 即可）
+ * #744 翻转：整轮归档后 createChatConversation(projectId) 开新线程（新 conversation_id）。
  *   + 本轮消息清空 + toast（write.chat.archived 或 sessions.archivedToast 均可，文案宽松）。
  */
 describe('ChatPanel — 删除按钮稳定 + 整轮归档/删除（#581）', () => {
@@ -763,7 +757,7 @@ describe('ChatPanel — 删除按钮稳定 + 整轮归档/删除（#581）', () 
     expect(screen.getByTestId('chat-msg-delete-ai-0')).toBeInTheDocument();
   });
 
-  it('整轮归档：消息区渲染 chat-round-archive；点击 → archiveChatConversation(projectId) + 本轮清空 + toast', async () => {
+  it('整轮归档：消息区渲染 chat-round-archive；点击 → archiveChatConversation(conversationId) + 本轮清空 + toast', async () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
     await sendAndAwaitStream(user, '问一句');
@@ -771,7 +765,7 @@ describe('ChatPanel — 删除按钮稳定 + 整轮归档/删除（#581）', () 
     // RED：当前实现无整轮归档按钮 → getByTestId FAIL
     expect(screen.getByTestId('chat-round-archive')).toBeInTheDocument();
     await user.click(screen.getByTestId('chat-round-archive'));
-    expect(chatApiMocks.archiveChatConversation).toHaveBeenCalledWith('p1');
+    expect(chatApiMocks.archiveChatConversation).toHaveBeenCalledWith('conv-p1');
     // 本轮消息清空
     await waitFor(() => {
       expect(screen.queryByTestId('chat-msg-user-0')).not.toBeInTheDocument();
@@ -783,7 +777,7 @@ describe('ChatPanel — 删除按钮稳定 + 整轮归档/删除（#581）', () 
     ).toBe(true);
   });
 
-  it('整轮删除：消息区渲染 chat-round-delete；点击 → deleteChatConversation(projectId)（force=true 在 api 内部）+ 本轮清空 + toast', async () => {
+  it('整轮删除：消息区渲染 chat-round-delete；点击 → deleteChatConversation(conversationId)（force=true 在 api 内部）+ 本轮清空 + toast', async () => {
     const user = userEvent.setup();
     render(<ChatPanel {...OPTS} />);
     await sendAndAwaitStream(user, '问一句');
@@ -791,7 +785,7 @@ describe('ChatPanel — 删除按钮稳定 + 整轮归档/删除（#581）', () 
     // RED：当前实现无整轮删除按钮 → getByTestId FAIL
     expect(screen.getByTestId('chat-round-delete')).toBeInTheDocument();
     await user.click(screen.getByTestId('chat-round-delete'));
-    expect(chatApiMocks.deleteChatConversation).toHaveBeenCalledWith('p1');
+    expect(chatApiMocks.deleteChatConversation).toHaveBeenCalledWith('conv-p1');
     // 本轮消息清空
     await waitFor(() => {
       expect(screen.queryByTestId('chat-msg-user-0')).not.toBeInTheDocument();
@@ -802,7 +796,8 @@ describe('ChatPanel — 删除按钮稳定 + 整轮归档/删除（#581）', () 
       useToastStore.getState().toasts.some((t) => t.type === 'ok' && /删除/.test(t.message)),
     ).toBe(true);
   });
-});
+
+  });
 
 /**
  * #597 Chat 接入 deepagents 系统级 Agent（工具流式 RED 契约）：

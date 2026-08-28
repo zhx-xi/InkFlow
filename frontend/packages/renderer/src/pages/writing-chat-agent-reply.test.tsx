@@ -100,6 +100,22 @@ beforeEach(() => {
       return created;
     }
     if (path.startsWith('/api/v1/chat/messages')) return { items: savedChatMessages, total: savedChatMessages.length, offset: 0, limit: 50 };
+    // #744：conversation 多线程（ChatPanel 挂载解析活动线程 / 归档后建新线程）
+    if (path.startsWith('/api/v1/chat/conversations')) {
+      if (init?.method === 'POST') {
+        const b = init.body as { project_id: string };
+        return {
+          conversation_id: `conv-${b.project_id}`,
+          project_id: b.project_id,
+          project_name: '青云志',
+          last_message: '',
+          message_count: 0,
+          is_deleted: false,
+          updated_at: '2026-08-25T00:00:00Z',
+        };
+      }
+      return { items: [], total: 0 };
+    }
     return { items: [], total: 0, offset: 0, limit: 50 };
   });
 });

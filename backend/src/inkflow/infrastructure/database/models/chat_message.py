@@ -26,6 +26,12 @@ class ChatMessageORM(Base):
         nullable=False,
         index=True,
     )
+    conversation_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     role: Mapped[str] = mapped_column(String(10), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     intent: Mapped[str | None] = mapped_column(String(20), nullable=True)
