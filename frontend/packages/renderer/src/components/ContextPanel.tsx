@@ -135,7 +135,10 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
   );
 
   /** 勾选/取消 → 白名单 override 重新组装 */
-  const handleToggle = (source: 'character_setting' | 'foreshadowing', id: string) => {
+  const handleToggle = (
+    source: 'character_setting' | 'world_setting' | 'foreshadowing',
+    id: string,
+  ) => {
     if (source === 'character_setting') {
       const next = checkedCharacterIds.includes(id)
         ? checkedCharacterIds.filter((candidate) => candidate !== id)
@@ -146,7 +149,7 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
         foreshadowing_ids: checkedForeshadowingIds,
         world_ids: checkedWorldIds,
       });
-    } else {
+    } else if (source === 'foreshadowing') {
       const next = checkedForeshadowingIds.includes(id)
         ? checkedForeshadowingIds.filter((candidate) => candidate !== id)
         : [...checkedForeshadowingIds, id];
@@ -155,6 +158,16 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
         character_ids: checkedCharacterIds,
         foreshadowing_ids: next,
         world_ids: checkedWorldIds,
+      });
+    } else {
+      const next = checkedWorldIds.includes(id)
+        ? checkedWorldIds.filter((candidate) => candidate !== id)
+        : [...checkedWorldIds, id];
+      setCheckedWorldIds(next);
+      void runAssemble({
+        character_ids: checkedCharacterIds,
+        foreshadowing_ids: checkedForeshadowingIds,
+        world_ids: next,
       });
     }
   };
@@ -261,7 +274,7 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
           >
             {error}
           </div>
-        ) : data === null || data.blocks.length === 0 ? (
+        ) : data === null ? (
           <div
             data-testid="context-empty"
             className="rounded-md border border-line bg-surface p-3 text-[12px] leading-relaxed text-ink-3"
@@ -270,10 +283,14 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
           </div>
         ) : (
           <>
-            {SOURCE_ORDER.filter((source) => groups.has(source)).map((source) => {
+            {SOURCE_ORDER.map((source) => {
               const blocks = groups.get(source) ?? [];
               const titleKey = SOURCE_TITLE_KEYS[source];
               const title = titleKey ? t(titleKey) : (blocks[0]?.item.title ?? source);
+              const isCheckable =
+                source === 'character_setting' ||
+                source === 'world_setting' ||
+                source === 'foreshadowing';
               return (
                 <section
                   key={source}
@@ -294,58 +311,80 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
                       </button>
                     )}
                   </div>
-                  {source === 'outline' ? (
-                    <div
-                      data-testid="context-outline"
-                      className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-ink-2"
-                    >
-                      {blocks[0]?.item.content}
+                  {blocks.length === 0 ? (
+                    <div className="mt-2 text-[12px] leading-relaxed text-ink-3">
+                      {t('common.empty')}
                     </div>
-                  ) : source === 'character_setting' || source === 'foreshadowing' ? (
+                  ) : source === 'outline' ? (
+                    blocks.map((block, index) => (
+                      <div
+                        key={`outline-${index}`}
+                        data-testid={`context-item-outline-${index}`}
+                      >
+                        <div
+                          data-testid="context-outline"
+                          className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-ink-2"
+                        >
+                          {block.item.content}
+                        </div>
+                      </div>
+                    ))
+                  ) : isCheckable ? (
                     blocks.map((block, index) => {
-                      const id = String(
+                      const metaKey =
                         source === 'character_setting'
-                          ? block.item.metadata?.character_id ?? ''
-                          : block.item.metadata?.foreshadowing_id ?? '',
-                      );
+                          ? 'character_id'
+                          : source === 'world_setting'
+                            ? 'world_setting_id'
+                            : 'foreshadowing_id';
+                      const id = String(block.item.metadata?.[metaKey] ?? '');
                       const checked =
                         source === 'character_setting'
                           ? checkedCharacterIds.includes(id)
-                          : checkedForeshadowingIds.includes(id);
-                      const itemTestId =
+                          : source === 'world_setting'
+                            ? checkedWorldIds.includes(id)
+                            : checkedForeshadowingIds.includes(id);
+                      const legacyTestId =
                         source === 'character_setting'
                           ? `context-character-${index}`
-                          : `context-foreshadow-${index}`;
+                          : source === 'foreshadowing'
+                            ? `context-foreshadow-${index}`
+                            : undefined;
                       return (
-                        <label
+                        <div
                           key={`${source}-${index}`}
-                          data-testid={itemTestId}
-                          className="mt-2 flex cursor-pointer items-start gap-2"
+                          data-testid={`context-item-${source}-${index}`}
                         >
-                          <input
-                            type="checkbox"
-                            data-testid={`context-item-toggle-${index}`}
-                            checked={checked}
-                            aria-label={t('write.context.inject')}
-                            onChange={() => handleToggle(source, id)}
-                            className="mt-0.5"
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="block text-[12px] font-medium text-ink-2">
-                              {block.item.title}
+                          <label
+                            data-testid={legacyTestId}
+                            className="mt-2 flex cursor-pointer items-start gap-2"
+                          >
+                            <input
+                              type="checkbox"
+                              data-testid={`context-item-toggle-${index}`}
+                              checked={checked}
+                              aria-label={t('write.context.inject')}
+                              onChange={() => handleToggle(source, id)}
+                              className="mt-0.5"
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-[12px] font-medium text-ink-2">
+                                {block.item.title}
+                              </span>
+                              <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">
+                                {block.item.content}
+                              </span>
                             </span>
-                            <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">
-                              {block.item.content}
-                            </span>
-                          </span>
-                        </label>
+                          </label>
+                        </div>
                       );
                     })
                   ) : (
                     blocks.map((block, index) => (
                       <div
                         key={`${source}-${index}`}
-                        className="mt-1 text-[12px] leading-relaxed text-ink-3"
+                        data-testid={`context-item-${source}-${index}`}
+                        className="mt-2 text-[12px] leading-relaxed text-ink-3"
                       >
                         <span className="font-medium text-ink-2">{block.item.title}</span>
                         <div className="mt-0.5">{block.item.content}</div>

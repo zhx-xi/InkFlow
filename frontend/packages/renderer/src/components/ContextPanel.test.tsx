@@ -149,13 +149,26 @@ describe('ContextPanel — 有数据渲染真实条目（#594）', () => {
     expect(screen.queryByTestId('context-empty')).not.toBeInTheDocument();
   });
 
-  it('无数据（blocks 为空）→ 渲染空态 context-empty', async () => {
+  it('已组装但 blocks 为空 → 渲染全部注入源分组骨架 context-block-<source>（UI 组件不能少，Issue #743）', async () => {
     assembleMock.mockResolvedValue(result([]));
     render(<ContextPanel {...OPTS} />);
     await waitFor(() => {
       expect(assembleMock).toHaveBeenCalledTimes(1);
     });
-    expect(screen.getByTestId('context-empty')).toBeInTheDocument();
+    // 每个注入源分组容器都渲染（角色/大纲/世界观/伏笔/章节摘要/写作要求），即使无条目
+    for (const source of [
+      'writing_requirements',
+      'outline',
+      'character_setting',
+      'world_setting',
+      'chapter_summary',
+      'foreshadowing',
+    ]) {
+      expect(screen.getByTestId(`context-block-${source}`)).toBeInTheDocument();
+    }
+    // 不出现 JSON 原始
+    expect(screen.getByTestId('context-panel-content').querySelector('pre')).toBeNull();
+    expect(screen.getByTestId('context-panel-content').textContent).not.toMatch(/\{"source"|"metadata"/);
   });
 
   it('无 projectId/chapterId/model → 空态，不调 assemble（守护）', async () => {
@@ -322,5 +335,74 @@ describe('ContextPanel — 分组「＋ 选择注入」搜索选择器多选追�
     const req = assembleMock.mock.calls[1][0] as AssembleRequest;
     expect(req.override?.character_ids).toContain('c-b');
     expect(req.override?.character_ids).toContain('c-a');
+  });
+});
+
+describe('ContextPanel — 结构化条目契约 context-item-<source>-<i>（#743）', () => {
+  it('每个注入源条目渲染为 context-item-<source>-<i>，含 title+content+勾选框（含 world/章节摘要/writing_requirements）', async () => {
+    const summaryBlock: ContextBlock = {
+      item: {
+        source: 'chapter_summary',
+        title: '章节摘要',
+        content: '第一章摘要：初入宗门',
+        priority: 0,
+        metadata: { chapter_id: 'c1' },
+      },
+      layer: 'protected',
+      token_count: 10,
+      compressed: false,
+    };
+    const reqBlock: ContextBlock = {
+      item: {
+        source: 'writing_requirements',
+        title: '写作要求',
+        content: '小说创作',
+        priority: 0,
+        metadata: {},
+      },
+      layer: 'protected',
+      token_count: 5,
+      compressed: false,
+    };
+    assembleMock.mockResolvedValue(
+      result([
+        reqBlock,
+        characterBlock('c-a', '林晚'),
+        worldBlock('w-a', '李家'),
+        foreshadowBlock('f-a', '归墟之约'),
+        summaryBlock,
+      ]),
+    );
+    render(<ContextPanel {...OPTS} />);
+    await screen.findByTestId('context-item-character_setting-0');
+    // 角色条目：统一 testid + title + content + 勾选框
+    const charItem = screen.getByTestId('context-item-character_setting-0');
+    expect(charItem).toHaveTextContent('林晚');
+    expect(within(charItem).getByRole('checkbox')).toBeInTheDocument();
+    // 世界观条目：当前实现无勾选框 → RED
+    const worldItem = screen.getByTestId('context-item-world_setting-0');
+    expect(worldItem).toHaveTextContent('李家');
+    expect(within(worldItem).getByRole('checkbox')).toBeInTheDocument();
+    // 伏笔条目
+    const foreItem = screen.getByTestId('context-item-foreshadowing-0');
+    expect(foreItem).toHaveTextContent('归墟之约');
+    expect(within(foreItem).getByRole('checkbox')).toBeInTheDocument();
+    // 章节摘要条目（当前走裸 div，无统一 testid → RED）
+    const sumItem = screen.getByTestId('context-item-chapter_summary-0');
+    expect(sumItem).toHaveTextContent('初入宗门');
+    // 写作要求条目
+    const reqItem = screen.getByTestId('context-item-writing_requirements-0');
+    expect(reqItem).toHaveTextContent('小说创作');
+  });
+
+  it('不出现 JSON 原始数据（无 <pre>、无 {"source 字面量、无 metadata 直渲）', async () => {
+    assembleMock.mockResolvedValue(
+      result([characterBlock('c-a', '林晚'), worldBlock('w-a', '李家'), foreshadowBlock('f-a', '归墟之约')]),
+    );
+    render(<ContextPanel {...OPTS} />);
+    await screen.findByTestId('context-item-character_setting-0');
+    const panel = screen.getByTestId('context-panel-content');
+    expect(panel.querySelector('pre')).toBeNull();
+    expect(panel.textContent).not.toMatch(/\{"source"|"metadata"|"character_id"|"world_setting_id"/);
   });
 });
