@@ -1,10 +1,12 @@
 /**
- * #486 会话/记忆 UI — 会话页（访谈会话 + 执行会话：归档/恢复/删除）.
- * 访谈会话一次拉取（fetchPlannerSessions）；执行会话一次拉取含归档全量
- * （fetchSessions({ includeDeleted: true })），chips 切换为纯前端本地过滤，不重拉.
+ * #725 会话页重构 — 统一窗口 / 按项目分区 / 检索同栏 / 归档回归.
+ * 移除「访谈会话/执行会话/AI 对话」三个独立分区，统一为一个会话目录
+ * （session-directory），三类卡片以类型徽标区分；顶部项目选择器按
+ * currentProjectId 前端过滤；检索框同栏过滤标题/项目名/最后消息。
+ * 数据流：前端一次拉全量（执行含归档 / 访谈全量 / AI 对话含归档），
+ * filter chips 纯本地过滤不重拉（Q3 归档回归由测试锁定）。
  */
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   archiveSession,
   deleteSession,
@@ -22,7 +24,9 @@ import {
   type ChatConversationDto,
 } from '../api/chat';
 import { errorMessage } from '../api/client';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
+import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
 
 type SessionFilter = 'all' | 'active' | 'archived';
@@ -54,32 +58,62 @@ const FILTERS: Array<{ key: SessionFilter; labelKey: string }> = [
   { key: 'archived', labelKey: 'sessions.filter.archived' },
 ];
 
+/** 统一目录卡片项（kind 前缀防三类 id 冲突：ex-* / pl-* / conv-*） */
+type DirectoryItem =
+  | { kind: 'ex'; id: string; updatedAt: string; isDeleted: boolean; view: SessionViewDto }
+  | { kind: 'pl'; id: string; updatedAt: string; isDeleted: false; planner: PlannerSessionDto }
+  | { kind: 'conv'; id: string; updatedAt: string; isDeleted: boolean; conv: ChatConversationDto };
+
 export function SessionsPage() {
   const { t } = useI18n();
-  const navigate = useNavigate();
   const pushToast = useToastStore((s) => s.pushToast);
 
+  const projects = useProjectStore((s) => s.projects);
+  const currentProjectId = useProjectStore((s) => s.currentProjectId);
+  const loadProjects = useProjectStore((s) => s.loadProjects);
+  const selectProject = useProjectStore((s) => s.selectProject);
+
   const [plannerItems, setPlannerItems] = useState<PlannerSessionDto[]>([]);
-  const [plannerLoading, setPlannerLoading] = useState(true);
   const [sessions, setSessions] = useState<SessionViewDto[]>([]);
   // #547：AI 对话聚合列表
   const [conversations, setConversations] = useState<ChatConversationDto[]>([]);
   const [filter, setFilter] = useState<SessionFilter>('all');
+  const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [plannerLoaded, setPlannerLoaded] = useState(false);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
+  const [conversationsLoaded, setConversationsLoaded] = useState(false);
+  const projectDefaulted = useRef(false);
+  // 三类数据全部落定后才渲染目录卡片（避免异步竞态导致部分卡片闪现）
+  const allLoaded = plannerLoaded && sessionsLoaded && conversationsLoaded;
+
+  // 项目列表：项目选择器 + 按项目过滤的目录数据源
+  useEffect(() => {
+    void loadProjects();
+  }, [loadProjects]);
+
+  // 仅在未选项目（路由直入 / 初始空）时回退首个项目；不覆盖用户已选项目
+  useEffect(() => {
+    if (currentProjectId === null && projects.length > 0 && !projectDefaulted.current) {
+      projectDefaulted.current = true;
+      selectProject(projects[0].id);
+    }
+  }, [projects, currentProjectId, selectProject]);
 
   // 访谈会话：一次拉取全量（缺省分页 50）
   useEffect(() => {
     void fetchPlannerSessions()
       .then((res) => setPlannerItems(res.items))
       .catch((err) => pushToast('err', errorMessage(err)))
-      .finally(() => setPlannerLoading(false));
+      .finally(() => setPlannerLoaded(true));
   }, [pushToast]);
 
   // 执行会话：一次拉取含已归档全量，chips 切换纯本地过滤不重拉
   useEffect(() => {
     void fetchSessions({ includeDeleted: true })
       .then((res) => setSessions(res.items))
-      .catch((err) => pushToast('err', errorMessage(err)));
+      .catch((err) => pushToast('err', errorMessage(err)))
+      .finally(() => setSessionsLoaded(true));
   }, [pushToast]);
 
   // #547/#581：AI 对话聚合列表（含已归档全量，失败静默）
@@ -88,22 +122,68 @@ export function SessionsPage() {
       .then((res) => setConversations(res.items))
       .catch(() => {
         // 契约：加载失败静默，不打扰页面主体
-      });
+      })
+      .finally(() => setConversationsLoaded(true));
   }, []);
 
-  /** 过滤后可见执行会话（全部 = 不过滤；活动 = 未归档；已归档 = is_deleted） */
-  const visibleSessions = useMemo(() => {
-    if (filter === 'active') return sessions.filter((v) => !v.session.is_deleted);
-    if (filter === 'archived') return sessions.filter((v) => v.session.is_deleted);
-    return sessions;
-  }, [sessions, filter]);
+  /** 统一目录：三类会话按 currentProjectId 合并 → filter/search 过滤 → updated_at 倒序 */
+  const directoryItems = useMemo(() => {
+    const projectSessions = sessions.filter((v) => v.session.project_id === currentProjectId);
+    const projectPlanners = plannerItems.filter((p) => p.project_id === currentProjectId);
+    const projectConvs = conversations.filter((c) => c.project_id === currentProjectId);
+    // 统一窗口无条件合并三类（#725 Q1=A / Q3）：执行 + 访谈 + AI 对话
+    const items: DirectoryItem[] = [
+      ...projectSessions.map((view) => ({
+        kind: 'ex' as const,
+        id: view.session.id,
+        updatedAt: view.session.updated_at,
+        isDeleted: view.session.is_deleted,
+        view,
+      })),
+      ...projectPlanners.map((planner) => ({
+        kind: 'pl' as const,
+        id: planner.id,
+        updatedAt: planner.updated_at,
+        isDeleted: false as const,
+        planner,
+      })),
+      ...projectConvs.map((conv) => ({
+        kind: 'conv' as const,
+        id: `conv-${conv.project_id}`,
+        updatedAt: conv.updated_at,
+        isDeleted: conv.is_deleted,
+        conv,
+      })),
+    ];
 
-  /** #581：过滤后可见 AI 对话（全部 = 不过滤；活动 = 未归档；已归档 = is_deleted） */
-  const visibleConversations = useMemo(() => {
-    if (filter === 'active') return conversations.filter((c) => !c.is_deleted);
-    if (filter === 'archived') return conversations.filter((c) => c.is_deleted);
-    return conversations;
-  }, [conversations, filter]);
+    return items
+      .filter((item) => {
+        if (filter === 'archived') return item.isDeleted;
+        if (filter === 'active') return !item.isDeleted;
+        return true;
+      })
+      .filter((item) => {
+        const q = search.trim().toLowerCase();
+        if (!q) return true;
+        const projectName = (projectId: string | null): string =>
+          projects.find((p) => p.id === projectId)?.name ?? '';
+        if (item.kind === 'ex') {
+          const s = item.view.session;
+          return [s.title, projectName(s.project_id), item.view.last_log?.message ?? ''].some((f) =>
+            f.toLowerCase().includes(q),
+          );
+        }
+        if (item.kind === 'pl') {
+          return [item.planner.one_liner, projectName(item.planner.project_id)].some((f) =>
+            f.toLowerCase().includes(q),
+          );
+        }
+        return [item.conv.project_name ?? '', item.conv.last_message].some((f) =>
+          f.toLowerCase().includes(q),
+        );
+      })
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }, [sessions, plannerItems, conversations, projects, currentProjectId, filter, search]);
 
   const handleArchive = async (id: string): Promise<void> => {
     try {
@@ -187,249 +267,255 @@ export function SessionsPage() {
     <div data-testid="sessions-page" className="mx-auto max-w-[1080px] px-12 py-10">
       <h1 className="font-serif text-[26px] font-semibold">{t('sessions.title')}</h1>
 
-      {/* 访谈会话区块 */}
-      <section data-testid="planner-section" className="mt-8">
-        <h2 className="text-[15px] font-semibold text-ink">{t('sessions.planner.title')}</h2>
-        {plannerLoading ? (
-          <div
-            data-testid="planner-loading"
-            className="mt-3 rounded-lg border border-line bg-surface px-4 py-6 text-center text-[13px] text-ink-2"
+      {/* 顶部工具条：项目选择器 + 检索框（与会话目录同栏） */}
+      <div className="mt-5 flex flex-wrap items-center gap-4">
+        <Select value={currentProjectId ?? undefined} onValueChange={selectProject}>
+          <SelectTrigger
+            data-testid="sessions-project-select"
+            aria-label={t('lib.projectSelect')}
+            className="w-56"
           >
-            {t('sessions.planner.loading')}
-          </div>
-        ) : plannerItems.length === 0 ? (
-          <div
-            data-testid="planner-empty"
-            className="mt-3 flex flex-col items-center justify-center rounded-lg border border-dashed border-line bg-surface px-6 py-12 text-center"
-          >
-            <p className="font-serif text-[15px] font-semibold text-ink">
-              {t('sessions.planner.empty')}
-            </p>
-            <button
-              type="button"
-              data-testid="planner-go-book"
-              className="mt-4 rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-              onClick={() => navigate('/book')}
-            >
-              {t('sessions.planner.goBook')}
-            </button>
-          </div>
-        ) : (
-          <ul className="mt-3 space-y-3">
-            {plannerItems.map((item) => (
-              <li
-                key={item.id}
-                data-testid="planner-card"
-                className="rounded-lg border border-line bg-surface p-4"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    data-testid={`planner-status-${item.id}`}
-                    className="rounded bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-ink-2"
-                  >
-                    {PLANNER_STATUS_LABEL[item.status]
-                      ? t(PLANNER_STATUS_LABEL[item.status])
-                      : item.status}
-                  </span>
-                  <span
-                    data-testid={`planner-confirmed-${item.id}`}
-                    className="ml-auto text-[12px] text-ink-3"
-                  >
-                    {t('sessions.planner.confirmed', { n: (item.confirmed_items ?? []).length })}
-                  </span>
-                </div>
-                <h3 className="mt-2 font-serif text-[15px] font-semibold text-ink">
-                  <span data-testid={`planner-one-liner-${item.id}`}>{item.one_liner}</span>
-                </h3>
-                {item.writing_plan_id ? (
-                  <span
-                    data-testid={`planner-writing-plan-${item.id}`}
-                    className="mt-2 inline-block rounded bg-surface-3 px-2 py-0.5 text-[12px] text-ink-2"
-                  >
-                    {t('sessions.planner.writingPlan')}
-                  </span>
-                ) : null}
-              </li>
+            <SelectValue placeholder={t('lib.projectSelect')} />
+          </SelectTrigger>
+          <SelectContent>
+            {projects.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.name}
+              </SelectItem>
             ))}
-          </ul>
-        )}
-      </section>
+          </SelectContent>
+        </Select>
+        <input
+          type="text"
+          data-testid="sessions-search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={t('sessions.search.placeholder')}
+          className="h-9 min-w-[220px] flex-1 rounded-md border border-line bg-surface px-3 text-[13px] text-ink transition-colors placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-bg"
+        />
+      </div>
 
-      {/* 执行会话区块 */}
-      <section data-testid="sessions-section" className="mt-10">
-        <h2 className="text-[15px] font-semibold text-ink">{t('sessions.runs.title')}</h2>
-        <div className="mt-3 flex gap-2">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              data-testid={`sessions-filter-${f.key}`}
-              aria-pressed={filter === f.key}
-              className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink aria-pressed:border-accent aria-pressed:bg-accent-weak aria-pressed:text-accent"
-              onClick={() => setFilter(f.key)}
-            >
-              {t(f.labelKey)}
-            </button>
-          ))}
-        </div>
+      {/* filter chips：作用于整个目录（本地过滤，不重拉） */}
+      <div className="mt-3 flex gap-2">
+        {FILTERS.map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            data-testid={`sessions-filter-${f.key}`}
+            aria-pressed={filter === f.key}
+            className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink aria-pressed:border-accent aria-pressed:bg-accent-weak aria-pressed:text-accent"
+            onClick={() => setFilter(f.key)}
+          >
+            {t(f.labelKey)}
+          </button>
+        ))}
+      </div>
 
-        {visibleSessions.length === 0 ? (
+      {/* 统一目录：AI 对话 + 访谈 + 执行 合并展示 */}
+      <div data-testid="session-directory" className="mt-6">
+        {!allLoaded || directoryItems.length === 0 ? (
           <div
             data-testid="sessions-empty"
-            className="mt-3 rounded-lg border border-dashed border-line bg-surface px-6 py-12 text-center text-[13px] text-ink-2"
+            className="rounded-lg border border-dashed border-line bg-surface px-6 py-12 text-center text-[13px] text-ink-2"
           >
             {t('sessions.empty')}
           </div>
         ) : (
-          <ul className="mt-3 space-y-3">
-            {visibleSessions.map((view) => {
-              const s = view.session;
-              return (
-                <li
-                  key={s.id}
-                  data-testid="session-card"
-                  className="rounded-lg border border-line bg-surface p-4"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-serif text-[15px] font-semibold text-ink">
-                      <span data-testid={`session-title-${s.id}`}>{s.title}</span>
-                    </h3>
-                    <span
-                      data-testid={`session-status-${s.id}`}
-                      className="rounded bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-ink-2"
-                    >
-                      {SESSION_STATUS_LABEL[s.status]
-                        ? t(SESSION_STATUS_LABEL[s.status])
-                        : s.status}
-                    </span>
-                    <span
-                      data-testid={`session-type-${s.id}`}
-                      className="rounded bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-ink-2"
-                    >
-                      {SESSION_TYPE_LABEL[s.session_type]
-                        ? t(SESSION_TYPE_LABEL[s.session_type])
-                        : s.session_type}
-                    </span>
-                    {s.is_deleted && (
-                      <span
-                        data-testid={`session-archived-${s.id}`}
-                        className="rounded bg-surface-3 px-2 py-0.5 text-[11px] text-ink-3"
-                      >
-                        {t('sessions.archived')}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-3 flex gap-2">
-                    {!s.is_deleted ? (
-                      <button
-                        type="button"
-                        data-testid={`session-archive-${s.id}`}
-                        className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink"
-                        onClick={() => void handleArchive(s.id)}
-                      >
-                        {t('sessions.archive')}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        data-testid={`session-restore-${s.id}`}
-                        className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink"
-                        onClick={() => void handleRestore(s.id)}
-                      >
-                        {t('sessions.restore')}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      data-testid={`session-delete-${s.id}`}
-                      className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:border-err/50 hover:text-err"
-                      onClick={() => setDeleteTarget(s.id)}
-                    >
-                      {t('sessions.delete')}
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      {/* #547：AI 对话区块 */}
-      <section data-testid="chat-conversations-section" className="mt-10">
-        <h2 className="text-[15px] font-semibold text-ink">{t('sessions.chat.title')}</h2>
-        {visibleConversations.length === 0 ? (
-          <div
-            data-testid="chat-conversations-empty"
-            className="mt-3 rounded-lg border border-dashed border-line bg-surface px-6 py-12 text-center text-[13px] text-ink-2"
-          >
-            {t('sessions.chat.empty')}
-          </div>
-        ) : (
-          <ul className="mt-3 space-y-3">
-            {visibleConversations.map((conv) => (
+          <ul className="space-y-3">
+            {directoryItems.map((item) => (
               <li
-                key={conv.project_id}
-                data-testid="chat-conversation-card"
+                key={`${item.kind}-${item.id}`}
+                data-testid="session-directory-card"
                 className="rounded-lg border border-line bg-surface p-4"
               >
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="font-serif text-[15px] font-semibold text-ink">
-                    {conv.project_name ?? t('sessions.chat.unknownProject')}
-                  </h3>
-                  <span className="ml-auto rounded bg-surface-3 px-2 py-0.5 text-[12px] text-ink-2">
-                    {t('sessions.chat.count', { n: conv.message_count })}
-                  </span>
-                </div>
-                <p className="mt-2 truncate text-[13px] text-ink-2">{conv.last_message}</p>
-                <div className="mt-3 flex gap-2">
-                  {!conv.is_deleted ? (
-                    <button
-                      type="button"
-                      data-testid={`chat-conv-archive-${conv.project_id}`}
-                      className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink"
-                      onClick={() => void handleArchiveConversation(conv.project_id)}
-                    >
-                      {t('sessions.archive')}
-                    </button>
-                  ) : (
-                    <>
+                {item.kind === 'ex' ? (
+                  <>
+                    <div className="flex flex-wrap items-center gap-2">
                       <span
-                        data-testid={`chat-conv-archived-${conv.project_id}`}
-                        className="rounded bg-surface-3 px-2 py-0.5 text-[11px] text-ink-3"
+                        data-testid={`session-type-${item.view.session.id}`}
+                        className="rounded bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-ink-2"
                       >
-                        {t('sessions.archived')}
+                        {t('sessions.badge.execution')}
                       </span>
+                      <span className="rounded bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-ink-3">
+                        {SESSION_TYPE_LABEL[item.view.session.session_type]
+                          ? t(SESSION_TYPE_LABEL[item.view.session.session_type])
+                          : item.view.session.session_type}
+                      </span>
+                      <span
+                        data-testid={`session-status-${item.view.session.id}`}
+                        className="rounded bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-ink-2"
+                      >
+                        {SESSION_STATUS_LABEL[item.view.session.status]
+                          ? t(SESSION_STATUS_LABEL[item.view.session.status])
+                          : item.view.session.status}
+                      </span>
+                      {item.view.session.is_deleted && (
+                        <span
+                          data-testid={`session-archived-${item.view.session.id}`}
+                          className="rounded bg-surface-3 px-2 py-0.5 text-[11px] text-ink-3"
+                        >
+                          {t('sessions.archived')}
+                        </span>
+                      )}
+                      <h3 className="ml-auto font-serif text-[15px] font-semibold text-ink">
+                        <span data-testid={`session-title-${item.view.session.id}`}>
+                          {item.view.session.title}
+                        </span>
+                      </h3>
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      {!item.view.session.is_deleted ? (
+                        <button
+                          type="button"
+                          data-testid={`session-archive-${item.view.session.id}`}
+                          className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink"
+                          onClick={() => void handleArchive(item.view.session.id)}
+                        >
+                          {t('sessions.archive')}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          data-testid={`session-restore-${item.view.session.id}`}
+                          className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink"
+                          onClick={() => void handleRestore(item.view.session.id)}
+                        >
+                          {t('sessions.restore')}
+                        </button>
+                      )}
                       <button
                         type="button"
-                        data-testid={`chat-conv-restore-${conv.project_id}`}
-                        className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink"
-                        onClick={() => void handleRestoreConversation(conv.project_id)}
+                        data-testid={`session-delete-${item.view.session.id}`}
+                        className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:border-err/50 hover:text-err"
+                        onClick={() => setDeleteTarget(item.view.session.id)}
                       >
-                        {t('sessions.restore')}
+                        {t('sessions.delete')}
                       </button>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    data-testid={`chat-conv-delete-${conv.project_id}`}
-                    className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:border-err/50 hover:text-err"
-                    onClick={() => void handleDeleteConversation(conv.project_id)}
-                  >
-                    {t('sessions.delete')}
-                  </button>
-                </div>
-                <span
-                  data-testid={`chat-conversation-updated-${conv.project_id}`}
-                  className="mt-2 block text-[11px] text-ink-3"
-                >
-                  {conv.updated_at}
-                </span>
+                    </div>
+                  </>
+                ) : item.kind === 'pl' ? (
+                  <>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        data-testid={`session-type-${item.planner.id}`}
+                        className="rounded bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-ink-2"
+                      >
+                        {t('sessions.badge.interview')}
+                      </span>
+                      <span
+                        data-testid={`session-status-${item.planner.id}`}
+                        className="rounded bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-ink-2"
+                      >
+                        {PLANNER_STATUS_LABEL[item.planner.status]
+                          ? t(PLANNER_STATUS_LABEL[item.planner.status])
+                          : item.planner.status}
+                      </span>
+                      <span
+                        data-testid={`planner-confirmed-${item.planner.id}`}
+                        className="ml-auto text-[12px] text-ink-3"
+                      >
+                        {t('sessions.planner.confirmed', { n: (item.planner.confirmed_items ?? []).length })}
+                      </span>
+                    </div>
+                    <h3 className="mt-2 font-serif text-[15px] font-semibold text-ink">
+                      <span data-testid={`session-title-${item.planner.id}`}>
+                        {item.planner.one_liner}
+                      </span>
+                    </h3>
+                    {item.planner.writing_plan_id ? (
+                      <span
+                        data-testid={`planner-writing-plan-${item.planner.id}`}
+                        className="mt-2 inline-block rounded bg-surface-3 px-2 py-0.5 text-[12px] text-ink-2"
+                      >
+                        {t('sessions.planner.writingPlan')}
+                      </span>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        data-testid={`session-type-conv-${item.conv.project_id}`}
+                        className="rounded bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-ink-2"
+                      >
+                        {t('sessions.badge.ai')}
+                      </span>
+                      {!item.conv.is_deleted ? (
+                        <span
+                          data-testid={`session-status-conv-${item.conv.project_id}`}
+                          className="rounded bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-ink-2"
+                        >
+                          {t('sessions.status.active')}
+                        </span>
+                      ) : (
+                        <>
+                          <span
+                            data-testid={`session-archived-conv-${item.conv.project_id}`}
+                            className="rounded bg-surface-3 px-2 py-0.5 text-[11px] text-ink-3"
+                          >
+                            {t('sessions.archived')}
+                          </span>
+                          <span
+                            data-testid={`chat-conv-archived-${item.conv.project_id}`}
+                            className="rounded bg-surface-3 px-2 py-0.5 text-[11px] text-ink-3"
+                          >
+                            {t('sessions.archived')}
+                          </span>
+                        </>
+                      )}
+                      <h3 className="font-serif text-[15px] font-semibold text-ink">
+                        <span data-testid={`session-title-conv-${item.conv.project_id}`}>
+                          {item.conv.project_name ?? t('sessions.chat.unknownProject')}
+                        </span>
+                      </h3>
+                      <span className="ml-auto rounded bg-surface-3 px-2 py-0.5 text-[12px] text-ink-2">
+                        {t('sessions.chat.count', { n: item.conv.message_count })}
+                      </span>
+                    </div>
+                    <p className="mt-2 truncate text-[13px] text-ink-2">{item.conv.last_message}</p>
+                    <div className="mt-3 flex gap-2">
+                      {!item.conv.is_deleted ? (
+                        <button
+                          type="button"
+                          data-testid={`chat-conv-archive-${item.conv.project_id}`}
+                          className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink"
+                          onClick={() => void handleArchiveConversation(item.conv.project_id)}
+                        >
+                          {t('sessions.archive')}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          data-testid={`chat-conv-restore-${item.conv.project_id}`}
+                          className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink"
+                          onClick={() => void handleRestoreConversation(item.conv.project_id)}
+                        >
+                          {t('sessions.restore')}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        data-testid={`chat-conv-delete-${item.conv.project_id}`}
+                        className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:border-err/50 hover:text-err"
+                        onClick={() => void handleDeleteConversation(item.conv.project_id)}
+                      >
+                        {t('sessions.delete')}
+                      </button>
+                    </div>
+                    <span
+                      data-testid={`chat-conversation-updated-${item.conv.project_id}`}
+                      className="mt-2 block text-[11px] text-ink-3"
+                    >
+                      {item.conv.updated_at}
+                    </span>
+                  </>
+                )}
               </li>
             ))}
           </ul>
         )}
-      </section>
+      </div>
 
       {/* 删除确认对话框（受控 state deleteTarget） */}
       {deleteTarget && (
