@@ -225,4 +225,35 @@ describe('ChatPanel — #744 conversation 多线程（归档后开新线程）',
     });
     expect(useToastStore.getState().toasts.some((t) => t.type === 'ok' && /归档/.test(t.message))).toBe(true);
   });
+
+  it('#744 回归：挂载时 fetchChatConversations 返回其它项目活动线程 → 不选中（按 project_id 过滤）→ 为本项目 createChatConversation 建新', async () => {
+    // 后端 GET /conversations 忽略 project_id 返回全部，含其它项目（p9）活动线程
+    chatApiMocks.fetchChatMessages.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
+    chatApiMocks.fetchChatConversations.mockResolvedValue({
+      items: [
+        {
+          conversation_id: 'conv-other',
+          project_id: 'p9',
+          project_name: '另一项目',
+          last_message: '别的项目消息',
+          message_count: 1,
+          is_deleted: false,
+          updated_at: '2026-08-21T10:00:00Z',
+        },
+      ],
+      total: 1,
+    });
+    render(<ChatPanel {...OPTS} />);
+    // 不应加载其它项目线程
+    await waitFor(() => {
+      expect(chatApiMocks.fetchChatMessages).not.toHaveBeenCalledWith('conv-other');
+    });
+    // 应为当前项目 p1 建新线程并加载其空历史
+    await waitFor(() => {
+      expect(chatApiMocks.createChatConversation).toHaveBeenCalledWith('p1');
+    });
+    await waitFor(() => {
+      expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledWith('conv-p1');
+    });
+  });
 });

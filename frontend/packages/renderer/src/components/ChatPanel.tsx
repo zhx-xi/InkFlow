@@ -120,7 +120,10 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
       try {
         const convs = await fetchChatConversations({ projectId, includeDeleted: false });
         if (cancelled) return;
-        const active = convs.items.find((c) => !c.is_deleted) ?? null;
+        // #744：后端 GET /conversations 忽略 project_id，返回全部线程 → 必须本地按 project_id 过滤，
+        // 否则会选到其它项目的活动线程（e2e 写作页跨用例消息残留根因）
+        const active =
+          convs.items.find((c) => c.project_id === projectId && !c.is_deleted) ?? null;
         let cid = active ? active.conversation_id : null;
         if (!cid) {
           const created = await createChatConversation(projectId);
