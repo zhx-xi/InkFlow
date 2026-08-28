@@ -57,12 +57,12 @@ const LIBRARY_ITEMS: NavItemDef[] = [
   { key: 'foreshadow', href: '/library?cat=foreshadow', labelKey: 'nav.lib.foreshadow', icon: Sparkles },
   { key: 'knowledge', href: '/library?cat=knowledge', labelKey: 'nav.lib.knowledge', icon: Database },
   { key: 'search', href: '/search', labelKey: 'nav.search', icon: Search },
+  { key: 'sessions', href: '/sessions', labelKey: 'nav.sessions', icon: History },
 ];
 
 /** agent 快捷入口直达 /settings?cat=agent */
 const SYSTEM_ITEMS: NavItemDef[] = [
   { key: 'agent', href: '/settings?cat=agent', labelKey: 'nav.agent', icon: Bot },
-  { key: 'sessions', href: '/sessions', labelKey: 'nav.sessions', icon: History },
   { key: 'memory', href: '/memory', labelKey: 'nav.memory', icon: Brain },
   { key: 'settings', href: '/settings', labelKey: 'nav.settings', icon: Settings },
 ];
