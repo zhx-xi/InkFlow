@@ -156,7 +156,7 @@ export function WritingPage() {
       const startW = railWidth;
       document.body.style.userSelect = 'none';
       const onMove = (ev: MouseEvent) => {
-        const next = Math.max(90, Math.min(540, startW + (ev.clientX - startX)));
+        const next = Math.max(90, Math.min(540, startW + (startX - ev.clientX)));
         setRailWidth(next);
       };
       const onUp = () => {
@@ -419,30 +419,25 @@ export function WritingPage() {
           className="relative flex shrink-0 flex-col border-l border-line bg-surface-2"
           style={{ width: railCollapsed ? 26 : railWidth }}
         >
-          <div
-            data-testid="right-col-handle"
-            className="absolute left-0 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-md border border-line bg-surface shadow-sm"
+          <button
+            type="button"
+            data-testid="right-col-toggle"
+            aria-label={railCollapsed ? '展开右栏' : '收起右栏'}
+            onClick={() => setRailCollapsed((c) => !c)}
+            className="flex h-8 w-full shrink-0 items-center justify-center border-b border-line text-[12px] text-ink-3 hover:bg-surface-3 hover:text-ink"
           >
-            <button
-              type="button"
+            {railCollapsed ? '«' : '»'}
+          </button>
+          {railCollapsed ? null : (
+            <div
               data-testid="right-col-drag"
               aria-label="拖拽调整右栏宽度"
-              disabled={railCollapsed}
-              onMouseDown={railCollapsed ? undefined : startRailColResize}
-              className="flex h-7 w-7 cursor-col-resize items-center justify-center border-r border-line text-[10px] text-ink-3 hover:bg-surface-3 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+              onMouseDown={startRailColResize}
+              className="absolute left-0 top-0 z-10 h-full w-1 cursor-col-resize bg-transparent hover:bg-line/60"
             >
               &nbsp;
-            </button>
-            <button
-              type="button"
-              data-testid="right-col-toggle"
-              aria-label={railCollapsed ? '展开右栏' : '收起右栏'}
-              onClick={() => setRailCollapsed((c) => !c)}
-              className="flex h-7 w-7 items-center justify-center text-[12px] text-ink-3 hover:bg-surface-3 hover:text-ink"
-            >
-              {railCollapsed ? '«' : '»'}
-            </button>
-          </div>
+            </div>
+          )}
 
           {railCollapsed ? null : (
             <>
