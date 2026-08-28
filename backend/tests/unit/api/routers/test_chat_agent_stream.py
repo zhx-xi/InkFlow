@@ -69,6 +69,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 from inkflow.api.routers.chat_stream import ChatStreamRequest, stream_chat_agent
 from inkflow.domain.models.agent_run import AgentRun
@@ -390,10 +391,23 @@ class TestGetChatAgentService:
     @patch("inkflow.api.deps.get_summary_service")
     @patch("inkflow.api.deps.get_foreshadowing_service")
     @patch("inkflow.api.deps.get_character_service")
+    @patch("inkflow.core.config.config")
+    @patch(
+        "inkflow.infrastructure.llm.provider_config.get_provider_config"
+    )
     def test_assembles_full_tools(
-        self, m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_rt, m_sd, m_da
+        self, m_get_provider, m_config, m_char, m_foresh, m_sum,
+        m_draft, m_audit, m_audit_ch, m_rt, m_sd, m_da,
     ) -> None:
         """全量工具面：5 只读 + save_draft → build_deep_agent；返回 ChatAgentService。"""
+        m_config.llm_default_model = MODEL
+        m_config.model_routing = {}
+        from inkflow.infrastructure.llm.provider_config import LLMProviderConfig
+
+        m_get_provider.return_value = LLMProviderConfig(
+            provider="deepseek", api_key=API_KEY, base_url=BASE_URL,
+            default_model=MODEL, models=[],
+        )
         data = ChatStreamRequest(project_id=PROJECT_ID, chapter_id=CHAPTER_ID, prompt="你好")
         m_rt.return_value = [_fake_tool(name) for name in EXPECTED_READER_NAMES]
         m_sd.return_value = _fake_tool("save_draft")
@@ -436,10 +450,23 @@ class TestGetChatAgentService:
     @patch("inkflow.api.deps.get_summary_service")
     @patch("inkflow.api.deps.get_foreshadowing_service")
     @patch("inkflow.api.deps.get_character_service")
+    @patch("inkflow.core.config.config")
+    @patch(
+        "inkflow.infrastructure.llm.provider_config.get_provider_config"
+    )
     def test_assembles_without_chapter_id(
-        self, m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_rt, m_sd, m_da
+        self, m_get_provider, m_config, m_char, m_foresh, m_sum,
+        m_draft, m_audit, m_audit_ch, m_rt, m_sd, m_da,
     ) -> None:
         """chapter_id 缺省 → SaveDraftToolDeps.expected_chapter_id 为 None。"""
+        m_config.llm_default_model = MODEL
+        m_config.model_routing = {}
+        from inkflow.infrastructure.llm.provider_config import LLMProviderConfig
+
+        m_get_provider.return_value = LLMProviderConfig(
+            provider="deepseek", api_key=API_KEY, base_url=BASE_URL,
+            default_model=MODEL, models=[],
+        )
         m_rt.return_value = [_fake_tool(name) for name in EXPECTED_READER_NAMES]
         m_sd.return_value = _fake_tool("save_draft")
         data = ChatStreamRequest(project_id=PROJECT_ID, prompt="你好")
@@ -496,22 +523,43 @@ class TestGetChatAgentServiceDbAndParseFallback:
     @patch("inkflow.api.deps.get_summary_service")
     @patch("inkflow.api.deps.get_foreshadowing_service")
     @patch("inkflow.api.deps.get_character_service")
-    @patch("inkflow.infrastructure.llm.provider_config.parse_model_string", side_effect=ValueError)
-    def test_parse_model_string_value_error_falls_back_to_defaults(
-        self, m_parse, m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_rt, m_sd, m_da
+    @patch(
+        "inkflow.infrastructure.llm.provider_config._await_registry_entry",
+        return_value=None,
+    )
+    @patch("inkflow.core.config.config")
+    def test_parse_model_string_value_error_raises_422_when_no_provider(
+        self,
+        m_config,
+        m_await_registry,
+        m_char,
+        m_foresh,
+        m_sum,
+        m_draft,
+        m_audit,
+        m_audit_ch,
+        m_rt,
+        m_sd,
+        m_da,
     ) -> None:
-        """parse_model_string 抛 ValueError → except 分支：api_key/base_url 回退空串，
-        装配继续，get_chat_agent_service 正常返回 ChatAgentService（不抛异常）。"""
-        data = ChatStreamRequest(project_id=PROJECT_ID, prompt="你好")
+        """#738: config.llm_default_model="" and no provider with key in registry
+        -> get_chat_agent_service raises HTTPException(422), not a 500 Missing
+        credentials. build_deep_agent must NOT be called with empty api_key."""
+        m_config.llm_default_model = ""
+        m_config.model_routing = {}
+        data = ChatStreamRequest(project_id=PROJECT_ID, prompt="hello")
 
-        svc = _get_chat_agent_service()(data=data, db=MagicMock())
+        with patch(
+            "inkflow.infrastructure.llm.provider_config._BUILTIN_PROVIDERS",
+            {"openai": None, "deepseek": None, "zhipu": None, "ollama": None},
+        ), patch(
+            "inkflow.infrastructure.llm.provider_config._load_stored_key",
+            return_value=None,
+        ), pytest.raises(HTTPException) as exc_info:
+            _get_chat_agent_service()(data=data, db=MagicMock())
 
-        m_parse.assert_called_once()
-        chat_agent_cls = _get_chat_agent_service_cls()
-        assert isinstance(svc, chat_agent_cls)
-        # 回退空串 → build_deep_agent 收到 api_key="" / base_url=""
-        assert _kwarg_or_positional(m_da.call_args, "api_key", 1, None) == ""
-        assert _kwarg_or_positional(m_da.call_args, "base_url", 2, None) == ""
+        assert exc_info.value.status_code == 422
+        assert m_da.call_count == 0
 
 
 # ── TestStreamChatAgentPersistsRun: #615 端点落 run ──
