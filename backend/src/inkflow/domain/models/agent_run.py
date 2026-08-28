@@ -45,12 +45,14 @@ class AgentStep(BaseModel):
     Attributes:
         index: 步骤序号（0 起）.
         message_content: 该步 AIMessage 文本（空 = 只调工具）.
+        reasoning: 该步 LLM 思考过程（reasoning_content，#740；推理模型才有，默认空）.
         tool_calls: 该步发出的工具调用列表.
         tokens: 该步 token 消耗（默认 0）.
     """
 
     index: int
     message_content: str  # 该步 AIMessage 文本（空 = 只调工具）
+    reasoning: str = ""  # 该步 LLM 思考过程（reasoning_content，#740）
     tool_calls: list[AgentToolCall]
     tokens: int = 0
 

@@ -433,6 +433,26 @@ class TestStreamEventsReasoningFrame:
         frames = [ev async for ev in svc.stream_events(prompt="你好", project_id=PROJECT_ID)]
         assert not any(ev.type == "reasoning" for ev in frames)
 
+    @pytest.mark.asyncio
+    async def test_model_end_reasoning_persisted_into_step(self) -> None:
+        """#740 思考持久化：reasoning_content → 步带 reasoning。
+
+        RED：当前 AgentStep 无 reasoning 字段 → 访问 steps[0].reasoning 抛 AttributeError。
+        """
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        output = SimpleNamespace(
+            content="最终答案",
+            tool_calls=[],
+            response_metadata={},
+            additional_kwargs={"reasoning_content": "让我想想…"},
+        )
+        svc = ChatAgentService(agent=_ReasoningAgent(output), system_prompt=BASE_PROMPT)
+        _ = [ev async for ev in svc.stream_events(prompt="你好", project_id=PROJECT_ID)]
+        steps, _, _ = svc.consume_trace()
+        assert len(steps) == 1
+        assert steps[0].reasoning == "让我想想…"
+
 
 class TestChatAgentMemoryInjection:
     """#748 会话记忆注入 — history_getter 加载历史 messages 进消息链（多轮对话有记忆）。

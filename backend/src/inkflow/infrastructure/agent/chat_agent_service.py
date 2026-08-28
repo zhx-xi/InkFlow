@@ -243,10 +243,13 @@ class ChatAgentService:
             .get("usage", {})
             .get("total_tokens", 0)
         )
+        # （在构造 AgentStep 之前）提取 reasoning（#740：推理模型写入思考过程，缺省空串）
+        reasoning = _extract_reasoning_content(output)
         self._trace.append(
             AgentStep(
                 index=step_index,
                 message_content=content,
+                reasoning=reasoning,
                 tool_calls=calls,
                 tokens=tokens,
             )

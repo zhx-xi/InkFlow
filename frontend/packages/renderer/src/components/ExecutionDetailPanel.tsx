@@ -54,7 +54,13 @@ export function ExecutionDetailPanel({
   const [activeExecutionId, setActiveExecutionId] = useState<string | null>(null);
   /** #599：历史列表点击后进入 agentic 详情的内部 id */
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  /** #740：agentic 每步思考折叠块展开状态（key = step.index） */
+  const [expandedThink, setExpandedThink] = useState<Record<number, boolean>>({});
   const [error, setError] = useState<string | null>(null);
+
+  /** #740：切换某步思考折叠块展开态 */
+  const toggleThink = (index: number) =>
+    setExpandedThink((prev) => ({ ...prev, [index]: !prev[index] }));
 
   useEffect(() => {
     // #599：agentic 模式（优先级最高）
@@ -141,7 +147,12 @@ export function ExecutionDetailPanel({
             {step.index}
           </span>
         ))}
-        <span className="ml-auto rounded px-2 py-0.5 text-[11px] text-ink-3">{run.status}</span>
+        <span
+          data-testid="exec-run-status"
+          className="ml-auto rounded px-2 py-0.5 text-[11px] text-ink-3"
+        >
+          {run.status}
+        </span>
       </WorkflowBar>
     ) : null;
     return (
@@ -164,6 +175,37 @@ export function ExecutionDetailPanel({
                     data-testid={`exec-detail-step-${step.index}`}
                     className="mt-2 rounded-md border border-line bg-surface-2 p-2"
                   >
+                    {/* #740：思考折叠块（仅 reasoning 真值时渲染，默认折叠） */}
+                    {step.reasoning ? (
+                      <div
+                        data-testid={`exec-think-${step.index}`}
+                        aria-expanded={!!expandedThink[step.index]}
+                        className="mb-1 rounded border border-line bg-surface px-2 py-1"
+                        onClick={() => toggleThink(step.index)}
+                      >
+                        <button
+                          type="button"
+                          data-testid={`exec-think-toggle-${step.index}`}
+                          aria-expanded={!!expandedThink[step.index]}
+                          className="flex w-full items-center gap-1.5 text-left"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleThink(step.index);
+                          }}
+                        >
+                          <span className="inline-block w-3 shrink-0 text-ink-3">
+                            {expandedThink[step.index] ? '▾' : '›'}
+                          </span>
+                          <span className="text-ink">🧠</span>
+                          <span className="font-medium text-ink">{t('write.chat.thinking')}</span>
+                        </button>
+                        {expandedThink[step.index] && (
+                          <div className="mt-1 whitespace-pre-wrap border-t border-line pt-1 text-ink-2">
+                            {step.reasoning}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-ink">{step.index}</span>
                       {step.message_content ? (

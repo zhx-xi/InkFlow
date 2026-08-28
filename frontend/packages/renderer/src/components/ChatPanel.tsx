@@ -103,6 +103,8 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
   // #726：消息区滚动容器 + 底部锚点（发送后自动滚动到底部）
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  // #745：每次提交 / 页面跳转加载历史后强制滚底（一次性标记，effect 消费后复位）
+  const pendingScrollRef = useRef(false);
 
   /** #547：挂载 / projectId 变化 → 加载历史（失败静默，不打扰后续发送） */
   useEffect(() => {
@@ -131,6 +133,8 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
         }
         userSeqRef.current = userSeq;
         aiSeqRef.current = aiSeq;
+        // #745：页面跳转/重载历史后强制滚底
+        pendingScrollRef.current = true;
         setMessages(history);
         // #597：切换项目/重载历史时清空上一轮工具卡片
         setToolEntries([]);
@@ -288,6 +292,8 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
     streamingRef.current = true;
     setStreaming(true);
     setMessages((prev) => [...prev, { kind: 'user', seq: userSeqRef.current++, text: prompt }]);
+    // #745：本轮提交消息渲染后强制滚底
+    pendingScrollRef.current = true;
     // #547：用户消息落库（fire-and-forget，不 await 不阻塞发送）
     void saveChatMessage({ project_id: projectId, role: 'user', content: prompt }).catch(() => {});
     setInput('');
@@ -360,9 +366,15 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
   }, [handleWindowMouseMove, handleWindowMouseUp]);
 
   // #726：发送后自动滚动到底部——仅当容器处于底部附近（用户未上滑）时拉底
+  // #745：pendingScrollRef 置位时无条件拉底（每次提交 + 页面跳转/历史加载）
   useEffect(() => {
     const el = messagesRef.current;
     if (!el) return;
+    if (pendingScrollRef.current) {
+      pendingScrollRef.current = false;
+      messagesEndRef.current?.scrollIntoView({ block: 'end' });
+      return;
+    }
     const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 60;
     if (atBottom) messagesEndRef.current?.scrollIntoView({ block: 'end' });
   }, [messages, toolEntries, reasoningEntries]);
