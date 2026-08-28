@@ -59,6 +59,7 @@ from inkflow.core.database import (
     ensure_character_drop_is_deleted,
     ensure_character_group_members_migration,
     ensure_characters_brief_column,
+    ensure_chat_messages_conversation_id_column,
     ensure_chat_messages_is_deleted_column,
     ensure_foreshadowing_drop_is_deleted,
     ensure_map_columns,
@@ -116,6 +117,7 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_timeline_drop_is_deleted)
         await conn.run_sync(ensure_foreshadowing_drop_is_deleted)
         await conn.run_sync(ensure_chat_messages_is_deleted_column)
+        await conn.run_sync(ensure_chat_messages_conversation_id_column)
     # #106 F1：启动后幂等 seed 内置 4 provider（ProviderConfigService 同名跳过，
     # 全新安装注册表为空 → seed 补全；重复启动不重复插入）
     async with async_session_factory() as session:

@@ -149,7 +149,7 @@ export function SessionsPage() {
       })),
       ...projectConvs.map((conv) => ({
         kind: 'conv' as const,
-        id: `conv-${conv.project_id}`,
+        id: `conv-${conv.conversation_id}`,
         updatedAt: conv.updated_at,
         isDeleted: conv.is_deleted,
         conv,
@@ -227,11 +227,11 @@ export function SessionsPage() {
   };
 
   /** #581：AI 对话会话归档（软删），成功后本地置 is_deleted=true 转归档态 */
-  const handleArchiveConversation = async (projectId: string): Promise<void> => {
+  const handleArchiveConversation = async (conversationId: string): Promise<void> => {
     try {
-      await archiveChatConversation(projectId);
+      await archiveChatConversation(conversationId);
       setConversations((prev) =>
-        prev.map((c) => (c.project_id === projectId ? { ...c, is_deleted: true } : c)),
+        prev.map((c) => (c.conversation_id === conversationId ? { ...c, is_deleted: true } : c)),
       );
       pushToast('ok', t('sessions.archivedToast'));
     } catch (err) {
@@ -240,11 +240,11 @@ export function SessionsPage() {
   };
 
   /** #581：AI 对话会话恢复：POST conversations/{projectId}/restore → 本地置 is_deleted=false 回活动态 */
-  const handleRestoreConversation = async (projectId: string): Promise<void> => {
+  const handleRestoreConversation = async (conversationId: string): Promise<void> => {
     try {
-      await restoreChatConversation(projectId);
+      await restoreChatConversation(conversationId);
       setConversations((prev) =>
-        prev.map((c) => (c.project_id === projectId ? { ...c, is_deleted: false } : c)),
+        prev.map((c) => (c.conversation_id === conversationId ? { ...c, is_deleted: false } : c)),
       );
       pushToast('ok', t('sessions.restoredToast'));
     } catch (err) {
@@ -253,10 +253,10 @@ export function SessionsPage() {
   };
 
   /** #566：AI 对话会话真删（force=true），成功后本地移除该卡片 */
-  const handleDeleteConversation = async (projectId: string): Promise<void> => {
+  const handleDeleteConversation = async (conversationId: string): Promise<void> => {
     try {
-      await deleteChatConversation(projectId);
-      setConversations((prev) => prev.filter((c) => c.project_id !== projectId));
+      await deleteChatConversation(conversationId);
+      setConversations((prev) => prev.filter((c) => c.conversation_id !== conversationId));
       pushToast('ok', t('sessions.deletedToast'));
     } catch (err) {
       pushToast('err', errorMessage(err));
@@ -436,14 +436,14 @@ export function SessionsPage() {
                   <>
                     <div className="flex flex-wrap items-center gap-2">
                       <span
-                        data-testid={`session-type-conv-${item.conv.project_id}`}
+                        data-testid={`session-type-conv-${item.conv.conversation_id}`}
                         className="rounded bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-ink-2"
                       >
                         {t('sessions.badge.ai')}
                       </span>
                       {!item.conv.is_deleted ? (
                         <span
-                          data-testid={`session-status-conv-${item.conv.project_id}`}
+                          data-testid={`session-status-conv-${item.conv.conversation_id}`}
                           className="rounded bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-ink-2"
                         >
                           {t('sessions.status.active')}
@@ -451,13 +451,13 @@ export function SessionsPage() {
                       ) : (
                         <>
                           <span
-                            data-testid={`session-archived-conv-${item.conv.project_id}`}
+                            data-testid={`session-archived-conv-${item.conv.conversation_id}`}
                             className="rounded bg-surface-3 px-2 py-0.5 text-[11px] text-ink-3"
                           >
                             {t('sessions.archived')}
                           </span>
                           <span
-                            data-testid={`chat-conv-archived-${item.conv.project_id}`}
+                            data-testid={`chat-conv-archived-${item.conv.conversation_id}`}
                             className="rounded bg-surface-3 px-2 py-0.5 text-[11px] text-ink-3"
                           >
                             {t('sessions.archived')}
@@ -465,7 +465,7 @@ export function SessionsPage() {
                         </>
                       )}
                       <h3 className="font-serif text-[15px] font-semibold text-ink">
-                        <span data-testid={`session-title-conv-${item.conv.project_id}`}>
+                        <span data-testid={`session-title-conv-${item.conv.conversation_id}`}>
                           {item.conv.project_name ?? t('sessions.chat.unknownProject')}
                         </span>
                       </h3>
@@ -478,33 +478,33 @@ export function SessionsPage() {
                       {!item.conv.is_deleted ? (
                         <button
                           type="button"
-                          data-testid={`chat-conv-archive-${item.conv.project_id}`}
+                          data-testid={`chat-conv-archive-${item.conv.conversation_id}`}
                           className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink"
-                          onClick={() => void handleArchiveConversation(item.conv.project_id)}
+                          onClick={() => void handleArchiveConversation(item.conv.conversation_id)}
                         >
                           {t('sessions.archive')}
                         </button>
                       ) : (
                         <button
                           type="button"
-                          data-testid={`chat-conv-restore-${item.conv.project_id}`}
+                          data-testid={`chat-conv-restore-${item.conv.conversation_id}`}
                           className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink"
-                          onClick={() => void handleRestoreConversation(item.conv.project_id)}
+                          onClick={() => void handleRestoreConversation(item.conv.conversation_id)}
                         >
                           {t('sessions.restore')}
                         </button>
                       )}
                       <button
                         type="button"
-                        data-testid={`chat-conv-delete-${item.conv.project_id}`}
+                        data-testid={`chat-conv-delete-${item.conv.conversation_id}`}
                         className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:border-err/50 hover:text-err"
-                        onClick={() => void handleDeleteConversation(item.conv.project_id)}
+                        onClick={() => void handleDeleteConversation(item.conv.conversation_id)}
                       >
                         {t('sessions.delete')}
                       </button>
                     </div>
                     <span
-                      data-testid={`chat-conversation-updated-${item.conv.project_id}`}
+                      data-testid={`chat-conversation-updated-${item.conv.conversation_id}`}
                       className="mt-2 block text-[11px] text-ink-3"
                     >
                       {item.conv.updated_at}

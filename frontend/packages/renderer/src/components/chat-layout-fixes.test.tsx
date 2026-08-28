@@ -34,6 +34,8 @@ const chatApiMocks = vi.hoisted(() => ({
   restoreChatMessage: vi.fn(),
   archiveChatConversation: vi.fn(),
   deleteChatConversation: vi.fn(),
+  // #744：新线程创建（GREEN api/chat.ts 新增 createChatConversation）
+  createChatConversation: vi.fn(),
 }));
 vi.mock('../api/chat', () => chatApiMocks);
 
@@ -60,8 +62,21 @@ beforeEach(() => {
   chatApiMocks.fetchChatMessages.mockReset();
   chatApiMocks.streamChat.mockReset();
   chatApiMocks.saveChatMessage.mockReset();
+  chatApiMocks.fetchChatConversations.mockReset();
+  chatApiMocks.createChatConversation.mockReset();
   chatApiMocks.fetchChatMessages.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
-  chatApiMocks.saveChatMessage.mockResolvedValue({ id: 'm-new', project_id: 'p1', role: 'ai', content: '', intent: null, created_at: '' });
+  chatApiMocks.saveChatMessage.mockResolvedValue({ id: 'm-new', conversation_id: 'conv-p1', project_id: 'p1', role: 'ai', content: '', intent: null, created_at: '' });
+  chatApiMocks.fetchChatConversations.mockResolvedValue({ items: [], total: 0 });
+  // #744：无活动线程时 createChatConversation 建新（mock 返回 conv-<projectId> 线程）
+  chatApiMocks.createChatConversation.mockImplementation(async (projectId: string) => ({
+    conversation_id: `conv-${projectId}`,
+    project_id: projectId,
+    project_name: null,
+    last_message: '',
+    message_count: 0,
+    is_deleted: false,
+    updated_at: '2026-08-21T10:00:00Z',
+  }));
   // #642-2：流式产出 content 意图消息（含 >>>CONTENT>>> 标记），使 per-message 复制/插入按钮都渲染
   chatApiMocks.streamChat.mockImplementation(
     (_body: { project_id: string; prompt: string; chapter_id?: string; chapter_context?: string },

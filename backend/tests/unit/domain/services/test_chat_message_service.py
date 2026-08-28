@@ -1,35 +1,37 @@
-"""#547 chat 消息服务单元测试 — Fake Repository（RED 契约，spec 待定稿）.
+"""#744 chat 消息服务单元测试 — Fake Repository（RED 契约：conversation 多线程）。
 
-契约（实现者以本文件为准）:
+契约（实现者以本文件为准，见 .hermes/plans/contract-744.md）:
 - 服务: inkflow.domain.services.chat_message_service.ChatMessageService
   构造: ChatMessageService(*, repo: object)（鸭子 repo，全 mock 轨）
 - 方法签名（全部 async）:
   * add_message(data: ChatMessageCreate) -> ChatMessage
-    （构造实体 id=uuid4 + created_at=now(UTC) → repo.add → 返回落库实体；
-    intent 默认 None 透传；内容校验由 ChatMessageCreate 构造期完成，
-    service 不重复校验）
-  * list_messages(project_id: uuid.UUID, offset: int = 0, limit: int = 50)
-    -> tuple[list[ChatMessage], int]（透传 repo.list_by_project，位置透传
-    (project_id, offset, limit)）
-  * list_conversations() -> list[dict]
-    （[{project_id, project_name, last_message, message_count, updated_at}]
-    由 repo 聚合；project_name 可空；service 原样透传）
+    （构造实体含 data.conversation_id；data.conversation_id 为空 → get_or_create_conversation
+    自动解析；构造 id=uuid4 + created_at=now(UTC) → repo.add → 返回落库实体；
+    内容校验由 ChatMessageCreate 构造期完成）
+  * get_or_create_conversation(project_id) -> Conversation
+    （repo.get_active_conversation 有活动线程→返回；无→repo.create_conversation 新建）
+  * list_messages(conversation_id: uuid.UUID, offset: int = 0, limit: int = 50)
+    -> tuple[list[ChatMessage], int]（透传 repo.list_by_conversation）
+  * list_conversations(include_deleted=False) -> list[dict]（透传 repo）
+  * archive_message(message_id) -> bool（repo.archive，overflow 短路）
+  * force_delete_message(message_id) -> bool（repo.force_delete，overflow 短路）
+  * restore_message(message_id) -> ChatMessage | None（repo.restore，overflow 短路）
+  * archive_conversation(conversation_id) -> bool（repo.archive_conversation，overflow 短路）
+  * force_delete_conversation(conversation_id) -> bool
+  * restore_conversation(conversation_id) -> bool
 - 鸭子 repo 方法:
   * add(message: ChatMessage) -> ChatMessage
-  * list_by_project(project_id, offset, limit) -> (items, total)
+  * list_by_conversation(conversation_id, offset, limit) -> (items, total)
   * list_conversations() -> list[dict]
+  * get_active_conversation(project_id) -> Conversation | None
+  * create_conversation(project_id) -> Conversation
+  * archive / force_delete / restore（消息级）
+  * archive_conversation / force_delete_conversation / restore_conversation（会话级）
 - 领域模型: inkflow.domain.models.chat_message
-  * ChatMessage: id/project_id: uuid.UUID、role: str（"user"/"ai"）、
+  * ChatMessage: id/project_id/conversation_id: uuid.UUID、role（"user"/"ai"）、
     content: str、intent: str | None = None、created_at: datetime（UTC aware）
-  * ChatMessageCreate: project_id/role/content 必填、intent 可选；
-    field_validator: content 去空白非空 ≤ 10000 字符
-    （空文案「chat 消息内容不能为空」）；role ∈ {user, ai}
-
-RED 预期: inkflow.domain.models.chat_message / services.chat_message_service
-模块均不存在 → 顶部 import 收集期 ImportError（等价 ModuleNotFoundError
-收集错误，exit 2），整文件不执行（规则 1c 首选形态，任务书认可）。
-
-asyncio: pyproject asyncio_mode = "auto"；文件级 pytestmark 双保险。
+  * ChatMessageCreate: project_id/conversation_id/role/content 必填、intent 可选；
+    field_validator: content 去空白非空 ≤ 10000 字符（空文案「chat 消息内容不能为空」）
 """
 
 from __future__ import annotations
@@ -45,20 +47,25 @@ from inkflow.domain.services import chat_message_service
 
 ChatMessage = chat_message.ChatMessage
 ChatMessageCreate = chat_message.ChatMessageCreate
+# Conversation / ConversationCreate 惰性 import（RED 时 conversation 模块未建 →
+# 免顶部 collection error，逐用例 FAILED 更干净）
 ChatMessageService = chat_message_service.ChatMessageService
 
 pytestmark = pytest.mark.asyncio  # 实测 mode=Mode.AUTO；显式 mark 兼容 STRICT/AUTO
 
 PID = uuid.UUID("12345678-1234-5678-1234-567812345678")
+CID = uuid.UUID("22345678-1234-5678-1234-567812345678")
+CID2 = uuid.UUID("32345678-1234-5678-1234-567812345678")
 TS = datetime(2026, 8, 20, 10, 0, 0, tzinfo=UTC)
 CONTENT = "你好，请续写第三章。"
 
 
 def _message(**overrides) -> ChatMessage:
-    """构造测试用 ChatMessage 实体（固定 UTC aware 时间戳，便于断言）。"""
+    """构造测试用 ChatMessage 实体（conversation_id 必填）。"""
     base = {
         "id": uuid.uuid4(),
         "project_id": PID,
+        "conversation_id": CID,
         "role": "user",
         "content": CONTENT,
         "intent": None,
@@ -68,13 +75,29 @@ def _message(**overrides) -> ChatMessage:
     return ChatMessage(**base)
 
 
+def _conversation(**overrides) -> object:
+    """构造 Conversation 领域对象（惰性 import conversation 模块）。"""
+    from inkflow.domain.models.conversation import Conversation
+
+    base = {
+        "id": CID,
+        "project_id": PID,
+        "created_at": TS,
+        "is_deleted": False,
+    }
+    base.update(overrides)
+    return Conversation(**base)
+
+
 def _conversation_dict(**overrides) -> dict:
-    """conversations 聚合 dict（repo 聚合结果形态，project_name 可空）。"""
+    """conversations 聚合 dict（repo 聚合结果形态，含 conversation_id）。"""
     conv = {
+        "conversation_id": str(CID),
         "project_id": str(PID),
         "project_name": "测试项目",
         "last_message": CONTENT,
         "message_count": 3,
+        "is_deleted": False,
         "updated_at": "2026-08-20T10:00:00Z",
     }
     conv.update(overrides)
@@ -86,19 +109,20 @@ def fake_repo() -> MagicMock:
     """鸭子 repo（规则 1m：全方法显式默认值，禁裸 AsyncMock 分支）。"""
     repo = MagicMock()
     repo.add = AsyncMock(side_effect=lambda m: m)
+    repo.list_by_conversation = AsyncMock(return_value=([], 0))
+    # #748 agent 聊天历史：list_messages(project_id) 仍读项目级
     repo.list_by_project = AsyncMock(return_value=([], 0))
     repo.list_conversations = AsyncMock(return_value=[])
-    # #566 两级删除（镜像 session_repo soft_delete/restore/hard_delete）：
-    # archive = 软删（is_deleted=true）返回 bool；force_delete = 硬删返回 bool；
-    # restore = 解除归档返回 ChatMessage | None。
+    repo.get_active_conversation = AsyncMock(return_value=None)
+    repo.create_conversation = AsyncMock(side_effect=lambda pid: _conversation(project_id=pid))
+    # 消息级两级删除
     repo.archive = AsyncMock(return_value=True)
     repo.force_delete = AsyncMock(return_value=True)
     repo.restore = AsyncMock(return_value=None)
-    # #566 会话级（per-project）归档/真删
-    repo.archive_by_project = AsyncMock(return_value=2)
-    repo.force_delete_by_project = AsyncMock(return_value=2)
-    # #587 会话级（per-project）恢复
-    repo.restore_by_project = AsyncMock(return_value=2)
+    # #744 会话级（per-conversation）归档/真删/恢复
+    repo.archive_conversation = AsyncMock(return_value=True)
+    repo.force_delete_conversation = AsyncMock(return_value=True)
+    repo.restore_conversation = AsyncMock(return_value=True)
     return repo
 
 
@@ -109,130 +133,147 @@ def service(fake_repo: MagicMock) -> ChatMessageService:
 
 
 class TestAddMessage:
-    """add_message — 持久化 + intent 默认 None 透传。"""
+    """add_message — 持久化 + conversation_id 透传。"""
 
     async def test_add_message_persists_via_repo(self, service, fake_repo):
-        """repo.add 记录调用；返回实体含 id/created_at（UTC aware）；intent 默认 None。"""
         created = await service.add_message(
-            ChatMessageCreate(project_id=PID, role="user", content=CONTENT)
+            ChatMessageCreate(project_id=PID, conversation_id=CID, role="user", content=CONTENT)
         )
         assert isinstance(created, ChatMessage)
         assert created.project_id == PID
+        assert created.conversation_id == CID
         assert created.role == "user"
         assert created.content == CONTENT
-        assert created.intent is None  # intent 缺省 → None 透传
+        assert created.intent is None
         assert isinstance(created.id, uuid.UUID)
-        assert created.created_at is not None
-        assert created.created_at.tzinfo is not None  # UTC aware
-        # repo.add 收到完整实体（service 返回落库实体，同一性）
+        assert created.created_at.tzinfo is not None
         fake_repo.add.assert_awaited_once()
         added = fake_repo.add.await_args.args[0]
         assert isinstance(added, ChatMessage)
-        assert added.id == created.id
-        assert added.intent is None
+        assert added.conversation_id == CID
+
+    async def test_add_message_resolves_active_conversation_when_missing(
+        self, service, fake_repo
+    ):
+        """#744：add_message 缺 conversation_id → get_or_create 自动解析（归档后无活动线程 → 新建）。"""
+        fake_repo.get_active_conversation = AsyncMock(return_value=None)
+        created = await service.add_message(
+            ChatMessageCreate(project_id=PID, conversation_id=None, role="user", content=CONTENT)
+        )
+        fake_repo.get_active_conversation.assert_awaited_once_with(PID)
+        fake_repo.create_conversation.assert_awaited_once_with(PID)
+        assert created.conversation_id == CID  # create_conversation 返回的 id
+
+    async def test_add_message_reuses_active_conversation_when_exists(
+        self, service, fake_repo
+    ):
+        """#744：存在活动线程 → get_or_create 复用其 conversation_id（不新建）。"""
+        active = _conversation()
+        fake_repo.get_active_conversation = AsyncMock(return_value=active)
+        created = await service.add_message(
+            ChatMessageCreate(project_id=PID, conversation_id=None, role="user", content=CONTENT)
+        )
+        fake_repo.create_conversation.assert_not_awaited()
+        assert created.conversation_id == active.id
 
     async def test_add_message_intent_passthrough(self, service, fake_repo):
-        """intent="conversation" 显式透传至实体与 repo.add。"""
         created = await service.add_message(
-            ChatMessageCreate(project_id=PID, role="ai", content="好的。", intent="conversation")
+            ChatMessageCreate(
+                project_id=PID, conversation_id=CID, role="ai", content="好的。", intent="conversation"
+            )
         )
         assert created.intent == "conversation"
         fake_repo.add.assert_awaited_once()
 
     async def test_add_message_blank_content_raises(self, service, fake_repo):
-        """content 纯空白 → ChatMessageCreate 构造期 ValueError（DTO validator，
-        service 不重复校验）→ repo.add 不被调用。"""
         with pytest.raises(ValueError, match="chat 消息内容不能为空"):
-            await service.add_message(ChatMessageCreate(project_id=PID, role="user", content="   "))
+            await service.add_message(
+                ChatMessageCreate(project_id=PID, conversation_id=CID, role="user", content="   ")
+            )
         fake_repo.add.assert_not_awaited()
 
 
-class TestListMessages:
-    """list_messages — 透传 repo (items, total) + 参数位置透传。"""
+class TestGetOrCreateConversation:
+    """get_or_create_conversation — 有活动线程复用 / 无则新建。"""
 
-    async def test_list_messages_passthrough(self, service, fake_repo):
-        """显式 offset/limit → repo.list_by_project(PID, 5, 20) 位置透传。"""
+    async def test_returns_active_when_exists(self, service, fake_repo):
+        active = _conversation()
+        fake_repo.get_active_conversation = AsyncMock(return_value=active)
+        result = await service.get_or_create_conversation(PID)
+        assert result is active
+        fake_repo.create_conversation.assert_not_awaited()
+
+    async def test_creates_when_none(self, service, fake_repo):
+        fake_repo.get_active_conversation = AsyncMock(return_value=None)
+        result = await service.get_or_create_conversation(PID)
+        fake_repo.get_active_conversation.assert_awaited_once_with(PID)
+        fake_repo.create_conversation.assert_awaited_once_with(PID)
+        assert result.project_id == PID
+
+
+class TestListMessagesByConversation:
+    """list_messages_by_conversation — 线程级读消息（透传 repo.list_by_conversation）。"""
+
+    async def test_list_messages_by_conversation_passthrough(self, service, fake_repo):
         items = [_message(), _message(role="ai", content="好的，已续写。")]
-        fake_repo.list_by_project = AsyncMock(return_value=(items, 2))
-        result, total = await service.list_messages(PID, offset=5, limit=20)
+        fake_repo.list_by_conversation = AsyncMock(return_value=(items, 2))
+        result, total = await service.list_messages_by_conversation(CID, offset=5, limit=20)
         assert result == items
         assert total == 2
-        # 契约锁位置透传 (project_id, offset, limit)
-        fake_repo.list_by_project.assert_awaited_once_with(PID, 5, 20)
+        fake_repo.list_by_conversation.assert_awaited_once_with(CID, 5, 20)
 
-    async def test_list_messages_defaults(self, service, fake_repo):
-        """全缺省 → repo.list_by_project(PID, 0, 50)。"""
-        await service.list_messages(PID)
-        fake_repo.list_by_project.assert_awaited_once_with(PID, 0, 50)
+    async def test_list_messages_by_conversation_defaults(self, service, fake_repo):
+        await service.list_messages_by_conversation(CID)
+        fake_repo.list_by_conversation.assert_awaited_once_with(CID, 0, 50)
+
+
+class TestListMessagesByProject:
+    """list_messages — 项目级读（#748 agent 聊天历史），透传 repo.list_by_project。"""
+
+    async def test_list_messages_project_history(self, service, fake_repo):
+        # 保持项目级读供 agent history_getter 用
+        await service.list_messages(PID, offset=0, limit=20)
+        fake_repo.list_by_project.assert_awaited_once_with(PID, 0, 20)
 
 
 class TestListConversations:
-    """list_conversations — 透传 repo 聚合结果（project_name 可空）。"""
+    """list_conversations — 透传 repo 聚合结果（含 conversation_id）。"""
 
     async def test_list_conversations_passthrough(self, service, fake_repo):
-        """repo 聚合 dict 列表原样透传（含 project_name=None 可空形态）。"""
-        convs = [_conversation_dict(), _conversation_dict(project_name=None)]
+        convs = [_conversation_dict(), _conversation_dict(conversation_id=str(CID2), project_name=None)]
         fake_repo.list_conversations = AsyncMock(return_value=convs)
         result = await service.list_conversations()
         assert result == convs
         fake_repo.list_conversations.assert_awaited_once()
 
     async def test_list_conversations_include_deleted_passthrough(self, service, fake_repo):
-        """#581 include_deleted=True → 关键字透传 repo.list_conversations(include_deleted=True)。
-
-        镜像 sessions 的 include_deleted 先例：默认排除已归档，
-        include_deleted=true 时活动 + 归档全量返回。
-        """
         convs = [_conversation_dict()]
         fake_repo.list_conversations = AsyncMock(return_value=convs)
-
         result = await service.list_conversations(include_deleted=True)
-
         assert result == convs
         fake_repo.list_conversations.assert_awaited_once_with(include_deleted=True)
 
 
 class TestArchiveDeleteRestore:
-    """#566 两级删除 — archive_message / force_delete_message / restore_message。
-
-    契约（镜像 session_service.delete/restore 模式）:
-    - archive_message(message_id: uuid.UUID) -> bool
-      （软删 is_deleted=true；repo.archive 收到 int 主键；False = 不存在/已归档）
-    - force_delete_message(message_id: uuid.UUID) -> bool
-      （真删；repo.force_delete 收到 int 主键；False = 不存在）
-    - restore_message(message_id: uuid.UUID) -> ChatMessage | None
-      （解除归档；repo.restore 收到 int 主键；None = 不存在/未归档）
-
-    RED 预期: service 无这三方法 → AttributeError（'ChatMessageService' object has
-    no attribute 'archive_message'）→ 用例 FAILED。
-    """
+    """消息级两级删除 — archive_message / force_delete_message / restore_message。"""
 
     async def test_archive_message_delegates_to_repo(self, service, fake_repo):
-        """archive_message → repo.archive(message_id.int) 位置透传，返回 bool。"""
         message_id = uuid.UUID(int=42)
         result = await service.archive_message(message_id)
         assert result is True
         fake_repo.archive.assert_awaited_once_with(message_id.int)
 
     async def test_archive_message_not_found_false(self, service, fake_repo):
-        """repo.archive 返回 False（不存在/已归档）→ service 原样透传 False。"""
         fake_repo.archive = AsyncMock(return_value=False)
         assert await service.archive_message(uuid.UUID(int=42)) is False
 
     async def test_force_delete_message_delegates_to_repo(self, service, fake_repo):
-        """force_delete_message → repo.force_delete(message_id.int) 位置透传。"""
         message_id = uuid.UUID(int=42)
         result = await service.force_delete_message(message_id)
         assert result is True
         fake_repo.force_delete.assert_awaited_once_with(message_id.int)
 
-    async def test_force_delete_message_not_found_false(self, service, fake_repo):
-        """repo.force_delete 返回 False → service 原样透传 False。"""
-        fake_repo.force_delete = AsyncMock(return_value=False)
-        assert await service.force_delete_message(uuid.UUID(int=42)) is False
-
     async def test_restore_message_returns_entity(self, service, fake_repo):
-        """restore_message → repo.restore(message_id.int)；返回 ChatMessage。"""
         message_id = uuid.UUID(int=42)
         restored = _message(id=str(message_id))
         fake_repo.restore = AsyncMock(return_value=restored)
@@ -240,113 +281,60 @@ class TestArchiveDeleteRestore:
         assert result is restored
         fake_repo.restore.assert_awaited_once_with(message_id.int)
 
-    async def test_restore_message_not_found_none(self, service, fake_repo):
-        """repo.restore 返回 None（不存在/未归档）→ service 原样透传 None。"""
-        assert await service.restore_message(uuid.UUID(int=42)) is None
+
+class TestConversationLevelArchive:
+    """#744 会话级（per-conversation）归档/真删/恢复。"""
 
     async def test_archive_conversation_delegates_to_repo(self, service, fake_repo):
-        """archive_conversation → repo.archive_by_project(project_id.int) 位置透传，返回 int。"""
-        result = await service.archive_conversation(uuid.UUID(int=42))
-        assert result == 2
-        fake_repo.archive_by_project.assert_awaited_once()
+        result = await service.archive_conversation(CID)
+        assert result is True
+        fake_repo.archive_conversation.assert_awaited_once_with(CID.int)
 
     async def test_force_delete_conversation_delegates_to_repo(self, service, fake_repo):
-        """force_delete_conversation → repo.force_delete_by_project(project_id.int) 位置透传。"""
-        result = await service.force_delete_conversation(uuid.UUID(int=42))
-        assert result == 2
-        fake_repo.force_delete_by_project.assert_awaited_once()
+        result = await service.force_delete_conversation(CID)
+        assert result is True
+        fake_repo.force_delete_conversation.assert_awaited_once_with(CID.int)
+
+    async def test_restore_conversation_delegates_to_repo(self, service, fake_repo):
+        result = await service.restore_conversation(CID)
+        assert result is True
+        fake_repo.restore_conversation.assert_awaited_once_with(CID.int)
 
 
 class Test578ServiceOverflowGuard:
-    """#578 RED：service 层 128 位溢出预检。
-
-    契约（修复方案：service 层预检短路）:
-    - 收到超出 SQLite 64 位 INTEGER 主键范围的 id（随机 uuid4 的 int 表示
-      > 2**63-1）→ 必然不存在 → 直接返回等价「不存在」语义，**不调用 repo**:
-      * archive_message -> False
-      * force_delete_message -> False
-      * restore_message -> None
-      * archive_conversation -> 0
-      * force_delete_conversation -> 0
-    - 小值 id（64 位范围内，如 uuid.UUID(int=42)）正常透传 repo（防过度防御）。
-
-    RED 预期: 当前 service 无条件 _to_int_id 后透传 repo（fake 不溢出，返回
-    默认值）→「repo 未被调用」断言 FAILED；修复后预检短路 → PASS。
-    """
+    """#578 RED：service 层 128 位溢出预检（随机 uuid4 → 短路，不调用 repo）。"""
 
     async def test_archive_message_overflow_uuid_skips_repo(self, service, fake_repo):
-        """随机 uuid4（int > 2**63-1）→ 返回 False 且 repo.archive 未被调用。"""
         result = await service.archive_message(uuid.uuid4())
         fake_repo.archive.assert_not_awaited()
         assert result is False
 
     async def test_force_delete_message_overflow_uuid_skips_repo(self, service, fake_repo):
-        """随机 uuid4 → 返回 False 且 repo.force_delete 未被调用。"""
         result = await service.force_delete_message(uuid.uuid4())
         fake_repo.force_delete.assert_not_awaited()
         assert result is False
 
     async def test_restore_message_overflow_uuid_skips_repo(self, service, fake_repo):
-        """随机 uuid4 → 返回 None 且 repo.restore 未被调用。"""
         result = await service.restore_message(uuid.uuid4())
         fake_repo.restore.assert_not_awaited()
         assert result is None
 
     async def test_archive_conversation_overflow_uuid_skips_repo(self, service, fake_repo):
-        """随机 uuid4 → 返回 0 且 repo.archive_by_project 未被调用。"""
         result = await service.archive_conversation(uuid.uuid4())
-        fake_repo.archive_by_project.assert_not_awaited()
-        assert result == 0
+        fake_repo.archive_conversation.assert_not_awaited()
+        assert result is False
 
     async def test_force_delete_conversation_overflow_uuid_skips_repo(self, service, fake_repo):
-        """随机 uuid4 → 返回 0 且 repo.force_delete_by_project 未被调用。"""
         result = await service.force_delete_conversation(uuid.uuid4())
-        fake_repo.force_delete_by_project.assert_not_awaited()
-        assert result == 0
+        fake_repo.force_delete_conversation.assert_not_awaited()
+        assert result is False
+
+    async def test_restore_conversation_overflow_uuid_skips_repo(self, service, fake_repo):
+        result = await service.restore_conversation(uuid.uuid4())
+        fake_repo.restore_conversation.assert_not_awaited()
+        assert result is False
 
     async def test_archive_message_small_id_still_delegates(self, service, fake_repo):
-        """对照: uuid.UUID(int=42)（64 位范围内）→ repo.archive 照常调用，返回值透传。"""
         result = await service.archive_message(uuid.UUID(int=42))
         assert result is True
         fake_repo.archive.assert_awaited_once_with(42)
-
-    async def test_restore_message_small_id_still_delegates(self, service, fake_repo):
-        """对照: uuid.UUID(int=42) → repo.restore 照常调用一次。"""
-        await service.restore_message(uuid.UUID(int=42))
-        fake_repo.restore.assert_awaited_once_with(42)
-
-
-class TestRestoreConversation:
-    """#587 会话级恢复 — restore_conversation 解除整项目归档（is_deleted=false）。
-
-    契约（镜像 archive_conversation 反操作）:
-    - restore_conversation(project_id: uuid.UUID) -> int
-      （repo.restore_by_project 收到 int 主键；返回受影响行数；0 = 不存在/未归档）
-    - > 2**63-1（随机 uuid4）→ 短路返回 0，不调用 repo（镜像 #578 溢出预检）
-
-    RED 预期: service 无 restore_conversation 方法 → AttributeError
-    （'ChatMessageService' object has no attribute 'restore_conversation'）
-    → 本类用例 FAILED。
-    """
-
-    async def test_restore_conversation_delegates_to_repo(self, service, fake_repo):
-        """restore_conversation → repo.restore_by_project(project_id.int) 位置透传，返回 int。"""
-        result = await service.restore_conversation(uuid.UUID(int=42))
-        assert result == 2
-        fake_repo.restore_by_project.assert_awaited_once_with(42)
-
-    async def test_restore_conversation_not_found_zero(self, service, fake_repo):
-        """repo.restore_by_project 返回 0（不存在/未归档）→ service 原样透传 0。"""
-        fake_repo.restore_by_project = AsyncMock(return_value=0)
-        assert await service.restore_conversation(uuid.UUID(int=42)) == 0
-
-    async def test_restore_conversation_overflow_uuid_skips_repo(self, service, fake_repo):
-        """随机 uuid4（int > 2**63-1）→ 返回 0 且 repo.restore_by_project 未被调用。"""
-        result = await service.restore_conversation(uuid.uuid4())
-        fake_repo.restore_by_project.assert_not_awaited()
-        assert result == 0
-
-    async def test_restore_conversation_small_id_still_delegates(self, service, fake_repo):
-        """对照: uuid.UUID(int=42)（64 位范围内）→ repo.restore_by_project 照常调用一次。"""
-        await service.restore_conversation(uuid.UUID(int=42))
-        fake_repo.restore_by_project.assert_awaited_once_with(42)

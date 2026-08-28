@@ -77,6 +77,7 @@ const apiFetchMock = vi.mocked(apiFetch);
 import type { PlannerSessionDto, SessionDto, SessionViewDto } from '../api/sessions';
 
 interface ChatConversationDto {
+  conversation_id: string;
   project_id: string;
   project_name: string | null;
   last_message: string;
@@ -88,7 +89,7 @@ interface ChatConversationDto {
 // 类型卡片统一 id（全局唯一，防执行/访谈/AI对话 id 冲突）
 // 执行会话 id：ex-active-p1 / ex-archived-p1 / ex-p2
 // 访谈会话 id：pl-p1
-// AI 对话 id：conv-p1 / conv-p2（project_id）
+// AI 对话 id：conv-conv-1 / conv-conv-2（conversation_id，#744 多线程：同 project 可有多个）
 
 let sessions: SessionViewDto[]; // 执行会话
 let plannerItems: PlannerSessionDto[]; // 访谈会话
@@ -182,6 +183,7 @@ beforeEach(() => {
   // AI 对话：p1 活动（仙侠长篇），p2 归档（null 项目名）
   conversations = [
     {
+      conversation_id: 'conv-1',
       project_id: 'p1',
       project_name: '仙侠长篇',
       last_message: '帮我写一段打斗场景',
@@ -190,6 +192,7 @@ beforeEach(() => {
       updated_at: '2026-08-21T10:00:00Z',
     },
     {
+      conversation_id: 'conv-2',
       project_id: 'p2',
       project_name: null,
       last_message: '聊聊角色设定',
@@ -242,7 +245,8 @@ beforeEach(() => {
       }
       const restoreMatch = path.match(/^\/api\/v1\/chat\/conversations\/([^/]+)\/restore$/);
       if (restoreMatch) {
-        const conv = conversations.find((c) => c.project_id === restoreMatch[1]);
+        // #744：恢复按 conversation_id 匹配（非 project_id）
+        const conv = conversations.find((c) => c.conversation_id === restoreMatch[1]);
         return conv ? { ...conv, is_deleted: false } : { ok: true };
       }
       return { ok: true };
@@ -271,7 +275,7 @@ describe('会话页 — 统一窗口（AI 对话 + 访谈 + 执行 合并展示�
   it('卡片带类型徽标（AI 对话 / 访谈 / 执行 三态）', async () => {
     renderSessionsPage();
     await screen.findAllByTestId('session-directory-card');
-    expect(screen.getByTestId('session-type-conv-p1')).toBeInTheDocument();
+    expect(screen.getByTestId('session-type-conv-conv-1')).toBeInTheDocument();
     expect(screen.getByTestId('session-type-pl-p1')).toBeInTheDocument();
     expect(screen.getByTestId('session-type-ex-active-p1')).toBeInTheDocument();
   });
@@ -285,7 +289,7 @@ describe('会话页 — 按项目分区（Q2，镜像 library 项目选择器 + 
     expect(screen.getByTestId('session-title-ex-active-p1')).toBeInTheDocument();
     // p2 的执行会话 / p2 的 AI 对话都不应在 p1 目录可见
     expect(screen.queryByTestId('session-title-ex-p2')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('session-type-conv-p2')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('session-type-conv-conv-2')).not.toBeInTheDocument();
   });
 
   it('切换项目（selectProject p2）→ 目录只显示 p2 会话（p1 会话不可见）', async () => {
@@ -293,7 +297,7 @@ describe('会话页 — 按项目分区（Q2，镜像 library 项目选择器 + 
     await screen.findAllByTestId('session-directory-card');
     act(() => useProjectStore.getState().selectProject('p2'));
     const cards = await screen.findAllByTestId('session-directory-card');
-    // p2：执行会话 ex-p2 + AI 对话 conv-p2
+    // p2：执行会话 ex-p2 + AI 对话 conv-conv-2
     expect(cards).toHaveLength(2);
     expect(screen.getByTestId('session-title-ex-p2')).toBeInTheDocument();
     expect(screen.queryByTestId('session-title-ex-active-p1')).not.toBeInTheDocument();
@@ -313,7 +317,7 @@ describe('会话页 — 检索同栏（sessions-search 与会话目录同栏，�
     await waitFor(() => {
       expect(screen.getByTestId('session-title-ex-active-p1')).toBeInTheDocument();
       expect(screen.queryByTestId('session-title-pl-p1')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('session-type-conv-p1')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('session-type-conv-conv-1')).not.toBeInTheDocument();
     });
   });
 });
@@ -347,7 +351,7 @@ describe('会话页 — 归档回归（Q3：归档两个会话，刷新后两个
     expect(screen.getByTestId('session-archived-ex-archived-p1b')).toBeInTheDocument();
     // 统一窗口：访谈 / AI 对话卡仍显示（不因执行会话归档而隐藏）
     expect(screen.getByTestId('session-title-pl-p1')).toBeInTheDocument();
-    expect(screen.getByTestId('session-title-conv-p1')).toBeInTheDocument();
+    expect(screen.getByTestId('session-title-conv-conv-1')).toBeInTheDocument();
     // 归档 filter 下：仅显示两个归档执行（访谈/对话被 is_deleted 过滤）
     const user = userEvent.setup();
     await user.click(screen.getByTestId('sessions-filter-archived'));
@@ -355,7 +359,7 @@ describe('会话页 — 归档回归（Q3：归档两个会话，刷新后两个
       expect(screen.getByTestId('session-title-ex-archived-p1')).toBeInTheDocument();
       expect(screen.getByTestId('session-title-ex-archived-p1b')).toBeInTheDocument();
       expect(screen.queryByTestId('session-title-pl-p1')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('session-title-conv-p1')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('session-title-conv-conv-1')).not.toBeInTheDocument();
     });
   });
 });
@@ -433,27 +437,63 @@ describe('会话页 — AI 对话卡（统一目录内，含归档/恢复/删除
   it('p1 AI 对话卡显示 project_name/最后消息/条数；活动态渲染归档+删除按钮', async () => {
     renderSessionsPage();
     await screen.findAllByTestId('session-directory-card');
-    const p1Card = screen.getByTestId('session-title-conv-p1').closest('[data-testid="session-directory-card"]');
+    const p1Card = screen.getByTestId('session-title-conv-conv-1').closest('[data-testid="session-directory-card"]');
     expect(p1Card).toBeTruthy();
     expect(within(p1Card as HTMLElement).getByText('帮我写一段打斗场景')).toBeInTheDocument();
     expect(within(p1Card as HTMLElement).getByText('3 条')).toBeInTheDocument();
-    expect(screen.getByTestId('chat-conv-archive-p1')).toBeInTheDocument();
-    expect(screen.getByTestId('chat-conv-delete-p1')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-conv-archive-conv-1')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-conv-delete-conv-1')).toBeInTheDocument();
   });
 
-  it('归档 AI 对话：点 chat-conv-archive-p1 → DELETE conversations/p1 + 转归档态（徽标+恢复按钮）', async () => {
+  it('归档 AI 对话：点 chat-conv-archive-conv-1 → DELETE conversations/conv-1 + 转归档态（徽标+恢复按钮）', async () => {
     const user = userEvent.setup();
     renderSessionsPage();
     await screen.findAllByTestId('session-directory-card');
 
-    await user.click(screen.getByTestId('chat-conv-archive-p1'));
+    await user.click(screen.getByTestId('chat-conv-archive-conv-1'));
     const delCall = apiFetchMock.mock.calls.find(
-      ([p, init]) => p === '/api/v1/chat/conversations/p1' && (init as RequestInit)?.method === 'DELETE',
+      ([p, init]) => p === '/api/v1/chat/conversations/conv-1' && (init as RequestInit)?.method === 'DELETE',
     );
     expect(delCall).toBeTruthy();
     await waitFor(() => {
-      expect(screen.getByTestId('chat-conv-archived-p1')).toBeInTheDocument();
-      expect(screen.getByTestId('chat-conv-restore-p1')).toBeInTheDocument();
+      expect(screen.getByTestId('chat-conv-archived-conv-1')).toBeInTheDocument();
+      expect(screen.getByTestId('chat-conv-restore-conv-1')).toBeInTheDocument();
     });
+  });
+
+  it('#744 核心：同一 project 两个 conversation 线程都显示、message_count 各自正确（conversation_id 区分，非 project_id 单例聚合）', async () => {
+    // 覆盖：p1 下两条独立线程（#744 后端按 conversation 聚合）
+    conversations = [
+      {
+        conversation_id: 'conv-a',
+        project_id: 'p1',
+        project_name: '仙侠长篇',
+        last_message: '帮我写一段打斗场景',
+        message_count: 3,
+        is_deleted: false,
+        updated_at: '2026-08-21T10:00:00Z',
+      },
+      {
+        conversation_id: 'conv-b',
+        project_id: 'p1',
+        project_name: '仙侠长篇',
+        last_message: '聊聊角色设定',
+        message_count: 5,
+        is_deleted: false,
+        updated_at: '2026-08-22T10:00:00Z',
+      },
+    ];
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    // RED：当前 src 按 project_id 单例聚合 → conv 卡 testid 为 session-title-conv-p1（无 conv-a/conv-b）→ FAIL
+    expect(screen.getByTestId('session-title-conv-conv-a')).toBeInTheDocument();
+    expect(screen.getByTestId('session-title-conv-conv-b')).toBeInTheDocument();
+    // 条数各自正确（卡按 conversation_id 区分）
+    const cardA = screen.getByTestId('session-title-conv-conv-a').closest('[data-testid="session-directory-card"]');
+    const cardB = screen.getByTestId('session-title-conv-conv-b').closest('[data-testid="session-directory-card"]');
+    expect(cardA).toBeTruthy();
+    expect(cardB).toBeTruthy();
+    expect(within(cardA as HTMLElement).getByText('3 条')).toBeInTheDocument();
+    expect(within(cardB as HTMLElement).getByText('5 条')).toBeInTheDocument();
   });
 });

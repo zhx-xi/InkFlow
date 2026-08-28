@@ -19,8 +19,10 @@ import {
 import {
   abortChatRun,
   archiveChatConversation,
+  createChatConversation,
   deleteChatConversation,
   deleteChatMessage,
+  fetchChatConversations,
   fetchChatMessages,
   saveChatMessage,
   streamChat,
@@ -96,6 +98,10 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
   const abortRef = useRef<(() => void) | null>(null);
   // #547：发送时的 projectId 快照（onDone/onError 保存 AI 消息仍落到原项目，避免闭包陈旧）
   const projectIdRef = useRef(projectId);
+  // #744：当前线程 id 快照（防闭包陈旧，镜像 projectIdRef；归档后新建线程更新）
+  const conversationIdRef = useRef<string | null>(null);
+  // #744：当前线程 id（state 驱动渲染；与 ref 同步）
+  const [conversationId, setConversationId] = useState<string | null>(null);
   // #719：run_id 捕获（run_started 帧 → 中断时调后端 abort 端点）
   const runIdRef = useRef<string | null>(null);
   // #727：reasoning 条目 seq 计数器（每帧独立块）
@@ -110,8 +116,20 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
   useEffect(() => {
     let cancelled = false;
     projectIdRef.current = projectId;
-    void fetchChatMessages(projectId)
-      .then((res) => {
+    const load = async () => {
+      try {
+        const convs = await fetchChatConversations({ projectId, includeDeleted: false });
+        if (cancelled) return;
+        const active = convs.items.find((c) => !c.is_deleted) ?? null;
+        let cid = active ? active.conversation_id : null;
+        if (!cid) {
+          const created = await createChatConversation(projectId);
+          if (cancelled) return;
+          cid = created.conversation_id;
+        }
+        conversationIdRef.current = cid;
+        setConversationId(cid);
+        const res = await fetchChatMessages(cid);
         if (cancelled) return;
         let userSeq = 0;
         let aiSeq = 0;
@@ -141,10 +159,11 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
         setSelectedSeq(latestContentSeq);
         // #642-1：写作页（带 streamSink）挂载后历史非空 → 自动展开（管线回复重挂后仍可见）
         if (streamSink && history.length > 0) setExpanded(true);
-      })
-      .catch(() => {
+      } catch {
         // 契约：历史加载失败静默，不弹 toast，后续发送仍可用
-      });
+      }
+    };
+    void load();
     return () => {
       cancelled = true;
     };
@@ -182,6 +201,7 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
       // #547：AI 回复落库（fire-and-forget；契约 = ChatPanel.test.tsx #547 describe）
       void saveChatMessage({
         project_id: projectIdRef.current,
+        conversation_id: conversationIdRef.current ?? '',
         role: 'ai',
         content: parsed.body,
         intent: parsed.intent,
@@ -295,7 +315,26 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
     // #745：本轮提交消息渲染后强制滚底
     pendingScrollRef.current = true;
     // #547：用户消息落库（fire-and-forget，不 await 不阻塞发送）
-    void saveChatMessage({ project_id: projectId, role: 'user', content: prompt }).catch(() => {});
+    // #547/#744：用户消息落库（fire-and-forget，不 await 不阻塞发送；线程异常缺失时先新建）
+    let cid = conversationIdRef.current;
+    if (!cid) {
+      try {
+        const created = await createChatConversation(projectId);
+        cid = created.conversation_id;
+        conversationIdRef.current = cid;
+        setConversationId(cid);
+      } catch {
+        // 新建线程失败不阻塞发送；AI 落库/下一轮发送会重试
+      }
+    }
+    if (cid) {
+      void saveChatMessage({
+        project_id: projectId,
+        conversation_id: cid,
+        role: 'user',
+        content: prompt,
+      }).catch(() => {});
+    }
     setInput('');
     const body: ChatStreamBody = {
       project_id: projectId,
@@ -427,9 +466,17 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
   /** #581：整轮归档（复用会话页归档 API：DELETE conversations/{projectId} 软删全部消息） */
   const handleArchiveRound = useCallback(async (): Promise<void> => {
     try {
-      await archiveChatConversation(projectIdRef.current);
+      // #744：归档当前线程 -> 新建新线程（开新对话不复用旧 conversation）-> 清空本轮消息
+      await archiveChatConversation(conversationIdRef.current ?? '');
+      const newConv = await createChatConversation(projectIdRef.current);
+      conversationIdRef.current = newConv.conversation_id;
+      setConversationId(newConv.conversation_id);
       setMessages([]);
       setToolEntries([]);
+      userSeqRef.current = 0;
+      aiSeqRef.current = 0;
+      // 新线程历史加载（新建线程为空；fire-and-forget，失败静默）
+      void fetchChatMessages(newConv.conversation_id).catch(() => {});
       useToastStore.getState().pushToast('ok', t('sessions.archivedToast'));
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
@@ -439,9 +486,16 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
   /** #581：整轮删除（force=true 物理删除，api/chat.ts deleteChatConversation 内部带 force） */
   const handleDeleteRound = useCallback(async (): Promise<void> => {
     try {
-      await deleteChatConversation(projectIdRef.current);
+      // #744：真删当前线程 -> 新建新线程 -> 清空本轮消息
+      await deleteChatConversation(conversationIdRef.current ?? '');
+      const newConv = await createChatConversation(projectIdRef.current);
+      conversationIdRef.current = newConv.conversation_id;
+      setConversationId(newConv.conversation_id);
       setMessages([]);
       setToolEntries([]);
+      userSeqRef.current = 0;
+      aiSeqRef.current = 0;
+      void fetchChatMessages(newConv.conversation_id).catch(() => {});
       useToastStore.getState().pushToast('ok', t('sessions.deletedToast'));
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
@@ -451,7 +505,11 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
   const canSend = input.trim() !== '';
 
   return (
-    <div data-testid="chat-panel" className="flex flex-col gap-2 border-b border-line bg-surface-2 px-4 py-3">
+    <div
+      data-testid="chat-panel"
+      data-conversation-id={conversationId ?? undefined}
+      className="flex flex-col gap-2 border-b border-line bg-surface-2 px-4 py-3"
+    >
       <div className="flex items-center gap-2">
         <button
           type="button"

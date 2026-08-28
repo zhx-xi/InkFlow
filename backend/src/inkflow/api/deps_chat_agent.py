@@ -126,6 +126,7 @@ def get_chat_agent_service(
         )
 
         cm_svc = ChatMessageService(repo=SQLiteChatMessageRepository(db))
+        # #748 agent 聊天历史：项目级读取（跨线程），多轮记忆注入
         items, _total = await cm_svc.list_messages(uuid.UUID(project_id), offset=0, limit=20)
         return list(items)
 

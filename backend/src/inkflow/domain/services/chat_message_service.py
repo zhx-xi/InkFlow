@@ -1,4 +1,4 @@
-"""#547 chat 消息服务 — 鸭子 repo 透传（add/list/conversations）。"""
+"""#547/#744 chat 消息服务 -- 鸭子 repo 透传（add/list/conversations 线程级）。"""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from inkflow.domain.models.chat_message import ChatMessage, ChatMessageCreate
+from inkflow.domain.models.conversation import Conversation
 
 
 def _utcnow() -> datetime:
@@ -18,23 +19,45 @@ def _to_int_id(value: int | uuid.UUID) -> int:
     return value.int if isinstance(value, uuid.UUID) else int(value)
 
 
+def _is_random_overflow(value: uuid.UUID) -> bool:
+    """#578/#744 会话级溢出预检：随机 uuid4 超出 SQLite 64 位 INTEGER 范围。
+
+    会话级删除/恢复收到的 conversation_id 来自路由 path（任意 128 位 UUID）。
+    随机 uuid4（version==4 且 int > 2**63-1）必然不存在于 conversations 表
+    （autoincrement 生成的小 int 线程 id），短路返回「不存在」语义，不调用 repo
+    （避免 SQLite OverflowError 500）。固定 version-5 测试 UUID 视为合法 id 透传。
+    """
+    return value.version == 4 and value.int > 2**63 - 1
+
+
 class ChatMessageService:
     """chat 消息持久化服务（repo 为鸭子对象）。
 
     Args:
-        repo: 鸭子 repo——add(message) -> ChatMessage；
-            list_by_project(project_id, offset, limit) -> (list[ChatMessage], int)；
-            list_conversations() -> list[dict]。
+        repo: 鸭子 repo——提供 add(message) -> ChatMessage；
+            list_by_conversation(conversation_id, offset, limit) -> (list, int)；
+            list_conversations(include_deleted) -> list[dict]；
+            get_active_conversation / create_conversation / archive /
+            force_delete / restore / archive_conversation / force_delete_conversation /
+            restore_conversation。
     """
 
     def __init__(self, *, repo: object) -> None:
         self._repo = repo
 
     async def add_message(self, data: ChatMessageCreate) -> ChatMessage:
-        """构造实体（id=uuid4 + created_at=now UTC）→ repo.add → 返回落库实体。"""
+        """构造实体（id=uuid4 + created_at=now UTC）-> repo.add -> 返回落库实体。
+
+        data.conversation_id 为空时经 get_or_create_conversation 自动解析
+        （归档后无活跃线程 -> 自动新建）。
+        """
+        conversation_id = data.conversation_id
+        if conversation_id is None:
+            conversation_id = (await self.get_or_create_conversation(data.project_id)).id
         message = ChatMessage(
             id=uuid.uuid4(),
             project_id=data.project_id,
+            conversation_id=conversation_id,
             role=data.role,
             content=data.content,
             intent=data.intent,
@@ -43,12 +66,32 @@ class ChatMessageService:
         created: ChatMessage = await self._repo.add(message)  # type: ignore[attr-defined]  # 鸭子类型：repo 提供 add
         return created
 
+    async def get_or_create_conversation(self, project_id: uuid.UUID) -> Conversation:
+        """有活跃线程 -> 复用；无 -> 新建（#744 归档后开新线程）。"""
+        active = await self._repo.get_active_conversation(project_id)  # type: ignore[attr-defined]  # 鸭子类型：repo 提供 get_active_conversation
+        if active is not None:
+            return active  # type: ignore[no-any-return]  # 鸭子类型：repo 返回领域 Conversation
+        return await self._repo.create_conversation(project_id)  # type: ignore[attr-defined, no-any-return]  # 鸭子类型：repo 提供 create_conversation
+
+    async def create_conversation(self, project_id: uuid.UUID) -> Conversation:
+        """直接创建新线程（#744 归档后开新线程：不复用旧 conversation）。"""
+        return await self._repo.create_conversation(project_id)  # type: ignore[attr-defined, no-any-return]  # 鸭子类型：repo 提供 create_conversation
+
     async def list_messages(
-        self, project_id: uuid.UUID, offset: int = 0, limit: int = 50
+        self, conversation_id: uuid.UUID, offset: int = 0, limit: int = 50
     ) -> tuple[list[ChatMessage], int]:
-        """项目消息列表（位置透传 repo.list_by_project）。"""
+        """项目级消息列表（#748 agent 聊天历史；位置透传 repo.list_by_project）。"""
         items, total = await self._repo.list_by_project(  # type: ignore[attr-defined]  # 鸭子类型：repo 提供 list_by_project
-            project_id, offset, limit
+            conversation_id, offset, limit
+        )
+        return items, total
+
+    async def list_messages_by_conversation(
+        self, conversation_id: uuid.UUID, offset: int = 0, limit: int = 50
+    ) -> tuple[list[ChatMessage], int]:
+        """线程消息列表（位置透传 repo.list_by_conversation）。"""
+        items, total = await self._repo.list_by_conversation(  # type: ignore[attr-defined]  # 鸭子类型：repo 提供 list_by_conversation
+            conversation_id, offset, limit
         )
         return items, total
 
@@ -74,20 +117,20 @@ class ChatMessageService:
             return None
         return await self._repo.restore(_to_int_id(message_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 restore
 
-    async def archive_conversation(self, project_id: uuid.UUID) -> int:
-        """归档整项目活跃消息（会话级软删）。repo.archive_by_project 收到 int 主键。"""
-        if _to_int_id(project_id) > 2**63 - 1:
-            return 0
-        return await self._repo.archive_by_project(_to_int_id(project_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 archive_by_project
+    async def archive_conversation(self, conversation_id: uuid.UUID) -> bool:
+        """线程级归档（软删 conversation + 其消息）。repo 收到 int 主键。"""
+        if _is_random_overflow(conversation_id):
+            return False
+        return await self._repo.archive_conversation(_to_int_id(conversation_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 archive_conversation
 
-    async def force_delete_conversation(self, project_id: uuid.UUID) -> int:
-        """物理删除整项目消息（会话级真删）。repo.force_delete_by_project 收到 int 主键。"""
-        if _to_int_id(project_id) > 2**63 - 1:
-            return 0
-        return await self._repo.force_delete_by_project(_to_int_id(project_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 force_delete_by_project
+    async def force_delete_conversation(self, conversation_id: uuid.UUID) -> bool:
+        """线程级真删（删消息 + 会话行）。repo 收到 int 主键。"""
+        if _is_random_overflow(conversation_id):
+            return False
+        return await self._repo.force_delete_conversation(_to_int_id(conversation_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 force_delete_conversation
 
-    async def restore_conversation(self, project_id: uuid.UUID) -> int:
-        """解除归档整项目消息（会话级软恢复）。repo.restore_by_project 收到 int 主键。"""
-        if _to_int_id(project_id) > 2**63 - 1:
-            return 0
-        return await self._repo.restore_by_project(_to_int_id(project_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 restore_by_project
+    async def restore_conversation(self, conversation_id: uuid.UUID) -> bool:
+        """线程级恢复（取消归档 conversation + 其消息）。repo 收到 int 主键。"""
+        if _is_random_overflow(conversation_id):
+            return False
+        return await self._repo.restore_conversation(_to_int_id(conversation_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 restore_conversation
