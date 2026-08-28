@@ -22,6 +22,8 @@ export interface AgentStepDto {
   index: number;
   /** 该步 AIMessage 文本（空 = 只调工具） */
   message_content: string;
+  /** 该步 LLM 思考过程（reasoning_content；推理模型才有，#740） */
+  reasoning?: string;
   tool_calls: AgentToolCallDto[];
   tokens: number;
 }

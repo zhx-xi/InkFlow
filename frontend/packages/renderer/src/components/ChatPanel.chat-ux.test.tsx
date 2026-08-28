@@ -106,6 +106,9 @@ function emitRunStart(index: number, runId: string) {
 function emitReasoning(index: number, text: string) {
   act(() => capturedStreams[index].callbacks.onReasoning?.(text));
 }
+function emitDone(index: number) {
+  act(() => capturedStreams[index].callbacks.onDone?.({ done: true }));
+}
 
 beforeEach(() => {
   streamChatMock.mockReset();
@@ -240,5 +243,58 @@ describe('ChatPanel chat-UX — 思考过程与工具调用折叠块（#727）',
     await user.click(screen.getByTestId('chat-tool-0'));
     expect(screen.getByTestId('chat-tool-0')).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText('{"ok":true,"data":[]}')).toBeInTheDocument();
+  });
+});
+
+describe('ChatPanel chat-UX — 每次提交+页面跳转自动滚到底（#745）', () => {
+  it('每次提交消息后即使未处于底部 → 仍自动滚动到底部（scrollIntoView 被调用）', async () => {
+    const scrollSpy = vi.fn();
+    Element.prototype.scrollIntoView = scrollSpy as unknown as typeof Element.prototype.scrollIntoView;
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    // 首次提交（自动展开消息区）
+    await sendAndAwaitStream(user, '第一次提交');
+    expect(screen.getByTestId('chat-messages')).toBeInTheDocument();
+    // 结束本轮流式，回到可发送态（chat-send）
+    emitDone(0);
+    await waitFor(() => expect(screen.getByTestId('chat-send')).toBeInTheDocument());
+    const container = screen.getByTestId('chat-messages');
+    // 模拟容器未处于底部（用户上滑阅读长回复）
+    Object.defineProperty(container, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(container, 'clientHeight', { value: 100, configurable: true });
+    Object.defineProperty(container, 'scrollTop', { value: 0, configurable: true });
+    scrollSpy.mockClear();
+    // 第二次提交 → 应无条件滚到底
+    await sendAndAwaitStream(user, '第二次提交', 1);
+    await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+  });
+
+  it('页面跳转（项目切换重新加载历史）→ 自动滚动到底部', async () => {
+    const scrollSpy = vi.fn();
+    Element.prototype.scrollIntoView = scrollSpy as unknown as typeof Element.prototype.scrollIntoView;
+    const user = userEvent.setup();
+    // 首次挂载：空历史
+    chatApiMocks.fetchChatMessages.mockResolvedValueOnce({ items: [], total: 0, offset: 0, limit: 50 });
+    const { rerender } = render(<ChatPanel {...OPTS} />);
+    // 展开消息区（首次提交触发）
+    await sendAndAwaitStream(user, '导航前');
+    const container = screen.getByTestId('chat-messages');
+    Object.defineProperty(container, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(container, 'clientHeight', { value: 100, configurable: true });
+    Object.defineProperty(container, 'scrollTop', { value: 0, configurable: true });
+    // 导航：切换到新项目（重新加载历史）
+    chatApiMocks.fetchChatMessages.mockResolvedValue({
+      items: [
+        { id: 'h1', project_id: 'p2', role: 'user', content: '历史问题', intent: null, created_at: '2026-08-21T10:00:00Z' },
+        { id: 'h2', project_id: 'p2', role: 'ai', content: '历史回答', intent: 'content', created_at: '2026-08-21T10:00:01Z' },
+      ],
+      total: 2,
+      offset: 0,
+      limit: 50,
+    });
+    scrollSpy.mockClear();
+    rerender(<ChatPanel {...OPTS} projectId="p2" />);
+    await screen.findByTestId('chat-msg-ai-0');
+    await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
   });
 });
