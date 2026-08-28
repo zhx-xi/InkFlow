@@ -56,6 +56,7 @@ from inkflow.domain.services.writing_service import WritingService
 from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent
 from inkflow.infrastructure.agent.tools.reader_tools import build_reader_tools
 from inkflow.infrastructure.agent.tools.save_draft_tool import build_save_draft_tool
+from inkflow.infrastructure.agent.tools.setting_write_tools import build_setting_write_tools
 from inkflow.infrastructure.database.repositories.agent_run_repo import (
     SQLiteAgentRunRepository,
 )
@@ -127,6 +128,7 @@ __all__ = [
     "build_deep_agent",
     "build_reader_tools",
     "build_save_draft_tool",
+    "build_setting_write_tools",
     "get_chat_agent_service",
 ]
 
@@ -651,11 +653,9 @@ async def get_index_rebuild_service(
     db: AsyncSession | None = None,
 ) -> IndexRebuildService:
     """获取 IndexRebuildService 实例（#659 统一异步重建）.
-    fulltext 复用 get_search_service 产出的 service.rebuild（接受 list[int] | None）；
-    vector 为「按 project_ids 逐个调 reindex」的懒加载闭包（RAG reindex 是 per-project
-    签名，故逐项目封装；未配 embedding 时 vector=None → vector/both scope 前置 422）。
-    TODO(#659 后续): 向量装配在 get_extraction_service 基础上逐项目 reindex，
-    本批先保证 fulltext + status 端点可测（单元测试对 vector 路径自建 mock）。
+    fulltext 复用 get_search_service.rebuild；vector 为「按 project_ids 逐个调
+    reindex」的懒加载闭包（未配 embedding → vector=None，vector/both 422）。
+    TODO(#659 后续): 向量装配待逐项目 reindex，本批先保证 fulltext + status 可测。
     """
     global _index_rebuild_service_instance
     if _index_rebuild_service_instance is None:

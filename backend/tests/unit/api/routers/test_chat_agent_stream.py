@@ -91,6 +91,11 @@ EXPECTED_READER_NAMES = [
     "audit_chapter",
     "count_words",
 ]
+EXPECTED_SETTING_WRITE_NAMES = [
+    "create_character",
+    "create_world_setting",
+    "create_outline",
+]
 
 PROJECT_ID = "550e8400-e29b-41d4-a716-446655440000"
 CHAPTER_ID = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
@@ -384,6 +389,7 @@ class TestGetChatAgentService:
 
     @patch("inkflow.api.deps.build_deep_agent")
     @patch("inkflow.api.deps.build_save_draft_tool")
+    @patch("inkflow.api.deps.build_setting_write_tools")
     @patch("inkflow.api.deps.build_reader_tools")
     @patch("inkflow.api.deps.get_chapter_audit_service")
     @patch("inkflow.api.deps.get_audit_service")
@@ -391,15 +397,30 @@ class TestGetChatAgentService:
     @patch("inkflow.api.deps.get_summary_service")
     @patch("inkflow.api.deps.get_foreshadowing_service")
     @patch("inkflow.api.deps.get_character_service")
+    @patch("inkflow.api.deps.get_outline_service")
+    @patch("inkflow.api.deps.get_world_service")
     @patch("inkflow.core.config.config")
     @patch(
         "inkflow.infrastructure.llm.provider_config.get_provider_config"
     )
     def test_assembles_full_tools(
-        self, m_get_provider, m_config, m_char, m_foresh, m_sum,
-        m_draft, m_audit, m_audit_ch, m_rt, m_sd, m_da,
+        self,
+        m_get_provider,
+        m_config,
+        m_world,
+        m_outline,
+        m_char,
+        m_foresh,
+        m_sum,
+        m_draft,
+        m_audit,
+        m_audit_ch,
+        m_rt,
+        m_sw,
+        m_sd,
+        m_da,
     ) -> None:
-        """全量工具面：5 只读 + save_draft → build_deep_agent；返回 ChatAgentService。"""
+        """全量工具面：5 只读 + save_draft + 3 设定库写入 → build_deep_agent。"""
         m_config.llm_default_model = MODEL
         m_config.model_routing = {}
         from inkflow.infrastructure.llm.provider_config import LLMProviderConfig
@@ -411,6 +432,7 @@ class TestGetChatAgentService:
         data = ChatStreamRequest(project_id=PROJECT_ID, chapter_id=CHAPTER_ID, prompt="你好")
         m_rt.return_value = [_fake_tool(name) for name in EXPECTED_READER_NAMES]
         m_sd.return_value = _fake_tool("save_draft")
+        m_sw.return_value = [_fake_tool(name) for name in EXPECTED_SETTING_WRITE_NAMES]
 
         svc = _get_chat_agent_service()(data=data, db=MagicMock())
 
@@ -428,10 +450,24 @@ class TestGetChatAgentService:
         assert save_deps.audit_service is m_audit.return_value
         assert save_deps.expected_project_id == uuid.UUID(PROJECT_ID)
         assert save_deps.expected_chapter_id == uuid.UUID(CHAPTER_ID)
-        # build_deep_agent：全量工具（5 只读 + save_draft）、profile_key=None、prompt 透传
+        # setting write deps：character/world/outline service + expected_project_id
+        setting_deps = _kwarg_or_positional(m_sw.call_args, "deps", 0)
+        from inkflow.infrastructure.agent.tools.setting_write_tools import SettingWriteToolDeps
+
+        assert isinstance(setting_deps, SettingWriteToolDeps)
+        assert setting_deps.character_service is m_char.return_value
+        assert setting_deps.world_service is m_world.return_value
+        assert setting_deps.outline_service is m_outline.return_value
+        assert setting_deps.audit_service is m_audit.return_value
+        assert setting_deps.expected_project_id == uuid.UUID(PROJECT_ID)
+        # build_deep_agent：全量工具（5 只读 + save_draft + 3 设定库写入）、profile_key=None
         assert m_da.call_count == 1
         tools = _kwarg_or_positional(m_da.call_args, "tools", 3, None)
-        assert [tool.spec.name for tool in tools] == [*EXPECTED_READER_NAMES, "save_draft"]
+        assert [tool.spec.name for tool in tools] == [
+            *EXPECTED_READER_NAMES,
+            "save_draft",
+            *EXPECTED_SETTING_WRITE_NAMES,
+        ]
         assert _kwarg_or_positional(m_da.call_args, "profile_key", 5, None) is None
         prompt = _kwarg_or_positional(m_da.call_args, "system_prompt", 4, None)
         assert isinstance(prompt, str) and prompt
@@ -443,6 +479,7 @@ class TestGetChatAgentService:
 
     @patch("inkflow.api.deps.build_deep_agent")
     @patch("inkflow.api.deps.build_save_draft_tool")
+    @patch("inkflow.api.deps.build_setting_write_tools")
     @patch("inkflow.api.deps.build_reader_tools")
     @patch("inkflow.api.deps.get_chapter_audit_service")
     @patch("inkflow.api.deps.get_audit_service")
@@ -450,13 +487,28 @@ class TestGetChatAgentService:
     @patch("inkflow.api.deps.get_summary_service")
     @patch("inkflow.api.deps.get_foreshadowing_service")
     @patch("inkflow.api.deps.get_character_service")
+    @patch("inkflow.api.deps.get_outline_service")
+    @patch("inkflow.api.deps.get_world_service")
     @patch("inkflow.core.config.config")
     @patch(
         "inkflow.infrastructure.llm.provider_config.get_provider_config"
     )
     def test_assembles_without_chapter_id(
-        self, m_get_provider, m_config, m_char, m_foresh, m_sum,
-        m_draft, m_audit, m_audit_ch, m_rt, m_sd, m_da,
+        self,
+        m_get_provider,
+        m_config,
+        m_world,
+        m_outline,
+        m_char,
+        m_foresh,
+        m_sum,
+        m_draft,
+        m_audit,
+        m_audit_ch,
+        m_rt,
+        m_sw,
+        m_sd,
+        m_da,
     ) -> None:
         """chapter_id 缺省 → SaveDraftToolDeps.expected_chapter_id 为 None。"""
         m_config.llm_default_model = MODEL
@@ -469,6 +521,7 @@ class TestGetChatAgentService:
         )
         m_rt.return_value = [_fake_tool(name) for name in EXPECTED_READER_NAMES]
         m_sd.return_value = _fake_tool("save_draft")
+        m_sw.return_value = [_fake_tool(name) for name in EXPECTED_SETTING_WRITE_NAMES]
         data = ChatStreamRequest(project_id=PROJECT_ID, prompt="你好")
 
         _get_chat_agent_service()(data=data, db=MagicMock())
@@ -476,9 +529,14 @@ class TestGetChatAgentService:
         save_deps = _kwarg_or_positional(m_sd.call_args, "deps", 0)
         assert save_deps.expected_project_id == uuid.UUID(PROJECT_ID)
         assert save_deps.expected_chapter_id is None
+        setting_deps = _kwarg_or_positional(m_sw.call_args, "deps", 0)
+        assert setting_deps.expected_project_id == uuid.UUID(PROJECT_ID)
         tools = _kwarg_or_positional(m_da.call_args, "tools", 3, None)
-        assert [tool.spec.name for tool in tools] == [*EXPECTED_READER_NAMES, "save_draft"]
-
+        assert [tool.spec.name for tool in tools] == [
+            *EXPECTED_READER_NAMES,
+            "save_draft",
+            *EXPECTED_SETTING_WRITE_NAMES,
+        ]
 
 # ── TestGetChatAgentServiceDbAndParseFallback: coverage-gap 补测（deps_chat_agent.py） ──
 
