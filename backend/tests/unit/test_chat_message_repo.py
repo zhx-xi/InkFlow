@@ -38,13 +38,13 @@ async def db_session():
     """独立 in-memory SQLite — 每个测试一个全新数据库（镜像既有 repo 测试形态）。"""
 
     # 惰性导入必须在 create_all 之前——Base.metadata 需先注册表
-    from inkflow.infrastructure.database.models.chat_message import (  # noqa: F401
+    from inkflow.infrastructure.database.models.chat_message import (  # noqa: F401  # 惰性导入触发 Base.metadata 表注册
         ChatMessageORM,
     )
-    from inkflow.infrastructure.database.models.conversation import (  # noqa: F401
+    from inkflow.infrastructure.database.models.conversation import (  # noqa: F401  # 惰性导入触发 Base.metadata 表注册
         ConversationORM,
     )
-    from inkflow.infrastructure.database.models.project import (  # noqa: F401
+    from inkflow.infrastructure.database.models.project import (  # noqa: F401  # 惰性导入触发 Base.metadata 表注册
         ProjectORM,
     )
 
