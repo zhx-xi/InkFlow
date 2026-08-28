@@ -9,7 +9,7 @@
  * - 项目印章: project-seal（文本 = 书名关键字）
  * - 工具栏: editor-toolbar；撤销/重做/保存（toolbar-save）/续写/生成（i18n 文案）
  * - 编辑器: chapter-editor（textarea，段落化纯文本）
- * - 右栏: right-rail / right-col-handle / right-col-drag / right-col-toggle（整栏收起/展开，面板隐藏）
+ * - 右栏: right-rail / right-col-drag / right-col-toggle（整栏收起/展开，面板隐藏）
  *
  * 管线执行状态区（spec §5.6 + #642-1 流式）：
  * - data-testid="pipeline-status"
@@ -190,15 +190,34 @@ describe('写作页 — 项目印章常驻（三主题）', () => {
   });
 });
 
-describe('写作页 — 右栏整栏收起/展开（#720 分裂式手柄）', () => {
-  it('渲染右栏边界分裂手柄（左半拖拽 + 右半收起/展开）', () => {
+describe('写作页 — 右栏整栏收起/展开（#742 收起按钮整行 + #747 拖动方向）', () => {
+  it('#742 收起按钮在右栏上侧占整行；拖动分隔线 hover 变鼠标（非方框）', () => {
     render(<WritingPage />);
-    expect(screen.getByTestId('right-col-handle')).toBeInTheDocument();
-    expect(screen.getByTestId('right-col-drag')).toBeInTheDocument();
-    expect(screen.getByTestId('right-col-toggle')).toBeInTheDocument();
+    const rail = screen.getByTestId('right-rail');
+    const toggle = within(rail).getByTestId('right-col-toggle');
+    // 收起按钮：位于右栏内、占整行（w-full）、位于面板上方
+    expect(toggle).toBeInTheDocument();
+    expect(toggle.className).toMatch(/w-full/);
+    expect(toggle.compareDocumentPosition(screen.getByTestId('rail-panel-context')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 拖动分隔线：右栏内、hover 变鼠标（cursor-col-resize）、细边界（非 28px 方框）
+    const drag = within(rail).getByTestId('right-col-drag');
+    expect(drag).toBeInTheDocument();
+    expect(drag.className).toMatch(/cursor-col-resize/);
+    expect(drag.className).not.toMatch(/h-7/);
   });
 
-  it('点右半「»」→ 整栏收起（三面板全隐藏 + data-collapsed=true）；再点「«」→ 展开', async () => {
+  it('#747 往左拖「right-col-drag」→ 右栏变宽、左编辑器变窄', () => {
+    render(<WritingPage />);
+    const rail = screen.getByTestId('right-rail');
+    const startW = parseInt(rail.style.width, 10) || 240;
+    const drag = screen.getByTestId('right-col-drag');
+    fireEvent.mouseDown(drag, { clientX: 300, clientY: 100 });
+    fireEvent.mouseMove(window, { clientX: 200, clientY: 100 }); // 往左拖 100px
+    const afterW = parseInt(rail.style.width, 10);
+    expect(afterW).toBeGreaterThan(startW); // 右栏变宽
+  });
+
+  it('点「»」→ 整栏收起（三面板全隐藏 + data-collapsed=true）；再点「«」→ 展开', async () => {
     const user = userEvent.setup();
     render(<WritingPage />);
     // 展开态：三个面板均在
