@@ -378,7 +378,7 @@ function WorldNodeRow({
           </span>
         )}
         {/* 名称：linkedMap 命中显示地图名（#368），否则显示条目名（P1 契约） */}
-        <span className="min-w-0 flex-1 whitespace-nowrap">
+        <span className="min-w-0 flex-1 truncate">
           {linkedMap ? linkedMap.name : (item.name ?? '')}
         </span>
         {!linkedMap && item.category ? (

@@ -360,8 +360,8 @@ export function MapWorkbench({
 
   /** #721：创建子图入口——真实地图节点直接以其为父；世界观条目未挂图时先物化根图再建子图 */
   const handleCreateChild = async (target: WorldMapDTO | LibraryItemDTO) => {
-    // WorldMapDTO 必带 project_id，LibraryItemDTO 无 → in 收窄两条路径
-    if ('project_id' in target) {
+    // WorldMapDTO 必有 bg_source，LibraryItemDTO 无 → in 收窄两条路径
+    if ('bg_source' in target) {
       setCreateDialog({ open: true, rootLocationId: null, parentMapId: target.id });
       return;
     }

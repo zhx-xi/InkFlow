@@ -783,6 +783,7 @@ export function LibraryPage() {
         <LibraryCreateDialog
           open={createOpen}
           cat={createCat}
+          isRoot={createCat === 'world' ? (activeWorldCat === null && !editing) : undefined}
           editing={editing}
           tagSuggestions={tagSuggestions}
           initialCategory={activeCat === 'world' ? (activeWorldCat ?? undefined) : undefined}
