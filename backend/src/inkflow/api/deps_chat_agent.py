@@ -50,27 +50,52 @@ def get_chat_agent_service(
     """
     import uuid
 
+    from fastapi import HTTPException
+
     from inkflow.core.config import config
+    from inkflow.domain.services.model_resolution import resolve_model
     from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
     from inkflow.infrastructure.agent.tools.reader_tools import ReaderToolDeps
     from inkflow.infrastructure.agent.tools.save_draft_tool import SaveDraftToolDeps
     from inkflow.infrastructure.llm.provider_config import (
+        _BUILTIN_PROVIDERS,
         get_provider_config,
         parse_model_string,
     )
 
-    # 模型/密钥/base_url 同源装配（F5 provider_config）：默认模型解析 provider，
-    # 未配置 key/base_url 时回退空串（harness 支持空 key/base_url 走 ChatOpenAI 默认）
-    model = config.llm_default_model
+    # 模型/密钥/base_url 同源装配（F5 provider_config）：resolve_model 统一解析链
+    # （#735 agent > project > global）；空默认模型时回退到首个有 key 且含 chat 模型的
+    # provider（#738，避免空 key 构造 ChatOpenAI → Missing credentials 500）
+    model = resolve_model(None, None, config.llm_default_model) or ""
     api_key = ""
     base_url = ""
-    try:
-        provider, _ = parse_model_string(model)
-        provider_cfg = get_provider_config(provider)
-        api_key = provider_cfg.api_key
-        base_url = provider_cfg.base_url or ""
-    except ValueError:
-        pass
+    if model:
+        try:
+            provider, _ = parse_model_string(model)
+            provider_cfg = get_provider_config(provider)
+            api_key = provider_cfg.api_key
+            base_url = provider_cfg.base_url or ""
+        except ValueError:
+            pass
+    else:
+        for provider in _BUILTIN_PROVIDERS:
+            try:
+                provider_cfg = get_provider_config(provider)
+            except ValueError:
+                continue
+            fallback_model = provider_cfg.default_model
+            if not fallback_model and provider_cfg.models:
+                fallback_model = provider_cfg.models[0]
+            if fallback_model:
+                model = fallback_model
+                api_key = provider_cfg.api_key
+                base_url = provider_cfg.base_url or ""
+                break
+        if not api_key:
+            raise HTTPException(
+                status_code=422,
+                detail="未配置默认模型，请在设置中配置 LLM Provider 和默认模型",
+            )
 
     context_svc = deps_module.get_context_service(db)
 
