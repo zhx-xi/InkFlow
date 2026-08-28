@@ -425,10 +425,11 @@ describe('设定库页 — #196 分类实体手动创建', () => {
     expect(within(dialog).getByTestId('library-create-save')).toBeInTheDocument();
   });
 
-  it('世界观分类对话框：字段（名称/类别/内容）', async () => {
+  it('世界观根创建对话框：字段（名称/内容；根不显示类别）', async () => {
     const { dialog } = await openCreateDialog('世界观');
     expect(within(dialog).getByLabelText('名称')).toBeInTheDocument();
-    expect(within(dialog).getByLabelText('类别')).toBeInTheDocument();
+    // #741/#731：根世界观无类别 → 根创建对话框不渲染「类别」输入框（旧契约错：根创建显示类别框）
+    expect(within(dialog).queryByLabelText('类别')).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText('内容')).toBeInTheDocument();
   });
 
