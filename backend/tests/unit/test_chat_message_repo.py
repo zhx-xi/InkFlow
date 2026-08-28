@@ -184,7 +184,9 @@ class TestListByConversation:
             await repo.add(
                 _make_message(content=content, created_at=base.replace(hour=8 + i))
             )
-        await repo.add(_make_message(project_id=PROJECT_ID_2, conversation_id=CONV_ID_2, content="另一线程"))
+        await repo.add(
+            _make_message(project_id=PROJECT_ID_2, conversation_id=CONV_ID_2, content="另一线程")
+        )
         return repo
 
     async def test_filters_by_conversation_asc_order(self, db_session):
@@ -252,7 +254,12 @@ class TestListConversations:
     ):
         """#744 核心：同一项目两个线程 → 列表输出两个卡（各 count/updated_at 独立）。"""
         repo = SQLiteChatMessageRepository(db_session)
-        await repo.add(_make_message(content="线程A消息", created_at=datetime(2026, 8, 20, 8, 0, 0, tzinfo=UTC)))
+        await repo.add(
+            _make_message(
+                content="线程A消息",
+                created_at=datetime(2026, 8, 20, 8, 0, 0, tzinfo=UTC),
+            )
+        )
         await repo.add(
             _make_message(
                 conversation_id=CONV_ID_3,
@@ -387,7 +394,8 @@ class TestConversationLevelArchive:
         assert ok is True
         assert (await repo.list_by_conversation(CONV_ID))[1] == 0
         assert not any(
-            c["conversation_id"] == str(CONV_ID) for c in await repo.list_conversations(include_deleted=True)
+            c["conversation_id"] == str(CONV_ID)
+            for c in await repo.list_conversations(include_deleted=True)
         )
 
     async def test_restore_conversation_unarchives(self, db_session):
@@ -423,7 +431,12 @@ class TestChatMessageAssemblyAndOrm:
     async def test_orm_created_at_default_and_repr(self, db_session):
         from inkflow.infrastructure.database.models.chat_message import ChatMessageORM
 
-        orm = ChatMessageORM(project_id=PROJECT_ID.int, conversation_id=CONV_ID.int, role="user", content="hi")
+        orm = ChatMessageORM(
+            project_id=PROJECT_ID.int,
+            conversation_id=CONV_ID.int,
+            role="user",
+            content="hi",
+        )
         db_session.add(orm)
         await db_session.commit()
         assert orm.created_at is not None

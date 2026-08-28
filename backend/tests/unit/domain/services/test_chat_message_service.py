@@ -155,7 +155,7 @@ class TestAddMessage:
     async def test_add_message_resolves_active_conversation_when_missing(
         self, service, fake_repo
     ):
-        """#744：add_message 缺 conversation_id → get_or_create 自动解析（归档后无活动线程 → 新建）。"""
+        """#744：add_message 缺 conversation_id → get_or_create 自动解析（无则新建）。"""
         fake_repo.get_active_conversation = AsyncMock(return_value=None)
         created = await service.add_message(
             ChatMessageCreate(project_id=PID, conversation_id=None, role="user", content=CONTENT)
@@ -179,7 +179,11 @@ class TestAddMessage:
     async def test_add_message_intent_passthrough(self, service, fake_repo):
         created = await service.add_message(
             ChatMessageCreate(
-                project_id=PID, conversation_id=CID, role="ai", content="好的。", intent="conversation"
+                project_id=PID,
+                conversation_id=CID,
+                role="ai",
+                content="好的。",
+                intent="conversation"
             )
         )
         assert created.intent == "conversation"
@@ -240,7 +244,10 @@ class TestListConversations:
     """list_conversations — 透传 repo 聚合结果（含 conversation_id）。"""
 
     async def test_list_conversations_passthrough(self, service, fake_repo):
-        convs = [_conversation_dict(), _conversation_dict(conversation_id=str(CID2), project_name=None)]
+        convs = [
+            _conversation_dict(),
+            _conversation_dict(conversation_id=str(CID2), project_name=None),
+        ]
         fake_repo.list_conversations = AsyncMock(return_value=convs)
         result = await service.list_conversations()
         assert result == convs

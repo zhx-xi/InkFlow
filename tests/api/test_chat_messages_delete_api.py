@@ -1,4 +1,4 @@
-"""#744 chat 消息删除/归档/恢复 API RED 契约测试 — DELETE/POST /api/v1/chat/messages/{id} + /conversations/{conversation_id}。
+"""#744 chat 消息删除/归档/恢复 API RED 契约测试 — /api/v1/chat 会话（消息/会话级两级删除）。
 
 父侧定稿契约（见 .hermes/plans/contract-744.md，镜像 sessions.py 两级删除先例）:
 - DELETE /api/v1/chat/messages/{message_id}（无 force）→ 204 归档（软删 is_deleted=true）

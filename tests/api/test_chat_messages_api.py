@@ -108,10 +108,20 @@ def chat_svc():
     svc.list_messages_by_conversation = AsyncMock(return_value=([], 0))
     svc.list_conversations = AsyncMock(return_value=[])
     svc.create_conversation = AsyncMock(
-        return_value={"conversation_id": str(CONV_ID), "project_id": str(PROJECT_ID), "created_at": CREATED_AT, "is_deleted": False}
+        return_value={
+            "conversation_id": str(CONV_ID),
+            "project_id": str(PROJECT_ID),
+            "created_at": CREATED_AT,
+            "is_deleted": False,
+        }
     )
     svc.get_or_create_conversation = AsyncMock(
-        return_value={"id": str(CONV_ID), "project_id": str(PROJECT_ID), "created_at": CREATED_AT, "is_deleted": False}
+        return_value={
+            "id": str(CONV_ID),
+            "project_id": str(PROJECT_ID),
+            "created_at": CREATED_AT,
+            "is_deleted": False,
+        }
     )
     svc.archive_conversation = AsyncMock(return_value=True)
     svc.force_delete_conversation = AsyncMock(return_value=True)
