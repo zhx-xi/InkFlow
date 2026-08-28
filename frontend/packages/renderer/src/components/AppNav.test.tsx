@@ -163,3 +163,11 @@ describe('AppNav — 跳转', () => {
     expect(screen.getByTestId('location-probe')).toHaveTextContent('/library?cat=characters');
   });
 });
+
+describe('AppNav — 会话入口分组（#746：会话列表从系统栏移到设定库栏）', () => {
+  it('nav-item-sessions 归属 nav-group-library（设定库），不在 nav-group-system（系统栏）', () => {
+    renderNav();
+    expect(screen.getByTestId('nav-group-library')).toContainElement(screen.getByTestId('nav-item-sessions'));
+    expect(screen.getByTestId('nav-group-system')).not.toContainElement(screen.getByTestId('nav-item-sessions'));
+  });
+});
