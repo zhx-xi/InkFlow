@@ -9,7 +9,7 @@
 - extract 入口：校验项目存在 → 调用 WorldExtractor → 返回 WorldExtractionResult；
   项目不存在 → ProjectNotFoundError；extractor/project_repo 未注入 → 配置错误
 
-依据: specs/f10-world-service/spec.md §7 + §9 测试策略。
+依据: specs/f10-world-settings/spec.md §7 + §9 测试策略。
 """
 
 from __future__ import annotations

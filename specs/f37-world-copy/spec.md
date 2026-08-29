@@ -1,4 +1,5 @@
 # F37: 世界观跨书复制（world-copy）— 功能规格
+> **端**: backend
 
 > **Spec 版本**: 1.2 | **日期**: 2026-08-10 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §6（workspace）、PRD v2.1 §6.2 P1-02、F35 spec v1.1（地点树）+ F36 spec v1.1（地图）、Constitution P1-P6
 >

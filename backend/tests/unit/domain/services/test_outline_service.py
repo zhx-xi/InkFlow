@@ -13,7 +13,7 @@
   返回 OutlineGenerationResult；项目不存在 → ProjectNotFoundError；
   generator / project_repo 未注入 → OutlineServiceError（配置错误）
 
-依据: specs/f11-outline-service/spec.md §6 + §7 + §9 测试策略。
+依据: specs/f11-outline/spec.md §6 + §7 + §9 测试策略。
 """
 
 from __future__ import annotations

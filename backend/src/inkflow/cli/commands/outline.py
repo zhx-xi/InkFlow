@@ -15,7 +15,7 @@ InkFlowHTTPClient 调内核 REST API（spec §4；Issue #169 CLI 恒经 HTTP）�
 - pydantic ValidationError / 文本文件缺失 → VALIDATION_ERROR
 - 其余异常 → DB_ERROR
 
-依据: specs/f11-outline-service/spec.md §4/§4.5/§7。
+依据: specs/f11-outline/spec.md §4/§4.5/§7。
 """
 
 from __future__ import annotations

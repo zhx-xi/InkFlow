@@ -17,7 +17,7 @@ mock 服务层（同 F9 characters.py 模式）。
 - WorldExtractionError → 500「世界观提取失败: LLM 输出无法解析，请重试」
 - LLMRequestError → 500「LLM 调用失败，请稍后重试」
 
-依据: specs/f10-world-service/spec.md §3/§5/§7。
+依据: specs/f10-world-settings/spec.md §3/§5/§7。
 """
 
 from __future__ import annotations

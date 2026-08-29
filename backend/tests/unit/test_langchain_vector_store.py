@@ -8,7 +8,7 @@ retrieve 按 project_id where 过滤（跨项目不可见）/ entity_types 过�
 delete_project 返回删除数 / 空库 retrieve → 空列表 / FakeEmbeddings
 维度一致性（size=384，与 BGE 输出维度同）/ metadata（含 project_id）透传。
 
-依据: specs/f14-extraction-service/spec.md §5.6/§9; ADR-013。
+依据: specs/f14-extraction/spec.md §5.6/§9; ADR-013。
 """
 
 from __future__ import annotations
@@ -471,7 +471,7 @@ async def test_fingerprint_isolated_per_project(store: LangChainVectorStore) -> 
 
 
 # ══ #277 M3 追加段（2026-08-16）: 检索去重（spec §5.6.3）══════════
-# 契约源: specs/f14-extraction-service/spec.md §5.6.3「检索去重: 按
+# 契约源: specs/f14-extraction/spec.md §5.6.3「检索去重: 按
 # (entity_type, 源实体 id) 去重取最高分再截断 top_k——chapter_chunk 的
 # 源实体 id = chapter_id（章节）非块 id（同章节多块命中只留最高分一条，
 # 杜绝相邻重复块刷屏，QA §P1-1）」。
@@ -559,7 +559,7 @@ async def test_retrieve_dedup_does_not_merge_across_entity_types(
 
 
 # ══ #278 M4 追加段（2026-08-16）: list_entities 只读查询（增量跳过白名单） ═══
-# 契约源: specs/f14-extraction-service/spec.md §5.6.7（LLM 增量跳过需读回旧块
+# 契约源: specs/f14-extraction/spec.md §5.6.7（LLM 增量跳过需读回旧块
 # id/source_hash）+ QA 报告 §P2-2。RED 期 VectorStoreProtocol/LangChainVectorStore
 # 均无 list_entities → AttributeError。
 #

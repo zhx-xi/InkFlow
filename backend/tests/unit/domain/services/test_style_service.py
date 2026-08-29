@@ -25,7 +25,7 @@
   spec §5.7 伪代码（多章 → 无完整句子 → 无有效词条）
 - StyleLLMAnalyzer.analyze(project, text) 由服务层以关键字调用（§5.7）
 
-依据: specs/f16-style-service/spec.md §5.1/§7/§8.1/§9。
+依据: specs/f16-style-analysis/spec.md §5.1/§7/§8.1/§9。
 """
 
 from __future__ import annotations

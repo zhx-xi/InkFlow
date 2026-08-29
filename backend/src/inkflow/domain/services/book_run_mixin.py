@@ -7,8 +7,8 @@ prepare_run/mark_failed 为后台任务改造（#456）新增的预校验/异常
 不改类契约：
 BookService(BookRunMixin) 后 prepare_run/mark_failed 仍为实例方法，既有测试零改动）。
 
-依据: specs/f44-long-task-orchestrator/spec.md §3/§13.4（#456 FastAPI 后台任务）.
-    specs/f49-autonomous-writing/spec.md §5.4（BookService 装配）.
+依据: specs/f44-book-orchestrator/spec.md §3/§13.4（#456 FastAPI 后台任务）.
+    specs/f27-writer-agent/spec.md §5.4（BookService 装配）.
 """
 
 from __future__ import annotations

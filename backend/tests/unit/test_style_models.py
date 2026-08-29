@@ -5,7 +5,7 @@ AITraceVerdict 三值枚举 / AITraceFeature / AITraceAssessment 默认值与嵌
 LexicalAnalysis（含 jieba 板块 None 默认）/ JiebaAnalysis 四字段 /
 StyleLLMAssessment 四字段 / StyleReport 完整序列化（llm_assessment 两态）。
 
-依据: specs/f16-style-service/spec.md §2 数据模型（§2.1-§2.7、§2.9 领域模型代码）。
+依据: specs/f16-style-analysis/spec.md §2 数据模型（§2.1-§2.7、§2.9 领域模型代码）。
 StyleAnalyzeRequest（§2.8）定义在 API 层 api/routers/style.py（同 F9-F15 DTO 先例），
 不属于领域模型测试范围——由 test_style_api.py 覆盖（本 RED 阶段不测）。
 """

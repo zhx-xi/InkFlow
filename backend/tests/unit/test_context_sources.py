@@ -1,6 +1,6 @@
 """上下文数据源测试 — 角色/世界观/大纲接真表（issue #593 F6 数据源补齐）.
 
-测试范围 (spec f6-context-service v1.1):
+测试范围 (spec f6-context v1.1):
     - CharacterSettingSource: 从 characters 表读角色，产出 source=character_setting 的 ContextItem
       （内容 = 角色名 + brief；brief 未填降级截 personality）
     - WorldSettingSource: 从 world_settings 表读条目，产出 source=world_setting 的 ContextItem

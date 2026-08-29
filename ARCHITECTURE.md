@@ -41,11 +41,11 @@ D:\develop\projects\
 │   │   ├── README.md
 │   │   └── images\                  #   架构图 PNG（README 引用）
 │   ├── specs\                       # SDD 规格文件（每个 feature 一个目录）
-│   │   ├── f1-project-service\ ... f7-cli-interface\   #   Phase 1（F8 无 spec，见 ADR-018）
-│   │   ├── f9-character-service\ ... f16-style-service\  #   Phase 2 创作工具链
+│   │   ├── f1-project\ ... f7-cli\   #   Phase 1（F8 无 spec，见 ADR-018）
+│   │   ├── f9-character\ ... f16-style-analysis\  #   Phase 2 创作工具链
 │   │   ├── f19-gui\                #   0.3.0 GUI（内核进程化 §2 ✅ PR #85 / Electron 壳、渲染层占位）
-│   │   ├── f23-sse-stream\         #   0.3.0 传输增强（SSE 流式）
-│   │   └── p0-11-cloud-protocols\   #   云端接口 Protocol spec
+│   │   ├── f23-sse\         #   0.3.0 传输增强（SSE 流式）
+│   │   └── f52-cloud-protocol\   #   云端接口 Protocol spec
 │   ├── frontend\                    # ★ 前端（0.3.0 F19 GUI 起；云 Web 一套两用，ADR-020）
 │   │   └── packages\                #   pnpm workspace 双包：renderer（React19+Vite6）+ electron（薄壳）
 │   ├── ci_cd\                       # ★ CI 质量护栏（check_file_length / check_noqa_reason / api-coverage.md）
@@ -114,18 +114,18 @@ D:\develop\projects\
 
 | 变体 | 特征 | 样板 |
 |------|------|------|
-| 提取型 | 实体 CRUD + AI 提取（模板/重试/合并/幂等） | `specs/f9-character-service/spec.md`（F10 是其镜像成品） |
-| 生成型 | 生成即新建（同名 422）+ save 预览参数 | `specs/f11-outline-service/spec.md`（§5.6 差异表） |
-| 确定性检查型 | 无 LLM，确定性算法（§5 算法 + 完备性论证） | `specs/f12-timeline-service/spec.md` |
-| 状态追踪 + F6 注入型 | 无 AI + 替换 F6 数据源 stub | `specs/f13-foreshadowing-service/spec.md`（§5） |
-| 横切收敛型 | 非实体 CRUD：统一门面 + 分发既有入口 + 增量 hash + RAG | `specs/f14-extraction-service/spec.md` |
-| 横切审计型 | 纯消费者：只读聚合 + 规则引擎 + 零跨模块 MODIFY | `specs/f15-audit-service/spec.md` |
-| 确定性文本分析型 | 无 LLM 主体 + LLM 可选 + jieba 增强 | `specs/f16-style-service/spec.md` |
-| 传输增强型 | 零新实体：流式通道 + 判别联合 DTO + SSE 帧协议 | `specs/f23-sse-stream/spec.md` |
+| 提取型 | 实体 CRUD + AI 提取（模板/重试/合并/幂等） | `specs/f9-character/spec.md`（F10 是其镜像成品） |
+| 生成型 | 生成即新建（同名 422）+ save 预览参数 | `specs/f11-outline/spec.md`（§5.6 差异表） |
+| 确定性检查型 | 无 LLM，确定性算法（§5 算法 + 完备性论证） | `specs/f12-timeline/spec.md` |
+| 状态追踪 + F6 注入型 | 无 AI + 替换 F6 数据源 stub | `specs/f13-foreshadowing/spec.md`（§5） |
+| 横切收敛型 | 非实体 CRUD：统一门面 + 分发既有入口 + 增量 hash + RAG | `specs/f14-extraction/spec.md` |
+| 横切审计型 | 纯消费者：只读聚合 + 规则引擎 + 零跨模块 MODIFY | `specs/f15-consistency-audit/spec.md` |
+| 确定性文本分析型 | 无 LLM 主体 + LLM 可选 + jieba 增强 | `specs/f16-style-analysis/spec.md` |
+| 传输增强型 | 零新实体：流式通道 + 判别联合 DTO + SSE 帧协议 | `specs/f23-sse/spec.md` |
 
 ## 5. 加新模块的步骤
 
-1. **写 spec**（在 feature worktree）：读 `specs/f9-character-service/spec.md`（格式范例）+ 最接近的变体样板 + PRD 对应需求 + 相关 ADR（含 ADR-019 编号口径）。文件结构节必须与真实源码树一致，不照抄旧 spec
+1. **写 spec**（在 feature worktree）：读 `specs/f9-character/spec.md`（格式范例）+ 最接近的变体样板 + PRD 对应需求 + 相关 ADR（含 ADR-019 编号口径）。文件结构节必须与真实源码树一致，不照抄旧 spec
 2. **拍板**：待澄清问题（Q1-Q3）由用户拍板后做 v1.x 修订（`references/spec-revision-playbook.md` 流程）
 3. **RED 批**：先写全部测试，逐文件确认 FAIL
 4. **GREEN 批**：分层实现（services → ports → infrastructure → api → cli）

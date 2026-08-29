@@ -1,12 +1,12 @@
 """#53 F21 导出服务 — GET /api/v1/projects/{project_id}/export API 测试契约（TDD RED 阶段）。
 
-本文件为 `api/routers/export.py`（NEW，specs/f21-export-service/spec.md v1.1 §3
+本文件为 `api/routers/export.py`（NEW，specs/f21-export/spec.md v1.1 §3
 API 契约 / §7 边界 / §9 测试策略 / §13 验收 M7）定义测试契约，覆盖 1 个下载端点：
 
 - `GET /api/v1/projects/{project_id}/export` — 导出项目 TXT（query: format 可选
   仅 txt 缺省 txt、include_settings 可选默认 false）
 
-权威来源：specs/f21-export-service/spec.md §3.1（端点总览）/ §3.2（请求响应
+权威来源：specs/f21-export/spec.md §3.1（端点总览）/ §3.2（请求响应
 示例）/ §3.3（异常映射表）/ §7 E1-E11（边界）/ §9.1（API 层测试）/ §13 M7（验收）；
 F19 token 中间件契约（spec §11 依赖，test_token_auth.py 同款）；F15 audit router
 先例（_parse_id/_get_svc/_run_service 错误映射，backend/src/inkflow/api/routers/

@@ -1,4 +1,4 @@
-/** 世界观复制对话框（F43 P1，specs/f43-setting-library-crud/spec.md v1.1 §5.5，F37 消费）：
+/** 世界观复制对话框（F43 P1，specs/f43-setting-library-gui/spec.md v1.1 §5.5，F37 消费）：
  * 行内复制（subtree：范围 chips「本体+全部子级[默认]/仅本体」）+ 顶部整体复制（all：范围固定，chips 隐藏）。
  * 目标项目 Select 排除当前项目（E20，父级过滤后传入）；确认 disabled 直到目标已选；
  * #195：遮罩点击不关闭；Esc 关闭；失败 → err toast + 保持打开可重试（E24，toast 由父级处理）。 */

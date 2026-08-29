@@ -13,7 +13,7 @@
 服务方法显式赋 AsyncMock —— 未赋值的同步 MagicMock 子 mock 被 await 会
 返回 coroutine 导致 500（F4 4.1 实测陷阱）。
 
-依据: specs/f10-world-service/spec.md §3 + §7 + §9。
+依据: specs/f10-world-settings/spec.md §3 + §7 + §9。
 
 F35 追加段（#173 地点层级，spec §3.1/§3.3 契约）:
 - create body 新增 parent_id → create_setting 收到 parent_id=<uuid> 关键字参数

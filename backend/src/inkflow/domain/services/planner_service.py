@@ -17,7 +17,7 @@ v1.2 #475：装配 llm_client 后升级为真 LLM 动态提问引擎——
 仅依赖 domain/models 与注入的 repo/可调用对象（鸭子类型），
 domain/ 零框架 import 门禁天然满足（ADR-002/015）.
 
-依据: specs/f44-long-task-orchestrator/spec.md 搂2.2/搂5.1/搂13.5（v1.2）.
+依据: specs/f44-book-orchestrator/spec.md 搂2.2/搂5.1/搂13.5（v1.2）.
 """
 
 from __future__ import annotations

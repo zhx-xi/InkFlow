@@ -11,7 +11,7 @@ F16 不新建业务实体表——报告是文本内容的瞬态只读计算结�
 Pydantic 输出模型，model_dump(mode="json") 直接进 API/CLI 信封
 （spec §2）。
 
-依据: specs/f16-style-service/spec.md §2（§2.1-§2.7、§2.9 领域模型代码）。
+依据: specs/f16-style-analysis/spec.md §2（§2.1-§2.7、§2.9 领域模型代码）。
 领域层保持纯净：仅依赖 Pydantic v2 与标准库，不感知 ORM / 框架。
 """
 

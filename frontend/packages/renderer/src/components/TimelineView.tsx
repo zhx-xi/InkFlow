@@ -1,5 +1,5 @@
 /**
- * F43 P4 时间线双序 + 两级检查（specs/f43-setting-library-crud/spec.md §5.16-5.17）：
+ * F43 P4 时间线双序 + 两级检查（specs/f43-setting-library-gui/spec.md §5.16-5.17）：
  * 工具栏（timeline-toolbar）= 双序 chips（tl-view-narrative 默认激活 / tl-view-world）+
  * 整体检查（tl-check-all）+ 图例（tl-legend）；
  * 双序切换仅本地切换显示数组（零额外请求；narrative_order 为空时回退 event_timeline）；

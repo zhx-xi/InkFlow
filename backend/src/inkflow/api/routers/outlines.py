@@ -24,7 +24,7 @@ mock 服务层（同 F9/F10 模式）。
 - OutlineGenerationError → 500「大纲生成失败: LLM 输出无法解析，请重试」
 - LLMRequestError → 500「LLM 调用失败，请稍后重试」
 
-依据: specs/f11-outline-service/spec.md §3/§5/§7。
+依据: specs/f11-outline/spec.md §3/§5/§7。
 """
 
 from __future__ import annotations

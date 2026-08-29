@@ -1,8 +1,9 @@
 # F45: 记忆系统 AI 总结演进（memory-evolution）功能规格
+> **端**: backend
 
 **Spec 版本**: 1.1（Q1=B/Q2=B/Q3=A 拍板固化）
 **日期**: 2026-08-17
-**依据**: 设计定稿（design/agentic-orchestrator-and-memory-design-2026-08-14.md §3 记忆系统演进，唯一真相）+ Issue #339（M1 用户级偏好层）+ Issue #340（M2 语义风格提取）+ F28 spec v1.0（specs/f28-agent-memory/spec.md，演进基线）+ 用户拍板（2026-08-14 两段式架构 / 记忆演进独立排期）+ LLM 配置拍板（#415，2026-08-16）
+**依据**: 设计定稿（design/agentic-orchestrator-and-memory-design-2026-08-14.md §3 记忆系统演进，唯一真相）+ Issue #339（M1 用户级偏好层）+ Issue #340（M2 语义风格提取）+ F28 spec v1.0（specs/f28-memory-learning/spec.md，演进基线）+ 用户拍板（2026-08-14 两段式架构 / 记忆演进独立排期）+ LLM 配置拍板（#415，2026-08-16）
 **所属阶段**: 0.10.0（记忆系统 AI 总结演进，F45），估算 M1 4-6 人天 + M2 6-8 人天（合计 10-14 人天）
 **关联 Issues**: #339（M1 用户级偏好层 + 归属分层 + 跨项目聚合）· #340（M2 语义风格提取——difflib 锚点 → LLM 语义总结）
 **依赖**: ✅ F28 agent-memory（演进基线：project_preferences/memory_events/learner/memory_service/PreferenceSource，PR #242）· ✅ F6 context-service（注入端口 ContextSourceType/SOURCE_LAYER）· ✅ F16 style-service（LLM 模板管线样板 _style_llm_analyzer）· ✅ F32 settings-persistence（app_settings 分层对照）· ✅ #415（LLM 默认模型 deepseek/deepseek-v4-flash，配置唯一默认源）· ✅ F38（CLI 恒 HTTP）· ✅ F34（audit_logs）· ⏳ M2 依赖 M1（#339 → #340）

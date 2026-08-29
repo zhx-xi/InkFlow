@@ -1,7 +1,7 @@
 """Timeline CLI 命令测试（delete/错误映射/人类输出）— Mock ensure_kernel +
 InkFlowHTTPClient（spec §4/§9 CLI 测试）.
 
-覆盖（依据 specs/f12-timeline-service/spec.md §4/§9）:
+覆盖（依据 specs/f12-timeline/spec.md §4/§9）:
 - delete 二次确认 + --force（v1.1 真删，不可恢复）
 - --json + delete 无 --force → VALIDATION_ERROR
 - 错误映射：NotFound → NOT_FOUND；ServiceError → VALIDATION_ERROR；

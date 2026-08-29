@@ -1,4 +1,5 @@
 # F29: Supervisor 自主编排 + HITL 功能规格（supervisor-agent）
+> **端**: backend
 
 **Spec 版本**: 1.0（初稿，2026-08-13）
 **日期**: 2026-08-13

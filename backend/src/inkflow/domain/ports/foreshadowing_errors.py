@@ -1,7 +1,7 @@
 """伏笔管理领域异常.
 
 F13 专属异常类型，继承自 Exception。
-依据: specs/f13-foreshadowing-service/spec.md §3.4/§8。
+依据: specs/f13-foreshadowing/spec.md §3.4/§8。
 
 异常映射约定（spec §3.4 异常映射表）:
 - ForeshadowingServiceError 子类 = 业务校验失败，API 层映射为 422（消息即 detail）
@@ -79,7 +79,7 @@ class ForeshadowingExtractionError(Exception):
     """伏笔提取失败 — LLM 输出无法解析为合法伏笔 JSON（F14 §5.4）— 500.
 
     修复重试耗尽后抛出，由调用方（API/CLI/门面）映射为 500。
-    依据: specs/f14-extraction-service/spec.md §5.4 + §7 异常映射表。
+    依据: specs/f14-extraction/spec.md §5.4 + §7 异常映射表。
 
     Attributes:
         raw_output: LLM 原始输出片段（诊断用，可能被截断 ≤ 500 字符）.

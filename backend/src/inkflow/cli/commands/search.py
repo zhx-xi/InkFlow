@@ -17,7 +17,7 @@
 /api/v1/projects 列表映射；--json 时 data = SearchResponse 原样、snippet 保留
 `<mark>`（消费端自行渲染）。--rebuild 人类输出重建完成提示。
 
-依据: specs/f22-search-service/spec.md §4/§9。
+依据: specs/f22-search/spec.md §4/§9。
 """
 
 from __future__ import annotations

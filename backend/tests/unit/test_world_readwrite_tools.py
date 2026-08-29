@@ -1,6 +1,6 @@
 """F51 世界读+写工具 RED 契约测试 — build_world_rw_tools 注册 + 执行信封.
 
-依据 specs/f51-agent-tools-v2/spec.md §2.4-2.6。镜像 test_chat_setting_write_tools 形态。
+依据 specs/f26-agent-tools/spec.md §2.4-2.6。镜像 test_chat_setting_write_tools 形态。
 锁定契约:
 1. build_world_rw_tools(deps) 返回 [list_maps, create_map, update_map,
    list_timeline_events, create_timeline_event, update_timeline_event,

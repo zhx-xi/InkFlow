@@ -14,7 +14,7 @@ checkpoint/HITL：book_supervisor 节点 LLM 决策 → Command(goto) 路由到�
     write/audit/revise 执行后静态边回 book_supervisor；mark_done 恒 Command(goto=...)
     （chapter_done HITL 条件路由，无静态边——Spike ②）；hitl 仅 interrupt；fallback → END。
 
-依据: specs/f49-autonomous-writing/spec.md §5.1-§5.5/§7
+依据: specs/f27-writer-agent/spec.md §5.1-§5.5/§7
     + backend/tests/unit/test_book_agentic_pipeline.py（RED 契约 docstring）。
 """
 

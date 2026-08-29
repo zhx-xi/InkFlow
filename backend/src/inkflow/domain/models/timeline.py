@@ -7,7 +7,7 @@ time_display 三字段，构成事件时间线）与**叙事位置**（narrative
 TimelineEventRef / TimelineConflict / ConsistencyReport / TimelineView 是
 双线视图与一致性检查（§5，确定性算法，无 LLM）的输出模型。
 
-依据: specs/f12-timeline-service/spec.md §2.5/§2.6。
+依据: specs/f12-timeline/spec.md §2.5/§2.6。
 领域层保持纯净：仅依赖 Pydantic v2，不感知 ORM / 框架。
 """
 

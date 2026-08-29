@@ -1,7 +1,7 @@
 /**
  * 轻量标签注册表（stores/tags.ts）测试契约（#595 D7=A 拍板 / #596 回归护栏）。
  *
- * ⚠️ 本文件 = 契约。注册表语义（specs/f1-project-service/spec.md §2.1）：
+ * ⚠️ 本文件 = 契约。注册表语义（specs/f1-project/spec.md §2.1）：
  * - 预设建议 = 本项目已用 tags ∪ 旧 genre 枚举值（PROJECT_GENRE_LEGACY），去重保序
  * - 仅作建议，不约束自定义输入（本 store 只聚合，不校验）
  *

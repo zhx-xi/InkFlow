@@ -6,7 +6,7 @@ ExtractionRun 是增量追踪记录（每 (project, type, source) 一行最新�
 §2.3）；ReindexResult 是全量重建索引结果（§5.6），引用 P0-11 已定义的
 EntityType（§2.4，不重定义）。
 
-依据: specs/f14-extraction-service/spec.md §2.1/§2.2/§2.3/§2.5。
+依据: specs/f14-extraction/spec.md §2.1/§2.2/§2.3/§2.5。
 领域层保持纯净：仅依赖 Pydantic v2，不感知 ORM / 框架。
 """
 

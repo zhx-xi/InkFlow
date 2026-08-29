@@ -12,7 +12,7 @@ RED 预期
     ModuleNotFoundError: No module named 'inkflow.infrastructure.agent.book_agentic_pipeline'
 顶部仅 import 主契约模块；WritingPlan/BookLimits/AgenticBookConfig/langgraph 全部用例体 lazy。
 
-设计假设（本红批契约定稿 = specs/f49-autonomous-writing/spec.md §5 后端编排核心；GREEN 按此实现）
+设计假设（本红批契约定稿 = specs/f27-writer-agent/spec.md §5 后端编排核心；GREEN 按此实现）
 ----------------------------------------
 1. 类与构造（§5.1）:
    class BookAgenticPipeline:

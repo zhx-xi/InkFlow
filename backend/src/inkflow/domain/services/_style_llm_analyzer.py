@@ -1,6 +1,6 @@
 """F16 风格 LLM 深度分析管线 — 模板渲染 → LLM → JSON 解析 → 修复重试 → StyleLLMAssessment.
 
-依据: specs/f16-style-service/spec.md §5.6（LLM 深度分析管线步骤 ①-⑥，Q1=C 拍板，
+依据: specs/f16-style-analysis/spec.md §5.6（LLM 深度分析管线步骤 ①-⑥，Q1=C 拍板，
 可选增强板块）。镜像 F14 `_timeline_extractor.py` 骨架，仅替换领域实体
 （StyleLLMAssessment ↔ TimelineExtractionResult）与模板（style_llm_analysis ↔
 timeline_extract）。

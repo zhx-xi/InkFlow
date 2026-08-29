@@ -5,7 +5,7 @@ CharacterRelation 三组 CRUD 操作，基础设施层（SQLite / mock / memory�
 实现此 Protocol。仓储层方法入参用 int（与 ORM 层一致），Service 负责
 UUID ↔ int 转换（沿用 F1 `_to_int_id` 模式）。
 
-依据: specs/f9-character-service/spec.md §8.1。
+依据: specs/f9-character/spec.md §8.1。
 """
 
 from __future__ import annotations

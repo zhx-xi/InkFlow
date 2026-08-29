@@ -1,4 +1,5 @@
 # F48: 知识图谱（knowledge-graph）— 功能规格
+> **端**: cross
 
 > **Spec 版本**: 1.2 | **日期**: 2026-08-19 | **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
 >

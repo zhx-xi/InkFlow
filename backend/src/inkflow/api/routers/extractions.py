@@ -25,8 +25,8 @@
 - RAGUnavailableError / VectorStoreError / ExtractionRunError → 500
   （消息即 detail）
 
-依据: specs/f14-extraction-service/spec.md §3/§5/§7 +
-specs/f16-style-service/spec.md §3.3/§8.2（StyleValidationError 映射）。
+依据: specs/f14-extraction/spec.md §3/§5/§7 +
+specs/f16-style-analysis/spec.md §3.3/§8.2（StyleValidationError 映射）。
 """
 
 from __future__ import annotations

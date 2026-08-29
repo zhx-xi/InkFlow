@@ -553,7 +553,7 @@ describe('设定库页 — #196 分类实体手动创建', () => {
 });
 
 /**
- * F43（2026-08-12，specs/f43-setting-library-crud/spec.md §5.1-5.4/§9.2）：
+ * F43（2026-08-12，specs/f43-setting-library-gui/spec.md §5.1-5.4/§9.2）：
  * 六分类列表项编辑/删除（P0 批次）。
  *
  * GREEN 契约（library.tsx + LibraryCreateDialog.tsx + ConfirmDialog.tsx + i18n zh/en）：

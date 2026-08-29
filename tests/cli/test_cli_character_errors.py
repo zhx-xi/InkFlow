@@ -1,6 +1,6 @@
 """Character CLI 命令测试（错误映射/人类输出）— Mock ensure_kernel + InkFlowHTTPClient。
 
-覆盖（依据 specs/f9-character-service/spec.md §4/§7/§9）:
+覆盖（依据 specs/f9-character/spec.md §4/§7/§9）:
 - _run 异常映射：HttpApiError（404→NOT_FOUND、422→VALIDATION_ERROR、
   code=LLM_ERROR→LLM_ERROR）与 pydantic ValidationError → VALIDATION_ERROR、
   未知异常 → DB_ERROR

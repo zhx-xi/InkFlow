@@ -7,7 +7,7 @@
 - 空更新对象（全 None）合法不抛错（路由层负责空 body 422）
 - JSON roundtrip（model_validate(model_dump()) 相等）
 
-依据: specs/f32-settings-persistence/spec.md §2.2 + §9.1/§9.4。
+依据: specs/f32-settings/spec.md §2.2 + §9.1/§9.4。
 
 ══════════════════════ 设计假设（GREEN 实现者唯一契约）══════════════════════
 

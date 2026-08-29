@@ -1,4 +1,5 @@
 # F5: LLM Provider 适配层 (llm_service) — 功能规格
+> **端**: cross
 
 > **Spec 版本**: 1.0 | **日期**: 2026-07-31 | **依据**: PRD v2.1 §6.1 F5, Constitution P1-P6
 > **所属阶段**: Phase 1 — Sprint 1.2（数据层+LLM 适配）

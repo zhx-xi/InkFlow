@@ -13,7 +13,7 @@
 - extractor: WorldExtractor（B2 已实现）
 - project_repo: ProjectRepositoryProtocol（F1 已实现，extract 入口校验用）
 
-依据: specs/f10-world-service/spec.md §6/§7/§9。
+依据: specs/f10-world-settings/spec.md §6/§7/§9。
 """
 
 from __future__ import annotations

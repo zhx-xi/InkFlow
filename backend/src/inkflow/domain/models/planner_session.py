@@ -3,7 +3,7 @@
 访谈会话（新建表 planner_sessions，阶段 1）：分批 <=5 问、问题即模板、
 授权项记录、auto 兜底（「全部你决定」declined 后直接跑 F42 write_auto）.
 
-依据: specs/f44-long-task-orchestrator/spec.md 搂2.2/搂5.1（v1.2 #475）.
+依据: specs/f44-book-orchestrator/spec.md 搂2.2/搂5.1（v1.2 #475）.
 领域层保持纯净：仅依赖 Pydantic v2，不感知 ORM / 框架.
 """
 

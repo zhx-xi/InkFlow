@@ -7,7 +7,7 @@
   types / mode / limit / offset）
 - POST /api/v1/search/rebuild  — 手动全量重建索引（project_id 可选，缺省 = 全部项目）
 
-权威来源：specs/f22-search-service/spec.md §3.1-§3.3（端点总览 / 请求
+权威来源：specs/f22-search/spec.md §3.1-§3.3（端点总览 / 请求
 响应示例 / 异常映射表）、§9.1（API 测试层次）、§13 M4（验收标准）。
 
 ════════════════════════════════════════════════════════════════════

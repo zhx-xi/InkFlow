@@ -5,7 +5,7 @@
 100、num_chapters 1-100、auto_extract bool|None、type 非法值）、
 ExtractionResult 信封默认值与 status 枚举、ExtractionRun 增量追踪记录、
 ReindexResult 全量重建索引结果。
-依据: specs/f14-extraction-service/spec.md §2.1/§2.2/§2.3/§2.5 + §9 测试策略「领域模型」。
+依据: specs/f14-extraction/spec.md §2.1/§2.2/§2.3/§2.5 + §9 测试策略「领域模型」。
 """
 
 import uuid

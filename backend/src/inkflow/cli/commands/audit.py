@@ -17,7 +17,7 @@ error/warning 逐条（[级别] 维度: 消息），info 只计数不逐条，
 有 findings 时末尾提示 --json 完整报告。发现不一致是「结果」而非
 「执行错误」——退出码恒 0（spec §4.1 Q1 拍板 A）。
 
-依据: specs/f15-audit-service/spec.md §4/§7。
+依据: specs/f15-consistency-audit/spec.md §4/§7。
 """
 
 from __future__ import annotations

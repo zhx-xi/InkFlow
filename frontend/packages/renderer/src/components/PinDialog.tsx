@@ -1,5 +1,5 @@
 /**
- * F43 P2 pin 对话框（specs/f43-setting-library-crud/spec.md §5.12）：
+ * F43 P2 pin 对话框（specs/f43-setting-library-gui/spec.md §5.12）：
  * 标记名称（必填 1-50 字符去空白）+ 类型四档（shadcn Select）+ 关联实体可搜索选择
  * （type=other 隐藏关联字段；本地过滤 refOptions，含「不关联」选项）。
  * editing 非空 = 编辑模式预填；#195 拍板：遮罩点击不关闭（仅 取消/Esc/保存成功后关闭）。

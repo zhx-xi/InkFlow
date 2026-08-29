@@ -1,6 +1,6 @@
 """F44 阶段2 书级运行服务单测（TDD RED 阶段，契约先行）。
 
-权威来源：specs/f44-long-task-orchestrator/spec.md §2.4（多维上限 + 读取优先级）、
+权威来源：specs/f44-book-orchestrator/spec.md §2.4（多维上限 + 读取优先级）、
 §5.2（阶段 2：顺序派发 + 进度状态机 + 安全阀）、§7 场景 4-6、§12 D7-D11、
 §13.2 M4-M6。
 本文件为 `domain/services/book_service.py`（阶段 1 合入，阶段 2 扩展）定义契约。

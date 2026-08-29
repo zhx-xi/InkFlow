@@ -2,7 +2,7 @@
 
 - **日期**: 2026-08-02
 - **视角**: 安全与运维专家
-- **输入依据**: `specs/p0-11-cloud-protocols/spec.md`（Auth/Database/Storage/User/Sync/MCP 六协议）、`design/prd-inkflow-v2.1-2026-07-30.md`（§5/§6/§8/§11）、`AGENTS.md`（技术栈：cryptography AES-256-GCM、langchain、本地 RAG）、`design/phase1-gate-review-2026-08-01.md`
+- **输入依据**: `specs/f52-cloud-protocol/spec.md`（Auth/Database/Storage/User/Sync/MCP 六协议）、`design/prd-inkflow-v2.1-2026-07-30.md`（§5/§6/§8/§11）、`AGENTS.md`（技术栈：cryptography AES-256-GCM、langchain、本地 RAG）、`design/phase1-gate-review-2026-08-01.md`
 - **固定假设**: 单人开发小团队运维；成本敏感；目标用户=个人作者；云应用=云存档+异地写作（无多人协作，已后移）；云=用户端+管理后台；单机版=GUI+CLI（无 web）
 - **本报告性质**: 决策依据，供一次性批量拍板；不含代码
 

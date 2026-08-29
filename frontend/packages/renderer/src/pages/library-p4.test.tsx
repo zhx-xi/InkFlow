@@ -1,5 +1,5 @@
 /**
- * F43 P4（specs/f43-setting-library-crud/spec.md v1.3 §5.16/§5.17/§6 P3+P4 表/§9.6 T1-T8）：
+ * F43 P4（specs/f43-setting-library-gui/spec.md v1.3 §5.16/§5.17/§6 P3+P4 表/§9.6 T1-T8）：
  * 设定库时间线 tab——时间线双序切换（叙事序/世界序）+ 两级检查（工具栏整体检查 + 事件行内单事件检查）。
  *
  * ⚠️ 本批契约拆分至独立文件 library-p4.test.tsx（对齐 library-p1.test.tsx / library-p2.test.tsx 先例：

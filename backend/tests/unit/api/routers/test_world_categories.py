@@ -1,6 +1,6 @@
 """F10 世界观分类 CRUD 测试（v1.2，issue #389）— 模型 + 服务 + API 三层 RED 契约.
 
-测试范围（specs/f10-world-service/spec.md v1.2 §2.6/§3.1/§6.1/§7）:
+测试范围（specs/f10-world-settings/spec.md v1.2 §2.6/§3.1/§6.1/§7）:
 - 领域模型 WorldCategory（id/project_id/name/created_at/updated_at + name 校验）
 - 服务层 WorldService 分类方法（Mock Repository）：create_category / list_world_categories /
   rename_category / delete_category + 同名冲突 / 不存在
@@ -41,7 +41,7 @@ RED 预期：WorldCategory / 错误类 / service 分类方法 / 端点均未实�
 （try/except）保证文件可收集；分类用例 FAIL（import 缺失 / 方法不存在 / 端点 404）；零
 SyntaxError / ReferenceError。
 
-依据: specs/f10-world-service/spec.md v1.2 §2.6 + §3.1 + §6.1 + §7 + §9。
+依据: specs/f10-world-settings/spec.md v1.2 §2.6 + §3.1 + §6.1 + §7 + §9。
 """
 
 from __future__ import annotations

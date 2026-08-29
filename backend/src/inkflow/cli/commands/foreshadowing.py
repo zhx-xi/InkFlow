@@ -17,7 +17,7 @@
 均为幂等操作；不存在的伏笔对其执行 → NOT_FOUND。
 update 的 --event-id "" 表示解除事件挂接（置为 None，spec §2.5）。
 
-依据: specs/f13-foreshadowing-service/spec.md §4/§7。
+依据: specs/f13-foreshadowing/spec.md §4/§7。
 """
 
 from __future__ import annotations

@@ -30,8 +30,8 @@ index=true 时恒 False + warning。
 遵循 ADR-002/015: 领域层零框架 import，依赖全部通过构造函数注入
 （Protocol 类型），测试注入 Mock。
 
-依据: specs/f14-extraction-service/spec.md §5.1-§5.6/§6/§7/§8 +
-specs/f16-style-service/spec.md §8.2（STYLE 槽位落地）。
+依据: specs/f14-extraction/spec.md §5.1-§5.6/§6/§7/§8 +
+specs/f16-style-analysis/spec.md §8.2（STYLE 槽位落地）。
 
 RAG 编排拆分（#307）: `reindex` / `retrieve` / `_paged_list` 与投影纯函数迁至
 `_extraction_rag.py`（`_ExtractionRAGMixin`，本类继承）；本类保留 extract 的

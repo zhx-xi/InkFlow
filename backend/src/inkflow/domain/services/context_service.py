@@ -5,7 +5,7 @@ ContextService 是 F6 的核心服务，负责:
 2. 按分层预算分配 Token 空间
 3. 将组装结果渲染为系统提示词
 
-依据: specs/f6-context-service/spec.md §4, ADR-010.
+依据: specs/f6-context/spec.md §4, ADR-010.
 """
 
 from __future__ import annotations

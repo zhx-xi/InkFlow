@@ -9,7 +9,7 @@
 F21 不新建持久化实体（无新表、无迁移）——所有输入来自既有模块实体，
 本模块全部为瞬态计算产物（spec §1 边界声明 / §2 决策论证表）。
 
-依据: specs/f21-export-service/spec.md §2。
+依据: specs/f21-export/spec.md §2。
 """
 
 from __future__ import annotations

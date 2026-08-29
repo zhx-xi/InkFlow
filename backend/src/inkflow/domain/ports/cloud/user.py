@@ -3,7 +3,7 @@
 本地实现（Phase 1-3）: SingleUser（无用户概念，返回默认本地用户）
 云端实现（Phase 4+）: MultiTenant（多租户）
 
-仅定义接口，不实现任何云端功能（PRD §6.5 / spec p0-11-cloud-protocols）。
+仅定义接口，不实现任何云端功能（PRD §6.5 / spec f52-cloud-protocol）。
 """
 
 from __future__ import annotations

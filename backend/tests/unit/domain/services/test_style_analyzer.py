@@ -4,7 +4,7 @@
 token 化、风格指纹 12 项、AI 痕迹 8 特征启发式评分（含 verdict 阈值与 evidence 规则）、
 词汇分析（含停用词）、jieba 精确分词增强板块（Q2=C）。
 
-依据: specs/f16-style-service/spec.md §5（§5.2-§5.5）+ §6.2/§6.3 + §9 测试策略。
+依据: specs/f16-style-analysis/spec.md §5（§5.2-§5.5）+ §6.2/§6.3 + §9 测试策略。
 
 契约说明（RED 阶段设计的纯函数签名假设，实现阶段按此测试契约实现）:
 - ``_preprocess(text) -> PreprocessStats``：返回属性可访问的统计快照（具名元组/数据类），

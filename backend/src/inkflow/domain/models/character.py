@@ -7,7 +7,7 @@ ORM 映射），CharacterCreate / CharacterUpdate / CharacterRelationCreate
 schema 校验模型，CharacterExtractRequest / CharacterExtractionResult
 是提取服务的入参/出参。
 
-依据: specs/f9-character-service/spec.md §2.5/§2.6。
+依据: specs/f9-character/spec.md §2.5/§2.6。
 领域层保持纯净：仅依赖 Pydantic v2，不感知 ORM / 框架。
 """
 

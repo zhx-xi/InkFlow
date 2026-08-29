@@ -30,7 +30,7 @@ RED 预期形态（四层失败类别地图，规则 1q；整文件可收集，�
 - OB11 database: ensure_outline_columns 缺失 → 用例体 lazy import ImportError
   （FAILED 形态，非收集 ERROR，规则 1c 混合轨）
 
-依据: specs/f43-setting-library-crud/spec.md §2.8/§3.6/§9.7。
+依据: specs/f43-setting-library-gui/spec.md §2.8/§3.6/§9.7。
 """
 
 from __future__ import annotations

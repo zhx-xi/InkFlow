@@ -16,7 +16,7 @@ reindex 缺席 --type = 全部 5 种实体类型（服务层展开）；--type �
 retrieve 结果按 relevance_score 降序输出（spec §4.2）。--type 非法值由
 Typer Choice 校验 → 退出码 2；retrieve 缺 --query → 退出码 2（spec §7）。
 
-依据: specs/f14-extraction-service/spec.md §4.2/§4.3/§7/§9。
+依据: specs/f14-extraction/spec.md §4.2/§4.3/§7/§9。
 """
 
 from __future__ import annotations

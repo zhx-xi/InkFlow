@@ -3,7 +3,7 @@
 本地实现（Phase 1-3）: stdio（本地进程通信）
 云端实现（Phase 4+）: Streamable HTTP
 
-仅定义接口，不实现任何云端功能（PRD §6.5 / spec p0-11-cloud-protocols）。
+仅定义接口，不实现任何云端功能（PRD §6.5 / spec f52-cloud-protocol）。
 """
 
 from __future__ import annotations

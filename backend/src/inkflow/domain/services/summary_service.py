@@ -5,7 +5,7 @@ SummaryService 负责:
 2. LLM 驱动的前文章节摘要生成
 3. 缓存失效检测（章节更新后自动重新生成）
 
-依据: specs/f6-context-service/spec.md §4.6.
+依据: specs/f6-context/spec.md §4.6.
 """
 
 from __future__ import annotations

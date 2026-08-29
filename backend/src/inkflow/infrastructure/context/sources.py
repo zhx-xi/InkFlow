@@ -8,8 +8,8 @@
     - ForeshadowingSource: 已由 F13（伏笔管理）实现 — 注入未回收伏笔提醒
       （ADR-019 编号口径：F13=伏笔管理，F14=统一提取）
 
-依据: specs/f6-context-service/spec.md §3.2 / §4.3,
-      specs/f13-foreshadowing-service/spec.md §5.3, ADR-010, ADR-019.
+依据: specs/f6-context/spec.md §3.2 / §4.3,
+      specs/f13-foreshadowing/spec.md §5.3, ADR-010, ADR-019.
 """
 
 from __future__ import annotations

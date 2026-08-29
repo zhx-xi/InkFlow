@@ -1,6 +1,6 @@
 """Session CLI 命令测试 — Mock ensure_kernel + InkFlowHTTPClient（F38 HTTP mock 轨，spec §4/§9.1）.
 
-覆盖（依据 specs/f24-session-service/spec.md §4/§9 + specs/f38-cli-http/spec.md §3.1/§5.3）:
+覆盖（依据 specs/f24-session/spec.md §4/§9 + specs/f38-cli-http/spec.md §3.1/§5.3）:
 - 各子命令成功路径与参数透传（create/list/get/update/pause/resume/complete/fail/
   logs/log add/delete/restore 共 11 个子命令 + 组帮助）
 - 信封格式与退出码 0/1/2（--type/--status/--level 非法枚举值 → 退出码 2；

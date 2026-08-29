@@ -1,6 +1,6 @@
 """World CLI 命令测试 — Mock ensure_kernel + InkFlowHTTPClient（HTTP JSON 响应）。
 
-覆盖（依据 specs/f10-world-service/spec.md §4/§4.2）:
+覆盖（依据 specs/f10-world-settings/spec.md §4/§4.2）:
 - 各子命令成功路径与参数透传（create/list/categories/get/update/delete/extract）
 - 信封格式与退出码 0/1/2
 - delete 二次确认 + --force；--json + delete 无 --force → VALIDATION_ERROR

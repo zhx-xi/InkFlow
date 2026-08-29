@@ -472,7 +472,7 @@ async def test_semantic_preserves_retrieve_order(repos):
 
 
 # ══ #277 M3 追加段（2026-08-16）: 检索元数据 fallback（spec §5.6.4）══
-# 契约源: specs/f14-extraction-service/spec.md §5.6.4「_map_retrieved 延续
+# 契约源: specs/f14-extraction/spec.md §5.6.4「_map_retrieved 延续
 # .get() fallback 约定（旧数据缺键不崩：metadata.get("chapter_x") 等，缺失
 # 回退现状展示，QA §P2-1）——任何新代码禁止直接 metadata["chapter_x"]
 # 下标访问」+ §13 M12「扩展 test_search_service.py 元数据缺键 .get()

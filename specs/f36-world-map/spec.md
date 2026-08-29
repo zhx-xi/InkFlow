@@ -1,4 +1,5 @@
 # F36: 世界观地图视图（world-map）— 功能规格
+> **端**: backend
 
 > **Spec 版本**: 1.4 | **日期**: 2026-08-15 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §5（workspace）、PRD v2.1 §6.2 P1-02、F10 spec + F35 spec v1.1（地点树，本模块数据基础）、Constitution P1-P6
 >

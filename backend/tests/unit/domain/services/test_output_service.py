@@ -57,7 +57,7 @@ RED 预期（实现不存在，收集期失败属设计使然）:
 实现落地自动收集。本文件 import 顺序: output_service 首个 → 收集错误
 报告该模块，models.output 缺失被其遮蔽。）
 
-依据: specs/f21-export-service/spec.md §5.1/§5.2/§6.1/§6.3/§7 E1-E2/§8.2/§9.2
+依据: specs/f21-export/spec.md §5.1/§5.2/§6.1/§6.3/§7 E1-E2/§8.2/§9.2
 场景 2-5 + 任务书拍板（返回 BookDocument）。
 """
 

@@ -1,6 +1,6 @@
 """F49 自主全自动写作 - book-level agent 编排配置（mode="agentic" 时生效）.
 
-依据: specs/f49-autonomous-writing/spec.md §2.2（AgenticRunConfig DTO）.
+依据: specs/f27-writer-agent/spec.md §2.2（AgenticRunConfig DTO）.
 领域层保持纯净：仅依赖 Pydantic v2，不感知 LangGraph / 基础设施（ADR-015）.
 """
 

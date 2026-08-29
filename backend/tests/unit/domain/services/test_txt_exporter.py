@@ -34,7 +34,7 @@ RED 预期（实现不存在，收集期失败属设计使然）:
 （顶部 import 缺失实现 → 收集期整文件 ModuleNotFoundError；GREEN 时
 实现落地自动收集。）
 
-依据: specs/f21-export-service/spec.md §3.2/§5.3/§6.2/§7 E3-E4/§9.2 场景 1。
+依据: specs/f21-export/spec.md §3.2/§5.3/§6.2/§7 E3-E4/§9.2 场景 1。
 """
 
 from __future__ import annotations

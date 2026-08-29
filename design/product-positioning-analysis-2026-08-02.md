@@ -2,7 +2,7 @@
 
 **日期**: 2026-08-02
 **角色**: 产品经理
-**依据**: PRD v2.1（2026-07-30）、AGENTS.md、specs/p0-11-cloud-protocols/spec.md、architecture-analysis-2026-07-30.md
+**依据**: PRD v2.1（2026-07-30）、AGENTS.md、specs/f52-cloud-protocol/spec.md、architecture-analysis-2026-07-30.md
 **背景**: 项目所有者最新三条产品形态决策（见 §0），本报告对其做完整展开分析，供一次性批量拍板。
 
 ---

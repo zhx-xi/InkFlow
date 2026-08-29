@@ -1,8 +1,9 @@
 # F49: 长期记忆衰减（memory-decay）功能规格
+> **端**: cross
 
 **Spec 版本**: 1.1（Q1=A/Q2=B/Q3=A 拍板固化）
 **日期**: 2026-08-23
-**依据**: 设计定稿（docs/agentic-orchestrator-and-memory-design-2026-08-14.md §3 记忆系统演进，唯一真相）+ Issue #617（① 时间衰减）/ #618（② LLM 显式覆盖）/ #619（③ GUI）+ 用户拍板（2026-08-23 五点决策）+ F28 spec v1.0（specs/f28-agent-memory/spec.md）+ F45 spec v1.1（specs/f45-memory-evolution/spec.md，两段式基线）
+**依据**: 设计定稿（docs/agentic-orchestrator-and-memory-design-2026-08-14.md §3 记忆系统演进，唯一真相）+ Issue #617（① 时间衰减）/ #618（② LLM 显式覆盖）/ #619（③ GUI）+ 用户拍板（2026-08-23 五点决策）+ F28 spec v1.0（specs/f28-memory-learning/spec.md）+ F45 spec v1.1（specs/f45-memory-evolution/spec.md，两段式基线）
 **所属阶段**: 0.12.0（长期记忆衰减，F49），估算 ① 3-5 人天 + ② 4-6 人天 + ③ 3-5 人天（合计 10-16 人天）
 **关联 Issues**: #617（① 后端·时间衰减 + 活跃时钟）· #618（② 后端·显式覆盖 + LLM 冲突判定）· #619（③ 前端 GUI + summary remove 端点）
 **依赖**: ✅ F28 agent-memory（project_preferences / user_preferences / memory_events / preference_learner / memory_service / PreferenceSource，PR #242）· ✅ F45 memory-evolution（M1 用户级偏好层 + M2 语义总结，semantic_summarizer / semantic_summaries，PR #442/#452）· ✅ F6 context-service（注入端口 ContextSourceType / PreferenceSource）· ✅ F32 settings-persistence（app_settings 分层对照）· ✅ #415（LLM 默认模型唯一默认源）· ✅ F38（CLI 恒 HTTP）· ✅ F34（audit_logs）· ⏳ ③ 依赖 ①②

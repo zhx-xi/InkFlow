@@ -4,7 +4,7 @@
 合法 JSON 全量落库 / 同名活动伏笔非空覆盖且 status 不重置 /
 非法条目跳过 / 围栏输出 / 修复重试与异常 / 幂等性 / 模板与模型参数断言。
 
-依据: specs/f14-extraction-service/spec.md §5.4 + §9 测试策略。
+依据: specs/f14-extraction/spec.md §5.4 + §9 测试策略。
 镜像 F9 test_character_extraction.py 测试模式。
 """
 

@@ -16,7 +16,7 @@
 complete（active|paused→completed）/ fail（active|paused→failed）。
 删除为两级语义（spec §2.5）：默认归档（force=False）、--force 直删。
 
-依据: specs/f24-session-service/spec.md §4/§7 + specs/f38-cli-http/spec.md §3.1/§5.3。
+依据: specs/f24-session/spec.md §4/§7 + specs/f38-cli-http/spec.md §3.1/§5.3。
 """
 
 from __future__ import annotations

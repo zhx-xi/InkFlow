@@ -1,7 +1,7 @@
 """F44 阶段3 BookService 卷级编排扩展单测（TDD RED 阶段，契约先行）。
 
 权威来源：.hermes/plans/f44-stage3-contract.md §2（父侧契约定稿，语义冲突以它为准）、
-specs/f44-long-task-orchestrator/spec.md §5.3（卷级编排 + Send map-reduce + 卷级 HITL）、
+specs/f44-book-orchestrator/spec.md §5.3（卷级编排 + Send map-reduce + 卷级 HITL）、
 §12 D1-D3/D9（扇出形态/聚合通道/interrupt 落点/恢复策略树）、§13.3 M7-M9。
 本文件为 `domain/services/book_service.py`（阶段 2 基座 + 阶段 3 扩展）定义契约。
 

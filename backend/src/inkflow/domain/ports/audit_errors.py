@@ -1,7 +1,7 @@
 """一致性审计服务领域异常.
 
 F15 专属异常类型。
-依据: specs/f15-audit-service/spec.md §3.3/§8。
+依据: specs/f15-consistency-audit/spec.md §3.3/§8。
 
 异常映射约定（spec §3.3 异常映射表）:
 - AuditServiceError 子类 = 审计领域错误基类（消息即响应 detail 中文文案）

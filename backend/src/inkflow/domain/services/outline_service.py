@@ -21,7 +21,7 @@
 - chapter_repo: ChapterRepositoryProtocol（F2 已实现，F43 P3 章关联校验用；
   可选注入，None 跳过 chapter_id 存在性校验，向后兼容）
 
-依据: specs/f11-outline-service/spec.md §6/§7/§9。
+依据: specs/f11-outline/spec.md §6/§7/§9。
 """
 
 from __future__ import annotations

@@ -19,7 +19,7 @@ spec §5.1 步骤 ①-④ 执行:
 只依赖 domain/ports/ 与 domain/models/（Protocol 与领域模型），不依赖任何
 infrastructure 实现——domain/ 零框架 import 门禁天然满足（ADR-002/015）。
 
-依据: specs/f21-export-service/spec.md §2.2/§5.1/§5.2/§6.1/§6.3/§7 E1-E2/§8.2。
+依据: specs/f21-export/spec.md §2.2/§5.1/§5.2/§6.1/§6.3/§7 E1-E2/§8.2。
 """
 
 from __future__ import annotations

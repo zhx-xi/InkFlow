@@ -21,7 +21,7 @@
 - project_repo: ProjectRepositoryProtocol（F1，项目存在性校验用）
 - timeline_repo: TimelineRepositoryProtocol（F12，event_id 事件锚点校验用）
 
-依据: specs/f13-foreshadowing-service/spec.md §5/§7/§9。
+依据: specs/f13-foreshadowing/spec.md §5/§7/§9。
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """F51 写作工具 RED 契约测试 — build_writing_tools 注册 + 执行信封.
 
-依据 specs/f51-agent-tools-v2/spec.md §2.8。镜像 test_chat_setting_write_tools 形态。
+依据 specs/f26-agent-tools/spec.md §2.8。镜像 test_chat_setting_write_tools 形态。
 锁定契约:
 1. build_writing_tools(deps) 返回 [generate, continue, revise]。
 2. 成功 {"ok": True, ...} / 失败 {"ok": False, "error": "..."}。

@@ -8,7 +8,7 @@ escape_xml 转义、tokenize 中文词拆分与过滤（纯标点/英文单字�
 单字符中文保留）、build_match MATCH 构造（FTS5 保留字引号保护）、
 prepare_index_text 全链路（HTML 标签字面转义）。
 
-依据: specs/f22-search-service/spec.md §5.5（分词预处理）/ §7 E9/E10 /
+依据: specs/f22-search/spec.md §5.5（分词预处理）/ §7 E9/E10 /
 §9.2 / §13 M7/M9。
 
 jieba 说明：jieba 首次 import 加载词典 ~1s（0.42.1 已锁定，缓存后 ~0.4s）。

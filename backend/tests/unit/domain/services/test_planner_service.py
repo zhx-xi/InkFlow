@@ -1,6 +1,6 @@
 """F44 阶段1 访谈式 Planner 服务单测（TDD RED 阶段）。
 
-权威来源：specs/f44-long-task-orchestrator/spec.md §2.2（PlannerSession）、
+权威来源：specs/f44-book-orchestrator/spec.md §2.2（PlannerSession）、
 §5.1（访谈循环：≤5 问/轮、问题即模板、分批节奏、授权、auto 兜底）、§13.1 M1/M2。
 本文件为 `domain/services/planner_service.py`（NEW）定义契约。
 

@@ -1,6 +1,6 @@
 """Timeline CLI 命令测试 — Mock ensure_kernel + InkFlowHTTPClient（spec §4/§9 CLI 测试）.
 
-覆盖（依据 specs/f12-timeline-service/spec.md §4/§9）:
+覆盖（依据 specs/f12-timeline/spec.md §4/§9）:
 - 各子命令成功路径与参数透传（create/list/view/check/get/update/delete）
 - 信封格式与退出码 0/1
 - delete 二次确认 + --force；--json + delete 无 --force → VALIDATION_ERROR
