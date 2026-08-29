@@ -6,6 +6,26 @@
 ## 1. 画面样式（简图/原型）
 
 - 原型引用：design/GUI/writing/writing.html + writing-<state>.png（三栏布局 / 骨架加载 / 流式生成中 / 右栏折叠 / 无项目空态等状态截图）
+
+> 低保真排版示意简图（区块+标签，非精确像素）
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ 顶栏：写作（页面标题）   主题 Select   语言 Select   窗口控制   │
+├──────────┬────────────────────────────────┬──────────────────┤
+│ 项目树    │ 编辑器（ChapterEditor）         │ 上下文注入         │
+│ 项目印章  │ 工具栏：撤销/重做/保存/续写/生成 │ ContextPanel       │
+│ 卷章树   │ /审计/风格检测/执行详情/全自动/   │ 写作要求/大纲/     │
+│ 卷/章 CRUD│ AI 提取                        │ 角色/世界观/伏笔   │
+│ 拖拽移动  │ 章节标题 + 正文编辑区           │ （勾选注入/已裁剪） │
+│ +新建卷  │ ────────────────────────────── │ ───────────────── │
+│ +新建章节 │ AI 对话（ChatPanel）            │ 章节摘要           │
+│          │ 消息区 + 输入框 + 发送/停止      │ ChapterSummary    │
+│          │                                 │ （刷新摘要）       │
+├──────────┴────────────────────────────────┴──────────────────┤
+│ 状态栏 StatusBar：内核连接态 / 模型 / 字数 / 自动保存时间      │
+└──────────────────────────────────────────────────────────────┘
+```
 - 参考锚点（以真实组件为准：pages/writing.tsx + components/ProjectTree、EditorToolbar、ContextPanel、ChatPanel、StatusBar、ChapterSummaryPanel、AuditDialog、StyleAnalyzeDialog、AIExtractDialog、AutoAuthorizationDialog）：
   - 布局：全高 flex 三栏 — 左项目树（aside project-tree）/ 中编辑器区（main）/ 右上下文栏（aside right-rail）
   - 左栏：默认宽 208px（treeWidth 受控），col-resize 拖拽 160~360px（ProjectTree RESIZE_MIN/MAX）；卷章树加载中显示骨架屏（头像/标题/6 行 Skeleton）；顶部 ProjectSeal 项目印章

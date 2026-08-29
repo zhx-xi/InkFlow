@@ -6,6 +6,24 @@
 ## 1. 画面样式（简图/原型）
 
 - 原型引用：design/GUI/settings/settings.html + settings-<state>.png（分类导航 / 常规面板 / 保存指示 / 模型分类 / 模板分类等状态截图）
+
+> 低保真排版示意简图（区块+标签，非精确像素）
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ 顶栏：设置（页面标题）   主题 Select   语言 Select   窗口控制   │
+├──────────┬───────────────────────────────────────────────────┤
+│ 分类导航   │ 设置面板（滚动）                                 │
+│ （192px） │ h1「设置」 + 保存指示器（保存中/已保存）           │
+│ ▸ 常规    │ 外观卡片：主题三预览 / 背景 / 语言                │
+│ ▸ 模型    │ 编辑器字体 / 关闭窗口时 / 首次托盘提示            │
+│ ▸ Agent  │ 新章节默认字数 / 快捷键一览（5 组 kbd）            │
+│ ▸ 模板    │ 知识图谱定时提取卡片（KnowledgeExtractCard）       │
+│ ▸ 技能    │ MCP 接入面板（McpSettingsCard）                    │
+│ ▸ 账户    │                                                   │
+│ 激活项高亮│                                                   │
+└──────────┴───────────────────────────────────────────────────┘
+```
 - 参考锚点（以真实组件为准：pages/settings.tsx + components/AppearanceCard、AgentChainCard、AgentList、GlobalDefaultModelCard、ModelsPanel、RagStatusCard、KnowledgeExtractCard、McpSettingsCard、SkillList、TemplateDialog；Agent/模板分类细节见 agent.md）：
   - 布局：全高 flex — 左 192px 分类导航（w-48，border-r，bg-surface-2，6 项带图标）+ 右滚动面板（标题 h1「设置」+ 面板内容，px-8）
   - 分类：常规（SlidersHorizontal）/ 模型（Cpu）/ Agent（Bot）/ 模板（FileText）/ 技能（BookOpen）/ 账户（UserRound）；激活项 bg-accent-weak + text-accent + aria-current=page，未激活 hover 高亮
