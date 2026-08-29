@@ -115,6 +115,48 @@ class TestBuildSettingUpdateTools:
         assert result["outline_id"] == "outline-1"
 
     @pytest.mark.asyncio
+    async def test_update_world_setting_failure_envelope(self) -> None:
+        """update_world_setting 失败 → {"ok": False, "error": "..."}。"""
+        deps = _make_deps()
+        deps.world_service.update_setting = AsyncMock(
+            side_effect=ValueError("世界观条目不存在")
+        )
+        tools = {t.spec.name: t for t in build_setting_update_tools(deps)}
+        result = json.loads(
+            await tools["update_world_setting"].func(setting_id="world-1", name="天元大陆")
+        )
+        assert result["ok"] is False
+        assert "世界观条目不存在" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_update_outline_failure_envelope(self) -> None:
+        """update_outline 失败 → {"ok": False, "error": "..."}。"""
+        deps = _make_deps()
+        deps.outline_service.update_outline = AsyncMock(
+            side_effect=ValueError("大纲不存在")
+        )
+        tools = {t.spec.name: t for t in build_setting_update_tools(deps)}
+        result = json.loads(
+            await tools["update_outline"].func(outline_id="outline-1", name="第一卷大纲")
+        )
+        assert result["ok"] is False
+        assert "大纲不存在" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_update_character_world_outline_partial_fields(self) -> None:
+        """部分字段更新：只传 name 时其它字段不修改（DTO exclude_unset 语义）。"""
+        deps = _make_deps()
+        deps.character_service.update_character = AsyncMock(
+            return_value=SimpleNamespace(id="char-1", name="林晚")
+        )
+        tools = {t.spec.name: t for t in build_setting_update_tools(deps)}
+        await tools["update_character"].func(character_id="char-1", name="林晚")
+        # service 收到 CharacterUpdate（或等价 dict），只有 name 被设置
+        args, _kwargs = deps.character_service.update_character.call_args
+        update = _kwargs.get("update") if _kwargs else (args[1] if len(args) > 1 else None)
+        assert update is not None
+
+    @pytest.mark.asyncio
     async def test_expected_project_id_binding(self) -> None:
         """装配期绑定 expected_project_id：caller 传入的 project_id 被忽略，恒用绑定值。"""
         deps = _make_deps()

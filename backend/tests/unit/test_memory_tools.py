@@ -110,6 +110,31 @@ class TestBuildMemoryTools:
         assert str(used_project_id) == str(PROJECT_ID)
 
 
+    @pytest.mark.asyncio
+    async def test_memory_update_failure_envelope(self) -> None:
+        deps = _make_deps()
+        deps.memory_service.update_preference = AsyncMock(
+            side_effect=ValueError("偏好不存在")
+        )
+        tools = {t.spec.name: t for t in build_memory_tools(deps)}
+        result = json.loads(
+            await tools["memory_update"].func(preference_id="pref-1", pattern="长句")
+        )
+        assert result["ok"] is False
+        assert "偏好不存在" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_memory_list_with_data(self) -> None:
+        deps = _make_deps()
+        item = SimpleNamespace(id="pref-1", pattern="短句")
+        item.model_dump = lambda *a, **k: {"id": "pref-1", "pattern": "短句"}
+        deps.memory_service.list_preferences = AsyncMock(return_value=([item], 1))
+        tools = {t.spec.name: t for t in build_memory_tools(deps)}
+        result = json.loads(await tools["memory_list"].func())
+        assert result["ok"] is True
+        assert len(result["data"]) == 1
+
+
 class TestMemoryToolAudit:
     """写类成功/失败均落审计，审计异常静默。"""
 

@@ -159,6 +159,56 @@ class TestBuildWorldRwTools:
         assert result["foreshadowing_id"] == "fsh-1"
 
 
+    @pytest.mark.asyncio
+    async def test_update_map_failure_envelope(self) -> None:
+        deps = _make_deps()
+        deps.map_service.update_map = AsyncMock(side_effect=ValueError("地图不存在"))
+        tools = {t.spec.name: t for t in build_world_rw_tools(deps)}
+        result = json.loads(await tools["update_map"].func(map_id="map-1", name="大陆图"))
+        assert result["ok"] is False
+        assert "地图不存在" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_create_timeline_event_failure_envelope(self) -> None:
+        deps = _make_deps()
+        deps.timeline_service.create_event = AsyncMock(side_effect=ValueError("标题不能为空"))
+        tools = {t.spec.name: t for t in build_world_rw_tools(deps)}
+        result = json.loads(await tools["create_timeline_event"].func(title=""))
+        assert result["ok"] is False
+        assert "标题不能为空" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_update_timeline_event_failure_envelope(self) -> None:
+        deps = _make_deps()
+        deps.timeline_service.update_event = AsyncMock(side_effect=ValueError("事件不存在"))
+        tools = {t.spec.name: t for t in build_world_rw_tools(deps)}
+        result = json.loads(
+            await tools["update_timeline_event"].func(event_id="evt-1", title="开篇")
+        )
+        assert result["ok"] is False
+        assert "事件不存在" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_create_foreshadowing_failure_envelope(self) -> None:
+        deps = _make_deps()
+        deps.foreshadowing_service.create = AsyncMock(side_effect=ValueError("标题不能为空"))
+        tools = {t.spec.name: t for t in build_world_rw_tools(deps)}
+        result = json.loads(await tools["create_foreshadowing"].func(title=""))
+        assert result["ok"] is False
+        assert "伏笔名不能为空" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_update_foreshadowing_failure_envelope(self) -> None:
+        deps = _make_deps()
+        deps.foreshadowing_service.update = AsyncMock(side_effect=ValueError("伏笔不存在"))
+        tools = {t.spec.name: t for t in build_world_rw_tools(deps)}
+        result = json.loads(
+            await tools["update_foreshadowing"].func(foreshadowing_id="fsh-1", title="新标题")
+        )
+        assert result["ok"] is False
+        assert "伏笔不存在" in result["error"]
+
+
 class TestWorldRwToolAudit:
     """写类工具成功/失败均落审计，审计异常静默。"""
 

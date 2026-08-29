@@ -119,6 +119,39 @@ class TestBuildWritingTools:
         assert str(used.chapter_id) == str(CHAPTER_ID)
 
 
+    @pytest.mark.asyncio
+    async def test_continue_failure_envelope(self) -> None:
+        deps = _make_deps()
+        deps.writing_service.continue_writing = AsyncMock(
+            side_effect=ValueError("已有内容太短")
+        )
+        tools = {t.spec.name: t for t in build_writing_tools(deps)}
+        result = json.loads(
+            await tools["continue"].func(existing_content="已有内容" * 20)
+        )
+        assert result["ok"] is False
+        assert "已有内容太短" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_revise_failure_envelope(self) -> None:
+        deps = _make_deps()
+        deps.writing_service.revise_content = AsyncMock(side_effect=ValueError("修订意见不能为空"))
+        tools = {t.spec.name: t for t in build_writing_tools(deps)}
+        result = json.loads(await tools["revise"].func(content="正文", feedback=""))
+        assert result["ok"] is False
+        assert "修订意见不能为空" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_generate_without_chapter_context(self) -> None:
+        """无 expected_chapter_id 时 generate 返回失败信封（写作必须有章）。"""
+        deps = _make_deps()
+        deps.expected_chapter_id = None
+        tools = {t.spec.name: t for t in build_writing_tools(deps)}
+        result = json.loads(await tools["generate"].func(outline="第一章大纲"))
+        assert result["ok"] is False
+        assert "需要章节上下文" in result["error"]
+
+
 class TestWritingToolAudit:
     """成功/失败均落审计，审计异常静默。"""
 
