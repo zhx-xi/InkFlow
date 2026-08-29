@@ -4,6 +4,8 @@
 
 > **Spec 变更**（v1.1 → v1.2，2026-08-29，#762-#765 增量）：将对话/写作会话提升为全局一等对象——左侧新增与「设定库」同级的独立**会话栏**（#762，取代 #752 会话入设定库栏 + 折叠/展开）；续写/生成按钮改为**创建新会话**而非页脚内联进度条（#763）；移除右栏「草稿审批」面板（审批/保存收敛到章节页顶部按钮，右栏只留上下文注入，D3，#764）；右栏折叠按钮移到左缘 +「折叠」提示（#765）。详见 §15。
 
+> **Spec 变更**（v1.2 → v1.3，2026-08-29，#770 增量）：将「写作页无章节」场景升级为**全局 chat 页**（占满画布不可调），已选章节保留底部可调 chat（两套视图）；会话提升为携带 **name（默认=章节名）+ chapter_id** 的一等对象——章节内会话跟随章节（进入不同章节→每章独享会话）、不同章节每次新会话、生成/续写每次新会话（#763 对齐）；左栏会话点击跳全局 chat 页加载历史+续写；`/sessions` 目录页保留不删除。详见 §16。
+
 ## 1. 概述
 
 写作页底部横栏从被动状态条改造为 **AI 聊天框**（可与 AI 对话，结果经用户确认落章），
@@ -428,3 +430,70 @@ write.detail.unknown        // 未知
 
 ### 15.8 待澄清
 - 无（D1/D2/D3 已拍板 2026-08-29）。
+
+## 16. 会话页架构（#770 增量）
+
+### 16.1 需求映射
+
+| Issue | 需求 | 决策 |
+|---|---|---|
+| #770 | 写作页未选章节 → **全局 chat 页**（占满画布不可调）；已选章节 → **章节内 chat**（默认最小+可调拖拽） | ① 两套视图（用户拍板 2026-08-29） |
+| #770 | 会话携带 **name（默认=章节名）+ chapter_id**；章节内会话跟随章节 | ② 会话名=章节名；③ 不同章节每次新会话（用户拍板 2026-08-29） |
+| #770 | 左栏会话点击 → 跳全局 chat 页加载历史+续写 | ④ 不删 `/sessions`；⑤ 生成/续写每次新会话（#763 对齐，用户拍板） |
+
+### 16.2 会话域模型增量（conversations 表加列）
+
+- `conversations` 表新增两列（幂等迁移 `ensure_conversations_name_chapter_id_column`，镜像 `ensure_chat_messages_conversation_id_column` 范式）：
+
+  | 列 | 类型 | 语义 |
+  |---|---|---|
+  | `name` | TEXT（可空） | 章节内会话默认=章节 title；全局会话/缺省显示回退文案 |
+  | `chapter_id` | INTEGER（可空） | 章节内会话记录所属章节 int 主键（`uuid.UUID(int=..)`）；全局会话为空 |
+
+- 领域 `Conversation` 实体 + `ConversationCreate` DTO + `ConversationORM` 均加 `name: str = ""` / `chapter_id: uuid.UUID | None = None`（可空兼容存量行；SQLite ALTER 不加 NOT NULL → 加列用可空 + 默认回填）。
+- 同一 `conversation_id` 不因章节切换复用：enter 新章节 → 该章无会话则新建（③）。
+
+### 16.3 API 契约增量
+
+- `POST /api/v1/chat/conversations` body 扩为 `{project_id, name?, chapter_id?}`（两者可选；章节内前端自动带 `name=章节title` + `chapter_id`）。
+- `GET /api/v1/chat/conversations` 响应每项追加 `name` / `chapter_id`（`list_conversations` 聚合 dict + `_conversation_to_json` 同步）。
+- `GET /api/v1/chat/messages?conversation_id=`（会话历史）不变，复用。
+- `POST /api/v1/chat/agent/stream` 不变复用（#763 生成/续写每次新会话 = 先 `POST /chat/conversations` 再 stream，非复用旧线程）。
+
+### 16.4 前端契约
+
+- `writing.tsx`：`!currentChapterId`（未选章节）→ 渲染全局 chat 页（占满 main，不可调，无编辑器/右栏）；`currentChapterId` → 编辑器 + 底部可调 `ChatPanel`（现有 CHAT_MIN=80 / DEFAULT / MAX=480 + 拖拽）。
+- `ChatPanel`：章节内会话跟随章节——进入章节查该章 `chapter_id` 会话；无则 `POST /chat/conversations {name: 章节title, chapter_id}`；切换章节每次新会话；`chapterId` 为空时=全局模式（占满）。
+- `SessionBar`（#762）：点击会话 → 跳全局 chat 页，`GET /chat/messages?conversation_id=` 加载历史 + `POST /chat/agent/stream` 继续。
+- `api/chat.ts`：`createChatConversation(data)` 签名扩展支持 `name?/chapter_id?`；`ChatConversationDto` 加 `name`/`chapter_id`。
+- `App.tsx`：全局 chat 页路由（A. 复用 `/writing` 空态 / B. 新增 `/chat`，见待拍板）；`/sessions` 保留不删除。
+
+### 16.5 文件结构
+
+| 文件 | 变更 |
+|---|---|
+| `backend/src/inkflow/core/database.py` | MODIFY：新增 `ensure_conversations_name_chapter_id_column`（幂等 PRAGMA；缺 name→ADD name TEXT，缺 chapter_id→ADD chapter_id INTEGER；无表 no-op）|
+| `backend/src/inkflow/domain/models/conversation.py` | MODIFY：`Conversation`/`ConversationCreate` 加 name/chapter_id |
+| `backend/src/inkflow/infrastructure/database/models/conversation.py` | MODIFY：`ConversationORM` 加 name/chapter_id 列 |
+| `backend/src/inkflow/infrastructure/database/repositories/chat_message_repo.py` | MODIFY：`create_conversation` 带 name/chapter_id；`_conv_to_domain`/`list_conversations` 聚合输出含 name/chapter_id |
+| `backend/src/inkflow/domain/services/chat_message_service.py` | MODIFY：`create_conversation` 透传 name/chapter_id |
+| `backend/src/inkflow/api/routers/chat_messages.py` | MODIFY：`create_conversation` body 接 name/chapter_id；`_conversation_to_json` 含 name/chapter_id |
+| `frontend/packages/renderer/src/api/chat.ts` | MODIFY：`createChatConversation(data)` 扩展 + `ChatConversationDto` 加字段 |
+| `frontend/packages/renderer/src/pages/writing.tsx` + `.test.tsx` | MODIFY：未选章节→全局 chat 页；已选章节→底部可调 |
+| `frontend/packages/renderer/src/components/ChatPanel.tsx` + `.test.tsx` | MODIFY：章节内会话跟随章节 + 新增全屏（全局）模式 |
+| `frontend/packages/renderer/src/components/SessionBar.tsx` + `.test.tsx` | MODIFY：会话点击跳全局 chat 页加载历史 |
+| `frontend/packages/renderer/src/App.tsx` + `.test.tsx` | MODIFY：全局 chat 页路由（见待拍板）|
+
+### 16.6 验收 M（叠加 v1.0 M1-M8 + v1.1 N1-N5 + v1.2 P1-P6）
+
+- **Q1**：未选章节 → 全局 chat 页占满不可调（无编辑器/右栏）；已选章节 → 底部可调 ChatPanel。
+- **Q2**：会话名默认=章节名；进入不同章节→新会话；会话列表呈现章节名。
+- **Q3**：左栏会话点击 → 全局 chat 页加载历史 + 可续写。
+- **Q4**：`/sessions` 目录页仍存在可用；生成/续写每次新会话（#763 对齐）。
+- **Q5**：后端迁移幂等（旧库补列/新库 no-op/无表 no-op）；契约测试断言表含 name/chapter_id + POST 落库回读。
+- **Q6**：前端 vitest + tsc 全绿；PR 合入（Closes #770）。
+
+### 16.7 待澄清 / 待拍板
+
+- **全局 chat 页路由**：A. 复用 `/writing` 空态（未选章节变全屏 chat）/ B. 新增 `/chat` 路由（SessionBar 点击携带 conversation_id）。倾向 A（复用现有页，少改 App.tsx），列入 PR body 待拍板，勿擅自定。
+- **章节内默认大小**：复用现有 `CHAT_MIN=80`（默认折叠最小，手拖到 480）。倾向沿用现状，列入 PR body 待拍板。
