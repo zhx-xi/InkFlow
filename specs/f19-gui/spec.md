@@ -1139,46 +1139,19 @@ toast 体系（三态/2s/aria-live）、骨架屏（项目列表/章节树加载
 
 ## 14. 交互规格（交互类专用）
 
-### 14.1 画面样式（简图/原型）
+> 已按页面拆分为独立规格文件（2026-08-30 #793 ①）。本主 spec 保留壳 / 内核 / 渲染层联合契约（§1-§13）；各页「画面样式 / 动作样式（按钮×状态表）/ 验收」以对应页面规格文件为准：
 
-- 原型引用：design/GUI/writing/（写作页三栏）、design/GUI/projects/（项目卡片网格 + 新建对话框）、design/GUI/library/（设定库六 tab + 项目选择器）、design/GUI/settings/（设置页五分类 + 模型分类摘要/模板分类）、design/GUI/agent/（Agent 配置/模板弹窗）；设定库数据页：design/GUI/characters/、design/GUI/world/、design/GUI/outline/、design/GUI/timeline/、design/GUI/foreshadow/、design/GUI/knowledge/（各状态截图 <page>-<state>.png）
-- 参考锚点（§7.2 信息架构方案 A，PM 文档 + prototypes/client-ui-v1 15 截图确认）：
-  - 布局：左侧可折叠侧边栏三分组（写作区/设定库/系统）+ 顶栏（品牌/页面标题/主题语言/内核状态）+ 页面内容区
-  - 折叠：侧边栏 52px 图标窄条 + 展开恢复（prefers-reduced-motion 降级）
-  - 分组：设定库六 tab（角色/世界观/大纲/时间线/伏笔/知识库 RAG）按项目上下文
-  - 空态：项目页「创建首个项目」引导；设定库「选择或新建项目开始构建设定」+ 前往项目页按钮；六 tab「还没有角色，去创建」+ CTA
-  - 流式时序：SSE 帧 → rAF 批渲染 → done 帧摘要；format_valid=false 展示 warnings + 手动重试（不自动重试）
-- 布局说明：写作页为全高 flex 三栏（项目树 208px / 编辑器弹性 / 上下文 240px 可折叠 26px）；项目页为滚动容器 + 卡片网格（末位虚线新建卡片）；设置页为左分类导航 + 右面板（常规/模型/Agent/模板/账户五分类）；模型管理页为 Provider 列表 + 模型表 + 角色绑定区三段布局（锚点 = design/GUI/settings/ 模型分类扩展）。
-
-### 14.2 动作样式（按钮 × 状态表，逐控件）
-
-| 控件 | 初始态 | 点击后 | 进行中 | 成功 | 失败 | 边界 |
-|------|--------|--------|--------|------|------|------|
-| 侧边栏折叠 | 展开（三分组文字+图标） | 收起为 52px 图标窄条 | 过渡动效 ≤180ms | 窄条停留，写作沉浸 | — | reduced-motion 直接切换；再点展开恢复 |
-| 新建项目（双入口） | 「新建项目」主按钮 + 末位虚线卡片 | 打开 NewProjectDialog | 提交 POST /projects | 201 → 跳转写作页 | try/catch 错误 toast/内联展示（§6.3②） | ESC/遮罩点击关闭 + 焦点归还；书名必填（1-100 字符）；Genre 11 枚举默认其他 |
-| 新建章节（写作页底部） | 按钮常驻 | 创建章节 | 请求中 | 项目树出现新章节 + 编辑器加载 | 错误 toast | 章节字数/元信息在编辑区显示 |
-| 工具栏按钮（撤销/重做/保存/续写/生成） | opacity 0.35，hover 全显 | Ctrl+Z/Y/S/Enter/Shift+Enter 或点击 | 生成中禁用续写/生成（防并发流） | 动作生效 + 状态栏更新 | toast 三态（ok/err/warn，2s，队列最多 3 条） | 纯文本无格式按钮；快捷键提示 title/hover 浮层 |
-| SSE 停止按钮 | 仅 generating 态出现 | abort() 中断 | — | 状态 stopped，保留已生成前文 | — | 不自动重连；F23 无断点续传 |
-| 上下文面板折叠 | 240px 四卡片 | 折叠 → 26px 展开条 | — | 恢复按钮可展开 | — | 原型已修复的交互闭环 |
-| 项目卡片 | 书名/题材/目标字数/章节进度/更新时间/进度条 | 点击进入写作页 | — | 路由切换 | — | 写作中标记（accent 边框 + 角标） |
-| 设定库项目选择器 | 当前项目名下拉 | 切换项目 → 内容重载 | 加载骨架屏 | 六 tab 内容刷新 | — | 未选择项目 → 空态引导；面包屑「设定库 · 项目名 / 分类」 |
-| 设置项（即改即存） | 当前值 | 修改 | — | 轻量「已保存」toast；数字项失焦即存 | 错误 toast | 三主题 × 中英双语；主题 radio → 可视化预览卡片 |
-| 顶栏主题/语言 Select | 当前值（header-theme-select/header-lang-select） | 展开选项 | — | 选择直达生效（setTheme/setLang） | — | 与设置页 AppearanceCard 双通道联动（改设置页后顶栏同步） |
-| Provider 添加/编辑弹窗 | 名称/预置模板/Base URL/Key/测试并保存 | 提交表单 | 测试连接中 / 保存中 | 保存成功 + 列表刷新（key_saved 徽标） | 测试失败 → 原因 toast；保存失败 → 错误 toast | API Key 加密存储（APIKeyManager）；内置 seed 不可删 |
-| Provider 删除 | 删除按钮 | 确认框（提示模型数） | 删除中 | 列表移除 | used_by 被引用 → 提示（前端确认） | 删除确认由前端；被模型绑定引用时返回 used_by 提示 |
-| 模型多选 + 批量测试 | 模型表（ID/类型 chat-embedding/角色用途标记） | 多选一次性添加 / 行内批量测试连接 | 测试中 | 成功状态标记 | 失败行标红 + 原因 | 角色用途去重徽标 |
-| 角色绑定区 6 下拉 | 主模型/四角色/RAG embedding | 从已配置模型联动选择 | — | 保存（依赖 #107 PATCH /agent-templates/default） | 未联动时只读展示 + 「保存需 Agent 模板功能」标注（M4b） | #106 单独交付时绑定区只读 |
-| 模板列表 | 名称/描述/应用项目数徽标/设为默认 | 新建/复制/编辑/删除 | CRUD 请求中 | 列表刷新 | 错误 toast | 默认模板不可删 |
-| 模板编辑弹窗 | 名称/描述/主模型/四角色行（模型下拉+独立温度滑杆+开关）/默认温度 | 保存 | 保存中 | 「已保存」 | 校验失败 toast | 被引用模板保存 → 风险确认框（列出项目名） |
-| 删除被引用模板 | 删除按钮 | 确认框（列出引用项目名） | 级联清空 config.template_id | 删除成功，引用项目回退默认模板装配 | 取消 → 不删除 | 确认后级联清空，一次写 |
-| 新建项目对话框模板下拉 | 默认模板/已建模板 | 选择模板 | — | 创建项目带 template_id | — | 引用式：模板修改 → 项目同步生效 |
-
-### 14.3 验收（写入 §7.8/§8.6/§9.6 验收 M）
-
-- N1：侧边栏折叠 52px 可恢复 + 三分组入口齐全（M1）
-- N2：SSE 生成 → 停止 → done 摘要/error 帧完整链路（M4）
-- N3：模型管理 Provider CRUD + 测试连接成败 toast + 删除确认框（M2/M3）
-- N4：角色绑定 6 下拉从已配置模型联动（M4）
-- N5：模板被引用保存/删除 → 风险确认框确认/取消分支（M4）
-- N6：新建项目选模板 + 项目内切换（M5）
-- N7：顶栏主题/语言 Select 展开可见全部选项 + 选择直达生效 + 与设置页联动（M5b）
+- 写作页 → specs/f19-gui/writing.md（design/GUI/writing/）
+- 项目页 → specs/f19-gui/projects.md（design/GUI/projects/）
+- 设定库 → specs/f19-gui/library.md（design/GUI/library/）
+- 角色 → specs/f19-gui/characters.md（design/GUI/characters/）
+- 世界观 → specs/f19-gui/world.md（design/GUI/world/）
+- 大纲 → specs/f19-gui/outline.md（design/GUI/outline/）
+- 时间线 → specs/f19-gui/timeline.md（design/GUI/timeline/）
+- 伏笔 → specs/f19-gui/foreshadow.md（design/GUI/foreshadow/）
+- 知识图谱 → specs/f19-gui/knowledge.md（design/GUI/knowledge/）
+- 检索 → specs/f19-gui/search.md（design/GUI/search/）
+- 会话 → specs/f19-gui/sessions.md（design/GUI/sessions/）
+- Agent → specs/f19-gui/agent.md（design/GUI/agent/）
+- 记忆 → specs/f19-gui/memory.md（design/GUI/memory/）
+- 设置 → specs/f19-gui/settings.md（design/GUI/settings/）
