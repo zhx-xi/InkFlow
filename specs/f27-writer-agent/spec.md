@@ -498,7 +498,7 @@ save_draft / confirm / reject 三个写动作均落 audit_logs：
 
 ## 附录：f49-autonomous-writing（原独立 spec，容器化合并）
 
-> 本章节由原 `specs/f27-writer-agent/spec.md` 合并而来（2026-08-29 spec 目录重构）。
+> 本章节由原 `specs/f49-autonomous-writing/spec.md` 合并而来（2026-08-29 spec 目录重构）。
 
 # F49: 自主全自动写作（autonomous-writing）功能规格
 

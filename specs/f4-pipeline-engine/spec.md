@@ -629,7 +629,7 @@ F4 被依赖:
 
 ## 附录：f87-langgraph-refactor（原独立 spec，容器化合并）
 
-> 本章节由原 `specs/f4-pipeline-engine/spec.md` 合并而来（2026-08-29 spec 目录重构）。
+> 本章节由原 `specs/f87-langgraph-refactor/spec.md` 合并而来（2026-08-29 spec 目录重构）。
 
 # F87: LangGraph 管线状态重构（StateGraph(dict) → TypedDict + reducer）
 

@@ -309,7 +309,7 @@ def build_deep_agent(*, model: str, api_key: str, base_url: str,
 
 ## 附录：f51-agent-tools-v2（原独立 spec，容器化合并）
 
-> 本章节由原 `specs/f26-agent-tools/spec.md` 合并而来（2026-08-29 spec 目录重构）。
+> 本章节由原 `specs/f51-agent-tools-v2/spec.md` 合并而来（2026-08-29 spec 目录重构）。
 
 # F51: AI 工具面全量注册（阶段① 读+写）功能规格
 

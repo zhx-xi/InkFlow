@@ -465,7 +465,7 @@ F20 被依赖:
 
 ## 附录：f50-mcp-guidance（原独立 spec，容器化合并）
 
-> 本章节由原 `specs/f20-mcp/spec.md` 合并而来（2026-08-29 spec 目录重构）。
+> 本章节由原 `specs/f50-mcp-guidance/spec.md` 合并而来（2026-08-29 spec 目录重构）。
 
 # F50 MCP 分发引导 — 功能规格（Specify 阶段）
 
