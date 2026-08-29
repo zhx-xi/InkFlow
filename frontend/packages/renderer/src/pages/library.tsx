@@ -674,6 +674,7 @@ export function LibraryPage() {
                 onCopy={(item) => setCopyState({ open: true, mode: 'subtree', rootId: item.id })}
                 onCopyAll={() => setCopyState({ open: true, mode: 'all' })}
                 copyTargetOptions={copyTargetOptions}
+                onMapsChanged={(next) => setMaps(next)}
               />
             ) : activeCat === 'outline' ? (
               <OutlineTree

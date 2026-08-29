@@ -69,6 +69,8 @@ export interface MapWorkbenchProps {
   worldItems: LibraryItemDTO[];
   /** 地图列表（含 root_location_id 关联地点） */
   maps: WorldMapDTO[];
+  /** #761：创建图后回传父级（localMaps 是 props 拷贝，必须反向同步） */
+  onMapsChanged?: (maps: WorldMapDTO[]) => void;
   /** 当前选中地图 id */
   activeMapId: string | null;
   onSelectMap: (mapId: string) => void;
@@ -119,6 +121,7 @@ export function MapWorkbench({
   projectId,
   worldItems,
   maps,
+  onMapsChanged,
   activeMapId,
   onSelectMap,
   onExitWorkbench,
@@ -325,6 +328,11 @@ export function MapWorkbench({
   /** #346/#368 创建地图：multipart FormData（bg_source 固定 shape；子图携带 parent_map_id，根图可挂条目） */
   const handleCreateMap = async (name: string) => {
     try {
+      // #761：本地已知同名图 → 直接 err toast，不再发 POST（避免后端「已存在」误报）
+      if (localMaps.some((m) => m.name === name)) {
+        useToastStore.getState().pushToast('err', t('toast.saveFailed'));
+        return;
+      }
       const fd = new FormData();
       fd.append('name', name);
       fd.append('bg_source', 'shape');
@@ -342,7 +350,11 @@ export function MapWorkbench({
       );
       // 返回完整地图 → 追加本地列表；否则（列表形状响应）回退重拉
       if (created && typeof created === 'object' && 'id' in created) {
-        setLocalMaps((prev) => [...prev, created]);
+        setLocalMaps((prev) => {
+          const next = [...prev, created];
+          onMapsChanged?.(next);
+          return next;
+        });
         // #377：创建成功后自动选中新图（右侧渲染画布 + 树高亮）
         onSelectMap(String(created.id));
       } else {
@@ -388,7 +400,11 @@ export function MapWorkbench({
         { method: 'POST', body: fd },
       );
       if (created && typeof created === 'object' && 'id' in created) {
-        setLocalMaps((prev) => [...prev, created]);
+        setLocalMaps((prev) => {
+          const next = [...prev, created];
+          onMapsChanged?.(next);
+          return next;
+        });
         setCreateDialog({ open: true, rootLocationId: null, parentMapId: created.id });
         return;
       }
