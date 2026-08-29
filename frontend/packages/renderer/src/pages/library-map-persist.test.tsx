@@ -112,6 +112,11 @@ beforeEach(() => {
       }
       return { items: [], total: 0, offset: 0, limit: 50 };
     }
+    if (/^\/api\/v1\/maps\//.test(path) && init?.method === 'PATCH') {
+      // #761：重命名/改层级 PATCH → 返回更新后的图（后端已持久化）
+      const id = path.split('/').pop() ?? '';
+      return id === 'm100' ? { ...createdMapM100, name: '新舆图v2' } : createdMapM100;
+    }
     if (/^\/api\/v1\/maps\/[^/]+\/pins$/.test(path)) return { items: [], total: 0, offset: 0, limit: 50 };
     return { items: [], total: 0, offset: 0, limit: 50 };
   });
@@ -199,5 +204,32 @@ describe('#761 世界观地图 — 创建后退出/切 tab 返回，树必须仍
       // RED：当前实现 handleCreateMap 无本地同名检查 → 第二次 POST 照样发出 → 长度变 2 → FAIL。
       expect(postMapCalls().length).toBe(1);
     });
+  });
+
+  it('RED：重命名地图 → 退出/切 tab 返回 → 新名字保留（handleRenameMap 也回传父级 maps，不改信息回退）', async () => {
+    act(() => {
+      useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
+    });
+    const user = userEvent.setup();
+    renderLibrary();
+    await openWorkbench(user);
+    await createRootMap(user); // m100 '新舆图'
+
+    // 重命名：点 edit → 复用 create-dialog → 改名为 '新舆图v2' → 保存 → PATCH /maps/m100 返回新名
+    await user.click(screen.getByTestId('map-tree-edit-m100'));
+    const nameInput = await screen.findByTestId('map-create-name');
+    await user.clear(nameInput);
+    await user.type(nameInput, '新舆图v2');
+    await user.click(screen.getByTestId('map-create-save'));
+
+    // 切走再切回 → workbench 重挂载
+    await user.click(screen.getByRole('tab', { name: '角色' }));
+    await screen.findByTestId('library-tab-empty');
+    await user.click(screen.getByRole('tab', { name: '世界观' }));
+    await screen.findByTestId('map-workbench');
+
+    // RED：当前实现 handleRenameMap 只改 localMaps 未回传 onMapsChanged → library.maps 仍是旧名
+    // '新舆图' → 重挂载后显示旧名 → 断言新名 '新舆图v2' 找不到 → FAIL。
+    expect(screen.getByTestId('map-tree-node-m100')).toHaveTextContent('新舆图v2');
   });
 });

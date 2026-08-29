@@ -315,11 +315,17 @@ export function MapWorkbench({
         method: 'PATCH',
         body: { bg_source: bgSource },
       });
-      setLocalMaps((prev) =>
-        prev.map((m) =>
-          String(m.id) === String(activeMap.id) ? (updated ? { ...m, ...updated } : { ...m, bg_source: bgSource }) : m,
-        ),
-      );
+      setLocalMaps((prev) => {
+        const next = prev.map((m) =>
+          String(m.id) === String(activeMap.id)
+            ? updated
+              ? { ...m, ...updated }
+              : { ...m, bg_source: bgSource }
+            : m,
+        );
+        onMapsChanged?.(next);
+        return next;
+      });
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
     }
@@ -433,15 +439,17 @@ export function MapWorkbench({
         method: 'PATCH',
         body: { parent_map_id: parentMapId },
       });
-      setLocalMaps((prev) =>
-        prev.map((m) =>
+      setLocalMaps((prev) => {
+        const next = prev.map((m) =>
           String(m.id) === String(mapId)
             ? updated
               ? { ...m, ...updated }
               : { ...m, parent_map_id: parentMapId }
             : m,
-        ),
-      );
+        );
+        onMapsChanged?.(next);
+        return next;
+      });
       useToastStore.getState().pushToast('ok', t('toast.saved'));
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
@@ -460,11 +468,13 @@ export function MapWorkbench({
         method: 'PATCH',
         body: { name },
       });
-      setLocalMaps((prev) =>
-        prev.map((m) =>
+      setLocalMaps((prev) => {
+        const next = prev.map((m) =>
           String(m.id) === String(map.id) ? (updated ? { ...m, ...updated } : { ...m, name }) : m,
-        ),
-      );
+        );
+        onMapsChanged?.(next);
+        return next;
+      });
       setRenameTarget(null);
       useToastStore.getState().pushToast('ok', t('toast.saved'));
     } catch (err) {
@@ -478,7 +488,11 @@ export function MapWorkbench({
     const target = pendingDeleteMap;
     try {
       await apiFetch(`/api/v1/maps/${target.id}`, { method: 'DELETE' });
-      setLocalMaps((prev) => prev.filter((m) => String(m.id) !== String(target.id)));
+      setLocalMaps((prev) => {
+        const next = prev.filter((m) => String(m.id) !== String(target.id));
+        onMapsChanged?.(next);
+        return next;
+      });
       setPendingDeleteMap(null);
       if (activeMapId !== null && String(activeMapId) === String(target.id)) {
         onClearMap();
@@ -502,13 +516,15 @@ export function MapWorkbench({
         method: 'PATCH',
         body: { extra: { shapes } },
       });
-      setLocalMaps((prev) =>
-        prev.map((m) => {
+      setLocalMaps((prev) => {
+        const next = prev.map((m) => {
           if (String(m.id) !== String(activeMap.id)) return m;
           if (updated) return { ...m, ...updated };
           return { ...m, extra: { ...(m.extra ?? {}), shapes } };
-        }),
-      );
+        });
+        onMapsChanged?.(next);
+        return next;
+      });
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
     }
