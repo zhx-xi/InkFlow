@@ -583,3 +583,38 @@ F35 被依赖:
 ---
 
 *本文档为 F35 功能规格（What），实施步骤（How）见后续 `specs/f35-world-tree/plan.md`。所有里程碑验收以本节 M1-M8 为准。*
+## 14. 动作确认
+
+> 基于 §3 API + §4 CLI + §7 边界事实的状态流表，不新增行为。
+
+### 14.1 端点状态流
+
+| 端点 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| POST /api/v1/projects/{project_id}/world-settings（MODIFY） | 项目存在 | 校验父存在/同项目/无环/同级同名 → 建条目 | 201 + WorldSetting（含 parent_id） | 422 WorldParentNotFoundError（父地点不存在或不在同一项目）；422 WorldCycleError（不能将地点挂接到自身或其子孙下）；422 WorldNameConflictError（同级同名） | parent_id 可空 = 顶层 |
+| GET /api/v1/projects/{project_id}/world-settings（MODIFY） | 项目存在 | 列表 + parent_id 过滤 | 200 + {items,total,offset,limit} | — | ?parent_id=<id> 直接子级；?parent_id=none 顶层；缺省全量（向后兼容） |
+| GET /api/v1/world-settings/{setting_id}/ancestors（CREATE） | 条目存在 | 递归 CTE 祖先链（含自身） | 200 + {items,total} | 404 WorldNotFoundError | 根在前，用于面包屑/上下文注入 |
+| GET /api/v1/world-settings/{setting_id}/descendants（CREATE） | 条目存在 | 递归 CTE 子树（含自身） | 200 + {items,total} | 404 WorldNotFoundError | 用于复制/级联删除/地图树 |
+| PATCH /api/v1/world-settings/{setting_id}（MODIFY） | 条目存在 | 更新（parent_id 出现即更新） | 200 + WorldSetting | 404 WorldNotFoundError；422 WorldCycleError（自身/子孙）；422 WorldParentNotFoundError（跨项目） | parent_id null = 置顶 |
+| DELETE /api/v1/world-settings/{setting_id}（无子地点） | 条目存在·无子地点 | F10 既有软删（is_deleted=1） | 204 | 404 WorldNotFoundError | ⚠️ 边界 X：与 F10 v1.1 真删语义存在跨 spec 张力（§5.5，#211 后置统一） |
+| DELETE /api/v1/world-settings/{setting_id}?cascade=true（有子地点） | 条目存在·有子地点 | 递归真删整棵子树（单事务原子） | 204 | 404 WorldNotFoundError | 真删不可恢复 |
+| DELETE /api/v1/world-settings/{setting_id}?reparent_to=<id>（有子地点） | 条目存在·有子地点 | 直接子改挂新父 + 真删自身 | 204 | 422 WorldReparentTargetError（reparent 目标地点不存在/不在同一项目/是自身子树） | 孙子层级不变（树整体平移） |
+| DELETE /api/v1/world-settings/{setting_id}（有子地点且未指定） | 条目存在·有子地点 | 拒绝删除 | 422 WorldChildrenActionRequiredError（该地点存在子地点，必须指定 cascade 或 reparent_to） | — | 强制显式选择 |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| world ancestors <setting_id> | 条目存在 | 祖先链查询 | {ok:true, data:{items}}（含 parent_id） | NOT_FOUND 退出码 1 | 只读薄层，根在前 |
+| world descendants <setting_id> | 条目存在 | 子树查询 | {ok:true, data:{items}} | NOT_FOUND 退出码 1 | 只读薄层，层序输出 |
+| world create/update --parent <UUID> | 父校验通过 | 建/改挂条目 | ✅ / --json | VALIDATION_ERROR（循环/父不存在/同名，与 API 422 一致）；NOT_FOUND | 缺省 = 顶层 |
+| world delete --cascade / --reparent-to <UUID> | 条目存在 | 真删子树 / 改挂后真删 | ✅ / --json | 有子未指定 → VALIDATION_ERROR（与 API 422 一致）；NOT_FOUND | — |
+
+### 14.3 验收锚点
+
+- A1：parent_id = 自身或自身子孙 → 422 WorldCycleError（防环）
+- A2：DELETE 有子地点未指定 cascade/reparent_to → 422 WorldChildrenActionRequiredError
+- A3：?cascade=true → 整棵子树单事务真删（不可恢复）
+- A4：?reparent_to 目标不存在/跨项目/自身子树 → 422 WorldReparentTargetError；成功后直接子改挂、孙子层级不变
+- A5：顶层同名 → 422 WorldNameConflictError；不同父同名 → ✅ 允许
+- A6：?parent_id=none → 仅顶层地点；?parent_id=<id> → 直接子级；缺省全量（向后兼容）

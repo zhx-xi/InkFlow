@@ -175,9 +175,7 @@ class CharacterCreate(BaseModel):
 
 class CharacterUpdate(BaseModel):
     """更新角色请求 DTO — 所有字段可选（exclude_unset 语义，同 F1）.
-
-    group_id: None 表示清除分组；不传该字段表示不修改.
-    """
+    group_id: None 表示清除分组；不传该字段表示不修改."""
     name: str | None = None
     personality: str | None = None
     background: str | None = None
@@ -902,3 +900,56 @@ F9 被依赖:
 ---
 
 *本文档为 F9 功能规格（What），实施步骤（How）见后续 `specs/f9-character/plan.md`。所有里程碑验收以本节 M1-M9 为准。*
+## 14. 动作确认
+
+> 基于 §3 API + §4 CLI + §7 边界事实的状态流表，不新增行为。
+
+### 14.1 端点状态流
+
+| 端点 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| POST /api/v1/projects/{project_id}/characters | 项目存在 | 校验 DTO → 同名检查 → 建角色 | 201 + Character | 404「项目不存在」；422「角色名不能为空」/「角色名不能超过 50 个字符」/「同名角色已存在（角色名在项目内必须唯一）」 | 软删同名可再建（partial unique 排除已删行） |
+| GET /api/v1/projects/{project_id}/characters | 项目存在 | search/group 过滤 + 排序分页 | 200 + {items,total,offset,limit} | — | 无结果/分页越界 → 空 items |
+| GET /api/v1/characters/{character_id} | 角色存在（活动） | 查询 + relations 双向聚合 | 200 + Character（含 relations） | 404「角色不存在」 | 无效 UUID → 404；软删角色已排除 |
+| PATCH /api/v1/characters/{character_id} | 角色存在 | exclude_unset 部分更新 | 200 + Character | 404「角色不存在」；422「分组不存在于该项目」（group_id 非法） | 不传字段 = 不改 |
+| DELETE /api/v1/characters/{character_id} | 角色存在 | 软删 is_deleted=True + 双向关系级联软删 | 204 | 404「角色不存在」 | 默认软删；?force=true = 物理删 + 关系 FK CASCADE |
+| POST /api/v1/characters/{character_id}/restore | 角色存在（软删） | is_deleted=False + 关系级联恢复 | 200 + Character | 404「角色不存在」 | 恢复未删角色 = 无操作成功 |
+| GET /api/v1/characters/{character_id}/relations | 角色存在 | 双向关系列表（from/to 聚合） | 200 + {items,total} | 404「角色不存在」 | — |
+| POST /api/v1/characters/{character_id}/relations | 角色存在 | 校验 to 存在/同项目/非自环/不重复 → 建关系 | 201 + CharacterRelation | 404「角色不存在」（to 不存在）；422「关系两端不能是同一角色」/「角色与目标角色不属于同一项目」/「该关系已存在」 | from = 路径角色 |
+| PATCH /api/v1/characters/{character_id}/relations/{relation_id} | 关系存在 | 更新 relation_type/description | 200 + CharacterRelation | 404「关系不存在」 | — |
+| DELETE /api/v1/characters/{character_id}/relations/{relation_id} | 关系存在 | 软删关系 | 204 | 404「关系不存在」 | — |
+| POST /api/v1/projects/{project_id}/character-groups | 项目存在 | 同名检查 → 建分组 | 201 + CharacterGroup | 422（同名分组，§3.5 服务层校验） | — |
+| GET /api/v1/projects/{project_id}/character-groups | 项目存在 | 列表（含 member_count） | 200 + {items,total} | — | — |
+| GET /api/v1/character-groups/{group_id} | 分组存在 | 详情（含 member_count） | 200 + CharacterGroup | 404「分组不存在」 | 无效 UUID → 404 |
+| PATCH /api/v1/character-groups/{group_id} | 分组存在 | 更新 name/description/sort_order | 200 + CharacterGroup | 404「分组不存在」；422（同名） | — |
+| DELETE /api/v1/character-groups/{group_id} | 分组存在 | 软删分组 + 成员 group_id 置 NULL | 204 | 404「分组不存在」 | 角色本身不受影响 |
+| POST /api/v1/characters/extract | 项目存在·text 非空 | LLM 提取 → 解析重试 ≤2 → 合并落库（单事务） | 200 + CharacterExtractionResult | 404「项目不存在」；422「章节文本不能为空」/「章节文本不能超过 50000 个字符」；500「角色提取失败: LLM 输出无法解析，请重试」/「LLM 调用失败，请稍后重试」 | 空列表 → warning「未提取到角色信息」；单条非法 → 跳过 + warning；幂等（同文本二次提取 created/updated 空）；DB 失败整体回滚 |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| character create | 项目存在 | 建角色 | ✅ 角色创建成功: [林尘] (主角团)；--json 信封 | 校验失败 → VALIDATION_ERROR 退出码 1 | — |
+| character list | 项目存在 | 列表 | 列表 / --json | — | --search/--group-id/--sort/--sort-desc |
+| character get | 角色存在 | 查询 | JSON | NOT_FOUND「角色不存在」退出码 1 | — |
+| character update | 角色存在 | 部分更新 | ✅ / JSON | 404 NOT_FOUND；422 VALIDATION_ERROR | --group-id "" 清除分组 |
+| character delete | 角色存在 | 二次确认（--force 跳过）→ 软删 | ✅ 角色已删除: [林尘] | --json 无 --force → VALIDATION_ERROR 退出码 1；404 NOT_FOUND | --permanent 硬删；--force 跳过确认 |
+| character restore | 角色存在（软删） | 恢复 | 200 | 404 NOT_FOUND | 重复恢复无操作成功 |
+| character relations | 角色存在 | 双向关系列表 | JSON | 404 NOT_FOUND | — |
+| character relate | 角色存在 | 建关系 | ✅ / JSON | 422 VALIDATION_ERROR（自环/重复/跨项目）；404 NOT_FOUND | — |
+| character unrelate | 关系存在 | 软删关系 | ✅ / JSON | 404 NOT_FOUND；--json 无 --force → VALIDATION_ERROR | — |
+| character extract | 项目存在 | LLM 提取 → 合并落库 | ✅ 提取完成: 新增 3 个角色, 更新 1 个角色, 新增 4 条关系, 更新 0 条, 跳过 2 条, 警告 2 条；--json 报告 | 404 项目不存在；422 空文本；500 LLM_ERROR | --text/--text-file 互斥（同时 → 退出码 2） |
+| character group list | 项目存在 | 分组列表 | 列表 / JSON | — | — |
+| character group create | 项目存在 | 建分组 | ✅ / JSON | 422 VALIDATION_ERROR（同名） | — |
+| character group update | 分组存在 | 更新分组 | ✅ / JSON | 404 NOT_FOUND；422 VALIDATION_ERROR（同名） | — |
+| character group delete | 分组存在 | 软删分组 + 成员置空 | ✅ / JSON | 404 NOT_FOUND；--json 无 --force → VALIDATION_ERROR | 角色保留 |
+
+### 14.3 验收锚点
+
+- A1：创建角色 name 空/全空白 → 422「角色名不能为空」（非 500/非 Pydantic 原文泄漏）
+- A2：同名活动角色 → 422「同名角色已存在（角色名在项目内必须唯一）」；软删后同名可再建
+- A3：DELETE 默认软删 → 204 后 GET 404；restore 级联恢复关系（重复恢复无操作成功）
+- A4：DELETE ?force=true → 204 物理删 + 关系 FK CASCADE；再 restore → 404
+- A5：关系自环/跨项目/重复 → 422（「关系两端不能是同一角色」/「角色与目标角色不属于同一项目」/「该关系已存在」）
+- A6：extract text 空 → 422「章节文本不能为空」；LLM 解析失败重试 ≤2 仍失败 → 500「角色提取失败: LLM 输出无法解析，请重试」
+- A7：extract 合并中途 DB 错误 → 单事务整体回滚（无部分落库）
