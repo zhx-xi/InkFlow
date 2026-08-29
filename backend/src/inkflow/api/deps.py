@@ -54,9 +54,13 @@ from inkflow.domain.services.timeline_service import TimelineService
 from inkflow.domain.services.world_service import WorldService
 from inkflow.domain.services.writing_service import WritingService
 from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent
+from inkflow.infrastructure.agent.tools.memory_tools import build_memory_tools
 from inkflow.infrastructure.agent.tools.reader_tools import build_reader_tools
 from inkflow.infrastructure.agent.tools.save_draft_tool import build_save_draft_tool
+from inkflow.infrastructure.agent.tools.setting_update_tools import build_setting_update_tools
 from inkflow.infrastructure.agent.tools.setting_write_tools import build_setting_write_tools
+from inkflow.infrastructure.agent.tools.world_readwrite_tools import build_world_rw_tools
+from inkflow.infrastructure.agent.tools.writing_tools import build_writing_tools
 from inkflow.infrastructure.database.repositories.agent_run_repo import (
     SQLiteAgentRunRepository,
 )
@@ -126,9 +130,13 @@ if TYPE_CHECKING:
 # f27 绑定名快照 re-export：单测 patch 目标 inkflow.api.deps.<名>（#597 迁移后保持可命中）
 __all__ = [
     "build_deep_agent",
+    "build_memory_tools",
     "build_reader_tools",
     "build_save_draft_tool",
+    "build_setting_update_tools",
     "build_setting_write_tools",
+    "build_world_rw_tools",
+    "build_writing_tools",
     "get_chat_agent_service",
 ]
 
