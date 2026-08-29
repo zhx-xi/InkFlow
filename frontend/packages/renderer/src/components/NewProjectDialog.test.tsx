@@ -312,6 +312,19 @@ describe('新建项目对话框 — 创建失败错误展示（Issue #105 §6.3�
   });
 });
 
+describe('新建项目对话框 — 书名长度校验（spec N2）', () => {
+  it('书名超过 100 字 → 「书名不能超过 100 字」，不发 POST', async () => {
+    const user = userEvent.setup();
+    renderHarness();
+    await user.click(screen.getByTestId('open-trigger'));
+    const nameInput = within(screen.getByRole('dialog')).getByLabelText('书名');
+    await user.type(nameInput, 'x'.repeat(101));
+    await user.click(screen.getByRole('button', { name: '创建' }));
+    expect(screen.getByText('书名不能超过 100 字')).toBeInTheDocument();
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/v1/projects', expect.objectContaining({ method: 'POST' }));
+  });
+});
+
 describe('新建项目对话框 — 提交中状态与 ESC 交互（#105 修复批契约）', () => {
   const createdProject = {
     id: 'p9',
