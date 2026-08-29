@@ -183,7 +183,6 @@
 | skills 包 | ✅ 0.8.0 | 官方 skills/inkflow/ 资产（GitHub 分发）+ 用户自定义轨 skills 命令组（导入管理） | 无 | [#70](https://github.com/zhx-xi/InkFlow/issues/70) | ✅ 已交付（PR #304，2026-08-13） |
 | F20 MCP Server | ✅ 0.9.0 | MCP Server（stdio 薄客户端经 HTTP），15 聚合工具（ADR-023 v2，spec v1.1） | #166（内核冷启动基建，✅ 已实现 PR #171） | [#49](https://github.com/zhx-xi/InkFlow/issues/49) | ✅ 已交付（PR #400，2026-08-16） |
 | F29 Supervisor 自主编排 | ✅ 0.8.0 | 自主编排 + HITL（Command(goto) 动态路由 + 振荡护栏 + deterministic 回退） | F26/F27/F28 | [#161](https://github.com/zhx-xi/InkFlow/issues/161) | ✅ 已交付（PR #323 + #324 登记，2026-08-13） |
-| ~~F25 daemon~~ | ~~0.5.0~~ | ~~daemon 后台写作~~（**已移除**，ADR-029：伪需求；真实意图=外部 agent 经 MCP/skills 调用，由 F19 serve + F20 MCP + skills 包覆盖） | 无 | [#52](https://github.com/zhx-xi/InkFlow/issues/52) | ❌ 已关闭（2026-08-07） |
 | 1.0.0 发布验收 | **1.0.0** | CLI + GUI + skills + MCP 四界面齐备；跨平台打包（macOS/Linux）+ 文档完善 + Phase 3 Gate | 以上全部 | [#55](https://github.com/zhx-xi/InkFlow/issues/55) | 🔜 已建 issue |
 | F18 云端 Web 用户端 | **2.0.0** | 云 Web UI（前端一套两用，移出单机） | — | [#47](https://github.com/zhx-xi/InkFlow/issues/47) | 🔜 已建 issue |
 | 云端总：云存档 + 异地写作 | **2.0.0** | 用户 API + Admin 后台 + GUI 远程模式（PostgreSQL + JWT + BYOK；无 CRDT，LWW + 修订历史） | P0-11 协议（已就绪） | [#71](https://github.com/zhx-xi/InkFlow/issues/71) | 🔜 已建 issue |
