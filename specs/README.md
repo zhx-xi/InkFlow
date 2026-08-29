@@ -107,6 +107,8 @@
 | F49 记忆衰减 | [`f49-memory-decay/spec.md`](f49-memory-decay/spec.md) | ✅ 已实现（#617/618/619） |
 | F50 LangSmith 可观测性 | [`f50-langsmith/spec.md`](f50-langsmith/spec.md) | ✅ 已实现（ADR-042，#629） |
 | F51 Agent 工具面 v2 | 并入 [`f26-agent-tools/spec.md`](f26-agent-tools/spec.md)（见附录） | ✅ 已实现（2026-08-29 并入 F26，#766） |
+| F49 自主全自动写作 | 并入 [`f27-writer-agent/spec.md`](f27-writer-agent/spec.md)（见附录） | 📝 草案（2026-08-29 并入 F27） |
+| F50 MCP 分发引导 | 并入 [`f20-mcp/spec.md`](f20-mcp/spec.md)（见附录） | 📝 草案（2026-08-29 并入 F20） |
 | F53 对话机密脱敏 | [`f53-secret-redact/spec.md`](f53-secret-redact/spec.md) | 📝 草案（#614） |
 | F54 执行链路可重放 | [`f54-trace-replay/spec.md`](f54-trace-replay/spec.md) | 📝 草案（#615） |
 | F55 统一执行视图 | [`f55-unified-exec-view/spec.md`](f55-unified-exec-view/spec.md) | 📝 草案（#599） |
