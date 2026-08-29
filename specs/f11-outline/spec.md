@@ -1201,3 +1201,64 @@ F11 被依赖:
 ---
 
 *本文档为 F11 功能规格（What），实施步骤（How）见后续 `specs/f11-outline/plan.md`。所有里程碑验收以本节 M1-M9 为准。*
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §7 边界事实，不重复）。
+
+### 14.1 端点状态流（§3.1 枚举 19 端点，表头标注 18）
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| POST /projects/{project_id}/outlines | 项目存在 | 校验 name（非空/≤50/项目内活动唯一）→ 创建 | 201 + Outline | 404「项目不存在」；422「大纲名不能为空」/「大纲名不能超过 50 个字符」/「同名大纲已存在（大纲名在项目内必须唯一）」 | description>5000 / sort_order<0 → 422；软删后同名可再建（partial unique） |
+| GET /projects/{project_id}/outlines | 项目存在 | 搜索/排序/分页 → 过滤活动大纲 | 200 + {items,total,offset,limit}（含 point_count 聚合） | 404「项目不存在」 | search 空不过滤；limit≤100；分页越界 → 空 items |
+| GET /outlines/{outline_id} | 大纲存在 | 查询 + plot_points 聚合（活动、position 升序、arc_name JOIN） | 200 + Outline JSON | 404「大纲不存在」 | 无效 UUID → 404（_parse_id） |
+| PATCH /outlines/{outline_id} | 大纲存在 | 部分更新（exclude_unset） | 200 + Outline | 404「大纲不存在」；422（name 非法/同名冲突） | 字段不传=不改 |
+| DELETE /outlines/{outline_id} | 大纲存在 | 软删除 + 情节点级联软删 | 204 | 404「大纲不存在」（不存在/已软删） | 不传 force=软删；?force=true=物理删除（情节点 FK CASCADE 级联物理删，弧线不受影响） |
+| POST /outlines/{outline_id}/restore | 大纲存在（硬删除外） | 恢复 + 情节点级联恢复 | 200 + Outline | 404「大纲不存在」 | 未软删时恢复=无操作成功；硬删后不可恢复 |
+| POST /outlines/generate | 项目存在 | LLM 生成（修复重试 ≤2）→ save=true 落库 / save=false 仅预览 | 200 + OutlineGenerationResult（saved/outline/plot_points/arcs/warnings/model 或 preview） | 404「项目不存在」；422（prompt>20000「创作约束不能超过 20000 个字符」/num_chapters 越界「规划章节数需在 1-100 之间」/save=true 同名大纲）；500「大纲生成失败: LLM 输出无法解析，请重试」/「LLM 调用失败，请稍后重试」 | save=false 不创建任何实体、不做同名检查；空情节点列表 → 200 + warning「未生成情节点」；个别非法条目跳过 + warning 不影响其余落库；落库单事务整体回滚 |
+| POST /outlines/{outline_id}/plot-points | 大纲存在 | 校验 → 创建（position=大纲末尾+1） | 201 + PlotPoint | 404「大纲不存在」；422「情节点名不能为空」/「情节点名不能超过 100 个字符」/「情节点类型不能超过 20 个字符」/「排序位置不能为负数」/「弧线不存在于该项目」 | arc_id 可空；arc_id 跨项目/不存在统一 422 |
+| GET /outlines/{outline_id}/plot-points | 大纲存在 | 列表（position 升序，arc_name 聚合） | 200 + {items,total} | 404「大纲不存在」 | — |
+| GET /plot-points/{point_id} | 情节点存在 | 查询 | 200 + PlotPoint（含 arc_name） | 404「情节点不存在」 | — |
+| PATCH /plot-points/{point_id} | 情节点存在 | 部分更新（含 arc_id 清除） | 200 + PlotPoint | 404「情节点不存在」；422 字段校验 | arc_id="" → 置 null |
+| DELETE /plot-points/{point_id} | 情节点存在 | 软删除 | 204 | 404「情节点不存在」 | ?force=true 物理删除 |
+| POST /plot-points/{point_id}/restore | 情节点存在（硬删除外） | 恢复 | 200 + PlotPoint | 404「情节点不存在」 | — |
+| POST /projects/{project_id}/story-arcs | 项目存在 | 校验 name（项目内活动唯一）→ 创建 | 201 + StoryArc | 404「项目不存在」；422「同名弧线已存在（弧线名在项目内必须唯一）」 | — |
+| GET /projects/{project_id}/story-arcs | 项目存在 | 列表（含 point_count） | 200 + {items,total} | 404「项目不存在」 | 无活动弧线 → 空 items |
+| GET /story-arcs/{arc_id} | 弧线存在 | 查询 + points 聚合（跨大纲成员，outline_name JOIN） | 200 + StoryArc JSON | 404「弧线不存在」 | — |
+| PATCH /story-arcs/{arc_id} | 弧线存在 | 部分更新 | 200 + StoryArc | 404「弧线不存在」；422 同名冲突 | — |
+| DELETE /story-arcs/{arc_id} | 弧线存在 | 软删除（成员情节点 arc_id 置 NULL，情节点保留） | 204 | 404「弧线不存在」 | ?force=true 物理删除 |
+| POST /story-arcs/{arc_id}/restore | 弧线存在（硬删除外） | 恢复（**不恢复**成员关联） | 200 + StoryArc | 404「弧线不存在」 | — |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| outline create | 项目存在 | 创建 | 「✅ 大纲创建成功: [第一卷大纲]」/ --json | 404 NOT_FOUND；422 VALIDATION_ERROR | — |
+| outline list | 项目存在 | 列表（--search/--sort） | 列表 / JSON | 404 | — |
+| outline get | 大纲存在 | 查询（含情节点聚合） | JSON | 404「大纲不存在」 | — |
+| outline update | 大纲存在 | 更新 | JSON | 404；422 | — |
+| outline delete | 大纲存在 | 二次确认（--force 跳过）→ 软删；--permanent 硬删 | 204 | 404；--json 无 --force → VALIDATION_ERROR「删除需 --force 或交互确认」（退出码 1） | — |
+| outline restore | 大纲存在 | 恢复（级联恢复情节点） | 200 | 404 | — |
+| outline point list | 大纲存在 | 列表 | 列表 / JSON | 404 | — |
+| outline point create | 大纲存在 | 创建（--position 缺省=末尾追加） | 「✅ 情节点创建成功: [主角登场] (开篇)」 | 404；422 | — |
+| outline point update | 情节点存在 | 更新（--arc-id "" 清除弧线归属） | JSON | 404；422 | — |
+| outline point delete | 情节点存在 | 二次确认（--force） | 204 | 404；--json 无 --force → VALIDATION_ERROR | — |
+| outline arc list | 项目存在 | 列表 | 列表 / JSON | 404 | — |
+| outline arc create | 项目存在 | 创建 | 「✅ 弧线创建成功: [主角成长线]」 | 404；422 同名 | — |
+| outline arc update | 弧线存在 | 更新 | JSON | 404；422 | — |
+| outline arc delete | 弧线存在 | 二次确认（--force） | 204 | 404；--json 无 --force → VALIDATION_ERROR | — |
+| outline generate | 项目存在 | AI 生成（--save 默认开/--no-save 预览；--model） | 「✅ 大纲生成并保存: [...]，含 8 个情节点、2 条弧线」/「🔍 大纲预览（未保存）: ...」/「⚠️ 生成完成但有警告: ...」；--json 信封 | 404；422；500 LLM_ERROR | --prompt 与 --prompt-file 互斥（同传 → 退出码 2）；错误码 NOT_FOUND/VALIDATION_ERROR/LLM_ERROR/DB_ERROR |
+
+### 14.3 验收锚点（写入 §14）
+
+- A1：POST outlines 空 name → 422「大纲名不能为空」（非 500/非 422 原文泄漏）
+- A2：同名大纲 → 422「同名大纲已存在（大纲名在项目内必须唯一）」；软删后再建同名 → 成功
+- A3：DELETE outlines → 204 后其情节点级联软删（GET plot-points 不含）；restore → 级联恢复
+- A4：generate save=false → 200 + preview 且不创建任何实体；save=true 同名 → 422
+- A5：generate LLM 输出无法解析（重试后仍失败）→ 500「大纲生成失败: LLM 输出无法解析，请重试」
+- A6：弧线软删 → 204 且成员情节点 arc_id 置 NULL（情节点保留）；弧线恢复 → 不恢复成员关联
+
+### 14.4 Spec 漂移标注（追加时核对实现 routers/outlines.py）
+
+- **restore 端点缺失**：spec §3.1/§4.1 声明的 `POST /outlines/{outline_id}/restore`、`POST /plot-points/{point_id}/restore`、`POST /story-arcs/{arc_id}/restore` 及 CLI `outline restore` 在实现中缺失（routers/outlines.py 无 restore 路由；services 无 restore 方法；CLI 无 restore 命令）——恢复能力未落地，且 §3.1 表头「18 个」与枚举 19 端点不符（次要）。
+- **实现侧新增端点**：`GET /outlines/by-volume/{volume_id}` 为 spec §3.1 未声明端点（疑 F56 卷-大纲关联功能）——实现路由 17 条 vs spec 枚举 19 端点，构成不同。

@@ -1101,3 +1101,29 @@ F15 被依赖:
 ---
 
 *本文档为 F15 功能规格（What），实施步骤（How）见后续 `specs/f15-consistency-audit/plan.md`。所有里程碑验收以本节 M1-M9 为准。*
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §7 边界事实，不重复）。
+
+### 14.1 端点状态流（1 端点，§3.1）
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| GET /projects/{project_id}/audit | 项目存在 | 校验项目（404）→ 单次全量读取（分页循环：角色/关系/分组/世界条目/事件/伏笔/章节/runs + 软删集合）→ 规则引擎（R-C1/R-C2 角色、R-T1 委托 F12、R-W1/R-W2 世界、R-F1/R-F2 伏笔、R-X1/R-X2 跨维度）→ 汇总 + 排序（dimension → severity → entity_name） | 200 + AuditReport（summary.consistent/total/by_dimension/counts + findings[] + timeline_check 嵌套） | 404「项目不存在」；无效 UUID → 404（_parse_id）；500「内部错误: ...」（任一档案仓储读取失败 / 委托 F12 异常——不产出部分报告） | 只读幂等、无副作用（GET 语义可缓存）；无请求体/无查询参数（YAGNI）；空项目 → consistent=true、findings 空、counts 全 0；有章节无档案 → info 级 R-W2/R-X2、consistent=true（无 error）；0/1 事件 → R-T1 无 finding |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| audit check | 项目存在 | 4 维度审计（只读幂等） | 「✅ 审计通过 (project ...): 0 error / 1 warning / 2 info（角色 3 · 关系 2 · 事件 6 · 伏笔 2 · 条目 4 · 章节 3）」/「🔍 审计完成: ❌ 不一致（3 error / 2 warning / 1 info）」+ error/warning 逐条 + info 计数；--json 完整 AuditReport | 404 NOT_FOUND（退出码 1）；DB_ERROR | **发现 error 退出码恒 0**（发现问题是「结果」而非「执行错误」，脚本用 data.summary.consistent 判断）；error/warning 逐条列出、info 只计数；有 findings 时末行提示 --json；缺参 → 退出码 2；错误码仅 NOT_FOUND/DB_ERROR（无 VALIDATION_ERROR/LLM_ERROR） |
+
+### 14.3 验收锚点（写入 §14）
+
+- A1：空项目 → 200 consistent=true、findings 空、counts 全 0、timeline_check.checked=0
+- A2：关系 to 端指向不存在角色（悬空）→ R-C1 error「悬空引用」；引用已软删角色/分组 → warning
+- A3：伏笔 status=resolved 但 resolved_at 空（或 open 但 resolved_at 非空）→ R-F2 error
+- A4：事件 source_chapter_id 指向不存在章节 → R-X1 error；run.status=error → R-X2 warning（error 截断 ≤500 入 data）；活动章节从未有任何 run → R-X2 info（manual run 不参与章节比对）
+- A5：CLI 审计发现 error → 退出码 0 + ❌ 摘要；项目不存在 → 退出码 1 + NOT_FOUND 信封
+- A6：同数据重复审计 → 报告完全一致（确定性快照断言，规则为纯函数）
+
+> 无 Spec 漂移：routers/audit.py 唯一端点与 spec §3.1 一致（追加时已核对实现）。

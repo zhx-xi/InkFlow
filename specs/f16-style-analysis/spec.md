@@ -1407,3 +1407,33 @@ F16 被依赖:
 ---
 
 *本文档为 F16 功能规格（What），实施步骤（How）见后续 `specs/f16-style-analysis/plan.md`。所有里程碑验收以本节 M1-M11 为准。*
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §7 边界事实，不重复）。
+
+### 14.1 端点状态流（2 端点，§3.1）
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| POST /projects/{project_id}/style/analyze | 项目存在 | 校验（text/chapter_ids 互斥或缺失、章节存在/归属、≤50000）→ 确定性分析（指纹 12 项/AI 痕迹 8 特征/词汇 + jieba 增强）→ 可选 LLM 深度分析（llm_analysis 三级判定：请求显式值 → 项目配置 extra["style_llm_analysis"] → 默认 false） | 200 + StyleReport（fingerprint/ai_trace/lexical/warnings + 可选 llm_assessment） | 404「项目不存在」；422「text 与 chapter_ids 不能同时使用」/「必须提供 text 或 chapter_ids」/「文本不能为空」/「章节不存在」（含软删）/「章节不属于该项目」/「章节内容超过分析上限（50000 字符）」；500「LLM 深度分析不可用」（未装配）/「LLM 调用失败，请稍后重试」（LLMRequestError）/StyleLLMAnalysisError（解析重试耗尽）——LLM 类 500 仅 llm_analysis=true 可达 | 只读幂等（同输入同输出，确定性板块可快照断言）；llm_analysis=false/缺省关闭 → llm_assessment=null；多章合并（≥2）→ source=chapters:<ids> + warning「多章节合并分析」；文本过短（<100）/无句尾符/无有效词条 → 200 + warning；jieba 未装配（理论不可达）→ lexical.jieba=None + warning |
+| POST /api/v1/extract（type=style，F14 门面） | 项目存在 | 门面注册表 STYLE → StyleService.analyze（**恒确定性**：llm_analysis=False 不透传）→ 结果归一 | 200 + ExtractionResult（status=success、created=0/updated=0/model=None/indexed=false、detail=StyleReport） | 404「项目不存在」；422「style 类型必须提供 text 或 chapter_ids」（无源）/「text 与 chapter_ids 不能同时使用」/「章节不存在」/「章节不属于该项目」/F14 输入约束；500（DB/RAG 与 style 无关路径） | 每次执行（无增量 skip、不读 run 表 hash）；force=true 照常接受（对 STYLE 无意义不报错）；index=true → indexed=false + warning「style 类型不支持自动索引」；携带 outline/timeline 专属参数（prompt/num_chapters/auto_extract）→ 422；text/chapter_ids 原样透传（章节读取在 StyleService 内） |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| style analyze | 项目存在 | 确定性分析（--text/--text-file/--chapters 三选一互斥；--llm-analysis/--no-llm-analysis 三级覆盖） | 「📊 风格分析 (project ...): 【风格指纹】字数 2850 · 句子 62 · ...【AI 痕迹】AI 得分 0.23 → ✅ 倾向人类创作【词汇分析】总词数 1520 · ...（+【jieba 增强】/【LLM 深度分析】行）」；--json 完整 StyleReport | 404 NOT_FOUND；422 VALIDATION_ERROR；500 LLM_ERROR（仅 --llm-analysis 开启时可达）/DB_ERROR | **退出码恒 0**（分析结论是「结果」；likely_ai 也退出码 0 + 「⚠ 倾向 AI 生成」摘要）；缺参（三选一均未提供）→ 退出码 2；--text 与 --text-file 同用 → 退出码 2；--chapters 非法 UUID → 退出码 1 + NOT_FOUND；verdict 中文映射：likely_human→倾向人类创作/uncertain→特征不明显/likely_ai→倾向 AI 生成 |
+| extract run --type style | 项目存在 | F14 门面（恒确定性） | 「✅ 提取完成: style 处理 1 个源（跳过 0），新增 0 更新 0，警告 1 条」/ --json（detail=StyleReport，无 llm_assessment） | 404；422 VALIDATION_ERROR | 退出码 0；UNSUPPORTED_TYPE 已随 F16 删除（错误码对 style 不再可达）；每次执行（run 记录 upsert、仍 success） |
+
+> 错误码：NOT_FOUND / VALIDATION_ERROR / LLM_ERROR（仅 LLM 深度分析开启时）/ DB_ERROR（**无 UNSUPPORTED_TYPE**）。
+
+### 14.3 验收锚点（写入 §14）
+
+- A1：独立入口空请求体 → 422「必须提供 text 或 chapter_ids」；text+chapter_ids 同传 → 422「text 与 chapter_ids 不能同时使用」
+- A2：llm_analysis=false（或缺省且项目配置 false）→ llm_assessment=null；llm_analysis=true → llm_assessment 含 verdict/reasoning/model/generated_at
+- A3：llm_analysis=true 且 LLM 分析器未装配 → 500「LLM 深度分析不可用」（镜像 F14 RAGUnavailableError 语义：可选能力未装配显式报错而非静默降级）
+- A4：门面 type=style → 200 success 信封（created=0/updated=0/model=None/indexed=false + warning「style 类型不支持自动索引」）；再次执行同命令仍 success（每次执行）
+- A5：同输入重分析 → 确定性板块数值完全一致；修改章节内容 → 指纹数值变化（反映新文本）
+- A6：文本过短（char_count<100）→ 200 + warning「文本过短——统计特征仅供参考」；无句尾符 → avg_sentence_length=0 + warning；CLI likely_ai 结论 → 退出码 0
+
+> 无 Spec 漂移：routers/style.py 唯一端点 + extractions.py STYLE 注册/归一（_resolve_sources full 源恒 skip=False、_dispatch llm_analysis=False、StyleValidationError → 422 映射、UNSUPPORTED_TYPE 删除）与 spec §3/§8.2 一致（追加时已核对实现）。

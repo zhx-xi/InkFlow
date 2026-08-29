@@ -399,7 +399,7 @@ class ReindexResult(BaseModel):
 
 端点风格沿用既有约定：**统一提取入口扁平**（`POST /api/v1/extract`——type 是资源维度而非项目维度，镜像 F9 `/characters/extract` 扁平先例）；**runs 查询与向量动作嵌套项目路径**（项目级资源）。错误响应格式沿用 F1/F2/F9-F13（`{"detail": "..."}` 404/422；LLM/管线失败 500）。
 
-### 3.1 端点总览（4 个）
+### 3.1 端点总览（6 个，实现核对补全 2026-08-29）
 
 | 方法 | 路径 | 用途 | 请求体 | 响应 |
 |------|------|------|--------|------|
@@ -407,6 +407,8 @@ class ReindexResult(BaseModel):
 | GET | `/api/v1/projects/{project_id}/extractions/runs` | 增量状态列表 | Query: `?type=&offset=&limit=` | 200 + `{items, total, offset, limit}` |
 | POST | `/api/v1/projects/{project_id}/vector/reindex` | 全量重建索引（RAG） | `{entity_types?: [...]}` | 200 + ReindexResult |
 | POST | `/api/v1/projects/{project_id}/vector/retrieve` | 语义检索（RAG） | `{query, entity_types?, top_k?, min_score?}` | 200 + `{items: [RetrievedEntity]}` |
+| GET | `/api/v1/projects/{project_id}/vector/status` | 向量库状态（stale 原因，含 chunking_changed） | — | 200 + `{stale, reason?}`（#276） |
+| PUT | `/api/v1/vector/embedding-model` | 切换激活 embedding 模型 | `{provider, model_id}`（必填校验） | 200（#525；404「Provider 不存在」/「模型不存在」，422 缺失） |
 
 > `/api/v1/extract` 为**静态路径段**，无与既有路由的歧义（F10 §3.1 的 extract 路径歧义处理不适用——本端点无 `{resource_id}` 兄弟段）。
 > 切片配置（mode/chunk_size/overlap）经 F32 `GET/PATCH /settings` 读写（§5.6.3，F32 已有端点），本 spec **不新增 API 端点**；`vector/status`（#276）的 stale reason 已含 `chunking_changed`（§5.6.5）。
@@ -1281,7 +1283,7 @@ _HANDLERS: dict[ExtractionType, ...] = {
 | RAG：vector_store 未装配 / BGE 下载失败 / chroma 错误 | 500: "RAG 向量库不可用: ..."（RAGUnavailableError / VectorStoreError）；**不影响非 RAG 功能** |
 | extract 带 index=true 但类型为 outline / timeline（关闭时） | 200 + indexed=false + warning "outline/timeline 类型不支持自动索引"（不报错；timeline 开启时 index 生效） |
 | vector retrieve 无结果 / min_score 过滤全空 | 200 + 空 items（正常路径） |
-| vector retrieve top_k 越界（≤0 或 >100） | 422（Pydantic 校验 top_k 1-100，min_score 0-1） |
+| vector retrieve top_k 越界（≤0 或 >50） | 422（Pydantic 校验 top_k 1-50，min_score 0-1） |
 | vector reindex 空项目（无档案） | 200 + indexed=0（正常路径） |
 | vector reindex 未指定 entity_types | 默认全部 5 种（config.vector_store_collections） |
 | extract 非法 type 值（API 层） | 422（Pydantic 枚举校验） |
@@ -1689,3 +1691,58 @@ F14 被依赖:
 ---
 
 *本文档为 F14 功能规格（What），实施步骤（How）见后续 `specs/f14-extraction/plan.md`。所有里程碑验收以本节 M1-M13 为准。*
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §7 边界事实，不重复）；增量提取语义基于 §5.2/§6.2/§6.3。
+
+### 14.1 端点状态流（4 端点，§3.1）
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| POST /api/v1/extract | 项目存在 | 门面校验项目（404）→ 注册表查 handler（未注册 → 422 防御）→ 类型输入约束（422）→ 增量判定（hash 比对，skip 不调 LLM）→ 逐源执行 → 每源成功后 upsert run → index=true 时索引本次产物 | 200 + ExtractionResult（status=success/skipped；processed_sources/skipped_sources/created/updated/warnings/model/indexed/detail） | 404「项目不存在」；422「text 与 chapter_ids 不能同时使用」/「character/setting/foreshadowing 类型必须提供 text 或 chapter_ids」/「outline 类型不支持 text/chapter_ids（使用 prompt/num_chapters）」/「时间线自动提取未开启（配置 timeline_auto_extract）」/「章节不存在」（含软删）/「章节不属于该项目」/「章节内容超过提取上限（50000 字符）」/非法 type（Pydantic 枚举）；500「LLM 调用失败: ...」/「角色提取失败: 2 次修复重试后仍无法解析为合法 JSON（...）」/「RAG 向量库不可用: ...」 | 全源未变更且 not force → 200 status=skipped 零 LLM（skipped_reason「内容未变更（源: chapter <id>/manual）」）；force=true 强制重跑；outline 每次执行（save=false 预览不落库）；timeline 关闭 → F12 确定性检查（无 LLM）；STYLE → F16 确定性分析（created=0/updated=0/model=None）；index=true 对 outline/timeline(关闭)/style → indexed=false + warning 不报错；text 与 chapter_ids 互斥；手动模式 source_key=manual |
+| GET /projects/{project_id}/extractions/runs | 项目存在 | 增量状态列表（type 过滤 + 分页，run_at DESC） | 200 + {items,total,offset,limit}（ExtractionRun：content_hash/status/created_count/updated_count/error/model/indexed） | 404「项目不存在」 | limit ge=1 le=100；status=success/skipped/error（error 行仅防御保留——失败源实际不写 run，无 run 行=缺口） |
+| POST /projects/{project_id}/vector/reindex | 项目存在 | 全量重建索引（F9-F13 档案 + F2 章节 → 向量库，幂等 upsert） | 200 + ReindexResult（entity_types/indexed/warnings） | 404「项目不存在」；500「RAG 向量库不可用: ...」（未装配/BGE 下载失败/chroma 错误） | entity_types 缺省=全部 5 种；空项目 → indexed=0；切片配置经 app_settings（reindex 不加覆盖参数）；切片 LLM analyzer 失败 → 降级段落切片不中断 |
+| POST /projects/{project_id}/vector/retrieve | 项目存在 | 语义检索（query/entity_types/top_k/min_score） | 200 + {items: [RetrievedEntity]}（relevance_score 降序） | 404「项目不存在」；422（top_k 越界/min_score 越界/query 空或超 500）；500「RAG 向量库不可用: ...」 | 无结果/min_score 过滤全空 → 200 空 items；旧向量缺新元数据键 → .get() fallback 不崩；切片配置变更 → stale（chunking_changed）提示重新向量化 |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| extract run | 项目存在 | 统一提取（--text/--text-file/--chapters 三选一互斥；--force 强制重跑；--index 自动索引；--auto-extract 仅 timeline；--no-save 仅 outline） | 「✅ 提取完成: character 处理 2 个源（跳过 0），新增 3 更新 2，警告 1 条」/「⏭ 提取跳过: character 内容未变更（源: chapter ...），未调用 LLM」；--json 信封 | 404 NOT_FOUND；422 VALIDATION_ERROR；500 LLM_ERROR/EXTRACTION_ERROR/RAG_ERROR | --text 与 --text-file 同传 → 退出码 2；--type 非法 → 退出码 2（Typer Choice）；UNSUPPORTED_TYPE 已随 F16 删除 |
+| extract status | 项目存在 | 列出各 (type, 源) 最近一次 run 状态（--type 过滤） | 「📋 提取状态（project ...）: [character] <source_key> — ✅ success (..., 新增 2 更新 1, 已索引)」/「⏭ skipped」/「❌ error」 | 404 | 缺 run 行 = 失败缺口（error 行仅历史兼容/防御保留） |
+| vector reindex | 项目存在 | 全量重建索引（--type 可重复指定，缺省全部 5 种） | 「✅ 索引完成: character/setting/... 共 87 条」/ --json | 404；500 RAG_ERROR | 幂等（全量 upsert） |
+| vector retrieve | 项目存在 | 语义检索（--top-k 默认 10；--min-score 默认 0.0） | 「🔍 检索结果 (query: ..., top 5): 1. [foreshadowing] 林晚的身世 — 0.82」；--json 信封 | 404；422 VALIDATION_ERROR；500 RAG_ERROR | 缺 --query → 退出码 2 |
+
+> 错误码：NOT_FOUND / VALIDATION_ERROR / LLM_ERROR / EXTRACTION_ERROR / RAG_ERROR / DB_ERROR（F14 是首个同时携带 LLM/管线/RAG 三类错误的模块）。
+
+### 14.3 增量提取语义（幂等/去重/部分失败/重试/回滚——§5.2/§6.2/§6.3/§7 事实）
+
+| 语义 | 规则 | 边界/依据 |
+|------|------|----------|
+| 幂等（同源同内容重跑） | 源 sha256 == run.content_hash 且 not force → skip，零 LLM 调用；全源 skip → 200 status=skipped + skipped_reason「内容未变更（源: chapter <id>/manual）」，并对**首个源** upsert 一行 skipped（记录确认事实） | §5.2/§6.2/§6.3；skip 判定先于 LLM（纯本地 O(n) 计算） |
+| 幂等（模块合并兜底） | 即使 hash 判定失效重跑，character/setting/foreshadowing/timeline 合并均为空 diff（同名匹配 + 非空字段覆盖后值不变）——与 hash 双保险 | §5.2「与模块幂等性叠加」；§5.4/§5.5 幂等性验收点 |
+| 去重（合并锚点） | foreshadowing 按 (project_id, title) 活动伏笔匹配（软删同名 → 视为不存在新建 + warning）；timeline 按 (project_id, title, source_chapter_id) 匹配（F12 表无唯一约束，服务层 list_by_chapter 比对；手工事件 source_chapter_id=None 不参与匹配） | §5.4/§5.5 合并策略表 |
+| 部分失败（批量章节） | 第 N 章 LLM/解析失败 → 门面抛异常 → router 500；第 1..N-1 章**已落库 + run 已写**（success）；**失败源不写 run 行**（无 run 行 = 失败缺口信号） | §5.2 失败语义/§6.2/§7；失败即异常（ADR-012），不吞错 |
+| 重试（断点续跑） | 重跑同一请求 → 成功章 hash 相同自动 skip、失败章重新执行；extract status 可见成功章与失败缺口 | §5.2/§6.2/§7；增量提取验收标准 ② 的核心实证 |
+| 回滚 | 单源「提取+合并」内 DB 错误 → 该源事务整体回滚（无部分落库）；run upsert 失败 → 500 但**实体不回滚**（run 是副产物，失败不回滚实体） | §7（落库中途 DB 错误行/run 表 upsert DB 错误行） |
+| 强制重跑 | force=true 忽略 skip（run hash 更新，200 status=success）——作者想重新审视 LLM 结果 | §5.2/§6.3/§7 |
+| 内容变更联动（timeline 开启） | 章节 hash 变化 → 重提取 → 同 (title, source_chapter_id) 事件非空字段覆盖更新、新事件创建——**只增改不删除**（提取时事件不再出现也不删除；自动删除归 Phase 2+） | §5.5 事件-章节联动/§7 |
+| 章节软删/硬删（timeline 开启） | 软删 → 事件保留 source_chapter_id（历史来源锚点）；硬删 → FK ON DELETE SET NULL 置 None（事件保留、来源解除） | §5.5/§7 |
+
+### 14.4 验收锚点（写入 §14）
+
+- A1：同一章节第二次提交 → 200 status=skipped + skipped_reason「内容未变更（源: chapter 7a4f2c91-...）」、skipped_sources=1、model=null（未调用 LLM）
+- A2：--force 重跑未变更源 → 200 status=success（强制执行，run hash 更新）
+- A3：批量 2 章、第 2 章失败 → 500；runs 列表第 1 章 success 行存在、第 2 章无 run 行；重跑同请求 → 成功章 skip、失败章执行（断点续跑）
+- A4：同文本重复提取 foreshadowing / timeline（开启）→ 第二次 created=0/updated=0（合并幂等）
+- A5：vector reindex 空项目 → 200 indexed=0；重复 reindex 幂等（全量 upsert）
+- A6：index=true 但 RAG 未装配 → 500「RAG 向量库不可用: ...」；非 RAG 功能不受影响（index=false 正常）
+- A7：timeline 设置项关闭 + 携带 chapter_ids → 422「时间线自动提取未开启（配置 timeline_auto_extract）」
+- A8：手动模式重复提交同一文本 → 200 status=skipped（source_key=manual 同 hash）
+
+### 14.5 Spec 漂移标注（追加时核对实现 backend/src/inkflow/）
+
+- **top_k 边界漂移（已修复 2026-08-29）**：原 spec §7 写「1-100」；实现 `RetrieveBody` validator 为「top_k 必须在 1-50 之间」+ 测试 `test_retrieve_top_k_out_of_range_422`（0/51 → 422）锁定 1-50——**已改 spec §7 为 1-50**（实现+测试一致，spec 落后）。
+- **端点面漂移（已补全 2026-08-29）**：原 spec §3.1 声明 4 端点；实现 extractions.py 另有 `GET /vector/status`（#276）+ `PUT /vector/embedding-model`（#525）——**已补入 §3.1（共 6 端点）**。
+- **LLM 错误文案漂移（轻微）**：spec §3.4 示例 `LLM 调用失败: ...`；实现固定「LLM 调用失败，请稍后重试」（同 F9-F11）——以实现为准，spec 示例待后续同步（cosmetic）。
+- **增量核心语义无漂移**：hash skip / force / 逐源 run upsert（success）/ 全 skip 首源 upsert skipped / 失败即异常（失败源无 run 行）/ 断点续跑，与 spec §5.2/§6.2 完全一致（已逐行核对 extraction_service.py `_resolve_sources`/`_run_sources`）。
