@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="paper">
+<head>
+<meta charset="utf-8" />
+<title>写作页总排版图 — 三增强（T1 草稿审批 / T2 风格检测 / T3 章节摘要）</title>
+<style>
+  :root{
+    --surface:#f7f3ec; --surface-2:#f0eae0; --surface-3:#e6ddcc;
+    --line:#ddd2c1; --ink:#2b2620; --ink-2:#5b5348; --ink-3:#8d8175;
+    --accent:#8a5a3b; --accent-ink:#f7f3ec; --accent-hover:#74492f;
+    --warn:#b07a2a; --ok:#3f7a52; --err:#a9442f; --font-serif:/* serif */ Georgia,'Songti SC','SimSun',serif;
+    --font-sans: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue','PingFang SC','Microsoft YaHei',sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#161311;color:#e9e2d6;font-family:var(--font-sans);font-size:13px;line-height:1.5;padding:24px}
+  .note{max-width:1200px;margin:0 auto 18px;background:#1f1b18;border:1px solid #3a332c;border-radius:10px;padding:16px 18px}
+  .note h1{margin:0 0 8px;font-size:17px;font-family:var(--font-serif);color:#c7b58f}
+  .note h2{margin:16px 0 6px;font-size:14px;color:#c7b58f;font-family:var(--font-serif)}
+  .note p{margin:4px 0;color:#cfc6ba}
+  .note ul{margin:4px 0;padding-left:20px;color:#cfc6ba;font-size:12px}
+  .note li{margin:2px 0}
+  .note .tag{display:inline-block;background:#8a5a3b;color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;margin-right:6px}
+  .note .tag.t2{background:#3f7a52}
+  .note .tag.t3{background:#b07a2a}
+  .app{max-width:1200px;margin:0 auto;display:flex;flex-direction:column;height:740px;border:1px solid #3a332c;border-radius:10px;overflow:hidden;background:var(--surface);color:var(--ink)}
+  .topbar{height:34px;background:var(--accent);display:flex;align-items:center;justify-content:space-between;padding:0 12px;color:var(--accent-ink);font-family:var(--font-serif);font-size:13px}
+  .topbar .brand{font-weight:600}
+  .cols{flex:1;display:flex;min-height:0}
+  .tree{width:158px;background:var(--surface-2);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:8px}
+  .tree .tree-head{padding:4px 6px;font-size:12px;color:var(--ink-2);border-bottom:1px solid var(--line);margin-bottom:6px}
+  .tree ul{list-style:none;margin:0;padding:0}
+  .tree li{padding:4px 6px;margin:2px 0;border-radius:5px;font-size:12px;color:var(--ink-2)}
+  .tree li.active{background:var(--surface-3);color:var(--ink);font-weight:600}
+  .tree li.indent{padding-left:20px}
+  .editor{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--surface)}
+  .toolbar{display:flex;align-items:center;gap:5px;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--surface);opacity:.5}
+  .toolbar:hover{opacity:1}
+  .tbtn{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:6px;border:none;background:transparent;color:var(--ink-2);font-size:14px;cursor:pointer}
+  .tbtn:hover{background:var(--surface-3);color:var(--ink)}
+  .tbtn.new{border:1.5px dashed var(--ok);color:var(--ok);background:rgba(63,122,82,.08)}
+  .tbtn.txt{width:auto;padding:0 8px;font-size:11px;font-weight:600}
+  .tbar-sep{width:1px;height:16px;background:var(--line);margin:0 3px}
+  .tbar-label{font-size:10px;color:var(--ink-3);margin-left:4px}
+  .canvas{flex:1;position:relative;padding:22px;overflow:auto}
+  .canvas .page{background:#fffdf8;border:1px solid var(--line);border-radius:6px;padding:20px 26px;font-size:13px;color:var(--ink);line-height:1.8;height:100%;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+  .canvas .page h3{margin:0 0 8px;font-family:var(--font-serif);font-size:16px}
+  .canvas .page .para{margin:6px 0;color:var(--ink-2)}
+  .chat{height:120px;border-top:1px solid var(--line);padding:10px 14px;background:var(--surface-2);display:flex;flex-direction:column;gap:6px}
+  .chat .msg{max-width:80%;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:12px;color:var(--ink)}
+  .chat .msg.assistant{margin-left:auto;background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  .right{width:242px;background:var(--surface-2);border-left:1px solid var(--line);display:flex;flex-direction:column;overflow:auto}
+  .panel{border-bottom:1px solid var(--line);padding:10px 12px}
+  .panel.context{flex:1}
+  .panel .panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+  .panel .panel-title{font-size:12px;font-weight:600;color:var(--ink)}
+  .panel .collapse{color:var(--ink-3);cursor:pointer;font-size:12px}
+  .panel ul{list-style:none;margin:0;padding:0}
+  .panel ul li{padding:6px;margin:4px 0;background:var(--surface);border:1px solid var(--line);border-radius:6px;font-size:11px;color:var(--ink-2)}
+  .panel ul li b{display:block;color:var(--ink);font-weight:600;font-size:11px}
+  .panel .empty{font-size:11px;color:var(--ink-3);padding:10px 8px;text-align:center}
+  /* 章节摘要（T3 新增 panel） */
+  .panel.summary{border-top:2px solid var(--warn)}
+  .panel.summary .summary-body{font-size:12px;color:var(--ink-2);line-height:1.65}
+  .btn{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer}
+  .btn:hover{background:var(--surface-3);color:var(--ink)}
+  .btn.accent{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  .btn.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
+  .btn.danger{border-color:var(--err);color:var(--err)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  /* 草稿审批（T1 新增 panel） */
+  .panel.drafts{border-top:2px solid var(--ok)}
+  .panel.drafts .draft-tools{display:flex;gap:5px;margin-bottom:7px}
+  .panel.drafts .draft-item{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:7px;margin:5px 0}
+  .panel.drafts .draft-item .dtitle{font-size:11px;font-weight:600;color:var(--ink)}
+  .panel.drafts .draft-item .dtext{font-size:10px;color:var(--ink-3);line-height:1.5;margin:3px 0}
+  .panel.drafts .draft-item .dops{display:flex;gap:4px}
+  .draft-tag{font-size:9px;color:var(--ink-3);background:var(--surface-3);border-radius:4px;padding:0 5px;margin-right:4px}
+  /* 风格检测 Dialog */
+  .overlay{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:50}
+  .overlay.open{display:flex}
+  .modal{width:520px;max-height:78vh;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px;color:var(--ink);box-shadow:0 10px 30px rgba(0,0,0,.4)}
+  .modal .mhead{padding:14px 18px;border-bottom:1px solid var(--line);font-family:var(--font-serif);font-size:15px;font-weight:600}
+  .modal .mbody{padding:16px 18px;font-size:12px}
+  .modal .sec{margin-bottom:14px}
+  .modal .sec h4{margin:0 0 6px;font-size:12px;color:var(--ink);font-weight:600}
+  .meta-row{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0}
+  .meta-chip{background:var(--surface-3);border-radius:6px;padding:4px 8px;font-size:11px}
+  .data-bar{height:7px;background:var(--surface-3);border-radius:4px;overflow:hidden;margin:4px 0}
+  .data-bar>i{display:block;height:100%;background:var(--accent)}
+  .mfoot{display:flex;justify-content:flex-end;gap:6px;padding:12px 18px;border-top:1px solid var(--line)}
+  .legend{max-width:1200px;margin:12px auto 0;display:flex;gap:12px;font-size:11px;color:#cfc6ba;flex-wrap:wrap}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .legend .dot{width:12px;height:12px;border-radius:3px;display:inline-block}
+  .mark{position:relative}
+  .mark.new::before{content:"NEW";position:absolute;top:-8px;left:-8px;font-size:9px;font-weight:700;color:#fff;background:var(--ok);border-radius:4px;padding:0 4px}
+  .mark.new.warnm::before{background:var(--warn)}
+  .mark.new.err::before{background:var(--err)}
+</style>
+</head>
+<body>
+
+<div class="note">
+  <h1>写作页总排版图 — 三增强（一个 PR 交付 #653 / #655 / #656）</h1>
+  <p>本图为 <b>GUI 排版确认门（M2）简图</b>：在上方现有写作页三栏布局上，标出三个子任务的新控件。请逐条确认后我再进入实现。</p>
+  <h2>新增控件落点（三处）</h2>
+  <ul>
+    <li><span class="tag">T1</span><b>草稿审批区</b>（右栏，绿色粗线 panel）：列待审批草稿 → 每条「确认/拒绝/编辑」+ 顶部「清理孤儿」。空态=「暂无待审批草稿」。</li>
+    <li><span class="tag t2">T2</span><b>风格检测按钮</b>（中栏工具栏，绿色虚线 NEW 按钮「风格检测」）：点击弹「风格分析报告」Dialog（三态：进行中/失败/完成）。</li>
+    <li><span class="tag t3">T3</span><b>章节摘要区块</b>（右栏，橙色粗线 panel）：显示当前章摘要文本 + 「刷新摘要」按钮。空态=「暂无摘要」。</li>
+  </ul>
+</div>
+
+<!-- 演示：点击工具栏「风格检测」按钮 → 打开 Dialog -->
+<div id="styleDialog" class="overlay">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="mhead">风格分析报告</div>
+    <div class="mbody">
+      <div class="sec"><h4>风格指纹</h4>
+        <div class="meta-row">
+          <span class="meta-chip">句子均值 22.4 字</span><span class="meta-chip">段落均值 3.1 句</span><span class="meta-chip">对话占比 38%</span>
+        </div>
+      </div>
+      <div class="sec"><h4>AI 痕迹检测</h4>
+        <div class="meta-row"><span class="meta-chip">AI 得分 0.28</span><span class="meta-chip">判定：倾向人类</span></div>
+        <div class="data-bar"><i style="width:28%"></i></div>
+      </div>
+      <div class="sec"><h4>词汇分析</h4>
+        <div class="meta-row"><span class="meta-chip">词条 412</span><span class="meta-chip">高频词「雨」「城门」「少年」</span><span class="meta-chip">停用词 12%</span></div>
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="btn" onclick="closeStyle()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div class="app">
+  <div class="topbar"><span class="brand">InkFlow · 写作</span><span>『归墟记』</span></div>
+  <div class="cols">
+    <!-- 左栏：章节树 -->
+    <div class="tree">
+      <div class="tree-head">目录</div>
+      <ul>
+        <li>卷一 · 归墟</li>
+        <li class="indent active">第 3 章 · 雨夜渡口</li>
+        <li class="indent">第 4 章 · 城门夜话</li>
+        <li class="indent">第 5 章 · 少年启行</li>
+      </ul>
+    </div>
+    <!-- 中栏：编辑器 -->
+    <div class="editor">
+      <div class="toolbar">
+        <button class="tbtn" title="撤销">↶</button>
+        <button class="tbtn" title="重做">↷</button>
+        <button class="tbtn" title="保存">💾</button>
+        <span class="tbar-sep"></span>
+        <button class="tbtn" title="续写">✎</button>
+        <button class="tbtn" title="生成">✦</button>
+        <span class="tbar-sep"></span>
+        <button class="tbtn" title="审计">🛡</button>
+        <span class="tbar-sep"></span>
+        <!-- T2 风格检测：新增按钮（绿色虚线 NEW） -->
+        <button class="tbtn new" title="风格检测" onclick="openStyle()">🌡</button>
+        <span class="tbar-label">风格检测</span>
+      </div>
+      <div class="canvas">
+        <div class="page">
+          <h3>第 3 章 · 雨夜渡口</h3>
+          <p class="para">雨下了整整三日。渡口的灯火在雾中浮沉，像一小簇不肯熄灭的烬。</p>
+          <p class="para">少年靠在船篷边，指尖抚过那封没有落款的信——「归墟之约，勿忘。」</p>
+        </div>
+      </div>
+      <div class="chat">
+        <div class="msg assistant">AI：我已根据大纲续写了下一段，先以草稿形式保存，待你确认。</div>
+        <div class="msg">（用户对话栏，流式/Markdown）</div>
+      </div>
+    </div>
+    <!-- 右栏：上下文 + 章节摘要(T3) + 草稿审批(T1) -->
+    <div class="right">
+      <!-- 既有：上下文面板 -->
+      <div class="panel context">
+        <div class="panel-head"><span class="panel-title">上下文</span><span class="collapse">›</span></div>
+        <ul>
+          <li><b>写作要求</b>悬疑为主 · 氛围雨夜 · 克制留白</li>
+          <li><b>大纲</b>第 3 章：渡口遇雨，少年收信，伏笔归墟</li>
+          <li><b>角色</b>顾长生 · 沈青梧（勾选注入）</li>
+        </ul>
+        <div class="empty">共 12,480 tokens / 60000</div>
+      </div>
+      <!-- T3 章节摘要：新增区块 -->
+      <div class="panel summary mark new warnm">
+        <div class="panel-head">
+          <span class="panel-title">章节摘要</span>
+          <button class="btn">↻ 刷新摘要</button>
+        </div>
+        <div class="summary-body">第 3 章：少年在雨夜渡口收到「归墟之约」的署名信，与沈青梧短暂相遇后启程入城。此章引出「归墟」核心悬念，并为后续城门冲突埋下伏笔。</div>
+      </div>
+      <!-- T1 草稿审批：新增区块 -->
+      <div class="panel drafts mark new">
+        <div class="panel-head"><span class="panel-title">草稿审批</span><span class="collapse">›</span></div>
+        <div class="draft-tools">
+          <button class="btn">♻ 清理孤儿</button>
+          <span style="font-size:10px;color:var(--ink-3);align-self:center">干跑(dry_run) 开关</span>
+        </div>
+        <div class="draft-item">
+          <div class="dtitle"><span class="draft-tag">草稿 #12</span>第 3 章续写·渡口夜雾</div>
+          <div class="dtext">雾更浓了。码头外的水面上，有某物缓缓沉了下去……(AI 生成草稿正文)</div>
+          <div class="dops">
+            <button class="btn ok">确认</button>
+            <button class="btn danger">拒绝</button>
+            <button class="btn">编辑</button>
+          </div>
+        </div>
+        <div class="empty" style="text-align:left;padding:6px 4px;color:var(--ink-3)">（另 2 条待审批 · 草稿确认后自动刷新列表）</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function openStyle(){ document.getElementById('styleDialog').classList.add('open'); }
+  function closeStyle(){ document.getElementById('styleDialog').classList.remove('open'); }
+  document.getElementById('styleDialog').addEventListener('click', function(e){ if(e.target===this) closeStyle(); });
+</script>
+</body>
+</html>

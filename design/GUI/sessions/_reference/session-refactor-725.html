@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>会话页重构原型 — #725</title>
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --ink-2: #555;
+    --ink-3: #9a9a9a;
+    --surface: #ffffff;
+    --surface-2: #f7f6f4;
+    --surface-3: #ecebe7;
+    --line: #e4e2dc;
+    --accent: #6b4fbb;
+    --accent-weak: #efeafb;
+    --accent-ink: #ffffff;
+    --accent-hover: #5d43a6;
+    --err: #b6433a;
+    --ok: #2e7d5b;
+    --font-serif: "Georgia", "Songti SC", "SimSun", serif;
+    --font-sans: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface-2); color: var(--ink);
+    font-family: var(--font-sans); font-size: 13px; line-height: 1.55;
+  }
+  .page { max-width: 1080px; margin: 0 auto; padding: 40px 48px; }
+  h1 { font-family: var(--font-serif); font-size: 26px; font-weight: 600; margin: 0; }
+  .toolbar {
+    margin-top: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 16px;
+  }
+  .select-wrap { position: relative; width: 224px; }
+  .select {
+    width: 100%; height: 38px; padding: 0 12px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--surface); display: flex; align-items: center;
+    justify-content: space-between; font-size: 13px; color: var(--ink-2); cursor: pointer;
+  }
+  .search {
+    flex: 1; min-width: 220px; height: 38px; padding: 0 12px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--surface); font-size: 13px; display: flex;
+    align-items: center; gap: 8px; color: var(--ink-3);
+  }
+  .search input { border: none; outline: none; flex: 1; font-size: 13px; color: var(--ink); background: transparent; }
+  .search input::placeholder { color: var(--ink-3); }
+  .filters { margin-top: 16px; display: flex; gap: 8px; }
+  .chip {
+    padding: 4px 12px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink-2); cursor: pointer; font-size: 13px;
+  }
+  .chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-weak); color: var(--accent); }
+  .section-label {
+    margin-top: 24px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--surface-2); color: var(--ink-3); font-size: 12px;
+  }
+  .list { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+  .card {
+    border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 16px;
+  }
+  .card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .badge {
+    font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px;
+    background: var(--surface-3); color: var(--ink-2);
+  }
+  .badge.ai { background: #e3ecf8; color: #31588c; }
+  .badge.interview { background: #e8f4ec; color: #2e7d5b; }
+  .badge.run { background: #f7ecdf; color: #9a6b2a; }
+  .badge.archived { background: var(--surface-3); color: var(--ink-3); }
+  .title { font-family: var(--font-serif); font-size: 15px; font-weight: 600; }
+  .meta { margin-left: auto; font-size: 12px; color: var(--ink-3); }
+  .sub { margin-top: 8px; font-size: 13px; color: var(--ink-2); }
+  .actions { margin-top: 12px; display: flex; gap: 8px; }
+  .btn {
+    padding: 4px 12px; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink-2); font-size: 13px; cursor: pointer;
+  }
+  .btn.danger { color: var(--err); }
+  .btn.confirm { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn.restore { border-color: var(--accent); color: var(--accent); }
+  .dim { color: var(--ink-3); }
+  .divider { margin: 20px 0; height: 1px; background: var(--line); }
+  .annot { margin-top: 32px; font-size: 12px; color: var(--ink-3); }
+  .annot code { background: var(--surface-3); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>会话</h1>
+
+  <div class="toolbar">
+    <!-- Q2：项目选择器（镜像 library.tsx 的 library-project-select） -->
+    <div class="select-wrap">
+      <div class="select">
+        <span>📚 仙侠长篇</span>
+        <span class="dim">▾</span>
+      </div>
+    </div>
+    <!-- 检索框与会话目录同栏 -->
+    <div class="search">
+      <span>🔍</span>
+      <input placeholder="搜索会话标题 / 项目 / 最后消息…" />
+    </div>
+  </div>
+
+  <div class="filters">
+    <span class="chip" aria-pressed="true">全部</span>
+    <span class="chip" aria-pressed="false">活动</span>
+    <span class="chip" aria-pressed="false">已归档</span>
+  </div>
+
+  <!-- 统一窗口：AI 对话 + 历史访谈/执行会话合并展示，按项目过滤 -->
+  <div class="section-label">会话目录 · 项目：仙侠长篇（AI 对话 / 访谈 / 执行 统一展示）</div>
+
+  <div class="list">
+    <!-- AI 对话（已归档）-->
+    <div class="card">
+      <div class="card-head">
+        <span class="badge ai">AI 对话</span>
+        <span class="badge archived">已归档</span>
+        <span class="title">仙侠长篇</span>
+        <span class="meta">3 条 · 2026-08-21</span>
+      </div>
+      <div class="sub dim">帮我写一段打斗场景</div>
+      <div class="actions">
+        <button class="btn restore">恢复</button>
+        <button class="btn danger">删除</button>
+      </div>
+    </div>
+
+    <!-- 访谈会话（历史，保留展示）-->
+    <div class="card">
+      <div class="card-head">
+        <span class="badge interview">访谈</span>
+        <span class="badge">已完成</span>
+        <span class="title">仙侠长篇 80 万字</span>
+        <span class="meta">已确定 2 项</span>
+      </div>
+      <div class="sub dim">圆桌访谈纪要：题材 / 篇幅设定</div>
+    </div>
+
+    <!-- 执行会话（活动）-->
+    <div class="card">
+      <div class="card-head">
+        <span class="badge run">执行</span>
+        <span class="badge">进行中</span>
+        <span class="title">第三章续写</span>
+        <span class="meta">2026-08-20</span>
+      </div>
+      <div class="actions">
+        <button class="btn">归档</button>
+        <button class="btn danger">删除</button>
+      </div>
+    </div>
+
+    <!-- 执行会话（已归档）-->
+    <div class="card">
+      <div class="card-head">
+        <span class="badge run">执行</span>
+        <span class="badge archived">已归档</span>
+        <span class="title">第二章草稿润色</span>
+        <span class="meta">2026-08-19</span>
+      </div>
+      <div class="actions">
+        <button class="btn restore">恢复</button>
+        <button class="btn danger">删除</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+  <div class="annot">
+    原型说明（#725 会话页重构）：① 移除「访谈会话」「执行会话」独立分区 → 三者统一在
+    <code>会话目录</code> 一个窗口，类型以徽标区分（AI 对话 / 访谈 / 执行）。② 顶部
+    <code>项目选择器</code> 按项目过滤（镜像设定库 library.tsx）。③ <code>检索框</code>与
+    会话目录同栏，按 标题/项目/最后消息 过滤。④ 归档过滤统一作用于整个目录（全部/活动/已归档）。
+    ⑤ 历史「访谈」「执行」记录保留，仅取消独立分区入口（Q1=A）。
+  </div>
+</div>
+</body>
+</html>
