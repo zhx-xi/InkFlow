@@ -685,3 +685,39 @@ F19 为拆分条目：GUI 壳与内核进程化（0.3.0）已完成，打包分�
 5. **Q5 Tauri 换壳**：**开独立 issue #137 挂 2.0.0**（用户拍板 2026-08-06「挂 1.0.0 后，以后优化用」）/ 仅 ADR 备注。**✅ 已确认**——正文 §10 不在范围内 + ADR-020 收尾备注。
 6. **Q6 压缩档位（T1）**：NSIS `compression: maximum` + UPX 可选。**✅ 已确认（用户拍板：按建议，2026-08-06）**——正文 §3.5。
 7. **Q7 数据目录落点（评审 🔴5 发现）**：A 壳注入 env（`INKFLOW_DATA_DIR`/`INKFLOW_DATABASE_URL`）/ **B config.py `sys.frozen` 检测默认 %APPDATA%/InkFlow** / C 接受 exe 目录。**✅ 已确认（用户拍板：选项 B，2026-08-06）**——正文 §2.1.1 已按 B 修订（config.py sys.frozen 检测 + 壳零改动成立 + §8.2 config.py MODIFY 行）。
+
+---
+
+## 14. 动作确认
+
+> 每个产物/命令的完整状态流表（基于 §2 产物契约 + §4 PyInstaller + §5 B+ 装配 + §7 release.yml + §13 验收事实，不重复）。
+
+### 14.1 产物状态流
+
+| 产物 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| P1 内核 exe（resources/kernel/inkflow.exe） | `uv run pyinstaller backend/pyinstaller/inkflow.spec` | onedir 构建：collect_all + copy_metadata('inkflow') + hiddenimports + excludes | dist/inkflow/inkflow.exe + _internal/；`--help` 退出码 0；`serve --port 0` 输出 INKFLOW_READY | 缺 copy_metadata → 冻结 exe PackageNotFoundError → INKFLOW_READY 交付失败 | excludes 兜底 torch 族；chromadb 进包（B+）；grpc 保留 |
+| P2 NSIS 安装包（InkFlow-Setup-<ver>.exe） | kernel-onedir + renderer dist + electron out artifacts 齐备 | package-electron 组装 → 版本注入（package.json ← tag）→ dist:win | 安装包可生成，可选安装目录 | 构建失败 → Release 不创建 | NSIS LZMA 压缩（compression: maximum）；安装包属性版本 = 0.4.0 |
+| P3 便携 ZIP（InkFlow-<ver>-portable.zip） | 同上 | zip target + 目录组装 | 解压即用文件夹 | 同上 | 非 portable 单 exe（拍板 A：zip 目录打包） |
+| 数据目录（%APPDATA%/InkFlow） | sys.frozen=True（打包模式） | config.py _default_data_dir() → %APPDATA%/InkFlow | 全新机器安装/解压后数据落 APPDATA，安装目录只读不写失败 | — | dev 模式 sys.frozen=False → ./data 不变；env 可覆盖（INKFLOW_DATA_DIR） |
+| Release（tag v0.4.0） | git tag v0.4.0 && git push origin v0.4.0 | release.yml 3 job：package-backend → build-renderer → package-electron（needs） | Release 含三件套资产 + Release Notes（--generate-notes） | 任一 job 失败 → 不发布 | gh release create 需 permissions contents: write + 显式 GH_TOKEN；cache 按 workflow 隔离自带 |
+
+### 14.2 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| uv run pyinstaller pyinstaller/inkflow.spec | uv sync --extra packaging（只装 packaging 不装 dev） | 版本注入（tag → pyproject）→ 构建 | dist/inkflow/inkflow.exe + _internal/ | ModuleNotFoundError（hiddenimports 缺失，冒烟逐项补） | 先注入版本再 sync（rc.3 坑：sync 后改 pyproject 不更新 dist-info） |
+| dist\inkflow\inkflow.exe --help | 构建完成 | 退出码 0 + usage | P1 冒烟通过 | 非 0 → 后续全部阻塞 | 门禁：三产物验收依赖 P1 冒烟先行 |
+| dist\inkflow\inkflow.exe serve --port 0 --port-file smoke.json | 同上 | 输出 INKFLOW_READY 行 | 冒烟通过 + 写作链路 API 可达 | 非 0 / 无 INKFLOW_READY | INKFLOW_READY {port, token, pid, version} |
+| pnpm --filter inkflow-electron dist:win | artifacts 下载组装 + 版本注入 | electron-builder NSIS + ZIP | dist/InkFlow-Setup-<ver>.exe + InkFlow-<ver>-portable.zip | 构建失败 | extraResources ../kernel → kernel |
+| 版本一致性验证 | 三产物齐备 | 安装包属性 = renderer 关于页（/health）= INKFLOW_READY.version | 全部 = 0.4.0 | 不一致 → M5 失败 | /health 改用 inkflow.__version__（评审 🔴1 修复） |
+| S1-S5 排除项 spike | 打包 venv | 卸载 onnxruntime/kubernetes/tokenizers → chromadb import + 检索 | S2 检索返回 1 条；S3 预期 ImportError（良性）；S5 打包产物复验 | S2 失败 → 回退排除项 | DefaultEmbeddingFunction 不可达（B+ 显式注入） |
+
+### 14.3 验收锚点（写入 §13 验收标准）
+
+- A1：P1 冒烟通过（--help 退出码 0 + serve 输出 INKFLOW_READY）→ M1
+- A2：三产物版本一致 = 0.4.0 → M5
+- A3：全新机器安装 → 启动 GUI → 内核拉起 → 写作流可用；数据落 %APPDATA%/InkFlow → M4
+- A4：未配置 embedding → 500 RAG 前缀；配置后 → OpenAIEmbeddings 透传 → M8（E1-E4）
+- A5：exclude 后 chromadb 检索正常 → M7
+- A6：release.yml 全绿：tag v0.4.0 → 3 job 成功 → Release 资产可下载 → M9
