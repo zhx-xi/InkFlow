@@ -314,3 +314,14 @@ describe('检索页 — 命中跳转（#683）', () => {
     expect(screen.getByTestId('location-display')).toHaveTextContent(`/library?cat=${cat}`);
   });
 });
+
+describe('检索页 — 未选项目不发请求（spec N2）', () => {
+  it('有项目列表但 currentProjectId=null → 点检索不发请求', async () => {
+    seedProjects(null); // projects 非空，但 currentProjectId=null（未选项目）
+    const user = userEvent.setup();
+    renderSearchPage();
+    await user.type(screen.getByRole('textbox', { name: /检索/ }), '青云');
+    await user.click(screen.getByRole('button', { name: '检索' }));
+    expect(fetchSearchMock).not.toHaveBeenCalled();
+  });
+});

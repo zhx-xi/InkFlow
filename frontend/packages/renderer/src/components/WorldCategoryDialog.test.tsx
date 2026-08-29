@@ -39,3 +39,19 @@ describe('WorldCategoryDialog — #699 kind 选择', () => {
     expect(onSave).toHaveBeenCalledWith('门派', 'abstract');
   });
 });
+
+describe('WorldCategoryDialog — 空名校验（spec N5）', () => {
+  it('名称为空 → 保存按钮 disabled + 显示「分类名不能为空」红字', () => {
+    render(<WorldCategoryDialog open onSave={vi.fn()} onOpenChange={vi.fn()} />);
+    expect(screen.getByTestId('world-cat-save')).toBeDisabled();
+    expect(screen.getByText('分类名不能为空')).toBeInTheDocument();
+  });
+
+  it('输入名称后 → 保存按钮 enabled + 红字消失', async () => {
+    const user = userEvent.setup();
+    render(<WorldCategoryDialog open onSave={vi.fn()} onOpenChange={vi.fn()} />);
+    await user.type(screen.getByTestId('world-cat-name'), '势力');
+    expect(screen.getByTestId('world-cat-save')).toBeEnabled();
+    expect(screen.queryByText('分类名不能为空')).not.toBeInTheDocument();
+  });
+});
