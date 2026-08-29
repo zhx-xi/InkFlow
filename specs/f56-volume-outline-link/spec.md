@@ -156,12 +156,12 @@ R 系列（本 spec）——镜像 `test_outline_p3.py` 四层失败形态:
 ## 10. 依赖关系
 
 ```
-volume-unify 依赖:
+卷概念统一（f56-volume-outline-link）依赖:
   F2 (chapter_service) ✅ — Volume 实体 + delete_volume 联动
   F11 (outline_service) ✅ — Outline.level=volume + _validate_outline_hierarchy
   F43 P3 ✅ — 大纲三级结构 + chapter_id 先例（volume_id 镜像其语义）
 
-volume-unify 被依赖:
+卷概念统一（f56-volume-outline-link）被依赖:
   F6 (context_service) — 上下文注入三级链（总纲/卷纲/章细纲）
   F0.12.0 GUI 卷/章树 — 按 volume_id 分组渲染 + 卷纲入口
 ```
