@@ -604,3 +604,33 @@ if project_model and project_model != AGENT_DEFAULT_SENTINEL:
 - **降级项（不占拍板配额，正文已定）**：CLI agent_order 读写归属 = #251 联动（§4）；deepagents 兼容边界 = 实证结论（§5.5）；数据源形态 = Q3 随附（§5.2）。
 
 > 已确认事实（实证留痕）：`__default__` 执行层 ValueError 缺陷必须修（§5.1）；执行顺序真相 = DAG 边非列表序（§5.3）；执行层无角色跳过逻辑（Q2 背景）；agentic 路径读全局默认模型（§5.5）；`config.model` 消费链 = extraction_service default_model（§11）；`_render` 未知占位符字面量残留（Q1 背景，§1.1⑦）。
+
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 + §4 + §5 + §7 事实，不重复）。F42 无新增 REST 端点（§3）——配置面经既有 PATCH /projects/{id} config 合并语义，执行面 = 管线 execute 装配链（§5.3.1）。
+
+### 14.1 配置端点状态流
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| PATCH /api/v1/projects/{id}（config.agent_order） | 项目存在 | exclude_unset 合并 → agent_order 层级结构校验（§2.3 API 层） | 200 + 更新后 Project | 404；422（长度 &gt;10「agent_order 最多 10 层（槽位编号 0-9）」/ 缺启用角色「agent_order 必须包含全部启用角色: xxx」/ 每层非数组「agent_order 每层必须为数组」/ 跨层重复「agent_order 角色重复: xxx」） | 空槽 [] 允许（跳号允许）；空列表 = 默认模板模式零迁移；任意角色名允许（内置 + 自定义，v1.2） |
+| PATCH /api/v1/projects/{id}（config.agent_*） | 项目存在 | 三态值（null / __default__ / provider/model）合并 | 200 | 422（空字符串「Agent 模型不能为空字符串」既有 validator） | 未知模型/裸模型名 → 200 允许保存 + 前端标记（未注册模型/格式需修正，不阻塞） |
+| POST /api/v1/agent/pipelines/execute（装配链消费） | 模板存在 | 读 agent_* 得启用集合 → _apply_agent_order（双模式分派 + 跳过过滤 + 自定义 stage 构造 + 层级重排 + 全连接边 + 一致性校验）→ _merge_role_configs → _run_pipeline | 202 + execution_id | 422（全部角色关闭，API 校验拒绝） | agent_order 非法（执行层防御）→ warning + 回退默认拓扑；终点角色非内容型 → 回退默认拓扑 + warning 或 API 422 |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow project update --id N --config-json '{"agent_order": [["agent_architect"], ...]}' | #251 已合入 | 经既有 PATCH 合并语义写入 agent_order（嵌套 JSON 透传） | 退出码 0 | 422 → 退出码 1 | 依赖 #251；未合入降级 API 层验证 + PR 标注（§4 验收联动） |
+| inkflow project get --id N --json | — | config 输出自动含 agent_order | 退出码 0 | — | F7 信封约定，无需改动 |
+
+### 14.3 验收锚点
+
+- A1：agent_* = __default__ 执行不抛 ValueError 且 mock LLM 收到模板角色模型（非 sentinel）（M1）
+- A2：配置驱动模式 agent_* = null → 角色跳过；默认模板模式（agent_order 空）null 不跳过（M1/M5）
+- A3：agent_order 层级重排（含 [[architect],[writer,auditor],[reviser]] 并行场景）+ 全连接边断言（input_from=前序全部、output_to=后序全部）（M5）
+- A4：PATCH 语义校验 422（缺启用角色/长度 &gt;10/跨层重复）；任意角色名允许（M4）
+- A5：GUI 槽位编辑 0-9 + 重启保持 + 写作按层序执行（stderr 可查，M6/M8）
+- A6：成品身份 = reviser 输出（调整顺序/关闭角色后不变，M6）
+- A7：role_key 全集 6（worldview/polisher）+ 自定义 Agent 进链执行（prompt = AgentEntity.system_prompt）（M9）
+- A8：CLI 读写依赖 #251（M7）

@@ -524,3 +524,34 @@ class PreferenceSource:
 ---
 
 **完成门禁对照**（本 spec 交付时）：13 节 + §14 待澄清 Q1-Q4；围栏偶数；参照 F27 spec（493 行）体量目标 ≤800 行。
+
+## 15. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 + §4 + §5 + §7 事实，不重复）。
+
+### 15.1 端点状态流
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| PATCH /api/v1/agent/drafts/{draft_id} | 草稿存在且状态 draft | update_content（接线 F27 未接线的 update_content）+ diff 事件捕获（memory_learning=true 时，与内容更新同事务原子） | 200 + {draft_id, status: draft, word_count, learned} | 404（草稿不存在）；409（状态非 draft，DraftStateError）；422（content 空） | before==after 幂等不落事件不触发提取；memory_learning=false 零额外行为 |
+| GET /api/v1/agent/preferences?project_id= | 项目存在 | 项目已学偏好列表 | 200 + {items, total} | — | — |
+| DELETE /api/v1/agent/preferences/{preference_id} | 偏好存在 | 删除（立即停止注入） | 200 + {preference_id, deleted} | 404（偏好不存在） | 无缓存实时查库；删除后重新积累重新计数 |
+| GET /api/v1/agent/memory/stats?project_id= | 项目存在 | 修改率统计（对照 F27 基线，验收判据①） | 200 + agentic/learned_preferences/baseline_ref | — | 基线无数据 → 标注「基线 N/A」 |
+
+### 15.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow memory list --project-id [--category] [--json] | — | 偏好列表 | 每行「[addressing] 称呼主角为林晚 (confidence 0.67, ×2)」/ --json 信封 | 退出码 1（内核启动失败/HTTP 错误） | 恒经 HTTP（F38，ensure_kernel + InkFlowHTTPClient） |
+| inkflow memory remove &lt;preference_id&gt; [--json] | 偏好存在 | 删除 | 「✅ 已删除偏好（下次生成立即停止注入）」 | 404 → 退出码 1 | — |
+| inkflow memory stats --project-id [--json] | — | 修改率/重新生成率 + 基线对照 | 「agentic 修改率 60%（基线 N/A——F27 基线随使用积累，见 docs/agent-baseline-2026-08-10.md）」 | 退出码 1 | 只统计 agentic 模式 |
+| inkflow write next --mode agentic [--memory-learning|--no-memory-learning] | 项目/章节存在 | 生成 + 偏好学习开关覆盖 | 本轮学习到新偏好时人类模式追加「🤖 AI 已记住：称呼主角为林晚（下次生成将遵循）」；--json 信封 data 追加 learned 数组 | 退出码 1 | 请求显式 &gt; extra 键 &gt; 默认 false（F13 同构） |
+
+### 15.3 验收锚点
+
+- A1：阈值语义——第 1 次修改不学 / 第 2 次同学 → 偏好落库 + learned=true + 审计 preference_learned（M1/M8）
+- A2：memory_learning=false 零行为——无事件/无提取/无审计/collect 返回 []/无「AI 已记住」（M10）
+- A3：删除偏好后立即生成 → 注入不含该条（M9）
+- A4：PATCH drafts 200/404/409/422 + preferences list/delete 200/404 + stats 口径（M5）
+- A5：冲突过滤（偏好 value 命中显式设定文本 → 跳过）+ 单条 ≤200 字符 + 最多 10 条 + title 恒「AI 已记住」（M4）
+- A6：修改率统计输出 + baseline_ref 引用（M11）

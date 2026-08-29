@@ -429,3 +429,43 @@ write.detail.unknown        // 未知
 
 ### 15.8 待澄清
 - 无（D1/D2/D3 已拍板 2026-08-29）。
+
+## 16. 交互规格（交互类专用）
+
+### 16.1 画面样式（简图/原型）
+
+- 原型引用：design/GUI/writing/（写作页：编辑器 + 底部聊天横栏 + 右栏上下文注入）、design/GUI/sessions/（左侧会话栏）；各状态截图 &lt;page&gt;-&lt;state&gt;.png
+- 参考锚点（§4 前端契约 + §14/§15 增量契约）：
+  - 布局：写作页底部横栏 = 聊天框（ChatPanel，替代原 PipelineStatus 区域布局，statusbar 精简信息行保留）；左侧导航新增「会话」分组（与设定库同级，取代 #752 会话入设定库栏的做法）
+  - 聊天：消息列表（user/ai）+ 工具调用/结果卡片流式渲染 + 最终回复 + 「插入正文」按钮；失败 → 消息区错误展示不崩溃
+  - 详情：AI 执行详情页（stages 阶段卡 / trace 决策分色 / relations 边 + gate 判定 / 最终回复 + 总耗时）；无执行记录 → 空态引导
+  - 会话：会话栏列表（last_message / message_count / updated_at），折叠/展开持久化，分组按时间 + 置顶（简化，勿照搬 Hermes 三级分组）
+  - 右栏：只留「上下文注入」面板（移除草稿审批），折叠按钮在右栏左缘 +「折叠」提示词；空写作要求 → 「未填写写作要求」占位
+- 布局说明：写作页 = 编辑器主区 + 底部聊天横栏（发送中 inFlight 守卫，流式增量渲染 delta 文本与工具卡片，SSE 帧 type 区分 delta/tool_call/tool_result/done/error）；详情视图经工具栏 view-toggle 切换（默认 editor-view）；左栏会话与设定库同级分组，折叠为图标窄条。
+
+### 16.2 动作样式（按钮 × 状态表，逐控件）
+
+| 控件 | 初始态 | 点击后 | 进行中 | 成功 | 失败 | 边界 |
+|------|--------|--------|--------|------|------|------|
+| 聊天输入框（chat-input） | 空输入 + 发送禁用 | 输入文本 | 发送中再次发送无操作（inFlight 守卫） | — | — | 空输入禁用发送；模型未配置 guard（#474） |
+| 发送按钮（chat-send） | 非空可点 | 调 agent 端点 SSE 流式（POST /api/v1/chat/agent/stream） | 流式渲染 delta 增量 + 工具调用/结果卡片 | assistant 消息展示最终回复 | 错误帧 → 消息区显示 write.chat.failed（不崩溃） | 错误帧 done=true；工具内部错误 → 工具信封 ok=false 不中断整体 |
+| 插入正文按钮（chat-insert-&lt;n&gt;） | assistant 消息后出现 | chapterStore.setContent(final_output) | — | toast「已插入正文，按 Ctrl+S 保存」（write.chat.inserted） | — | 无章节选中（currentChapterId 为空）→ 按钮禁用；不自动保存（F27 既有 save 流） |
+| 工具调用卡片（chat-tool-call-&lt;n&gt;） | — | 流式出现（工具名 + 参数摘要，data-name 属性） | — | — | — | 逐工具一张卡片 |
+| 工具结果卡片（chat-tool-result-&lt;n&gt;） | — | 流式出现（结果 JSON 摘要） | — | tool-error 样式 | 结果信封 ok=false 展示业务错误 | — |
+| 视图切换按钮（view-toggle） | 默认 editor-view（aria-label 查看 AI 执行详情 write.view.toDetail） | 切换 editor ↔ detail | — | 主编辑区渲染 ChapterEditor（editor-view）/ ExecutionDetailPanel（detail-view） | — | 图标 lucide ListRestart 或 Eye/Pencil；aria-label 按当前视图（write.view.toEditor 返回正文编辑） |
+| AI 执行详情页（exec-detail） | 无执行记录 → 空态（exec-detail-empty） | 数据源 GET /pipelines/executions/{id} | 加载态 | 渲染 stages（status/output/error/retry_count/duration_ms）/ trace（node/type/reasoning/tool_calls/output/duration_ms 分色）/ relations（边 + gate_result）/ 最终回复 | — | trace 无决策条目（静态模式仅 stage 条目，decision 仅 supervisor 模式产生）；旧库未迁移 → getattr trace 空数组防御 |
+| 会话栏折叠（SessionBar） | 展开列表 | 折叠/展开 | — | 状态持久化（localStorage） | — | 分组按时间 + 置顶；归档会话 is_deleted 也显示（include_deleted=true） |
+| 续写/生成按钮 | 常驻 | POST /chat/conversations 创建新会话 → 该次生成挂到新会话 | 生成中 | 会话栏出现新项 | 错误 toast | 移除写作页页脚内联「执行中 N%」进度条；生成进度改在会话视图呈现 |
+| 右栏折叠按钮 | 右栏左缘 +「折叠」提示词（图标 + 文字） | 收起右栏 | — | 展开条可恢复 | — | 右栏只留上下文注入面板 |
+| 上下文注入面板 | 空写作要求 | — | — | 显示「未填写写作要求」占位 | — | 不渲染 422 原始 JSON（#759） |
+
+### 16.3 验收
+
+- N1：聊天框发送 → 流式/轮询 → assistant 消息 + 插入正文按钮；插入 → 编辑器 value 更新（v1.0 M3 + §14.8 N2）
+- N2：失败 → 错误消息不崩溃；发送中并发保护；空输入禁用发送（M3）
+- N3：view-toggle 切换 editor ↔ detail；详情页渲染 stages/trace/relations/final + 空态（M4/M5）
+- N4：工具流式渲染 tool_call/result 卡片 + 最终回复（§14.8 N2）
+- N5：AppNav 无 nav-item-book（正向守卫）且 /book 路由仍直达 BookPage（§14.8 N3）
+- N6：会话栏显示项目会话（含归档）+ 折叠持久化；续写/生成 → 新会话；页脚无「执行中」进度条（§15.7 P1/P2）
+- N7：右栏无「草稿审批」+ 折叠按钮左缘 + 上下文注入空需求占位（§15.7 P3/P4/P5）
+- N8：前端 vitest + tsc 全绿；E2E e2e-writer-chat 确定性 page.route 拦截（M7 + §14.8 N4）

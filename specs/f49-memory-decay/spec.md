@@ -357,3 +357,35 @@ score = count × 0.5^(Δt_active / half_life)
 
 - 本 spec 声明第 22 变体（F48=21 为当前最新无冲突基线；冲突以 ADR-019 v5+ 为准）。
 - 实现收尾时 ADR-019 版本表补 0.12.0 行 + F49 Feature 编号登记；ADR 决策记录对应 §12 D1-D6。
+
+## 15. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 + §4 + §5 + §7 事实，不重复）。F49 为注入读路径改造（非新增记忆来源）——端点面仅 1 个新端点 + 既有端点语义变更。
+
+### 15.1 端点状态流
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| PATCH /api/v1/projects/{id}/config（extra 键） | 项目存在 | memory_decay_enabled（bool）/ memory_decay_half_life（int 1-365）校验 → 落 ProjectConfig.extra | 200 + 完整 config | 422（半衰期越界/非 int）；404（项目不存在） | 缺省键零迁移 |
+| GET /api/v1/projects/{id}/config | 项目存在 | 读取完整 config（含 extra） | 200 | 404 | — |
+| GET /agent/preferences?project_id= | 项目存在 | 返回顺序 count desc → score desc（count × 0.5^(Δt_active/half_life)）；list 展示全部含 superseded（Q3=A） | 200 {items, total} | — | items 含 score/superseded_by/active_watermark_at_last_access 字段 |
+| GET /agent/user-preferences | — | 同 list，用户级 | 200 | — | get_user_preferences_for_injection 过滤 superseded |
+| DELETE /api/v1/agent/memory/summaries?project_id= | 项目存在（scope=user 时显式 scope=user 无 project_id） | 删除语义总结（项目级/全局） | 200 {project_id, deleted: true} | 404（项目不存在） | 幂等：summary 不存在 → deleted: true no-op 不 404；memory_learning=false 仍可删（Q2=B 越闸，仅此端点越闸）；删除后下次 summarize 重新生成（对齐删除即停止注入语义） |
+
+### 15.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow memory summarize --project-id &lt;uuid&gt; --remove | 项目存在 | 调 DELETE /memory/summaries | 退出码 0 + 删除确认 | 404 → 退出码 1 | 删除后复用 get_summaries 幂等（锚点未变 → 下次 summarize 可复用既有逻辑） |
+| inkflow memory list --project-id &lt;uuid&gt; | — | 按 score desc 排序返回（含 score/superseded_by 字段） | 退出码 0 | — | — |
+| inkflow memory user-list | — | 同 list，用户级 | 退出码 0 | — | — |
+| inkflow project config set --project-id &lt;uuid&gt; --key memory_decay_enabled --value true | — | 透传 extra | 退出码 0 | 422 → 退出码 1 | 走既有 project config CLI（若存在）；否则经 GUI 设置项 |
+
+### 15.3 验收锚点
+
+- A1：注入排序 score desc；久未强化偏好按 τ 降位/退出阈值（score &lt; 0.05 不注入，不删）（M1）
+- A2：项目闲置 → Δt_active=0 → 记忆不衰减（探针实证：不推进活跃水位时 score 不变）（M1）
+- A3：memory_decay_enabled=false / memory_learning=false 回归零影响（排序保持 count desc）（M1/§7）
+- A4：LLM 判定取代 → 旧偏好 superseded + 注入排除；用户级同规则（M2）
+- A5：防幻觉 B（anchor_refs ⊆ 证据集，不通过丢弃该条 + 审计）+ 重试 ≤2 → 502/丢弃（M2）
+- A6：GUI 衰减设置项（开关 + τ）可操作保存 + 删除总结按钮 + 被覆盖/降权状态展示 + 查看/恢复入口（M3）

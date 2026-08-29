@@ -854,3 +854,56 @@ async def book_supervisor_node(state: BookAgenticState, config: AgenticBookConfi
 - **Q3（阻塞级）：audit/revise 的 LLM 质检实现深度** ✅ 已定（方案 A for 后端批）— audit 用 `llm_client.chat` 结构化输出质量分+问题清单；revise 用改善 agent 改写（复用 writer 默认链）。真实质检质量属 S2 实现轨，后端批以「存在 audit/revise 节点 + 落盘」为门禁。
   - A. 轻量 LLM 质检（已定，后端批门禁 = 节点存在 + 落盘）
   - B. 深度多重审校循环（S2 实现轨，后端批范围外）
+
+## 15. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 + §4 + §5 + §7 事实，不重复）；LLM 行为确认（§15.3）覆盖编排核心的 LLM 失败/重试/HITL 暂停/恢复/取消语义（§5/§7 + 附录 f49 §5/§7）。
+
+### 15.1 端点状态流
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| POST /api/v1/writing/agentic/generate | 项目/章节存在 | 校验预算参数 → 装配 build_deep_agent（5 只读 + save_draft）→ ReAct 循环 → 后处理（空 content 重试护栏/落 agent_run/草稿关联） | 200 + run_id/status/draft_id/final_content/steps/token_usage_total/terminated_by | 404（项目/章节不存在）；500 LLM_ERROR（既有映射复用）；422（max_steps 越界等） | guardrail 触发 → 200 + status=terminated_by_guardrail，产物保留（非 HTTP 错误）；既有 /generate 零改动 |
+| GET /api/v1/agent/runs/{run_id} | run 存在 | 查询决策轨迹 | 200 + steps（每步 message/tool_calls/result/tokens） | 404 | — |
+| GET /api/v1/agent/runs?project_id=&limit= | — | 项目 run 列表（分页倒序） | 200 + items | — | — |
+| POST /api/v1/agent/drafts/{draft_id}/confirm | 草稿存在且状态 draft | 经 chapter_service.update_chapter 写入正式章节 + draft 置 CONFIRMED | 200 + {draft_id, status: confirmed, chapter_id} | 404（草稿不存在/确认时章节已被删）；409（重复确认，草稿已 confirmed） | 草稿未绑定章节时 body 可传 chapter_id |
+| GET /api/v1/agent/drafts?project_id=&status= | — | 草稿列表（用户确认入口） | 200 + items | — | status 过滤可选 |
+| POST /api/v1/agent/books/runs（mode=agentic，附录） | 计划存在 + 至少一道护栏 | prepare_run 预校验 → 后台 _run_book → write_book_agentic → BookAgenticPipeline.execute | 202 + run_id/status=running | 404（运行不存在）；409（内容已写安全阀）；422（上限全无限制/非 waiting_hitl confirm） | mode 默认 static 零改动；config（AgenticBookConfig）仅 agentic 生效；GET/confirm/intervene 复用 F44 |
+
+### 15.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow write next --mode agentic | 项目/章节存在 | 装配 → 生成 → 兜底落草稿 | 退出码 0 + 信封（run_id/status/draft_id）；人类模式打印「草稿已保存 (draft_id)，确认命令: inkflow agent draft confirm &lt;draft_id&gt;」+ 轨迹摘要 | 退出码 1（含 404/500）；退出码 2（参数错误） | 默认 deterministic；--max-steps/--token-budget 覆盖全局设置 |
+| inkflow agent draft list --project-id [--status] | — | 草稿列表 | 退出码 0 + 信封 | 退出码 1 | — |
+| inkflow agent draft confirm &lt;draft_id&gt; [--chapter-id] | 草稿存在 draft 态 | 确认 → 写正式章节 | 「章节已更新 (status=final, 字数 N)」 | 404/409 → 退出码 1 | — |
+| inkflow agent draft reject &lt;draft_id&gt; | 草稿存在 | 拒绝（保留记录） | 「草稿已拒绝（保留记录）」 | 404 → 退出码 1 | — |
+| inkflow agent run list --project-id [--limit 20] / show &lt;run_id&gt; | — | 决策轨迹查询 | 退出码 0（show 输出 steps 每步 message + tool_calls + result） | 404 → 退出码 1 | — |
+| inkflow book run/status/confirm/intervene --mode agentic（附录） | 计划存在 | 复用 F44 命令，agentic 模式 | 退出码 0 | 404/409/422 → 退出码 1 | density 三层；confirm/intervene 复用 F44 语义 |
+
+### 15.3 LLM 行为确认（编排核心，§5/§7 + 附录 f49 §5/§7）
+
+| 场景 | 判定 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|------|--------------|------|------|------|
+| 空 content（章级） | 最终 AIMessage content == ""（无 tool_calls） | 自动重试 1 次（附加「工具结果已回填。请基于以上工具结果直接输出章节正文（Markdown）。」用户消息，保留上下文与已执行工具结果）→ 仍空 → guardrail | 重试后非空 → completed | terminated_by_guardrail(empty_content)，产物保留 | 含 tool_calls 不算空 content，继续循环（不重试） |
+| 预算护栏（章级） | max_steps=12 / token_budget=32K / 同工具连续=3 | 达限 → 终止 | 200 + status=terminated_by_guardrail（max_steps/repeat_tool/token_budget），产物保留 | — | 读取优先级：请求体显式 &gt; 全局设置（F32 键 agent_max_steps 等）&gt; 默认值 |
+| LLM 调用失败（章级） | LLMRequestError | — | — | 500 X-InkFlow-Error-Code: LLM_ERROR | 不自动回退 deterministic（用户显式决定）；agentic 失败可手动重跑 |
+| save_draft 工具异常 | DB 故障等 | 工具返回 is_error 文本回填 | 循环继续 | — | 单工具单事务（每次独立 commit）；写动作落审计（actor=agent:writer） |
+| LLM 未调 save_draft 自然终止 | 最终 AIMessage 含正文 content | 服务层兜底保存草稿 | completed（terminated_by=llm），产物保留 | — | 审计标注 auto_saved |
+| 书级 supervisor 决策空 content/解析失败（附录） | 决策输出空/非法 op/非法 outline_id | 重试 N 次 → 仍失败 → fallback | — | fallback = 确定性写剩余章（保底「完成+非空」） | 弱模型教训（F26）；route_history 含 __fallback__ |
+| 章级 write 失败（附录） | write_chapter 委托失败 | 重试 N 次（默认 2，复用 F44 retry_limit）→ failed 标记 → trigger book_supervisor 决策（跳过/重写/中断） | 重试成功 → 继续 | failed 落盘（进度 failed） | — |
+| 振荡/步数护栏（附录） | 同 op 连续 ≥ max_consecutive / steps ≥ max_steps | → fallback | — | — | 护栏在 LLM 决策后强制校验 |
+| 章节循环上限（附录） | 同章 write/audit/revise 累计 ≥ max_chapter_cycles（默认 5） | 强制 mark_done | 进度 done | — | 防无限修订 |
+| audit_required 跳审（附录） | 未 audit 即 mark_done/跳章 | 护栏强制 goto audit_chapter | — | — | 规格化下限 |
+| HITL 确认点（附录） | hitl_points 命中（book_start/chapter_done/finish，默认空 = 全自动） | interrupt() → plan.status=waiting_hitl + hitl_payload | confirm approved → 继续（chapter_done rejected → 回该章 revise；book_start/finish rejected → fallback） | 确认目标非 waiting_hitl → 422（F44 confirm 防呆） | 确认点缺失 → 不打断（降级而非阻塞，R9） |
+| 进程被杀/断电（附录） | — | AsyncSqliteSaver 章边界 checkpoint → 重启 resume（章边界） | 无重复内容（安全阀兜底） | — | llm_client 丢失 → UntrackedValue → resume 时 Command(update) 重注入 |
+
+### 15.4 验收锚点
+
+- A1：空 content 重试 1 次仍空 → terminated_by_guardrail(empty_content)，产物保留（M1）
+- A2：max_steps/同工具连续 ×5 → guardrail 双形态 200（M1）
+- A3：save_draft 落库 + 确认转正式 + 审计日志写入 + 决策轨迹暴露（M1/M2/M9）
+- A4：agentic/generate 404/409/422 映射 + 双形态 200；draft confirm 409 幂等（M6）
+- A5：CLI write next --mode agentic + draft/run 子命令信封/人类模式/退出码 0/1/2（M5）
+- A6：书级自主编排 completed + 章节落盘非空 + HITL interrupt/resume + 跨 restart 续跑（附录 M3/M4/M5）
+- A7：修改率基线报告 docs/agent-baseline-YYYY-MM-DD.md 产出（M8）
