@@ -7,9 +7,10 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
-import { Compass } from 'lucide-react';
+import { Compass, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { auditChapter, confirmAudit, type AuditReportDto } from '../api/audit';
+import { createChatConversation, saveChatMessage } from '../api/chat';
 import { analyzeStyle, type StyleReportDto } from '../api/style';
 import { fetchConfig } from '../api/config';
 import { errorMessage } from '../api/client';
@@ -19,11 +20,9 @@ import { ChapterEditor } from '../components/ChapterEditor';
 import { ChatPanel } from '../components/ChatPanel';
 import { ChapterSummaryPanel } from '../components/ChapterSummaryPanel';
 import { ContextPanel } from '../components/ContextPanel';
-import { DraftApprovalPanel } from '../components/DraftApprovalPanel';
 import { EditorToolbar } from '../components/EditorToolbar';
 import { ExecutionDetailPanel } from '../components/ExecutionDetailPanel';
 import { AIExtractDialog } from '../components/extract/AIExtractDialog';
-import { PipelineStatus } from '../components/PipelineStatus';
 import { ProjectTree } from '../components/ProjectTree';
 import { StatusBar } from '../components/StatusBar';
 import { StyleAnalyzeDialog } from '../components/StyleAnalyzeDialog';
@@ -83,33 +82,36 @@ export function WritingPage() {
   });
   const {
     status,
-    error,
-    start,
-    hitlPending,
-    confirm,
+    finalOutput,
     executionId,
-    currentStage,
-    stageName,
-    stageProgress,
-    stageElapsedMs,
+    streamSinkRef,
+    start,
   } = pipeline;
 
   // #474 P0：模型未配置前置校验（续写/生成四触发点共用守卫）
+  // #763：校验通过后先创建新会话，落章时把成品归档为 AI chat 消息
+  const conversationIdRef = useRef<string | null>(null);
   const startWithCheck = useCallback(
     async (mode: 'write_auto' | 'write_continue') => {
       if (!(await ensureModelReady())) {
         useToastStore.getState().pushToast('warn', t('common.modelNotConfigured'));
         return;
       }
+      try {
+        const conv = await createChatConversation(effectiveProjectId);
+        conversationIdRef.current = conv.conversation_id;
+      } catch {
+        // 建会话失败：静默降级（仍可继续生成，只是不落 chat 消息）
+        conversationIdRef.current = null;
+      }
       start(mode);
     },
-    [start, t],
+    [effectiveProjectId, start, t],
   );
 
   // F47 #379（spec §4.2）：正文编辑 ↔ AI 执行详情视图切换，默认 editor
   const [view, setView] = useState<'editor' | 'detail'>('editor');
   const [savedAt, setSavedAt] = useState<Date | null>(null);
-  const [confirming, setConfirming] = useState(false);
   // #598 D9-a1：首次授权弹框开关（默认关闭；「触发全自动且未授权」时置 true）
   const [autoAuthOpen, setAutoAuthOpen] = useState(false);
   const dirtyRef = useRef(false);
@@ -168,18 +170,6 @@ export function WritingPage() {
       window.addEventListener('mouseup', onUp);
     },
     [railWidth],
-  );
-
-  const handleHitlConfirm = useCallback(
-    (approved: boolean) => {
-      setConfirming(true);
-      // confirm 内部状态机续跑；成功后恢复 confirming
-      confirm(approved);
-      // 简单起见：confirm 是异步续跑，成功/失败态由 usePipeline 内部处理；
-      // 这里延迟重置 confirming（轮询成功后 UI 已切换）
-      setTimeout(() => setConfirming(false), 1500);
-    },
-    [confirm],
   );
 
   const save = useCallback(async () => {
@@ -288,6 +278,20 @@ export function WritingPage() {
     }, 2000);
     return () => clearTimeout(timer);
   }, [content, save]);
+
+  // #763：生成落章成功 → 把成品作为 AI chat 消息归档到本次生成新建的会话
+  useEffect(() => {
+    if (status === 'success' && finalOutput && conversationIdRef.current) {
+      void saveChatMessage({
+        project_id: effectiveProjectId,
+        conversation_id: conversationIdRef.current,
+        role: 'ai',
+        content: finalOutput,
+        intent: 'content',
+      });
+      conversationIdRef.current = null;
+    }
+  }, [status, finalOutput, effectiveProjectId]);
 
   const handleContentChange = (value: string) => {
     dirtyRef.current = true;
@@ -398,20 +402,9 @@ export function WritingPage() {
               projectId={effectiveProjectId}
               chapterId={currentChapterId ?? undefined}
               chapterContent={content}
-              streamSink={pipeline.streamSinkRef}
+              streamSink={streamSinkRef}
             />
           ) : null}
-          <PipelineStatus
-            status={status}
-            error={error}
-            hitlPending={hitlPending}
-            onConfirm={handleHitlConfirm}
-            confirming={confirming}
-            currentStage={currentStage}
-            stageName={stageName}
-            stageProgress={stageProgress}
-            stageElapsedMs={stageElapsedMs}
-          />
         </main>
         <aside
           data-testid="right-rail"
@@ -424,9 +417,19 @@ export function WritingPage() {
             data-testid="right-col-toggle"
             aria-label={railCollapsed ? '展开右栏' : '收起右栏'}
             onClick={() => setRailCollapsed((c) => !c)}
-            className="flex h-8 w-full shrink-0 items-center justify-center border-b border-line text-[12px] text-ink-3 hover:bg-surface-3 hover:text-ink"
+            className="flex h-auto shrink-0 items-center justify-start gap-1 self-start border-b border-line px-2 py-1.5 text-[12px] text-ink-3 hover:bg-surface-3 hover:text-ink"
           >
-            {railCollapsed ? '«' : '»'}
+            {railCollapsed ? (
+              <>
+                <PanelLeftOpen className="h-4 w-4" aria-hidden="true" />
+                <span>{t('nav.expand')}</span>
+              </>
+            ) : (
+              <>
+                <PanelLeftClose className="h-4 w-4" aria-hidden="true" />
+                <span>{t('write.context.collapse')}</span>
+              </>
+            )}
           </button>
           {railCollapsed ? null : (
             <div
@@ -465,18 +468,6 @@ export function WritingPage() {
                 className="min-h-0 shrink-0 flex flex-col"
               >
                 <ChapterSummaryPanel projectId={effectiveProjectId} chapterId={currentChapterId} />
-              </div>
-              <div
-                data-testid="rail-resize-handle-1"
-                className="h-2 shrink-0 cursor-row-resize select-none border-t border-line bg-surface-3"
-                onMouseDown={startRailResize('summary')}
-                aria-hidden="true"
-              />
-              <div
-                data-testid="rail-panel-drafts"
-                className="min-h-[120px] shrink-0 flex flex-col"
-              >
-                <DraftApprovalPanel projectId={effectiveProjectId} />
               </div>
             </>
           )}
