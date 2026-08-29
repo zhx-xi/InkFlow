@@ -303,3 +303,43 @@ F2 被依赖:
   F6 (context_service) — 上下文管理需要 Chapter.content 和 project 信息
   F7 (CLI) — chapter/volume 子命令
 ```
+---
+
+## 12. 动作确认
+
+> 基于 §3 API + §4 CLI + §7 边界事实的状态流表。
+
+### 12.1 Volume 端点状态流
+
+| 端点 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| POST /projects/{id}/volumes | 项目存在 | 校验 title → 建 Volume | 201 + Volume | 422（title 空/>200） | title 必填；order_index 可省略 |
+| GET /projects/{id}/volumes | 项目存在 | 列出 | 200 + {items} | — | — |
+| GET /volumes/{id} | 卷存在 | 查询 | 200 + Volume | 404「卷不存在」 | — |
+| PATCH /volumes/{id} | 卷存在 | 部分更新 | 200 + Volume | 404；422（title 非法） | 字段不传=不改 |
+| DELETE /volumes/{id} | 卷存在 | 删卷 — 章节 volume_id 置 NULL | 204 | 404「卷不存在」 | 有章节→孤儿化；无章节→直接删 |
+
+### 12.2 Chapter 端点状态流
+
+| 端点 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| POST /projects/{id}/chapters | 项目存在 | 校验 title → 建 Chapter | 201 + Chapter | 422（title 空/>500） | title 必填；volume_id 可 NULL（未分类） |
+| GET /projects/{id}/chapters | 项目存在 | 列表+过滤 | 200 + {items,total,offset,limit} | — | volume_id/status 过滤；分页 |
+| GET /chapters/{id} | 章节存在 | 查询 | 200 + Chapter | 404「章节不存在」 | — |
+| PATCH /chapters/{id} | 章节存在 | 部分更新（含 status） | 200 + Chapter | 404；422 | status 变更触发状态追踪（§6） |
+| DELETE /chapters/{id} | 章节存在 | 硬删除 | 204 | 404 | — |
+| POST /chapters/{id}/move?target_volume_id= | 章节存在 | 跨卷移动 | 200 + Chapter | 404 | 目标卷须存在 |
+
+### 12.3 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| volume create/list/get/delete | 项目/卷存在 | CRUD | 人类可读/--json | 404/422 | delete 需 --force 确认 |
+| chapter create/list/get/delete | 项目/章节存在 | CRUD | 人类可读/--json | 404/422 | — |
+
+### 12.4 验收锚点
+
+- A1：创建卷 title 空 → 422「卷标题不能为空」
+- A2：删卷后章节 volume_id 置 NULL（孤儿），返回 204
+- A3：/chapters/{id}/move 到不存在卷 → 404
+- A4：空 content 字数 → word_count = 0

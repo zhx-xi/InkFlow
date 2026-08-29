@@ -249,7 +249,7 @@ inkflow --install-completion powershell    # 写入 $PROFILE
 |--------|------|------|
 | 0 | 成功 | 正常输出 |
 | 1 | 业务/运行时错误（404/422 业务校验、LLM 失败、DB 错误、config key 非法值） | 人类模式 → stderr 错误文案；`--json` → 错误信封（stdout） |
-| 2 | 用法错误（缺失必填参数、未知命令/选项、非法枚举值） | Typer/Click 默认 usage 信息 |
+| 2 | 用法错误（缺失必填参数、未知命令/选项、非法枚举值、config set 白名单外 key） | Typer/Click 默认 usage 信息 |
 | 130 | Ctrl+C（含 serve 优雅退出） | — |
 
 **错误分类映射**（ADR-012）:
@@ -390,3 +390,49 @@ F7 被依赖:
 | M5 | llm / config 组功能完整（Key 加密、白名单） | `pytest tests/test_cli_llm.py tests/test_cli_config.py -v` 全绿 |
 | M6 | Shell 补全四 shell 安装无报错 | 手工验证 + CI 脚本生成检查 |
 | M7 | 全量测试 + lint + type check 通过 | CI 门禁（ADR-017）全绿 |
+## 14. 动作确认
+
+> 基于 §4 命令签名 + §5 信封 + §7 退出码/错误分类事实的状态流表，不新增行为。
+
+### 14.1 全局选项状态流
+
+| 选项 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| --json | 任意命令 | 输出统一信封 {ok, data/error}（stdout） | {"ok": true, "data": ...} | {"ok": false, "error": {code, message}} → 退出码 1 | 挂在根 app 全局继承；人类模式错误信息 → stderr |
+| --version / -V | — | 打印版本号（pyproject.toml）并退出 | 版本号 | — | — |
+| --help | 每级命令 | Typer 原生帮助 | 帮助文本（含选项/参数说明） | — | no_args_is_help |
+| --install-completion / --show-completion [bash/zsh/fish/powershell] | — | 安装/显示补全脚本 | 写入 rc 文件 / 脚本内容 | — | 四种 Shell 覆盖 |
+| 无参数 | — | — | — | 显示 help，退出码 2 | no_args_is_help=True |
+
+### 14.2 命令组状态流
+
+| 命令组 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|--------|------|------|------|------|------|
+| serve [--host --port --open-browser --reload] | — | uvicorn 启动（阻塞） | 服务运行；--json 打印一次启动信封后进入服务循环 | 启动失败 → 退出码 1 | host 127.0.0.1 / port 8000 默认；Ctrl+C → 130 优雅退出 |
+| project create/list/get/update/delete | 委托 F1 | 参数透传 → ProjectService | 人类可读 / 信封 | 404 → NOT_FOUND；422 → VALIDATION_ERROR（退出码 1） | delete 需二次确认；--json + 无 --force → VALIDATION_ERROR「删除需 --force 或交互确认」；--permanent 硬删 |
+| chapter create/list/get/update/delete/move | 委托 F2 | 参数透传 → ChapterService | 人类可读 / 信封 | 404 → NOT_FOUND；422 → VALIDATION_ERROR（退出码 1） | — |
+| write next/continue/revise | 委托 F3 + F6 | 写作；--show-context 附上下文 | 每章 {chapter_id, title, word_count} / 章节全文；--json 含正文 + context 字段 | LLM 失败 → LLM_ERROR（退出码 1） | next --count 默认 1；revise 用 --instruction |
+| llm list / set-key | 委托 F5 | Provider 列表 / API Key 设置 | list 输出掩码 sk-****abc；set-key 成功 | — | set-key 无 --key → getpass 交互输入不回显；传 --key → WARNING（shell history 泄露风险）；Key 密文落盘，明文不落盘不输出 |
+| config show / set | — | 配置查看/设置 | show 展示三层来源与生效值；set 合法 key 写入 config.json | set 白名单外 key → 退出码 2；set 非法值（temperature=3.0）→ 退出码 1 | key 白名单 6 项；优先级 环境变量 > config.json > 内置默认 |
+
+### 14.3 错误分类与退出码状态流
+
+| 异常 | 错误码 | 人类文案示例 | 退出码 |
+|------|--------|-------------|--------|
+| 资源不存在（F1/F2 404） | NOT_FOUND | 项目不存在 / 章节不存在 | 1 |
+| 业务校验失败 | VALIDATION_ERROR | 项目名称不能为空 | 1 |
+| LLM 调用失败（F5） | LLM_ERROR | LLM 调用失败: API key not configured for provider: deepseek | 1 |
+| 上下文预算超限（F6） | CONTEXT_BUDGET_EXCEEDED | 上下文预算超限: protected 层需要 20000 tokens, 预算 15360 | 1 |
+| 配置非法 | CONFIG_ERROR | 未知配置项: foo.bar | 1（非法值）/ 2（白名单外 key，见 §4.6） |
+| 数据库错误 | DB_ERROR | 数据库操作失败（不泄漏堆栈，loguru 记录详情） | 1 |
+| 用法错误（缺失必填参数、未知命令/选项、非法枚举值） | — | Typer/Click 默认 usage 信息 | 2 |
+| Ctrl+C（含 serve 优雅退出） | — | — | 130 |
+
+### 14.4 验收锚点
+
+- A1：未知命令 / 缺失必填参数 → 退出码 2 + usage（非业务错误信封）
+- A2：project get 不存在 → 退出码 1 + {"ok": false, "error": {"code": "NOT_FOUND", "message": "项目不存在"}}（信封输出 stdout）
+- A3：--json + project delete 无 --force → VALIDATION_ERROR「删除需 --force 或交互确认」（脚本场景不隐式删除）
+- A4：llm set-key 交互输入不回显；任何模式 Key 只输出掩码（明文不落盘不输出）
+- A5：config set 白名单外 key → 退出码 2；set 非法值（temperature=3.0）→ 退出码 1
+- A6：write 命令 LLM 失败 → LLM_ERROR 信封 + 退出码 1（人类模式错误 → stderr）

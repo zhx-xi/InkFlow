@@ -253,7 +253,7 @@ Content-Type: application/json
 ```
 → 200（非法）
 ```json
-{ "valid": false, "errors": ["阶段 'writer' 的 input_from 引用了不存在的阶段 'foo'"] }
+{ "valid": false, "errors": ["阶段 'writer' 的 input_from 引用了不存在的上游阶段 'foo'"] }
 ```
 
 **模板列表**:
@@ -779,3 +779,34 @@ stage_results = [
 - ADR-015：LangChain 全家桶选型（本重构遵守，不引入新依赖）
 - inkflow-dev §6.2：方案已实测（TypedDict + reducer 跑通）
 - 无跨模块行为依赖；`domain/ports/agent_pipeline.py` 仅类型声明改动，向后兼容
+## 13. 动作确认
+
+> 基于 §3 API + §4 CLI + §7 边界事实的状态流表，不新增行为。本节属于主 spec（§1-§12）；其后「附录：f87-langgraph-refactor」为容器化合并的独立 spec，不在本节范围。
+
+### 13.1 端点状态流
+
+| 端点 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| POST /api/v1/agent/pipelines/execute | 项目存在；chapter_id 提供则须存在 | 校验 DTO → 创建执行记录 → 异步调度 | 202 + {execution_id, status: pending} | 404「项目不存在/章节不存在」；422（缺字段、未知模板「未知管线模板: xxx」、temperature 越界） | 202 异步 + 状态轮询；同项目并发 execute 允许，执行记录相互隔离 |
+| GET /api/v1/agent/pipelines/executions/{execution_id} | 执行记录存在 | 读执行状态/结果 | 200 + Execution JSON（pending/running/completed/failed + stages 快照） | 404「执行记录不存在」 | 重复查询无副作用（幂等）；执行不可重放 |
+| GET /api/v1/agent/pipelines/executions?project_id=&limit= | 无 | 最近执行列表 | 200 + {items, total} | — | 无记录 → {items: [], total: 0} |
+| POST /api/v1/agent/pipelines/validate | 无 | Protocol.validate 结构校验 | 200 + {valid: true, errors: []} | 422（Pydantic） | 非法图 → {valid: false, errors: [...]}（空 stages/重复 id/多入口/无终点/环/非法引用） |
+| GET /api/v1/agent/pipelines/templates | 无 | 内置模板列表 | 200 + {items} | — | 空 → {items: []}；内置模板不可修改/删除 |
+
+### 13.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow agent run --project-id [--chapter-id --pipeline --var key=value --override role.field=value --watch --json] | 项目存在 | 创建执行 → 轮询至完成 | 🚀 管线启动 → ⏳ 各阶段进度 → ✅ 管线完成 (88.6s) / --json {execution_id, status} | 404/422 → 退出码 1；失败 → ❌ 管线失败: 阶段 'writer' 重试 3 次后仍失败: LLM 超时 | --watch 阻塞轮询；--var / --override 可重复 |
+| inkflow agent status --run-id [--json] | 执行记录存在 | 查询状态/结果 | 人类可读 / --json Execution JSON | 404「执行记录不存在」 → 退出码 1 | — |
+| inkflow agent validate --file <pipeline.yaml> [--json] | 无 | 结构校验（走 Protocol.validate） | 校验结果 / --json | 422 → 退出码 1 | Phase 1 即支持 |
+| inkflow agent template list [--json] | 无 | 列出内置模板 | {items} / --json | — | — |
+
+### 13.3 验收锚点
+
+- A1：POST execute → 202 + status=pending（异步模式，非 200 长连接）
+- A2：必需阶段重试耗尽 → 管线 failed + 未执行阶段全 skipped（error 含阶段 id 与原因）
+- A3：非必需阶段（required=False）重试耗尽 → 该阶段 skipped + 下游继续（输出为空串）
+- A4：执行记录不存在 → 404「执行记录不存在」
+- A5：未知模板 id → 422「未知管线模板: xxx」
+- A6：validate 非法图（input_from 引用不存在阶段）→ {valid: false, errors: [...]}，文案与 §7 一致

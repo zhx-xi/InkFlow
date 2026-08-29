@@ -487,3 +487,38 @@ F6 被依赖:
 | M4 | 调试 API 3 端点通过 | `pytest tests/test_context_api.py -v` 全绿 |
 | M5 | domain/ 零 LangChain import | CI 强制检查通过 |
 | M6 | `write --show-context` 输出完整三层信息 | 手工验证（F7 落地后联调） |
+## 14. 动作确认
+
+> 基于 §5 API + §6 CLI + §8 边界事实的状态流表，不新增行为。
+
+### 14.1 API 端点状态流
+
+| 端点 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| POST /api/v1/context/assemble | 项目 + 章节存在 | build_context：收集 → 预算 → 分层组装 | 200 + ContextAssemblyResult JSON（blocks/budget_tokens/total_tokens/dropped） | 404「项目不存在/章节不存在」；400「上下文预算超限: protected 层需要 X tokens, 预算 Y tokens」 | 调试端点（正常写作路径由 F3 直接调用）；protected 层超限硬失败 |
+| GET /api/v1/context/chapters/{chapter_id}/summary | 章节存在；摘要存在 | 查摘要缓存 | 200 + {summary, model, updated_at} | 404（章节不存在 / 无摘要） | — |
+| POST /api/v1/context/chapters/{chapter_id}/summary/refresh | 章节存在 | 强制重新生成摘要并 upsert | 200 + {summary, model, updated_at} | 404（章节不存在） | 缓存失效规则见 §3.5 |
+
+### 14.2 领域服务状态流（build_context 分层）
+
+| 层/方法 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| protected 层 | writing_requirements 非空 | 全量注入（不可压缩、不可裁剪） | 注入成功 | 超 cap → ContextBudgetExceededError 硬失败 | writing_requirements 空 → ValueError("writing_requirements cannot be empty")；outline 缺失/为空 → 跳过不报错 |
+| compressible 层 | — | priority 降序累积 → 超 cap 逐项 LLM 压缩（目标 ≤ 原文 token × 0.5） | 压缩后放入 | 压缩后仍超 cap → 裁剪 + DroppedItem("compression_insufficient") | 软降级，不阻断写作 |
+| dynamic 层 | — | 摘要按 chapter_index 倒序 + 伏笔按 priority 贪心选择至 cap | 择优注入 | 放不下 → 裁剪 + DroppedItem("over_budget") | 只选不压缩；预算为 0 或候选为空 → 空注入（正常路径） |
+| ensure_summary(chapter, model) | 章节存在 | 缓存命中（未过期）直接返回 / 过期或缺失 → 生成并 upsert | str（≤ 300 字） | LLM 错误 → WARNING + 跳过该摘要 + dropped("summary_failed")，不阻断写作 | chapter.updated_at > summary.updated_at → 缓存过期重新生成 |
+
+### 14.3 CLI 调试入口状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow write next/continue --show-context | 项目/章节存在 | 写作时打印本次组装的 ContextAssemblyResult | 每层块标题/token/压缩标记 + 预算 + 丢弃项；--json 输出 context 字段 | 404/400 → 退出码 1 | Phase 1 无独立 context 命令组（F7 命令树限定 serve/project/chapter/write/llm/config） |
+
+### 14.4 验收锚点
+
+- A1：writing_requirements 为空 → ValueError("writing_requirements cannot be empty")（protected 层必填）
+- A2：protected 层超预算 → ContextBudgetExceededError 硬失败（不静默裁剪）→ API 400「上下文预算超限: protected 层需要 … tokens, 预算 … tokens」
+- A3：compressible 项压缩后仍超 cap → 裁剪 + DroppedItem(reason="compression_insufficient")
+- A4：dynamic 预算不足 → 只保留最新摘要，其余裁剪 + DroppedItem(reason="over_budget")
+- A5：摘要缓存过期（章节已更新）→ ensure_summary 自动重新生成
+- A6：目标模型窗口 < 4096 → ContextBudgetExceededError（配置错误）；未知模型 → registry 兜底 default_window（默认 128000）+ WARNING

@@ -208,7 +208,7 @@ Content-Type: application/json
 |------|------|------|
 | `NotFoundError`（项目/章节） | 404 | `"项目不存在"` / `"章节不存在"` |
 | Pydantic `ValidationError` | 422 | FastAPI 自动生成 |
-| `ContextBudgetExceededError`（F6 预算超限） | 422 | `"上下文 Token 预算超限，请精简大纲或上下文"` |
+| `ContextBudgetExceededError`（F6 预算超限） | 400 | `"上下文 Token 预算超限，请精简大纲或上下文"` |
 | `LLMRequestError`（F5 重试耗尽） | 500 | `"LLM 调用失败，请稍后重试"`（日志记录原始异常） |
 
 ---
@@ -340,7 +340,7 @@ WritingRequest
 | 章节不属于该项目 | 404: "章节不存在"（不泄漏归属信息） |
 | 无效 UUID 格式 | 404: 统一解析失败处理（同 F1/F2） |
 | LLM 调用失败（网络/超时/Key 无效） | 500: "LLM 调用失败，请稍后重试"（F5 已内部重试 3 次；日志记录原始异常，ADR-012） |
-| 上下文 Token 预算超限 | 422: "上下文 Token 预算超限，请精简大纲或上下文"（`ContextBudgetExceededError`） |
+| 上下文 Token 预算超限 | 400: "上下文 Token 预算超限，请精简大纲或上下文"（`ContextBudgetExceededError`，与 F6 spec §5.3 统一；⚠️ 当前 writing 端点为 500 未捕获——归 PR-2 修复） |
 | 输出格式不合格（首次） | 自动修复重试，retry_count=1，最终 format_valid=true |
 | 输出格式不合格（3 次后） | 200 + format_valid=false + warnings，不抛错 |
 | 输出字数不足（3 次后） | format_valid=false + warning "字数不足: X/2000" |
@@ -468,7 +468,7 @@ class ContextProviderProtocol(Protocol):
 | `test_generate_chapter_not_found` | 章节不存在/不属于项目 → 404 |
 | `test_generate_validation_error` | outline 缺失 → 422 |
 | `test_generate_llm_error_500` | LLMRequestError → 500 + 通用消息（不泄漏细节） |
-| `test_budget_exceeded_422` | ContextBudgetExceededError → 422 |
+| `test_budget_exceeded_400` | ContextBudgetExceededError → 400 |
 
 ### 9.5 测试覆盖率目标
 
@@ -525,3 +525,31 @@ F3 被依赖:
 | 上下文注入 | 定义 ContextProviderProtocol + Null 实现 | F6 未就绪时 F3 可独立开发测试；就绪后无感替换 |
 | 修订温度 | 默认 0.4 低温 | 修订是保守操作，避免风格漂移 |
 | F3 不落库 | 结果瞬态返回，调用方负责持久化 | 单一职责；避免与 F2 的写入路径重复 |
+## 13. 动作确认
+
+> 基于 §3 API + §4 CLI + §7 边界事实的状态流表，不新增行为。
+
+### 13.1 端点状态流
+
+| 端点 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| POST /api/v1/writing/generate | 项目存在；章节存在且属于项目 | 校验 DTO → 组装 Prompt → LLM 调用 → 格式校验/修复重试 | 200 + WritingResult（format_valid=true） | 404「项目不存在/章节不存在」；422（outline 空/超 5000 字符、min_words<2000、预算超限）；500「LLM 调用失败，请稍后重试」 | 输出 ≥ min_words（默认 2000）；修复重试 ≤ 3 次；3 次仍失败 → 200 + format_valid=false + warnings，不抛错 |
+| POST /api/v1/writing/continue | 项目存在；章节存在且属于项目 | 校验 DTO → 注入原文末尾 800 字符锚点 → LLM → 格式校验 | 200 + WritingResult（mode=continue） | 404；422（existing_content<50、预算超限）；500 | target_words 下限 200，不强制 ≥2000（增量操作） |
+| POST /api/v1/writing/revise | 项目存在；章节存在且属于项目 | 校验 DTO → 注入原文+feedback+target_range → LLM（默认温度 0.4） | 200 + WritingResult（mode=revise） | 404；422（feedback 空、content 空、预算超限）；500 | target_range 未定位 → 全文修订 + warning；仅修复反馈指出问题，保留原文风格 |
+
+### 13.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow write generate --project-id --chapter-id --outline [--context --min-words --style --json] | 项目/章节存在 | 生成章节 | ✅ 章节生成成功: 2347 字 (重试 1 次, deepseek/deepseek-chat) / --json WritingResult | 404/422/500 → 退出码 1 | 3 次仍异常 → ⚠️ 生成完成但格式校验未通过 |
+| inkflow write continue --project-id --chapter-id [--target-words --context --json] | 同上 | 续写内容 | 人类可读摘要 / --json WritingResult | 404/422/500 → 退出码 1 | 衔接锚点 = 原文末尾 800 字符 |
+| inkflow write revise --project-id --chapter-id --feedback [--range --json] | 同上 | 修改润色 | 人类可读摘要 / --json WritingResult | 404/422/500 → 退出码 1 | --range 无法定位 → 全文修订 + warning |
+
+### 13.3 验收锚点
+
+- A1：outline 空/全空白 → 422「大纲不能为空」（非 500）
+- A2：min_words=1000 → 422「最少字数不能低于 2000」（PRD 验收硬约束）
+- A3：existing_content < 50 字符 → 422「已有内容太短，无法续写」
+- A4：格式校验 3 次仍失败 → 200 + format_valid=false + warnings，不抛错（写作管道不中断）
+- A5：章节不属于该项目 → 404「章节不存在」（不泄漏归属信息）
+- A6：LLM 调用失败（F5 重试耗尽）→ 500「LLM 调用失败，请稍后重试」（ADR-012 不泄漏堆栈）
