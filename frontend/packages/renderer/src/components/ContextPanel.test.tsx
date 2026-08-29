@@ -406,3 +406,27 @@ describe('ContextPanel — 结构化条目契约 context-item-<source>-<i>（#74
     expect(panel.textContent).not.toMatch(/\{"source"|"metadata"|"character_id"|"world_setting_id"/);
   });
 });
+
+describe('ContextPanel — 空写作要求优雅占位（#759）', () => {
+  it('#759: writingRequirements 为空 → 不调 assemble + 显示「未填写写作要求」占位', async () => {
+    render(<ContextPanel {...OPTS} writingRequirements="" />);
+    await waitFor(() => {
+      expect(assembleMock).not.toHaveBeenCalled();
+    });
+    const err = await screen.findByTestId('context-error');
+    expect(err).toHaveTextContent('未填写写作要求');
+  });
+
+  it('#759: assemble 返回 422 string_too_short → 显示「未填写写作要求」占位，不渲染原始 JSON', async () => {
+    assembleMock.mockRejectedValue(
+      new Error(
+        '[{"type":"string_too_short","loc":["body","writing_requirements"],"msg":"String should have at least 1 character","input":"","ctx":{"min_length":1}}]',
+      ),
+    );
+    render(<ContextPanel {...OPTS} />);
+    const err = await screen.findByTestId('context-error');
+    expect(err).toHaveTextContent('未填写写作要求');
+    expect(err.textContent).not.toMatch(/string_too_short/);
+    expect(assembleMock).toHaveBeenCalled();
+  });
+});

@@ -467,6 +467,7 @@ export const zh = {
   'write.context.expand': '展开上下文',
   'write.context.inject': '注入',
   'write.context.required': '写作要求',
+  'write.context.emptyRequired': '未填写写作要求',
   'write.context.dropped': '已裁剪',
   'write.context.tokens': '{total}/{budget} tokens',
   'write.context.injectSelect': '＋ 选择注入',
@@ -896,5 +897,4 @@ export const zh = {
   'memory.cat.user.structure': '结构',
   'memory.cat.user.other': '其他',
 } as const;
-
 export type ZhKey = keyof typeof zh;

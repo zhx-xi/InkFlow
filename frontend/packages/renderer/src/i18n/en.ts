@@ -478,6 +478,7 @@ export const en: Record<string, string> = {
   'write.context.expand': 'Expand context',
   'write.context.inject': 'Inject',
   'write.context.required': 'Writing requirements',
+  'write.context.emptyRequired': 'Writing requirements not filled',
   'write.context.dropped': 'Dropped',
   'write.context.tokens': '{total}/{budget} tokens',
   'write.context.injectSelect': '+ Select inject',
