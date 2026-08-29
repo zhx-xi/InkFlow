@@ -4,10 +4,12 @@
  * ⚠️ #681 契约翻转（2026-08-26）：管线产物**不再**以 chat-msg-ai-<seq> 渲染、**不再** saveChatMessage
  * 落库——改为独立「管线输出」区（pipeline-output-<seq>，带「管线输出」标签），符合 #681
  * 「管线阶段输出不污染 chat 历史」。编辑器仍落章（final_output = 编辑器内容）。
+ * ⚠️ #763（2026-08-29）语义反转（用户拍板 P3-A）：生成/续写 → createChatConversation 建新会话，
+ *   onDone(final_output) **再次** saveChatMessage 落成会话 ai 消息——本文件「不 saveChatMessage」断言已迁移为「saveChatMessage 被调」。
  *
  * GREEN 目标（本文件 = #681 新契约）:
  * - 生成触点 → 调 streamPipeline（SSE 流式），onDelta 渐进取「管线输出」区（pipeline-output-<seq>）
- * - onDone → 不调 saveChatMessage 落管线产物；仅落章（编辑器 = final_output）
+ * - onDone → **saveChatMessage** 落管线产物到新会话（#763 覆盖 #681 的「不落 chat」）；仅落章（编辑器 = final_output）
  * - 管线产物不持久化到 chat 历史（切 view 重挂后 chat 区无管线产物，符合「不污染 chat」语义）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -146,19 +148,22 @@ describe('写作页 — AI 生成后管线输出与 chat 区分渲染（#681 翻
     expect(screen.queryByTestId('chat-msg-ai-0')).not.toBeInTheDocument();
   });
 
-  it('done → 不 saveChatMessage 落管线产物；仅落章（编辑器 = final_output）', async () => {
+  it('done → saveChatMessage 落管线产物到会话（#763 覆盖 #681）；仅落章时编辑器 = final_output', async () => {
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
     act(() => { capturedPipelineStream?.callbacks.onDelta('\n<<<CONTENT>>>\n他握紧了剑。\n<<<END>>>'); });
     act(() => { capturedPipelineStream?.callbacks.onDone({ done: true, final_output: '他握紧了剑。' }); });
-    // #681：管线产物不落 chat 历史——saveChatMessage 不被调（chat 消息落库仅限用户驱动 chat 流）
-    expect(apiFetchMock).not.toHaveBeenCalledWith(
-      '/api/v1/chat/messages',
-      expect.objectContaining({
-        method: 'POST',
-        body: expect.objectContaining({ project_id: 'p1', role: 'ai', content: '他握紧了剑。', intent: 'content' }),
-      }),
+    // #763：生成产物落成新会话的 ai 消息（saveChatMessage → POST /api/v1/chat/messages）。
+    //   ⚠️ 此为 #681「管线产物不落 chat 历史」契约的语义反转（用户拍板 P3-A：#763 覆盖 #681）。
+    await waitFor(() =>
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/chat/messages',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.objectContaining({ project_id: 'p1', role: 'ai', content: '他握紧了剑。', intent: 'content', conversation_id: 'conv-p1' }),
+        }),
+      ),
     );
     // 落章：编辑器内容 = final_output
     const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
