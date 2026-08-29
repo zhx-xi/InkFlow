@@ -376,3 +376,46 @@ F30 被依赖:
 ---
 
 *本文档为 F30 功能规格（What），实施步骤（How）见后续 `specs/f30-kernel/plan.md`。所有里程碑验收以本节 M1-M7 为准。*
+
+---
+
+## 14. 动作确认
+
+> 每个端点/命令/组件的完整状态流表（基于 §2 kernel.json 契约 + §3 ensure_kernel + §5 冷启动协议 + §7 边界事实，不重复）。
+
+### 14.1 内核发现状态流（kernel.json 三态判定 + /health 复用）
+
+| 状态场景 | 前置 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|----------|------|--------------|------|------|------|
+| 文件不存在 | 无 kernel.json | 视为无内核 → 互斥拉起 | KernelHandle(reused=False) | KernelStartupError | 冷启动含 chromadb/BGE 加载（首次 ~4.7s） |
+| JSON 解析失败 | 文件损坏 | 视为无内核 → 重命名 .stale-<ts> → 拉起 | KernelHandle(reused=False) | KernelStartupError | 备份保留现场可排障 |
+| pid 不存在 | 崩溃残留 | stale 判定 → 清理（重命名备份）→ 拉起 | KernelHandle(reused=False) | KernelStartupError | 内核退出不主动删（stale 由读取方判定） |
+| pid 存活 + /health 200 + 版本兼容 | 内核运行中 | 直接复用，不 spawn | KernelHandle(reused=True) | — | 复用 ~19ms |
+| /health 非 200/超时 | pid 存在但 token 失效/端口被占 | stale 清理 → 重新拉起 | KernelHandle(reused=False) | KernelStartupError | health_timeout 默认 2s |
+| 版本 major 不匹配 | kernel.json.version 与客户端 major 不同 | 拒绝复用 → 清理 → 拉起匹配版本 | 拉起客户端版本内核 | 仅当客户端能 spawn 自己版本时 | minor/patch 容忍（ADR-019 契约冻结） |
+
+### 14.2 冷启动拉起状态流（互斥 + spawn + 生命周期）
+
+| 场景 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| 互斥获取成功 | CreateMutexW 拿到 | spawn 内核（serve --port 0 --port-file <tmp>）→ INKFLOW_READY/端口文件双保险 → 校验 port/token → 写 kernel.json | KernelHandle(reused=False) | KernelStartupError（含日志指引 %TEMP%\inkflow-kernel.log） | --port-file 为主 + INKFLOW_READY 双保险（不依赖 stdout 解析） |
+| 互斥 183（已有实例在拉起） | 另一客户端已持有互斥 | 轮询 kernel.json ≤ timeout | 复用新文件 KernelHandle | 轮询超时 → KernelStartupError | 双客户端同时冷调用只 spawn 一次（§5.3） |
+| 内核秒退 | spawn 后立即退出 | 捕获进程退出 → 清理 → 重试 ≤2 次 | 重试内拉起成功 | 仍失败 → KernelStartupError | 日志可查死因 |
+| 冷启动超时 | 等待 > timeout（默认 30s） | INKFLOW_READY/端口文件均未到达 | — | KernelStartupError | env INKFLOW_KERNEL_TIMEOUT 覆盖 |
+| spawn 命令不存在 / %APPDATA% 不可写 | 打包缺 serve / 权限问题 | — | — | KernelStartupError（明确提示） | 日志记录路径 |
+| 生命周期（detach） | 拉起成功 | CREATE_NEW_PROCESS_GROUP + CREATE_NO_WINDOW，Popen 不 wait | 内核常驻到显式退出（不随调用方退出） | — | 无空闲超时回收（ADR-030 D2=A）；显式退出控制面归 GUI 托盘/未来 daemon stop |
+| 内核已由他方拉起 | 状态文件 + pid 存活 + /health 200 | 正常复用（不关心拉起方） | KernelHandle(reused=True) | — | 多内核并存禁止（互斥锁 + 唯一路径） |
+
+### 14.3 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow kernel status | 无 | 读 kernel.json 输出内核状态 | 运行中：{ok:true, data:{running:true, pid, port, version}}；未运行：{ok:true, data:{running:false}} | — | dev 标注非用户面；绝不拉起内核（查询≠拉起）；退出码恒 0（状态查询不因未运行失败） |
+
+### 14.4 验收锚点（写入 §13 验收标准）
+
+- A1：无内核 → ensure_kernel 拉起 → kernel.json 写入 → 二次调用复用（pid 不变）→ M5
+- A2：kill 内核 → 残留 kernel.json 判定 stale → 重新拉起（新 pid）→ M6
+- A3：mock CreateMutexW 返回 183 → 进入轮询不放 Popen → 复用首个客户端写入状态 → M2
+- A4：kernel.json version 1.2.0 vs 客户端 2.0.0 → 拒绝复用 → M3
+- A5：冷启动超时 / 秒退重试 ≤2 后仍失败 → KernelStartupError → M2

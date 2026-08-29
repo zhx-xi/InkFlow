@@ -1098,3 +1098,48 @@ pnpm --filter inkflow-electron test:e2e e2e-shell e2e-tray
 - **Q3 表单草稿守卫形态**：A. 自动保存（导航前 flush 全部未提交修改，失败 toast）；B. 跳页提示（dirty 时 confirm 对话框拦截导航）；C. **综合（建议）**：default_words 类文本输入自动 flush（卸载路径，保存动作与导航解耦）+ 保存失败 toast 可见；对话框表单（模板/模型）保持显式保存/取消语义（关闭即取消是标准对话框 UX，半截输入被自动提交反而是数据污染）；Agent 面板已是即改即存无需守卫。**建议 C**——B 的「弹确认框」对单个数字输入框是过度打扰（用户可能只是路过设置页），且 useBlocker 在 HashRouter 的可用性未验证（§12 D7）。**✅ 已确认（用户拍板：选项 C，2026-08-08）**——正文即按综合守卫设计（§5.4/§12 D7）。
 
 > 说明：Issue #152 评论区已拍板范围 ①②③ + 归口 ④⑤（2026-08-07），本表 Q1-Q3 为 spec 起草阶段补充识别的设计决策点；拍板后正文按结论修订并留痕。
+
+---
+
+## 15. 动作确认
+
+> 每个端点/组件流的完整状态流表（基于 §3 API 契约 + §5 双轨加载/主进程桥接/表单守卫 + §7 边界事实，不重复）。
+
+### 15.1 端点状态流
+
+| 端点 | 前置 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|------|--------------|------|------|------|
+| GET /api/v1/settings | 带 X-InkFlow-Token | 读全量已持久化键 → 与 AppSettings 默认值合并（缺失键补齐，不落库） | 200 全量 6 字段 | 401（token 缺失/无效） | 首次空表 → 全默认；脏数据键（非法 JSON/类型不匹配）防御性忽略，仍 200 |
+| PATCH /api/v1/settings | 带 X-InkFlow-Token | 校验 DTO（extra='forbid' + Literal 枚举）→ 非 None 字段白名单 → JSON 编码 upsert → 返回合并后全量 | 200 全量对象 | 422（未知字段「Extra inputs are not permitted」/非法枚举/空 body「至少提供一个设置字段」）；401；500（DB 异常） | 幂等 upsert；响应恒全量（客户端免二次 GET）；未知字段 422 显式暴露前端拼写错误（#105 教训） |
+
+### 15.2 前端加载与 setter 状态流（双轨）
+
+| 流程 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| 启动加载（initFromBackend） | store 快照已建（localStorage 'inkflow.ui'） | ensureApiReady（15s 兜底）→ GET /settings → 覆盖 store + 回写缓存 → 主进程桥接 | 后端权威覆盖 + localStorage 回写 + IPC 推送（close_behavior 非 tray / tray_hint_dismissed=true） | 后端不可达/401 → 保持快照继续运行 + console.warn（不弹 toast 不阻塞 UI） | 首帧零闪烁（同步快照）；旧 localStorage 自动接管（无迁移提示） |
+| theme 覆盖三分支 | GET 返回 theme | 后端非 paper → 覆盖；paper + 本地有记录 → 保留本地记录值；paper + 本地无记录 → 不覆盖 | 跨设备/重启保留用户显式选择 | — | 后端 'paper' = 「无显式选择」；系统深色跟随 = 前端首帧策略 |
+| 视觉 setter（theme/bg/lang/font） | 用户选择 | 乐观更新 store + 回写 localStorage → fire-and-forget PATCH | 无动作（响应全量对象可顺手校验） | err toast「保存失败」+ 本地值保留（不回滚） | 下次启动以后端为准兜底；视觉设置不做「PATCH 成功才生效」 |
+| 行为 setter（close_behavior） | 用户切换 Select | PATCH 持久化成功 → IPC settings:set-close-behavior → store 更新 + 回写 | 运行时行为切换 + 持久化一致 | PATCH 失败 → Select 回弹 + err toast，不推送 IPC | 持久化失败 = 行为不切换（诚实一致）；启动窗口期 <1s 主进程按默认 'tray' 拦截 |
+| 首次提示开关（tray_hint_dismissed） | 用户切换 Switch | PATCH → 成功 → IPC settings:dismiss-tray-hint → 主进程置位 | 本次会话不再提示 | PATCH 失败 → err toast | 开关是唯一入口（F31 tray-hint 事件无 renderer 消费端）；打开（false）仅写后端，主进程保持 true 无害（重启后初始化对齐） |
+| 浏览器 dev（无 Electron） | — | store setter PATCH 后端成功，IPC 可选链吞掉 | 仅持久化 | — | 运行时行为无从生效（dev 语义完整）；close_behavior 显示 store 默认 'tray' |
+
+### 15.3 default_words 表单守卫状态流
+
+| 输入路径 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|----------|------|------|------|------|------|
+| onChange | — | 本地 state + dirty 标记（ref 镜像） | dirty=true | — | valueRef 镜像保证卸载 flush 携带最新输入值 |
+| onBlur / 切分类 / 卸载 cleanup | dirty=true | flushDefaultWords() | — | — | 卸载路径 fire-and-forget（cleanup 不能 await）；PATCH 已发出 |
+| 空值/非法数字 | — | 不 PATCH | dirty 保持 | — | 静默不弹 toast（现状语义） |
+| n < 1000 | — | 不 PATCH + err toast | — | toast「保存失败」 | 与后端 ge=1000 对齐 |
+| 合法值 | — | PATCH /projects/{id} {config: {...default_words}} | setConfig 同步 + 清 dirty + ok toast | err toast「保存失败」+ dirty 保持 + 不 setConfig | 失败值只留输入框，不污染 agent store（缺陷 #4 修复） |
+| 切项目 | currentProjectId 变化 | 重读新项目 config.default_words 初始化 + 清 dirty | 输入框显示新项目值 | — | dirty 编辑丢弃 = 有意行为（上下文切换） |
+| 无当前项目 | — | 不保存（return） | — | — | 不 PATCH（评审 🟢 修订） |
+
+### 15.4 验收锚点（写入 §13 验收标准）
+
+- A1：default_words 修改后直接跳页 → 返回值保留（卸载 flush PATCH 断言 + project store 同步）→ M1
+- A2：PATCH theme=night → 200 全量 → GET 回读一致；重启（二次 launch 同数据目录）仍为 night → M3
+- A3：PATCH 未知字段 / 非法枚举 / 空 body 各 422 + detail 断言；无 token → 401 → M8
+- A4：后端不可达 → localStorage 兜底，UI 不阻塞不崩 → M5
+- A5：close_behavior=quit PATCH 成功后才 IPC 推送；失败回弹不推送 → M6
+- A6：启动加载三分支（后端 night 覆盖 / paper+本地有记录保留本地 / paper+无记录保留系统深色策略）→ M4

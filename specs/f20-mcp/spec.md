@@ -682,3 +682,45 @@ F20（#49，0.9.0 已交付）让 InkFlow 通过 MCP 协议暴露 15 个工具�
 ## 待澄清问题（≤3）
 
 1. ~~config_template 是否按宿主分键~~ ✅ 已确认（用户拍板：方案 A，三宿主 Claude/Cursor/Hermes 分键 `claude`/`cursor`/`hermes`，值 = 宿主 mcpServers JSON，command 填 client_path）——正文 §3.2 已按此定稿。
+
+---
+
+## 14. 动作确认
+
+> 每个 MCP 方法/工具调用的完整状态流表（基于 §3 MCP 协议契约 + §4 工具面渐进发现 + §5 薄客户端经 HTTP + §7 边界事实，不重复）。
+
+### 14.1 MCP 协议方法状态流
+
+| 方法 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| initialize | agent 拉起 inkflow-mcp（stdio 会话） | 能力协商 | 返回 server 能力（tools + 协议版本） | — | 对齐 MCP 规范版本 |
+| tools/list | server 启动装配完成 | 从 mcp/tools/ 静态注册表动态装配返回工具面 | 恰好 15 工具（name/description/inputSchema 非空） | — | 不触发 ensure_kernel（纯装配无 HTTP）；本期静态 15 工具不按内核能力裁剪（§10 登记） |
+| tools/call | agent 传工具名 + 参数 | Pydantic schema 校验 → ensure_kernel → InkFlowHTTPClient 转发 → 序列化 result | isError:false + {ok:true, data:...} | isError:true + {ok:false, error:...} | 序列化 ensure_ascii=False（中文不转义） |
+| ping | — | 保活 | 立即响应 | — | — |
+| tool_search | — | 本地装配结果返回（与 tools/list 同源注册表） | 工具面自描述（工具名 + action 枚举） | — | 不经 HTTP（同 tools/list 豁免先例） |
+
+### 14.2 工具调用状态流（薄客户端经 HTTP）
+
+| 场景 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| 内核未运行 | 无 kernel.json | ensure_kernel 互斥拉起（F30）→ 继续调用 | 正常调用（首次 ~4.7s） | KernelStartupError → {ok:false, error: 内核启动失败...} + isError | 错误码 KERNEL_ERROR；冷启动协议复用 F30，MCP 层零逻辑 |
+| 内核已运行 | pid 存活 + /health 200 | ensure_kernel 复用 | 复用 KernelHandle（~19ms） | — | reused=True |
+| HTTP 2xx | 内核就绪 | InkFlowHTTPClient 请求（X-InkFlow-Token 头） | {ok:true, data:...} | — | base_url = http://127.0.0.1:{port}/api/v1 |
+| HTTP 404 | 实体不存在 | map_http_error | — | NOT_FOUND | detail 透传（兜底文案保证 error 非空） |
+| HTTP 422 | 参数校验失败 | map_http_error | — | VALIDATION_ERROR | detail 透传 |
+| HTTP 401 | token 失效 | map_http_error | — | CONFIG_ERROR（提示重启内核） | 罕见（ensure_kernel 已校验健康） |
+| HTTP 500 + LLM_ERROR 头 | write LLM 失败 | map_http_error | — | LLM_ERROR | writing router 响应头 |
+| HTTP 500 无头 | 其余内部错误 | map_http_error | — | INTERNAL_ERROR | 兜底「内部错误（无详情）」 |
+| 连接失败/超时 | 内核刚退出 | F38 §5.1 单次重试（重新 ensure_kernel）→ 仍失败 | 重试后成功 | KERNEL_ERROR | 单次重试防抖 |
+| 请求超时（30s） | — | httpx.TimeoutException | — | INTERNAL_ERROR | — |
+| 参数 schema 校验失败 | action 非法值/字段错误 | MCP SDK 层 Pydantic 校验 | — | isError（协议层，无业务码） | §7 #12 |
+| 工具函数未预期异常 | — | 工具捕获 → {ok:false, error:...}（F26 错误文本回填语义） | — | isError | error 永不为空（#634 兜底） |
+
+### 14.3 验收锚点（写入 §13 验收标准）
+
+- A1：tools/list 返回恰好 15 项（name/description/inputSchema 非空）→ M3
+- A2：无内核 → MCP 工具调用 → 自动拉起内核 → 调用成功 → M4/M6-c
+- A3：manage_project create → POST /projects + body 字段透传（mock InkFlowHTTPClient 断言）→ M2
+- A4：错误响应 → 错误码映射（复用 map_http_error）→ M2
+- A5：import inkflow.mcp.server 后 sys.modules 无 domain.services / llm / database → M3
+- A6：打包版 inkflow-mcp.exe 真实启动 → initialize + tools/list 返回 15 工具 → M6-a

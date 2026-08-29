@@ -164,3 +164,37 @@
 新增 **ADR-042**（决策先于代码）：LangSmith 可观测性接入——默认关 + SaaS 优先。ADR-019 版本表在 0.12.0 收尾时补登记 F49/F50 行。
 
 > **注意**：本 spec 为 config 驱动横切类型，无独立数据表 / API / CLI 命令面（§2/§3/§5 明确）。
+
+---
+
+## 10. 动作确认
+
+> 每个组件方法流的完整状态流表（基于 §3 配置项 + §4 行为契约 + §5 边界事实，不重复）。
+
+### 10.1 组件方法流（resolve_langsmith_trace_env 纯函数）
+
+| 输入组合 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|---------|------|------|------|------|------|
+| enabled=False | 无 | 直接返回空 dict，不注入 | {} | — | 无副作用；默认关（用户拍板方案 C） |
+| enabled=True + key 空 | — | 返回 {} + logger.warning | {} | warning（非致命，不阻断启动） | 提示 key 缺失 |
+| enabled=True + key 非空 | — | 构造 3 键 env | LANGSMITH_TRACING=true + LANGSMITH_API_KEY + LANGSMITH_PROJECT | — | PROJECT 空串回退 "inkflow" |
+| enabled=True + key 非空 + endpoint 非空 | — | 追加 LANGSMITH_ENDPOINT | 4 键 env | — | 自托管端点预留（§2 范围外声明） |
+| 任意组合重复调用 | — | 纯函数多次求值 | 结果一致（幂等） | — | 无外部副作用 |
+
+### 10.2 组件方法流（apply_langsmith_tracing 副作用）
+
+| 输入组合 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|---------|------|------|------|------|------|
+| disabled（enabled=False） | 无 | 先无条件 pop 4 键 → resolve 返回 {} → 不 update | 4 键不在 env（清除残留） | — | 先 pop 再 update，幂等 |
+| enabled=True + key 非空 | — | pop 4 键 → resolve 非空 → os.environ.update + logger.info | env 注入 + info 日志（project=%s） | — | 注入点 = api/app.py lifespan() 顶段（setup_logging 之前，早于首次 ChatOpenAI 实例化）；REST/CLI/MCP 全入口单点覆盖 |
+| 上次已注入、本次 disabled | — | pop 4 键 | LANGSMITH_TRACING / API_KEY / PROJECT / ENDPOINT 全部 is None | — | 测试/重启幂等（§6.1 断言） |
+| key 含异常字符/格式 | — | 原样注入 | 透传 | — | 不校验（LangSmith SDK 处理） |
+| 重复调用 | — | 先 pop 再 update | 幂等 | — | 无脏残留 |
+
+### 10.3 验收锚点（写入 §6 测试策略）
+
+- A1：enabled=False → resolve 返回 {} 且 apply 后 LANGSMITH_TRACING 不在 env → §6.1 用例 1-2
+- A2：enabled=True + key → resolve 返回 4 键精确值（TRACING=="true" / PROJECT=="inkflow"）→ §6.1 用例 3
+- A3：enabled=True + key 空 → resolve 返回 {} + warning，启动不被阻断 → §6.1 用例 4
+- A4：endpoint 非空 → 含 LANGSMITH_ENDPOINT；project 空串 → 回退 "inkflow" → §6.1 用例 5-6
+- A5：连续两次 apply → env 状态一致；disabled 后 4 键全部清除 → §6.1 用例 7-8
