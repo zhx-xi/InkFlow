@@ -441,7 +441,125 @@ class ToolAuth:
 - **Q3: 地图/时间线/伏笔 读工具命名与分页**——list_maps / list_timeline_events 沿用 reader_tools `_fetch_all_pages` 分页模式（limit=50 循环），不引新分页机制；**建议维持**（实现确认）。
 
 > **关联**：ADR-043（工具面矩阵 + 分阶段）· Issue #766（0.12.1）· spec 依据 F26 agent-tools（装配模式复用）。
-> **范围边界**：本 spec 只覆盖阶段① 读+写工具；删除授权（阶段②）与分段控件**不属本批**，勿实现。
+> **范围边界**：阶段① 读+写工具已合入 main（§1-§5）；阶段② 删除 HITL 授权 + 分段控件 + 阶段③ agent 链调用见 §6-§7。
+
+---
+
+## 6. 阶段②：删除 HITL 授权（增量契约）
+
+> ADR-043 §2-§3 落地细化。阶段① 全部合入 main 后，阶段② 交付删除类工具 + per-conversation 授权状态域 + HITL 中断 + 前端三态分段控件。
+
+### 6.1 删除工具清单
+
+| 域 | 工具 | 包装服务方法 | 备注 |
+|---|---|---|---|
+| 设定库·角色 | `delete_character` | character_service.hard_delete(id) | F9 已有 |
+| 设定库·世界观 | `delete_world_setting` | world_service.hard_delete(id) | F10 |
+| 设定库·大纲 | `delete_outline` | outline_service.hard_delete(id) | F11 |
+| 设定库·地图 | `delete_map` | map_service.hard_delete(id) | F36，含 cleanup |
+| 设定库·时间线 | `delete_timeline_event` | timeline_service.hard_delete(id) | F12 |
+| 设定库·伏笔 | `delete_foreshadowing` | foreshadowing_service.hard_delete(id) | F13 |
+| 记忆 | `memory_remove` | memory_service.delete_preference(id) | F28 |
+
+> 删除工具**不进静态 TOOL_REGISTRY**（CLI tools list 不枚举），由装配期守卫决定是否注册。
+
+### 6.2 权限状态域
+
+```python
+# domain/models/agent_tools.py 追加
+@dataclass
+class ToolAuth:
+    """删除授权状态——per-conversation，由前端分段控件设置。"""
+    delete_permission: str = "manual"  # "manual" | "ask_once" | "auto"
+```
+
+- **manual**（默认）：删除工具**不注册**，AI 无法调用删除。
+- **ask_once**：删除工具注册；AI 调用删除 → 工具内部触发 `interrupt()`（deepagents HITL）→ 前端呈现确认弹窗 → 用户批准/拒绝**本次** → 结果回灌继续。批准后**本次**执行删除，不升级为 auto。
+- **auto**：删除工具注册；AI 调用删除**直接执行**，不触发 HITL。
+
+### 6.3 HITL 中断机制
+
+复用 F44 `book_agentic_pipeline.py` 的 `interrupt()` 模式（ADR-043 §2 复用 #456）：
+
+```python
+# 删除工具 func 内部（ask_once 模式）：
+from langgraph.types import interrupt
+payload = {"tool": "delete_character", "entity_id": "<id>", "entity_name": "<name>"}
+decision = interrupt(payload)  # 暂停，等待用户响应
+if not decision.get("approved"):
+    return json.dumps({"ok": False, "error": "用户拒绝删除"}, ensure_ascii=False)
+# 批准 → 执行删除
+```
+
+- **ChatAgentService 扩展**：`stream_events` 遇 `__interrupt__` 帧 → 发送 `interrupt` SSE 帧（`type: "interrupt"`, `payload: {...}`）→ 前端弹窗。
+- **resume 端点**：`POST /chat/resume` body `{conversation_id, approved: bool}` → ChatAgentService 调用 `agent.invoke(..., command=Command(resume={"approved": approved}))` 续跑。
+- **auto 模式**：工具 func 直接执行删除，不 interrupt。
+
+### 6.4 前端三态分段控件
+
+ChatPanel 工具调用区域新增**分段控件**（非下拉、非闪电按钮）：
+
+```
+[手动] [一次确认] [全自动]
+```
+
+- 控件形态：三按钮分段组（`SegmentedControl` 风格），选中态高亮，未选低对比度。
+- 文案/状态映射（i18n）：
+  - `manual` → `write.chat.deleteMode.manual`（默认；「删除不可用」tooltip）
+  - `ask_once` → `write.chat.deleteMode.askOnce`（「每次删除需确认」tooltip）
+  - `auto` → `write.chat.deleteMode.auto`（「AI 可直接删除」tooltip）
+- 控件变更 → `PATCH /chat/conversations/{id}` body `{delete_permission: "<mode>"}` → 后端更新 conversation 级权限状态。
+- HITL 确认弹窗：interrupt SSE 帧到达 → 渲染确认弹窗（实体名 + 删除确认/取消按钮）→ 用户点击 → `POST /chat/resume`。
+
+### 6.5 装配点改动
+
+| 装配点 | 改动 |
+|---|---|
+| `deps_chat_agent.py::get_chat_agent_service` | 读 conversation 的 `delete_permission`；manual 时不注入删除工具；ask_once/auto 时注入删除工具（func 按 mode 分支 interrupt 或直接执行） |
+| `api/chat_stream.py` | `stream_events` 检测 `__interrupt__` 帧 → 发 interrupt SSE 帧 |
+| 新增 `api/chat_resume.py` | `POST /chat/resume` 端点 |
+| `domain/models/conversation.py` | Conversation 模型加 `delete_permission: str = "manual"` 字段 |
+| 前端 `ChatPanel.tsx` | 加分段控件 + HITL 确认弹窗 |
+
+### 6.6 验收标准（阶段②）
+
+- **M5** 删除工具契约测试（7 工具正例/拒绝/异常 → JSON 信封）——`pytest tests/unit/test_delete_tools.py`
+- **M6** HITL 中断 + resume 测试（ask_once → interrupt → approve → 删除成功；reject → 不删除）——`pytest tests/unit/test_delete_hitl.py`
+- **M7** 装配守卫测试（manual 不注入删除工具；auto 注入且不 interrupt）——`pytest tests/unit/test_delete_assembly.py`
+- **M8** 前端 vitest（分段控件三态切换 + PATCH + HITL 弹窗 + resume 调用）——`vitest ChatPanel.delete-auth.test.tsx`
+- **M9** 回归零失败
+
+---
+
+## 7. 阶段③：agent 链调用工具（增量契约）
+
+> ADR-043 D5 结论：agent 链**修改/删除配置不给 AI**——只给「执行/调用」。
+
+### 7.1 工具清单
+
+| 工具 | 包装服务方法 | 说明 |
+|---|---|---|
+| `agent_run` | agent_service.execute(PipelineExecuteRequest) | 启动一次 agent 链管线执行 |
+| `agent_call` | agent_entity_service.get + 单 agent 执行 | 调用单个 agent（Q1=A 拍板：复用 agent_entity_service） |
+
+### 7.2 ToolSpec 契约
+
+- **agent_run**：`description`="启动一次 agent 链管线执行"；args=PipelineExecuteRequest 字段（project_id 由 deps 绑定，schema 不含）；成功 `{"ok": true, "execution_id": "<id>", "status": "pending"}`。
+- **agent_call**：`description`="调用单个 agent 执行一次任务"；args=`{agent_id: str, input: str}`；成功 `{"ok": true, "result": "<输出文本>"}`。
+
+> agent 链配置修改/删除（roles/order/relations CRUD）**不给 AI**（D5）——属元配置，风险高。
+
+### 7.3 装配点
+
+- `deps_chat_agent.py`：注入 `agent_run` + `agent_call`（与阶段①工具同批装配）。
+- `agent_run` 包装 agent_service.execute——与 F4 管线执行同源。
+- `agent_call` 包装 agent_entity_service——读配置后单 agent 执行。
+
+### 7.4 验收标准（阶段③）
+
+- **M10** agent_run/agent_call 契约测试——`pytest tests/unit/test_agent_chain_tools.py`
+- **M11** 装配注入测试——mock 断言 build_agent_chain_tools 被调
+- **M12** 回归零失败
 
 ## 14. 动作确认
 
