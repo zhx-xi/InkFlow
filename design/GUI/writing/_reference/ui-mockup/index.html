@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="paper" data-bg="default" data-view="writing" data-lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InkFlow GUI 原型 v0 - 候选风格评审</title>
+<style>
+/* ============================================================
+   InkFlow GUI 原型 v0 — 三候选风格 × 背景变体 × 中英切换
+   设计语言: ui-design-taste（暖白纸张感/单强调色/低动效/长文排版）
+   ============================================================ */
+
+/* ---------- 1. 设计 Token（三风格三套，CSS 变量） ---------- */
+
+:root {
+  /* 布局常量（所有风格共用） */
+  --radius-s: 4px;   /* 小控件 */
+  --radius-m: 6px;   /* 输入/卡片 */
+  --radius-l: 8px;   /* 大面板 */
+  --font-ui: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", sans-serif;
+  --font-serif: "Noto Serif SC", "Source Han Serif SC", "SimSun", "宋体", Georgia, serif;
+  --font-kai: "KaiTi", "STKaiti", "楷体", "PingFang SC", serif;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur: 180ms;
+}
+
+/* 风格 1: 素笺 Paper — 暖白纸张 + 墨蓝强调（定稿方向忠实版） */
+[data-theme="paper"] {
+  --bg: #FAF9F7;            /* 暖白（非纯白） */
+  --surface: #FFFFFF;
+  --surface-2: #F3F1EC;     /* 次级面：侧栏/面板 */
+  --surface-3: #EBE8E1;     /* 悬停面 */
+  --ink: #2A2A28;           /* 主文字（暖黑） */
+  --ink-2: #6B6A66;         /* 次级文字 */
+  --ink-3: #A4A29B;         /* 弱文字/占位 */
+  --line: #E5E2DA;          /* 分隔线 */
+  --accent: #3B5B7C;        /* 墨蓝（饱和度 < 80%） */
+  --accent-ink: #FFFFFF;
+  --accent-weak: rgba(59, 91, 124, 0.10);
+  --ok: #4A7C59; --warn: #B07A2E; --err: #B04A3A;
+  --shadow: 0 1px 2px rgba(42, 42, 40, 0.05), 0 4px 16px rgba(42, 42, 40, 0.05);
+}
+[data-theme="paper"][data-bg="parchment"] {  /* 背景变体: 羊皮纸 */
+  --bg: #F4EFE6; --surface: #FBF8F1; --surface-2: #EFE9DC; --surface-3: #E7E0D0;
+}
+
+/* 风格 2: 夜航 Nocturne — 暖灰黑 + 暖金强调（夜间长写） */
+[data-theme="night"] {
+  --bg: #1A1A18;            /* 暖灰黑（非纯黑） */
+  --surface: #22221F;
+  --surface-2: #282823;
+  --surface-3: #32322C;
+  --ink: #E8E6E1;           /* 暖白文字 */
+  --ink-2: #9B988F;
+  --ink-3: #6E6B63;
+  --line: #34332E;
+  --accent: #C9A24B;        /* 暖金（低饱和） */
+  --accent-ink: #1A1A18;
+  --accent-weak: rgba(201, 162, 75, 0.13);
+  --ok: #8FAE8E; --warn: #C9A24B; --err: #C97B63;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+[data-theme="night"][data-bg="navy"] {  /* 背景变体: 墨蓝黑 */
+  --bg: #171A1E; --surface: #1E2228; --surface-2: #242A31; --surface-3: #2D343D;
+  --line: #2E3540;
+}
+
+/* 风格 3: 墨韵 Ink — 宣纸 + 墨黑 + 朱砂点缀（东方中文写作） */
+[data-theme="ink"] {
+  --bg: #F3EEE2;            /* 宣纸米黄 */
+  --surface: #FAF6EC;
+  --surface-2: #EFE9DA;
+  --surface-3: #E6DFCC;
+  --ink: #2B2A26;           /* 墨黑 */
+  --ink-2: #6E6A5E;
+  --ink-3: #A49F90;
+  --line: #DED6C2;
+  --accent: #A6402E;        /* 朱砂（点缀用，不做大面） */
+  --accent-ink: #FAF6EC;
+  --accent-weak: rgba(166, 64, 46, 0.09);
+  --ok: #5A7A58; --warn: #9A7B3C; --err: #A6402E;
+  --shadow: 0 1px 2px rgba(43, 42, 38, 0.06), 0 4px 16px rgba(43, 42, 38, 0.06);
+}
+[data-theme="ink"][data-bg="ochre"] {  /* 背景变体: 深褐纸 */
+  --bg: #EDE6D6; --surface: #F6F1E5; --surface-2: #E9E1CE; --surface-3: #E0D6BF;
+}
+
+/* ---------- 2. 基础 ---------- */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--ink);
+  background: var(--bg);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+button { font-family: inherit; font-size: 13.5px; cursor: pointer; }
+input, select, textarea { font-family: inherit; font-size: 14px; color: var(--ink); }
+::placeholder { color: var(--ink-3); }
+
+/* ---------- 3. 顶部评审控制栏（原型专用，产品里不存在） ---------- */
+.ctlbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  display: flex; align-items: center; gap: 14px;
+  padding: 8px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.ctlbar .brand { font-family: var(--font-serif); font-weight: 600; font-size: 14.5px; letter-spacing: 0.04em; }
+.ctlbar .brand small { font-family: var(--font-ui); font-weight: 400; font-size: 11px; color: var(--ink-3); margin-left: 6px; }
+.ctl-group { display: flex; align-items: center; gap: 6px; }
+.ctl-group + .ctl-group::before { content: ""; width: 1px; height: 16px; background: var(--line); margin: 0 6px; }
+.ctl-label { font-size: 11.5px; color: var(--ink-3); }
+.seg {
+  display: flex; border: 1px solid var(--line); border-radius: var(--radius-m);
+  overflow: hidden; background: var(--surface-2);
+}
+.seg button {
+  border: none; background: transparent; color: var(--ink-2);
+  padding: 4px 12px; font-size: 12.5px;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.active { background: var(--accent); color: var(--accent-ink); }
+/* 下拉选择（风格/语言/背景，可扩展） */
+.ctl-select {
+  padding: 4px 10px; font-size: 12.5px;
+  border: 1px solid var(--line); border-radius: var(--radius-m);
+  background: var(--surface-2); color: var(--ink);
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.ctl-select:hover { border-color: var(--ink-3); }
+.ctl-select:focus { outline: none; border-color: var(--accent); }
+.ctlbar .spacer { flex: 1; }
+.ctl-note { font-size: 11px; color: var(--ink-3); }
+
+/* ---------- 4. 应用框架 ---------- */
+.app {
+  display: flex; flex-direction: column;
+  height: 100vh;
+  padding-top: 42px;   /* 控制栏高度 */
+}
+.statusbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 4px 16px;
+  font-size: 11.5px; color: var(--ink-2);
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  transition: background var(--dur) var(--ease);
+}
+.statusbar .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); display: inline-block; margin-right: 6px; }
+.statusbar .right { margin-left: auto; display: flex; gap: 16px; }
+
+/* ---------- 5. 视图切换（原型里三个页面都渲染，按 data-view 显隐） ---------- */
+.view { display: none; flex: 1; min-height: 0; }
+body[data-view="writing"] .view-writing { display: flex; }
+body[data-view="projects"] .view-projects { display: block; overflow-y: auto; }
+body[data-view="agents"] .view-agents { display: block; overflow-y: auto; }
+
+/* ============================================================
+   写作页（核心）
+   ============================================================ */
+.write-main { display: flex; flex: 1; min-height: 0; }
+
+/* 左侧: 项目树（窄） */
+.sidebar {
+  width: 208px; flex-shrink: 0;
+  background: var(--surface-2);
+  border-right: 1px solid var(--line);
+  display: flex; flex-direction: column;
+  transition: background var(--dur) var(--ease);
+}
+.sidebar .proj-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px 8px;
+}
+.sidebar .proj-name {
+  font-family: var(--font-serif); font-weight: 600; font-size: 14.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sidebar .proj-seal { /* 项目印章: 所有风格均显示，颜色跟随主题强调色 */
+  display: block; width: 22px; height: 22px; border-radius: 3px;
+  background: var(--accent); color: var(--accent-ink);
+  font-family: var(--font-kai); font-size: 12px; line-height: 22px; text-align: center;
+  flex-shrink: 0;
+}
+.tree { flex: 1; overflow-y: auto; padding: 4px 8px 12px; }
+.tree .vol {
+  font-size: 11.5px; color: var(--ink-3);
+  padding: 10px 8px 4px; letter-spacing: 0.06em;
+}
+.tree .node {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; border-radius: var(--radius-s);
+  font-size: 13.5px; color: var(--ink-2);
+  cursor: pointer; border: none; background: transparent; width: 100%; text-align: left;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.tree .node:hover { background: var(--surface-3); color: var(--ink); }
+.tree .node.active { background: var(--accent-weak); color: var(--accent); font-weight: 500; }
+.tree .node .wc { margin-left: auto; font-size: 11px; color: var(--ink-3); }
+.sidebar .foot {
+  padding: 10px 14px; border-top: 1px solid var(--line);
+  font-size: 12px; color: var(--ink-2);
+  display: flex; align-items: center; gap: 6px;
+}
+
+/* 中间: 编辑器（内容为王） */
+.editor {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  transition: background var(--dur) var(--ease);
+}
+.editor .toolbar {
+  display: flex; align-items: center; gap: 4px;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--line);
+  opacity: 0.35;   /* 默认隐藏（弱化），hover 唤起 */
+  transition: opacity var(--dur) var(--ease);
+}
+.editor:hover .toolbar, .editor .toolbar:focus-within { opacity: 1; }
+.tbtn {
+  border: none; background: transparent; color: var(--ink-2);
+  padding: 4px 9px; border-radius: var(--radius-s); font-size: 12.5px;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.tbtn:hover { background: var(--surface-3); color: var(--ink); }
+.tbtn:active { transform: scale(0.97); }
+.tbtn.primary { background: var(--accent); color: var(--accent-ink); }
+.tbtn.primary:hover { background: var(--accent); opacity: 0.9; color: var(--accent-ink); }
+.editor .doc { flex: 1; overflow-y: auto; padding: 36px 56px 80px; }
+.doc-inner { max-width: 680px; margin: 0 auto; }
+.chapter-title {
+  font-family: var(--font-serif); font-weight: 600;
+  font-size: 24px; line-height: 1.5;
+  margin-bottom: 4px; letter-spacing: 0.02em;
+}
+[data-theme="night"] .chapter-title { font-family: var(--font-ui); font-weight: 600; }
+[data-theme="ink"] .chapter-title { font-family: var(--font-kai); font-weight: 600; }
+.chapter-meta { font-size: 12px; color: var(--ink-3); margin-bottom: 28px; }
+.prose { font-size: 16px; line-height: 1.85; color: var(--ink); }
+[data-theme="ink"] .prose { font-family: var(--font-serif); font-size: 16.5px; }
+.prose p { margin-bottom: 1.2em; text-indent: 2em; }  /* 中文长文首行缩进 */
+.prose .cursor {
+  display: inline-block; width: 2px; height: 1.1em; vertical-align: -0.18em;
+  background: var(--accent); margin-left: 2px;
+  animation: blink 1s steps(2, start) infinite;
+}
+@keyframes blink { to { visibility: hidden; } }
+
+/* SSE 流式生成区 */
+.stream-area {
+  margin-top: 8px;
+  border-top: 1px dashed var(--line);
+  padding-top: 18px;
+}
+.stream-head {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 12.5px; color: var(--ink-2); margin-bottom: 10px;
+}
+.stream-head .live {
+  font-size: 11px; color: var(--accent);
+  border: 1px solid var(--accent); border-radius: 999px; padding: 0 8px;
+  opacity: 0; transition: opacity var(--dur) var(--ease);
+}
+.stream-head .live.on { opacity: 1; }
+.stream-body {
+  font-size: 16px; line-height: 1.85;
+  min-height: 40px;
+}
+[data-theme="ink"] .stream-body { font-family: var(--font-serif); font-size: 16.5px; }
+.stream-foot { margin-top: 12px; font-size: 12px; color: var(--ink-3); display: flex; gap: 14px; }
+
+/* 右侧: 上下文面板（可折叠） */
+.context-panel {
+  width: 240px; flex-shrink: 0;
+  background: var(--surface-2);
+  border-left: 1px solid var(--line);
+  display: flex; flex-direction: column;
+  transition: background var(--dur) var(--ease);
+}
+.context-panel.collapsed { width: 0; border-left: none; overflow: hidden; }
+/* 折叠后的展开条（窄竖条，点击恢复） */
+.ctx-expand {
+  width: 26px; flex-shrink: 0;
+  border: none; border-left: 1px solid var(--line);
+  background: var(--surface-2); color: var(--ink-3);
+  font-size: 13px; display: none; cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.ctx-expand:hover { color: var(--accent); background: var(--surface-3); }
+.context-panel.collapsed + .ctx-expand { display: block; }
+.context-panel .ctx-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; font-size: 12.5px; color: var(--ink-2);
+  border-bottom: 1px solid var(--line);
+}
+.context-panel .ctx-body { flex: 1; overflow-y: auto; padding: 10px 12px; }
+.ctx-card { margin-bottom: 12px; }
+.ctx-card .cc-title { font-size: 12px; color: var(--ink-3); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+.ctx-card .cc-title::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--accent); opacity: 0.55; }
+.ctx-card .cc-body {
+  font-size: 13px; color: var(--ink-2); line-height: 1.6;
+  background: var(--surface); border-radius: var(--radius-m); padding: 8px 10px;
+  border: 1px solid var(--line);
+}
+.ctx-card .cc-body .tag { display: inline-block; font-size: 11px; color: var(--ink-2); background: var(--surface-3); border-radius: 3px; padding: 0 6px; margin: 2px 3px 2px 0; }
+
+/* ============================================================
+   项目页
+   ============================================================ */
+.proj-page { padding: 40px 48px; max-width: 1080px; margin: 0 auto; }
+.page-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 28px; }
+.page-title { font-family: var(--font-serif); font-size: 26px; font-weight: 600; }
+[data-theme="night"] .page-title { font-family: var(--font-ui); }
+[data-theme="ink"] .page-title { font-family: var(--font-kai); }
+.page-sub { color: var(--ink-3); font-size: 13px; margin-top: 2px; }
+.proj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.proj-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  padding: 18px 20px;
+  cursor: pointer;
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.proj-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); border-color: var(--ink-3); }
+.proj-card:active { transform: scale(0.985); }
+.proj-card .pc-name { font-family: var(--font-serif); font-size: 17px; font-weight: 600; margin-bottom: 2px; }
+[data-theme="ink"] .proj-card .pc-name { font-family: var(--font-kai); }
+.proj-card .pc-meta { font-size: 12.5px; color: var(--ink-2); display: flex; gap: 10px; margin-bottom: 14px; }
+.proj-card .pc-foot { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-3); }
+.proj-card .pc-foot .recent { margin-left: auto; }
+.proj-card .pc-bar { height: 3px; border-radius: 2px; background: var(--surface-3); margin-top: 12px; overflow: hidden; }
+.proj-card .pc-bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+.proj-card.new {
+  border-style: dashed; background: transparent;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ink-3); font-size: 14px; gap: 8px;
+  min-height: 150px;
+}
+.proj-card.new:hover { color: var(--accent); border-color: var(--accent); }
+.proj-card.writing { border-color: var(--accent); }
+.proj-card .writing-badge {
+  position: absolute; margin: -18px 0 0 -20px;
+  font-size: 10.5px; color: var(--accent-ink); background: var(--accent);
+  border-radius: 0 var(--radius-s) 0 var(--radius-s); padding: 2px 8px;
+}
+
+/* 对话框 */
+.dialog-mask {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.3);
+  display: none; align-items: center; justify-content: center; z-index: 200;
+}
+body[data-dialog="newproj"] .dialog-mask { display: flex; }
+.dialog {
+  width: 440px; background: var(--surface);
+  border-radius: var(--radius-l); box-shadow: var(--shadow);
+  padding: 24px 26px;
+  border: 1px solid var(--line);
+}
+.dialog h3 { font-size: 17px; font-weight: 600; margin-bottom: 18px; font-family: var(--font-serif); }
+[data-theme="ink"] .dialog h3 { font-family: var(--font-kai); }
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 12.5px; color: var(--ink-2); margin-bottom: 5px; }
+.field input, .field select {
+  width: 100%; padding: 7px 10px;
+  border: 1px solid var(--line); border-radius: var(--radius-m);
+  background: var(--surface-2); outline: none;
+  transition: border-color var(--dur) var(--ease);
+}
+.field input:focus, .field select:focus { border-color: var(--accent); }
+.dialog .row { display: flex; gap: 12px; }
+.dialog .row .field { flex: 1; }
+.dialog .d-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+/* ============================================================
+   Agent 配置页
+   ============================================================ */
+.agent-page { padding: 40px 48px; max-width: 860px; margin: 0 auto; }
+.section-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  padding: 22px 26px;
+  margin-bottom: 20px;
+}
+.section-card h4 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.section-card .sec-desc { font-size: 12.5px; color: var(--ink-3); margin-bottom: 18px; }
+.agent-list { display: flex; flex-direction: column; gap: 4px; }
+.agent-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 14px; border-radius: var(--radius-m);
+  border: 1px solid var(--line); background: var(--surface-2);
+  transition: background var(--dur) var(--ease);
+}
+.agent-row:hover { background: var(--surface-3); }
+.agent-row .a-role {
+  width: 34px; height: 34px; border-radius: var(--radius-s); flex-shrink: 0;
+  background: var(--accent-weak); color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-serif); font-weight: 600; font-size: 15px;
+}
+.agent-row .a-info { flex: 1; }
+.agent-row .a-name { font-size: 14px; font-weight: 500; }
+.agent-row .a-desc { font-size: 12px; color: var(--ink-3); }
+.agent-row .a-tag { font-size: 11px; color: var(--ink-3); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+/* 开关 */
+.switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch .track {
+  position: absolute; inset: 0; border-radius: 999px;
+  background: var(--surface-3); transition: background var(--dur) var(--ease);
+}
+.switch .track::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px; border-radius: 50%; background: var(--surface);
+  transition: transform var(--dur) var(--ease);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+.switch input:checked + .track { background: var(--accent); }
+.switch input:checked + .track::after { transform: translateX(16px); }
+/* 模型字段 */
+.model-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.model-grid .field.wide { grid-column: 1 / -1; }
+.key-row { display: flex; gap: 8px; }
+.key-row input { flex: 1; }
+.btn {
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+  padding: 6px 14px; border-radius: var(--radius-m); font-size: 13px;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  white-space: nowrap;
+}
+.btn:hover { border-color: var(--ink-3); background: var(--surface-3); }
+.btn:active { transform: scale(0.98); }
+.btn.solid { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.solid:hover { opacity: 0.92; background: var(--accent); border-color: var(--accent); }
+.btn.ghost { background: transparent; border-color: var(--line); color: var(--ink-2); }
+/* 温度滑杆 */
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+
+/* ---------- 6. 设计 Token 评审面板 ---------- */
+.token-panel {
+  position: fixed; right: 14px; bottom: 14px; z-index: 90;
+  width: 210px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius-l);
+  box-shadow: var(--shadow); padding: 12px 14px;
+  font-size: 12px;
+}
+.token-panel h5 { font-size: 11.5px; color: var(--ink-3); margin-bottom: 8px; letter-spacing: 0.06em; }
+.token-panel .swatches { display: flex; gap: 5px; margin-bottom: 8px; }
+.token-panel .sw { width: 22px; height: 22px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1); }
+.token-panel .tp-row { display: flex; justify-content: space-between; color: var(--ink-2); margin-bottom: 3px; }
+.token-panel .tp-row b { color: var(--ink); font-weight: 500; }
+
+/* ---------- 7. 动效降级 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* ---------- 8. 窄窗口兜底 ---------- */
+@media (max-width: 900px) {
+  .context-panel { display: none; }
+  .sidebar { width: 160px; }
+  .editor .doc { padding: 24px 24px 60px; }
+  .proj-page, .agent-page { padding: 24px; }
+}
+</style>
+</head>
+<body data-theme="paper" data-bg="default" data-view="writing" data-lang="zh">
+
+<!-- ═══════════ 评审控制栏（原型专用） ═══════════ -->
+<div class="ctlbar">
+  <div class="brand"><img src="../../assets/inkflow-icon.svg" id="brandLogo" alt="InkFlow" style="width:22px;height:22px;vertical-align:-5px;margin-right:7px">InkFlow<small>GUI 原型 v0 · 风格评审</small></div>
+  <div class="ctl-group">
+    <span class="ctl-label" data-i18n="ctl.style">风格</span>
+    <select id="themeSelect" class="ctl-select">
+      <option value="paper" data-i18n-opt="theme.paper">素笺 · 纸张</option>
+      <option value="night" data-i18n-opt="theme.night">夜航 · 深色</option>
+      <option value="ink" data-i18n-opt="theme.ink">墨韵 · 东方</option>
+    </select>
+  </div>
+  <div class="ctl-group">
+    <span class="ctl-label" data-i18n="ctl.bg">背景</span>
+    <select id="bgSelect" class="ctl-select">
+      <option value="default" data-i18n-opt="bg.default">默认</option>
+      <option value="parchment" data-i18n-opt="bg.parchment" data-bg-for="paper">羊皮纸</option>
+      <option value="navy" data-i18n-opt="bg.navy" data-bg-for="night">墨蓝黑</option>
+      <option value="ochre" data-i18n-opt="bg.ochre" data-bg-for="ink">深褐纸</option>
+    </select>
+  </div>
+  <div class="ctl-group">
+    <span class="ctl-label" data-i18n="ctl.lang">语言</span>
+    <select id="langSelect" class="ctl-select">
+      <option value="zh">中文</option>
+      <option value="en">EN</option>
+    </select>
+  </div>
+  <div class="spacer"></div>
+  <div class="ctl-group">
+    <span class="ctl-label" data-i18n="ctl.view">视图</span>
+    <div class="seg" id="viewSeg">
+      <button data-view-val="writing" class="active" data-i18n="view.writing">写作页</button>
+      <button data-view-val="projects" data-i18n="view.projects">项目页</button>
+      <button data-view-val="agents" data-i18n="view.agents">Agent 配置</button>
+    </div>
+  </div>
+  <div class="ctl-note" data-i18n="ctl.note">评审用 · 非产品界面</div>
+</div>
+
+<!-- ═══════════ 应用框架 ═══════════ -->
+<div class="app">
+  <div class="statusbar">
+    <span><span class="dot"></span><span data-i18n="sb.kernel">内核已连接</span> · 127.0.0.1:53xxx</span>
+    <span><span data-i18n="sb.model">模型</span>: deepseek/deepseek-chat</span>
+    <span class="right">
+      <span><span data-i18n="sb.save">自动保存</span> 15:32</span>
+      <span><span data-i18n="sb.words">字数</span> 1,234</span>
+    </span>
+  </div>
+
+  <!-- ═══════════ 写作页 ═══════════ -->
+  <div class="view view-writing">
+    <div class="write-main">
+      <!-- 左: 项目树 -->
+      <aside class="sidebar">
+        <div class="proj-head">
+          <span class="proj-name">青云志</span>
+          <span class="proj-seal">云</span>
+        </div>
+        <div class="tree">
+          <div class="vol" data-i18n="tree.v1">第一卷 · 初入山门</div>
+          <button class="node active"><span>第一章 试炼场</span><span class="wc">2,347</span></button>
+          <button class="node"><span>第二章 藏书阁</span><span class="wc">1,980</span></button>
+          <button class="node"><span>第三章 灵脉觉醒</span><span class="wc">2,105</span></button>
+          <div class="vol" data-i18n="tree.v2">第二卷 · 宗门内务</div>
+          <button class="node"><span>第四章 杂役弟子</span><span class="wc">2,012</span></button>
+          <button class="node"><span>第五章 丹房风波</span><span class="wc">1,876</span></button>
+        </div>
+        <div class="foot">☰ <span data-i18n="tree.new">新建章节</span></div>
+      </aside>
+
+      <!-- 中: 编辑器 -->
+      <main class="editor">
+        <div class="toolbar">
+          <button class="tbtn" data-i18n="tb.undo">撤销</button>
+          <button class="tbtn" data-i18n="tb.redo">重做</button>
+          <button class="tbtn" data-i18n="tb.bold">加粗</button>
+          <button class="tbtn" data-i18n="tb.link">链接</button>
+          <span style="flex:1"></span>
+          <button class="tbtn" data-i18n="tb.revise">修订</button>
+          <button class="tbtn primary" id="btnContinue" data-i18n="tb.continue">续写</button>
+          <button class="tbtn" id="btnGenerate" data-i18n="tb.generate">生成</button>
+        </div>
+        <div class="doc">
+          <div class="doc-inner">
+            <div class="chapter-title">第一章 试炼场</div>
+            <div class="chapter-meta" data-i18n="ch.meta">2026-08-03 · 大纲: 主角首次踏入试炼场 · 字数 2,347</div>
+            <div class="prose">
+              <p>清晨的薄雾尚未散尽，青云宗的试炼场已经人声鼎沸。数百名新入门的弟子沿着青石阶排成两列，衣角被山风掀起，露出袖口绣着的云纹。</p>
+              <p>沈砚站在队伍末尾，掌心微微出汗。他抬头望向试炼场中央那座九丈高的石台，石台表面刻满符文，在晨光里泛着幽蓝的光。负责监考的执事长老负手而立，目光扫过人群，落在他身上时顿了一顿。</p>
+              <p>「第二轮，沈砚。」</p>
+              <p>他深吸一口气，抬脚走向石台。身后的议论声渐渐低下去，只剩山风穿过松林的呜咽。石台边缘的符文在他接近时忽然亮起，像一条苏醒的蛇，顺着他的脚踝盘旋而上。</p>
+              <p>「灵根……竟是五行俱全？」长老的声音第一次带上了一丝起伏。</p>
+            </div>
+            <!-- SSE 流式生成区（模拟） -->
+            <div class="stream-area">
+              <div class="stream-head">
+                <span data-i18n="stream.title">AI 续写</span>
+                <span class="live" id="liveTag" data-i18n="stream.live">生成中</span>
+                <span style="flex:1"></span>
+                <button class="tbtn" id="btnStop" style="display:none" data-i18n="stream.stop">停止</button>
+              </div>
+              <div class="stream-body" id="streamBody"></div>
+              <div class="stream-foot">
+                <span id="streamStats" data-i18n="stream.idle">点击「续写」体验逐 token 流式渲染（模拟）</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- 右: 上下文面板 -->
+      <aside class="context-panel" id="ctxPanel">
+        <div class="ctx-head">
+          <span data-i18n="ctx.title">上下文注入</span>
+          <button class="tbtn" id="btnCtxFold" title="折叠">»</button>
+        </div>
+        <div class="ctx-body">
+          <div class="ctx-card">
+            <div class="cc-title" data-i18n="ctx.characters">角色</div>
+            <div class="cc-body"><span class="tag">沈砚</span><span class="tag">执事长老</span><span class="tag">林晚晴</span></div>
+          </div>
+          <div class="ctx-card">
+            <div class="cc-title" data-i18n="ctx.world">世界观</div>
+            <div class="cc-body" data-i18n="ctx.worldBody">青云宗 · 修仙 · 五行灵根体系；试炼场为入门考核地，符文石台可测灵根属性。</div>
+          </div>
+          <div class="ctx-card">
+            <div class="cc-title" data-i18n="ctx.outline">大纲</div>
+            <div class="cc-body" data-i18n="ctx.outlineBody">第一卷主线: 主角入门 → 测出五行俱全灵根 → 被长老收为亲传。</div>
+          </div>
+          <div class="ctx-card">
+            <div class="cc-title" data-i18n="ctx.foreshadow">伏笔</div>
+            <div class="cc-body" data-i18n="ctx.foreshadowBody">「五行俱全灵根」→ 伏笔 #3（回收点: 第二卷丹房篇）</div>
+          </div>
+        </div>
+      </aside>
+      <!-- 折叠后的展开条 -->
+      <button class="ctx-expand" id="btnCtxExpand" title="展开上下文">«</button>
+    </div>
+  </div>
+
+  <!-- ═══════════ 项目页 ═══════════ -->
+  <div class="view view-projects">
+    <div class="proj-page">
+      <div class="page-head">
+        <div>
+          <div class="page-title" data-i18n="pj.title">我的项目</div>
+          <div class="page-sub" data-i18n="pj.sub">本地存储 · 自动存档 · 断网可用</div>
+        </div>
+        <button class="btn solid" id="btnNewProj" data-i18n="pj.new">新建项目</button>
+      </div>
+      <div class="proj-grid">
+        <div class="proj-card writing">
+          <div class="writing-badge" data-i18n="pj.writing">写作中</div>
+          <div class="pc-name">青云志</div>
+          <div class="pc-meta"><span data-i18n="pj.genre">仙侠</span> · <span data-i18n="pj.words">目标</span> <span data-i18n="pj.w1">120 万字</span> · <span data-i18n="pj.c1">第 5 章 / 12 章</span></div>
+          <div class="pc-foot"><span data-i18n="pj.lang">中文</span><span class="recent" data-i18n="pj.t1">2 小时前</span></div>
+          <div class="pc-bar"><i style="width:42%"></i></div>
+        </div>
+        <div class="proj-card">
+          <div class="pc-name">雾城档案</div>
+          <div class="pc-meta"><span data-i18n="pj.genre">悬疑</span> · <span data-i18n="pj.words">目标</span> <span data-i18n="pj.w2">40 万字</span> · <span data-i18n="pj.c2">第 3 章 / 8 章</span></div>
+          <div class="pc-foot"><span data-i18n="pj.lang">中文</span><span class="recent" data-i18n="pj.t2">3 天前</span></div>
+          <div class="pc-bar"><i style="width:18%"></i></div>
+        </div>
+        <div class="proj-card">
+          <div class="pc-name">星港灯塔</div>
+          <div class="pc-meta"><span data-i18n="pj.genre">科幻</span> · <span data-i18n="pj.words">目标</span> <span data-i18n="pj.w3">60 万字</span> · <span data-i18n="pj.c3">第 1 章 / 6 章</span></div>
+          <div class="pc-foot"><span data-i18n="pj.lang">中文</span><span class="recent" data-i18n="pj.t3">1 周前</span></div>
+          <div class="pc-bar"><i style="width:8%"></i></div>
+        </div>
+        <div class="proj-card new" id="btnNewProj2">
+          <span>＋</span><span data-i18n="pj.newCard">新建项目</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新建项目对话框 -->
+  <div class="dialog-mask" id="dialogMask">
+    <div class="dialog">
+      <h3 data-i18n="dlg.title">新建项目</h3>
+      <div class="field">
+        <label data-i18n="dlg.name">书名</label>
+        <input id="dlgBookName" placeholder="例如: 青山入我怀">
+      </div>
+      <div class="row">
+        <div class="field">
+          <label data-i18n="dlg.genre">题材</label>
+          <select>
+            <option data-i18n-opt="genre.xianxia">仙侠</option>
+            <option data-i18n-opt="genre.mystery">悬疑</option>
+            <option data-i18n-opt="genre.scifi">科幻</option>
+            <option data-i18n-opt="genre.romance">言情</option>
+          </select>
+        </div>
+        <div class="field">
+          <label data-i18n="dlg.lang">语言</label>
+          <select>
+            <option data-i18n-opt="lang.zh">中文</option>
+            <option data-i18n-opt="lang.en">English</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label data-i18n="dlg.words">目标字数</label>
+        <input type="number" value="800000" style="width:120px">
+      </div>
+      <div class="d-actions">
+        <button class="btn ghost" id="btnCancel" data-i18n="dlg.cancel">取消</button>
+        <button class="btn solid" id="btnCreate" data-i18n="dlg.create">创建</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ Agent 配置页 ═══════════ -->
+  <div class="view view-agents">
+    <div class="agent-page">
+      <div class="page-head">
+        <div>
+          <div class="page-title" data-i18n="ag.title">Agent 与模型配置</div>
+          <div class="page-sub" data-i18n="ag.sub">API Key 本地加密存储 · 数据不出本机</div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <h4 data-i18n="ag.llmTitle">模型接入</h4>
+        <div class="sec-desc" data-i18n="ag.llmDesc">自带 Key（BYOK）或本地 Ollama 模型，Key 加密落盘后可随时吊销。</div>
+        <div class="model-grid">
+          <div class="field">
+            <label data-i18n="ag.provider">服务商</label>
+            <select>
+              <option>DeepSeek</option>
+              <option>OpenAI</option>
+              <option>Ollama (本地)</option>
+              <option data-i18n-opt="ag.custom">自定义兼容</option>
+            </select>
+          </div>
+          <div class="field">
+            <label data-i18n="ag.model">模型</label>
+            <select>
+              <option>deepseek-chat</option>
+              <option>deepseek-reasoner</option>
+            </select>
+          </div>
+          <div class="field wide">
+            <label data-i18n="ag.key">API Key</label>
+            <div class="key-row">
+              <input type="password" value="sk-xxxxxxxxxxxxxxxx" style="flex:1">
+              <button class="btn" data-i18n="ag.test">测试连接</button>
+            </div>
+          </div>
+          <div class="field">
+            <label data-i18n="ag.temp">温度 <span id="tempVal">0.8</span></label>
+            <input type="range" min="0" max="1" step="0.1" value="0.8" id="tempRange">
+          </div>
+          <div class="field">
+            <label data-i18n="ag.words">默认字数</label>
+            <select>
+              <option>2000</option>
+              <option>3000</option>
+              <option>5000</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <h4 data-i18n="ag.chainTitle">写作 Agent 链</h4>
+        <div class="sec-desc" data-i18n="ag.chainDesc">Architect 规划 → Writer 执笔 → Auditor 审校 → Reviser 修订，可按需开关。</div>
+        <div class="agent-list">
+          <div class="agent-row">
+            <div class="a-role">构</div>
+            <div class="a-info">
+              <div class="a-name" data-i18n="ag.architect">Architect 大纲架构师</div>
+              <div class="a-desc" data-i18n="ag.architectDesc">拆分章节结构、生成大纲与情节点</div>
+            </div>
+            <span class="a-tag" data-i18n="ag.gen">生成大纲</span>
+            <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
+          </div>
+          <div class="agent-row">
+            <div class="a-role">写</div>
+            <div class="a-info">
+              <div class="a-name" data-i18n="ag.writer">Writer 执笔</div>
+              <div class="a-desc" data-i18n="ag.writerDesc">按大纲逐章写作，SSE 流式输出</div>
+            </div>
+            <span class="a-tag" data-i18n="ag.stream">流式</span>
+            <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
+          </div>
+          <div class="agent-row">
+            <div class="a-role">审</div>
+            <div class="a-info">
+              <div class="a-name" data-i18n="ag.auditor">Auditor 审校</div>
+              <div class="a-desc" data-i18n="ag.auditorDesc">一致性审计: 角色 / 时间线 / 世界观 / 伏笔</div>
+            </div>
+            <span class="a-tag" data-i18n="ag.audit">4 维度</span>
+            <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
+          </div>
+          <div class="agent-row">
+            <div class="a-role">修</div>
+            <div class="a-info">
+              <div class="a-name" data-i18n="ag.reviser">Reviser 修订</div>
+              <div class="a-desc" data-i18n="ag.reviserDesc">按审校意见自动修订章节</div>
+            </div>
+            <span class="a-tag" data-i18n="ag.auto">自动</span>
+            <label class="switch"><input type="checkbox"><span class="track"></span></label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 设计 Token 评审面板 ═══════════ -->
+<div class="token-panel">
+  <h5 data-i18n="tp.title">设计 Token</h5>
+  <div class="swatches">
+    <div class="sw" style="background:var(--bg)" title="bg"></div>
+    <div class="sw" style="background:var(--surface)" title="surface"></div>
+    <div class="sw" style="background:var(--surface-2)" title="surface-2"></div>
+    <div class="sw" style="background:var(--ink)" title="ink"></div>
+    <div class="sw" style="background:var(--accent)" title="accent"></div>
+  </div>
+  <div class="tp-row"><span data-i18n="tp.font">字体</span><b id="tpFont">系统黑体</b></div>
+  <div class="tp-row"><span data-i18n="tp.accent">强调色</span><b id="tpAccent">#3B5B7C</b></div>
+  <div class="tp-row"><span data-i18n="tp.radius">圆角</span><b>4-8px</b></div>
+  <div class="tp-row"><span data-i18n="tp.motion">动效</span><b>≤180ms</b></div>
+  <div class="tp-row"><span data-i18n="tp.density">密度</span><b id="tpDensity">低（写作）</b></div>
+</div>
+
+<script>
+/* ═══════════════ 原型交互 ═══════════════ */
+(function () {
+  const root = document.documentElement;
+  const body = document.body;
+
+  /* ---- 1. 风格切换（下拉，新增风格只需加 option） ---- */
+  const themeSelect = document.getElementById('themeSelect');
+  const brandLogo = document.getElementById('brandLogo');
+  function applyTheme(theme) {
+    root.dataset.theme = theme;   // html 与 body 必须同步（body 自带 data-theme 会覆盖继承）
+    body.dataset.theme = theme;
+    // 品牌图标跟随主题: 深色风格用暖金版本保证对比度
+    brandLogo.src = theme === 'night'
+      ? '../../assets/inkflow-icon-dark.svg'
+      : '../../assets/inkflow-icon.svg';
+  }
+  themeSelect.addEventListener('change', () => {
+    applyTheme(themeSelect.value);
+    syncBgOptions();
+    syncTokens();
+  });
+
+  /* ---- 2. 背景变体（个性化「背景切换」演示） ---- */
+  const bgSelect = document.getElementById('bgSelect');
+  function applyBg(bg) {
+    root.dataset.bg = bg;
+    body.dataset.bg = bg;
+  }
+  function syncBgOptions() {
+    const theme = root.dataset.theme;
+    [...bgSelect.options].forEach(opt => {
+      opt.hidden = opt.dataset.bgFor && opt.dataset.bgFor !== theme;
+    });
+    // 当前风格不支持的变体回到默认
+    if (bgSelect.selectedOptions[0].hidden) bgSelect.value = 'default';
+    applyBg(bgSelect.value);
+  }
+  bgSelect.addEventListener('change', () => { applyBg(bgSelect.value); });
+
+  /* ---- 3. 语言切换（i18n 演示） ---- */
+  const I18N = {
+    zh: {
+      'ctl.style':'风格','ctl.bg':'背景','ctl.lang':'语言','ctl.view':'视图','ctl.note':'评审用 · 非产品界面',
+      'theme.paper':'素笺 · 纸张','theme.night':'夜航 · 深色','theme.ink':'墨韵 · 东方',
+      'bg.default':'默认','bg.parchment':'羊皮纸','bg.navy':'墨蓝黑','bg.ochre':'深褐纸',
+      'view.writing':'写作页','view.projects':'项目页','view.agents':'Agent 配置',
+      'sb.kernel':'内核已连接','sb.model':'模型','sb.save':'自动保存','sb.words':'字数',
+      'tree.v1':'第一卷 · 初入山门','tree.v2':'第二卷 · 宗门内务','tree.new':'新建章节',
+      'tb.undo':'撤销','tb.redo':'重做','tb.bold':'加粗','tb.link':'链接','tb.revise':'修订','tb.continue':'续写','tb.generate':'生成',
+      'ch.meta':'2026-08-03 · 大纲: 主角首次踏入试炼场 · 字数 2,347',
+      'stream.title':'AI 续写','stream.live':'生成中','stream.stop':'停止','stream.idle':'点击「续写」体验逐 token 流式渲染（模拟）','stream.done':'已生成 342 字 · 格式校验通过 · 0.8s 内首 token','stream.error':'生成中断',
+      'ctx.title':'上下文注入','ctx.characters':'角色','ctx.world':'世界观','ctx.worldBody':'青云宗 · 修仙 · 五行灵根体系；试炼场为入门考核地，符文石台可测灵根属性。','ctx.outline':'大纲','ctx.outlineBody':'第一卷主线: 主角入门 → 测出五行俱全灵根 → 被长老收为亲传。','ctx.foreshadow':'伏笔','ctx.foreshadowBody':'「五行俱全灵根」→ 伏笔 #3（回收点: 第二卷丹房篇）',
+      'pj.title':'我的项目','pj.sub':'本地存储 · 自动存档 · 断网可用','pj.new':'新建项目','pj.newCard':'新建项目','pj.writing':'写作中','pj.genre':'仙侠','pj.words':'目标','pj.lang':'中文',
+      'pj.w1':'120 万字','pj.w2':'40 万字','pj.w3':'60 万字','pj.c1':'第 5 章 / 12 章','pj.c2':'第 3 章 / 8 章','pj.c3':'第 1 章 / 6 章','pj.t1':'2 小时前','pj.t2':'3 天前','pj.t3':'1 周前',
+      'dlg.title':'新建项目','dlg.name':'书名','dlg.genre':'题材','dlg.lang':'语言','dlg.words':'目标字数','dlg.cancel':'取消','dlg.create':'创建',
+      'genre.xianxia':'仙侠','genre.mystery':'悬疑','genre.scifi':'科幻','genre.romance':'言情','lang.zh':'中文','lang.en':'English',
+      'ag.title':'Agent 与模型配置','ag.sub':'API Key 本地加密存储 · 数据不出本机',
+      'ag.llmTitle':'模型接入','ag.llmDesc':'自带 Key（BYOK）或本地 Ollama 模型，Key 加密落盘后可随时吊销。',
+      'ag.provider':'服务商','ag.model':'模型','ag.key':'API Key','ag.test':'测试连接','ag.temp':'温度','ag.words':'默认字数','ag.custom':'自定义兼容',
+      'ag.chainTitle':'写作 Agent 链','ag.chainDesc':'Architect 规划 → Writer 执笔 → Auditor 审校 → Reviser 修订，可按需开关。',
+      'ag.architect':'Architect 大纲架构师','ag.architectDesc':'拆分章节结构、生成大纲与情节点','ag.gen':'生成大纲',
+      'ag.writer':'Writer 执笔','ag.writerDesc':'按大纲逐章写作，SSE 流式输出','ag.stream':'流式',
+      'ag.auditor':'Auditor 审校','ag.auditorDesc':'一致性审计: 角色 / 时间线 / 世界观 / 伏笔','ag.audit':'4 维度',
+      'ag.reviser':'Reviser 修订','ag.reviserDesc':'按审校意见自动修订章节','ag.auto':'自动',
+      'tp.title':'设计 Token','tp.font':'字体','tp.accent':'强调色','tp.radius':'圆角','tp.motion':'动效','tp.density':'密度'
+    },
+    en: {
+      'ctl.style':'Style','ctl.bg':'Background','ctl.lang':'Language','ctl.view':'View','ctl.note':'Review only · not product UI',
+      'theme.paper':'Paper','theme.night':'Nocturne','theme.ink':'Ink East',
+      'bg.default':'Default','bg.parchment':'Parchment','bg.navy':'Navy','bg.ochre':'Ochre',
+      'view.writing':'Writing','view.projects':'Projects','view.agents':'Agents',
+      'sb.kernel':'Kernel connected','sb.model':'Model','sb.save':'Autosaved','sb.words':'Words',
+      'tree.v1':'Vol.1 · First Steps','tree.v2':'Vol.2 · Sect Affairs','tree.new':'New chapter',
+      'tb.undo':'Undo','tb.redo':'Redo','tb.bold':'Bold','tb.link':'Link','tb.revise':'Revise','tb.continue':'Continue','tb.generate':'Generate',
+      'ch.meta':'2026-08-03 · Outline: protagonist enters trial grounds · 2,347 words',
+      'stream.title':'AI continuation','stream.live':'Generating','stream.stop':'Stop','stream.idle':'Click "Continue" to see token-by-token SSE rendering (simulated)','stream.done':'342 words generated · format valid · first token < 0.8s','stream.error':'Generation stopped',
+      'ctx.title':'Context','ctx.characters':'Characters','ctx.world':'World','ctx.worldBody':'Qingyun Sect · xianxia · five-element spiritual roots; trial grounds are the entrance exam, rune platform detects root affinity.','ctx.outline':'Outline','ctx.outlineBody':'Vol.1 arc: protagonist joins → five-element root revealed → taken as personal disciple.','ctx.foreshadow':'Foreshadowing','ctx.foreshadowBody':'"Five-element root" → foreshadow #3 (payoff: Vol.2 alchemy arc)',
+      'pj.title':'My Projects','pj.sub':'Local storage · autosave · works offline','pj.new':'New project','pj.newCard':'New project','pj.writing':'Writing','pj.genre':'Genre','pj.words':'Target','pj.lang':'Chinese',
+      'pj.w1':'120K words','pj.w2':'40K words','pj.w3':'60K words','pj.c1':'Ch.5 / 12','pj.c2':'Ch.3 / 8','pj.c3':'Ch.1 / 6','pj.t1':'2h ago','pj.t2':'3d ago','pj.t3':'1w ago',
+      'dlg.title':'New Project','dlg.name':'Title','dlg.genre':'Genre','dlg.lang':'Language','dlg.words':'Target words','dlg.cancel':'Cancel','dlg.create':'Create',
+      'genre.xianxia':'Xianxia','genre.mystery':'Mystery','genre.scifi':'Sci-fi','genre.romance':'Romance','lang.zh':'中文','lang.en':'English',
+      'ag.title':'Agents & Model','ag.sub':'API keys encrypted locally · data stays on device',
+      'ag.llmTitle':'Model setup','ag.llmDesc':'Bring-your-own-key or local Ollama. Keys are encrypted on disk and revocable anytime.',
+      'ag.provider':'Provider','ag.model':'Model','ag.key':'API Key','ag.test':'Test','ag.temp':'Temperature','ag.words':'Default length','ag.custom':'Custom compatible',
+      'ag.chainTitle':'Writing agent chain','ag.chainDesc':'Architect plans → Writer drafts → Auditor reviews → Reviser polishes. Toggle as needed.',
+      'ag.architect':'Architect','ag.architectDesc':'Splits chapters, generates outlines and plot points','ag.gen':'Outline',
+      'ag.writer':'Writer','ag.writerDesc':'Writes chapters from outline, SSE streaming','ag.stream':'Streaming',
+      'ag.auditor':'Auditor','ag.auditorDesc':'Consistency audit: characters / timeline / world / foreshadowing','ag.audit':'4 dims',
+      'ag.reviser':'Reviser','ag.reviserDesc':'Auto-revises chapters per audit feedback','ag.auto':'Auto',
+      'tp.title':'Design Tokens','tp.font':'Typeface','tp.accent':'Accent','tp.radius':'Radius','tp.motion':'Motion','tp.density':'Density'
+    }
+  };
+
+  const langSelect = document.getElementById('langSelect');
+  function applyLang(lang) {
+    const dict = I18N[lang];
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const k = el.dataset.i18n;
+      if (dict[k]) el.textContent = dict[k];
+    });
+    document.querySelectorAll('[data-i18n-opt]').forEach(el => {
+      const k = el.dataset.i18nOpt;
+      if (dict[k]) el.textContent = dict[k];
+    });
+    // 保持视图 seg active 态文案不被覆盖
+    syncTokens();
+  }
+  langSelect.addEventListener('change', () => {
+    root.dataset.lang = langSelect.value;
+    applyLang(langSelect.value);
+  });
+
+  /* ---- 4. 视图切换 ---- */
+  const viewSeg = document.getElementById('viewSeg');
+  viewSeg.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-view-val]');
+    if (!btn) return;
+    body.dataset.view = btn.dataset.viewVal;
+    viewSeg.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+  });
+
+  /* ---- 5. 上下文面板折叠/展开 ---- */
+  const ctxPanel = document.getElementById('ctxPanel');
+  document.getElementById('btnCtxFold').addEventListener('click', () => {
+    ctxPanel.classList.add('collapsed');
+  });
+  document.getElementById('btnCtxExpand').addEventListener('click', () => {
+    ctxPanel.classList.remove('collapsed');
+  });
+
+  /* ---- 6. 新建项目对话框 ---- */
+  const dialogMask = document.getElementById('dialogMask');
+  document.getElementById('btnNewProj').addEventListener('click', () => { body.dataset.dialog = 'newproj'; });
+  document.getElementById('btnNewProj2').addEventListener('click', () => { body.dataset.dialog = 'newproj'; });
+  document.getElementById('btnCancel').addEventListener('click', () => { delete body.dataset.dialog; });
+  document.getElementById('btnCreate').addEventListener('click', () => { delete body.dataset.dialog; });
+  dialogMask.addEventListener('click', (e) => { if (e.target === dialogMask) delete body.dataset.dialog; });
+
+  /* ---- 7. SSE 流式模拟（逐 token 打字机） ---- */
+  const streamBody = document.getElementById('streamBody');
+  const liveTag = document.getElementById('liveTag');
+  const btnStop = document.getElementById('btnStop');
+  const btnContinue = document.getElementById('btnContinue');
+  const streamStats = document.getElementById('streamStats');
+  const SAMPLE = '「五行俱全？」执事长老的声音在晨风中飘散，广场上数百名弟子齐齐抬头。\n\n沈砚低头看着自己掌心亮起的五色微光，一时不知该喜该忧。灵根五行俱全，在青云宗的典籍里只出现过三次，最近一次是三百年前那位创下护山大阵的祖师。\n\n「弟子……不知。」他如实答道。\n\n长老沉默片刻，从袖中取出一枚青玉令牌，递到他面前。「明日辰时，来藏书阁三层。」\n\n人群里响起一片压抑的抽气声。藏书阁三层，亲传弟子才能踏入。';
+  let timer = null;
+  btnContinue.addEventListener('click', startStream);
+  btnStop.addEventListener('click', stopStream);
+  function startStream() {
+    if (timer) return;
+    streamBody.textContent = '';
+    liveTag.classList.add('on');
+    btnStop.style.display = '';
+    btnContinue.disabled = true;
+    const text = SAMPLE;
+    let i = 0;
+    const step = () => {
+      if (i >= text.length) { finishStream(); return; }
+      streamBody.textContent = text.slice(0, i + 2);
+      i += 2;
+      timer = setTimeout(step, 16);
+    };
+    timer = setTimeout(step, 300);
+  }
+  function finishStream() {
+    clearTimeout(timer); timer = null;
+    liveTag.classList.remove('on');
+    btnStop.style.display = 'none';
+    btnContinue.disabled = false;
+    const zh = root.dataset.lang !== 'en';
+    streamStats.textContent = zh ? '已生成 342 字 · 格式校验通过 · 首 token < 0.8s' : '342 words generated · format valid · first token < 0.8s';
+    streamBody.insertAdjacentHTML('beforeend', '<span class="cursor"></span>');
+  }
+  function stopStream() {
+    clearTimeout(timer); timer = null;
+    liveTag.classList.remove('on');
+    btnStop.style.display = 'none';
+    btnContinue.disabled = false;
+    const zh = root.dataset.lang !== 'en';
+    streamStats.textContent = zh ? '生成中断 · 已保留前文' : 'Stopped · draft preserved';
+  }
+
+  /* ---- 8. Token 面板同步 ---- */
+  const THEME_META = {
+    paper:  { font: '衬线标题 + 系统黑体', accent: '#3B5B7C', density: '低（写作）' },
+    night:  { font: '系统黑体',             accent: '#C9A24B', density: '低（写作）' },
+    ink:    { font: '楷体标题 + 宋体正文',   accent: '#A6402E', density: '低（写作）' }
+  };
+  function syncTokens() {
+    const m = THEME_META[root.dataset.theme];
+    document.getElementById('tpFont').textContent = m.font;
+    document.getElementById('tpAccent').textContent = m.accent;
+    document.getElementById('tpDensity').textContent = m.density;
+  }
+
+  /* ---- 9. 温度滑杆 ---- */
+  document.getElementById('tempRange').addEventListener('input', (e) => {
+    document.getElementById('tempVal').textContent = e.target.value;
+  });
+
+  /* 初始化 */
+  syncBgOptions();
+  syncTokens();
+})();
+</script>
+</body>
+</html>

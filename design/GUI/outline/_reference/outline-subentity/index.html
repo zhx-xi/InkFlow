@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="paper" data-bg="default">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>InkFlow 大纲子项排版原型 (#649)</title>
+<style>
+  :root{
+    /* 布局常量 */
+    --radius-s:4px; --radius-m:6px; --radius-l:8px;
+    --dur:180ms; --ease:cubic-bezier(.16,1,.3,1);
+    --font-ui:"PingFang SC","Microsoft YaHei","Noto Sans SC","Segoe UI",sans-serif;
+    --font-serif:"Noto Serif SC","Source Han Serif SC","SimSun","宋体",Georgia,serif;
+  }
+  [data-theme="paper"][data-bg="default"]{
+    --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F3F1EC; --surface-3:#EBE8E1;
+    --ink:#2A2A28; --ink-2:#6B6A66; --ink-3:#A4A29B; --line:#E5E2DA;
+    --accent:#3B5B7C; --accent-ink:#FFFFFF; --accent-weak:rgba(59,91,124,.10);
+    --ok:#4A7C59; --warn:#B07A2E; --err:#B04A3A;
+    --shadow:0 1px 2px rgba(42,42,40,.05), 0 4px 16px rgba(42,42,40,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-ui);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .page{max-width:1080px;margin:0 auto;padding:24px 48px}
+  h1{font-family:var(--font-serif);font-size:26px;font-weight:600;margin:0}
+  /* 项目上下文行 */
+  .ctx{display:flex;align-items:center;gap:16px;margin-top:14px}
+  .ctx .select{width:224px;height:32px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-m);display:flex;align-items:center;padding:0 10px;color:var(--ink-2);font-size:13px}
+  .ctx .crumb{font-size:13px;color:var(--ink-2)}
+  .ctx .crumb b{color:var(--ink);font-weight:500}
+  .ctx .save-ind{margin-left:auto;font-size:12px;color:var(--ok)}
+  /* tabs */
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-top:20px}
+  .tab{padding:8px 14px;font-size:13px;border-bottom:2px solid transparent;color:var(--ink-2);cursor:pointer;background:none;border-top:none;border-left:none;border-right:none;font-family:var(--font-ui)}
+  .tab.active{border-bottom-color:var(--accent);color:var(--accent);font-weight:500}
+  /* content */
+  .content{margin-top:16px}
+  /* toolbar */
+  .toolbar{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:14px}
+  .btn{display:inline-flex;align-items:center;gap:6px;border-radius:var(--radius-m);border:1px solid transparent;padding:7px 14px;font-size:13px;cursor:pointer;font-family:var(--font-ui);transition:background var(--dur) var(--ease),color var(--dur) var(--ease),border-color var(--dur) var(--ease)}
+  .btn-primary{background:var(--accent);color:var(--accent-ink)}
+  .btn-primary:hover{background:#33516F}
+  .btn-ghost{background:var(--surface);border-color:var(--line);color:var(--ink-2)}
+  .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+  .btn-ai{background:var(--surface);border:1px solid var(--accent);color:var(--accent)}
+  .btn-ai:hover{background:var(--accent-weak)}
+  .btn-ai.loading{opacity:.6;cursor:default}
+  /* 卡片 */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-l);box-shadow:var(--shadow);overflow:hidden}
+  .card + .card{margin-top:20px}
+  .card-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .card-title{font-family:var(--font-serif);font-size:15px;font-weight:600}
+  .card-body{padding:8px 12px}
+  /* 树行 */
+  .tree-row{display:flex;align-items:center;gap:8px;padding:7px 12px;font-size:13px;border-radius:var(--radius-s);transition:background var(--dur) var(--ease)}
+  .tree-row:hover{background:var(--surface-2)}
+  .chev{width:20px;height:20px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--ink-3);border-radius:var(--radius-s)}
+  .chev.open{transform:rotate(90deg)}
+  .badge{flex-shrink:0;border-radius:999px;background:var(--surface-3);padding:1px 8px;font-size:11px;color:var(--ink-2)}
+  .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chapter-ref{flex-shrink:0;display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);background:var(--surface-2);border-radius:999px;padding:1px 8px;font-size:11px;color:var(--ink-2)}
+  .link-chapter{flex-shrink:0;border:1px dashed var(--accent);border-radius:var(--radius-m);padding:1px 8px;font-size:11px;color:var(--accent);cursor:pointer;background:none;font-family:var(--font-ui)}
+  .mini-btn{flex-shrink:0;border:1px solid var(--line);background:var(--surface);border-radius:var(--radius-m);padding:1px 8px;font-size:11px;color:var(--ink-2);cursor:pointer;white-space:nowrap}
+  .mini-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .mini-btn.accent{border-color:var(--accent);color:var(--accent)}
+  /* 悬停操作 */
+  .actions{display:flex;gap:4px;flex-shrink:0;opacity:0;transition:opacity var(--dur) var(--ease)}
+  .tree-row:hover .actions{opacity:1}
+  .icon-btn{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:var(--radius-s);color:var(--ink-3);cursor:pointer}
+  .icon-btn:hover{background:var(--surface-3)}
+  .icon-btn.edit:hover{color:var(--accent)}
+  .icon-btn.del:hover{color:var(--err)}
+  .icon-btn svg{width:15px;height:15px}
+  /* 情节点 */
+  .points{padding:2px 12px 10px}
+  .point-row{display:flex;align-items:center;gap:8px;background:var(--surface-2);border-radius:var(--radius-m);padding:6px 10px;font-size:12px;margin-bottom:6px}
+  .point-row:hover{background:var(--surface-3)}
+  .point-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .point-type{flex-shrink:0;border-radius:999px;background:var(--surface-3);padding:1px 8px;font-size:10px;color:var(--ink-2)}
+  .point-empty{color:var(--ink-3);font-size:12px;padding:4px 2px}
+  .indent{padding-left:24px}
+  /* 故事弧区 */
+  .arc-row{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:13px;border-bottom:1px solid var(--line)}
+  .arc-row:last-child{border-bottom:none}
+  .arc-row:hover{background:var(--surface-2)}
+  .arc-dot{flex-shrink:0;width:7px;height:7px;border-radius:50%;background:var(--accent)}
+  .arc-desc{flex-shrink:0;color:var(--ink-3);font-size:12px;margin-left:6px}
+  .arc-count{flex-shrink:0;border-radius:999px;background:var(--surface-3);padding:1px 8px;font-size:11px;color:var(--ink-2)}
+  /* 空态 */
+  .empty{text-align:center;padding:40px 16px;color:var(--ink-3);font-size:13px}
+  .empty-sub{color:var(--ink-3);font-size:12px;margin-top:6px}
+  /* 弹窗 */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:flex-start;justify-content:center;z-index:200;padding-top:80px}
+  .overlay.open{display:flex}
+  .modal{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-l);box-shadow:0 12px 40px rgba(0,0,0,.18);width:440px;max-width:92vw;overflow:hidden}
+  .modal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line)}
+  .modal-title{font-family:var(--font-serif);font-size:16px;font-weight:600}
+  .modal-close{border:none;background:none;color:var(--ink-3);font-size:18px;cursor:pointer}
+  .modal-body{padding:16px 18px}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:12px;color:var(--ink-2);margin-bottom:4px}
+  .field input,.field textarea,.field select{width:100%;border:1px solid var(--line);border-radius:var(--radius-m);background:var(--surface);padding:7px 10px;font-size:13px;color:var(--ink);font-family:var(--font-ui);box-sizing:border-box}
+  .field textarea{resize:vertical;min-height:60px}
+  .field .help{font-size:11px;color:var(--ink-3);margin-top:3px}
+  .field-row{display:flex;gap:10px}
+  .field-row .field{flex:1}
+  .modal-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line)}
+  .btn-cancel{background:var(--surface);border:1px solid var(--line);color:var(--ink-2)}
+  .btn-cancel:hover{border-color:var(--ink-3)}
+  .btn-danger{background:var(--err);color:#fff}
+  .btn-danger:hover{background:#9A3F30}
+  .btn-loading{position:relative;opacity:.75}
+  .spinner{width:13px;height:13px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;display:inline-block;vertical-align:-2px;animation:spin .7s linear infinite;margin-right:5px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  /* toast */
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 16px;border-radius:var(--radius-m);font-size:13px;box-shadow:var(--shadow);display:none;z-index:400}
+  .toast.show{display:block}
+  .toast.ok{background:var(--ok)}
+  .toast.err{background:var(--err)}
+  .toast.warn{background:var(--warn)}
+  /* 图例提示 */
+  .ai-hint{font-size:11px;color:var(--ink-3);margin-top:6px}
+  .tag{font-size:10px;color:var(--ink-3);border:1px dashed var(--line);border-radius:var(--radius-s);padding:0 4px}
+  .section-gap{height:20px}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>设定库</h1>
+  <div class="ctx">
+    <div class="select">青云志 ▾</div>
+    <div class="crumb">设定库 · <b>青云志</b> / <b>大纲</b></div>
+    <span class="save-ind">已保存</span>
+  </div>
+  <div class="tabs">
+    <button class="tab">角色</button>
+    <button class="tab">世界观</button>
+    <button class="tab active">大纲</button>
+    <button class="tab">时间线</button>
+    <button class="tab">伏笔</button>
+    <button class="tab">知识图谱</button>
+  </div>
+
+  <div class="content">
+    <!-- 工具栏：新建 + AI 生成 -->
+    <div class="toolbar">
+      <button class="btn btn-ai" id="btn-ai">✦ AI 生成大纲</button>
+      <button class="btn btn-primary">＋ 新建</button>
+    </div>
+
+    <!-- 大纲三级树 -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">大纲（整体 → 卷 → 章 → 情节点）</div>
+      </div>
+      <div class="card-body" style="padding-top:6px">
+        <!-- overall -->
+        <div class="tree-row">
+          <span class="chev open">▸</span>
+          <span class="badge">整体</span>
+          <span class="name">《青云志》主线大纲</span>
+          <button class="mini-btn accent">＋卷</button>
+          <div class="actions">
+            <button class="icon-btn edit" title="编辑">✎</button>
+            <button class="icon-btn del" title="删除">🗑</button>
+          </div>
+        </div>
+        <div class="indent">
+          <!-- volume -->
+          <div class="tree-row">
+            <span class="chev open">▸</span>
+            <span class="badge">卷</span>
+            <span class="name">第一卷 · 宗门初试</span>
+            <button class="mini-btn accent">＋章</button>
+            <div class="actions">
+              <button class="icon-btn edit" title="编辑">✎</button>
+              <button class="icon-btn del" title="删除">🗑</button>
+            </div>
+          </div>
+          <div class="indent">
+            <!-- chapter -->
+            <div class="tree-row">
+              <span class="chev open">▸</span>
+              <span class="badge">章</span>
+              <span class="name">第一章 · 废柴觉醒</span>
+              <span class="chapter-ref">📎 第1章 · 废柴觉醒</span>
+              <button class="mini-btn accent" id="add-point-1">＋情节点</button>
+              <div class="actions">
+                <button class="icon-btn edit">✎</button>
+                <button class="icon-btn del">🗑</button>
+              </div>
+            </div>
+            <!-- 情节点 -->
+            <div class="points">
+              <div class="point-row">
+                <span class="point-name">主角获得金手指</span>
+                <span class="point-type">开端</span>
+                <div class="actions">
+                  <button class="icon-btn edit" id="pt-edit-1">✎</button>
+                  <button class="icon-btn del" id="pt-del-1">🗑</button>
+                </div>
+              </div>
+              <div class="point-row">
+                <span class="point-name">宗门测试展露废柴体质</span>
+                <span class="point-type">发展</span>
+                <div class="actions">
+                  <button class="icon-btn edit" id="pt-edit-2">✎</button>
+                  <button class="icon-btn del" id="pt-del-2">🗑</button>
+                </div>
+              </div>
+              <div class="point-row">
+                <span class="point-name">青云宗闭关</span>
+                <span class="point-type">高潮</span>
+                <div class="actions">
+                  <button class="icon-btn edit">✎</button>
+                  <button class="icon-btn del">🗑</button>
+                </div>
+              </div>
+            </div>
+            <!-- 另一个 chapter 空态 -->
+            <div class="tree-row">
+              <span class="chev">▸</span>
+              <span class="badge">章</span>
+              <span class="name">第二章 · 初入外门</span>
+              <button class="mini-btn accent">关联章节</button>
+              <button class="mini-btn accent" id="add-point-2">＋情节点</button>
+              <div class="actions">
+                <button class="icon-btn edit">✎</button>
+                <button class="icon-btn del">🗑</button>
+              </div>
+            </div>
+            <div class="points">
+              <div class="point-empty">暂无情节点 <span class="tag">点击「＋情节点」创建</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-gap"></div>
+
+    <!-- 故事弧区 -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">故事弧 <span style="font-size:12px;color:var(--ink-3);font-family:var(--font-ui)">（项目级 · 跨大纲组织）</span></div>
+        <button class="btn btn-ghost" id="btn-add-arc">＋ 新建弧线</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div class="arc-row">
+          <span class="arc-dot"></span>
+          <span class="name">主角成长线</span>
+          <span class="arc-desc">废柴 → 强者的蜕变</span>
+          <span class="arc-count">3 情节点</span>
+          <div class="actions">
+            <button class="icon-btn edit" id="arc-edit-1">✎</button>
+            <button class="icon-btn del" id="arc-del-1">🗑</button>
+          </div>
+        </div>
+        <div class="arc-row">
+          <span class="arc-dot"></span>
+          <span class="name">反派线</span>
+          <span class="arc-desc">阴谋与对抗</span>
+          <span class="arc-count">2 情节点</span>
+          <div class="actions">
+            <button class="icon-btn edit" id="arc-edit-2">✎</button>
+            <button class="icon-btn del" id="arc-del-2">🗑</button>
+          </div>
+        </div>
+        <div class="arc-row" style="border-bottom:none">
+          <span class="arc-dot" style="background:var(--ink-3)"></span>
+          <span class="name">未命名线</span>
+          <span class="arc-desc">0 情节点</span>
+          <span class="arc-count">0 情节点</span>
+          <div class="actions">
+            <button class="icon-btn edit" id="arc-edit-3">✎</button>
+            <button class="icon-btn del" id="arc-del-3">🗑</button>
+          </div>
+        </div>
+        <div class="points" style="padding:10px 12px">
+          <div class="point-empty">暂无事弧 <span class="tag">点击「＋新建弧线」创建</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-hint">✦ AI 生成大纲：手动触发，生成后作为<b>新大纲</b>加入上方树（不会追加/覆盖当前选中节点）。</div>
+  </div>
+</div>
+
+<!-- 情节点对话框 -->
+<div class="overlay" id="pt-overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="pt-title">新建情节点</div>
+      <button class="modal-close" onclick="closeAll()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="field"><label>名称 *</label><input placeholder="如：主角获得金手指" /></div>
+      <div class="field">
+        <label>类型</label>
+        <select><option value="">未分类</option><option>开端</option><option>发展</option><option>转折</option><option>高潮</option><option>结局</option></select>
+      </div>
+      <div class="field"><label>描述</label><textarea placeholder="该节点发生什么…"></textarea></div>
+      <div class="field">
+        <label>所属弧线（可选）</label>
+        <select><option value="">不挂弧线</option><option>主角成长线</option><option>反派线</option></select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-cancel" onclick="closeAll()">取消</button>
+      <button class="btn btn-primary" onclick="toast('ok','情节点已保存');closeAll()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 故事弧对话框 -->
+<div class="overlay" id="arc-overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="arc-title">新建弧线</div>
+      <button class="modal-close" onclick="closeAll()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="field"><label>弧线名 *</label><input placeholder="如：主角成长线" /></div>
+      <div class="field"><label>说明</label><textarea placeholder="该弧线讲述什么…"></textarea></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-cancel" onclick="closeAll()">取消</button>
+      <button class="btn btn-primary" onclick="toast('ok','弧线已保存');closeAll()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 删除确认框 -->
+<div class="overlay" id="del-overlay">
+  <div class="modal" style="width:380px">
+    <div class="modal-head"><div class="modal-title" id="del-title">删除情节点</div><button class="modal-close" onclick="closeAll()">×</button></div>
+    <div class="modal-body">
+      <p style="margin:0;font-size:14px">删除「<b id="del-name">主角获得金手指</b>」？</p>
+      <p style="margin:0 0 8px;font-size:13px;color:var(--ink-2)">此操作不可撤销。</p>
+      <p style="margin:0;font-size:12px;color:var(--err)">点击确认后立即移除，不可恢复。</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-cancel" onclick="closeAll()">取消</button>
+      <button class="btn btn-danger" onclick="toast('ok','已删除');closeAll()">删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- AI 生成对话框 -->
+<div class="overlay" id="ai-overlay">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">AI 生成大纲</div><button class="modal-close" onclick="closeAll()">×</button></div>
+    <div class="modal-body">
+      <div class="field"><label>大纲名（可选，缺省「未命名大纲」）</label><input placeholder="如：第一卷大纲" /></div>
+      <div class="field"><label>创作约束 / 设定摘要（可选）</label><textarea placeholder="主角林尘，废柴体质逆袭；风格爽文；世界观灵气复苏…"></textarea></div>
+      <div class="field"><label>规划章节数（可选 1-100）</label><input type="number" min="1" max="100" placeholder="如：30" /></div>
+      <div class="field"><label>生成方式</label>
+        <select><option>生成到「新大纲」（默认）</option><option disabled>追加到当前节点（后端不支持）</option><option disabled>覆盖本节点（后端不支持）</option></select>
+        <div class="help">注：后端生成接口固定为「生成即新建大纲」，不追加/不覆盖已有节点。</div>
+      </div>
+    </div>
+    <div class="modal-foot" id="ai-foot">
+      <button class="btn btn-cancel" onclick="closeAll()">取消</button>
+      <button class="btn btn-primary" id="ai-go" onclick="startGenerate()">生成</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  function closeAll(){document.querySelectorAll('.overlay').forEach(o=>o.classList.remove('open'))}
+  function open(el){closeAll();el.classList.add('open')}
+  function toast(type,msg){var t=document.getElementById('toast');t.textContent=msg;t.className='toast show '+type;setTimeout(function(){t.classList.remove('show')},2000)}
+  // 绑定
+  document.getElementById('add-point-1').onclick=function(){document.getElementById('pt-title').textContent='新建情节点';open(document.getElementById('pt-overlay'))};
+  document.getElementById('add-point-2').onclick=function(){document.getElementById('pt-title').textContent='新建情节点';open(document.getElementById('pt-overlay'))};
+  document.getElementById('pt-edit-1').onclick=function(){document.getElementById('pt-title').textContent='编辑情节点';open(document.getElementById('pt-overlay'))};
+  document.getElementById('pt-edit-2').onclick=function(){document.getElementById('pt-title').textContent='编辑情节点';open(document.getElementById('pt-overlay'))};
+  document.getElementById('pt-del-1').onclick=function(){document.getElementById('del-name').textContent='主角获得金手指';open(document.getElementById('del-overlay'))};
+  document.getElementById('pt-del-2').onclick=function(){document.getElementById('del-name').textContent='宗门测试展露废柴体质';open(document.getElementById('del-overlay'))};
+  document.getElementById('btn-add-arc').onclick=function(){document.getElementById('arc-title').textContent='新建弧线';open(document.getElementById('arc-overlay'))};
+  document.getElementById('arc-edit-1').onclick=function(){document.getElementById('arc-title').textContent='编辑弧线';open(document.getElementById('arc-overlay'))};
+  document.getElementById('arc-del-1').onclick=function(){document.getElementById('del-name').textContent='主角成长线';open(document.getElementById('del-overlay'))};
+  document.getElementById('arc-del-2').onclick=function(){document.getElementById('del-name').textContent='反派线';open(document.getElementById('del-overlay'))};
+  document.getElementById('arc-del-3').onclick=function(){document.getElementById('del-name').textContent='未命名线';open(document.getElementById('del-overlay'))};
+  document.getElementById('btn-ai').onclick=function(){open(document.getElementById('ai-overlay'))};
+  function startGenerate(){
+    var b=document.getElementById('ai-go');
+    b.innerHTML='<span class="spinner"></span>生成中…';b.className='btn btn-primary loading';
+    setTimeout(function(){
+      b.textContent='生成';b.className='btn btn-primary';
+      closeAll();
+      toast('ok','大纲生成成功：新增「第一卷大纲」，含 8 个情节点、2 条弧线');
+    },1400);
+  }
+</script>
+</body>
+</html>
