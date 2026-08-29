@@ -209,15 +209,12 @@ def get_agentic_writer_service(
     db: AsyncSession = Depends(get_db),
 ) -> AgenticWriterService:
     """获取 AgenticWriterService 实例（agentic 编排，装配 F26/F27 工具）."""
+    from inkflow.api._llm_resolver import resolve_llm_credentials
     from inkflow.core.config import config
     from inkflow.infrastructure.agent.agentic_writer import (
         AgenticWriterDeps,
         build_agentic_writer,
         build_writer_agent_system_prompt,
-    )
-    from inkflow.infrastructure.llm.provider_config import (
-        get_provider_config,
-        parse_model_string,
     )
     # 循环依赖注意：不重复调 get_draft_service(db)（直接 Python 调用无 FastAPI
     # 依赖缓存）——草稿服务在同一函数内联构建，deps 与 service 共享同源实例
@@ -253,18 +250,9 @@ def get_agentic_writer_service(
             expected_project_id=request.project_id,
             expected_chapter_id=request.chapter_id,
         )
-    # 模型/密钥/base_url 同源装配（F5 provider_config）：默认模型解析 provider，
-    # 未配置 key/base_url 时回退空串（harness 支持空 key/base_url 走 ChatOpenAI 默认）
-    model = config.llm_default_model
-    api_key = ""
-    base_url = ""
-    try:
-        provider, _ = parse_model_string(model)
-        provider_cfg = get_provider_config(provider)
-        api_key = provider_cfg.api_key
-        base_url = provider_cfg.base_url or ""
-    except ValueError:
-        pass
+    # 模型/密钥/base_url 同源装配：#758 空默认模型回退到首个有 key 且含 chat 模型的
+    # provider（镜像 chat 路径 #738），避免空 key 构造 ChatOpenAI → Missing credentials 500
+    model, api_key, base_url = resolve_llm_credentials(config.llm_default_model)
     return AgenticWriterService(
         agent_factory=_build_agent,
         draft_service=draft_service,
