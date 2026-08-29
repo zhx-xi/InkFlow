@@ -96,6 +96,31 @@ EXPECTED_SETTING_WRITE_NAMES = [
     "create_world_setting",
     "create_outline",
 ]
+EXPECTED_SETTING_UPDATE_NAMES = [
+    "update_character",
+    "update_world_setting",
+    "update_outline",
+]
+EXPECTED_WORLD_RW_NAMES = [
+    "list_maps",
+    "create_map",
+    "update_map",
+    "list_timeline_events",
+    "create_timeline_event",
+    "update_timeline_event",
+    "create_foreshadowing",
+    "update_foreshadowing",
+]
+EXPECTED_MEMORY_NAMES = [
+    "memory_list",
+    "memory_add",
+    "memory_update",
+]
+EXPECTED_WRITING_NAMES = [
+    "generate",
+    "continue",
+    "revise",
+]
 
 PROJECT_ID = "550e8400-e29b-41d4-a716-446655440000"
 CHAPTER_ID = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
@@ -467,6 +492,10 @@ class TestGetChatAgentService:
             *EXPECTED_READER_NAMES,
             "save_draft",
             *EXPECTED_SETTING_WRITE_NAMES,
+            *EXPECTED_SETTING_UPDATE_NAMES,
+            *EXPECTED_WORLD_RW_NAMES,
+            *EXPECTED_MEMORY_NAMES,
+            *EXPECTED_WRITING_NAMES,
         ]
         assert _kwarg_or_positional(m_da.call_args, "profile_key", 5, None) is None
         prompt = _kwarg_or_positional(m_da.call_args, "system_prompt", 4, None)
@@ -536,6 +565,10 @@ class TestGetChatAgentService:
             *EXPECTED_READER_NAMES,
             "save_draft",
             *EXPECTED_SETTING_WRITE_NAMES,
+            *EXPECTED_SETTING_UPDATE_NAMES,
+            *EXPECTED_WORLD_RW_NAMES,
+            *EXPECTED_MEMORY_NAMES,
+            *EXPECTED_WRITING_NAMES,
         ]
 
 # ── TestGetChatAgentServiceDbAndParseFallback: coverage-gap 补测（deps_chat_agent.py） ──
