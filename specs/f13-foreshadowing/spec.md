@@ -1011,3 +1011,46 @@ F13 被依赖:
 ---
 
 *本文档为 F13 功能规格（What），实施步骤（How）见后续 `specs/f13-foreshadowing/plan.md`。所有里程碑验收以本节 M1-M8 为准。*
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §7 边界事实，不重复）。
+
+### 14.1 端点状态流（8 端点，§3.1）
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| POST /projects/{project_id}/foreshadowings | 项目存在 | 校验（title/priority/location/event_id）→ 创建（status=open，叙事位置从事件获取） | 201 + Foreshadowing | 404「项目不存在」；422「伏笔名不能为空」/「伏笔名不能超过 100 个字符」/「伏笔描述不能超过 5000 个字符」/「优先级必须在 0-100 之间」/「埋设位置不能超过 200 个字符」/「同名伏笔已存在（伏笔名在项目内必须唯一）」/「事件不存在」（含已软删）/「事件不属于该项目」 | 软删后同名可再建（partial unique）；event_id 缺省=不挂接（location 自由文本兜底） |
+| GET /projects/{project_id}/foreshadowings | 项目存在 | status/search/排序/分页过滤 | 200 + {items,total,offset,limit} | 404「项目不存在」 | 搜索无结果/分页越界 → 空 items |
+| GET /foreshadowings/{foreshadowing_id} | 伏笔存在 | 查询 | 200 + Foreshadowing | 404「伏笔不存在」 | — |
+| PATCH /foreshadowings/{foreshadowing_id} | 伏笔存在 | 部分更新（不含 status/resolved_at） | 200 + Foreshadowing | 404「伏笔不存在」；422（event_id 传非空字符串 →「解除事件挂接请传空字符串」；携带 status/resolved_at 不生效） | location="" → 置 ""（未记录）；event_id="" → 置 null；已挂接事件软删 → event_id 保留 |
+| DELETE /foreshadowings/{foreshadowing_id} | 伏笔存在 | 软删除 | 204 | 404「伏笔不存在」（不存在/已软删） | ?force=true 物理删除 |
+| POST /foreshadowings/{foreshadowing_id}/restore | 伏笔存在（硬删除外） | 恢复 | 200 + Foreshadowing | 404「伏笔不存在」 | 未软删时恢复=无操作成功 |
+| POST /foreshadowings/{foreshadowing_id}/resolve | 伏笔存在 | 状态迁移 open→resolved + 自动设 resolved_at | 200 + Foreshadowing | 404「伏笔不存在」（含已软删） | 幂等：已 resolved 再 resolve 状态不变、resolved_at 不更新 |
+| POST /foreshadowings/{foreshadowing_id}/reopen | 伏笔存在 | 状态迁移 resolved→open + 清 resolved_at | 200 + Foreshadowing | 404「伏笔不存在」 | 幂等：已 open 再 reopen 状态不变 |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| foreshadowing create | 项目存在 | 创建（--event-id 挂接 F12 事件，缺省不挂接） | 「✅ 伏笔创建成功: [林晚的身世]（优先级 80，未回收）」/ --json | 404 NOT_FOUND；422 VALIDATION_ERROR（含事件校验） | status 固定 open |
+| foreshadowing list | 项目存在 | 列表（--status open/resolved 过滤） | 「📋 未回收伏笔 3 条: ...」/「🔍 已回收伏笔 1 条: ...（回收于 ...）」 | 404 | --status 非法值 → 退出码 2（Typer Choice） |
+| foreshadowing get | 伏笔存在 | 查询 | JSON | 404「伏笔不存在」 | — |
+| foreshadowing update | 伏笔存在 | 更新（--location ""/--event-id "" 清除） | JSON | 404；422 | — |
+| foreshadowing delete | 伏笔存在 | 二次确认（--force）→ 软删；--permanent 硬删 | 204 | 404；--json 无 --force → VALIDATION_ERROR「删除需 --force 或交互确认」（退出码 1） | — |
+| foreshadowing restore | 伏笔存在 | 恢复 | 200 | 404 | — |
+| foreshadowing resolve | 伏笔存在 | 标记回收（open→resolved） | 「✅ 伏笔已回收: [林晚的身世]」/ --json | 404 | 幂等（已 resolved 再 resolve 不更新 resolved_at） |
+| foreshadowing reopen | 伏笔存在 | 重新开启（resolved→open） | 「✅ 伏笔已重新开启: [林晚的身世]」/ --json | 404 | 幂等 |
+
+> 错误码：NOT_FOUND / VALIDATION_ERROR / DB_ERROR（**无 LLM_ERROR**——F13 无 LLM）。
+
+### 14.3 验收锚点（写入 §14）
+
+- A1：创建挂不存在事件 → 422「事件不存在」（含已软删事件——F12 get 不含软删）；挂其他项目事件 → 422「事件不属于该项目」
+- A2：resolve → 200 status=resolved + resolved_at 非空；对已 resolved 再 resolve → 200 幂等（resolved_at 不更新）；reopen → open + resolved_at=null
+- A3：同名活动伏笔 → 422「同名伏笔已存在（伏笔名在项目内必须唯一）」；软删后再建同名 → 成功
+- A4：已挂接事件被硬删（force）→ event_id FK ON DELETE SET NULL 自动解除挂接（无 422）；被软删 → event_id 保留、注入 metadata 原样携带、resolve/reopen/更新不受影响
+- A5：F6 注入：全部 open 伏笔按 priority 降序注入；resolve 后立即不再注入（无缓存）；dynamic 预算不足 → 裁剪 + DroppedItem(over_budget) 不阻塞写作
+
+### 14.4 Spec 漂移标注（追加时核对实现 routers/foreshadowings.py）
+
+- **restore 端点缺失**：spec §3.1/§4.1 声明的 `POST /foreshadowings/{foreshadowing_id}/restore` 与 CLI `foreshadowing restore` 在实现中缺失（routers/foreshadowings.py 无 restore 路由；services 无 restore 方法；CLI 无 restore 命令）——实现路由 7 条 vs spec 枚举 8 端点（resolve/reopen 已实现）。

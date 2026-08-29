@@ -992,3 +992,48 @@ F12 被依赖:
 ---
 
 *本文档为 F12 功能规格（What），实施步骤（How）见后续 `specs/f12-timeline/plan.md`。所有里程碑验收以本节 M1-M8 为准。*
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §7 边界事实，不重复）。
+
+### 14.1 端点状态流（8 端点，§3.1）
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| POST /projects/{project_id}/timeline/events | 项目存在 | 校验（标题/时间/叙事位置）→ 创建（narrative_position 缺省=叙事末尾追加） | 201 + TimelineEvent | 404「项目不存在」；422「事件标题不能为空」/「事件标题不能超过 100 个字符」/「事件描述不能超过 5000 个字符」/「世界内时间必须是有限数值」/「世界内时间超出允许范围（[-10^12, 10^12]）」/「叙事位置不能为负数」 | time_value 缺省=时间未知（None）；time_unit/time_display/timeline_flag 超长 → 422 |
+| GET /projects/{project_id}/timeline/events | 项目存在 | 搜索/排序/分页 → 活动事件 | 200 + {items,total,offset,limit} | 404「项目不存在」 | search 空不过滤；分页越界 → 空 items |
+| GET /projects/{project_id}/timeline | 项目存在 | 双线投影（活动事件全量，无分页） | 200 + TimelineView（event_timeline + narrative_order） | 404「项目不存在」 | event_timeline 按 (time_value ASC NULLS LAST, narrative_position ASC)；narrative_order 按 (narrative_position ASC, created_at ASC)；无活动事件 → total=0 + 空数组 |
+| GET /projects/{project_id}/timeline/check | 项目存在 | 相邻对扫描（确定性算法，无 LLM） | 200 + ConsistencyReport（checked/skipped/consistent/conflicts/flashbacks + 双线视图） | 404「项目不存在」 | include_flashbacks 查询参数（默认含）；0/1 事件 → consistent=true；全未知时间 → checked=0 skipped=n；逆序对 next 标记 flashback / prev 标记 flashforward → 不算冲突；未知标记（如 "flshback"）→ order_conflict；同刻事件不冲突 |
+| GET /timeline/events/{event_id} | 事件存在 | 查询 | 200 + TimelineEvent | 404「事件不存在」 | 无效 UUID → 404 |
+| PATCH /timeline/events/{event_id} | 事件存在 | 部分更新（时间/标记清除语义） | 200 + TimelineEvent | 404「事件不存在」；422（time_value 清除只接受空字符串） | time_value="" → 置 None（时间未知）；timeline_flag="" → 置 ""（正叙）；time_value 传 "abc" → 422 |
+| DELETE /timeline/events/{event_id} | 事件存在 | 软删除（不进入双线视图与一致性检查） | 204 | 404「事件不存在」（不存在/已软删） | ?force=true 物理删除 |
+| POST /timeline/events/{event_id}/restore | 事件存在（硬删除外） | 恢复 | 200 + TimelineEvent | 404「事件不存在」 | 未软删时恢复=无操作成功 |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| timeline create | 项目存在 | 创建（--time-value 缺省=未知；--narrative-position 缺省=末尾追加） | 「✅ 事件创建成功: [林尘觉醒金手指]（青元历 317 年秋，叙事第 3 位）」/ --json | 404 NOT_FOUND；422 VALIDATION_ERROR | — |
+| timeline list | 项目存在 | 列表（--sort 5 种） | 列表 / JSON | 404 | — |
+| timeline view | 项目存在 | 双线总览 | 「📋 双线总览: 共 5 个事件 — ...」 | 404 | — |
+| timeline check | 项目存在 | 一致性检查（--include-flashbacks 默认开） | 「🔍 一致性检查: ✅ 一致（检查 4 个事件，跳过 1 个时间未知）」/「⚠️ 发现 2 个冲突」/「💡 1 个已声明倒叙/插叙」 | 404 | 发现冲突退出码仍 0 |
+| timeline get | 事件存在 | 查询 | JSON | 404「事件不存在」 | — |
+| timeline update | 事件存在 | 更新（--time-value ""/--timeline-flag "" 清除） | JSON | 404；422 | — |
+| timeline delete | 事件存在 | 二次确认（--force 跳过）→ 软删；--permanent 硬删 | 204 | 404；--json 无 --force → VALIDATION_ERROR「删除需 --force 或交互确认」（退出码 1） | — |
+| timeline restore | 事件存在 | 恢复 | 200 | 404 | — |
+
+> 错误码：NOT_FOUND / VALIDATION_ERROR / DB_ERROR（**无 LLM_ERROR**——F12 无 LLM）。
+
+### 14.3 验收锚点（写入 §14）
+
+- A1：POST 事件 time_value=NaN/±Inf → 422「世界内时间必须是有限数值」；越界 → 422「世界内时间超出允许范围（[-10^12, 10^12]）」
+- A2：PATCH time_value 传 "abc" → 422；传 "" → 200 且 time_value=null（时间未知，一致性检查计入 skipped）
+- A3：逆序对未标记 → check 200 的 conflicts 含 order_conflict、consistent=false；给后叙事件加 timeline_flag=flashback 重查 → flashbacks 含该项、consistent=true
+- A4：软删事件 → 双线总览与 check 均不含该事件；restore 后恢复可见
+- A5：0/1 个活动事件 → 200 consistent=true（checked=0/1）；全部事件时间未知 → checked=0、skipped=n、consistent=true
+- A6：include_flashbacks=false → flashbacks 返回空列表；conflicts/consistent 不变
+
+### 14.4 Spec 漂移标注（追加时核对实现 routers/timeline.py）
+
+- **restore 端点缺失**：spec §3.1/§4.1 声明的 `POST /timeline/events/{event_id}/restore` 与 CLI `timeline restore` 在实现中缺失（routers/timeline.py 无 restore 路由；services 无 restore 方法；CLI 无 restore 命令）。
+- **实现侧新增端点**：`GET /timeline/events/{event_id}/check`（单事件一致性检查）为 spec §3.1 未声明端点——实现路由 8 条 vs spec 枚举 8 端点，构成不同（缺 restore、多单事件 check）。
