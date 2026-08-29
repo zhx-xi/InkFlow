@@ -186,10 +186,8 @@ class WorldCreate(BaseModel):
 
 class WorldUpdate(BaseModel):
     """更新世界观条目请求 DTO — 所有字段均为可选项（exclude_unset 语义，同 F1）.
-
     category: None 表示不修改；"" 表示清除类别（置为未分类）.
-    F35 parent_id 例外：出现即更新（service 用 model_fields_set 判断）.
-    """
+    F35 parent_id 例外：出现即更新（service 用 model_fields_set 判断）."""
     name: str | None = None
     category: str | None = None
     content: str | None = None
@@ -619,13 +617,10 @@ backend/tests/
 ```python
 class WorldRepositoryProtocol(Protocol):
     """世界观条目仓储端口.
-
     按 spec §2.4: 项目内同层级条目 name 唯一（全唯一索引，v1.1）。
     v1.1 真删语义：无 soft_delete / restore 方法。
-
     注: 类内方法名 ``list`` 会在 mypy 类作用域解析中遮蔽内置 ``list``，
-    因此返回注解中的列表类型统一写作 ``builtins.list[...]``（同 F9）。
-    """
+    因此返回注解中的列表类型统一写作 ``builtins.list[...]``（同 F9）。"""
 
     # ── WorldSetting ──
     async def add(self, setting: WorldSetting) -> WorldSetting: ...
@@ -907,3 +902,46 @@ F10 被依赖（v1.1 删除语义变更的下游）:
 ---
 
 *本文档为 F10 功能规格 v1.1（What），实施步骤（How）见后续 `specs/f10-world-settings/plan.md`。所有里程碑验收以 §13 M1-M10 为准。*
+## 15. 动作确认
+
+> 基于 §3 API + §4 CLI + §7 边界事实的状态流表，不新增行为。
+
+### 15.1 端点状态流
+
+| 端点 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| POST /api/v1/projects/{project_id}/world-settings | 项目存在 | 校验 DTO → 同名检查 → 建条目 | 201 + WorldSetting | 404「项目不存在」；422「条目名不能为空」/「条目名不能超过 50 个字符」/「同名世界观条目已存在（条目名在项目内必须唯一）」 | parent_id 可空（F35） |
+| GET /api/v1/projects/{project_id}/world-settings | 项目存在 | search/category/parent_id 过滤 + 排序分页 | 200 + {items,total,offset,limit} | — | 无结果 → 空 items；?parent_id=none = 顶层（F35） |
+| GET /api/v1/projects/{project_id}/world-settings/categories | 项目存在 | 类别汇总（实时聚合条目数） | 200 + {items,total} | — | 仅活动条目；空类别不出现；无条目 → 空 |
+| POST /api/v1/projects/{project_id}/world-categories | 项目存在 | 同名检查 → 建分类 | 201 + WorldCategory | 422「分类名不能为空」/「分类名不能超过 50 个字符」/「同名世界观分类已存在」 | v1.2 |
+| GET /api/v1/projects/{project_id}/world-categories | 项目存在 | 分类列表（含条目数） | 200 + {items,total} | — | v1.2 |
+| PATCH /api/v1/world-categories/{category_id} | 分类存在 | 重命名 + 反向同步同名字符串条目 category | 200 + WorldCategory | 404「世界观分类不存在」；422「同名世界观分类已存在」 | 条目 category 改新名（v1.2） |
+| DELETE /api/v1/world-categories/{category_id} | 分类存在 | 删分类 + 条目 category 置空 | 204 | 404「世界观分类不存在」 | 条目变未分类（v1.2） |
+| POST /api/v1/projects/{target_project_id}/world-settings/copy | 源/目标项目存在 | 跨书复制世界观 | 200 + result | 404（源/目标项目不存在） | 语义详见 F37 §14 |
+| GET /api/v1/world-settings/{setting_id} | 条目存在 | 详情 | 200 + WorldSetting | 404「世界观条目不存在」 | 无效 UUID → 404 |
+| GET /api/v1/world-settings/{setting_id}/ancestors | 条目存在 | 祖先链（含自身） | 200 + {items,total} | 404「世界观条目不存在」 | 语义详见 F35 §14 |
+| GET /api/v1/world-settings/{setting_id}/descendants | 条目存在 | 子树（含自身） | 200 + {items,total} | 404「世界观条目不存在」 | 语义详见 F35 §14 |
+| PATCH /api/v1/world-settings/{setting_id} | 条目存在 | 部分更新（exclude_unset） | 200 + WorldSetting | 404「世界观条目不存在」；422（业务校验） | parent_id 出现即更新（F35）；category "" = 清除类别 |
+| DELETE /api/v1/world-settings/{setting_id} | 条目存在 | 真删（物理删除，不可恢复） | 204 | 404「世界观条目不存在」；422「该条目包含子地点，须指定级联删除或改挂」 | ?cascade=true 真删整棵子树 / ?reparent_to=<id> 子改挂后真删自身（F35）；无软删/restore 路径 |
+| POST /api/v1/world-settings/extract | 项目存在·text 非空 | LLM 提取 → 解析重试 ≤2 → 合并落库（单事务） | 200 + WorldExtractionResult | 404「项目不存在」；422「章节文本不能为空」/「章节文本不能超过 50000 个字符」；500「世界观提取失败: LLM 输出无法解析，请重试」/「LLM 调用失败，请稍后重试」 | 空列表 → warning「未提取到世界观信息」；单条非法 → 跳过 + warning；幂等 |
+
+### 15.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| world create | 项目存在 | 建条目 | ✅ 世界观条目创建成功: [灵气复苏] (设定)；--json 信封 | 422 VALIDATION_ERROR | — |
+| world list | 项目存在 | 列表 | 列表 / --json | — | --search/--category/--parent-id/--sort |
+| world categories | 项目存在 | 类别汇总 | JSON | — | — |
+| world get | 条目存在 | 查询 | JSON | NOT_FOUND「世界观条目不存在」退出码 1 | — |
+| world update | 条目存在 | 部分更新 | ✅ / JSON | 404 NOT_FOUND；422 VALIDATION_ERROR | --category "" 清除类别 |
+| world delete | 条目存在 | 二次确认（--force 跳过）→ 真删 | ✅ 条目已删除: [灵气复苏]；--json data null | 404 NOT_FOUND；422 VALIDATION_ERROR（有子未指定）；--json 无 --force → VALIDATION_ERROR | --cascade 真删子树 / --reparent-to 改挂；无 --permanent（默认真删） |
+| world extract | 项目存在 | LLM 提取 → 合并落库 | ✅ 提取完成: 新增 3 个条目, 更新 1 个条目, 跳过 2 条, 警告 2 条；--json 报告 | 404 项目不存在；422 空文本；500 LLM_ERROR | --text/--text-file 互斥（同时 → 退出码 2） |
+
+### 15.3 验收锚点
+
+- A1：删除有子地点的条目且未指定 cascade/reparent_to → 422「该条目包含子地点，须指定级联删除或改挂」
+- A2：真删后 GET → 404「世界观条目不存在」（不可恢复，无 restore）
+- A3：创建条目 name 空 → 422「条目名不能为空」；同名 → 422「同名世界观条目已存在（条目名在项目内必须唯一）」
+- A4：extract text 空 → 422「章节文本不能为空」；LLM 解析失败重试 ≤2 仍失败 → 500「世界观提取失败: LLM 输出无法解析，请重试」
+- A5：重命名分类 → 同名字符串条目 category 同步改新名；删除分类 → 条目 category 置空（D2=A）
+- A6：extract 合并中途 DB 错误 → 单事务整体回滚（无部分落库）
