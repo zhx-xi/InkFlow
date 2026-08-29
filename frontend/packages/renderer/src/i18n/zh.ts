@@ -6,7 +6,7 @@ export const zh = {
   'nav.settings': '设置', 'nav.agent': 'Agent',
   'nav.expand': '展开', 'nav.collapse': '折叠',
   'nav.group.writing': '写作区', 'nav.group.library': '设定库',
-  'nav.group.system': '系统',
+  'nav.group.system': '系统', 'nav.group.sessions': '会话',
   'nav.lib.characters': '角色',
   'nav.lib.world': '世界观',
   'nav.lib.outline': '大纲',
@@ -16,6 +16,12 @@ export const zh = {
   'nav.search': '检索',
   'nav.sessions': '会话',
   'nav.memory': '记忆',
+  // #762：左侧独立会话栏（分组标签 / 归档徽标 / 消息计数）
+  'session.time.today': '今天',
+  'session.time.week': '本周',
+  'session.time.earlier': '更早',
+  'session.archived': '已归档',
+  'session.messages': '{count} 条',
   // 状态栏
   'sb.kernel': '内核已连接',
   'sb.kernelOffline': '内核未就绪',
