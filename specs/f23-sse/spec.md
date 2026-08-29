@@ -571,3 +571,44 @@ async def test_stream_generate_deltas(override_writing_service):
 ---
 
 *本文档为 F23 功能规格（What），实施步骤（How）见后续 `specs/f23-sse/plan.md`。所有里程碑验收以本节 M1-M8 为准。*
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §6 SSE 帧协议 + §7 边界事实，不重复、不新增行为）。SSE 帧序列与流式错误处理为本节重点（§14.2）。
+
+### 14.1 端点状态流
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| POST /api/v1/writing/stream | mode 显式必填（缺失/非法 → 422）；项目/章节存在；请求体字段校验（outline 空 / 字数越界 / max_words < min_words → 422）；无效 UUID → 422 | mode 判别分发（generate/continue/revise）→ service 流式方法（校验 → prompt 构建 → chat_stream 逐事件 yield）→ _event_generator 逐帧编码 → StreamingResponse | 200 text/event-stream + Cache-Control: no-cache + Connection: keep-alive + X-Accel-Buffering: no；帧序列 = 0..N delta 帧 + 恰好 1 个 done 帧（§6.1 不变量）；首 token ≤ 2s | 流开始前：404（项目/章节不存在，LLMRequestError 属 _NOT_FOUND_MESSAGES）、422（Pydantic 校验 / mode 缺失非法）、500（其他 LLMRequestError，API key 缺失等）——均为普通 HTTP 响应非 SSE；流开始后：error 帧（见 §14.2） | 客户端断开 → is_disconnected + events.aclose() 终止生成器不泄漏（E4）；空流 → done 帧 format_valid=false +「生成内容为空」（E5）；格式无效 → done 帧 format_valid=false + warnings 不重试（E6）；revise done 帧无 format_valid（E7/§5.1 注）；token_usage 不可用 → done 帧省略该字段（E8） |
+
+### 14.2 SSE 帧序列与流式错误处理（重点）
+
+| 场景 | 帧序列 / 行为 | 依据 |
+|------|--------------|------|
+| 正常流 | 0..N 个 delta 帧（data: {"delta": "...", "done": false}，全部 delta 拼接 = 完整内容）→ 1 个 done 帧（data: {"done": true, "format_valid": ..., "word_count": ..., "model": ..., "token_usage": {...}}）→ 连接关闭 | §6.1 不变量 1-3 |
+| 流中 LLM 失败（网络/超时/Provider） | 捕获 LLMRequestError → 发 error 帧 data: {"done": true, "error": "LLM 调用失败，请稍后重试"} → 流结束（结果字段省略） | §7 E3 + §6.1 不变量 4 |
+| 客户端断开（关连接/取消请求/Ctrl+C） | 每帧前 is_disconnected() → 真则 events.aclose() 终止 LLM 流（LangChain astream 中止底层请求），服务端无泄漏任务；断开后客户端重连 = 从头重拉（MVP 无断点续传） | §5.3 + §7 E4 |
+| 格式校验失败（generate/continue） | done 帧 format_valid=false + warnings；不自动重试（重试打断已见输出流） | §5.4 + §7 E6 |
+| revise 目标范围未定位 | done 帧 warnings 携带「未能定位目标范围…已全文修订」；无 format_valid | §7 E7 |
+| 空流（0 个 delta） | done 帧 format_valid=false + warning「生成内容为空」 | §7 E5 |
+
+### 14.3 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow write next / continue / revise（默认流式） | 项目/章节存在（service 校验，流开始前抛出）；DTO 字段校验 | 直接消费 service 流式方法（不经 HTTP），逐 token 打印 ev.delta（typer.echo nl=False 连续拼接）→ 流结束摘要行 | 退出 0；摘要「✅/⚠️ 章节生成成功: {word_count} 字 (重试 0 次, {model})」/「✅ 续写完成」/「✅ 修订完成」；--json 静默收集 → 信封 data 含 content/word_count/format_valid/retry_count/model/token_usage/warnings | 项目/章节不存在 → 退出 1 NOT_FOUND；流中 LLM 错误 → 退出 1 LLM_ERROR；Ctrl+C → 退出码 130（KeyboardInterrupt，aclose 由 async generator 生命周期保证） | 无 --no-stream 回退（Q3 拍板）；--count > 1 逐章循环（仅 next，章间空行）；--count + --json → 数组信封 |
+
+### 14.4 验收锚点（写入 §14）
+
+- A1：流开始前项目不存在 → 普通 HTTP 404（非 SSE error 帧）
+- A2：mode 缺失/非法 → 422（判别字段必填，FastAPI 自动）
+- A3：帧序列不变量：delta 帧均带 done:false；恰好 1 个 done 帧收尾后连接关闭
+- A4：流中 LLM 失败 → error 帧「LLM 调用失败，请稍后重试」后流结束（客户端可区分错误与正常结束）
+- A5：客户端断开 → service 生成器被 aclose（Mock 断言 aclose 被调用，无后台泄漏）
+- A6：空流 → done 帧 format_valid=false +「生成内容为空」warning
+- A7：格式无效 → done 帧 format_valid=false 且 chat_stream 仅调用 1 次（不重试）
+- A8：revise done 帧无 format_valid 字段（字段省略规则 §6.2）
+
+### 14.5 漂移标注
+
+- 无关键漂移：实现 `api/routers/writing.py` 的 _encode_sse 字段省略规则、error 帧文案「LLM 调用失败，请稍后重试」、is_disconnected + aclose 断开处理与 spec §6.2/§7 E3/E4 逐行一致；service 层 stream_generate/stream_continue/stream_revise 的 done 帧语义（format_valid /「生成内容为空」warning / revise 无校验）与 §5.1/§7 E5-E8 一致。实现含「预消费探针」模式（先 await 首事件再返回 StreamingResponse，writing.py L220-235）——落实 spec §3.2「流开始前校验异常 → HTTP 状态码」的惰性生成器实现细节，属实现补充非漂移。

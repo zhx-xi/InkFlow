@@ -894,3 +894,64 @@ F24 被依赖:
 ---
 
 *本文档为 F24 功能规格（What），实施步骤（How）见后续 `specs/f24-session/plan.md`。所有里程碑验收以本节 M1-M8 为准。*
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §5 状态机与履历 + §7 边界事实，不重复、不新增行为）。状态机与中断恢复语义为本节重点（§14.2）。
+
+### 14.1 端点状态流
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| POST /api/v1/sessions | project_id 存在（若携带：404 前置校验先于创建；null 不校验） | 创建会话 → status=active，started_at/created_at = now | 201 + SessionView（log_count=0，last_log=null） | 404「项目不存在」；422「会话标题不能为空」/「会话标题不能超过 100 个字符」/「会话描述不能超过 5000 个字符」 | project_id 可空（全局会话）；标题允许重复（实例语义）；status 不可传（创建即 active） |
+| GET /api/v1/sessions | — | 过滤（session_type/status/project_id/search）+ 分页，排除归档 | 200 {items, total, offset, limit}；排序 created_at DESC | — | search 仅匹配 title（LIKE 包含，不匹配 description，§6.3）；limit 默认 50 上限 200；全缺省 = 全部未归档会话 |
+| GET /api/v1/sessions/{session_id} | 会话存在（含归档） | 详情 + 履历摘要（log_count/last_log） | 200 + SessionView | 404「会话不存在」 | 归档会话详情 200 可追溯（列表不可见，§7 #7） |
+| PATCH /api/v1/sessions/{session_id} | 会话存在 | 部分更新 title/description/context（context 整体替换，未传字段不变） | 200 + Session | 404「会话不存在」；422 标题/描述非法 | status 字段被静默忽略（extra=ignore，status 不变，§7 #10）；空 body 200 无变化（§7 #11） |
+| POST /api/v1/sessions/{session_id}/pause | 会话 active | active→paused，paused_at = now | 200 + Session | 404；422「会话当前状态 X 不允许 pause」（§7 #3/#4） | 归档会话 404 不可操作（§7 #6） |
+| POST /api/v1/sessions/{session_id}/resume | 会话 paused | paused→active，清 paused_at | 200 + Session（paused_at=null） | 404；422 非法迁移 | 恢复语义 = 消费方读 context 快照续跑（§5.3） |
+| POST /api/v1/sessions/{session_id}/complete | 会话 active 或 paused | →completed，completed_at = now + result 快照落库（同事务，§5.2） | 200 + Session | 404；422「会话当前状态 completed 不允许 complete」 | 终态不可逆（不 reopen，§12 #5）；重复 complete 第二次 422（不承诺幂等，§5.2） |
+| POST /api/v1/sessions/{session_id}/fail | 会话 active 或 paused | →failed，completed_at = now + error 落库（同事务，§5.2） | 200 + Session | 404；422 非法迁移；422「失败原因不能为空」/「失败原因不能超过 2000 个字符」 | 终态不可逆 |
+| POST /api/v1/sessions/{session_id}/logs | 会话存在且未归档（任意状态含终态） | 追加日志，seq = max(seq)+1（服务层分配，§2.2） | 201 + SessionLogEntry（seq 递增） | 404「会话不存在」；422「日志消息不能为空」/「日志消息不能超过 2000 个字符」 | 终态可追加（履历补记 Q2 拍板，§7 #9）；日志不可更新/删除（履历不可篡改）；并发 seq 冲突 → 500 DB_ERROR（§7 #13） |
+| GET /api/v1/sessions/{session_id}/logs | 会话存在且未归档 | 日志列表按 seq ASC 分页 | 200 {items, total, offset, limit} | 404（会话不存在 / 归档会话 §7 #8） | 履历顺序不可配置（seq 即履历序号） |
+| DELETE /api/v1/sessions/{session_id} | 会话存在 | 两级删除：首次 → 归档（is_deleted=True）；已归档再删 → 物理删除 + 日志级联；?force=true → 直接真删（§2.5） | 204 | 404「会话不存在」 | 归档可 restore 解除；真删不可恢复（§7 #8b/#15） |
+| POST /api/v1/sessions/{session_id}/restore | 会话存在 | 解除归档 is_deleted=False | 200 + Session | 404 | 未归档时幂等返回原对象（无操作成功） |
+
+### 14.2 状态机与中断恢复语义（重点）
+
+| 场景 | 行为 | 依据 |
+|------|------|------|
+| 状态迁移合法性 | active→{pause, complete, fail}；paused→{resume, complete, fail}；completed/failed→任意动作 = 422（终态不可逆）；paused→pause / active→resume = 422 | §2.4 状态机 |
+| 时间戳副产物 | pause 写 paused_at；resume 清 paused_at；complete/fail 写 completed_at（统一终态时间戳） | §5.2 |
+| 动作原子性 | complete/fail 的 result/error 与状态更新同一事务落库 | §5.2 |
+| 中断恢复（写作会话） | resume 后消费方（F3/GUI）读 context 快照（章节 id/模式/参数）重建写作输入——F24 只存不解释（§5.3） | §5.3 |
+| 中断恢复（任务会话） | 外部 agent（F20 MCP）resume 后读 context 续跑未完成任务；进度连续性 = GET /logs 按 seq 回溯已执行步骤，据 last_log/result 决定续跑起点 | §5.3 |
+| 进度写入契约 | 任务开始/每章节完成/LLM 重试/任务完成/任务失败按 §5.4 模板写日志（level/message/payload 键约定）；日志与状态机独立（终态也可写） | §5.4 |
+| 可观测键（软关联） | payload 可携带 execution_id/agent_name/stage/tool_calls/duration_ms（全部可选，无 FK）；「当前哪个 agent 在工作」= status=active + last_log.payload.agent_name；「执行到哪一步」= /logs 的 seq 时间线 | §5.4b |
+
+### 14.3 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow session create --type writing/task --project-id <id> --title ... | 项目存在（若传 --project-id） | 创建会话（--context-json 或 --context-file 双通道） | 退出 0；--json 信封 data = SessionView | NOT_FOUND（项目不存在）→ 退出 1；VALIDATION_ERROR → 退出 1 | --context-json 与 --context-file 互斥 |
+| inkflow session list [--type/--status/--project-id/--search/--limit/--offset] | — | 履历查询（过滤可任意组合） | 退出 0；data = {items, total, offset, limit} | — | — |
+| inkflow session get --id | 会话存在 | 详情（含履历摘要 + 日志条数） | 退出 0 | NOT_FOUND → 退出 1 | 归档会话可查 |
+| inkflow session update --id [--title/--description/--context-json] | 会话存在 | 部分更新（不承载 status） | 退出 0 | NOT_FOUND → 退出 1 | status 不经 CLI 修改 |
+| inkflow session pause / resume / complete / fail --id | 会话存在且迁移合法 | 状态机动作（complete 带 --result-json；fail 带 --error） | 退出 0 | NOT_FOUND → 退出 1；VALIDATION_ERROR（非法迁移/校验失败）→ 退出 1 | 重复动作 → VALIDATION_ERROR（不幂等） |
+| inkflow session logs --id | 会话存在 | 履历列表（seq ASC） | 退出 0 | NOT_FOUND → 退出 1 | — |
+| inkflow session log add --id --message [--level/--payload-json] | 会话存在（含终态） | 追加日志（seq 递增） | 退出 0 | NOT_FOUND → 退出 1；VALIDATION_ERROR → 退出 1 | 终态可追加 |
+| inkflow session delete --id [--force] | 会话存在 | 两级删除（首次归档；已归档再删 = 真删；--force 直删） | 退出 0 | NOT_FOUND → 退出 1 | — |
+| inkflow session restore --id | 会话存在 | 解除归档 | 退出 0 | NOT_FOUND → 退出 1 | 未归档幂等 |
+
+### 14.4 验收锚点（写入 §14）
+
+- A1：非法迁移（如 completed 会话 pause）→ 422「会话当前状态 completed 不允许 pause」（非 500）
+- A2：终态（completed/failed）追加日志 → 201 允许（履历补记）
+- A3：首次 DELETE → 204 归档后：列表不含、详情 200、logs 404；已归档再 DELETE → 204 物理删除（session_logs 级联行数验证，不可恢复）
+- A4：?force=true 对活动会话直接真删（204）
+- A5：创建携带不存在 project_id → 404（前置校验先于创建，非 500）
+- A6：SessionUpdate 携带 status → 静默忽略，status 不变（非 422）
+- A7：resume 后 paused_at=null；complete/fail 后 completed_at 已填
+- A8：日志 seq 连续递增（1,2,3），无更新/删除端点（履历不可篡改）
+
+### 14.5 漂移标注
+
+- 无关键漂移：实现 `domain/services/session_service.py` 状态机（pause 仅 active、resume 仅 paused、complete/fail 允许 active|paused、终态 422、时间戳副产物、两级删除 force 直删 / 归档再删真删 / restore 幂等）与 spec §2.4/§2.5/§5.2 逐行一致；`api/routers/sessions.py` 12 端点（含 POST 201 / DELETE 204 状态码）与 spec §3.1 一一对应；422 文案「会话当前状态 X 不允许 Y」与 §3.4 示例一致。

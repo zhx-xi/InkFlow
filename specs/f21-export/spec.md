@@ -527,3 +527,32 @@ class ExportService:
 | Q1 | 导出格式集 | A. 4 种全做（EPUB/Markdown/TXT/DOCX）<br>B. 3 种 MVP（Markdown/TXT/EPUB，DOCX 延后）<br>C. 仅 TXT（国内网文发布生态主流，其余无场景） | ✅ 已确认（用户拍板 2026-08-09：C）——正文已按仅 TXT 修订（§1/§5/§8/§10/§12 D4），格式扩展接缝保留（§5.5） |
 | Q2 | 依赖库选型 | A. ebooklib + python-docx（+lxml）<br>B. 纯标准库手写（zipfile + xml.etree）<br>C. 混合 | ✅ 已确认（用户拍板 2026-08-09：随 Q1=C 自解，TXT 纯文本零依赖）——正文已按零依赖修订（§5.3/§12 D5），pyproject/uv.lock 零变更 |
 | Q3 | 导出内容范围 | A. 仅正文（卷/章）<br>B. 正文 + 设定档案固定包含<br>C. `include_settings` 参数切换（默认不含） | ✅ 已确认（用户拍板 2026-08-09：C）——正文已按参数切换修订（§2.3/§5.1/§6.3） |
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §7 边界事实，不重复、不新增行为）。
+
+### 14.1 端点状态流
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| GET /api/v1/projects/{project_id}/export | 项目存在且未软删（E1） | 只读聚合 7 模块（§5.1 ①-④）→ BookDocument → TXT 序列化（§5.3）→ 字节流响应 | 200 text/plain; charset=utf-8 + Content-Disposition attachment（文件名 URL 编码）；幂等、确定性（同参数同字节） | 404「项目不存在」（复用 ProjectNotFoundError）；422 format 非 txt（Pydantic Literal，E10）；422 include_settings 非法；500「内部错误: <e>」（并行拉取单源失败，E9） | 项目无内容 → 200 空文档（E2/E4）；文件名非法字符清洗为 _（E5）；空书名占位 untitled（E7）；正文超长正常导出（E6）；快照语义以聚合时刻为准（E11） |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow export <project> [--include-settings] [--output PATH] [--json] | 项目存在（名称精确匹配 / 数字或 UUID 直通；恒经 ensure_kernel + HTTP get_raw） | 下载 TXT 原始文本 → 写文件（目录 → 建议文件名；文件路径 → 直接写入；默认 cwd + 建议文件名） | 退出 0；人类模式「✅ 导出成功: {name} → {path} ({bytes:,} bytes)」；--json 信封 data = ExportResult {format, filename, bytes, path} | 项目不存在 → 退出 1「项目不存在: <name>」；写文件失败（权限/磁盘）→ 退出 1「写文件失败: <系统错误>」 | --output 为已存在文件 → 直接覆盖不确认（E8）；无 --format 选项（v1.1 单格式，未来扩展恢复 -f） |
+
+### 14.3 验收锚点（写入 §14）
+
+- A1：项目不存在 → 404「项目不存在」（非 500、非英文文案泄漏）
+- A2：format=epub → 422（Literal["txt"] 校验，非 200）
+- A3：include_settings=true → 附录含 5 类档案；false → settings 空列表（§6.3 摘要拼接）
+- A4：并行拉取单源 DB 失败 → 500「内部错误: ...」（无部分导出，原子快照，E9）
+- A5：空项目（无卷无章）→ 200 空文档（标题 + 分隔线，不报错，E2）
+- A6：软删内容（卷/章/角色/世界观/大纲/时间线/伏笔）不出现于导出
+- A7：>50 章项目不丢章（循环分页拉全，§5.2 分页陷阱回归）
+
+### 14.4 漂移标注
+
+- 无关键漂移：实现 `api/routers/export.py` 与 spec §3.1/§3.3 一致（1 端点、404/500 detail 文案、format Literal["txt"]、include_settings 默认 false）；Content-Disposition 实现为 filename*=UTF-8''（RFC 5987）形式，与 spec「文件名 URL 编码」语义一致，属表述差异。
