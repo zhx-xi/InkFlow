@@ -201,13 +201,14 @@ describe('写作页 — 项目印章常驻（三主题）', () => {
 });
 
 describe('写作页 — 右栏整栏收起/展开（#742 收起按钮整行 + #747 拖动方向）', () => {
-  it('#742 收起按钮在右栏上侧占整行；拖动分隔线 hover 变鼠标（非方框）', () => {
+  it('#765 收起按钮移到右栏左缘 + 显示「折叠」提示；拖动分隔线 hover 变鼠标（非方框）', () => {
     render(<WritingPage />);
     const rail = screen.getByTestId('right-rail');
     const toggle = within(rail).getByTestId('right-col-toggle');
-    // 收起按钮：位于右栏内、占整行（w-full）、位于面板上方
+    // #765：收起按钮位于右栏左缘（内容左对齐 + 可见「折叠」文案，非 w-full 整行居中图标）
     expect(toggle).toBeInTheDocument();
-    expect(toggle.className).toMatch(/w-full/);
+    expect(toggle).toHaveTextContent('折叠');
+    expect(toggle.className).not.toMatch(/w-full/);
     expect(toggle.compareDocumentPosition(screen.getByTestId('rail-panel-context')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // 拖动分隔线：右栏内、hover 变鼠标（cursor-col-resize）、细边界（非 28px 方框）
     const drag = within(rail).getByTestId('right-col-drag');

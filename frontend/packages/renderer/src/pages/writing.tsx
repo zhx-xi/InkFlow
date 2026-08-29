@@ -7,7 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
-import { Compass } from 'lucide-react';
+import { Compass, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { auditChapter, confirmAudit, type AuditReportDto } from '../api/audit';
 import { createChatConversation, saveChatMessage } from '../api/chat';
@@ -417,9 +417,19 @@ export function WritingPage() {
             data-testid="right-col-toggle"
             aria-label={railCollapsed ? '展开右栏' : '收起右栏'}
             onClick={() => setRailCollapsed((c) => !c)}
-            className="flex h-8 w-full shrink-0 items-center justify-center border-b border-line text-[12px] text-ink-3 hover:bg-surface-3 hover:text-ink"
+            className="flex h-auto shrink-0 items-center justify-start gap-1 self-start border-b border-line px-2 py-1.5 text-[12px] text-ink-3 hover:bg-surface-3 hover:text-ink"
           >
-            {railCollapsed ? '«' : '»'}
+            {railCollapsed ? (
+              <>
+                <PanelLeftOpen className="h-4 w-4" aria-hidden="true" />
+                <span>{t('nav.expand')}</span>
+              </>
+            ) : (
+              <>
+                <PanelLeftClose className="h-4 w-4" aria-hidden="true" />
+                <span>{t('write.context.collapse')}</span>
+              </>
+            )}
           </button>
           {railCollapsed ? null : (
             <div
