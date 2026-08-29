@@ -6,12 +6,13 @@ import { worldCatKindEn, worldCatKindZh } from './world-cat-kind';
 import { chatUxEn, chatUxZh } from './chat-ux';
 import { sessionsUxEn, sessionsUxZh } from './sessions-ux';
 import { writingUxEn, writingUxZh } from './writing-ux';
+import { sessionUxEn, sessionUxZh } from './session-ux';
 import { zh } from './zh';
 
 type Dict = Record<string, string>;
 const dicts: Record<'zh' | 'en', Dict> = {
-  zh: { ...zh, ...roleEnhanceZh, ...extractZh, ...worldCatKindZh, ...chatUxZh, ...sessionsUxZh, ...writingUxZh } as Dict,
-  en: { ...en, ...roleEnhanceEn, ...extractEn, ...worldCatKindEn, ...chatUxEn, ...sessionsUxEn, ...writingUxEn },
+  zh: { ...zh, ...roleEnhanceZh, ...extractZh, ...worldCatKindZh, ...chatUxZh, ...sessionsUxZh, ...writingUxZh, ...sessionUxZh } as Dict,
+  en: { ...en, ...roleEnhanceEn, ...extractEn, ...worldCatKindEn, ...chatUxEn, ...sessionsUxEn, ...writingUxEn, ...sessionUxEn },
 };
 
 /** 简单占位替换: t('write.stream.done', { words: 342, model: 'x', valid: '通过' }) */
