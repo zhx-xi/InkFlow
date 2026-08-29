@@ -54,14 +54,26 @@
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
-| model | str | DEFAULT "gpt-4o" | 默认 AI 模型 |
-| agent_architect | str? | NULLABLE | 架构师 Agent 模型（None=用默认） |
-| agent_writer | str? | NULLABLE | 写手 Agent 模型 |
-| agent_auditor | str? | NULLABLE | 审阅 Agent 模型 |
-| agent_reviser | str? | NULLABLE | 修订 Agent 模型 |
+| model | str? | None=未配置，装配回退全局默认 | 默认 AI 模型 |
+| agent_architect | str? | None=关闭；字符串=指定；"__default__"=跟随默认 | 架构师 Agent 模型 |
+| agent_writer | str? | 同上 | 写手 Agent 模型 |
+| agent_auditor | str? | 同上 | 审阅 Agent 模型 |
+| agent_reviser | str? | 同上 | 修订 Agent 模型 |
+| agent_worldview | str? | 同上（v1.5 #484） | 世界观顾问 Agent 模型（F42 spec §5.7.1） |
+| agent_polisher | str? | 同上（v1.5 #484） | 润色师 Agent 模型（F42 spec §5.7.1） |
+| agent_roles | dict[str, str?] | 默认 {}；key 带 agent_ 前缀（F42 #295 §5.3.4） | 自定义角色三态字段 |
 | temperature | float | DEFAULT 0.7, [0.0, 2.0] | 生成温度 |
+| role_*_temperature | float? | 4 个（architect/writer/auditor/reviser），None=跟随默认 | 角色独立温度 |
+| template_id | str? | None=未引用，回退默认装配（#143 spec §9.2） | 引用的 AgentTemplate id |
+| default_words | int | DEFAULT 800000, [1000, 10_000_000] | 新章节默认字数 |
 | writing_style | str | DEFAULT "" | 写作风格描述 |
+| agent_order | list[list[str]] | DEFAULT []; 层级嵌套，槽位 0-9（F42 v1.2 §2.1） | Agent 链执行拓扑 |
+| agent_relations | list[AgentRelation] | DEFAULT []; 显式边（F42 v1.4 §1.2） | 角色间关联关系 |
+| supervisor | SupervisorProjectConfig? | None=未启用（F29/#598） | 项目级 Supervisor/HITL |
+| auto_write_enabled | bool | DEFAULT False；项目级全自动开关（#598 D9-a1） | 全自动写书开关 |
 | extra | dict[str, Any] | DEFAULT {} | 扩展配置字典（未来兼容） |
+
+> **字段来源注**：ProjectConfig 为 F1 领域模型，但 `agent_worldview/agent_polisher/agent_roles/agent_order/agent_relations/supervisor/auto_write_enabled` 的详细语义由 **F42（agent-chain）/ F29（supervisor）/ F44（book-orchestrator）+ #598** 定义并消费——本表只列字段与三态口径，不重复展开（避免双份真相，见 split-spec-revision §6）。
 
 **业务规则**:
 - 项目名称不能为空、不能全空白、不能超过 100 字符
@@ -507,3 +519,37 @@ F1 被依赖:
 | Service 依赖 | 直接实例化 Repository | 单人开发，暂时不需要 IoC 容器 |
 | UUID 解析 | 自定义 `_parse_project_id` | 统一处理无效格式为 404 |
 | tags 取代 genre（#595，D6=B 拍板） | 删 `Genre` 枚举；`tags: list[str]`（JSON 列） | 单用户未上线，删枚举重建可接受；自由标签比 11 固定分类更贴合创作，write_auto 题材改从 tags 全拼取（D6-a1） |
+---
+
+## 13. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §7 边界事实，不重复）。
+
+### 13.1 端点状态流
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| POST /projects | 无 | 校验 DTO → 建 Project（is_deleted=False） | 201 + Project JSON | 422（name 空/>100 字符/tags 空项） | name 必填；config 默认 ProjectConfig() |
+| GET /projects | 无 | 搜索/排序/分页 → 过滤 is_deleted | 200 + {items,total,offset,limit} | — | search 空不过滤；limit≤100；offset≥0 |
+| GET /projects/{id} | 项目存在 | 查询 → 返回 | 200 + Project JSON | 404「项目不存在」 | is_deleted→404；无效 UUID→404 |
+| PATCH /projects/{id} | 项目存在 | 部分更新（exclude_unset） | 200 + 更新后 Project | 404（不存在）；422（name 非法） | 字段不传=不改 |
+| DELETE /projects/{id} | 项目存在 | 软删除 is_deleted=True | 204 | 404（不存在/已软删） | 不传 force=软删；软删后 GET/PATCH 404 |
+| DELETE /projects/{id}?force=true | 项目存在 | 硬删除（不可恢复） | 204 | 404（不存在/已软删） | 硬删后 GET 404 |
+| POST /projects/{id}/restore | 项目存在（硬删除外） | is_deleted=False | 200 + Project JSON | 404（不存在）；硬删后不可恢复 | 未软删时恢复=无操作成功 |
+
+### 13.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| project create | 无 | 建项目 | 「✅ 项目创建成功」/ --json JSON | 422 校验失败 | --tags 可重复传 |
+| project list | 无 | 列出 | 列表 / JSON | — | --search/--sort/--json |
+| project get | 项目存在 | 查询 | 项目 JSON | 404 | — |
+| project delete | 项目存在 | 二次确认（--force 跳过）→ 软删 | 204 | 404 | --force 跳过确认；--permanent 硬删 |
+| project restore | 项目存在 | 恢复 | 200 | 404 | — |
+
+### 13.3 验收锚点（写入 §13）
+
+- A1：POST /projects 空 name → 422「项目名称不能为空」（非 500/非 422 原文泄漏）
+- A2：DELETE /projects/{id} → 204 后 GET 404（软删排除）
+- A3：DELETE /projects/{id}?force=true → 204 后 restore 404（硬删不可恢复）
+- A4：tags 含空白项 → 422「项目标签不能为空」
