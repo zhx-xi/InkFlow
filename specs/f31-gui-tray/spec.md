@@ -412,3 +412,41 @@ Playwright `app.evaluate` 断言托盘状态；托盘菜单项点击经 `app.eva
 - **Q3 设置页首次提示开关是否展示**：A. 不展示（toast 内勾选即可，YAGNI；#152 合入后如需持久化再加）；B. GeneralPanel 额外加「首次托盘提示」开关（与关闭行为并列，显式可改）。**✅ 已确认（用户拍板：选项 A，2026-08-07）+ 设置页开关需求登记 #152**（2026-08-07 已在 #152 评论区留痕：作为 #152 设置持久化落地后的增强项）——正文已按 A 定稿（§6.2 不占设置页空间）。
 
 > 说明：F167-SESSION-PROMPT §7 的「待拍板项」（#152 口径）已在 issue 评论区拍板（2026-08-07 归口合并），Q 表不再重复；本表 Q1-Q3 为起草阶段补充识别。
+
+---
+
+## 15. 交互规格（交互类专用）
+
+### 15.1 画面样式（简图/原型）
+
+- 原型引用：design/GUI/settings/（设置页常规分类 GeneralPanel「关闭窗口时」Select；<page>-<state>.png 各状态截图）
+- 参考锚点（§6.2 设置页 UI + §5.6 托盘实现）：
+  - 布局：设置项位于 GeneralPanel（常规分类），与 AppearanceCard（主题/语言）同区——应用级设置，非项目 config
+  - 折叠/分组：设置页左侧分类导航 + 右侧面板；「关闭窗口时」Select 两项（最小化到系统托盘/直接退出）
+  - 空态/流式：不适用（托盘交互无页面空态/流式时序）
+  - 托盘本体为系统级 UI（任务栏图标 + 右键菜单），非页面——画面锚点以设置页入口 + §5.1 模式总览图为准
+- 布局说明：托盘菜单三项（打开主窗口 default / 内核状态只读子菜单 / 退出）+ 分隔线；首次托盘提示 toast（含「不再提示」勾选，操作区）；关闭行为 Select 默认「最小化到系统托盘」。
+
+### 15.2 动作样式（按钮 × 状态表，逐控件）
+
+| 控件 | 初始态 | 点击后 | 进行中 | 成功 | 失败 | 边界 |
+|------|--------|--------|--------|------|------|------|
+| 窗口关闭按钮（自绘/Alt+F4/任务栏） | closeBehavior='tray'（默认） | win.on('close') 拦截：preventDefault + win.hide() | — | 窗口隐藏，内核保持运行；首次 webContents.send('inkflow:tray-hint') | — | 首次且 !trayHintDismissed 才提示；勾选「不再提示」→ dismissTrayHint() 置位（内存态，重启后重新提示） |
+| 窗口关闭（closeBehavior='quit'） | 设置页 Select 切「直接退出」 | 不拦截 → window-all-closed → shutdown() | 内核回收 | 完整退出（stopKernel + app.exit(0)） | 3s 超时 taskkill 兜底 | 用户显式选择；#78 既有路径 |
+| 托盘「打开主窗口」 | 菜单项（default，加粗） | win.show() + focus() | — | 窗口恢复可见 | 窗口被销毁 → createMainWindow() 重建 | 单击/双击托盘图标同行为（tray.on('click')） |
+| 托盘「内核状态」子菜单 | 只读 disabled：端口/PID/版本/健康 | —（只读展示） | 健康检查 2s 周期刷新 | 「内核状态: 运行中 (port 端口 · pid PID)」 | 「内核状态: 未运行」 | 仅状态翻转时重建菜单（防抖，避免每 2s 重建） |
+| 托盘「退出」 | 菜单项 | shutdown()（stopKernel 优雅 kill → 3s 超时 taskkill → app.exit(0)） | 回收中 | 内核 pid 不再存活 + 应用退出 | 超时兜底不挂起 | 先 tray.destroy() 防 Windows 托盘残留图标 |
+| 关闭行为 Select（设置页） | 挂载时 getCloseBehavior() 异步取初值（默认 'tray'） | 选择「直接退出」→ setCloseBehavior('quit') | — | 主进程内存态更新，下次关闭即生效（无需重启） | — | 无 API 时（Vite dev 浏览器模式）可选链吞掉调用；#152 合入后切持久化 |
+| 首次托盘提示 toast | 仅 tray 模式首次 hide 触发 | toast「InkFlow 仍在后台运行，已最小化到系统托盘」+ 勾选框 | — | 勾选 → dismissTrayHint() → trayHintDismissed=true | — | 内存态：重启后重新提示（Q1=A 拍板） |
+| 二次启动（单实例） | 已有实例运行 | requestSingleInstanceLock 失败 → app.quit() | — | 第二实例静默退出；已有窗口 restore/show/focus | — | 锁获取在 createMainWindow/spawnKernel 之前；窗口被销毁 → 重建 |
+| GUI 启动内核复用 | 读 kernel.json | pid 存活 + /health 200 → 复用（不 spawn） | — | 直接连接（kernelInfo 就绪 + sendReadyToRenderer） | 无/stale → 重命名 .stale-<ts> → spawnKernel() | 版本不一致视为 stale（防御性）；GUI spawn 后写 kernel.json（原子写，失败降级 console.error） |
+
+### 15.3 验收（写入 §13 验收 M）
+
+- N1：关闭 → 窗口隐藏 + 内核存活 + 托盘图标出现（M1）
+- N2：托盘「打开」恢复窗口；「退出」内核回收 + 应用退出（M2）
+- N3：设置切「直接退出」→ 关闭 = 完整退出（M3）
+- N4：二次启动 → 无第二窗口/第二内核（M4）
+- N5：GUI 启动复用 CLI 已拉起内核（pid 不变，不 spawn）（M5）
+- N6：首次托盘提示 toast + 不再提示勾选（M7）
+- N7：GUI spawn 内核后写 kernel.json 五字段齐全（M8）

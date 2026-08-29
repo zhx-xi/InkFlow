@@ -426,3 +426,34 @@ F19 为拆分条目：GUI 壳（0.3.0）/ 打包分发（0.4.0）/ skills 包（
    - C：A + B 双放（覆盖最全，但双处收集 + 双处冒烟）
    - **✅ 已确认（用户拍板：新决策，2026-08-12）——A/B/C 全部否决**：skills 放 GitHub 主通道 + **后续可能单独打包**，**当前不随安装包下载**。正文 §1.1/§1.2/§5.1/§5.4/§5.5/§8.2/§8.3/§9/§10/§13 已联动修订（双轨 + 打包配置零改动 + 漂移四件套 #1/#4 调整），D6 同步 ✅。
    - 影响：§5.4（不实施）、§8.2/§8.3（inkflow.spec/release.yml/electron-builder 零改动）、§13 M3/M6（漂移验证调整）
+
+---
+
+## 14. 动作确认
+
+> 每个命令的完整状态流表（基于 §4 CLI 命令签名 + §7 边界错误码 + §13 验收事实，不重复）。
+
+### 14.1 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow skills install <SOURCE> [--target PATH] [--force] [--json] | SOURCE = 本地目录（含 SKILL.md） | 读源目录 → 校验 frontmatter → 复制整个目录到 data_dir/skills/<name>/ | {"ok": true, "data": {name, target, files}} 退出码 0 | N1/N2 校验失败 → 退出码 1；N4 ALREADY_INSTALLED → 1；N6 SKILLS_SOURCE_INVALID → 1；N7 SKILLS_TARGET_UNWRITABLE → 1 | --force 覆盖同名；--target 覆盖默认根；首版仅本地路径（GitHub URL 留待后续）；原样保留辅助文件/references |
+| inkflow skills list [--json] | 无 | 扫描 data_dir/skills/ 各 SKILL.md | {"ok": true, "data": {skills: [{name, description, path, status}]}} 退出码 0 | — | status = frontmatter 校验结果（invalid 附 N1/N2 信息）；无 --json 人类可读列表 |
+| inkflow skills verify [--name NAME] [--json] | 已导入 skills | 校验必填字段（N1）/name 合规且与目录名一致（N2）/description 长度（N3） | {"ok": true, "data": {name, checks, status: ok}} 退出码 0 | 任一失败 → 退出码 1 + 错误信封 | 只读校验不改文件；N3 截断警告仍成功（deepagents 宽容策略） |
+| inkflow skills remove <NAME> [--json] | skill 已导入 | 删除 data_dir/skills/<NAME>/ 整个目录 | {"ok": true, "data": {removed: <NAME>}} 退出码 0 | N5 NOT_FOUND → 退出码 1；N7 不可写 → 1 | 整目录删除（SKILL.md + 辅助 + references） |
+| （通用错误面） | 任意子命令 | 非法参数/缺参 | — | 退出码 2（typer 默认） | Ctrl+C → 退出码 130 优雅退出 |
+
+### 14.2 双轨动作边界（官方轨 vs 用户自定义轨）
+
+| 轨 | 动作 | 管理方 | 成功 | 失败 | 边界 |
+|----|------|--------|------|------|------|
+| 官方轨（skills/inkflow/，GitHub 源码树） | 交付资产（蓝本复制改造 20 references + SKILL.md + mcp-setup.md 占位） | CLI 不管（agent 从 GitHub 自取） | tag 上文件完整 + frontmatter 合规（M3） | 文件缺失 → 漂移验证失败 | 不随安装包（Q3 拍板零打包改动）；version 对齐当前版本（M7） |
+| 用户自定义轨（data_dir/skills/<name>/） | install/list/verify/remove | CLI 管理 | install → list → verify → remove 闭环（M2） | 校验/覆盖/删除错误码 N1-N7 | 与 deepagents SkillsMiddleware 逐字节兼容；未来 agent run 零改造（其他 issue） |
+
+### 14.3 验收锚点（写入 §13 验收标准）
+
+- A1：install（tmp_path 真实导入）→ list → verify → remove 闭环 + --json 信封 + 退出码 0/1/2 → M2
+- A2：tag 上官方轨 20 references + SKILL.md 完整、frontmatter 合规 → M3
+- A3：inkflow skills list --json（本地 + 打包 exe）无 ModuleNotFoundError → M4
+- A4：外部 agent 加载官方包执行旅程 C 任务，决策轨迹可见 inkflow <cmd> --json 调用 → M5
+- A5：双轨分发各验一次 → M6；frontmatter version = 当前版本 → M7
