@@ -67,17 +67,27 @@ export function ExecutionDetailPanel({
     const targetRunId = runId ?? activeRunId;
     if (targetRunId) {
       let cancelled = false;
+      let timer: number | undefined;
       setRun(null);
       setError(null);
-      getRun(targetRunId)
-        .then((data) => {
-          if (!cancelled) setRun(data);
-        })
-        .catch((err) => {
-          if (!cancelled) setError(errorMessage(err));
-        });
+      const load = () => {
+        getRun(targetRunId)
+          .then((data) => {
+            if (cancelled) return;
+            setRun(data);
+            // #760：进行中 run 轮询刷新至终态（running/pending → 继续轮询；终态停止），不僵死 running
+            if (data.status === 'running' || data.status === 'pending') {
+              timer = window.setTimeout(load, 400);
+            }
+          })
+          .catch((err) => {
+            if (!cancelled) setError(errorMessage(err));
+          });
+      };
+      load();
       return () => {
         cancelled = true;
+        if (timer !== undefined) window.clearTimeout(timer);
       };
     }
     // 链式模式（既有：#586 detail 不调用列表端点）
@@ -119,7 +129,15 @@ export function ExecutionDetailPanel({
       void Promise.resolve(listRuns(projectId))
         .catch(() => null)
         .then((data) => {
-          if (!cancelled) setRuns(data?.items ?? []);
+          if (!cancelled) {
+            const items = data?.items ?? [];
+            setRuns(items);
+            // #760：项目存在进行中 agentic run → 自动恢复为当前展示（切页返回不再丢失）
+            const inProgress = items.find(
+              (r) => r.status === 'running' || r.status === 'pending',
+            );
+            if (inProgress) setActiveRunId(inProgress.id);
+          }
         });
       return () => {
         cancelled = true;

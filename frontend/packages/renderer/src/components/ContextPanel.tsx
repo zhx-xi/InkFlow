@@ -10,7 +10,7 @@ import {
   type ContextOverride,
   type ContextSourceType,
 } from '../api/context';
-import { errorMessage } from '../api/client';
+import { ApiError, errorMessage } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 
 export interface ContextPanelProps {
@@ -108,7 +108,13 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
         setCheckedWorldIds(collectIds(result.blocks, 'world_setting', 'world_setting_id'));
       } catch (err) {
         setData(null);
-        setError(errorMessage(err));
+        // #759：空写作要求被后端 min_length 拒（422 string_too_short）→ 优雅占位，不渲染原始 JSON
+        const msg = errorMessage(err);
+        if ((err instanceof ApiError && err.status === 422) || msg.includes('string_too_short')) {
+          setError(t('write.context.emptyRequired'));
+        } else {
+          setError(msg);
+        }
       } finally {
         setLoading(false);
       }
@@ -122,12 +128,18 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
     setCheckedForeshadowingIds([]);
     setCheckedWorldIds([]);
     if (projectId && chapterId && model) {
-      void runAssemble({ character_ids: [], foreshadowing_ids: [], world_ids: [] });
+      if (!writingRequirements.trim()) {
+        // #759：写作要求为空 → 不发 assemble，直接显示「未填写写作要求」占位
+        setData(null);
+        setError(t('write.context.emptyRequired'));
+      } else {
+        void runAssemble({ character_ids: [], foreshadowing_ids: [], world_ids: [] });
+      }
     } else {
       setData(null);
       setError(null);
     }
-  }, [runAssemble, projectId, chapterId, model]);
+  }, [runAssemble, projectId, chapterId, model, writingRequirements]);
 
   const groups = useMemo(
     () => (data ? groupBySource(data.blocks) : new Map<ContextSourceType, ContextBlock[]>()),
