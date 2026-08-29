@@ -41,7 +41,7 @@ def get_chat_agent_service(
     data: deps_module.ChatStreamRequest,
     db: AsyncSession = Depends(_get_db),
 ) -> ChatAgentService:
-    """获取 ChatAgentService 实例（#597：5 只读 + save_draft + 3 设定库写入）.
+    """获取 ChatAgentService 实例（#597 只读 + #748 设定库写入 + #766 更新/世界/记忆/写作）.
 
     chat_stream.py 顶层导入本函数（绑定名同一性 → dependency_overrides 命中）；
     模型/密钥/base_url 解析镜像 get_agentic_writer_service（provider_config 同源）；
@@ -57,9 +57,13 @@ def get_chat_agent_service(
     from inkflow.core.config import config
     from inkflow.domain.services.model_resolution import resolve_model
     from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+    from inkflow.infrastructure.agent.tools.memory_tools import MemoryToolDeps
     from inkflow.infrastructure.agent.tools.reader_tools import ReaderToolDeps
     from inkflow.infrastructure.agent.tools.save_draft_tool import SaveDraftToolDeps
+    from inkflow.infrastructure.agent.tools.setting_update_tools import SettingUpdateToolDeps
     from inkflow.infrastructure.agent.tools.setting_write_tools import SettingWriteToolDeps
+    from inkflow.infrastructure.agent.tools.world_readwrite_tools import WorldRwToolDeps
+    from inkflow.infrastructure.agent.tools.writing_tools import WritingToolDeps
     from inkflow.infrastructure.llm.provider_config import (
         _BUILTIN_PROVIDERS,
         get_provider_config,
@@ -156,11 +160,52 @@ def get_chat_agent_service(
             expected_project_id=uuid.UUID(data.project_id),
         )
     )
+    setting_update_tools = deps_module.build_setting_update_tools(
+        SettingUpdateToolDeps(
+            character_service=deps_module.get_character_service(db),
+            world_service=deps_module.get_world_service(db),
+            outline_service=deps_module.get_outline_service(db),
+            audit_service=deps_module.get_audit_service(db),
+            expected_project_id=uuid.UUID(data.project_id),
+        )
+    )
+    world_rw_tools = deps_module.build_world_rw_tools(
+        WorldRwToolDeps(
+            map_service=deps_module.get_map_service(db),
+            timeline_service=deps_module.get_timeline_service(db),
+            foreshadowing_service=deps_module.get_foreshadowing_service(db),
+            audit_service=deps_module.get_audit_service(db),
+            expected_project_id=uuid.UUID(data.project_id),
+        )
+    )
+    memory_tools = deps_module.build_memory_tools(
+        MemoryToolDeps(
+            memory_service=deps_module.get_memory_service(db),
+            audit_service=deps_module.get_audit_service(db),
+            expected_project_id=uuid.UUID(data.project_id),
+        )
+    )
+    writing_tools = deps_module.build_writing_tools(
+        WritingToolDeps(
+            writing_service=deps_module.get_writing_service(db),
+            audit_service=deps_module.get_audit_service(db),
+            expected_project_id=uuid.UUID(data.project_id),
+            expected_chapter_id=uuid.UUID(data.chapter_id) if data.chapter_id else None,
+        )
+    )
     agent = deps_module.build_deep_agent(
         model=model,
         api_key=api_key,
         base_url=base_url,
-        tools=[*reader_tools, save_draft_tool, *setting_write_tools],
+        tools=[
+            *reader_tools,
+            save_draft_tool,
+            *setting_write_tools,
+            *setting_update_tools,
+            *world_rw_tools,
+            *memory_tools,
+            *writing_tools,
+        ],
         system_prompt=_CHAT_SYSTEM_AGENT_PROMPT,
         profile_key=None,
     )
