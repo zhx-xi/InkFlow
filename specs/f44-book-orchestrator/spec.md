@@ -722,3 +722,61 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 - **B**：单 PR 全量实现（后端 + 前端一起）。估算影响：5-8 人天单批，评审面大、回滚粒度粗。
 
 > **✅ 已确认（用户拍板：选项 A）**：拆 2 个独立 PR——后端提问引擎（PR-1）+ 前端对话式 UI（PR-2），后端先合前端依赖其后端契约。正文已按拍板结果修订：§5.1 新增「LLM 动态提问引擎」（PR-1 后端契约）+「对话式 UI」（PR-2 前端契约）；§2.2/§3.2/§4/§8.2/§9/§10/§11/§12 D13/§13.5 全节联动；头部估算并入 5-8 人天（0.10.1）。估算影响 +5-8 人天（0.10.1 增量，未并入 0.10.0 的 24-39）。
+
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 + §4 + §5 + §7 事实，不重复）；LLM 行为确认（§14.3）覆盖长任务编排核心的 LLM 失败/重试/HITL 暂停/恢复/取消语义（§5/§7）。
+
+### 14.1 端点状态流
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| POST /api/v1/agent/books/planner | project_id 合法 | 启动访谈会话（LLM 动态提问，通用必答 + 针对性并存） | 201 + session_id + round 1 + questions（≤5 问/轮，含 template/kind） | 404（项目不存在） | max_rounds 硬护栏；确认项/冲突落会话 |
+| POST /api/v1/agent/books/planner/{session_id}/respond | 会话存在 | 回复（或 auto=true）→ LLM 提取确定项 → 下轮问/冲突回问/末尾总体确认（confirming=true）/完成返回 WritingPlan | 200 + 下一轮 questions / completed=true + writing_plan | 404（会话不存在）；422（confirm 时非 confirming 阶段「仅 confirming=true 时可用」） | 用户修改确定项 → 回 questioning 重问；auto=true 直接跑 F42 write_auto |
+| GET /api/v1/agent/books/planner/{session_id} | 会话存在 | 会话状态（已问问题/回答快照 + 确定项/冲突，问题即模板复用） | 200 | 404 | 供用户审计回溯（#486） |
+| POST /api/v1/agent/books/runs | 计划存在 + 至少一道有限护栏 | write_book 启动（顺序派发/卷级 Send + 进度状态机 + 安全阀 + 多维上限） | 202 + run_id | 404（运行不存在）；409（内容已写安全阀「该章已有内容，拒绝重跑」）；422（上限全无限制 validate_at_least_one_hard_limit） | 202 异步语义；token 软护栏告警 / 章数调用数硬护栏终止；mode 默认 static |
+| GET /api/v1/agent/books/runs/{run_id} | 运行存在 | 状态（进度树 + 计数器 + 当前 interrupt + 章级只报告） | 200 | 404 | density 三层（performance/dashboard/silent，默认全开） |
+| POST /api/v1/agent/books/runs/{run_id}/confirm | 运行 waiting_hitl（卷边界 interrupt） | Command(resume) 恢复 | 200 + status + next_checkpoint | 422（非 waiting_hitl「卷确认仅在 interrupt 暂停点可用」） | body {approved, decision?}；F29 confirm 同构 |
+| POST /api/v1/agent/books/runs/{run_id}/intervene | 运行存在 | pause/resume/redirect/edit（卷级锚点 + 章级被动动作） | 200 + diff 字段（redirect/edit 时，difflib 字面 diff 零 LLM） | 422（非法动作/目标 outline 不存在）；422（已完成章 progress=done 拒绝干预） | pause 卷边界 checkpoint 已存；并行分支进行中的章允许完成（不做章内断点） |
+| GET /api/v1/agent/books/runs/{run_id}/summary | 运行存在 | 回归摘要（到哪了/接下来/已耗）+ 结构化运行日志 | 200 | 404 | steps JSON 快照（镜像 F27 AgentStep）可回放导出 |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow book plan start/respond/confirm/auto/show | — | 访谈式 Planner（LLM 动态提问，问题即模板） | 退出码 0 + Rich 进度树 | 404/422 → 退出码 1 | plan auto → 拒访谈 → 跑 F42 write_auto |
+| inkflow book run &lt;plan_id&gt; [--limits max_chapters=5,max_tokens=200000] | 计划存在 + 护栏 | 启动书级运行 | 退出码 0 + run_id | 404/409/422 → 退出码 1 | — |
+| inkflow book status &lt;run_id&gt; [--density ...] | — | 状态轮询（观察流三层密度） | 退出码 0 | 404 → 退出码 1 | — |
+| inkflow book confirm &lt;run_id&gt; --approved --decision "继续下一卷" | waiting_hitl | 卷级 HITL 确认 | 退出码 0 | 422 → 退出码 1 | — |
+| inkflow book intervene &lt;run_id&gt; --action pause/resume/redirect/edit ... | 运行存在 | 中途干预 | 退出码 0 + diff 展示 | 422 → 退出码 1 | — |
+| inkflow book summary &lt;run_id&gt; [--export &lt;file.json&gt;] | — | 回归摘要 + 结构化日志导出 | 退出码 0 | 404 → 退出码 1 | — |
+
+### 14.3 LLM 行为确认（长任务编排核心，§5/§7）
+
+| 场景 | 判定 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|------|--------------|------|------|------|
+| 访谈 LLM 动态提问失败/超时 | LLM 调用失败/超时 | 重试 1 次 → 仍失败 → 回退 ROUND1/ROUND2 确定性常量 | 访谈不阻塞（问题即模板、分批节奏不变） | — | LLM 恢复后下轮回到动态提问（R11 ④） |
+| 访谈必答项漏问 | LLM 输出缺通用必答项（题材/篇幅/主题） | 服务端强约束校验 → 该轮拒绝/补问；校验失败重试 1 次 | 必答项始终出现在 questions | — | R11 ①；大纲/主角必须对话确认 |
+| 访谈冲突/不合理回答 | 回答与已确定项/项目设定冲突 | conflicts 记录（resolution=pending）+ kind=conflict 回问题 | 用户重新确认 → resolve 继续 | — | 不得静默采纳冲突值（R11 ③） |
+| 章级执行失败 | write_chapter 委托失败 | 重试 N 次（默认 2）→ 标记 failed 继续（章级只报告，进度落库） | 重试成功 → 继续 | failed 继续下一章 | 恢复策略树（R8）；单工具单事务 save_draft |
+| 卷级失败 | 卷中断言失败/不可恢复 | interrupt 暂停 → 用户决定（继续/跳过/中止）或授权主 agent 补救（supervisor） | 用户 confirm 后继续 | 中止 | 卷边界 interrupt 唯一暂停点（R4） |
+| 卷级 HITL | volume_boundary interrupt（卷内全部章并行写完） | interrupt() → waiting_hitl（next=volume_boundary） | confirm approved → 下一卷；Command(resume=y) 续跑 | 中止/拒绝 | 章执行节点/并行分支内禁 interrupt（Spike ④ 硬约束）；并行聚合必须 Annotated reducer |
+| 进程被杀/断电 | — | AsyncSqliteSaver 卷边界 checkpoint → 重启 resume 续跑（章边界） | 无重复内容（安全阀兜底） | — | llm_client UntrackedValue 不序列化 → resume 时 Command(update) 重注入；缺失 → 422 提示重新注入 |
+| 并行执行中 pause | 卷边界 checkpoint 已存 | 挂起后台任务 | pause 生效 | — | 并行分支进行中的章允许完成（不做章内断点） |
+| 安全阀命中 | 该章已有内容（Chapter.content 非空 / Draft 存在）/执行已完成（execution_refs 存在且 done） | create_execution 前拒绝重跑 | 409「该章已有内容，拒绝重跑」 | — | 误判宁可拒绝不可重跑（R3，防双倍费用优先） |
+| 上限全无限制 | validate_at_least_one_hard_limit | 422 拒绝启动 | — | 422 | token 软护栏告警（trace 记录）/ 章数调用数硬护栏超限终止 + 进度落库 |
+| 干预目标非法 | 动作非 pause/resume/redirect/edit / 目标 outline 不存在 / 已完成章 | 422 拒绝 | — | 422 | 干预效果带 diff 字段（R10） |
+
+### 14.4 验收锚点
+
+- A1：一句话 → 访谈 → 一章草稿端到端（访谈 ≤5 问/轮、问题即模板、授权项记录；LLM 动态提问）（M1）
+- A2：plan auto → F42 write_auto + WritingPlan 状态=auto（M2）
+- A3：3-5 章顺序生成 + 每章状态落库（pending→done/failed/skipped）（M4）
+- A4：上限配置生效（全无护栏 422；硬护栏超限终止；token 软超限告警）（M5）
+- A5：安全阀拒绝重跑 409（M6）
+- A6：一卷端到端（卷 planner 拆章 → Send map-reduce 并行扇出 → join 回收）（M7）
+- A7：卷边界暂停确认 waiting_hitl + confirm --approved（M8）
+- A8：杀进程 → 重启 → resume → 无重复内容（M10）
+- A9：干预指令 pause/resume/redirect/edit + diff 字段；已完成章干预 422（M11）
+- A10：回归摘要 + 结构化运行日志导出（M12）
+- A11：访谈 LLM 动态提问（M13）+ 前端对话式 UI（M14）

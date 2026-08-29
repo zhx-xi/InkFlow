@@ -442,3 +442,32 @@ class ToolAuth:
 
 > **关联**：ADR-043（工具面矩阵 + 分阶段）· Issue #766（0.12.1）· spec 依据 F26 agent-tools（装配模式复用）。
 > **范围边界**：本 spec 只覆盖阶段① 读+写工具；删除授权（阶段②）与分段控件**不属本批**，勿实现。
+
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 + §4 + §5 + §7 事实，不重复）。F26 为内部基础设施，无新增 REST 端点（§3）——端点面保持现状，状态流表聚焦工具装配/执行与 CLI 诊断命令。
+
+### 14.1 工具装配与执行状态流
+
+| 场景 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| 装配（build_deep_agent） | model/api_key/base_url 齐备 | parse_model_string 剥离 registry 前缀 → ChatOpenAI 实例直传 create_deep_agent | Agent 装配成功 | 模型名带前缀未剥离 → zhipu API 拒绝 | HarnessProfile key 必须 openai:&lt;model&gt;，不匹配 → 「No harness profile matched」警告 + 静默默认 profile |
+| LLM 调用工具（ReAct 循环内） | 工具已注册（TOOL_REGISTRY 5 只读） | Tool.func 异步执行（只读、不落库） | 返回文本 → ToolMessage 回填，deepagents 循环继续 | 工具内部异常 → 返回错误文本回填，循环不中断 | 参数 schema 校验失败 → deepagents 框架层校验回填；服务 404（项目/章节不存在）→ 错误文本 |
+| excluded_tools 禁用默认 FS 工具 | — | create_deep_agent 传 excluded_tools | 工具面只剩 task + 自定义工具 | — | 默认 FS 工具名清单待 F26 实现确认（以 deepagents 0.7.5 源码 default tools 列表为准） |
+| subagent task 工具 | — | 不装配 SubAgentMiddleware（或不传 subagents 参数） | F26 无 subagent 能力 | — | F29 0.8.0 恢复（届时 spec 定义装配参数） |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow agent tools list [--json] | 无 | 本地静态枚举 TOOL_REGISTRY（不 ensure_kernel、不发 HTTP） | 退出码 0 + 5 工具信封（name/description/input_schema，§13 M3） | 退出码 1（运行错误） | 退出码 2（参数错误）；无工具注册 → 空 items 信封退出码 0（防御性，注册表恒非空） |
+
+> 注：附录 f51（阶段① 工具面，已合入）起 TOOL_REGISTRY 扩展为完整 6 工具目录（含 save_draft 静态 spec，§2.3）——CLI 输出以注册表实际为准；§13 M3 的「5 工具信封」为 F26 交付基线契约。
+
+### 14.3 验收锚点
+
+- A1：CLI tools list --json 输出工具信封 + ensure_kernel 未被调用（M3）
+- A2：装配测试 mock ChatOpenAI 直传 + HarnessProfile key openai:&lt;model&gt; + excluded_tools 传参断言（M1）
+- A3：模型名剥离 zhipu/glm-4.5 → glm-4.5（M1）
+- A4：5 工具各 1 正例 + 1 异常（service 抛错 → 错误文本，M2）
+- A5：真实模型冒烟 build_deep_agent 单次 invoke 返回正确 tool_calls（M5，手工）

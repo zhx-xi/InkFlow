@@ -482,3 +482,32 @@ def _make_gate(from_id: str, to_id: str):
   - **A. 列表 + 连线（关系列表 + 依赖选择器 + 只读 DAG 预览）**（建议）——复用既有 AgentChainCard，MVP 可落地，成本可控
   - B. 独立画布（拖拽连线，React Flow 等）——交互直观但大 UI 工程（+3-5 人天），超本期估算
   - **影响**：Q3 决定 §5.2/§8 前端文件结构/§10 范围外；A 零增量（列表编辑在 8-12 人天内），B 估算 +3-5 人天
+
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 + §4 + §5 + §7 事实，不重复）。F46 无新增 REST 端点（§3）——配置面经既有 PATCH /projects/{id}，执行面 = 基线 + 叠加装配链（§5.1）。
+
+### 14.1 配置端点状态流
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| PATCH /api/v1/projects/{id}（config.agent_relations） | 项目存在 | exclude_unset 合并 → agent_relations 语义校验（§2.3 API 层） | 200 + 更新后 Project | 404；422（非数组「agent_relations 必须为数组」/ type 非三值「agent_relations 类型非法: xxx（应为 sequential/data/conditional）」/ 自环「agent_relations 自环非法: xxx」/ 重复边「agent_relations 重复边: xxx -&gt; yyy」/ 死角色引用「agent_relations 引用了不存在的角色: xxx」/ 自身环「agent_relations 存在循环依赖」/ conditional 多后继「conditional 边 xxx-&gt;yyy 要求 yyy 是 xxx 的唯一后继」） | 引用未启用角色（存在但 agent_* = null）→ API 允许保存 + 前端提示；空列表零迁移 |
+| POST /api/v1/agent/pipelines/execute（static 模式消费链） | 模板存在 | _apply_agent_order 基线 → _apply_agent_relations 叠加（关系优先，逐边叠加 + conditional_edges 集合）→ _merge_role_configs → _run_pipeline（传入 conditional_edges） | 202 + execution_id | 422 | agent_relations 非法（执行层防御：死引用/自身环/合成环）→ warning + 回退纯基线；supervisor 模式不消费 agent_relations |
+| GET /pipelines/executions/{id} | 执行记录存在 | 状态查询 + relations 元数据透出 | 200 + relations（边 + gate_result: passed/skipped） | 404 | F29 既有端点扩展；relation 快照由 _run_pipeline 完成后回填 |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow project update --id N --config-json '{"agent_relations": [{"from": "agent_auditor", "to": "agent_reviser", "type": "conditional"}]}' | #251 已合入 | 经既有 PATCH 合并语义写入（list[{from,to,type}] JSON 透传） | 退出码 0 | 422 → 退出码 1 | 形态有变 → 降级 API 层验证 + PR 标注 |
+| inkflow project get --id N --json | — | config 输出自动含 agent_relations | 退出码 0 | — | F7 信封约定，无需改动 |
+
+### 14.3 验收锚点
+
+- A1：agent_relations 存储层校验（类型/自环/重复边）+ API 422（死引用/自身环/conditional 唯一后继）（M5）
+- A2：_apply_agent_relations 叠加语义（空回退/死引用回退/自身环回退/合成环回退/sequential 同层打破并行/data 同层注入/conditional 标记 + conditional_edges 集合）（M5）
+- A3：add_conditional_edges 两路（gate 通过执行目标 / 不通过跳过目标及其下游）（M6）
+- A4：终点被条件边跳过 → final_output 回退最后执行的内容角色（writer）（M6）
+- A5：relations 快照回填 + GET /executions/{id} 透出（M6）
+- A6：线性兼容零回归（agent_relations 空 = 纯基线 + supervisor 模式零回归）（M4）
+- A7：GUI 关系编辑（依赖选择器增删改 + 只读 DAG 预览）+ 重启保持 + 写作按关系执行（stderr/relations 可查 conditional 判定）（M8）
