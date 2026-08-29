@@ -29,6 +29,7 @@ from inkflow.domain.models.writing import (
     WritingRequest,
     WritingStreamEvent,
 )
+from inkflow.domain.ports.context_errors import ContextBudgetExceededError
 from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.services.agentic_writer_service import (
     AgenticWriteNotFoundError,
@@ -53,6 +54,11 @@ def _map_service_error(exc: Exception) -> HTTPException:
     """
     if isinstance(exc, _NotFoundError):
         return HTTPException(status_code=404, detail=exc.args[0] if exc.args else "章节不存在")
+    if isinstance(exc, ContextBudgetExceededError):
+        return HTTPException(
+            status_code=400,
+            detail=str(exc) if exc.args else "上下文 Token 预算超限，请精简大纲或上下文",
+        )
     if isinstance(exc, LLMRequestError):
         if exc.args and exc.args[0] in _NOT_FOUND_MESSAGES:
             return HTTPException(status_code=404, detail=exc.args[0])
