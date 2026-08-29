@@ -1,6 +1,6 @@
 """AppSettings 领域模型 — 应用级设置（全局用户偏好，settings 表承载）。
 
-依据: specs/f32-settings-persistence/spec.md §2。
+依据: specs/f32-settings/spec.md §2。
 领域层保持纯净：仅依赖 Pydantic v2，不感知 ORM / 框架。
 """
 

@@ -6,7 +6,7 @@ SessionLogEntry 是会话日志条目（对应 session_logs 表，容器语义�
 SessionLogCreate / SessionComplete / SessionFail 是请求 DTO；
 SessionView 是会话 + 履历摘要视图（详情/列表项）。
 
-依据: specs/f24-session-service/spec.md §2.1/§2.2/§2.6。
+依据: specs/f24-session/spec.md §2.1/§2.2/§2.6。
 领域层保持纯净：仅依赖 Pydantic v2，不感知 ORM / 框架。
 """
 

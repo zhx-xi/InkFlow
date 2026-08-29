@@ -3,7 +3,7 @@
 覆盖 core/database.py 的 5 个迁移函数：旧库迁移（存量软删清理 + 索引重建 + 删列）、
 全新 schema no-op、表缺失 no-op、无唯一索引表。真 SQLite 同步轨（in-memory）。
 
-依据: specs/f10-world-service/spec.md §8.3（数据库迁移）。
+依据: specs/f10-world-settings/spec.md §8.3（数据库迁移）。
 """
 
 from __future__ import annotations

@@ -1,5 +1,5 @@
 /**
- * F43 P2 地图工作台（specs/f43-setting-library-crud/spec.md §5.8-5.12）：
+ * F43 P2 地图工作台（specs/f43-setting-library-gui/spec.md §5.8-5.12）：
  * 世界观 tab 工作台态——四级面包屑回跳（设定库/世界观/地图视图/{地图名}）+
  * 左侧世界观树（P1 树渲染复用：parent_id 建树 + 分类 chips + 复制/编辑/删除；
  * 地图节点渲染 🗺 world-map-badge-<节点id> + pin 数徽标）+ 右侧画布/pin 列表。

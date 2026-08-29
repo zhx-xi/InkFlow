@@ -1,4 +1,4 @@
-/** 角色详情面板（#650 角色关系 + #651 角色分组，specs/f9-character-service/gui-role-enhance-red-contract.md）
+/** 角色详情面板（#650 角色关系 + #651 角色分组，specs/f9-character/gui-role-enhance-red-contract.md）
  * - 入口：library.tsx 角色行点名字打开；容器 character-detail-panel，标题 = 角色名，关闭 character-detail-close
  * - T1 关系区：GET/POST/PATCH/DELETE /characters/{cid}/relations（from=路径角色；编辑 from/to 不变）
  * - T2 分组区：多选 checkbox 列表 PATCH /characters/{cid} {group_ids:[...]}；管理面板 CRUD /projects/{pid}/character-groups

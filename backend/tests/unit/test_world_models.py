@@ -2,7 +2,7 @@
 
 测试范围：WorldSetting / WorldCreate / WorldUpdate / ExtractedWorldSetting /
 WorldExtractRequest。
-依据: specs/f10-world-service/spec.md §2.5/§2.6 + §9 测试策略「领域模型」。
+依据: specs/f10-world-settings/spec.md §2.5/§2.6 + §9 测试策略「领域模型」。
 """
 
 import uuid

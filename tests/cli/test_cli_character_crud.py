@@ -1,6 +1,6 @@
 """Character CLI 命令测试 — Mock ensure_kernel + InkFlowHTTPClient（HTTP JSON 响应）。
 
-覆盖（依据 specs/f9-character-service/spec.md §4/§7/§9）:
+覆盖（依据 specs/f9-character/spec.md §4/§7/§9）:
 - 各子命令成功路径与参数透传（create/list/get/update/delete + group 子组）
 - 信封格式与退出码 0/1/2
 - delete 二次确认 + --force；--json + delete 无 --force → VALIDATION_ERROR

@@ -7,7 +7,7 @@ DTO，GeneratedOutline / GeneratedPlotPoint / GeneratedArc 是 LLM 生成结果
 的 schema 校验模型，OutlineGenerateRequest / OutlineGenerationResult 是
 生成服务的入参/出参。
 
-依据: specs/f11-outline-service/spec.md §2.5/§2.6。
+依据: specs/f11-outline/spec.md §2.5/§2.6。
 领域层保持纯净：仅依赖 Pydantic v2，不感知 ORM / 框架。
 """
 

@@ -3,7 +3,7 @@
 WritingPlan 只存编排元数据（结构锚点/进度/上限/执行引用/thread_id），
 大纲与角色实体由 planner 直接写 outline/character 表（spec 搂2.1 决策论证表）。
 
-依据: specs/f44-long-task-orchestrator/spec.md 搂2.1/搂2.4（v1.1）.
+依据: specs/f44-book-orchestrator/spec.md 搂2.1/搂2.4（v1.1）.
 领域层保持纯净：仅依赖 Pydantic v2，不感知 ORM / 框架.
 """
 

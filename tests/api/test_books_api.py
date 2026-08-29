@@ -1,6 +1,6 @@
 """#335 F44 阶段1 书级运行 API 契约测试（TDD RED 阶段）。
 
-权威来源：specs/f44-long-task-orchestrator/spec.md §3（API 契约，v1.1）
+权威来源：specs/f44-book-orchestrator/spec.md §3（API 契约，v1.1）
 + §13.1 M1-M3。本文件为 `api/routers/books.py`（NEW）定义契约。
 
 ════════════════════════════════════════════════════════════════════
@@ -681,7 +681,7 @@ async def test_runs_start_no_hard_limit_422_detail(client, override_services):
 
 # ════ F44 阶段3 追加段（#337 confirm 端点/命令）════
 # 权威来源：.hermes/plans/f44-stage3-contract.md §3.1/§3.2/§3.5/§5.C +
-# specs/f44-long-task-orchestrator/spec.md §13.3 M8。GREEN 实现须满足：
+# specs/f44-book-orchestrator/spec.md §13.3 M8。GREEN 实现须满足：
 # - POST /runs/{run_id}/confirm（body {approved, decision?}）→ 200
 #   {run_id, status, next_checkpoint}；ValueError「运行不存在」→ 404；
 #   ValueError「未处于等待确认状态」→ 422（detail 原样透传）。

@@ -1,6 +1,6 @@
 """F21 导出 CLI 命令测试 — Mock ensure_kernel + InkFlowHTTPClient（spec §4/§9 CLI 测试）。
 
-覆盖（依据 specs/f21-export-service/spec.md §4/§7/§9.1/§13 M1-M2）:
+覆盖（依据 specs/f21-export/spec.md §4/§7/§9.1/§13 M1-M2）:
 - export 组注册（export 命令）
 - 导出成功：名称解析 → 下载 TXT → 落盘（tmp_path）+ 人类模式输出
 - --json 成功信封 {"ok": true, "data": {format/filename/bytes/path}} 精确断言

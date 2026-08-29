@@ -1,5 +1,5 @@
 /**
- * ⚠️ 契约文件（T2 角色分组 #651 RED 阶段，specs/f9-character-service/gui-role-enhance-red-contract.md §T2 分组区契约）
+ * ⚠️ 契约文件（T2 角色分组 #651 RED 阶段，specs/f9-character/gui-role-enhance-red-contract.md §T2 分组区契约）
  *
  * GREEN 改造 src/pages/library.tsx（角色 tab 加「点名字打开详情面板」入口 + CharacterDetailPanel
  * 组件承载分组区），必须匹配以下契约：

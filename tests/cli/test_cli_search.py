@@ -1,6 +1,6 @@
 """F22 全文搜索 CLI 命令测试 — Mock ensure_kernel + InkFlowHTTPClient（F38 mock 轨）。
 
-覆盖（依据 specs/f22-search-service/spec.md §4/§9 + M2/M13，v1.2 拍板
+覆盖（依据 specs/f22-search/spec.md §4/§9 + M2/M13，v1.2 拍板
 「CLI 恒经 HTTP」ADR-030/F38）：
 - 命中人类可读输出（类型徽标 + 项目名 + 标题 + snippet，<mark> → [ ] 方括号替换）
 - --json 成功信封（{"ok": true, "data": SearchResponse}）

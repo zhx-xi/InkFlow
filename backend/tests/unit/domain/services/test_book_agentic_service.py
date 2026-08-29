@@ -12,7 +12,7 @@ RED 预期
 - AgenticBookConfig 用例 → ImportError（模块不存在）
 - BookRunRequest.mode="agentic" 用例 → Pydantic ValidationError（Literal 不含 agentic）
 
-权威来源: specs/f49-autonomous-writing/spec.md §3/§5.4（装配契约：复用 F44 book run
+权威来源: specs/f27-writer-agent/spec.md §3/§5.4（装配契约：复用 F44 book run
 骨架 + agentic_pipeline 委托）+ F44 §3/§13.4（后台任务 + prepare_run 预校验）。
 """
 

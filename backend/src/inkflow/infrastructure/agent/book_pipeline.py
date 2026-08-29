@@ -12,7 +12,7 @@ resume 从 checkpointer 恢复。图拓扑（Spike ①-④ 实证形态，父侧
         → volume_boundary（interrupt 串行点）→ resume approved → 下一卷 / END
         → volume_failure（interrupt）→ resume decision: continue / abort / supervisor
 
-依据: specs/f44-long-task-orchestrator/spec.md §5.3/§12 D1-D3/D9/§13.3 M7-M9
+依据: specs/f44-book-orchestrator/spec.md §5.3/§12 D1-D3/D9/§13.3 M7-M9
     + .hermes/plans/f44-stage3-contract.md §1（父侧裁定，语义冲突以它为准）
     + docs/f44-orchestrator-spike-2026-08-17.md ①-④（Spike 实证形态）。
 

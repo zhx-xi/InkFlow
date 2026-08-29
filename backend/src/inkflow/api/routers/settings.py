@@ -4,7 +4,7 @@
 - POST /api/v1/settings/llm-keys — APIKeyManager AES-256-GCM 加密存储 API Key
 - POST /api/v1/settings/llm/test — LLMClient 最小连通探测
 
-F32 设置持久化（specs/f32-settings-persistence/spec.md §3）新增 2 个端点：
+F32 设置持久化（specs/f32-settings/spec.md §3）新增 2 个端点：
 - GET  /api/v1/settings — 全量设置（缺失键默认值补齐，不落库）
 - PATCH /api/v1/settings — 部分更新（白名单 + JSON 编码落库）→ 合并后全量
 

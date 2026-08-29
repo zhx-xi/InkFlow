@@ -24,7 +24,7 @@ Protocol 与 F12 TimelineService，run_audit 按 spec §5.1 步骤 ①-⑤ 执�
 只依赖 domain/ports/ 与 domain/services/（Protocol 与领域服务），不依赖任何
 infrastructure 实现——domain/ 零框架 import 门禁天然满足（ADR-002/015）。
 
-依据: specs/f15-audit-service/spec.md §5/§6/§7/§8.1。
+依据: specs/f15-consistency-audit/spec.md §5/§6/§7/§8.1。
 """
 
 from __future__ import annotations

@@ -17,7 +17,7 @@
 - extractor: CharacterExtractor（B2 已实现）
 - project_repo: ProjectRepositoryProtocol（F1 已实现，extract 入口校验用）
 
-依据: specs/f9-character-service/spec.md §7/§8/§9。
+依据: specs/f9-character/spec.md §7/§8/§9。
 """
 
 from __future__ import annotations

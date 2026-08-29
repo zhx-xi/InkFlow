@@ -16,7 +16,7 @@
 - format 非 txt → FastAPI 自动 422（Pydantic Literal 校验短路，
   service 零调用）
 
-依据: specs/f21-export-service/spec.md §3/§7/§9。
+依据: specs/f21-export/spec.md §3/§7/§9。
 """
 
 from __future__ import annotations

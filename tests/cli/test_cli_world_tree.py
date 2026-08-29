@@ -4,7 +4,7 @@
 故新用例独立成文件。fixtures/helpers 复制自 test_cli_world.py（cli_runner /
 fake_http_client / _http_error / _make_setting），保持同构。
 
-覆盖（依据 specs/f35-world-location-tree/spec.md §4/§7）:
+覆盖（依据 specs/f35-world-tree/spec.md §4/§7）:
 - world ancestors <id> / descendants <id>（新命令）→ GET /world-settings/{id}/ancestors|descendants
 - create/update 新增 --parent <UUID>（契约定死: 无 --parent 时 body 不含 parent_id 键）
 - delete 新增 --cascade / --reparent-to <UUID>（params 透传）

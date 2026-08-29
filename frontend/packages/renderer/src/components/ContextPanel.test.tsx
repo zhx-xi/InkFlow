@@ -1,5 +1,5 @@
 /**
- * 上下文面板契约（specs/f6-context-service/gui-panel.md #594）：
+ * 上下文面板契约（specs/f6-context/gui-panel.md #594）：
  * 静态占位 → 接 assemble API 渲染真实上下文条目 + 三级大纲注入 + 角色/伏笔勾选 override。
  * ⚠️ 本文件 = 契约。GREEN 实现 ContextPanel 必须匹配（行为断言，不测样式）。
  * 决策（2026-08-23）：D3=A 三级全注入；D4=A 先自动注入+展开/修改；覆盖 D1 override 通道（#593 后端已做）。

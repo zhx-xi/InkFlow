@@ -37,7 +37,7 @@ export const en: Record<string, string> = {
   'lib.empty.create': 'Create',
   'lib.loadFailed': 'Loading failed, please retry',
   'lib.retry': 'Retry',
-  // F43: library CRUD P0 (specs/f43-setting-library-crud/spec.md §6)
+  // F43: library CRUD P0 (specs/f43-setting-library-gui/spec.md §6)
   'lib.edit': 'Edit',
   'lib.delete': 'Delete',
   'lib.edit.title.characters': 'Edit Character',
@@ -73,7 +73,7 @@ export const en: Record<string, string> = {
   'lib.create.timeDisplay': 'Time Display',
   'lib.create.priority': 'Priority',
   'lib.create.location': 'Location',
-  // F43 P1 (specs/f43-setting-library-crud/spec.md v1.1 §6): character rank/tags/world category/copy
+  // F43 P1 (specs/f43-setting-library-gui/spec.md v1.1 §6): character rank/tags/world category/copy
   'lib.rank.protagonist': 'Protagonist',
   'lib.rank.major': 'Major Character',
   'lib.rank.minor': 'Minor Character',
@@ -101,7 +101,7 @@ export const en: Record<string, string> = {
   'lib.copy.result': 'Copied {n} items to "{name}"',
   'lib.copy.skipped': '{n} skipped (duplicate names)',
   'lib.copy.needTwo': 'Need at least two projects',
-  // F43 P2 (specs/f43-setting-library-crud/spec.md v1.2 §6): map workbench
+  // F43 P2 (specs/f43-setting-library-gui/spec.md v1.2 §6): map workbench
   'lib.worldMap': 'Map View',
   'lib.worldMapBack': 'Back to settings',
   'lib.worldMapPins': 'pins',
@@ -146,7 +146,7 @@ export const en: Record<string, string> = {
   'lib.map.renameTitle': 'Rename Map',
   'lib.map.renamePlaceholder': 'Map name',
   'lib.map.renameSave': 'Save',
-  // F43 P3+P4 (specs/f43-setting-library-crud/spec.md §6): outline tree + chapter link + timeline dual view
+  // F43 P3+P4 (specs/f43-setting-library-gui/spec.md §6): outline tree + chapter link + timeline dual view
   'lib.level.overall': 'Overall',
   'lib.level.volume': 'Volume',
   'lib.level.chapter': 'Chapter',
@@ -586,7 +586,7 @@ export const en: Record<string, string> = {
   'pj.time.hours': '{n}h ago',
   'pj.time.days': '{n}d ago',
   'pj.time.weeks': '{n}w ago',
-  // F43: project card menu rename/delete (specs/f43-setting-library-crud/spec.md §6)
+  // F43: project card menu rename/delete (specs/f43-setting-library-gui/spec.md §6)
   'pj.rename': 'Rename',
   'pj.edit': 'Edit',
   'pj.delete': 'Delete',

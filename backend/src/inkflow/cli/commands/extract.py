@@ -15,7 +15,7 @@
 run 的 --text/--text-file/--chapters 三选一互斥（同 F9 character extract
 先例）；--type 非法值由 Typer Choice 校验 → 退出码 2（spec §7）。
 
-依据: specs/f14-extraction-service/spec.md §4.1/§4.3/§7/§9。
+依据: specs/f14-extraction/spec.md §4.1/§4.3/§7/§9。
 """
 
 from __future__ import annotations

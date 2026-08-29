@@ -1,4 +1,4 @@
-/** 上下文面板（spec §4.2.1 + f6-context-service/gui-panel.md #594）：静态占位 → 接 assemble API 渲染真实条目 + 三级大纲 + 角色/伏笔勾选 override */
+/** 上下文面板（spec §4.2.1 + f6-context/gui-panel.md #594）：静态占位 → 接 assemble API 渲染真实条目 + 三级大纲 + 角色/伏笔勾选 override */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listProjectCharacters } from '../api/character';
 import {

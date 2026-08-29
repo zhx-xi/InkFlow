@@ -6,7 +6,7 @@ ForeshadowingUpdate 是请求 DTO：Create 无 status 字段（创建即 open）
 所有字段可选（exclude_unset 语义），其中 event_id 具有「None = 不修改，
 \"\" = 解除事件挂接」双语义，与 F11 arc_id / F12 time_value 同构。
 
-依据: specs/f13-foreshadowing-service/spec.md §2.5。
+依据: specs/f13-foreshadowing/spec.md §2.5。
 领域层保持纯净：仅依赖 Pydantic v2，不感知 ORM / 框架。
 """
 

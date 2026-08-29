@@ -284,7 +284,7 @@ describe('project store — #107 模板引用（template_id）', () => {
 });
 
 /**
- * F43（2026-08-12，specs/f43-setting-library-crud/spec.md §2.4/§5.6/§9.2）：
+ * F43（2026-08-12，specs/f43-setting-library-gui/spec.md §2.4/§5.6/§9.2）：
  * 项目重命名/删除 actions（GUI 卡片菜单消费）。
  *
  * GREEN 需在 src/stores/project.ts 补：

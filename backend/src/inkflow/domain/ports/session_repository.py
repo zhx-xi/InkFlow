@@ -5,7 +5,7 @@ SessionRepositoryProtocol 定义 Session 与 SessionLogEntry 的持久化操作
 设施层（SQLite / mock / memory）实现本 Protocol。仓储层方法入参用 int
 （与 ORM 层一致），Service 负责 UUID ↔ int 转换（沿用 F1 `_to_int_id` 模式）。
 
-依据: specs/f24-session-service/spec.md §8.2。
+依据: specs/f24-session/spec.md §8.2。
 """
 
 from __future__ import annotations

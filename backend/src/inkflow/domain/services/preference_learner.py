@@ -9,7 +9,7 @@
 - confidence_for: 置信度公式 1 - 1/(count+1)（单调递增）.
 
 纯函数零依赖注入：不 import 任何框架 / 仓储，测试直接直测（spec §9）。
-依据: specs/f28-agent-memory/spec.md §5.2/§9。
+依据: specs/f28-memory-learning/spec.md §5.2/§9。
 """
 
 from __future__ import annotations

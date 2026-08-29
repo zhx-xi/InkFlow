@@ -1,6 +1,6 @@
 """F51 设定库更新工具 RED 契约测试 — build_setting_update_tools 注册 + 执行信封.
 
-依据 specs/f51-agent-tools-v2/spec.md §2.1-2.3。镜像 test_chat_setting_write_tools 形态。
+依据 specs/f26-agent-tools/spec.md §2.1-2.3。镜像 test_chat_setting_write_tools 形态。
 锁定契约:
 1. build_setting_update_tools(deps) 返回 [update_character, update_world_setting, update_outline]。
 2. 每个 func 成功返回 {"ok": True, "<entity>_id": "<id>", ...} 信封（不抛出）。

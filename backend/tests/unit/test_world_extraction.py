@@ -4,7 +4,7 @@
 合法 JSON 全量落库 / 同名更新与幂等性 / 软删同名新建 / 非法条目跳过 /
 围栏输出 / 修复重试与异常透传 / 空条目列表 / 模板与模型参数断言。
 
-依据: specs/f10-world-service/spec.md §5（AI 提取模式，同 F9 §5）+
+依据: specs/f10-world-settings/spec.md §5（AI 提取模式，同 F9 §5）+
 §9 测试策略。实现镜像 F9 test_character_extraction.py，仅替换领域实体
 （WorldSetting ↔ Character）与模板名（world_extract ↔ character_extract）。
 

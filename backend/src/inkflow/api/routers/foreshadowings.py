@@ -18,7 +18,7 @@
 - ForeshadowingNotFoundError / ProjectNotFoundError → 404
 - 无 LLM 相关错误（F13 无 LLM，伏笔状态追踪为确定性逻辑）
 
-依据: specs/f13-foreshadowing-service/spec.md §3/§5/§7。
+依据: specs/f13-foreshadowing/spec.md §3/§5/§7。
 """
 
 from __future__ import annotations

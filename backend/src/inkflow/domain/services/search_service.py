@@ -12,7 +12,7 @@ ai_maintenance=true 时增量同步（失败回退全量重建，E13），手动
 零跨模块 MODIFY：只依赖 domain/ports/ 与 _search_tokenizer 纯函数，
 domain 层零框架 import 门禁天然满足（ADR-002/015）。
 
-依据: specs/f22-search-service/spec.md §5/§6/§8.2。
+依据: specs/f22-search/spec.md §5/§6/§8.2。
 """
 
 from __future__ import annotations

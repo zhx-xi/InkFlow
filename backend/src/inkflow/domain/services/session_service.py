@@ -22,7 +22,7 @@
 - project_repo: ProjectRepositoryProtocol（F1，项目存在性校验用；未注入
   且创建带 project_id → SessionServiceError 配置错误，防静默降级）
 
-依据: specs/f24-session-service/spec.md §5/§7/§9。
+依据: specs/f24-session/spec.md §5/§7/§9。
 """
 
 from __future__ import annotations

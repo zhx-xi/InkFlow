@@ -8,7 +8,7 @@ F6 是内部服务，正常写作路径由 F3 直接调用（无 HTTP）。
     GET    /api/v1/context/chapters/{id}/summary       — 查看摘要缓存
     POST   /api/v1/context/chapters/{id}/summary/refresh — 强制重新生成摘要
 
-依据: specs/f6-context-service/spec.md §5.
+依据: specs/f6-context/spec.md §5.
 """
 
 from __future__ import annotations

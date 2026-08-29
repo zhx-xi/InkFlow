@@ -1,5 +1,5 @@
 /**
- * F43 P2 地图画布（specs/f43-setting-library-crud/spec.md §5.10-5.12）：
+ * F43 P2 地图画布（specs/f43-setting-library-gui/spec.md §5.10-5.12）：
  * 三底图共存（shape 简图 / image 图片 / ai 占位）+ 底图工具栏（chips + 简图形状按钮）；
  * pin 独立叠加层（始终渲染在底图之上，切换底图只 PATCH bg_source 不触碰 pins）。
  * shapes 拖拽：mousedown 计算偏移 → mousemove 更新 x/y（clamp 0-100）→ mouseup 提交 onUpdateShapes。

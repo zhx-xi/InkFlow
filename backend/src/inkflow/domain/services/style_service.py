@@ -18,7 +18,7 @@ Q1=C），analyze 按 spec §5.1 步骤 ①-⑥ 执行:
 只依赖 domain/ports/ 与 domain/models/，不依赖任何 infrastructure 实现——
 domain/ 零框架 import 门禁天然满足（ADR-002/015）。
 
-依据: specs/f16-style-service/spec.md §5.1/§5.7/§7/§8.1/§9。
+依据: specs/f16-style-analysis/spec.md §5.1/§5.7/§7/§8.1/§9。
 """
 
 from __future__ import annotations

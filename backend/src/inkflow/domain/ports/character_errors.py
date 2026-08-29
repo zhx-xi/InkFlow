@@ -1,7 +1,7 @@
 """角色管理领域异常.
 
 F9 专属异常类型，继承自 Exception.
-依据: specs/f9-character-service/spec.md §5/§8.
+依据: specs/f9-character/spec.md §5/§8.
 
 异常映射约定（spec §3.5 异常映射表）:
 - CharacterServiceError 子类 = 业务校验失败，API 层映射为 422（消息即 detail）

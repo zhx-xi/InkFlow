@@ -20,7 +20,7 @@ get_status 顶层 waiting_hitl/hitl_payload（§3/§13.3 M8）。
 仅依赖 domain/models 与注入的 repo/可调用对象（鸭子类型），
 domain/ 零框架 import 门禁天然满足（ADR-002/015）。
 
-依据: specs/f44-long-task-orchestrator/spec.md §2.4/§5.1/§13.1（v1.1）.
+依据: specs/f44-book-orchestrator/spec.md §2.4/§5.1/§13.1（v1.1）.
 """
 
 from __future__ import annotations

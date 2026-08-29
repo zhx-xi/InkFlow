@@ -2,7 +2,7 @@
 
 测试范围：Foreshadowing 实体、Create/Update DTO（含 event_id 双语义：
 None = 不修改，"" = 解除事件挂接）。
-依据: specs/f13-foreshadowing-service/spec.md §2.5 + §9 测试策略「领域模型」。
+依据: specs/f13-foreshadowing/spec.md §2.5 + §9 测试策略「领域模型」。
 """
 
 import uuid

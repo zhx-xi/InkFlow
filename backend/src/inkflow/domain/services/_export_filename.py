@@ -3,7 +3,7 @@
 纯函数，零依赖：清洗顺序 = strip → 空判（untitled 占位）→ 禁符替换 →
 前 60 字符截断 → 拼接 "{书名}-{fmt.value}.txt"（spec §5.3/§7 E5）。
 
-依据: specs/f21-export-service/spec.md §5.3/§7 E5-E7。
+依据: specs/f21-export/spec.md §5.3/§7 E5-E7。
 """
 
 from __future__ import annotations

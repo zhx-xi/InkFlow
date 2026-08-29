@@ -1,6 +1,6 @@
 /**
  * 设定库分类实体创建/编辑对话框（#196 + F43 双模式扩展，
- * specs/f36-library-manual-create/spec.md §2.2/§2.3 + specs/f43-setting-library-crud/spec.md §2.2）：
+ * specs/f36-library-manual-create/spec.md §2.2/§2.3 + specs/f43-setting-library-gui/spec.md §2.2）：
  * 受控表单对话框，字段按分类渲染（后端 DTO 字段名对齐 spec §2.1 表）；
  * editing 非空 = 编辑模式（打开预填现值），空 = 创建模式（空表单重置，#196）；
  * 名称/标题必填（strip 后非空 → 保存按钮 enabled）；保存中禁用防重复提交；

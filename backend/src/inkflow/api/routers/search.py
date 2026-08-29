@@ -25,7 +25,7 @@
 - 其余异常（DB 异常等）→ 500 通用 detail "Internal server error"
   （内部异常消息不得泄漏，ADR-012/016）
 
-依据: specs/f22-search-service/spec.md §3/§9/§13。
+依据: specs/f22-search/spec.md §3/§9/§13。
 """
 
 from __future__ import annotations

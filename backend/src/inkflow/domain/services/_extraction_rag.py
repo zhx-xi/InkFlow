@@ -18,7 +18,7 @@
 本模块 `reindex` 均使用）——迁入以切断「门面 ↔ 本模块」的 import 环（本模块对门面
 零运行时依赖），门面 re-export。
 
-依据: specs/f14-extraction-service/spec.md §5.6（RAG 索引流程）。
+依据: specs/f14-extraction/spec.md §5.6（RAG 索引流程）。
 """
 
 from __future__ import annotations

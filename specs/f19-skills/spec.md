@@ -1,4 +1,5 @@
 # F19-skills: skills 包（ADR-022）— 功能规格
+> **端**: cross
 
 > **Spec 版本**: 1.2（2026-08-12 拍板修订：Q2 语义反转 + 存储形态定稿） | **日期**: 2026-08-12 | **依据**: ADR-022（skills 包形态）、ADR-019 v6（版本里程碑：0.8.0 = 后续语义统一与技术债，2026-08-09 建）、Issue #65 决策 D4、Constitution P1-P6
 > **Spec 变更**: v1.0 → v1.1（2026-08-12）：Q1=B / Q3=新决策 拍板；v1.1 → v1.2（2026-08-12）：**Q2 语义反转**——`skills install` 不是「下载官方 skills」（那是 agent 生态的事，CLI 不管官方包），而是**导入用户自定义 skills 到 InkFlow 本地**；**存储形态定稿 = 文件系统目录 `data_dir/skills/`（deepagents 0.7.5 SkillsMiddleware 现成实现即从文件读取，非数据库）**；范围收敛 = **只做导入+管理，agent 实际使用是其他 issue**；正文 §1/§2/§4/§5/§7/§8/§9/§10/§12/§13 联动修订
@@ -7,7 +8,7 @@
 >
 > **关联 Issues**: [#70](https://github.com/zhx-xi/InkFlow/issues/70)（本任务）· [#65](https://github.com/zhx-xi/InkFlow/issues/65)（决策 D4：AI agent 经 skills 包使用 InkFlow）· [#49](https://github.com/zhx-xi/InkFlow/issues/49)（F20 MCP，0.9.0——本 spec §10 预留 mcp-setup.md 联动，不实现）· [#251](https://github.com/zhx-xi/InkFlow/issues/251)（CLI 命令面缺口补全，0.8.0——CLI 域并行，merge 错开）
 >
-> **依赖**: ✅ ADR-022（skills 包形态决策）· ✅ F7 CLI 全局约定（`--json` 信封/退出码 0/1/2/130，f7-cli-interface spec §5/§7）· ✅ f19-packaging（PyInstaller 打包链 + release.yml，0.4.0 已交付）· ✅ f33-cli-dist（CLI zip 产物，0.5.0 已交付）· ⚡ #251（CLI 域并行，无代码依赖，merge 错开——roadmap 2026-08-12 拍板）
+> **依赖**: ✅ ADR-022（skills 包形态决策）· ✅ F7 CLI 全局约定（`--json` 信封/退出码 0/1/2/130，f7-cli spec §5/§7）· ✅ f19-packaging（PyInstaller 打包链 + release.yml，0.4.0 已交付）· ✅ f33-cli-dist（CLI zip 产物，0.5.0 已交付）· ⚡ #251（CLI 域并行，无代码依赖，merge 错开——roadmap 2026-08-12 拍板）
 >
 > **参考 ADR**: [ADR-022](../../adr/ADR-022.md)（skills 包：源码单一真相 + 三通道分发）· [ADR-019](../../adr/ADR-019.md)（版本里程碑 v6：skills 后移至 1.0.0 后于 0.8.0 提前）· [ADR-021](../../adr/ADR-021.md)（本地内核进程化：CLI/skills/agent 共享同一内核）· [ADR-023](../../adr/ADR-023.md)（MCP Server：发布后补 mcp-setup.md）
 >

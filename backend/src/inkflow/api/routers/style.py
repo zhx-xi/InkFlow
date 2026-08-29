@@ -21,7 +21,7 @@ F9 /characters/extract 与 F14 /extract 的 POST 先例；幂等性由确定性�
   （LLM 深度分析错误，仅 llm_analysis=true 可达）→ 500，消息即 detail
 - 其余异常（DB 读取失败等）→ 500「内部错误: ...」（全局处理器语义，ADR-012/016）
 
-依据: specs/f16-style-service/spec.md §3/§7/§9。
+依据: specs/f16-style-analysis/spec.md §3/§7/§9。
 """
 
 from __future__ import annotations

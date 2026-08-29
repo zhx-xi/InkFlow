@@ -35,7 +35,7 @@ export const zh = {
   'lib.empty.create': '去创建',
   'lib.loadFailed': '加载失败，请重试',
   'lib.retry': '重试',
-  // F43：设定库 CRUD P0（specs/f43-setting-library-crud/spec.md §6）
+  // F43：设定库 CRUD P0（specs/f43-setting-library-gui/spec.md §6）
   'lib.edit': '编辑',
   'lib.delete': '删除',
   'lib.edit.title.characters': '编辑角色',
@@ -71,7 +71,7 @@ export const zh = {
   'lib.create.timeDisplay': '时间显示',
   'lib.create.priority': '优先级',
   'lib.create.location': '位置',
-  // F43 P1（specs/f43-setting-library-crud/spec.md v1.1 §6）：角色等级/标签/世界观分类/复制
+  // F43 P1（specs/f43-setting-library-gui/spec.md v1.1 §6）：角色等级/标签/世界观分类/复制
   'lib.rank.protagonist': '主角',
   'lib.rank.major': '重要配角',
   'lib.rank.minor': '配角',
@@ -99,7 +99,7 @@ export const zh = {
   'lib.copy.result': '已复制 {n} 条到「{name}」',
   'lib.copy.skipped': '跳过同名 {n} 条',
   'lib.copy.needTwo': '需至少两个项目才能复制',
-  // F43 P2（specs/f43-setting-library-crud/spec.md v1.2 §6）：地图工作台
+  // F43 P2（specs/f43-setting-library-gui/spec.md v1.2 §6）：地图工作台
   'lib.worldMap': '地图视图',
   'lib.worldMapBack': '返回设定',
   'lib.worldMapPins': '个标记',
@@ -144,7 +144,7 @@ export const zh = {
   'lib.map.renameTitle': '重命名地图',
   'lib.map.renamePlaceholder': '地图名称',
   'lib.map.renameSave': '保存',
-  // F43 P3+P4（specs/f43-setting-library-crud/spec.md §6）：大纲三级树 + 章关联 + 时间线双序/两级检查
+  // F43 P3+P4（specs/f43-setting-library-gui/spec.md §6）：大纲三级树 + 章关联 + 时间线双序/两级检查
   'lib.level.overall': '整体',
   'lib.level.volume': '卷',
   'lib.level.chapter': '章',
@@ -585,7 +585,7 @@ export const zh = {
   'pj.time.hours': '{n} 小时前',
   'pj.time.days': '{n} 天前',
   'pj.time.weeks': '{n} 周前',
-  // F43：项目卡片菜单重命名/删除（specs/f43-setting-library-crud/spec.md §6）
+  // F43：项目卡片菜单重命名/删除（specs/f43-setting-library-gui/spec.md §6）
   'pj.rename': '重命名',
   'pj.edit': '修改',
   'pj.delete': '删除',

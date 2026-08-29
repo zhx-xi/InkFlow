@@ -9,7 +9,7 @@
 - delete_event 真删委托 repo.hard_delete；get_event None（router 层转 404）
 - list 透传搜索/排序/分页；view 编排（两种排序视图）；check 编排
 
-依据: specs/f12-timeline-service/spec.md §7 + §9 测试策略。
+依据: specs/f12-timeline/spec.md §7 + §9 测试策略。
 """
 
 from __future__ import annotations

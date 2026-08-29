@@ -1,6 +1,6 @@
 """Outline CLI 命令测试（outline/point/arc CRUD）— Mock ensure_kernel + InkFlowHTTPClient。
 
-覆盖（依据 specs/f11-outline-service/spec.md §4/§7）:
+覆盖（依据 specs/f11-outline/spec.md §4/§7）:
 - outline 组成功路径（create/list/get/update/delete）
 - point 子组（list/create/update/delete，含 --position/--arc-id）
 - arc 子组（list/create/update/delete）

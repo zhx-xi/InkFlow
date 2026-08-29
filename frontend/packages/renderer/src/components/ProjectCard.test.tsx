@@ -1,7 +1,7 @@
 /**
  * 项目卡片 ProjectCard 测试契约（#595 D7=A / #596 回归护栏）——标签展示。
  *
- * ⚠️ 本文件 = 契约。GREEN 实现 components/ProjectCard.tsx 必须匹配（specs/f1-project-service/spec.md §2.1）：
+ * ⚠️ 本文件 = 契约。GREEN 实现 components/ProjectCard.tsx 必须匹配（specs/f1-project/spec.md §2.1）：
  * - 有标签：卡片展示 tags 全拼（`tags.join('，')` 逗号分隔，保序）
  * - 空标签：不渲染标签行（`project.tags.length > 0` 守卫）
  *

@@ -20,28 +20,28 @@
 
 | 模块 | 核心能力 | CLI 入口 | REST API 前缀 | Spec / 依据 | 状态 |
 |------|---------|---------|--------------|------------|------|
-| F1 `project_service` | 项目/书籍管理：CRUD + 软删除 + 回收站 | `inkflow project create/list/get/delete/restore` | `/api/v1/projects` | [`specs/f1-project-service/`](specs/f1-project-service/spec.md) | ✅ PR #8 |
-| F2 `chapter_service` | 卷/章节管理：层级结构、章节移动、状态流转 | `inkflow volume create/list/delete` · `inkflow chapter create/list/get/update/delete` | `/api/v1/projects/{id}/volumes` · `/chapters` | [`specs/f2-chapter-service/`](specs/f2-chapter-service/spec.md) | ✅ PR #9 |
-| F3 `writing_service` | AI 写作管道：生成 → 续写 → 修订 | `inkflow write next/continue/revise` | `/api/v1/write/generate|continue|revise` | [`specs/f3-writing-service/`](specs/f3-writing-service/spec.md) | ✅ PR #21 |
-| F4 `agent_service` | Agent 编排：架构师/写手/审阅/修订角色链（LangGraph StateGraph） | `inkflow agent run/status/validate/template` | `/api/v1/pipelines/*` | [`specs/f4-agent-service/`](specs/f4-agent-service/spec.md) | ✅ PR #22 |
+| F1 `project_service` | 项目/书籍管理：CRUD + 软删除 + 回收站 | `inkflow project create/list/get/delete/restore` | `/api/v1/projects` | [`specs/f1-project/`](specs/f1-project/spec.md) | ✅ PR #8 |
+| F2 `chapter_service` | 卷/章节管理：层级结构、章节移动、状态流转 | `inkflow volume create/list/delete` · `inkflow chapter create/list/get/update/delete` | `/api/v1/projects/{id}/volumes` · `/chapters` | [`specs/f2-chapter/`](specs/f2-chapter/spec.md) | ✅ PR #9 |
+| F3 `writing_service` | AI 写作管道：生成 → 续写 → 修订 | `inkflow write next/continue/revise` | `/api/v1/write/generate|continue|revise` | [`specs/f3-writing/`](specs/f3-writing/spec.md) | ✅ PR #21 |
+| F4 `agent_service` | Agent 编排：架构师/写手/审阅/修订角色链（LangGraph StateGraph） | `inkflow agent run/status/validate/template` | `/api/v1/pipelines/*` | [`specs/f4-pipeline-engine/`](specs/f4-pipeline-engine/spec.md) | ✅ PR #22 |
 | F5 `llm_service` | LLM Provider 适配（OpenAI/DeepSeek/…，ChatOpenAI 兼容路由）；API Key AES-256-GCM 加密存储 | `inkflow llm list/set-key` | 配置侧（无 REST 端点） | [`specs/f5-llm-provider/`](specs/f5-llm-provider/spec.md) | ✅ PR #16 |
-| F6 `context_service` | 上下文管理：角色/世界观/伏笔/时间线注入 + 章节摘要（分层 Token 预算） | 经写作管道自动装配 | `/api/v1/context/assemble` · `/chapters/{id}/summary` | [`specs/f6-context-service/`](specs/f6-context-service/spec.md) | ✅ PR #27 |
-| F7 `cli_interface` | 全局 CLI 约定：JSON 信封 / 退出码 / 错误码（`--json` 全局选项） | 所有 `inkflow` 命令 | — | [`specs/f7-cli-interface/`](specs/f7-cli-interface/spec.md) | ✅ PR #28 |
+| F6 `context_service` | 上下文管理：角色/世界观/伏笔/时间线注入 + 章节摘要（分层 Token 预算） | 经写作管道自动装配 | `/api/v1/context/assemble` · `/chapters/{id}/summary` | [`specs/f6-context/`](specs/f6-context/spec.md) | ✅ PR #27 |
+| F7 `cli_interface` | 全局 CLI 约定：JSON 信封 / 退出码 / 错误码（`--json` 全局选项） | 所有 `inkflow` 命令 | — | [`specs/f7-cli/`](specs/f7-cli/spec.md) | ✅ PR #28 |
 | F8 CI 治理 | 测试分层（unit / integration / CLI）+ CI 门禁（ruff + mypy + pytest + 覆盖率） | — | — | [ADR-018](adr/ADR-018.md)（无独立 spec） | ✅ PRs #24+#25 |
-| P0-11 云端 Protocol | 云端接口端口契约：Auth / Database / Storage / User / Sync / MCPTransport（Protocol 定义，实现留云端里程碑） | — | 端口定义（domain/ports/cloud/） | [`specs/p0-11-cloud-protocols/`](specs/p0-11-cloud-protocols/spec.md) | ✅ PR #37 |
+| P0-11 云端 Protocol | 云端接口端口契约：Auth / Database / Storage / User / Sync / MCPTransport（Protocol 定义，实现留云端里程碑） | — | 端口定义（domain/ports/cloud/） | [`specs/f52-cloud-protocol/`](specs/f52-cloud-protocol/spec.md) | ✅ PR #37 |
 
 ### 1.2 创作工具链（0.2.0，F9-F16，8 模块全交付 ✅）
 
 | 模块 | 核心能力 | CLI 入口 | REST API 前缀 | Spec | 状态 |
 |------|---------|---------|--------------|------|------|
-| F9 `character_service` | 角色管理：档案 / 关系图谱 / 分组 + AI 提取（样板模块，提取型） | `inkflow character create/list/get/update/delete/restore/relate/unrelate/relations/extract` | `/api/v1/characters*` · `/character-groups*` | [`specs/f9-character-service/`](specs/f9-character-service/spec.md) | ✅ PR #56 |
-| F10 `world_service` | 世界观管理：条目 / 分类汇总 + AI 提取（镜像成品） | `inkflow world create/list/categories/get/update/delete/restore/extract` | `/api/v1/world-settings*` | [`specs/f10-world-service/`](specs/f10-world-service/spec.md) | ✅ PR #57 |
-| F11 `outline_service` | 大纲管理：大纲 / 情节点 / 弧线 + AI 生成（首个生成型，生成即新建） | `inkflow outline create/list/get/update/delete/restore/generate` | `/api/v1/outlines*` · `/plot-points*` · `/story-arcs*` | [`specs/f11-outline-service/`](specs/f11-outline-service/spec.md) | ✅ PR #58 |
-| F12 `timeline_service` | 时间线管理：事件 / 叙事双时间线 + 一致性检查（首个无 LLM 模块，确定性算法） | `inkflow timeline create/list/view/check/get/update/delete/restore` | `/api/v1/timeline*` | [`specs/f12-timeline-service/`](specs/f12-timeline-service/spec.md) | ✅ PR #63 |
-| F13 `foreshadowing_service` | 伏笔管理：伏笔档案 + 状态机（埋设/回收/重开）+ 写作时注入 F6 上下文（F6 集成型，无 LLM） | `inkflow foreshadowing create/list/get/update/delete/restore/resolve/reopen` | `/api/v1/foreshadowings*` | [`specs/f13-foreshadowing-service/`](specs/f13-foreshadowing-service/spec.md) | ✅ PR #64 |
-| F14 `extraction_service` | 统一提取门面：6 种提取类型（角色/世界/大纲/时间线/伏笔/风格）分发到各模块既有入口 + 增量提取（源 sha256 hash）+ **RAG 首次落地**（Chroma + BGE，ADR-013） | `inkflow extract run/status` | `/api/v1/extract*` · `/vector/reindex|retrieve` | [`specs/f14-extraction-service/`](specs/f14-extraction-service/spec.md) | ✅ PR #72 |
-| F15 `audit_service` | 一致性审计：角色 / 时间线 / 世界 / 伏笔 4 维度（横切审计型，纯消费者零跨模块修改） | `inkflow audit check` | `/api/v1/projects/{id}/audit` | [`specs/f15-audit-service/`](specs/f15-audit-service/spec.md) | ✅ PR #74 |
-| F16 `style_service` | 风格检测：风格指纹 / AI 痕迹 / 词汇分析（确定性文本分析型，jieba 增强 + LLM 深度分析可选） | `inkflow style analyze` | `/api/v1/projects/{id}/style/analyze` | [`specs/f16-style-service/`](specs/f16-style-service/spec.md) | ✅ PR #75 |
+| F9 `character_service` | 角色管理：档案 / 关系图谱 / 分组 + AI 提取（样板模块，提取型） | `inkflow character create/list/get/update/delete/restore/relate/unrelate/relations/extract` | `/api/v1/characters*` · `/character-groups*` | [`specs/f9-character/`](specs/f9-character/spec.md) | ✅ PR #56 |
+| F10 `world_service` | 世界观管理：条目 / 分类汇总 + AI 提取（镜像成品） | `inkflow world create/list/categories/get/update/delete/restore/extract` | `/api/v1/world-settings*` | [`specs/f10-world-settings/`](specs/f10-world-settings/spec.md) | ✅ PR #57 |
+| F11 `outline_service` | 大纲管理：大纲 / 情节点 / 弧线 + AI 生成（首个生成型，生成即新建） | `inkflow outline create/list/get/update/delete/restore/generate` | `/api/v1/outlines*` · `/plot-points*` · `/story-arcs*` | [`specs/f11-outline/`](specs/f11-outline/spec.md) | ✅ PR #58 |
+| F12 `timeline_service` | 时间线管理：事件 / 叙事双时间线 + 一致性检查（首个无 LLM 模块，确定性算法） | `inkflow timeline create/list/view/check/get/update/delete/restore` | `/api/v1/timeline*` | [`specs/f12-timeline/`](specs/f12-timeline/spec.md) | ✅ PR #63 |
+| F13 `foreshadowing_service` | 伏笔管理：伏笔档案 + 状态机（埋设/回收/重开）+ 写作时注入 F6 上下文（F6 集成型，无 LLM） | `inkflow foreshadowing create/list/get/update/delete/restore/resolve/reopen` | `/api/v1/foreshadowings*` | [`specs/f13-foreshadowing/`](specs/f13-foreshadowing/spec.md) | ✅ PR #64 |
+| F14 `extraction_service` | 统一提取门面：6 种提取类型（角色/世界/大纲/时间线/伏笔/风格）分发到各模块既有入口 + 增量提取（源 sha256 hash）+ **RAG 首次落地**（Chroma + BGE，ADR-013） | `inkflow extract run/status` | `/api/v1/extract*` · `/vector/reindex|retrieve` | [`specs/f14-extraction/`](specs/f14-extraction/spec.md) | ✅ PR #72 |
+| F15 `audit_service` | 一致性审计：角色 / 时间线 / 世界 / 伏笔 4 维度（横切审计型，纯消费者零跨模块修改） | `inkflow audit check` | `/api/v1/projects/{id}/audit` | [`specs/f15-consistency-audit/`](specs/f15-consistency-audit/spec.md) | ✅ PR #74 |
+| F16 `style_service` | 风格检测：风格指纹 / AI 痕迹 / 词汇分析（确定性文本分析型，jieba 增强 + LLM 深度分析可选） | `inkflow style analyze` | `/api/v1/projects/{id}/style/analyze` | [`specs/f16-style-analysis/`](specs/f16-style-analysis/spec.md) | ✅ PR #75 |
 
 **0.2.0 交付实证**：1589 测试通过 / 覆盖率 91%（DoD ≥60%）· 64 个 CLI 命令 · 12 个 API router（92 端点）· Milestone #2 已关闭（2026-08-02）。
 

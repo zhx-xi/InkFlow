@@ -1,6 +1,6 @@
 """F14 伏笔提取管线 — 模板渲染 → LLM → JSON 解析 → 修复重试 → 合并落库.
 
-依据: specs/f14-extraction-service/spec.md §5.4（伏笔提取管线，F13 移交）。
+依据: specs/f14-extraction/spec.md §5.4（伏笔提取管线，F13 移交）。
 镜像 F9 `_character_extractor.py` 骨架（管线步骤/JSON 解析/重试/合并全参考），
 仅替换领域实体（ExtractedForeshadowing → Foreshadowing）与模板
 （foreshadowing_extract.yaml）。

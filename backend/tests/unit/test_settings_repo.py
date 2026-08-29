@@ -5,7 +5,7 @@
 - 多行 JSON 编解码往返（repo 不解析，原样返回字符串值——解析在 service）
 - set_many upsert（同 key 覆盖 → 单行 + 新值；commit 调用断言）
 
-依据: specs/f32-settings-persistence/spec.md §2.3/§2.4 + §9.1/§9.4。
+依据: specs/f32-settings/spec.md §2.3/§2.4 + §9.1/§9.4。
 
 ══════════════════════ 设计假设（GREEN 实现者唯一契约）══════════════════════
 

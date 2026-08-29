@@ -1,6 +1,6 @@
 """F44 阶段1 书级仓储集成测试（TDD RED 阶段）。
 
-权威来源：specs/f44-long-task-orchestrator/spec.md §2.1（WritingPlan）、
+权威来源：specs/f44-book-orchestrator/spec.md §2.1（WritingPlan）、
 §2.2（PlannerSession）、§8.1（infrastructure/database/models/writing_plan.py +
 planner_session.py + infrastructure/repositories/book_repository.py）、
 §13.1 M3（WritingPlan/PlannerSession 落库）。

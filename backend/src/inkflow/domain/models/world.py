@@ -5,7 +5,7 @@ WorldSetting 是持久化实体（对应 world_settings 表，通过 SQLAlchemy 
 LLM 提取结果的 schema 校验模型，WorldExtractRequest / WorldExtractionResult
 是提取服务的入参/出参。
 
-依据: specs/f10-world-service/spec.md §2.5/§2.6。
+依据: specs/f10-world-settings/spec.md §2.5/§2.6。
 领域层保持纯净：仅依赖 Pydantic v2，不感知 ORM / 框架。
 """
 

@@ -16,7 +16,7 @@ F42 #269 追加（spec §2.3/§3）：PATCH /api/v1/projects/{id} agent_order
 语义校验映射——service 层校验抛 ValueError → router 转 422（detail 中文）；
 Pydantic 结构校验（长度 >10/跨层重复）→ FastAPI 默认 422。
 
-依据: specs/f19-gui/spec.md §9.2.5 + specs/f42-agent-chain-config/spec.md §2.3/§3。
+依据: specs/f19-gui/spec.md §9.2.5 + specs/f42-agent-chain/spec.md §2.3/§3。
 """
 
 from __future__ import annotations

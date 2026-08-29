@@ -17,7 +17,7 @@
 - 无 422 业务校验错误（F15 唯一输入是路径 project_id，无请求体/查询
   参数，错误面只有 404 与 500）
 
-依据: specs/f15-audit-service/spec.md §3/§7。
+依据: specs/f15-consistency-audit/spec.md §3/§7。
 """
 
 from __future__ import annotations

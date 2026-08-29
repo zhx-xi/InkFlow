@@ -1,6 +1,6 @@
 """F15 审计 CLI 命令测试 — Mock ensure_kernel + InkFlowHTTPClient（spec §4/§9 CLI 测试）。
 
-覆盖（依据 specs/f15-audit-service/spec.md §4/§7/§9）:
+覆盖（依据 specs/f15-consistency-audit/spec.md §4/§7/§9）:
 - audit 组注册（check 命令）
 - check 人类可读摘要两种形态（✅ 审计通过 / ❌ 不一致；error/warning 逐条、
   info 只计数不逐条、末尾提示 --json）

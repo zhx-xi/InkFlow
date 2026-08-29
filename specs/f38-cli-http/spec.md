@@ -1,4 +1,5 @@
 # F38: CLI 恒经 HTTP 路由改造（cli_http）— 功能规格
+> **端**: backend
 
 > **Spec 版本**: 1.0 | **日期**: 2026-08-09 | **依据**: ADR-030 ② D1=A（CLI 恒经 HTTP）、ADR-021（内核并发契约）、F30 spec（ensure_kernel 消费方）、Constitution P1-P6
 >

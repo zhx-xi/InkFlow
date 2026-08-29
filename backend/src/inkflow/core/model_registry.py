@@ -5,7 +5,7 @@
 2. Provider 前缀匹配: model 以 "provider/" 开头时，查该 provider 的默认窗口
 3. 兜底: config.context.default_window + WARNING 日志
 
-依据: specs/f6-context-service/spec.md §7 ModelContextRegistry.
+依据: specs/f6-context/spec.md §7 ModelContextRegistry.
 """
 
 from __future__ import annotations

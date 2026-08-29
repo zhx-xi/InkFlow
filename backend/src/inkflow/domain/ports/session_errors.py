@@ -1,7 +1,7 @@
 """会话管理领域异常.
 
 F24 专属异常类型，继承自 Exception。
-依据: specs/f24-session-service/spec.md §8.1。
+依据: specs/f24-session/spec.md §8.1。
 
 异常映射约定（spec §8.1 异常映射表）:
 - SessionServiceError 子类 = 业务校验失败，API 层映射为 422（消息即 detail）

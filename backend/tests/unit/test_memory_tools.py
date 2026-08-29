@@ -1,6 +1,6 @@
 """F51 记忆工具 RED 契约测试 — build_memory_tools 注册 + 执行信封.
 
-依据 specs/f51-agent-tools-v2/spec.md §2.7。镜像 test_chat_setting_write_tools 形态。
+依据 specs/f26-agent-tools/spec.md §2.7。镜像 test_chat_setting_write_tools 形态。
 锁定契约:
 1. build_memory_tools(deps) 返回 [memory_list, memory_add, memory_update]。
 2. 成功 {"ok": True, ...} / 失败 {"ok": False, "error": "..."}（不抛出）。

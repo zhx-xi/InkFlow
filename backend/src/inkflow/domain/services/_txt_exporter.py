@@ -16,7 +16,7 @@
    settings 为空 → 不输出附录
 5. 空项目（无卷无章无设定）→ 书名 + 分隔线（§7 E4）
 
-依据: specs/f21-export-service/spec.md §3.2/§5.3/§6.2/§7 E3-E4。
+依据: specs/f21-export/spec.md §3.2/§5.3/§6.2/§7 E3-E4。
 """
 
 from __future__ import annotations

@@ -5,7 +5,7 @@ ContextSourceType 枚举七种数据源（F28 追加 preference），
 ContextItem/ContextBlock/DroppedItem 为组装过程的
 中间数据结构，ContextRequest 为 API 输入，ContextAssemblyResult 为最终产出。
 
-依据: specs/f6-context-service/spec.md §3, ADR-010.
+依据: specs/f6-context/spec.md §3, ADR-010.
 """
 
 from __future__ import annotations

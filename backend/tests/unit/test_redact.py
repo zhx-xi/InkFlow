@@ -1,4 +1,4 @@
-"""#614 对话输入机密脱敏 — `redact_secrets` RED 契约（specs/secret-redact/spec.md §4.1）。
+"""#614 对话输入机密脱敏 — `redact_secrets` RED 契约（specs/f53-secret-redact/spec.md §4.1）。
 
 目标：redact_secrets(prompt, known_keys) -> str（llm/redact.py，尚未实现）。
 契约用例（spec §3.1/§3.3/§4.1）：

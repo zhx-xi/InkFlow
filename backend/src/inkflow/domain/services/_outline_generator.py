@@ -1,6 +1,6 @@
 """F11 大纲生成管线 — 模板渲染 → LLM → JSON 解析 → 修复重试 → 落库/预览.
 
-依据: specs/f11-outline-service/spec.md §5（AI 生成模式，关键差异见 §5.6）。
+依据: specs/f11-outline/spec.md §5（AI 生成模式，关键差异见 §5.6）。
 实现为 F10 `_world_extractor.py` 的镜像，仅替换领域实体（Outline /
 PlotPoint / StoryArc ↔ WorldSetting）与模板名（outline_generate ↔
 world_extract），并按 §5.6 调整落库语义: 生成即新建（大纲同名 → 422，

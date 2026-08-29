@@ -15,7 +15,7 @@
   已 open 幂等）
 - 404 全路径：get/update/resolve/reopen 不存在 → None；delete → False
 
-依据: specs/f13-foreshadowing-service/spec.md §7 + §9 测试策略。
+依据: specs/f13-foreshadowing/spec.md §7 + §9 测试策略。
 """
 
 from __future__ import annotations

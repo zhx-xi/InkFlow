@@ -1,6 +1,6 @@
 """F14 LLM 分析切片器 — 模板渲染 → LLM → JSON 解析 → 修复重试 → 边界列表.
 
-依据: specs/f14-extraction-service/spec.md §5.6.7（LLM 分析切片器）+ §9 测试策略。
+依据: specs/f14-extraction/spec.md §5.6.7（LLM 分析切片器）+ §9 测试策略。
 镜像 F16 `_style_llm_analyzer.py` 骨架（模板渲染 → LLM chat → JSON 解析 →
 边界校验 → 修复式重试 ≤2），仅替换领域实体（list[int] ↔ StyleLLMAssessment）
 与模板（llm_chunk ↔ style_llm_analysis）。

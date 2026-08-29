@@ -3,7 +3,7 @@
 覆盖 core/database.py 的 ensure_world_categories_kind_column 三形态：旧库补列 /
 新库 no-op / 无表 no-op。真 SQLite 同步轨（in-memory）。
 
-依据: specs/f10-world-service/spec.md v1.2 §2.6（world_categories 表）+#699（加 kind 列）.
+依据: specs/f10-world-settings/spec.md v1.2 §2.6（world_categories 表）+#699（加 kind 列）.
 """
 
 from __future__ import annotations

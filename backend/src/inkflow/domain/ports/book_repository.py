@@ -5,7 +5,7 @@ BookRepositoryProtocol 定义 WritingPlan 与 PlannerSession 的
 get_writing_plan / get_planner_session 入参接受 uuid.UUID 或 str
 （repo 实现负责字符串转换查询）.
 
-依据: specs/f44-long-task-orchestrator/spec.md 搂2.1/搂2.2/搂4.3.
+依据: specs/f44-book-orchestrator/spec.md 搂2.1/搂2.2/搂4.3.
 """
 
 from __future__ import annotations

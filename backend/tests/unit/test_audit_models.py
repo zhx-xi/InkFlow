@@ -4,8 +4,8 @@
 可空边界、稳定 id 格式）、DimensionSummary / AuditSummary（计数与
 consistent 语义）、AuditReport（JSON 序列化 + ConsistencyReport 嵌套）。
 
-依据: specs/f15-audit-service/spec.md §2 数据模型（§2.1-§2.5）+
-specs/f12-timeline-service/spec.md §2.4（ConsistencyReport 引用不重定义）。
+依据: specs/f15-consistency-audit/spec.md §2 数据模型（§2.1-§2.5）+
+specs/f12-timeline/spec.md §2.4（ConsistencyReport 引用不重定义）。
 """
 
 import uuid

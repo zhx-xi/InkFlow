@@ -18,7 +18,7 @@ restore），与动态会话 ID 无冲突。
 响应序列化: 时间戳统一 UTC aware（naive 视为 UTC，spec §3.2 响应 Z 后缀；
 真实服务/仓储产出均 aware，此处仅兜底 naive 输入），保证响应契约一致。
 
-依据: specs/f24-session-service/spec.md §3/§7/§8。
+依据: specs/f24-session/spec.md §3/§7/§8。
 """
 
 from __future__ import annotations
