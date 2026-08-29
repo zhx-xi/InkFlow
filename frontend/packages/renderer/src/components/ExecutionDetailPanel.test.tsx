@@ -366,3 +366,43 @@ describe('ExecutionDetailPanel — 思考折叠块 exec-think-${n}（#740）', (
     expect(tool0).toHaveTextContent('主角');
   });
 });
+
+describe('ExecutionDetailPanel — 进行中 run 恢复 + 状态不僵死（#760）', () => {
+  it('#760: projectId + 项目存在进行中 agentic run → 自动恢复（getRun 调用 + exec-run-status 显示 running，非空态）', async () => {
+    apiFetchMock.mockResolvedValue({ items: [], total: 0 } as never);
+    listRunsMock.mockResolvedValue({
+      items: [{ ...MOCK_RUN, id: 'r-running', status: 'running' }],
+      total: 1,
+    } as never);
+    getRunMock.mockResolvedValue({ ...MOCK_RUN, id: 'r-running', status: 'running' } as never);
+    render(<ExecutionDetailPanel executionId={null} projectId="p1" />);
+    // 契约：挂载时自动把进行中的 run 当成当前展示（getRun 被调，显示其 status）
+    await waitFor(() => expect(getRunMock).toHaveBeenCalledWith('r-running'));
+    const status = await screen.findByTestId('exec-run-status');
+    expect(status).toHaveTextContent('running');
+    expect(screen.queryByTestId('exec-detail-empty')).not.toBeInTheDocument();
+  });
+
+  it('#760: 恢复的进行中 run 轮询刷新至终态（running → completed），不僵死 running', async () => {
+    apiFetchMock.mockResolvedValue({ items: [], total: 0 } as never);
+    listRunsMock.mockResolvedValue({
+      items: [{ ...MOCK_RUN, id: 'r-running', status: 'running' }],
+      total: 1,
+    } as never);
+    let calls = 0;
+    getRunMock.mockImplementation(() => {
+      calls += 1;
+      if (calls === 1) {
+        return Promise.resolve({ ...MOCK_RUN, id: 'r-running', status: 'running' } as never);
+      }
+      return Promise.resolve({ ...MOCK_RUN, id: 'r-running', status: 'completed' } as never);
+    });
+    render(<ExecutionDetailPanel executionId={null} projectId="p1" />);
+    await screen.findByTestId('exec-run-status');
+    // 契约：轮询直到终态（completed），不一直显示 running
+    await waitFor(() => {
+      expect(screen.getByTestId('exec-run-status')).toHaveTextContent('completed');
+    });
+    expect(getRunMock.mock.calls.length).toBeGreaterThan(1);
+  });
+});
