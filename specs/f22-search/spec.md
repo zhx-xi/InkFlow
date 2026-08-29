@@ -125,7 +125,7 @@ class SearchResponse(BaseModel):
 
 - GET query：`q`（必填）、`project_id` **或** `project_ids`（必填其一；`project_ids` 逗号分隔 UUID 数组 = 同世界观选择器，v1.1）、`types`（可选，逗号分隔枚举）、`mode`（可选，`keyword`/`semantic`，默认 keyword）、`limit`（默认 20）、`offset`（默认 0）
 - GET 响应：200 `SearchResponse` JSON；幂等只读
-- POST rebuild：query 参数 `project_id`（可选 UUID）——**缺省 = 重建全部项目索引**；传 = 仅重建指定项目。响应 200 `{"rebuilt_at": "<ISO8601 UTC>", "project_id": "<uuid>" | null}`；有副作用（写 FTS 索引），**用 POST 非 GET**（F12 check 只读先例不适用）
+- POST rebuild：query 参数 `project_id`（可选 UUID）**或** `project_ids`（可选逗号分隔 UUID 数组，同世界观选择器）——**都缺省 = 重建全部项目索引**；任一提供 = 仅重建指定项目/项目组（#251 P3 多项目升级）。响应 200 `{"rebuilt_at": "<ISO8601 UTC>", "project_ids": [str] | null}`；有副作用（写 FTS 索引），**用 POST 非 GET**（F12 check 只读先例不适用）
 
 ### 3.2 请求/响应示例
 
@@ -646,3 +646,34 @@ F22 编号 0.6.0 立项未改号（ADR-019 v5 口径）；变体编号声明依�
 | Q1 | 搜索方案 | A. FTS5 + jieba 分词（零新依赖，词法精确）+ 可接入既有 RAG 做 AI 语义检索<br>B. LIKE 全表扫描<br>C. 纯向量检索（复用 chromadb + BGE） | ✅ 已确认（用户拍板 2026-08-09：A + AI 检索增强）——正文已按「keyword 默认 + semantic 增强（复用 F14 RAG）」修订（§1/§5.8/§12 D1/D9），semantic 覆盖缺口显式声明 |
 | Q2 | 索引维护策略 | A. 写时同步（6 模块 MODIFY）<br>B. 全量重建 + 脏检测<br>C. 增量游标 | ✅ 已确认（用户拍板 2026-08-09：自定义综合方案）——默认用户自维护（懒重建 + 手动 rebuild）+ 设置项 AI 自动维护（写完一章 REVIEW/FINAL 触发增量）+ 手动全量重建；**章节审计拆出 #208/F34 单独立项**，审计确认作为增强触发点非阻塞（§5.3/§10） |
 | Q3 | 搜索范围 | A. 项目内（project_id 必填）<br>B. 跨项目（无差别全局）<br>C. A + 预留 | ✅ 已确认（用户拍板 2026-08-09：默认单项目 + 同世界观选择器）——`project_ids` 数组显式跨项目（会话级不持久化，持久化归 #175）；正文已修订（§2.2/§3.1/§5.7/§12 D8） |
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §7 边界事实，不重复、不新增行为）。
+
+### 14.1 端点状态流
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| GET /api/v1/search | q 必填 1-100；project_id 或 project_ids 必填其一；项目存在 | 校验项目（逐个，E1）→ _ensure_index（懒建表 + 判脏重建，§5.2）→ jieba 分词 + MATCH 构造（§5.5）→ FTS5 查询 + snippet 高亮 → SearchResponse | 200 {total, hits, query, types, mode, project_ids}；无命中 total:0；索引未建 → 懒初始化后返回真实结果（E4） | 404「Project not found: <id>」（任一项目不存在/已软删）；422（q 缺失/空白/超长、types/mode 非法枚举、limit>100、project_id 与 project_ids 双缺「project_id or project_ids required」）；500「Internal server error」 | 纯标点查询 → 200 空结果（分词后无有效词，E2）；保留字 AND/OR/NOT 引号转义按普通词（E9）；正文 HTML 转义按字面检索（E10）；semantic 向量库空/embedding 不可用 → 200 空结果不降级 keyword（E12）；多项目 IN 查询项目隔离（§5.7）；软删不命中（§6.2）；types=[] 空列表视为 None 全部（§6.3） |
+| POST /api/v1/search/rebuild | project_id 存在（若传） | 全量重建：DELETE search_index → 并行拉 6 类数据源（分页循环）→ jieba 分词入库 → upsert last_rebuilt_at（§5.3） | 200 {"rebuilt_at": ISO8601 UTC, "project_id": uuid 或 null}；有副作用故用 POST | 404「Project not found: <id>」；500「Internal server error」 | 缺省 = 重建全部项目索引；重建中断 → last_rebuilt_at 不更新 → 下次搜索判脏重重建（E8）；并发重建 asyncio.Lock 双检锁（E7）；残留索引行按 project_id 过滤自然隔离（E6） |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow search <query> --project <name 或 id> [--project ...] [--type TYPE]... [--mode keyword/semantic] [--limit N] [--offset N] [--json] | 项目存在（≥1；经 ensure_kernel + HTTP） | GET /api/v1/search 透传（--mode/--type/--limit/--offset） | 退出 0；人类模式类型徽标 + 项目名 + 标题 + snippet（[...] 方括号高亮）；--json 信封 data = SearchResponse（snippet 保留 mark 标签） | 项目不存在 → 退出 1「项目不存在: <name>」（HttpApiError 404 → NOT_FOUND）；query 空白 → 退出 2（Typer 自动）；内核未运行 → ensure_kernel 拉起（KERNEL_ERROR） | -p 可重复（同世界观选择器）；-t 可重复；--mode semantic 复用 RAG（覆盖缺口：outline 恒无命中，§5.8） |
+| inkflow search --rebuild [--project <name 或 id>] | — | POST /api/v1/search/rebuild（传 --project 则带 project_id） | 退出 0；--json 信封 data = {"rebuilt_at", "project_id"} | 项目不存在 → 退出 1 | 不传 --project = 重建全部项目索引 |
+
+### 14.3 验收锚点（写入 §14）
+
+- A1：任一项目不存在 → 404「Project not found: <id>」（非 500）
+- A2：project_id 与 project_ids 双缺 → 422 精确 detail「project_id or project_ids required」
+- A3：纯标点查询 → 200 total:0（非 422；分词后无有效词）
+- A4：semantic embedding 不可用 → 200 空结果（不静默降级 keyword，E12）
+- A5：增量同步失败 → 回退懒重建（_is_stale 兜底，E13）
+- A6：types=[] 空列表 → 视为 None（全部 6 类，§6.3）
+- A7：snippet 含 mark 标记且无未转义 HTML（E10）
+
+### 14.4 漂移标注
+
+- POST /api/v1/search/rebuild 实现已扩展（#251 P3 多项目升级）：query 同时接受 project_id 与 project_ids，响应键为 project_ids 数组（全量重建为 null），CLI --rebuild 的 --json 数据面与人类输出同样消费 project_ids——spec §3.1/§3.2/§4 仍声明单 project_id 参数 + project_id 响应键。spec 落后实现（实现有、spec 无），仅标注待父侧按规则处置，本批不合改。
