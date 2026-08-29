@@ -227,27 +227,24 @@ describe('写作页 — 右栏整栏收起/展开（#742 收起按钮整行 + #7
     expect(afterW).toBeGreaterThan(startW); // 右栏变宽
   });
 
-  it('点「»」→ 整栏收起（三面板全隐藏 + data-collapsed=true）；再点「«」→ 展开', async () => {
+  it('点「»」→ 整栏收起（context/summary 面板全隐藏 + data-collapsed=true）；再点「«」→ 展开', async () => {
     const user = userEvent.setup();
     render(<WritingPage />);
-    // 展开态：三个面板均在
+    // 展开态：两面板均在（#764 无 drafts）
     expect(screen.getByTestId('rail-panel-context')).toBeInTheDocument();
     expect(screen.getByTestId('rail-panel-summary')).toBeInTheDocument();
-    expect(screen.getByTestId('rail-panel-drafts')).toBeInTheDocument();
 
     // 收起整栏
     await user.click(screen.getByTestId('right-col-toggle'));
     expect(screen.getByTestId('right-rail')).toHaveAttribute('data-collapsed', 'true');
     expect(screen.queryByTestId('rail-panel-context')).not.toBeInTheDocument();
     expect(screen.queryByTestId('rail-panel-summary')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('rail-panel-drafts')).not.toBeInTheDocument();
 
     // 展开整栏
     await user.click(screen.getByTestId('right-col-toggle'));
     expect(screen.getByTestId('right-rail')).not.toHaveAttribute('data-collapsed', 'true');
     expect(screen.getByTestId('rail-panel-context')).toBeInTheDocument();
     expect(screen.getByTestId('rail-panel-summary')).toBeInTheDocument();
-    expect(screen.getByTestId('rail-panel-drafts')).toBeInTheDocument();
   });
 });
 
@@ -714,26 +711,18 @@ describe('写作页 — 模型未配置前置校验（#474 P0）', () => {
     expect(executeMock).not.toHaveBeenCalled();
   });
 });
-describe('写作页 — 右栏三面板拖拽分隔 + 草稿审批最小高度（#703）', () => {
-  it('右栏三个面板之间各有 row-resize 拖拽分隔条', () => {
+describe('写作页 — 右栏两面板拖拽分隔 + 无草稿审批（#703 + #764）', () => {
+  it('右栏 context/summary 面板 + 一个 row-resize 分隔条；无 rail-panel-drafts/rail-resize-handle-1', () => {
     render(<WritingPage />);
     const rail = screen.getByTestId('right-rail');
     expect(within(rail).getByTestId('rail-panel-context')).toBeInTheDocument();
     expect(within(rail).getByTestId('rail-panel-summary')).toBeInTheDocument();
-    expect(within(rail).getByTestId('rail-panel-drafts')).toBeInTheDocument();
+    // #764：草稿审批右栏移除 → 无 drafts 面板、无其分隔条
+    expect(within(rail).queryByTestId('rail-panel-drafts')).not.toBeInTheDocument();
+    expect(within(rail).queryByTestId('rail-resize-handle-1')).not.toBeInTheDocument();
     const sp0 = within(rail).getByTestId('rail-resize-handle-0');
-    const sp1 = within(rail).getByTestId('rail-resize-handle-1');
     expect(sp0).toBeInTheDocument();
-    expect(sp1).toBeInTheDocument();
     expect(sp0.className).toMatch(/row-resize/);
-    expect(sp1.className).toMatch(/row-resize/);
-  });
-
-  it('草稿审批面板有最小高度保护（min-height ≥ 120px）', () => {
-    render(<WritingPage />);
-    const drafts = screen.getByTestId('rail-panel-drafts');
-    // #703：草稿审批 panel 设 min-height:120px 保护，不被上下文 flex:1 压瘪
-    expect(drafts.className).toMatch(/min-h-\[120px\]/);
   });
 
   it('拖拽分隔条调整上一面板高度（mousedown→mousemove）', () => {

@@ -20,7 +20,6 @@ import { ChapterEditor } from '../components/ChapterEditor';
 import { ChatPanel } from '../components/ChatPanel';
 import { ChapterSummaryPanel } from '../components/ChapterSummaryPanel';
 import { ContextPanel } from '../components/ContextPanel';
-import { DraftApprovalPanel } from '../components/DraftApprovalPanel';
 import { EditorToolbar } from '../components/EditorToolbar';
 import { ExecutionDetailPanel } from '../components/ExecutionDetailPanel';
 import { AIExtractDialog } from '../components/extract/AIExtractDialog';
@@ -459,18 +458,6 @@ export function WritingPage() {
                 className="min-h-0 shrink-0 flex flex-col"
               >
                 <ChapterSummaryPanel projectId={effectiveProjectId} chapterId={currentChapterId} />
-              </div>
-              <div
-                data-testid="rail-resize-handle-1"
-                className="h-2 shrink-0 cursor-row-resize select-none border-t border-line bg-surface-3"
-                onMouseDown={startRailResize('summary')}
-                aria-hidden="true"
-              />
-              <div
-                data-testid="rail-panel-drafts"
-                className="min-h-[120px] shrink-0 flex flex-col"
-              >
-                <DraftApprovalPanel projectId={effectiveProjectId} />
               </div>
             </>
           )}
