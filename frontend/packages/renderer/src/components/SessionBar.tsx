@@ -4,6 +4,7 @@ import { ChevronsDown, ChevronsUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { fetchChatConversations, type ChatConversationDto } from '../api/chat';
 import { useI18n } from '../i18n/useI18n';
+import { useChapterStore } from '../stores/chapter';
 
 const COLLAPSE_KEY = 'session-bar.collapsed';
 
@@ -37,6 +38,8 @@ function shortDate(isoDate: string): string {
 export function SessionBar({ projectId }: { projectId?: string | null }) {
   const { t } = useI18n();
   const navigate = useNavigate();
+  // #770：章节锚点 = 会话 title 匹配当前项目章节标题（匹配 → 章节页；否则 → 全局 chat 页）
+  const chapters = useChapterStore((s) => s.chapters);
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSE_KEY) === 'true',
   );
@@ -127,25 +130,40 @@ export function SessionBar({ projectId }: { projectId?: string | null }) {
                   <div className="text-[10px] uppercase tracking-[0.14em] text-ink-3">
                     {t(`session.time.${bucket}`)}
                   </div>
-                  {bucketItems.map((conv) => (
-                    <button
-                      key={conv.conversation_id}
-                      type="button"
-                      data-testid={`session-item-${conv.conversation_id}`}
-                      onClick={() => navigate(`/sessions?conversation_id=${conv.conversation_id}`)}
-                      className="flex w-full flex-col items-start rounded-md px-2 py-1.5 text-left text-[12px] text-ink-2 hover:bg-surface-3 hover:text-ink"
-                    >
-                      <span className="min-w-0 flex-1 truncate">{conv.last_message || t('common.empty')}</span>
-                      <span className="text-ink-3">
-                        {t('session.messages', { count: conv.message_count })} · {shortDate(conv.updated_at)}
-                      </span>
-                      {conv.is_deleted && (
-                        <span data-testid="session-item-archived" className="text-ink-3">
-                          {t('session.archived')}
+                  {bucketItems.map((conv) => {
+                    const match = chapters.find((c) => c.title === conv.title);
+                    return (
+                      <button
+                        key={conv.conversation_id}
+                        type="button"
+                        data-testid={`session-item-${conv.conversation_id}`}
+                        onClick={() =>
+                          match
+                            ? navigate(`/writing?chapter_id=${match.id}`)
+                            : navigate(`/writing?conversation_id=${conv.conversation_id}`)
+                        }
+                        className="flex w-full flex-col items-start rounded-md px-2 py-1.5 text-left text-[12px] text-ink-2 hover:bg-surface-3 hover:text-ink"
+                      >
+                        {/* #770：优先展示会话 title（章节锚点），空则回退 last_message */}
+                        {/* #770：优先展示会话 title（章节锚点），空则回退 last_message；
+                            title 非空时 last_message 仍展示为副行（#762 契约保留） */}
+                        <span className="min-w-0 flex-1 truncate">
+                          {conv.title || conv.last_message || t('common.empty')}
                         </span>
-                      )}
-                    </button>
-                  ))}
+                        {conv.title && conv.last_message ? (
+                          <span className="truncate text-[11px] text-ink-3">{conv.last_message}</span>
+                        ) : null}
+                        <span className="text-ink-3">
+                          {t('session.messages', { count: conv.message_count })} · {shortDate(conv.updated_at)}
+                        </span>
+                        {conv.is_deleted && (
+                          <span data-testid="session-item-archived" className="text-ink-3">
+                            {t('session.archived')}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               );
             })

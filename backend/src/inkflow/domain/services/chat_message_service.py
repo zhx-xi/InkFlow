@@ -73,9 +73,17 @@ class ChatMessageService:
             return active  # type: ignore[no-any-return]  # 鸭子类型：repo 返回领域 Conversation
         return await self._repo.create_conversation(project_id)  # type: ignore[attr-defined, no-any-return]  # 鸭子类型：repo 提供 create_conversation
 
-    async def create_conversation(self, project_id: uuid.UUID) -> Conversation:
-        """直接创建新线程（#744 归档后开新线程：不复用旧 conversation）。"""
-        return await self._repo.create_conversation(project_id)  # type: ignore[attr-defined, no-any-return]  # 鸭子类型：repo 提供 create_conversation
+    async def create_conversation(self, project_id: uuid.UUID, title: str = "") -> Conversation:
+        """直接创建新线程（#744 归档后开新线程：不复用旧 conversation；title 可选，#770）。"""
+        created: Conversation = await self._repo.create_conversation(project_id, title)  # type: ignore[attr-defined]  # 鸭子类型：repo 提供 create_conversation
+        return created
+
+    async def rename_conversation(self, conversation_id: uuid.UUID, title: str) -> bool:
+        """会话改名（#770）：溢出 uuid4 短路「不存在」，否则透传 repo.rename_conversation。"""
+        if _is_random_overflow(conversation_id):
+            return False
+        renamed: bool = await self._repo.rename_conversation(_to_int_id(conversation_id), title)  # type: ignore[attr-defined]  # 鸭子类型：repo 提供 rename_conversation
+        return renamed
 
     async def list_messages(
         self, conversation_id: uuid.UUID, offset: int = 0, limit: int = 50

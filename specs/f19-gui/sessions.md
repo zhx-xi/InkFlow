@@ -72,3 +72,22 @@
 - N4：检索框按 标题/项目名/最后消息 过滤，与 chips 叠加，无网络请求
 - N5：执行会话与 AI 对话归档/恢复闭环：活动态可归档（ok toast）→ 归档态显示「已归档」徽标 + 恢复按钮 → 恢复后回活动态；失败均 err toast 且列表状态不变
 - N6：删除需经确认对话框（含永久删除提示）；确定 → 卡片移除 + ok toast「已删除」；取消 → 无副作用
+
+## 4. #770 会话页架构增量（会话标题/改名/导航）
+
+> 会话列表展示 `title`；新增改名入口；点击会话按 title 匹配章节 → 跳章节页，匹配不到 → 跳全局 chat 页。完整契约见 f47 §17。
+
+### 4.1 画面样式补充
+
+- 会话卡片目录（`session-directory`）AI 对话卡片展示会话 `title`（空则回退 `project_name`）；联系人标题行加「改名」按钮（`chat-conv-rename-{id}`）。
+- 卡片导航：点击会话 → 用 `title` 匹配当前项目章节标题 → 匹配则 `navigate('/writing?chapter_id=...')`；匹配不到 → `navigate('/writing?conversation_id=...')`（全局 chat 页）。
+
+### 4.2 动作样式补充
+
+- 改名按钮（chat-conv-rename-{id}）→ 行内输入框（Enter 提交 / Esc 取消）→ PATCH `/chat/conversations/{id}` body `{title}`（≤200）；成功 → 本地更新 title + ok toast「已重命名」；失败 → err toast。
+
+### 4.3 验收补充
+
+- N7：AI 对话卡片展示会话 title（为空回退 project_name）。
+- N8：改名入口 → PATCH → 本地 title 更新 + ok toast；超 200 → err toast；失败 → err toast 且 title 不变。
+- N9：点击卡片 title 匹配章节 → 跳对应章节页；匹配不到 → 跳全局 chat 页（`/writing?conversation_id=...`）。

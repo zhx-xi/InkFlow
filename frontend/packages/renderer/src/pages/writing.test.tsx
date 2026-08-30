@@ -388,13 +388,14 @@ describe('写作页 — 空态（#98 §5.2.6）', () => {
     expect(await screen.findByTestId('projects-probe')).toBeInTheDocument();
   });
 
-  it('有项目无章节 → 项目树「新建章节」引导 + 编辑器 placeholder 增强文案', async () => {
+  it('#770 场景A：有项目无章节 → 全局 chat 页（不渲染编辑器/工具栏）', async () => {
     useChapterStore.setState({ volumes: [], chapters: [], currentChapterId: null, content: '', loading: false, error: null });
     render(<WritingPage />);
     await waitFor(() => expect(useChapterStore.getState().loading).toBe(false));
     expect(screen.getByRole('button', { name: /新建章节/ })).toBeInTheDocument();
-    const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
-    expect(editor.placeholder).toBe('还没有章节，点击左侧「新建章节」创建');
+    await waitFor(() => expect(screen.getByTestId('global-chat')).toBeInTheDocument());
+    expect(screen.queryByTestId('chapter-editor')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('editor-toolbar')).not.toBeInTheDocument();
   });
 
   it('回归：有章节时编辑器 placeholder 不含 idle 空态文案（#580 删除「AI 已就绪，开始创作」）', () => {
@@ -801,7 +802,7 @@ describe('写作页 — 生成→新会话（#763：createChatConversation + 去
     await waitFor(() => expect(createChatCovMock).toHaveBeenCalled());
     createChatCovMock.mockClear();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
-    await waitFor(() => expect(createChatCovMock).toHaveBeenCalledWith('p1'));
+    await waitFor(() => expect(createChatCovMock).toHaveBeenCalledWith('p1', { title: '第1章 初见' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalledWith(expect.objectContaining({ pipeline: 'builtin:write_auto' }), expect.any(Object)));
   });
 

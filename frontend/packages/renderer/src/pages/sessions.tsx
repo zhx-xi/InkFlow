@@ -7,6 +7,7 @@
  * filter chips 纯本地过滤不重拉（Q3 归档回归由测试锁定）。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   archiveSession,
   deleteSession,
@@ -20,12 +21,14 @@ import {
   archiveChatConversation,
   deleteChatConversation,
   fetchChatConversations,
+  renameChatConversation,
   restoreChatConversation,
   type ChatConversationDto,
 } from '../api/chat';
 import { errorMessage } from '../api/client';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
+import { useChapterStore } from '../stores/chapter';
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
 
@@ -67,6 +70,9 @@ type DirectoryItem =
 export function SessionsPage() {
   const { t } = useI18n();
   const pushToast = useToastStore((s) => s.pushToast);
+  const navigate = useNavigate();
+  // #770：点击会话 → 用 title 匹配当前项目章节标题（匹配 → 章节页；否则 → 全局 chat 页）
+  const chapters = useChapterStore((s) => s.chapters);
 
   const projects = useProjectStore((s) => s.projects);
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
@@ -77,6 +83,9 @@ export function SessionsPage() {
   const [sessions, setSessions] = useState<SessionViewDto[]>([]);
   // #547：AI 对话聚合列表
   const [conversations, setConversations] = useState<ChatConversationDto[]>([]);
+  // #770：行内改名 state（renameTarget = conversation_id；renameValue = 输入值）
+  const [renameTarget, setRenameTarget] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const [filter, setFilter] = useState<SessionFilter>('all');
   const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -178,7 +187,7 @@ export function SessionsPage() {
             f.toLowerCase().includes(q),
           );
         }
-        return [item.conv.project_name ?? '', item.conv.last_message].some((f) =>
+        return [item.conv.title ?? '', item.conv.project_name ?? '', item.conv.last_message].some((f) =>
           f.toLowerCase().includes(q),
         );
       })
@@ -261,6 +270,35 @@ export function SessionsPage() {
     } catch (err) {
       pushToast('err', errorMessage(err));
     }
+  };
+
+  /** #770：行内改名提交 → PATCH /chat/conversations/{id} body {title}；成功本地更新 + ok toast */
+  const handleRenameConversation = async (): Promise<void> => {
+    if (!renameTarget) return;
+    const id = renameTarget;
+    const value = renameValue.trim();
+    // f19 §4.2 边界：空 / 超 200 字符 → err toast，不发请求
+    if (!value || value.length > 200) {
+      pushToast('err', t('write.chat.renameInvalid'));
+      return;
+    }
+    try {
+      await renameChatConversation(id, value);
+      setConversations((prev) =>
+        prev.map((c) => (c.conversation_id === id ? { ...c, title: value } : c)),
+      );
+      pushToast('ok', t('write.chat.renamed'));
+      setRenameTarget(null);
+      setRenameValue('');
+    } catch (err) {
+      pushToast('err', errorMessage(err));
+    }
+  };
+
+  /** #770：点击会话标题 → title 匹配章节则跳章节页；否则跳全局 chat 页 */
+  const handleConversationNavigate = (conv: ChatConversationDto): void => {
+    const match = chapters.find((c) => c.title === conv.title);
+    navigate(match ? `/writing?chapter_id=${match.id}` : `/writing?conversation_id=${conv.conversation_id}`);
   };
 
   return (
@@ -465,9 +503,15 @@ export function SessionsPage() {
                         </>
                       )}
                       <h3 className="font-serif text-[15px] font-semibold text-ink">
-                        <span data-testid={`session-title-conv-${item.conv.conversation_id}`}>
-                          {item.conv.project_name ?? t('sessions.chat.unknownProject')}
-                        </span>
+                        <button
+                          type="button"
+                          data-testid={`session-title-conv-${item.conv.conversation_id}`}
+                          onClick={() => handleConversationNavigate(item.conv)}
+                          className="text-left hover:text-accent"
+                        >
+                          {/* #770：title 空回退 project_name；两者皆空 → 未命名会话 */}
+                          {item.conv.title || item.conv.project_name || t('sessions.chat.titleEmpty')}
+                        </button>
                       </h3>
                       <span className="ml-auto rounded bg-surface-3 px-2 py-0.5 text-[12px] text-ink-2">
                         {t('sessions.chat.count', { n: item.conv.message_count })}
@@ -475,6 +519,37 @@ export function SessionsPage() {
                     </div>
                     <p className="mt-2 truncate text-[13px] text-ink-2">{item.conv.last_message}</p>
                     <div className="mt-3 flex gap-2">
+                      {renameTarget === item.conv.conversation_id ? (
+                        <input
+                          type="text"
+                          data-testid={`chat-conv-rename-input-${item.conv.conversation_id}`}
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              void handleRenameConversation();
+                            } else if (e.key === 'Escape') {
+                              setRenameTarget(null);
+                              setRenameValue('');
+                            }
+                          }}
+                          autoFocus
+                          className="h-8 w-48 rounded-md border border-line bg-surface px-2 text-[13px] text-ink outline-none focus:border-accent"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          data-testid={`chat-conv-rename-${item.conv.conversation_id}`}
+                          className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] text-ink-2 transition-colors duration-180 hover:bg-surface-3 hover:text-ink"
+                          onClick={() => {
+                            setRenameTarget(item.conv.conversation_id);
+                            setRenameValue(item.conv.title ?? '');
+                          }}
+                        >
+                          {t('write.chat.rename')}
+                        </button>
+                      )}
                       {!item.conv.is_deleted ? (
                         <button
                           type="button"

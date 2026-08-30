@@ -167,6 +167,9 @@ export interface ChatConversationDto {
   conversation_id: string;
   project_id: string;
   project_name: string | null;
+  /** #770：会话标题（章节锚点；空则展示回退 project_name / last_message）。
+      类型可选仅为兼容 RED 测试 mock（后端始终返回 title）；展示层按契约回退 */
+  title?: string;
   last_message: string;
   message_count: number;
   /** #581：true=已归档对话（后端 include_deleted=true 聚合输出，镜像 sessions.is_deleted） */
@@ -222,11 +225,25 @@ export async function fetchChatConversations(params?: {
   return apiFetch(`/api/v1/chat/conversations${suffix}`);
 }
 
-/** #744：创建新线程：POST /api/v1/chat/conversations body {project_id} -> 201 */
-export async function createChatConversation(projectId: string): Promise<ChatConversationDto> {
+/** #744/#770：创建新线程：POST /api/v1/chat/conversations body {project_id, title?} -> 201 */
+export async function createChatConversation(
+  projectId: string,
+  opts?: { title?: string },
+): Promise<ChatConversationDto> {
   return apiFetch<ChatConversationDto>('/api/v1/chat/conversations', {
     method: 'POST',
-    body: { project_id: projectId },
+    body: { project_id: projectId, ...(opts?.title ? { title: opts.title } : {}) },
+  });
+}
+
+/** #770：重命名会话：PATCH /api/v1/chat/conversations/{conversationId} body {title} */
+export async function renameChatConversation(
+  conversationId: string,
+  title: string,
+): Promise<{ conversation_id: string; title: string }> {
+  return apiFetch(`/api/v1/chat/conversations/${conversationId}`, {
+    method: 'PATCH',
+    body: { title },
   });
 }
 

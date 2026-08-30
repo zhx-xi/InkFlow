@@ -71,3 +71,25 @@
 - N6：自动保存 2s 防抖落盘 + 状态栏自动保存时间更新；SSE done 帧落章不触发防抖保存
 - N7：删除授权三态分段控件（delete-mode-manual/ask-once/auto）渲染三按钮，默认 manual 选中（data-selected=true / aria-pressed）；点击一次确认/全自动 → updateChatDeletePermission(conversationId, mode) PATCH 生效；conversation 缺失先建再 PATCH
 - N8：interrupt SSE 帧到达 → HITL 确认弹窗（delete-confirm-dialog 显示实体名 + confirmTitle）；点确认删除 → resumeChatRun({approved:true}) 续跑删除；点取消 → {approved:false} 拒绝不删除；弹窗打开期间分段控件 disabled
+
+## 4. #770 会话页架构增量
+
+> 无章节写作页由「空」改全局 chat 页；章节内 chat 与全局 chat 页两套视图；会话跟随章节 + 命名/改名。完整契约见 f47 §17。
+
+### 4.1 画面样式补充（场景 A：无章节 → 全局 chat 页）
+
+- `currentChapterId === null`（有项目）时，中栏渲染全局 ChatPanel（`data-testid="global-chat"`，`variant="full"`）：
+  - flex-1 占满中栏，**无 resize handle**（不可调节大小）
+  - 不渲染 `EditorToolbar` / `ChapterEditor` / `ExecutionDetailPanel`
+  - 左栏项目树、右栏 `right-rail` 均保持
+- 与场景 B（章节选中）区别：章节内 ChatPanel 为底部横栏 inline（resize handle 80~480px）。两套视图条件分支渲染，不共享同一布局组件硬编码。
+
+### 4.2 动作样式补充
+
+- 章节内 chat 对话/生成/续写 → 新建会话 title=章节名；全局 chat 页对话 → 新建会话 title=首条用户消息前 30 字；均支持改名（PATCH ≤200 字符）。
+
+### 4.3 验收补充
+
+- N9：无章节进入写作页（有项目）→ 中栏渲染全局 chat 页（global-chat，无 resize handle），不渲染 EditorToolbar/ChapterEditor；右栏保持。
+- N10：章节选中 → 章节内 ChatPanel（inline，resize handle）完整保留。
+- N11：章节内对话/生成/续写均创建新会话，title=章节名；全局 chat 页对话 title=首条用户消息前 30 字；会话可改名。

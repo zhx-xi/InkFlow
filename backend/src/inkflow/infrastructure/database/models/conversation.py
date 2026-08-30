@@ -35,6 +35,7 @@ class ConversationORM(Base):
         nullable=False,
         default="manual",  # "manual" | "ask_once" | "auto" (#766 阶段②)
     )
+    title: Mapped[str] = mapped_column(String(200), nullable=False, default="")
 
     def __repr__(self) -> str:
         return f"<ConversationORM id={self.id}>"

@@ -38,11 +38,20 @@
  *
  * RED 预期：当前实现为旧三区（planner-section/sessions-section/chat-conversations-section）→
  * 本文件全部 describe 的断言（session-directory / sessions-project-select / sessions-search 等）FAIL。
+ *
+ * #770 增量（RED，f47 §17.4.4/§17.4.5 + f19 §4）：
+ * - AI 对话卡片标题元素 session-title-conv-{id} 展示会话 title（空回退 project_name；
+ *   两者皆空 → t('sessions.chat.titleEmpty')='未命名会话'，GREEN 补 key）。
+ * - 改名按钮 chat-conv-rename-{id} → 行内输入框 chat-conv-rename-input-{id}（Enter 提交 / Esc 取消）
+ *   → PATCH /api/v1/chat/conversations/{id} body { title }（>200 → err toast 不发请求）
+ *   → 成功本地更新 title + ok toast；失败 err toast 且 title 不变。
+ * - 点击卡片标题 → title 匹配当前项目章节标题（useChapterStore.chapters 播种；apiFetch 章节接口
+ *   同步返回同数据）→ /writing?chapter_id=<章ID>；匹配不到 → /writing?conversation_id=<会话ID>。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { SessionsPage } from './sessions';
 import {
   archiveSession,
@@ -54,6 +63,8 @@ import {
 import { apiFetch } from '../api/client';
 import { useThemeStore } from '../stores/theme';
 import { useProjectStore, type Project } from '../stores/project';
+import { useChapterStore, type ChapterMeta } from '../stores/chapter';
+import { useToastStore } from '../stores/toast';
 
 vi.mock('../api/sessions', () => ({
   fetchSessions: vi.fn(),
@@ -80,6 +91,8 @@ interface ChatConversationDto {
   conversation_id: string;
   project_id: string;
   project_name: string | null;
+  /** #770：会话 title（空则回退 project_name 展示） */
+  title: string;
   last_message: string;
   message_count: number;
   is_deleted: boolean;
@@ -94,6 +107,10 @@ interface ChatConversationDto {
 let sessions: SessionViewDto[]; // 执行会话
 let plannerItems: PlannerSessionDto[]; // 访谈会话
 let conversations: ChatConversationDto[]; // AI 对话
+// #770：当前项目章节标题（title 匹配章节导航数据源；apiFetch 章节接口同步返回同数据）
+let chapterItems: ChapterMeta[] = [];
+// #770：改名 PATCH 失败开关（测试控制 apiFetch PATCH 分支抛错）
+let renameFail = false;
 
 function makeSession(overrides: Partial<SessionDto> = {}): SessionViewDto {
   const s: SessionDto = {
@@ -132,12 +149,19 @@ function makeProjects(): Project[] {
   ];
 }
 
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location-probe">{location.pathname}{location.search}</div>;
+}
+
 function renderSessionsPage() {
   return render(
     <MemoryRouter initialEntries={['/sessions']}>
       <SessionsPage />
       <Routes>
         <Route path="/book" element={<div data-testid="book-probe" />} />
+        {/* #770：点击会话导航目标（title 匹配章节 → /writing?chapter_id=...；否则 → 全局 chat 页） */}
+        <Route path="/writing" element={<LocationProbe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -148,6 +172,19 @@ beforeEach(() => {
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
   // #725 按项目分区：显式设置当前项目（默认 p1）+ projects，避免跨用例 currentProjectId 残留/依赖组件的默认回退
   useProjectStore.setState({ projects: makeProjects(), currentProjectId: 'p1', loading: false, error: null });
+  useToastStore.setState({ toasts: [] });
+  // #770：章节树 / 改名失败开关复位（防跨用例泄漏）
+  useChapterStore.setState({
+    volumes: [],
+    chapters: [],
+    treeProjectId: null,
+    currentChapterId: null,
+    content: '',
+    loading: false,
+    error: null,
+  });
+  chapterItems = [];
+  renameFail = false;
 
   // 执行会话：p1 下 1 活动 + 1 归档；p2 下 1 活动
   sessions = [
@@ -186,6 +223,7 @@ beforeEach(() => {
       conversation_id: 'conv-1',
       project_id: 'p1',
       project_name: '仙侠长篇',
+      title: '',
       last_message: '帮我写一段打斗场景',
       message_count: 3,
       is_deleted: false,
@@ -195,6 +233,7 @@ beforeEach(() => {
       conversation_id: 'conv-2',
       project_id: 'p2',
       project_name: null,
+      title: '',
       last_message: '聊聊角色设定',
       message_count: 1,
       is_deleted: true,
@@ -237,7 +276,7 @@ beforeEach(() => {
       return { items: makeProjects(), total: 2, offset: 0, limit: 50 };
     }
     if (path.startsWith('/api/v1/projects/') && path.endsWith('/chapters') && method === 'GET') {
-      return { items: [], total: 0, offset: 0, limit: 50 };
+      return { items: chapterItems, total: chapterItems.length, offset: 0, limit: 50 };
     }
     if (path.startsWith('/api/v1/chat/conversations')) {
       if (method === 'GET') {
@@ -248,6 +287,14 @@ beforeEach(() => {
         // #744：恢复按 conversation_id 匹配（非 project_id）
         const conv = conversations.find((c) => c.conversation_id === restoreMatch[1]);
         return conv ? { ...conv, is_deleted: false } : { ok: true };
+      }
+      // #770：改名 PATCH /api/v1/chat/conversations/{id} body { title }
+      const renameMatch = path.match(/^\/api\/v1\/chat\/conversations\/([^/]+)$/);
+      if (renameMatch && method === 'PATCH') {
+        if (renameFail) throw new Error('改名失败');
+        const conv = conversations.find((c) => c.conversation_id === renameMatch[1]);
+        const title = (init as unknown as { body?: { title?: string } } | undefined)?.body?.title ?? '';
+        return conv ? { ...conv, title } : { ok: true };
       }
       return { ok: true };
     }
@@ -468,6 +515,7 @@ describe('会话页 — AI 对话卡（统一目录内，含归档/恢复/删除
         conversation_id: 'conv-a',
         project_id: 'p1',
         project_name: '仙侠长篇',
+        title: '',
         last_message: '帮我写一段打斗场景',
         message_count: 3,
         is_deleted: false,
@@ -477,6 +525,7 @@ describe('会话页 — AI 对话卡（统一目录内，含归档/恢复/删除
         conversation_id: 'conv-b',
         project_id: 'p1',
         project_name: '仙侠长篇',
+        title: '',
         last_message: '聊聊角色设定',
         message_count: 5,
         is_deleted: false,
@@ -495,5 +544,191 @@ describe('会话页 — AI 对话卡（统一目录内，含归档/恢复/删除
     expect(cardB).toBeTruthy();
     expect(within(cardA as HTMLElement).getByText('3 条')).toBeInTheDocument();
     expect(within(cardB as HTMLElement).getByText('5 条')).toBeInTheDocument();
+  });
+});
+
+/* ============================== #770 会话页架构（title 展示 / 改名 / 导航） ============================== */
+
+describe('会话页 — #770 title 展示（空回退 project_name / titleEmpty）', () => {
+  it('AI 对话卡片标题元素展示会话 title（非空）', async () => {
+    conversations = [
+      {
+        conversation_id: 'conv-1',
+        project_id: 'p1',
+        project_name: '仙侠长篇',
+        title: '第十二章 剑心蒙尘',
+        last_message: '帮我写一段打斗场景',
+        message_count: 3,
+        is_deleted: false,
+        updated_at: '2026-08-21T10:00:00Z',
+      },
+    ];
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    // RED：当前实现展示 project_name（'仙侠长篇'）→ FAIL
+    expect(screen.getByTestId('session-title-conv-conv-1')).toHaveTextContent('第十二章 剑心蒙尘');
+  });
+
+  it('title 为空 → 回退展示 project_name（守护用例，当前实现天然通过）', async () => {
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    expect(screen.getByTestId('session-title-conv-conv-1')).toHaveTextContent('仙侠长篇');
+  });
+
+  it('title 与 project_name 皆空 → 展示 t(sessions.chat.titleEmpty)（未命名会话）', async () => {
+    conversations = [
+      {
+        conversation_id: 'conv-1',
+        project_id: 'p1',
+        project_name: null,
+        title: '',
+        last_message: '帮我写一段打斗场景',
+        message_count: 3,
+        is_deleted: false,
+        updated_at: '2026-08-21T10:00:00Z',
+      },
+    ];
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    // RED：当前实现展示 t('sessions.chat.unknownProject')='未知项目' → FAIL
+    expect(screen.getByTestId('session-title-conv-conv-1')).toHaveTextContent('未命名会话');
+  });
+});
+
+describe('会话页 — #770 改名入口（PATCH /chat/conversations/{id}）', () => {
+  it('AI 对话卡片渲染改名按钮 chat-conv-rename-{id}；点击 → 行内输入框 chat-conv-rename-input-{id}', async () => {
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    // RED：改名按钮未实现 → FAIL
+    const renameBtn = screen.getByTestId('chat-conv-rename-conv-1');
+    await user.click(renameBtn);
+    expect(screen.getByTestId('chat-conv-rename-input-conv-1')).toBeInTheDocument();
+  });
+
+  it('输入新标题 Enter 提交 → PATCH /api/v1/chat/conversations/conv-1 body { title } → 卡片 title 更新 + ok toast', async () => {
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    await user.click(screen.getByTestId('chat-conv-rename-conv-1'));
+    const input = screen.getByTestId('chat-conv-rename-input-conv-1');
+    await user.clear(input);
+    await user.type(input, '改名后的标题{Enter}');
+    const patchCall = apiFetchMock.mock.calls.find(
+      ([p, init]) =>
+        p === '/api/v1/chat/conversations/conv-1' &&
+        (init as unknown as { method?: string } | undefined)?.method === 'PATCH',
+    );
+    expect(patchCall).toBeTruthy();
+    expect((patchCall?.[1] as unknown as { body?: unknown } | undefined)?.body).toEqual({
+      title: '改名后的标题',
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('session-title-conv-conv-1')).toHaveTextContent('改名后的标题');
+    });
+    // ok toast：GREEN 补 i18n key write.chat.renamed='已重命名'
+    expect(useToastStore.getState().toasts.some((t) => t.type === 'ok' && /重命名/.test(t.message))).toBe(true);
+  });
+
+  it('PATCH 失败 → err toast + 卡片 title 不变', async () => {
+    renameFail = true;
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    await user.click(screen.getByTestId('chat-conv-rename-conv-1'));
+    const input = screen.getByTestId('chat-conv-rename-input-conv-1');
+    await user.clear(input);
+    await user.type(input, '新标题{Enter}');
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'err')).toBe(true);
+    });
+    // title 不变：conv-1 默认 title 空 → 仍回退 project_name
+    expect(screen.getByTestId('session-title-conv-conv-1')).toHaveTextContent('仙侠长篇');
+  });
+
+  it('Esc 取消 → 关闭输入框且不发 PATCH', async () => {
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    await user.click(screen.getByTestId('chat-conv-rename-conv-1'));
+    const input = screen.getByTestId('chat-conv-rename-input-conv-1');
+    await user.click(input);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByTestId('chat-conv-rename-input-conv-1')).not.toBeInTheDocument();
+    const patchCall = apiFetchMock.mock.calls.find(
+      ([p, init]) =>
+        p === '/api/v1/chat/conversations/conv-1' &&
+        (init as unknown as { method?: string } | undefined)?.method === 'PATCH',
+    );
+    expect(patchCall).toBeUndefined();
+  });
+
+  it('输入超 200 字符 → err toast 且不发 PATCH（f19 §4.2 边界）', async () => {
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    await user.click(screen.getByTestId('chat-conv-rename-conv-1'));
+    const input = screen.getByTestId('chat-conv-rename-input-conv-1');
+    await user.clear(input);
+    await user.type(input, `${'长'.repeat(201)}{Enter}`);
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'err')).toBe(true);
+    });
+    const patchCall = apiFetchMock.mock.calls.find(
+      ([p, init]) =>
+        p === '/api/v1/chat/conversations/conv-1' &&
+        (init as unknown as { method?: string } | undefined)?.method === 'PATCH',
+    );
+    expect(patchCall).toBeUndefined();
+  });
+});
+
+describe('会话页 — #770 点击导航（title 匹配章节 → chapter_id；匹配不到 → 全局 chat 页）', () => {
+  it('title 与当前项目章节标题同名 → navigate(/writing?chapter_id=...)', async () => {
+    conversations = [
+      {
+        conversation_id: 'conv-1',
+        project_id: 'p1',
+        project_name: '仙侠长篇',
+        title: '第十二章 剑心蒙尘',
+        last_message: '帮我写一段打斗场景',
+        message_count: 3,
+        is_deleted: false,
+        updated_at: '2026-08-21T10:00:00Z',
+      },
+    ];
+    chapterItems = [{ id: 'ch1', title: '第十二章 剑心蒙尘', volume_id: null, order_index: 0, word_count: 0 }];
+    useChapterStore.setState({ chapters: chapterItems, treeProjectId: 'p1' });
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    // RED：当前标题元素无点击行为 → 不导航 → location-probe 不出现 → FAIL
+    await user.click(screen.getByTestId('session-title-conv-conv-1'));
+    const probe = await screen.findByTestId('location-probe');
+    expect(probe).toHaveTextContent('/writing?chapter_id=ch1');
+  });
+
+  it('title 匹配不到章节（改名 / 全局会话）→ navigate(/writing?conversation_id=...) 全局 chat 页', async () => {
+    conversations = [
+      {
+        conversation_id: 'conv-1',
+        project_id: 'p1',
+        project_name: '仙侠长篇',
+        title: '改名后的会话',
+        last_message: '帮我写一段打斗场景',
+        message_count: 3,
+        is_deleted: false,
+        updated_at: '2026-08-21T10:00:00Z',
+      },
+    ];
+    // 章节存在但 title 不匹配（改名了）
+    chapterItems = [{ id: 'ch1', title: '第十二章 剑心蒙尘', volume_id: null, order_index: 0, word_count: 0 }];
+    useChapterStore.setState({ chapters: chapterItems, treeProjectId: 'p1' });
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    await user.click(screen.getByTestId('session-title-conv-conv-1'));
+    const probe = await screen.findByTestId('location-probe');
+    expect(probe).toHaveTextContent('/writing?conversation_id=conv-1');
   });
 });

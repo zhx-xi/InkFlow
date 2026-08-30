@@ -98,7 +98,13 @@ export function WritingPage() {
         return;
       }
       try {
-        const conv = await createChatConversation(effectiveProjectId);
+        // #770：章节内生成/续写建会话 title=章节名（章节锚点；全局 chat 页无章节不传）
+        const chapterTitle = currentChapterId
+          ? chapters.find((c) => c.id === currentChapterId)?.title
+          : undefined;
+        const conv = chapterTitle
+          ? await createChatConversation(effectiveProjectId, { title: chapterTitle })
+          : await createChatConversation(effectiveProjectId);
         conversationIdRef.current = conv.conversation_id;
       } catch {
         // 建会话失败：静默降级（仍可继续生成，只是不落 chat 消息）
@@ -106,7 +112,7 @@ export function WritingPage() {
       }
       start(mode);
     },
-    [effectiveProjectId, start, t],
+    [effectiveProjectId, start, t, currentChapterId, chapters],
   );
 
   // F47 #379（spec §4.2）：正文编辑 ↔ AI 执行详情视图切换，默认 editor
@@ -370,41 +376,56 @@ export function WritingPage() {
           )}
         </aside>
         <main data-testid="editor" className="group flex min-w-0 flex-1 flex-col bg-surface">
-          <EditorToolbar
-            disabled={generating}
-            generating={generating}
-            onUndo={() => document.execCommand('undo')}
-            onRedo={() => document.execCommand('redo')}
-            onSave={() => void save()}
-            onContinue={() => startWithCheck('write_continue')}
-            onGenerate={() => startWithCheck('write_auto')}
-            onAudit={() => void handleAudit()}
-            onStyleAnalyze={() => void handleStyleAnalyze()}
-            view={view}
-            onToggleView={() => setView((v) => (v === 'editor' ? 'detail' : 'editor'))}
-            autoWriteEnabled={currentProject?.config?.auto_write_enabled === true}
-            onToggleAuto={() => {
-              if (currentProject) {
-                void useProjectStore.getState().updateConfig(currentProject.id, {
-                  auto_write_enabled: !(currentProject.config?.auto_write_enabled === true),
-                });
-              }
-            }}
-            onExtract={() => setExtractOpen(true)}
-          />
-          {view === 'editor' ? (
-            <ChapterEditor onEditorKeyDown={handleKeyDown} onContentChange={handleContentChange} />
+          {/* #770 场景 A：无选中章节（有项目）→ 全局 chat 页 */}
+          {currentChapterId === null ? (
+            // #770 场景 A：无章节（有项目）→ 全局 chat 页（占满中栏、无 resize handle，
+            // 不渲染 EditorToolbar/ChapterEditor；空态守卫：无生成/续写触发点）
+            <div data-testid="global-chat" className="flex min-h-0 flex-1 flex-col bg-surface">
+              <ChatPanel
+                variant="full"
+                projectId={effectiveProjectId}
+                streamSink={streamSinkRef}
+              />
+            </div>
           ) : (
-            <ExecutionDetailPanel executionId={executionId} projectId={effectiveProjectId} />
+            <>
+              <EditorToolbar
+                disabled={generating}
+                generating={generating}
+                onUndo={() => document.execCommand('undo')}
+                onRedo={() => document.execCommand('redo')}
+                onSave={() => void save()}
+                onContinue={() => startWithCheck('write_continue')}
+                onGenerate={() => startWithCheck('write_auto')}
+                onAudit={() => void handleAudit()}
+                onStyleAnalyze={() => void handleStyleAnalyze()}
+                view={view}
+                onToggleView={() => setView((v) => (v === 'editor' ? 'detail' : 'editor'))}
+                autoWriteEnabled={currentProject?.config?.auto_write_enabled === true}
+                onToggleAuto={() => {
+                  if (currentProject) {
+                    void useProjectStore.getState().updateConfig(currentProject.id, {
+                      auto_write_enabled: !(currentProject.config?.auto_write_enabled === true),
+                    });
+                  }
+                }}
+                onExtract={() => setExtractOpen(true)}
+              />
+              {view === 'editor' ? (
+                <ChapterEditor onEditorKeyDown={handleKeyDown} onContentChange={handleContentChange} />
+              ) : (
+                <ExecutionDetailPanel executionId={executionId} projectId={effectiveProjectId} />
+              )}
+              {view === 'editor' && effectiveProjectId !== '' && currentChapterId !== null ? (
+                <ChatPanel
+                  projectId={effectiveProjectId}
+                  chapterId={currentChapterId ?? undefined}
+                  chapterContent={content}
+                  streamSink={streamSinkRef}
+                />
+              ) : null}
+            </>
           )}
-          {view === 'editor' && effectiveProjectId !== '' && currentChapterId !== null ? (
-            <ChatPanel
-              projectId={effectiveProjectId}
-              chapterId={currentChapterId ?? undefined}
-              chapterContent={content}
-              streamSink={streamSinkRef}
-            />
-          ) : null}
         </main>
         <aside
           data-testid="right-rail"

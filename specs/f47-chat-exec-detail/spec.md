@@ -469,3 +469,125 @@ write.detail.unknown        // 未知
 - N6：会话栏显示项目会话（含归档）+ 折叠持久化；续写/生成 → 新会话；页脚无「执行中」进度条（§15.7 P1/P2）
 - N7：右栏无「草稿审批」+ 折叠按钮左缘 + 上下文注入空需求占位（§15.7 P3/P4/P5）
 - N8：前端 vitest + tsc 全绿；E2E e2e-writer-chat 确定性 page.route 拦截（M7 + §14.8 N4）
+
+## 17. 会话页架构（#770，2026-08-30 增量）
+
+> 本模块把「写作会话/聊天会话」提升为全局一等对象，与 §15 会话栏（#762）+ 生成新会话（#763）衔接。核心：**无章节写作页 → 全局 chat 页** + **章节内会话跟随章节** + **会话命名/改名**。
+
+### 17.1 需求映射
+
+| Issue | 需求 | 决策 |
+|---|---|---|
+| #770 | 无章节写作页由「空」改全局 chat 页（始终占最大画布、不可调节大小） | A：中栏条件渲染全局 ChatPanel（flex-1，无 resize handle），不渲染 EditorToolbar/ChapterEditor；右栏保持 |
+| #770 | 章节内 chat 默认最小且可调（与全局 chat 页两套视图） | B：章节选中 → 现有底部横栏 ChatPanel（resize handle 80~480px）不变 |
+| #770 | 每次不同章节用 chat 都创建新会话，会话名默认=章节名 | C：创建时机 = chat 对话 或 点生成/续写按钮（非选中章节即建）；title=章节名 |
+| #770 | 生成/续写每次开新会话（对齐 #763 P3-A） | 已实现（§15 write_continue/write_auto 建会话），保持 |
+
+### 17.2 会话域模型
+
+- 会话 = 后端 `/chat/conversations` 线程（#744 已实现，复用不新建；含 `is_deleted` 归档语义）。
+- **不新增 `chapter_id` 字段**，也不新增任何章节关联字段（用户拍板 2026-08-30）。
+- 会话 `title` 是**唯一的章节锚点**（匹配章节或回退全局页）。导航规则见 §17.4。
+
+### 17.3 后端契约（#770 增量）
+
+| 项 | 变更 |
+|---|---|
+| 字段 | `Conversation` + `ConversationORM` 加 `title: str`（可空/默认空，上限 **200** 字符，对齐章节标题 `String(200)`） |
+| 创建 | `ConversationCreate` DTO 加 `title`（可选）；`POST /api/v1/chat/conversations` 透传 title |
+| 改名 | 新增 `PATCH /api/v1/chat/conversations/{conversation_id}`（body `{title}`，上限 200） |
+| 返回 | `list_conversations` + `_conversation_to_json` + 前端 `ChatConversationDto` 加 `title` 字段 |
+| 迁移 | conversations 表加 `title` 列（幂等 `ensure_conversation_title_column`，lifespan 注册） |
+
+命名规则：
+- 章节内新建会话 → `title` = 章节名（如「第十二章 剑心蒙尘」）
+- 全局 chat 页新建会话 → `title` = 首条用户消息前 **30 字**（少于 30 字取全部）
+- 手动改名 → PATCH，任意 ≤200 字符
+
+### 17.4 前端契约
+
+#### 17.4.1 无章节 → 全局 chat 页（场景 A）
+
+- `pages/writing.tsx`：`currentChapterId === null`（且有项目）时，中栏渲染全局 ChatPanel：
+  - `data-testid="global-chat"`（新容器）；ChatPanel `variant="full"`（或等价 prop），flex-1 占满中栏，**不渲染 resize handle**（不可调节大小）
+  - 不渲染 `EditorToolbar` / `ChapterEditor` / `ExecutionDetailPanel`
+  - 右栏 `right-rail` 保持（上下文注入仍有用）；左栏项目树保持
+- 全局 ChatPanel 发送/流式/工具卡片/意图解析复用章节内 ChatPanel 全部行为（§4.1/§14.3 契约），**仅大小可调性不同**（full=不可调 / inline=可调）
+
+#### 17.4.2 章节内 chat 可调（场景 B）
+
+- 章节选中 → 现有 `ChatPanel`（inline，resize handle 80~480px）完整保留，**不改**。
+- **两套视图用条件分支渲染，不共享同一布局组件硬编码**（full 与 inline 的 wrapper/行为分离）。
+
+#### 17.4.3 会话跟随章节 + 命名（场景创建）
+
+- 章节内 chat 对话 → `createChatConversation(projectId, { title: 章节名 })` 建立**新会话**（非复用现有线程）；`conversationIdRef` 跟随。
+- 章节内点生成/续写 → `startWithCheck` 已建新会话（#763），补传 `title: 章节名`。
+- 全局 chat 页对话 → `createChatConversation(projectId)`（无章节），title 由首条用户消息前 30 字落库（发送时 saveChatMessage 前先 set title）。
+
+#### 17.4.4 会话命名/改名
+
+- `SessionBar` / `sessions.tsx` 展示会话 `title`（空则回退 `project_name` / `last_message`）。
+- 会话改名入口：`sessions.tsx` 卡片行内「改名」按钮 → PATCH `/chat/conversations/{id}` body `{title}`。
+- 章节内 ChatPanel 也提供改名（可选，聚焦 sessions 页）。
+
+#### 17.4.5 导航规则（基于 title 匹配章节，非 chapter_id）
+
+- 点击会话（SessionBar / sessions 卡片）→ 用 `title` 去匹配「当前项目章节标题」：
+  - 匹配到 → `navigate('/writing?chapter_id=<章ID>')` + 选中该章节（写作页 + 章节内 chat）
+  - 匹配不到（改名了 / 全局会话 / 章节不存在）→ `navigate('/writing?conversation_id=<会话ID>')` → 全局 chat 页加载历史并继续
+- `SessionBar` 保持自包含（点击目标可后续重定向，§15 契约不变）。
+
+### 17.5 i18n 新增 key（zh.ts / en.ts 同步）
+
+```
+write.chat.globalTitle      // 全局对话
+write.chat.rename           // 重命名
+write.chat.renamed          // 已重命名
+sessions.chat.titleEmpty    // 未命名会话
+```
+
+### 17.6 测试策略（RED 契约）
+
+**后端（pytest）**：
+- `tests/unit/test_conversation_title.py`（NEW）：`Conversation` 领域模型 `title` 字段默认空 / 上限 200 校验（超 200 → ValidationError）；`ConversationCreate` 带/不带 title；`ensure_conversation_title_column` 幂等迁移三形态（旧库补列/新库 no-op/无表 no-op）。
+- `tests/api/test_chat_conversation.py`（NEW 或 MODIFY）：`POST /chat/conversations` 带 title → 201 返回含 title；`PATCH /chat/conversations/{id}` 改 title（成功/404/超 200 → 422）；`GET /chat/conversations` 返回 title；`_conversation_to_json` 序列化含 title。
+
+**前端（Vitest + RTL）**：
+- `writing.test.tsx`（MODIFY RED）：无章节 → 渲染全局 chat 页（`global-chat` testid，无 resize handle / 无 EditorToolbar）；章节选中 → 章节内 ChatPanel（resize handle 存在）。
+- `ChatPanel.test.tsx`（MODIFY RED）：full variant 不渲染 resize handle；inline 渲染（回归）。
+- `writing-chat-agent-reply.test.tsx`（MODIFY 或 NEW）：章节内对话 → createChatConversation 传 title=章节名；全局对话 → title=首条用户消息前 30 字。
+- `sessions.test.tsx`（MODIFY RED）：会话卡片展示 title；改名按钮 → PATCH；点击 title 匹配章节 → 跳章节页；匹配不到 → 跳全局 chat 页。
+- `SessionBar.test.tsx`（MODIFY 或 NEW）：展示 title（空回退 last_message）；点击导航（匹配→章节 / 不匹配→全局）。
+
+### 17.7 文件结构（#770 增量）
+
+**后端**：
+| 文件 | 变更 |
+|---|---|
+| `backend/src/inkflow/domain/models/conversation.py` | MODIFY：`Conversation.title` + `ConversationCreate.title` + 上限 200 校验 |
+| `backend/src/inkflow/infrastructure/database/models/conversation.py` | MODIFY：`ConversationORM.title` 列（String(200)，nullable，default="") |
+| `backend/src/inkflow/core/database.py` | MODIFY：`ensure_conversation_title_column` 幂等迁移 |
+| `backend/src/inkflow/app.py` | MODIFY：lifespan 注册迁移 |
+| `backend/src/inkflow/api/routers/chat_messages.py` | MODIFY：`ConversationCreate` 透传 title；`_conversation_to_json` 加 title；新增 `PATCH /conversations/{id}` |
+| `backend/src/inkflow/domain/services/chat_message_service.py` | MODIFY：`create_conversation` 接受 title；新增 `rename_conversation` |
+| `backend/src/inkflow/infrastructure/database/repositories/chat_message_repo.py` | MODIFY：`create_conversation` 落 title；新增 `rename_conversation` |
+
+**前端**：
+| 文件 | 变更 |
+|---|---|
+| `frontend/packages/renderer/src/pages/writing.tsx` | MODIFY：无章节 → 全局 chat 页分支（场景 A）；章节建会话传 title |
+| `frontend/packages/renderer/src/components/ChatPanel.tsx` | MODIFY：`variant="full"` 不渲染 resize handle + flex-1 占满 |
+| `frontend/packages/renderer/src/pages/sessions.tsx` | MODIFY：展示 title；改名按钮；PATCH；导航规则 |
+| `frontend/packages/renderer/src/components/SessionBar.tsx` | MODIFY：展示 title；导航规则（匹配→章节/不匹配→全局） |
+| `frontend/packages/renderer/src/api/chat.ts` | MODIFY：`ChatConversationDto.title` + `createChatConversation` 传 title + `renameChatConversation` |
+| `frontend/packages/renderer/src/i18n/zh.ts` / `en.ts` | MODIFY：§17.5 key |
+
+### 17.8 验收（M 叠加 §14.8 N + §15.7 P）
+
+- **Q1**：无章节写作页 → 全局 chat 页（始终占满、无 resize handle）；有项目无章节不渲染 EditorToolbar/ChapterEditor；右栏保持。
+- **Q2**：章节内 chat 默认最小且可调（resize handle 80~480px）；两套视图条件分支渲染（full/inline 行为分离）。
+- **Q3**：不同章节用 chat 均创建新会话，title=章节名；点生成/续写也开新会话（#763 保持）。
+- **Q4**：全局 chat 页新建会话 title=首条消息前 30 字；会话可改名（PATCH ≤200 字符）。
+- **Q5**：点击会话 title 匹配章节 → 跳对应章节；匹配不到 → 跳全局 chat 页；`/sessions` 路由不删除。
+- **Q6**：前端 vitest + tsc 全绿；后端 pytest + ruff + mypy 全绿；PR 合入（Closes #770）。
