@@ -661,6 +661,7 @@ export function LibraryPage() {
                 onExitWorkbench={() => setWorkbenchActive(false)}
                 onClearMap={() => setActiveMapId(null)}
                 worldCategories={worldCategories}
+                worldCatEntities={worldCatEntities}
                 activeWorldCat={activeWorldCat}
                 onWorldCatChange={setActiveWorldCat}
                 collapsedIds={collapsedIds}
@@ -673,6 +674,7 @@ export function LibraryPage() {
                 onCopy={(item) => setCopyState({ open: true, mode: 'subtree', rootId: item.id })}
                 onCopyAll={() => setCopyState({ open: true, mode: 'all' })}
                 copyTargetOptions={copyTargetOptions}
+                onMapsChanged={(next) => setMaps(next)}
               />
             ) : activeCat === 'outline' ? (
               <OutlineTree
@@ -782,6 +784,7 @@ export function LibraryPage() {
         <LibraryCreateDialog
           open={createOpen}
           cat={createCat}
+          isRoot={createCat === 'world' ? (activeWorldCat === null && !editing) : undefined}
           editing={editing}
           tagSuggestions={tagSuggestions}
           initialCategory={activeCat === 'world' ? (activeWorldCat ?? undefined) : undefined}

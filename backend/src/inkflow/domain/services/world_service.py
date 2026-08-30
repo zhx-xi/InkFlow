@@ -13,7 +13,7 @@
 - extractor: WorldExtractor（B2 已实现）
 - project_repo: ProjectRepositoryProtocol（F1 已实现，extract 入口校验用）
 
-依据: specs/f10-world-service/spec.md §6/§7/§9。
+依据: specs/f10-world-settings/spec.md §6/§7/§9。
 """
 
 from __future__ import annotations
@@ -44,6 +44,7 @@ from inkflow.domain.ports.world_errors import (
 )
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
 from inkflow.domain.services._world_extractor import WorldExtractor
+from inkflow.domain.services.model_resolution import resolve_model
 
 logger = logging.getLogger(__name__)
 
@@ -513,5 +514,9 @@ class WorldService:
             request.model or project.config.model,
         )
         return await self._extractor.extract(
-            request, default_model=project.config.model or self._llm_default_model
+            request,
+            default_model=resolve_model(
+                None, project.config.model, self._llm_default_model
+            )
+            or "",
         )

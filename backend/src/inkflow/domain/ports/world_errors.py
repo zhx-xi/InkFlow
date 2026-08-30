@@ -1,7 +1,7 @@
 """世界观管理领域异常.
 
 F10 专属异常类型，继承自 Exception。
-依据: specs/f10-world-service/spec.md §5/§8。
+依据: specs/f10-world-settings/spec.md §5/§8。
 
 异常映射约定（spec §3.5 异常映射表）:
 - WorldServiceError 子类 = 业务校验失败，API 层映射为 422（消息即 detail）

@@ -1,5 +1,5 @@
 /**
- * #594 上下文组装 API（spec f6-context-service/gui-panel.md §2.1）：
+ * #594 上下文组装 API（spec f6-context/gui-panel.md §2.1）：
  * POST /api/v1/context/assemble 预览上下文注入结果，前端据此渲染真实条目 + 勾选 override。
  */
 import { apiFetch } from './client';

@@ -45,7 +45,7 @@ beforeEach(() => {
 
 /**
  * #568 世界观默认视图 UI 完整重设计——信息层级（名称/描述/子条目数）+ 入口交互（根态隐藏创建按钮、
- * 选中分类才显示 + 预填类别）+ 视图切换语义。spec: specs/f43-setting-library-crud/world-default-view-ui-568.md
+ * 选中分类才显示 + 预填类别）+ 视图切换语义。spec: specs/f43-setting-library-gui/world-default-view-ui-568.md
  * @see 旧 #588 行为（已有根条目恒显示 world-cat-add）在 #568 反转：根态（未选分类）隐藏创建按钮。
  */
 describe('设定库页 — 世界观默认视图重设计（#568）', () => {

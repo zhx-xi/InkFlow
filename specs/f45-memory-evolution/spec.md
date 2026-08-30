@@ -1,8 +1,9 @@
 # F45: 记忆系统 AI 总结演进（memory-evolution）功能规格
+> **端**: backend
 
 **Spec 版本**: 1.1（Q1=B/Q2=B/Q3=A 拍板固化）
 **日期**: 2026-08-17
-**依据**: 设计定稿（design/agentic-orchestrator-and-memory-design-2026-08-14.md §3 记忆系统演进，唯一真相）+ Issue #339（M1 用户级偏好层）+ Issue #340（M2 语义风格提取）+ F28 spec v1.0（specs/f28-agent-memory/spec.md，演进基线）+ 用户拍板（2026-08-14 两段式架构 / 记忆演进独立排期）+ LLM 配置拍板（#415，2026-08-16）
+**依据**: 设计定稿（design/agentic-orchestrator-and-memory-design-2026-08-14.md §3 记忆系统演进，唯一真相）+ Issue #339（M1 用户级偏好层）+ Issue #340（M2 语义风格提取）+ F28 spec v1.0（specs/f28-memory-learning/spec.md，演进基线）+ 用户拍板（2026-08-14 两段式架构 / 记忆演进独立排期）+ LLM 配置拍板（#415，2026-08-16）
 **所属阶段**: 0.10.0（记忆系统 AI 总结演进，F45），估算 M1 4-6 人天 + M2 6-8 人天（合计 10-14 人天）
 **关联 Issues**: #339（M1 用户级偏好层 + 归属分层 + 跨项目聚合）· #340（M2 语义风格提取——difflib 锚点 → LLM 语义总结）
 **依赖**: ✅ F28 agent-memory（演进基线：project_preferences/memory_events/learner/memory_service/PreferenceSource，PR #242）· ✅ F6 context-service（注入端口 ContextSourceType/SOURCE_LAYER）· ✅ F16 style-service（LLM 模板管线样板 _style_llm_analyzer）· ✅ F32 settings-persistence（app_settings 分层对照）· ✅ #415（LLM 默认模型 deepseek/deepseek-v4-flash，配置唯一默认源）· ✅ F38（CLI 恒 HTTP）· ✅ F34（audit_logs）· ⏳ M2 依赖 M1（#339 → #340）
@@ -595,3 +596,36 @@ PreferenceSource.collect(project_id, chapter_id):
 ---
 
 **完成门禁对照**（本 spec 交付时）：13 节 + §14 待澄清 Q1-Q3（≤3，v1.1 已全部拍板 ✅ 留痕不删）；围栏偶数；marker 残留 0；参照 F28 spec（525 行）体量目标 ≤800 行；M1 覆盖 #339、M2 覆盖 #340（两段式架构 + 两层归属 + user_preferences 表）、LLM 配置遵循 #415。
+
+## 15. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 + §4 + §5 + §7 事实，不重复）。
+
+### 15.1 端点状态流
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| GET /api/v1/agent/user-preferences | — | 用户级偏好列表（全局跨项目） | 200 {items, total} | — | 幽灵项目来源过滤（惰性重算，Q1=B）；source_projects 含已删项目 → 移除 |
+| DELETE /api/v1/agent/user-preferences/{preference_id} | 偏好存在 | 删除（立即停止全局注入） | 200 {preference_id, deleted} | 404（偏好不存在） | 实时查库无缓存 |
+| GET /api/v1/agent/memory/summaries?project_id= | 项目存在 | 项目级 + 用户级语义总结（返回两层的抽象风格指令） | 200 {project, user} | — | memory_learning=false → 200 空结构（project/user 均为 None，零行为语义） |
+| POST /api/v1/agent/memory/summarize?project_id= | 项目存在 | 锚点哈希检查（SHA-256 排序锚点键）→ 变化则 LLM 总结（温度 0.2，修复式重试 ≤2）→ 落库 | 200 {summarized: true, project, user} | 502（LLM 调用失败/输出不可解析重试 2 次仍失败，SemanticSummaryError） | 锚点未变化 → summarized=false 复用既有总结（幂等）；--force 忽略哈希强制重新总结；防幻觉 B（anchor_refs ⊆ 锚点集，不通过丢弃该条 + 审计） |
+| GET /api/v1/agent/memory/stats?project_id= | — | 修改率统计（M1 扩展 user 层计数） | 200 | — | F28 既有语义零改动 |
+
+### 15.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow memory user-list [--category] [--json] | — | 用户级偏好列表 | 每行「[style_word] 说 → 低声道 (confidence 0.75, ×3, 2 项目)」/ --json 信封 | 退出码 1 | 恒经 HTTP（F38） |
+| inkflow memory user-remove &lt;preference_id&gt; [--json] | 偏好存在 | 删除 | 「✅ 已删除用户级偏好（所有项目生成立即停止注入）」 | 404 → 退出码 1 | — |
+| inkflow memory summarize --project-id [--force] [--json] | 项目存在 | 手动触发语义总结 | 「✅ 已生成项目级风格摘要（5 锚点）」「✅ 已生成用户级风格摘要（12 锚点）」或「ℹ️ 锚点未变化，复用既有摘要（--force 强制重新总结）」 | 502 → 退出码 1 | — |
+| inkflow memory stats --project-id [--json] | — | 修改率统计 | 既有输出后追加「用户级偏好: N 条（跨 M 项目）」 | 退出码 1 | — |
+| inkflow write next --mode agentic（M2 注入升级后） | 项目/章节存在 | 生成 + 语义总结注入 | 人类模式追加「🧠 风格指令：叙述偏好用角色全名而非代词（AI 语义总结）」；--json 信封 data 追加 semantic_summaries | 退出码 1 | memory_learning 开关延续 |
+
+### 15.3 验收锚点
+
+- A1：用户级聚合保守规则（单项目不升/第 2 项目落库/第 3 项目更新/跨项目不混算）（M1-1）
+- A2：项目删除惰性重算（删除钩子零成本 + user-list 过滤幽灵项目 + project_count&lt;2 删偏好）（M1-2/M1-10）
+- A3：防幻觉 B（mock LLM 编造证据之外偏好 → anchor_refs 校验拒绝 + 审计）（M2-2）
+- A4：summarize 幂等（锚点未变不调 LLM，日志可查）；LLM 失败 502 + 注入回退字面偏好不阻断（M2-5/M2-9）
+- A5：注入升级（语义总结优先 + 字面兜底 + 项目级/用户级 title 区分 + 预算延续）（M2-4/M2-8）
+- A6：惰性总结 + 后台异步刷新（锚点变化先用旧总结注入 + 审计 pending_summary；基建缺位降级同步总结兜底）（M2-10）

@@ -16,7 +16,7 @@ mock 服务层（同 F9/F10/F11 模式）。
 - TimelineNotFoundError / ProjectNotFoundError → 404
 - 无 LLM 相关错误（F12 一致性检查为确定性算法，无 LLM）
 
-依据: specs/f12-timeline-service/spec.md §3/§5/§7。
+依据: specs/f12-timeline/spec.md §3/§5/§7。
 """
 
 from __future__ import annotations

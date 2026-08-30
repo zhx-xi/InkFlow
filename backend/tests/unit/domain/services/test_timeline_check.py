@@ -13,7 +13,7 @@
 (narrative_position, created_at) 稳定排序并排除软删），比 Mock 更易
 构造任意事件序列。
 
-依据: specs/f12-timeline-service/spec.md §5.3/§5.4/§5.5 + §9。
+依据: specs/f12-timeline/spec.md §5.3/§5.4/§5.5 + §9。
 """
 
 from __future__ import annotations

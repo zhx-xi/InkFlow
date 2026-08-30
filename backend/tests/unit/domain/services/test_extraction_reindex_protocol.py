@@ -229,7 +229,7 @@ async def test_reindex_twice_idempotent(store: MagicMock) -> None:
 
 
 # ══ #277 M3 追加段（2026-08-16）: reindex 配置切片 + 章节块元数据 ═══
-# 契约源: specs/f14-extraction-service/spec.md §5.6.3-§5.6.5。
+# 契约源: specs/f14-extraction/spec.md §5.6.3-§5.6.5。
 # RED 期 ExtractionService 无 chunking 参数 → TypeError；_project_chapter_chunk
 # 无新元数据/块 id 三态 → 断言失败。
 
@@ -335,7 +335,7 @@ async def test_reindex_chapter_chunk_overlap_uses_triple_part_id() -> None:
 
 
 # ══ #278 M4 追加段（2026-08-16）: LLM 档 analyzer 注入 + source_hash 增量跳过 ═══
-# 契约源: specs/f14-extraction-service/spec.md §5.6.7（LLM 分析切片器）+ §13 M13
+# 契约源: specs/f14-extraction/spec.md §5.6.7（LLM 分析切片器）+ §13 M13
 # （「LLM 档内容未变章节不重复调用 analyzer」）+ QA 报告 §P2-2（sha256 增量）。
 # RED 期 ExtractionService 无 llm_chunk_analyzer 参数 → TypeError（签名未扩展）；
 # store 无 list_entities → AttributeError；增量跳过未实现 → analyzer 被调用

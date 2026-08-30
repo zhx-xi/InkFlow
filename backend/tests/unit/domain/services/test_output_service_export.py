@@ -22,7 +22,7 @@ RED 预期（实现不存在，收集期失败属设计使然）:
 实现落地自动收集。import 顺序: output_service 首个 → 收集错误报告该
 模块，models.output/_txt_exporter 缺失被其遮蔽。）
 
-依据: specs/f21-export-service/spec.md §5.1/§7 E4/§9.2 场景 1+6/§13 M2/M3/M6。
+依据: specs/f21-export/spec.md §5.1/§7 E4/§9.2 场景 1+6/§13 M2/M3/M6。
 """
 
 from __future__ import annotations

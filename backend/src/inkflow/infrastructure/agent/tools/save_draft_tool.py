@@ -1,6 +1,11 @@
 """F27 save_draft 写工具——agent 唯一写面（草稿落库 + 单事务 + 审计，spec §5.2/ADR-F）.
 
-与 F26 只读工具同形态（Tool/ToolSpec 复用 reader_tools）：
+#718: 移除 SaveDraftParams 的 project_id/chapter_id——LLM 无需也无需自报项目/章节 id
+（chat 系统提示词提示「当前项目已绑定，无需用户提供项目 ID」）。项目/章节上下文由
+装配期 deps.expected_project_id/expected_chapter_id 绑定（镜像 #680 reader 工具闭包绑定），
+工具总是使用绑定值（LLM 无法编造全零 UUID 落孤儿数据）。
+
+与 F26 只读工具同形态（Tool/ToolSpec 复用 reader_tools）:
 - 动态 deps 构建（不进静态 TOOL_REGISTRY）
 - 成功: {"ok": True, "draft_id": "<id>", "status": "draft", "word_count": N}
 - 失败: {"ok": False, "error": "<异常消息>"}（工具内部捕获一切 Exception 不抛出）
@@ -24,10 +29,11 @@ from inkflow.infrastructure.agent.tools.reader_tools import Tool
 
 
 class SaveDraftParams(BaseModel):
-    """save_draft 工具参数（spec §5.2）."""
+    """save_draft 工具参数（spec §5.2）.
 
-    project_id: uuid.UUID
-    chapter_id: uuid.UUID | None = None  # 目标章节（可选，确认时指定）
+    #718: 移除 project_id/chapter_id——装配期 deps.expected_* 绑定，LLM 无需/不能自报。
+    """
+
     content: str  # 草稿正文（Markdown）
     summary: str | None = None  # 一句话说明（用户确认时展示）
 
@@ -48,9 +54,9 @@ SAVE_DRAFT_SPEC = ToolSpec(
 class SaveDraftToolDeps:
     """写工具工厂依赖——service 实例注入（鸭子类型，镜像 ReaderToolDeps）.
 
-    expected_project_id/expected_chapter_id: #275 期望上下文——每次 run 由
-    装配层注入请求真实值；工具参数与期望不符 → 拒绝（防 LLM 编造全零 UUID
-    落孤儿数据）。
+    expected_project_id/expected_chapter_id: #718 绑定上下文——每次 run 由装配层注入
+    请求真实值；工具总是使用绑定值（LLM 无法编造全零 UUID 落孤儿数据），未注入时
+    回退 caller 传入值（MCP/F27 writer 兼容）。
     """
 
     draft_service: object  # 有 create(*, project_id, chapter_id, content,
@@ -72,43 +78,38 @@ def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool:
     spec = SAVE_DRAFT_SPEC  # 复用静态常量（与 TOOL_REGISTRY 同源，行为不变）
 
     async def _save_draft(
-        project_id: uuid.UUID,
-        chapter_id: uuid.UUID | None = None,
+        project_id: uuid.UUID | str | None = None,
+        chapter_id: uuid.UUID | str | None = None,
         content: str = "",
         summary: str | None = None,
     ) -> str:
-        project_id = project_id if isinstance(project_id, uuid.UUID) else uuid.UUID(str(project_id))
-        chapter_id = (
-            None
-            if chapter_id is None
-            else (chapter_id if isinstance(chapter_id, uuid.UUID) else uuid.UUID(str(chapter_id)))
+        # #718: 绑定到装配期上下文——deps.expected_* 注入时总是使用绑定值
+        # （LLM 无需也无需自报 id，杜绝编造全零/误报导致 {ok:False} 循环失败）；
+        # 未注入时回退 caller 传入值（MCP/F27 writer 兼容）。
+        bound_project_id = (
+            deps.expected_project_id if deps.expected_project_id is not None else project_id
         )
-
-        def _validate_context() -> None:
-            """#275 工具上下文校验——参数与期望不符直接抛 ValueError.
-
-            统一 except 路径生成错误信封（约束③失败审计自动覆盖）。
-            """
-            if deps.expected_project_id is not None and project_id != deps.expected_project_id:
-                raise ValueError(
-                    f"project_id 与当前项目上下文不符（期望 {deps.expected_project_id}，"
-                    f"收到 {project_id}）"
-                )
-            if (
-                deps.expected_chapter_id is not None
-                and chapter_id is not None
-                and chapter_id != deps.expected_chapter_id
-            ):
-                raise ValueError(
-                    f"chapter_id 与当前章节上下文不符（期望 {deps.expected_chapter_id}，"
-                    f"收到 {chapter_id}）"
-                )
-
+        bound_chapter_id = (
+            deps.expected_chapter_id if deps.expected_chapter_id is not None else chapter_id
+        )
         try:
-            _validate_context()
+            _project_id = (
+                bound_project_id
+                if isinstance(bound_project_id, uuid.UUID)
+                else uuid.UUID(str(bound_project_id))
+            )
+            _chapter_id = (
+                None
+                if bound_chapter_id is None
+                else (
+                    bound_chapter_id
+                    if isinstance(bound_chapter_id, uuid.UUID)
+                    else uuid.UUID(str(bound_chapter_id))
+                )
+            )
             draft = await deps.draft_service.create(  # type: ignore[attr-defined]  # 鸭子类型：draft_service 按契约提供 create
-                project_id=project_id,
-                chapter_id=chapter_id,
+                project_id=_project_id,
+                chapter_id=_chapter_id,
                 content=content,
                 summary=summary or "",
                 agent_run_id=None,
@@ -117,8 +118,8 @@ def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool:
             with contextlib.suppress(Exception):
                 await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
                     actor="agent:writer",
-                    project_id=project_id,
-                    chapter_id=chapter_id,
+                    project_id=_project_id,
+                    chapter_id=_chapter_id,
                     severity_summary="draft_saved",
                     summary=f"草稿保存 {count_words(content)} 字",
                     degraded=True,
@@ -137,8 +138,8 @@ def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool:
             with contextlib.suppress(Exception):
                 await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
                     actor="agent:writer",
-                    project_id=project_id,
-                    chapter_id=chapter_id,
+                    project_id=_project_id,
+                    chapter_id=_chapter_id,
                     severity_summary="draft_save_failed",
                     summary=str(exc),
                     degraded=True,

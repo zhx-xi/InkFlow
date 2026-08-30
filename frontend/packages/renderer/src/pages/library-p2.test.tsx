@@ -1,5 +1,5 @@
 /**
- * F43 P2（specs/f43-setting-library-crud/spec.md v1.2 §2.7/§3.5/§5.8-5.13/§9.5 M1-M13）：
+ * F43 P2（specs/f43-setting-library-gui/spec.md v1.2 §2.7/§3.5/§5.8-5.13/§9.5 M1-M13）：
  * 设定库世界观 tab 地图工作台——地图节点徽标（root_location_id 识别）+ 四级面包屑回跳 +
  * 三底图切换（pin 独立叠加层）+ AI 占位 + 点击画布添加标记 + PinDialog 四类型 + 一图多标记 +
  * pin 编辑/删除 + 简图 shapes 增删。

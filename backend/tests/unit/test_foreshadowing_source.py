@@ -13,7 +13,7 @@
 （SQLiteForeshadowingRepository.list_open，见 test_foreshadowing_repo.py）；
 本文件只测数据源对 repo 结果的消费与 ContextItem 构造。
 
-依据: specs/f13-foreshadowing-service/spec.md §5.3/§5.5/§9。
+依据: specs/f13-foreshadowing/spec.md §5.3/§5.5/§9。
 """
 
 from __future__ import annotations

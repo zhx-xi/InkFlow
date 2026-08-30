@@ -222,3 +222,19 @@ describe('DraftApprovalPanel — 操作闭环（成功后刷新列表）', () =>
     });
   });
 });
+
+describe('DraftApprovalPanel — 草稿概要不撑满右栏（#749）', () => {
+  it('长草稿默认截断为概要 + 点「展开看全文」显示全文', async () => {
+    const longContent = '蜀山修仙宇宙设定：修炼体系/势力格局/核心法则。'.repeat(40);
+    listDraftsMock.mockResolvedValue({ items: [{ ...seedDraft1, content: longContent }], total: 1 });
+    const user = userEvent.setup();
+    render(<DraftApprovalPanel projectId="p1" />);
+    await screen.findByTestId('draft-item-0');
+    // 默认概要：不显示全文（截断 + 省略号）
+    expect(screen.getByTestId('draft-content-0').textContent).toContain('…');
+    expect(screen.getByTestId('draft-content-0').textContent).not.toContain(longContent);
+    // 展开看全文
+    await user.click(screen.getByTestId('draft-expand-0'));
+    expect(screen.getByTestId('draft-content-0')).toHaveTextContent(longContent);
+  });
+});

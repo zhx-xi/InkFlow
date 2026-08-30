@@ -68,8 +68,9 @@ ModuleNotFoundError: No module named 'inkflow.infrastructure.agent.deepagents'
 ToolSpec/Tool 惰性 → 收集错误唯一聚焦 deepagents）。GREEN 落地后本文件自动
 收集，14 用例全部转绿。
 
-本文件全部为同步用例（build_deep_agent / ensure_profile 均为同步函数），
-不依赖 pytest-asyncio 模式（auto/STRICT 均不影响）。
+本文件 build_deep_agent / ensure_profile 均为同步用例（不依赖 pytest-asyncio 模式，
+auto/STRICT 均不影响）；_make_sync_wrapper 运行中事件循环路径（独立 worker 线程
+桥接）为 async 用例。
 """
 
 from unittest import mock
@@ -180,6 +181,25 @@ class TestBuildDeepAgent:
         assert result is AGENT_SENTINEL
         create.assert_called_once()
 
+    def test_empty_api_key_and_base_url_omitted(self, harness_patches):
+        """api_key/base_url 为空 → 不传 openai_api_key/openai_api_base（空串分支）。"""
+        chat_cls, _ = harness_patches
+        build_deep_agent(
+            model="glm-4.5", api_key="", base_url="", tools=[], system_prompt="p"
+        )
+        chat_cls.assert_called_once_with(model="glm-4.5", temperature=0.2)
+
+    def test_checkpointer_is_in_memory_saver(self, harness_patches):
+        """create_deep_agent 收到 checkpointer=InMemorySaver()（HITL resume thread 隔离）。"""
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        _, create = harness_patches
+        build_deep_agent(
+            model="glm-4.5", api_key="sk", base_url="https://x/v1", tools=[], system_prompt="p"
+        )
+        checkpointer = create.call_args.kwargs["checkpointer"]
+        assert isinstance(checkpointer, InMemorySaver)
+
 
 class TestProfiles:
     """HARNESS_PROFILES 注册表 + ensure_profile 契约（注册 key = openai:<model>）。"""
@@ -281,6 +301,31 @@ class TestToolMapping:
         assert len(mapped) == 1
         result = mapped[0].invoke({"text": "你好"})
         assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_mapped_tool_sync_invoke_in_running_loop(self) -> None:
+        """运行中事件循环内调 sync wrapper → 独立 worker 线程执行（不 asyncio.run）。"""
+        from inkflow.infrastructure.agent.deepagents.harness import _map_tools
+
+        mapped = _map_tools([_make_tool(name="count_words")])
+        result = mapped[0].invoke({"text": "你好"})
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_mapped_tool_sync_invoke_running_loop_error_propagates(self) -> None:
+        """运行中事件循环内 async_fn 抛异常 → 原异常经 worker 线程向上传播。"""
+        from inkflow.domain.models.agent_tools import ToolSpec
+        from inkflow.infrastructure.agent.deepagents.harness import _map_tools
+        from inkflow.infrastructure.agent.tools import Tool
+
+        async def _boom(**kwargs) -> str:
+            raise ValueError("tool boom")
+
+        mapped = _map_tools(
+            [Tool(spec=ToolSpec(name="boom_tool", description="", input_schema={}), func=_boom)]
+        )
+        with pytest.raises(ValueError, match="tool boom"):
+            mapped[0].invoke({"text": "你好"})
 
 
 class TestExcludedTools:

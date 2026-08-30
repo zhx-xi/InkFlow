@@ -13,7 +13,7 @@
 run_audit 显式赋 AsyncMock —— 未赋值的同步 MagicMock 子 mock 被 await
 会返回 coroutine 导致 500（F4 4.1 实测陷阱）。
 
-依据: specs/f15-audit-service/spec.md §3 + §7 + §9。
+依据: specs/f15-consistency-audit/spec.md §3 + §7 + §9。
 """
 
 from __future__ import annotations

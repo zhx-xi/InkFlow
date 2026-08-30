@@ -1,6 +1,6 @@
 """F14 时间线提取管线 — 模板渲染 → LLM → JSON 解析 → 修复重试 → 合并落库.
 
-依据: specs/f14-extraction-service/spec.md §5.5（时间线提取管线，Q2 拍板，
+依据: specs/f14-extraction/spec.md §5.5（时间线提取管线，Q2 拍板，
 设置项 timeline_auto_extract 开启时由门面调用）。镜像 F9 `_character_extractor.py`
 骨架，仅替换领域实体（TimelineEvent ↔ Character）与模板（timeline_extract ↔
 character_extract）。

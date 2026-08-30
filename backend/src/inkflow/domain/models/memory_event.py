@@ -6,7 +6,7 @@ MemoryEvent 是偏好学习闭环的事件源（spec §2.2，Q2 独立表）:
 - draft_rejected/draft_confirmed 不参与提取，只贡献修改率统计（spec §5.7）;
 - diff_chars = len(after) - len(before) 由仓储层计算（只读统计用，可负）.
 
-依据: specs/f28-agent-memory/spec.md §2.2/§5.1/§5.2。
+依据: specs/f28-memory-learning/spec.md §2.2/§5.1/§5.2。
 领域层保持纯净：仅依赖 Pydantic v2 与标准库，不感知 ORM / 框架。
 """
 

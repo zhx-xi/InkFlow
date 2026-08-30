@@ -1,6 +1,6 @@
 """F16 风格 LLM 深度分析管线 — 模板渲染 → LLM → JSON 解析 → 修复重试 → StyleLLMAssessment.
 
-依据: specs/f16-style-service/spec.md §5.6（LLM 深度分析管线步骤 ①-⑥，Q1=C 拍板，
+依据: specs/f16-style-analysis/spec.md §5.6（LLM 深度分析管线步骤 ①-⑥，Q1=C 拍板，
 可选增强板块）。镜像 F14 `_timeline_extractor.py` 骨架，仅替换领域实体
 （StyleLLMAssessment ↔ TimelineExtractionResult）与模板（style_llm_analysis ↔
 timeline_extract）。
@@ -32,6 +32,7 @@ from inkflow.domain.models.style import StyleLLMAssessment
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
 from inkflow.domain.ports.prompt_template import PromptTemplateProtocol
 from inkflow.domain.ports.style_errors import StyleLLMAnalysisError
+from inkflow.domain.services.model_resolution import resolve_model
 
 _TEMPLATE_NAME = "style_llm_analysis"
 """LLM 深度分析模板名（infrastructure/llm/templates/style_llm_analysis.yaml）。"""
@@ -167,7 +168,9 @@ class StyleLLMAnalyzer:
         if not text.strip():
             return None
 
-        resolved_model = model or project.config.model or self._llm_default_model
+        resolved_model = (
+            resolve_model(model, project.config.model, self._llm_default_model) or ""
+        )
 
         # ② 渲染模板（变量: text）
         template = self._prompts.load(_TEMPLATE_NAME)

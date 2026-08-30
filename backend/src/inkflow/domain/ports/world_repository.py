@@ -5,7 +5,7 @@ WorldRepositoryProtocol 定义 WorldSetting 的 CRUD 操作与类别聚合，
 用 int（与 ORM 层一致），Service 负责 UUID ↔ int 转换（沿用 F1
 `_to_int_id` 模式）。
 
-依据: specs/f10-world-service/spec.md §8.1。
+依据: specs/f10-world-settings/spec.md §8.1。
 """
 
 from __future__ import annotations

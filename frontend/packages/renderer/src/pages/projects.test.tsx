@@ -325,7 +325,7 @@ describe('项目页 — 点击卡片跳转写作页（#232）', () => {
 });
 
 /**
- * F43（2026-08-12，specs/f43-setting-library-crud/spec.md §5.5/§5.6/§9.2）：
+ * F43（2026-08-12，specs/f43-setting-library-gui/spec.md §5.5/§5.6/§9.2）：
  * 项目卡片菜单（重命名/删除，US-3）。
  *
  * GREEN 契约（ProjectCard.tsx + projects.tsx + stores/project.ts + i18n zh/en）：

@@ -20,7 +20,7 @@
 - repository: TimelineRepositoryProtocol（B1 已实现）
 - project_repo: ProjectRepositoryProtocol（F1 已实现，项目存在性校验用）
 
-依据: specs/f12-timeline-service/spec.md §5/§6/§7/§9。
+依据: specs/f12-timeline/spec.md §5/§6/§7/§9。
 """
 
 from __future__ import annotations

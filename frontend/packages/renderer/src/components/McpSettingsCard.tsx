@@ -1,5 +1,5 @@
 /**
- * F50 #563：设置页「MCP 接入」面板（specs/f50-mcp-guidance/spec.md §5.2，方案 A）。
+ * F50 #563：设置页「MCP 接入」面板（specs/f20-mcp/spec.md §5.2，方案 A）。
  *
  * - 挂载拉取 GET /api/v1/mcp/info（ensureApiReady 后），显示当前客户端 exe 路径（动态）
  * - 一键复制：客户端路径 + Claude Desktop / Cursor / Hermes 三宿主配置 JSON

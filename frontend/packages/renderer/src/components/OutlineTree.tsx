@@ -1,12 +1,12 @@
 /**
- * F43 P3 大纲三级树（specs/f43-setting-library-crud/spec.md §5.14-5.15）：
+ * F43 P3 大纲三级树（specs/f43-setting-library-gui/spec.md §5.14-5.15）：
  * 整体 → 卷 → 章 → 情节点（level/parent_id 前端建树；孤立章降级顶层；未知 level 按整体兜底）；
  * 三级展开收起（有子节点才渲染 toggle，叶子不渲染）；各层新增按钮（本批占位，创建入口后置）；
  * 章关联徽标（chapter_id 非空 → 📎 + 章节标题，title=lib.chapterRefTip；未关联 → 「关联章节」按钮，
  * 点击打开章节选择器 lib.chapterLinkPick，选中后 PATCH chapter_id 并即时显示徽标（#676 解除 D9 占位））；
  * 情节点首次展开按需拉取 GET /outlines/{id}/plot-points + 前端本地缓存（收起再展开不重拉）。
  *
- * #649 大纲子项写操作（specs/f11-outline-service/spec.md §3 + #649 拍板）：
+ * #649 大纲子项写操作（specs/f11-outline/spec.md §3 + #649 拍板）：
  * - 情节节点：章行「＋情节点」→ 创建对话框（name 必填 gate；type/desc/arc 可选，arc 为原生 select）；
  *   行内 ✎ 编辑（预填现值 + PATCH 仅变化字段）/ 🗑 删除（ConfirmDialog 真删）；
  *   新增/编辑/删除成功后强制刷新该章情节点（fetchedRef 移除 key 再拉取）。

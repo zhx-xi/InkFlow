@@ -8,7 +8,7 @@
 - 脏 JSON / 类型错误 / 未知键防御性忽略（_merge 防御，§7 边界 #6）
 - 白名单：DTO 已校验（extra='forbid' + Literal），service 只筛非 None 直接透传
 
-依据: specs/f32-settings-persistence/spec.md §2.5 + §9.1/§9.4。
+依据: specs/f32-settings/spec.md §2.5 + §9.1/§9.4。
 
 ══════════════════════ 设计假设（GREEN 实现者唯一契约）══════════════════════
 

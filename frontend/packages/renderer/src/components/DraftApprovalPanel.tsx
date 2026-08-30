@@ -15,6 +15,7 @@ export function DraftApprovalPanel({ projectId }: { projectId: string | null }) 
   const [error, setError] = useState<string | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -113,72 +114,86 @@ export function DraftApprovalPanel({ projectId }: { projectId: string | null }) 
             {t('write.drafts.empty')}
           </div>
         ) : (
-          drafts.map((draft, index) => (
-            <section
-              key={draft.id}
-              data-testid={`draft-item-${index}`}
-              className="rounded-md border border-line bg-surface p-3"
-            >
-              <div data-testid={`draft-title-${index}`} className="text-[13px] font-medium">
-                {draft.summary}
-              </div>
-              <div
-                data-testid={`draft-content-${index}`}
-                className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-ink-2"
+          drafts.map((draft, index) => {
+            const isLong = draft.content.length > 60;
+            const shown = isLong && expandedIndex !== index ? draft.content.slice(0, 60) + '…' : draft.content;
+            return (
+              <section
+                key={draft.id}
+                data-testid={`draft-item-${index}`}
+                className="rounded-md border border-line bg-surface p-3"
               >
-                {draft.content}
-              </div>
-              {editingIndex === index ? (
-                <div className="mt-2 space-y-2">
-                  <textarea
-                    data-testid={`draft-edit-input-${index}`}
-                    value={editValue}
-                    onChange={(event) => setEditValue(event.target.value)}
-                    rows={5}
-                    className="w-full rounded border border-line bg-surface-2 p-2 text-[12px]"
-                  />
-                  <button
-                    type="button"
-                    data-testid={`draft-edit-save-${index}`}
-                    className="rounded border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
-                    onClick={() => void handleEditSave(draft)}
-                  >
-                    {t('write.drafts.save')}
-                  </button>
+                <div data-testid={`draft-title-${index}`} className="text-[13px] font-medium">
+                  {draft.summary}
                 </div>
-              ) : (
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    data-testid={`draft-confirm-${index}`}
-                    className="rounded border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
-                    onClick={() => void handleConfirm(draft)}
-                  >
-                    {t('write.drafts.confirm')}
-                  </button>
-                  <button
-                    type="button"
-                    data-testid={`draft-reject-${index}`}
-                    className="rounded border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
-                    onClick={() => void handleReject(draft)}
-                  >
-                    {t('write.drafts.reject')}
-                  </button>
-                  <button
-                    type="button"
-                    data-testid={`draft-edit-${index}`}
-                    className="rounded border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
-                    onClick={() => {
-                      setEditingIndex(index);
-                      setEditValue(draft.content);
-                    }}
-                  >
-                    {t('write.drafts.edit')}
-                  </button>
+                <div
+                  data-testid={`draft-content-${index}`}
+                  className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-ink-2"
+                >
+                  {shown}
                 </div>
-              )}
-            </section>
-          ))
+                {isLong && (
+                  <button
+                    type="button"
+                    data-testid={`draft-expand-${index}`}
+                    className="mt-1 rounded border border-line px-2 py-0.5 text-[12px] text-ink-3 hover:bg-surface-3"
+                    onClick={() => setExpandedIndex((cur) => (cur === index ? null : index))}
+                  >
+                    {expandedIndex === index ? t('write.drafts.collapse') : t('write.drafts.expand')}
+                  </button>
+                )}
+                {editingIndex === index ? (
+                  <div className="mt-2 space-y-2">
+                    <textarea
+                      data-testid={`draft-edit-input-${index}`}
+                      value={editValue}
+                      onChange={(event) => setEditValue(event.target.value)}
+                      rows={5}
+                      className="w-full rounded border border-line bg-surface-2 p-2 text-[12px]"
+                    />
+                    <button
+                      type="button"
+                      data-testid={`draft-edit-save-${index}`}
+                      className="rounded border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
+                      onClick={() => void handleEditSave(draft)}
+                    >
+                      {t('write.drafts.save')}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      data-testid={`draft-confirm-${index}`}
+                      className="rounded border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
+                      onClick={() => void handleConfirm(draft)}
+                    >
+                      {t('write.drafts.confirm')}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid={`draft-reject-${index}`}
+                      className="rounded border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
+                      onClick={() => void handleReject(draft)}
+                    >
+                      {t('write.drafts.reject')}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid={`draft-edit-${index}`}
+                      className="rounded border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
+                      onClick={() => {
+                        setEditingIndex(index);
+                        setEditValue(draft.content);
+                      }}
+                    >
+                      {t('write.drafts.edit')}
+                    </button>
+                  </div>
+                )}
+              </section>
+            );
+          })
         )}
       </div>
     </aside>

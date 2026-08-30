@@ -1,6 +1,6 @@
 /**
  * 设定库分类实体创建/编辑对话框（#196 + F43 双模式扩展，
- * specs/f36-library-manual-create/spec.md §2.2/§2.3 + specs/f43-setting-library-crud/spec.md §2.2）：
+ * specs/f36-library-manual-create/spec.md §2.2/§2.3 + specs/f43-setting-library-gui/spec.md §2.2）：
  * 受控表单对话框，字段按分类渲染（后端 DTO 字段名对齐 spec §2.1 表）；
  * editing 非空 = 编辑模式（打开预填现值），空 = 创建模式（空表单重置，#196）；
  * 名称/标题必填（strip 后非空 → 保存按钮 enabled）；保存中禁用防重复提交；
@@ -36,6 +36,8 @@ export interface LibraryItemDTO {
 export interface LibraryCreateDialogProps {
   open: boolean;
   cat: LibraryCreateCat;
+  /** #722: root world create - hide the category input (roots should have no category) */
+  isRoot?: boolean;
   /** F43：非空 = 编辑模式（预填现值），空 = 创建模式（#196 行为） */
   editing?: LibraryItemDTO | null;
   /** F43 P1：建议标签 = 当前项目角色 extra.groups 并集（父级聚合，D-13 数据驱动） */
@@ -81,6 +83,7 @@ export function LibraryCreateDialog({
   initialCategory,
   initialLevel,
   initialParentId,
+  isRoot,
   onSave,
   onOpenChange,
 }: LibraryCreateDialogProps) {
@@ -280,14 +283,16 @@ export function LibraryCreateDialog({
                   onChange={(e) => setName(e.target.value)}
                 />
               </Field>
-              <Field label={t('lib.create.category')}>
-                <input
-                  aria-label={t('lib.create.category')}
-                  className={INPUT_CLS}
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                />
-              </Field>
+              {!isRoot && (
+                <Field label={t('lib.create.category')}>
+                  <input
+                    aria-label={t('lib.create.category')}
+                    className={INPUT_CLS}
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                  />
+                </Field>
+              )}
               <Field label={t('lib.create.content')}>
                 <textarea
                   aria-label={t('lib.create.content')}

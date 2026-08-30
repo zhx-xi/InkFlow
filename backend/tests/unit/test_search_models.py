@@ -7,7 +7,7 @@ RED 阶段：inkflow/domain/models/search.py 不存在 → 收集期 ModuleNotFo
 必填与边界（q 空白/超长、project_ids 必填、types 枚举与 [] 归一 None、mode 默认、
 limit 边界）、SearchHit 默认 score、SearchResponse 完整 roundtrip。
 
-依据: specs/f22-search-service/spec.md §2.2（DTO 定义）/ §6.3（types=[] 语义）/
+依据: specs/f22-search/spec.md §2.2（DTO 定义）/ §6.3（types=[] 语义）/
 §3.3（422 校验场景）。
 
 设计假设（RED 阶段按 spec 口径记录，实现须满足）:

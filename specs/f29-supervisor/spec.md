@@ -1,4 +1,5 @@
 # F29: Supervisor 自主编排 + HITL 功能规格（supervisor-agent）
+> **端**: backend
 
 **Spec 版本**: 1.0（初稿，2026-08-13）
 **日期**: 2026-08-13
@@ -475,3 +476,31 @@ async def hitl_node(state: SupervisorState) -> dict:
 - **Q3（设计决策级）：重复执行角色的执行记录形态** ✅ 已确认（用户拍板：选项 A）— supervisor 允许同一角色多次执行（如 writer 写 2 次再审）。
   - **A. 保留多次执行记录**（已拍板，route_history 顺序展开 stages 快照，每次执行一个 StageResult）
   - B. 合并为单条（只保留最后执行结果）
+
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 + §4 + §5 + §7 事实，不重复）。supervisor 模式无新 CLI 命令（§4）——CLI 经既有 execute 透传 + HITL 确认，确认命令未实现时降级 API 层验证。
+
+### 14.1 端点状态流
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| POST /api/v1/agent/pipelines/execute（mode=supervisor） | mode 字段 + supervisor 配置齐备 | mode 分派 → 角色池装配（不执行 _apply_agent_order 静态重排）→ SupervisorPipeline.execute（supervisor 节点 Command(goto) 动态路由） | 202 + execution_id + mode 透传 | 422（mode=supervisor 但配置缺失「supervisor 模式需要 supervisor 配置」/ max_steps 越界 >100）；LLM 决策失败重试耗尽 → PipelineError | mode 默认 static 零改动；fallback_on_error=true → 回退固定链 / false → FAILED |
+| POST /api/v1/agent/pipelines/executions/{id}/confirm | 执行记录存在且 status=waiting_hitl | 查找记录 → 从 checkpointer 恢复图 → Command(resume={approved}) → 更新状态 running | 200（approved=True 继续执行 / False → fallback 固定链） | 404（「执行记录不存在」）；422（非 waiting_hitl「执行记录不在等待确认状态」） | 进程重启后 waiting_hitl 记录标记 failed（InMemorySaver 内存态丢失） |
+| GET /pipelines/executions/{id} | — | 状态查询 | 200 + status（waiting_hitl 时含 hitl_pending 详情：待确认角色/原因/时间） | 404 | 护栏触发 = completed（route_history 含 __fallback__），非错误路径 |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow agent execute --mode supervisor --supervisor-json '{"max_steps": 30, ...}' | supervisor 配置齐备 | 透传既有 execute（#251 已合入签名） | 退出码 0 + 202 信封 | 422 → 退出码 1 | PipelineExecuteRequest 字段扩展不得破坏 #251 透传（mode 默认 static） |
+| inkflow agent confirm --execution-id N --approved | 记录 waiting_hitl | HITL 确认 | 退出码 0 | 404/422 → 退出码 1 | 未实现 → 降级 API 层 curl 验证 + PR 标注（§4 约束②） |
+
+### 14.3 验收锚点
+
+- A1：动态路由 mock LLM 决策序列 → Command(goto) 路由正确（route_history 断言，M5）
+- A2：振荡护栏（同角色连续 3 次）/步数 30 超限/非法角色 → fallback 固定链 + final_output=reviser（M6）
+- A3：LLM 决策空 content → 自动重试（附路由历史）→ 仍空 → fallback（M5/M6 场景）
+- A4：HITL interrupt payload 暂停 → confirm approved 恢复 / rejected 回退固定链（M7）
+- A5：confirm 端点 404/422 + GET 状态含 hitl_pending（M7）
+- A6：静态模式零回归（mode 默认 static，M4）

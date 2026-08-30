@@ -1,4 +1,4 @@
-/** 角色分组标签编辑器（F43 P1，specs/f43-setting-library-crud/spec.md v1.1 §2.3/§5.2，D2）：
+/** 角色分组标签编辑器（F43 P1，specs/f43-setting-library-gui/spec.md v1.1 §2.3/§5.2，D2）：
  * wiki 风格多选——已选 chips（× 移除）+ 输入框（回车/逗号创建，strip 去空去重）+ 建议标签按钮。
  * 建议标签来源 = 父级聚合的当前项目角色 extra.groups 并集（数据驱动，D-13）。
  * testid 契约：lib-tag-input / lib-tag-chip-<tag>（× 按钮同 chip 内）/ lib-tag-suggest-<tag>。 */

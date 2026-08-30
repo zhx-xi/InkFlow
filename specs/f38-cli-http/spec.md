@@ -1,4 +1,5 @@
 # F38: CLI 恒经 HTTP 路由改造（cli_http）— 功能规格
+> **端**: backend
 
 > **Spec 版本**: 1.0 | **日期**: 2026-08-09 | **依据**: ADR-030 ② D1=A（CLI 恒经 HTTP）、ADR-021（内核并发契约）、F30 spec（ensure_kernel 消费方）、Constitution P1-P6
 >
@@ -612,3 +613,45 @@ F38 被依赖:
 ---
 
 *本文件为 F38 功能规格（What），实施步骤（How）见 `.hermes/plans/` 执行计划。所有里程碑验收以本节 M1-M6 为准。*
+
+---
+
+## 14. 动作确认
+
+> 每个命令/错误路径的完整状态流表（基于 §3 API 契约 + §4 CLI 接线 + §5 传输层 + §7 边界事实，不重复）。
+
+### 14.1 CLI 命令状态流（14 个业务命令统一接线）
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow <业务命令>（14 个：project/chapter/character/world/outline/timeline/foreshadowing/extract/audit/style/vector/agent/session/write） | 无 | ensure_kernel（复用/互斥拉起）→ InkFlowHTTPClient → HTTP → print_result | 人类/JSON 双模式（F7 信封不变） | HttpApiError → print_error（信封 + 退出码 1）；KernelStartupError → KERNEL_ERROR | 命令签名零变化；参数→请求体映射（--name→name、--target-words→target_words）；命令内不再 create_tables/async_session_factory/构造 Service |
+| inkflow write（SSE 流式） | 同上 | POST /writing/stream：delta 帧拼接（人类模式逐 delta 打印）→ done 帧 → WritingResult | 完整正文 + done 帧字段（format_valid/word_count/model/token_usage/warnings） | 流中 error 字段 → LLM_ERROR；流中断 → INTERNAL_ERROR（message 含「流中断」） | 流式超时 timeout=None（帧间隙由内核心跳保证）；Ctrl+C → 退出码 130；非流式端点 generate/continue/revise 兜底 |
+| inkflow serve | — | 豁免（内核启动者本身） | — | — | F19 契约（INKFLOW_READY/--port-file/token）零改动 |
+| inkflow kernel status | — | 豁免（绝不拉起内核的纯状态查询） | — | — | 查询≠拉起语义（走 HTTP 会破坏） |
+| inkflow config show/set | — | 豁免（操作本地 config.json，API 无对应端点） | — | — | CONFIG_WHITELIST 与 /settings 的 AppSettings 键集合完全不同；与内核共享 data_dir |
+| inkflow llm list/set-key | — | 豁免（操作本地 keys/，无 key 状态读取端点） | — | — | APIKeyManager AES-256-GCM；共享 data_dir |
+| inkflow agent tools list | — | 豁免（本地静态枚举，API 无对应端点） | — | — | 不启动内核、不发 HTTP |
+| inkflow --help / --version / 未知命令 | — | 不触发 ensure_kernel（惰性接线） | — | exit 2（用法错误） | 接线点在命令函数内部（app callback 顶层在参数解析前执行会误触发拉起） |
+
+### 14.2 错误映射状态流（HTTP 状态 → F7 错误码）
+
+| 场景 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| HTTP 404 | 实体不存在 | map_http_error | — | NOT_FOUND | detail 文本透传；兜底「资源不存在」 |
+| HTTP 422 | 参数非法/枚举错误/缺失字段 | map_http_error | — | VALIDATION_ERROR | 兜底「参数校验失败」 |
+| HTTP 401 | token 失效 | map_http_error | — | CONFIG_ERROR（提示重启内核） | 罕见（ensure_kernel 已校验健康）；兜底「鉴权失败」 |
+| HTTP 500 + X-InkFlow-Error-Code: LLM_ERROR | write LLM 失败 | map_http_error | — | LLM_ERROR | 仅 writing router 响应头（约 1 行扩展） |
+| HTTP 500 无头 | DB/未知内部错误 | map_http_error | — | INTERNAL_ERROR（新增码） | 兜底「内部错误（无详情）」；DB_ERROR/CONTEXT_BUDGET_EXCEEDED 恒 HTTP 后由 INTERNAL_ERROR 兜底 |
+| 连接拒绝（内核刚退出） | 请求时内核退出 | 单次重试：重新 ensure_kernel → 重发请求 | 重试成功 | KERNEL_ERROR | 单次防抖；建议「内核可能已退出，重试将自动拉起」 |
+| 请求超时（30s 默认） | — | httpx.TimeoutException → HttpApiError | — | INTERNAL_ERROR | message 含「请求超时」 |
+| ensure_kernel 失败 | 冷启动超时/秒退/spawn 失败 | KernelStartupError | — | KERNEL_ERROR | 文案 + %TEMP%\inkflow-kernel.log 指引 |
+| 内核未运行（首次调用） | 无 kernel.json | ensure_kernel 互斥拉起 | 正常调用（首次 ~4.7s；复用 ~19ms；热调用 ≤100ms 基准） | — | 双 CLI 同时冷调用 → F30 互斥 183 → 轮询复用 |
+
+### 14.3 验收锚点（写入 §13 验收标准）
+
+- A1：改造后 import inkflow.cli.commands.project 不触发 domain.services / llm / database（sys.modules 断言）→ M1
+- A2：错误映射表 §5.3 每行一个断言（map_http_error 参数化）→ M3
+- A3：无内核 → CLI 命令自动拉起 → 调用成功；预置健康内核 → 二次调用 pid 不变 → M5
+- A4：serve/kernel/config/llm 四组豁免命令模块与测试文件 git diff 为空 → M4
+- A5：热调用 ≤100ms 手工基准（进程内 httpx 中位数，不入 CI）→ M5
+- A6：write 流中 error 帧 → LLM_ERROR；流中断 → INTERNAL_ERROR（含「流中断」）→ M3

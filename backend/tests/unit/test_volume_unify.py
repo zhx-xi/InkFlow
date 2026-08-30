@@ -32,7 +32,7 @@ RED 预期形态（四层失败类别地图，规则 1q;整文件可收集，零
   → AttributeError / ORM 无 volume_id 列 → FK 建表失败
 - R10 database: ensure_outline_volume_id_column 缺失 → 用例体 lazy import ImportError
 
-依据: specs/volume-unify/spec.md §2/§3/§4/§5/§7/§8。
+依据: specs/f56-volume-outline-link/spec.md §2/§3/§4/§5/§7/§8。
 """
 
 from __future__ import annotations

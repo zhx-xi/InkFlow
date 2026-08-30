@@ -342,3 +342,248 @@ class TestStreamEventsCoverageGaps:
         assert [ev.type for ev in frames] == ["tool_call", "tool_result", "tool_call", "done"]
         assert frames[1].result == "found"
         assert frames[2].id == "tool_2"
+
+
+class _WriteToolFlowAgent:
+    """#718 fake agent - 产 save_draft 工具调用 + {ok:True} 结果，验证写工具流终止于 done."""
+
+    async def astream_events(self, inputs, version="v2"):
+        yield {
+            "event": "on_tool_start",
+            "run_id": "tool_1",
+            "name": "save_draft",
+            "data": {"input": {"content": "正文"}},
+        }
+        yield {
+            "event": "on_tool_end",
+            "run_id": "tool_1",
+            "name": "save_draft",
+            "data": {"output": '{"ok": true, "draft_id": "draft-1"}'},
+        }
+        yield {
+            "event": "on_chat_model_end",
+            "data": {"output": SimpleNamespace(
+                content="草稿已保存", tool_calls=[], response_metadata={}
+            )},
+        }
+
+
+class TestStreamEventsWriteToolTerminal:
+    """#718 写工具流必须终止于 done 帧（不无限 running），并回显工具结果."""
+
+    @pytest.mark.asyncio
+    async def test_save_draft_stream_reaches_done_and_echoes_result(self) -> None:
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        svc = ChatAgentService(agent=_WriteToolFlowAgent(), system_prompt=BASE_PROMPT)
+        frames = [ev async for ev in svc.stream_events(prompt="保存草稿", project_id=PROJECT_ID)]
+        # 终帧必须是 done（流不裸断 / 不无限运行）
+        assert frames[-1].type == "done"
+        assert frames[-1].done is True
+        # 写工具结果（{ok:True} 信封）被回吐到 tool_result 帧
+        tool_results = [ev for ev in frames if ev.type == "tool_result"]
+        assert len(tool_results) == 1
+        assert tool_results[0].name == "save_draft"
+        assert '"ok": true' in tool_results[0].result
+        assert "draft-1" in tool_results[0].result
+
+
+# ── #727 reasoning 帧 ──
+
+
+class _ReasoningAgent:
+    """fake agent 只产 on_chat_model_end，output 可含 additional_kwargs.reasoning_content。"""
+
+    def __init__(self, output: object) -> None:
+        self.output = output
+
+    async def astream_events(self, inputs, version="v2"):
+        yield {"event": "on_chat_model_end", "data": {"output": self.output}}
+
+
+class TestStreamEventsReasoningFrame:
+    """#727 思考过程：on_chat_model_end 消息含思考字段（reasoning_content）→ emit reasoning 帧。"""
+
+    @pytest.mark.asyncio
+    async def test_model_end_with_reasoning_content_emits_reasoning_frame(self) -> None:
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        output = SimpleNamespace(
+            content="最终答案",
+            tool_calls=[],
+            response_metadata={},
+            additional_kwargs={"reasoning_content": "让我想想…"},
+        )
+        svc = ChatAgentService(agent=_ReasoningAgent(output), system_prompt=BASE_PROMPT)
+        frames = [ev async for ev in svc.stream_events(prompt="你好", project_id=PROJECT_ID)]
+        reasoning_frames = [ev for ev in frames if ev.type == "reasoning"]
+        assert len(reasoning_frames) == 1
+        assert reasoning_frames[0].delta == "让我想想…"
+        # 思考帧序列后仍应正常收尾（done 终帧，不裸断）
+        assert frames[-1].done is True
+        assert frames[-1].type == "done"
+
+    @pytest.mark.asyncio
+    async def test_model_end_without_reasoning_yields_no_reasoning_frame(self) -> None:
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        # output 无 additional_kwargs（常见模型不返回思考）→ 不 emit reasoning 帧
+        output = SimpleNamespace(content="无思考回复", tool_calls=[], response_metadata={})
+        svc = ChatAgentService(agent=_ReasoningAgent(output), system_prompt=BASE_PROMPT)
+        frames = [ev async for ev in svc.stream_events(prompt="你好", project_id=PROJECT_ID)]
+        assert not any(ev.type == "reasoning" for ev in frames)
+
+    @pytest.mark.asyncio
+    async def test_model_end_reasoning_persisted_into_step(self) -> None:
+        """#740 思考持久化：reasoning_content → 步带 reasoning。
+
+        RED：当前 AgentStep 无 reasoning 字段 → 访问 steps[0].reasoning 抛 AttributeError。
+        """
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        output = SimpleNamespace(
+            content="最终答案",
+            tool_calls=[],
+            response_metadata={},
+            additional_kwargs={"reasoning_content": "让我想想…"},
+        )
+        svc = ChatAgentService(agent=_ReasoningAgent(output), system_prompt=BASE_PROMPT)
+        _ = [ev async for ev in svc.stream_events(prompt="你好", project_id=PROJECT_ID)]
+        steps, _, _ = svc.consume_trace()
+        assert len(steps) == 1
+        assert steps[0].reasoning == "让我想想…"
+
+
+class TestChatAgentMemoryInjection:
+    """#748 会话记忆注入 — history_getter 加载历史 messages 进消息链（多轮对话有记忆）。
+
+    契约（D5=A 三合一之「会话记忆」）:
+    1. ChatAgentService(..., history_getter=None) 构造可注入 history_getter。
+    2. history_getter(project_id) -> list[history message]（role=user/ai）。
+    3. stream_events 组装消息链：[System, 历史 user/ai..., 当前 Human]。
+    4. getter 抛异常 → 历史注入失败隔离，回退 [System, 当前 Human]（不阻断流）。
+    5. project_id=None → 不调 history_getter。
+    """
+
+    @pytest.mark.asyncio
+    async def test_history_messages_injected_between_system_and_current_user(self) -> None:
+        """history_getter 返回历史 → 消息链 = [System, 历史user, 历史ai, 当前Human]。"""
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        async def _getter(project_id: str) -> list:
+            return [
+                SimpleNamespace(role="user", content="第一轮：我的主角是林晚"),
+                SimpleNamespace(role="ai", content="好的，林晚作为主角加入主线"),
+            ]
+
+        agent = _FakeAgent()
+        svc = ChatAgentService(
+            agent=agent, system_prompt=BASE_PROMPT, history_getter=_getter
+        )
+        _, inputs = await _drain(svc, agent, prompt="第二轮：写他的背景", project_id=PROJECT_ID)
+        messages = inputs["messages"]
+        # 位置与角色映射：user→HumanMessage，ai→AIMessage
+        assert [m.content for m in messages] == [
+            BASE_PROMPT,
+            "第一轮：我的主角是林晚",
+            "好的，林晚作为主角加入主线",
+            "第二轮：写他的背景",
+        ]
+        assert isinstance(messages[1], HumanMessage)
+        assert isinstance(messages[2], AIMessage)
+
+    @pytest.mark.asyncio
+    async def test_history_getter_receives_project_id(self) -> None:
+        """history_getter 接收 project_id。"""
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        received: list[str] = []
+
+        async def _getter(project_id: str) -> list:
+            received.append(project_id)
+            return []
+
+        agent = _FakeAgent()
+        svc = ChatAgentService(
+            agent=agent, system_prompt=BASE_PROMPT, history_getter=_getter
+        )
+        await _drain(svc, agent, prompt="你好", project_id=PROJECT_ID)
+        assert received == [PROJECT_ID]
+
+    @pytest.mark.asyncio
+    async def test_history_getter_failure_falls_back_to_no_history(self) -> None:
+        """getter 抛异常 → 历史注入失败隔离，消息链回退 [System, 当前Human]。"""
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        async def _getter(project_id: str) -> list:
+            raise RuntimeError("history load failed")
+
+        agent = _FakeAgent()
+        svc = ChatAgentService(
+            agent=agent, system_prompt=BASE_PROMPT, history_getter=_getter
+        )
+        frames, inputs = await _drain(svc, agent, prompt="你好", project_id=PROJECT_ID)
+        assert [m.content for m in inputs["messages"]] == [BASE_PROMPT, "你好"]
+        assert frames[-1].done is True
+
+    @pytest.mark.asyncio
+    async def test_single_turn_when_history_getter_absent(self) -> None:
+        """未注入 history_getter（None）→ 消息链仍是 [System, 当前Human]（向后兼容）。"""
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        agent = _FakeAgent()
+        svc = ChatAgentService(agent=agent, system_prompt=BASE_PROMPT)
+        _, inputs = await _drain(svc, agent, prompt="你好", project_id=PROJECT_ID)
+        assert [m.content for m in inputs["messages"]] == [BASE_PROMPT, "你好"]
+
+    @pytest.mark.asyncio
+    async def test_history_getter_skipped_when_project_id_none(self) -> None:
+        """project_id=None → 不调 history_getter（无可追溯项目）。"""
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        called = False
+
+        async def _getter(project_id: str) -> list:
+            nonlocal called
+            called = True
+            return []
+
+        agent = _FakeAgent()
+        svc = ChatAgentService(
+            agent=agent, system_prompt=BASE_PROMPT, history_getter=_getter
+        )
+        await _drain(svc, agent, prompt="你好", project_id=None)
+        assert called is False
+        assert [m.content for m in agent.calls[0]["inputs"]["messages"]] == [
+            BASE_PROMPT,
+            "你好",
+        ]
+
+
+class TestResume:
+    """#766 阶段③ HITL resume 续跑——agent.ainvoke 收到 Command(resume=...) + thread_id config。"""
+
+    @pytest.mark.asyncio
+    async def test_resume_invokes_agent_with_command(self) -> None:
+        """resume → ainvoke 收 Command(resume={"approved": True})，config 透传 thread_id。"""
+        from unittest.mock import AsyncMock
+
+        from langgraph.types import Command
+
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        agent = AsyncMock()
+        svc = ChatAgentService(agent=agent, system_prompt=BASE_PROMPT)
+        # 装配期 thread_id（deps 注入或默认空；本用例白盒设值断言 config 透传）
+        svc._thread_id = "thread-766"
+        result = await svc.resume(conversation_id="conv-1", approved=True)
+
+        assert result == {"ok": True}
+        agent.ainvoke.assert_awaited_once()
+        call = agent.ainvoke.await_args
+        command = call.args[0]
+        assert isinstance(command, Command)
+        assert command.resume == {"approved": True}
+        assert call.kwargs["config"] == {"configurable": {"thread_id": "thread-766"}}

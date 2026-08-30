@@ -1,6 +1,6 @@
 """F44 v1.2 #475 访谈 LLM 动态提问契约（TDD RED 阶段，兄弟文件）。
 
-权威来源：specs/f44-long-task-orchestrator/spec.md §2.2（PlannerSession 扩展
+权威来源：specs/f44-book-orchestrator/spec.md §2.2（PlannerSession 扩展
 confirmed_items/conflicts/confirming）、§5.1「LLM 动态提问引擎」（PR-1 后端契约）、
 §7 场景 15/16/17、§12 D13、§13.5 M13。本文件为
 `domain/services/planner_service.py`（MODIFY）的 v1.2 扩展定义契约。

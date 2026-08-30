@@ -11,7 +11,7 @@ MemoryService 是偏好学习闭环的编排核心（调 repo 不碰 ORM，ADR-F
 依赖全部鸭子类型注入（preference_repo / event_repo / project_repo /
 audit_service / learner），不感知 ORM/框架——domain/ 零框架 import 门禁
 天然满足（ADR-002/015）。
-依据: specs/f28-agent-memory/spec.md §5.1-§5.7/§9。
+依据: specs/f28-memory-learning/spec.md §5.1-§5.7/§9。
 """
 
 from __future__ import annotations

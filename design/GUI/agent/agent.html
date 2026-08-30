@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="paper">
+<head>
+<meta charset="utf-8" />
+<title>InkFlow Agent 设置 — 官方简图原型</title>
+<style>
+/* ═══════════ 设计 Token（对齐 frontend/packages/renderer/src/theme/tokens.css） ═══════════ */
+:root{
+  --radius-s:4px; --radius-m:6px; --radius-l:8px;
+  --font-ui:"PingFang SC","Microsoft YaHei","Noto Sans SC","Segoe UI",sans-serif;
+  --font-serif:"Noto Serif SC","Source Han Serif SC","SimSun","宋体",Georgia,serif;
+  --dur:180ms; --ease:cubic-bezier(0.16,1,0.3,1);
+}
+[data-theme="paper"]{
+  --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F3F1EC; --surface-3:#EBE8E1;
+  --ink:#2A2A28; --ink-2:#6B6A66; --ink-3:#A4A29B; --line:#E5E2DA;
+  --accent:#3B5B7C; --accent-ink:#FFFFFF; --accent-hover:#325370; --accent-weak:rgba(59,91,124,.10);
+  --ring:rgba(59,91,124,.38); --ok:#4A7C59; --warn:#B07A2E; --err:#B04A3A;
+  --shadow:0 1px 2px rgba(42,42,40,.05),0 4px 16px rgba(42,42,40,.05);
+  --shadow-hover:0 2px 4px rgba(42,42,40,.07),0 8px 24px rgba(42,42,40,.09);
+}
+[data-theme="paper"][data-bg="parchment"]{ --bg:#F4EFE6; --surface:#FBF8F1; --surface-2:#EFE9DC; --surface-3:#E7E0D0; --line:#ACA289; }
+[data-theme="night"]{
+  --bg:#1A1A18; --surface:#22221F; --surface-2:#282823; --surface-3:#4A493F;
+  --ink:#E8E6E1; --ink-2:#9B988F; --ink-3:#6E6B63; --line:#42413A;
+  --accent:#C9A24B; --accent-ink:#1A1A18; --accent-hover:#B8923F; --accent-weak:rgba(201,162,75,.13);
+  --ring:rgba(201,162,75,.45); --ok:#8FAE8E; --warn:#C9A24B; --err:#C97B63;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.25);
+  --shadow-hover:0 2px 6px rgba(0,0,0,.4),0 10px 28px rgba(0,0,0,.35);
+}
+[data-theme="night"][data-bg="navy"]{ --bg:#171A1E; --surface:#1E2228; --surface-2:#242A31; --surface-3:#414852; --line:#4E5765; }
+[data-theme="ink"]{
+  --bg:#F3EEE2; --surface:#FAF6EC; --surface-2:#EFE9DA; --surface-3:#C9BFA4;
+  --ink:#2B2A26; --ink-2:#6E6A5E; --ink-3:#A49F90; --line:#CBC0A4;
+  --accent:#A6402E; --accent-ink:#FAF6EC; --accent-hover:#96382A; --accent-weak:rgba(166,64,46,.09);
+  --ring:rgba(166,64,46,.38); --ok:#5A7A58; --warn:#9A7B3C; --err:#A6402E;
+  --shadow:0 1px 2px rgba(43,42,38,.06),0 4px 16px rgba(43,42,38,.06);
+  --shadow-hover:0 2px 4px rgba(43,42,38,.08),0 8px 24px rgba(43,42,38,.10);
+}
+[data-theme="ink"][data-bg="ochre"]{ --bg:#EDE6D6; --surface:#F6F1E5; --surface-2:#E9E1CE; --surface-3:#CDBF9F; --line:#A89976; }
+/* ═══════════ 基础 ═══════════ */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-ui);font-size:13px;line-height:1.5;overflow:hidden}
+.ic{width:16px;height:16px;flex:none}
+.ic svg{display:block;width:100%;height:100%}
+[data-ic] svg{width:16px;height:16px;display:block;flex:none}
+button{font-family:inherit;cursor:pointer}
+::selection{background:var(--ring)}
+
+/* ═══════════ 布局骨架（AppLayout：AppNav 216px + 顶栏 48px） ═══════════ */
+.app{display:flex;height:100vh;overflow:hidden}
+.app-nav{display:flex;flex-direction:column;flex:none;width:216px;border-right:1px solid var(--line);background:var(--surface-2)}
+.nav-brand{display:flex;align-items:center;gap:8px;height:48px;padding:0 12px;border-bottom:1px solid var(--line)}
+.nav-brand .logo{width:24px;height:24px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:6px;background:var(--accent);color:var(--accent-ink)}
+.nav-brand .logo svg{width:15px;height:15px}
+.nav-brand span{font-family:var(--font-serif);font-size:15px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-scroll{flex:1;min-height:0;overflow-y:auto;padding:4px 0}
+.nav-group{padding:0 8px}
+.nav-group-label{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;font-size:10px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.nav-group-label svg{width:14px;height:14px;flex:none}
+.nav-item{display:flex;width:100%;align-items:center;gap:10px;border-radius:6px;padding:6px 10px;font-size:13px;color:var(--ink-2);text-decoration:none;transition:background var(--dur)}
+.nav-item svg{width:16px;height:16px;flex:none}
+.nav-item:hover{background:var(--surface-3);color:var(--ink)}
+.nav-item.active{background:var(--accent-weak);color:var(--accent);font-weight:500}
+.nav-item.active svg{color:var(--accent)}
+.nav-collapse{flex:none;border-top:1px solid var(--line);padding:8px}
+.nav-collapse button{display:flex;width:100%;align-items:center;gap:10px;border:none;background:none;border-radius:6px;padding:6px 10px;font-size:12px;color:var(--ink-3)}
+.nav-collapse button:hover{background:var(--surface-3);color:var(--ink)}
+
+.app-main{display:flex;flex:1;min-width:0;flex-direction:column}
+.topbar{display:flex;align-items:center;gap:12px;height:48px;flex:none;padding:0 16px;border-bottom:1px solid var(--line);background:var(--surface)}
+.topbar .page-title{font-size:13px;color:var(--ink-2)}
+.topbar .spacer{flex:1}
+.select{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-2);font-size:12px;padding:3px 8px;height:26px}
+.select svg{width:12px;height:12px;color:var(--ink-3)}
+.kernel-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ok);margin-right:5px;vertical-align:1px}
+.win-ctrl{display:flex;align-items:center;gap:2px;height:100%}
+.win-ctrl button{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border:none;background:none;border-radius:4px;color:var(--ink-3)}
+.win-ctrl button:hover{background:var(--surface-3);color:var(--ink)}
+.win-ctrl button.close:hover{background:var(--err);color:#fff}
+
+/* ═══════════ 设置页骨架（SettingsPage：左分类导航 w-48 + 右面板） ═══════════ */
+.page-settings{display:flex;flex:1;min-height:0}
+.settings-nav{display:flex;flex-direction:column;flex:none;width:192px;border-right:1px solid var(--line);background:var(--surface-2);padding:16px 0}
+.settings-nav .nav-inner{display:flex;flex-direction:column;gap:4px;padding:0 12px}
+.cat-btn{display:flex;width:100%;align-items:center;gap:10px;border:none;background:none;border-radius:6px;padding:6px 10px;font-size:13px;color:var(--ink-2);text-align:left;transition:background var(--dur)}
+.cat-btn svg{width:16px;height:16px;flex:none}
+.cat-btn:hover{background:var(--surface-3);color:var(--ink)}
+.cat-btn.active{background:var(--accent-weak);color:var(--accent);font-weight:500}
+.cat-btn.active svg{color:var(--accent)}
+.settings-main{flex:1;min-width:0;overflow-y:auto}
+.settings-main h1{font-family:var(--font-serif);font-size:26px;font-weight:600;margin:0;padding:32px 32px 8px}
+.settings-panel{padding:16px 32px 40px}
+.view{display:none}
+body[data-state="main"] .view-agent,
+body[data-state="templates"] .view-templates,
+body[data-state="dialog"] .view-templates,
+body[data-state="confirm"] .view-templates{display:block}
+
+/* ═══════════ 通用控件 ═══════════ */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow)}
+.card-pad{padding:24px}
+.space-y-5>*+*{margin-top:20px}
+.space-y-4>*+*{margin-top:16px}
+.space-y-3>*+*{margin-top:12px}
+.space-y-2>*+*{margin-top:8px}
+.card h2{font-family:var(--font-serif);font-size:17px;font-weight:600;margin:0}
+.card .desc{margin-top:4px;font-size:12px;color:var(--ink-3)}
+.field-label{font-size:12px;color:var(--ink-2)}
+.field-sub{font-size:11px;color:var(--ink-3)}
+.frow{display:flex;flex-direction:column;gap:6px}
+.frow-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.input{width:224px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);padding:8px 12px;font-size:13px;outline:none;font-family:inherit}
+.input:focus{border-color:var(--accent)}
+.input.wide{width:100%}
+.select-box{display:flex;align-items:center;justify-content:space-between;gap:8px;width:224px;height:34px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-2);font-size:13px;padding:0 10px}
+.select-box svg{width:14px;height:14px;color:var(--ink-3);flex:none}
+.select-box.sm{width:208px;height:30px;font-size:12px}
+.select-box.full{width:100%}
+.select-box.disabled{opacity:.4;pointer-events:none}
+.btn-accent{display:inline-flex;align-items:center;gap:6px;border:none;border-radius:6px;background:var(--accent);color:var(--accent-ink);font-size:13px;padding:6px 16px}
+.btn-accent:hover{background:var(--accent-hover)}
+.btn-accent svg{width:16px;height:16px}
+.btn-ghost{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-2);font-size:12px;padding:4px 10px}
+.btn-ghost:hover{background:var(--surface-3);color:var(--ink)}
+.btn-ghost.danger:hover{color:var(--err)}
+.btn-ghost svg{width:13px;height:13px}
+.btn-ghost.sm{padding:4px 10px;font-size:12px;border-radius:6px}
+.switch{position:relative;width:36px;height:20px;flex:none;border-radius:999px;background:var(--surface-3);border:1px solid var(--line);transition:background var(--dur)}
+.switch::after{content:"";position:absolute;top:1px;left:1px;width:16px;height:16px;border-radius:50%;background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform var(--dur)}
+.switch.on{background:var(--accent);border-color:var(--accent)}
+.switch.on::after{transform:translateX(16px)}
+.badge{display:inline-flex;align-items:center;border-radius:999px;padding:2px 8px;font-size:11px;border:1px solid var(--line);color:var(--ink-2)}
+.badge.ok{border-color:rgba(74,124,89,.3);background:rgba(74,124,89,.1);color:var(--ok)}
+.badge.muted{color:var(--ink-3)}
+.tag{display:inline-block;border-radius:4px;background:var(--surface-3);color:var(--ink-3);font-size:11px;padding:2px 6px}
+.tag.warn{color:var(--warn)}
+.divide-y>*+*{border-top:1px solid var(--line)}
+.chip{display:inline-block;border-radius:4px;background:var(--surface-3);color:var(--ink-2);font-size:11px;padding:2px 8px}
+.slider{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:2px;background:var(--surface-3);outline:none;accent-color:var(--accent)}
+.slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.slider:disabled{opacity:.4}
+
+/* ═══════════ Agent 链（AgentChainCard） ═══════════ */
+.chain-row{display:flex;align-items:center;gap:12px;padding:12px 0}
+.chain-row .role-ic{display:flex;align-items:center;justify-content:center;width:32px;height:32px;flex:none;border-radius:6px;background:var(--accent-weak);color:var(--accent);font-family:var(--font-serif);font-size:15px;font-weight:600}
+.chain-row .rname{font-size:13px;font-weight:500;color:var(--ink)}
+.chain-row .rmain{flex:1;min-width:0}
+.chain-row .rdesc{font-size:12px;color:var(--ink-3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.slot{display:inline-flex;align-items:center;justify-content:center;min-width:20px;border-radius:4px;background:var(--surface-3);color:var(--ink-3);font-size:11px;padding:2px 6px}
+.move-btn{display:flex;align-items:center;justify-content:center;width:24px;height:24px;border:1px solid var(--line);border-radius:4px;background:var(--surface);color:var(--ink-3);font-size:12px;line-height:1}
+.move-btn:hover:not(:disabled){background:var(--surface-3)}
+.move-btn:disabled{opacity:.4;cursor:not-allowed}
+.rel-btn{display:flex;align-items:center;justify-content:center;width:24px;height:24px;border:1px solid var(--line);border-radius:4px;background:var(--surface);color:var(--ink-3)}
+.rel-btn svg{width:14px;height:14px}
+.rel-btn:hover{background:var(--surface-3);color:var(--accent)}
+.add-role-btn{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-3);font-size:12px;padding:4px 10px}
+.add-role-btn:hover{background:var(--surface-3)}
+.role-pool{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.role-pool button{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-3);font-size:12px;padding:4px 10px}
+.role-pool button:hover{background:var(--surface-3);color:var(--ink)}
+
+/* ═══════════ Agent 管理列表（AgentList） ═══════════ */
+.agent-card{border:1px solid var(--line);border-radius:6px;padding:12px}
+.agent-card .head{display:flex;align-items:center;justify-content:space-between}
+.agent-card .aname{font-size:14px;font-weight:500;color:var(--ink)}
+.agent-card .adesc{margin-top:4px;font-size:12px;color:var(--ink-2)}
+.agent-card .achips{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}
+.agent-card .aprompt{margin-top:8px;font-size:12px;color:var(--ink-3);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+/* ═══════════ 模板列表（TemplatesPanel） ═══════════ */
+.tpl-card{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px;border-radius:8px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow)}
+.tpl-card .tname{font-size:14px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tpl-card .tdesc{margin-top:4px;font-size:12px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tpl-card .tused{margin-top:8px;display:inline-block;border-radius:999px;border:1px solid var(--line);padding:2px 8px;font-size:11px;color:var(--ink-2)}
+.tpl-card .tacts{display:flex;gap:4px;flex:none}
+
+/* ═══════════ 弹窗（TemplateDialog / 风险确认） ═══════════ */
+.overlay{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.3)}
+body[data-state="dialog"] .overlay.dialog,
+body[data-state="confirm"] .overlay.confirm{display:flex}
+.dlg{max-height:85vh;overflow-y:auto;width:600px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow-hover);padding:24px}
+.dlg h2{font-family:var(--font-serif);font-size:18px;font-weight:600;margin:0}
+.dlg .body{margin-top:16px}
+.dlg .foot{margin-top:24px;display:flex;justify-content:flex-end;gap:8px}
+.dlg .foot button{font-size:14px;padding:6px 16px}
+.confirm-dlg{width:420px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow-hover);padding:24px}
+.confirm-dlg h2{font-family:var(--font-serif);font-size:18px;font-weight:600;margin:0}
+.confirm-dlg p{margin-top:12px;font-size:13px;color:var(--ink-2)}
+.confirm-dlg .foot{margin-top:24px;display:flex;justify-content:flex-end;gap:8px}
+.role-edit{border:1px solid var(--line);border-radius:6px;padding:12px}
+.role-edit .re-head{display:flex;align-items:center;justify-content:space-between}
+.role-edit .re-name{font-size:13px;font-weight:500;color:var(--ink)}
+.role-edit .re-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.role-edit .re-note{margin-top:8px;font-size:12px;color:var(--ink-3)}
+.temp-val{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--ink)}
+.flex-between{display:flex;align-items:center;justify-content:space-between}
+
+/* ═══════════ 演示切换条（截图前隐藏） ═══════════ */
+.demo-bar{position:fixed;right:14px;bottom:14px;z-index:200;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-hover);padding:8px 12px;font-size:12px;color:var(--ink-2)}
+.demo-bar select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 6px}
+.demo-bar .sep{width:1px;height:18px;background:var(--line)}
+</style>
+</head>
+<body data-state="main">
+
+<div class="app">
+  <!-- ═══ 侧边导航 AppNav（Agent 快捷入口 active） ═══ -->
+  <nav class="app-nav" data-testid="app-nav">
+    <div class="nav-brand">
+      <span class="logo"><span data-ic="penline"></span></span>
+      <span>InkFlow</span>
+    </div>
+    <div class="nav-scroll">
+      <div class="nav-group">
+        <div class="nav-group-label"><span data-ic="folderopen"></span>写作区</div>
+        <a class="nav-item"><span data-ic="penline"></span>写作</a>
+        <a class="nav-item"><span data-ic="bookopen"></span>项目</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label"><span data-ic="library"></span>设定库</div>
+        <a class="nav-item"><span data-ic="library"></span>设定库</a>
+        <a class="nav-item"><span data-ic="users"></span>角色</a>
+        <a class="nav-item"><span data-ic="globe"></span>世界观</a>
+        <a class="nav-item"><span data-ic="listtree"></span>大纲</a>
+        <a class="nav-item"><span data-ic="clock"></span>时间线</a>
+        <a class="nav-item"><span data-ic="sparkles"></span>伏笔</a>
+        <a class="nav-item"><span data-ic="database"></span>知识图谱</a>
+        <a class="nav-item"><span data-ic="search"></span>检索</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label"><span data-ic="history"></span>会话</div>
+        <a class="nav-item"><span data-ic="history"></span>会话</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label"><span data-ic="settings"></span>系统</div>
+        <a class="nav-item active" data-testid="nav-item-agent"><span data-ic="bot"></span>Agent</a>
+        <a class="nav-item"><span data-ic="brain"></span>记忆</a>
+        <a class="nav-item" data-testid="nav-item-settings"><span data-ic="settings"></span>设置</a>
+      </div>
+    </div>
+    <div class="nav-collapse"><button><span data-ic="chevronsleft"></span>折叠</button></div>
+  </nav>
+
+  <div class="app-main">
+    <!-- ═══ 顶栏 ═══ -->
+    <header class="topbar" role="banner">
+      <span class="page-title">设置</span>
+      <span class="spacer"></span>
+      <span class="select"><span data-ic="palette"></span>素笺 · 纸张<span data-ic="chevron-down"></span></span>
+      <span class="select">中文<span data-ic="chevron-down"></span></span>
+      <span style="font-size:12px;color:var(--ink-3)"><span class="kernel-dot"></span>内核已连接</span>
+      <div class="win-ctrl">
+        <button><span data-ic="minus"></span></button>
+        <button><span data-ic="square"></span></button>
+        <button class="close"><span data-ic="x"></span></button>
+      </div>
+    </header>
+
+    <!-- ═══ 设置页：cat=agent ═══ -->
+    <div class="page-settings" data-testid="settings-page">
+      <nav class="settings-nav" data-testid="settings-nav" aria-label="设置">
+        <div class="nav-inner">
+          <button class="cat-btn" data-cat="general"><span data-ic="sliders"></span>常规</button>
+          <button class="cat-btn" data-cat="models"><span data-ic="cpu"></span>模型</button>
+          <button class="cat-btn active" data-cat="agent"><span data-ic="bot"></span>Agent</button>
+          <button class="cat-btn" data-cat="templates"><span data-ic="filetext"></span>模板</button>
+          <button class="cat-btn" data-cat="skills"><span data-ic="bookopen"></span>Skill 管理</button>
+          <button class="cat-btn" data-cat="account"><span data-ic="userround"></span>账户</button>
+        </div>
+      </nav>
+
+      <div class="settings-main">
+        <h1>设置</h1>
+        <div class="settings-panel" data-testid="settings-panel">
+
+          <!-- ── Agent 分类（AgentPanel：AgentChainCard + 默认模型 + AgentList） ── -->
+          <div class="view view-agent">
+            <div class="space-y-5">
+              <!-- AgentChainCard -->
+              <section class="card card-pad" data-testid="agent-chain-card">
+                <h2>写作 Agent 链</h2>
+                <p class="desc">Architect 规划 → Writer 执笔 → Auditor 审校 → Reviser 修订，可按需开关</p>
+                <div class="divide-y" style="margin-top:16px">
+
+                  <div class="chain-row" data-testid="agent-row-agent_architect">
+                    <span class="role-ic">纲</span>
+                    <div class="rmain">
+                      <div style="display:flex;align-items:center;gap:8px">
+                        <span class="rname">大纲架构师</span>
+                        <span class="tag">deepseek-chat</span>
+                      </div>
+                      <div class="rdesc">规划全书结构、章节大纲与情节点</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px">
+                      <span class="slot" aria-label="槽位 0">0</span>
+                      <button class="move-btn" disabled aria-label="上移">↑</button>
+                      <button class="move-btn" aria-label="下移">↓</button>
+                    </div>
+                    <span class="select-box sm" style="width:208px">deepseek-chat<span data-ic="chevron-down"></span></span>
+                    <button class="rel-btn" aria-label="依赖"><span data-ic="gitbranch"></span></button>
+                    <span class="switch on"></span>
+                  </div>
+
+                  <div class="chain-row" data-testid="agent-row-agent_writer">
+                    <span class="role-ic">执</span>
+                    <div class="rmain">
+                      <div style="display:flex;align-items:center;gap:8px">
+                        <span class="rname">执笔</span>
+                        <span class="tag">跟随默认</span>
+                      </div>
+                      <div class="rdesc">按大纲撰写正文，保持文风一致</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px">
+                      <span class="slot" aria-label="槽位 1">1</span>
+                      <button class="move-btn" aria-label="上移">↑</button>
+                      <button class="move-btn" aria-label="下移">↓</button>
+                    </div>
+                    <span class="select-box sm" style="width:208px">跟随默认<span data-ic="chevron-down"></span></span>
+                    <button class="rel-btn" aria-label="依赖"><span data-ic="gitbranch"></span></button>
+                    <span class="switch on"></span>
+                  </div>
+
+                  <div class="chain-row" data-testid="agent-row-agent_auditor">
+                    <span class="role-ic">审</span>
+                    <div class="rmain">
+                      <div style="display:flex;align-items:center;gap:8px">
+                        <span class="rname">审校</span>
+                        <span class="tag">已关闭</span>
+                      </div>
+                      <div class="rdesc">检查逻辑、设定一致性与错别字</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px">
+                      <span class="slot" aria-label="槽位 2">2</span>
+                      <button class="move-btn" aria-label="上移">↑</button>
+                      <button class="move-btn" aria-label="下移">↓</button>
+                    </div>
+                    <span class="select-box sm disabled" style="width:208px">—<span data-ic="chevron-down"></span></span>
+                    <button class="rel-btn" aria-label="依赖"><span data-ic="gitbranch"></span></button>
+                    <span class="switch"></span>
+                  </div>
+
+                  <div class="chain-row" data-testid="agent-row-agent_reviser">
+                    <span class="role-ic">修</span>
+                    <div class="rmain">
+                      <div style="display:flex;align-items:center;gap:8px">
+                        <span class="rname">修订</span>
+                        <span class="tag">deepseek-chat</span>
+                      </div>
+                      <div class="rdesc">按审校意见修订润色</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px">
+                      <span class="slot" aria-label="槽位 3">3</span>
+                      <button class="move-btn" aria-label="上移">↑</button>
+                      <button class="move-btn" disabled aria-label="下移">↓</button>
+                    </div>
+                    <span class="select-box sm" style="width:208px">deepseek-chat<span data-ic="chevron-down"></span></span>
+                    <button class="rel-btn" aria-label="依赖"><span data-ic="gitbranch"></span></button>
+                    <span class="switch on"></span>
+                  </div>
+
+                </div>
+                <div style="margin-top:12px">
+                  <button class="add-role-btn" data-testid="agent-chain-add-role"><span data-ic="plus"></span>添加角色</button>
+                  <div class="role-pool">
+                    <button data-testid="agent-chain-role-option-1">世界观维护者</button>
+                    <button data-testid="agent-chain-role-option-2">文风润色师</button>
+                    <button data-testid="agent-chain-role-option-3">伏笔校准员</button>
+                  </div>
+                </div>
+              </section>
+
+              <!-- 默认模型 -->
+              <div class="frow">
+                <span class="field-label">默认模型</span>
+                <span class="select-box">deepseek-chat<span data-ic="chevron-down"></span></span>
+              </div>
+
+              <!-- AgentList -->
+              <div data-testid="agent-list" class="space-y-3">
+                <div class="frow-row">
+                  <span style="font-size:13px;font-weight:500;color:var(--ink)">Agent 管理</span>
+                  <button class="btn-accent" style="padding:6px 12px;font-size:12px" data-testid="agent-new-btn"><span data-ic="plus"></span>新建 Agent</button>
+                </div>
+
+                <div class="agent-card" data-testid="agent-card-1">
+                  <div class="head">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span class="aname">大纲架构师</span>
+                      <span class="tag">内置</span>
+                    </div>
+                    <div style="display:flex;gap:8px">
+                      <button class="btn-ghost sm">查看详情</button>
+                      <button class="btn-ghost sm">复制</button>
+                    </div>
+                  </div>
+                  <div class="adesc">规划全书结构、章节大纲与情节点，输出结构蓝图</div>
+                  <div class="achips">
+                    <span class="chip">web_search</span><span class="chip">chapter_fetch</span><span class="chip">outline_plan</span><span class="chip">大纲规划</span><span class="chip">文风仿写</span>
+                  </div>
+                  <div class="aprompt">你是一位资深小说大纲架构师。请基于项目设定与角色关系，输出章节级大纲：含情节点、转折与伏笔埋设位置……</div>
+                </div>
+
+                <div class="agent-card" data-testid="agent-card-2">
+                  <div class="head">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span class="aname">执笔</span>
+                      <span class="tag">内置</span>
+                    </div>
+                    <div style="display:flex;gap:8px">
+                      <button class="btn-ghost sm">查看详情</button>
+                      <button class="btn-ghost sm">复制</button>
+                    </div>
+                  </div>
+                  <div class="adesc">按大纲撰写正文，保持文风一致，场景描写以感官细节为主</div>
+                  <div class="achips">
+                    <span class="chip">chapter_fetch</span><span class="chip">context_query</span><span class="chip">文风仿写</span>
+                  </div>
+                </div>
+
+                <div class="agent-card" data-testid="agent-card-3">
+                  <div class="head">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span class="aname">世界史考据家</span>
+                    </div>
+                    <div style="display:flex;gap:8px">
+                      <button class="btn-ghost sm">编辑</button>
+                      <button class="btn-ghost sm danger">删除</button>
+                    </div>
+                  </div>
+                  <div class="adesc">考据历史地理细节，纠正时代错位，输出设定注释（自定义 Agent）</div>
+                  <div class="achips">
+                    <span class="chip">web_search</span><span class="chip">style_analyze</span><span class="chip">历史考据</span>
+                  </div>
+                  <div class="aprompt">你是一位严谨的历史考据专家。当正文出现朝代、官职、器物与地理描述时，核对史实并给出修正建议……</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── 模板分类（TemplatesPanel） ── -->
+          <div class="view view-templates">
+            <div class="space-y-5">
+              <div class="frow-row">
+                <h2 style="font-size:17px">模板</h2>
+                <button class="btn-accent" data-testid="template-add-btn">新建</button>
+              </div>
+              <div data-testid="template-list" class="space-y-3">
+
+                <div class="tpl-card" data-testid="template-card-1">
+                  <div style="min-width:0">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span class="tname">全自动写作</span>
+                      <span class="badge ok">默认</span>
+                    </div>
+                    <div class="tdesc">规划 → 执笔 → 审校 → 修订全自动跑完，适合稳定连载</div>
+                    <span class="tused">3 个项目使用</span>
+                  </div>
+                  <div class="tacts">
+                    <button class="btn-ghost sm" data-testid="template-edit-1">编辑</button>
+                    <button class="btn-ghost sm" data-testid="template-set-default-1">设为默认</button>
+                    <button class="btn-ghost sm danger" data-testid="template-delete-1">删除</button>
+                  </div>
+                </div>
+
+                <div class="tpl-card" data-testid="template-card-2">
+                  <div style="min-width:0">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span class="tname">续写</span>
+                    </div>
+                    <div class="tdesc">仅执笔续写当前章节，其余角色跟随默认</div>
+                    <span class="tused">2 个项目使用</span>
+                  </div>
+                  <div class="tacts">
+                    <button class="btn-ghost sm" data-testid="template-edit-2">编辑</button>
+                    <button class="btn-ghost sm" data-testid="template-set-default-2">设为默认</button>
+                    <button class="btn-ghost sm danger" data-testid="template-delete-2">删除</button>
+                  </div>
+                </div>
+
+                <div class="tpl-card" data-testid="template-card-3">
+                  <div style="min-width:0">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span class="tname">慢节奏细描</span>
+                    </div>
+                    <div class="tdesc">低温度精修场景描写，适合文戏与氛围段落</div>
+                  </div>
+                  <div class="tacts">
+                    <button class="btn-ghost sm" data-testid="template-edit-3">编辑</button>
+                    <button class="btn-ghost sm" data-testid="template-set-default-3">设为默认</button>
+                    <button class="btn-ghost sm danger" data-testid="template-delete-3">删除</button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 模板编辑弹窗 TemplateDialog（编辑「全自动写作」） ═══ -->
+<div class="overlay dialog">
+  <div class="dlg" role="dialog" aria-modal="true" aria-label="编辑模板" data-testid="template-dialog">
+    <h2>编辑模板</h2>
+    <div class="body space-y-4">
+      <label class="frow" style="font-size:13px">
+        <span>模板名称</span>
+        <input class="input wide" aria-label="模板名称" value="全自动写作" data-testid="template-name-input" />
+      </label>
+      <label class="frow" style="font-size:13px">
+        <span>描述</span>
+        <input class="input wide" aria-label="描述" value="规划 → 执笔 → 审校 → 修订全自动跑完，适合稳定连载" data-testid="template-description-input" />
+      </label>
+      <div class="frow" style="font-size:13px">
+        <span>主模型</span>
+        <span class="select-box full">deepseek-chat<span data-ic="chevron-down"></span></span>
+      </div>
+
+      <div class="role-edit" data-testid="template-role-row-architect">
+        <div class="re-head">
+          <span class="re-name">大纲架构师</span>
+          <span class="switch on"></span>
+        </div>
+        <div class="re-grid">
+          <div class="frow">
+            <span class="field-label">架构师模型</span>
+            <span class="select-box full">deepseek-chat<span data-ic="chevron-down"></span></span>
+          </div>
+          <div class="frow">
+            <div class="flex-between">
+              <span class="field-label">架构师温度</span>
+              <span class="temp-val">0.8</span>
+            </div>
+            <input class="slider" type="range" min="0" max="1.5" step="0.1" value="0.8" />
+          </div>
+        </div>
+      </div>
+
+      <div class="role-edit" data-testid="template-role-row-writer">
+        <div class="re-head">
+          <span class="re-name">执笔</span>
+          <span class="switch on"></span>
+        </div>
+        <div class="re-grid">
+          <div class="frow">
+            <span class="field-label">执笔模型</span>
+            <span class="select-box full">deepseek-chat<span data-ic="chevron-down"></span></span>
+          </div>
+          <div class="frow">
+            <div class="flex-between">
+              <span class="field-label">执笔温度</span>
+              <span class="temp-val">1.1</span>
+            </div>
+            <input class="slider" type="range" min="0" max="1.5" step="0.1" value="1.1" />
+          </div>
+        </div>
+      </div>
+
+      <div class="role-edit" data-testid="template-role-row-auditor">
+        <div class="re-head">
+          <span class="re-name">审校</span>
+          <span class="switch on"></span>
+        </div>
+        <div class="re-grid">
+          <div class="frow">
+            <span class="field-label">审校模型</span>
+            <span class="select-box full">deepseek-chat<span data-ic="chevron-down"></span></span>
+          </div>
+          <div class="frow">
+            <div class="flex-between">
+              <span class="field-label">审校温度</span>
+              <span class="temp-val">0.3</span>
+            </div>
+            <input class="slider" type="range" min="0" max="1.5" step="0.1" value="0.3" />
+          </div>
+        </div>
+      </div>
+
+      <div class="role-edit" data-testid="template-role-row-reviser">
+        <div class="re-head">
+          <span class="re-name">修订</span>
+          <span class="switch"></span>
+        </div>
+        <div class="re-grid">
+          <div class="frow">
+            <span class="field-label">修订模型</span>
+            <span class="select-box full disabled">—<span data-ic="chevron-down"></span></span>
+          </div>
+          <div class="frow">
+            <div class="flex-between">
+              <span class="field-label">修订温度</span>
+              <span class="temp-val">0.7</span>
+            </div>
+            <input class="slider" type="range" min="0" max="1.5" step="0.1" value="0.7" disabled />
+          </div>
+        </div>
+        <p class="re-note">关闭 = 该角色使用默认模型</p>
+      </div>
+
+      <div class="frow">
+        <div class="flex-between">
+          <span class="field-label">默认温度</span>
+          <span class="temp-val">0.7</span>
+        </div>
+        <input class="slider" type="range" min="0" max="1.5" step="0.1" value="0.7" data-testid="template-default-temp" />
+      </div>
+
+      <label class="frow" style="font-size:13px">
+        <span>默认字数</span>
+        <input class="input wide" type="number" value="800000" data-testid="template-default-words" />
+      </label>
+    </div>
+    <div class="foot">
+      <button class="btn-ghost" style="font-size:14px;padding:6px 16px" data-testid="template-cancel">取消</button>
+      <button class="btn-accent" style="font-size:14px;padding:6px 16px" data-testid="template-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 风险确认框（删除被引用模板） ═══ -->
+<div class="overlay confirm">
+  <div class="confirm-dlg" role="dialog" aria-modal="true" aria-label="风险确认" data-testid="template-confirm-dialog">
+    <h2>风险确认</h2>
+    <p>该模板正在被 <b>3</b> 个项目使用（青云志、归墟记、长风渡），删除后将同步移除这些项目的 Agent 配置引用。</p>
+    <div class="foot">
+      <button class="btn-ghost" style="font-size:14px;padding:6px 16px" data-testid="template-confirm-cancel">取消</button>
+      <button class="btn-accent" style="font-size:14px;padding:6px 16px" data-testid="template-confirm-ok">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 演示切换条 ═══ -->
+<div class="demo-bar">
+  <label>状态
+    <select id="stateSel">
+      <option value="main">Agent 分类（默认）</option>
+      <option value="templates">模板列表</option>
+      <option value="dialog">模板编辑弹窗</option>
+      <option value="confirm">风险确认框</option>
+    </select>
+  </label>
+  <span class="sep"></span>
+  <label>主题
+    <select id="themeSel">
+      <option value="paper">素笺 · 纸张</option>
+      <option value="night">夜航 · 深色</option>
+      <option value="ink">墨韵 · 东方</option>
+    </select>
+  </label>
+</div>
+
+<script>
+/* ── 内联 SVG 图标库（lucide 风格，stroke 当前色） ── */
+const ICONS = {
+  penline:'<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>',
+  bookopen:'<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+  library:'<path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/>',
+  users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  globe:'<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  listtree:'<path d="M11 6H3"/><path d="M15.5 12H3"/><path d="M15.5 18H3"/><path d="M18 6h3"/><path d="M18 12h3"/><path d="M18 18h3"/>',
+  clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  sparkles:'<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/>',
+  database:'<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>',
+  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  history:'<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  brain:'<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M12 5v14"/>',
+  bot:'<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  settings:'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  folderopen:'<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
+  chevronsleft:'<path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/>',
+  'chevron-down':'<path d="m6 9 6 6 6-6"/>',
+  plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
+  x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  minus:'<path d="M5 12h14"/>',
+  square:'<rect width="14" height="14" x="5" y="5" rx="1"/>',
+  palette:'<circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>',
+  sliders:'<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
+  cpu:'<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>',
+  filetext:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+  userround:'<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
+  gitbranch:'<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>'
+};
+document.querySelectorAll('[data-ic]').forEach(el=>{
+  const name = el.getAttribute('data-ic');
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('viewBox','0 0 24 24');
+  svg.setAttribute('fill','none');
+  svg.setAttribute('stroke','currentColor');
+  svg.setAttribute('stroke-width','2');
+  svg.setAttribute('stroke-linecap','round');
+  svg.setAttribute('stroke-linejoin','round');
+  svg.innerHTML = ICONS[name] || '';
+  el.appendChild(svg);
+});
+
+/* ── 状态机：body[data-state] 驱动视图 + 分类导航高亮 ── */
+function setState(s){
+  document.body.dataset.state = s;
+  const agentBtn = document.querySelector('.cat-btn[data-cat="agent"]');
+  const tplBtn = document.querySelector('.cat-btn[data-cat="templates"]');
+  const activeCat = (s === 'main') ? 'agent' : 'templates';
+  [agentBtn, tplBtn].forEach(b=>b.classList.toggle('active', b.dataset.cat === activeCat));
+  document.getElementById('stateSel').value = s;
+}
+function setTheme(th){
+  document.documentElement.dataset.theme = th;
+  document.body.dataset.theme = th;
+}
+/* 分类导航点击（本简图仅 Agent/模板 两分类有真实面板） */
+document.querySelectorAll('.cat-btn').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    if (b.dataset.cat === 'agent') setState('main');
+    else if (b.dataset.cat === 'templates') setState('templates');
+  });
+});
+document.getElementById('stateSel').addEventListener('change', e=>setState(e.target.value));
+document.getElementById('themeSel').addEventListener('change', e=>setTheme(e.target.value));
+/* hash 驱动初始状态（截图脚本用 file://...html#state） */
+const STATES = ['main','templates','dialog','confirm'];
+const init = location.hash.replace('#','');
+if (STATES.includes(init)) setState(init);
+window.addEventListener('hashchange', ()=>{
+  const s = location.hash.replace('#','');
+  if (STATES.includes(s)) setState(s);
+});
+</script>
+</body>
+</html>

@@ -54,24 +54,40 @@ export function ExecutionDetailPanel({
   const [activeExecutionId, setActiveExecutionId] = useState<string | null>(null);
   /** #599：历史列表点击后进入 agentic 详情的内部 id */
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  /** #740：agentic 每步思考折叠块展开状态（key = step.index） */
+  const [expandedThink, setExpandedThink] = useState<Record<number, boolean>>({});
   const [error, setError] = useState<string | null>(null);
+
+  /** #740：切换某步思考折叠块展开态 */
+  const toggleThink = (index: number) =>
+    setExpandedThink((prev) => ({ ...prev, [index]: !prev[index] }));
 
   useEffect(() => {
     // #599：agentic 模式（优先级最高）
     const targetRunId = runId ?? activeRunId;
     if (targetRunId) {
       let cancelled = false;
+      let timer: number | undefined;
       setRun(null);
       setError(null);
-      getRun(targetRunId)
-        .then((data) => {
-          if (!cancelled) setRun(data);
-        })
-        .catch((err) => {
-          if (!cancelled) setError(errorMessage(err));
-        });
+      const load = () => {
+        getRun(targetRunId)
+          .then((data) => {
+            if (cancelled) return;
+            setRun(data);
+            // #760：进行中 run 轮询刷新至终态（running/pending → 继续轮询；终态停止），不僵死 running
+            if (data.status === 'running' || data.status === 'pending') {
+              timer = window.setTimeout(load, 400);
+            }
+          })
+          .catch((err) => {
+            if (!cancelled) setError(errorMessage(err));
+          });
+      };
+      load();
       return () => {
         cancelled = true;
+        if (timer !== undefined) window.clearTimeout(timer);
       };
     }
     // 链式模式（既有：#586 detail 不调用列表端点）
@@ -113,7 +129,15 @@ export function ExecutionDetailPanel({
       void Promise.resolve(listRuns(projectId))
         .catch(() => null)
         .then((data) => {
-          if (!cancelled) setRuns(data?.items ?? []);
+          if (!cancelled) {
+            const items = data?.items ?? [];
+            setRuns(items);
+            // #760：项目存在进行中 agentic run → 自动恢复为当前展示（切页返回不再丢失）
+            const inProgress = items.find(
+              (r) => r.status === 'running' || r.status === 'pending',
+            );
+            if (inProgress) setActiveRunId(inProgress.id);
+          }
         });
       return () => {
         cancelled = true;
@@ -141,7 +165,12 @@ export function ExecutionDetailPanel({
             {step.index}
           </span>
         ))}
-        <span className="ml-auto rounded px-2 py-0.5 text-[11px] text-ink-3">{run.status}</span>
+        <span
+          data-testid="exec-run-status"
+          className="ml-auto rounded px-2 py-0.5 text-[11px] text-ink-3"
+        >
+          {run.status}
+        </span>
       </WorkflowBar>
     ) : null;
     return (
@@ -164,6 +193,37 @@ export function ExecutionDetailPanel({
                     data-testid={`exec-detail-step-${step.index}`}
                     className="mt-2 rounded-md border border-line bg-surface-2 p-2"
                   >
+                    {/* #740：思考折叠块（仅 reasoning 真值时渲染，默认折叠） */}
+                    {step.reasoning ? (
+                      <div
+                        data-testid={`exec-think-${step.index}`}
+                        aria-expanded={!!expandedThink[step.index]}
+                        className="mb-1 rounded border border-line bg-surface px-2 py-1"
+                        onClick={() => toggleThink(step.index)}
+                      >
+                        <button
+                          type="button"
+                          data-testid={`exec-think-toggle-${step.index}`}
+                          aria-expanded={!!expandedThink[step.index]}
+                          className="flex w-full items-center gap-1.5 text-left"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleThink(step.index);
+                          }}
+                        >
+                          <span className="inline-block w-3 shrink-0 text-ink-3">
+                            {expandedThink[step.index] ? '▾' : '›'}
+                          </span>
+                          <span className="text-ink">🧠</span>
+                          <span className="font-medium text-ink">{t('write.chat.thinking')}</span>
+                        </button>
+                        {expandedThink[step.index] && (
+                          <div className="mt-1 whitespace-pre-wrap border-t border-line pt-1 text-ink-2">
+                            {step.reasoning}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-ink">{step.index}</span>
                       {step.message_content ? (

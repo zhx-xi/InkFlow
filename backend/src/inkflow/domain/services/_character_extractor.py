@@ -1,6 +1,6 @@
 """F9 角色提取管线 — 模板渲染 → LLM → JSON 解析 → 修复重试 → 合并落库.
 
-依据: specs/f9-character-service/spec.md §5（AI 提取模式，F10-F13 复用骨架）。
+依据: specs/f9-character/spec.md §5（AI 提取模式，F10-F13 复用骨架）。
 遵循 ADR-015: 领域层零 LangChain import，LLM / 模板 / 仓储均通过
 Protocol 注入（LLMClientProtocol / PromptTemplateProtocol /
 CharacterRepositoryProtocol），测试中注入 Mock。

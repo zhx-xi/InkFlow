@@ -1,6 +1,6 @@
 """F14 LLM 分析切片器 — 模板渲染 → LLM → JSON 解析 → 修复重试 → 边界列表.
 
-依据: specs/f14-extraction-service/spec.md §5.6.7（LLM 分析切片器）+ §9 测试策略。
+依据: specs/f14-extraction/spec.md §5.6.7（LLM 分析切片器）+ §9 测试策略。
 镜像 F16 `_style_llm_analyzer.py` 骨架（模板渲染 → LLM chat → JSON 解析 →
 边界校验 → 修复式重试 ≤2），仅替换领域实体（list[int] ↔ StyleLLMAssessment）
 与模板（llm_chunk ↔ style_llm_analysis）。
@@ -28,6 +28,7 @@ from typing import Any
 from inkflow.core.config import config
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
 from inkflow.domain.ports.prompt_template import PromptTemplateProtocol
+from inkflow.domain.services.model_resolution import resolve_model
 
 _TEMPLATE_NAME = "llm_chunk"
 """LLM 切片边界分析模板名（infrastructure/llm/templates/llm_chunk.yaml）。"""
@@ -152,7 +153,9 @@ class LLMChunkAnalyzer:
         if not text.strip():
             return []
 
-        resolved_model = self._model or config.llm_default_model
+        resolved_model = resolve_model(
+            self._model, None, config.llm_default_model
+        ) or ""
 
         # ② 渲染模板（变量: text）
         template = self._prompts.load(_TEMPLATE_NAME)

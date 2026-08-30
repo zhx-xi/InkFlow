@@ -1,4 +1,5 @@
 # F37: 世界观跨书复制（world-copy）— 功能规格
+> **端**: backend
 
 > **Spec 版本**: 1.2 | **日期**: 2026-08-10 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §6（workspace）、PRD v2.1 §6.2 P1-02、F35 spec v1.1（地点树）+ F36 spec v1.1（地图）、Constitution P1-P6
 >
@@ -371,3 +372,27 @@ F37 被依赖:
 ---
 
 *本文档为 F37 功能规格（What），实施步骤（How）见后续 `specs/f37-world-copy/plan.md`。所有里程碑验收以本节 M1-M8 为准。*
+## 14. 动作确认
+
+> 基于 §3 API + §4 CLI + §7 边界事实的状态流表，不新增行为。
+
+### 14.1 端点状态流
+
+| 端点 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| POST /api/v1/projects/{target_project_id}/world-settings/copy | 源/目标项目存在·root 在源项目 | 递归复制子树（层序）→ 条目/地图/pin 合并落库（单事务） | 200 + WorldCopyResult（created/skipped/maps_created/pins_created/warnings） | 404 CopySourceNotFoundError（源项目不存在）；404 ProjectNotFoundError（目标项目不存在）；404 CopyRootNotFoundError（复制起点条目不存在/不在源项目） | 注册于 /world-settings/{setting_id} 之前（防路径歧义）；目标同名 → 跳过 + warning 不失败；父被跳过 → 子置顶层 + warning；地图源文件缺失 → 该图跳过 + warning；pin 关联地点不在复制集合 → 转纯注释（location=NULL）；源为空 → 200 空报告；DB 失败 → 单事务回滚 |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| world copy <source_project_id> <target_project_id> | 源/目标项目存在 | 同端点语义（CLI 恒 HTTP，POST copy 端点） | 0 + {ok:true, data:{created,skipped,maps_created,warnings}} | 源/目标项目不存在 → 1 + NOT_FOUND | --root <UUID> 复制起点（缺省 = 整棵）；目标同名 → 跳过 + warning（不失败） |
+
+### 14.3 验收锚点
+
+- A1：目标项目同名条目 → 跳过 + warning（不覆盖、不失败——复制是「尽量复制」）
+- A2：root_setting_id 不在源项目/非活动 → 404 CopyRootNotFoundError
+- A3：父条目被跳过 → 子条目置顶层 + warning（不阻断）
+- A4：pin 关联地点不在复制集合 → 转纯注释（location=NULL，label/坐标保留）+ warning
+- A5：复制中途 DB 失败 → 单事务回滚（零半复制）
+- A6：源项目无世界观条目 → 200 空报告（created=[], warnings=[]，非错误）

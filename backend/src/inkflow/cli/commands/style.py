@@ -20,7 +20,7 @@ likely_human→「倾向人类创作」、「uncertain→「特征不明显」�
 likely_ai→「倾向 AI 生成」。分析结论是「结果」而非「执行错误」——
 退出码恒 0（spec §4.2）。
 
-依据: specs/f16-style-service/spec.md §4/§7/§9。
+依据: specs/f16-style-analysis/spec.md §4/§7/§9。
 """
 
 from __future__ import annotations

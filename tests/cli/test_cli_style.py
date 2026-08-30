@@ -1,6 +1,6 @@
 """F16 风格检测 CLI 命令测试 — Mock ensure_kernel + InkFlowHTTPClient（spec §4/§9 CLI 测试）.
 
-覆盖（依据 specs/f16-style-service/spec.md §4/§7/§9）:
+覆盖（依据 specs/f16-style-analysis/spec.md §4/§7/§9）:
 - style 组注册（analyze 命令）
 - analyze 人类可读输出（三大板块摘要 + 高频词前 5 + verdict 中文映射 +
   jieba 行 + LLM 行（开启时）+ warnings 逐条 + 末尾提示 --json）

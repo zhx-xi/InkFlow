@@ -1,5 +1,5 @@
 /**
- * F43 P4（specs/f43-setting-library-crud/spec.md v1.3 §5.16/§5.17/§6 P3+P4 表/§9.6 T1-T8）：
+ * F43 P4（specs/f43-setting-library-gui/spec.md v1.3 §5.16/§5.17/§6 P3+P4 表/§9.6 T1-T8）：
  * 设定库时间线 tab——时间线双序切换（叙事序/世界序）+ 两级检查（工具栏整体检查 + 事件行内单事件检查）。
  *
  * ⚠️ 本批契约拆分至独立文件 library-p4.test.tsx（对齐 library-p1.test.tsx / library-p2.test.tsx 先例：
@@ -222,6 +222,17 @@ describe('设定库页 — F43 P4 时间线双序 + 两级检查（spec §5.16-5
     expect(screen.getByTestId('tl-legend')).toHaveTextContent('点=叙事顺序 · 时间轴=世界内时间');
     // 默认显示叙事序数组（narrative_position 升序）
     await waitFor(() => expect(rowIds()).toEqual(['evB', 'evC', 'evA']));
+  });
+
+  it('N5 行内 time_display 徽标：事件行显示时间显示文本', async () => {
+    mockTimelineP4(timelineView);
+    renderLibrary();
+    const user = userEvent.setup();
+    await openTimelineTab(user);
+    const list = screen.getByTestId('library-list');
+    expect(within(list).getByText('300 年')).toBeInTheDocument(); // evA
+    expect(within(list).getByText('100 年')).toBeInTheDocument(); // evC
+    expect(within(list).getByText('未知')).toBeInTheDocument(); // evB
   });
 
   it('T2 世界序切换：点 tl-view-world → 列表按 time_value 升序（None 排末尾）+ 零额外请求', async () => {

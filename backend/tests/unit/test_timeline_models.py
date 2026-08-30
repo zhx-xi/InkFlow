@@ -3,7 +3,7 @@
 测试范围：TimelineEvent 实体、Create/Update DTO（含 time_value 清除语义）、
 检查相关模型（TimelineEventRef / TimelineConflict / ConsistencyReport /
 TimelineView）。
-依据: specs/f12-timeline-service/spec.md §2.5/§2.6 + §9 测试策略「领域模型」。
+依据: specs/f12-timeline/spec.md §2.5/§2.6 + §9 测试策略「领域模型」。
 """
 
 import math

@@ -1,6 +1,6 @@
 """ContextRequest.override 通道测试 — 勾选的角色/伏笔才注入（issue #593）.
 
-测试范围 (spec f6-context-service v1.1):
+测试范围 (spec f6-context v1.1):
     - ContextRequest.override.character_ids 非空时，只注入 metadata.character_id 命中的角色 item
     - ContextRequest.override.foreshadowing_ids 非空时，同理只注入命中伏笔
     - override 为空/None 时注入全部（默认行为不受影响）

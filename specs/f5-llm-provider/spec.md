@@ -1,4 +1,5 @@
 # F5: LLM Provider 适配层 (llm_service) — 功能规格
+> **端**: cross
 
 > **Spec 版本**: 1.0 | **日期**: 2026-07-31 | **依据**: PRD v2.1 §6.1 F5, Constitution P1-P6
 > **所属阶段**: Phase 1 — Sprint 1.2（数据层+LLM 适配）
@@ -206,3 +207,41 @@ backend/tests/
 | M2 | LangChainPromptManager 全部测试通过 | `pytest tests/test_prompt_manager.py -v` 全绿 |
 | M3 | APIKeyManager 全部测试通过 | `pytest tests/test_key_manager.py -v` 全绿 |
 | M4 | domain/ 零 LangChain import | CI 强制检查通过 |
+## 10. 动作确认
+
+> F5 是跨端基础设施（无 HTTP API / CLI，llm 命令组归 F7）。状态流表基于 §4 基础设施组件方法 + §6 边界事实，不新增行为。
+
+### 10.1 LangChainLLMClient 方法状态流
+
+| 方法 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| chat(messages, *, model, temperature, max_tokens) | API Key 已配置 | 解析 provider/model → 注入 ChatOpenAI → ainvoke → 映射 ChatResponse | ChatResponse | LLMRequestError（Key 未配置 / 401 不重试 / 重试耗尽 / 模型不支持） | 重试 ≤3 + 指数退避，超时 120s；401/403 不重试；model 格式 provider/model_name |
+| chat_stream(messages, *, model, temperature, max_tokens) | 同上 | 流式逐 token | AsyncGenerator[StreamEvent]（is_final 收尾） | stream 中断 → LLMRequestError | — |
+| count_tokens(messages, *, model) | — | tiktoken 估算 | int | — | 无 tokenizer 模型 → 回退字符数/4 + WARNING；空消息 → 0 |
+| chat([]) | — | 空消息调用 | — | ValueError("messages cannot be empty") | 前置校验，非 LLM 错误 |
+
+### 10.2 LangChainPromptManager 方法状态流
+
+| 方法 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| load(template_name) | 模板文件存在 | 从 templates/{name}.yaml 加载 | PromptTemplate | TemplateNotFoundError | Phase 1 模板：writer / architect / auditor / reviser |
+| render(template, variables) | 模板已加载 | 渲染变量 | RenderedPrompt（含 token_estimate） | TemplateRenderError | 缺变量 → TemplateRenderError + missing_variables；YAML 格式错误 → TemplateRenderError |
+| validate(template, variables) | — | 缺失变量检查 | list[str]（空 = 满足） | — | — |
+| list_templates() | — | 列出全部模板 | list[str] | — | — |
+
+### 10.3 APIKeyManager 方法状态流
+
+| 方法 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| encrypt(provider, api_key) | — | AES-256-GCM 加密 | dict{encrypted_key, nonce} | — | secret_key 空 → 明文模式 + WARNING |
+| decrypt(provider, encrypted_data) | 密文存在 | 解密 | str | 密文不存在 / 密钥不符 → 抛异常 | 不同密钥解密失败 |
+| store / load / delete / list_providers | — | 持久化 CRUD | — | load/delete 不存在 → 抛异常 | 密文落盘 {data_dir}/keys/{provider}.enc；明文不落盘 |
+
+### 10.4 验收锚点
+
+- A1：网络超时 → 指数退避重试 ≤3 次 → LLMRequestError(retries_exhausted=True)
+- A2：API Key 无效（401/403）→ 不重试，直接 LLMRequestError(retries_exhausted=False)
+- A3：API Key 未配置 → LLMRequestError("API key not configured for provider: X")
+- A4：模板文件不存在 → TemplateNotFoundError；缺变量 → TemplateRenderError + missing_variables
+- A5：chat([]) → ValueError("messages cannot be empty")；无 tokenizer → 回退字符数/4
+- A6：secret_key 为空 → 明文模式 + WARNING（Key 密文不落盘明文）

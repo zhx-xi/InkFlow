@@ -42,8 +42,8 @@
  *   lib.tab.foreshadow / lib.tab.knowledge）
  *
  * 设置页（pages/settings.tsx，根 data-testid="settings-page"）：
- * - 左侧分类导航 data-testid="settings-nav"，五分类文案：常规/模型/Agent/模板/账户
- *   （i18n keys：set.general / set.models / set.agent / set.templates / set.account）
+ * - 左侧分类导航 data-testid="settings-nav"，六分类文案：常规/模型/Agent/模板/Skill 管理/账户
+ *   （i18n keys：set.cat.general / set.cat.models / set.cat.agent / set.cat.templates / set.cat.skills / set.cat.account）
  * - Agent 分类面板 data-testid="settings-agent-panel"（迁移自 AgentChainCard，四角色开关语义保留）
  *
  * ⚠️ #384 门控适配（2026-08-16）：门控是异步的（挂载 booting → 封面 → checkHealth 异步转 ready）。
@@ -175,14 +175,14 @@ describe('App 路由集成（HashRouter 四页 + 侧边导航）', () => {
     }
   });
 
-  it('侧边导航「设置」→ 设置页：五分类导航渲染', async () => {
+  it('侧边导航「设置」→ 设置页：六分类导航渲染', async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole('link', { name: '设置' }));
     const page = await screen.findByTestId('settings-page');
     expect(window.location.hash).toMatch(/settings/);
     const nav = within(page).getByTestId('settings-nav');
-    for (const name of ['常规', '模型', 'Agent', '模板', '账户']) {
+    for (const name of ['常规', '模型', 'Agent', '模板', 'Skill 管理', '账户']) {
       expect(within(nav).getByText(name)).toBeInTheDocument();
     }
   });

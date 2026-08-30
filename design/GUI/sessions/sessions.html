@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="paper">
+<head>
+<meta charset="utf-8" />
+<title>InkFlow 会话页 — 官方简图原型</title>
+<style>
+/* ═══════════ 设计 Token（对齐 frontend/packages/renderer/src/theme/tokens.css） ═══════════ */
+:root{
+  --radius-s:4px; --radius-m:6px; --radius-l:8px;
+  --font-ui:"PingFang SC","Microsoft YaHei","Noto Sans SC","Segoe UI",sans-serif;
+  --font-serif:"Noto Serif SC","Source Han Serif SC","SimSun","宋体",Georgia,serif;
+  --dur:180ms; --ease:cubic-bezier(0.16,1,0.3,1);
+}
+[data-theme="paper"]{
+  --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F3F1EC; --surface-3:#EBE8E1;
+  --ink:#2A2A28; --ink-2:#6B6A66; --ink-3:#A4A29B; --line:#E5E2DA;
+  --accent:#3B5B7C; --accent-ink:#FFFFFF; --accent-hover:#325370; --accent-weak:rgba(59,91,124,.10);
+  --ring:rgba(59,91,124,.38); --ok:#4A7C59; --warn:#B07A2E; --err:#B04A3A;
+  --shadow:0 1px 2px rgba(42,42,40,.05),0 4px 16px rgba(42,42,40,.05);
+  --shadow-hover:0 2px 4px rgba(42,42,40,.07),0 8px 24px rgba(42,42,40,.09);
+}
+[data-theme="night"]{
+  --bg:#1A1A18; --surface:#22221F; --surface-2:#282823; --surface-3:#4A493F;
+  --ink:#E8E6E1; --ink-2:#9B988F; --ink-3:#6E6B63; --line:#42413A;
+  --accent:#C9A24B; --accent-ink:#1A1A18; --accent-hover:#B8923F; --accent-weak:rgba(201,162,75,.13);
+  --ring:rgba(201,162,75,.45); --ok:#8FAE8E; --warn:#C9A24B; --err:#C97B63;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.25);
+  --shadow-hover:0 2px 6px rgba(0,0,0,.4),0 10px 28px rgba(0,0,0,.35);
+}
+[data-theme="ink"]{
+  --bg:#F3EEE2; --surface:#FAF6EC; --surface-2:#EFE9DA; --surface-3:#C9BFA4;
+  --ink:#2B2A26; --ink-2:#6E6A5E; --ink-3:#A49F90; --line:#CBC0A4;
+  --accent:#A6402E; --accent-ink:#FAF6EC; --accent-hover:#96382A; --accent-weak:rgba(166,64,46,.09);
+  --ring:rgba(166,64,46,.38); --ok:#5A7A58; --warn:#9A7B3C; --err:#A6402E;
+  --shadow:0 1px 2px rgba(43,42,38,.06),0 4px 16px rgba(43,42,38,.06);
+  --shadow-hover:0 2px 4px rgba(43,42,38,.08),0 8px 24px rgba(43,42,38,.10);
+}
+/* ═══════════ 基础 ═══════════ */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-ui);font-size:13px;line-height:1.5;overflow:hidden}
+.ic{width:16px;height:16px;flex:none}
+.ic svg{display:block;width:100%;height:100%}
+[data-ic] svg{width:16px;height:16px;display:block;flex:none}
+button{font-family:inherit;cursor:pointer}
+::selection{background:var(--ring)}
+
+/* ═══════════ 布局骨架 ═══════════ */
+.app{display:flex;height:100vh;overflow:hidden}
+.app-nav{display:flex;flex-direction:column;flex:none;width:216px;border-right:1px solid var(--line);background:var(--surface-2)}
+.nav-brand{display:flex;align-items:center;gap:8px;height:48px;padding:0 12px;border-bottom:1px solid var(--line)}
+.nav-brand .logo{width:24px;height:24px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:6px;background:var(--accent);color:var(--accent-ink)}
+.nav-brand .logo svg{width:15px;height:15px}
+.nav-brand span{font-family:var(--font-serif);font-size:15px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-scroll{flex:1;min-height:0;overflow-y:auto;padding:4px 0}
+.nav-group{padding:0 8px}
+.nav-group-label{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;font-size:10px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.nav-group-label svg{width:14px;height:14px;flex:none}
+.nav-item{display:flex;width:100%;align-items:center;gap:10px;border-radius:6px;padding:6px 10px;font-size:13px;color:var(--ink-2);text-decoration:none;transition:background var(--dur)}
+.nav-item svg{width:16px;height:16px;flex:none}
+.nav-item:hover{background:var(--surface-3);color:var(--ink)}
+.nav-item.active{background:var(--accent-weak);color:var(--accent);font-weight:500}
+.nav-item.active svg{color:var(--accent)}
+.nav-collapse{flex:none;border-top:1px solid var(--line);padding:8px}
+.nav-collapse button{display:flex;width:100%;align-items:center;gap:10px;border:none;background:none;border-radius:6px;padding:6px 10px;font-size:12px;color:var(--ink-3)}
+.nav-collapse button:hover{background:var(--surface-3);color:var(--ink)}
+
+.app-main{display:flex;flex:1;min-width:0;flex-direction:column}
+.topbar{display:flex;align-items:center;gap:12px;height:48px;flex:none;padding:0 16px;border-bottom:1px solid var(--line);background:var(--surface)}
+.topbar .page-title{font-size:13px;color:var(--ink-2)}
+.topbar .spacer{flex:1}
+.select{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-2);font-size:12px;padding:3px 8px;height:26px}
+.select svg{width:12px;height:12px;color:var(--ink-3)}
+.win-ctrl{display:flex;align-items:center;gap:2px;height:100%}
+.win-ctrl button{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border:none;background:none;border-radius:4px;color:var(--ink-3)}
+.win-ctrl button:hover{background:var(--surface-3);color:var(--ink)}
+.win-ctrl button.close:hover{background:var(--err);color:#fff}
+
+/* ═══════════ 页面脚手架 ═══════════ */
+.page-scroll{flex:1;min-height:0;overflow-y:auto}
+.page{margin:0 auto;max-width:1080px;padding:40px 48px}
+.page-h1{margin:0;font-family:var(--font-serif);font-size:26px;font-weight:600;color:var(--ink)}
+
+/* 控件 */
+.select-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;height:36px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:13px;padding:0 10px;text-align:left}
+.select-trigger svg{width:14px;height:14px;color:var(--ink-3);flex:none}
+.w-56{width:224px}
+.input{height:36px;min-width:220px;flex:1;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:0 12px;font-size:13px;color:var(--ink);outline:none;transition:border-color var(--dur)}
+.input:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--ring)}
+.input::placeholder{color:var(--ink-3)}
+
+/* ═══════════ 会话页 ═══════════ */
+.sessions-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:16px;margin-top:20px}
+.chips{display:flex;gap:8px;margin-top:12px}
+.chip{border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:4px 12px;font-size:13px;color:var(--ink-2);transition:background var(--dur)}
+.chip:hover{background:var(--surface-3);color:var(--ink)}
+.chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-weak);color:var(--accent)}
+
+.directory{margin-top:24px}
+.dir-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:12px}
+.dir-card{border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:16px}
+.dir-card .row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.dir-card h3{margin:0;font-family:var(--font-serif);font-size:15px;font-weight:600;color:var(--ink)}
+.dir-card .title-spacer{margin-left:auto;display:flex;align-items:center;gap:8px}
+.dir-card .meta-right{margin-left:auto;font-size:12px;color:var(--ink-3)}
+.dir-card .last-msg{margin:8px 0 0;font-size:13px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dir-card .actions{display:flex;gap:8px;margin-top:12px}
+.badge{display:inline-block;border-radius:4px;background:var(--surface-3);padding:2px 8px;font-size:11px;font-weight:500;color:var(--ink-2)}
+.badge.weak{font-weight:400;color:var(--ink-3)}
+.btn-ghost{height:28px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-2);font-size:13px;padding:0 12px;transition:background var(--dur)}
+.btn-ghost:hover{background:var(--surface-3);color:var(--ink)}
+.btn-ghost.danger:hover{border-color:rgba(176,74,58,.5);color:var(--err)}
+.updated{margin-top:8px;display:block;font-size:11px;color:var(--ink-3)}
+/* #770：AI 对话会话标题（title 匹配章节标题 → 跳章节页）+ 行内改名（chat-conv-rename 语义） */
+.dir-card .conv-title{border:none;background:none;padding:0;font-family:var(--font-serif);font-size:15px;font-weight:600;color:var(--ink);text-align:left;cursor:pointer}
+.dir-card .conv-title:hover{color:var(--accent)}
+.chat-conv-rename-input{display:none;height:32px;width:192px;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:0 8px;font-size:13px;color:var(--ink);outline:none}
+.chat-conv-rename-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--ring)}
+body[data-state="rename"] .chat-conv-rename-input{display:block}
+body[data-state="rename"] [data-testid="chat-conv-rename-1"]{display:none}
+.empty-box{margin-top:24px;display:none;border:1px dashed var(--line);border-radius:8px;background:var(--surface);padding:48px 24px;text-align:center;font-size:13px;color:var(--ink-2)}
+
+/* 删除确认弹框（sessions.tsx 内联：bg-black/40） */
+.dialog-overlay{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.40);padding:16px}
+.dialog{width:384px;border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:20px;box-shadow:var(--shadow)}
+.dialog h3{margin:0;font-family:var(--font-serif);font-size:17px;font-weight:600}
+.dialog .msg{margin-top:8px;font-size:13px;color:var(--ink-2)}
+.dialog .actions{margin-top:20px;display:flex;justify-content:flex-end;gap:8px}
+.btn-primary{height:30px;border:none;border-radius:6px;background:var(--accent);color:var(--accent-ink);font-size:13px;padding:0 16px}
+.btn-primary:hover{background:var(--accent-hover)}
+
+/* ── 状态栏 ── */
+.statusbar{display:flex;align-items:center;gap:20px;flex:none;padding:6px 16px;border-top:1px solid var(--line);background:var(--surface);font-size:11px;color:var(--ink-3)}
+
+/* ═══════════ 状态机（body[data-state]） ═══════════ */
+/* archived：仅显示已归档卡片（真实实现为本地过滤，不重拉） */
+body[data-state="archived"] .chip[data-key="archived"]{border-color:var(--accent);background:var(--accent-weak);color:var(--accent)}
+body[data-state="archived"] .dir-card[data-archived="false"]{display:none}
+body[data-state="delete"] .dialog-overlay{display:flex}
+body[data-state="empty"] .dir-list{display:none}
+body[data-state="empty"] .empty-box{display:block}
+
+/* ═══════════ 演示切换条（截图前隐藏） ═══════════ */
+.demo-bar{position:fixed;right:14px;bottom:14px;z-index:200;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-hover);padding:8px 12px;font-size:12px;color:var(--ink-2)}
+.demo-bar select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 6px}
+.demo-bar .sep{width:1px;height:18px;background:var(--line)}
+body[data-shot="1"] .demo-bar{display:none}
+</style>
+</head>
+<body data-state="directory">
+
+<div class="app">
+  <!-- ═══ 侧边导航 AppNav（会话 active） ═══ -->
+  <nav class="app-nav" data-testid="app-nav">
+    <div class="nav-brand">
+      <span class="logo"><span data-ic="penline"></span></span>
+      <span>InkFlow</span>
+    </div>
+    <div class="nav-scroll">
+      <div class="nav-group">
+        <div class="nav-group-label"><span data-ic="folderopen"></span>写作区</div>
+        <a class="nav-item"><span data-ic="penline"></span>写作</a>
+        <a class="nav-item"><span data-ic="bookopen"></span>项目</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label"><span data-ic="library"></span>设定库</div>
+        <a class="nav-item"><span data-ic="library"></span>设定库</a>
+        <a class="nav-item"><span data-ic="users"></span>角色</a>
+        <a class="nav-item"><span data-ic="globe"></span>世界观</a>
+        <a class="nav-item"><span data-ic="listtree"></span>大纲</a>
+        <a class="nav-item"><span data-ic="clock"></span>时间线</a>
+        <a class="nav-item"><span data-ic="sparkles"></span>伏笔</a>
+        <a class="nav-item"><span data-ic="database"></span>知识图谱</a>
+        <a class="nav-item"><span data-ic="search"></span>检索</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label"><span data-ic="history"></span>会话</div>
+        <a class="nav-item active" data-testid="nav-item-sessions"><span data-ic="history"></span>会话</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label"><span data-ic="settings"></span>系统</div>
+        <a class="nav-item"><span data-ic="bot"></span>Agent</a>
+        <a class="nav-item"><span data-ic="brain"></span>记忆</a>
+        <a class="nav-item"><span data-ic="settings"></span>设置</a>
+      </div>
+    </div>
+    <div class="nav-collapse"><button><span data-ic="chevronsleft"></span>折叠</button></div>
+  </nav>
+
+  <div class="app-main">
+    <!-- ═══ 顶栏 ═══ -->
+    <header class="topbar" role="banner">
+      <span class="page-title">会话</span>
+      <span class="spacer"></span>
+      <span class="select"><span data-ic="palette"></span>素笺 · 纸张<span data-ic="chevron-down"></span></span>
+      <span class="select">中文<span data-ic="chevron-down"></span></span>
+      <div class="win-ctrl">
+        <button><span data-ic="minus"></span></button>
+        <button><span data-ic="square"></span></button>
+        <button class="close"><span data-ic="x"></span></button>
+      </div>
+    </header>
+
+    <!-- ═══ 会话页 ═══ -->
+    <div class="page-scroll">
+      <div class="page" data-testid="sessions-page">
+        <h1 class="page-h1">会话</h1>
+
+        <!-- 顶部工具条：项目选择器 + 检索框（同栏） -->
+        <div class="sessions-toolbar">
+          <button type="button" class="select-trigger w-56" data-testid="sessions-project-select">青云志<span data-ic="chevron-down"></span></button>
+          <input class="input" type="text" data-testid="sessions-search" placeholder="搜索会话标题 / 项目 / 最后消息…" />
+        </div>
+
+        <!-- filter chips（本地过滤，不重拉） -->
+        <div class="chips">
+          <button type="button" class="chip" data-key="all" data-testid="sessions-filter-all" aria-pressed="true">全部</button>
+          <button type="button" class="chip" data-key="active" data-testid="sessions-filter-active" aria-pressed="false">活动</button>
+          <button type="button" class="chip" data-key="archived" data-testid="sessions-filter-archived" aria-pressed="false">已归档</button>
+        </div>
+
+        <!-- 统一目录：执行 + 访谈 + AI 对话 三类卡片合并 -->
+        <div class="directory" data-testid="session-directory">
+          <ul class="dir-list">
+            <!-- AI 对话（进行中，#770：title 展示 + 行内改名） -->
+            <li class="dir-card" data-archived="false" data-testid="session-directory-card">
+              <div class="row">
+                <span class="badge">AI 对话</span>
+                <span class="badge">进行中</span>
+                <h3><button type="button" class="conv-title" data-testid="session-title-conv-1">第 1 章 初见</button></h3>
+                <span class="meta-right">23 条</span>
+              </div>
+              <p class="last-msg">帮我看看第 12 章的氛围描写要不要再收紧一些？</p>
+              <div class="actions">
+                <input type="text" class="chat-conv-rename-input" data-testid="chat-conv-rename-input-1" value="第 1 章 初见" />
+                <button type="button" class="btn-ghost chat-conv-rename-btn" data-testid="chat-conv-rename-1">重命名</button>
+                <button type="button" class="btn-ghost">归档</button>
+                <button type="button" class="btn-ghost danger">删除</button>
+              </div>
+              <span class="updated">2026-08-30 09:41</span>
+            </li>
+
+            <!-- 执行会话（进行中） -->
+            <li class="dir-card" data-archived="false" data-testid="session-directory-card">
+              <div class="row">
+                <span class="badge">执行</span>
+                <span class="badge">写作</span>
+                <span class="badge">进行中</span>
+                <h3 class="title-spacer">第 12 章 剑心蒙尘 · 续写</h3>
+              </div>
+              <div class="actions">
+                <button type="button" class="btn-ghost">归档</button>
+                <button type="button" class="btn-ghost danger">删除</button>
+              </div>
+              <span class="updated">2026-08-30 09:12</span>
+            </li>
+
+            <!-- 访谈会话（已完成） -->
+            <li class="dir-card" data-archived="false" data-testid="session-directory-card">
+              <div class="row">
+                <span class="badge">访谈</span>
+                <span class="badge">已完成</span>
+                <span class="meta-right">已确认 12 项</span>
+              </div>
+              <h3 style="margin-top:8px">主角成长弧光确认</h3>
+              <div class="row" style="margin-top:8px">
+                <span class="badge weak">已生成写作计划</span>
+              </div>
+              <span class="updated">2026-08-29 21:33</span>
+            </li>
+
+            <!-- 执行会话（已暂停） -->
+            <li class="dir-card" data-archived="false" data-testid="session-directory-card">
+              <div class="row">
+                <span class="badge">执行</span>
+                <span class="badge">写作</span>
+                <span class="badge">已暂停</span>
+                <h3 class="title-spacer">第 9 章 山雨欲来 · 扩写</h3>
+              </div>
+              <div class="actions">
+                <button type="button" class="btn-ghost">归档</button>
+                <button type="button" class="btn-ghost danger">删除</button>
+              </div>
+              <span class="updated">2026-08-29 18:20</span>
+            </li>
+
+            <!-- 访谈会话（访谈中） -->
+            <li class="dir-card" data-archived="false" data-testid="session-directory-card">
+              <div class="row">
+                <span class="badge">访谈</span>
+                <span class="badge">访谈中</span>
+                <span class="meta-right">已确认 5 项</span>
+              </div>
+              <h3 style="margin-top:8px">第二卷世界观补全访谈</h3>
+              <span class="updated">2026-08-29 15:04</span>
+            </li>
+
+            <!-- 执行会话（已完成） -->
+            <li class="dir-card" data-archived="false" data-testid="session-directory-card">
+              <div class="row">
+                <span class="badge">执行</span>
+                <span class="badge">任务</span>
+                <span class="badge">已完成</span>
+                <h3 class="title-spacer">第一卷 · 全卷一致性审计</h3>
+              </div>
+              <div class="actions">
+                <button type="button" class="btn-ghost">归档</button>
+                <button type="button" class="btn-ghost danger">删除</button>
+              </div>
+              <span class="updated">2026-08-28 22:15</span>
+            </li>
+
+            <!-- AI 对话（已归档，#770：title 展示） -->
+            <li class="dir-card" data-archived="true" data-testid="session-directory-card">
+              <div class="row">
+                <span class="badge">AI 对话</span>
+                <span class="badge weak">已归档</span>
+                <h3><button type="button" class="conv-title" data-testid="session-title-conv-2">第 3 章 剑引</button></h3>
+                <span class="meta-right">8 条</span>
+              </div>
+              <p class="last-msg">给苏云舟设计三句台词</p>
+              <div class="actions">
+                <button type="button" class="btn-ghost chat-conv-rename-btn" data-testid="chat-conv-rename-2">重命名</button>
+                <button type="button" class="btn-ghost">恢复</button>
+                <button type="button" class="btn-ghost danger">删除</button>
+              </div>
+              <span class="updated">2026-08-27 11:02</span>
+            </li>
+
+            <!-- 执行会话（失败） -->
+            <li class="dir-card" data-archived="false" data-testid="session-directory-card">
+              <div class="row">
+                <span class="badge">执行</span>
+                <span class="badge">任务</span>
+                <span class="badge">失败</span>
+                <h3 class="title-spacer">设定库批量提取 · 角色</h3>
+              </div>
+              <div class="actions">
+                <button type="button" class="btn-ghost">归档</button>
+                <button type="button" class="btn-ghost danger">删除</button>
+              </div>
+              <span class="updated">2026-08-26 16:40</span>
+            </li>
+
+            <!-- AI 对话（已归档，#770：title 展示） -->
+            <li class="dir-card" data-archived="true" data-testid="session-directory-card">
+              <div class="row">
+                <span class="badge">AI 对话</span>
+                <span class="badge weak">已归档</span>
+                <h3><button type="button" class="conv-title" data-testid="session-title-conv-3">第二卷开篇设定讨论</button></h3>
+                <span class="meta-right">15 条</span>
+              </div>
+              <p class="last-msg">第二卷开篇设定讨论</p>
+              <div class="actions">
+                <button type="button" class="btn-ghost chat-conv-rename-btn" data-testid="chat-conv-rename-3">重命名</button>
+                <button type="button" class="btn-ghost">恢复</button>
+                <button type="button" class="btn-ghost danger">删除</button>
+              </div>
+              <span class="updated">2026-08-25 19:26</span>
+            </li>
+
+            <!-- 执行会话（已归档） -->
+            <li class="dir-card" data-archived="true" data-testid="session-directory-card">
+              <div class="row">
+                <span class="badge">执行</span>
+                <span class="badge">写作</span>
+                <span class="badge">已完成</span>
+                <span class="badge weak">已归档</span>
+                <h3 class="title-spacer">第 3 章 剑引 · 润色</h3>
+              </div>
+              <div class="actions">
+                <button type="button" class="btn-ghost">恢复</button>
+                <button type="button" class="btn-ghost danger">删除</button>
+              </div>
+              <span class="updated">2026-08-25 10:08</span>
+            </li>
+          </ul>
+          <div class="empty-box" data-testid="sessions-empty">暂无会话</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态栏 -->
+    <div class="statusbar" data-testid="statusbar">
+      <span>内核已连接</span>
+      <span>模型: deepseek-chat</span>
+      <span>项目: 青云志</span>
+      <span>会话: 11</span>
+    </div>
+  </div>
+</div>
+
+<!-- 删除确认弹框 -->
+<div class="dialog-overlay" data-testid="session-delete-dialog" role="dialog" aria-modal="true">
+  <div class="dialog">
+    <h3>删除会话？</h3>
+    <p class="msg">此操作将永久删除会话，不可恢复。</p>
+    <div class="actions">
+      <button type="button" class="btn-ghost" data-testid="session-delete-cancel">取消</button>
+      <button type="button" class="btn-primary" data-testid="session-delete-confirm">确定删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 演示切换条 ═══ -->
+<div class="demo-bar">
+  <label>状态
+    <select id="stateSel">
+      <option value="directory">会话目录</option>
+      <option value="rename">AI 对话改名</option>
+      <option value="archived">已归档过滤</option>
+      <option value="delete">删除确认弹框</option>
+      <option value="empty">空态</option>
+    </select>
+  </label>
+  <span class="sep"></span>
+  <label>主题
+    <select id="themeSel">
+      <option value="paper">素笺 · 纸张</option>
+      <option value="night">夜航 · 深色</option>
+      <option value="ink">墨韵 · 东方</option>
+    </select>
+  </label>
+</div>
+
+<script>
+/* ── 内联 SVG 图标库（lucide 风格，stroke 当前色） ── */
+const ICONS = {
+  penline:'<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>',
+  bookopen:'<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+  library:'<path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/>',
+  users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  globe:'<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  listtree:'<path d="M11 6H3"/><path d="M15.5 12H3"/><path d="M15.5 18H3"/><path d="M18 6h3"/><path d="M18 12h3"/><path d="M18 18h3"/>',
+  clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  sparkles:'<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/>',
+  database:'<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>',
+  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  history:'<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  brain:'<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M12 5v14"/>',
+  bot:'<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  settings:'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  folderopen:'<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
+  chevronsleft:'<path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/>',
+  'chevron-down':'<path d="m6 9 6 6 6-6"/>',
+  palette:'<circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>',
+  x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  minus:'<path d="M5 12h14"/>',
+  square:'<rect width="14" height="14" x="5" y="5" rx="1"/>',
+};
+document.querySelectorAll('[data-ic]').forEach(el=>{
+  const name = el.getAttribute('data-ic');
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('viewBox','0 0 24 24');
+  svg.setAttribute('fill','none');
+  svg.setAttribute('stroke','currentColor');
+  svg.setAttribute('stroke-width','2');
+  svg.setAttribute('stroke-linecap','round');
+  svg.setAttribute('stroke-linejoin','round');
+  svg.innerHTML = ICONS[name] || '';
+  el.appendChild(svg);
+});
+
+/* ── 状态机：body[data-state] 驱动视图 ── */
+const STATES = ['directory','rename','archived','delete','empty'];
+function setState(s){
+  document.body.dataset.state = s;
+  // chips 的 aria-pressed 随状态切换（已归档过滤时高亮对应 chip）
+  document.querySelectorAll('.chip').forEach((c)=>{
+    c.setAttribute('aria-pressed', String((s==='archived'&&c.dataset.key==='archived')||(s!=='archived'&&c.dataset.key==='all')));
+  });
+}
+function setTheme(th){
+  document.documentElement.dataset.theme = th;
+  document.body.dataset.theme = th;
+}
+document.getElementById('stateSel').addEventListener('change',e=>setState(e.target.value));
+document.getElementById('themeSel').addEventListener('change',e=>setTheme(e.target.value));
+/* hash 驱动初始状态（截图脚本用 file://...html#archived） */
+const init = location.hash.replace('#','');
+if (STATES.includes(init)) { setState(init); document.getElementById('stateSel').value = init; }
+window.addEventListener('hashchange', () => {
+  const s = location.hash.replace('#','');
+  if (STATES.includes(s)) { setState(s); document.getElementById('stateSel').value = s; }
+});
+</script>
+</body>
+</html>

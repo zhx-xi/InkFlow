@@ -1,6 +1,6 @@
 """F28 M1 偏好提取算法 RED 契约测试 — preference_learner（difflib 规则化统计纯函数）.
 
-依据: specs/f28-agent-memory/spec.md（§5.2 提取算法 / §5.3 存储 / §9 测试策略 /
+依据: specs/f28-memory-learning/spec.md（§5.2 提取算法 / §5.3 存储 / §9 测试策略 /
 §13 M1 验收），父侧定稿契约同源（test_preference_learner.py docstring 即契约载体）。
 
 被测模块（全部未实现，1c 整模块 RED 形态；顶层唯一 inkflow import = 主契约模块——

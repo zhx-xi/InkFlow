@@ -218,6 +218,34 @@ describe('F48 知识图谱 tab（spec §5.4）', () => {
     expect(empty).toHaveTextContent('图谱为空');
   });
 
+  it('N5 图谱空态 CTA：空态 → library-kg-empty-cta 存在', async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/knowledge-graph') return { nodes: [], edges: [] };
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    act(() => { useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' }); });
+    const user = userEvent.setup();
+    renderLibrary();
+    await user.click(screen.getByRole('tab', { name: '知识图谱' }));
+    await screen.findByTestId('library-kg-empty');
+    expect(screen.getByTestId('library-kg-empty-cta')).toBeInTheDocument();
+  });
+
+  it('N5 sr-only 摘要：图谱渲染 → library-kg-summary 存在', async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/knowledge-graph') return GRAPH_SEED;
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    act(() => { useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' }); });
+    const user = userEvent.setup();
+    renderLibrary();
+    await user.click(screen.getByRole('tab', { name: '知识图谱' }));
+    const summary = await screen.findByTestId('library-kg-summary');
+    expect(summary).toBeInTheDocument();
+  });
+
   it('新建关系：工具栏按钮 → 表单渲染 → 提交 POST /knowledge-relations（六元组+description）→ 列表视图出现新行', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });

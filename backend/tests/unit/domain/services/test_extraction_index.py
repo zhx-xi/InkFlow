@@ -679,7 +679,7 @@ async def test_reindex_without_vector_store_raises() -> None:
 
 
 # ══ #277 M3 追加段（2026-08-16）: 切片配置 + 章节块元数据 ══════════
-# 契约源: specs/f14-extraction-service/spec.md §5.6.3/§5.6.4（块 id 三态 +
+# 契约源: specs/f14-extraction/spec.md §5.6.3/§5.6.4（块 id 三态 +
 # 元数据补强）。RED 期 ExtractionService 无 chunking 参数 → TypeError；
 # _project_chapter_chunk 无新元数据 → 断言 KeyError/值不符。
 

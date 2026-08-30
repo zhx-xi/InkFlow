@@ -22,7 +22,7 @@ llm_chunk.yaml 模板）:
 - 边界校验规则: 全部整数、0 < b < len(text)、严格升序——任一违规 → 重试/报错。
 - 空文本 → 直接返回 []（不调用 LLM，spec §9「空文本 → []」）。
 
-依据: specs/f14-extraction-service/spec.md §5.6.7/§9 + §13 M13。
+依据: specs/f14-extraction/spec.md §5.6.7/§9 + §13 M13。
 """
 
 from __future__ import annotations

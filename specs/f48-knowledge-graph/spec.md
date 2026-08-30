@@ -1,4 +1,5 @@
 # F48: 知识图谱（knowledge-graph）— 功能规格
+> **端**: cross
 
 > **Spec 版本**: 1.2 | **日期**: 2026-08-19 | **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
 >
@@ -814,3 +815,38 @@ F48 被依赖:
 ---
 
 > **所有里程碑验收以本节 M1-M8 为准**；Q1-Q3 已全拍板（2026-08-19，✅ 留痕），正文已按拍板结果修订（§2.1 规则 3b / §5.2 聚合 / §5.4 前端 / §8 文件结构 / §10 / §11 / §12 决策 9-11 / §13）——F48 实现以 v1.1 为唯一真相来源。v1.2（2026-08-19）补定 §5.5 #479 具体契约（决策 12），#479 实现以 §5.5 为唯一真相。
+
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 + §4 + §5 + §7 事实，不重复）。#479 提取端点（§5.5.6）不在本表——由 #479 实现交付，本 spec 仅预留数据面。
+
+### 14.1 端点状态流
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| POST /api/v1/projects/{project_id}/knowledge-relations | 项目存在 | 校验链（项目存在 → 自环 → 六元组字段 → source/target 实体存在 + 同项目 → 同键唯一）→ 落库（source 恒 manual） | 201 完整实体 | 404（项目不存在）；422（自环/实体不存在/同键冲突/字段非法） | character→character 合法（Q1=A）；六元组唯一索引兜底 |
+| GET /api/v1/projects/{project_id}/knowledge-relations | 项目存在 | 过滤（source_type/target_type/relation_type/source）+ 分页（offset/limit，created_at DESC） | 200 {items, total} | 404 | 只含 knowledge_relations 本表（不含 character_relations 行） |
+| GET /api/v1/projects/{project_id}/knowledge-graph | 项目存在 | 聚合：六类实体全量 nodes + knowledge_relations ∪ character_relations edges（同键去重，knowledge 优先） | 200 {nodes, edges} | 404 | 空图谱 → 200 空数组（前端空态引导）；孤立边跳过 + loguru warning（不 500）；节点 ID 格式 entity_type:entity_uuid |
+| GET /api/v1/knowledge-relations/{relation_id} | 关系存在 | 详情 | 200 完整实体 | 404（关系不存在） | — |
+| PATCH /api/v1/knowledge-relations/{relation_id} | 关系存在 | 变更字段重新校验（自环/实体存在/同项目/同键唯一）→ 落库 | 200 完整实体 | 404；422（改键后冲突/字段非法） | source 字段不可改（#479 写入方才能置 ai）；未传字段不动 |
+| DELETE /api/v1/knowledge-relations/{relation_id} | 关系存在 | 真删单行（无 restore） | 204 | 404 | 与 F9/F36 删除语义一致（#211 统一登记） |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow knowledge graph &lt;project_id&gt; [--json] | 项目存在 | 图谱聚合查询（nodes + edges） | 退出码 0（文本模式 edges 摘要行 source --label--&gt; target；--json 原样输出） | 404 → 退出码 1 | — |
+| inkflow knowledge relation list &lt;project_id&gt; [--source-type/--target-type/--relation-type] | — | 关系列表 | 退出码 0 + 信封 | 退出码 1 | — |
+| inkflow knowledge relation add &lt;project_id&gt; --source-type --source-id --target-type --target-id --relation-type [--description] | 实体存在 + 同项目 | 创建 | 退出码 0 + 实体 | 422 → 退出码 1 | — |
+| inkflow knowledge relation get &lt;relation_id&gt; | 关系存在 | 详情 | 退出码 0 | 404 → 退出码 1 | — |
+| inkflow knowledge relation update &lt;relation_id&gt; [--relation-type/--description/--source-id ...] | 关系存在 | 更新 | 退出码 0 | 404/422 → 退出码 1 | — |
+| inkflow knowledge relation delete &lt;relation_id&gt; | 关系存在 | 真删（二次确认） | 退出码 0 | 404 → 退出码 1 | 删除类命令二次确认（同 F9/F36） |
+
+### 14.3 验收锚点
+
+- A1：数据模型 + 建表（create_all 自动，无 is_deleted 列）（M1）
+- A2：服务校验链（六元组/实体存在/同项目/自环/同键冲突/角色↔角色合法）（M2）
+- A3：API 契约（CRUD + 图谱聚合 + 错误映射）（M3）
+- A4：图谱聚合合并 + 去重 + 孤立边防御 + 清理回调（M4）
+- A5：CLI knowledge 组全绿（含 ci.yml integration-cli-backend 登记）（M5）
+- A6：前端知识图谱 tab（画布/交互/增删改）+ 手工验证闭环（删实体 → 关系被清理无悬空边）（M6/M7）

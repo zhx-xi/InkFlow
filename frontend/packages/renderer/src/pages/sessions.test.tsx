@@ -1,80 +1,57 @@
 /**
- * #486 会话/记忆 UI — 会话页（访谈会话 + 执行会话：归档/恢复/删除）RED 阶段契约测试
+ * #725 会话页重构 — 统一窗口 / 按项目分区 / 检索同栏 / 归档回归 RED 契约测试
  *
- * ⚠️ 本文件 = 契约。GREEN 新建 src/pages/sessions.tsx（命名导出 SessionsPage），必须匹配：
+ * ⚠️ 本文件 = 契约。GREEN 重构 src/pages/sessions.tsx（命名导出 SessionsPage），必须匹配：
+ *
+ * 布局（Q1=A 统一 / Q2 按项目分区 / 检索同栏 / Q3 归档回归）：
+ * - 移除「访谈会话 / 执行会话 / AI 对话」三个独立分区（planner-section /
+ *   sessions-section / chat-conversations-section 不再渲染），统一为一个
+ *   data-testid="session-directory" 目录，三类会话合并展示（类型徽标区分）。
+ * - 顶部项目选择器 data-testid="sessions-project-select"（镜像 library.tsx 的
+ *   library-project-select；复用 useProjectStore 的 projects/currentProjectId/selectProject）。
+ * - 检索框 data-testid="sessions-search"（input）与会话目录同栏，按 标题/项目名/最后消息 过滤。
+ * - filter chips（全部/活动/已归档）作用于整个目录（本地过滤，不重拉）。
+ * - 每张卡片 data-testid="session-directory-card"，行内：
+ *   session-type-<id>（类型徽标：AI 对话 / 访谈 / 执行）、session-title-<id>、
+ *   session-status-<id>（执行会话）、session-archived-<id>（仅归档态）、
+ *   session-archive-<id>（仅活动态）、session-restore-<id>（仅归档态）、session-delete-<id>。
+ * - 空态 sessions-empty；删除确认 dialog：session-delete-dialog/-cancel/-confirm。
+ *
+ * 数据流（Q2 拍板：前端拉全量 + 按 currentProjectId 前端过滤分组）：
+ * - 挂载：useProjectStore.loadProjects()（apiFetch GET /api/v1/projects）+ fetchSessions({includeDeleted:true})
+ *   + fetchPlannerSessions() + fetchChatConversations({includeDeleted:true})（apiFetch GET /api/v1/chat/conversations）。
+ * - 目录 = 当前项目 的执行会话（project_id===currentProjectId ∪ is_deleted）+ 访谈会话 + AI 对话（project_id 匹配）
+ *   合并，按 updated_at/created_at 倒序，类型徽标区分。
+ * - 项目切换 → selectProject(id) → 目录切换（仅显示该项目会话）。
  *
  * 接线（Mock 依赖）：
- * - SessionsPage 必须 import 自 '../api/sessions'：fetchPlannerSessions /
- *   fetchSessions / archiveSession / deleteSession / restoreSession
- *   （本文件 vi.mock 该模块；GREEN 若改 import 源 → mock 不生效 → 测试炸，属契约违约）
- * - 挂载即并行加载：fetchPlannerSessions() + fetchSessions({ includeDeleted: true })
- *   （会话页展示全部会话含归档——一次拉取，chips 切换为前端本地过滤，不重拉）
- * - 操作 wire：
- *   归档（活动行）→ archiveSession(id)
- *   恢复（归档行）→ restoreSession(id)
- *   删除（两态行皆可）→ 二次确认 Dialog → deleteSession(id)
- * - 操作后列表行状态跟随变化（实现可重拉或本地更新——测试用状态化 mock 数组
- *   保证两种实现最终态一致，见 #478 模式；archive/restore/delete 的 mock
- *   implementation 同步改写共享数组，fetch* 读同一数组）
+ * - ../api/sessions：fetchSessions / fetchPlannerSessions / archiveSession / deleteSession / restoreSession
+ *   （本文件 vi.mock；GREEN 若改 import 源 → mock 不生效 → 测试炸，属契约违约）
+ * - ../api/client：apiFetch（chat 对话 GET/POST/DELETE + /api/v1/projects 走 apiFetch mock 分发）
+ * - useProjectStore：直接 setState 播种 projects/currentProjectId（不 vi.mock，组件读真 store）
+ * - useThemeStore：setState({ lang: 'zh' })
  *
- * data-testid 即契约：
- * - sessions-page 根容器
- * - 访谈会话区块：planner-section；planner-card（卡片）；行内：
- *   planner-status-<id>（status 文案）、planner-one-liner-<id>、
- *   planner-confirmed-<id>（「已确定 N 项」类文案）、planner-writing-plan-<id>
- *   （writing_plan_id 非空时渲染）；空态 planner-empty；加载中 planner-loading；
- *   前往书页按钮 planner-go-book（t('sessions.planner.goBook')）→ 跳 /book
- * - 执行会话区块：sessions-section；筛选 chips（aria-pressed）：
- *   sessions-filter-all / sessions-filter-active / sessions-filter-archived
- *   （「全部/活动/已归档」，纯前端本地过滤，切换不触发重拉）
- *   行：session-card；行内 session-title-<id>（title 文案）、session-status-<id>、
- *   session-type-<id>、session-archived-<id>（仅 is_deleted=true 时渲染）、
- *   操作按钮：session-archive-<id>（仅活动行）、session-restore-<id>（仅归档行）、
- *   session-delete-<id>（两态行皆渲染）
- *   删除确认 Dialog：session-delete-dialog + session-delete-cancel +
- *   session-delete-confirm；空态 sessions-empty
+ * i18n key（GREEN 补，走子词典 i18n/sessions-ux.ts 避免 zh.ts 900 护栏）：
+ * - sessions.projectSelect（复用 lib.projectSelect='当前项目'）
+ * - sessions.search.placeholder='搜索会话标题 / 项目 / 最后消息…'
+ * - sessions.badge.ai='AI 对话' sessions.badge.interview='访谈' sessions.badge.execution='执行'
  *
- * i18n key（GREEN 补 zh.ts/en.ts）：
- * sessions.title='会话' sessions.planner.title='访谈会话'
- * sessions.planner.empty='暂无访谈会话' sessions.planner.goBook='前往书页访谈'
- * sessions.planner.status.drafting='访谈中' sessions.planner.status.completed='已完成'
- * sessions.planner.status.declined='已跳过'
- * sessions.planner.confirmed='已确定 {n} 项' sessions.planner.writingPlan='已生成写作计划'
- * sessions.runs.title='执行会话' sessions.filter.all='全部' sessions.filter.active='活动'
- * sessions.filter.archived='已归档' sessions.status.active='进行中' sessions.status.paused='已暂停'
- * sessions.status.completed='已完成' sessions.status.failed='失败'
- * sessions.type.writing='写作' sessions.type.task='任务'
- * sessions.archived='已归档' sessions.archive='归档' sessions.restore='恢复'
- * sessions.delete='删除' sessions.delete.dialog.title='删除会话？'
- * sessions.delete.dialog.desc='此操作将永久删除会话，不可恢复。'
- * sessions.delete.confirm='确定删除' sessions.delete.cancel='取消' sessions.empty='暂无会话'
- * sessions.archivedToast='已归档' sessions.restoredToast='已恢复' sessions.deletedToast='已删除'
+ * RED 预期：当前实现为旧三区（planner-section/sessions-section/chat-conversations-section）→
+ * 本文件全部 describe 的断言（session-directory / sessions-project-select / sessions-search 等）FAIL。
  *
- * RED 预期：./sessions 模块不存在 → 收集期 module-not-found（类 1 契约缺口）。
- *
- * #547 AI 对话会话区块（本文件「AI 对话会话区块」describe 锁定，GREEN 追加实现）：
- * - 区块 data-testid="chat-conversations-section"，位于执行会话区块（sessions-section）之后
- * - 挂载时 fetchChatConversations()（走 apiFetch GET /api/v1/chat/conversations?include_deleted=true，
- *   #581 起拉取含已归档全量——GREEN fetchChatConversations 带 includeDeleted 参数）
- * - 会话卡片 data-testid="chat-conversation-card"：project_name（null 回退「未知项目」）、
- *   last_message、message_count（t('sessions.chat.count', {n}) 模板）、updated_at
- *   （chat-conversation-updated-<project_id> 元素非空）；空态 chat-conversations-empty
- * - i18n key（GREEN 补 zh.ts/en.ts）：sessions.chat.title='AI 对话' / sessions.chat.empty
- *   / sessions.chat.count='{n} 条' / sessions.chat.unknownProject='未知项目'
- *
- * #581 AI 对话归档视图闭环（本文件「会话页 — AI 对话归档视图（#581）」describe 锁定）：
- * - conversations 区块接 FILTERS all/active/archived（当前 FILTERS 只作用执行会话）：
- *   archived → 只显示已归档对话（is_deleted=true）；active → 只显示活动对话（is_deleted=false）
- * - 已归档对话卡片渲染归档徽标 chat-conv-archived-<project_id> + 恢复按钮
- *   chat-conv-restore-<project_id>；点恢复 → POST /api/v1/chat/conversations/{project_id}/restore
- *   （restoreChatConversation 走 apiFetch，镜像 archiveChatConversation；api/chat.ts GREEN 补）
- *   + 本地恢复（is_deleted=false → 回活动列表）
- * - #566 归档/删除按钮（chat-conv-archive-<pid>/chat-conv-delete-<pid>）保持不回归
+ * #770 增量（RED，f47 §17.4.4/§17.4.5 + f19 §4）：
+ * - AI 对话卡片标题元素 session-title-conv-{id} 展示会话 title（空回退 project_name；
+ *   两者皆空 → t('sessions.chat.titleEmpty')='未命名会话'，GREEN 补 key）。
+ * - 改名按钮 chat-conv-rename-{id} → 行内输入框 chat-conv-rename-input-{id}（Enter 提交 / Esc 取消）
+ *   → PATCH /api/v1/chat/conversations/{id} body { title }（>200 → err toast 不发请求）
+ *   → 成功本地更新 title + ok toast；失败 err toast 且 title 不变。
+ * - 点击卡片标题 → title 匹配当前项目章节标题（useChapterStore.chapters 播种；apiFetch 章节接口
+ *   同步返回同数据）→ /writing?chapter_id=<章ID>；匹配不到 → /writing?conversation_id=<会话ID>。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within, waitFor } from '@testing-library/react';
+import { render, screen, within, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { SessionsPage } from './sessions';
 import {
   archiveSession,
@@ -85,6 +62,9 @@ import {
 } from '../api/sessions';
 import { apiFetch } from '../api/client';
 import { useThemeStore } from '../stores/theme';
+import { useProjectStore, type Project } from '../stores/project';
+import { useChapterStore, type ChapterMeta } from '../stores/chapter';
+import { useToastStore } from '../stores/toast';
 
 vi.mock('../api/sessions', () => ({
   fetchSessions: vi.fn(),
@@ -93,7 +73,7 @@ vi.mock('../api/sessions', () => ({
   deleteSession: vi.fn(),
   restoreSession: vi.fn(),
 }));
-// #547：fetchChatConversations 走 apiFetch（GREEN sessions.tsx 从 ../api/chat 导入真实实现）
+// apiFetch mock：项目列表 + chat 对话（/projects、/chat/conversations）分发
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
   return { ...actual, apiFetch: vi.fn() };
@@ -107,26 +87,34 @@ const restoreSessionMock = vi.mocked(restoreSession);
 const apiFetchMock = vi.mocked(apiFetch);
 import type { PlannerSessionDto, SessionDto, SessionViewDto } from '../api/sessions';
 
-/** #547：ChatConversationDto 本地镜像（GREEN 建 src/api/chat.ts 导出；形状对齐后端 GET /api/v1/chat/conversations 契约） */
 interface ChatConversationDto {
+  conversation_id: string;
   project_id: string;
   project_name: string | null;
+  /** #770：会话 title（空则回退 project_name 展示） */
+  title: string;
   last_message: string;
   message_count: number;
-  /** #581：后端 include_deleted=true 响应 items 含 is_deleted（true=已归档对话） */
   is_deleted: boolean;
   updated_at: string;
 }
 
-/** 状态化会话数组（fetch* 读同一数组；archive/restore/delete 改写同一数组） */
-let sessions: SessionViewDto[];
-let plannerItems: PlannerSessionDto[];
-/** #547：AI 对话会话数组（apiFetchMock 对 /api/v1/chat/conversations 应答；空态用例置空） */
-let conversations: ChatConversationDto[];
+// 类型卡片统一 id（全局唯一，防执行/访谈/AI对话 id 冲突）
+// 执行会话 id：ex-active-p1 / ex-archived-p1 / ex-p2
+// 访谈会话 id：pl-p1
+// AI 对话 id：conv-conv-1 / conv-conv-2（conversation_id，#744 多线程：同 project 可有多个）
+
+let sessions: SessionViewDto[]; // 执行会话
+let plannerItems: PlannerSessionDto[]; // 访谈会话
+let conversations: ChatConversationDto[]; // AI 对话
+// #770：当前项目章节标题（title 匹配章节导航数据源；apiFetch 章节接口同步返回同数据）
+let chapterItems: ChapterMeta[] = [];
+// #770：改名 PATCH 失败开关（测试控制 apiFetch PATCH 分支抛错）
+let renameFail = false;
 
 function makeSession(overrides: Partial<SessionDto> = {}): SessionViewDto {
   const s: SessionDto = {
-    id: 's1',
+    id: 'ex-active-p1',
     session_type: 'writing',
     status: 'active',
     project_id: 'p1',
@@ -146,12 +134,34 @@ function makeSession(overrides: Partial<SessionDto> = {}): SessionViewDto {
   return { session: s, log_count: 0, last_log: null };
 }
 
-function renderSessionsPage(initialPath = '/sessions') {
+function makeProjects(): Project[] {
+  const base = {
+    tags: [] as string[],
+    language: 'zh',
+    target_words: 800000,
+    config: {} as Project['config'],
+    created_at: '2026-08-01T00:00:00Z',
+    updated_at: '2026-08-01T00:00:00Z',
+  };
+  return [
+    { id: 'p1', name: '仙侠长篇', ...base },
+    { id: 'p2', name: '另一项目', ...base },
+  ];
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location-probe">{location.pathname}{location.search}</div>;
+}
+
+function renderSessionsPage() {
   return render(
-    <MemoryRouter initialEntries={[initialPath]}>
+    <MemoryRouter initialEntries={['/sessions']}>
       <SessionsPage />
       <Routes>
         <Route path="/book" element={<div data-testid="book-probe" />} />
+        {/* #770：点击会话导航目标（title 匹配章节 → /writing?chapter_id=...；否则 → 全局 chat 页） */}
+        <Route path="/writing" element={<LocationProbe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -160,16 +170,40 @@ function renderSessionsPage(initialPath = '/sessions') {
 beforeEach(() => {
   localStorage.clear();
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
+  // #725 按项目分区：显式设置当前项目（默认 p1）+ projects，避免跨用例 currentProjectId 残留/依赖组件的默认回退
+  useProjectStore.setState({ projects: makeProjects(), currentProjectId: 'p1', loading: false, error: null });
+  useToastStore.setState({ toasts: [] });
+  // #770：章节树 / 改名失败开关复位（防跨用例泄漏）
+  useChapterStore.setState({
+    volumes: [],
+    chapters: [],
+    treeProjectId: null,
+    currentChapterId: null,
+    content: '',
+    loading: false,
+    error: null,
+  });
+  chapterItems = [];
+  renameFail = false;
 
+  // 执行会话：p1 下 1 活动 + 1 归档；p2 下 1 活动
   sessions = [
-    makeSession({ id: 's-active', title: '活跃写作' }),
-    makeSession({ id: 's-archived', title: '已归档写作', status: 'completed', is_deleted: true }),
+    makeSession({ id: 'ex-active-p1', project_id: 'p1', title: '第三章续写', status: 'active' }),
+    makeSession({
+      id: 'ex-archived-p1',
+      project_id: 'p1',
+      title: '第二章草稿润色',
+      status: 'completed',
+      is_deleted: true,
+    }),
+    makeSession({ id: 'ex-p2', project_id: 'p2', title: '另一项目会话', status: 'paused' }),
   ];
+  // 访谈会话：p1 下 1 条
   plannerItems = [
     {
-      id: 'pl-1',
+      id: 'pl-p1',
       project_id: 'p1',
-      status: 'drafting',
+      status: 'completed',
       one_liner: '仙侠长篇 80 万字',
       round: 2,
       asked_questions: [],
@@ -183,12 +217,36 @@ beforeEach(() => {
       updated_at: '2026-08-10T08:00:00Z',
     },
   ];
+  // AI 对话：p1 活动（仙侠长篇），p2 归档（null 项目名）
+  conversations = [
+    {
+      conversation_id: 'conv-1',
+      project_id: 'p1',
+      project_name: '仙侠长篇',
+      title: '',
+      last_message: '帮我写一段打斗场景',
+      message_count: 3,
+      is_deleted: false,
+      updated_at: '2026-08-21T10:00:00Z',
+    },
+    {
+      conversation_id: 'conv-2',
+      project_id: 'p2',
+      project_name: null,
+      title: '',
+      last_message: '聊聊角色设定',
+      message_count: 1,
+      is_deleted: true,
+      updated_at: '2026-08-20T09:00:00Z',
+    },
+  ];
 
   fetchSessionsMock.mockReset();
   fetchPlannerSessionsMock.mockReset();
   archiveSessionMock.mockReset();
   deleteSessionMock.mockReset();
   restoreSessionMock.mockReset();
+  apiFetchMock.mockReset();
 
   fetchSessionsMock.mockResolvedValue({ items: sessions, total: sessions.length, offset: 0, limit: 50 });
   fetchPlannerSessionsMock.mockResolvedValue({
@@ -197,7 +255,7 @@ beforeEach(() => {
     offset: 0,
     limit: 50,
   });
-  // 状态化操作 mock：改写共享数组（页面重拉或本地更新两种实现最终态一致）
+  // 状态化操作 mock（执行会话）：改写共享数组（镜像 #478 模式，两种实现最终态一致）
   archiveSessionMock.mockImplementation(async (id: string) => {
     const view = sessions.find((v) => v.session.id === id);
     if (view) view.session.is_deleted = true;
@@ -211,276 +269,466 @@ beforeEach(() => {
   deleteSessionMock.mockImplementation(async (id: string) => {
     sessions = sessions.filter((v) => v.session.id !== id);
   });
-  // #547：AI 对话会话（GET /api/v1/chat/conversations 走 apiFetch mock；数组状态化供空态用例改写）
-  // #581：p1 = 活动（is_deleted=false），p2 = 已归档（is_deleted=true）
-  conversations = [
-    { project_id: 'p1', project_name: '仙侠长篇', last_message: '帮我写一段打斗场景', message_count: 3, is_deleted: false, updated_at: '2026-08-21T10:00:00Z' },
-    { project_id: 'p2', project_name: null, last_message: '聊聊角色设定', message_count: 1, is_deleted: true, updated_at: '2026-08-20T09:00:00Z' },
-  ];
-  apiFetchMock.mockReset();
-  // #581：列表 GET 带 include_deleted=true（GREEN）；restore 走 POST {pid}/restore（镜像 archive 模式）
+  // apiFetch 分发：/api/v1/projects（loadProjects）+ /api/v1/chat/conversations（#547/#581 聚合）
   apiFetchMock.mockImplementation(async (path: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    if (path === '/api/v1/projects' && method === 'GET') {
+      return { items: makeProjects(), total: 2, offset: 0, limit: 50 };
+    }
+    if (path.startsWith('/api/v1/projects/') && path.endsWith('/chapters') && method === 'GET') {
+      return { items: chapterItems, total: chapterItems.length, offset: 0, limit: 50 };
+    }
     if (path.startsWith('/api/v1/chat/conversations')) {
-      // 列表 GET（含 include_deleted=true 查询参数）→ 返回 conversations
-      if ((init?.method ?? 'GET') === 'GET') {
+      if (method === 'GET') {
         return { items: conversations, total: conversations.length };
       }
-      // POST /api/v1/chat/conversations/{projectId}/restore → 恢复后 conversation
       const restoreMatch = path.match(/^\/api\/v1\/chat\/conversations\/([^/]+)\/restore$/);
       if (restoreMatch) {
-        const conv = conversations.find((c) => c.project_id === restoreMatch[1]);
+        // #744：恢复按 conversation_id 匹配（非 project_id）
+        const conv = conversations.find((c) => c.conversation_id === restoreMatch[1]);
         return conv ? { ...conv, is_deleted: false } : { ok: true };
       }
-      // DELETE（归档/真删，含 ?force=true）→ 204 语义
+      // #770：改名 PATCH /api/v1/chat/conversations/{id} body { title }
+      const renameMatch = path.match(/^\/api\/v1\/chat\/conversations\/([^/]+)$/);
+      if (renameMatch && method === 'PATCH') {
+        if (renameFail) throw new Error('改名失败');
+        const conv = conversations.find((c) => c.conversation_id === renameMatch[1]);
+        const title = (init as unknown as { body?: { title?: string } } | undefined)?.body?.title ?? '';
+        return conv ? { ...conv, title } : { ok: true };
+      }
       return { ok: true };
     }
     return { ok: true };
   });
 });
 
-describe('会话页 — 访谈会话区块', () => {
-  it('挂载渲染访谈卡片：one_liner / status 文案 / confirmed 数', async () => {
-    plannerItems[0].confirmed_items = [
-      { key: 'tags', value: '仙侠', source: 'user' },
-      { key: 'length', value: '80万字', source: 'user' },
-    ];
+describe('会话页 — 移除「访谈/执行/AI对话」独立分区（Q1=A 统一窗口）', () => {
+  it('三个旧分区均不再渲染（planner-section / sessions-section / chat-conversations-section）', async () => {
     renderSessionsPage();
-    expect(await screen.findByTestId('planner-card')).toBeInTheDocument();
-    expect(screen.getByTestId('planner-one-liner-pl-1')).toHaveTextContent('仙侠长篇 80 万字');
-    expect(screen.getByTestId('planner-status-pl-1')).toHaveTextContent('访谈中');
-    expect(screen.getByTestId('planner-confirmed-pl-1')).toHaveTextContent('2');
-  });
-
-  it('writing_plan_id 非空 → 已生成计划徽标渲染', async () => {
-    plannerItems[0].writing_plan_id = 'wp-1';
-    renderSessionsPage();
-    expect(await screen.findByTestId('planner-writing-plan-pl-1')).toBeInTheDocument();
-  });
-
-  it('访谈会话空态：planner-empty + 前往书页按钮跳 /book', async () => {
-    plannerItems.length = 0;
-    const user = userEvent.setup();
-    renderSessionsPage();
-    expect(await screen.findByTestId('planner-empty')).toBeInTheDocument();
-    await user.click(screen.getByTestId('planner-go-book'));
-    expect(screen.getByTestId('book-probe')).toBeInTheDocument();
+    await screen.findByTestId('session-directory');
+    expect(screen.queryByTestId('planner-section')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sessions-section')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-conversations-section')).not.toBeInTheDocument();
   });
 });
 
-describe('会话页 — 执行会话列表与筛选', () => {
-  it('挂载加载含归档全量：活动行 + 归档行（归档徽标）', async () => {
+describe('会话页 — 统一窗口（AI 对话 + 访谈 + 执行 合并展示）', () => {
+  it('p1 项目目录合并三类会话：数目 4（执行 2 + 访谈 1 + AI 对话 1）', async () => {
     renderSessionsPage();
-    expect(await screen.findByTestId('session-title-s-active')).toBeInTheDocument();
-    expect(fetchSessionsMock).toHaveBeenCalledWith({ includeDeleted: true });
-
-    expect(screen.getByTestId('session-status-s-active')).toHaveTextContent('进行中');
-    expect(screen.getByTestId('session-archived-s-archived')).toBeInTheDocument();
+    const cards = await screen.findAllByTestId('session-directory-card');
+    expect(cards).toHaveLength(4);
   });
 
-  it('筛选 chips：默认全部；切「活动」只显示活动行；切「已归档」只显示归档行（本地过滤，不重拉）', async () => {
+  it('卡片带类型徽标（AI 对话 / 访谈 / 执行 三态）', async () => {
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    expect(screen.getByTestId('session-type-conv-conv-1')).toBeInTheDocument();
+    expect(screen.getByTestId('session-type-pl-p1')).toBeInTheDocument();
+    expect(screen.getByTestId('session-type-ex-active-p1')).toBeInTheDocument();
+  });
+});
+
+describe('会话页 — 按项目分区（Q2，镜像 library 项目选择器 + 按 currentProjectId 过滤）', () => {
+  it('挂载渲染项目选择器；默认 p1 → 目录只显示 p1 会话（p2 会话不可见）', async () => {
+    renderSessionsPage();
+    expect(screen.getByTestId('sessions-project-select')).toBeInTheDocument();
+    await screen.findAllByTestId('session-directory-card');
+    expect(screen.getByTestId('session-title-ex-active-p1')).toBeInTheDocument();
+    // p2 的执行会话 / p2 的 AI 对话都不应在 p1 目录可见
+    expect(screen.queryByTestId('session-title-ex-p2')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('session-type-conv-conv-2')).not.toBeInTheDocument();
+  });
+
+  it('切换项目（selectProject p2）→ 目录只显示 p2 会话（p1 会话不可见）', async () => {
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    act(() => useProjectStore.getState().selectProject('p2'));
+    const cards = await screen.findAllByTestId('session-directory-card');
+    // p2：执行会话 ex-p2 + AI 对话 conv-conv-2
+    expect(cards).toHaveLength(2);
+    expect(screen.getByTestId('session-title-ex-p2')).toBeInTheDocument();
+    expect(screen.queryByTestId('session-title-ex-active-p1')).not.toBeInTheDocument();
+  });
+});
+
+describe('会话页 — 检索同栏（sessions-search 与会话目录同栏，按关键字段过滤）', () => {
+  it('渲染检索框；输入标题关键词 → 目录仅显示匹配项', async () => {
     const user = userEvent.setup();
     renderSessionsPage();
-    await screen.findByTestId('session-title-s-active');
+    await screen.findAllByTestId('session-directory-card');
+    const search = screen.getByTestId('sessions-search');
+    expect(search).toBeInTheDocument();
 
-    await user.click(screen.getByTestId('sessions-filter-active'));
-    expect(screen.getByTestId('sessions-filter-active')).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByTestId('session-title-s-active')).toBeInTheDocument();
-    expect(screen.queryByTestId('session-title-s-archived')).not.toBeInTheDocument();
+    await user.type(search, '第三章');
+    // 仅 ex-active-p1 标题含「第三章」；其余过滤
+    await waitFor(() => {
+      expect(screen.getByTestId('session-title-ex-active-p1')).toBeInTheDocument();
+      expect(screen.queryByTestId('session-title-pl-p1')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('session-type-conv-conv-1')).not.toBeInTheDocument();
+    });
+  });
+});
+
+describe('会话页 — 归档回归（Q3：归档两个会话，刷新后两个都显示）', () => {
+  it('Q3 归档回归：p1 两个执行会话均归档 → 统一目录完整合并三类（4 张），两个归档执行都显示 + 访谈/AI 对话不因归档隐藏', async () => {
+    // 覆盖两个执行会话为已归档（都在 p1）
+    sessions = [
+      makeSession({
+        id: 'ex-archived-p1',
+        project_id: 'p1',
+        title: '第二章草稿润色',
+        status: 'completed',
+        is_deleted: true,
+      }),
+      makeSession({
+        id: 'ex-archived-p1b',
+        project_id: 'p1',
+        title: '第一章初稿重写',
+        status: 'completed',
+        is_deleted: true,
+      }),
+    ];
+    fetchSessionsMock.mockResolvedValue({ items: sessions, total: sessions.length, offset: 0, limit: 50 });
+    renderSessionsPage();
+    const cards = await screen.findAllByTestId('session-directory-card');
+    // 无条件合并：2 归档执行 + 1 访谈 + 1 AI 对话 = 4 张（统一窗口不因执行会话归档隐藏访谈/对话）
+    expect(cards).toHaveLength(4);
+    // Q3 回归核心：两个归档执行会话都显示（带归档徽标），不丢任何一条
+    expect(screen.getByTestId('session-archived-ex-archived-p1')).toBeInTheDocument();
+    expect(screen.getByTestId('session-archived-ex-archived-p1b')).toBeInTheDocument();
+    // 统一窗口：访谈 / AI 对话卡仍显示（不因执行会话归档而隐藏）
+    expect(screen.getByTestId('session-title-pl-p1')).toBeInTheDocument();
+    expect(screen.getByTestId('session-title-conv-conv-1')).toBeInTheDocument();
+    // 归档 filter 下：仅显示两个归档执行（访谈/对话被 is_deleted 过滤）
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('sessions-filter-archived'));
+    await waitFor(() => {
+      expect(screen.getByTestId('session-title-ex-archived-p1')).toBeInTheDocument();
+      expect(screen.getByTestId('session-title-ex-archived-p1b')).toBeInTheDocument();
+      expect(screen.queryByTestId('session-title-pl-p1')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('session-title-conv-conv-1')).not.toBeInTheDocument();
+    });
+  });
+});
+
+describe('会话页 — filter chips 作用于整个目录（本地过滤，不重拉）', () => {
+  it('默认全部显示；切「已归档」只显示归档卡；切「活动」只显示活动卡', async () => {
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
 
     await user.click(screen.getByTestId('sessions-filter-archived'));
-    expect(screen.queryByTestId('session-title-s-active')).not.toBeInTheDocument();
-    expect(screen.getByTestId('session-title-s-archived')).toBeInTheDocument();
+    // p1 归档：ex-archived-p1（执行会话）
+    expect(screen.getByTestId('session-title-ex-archived-p1')).toBeInTheDocument();
+    expect(screen.queryByTestId('session-title-ex-active-p1')).not.toBeInTheDocument();
 
-    // 本地过滤语义：无重拉（fetchSessions 仍只 1 次）
+    await user.click(screen.getByTestId('sessions-filter-active'));
+    expect(screen.getByTestId('session-title-ex-active-p1')).toBeInTheDocument();
+    expect(screen.queryByTestId('session-title-ex-archived-p1')).not.toBeInTheDocument();
+
+    // 本地过滤：fetchSessions 仍只被调用 1 次（无重拉）
     expect(fetchSessionsMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('空态：无会话 → sessions-empty', async () => {
-    sessions.length = 0;
-    renderSessionsPage();
-    expect(await screen.findByTestId('sessions-empty')).toBeInTheDocument();
   });
 });
 
-describe('会话页 — 归档 / 恢复 / 删除', () => {
-  it('归档：点 session-archive-s-active → archiveSession(id) → 行转归档（徽标 + 恢复按钮）', async () => {
+describe('会话页 — 归档 / 恢复 / 删除（执行会话）', () => {
+  it('归档：点 session-archive-ex-active-p1 → archiveSession(id) → 行转归档（徽标 + 恢复按钮）', async () => {
     const user = userEvent.setup();
     renderSessionsPage();
-    await screen.findByTestId('session-title-s-active');
+    await screen.findByTestId('session-title-ex-active-p1');
 
-    await user.click(screen.getByTestId('session-archive-s-active'));
-    expect(archiveSessionMock).toHaveBeenCalledWith('s-active');
+    await user.click(screen.getByTestId('session-archive-ex-active-p1'));
+    expect(archiveSessionMock).toHaveBeenCalledWith('ex-active-p1');
     await waitFor(() => {
-      expect(screen.getByTestId('session-archived-s-active')).toBeInTheDocument();
-      expect(screen.getByTestId('session-restore-s-active')).toBeInTheDocument();
-      expect(screen.queryByTestId('session-archive-s-active')).not.toBeInTheDocument();
+      expect(screen.getByTestId('session-archived-ex-active-p1')).toBeInTheDocument();
+      expect(screen.getByTestId('session-restore-ex-active-p1')).toBeInTheDocument();
+      expect(screen.queryByTestId('session-archive-ex-active-p1')).not.toBeInTheDocument();
     });
   });
 
-  it('恢复：归档行点 session-restore-s-archived → restoreSession(id) → 徽标消失、归档按钮出现', async () => {
+  it('恢复：归档行点 session-restore-ex-archived-p1 → restoreSession(id) → 徽标消失、归档按钮出现', async () => {
     const user = userEvent.setup();
     renderSessionsPage();
-    await screen.findByTestId('session-title-s-archived');
+    await screen.findByTestId('session-title-ex-archived-p1');
 
-    await user.click(screen.getByTestId('session-restore-s-archived'));
-    expect(restoreSessionMock).toHaveBeenCalledWith('s-archived');
+    await user.click(screen.getByTestId('session-restore-ex-archived-p1'));
+    expect(restoreSessionMock).toHaveBeenCalledWith('ex-archived-p1');
     await waitFor(() => {
-      expect(screen.queryByTestId('session-archived-s-archived')).not.toBeInTheDocument();
-      expect(screen.getByTestId('session-archive-s-archived')).toBeInTheDocument();
+      expect(screen.queryByTestId('session-archived-ex-archived-p1')).not.toBeInTheDocument();
+      expect(screen.getByTestId('session-archive-ex-archived-p1')).toBeInTheDocument();
     });
   });
 
   it('删除：取消二次确认不删；确认后 deleteSession(id) → 行消失', async () => {
     const user = userEvent.setup();
     renderSessionsPage();
-    await screen.findByTestId('session-title-s-active');
+    await screen.findByTestId('session-title-ex-active-p1');
 
-    await user.click(screen.getByTestId('session-delete-s-active'));
+    await user.click(screen.getByTestId('session-delete-ex-active-p1'));
     const dialog = await screen.findByTestId('session-delete-dialog');
     await user.click(within(dialog).getByTestId('session-delete-cancel'));
     expect(deleteSessionMock).not.toHaveBeenCalled();
-    expect(screen.getByTestId('session-title-s-active')).toBeInTheDocument();
+    expect(screen.getByTestId('session-title-ex-active-p1')).toBeInTheDocument();
 
-    await user.click(screen.getByTestId('session-delete-s-active'));
+    await user.click(screen.getByTestId('session-delete-ex-active-p1'));
     const dialog2 = await screen.findByTestId('session-delete-dialog');
     await user.click(within(dialog2).getByTestId('session-delete-confirm'));
-    expect(deleteSessionMock).toHaveBeenCalledWith('s-active');
+    expect(deleteSessionMock).toHaveBeenCalledWith('ex-active-p1');
     await waitFor(() => {
-      expect(screen.queryByTestId('session-title-s-active')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('session-title-ex-active-p1')).not.toBeInTheDocument();
     });
   });
 });
 
-describe('会话页 — AI 对话会话区块（#547）', () => {
-  it('挂载即拉取 AI 对话：apiFetch GET /api/v1/chat/conversations?include_deleted=true（#581 含已归档全量）；渲染会话卡片（项目名/最后消息/条数/时间）', async () => {
+describe('会话页 — AI 对话卡（统一目录内，含归档/恢复/删除）', () => {
+  it('p1 AI 对话卡显示 project_name/最后消息/条数；活动态渲染归档+删除按钮', async () => {
     renderSessionsPage();
-    const cards = await screen.findAllByTestId('chat-conversation-card');
-    expect(cards).toHaveLength(2);
-
-    // fetchChatConversations 走 apiFetch：路径含 include_deleted=true（#581：拉取含已归档对话全量）
-    const call = apiFetchMock.mock.calls.find(
-      ([p]) => p.startsWith('/api/v1/chat/conversations') && p.includes('include_deleted=true'),
-    );
-    expect(call).toBeTruthy();
-    const [, init] = call as [string, RequestInit];
-    expect(init?.method ?? 'GET').toBe('GET');
-
-    // p1 卡片：project_name / last_message / message_count（t('sessions.chat.count', {n})='3 条'）/ updated_at 非空
-    const p1Card = cards.find((c) => c.textContent?.includes('仙侠长篇'));
+    await screen.findAllByTestId('session-directory-card');
+    const p1Card = screen.getByTestId('session-title-conv-conv-1').closest('[data-testid="session-directory-card"]');
     expect(p1Card).toBeTruthy();
     expect(within(p1Card as HTMLElement).getByText('帮我写一段打斗场景')).toBeInTheDocument();
     expect(within(p1Card as HTMLElement).getByText('3 条')).toBeInTheDocument();
-    expect(within(p1Card as HTMLElement).getByTestId('chat-conversation-updated-p1')).not.toHaveTextContent('');
-
-    // p2 卡片：project_name 为 null → 回退「未知项目」（sessions.chat.unknownProject）
-    const p2Card = cards.find((c) => c.textContent?.includes('未知项目'));
-    expect(p2Card).toBeTruthy();
-    expect(within(p2Card as HTMLElement).getByText('1 条')).toBeInTheDocument();
-    expect(within(p2Card as HTMLElement).getByTestId('chat-conversation-updated-p2')).not.toHaveTextContent('');
+    expect(screen.getByTestId('chat-conv-archive-conv-1')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-conv-delete-conv-1')).toBeInTheDocument();
   });
 
-  it('AI 对话区块位于执行会话区块之后；无会话 → 空态 chat-conversations-empty；标题 sessions.chat.title="AI 对话"', async () => {
-    conversations.length = 0;
-    renderSessionsPage();
-    const section = await screen.findByTestId('chat-conversations-section');
-    expect(screen.getByTestId('chat-conversations-empty')).toBeInTheDocument();
-    expect(within(section).getByText('AI 对话')).toBeInTheDocument();
-    const runsSection = screen.getByTestId('sessions-section');
-    expect(runsSection.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-});
-
-/**
- * #566 AI 对话区块归档/删除：会话卡片补归档/删除按钮（对齐执行会话区块），
- * 点归档 → DELETE /api/v1/chat/conversations/{project_id} + 卡片本地移除。
- */
-describe('会话页 — AI 对话区块归档/删除（#566）', () => {
-  it('会话卡片渲染归档/删除按钮；点归档 → DELETE conversations/{project_id} + 卡片移除', async () => {
+  it('归档 AI 对话：点 chat-conv-archive-conv-1 → DELETE conversations/conv-1 + 转归档态（徽标+恢复按钮）', async () => {
     const user = userEvent.setup();
     renderSessionsPage();
-    // 两张会话卡片（p1/p2）——findAllByTestId 防「Found multiple」
-    const cards = await screen.findAllByTestId('chat-conversation-card');
-    expect(cards).toHaveLength(2);
-    // RED：当前会话卡片无归档/删除按钮 → 下面 FAIL
-    expect(screen.getByTestId('chat-conv-archive-p1')).toBeInTheDocument();
-    expect(screen.getByTestId('chat-conv-delete-p1')).toBeInTheDocument();
-    // 点归档 → DELETE /api/v1/chat/conversations/p1（archiveChatConversation 走 apiFetch）
-    await user.click(screen.getByTestId('chat-conv-archive-p1'));
+    await screen.findAllByTestId('session-directory-card');
+
+    await user.click(screen.getByTestId('chat-conv-archive-conv-1'));
     const delCall = apiFetchMock.mock.calls.find(
-      ([p, init]) => p === '/api/v1/chat/conversations/p1' && (init as RequestInit)?.method === 'DELETE',
+      ([p, init]) => p === '/api/v1/chat/conversations/conv-1' && (init as RequestInit)?.method === 'DELETE',
     );
     expect(delCall).toBeTruthy();
-    // #581 迁移：归档不再移除卡片——置 is_deleted=true 转归档态（归档徽标 + 恢复按钮出现，卡片仍在）
     await waitFor(() => {
-      expect(screen.getByTestId('chat-conv-archived-p1')).toBeInTheDocument();
-      expect(screen.getByTestId('chat-conv-restore-p1')).toBeInTheDocument();
-      expect(screen.queryByTestId('chat-conv-archive-p1')).not.toBeInTheDocument();
+      expect(screen.getByTestId('chat-conv-archived-conv-1')).toBeInTheDocument();
+      expect(screen.getByTestId('chat-conv-restore-conv-1')).toBeInTheDocument();
     });
+  });
+
+  it('#744 核心：同一 project 两个 conversation 线程都显示、message_count 各自正确（conversation_id 区分，非 project_id 单例聚合）', async () => {
+    // 覆盖：p1 下两条独立线程（#744 后端按 conversation 聚合）
+    conversations = [
+      {
+        conversation_id: 'conv-a',
+        project_id: 'p1',
+        project_name: '仙侠长篇',
+        title: '',
+        last_message: '帮我写一段打斗场景',
+        message_count: 3,
+        is_deleted: false,
+        updated_at: '2026-08-21T10:00:00Z',
+      },
+      {
+        conversation_id: 'conv-b',
+        project_id: 'p1',
+        project_name: '仙侠长篇',
+        title: '',
+        last_message: '聊聊角色设定',
+        message_count: 5,
+        is_deleted: false,
+        updated_at: '2026-08-22T10:00:00Z',
+      },
+    ];
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    // RED：当前 src 按 project_id 单例聚合 → conv 卡 testid 为 session-title-conv-p1（无 conv-a/conv-b）→ FAIL
+    expect(screen.getByTestId('session-title-conv-conv-a')).toBeInTheDocument();
+    expect(screen.getByTestId('session-title-conv-conv-b')).toBeInTheDocument();
+    // 条数各自正确（卡按 conversation_id 区分）
+    const cardA = screen.getByTestId('session-title-conv-conv-a').closest('[data-testid="session-directory-card"]');
+    const cardB = screen.getByTestId('session-title-conv-conv-b').closest('[data-testid="session-directory-card"]');
+    expect(cardA).toBeTruthy();
+    expect(cardB).toBeTruthy();
+    expect(within(cardA as HTMLElement).getByText('3 条')).toBeInTheDocument();
+    expect(within(cardB as HTMLElement).getByText('5 条')).toBeInTheDocument();
   });
 });
 
-/**
- * #581 归档视图闭环（用户拍板方案，RED 契约）：conversations 区块接 FILTERS all/active/archived，
- * fetch 带 include_deleted=true；归档视图显示已归档对话 + 恢复入口（restoreChatConversation 新 API，
- * 镜像 api/sessions.ts restoreSession；api/chat.ts GREEN 补）。
- */
-describe('会话页 — AI 对话归档视图（#581）', () => {
-  it('点 sessions-filter-archived → 只显示已归档对话卡片（p2 在、p1 不在）+ 归档徽标 + 恢复按钮', async () => {
-    const user = userEvent.setup();
+/* ============================== #770 会话页架构（title 展示 / 改名 / 导航） ============================== */
+
+describe('会话页 — #770 title 展示（空回退 project_name / titleEmpty）', () => {
+  it('AI 对话卡片标题元素展示会话 title（非空）', async () => {
+    conversations = [
+      {
+        conversation_id: 'conv-1',
+        project_id: 'p1',
+        project_name: '仙侠长篇',
+        title: '第十二章 剑心蒙尘',
+        last_message: '帮我写一段打斗场景',
+        message_count: 3,
+        is_deleted: false,
+        updated_at: '2026-08-21T10:00:00Z',
+      },
+    ];
     renderSessionsPage();
-    await screen.findAllByTestId('chat-conversation-card');
-    // RED：当前 conversations 区块不受 filter 影响（永远显示全部）→ p1 卡片仍在 → FAIL
-    await user.click(screen.getByTestId('sessions-filter-archived'));
-    expect(screen.getByTestId('chat-conversation-updated-p2')).toBeInTheDocument();
-    expect(screen.queryByTestId('chat-conversation-updated-p1')).not.toBeInTheDocument();
-    // 归档徽标 + 恢复按钮（#581 契约：chat-conv-archived-<pid> / chat-conv-restore-<pid>）
-    expect(screen.getByTestId('chat-conv-archived-p2')).toBeInTheDocument();
-    expect(screen.getByTestId('chat-conv-restore-p2')).toBeInTheDocument();
+    await screen.findAllByTestId('session-directory-card');
+    // RED：当前实现展示 project_name（'仙侠长篇'）→ FAIL
+    expect(screen.getByTestId('session-title-conv-conv-1')).toHaveTextContent('第十二章 剑心蒙尘');
   });
 
-  it('归档视图恢复：点 chat-conv-restore-p2 → POST /api/v1/chat/conversations/p2/restore + 本地恢复回活动列表', async () => {
+  it('title 为空 → 回退展示 project_name（守护用例，当前实现天然通过）', async () => {
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    expect(screen.getByTestId('session-title-conv-conv-1')).toHaveTextContent('仙侠长篇');
+  });
+
+  it('title 与 project_name 皆空 → 展示 t(sessions.chat.titleEmpty)（未命名会话）', async () => {
+    conversations = [
+      {
+        conversation_id: 'conv-1',
+        project_id: 'p1',
+        project_name: null,
+        title: '',
+        last_message: '帮我写一段打斗场景',
+        message_count: 3,
+        is_deleted: false,
+        updated_at: '2026-08-21T10:00:00Z',
+      },
+    ];
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    // RED：当前实现展示 t('sessions.chat.unknownProject')='未知项目' → FAIL
+    expect(screen.getByTestId('session-title-conv-conv-1')).toHaveTextContent('未命名会话');
+  });
+});
+
+describe('会话页 — #770 改名入口（PATCH /chat/conversations/{id}）', () => {
+  it('AI 对话卡片渲染改名按钮 chat-conv-rename-{id}；点击 → 行内输入框 chat-conv-rename-input-{id}', async () => {
     const user = userEvent.setup();
     renderSessionsPage();
-    await screen.findAllByTestId('chat-conversation-card');
-    await user.click(screen.getByTestId('sessions-filter-archived'));
-    // RED：当前无恢复按钮 → getByTestId FAIL
-    const restoreBtn = screen.getByTestId('chat-conv-restore-p2');
-    await user.click(restoreBtn);
-    // restoreChatConversation 走 apiFetch：POST /api/v1/chat/conversations/p2/restore（镜像 archive 模式）
-    const restoreCall = apiFetchMock.mock.calls.find(
-      ([p, init]) => p === '/api/v1/chat/conversations/p2/restore' && (init as RequestInit)?.method === 'POST',
+    await screen.findAllByTestId('session-directory-card');
+    // RED：改名按钮未实现 → FAIL
+    const renameBtn = screen.getByTestId('chat-conv-rename-conv-1');
+    await user.click(renameBtn);
+    expect(screen.getByTestId('chat-conv-rename-input-conv-1')).toBeInTheDocument();
+  });
+
+  it('输入新标题 Enter 提交 → PATCH /api/v1/chat/conversations/conv-1 body { title } → 卡片 title 更新 + ok toast', async () => {
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    await user.click(screen.getByTestId('chat-conv-rename-conv-1'));
+    const input = screen.getByTestId('chat-conv-rename-input-conv-1');
+    await user.clear(input);
+    await user.type(input, '改名后的标题{Enter}');
+    const patchCall = apiFetchMock.mock.calls.find(
+      ([p, init]) =>
+        p === '/api/v1/chat/conversations/conv-1' &&
+        (init as unknown as { method?: string } | undefined)?.method === 'PATCH',
     );
-    expect(restoreCall).toBeTruthy();
-    // 本地恢复：归档视图下 p2 卡片移除（恢复按钮消失）
-    await waitFor(() => {
-      expect(screen.queryByTestId('chat-conv-restore-p2')).not.toBeInTheDocument();
+    expect(patchCall).toBeTruthy();
+    expect((patchCall?.[1] as unknown as { body?: unknown } | undefined)?.body).toEqual({
+      title: '改名后的标题',
     });
-    // 回活动列表：active 视图下 p2 重新可见（is_deleted=false）
-    await user.click(screen.getByTestId('sessions-filter-active'));
-    expect(screen.getByTestId('chat-conversation-updated-p2')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('session-title-conv-conv-1')).toHaveTextContent('改名后的标题');
+    });
+    // ok toast：GREEN 补 i18n key write.chat.renamed='已重命名'
+    expect(useToastStore.getState().toasts.some((t) => t.type === 'ok' && /重命名/.test(t.message))).toBe(true);
   });
 
-  it('点 sessions-filter-active → 只显示活动对话卡片（p1 在、p2 不在）', async () => {
+  it('PATCH 失败 → err toast + 卡片 title 不变', async () => {
+    renameFail = true;
     const user = userEvent.setup();
     renderSessionsPage();
-    await screen.findAllByTestId('chat-conversation-card');
-    // RED：当前 conversations 区块不受 filter 影响 → p2 卡片仍在 → FAIL
-    await user.click(screen.getByTestId('sessions-filter-active'));
-    expect(screen.getByTestId('chat-conversation-updated-p1')).toBeInTheDocument();
-    expect(screen.queryByTestId('chat-conversation-updated-p2')).not.toBeInTheDocument();
+    await screen.findAllByTestId('session-directory-card');
+    await user.click(screen.getByTestId('chat-conv-rename-conv-1'));
+    const input = screen.getByTestId('chat-conv-rename-input-conv-1');
+    await user.clear(input);
+    await user.type(input, '新标题{Enter}');
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'err')).toBe(true);
+    });
+    // title 不变：conv-1 默认 title 空 → 仍回退 project_name
+    expect(screen.getByTestId('session-title-conv-conv-1')).toHaveTextContent('仙侠长篇');
   });
 
-  it('守护：filter=all 显示全部对话卡片；#566 归档/删除按钮（chat-conv-archive-<pid>/chat-conv-delete-<pid>）保持', async () => {
+  it('Esc 取消 → 关闭输入框且不发 PATCH', async () => {
+    const user = userEvent.setup();
     renderSessionsPage();
-    const cards = await screen.findAllByTestId('chat-conversation-card');
-    expect(cards).toHaveLength(2);
-    // 活动对话（p1）：归档按钮 + 删除按钮
-    expect(screen.getByTestId('chat-conv-archive-p1')).toBeInTheDocument();
-    expect(screen.getByTestId('chat-conv-delete-p1')).toBeInTheDocument();
-    // 归档对话（p2）：不渲染归档按钮（渲染徽标 + 恢复按钮），删除按钮保持（#581 契约）
-    expect(screen.queryByTestId('chat-conv-archive-p2')).not.toBeInTheDocument();
-    expect(screen.getByTestId('chat-conv-archived-p2')).toBeInTheDocument();
-    expect(screen.getByTestId('chat-conv-restore-p2')).toBeInTheDocument();
-    expect(screen.getByTestId('chat-conv-delete-p2')).toBeInTheDocument();
+    await screen.findAllByTestId('session-directory-card');
+    await user.click(screen.getByTestId('chat-conv-rename-conv-1'));
+    const input = screen.getByTestId('chat-conv-rename-input-conv-1');
+    await user.click(input);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByTestId('chat-conv-rename-input-conv-1')).not.toBeInTheDocument();
+    const patchCall = apiFetchMock.mock.calls.find(
+      ([p, init]) =>
+        p === '/api/v1/chat/conversations/conv-1' &&
+        (init as unknown as { method?: string } | undefined)?.method === 'PATCH',
+    );
+    expect(patchCall).toBeUndefined();
+  });
+
+  it('输入超 200 字符 → err toast 且不发 PATCH（f19 §4.2 边界）', async () => {
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    await user.click(screen.getByTestId('chat-conv-rename-conv-1'));
+    const input = screen.getByTestId('chat-conv-rename-input-conv-1');
+    await user.clear(input);
+    await user.type(input, `${'长'.repeat(201)}{Enter}`);
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'err')).toBe(true);
+    });
+    const patchCall = apiFetchMock.mock.calls.find(
+      ([p, init]) =>
+        p === '/api/v1/chat/conversations/conv-1' &&
+        (init as unknown as { method?: string } | undefined)?.method === 'PATCH',
+    );
+    expect(patchCall).toBeUndefined();
+  });
+});
+
+describe('会话页 — #770 点击导航（title 匹配章节 → chapter_id；匹配不到 → 全局 chat 页）', () => {
+  it('title 与当前项目章节标题同名 → navigate(/writing?chapter_id=...)', async () => {
+    conversations = [
+      {
+        conversation_id: 'conv-1',
+        project_id: 'p1',
+        project_name: '仙侠长篇',
+        title: '第十二章 剑心蒙尘',
+        last_message: '帮我写一段打斗场景',
+        message_count: 3,
+        is_deleted: false,
+        updated_at: '2026-08-21T10:00:00Z',
+      },
+    ];
+    chapterItems = [{ id: 'ch1', title: '第十二章 剑心蒙尘', volume_id: null, order_index: 0, word_count: 0 }];
+    useChapterStore.setState({ chapters: chapterItems, treeProjectId: 'p1' });
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    // RED：当前标题元素无点击行为 → 不导航 → location-probe 不出现 → FAIL
+    await user.click(screen.getByTestId('session-title-conv-conv-1'));
+    const probe = await screen.findByTestId('location-probe');
+    expect(probe).toHaveTextContent('/writing?chapter_id=ch1');
+  });
+
+  it('title 匹配不到章节（改名 / 全局会话）→ navigate(/writing?conversation_id=...) 全局 chat 页', async () => {
+    conversations = [
+      {
+        conversation_id: 'conv-1',
+        project_id: 'p1',
+        project_name: '仙侠长篇',
+        title: '改名后的会话',
+        last_message: '帮我写一段打斗场景',
+        message_count: 3,
+        is_deleted: false,
+        updated_at: '2026-08-21T10:00:00Z',
+      },
+    ];
+    // 章节存在但 title 不匹配（改名了）
+    chapterItems = [{ id: 'ch1', title: '第十二章 剑心蒙尘', volume_id: null, order_index: 0, word_count: 0 }];
+    useChapterStore.setState({ chapters: chapterItems, treeProjectId: 'p1' });
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    await user.click(screen.getByTestId('session-title-conv-conv-1'));
+    const probe = await screen.findByTestId('location-probe');
+    expect(probe).toHaveTextContent('/writing?conversation_id=conv-1');
   });
 });

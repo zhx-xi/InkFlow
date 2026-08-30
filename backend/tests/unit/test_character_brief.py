@@ -1,6 +1,6 @@
 """Character.brief 字段契约测试（issue #593 D5-a1）.
 
-测试范围 (spec f9-character-service v1.1):
+测试范围 (spec f9-character v1.1):
     - Character.brief 字段默认空串；可传值
     - CharacterCreate.brief 可传值；默认空串；超长报错
     - CharacterUpdate.brief 可传值；None 表示不修改

@@ -3,7 +3,7 @@
 测试范围：Character / CharacterCreate / CharacterUpdate / CharacterGroup /
 CharacterRelation / CharacterRelationCreate / ExtractedCharacter /
 ExtractedRelation / CharacterExtractRequest。
-依据: specs/f9-character-service/spec.md §2.5/§2.6 + §9 测试策略「领域模型」。
+依据: specs/f9-character/spec.md §2.5/§2.6 + §9 测试策略「领域模型」。
 """
 
 import uuid

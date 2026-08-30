@@ -1,7 +1,7 @@
 """时间线管理领域异常.
 
 F12 专属异常类型，继承自 Exception。
-依据: specs/f12-timeline-service/spec.md §3.4/§8。
+依据: specs/f12-timeline/spec.md §3.4/§8。
 
 异常映射约定（spec §3.4 异常映射表）:
 - TimelineServiceError 子类 = 业务校验失败，API 层映射为 422（消息即 detail）

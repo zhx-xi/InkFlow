@@ -1,6 +1,6 @@
 """F14 vector CLI 命令测试 — Mock ensure_kernel + InkFlowHTTPClient（spec §4/§9 CLI 测试）.
 
-覆盖（依据 specs/f14-extraction-service/spec.md §4/§9）:
+覆盖（依据 specs/f14-extraction/spec.md §4/§9）:
 - vector reindex 缺省（--type 省略 = None 透传）与多 --type 指定
 - vector retrieve 参数透传（--query/--type/--top-k/--min-score）与排序输出
 - 信封格式与退出码 0/1/2；INTERNAL_ERROR / NOT_FOUND 信封

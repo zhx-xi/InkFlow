@@ -55,6 +55,7 @@ from inkflow.domain.models.context import (
     DroppedItem,
     TokenBudgetConfig,
 )
+from inkflow.domain.models.conversation import Conversation, ConversationCreate
 from inkflow.domain.models.draft import Draft, DraftStatus
 from inkflow.domain.models.extraction import (
     ExtractionRequest,
@@ -183,6 +184,8 @@ __all__ = [
     "ContextRequest",
     "ContextSourceType",
     "ContinueWritingRequest",
+    "Conversation",
+    "ConversationCreate",
     "DimensionSummary",
     "Draft",
     "DraftStatus",

@@ -1,4 +1,5 @@
 # F36: 世界观地图视图（world-map）— 功能规格
+> **端**: backend
 
 > **Spec 版本**: 1.4 | **日期**: 2026-08-15 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §5（workspace）、PRD v2.1 §6.2 P1-02、F10 spec + F35 spec v1.1（地点树，本模块数据基础）、Constitution P1-P6
 >
@@ -679,3 +680,52 @@ F36 被依赖:
 ---
 
 *本文档为 F36 功能规格（What），实施步骤（How）见后续 `specs/f36-world-map/plan.md`。所有里程碑验收以本节 M1-M8 为准。*
+## 14. 动作确认
+
+> 基于 §3 API + §4 CLI + §7 边界事实的状态流表，不新增行为。
+
+### 14.1 端点状态流
+
+| 端点 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| POST /api/v1/projects/{project_id}/maps | 项目存在·root_location 有效 | 存图片文件 + 建地图 | 201 + Map | 422 MapRootLocationNotFoundError（父地点不存在或不在同一项目）；422 MapRootLocationConflictError（该地点已挂有一张地图）；422 MapParentMapNotFoundError（父地图不存在或不在同一项目）；500 MapAssetError（图片类型不支持/超限） | multipart/form-data；parent_map_id None = 根图（v1.3 #368） |
+| GET /api/v1/projects/{project_id}/maps | 项目存在 | 列表 + root_location_id 过滤 | 200 + {items,total} | — | ?root_location_id=none = 全局图 |
+| GET /api/v1/maps/{map_id} | 地图存在 | 详情 | 200 + Map | 404 MapNotFoundError | — |
+| GET /api/v1/maps/{map_id}/image | 地图存在·文件存在 | 图片文件流 | 200 FileResponse（Content-Type 按扩展名） | 404「图片文件缺失」（文件被手动删） | DB 行仍在，可换图恢复 |
+| GET /api/v1/maps/{map_id}/children | 地图存在 | drill-down 子地图列表 | 200 + {items,total} | 404 MapNotFoundError | 过滤地点软删；无子图 → 200 空列表 |
+| PATCH /api/v1/maps/{map_id} | 地图存在 | 更新元数据（含 parent_map_id 改挂） | 200 + Map | 404 MapNotFoundError；422 MapParentCycleError（不能将地图挂到自己的子孙地图下） | parent_map_id null = 变根图（v1.4 #378） |
+| PUT /api/v1/maps/{map_id}/image | 地图存在 | 换图（新文件写入成功后才删旧文件） | 200 | 404 MapNotFoundError；500 MapAssetError（写失败） | 失败保留旧图，DB 不变 |
+| DELETE /api/v1/maps/{map_id}（无子地图） | 地图存在 | 真删（地图 + pins + 文件） | 204 | 404 MapNotFoundError | 无归档态；真删即 404 |
+| DELETE /api/v1/maps/{map_id}?cascade=true（有子地图） | 地图存在 | 递归真删子孙地图 + pins + 文件（单事务原子） | 204 | 404 MapNotFoundError | 不可恢复 |
+| DELETE /api/v1/maps/{map_id}?reparent_to=<map_id>（有子地图） | 地图存在 | 子地图改挂新父 + 真删自身 + 文件删 | 204 | 422 MapReparentTargetError（reparent 目标地图不存在/不在同一项目/是自身子孙地图） | 目标父地图自动补 pin（复用/创建默认 pin） |
+| DELETE /api/v1/maps/{map_id}（有子地图且未指定） | 地图存在·有子地图 | 拒绝删除 | 422 MapChildrenActionRequiredError（该地图存在子地图，必须指定 cascade 或 reparent_to） | — | 强制显式选择 |
+| POST /api/v1/maps/{map_id}/pins | 地图存在·location 有效 | 建 pin | 201 + MapPin | 404 MapNotFoundError；422 MapPinLocationNotFoundError（pin 关联地点不存在或不在同一项目） | x/y 0-100 |
+| GET /api/v1/maps/{map_id}/pins | 地图存在 | pin 列表 | 200 + {items,total} | 404 MapNotFoundError | ?location_id=<id> 过滤可选 |
+| PATCH /api/v1/map-pins/{pin_id} | pin 存在 | 更新 pin | 200 + MapPin | 404 MapPinNotFoundError；422 MapPinLocationNotFoundError | — |
+| DELETE /api/v1/map-pins/{pin_id} | pin 存在 | 真删 pin（无归档） | 204 | 404 MapPinNotFoundError | — |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| map create <project_id> --name --image | 项目存在·图片有效 | 上传本地图片建图 | ✅ / --json | 图片上传失败（文件不存在/类型不支持）→ VALIDATION_ERROR；404 NOT_FOUND | --root-location/--description 可选 |
+| map list <project_id> | 项目存在 | 列表 | 列表 / --json | — | --root-location <UUID>/none |
+| map get <map_id> | 地图存在 | 详情；--image-output 下载图片 | JSON / 图片文件 | NOT_FOUND 退出码 1 | — |
+| map update <map_id> | 地图存在 | 更新元数据 | JSON | NOT_FOUND；VALIDATION_ERROR | --root-location <UUID>/none |
+| map image <map_id> --image | 地图存在 | 换图 | JSON | 文件无效 → VALIDATION_ERROR | — |
+| map delete <map_id> | 地图存在 | 二次确认 → 真删 | ✅ / --json | 有子未指定 → VALIDATION_ERROR（与 API 422 一致）；NOT_FOUND | --cascade / --reparent-to <map_id> |
+| map children <map_id> | 地图存在 | drill-down | JSON | NOT_FOUND | — |
+| map pin add <map_id> | 地图存在·location 有效 | 建 pin | ✅ / JSON | NOT_FOUND；VALIDATION_ERROR（location 非法） | --x/--y 0-100 |
+| map pin list <map_id> | 地图存在 | pin 列表 | JSON | NOT_FOUND | — |
+| map pin update <pin_id> | pin 存在 | 更新 pin | JSON | NOT_FOUND；VALIDATION_ERROR | --location <UUID>/none |
+| map pin delete <pin_id> | pin 存在 | 真删 pin | ✅ / JSON | NOT_FOUND | 无归档 |
+
+### 14.3 验收锚点
+
+- A1：同一地点挂第二张图 → 422 MapRootLocationConflictError
+- A2：DELETE 有子地图未指定 → 422 MapChildrenActionRequiredError；?cascade=true → 递归真删（单事务原子）+ 文件删
+- A3：PATCH parent_map_id = 自身或自身子孙 → 422 MapParentCycleError（防成环，v1.4 #378）
+- A4：图片类型白名单外（.exe/.svg）或 > 10 MB → MapAssetError（魔数校验拒绝）
+- A5：GET /image 文件缺失 → 404「图片文件缺失」（DB 行保留，可换图恢复）
+- A6：硬删地点（F35 cascade）→ pin location_id 显式 SET NULL（保留为纯注释，label 不变）
+- A7：换图失败（新文件写失败）→ 旧文件保留、DB 不变（不丢旧图）

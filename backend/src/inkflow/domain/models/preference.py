@@ -8,7 +8,7 @@ ProjectPreference 是用户修改行为的统计沉淀（spec §2.1，ADR-G 结�
 - source_events 反查 memory_events 事件详情（可追溯）;
 - 删除即停止注入（读路径实时查库无缓存，spec §5.3）.
 
-依据: specs/f28-agent-memory/spec.md §2.1/§5.2/§5.3。
+依据: specs/f28-memory-learning/spec.md §2.1/§5.2/§5.3。
 领域层保持纯净：仅依赖 Pydantic v2 与标准库，不感知 ORM / 框架。
 """
 

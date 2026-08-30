@@ -1,6 +1,6 @@
 """F44 v1.2 #475 访谈 LLM 动态提问 API 契约测试（TDD RED 阶段，兄弟文件）。
 
-权威来源：specs/f44-long-task-orchestrator/spec.md §3.2（v1.2 响应扩展——
+权威来源：specs/f44-book-orchestrator/spec.md §3.2（v1.2 响应扩展——
 questions[] 含 kind；respond 响应加 confirmed_items/conflicts/confirming；
 PlannerRespondRequest 加 confirm）、§3.5（非 confirming 阶段 confirm → 422）、
 §13.5 M13（API 测试：confirm 端点 + confirmed_items/conflicts 响应字段）。

@@ -1,6 +1,6 @@
 """F10 世界观提取管线 — 模板渲染 → LLM → JSON 解析 → 修复重试 → 合并落库.
 
-依据: specs/f10-world-service/spec.md §5（AI 提取模式，同 F9 §5，
+依据: specs/f10-world-settings/spec.md §5（AI 提取模式，同 F9 §5，
 无 relations 步骤）。实现为 F9 `_character_extractor.py` 的镜像，
 仅替换领域实体（WorldSetting ↔ Character）与模板名
 （world_extract ↔ character_extract），不重新设计管线。

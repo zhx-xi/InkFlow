@@ -9,7 +9,7 @@ F15 不新建业务实体表——报告是当前数据快照的只读计算结�
 引用 F12 ConsistencyReport（domain/models/timeline.py 已定义）作为时间线
 维度的嵌套原始报告——引用不重定义（spec §2.4）。
 
-依据: specs/f15-audit-service/spec.md §2。
+依据: specs/f15-consistency-audit/spec.md §2。
 领域层保持纯净：仅依赖 Pydantic v2，不感知 ORM / 框架。
 """
 

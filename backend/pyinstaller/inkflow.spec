@@ -69,6 +69,15 @@ datas += _chromadb_datas
 binaries += _chromadb_binaries
 hiddenimports += _chromadb_hiddenimports
 
+# #710: collect_all langgraph/deepagents/langchain 全家——
+# deepagents create_deep_agent → CompiledStateGraph，其 ToolNode 组件由 importlib 动态导入，
+# PyInstaller 静态分析不可见；此前漏收集导致打包版 chat Agent 工具调用失败（sync 路径触发）。
+for _pkg in ("deepagents", "langchain_openai", "langchain_core", "langgraph"):
+    _d, _b, _h = collect_all(_pkg)
+    datas += _d
+    binaries += _b
+    hiddenimports += _h
+
 # 运行时钩子（冒烟 2 实测）：冻结版 PyInstaller 引导器在 Windows 上重定向
 # stdout/stderr 时忽略 PYTHONUTF8/PYTHONIOENCODING，退化为区域编码（本机 cp936），
 # serve 打印 emoji 等字符直接 UnicodeEncodeError（Electron 内核以管道捕获 stdout

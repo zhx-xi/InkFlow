@@ -1,7 +1,7 @@
 """F14 统一提取服务领域异常.
 
 F14 专属异常类型，继承自 Exception。
-依据: specs/f14-extraction-service/spec.md §7 边界情况与错误处理 + §8 文件清单。
+依据: specs/f14-extraction/spec.md §7 边界情况与错误处理 + §8 文件清单。
 
 异常映射约定（spec §7）:
 - ExtractionServiceError 子类 = 业务校验失败，API 层映射为 422（消息即 detail）

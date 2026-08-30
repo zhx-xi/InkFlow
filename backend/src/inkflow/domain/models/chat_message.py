@@ -29,6 +29,7 @@ class ChatMessage(BaseModel):
 
     id: uuid.UUID
     project_id: uuid.UUID
+    conversation_id: uuid.UUID
     role: Literal["user", "ai"]
     content: str
     intent: Literal["content", "conversation"] | None = None
@@ -40,6 +41,7 @@ class ChatMessageCreate(BaseModel):
     """创建 chat 消息请求 DTO（content 校验；role 枚举）。"""
 
     project_id: uuid.UUID
+    conversation_id: uuid.UUID | None = None
     role: Literal["user", "ai"]
     content: str
     intent: Literal["content", "conversation"] | None = None

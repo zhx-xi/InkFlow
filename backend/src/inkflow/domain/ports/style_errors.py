@@ -1,7 +1,7 @@
 """F16 风格检测服务领域异常.
 
 F16 专属异常类型，继承自 Exception。
-依据: specs/f16-style-service/spec.md §3.3 异常映射表 + §7 边界情况与
+依据: specs/f16-style-analysis/spec.md §3.3 异常映射表 + §7 边界情况与
 错误处理 + §8 文件清单。
 
 异常映射约定（spec §3.3/§7）:

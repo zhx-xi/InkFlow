@@ -1,6 +1,6 @@
 /**
  * #675 大纲分级创建（level / parent_id）—— GUI 契约
- * specs/f43-setting-library-crud/spec.md §5.15 + #675 拍板：
+ * specs/f43-setting-library-gui/spec.md §5.15 + #675 拍板：
  *   - outline 分类创建表单新增 level 字段（overall/volume/chapter 三选）
  *   - 创建入口传父级上下文：＋卷 → parent=overall+level=volume；＋章细纲 → parent=volume+level=chapter；＋整本 → level=overall+parent=null
  *   - POST /projects/{pid}/outlines body 含 level/parent_id

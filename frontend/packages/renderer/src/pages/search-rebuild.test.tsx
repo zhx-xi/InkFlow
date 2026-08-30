@@ -216,3 +216,32 @@ describe('检索页 — 索引维护重建入口（#657）', () => {
     expect(screen.getByRole('button', { name: '检索' })).toBeInTheDocument();
   });
 });
+
+describe('#797 search N6 重建 failed 红块 + 轮询异常（spec 验收点）', () => {
+  it('status=failed → rebuild-err-toast 红块（含 error 文案）', async () => {
+    seedProjects();
+    fetchIndexRebuildStatusMock.mockResolvedValue({
+      status: 'failed', step: 'vector', progress_done: 3, progress_total: 7, rebuilt_at: null, error: '向量索引构建失败',
+    });
+    const user = userEvent.setup();
+    renderSearchPage();
+    await user.click(screen.getByTestId('rebuild-btn'));
+    await user.click(await screen.findByTestId('rebuild-confirm-ok'));
+    const err = await screen.findByTestId('rebuild-err-toast');
+    expect(err).toBeInTheDocument();
+    expect(err.textContent).toMatch(/向量索引构建失败/);
+  });
+
+  it('轮询 fetchIndexRebuildStatus reject → 落入 err 红块（不炸 UI）', async () => {
+    seedProjects();
+    fetchIndexRebuildStatusMock.mockRejectedValue(new Error('poll exploded'));
+    const user = userEvent.setup();
+    renderSearchPage();
+    await user.click(screen.getByTestId('rebuild-btn'));
+    await user.click(await screen.findByTestId('rebuild-confirm-ok'));
+    const err = await screen.findByTestId('rebuild-err-toast');
+    expect(err).toBeInTheDocument();
+    expect(err.textContent).toMatch(/poll exploded/);
+    expect(screen.getByTestId('search-page')).toBeInTheDocument();
+  });
+});

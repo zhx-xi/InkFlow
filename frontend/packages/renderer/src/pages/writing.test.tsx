@@ -9,13 +9,12 @@
  * - 项目印章: project-seal（文本 = 书名关键字）
  * - 工具栏: editor-toolbar；撤销/重做/保存（toolbar-save）/续写/生成（i18n 文案）
  * - 编辑器: chapter-editor（textarea，段落化纯文本）
- * - 上下文: context-collapse / context-panel-content / context-expand-bar
+ * - 右栏: right-rail / right-col-drag / right-col-toggle（整栏收起/展开，面板隐藏）
  *
- * 管线执行状态区（spec §5.6 + #642-1 流式）：
- * - data-testid="pipeline-status"
- * - running → 文案「执行中」（write.pipeline.running）
- * - success → 文案「生成完成」（write.pipeline.success）
- * - failed  → 文案「生成失败: ...」（write.pipeline.failed）
+ * #763：写作页不再内联页脚进度条（<PipelineStatus/> 已移除）——
+ *   pipeline-status testid 不再出现在写作页（进度改由会话页/聊天消息承载）。
+ * 生成契约（#763）：点击「生成」→ createChatConversation(projectId) 建线程 →
+ *   start(mode) 流式；onDone(final_output) 落章同时 saveChatMessage(ai, intent=content)。
  *
  * 管线接线契约（#298 + #642-1 核心）：
  * - 「续写」按钮 / Ctrl+Enter → streamPipeline({pipeline:'builtin:write_continue', ...})
@@ -38,6 +37,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { WritingPage } from './writing';
 import { apiFetch } from '../api/client';
 import { streamPipeline, executePipeline, confirmExecution } from '../api/pipeline';
+import { createChatConversation, saveChatMessage } from '../api/chat';
 import { useChapterStore } from '../stores/chapter';
 import { useProjectStore } from '../stores/project';
 import { useThemeStore } from '../stores/theme';
@@ -54,11 +54,17 @@ vi.mock('../api/pipeline', () => ({
   getExecutionStatus: vi.fn(),
   confirmExecution: vi.fn(),
 }));
+vi.mock('../api/chat', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/chat')>();
+  return { ...actual, createChatConversation: vi.fn(), saveChatMessage: vi.fn() };
+});
 
 const apiFetchMock = vi.mocked(apiFetch);
 const streamPipelineMock = vi.mocked(streamPipeline);
 const executeMock = vi.mocked(executePipeline);
 const confirmMock = vi.mocked(confirmExecution);
+const createChatCovMock = vi.mocked(createChatConversation);
+const saveChatMsgMock = vi.mocked(saveChatMessage);
 
 /** #642-1：每次 streamPipeline 调用的 body/callbacks 捕获（用例手动驱动 SSE 帧） */
 interface CapturedPipelineStream {
@@ -109,6 +115,10 @@ beforeEach(() => {
   streamPipelineMock.mockReset();
   executeMock.mockReset();
   confirmMock.mockReset();
+  createChatCovMock.mockReset();
+  saveChatMsgMock.mockReset();
+  createChatCovMock.mockResolvedValue({ conversation_id: 'conv-1', project_id: 'p1', project_name: '青云志', last_message: '', message_count: 0, is_deleted: false, updated_at: '2026-08-29T00:00:00Z' });
+  saveChatMsgMock.mockResolvedValue({ id: 'm1', project_id: 'p1', conversation_id: 'conv-1', role: 'ai', content: 'x', intent: 'content', created_at: '2026-08-29T00:00:00Z' });
   capturedStream = null;
   // #474 前置校验依赖 models store：默认播种「已配置」+ provider-configs GET 返回同款，
   // 防 GREEN 挂载/发送时 loadProviders 覆盖为未配置
@@ -190,19 +200,52 @@ describe('写作页 — 项目印章常驻（三主题）', () => {
   });
 });
 
-describe('写作页 — 上下文面板折叠/展开闭环', () => {
-  it('折叠 → 展开条出现、内容区消失；点击展开条 → 内容区恢复', async () => {
+describe('写作页 — 右栏整栏收起/展开（#742 收起按钮整行 + #747 拖动方向）', () => {
+  it('#765 收起按钮移到右栏左缘 + 显示「折叠」提示；拖动分隔线 hover 变鼠标（非方框）', () => {
+    render(<WritingPage />);
+    const rail = screen.getByTestId('right-rail');
+    const toggle = within(rail).getByTestId('right-col-toggle');
+    // #765：收起按钮位于右栏左缘（内容左对齐 + 可见「折叠」文案，非 w-full 整行居中图标）
+    expect(toggle).toBeInTheDocument();
+    expect(toggle).toHaveTextContent('折叠');
+    expect(toggle.className).not.toMatch(/w-full/);
+    expect(toggle.compareDocumentPosition(screen.getByTestId('rail-panel-context')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 拖动分隔线：右栏内、hover 变鼠标（cursor-col-resize）、细边界（非 28px 方框）
+    const drag = within(rail).getByTestId('right-col-drag');
+    expect(drag).toBeInTheDocument();
+    expect(drag.className).toMatch(/cursor-col-resize/);
+    expect(drag.className).not.toMatch(/h-7/);
+  });
+
+  it('#747 往左拖「right-col-drag」→ 右栏变宽、左编辑器变窄', () => {
+    render(<WritingPage />);
+    const rail = screen.getByTestId('right-rail');
+    const startW = parseInt(rail.style.width, 10) || 240;
+    const drag = screen.getByTestId('right-col-drag');
+    fireEvent.mouseDown(drag, { clientX: 300, clientY: 100 });
+    fireEvent.mouseMove(window, { clientX: 200, clientY: 100 }); // 往左拖 100px
+    const afterW = parseInt(rail.style.width, 10);
+    expect(afterW).toBeGreaterThan(startW); // 右栏变宽
+  });
+
+  it('点「»」→ 整栏收起（context/summary 面板全隐藏 + data-collapsed=true）；再点「«」→ 展开', async () => {
     const user = userEvent.setup();
     render(<WritingPage />);
-    expect(screen.getByTestId('context-panel-content')).toBeInTheDocument();
+    // 展开态：两面板均在（#764 无 drafts）
+    expect(screen.getByTestId('rail-panel-context')).toBeInTheDocument();
+    expect(screen.getByTestId('rail-panel-summary')).toBeInTheDocument();
 
-    await user.click(screen.getByTestId('context-collapse'));
-    expect(screen.queryByTestId('context-panel-content')).not.toBeInTheDocument();
-    expect(screen.getByTestId('context-expand-bar')).toBeInTheDocument();
+    // 收起整栏
+    await user.click(screen.getByTestId('right-col-toggle'));
+    expect(screen.getByTestId('right-rail')).toHaveAttribute('data-collapsed', 'true');
+    expect(screen.queryByTestId('rail-panel-context')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('rail-panel-summary')).not.toBeInTheDocument();
 
-    await user.click(screen.getByTestId('context-expand-bar'));
-    expect(screen.getByTestId('context-panel-content')).toBeInTheDocument();
-    expect(screen.queryByTestId('context-expand-bar')).not.toBeInTheDocument();
+    // 展开整栏
+    await user.click(screen.getByTestId('right-col-toggle'));
+    expect(screen.getByTestId('right-rail')).not.toHaveAttribute('data-collapsed', 'true');
+    expect(screen.getByTestId('rail-panel-context')).toBeInTheDocument();
+    expect(screen.getByTestId('rail-panel-summary')).toBeInTheDocument();
   });
 });
 
@@ -288,15 +331,14 @@ describe('写作页 — 管线执行状态与成品落章（#298 §5.6 + #642-1 
     });
   });
 
-  it('执行中：running 状态展示「执行中」', async () => {
+  it('#763 执行中：页脚不再渲染 pipeline-status 进度条', async () => {
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
-    await waitFor(() => {
-      expect(screen.getByTestId('pipeline-status')).toHaveTextContent('执行中');
-    });
+    await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
+    expect(screen.queryByTestId('pipeline-status')).not.toBeInTheDocument();
   });
 
-  it('成品落章：onDone(final_output) → 编辑器内容 = final_output + 展示「生成完成」', async () => {
+  it('#763 成品落章：onDone(final_output) → 编辑器内容 = final_output（页脚无 pipeline-status）', async () => {
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
@@ -306,21 +348,21 @@ describe('写作页 — 管线执行状态与成品落章（#298 §5.6 + #642-1 
     });
     const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
     await waitFor(() => expect(editor.value).toBe('管线成品章节内容'));
-    expect(screen.getByTestId('pipeline-status')).toHaveTextContent('生成完成');
+    expect(screen.queryByTestId('pipeline-status')).not.toBeInTheDocument();
   });
 
-  it('失败：onError → 展示错误（不崩溃、不落章）', async () => {
+  it('失败：onError → 展示错误（不崩溃、不落章、不存 chat 消息）', async () => {
     render(<WritingPage />);
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
     act(() => {
       capturedStream?.callbacks.onError('管线执行失败: 阶段 writer 重试耗尽');
     });
-    expect(screen.getByTestId('pipeline-status')).toHaveTextContent(/生成失败/);
-    expect(screen.getByTestId('pipeline-status')).toHaveTextContent('管线执行失败');
     // 失败不落章（编辑器保持原值）
     const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
     expect(editor.value).toBe('已有正文第一段。');
+    // #763：onError 不落 chat 消息（saveChatMessage 仅 onDone 调用）
+    expect(saveChatMsgMock).not.toHaveBeenCalled();
   });
 });
 
@@ -346,13 +388,14 @@ describe('写作页 — 空态（#98 §5.2.6）', () => {
     expect(await screen.findByTestId('projects-probe')).toBeInTheDocument();
   });
 
-  it('有项目无章节 → 项目树「新建章节」引导 + 编辑器 placeholder 增强文案', async () => {
+  it('#770 场景A：有项目无章节 → 全局 chat 页（不渲染编辑器/工具栏）', async () => {
     useChapterStore.setState({ volumes: [], chapters: [], currentChapterId: null, content: '', loading: false, error: null });
     render(<WritingPage />);
     await waitFor(() => expect(useChapterStore.getState().loading).toBe(false));
     expect(screen.getByRole('button', { name: /新建章节/ })).toBeInTheDocument();
-    const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
-    expect(editor.placeholder).toBe('还没有章节，点击左侧「新建章节」创建');
+    await waitFor(() => expect(screen.getByTestId('global-chat')).toBeInTheDocument());
+    expect(screen.queryByTestId('chapter-editor')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('editor-toolbar')).not.toBeInTheDocument();
   });
 
   it('回归：有章节时编辑器 placeholder 不含 idle 空态文案（#580 删除「AI 已就绪，开始创作」）', () => {
@@ -464,13 +507,11 @@ describe('写作页 — HITL 确认流（#343 + #642-1：流式 start 无 HITL �
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
     // running 态：无确认卡片
     expect(screen.queryByTestId('hitl-confirm-card')).not.toBeInTheDocument();
-    expect(screen.getByTestId('pipeline-status')).toHaveTextContent('执行中');
     // done 帧直达 success：依然无确认卡片
     act(() => {
       capturedStream?.callbacks.onDone({ done: true, final_output: '成品' });
     });
     expect(screen.queryByTestId('hitl-confirm-card')).not.toBeInTheDocument();
-    expect(screen.getByTestId('pipeline-status')).toHaveTextContent('生成完成');
   });
 
   it('done 帧直达 success：不触发 confirmExecution（流式路径无 executionId）', async () => {
@@ -480,7 +521,6 @@ describe('写作页 — HITL 确认流（#343 + #642-1：流式 start 无 HITL �
     act(() => {
       capturedStream?.callbacks.onDone({ done: true, final_output: '确认后成品' });
     });
-    expect(screen.getByTestId('pipeline-status')).toHaveTextContent('生成完成');
     expect(useChapterStore.getState().content).toBe('确认后成品');
     expect(confirmMock).not.toHaveBeenCalled();
   });
@@ -492,7 +532,6 @@ describe('写作页 — HITL 确认流（#343 + #642-1：流式 start 无 HITL �
     act(() => {
       capturedStream?.callbacks.onError('管线执行失败: 阶段 writer 重试耗尽');
     });
-    expect(screen.getByTestId('pipeline-status')).toHaveTextContent(/生成失败/);
     expect(screen.queryByTestId('hitl-confirm-card')).not.toBeInTheDocument();
     expect(confirmMock).not.toHaveBeenCalled();
   });
@@ -674,26 +713,18 @@ describe('写作页 — 模型未配置前置校验（#474 P0）', () => {
     expect(executeMock).not.toHaveBeenCalled();
   });
 });
-describe('写作页 — 右栏三面板拖拽分隔 + 草稿审批最小高度（#703）', () => {
-  it('右栏三个面板之间各有 row-resize 拖拽分隔条', () => {
+describe('写作页 — 右栏两面板拖拽分隔 + 无草稿审批（#703 + #764）', () => {
+  it('右栏 context/summary 面板 + 一个 row-resize 分隔条；无 rail-panel-drafts/rail-resize-handle-1', () => {
     render(<WritingPage />);
     const rail = screen.getByTestId('right-rail');
     expect(within(rail).getByTestId('rail-panel-context')).toBeInTheDocument();
     expect(within(rail).getByTestId('rail-panel-summary')).toBeInTheDocument();
-    expect(within(rail).getByTestId('rail-panel-drafts')).toBeInTheDocument();
+    // #764：草稿审批右栏移除 → 无 drafts 面板、无其分隔条
+    expect(within(rail).queryByTestId('rail-panel-drafts')).not.toBeInTheDocument();
+    expect(within(rail).queryByTestId('rail-resize-handle-1')).not.toBeInTheDocument();
     const sp0 = within(rail).getByTestId('rail-resize-handle-0');
-    const sp1 = within(rail).getByTestId('rail-resize-handle-1');
     expect(sp0).toBeInTheDocument();
-    expect(sp1).toBeInTheDocument();
     expect(sp0.className).toMatch(/row-resize/);
-    expect(sp1.className).toMatch(/row-resize/);
-  });
-
-  it('草稿审批面板有最小高度保护（min-height ≥ 120px）', () => {
-    render(<WritingPage />);
-    const drafts = screen.getByTestId('rail-panel-drafts');
-    // #703：草稿审批 panel 设 min-height:120px 保护，不被上下文 flex:1 压瘪
-    expect(drafts.className).toMatch(/min-h-\[120px\]/);
   });
 
   it('拖拽分隔条调整上一面板高度（mousedown→mousemove）', () => {
@@ -706,5 +737,88 @@ describe('写作页 — 右栏三面板拖拽分隔 + 草稿审批最小高度�
     const after = parseInt(context.style.height, 10) || 0;
     // 向下拖 100px → 上一面板高度增加
     expect(after).toBeGreaterThan(before);
+  });
+});
+
+describe('写作页 — #724 项目无 model 回退全局默认（上下文注入）', () => {
+  it('项目 config 无 model 时，上下文注入用全局默认模型 assemble 并渲染角色', async () => {
+    // 捕获 assemble 请求 body，验证回退 model（{} 初始避免 TS 收窄为 null）
+    let capturedAssemble: Record<string, unknown> = {};
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: string }) => {
+      if (path === '/api/v1/config') {
+        return {
+          default_model: 'openai/gpt-4o',
+          default_temperature: 0.8,
+          context_max_ratio: 0.8,
+          context_default_window: 128000,
+          server_host: '127.0.0.1',
+          server_port: 8000,
+          data_dir: '',
+        };
+      }
+      if (path === '/api/v1/projects/p1/volumes') return { items: seedVolumes };
+      if (path === '/api/v1/projects/p1/chapters') return { items: seedChapters, total: 2, offset: 0, limit: 50 };
+      if (path === '/api/v1/context/assemble') {
+        // mock 的 apiFetch 不透传 JSON.stringify → init.body 是对象，勿 JSON.parse
+        capturedAssemble = (init?.body ?? {}) as Record<string, unknown>;
+        return {
+          blocks: [
+            {
+              item: {
+                source: 'character_setting',
+                title: '角色：林晚',
+                content: '林晚：冷傲大小姐',
+                priority: 0,
+                metadata: { character_id: 'c-a' },
+              },
+              layer: 'compressible',
+              token_count: 30,
+              compressed: false,
+            },
+          ],
+          budget_tokens: 51200,
+          total_tokens: 1000,
+          model: 'openai/gpt-4o',
+          dropped: [],
+        };
+      }
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+
+    render(<WritingPage />);
+
+    // #724：项目 config={}（无 model），但全局默认存在 → 上下文注入应回退它并渲染角色
+    const charItem = await screen.findByTestId('context-character-0');
+    expect(charItem).toHaveTextContent('林晚');
+    expect(capturedAssemble.model).toBe('openai/gpt-4o');
+  });
+});
+
+describe('写作页 — 生成→新会话（#763：createChatConversation + 去页脚进度条）', () => {
+  it('点击「生成」→ createChatConversation(projectId) 建会话，再触发 streamPipeline(write_auto)', async () => {
+    render(<WritingPage />);
+    // ⚠️ ChatPanel 挂载即建会话（#744 既有行为：无活跃线程 → createChatConversation）：
+    // 先等挂载建会话完成并清零，锚定「生成路径」的新建会话调用（防假阳性）
+    await waitFor(() => expect(createChatCovMock).toHaveBeenCalled());
+    createChatCovMock.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
+    await waitFor(() => expect(createChatCovMock).toHaveBeenCalledWith('p1', { title: '第1章 初见' }));
+    await waitFor(() => expect(streamPipelineMock).toHaveBeenCalledWith(expect.objectContaining({ pipeline: 'builtin:write_auto' }), expect.any(Object)));
+  });
+
+  it('onDone(final_output) → saveChatMessage(ai, content=final_output, intent=content)', async () => {
+    render(<WritingPage />);
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
+    await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
+    act(() => { capturedStream?.callbacks.onDone({ done: true, final_output: '管线成品章节内容' }); });
+    await waitFor(() => expect(saveChatMsgMock).toHaveBeenCalled());
+    expect(saveChatMsgMock).toHaveBeenCalledWith({ project_id: 'p1', conversation_id: 'conv-1', role: 'ai', content: '管线成品章节内容', intent: 'content' });
+  });
+
+  it('页脚无 pipeline-status（写作页不再内联「执行中 N%」进度条）', async () => {
+    render(<WritingPage />);
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
+    await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
+    expect(screen.queryByTestId('pipeline-status')).not.toBeInTheDocument();
   });
 });

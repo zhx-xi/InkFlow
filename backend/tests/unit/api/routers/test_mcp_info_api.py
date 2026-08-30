@@ -1,6 +1,6 @@
 """F50 MCP 分发引导 — /api/v1/mcp/info 自发现端点契约（Issue #563，RED 阶段测试契约）。
 
-覆盖（spec f50-mcp-guidance §3/§9）：
+覆盖（spec f20-mcp §3/§9）：
 - GET /api/v1/mcp/info → 200，字段 {client_path, version, config_template}；
 - version 动态读 inkflow.__version__（不得硬编码；patch 注入验证）；
 - config_template 三宿主键 claude/cursor/hermes，各含 mcpServers.inkflow.command == client_path；

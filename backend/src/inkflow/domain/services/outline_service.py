@@ -21,7 +21,7 @@
 - chapter_repo: ChapterRepositoryProtocol（F2 已实现，F43 P3 章关联校验用；
   可选注入，None 跳过 chapter_id 存在性校验，向后兼容）
 
-依据: specs/f11-outline-service/spec.md §6/§7/§9。
+依据: specs/f11-outline/spec.md §6/§7/§9。
 """
 
 from __future__ import annotations
@@ -59,6 +59,7 @@ from inkflow.domain.ports.outline_errors import (
 from inkflow.domain.ports.outline_repository import OutlineRepositoryProtocol
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.services._outline_generator import OutlineGenerator
+from inkflow.domain.services.model_resolution import resolve_model
 
 logger = logging.getLogger(__name__)
 
@@ -594,5 +595,8 @@ class OutlineService:
         return await self._generator.generate(
             request,
             project_info=_build_project_info(project),
-            default_model=project.config.model or self._llm_default_model,
+            default_model=resolve_model(
+                None, project.config.model, self._llm_default_model
+            )
+            or "",
         )

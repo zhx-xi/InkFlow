@@ -1,4 +1,5 @@
 # F19: GUI（内核进程化 + Electron 壳 + React 渲染层）— 功能规格
+> **端**: cross
 
 > **Spec 版本**: 1.6（§2-§5 ✅ / §6 交互反馈 ✅ 已合入 / §7 导航重构 ✅ 已合入 / §8 模型管理 ✅ 已合入 / §9 Agent 模板 ✅ 已合入） | **日期**: 2026-08-06 | **依据**: PRD v2.1, Constitution P1-P6, ADR-003/004/011/019(v2)/020/021/025
 > **Spec 变更**: 1.1（2026-08-04）：§3 占位 → 完整起草（#77 合入后条件满足；契约实测 serve.py 已交付 INKFLOW_READY 行 + 端口文件）
@@ -1133,3 +1134,24 @@ toast 体系（三态/2s/aria-live）、骨架屏（项目列表/章节树加载
 - **Q1 端口文件路径默认值**：A. 仅显式 `--port-file`（缺省不写文件，stdout 唯一默认通道）——壳必须传路径，契约最明确；B. 缺省写 `{data_dir}/serve.json`——壳零参数，但 data_dir 权限/并发（多实例）需处理；C. 缺省写系统临时目录 `{tempdir}/inkflow-serve.json`。**✅ 已确认（用户拍板：选项 A，2026-08-03）**——消费方唯一性论证：端口文件唯一消费方是 #78 壳，而壳自身 spawn 内核并传参，显式传路径零额外成本；B/C 的缺省路径引入多实例冲突与轮询竞态，收益为零。正文已按 A 修订（§2.1.2 缺省不写文件、仅 stdout）。
 - **Q2 /health 是否豁免 token**：A. 豁免（健康检查无敏感数据，壳轮询/运维 curl 方便）；B. 全部强制（严格基线，壳先解析 INKFLOW_READY 拿 token 再轮询）。**✅ 已确认（用户拍板：选项 B，2026-08-03）**——原建议 A 存在认知偏差：「壳轮询方便」不成立——端口与 token 同在 INKFLOW_READY 行，壳解析该行是必经步骤，token 是免费副产品，轮询带 token 零成本；豁免收益仅剩「运维 curl 探测」（本地单机无真实运维场景），代价却是契约例外 + DNS rebinding 端口探测通道 + 测试双分支。/docs /redoc /openapi.json 为静态文档仍豁免，配全局 HTTPBearer scheme（Swagger UI Authorize 按钮，兼作 ADR-024 云端 JWT 前置）。正文已按 B 修订（§2.1.3/§2.3.1/§2.6/§2.7/§10）。
 - **Q3 --reload 与 token 交付**：A. reload 模式下禁用 token 校验 + 不输出 INKFLOW_READY（开发热重载仅本机，语义最简）；B. reload 时 env 注入 token 让子进程继承（token 跨 reload 稳定）；C. `--reload` 与 `--port-file/--token` 互斥报错。**✅ 已确认（用户拍板：选项 A 修正，2026-08-03）**——交付契约与 reload 互斥（不输出 INKFLOW_READY、不写端口文件，reload 子进程端口漂移无法消费）成立，但「禁用 token 校验」是安全基线无谓降级：token 经 env 注入、reload 子进程天然继承，校验保持启用零成本。最终语义：**reload 与交付契约互斥 + token 校验保持启用**（§2.2 表格与 §10 决策表已同步）。
+
+---
+
+## 14. 交互规格（交互类专用）
+
+> 已按页面拆分为独立规格文件（2026-08-30 #793 ①）。本主 spec 保留壳 / 内核 / 渲染层联合契约（§1-§13）；各页「画面样式 / 动作样式（按钮×状态表）/ 验收」以对应页面规格文件为准：
+
+- 写作页 → specs/f19-gui/writing.md（design/GUI/writing/）
+- 项目页 → specs/f19-gui/projects.md（design/GUI/projects/）
+- 设定库 → specs/f19-gui/library.md（design/GUI/library/）
+- 角色 → specs/f19-gui/characters.md（design/GUI/characters/）
+- 世界观 → specs/f19-gui/world.md（design/GUI/world/）
+- 大纲 → specs/f19-gui/outline.md（design/GUI/outline/）
+- 时间线 → specs/f19-gui/timeline.md（design/GUI/timeline/）
+- 伏笔 → specs/f19-gui/foreshadow.md（design/GUI/foreshadow/）
+- 知识图谱 → specs/f19-gui/knowledge.md（design/GUI/knowledge/）
+- 检索 → specs/f19-gui/search.md（design/GUI/search/）
+- 会话 → specs/f19-gui/sessions.md（design/GUI/sessions/）
+- Agent → specs/f19-gui/agent.md（design/GUI/agent/）
+- 记忆 → specs/f19-gui/memory.md（design/GUI/memory/）
+- 设置 → specs/f19-gui/settings.md（design/GUI/settings/）

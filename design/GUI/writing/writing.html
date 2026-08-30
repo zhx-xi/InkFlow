@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="paper">
+<head>
+<meta charset="utf-8" />
+<title>InkFlow 写作页 — 官方简图原型</title>
+<style>
+/* ═══════════ 设计 Token（对齐 frontend/packages/renderer/src/theme/tokens.css） ═══════════ */
+:root{
+  --radius-s:4px; --radius-m:6px; --radius-l:8px;
+  --font-ui:"PingFang SC","Microsoft YaHei","Noto Sans SC","Segoe UI",sans-serif;
+  --font-serif:"Noto Serif SC","Source Han Serif SC","SimSun","宋体",Georgia,serif;
+  --dur:180ms; --ease:cubic-bezier(0.16,1,0.3,1);
+}
+[data-theme="paper"]{
+  --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F3F1EC; --surface-3:#EBE8E1;
+  --ink:#2A2A28; --ink-2:#6B6A66; --ink-3:#A4A29B; --line:#E5E2DA;
+  --accent:#3B5B7C; --accent-ink:#FFFFFF; --accent-hover:#325370; --accent-weak:rgba(59,91,124,.10);
+  --ring:rgba(59,91,124,.38); --ok:#4A7C59; --warn:#B07A2E; --err:#B04A3A;
+  --shadow:0 1px 2px rgba(42,42,40,.05),0 4px 16px rgba(42,42,40,.05);
+  --shadow-hover:0 2px 4px rgba(42,42,40,.07),0 8px 24px rgba(42,42,40,.09);
+}
+[data-theme="night"]{
+  --bg:#1A1A18; --surface:#22221F; --surface-2:#282823; --surface-3:#4A493F;
+  --ink:#E8E6E1; --ink-2:#9B988F; --ink-3:#6E6B63; --line:#42413A;
+  --accent:#C9A24B; --accent-ink:#1A1A18; --accent-hover:#B8923F; --accent-weak:rgba(201,162,75,.13);
+  --ring:rgba(201,162,75,.45); --ok:#8FAE8E; --warn:#C9A24B; --err:#C97B63;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.25);
+  --shadow-hover:0 2px 6px rgba(0,0,0,.4),0 10px 28px rgba(0,0,0,.35);
+}
+[data-theme="ink"]{
+  --bg:#F3EEE2; --surface:#FAF6EC; --surface-2:#EFE9DA; --surface-3:#C9BFA4;
+  --ink:#2B2A26; --ink-2:#6E6A5E; --ink-3:#A49F90; --line:#CBC0A4;
+  --accent:#A6402E; --accent-ink:#FAF6EC; --accent-hover:#96382A; --accent-weak:rgba(166,64,46,.09);
+  --ring:rgba(166,64,46,.38); --ok:#5A7A58; --warn:#9A7B3C; --err:#A6402E;
+  --shadow:0 1px 2px rgba(43,42,38,.06),0 4px 16px rgba(43,42,38,.06);
+  --shadow-hover:0 2px 4px rgba(43,42,38,.08),0 8px 24px rgba(43,42,38,.10);
+}
+/* ═══════════ 基础 ═══════════ */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-ui);font-size:13px;line-height:1.5;overflow:hidden}
+.ic{width:16px;height:16px;flex:none}
+.ic svg{display:block;width:100%;height:100%}
+/* 兜底：所有 data-ic 图标默认尺寸（可被更具体规则覆盖） */
+[data-ic] svg{width:16px;height:16px;display:block;flex:none}
+button{font-family:inherit;cursor:pointer}
+::selection{background:var(--ring)}
+
+/* ═══════════ 布局骨架 ═══════════ */
+.app{display:flex;height:100vh;overflow:hidden}
+
+/* ── 侧边导航（AppNav，w-[216px]，三分组） ── */
+.app-nav{display:flex;flex-direction:column;flex:none;width:216px;border-right:1px solid var(--line);background:var(--surface-2)}
+.nav-brand{display:flex;align-items:center;gap:8px;height:48px;padding:0 12px;border-bottom:1px solid var(--line)}
+.nav-brand .logo{width:24px;height:24px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:6px;background:var(--accent);color:var(--accent-ink)}
+.nav-brand .logo svg{width:15px;height:15px}
+.nav-brand span{font-family:var(--font-serif);font-size:15px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-scroll{flex:1;min-height:0;overflow-y:auto;padding:4px 0}
+.nav-group{padding:0 8px}
+.nav-group-label{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;font-size:10px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.nav-group-label svg{width:14px;height:14px;flex:none}
+.nav-item{display:flex;width:100%;align-items:center;gap:10px;border-radius:6px;padding:6px 10px;font-size:13px;color:var(--ink-2);text-decoration:none;transition:background var(--dur)}
+.nav-item svg{width:16px;height:16px;flex:none}
+.nav-item:hover{background:var(--surface-3);color:var(--ink)}
+.nav-item.active{background:var(--accent-weak);color:var(--accent);font-weight:500}
+.nav-item.active svg{color:var(--accent)}
+.nav-collapse{flex:none;border-top:1px solid var(--line);padding:8px}
+.nav-collapse button{display:flex;width:100%;align-items:center;gap:10px;border:none;background:none;border-radius:6px;padding:6px 10px;font-size:12px;color:var(--ink-3)}
+.nav-collapse button:hover{background:var(--surface-3);color:var(--ink)}
+
+/* ── 主区 ── */
+.app-main{display:flex;flex:1;min-width:0;flex-direction:column}
+.topbar{display:flex;align-items:center;gap:12px;height:48px;flex:none;padding:0 16px;border-bottom:1px solid var(--line);background:var(--surface)}
+.topbar .page-title{font-size:13px;color:var(--ink-2)}
+.topbar .spacer{flex:1}
+.select{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-2);font-size:12px;padding:3px 8px;height:26px}
+.select svg{width:12px;height:12px;color:var(--ink-3)}
+.win-ctrl{display:flex;align-items:center;gap:2px;height:100%}
+.win-ctrl button{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border:none;background:none;border-radius:4px;color:var(--ink-3)}
+.win-ctrl button:hover{background:var(--surface-3);color:var(--ink)}
+.win-ctrl button.close:hover{background:var(--err);color:#fff}
+
+/* ═══════════ 写作页三栏 ═══════════ */
+.page-writing{display:flex;flex:1;min-height:0;flex-direction:column}
+.cols{display:flex;flex:1;min-height:0}
+
+/* ── 左栏 project-tree（w-[208px] bg-surface-2） ── */
+.project-tree{display:flex;flex-direction:column;flex:none;width:208px;border-right:1px solid var(--line);background:var(--surface-2);min-height:0}
+.tree-seal{display:flex;align-items:center;gap:10px;padding:12px 16px}
+.tree-seal .seal{display:flex;width:40px;height:40px;flex:none;align-items:center;justify-content:center;border:2px solid var(--accent);border-radius:50%;color:var(--accent);font-family:var(--font-serif);font-size:18px}
+.tree-seal .name{font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tree-seal .sub{font-size:11px;color:var(--ink-3)}
+.tree-scroll{flex:1;min-height:0;overflow-y:auto;padding:0 8px 8px}
+.vol-row{display:flex;align-items:center;gap:4px;padding:4px 8px;font-size:12px;font-weight:600;color:var(--ink-3);margin-top:8px}
+.vol-row .chev{width:14px;height:14px;flex:none;color:var(--ink-3)}
+.vol-row .vname{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vol-row .row-actions{display:flex;align-items:center;gap:2px;opacity:0;transition:opacity var(--dur)}
+.vol-row:hover .row-actions{opacity:1}
+.row-actions button{display:flex;align-items:center;justify-content:center;width:22px;height:22px;border:none;border-radius:4px;background:none;color:var(--ink-3)}
+.row-actions button svg{width:13px;height:13px}
+.row-actions button:hover{background:var(--surface-3);color:var(--accent)}
+.row-actions button.del:hover{color:var(--err)}
+.tree-chapter{display:flex;align-items:center;gap:8px;width:100%;border-radius:6px;padding:6px 8px}
+.tree-chapter.current{background:var(--accent-weak)}
+.tree-chapter .ch-title{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;font-size:13px;color:var(--ink-2);border:none;background:none;padding:0}
+.tree-chapter.current .ch-title{color:var(--ink)}
+.tree-chapter .wc{flex:none;font-size:11px;color:var(--ink-3)}
+.tree-chapter .row-actions{opacity:0;transition:opacity var(--dur)}
+.tree-chapter:hover .row-actions{opacity:1}
+.tree-actions{display:flex;align-items:center;gap:4px;flex:none;padding:6px 8px;border-top:1px solid var(--line)}
+.tree-actions button{display:flex;flex:1;align-items:center;justify-content:center;gap:4px;border:1px dashed var(--line);border-radius:6px;background:none;padding:5px 0;font-size:12px;color:var(--ink-2)}
+.tree-actions button svg{width:12px;height:12px}
+.tree-actions button:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ── 中栏 editor ── */
+.editor{display:flex;flex:1;min-width:0;flex-direction:column;background:var(--surface)}
+.editor-toolbar{display:flex;align-items:center;gap:4px;flex:none;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--surface);opacity:.35;transition:opacity var(--dur)}
+.group-hover:hover .editor-toolbar,.editor-toolbar:hover{opacity:1}
+.tbtn{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:none;border-radius:6px;background:none;color:var(--ink-2);transition:background var(--dur)}
+.tbtn svg{width:16px;height:16px}
+.tbtn:hover{background:var(--surface-3);color:var(--ink)}
+.tbtn:disabled{opacity:.4;cursor:not-allowed}
+.tbtn .pulse{color:var(--accent);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.tbar-sep{width:1px;height:16px;margin:0 4px;background:var(--line)}
+.chapter-head{flex:none;padding:16px 32px;border-bottom:1px solid var(--line)}
+.chapter-head h2{margin:0;font-family:var(--font-serif);font-size:18px;font-weight:600}
+.chapter-head .meta{margin-top:2px;font-size:12px;color:var(--ink-3)}
+.editor-scroll{flex:1;min-height:0;overflow-y:auto}
+.editor-text{width:100%;height:100%;border:none;resize:none;outline:none;background:transparent;padding:24px 32px;font-size:16px;line-height:1.85;color:var(--ink);font-family:var(--font-ui)}
+.editor-text p{text-indent:2em;margin:0 0 14px}
+.chat-panel{flex:none;display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);background:var(--surface-2);padding:12px 16px}
+.chat-head{display:flex;align-items:center;gap:8px}
+.chat-head .toggle{display:flex;align-items:center;justify-content:center;width:26px;height:22px;border:none;border-radius:4px;background:none;color:var(--ink-3)}
+.chat-head .toggle:hover{background:var(--surface-3);color:var(--ink)}
+.chat-head .toggle svg{width:14px;height:14px}
+.chat-head .resize-grip{flex:1;display:flex;justify-content:center}
+.chat-head .resize-grip span{display:block;width:32px;height:2px;border-radius:8px;background:var(--line)}
+.chat-messages{max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:12px}
+.chat-msg{display:flex;gap:8px;font-size:13px}
+.chat-msg .role{display:flex;align-items:center;justify-content:center;width:22px;height:22px;flex:none;border-radius:50%;font-size:11px;font-weight:600}
+.chat-msg.user{justify-content:flex-end}
+.chat-msg.user .bubble{background:var(--accent);color:var(--accent-ink);border-radius:10px 10px 2px 10px;padding:6px 10px;max-width:78%}
+.chat-msg.ai .role{background:var(--surface-3);color:var(--ink-2)}
+.chat-msg.ai .bubble{background:var(--surface);border:1px solid var(--line);border-radius:10px 10px 10px 2px;padding:6px 10px;max-width:78%;color:var(--ink-2)}
+.chat-msg .bubble .intent-actions{display:flex;gap:6px;margin-top:6px}
+.chat-msg .bubble .intent-actions button{border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px;color:var(--ink-2);padding:2px 8px}
+.chat-msg .bubble .intent-actions button:hover{background:var(--surface-3);color:var(--ink)}
+.pipeline-output{border:1px solid var(--accent);border-radius:8px;background:var(--surface);padding:10px 12px;font-size:13px;line-height:1.8;color:var(--ink-2)}
+.pipeline-output .tag{display:inline-block;margin-bottom:6px;border-radius:4px;background:var(--accent-weak);color:var(--accent);font-size:11px;padding:1px 8px;font-weight:600}
+.pipeline-output .cursor{display:inline-block;width:7px;height:14px;background:var(--accent);vertical-align:-2px;animation:blink 1s step-end infinite}
+@keyframes blink{50%{opacity:0}}
+.chat-input-row{display:flex;align-items:flex-end;gap:8px}
+.chat-input-row textarea{flex:1;min-height:40px;resize:none;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:8px 12px;font-size:13px;color:var(--ink);outline:none;font-family:inherit}
+.chat-input-row textarea:focus{border-color:var(--accent)}
+.btn-send{border:none;border-radius:6px;background:var(--accent);color:var(--accent-ink);font-size:13px;padding:8px 16px}
+.btn-send:hover{background:var(--accent-hover)}
+.btn-send:disabled{opacity:.4;cursor:not-allowed}
+.btn-stop{display:flex;align-items:center;gap:6px;border:1px solid var(--err);border-radius:6px;background:var(--surface);color:var(--err);font-size:13px;padding:8px 16px}
+.btn-stop svg{width:12px;height:12px}
+
+/* ── 右栏 right-rail（w-[240px] bg-surface-2） ── */
+.right-rail{position:relative;display:flex;flex-direction:column;flex:none;width:240px;border-left:1px solid var(--line);background:var(--surface-2);min-height:0;transition:width var(--dur)}
+.rail-toggle{display:flex;align-items:center;justify-content:flex-start;gap:4px;flex:none;align-self:flex-start;border:none;border-bottom:1px solid var(--line);background:none;padding:6px 8px;font-size:12px;color:var(--ink-3)}
+.rail-toggle svg{width:16px;height:16px}
+.rail-toggle:hover{background:var(--surface-3);color:var(--ink)}
+.rail-panel{display:flex;flex-direction:column;min-height:0;flex:none}
+.rail-panel.context{height:430px}
+.rail-panel.summary{height:230px;border-top:1px solid var(--line)}
+.rail-resize-h{height:8px;flex:none;border-top:1px solid var(--line);background:var(--surface-3);cursor:row-resize}
+.panel-head{display:flex;align-items:center;justify-content:space-between;flex:none;padding:12px 16px;border-bottom:1px solid var(--line)}
+.panel-head .pt{font-size:13px;font-weight:600}
+.panel-head .pbtn{border:1px solid var(--line);border-radius:6px;background:none;font-size:12px;color:var(--ink-2);padding:2px 8px}
+.panel-head .pbtn:hover{background:var(--surface-3)}
+.panel-body{flex:1;min-height:0;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:12px}
+.ctx-card{border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:12px;flex:none}
+.ctx-card .card-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ctx-card .card-title{font-size:13px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctx-card .pick-btn{flex:none;border:1px solid var(--line);border-radius:6px;background:none;font-size:12px;color:var(--ink-2);padding:2px 6px;white-space:nowrap}
+.ctx-card .pick-btn:hover{background:var(--surface-3);color:var(--ink)}
+.ctx-card .empty-tip{margin-top:8px;font-size:12px;color:var(--ink-3)}
+.ctx-item{margin-top:8px;display:flex;gap:8px;align-items:flex-start}
+.ctx-item input[type=checkbox]{margin-top:2px;accent-color:var(--accent)}
+.ctx-item .t{display:block;font-size:12px;font-weight:500;color:var(--ink-2)}
+.ctx-item .c{display:block;margin-top:2px;font-size:12px;line-height:1.6;color:var(--ink-3)}
+.ctx-outline{margin-top:4px;white-space:pre-wrap;font-size:12px;line-height:1.6;color:var(--ink-2)}
+.ctx-tokens{font-size:11px;color:var(--ink-3);flex:none}
+.summary-content{white-space:pre-wrap;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:12px;font-size:12px;line-height:1.7;color:var(--ink-2)}
+.summary-empty{border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:12px;font-size:12px;color:var(--ink-3)}
+.rail-collapsed-only{display:none}
+
+/* 折叠态：右栏 26px */
+body[data-state="collapsed"] .right-rail{width:26px}
+body[data-state="collapsed"] .rail-panel,body[data-state="collapsed"] .rail-resize-h{display:none}
+body[data-state="collapsed"] .rail-toggle{width:100%;justify-content:center;padding:6px 0}
+body[data-state="collapsed"] .rail-toggle .lbl{display:none}
+body[data-state="collapsed"] .rail-toggle-open{display:flex !important}
+
+/* ── 状态栏 ── */
+.statusbar{display:flex;align-items:center;gap:20px;flex:none;padding:6px 16px;border-top:1px solid var(--line);background:var(--surface);font-size:11px;color:var(--ink-3)}
+
+/* ── 空态（无项目） ── */
+.writing-empty{display:none;flex:1;align-items:center;justify-content:center}
+.writing-empty .inner{text-align:center}
+.writing-empty .big-ic{width:40px;height:40px;margin:0 auto;color:var(--ink-3)}
+.writing-empty .big-ic svg{width:40px;height:40px}
+.writing-empty p{margin:12px 0 0;font-size:15px;color:var(--ink-2)}
+.writing-empty button{margin-top:20px;border:none;border-radius:6px;background:var(--accent);color:var(--accent-ink);font-size:13px;padding:6px 16px}
+body[data-state="empty"] .page-writing{display:none}
+body[data-state="empty"] .writing-empty{display:flex}
+
+/* ── 删除授权三态控件 + HITL 确认弹窗（#766） ── */
+.delete-auth-control{display:none;align-items:center;gap:4px}
+.delete-auth-control button{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:2px 8px;font-size:12px;color:var(--ink-2)}
+.delete-auth-control button[data-selected="true"]{border-color:var(--accent);color:var(--ink)}
+.delete-auth-control button:disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
+body[data-state="delete-auth"] .delete-auth-control,body[data-state="delete-hitl"] .delete-auth-control{display:flex}
+.delete-hitl-dialog{display:none;position:fixed;inset:0;z-index:100;align-items:center;justify-content:center;background:rgba(0,0,0,.4)}
+body[data-state="delete-hitl"] .delete-hitl-dialog{display:flex}
+body[data-state="delete-hitl"] .delete-auth-control button{opacity:.4;pointer-events:none}
+.delete-hitl-dialog .delete-hitl-card{min-width:220px;border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:12px 16px;box-shadow:var(--shadow-hover)}
+.delete-hitl-dialog h3{margin:0 0 4px;font-size:13px;font-weight:500;color:var(--ink)}
+.delete-hitl-dialog p{margin:0 0 12px;font-size:13px;color:var(--ink-2)}
+.delete-hitl-dialog .delete-hitl-actions{display:flex;justify-content:flex-end;gap:8px}
+.delete-hitl-dialog .delete-hitl-actions button{border-radius:6px;padding:4px 12px;font-size:12px}
+.delete-hitl-dialog .delete-hitl-actions button[data-testid="delete-confirm-cancel"]{border:1px solid var(--line);background:var(--surface);color:var(--ink-2)}
+.delete-hitl-dialog .delete-hitl-actions button[data-testid="delete-confirm-cancel"]:hover{background:var(--surface-3)}
+.delete-hitl-dialog .delete-hitl-actions button[data-testid="delete-confirm-approve"]{border:none;background:var(--accent);color:var(--accent-ink)}
+.delete-hitl-dialog .delete-hitl-actions button[data-testid="delete-confirm-approve"]:hover{background:var(--accent-hover)}
+/* ── global-chat 态（#770 场景 A：无章节 → 全局 chat 页：占满中栏、无 resize handle，不渲染 EditorToolbar/ChapterEditor） ── */
+.global-chat{display:none;flex:1;min-height:0;flex-direction:column;background:var(--surface)}
+body[data-state="global-chat"] .global-chat{display:flex}
+body[data-state="global-chat"] .editor > .editor-toolbar,
+body[data-state="global-chat"] .editor > .chapter-head,
+body[data-state="global-chat"] .editor > .editor-scroll,
+body[data-state="global-chat"] .editor > .chat-panel.inline-chat{display:none}
+.chat-panel.gc{flex:1;min-height:0;gap:8px;border-top:none;border-bottom:1px solid var(--line);background:var(--surface-2);padding:12px 16px}
+.chat-panel.gc .chat-messages{max-height:none;flex:1;min-height:0}
+.chat-panel.gc .gc-spacer{flex:1}
+.chat-panel.gc .chat-input-row{margin-top:auto}
+
+/* ═══════════ 演示切换条（截图前隐藏） ═══════════ */
+.demo-bar{position:fixed;right:14px;bottom:14px;z-index:200;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-hover);padding:8px 12px;font-size:12px;color:var(--ink-2)}
+.demo-bar select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 6px}
+.demo-bar .sep{width:1px;height:18px;background:var(--line)}
+body[data-shot="1"] .demo-bar{display:none}
+</style>
+</head>
+<body data-state="editor-idle">
+
+<div class="app">
+  <!-- ═══ 侧边导航 AppNav ═══ -->
+  <nav class="app-nav" data-testid="app-nav">
+    <div class="nav-brand">
+      <span class="logo"><span data-ic="penline"></span></span>
+      <span>InkFlow</span>
+    </div>
+    <div class="nav-scroll">
+      <div class="nav-group">
+        <div class="nav-group-label"><span data-ic="folderopen"></span>写作区</div>
+        <a class="nav-item active" data-testid="nav-item-writing"><span data-ic="penline"></span>写作</a>
+        <a class="nav-item" data-testid="nav-item-projects"><span data-ic="bookopen"></span>项目</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label"><span data-ic="library"></span>设定库</div>
+        <a class="nav-item"><span data-ic="library"></span>设定库</a>
+        <a class="nav-item"><span data-ic="users"></span>角色</a>
+        <a class="nav-item"><span data-ic="globe"></span>世界观</a>
+        <a class="nav-item"><span data-ic="listtree"></span>大纲</a>
+        <a class="nav-item"><span data-ic="clock"></span>时间线</a>
+        <a class="nav-item"><span data-ic="sparkles"></span>伏笔</a>
+        <a class="nav-item"><span data-ic="database"></span>知识图谱</a>
+        <a class="nav-item"><span data-ic="search"></span>检索</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label"><span data-ic="history"></span>会话</div>
+        <a class="nav-item"><span data-ic="history"></span>会话</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label"><span data-ic="settings"></span>系统</div>
+        <a class="nav-item"><span data-ic="bot"></span>Agent</a>
+        <a class="nav-item"><span data-ic="brain"></span>记忆</a>
+        <a class="nav-item"><span data-ic="settings"></span>设置</a>
+      </div>
+    </div>
+    <div class="nav-collapse"><button><span data-ic="chevronsleft"></span>折叠</button></div>
+  </nav>
+
+  <div class="app-main">
+    <!-- ═══ 顶栏 ═══ -->
+    <header class="topbar" role="banner">
+      <span class="page-title">写作</span>
+      <span class="spacer"></span>
+      <span class="select"><span data-ic="palette"></span>素笺 · 纸张<span data-ic="chevron-down"></span></span>
+      <span class="select">中文<span data-ic="chevron-down"></span></span>
+      <div class="win-ctrl">
+        <button><span data-ic="minus"></span></button>
+        <button><span data-ic="square"></span></button>
+        <button class="close"><span data-ic="x"></span></button>
+      </div>
+    </header>
+
+    <!-- ═══ 写作页 ═══ -->
+    <div class="page-writing">
+      <div class="cols">
+        <!-- 左栏：项目树 ProjectTree -->
+        <aside class="project-tree" data-testid="project-tree" style="width:208px">
+          <div class="tree-seal">
+            <span class="seal">青</span>
+            <div style="min-width:0">
+              <div class="name">青云志</div>
+              <div class="sub">写作</div>
+            </div>
+          </div>
+          <div class="tree-scroll">
+            <div class="vol-row">
+              <span class="chev"><span data-ic="chevron-down"></span></span>
+              <span class="vname">第一卷 · 入青云</span>
+              <span class="row-actions">
+                <button><span data-ic="pencil"></span></button>
+                <button class="del"><span data-ic="trash"></span></button>
+              </span>
+            </div>
+            <div style="padding-left:8px">
+              <div class="tree-chapter"><button class="ch-title">第 1 章 山门初见</button><span class="wc">1,982</span><span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span></div>
+              <div class="tree-chapter"><button class="ch-title">第 2 章 云海听涛</button><span class="wc">2,105</span><span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span></div>
+              <div class="tree-chapter"><button class="ch-title">第 3 章 剑引</button><span class="wc">2,431</span><span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span></div>
+            </div>
+            <div class="vol-row">
+              <span class="chev"><span data-ic="chevron-down"></span></span>
+              <span class="vname">第二卷 · 山门风波</span>
+              <span class="row-actions">
+                <button><span data-ic="pencil"></span></button>
+                <button class="del"><span data-ic="trash"></span></button>
+              </span>
+            </div>
+            <div style="padding-left:8px">
+              <div class="tree-chapter"><button class="ch-title">第 9 章 山雨欲来</button><span class="wc">2,310</span><span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span></div>
+              <div class="tree-chapter"><button class="ch-title">第 10 章 夜访剑冢</button><span class="wc">2,528</span><span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span></div>
+              <div class="tree-chapter"><button class="ch-title">第 11 章 密信</button><span class="wc">1,976</span><span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span></div>
+              <div class="tree-chapter current" data-testid="tree-chapter" data-current="true">
+                <button class="ch-title">第 12 章 剑心蒙尘</button><span class="wc">2,847</span>
+                <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+              </div>
+              <div class="tree-chapter"><button class="ch-title">第 13 章 断剑</button><span class="wc">2,142</span><span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span></div>
+            </div>
+          </div>
+          <div class="tree-actions">
+            <button><span data-ic="plus"></span>新建卷</button>
+            <button><span data-ic="plus"></span>新建章节</button>
+          </div>
+        </aside>
+
+        <!-- 中栏：编辑器 -->
+        <main class="editor group-hover" data-testid="editor">
+          <!-- #770 场景 A：无章节（有项目）→ 全局 chat 页（占满中栏、无 resize handle；不渲染 EditorToolbar/ChapterEditor） -->
+          <div class="global-chat" data-testid="global-chat">
+            <div class="chat-panel gc" data-testid="chat-panel">
+              <div class="chat-head">
+                <button class="toggle" data-testid="chat-collapse"><span data-ic="chevron-down"></span></button>
+                <div class="gc-spacer"></div>
+              </div>
+              <div class="chat-messages" data-testid="chat-messages">
+                <div class="chat-msg user"><div class="bubble">帮我梳理一下「剑心蒙尘」这条线的伏笔闭环</div></div>
+                <div class="chat-msg ai">
+                  <span class="role">AI</span>
+                  <div class="bubble">
+                    好的。这条伏笔线目前有三处锚点：① 第 12 章师父闭关前的告诫——「剑心蒙尘时，人便再也分不清，握剑是为了护人，还是为了杀人」；② 剑冢夜访时苏云舟发现墙上的剑鞘排列如墓碑，每一柄都朝着同一个方向；③ 第 9 章山雨欲来中提及的二十年前剑冢异动。建议在卷末让师父闭关的真相与这三处一一闭合。
+                    <div class="intent-actions">
+                      <button data-testid="chat-insert">插入正文</button>
+                      <button>选中此回复</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="chat-msg user"><div class="bubble">好，那给苏云舟设计一段夜访剑冢前的内心独白</div></div>
+              </div>
+              <div class="chat-input-row">
+                <textarea data-testid="chat-input" placeholder="与 AI 对话，如「帮我写一段打斗场景」"></textarea>
+                <button class="btn-send" data-testid="chat-send">发送</button>
+                <button class="btn-stop" data-testid="chat-stop" style="display:none"><span data-ic="square"></span>停止</button>
+              </div>
+            </div>
+          </div>
+          <div class="editor-toolbar" data-testid="editor-toolbar">
+            <button class="tbtn" title="撤销 (Ctrl+Z)"><span data-ic="undo"></span></button>
+            <button class="tbtn" title="重做 (Ctrl+Y)"><span data-ic="redo"></span></button>
+            <button class="tbtn" title="保存 (Ctrl+S)"><span data-ic="save"></span></button>
+            <span class="tbar-sep"></span>
+            <button class="tbtn" title="续写 (Ctrl+Enter)"><span data-ic="wand"></span></button>
+            <button class="tbtn" title="生成 (Ctrl+Shift+Enter)"><span class="ic gen-ic" data-ic="sparkles"></span></button>
+            <span class="tbar-sep"></span>
+            <button class="tbtn" title="审计"><span data-ic="scansearch"></span></button>
+            <button class="tbtn" title="风格检测"><span data-ic="gauge"></span></button>
+            <span class="tbar-sep"></span>
+            <button class="tbtn" title="查看 AI 执行详情"><span data-ic="eye"></span></button>
+            <button class="tbtn" title="是否全自动"><span data-ic="zap"></span></button>
+            <button class="tbtn" title="AI 提取"><span data-ic="filesearch"></span></button>
+          </div>
+          <div class="chapter-head">
+            <h2>第 12 章 剑心蒙尘</h2>
+            <div class="meta">2,847 字数</div>
+          </div>
+          <div class="editor-scroll">
+            <div class="editor-text">
+              <p>「师兄，你当真要下山？」林晚照立在石阶下，仰头望着那人负剑的背影，山风卷起她鬓边碎发。</p>
+              <p>苏云舟没有回头。他望着云海尽头那一线残阳，许久才道：「师父闭关前夜，曾问过我一句话——剑心为何物。」</p>
+              <p>「我答，剑心即本心。师父却摇头。」他顿了顿，声音低下去，「他说，剑心蒙尘时，人便再也分不清，握剑是为了护人，还是为了杀人。」</p>
+              <p>林晚照呼吸一窒。她想说些什么，可石阶上的人已经踏出第一步，脚步声在暮色里渐渐远去，像一柄剑缓缓归鞘。</p>
+            </div>
+          </div>
+          <!-- ChatPanel（章节内 inline 横栏） -->
+          <div class="chat-panel inline-chat" data-testid="chat-panel">
+            <div class="chat-head">
+              <button class="toggle" data-testid="chat-collapse"><span data-ic="chevron-down"></span></button>
+              <div class="resize-grip" data-testid="chat-resize-handle"><span></span></div>
+            </div>
+            <div class="chat-messages" data-testid="chat-messages">
+              <div class="chat-msg user"><div class="bubble">帮我写一段夜探剑冢的紧张氛围</div></div>
+              <div class="chat-msg ai">
+                <span class="role">AI</span>
+                <div class="bubble">
+                  剑冢在月色下像一头伏卧的巨兽。石门开启的刹那，积尘扑面而来，苏云舟按住剑柄，听见自己的心跳在空旷的甬道里回响——墙上的剑鞘排列如墓碑，每一柄都朝着同一个方向，像在等他。
+                  <div class="intent-actions">
+                    <button data-testid="chat-insert">插入正文</button>
+                    <button>选中此回复</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="pipeline-output" data-testid="pipeline-output" style="display:none">
+              <span class="tag">生成中</span>
+              <span class="stream-text">剑冢深处传来一声极轻的叹息，像是锈铁在风中剥落。苏云舟的指尖抚过最近的一柄残剑，剑身上刻着三个字——</span><span class="cursor"></span>
+            </div>
+            <div class="delete-auth-control" data-testid="delete-auth-control" style="display:none">
+              <button type="button" data-testid="delete-mode-manual" data-selected="true" aria-pressed="true">手动</button>
+              <button type="button" data-testid="delete-mode-ask-once" data-selected="false" aria-pressed="false">一次确认</button>
+              <button type="button" data-testid="delete-mode-auto" data-selected="false" aria-pressed="false">全自动</button>
+            </div>
+            <div class="chat-input-row">
+              <textarea data-testid="chat-input" placeholder="与 AI 对话，如「帮我写一段打斗场景」"></textarea>
+              <button class="btn-send" data-testid="chat-send">发送</button>
+              <button class="btn-stop" data-testid="chat-stop" style="display:none"><span data-ic="square"></span>停止</button>
+            </div>
+          </div>
+        </main>
+
+        <!-- 右栏 right-rail -->
+        <aside class="right-rail" data-testid="right-rail" data-collapsed="false">
+          <button class="rail-toggle" data-testid="right-col-toggle"><span data-ic="panelleftclose"></span><span class="lbl">折叠</span></button>
+          <button class="rail-toggle rail-toggle-open" style="display:none"><span data-ic="panelleftopen"></span><span class="lbl">展开</span></button>
+          <!-- ContextPanel -->
+          <div class="rail-panel context" data-testid="rail-panel-context">
+            <div class="panel-head"><span class="pt">上下文注入</span></div>
+            <div class="panel-body" data-testid="context-panel-content">
+              <div class="ctx-card" data-testid="context-block-writing_requirements">
+                <div class="card-head"><span class="card-title">写作要求</span></div>
+                <div class="ctx-outline">文风古朴，节奏明快，对话简洁有力；避免现代词汇与网络用语；场景描写以感官细节为主。</div>
+              </div>
+              <div class="ctx-card" data-testid="context-block-outline">
+                <div class="card-head"><span class="card-title">大纲</span></div>
+                <div class="ctx-outline">第 12 章 剑心蒙尘 —— 情节点：苏云舟夜访剑冢，发现师父闭关的真相与二十年前剑冢异动有关。</div>
+              </div>
+              <div class="ctx-card" data-testid="context-block-character_setting">
+                <div class="card-head"><span class="card-title">角色</span><button class="pick-btn">＋ 选择注入</button></div>
+                <label class="ctx-item"><input type="checkbox" checked /><span><span class="t">苏云舟 · 主角</span><span class="c">青云宗弟子，剑心澄明；本卷面临「剑心蒙尘」心魔。</span></span></label>
+                <label class="ctx-item"><input type="checkbox" checked /><span><span class="t">林晚照 · 重要配角</span><span class="c">师妹，善医术；执意随师兄下山。</span></span></label>
+              </div>
+              <div class="ctx-card" data-testid="context-block-world_setting">
+                <div class="card-head"><span class="card-title">世界观</span><button class="pick-btn">＋ 选择注入</button></div>
+                <label class="ctx-item"><input type="checkbox" checked /><span><span class="t">青云宗</span><span class="c">修仙宗门，坐落云海之巅，以剑修闻名。</span></span></label>
+                <label class="ctx-item"><input type="checkbox" checked /><span><span class="t">剑冢</span><span class="c">历代掌门葬剑之地，禁地，剑鸣可闻百里。</span></span></label>
+              </div>
+              <div class="ctx-card" data-testid="context-block-foreshadowing">
+                <div class="card-head"><span class="card-title">伏笔</span><button class="pick-btn">＋ 选择注入</button></div>
+                <label class="ctx-item"><input type="checkbox" checked /><span><span class="t">师父闭关的真相</span><span class="c">与二十年前剑冢异动有关；卷末揭晓。</span></span></label>
+              </div>
+              <div class="ctx-card" data-testid="context-dropped">
+                <div class="card-head"><span class="card-title">已裁剪</span></div>
+                <div class="ctx-item"><span><span class="c">青云宗 · 弟子名录：超出 token 预算</span></span></div>
+              </div>
+              <div class="ctx-tokens">3,240/8,000 tokens</div>
+            </div>
+          </div>
+          <div class="rail-resize-h" data-testid="rail-resize-handle-0"></div>
+          <!-- ChapterSummaryPanel -->
+          <div class="rail-panel summary" data-testid="rail-panel-summary">
+            <div class="panel-head"><span class="pt">章节摘要</span><button class="pbtn">刷新摘要</button></div>
+            <div class="panel-body">
+              <div class="summary-content">苏云舟决定下山，林晚照追随；师父闭关前的告诫埋下「剑心蒙尘」伏笔；为夜访剑冢寻找真相铺垫。</div>
+            </div>
+          </div>
+        </aside>
+      </div>
+      <!-- 状态栏 -->
+      <div class="statusbar" data-testid="statusbar">
+        <span>内核已连接</span>
+        <span>模型: deepseek-chat</span>
+        <span>字数: 2,847</span>
+        <span>自动保存: 14:32:08</span>
+      </div>
+    </div>
+
+    <!-- 空态（无项目） -->
+    <div class="writing-empty" data-testid="writing-empty">
+      <div class="inner">
+        <span class="big-ic"><span data-ic="compass"></span></span>
+        <p>选择或新建项目开始写作</p>
+        <button>返回项目页</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 演示切换条 ═══ -->
+<div class="demo-bar">
+  <label>状态
+    <select id="stateSel">
+      <option value="editor-idle">编辑器空闲</option>
+      <option value="streaming">SSE 流式生成中</option>
+      <option value="collapsed">右栏折叠</option>
+      <option value="empty">无项目空态</option>
+      <option value="delete-auth">删除授权（三态）</option>
+      <option value="delete-hitl">删除授权 HITL 弹窗</option>
+      <option value="global-chat">全局 chat 页（无章节）</option>
+    </select>
+  </label>
+  <span class="sep"></span>
+  <label>主题
+    <select id="themeSel">
+      <option value="paper">素笺 · 纸张</option>
+      <option value="night">夜航 · 深色</option>
+      <option value="ink">墨韵 · 东方</option>
+    </select>
+  </label>
+</div>
+
+<!-- HITL 删除授权确认弹窗（#766：delete-hitl 状态显示） -->
+<div class="delete-hitl-dialog" data-testid="delete-confirm-dialog" role="dialog" aria-modal="true" style="display:none">
+  <div class="delete-hitl-card">
+    <h3>确认删除</h3>
+    <p>李四</p>
+    <div class="delete-hitl-actions">
+      <button type="button" data-testid="delete-confirm-cancel">取消</button>
+      <button type="button" data-testid="delete-confirm-approve">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── 内联 SVG 图标库（lucide 风格，stroke 当前色） ── */
+const ICONS = {
+  penline:'<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>',
+  bookopen:'<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+  library:'<path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/>',
+  users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  globe:'<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  listtree:'<path d="M11 6H3"/><path d="M15.5 12H3"/><path d="M15.5 18H3"/><path d="M18 6h3"/><path d="M18 12h3"/><path d="M18 18h3"/>',
+  clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  sparkles:'<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/>',
+  database:'<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>',
+  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  history:'<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  brain:'<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M12 5v14"/>',
+  bot:'<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  settings:'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  folderopen:'<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
+  chevronsleft:'<path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/>',
+  chevronsright:'<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>',
+  undo:'<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/>',
+  redo:'<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13"/>',
+  save:'<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>',
+  wand:'<path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/>',
+  scansearch:'<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/><path d="m16 16-1.9-1.9"/>',
+  gauge:'<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+  eye:'<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+  zap:'<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+  filesearch:'<path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M4.268 21a2 2 0 0 0 2 1h9a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v3"/><path d="M4.268 21A2 2 0 0 1 2 19v-3"/><circle cx="17" cy="17" r="3"/><path d="m21 21-1.9-1.9"/>',
+  panelleftclose:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/>',
+  panelleftopen:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m14 9 3 3-3 3"/>',
+  compass:'<circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>',
+  'chevron-down':'<path d="m6 9 6 6 6-6"/>',
+  'chevron-right':'<path d="m9 18 6-6-6-6"/>',
+  plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
+  x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  minus:'<path d="M5 12h14"/>',
+  square:'<rect width="14" height="14" x="5" y="5" rx="1"/>',
+  pencil:'<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
+  trash:'<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+  palette:'<circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>',
+};
+document.querySelectorAll('[data-ic]').forEach(el=>{
+  const name = el.getAttribute('data-ic');
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('viewBox','0 0 24 24');
+  svg.setAttribute('fill','none');
+  svg.setAttribute('stroke','currentColor');
+  svg.setAttribute('stroke-width','2');
+  svg.setAttribute('stroke-linecap','round');
+  svg.setAttribute('stroke-linejoin','round');
+  svg.innerHTML = ICONS[name] || '';
+  el.appendChild(svg);
+});
+
+/* ── 状态机：body[data-state] 驱动视图 ── */
+const STATES = ['editor-idle','streaming','collapsed','empty','delete-auth','delete-hitl','global-chat'];
+function setState(s){
+  document.body.dataset.state = s;
+  const streaming = s === 'streaming';
+  document.querySelector('.gen-ic').classList.toggle('pulse', streaming);
+  // 章节内 inline ChatPanel 专属联动（global-chat 全屏面板无生成触发点，不参与）
+  const panel = document.querySelector('.editor > .chat-panel.inline-chat');
+  panel.querySelector('[data-testid="pipeline-output"]').style.display = streaming ? '' : 'none';
+  panel.querySelector('[data-testid="chat-stop"]').style.display = streaming ? '' : 'none';
+  panel.querySelector('[data-testid="chat-send"]').style.display = streaming ? 'none' : '';
+  const rail = document.querySelector('[data-testid="right-rail"]');
+  rail.dataset.collapsed = s === 'collapsed' ? 'true' : 'false';
+  document.querySelector('.rail-toggle').style.display = s === 'collapsed' ? 'none' : '';
+  document.querySelector('.rail-toggle-open').style.display = s === 'collapsed' ? '' : 'none';
+  const deleteHitl = s === 'delete-hitl';
+  document.querySelector('.delete-auth-control').style.display = (s === 'delete-auth' || deleteHitl) ? 'flex' : 'none';
+  document.querySelector('.delete-hitl-dialog').style.display = deleteHitl ? 'flex' : 'none';
+  document.querySelectorAll('.delete-auth-control button').forEach(btn => { btn.disabled = deleteHitl; });
+}
+function setTheme(th){
+  document.documentElement.dataset.theme = th;
+  document.body.dataset.theme = th;
+}
+document.getElementById('stateSel').addEventListener('change',e=>setState(e.target.value));
+document.getElementById('themeSel').addEventListener('change',e=>setTheme(e.target.value));
+/* hash 驱动初始状态（截图脚本用 file://...html#streaming） */
+const init = location.hash.replace('#','');
+if (STATES.includes(init)) { setState(init); document.getElementById('stateSel').value = init; }
+/* hash 变化（含 file:// 下同文档导航）也切状态 */
+window.addEventListener('hashchange', () => {
+  const s = location.hash.replace('#','');
+  if (STATES.includes(s)) { setState(s); document.getElementById('stateSel').value = s; }
+});
+</script>
+</body>
+</html>

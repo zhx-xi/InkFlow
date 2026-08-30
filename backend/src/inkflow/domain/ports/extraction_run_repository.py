@@ -5,7 +5,7 @@ ExtractionRunRepositoryProtocol 定义 ExtractionRun 的查询与 upsert 操作�
 （与 ORM 层一致），Service 负责 UUID ↔ int 转换（沿用 F1 `_to_int_id`
 模式）。
 
-依据: specs/f14-extraction-service/spec.md §8.1。
+依据: specs/f14-extraction/spec.md §8.1。
 """
 
 from __future__ import annotations

@@ -69,6 +69,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 from inkflow.api.routers.chat_stream import ChatStreamRequest, stream_chat_agent
 from inkflow.domain.models.agent_run import AgentRun
@@ -89,6 +90,36 @@ EXPECTED_READER_NAMES = [
     "get_prior_summary",
     "audit_chapter",
     "count_words",
+]
+EXPECTED_SETTING_WRITE_NAMES = [
+    "create_character",
+    "create_world_setting",
+    "create_outline",
+]
+EXPECTED_SETTING_UPDATE_NAMES = [
+    "update_character",
+    "update_world_setting",
+    "update_outline",
+]
+EXPECTED_WORLD_RW_NAMES = [
+    "list_maps",
+    "create_map",
+    "update_map",
+    "list_timeline_events",
+    "create_timeline_event",
+    "update_timeline_event",
+    "create_foreshadowing",
+    "update_foreshadowing",
+]
+EXPECTED_MEMORY_NAMES = [
+    "memory_list",
+    "memory_add",
+    "memory_update",
+]
+EXPECTED_WRITING_NAMES = [
+    "generate",
+    "continue",
+    "revise",
 ]
 
 PROJECT_ID = "550e8400-e29b-41d4-a716-446655440000"
@@ -383,6 +414,7 @@ class TestGetChatAgentService:
 
     @patch("inkflow.api.deps.build_deep_agent")
     @patch("inkflow.api.deps.build_save_draft_tool")
+    @patch("inkflow.api.deps.build_setting_write_tools")
     @patch("inkflow.api.deps.build_reader_tools")
     @patch("inkflow.api.deps.get_chapter_audit_service")
     @patch("inkflow.api.deps.get_audit_service")
@@ -390,15 +422,45 @@ class TestGetChatAgentService:
     @patch("inkflow.api.deps.get_summary_service")
     @patch("inkflow.api.deps.get_foreshadowing_service")
     @patch("inkflow.api.deps.get_character_service")
-    def test_assembles_full_tools(
-        self, m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_rt, m_sd, m_da
+    @patch("inkflow.api.deps.get_outline_service")
+    @patch("inkflow.api.deps.get_world_service")
+    @patch("inkflow.core.config.config")
+    @patch(
+        "inkflow.infrastructure.llm.provider_config.get_provider_config"
+    )
+    @pytest.mark.asyncio
+    async def test_assembles_full_tools(
+        self,
+        m_get_provider,
+        m_config,
+        m_world,
+        m_outline,
+        m_char,
+        m_foresh,
+        m_sum,
+        m_draft,
+        m_audit,
+        m_audit_ch,
+        m_rt,
+        m_sw,
+        m_sd,
+        m_da,
     ) -> None:
-        """全量工具面：5 只读 + save_draft → build_deep_agent；返回 ChatAgentService。"""
+        """全量工具面：5 只读 + save_draft + 3 设定库写入 → build_deep_agent。"""
+        m_config.llm_default_model = MODEL
+        m_config.model_routing = {}
+        from inkflow.infrastructure.llm.provider_config import LLMProviderConfig
+
+        m_get_provider.return_value = LLMProviderConfig(
+            provider="deepseek", api_key=API_KEY, base_url=BASE_URL,
+            default_model=MODEL, models=[],
+        )
         data = ChatStreamRequest(project_id=PROJECT_ID, chapter_id=CHAPTER_ID, prompt="你好")
         m_rt.return_value = [_fake_tool(name) for name in EXPECTED_READER_NAMES]
         m_sd.return_value = _fake_tool("save_draft")
+        m_sw.return_value = [_fake_tool(name) for name in EXPECTED_SETTING_WRITE_NAMES]
 
-        svc = _get_chat_agent_service()(data=data, db=MagicMock())
+        svc = await _get_chat_agent_service()(data=data, db=MagicMock())
 
         # 4 只读 service 注入 ReaderToolDeps（身份同一性）
         reader_deps = _kwarg_or_positional(m_rt.call_args, "deps", 0)
@@ -414,10 +476,30 @@ class TestGetChatAgentService:
         assert save_deps.audit_service is m_audit.return_value
         assert save_deps.expected_project_id == uuid.UUID(PROJECT_ID)
         assert save_deps.expected_chapter_id == uuid.UUID(CHAPTER_ID)
-        # build_deep_agent：全量工具（5 只读 + save_draft）、profile_key=None、prompt 透传
+        # setting write deps：character/world/outline service + expected_project_id
+        setting_deps = _kwarg_or_positional(m_sw.call_args, "deps", 0)
+        from inkflow.infrastructure.agent.tools.setting_write_tools import SettingWriteToolDeps
+
+        assert isinstance(setting_deps, SettingWriteToolDeps)
+        assert setting_deps.character_service is m_char.return_value
+        assert setting_deps.world_service is m_world.return_value
+        assert setting_deps.outline_service is m_outline.return_value
+        assert setting_deps.audit_service is m_audit.return_value
+        assert setting_deps.expected_project_id == uuid.UUID(PROJECT_ID)
+        # build_deep_agent：全量工具（5 只读 + save_draft + 3 设定库写入）、profile_key=None
         assert m_da.call_count == 1
         tools = _kwarg_or_positional(m_da.call_args, "tools", 3, None)
-        assert [tool.spec.name for tool in tools] == [*EXPECTED_READER_NAMES, "save_draft"]
+        assert [tool.spec.name for tool in tools] == [
+            *EXPECTED_READER_NAMES,
+            "save_draft",
+            *EXPECTED_SETTING_WRITE_NAMES,
+            *EXPECTED_SETTING_UPDATE_NAMES,
+            *EXPECTED_WORLD_RW_NAMES,
+            *EXPECTED_MEMORY_NAMES,
+            *EXPECTED_WRITING_NAMES,
+            "agent_run",
+            "agent_call",  # #766 阶段③ agent 链工具
+        ]
         assert _kwarg_or_positional(m_da.call_args, "profile_key", 5, None) is None
         prompt = _kwarg_or_positional(m_da.call_args, "system_prompt", 4, None)
         assert isinstance(prompt, str) and prompt
@@ -429,6 +511,7 @@ class TestGetChatAgentService:
 
     @patch("inkflow.api.deps.build_deep_agent")
     @patch("inkflow.api.deps.build_save_draft_tool")
+    @patch("inkflow.api.deps.build_setting_write_tools")
     @patch("inkflow.api.deps.build_reader_tools")
     @patch("inkflow.api.deps.get_chapter_audit_service")
     @patch("inkflow.api.deps.get_audit_service")
@@ -436,21 +519,63 @@ class TestGetChatAgentService:
     @patch("inkflow.api.deps.get_summary_service")
     @patch("inkflow.api.deps.get_foreshadowing_service")
     @patch("inkflow.api.deps.get_character_service")
-    def test_assembles_without_chapter_id(
-        self, m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_rt, m_sd, m_da
+    @patch("inkflow.api.deps.get_outline_service")
+    @patch("inkflow.api.deps.get_world_service")
+    @patch("inkflow.core.config.config")
+    @patch(
+        "inkflow.infrastructure.llm.provider_config.get_provider_config"
+    )
+    @pytest.mark.asyncio
+    async def test_assembles_without_chapter_id(
+        self,
+        m_get_provider,
+        m_config,
+        m_world,
+        m_outline,
+        m_char,
+        m_foresh,
+        m_sum,
+        m_draft,
+        m_audit,
+        m_audit_ch,
+        m_rt,
+        m_sw,
+        m_sd,
+        m_da,
     ) -> None:
         """chapter_id 缺省 → SaveDraftToolDeps.expected_chapter_id 为 None。"""
+        m_config.llm_default_model = MODEL
+        m_config.model_routing = {}
+        from inkflow.infrastructure.llm.provider_config import LLMProviderConfig
+
+        m_get_provider.return_value = LLMProviderConfig(
+            provider="deepseek", api_key=API_KEY, base_url=BASE_URL,
+            default_model=MODEL, models=[],
+        )
         m_rt.return_value = [_fake_tool(name) for name in EXPECTED_READER_NAMES]
         m_sd.return_value = _fake_tool("save_draft")
+        m_sw.return_value = [_fake_tool(name) for name in EXPECTED_SETTING_WRITE_NAMES]
         data = ChatStreamRequest(project_id=PROJECT_ID, prompt="你好")
 
-        _get_chat_agent_service()(data=data, db=MagicMock())
+        await _get_chat_agent_service()(data=data, db=MagicMock())
 
         save_deps = _kwarg_or_positional(m_sd.call_args, "deps", 0)
         assert save_deps.expected_project_id == uuid.UUID(PROJECT_ID)
         assert save_deps.expected_chapter_id is None
+        setting_deps = _kwarg_or_positional(m_sw.call_args, "deps", 0)
+        assert setting_deps.expected_project_id == uuid.UUID(PROJECT_ID)
         tools = _kwarg_or_positional(m_da.call_args, "tools", 3, None)
-        assert [tool.spec.name for tool in tools] == [*EXPECTED_READER_NAMES, "save_draft"]
+        assert [tool.spec.name for tool in tools] == [
+            *EXPECTED_READER_NAMES,
+            "save_draft",
+            *EXPECTED_SETTING_WRITE_NAMES,
+            *EXPECTED_SETTING_UPDATE_NAMES,
+            *EXPECTED_WORLD_RW_NAMES,
+            *EXPECTED_MEMORY_NAMES,
+            *EXPECTED_WRITING_NAMES,
+            "agent_run",
+            "agent_call",  # #766 阶段③ agent 链工具
+        ]
 
 
 # ── TestGetChatAgentServiceDbAndParseFallback: coverage-gap 补测（deps_chat_agent.py） ──
@@ -496,22 +621,44 @@ class TestGetChatAgentServiceDbAndParseFallback:
     @patch("inkflow.api.deps.get_summary_service")
     @patch("inkflow.api.deps.get_foreshadowing_service")
     @patch("inkflow.api.deps.get_character_service")
-    @patch("inkflow.infrastructure.llm.provider_config.parse_model_string", side_effect=ValueError)
-    def test_parse_model_string_value_error_falls_back_to_defaults(
-        self, m_parse, m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_rt, m_sd, m_da
+    @patch(
+        "inkflow.infrastructure.llm.provider_config._await_registry_entry",
+        return_value=None,
+    )
+    @patch("inkflow.core.config.config")
+    @pytest.mark.asyncio
+    async def test_parse_model_string_value_error_raises_422_when_no_provider(
+        self,
+        m_config,
+        m_await_registry,
+        m_char,
+        m_foresh,
+        m_sum,
+        m_draft,
+        m_audit,
+        m_audit_ch,
+        m_rt,
+        m_sd,
+        m_da,
     ) -> None:
-        """parse_model_string 抛 ValueError → except 分支：api_key/base_url 回退空串，
-        装配继续，get_chat_agent_service 正常返回 ChatAgentService（不抛异常）。"""
-        data = ChatStreamRequest(project_id=PROJECT_ID, prompt="你好")
+        """#738: config.llm_default_model="" and no provider with key in registry
+        -> get_chat_agent_service raises HTTPException(422), not a 500 Missing
+        credentials. build_deep_agent must NOT be called with empty api_key."""
+        m_config.llm_default_model = ""
+        m_config.model_routing = {}
+        data = ChatStreamRequest(project_id=PROJECT_ID, prompt="hello")
 
-        svc = _get_chat_agent_service()(data=data, db=MagicMock())
+        with patch(
+            "inkflow.infrastructure.llm.provider_config._BUILTIN_PROVIDERS",
+            {"openai": None, "deepseek": None, "zhipu": None, "ollama": None},
+        ), patch(
+            "inkflow.infrastructure.llm.provider_config._load_stored_key",
+            return_value=None,
+        ), pytest.raises(HTTPException) as exc_info:
+            await _get_chat_agent_service()(data=data, db=MagicMock())
 
-        m_parse.assert_called_once()
-        chat_agent_cls = _get_chat_agent_service_cls()
-        assert isinstance(svc, chat_agent_cls)
-        # 回退空串 → build_deep_agent 收到 api_key="" / base_url=""
-        assert _kwarg_or_positional(m_da.call_args, "api_key", 1, None) == ""
-        assert _kwarg_or_positional(m_da.call_args, "base_url", 2, None) == ""
+        assert exc_info.value.status_code == 422
+        assert m_da.call_count == 0
 
 
 # ── TestStreamChatAgentPersistsRun: #615 端点落 run ──

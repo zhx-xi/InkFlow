@@ -7,12 +7,14 @@ StructuredTool，默认文件系统工具与 subagent（task 工具）禁用。
 from __future__ import annotations
 
 import asyncio
+import threading
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, TypeAlias, cast
 
 from deepagents import create_deep_agent
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from inkflow.infrastructure.agent.deepagents.profiles import ensure_profile
@@ -57,8 +59,34 @@ def _make_sync_wrapper(async_fn: Callable[..., Awaitable[str]]) -> Callable[...,
     """构造 sync 桥接 wrapper——async_fn 按参数绑定（每次调用独立闭包，避免循环变量共享）."""
 
     def _sync_wrapper(*args, **kwargs) -> str:
-        # asyncio.run 要求 Coroutine，领域契约为 Awaitable——cast 桥接两类型
-        return asyncio.run(cast(Coroutine[Any, Any, str], async_fn(*args, **kwargs)))
+        coro = cast(Coroutine[Any, Any, str], async_fn(*args, **kwargs))
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            # 无运行中事件循环（普通 sync 线程）——asyncio.run 原路径
+            return asyncio.run(coro)
+        # 运行中事件循环（FastAPI/uvloop，打包版 ToolNode sync 路径）——不能 asyncio.run
+        # （抛 RuntimeError），也不能 run_coroutine_threadsafe(...).result()（当前线程即循环所有者，
+        # 会死锁）。改为在独立 worker 线程 + 新事件循环上运行到完成，阻塞返回结果/异常。
+        loop = asyncio.new_event_loop()
+        results: list[str] = []
+        errors: list[BaseException] = []
+
+        def _run() -> None:
+            asyncio.set_event_loop(loop)
+            try:
+                results.append(loop.run_until_complete(coro))
+            except BaseException as exc:  # 保留原始异常语义（工具失败向上传播）
+                errors.append(exc)
+            finally:
+                loop.close()
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+        thread.join()
+        if errors:
+            raise errors[0]
+        return results[0]
 
     return _sync_wrapper
 
@@ -93,4 +121,5 @@ def build_deep_agent(
         model=chat,
         tools=_map_tools(tools),
         system_prompt=system_prompt,
+        checkpointer=InMemorySaver(),
     )

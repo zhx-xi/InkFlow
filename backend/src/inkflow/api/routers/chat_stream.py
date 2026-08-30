@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from datetime import UTC, datetime
@@ -27,6 +28,23 @@ from inkflow.infrastructure.llm.redact import load_known_keys, redact_secrets
 router = APIRouter(prefix="/api/v1/chat", tags=["AI 对话"])
 
 
+_inflight_runs: dict[str, asyncio.Event] = {}
+
+
+def _register_inflight_run(run_id: str, cancel: asyncio.Event) -> None:
+    """注册 in-flight chat run 的取消事件（abort 端点据此定位，#719）。"""
+    _inflight_runs[run_id] = cancel
+
+
+def abort_chat_run(run_id: str) -> bool:
+    """命中注册表 → 置位 cancel 事件并返回 True；未注册返回 False（#719）。"""
+    ev = _inflight_runs.get(run_id)
+    if ev is None:
+        return False
+    ev.set()
+    return True
+
+
 class ChatStreamRequest(BaseModel):
     """chat 流式请求体。prompt 可缺省（None）——缺失/空白由 handler 统一 422 自定义文案。"""
 
@@ -34,6 +52,7 @@ class ChatStreamRequest(BaseModel):
     prompt: str | None = None
     chapter_id: str | None = None
     chapter_context: str | None = None
+    conversation_id: str | None = None  # #766 阶段②：装配守卫按会话删除授权注入删除工具
 
 
 # #597 循环依赖规避：deps.get_chat_agent_service 的函数体惰性 import ChatStreamRequest
@@ -66,6 +85,20 @@ def _encode_legacy_frame(ev: ChatStreamEvent) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _result_to_str(result: object) -> str:
+    """序列化 tool_result 帧 result——message-like（LangChain ToolMessage/BaseMessage）取 .content，
+    其余能 JSON 序列化则序列化（ensure_ascii=False），兜底 str(result)。"""
+    if isinstance(result, str):
+        return result
+    content = getattr(result, "content", None)
+    if content is not None:
+        return content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+    try:
+        return json.dumps(result, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(result)
+
+
 def _encode_frame(ev: ChatStreamEvent, run_id: str | None = None) -> str:
     """ChatStreamEvent → SSE 帧字符串（#597 type 键扩展 + #615 done 帧 run_id 回传）：
     - delta → {"type": "delta", "delta": str, "done": false}
@@ -94,9 +127,19 @@ def _encode_frame(ev: ChatStreamEvent, run_id: str | None = None) -> str:
             "type": "tool_result",
             "id": ev.id,
             "name": ev.name,
-            "result": ev.result,
+            "result": _result_to_str(ev.result),
             "done": False,
         }
+    elif type_field == "interrupt":
+        payload = {
+            "type": "interrupt",
+            "payload": ev.payload,
+            "done": False,
+        }
+    elif type_field == "run_started":
+        payload = {"type": "run_started", "id": ev.id, "done": False}
+    elif type_field == "reasoning":
+        payload = {"type": "reasoning", "delta": ev.delta, "done": False}
     else:
         payload = {"type": "delta", "delta": ev.delta, "done": False}
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
@@ -150,6 +193,29 @@ async def _save_failed_run(
             terminated_by="",
         )
     )
+
+
+async def _end_run_terminated(
+    repo: SQLiteAgentRunRepository,
+    svc: ChatAgentService,
+    run: AgentRun,
+    data: ChatStreamRequest,
+) -> str:
+    """#719：用户中断 → 收集 trace 并落 TERMINATED 运行，返回 done 终帧（run_id 回传）。"""
+    steps, final_content, token_total = svc.consume_trace()
+    await repo.save(
+        _build_chat_run(
+            run,
+            data,
+            status=AgentRunStatus.TERMINATED,
+            steps=steps,
+            final_content=final_content,
+            token_usage_total=token_total,
+            model=config.llm_default_model,
+            terminated_by="user",
+        )
+    )
+    return _encode_frame(ChatStreamEvent(type="done", done=True), run_id=run.id)
 
 
 @router.post("/stream")
@@ -210,13 +276,27 @@ async def stream_chat_agent(
                 chapter_id=uuid.UUID(data.chapter_id) if data.chapter_id else None,
                 mode="chat",
             )
+            cancel = asyncio.Event()
+            _register_inflight_run(str(run.id), cancel)
             error_occurred = False
+            run_started_sent = False
             async for ev in svc.stream_events(
                 prompt=prompt,
                 project_id=data.project_id,
                 chapter_context=data.chapter_context,
+                cancel_event=cancel,
             ):
                 if await request.is_disconnected():
+                    return
+                # #719：首个 agent 事件前回传 run_id（前端据此调后端 abort 端点）
+                if not run_started_sent:
+                    yield _encode_frame(
+                        ChatStreamEvent(type="run_started", id=str(run.id), done=False)
+                    )
+                    run_started_sent = True
+                # #719：用户中断 → 落 TERMINATED 运行 + done 终帧
+                if cancel.is_set():
+                    yield await _end_run_terminated(repo, svc, run, data)
                     return
                 # #680/#615：agent 终帧按帧协议以 type=="done" 判定（f47 §14.2，
                 # ChatAgentService 终帧恒为 type="done"）；done=True 但 type 非
@@ -247,6 +327,10 @@ async def stream_chat_agent(
                     yield _encode_frame(ev, run_id=run.id)
                 else:
                     yield _encode_frame(ev)
+            # #719：服务在 cancel 后已停止产出事件 → 兜底落 TERMINATED 终帧
+            if cancel.is_set():
+                yield await _end_run_terminated(repo, svc, run, data)
+                return
         except LLMRequestError:
             if run is not None:
                 await _save_failed_run(repo, svc, run, data)
@@ -259,6 +343,9 @@ async def stream_chat_agent(
             yield _encode_frame(
                 ChatStreamEvent(type="error", done=True, error="Agent 执行失败，请稍后重试")
             )
+        finally:
+            if run is not None:
+                _inflight_runs.pop(str(run.id), None)
 
     return StreamingResponse(
         _event_stream(),
@@ -269,3 +356,12 @@ async def stream_chat_agent(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/agent/stream/{run_id}/abort")
+async def abort_chat_run_route(run_id: str) -> dict:
+    """#719：中断指定 in-flight chat run（404 = 无此运行中 run）。"""
+    ok = abort_chat_run(run_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="运行中的 chat run 不存在")
+    return {"ok": True}

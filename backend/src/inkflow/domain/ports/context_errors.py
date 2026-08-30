@@ -1,7 +1,7 @@
 """上下文管理领域异常.
 
 F6 专属异常类型，继承自 Exception.
-依据: specs/f6-context-service/spec.md §8.
+依据: specs/f6-context/spec.md §8.
 """
 
 from __future__ import annotations

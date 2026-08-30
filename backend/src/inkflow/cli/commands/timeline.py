@@ -13,7 +13,7 @@
 - pydantic ValidationError / 非法数值 → VALIDATION_ERROR
 - 其余异常 → DB_ERROR（F12 无 LLM，无 LLM_ERROR）
 
-依据: specs/f12-timeline-service/spec.md §4/§7。
+依据: specs/f12-timeline/spec.md §4/§7。
 """
 
 from __future__ import annotations

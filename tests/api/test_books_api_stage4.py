@@ -1,6 +1,6 @@
 """#335 F44 阶段1 书级运行 API 契约测试（TDD RED 阶段）。
 
-权威来源：specs/f44-long-task-orchestrator/spec.md §3（API 契约，v1.1）
+权威来源：specs/f44-book-orchestrator/spec.md §3（API 契约，v1.1）
 + §13.1 M1-M3。本文件为 `api/routers/books.py`（NEW）定义契约。
 
 ════════════════════════════════════════════════════════════════════

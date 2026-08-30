@@ -6,7 +6,7 @@
 围栏输出提取 / 修复重试与异常透传 / 空情节点 warning / save=false 零落库 /
 模板与模型参数断言 / num_chapters 条件段解析（真实 PromptManager）。
 
-依据: specs/f11-outline-service/spec.md §5（AI 生成模式，差异见 §5.6）+
+依据: specs/f11-outline/spec.md §5（AI 生成模式，差异见 §5.6）+
 §9 测试策略。实现镜像 F10 test_world_extraction.py，仅替换领域实体
 （Outline/PlotPoint/StoryArc ↔ WorldSetting）与模板名
 （outline_generate ↔ world_extract），并新增生成模式专属场景

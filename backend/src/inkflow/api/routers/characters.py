@@ -17,7 +17,7 @@ mock 服务层（同 project.py 模式）。
 - CharacterExtractionError → 500「角色提取失败: LLM 输出无法解析，请重试」
 - LLMRequestError → 500「LLM 调用失败，请稍后重试」
 
-依据: specs/f9-character-service/spec.md §3/§5/§7。
+依据: specs/f9-character/spec.md §3/§5/§7。
 """
 
 from __future__ import annotations

@@ -10,7 +10,7 @@
 - 分组删除 → 移除成员关联的编排（委托 hard_delete_group）
 - extract 入口：校验项目存在 → 调用 CharacterExtractor → 返回 CharacterExtractionResult
 
-依据: specs/f9-character-service/spec.md §7 + §9 测试策略。
+依据: specs/f9-character/spec.md §7 + §9 测试策略。
 """
 
 from __future__ import annotations

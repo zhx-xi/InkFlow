@@ -8,7 +8,7 @@ Protocol。仓储层方法入参用 int（与 ORM 层一致），Service 负责 
 事件校验（event_id 存在性 + 同项目）不在本端口：复用 F12
 TimelineRepositoryProtocol.get（Service 层构造注入，spec §8.1）。
 
-依据: specs/f13-foreshadowing-service/spec.md §8.1。
+依据: specs/f13-foreshadowing/spec.md §8.1。
 """
 
 from __future__ import annotations

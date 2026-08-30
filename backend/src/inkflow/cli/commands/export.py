@@ -20,7 +20,7 @@ InkFlowHTTPClient 调用内核 REST API（Issue #169 CLI 恒经 HTTP；spec §4
 人类可读成功（码点精确，见测试设计假设 7）：
 `✅ 导出成功: {name} → {path} ({bytes:,} bytes)`。
 
-依据: specs/f21-export-service/spec.md §4/§7/§9.1。
+依据: specs/f21-export/spec.md §4/§7/§9.1。
 """
 
 from __future__ import annotations

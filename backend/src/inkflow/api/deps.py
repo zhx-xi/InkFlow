@@ -10,6 +10,12 @@ from fastapi import Depends
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# #766 chat agent 装配守卫辅助——从 _chat_auth 迁入（防超 900 行）
+from inkflow.api._chat_auth import (  # 集中 re-export 保持 deps 命名空间不变
+    get_agent_entity_service,
+    get_agent_service,
+    get_conversation_service,
+)
 from inkflow.api.deps_chat_agent import get_chat_agent_service
 from inkflow.core.database import async_session_factory, get_session
 from inkflow.domain.models.agent_run import AgenticWriteRequest
@@ -54,8 +60,17 @@ from inkflow.domain.services.timeline_service import TimelineService
 from inkflow.domain.services.world_service import WorldService
 from inkflow.domain.services.writing_service import WritingService
 from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent
+from inkflow.infrastructure.agent.tools.agent_chain_tools import (
+    build_agent_chain_tools,
+)
+from inkflow.infrastructure.agent.tools.delete_tools import build_delete_tools
+from inkflow.infrastructure.agent.tools.memory_tools import build_memory_tools
 from inkflow.infrastructure.agent.tools.reader_tools import build_reader_tools
 from inkflow.infrastructure.agent.tools.save_draft_tool import build_save_draft_tool
+from inkflow.infrastructure.agent.tools.setting_update_tools import build_setting_update_tools
+from inkflow.infrastructure.agent.tools.setting_write_tools import build_setting_write_tools
+from inkflow.infrastructure.agent.tools.world_readwrite_tools import build_world_rw_tools
+from inkflow.infrastructure.agent.tools.writing_tools import build_writing_tools
 from inkflow.infrastructure.database.repositories.agent_run_repo import (
     SQLiteAgentRunRepository,
 )
@@ -124,10 +139,20 @@ if TYPE_CHECKING:
 
 # f27 绑定名快照 re-export：单测 patch 目标 inkflow.api.deps.<名>（#597 迁移后保持可命中）
 __all__ = [
+    "build_agent_chain_tools",
     "build_deep_agent",
+    "build_delete_tools",
+    "build_memory_tools",
     "build_reader_tools",
     "build_save_draft_tool",
+    "build_setting_update_tools",
+    "build_setting_write_tools",
+    "build_world_rw_tools",
+    "build_writing_tools",
+    "get_agent_entity_service",
+    "get_agent_service",
     "get_chat_agent_service",
+    "get_conversation_service",
 ]
 
 
@@ -207,15 +232,12 @@ def get_agentic_writer_service(
     db: AsyncSession = Depends(get_db),
 ) -> AgenticWriterService:
     """获取 AgenticWriterService 实例（agentic 编排，装配 F26/F27 工具）."""
+    from inkflow.api._llm_resolver import resolve_llm_credentials
     from inkflow.core.config import config
     from inkflow.infrastructure.agent.agentic_writer import (
         AgenticWriterDeps,
         build_agentic_writer,
         build_writer_agent_system_prompt,
-    )
-    from inkflow.infrastructure.llm.provider_config import (
-        get_provider_config,
-        parse_model_string,
     )
     # 循环依赖注意：不重复调 get_draft_service(db)（直接 Python 调用无 FastAPI
     # 依赖缓存）——草稿服务在同一函数内联构建，deps 与 service 共享同源实例
@@ -251,18 +273,9 @@ def get_agentic_writer_service(
             expected_project_id=request.project_id,
             expected_chapter_id=request.chapter_id,
         )
-    # 模型/密钥/base_url 同源装配（F5 provider_config）：默认模型解析 provider，
-    # 未配置 key/base_url 时回退空串（harness 支持空 key/base_url 走 ChatOpenAI 默认）
-    model = config.llm_default_model
-    api_key = ""
-    base_url = ""
-    try:
-        provider, _ = parse_model_string(model)
-        provider_cfg = get_provider_config(provider)
-        api_key = provider_cfg.api_key
-        base_url = provider_cfg.base_url or ""
-    except ValueError:
-        pass
+    # 模型/密钥/base_url 同源装配：#758 空默认模型回退到首个有 key 且含 chat 模型的
+    # provider（镜像 chat 路径 #738），避免空 key 构造 ChatOpenAI → Missing credentials 500
+    model, api_key, base_url = resolve_llm_credentials(config.llm_default_model)
     return AgenticWriterService(
         agent_factory=_build_agent,
         draft_service=draft_service,
@@ -273,8 +286,7 @@ def get_agentic_writer_service(
 
 
 def _collect_explicit_texts(db: AsyncSession):
-    """收集显式设定文本（冲突过滤用）：角色档案 name 列表；
-    list_characters 返回 tuple/list 均宽松兼容。"""
+    """收集显式设定文本（冲突过滤用）：角色档案 name 列表； list_characters 返回 tuple/list 均宽松兼容。"""  # noqa: E501  # 中文 docstring 长描述
     async def loader(project_id: uuid.UUID) -> list[str]:
         svc = get_character_service(db)
         result = await svc.list_characters(project_id)
@@ -286,8 +298,7 @@ def _collect_explicit_texts(db: AsyncSession):
 def get_context_service(
     db: AsyncSession,
 ) -> ContextService:
-    """获取 ContextService 实例（#593：Character/World/Outline 数据源接真实表，
-    Mock count_tokens 生产环境由 F5 LLMClient.count_tokens 替换）."""
+    """获取 ContextService 实例（#593：Character/World/Outline 数据源接真实表， Mock count_tokens 生产环境由 F5 ..."""  # noqa: E501  # 中文 docstring 长描述
     from inkflow.core.config import config
     from inkflow.domain.models.context import ContextSourceType
     from inkflow.infrastructure.context.preference_source import PreferenceSource
@@ -503,8 +514,7 @@ def get_provider_config_service(
 def get_settings_service(
     db: AsyncSession = Depends(get_db),
 ) -> SettingsService:
-    """获取 SettingsService 实例（app_settings 键值仓储，F32 #152；显式 Depends(get_db)
-    供测试 override_get_db 替换 session，镜像 get_writing_service 形态）。"""
+    """获取 SettingsService 实例（app_settings 键值仓储，F32 #152；显式 Depends(get_db) 供测试 override_get_d..."""  # noqa: E501  # 中文 docstring 长描述
     return SettingsService(
         repository=SQLiteSettingsRepository(db),
     )
@@ -513,8 +523,7 @@ def get_settings_service(
 async def get_extraction_service(
     db: AsyncSession,
 ) -> ExtractionService:
-    """获取 ExtractionService 实例（F14 统一提取门面，spec §5/§8）：
-    复用 F9-F12 + F16 风格 + 增量追踪 + 懒加载向量存储 + #276 指纹提供器。"""
+    """获取 ExtractionService 实例（F14 统一提取门面，spec §5/§8）： 复用 F9-F12 + F16 风格 + 增量追踪 + 懒加载向量存储 + ..."""  # noqa: E501  # 中文 docstring 长描述
     from inkflow.core.config import config
     vector_store = await get_vector_store_optional()
     chunking = await _load_chunking_config(db)
@@ -650,13 +659,7 @@ _index_rebuild_service_instance: IndexRebuildService | None = None
 async def get_index_rebuild_service(
     db: AsyncSession | None = None,
 ) -> IndexRebuildService:
-    """获取 IndexRebuildService 实例（#659 统一异步重建）.
-    fulltext 复用 get_search_service 产出的 service.rebuild（接受 list[int] | None）；
-    vector 为「按 project_ids 逐个调 reindex」的懒加载闭包（RAG reindex 是 per-project
-    签名，故逐项目封装；未配 embedding 时 vector=None → vector/both scope 前置 422）。
-    TODO(#659 后续): 向量装配在 get_extraction_service 基础上逐项目 reindex，
-    本批先保证 fulltext + status 端点可测（单元测试对 vector 路径自建 mock）。
-    """
+    """获取 IndexRebuildService 实例（#659 统一异步重建）. fulltext 复用 get_search_service.rebuild；vector ..."""  # noqa: E501  # 中文 docstring 长描述
     global _index_rebuild_service_instance
     if _index_rebuild_service_instance is None:
         db = db or async_session_factory()
@@ -690,8 +693,7 @@ _vector_store: VectorStoreProtocol | None = None
 
 
 async def _resolve_embedding_spec() -> tuple[str, str, str]:
-    """解析 embedding 装配选型（#276 G3）：注册表首个 type="embedding" 模型为唯一真相源；
-    无 → RAGUnavailableError；base_url None → 归一化空串。"""
+    """解析 embedding 装配选型（#276 G3）：注册表首个 type="embedding" 模型为唯一真相源； 无 → RAGUnavailableError；ba..."""  # noqa: E501  # 中文 docstring 长描述
     from inkflow.domain.models.provider_config import ProviderConfig, ProviderModel
     from inkflow.domain.ports.extraction_errors import RAGUnavailableError
     from inkflow.infrastructure.database.repositories.provider_config_repo import (
@@ -715,8 +717,7 @@ async def _resolve_embedding_spec() -> tuple[str, str, str]:
 
 
 async def _build_store() -> VectorStoreProtocol:
-    """按当前配置装配新向量存储（不赋值全局单例，供 get/refresh 复用）；
-    API embedding（OpenAIEmbeddings），失败 → RAGUnavailableError（spec §5.5 B1）。"""
+    """按当前配置装配新向量存储（不赋值全局单例，供 get/refresh 复用）； API embedding（OpenAIEmbeddings），失败 → RAGUnavai..."""  # noqa: E501  # 中文 docstring 长描述
     provider, model_id, base_url = await _resolve_embedding_spec()
     from langchain_core.embeddings import Embeddings
 
@@ -747,11 +748,7 @@ async def _build_store() -> VectorStoreProtocol:
 
 
 async def get_vector_store() -> VectorStoreProtocol:
-    """获取 RAG 向量存储（模块级单例，懒加载，spec f19 §5）.
-    LangChainVectorStore（Chroma 持久化到 config.vector_store_dir）+ 选型
-    （#276 G3，同 _resolve_embedding_spec）；无 embedding → RAGUnavailableError
-    （500「RAG 向量库不可用」前缀，§5.5 B1/B6）。仅首次调用时初始化。
-    """
+    """获取 RAG 向量存储（模块级单例，懒加载，spec f19 §5）. LangChainVectorStore（Chroma 持久化到 config.vector_sto..."""  # noqa: E501  # 中文 docstring 长描述
     global _vector_store
     if _vector_store is None:
         _vector_store = await _build_store()
@@ -759,10 +756,7 @@ async def get_vector_store() -> VectorStoreProtocol:
 
 
 async def refresh_vector_store() -> VectorStoreProtocol:
-    """刷新向量存储单例（#276 G3 契约 14）——重建失败保留旧实例.
-    成功 → 原子替换模块级 _vector_store；失败 → RAGUnavailableError 上抛，
-    旧实例保留不动（防 reindex 用旧模型重写旧向量假成功）。
-    """
+    """刷新向量存储单例（#276 G3 契约 14）——重建失败保留旧实例. 成功 → 原子替换模块级 _vector_store；失败 → RAGUnavailableErro..."""  # noqa: E501  # 中文 docstring 长描述
     global _vector_store
     new_store = await _build_store()
     _vector_store = new_store

@@ -583,7 +583,7 @@ async def test_build_configured_fingerprint_returns_none_without_embedding(
 
 
 # ══ #277 M3 追加段（2026-08-16）: 切片配置纳入指纹（spec §5.6.5）═══
-# 契约源: specs/f14-extraction-service/spec.md §5.6.5「reindex 装配时从
+# 契约源: specs/f14-extraction/spec.md §5.6.5「reindex 装配时从
 # app_settings 读取切片配置快照 → build_fingerprint(chunking={mode,
 # chunk_size, overlap_ratio, chunker_version}) 写入指纹；任一字段变更
 # （含 chunker_version 手动 bump）→ compare_fingerprints 报
@@ -718,7 +718,7 @@ async def test_load_chunking_config_none_db_returns_default() -> None:
 
 
 # ══ #278 M4 追加段（2026-08-16）: LLM 档 analyzer 装配 + chunker_version 常量 ═══
-# 契约源: specs/f14-extraction-service/spec.md §5.6.7（analyzer 装配在 deps/
+# 契约源: specs/f14-extraction/spec.md §5.6.7（analyzer 装配在 deps/
 # 装配层，复用 F5 LLMClient）+ §5.6.5（chunker_version 手动 bump 触发 stale）。
 # RED 期 get_extraction_service 无 llm_chunk_analyzer 装配 → AttributeError /
 # _chunking_fingerprint_dict 硬编码 1 → E10 已升级 2。

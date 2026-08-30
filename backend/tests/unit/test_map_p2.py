@@ -1,6 +1,6 @@
 """F43 设定库 P2 地图工作台后端扩展契约 — test_map_p2.py（RED 阶段，只写测试不改 src/）.
 
-被测扩展: F36 既有 maps/map_pins 之上叠加 P2 字段（specs/f43-setting-library-crud/spec.md
+被测扩展: F36 既有 maps/map_pins 之上叠加 P2 字段（specs/f43-setting-library-gui/spec.md
 §2.7/§3.5/§9.5 B1-B7）。独立新文件（test_map_service.py 已 830 行，超 900 护栏——§9.5 裁定）。
 
 镜像: tests/unit/test_map_service.py（service 层全 mock + fixture 构造模式）+
@@ -67,7 +67,7 @@ AssertionError 混合），零收集 ERROR（错误类缺失用 try/except Impor
 B6 api=AssertionError（assert_awaited_once_with 缺参 / model_fields_set 缺键）；
 B7 repo=AttributeError（转换函数不映射新字段 / ORM 无新列）。
 
-依据: specs/f43-setting-library-crud/spec.md §2.7/§3.5/§9.5 + 父侧定稿契约。
+依据: specs/f43-setting-library-gui/spec.md §2.7/§3.5/§9.5 + 父侧定稿契约。
 """
 
 from __future__ import annotations

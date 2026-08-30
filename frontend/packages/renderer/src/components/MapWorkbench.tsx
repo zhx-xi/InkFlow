@@ -1,5 +1,5 @@
 /**
- * F43 P2 地图工作台（specs/f43-setting-library-crud/spec.md §5.8-5.12）：
+ * F43 P2 地图工作台（specs/f43-setting-library-gui/spec.md §5.8-5.12）：
  * 世界观 tab 工作台态——四级面包屑回跳（设定库/世界观/地图视图/{地图名}）+
  * 左侧世界观树（P1 树渲染复用：parent_id 建树 + 分类 chips + 复制/编辑/删除；
  * 地图节点渲染 🗺 world-map-badge-<节点id> + pin 数徽标）+ 右侧画布/pin 列表。
@@ -11,6 +11,7 @@ import { ChevronRight, MapPlus, Pencil, Trash2 } from 'lucide-react';
 import { ApiError, apiFetch, errorMessage } from '../api/client';
 import { cn } from '../lib/cn';
 import { useI18n } from '../i18n/useI18n';
+import type { WorldCategoryEntity } from '../hooks/useWorldCategories';
 import { useToastStore } from '../stores/toast';
 import { ConfirmDialog } from './ConfirmDialog';
 import type { LibraryItemDTO } from './LibraryCreateDialog';
@@ -68,6 +69,8 @@ export interface MapWorkbenchProps {
   worldItems: LibraryItemDTO[];
   /** 地图列表（含 root_location_id 关联地点） */
   maps: WorldMapDTO[];
+  /** #761：创建图后回传父级（localMaps 是 props 拷贝，必须反向同步） */
+  onMapsChanged?: (maps: WorldMapDTO[]) => void;
   /** 当前选中地图 id */
   activeMapId: string | null;
   onSelectMap: (mapId: string) => void;
@@ -77,6 +80,8 @@ export interface MapWorkbenchProps {
   onClearMap: () => void;
   // ── P1 树交互（library.tsx 既有状态/回调复用）──
   worldCategories: string[];
+  /** #721：世界观分类实体（kind 分流——转发给 MapDirectoryTree 过滤 abstract 条目） */
+  worldCatEntities?: WorldCategoryEntity[];
   activeWorldCat: string | null;
   onWorldCatChange: (cat: string | null) => void;
   collapsedIds: Set<string | number>;
@@ -116,10 +121,12 @@ export function MapWorkbench({
   projectId,
   worldItems,
   maps,
+  onMapsChanged,
   activeMapId,
   onSelectMap,
   onExitWorkbench,
   onClearMap,
+  worldCatEntities,
   collapsedIds,
   onToggle,
   onEdit,
@@ -308,11 +315,17 @@ export function MapWorkbench({
         method: 'PATCH',
         body: { bg_source: bgSource },
       });
-      setLocalMaps((prev) =>
-        prev.map((m) =>
-          String(m.id) === String(activeMap.id) ? (updated ? { ...m, ...updated } : { ...m, bg_source: bgSource }) : m,
-        ),
-      );
+      setLocalMaps((prev) => {
+        const next = prev.map((m) =>
+          String(m.id) === String(activeMap.id)
+            ? updated
+              ? { ...m, ...updated }
+              : { ...m, bg_source: bgSource }
+            : m,
+        );
+        onMapsChanged?.(next);
+        return next;
+      });
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
     }
@@ -321,6 +334,11 @@ export function MapWorkbench({
   /** #346/#368 创建地图：multipart FormData（bg_source 固定 shape；子图携带 parent_map_id，根图可挂条目） */
   const handleCreateMap = async (name: string) => {
     try {
+      // #761：本地已知同名图 → 直接 err toast，不再发 POST（避免后端「已存在」误报）
+      if (localMaps.some((m) => m.name === name)) {
+        useToastStore.getState().pushToast('err', t('toast.saveFailed'));
+        return;
+      }
       const fd = new FormData();
       fd.append('name', name);
       fd.append('bg_source', 'shape');
@@ -338,7 +356,11 @@ export function MapWorkbench({
       );
       // 返回完整地图 → 追加本地列表；否则（列表形状响应）回退重拉
       if (created && typeof created === 'object' && 'id' in created) {
-        setLocalMaps((prev) => [...prev, created]);
+        setLocalMaps((prev) => {
+          const next = [...prev, created];
+          onMapsChanged?.(next);
+          return next;
+        });
         // #377：创建成功后自动选中新图（右侧渲染画布 + 树高亮）
         onSelectMap(String(created.id));
       } else {
@@ -354,6 +376,62 @@ export function MapWorkbench({
     }
   };
 
+  /** #721：创建子图入口——真实地图节点直接以其为父；世界观条目未挂图时先物化根图再建子图 */
+  const handleCreateChild = async (target: WorldMapDTO | LibraryItemDTO) => {
+    // WorldMapDTO 必有 bg_source，LibraryItemDTO 无 → in 收窄两条路径
+    if ('bg_source' in target) {
+      setCreateDialog({ open: true, rootLocationId: null, parentMapId: target.id });
+      return;
+    }
+    // 世界观条目：已挂图 → 以挂载图为父（与既有行为一致）
+    const linkedMap =
+      localMaps.find(
+        (m) =>
+          m.root_location_id !== null &&
+          m.root_location_id !== undefined &&
+          String(m.root_location_id) === String(target.id),
+      ) ?? null;
+    if (linkedMap) {
+      setCreateDialog({ open: true, rootLocationId: null, parentMapId: linkedMap.id });
+      return;
+    }
+    // 未挂图 → 先物化该世界的根图（name=条目名 / bg_source=shape / root_location_id=条目 id，无 parent_map_id）
+    try {
+      const fd = new FormData();
+      fd.append('name', target.name ?? '');
+      fd.append('bg_source', 'shape');
+      fd.append('root_location_id', String(target.id));
+      const created = await apiFetch<WorldMapDTO | { items?: WorldMapDTO[] }>(
+        `/api/v1/projects/${projectId}/maps`,
+        { method: 'POST', body: fd },
+      );
+      if (created && typeof created === 'object' && 'id' in created) {
+        setLocalMaps((prev) => {
+          const next = [...prev, created];
+          onMapsChanged?.(next);
+          return next;
+        });
+        setCreateDialog({ open: true, rootLocationId: null, parentMapId: created.id });
+        return;
+      }
+      // 列表形状响应 → 回退重拉并按 root_location_id 找回物化图
+      const data = await apiFetch<{ items?: WorldMapDTO[] }>(`/api/v1/projects/${projectId}/maps`);
+      const items = data.items ?? [];
+      setLocalMaps(items);
+      const materialized = items.find(
+        (m) =>
+          m.root_location_id !== null &&
+          m.root_location_id !== undefined &&
+          String(m.root_location_id) === String(target.id),
+      );
+      if (materialized) {
+        setCreateDialog({ open: true, rootLocationId: null, parentMapId: materialized.id });
+      }
+    } catch (err) {
+      useToastStore.getState().pushToast('err', errorMessage(err));
+    }
+  };
+
   /** #378 拖拽改挂：PATCH parent_map_id（目标 id 或 null=变根图）→ 回写本地列表 + ok toast */
   const handleReparent = async (mapId: string, parentMapId: string | null) => {
     try {
@@ -361,15 +439,17 @@ export function MapWorkbench({
         method: 'PATCH',
         body: { parent_map_id: parentMapId },
       });
-      setLocalMaps((prev) =>
-        prev.map((m) =>
+      setLocalMaps((prev) => {
+        const next = prev.map((m) =>
           String(m.id) === String(mapId)
             ? updated
               ? { ...m, ...updated }
               : { ...m, parent_map_id: parentMapId }
             : m,
-        ),
-      );
+        );
+        onMapsChanged?.(next);
+        return next;
+      });
       useToastStore.getState().pushToast('ok', t('toast.saved'));
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
@@ -388,11 +468,13 @@ export function MapWorkbench({
         method: 'PATCH',
         body: { name },
       });
-      setLocalMaps((prev) =>
-        prev.map((m) =>
+      setLocalMaps((prev) => {
+        const next = prev.map((m) =>
           String(m.id) === String(map.id) ? (updated ? { ...m, ...updated } : { ...m, name }) : m,
-        ),
-      );
+        );
+        onMapsChanged?.(next);
+        return next;
+      });
       setRenameTarget(null);
       useToastStore.getState().pushToast('ok', t('toast.saved'));
     } catch (err) {
@@ -406,7 +488,11 @@ export function MapWorkbench({
     const target = pendingDeleteMap;
     try {
       await apiFetch(`/api/v1/maps/${target.id}`, { method: 'DELETE' });
-      setLocalMaps((prev) => prev.filter((m) => String(m.id) !== String(target.id)));
+      setLocalMaps((prev) => {
+        const next = prev.filter((m) => String(m.id) !== String(target.id));
+        onMapsChanged?.(next);
+        return next;
+      });
       setPendingDeleteMap(null);
       if (activeMapId !== null && String(activeMapId) === String(target.id)) {
         onClearMap();
@@ -430,13 +516,15 @@ export function MapWorkbench({
         method: 'PATCH',
         body: { extra: { shapes } },
       });
-      setLocalMaps((prev) =>
-        prev.map((m) => {
+      setLocalMaps((prev) => {
+        const next = prev.map((m) => {
           if (String(m.id) !== String(activeMap.id)) return m;
           if (updated) return { ...m, ...updated };
           return { ...m, extra: { ...(m.extra ?? {}), shapes } };
-        }),
-      );
+        });
+        onMapsChanged?.(next);
+        return next;
+      });
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
     }
@@ -537,12 +625,13 @@ export function MapWorkbench({
               maps={localMaps}
               activeMapId={activeMapId}
               onSelectMap={onSelectMap}
-              onCreateChild={(map) => setCreateDialog({ open: true, rootLocationId: null, parentMapId: map.id })}
+              onCreateChild={(target) => void handleCreateChild(target)}
               onDeleteMap={(map) => setPendingDeleteMap(map)}
               onRenameMap={(map) => setRenameTarget(map)}
               onReparent={(mapId, parentMapId) => void handleReparent(mapId, parentMapId)}
               onCycleReject={handleCycleReject}
               worldItems={worldItems}
+              worldCategories={worldCatEntities}
               collapsedIds={collapsedIds}
               onToggle={onToggle}
               onEdit={onEdit}
@@ -554,7 +643,7 @@ export function MapWorkbench({
         </aside>
 
         {/* 右栏：画布 + pin 列表 / 未选地图空态 */}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 overflow-x-auto">
           {activeMap ? (
             <div className="space-y-3">
               <MapCanvas

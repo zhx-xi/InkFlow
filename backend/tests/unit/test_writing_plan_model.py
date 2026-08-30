@@ -1,6 +1,6 @@
 """F44 阶段1+2 WritingPlan 模型 + 多维上限单测（TDD RED 阶段）。
 
-权威来源：specs/f44-long-task-orchestrator/spec.md §2.1/§2.4（v1.1）。
+权威来源：specs/f44-book-orchestrator/spec.md §2.1/§2.4（v1.1）。
 本文件为 `domain/models/writing_plan.py`（NEW）定义契约：WritingPlan 实体、
 PlanNodeStatus 状态机、BookLimits 上限模型、validate_at_least_one_hard_limit
 「至少一道有限护栏」不变式、阶段1 写死上限常量、阶段2 merge_book_limits

@@ -1,5 +1,5 @@
 """F28 M2 编排服务 RED 契约测试 — MemoryService（事件捕获/偏好 CRUD/统计，全 mock 轨）.
-依据: specs/f28-agent-memory/spec.md（§5.1 事件捕获 / §5.2 提取 / §5.3 存储 /
+依据: specs/f28-memory-learning/spec.md（§5.1 事件捕获 / §5.2 提取 / §5.3 存储 /
 §5.6 审计 / §5.7 统计 / §9 测试策略 / §13 M2 验收），父侧定稿契约同源
 （test_memory_service.py docstring 即契约载体）。
 被测模块（未实现，1c 整模块 RED 形态；顶层唯一 inkflow import = 主契约模块——

@@ -33,6 +33,9 @@ const mocks = vi.hoisted(() => ({
     deleteVolume: vi.fn(),
     // #674 拖拽归卷：章节 drop 到卷容器依赖的 store 方法
     moveChapter: vi.fn(),
+    // #723 章节行操作：重命名（patchChapter）/ 删除（deleteChapter）
+    patchChapter: vi.fn(),
+    deleteChapter: vi.fn(),
   },
   projectState: {
     projects: [] as Project[],
@@ -74,6 +77,8 @@ beforeEach(() => {
   mocks.chapterState.patchVolume.mockReset();
   mocks.chapterState.moveChapter.mockReset();
   mocks.chapterState.deleteVolume.mockReset();
+  mocks.chapterState.patchChapter.mockReset();
+  mocks.chapterState.deleteChapter.mockReset();
   mocks.chapterState.createChapter.mockResolvedValue({ id: 'c4', title: '新章节', volume_id: null, order_index: 3, word_count: 0 });
   mocks.chapterState.volumes = [];
   mocks.chapterState.chapters = [];
@@ -336,5 +341,61 @@ describe('ProjectTree — #702 左栏创建输入整行 + 调宽手柄', () => {
     fireEvent.mouseDown(handle, { clientX: 0 });
     fireEvent.mouseMove(window, { clientX: 500 });
     expect(onResize).toHaveBeenLastCalledWith(360);
+  });
+});
+describe('ProjectTree — #723 章节行编辑/删除按钮（RED 契约）', () => {
+  it('每章节行提供「编辑章节」与「删除章节」按钮（按章节 id 查找）', () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    renderTree();
+    for (const ch of chapters) {
+      expect(screen.getByTestId(`chapter-edit-${ch.id}`)).toBeInTheDocument();
+      expect(screen.getByTestId(`chapter-delete-${ch.id}`)).toBeInTheDocument();
+    }
+  });
+
+  it('点击「删除章节」→ 弹确认框（chapter-del-dialog，含章节名）；确认 → deleteChapter(id) 且关框', async () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    mocks.chapterState.deleteChapter.mockResolvedValue(undefined);
+    renderTree();
+
+    fireEvent.click(screen.getByTestId('chapter-delete-c1'));
+    const dialog = screen.getByTestId('chapter-del-dialog');
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('第1章 初见');
+
+    fireEvent.click(screen.getByTestId('chapter-del-ok'));
+    await waitFor(() => expect(mocks.chapterState.deleteChapter).toHaveBeenCalledWith('c1'));
+    await waitFor(() => expect(screen.queryByTestId('chapter-del-dialog')).not.toBeInTheDocument());
+  });
+
+  it('确认框「取消」关闭且不调 deleteChapter', () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    renderTree();
+
+    fireEvent.click(screen.getByTestId('chapter-delete-c1'));
+    fireEvent.click(screen.getByTestId('chapter-del-cancel'));
+    expect(screen.queryByTestId('chapter-del-dialog')).not.toBeInTheDocument();
+    expect(mocks.chapterState.deleteChapter).not.toHaveBeenCalled();
+  });
+
+  it('点「编辑章节」→ 行内输入框（chapter-edit-input，预填标题）；Enter → patchChapter(id, 新标题)', async () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    mocks.chapterState.patchChapter.mockResolvedValue({
+      id: 'c1', title: '改后标题', volume_id: 'v1', order_index: 0, word_count: 2347,
+    });
+    renderTree();
+
+    fireEvent.click(screen.getByTestId('chapter-edit-c1'));
+    const input = screen.getByTestId('chapter-edit-input') as HTMLInputElement;
+    expect(input).toBeInTheDocument();
+    expect(input.value).toBe('第1章 初见');
+
+    fireEvent.change(input, { target: { value: '改后标题' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(mocks.chapterState.patchChapter).toHaveBeenCalledWith('c1', '改后标题'));
   });
 });

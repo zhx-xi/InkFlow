@@ -1,5 +1,5 @@
 /**
- * ⚠️ 契约文件（#650 角色关系 GUI RED 阶段，specs/f9-character-service/gui-role-enhance-red-contract.md T1）
+ * ⚠️ 契约文件（#650 角色关系 GUI RED 阶段，specs/f9-character/gui-role-enhance-red-contract.md T1）
  *
  * GREEN 改造 src/pages/library.tsx：角色 tab 行名字加可点击入口 → 打开 CharacterDetailPanel
  * （新建「角色详情面板」组件，承载关系区 + 分组区）；本文件只锁 T1 关系区契约。

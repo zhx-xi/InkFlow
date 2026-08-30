@@ -2,7 +2,7 @@
 
 SearchMode / SearchEntityType 枚举、SearchQuery 请求校验（空白拒绝、types=[]
 归一为 None、limit/offset 边界）、SearchHit 命中和 SearchResponse 响应封装，
-对应 specs/f22-search-service/spec.md §2.1/§2.2/§6.3。
+对应 specs/f22-search/spec.md §2.1/§2.2/§6.3。
 """
 
 from __future__ import annotations

@@ -17,7 +17,7 @@
 - StyleLLMAnalysisError 仅断言异常类型（构造参数语义同 F14 TimelineExtractionError，
   本测试不约束）
 
-依据: specs/f16-style-service/spec.md §5.6/§7/§9。
+依据: specs/f16-style-analysis/spec.md §5.6/§7/§9。
 """
 
 from __future__ import annotations

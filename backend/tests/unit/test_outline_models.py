@@ -3,7 +3,7 @@
 测试范围：Outline / PlotPoint / StoryArc 三实体、Create/Update DTO、
 生成相关模型（GeneratedOutline / GeneratedPlotPoint / GeneratedArc、
 OutlineGenerateRequest / OutlineGenerationResult）。
-依据: specs/f11-outline-service/spec.md §2.5/§2.6 + §9 测试策略「领域模型」。
+依据: specs/f11-outline/spec.md §2.5/§2.6 + §9 测试策略「领域模型」。
 """
 
 import uuid

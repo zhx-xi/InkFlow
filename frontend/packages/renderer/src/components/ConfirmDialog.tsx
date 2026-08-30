@@ -1,4 +1,4 @@
-/** 共享删除确认框（F43，specs/f43-setting-library-crud/spec.md §2.3）：
+/** 共享删除确认框（F43，specs/f43-setting-library-gui/spec.md §2.3）：
  * 设定库列表项 + 项目卡片两处消费（Rule of Two 已到）。
  * 关闭路径 = 取消按钮 / Esc / 父级确认成功后 onOpenChange(false)；
  * 遮罩点击不关闭（#195 拍板，与 TemplateDialog 旧确认框不同）。

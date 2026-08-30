@@ -17,12 +17,17 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import {
+  abortChatRun,
   archiveChatConversation,
+  createChatConversation,
   deleteChatConversation,
   deleteChatMessage,
+  fetchChatConversations,
   fetchChatMessages,
+  resumeChatRun,
   saveChatMessage,
   streamChat,
+  updateChatDeletePermission,
   type ChatMessageDto,
   type ChatStreamBody,
 } from '../api/chat';
@@ -33,6 +38,7 @@ import { parseChatReply, type ChatIntent } from '../lib/chatIntent';
 import { useChapterStore } from '../stores/chapter';
 import { ensureModelReady } from '../stores/models';
 import { useToastStore } from '../stores/toast';
+import { ChatDeleteAuthControl } from './ChatDeleteAuthControl';
 
 export interface ChatPanelProps {
   projectId: string;
@@ -40,6 +46,8 @@ export interface ChatPanelProps {
   chapterContent?: string;
   /** #642-1：管线流式回调 sink（streamPipeline 的 delta/done 复用 ChatPanel 流式渲染管线） */
   streamSink?: MutableRefObject<PipelineStreamSink> | null;
+  /** #770：full=全局 chat 页（占满、无 resize handle）；inline=章节内底部横栏（默认，可调 80~480px） */
+  variant?: 'inline' | 'full';
 }
 
 interface ChatEntry {
@@ -65,8 +73,15 @@ const CHAT_DEFAULT_HEIGHT = 160;
 const CHAT_MIN_HEIGHT = 80;
 const CHAT_MAX_HEIGHT = 480;
 
-export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: ChatPanelProps) {
+export function ChatPanel({
+  projectId,
+  chapterId,
+  chapterContent,
+  streamSink,
+  variant = 'inline',
+}: ChatPanelProps) {
   const { t } = useI18n();
+  const isFull = variant === 'full';
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   // #597：本轮 agent 工具调用/结果卡片（下标 = 数组内 index，首个工具调用 = 0）
@@ -77,6 +92,12 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
   /** #681：管线输出区（管线 delta 独立渲染，非 chat AI 消息、不落库） */
   const [pipelineOutputEntries, setPipelineOutputEntries] = useState<{ seq: number; text: string }[]>([]);
   const [height, setHeight] = useState(CHAT_DEFAULT_HEIGHT);
+  // #719：流式运行中渲染中断按钮（state 驱动重渲染；ref 供回调/并发保护）
+  const [streaming, setStreaming] = useState(false);
+  // #727：思考过程/工具调用折叠块展开状态（key = tool-${index} / reasoning-${index}）
+  const [expandedBlocks, setExpandedBlocks] = useState<Record<string, boolean>>({});
+  // #727：reasoning 帧条目（seq 独立递增 → 每帧独立折叠块）
+  const [reasoningEntries, setReasoningEntries] = useState<{ seq: number; text: string }[]>([]);
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const userSeqRef = useRef(0);
   const aiSeqRef = useRef(0);
@@ -89,13 +110,58 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
   const abortRef = useRef<(() => void) | null>(null);
   // #547：发送时的 projectId 快照（onDone/onError 保存 AI 消息仍落到原项目，避免闭包陈旧）
   const projectIdRef = useRef(projectId);
+  // #770：章节 id 快照（挂载 effect 建会话时读最新章节名；不把 chapterId 纳入 effect 依赖，
+  // 保持既有「仅 projectId/streamSink 变化才重解析线程」的加载语义）
+  const chapterIdRef = useRef(chapterId);
+  chapterIdRef.current = chapterId;
+  // #744：当前线程 id 快照（防闭包陈旧，镜像 projectIdRef；归档后新建线程更新）
+  const conversationIdRef = useRef<string | null>(null);
+  // #744：当前线程 id（state 驱动渲染；与 ref 同步）
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  // #766 阶段②：删除授权三态（默认 manual）+ HITL interrupt 弹窗 payload
+  const [deletePermission, setDeletePermission] = useState<'manual' | 'ask_once' | 'auto'>('manual');
+  const [interruptPayload, setInterruptPayload] = useState<{
+    tool: string;
+    entity_id: string;
+    entity_name: string;
+  } | null>(null);
+  // #719：run_id 捕获（run_started 帧 → 中断时调后端 abort 端点）
+  const runIdRef = useRef<string | null>(null);
+  // #727：reasoning 条目 seq 计数器（每帧独立块）
+  const reasoningSeqRef = useRef(0);
+  // #726：消息区滚动容器 + 底部锚点（发送后自动滚动到底部）
+  const messagesRef = useRef<HTMLDivElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  // #745：每次提交 / 页面跳转加载历史后强制滚底（一次性标记，effect 消费后复位）
+  const pendingScrollRef = useRef(false);
 
   /** #547：挂载 / projectId 变化 → 加载历史（失败静默，不打扰后续发送） */
   useEffect(() => {
     let cancelled = false;
     projectIdRef.current = projectId;
-    void fetchChatMessages(projectId)
-      .then((res) => {
+    const load = async () => {
+      try {
+        const convs = await fetchChatConversations({ projectId, includeDeleted: false });
+        if (cancelled) return;
+        // #744：后端 GET /conversations 忽略 project_id，返回全部线程 → 必须本地按 project_id 过滤，
+        // 否则会选到其它项目的活动线程（e2e 写作页跨用例消息残留根因）
+        const active =
+          convs.items.find((c) => c.project_id === projectId && !c.is_deleted) ?? null;
+        let cid = active ? active.conversation_id : null;
+        if (!cid) {
+          // #770：章节内建会话 title=章节名（章节锚点）；全局 chat 页（无章节）不传 title
+          const chapterTitle = chapterIdRef.current
+            ? useChapterStore.getState().chapters.find((c) => c.id === chapterIdRef.current)?.title
+            : undefined;
+          const created = chapterTitle
+            ? await createChatConversation(projectId, { title: chapterTitle })
+            : await createChatConversation(projectId);
+          if (cancelled) return;
+          cid = created.conversation_id;
+        }
+        conversationIdRef.current = cid;
+        setConversationId(cid);
+        const res = await fetchChatMessages(cid);
         if (cancelled) return;
         let userSeq = 0;
         let aiSeq = 0;
@@ -117,16 +183,19 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
         }
         userSeqRef.current = userSeq;
         aiSeqRef.current = aiSeq;
+        // #745：页面跳转/重载历史后强制滚底
+        pendingScrollRef.current = true;
         setMessages(history);
         // #597：切换项目/重载历史时清空上一轮工具卡片
         setToolEntries([]);
         setSelectedSeq(latestContentSeq);
         // #642-1：写作页（带 streamSink）挂载后历史非空 → 自动展开（管线回复重挂后仍可见）
         if (streamSink && history.length > 0) setExpanded(true);
-      })
-      .catch(() => {
+      } catch {
         // 契约：历史加载失败静默，不弹 toast，后续发送仍可用
-      });
+      }
+    };
+    void load();
     return () => {
       cancelled = true;
     };
@@ -164,6 +233,7 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
       // #547：AI 回复落库（fire-and-forget；契约 = ChatPanel.test.tsx #547 describe）
       void saveChatMessage({
         project_id: projectIdRef.current,
+        conversation_id: conversationIdRef.current ?? '',
         role: 'ai',
         content: parsed.body,
         intent: parsed.intent,
@@ -173,6 +243,9 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
     streamSeqRef.current = null;
     streamTextRef.current = '';
     abortRef.current = null;
+    // #719：done 后复位中断态与 run_id
+    runIdRef.current = null;
+    setStreaming(false);
   }, []);
 
   /** 流式 error：AI 消息显示错误文案（write.chat.failed），不插入正文 */
@@ -193,6 +266,9 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
       streamSeqRef.current = null;
       streamTextRef.current = '';
       abortRef.current = null;
+      // #719：error 后复位中断态与 run_id
+      runIdRef.current = null;
+      setStreaming(false);
     },
     [t],
   );
@@ -205,6 +281,62 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
   /** #597：工具结果帧 → 按 id 匹配填充 result */
   const onToolResult = useCallback((res: { id: string; name: string; result: string }) => {
     setToolEntries((prev) => prev.map((e) => (e.id === res.id ? { ...e, result: res.result } : e)));
+  }, []);
+
+  /** #719：run_started 帧 → 捕获 run_id（中断时调后端 abort 端点） */
+  const onRunStart = useCallback((runId: string) => {
+    runIdRef.current = runId;
+  }, []);
+
+  /** #727：reasoning 帧 → 追加独立思考过程条目（seq 递增） */
+  const onReasoning = useCallback((text: string) => {
+    const seq = reasoningSeqRef.current++;
+    setReasoningEntries((prev) => [...prev, { seq, text }]);
+  }, []);
+
+  /** #766 阶段②：interrupt 帧（HITL 删除授权确认）→ 打开确认弹窗 */
+  const onInterrupt = useCallback((payload: { tool: string; entity_id: string; entity_name: string }) => {
+    setInterruptPayload(payload);
+  }, []);
+
+  /** #766 阶段②：删除授权三态切换 → PATCH 服务端（线程缺失时先新建再 PATCH） */
+  const handleDeleteModeChange = useCallback(async (mode: 'manual' | 'ask_once' | 'auto') => {
+    setDeletePermission(mode);
+    let cid = conversationIdRef.current;
+    if (!cid) {
+      try {
+        const created = await createChatConversation(projectIdRef.current);
+        cid = created.conversation_id;
+        conversationIdRef.current = cid;
+        setConversationId(cid);
+      } catch {
+        // 新建线程失败则跳过 PATCH（本地选中态保留，服务端权限不变）
+      }
+    }
+    if (cid) {
+      try {
+        await updateChatDeletePermission(cid, mode);
+      } catch {
+        // PATCH 失败静默（不阻塞 UI）
+      }
+    }
+  }, []);
+
+  /** #766 阶段②：HITL 确认删除 → resume approved:true */
+  const handleResumeApprove = useCallback(() => {
+    void resumeChatRun({ conversation_id: conversationIdRef.current ?? '', approved: true }).catch(() => {});
+    setInterruptPayload(null);
+  }, []);
+
+  /** #766 阶段②：HITL 取消删除 → resume approved:false */
+  const handleResumeCancel = useCallback(() => {
+    void resumeChatRun({ conversation_id: conversationIdRef.current ?? '', approved: false }).catch(() => {});
+    setInterruptPayload(null);
+  }, []);
+
+  /** #727：折叠块展开切换（tool-${index} / reasoning-${index}） */
+  const toggleBlock = useCallback((key: string) => {
+    setExpandedBlocks((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
   // #681：管线帧与 chat 帧区分渲染——管线 delta/done 走独立「管线输出」区，
@@ -250,9 +382,36 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
       return;
     }
     streamingRef.current = true;
+    setStreaming(true);
     setMessages((prev) => [...prev, { kind: 'user', seq: userSeqRef.current++, text: prompt }]);
+    // #745：本轮提交消息渲染后强制滚底
+    pendingScrollRef.current = true;
     // #547：用户消息落库（fire-and-forget，不 await 不阻塞发送）
-    void saveChatMessage({ project_id: projectId, role: 'user', content: prompt }).catch(() => {});
+    // #547/#744：用户消息落库（fire-and-forget，不 await 不阻塞发送；线程异常缺失时先新建）
+    let cid = conversationIdRef.current;
+    if (!cid) {
+      try {
+        const chapterTitle = chapterId
+          ? useChapterStore.getState().chapters.find((c) => c.id === chapterId)?.title
+          : undefined;
+        const created = chapterTitle
+          ? await createChatConversation(projectId, { title: chapterTitle })
+          : await createChatConversation(projectId);
+        cid = created.conversation_id;
+        conversationIdRef.current = cid;
+        setConversationId(cid);
+      } catch {
+        // 新建线程失败不阻塞发送；AI 落库/下一轮发送会重试
+      }
+    }
+    if (cid) {
+      void saveChatMessage({
+        project_id: projectId,
+        conversation_id: cid,
+        role: 'user',
+        content: prompt,
+      }).catch(() => {});
+    }
     setInput('');
     const body: ChatStreamBody = {
       project_id: projectId,
@@ -260,10 +419,24 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
       ...(chapterId ? { chapter_id: chapterId } : {}),
       ...(chapterContent ? { chapter_context: chapterContent } : {}),
     };
-    void streamChat(body, { onDelta, onDone, onError, onToolCall, onToolResult }).then((abort) => {
-      abortRef.current = abort;
-    });
-  }, [input, projectId, chapterId, chapterContent, onDelta, onDone, onError, onToolCall, onToolResult, t]);
+    void streamChat(body, { onDelta, onDone, onError, onToolCall, onToolResult, onRunStart, onReasoning, onInterrupt }).then(
+      (abort) => {
+        abortRef.current = abort;
+      },
+    );
+  }, [input, projectId, chapterId, chapterContent, onDelta, onDone, onError, onToolCall, onToolResult, onRunStart, onReasoning, onInterrupt, t]);
+
+  /** #719：中断当前流式运行（先调后端 abort 端点，再本地 abort + 复位发送态） */
+  const handleInterrupt = useCallback(() => {
+    if (runIdRef.current) void abortChatRun(runIdRef.current);
+    abortRef.current?.();
+    runIdRef.current = null;
+    setStreaming(false);
+    streamingRef.current = false;
+    streamSeqRef.current = null;
+    streamTextRef.current = '';
+    abortRef.current = null;
+  }, []);
 
   // #476 窗口级拖拽：#388 模式 —— mousedown(handle) 记录起点，window mousemove 更新高度，window mouseup 收尾
   const handleWindowMouseMove = useCallback((e: MouseEvent) => {
@@ -307,6 +480,20 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
       window.removeEventListener('mouseup', handleWindowMouseUp);
     };
   }, [handleWindowMouseMove, handleWindowMouseUp]);
+
+  // #726：发送后自动滚动到底部——仅当容器处于底部附近（用户未上滑）时拉底
+  // #745：pendingScrollRef 置位时无条件拉底（每次提交 + 页面跳转/历史加载）
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (!el) return;
+    if (pendingScrollRef.current) {
+      pendingScrollRef.current = false;
+      messagesEndRef.current?.scrollIntoView({ block: 'end' });
+      return;
+    }
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 60;
+    if (atBottom) messagesEndRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages, toolEntries, reasoningEntries]);
 
   /** #642-2：per-message 插入（点击该条 content 消息直接插入该条 body，不再依赖 selectedSeq） */
   const handleInsertMessage = useCallback(
@@ -356,31 +543,60 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
   /** #581：整轮归档（复用会话页归档 API：DELETE conversations/{projectId} 软删全部消息） */
   const handleArchiveRound = useCallback(async (): Promise<void> => {
     try {
-      await archiveChatConversation(projectIdRef.current);
+      // #744：归档当前线程 -> 新建新线程（开新对话不复用旧 conversation）-> 清空本轮消息
+      await archiveChatConversation(conversationIdRef.current ?? '');
+      const chapterTitle = chapterId
+        ? useChapterStore.getState().chapters.find((c) => c.id === chapterId)?.title
+        : undefined;
+      const newConv = chapterTitle
+        ? await createChatConversation(projectIdRef.current, { title: chapterTitle })
+        : await createChatConversation(projectIdRef.current);
+      conversationIdRef.current = newConv.conversation_id;
+      setConversationId(newConv.conversation_id);
       setMessages([]);
       setToolEntries([]);
+      userSeqRef.current = 0;
+      aiSeqRef.current = 0;
+      // 新线程历史加载（新建线程为空；fire-and-forget，失败静默）
+      void fetchChatMessages(newConv.conversation_id).catch(() => {});
       useToastStore.getState().pushToast('ok', t('sessions.archivedToast'));
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
     }
-  }, [t]);
+  }, [t, chapterId]);
 
   /** #581：整轮删除（force=true 物理删除，api/chat.ts deleteChatConversation 内部带 force） */
   const handleDeleteRound = useCallback(async (): Promise<void> => {
     try {
-      await deleteChatConversation(projectIdRef.current);
+      // #744：真删当前线程 -> 新建新线程 -> 清空本轮消息
+      await deleteChatConversation(conversationIdRef.current ?? '');
+      const chapterTitle = chapterId
+        ? useChapterStore.getState().chapters.find((c) => c.id === chapterId)?.title
+        : undefined;
+      const newConv = chapterTitle
+        ? await createChatConversation(projectIdRef.current, { title: chapterTitle })
+        : await createChatConversation(projectIdRef.current);
+      conversationIdRef.current = newConv.conversation_id;
+      setConversationId(newConv.conversation_id);
       setMessages([]);
       setToolEntries([]);
+      userSeqRef.current = 0;
+      aiSeqRef.current = 0;
+      void fetchChatMessages(newConv.conversation_id).catch(() => {});
       useToastStore.getState().pushToast('ok', t('sessions.deletedToast'));
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
     }
-  }, [t]);
+  }, [t, chapterId]);
 
   const canSend = input.trim() !== '';
 
   return (
-    <div data-testid="chat-panel" className="flex flex-col gap-2 border-b border-line bg-surface-2 px-4 py-3">
+    <div
+      data-testid="chat-panel"
+      data-conversation-id={conversationId ?? undefined}
+      className={`flex flex-col gap-2 border-b border-line bg-surface-2 px-4 py-3${isFull ? ' min-h-0 flex-1' : ''}`}
+    >
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -393,39 +609,108 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
         </button>
         {/* #642-2：resize-handle 从底部移到顶部行（toggle 之后；拖动逻辑不变） */}
         <div className="flex-1 flex justify-center">
-          <div
-            data-testid="chat-resize-handle"
-            className="flex h-1.5 cursor-ns-resize items-center justify-center"
-            onMouseDown={handleResizeMouseDown}
-          >
-            <span className="block h-0.5 w-8 rounded-full bg-line" />
-          </div>
+          {!isFull && (
+            <div
+              data-testid="chat-resize-handle"
+              className="flex h-1.5 cursor-ns-resize items-center justify-center"
+              onMouseDown={handleResizeMouseDown}
+            >
+              <span className="block h-0.5 w-8 rounded-full bg-line" />
+            </div>
+          )}
         </div>
       </div>
-      {expanded && messages.length > 0 && (
+      {(expanded || isFull) && messages.length > 0 && (
         <div
           data-testid="chat-messages"
           data-height={String(height)}
-          className="max-h-[480px] space-y-3 overflow-y-auto text-[13px]"
-          style={{ height }}
+          ref={messagesRef}
+          className={
+            isFull
+              ? 'min-h-0 flex-1 space-y-3 overflow-y-auto text-[13px]'
+              : 'max-h-[480px] space-y-3 overflow-y-auto text-[13px]'
+          }
+          style={isFull ? undefined : { height }}
         >
-          {/* #597：agent 工具调用/结果卡片（在 ai 消息前展示） */}
-          {toolEntries.map((entry, index) => (
-            <div key={`tool-${entry.id}-${index}`} className="space-y-1">
+          {/* #727：思考过程折叠块（在工具块之前展示） */}
+          {reasoningEntries.map((entry, index) => {
+            const blockKey = `reasoning-${index}`;
+            const open = !!expandedBlocks[blockKey];
+            return (
               <div
-                data-testid={`chat-tool-call-${index}`}
-                data-name={entry.name}
-                className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] text-ink-2"
+                key={blockKey}
+                data-testid={`chat-reasoning-${index}`}
+                aria-expanded={open}
+                className="rounded-md border border-line bg-surface px-3 py-2 text-[12px]"
+                onClick={() => toggleBlock(blockKey)}
               >
-                <span className="font-medium text-ink">{entry.name}</span>
-                <span className="ml-2 truncate">{JSON.stringify(entry.args)}</span>
-              </div>
-              {entry.result !== null && (
-                <div
-                  data-testid={`chat-tool-result-${index}`}
-                  className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] text-ink-2"
+                <button
+                  type="button"
+                  data-testid={`chat-reasoning-toggle-${index}`}
+                  aria-expanded={open}
+                  className="flex w-full items-center gap-1.5 text-left"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleBlock(blockKey);
+                  }}
                 >
-                  {entry.result}
+                  <span className="inline-block w-3 shrink-0 text-ink-3">{open ? '▾' : '›'}</span>
+                  <span className="text-ink">🧠</span>
+                  <span className="font-medium text-ink">{t('write.chat.thinking')}</span>
+                  <span className="ml-auto text-[11px] text-ink-3">{t('write.chat.thinking')}</span>
+                </button>
+                {open && (
+                  <div className="mt-1 whitespace-pre-wrap border-t border-line pt-1 text-ink-2">
+                    {entry.text}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {/* #727：agent 工具调用/结果折叠块（保留 #597 旧 testid chat-tool-call 与 chat-tool-result） */}
+          {toolEntries.map((entry, index) => (
+            <div
+              key={`tool-${entry.id}-${index}`}
+              data-testid={`chat-tool-${index}`}
+              aria-expanded={!!expandedBlocks[`tool-${index}`]}
+              className="rounded-md border border-line bg-surface px-3 py-2 text-[12px]"
+              onClick={() => toggleBlock(`tool-${index}`)}
+            >
+              <button
+                type="button"
+                data-testid={`chat-tool-toggle-${index}`}
+                aria-expanded={!!expandedBlocks[`tool-${index}`]}
+                className="flex w-full items-center gap-1.5 text-left"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleBlock(`tool-${index}`);
+                }}
+              >
+                <span className="inline-block w-3 shrink-0 text-ink-3">
+                  {expandedBlocks[`tool-${index}`] ? '▾' : '›'}
+                </span>
+                <span className="text-ink">🔧</span>
+                <span className="font-medium text-ink" data-testid={`chat-tool-call-${index}`} data-name={entry.name}>
+                  {entry.name}
+                </span>
+                <span className="ml-auto text-[11px] text-ink-3">{t('write.chat.toolCall')}</span>
+              </button>
+              {expandedBlocks[`tool-${index}`] && (
+                <div className="mt-1 space-y-1 border-t border-line pt-1">
+                  <div className="text-ink-2">参数: {JSON.stringify(entry.args)}</div>
+                </div>
+              )}
+              {/* #597 兼容：result 卡片 testid 常驻 DOM（内容按折叠态显示） */}
+              {entry.result !== null && (
+                <div data-testid={`chat-tool-result-${index}`} className="text-ink-2">
+                  {expandedBlocks[`tool-${index}`] && (
+                    <>
+                      <span className={entry.result.includes('"ok": false') ? 'text-err' : 'text-ink'}>
+                        {entry.result.includes('"ok": false') ? '❌ ' : '✅ '}
+                      </span>
+                      <span className="whitespace-pre-wrap">{entry.result}</span>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -516,10 +801,12 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
               </div>
             );
           })}
+          {/* #726：滚动到底部锚点（新消息/工具/思考块到达后 scrollIntoView） */}
+          <div data-testid="chat-scroll-anchor" ref={messagesEndRef} />
         </div>
       )}
       {/* #681：管线输出区——管线 delta/done 独立渲染（与 chat messages 分离，不落 chat 历史） */}
-      {expanded && pipelineOutputEntries.length > 0 && (
+      {(expanded || isFull) && pipelineOutputEntries.length > 0 && (
         <div
           data-testid="pipeline-output-area"
           className="max-h-[240px] space-y-2 overflow-y-auto text-[13px]"
@@ -536,7 +823,15 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
           ))}
         </div>
       )}
-      <div className="flex items-center gap-2">
+      {/* #766 阶段②：删除授权三态分段控件 + HITL 确认弹窗（独立组件，行为不变） */}
+      <ChatDeleteAuthControl
+        deletePermission={deletePermission}
+        onModeChange={handleDeleteModeChange}
+        interruptPayload={interruptPayload}
+        onApprove={handleResumeApprove}
+        onCancel={handleResumeCancel}
+      />
+      <div className={`flex items-center gap-2${isFull ? ' mt-auto' : ''}`}>
         <textarea
           data-testid="chat-input"
           className="min-h-[40px] flex-1 resize-none rounded-md border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
@@ -546,17 +841,30 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
           placeholder={t('write.chat.placeholder')}
           rows={1}
         />
-        <button
-          type="button"
-          data-testid="chat-send"
-          disabled={!canSend}
-          className="rounded-md bg-accent px-4 py-2 text-[13px] text-accent-ink hover:bg-accent-hover disabled:opacity-40"
-          onClick={() => void handleSend()}
-        >
-          {t('write.chat.send')}
-        </button>
+        {streaming ? (
+          <button
+            type="button"
+            data-testid="chat-interrupt"
+            aria-label={t('write.chat.stop')}
+            className="rounded-md bg-accent px-4 py-2 text-[13px] text-accent-ink hover:bg-accent-hover"
+            onClick={() => void handleInterrupt()}
+          >
+            <span className="mr-1 inline-block h-2 w-2 rounded-[2px] bg-current" aria-hidden="true" />
+            {t('write.chat.stop')}
+          </button>
+        ) : (
+          <button
+            type="button"
+            data-testid="chat-send"
+            disabled={!canSend}
+            className="rounded-md bg-accent px-4 py-2 text-[13px] text-accent-ink hover:bg-accent-hover disabled:opacity-40"
+            onClick={() => void handleSend()}
+          >
+            {t('write.chat.send')}
+          </button>
+        )}
       </div>
-      {expanded && messages.length > 0 && (
+      {(expanded || isFull) && messages.length > 0 && (
         <div className="flex gap-2">
           <button
             type="button"

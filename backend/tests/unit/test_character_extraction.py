@@ -5,7 +5,7 @@
 不可解析关系引用 / 围栏输出 / 修复重试与异常透传 / 空角色列表 /
 模板与模型参数断言。
 
-依据: specs/f9-character-service/spec.md §5 + §9 测试策略。
+依据: specs/f9-character/spec.md §5 + §9 测试策略。
 """
 
 from __future__ import annotations

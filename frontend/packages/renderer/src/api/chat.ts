@@ -1,13 +1,13 @@
 /**
- * SSE 流式聊天客户端（#541，契约 = api/chat.test.ts）
- * - POST /api/v1/chat/agent/stream（#597 deepagents 系统级 Agent 流式端点）
- *   + fetch ReadableStream（EventSource 不支持 POST/自定义头）
- * - 帧: data: {type, delta, done:false} × N → {type:'done', done:true}；流中错误: {type:'error', error}
- * - #597 帧协议扩展：type='tool_call' → onToolCall；type='tool_result' → onToolResult；
- *   type='delta'（或 type 缺省的旧帧）→ onDelta；type='error' → onError + return；
- *   type='done'（或无 error 的终帧）→ onDone + return
- * - 停止: AbortController.abort() → 服务端终止生成器
- * - 行为镜像 src/api/sse.ts streamWriting：行缓冲按 \n\n 切帧取 data: 行
+ * SSE 流式聊天客户端（#541，外部契约 = api/chat.test.ts）。
+ * - POST /api/v1/chat/agent/stream（#597 deepagents 系统级 Agent 流式端点）；
+ *   + fetch ReadableStream（EventSource 不支持 POST/自定义头）。
+ * - 携带 data: {type, delta, done:false} × N -> {type:'done', done:true}；流中错误 {type:'error', error}
+ * - #597 帧协议扩展：type='tool_call' -> onToolCall；type='tool_result' -> onToolResult；
+ *   type='delta'（或 type 缺省的旧帧）-> onDelta；type='error' -> onError + return；
+ *   type='done'（或无 error 的终帧）-> onDone + return
+ * - 停止: AbortController.abort() -> 服务端终止生成器
+ * - 行为镜像 src/api/sse.ts streamWriting：行缓冲按 \n\n 切帧，data: 行
  */
 import { apiFetch, getApiConfig } from './client';
 
@@ -19,7 +19,7 @@ export interface ChatStreamBody {
 }
 
 export interface ChatStreamFrame {
-  type: 'delta' | 'tool_call' | 'tool_result' | 'done' | 'error';
+  type: 'delta' | 'tool_call' | 'tool_result' | 'done' | 'error' | 'run_started' | 'reasoning' | 'interrupt';
   done: boolean;
   delta?: string;
   error?: string;
@@ -28,6 +28,10 @@ export interface ChatStreamFrame {
   name?: string;
   args?: Record<string, unknown>;
   result?: string;
+  /** #766 阶段②：interrupt 帧字段（HITL 删除授权确认 payload {tool, entity_id, entity_name}） */
+  tool?: string;
+  entity_id?: string;
+  entity_name?: string;
 }
 
 export interface ChatStreamCallbacks {
@@ -37,6 +41,12 @@ export interface ChatStreamCallbacks {
   /** #597：agent 工具流回调（可选） */
   onToolCall?: (call: { id: string; name: string; args: Record<string, unknown> }) => void;
   onToolResult?: (res: { id: string; name: string; result: string }) => void;
+  /** #719：run_started 帧 -> 携带 run_id（前端据此调后端 abort） */
+  onRunStart?: (runId: string) => void;
+  /** #727：reasoning 帧 -> 思考过程块 */
+  onReasoning?: (text: string) => void;
+  /** #766 阶段②：interrupt 帧（HITL 删除授权确认）→ payload {tool, entity_id, entity_name} */
+  onInterrupt?: (payload: { tool: string; entity_id: string; entity_name: string }) => void;
 }
 
 /** 发起 chat 流式请求；返回 abort 函数（组件卸载时调用） */
@@ -65,7 +75,7 @@ export async function streamChat(
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      // 行缓冲: SSE 帧以空行分隔（\n\n），data: JSON 行可能分块到达
+      // 行缓冲：SSE 帧以空行分隔（\n\n），data: JSON 行可能分块到达
       let buffer = '';
 
       while (true) {
@@ -73,7 +83,7 @@ export async function streamChat(
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
 
-        // 逐帧切分（#541 帧格式: data: 行 + \n\n 空行）
+        // 逐帧切分：#541 帧格式 data: 行 + \n\n 空行
         let sepIndex: number;
         while ((sepIndex = buffer.indexOf('\n\n')) !== -1) {
           const rawFrame = buffer.slice(0, sepIndex);
@@ -92,6 +102,23 @@ export async function streamChat(
           }
           if (frame.type === 'tool_result') {
             callbacks.onToolResult?.({ id: frame.id ?? '', name: frame.name ?? '', result: frame.result ?? '' });
+            continue;
+          }
+          if (frame.type === 'run_started') {
+            callbacks.onRunStart?.(frame.id ?? '');
+            continue;
+          }
+          if (frame.type === 'reasoning') {
+            callbacks.onReasoning?.(frame.delta ?? '');
+            continue;
+          }
+          // #766 阶段②：interrupt 帧（HITL 删除授权确认）→ 前端弹窗
+          if (frame.type === 'interrupt') {
+            callbacks.onInterrupt?.({
+              tool: frame.tool ?? '',
+              entity_id: frame.entity_id ?? '',
+              entity_name: frame.entity_name ?? '',
+            });
             continue;
           }
           if (frame.type === 'error' || frame.error) {
@@ -117,20 +144,32 @@ export async function streamChat(
   return () => controller.abort();
 }
 
-/** #547：chat 消息实体（对齐后端 GET/POST /api/v1/chat/messages 契约） */
+/** #719：后端中断端点——POST /api/v1/chat/agent/stream/{runId}/abort */
+export async function abortChatRun(runId: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/api/v1/chat/agent/stream/${runId}/abort`, { method: 'POST' });
+}
+
+/** #547：#744 chat 消息实体（对齐后端 GET/POST /api/v1/chat/messages 契约，含 conversation_id） */
 export interface ChatMessageDto {
   id: string;
   project_id: string;
+  /** #744：消息所属线程 id */
+  conversation_id: string;
   role: 'user' | 'ai';
   content: string;
   intent: 'content' | 'conversation' | null;
   created_at: string;
 }
 
-/** #547：会话聚合实体（对齐后端 GET /api/v1/chat/conversations 契约） */
+/** #547：#744 会话聚合实体（对齐后端 GET /api/v1/chat/conversations 契约） */
 export interface ChatConversationDto {
+  /** #744：线程 id（列表/归档/新建均以 conversation 维度） */
+  conversation_id: string;
   project_id: string;
   project_name: string | null;
+  /** #770：会话标题（章节锚点；空则展示回退 project_name / last_message）。
+      类型可选仅为兼容 RED 测试 mock（后端始终返回 title）；展示层按契约回退 */
+  title?: string;
   last_message: string;
   message_count: number;
   /** #581：true=已归档对话（后端 include_deleted=true 聚合输出，镜像 sessions.is_deleted） */
@@ -138,29 +177,31 @@ export interface ChatConversationDto {
   updated_at: string;
 }
 
-/** 拉取项目 chat 消息历史（时间升序，分页） */
+/** 拉取线程 chat 消息历史（时间升序，分页；#744 按 conversation_id 过滤） */
 export async function fetchChatMessages(
-  projectId: string,
+  conversationId: string,
   offset = 0,
   limit = 50,
 ): Promise<{ items: ChatMessageDto[]; total: number; offset: number; limit: number }> {
   const qs = new URLSearchParams({
-    project_id: projectId,
+    conversation_id: conversationId,
     offset: String(offset),
     limit: String(limit),
   });
   return apiFetch(`/api/v1/chat/messages?${qs.toString()}`, { method: 'GET' });
 }
 
-/** 追加 chat 消息（落库） */
+/** 追加 chat 消息（落库；body 逐字含 conversation_id） */
 export async function saveChatMessage(body: {
   project_id: string;
+  conversation_id: string;
   role: 'user' | 'ai';
   content: string;
   intent?: 'content' | 'conversation' | null;
 }): Promise<ChatMessageDto> {
   const payload: {
     project_id: string;
+    conversation_id: string;
     role: 'user' | 'ai';
     content: string;
     intent?: 'content' | 'conversation' | null;
@@ -171,19 +212,44 @@ export async function saveChatMessage(body: {
   return apiFetch('/api/v1/chat/messages', { method: 'POST', body: payload });
 }
 
-/** 会话页聚合列表（#581：includeDeleted=true 时含已归档全量，镜像 api/sessions.ts fetchSessions） */
+/** 会话页聚合列表（#581）：includeDeleted=true 时含已归档全量，镜像 api/sessions.ts fetchSessions */
 export async function fetchChatConversations(params?: {
   includeDeleted?: boolean;
+  /** #744：可选按项目过滤 query */
+  projectId?: string;
 }): Promise<{ items: ChatConversationDto[]; total: number }> {
   const qs = new URLSearchParams();
   if (params?.includeDeleted) qs.set('include_deleted', 'true');
+  if (params?.projectId) qs.set('project_id', params.projectId);
   const suffix = qs.toString() ? `?${qs.toString()}` : '';
   return apiFetch(`/api/v1/chat/conversations${suffix}`);
 }
 
-/** #581：恢复已归档 chat 会话：POST /api/v1/chat/conversations/{projectId}/restore → ChatConversation */
-export async function restoreChatConversation(projectId: string): Promise<ChatConversationDto> {
-  return apiFetch<ChatConversationDto>(`/api/v1/chat/conversations/${projectId}/restore`, {
+/** #744/#770：创建新线程：POST /api/v1/chat/conversations body {project_id, title?} -> 201 */
+export async function createChatConversation(
+  projectId: string,
+  opts?: { title?: string },
+): Promise<ChatConversationDto> {
+  return apiFetch<ChatConversationDto>('/api/v1/chat/conversations', {
+    method: 'POST',
+    body: { project_id: projectId, ...(opts?.title ? { title: opts.title } : {}) },
+  });
+}
+
+/** #770：重命名会话：PATCH /api/v1/chat/conversations/{conversationId} body {title} */
+export async function renameChatConversation(
+  conversationId: string,
+  title: string,
+): Promise<{ conversation_id: string; title: string }> {
+  return apiFetch(`/api/v1/chat/conversations/${conversationId}`, {
+    method: 'PATCH',
+    body: { title },
+  });
+}
+
+/** #581/#744：恢复已归档线程：POST /api/v1/chat/conversations/{conversationId}/restore */
+export async function restoreChatConversation(conversationId: string): Promise<ChatConversationDto> {
+  return apiFetch<ChatConversationDto>(`/api/v1/chat/conversations/${conversationId}/restore`, {
     method: 'POST',
   });
 }
@@ -193,22 +259,43 @@ export async function archiveChatMessage(id: string): Promise<void> {
   return apiFetch<void>(`/api/v1/chat/messages/${id}`, { method: 'DELETE' });
 }
 
-/** #566：真删 chat 消息：DELETE /api/v1/chat/messages/{id}?force=true（204） */
+/** #566：真删 chat 消息：DELETE /api/v1/chat/messages/{id}?force=true，204 */
 export async function deleteChatMessage(id: string): Promise<void> {
   return apiFetch<void>(`/api/v1/chat/messages/${id}?force=true`, { method: 'DELETE' });
 }
 
-/** #566：恢复 chat 消息：POST /api/v1/chat/messages/{id}/restore → ChatMessage */
+/** #566：恢复 chat 消息：POST /api/v1/chat/messages/{id}/restore -> ChatMessage */
 export async function restoreChatMessage(id: string): Promise<ChatMessageDto> {
   return apiFetch<ChatMessageDto>(`/api/v1/chat/messages/${id}/restore`, { method: 'POST' });
 }
 
-/** #566：归档整个项目 chat 会话（sessions 页对话区块用）：DELETE /api/v1/chat/conversations/{projectId}（204） */
-export async function archiveChatConversation(projectId: string): Promise<void> {
-  return apiFetch<void>(`/api/v1/chat/conversations/${projectId}`, { method: 'DELETE' });
+/** #566/#744：归档线程：DELETE /api/v1/chat/conversations/{conversationId}，204 */
+export async function archiveChatConversation(conversationId: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/chat/conversations/${conversationId}`, { method: 'DELETE' });
 }
 
-/** #566：真删整个项目 chat 会话：DELETE /api/v1/chat/conversations/{projectId}?force=true（204） */
-export async function deleteChatConversation(projectId: string): Promise<void> {
-  return apiFetch<void>(`/api/v1/chat/conversations/${projectId}?force=true`, { method: 'DELETE' });
+/** #566/#744：真删线程：DELETE /api/v1/chat/conversations/{conversationId}?force=true，204 */
+export async function deleteChatConversation(conversationId: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/chat/conversations/${conversationId}?force=true`, {
+    method: 'DELETE',
+  });
+}
+
+/** #766 阶段②：设置线程删除权限：PATCH /api/v1/chat/conversations/{conversationId} body {delete_permission} */
+export async function updateChatDeletePermission(
+  conversationId: string,
+  deletePermission: 'manual' | 'ask_once' | 'auto',
+): Promise<void> {
+  return apiFetch<void>(`/api/v1/chat/conversations/${conversationId}`, {
+    method: 'PATCH',
+    body: { delete_permission: deletePermission },
+  });
+}
+
+/** #766 阶段②：HITL 中断续跑：POST /api/v1/chat/resume body {conversation_id, approved} */
+export async function resumeChatRun(body: {
+  conversation_id: string;
+  approved: boolean;
+}): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>('/api/v1/chat/resume', { method: 'POST', body });
 }

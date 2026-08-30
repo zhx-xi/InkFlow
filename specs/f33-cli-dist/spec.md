@@ -1,4 +1,5 @@
 # F33: CLI 独立发布产物（cli-dist）— 功能规格
+> **端**: cross
 
 > **Spec 版本**: 1.1（2026-08-08 拍板修订：Q1=A / Q2=C / Q3=A 已确认） | **日期**: 2026-08-08 | **依据**: ADR-030 ⑤（CLI 独立发布产物决策原文）、ADR-019 v5（版本对齐 SemVer）、ADR-021（内核进程化交付契约）、Constitution P1-P6
 > **Spec 变更**: v1.0 → v1.1（2026-08-08）：Q1-Q3 用户拍板——Q1=A（zip 不含 README，说明放 Release Notes/项目 README，推翻原建议 B）、Q2=C（SHELL_CONTEXT 跟随安装模式，与建议一致）、Q3=A（仅 GUI 安装器勾选，与建议一致）；正文 §1.4/§7 N9/§10/§12 D11 同步标注 ✅ 已确认，待澄清问题区留痕（原建议行保留）
@@ -647,3 +648,39 @@ F33 为打包基建增量模块：F30（#166 内核冷启动 ✅ PR #171）、F3
 ---
 
 > **Spec 变更记录**：v1.0（2026-08-08）初稿——打包/发布基建增量专项型 spec，镜像 f19-packaging 13 节映射（§5.5）；Q1-Q3 待拍板，正文 §4/§12 已含建议方案（D11 = Q2 建议 C），拍板后同步修订并留痕。v1.1（2026-08-08）——Q1=A / Q2=C / Q3=A 已确认（头部 Spec 变更行 + §1.4/§7/§10/§12 + 待澄清区同步留痕）。**QA 修订（2026-08-08，实现后）**：installer.nsh 的 `$installMode` 引用改为宏内复制到自有变量 `_f33InstallMode`——NSIS 3.0.4.1 实测：本文件在 sharedHeader 被 include（先于模板 multiUser.nsh 的 `Var installMode`），函数体直接引用触发 warning 6000（unknown variable, ignoring）→ per-machine 安装写错注册表根；宏体（模板内展开）引用合法。§4.6 骨架同步更新为 `_f33InstallMode` 模式（实测驱动，非拍板）。
+
+---
+
+## 14. 动作确认
+
+> 每个产物/命令的完整状态流表（基于 §2 产物契约 + §3 release.yml 增量 + §4 NSIS PATH + §7 边界 + §13 验收事实，不重复）。
+
+### 14.1 产物状态流
+
+| 产物 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| P4 CLI ZIP（inkflow-cli-<ver>.zip） | package-backend：版本注入（tag → pyproject）→ PyInstaller onedir 构建完成 | Compress-Archive -Path dist/inkflow → dist/inkflow-cli-<ver>.zip | zip 内含 inkflow/ 顶层目录（inkflow.exe + _internal/） | Compress-Archive 异常 → 阻断整个发布（R3，不设 continue-on-error） | 与 GUI resources/kernel 同源同构（同一构建产物，零第二次构建）；预算 60-90MB（实测记录 + 偏差 >30% 说明口径） |
+| Release 资产（4 件套） | 3 job 全绿 | package-electron 下载 cli-zip → 复制进 dist/ → 并入 gh release create 资产列表 | Release 含 GUI 三件套 + inkflow-cli-<ver>.zip | 任一 job 失败 → Release 不创建 | package-backend 仅 contents:read 无发布权限 → 经 artifact 中转由 package-electron 统一发布（D4） |
+| NSIS PATH 勾选（installer.nsh） | 安装器运行（assisted 模式） | customPageAfterChangeDir 勾选页（默认不勾）→ customInstall 写 PATH | 勾选 → PATH 含 $INSTDIR\resources\kernel（REG_EXPAND_SZ + WM_SETTINGCHANGE 广播） | 写入失败 → 安装继续但 CLI 不可用（记录） | /S 静默跳过勾选页不加 PATH（N6）；SHELL_CONTEXT 跟随安装模式：per-user → HKCU、per-machine → HKLM（Q2=C）；PATH ≥1000 字符跳过写入 + 警告（N4） |
+| NSIS 卸载清理 | 卸载器运行 | customUnInstall 精确删除 PATH 条目 | 卸载后 PATH 无残留，其他条目完好 | — | 只删「完全等于 $INSTDIR\resources\kernel」段（N3）；删除幂等（无条目无操作）；升级安装去重不撤销（N7） |
+| CLI zip 全新机器验收 | 解压 zip（无 Python/Node 环境） | 冒烟三步：--help → project list --json → serve | 三步全过（INKFLOW_READY 行输出） | 任一步失败 → M2 失败 | PYTHONUTF8=1 保证中文输出编码；CLI 产物 = 完整内核含 serve（#169 未合入，冒烟以当前直连实现为准） |
+
+### 14.2 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| Compress-Archive -Path dist/inkflow -DestinationPath dist/inkflow-cli-<ver>.zip | onedir 构建完成 | 打 zip（CI 与本地同款命令，本地可完整复现） | dist/inkflow-cli-<ver>.zip | 异常 → 阻断发布（R3） | zip 含 inkflow/ 顶层目录（与解压验收形态一致）；CompressionLevel Optimal |
+| inkflow.exe --help（解压后） | 解压 zip | 退出码 0 + usage | M2 冒烟① | 非 0 → 失败 | PYTHONUTF8=1 |
+| inkflow.exe project list --json | 同上 | JSON 信封输出 | M2 冒烟② | 非 0/非 JSON → 失败 | 无内核拉起（本地命令） |
+| inkflow.exe serve --port 0 --port-file smoke.json | 同上 | INKFLOW_READY 行输出 → Ctrl+C 结束 | M2 冒烟③ | 无 INKFLOW_READY → 失败 | 完整内核含 serve 能力 |
+| 版本对齐验证 | 四产物齐备 | zip 文件名版本 = inkflow.exe --version = INKFLOW_READY.version = GUI 资产版本 | 全部 = tag | 不一致 → M5 失败 | 命名版本在注入 step 之后派生（同 job $version 作用域）；先注入再 sync（rc.3 坑） |
+| release.yml 实跑（tag v0.5.x） | 预发布 tag v0.5.0-rc.N 迭代全绿 | 3 job → 4 资产 Release | M7 全绿 | job 失败 → rc 迭代 | 无 workflow_dispatch；走 #145 rc 先例路径 |
+
+### 14.3 验收锚点（写入 §13 验收标准）
+
+- A1：Release 资产含 inkflow-cli-<version>.zip（与 GUI 三件套同 Release）→ M1
+- A2：全新机器解压 → 冒烟三步通过 → M2
+- A3：勾选安装 → 新终端 inkflow --help 可用 + $env:Path/注册表含 $INSTDIR\resources\kernel（REG_EXPAND_SZ）→ M3（V1 含中文路径变体）
+- A4：卸载 → 注册表无残留 + 其他 PATH 条目完好 → M4（V5）
+- A5：不勾选/静默 /S → PATH 无条目 → M6（V2/V3）
+- A6：release.yml 全绿（tag v0.5.x → 3 job → 4 资产）→ M7

@@ -5,7 +5,7 @@
 兼容历史构造签名（audit_service.audit_repo 可选参数），基础设施层不再提供
 实现（audit_repo.py 已删除）。
 
-依据: specs/f15-audit-service/spec.md §8.2（#211 适配）。
+依据: specs/f15-consistency-audit/spec.md §8.2（#211 适配）。
 """
 
 from __future__ import annotations

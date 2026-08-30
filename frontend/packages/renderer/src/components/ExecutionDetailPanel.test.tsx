@@ -296,3 +296,113 @@ describe('ExecutionDetailPanel — 统一历史列表（#599 D12-A 双入口统�
     expect(getRunMock).toHaveBeenCalledWith('r1');
   });
 });
+
+describe('ExecutionDetailPanel — 中断状态显示 terminated 非 running（#739）', () => {
+  it('abort 后 getRun 返回 status=terminated → 详情页经 exec-run-status 显示 terminated，不显示 running', async () => {
+    getRunMock.mockResolvedValue({
+      ...MOCK_RUN,
+      status: 'terminated',
+      terminated_by: 'user',
+    } as never);
+    render(<ExecutionDetailPanel runId="r1" />);
+    await screen.findByTestId('exec-detail-steps');
+    const status = screen.getByTestId('exec-run-status');
+    expect(status).toHaveTextContent('terminated');
+    expect(status).not.toHaveTextContent('running');
+  });
+
+  it('守护：正常 completed run → exec-run-status 显示 completed', async () => {
+    getRunMock.mockResolvedValue({ ...MOCK_RUN, status: 'completed' } as never);
+    render(<ExecutionDetailPanel runId="r1" />);
+    await screen.findByTestId('exec-detail-steps');
+    expect(screen.getByTestId('exec-run-status')).toHaveTextContent('completed');
+  });
+});
+
+describe('ExecutionDetailPanel — 思考折叠块 exec-think-${n}（#740）', () => {
+  const MOCK_RUN_THINKING = {
+    ...MOCK_RUN,
+    steps: [
+      {
+        index: 0,
+        message_content: '我来查一下角色设定。',
+        tool_calls: [
+          { step_index: 0, tool_name: 'search_characters', arguments: { query: '主角' }, result: '{"ok":true,"items":[]}', is_error: false },
+        ],
+        tokens: 120,
+        reasoning: '先分析用户意图，定位需要搜索的实体。',
+      },
+      { index: 1, message_content: '正文内容...', tool_calls: [], tokens: 200, reasoning: '' },
+    ],
+  };
+
+  it('有 reasoning 的 step 渲染 exec-think-${index} 折叠块，默认折叠（aria-expanded=false，思考内容不可见）', async () => {
+    getRunMock.mockResolvedValue(MOCK_RUN_THINKING as never);
+    render(<ExecutionDetailPanel runId="r1" />);
+    await screen.findByTestId('exec-detail-steps');
+    const think = screen.getByTestId('exec-think-0');
+    expect(think).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText(/先分析用户意图/)).not.toBeInTheDocument();
+  });
+
+  it('点击 › /折叠块 → 展开思考块，思考内容可见', async () => {
+    const user = userEvent.setup();
+    getRunMock.mockResolvedValue(MOCK_RUN_THINKING as never);
+    render(<ExecutionDetailPanel runId="r1" />);
+    await screen.findByTestId('exec-detail-steps');
+    await user.click(screen.getByTestId('exec-think-toggle-0'));
+    expect(screen.getByTestId('exec-think-0')).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText(/先分析用户意图/)).toBeInTheDocument();
+  });
+
+  it('无 reasoning 的 step 不渲染该步思考块 → 仅工具结果可见（降级只做工具块）', async () => {
+    getRunMock.mockResolvedValue(MOCK_RUN as never);
+    render(<ExecutionDetailPanel runId="r1" />);
+    await screen.findByTestId('exec-detail-steps');
+    expect(screen.queryByTestId('exec-think-0')).not.toBeInTheDocument();
+    // 工具结果（成功）可见
+    const tool0 = screen.getByTestId('exec-detail-tool-call-0-0');
+    expect(tool0).toHaveTextContent('search_characters');
+    expect(tool0).toHaveTextContent('主角');
+  });
+});
+
+describe('ExecutionDetailPanel — 进行中 run 恢复 + 状态不僵死（#760）', () => {
+  it('#760: projectId + 项目存在进行中 agentic run → 自动恢复（getRun 调用 + exec-run-status 显示 running，非空态）', async () => {
+    apiFetchMock.mockResolvedValue({ items: [], total: 0 } as never);
+    listRunsMock.mockResolvedValue({
+      items: [{ ...MOCK_RUN, id: 'r-running', status: 'running' }],
+      total: 1,
+    } as never);
+    getRunMock.mockResolvedValue({ ...MOCK_RUN, id: 'r-running', status: 'running' } as never);
+    render(<ExecutionDetailPanel executionId={null} projectId="p1" />);
+    // 契约：挂载时自动把进行中的 run 当成当前展示（getRun 被调，显示其 status）
+    await waitFor(() => expect(getRunMock).toHaveBeenCalledWith('r-running'));
+    const status = await screen.findByTestId('exec-run-status');
+    expect(status).toHaveTextContent('running');
+    expect(screen.queryByTestId('exec-detail-empty')).not.toBeInTheDocument();
+  });
+
+  it('#760: 恢复的进行中 run 轮询刷新至终态（running → completed），不僵死 running', async () => {
+    apiFetchMock.mockResolvedValue({ items: [], total: 0 } as never);
+    listRunsMock.mockResolvedValue({
+      items: [{ ...MOCK_RUN, id: 'r-running', status: 'running' }],
+      total: 1,
+    } as never);
+    let calls = 0;
+    getRunMock.mockImplementation(() => {
+      calls += 1;
+      if (calls === 1) {
+        return Promise.resolve({ ...MOCK_RUN, id: 'r-running', status: 'running' } as never);
+      }
+      return Promise.resolve({ ...MOCK_RUN, id: 'r-running', status: 'completed' } as never);
+    });
+    render(<ExecutionDetailPanel executionId={null} projectId="p1" />);
+    await screen.findByTestId('exec-run-status');
+    // 契约：轮询直到终态（completed），不一直显示 running
+    await waitFor(() => {
+      expect(screen.getByTestId('exec-run-status')).toHaveTextContent('completed');
+    });
+    expect(getRunMock.mock.calls.length).toBeGreaterThan(1);
+  });
+});

@@ -24,6 +24,7 @@ import {
 import inkflowIcon from '../assets/inkflow-icon-plain.svg?url&no-inline';
 import inkflowIconDark from '../assets/inkflow-icon-plain-dark.svg?url&no-inline';
 import inkflowIconInk from '../assets/inkflow-icon-plain-ink.svg?url&no-inline';
+import { SessionBar } from './SessionBar';
 import { useI18n } from '../i18n/useI18n';
 import { useThemeStore } from '../stores/theme';
 import type { ThemeName } from '../theme';
@@ -59,10 +60,14 @@ const LIBRARY_ITEMS: NavItemDef[] = [
   { key: 'search', href: '/search', labelKey: 'nav.search', icon: Search },
 ];
 
+/** #762：会话独立分组（迁出设定库） */
+const SESSION_ITEMS: NavItemDef[] = [
+  { key: 'sessions', href: '/sessions', labelKey: 'nav.sessions', icon: History },
+];
+
 /** agent 快捷入口直达 /settings?cat=agent */
 const SYSTEM_ITEMS: NavItemDef[] = [
   { key: 'agent', href: '/settings?cat=agent', labelKey: 'nav.agent', icon: Bot },
-  { key: 'sessions', href: '/sessions', labelKey: 'nav.sessions', icon: History },
   { key: 'memory', href: '/memory', labelKey: 'nav.memory', icon: Brain },
   { key: 'settings', href: '/settings', labelKey: 'nav.settings', icon: Settings },
 ];
@@ -172,6 +177,16 @@ export function AppNav({ showBrand = true }: { showBrand?: boolean }) {
               </NavLink>
             );
           })}
+        </NavGroup>
+
+        <NavGroup testKey="sessions" labelKey="nav.group.sessions" icon={History} collapsed={collapsed}>
+          {SESSION_ITEMS.map((item) => (
+            <NavLink key={item.key} to={item.href!} className={navCls} data-testid={`nav-item-${item.key}`}>
+              <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {!collapsed && <span className="truncate">{t(item.labelKey)}</span>}
+            </NavLink>
+          ))}
+          <SessionBar />
         </NavGroup>
 
         <NavGroup testKey="system" labelKey="nav.group.system" icon={Settings} collapsed={collapsed}>

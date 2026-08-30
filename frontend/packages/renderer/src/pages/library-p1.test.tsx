@@ -1,5 +1,5 @@
 /**
- * F43 P1（#284 第二批，specs/f43-setting-library-crud/spec.md v1.1 §2.2-2.3/§5.1-5.5/§9.2 R1-R13）：
+ * F43 P1（#284 第二批，specs/f43-setting-library-gui/spec.md v1.1 §2.2-2.3/§5.1-5.5/§9.2 R1-R13）：
  * 角色等级必填（D1）+ 分组标签多选（D2）+ 世界观树与分类筛选（D3）+ 世界观复制 GUI（F37 跨项目 copy）。
  *
  * ⚠️ 本批契约拆分至独立文件 library-p1.test.tsx：library.test.tsx 已 788 行，追加将超 900 行护栏。

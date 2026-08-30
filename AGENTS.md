@@ -142,14 +142,14 @@ class ProjectRepositoryProtocol(Protocol):
 
 | 变体 | 样板 |
 |------|------|
-| 格式范例（Phase 1） | `specs/f1-project-service/spec.md` |
-| 提取型 | `specs/f9-character-service/spec.md`（F10 镜像） |
-| 生成型 | `specs/f11-outline-service/spec.md` |
-| 横切收敛门面型 | `specs/f14-extraction-service/spec.md` |
-| 确定性文本分析型 | `specs/f16-style-service/spec.md` |
-| 传输增强型（SSE） | `specs/f23-sse-stream/spec.md` |
-| 设置域横切型 | `specs/f32-settings-persistence/spec.md` |
-| 配置驱动编排型 | `specs/f42-agent-chain-config/spec.md` |
+| 格式范例（Phase 1） | `specs/f1-project/spec.md` |
+| 提取型 | `specs/f9-character/spec.md`（F10 镜像） |
+| 生成型 | `specs/f11-outline/spec.md` |
+| 横切收敛门面型 | `specs/f14-extraction/spec.md` |
+| 确定性文本分析型 | `specs/f16-style-analysis/spec.md` |
+| 传输增强型（SSE） | `specs/f23-sse/spec.md` |
+| 设置域横切型 | `specs/f32-settings/spec.md` |
+| 配置驱动编排型 | `specs/f42-agent-chain/spec.md` |
 
 - 每个模块 spec 定义了：数据模型、API 契约、CLI 命令、边界情况、测试策略
 - **spec 是开发的唯一真相来源**。如果发现 spec 与实现矛盾，先更新 spec，再改代码

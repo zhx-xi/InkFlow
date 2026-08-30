@@ -341,3 +341,42 @@ describe('#698 大纲创建入口精简（单全局入口 + 整本后隐藏）',
     expect(options).not.toContain('overall');
   });
 });
+
+describe('outline N1 孤儿降级 + 未知 level 兜底（spec 验收点）', () => {
+  it('孤儿（parent 缺失）降级顶层渲染；未知 level 按整体兜底', async () => {
+    const state = makeState();
+    state.outlines = [
+      { id: 'o-orphan', name: '孤儿章节', level: 'chapter', parent_id: 'ghost-parent', chapter_id: null, point_count: 0 },
+      { id: 'o-badlevel', name: '坏level节点', level: 'bogus', parent_id: null, chapter_id: null, point_count: 0 },
+      ...state.outlines,
+    ];
+    mockOutlineApi(state);
+    renderLibrary();
+    const user = userEvent.setup();
+    await enterOutlineTab(user);
+    // 孤儿（parent 不存在）→ buildOutlineTree 降级顶层 → 渲染 outline-chapter-<id>
+    expect(screen.getByTestId('outline-chapter-o-orphan')).toBeInTheDocument();
+    // 未知 level → normalizeLevel 兜底为整体 → 渲染 outline-overall-<id>
+    expect(screen.getByTestId('outline-overall-o-badlevel')).toBeInTheDocument();
+  });
+});
+
+describe('outline N3 情节点按需拉取 + 收起再展开不重拉（spec O8 契约）', () => {
+  it('挂载即拉 plot-points；收起→再展开不重拉（fetchedRef 缓存）', async () => {
+    const state = makeState(); // chapter c1 point_count=2
+    mockOutlineApi(state);
+    renderLibrary();
+    const user = userEvent.setup();
+    await enterOutlineTab(user);
+    const plotCalls = () =>
+      apiFetchMock.mock.calls.filter((c) => String(c[0]).match(/outlines\/c1\/plot-points/)).length;
+    // 挂载即拉（chapter & point_count>0 & 未收起）
+    await waitFor(() => expect(plotCalls()).toBeGreaterThanOrEqual(1));
+    const initial = plotCalls();
+    // 收起 c1 → 再展开
+    await user.click(screen.getByTestId('outline-toggle-c1'));
+    await user.click(screen.getByTestId('outline-toggle-c1'));
+    // fetchedRef 缓存：不重拉
+    expect(plotCalls()).toBe(initial);
+  });
+});

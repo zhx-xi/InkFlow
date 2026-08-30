@@ -21,6 +21,7 @@ class ChatStreamEvent:
     name: str | None = None
     args: dict | None = None
     result: str | None = None
+    payload: dict | None = None  # #766 interrupt 帧：HITL 删除授权 payload
 
 
 class ChatService:

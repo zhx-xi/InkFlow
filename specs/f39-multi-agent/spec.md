@@ -1,4 +1,5 @@
 # F39: 多 Agent 能力（multi-agent）功能规格
+> **端**: cross
 
 **Spec 版本**: 1.2
 **日期**: 2026-08-16（v1.2 修订 2026-08-20）
@@ -564,3 +565,41 @@ def build_agentic_writer(
 ---
 
 > **Spec 变更记录**：v1.0 初稿（2026-08-16）→ v1.1（2026-08-16，Q0=A / Q1=A 拍板定稿，留痕见头部 Spec 变更行 + §12 D9/D10）→ v1.2（2026-08-20，#522 skill 存储架构重构去表，留痕见头部 Spec 变更行 + §12 D5/D8）。
+
+## 14. 动作确认
+
+> 每个端点/命令的完整状态流表（基于 §3 + §4 + §5 + §7 事实，不重复）。
+
+### 14.1 端点状态流
+
+| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
+|------|---------|--------------|------|------|------|
+| GET /api/v1/agents | — | Agent 列表 | 200 {items, total} | — | builtin 标记（内置/自定义分流） |
+| GET /api/v1/agents/tools | — | 工具目录（勾选 UI 数据源） | 200 {items: [{name, description, group, input_schema}]} | — | 路由须声明在 /agents/{agent_id} 之前（顺序匹配，否则 tools 被吞进 path 404） |
+| POST /api/v1/agents | 名称唯一 | 创建自定义 Agent + 白名单引用校验（tool_ids 目录内/skill_ids 目录名存在） | 201 完整实体 | 422（同名 AgentNameConflictError / ToolReferenceError / SkillReferenceError） | 自定义 Agent role_key 服务层分配（v1.5，name slug 化 + 冲突后缀） |
+| GET /api/v1/agents/{agent_id} | Agent 存在 | 详情 | 200 完整实体 | 404（不存在/非法 id，_parse_id 语义） | — |
+| PATCH /api/v1/agents/{agent_id} | Agent 存在 | 部分更新（exclude_unset） | 200 完整实体 | 404；409（内置 AgentBuiltinError）；422 | 内置只读 |
+| DELETE /api/v1/agents/{agent_id} | Agent 存在 | 删除自定义 Agent | 204 | 404；409（内置） | 本期无 project/template 引用面 |
+| GET /api/v1/skills | — | Skill 列表（含反查 agent_ids） | 200 {items, total} | — | — |
+| POST /api/v1/skills | content frontmatter 合法 | frontmatter 后端解析 + 写文件（data_dir/skills/） | 201 完整实体（id=name 兼容层） | 422（frontmatter 缺失 name/description 或 name 格式非法 / 同名 SkillNameConflictError） | 上传时显式绑定 Agent（D1 默认不勾选） |
+| GET /api/v1/skills/{skill_name} | skill 存在 | 详情（含反查） | 200 完整实体 | 404「Skill 不存在」（不存在/非法，非 422） | — |
+| PATCH /api/v1/skills/{skill_name} | skill 存在 | 部分更新（content 写回文件） | 200 完整实体 | 404；409（内置 SkillBuiltinError「内置 skill 只读」） | source=builtin 只读 |
+| DELETE /api/v1/skills/{skill_name} | skill 存在 | 被引用 → 服务层先清所有 Agent.skill_ids 引用（list_agents_by_skill 反查 + 批量 update）→ 删目录 | 204 | 404；409（内置） | 级联清引用由服务层显式（JSON 列无 FK，不依赖 FK CASCADE）；前端先经 agent_ids 确认影响面 |
+| POST /api/v1/skills/{skill_name}/duplicate | skill 存在 | 复制（新名 f"{name}-copy"） | 201 完整实体 | 404；422（同名冲突） | — |
+
+### 14.2 CLI 命令状态流
+
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| inkflow agent list [--json] | 内核就绪 | 列 Agent（name + description + builtin 标记） | 退出码 0 + 信封 {items, total} | 退出码 1（内核启动失败/HTTP 错误） | 恒经 HTTP（F38，区别于 F26 tools list 本地豁免）；≠ agent template list / tools list |
+| inkflow agent show --id N [--json] | Agent 存在 | 详情（system_prompt + tool_ids + skill_ids + 模型/温度覆盖） | 退出码 0 | 404 → 退出码 1 | — |
+| inkflow skill list [--json] | 内核就绪 | 列 Skill（name + source + 被引用 Agent 数） | 退出码 0 | 退出码 1 | 单数（区别于 F19-skills 复数，文件系统导入） |
+
+### 14.3 验收锚点
+
+- A1：Agent/Skill 实体 CRUD 契约全绿（同名 422、非法 id 404，M1）
+- A2：工具目录 = 完整 6 工具（含 save_draft）+ group 分组；GET /agents/tools 不被 /{agent_id} 吞（M2）
+- A3：白名单装配确定性：tool_ids 只 build 命中工具、skill_ids 只拼命中 skill（base 前 skill 后）；None 向后兼容（M3）
+- A4：内置 seed 幂等：6 Agent 落库 + 6 Skill 文件回补，重复启动不重复插入/写入（M4）
+- A5：内置只读（PATCH/DELETE 409）；被引用 user skill 删除级联清引用（M5）
+- A6：CLI 三命令手工验证闭环（完成门禁）

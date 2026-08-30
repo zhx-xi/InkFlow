@@ -1,4 +1,4 @@
-/** 角色详情 API 客户端（#650 角色关系 + #651 角色分组，specs/f9-character-service/gui-role-enhance-red-contract.md；apiFetch 封装同 knowledge-graph.ts 模式） */
+/** 角色详情 API 客户端（#650 角色关系 + #651 角色分组，specs/f9-character/gui-role-enhance-red-contract.md；apiFetch 封装同 knowledge-graph.ts 模式） */
 import { apiFetch } from './client';
 
 /** 项目角色列表行（T1 对方角色下拉选项来源；#701 N:M 归属分组 group_ids，group_id 仅过渡兼容） */

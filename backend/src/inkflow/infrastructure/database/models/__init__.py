@@ -13,6 +13,7 @@ from inkflow.infrastructure.database.models.character import (
 )
 from inkflow.infrastructure.database.models.chat_message import ChatMessageORM
 from inkflow.infrastructure.database.models.context import ChapterSummaryORM
+from inkflow.infrastructure.database.models.conversation import ConversationORM
 from inkflow.infrastructure.database.models.extraction_run import ExtractionRunORM
 from inkflow.infrastructure.database.models.foreshadowing import ForeshadowingORM
 from inkflow.infrastructure.database.models.knowledge_graph import KnowledgeRelationORM
@@ -44,6 +45,7 @@ __all__ = [
     "CharacterORM",
     "CharacterRelationORM",
     "ChatMessageORM",
+    "ConversationORM",
     "DraftORM",
     "ExtractionRunORM",
     "ForeshadowingORM",

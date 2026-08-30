@@ -39,6 +39,13 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { AppNav } from './AppNav';
 import { useThemeStore } from '../stores/theme';
 
+// #762：AppNav 新增「会话」组含 SessionBar（需 mock chat api，防真实 fetch）
+vi.mock('../api/chat', () => ({
+  fetchChatConversations: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+  createChatConversation: vi.fn().mockResolvedValue({}),
+  saveChatMessage: vi.fn().mockResolvedValue({}),
+}));
+
 function LocationProbe() {
   const location = useLocation();
   return <div data-testid="location-probe">{location.pathname}{location.search}</div>;
@@ -161,5 +168,15 @@ describe('AppNav — 跳转', () => {
     renderNav();
     await user.click(screen.getByTestId('nav-item-characters'));
     expect(screen.getByTestId('location-probe')).toHaveTextContent('/library?cat=characters');
+  });
+});
+
+describe('AppNav — 会话入口分组（#762：会话迁出设定库，入独立「会话」组+SessionBar 内联）', () => {
+  it('nav-group-sessions 存在且含 nav-item-sessions；sessions 不在 library/system 组', () => {
+    renderNav();
+    const sessionsGroup = screen.getByTestId('nav-group-sessions');
+    expect(sessionsGroup).toContainElement(screen.getByTestId('nav-item-sessions'));
+    expect(screen.getByTestId('nav-group-library')).not.toContainElement(screen.getByTestId('nav-item-sessions'));
+    expect(screen.getByTestId('nav-group-system')).not.toContainElement(screen.getByTestId('nav-item-sessions'));
   });
 });
