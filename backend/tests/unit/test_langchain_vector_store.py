@@ -653,3 +653,28 @@ async def test_retrieve_hnsw_internal_error_raises_clear_vector_error(
     assert "hnsw" in message, f"应含 hnsw 诊断标识: {message}"
     assert "内部错误（无详情）" not in message, f"不应吞空 INTERNAL_ERROR: {message}"
     assert "重建索引" in message or "重试" in message, f"应提示重建索引/重试: {message}"
+
+
+async def test_retrieve_hnsw_internal_error_recovers_after_count_retry(
+    store: LangChainVectorStore,
+) -> None:
+    """#823: hnsw 段读取失败（未落盘）→ count() 落盘后重试一次 → 命中（自愈成功）。"""
+    await store.index(make_entity("c1", EntityType.CHARACTER, "p1", "苹果"))
+    collection = store._collections[EntityType.CHARACTER]
+    real_query = collection.query
+    call_count = 0
+
+    def _flaky_query(*args: object, **kwargs: object) -> dict[str, object]:
+        """首次调用抛 hnsw InternalError（模拟未落盘），重试时走真实 query。"""
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise chromadb.errors.InternalError(
+                "Error creating hnsw segment reader: Nothing found on disk"
+            )
+        return real_query(*args, **kwargs)
+
+    with patch.object(collection, "query", side_effect=_flaky_query):
+        results = await store.retrieve("苹果", project_id="p1")
+    assert [r.entity_id for r in results] == ["c1"]
+    assert call_count == 2  # 首败 → count() 落盘 → 重试成功
