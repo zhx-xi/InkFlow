@@ -31,9 +31,11 @@ class ChatMessagePostRequest(BaseModel):
 
 
 class ConversationPatchRequest(BaseModel):
-    """PATCH conversation 删除权限请求。"""
+    """PATCH conversation 通用请求（title 改名 #770 / delete_permission 删除权限 #766，
+    至少一个字段）。"""
 
-    delete_permission: Literal["manual", "ask_once", "auto"]
+    title: str | None = None
+    delete_permission: Literal["manual", "ask_once", "auto"] | None = None
 
 
 def get_chat_message_service(db: AsyncSession) -> ChatMessageService:
@@ -57,6 +59,7 @@ def _conversation_to_json(conv: Conversation | dict) -> dict:
         "project_id": str(conv.project_id),
         "created_at": conv.created_at.isoformat(),
         "is_deleted": conv.is_deleted,
+        "title": conv.title,
     }
 
 
@@ -122,7 +125,12 @@ async def create_conversation(
 ) -> dict:
     """创建新线程（#744 归档后开新线程：不复用旧 conversation）。"""
     svc = get_chat_message_service(db)
-    created = await svc.create_conversation(data.project_id)
+    # title 非空才传（#770）：保持无 title 时调用形态不变（既有契约
+    # create_conversation(PROJECT_ID)），有 title 时透传
+    if data.title:
+        created = await svc.create_conversation(data.project_id, data.title)
+    else:
+        created = await svc.create_conversation(data.project_id)
     return _conversation_to_json(created)
 
 
@@ -178,23 +186,39 @@ async def delete_conversation(
 
 
 @router.patch("/conversations/{conversation_id}")
-async def patch_conversation_delete_permission(
+async def patch_conversation(
     conversation_id: str,
     data: ConversationPatchRequest,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """#766 阶段③：设置线程删除授权（前端分段控件经 PATCH）。非法权限 422；不存在 404。"""
+    """PATCH 会话字段：#770 title 改名 / #766 delete_permission 删除权限
+    （至少一个字段；同时提供时按 title 处理）。"""
     try:
         cid = uuid.UUID(conversation_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="chat 会话不存在") from None
     svc = get_chat_message_service(db)
-    updated = await svc.update_delete_permission(
-        conversation_id=cid, delete_permission=data.delete_permission
-    )
-    if updated is None:
-        raise HTTPException(status_code=404, detail="chat 会话不存在")
-    return updated
+    # title 改名（#770）
+    if data.title is not None:
+        stripped = data.title.strip()
+        if not stripped:
+            raise HTTPException(status_code=422, detail="会话标题不能为空")
+        if len(stripped) > 200:
+            raise HTTPException(status_code=422, detail="会话标题不能超过 200 个字符")
+        ok = await svc.rename_conversation(cid, stripped)
+        if not ok:
+            raise HTTPException(status_code=404, detail="chat 会话不存在")
+        return {"conversation_id": str(cid), "title": stripped}
+    # delete_permission 删除权限（#766）
+    if data.delete_permission is not None:
+        updated = await svc.update_delete_permission(
+            conversation_id=cid, delete_permission=data.delete_permission
+        )
+        if updated is None:
+            raise HTTPException(status_code=404, detail="chat 会话不存在")
+        return updated
+    # 两者皆空 → 422
+    raise HTTPException(status_code=422, detail="title 或 delete_permission 至少提供一个")
 
 
 @router.post("/conversations/{conversation_id}/restore")

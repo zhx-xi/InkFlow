@@ -46,6 +46,8 @@ export interface ChatPanelProps {
   chapterContent?: string;
   /** #642-1：管线流式回调 sink（streamPipeline 的 delta/done 复用 ChatPanel 流式渲染管线） */
   streamSink?: MutableRefObject<PipelineStreamSink> | null;
+  /** #770：full=全局 chat 页（占满、无 resize handle）；inline=章节内底部横栏（默认，可调 80~480px） */
+  variant?: 'inline' | 'full';
 }
 
 interface ChatEntry {
@@ -71,8 +73,15 @@ const CHAT_DEFAULT_HEIGHT = 160;
 const CHAT_MIN_HEIGHT = 80;
 const CHAT_MAX_HEIGHT = 480;
 
-export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: ChatPanelProps) {
+export function ChatPanel({
+  projectId,
+  chapterId,
+  chapterContent,
+  streamSink,
+  variant = 'inline',
+}: ChatPanelProps) {
   const { t } = useI18n();
+  const isFull = variant === 'full';
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   // #597：本轮 agent 工具调用/结果卡片（下标 = 数组内 index，首个工具调用 = 0）
@@ -101,6 +110,10 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
   const abortRef = useRef<(() => void) | null>(null);
   // #547：发送时的 projectId 快照（onDone/onError 保存 AI 消息仍落到原项目，避免闭包陈旧）
   const projectIdRef = useRef(projectId);
+  // #770：章节 id 快照（挂载 effect 建会话时读最新章节名；不把 chapterId 纳入 effect 依赖，
+  // 保持既有「仅 projectId/streamSink 变化才重解析线程」的加载语义）
+  const chapterIdRef = useRef(chapterId);
+  chapterIdRef.current = chapterId;
   // #744：当前线程 id 快照（防闭包陈旧，镜像 projectIdRef；归档后新建线程更新）
   const conversationIdRef = useRef<string | null>(null);
   // #744：当前线程 id（state 驱动渲染；与 ref 同步）
@@ -136,7 +149,13 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
           convs.items.find((c) => c.project_id === projectId && !c.is_deleted) ?? null;
         let cid = active ? active.conversation_id : null;
         if (!cid) {
-          const created = await createChatConversation(projectId);
+          // #770：章节内建会话 title=章节名（章节锚点）；全局 chat 页（无章节）不传 title
+          const chapterTitle = chapterIdRef.current
+            ? useChapterStore.getState().chapters.find((c) => c.id === chapterIdRef.current)?.title
+            : undefined;
+          const created = chapterTitle
+            ? await createChatConversation(projectId, { title: chapterTitle })
+            : await createChatConversation(projectId);
           if (cancelled) return;
           cid = created.conversation_id;
         }
@@ -372,7 +391,12 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
     let cid = conversationIdRef.current;
     if (!cid) {
       try {
-        const created = await createChatConversation(projectId);
+        const chapterTitle = chapterId
+          ? useChapterStore.getState().chapters.find((c) => c.id === chapterId)?.title
+          : undefined;
+        const created = chapterTitle
+          ? await createChatConversation(projectId, { title: chapterTitle })
+          : await createChatConversation(projectId);
         cid = created.conversation_id;
         conversationIdRef.current = cid;
         setConversationId(cid);
@@ -521,7 +545,12 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
     try {
       // #744：归档当前线程 -> 新建新线程（开新对话不复用旧 conversation）-> 清空本轮消息
       await archiveChatConversation(conversationIdRef.current ?? '');
-      const newConv = await createChatConversation(projectIdRef.current);
+      const chapterTitle = chapterId
+        ? useChapterStore.getState().chapters.find((c) => c.id === chapterId)?.title
+        : undefined;
+      const newConv = chapterTitle
+        ? await createChatConversation(projectIdRef.current, { title: chapterTitle })
+        : await createChatConversation(projectIdRef.current);
       conversationIdRef.current = newConv.conversation_id;
       setConversationId(newConv.conversation_id);
       setMessages([]);
@@ -534,14 +563,19 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
     }
-  }, [t]);
+  }, [t, chapterId]);
 
   /** #581：整轮删除（force=true 物理删除，api/chat.ts deleteChatConversation 内部带 force） */
   const handleDeleteRound = useCallback(async (): Promise<void> => {
     try {
       // #744：真删当前线程 -> 新建新线程 -> 清空本轮消息
       await deleteChatConversation(conversationIdRef.current ?? '');
-      const newConv = await createChatConversation(projectIdRef.current);
+      const chapterTitle = chapterId
+        ? useChapterStore.getState().chapters.find((c) => c.id === chapterId)?.title
+        : undefined;
+      const newConv = chapterTitle
+        ? await createChatConversation(projectIdRef.current, { title: chapterTitle })
+        : await createChatConversation(projectIdRef.current);
       conversationIdRef.current = newConv.conversation_id;
       setConversationId(newConv.conversation_id);
       setMessages([]);
@@ -553,7 +587,7 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
     } catch (err) {
       useToastStore.getState().pushToast('err', errorMessage(err));
     }
-  }, [t]);
+  }, [t, chapterId]);
 
   const canSend = input.trim() !== '';
 
@@ -561,7 +595,7 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
     <div
       data-testid="chat-panel"
       data-conversation-id={conversationId ?? undefined}
-      className="flex flex-col gap-2 border-b border-line bg-surface-2 px-4 py-3"
+      className={`flex flex-col gap-2 border-b border-line bg-surface-2 px-4 py-3${isFull ? ' min-h-0 flex-1' : ''}`}
     >
       <div className="flex items-center gap-2">
         <button
@@ -575,22 +609,28 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
         </button>
         {/* #642-2：resize-handle 从底部移到顶部行（toggle 之后；拖动逻辑不变） */}
         <div className="flex-1 flex justify-center">
-          <div
-            data-testid="chat-resize-handle"
-            className="flex h-1.5 cursor-ns-resize items-center justify-center"
-            onMouseDown={handleResizeMouseDown}
-          >
-            <span className="block h-0.5 w-8 rounded-full bg-line" />
-          </div>
+          {!isFull && (
+            <div
+              data-testid="chat-resize-handle"
+              className="flex h-1.5 cursor-ns-resize items-center justify-center"
+              onMouseDown={handleResizeMouseDown}
+            >
+              <span className="block h-0.5 w-8 rounded-full bg-line" />
+            </div>
+          )}
         </div>
       </div>
-      {expanded && messages.length > 0 && (
+      {(expanded || isFull) && messages.length > 0 && (
         <div
           data-testid="chat-messages"
           data-height={String(height)}
           ref={messagesRef}
-          className="max-h-[480px] space-y-3 overflow-y-auto text-[13px]"
-          style={{ height }}
+          className={
+            isFull
+              ? 'min-h-0 flex-1 space-y-3 overflow-y-auto text-[13px]'
+              : 'max-h-[480px] space-y-3 overflow-y-auto text-[13px]'
+          }
+          style={isFull ? undefined : { height }}
         >
           {/* #727：思考过程折叠块（在工具块之前展示） */}
           {reasoningEntries.map((entry, index) => {
@@ -766,7 +806,7 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
         </div>
       )}
       {/* #681：管线输出区——管线 delta/done 独立渲染（与 chat messages 分离，不落 chat 历史） */}
-      {expanded && pipelineOutputEntries.length > 0 && (
+      {(expanded || isFull) && pipelineOutputEntries.length > 0 && (
         <div
           data-testid="pipeline-output-area"
           className="max-h-[240px] space-y-2 overflow-y-auto text-[13px]"
@@ -791,7 +831,7 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
         onApprove={handleResumeApprove}
         onCancel={handleResumeCancel}
       />
-      <div className="flex items-center gap-2">
+      <div className={`flex items-center gap-2${isFull ? ' mt-auto' : ''}`}>
         <textarea
           data-testid="chat-input"
           className="min-h-[40px] flex-1 resize-none rounded-md border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
@@ -824,7 +864,7 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
           </button>
         )}
       </div>
-      {expanded && messages.length > 0 && (
+      {(expanded || isFull) && messages.length > 0 && (
         <div className="flex gap-2">
           <button
             type="button"

@@ -22,6 +22,7 @@ import { SessionBar } from './SessionBar';
 import type { ChatConversationDto } from '../api/chat';
 import { fetchChatConversations } from '../api/chat';
 import { useThemeStore } from '../stores/theme';
+import { useChapterStore } from '../stores/chapter';
 
 vi.mock('../api/chat', () => ({
   fetchChatConversations: vi.fn(),
@@ -31,6 +32,9 @@ vi.mock('../api/chat', () => ({
 
 const fetchMock = vi.mocked(fetchChatConversations);
 
+/** #770：会话 title 字段（GREEN api/chat.ts 为 ChatConversationDto 补 title: string；测试契约先行） */
+type ChatConversationWithTitle = ChatConversationDto & { title: string };
+
 /** 生成距今天 daysAgo 天的 ISO 时间串（分桶入 today/week/earlier） */
 function iso(daysAgo: number): string {
   const d = new Date();
@@ -38,11 +42,12 @@ function iso(daysAgo: number): string {
   return d.toISOString();
 }
 
-function item(overrides: Partial<ChatConversationDto> = {}): ChatConversationDto {
+function item(overrides: Partial<ChatConversationWithTitle> = {}): ChatConversationWithTitle {
   return {
     conversation_id: 'c1',
     project_id: 'p1',
     project_name: '青云志',
+    title: '默认标题',
     last_message: '默认消息',
     message_count: 1,
     is_deleted: false,
@@ -71,6 +76,16 @@ beforeEach(() => {
   localStorage.clear();
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
   fetchMock.mockReset();
+  // #770：章节树复位（title 匹配章节导航依赖 useChapterStore，防跨用例泄漏）
+  useChapterStore.setState({
+    volumes: [],
+    chapters: [],
+    treeProjectId: null,
+    currentChapterId: null,
+    content: '',
+    loading: false,
+    error: null,
+  });
 });
 
 describe('SessionBar — 列表按时间分组渲染（#762）', () => {
@@ -133,18 +148,78 @@ describe('SessionBar — 折叠/展开持久化（#762 localStorage）', () => {
   });
 });
 
-describe('SessionBar — 点击会话项跳转 + 空态（#762）', () => {
-  it('点击会话项 → /sessions?conversation_id=X', async () => {
+describe('SessionBar — 点击会话项跳转 + 空态（#762/#770）', () => {
+  it('#770：点击会话项 → title 匹配不到章节（无章节数据）→ /writing?conversation_id=X（全局 chat 页）', async () => {
     fetchMock.mockResolvedValue({ items: [item({ conversation_id: 'c-jump' })], total: 1 });
     const user = userEvent.setup();
     renderBar();
     await user.click(await screen.findByTestId('session-item-c-jump'));
-    expect(screen.getByTestId('location-probe')).toHaveTextContent('/sessions?conversation_id=c-jump');
+    // RED：当前实现跳 /sessions?conversation_id=c-jump → FAIL
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/writing?conversation_id=c-jump');
   });
 
   it('无会话 → 空态占位 session-bar-empty', async () => {
     fetchMock.mockResolvedValue({ items: [], total: 0 });
     renderBar();
     expect(await screen.findByTestId('session-bar-empty')).toBeInTheDocument();
+  });
+});
+
+/* ============================== #770 SessionBar 增量（title 展示 / title 匹配导航） ============================== */
+
+describe('SessionBar — #770 会话 title 展示（空回退 last_message）', () => {
+  it('会话项展示 title（非空）', async () => {
+    fetchMock.mockResolvedValue({
+      items: [item({ conversation_id: 'c-title', title: '第十二章 剑心蒙尘', last_message: '最后消息' })],
+      total: 1,
+    });
+    renderBar();
+    const entry = await screen.findByTestId('session-item-c-title');
+    // RED：当前实现展示 last_message（'最后消息'）→ FAIL
+    expect(entry).toHaveTextContent('第十二章 剑心蒙尘');
+  });
+
+  it('title 为空 → 回退展示 last_message（守护用例，当前实现天然通过）', async () => {
+    fetchMock.mockResolvedValue({
+      items: [item({ conversation_id: 'c-fallback', title: '', last_message: '最后消息' })],
+      total: 1,
+    });
+    renderBar();
+    const entry = await screen.findByTestId('session-item-c-fallback');
+    expect(entry).toHaveTextContent('最后消息');
+  });
+});
+
+describe('SessionBar — #770 点击导航（title 匹配章节 → /writing?chapter_id；否则 → /writing?conversation_id）', () => {
+  it('title 与当前项目章节标题同名 → /writing?chapter_id=<章ID>', async () => {
+    fetchMock.mockResolvedValue({
+      items: [item({ conversation_id: 'c-match', title: '第十二章 剑心蒙尘' })],
+      total: 1,
+    });
+    // 播种当前项目章节（GREEN 读 useChapterStore；测试契约同步播种）
+    useChapterStore.setState({
+      chapters: [{ id: 'ch1', title: '第十二章 剑心蒙尘', volume_id: null, order_index: 0, word_count: 0 }],
+      treeProjectId: 'p1',
+    });
+    const user = userEvent.setup();
+    renderBar({ projectId: 'p1' });
+    await user.click(await screen.findByTestId('session-item-c-match'));
+    // RED：当前实现跳 /sessions?conversation_id=c-match → FAIL
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/writing?chapter_id=ch1');
+  });
+
+  it('title 匹配不到章节（改名 / 全局会话）→ /writing?conversation_id=<会话ID>（全局 chat 页）', async () => {
+    fetchMock.mockResolvedValue({
+      items: [item({ conversation_id: 'c-nomatch', title: '改名后的会话' })],
+      total: 1,
+    });
+    useChapterStore.setState({
+      chapters: [{ id: 'ch1', title: '第十二章 剑心蒙尘', volume_id: null, order_index: 0, word_count: 0 }],
+      treeProjectId: 'p1',
+    });
+    const user = userEvent.setup();
+    renderBar({ projectId: 'p1' });
+    await user.click(await screen.findByTestId('session-item-c-nomatch'));
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/writing?conversation_id=c-nomatch');
   });
 });

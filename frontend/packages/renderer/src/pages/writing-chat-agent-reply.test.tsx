@@ -12,9 +12,10 @@
  * - onDone → **saveChatMessage** 落管线产物到新会话（#763 覆盖 #681 的「不落 chat」）；仅落章（编辑器 = final_output）
  * - 管线产物不持久化到 chat 历史（切 view 重挂后 chat 区无管线产物，符合「不污染 chat」语义）
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { WritingPage } from './writing';
+import { createChatConversation, type ChatConversationDto } from '../api/chat';
 import { apiFetch } from '../api/client';
 import { streamPipeline, executePipeline, getExecutionStatus, confirmExecution } from '../api/pipeline';
 import { useChapterStore } from '../stores/chapter';
@@ -33,12 +34,21 @@ vi.mock('../api/pipeline', () => ({
   getExecutionStatus: vi.fn(),
   confirmExecution: vi.fn(),
 }));
+vi.mock('../api/chat', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/chat')>();
+  return { ...actual, createChatConversation: vi.fn() };
+});
 
 const apiFetchMock = vi.mocked(apiFetch);
 const streamPipelineMock = vi.mocked(streamPipeline);
 const executeMock = vi.mocked(executePipeline);
 const statusMock = vi.mocked(getExecutionStatus);
 const confirmMock = vi.mocked(confirmExecution);
+
+/** #770 契约签名（当前 src 仅 1 参 → RED）：createChatConversation(projectId, { title?: string }) */
+const createChatCovMock = vi.mocked(createChatConversation) as unknown as MockInstance<
+  (projectId: string, opts?: { title?: string }) => Promise<ChatConversationDto>
+>;
 
 const seedVolumes = [{ id: 'v1', title: '第一卷 风起', order_index: 0 }];
 const seedChapters = [
@@ -71,6 +81,17 @@ beforeEach(() => {
   executeMock.mockReset();
   statusMock.mockReset();
   confirmMock.mockReset();
+  // #770：createChatConversation 直接 mock（返回 conv-<projectId> 线程，保持既有测试流）
+  createChatCovMock.mockReset();
+  createChatCovMock.mockImplementation(async (projectId: string) => ({
+    conversation_id: `conv-${projectId}`,
+    project_id: projectId,
+    project_name: '青云志',
+    last_message: '',
+    message_count: 0,
+    is_deleted: false,
+    updated_at: '2026-08-25T00:00:00Z',
+  }));
   useModelsStore.setState({ providers: [READY_PROVIDER], loading: false, error: null });
   useToastStore.setState({ toasts: [] });
   // 默认 streamPipeline 捕获 callbacks，不自动 emit（用例手动驱动帧）
@@ -184,5 +205,39 @@ describe('写作页 — AI 生成后管线输出与 chat 区分渲染（#681 翻
     await waitFor(() => {
       expect(screen.queryByTestId('chat-msg-ai-0')).not.toBeInTheDocument();
     });
+  });
+});
+
+/**
+ * #770 会话跟随章节 + 命名（spec §17.4.3 / writing.md §4.2）：
+ * - 章节内对话（ChatPanel 挂载建会话）/生成/续写 → createChatConversation(projectId, { title: 章节名 })
+ * - 全局 chat 页（无章节）→ createChatConversation(projectId)（无 title；首条消息前 30 字命名在 ChatPanel 层落库）
+ */
+describe('写作页 — 会话跟随章节 + 命名（#770 §17.4.3）', () => {
+  it('章节内对话（ChatPanel 挂载建会话）→ createChatConversation 传 {project_id, title=章节名}', async () => {
+    render(<WritingPage />);
+    // ChatPanel 挂载即解析活动线程：fetchChatConversations 空 → createChatConversation 建新
+    await waitFor(() => expect(createChatCovMock).toHaveBeenCalled());
+    // #770：章节内建会话 title=章节名（当前实现只传 projectId → RED）
+    expect(createChatCovMock).toHaveBeenCalledWith('p1', expect.objectContaining({ title: '第1章 初见' }));
+  });
+
+  it('章节内点「生成」→ startWithCheck 建会话同样传 title=章节名（#763 保持 + #770 补 title）', async () => {
+    render(<WritingPage />);
+    await waitFor(() => expect(createChatCovMock).toHaveBeenCalled());
+    createChatCovMock.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
+    await waitFor(() => expect(createChatCovMock).toHaveBeenCalled());
+    expect(createChatCovMock).toHaveBeenLastCalledWith('p1', expect.objectContaining({ title: '第1章 初见' }));
+  });
+
+  it('全局 chat（无章节）→ 建会话不传 title（首条消息前 30 字命名在 ChatPanel 层）', async () => {
+    useChapterStore.setState({ currentChapterId: null, content: '' });
+    render(<WritingPage />);
+    // 全局 chat 页挂载即建会话（当前实现无全局分支 → ChatPanel 不挂载 → 永不调用 → RED）
+    await waitFor(() => expect(createChatCovMock).toHaveBeenCalled());
+    const [pid, opts] = createChatCovMock.mock.calls[0];
+    expect(pid).toBe('p1');
+    expect(opts === undefined || !opts.title).toBe(true);
   });
 });

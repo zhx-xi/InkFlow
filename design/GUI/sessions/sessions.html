@@ -111,6 +111,13 @@ button{font-family:inherit;cursor:pointer}
 .btn-ghost:hover{background:var(--surface-3);color:var(--ink)}
 .btn-ghost.danger:hover{border-color:rgba(176,74,58,.5);color:var(--err)}
 .updated{margin-top:8px;display:block;font-size:11px;color:var(--ink-3)}
+/* #770：AI 对话会话标题（title 匹配章节标题 → 跳章节页）+ 行内改名（chat-conv-rename 语义） */
+.dir-card .conv-title{border:none;background:none;padding:0;font-family:var(--font-serif);font-size:15px;font-weight:600;color:var(--ink);text-align:left;cursor:pointer}
+.dir-card .conv-title:hover{color:var(--accent)}
+.chat-conv-rename-input{display:none;height:32px;width:192px;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:0 8px;font-size:13px;color:var(--ink);outline:none}
+.chat-conv-rename-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--ring)}
+body[data-state="rename"] .chat-conv-rename-input{display:block}
+body[data-state="rename"] [data-testid="chat-conv-rename-1"]{display:none}
 .empty-box{margin-top:24px;display:none;border:1px dashed var(--line);border-radius:8px;background:var(--surface);padding:48px 24px;text-align:center;font-size:13px;color:var(--ink-2)}
 
 /* 删除确认弹框（sessions.tsx 内联：bg-black/40） */
@@ -215,16 +222,18 @@ body[data-shot="1"] .demo-bar{display:none}
         <!-- 统一目录：执行 + 访谈 + AI 对话 三类卡片合并 -->
         <div class="directory" data-testid="session-directory">
           <ul class="dir-list">
-            <!-- AI 对话（进行中） -->
+            <!-- AI 对话（进行中，#770：title 展示 + 行内改名） -->
             <li class="dir-card" data-archived="false" data-testid="session-directory-card">
               <div class="row">
                 <span class="badge">AI 对话</span>
                 <span class="badge">进行中</span>
-                <h3>青云志</h3>
+                <h3><button type="button" class="conv-title" data-testid="session-title-conv-1">第 1 章 初见</button></h3>
                 <span class="meta-right">23 条</span>
               </div>
               <p class="last-msg">帮我看看第 12 章的氛围描写要不要再收紧一些？</p>
               <div class="actions">
+                <input type="text" class="chat-conv-rename-input" data-testid="chat-conv-rename-input-1" value="第 1 章 初见" />
+                <button type="button" class="btn-ghost chat-conv-rename-btn" data-testid="chat-conv-rename-1">重命名</button>
                 <button type="button" class="btn-ghost">归档</button>
                 <button type="button" class="btn-ghost danger">删除</button>
               </div>
@@ -301,16 +310,17 @@ body[data-shot="1"] .demo-bar{display:none}
               <span class="updated">2026-08-28 22:15</span>
             </li>
 
-            <!-- AI 对话（已归档） -->
+            <!-- AI 对话（已归档，#770：title 展示） -->
             <li class="dir-card" data-archived="true" data-testid="session-directory-card">
               <div class="row">
                 <span class="badge">AI 对话</span>
                 <span class="badge weak">已归档</span>
-                <h3>青云志</h3>
+                <h3><button type="button" class="conv-title" data-testid="session-title-conv-2">第 3 章 剑引</button></h3>
                 <span class="meta-right">8 条</span>
               </div>
               <p class="last-msg">给苏云舟设计三句台词</p>
               <div class="actions">
+                <button type="button" class="btn-ghost chat-conv-rename-btn" data-testid="chat-conv-rename-2">重命名</button>
                 <button type="button" class="btn-ghost">恢复</button>
                 <button type="button" class="btn-ghost danger">删除</button>
               </div>
@@ -332,16 +342,17 @@ body[data-shot="1"] .demo-bar{display:none}
               <span class="updated">2026-08-26 16:40</span>
             </li>
 
-            <!-- AI 对话（已归档） -->
+            <!-- AI 对话（已归档，#770：title 展示） -->
             <li class="dir-card" data-archived="true" data-testid="session-directory-card">
               <div class="row">
                 <span class="badge">AI 对话</span>
                 <span class="badge weak">已归档</span>
-                <h3>青云志</h3>
+                <h3><button type="button" class="conv-title" data-testid="session-title-conv-3">第二卷开篇设定讨论</button></h3>
                 <span class="meta-right">15 条</span>
               </div>
               <p class="last-msg">第二卷开篇设定讨论</p>
               <div class="actions">
+                <button type="button" class="btn-ghost chat-conv-rename-btn" data-testid="chat-conv-rename-3">重命名</button>
                 <button type="button" class="btn-ghost">恢复</button>
                 <button type="button" class="btn-ghost danger">删除</button>
               </div>
@@ -396,6 +407,7 @@ body[data-shot="1"] .demo-bar{display:none}
   <label>状态
     <select id="stateSel">
       <option value="directory">会话目录</option>
+      <option value="rename">AI 对话改名</option>
       <option value="archived">已归档过滤</option>
       <option value="delete">删除确认弹框</option>
       <option value="empty">空态</option>
@@ -450,7 +462,7 @@ document.querySelectorAll('[data-ic]').forEach(el=>{
 });
 
 /* ── 状态机：body[data-state] 驱动视图 ── */
-const STATES = ['directory','archived','delete','empty'];
+const STATES = ['directory','rename','archived','delete','empty'];
 function setState(s){
   document.body.dataset.state = s;
   // chips 的 aria-pressed 随状态切换（已归档过滤时高亮对应 chip）

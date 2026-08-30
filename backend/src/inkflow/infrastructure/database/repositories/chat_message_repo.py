@@ -62,6 +62,7 @@ def _conv_to_domain(row: ConversationORM) -> Conversation:
         project_id=uuid.UUID(int=row.project_id),
         created_at=_as_utc(row.created_at),
         is_deleted=row.is_deleted,
+        title=row.title,
     )
 
 
@@ -98,13 +99,25 @@ class SQLiteChatMessageRepository:
         await self._db.refresh(row)
         return _orm_to_domain(row)
 
-    async def create_conversation(self, project_id: uuid.UUID) -> Conversation:
-        """新建线程（落库），返回领域 Conversation."""
-        row = ConversationORM(project_id=project_id.int)
+    async def create_conversation(self, project_id: uuid.UUID, title: str = "") -> Conversation:
+        """新建线程（落库），返回领域 Conversation（title 默认空，#770）。"""
+        row = ConversationORM(project_id=project_id.int, title=title)
         self._db.add(row)
         await self._db.commit()
         await self._db.refresh(row)
         return _conv_to_domain(row)
+
+    async def rename_conversation(self, conversation_id: int | uuid.UUID, title: str) -> bool:
+        """会话改名（#770）：更新 title 列；不存在 → False。"""
+        cid = _to_int(conversation_id)
+        stmt = (
+            sa_update(ConversationORM)
+            .where(ConversationORM.id == cid)
+            .values(title=title)
+        )
+        result = await self._db.execute(stmt)
+        await self._db.commit()
+        return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
 
     async def get_active_conversation(self, project_id: uuid.UUID) -> Conversation | None:
         """取该项目最近一条未归档线程；无则 None."""
@@ -215,6 +228,7 @@ class SQLiteChatMessageRepository:
                     "conversation_id": str(uuid.UUID(int=c.id)),
                     "project_id": str(uuid.UUID(int=c.project_id)),
                     "project_name": names.get(c.project_id),
+                    "title": c.title,
                     "last_message": last.content if last else "",
                     "message_count": count_by_conv.get(c.id, 0),
                     "is_deleted": c.is_deleted,

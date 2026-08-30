@@ -9,7 +9,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ChatPanel } from './ChatPanel';
+import { ChatPanel, type ChatPanelProps } from './ChatPanel';
 import { useModelsStore, type ProviderConfig } from '../stores/models';
 import { useToastStore } from '../stores/toast';
 import { useThemeStore } from '../stores/theme';
@@ -255,5 +255,26 @@ describe('ChatPanel — #744 conversation 多线程（归档后开新线程）',
     await waitFor(() => {
       expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledWith('conv-p1');
     });
+  });
+});
+
+/* ============================== #770 ChatPanel variant 契约（full / inline） ============================== */
+
+describe('ChatPanel — #770 variant 契约（full 无 resize handle / inline 可调）', () => {
+  it('variant="full" → 不渲染 chat-resize-handle；容器 chat-panel 含 flex-1 占满', async () => {
+    // RED：ChatPanelProps 尚无 variant（#770 增量，f47 §17.4.1）。契约先行：扩展类型携带 variant 渲染；
+    // GREEN 将 variant?: 'inline' | 'full' 并入 ChatPanelProps 后可直接 <ChatPanel variant="full" />。
+    type FullVariantProps = ChatPanelProps & { variant: 'full' };
+    render(<ChatPanel {...({ ...OPTS, variant: 'full' } as FullVariantProps)} />);
+    await screen.findByTestId('chat-panel');
+    // RED：当前恒渲染 resize handle + 无 flex-1 → FAIL
+    expect(screen.queryByTestId('chat-resize-handle')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-panel')).toHaveClass('flex-1');
+  });
+
+  it('默认 inline → 渲染 chat-resize-handle（回归守护，当前实现通过）', async () => {
+    render(<ChatPanel {...OPTS} />);
+    await screen.findByTestId('chat-panel');
+    expect(screen.getByTestId('chat-resize-handle')).toBeInTheDocument();
   });
 });
