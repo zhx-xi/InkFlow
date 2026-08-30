@@ -43,6 +43,10 @@ from inkflow.api.routers import (
     world_settings,
     writing,
 )
+
+# #766 阶段③：chat_resume 的 Depends(get_chat_agent_service) 依赖 chat_stream 模块级
+# 注册 deps.ChatStreamRequest（FastAPI 注解求值），必须在 chat_stream 之后导入。
+from inkflow.api.routers import chat_resume as chat_resume_router
 from inkflow.api.routers import (
     config as config_router,
 )
@@ -61,6 +65,7 @@ from inkflow.core.database import (
     ensure_characters_brief_column,
     ensure_chat_messages_conversation_id_column,
     ensure_chat_messages_is_deleted_column,
+    ensure_conversations_delete_permission_column,
     ensure_foreshadowing_drop_is_deleted,
     ensure_map_columns,
     ensure_outline_columns,
@@ -118,6 +123,7 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_foreshadowing_drop_is_deleted)
         await conn.run_sync(ensure_chat_messages_is_deleted_column)
         await conn.run_sync(ensure_chat_messages_conversation_id_column)
+        await conn.run_sync(ensure_conversations_delete_permission_column)
     # #106 F1：启动后幂等 seed 内置 4 provider（ProviderConfigService 同名跳过，
     # 全新安装注册表为空 → seed 补全；重复启动不重复插入）
     async with async_session_factory() as session:
@@ -232,6 +238,7 @@ app.include_router(maps.router)
 app.include_router(mcp.router)
 app.include_router(writing.router)
 app.include_router(chat_stream.router)
+app.include_router(chat_resume_router.router)
 app.include_router(agent.router)
 app.include_router(books.router)
 app.include_router(agent_runs.router)

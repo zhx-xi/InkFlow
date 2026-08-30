@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from inkflow.core.database import Base
@@ -30,6 +30,11 @@ class ConversationORM(Base):
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    delete_permission: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default="manual",  # "manual" | "ask_once" | "auto" (#766 阶段②)
+    )
 
     def __repr__(self) -> str:
         return f"<ConversationORM id={self.id}>"

@@ -19,7 +19,7 @@ export interface ChatStreamBody {
 }
 
 export interface ChatStreamFrame {
-  type: 'delta' | 'tool_call' | 'tool_result' | 'done' | 'error' | 'run_started' | 'reasoning';
+  type: 'delta' | 'tool_call' | 'tool_result' | 'done' | 'error' | 'run_started' | 'reasoning' | 'interrupt';
   done: boolean;
   delta?: string;
   error?: string;
@@ -28,6 +28,10 @@ export interface ChatStreamFrame {
   name?: string;
   args?: Record<string, unknown>;
   result?: string;
+  /** #766 阶段②：interrupt 帧字段（HITL 删除授权确认 payload {tool, entity_id, entity_name}） */
+  tool?: string;
+  entity_id?: string;
+  entity_name?: string;
 }
 
 export interface ChatStreamCallbacks {
@@ -41,6 +45,8 @@ export interface ChatStreamCallbacks {
   onRunStart?: (runId: string) => void;
   /** #727：reasoning 帧 -> 思考过程块 */
   onReasoning?: (text: string) => void;
+  /** #766 阶段②：interrupt 帧（HITL 删除授权确认）→ payload {tool, entity_id, entity_name} */
+  onInterrupt?: (payload: { tool: string; entity_id: string; entity_name: string }) => void;
 }
 
 /** 发起 chat 流式请求；返回 abort 函数（组件卸载时调用） */
@@ -104,6 +110,15 @@ export async function streamChat(
           }
           if (frame.type === 'reasoning') {
             callbacks.onReasoning?.(frame.delta ?? '');
+            continue;
+          }
+          // #766 阶段②：interrupt 帧（HITL 删除授权确认）→ 前端弹窗
+          if (frame.type === 'interrupt') {
+            callbacks.onInterrupt?.({
+              tool: frame.tool ?? '',
+              entity_id: frame.entity_id ?? '',
+              entity_name: frame.entity_name ?? '',
+            });
             continue;
           }
           if (frame.type === 'error' || frame.error) {
@@ -247,4 +262,23 @@ export async function deleteChatConversation(conversationId: string): Promise<vo
   return apiFetch<void>(`/api/v1/chat/conversations/${conversationId}?force=true`, {
     method: 'DELETE',
   });
+}
+
+/** #766 阶段②：设置线程删除权限：PATCH /api/v1/chat/conversations/{conversationId} body {delete_permission} */
+export async function updateChatDeletePermission(
+  conversationId: string,
+  deletePermission: 'manual' | 'ask_once' | 'auto',
+): Promise<void> {
+  return apiFetch<void>(`/api/v1/chat/conversations/${conversationId}`, {
+    method: 'PATCH',
+    body: { delete_permission: deletePermission },
+  });
+}
+
+/** #766 阶段②：HITL 中断续跑：POST /api/v1/chat/resume body {conversation_id, approved} */
+export async function resumeChatRun(body: {
+  conversation_id: string;
+  approved: boolean;
+}): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>('/api/v1/chat/resume', { method: 'POST', body });
 }

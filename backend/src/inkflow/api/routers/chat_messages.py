@@ -30,6 +30,12 @@ class ChatMessagePostRequest(BaseModel):
     intent: Literal["content", "conversation"] | None = None
 
 
+class ConversationPatchRequest(BaseModel):
+    """PATCH conversation 删除权限请求。"""
+
+    delete_permission: Literal["manual", "ask_once", "auto"]
+
+
 def get_chat_message_service(db: AsyncSession) -> ChatMessageService:
     """装配 ChatMessageService（repo=SQLiteChatMessageRepository）。"""
     return ChatMessageService(repo=SQLiteChatMessageRepository(db))
@@ -169,6 +175,26 @@ async def delete_conversation(
     ok = await svc.force_delete_conversation(cid) if force else await svc.archive_conversation(cid)
     if not ok:
         raise HTTPException(status_code=404, detail="chat 会话不存在")
+
+
+@router.patch("/conversations/{conversation_id}")
+async def patch_conversation_delete_permission(
+    conversation_id: str,
+    data: ConversationPatchRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """#766 阶段③：设置线程删除授权（前端分段控件经 PATCH）。非法权限 422；不存在 404。"""
+    try:
+        cid = uuid.UUID(conversation_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="chat 会话不存在") from None
+    svc = get_chat_message_service(db)
+    updated = await svc.update_delete_permission(
+        conversation_id=cid, delete_permission=data.delete_permission
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="chat 会话不存在")
+    return updated
 
 
 @router.post("/conversations/{conversation_id}/restore")

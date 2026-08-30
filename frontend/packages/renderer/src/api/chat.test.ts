@@ -540,4 +540,31 @@ describe('chat 消息 CRUD 客户端（#547）', () => {
     expect(JSON.parse(String(init?.body))).toEqual({ project_id: 'p1' });
     expect(res).toEqual(created);
   });
+
+  it('updateChatDeletePermission：PATCH {baseURL}/api/v1/chat/conversations/conv-p1 + body {delete_permission:"ask_once"}', async () => {
+    const { updateChatDeletePermission } = await import('./chat');
+    const fetchMock = stubJsonFetch(undefined, 204);
+    await updateChatDeletePermission('conv-p1', 'ask_once');
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${BASE}/api/v1/chat/conversations/conv-p1`);
+    expect(init?.method).toBe('PATCH');
+    const headers = init?.headers as Headers;
+    expect(headers.get('Content-Type')).toBe('application/json');
+    expect(JSON.parse(String(init?.body))).toEqual({ delete_permission: 'ask_once' });
+  });
+
+  it('resumeChatRun：POST {baseURL}/api/v1/chat/resume + body {conversation_id, approved} → {ok}', async () => {
+    const { resumeChatRun } = await import('./chat');
+    const fetchMock = stubJsonFetch({ ok: true });
+    const res = await resumeChatRun({ conversation_id: 'conv-p1', approved: true });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${BASE}/api/v1/chat/resume`);
+    expect(init?.method).toBe('POST');
+    const headers = init?.headers as Headers;
+    expect(headers.get('Content-Type')).toBe('application/json');
+    expect(JSON.parse(String(init?.body))).toEqual({ conversation_id: 'conv-p1', approved: true });
+    expect(res).toEqual({ ok: true });
+  });
 });

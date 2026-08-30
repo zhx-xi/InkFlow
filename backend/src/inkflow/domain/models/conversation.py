@@ -21,6 +21,7 @@ class Conversation(BaseModel):
     project_id: uuid.UUID
     created_at: datetime
     is_deleted: bool = False
+    delete_permission: str = "manual"  # "manual" | "ask_once" | "auto" (#766 阶段②)
 
 
 class ConversationCreate(BaseModel):

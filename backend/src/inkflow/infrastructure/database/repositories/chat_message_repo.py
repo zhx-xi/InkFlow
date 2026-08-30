@@ -329,3 +329,22 @@ class SQLiteChatMessageRepository:
         )
         await self._db.commit()
         return True
+
+    async def update_delete_permission(
+        self, *, conversation_id: uuid.UUID, delete_permission: str
+    ) -> dict | None:
+        """更新线程删除授权（conversations 表）。不存在 → None。"""
+        cid = _to_int(conversation_id)
+        row = (
+            await self._db.execute(
+                select(ConversationORM).where(ConversationORM.id == cid)
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        row.delete_permission = delete_permission
+        await self._db.commit()
+        return {
+            "conversation_id": str(uuid.UUID(int=row.id)),
+            "delete_permission": row.delete_permission,
+        }

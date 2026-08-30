@@ -134,3 +134,12 @@ class ChatMessageService:
         if _is_random_overflow(conversation_id):
             return False
         return await self._repo.restore_conversation(_to_int_id(conversation_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 restore_conversation
+
+    async def update_delete_permission(
+        self, *, conversation_id: uuid.UUID, delete_permission: str
+    ) -> dict | None:
+        """#766 阶段③：更新线程删除授权；不存在返回 None（404 语义）。"""
+        return await self._repo.update_delete_permission(  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 update_delete_permission
+            conversation_id=conversation_id,
+            delete_permission=delete_permission,
+        )

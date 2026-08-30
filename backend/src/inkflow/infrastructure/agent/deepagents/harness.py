@@ -14,6 +14,7 @@ from typing import Any, TypeAlias, cast
 from deepagents import create_deep_agent
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from inkflow.infrastructure.agent.deepagents.profiles import ensure_profile
@@ -120,4 +121,5 @@ def build_deep_agent(
         model=chat,
         tools=_map_tools(tools),
         system_prompt=system_prompt,
+        checkpointer=InMemorySaver(),
     )

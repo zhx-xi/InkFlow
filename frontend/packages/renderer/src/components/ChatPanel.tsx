@@ -24,8 +24,10 @@ import {
   deleteChatMessage,
   fetchChatConversations,
   fetchChatMessages,
+  resumeChatRun,
   saveChatMessage,
   streamChat,
+  updateChatDeletePermission,
   type ChatMessageDto,
   type ChatStreamBody,
 } from '../api/chat';
@@ -36,6 +38,7 @@ import { parseChatReply, type ChatIntent } from '../lib/chatIntent';
 import { useChapterStore } from '../stores/chapter';
 import { ensureModelReady } from '../stores/models';
 import { useToastStore } from '../stores/toast';
+import { ChatDeleteAuthControl } from './ChatDeleteAuthControl';
 
 export interface ChatPanelProps {
   projectId: string;
@@ -102,6 +105,13 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
   const conversationIdRef = useRef<string | null>(null);
   // #744：当前线程 id（state 驱动渲染；与 ref 同步）
   const [conversationId, setConversationId] = useState<string | null>(null);
+  // #766 阶段②：删除授权三态（默认 manual）+ HITL interrupt 弹窗 payload
+  const [deletePermission, setDeletePermission] = useState<'manual' | 'ask_once' | 'auto'>('manual');
+  const [interruptPayload, setInterruptPayload] = useState<{
+    tool: string;
+    entity_id: string;
+    entity_name: string;
+  } | null>(null);
   // #719：run_id 捕获（run_started 帧 → 中断时调后端 abort 端点）
   const runIdRef = useRef<string | null>(null);
   // #727：reasoning 条目 seq 计数器（每帧独立块）
@@ -265,6 +275,46 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
     setReasoningEntries((prev) => [...prev, { seq, text }]);
   }, []);
 
+  /** #766 阶段②：interrupt 帧（HITL 删除授权确认）→ 打开确认弹窗 */
+  const onInterrupt = useCallback((payload: { tool: string; entity_id: string; entity_name: string }) => {
+    setInterruptPayload(payload);
+  }, []);
+
+  /** #766 阶段②：删除授权三态切换 → PATCH 服务端（线程缺失时先新建再 PATCH） */
+  const handleDeleteModeChange = useCallback(async (mode: 'manual' | 'ask_once' | 'auto') => {
+    setDeletePermission(mode);
+    let cid = conversationIdRef.current;
+    if (!cid) {
+      try {
+        const created = await createChatConversation(projectIdRef.current);
+        cid = created.conversation_id;
+        conversationIdRef.current = cid;
+        setConversationId(cid);
+      } catch {
+        // 新建线程失败则跳过 PATCH（本地选中态保留，服务端权限不变）
+      }
+    }
+    if (cid) {
+      try {
+        await updateChatDeletePermission(cid, mode);
+      } catch {
+        // PATCH 失败静默（不阻塞 UI）
+      }
+    }
+  }, []);
+
+  /** #766 阶段②：HITL 确认删除 → resume approved:true */
+  const handleResumeApprove = useCallback(() => {
+    void resumeChatRun({ conversation_id: conversationIdRef.current ?? '', approved: true }).catch(() => {});
+    setInterruptPayload(null);
+  }, []);
+
+  /** #766 阶段②：HITL 取消删除 → resume approved:false */
+  const handleResumeCancel = useCallback(() => {
+    void resumeChatRun({ conversation_id: conversationIdRef.current ?? '', approved: false }).catch(() => {});
+    setInterruptPayload(null);
+  }, []);
+
   /** #727：折叠块展开切换（tool-${index} / reasoning-${index}） */
   const toggleBlock = useCallback((key: string) => {
     setExpandedBlocks((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -345,12 +395,12 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
       ...(chapterId ? { chapter_id: chapterId } : {}),
       ...(chapterContent ? { chapter_context: chapterContent } : {}),
     };
-    void streamChat(body, { onDelta, onDone, onError, onToolCall, onToolResult, onRunStart, onReasoning }).then(
+    void streamChat(body, { onDelta, onDone, onError, onToolCall, onToolResult, onRunStart, onReasoning, onInterrupt }).then(
       (abort) => {
         abortRef.current = abort;
       },
     );
-  }, [input, projectId, chapterId, chapterContent, onDelta, onDone, onError, onToolCall, onToolResult, onRunStart, onReasoning, t]);
+  }, [input, projectId, chapterId, chapterContent, onDelta, onDone, onError, onToolCall, onToolResult, onRunStart, onReasoning, onInterrupt, t]);
 
   /** #719：中断当前流式运行（先调后端 abort 端点，再本地 abort + 复位发送态） */
   const handleInterrupt = useCallback(() => {
@@ -733,6 +783,14 @@ export function ChatPanel({ projectId, chapterId, chapterContent, streamSink }: 
           ))}
         </div>
       )}
+      {/* #766 阶段②：删除授权三态分段控件 + HITL 确认弹窗（独立组件，行为不变） */}
+      <ChatDeleteAuthControl
+        deletePermission={deletePermission}
+        onModeChange={handleDeleteModeChange}
+        interruptPayload={interruptPayload}
+        onApprove={handleResumeApprove}
+        onCancel={handleResumeCancel}
+      />
       <div className="flex items-center gap-2">
         <textarea
           data-testid="chat-input"

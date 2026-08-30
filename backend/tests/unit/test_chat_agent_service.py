@@ -560,3 +560,30 @@ class TestChatAgentMemoryInjection:
             BASE_PROMPT,
             "你好",
         ]
+
+
+class TestResume:
+    """#766 阶段③ HITL resume 续跑——agent.ainvoke 收到 Command(resume=...) + thread_id config。"""
+
+    @pytest.mark.asyncio
+    async def test_resume_invokes_agent_with_command(self) -> None:
+        """resume → ainvoke 收 Command(resume={"approved": True})，config 透传 thread_id。"""
+        from unittest.mock import AsyncMock
+
+        from langgraph.types import Command
+
+        from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+
+        agent = AsyncMock()
+        svc = ChatAgentService(agent=agent, system_prompt=BASE_PROMPT)
+        # 装配期 thread_id（deps 注入或默认空；本用例白盒设值断言 config 透传）
+        svc._thread_id = "thread-766"
+        result = await svc.resume(conversation_id="conv-1", approved=True)
+
+        assert result == {"ok": True}
+        agent.ainvoke.assert_awaited_once()
+        call = agent.ainvoke.await_args
+        command = call.args[0]
+        assert isinstance(command, Command)
+        assert command.resume == {"approved": True}
+        assert call.kwargs["config"] == {"configurable": {"thread_id": "thread-766"}}

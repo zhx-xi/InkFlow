@@ -52,6 +52,7 @@ class ChatStreamRequest(BaseModel):
     prompt: str | None = None
     chapter_id: str | None = None
     chapter_context: str | None = None
+    conversation_id: str | None = None  # #766 阶段②：装配守卫按会话删除授权注入删除工具
 
 
 # #597 循环依赖规避：deps.get_chat_agent_service 的函数体惰性 import ChatStreamRequest
@@ -127,6 +128,12 @@ def _encode_frame(ev: ChatStreamEvent, run_id: str | None = None) -> str:
             "id": ev.id,
             "name": ev.name,
             "result": _result_to_str(ev.result),
+            "done": False,
+        }
+    elif type_field == "interrupt":
+        payload = {
+            "type": "interrupt",
+            "payload": ev.payload,
             "done": False,
         }
     elif type_field == "run_started":
