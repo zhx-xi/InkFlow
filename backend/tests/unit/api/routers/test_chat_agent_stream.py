@@ -197,7 +197,7 @@ class _FakeAgent:
         self._error_after = error_after
         self.calls: list[dict] = []
 
-    async def astream_events(self, inputs, version="v2"):
+    async def astream_events(self, inputs, version="v2", config=None):
         self.calls.append({"inputs": inputs, "version": version})
         for i, ev in enumerate(self._events):
             if self._error is not None and self._error_after is not None and i >= self._error_after:

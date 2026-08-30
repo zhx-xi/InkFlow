@@ -11,9 +11,9 @@ from __future__ import annotations
 def resolve_llm_credentials(global_default: str) -> tuple[str, str, str]:
     """解析 (model, api_key, base_url)：resolve_model + 空默认回退注册表。
 
-    global_default 为空时按 _BUILTIN_PROVIDERS 顺序取首个有 key 且含 chat
-    模型的 provider；全部无 key → HTTPException(422)（绝不把空 key 传给
-    ChatOpenAI → Missing credentials 500）。
+    global_default 为空或 named provider key 不可用时，按 _BUILTIN_PROVIDERS
+    顺序取首个有 key 且含 chat 模型的 provider；全部无 key → HTTPException(422)
+    （绝不把空 key 传给 ChatOpenAI → Missing credentials 500）。
     """
     from fastapi import HTTPException
 
@@ -34,8 +34,10 @@ def resolve_llm_credentials(global_default: str) -> tuple[str, str, str]:
             api_key = provider_cfg.api_key
             base_url = provider_cfg.base_url or ""
         except ValueError:
-            pass
-    else:
+            # #821：named model 的 provider key 不可用 → 置空后走注册表回退
+            api_key = ""
+            base_url = ""
+    if not api_key:
         for provider in _BUILTIN_PROVIDERS:
             try:
                 provider_cfg = get_provider_config(provider)

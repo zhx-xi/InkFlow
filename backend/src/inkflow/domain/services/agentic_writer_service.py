@@ -162,13 +162,17 @@ class AgenticWriterService:
         agent = self._agent_factory(request)
         history: list[object] = []
         try:
-            history = await self._invoke_agent(agent, [self._build_initial_message(request)])
+            history = await self._invoke_agent(
+                agent, [self._build_initial_message(request)], thread_id=run_id
+            )
             # 空 content 重试循环（保留完整历史，追加用户消息再次 invoke）
             retries = 0
             while self._is_empty_final(history) and retries < self._empty_content_retries:
                 retries += 1
                 retry_message = {"type": "user", "content": _EMPTY_RETRY_PROMPT}
-                history = await self._invoke_agent(agent, [*history, retry_message])
+                history = await self._invoke_agent(
+                    agent, [*history, retry_message], thread_id=run_id
+                )
         except Exception as exc:
             # 防御：invoke 抛错 → FAILED 落库返回（不吞进程级错误导致挂起）
             run.status = AgentRunStatus.FAILED
@@ -234,9 +238,16 @@ class AgenticWriterService:
         await self._run_repo.save(run)
         return run
 
-    async def _invoke_agent(self, agent: object, messages: list[object]) -> list[object]:
+    async def _invoke_agent(
+        self,
+        agent: object,
+        messages: list[object],
+        *,
+        thread_id: str = "",
+    ) -> list[object]:
         """调 agent（deepagents invoke 语义：返回含完整消息历史的 dict）."""
-        result = await agent.invoke(messages)  # type: ignore[attr-defined]  # 鸭子类型：agent 按契约提供 async invoke
+        config = {"configurable": {"thread_id": thread_id or str(uuid.uuid4())}}
+        result = await agent.invoke(messages, config=config)  # type: ignore[attr-defined]  # 鸭子类型：agent 按契约提供 async invoke
         if isinstance(result, dict):
             history = result.get("messages") or []
             return list(history)

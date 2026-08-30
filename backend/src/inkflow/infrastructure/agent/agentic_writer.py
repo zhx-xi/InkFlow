@@ -84,6 +84,9 @@ class DeepAgentInvokeAdapter:
         self._inner = inner
 
     async def invoke(self, messages: list, config: dict | None = None) -> dict:
+        # #821：显式 config 原样透传；缺失时自动补 thread_id（InMemorySaver 兜底）
+        if config is None:
+            config = {"configurable": {"thread_id": str(uuid.uuid4())}}
         # deepagents 输入 {"messages": [...]}；graph.invoke 同步返回（含 "messages" 键）
         result = self._inner.invoke({"messages": messages}, config=config)  # type: ignore[attr-defined]  # 鸭子类型：deepagents CompiledStateGraph
         if isinstance(result, Awaitable):

@@ -79,7 +79,7 @@ class _FakeAgent:
     def __init__(self, events: list[dict] | None = None) -> None:
         self._events = list(events or [])
 
-    async def astream_events(self, inputs, version="v2"):
+    async def astream_events(self, inputs, version="v2", config=None):
         for ev in self._events:
             yield ev
 

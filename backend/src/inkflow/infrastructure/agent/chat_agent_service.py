@@ -11,6 +11,7 @@ consume_trace() 取回 (steps, final_content, token_usage_total) 落 AgentRun。
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -67,6 +68,7 @@ class ChatAgentService:
         system_prompt: str,
         project_context_getter: Callable[[str, str], Awaitable[str]] | None = None,
         history_getter: Callable[[str], Awaitable[list[object]]] | None = None,
+        thread_id: str = "",
     ) -> None:
         self._agent = agent
         self._system_prompt = system_prompt
@@ -81,8 +83,8 @@ class ChatAgentService:
         # on_tool_end.run_id → (step_index, tool_index) 映射（AgentToolCall 无 id 字段，
         # 结果回填按 AIMessage.tool_calls[].id ↔ on_tool_end.run_id 匹配）
         self._tool_call_index: dict[str, tuple[int, int]] = {}
-        # #766 阶段③：HITL resume 续跑 thread_id（装配期赋值或默认空；InMemorySaver 按 thread 隔离）
-        self._thread_id: str = ""
+        # #766 阶段③/#821：HITL resume 与 stream_events 共用 thread_id（装配期注入，空时 uuid 兜底）
+        self._thread_id: str = thread_id
 
     async def stream_events(
         self,
@@ -148,7 +150,9 @@ class ChatAgentService:
         cancelled = False
         try:
             async for ev in self._agent.astream_events(  # type: ignore[attr-defined]  # 鸭子类型：deepagents CompiledStateGraph 提供 astream_events（v2 事件 dict 流）
-                {"messages": messages}, version="v2"
+                {"messages": messages},
+                version="v2",
+                config={"configurable": {"thread_id": self._thread_id or str(uuid.uuid4())}},
             ):
                 # #719：用户中断 → 停止继续 yield 事件（done 终帧由路由层落 TERMINATED 后自行发出）
                 if cancel_event is not None and cancel_event.is_set():

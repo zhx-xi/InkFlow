@@ -352,6 +352,7 @@ async def test_deep_agent_invoke_adapter_sync_result() -> None:
     result = await adapter.invoke([{"type": "user", "content": "你好"}])
 
     assert result["messages"][0]["content"] == "正文。"
-    inner.invoke.assert_called_once_with(
-        {"messages": [{"type": "user", "content": "你好"}]}, config=None
-    )
+    # #821: adapter 未显式传 config 时自动补 thread_id（InMemorySaver 依赖）
+    kwargs = inner.invoke.call_args.kwargs
+    assert kwargs.get("config") is not None
+    assert kwargs["config"]["configurable"]["thread_id"]
