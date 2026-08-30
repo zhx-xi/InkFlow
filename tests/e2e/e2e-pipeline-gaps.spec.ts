@@ -222,11 +222,12 @@ async function waitExecutionId(
   return executionId;
 }
 
-/** 轮询执行终态：completed 且 final_output 非空 → 返回 final_output（宽松断言哲学） */
+/** 轮询执行终态：completed 且 final_output 非空 → 返回 final_output（宽松断言哲学）
+ * 默认 900s：#763 后写作页无 pipeline-status，完成信号完全依赖内核执行记录轮询（真实 LLM 管线数分钟级）。 */
 async function pollExecutionResult(
   kernel: KernelInfo,
   executionId: string,
-  timeoutMs = 60_000
+  timeoutMs = 900_000
 ): Promise<string> {
   let finalOutput = '';
   await expect
@@ -308,7 +309,8 @@ async function createChapterViaUi(window: Page, title: string): Promise<void> {
   await titleInput.press('Enter');
 }
 
-/** 点击「生成」→ 等待管线 completed → 返回 final_output（轮询 900s 预算） */
+/** 点击「生成」→ 等待管线 completed → 返回 final_output（轮询 900s 预算）
+ *  #763：写作页不再渲染 pipeline-status，完成信号由内核执行记录承载。 */
 async function runWriteAuto(
   window: Page,
   kernel: KernelInfo,
@@ -316,16 +318,14 @@ async function runWriteAuto(
 ): Promise<string> {
   const toolbar = window.getByTestId('editor-toolbar');
   await toolbar.getByRole('button', { name: '生成', exact: true }).click();
-  const status = window.getByTestId('pipeline-status');
-  await expect(status).toContainText('执行中', { timeout: 15_000 });
-  await expect(status).toContainText('生成完成', { timeout: 900_000 });
   const executionId = await waitExecutionId(kernel, projectId);
-  const finalOutput = await pollExecutionResult(kernel, executionId, 60_000);
+  const finalOutput = await pollExecutionResult(kernel, executionId);
   expect(finalOutput.trim().length).toBeGreaterThan(0);
   return finalOutput;
 }
 
-/** 点击「续写」→ 等待管线 completed → 返回 final_output（轮询 900s 预算） */
+/** 点击「续写」→ 等待管线 completed → 返回 final_output（轮询 900s 预算）
+ *  #763：写作页不再渲染 pipeline-status，完成信号由内核执行记录承载。 */
 async function runWriteContinue(
   window: Page,
   kernel: KernelInfo,
@@ -333,11 +333,8 @@ async function runWriteContinue(
 ): Promise<string> {
   const toolbar = window.getByTestId('editor-toolbar');
   await toolbar.getByRole('button', { name: '续写', exact: true }).click();
-  const status = window.getByTestId('pipeline-status');
-  await expect(status).toContainText('执行中', { timeout: 15_000 });
-  await expect(status).toContainText('生成完成', { timeout: 900_000 });
   const executionId = await waitExecutionId(kernel, projectId);
-  const finalOutput = await pollExecutionResult(kernel, executionId, 60_000);
+  const finalOutput = await pollExecutionResult(kernel, executionId);
   expect(finalOutput.trim().length).toBeGreaterThan(0);
   return finalOutput;
 }
