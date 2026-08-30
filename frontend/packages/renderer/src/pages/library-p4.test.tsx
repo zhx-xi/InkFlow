@@ -224,6 +224,17 @@ describe('设定库页 — F43 P4 时间线双序 + 两级检查（spec §5.16-5
     await waitFor(() => expect(rowIds()).toEqual(['evB', 'evC', 'evA']));
   });
 
+  it('N5 行内 time_display 徽标：事件行显示时间显示文本', async () => {
+    mockTimelineP4(timelineView);
+    renderLibrary();
+    const user = userEvent.setup();
+    await openTimelineTab(user);
+    const list = screen.getByTestId('library-list');
+    expect(within(list).getByText('300 年')).toBeInTheDocument(); // evA
+    expect(within(list).getByText('100 年')).toBeInTheDocument(); // evC
+    expect(within(list).getByText('未知')).toBeInTheDocument(); // evB
+  });
+
   it('T2 世界序切换：点 tl-view-world → 列表按 time_value 升序（None 排末尾）+ 零额外请求', async () => {
     mockTimelineP4(timelineView);
     renderLibrary();
