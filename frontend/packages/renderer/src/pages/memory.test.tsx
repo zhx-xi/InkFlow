@@ -539,6 +539,20 @@ describe('记忆页 — 提取记忆', () => {
     await user.click(screen.getByTestId('memory-extract-btn'));
     expect(await screen.findByTestId('memory-extract-error')).toHaveTextContent('模型未配置');
   });
+
+  it('提取无内容（summarized=false）→ warn toast「暂无可提取的记忆内容」', async () => {
+    const user = userEvent.setup();
+    summarizeMemoryMock.mockImplementation(async () => ({ project_id: 'p1', summarized: false, project: null, user: null }));
+    seedProjects();
+    renderMemoryPage();
+    await screen.findByTestId('memory-summary-card');
+    await user.click(screen.getByTestId('memory-extract-btn'));
+    await waitFor(() => {
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts[toasts.length - 1].type).toBe('warn');
+      expect(toasts[toasts.length - 1].message).toContain('暂无可提取的记忆内容');
+    });
+  });
 });
 
 describe('记忆页 — 偏好列表与删除', () => {
