@@ -393,7 +393,9 @@ mode=semantic:
 
 > ⚠️ **覆盖缺口声明（v1.1 load-bearing）**：RAG 向量库（F14）只索引**提取管线产出**——章节块（提取过的）+ 提取出的角色/世界/伏笔/时间线。**手动创建的档案条目、未走提取的章节不在向量库** → semantic 模式对「手动内容」召回不全、outline 恒无命中。这是**模式差异而非缺陷**（keyword 全量覆盖、semantic 语义补充），spec 明确声明：semantic 结果集 ⊆ keyword 语义近似，GUI 可标注「AI 检索」徽标提示召回范围。F14 后续若扩展索引全量（不在本 spec），semantic 覆盖自动提升。
 
-**semantic 失败语义**：embedding 模型不可用（未部署/加载失败）→ 200 + 空结果 + loguru（不降级为 keyword——模式显式请求，失败空结果比静默换模式诚实）；测试用 FakeEmbeddings（F14 先例，size=384 + 临时 chroma 目录）。
+> **semantic 失败语义**：embedding 模型不可用（未部署/加载失败）→ 200 + 空结果 + loguru（不降级为 keyword——模式显式请求，失败空结果比静默换模式诚实）；测试用 FakeEmbeddings（F14 先例，size=384 + 临时 chroma 目录）。
+>
+> **semantic 健壮性（#823/#468，修改履历 2026-08-31）**：底层向量库（F14 VectorStoreProtocol.retrieve）对 chromadb hnsw 段读取失败（"Nothing found on disk"）现作**自愈降级**——服务层捕获 `VectorStoreError` → 触发一次 `reindex` → 重试一次；成功 → 200 命中（`relevance_score` 降序）；仍失败 → 500 清晰 detail（含「chromadb hnsw」诊断，**不吞空**「内部错误（无详情）」，替代原先吞成空 `INTERNAL_ERROR`）。`vector retrieve` 端点与 `mode=semantic` 都经此路径受益。
 
 ### 5.9 索引检索型 vs 既有样板：差异对照表
 
@@ -455,6 +457,7 @@ mode=semantic:
 | E12 | semantic 模式向量库为空 / embedding 不可用 | 200 空结果 + loguru（不降级 keyword，§5.8） |
 | E13 | AI 自动维护设置开启但增量同步失败 | 回退懒重建（_is_stale 兜底——增量失败不阻塞搜索，下次判脏全量重建） |
 | E14 | 跨项目检索其中一项目无索引内容 | 该项目自然无命中（不报错，total 计数其余项目） |
+| E15 | semantic 模式向量库 chromadb hnsw 段读取失败（"Nothing found on disk"，#468 同族） | 服务层自愈：捕获 VectorStoreError → reindex 一次 → 重试一次；成功 → 200 命中；仍失败 → 500 清晰 detail（含「chromadb hnsw」诊断），**不吞空**「内部错误（无详情）」——vector retrieve 端点同步受益（新增 2026-08-31） |
 
 ---
 
@@ -634,6 +637,7 @@ F22 编号 0.6.0 立项未改号（ADR-019 v5 口径）；变体编号声明依�
 | M13 | **v1.1/v1.2：手动 rebuild** `inkflow search --rebuild` 强制全量重建（经 POST rebuild 端点） | CLI+单元 | `pytest ../tests/cli/test_cli_search.py tests/unit/test_search_service.py -k rebuild` |
 | M14 | 全量门禁：lint/unit/integration/api/cli 绿 + 覆盖率达标 | CI | `uv run ruff check src/ tests/unit/ ../tests/` + 全量 pytest |
 | M15 | 手工闭环：CLI 搜索真实项目中文词命中 + GUI 未来接线冒烟 | 手动 | 发布前冒烟 |
+| M16 | **2026-08-31：semantic/vector retrieve 遇 chromadb hnsw 段读取失败不吞空**——服务层捕获 VectorStoreError → 自愈 reindex 一次重试/清晰上抛（非「内部错误（无详情）」） | 单元 | pytest tests/unit/test_langchain_vector_store.py -k hnsw tests/unit/domain/services/test_extraction_retrieve.py -k reindex_retry |
 
 > Issue #54 验收标准映射：跨内容类型搜索=M1 · 类型筛选=M2 · 搜索高亮=M3；v1.1 新增（用户拍板 2026-08-09）：AI 检索=M12 · 同世界观跨项目=M10 · AI 自动维护=M11。
 

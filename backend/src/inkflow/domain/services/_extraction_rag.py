@@ -38,7 +38,10 @@ from inkflow.domain.models.timeline import TimelineEvent
 from inkflow.domain.models.world import WorldSetting
 from inkflow.domain.ports.chapter_repository import ChapterRepositoryProtocol
 from inkflow.domain.ports.character_repository import CharacterRepositoryProtocol
-from inkflow.domain.ports.extraction_errors import RAGUnavailableError
+from inkflow.domain.ports.extraction_errors import (
+    RAGUnavailableError,
+    VectorStoreError,
+)
 from inkflow.domain.ports.foreshadowing_repository import ForeshadowingRepositoryProtocol
 from inkflow.domain.ports.timeline_repository import TimelineRepositoryProtocol
 from inkflow.domain.ports.vector_store import (
@@ -475,10 +478,26 @@ class _ExtractionRAGMixin:
         """
         if self._vector_store is None:
             raise RAGUnavailableError()
-        return await self._vector_store.retrieve(
-            query,
-            project_id=str(project_id),
-            entity_types=entity_types,
-            top_k=top_k,
-            min_score=min_score,
-        )
+        try:
+            return await self._vector_store.retrieve(
+                query,
+                project_id=str(project_id),
+                entity_types=entity_types,
+                top_k=top_k,
+                min_score=min_score,
+            )
+        except VectorStoreError:
+            # #823: chromadb hnsw 段读取失败（"Nothing found on disk"，#468 同族）→
+            # 一次自愈重试：重建索引后重试一次；仍失败则清晰上抛 VectorStoreError
+            # （禁止吞空「内部错误（无详情）」）。
+            logger.warning(
+                "向量检索失败，尝试重建索引后重试: project=%s", project_id, exc_info=True
+            )
+            await self.reindex(project_id, entity_types)
+            return await self._vector_store.retrieve(
+                query,
+                project_id=str(project_id),
+                entity_types=entity_types,
+                top_k=top_k,
+                min_score=min_score,
+            )

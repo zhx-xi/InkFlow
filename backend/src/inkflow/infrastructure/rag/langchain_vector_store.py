@@ -27,6 +27,7 @@ import chromadb
 from langchain_core.embeddings import Embeddings
 from loguru import logger
 
+from inkflow.domain.ports.extraction_errors import VectorStoreError
 from inkflow.domain.ports.vector_store import (
     EntityType,
     IndexableEntity,
@@ -235,13 +236,40 @@ class LangChainVectorStore:
             merged: list[RetrievedEntity] = []
             for entity_type in types:
                 collection = self._get_collection(entity_type)
-                result = collection.query(
-                    # chroma stub 对 query_embeddings 类型过严（实际运行时接受 list[list[float]]）
-                    query_embeddings=cast(Any, [query_embedding]),
-                    n_results=top_k,
-                    where={"project_id": project_id},
-                    include=["documents", "metadatas", "distances"],
-                )
+                try:
+                    result = collection.query(
+                        # chroma stub: query_embeddings 实际接受 list[list[float]]
+                        query_embeddings=cast(Any, [query_embedding]),
+                        n_results=top_k,
+                        where={"project_id": project_id},
+                        include=["documents", "metadatas", "distances"],
+                    )
+                except chromadb.errors.InternalError as exc:
+                    # #823: chromadb hnsw 段读取失败（"Nothing found on disk"，#468 同族）——
+                    # 常为小批量写入未落盘（WAL-only）或残留空/旧 hnsw 段。一次自愈：
+                    # 强制 count() 触发 WAL→段落盘/载入后重试一次；仍失败则清晰上抛
+                    # VectorStoreError（不吞空「内部错误（无详情）」），由服务层 retrieve
+                    # 捕获后触发一次 reindex 重建重试（_extraction_rag.py）。
+                    logger.warning(
+                        "chromadb hnsw 段读取失败，强制落盘后重试: "
+                        "entity_type={} project_id={} err={}",
+                        entity_type.value,
+                        project_id,
+                        exc,
+                    )
+                    try:
+                        collection.count()
+                        result = collection.query(
+                            query_embeddings=cast(Any, [query_embedding]),
+                            n_results=top_k,
+                            where={"project_id": project_id},
+                            include=["documents", "metadatas", "distances"],
+                        )
+                    except chromadb.errors.InternalError:
+                        raise VectorStoreError(
+                            "向量检索失败：chromadb hnsw 段读取失败（"
+                            f"{entity_type.value}），建议重建索引后重试"
+                        ) from exc
                 ids = result["ids"]
                 if not ids or not ids[0]:
                     continue

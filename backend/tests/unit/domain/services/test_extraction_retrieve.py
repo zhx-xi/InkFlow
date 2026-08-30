@@ -48,6 +48,7 @@ from inkflow.domain.models.world import (
 from inkflow.domain.ports.extraction_errors import (
     ExtractionValidationError,
     RAGUnavailableError,
+    VectorStoreError,
 )
 from inkflow.domain.ports.vector_store import EntityType, RetrievedEntity
 from inkflow.domain.services.extraction_service import ExtractionService
@@ -681,3 +682,58 @@ async def test_reindex_missing_repos_warns_and_skips() -> None:
     assert any("setting" in w for w in skipped)
     assert any("foreshadowing" in w for w in skipped)
     assert any("timeline_event" in w for w in skipped)
+
+
+# ══ #823 追加段（2026-08-31）: retrieve 自愈重试（hnsw 段读取失败 → reindex 一次 + 重试）═══
+# 契约源: specs/f22-search/spec.md §5.8/§7 + specs/f14-extraction/spec.md §5.6/§7。
+# 缺陷背景（v0.12.1-rc3 打包版实证）：retrieve 走 chromadb Collection.query 遇
+# hnsw 段读取失败（"Nothing found on disk"，#468 同族）。服务层 retrieve 应捕获
+# VectorStoreError → 触发一次 reindex（重建索引）→ 重试一次；仍失败则清晰上抛
+# （禁止吞空「内部错误（无详情）」）。
+# RED 形态: 服务层 retrieve 无 try/except → VectorStoreError 原样上抛 → 重试断言
+# FAIL（干净 RED）。
+
+
+async def test_retrieve_auto_reindex_retry_on_vector_store_error() -> None:
+    """#823: retrieve 遇 VectorStoreError（hnsw 段读取失败）→ reindex 自愈重试一次 → 返回命中。"""
+    deps = _Deps(_project())
+    svc = deps.service()
+    svc.reindex = AsyncMock()  # 接管真实 reindex（无需真实重建，仅断言触发一次）
+    hits = [
+        RetrievedEntity(
+            entity_id=str(uuid.uuid4()),
+            entity_type=EntityType.FORESHADOWING,
+            content="伏笔：铜镜",
+            relevance_score=0.82,
+            metadata={"project_id": str(PID)},
+        )
+    ]
+    deps.vector_store.retrieve = AsyncMock(
+        side_effect=[
+            VectorStoreError("向量检索失败：chromadb hnsw 段读取失败（foreshadowing）"),
+            hits,
+        ]
+    )
+
+    items = await svc.retrieve("铜镜", project_id=PID, entity_types=[EntityType.FORESHADOWING])
+
+    svc.reindex.assert_awaited_once()
+    svc.reindex.assert_awaited_once_with(PID, [EntityType.FORESHADOWING])
+    assert deps.vector_store.retrieve.await_count == 2
+    assert items == hits
+
+
+async def test_retrieve_auto_reindex_retry_raises_clear_error_on_second_failure() -> None:
+    """#823: 自愈重试仍失败 → 清晰上抛 VectorStoreError（不吞空、不无限重试）。"""
+    deps = _Deps(_project())
+    svc = deps.service()
+    svc.reindex = AsyncMock()
+    err = VectorStoreError("向量检索失败：chromadb hnsw 段读取失败（foreshadowing）")
+    deps.vector_store.retrieve = AsyncMock(side_effect=[err, err])
+
+    with pytest.raises(VectorStoreError) as exc_info:
+        await svc.retrieve("铜镜", project_id=PID)
+
+    assert str(exc_info.value) == str(err)
+    svc.reindex.assert_awaited_once()  # 恰一次自愈重试，不无限循环
+    assert deps.vector_store.retrieve.await_count == 2

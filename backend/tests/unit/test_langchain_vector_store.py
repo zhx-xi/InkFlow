@@ -14,11 +14,13 @@ delete_project 返回删除数 / 空库 retrieve → 空列表 / FakeEmbeddings
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import chromadb
 import pytest
 from langchain_core.embeddings import Embeddings
 
+from inkflow.domain.ports.extraction_errors import VectorStoreError
 from inkflow.domain.ports.vector_store import (
     EntityType,
     IndexableEntity,
@@ -616,3 +618,63 @@ async def test_list_entities_empty_result(store: LangChainVectorStore) -> None:
         "p-empty", EntityType.CHAPTER_CHUNK, where={"chapter_id": "nope"}
     )
     assert result == []
+
+
+# ══ #823 追加段（2026-08-31）: chromadb hnsw 段读取失败优雅降级/清晰诊断 ═══════
+# 契约源: specs/f22-search/spec.md §5.8/§7 + specs/f14-extraction/spec.md §7。
+# 缺陷背景（v0.12.1-rc3 打包版实证）：_retrieve_sync 走 chromadb Collection.query，
+# hnsw 段读取失败抛 InternalError（"Nothing found on disk"，#468 同族），服务层
+# except Exception →「内部错误（无详情）」吞空（第 19 类吞空模式）。
+# 本契约：_retrieve_sync 捕获 InternalError → 抛 VectorStoreError（清晰可定位，
+# 消息含「hnsw」并提示重建索引），**不吞空 INTERNAL_ERROR**。
+# RED 形态: _retrieve_sync 无 try/except → InternalError 原样上抛 → 断言
+# pytest.raises(VectorStoreError) FAIL（干净 RED）。
+
+
+async def test_retrieve_hnsw_internal_error_raises_clear_vector_error(
+    store: LangChainVectorStore,
+) -> None:
+    """#823: hnsw 段读取失败 → 抛 VectorStoreError（清晰诊断 + 重建提示），非吞空。"""
+    await store.index(make_entity("c1", EntityType.CHARACTER, "p1", "苹果"))
+    collection = store._collections[EntityType.CHARACTER]
+    with (
+        patch.object(
+            collection,
+            "query",
+            side_effect=chromadb.errors.InternalError(
+                "Error executing plan: Internal error: "
+                "Error creating hnsw segment reader: Nothing found on disk"
+            ),
+        ),
+        pytest.raises(VectorStoreError) as exc_info,
+    ):
+        await store.retrieve("苹果", project_id="p1")
+    message = str(exc_info.value)
+    assert "hnsw" in message, f"应含 hnsw 诊断标识: {message}"
+    assert "内部错误（无详情）" not in message, f"不应吞空 INTERNAL_ERROR: {message}"
+    assert "重建索引" in message or "重试" in message, f"应提示重建索引/重试: {message}"
+
+
+async def test_retrieve_hnsw_internal_error_recovers_after_count_retry(
+    store: LangChainVectorStore,
+) -> None:
+    """#823: hnsw 段读取失败（未落盘）→ count() 落盘后重试一次 → 命中（自愈成功）。"""
+    await store.index(make_entity("c1", EntityType.CHARACTER, "p1", "苹果"))
+    collection = store._collections[EntityType.CHARACTER]
+    real_query = collection.query
+    call_count = 0
+
+    def _flaky_query(*args: object, **kwargs: object) -> dict[str, object]:
+        """首次调用抛 hnsw InternalError（模拟未落盘），重试时走真实 query。"""
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise chromadb.errors.InternalError(
+                "Error creating hnsw segment reader: Nothing found on disk"
+            )
+        return real_query(*args, **kwargs)
+
+    with patch.object(collection, "query", side_effect=_flaky_query):
+        results = await store.retrieve("苹果", project_id="p1")
+    assert [r.entity_id for r in results] == ["c1"]
+    assert call_count == 2  # 首败 → count() 落盘 → 重试成功
