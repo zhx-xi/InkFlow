@@ -187,3 +187,44 @@ describe('RagStatusCard — 向量模型选择器（#525）', () => {
     expect(screen.queryByTestId('rag-embedding-select')).not.toBeInTheDocument();
   });
 });
+
+describe('RagStatusCard — UI 元素必须出现（#824 防「区块空」回归）', () => {
+  it('test_elements_appear_with_project_full_card：有项目+已加载 → 标题/模型卡/Select 全出现（锁定元素存在）', async () => {
+    fetchVectorStatusMock.mockResolvedValue(FRESH_STATUS);
+    renderCard();
+    // 标题「向量检索（RAG）」渲染
+    expect(screen.getByText('向量检索（RAG）')).toBeInTheDocument();
+    // 内容卡恒渲染 + embedding 模型展示 + 向量模型 Select
+    expect(await screen.findByTestId('rag-status-card')).toBeInTheDocument();
+    expect(screen.getByTestId('rag-model-name')).toHaveTextContent('embedding-3');
+    expect(screen.getByTestId('rag-embedding-select')).toBeInTheDocument();
+  });
+
+  it('test_no_project_shows_empty_state_not_blank：无项目 → 区块不空置，渲染空态 + embedding 配置（#824 根因：{status && ...} 抑制整块）', async () => {
+    useProjectStore.setState({ currentProjectId: null });
+    renderCard();
+    // 标题始终渲染
+    expect(screen.getByText('向量检索（RAG）')).toBeInTheDocument();
+    // 修复后：内容卡恒渲染（不再整体依赖 status），区块不空
+    expect(await screen.findByTestId('rag-status-card')).toBeInTheDocument();
+    // 无项目 → 空态提示（复用 ps.empty：请先在项目页选择项目）
+    expect(screen.getByTestId('rag-empty')).toHaveTextContent('请先在项目页选择项目');
+    // embedding 配置（全局）不因无项目而缺失
+    expect(screen.getByTestId('rag-embedding-select')).toBeInTheDocument();
+  });
+
+  it('test_no_embedding_shows_empty_text：reason=no_embedding → 空态文案「未配置 embedding 模型」', async () => {
+    useProjectStore.setState({ currentProjectId: 'p1' });
+    fetchVectorStatusMock.mockResolvedValue({ configured_fp: null, indexed_fp: null, stale: false, reason: 'no_embedding', dimension_mismatch: false });
+    renderCard();
+    await screen.findByTestId('rag-status-card');
+    expect(screen.getByTestId('rag-no-embedding')).toHaveTextContent('未配置 embedding 模型');
+  });
+
+  it('test_project_pending_shows_loading_empty：有项目但 status 未加载 → 加载态空态（区块不空置）', async () => {
+    renderCard();
+    // status 未初始化（fetch 返回 undefined/未 resolve）→ rag-status-card 恒渲染 + rag-empty 加载态
+    expect(await screen.findByTestId('rag-status-card')).toBeInTheDocument();
+    expect(screen.getByTestId('rag-empty')).toBeInTheDocument();
+  });
+});

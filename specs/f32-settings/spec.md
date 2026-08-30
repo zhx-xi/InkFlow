@@ -950,6 +950,8 @@ RED 批 1（后端契约）：test_settings_models → test_settings_repo → te
 
 ### 9.4 关键测试用例明细（契约断言清单）
 
+> 模型分类 RAG 区块前端契约（#824，2026-08-31 同步）：`RagStatusCard.test.tsx` 须含「UI 元素必须出现」断言——标题「向量检索（RAG）」、`rag-status-card`（内容卡恒渲染）、`rag-embedding-select`、`rag-reindex-btn`、`rag-no-embedding`（未配 embedding 空态）、无项目空态 `rag-empty`（请先在项目页选择项目）。详见 f19-gui/settings.md §1/§2/§3。
+
 | 测试文件 | 用例 | 断言要点 |
 |----------|------|----------|
 | test_settings_models.py | 默认值齐全 | AppSettings().model_dump() == 6 字段默认字典 |
