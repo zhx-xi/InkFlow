@@ -27,6 +27,7 @@ import inkflowIconInk from '../assets/inkflow-icon-plain-ink.svg?url&no-inline';
 import { SessionBar } from './SessionBar';
 import { useI18n } from '../i18n/useI18n';
 import { useThemeStore } from '../stores/theme';
+import { useProjectStore } from '../stores/project';
 import type { ThemeName } from '../theme';
 import { cn } from '../lib/cn';
 
@@ -114,6 +115,7 @@ function NavGroup({
 export function AppNav({ showBrand = true }: { showBrand?: boolean }) {
   const { t } = useI18n();
   const theme = useThemeStore((s) => s.theme);
+  const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const [collapsed, setCollapsed] = useState(false);
   const [searchParams] = useSearchParams();
   const activeCat = searchParams.get('cat');
@@ -186,7 +188,7 @@ export function AppNav({ showBrand = true }: { showBrand?: boolean }) {
               {!collapsed && <span className="truncate">{t(item.labelKey)}</span>}
             </NavLink>
           ))}
-          <SessionBar />
+          <SessionBar projectId={currentProjectId} />
         </NavGroup>
 
         <NavGroup testKey="system" labelKey="nav.group.system" icon={Settings} collapsed={collapsed}>

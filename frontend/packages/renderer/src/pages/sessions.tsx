@@ -517,7 +517,10 @@ export function SessionsPage() {
                         {t('sessions.chat.count', { n: item.conv.message_count })}
                       </span>
                     </div>
-                    <p className="mt-2 truncate text-[13px] text-ink-2">{item.conv.last_message}</p>
+                    {/* #825：title 与 last_message 相同时不重复展示（一次一个清晰标题）；不同时保留消息预览 */}
+                    {item.conv.last_message !== item.conv.title ? (
+                      <p className="mt-2 truncate text-[13px] text-ink-2">{item.conv.last_message}</p>
+                    ) : null}
                     <div className="mt-3 flex gap-2">
                       {renameTarget === item.conv.conversation_id ? (
                         <input
