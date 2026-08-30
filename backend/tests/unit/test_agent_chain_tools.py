@@ -27,6 +27,7 @@ import pytest
 
 from inkflow.infrastructure.agent.tools.agent_chain_tools import (
     AgentChainToolDeps,
+    _coerce_uuid,
     build_agent_chain_tools,
 )
 
@@ -65,6 +66,18 @@ class TestBuildAgentChainTools:
         tools = build_agent_chain_tools(_make_deps())
         names = [t.spec.name for t in tools]
         assert names == ["agent_run", "agent_call"]
+
+
+class TestCoerceUuid:
+    """_coerce_uuid 规范化 uuid.UUID（str 解析 / UUID 直传双路径，#275）。"""
+
+    def test_coerce_uuid_str(self) -> None:
+        """str 输入 → 解析为 uuid.UUID（deepagents 透传 LLM JSON 原值恒为 str）。"""
+        assert _coerce_uuid(str(PROJECT_ID)) == PROJECT_ID
+
+    def test_coerce_uuid_uuid_passthrough(self) -> None:
+        """uuid.UUID 实例直传 → 原实例原样返回（不重复解析）。"""
+        assert _coerce_uuid(PROJECT_ID) is PROJECT_ID
 
 
 class TestAgentRun:
@@ -110,6 +123,41 @@ class TestAgentRun:
         result = json.loads(await tools["agent_run"].func())
         assert result["ok"] is False
         assert "管线不存在" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_missing_project_context_envelope(self) -> None:
+        """expected_project_id=None（装配缺项目上下文）→ 失败信封，不执行管线。"""
+        deps = _make_deps()
+        deps.expected_project_id = None
+        tools = {t.spec.name: t for t in build_agent_chain_tools(deps)}
+        result = json.loads(await tools["agent_run"].func())
+        assert result["ok"] is False
+        assert result["error"] == "缺少项目上下文"
+        deps.agent_service.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_chapter_id_str_coerced_to_uuid(self) -> None:
+        """chapter_id 传 str → 内部 _coerce_uuid 规范化为 UUID 后透传 execute。"""
+        deps = _make_deps()
+        deps.agent_service.execute = AsyncMock(
+            return_value={"execution_id": "r", "status": "pending"}
+        )
+        tools = {t.spec.name: t for t in build_agent_chain_tools(deps)}
+        await tools["agent_run"].func(chapter_id=str(PROJECT_ID))
+        request = deps.agent_service.execute.await_args.args[0]
+        assert request.chapter_id == PROJECT_ID
+
+    @pytest.mark.asyncio
+    async def test_chapter_id_uuid_passthrough(self) -> None:
+        """chapter_id 传 uuid.UUID 实例 → 原样透传 execute（不重复解析）。"""
+        deps = _make_deps()
+        deps.agent_service.execute = AsyncMock(
+            return_value={"execution_id": "r", "status": "pending"}
+        )
+        tools = {t.spec.name: t for t in build_agent_chain_tools(deps)}
+        await tools["agent_run"].func(chapter_id=PROJECT_ID)
+        request = deps.agent_service.execute.await_args.args[0]
+        assert request.chapter_id is PROJECT_ID
 
 
 class TestAgentCall:

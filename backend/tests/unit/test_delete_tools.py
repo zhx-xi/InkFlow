@@ -183,3 +183,45 @@ class TestDeleteToolAudit:
         tools = {t.spec.name: t for t in build_delete_tools(deps)}
         result = json.loads(await tools["delete_character"].func(character_id="x"))
         assert result["ok"] is True  # 审计异常不影响主返回
+
+
+class TestDeleteCoerceUuid:
+    """delete_tools._coerce_uuid 规范化 uuid.UUID（str 解析 / UUID 直传双路径）。"""
+
+    def test_coerce_uuid_uuid_passthrough(self) -> None:
+        """uuid.UUID 实例直传 → 原实例原样返回（模块私有 helper 分支补测）。"""
+        from inkflow.infrastructure.agent.tools.delete_tools import _coerce_uuid
+
+        assert _coerce_uuid(PROJECT_ID) is PROJECT_ID
+
+    def test_coerce_uuid_str_parsed(self) -> None:
+        """str 输入 → 解析为 uuid.UUID（与 agent_chain_tools 同源 #275 语义）。"""
+        from inkflow.infrastructure.agent.tools.delete_tools import _coerce_uuid
+
+        assert _coerce_uuid(str(PROJECT_ID)) == PROJECT_ID
+
+
+class TestDeleteToolUuidEntityId:
+    """entity_id 为 uuid.UUID 实例（非 str 形态）→ 原值透传删除服务。"""
+
+    @pytest.mark.asyncio
+    async def test_uuid_entity_id_passthrough(self) -> None:
+        deps = _make_deps()
+        method = _mock_service(deps, "delete_character")
+        tools = {t.spec.name: t for t in build_delete_tools(deps)}
+        entity_uuid = uuid.UUID("550e8400-e29b-41d4-a716-44665544000d")
+        result = json.loads(await tools["delete_character"].func(character_id=entity_uuid))
+        assert result["ok"] is True
+        method.assert_awaited_once()
+        assert method.await_args.args[0] is entity_uuid
+
+    @pytest.mark.asyncio
+    async def test_unbound_project_id_skips_uuid_resolution(self) -> None:
+        """expected_project_id 与 func project_id 均缺省 → 跳过绑定项目 UUID 解析（None 分支）。"""
+        deps = _make_deps()
+        deps.expected_project_id = None
+        method = _mock_service(deps, "delete_character")
+        tools = {t.spec.name: t for t in build_delete_tools(deps)}
+        result = json.loads(await tools["delete_character"].func(character_id="x"))
+        assert result["ok"] is True
+        method.assert_awaited_once()
