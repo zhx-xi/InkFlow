@@ -313,6 +313,15 @@ describe('检索页 — 命中跳转（#683）', () => {
     await user.click(screen.getByTestId('search-hit'));
     expect(screen.getByTestId('location-display')).toHaveTextContent(`/library?cat=${cat}`);
   });
+
+  it('未知类型命中（default）→ 无操作（不跳转）', async () => {
+    seedProjects();
+    await searchHits([makeHit('unknown-type', 'u1', '未知实体')]);
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('search-hit'));
+    expect(screen.getByTestId('location-display')).not.toHaveTextContent(/writing/);
+    expect(screen.getByTestId('location-display')).not.toHaveTextContent(/\/library\?cat=/);
+  });
 });
 
 describe('检索页 — 未选项目不发请求（spec N2）', () => {
