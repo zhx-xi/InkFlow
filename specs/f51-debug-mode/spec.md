@@ -4,7 +4,7 @@
 > **所属阶段**: 0.13.0 里程碑（Issue #713/#714/#715，估算 4-7 人天）
 > **关联 Issues**: [#713](https://github.com/zhx-xi/InkFlow/issues/713)（后端 debug 开关 + 详细日志）· [#714](https://github.com/zhx-xi/InkFlow/issues/714)（Electron GUI DevTools + dev 钩子）· [#715](https://github.com/zhx-xi/InkFlow/issues/715)（serve 可直达端点）
 > **依赖**: 无硬前置（三条均为新增能力；#715 复用 #713 的 `INKFLOW_DEBUG` 语义，建议同批排期）
-> **参考 ADR**: [ADR-043](../../adr/ADR-043.md)（打包产物 Debug 模式总决策）· [ADR-008](../../adr/ADR-008.md)（pydantic settings 配置）· [ADR-016](../../adr/ADR-016.md)（loguru 日志）· [ADR-020](../../adr/ADR-020.md)（Electron 壳）· [ADR-021](../../adr/ADR-021.md)（内核进程化）· [ADR-030](../../adr/ADR-030.md)（本地内核服务化）
+> **参考 ADR**: [ADR-044](../../adr/ADR-044.md)（打包产物 Debug 模式总决策）· [ADR-008](../../adr/ADR-008.md)（pydantic settings 配置）· [ADR-016](../../adr/ADR-016.md)（loguru 日志）· [ADR-020](../../adr/ADR-020.md)（Electron 壳）· [ADR-021](../../adr/ADR-021.md)（内核进程化）· [ADR-030](../../adr/ADR-030.md)（本地内核服务化）
 > **状态**: 待实现 🔲
 
 ---
@@ -52,7 +52,7 @@
 class InkFlowConfig(BaseSettings):
     # ... 既有字段 ...
     debug: bool = False
-    """Debug 模式：INI 级别贯穿三层（见 ADR-043）。
+    """Debug 模式：INI 级别贯穿三层（见 ADR-044）。
     触发源优先级：进程 env INKFLOW_DEBUG > instance.env INKFLOW_DEBUG > config.json debug。
     """
 ```
@@ -218,7 +218,7 @@ def resolve_log_dir() -> Path:
 | 文件 | 内容 |
 |------|------|
 | `specs/f51-debug-mode/spec.md` | 本 spec |
-| `adr/ADR-043.md` | Debug 模式总决策（已随 spec 创建） |
+| `adr/ADR-044.md` | Debug 模式总决策（已随 spec 创建） |
 
 > 注：测试为本 spec 的主要代码产出，**扩展既有测试文件**（见 §9），不新建独立测试文件（除非契约测试过多需拆）。
 
@@ -231,7 +231,7 @@ def resolve_log_dir() -> Path:
 | `backend/src/inkflow/cli/commands/serve.py` | `--debug` flag + debug 分支（token /docs / uvicorn log_level） | §5.4 |
 | `frontend/packages/electron/src/main.ts` | `isDebugMode()`；`setupAppMenu(isPackaged, isDebug)`；auto-open DevTools；dev 钩子门控改 `!isPackaged \|\| isDebug` | §5.3 |
 | `frontend/packages/electron/src/kernel.ts` | 无核心改动（`INKFLOW_KERNEL_CMD` 分支保留）；如新增 debug 辅助读取可扩展 | §5.5 |
-| `adr/README.md` | 索引登记 ADR-043 | — |
+| `adr/README.md` | 索引登记 ADR-044 | — |
 | `AGENTS.md` / `FEATURES.md` | 里程碑收尾同步（0.13.0 五项同步，收尾 Phase） | — |
 
 ### 8.3 不修改（明确声明）
