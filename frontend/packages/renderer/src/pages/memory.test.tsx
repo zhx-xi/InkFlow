@@ -542,9 +542,7 @@ describe('记忆页 — 提取记忆', () => {
 
   it('提取无内容（summarized=false）→ warn toast「暂无可提取的记忆内容」', async () => {
     const user = userEvent.setup();
-    summarizeMemoryMock.mockImplementation(async () => ({
-      project_id: 'p1', summarized: false, project: null, user: null,
-    }));
+    summarizeMemoryMock.mockImplementation(async () => ({ project_id: 'p1', summarized: false, project: null, user: null }));
     seedProjects();
     renderMemoryPage();
     await screen.findByTestId('memory-summary-card');
