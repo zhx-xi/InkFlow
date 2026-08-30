@@ -66,3 +66,4 @@
 - N5：索引维护卡齐全（范围/类型/重建按钮），默认「当前项目」+「两者」；点重建先出确认弹窗（含 API 费用提示），确定才发请求
 - N6：重建三态闭环：running 轮询（2s 间隔，spinner+步骤+进度）→ done 绿块（rebuilt_at + 项目数）/ failed 红块（原因）；轮询异常或 404 落入 err 块且页面其余交互不受影响
 - N7：参数映射：范围=当前项目且已选项目 → project_ids=[id]；全部项目/未选 → null；索引类型 both/fulltext/vector 直传
+> 说明（#802）：本页重建走异步端点 POST /api/v1/index/rebuild（#659，202 异步 + task_id 轮询）为主；遗留同步端点 POST /api/v1/search/rebuild（routers/search.py:158）无 scope 参数、返回 rebuilt_at（非 task_id），标记 deprecated，不作为本页路径。

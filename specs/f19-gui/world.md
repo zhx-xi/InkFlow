@@ -59,7 +59,7 @@
 | 树 toggle（world-tree-toggle） | 展开态（箭头 90°） | 收起/展开子树 | — | 子树隐藏/显示 | — | 仅子节点行渲染；默认全部展开 |
 | 行编辑（lib-edit） | 悬停显现 | 打开编辑对话框（预填 name/category/content） | saving 禁用 | PATCH 成功 → 关框 + 刷新 + 顶部「已保存」 | err toast | 类别编辑态优先 editing.category |
 | 行删除（lib-delete） | 悬停显现 | ConfirmDialog（lib-confirm-dialog，追加红字级联警告行） | DELETE ?cascade=true | ok toast + 树刷新 | err toast + 关框 | 警告「该条目及其全部子条目将级联删除，不可恢复」；遮罩点击不关闭 |
-| 行复制（world-copy） | 悬停显现 | 打开 CopyDialog（subtree 模式，rootId 绑定） | copying 禁用 | ok toast「已复制 n 条到 name」+ warnings 追加 warn toast / skipped 追加跳过数 | err toast，对话框保持打开可重试（E24） | 目标项目排除当前项目；确认 disabled 直至目标已选；Esc 关闭 |
+| 行复制（world-copy） | 悬停显现 | 打开 CopyDialog（subtree 模式，rootId 绑定） | copying 禁用 | ok toast「已复制 n 条到 name」+ warnings 非空只发第一条 warn，否则才发 skipped 跳过数（互斥，防刷屏 E23） | err toast，对话框保持打开可重试（E24） | 目标项目排除当前项目；确认 disabled 直至目标已选；Esc 关闭 |
 | 整体复制（world-copy-all） | 右缘按钮（ml-auto） | 打开 CopyDialog（all 模式，范围 chips 隐藏） | copying 禁用 | 同上 toast 语义 | err toast + 保持打开 | 仅 1 项目 → disabled + title「需至少两个项目才能复制」（E21） |
 | 创建/编辑对话框 | 与 library 通用双模式 | 名称必填 | saving | POST/PATCH → 关框 + 刷新 | err toast | 根条目（isRoot）隐藏类别输入；选中分类新建 = 创建子条目（标题「创建分类」） |
 | 工作台面包屑 | 三段可点 + 当前地图名 | 层级 1/2（设定库/世界观）→ 退出工作台；层级 3（地图视图）→ 清空选中地图 | — | 视图切换 | — | 当前地图名纯展示（含 🗺 前缀） |
