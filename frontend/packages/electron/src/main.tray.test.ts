@@ -284,6 +284,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe('单实例锁与 second-instance（spec §5.5 / 边界#7-9）', () => {
@@ -533,5 +534,61 @@ describe('回归防护：内核路径来源（#187/#192 F1）', () => {
         Object.defineProperty(process, 'resourcesPath', { value: prev, configurable: true });
       }
     }
+  });
+});
+
+// ══ F51 debug-mode：dev 测试钩子门控（打包版 + INKFLOW_DEBUG=1 时仍暴露）═══════════
+// 契约（GREEN 由 Codex 实现）：
+//   - updateKernelInfoHook / updateTrayInfoHook 门控改 `if (app.isPackaged && !isDebugMode()) return;`
+//   - whenReady 内 `if (!app.isPackaged || isDebugMode()) { exposeTrayDevHooks(); }`
+//   - isDebugMode() 读 process.env.INKFLOW_DEBUG（truthy 如 '1' 视为 debug，env 最高优先）
+// RED 阶段：门控仍是 `app.isPackaged` → 打包版钩子不暴露 → 正向用例断言失败 = 有效 RED；
+// 负向用例（打包版无 debug）当前实现天然满足 = 守卫（防 GREEN 过度暴露）。
+// ⚠️ globalThis 钩子是模块内函数写入：文件顶部 dev 实例（isPackaged=false）启动期已写入
+//   __trayInfo/__trayActions——用例前必须 delete 清理，否则负向断言受残留污染。
+describe('dev 钩子门控（F51 debug-mode：打包版 + INKFLOW_DEBUG 也暴露测试钩子）', () => {
+  beforeEach(() => {
+    // READY 触发后 startHealthCheck 会打真实 /health —— stub fetch 杜绝真实网络（window-controls 先例）
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true })));
+  });
+
+  /** 清理跨 freshInstance 残留的 globalThis 测试钩子（默认 dev 实例启动期已写入） */
+  const deleteHookGlobals = (): void => {
+    delete (globalThis as { __kernelInfo?: unknown }).__kernelInfo;
+    delete (globalThis as { __trayInfo?: unknown }).__trayInfo;
+    delete (globalThis as { __trayActions?: unknown }).__trayActions;
+  };
+
+  it('正向：打包版 + INKFLOW_DEBUG=1 → 暴露 __trayInfo/__trayActions；READY 后暴露 __kernelInfo', async () => {
+    deleteHookGlobals();
+    vi.stubEnv('INKFLOW_DEBUG', '1');
+    appMock.isPackaged = true;
+    await freshInstance();
+    await flushMicrotasks(); // whenReady 续体（createTray / exposeTrayDevHooks）跑完
+    // RED：exposeTrayDevHooks 被 `if (!app.isPackaged)` 挡掉 + updateTrayInfoHook 被
+    // `if (app.isPackaged)` 挡掉 → 均为 undefined → 失败 = 有效 RED（门控未改）
+    expect((globalThis as { __trayInfo?: unknown }).__trayInfo).toBeDefined();
+    expect((globalThis as { __trayActions?: unknown }).__trayActions).toBeDefined();
+    // 内核就绪 → __kernelInfo 钩子（readline 'line' 回调同步执行，window-controls 先例）
+    fakeChild.stdout.emit(
+      'data',
+      Buffer.from('INKFLOW_READY {"port":1,"token":"t","pid":4242,"version":"0.1.0"}\n')
+    );
+    await flushMicrotasks();
+    const kernelHook = (globalThis as {
+      __kernelInfo?: { pid: number; port: number; token: string };
+    }).__kernelInfo;
+    expect(kernelHook).toBeDefined();
+    expect(kernelHook?.port).toBe(1);
+  });
+
+  it('负向：打包版 + 无 INKFLOW_DEBUG → 不暴露任何测试钩子（F51 门控守卫）', async () => {
+    deleteHookGlobals();
+    appMock.isPackaged = true;
+    await freshInstance();
+    await flushMicrotasks();
+    expect((globalThis as { __kernelInfo?: unknown }).__kernelInfo).toBeUndefined();
+    expect((globalThis as { __trayInfo?: unknown }).__trayInfo).toBeUndefined();
+    expect((globalThis as { __trayActions?: unknown }).__trayActions).toBeUndefined();
   });
 });

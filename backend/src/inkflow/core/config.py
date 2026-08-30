@@ -65,6 +65,42 @@ def _default_data_dir() -> Path:
     return Path("./data")
 
 
+def load_config_json(data_dir: Path) -> dict:
+    """从 {data_dir}/config.json 加载配置.
+
+    Args:
+        data_dir: 数据目录路径.
+
+    Returns:
+        配置 dict，文件不存在时返回空 dict.
+    """
+    config_file = data_dir / "config.json"
+    if not config_file.exists():
+        return {}
+    try:
+        return dict(_json.loads(config_file.read_text(encoding="utf-8")))
+    except (_json.JSONDecodeError, OSError):
+        logger.warning("config.json 解析失败，使用默认值")
+        return {}
+
+
+def save_config_json(data_dir: Path, updates: dict) -> None:
+    """合并更新到 config.json.
+
+    Args:
+        data_dir: 数据目录路径.
+        updates: 要更新的 key-value 对.
+    """
+    config_file = data_dir / "config.json"
+    current = load_config_json(data_dir)
+    current.update(updates)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(
+        _json.dumps(current, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 class InkFlowConfig(BaseSettings):
     """应用全局配置，可通过环境变量 `INKFLOW_*` 覆盖。"""
 
@@ -151,6 +187,11 @@ class InkFlowConfig(BaseSettings):
     langsmith_endpoint: str = ""
     """LangSmith 自托管端点。空 = SaaS smith.langchain.com。"""
 
+    debug: bool = False
+    """Debug 模式：INI 级别贯穿三层（见 ADR-044）。
+    触发源优先级：进程 env INKFLOW_DEBUG > instance.env INKFLOW_DEBUG > config.json debug。
+    """
+
     # ---- Embedding 模型 ----
     embedding_model: str = ""
     """Embedding 模型（已弃用本地 embedding，空 = 未配置；装配以 ProviderConfig
@@ -191,6 +232,7 @@ class InkFlowConfig(BaseSettings):
         """基于 data_dir 派生 database_url / vector_store_dir（spec §2.1.1）。
 
         仅当字段未被显式设置（env 覆盖 / 构造参数）时才派生，保证显式值优先。
+        debug 触发源优先级：env INKFLOW_DEBUG > instance.env > config.json（ADR-044/D1）。
         """
         # data_dir 目录必须存在：SQLite 不自动创建父目录（实测 unable to open database file）
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -198,6 +240,15 @@ class InkFlowConfig(BaseSettings):
             self.database_url = f"sqlite+aiosqlite:///{(self.data_dir / 'inkflow.db').as_posix()}"
         if "vector_store_dir" not in self.model_fields_set:
             self.vector_store_dir = self.data_dir / "chroma"
+        # env 未显式设（含 env=0 也入 set，故 0 不被 instance.env/config.json 覆盖，D8）
+        if "debug" not in self.model_fields_set:
+            ie = load_instance_env()
+            if "INKFLOW_DEBUG" in ie:
+                self.debug = ie["INKFLOW_DEBUG"] == "1"
+            else:
+                cfg = load_config_json(self.data_dir)
+                if "debug" in cfg:
+                    self.debug = bool(cfg["debug"])
         return self
 
 
@@ -215,39 +266,3 @@ CONFIG_WHITELIST: dict[str, str] = {
     "server.host": "server_host",
     "server.port": "server_port",
 }
-
-
-def load_config_json(data_dir: Path) -> dict:
-    """从 {data_dir}/config.json 加载配置.
-
-    Args:
-        data_dir: 数据目录路径.
-
-    Returns:
-        配置 dict，文件不存在时返回空 dict.
-    """
-    config_file = data_dir / "config.json"
-    if not config_file.exists():
-        return {}
-    try:
-        return dict(_json.loads(config_file.read_text(encoding="utf-8")))
-    except (_json.JSONDecodeError, OSError):
-        logger.warning("config.json 解析失败，使用默认值")
-        return {}
-
-
-def save_config_json(data_dir: Path, updates: dict) -> None:
-    """合并更新到 config.json.
-
-    Args:
-        data_dir: 数据目录路径.
-        updates: 要更新的 key-value 对.
-    """
-    config_file = data_dir / "config.json"
-    current = load_config_json(data_dir)
-    current.update(updates)
-    data_dir.mkdir(parents=True, exist_ok=True)
-    config_file.write_text(
-        _json.dumps(current, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )

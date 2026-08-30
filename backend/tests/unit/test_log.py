@@ -86,3 +86,52 @@ def test_setup_logging_accepts_custom_log_dir(monkeypatch, tmp_path):
         logger.remove()
         for p in created:
             p.unlink(missing_ok=True)
+
+
+# ---- F51 debug-mode：日志目录 frozen 分支 + console 级别 debug 提升 ----
+def test_resolve_log_dir_frozen_uses_config_data_dir(monkeypatch, tmp_path):
+    """F51-frozen：打包模式（sys.frozen=True）→ 日志目录 = config.data_dir/logs。
+
+    RED 阶段 resolve_log_dir 无 frozen 分支 → 仍返回 backend/logs → 断言 FAIL
+    （GREEN 义务：`if getattr(sys, "frozen", False): return config.data_dir / "logs"`）。
+    """
+    import importlib
+
+    # config 是模块级单例：import inkflow.core.config as cfg_mod 会绑定到实例
+    # （memory 已知坑），须 importlib 取真模块再 patch 单例实例属性
+    cfg_mod = importlib.import_module("inkflow.core.config")
+    monkeypatch.setattr(cfg_mod.config, "data_dir", tmp_path)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    result = log_module.resolve_log_dir()
+
+    assert result == tmp_path / "logs"
+
+
+def test_resolve_log_dir_dev_keeps_backend_logs(monkeypatch):
+    """F51-dev 守护：非 frozen → 保持 backend/logs 不变（防 frozen 分支破坏 dev 行为）。"""
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+
+    result = log_module.resolve_log_dir()
+
+    assert result == _EXPECTED_LOG_DIR
+
+
+def test_setup_logging_debug_forces_console_debug(monkeypatch, tmp_path):
+    """F51-debug：config.debug=True → console/stderr sink 提升为 DEBUG（levelno=10）。
+
+    RED 阶段 config 单例无 debug 字段 → monkeypatch.setattr 抛 AttributeError
+    （字段缺失信号；GREEN 义务：新增 debug 字段 + console sink level 改
+    "DEBUG" if config.debug else config.log_level）。
+    """
+    import importlib
+
+    cfg_mod = importlib.import_module("inkflow.core.config")
+    monkeypatch.setattr(cfg_mod.config, "debug", True)  # RED 字段缺失即 AttributeError
+    monkeypatch.setattr(cfg_mod.config, "log_level", "INFO")
+    monkeypatch.setattr(log_module, "resolve_log_dir", lambda: tmp_path / "logs")
+
+    log_module.setup_logging()
+
+    handlers = list(logger._core.handlers.values())
+    assert handlers[0].levelno == 10  # loguru DEBUG = 10

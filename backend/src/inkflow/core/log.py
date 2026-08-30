@@ -13,7 +13,11 @@ def resolve_log_dir() -> Path:
 
     bug 背景（Issue #11）：文件 sink 使用相对路径 ``logs/...`` 时，日志落点
     随进程 cwd 漂移。此处从模块文件位置向上定位 backend 根目录，保证稳定。
+    F51 修正（ADR-044）：frozen 打包模式下 __file__ 指向包内路径（parents[3]
+    不再落到可写 backend 根）→ 日志落 config.data_dir/logs（默认 %APPDATA%/InkFlow/logs）。
     """
+    if getattr(sys, "frozen", False):
+        return config.data_dir / "logs"
     # backend/src/inkflow/core/log.py → parents[3] = backend 根目录
     backend_root = Path(__file__).resolve().parents[3]
     return backend_root / "logs"
@@ -29,7 +33,7 @@ def setup_logging(log_dir: Path | None = None) -> None:
     logger.remove()  # 移除默认 handler
     logger.add(
         sys.stderr,
-        level=config.log_level,
+        level="DEBUG" if config.debug else config.log_level,
         format=(
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> "
             "| <level>{level: <8}</level> "

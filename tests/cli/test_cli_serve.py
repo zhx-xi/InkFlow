@@ -502,3 +502,101 @@ class TestServeShutdown:
 
         assert result.exit_code == 0
         assert "🚀 InkFlow 服务启动于 http://0.0.0.0:9999" in result.output
+
+
+class TestServeDebugMode:
+    """--debug 模式（F51）：token 固定默认串 / INKFLOW_DEBUG_TOKEN 覆盖、/docs 自动打开用实际端口、
+    uvicorn log_level=debug。
+
+    GREEN 实现契约（serve.py 必须满足）：
+    - serve() 注册 `debug: bool = typer.Option(False, "--debug", ...)`；
+      生效条件 `is_debug = config.debug or debug`（config 来自 inkflow.core.config）。
+    - token 解析：--debug 时缺省 token 用固定默认串（确定性，非随机），
+      INKFLOW_DEBUG_TOKEN env 可覆盖；非 debug 保持 secrets.token_urlsafe(32) 随机（既有契约不变）。
+    - _run_server(host, port, reload, debug=False)：debug=True 时 uvicorn log_level="debug"，
+      否则 "info"（既有契约不变）。
+    - debug 自动打开 /docs：在 _run_server 返回后（拿到 actual_port）注册
+      threading.Timer(1.5, lambda: webbrowser.open(f"http://{host}:{actual_port}/docs"))，
+      URL 用实际端口而非请求端口（--port 0 动态端口语义）；既有 --open-browser 行为不变。
+    - INKFLOW_READY 四字段 port/token/pid/version 在 --debug 下不变。
+    """
+
+    def test_debug_token_uses_env(self, cli_runner, monkeypatch):
+        """--debug + INKFLOW_DEBUG_TOKEN=fnord：token 用 env 值（覆盖固定默认串）。"""
+        monkeypatch.setenv("INKFLOW_DEBUG_TOKEN", "fnord")
+        from inkflow.cli.commands.serve import app
+
+        with patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT):
+            result = cli_runner.invoke(app, ["--debug"])
+        assert result.exit_code == 0
+        assert _parse_ready(result.output)["token"] == "fnord"
+        assert os.environ["INKFLOW_SERVER_TOKEN"] == "fnord"
+
+    def test_debug_default_token_fixed_across_starts(self, cli_runner, monkeypatch):
+        """--debug 缺省 token：固定默认串（确定性），两次启动 token 相同（非随机）。"""
+        monkeypatch.delenv("INKFLOW_DEBUG_TOKEN", raising=False)
+        from inkflow.cli.commands.serve import app
+
+        with patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT):
+            result1 = cli_runner.invoke(app, ["--debug"])
+        with patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT):
+            result2 = cli_runner.invoke(app, ["--debug"])
+        token1 = _parse_ready(result1.output)["token"]
+        token2 = _parse_ready(result2.output)["token"]
+        assert token1  # 非空
+        assert token1 == token2  # 确定性：两次启动相同
+
+    def test_debug_auto_open_docs_uses_actual_port(self, cli_runner):
+        """--debug：_run_server 返回后注册 Timer(1.5) 打开 /docs，URL 用实际端口而非请求端口。"""
+        from inkflow.cli.commands.serve import app
+
+        with (
+            patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT),
+            patch("threading.Timer") as mock_timer,
+            patch("webbrowser.open") as mock_wb,
+        ):
+            result = cli_runner.invoke(app, ["--debug", "--port", "0"])
+            assert result.exit_code == 0
+            mock_timer.assert_called_once()
+            assert mock_timer.call_args.args[0] == 1.5
+            # Timer 未触发前不得打开浏览器
+            mock_wb.assert_not_called()
+            # 触发 Timer 回调 → webbrowser.open 打开 /docs（URL 用实际端口 FAKE_PORT，非请求端口 0）
+            mock_timer.call_args.args[1]()
+            mock_wb.assert_called_once_with(f"http://127.0.0.1:{FAKE_PORT}/docs")
+
+    def test_debug_run_server_receives_debug_true(self, cli_runner):
+        """--debug：装配缝收到 debug=True（第 4 参，兼容 kwargs 风格）。"""
+        from inkflow.cli.commands.serve import app
+
+        with patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT) as mock_run:
+            result = cli_runner.invoke(app, ["--debug"])
+        assert result.exit_code == 0
+        assert _param(mock_run.call_args, "debug", 3) is True
+
+    def test_debug_uvicorn_log_level_debug(self):
+        """debug=True：uvicorn log_level="debug"（镜像 TestRunServerSeam patch 方式）。"""
+        import inkflow.cli.commands.serve as serve_mod
+
+        fake_server = MagicMock()
+        fake_server.started = True  # 跳过 started 轮询等待
+        with (
+            patch("uvicorn.Config") as mock_config_cls,
+            patch("uvicorn.Server", return_value=fake_server),
+            patch(f"{SERVE_MOD}.threading.Thread"),
+            patch(f"{SERVE_MOD}._server_thread", None),
+            patch(f"{SERVE_MOD}._current_server", None),
+        ):
+            actual = serve_mod._run_server("127.0.0.1", 8000, False, True)
+
+        assert actual == 8000
+        assert _param(mock_config_cls.call_args, "log_level", 4) == "debug"
+
+    def test_debug_ready_four_fields(self, cli_runner):
+        """--debug：INKFLOW_READY 交付行四字段 port/token/pid/version 契约不变。"""
+        from inkflow.cli.commands.serve import app
+
+        with patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT):
+            result = cli_runner.invoke(app, ["--debug"])
+        assert result.exit_code == 0
+        assert set(_parse_ready(result.output)) == {"port", "token", "pid", "version"}

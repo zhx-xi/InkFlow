@@ -128,4 +128,27 @@ describe('setupAppMenu（菜单移除 + DevTools 快捷键，spec §5.2.9 / M9�
     expect(() => setupAppMenu(false)).not.toThrow();
     expect(globalShortcut.register).toHaveBeenCalledTimes(2);
   });
+
+  // ══ F51 debug-mode：打包版 + debug 门控（GREEN 签名 setupAppMenu(isPackaged, isDebug = false)）══
+  // 契约：`if (isPackaged && !isDebug) return;` —— 打包版仅在 debug 时放行注册 F12/Ctrl+Shift+I；
+  // 两个模式仍都先 Menu.setApplicationMenu(null)。
+  // RED 阶段：setupAppMenu 签名仅 isPackaged 单参（extra 参数被 esbuild 丢弃）→ isPackaged=true
+  // 提前 return、零注册 → 下方长度断言失败 = 有效 RED。
+  it('打包版 + debug（setupAppMenu(true,true)）：菜单移除且注册 F12/Ctrl+Shift+I（F51 门控）', () => {
+    setupAppMenu(true, true);
+    expect(Menu.setApplicationMenu).toHaveBeenCalledWith(null);
+    const accelerators = vi
+      .mocked(globalShortcut.register)
+      .mock.calls.map((call) => call[0]);
+    expect(accelerators).toHaveLength(2);
+    expect(accelerators).toEqual(expect.arrayContaining(['F12', 'Ctrl+Shift+I']));
+  });
+
+  it('打包版 + 非 debug（setupAppMenu(true,false)）：菜单移除且零注册（F51 门控守卫）', () => {
+    // 守卫用例：当前实现（isPackaged → return）天然满足；GREEN 的
+    // `if (isPackaged && !isDebug) return;` 也必须保持零注册（防回归）
+    setupAppMenu(true, false);
+    expect(Menu.setApplicationMenu).toHaveBeenCalledWith(null);
+    expect(globalShortcut.register).not.toHaveBeenCalled();
+  });
 });

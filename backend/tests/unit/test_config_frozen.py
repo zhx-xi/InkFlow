@@ -132,3 +132,32 @@ def test_settings_env_override_wins_over_frozen_default(monkeypatch, tmp_path) -
     # Assert
     assert settings.data_dir == custom_data
     assert settings.vector_store_dir == custom_data / "chroma"
+
+
+# ---- F51 debug 字段：config.json debug=true 触发（env INKFLOW_DEBUG 未设时）----
+def test_debug_config_json_triggers(monkeypatch, tmp_path) -> None:
+    """F51-配置：config.json 含 "debug": true → settings.debug is True。
+
+    RED 阶段 InkFlowConfig 无 debug 字段 → settings.debug 访问抛 AttributeError
+    （GREEN 义务：新增 debug: bool = False 字段 + model_validator 并入 config.json）。
+    """
+    import importlib
+
+    # 真实 APPDATA 下可能存在 instance.env（含 INKFLOW_DEBUG/DATA_DIR），
+    # 把 get_instance_env_path 固定到不存在的临时锚点，保证本用例只测 config.json 触发
+    core_config_mod = importlib.import_module("inkflow.core.config")
+    monkeypatch.setattr(
+        core_config_mod,
+        "get_instance_env_path",
+        lambda: tmp_path / "nonexistent" / "instance.env",
+        raising=False,
+    )
+    monkeypatch.delenv("INKFLOW_DEBUG", raising=False)
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "config.json").write_text('{"debug": true}', encoding="utf-8")
+
+    settings = InkFlowConfig(data_dir=data_dir)
+
+    assert settings.debug is True
