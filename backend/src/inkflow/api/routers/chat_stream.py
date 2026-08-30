@@ -130,6 +130,12 @@ def _encode_frame(ev: ChatStreamEvent, run_id: str | None = None) -> str:
             "result": _result_to_str(ev.result),
             "done": False,
         }
+    elif type_field == "interrupt":
+        payload = {
+            "type": "interrupt",
+            "payload": ev.payload,
+            "done": False,
+        }
     elif type_field == "run_started":
         payload = {"type": "run_started", "id": ev.id, "done": False}
     elif type_field == "reasoning":

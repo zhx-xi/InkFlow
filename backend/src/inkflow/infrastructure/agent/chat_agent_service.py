@@ -81,6 +81,8 @@ class ChatAgentService:
         # on_tool_end.run_id → (step_index, tool_index) 映射（AgentToolCall 无 id 字段，
         # 结果回填按 AIMessage.tool_calls[].id ↔ on_tool_end.run_id 匹配）
         self._tool_call_index: dict[str, tuple[int, int]] = {}
+        # #766 阶段③：HITL resume 续跑 thread_id（装配期赋值或默认空；InMemorySaver 按 thread 隔离）
+        self._thread_id: str = ""
 
     async def stream_events(
         self,
@@ -186,6 +188,26 @@ class ChatAgentService:
                         name=ev.get("name"),
                         result=result,
                     )
+                elif ev.get("event") == "on_chain_stream":
+                    chunk = ev.get("data", {}).get("chunk")
+                    # #766 阶段③：langgraph interrupt 经 chunk["__interrupt__"] 流出
+                    # （父侧探针实测 langgraph 1.2.10）。提取 Interrupt.value → interrupt 帧。
+                    if isinstance(chunk, dict) and "__interrupt__" in chunk:
+                        interrupts = chunk["__interrupt__"]
+                        payload = None
+                        # Interrupt 对象 .value 属性（或元组元素）；payload 为 tool 三键
+                        if interrupts:
+                            first = (
+                                interrupts[0]
+                                if isinstance(interrupts, (list, tuple))
+                                else interrupts
+                            )
+                            value = getattr(first, "value", None) or (
+                                first if isinstance(first, dict) else None
+                            )
+                            if isinstance(value, dict):
+                                payload = value
+                        yield ChatStreamEvent(type="interrupt", payload=payload, done=False)
             if not cancelled:
                 yield ChatStreamEvent(type="done", done=True)
         except LLMRequestError:
@@ -193,6 +215,20 @@ class ChatAgentService:
         except Exception as exc:
             yield ChatStreamEvent(type="error", done=True, error=f"工具执行失败: {exc}")
             yield ChatStreamEvent(type="done", done=True)
+
+    async def resume(self, *, conversation_id: str, approved: bool) -> dict:
+        """#766 阶段③：HITL 中断续跑——给 agent invoke Command(resume={"approved": approved})。
+
+        复用书级 HITL resume 模式（book_agentic_pipeline.py::resume）：需 checkpointer +
+        thread_id（本服务 agent 已由装配期注入 InMemorySaver + 每次 run thread_id，见 harness）。
+        """
+        from langgraph.types import Command
+
+        await self._agent.ainvoke(  # type: ignore[attr-defined]  # 鸭子类型：deepagents CompiledStateGraph 提供 ainvoke
+            Command(resume={"approved": approved}),
+            config={"configurable": {"thread_id": self._thread_id}},
+        )
+        return {"ok": True}
 
     def consume_trace(self) -> tuple[list[AgentStep], str, int]:
         """#615：消费 trace 收集器 → (steps, final_content, token_usage_total) 并清空。

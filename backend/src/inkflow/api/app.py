@@ -43,6 +43,10 @@ from inkflow.api.routers import (
     world_settings,
     writing,
 )
+
+# #766 阶段③：chat_resume 的 Depends(get_chat_agent_service) 依赖 chat_stream 模块级
+# 注册 deps.ChatStreamRequest（FastAPI 注解求值），必须在 chat_stream 之后导入。
+from inkflow.api.routers import chat_resume as chat_resume_router
 from inkflow.api.routers import (
     config as config_router,
 )
@@ -234,6 +238,7 @@ app.include_router(maps.router)
 app.include_router(mcp.router)
 app.include_router(writing.router)
 app.include_router(chat_stream.router)
+app.include_router(chat_resume_router.router)
 app.include_router(agent.router)
 app.include_router(books.router)
 app.include_router(agent_runs.router)
