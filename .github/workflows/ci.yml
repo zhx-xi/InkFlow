@@ -956,6 +956,12 @@ jobs:
           name: coverage-frontend-electron
           path: frontend-coverage/electron
 
+      # 前端覆盖率门禁：coverage-frontend 此前只归档不做判断（真正的 gate 藏在 required 的
+      # unit-frontend vitest --coverage thresholds）。此处补上独立判断，阈值与 unit-frontend
+      # 对齐（renderer 92/85/80/92、electron 88/90/80/88）；后续提高阈值须同步 vitest.config.ts。
+      - name: Coverage gate (renderer/electron >= unit thresholds)
+        run: python3 ci_cd/check_frontend_coverage.py frontend-coverage/renderer/coverage-summary.json frontend-coverage/electron/coverage-summary.json
+
       - name: Re-bundle coverage reports
         uses: actions/upload-artifact@v7
         with:
