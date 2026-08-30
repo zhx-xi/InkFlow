@@ -209,6 +209,25 @@ body[data-state="collapsed"] .rail-toggle-open{display:flex !important}
 body[data-state="empty"] .page-writing{display:none}
 body[data-state="empty"] .writing-empty{display:flex}
 
+/* ── 删除授权三态控件 + HITL 确认弹窗（#766） ── */
+.delete-auth-control{display:none;align-items:center;gap:4px}
+.delete-auth-control button{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:2px 8px;font-size:12px;color:var(--ink-2)}
+.delete-auth-control button[data-selected="true"]{border-color:var(--accent);color:var(--ink)}
+.delete-auth-control button:disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
+body[data-state="delete-auth"] .delete-auth-control,body[data-state="delete-hitl"] .delete-auth-control{display:flex}
+.delete-hitl-dialog{display:none;position:fixed;inset:0;z-index:100;align-items:center;justify-content:center;background:rgba(0,0,0,.4)}
+body[data-state="delete-hitl"] .delete-hitl-dialog{display:flex}
+body[data-state="delete-hitl"] .delete-auth-control button{opacity:.4;pointer-events:none}
+.delete-hitl-dialog .delete-hitl-card{min-width:220px;border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:12px 16px;box-shadow:var(--shadow-hover)}
+.delete-hitl-dialog h3{margin:0 0 4px;font-size:13px;font-weight:500;color:var(--ink)}
+.delete-hitl-dialog p{margin:0 0 12px;font-size:13px;color:var(--ink-2)}
+.delete-hitl-dialog .delete-hitl-actions{display:flex;justify-content:flex-end;gap:8px}
+.delete-hitl-dialog .delete-hitl-actions button{border-radius:6px;padding:4px 12px;font-size:12px}
+.delete-hitl-dialog .delete-hitl-actions button[data-testid="delete-confirm-cancel"]{border:1px solid var(--line);background:var(--surface);color:var(--ink-2)}
+.delete-hitl-dialog .delete-hitl-actions button[data-testid="delete-confirm-cancel"]:hover{background:var(--surface-3)}
+.delete-hitl-dialog .delete-hitl-actions button[data-testid="delete-confirm-approve"]{border:none;background:var(--accent);color:var(--accent-ink)}
+.delete-hitl-dialog .delete-hitl-actions button[data-testid="delete-confirm-approve"]:hover{background:var(--accent-hover)}
+
 /* ═══════════ 演示切换条（截图前隐藏） ═══════════ */
 .demo-bar{position:fixed;right:14px;bottom:14px;z-index:200;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-hover);padding:8px 12px;font-size:12px;color:var(--ink-2)}
 .demo-bar select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 6px}
@@ -372,6 +391,11 @@ body[data-state="empty"] .writing-empty{display:flex}
               <span class="tag">生成中</span>
               <span class="stream-text">剑冢深处传来一声极轻的叹息，像是锈铁在风中剥落。苏云舟的指尖抚过最近的一柄残剑，剑身上刻着三个字——</span><span class="cursor"></span>
             </div>
+            <div class="delete-auth-control" data-testid="delete-auth-control" style="display:none">
+              <button type="button" data-testid="delete-mode-manual" data-selected="true" aria-pressed="true">手动</button>
+              <button type="button" data-testid="delete-mode-ask-once" data-selected="false" aria-pressed="false">一次确认</button>
+              <button type="button" data-testid="delete-mode-auto" data-selected="false" aria-pressed="false">全自动</button>
+            </div>
             <div class="chat-input-row">
               <textarea data-testid="chat-input" placeholder="与 AI 对话，如「帮我写一段打斗场景」"></textarea>
               <button class="btn-send" data-testid="chat-send">发送</button>
@@ -455,6 +479,8 @@ body[data-state="empty"] .writing-empty{display:flex}
       <option value="streaming">SSE 流式生成中</option>
       <option value="collapsed">右栏折叠</option>
       <option value="empty">无项目空态</option>
+      <option value="delete-auth">删除授权（三态）</option>
+      <option value="delete-hitl">删除授权 HITL 弹窗</option>
     </select>
   </label>
   <span class="sep"></span>
@@ -465,6 +491,18 @@ body[data-state="empty"] .writing-empty{display:flex}
       <option value="ink">墨韵 · 东方</option>
     </select>
   </label>
+</div>
+
+<!-- HITL 删除授权确认弹窗（#766：delete-hitl 状态显示） -->
+<div class="delete-hitl-dialog" data-testid="delete-confirm-dialog" role="dialog" aria-modal="true" style="display:none">
+  <div class="delete-hitl-card">
+    <h3>确认删除</h3>
+    <p>李四</p>
+    <div class="delete-hitl-actions">
+      <button type="button" data-testid="delete-confirm-cancel">取消</button>
+      <button type="button" data-testid="delete-confirm-approve">确认删除</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -523,7 +561,7 @@ document.querySelectorAll('[data-ic]').forEach(el=>{
 });
 
 /* ── 状态机：body[data-state] 驱动视图 ── */
-const STATES = ['editor-idle','streaming','collapsed','empty'];
+const STATES = ['editor-idle','streaming','collapsed','empty','delete-auth','delete-hitl'];
 function setState(s){
   document.body.dataset.state = s;
   const streaming = s === 'streaming';
@@ -535,6 +573,10 @@ function setState(s){
   rail.dataset.collapsed = s === 'collapsed' ? 'true' : 'false';
   document.querySelector('.rail-toggle').style.display = s === 'collapsed' ? 'none' : '';
   document.querySelector('.rail-toggle-open').style.display = s === 'collapsed' ? '' : 'none';
+  const deleteHitl = s === 'delete-hitl';
+  document.querySelector('.delete-auth-control').style.display = (s === 'delete-auth' || deleteHitl) ? 'flex' : 'none';
+  document.querySelector('.delete-hitl-dialog').style.display = deleteHitl ? 'flex' : 'none';
+  document.querySelectorAll('.delete-auth-control button').forEach(btn => { btn.disabled = deleteHitl; });
 }
 function setTheme(th){
   document.documentElement.dataset.theme = th;
