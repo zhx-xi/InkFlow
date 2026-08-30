@@ -944,6 +944,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 仓库文件（ci_cd/check_frontend_coverage.py）是 gate 脚本，必须 checkout 才存在。
+      # coverage-frontend 此前只归档 artifact 从不落仓库，故需显式检查出仓库。
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - name: Download renderer coverage
         uses: actions/download-artifact@v7
         with:
@@ -955,6 +961,12 @@ jobs:
         with:
           name: coverage-frontend-electron
           path: frontend-coverage/electron
+
+      # 前端覆盖率门禁：coverage-frontend 此前只归档不做判断（真正的 gate 藏在 required 的
+      # unit-frontend vitest --coverage thresholds）。此处补上独立判断，阈值与 unit-frontend
+      # 对齐（renderer 92/85/80/92、electron 88/90/80/88）；后续提高阈值须同步 vitest.config.ts。
+      - name: Coverage gate (renderer/electron >= unit thresholds)
+        run: python3 ci_cd/check_frontend_coverage.py frontend-coverage/renderer/coverage-summary.json frontend-coverage/electron/coverage-summary.json
 
       - name: Re-bundle coverage reports
         uses: actions/upload-artifact@v7
