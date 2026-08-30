@@ -341,3 +341,22 @@ describe('#698 大纲创建入口精简（单全局入口 + 整本后隐藏）',
     expect(options).not.toContain('overall');
   });
 });
+
+describe('outline N1 孤儿降级 + 未知 level 兜底（spec 验收点）', () => {
+  it('孤儿（parent 缺失）降级顶层渲染；未知 level 按整体兜底', async () => {
+    const state = makeState();
+    state.outlines = [
+      { id: 'o-orphan', name: '孤儿章节', level: 'chapter', parent_id: 'ghost-parent', chapter_id: null, point_count: 0 },
+      { id: 'o-badlevel', name: '坏level节点', level: 'bogus', parent_id: null, chapter_id: null, point_count: 0 },
+      ...state.outlines,
+    ];
+    mockOutlineApi(state);
+    renderLibrary();
+    const user = userEvent.setup();
+    await enterOutlineTab(user);
+    // 孤儿（parent 不存在）→ buildOutlineTree 降级顶层 → 渲染 outline-chapter-<id>
+    expect(screen.getByTestId('outline-chapter-o-orphan')).toBeInTheDocument();
+    // 未知 level → normalizeLevel 兜底为整体 → 渲染 outline-overall-<id>
+    expect(screen.getByTestId('outline-overall-o-badlevel')).toBeInTheDocument();
+  });
+});
