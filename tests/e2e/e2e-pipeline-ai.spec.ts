@@ -4,8 +4,8 @@
  * 覆盖 spec §5.6「GUI 写作入口管线化」（usePipeline.ts 契约）：
  * - 全自动 = 工具栏「生成」按钮（aria-label=write.toolbar.generate='生成'）→ start('write_auto')
  * - 续写   = 工具栏「续写」按钮（aria-label=write.toolbar.continue='续写'）→ start('write_continue')
- * - 状态机 idle → running → success | failed 经 pipeline-status（data-testid）四态文案：
- *   running='执行中' / success='生成完成' / failed='生成失败: {message}' / idle（i18n zh.ts 契约）
+ * - 状态机 idle → running → success | failed 经内核执行记录（agent_executions.status：
+ *   pending/running/completed/failed）承载，不再经写作页 pipeline-status（#763：进度改由会话页/聊天消息承载）
  * - 成品落章：getExecutionStatus completed → chapterStore.setContent(final_output)
  *   → 编辑器（chapter-editor textarea）内容 = final_output
  *
@@ -240,11 +240,12 @@ async function waitExecutionId(
   return executionId;
 }
 
-/** 轮询执行终态：completed 且 final_output 非空 → 返回 final_output（宽松断言哲学） */
+/** 轮询执行终态：completed 且 final_output 非空 → 返回 final_output（宽松断言哲学）
+ * 默认 900s：#763 后写作页无 pipeline-status，完成信号完全依赖内核执行记录轮询（真实 LLM 管线数分钟级）。 */
 async function pollExecutionResult(
   kernel: KernelInfo,
   executionId: string,
-  timeoutMs = 60_000
+  timeoutMs = 900_000
 ): Promise<string> {
   let finalOutput = '';
   await expect
@@ -270,9 +271,9 @@ async function pollExecutionResult(
 test.describe.configure({ timeout: 3_600_000 });
 
 // ────────────────────────────────────────────────────────────────
-// B1-1 全自动管线：点「生成」→ running → success → 成品落章
+// B1-1 全自动管线：点「生成」→ 管线完成 → 成品落章
 // ────────────────────────────────────────────────────────────────
-test('B1-1 全自动管线：点「生成」→ pipeline-status 执行中→生成完成 → 成品落章', async () => {
+test('B1-1 全自动管线：点「生成」→ 管线完成 → 成品落章', async () => {
   test.skip(!process.env.INKFLOW_LLM_KEY, '需要真实 LLM key（INKFLOW_LLM_KEY 环境变量）');
   const { app, window, kernel } = await launchApp();
   try {
@@ -297,16 +298,14 @@ test('B1-1 全自动管线：点「生成」→ pipeline-status 执行中→生�
     const editor = window.getByTestId('chapter-editor');
     await expect(editor).toHaveValue('');
 
-    // 点「全自动」（工具栏「生成」按钮 aria-label=write.toolbar.generate）→ 状态机 running → success
+    // 点「全自动」（工具栏「生成」按钮 aria-label=write.toolbar.generate）→ 管线执行
+    // #763：写作页不再渲染 pipeline-status（进行中/完成均无），完成信号改由内核执行记录承载
     const toolbar = window.getByTestId('editor-toolbar');
     await toolbar.getByRole('button', { name: '生成', exact: true }).click();
-    const status = window.getByTestId('pipeline-status');
-    await expect(status).toContainText('执行中', { timeout: 15_000 });
-    await expect(status).toContainText('生成完成', { timeout: 900_000 });
 
     // 成品落章（宽松断言：final_output 非空 + 编辑器 = final_output，不断言质量/字数）
     const executionId = await waitExecutionId(kernel, pid);
-    const finalOutput = await pollExecutionResult(kernel, executionId, 60_000);
+    const finalOutput = await pollExecutionResult(kernel, executionId, 900_000);
     expect(finalOutput.trim().length).toBeGreaterThan(0);
     await expect(editor).toHaveValue(finalOutput, { timeout: 15_000 });
   } finally {
@@ -315,9 +314,9 @@ test('B1-1 全自动管线：点「生成」→ pipeline-status 执行中→生�
 });
 
 // ────────────────────────────────────────────────────────────────
-// B1-2 续写管线：点「续写」→ success → 成品落章（final_output 非空 + 内容已变更）
+// B1-2 续写管线：点「续写」→ 管线完成 → 成品落章（final_output 非空 + 内容已变更）
 // ────────────────────────────────────────────────────────────────
-test('B1-2 续写管线：点「续写」→ pipeline-status 生成完成 → 成品落章', async () => {
+test('B1-2 续写管线：点「续写」→ 管线完成 → 成品落章', async () => {
   test.skip(!process.env.INKFLOW_LLM_KEY, '需要真实 LLM key（INKFLOW_LLM_KEY 环境变量）');
   const { app, window, kernel } = await launchApp();
   try {
@@ -344,16 +343,13 @@ test('B1-2 续写管线：点「续写」→ pipeline-status 生成完成 → �
     const editor = window.getByTestId('chapter-editor');
     await expect(editor).toHaveValue(seedContent);
 
-    // 点「续写」→ 状态机 running → success
+    // 点「续写」→ 管线执行（#763：完成信号改由内核执行记录承载，写作页无 pipeline-status）
     const toolbar = window.getByTestId('editor-toolbar');
     await toolbar.getByRole('button', { name: '续写', exact: true }).click();
-    const status = window.getByTestId('pipeline-status');
-    await expect(status).toContainText('执行中', { timeout: 15_000 });
-    await expect(status).toContainText('生成完成', { timeout: 900_000 });
 
     // 成品落章（宽松断言：final_output 非空 + 编辑器 = final_output + 内容已变更）
     const executionId = await waitExecutionId(kernel, pid);
-    const finalOutput = await pollExecutionResult(kernel, executionId, 60_000);
+    const finalOutput = await pollExecutionResult(kernel, executionId, 900_000);
     expect(finalOutput.trim().length).toBeGreaterThan(0);
     expect(finalOutput).not.toBe(seedContent);
     await expect(editor).toHaveValue(finalOutput, { timeout: 15_000 });
@@ -393,10 +389,25 @@ test('B1-3 并发保护：running 中再触发 → AI 按钮 disabled + 内核�
     const generateBtn = toolbar.getByRole('button', { name: '生成', exact: true });
     const continueBtn = toolbar.getByRole('button', { name: '续写', exact: true });
 
-    // 第一次触发：全自动 → running
+    // 第一次触发：进入管线执行（#763：写作页不再渲染 pipeline-status，完成信号由内核执行记录承载）
     await generateBtn.click();
-    const status = window.getByTestId('pipeline-status');
-    await expect(status).toContainText('执行中', { timeout: 15_000 });
+
+    // 等待内核执行记录进入 running（running 时 AI 按钮 disabled；旧「执行中」UI 信号已随 #763 移除）
+    const executionId = await waitExecutionId(kernel, pid);
+    await expect
+      .poll(
+        async () => {
+          const res = await kernelFetch(
+            kernel,
+            `/api/v1/agent/pipelines/executions/${executionId}`
+          );
+          if (!res.ok) return null;
+          const data = (await res.json()) as { status: string };
+          return data.status === 'running' ? 'running' : null;
+        },
+        { timeout: 30_000, message: '管线执行应进入 running（内核执行记录）' }
+      )
+      .toBe('running');
 
     // UI 闸门：running 中 AI 按钮 disabled（EditorToolbar disabled={generating}，writing.tsx 实证）
     await expect(generateBtn).toBeDisabled();
@@ -422,10 +433,8 @@ test('B1-3 并发保护：running 中再触发 → AI 按钮 disabled + 内核�
       )
       .toBe(1);
 
-    // 首条执行正常完成 → 成品落章
-    await expect(status).toContainText('生成完成', { timeout: 900_000 });
-    const executionId = await waitExecutionId(kernel, pid);
-    const finalOutput = await pollExecutionResult(kernel, executionId, 60_000);
+    // 首条执行正常完成 → 成品落章（完成信号由内核执行记录承载，无 pipeline-status）
+    const finalOutput = await pollExecutionResult(kernel, executionId, 900_000);
     expect(finalOutput.trim().length).toBeGreaterThan(0);
     await expect(window.getByTestId('chapter-editor')).toHaveValue(finalOutput, {
       timeout: 15_000,
@@ -436,9 +445,9 @@ test('B1-3 并发保护：running 中再触发 → AI 按钮 disabled + 内核�
 });
 
 // ────────────────────────────────────────────────────────────────
-// B1-4 失败态：角色模型指向无 key 的 provider → 全自动 → pipeline-status 生成失败（不落章）
+// B1-4 失败态：角色模型指向无 key 的 provider → 全自动 → 管线执行失败（不落章）
 // ────────────────────────────────────────────────────────────────
-test('B1-4 失败态：模型指向无 key provider → 点「生成」→ pipeline-status 生成失败', async () => {
+test('B1-4 失败态：模型指向无 key provider → 点「生成」→ 管线执行失败', async () => {
   test.skip(!process.env.INKFLOW_LLM_KEY, '需要真实 LLM key（INKFLOW_LLM_KEY 环境变量）');
   const { app, window, kernel } = await launchApp();
   try {
@@ -467,11 +476,27 @@ test('B1-4 失败态：模型指向无 key provider → 点「生成」→ pipel
       .click();
     await expect(window.getByTestId('chapter-editor')).toHaveValue('');
 
-    // 点「全自动」→ failed 态（write.pipeline.failed='生成失败: {message}' 前缀，宽松断言前缀）
+    // 点「全自动」→ 执行失败（#763：无 pipeline-status；失败信号由内核执行记录承载）
     const toolbar = window.getByTestId('editor-toolbar');
     await toolbar.getByRole('button', { name: '生成', exact: true }).click();
-    const status = window.getByTestId('pipeline-status');
-    await expect(status).toContainText('生成失败', { timeout: 900_000 });
+    const executionId = await waitExecutionId(kernel, pid);
+    await expect
+      .poll(
+        async () => {
+          const res = await kernelFetch(
+            kernel,
+            `/api/v1/agent/pipelines/executions/${executionId}`
+          );
+          if (!res.ok) return null;
+          const data = (await res.json()) as { status: string };
+          // 无 key provider 应失败；若意外 completed 则返回哨兵以显式失败
+          if (data.status === 'failed') return 'failed';
+          if (data.status === 'completed') return 'UNEXPECTED-COMPLETED';
+          return null;
+        },
+        { timeout: 900_000, message: '无 key provider 应使管线执行失败（failed）' }
+      )
+      .toBe('failed');
 
     // 失败不落章：编辑器保持原内容（空）
     await expect(window.getByTestId('chapter-editor')).toHaveValue('');
@@ -537,14 +562,10 @@ test('B1-5 HITL 确认流：supervisor 管线 → 确认卡片 → 继续执行 
     await expect(confirmCard).toBeVisible({ timeout: 900_000 });
     await expect(confirmCard).toContainText('确认执行下一角色');
 
-    // 点「继续执行」→ resume → 完成 → 成品落章
+    // 点「继续执行」→ resume → 完成 → 成品落章（#763：完成信号由内核执行记录承载，无 pipeline-status）
     await window.getByTestId('hitl-confirm-approve').click();
-    const status = window.getByTestId('pipeline-status');
-    await expect(status).toContainText('生成完成', { timeout: 900_000 });
-
-    // 成品落章（宽松断言：final_output 非空 + 编辑器 = final_output）
     const executionId = await waitExecutionId(kernel, pid);
-    const finalOutput = await pollExecutionResult(kernel, executionId, 60_000);
+    const finalOutput = await pollExecutionResult(kernel, executionId, 900_000);
     expect(finalOutput.trim().length).toBeGreaterThan(0);
     await expect(window.getByTestId('chapter-editor')).toHaveValue(finalOutput, {
       timeout: 15_000,
