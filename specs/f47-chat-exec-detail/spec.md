@@ -391,6 +391,7 @@ write.detail.unknown        // 未知
 ### 15.2 会话域模型
 - 会话 = 后端 `/chat/conversations` 线程（#744 已实现，复用不新建；含 `is_deleted` 归档语义）。
 - 左侧导航新增「会话」分组（与设定库同级，取代 #752 会话入设定库栏的做法），列表 = `GET /chat/conversations?include_deleted=true`；每项显示 `last_message` / `message_count` / `updated_at`。
+- **#825 修正**：后端 `GET /chat/conversations` **不收 project_id**（忽略未定义 query）→ 会话栏须**本地按当前项目 `project_id` 过滤**（镜像 sessions.tsx）；每条目显示**单一 title**（空回退 last_message，无冗余底部小 title）；折叠按钮位于「会话」标题行最右（justify-between）。
 - 会话栏容器折叠/展开状态 → `localStorage` 持久化；分组按时间 + 置顶（简化，勿照搬 Hermes 三级分组）。
 
 ### 15.3 生成→新会话契约
@@ -558,7 +559,7 @@ sessions.chat.titleEmpty    // 未命名会话
 - `ChatPanel.test.tsx`（MODIFY RED）：full variant 不渲染 resize handle；inline 渲染（回归）。
 - `writing-chat-agent-reply.test.tsx`（MODIFY 或 NEW）：章节内对话 → createChatConversation 传 title=章节名；全局对话 → title=首条用户消息前 30 字。
 - `sessions.test.tsx`（MODIFY RED）：会话卡片展示 title；改名按钮 → PATCH；点击 title 匹配章节 → 跳章节页；匹配不到 → 跳全局 chat 页。
-- `SessionBar.test.tsx`（MODIFY 或 NEW）：展示 title（空回退 last_message）；点击导航（匹配→章节 / 不匹配→全局）。
+- `SessionBar.test.tsx`（MODIFY 或 NEW）：展示 title（空回退 last_message）；点击导航（匹配→章节 / 不匹配→全局）。**#825 UI 元素必须出现断言**：mock 会话列表返回条目 → `getByText('蜀山，我是掌门')` / `session-item-<id>` 出现（非「暂无数据」）；每条目仅一个清晰标题；折叠按钮在「会话」行最右；无会话 → `session-bar-empty` 空态；`projectId` 生效时仅显示该项目线程。
 
 ### 17.7 文件结构（#770 增量）
 
@@ -590,4 +591,5 @@ sessions.chat.titleEmpty    // 未命名会话
 - **Q3**：不同章节用 chat 均创建新会话，title=章节名；点生成/续写也开新会话（#763 保持）。
 - **Q4**：全局 chat 页新建会话 title=首条消息前 30 字；会话可改名（PATCH ≤200 字符）。
 - **Q5**：点击会话 title 匹配章节 → 跳对应章节；匹配不到 → 跳全局 chat 页；`/sessions` 路由不删除。
-- **Q6**：前端 vitest + tsc 全绿；后端 pytest + ruff + mypy 全绿；PR 合入（Closes #770）。
+- **Q6（#825 UI 元素必须出现）**：左侧会话栏（SessionBar）渲染会话条目（`session-item-<id>` / title 文案出现，非「暂无数据」）；每条目仅一个清晰标题（无冗余底部小 title）；折叠按钮位于「会话」标题行最右；无会话 → `session-bar-empty` 空态；`projectId` 生效时仅显示该项目线程。
+- **Q7**：前端 vitest + tsc 全绿；后端 pytest + ruff + mypy 全绿；PR 合入（Closes #770）。

@@ -43,6 +43,7 @@
   - 卡片行内：类型徽标（执行/访谈/AI 对话）+ 状态徽标（进行中/已暂停/已完成/失败 或 访谈中/已完成/已跳过）+ 已归档徽标 + 标题 + 操作按钮（归档/恢复/删除）
   - 删除确认对话框：固定遮罩 + 「删除会话？」+ 永久删除提示 +「取消/确定删除」
   - 空态：「暂无会话」（三类数据全部落定前也显示该空态容器）
+  - **左侧会话栏（session-bar，AppNav 会话组 `SessionBar`，#825 修复）**：消费 `GET /chat/conversations?include_deleted=true` 拉取**全部**线程后**本地按当前项目 `project_id` 过滤**（后端不收 project_id）；每条目显示**单一 title**（空回退 `last_message`/project_name，无冗余底部小 title）`session-item-<id>` + 消息数·更新时间；**折叠按钮位于「会话」标题行最右（justify-between）**；空列表 → 「暂无数据」（`session-bar-empty`）；折叠态列表隐藏但 header + 折叠按钮仍显示
 - 布局说明：
   - 顶部：h1「会话」
   - 工具条（mt-5）：项目 Select（w-56）→ 检索框（min-w-[220px] flex-1，placeholder「搜索会话标题 / 项目 / 最后消息…」）
@@ -52,17 +53,20 @@
 
 ## 2. 动作样式（按钮 × 状态表，逐控件）
 
-| 控件 | 初始态 | 点击后 | 进行中 | 成功 | 失败 | 边界 |
-|------|--------|--------|--------|------|------|------|
-| 项目选择器（sessions-project-select） | 当前项目名（无则 placeholder「当前项目」） | 展开项目列表 | — | selectProject → 目录按项目重过滤（前端过滤不重拉） | — | 路由直入且未选项目 → 自动回退首个项目（仅一次，不覆盖用户已选） |
-| 检索框（sessions-search） | 空输入，placeholder 提示 | 输入即过滤 | — | 目录按 标题/项目名/最后消息 本地过滤（trim + 小写） | — | 纯本地过滤不重拉接口；与 filter chips 叠加生效 |
-| filter chips（全部/活动/已归档） | 「全部」高亮（aria-pressed） | 切换过滤条件 | — | 目录切换：已归档 → 仅 is_deleted；活动 → 仅非 is_deleted；全部 → 不过滤 | — | 本地过滤不重拉（归档回归由测试锁定）；与检索框叠加 |
-| 归档按钮（session-archive / chat-conv-archive） | 活动态卡片显示，outline 样式 | archiveSession(id) / archiveChatConversation(id) | — | 本地置 is_deleted=true → 卡片转归档态 + ok toast「已归档」 | err toast「原因」 | 仅活动态渲染；归档态不显示归档按钮 |
-| 恢复按钮（session-restore / chat-conv-restore） | 归档态卡片显示 | restoreSession(id) / restoreChatConversation(id) | — | 本地置 is_deleted=false → 卡片回活动态 + ok toast「已恢复」 | err toast「原因」 | 仅归档态渲染；恢复后归档徽标消失 |
-| 删除按钮（session-delete / chat-conv-delete） | 所有卡片显示，hover 变红 | 打开删除确认对话框（受控 deleteTarget） | — | — | — | 仅打开对话框，不发删除请求 |
-| 删除确认「取消」（session-delete-cancel） | 对话框内次按钮 | 关闭对话框 | — | 卡片不变 | — | 不调任何 API |
-| 删除确认「确定删除」（session-delete-confirm） | 对话框内主按钮（accent） | deleteSession(id) / deleteChatConversation(id)（force 真删） | — | 卡片从目录移除 + ok toast「已删除」 | err toast「原因」 | 描述「此操作将永久删除会话，不可恢复」；删除后不可撤销 |
-| 访谈卡片 | 只读：访谈徽标 + 状态 +「已确认 {n} 项」+ 标题 + 可选「已生成写作计划」徽标 | 无操作按钮 | — | — | — | 无归档/恢复/删除入口 |
+| 控件 | 初始态 | 点击后 | 进行中 | 成功 | 失败 | 边界 | 修改履历 |
+|------|--------|--------|--------|------|------|------|------|
+| 项目选择器（sessions-project-select） | 当前项目名（无则 placeholder「当前项目」） | 展开项目列表 | — | selectProject → 目录按项目重过滤（前端过滤不重拉） | — | 路由直入且未选项目 → 自动回退首个项目（仅一次，不覆盖用户已选） | — |
+| 检索框（sessions-search） | 空输入，placeholder 提示 | 输入即过滤 | — | 目录按 标题/项目名/最后消息 本地过滤（trim + 小写） | — | 纯本地过滤不重拉接口；与 filter chips 叠加生效 | — |
+| filter chips（全部/活动/已归档） | 「全部」高亮（aria-pressed） | 切换过滤条件 | — | 目录切换：已归档 → 仅 is_deleted；活动 → 仅非 is_deleted；全部 → 不过滤 | — | 本地过滤不重拉（归档回归由测试锁定）；与检索框叠加 | — |
+| 左侧会话栏（session-bar 会话条目列表） | `GET /chat/conversations?include_deleted=true` 拉取**全部**线程 → 本地按 `project_id === currentProjectId` 过滤（后端不收 project_id） | 点击条目 → title 匹配章节则跳章节页 / 匹配不到 → 全局 chat 页 | 加载中不渲染空态（loading && items 空） | 渲染当前项目会话条目（`session-item-<id>`），每项单一 title + 消息数·时间 | 拉取失败 → 静默置空 + 空态「暂无数据」 | 空列表 → 空态「暂无数据」（`session-bar-empty`）；折叠态整个列表隐藏但 header + 折叠按钮仍显示 | 新增（#825） |
+| 左侧会话栏折叠按钮（session-bar-toggle） | 展开态（「折叠」图标） | 切换折叠/展开 | — | 折叠态存 localStorage（`session-bar.collapsed`） | — | 按钮位于「会话」标题行**最右侧**（justify-between）；折叠/展开图标随状态切换 | 修改（#825：按钮挪到「会话」行最右边，位置修正） |
+| 左侧会话栏条目标题 | 展示会话 `title`（空回退 `last_message`/project_name） | — | — | 一次只显示**一个清晰标题**（无冗余底部小 title / 副行 last_message 重复） | — | 归档会话 `is_deleted` 亦显示（include_deleted=true）；标题过长 truncate | 修改（#825：title 精简，删除冗余底部小 title） |
+| 归档按钮（session-archive / chat-conv-archive） | 活动态卡片显示，outline 样式 | archiveSession(id) / archiveChatConversation(id) | — | 本地置 is_deleted=true → 卡片转归档态 + ok toast「已归档」 | err toast「原因」 | 仅活动态渲染；归档态不显示归档按钮 | — |
+| 恢复按钮（session-restore / chat-conv-restore） | 归档态卡片显示 | restoreSession(id) / restoreChatConversation(id) | — | 本地置 is_deleted=false → 卡片回活动态 + ok toast「已恢复」 | err toast「原因」 | 仅归档态渲染；恢复后归档徽标消失 | — |
+| 删除按钮（session-delete / chat-conv-delete） | 所有卡片显示，hover 变红 | 打开删除确认对话框（受控 deleteTarget） | — | — | — | 仅打开对话框，不发删除请求 | — |
+| 删除确认「取消」（session-delete-cancel） | 对话框内次按钮 | 关闭对话框 | — | 卡片不变 | — | 不调任何 API | — |
+| 删除确认「确定删除」（session-delete-confirm） | 对话框内主按钮（accent） | deleteSession(id) / deleteChatConversation(id)（force 真删） | — | 卡片从目录移除 + ok toast「已删除」 | err toast「原因」 | 描述「此操作将永久删除会话，不可恢复」；删除后不可撤销 | — |
+| 访谈卡片 | 只读：访谈徽标 + 状态 +「已确认 {n} 项」+ 标题 + 可选「已生成写作计划」徽标 | 无操作按钮 | — | — | — | 无归档/恢复/删除入口 | — |
 
 ## 3. 验收
 
@@ -72,6 +76,7 @@
 - N4：检索框按 标题/项目名/最后消息 过滤，与 chips 叠加，无网络请求
 - N5：执行会话与 AI 对话归档/恢复闭环：活动态可归档（ok toast）→ 归档态显示「已归档」徽标 + 恢复按钮 → 恢复后回活动态；失败均 err toast 且列表状态不变
 - N6：删除需经确认对话框（含永久删除提示）；确定 → 卡片移除 + ok toast「已删除」；取消 → 无副作用
+- N10（#825 UI 元素必须出现）：左侧会话栏（SessionBar）渲染时——① mock 会话列表返回含「蜀山，我是掌门」等条目 → 断言 `session-item-<id>` / `getByText('蜀山，我是掌门')` **出现**（非「暂无数据」）；② 每个条目断言**仅一个清晰标题**（无冗余底部小 title）；③ 折叠按钮 `session-bar-toggle` 断言位于「会话」标题行最右（justify-between，或在分组 header 内右对齐）；④ 无会话 → 断言空态「暂无数据」文案出现（`session-bar-empty`）。⑤ 按项目过滤：mock 含项目 p1/p2 线程，`projectId='p1'` 时仅显示 p1 条目、p2 条目不出现。
 
 ## 4. #770 会话页架构增量（会话标题/改名/导航）
 

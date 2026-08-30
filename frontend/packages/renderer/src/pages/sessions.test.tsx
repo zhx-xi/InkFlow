@@ -492,6 +492,28 @@ describe('会话页 — AI 对话卡（统一目录内，含归档/恢复/删除
     expect(screen.getByTestId('chat-conv-delete-conv-1')).toBeInTheDocument();
   });
 
+  it('#825：title 与 last_message 相同时仅显示一个标题（不重复渲染底部小 title；UI 元素必须出现）', async () => {
+    conversations = [
+      {
+        conversation_id: 'conv-dup',
+        project_id: 'p1',
+        project_name: '仙侠长篇',
+        title: '蜀山，我是掌门',
+        last_message: '蜀山，我是掌门',
+        message_count: 3,
+        is_deleted: false,
+        updated_at: '2026-08-21T10:00:00Z',
+      },
+    ];
+    renderSessionsPage();
+    await screen.findAllByTestId('session-directory-card');
+    const card = screen.getByTestId('session-title-conv-conv-dup').closest('[data-testid="session-directory-card"]');
+    expect(card).toBeTruthy();
+    // 标题只出现一次（title 与 last_message 相同时不重复显示，一次一个清晰标题）
+    expect(within(card as HTMLElement).getByText('蜀山，我是掌门')).toBeInTheDocument();
+    expect(within(card as HTMLElement).queryAllByText('蜀山，我是掌门').length).toBe(1);
+  });
+
   it('归档 AI 对话：点 chat-conv-archive-conv-1 → DELETE conversations/conv-1 + 转归档态（徽标+恢复按钮）', async () => {
     const user = userEvent.setup();
     renderSessionsPage();

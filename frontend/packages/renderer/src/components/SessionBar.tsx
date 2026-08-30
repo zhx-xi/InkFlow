@@ -54,7 +54,10 @@ export function SessionBar({ projectId }: { projectId?: string | null }) {
       ...(projectId ? { projectId } : {}),
     })
       .then((res) => {
-        if (!cancelled) setItems(res.items);
+        // #825：后端 GET /chat/conversations 不收 project_id，前端本地按当前项目过滤
+        if (!cancelled) {
+          setItems(projectId ? res.items.filter((item) => item.project_id === projectId) : res.items);
+        }
       })
       .catch(() => {
         if (!cancelled) setItems([]);
@@ -145,12 +148,11 @@ export function SessionBar({ projectId }: { projectId?: string | null }) {
                         className="flex w-full flex-col items-start rounded-md px-2 py-1.5 text-left text-[12px] text-ink-2 hover:bg-surface-3 hover:text-ink"
                       >
                         {/* #770：优先展示会话 title（章节锚点），空则回退 last_message */}
-                        {/* #770：优先展示会话 title（章节锚点），空则回退 last_message；
-                            title 非空时 last_message 仍展示为副行（#762 契约保留） */}
                         <span className="min-w-0 flex-1 truncate">
                           {conv.title || conv.last_message || t('common.empty')}
                         </span>
-                        {conv.title && conv.last_message ? (
+                        {/* #825：title 与 last_message 相同时不重复展示副行（一次一个清晰标题）；不同时按 #762 契约保留 */}
+                        {conv.title && conv.last_message && conv.last_message !== conv.title ? (
                           <span className="truncate text-[11px] text-ink-3">{conv.last_message}</span>
                         ) : null}
                         <span className="text-ink-3">

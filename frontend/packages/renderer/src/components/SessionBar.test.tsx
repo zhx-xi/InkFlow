@@ -223,3 +223,64 @@ describe('SessionBar — #770 点击导航（title 匹配章节 → /writing?cha
     expect(screen.getByTestId('location-probe')).toHaveTextContent('/writing?conversation_id=c-nomatch');
   });
 });
+/* ============================== #825 会话列表不显示 + title 布局 + 折叠按钮位置（UI 元素必须出现） ============================== */
+
+describe('SessionBar — #825 会话列表显示 + 按项目过滤（UI 元素必须出现）', () => {
+  it('mock 返回会话 → 标题文案出现（非「暂无数据」），会话条目 testid 存在', async () => {
+    fetchMock.mockResolvedValue({
+      items: [item({ conversation_id: 'c-p1', title: '蜀山，我是掌门', last_message: '帮我看看第12章氛围', project_id: 'p1' })],
+      total: 1,
+    });
+    renderBar({ projectId: 'p1' });
+    expect(await screen.findByText('蜀山，我是掌门')).toBeInTheDocument();
+    expect(screen.getByTestId('session-item-c-p1')).toBeInTheDocument();
+    expect(screen.queryByTestId('session-bar-empty')).not.toBeInTheDocument();
+  });
+
+  it('按项目过滤：projectId=p1 仅显示 p1 会话，p2 会话不出现（本地过滤，后端不收 project_id）', async () => {
+    fetchMock.mockResolvedValue({
+      items: [
+        item({ conversation_id: 'c-p1', title: '蜀山，我是掌门', project_id: 'p1' }),
+        item({ conversation_id: 'c-p2', title: '第一章', project_id: 'p2' }),
+      ],
+      total: 2,
+    });
+    renderBar({ projectId: 'p1' });
+    expect(await screen.findByText('蜀山，我是掌门')).toBeInTheDocument();
+    expect(screen.queryByText('第一章')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('session-item-c-p2')).not.toBeInTheDocument();
+  });
+});
+
+describe('SessionBar — #825 title 布局（一次一个清晰标题，无冗余重复）', () => {
+  it('title 与 last_message 相同 → 只显示一个标题（不重复展示），无冗余底部小 title', async () => {
+    fetchMock.mockResolvedValue({
+      items: [item({ conversation_id: 'c-dup', title: '蜀山，我是掌门', last_message: '蜀山，我是掌门', project_id: 'p1' })],
+      total: 1,
+    });
+    renderBar({ projectId: 'p1' });
+    const entry = await screen.findByTestId('session-item-c-dup');
+    expect(within(entry).getByText('蜀山，我是掌门')).toBeInTheDocument();
+    expect(within(entry).queryAllByText('蜀山，我是掌门').length).toBe(1);
+  });
+
+  it('title 与 last_message 不同 → last_message 作为副行保留（#762 契约）', async () => {
+    fetchMock.mockResolvedValue({
+      items: [item({ conversation_id: 'c-diff', title: '蜀山，我是掌门', last_message: '帮我看看第12章氛围', project_id: 'p1' })],
+      total: 1,
+    });
+    renderBar({ projectId: 'p1' });
+    const entry = await screen.findByTestId('session-item-c-diff');
+    expect(within(entry).getByText('帮我看看第12章氛围')).toBeInTheDocument();
+  });
+});
+
+describe('SessionBar — #825 折叠按钮位置（「会话」标题行最右）', () => {
+  it('session-bar-toggle 位于 session-bar-header（justify-between）内', async () => {
+    fetchMock.mockResolvedValue({ items: [item({ conversation_id: 'c-b' })], total: 1 });
+    renderBar();
+    const header = await screen.findByTestId('session-bar-header');
+    expect(header.className).toContain('justify-between');
+    expect(header.contains(screen.getByTestId('session-bar-toggle'))).toBe(true);
+  });
+});
