@@ -227,11 +227,23 @@ body[data-state="delete-hitl"] .delete-auth-control button{opacity:.4;pointer-ev
 .delete-hitl-dialog .delete-hitl-actions button[data-testid="delete-confirm-cancel"]:hover{background:var(--surface-3)}
 .delete-hitl-dialog .delete-hitl-actions button[data-testid="delete-confirm-approve"]{border:none;background:var(--accent);color:var(--accent-ink)}
 .delete-hitl-dialog .delete-hitl-actions button[data-testid="delete-confirm-approve"]:hover{background:var(--accent-hover)}
+/* ── global-chat 态（#770 场景 A：无章节 → 全局 chat 页：占满中栏、无 resize handle，不渲染 EditorToolbar/ChapterEditor） ── */
+.global-chat{display:none;flex:1;min-height:0;flex-direction:column;background:var(--surface)}
+body[data-state="global-chat"] .global-chat{display:flex}
+body[data-state="global-chat"] .editor > .editor-toolbar,
+body[data-state="global-chat"] .editor > .chapter-head,
+body[data-state="global-chat"] .editor > .editor-scroll,
+body[data-state="global-chat"] .editor > .chat-panel.inline-chat{display:none}
+.chat-panel.gc{flex:1;min-height:0;gap:8px;border-top:none;border-bottom:1px solid var(--line);background:var(--surface-2);padding:12px 16px}
+.chat-panel.gc .chat-messages{max-height:none;flex:1;min-height:0}
+.chat-panel.gc .gc-spacer{flex:1}
+.chat-panel.gc .chat-input-row{margin-top:auto}
 
 /* ═══════════ 演示切换条（截图前隐藏） ═══════════ */
 .demo-bar{position:fixed;right:14px;bottom:14px;z-index:200;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-hover);padding:8px 12px;font-size:12px;color:var(--ink-2)}
 .demo-bar select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 6px}
 .demo-bar .sep{width:1px;height:18px;background:var(--line)}
+body[data-shot="1"] .demo-bar{display:none}
 </style>
 </head>
 <body data-state="editor-idle">
@@ -341,6 +353,34 @@ body[data-state="delete-hitl"] .delete-auth-control button{opacity:.4;pointer-ev
 
         <!-- 中栏：编辑器 -->
         <main class="editor group-hover" data-testid="editor">
+          <!-- #770 场景 A：无章节（有项目）→ 全局 chat 页（占满中栏、无 resize handle；不渲染 EditorToolbar/ChapterEditor） -->
+          <div class="global-chat" data-testid="global-chat">
+            <div class="chat-panel gc" data-testid="chat-panel">
+              <div class="chat-head">
+                <button class="toggle" data-testid="chat-collapse"><span data-ic="chevron-down"></span></button>
+                <div class="gc-spacer"></div>
+              </div>
+              <div class="chat-messages" data-testid="chat-messages">
+                <div class="chat-msg user"><div class="bubble">帮我梳理一下「剑心蒙尘」这条线的伏笔闭环</div></div>
+                <div class="chat-msg ai">
+                  <span class="role">AI</span>
+                  <div class="bubble">
+                    好的。这条伏笔线目前有三处锚点：① 第 12 章师父闭关前的告诫——「剑心蒙尘时，人便再也分不清，握剑是为了护人，还是为了杀人」；② 剑冢夜访时苏云舟发现墙上的剑鞘排列如墓碑，每一柄都朝着同一个方向；③ 第 9 章山雨欲来中提及的二十年前剑冢异动。建议在卷末让师父闭关的真相与这三处一一闭合。
+                    <div class="intent-actions">
+                      <button data-testid="chat-insert">插入正文</button>
+                      <button>选中此回复</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="chat-msg user"><div class="bubble">好，那给苏云舟设计一段夜访剑冢前的内心独白</div></div>
+              </div>
+              <div class="chat-input-row">
+                <textarea data-testid="chat-input" placeholder="与 AI 对话，如「帮我写一段打斗场景」"></textarea>
+                <button class="btn-send" data-testid="chat-send">发送</button>
+                <button class="btn-stop" data-testid="chat-stop" style="display:none"><span data-ic="square"></span>停止</button>
+              </div>
+            </div>
+          </div>
           <div class="editor-toolbar" data-testid="editor-toolbar">
             <button class="tbtn" title="撤销 (Ctrl+Z)"><span data-ic="undo"></span></button>
             <button class="tbtn" title="重做 (Ctrl+Y)"><span data-ic="redo"></span></button>
@@ -368,11 +408,11 @@ body[data-state="delete-hitl"] .delete-auth-control button{opacity:.4;pointer-ev
               <p>林晚照呼吸一窒。她想说些什么，可石阶上的人已经踏出第一步，脚步声在暮色里渐渐远去，像一柄剑缓缓归鞘。</p>
             </div>
           </div>
-          <!-- ChatPanel -->
-          <div class="chat-panel" data-testid="chat-panel">
+          <!-- ChatPanel（章节内 inline 横栏） -->
+          <div class="chat-panel inline-chat" data-testid="chat-panel">
             <div class="chat-head">
               <button class="toggle" data-testid="chat-collapse"><span data-ic="chevron-down"></span></button>
-              <div class="resize-grip"><span></span></div>
+              <div class="resize-grip" data-testid="chat-resize-handle"><span></span></div>
             </div>
             <div class="chat-messages" data-testid="chat-messages">
               <div class="chat-msg user"><div class="bubble">帮我写一段夜探剑冢的紧张氛围</div></div>
@@ -481,6 +521,7 @@ body[data-state="delete-hitl"] .delete-auth-control button{opacity:.4;pointer-ev
       <option value="empty">无项目空态</option>
       <option value="delete-auth">删除授权（三态）</option>
       <option value="delete-hitl">删除授权 HITL 弹窗</option>
+      <option value="global-chat">全局 chat 页（无章节）</option>
     </select>
   </label>
   <span class="sep"></span>
@@ -561,14 +602,16 @@ document.querySelectorAll('[data-ic]').forEach(el=>{
 });
 
 /* ── 状态机：body[data-state] 驱动视图 ── */
-const STATES = ['editor-idle','streaming','collapsed','empty','delete-auth','delete-hitl'];
+const STATES = ['editor-idle','streaming','collapsed','empty','delete-auth','delete-hitl','global-chat'];
 function setState(s){
   document.body.dataset.state = s;
   const streaming = s === 'streaming';
   document.querySelector('.gen-ic').classList.toggle('pulse', streaming);
-  document.querySelector('[data-testid="pipeline-output"]').style.display = streaming ? '' : 'none';
-  document.querySelector('[data-testid="chat-stop"]').style.display = streaming ? '' : 'none';
-  document.querySelector('[data-testid="chat-send"]').style.display = streaming ? 'none' : '';
+  // 章节内 inline ChatPanel 专属联动（global-chat 全屏面板无生成触发点，不参与）
+  const panel = document.querySelector('.editor > .chat-panel.inline-chat');
+  panel.querySelector('[data-testid="pipeline-output"]').style.display = streaming ? '' : 'none';
+  panel.querySelector('[data-testid="chat-stop"]').style.display = streaming ? '' : 'none';
+  panel.querySelector('[data-testid="chat-send"]').style.display = streaming ? 'none' : '';
   const rail = document.querySelector('[data-testid="right-rail"]');
   rail.dataset.collapsed = s === 'collapsed' ? 'true' : 'false';
   document.querySelector('.rail-toggle').style.display = s === 'collapsed' ? 'none' : '';
