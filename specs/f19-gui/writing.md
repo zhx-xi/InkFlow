@@ -21,15 +21,17 @@
 │ +新建卷  │ ────────────────────────────── │ ───────────────── │
 │ +新建章节 │ AI 对话（ChatPanel）            │ 章节摘要           │
 │          │ 消息区 + 输入框 + 发送/停止      │ ChapterSummary    │
-│          │                                 │ （刷新摘要）       │
+│          │ 删除授权：[手动][一次确认][全自动]│ （刷新摘要）       │
+│          │  └─ 弹窗：确认删除「角色名」？   │                   │
+│          │                                │                   │
 ├──────────┴────────────────────────────────┴──────────────────┤
 │ 状态栏 StatusBar：内核连接态 / 模型 / 字数 / 自动保存时间      │
 └──────────────────────────────────────────────────────────────┘
 ```
-- 参考锚点（以真实组件为准：pages/writing.tsx + components/ProjectTree、EditorToolbar、ContextPanel、ChatPanel、StatusBar、ChapterSummaryPanel、AuditDialog、StyleAnalyzeDialog、AIExtractDialog、AutoAuthorizationDialog）：
+- 参考锚点（以真实组件为准：pages/writing.tsx + components/ProjectTree、EditorToolbar、ContextPanel、ChatPanel、ChatDeleteAuthControl、StatusBar、ChapterSummaryPanel、AuditDialog、StyleAnalyzeDialog、AIExtractDialog、AutoAuthorizationDialog）：
   - 布局：全高 flex 三栏 — 左项目树（aside project-tree）/ 中编辑器区（main）/ 右上下文栏（aside right-rail）
   - 左栏：默认宽 208px（treeWidth 受控），col-resize 拖拽 160~360px（ProjectTree RESIZE_MIN/MAX）；卷章树加载中显示骨架屏（头像/标题/6 行 Skeleton）；顶部 ProjectSeal 项目印章
-  - 中栏：EditorToolbar 默认 opacity 0.35、hover 编辑器区域 group-hover 全显；下方 ChapterEditor（正文编辑）或 ExecutionDetailPanel（执行详情，视图切换）；底部 ChatPanel 对话区
+  - 中栏：EditorToolbar 默认 opacity 0.35、hover 编辑器区域 group-hover 全显；下方 ChapterEditor（正文编辑）或 ExecutionDetailPanel（执行详情，视图切换）；底部 ChatPanel 对话区（含 ChatDeleteAuthControl 删除授权三态分段控件，HITL 弹窗打开期间控件禁用）
   - 右栏：默认 240px（railWidth），col-resize 90~540px；整栏可折叠为 26px 展开条（按钮 right-col-toggle）；内含 ContextPanel（写作要求/大纲/角色/世界观/伏笔卡片，数据来自设定库 assemble）+ row-resize 手柄 + ChapterSummaryPanel，面板高度各自 90~540px
   - 空态：无任何项目 → WritingEmptyState（Compass 图标 + 文案 + 「返回项目页」按钮 navigate('/projects')）
   - 流式时序：续写/生成 → ensureModelReady 前置校验（未配置 warn toast「模型未配置」不启动）→ 创建 chat 会话（失败静默降级）→ start(mode) → SSE 流式（status=running）→ done 帧 finalOutput 落章（setContent）+ 归档 AI chat 消息；error 帧展示错误
@@ -55,6 +57,8 @@
 | 左栏宽度拖拽 | col-resize 手柄（tree-resize-handle） | mousedown 拖拽调宽 | — | 宽度 160~360px 实时更新 | — | 拖拽中 body userSelect 锁定；mouseup 结束 |
 | 右栏折叠/调宽/调高 | 折叠按钮 right-col-toggle + col-resize 手柄 + row-resize 手柄 | 折叠 → 26px 展开条（PanelLeftOpen+展开 文案），再点展开恢复 | — | 宽度 90~540px / 面板高度 90~540px 实时更新 | — | 折叠态隐藏两面板与全部手柄 |
 | ChatPanel 发送/停止 | 输入框 + 发送按钮（chat-send） | 发送 → streamChat 流式对话 | streaming 中发送按钮替换为「停止」（chat-interrupt，方块图标） | done → AI 消息落地 + 意图解析（onDone） | error → 错误文案不插入正文 | in-flight 再发不触发第二次流；停止 → abortChatRun(run_id) + 本地 abort 保留已生成前文；卸载 abort 清理 |
+| 删除授权三态分段控件 | 三按钮（delete-mode-manual/ask-once/auto，默认 manual 选中 data-selected=true） | 点击切换 → updateChatDeletePermission(conversationId, mode) PATCH | PATCH 在途 | 选中态切换 + PATCH 生效 | 失败静默（本地选中保留，服务端不变） | conversation 缺失先 createChatConversation 再 PATCH；HITL 弹窗打开期间三按钮 disabled |
+| HITL 删除确认弹窗 | interrupt SSE 帧到达 → 渲染（delete-confirm-dialog，实体名 + confirmTitle） | 点确认删除（delete-confirm-approve）→ resumeChatRun({conversation_id, approved:true})；点取消（delete-confirm-cancel）→ approved:false | — | 弹窗关闭 + resume 续跑 | resume 失败静默（弹窗关闭） | 弹窗打开期间分段控件禁用；取消不删除（approved:false 拒绝续跑） |
 | 无项目空态按钮 | 「返回项目页」 | navigate('/projects') | — | 路由切换 | — | 仅无项目分支渲染（writing-empty） |
 
 ## 3. 验收
@@ -65,3 +69,5 @@
 - N4：生成中续写/生成禁用 + Sparkles 脉冲动画；SSE 停止按钮仅流式中出现，停止后保留已生成前文
 - N5：章节/卷 CRUD（新建/重命名/删除确认）与章节拖拽移动完整可用；左栏 160~360px / 右栏 90~540px 可折叠 26px / 面板高度拖拽均生效
 - N6：自动保存 2s 防抖落盘 + 状态栏自动保存时间更新；SSE done 帧落章不触发防抖保存
+- N7：删除授权三态分段控件（delete-mode-manual/ask-once/auto）渲染三按钮，默认 manual 选中（data-selected=true / aria-pressed）；点击一次确认/全自动 → updateChatDeletePermission(conversationId, mode) PATCH 生效；conversation 缺失先建再 PATCH
+- N8：interrupt SSE 帧到达 → HITL 确认弹窗（delete-confirm-dialog 显示实体名 + confirmTitle）；点确认删除 → resumeChatRun({approved:true}) 续跑删除；点取消 → {approved:false} 拒绝不删除；弹窗打开期间分段控件 disabled
