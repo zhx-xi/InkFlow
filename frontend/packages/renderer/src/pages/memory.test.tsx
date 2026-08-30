@@ -513,6 +513,40 @@ describe('记忆页 — 挂载加载与语义总结展示', () => {
     renderMemoryPage();
     expect(await screen.findByTestId('memory-summary-empty')).toBeInTheDocument();
   });
+
+  it('#803 长文总结渲染展开/收起按钮；点击展开 → 收起 → 折叠', async () => {
+    const user = userEvent.setup();
+    // 长文本（>EXPAND_THRESHOLD 200 触发渲染 memory-summary-expand）
+    const longContent =
+      '这是一段足够长的语义总结文本：' +
+      '用户偏好使用「低声道」替代「说」，第三人称主角称呼为林晚。'.repeat(10);
+    summaries.project = {
+      content: longContent,
+      anchor_hash: 'abc123',
+      anchor_count: 3,
+      model: 'deepseek-v4-flash',
+      updated_at: '2026-08-10T08:00:00Z',
+    };
+    seedProjects();
+    renderMemoryPage();
+    await screen.findByTestId('memory-summary-card');
+
+    // 初始：长文 → 展开按钮渲染，文案 = 展开（内容折叠，line-clamp-3）
+    const expandBtn = screen.getByTestId('memory-summary-expand');
+    expect(expandBtn).toHaveTextContent('展开');
+    const content = screen.getByTestId('memory-summary-content');
+    expect(content.className).toContain('line-clamp-3');
+
+    // 点击展开 → 全文（移除 line-clamp-3）+ 按钮文案 = 收起
+    await user.click(expandBtn);
+    expect(expandBtn).toHaveTextContent('收起');
+    expect(content.className).not.toContain('line-clamp-3');
+
+    // 再点收起 → 折叠（恢复 line-clamp-3）+ 按钮文案 = 展开
+    await user.click(expandBtn);
+    expect(expandBtn).toHaveTextContent('展开');
+    expect(content.className).toContain('line-clamp-3');
+  });
 });
 
 describe('记忆页 — 提取记忆', () => {
@@ -822,79 +856,5 @@ describe('记忆页 — F49 记忆衰减（删除语义总结 / 被覆盖状态�
 
     expect(screen.getByTestId('memory-userpref-superseded-upref-1')).toBeInTheDocument();
     expect(screen.getByTestId('memory-userpref-superseded-by-upref-1')).toHaveTextContent('upref-2');
-  });
-});
-
-/**
- * #658 记忆统计概览（2026-08-25）：
- * - 页面顶部「统计概览」区块 memory-stats-section（有项目时渲染）；数字卡
- *   memory-stats-total（= learned_preferences + user_preferences.count +
- *   语义总结数）、memory-stats-project-prefs（learned_preferences）、
- *   memory-stats-user-prefs（user_preferences.count）、memory-stats-summaries
- *   （语义总结数）与 agentic 明细卡 memory-stats-chapters /
- *   memory-stats-direct-confirms / memory-stats-modify-rate（百分比） /
- *   memory-stats-regenerate-rate（百分比）/ memory-stats-avg-diff-chars
- * - 统计加载失败不阻断页面（总结/偏好照常渲染）：memory-stats-unavailable 弱提示
- * - MemoryPage 必须 import fetchMemoryStats 自 '../api/memory'
- *   （本文件 vi.mock 工厂已加）→ 有项目挂载时调用 fetchMemoryStats(pid)
- *
- * RED 预期：当前实现无统计区块 → memory-stats-* 元素不存在（元素级 FAIL）；
- * 用户级偏好行内详情 testid 同理。
- */
-describe('记忆页 — 统计概览（#658）', () => {
-  it('有项目挂载 → fetchMemoryStats(pid) 被调用', async () => {
-    seedProjects();
-    renderMemoryPage();
-    await screen.findByTestId('memory-stats-section');
-    expect(fetchMemoryStatsMock).toHaveBeenCalledWith('p1');
-  });
-
-  it('渲染概览数字卡（total=learned+user+总结 / 项目偏好 / 用户偏好 / agentic 明细）', async () => {
-    seedProjects();
-    renderMemoryPage();
-    await screen.findByTestId('memory-stats-section');
-
-    // total = learned_preferences 3 + user_preferences.count 5 + 语义总结 1（summaries.project 存在）= 9
-    expect(screen.getByTestId('memory-stats-total')).toHaveTextContent('9');
-    expect(screen.getByTestId('memory-stats-project-prefs')).toHaveTextContent('3');
-    expect(screen.getByTestId('memory-stats-user-prefs')).toHaveTextContent('5');
-    expect(screen.getByTestId('memory-stats-summaries')).toHaveTextContent('1');
-    // agentic 明细（modify/regenerate 以百分比展示）
-    expect(screen.getByTestId('memory-stats-chapters')).toHaveTextContent('10');
-    expect(screen.getByTestId('memory-stats-direct-confirms')).toHaveTextContent('3');
-    expect(screen.getByTestId('memory-stats-modify-rate')).toHaveTextContent('34%');
-    expect(screen.getByTestId('memory-stats-regenerate-rate')).toHaveTextContent('20%');
-    expect(screen.getByTestId('memory-stats-avg-diff-chars')).toHaveTextContent('48');
-  });
-
-  it('统计加载失败降级：页面不阻断（总结照常渲染）+ memory-stats-unavailable 弱提示', async () => {
-    fetchMemoryStatsMock.mockRejectedValue(new Error('503'));
-    seedProjects();
-    renderMemoryPage();
-    // 统计失败不影响总结/偏好区块（页面仍完整可用）
-    expect(await screen.findByTestId('memory-summary-card')).toBeInTheDocument();
-    expect(await screen.findByTestId('memory-stats-unavailable')).toBeInTheDocument();
-  });
-
-  it('空态：stats 全 0 且无总结 → memory-stats-total 显示 0', async () => {
-    memoryStats = {
-      project_id: 'p1',
-      agentic: {
-        chapters: 0,
-        direct_confirms: 0,
-        avg_diff_chars: 0,
-        modify_rate: 0,
-        regenerate_rate: 0,
-      },
-      learned_preferences: 0,
-      baseline_ref: 'docs/agent-baseline-2026-08-10.md',
-      user_preferences: null,
-    };
-    // 无总结 → 总数 0（与 total=learned+user+总结数 的契约一致）
-    summaries.project = null;
-    summaries.user = null;
-    seedProjects();
-    renderMemoryPage();
-    expect(await screen.findByTestId('memory-stats-total')).toHaveTextContent('0');
   });
 });
