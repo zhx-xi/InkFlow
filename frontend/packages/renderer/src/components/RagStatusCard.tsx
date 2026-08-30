@@ -109,76 +109,89 @@ export function RagStatusCard() {
     <section className="rounded-lg border border-line bg-surface p-6 shadow-card">
       <h2 className="font-serif text-[17px] font-semibold">{t('set.rag.title')}</h2>
 
-      {status && (
-        <div
-          data-testid="rag-status-card"
-          className="mt-5 space-y-3 rounded-lg border border-line bg-surface-2 p-4"
-        >
-          <div className="flex items-center gap-2 text-[12px] text-ink-2">
-            <span>{t('set.rag.model')}</span>
-            <span data-testid="rag-model-name" className="font-medium text-ink">
-              {status.configured_fp?.embedding.model_id ?? '—'}
-            </span>
-          </div>
-
-          {/* #525：切换激活 embedding 模型（无 embedding 模型 → 不渲染 Select） */}
-          {embeddingOptions.length > 0 && (
-            <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
-              <span>{t('set.rag.selectModel')}</span>
-              <Select
-                value={currentEmbedding}
-                onValueChange={(v) => void handleEmbeddingChange(v)}
-              >
-                <SelectTrigger
-                  data-testid="rag-embedding-select"
-                  aria-label={t('set.rag.selectModel')}
-                  className="w-56"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {embeddingOptions.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {status.reason === 'no_embedding' && (
-            <div data-testid="rag-no-embedding" className="text-[12px] text-ink-3">
-              {t('set.rag.noEmbedding')}
-            </div>
-          )}
-
-          {!status.stale && status.reason !== 'no_embedding' && status.configured_fp && (
-            <div className="text-[12px] text-ok">{t('set.rag.fresh')}</div>
-          )}
-
-          {status.stale && (
-            <>
-              <div
-                data-testid="rag-stale-banner"
-                className="rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[12px] text-warn"
-              >
-                {t('set.rag.stale')}
-                {reasonText(status.reason) ? `（${reasonText(status.reason)}）` : ''}
-              </div>
-              <button
-                type="button"
-                data-testid="rag-reindex-btn"
-                disabled={reindexing}
-                className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={() => setConfirming(true)}
-              >
-                {t('set.rag.reindex')}
-              </button>
-            </>
-          )}
+      {/* #824：内容卡恒渲染（不再整体依赖 status —— 修复设置页模型页「向量检索 (RAG)」区块空）；
+          embedding 模型区为全局配置（无项目亦可操作）；项目索引状态区按项目/状态分支 */}
+      <div
+        data-testid="rag-status-card"
+        className="mt-5 space-y-3 rounded-lg border border-line bg-surface-2 p-4"
+      >
+        <div className="flex items-center gap-2 text-[12px] text-ink-2">
+          <span>{t('set.rag.model')}</span>
+          <span data-testid="rag-model-name" className="font-medium text-ink">
+            {status?.configured_fp?.embedding.model_id ?? '—'}
+          </span>
         </div>
-      )}
+
+        {/* #525：切换激活 embedding 模型（无 embedding 模型 → 不渲染 Select） */}
+        {embeddingOptions.length > 0 && (
+          <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
+            <span>{t('set.rag.selectModel')}</span>
+            <Select
+              value={currentEmbedding}
+              onValueChange={(v) => void handleEmbeddingChange(v)}
+            >
+              <SelectTrigger
+                data-testid="rag-embedding-select"
+                aria-label={t('set.rag.selectModel')}
+                className="w-56"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {embeddingOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* ② 项目索引状态区：无项目 → 空态；有项目未加载 → 加载态；已加载 → 完整状态 */}
+        {!currentProjectId ? (
+          <div data-testid="rag-empty" className="text-[12px] text-ink-3">
+            {t('ps.empty')}
+          </div>
+        ) : !status ? (
+          <div data-testid="rag-empty" className="text-[12px] text-ink-3">
+            {t('common.loading')}
+          </div>
+        ) : (
+          <>
+            {status.reason === 'no_embedding' && (
+              <div data-testid="rag-no-embedding" className="text-[12px] text-ink-3">
+                {t('set.rag.noEmbedding')}
+              </div>
+            )}
+
+            {!status.stale && status.reason !== 'no_embedding' && status.configured_fp && (
+              <div className="text-[12px] text-ok">{t('set.rag.fresh')}</div>
+            )}
+
+            {status.stale && (
+              <>
+                <div
+                  data-testid="rag-stale-banner"
+                  className="rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[12px] text-warn"
+                >
+                  {t('set.rag.stale')}
+                  {reasonText(status.reason) ? `（${reasonText(status.reason)}）` : ''}
+                </div>
+                <button
+                  type="button"
+                  data-testid="rag-reindex-btn"
+                  disabled={reindexing}
+                  className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => setConfirming(true)}
+                >
+                  {t('set.rag.reindex')}
+                </button>
+              </>
+            )}
+          </>
+        )}
+      </div>
 
       {confirming && status && (
         <div
