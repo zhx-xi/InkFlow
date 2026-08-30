@@ -16,13 +16,16 @@ _server_thread: threading.Thread | None = None
 _current_server: Any | None = None  # uvicorn.Server 引用，Ctrl+C 优雅关闭用
 
 
-def _run_server(host: str, port: int, reload: bool) -> int:
+def _run_server(host: str, port: int, reload: bool, debug: bool = False) -> int:
     """启动 uvicorn 服务并返回实际监听端口。
 
     非 reload：后台线程运行 uvicorn，等待启动就绪（server.started）后返回
     端口——服务已在运行，serve 输出 INKFLOW_READY 交付行（真实时序修复，
     #77 load-bearing bug）。reload：uvicorn reload supervisor 需主线程语义
     （subprocess 管理），直接阻塞运行，无交付契约。
+
+    Args:
+        debug: F51 debug 模式 → uvicorn log_level="debug"（否则 "info"）。
     """
     import socket
     import time
@@ -36,12 +39,13 @@ def _run_server(host: str, port: int, reload: bool) -> int:
         actual_port = sock.getsockname()[1]
         sock.close()
 
+    log_level = "debug" if debug else "info"
     config = uvicorn.Config(
         "inkflow.api.app:app",
         host=host,
         port=actual_port,
         reload=reload,
-        log_level="info",
+        log_level=log_level,
     )
     server = uvicorn.Server(config)
 
@@ -76,6 +80,9 @@ def serve(
     token: str | None = typer.Option(None, "--token", help="鉴权 token（缺省随机生成）"),
     open_browser: bool = typer.Option(False, "--open-browser", help="自动打开浏览器"),
     reload: bool = typer.Option(False, "--reload", help="开发模式热重载"),
+    debug: bool = typer.Option(
+        False, "--debug", help="Debug 模式（等价 INKFLOW_DEBUG=1；env 优先）"
+    ),
 ) -> None:
     """启动 InkFlow Web 服务."""
     import json
@@ -85,9 +92,18 @@ def serve(
     import webbrowser
 
     from inkflow import __version__
+    from inkflow.core.config import config
 
-    # token 解析：显式指定原样使用，缺省随机生成（每次启动不同）
-    effective_token = token or secrets.token_urlsafe(32)
+    is_debug = config.debug or debug
+
+    # token 解析：显式指定原样使用；debug 缺省用可预测 token（INKFLOW_DEBUG_TOKEN
+    # 可覆盖）；非 debug 缺省随机生成（每次启动不同）
+    if token is not None:
+        effective_token = token
+    elif is_debug:
+        effective_token = os.environ.get("INKFLOW_DEBUG_TOKEN", "inkflow-debug-token")
+    else:
+        effective_token = secrets.token_urlsafe(32)
     # env 注入必须先于 _run_server：reload 子进程经 env 继承 token，校验保持启用
     os.environ["INKFLOW_SERVER_TOKEN"] = effective_token
 
@@ -97,7 +113,16 @@ def serve(
 
     typer.echo(f"🚀 InkFlow 服务启动于 http://{host}:{port}")
 
-    actual_port = _run_server(host, port, reload)
+    if is_debug:
+        actual_port = _run_server(host, port, reload, True)
+    else:
+        # 非 debug 保持 3 参调用（装配缝第 4 参缺省 False，既有 mock 兼容）
+        actual_port = _run_server(host, port, reload)
+
+    # F51 debug 默认自动打开 /docs（_run_server 返回后，用实际监听端口防 :0 死链）
+    if is_debug:
+        docs_url = f"http://{host}:{actual_port}/docs"
+        threading.Timer(1.5, lambda: webbrowser.open(docs_url)).start()
 
     if not reload:
         payload = {

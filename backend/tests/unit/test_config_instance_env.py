@@ -39,7 +39,12 @@ import importlib
 import sys
 from pathlib import Path
 
-from inkflow.core.config import get_instance_env_path, load_instance_env, save_instance_env
+from inkflow.core.config import (
+    InkFlowConfig,
+    get_instance_env_path,
+    load_instance_env,
+    save_instance_env,
+)
 
 
 def _patch_anchor(monkeypatch, anchor: Path) -> None:
@@ -202,3 +207,51 @@ def test_default_data_dir_frozen_without_instance_env(monkeypatch, tmp_path) -> 
     result = _default_data_dir()
 
     assert result == tmp_path / "appdata" / "InkFlow"
+
+
+# ---- F51 debug 字段：env INKFLOW_DEBUG > instance.env INKFLOW_DEBUG > config.json ----
+def test_debug_instance_env_triggers(monkeypatch, tmp_path) -> None:
+    """F51-优先级：env 未设 + instance.env INKFLOW_DEBUG=1 → settings.debug is True。
+
+    RED 阶段 InkFlowConfig 无 debug 字段 → settings.debug 抛 AttributeError
+    （GREEN 义务：新增 debug: bool = False 字段 + model_validator 并入 instance.env）。
+    """
+    anchor = tmp_path / "appdata" / "InkFlow" / "instance.env"
+    _patch_anchor(monkeypatch, anchor)
+    monkeypatch.delenv("INKFLOW_DEBUG", raising=False)
+    anchor.parent.mkdir(parents=True, exist_ok=True)
+    anchor.write_text("INKFLOW_DEBUG=1\n", encoding="utf-8")
+
+    settings = InkFlowConfig()
+
+    assert settings.debug is True
+
+
+def test_debug_env_zero_not_overridden_by_instance_env(monkeypatch, tmp_path) -> None:
+    """F51-D8：env 显式 INKFLOW_DEBUG=0 不被 instance.env=1 覆盖 → debug is False。
+
+    核心契约：pydantic env 已显式设（model_fields_set 含 debug）→ 跳过 instance.env，
+    env 显式 0 保持 False（GREEN 义务）。
+    """
+    anchor = tmp_path / "appdata" / "InkFlow" / "instance.env"
+    _patch_anchor(monkeypatch, anchor)
+    monkeypatch.setenv("INKFLOW_DEBUG", "0")
+    anchor.parent.mkdir(parents=True, exist_ok=True)
+    anchor.write_text("INKFLOW_DEBUG=1\n", encoding="utf-8")
+
+    settings = InkFlowConfig()
+
+    assert settings.debug is False
+
+
+def test_debug_env_wins_over_instance_env(monkeypatch, tmp_path) -> None:
+    """F51-优先级：env INKFLOW_DEBUG=1 胜 instance.env=0 → debug is True（env 最高）。"""
+    anchor = tmp_path / "appdata" / "InkFlow" / "instance.env"
+    _patch_anchor(monkeypatch, anchor)
+    monkeypatch.setenv("INKFLOW_DEBUG", "1")
+    anchor.parent.mkdir(parents=True, exist_ok=True)
+    anchor.write_text("INKFLOW_DEBUG=0\n", encoding="utf-8")
+
+    settings = InkFlowConfig()
+
+    assert settings.debug is True

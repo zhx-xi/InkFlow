@@ -18,7 +18,7 @@ import {
   type MenuItemConstructorOptions,
 } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
@@ -93,9 +93,70 @@ let trayInfoWindowVisible = true;
 /** 已注册的 DevTools 快捷键集合（幂等去重，spec §5.2.9） */
 const registeredDevToolsAccelerators = new Set<string>();
 
+/** 解析 instance.env 文本 → KEY=VALUE 映射（解析规则与 backend load_instance_env
+ * 对齐：空行 / # 注释 / 无 = 行跳过；KEY/VALUE strip；空值键跳过）。 */
+function parseInstanceEnv(content: string): Record<string, string> {
+  const vars: Record<string, string> = {};
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) {
+      continue;
+    }
+    const eq = line.indexOf('=');
+    if (eq < 0) {
+      continue;
+    }
+    const key = line.slice(0, eq).trim();
+    const value = line.slice(eq + 1).trim();
+    if (key && value) {
+      vars[key] = value;
+    }
+  }
+  return vars;
+}
+
+/**
+ * F51 debug-mode 统一开关：INKFLOW_DEBUG 贯穿三层（D6/D7 三层对称）。
+ * 触发源优先级（D1）：进程 env INKFLOW_DEBUG > instance.env INKFLOW_DEBUG > config.json debug。
+ * - env INKFLOW_DEBUG truthy（非空串）→ true（最高优先）；
+ * - instance.env（%APPDATA%/InkFlow/instance.env）含 INKFLOW_DEBUG=1 → true；
+ * - config.json（data_dir = instance.env INKFLOW_DATA_DIR 优先、缺省 %APPDATA%/InkFlow）
+ *   含 "debug": true → true。
+ * app.getPath 不可用（测试 mock）→ try/catch 返回基于 env 的结果。
+ */
+function isDebugMode(): boolean {
+  if (process.env.INKFLOW_DEBUG) {
+    return true;
+  }
+  try {
+    const appData = app.getPath('appData');
+    const instanceEnvPath = path.join(appData, 'InkFlow', 'instance.env');
+    const envVars = existsSync(instanceEnvPath)
+      ? parseInstanceEnv(readFileSync(instanceEnvPath, 'utf8'))
+      : {};
+    if (envVars.INKFLOW_DEBUG === '1') {
+      return true;
+    }
+    const dataDir = envVars.INKFLOW_DATA_DIR || path.join(appData, 'InkFlow');
+    const configPath = path.join(dataDir, 'config.json');
+    if (existsSync(configPath)) {
+      const fileConfig = JSON.parse(readFileSync(configPath, 'utf8')) as {
+        debug?: unknown;
+      };
+      if (fileConfig.debug === true) {
+        return true;
+      }
+    }
+  } catch {
+    // app.getPath 不可用（测试 mock）/ 文件读取解析失败 → 回退为基于 env 的结果
+    return Boolean(process.env.INKFLOW_DEBUG);
+  }
+  return false;
+}
+
 /** dev 测试钩子（spec §3.6）：app.isPackaged === false 时暴露 __kernelInfo 供 Playwright 断言 */
 function updateKernelInfoHook(): void {
-  if (app.isPackaged || !kernelInfo) {
+  if ((app.isPackaged && !isDebugMode()) || !kernelInfo) {
     return;
   }
   (globalThis as unknown as { __kernelInfo?: { pid: number; port: number; token: string } }).__kernelInfo = {
@@ -107,7 +168,7 @@ function updateKernelInfoHook(): void {
 
 /** dev 测试钩子（spec f31 §9）：__trayInfo 跟随 hide/show/设置变更刷新 */
 function updateTrayInfoHook(): void {
-  if (app.isPackaged) {
+  if (app.isPackaged && !isDebugMode()) {
     return;
   }
   (globalThis as unknown as {
@@ -593,6 +654,10 @@ function createMainWindow(): void {
     if (pendingReadyPayload) {
       win.webContents.send('inkflow:ready', pendingReadyPayload);
     }
+    // F51 debug 模式默认自动打开 DevTools（D2）
+    if (isDebugMode()) {
+      win.webContents.openDevTools();
+    }
     sendMaximizedState(); // 初始状态补发（ready-to-show 早于 React 挂载订阅时兜底）
   });
 
@@ -682,6 +747,9 @@ function createTray(): void {
 
 /** dev 测试钩子（spec f31 §9）：__trayActions 直调主进程动作（CI 无真实托盘交互） */
 function exposeTrayDevHooks(): void {
+  if (app.isPackaged && !isDebugMode()) {
+    return;
+  }
   updateTrayInfoHook();
   (globalThis as unknown as {
     __trayActions?: {
@@ -726,9 +794,9 @@ function isFreshRegistrationSession(): boolean {
  * - 幂等：同一会话内重复调用不重复注册（模块级集合去重，新会话重置）；
  *   register 返回 false 时静默忽略。
  */
-export function setupAppMenu(isPackaged: boolean): void {
+export function setupAppMenu(isPackaged: boolean, isDebug = false): void {
   Menu.setApplicationMenu(null);
-  if (isPackaged) {
+  if (isPackaged && !isDebug) {
     return;
   }
   if (isFreshRegistrationSession()) {
@@ -768,7 +836,7 @@ app.whenReady().then(async () => {
   });
 
   app.setAppUserModelId('InkFlow');
-  setupAppMenu(app.isPackaged);
+  setupAppMenu(app.isPackaged, isDebugMode());
   registerWindowControlsHandlers();
   registerSettingsHandlers();
   registerExportHandlers();
@@ -777,7 +845,7 @@ app.whenReady().then(async () => {
   kernelStatePath = resolveKernelStatePath();
   await connectKernel();
   createTray();
-  if (!app.isPackaged) {
+  if (!app.isPackaged || isDebugMode()) {
     exposeTrayDevHooks();
   }
 });
