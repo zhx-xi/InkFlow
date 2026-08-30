@@ -95,7 +95,8 @@ class TestEmptyDefaultModelFallbackToRegistry:
         "inkflow.infrastructure.llm.provider_config.get_provider_config"
     )
     @patch("inkflow.core.config.config")
-    def test_empty_default_falls_back_to_provider_with_key(
+    @pytest.mark.asyncio
+    async def test_empty_default_falls_back_to_provider_with_key(
         self,
         m_config,
         m_get_provider,
@@ -128,7 +129,7 @@ class TestEmptyDefaultModelFallbackToRegistry:
         _default_mocks(m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_rt, m_sd)
         data = ChatStreamRequest(project_id=PROJECT_ID, prompt="hello")
 
-        svc = _get_chat_agent_service()(data=data, db=MagicMock())
+        svc = await _get_chat_agent_service()(data=data, db=MagicMock())
 
         chat_agent_cls = _get_chat_agent_service_cls()
         assert isinstance(svc, chat_agent_cls)
@@ -155,7 +156,8 @@ class TestEmptyDefaultModelFallbackToRegistry:
         side_effect=ValueError("API key not configured for provider"),
     )
     @patch("inkflow.core.config.config")
-    def test_empty_default_no_provider_raises_422(
+    @pytest.mark.asyncio
+    async def test_empty_default_no_provider_raises_422(
         self,
         m_config,
         m_get_provider,
@@ -186,7 +188,7 @@ class TestEmptyDefaultModelFallbackToRegistry:
             "inkflow.infrastructure.llm.provider_config._load_stored_key",
             return_value=None,
         ), pytest.raises(HTTPException) as exc_info:
-            _get_chat_agent_service()(data=data, db=MagicMock())
+            await _get_chat_agent_service()(data=data, db=MagicMock())
 
         assert exc_info.value.status_code == 422
         assert "默认模型" in exc_info.value.detail or "model" in exc_info.value.detail.lower()
@@ -209,7 +211,8 @@ class TestResolveModelPriority:
     @patch(
         "inkflow.domain.services.model_resolution.resolve_model"
     )
-    def test_resolve_model_is_called(
+    @pytest.mark.asyncio
+    async def test_resolve_model_is_called(
         self,
         m_resolve,
         m_char,
@@ -230,7 +233,7 @@ class TestResolveModelPriority:
         )
         data = ChatStreamRequest(project_id=PROJECT_ID, prompt="hello")
 
-        _get_chat_agent_service()(data=data, db=MagicMock())
+        await _get_chat_agent_service()(data=data, db=MagicMock())
 
         # resolve_model must have been called at least once
         assert m_resolve.call_count >= 1

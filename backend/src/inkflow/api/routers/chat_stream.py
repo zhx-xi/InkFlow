@@ -52,6 +52,7 @@ class ChatStreamRequest(BaseModel):
     prompt: str | None = None
     chapter_id: str | None = None
     chapter_context: str | None = None
+    conversation_id: str | None = None  # #766 阶段②：装配守卫按会话删除授权注入删除工具
 
 
 # #597 循环依赖规避：deps.get_chat_agent_service 的函数体惰性 import ChatStreamRequest

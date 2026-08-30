@@ -428,7 +428,8 @@ class TestGetChatAgentService:
     @patch(
         "inkflow.infrastructure.llm.provider_config.get_provider_config"
     )
-    def test_assembles_full_tools(
+    @pytest.mark.asyncio
+    async def test_assembles_full_tools(
         self,
         m_get_provider,
         m_config,
@@ -459,7 +460,7 @@ class TestGetChatAgentService:
         m_sd.return_value = _fake_tool("save_draft")
         m_sw.return_value = [_fake_tool(name) for name in EXPECTED_SETTING_WRITE_NAMES]
 
-        svc = _get_chat_agent_service()(data=data, db=MagicMock())
+        svc = await _get_chat_agent_service()(data=data, db=MagicMock())
 
         # 4 只读 service 注入 ReaderToolDeps（身份同一性）
         reader_deps = _kwarg_or_positional(m_rt.call_args, "deps", 0)
@@ -496,6 +497,8 @@ class TestGetChatAgentService:
             *EXPECTED_WORLD_RW_NAMES,
             *EXPECTED_MEMORY_NAMES,
             *EXPECTED_WRITING_NAMES,
+            "agent_run",
+            "agent_call",  # #766 阶段③ agent 链工具
         ]
         assert _kwarg_or_positional(m_da.call_args, "profile_key", 5, None) is None
         prompt = _kwarg_or_positional(m_da.call_args, "system_prompt", 4, None)
@@ -522,7 +525,8 @@ class TestGetChatAgentService:
     @patch(
         "inkflow.infrastructure.llm.provider_config.get_provider_config"
     )
-    def test_assembles_without_chapter_id(
+    @pytest.mark.asyncio
+    async def test_assembles_without_chapter_id(
         self,
         m_get_provider,
         m_config,
@@ -553,7 +557,7 @@ class TestGetChatAgentService:
         m_sw.return_value = [_fake_tool(name) for name in EXPECTED_SETTING_WRITE_NAMES]
         data = ChatStreamRequest(project_id=PROJECT_ID, prompt="你好")
 
-        _get_chat_agent_service()(data=data, db=MagicMock())
+        await _get_chat_agent_service()(data=data, db=MagicMock())
 
         save_deps = _kwarg_or_positional(m_sd.call_args, "deps", 0)
         assert save_deps.expected_project_id == uuid.UUID(PROJECT_ID)
@@ -569,7 +573,10 @@ class TestGetChatAgentService:
             *EXPECTED_WORLD_RW_NAMES,
             *EXPECTED_MEMORY_NAMES,
             *EXPECTED_WRITING_NAMES,
+            "agent_run",
+            "agent_call",  # #766 阶段③ agent 链工具
         ]
+
 
 # ── TestGetChatAgentServiceDbAndParseFallback: coverage-gap 补测（deps_chat_agent.py） ──
 
@@ -619,7 +626,8 @@ class TestGetChatAgentServiceDbAndParseFallback:
         return_value=None,
     )
     @patch("inkflow.core.config.config")
-    def test_parse_model_string_value_error_raises_422_when_no_provider(
+    @pytest.mark.asyncio
+    async def test_parse_model_string_value_error_raises_422_when_no_provider(
         self,
         m_config,
         m_await_registry,
@@ -647,7 +655,7 @@ class TestGetChatAgentServiceDbAndParseFallback:
             "inkflow.infrastructure.llm.provider_config._load_stored_key",
             return_value=None,
         ), pytest.raises(HTTPException) as exc_info:
-            _get_chat_agent_service()(data=data, db=MagicMock())
+            await _get_chat_agent_service()(data=data, db=MagicMock())
 
         assert exc_info.value.status_code == 422
         assert m_da.call_count == 0

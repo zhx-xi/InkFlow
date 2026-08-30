@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import inkflow.api.deps as deps_module
 from inkflow.infrastructure.agent.pipeline_templates import _CHAT_SYSTEM_AGENT_PROMPT
+from inkflow.infrastructure.agent.tools.reader_tools import Tool
 
 if TYPE_CHECKING:
     from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
@@ -37,18 +38,21 @@ async def _get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-def get_chat_agent_service(
+async def get_chat_agent_service(
     data: deps_module.ChatStreamRequest,
     db: AsyncSession = Depends(_get_db),
 ) -> ChatAgentService:
-    """获取 ChatAgentService 实例（#597 只读 + #748 设定库写入 + #766 更新/世界/记忆/写作）.
+    """获取 ChatAgentService 实例（#597 只读 + #748 设定库写入 + #766 写/删/agent 链）.
 
     chat_stream.py 顶层导入本函数（绑定名同一性 → dependency_overrides 命中）；
     模型/密钥/base_url 解析镜像 get_agentic_writer_service（provider_config 同源）；
     #680: reader tools 装配期注入 project_id（闭包绑定，LLM 无需自报），并注入
     project_context_getter（context_service 7 源渲染 → 系统提示词增强）；
     #748: 新增 3 个设定库写入工具（create_character/world_setting/outline）+ 注入
-    history_getter（ChatMessageService 加载项目历史消息 → 多轮对话有记忆）。
+    history_getter（ChatMessageService 加载项目历史消息 → 多轮对话有记忆）；
+    #766 阶段②: 装配守卫读 conversation.delete_permission——manual 不注入删除工具，
+    ask_once/auto 注入（func 内部按授权分支 interrupt 或直接执行）；
+    #766 阶段③: 注入 agent_run/agent_call（agent 链执行/调用，D5 不给配置 CRUD）。
     """
     import uuid
 
@@ -103,6 +107,35 @@ def get_chat_agent_service(
                 status_code=422,
                 detail="未配置默认模型，请在设置中配置 LLM Provider 和默认模型",
             )
+
+    # #766 阶段② 装配守卫：读 conversation.delete_permission 决定是否挂载删除工具
+    # （manual=不注册；ask_once/auto=注册，func 内部按授权分支 interrupt 或直接执行）。
+    # conversation_id 缺省（旧客户端/无会话）→ 按 manual 兜底，删除工具不注册。
+    conv_svc = deps_module.get_conversation_service(db)
+    conv = None
+    if data.conversation_id is not None:
+        conv = await conv_svc.get(uuid.UUID(data.conversation_id))
+    delete_permission = getattr(conv, "delete_permission", "manual") or "manual"
+
+    async def _run_single_agent(agent: object, input_text: str) -> str:
+        """单 agent 执行钩子（Q1=A 拍板）：按 agent 配置构建 deep agent 并执行一次，返回输出文本."""
+        from langchain_core.messages import HumanMessage
+
+        built_agent = deps_module.build_deep_agent(
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            tools=[],
+            system_prompt=getattr(agent, "system_prompt", "") or "",
+            profile_key=None,
+        )
+        # 鸭子类型：deepagents CompiledStateGraph 提供 ainvoke（Runnable 契约）
+        result = await built_agent.ainvoke({"messages": [HumanMessage(content=input_text)]})
+        history = result.get("messages", []) if isinstance(result, dict) else []
+        for message in reversed(history):
+            if getattr(message, "type", "") == "ai":
+                return getattr(message, "content", "") or ""
+        return ""
 
     context_svc = deps_module.get_context_service(db)
 
@@ -193,6 +226,35 @@ def get_chat_agent_service(
             expected_chapter_id=uuid.UUID(data.chapter_id) if data.chapter_id else None,
         )
     )
+    delete_tools: list[Tool] = []
+    if delete_permission != "manual":
+        from inkflow.domain.models.agent_tools import ToolAuth
+        from inkflow.infrastructure.agent.tools.delete_tools import DeleteToolDeps
+
+        delete_tools = deps_module.build_delete_tools(
+            DeleteToolDeps(
+                character_service=deps_module.get_character_service(db),
+                world_service=deps_module.get_world_service(db),
+                outline_service=deps_module.get_outline_service(db),
+                map_service=deps_module.get_map_service(db),
+                timeline_service=deps_module.get_timeline_service(db),
+                foreshadowing_service=deps_module.get_foreshadowing_service(db),
+                memory_service=deps_module.get_memory_service(db),
+                audit_service=deps_module.get_audit_service(db),
+                auth=ToolAuth(delete_permission=delete_permission),
+                expected_project_id=uuid.UUID(data.project_id),
+            )
+        )
+    from inkflow.infrastructure.agent.tools.agent_chain_tools import AgentChainToolDeps
+
+    agent_chain_tools = deps_module.build_agent_chain_tools(
+        AgentChainToolDeps(
+            agent_service=deps_module.get_agent_service(db),
+            agent_entity_service=deps_module.get_agent_entity_service(db),
+            run_agent=_run_single_agent,
+            expected_project_id=uuid.UUID(data.project_id),
+        )
+    )
     agent = deps_module.build_deep_agent(
         model=model,
         api_key=api_key,
@@ -205,6 +267,8 @@ def get_chat_agent_service(
             *world_rw_tools,
             *memory_tools,
             *writing_tools,
+            *delete_tools,
+            *agent_chain_tools,
         ],
         system_prompt=_CHAT_SYSTEM_AGENT_PROMPT,
         profile_key=None,
