@@ -13,12 +13,15 @@
 from __future__ import annotations
 
 import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
 from inkflow.api.app import app
-from inkflow.domain.ports.extraction_errors import RAGUnavailableError
+from inkflow.domain.ports.extraction_errors import (
+    RAGUnavailableError,
+    VectorStoreError,
+)
 from inkflow.domain.services.extraction_service import ExtractionService
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
@@ -80,3 +83,28 @@ class TestVectorRetrieveRagUnavailable:
         )
         assert response.status_code == 500
         assert "未配置 embedding 模型" in response.json()["detail"]
+
+
+class TestVectorRetrieveVectorStoreError:
+    """POST /api/v1/projects/{pid}/vector/retrieve — 服务层抛 VectorStoreError（hnsw 段读取失败）
+    → 500 + 清晰 detail（非吞空「内部错误（无详情）」，#823）。
+
+    这是映射回归锁（_run_service L114-115 已映射 VectorStoreError→500+detail）；
+    真正 RED 契约在 vector store/service 层（hnsw InternalError → VectorStoreError + 自愈重试）。
+    """
+
+    @patch("inkflow.api.routers.extractions.get_extraction_service")
+    def test_retrieve_vector_store_error_clear_detail(self, mock_get_svc: MagicMock) -> None:
+        """#823: 服务层抛 VectorStoreError（hnsw 段读取失败）→ 500 + detail 含诊断。"""
+        svc = _mock_svc(mock_get_svc)
+        svc.retrieve = AsyncMock(
+            side_effect=VectorStoreError("向量检索失败：chromadb hnsw 段读取失败（character）")
+        )
+        response = client.post(
+            f"/api/v1/projects/{PID}/vector/retrieve",
+            json={"query": "q"},
+        )
+        assert response.status_code == 500
+        detail = response.json()["detail"]
+        assert "chromadb hnsw" in detail
+        assert "内部错误（无详情）" not in detail

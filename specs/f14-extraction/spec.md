@@ -1280,10 +1280,11 @@ _HANDLERS: dict[ExtractionType, ...] = {
 | timeline 提取时事件不再出现于章节 | **不删除**（只增改不删除；自动删除归 Phase 2+，§10） |
 | 手动模式重复提交同一文本 | 200 + status=skipped（source_key="manual" 同 hash） |
 | --force 重跑未变更源 | 200 + status=success（强制执行，run hash 更新） |
-| RAG：vector_store 未装配 / BGE 下载失败 / chroma 错误 | 500: "RAG 向量库不可用: ..."（RAGUnavailableError / VectorStoreError）；**不影响非 RAG 功能** |
+| RAG：vector_store 未装配 / BGE 下载失败 / chroma 错误 | 500: "RAG 向量库不可用: ..."（RAGUnavailableError / VectorStoreError）；**不影响非 RAG 功能**（修改履历 2026-08-31：retrieve 优雅降级防吞空 INTERNAL_ERROR——chroma hnsw 段读取失败不再吞成「内部错误（无详情）」） |
 | extract 带 index=true 但类型为 outline / timeline（关闭时） | 200 + indexed=false + warning "outline/timeline 类型不支持自动索引"（不报错；timeline 开启时 index 生效） |
 | vector retrieve 无结果 / min_score 过滤全空 | 200 + 空 items（正常路径） |
 | vector retrieve top_k 越界（≤0 或 >50） | 422（Pydantic 校验 top_k 1-50，min_score 0-1） |
+| vector retrieve 遇 chromadb hnsw 段读取失败（"Nothing found on disk"，#468 同族） | 服务层自愈：捕获 VectorStoreError → 触发一次 reindex → 重试一次；成功 → 200 命中（relevance_score 降序）；仍失败 → 500 "向量检索失败：chromadb hnsw 段读取失败(...)"（清晰可定位，**不吞空**「内部错误（无详情）」；新增 2026-08-31） |
 | vector reindex 空项目（无档案） | 200 + indexed=0（正常路径） |
 | vector reindex 未指定 entity_types | 默认全部 5 种（config.vector_store_collections） |
 | extract 非法 type 值（API 层） | 422（Pydantic 枚举校验） |
