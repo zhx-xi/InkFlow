@@ -296,12 +296,12 @@ beforeEach(() => {
   });
 });
 
-describe('设置页 — 五分类导航（spec §7.4）', () => {
-  it('settings-nav 五分类按钮 + 默认常规面板（仅激活面板渲染）', () => {
+describe('设置页 — 六分类导航（spec §7.4）', () => {
+  it('settings-nav 六分类按钮 + 默认常规面板（仅激活面板渲染）', () => {
     renderSettings();
     expect(screen.getByTestId('settings-page')).toBeInTheDocument();
     const nav = screen.getByTestId('settings-nav');
-    for (const name of ['常规', '模型', 'Agent', '模板', '账户']) {
+    for (const name of ['常规', '模型', 'Agent', '模板', 'Skill 管理', '账户']) {
       expect(within(nav).getByRole('button', { name })).toBeInTheDocument();
     }
     // 默认常规：主题 radio 可见，Agent 面板未挂载

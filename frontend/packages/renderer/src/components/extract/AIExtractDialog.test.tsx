@@ -213,7 +213,8 @@ describe('「AI 提取」弹窗（#652）', () => {
       expect(call).toBeDefined();
       const body = (call![1] as { body?: Record<string, unknown> }).body;
       expect(body?.project_id).toBe('p1');
-      expect(body?.type).toBeTruthy();
+      // 用户选「伏笔」option → type='foreshadowing'（GENERIC_RESULT 同值）
+      expect(body?.type).toBe('foreshadowing');
       expect(typeof body?.text).toBe('string');
     });
   });

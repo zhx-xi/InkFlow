@@ -118,7 +118,6 @@ describe('设定库页 — 未选择项目空态（spec §7.3）', () => {
     await user.click(within(empty).getByRole('button', { name: '前往项目页' }));
     expect(await screen.findByTestId('location-probe')).toHaveTextContent('/projects');
   });
-
   it('有项目但未选择（currentProjectId=null）：同样空态（入口语义 = 当前项目的设定库）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1, projectP2], currentProjectId: null });
@@ -157,7 +156,6 @@ describe('设定库页 — 项目上下文（spec §7.3）', () => {
       expect(screen.getByTestId('library-list')).toHaveTextContent('林晚');
     });
   });
-
   it('tab 切换：点击大纲 → 面包屑更新 + 拉取 /outlines + 列表渲染', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
@@ -172,7 +170,6 @@ describe('设定库页 — 项目上下文（spec §7.3）', () => {
       expect(screen.getByTestId('library-list')).toHaveTextContent('卷一 风起');
     });
   });
-
   it('列表非空时仍有「新建」按钮（#545：创建实体后无常态创建入口）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
@@ -190,7 +187,6 @@ describe('设定库页 — 项目上下文（spec §7.3）', () => {
     await user.click(createBtn);
     expect(screen.getByTestId('library-create-dialog')).toBeInTheDocument();
   });
-
   it('知识图谱 tab：拉取图谱端点 /knowledge-graph（F48：原 rag tab 改造）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
@@ -203,7 +199,6 @@ describe('设定库页 — 项目上下文（spec §7.3）', () => {
       expect(fetchCalled('/api/v1/projects/p1/knowledge-graph')).toBe(true);
     });
   });
-
   it('时间线 tab：TimelineView 形状（event_timeline 列表渲染 title，无 items）——评审 🔴 修复契约', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
@@ -218,7 +213,6 @@ describe('设定库页 — 项目上下文（spec §7.3）', () => {
       expect(screen.getByTestId('library-list')).toHaveTextContent('决战昆仑');
     });
   });
-
   it('项目切换：选择器切换 → selectProject + 内容重载（新项目端点 + 新列表）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1, projectP2], currentProjectId: 'p1' });
@@ -236,7 +230,6 @@ describe('设定库页 — 项目上下文（spec §7.3）', () => {
       expect(screen.getByTestId('library-list')).toHaveTextContent('沈砚');
     });
   });
-
   it('分类空态引导：无数据分类 → 「还没有{name}，去创建」+ CTA', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
@@ -250,7 +243,6 @@ describe('设定库页 — 项目上下文（spec §7.3）', () => {
     expect(empty).toHaveTextContent('还没有世界观，去创建');
     expect(within(empty).getByTestId('library-tab-empty-cta')).toBeInTheDocument();
   });
-
   it('#196 空态 CTA 打开创建对话框：世界观分类空态「去创建」→ 对话框出现，不跳转 /writing（替代 #105 占位跳转）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
@@ -268,7 +260,6 @@ describe('设定库页 — 项目上下文（spec §7.3）', () => {
     // 不跳转
     expect(screen.queryByTestId('location-probe')).not.toBeInTheDocument();
   });
-
   it('深链直达：/library?cat=outline → 初始 tab 大纲（侧边导航联动）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
@@ -304,7 +295,6 @@ describe('设定库页 — 分类端点全覆盖与失败兜底（#105 补测）
       expect(fetchCalled('/api/v1/projects/p1/foreshadowings')).toBe(true);
     });
   });
-
   it('分类端点失败 → error 态：不显示空态，展示 lib.loadFailed 文案 + library-retry 重试按钮', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
@@ -322,7 +312,6 @@ describe('设定库页 — 分类端点全覆盖与失败兜底（#105 补测）
       expect(screen.getByTestId('library-retry')).toBeInTheDocument();
     });
   });
-
   it('点击 library-retry 重新拉取分类：失败一次后重试成功 → 列表恢复', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
@@ -424,7 +413,6 @@ describe('设定库页 — #196 分类实体手动创建', () => {
     expect(within(dialog).getByLabelText('目标')).toBeInTheDocument();
     expect(within(dialog).getByTestId('library-create-save')).toBeInTheDocument();
   });
-
   it('世界观根创建对话框：字段（名称/内容；根不显示类别）', async () => {
     const { dialog } = await openCreateDialog('世界观');
     expect(within(dialog).getByLabelText('名称')).toBeInTheDocument();
@@ -432,20 +420,17 @@ describe('设定库页 — #196 分类实体手动创建', () => {
     expect(within(dialog).queryByLabelText('类别')).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText('内容')).toBeInTheDocument();
   });
-
   it('大纲分类对话框：字段（名称/描述）', async () => {
     const { dialog } = await openCreateDialog('大纲');
     expect(within(dialog).getByLabelText('名称')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('描述')).toBeInTheDocument();
   });
-
   it('时间线分类对话框：字段（标题/时间显示/描述）', async () => {
     const { dialog } = await openCreateDialog('时间线');
     expect(within(dialog).getByLabelText('标题')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('时间显示')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('描述')).toBeInTheDocument();
   });
-
   it('伏笔分类对话框：字段（标题/优先级/位置/描述）', async () => {
     const { dialog } = await openCreateDialog('伏笔');
     expect(within(dialog).getByLabelText('标题')).toBeInTheDocument();
@@ -453,7 +438,6 @@ describe('设定库页 — #196 分类实体手动创建', () => {
     expect(within(dialog).getByLabelText('位置')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('描述')).toBeInTheDocument();
   });
-
   it('角色创建保存：填写 → POST /characters body 对齐 DTO → 对话框关闭 + 列表刷新出现新角色', async () => {
     // 后端语义 mock：POST 入数组，GET 返回数组（回显式模拟真实落库）
     const chars: Array<{ id: string; name: string }> = [{ id: 'c1', name: '林晚' }];
@@ -507,7 +491,6 @@ describe('设定库页 — #196 分类实体手动创建', () => {
       expect(screen.getByTestId('library-list')).toHaveTextContent('叶孤城');
     });
   });
-
   it('创建保存失败：POST reject → err toast + 对话框保持打开（可修改重试）', async () => {
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
@@ -528,7 +511,6 @@ describe('设定库页 — #196 分类实体手动创建', () => {
     // 对话框保持
     expect(screen.getByTestId('library-create-dialog')).toBeInTheDocument();
   });
-
   it('知识图谱 tab 空态 → 图谱空态引导（F48：不再跳 /writing，改图谱空态 library-kg-empty）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
@@ -612,7 +594,6 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
     expect(within(dialog).getByLabelText('背景')).toHaveValue('剑客');
     expect(within(dialog).getByLabelText('目标')).toHaveValue('决战');
   });
-
   it('L2 编辑保存：PATCH /api/v1/characters/c1 → 关框 + 列表刷新显示新名 + 顶部「已保存」指示', async () => {
     mockCharacters();
     const user = userEvent.setup();
@@ -641,6 +622,47 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
     });
   });
 
+  it('L2b 保存三态全链路：保存中… → 已保存 → 2s 自动隐藏（#189 模式）', async () => {
+    const chars = [{ ...fullChar }];
+    let resolvePatch!: (v: unknown) => void;
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/characters') return { items: chars, total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/characters/c1' && init?.method === 'PATCH') {
+        return new Promise((res) => { resolvePatch = res; });
+      }
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    act(() => {
+      useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
+    });
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await screen.findByTestId('library-list');
+    await user.click(screen.getByTestId('lib-edit-c1'));
+    const dialog = await screen.findByTestId('library-create-dialog');
+    const nameInput = within(dialog).getByLabelText('名称');
+    await user.clear(nameInput);
+    await user.type(nameInput, '叶孤城');
+    await user.click(within(dialog).getByTestId('library-create-save'));
+    // ① saving 中间态：PATCH pending →「保存中…」（lib.saving）
+    await waitFor(() => {
+      expect(screen.getByTestId('lib-save-indicator').textContent).toBe('保存中…');
+    });
+    // ② resolve →「已保存」（lib.saved）
+    await act(async () => {
+      resolvePatch!({ ...fullChar, name: '叶孤城' });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('lib-save-indicator').textContent).toBe('已保存');
+    });
+    // ③ 2s 自动隐藏（真实 timer + 短超时轮询；fake timers 与 RTL waitFor 冲突，skill 建议真实 timer）
+    await waitFor(() => {
+      expect(screen.queryByTestId('lib-save-indicator')).not.toBeInTheDocument();
+    }, { timeout: 4000 });
+  });
+
   it('L3 编辑保存失败：PATCH reject → err toast + 对话框保持打开', async () => {
     mockCharacters();
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
@@ -667,7 +689,6 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
     });
     expect(screen.getByTestId('library-create-dialog')).toBeInTheDocument();
   });
-
   it('L4 行删除按钮 → 确认框：标题含名称 + D11 统一文案', async () => {
     mockCharacters();
     const user = userEvent.setup();
@@ -680,7 +701,6 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
     expect(confirm).toHaveTextContent('林晚');
     expect(confirm).toHaveTextContent('点击确认后立即移除，不可恢复');
   });
-
   it('L5 确认删除：DELETE /api/v1/characters/c1 → 关框 + 列表刷新（条目消失）+ ok toast', async () => {
     // 状态化 mock：初始含 c1（渲染删除按钮），DELETE 后清空（列表刷新条目消失）
     const chars = [{ ...fullChar }];
@@ -716,7 +736,6 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
       expect(useToastStore.getState().toasts.some((t) => t.type === 'ok')).toBe(true);
     });
   });
-
   it('L6 世界观删除：确认框含级联警告 + DELETE 带 ?cascade=true', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
@@ -748,7 +767,6 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
       ).toBe(true);
     });
   });
-
   it('L7 取消按钮关闭且零请求；遮罩点击不关闭（#195）', async () => {
     mockCharacters();
     const user = userEvent.setup();
@@ -771,7 +789,6 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
     // 全程零 DELETE 调用
     expect(apiFetchMock.mock.calls.some((c) => c[1]?.method === 'DELETE')).toBe(false);
   });
-
   it('L8 Esc 关闭确认框且零请求', async () => {
     mockCharacters();
     const user = userEvent.setup();
@@ -785,7 +802,6 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
     expect(screen.queryByTestId('lib-confirm-dialog')).not.toBeInTheDocument();
     expect(apiFetchMock.mock.calls.some((c) => c[1]?.method === 'DELETE')).toBe(false);
   });
-
   it('L9 删除失败：DELETE reject → err toast + 列表不变（条目仍在）', async () => {
     mockCharacters();
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
@@ -808,7 +824,6 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
       expect(screen.getByTestId('library-list')).toHaveTextContent('林晚');
     });
   });
-
   it('L10 知识图谱 tab 无列表行操作按钮（图谱画布视图 library-kg-canvas，F48 改造）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
