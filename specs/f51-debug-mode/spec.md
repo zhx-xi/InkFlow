@@ -70,6 +70,19 @@ class InkFlowConfig(BaseSettings):
 | 3（最低） | config.json `debug` | `{data_dir}/config.json` |
 
 > ⚠️ 实现注意：pydantic-settings 默认只读 os.environ，**不会**自动读 instance.env / config.json——instance.env 需显式并入（`_default_data_dir` 已有 `load_instance_env` 先例，`debug` 同理：model_validator 里读 instance.env / load_config_json 合并），config.json 同理。优先级判定建议在 `config` 实例化后统一解析。
+>
+> **🔴 读优先级实现判据（2026-08-31 技术审查补，防「env 显式 0」误判）**：判定「env 是否显式设置」必须用 `"debug" not in self.model_fields_set`——`if not self.debug: 读 instance.env` 会把「env 显式 INKFLOW_DEBUG=0」误判为「未设」→ 错误覆盖为 instance.env=1。正确：
+> ```python
+> # config 实例化后统一解析（伪代码，实现以 TDD 为准）
+> if "debug" not in self.model_fields_set:          # env 未显式设
+>     ie = load_instance_env()                        # instance.env
+>     if "INKFLOW_DEBUG" in ie: self.debug = ie["INKFLOW_DEBUG"] == "1"
+>     else:
+>         cfg = load_config_json(self.data_dir)       # config.json
+>         if "debug" in cfg: self.debug = bool(cfg["debug"])
+> ```
+> RDD 契约须锁定「env=0 显式关闭 > instance.env=1」（即 env 优先且 `0` 不被覆盖）。
+> **⚠️ 空值边界**：`INKFLOW_DEBUG=`（空串）pydantic 解析会抛 ValidationError（同 `langsmith_enabled` 既有行为）——实现期按「未设置」处理，不崩（与 `langsmith_enabled` 语义对齐）。
 
 ### 2.3 决策论证（bool 字段 vs 枚举 / 独立配置对象）
 
@@ -125,6 +138,11 @@ INKFLOW_DEBUG=1（用户设置）
 
 - **env 继承**（核心优势）：GUI `spawn` 内核时不显式传 env，但子进程默认继承父进程 env——设置一次 `INKFLOW_DEBUG=1`，壳 + 内核**同时**生效。
 - **instance.env / config.json**：Python 内核经 `load_instance_env` / `load_config_json` 读（见 §2.1）；Electron 壳辅助读取（见 §5.3）。
+- **🔴 config.json 三层不对称（2026-08-31 技术审查补，防「统一开关贯穿三层」断裂）**：D6 主张「一个开关贯穿三层」，但 **Electron 壳 `isDebugMode()` 只读 env + instance.env、不读 config.json**（GUI 无 data_dir 定位逻辑；仅 config.json 触发时内核 debug 开、GUI DevTools 不开）。**处置二选一（实现期按 TDD 定，spec 默认建议 A）**：
+  - **A**：`isDebugMode()` 增加 config.json 读取——data_dir 定位 = instance.env `INKFLOW_DATA_DIR` 优先、缺省 `%APPDATA%/InkFlow/config.json`（与后端 `_default_data_dir` 同构），使 config.json 也贯穿三层。
+  - **B**：显式声明「config.json 触发仅作用于内核层（日志/serve），不作用于 GUI 壳」——并在 §1.3 边界声明 + §7 边界表登记。
+  - 无论 A/B，都须在 §7 边界表补「config.json 触发时 GUI 壳行为」一行。
+- **🔴 tryReuseKernel 复用路径（2026-08-31 技术审查补）**：GUI `tryReuseKernel` 复用的是**先前无 debug 启动**的常驻内核（如 CLI 拉起）时，GUI 开了 DevTools 但内核无 debug token//docs，三层不一致。此边界须在 §7 边界表登记「复用既有内核 vs debug 一致性」。
 
 ### 5.2 后端日志：落点修正 + DEBUG 级别（#713）
 
@@ -148,18 +166,19 @@ def resolve_log_dir() -> Path:
 
 `main.ts`：
 
-- 新增 `isDebugMode()`：读 `process.env.INKFLOW_DEBUG`（env）或 `%APPDATA%/InkFlow/instance.env` 的 `INKFLOW_DEBUG`。
-- `setupAppMenu(isPackaged, isDebug)`：`isDebug || !isPackaged` 时注册 F12 / Ctrl+Shift+I 开 DevTools（保留 `isFreshRegistrationSession` 幂等去重）。
+- 新增 `isDebugMode()`：读 `process.env.INKFLOW_DEBUG`（env）或 `%APPDATA%/InkFlow/instance.env` 的 `INKFLOW_DEBUG`（或见 §5.1 config.json 边界处置）。
+- `setupAppMenu(isPackaged, isDebug = false)`：**`isDebug` 带默认值 `false`**（⚠️ 保既有 `main.menu.test.ts` 6 个 `setupAppMenu(true/false)` 单参调用编译兼容；缺省 false = 现行为，既有契约零改动）。`isDebug || !isPackaged` 时注册 F12 / Ctrl+Shift+I 开 DevTools（保留 `isFreshRegistrationSession` 幂等去重）。
 - `createMainWindow` 后：`if (isDebugMode()) win.webContents.openDevTools()`（D2 已拍板默认开）。
-- dev 钩子门控：`updateKernelInfoHook` / `updateTrayInfoHook` / `exposeTrayDevHooks` 改为 `!app.isPackaged || isDebugMode()`。
-- 辅助读取 instance.env：新增小 helper（复用 `app.getPath('appData')` 定位 `%APPDATA%/InkFlow/`，与 kernel.json 同目录定位一致）。
+- dev 钩子门控：`updateKernelInfoHook` / `updateTrayInfoHook` / `exposeTrayDevHooks` 改为 `!app.isPackaged || isDebugMode()`（**4 处**——含 `whenReady` 调用点 `if (!app.isPackaged)`，spec 原列 3 个函数 + 该调用点）。
+- 辅助读取 instance.env：新增小 helper（复用 `app.getPath('appData')` 定位 `%APPDATA%/InkFlow/`，与 kernel.json 同目录定位一致）。**GUI 侧解析规则与后端 `load_instance_env()` 对齐**（空值键跳过 / `#` 注释），防双份解析语义漂移。
 
 ### 5.4 serve 可直达端点（#715）
 
 `serve.py` debug 时：
 
 - **token**：debug 且未显式传 `--token` 时用可预测值——env `INKFLOW_DEBUG_TOKEN`，缺省固定字符串（D1 已拍板）。非 debug 保持 `secrets.token_urlsafe(32)` 随机。
-- **/docs**：debug 时默认打开 `http://127.0.0.1:<port>/docs`（D2 已拍板默认开，复用 `open_browser` 语义）。
+- **/docs**：debug 时默认打开 `http://127.0.0.1:<actual_port>/docs`（D2 已拍板默认开，复用 `open_browser` 语义）。
+  - **🔴 端口 bug（2026-08-31 技术审查补，不修则 M4 必失败）**：既有 `--open-browser` 用**请求端口** `port` 拼 URL（serve.py:95），`--port 0`（GUI 必走路径）时 = `http://127.0.0.1:0/docs` **死链**——debug 复用 `open_browser` 语义会继承此 bug。**必须**：自动打开 `/docs` 用 **`actual_port`**（`_run_server` 返回的实际监听端口），且安排在 `_run_server` 返回之后（顺带 `typer.echo` 的 `{port}` 展示也用 `actual_port`，修既有 `:0` 展示瑕疵）。
 - **uvicorn**：`log_level="debug"`。
 - **端口**：仍 `--port 0` 动态，经端口文件 / `INKFLOW_READY` / 日志可查。
 
@@ -182,11 +201,15 @@ def resolve_log_dir() -> Path:
 | 场景 | 行为 |
 |------|------|
 | `INKFLOW_DEBUG=1` 但未配 LLM / embedding | 应用照常启动；debug 只影响日志/DevTools/serve 行为，不要求 LLM 就绪 |
-| 打包版日志目录 `%APPDATA%/InkFlow/logs` 不可写 | 文件 sink 降级（loguru 容错），console 仍能诊断 |
+| 打包版日志目录 `%APPDATA%/InkFlow/logs` 不可写 | 文件 sink 降级（loguru 容错），console 仍能诊断。**⚠️ 措辞修正（技术审查补）**：`catch=True` 只兜写入期异常；目录只读时 `logger.add` 在**启动期**直接抛错（非降级）——frozen 改 `%APPDATA%` 后可写，风险小，行为按「目录创建/写入失败时启动报错可见，console 仍可诊断」呈现 |
 | instance.env 含 `INKFLOW_DEBUG=0` / `false` | 按 False 处理（不开 debug）；只在值为真（1/true/on）时开启 |
-| env、instance.env、config.json 冲突 | 优先级 env > instance.env > config.json（D1） |
+| env、instance.env、config.json 冲突 | 优先级 env > instance.env > config.json（D1）；**env 显式 `0` 用 `model_fields_set` 判定「已设」不被 instance.env/config.json 覆盖**（见 §2.2 实现判据） |
+| `INKFLOW_DEBUG=`（空串） | 按「未设置」处理（不崩，与 `langsmith_enabled` 语义对齐） |
+| **config.json 触发（仅内核层）** | 内核 debug 开（日志/serve）；**GUI 壳 `isDebugMode()` 是否读 config.json 依 §5.1 boundary 处置 A/B**——若选 B，GUI DevTools 不开（显式声明「仅作用于内核层」）；若选 A，三层贯穿 |
+| **GUI 复用既有内核（tryReuseKernel）** | GUI `tryReuseKernel` 复用先前**无 debug**启动的常驻内核（如 CLI 拉起）时，GUI 开了 DevTools 但内核无 debug token//docs，三层不一致——**边界登记**：复用路径不强制重启内核，debug 一致性靠「复用对象本身是否 debug 启动」决定（实现期若需三层一致，可要求复用前检查内核 debug 标记或强制重启） |
 | 非 debug 模式启动 | 行为零变化（随机 token / 不自动 /docs / info 级别 / 无 DevTools 钩子） |
 | debug 时 `--token` 显式传入 | 尊重显式 token，不覆盖 |
+| debug 时 `--open-browser`/自动 /docs | **用 `actual_port`**（`--port 0` 下不用请求端口 `port`，否则 `:0` 死链）——见 §5.4 |
 
 ## 8. 文件结构
 
@@ -223,12 +246,14 @@ def resolve_log_dir() -> Path:
 
 | 层 | 载体 | 覆盖 |
 |----|------|------|
-| unit（扩展） | `tests/unit/test_log.py` | frozen 日志目录解析（monkeypatch `sys.frozen`）/ debug 级别开关 | 
-| unit（扩展） | `tests/api` / `tests/cli` serve 契约 | serve debug 分支（token /docs / uvicorn log_level），`INKFLOW_READY` 契约不破 |
-| unit（扩展） | `tests/unit/test_config_frozen*`（如存在） | config.debug 读取优先级（env > instance.env > config.json） |
-| frontend unit | `main.menu.test.ts` | debug 门控注册 DevTools（打包版 + debug 也注册）；幂等去重保持 |
-| frontend unit | `main.tray.test.ts` | dev 钩子门控改 `!isPackaged \|\| isDebug` 后打包版 debug 暴露 |
+| unit（扩展） | `tests/unit/test_log.py` | frozen 日志目录解析（monkeypatch `sys.frozen`）/ debug 级别开关 |
+| unit（扩展） | `tests/cli/test_cli_serve.py`（**仓库根 tests/，非 backend/tests/**——serve 契约测试在此，504 行既有） | serve debug 分支（token /docs / uvicorn log_level），`INKFLOW_READY` 契约不破。**⚠️ 该文件 L336-342 硬断言 `uvicorn.Config(..., log_level=\"info\")`——加 debug 分支后仅非 debug 态成立，须标注兼容策略**（debug 分支用 `if config.debug` 隔离，非 debug 断言不变） |
+| unit（扩展） | `tests/unit/test_config_frozen.py`（已存在，非「（如存在）」）+ `tests/unit/test_config_instance_env.py`（204 行，instance.env 基础设施已测） | config.debug 读取优先级（env > instance.env > config.json，含 §7 冲突场景） |
+| frontend unit | `main.menu.test.ts` | debug 门控注册 DevTools（打包版 + debug 也注册）；幂等去重保持。**⚠️ spec 改 `setupAppMenu(isPackaged, isDebug=false)` 带默认值，既有 6 个单参调用编译兼容（缺省 false=现行为）**；新增 `setupAppMenu(true, true)` 注册 / `(true, false)` 不注册 |
+| frontend unit | `main.tray.test.ts` | dev 钩子门控改 `!isPackaged \|\| isDebug` 后打包版 debug 暴露。**⚠️ 该文件目前零钩子用例（grep kernelInfo/Hook 0 命中），正/负向均须新建** |
 | CI | ci.yml 既有 job | 本 spec PR 全绿（coverage-backend 98.5/95.0 不变，ADR-027） |
+
+> **🔴 既有测试破坏清单（QA 审查补，M6「既有测试全绿」成立条件）**：本 spec 改动会触碰的既有测试须预判兼容——① `main.menu.test.ts` 6 用例调 `setupAppMenu(true/false)` 单参 → 靠 `isDebug=false` 默认值零改动；② `tests/cli/test_cli_serve.py` L336-342 `log_level=\"info\"` 硬断言 → debug 分支用 `if config.debug` 隔离，非 debug 断言不变；③ `test_log.py` 既有「dev 分支 == backend/logs」断言 → dev 分支不改零影响。
 
 ### 9.2 关键场景
 
@@ -282,17 +307,20 @@ def resolve_log_dir() -> Path:
 | D4 | **serve debug token 来源** | env `INKFLOW_DEBUG_TOKEN`，缺省固定字符串 | 可预测 + 可配置；仅 debug 生效 | 仅固定字符串（不可配）；仅 instance.env（env 临时启用时无配置） |
 | D5 | **server_host 保持 127.0.0.1** | debug 不改监听地址 | 防局域网暴露（安全） | 临时改 `0.0.0.0`（暴露风险，如需要单独拍板） |
 | D6 | **统一开关贯穿三层** | 一个 `INKFLOW_DEBUG` 贯穿壳 + 内核 + serve | env 继承自动传播；成本低 | 每层独立开关（碎片化） |
+| D7 | **config.json 触发源三层对称（2026-08-31 技术审查补）** | `isDebugMode()` 增加 config.json 读取（data_dir 定位 = instance.env `INKFLOW_DATA_DIR` 优先、缺省 `%APPDATA%/InkFlow/config.json`），使 config.json 也贯穿三层（方案 A，见 §5.1） | 补 D6「单开关贯穿三层」在 config.json 触发时的缺口 | 方案 B（config.json 仅内核层，GUI 不开）——三层不一致，否决 |
+| D8 | **env=0 优先级判据（2026-08-31 技术审查补）** | 用 `model_fields_set` 判定「env 是否显式设置」，env 显式 `0` 不被 instance.env/config.json 覆盖 | 防「`if not debug` 误判 env=0 为未设」→ 错误覆盖 | 朴素 `if not self.debug`（判据缺失，TDD 易实现错） |
+| D9 | **auto-open /docs 端口（2026-08-31 技术审查补）** | 自动打开 `/docs` 用 `actual_port` 且 `_run_server` 返回后；`typer.echo` 的 `{port}` 展示也用 `actual_port` | `--port 0` 下请求端口 = `:0` 死链，必须用实际监听端口 | 复用既有 `open_browser` 的请求端口 `port`（`--port 0` 下 M4 必失败） |
 
 ## 13. 验收标准
 
 | # | 验收项（M 行） | 验证方式 | 载体 |
 |---|---------------|----------|------|
 | M1 | 打包版启动后日志落 `%APPDATA%/InkFlow/logs/inkflow_*.log`（#713） | 打包版实测（frozen）+ `tests/unit/test_log.py` frozen 分支 | 手动 + 单元 |
-| M2 | `INKFLOW_DEBUG=1` 时 console + 文件日志均 DEBUG（#713） | 设 env 启动实测 | 手动 |
-| M3 | 打包版 + debug：F12 / Ctrl+Shift+I 可开 DevTools；`__kernelInfo`/`__trayInfo`/`__trayActions` 暴露（#714） | `main.menu.test.ts` + 打包版实测 | 单元 + 手动 |
-| M4 | debug 起内核可达 `/docs`；已知 token + `X-InkFlow-Token` header curl 成功；uvicorn debug 日志（#715） | serve 契约 + 实测 | 单元 + 手动 |
-| M5 | 非 debug 回归：随机 token / 不自动 /docs / info 级别 / 无 DevTools 钩子 | 契约测试 + 对比实测 | 单元 + 手动 |
-| M6 | 既有测试全绿（backend unit/api/cli + frontend main.menu/tray）+ coverage 门槛 98.5/95.0 不变 | ci.yml PR 全绿 | CI |
+| M2 | `INKFLOW_DEBUG=1` 时 console + 文件日志均 DEBUG（#713） | 设 env 启动实测 + `tests/unit/test_log.py` debug 级别开关（断言 sink level）；**三路触发源（env/instance.env/config.json）各验一次** | 手动 + 单元 |
+| M3 | 打包版 + debug：F12 / Ctrl+Shift+I 可开 DevTools；`__kernelInfo`/`__trayInfo`/`__trayActions` 暴露（#714） | `main.menu.test.ts`（isDebug 门控注册）+ `main.tray.test.ts`（钩子暴露，正/负向）+ 打包版实测 | 单元 + 手动 |
+| M4 | debug 起内核可达 `/docs`（**用 actual_port** + 已知 token + `X-InkFlow-Token` header curl 成功）；uvicorn debug 日志（#715） | `tests/cli/test_cli_serve.py` debug 分支（token //docs actual_port / `uvicorn.Config` log_level）、`INKFLOW_READY` 四字段不破 | 单元 + 手动 |
+| M5 | 非 debug 回归：随机 token / 不自动 /docs / info 级别 / 无 DevTools 钩子 | 契约测试（`test_serve_default_token_is_random_per_start`、`main.menu.test.ts` 生产零注册）+ **新增「缺省不注册 Timer / 不自动 /docs」负向用例** | 单元 + 手动 |
+| M6 | 既有测试全绿（backend unit/api/cli + frontend main.menu/tray，见 §9.1 既有测试破坏清单）+ coverage 门槛 98.5/95.0 不变 | ci.yml PR 全绿 | CI |
 
 > 完成标准映射：M1-M2 = #713（后端）；M3 = #714（GUI）；M4 = #715（serve）；M5-M6 = 回归 + 质量门禁。
 
@@ -303,8 +331,3 @@ def resolve_log_dir() -> Path:
 3. **Q3 serve debug token 来源**：env `INKFLOW_DEBUG_TOKEN` 缺省固定字符串。**✅ 已确认（用户 2026-08-27 按建议拍板）**——正文 §5.4/§12 D4。
 
 > 附：D3/D5（debug 日志面 P1 一并做、server_host 保持 127.0.0.1）也在 2026-08-27 用户按建议确认，正文已按此定稿。
-
-
-
-
-
