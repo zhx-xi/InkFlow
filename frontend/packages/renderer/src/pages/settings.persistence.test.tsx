@@ -304,7 +304,6 @@ describe('设置页 — 关闭窗口时设置（#167 F31 RED 契约）', () => {
   afterEach(() => {
     setInjected(undefined);
   });
-
   it('渲染「关闭窗口时」标签 + Select（combobox aria-label），默认值「最小化到系统托盘」（set.closeBehavior.tray）', async () => {
     renderSettings();
     const panel = screen.getByTestId('settings-panel');
@@ -316,7 +315,6 @@ describe('设置页 — 关闭窗口时设置（#167 F31 RED 契约）', () => {
       expect(select).toHaveTextContent('最小化到系统托盘');
     });
   });
-
   it('挂载时调用 getCloseBehavior() 取初值（mock 返回 tray → Select 显示「最小化到系统托盘」）', async () => {
     renderSettings();
     // GREEN 前设置项未实现、零 IPC 调用 → toHaveBeenCalledTimes(1) FAIL = RED
@@ -325,7 +323,6 @@ describe('设置页 — 关闭窗口时设置（#167 F31 RED 契约）', () => {
       expect(screen.getByRole('combobox', { name: '关闭窗口时' })).toHaveTextContent('最小化到系统托盘');
     });
   });
-
   it('切换 Select 到「直接退出」→ settings.setCloseBehavior(quit) 被调用（选择即生效）', async () => {
     const user = userEvent.setup();
     renderSettings();
@@ -340,7 +337,29 @@ describe('设置页 — 关闭窗口时设置（#167 F31 RED 契约）', () => {
     });
     expect(select).toHaveTextContent('直接退出');
   });
-
+  it('切换 Select 到「直接退出」但 PATCH 失败 → err toast + 值回弹「最小化到系统托盘」+ 零 IPC 推送（§5.3 失败回弹）', async () => {
+    // patchSettingsMock 默认成功（beforeEach）→ 本用例覆盖为 reject（store PATCH 出口失败）
+    patchSettingsMock.mockRejectedValue(new Error('保存失败'));
+    const user = userEvent.setup();
+    renderSettings();
+    const select = screen.getByRole('combobox', { name: '关闭窗口时' });
+    await waitFor(() => {
+      expect(select).toHaveTextContent('最小化到系统托盘');
+    });
+    await user.click(select);
+    await user.click(await screen.findByRole('option', { name: '直接退出' }));
+    // store setter 已执行（真实 setter 的 catch 分支）→ err toast「保存失败」（pushSaveFailed）
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'err')).toBe(true);
+    });
+    // 值回弹：store 未更新（closeBehavior 保持 tray）→ Select 显示原值
+    expect(useThemeStore.getState().closeBehavior).toBe('tray');
+    await waitFor(() => {
+      expect(select).toHaveTextContent('最小化到系统托盘');
+    });
+    // 不推送 IPC（PATCH 失败 → settings.setCloseBehavior 零调用）
+    expect(settingsApi.setCloseBehavior).not.toHaveBeenCalled();
+  });
   it('无 window.INKFLOW_API（浏览器 dev）→ 渲染不崩，Select 仍显示默认值「最小化到系统托盘」', async () => {
     setInjected(undefined);
     renderSettings();
@@ -368,7 +387,6 @@ describe('设置页 — F32 font / closeBehavior 读 store（spec §6.2）', () 
     // 在 RED 阶段误 PASS；/^衬线$/ 钉死精确文本。GREEN 前本地 state 恒 'sans'（无衬线）→ FAIL = RED
     expect(screen.getByRole('combobox', { name: '编辑器字体' })).toHaveTextContent(/^衬线$/);
   });
-
   it('关闭窗口时 Select 渲染初值 = store.closeBehavior（非本地 state）', () => {
     // 不注入 INKFLOW_API：挂载 IPC 读被可选链吞掉，展示值应完全来自 store
     useThemeStore.setState({ closeBehavior: 'quit' } as unknown as Partial<ThemeStoreF32>);
@@ -434,7 +452,6 @@ describe('设置页 — #199 保存反馈统一化（顶部「已保存」）', 
     // store 已持久化（wire 佐证）
     expect(useThemeStore.getState().font).toBe('mono');
   });
-
   it('关闭窗口时 Select 切换「直接退出」→ 顶部「已保存」（closeBehavior 即改即存反馈）', async () => {
     const user = userEvent.setup();
     renderSettings();
@@ -445,7 +462,6 @@ describe('设置页 — #199 保存反馈统一化（顶部「已保存」）', 
     });
     expect(useThemeStore.getState().closeBehavior).toBe('quit');
   });
-
   it('首次托盘提示开关切换 → 顶部「已保存」（trayHint 即改即存反馈）', async () => {
     const user = userEvent.setup();
     renderSettings();
@@ -456,7 +472,6 @@ describe('设置页 — #199 保存反馈统一化（顶部「已保存」）', 
     });
     expect(useThemeStore.getState().trayHintDismissed).toBe(true);
   });
-
   it('font 切换 PATCH 失败 → err toast + 顶部指示器不显示「已保存」（失败回隐藏，提示走 err toast）', async () => {
     patchSettingsMock.mockRejectedValue(new Error('network down'));
     const user = userEvent.setup();
@@ -519,7 +534,6 @@ describe('设置页 — default_words 卸载 flush（F32 §5.4 RED 契约）', (
     await user.click(within(screen.getByTestId('settings-nav')).getByRole('button', { name: '常规' }));
     expect(screen.getByLabelText('新章节默认字数')).toHaveValue(5000);
   });
-
   it('输入 5000 → 再改 6000 → 立即卸载 → flush PATCH 携带 6000（ref 镜像契约，评审 🟡-7）', async () => {
     const user = userEvent.setup();
     const { unmount } = renderSettings();
@@ -540,7 +554,6 @@ describe('设置页 — default_words 卸载 flush（F32 §5.4 RED 契约）', (
       expect(lastBody.config.default_words).toBe(6000);
     });
   });
-
   it('flush PATCH 成功 → project store 本地 config.default_words 已更新（评审 🔴-2：remount 懒初始化读新值前提）', async () => {
     const user = userEvent.setup();
     renderSettings();
@@ -553,7 +566,6 @@ describe('设置页 — default_words 卸载 flush（F32 §5.4 RED 契约）', (
       expect(useProjectStore.getState().projects[0].config.default_words).toBe(7000);
     });
   });
-
   it('卸载 flush PATCH reject → err toast + agent store.config.default_words 未被污染（缺陷 #4 修复）', async () => {
     apiFetchMock.mockRejectedValue(new Error('network down'));
     const user = userEvent.setup();
@@ -569,7 +581,6 @@ describe('设置页 — default_words 卸载 flush（F32 §5.4 RED 契约）', (
     // 现状 blur 路径 PATCH 前先 setConfig → 污染（default_words=5000）→ toBeUndefined FAIL = RED
     expect(useAgentStore.getState().config.default_words).toBeUndefined();
   });
-
   it('currentProjectId 变化 → 输入框重读新项目 config.default_words + 清 dirty（缺陷 #2 修复）', async () => {
     useProjectStore.setState({
       projects: [
@@ -587,7 +598,6 @@ describe('设置页 — default_words 卸载 flush（F32 §5.4 RED 契约）', (
     // GREEN 前 useState 惰性初始化只跑一次 → 输入框仍 30000 → waitFor 超时 = RED
     await waitFor(() => expect(input).toHaveValue(60000));
   });
-
   it('无当前项目：输入 → 卸载 → PATCH 未发出（评审 🟢；确认型——现状 blur 路径已有无项目守卫，预期 RED 阶段即绿）', async () => {
     useProjectStore.setState({ projects: [], currentProjectId: null });
     const user = userEvent.setup();
@@ -601,7 +611,6 @@ describe('设置页 — default_words 卸载 flush（F32 §5.4 RED 契约）', (
     );
     expect(patchCalls).toHaveLength(0);
   });
-
   it('#399：PATCH 异步在途 → 切回常规 remount → store 合并后输入框自动同步 5000（订阅式重读）', async () => {
     // 模拟 E2E F32 M1（e2e-settings.spec.ts:227）真实时序：输入 5000 → 切分类（blur flush PATCH
     // 发出，异步在途）→ 立即切回常规 → remount 懒初始化读 store 旧值 800000 → PATCH 完成后
@@ -666,7 +675,6 @@ describe('设置页 — 数据目录持久化（#266 RED 契约）', () => {
       restart_required: true,
     });
   });
-
   it('test_account_data_dir_input_shows_api_value：挂载账户面板 → fetchDataDir 回显 data_dir', async () => {
     renderSettings();
     switchToAccount();
@@ -677,7 +685,6 @@ describe('设置页 — 数据目录持久化（#266 RED 契约）', () => {
     });
     expect(fetchDataDirMock).toHaveBeenCalled();
   });
-
   it('test_account_data_dir_save_calls_put_and_shows_hint：修改 + 保存 → PUT body 精确 + 重启提示 + ok toast', async () => {
     renderSettings();
     switchToAccount();
@@ -698,7 +705,6 @@ describe('设置页 — 数据目录持久化（#266 RED 契约）', () => {
       expect(toasts.some((t) => t.type === 'ok')).toBe(true);
     });
   });
-
   it('test_account_data_dir_save_failure_shows_err_toast：保存失败 → err toast + 提示行不显示', async () => {
     updateDataDirMock.mockRejectedValueOnce(new Error('boom'));
     renderSettings();
@@ -714,7 +720,6 @@ describe('设置页 — 数据目录持久化（#266 RED 契约）', () => {
     // 提示行不显示
     expect(screen.queryByTestId('settings-data-dir-hint')).not.toBeInTheDocument();
   });
-
   it('test_account_data_dir_input_has_aria_label：input aria-label = 数据目录（set.account.dataDir）', async () => {
     renderSettings();
     switchToAccount();
@@ -820,7 +825,6 @@ describe('RAG 向量检索区块（#276）', () => {
     vectorStatusMock.mockResolvedValue(ragStatusFresh);
     vectorReindexMock.mockResolvedValue(ragReindexResult);
   });
-
   it('test_rag_fresh_shows_model_name_and_no_banner：fresh → 模型名 + 匹配态，无横幅', async () => {
     renderModelsPanel();
     expect(await screen.findByTestId('rag-model-name')).toHaveTextContent(
@@ -830,7 +834,6 @@ describe('RAG 向量检索区块（#276）', () => {
     expect(screen.queryByTestId('rag-stale-banner')).not.toBeInTheDocument();
     expect(screen.queryByTestId('rag-reindex-btn')).not.toBeInTheDocument();
   });
-
   it('test_rag_stale_shows_banner_and_reindex_button：stale → 横幅（reason 文案）+ 按钮', async () => {
     vectorStatusMock.mockResolvedValue(ragStatusStaleModelChanged);
     renderModelsPanel();
@@ -838,14 +841,12 @@ describe('RAG 向量检索区块（#276）', () => {
     expect(banner.textContent).toContain('模型已变更');
     expect(screen.getByTestId('rag-reindex-btn')).toBeInTheDocument();
   });
-
   it('test_rag_unknown_shows_banner：unknown（存量升级）视同 stale → 横幅 + 按钮', async () => {
     vectorStatusMock.mockResolvedValue(ragStatusUnknown);
     renderModelsPanel();
     expect(await screen.findByTestId('rag-stale-banner')).toBeInTheDocument();
     expect(screen.getByTestId('rag-reindex-btn')).toBeInTheDocument();
   });
-
   it('test_rag_no_embedding_shows_hint：未配置 embedding → 提示态，无横幅无按钮', async () => {
     vectorStatusMock.mockResolvedValue(ragStatusNoEmbedding);
     renderModelsPanel();
@@ -853,7 +854,6 @@ describe('RAG 向量检索区块（#276）', () => {
     expect(screen.queryByTestId('rag-stale-banner')).not.toBeInTheDocument();
     expect(screen.queryByTestId('rag-reindex-btn')).not.toBeInTheDocument();
   });
-
   it('test_rag_reindex_flow_confirm_then_fresh：点击按钮 → 确认 → reindex → 刷新 fresh 横幅消失', async () => {
     vectorStatusMock.mockResolvedValueOnce(ragStatusStaleModelChanged).mockResolvedValue(ragStatusFresh);
     renderModelsPanel();
@@ -870,7 +870,6 @@ describe('RAG 向量检索区块（#276）', () => {
     });
     expect(vectorStatusMock).toHaveBeenCalledTimes(2);
   });
-
   it('test_rag_dimension_mismatch_shows_destructive_confirm：维度不匹配 → 破坏性二次确认文案', async () => {
     vectorStatusMock.mockResolvedValue({ ...ragStatusStaleModelChanged, dimension_mismatch: true });
     renderModelsPanel();

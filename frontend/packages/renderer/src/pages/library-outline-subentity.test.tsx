@@ -235,12 +235,33 @@ describe('#649 大纲子项写操作（情节节点/故事弧 CRUD + AI 生成�
     await waitFor(() => {
       const patch = apiFetchMock.mock.calls.find((c) => c[0] === '/api/v1/plot-points/p1' && c[1]?.method === 'PATCH');
       expect(patch).toBeTruthy();
-      expect((patch![1]!.body as Record<string, unknown>).name).toBe('主角入场');
+      // #649 保存契约：PATCH body 只含变化字段（只改了名称；type/description/arc_id 未变不进 body）
+      const body = patch![1]!.body as Record<string, unknown>;
+      expect(body.name).toBe('主角入场');
+      expect(Object.keys(body)).toEqual(['name']);
     });
     await waitFor(() => {
       const tree = screen.getByTestId('outline-tree');
       expect(within(tree).getByText('主角入场')).toBeInTheDocument();
     });
+  });
+
+  it('T2b 全字段未变直接保存 → 零 PATCH 请求（仅变化字段才发 PATCH，空 body 不发）', async () => {
+    const state = makeState();
+    mockOutlineApi(state);
+    renderLibrary();
+    const user = userEvent.setup();
+    await enterOutlineTab(user);
+    await user.click(screen.getByTestId('outline-point-edit-p1'));
+    const dialog = await screen.findByTestId('outline-point-dialog');
+    // 不改任何字段直接保存（名称预填非空 → 保存按钮可用）
+    await user.click(within(dialog).getByTestId('outline-point-save'));
+    // 保存流程走完（对话框关闭 + 刷新）
+    await waitFor(() => {
+      expect(screen.queryByTestId('outline-point-dialog')).not.toBeInTheDocument();
+    });
+    // 全字段未变 → 零 PATCH 请求（OutlineTree handlePointSave 空 body 不发）
+    expect(apiFetchMock.mock.calls.some((c) => c[1]?.method === 'PATCH')).toBe(false);
   });
 
   it('T3 情节节点删除：行内「🗑」→ 确认框（含名称）→ 确认 → DELETE /plot-points/p1 → 行消失', async () => {
@@ -302,7 +323,10 @@ describe('#649 大纲子项写操作（情节节点/故事弧 CRUD + AI 生成�
     await waitFor(() => {
       const patch = apiFetchMock.mock.calls.find((c) => c[0] === '/api/v1/story-arcs/a1' && c[1]?.method === 'PATCH');
       expect(patch).toBeTruthy();
-      expect((patch![1]!.body as Record<string, unknown>).name).toBe('主角蜕变线');
+      // #649 保存契约：PATCH body 只含变化字段（description 未变不进 body）
+      const body = patch![1]!.body as Record<string, unknown>;
+      expect(body.name).toBe('主角蜕变线');
+      expect(Object.keys(body)).toEqual(['name']);
     });
     await waitFor(() => {
       expect(screen.getByText('主角蜕变线')).toBeInTheDocument();
