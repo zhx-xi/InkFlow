@@ -695,14 +695,15 @@ class BookAgenticPipeline:
             expected_project_id=plan.project_id,
             expected_chapter_id=chapter["chapter_id"],
         )
-        result = await agent.invoke(  # type: ignore[attr-defined]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages)
+        result = await agent.invoke(  # type: ignore[attr-defined]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages, config)
             [
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
                     "content": (f"请撰写章节《{chapter['name']}》：{chapter['description']}"),
                 },
-            ]
+            ],
+            config={"configurable": {"thread_id": self._thread_id}},
         )
         content = _extract_final_content(result)
         draft = await self._draft_service.create(  # type: ignore[attr-defined]  # 鸭子类型：draft_service 按 F27 契约提供 async create

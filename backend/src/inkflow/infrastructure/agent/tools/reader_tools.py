@@ -191,6 +191,7 @@ def build_reader_tools(
     async def _search_characters(
         search: str | None = None,
         group_id: uuid.UUID | None = None,
+        **kwargs: object,
     ) -> str:
         try:
             if group_id is not None:
@@ -205,7 +206,7 @@ def build_reader_tools(
         except Exception as exc:
             return _fail(exc)
 
-    async def _check_foreshadowing(status: str | None = None) -> str:
+    async def _check_foreshadowing(status: str | None = None, **kwargs: object) -> str:
         try:
             items = await _fetch_all_pages(
                 deps.foreshadowing_service.list,  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
@@ -216,7 +217,7 @@ def build_reader_tools(
         except Exception as exc:
             return _fail(exc)
 
-    async def _get_prior_summary(limit: int = 10) -> str:
+    async def _get_prior_summary(limit: int = 10, **kwargs: object) -> str:
         try:
             result = await deps.summary_service.list_recent(  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
                 bound_project_id, limit=limit
@@ -228,6 +229,7 @@ def build_reader_tools(
     async def _audit_chapter(
         chapter_id: uuid.UUID,
         include_static: bool = True,
+        **kwargs: object,
     ) -> str:
         chapter_id = _coerce_uuid(chapter_id)
         try:
@@ -240,7 +242,7 @@ def build_reader_tools(
         except Exception as exc:
             return _fail(exc)
 
-    async def _count_words(text: str) -> str:
+    async def _count_words(text: str, **kwargs: object) -> str:
         try:
             return _ok(count_words(text))
         except Exception as exc:

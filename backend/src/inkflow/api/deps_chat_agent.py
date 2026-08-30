@@ -130,7 +130,10 @@ async def get_chat_agent_service(
             profile_key=None,
         )
         # 鸭子类型：deepagents CompiledStateGraph 提供 ainvoke（Runnable 契约）
-        result = await built_agent.ainvoke({"messages": [HumanMessage(content=input_text)]})
+        result = await built_agent.ainvoke(
+            {"messages": [HumanMessage(content=input_text)]},
+            config={"configurable": {"thread_id": str(uuid.uuid4())}},
+        )
         history = result.get("messages", []) if isinstance(result, dict) else []
         for message in reversed(history):
             if getattr(message, "type", "") == "ai":
@@ -273,9 +276,12 @@ async def get_chat_agent_service(
         system_prompt=_CHAT_SYSTEM_AGENT_PROMPT,
         profile_key=None,
     )
+    # #821：InMemorySaver 需要 thread_id —— conversation_id 缺失时生成稳定 uuid 兜底
+    thread_id = str(data.conversation_id) if data.conversation_id else str(uuid.uuid4())
     return ChatAgentService(
         agent=agent,
         system_prompt=_CHAT_SYSTEM_AGENT_PROMPT,
         project_context_getter=_project_context_getter,
         history_getter=_history_getter,
+        thread_id=thread_id,
     )

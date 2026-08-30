@@ -43,7 +43,7 @@ class _FakeAgent:
     def __init__(self) -> None:
         self.calls: list[dict] = []
 
-    async def astream_events(self, inputs, version="v2"):
+    async def astream_events(self, inputs, version="v2", config=None):
         self.calls.append({"inputs": inputs, "version": version})
         yield {
             "event": "on_chat_model_stream",
@@ -176,7 +176,7 @@ class _RaisingToolAgent:
     def __init__(self) -> None:
         self.calls: list[dict] = []
 
-    async def astream_events(self, inputs, version="v2"):
+    async def astream_events(self, inputs, version="v2", config=None):
         self.calls.append({"inputs": inputs, "version": version})
         yield {
             "event": "on_tool_start",
@@ -213,7 +213,7 @@ class TestStreamEventsToolExceptionTerminal:
         from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
 
         class _BoomAgent:
-            async def astream_events(self, inputs, version="v2"):
+            async def astream_events(self, inputs, version="v2", config=None):
                 raise RuntimeError("boom")
                 yield  # unreachable
 
@@ -232,7 +232,7 @@ class _ModelEndAgent:
         self.output = output
         self.stream_first = stream_first
 
-    async def astream_events(self, inputs, version="v2"):
+    async def astream_events(self, inputs, version="v2", config=None):
         if self.stream_first:
             yield {
                 "event": "on_chat_model_stream",
@@ -248,7 +248,7 @@ class _ModelEndAgent:
 class _ToolFlowAgent:
     """fake agent 产出 tool_start → tool_end → tool_start → 未知事件。"""
 
-    async def astream_events(self, inputs, version="v2"):
+    async def astream_events(self, inputs, version="v2", config=None):
         yield {
             "event": "on_tool_start",
             "run_id": "tool_1",
@@ -347,7 +347,7 @@ class TestStreamEventsCoverageGaps:
 class _WriteToolFlowAgent:
     """#718 fake agent - 产 save_draft 工具调用 + {ok:True} 结果，验证写工具流终止于 done."""
 
-    async def astream_events(self, inputs, version="v2"):
+    async def astream_events(self, inputs, version="v2", config=None):
         yield {
             "event": "on_tool_start",
             "run_id": "tool_1",
@@ -397,7 +397,7 @@ class _ReasoningAgent:
     def __init__(self, output: object) -> None:
         self.output = output
 
-    async def astream_events(self, inputs, version="v2"):
+    async def astream_events(self, inputs, version="v2", config=None):
         yield {"event": "on_chat_model_end", "data": {"output": self.output}}
 
 

@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import threading
 from dataclasses import dataclass, field
@@ -56,19 +57,39 @@ _BUILTIN_PROVIDERS: dict[str, str | None] = {
 
 
 def _load_stored_key(provider: str) -> str | None:
-    """key 回退链第 3 级：读取 APIKeyManager 已存 key（data_dir/keys/{provider}.json）。
+    """key 回退链第 3 级：读取 APIKeyManager 已存 key（data_dir/keys/{provider}.json / .key）。
 
-    文件不存在/解密失败 → 忽略（返回 None），继续回退下一级。
+    #821 打包版差异防御：存储格式与当前 secret_key 状态不匹配时（如明文/密文
+    不一致），交叉尝试 get_key → 明文 .key → 密文 .json 解密，任一命中即返回；
+    全部失败 → 返回 None（保持调用方回退语义）。文件不存在/解密失败 → 忽略。
     """
+    storage_dir = config.data_dir / "keys"
     try:
-        key_manager = APIKeyManager(
+        key = APIKeyManager(
             secret_key=config.secret_key,
-            storage_dir=config.data_dir / "keys",
-        )
-        return key_manager.load(provider)
+            storage_dir=storage_dir,
+        ).get_key(provider)
+        if key:
+            return key
     except Exception:
-        # 文件不存在（FileNotFoundError）或解密失败（密钥不匹配等）→ 在本级安静忽略
-        return None
+        pass
+    try:
+        key = (storage_dir / f"{provider}.key").read_text(encoding="utf-8").strip()
+        if key:
+            return key
+    except Exception:
+        pass
+    try:
+        encrypted = json.loads((storage_dir / f"{provider}.json").read_text(encoding="utf-8"))
+        key = APIKeyManager(
+            secret_key=config.secret_key,
+            storage_dir=storage_dir,
+        ).decrypt(provider, encrypted_data=encrypted)
+        if key:
+            return key
+    except Exception:
+        pass
+    return None
 
 
 async def _lookup_registry_entry(provider: str) -> ProviderConfig | None:
