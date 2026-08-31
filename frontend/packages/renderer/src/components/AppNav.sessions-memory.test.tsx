@@ -45,9 +45,9 @@ describe('AppNav — 会话导航项（#486）', () => {
     expect(screen.getByTestId('nav-item-sessions')).toHaveAttribute('href', '/sessions');
   });
 
-  it('文案 = t(nav.sessions)（zh 下「会话」）', () => {
+  it('文案 = t(nav.sessions)（zh 下「会话详情」——#836 按钮跳 /sessions）', () => {
     renderNav();
-    expect(screen.getByTestId('nav-item-sessions')).toHaveTextContent('会话');
+    expect(screen.getByTestId('nav-item-sessions')).toHaveTextContent('会话详情');
   });
 
   it('点击 nav-item-sessions → location.pathname=/sessions', async () => {
