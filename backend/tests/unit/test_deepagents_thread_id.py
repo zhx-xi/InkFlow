@@ -60,7 +60,9 @@ class TestChatAgentServiceThreadId:
         assert any(ev.type == "done" for ev in frames)
         assert len(agent.calls) == 1
         cfg = agent.calls[0]["config"]
-        assert cfg == {"configurable": {"thread_id": THREAD_ID}}
+        # #839：config 含 configurable.thread_id + recursion_limit 护栏（非精确 dict 匹配）
+        assert cfg["configurable"] == {"thread_id": THREAD_ID}
+        assert cfg.get("recursion_limit", 25) > 25
 
     @pytest.mark.asyncio
     async def test_missing_thread_id_exception_is_surfaced(self) -> None:
