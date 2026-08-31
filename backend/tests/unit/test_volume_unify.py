@@ -197,9 +197,13 @@ class TestVolumeUnifyService:
         GREEN 必实现: level=volume 且 volume_id 非空 → chapter_repo.get_volume(volume_id)
         为 None（不存在/跨项目）→ OutlineVolumeRefError（422）。
         """
+        parent = _outline("整本", level="overall")
+        mock_repo.get = AsyncMock(return_value=parent)
         svc = _make_service(mock_repo, mock_chapter_repo)
         with pytest.raises(OutlineVolumeRefError):
-            await svc.create_outline(PID, "卷纲", level="volume", volume_id=uuid.uuid4())
+            await svc.create_outline(
+                PID, "卷纲", level="volume", parent_id=parent.id, volume_id=uuid.uuid4()
+            )
 
     @pytest.mark.asyncio
     async def test_r5_service_duplicate_volume_outline_raises_ref_error(
@@ -212,6 +216,8 @@ class TestVolumeUnifyService:
         已存在同卷卷纲 → OutlineVolumeRefError（"卷已关联卷纲"，422）。
         """
         vol_id = uuid.uuid4()
+        parent = _outline("整本", level="overall")
+        mock_repo.get = AsyncMock(return_value=parent)
         existing = _outline("已有卷纲", level="volume", volume_id=vol_id)
         mock_repo.get_outline_by_volume = AsyncMock(return_value=existing)
         mock_chapter_repo.get_volume = AsyncMock(
@@ -219,7 +225,9 @@ class TestVolumeUnifyService:
         )
         svc = _make_service(mock_repo, mock_chapter_repo)
         with pytest.raises(OutlineVolumeRefError):
-            await svc.create_outline(PID, "另一卷纲", level="volume", volume_id=vol_id)
+            await svc.create_outline(
+                PID, "另一卷纲", level="volume", parent_id=parent.id, volume_id=vol_id
+            )
 
     @pytest.mark.asyncio
     async def test_r6_service_volume_outline_without_volume_id_creates_ok(
@@ -232,9 +240,13 @@ class TestVolumeUnifyService:
         Outline 含 level=volume/volume_id=None。
         """
         saved = _outline("独立卷纲", level="volume")
+        parent = _outline("整本", level="overall")
+        mock_repo.get = AsyncMock(return_value=parent)
         mock_repo.add = AsyncMock(return_value=saved)
         svc = _make_service(mock_repo)
-        result = await svc.create_outline(PID, "独立卷纲", level="volume")
+        result = await svc.create_outline(
+            PID, "独立卷纲", level="volume", parent_id=parent.id
+        )
         assert result.model_dump()["level"] == "volume"
         assert result.model_dump()["volume_id"] is None
 

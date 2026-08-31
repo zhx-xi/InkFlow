@@ -145,7 +145,8 @@ class OutlineService:
         - level 非 overall/volume/chapter → OutlineLevelError
         - overall 不允许挂父（parent_id 非空）→ OutlineHierarchyError
         - volume 父须 level=overall 且同项目（不存在/不符 → OutlineHierarchyError）
-        - chapter 父须 level=volume 且同项目；parent 空 = 孤立章（合法）
+        - chapter 父须 level=volume 且同项目；parent 空（孤立章）→ 422
+        - volume/chapter 无 parent → OutlineHierarchyError（强制树形，孤立章非法）
         - chapter_id 非空且 level ≠ chapter → OutlineChapterRefError
         - chapter_id 非空时经 chapter_repo.get_chapter 校验存在且同项目
           （chapter_repo 未注入 → 跳过校验，向后兼容）
@@ -165,6 +166,10 @@ class OutlineService:
             raise OutlineLevelError()
         if level == "overall" and parent_id is not None:
             raise OutlineHierarchyError("整体大纲不允许挂载父大纲")
+        if level == "volume" and parent_id is None:
+            raise OutlineHierarchyError("卷大纲必须挂载在整体大纲下")
+        if level == "chapter" and parent_id is None:
+            raise OutlineHierarchyError("章大纲必须挂载在卷大纲下")
         if parent_id is not None:
             parent = await self._repo.get(_to_int_id(parent_id))
             if parent is None or parent.project_id != project_id:
@@ -211,8 +216,10 @@ class OutlineService:
             name: 大纲名（OutlineCreate 已去空白校验）.
             description: 大纲总体描述.
             sort_order: 大纲间排序权重（小者在前）.
-            level: 大纲层级（overall/volume/chapter；默认 chapter = 孤立章）.
-            parent_id: 父大纲 UUID（None = 顶层/孤立章）.
+            level: 大纲层级（overall/volume/chapter；默认 chapter；
+                chapter 必须挂 volume，否则 422）.
+            parent_id: 父大纲 UUID（None = 顶层（仅 overall）；
+                volume/chapter 无 parent → 422）.
             chapter_id: 关联写作章节 UUID（仅 level=chapter 可设）.
 
         Returns:
@@ -299,7 +306,8 @@ class OutlineService:
 
         业务校验（spec §7 + F43 P3 §2.8）: 改名撞项目内其他活动大纲 → 422；
         层级变更（level/parent_id/chapter_id）按三级结构严格校验；parent_id/
-        chapter_id 传 "" = 清除（置 None，对齐 PlotPointUpdate.arc_id 先例）。
+        chapter_id 传 "" = 清除（置 None，对齐 PlotPointUpdate.arc_id 先例）；
+        未变更层级相关字段的常规更新不触发层级校验（兼容既有孤立章数据）。
 
         Args:
             outline_id: 大纲主键（支持 int 或 UUID）.
@@ -333,14 +341,18 @@ class OutlineService:
             # None / "" → 清除卷关联
             updates["volume_id"] = None
         merged = existing.model_copy(update=updates)
-        await self._validate_outline_hierarchy(
-            project_id=merged.project_id,
-            level=merged.level,
-            parent_id=merged.parent_id,
-            chapter_id=merged.chapter_id,
-            volume_id=merged.volume_id,
-            exclude_outline_id=_to_int_id(merged.id),
-        )
+        # 仅层级相关字段变更时执行三级校验（#835 强制树形；常规更新不改层级，
+        # 兼容既有孤立章数据的非层级字段更新）
+        hierarchy_fields = {"level", "parent_id", "chapter_id", "volume_id"}
+        if hierarchy_fields & update.model_fields_set:
+            await self._validate_outline_hierarchy(
+                project_id=merged.project_id,
+                level=merged.level,
+                parent_id=merged.parent_id,
+                chapter_id=merged.chapter_id,
+                volume_id=merged.volume_id,
+                exclude_outline_id=_to_int_id(merged.id),
+            )
         logger.info("更新大纲: outline_id=%s", outline_id)
         return await self._repo.update(merged)
 

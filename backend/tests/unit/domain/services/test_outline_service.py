@@ -171,9 +171,13 @@ class TestOutlineCrud:
     """大纲 CRUD — 创建/查询/更新/真删（v1.1 默认硬删）。"""
 
     async def test_create_outline_success_persists(self, service, mock_repo) -> None:
-        """创建大纲 → repo.add 收到完整实体（UUID 项目归属）。"""
+        """创建大纲 → repo.add 收到完整实体（UUID 项目归属；#835 起默认须为合法树根）. """
         created = await service.create_outline(
-            project_id=PID, name="第一卷大纲", description="主角觉醒", sort_order=1
+            project_id=PID,
+            name="第一卷大纲",
+            description="主角觉醒",
+            sort_order=1,
+            level="overall",
         )
         assert created.name == "第一卷大纲"
         mock_repo.get_by_name.assert_awaited_once_with(PID.int, "第一卷大纲")

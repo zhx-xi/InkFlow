@@ -29,26 +29,33 @@ def _svc(repo=None, chapter_repo=None) -> OutlineService:
 
 @pytest.mark.asyncio
 async def test_validate_chapter_repo_none_skips_check():
-    """覆盖 L178 br=[182]：chapter_repo None 跳过章校验（向后兼容）。"""
-    svc = _svc(chapter_repo=None)
-    await svc._validate_outline_hierarchy(PID, "chapter", None, uuid.uuid4())
+    """覆盖 L178 br=[182]：chapter_repo None 跳过章校验（向后兼容；#835 章须挂卷）. """
+    volume = SimpleNamespace(level="volume", project_id=PID)
+    repo = AsyncMock()
+    repo.get.return_value = volume
+    svc = _svc(repo=repo, chapter_repo=None)
+    await svc._validate_outline_hierarchy(PID, "chapter", uuid.uuid4(), uuid.uuid4())
 
 
 @pytest.mark.asyncio
 async def test_validate_chapter_matches_project():
-    """覆盖 L180 br=[182]：章存在且同项目 -> 校验通过。"""
+    """覆盖 L180 br=[182]：章存在且同项目 -> 校验通过（#835 章须挂卷）. """
+    volume = SimpleNamespace(level="volume", project_id=PID)
+    repo = AsyncMock()
+    repo.get.return_value = volume
     cr = AsyncMock()
     cr.get_chapter.return_value = SimpleNamespace(project_id=PID)
-    svc = _svc(chapter_repo=cr)
-    await svc._validate_outline_hierarchy(PID, "chapter", None, uuid.uuid4())
+    svc = _svc(repo=repo, chapter_repo=cr)
+    await svc._validate_outline_hierarchy(PID, "chapter", uuid.uuid4(), uuid.uuid4())
     cr.get_chapter.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_validate_volume_repo_none_and_no_existing():
-    """覆盖 L185 br=[189] + L192 br=[exit]：volume 分支 chapter_repo None 且无已有卷纲。"""
+    """覆盖 L185 br=[189] + L192 br=[exit]：volume 分支 chapter_repo None 且无卷纲（#835）. """
     repo = AsyncMock()
+    repo.get.return_value = SimpleNamespace(level="overall", project_id=PID)
     repo.get_outline_by_volume.return_value = None
     svc = _svc(repo=repo, chapter_repo=None)
-    await svc._validate_outline_hierarchy(PID, "volume", None, None, volume_id=uuid.uuid4())
+    await svc._validate_outline_hierarchy(PID, "volume", uuid.uuid4(), None, volume_id=uuid.uuid4())
     repo.get_outline_by_volume.assert_awaited_once()

@@ -529,8 +529,10 @@ test('设定库：大纲章关联徽标（E2E-A7）——chapter_id 关联 → �
     expect(chRes.status).toBe(201);
     const chId = ((await chRes.json()) as { id: string }).id;
     const ids = await presetOutlineNodes(kernel, pid, [
-      { name: '第一章', level: 'chapter', chapter_id: chId },
-      { name: '第二章', level: 'chapter' },
+      { name: '大纲整体', level: 'overall' },
+      { name: '第一卷', level: 'volume', parent: '大纲整体' },
+      { name: '第一章', level: 'chapter', parent: '第一卷', chapter_id: chId },
+      { name: '第二章', level: 'chapter', parent: '第一卷' },
     ]);
 
     await gotoNav(window, '设定库');

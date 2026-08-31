@@ -91,22 +91,31 @@ def create_outline_cmd(
     name: str = typer.Option(..., "--name", "-n", help="大纲名"),
     description: str = typer.Option("", "--description", "-d", help="大纲总体描述"),
     sort_order: int = typer.Option(0, "--sort-order", help="排序权重（小者在前）"),
+    level: str = typer.Option("overall", "--level", help="大纲层级 (overall/volume/chapter)"),
+    parent_id: str | None = typer.Option(
+        None, "--parent-id", help="父大纲 ID (UUID；volume 挂 overall、chapter 挂 volume，必填)"
+    ),
 ) -> None:
-    """创建大纲"""
+    """创建大纲（#835 强制树形：level=chapter 须挂 volume，否则 422）"""
     cli_ctx: CliContext = ctx.obj
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
+    parent_uuid = _parse_uuid(cli_ctx, parent_id, "父大纲不存在") if parent_id else None
 
     async def _impl() -> dict:
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
+            body: dict = {
+                "name": name,
+                "description": description,
+                "sort_order": sort_order,
+                "level": level,
+            }
+            if parent_uuid is not None:
+                body["parent_id"] = str(parent_uuid)
             return await client.post(
                 f"/projects/{pid}/outlines",
-                json={
-                    "name": name,
-                    "description": description,
-                    "sort_order": sort_order,
-                },
+                json=body,
             )
 
     outline = _run(cli_ctx, _impl)
