@@ -26,6 +26,7 @@ from langgraph.types import interrupt
 from pydantic import BaseModel
 
 from inkflow.domain.models.agent_tools import ToolAuth, ToolSpec
+from inkflow.infrastructure.agent.tools import _tool_db_lock as _tool_db_lock_mod
 from inkflow.infrastructure.agent.tools.reader_tools import Tool
 
 
@@ -237,84 +238,86 @@ def build_delete_tools(deps: DeleteToolDeps) -> list[Tool]:
             project_id: uuid.UUID | str | None = None,
             **kwargs: object,
         ) -> str:
-            # #766: 绑定到装配期项目（LLM 无需也不能自报 id，审计绑定用）
-            bound_project_id = (
-                deps.expected_project_id if deps.expected_project_id is not None else project_id
-            )
-            _project_id: uuid.UUID | None = None
-            entity_id = kwargs.get(entity_key)
-            try:
-                if bound_project_id is not None:
-                    _project_id = (
-                        bound_project_id
-                        if isinstance(bound_project_id, uuid.UUID)
-                        else _coerce_uuid(bound_project_id)
-                    )
-                # HITL（ask_once）：每次调用都走 interrupt，批准仅放行本次（不升级 auto）
-                if deps.auth.delete_permission == "ask_once":
-                    decision = interrupt(
-                        {
-                            "tool": tool_name,
-                            "entity_id": entity_id,
-                            "entity_name": entity_label,
-                        }
-                    )
-                    if not decision.get("approved", False):
-                        # 拒绝亦落审计（失败语义）；审计自身异常静默
-                        with contextlib.suppress(Exception):
-                            await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                                actor="agent:chat",
-                                project_id=_project_id,
-                                severity_summary=f"{tool_name}_rejected",
-                                summary=f"{entity_label}删除被用户拒绝",
-                                degraded=True,
-                            )
-                        return json.dumps(
-                            {"ok": False, "error": "用户拒绝删除"}, ensure_ascii=False
-                        )
-                # 实体 id：memory 走字符串型，其余规范化为 UUID（非法格式回退原值由
-                # service 校验/报错——测试契约要求 service 异常消息透传）
-                entity_value: object
-                if str_id:
-                    entity_value = str(entity_id)
-                elif isinstance(entity_id, str):
-                    try:
-                        entity_value = _coerce_uuid(entity_id)
-                    except ValueError:
-                        entity_value = entity_id
-                else:
-                    entity_value = entity_id
-                service = getattr(deps, svc_field)  # 鸭子类型：deps 按契约提供各删除 service 字段
-                method = getattr(service, method_name)  # 鸭子类型：service 按契约提供删除方法
-                # 鸭子类型：删除方法按契约返回 bool（memory 返回实体，False 兜底）
-                result: bool = await method(entity_value)
-                if result is False:
-                    return json.dumps(
-                        {"ok": False, "error": "记录不存在"}, ensure_ascii=False
-                    )
-                # 成功审计；审计自身异常静默，不影响主返回
-                with contextlib.suppress(Exception):
-                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                        actor="agent:chat",
-                        project_id=_project_id,
-                        severity_summary=f"{tool_name}_deleted",
-                        summary=f"{entity_label}删除 {entity_id}",
-                        degraded=True,
-                    )
-                return json.dumps(
-                    {"ok": True, entity_key: str(entity_id)}, ensure_ascii=False
+            async with _tool_db_lock_mod._tool_db_lock:
+                # #766: 绑定到装配期项目（LLM 无需也不能自报 id，审计绑定用）
+                bound_project_id = (
+                    deps.expected_project_id if deps.expected_project_id is not None else project_id
                 )
-            except Exception as exc:
-                # 失败亦落审计；审计自身异常静默
-                with contextlib.suppress(Exception):
-                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                        actor="agent:chat",
-                        project_id=_project_id,
-                        severity_summary=f"{tool_name}_delete_failed",
-                        summary=f"{entity_label}删除失败: {exc}",
-                        degraded=True,
+                _project_id: uuid.UUID | None = None
+                entity_id = kwargs.get(entity_key)
+                try:
+                    if bound_project_id is not None:
+                        _project_id = (
+                            bound_project_id
+                            if isinstance(bound_project_id, uuid.UUID)
+                            else _coerce_uuid(bound_project_id)
+                        )
+                    # HITL（ask_once）：每次调用都走 interrupt，批准仅放行本次（不升级 auto）
+                    if deps.auth.delete_permission == "ask_once":
+                        decision = interrupt(
+                            {
+                                "tool": tool_name,
+                                "entity_id": entity_id,
+                                "entity_name": entity_label,
+                            }
+                        )
+                        if not decision.get("approved", False):
+                            # 拒绝亦落审计（失败语义）；审计自身异常静默
+                            with contextlib.suppress(Exception):
+                                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                                    actor="agent:chat",
+                                    project_id=_project_id,
+                                    severity_summary=f"{tool_name}_rejected",
+                                    summary=f"{entity_label}删除被用户拒绝",
+                                    degraded=True,
+                                )
+                            return json.dumps(
+                                {"ok": False, "error": "用户拒绝删除"}, ensure_ascii=False
+                            )
+                    # 实体 id：memory 走字符串型，其余规范化为 UUID（非法格式回退原值由
+                    # service 校验/报错——测试契约要求 service 异常消息透传）
+                    entity_value: object
+                    if str_id:
+                        entity_value = str(entity_id)
+                    elif isinstance(entity_id, str):
+                        try:
+                            entity_value = _coerce_uuid(entity_id)
+                        except ValueError:
+                            entity_value = entity_id
+                    else:
+                        entity_value = entity_id
+                    # 鸭子类型：deps 按契约提供各删除 service 字段
+                    service = getattr(deps, svc_field)
+                    method = getattr(service, method_name)  # 鸭子类型：service 按契约提供删除方法
+                    # 鸭子类型：删除方法按契约返回 bool（memory 返回实体，False 兜底）
+                    result: bool = await method(entity_value)
+                    if result is False:
+                        return json.dumps(
+                            {"ok": False, "error": "记录不存在"}, ensure_ascii=False
+                        )
+                    # 成功审计；审计自身异常静默，不影响主返回
+                    with contextlib.suppress(Exception):
+                        await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                            actor="agent:chat",
+                            project_id=_project_id,
+                            severity_summary=f"{tool_name}_deleted",
+                            summary=f"{entity_label}删除 {entity_id}",
+                            degraded=True,
+                        )
+                    return json.dumps(
+                        {"ok": True, entity_key: str(entity_id)}, ensure_ascii=False
                     )
-                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+                except Exception as exc:
+                    # 失败亦落审计；审计自身异常静默
+                    with contextlib.suppress(Exception):
+                        await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                            actor="agent:chat",
+                            project_id=_project_id,
+                            severity_summary=f"{tool_name}_delete_failed",
+                            summary=f"{entity_label}删除失败: {exc}",
+                            degraded=True,
+                        )
+                    return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
         return _delete
 
