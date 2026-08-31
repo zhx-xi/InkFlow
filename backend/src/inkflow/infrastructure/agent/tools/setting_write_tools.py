@@ -81,7 +81,11 @@ CREATE_CHARACTER_SPEC = ToolSpec(
 
 CREATE_WORLD_SETTING_SPEC = ToolSpec(
     name="create_world_setting",
-    description="创建项目内世界观设定条目并写入设定库，返回新条目 id；同级同名会失败。",
+    description=(
+        "创建项目内世界观设定条目并写入设定库，返回新条目 id；必须先创建根世界观"
+        "（一个项目仅一根），创建非根条目必须传 parent_id，带 category 前必须先创建"
+        "该分类；同级同名会失败。"
+    ),
     input_schema=CreateWorldSettingParams.model_json_schema(),
     group="writing",
 )
