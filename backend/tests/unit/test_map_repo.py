@@ -49,7 +49,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import event, insert, text
+from sqlalchemy import event, insert, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -148,8 +148,23 @@ def _pin(map_obj, **kw):
 
 
 async def _add_location(db_session, project, name: str) -> WorldSettingORM:
-    """造一个持久化的地点（F35 WorldSettingORM 直接落库，非被测对象）."""
-    loc = WorldSettingORM(project_id=project.id, name=name)
+    """造一个持久化的地点（F35 WorldSettingORM 直接落库，非被测对象）.
+
+    #849 根单例：一项目仅一根——后续地点挂到既有根下（首个为根）。
+    """
+    root = (
+        await db_session.execute(
+            select(WorldSettingORM).where(
+                WorldSettingORM.project_id == project.id,
+                WorldSettingORM.parent_id.is_(None),
+            ).limit(1)
+        )
+    ).scalar_one_or_none()
+    loc = WorldSettingORM(
+        project_id=project.id,
+        name=name,
+        parent_id=root.id if root is not None else None,
+    )
     db_session.add(loc)
     await db_session.commit()
     await db_session.refresh(loc)

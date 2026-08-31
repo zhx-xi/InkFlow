@@ -80,6 +80,7 @@ from inkflow.core.database import (
     ensure_world_categories_kind_column,
     ensure_world_drop_is_deleted,
     ensure_world_parent_id_column,
+    ensure_world_root_unique_index,
 )
 from inkflow.core.log import setup_logging
 from inkflow.domain.ports.extraction_errors import RAGUnavailableError
@@ -111,6 +112,7 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_preference_superseded_column)
         await conn.run_sync(ensure_user_preference_superseded_column)
         await conn.run_sync(ensure_world_parent_id_column)
+        await conn.run_sync(ensure_world_root_unique_index)
         await conn.run_sync(ensure_world_categories_kind_column)
         await conn.run_sync(ensure_map_columns)
         await conn.run_sync(ensure_outline_columns)

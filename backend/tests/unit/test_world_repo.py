@@ -153,8 +153,8 @@ class TestWorldRepository:
         """list 返回 (列表, 总数)."""
         repo = SQLiteWorldRepository(db_session)
         s1 = await repo.add(_setting(project, "灵气复苏"))
-        s2 = await repo.add(_setting(project, "宗门等级"))
-        s3 = await repo.add(_setting(project, "古神禁地"))
+        s2 = await repo.add(_setting(project, "宗门等级", parent_id=s1.id))
+        s3 = await repo.add(_setting(project, "古神禁地", parent_id=s1.id))
 
         settings, total = await repo.list(project.id)
         assert total == 3
@@ -163,9 +163,9 @@ class TestWorldRepository:
     async def test_list_search_icontains(self, db_session, project):
         """search 对 name 不区分大小写子串匹配."""
         repo = SQLiteWorldRepository(db_session)
-        await repo.add(_setting(project, "灵气复苏"))
-        await repo.add(_setting(project, "灵气时代"))
-        await repo.add(_setting(project, "宗门等级"))
+        s1 = await repo.add(_setting(project, "灵气复苏"))
+        await repo.add(_setting(project, "灵气时代", parent_id=s1.id))
+        await repo.add(_setting(project, "宗门等级", parent_id=s1.id))
 
         settings, total = await repo.list(project.id, search="灵气")
         assert total == 2
@@ -179,8 +179,8 @@ class TestWorldRepository:
         """category 精确过滤；空串过滤出未分类条目."""
         repo = SQLiteWorldRepository(db_session)
         s1 = await repo.add(_setting(project, "灵气复苏", category="设定"))
-        await repo.add(_setting(project, "宗门等级", category="规则"))
-        s3 = await repo.add(_setting(project, "无主之地", category=""))
+        await repo.add(_setting(project, "宗门等级", category="规则", parent_id=s1.id))
+        s3 = await repo.add(_setting(project, "无主之地", category="", parent_id=s1.id))
 
         settings, total = await repo.list(project.id, category="设定")
         assert total == 1
@@ -194,9 +194,9 @@ class TestWorldRepository:
     async def test_list_sort_by_name_and_created_at(self, db_session, project):
         """sort_by=name/created_at 与 sort_desc 生效."""
         repo = SQLiteWorldRepository(db_session)
-        await repo.add(_setting(project, "charlie"))
-        await repo.add(_setting(project, "alpha"))
-        await repo.add(_setting(project, "bravo"))
+        s1 = await repo.add(_setting(project, "charlie"))
+        await repo.add(_setting(project, "alpha", parent_id=s1.id))
+        await repo.add(_setting(project, "bravo", parent_id=s1.id))
 
         asc, _ = await repo.list(project.id, sort_by="name", sort_desc=False)
         assert [s.name for s in asc] == ["alpha", "bravo", "charlie"]
@@ -210,8 +210,9 @@ class TestWorldRepository:
     async def test_list_pagination(self, db_session, project):
         """offset/limit 分页，total 为未分页总数；越界返回空列表."""
         repo = SQLiteWorldRepository(db_session)
-        for i in range(5):
-            await repo.add(_setting(project, f"条目{i}"))
+        first = await repo.add(_setting(project, "条目0"))
+        for i in range(1, 5):
+            await repo.add(_setting(project, f"条目{i}", parent_id=first.id))
 
         page1, total = await repo.list(
             project.id, sort_by="name", sort_desc=False, offset=0, limit=2
@@ -285,11 +286,12 @@ class TestWorldRepository:
     async def test_list_categories_aggregates_counts(self, db_session, project):
         """list_categories 聚合条目类别计数：排除空类别，count 降序 + category 升序."""
         repo = SQLiteWorldRepository(db_session)
-        await repo.add(_setting(project, "灵气复苏", category="设定"))
-        await repo.add(_setting(project, "宗门等级", category="规则"))
-        await repo.add(_setting(project, "炼丹术", category="规则"))
-        await repo.add(_setting(project, "无主之地", category=""))  # 未分类 → 不计入汇总
-        s_del = await repo.add(_setting(project, "古神禁地", category="地理"))
+        s1 = await repo.add(_setting(project, "灵气复苏", category="设定"))
+        await repo.add(_setting(project, "宗门等级", category="规则", parent_id=s1.id))
+        await repo.add(_setting(project, "炼丹术", category="规则", parent_id=s1.id))
+        # 未分类 → 不计入汇总
+        await repo.add(_setting(project, "无主之地", category="", parent_id=s1.id))
+        s_del = await repo.add(_setting(project, "古神禁地", category="地理", parent_id=s1.id))
         await repo.hard_delete(s_del.id.int)  # 真删 → 不计入汇总
 
         cats = await repo.list_categories(project.id)
@@ -306,8 +308,8 @@ class TestWorldRepository:
     async def test_project_hard_delete_cascades_settings(self, db_session, project):
         """项目硬删 → 世界观条目行物理删除（DB FK CASCADE）."""
         repo = SQLiteWorldRepository(db_session)
-        await repo.add(_setting(project, "灵气复苏"))
-        await repo.add(_setting(project, "宗门等级", category="规则"))
+        s1 = await repo.add(_setting(project, "灵气复苏"))
+        await repo.add(_setting(project, "宗门等级", category="规则", parent_id=s1.id))
 
         p_row = await db_session.execute(select(ProjectORM).where(ProjectORM.id == project.id))
         await db_session.delete(p_row.scalar_one())
@@ -508,7 +510,7 @@ class TestF35LocationTree:
         country = await repo.add(_setting(project, "大越国"))
         state = await repo.add(_setting(project, "青州", parent_id=country.id))
         await repo.add(_setting(project, "清河县城", parent_id=state.id))
-        await repo.add(_setting(project, "东大陆"))
+        await repo.add(_setting(project, "东大陆", parent_id=state.id))
 
         children, total = await repo.list(project.id, parent_id=country.id.int)
         assert total == 1
@@ -521,11 +523,10 @@ class TestF35LocationTree:
         repo = SQLiteWorldRepository(db_session)
         country = await repo.add(_setting(project, "大越国"))
         await repo.add(_setting(project, "青州", parent_id=country.id))
-        other = await repo.add(_setting(project, "东大陆"))
 
         tops, total = await repo.list(project.id, top_level_only=True)
-        assert total == 2
-        assert {s.id for s in tops} == {country.id, other.id}
+        assert total == 1
+        assert [s.id for s in tops] == [country.id]
 
     async def test_list_default_no_filter_backward_compat(self, db_session, project):
         """缺省（不带 parent_id 参数）→ 全量，向后兼容（Q3=A 回归）."""
@@ -549,13 +550,15 @@ class TestF35LocationTree:
         更晚（跨层同名，旧索引不区分 parent → 拦截；新索引 NULL/不同父不冲突）.
         """
         repo = SQLiteWorldRepository(db_session)
-        state = await repo.add(_setting(project, "青州"))
+        country = await repo.add(_setting(project, "大越国"))
+        state = await repo.add(_setting(project, "青州", parent_id=country.id))
         first = await repo.add(_setting(project, "旧城区", parent_id=state.id))
         later = _now() + timedelta(minutes=5)
         await db_session.execute(
             insert(WorldSettingORM).values(
                 project_id=project.id,
                 name="旧城区",
+                parent_id=country.id.int,
                 created_at=later,
                 updated_at=later,
             )
@@ -584,7 +587,7 @@ class TestF35LocationTree:
         """
         repo = SQLiteWorldRepository(db_session)
         p1 = await repo.add(_setting(project, "大越国"))
-        p2 = await repo.add(_setting(project, "东大陆"))
+        p2 = await repo.add(_setting(project, "东大陆", parent_id=p1.id))
         state = await repo.add(_setting(project, "青州", parent_id=p1.id))
 
         # 显式构造完整实体改挂（不依赖 model_copy(update=...) 对未知字段的行为）
@@ -637,8 +640,9 @@ class TestF35DeleteWithReparentCoverage:
     async def test_delete_with_reparent_moves_children_and_deletes_self(self, db_session, project):
         """正常路径：直接子改挂新父 + 自身真删（单事务，返回 True）."""
         repo = SQLiteWorldRepository(db_session)
-        old_parent = await repo.add(_setting(project, "青州"))
-        new_parent = await repo.add(_setting(project, "东大陆"))
+        root = await repo.add(_setting(project, "大陆"))
+        old_parent = await repo.add(_setting(project, "青州", parent_id=root.id))
+        new_parent = await repo.add(_setting(project, "东大陆", parent_id=root.id))
         child = await repo.add(_setting(project, "清河县城", parent_id=old_parent.id))
 
         result = await repo.delete_with_reparent(old_parent.id.int, new_parent.id.int)
@@ -673,8 +677,8 @@ class TestListAllActive:
         """
         repo = SQLiteWorldRepository(db_session)
         s1 = await repo.add(_setting(project, "大越国"))
-        s2 = await repo.add(_setting(project, "青州"))
-        s_del = await repo.add(_setting(project, "古神禁地"))
+        s2 = await repo.add(_setting(project, "青州", parent_id=s1.id))
+        s_del = await repo.add(_setting(project, "古神禁地", parent_id=s1.id))
         await repo.hard_delete(s_del.id.int)  # 真删 → 不返回
 
         other = ProjectORM(name="其他项目")
@@ -693,20 +697,23 @@ class TestListAllActive:
         """
         repo = SQLiteWorldRepository(db_session)
         t = _now() - timedelta(minutes=10)
-        await db_session.execute(
-            insert(WorldSettingORM).values(
-                project_id=project.id,
-                name="晚条目",
-                created_at=t + timedelta(minutes=5),
-                updated_at=t + timedelta(minutes=5),
-            )
-        )
-        await db_session.execute(
+        # 早条目 = 根（created_at=t，显式时间戳）；晚条目 = 其子级（created_at=t+5）
+        res1 = await db_session.execute(
             insert(WorldSettingORM).values(
                 project_id=project.id,
                 name="早条目",
                 created_at=t,
                 updated_at=t,
+            )
+        )
+        root_id = res1.inserted_primary_key[0]
+        await db_session.execute(
+            insert(WorldSettingORM).values(
+                project_id=project.id,
+                name="晚条目",
+                parent_id=root_id,
+                created_at=t + timedelta(minutes=5),
+                updated_at=t + timedelta(minutes=5),
             )
         )
         await db_session.commit()
@@ -781,9 +788,9 @@ class TestWorldCategoryRepository:
         repo = SQLiteWorldRepository(db_session)
         await repo.create_category(project.id, "势力")
         # 造两条 category=势力 + 一条未分类条目
-        await repo.add(_setting(project, "宗门体系", category="势力"))
-        await repo.add(_setting(project, "功法等级", category="势力"))
-        await repo.add(_setting(project, "未分类条目", category=""))
+        s1 = await repo.add(_setting(project, "宗门体系", category="势力"))
+        await repo.add(_setting(project, "功法等级", category="势力", parent_id=s1.id))
+        await repo.add(_setting(project, "未分类条目", category="", parent_id=s1.id))
         result = await repo.list_world_categories(project.id)
         assert len(result) == 1
         cat, count = result[0]

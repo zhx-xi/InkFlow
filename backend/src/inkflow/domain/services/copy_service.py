@@ -76,6 +76,11 @@ class WorldCopyService:
         self._map_repo = map_repo
         self._asset_store = asset_store
 
+    async def _has_root(self, project_id: int) -> bool:
+        """项目是否已有根世界观条目（parent_id IS NULL）."""
+        roots, _ = await self._repo.list(project_id, top_level_only=True, limit=1)
+        return len(roots) > 0
+
     async def copy(
         self,
         source_project_id: int | uuid.UUID,
@@ -141,6 +146,26 @@ class WorldCopyService:
         for src in copy_set:
             # 父被跳过/不在集合 → parent_new=None（子置顶层）
             parent_new = id_map.get(src.parent_id.int) if src.parent_id is not None else None
+            # #848 复制守卫：目标根单例 + 分类前置（复用 create_setting 校验语义，降级=跳过）
+            if parent_new is None and await self._has_root(target_int):
+                skipped.append(src.name)
+                warnings.append(f"目标项目已存在根世界观，顶层条目「{src.name}」已跳过")
+                logger.warning(
+                    "复制跳过顶层（目标已有根）: target=%s name=%s",
+                    target_project_id,
+                    src.name,
+                )
+                continue
+            if src.category and await self._repo.get_category_by_name(
+                uuid.UUID(int=target_int), src.category
+            ) is None:
+                skipped.append(src.name)
+                warnings.append(f"目标项目未创建分类「{src.category}」，条目「{src.name}」已跳过")
+                logger.warning(
+                    "复制跳过未建分类条目: target=%s name=%s category=%s",
+                    target_project_id, src.name, src.category,
+                )
+                continue
             # ④ 同级同名冲突预筛（target, 映射后父 id, name；父先落库再预筛子）
             conflict = await self._repo.get_by_parent_and_name(
                 target_int, parent_new.int if parent_new is not None else None, src.name

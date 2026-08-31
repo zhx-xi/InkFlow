@@ -291,6 +291,14 @@ class WorldService:
         # F35: 改挂/置顶前校验（父存在/循环/同级同名）——只有 parent_id 变化才需要
         if "parent_id" in update.model_fields_set:
             new_parent_int = _to_int_id(update.parent_id) if update.parent_id is not None else None
+            existing_is_root = existing.parent_id is None
+            # #847 更新根守卫：非根置顶 → 第二根（new_parent=None，无循环风险，置于前置）
+            if (
+                not existing_is_root
+                and new_parent_int is None
+                and await self.has_root_setting(existing.project_id)
+            ):
+                raise WorldRootConflictError()  # 非根条目置顶 -> 第二根
             if new_parent_int is not None:
                 # 父存在 + 同项目
                 parent = await self._repo.get(new_parent_int)
@@ -300,6 +308,9 @@ class WorldService:
                     raise WorldParentNotFoundError()
             # 循环防护（spec §5.2）
             await self._assert_no_cycle(sid, new_parent_int)
+            # #847 唯一根改挂他父 → 无根（置于循环校验后，自环优先抛 WorldCycleError）
+            if existing_is_root and new_parent_int is not None:
+                raise WorldRootMissingError()  # 唯一根改挂他父 -> 项目无根
             # 同级同名（改挂后新父下是否撞名）
             if "name" in update.model_fields_set and update.name is not None:
                 new_name = update.name

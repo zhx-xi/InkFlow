@@ -522,6 +522,20 @@ def ensure_world_categories_kind_column(conn: Connection) -> None:
         )
 
 
+def ensure_world_root_unique_index(conn: Connection) -> None:
+    """#849: 为既有库 world_settings 补根单例部分唯一索引（幂等，conn.run_sync 调用）."""
+    cols = conn.execute(text("PRAGMA table_info(world_settings)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return  # 表不存在（全新环境）-> create_all 建新表自动含索引
+    conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_world_settings_root_per_project "
+            "ON world_settings (project_id) WHERE parent_id IS NULL"
+        )
+    )
+
+
 def _migrate_drop_is_deleted(
     conn: Connection,
     table: str,

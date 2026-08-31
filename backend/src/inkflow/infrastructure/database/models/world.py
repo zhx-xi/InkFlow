@@ -22,6 +22,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,6 +50,12 @@ class WorldSettingORM(Base):
             "parent_id",
             "name",
             unique=True,
+        ),
+        Index(
+            "uq_world_settings_root_per_project",
+            "project_id",
+            unique=True,
+            sqlite_where=text("parent_id IS NULL"),
         ),
     )
     """同级（project_id, parent_id）内条目名唯一（v1.1 全唯一索引；

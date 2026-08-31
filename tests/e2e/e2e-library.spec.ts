@@ -470,7 +470,7 @@ async function presetMapWithPin(
   await createProjectViaUi(window, name);
   const pid = await findProjectId(kernel, name);
 
-  // 世界观节点（category='地图'）→ 返回 id 作 rootLocationId（地图挂载根地点）
+  // 世界观节点（category=''，无分类）→ 返回 id 作 rootLocationId（地图挂载根地点）
   const wsRes = await kernelFetch(kernel, `/api/v1/projects/${pid}/world-settings`, {
     method: 'POST',
     body: { name: `${name}-节点甲`, category: '' },
