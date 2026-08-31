@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def _validate_name(v: str) -> str:
@@ -78,6 +79,38 @@ def _validate_text(v: str) -> str:
     if len(stripped) > 50000:
         raise ValueError("提取文本不能超过 50000 个字符")
     return stripped
+
+
+class RoleRank(StrEnum):
+    """角色等级五档枚举（#833，存 extra.role_rank）."""
+
+    PROTAGONIST = "protagonist"
+    MAJOR = "major"
+    MINOR = "minor"
+    SCENE = "scene"
+    WALKON = "walkon"
+
+
+def _validate_role_rank(extra: dict | None, *, required: bool) -> None:
+    """校验 extra.role_rank（#833，五档枚举）.
+
+    Args:
+        extra: 扩展属性字典（None 视为未提供）.
+        required: True 表示必填（创建场景）；False 表示 validate-if-present（更新场景）.
+
+    Raises:
+        ValueError: 角色等级缺失（必填时）或值非法（非五档）.
+    """
+    if extra is None or "role_rank" not in extra:
+        if required:
+            raise ValueError("角色等级必填")
+        return
+    try:
+        RoleRank(extra["role_rank"])
+    except ValueError as exc:
+        if required:
+            raise ValueError("角色等级必填") from exc
+        raise ValueError("角色等级非法") from exc
 
 
 class Character(BaseModel):
@@ -150,6 +183,12 @@ class CharacterCreate(BaseModel):
             raise ValueError("角色简介不能超过 500 个字符")
         return stripped
 
+    @model_validator(mode="after")
+    def validate_role_rank(self) -> CharacterCreate:
+        """#833：创建角色必填 role_rank（五档枚举），缺失/非法 → ValidationError."""
+        _validate_role_rank(self.extra, required=True)
+        return self
+
 
 class CharacterUpdate(BaseModel):
     """更新角色请求 DTO — 所有字段均为可选项（exclude_unset 语义，同 F1）.
@@ -174,6 +213,12 @@ class CharacterUpdate(BaseModel):
         if v is None:
             return v
         return _validate_name(v)
+
+    @model_validator(mode="after")
+    def validate_role_rank(self) -> CharacterUpdate:
+        """#833：修改角色 role_rank 采用 validate-if-present——带键必须合法，缺键不报错."""
+        _validate_role_rank(self.extra, required=False)
+        return self
 
 
 class CharacterGroup(BaseModel):

@@ -86,6 +86,11 @@ def create_character(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
     name: str = typer.Option(..., "--name", "-n", help="角色名"),
+    role_rank: str = typer.Option(
+        ...,
+        "--role-rank",
+        help="角色等级（protagonist|major|minor|scene|walkon）",
+    ),
     personality: str = typer.Option("", "--personality", help="性格描述"),
     background: str = typer.Option("", "--background", help="背景设定"),
     goals: str = typer.Option("", "--goals", help="目标/动机"),
@@ -108,6 +113,7 @@ def create_character(
                     "background": background,
                     "goals": goals,
                     "group_ids": [str(gid)] if gid is not None else [],
+                    "extra": {"role_rank": role_rank},
                 },
             )
 

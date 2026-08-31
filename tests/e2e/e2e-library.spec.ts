@@ -231,7 +231,7 @@ test('设定库：内核预置角色 → 角色分类列表渲染条目', async 
     // 内核 API 预置 1 个角色（POST /characters；body 契约见 CharacterCreateBody）
     const res = await kernelFetch(kernel, `/api/v1/projects/${pid}/characters`, {
       method: 'POST',
-      body: { name: '角色甲', personality: 'E2E 测试' },
+      body: { name: '角色甲', personality: 'E2E 测试', extra: { role_rank: 'major' } },
     });
     expect(res.status).toBe(201);
 
@@ -282,7 +282,7 @@ test('设定库：分类加载失败 → error + 重试 → 列表恢复', async
     const pid = await findProjectId(kernel, name);
     const res = await kernelFetch(kernel, `/api/v1/projects/${pid}/characters`, {
       method: 'POST',
-      body: { name: '角色甲', personality: 'E2E 测试' },
+      body: { name: '角色甲', personality: 'E2E 测试', extra: { role_rank: 'major' } },
     });
     expect(res.status).toBe(201);
 
@@ -373,7 +373,7 @@ test('设定库：删除确认闭环（E2E-E2）——确认框 D11 文案 → �
     const pid = await findProjectId(kernel, name);
     const res = await kernelFetch(kernel, `/api/v1/projects/${pid}/characters`, {
       method: 'POST',
-      body: { name: '角色甲', personality: 'E2E 测试' },
+      body: { name: '角色甲', personality: 'E2E 测试', extra: { role_rank: 'major' } },
     });
     expect(res.status).toBe(201);
     const created = (await res.json()) as { id: string };
@@ -419,7 +419,7 @@ test('设定库：删除取消零请求（E2E-E3）——取消 → 关闭 + 条
     const pid = await findProjectId(kernel, name);
     const res = await kernelFetch(kernel, `/api/v1/projects/${pid}/characters`, {
       method: 'POST',
-      body: { name: '角色甲', personality: 'E2E 测试' },
+      body: { name: '角色甲', personality: 'E2E 测试', extra: { role_rank: 'major' } },
     });
     expect(res.status).toBe(201);
     const created = (await res.json()) as { id: string };

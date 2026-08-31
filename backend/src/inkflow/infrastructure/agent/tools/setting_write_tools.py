@@ -19,6 +19,7 @@ import contextlib
 import json
 import uuid
 from dataclasses import dataclass
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -41,6 +42,7 @@ class CreateCharacterParams(BaseModel):
     """create_character 工具参数。"""
 
     name: str
+    role_rank: Literal["protagonist", "major", "minor", "scene", "walkon"]
     personality: str = ""
     background: str = ""
     goals: str = ""
@@ -123,6 +125,7 @@ def build_setting_write_tools(deps: SettingWriteToolDeps) -> list[Tool]:
     async def _create_character(
         project_id: uuid.UUID | str | None = None,
         name: str = "",
+        role_rank: str = "major",
         personality: str = "",
         background: str = "",
         goals: str = "",
@@ -150,7 +153,7 @@ def build_setting_write_tools(deps: SettingWriteToolDeps) -> list[Tool]:
                     background=background,
                     goals=goals,
                     group_ids=group_ids_coerced or None,
-                    extra=None,
+                    extra={"role_rank": role_rank},
                 )
                 # 成功审计（约束①）；审计自身异常静默，不影响主返回
                 with contextlib.suppress(Exception):

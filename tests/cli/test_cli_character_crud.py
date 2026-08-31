@@ -146,6 +146,8 @@ class TestCharacterCreate:
                 "出身贫寒",
                 "--goals",
                 "成为强者",
+                "--role-rank",
+                "major",
             ],
             obj=CliContext(json_output=True),
         )
@@ -169,6 +171,8 @@ class TestCharacterCreate:
                 "林尘",
                 "--group-id",
                 str(gid),
+                "--role-rank",
+                "major",
             ],
             obj=CliContext(json_output=True),
         )
@@ -180,7 +184,7 @@ class TestCharacterCreate:
         fake_http_client.post.return_value = _make_character(name="林尘")
         result = cli_runner.invoke(
             app,
-            ["create", "--project-id", str(PID), "--name", "林尘"],
+            ["create", "--project-id", str(PID), "--name", "林尘", "--role-rank", "major"],
             obj=CliContext(json_output=False),
         )
         assert result.exit_code == 0
@@ -191,7 +195,7 @@ class TestCharacterCreate:
         fake_http_client.post.side_effect = _http_error(422, "同名角色")
         result = cli_runner.invoke(
             app,
-            ["create", "--project-id", str(PID), "--name", "林尘"],
+            ["create", "--project-id", str(PID), "--name", "林尘", "--role-rank", "major"],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1
@@ -209,7 +213,7 @@ class TestCharacterCreate:
         ):
             result = cli_runner.invoke(
                 app,
-                ["create", "--project-id", str(PID), "--name", "林尘"],
+                ["create", "--project-id", str(PID), "--name", "林尘", "--role-rank", "major"],
                 obj=CliContext(json_output=True),
             )
         assert result.exit_code == 1

@@ -152,7 +152,7 @@ class TestCharacterErrorMapping:
         )
         result = cli_runner.invoke(
             app,
-            ["create", "--project-id", str(PID), "--name", "林尘"],
+            ["create", "--project-id", str(PID), "--name", "林尘", "--role-rank", "major"],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1
@@ -176,7 +176,7 @@ class TestCharacterErrorMapping:
         )
         result = cli_runner.invoke(
             app,
-            ["create", "--project-id", str(PID), "--name", "林尘"],
+            ["create", "--project-id", str(PID), "--name", "林尘", "--role-rank", "major"],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1
@@ -190,7 +190,7 @@ class TestCharacterErrorMapping:
         fake_http_client.post.side_effect = _http_error(404, "角色不存在")
         result = cli_runner.invoke(
             app,
-            ["create", "--project-id", str(PID), "--name", "林尘"],
+            ["create", "--project-id", str(PID), "--name", "林尘", "--role-rank", "major"],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1

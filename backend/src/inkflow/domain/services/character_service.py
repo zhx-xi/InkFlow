@@ -36,10 +36,12 @@ from inkflow.domain.models.character import (
     CharacterGroup,
     CharacterRelation,
     CharacterUpdate,
+    _validate_role_rank,
 )
 from inkflow.domain.ports.character_errors import (
     CharacterNameConflictError,
     CharacterNotFoundError,
+    CharacterRoleRankError,
     CharacterServiceError,
     CrossProjectRelationError,
     GroupNameConflictError,
@@ -124,9 +126,14 @@ class CharacterService:
             持久化后的完整 Character.
 
         Raises:
+            CharacterRoleRankError: role_rank 非法（服务层 validate-if-present）.
             CharacterNameConflictError: 项目内已存在同名活动角色.
             GroupNotInProjectError: 分组不存在或不属于该项目.
         """
+        try:
+            _validate_role_rank(extra, required=False)
+        except ValueError as exc:
+            raise CharacterRoleRankError(str(exc)) from exc
         pid_int = _to_int_id(project_id)
         existing = await self._repo.get_by_name(pid_int, name)
         if existing is not None:
@@ -213,6 +220,11 @@ class CharacterService:
         if "group_ids" in merge_updates and merge_updates["group_ids"] is None:
             # None = 不修改（Character.group_ids 必须为列表，不能落 None）
             merge_updates.pop("group_ids")
+        if "extra" in merge_updates:
+            try:
+                _validate_role_rank(merge_updates["extra"], required=False)
+            except ValueError as exc:
+                raise CharacterRoleRankError(str(exc)) from exc
         merged = existing.model_copy(update=merge_updates)
         logger.info("更新角色: character_id=%s", character_id)
         return await self._repo.update(merged)

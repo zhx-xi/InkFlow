@@ -262,7 +262,7 @@ async function presetCharacter(
 ): Promise<void> {
   const res = await kernelFetch(kernel, `/api/v1/projects/${projectId}/characters`, {
     method: 'POST',
-    body: { name, personality },
+    body: { name, personality, extra: { role_rank: 'major' } },
   });
   expect(res.status, `角色「${name}」创建应 201`).toBe(201);
 }

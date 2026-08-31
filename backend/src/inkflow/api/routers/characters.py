@@ -27,7 +27,7 @@ from collections.abc import Awaitable
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_character_service, get_db
@@ -37,6 +37,7 @@ from inkflow.domain.models.character import (
     CharacterUpdate,
     _validate_name,
     _validate_relation_type,
+    _validate_role_rank,
 )
 from inkflow.domain.ports.character_errors import (
     CharacterExtractionError,
@@ -109,6 +110,12 @@ class CharacterCreateBody(BaseModel):
     def validate_name(cls, v: str) -> str:
         """验证角色名：去空白后非空且不超过 50 字符."""
         return _validate_name(v)
+
+    @model_validator(mode="after")
+    def validate_role_rank(self) -> CharacterCreateBody:
+        """#833：创建角色必填 role_rank（五档枚举），缺失/非法 → 422."""
+        _validate_role_rank(self.extra, required=True)
+        return self
 
 
 class CharacterGroupCreateBody(BaseModel):

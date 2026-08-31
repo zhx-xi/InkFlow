@@ -63,11 +63,18 @@ class TestCharacterCreateBrief:
     """创建 DTO 的 brief 字段. """
 
     def test_create_brief_defaults_empty(self) -> None:
-        dto = CharacterCreate(project_id=uuid.UUID(int=1), name="林晚")
+        dto = CharacterCreate(
+            project_id=uuid.UUID(int=1), name="林晚", extra={"role_rank": "major"}
+        )
         assert dto.brief == ""
 
     def test_create_brief_accepts_value(self) -> None:
-        dto = CharacterCreate(project_id=uuid.UUID(int=1), name="林晚", brief="冷傲大小姐")
+        dto = CharacterCreate(
+            project_id=uuid.UUID(int=1),
+            name="林晚",
+            brief="冷傲大小姐",
+            extra={"role_rank": "major"},
+        )
         assert dto.brief == "冷傲大小姐"
 
     def test_create_brief_over_length_raises(self) -> None:

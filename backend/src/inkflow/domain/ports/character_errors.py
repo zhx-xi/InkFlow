@@ -38,6 +38,13 @@ class CharacterServiceError(Exception):
     """
 
 
+class CharacterRoleRankError(CharacterServiceError):
+    """角色等级校验失败（#833，服务层 validate-if-present）— 422."""
+
+    def __init__(self, message: str = "角色等级非法") -> None:
+        super().__init__(message)
+
+
 class CharacterNotFoundError(Exception):
     """角色不存在 — API 层映射为 404「角色不存在」.
 
