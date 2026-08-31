@@ -47,8 +47,10 @@ from inkflow.domain.models.world import WorldExtractionResult, WorldSetting
 from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.ports.world_errors import (
     ProjectNotFoundError,
+    WorldCategoryMissingError,
     WorldExtractionError,
     WorldNameConflictError,
+    WorldRootMissingError,
 )
 
 client = TestClient(app)
@@ -691,3 +693,31 @@ class TestWorldRootSingletonAPI:
         assert response.json()["name"] == "清河县城"
         svc.get_root_setting.assert_not_awaited()
         svc.create_setting.assert_awaited_once_with(PID, "清河县城", "", "", parent_id=PARENT_ID)
+
+
+class TestWorldRootCategoryGuardAPI:
+    """#834 世界观「先建根/先建分类」后端前置校验 API 层防回归（422 + detail 文案）。"""
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_create_setting_child_no_root_422(self, mock_get_svc: MagicMock) -> None:
+        """无根世界时创建非根条目（带 parent_id）→ 422「请先创建根世界观后再创建条目」。"""
+        svc = _mock_svc(mock_get_svc)
+        svc.create_setting = AsyncMock(side_effect=WorldRootMissingError())
+        response = client.post(
+            f"/api/v1/projects/{PID}/world-settings",
+            json={"name": "宗门等级体系", "parent_id": str(uuid.uuid4())},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "请先创建根世界观后再创建条目"
+
+    @patch("inkflow.api.routers.world_settings.get_world_service")
+    def test_create_setting_category_not_created_422(self, mock_get_svc: MagicMock) -> None:
+        """创建带非空 category 条目但分类未建 → 422「请先创建分类「设定」后再创建条目」。"""
+        svc = _mock_svc(mock_get_svc)
+        svc.create_setting = AsyncMock(side_effect=WorldCategoryMissingError("设定"))
+        response = client.post(
+            f"/api/v1/projects/{PID}/world-settings",
+            json={"name": "宗门等级体系", "category": "设定"},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "请先创建分类「设定」后再创建条目"

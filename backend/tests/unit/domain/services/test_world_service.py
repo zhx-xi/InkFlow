@@ -1,5 +1,4 @@
 """F10 世界观服务单元测试 — Mock Repository（F10 服务层 RED→GREEN）.
-
 覆盖 spec §9 服务测试 + §7 边界表（镜像 F9 test_character_service.py，
 去掉关系/分组相关用例）:
 - 创建/更新/软删/恢复/硬删全流程（Mock Repository）
@@ -338,7 +337,6 @@ class TestExtract:
 
 class TestF35CreateValidationChain:
     """F35 create_setting 校验链（spec §5.1 ①②③④⑤：父存在→同级同名→循环→落库）.
-
     RED 阶段预期: create_setting 签名无 parent_id 参数 → 传 parent_id 的调用
     TypeError；未传 parent_id 的用例因 get_by_parent_and_name 未被调用 /
     add 收到的实体无 parent_id 属性而失败（AssertionError / AttributeError）。
@@ -350,6 +348,7 @@ class TestF35CreateValidationChain:
         RED: create_setting 无 parent_id 参数 → TypeError.
         """
         mock_repo.get = AsyncMock(return_value=None)
+        mock_repo.list = AsyncMock(return_value=([_setting(name="大越国")], 1))
         with pytest.raises(WorldParentNotFoundError):
             await service.create_setting(PID, "清河县城", parent_id=uuid.uuid4())
         mock_repo.add.assert_not_awaited()
@@ -363,6 +362,7 @@ class TestF35CreateValidationChain:
         """
         other_parent = _setting(name="他国", project_id=OTHER_PID)
         mock_repo.get = AsyncMock(return_value=other_parent)
+        mock_repo.list = AsyncMock(return_value=([_setting(name="大越国")], 1))
         with pytest.raises(WorldParentNotFoundError):
             await service.create_setting(PID, "清河县城", parent_id=other_parent.id)
         mock_repo.add.assert_not_awaited()
@@ -376,6 +376,7 @@ class TestF35CreateValidationChain:
         """
         parent = _setting(name="青州")
         mock_repo.get = AsyncMock(return_value=parent)
+        mock_repo.list = AsyncMock(return_value=([_setting(name="大越国")], 1))
         mock_repo.get_by_parent_and_name = AsyncMock(return_value=_setting(name="清河县城"))
         with pytest.raises(WorldNameConflictError):
             await service.create_setting(PID, "清河县城", parent_id=parent.id)
@@ -400,6 +401,7 @@ class TestF35CreateValidationChain:
         """
         parent = _setting(name="青州")
         mock_repo.get = AsyncMock(return_value=parent)
+        mock_repo.list = AsyncMock(return_value=([_setting(name="大越国")], 1))
         mock_repo.get_by_parent_and_name = AsyncMock(return_value=None)
 
         created = await service.create_setting(PID, "清河县城", parent_id=parent.id)
@@ -427,7 +429,6 @@ class TestF35CreateValidationChain:
 
 class TestF35UpdateParentSemantics:
     """F35 update_setting parent_id 特殊处理（spec §2.2 None 语义差异，load-bearing）.
-
     RED 阶段预期: WorldUpdate 无 parent_id 字段（静默忽略）→ model_fields_set
     不含 parent_id → merged 实体无 parent_id 属性 → AttributeError / DID NOT RAISE。
     """

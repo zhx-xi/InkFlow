@@ -129,3 +129,34 @@ class WorldCategoryNotFoundError(Exception):
 
     def __init__(self, message: str = "世界观分类不存在") -> None:
         super().__init__(message)
+
+
+class WorldRootMissingError(WorldServiceError):
+    """项目尚无根世界观时创建非根条目 — 422（#834 先建根前置校验）.
+
+    判据：项目无根世界时创建条目应被要求先建根（复用 #567 has_root_setting）。
+    """
+
+    def __init__(self, message: str = "请先创建根世界观后再创建条目") -> None:
+        super().__init__(message)
+
+
+class WorldRootConflictError(WorldServiceError):
+    """项目已存在根世界观时再次创建根 — 422（#567/#834 根世界单例）."""
+
+    def __init__(self, message: str = "根世界观已存在，无法重复创建根") -> None:
+        super().__init__(message)
+
+
+class WorldCategoryMissingError(WorldServiceError):
+    """建带 category 条目时分类未先建 — 422（#834 先建分类前置校验）.
+
+    判据：建带 category 条目时校验该分类已存在于 world_categories。
+    """
+
+    def __init__(self, category: str = "") -> None:
+        if category:
+            msg = f"请先创建分类「{category}」后再创建条目"
+        else:
+            msg = "请先创建该分类后再创建条目"
+        super().__init__(msg)

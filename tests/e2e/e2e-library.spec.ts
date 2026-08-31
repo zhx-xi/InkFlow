@@ -473,7 +473,7 @@ async function presetMapWithPin(
   // 世界观节点（category='地图'）→ 返回 id 作 rootLocationId（地图挂载根地点）
   const wsRes = await kernelFetch(kernel, `/api/v1/projects/${pid}/world-settings`, {
     method: 'POST',
-    body: { name: `${name}-节点甲`, category: '地图' },
+    body: { name: `${name}-节点甲`, category: '' },
   });
   expect(wsRes.status).toBe(201);
   const ws = (await wsRes.json()) as { id: string };

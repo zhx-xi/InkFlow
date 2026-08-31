@@ -34,12 +34,15 @@ from inkflow.domain.models.world import (
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.world_errors import (
     ProjectNotFoundError,
+    WorldCategoryMissingError,
     WorldCategoryNameConflictError,
     WorldChildrenActionRequiredError,
     WorldCycleError,
     WorldNameConflictError,
     WorldParentNotFoundError,
     WorldReparentTargetError,
+    WorldRootConflictError,
+    WorldRootMissingError,
     WorldServiceError,
 )
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
@@ -123,11 +126,25 @@ class WorldService:
         """
         pid_int = _to_int_id(project_id)
         parent_int = _to_int_id(parent_id) if parent_id is not None else None
-        # ① 父存在 + 同项目（repo.get 真删语义下不存在即无记录）
-        if parent_int is not None:
+        # #834 前置校验：根世界单例 + 先建根
+        has_root = await self.has_root_setting(project_id)
+        category_stripped = category.strip() if category else ""
+        # #834 根规则：一个项目仅一根；建非根条目须先有根
+        if parent_int is None:
+            if has_root:
+                raise WorldRootConflictError()
+        else:
+            if not has_root:
+                raise WorldRootMissingError()
+            # ① 父存在 + 同项目（repo.get 真删语义下不存在即无记录）
             parent = await self._repo.get(parent_int)
             if parent is None or _to_int_id(parent.project_id) != pid_int:
                 raise WorldParentNotFoundError()
+        # #834 分类前置：带 category 条目须先创建该分类
+        if category_stripped and await self._repo.get_category_by_name(
+            project_id, category_stripped
+        ) is None:
+            raise WorldCategoryMissingError(category_stripped)
         # F10 兼容：顶层创建沿用项目级同名预检（既有测试契约）；同级校验见下
         if parent_int is None:
             existing = await self._repo.get_by_name(pid_int, name)

@@ -342,10 +342,10 @@ test('设定库：世界观树层级 + toggle 收起/展开（E2E-A3）——par
     await createProjectViaUi(window, name);
     const pid = await findProjectId(kernel, name);
     const ids = await presetWorldNodes(kernel, pid, [
-      { name: '九州', category: '地图' },
-      { name: '中州', category: '地图', parent: '九州' },
-      { name: '东荒', category: '地图', parent: '九州' },
-      { name: '昆仑山', category: '秘境', parent: '中州' },
+      { name: '九州', category: '' },
+      { name: '中州', category: '', parent: '九州' },
+      { name: '东荒', category: '', parent: '九州' },
+      { name: '昆仑山', category: '', parent: '中州' },
     ]);
 
     await gotoNav(window, '设定库');
@@ -433,9 +433,9 @@ test('设定库：世界观行内复制到目标项目（E2E-A5）——subtree 
     // #567 单例：一项目一根——根「世界观」+ 分类元素作其子孙（多根已废）
     const ids = await presetWorldNodes(kernel, pid, [
       { name: '世界观', category: '' },
-      { name: '九州', category: '地图', parent: '世界观' },
-      { name: '中州', category: '地图', parent: '九州' },
-      { name: '宗门', category: '组织', parent: '世界观' },
+      { name: '九州', category: '', parent: '世界观' },
+      { name: '中州', category: '', parent: '九州' },
+      { name: '宗门', category: '', parent: '世界观' },
     ]);
 
     await gotoNav(window, '设定库');
