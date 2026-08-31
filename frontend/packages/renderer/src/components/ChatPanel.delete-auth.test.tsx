@@ -257,3 +257,25 @@ describe('ChatPanel — HITL 确认弹窗（#766 阶段② spec §6.3/§6.4）',
     expect(screen.getByTestId('delete-mode-auto')).toBeDisabled();
   });
 });
+
+describe('ChatPanel — #841 5b 写作模式控件锚定输入框上方', () => {
+  it('full 变体无 chat 内容 → 分段控件与输入框同在底部 compose 组（控件在输入框上方）', async () => {
+    chatApiMocks.fetchChatConversations.mockResolvedValue({ items: [], total: 0 });
+    render(<ChatPanel projectId="p1" variant="full" />);
+    await screen.findByTestId('chat-panel');
+    const compose = screen.getByTestId('chat-compose');
+    // #841 5b：compose 组 mt-auto 沉底（控件 + 输入框同组）
+    expect(compose).toHaveClass('mt-auto');
+    expect(within(compose).getByTestId('delete-mode-manual')).toBeInTheDocument();
+    expect(within(compose).getByTestId('chat-input')).toBeInTheDocument();
+  });
+
+  it('章节内 inline 变体 → 分段控件仍在输入框上方（同 compose 组）', async () => {
+    chatApiMocks.fetchChatConversations.mockResolvedValue({ items: [], total: 0 });
+    render(<ChatPanel {...OPTS} />);
+    await screen.findByTestId('chat-panel');
+    const compose = screen.getByTestId('chat-compose');
+    expect(within(compose).getByTestId('delete-mode-manual')).toBeInTheDocument();
+    expect(within(compose).getByTestId('chat-input')).toBeInTheDocument();
+  });
+});

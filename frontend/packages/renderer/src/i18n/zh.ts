@@ -7,6 +7,7 @@ export const zh = {
   'nav.expand': '展开', 'nav.collapse': '折叠',
   'nav.group.writing': '写作区', 'nav.group.library': '设定库',
   'nav.group.system': '系统',
+  'nav.group.sessions': '会话列表',
   'nav.lib.characters': '角色',
   'nav.lib.world': '世界观',
   'nav.lib.outline': '大纲',
@@ -14,7 +15,7 @@ export const zh = {
   'nav.lib.foreshadow': '伏笔',
   'nav.lib.knowledge': '知识图谱',
   'nav.search': '检索',
-  'nav.sessions': '会话',
+  'nav.sessions': '会话详情',
   'nav.memory': '记忆',
   // 状态栏
   'sb.kernel': '内核已连接',
@@ -805,7 +806,7 @@ export const zh = {
   'book.trace.editCancel': '取消',
   'book.trace.briefPlaceholder': '输入新的章 brief…',
   // #486 会话/记忆 UI
-  'sessions.title': '会话',
+  'sessions.title': '会话列表',
   'sessions.planner.title': '访谈会话',
   'sessions.planner.loading': '加载中…',
   'sessions.planner.empty': '暂无访谈会话',

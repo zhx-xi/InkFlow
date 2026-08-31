@@ -130,3 +130,59 @@
 - N9：无章节进入写作页（有项目）→ 中栏渲染全局 chat 页（global-chat，无 resize handle），不渲染 EditorToolbar/ChapterEditor；右栏保持。
 - N10：章节选中 → 章节内 ChatPanel（inline，resize handle）完整保留。
 - N11：章节内对话/生成/续写均创建新会话，title=章节名；全局 chat 页对话 title=首条用户消息前 30 字；会话可改名。
+
+## 5. #840 会话点击贯通（conversationId prop）
+
+> 会话归档恢复后点击进入 chat 页历史不显示——`conversation_id` URL 参数此前全链路未消费（ChatPanel 恒取「最新活跃线程」）。完整契约见 f47 §17 + sessions §4。
+
+### 5.1 画面/逻辑补充
+
+- `ChatPanel` 新增 `conversationId?: string` prop：**提供时直接加载该指定会话历史**（跳过「最新活跃线程/新建线程」解析）；未提供时保持既有行为（解析最新活跃线程/新建）。prop 变化 → 重新加载对应会话。
+- `pages/writing.tsx` 用 `useSearchParams` 读取 `conversation_id`，并透传给全局 chat 页 ChatPanel（variant="full"）与章节内 ChatPanel；无参数时 undefined（既有行为不变）。
+
+### 5.2 验收补充
+
+- N12：`/writing?conversation_id=<id>` → ChatPanel 加载该指定会话历史（非最新活跃线程/非空）；指定会话后不新建线程、不解析最新线程。
+- N13：session 点击（SessionBar/sessions 目录）跳转的 `conversation_id` 被 writing.tsx 消费并传给 ChatPanel 加载对应会话（含归档恢复场景）。
+
+## 6. #842 AI 回复中切页状态丢失（卸载中止后端 run + 断连终态落库）
+
+> AI 回复中转页 → 转回按钮复位未发送、AI 永不回复——卸载只调本地 abort 不调后端端点，断连 run 无终态落库。
+
+### 6.1 逻辑补充
+
+- ChatPanel **卸载清理补调后端 `abortChatRun(runIdRef.current)`**（不只本地 `abortRef.current?.()`）——后端 run 有终态（TERMINATED），不遗留 running；AI 消息不静默丢失。
+- 后端 `chat_stream.py` SSE 断连路径（`request.is_disconnected()`）提前 return 前，**补 run 终态落库**（TERMINATED，复用 `_end_run_terminated`）——断连不再让 `repo.create` 的 AgentRun 永久停留在 running。
+
+### 6.2 验收补充
+
+- N14：流式运行中卸载 → `abortChatRun(run_id)` 被调（后端 run 有终态）；转回 chat 页不误复位为未发送状态。
+- N15：SSE 断连（`is_disconnected=True`）→ run 落 TERMINATED 终态（`repo.save` 被调，status=terminated），不遗留 running。
+
+## 7. #841 项目标识跳全局 chat + 写作模式控件锚定输入框上方
+
+> 顶部项目标识点击无反应（5a）；无 chat 内容时「手动/一次确认/全自动」控件被顶到面板顶部、与输入框分离（5b）。
+
+### 7.1 逻辑/样式补充
+
+- **5a**：`ProjectSeal` 增加 onClick → 跳写作页全局 chat 视图（清空 currentChapterId → `currentChapterId===null` 分支渲染 global-chat）。
+- **5b（方案 A 始终锚定）**：ChatPanel 渲染尾部把 `ChatDeleteAuthControl` 与输入行包进同一 `chat-compose` 组（flex-col），full 变体对该组加 `mt-auto`（控件始终在 AI 输入框上方）。
+
+### 7.2 验收补充
+
+- N16：点击项目标识（project-seal）→ 写作页切换为全局 chat 视图（选中章节时也如此）。
+- N17：full 变体无 chat 内容 → 分段控件（delete-mode-manual/ask-once/auto）与输入框同在 `chat-compose` 组、位于输入框上方；inline 变体同样控件在输入框上方。
+
+## 8. #839 对话优雅异常处理（工具循环/递归超限自动收束）
+
+> 对话工具循环/递归超限时裸抛「工具执行失败」原始异常。核心 = 异常处理不「只抛出去」而「处理掉」。
+
+### 8.1 逻辑补充
+
+- `ChatAgentService.stream_events` 的 `astream_events` config 显式传 `recursion_limit`（默认 25 → 60，护栏自行收束）。
+- 捕获 `GraphRecursionError`（工具循环达上限）→ 优雅收束为 `done` 终帧（已流出部分结果保留），**不 yield `error` 帧** → 前端 onDone、端点落 COMPLETED（含部分 trace）。
+
+### 8.2 验收补充
+
+- N18：工具循环触发递归上限 → 对话不显示「工具执行失败」裸异常，优雅结束（done 帧 + 已流出部分结果）。
+- N19：astream_events config 含 `recursion_limit > 25`（护栏非默认 25）。

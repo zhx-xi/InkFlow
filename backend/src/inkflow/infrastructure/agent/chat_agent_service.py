@@ -15,6 +15,7 @@ import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langgraph.errors import GraphRecursionError
 
 from inkflow.domain.models.agent_run import AgentStep, AgentToolCall
 from inkflow.domain.ports.llm_errors import LLMRequestError
@@ -152,7 +153,10 @@ class ChatAgentService:
             async for ev in self._agent.astream_events(  # type: ignore[attr-defined]  # 鸭子类型：deepagents CompiledStateGraph 提供 astream_events（v2 事件 dict 流）
                 {"messages": messages},
                 version="v2",
-                config={"configurable": {"thread_id": self._thread_id or str(uuid.uuid4())}},
+                config={
+                    "configurable": {"thread_id": self._thread_id or str(uuid.uuid4())},
+                    "recursion_limit": 60,  # #839：护栏高出默认 25（缓解，非根治）
+                },
             ):
                 # #719：用户中断 → 停止继续 yield 事件（done 终帧由路由层落 TERMINATED 后自行发出）
                 if cancel_event is not None and cancel_event.is_set():
@@ -216,6 +220,9 @@ class ChatAgentService:
                 yield ChatStreamEvent(type="done", done=True)
         except LLMRequestError:
             raise
+        except GraphRecursionError:
+            # #839：工具循环达上限 → 优雅收束（已流出部分结果保留），不抛 error
+            yield ChatStreamEvent(type="done", done=True)
         except Exception as exc:
             yield ChatStreamEvent(type="error", done=True, error=f"工具执行失败: {exc}")
             yield ChatStreamEvent(type="done", done=True)

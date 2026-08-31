@@ -278,3 +278,49 @@ describe('ChatPanel — #770 variant 契约（full 无 resize handle / inline �
     expect(screen.getByTestId('chat-resize-handle')).toBeInTheDocument();
   });
 });
+
+/* ============================== #840 conversationId prop 加载指定会话 ============================== */
+
+describe('ChatPanel — #840 conversationId prop 加载指定会话（点击会话贯通）', () => {
+  it('#840：传 conversationId prop → 直接加载该指定会话历史（不解析最新活跃线程、不新建线程）', async () => {
+    chatApiMocks.fetchChatMessages.mockResolvedValue({
+      items: [
+        {
+          id: 'rm1',
+          conversation_id: 'conv-restored',
+          project_id: 'p1',
+          role: 'user',
+          content: '恢复后的会话历史',
+          intent: null,
+          created_at: '2026-08-30T09:00:00Z',
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    });
+    // 即便 GET /conversations 返回空（无活动线程），conversationId 指定后也应直接加载该会话
+    chatApiMocks.fetchChatConversations.mockResolvedValue({ items: [], total: 0 });
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} conversationId="conv-restored" />);
+    await waitFor(() => {
+      expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledWith('conv-restored');
+    });
+    // 指定会话后不应走 createChatConversation 建新线程
+    expect(chatApiMocks.createChatConversation).not.toHaveBeenCalled();
+    await user.click(screen.getByTestId('chat-expand'));
+    expect(screen.getByTestId('chat-msg-user-0')).toHaveTextContent('恢复后的会话历史');
+  });
+
+  it('#840：conversationId prop 变化 → 重新加载对应会话（切换会话）', async () => {
+    chatApiMocks.fetchChatMessages.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
+    const { rerender } = render(<ChatPanel {...OPTS} conversationId="conv-A" />);
+    await waitFor(() => {
+      expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledWith('conv-A');
+    });
+    rerender(<ChatPanel {...OPTS} conversationId="conv-B" />);
+    await waitFor(() => {
+      expect(chatApiMocks.fetchChatMessages).toHaveBeenCalledWith('conv-B');
+    });
+  });
+});

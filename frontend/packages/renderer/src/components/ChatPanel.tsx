@@ -2,10 +2,8 @@
  * 底部 AI 聊天框（spec §4.1，#541 流式版）：streamChat SSE 驱动
  * - 发送 → streamChat({project_id, prompt, chapter_id?, chapter_context?}, callbacks)
  * - 流式渐进：onDelta 逐字追加当前 ai 消息；onDone → parseChatReply 解析意图（#477 保留）
- * - onError → 错误文案（write.chat.failed），不插入正文
- * - 并发保护：流式 in-flight 时再次发送不触发第二次 streamChat；done/error 后可继续
- * - abort 清理：卸载时调用 streamChat 返回的 abort
- * - hermes 风格：user 靠右 / ai 靠左 + 角色标签 + space-y-3 空行
+ * - onError → 错误文案（write.chat.failed），不插入正文；并发保护：流式 in-flight 时再次发送不触发第二次 streamChat；done/error 后可继续
+ * - abort 清理：卸载时调用 streamChat 返回的 abort；hermes 风格：user 靠右 / ai 靠左 + 角色标签 + space-y-3 空行
  */
 import {
   useCallback,
@@ -48,6 +46,8 @@ export interface ChatPanelProps {
   streamSink?: MutableRefObject<PipelineStreamSink> | null;
   /** #770：full=全局 chat 页（占满、无 resize handle）；inline=章节内底部横栏（默认，可调 80~480px） */
   variant?: 'inline' | 'full';
+  /** #840：URL 指定会话 id——提供时直接加载该会话（跳过“最新活跃线程/新建”解析） */
+  conversationId?: string;
 }
 
 interface ChatEntry {
@@ -79,6 +79,7 @@ export function ChatPanel({
   chapterContent,
   streamSink,
   variant = 'inline',
+  conversationId: requestedConversationId,
 }: ChatPanelProps) {
   const { t } = useI18n();
   const isFull = variant === 'full';
@@ -135,29 +136,34 @@ export function ChatPanel({
   // #745：每次提交 / 页面跳转加载历史后强制滚底（一次性标记，effect 消费后复位）
   const pendingScrollRef = useRef(false);
 
-  /** #547：挂载 / projectId 变化 → 加载历史（失败静默，不打扰后续发送） */
+  /** #547/#840：挂载 / projectId / conversationId 变化 → 加载历史（失败静默，不打扰后续发送） */
   useEffect(() => {
     let cancelled = false;
     projectIdRef.current = projectId;
     const load = async () => {
       try {
-        const convs = await fetchChatConversations({ projectId, includeDeleted: false });
-        if (cancelled) return;
-        // #744：后端 GET /conversations 忽略 project_id，返回全部线程 → 必须本地按 project_id 过滤，
-        // 否则会选到其它项目的活动线程（e2e 写作页跨用例消息残留根因）
-        const active =
-          convs.items.find((c) => c.project_id === projectId && !c.is_deleted) ?? null;
-        let cid = active ? active.conversation_id : null;
+        // #840：URL 指定会话 id 非空 → 直接加载该会话（跳过“最新活跃线程/新建”解析）
+        let cid =
+          requestedConversationId && requestedConversationId.trim() !== '' ? requestedConversationId : null;
         if (!cid) {
-          // #770：章节内建会话 title=章节名（章节锚点）；全局 chat 页（无章节）不传 title
-          const chapterTitle = chapterIdRef.current
-            ? useChapterStore.getState().chapters.find((c) => c.id === chapterIdRef.current)?.title
-            : undefined;
-          const created = chapterTitle
-            ? await createChatConversation(projectId, { title: chapterTitle })
-            : await createChatConversation(projectId);
+          const convs = await fetchChatConversations({ projectId, includeDeleted: false });
           if (cancelled) return;
-          cid = created.conversation_id;
+          // #744：后端 GET /conversations 忽略 project_id，返回全部线程 → 必须本地按 project_id 过滤，
+          // 否则会选到其它项目的活动线程（e2e 写作页跨用例消息残留根因）
+          const active =
+            convs.items.find((c) => c.project_id === projectId && !c.is_deleted) ?? null;
+          cid = active ? active.conversation_id : null;
+          if (!cid) {
+            // #770：章节内建会话 title=章节名（章节锚点）；全局 chat 页（无章节）不传 title
+            const chapterTitle = chapterIdRef.current
+              ? useChapterStore.getState().chapters.find((c) => c.id === chapterIdRef.current)?.title
+              : undefined;
+            const created = chapterTitle
+              ? await createChatConversation(projectId, { title: chapterTitle })
+              : await createChatConversation(projectId);
+            if (cancelled) return;
+            cid = created.conversation_id;
+          }
         }
         conversationIdRef.current = cid;
         setConversationId(cid);
@@ -199,7 +205,7 @@ export function ChatPanel({
     return () => {
       cancelled = true;
     };
-  }, [projectId, streamSink]);
+  }, [projectId, streamSink, requestedConversationId]);
 
   /** 流式 delta：追加到当前 ai 消息（首个 delta 创建消息占位） */
   const onDelta = useCallback((delta: string) => {
@@ -468,6 +474,7 @@ export function ChatPanel({
   // 卸载时中止在途流式请求（streamChat 返回的 abort）
   useEffect(() => {
     return () => {
+      if (runIdRef.current) void abortChatRun(runIdRef.current);
       abortRef.current?.();
     };
   }, []);
@@ -823,46 +830,48 @@ export function ChatPanel({
           ))}
         </div>
       )}
-      {/* #766 阶段②：删除授权三态分段控件 + HITL 确认弹窗（独立组件，行为不变） */}
-      <ChatDeleteAuthControl
-        deletePermission={deletePermission}
-        onModeChange={handleDeleteModeChange}
-        interruptPayload={interruptPayload}
-        onApprove={handleResumeApprove}
-        onCancel={handleResumeCancel}
-      />
-      <div className={`flex items-center gap-2${isFull ? ' mt-auto' : ''}`}>
-        <textarea
-          data-testid="chat-input"
-          className="min-h-[40px] flex-1 resize-none rounded-md border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleInputKeyDown}
-          placeholder={t('write.chat.placeholder')}
-          rows={1}
+      <div data-testid="chat-compose" className={`flex flex-col gap-2${isFull ? ' mt-auto' : ''}`}>
+        {/* #766 阶段②：删除授权三态分段控件 + HITL 确认弹窗（独立组件，行为不变） */}
+        <ChatDeleteAuthControl
+          deletePermission={deletePermission}
+          onModeChange={handleDeleteModeChange}
+          interruptPayload={interruptPayload}
+          onApprove={handleResumeApprove}
+          onCancel={handleResumeCancel}
         />
-        {streaming ? (
-          <button
-            type="button"
-            data-testid="chat-interrupt"
-            aria-label={t('write.chat.stop')}
-            className="rounded-md bg-accent px-4 py-2 text-[13px] text-accent-ink hover:bg-accent-hover"
-            onClick={() => void handleInterrupt()}
-          >
-            <span className="mr-1 inline-block h-2 w-2 rounded-[2px] bg-current" aria-hidden="true" />
-            {t('write.chat.stop')}
-          </button>
-        ) : (
-          <button
-            type="button"
-            data-testid="chat-send"
-            disabled={!canSend}
-            className="rounded-md bg-accent px-4 py-2 text-[13px] text-accent-ink hover:bg-accent-hover disabled:opacity-40"
-            onClick={() => void handleSend()}
-          >
-            {t('write.chat.send')}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <textarea
+            data-testid="chat-input"
+            className="min-h-[40px] flex-1 resize-none rounded-md border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleInputKeyDown}
+            placeholder={t('write.chat.placeholder')}
+            rows={1}
+          />
+          {streaming ? (
+            <button
+              type="button"
+              data-testid="chat-interrupt"
+              aria-label={t('write.chat.stop')}
+              className="rounded-md bg-accent px-4 py-2 text-[13px] text-accent-ink hover:bg-accent-hover"
+              onClick={() => void handleInterrupt()}
+            >
+              <span className="mr-1 inline-block h-2 w-2 rounded-[2px] bg-current" aria-hidden="true" />
+              {t('write.chat.stop')}
+            </button>
+          ) : (
+            <button
+              type="button"
+              data-testid="chat-send"
+              disabled={!canSend}
+              className="rounded-md bg-accent px-4 py-2 text-[13px] text-accent-ink hover:bg-accent-hover disabled:opacity-40"
+              onClick={() => void handleSend()}
+            >
+              {t('write.chat.send')}
+            </button>
+          )}
+        </div>
       </div>
       {(expanded || isFull) && messages.length > 0 && (
         <div className="flex gap-2">

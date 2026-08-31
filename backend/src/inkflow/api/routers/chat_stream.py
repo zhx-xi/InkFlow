@@ -287,6 +287,8 @@ async def stream_chat_agent(
                 cancel_event=cancel,
             ):
                 if await request.is_disconnected():
+                    # #842：断连 → 落 TERMINATED 终态（不遗留 running）；done 帧回传 run_id
+                    yield await _end_run_terminated(repo, svc, run, data)
                     return
                 # #719：首个 agent 事件前回传 run_id（前端据此调后端 abort 端点）
                 if not run_started_sent:

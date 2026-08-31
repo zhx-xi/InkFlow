@@ -120,3 +120,17 @@
 - N7：AI 对话卡片展示会话 title（为空回退 project_name）。
 - N8：改名入口 → PATCH → 本地 title 更新 + ok toast；超 200 → err toast；失败 → err toast 且 title 不变。
 - N9：点击卡片 title 匹配章节 → 跳对应章节页；匹配不到 → 跳全局 chat 页（`/writing?conversation_id=...`）。
+
+## 5. #836 会话命名调整（会话列表 / 会话详情）
+
+> 左侧导航「会话」入口、SessionBar 分组标题、会话详情按钮均叫「会话」——命名不清晰。
+
+### 5.1 逻辑/文案补充
+
+- `nav.sessions`（AppNav 左导航「会话」按钮，跳 `/sessions`）→ **「会话详情」** / "Session Detail"。
+- `nav.group.sessions`（SessionBar 分组标题，新增键）→ **「会话列表」** / "Session List"。
+- `sessions.title`（会话页 header）→ **「会话列表」** / "Session List"。
+
+### 5.2 验收补充
+
+- N10：左侧导航「会话」按钮显示「会话详情」、跳 /sessions；SessionBar 分组标题与会话页 header 显示「会话列表」。zh/en 两端一致。

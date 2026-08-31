@@ -15,6 +15,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { ProjectTree } from './ProjectTree';
 import { useThemeStore } from '../stores/theme';
 import type { ChapterMeta, Volume } from '../stores/chapter';
@@ -89,7 +90,11 @@ beforeEach(() => {
 });
 
 function renderTree() {
-  render(<ProjectTree />);
+  render(
+    <MemoryRouter>
+      <ProjectTree />
+    </MemoryRouter>
+  );
 }
 
 /** 进入创建态（点 + 按钮） */
@@ -329,7 +334,11 @@ describe('ProjectTree — #702 左栏创建输入整行 + 调宽手柄', () => {
 
   it('左栏提供 col-resize 拖拽手柄（拖动调宽，min 160 / max 360）', () => {
     const onResize = vi.fn();
-    render(<ProjectTree width={208} onResizeWidth={onResize} />);
+    render(
+      <MemoryRouter initialEntries={['/writing']}>
+        <ProjectTree width={208} onResizeWidth={onResize} />
+      </MemoryRouter>
+    );
     const handle = screen.getByTestId('tree-resize-handle');
     expect(handle).toBeInTheDocument();
     expect(handle.className).toMatch(/col-resize/);
