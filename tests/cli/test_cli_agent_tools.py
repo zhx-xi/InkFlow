@@ -55,6 +55,26 @@ TOOL_NAMES = [
     "audit_chapter",
     "count_words",
     "save_draft",
+    "create_character",
+    "create_world_setting",
+    "create_outline",
+    "update_character",
+    "update_world_setting",
+    "update_outline",
+    "list_maps",
+    "create_map",
+    "update_map",
+    "list_timeline_events",
+    "create_timeline_event",
+    "update_timeline_event",
+    "create_foreshadowing",
+    "update_foreshadowing",
+    "memory_list",
+    "memory_add",
+    "memory_update",
+    "generate",
+    "continue",
+    "revise",
 ]
 
 
@@ -70,7 +90,7 @@ class TestAgentToolsCLI:
 
     @pytest.mark.agent
     def test_tools_list_json(self):
-        """--json：exit 0；信封 ok=True；items 5 项且顺序固定；每项含三键。"""
+        """--json：exit 0；信封 ok=True；items 26 项且顺序固定；每项含三键。"""
         result = runner.invoke(app, ["agent", "tools", "list", "--json"])
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
@@ -89,14 +109,14 @@ class TestAgentToolsCLI:
         result = runner.invoke(app, ["agent", "tools", "list", "--json"])
         assert result.exit_code == 0
         items = json.loads(result.stdout)["data"]["items"]
-        assert len(items) == 6
+        assert len(items) == 26
         for item in items:
             assert isinstance(item["description"], str)
             assert item["description"].strip() != ""
 
     @pytest.mark.agent
     def test_tools_list_human(self):
-        """无 --json：5 个工具名均出现在 stdout（不锁精确格式）。"""
+        """无 --json：26 个工具名均出现在 stdout（不锁精确格式）。"""
         result = runner.invoke(app, ["agent", "tools", "list"])
         assert result.exit_code == 0
         stdout = self._strip_ansi(result.stdout)

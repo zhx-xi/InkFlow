@@ -4,8 +4,9 @@
 - CRUD 编排：委托 AgentRepositoryProtocol
 - 同名唯一性校验（422）：create 前 / update 改名时经 agent_repository.get_by_name
   检查，命中 → AgentNameConflictError
-- 工具白名单校验（422）：tool_ids 逐个对照工具目录 TOOL_REGISTRY（工具名唯一
-  真源，spec §6），目录外 → ToolReferenceError
+- 工具白名单校验（422，#838）：tool_ids 逐个对照统一目录 ALL_TOOL_SPECS（工具名
+  唯一真源，spec §6）；目录外或 allow_custom_agent=False（核心工具，自定义
+  agent 不可勾选）→ ToolReferenceError
 - skill 引用校验（422，#522 目录名语义）：skill_ids 逐个检查
   skills_root/<name>/SKILL.md 存在（Path.is_file），任一缺失 →
   SkillReferenceError（不再 int() 解析 DB 主键）
@@ -17,8 +18,8 @@
 - 时间戳契约：create/update 填充 created_at/updated_at 为 datetime.now(UTC)
   （时区感知）；id 由 repo 分配（构造 None），builtin 服务层固定 False
 
-依赖全部通过构造函数注入（ADR-015，测试注入 Mock）；TOOL_REGISTRY 为静态
-工具目录常量，按测试 docstring 契约在服务内部 import 校验。
+依赖全部通过构造函数注入（ADR-015，测试注入 Mock）；ALL_TOOL_SPECS 为静态
+统一工具目录常量，按测试 docstring 契约在服务内部 import 校验。
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ from inkflow.domain.ports.agent_errors import (
     ToolReferenceError,
 )
 from inkflow.domain.ports.agent_repository import AgentRepositoryProtocol
-from inkflow.infrastructure.agent.tools import TOOL_REGISTRY
+from inkflow.infrastructure.agent.tools import ALL_TOOL_SPECS
 from inkflow.infrastructure.database.repositories.agent_repo import (
     SQLiteAgentRepository,
 )
@@ -170,11 +171,16 @@ def _slugify_role_key(name: str) -> str:
 
 
 def _validate_tool_ids(tool_ids: list[str]) -> None:
-    """工具白名单校验：含目录外工具名 → ToolReferenceError（422）."""
-    registry_names = {spec.name for spec in TOOL_REGISTRY}
-    unknown = [tool_id for tool_id in tool_ids if tool_id not in registry_names]
-    if unknown:
-        raise ToolReferenceError()
+    """工具白名单校验：目录外或 allow_custom_agent=False（核心）→ ToolReferenceError（422）.
+
+    #838: 自定义 agent 不可勾选目录内核心工具（agent_run/agent_call + 删除类），
+    与目录外名同等拒绝——均按统一目录 ALL_TOOL_SPECS 判定。
+    """
+    specs = {spec.name: spec for spec in ALL_TOOL_SPECS}
+    for tool_id in tool_ids:
+        spec = specs.get(tool_id)
+        if spec is None or not spec.allow_custom_agent:
+            raise ToolReferenceError()
 
 
 class AgentEntityService:
@@ -341,7 +347,7 @@ async def seed_builtin_agents(session: AsyncSession) -> int:
     目录名英文 slug，#522：不再按 BUILTIN_SKILL_NAMES.index 预测主键）。
     """
     # seed 契约（test_builtin_seed.py）固定本函数位置 + session 显式注入；
-    # 此处按既有模块内 infra import 先例（TOOL_REGISTRY）构造 SQLite 仓储。
+    # 此处按既有模块内 infra import 先例（ALL_TOOL_SPECS）构造 SQLite 仓储。
     agent_repo = SQLiteAgentRepository(session)
     inserted = 0
     for spec in BUILTIN_AGENT_SPECS:

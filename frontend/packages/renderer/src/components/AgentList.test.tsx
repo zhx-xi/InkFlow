@@ -95,6 +95,10 @@ interface ToolSpec {
   description: string;
   group: string;
   input_schema: unknown;
+  /** #838: 是否允许自定义 agent 勾选（false = is_core 核心工具，选择区不渲染） */
+  allow_custom_agent: boolean;
+  /** #838: 核心工具标记（后端工具目录 is_core） */
+  is_core: boolean;
 }
 interface SkillSummary {
   id: number;
@@ -135,12 +139,12 @@ const CUSTOM_AGENT: AgentEntity = {
 };
 
 const TOOL_ITEMS: ToolSpec[] = [
-  { name: 'save_draft', description: '保存章节草稿（agent 唯一写面）', group: 'writing', input_schema: {} },
-  { name: 'search_characters', description: '搜索项目内角色档案', group: 'retrieval', input_schema: {} },
-  { name: 'check_foreshadowing', description: '列出未回收伏笔', group: 'retrieval', input_schema: {} },
-  { name: 'get_prior_summary', description: '获取前文摘要', group: 'retrieval', input_schema: {} },
-  { name: 'audit_chapter', description: '单章一致性审计', group: 'audit', input_schema: {} },
-  { name: 'count_words', description: '中英文混合字数统计', group: 'audit', input_schema: {} },
+  { name: 'save_draft', description: '保存章节草稿（agent 唯一写面）', group: 'writing', input_schema: {}, allow_custom_agent: true, is_core: false },
+  { name: 'search_characters', description: '搜索项目内角色档案', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false },
+  { name: 'check_foreshadowing', description: '列出未回收伏笔', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false },
+  { name: 'get_prior_summary', description: '获取前文摘要', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false },
+  { name: 'audit_chapter', description: '单章一致性审计', group: 'audit', input_schema: {}, allow_custom_agent: true, is_core: false },
+  { name: 'count_words', description: '中英文混合字数统计', group: 'audit', input_schema: {}, allow_custom_agent: true, is_core: false },
 ];
 
 const SKILL_ITEMS: SkillSummary[] = [

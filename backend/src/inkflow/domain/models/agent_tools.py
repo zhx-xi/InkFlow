@@ -13,6 +13,8 @@ class ToolSpec:
     description: str  # 工具用途描述
     input_schema: dict  # JSON Schema（Pydantic model_json_schema() 产物）
     group: str = "project"  # 分组键（writing/retrieval/audit/project）
+    allow_custom_agent: bool = True  # 能否被自定义 agent 勾选/调用（False = 核心工具）
+    is_core: bool = False  # 系统内置核心工具（统一列表不展示/置灰）
 
 
 @dataclass

@@ -35,7 +35,7 @@ from inkflow.domain.services.agent_entity_service import (
     BUILTIN_AGENT_SPECS,
     AgentEntityService,
 )
-from inkflow.infrastructure.agent.tools import TOOL_REGISTRY
+from inkflow.infrastructure.agent.tools import ALL_TOOL_SPECS
 from inkflow.infrastructure.database.repositories.agent_repo import (
     SQLiteAgentRepository,
 )
@@ -114,7 +114,11 @@ async def list_agents(
 
 @router.get("/tools")
 async def list_tool_catalog():
-    """工具目录（spec §2.3/§5.1）— TOOL_REGISTRY 6 工具按目录原序（save_draft 末位）.
+    """工具目录（spec §2.3/§5.1 + #838）— ALL_TOOL_SPECS 35 工具按目录原序 + 双标记.
+
+    #838: 返回全量 35（9 组全集，含 9 核心工具），每项带
+    allow_custom_agent/is_core 标记；核心工具 allow_custom_agent=False、
+    is_core=True（自定义 agent 选择列表过滤依据，26 个暴露工具 = TOOL_REGISTRY）。
 
     路由顺序硬契约：本端点必须声明在 /{agent_id} 之前，否则 "tools" 被
     _parse_id 吞掉 → 404「Agent 不存在」（API 测试契约 #3）。
@@ -126,8 +130,10 @@ async def list_tool_catalog():
                 "description": spec.description,
                 "group": spec.group,
                 "input_schema": spec.input_schema,
+                "allow_custom_agent": spec.allow_custom_agent,
+                "is_core": spec.is_core,
             }
-            for spec in TOOL_REGISTRY
+            for spec in ALL_TOOL_SPECS
         ]
     }
 

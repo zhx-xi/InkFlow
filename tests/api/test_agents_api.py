@@ -3,7 +3,8 @@
 本文件为 `api/routers/agents.py`（NEW，spec §3 API 契约 + §5.3 seed 表 +
 §13 M1/M2/M5 验收）定义 API 契约测试，覆盖 6 组端点（前缀 /api/v1/agents）：
 - `GET    /api/v1/agents`          — Agent 列表（{items, total} 信封）
-- `GET    /api/v1/agents/tools`    — 工具目录（6 工具 + group 分组；路由顺序硬契约）
+- `GET    /api/v1/agents/tools`    — 工具目录（35 工具 + group 分组 +
+  allow_custom_agent/is_core 标记；路由顺序硬契约）
 - `POST   /api/v1/agents`          — 创建自定义 Agent（201 完整实体）
 - `GET    /api/v1/agents/{agent_id}` — 详情（200 完整实体）/ 404
 - `PATCH  /api/v1/agents/{agent_id}` — 部分更新（exclude_unset）/ 404 / 内置 409
@@ -53,14 +54,13 @@
    输出 offset/limit 等分页字段）；无数据时 total=0、items=[]；每项满足
    基础响应契约（含 builtin 值回显）。
 6. 【工具目录端点】GET /api/v1/agents/tools → 200 + `{items: [{name,
-   description, group, input_schema}]}`（spec §2.3/§5.1）：
-   - 完整 6 工具目录：save_draft（writing）/ search_characters（retrieval）/
-     check_foreshadowing（retrieval）/ get_prior_summary（retrieval）/
-     audit_chapter（audit）/ count_words（audit）——名字全集契约
-   - 目录排序固定：先 5 只读后 save_draft（spec §5.1）——本契约只锁
-     save_draft 为末位（前 5 只读相对顺序为实现细节）
-   - group ∈ {writing, retrieval, audit, project} 四分组键；save_draft
-     group == "writing"（spec §2.3 表）
+   description, group, input_schema, allow_custom_agent, is_core}]}`（#838）：
+   - 统一 35 工具目录（9 组全集）——名字全集契约（ALL_TOOL_SPECS 顺序）
+   - 每项 6 键；allow_custom_agent/is_core 为 bool 标记：9 核心工具
+     （agent_run/agent_call + 7 个 delete/memory_remove）allow_custom_agent=
+     False 且 is_core=True；其余 26 自定义工具 allow_custom_agent=True、
+     is_core=False（= TOOL_REGISTRY 内容）
+   - group ∈ {writing, retrieval, audit, project} 四分组键
    - input_schema 为 dict（Pydantic model_json_schema() 产物）
    - 本端点 200 即路由顺序契约的验证：若 /tools 声明在 /{agent_id} 之后 →
      "tools" 被 _parse_id → 404「Agent 不存在」→ 200 断言 FAIL
@@ -113,7 +113,7 @@
     service：skill_ids 合法引用用例先经 `_seed_skill`（写 skills_root/<name>/
     SKILL.md，#522 文件系统真源）预插 skill 目录；不存在引用用例用确定
     不存在的目录名（如 "no-such-skill"）；tool_ids 合法性由实现对照
-    TOOL_REGISTRY（静态 6 工具目录）判定，用例直接传目录外名（如
+    TOOL_REGISTRY（静态 26 自定义工具目录）判定，用例直接传目录外名（如
     "no_such_tool"）。全链路真实 DB + 真实 service，无 mock。
 
 15. 【lifespan/建表】ASGITransport 不触发 lifespan（test_chapter_api.py
@@ -168,27 +168,12 @@ from inkflow.domain.services.agent_entity_service import AgentEntityService
 ENDPOINT = "/api/v1/agents"
 """Agent 端点前缀（spec §3.1）。"""
 
-ENDPOINT_TOOLS = "/api/v1/agents/tools"
-"""工具目录端点（spec §3.1；路由顺序硬契约 #3）。"""
-
 ENV_TOKEN = "INKFLOW_SERVER_TOKEN"
 """token 来源环境变量（spec §2.3.1）：本文件全部用例依赖未设置 → 直通。"""
 
 DETAIL_NOT_FOUND = "Agent 不存在"
 """id 不存在/非法格式的 404 detail（设计假设 #10，本契约定稿）。"""
 
-TOOL_GROUPS = ("writing", "retrieval", "audit", "project")
-"""工具目录四分组键（spec §2.3，D2 勾选 UI 用）。"""
-
-EXPECTED_TOOL_NAMES = {
-    "save_draft",
-    "search_characters",
-    "check_foreshadowing",
-    "get_prior_summary",
-    "audit_chapter",
-    "count_words",
-}
-"""完整 6 工具目录名字全集（spec §2.3 表，M2 验收）。"""
 
 FULL_AGENT_PAYLOAD = {
     "name": "我的润色师",
@@ -326,27 +311,6 @@ def _assert_response_contract(data: dict) -> None:
     assert isinstance(data["builtin"], bool)
 
 
-def _assert_tool_entry(tool: dict) -> None:
-    """工具目录单项契约（设计假设 #6）：{name, description, group, input_schema}。"""
-    assert isinstance(tool, dict)
-    for key in ("name", "description", "group", "input_schema"):
-        assert key in tool, f"工具目录项缺少契约字段 {key}"
-    assert isinstance(tool["name"], str) and tool["name"] != ""
-    assert isinstance(tool["description"], str)
-    assert tool["group"] in TOOL_GROUPS, f"未知分组: {tool['group']}"
-    assert isinstance(tool["input_schema"], dict)
-
-
-def _assert_tool_catalog(items: list) -> None:
-    """工具目录整体契约（设计假设 #6）：6 工具全集 + 末位 save_draft + 分组。"""
-    assert isinstance(items, list)
-    names = [t["name"] for t in items]
-    assert set(names) == EXPECTED_TOOL_NAMES, f"工具目录名字全集不符: {names}"
-    assert names[-1] == "save_draft", "目录排序：save_draft 必须为末位（先 5 只读）"
-    for tool in items:
-        _assert_tool_entry(tool)
-    save_draft = next(t for t in items if t["name"] == "save_draft")
-    assert save_draft["group"] == "writing"
 
 
 # ── GET /api/v1/agents（spec §3.1 列表）──
@@ -395,42 +359,10 @@ class TestListAgents:
         assert by_id[str(row_b.id)]["tool_ids"] == ["count_words", "save_draft"]
 
 
-# ── GET /api/v1/agents/tools（spec §3.1 工具目录 + 路由顺序硬契约）──
-
-
-@pytest.mark.asyncio
-@pytest.mark.api
-class TestToolCatalog:
-    """工具目录端点契约（设计假设 #3/#6，M2 验收）。
-
-    路由顺序硬契约的验证机制：若 GREEN 实现把 `GET /tools` 声明在
-    `GET /{agent_id}` 之后，"tools" 会被 {agent_id} 路径参数捕获 →
-    _parse_id 解析失败 → 404「Agent 不存在」→ 下方 200 断言 FAIL。
-    """
-
-    async def test_tools_route_not_swallowed_by_agent_id(
-        self, client, db_session, override_get_db
-    ):
-        """GET /api/v1/agents/tools → 200（非 404）+ 顶层含 items 键（#3）。"""
-        resp = await client.get(ENDPOINT_TOOLS)
-        assert (
-            resp.status_code == 200
-        ), f"/tools 被 /{{agent_id}} 吞（路由顺序错）或端点未实现: {resp.status_code}"
-        body = resp.json()
-        assert isinstance(body, dict)
-        assert "items" in body
-
-    async def test_tools_catalog_six_tools_with_groups(
-        self, client, db_session, override_get_db
-    ):
-        """工具目录：6 工具全集 + group 分组 + save_draft 末位（#6，M2）。"""
-        resp = await client.get(ENDPOINT_TOOLS)
-        assert resp.status_code == 200
-        items = resp.json()["items"]
-        _assert_tool_catalog(items)
 
 
 # ── POST /api/v1/agents（spec §3.1 新建）──
+# #838 工具目录契约已拆到 test_agents_tools_api.py。
 
 
 @pytest.mark.asyncio

@@ -79,7 +79,34 @@ EXPECTED_READER_NAMES = [
     "count_words",
 ]
 
-EXPECTED_CATALOG_NAMES = [*EXPECTED_READER_NAMES, "save_draft"]
+EXPECTED_CATALOG_NAMES = [
+    "search_characters",
+    "check_foreshadowing",
+    "get_prior_summary",
+    "audit_chapter",
+    "count_words",
+    "save_draft",
+    "create_character",
+    "create_world_setting",
+    "create_outline",
+    "update_character",
+    "update_world_setting",
+    "update_outline",
+    "list_maps",
+    "create_map",
+    "update_map",
+    "list_timeline_events",
+    "create_timeline_event",
+    "update_timeline_event",
+    "create_foreshadowing",
+    "update_foreshadowing",
+    "memory_list",
+    "memory_add",
+    "memory_update",
+    "generate",
+    "continue",
+    "revise",
+]
 
 EXPECTED_GROUPS = {
     "search_characters": "retrieval",
@@ -88,6 +115,26 @@ EXPECTED_GROUPS = {
     "audit_chapter": "audit",
     "count_words": "audit",
     "save_draft": "writing",
+    "create_character": "writing",
+    "create_world_setting": "writing",
+    "create_outline": "writing",
+    "update_character": "writing",
+    "update_world_setting": "writing",
+    "update_outline": "writing",
+    "list_maps": "retrieval",
+    "create_map": "writing",
+    "update_map": "writing",
+    "list_timeline_events": "retrieval",
+    "create_timeline_event": "writing",
+    "update_timeline_event": "writing",
+    "create_foreshadowing": "writing",
+    "update_foreshadowing": "writing",
+    "memory_list": "retrieval",
+    "memory_add": "writing",
+    "memory_update": "writing",
+    "generate": "writing",
+    "continue": "writing",
+    "revise": "writing",
 }
 
 VALID_GROUPS = {"writing", "retrieval", "audit", "project"}
@@ -112,7 +159,7 @@ def _make_save_draft_deps() -> SaveDraftToolDeps:
 
 
 class TestToolSpecGroup:
-    """ToolSpec.group 字段契约（spec §2.3：默认 'project' + 四分组键）."""
+    """ToolSpec 字段契约（spec §2.3 group 默认 'project'；#838 allow_custom_agent/is_core 标记）."""
 
     def test_group_default_is_project(self):
         """默认 group='project'（字段默认值契约）."""
@@ -132,27 +179,35 @@ class TestToolSpecGroup:
         assert "group" in field_names
         # RED: 无 group 字段 → AssertionError FAILED
 
+    def test_marker_fields_defaults(self):
+        """#838: ToolSpec 新增 allow_custom_agent（默认 True）/ is_core（默认 False）."""
+        spec = ToolSpec(name="search_characters", description="搜索角色", input_schema={})
+        assert spec.allow_custom_agent is True
+        assert spec.is_core is False
+        # RED: 当前 ToolSpec 无这两个字段 → AttributeError FAILED
+
 
 # ── TestToolRegistryCatalog ─────────────────────────
 
 
 class TestToolRegistryCatalog:
-    """TOOL_REGISTRY 完整 6 工具目录契约（spec §5.1：顺序固定 + save_draft 收尾）."""
+    """TOOL_REGISTRY 完整 26 自定义工具目录契约（#838：ALL_TOOL_SPECS 过滤 allow_custom_agent）."""
 
-    def test_registry_has_six_specs(self):
-        """注册表长度 6（5 只读 + save_draft 静态 spec）."""
-        assert len(TOOL_REGISTRY) == 6
-        # RED: 当前 5 → assert 5 == 6 FAILED
+    def test_registry_has_twenty_six_specs(self):
+        """注册表长度 26（35 统一目录 - 9 核心工具）."""
+        assert len(TOOL_REGISTRY) == 26
+        # RED: 当前 6 → assert 6 == 26 FAILED
 
     def test_registry_names_fixed_order(self):
-        """目录顺序固定：先 5 只读（_TOOL_SPECS 原序）后 save_draft."""
+        """目录顺序固定：26 自定义工具按 ALL_TOOL_SPECS 过滤序
+        （读者 5 → save_draft → 设定写 3 → 设定改 3 → 世界读写 8 → 记忆 3 → 写作 3）."""
         assert [spec.name for spec in TOOL_REGISTRY] == EXPECTED_CATALOG_NAMES
-        # RED: 实际 5 项 → 列表不等 FAILED
+        # RED: 实际 6 项 → 列表不等 FAILED
 
-    def test_save_draft_is_last(self):
-        """save_draft 是注册表最后一项（§5.1 排序契约）."""
-        assert TOOL_REGISTRY[-1].name == "save_draft"
-        # RED: 实际末项 count_words → 断言 FAILED
+    def test_revise_is_last(self):
+        """revise 是注册表最后一项（26 自定义工具排序契约）."""
+        assert TOOL_REGISTRY[-1].name == "revise"
+        # RED: 实际末项 save_draft → 断言 FAILED
 
     def test_registry_contains_five_reader_tools(self):
         """守护：既有 5 只读工具名全部在注册表中（RED 阶段即 PASS）."""
@@ -169,7 +224,7 @@ class TestToolRegistryCatalog:
 
 
 class TestToolGroupMapping:
-    """6 工具分组映射契约（spec §2.3 表格：retrieval×3 / audit×2 / writing×1）."""
+    """26 工具分组映射契约（#838：retrieval×6 / audit×2 / writing×18）."""
 
     def test_group_mapping(self):
         """每工具 group 与契约表一致."""

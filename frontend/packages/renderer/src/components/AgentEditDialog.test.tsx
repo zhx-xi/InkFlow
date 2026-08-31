@@ -101,12 +101,15 @@ const EDITING_AGENT: AgentEntity = {
 };
 
 const TOOL_ITEMS = [
-  { name: 'save_draft', description: '保存章节草稿（agent 唯一写面）', group: 'writing', input_schema: {} },
-  { name: 'search_characters', description: '搜索项目内角色档案', group: 'retrieval', input_schema: {} },
-  { name: 'check_foreshadowing', description: '列出未回收伏笔', group: 'retrieval', input_schema: {} },
-  { name: 'get_prior_summary', description: '获取前文摘要', group: 'retrieval', input_schema: {} },
-  { name: 'audit_chapter', description: '单章一致性审计', group: 'audit', input_schema: {} },
-  { name: 'count_words', description: '中英文混合字数统计', group: 'audit', input_schema: {} },
+  { name: 'save_draft', description: '保存章节草稿（agent 唯一写面）', group: 'writing', input_schema: {}, allow_custom_agent: true, is_core: false },
+  { name: 'search_characters', description: '搜索项目内角色档案', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false },
+  { name: 'check_foreshadowing', description: '列出未回收伏笔', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false },
+  { name: 'get_prior_summary', description: '获取前文摘要', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false },
+  { name: 'audit_chapter', description: '单章一致性审计', group: 'audit', input_schema: {}, allow_custom_agent: true, is_core: false },
+  { name: 'count_words', description: '中英文混合字数统计', group: 'audit', input_schema: {}, allow_custom_agent: true, is_core: false },
+  // #838: is_core 工具（allow_custom_agent=false）——不允许自定义 agent 勾选
+  { name: 'delete_character', description: '删除角色', group: 'writing', input_schema: {}, allow_custom_agent: false, is_core: true },
+  { name: 'agent_run', description: '启动 agent 链', group: 'project', input_schema: {}, allow_custom_agent: false, is_core: true },
 ];
 
 const SKILL_ITEMS = [
@@ -307,5 +310,36 @@ describe('AgentEditDialog — 编辑模式', () => {
       model_override: 'zhipu/glm-4.5',
       temperature_override: 0.6,
     });
+  });
+});
+
+describe('AgentEditDialog — allow_custom_agent 过滤（#838）', () => {
+  it('工具选择只渲染 allow_custom_agent=true 的工具 checkbox（守护：非核心工具仍在）', () => {
+    render(
+      <AgentEditDialog
+        open
+        onOpenChange={() => undefined}
+        onCreate={() => undefined}
+        onUpdate={() => undefined}
+      />,
+    );
+    const dlg = screen.getByTestId('agent-dialog');
+    // allow_custom_agent=true（is_core=false）→ 正常渲染
+    expect(within(dlg).getByTestId('agent-tool-save_draft')).toBeInTheDocument();
+  });
+
+  it('is_core 工具（allow_custom_agent=false）不渲染为可勾选 checkbox（#838）', () => {
+    render(
+      <AgentEditDialog
+        open
+        onOpenChange={() => undefined}
+        onCreate={() => undefined}
+        onUpdate={() => undefined}
+      />,
+    );
+    const dlg = screen.getByTestId('agent-dialog');
+    // delete_character（writing 组）与 agent_run（project 组）是 is_core=true / allow_custom_agent=false → 必须不渲染
+    expect(within(dlg).queryByTestId('agent-tool-delete_character')).not.toBeInTheDocument();
+    expect(within(dlg).queryByTestId('agent-tool-agent_run')).not.toBeInTheDocument();
   });
 });
