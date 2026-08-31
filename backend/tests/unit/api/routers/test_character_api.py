@@ -166,7 +166,11 @@ class TestCharacterCRUDAPI:
 
         response = client.post(
             f"/api/v1/projects/{PID}/characters",
-            json={"name": "林尘", "group_ids": [str(uuid.uuid4())], "extra": {"role_rank": "major"}},
+            json={
+                "name": "林尘",
+                "group_ids": [str(uuid.uuid4())],
+                "extra": {"role_rank": "major"},
+            },
         )
         assert response.status_code == 422
         assert response.json()["detail"] == "分组不存在于该项目"

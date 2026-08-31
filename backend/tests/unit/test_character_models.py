@@ -225,7 +225,7 @@ class TestCharacterExtraContract:
         assert create.model_dump()["extra"] == {"role_rank": "major", "groups": ["主角团"]}
 
     def test_create_extra_defaults_to_empty_dict(self):
-        """#833：CharacterCreate 缺 role_rank → ValidationError（原「缺省 extra=空 dict」契约被收紧）."""
+        """#833：缺 role_rank → ValidationError（原「缺省 extra=空 dict」契约已收紧）."""
         with pytest.raises(ValidationError):
             CharacterCreate(project_id=PID, name="林尘")
 
