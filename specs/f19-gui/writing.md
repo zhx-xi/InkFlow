@@ -172,3 +172,17 @@
 
 - N16：点击项目标识（project-seal）→ 写作页切换为全局 chat 视图（选中章节时也如此）。
 - N17：full 变体无 chat 内容 → 分段控件（delete-mode-manual/ask-once/auto）与输入框同在 `chat-compose` 组、位于输入框上方；inline 变体同样控件在输入框上方。
+
+## 8. #839 对话优雅异常处理（工具循环/递归超限自动收束）
+
+> 对话工具循环/递归超限时裸抛「工具执行失败」原始异常。核心 = 异常处理不「只抛出去」而「处理掉」。
+
+### 8.1 逻辑补充
+
+- `ChatAgentService.stream_events` 的 `astream_events` config 显式传 `recursion_limit`（默认 25 → 60，护栏自行收束）。
+- 捕获 `GraphRecursionError`（工具循环达上限）→ 优雅收束为 `done` 终帧（已流出部分结果保留），**不 yield `error` 帧** → 前端 onDone、端点落 COMPLETED（含部分 trace）。
+
+### 8.2 验收补充
+
+- N18：工具循环触发递归上限 → 对话不显示「工具执行失败」裸异常，优雅结束（done 帧 + 已流出部分结果）。
+- N19：astream_events config 含 `recursion_limit > 25`（护栏非默认 25）。

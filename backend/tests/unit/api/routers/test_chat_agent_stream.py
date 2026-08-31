@@ -198,7 +198,7 @@ class _FakeAgent:
         self.calls: list[dict] = []
 
     async def astream_events(self, inputs, version="v2", config=None):
-        self.calls.append({"inputs": inputs, "version": version})
+        self.calls.append({"inputs": inputs, "version": version, "config": config})
         for i, ev in enumerate(self._events):
             if self._error is not None and self._error_after is not None and i >= self._error_after:
                 raise self._error
@@ -400,6 +400,37 @@ class TestChatAgentStreamEvents:
         assert steps[0].tokens == 25
         assert token_usage_total == 25
         assert final_content == "介绍主角"
+
+    @pytest.mark.asyncio
+    async def test_stream_events_config_includes_recursion_limit(self) -> None:
+        """#839：astream_events config 显式传 recursion_limit（高出默认 25，护栏自行收束）。"""
+        svc, agent = _make_svc(events=[_llm_chunk_event("好")])
+        async for _ in svc.stream_events(prompt="你好"):
+            pass
+        cfg = agent.calls[0]["config"]
+        assert cfg["configurable"]["thread_id"]
+        assert cfg.get("recursion_limit", 25) > 25
+
+    @pytest.mark.asyncio
+    async def test_recursion_limit_graceful_done_not_error(self) -> None:
+        """#839：工具循环达上限（GraphRecursionError）→ 优雅收束 done 帧（非裸 error 帧）。"""
+        from langgraph.errors import GraphRecursionError
+
+        svc, _ = _make_svc(
+            events=[
+                _llm_chunk_event("部分结果"),
+                _tool_start_event("call_1", "search_characters", {}),
+            ],
+            error=GraphRecursionError(
+                "Recursion limit of 25 reached without hitting a stop condition"
+            ),
+            error_after=1,
+        )
+        frames = [ev async for ev in svc.stream_events(prompt="你好")]
+        # #839：优雅收束为 done 终帧（已流出部分结果保留），不裸抛 error
+        assert frames[-1].type == "done"
+        assert frames[-1].done is True
+        assert not any(ev.type == "error" for ev in frames)
 
 
 # ── TestGetChatAgentService: 装配 ──
