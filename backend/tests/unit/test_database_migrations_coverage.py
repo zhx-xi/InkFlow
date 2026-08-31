@@ -15,7 +15,8 @@
 - ensure_preference_superseded_column（420-424）
 - ensure_user_preference_superseded_column（436-440）
 - ensure_world_categories（508）
-- ensure_character_group_members_migration（623-644）
+- ensure_character_group_members_migration（735-770）
+- _rebuild_characters_without_group_id（663-732，重建表）
 """
 
 from __future__ import annotations

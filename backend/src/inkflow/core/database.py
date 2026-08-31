@@ -673,12 +673,13 @@ def _rebuild_characters_without_group_id(conn: Connection) -> None:
     ③ DROP 旧表 → RENAME 为 characters → 重建原非 group_id 索引
        （含 uq_characters_active_name 等既有结构）。
 
-    SQLite 的 ``PRAGMA foreign_keys`` 只能在无挂起事务时切换；本迁移经
-    conn.run_sync 在 engine.begin() 事务内运行（此前迁移链与回填 INSERT 均为
-    DML，事务已挂起）→ 重建前尝试关闭 FK，若无法关闭（pragma no-op）则抛错
-    而不是在 FK=ON 下 DROP 父表——否则 SQLite 会先隐式 DELETE 全部行并沿 FK
-    CASCADE 清空 character_relations / character_group_members（数据丢失）。
-    重建成功/失败后恢复 FK=ON（尽力而为，异常路径由外层事务回滚兜底）。
+    SQLite 的 ``PRAGMA foreign_keys`` 只能在无挂起事务时切换；生产路径由
+    ``run_character_group_members_migration`` 在独立 AUTOCOMMIT 连接上先 FK=OFF
+    再调用本函数（无挂起事务 → pragma 生效），重建体由调用方包 ``BEGIN/COMMIT``
+    原子化——避免 DROP 后 RENAME 前崩溃残留 ``_characters_new``/空 characters（数据丢）。
+    若本函数被直接在事务内连接（FK=ON 无法关闭）调用则抛错，否则 DROP 父表会沿
+    FK CASCADE 清空 character_relations / character_group_members（#831 数据丢失）。
+    重建前先幂等清理遗留 ``_characters_new``（防重试报 already exists）。
     """
     create_sql_row = conn.execute(
         text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'characters'")
@@ -702,6 +703,8 @@ def _rebuild_characters_without_group_id(conn: Connection) -> None:
                 "重建 characters 会沿 FK CASCADE 清空关联表"
             )
     try:
+        # 幂等清理遗留临时表（partial-crash 后重试不报 already exists）
+        conn.execute(text("DROP TABLE IF EXISTS _characters_new"))
         conn.execute(text(f"CREATE TABLE _characters_new ({', '.join(keep_segments)})"))
         col_list = ", ".join(keep_cols)
         conn.execute(
@@ -782,7 +785,17 @@ async def run_character_group_members_migration() -> None:
         conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
         await conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
         try:
-            await conn.run_sync(ensure_character_group_members_migration)
+            # 原子化：整段迁移（建关联表 + 回填 + 重建 characters）包 BEGIN/COMMIT，
+            # FK=OFF 在事务外设置；中途崩溃即 ROLLBACK，不留 _characters_new / 空 characters，
+            # 下次启动可整段重试（配合 _rebuild_* 的 DROP TABLE IF EXISTS _characters_new）。
+            await conn.exec_driver_sql("BEGIN")
+            try:
+                await conn.run_sync(ensure_character_group_members_migration)
+            except Exception:
+                with suppress(Exception):
+                    await conn.exec_driver_sql("ROLLBACK")
+                raise
+            await conn.exec_driver_sql("COMMIT")
         finally:
             with suppress(Exception):
                 await conn.exec_driver_sql("PRAGMA foreign_keys=ON")
