@@ -425,12 +425,14 @@ class TestWorldListParentFilter:
     """list 末尾追加 parent_id / top_level_only 过滤参数（Q3=A，向后兼容）."""
 
     async def _build_filter_tree(self, repo, project):
-        a = await _add_setting(repo, project, "loc_A")  # 顶层
-        b = await _add_setting(repo, project, "loc_B")  # 顶层
+        # #849 根单例：一项目仅一根。loc_root 为唯一根，A/B 为其子级（原双顶层模型废弃）
+        root = await _add_setting(repo, project, "loc_root")
+        a = await _add_setting(repo, project, "loc_A", parent=root)
+        b = await _add_setting(repo, project, "loc_B", parent=root)
         c = await _add_setting(repo, project, "loc_C", parent=a)
         d = await _add_setting(repo, project, "loc_D", parent=a)
         e = await _add_setting(repo, project, "loc_E", parent=b)
-        return a, b, c, d, e
+        return root, a, b, c, d, e
 
     async def test_list_default_no_filter_returns_all(self, db_session, project):
         """缺省（不传 parent_id/top_level_only）→ 全量，向后兼容（spec §7 边界 16）."""
@@ -438,13 +440,15 @@ class TestWorldListParentFilter:
         await self._build_filter_tree(repo, project)
 
         settings, total = await repo.list(project.id, sort_by="name", sort_desc=False)
-        assert total == 5
-        assert [s.name for s in settings] == ["loc_A", "loc_B", "loc_C", "loc_D", "loc_E"]
+        assert total == 6
+        assert [s.name for s in settings] == [
+            "loc_A", "loc_B", "loc_C", "loc_D", "loc_E", "loc_root",
+        ]
 
     async def test_list_parent_id_returns_direct_children(self, db_session, project):
         """parent_id=<int> → 只返回该父的直接子级（不含孙辈与顶层，spec §7 边界 16）."""
         repo = SQLiteWorldRepository(db_session)
-        a, _, _, c, _ = await self._build_filter_tree(repo, project)
+        _, a, _, _, c, _ = await self._build_filter_tree(repo, project)
 
         settings, total = await repo.list(
             project.id, parent_id=a.id.int, sort_by="name", sort_desc=False
@@ -463,21 +467,21 @@ class TestWorldListParentFilter:
         settings, total = await repo.list(
             project.id, top_level_only=True, sort_by="name", sort_desc=False
         )
-        assert total == 2
-        assert [s.name for s in settings] == ["loc_A", "loc_B"]
+        assert total == 1
+        assert [s.name for s in settings] == ["loc_root"]
 
     async def test_list_parent_id_and_top_level_only_are_anded(self, db_session, project):
         """parent_id + top_level_only 同时给出 → 等价 AND
         （先 top_level_only 过滤再加 parent_id 条件）."""
         repo = SQLiteWorldRepository(db_session)
-        a, _, _, _, _ = await self._build_filter_tree(repo, project)
+        _, a, _, _, _, _ = await self._build_filter_tree(repo, project)
 
         # AND: 无条目既属于 A 的直接子级又是顶层 → 空
         assert await repo.list(project.id, parent_id=a.id.int, top_level_only=True) == ([], 0)
         # parent_id=None（哨兵 = 未过滤）+ top_level_only → 顶层
         settings, total = await repo.list(project.id, parent_id=None, top_level_only=True)
-        assert total == 2
-        assert {s.name for s in settings} == {"loc_A", "loc_B"}
+        assert total == 1
+        assert {s.name for s in settings} == {"loc_root"}
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -525,7 +529,7 @@ class TestWorldHardDeleteSemantics:
         """delete_with_reparent(父id, 新父id) → 子改挂新父 + 自身删除，单事务（spec §5.5）."""
         repo = SQLiteWorldRepository(db_session)
         country, state, county = await _build_3level_tree(repo, project)
-        x = await _add_setting(repo, project, "loc_X")  # reparent 目标（顶层）
+        x = await _add_setting(repo, project, "loc_X", parent=country)  # reparent 目标（子级）
 
         assert await repo.delete_with_reparent(state.id.int, x.id.int) is True
         assert await repo.get(state.id.int) is None  # 自身物理删除
@@ -542,7 +546,7 @@ class TestWorldHardDeleteSemantics:
         b = await _add_setting(repo, project, "loc_B", parent=a)
         c = await _add_setting(repo, project, "loc_C", parent=b)
         d = await _add_setting(repo, project, "loc_D", parent=c)
-        x = await _add_setting(repo, project, "loc_X")
+        x = await _add_setting(repo, project, "loc_X", parent=a)
 
         assert await repo.delete_with_reparent(b.id.int, x.id.int) is True
         c_after = await repo.get(c.id.int)
@@ -555,8 +559,9 @@ class TestWorldHardDeleteSemantics:
     ):
         """无子地点 → 自身物理删除，返回 True（UPDATE 0 行 + DELETE 自身仍为合法机械操作）."""
         repo = SQLiteWorldRepository(db_session)
-        a = await _add_setting(repo, project, "loc_A")
-        b = await _add_setting(repo, project, "loc_B")
+        root = await _add_setting(repo, project, "loc_root")
+        a = await _add_setting(repo, project, "loc_A", parent=root)
+        b = await _add_setting(repo, project, "loc_B", parent=root)
 
         assert await repo.delete_with_reparent(a.id.int, b.id.int) is True
         assert await repo.get(a.id.int) is None
@@ -592,7 +597,7 @@ class TestWorldParentIdWriteRoundtrip:
         """update 改 parent_id → 返回对象与 get 读回一致（改挂）."""
         repo = SQLiteWorldRepository(db_session)
         a = await _add_setting(repo, project, "loc_A")
-        b = await _add_setting(repo, project, "loc_B")
+        b = await _add_setting(repo, project, "loc_B", parent=a)
         c = await _add_setting(repo, project, "loc_C", parent=a)
 
         updated = await repo.update(c.model_copy(update={"parent_id": b.id}))
@@ -609,12 +614,11 @@ class TestWorldParentIdWriteRoundtrip:
         b = await _add_setting(repo, project, "loc_B", parent=a)
         assert b.parent_id == a.id
 
-        top = await _add_setting(repo, project, "loc_top")  # 缺省 = 顶层
-        assert top.parent_id is None
-        got_top = await repo.get(top.id.int)
-        assert got_top is not None and got_top.parent_id is None
+        got_a = await repo.get(a.id.int)
+        assert got_a is not None and got_a.parent_id is None  # 根保持顶层
 
-        # 置顶: update 显式 parent_id=None → 读回 None
+        # 置顶: 删掉唯一根后，b 置顶成为新的唯一根（单根不变量允许）
+        await repo.hard_delete(a.id.int)
         promoted = await repo.update(b.model_copy(update={"parent_id": None}))
         assert promoted.parent_id is None
         got_b = await repo.get(b.id.int)
@@ -682,7 +686,7 @@ class TestWorldGetByParentAndName:
         """不同父同名（跨层同名合法，新语义）→ 各自按 (父, 名) 命中（spec §2.4 场景表）."""
         repo = SQLiteWorldRepository(db_session)
         a = await _add_setting(repo, project, "loc_A")
-        b = await _add_setting(repo, project, "loc_B")
+        b = await _add_setting(repo, project, "loc_B", parent=a)
         x1 = await _add_setting(repo, project, "loc_X", parent=a)
         x2 = await _add_setting(repo, project, "loc_X", parent=b)
 

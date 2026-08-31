@@ -209,6 +209,7 @@ def build_setting_write_tools(deps: SettingWriteToolDeps) -> list[Tool]:
                 parent_coerced = None
                 if parent_id is not None:
                     parent_coerced = _coerce_uuid(parent_id)
+                category = category.strip() if category else ""
                 setting = await deps.world_service.create_setting(  # type: ignore[attr-defined]  # 鸭子类型：world_service 按契约提供 create_setting
                     project_id=_project_id,
                     name=name,

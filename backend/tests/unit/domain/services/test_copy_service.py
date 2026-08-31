@@ -180,6 +180,9 @@ def mock_repo() -> MagicMock:
     repo.list_descendants = AsyncMock(return_value=[])
     repo.get_by_parent_and_name = AsyncMock(return_value=None)
     repo.list_pins = AsyncMock(return_value=[])
+    # #848 复制守卫默认值：保证既有「复制到干净目标」用例通过（目标无根 + 分类存在）
+    repo.list = AsyncMock(return_value=([], 0))  # has_root：目标默认无根
+    repo.get_category_by_name = AsyncMock(return_value=MagicMock())  # 分类默认存在
     return repo
 
 
