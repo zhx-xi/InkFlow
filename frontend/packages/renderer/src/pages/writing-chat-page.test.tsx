@@ -13,6 +13,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { WritingPage } from './writing';
 import { apiFetch } from '../api/client';
@@ -160,5 +161,22 @@ describe('写作页 — #840 URL conversation_id 参数消费（会话点击贯�
       '/api/v1/chat/conversations',
       expect.anything(),
     );
+  });
+});
+
+describe('写作页 — #841 5a 项目标识点击跳全局 chat 视图', () => {
+  it('选中章节时点击 project-seal → 跳转全局 chat 视图（currentChapterId 复位 null → global-chat）', async () => {
+    useChapterStore.setState({ currentChapterId: 'c1', content: '已有正文第一段。' });
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/writing']}>
+        <WritingPage />
+      </MemoryRouter>
+    );
+    expect(screen.getByTestId('editor')).toBeInTheDocument();
+    await user.click(screen.getByTestId('project-seal'));
+    await waitFor(() => {
+      expect(screen.getByTestId('global-chat')).toBeInTheDocument();
+    });
   });
 });

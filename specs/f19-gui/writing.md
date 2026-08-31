@@ -158,3 +158,17 @@
 
 - N14：流式运行中卸载 → `abortChatRun(run_id)` 被调（后端 run 有终态）；转回 chat 页不误复位为未发送状态。
 - N15：SSE 断连（`is_disconnected=True`）→ run 落 TERMINATED 终态（`repo.save` 被调，status=terminated），不遗留 running。
+
+## 7. #841 项目标识跳全局 chat + 写作模式控件锚定输入框上方
+
+> 顶部项目标识点击无反应（5a）；无 chat 内容时「手动/一次确认/全自动」控件被顶到面板顶部、与输入框分离（5b）。
+
+### 7.1 逻辑/样式补充
+
+- **5a**：`ProjectSeal` 增加 onClick → 跳写作页全局 chat 视图（清空 currentChapterId → `currentChapterId===null` 分支渲染 global-chat）。
+- **5b（方案 A 始终锚定）**：ChatPanel 渲染尾部把 `ChatDeleteAuthControl` 与输入行包进同一 `chat-compose` 组（flex-col），full 变体对该组加 `mt-auto`（控件始终在 AI 输入框上方）。
+
+### 7.2 验收补充
+
+- N16：点击项目标识（project-seal）→ 写作页切换为全局 chat 视图（选中章节时也如此）。
+- N17：full 变体无 chat 内容 → 分段控件（delete-mode-manual/ask-once/auto）与输入框同在 `chat-compose` 组、位于输入框上方；inline 变体同样控件在输入框上方。

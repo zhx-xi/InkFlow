@@ -2,10 +2,8 @@
  * 底部 AI 聊天框（spec §4.1，#541 流式版）：streamChat SSE 驱动
  * - 发送 → streamChat({project_id, prompt, chapter_id?, chapter_context?}, callbacks)
  * - 流式渐进：onDelta 逐字追加当前 ai 消息；onDone → parseChatReply 解析意图（#477 保留）
- * - onError → 错误文案（write.chat.failed），不插入正文
- * - 并发保护：流式 in-flight 时再次发送不触发第二次 streamChat；done/error 后可继续
- * - abort 清理：卸载时调用 streamChat 返回的 abort
- * - hermes 风格：user 靠右 / ai 靠左 + 角色标签 + space-y-3 空行
+ * - onError → 错误文案（write.chat.failed），不插入正文；并发保护：流式 in-flight 时再次发送不触发第二次 streamChat；done/error 后可继续
+ * - abort 清理：卸载时调用 streamChat 返回的 abort；hermes 风格：user 靠右 / ai 靠左 + 角色标签 + space-y-3 空行
  */
 import {
   useCallback,
@@ -832,46 +830,48 @@ export function ChatPanel({
           ))}
         </div>
       )}
-      {/* #766 阶段②：删除授权三态分段控件 + HITL 确认弹窗（独立组件，行为不变） */}
-      <ChatDeleteAuthControl
-        deletePermission={deletePermission}
-        onModeChange={handleDeleteModeChange}
-        interruptPayload={interruptPayload}
-        onApprove={handleResumeApprove}
-        onCancel={handleResumeCancel}
-      />
-      <div className={`flex items-center gap-2${isFull ? ' mt-auto' : ''}`}>
-        <textarea
-          data-testid="chat-input"
-          className="min-h-[40px] flex-1 resize-none rounded-md border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleInputKeyDown}
-          placeholder={t('write.chat.placeholder')}
-          rows={1}
+      <div data-testid="chat-compose" className={`flex flex-col gap-2${isFull ? ' mt-auto' : ''}`}>
+        {/* #766 阶段②：删除授权三态分段控件 + HITL 确认弹窗（独立组件，行为不变） */}
+        <ChatDeleteAuthControl
+          deletePermission={deletePermission}
+          onModeChange={handleDeleteModeChange}
+          interruptPayload={interruptPayload}
+          onApprove={handleResumeApprove}
+          onCancel={handleResumeCancel}
         />
-        {streaming ? (
-          <button
-            type="button"
-            data-testid="chat-interrupt"
-            aria-label={t('write.chat.stop')}
-            className="rounded-md bg-accent px-4 py-2 text-[13px] text-accent-ink hover:bg-accent-hover"
-            onClick={() => void handleInterrupt()}
-          >
-            <span className="mr-1 inline-block h-2 w-2 rounded-[2px] bg-current" aria-hidden="true" />
-            {t('write.chat.stop')}
-          </button>
-        ) : (
-          <button
-            type="button"
-            data-testid="chat-send"
-            disabled={!canSend}
-            className="rounded-md bg-accent px-4 py-2 text-[13px] text-accent-ink hover:bg-accent-hover disabled:opacity-40"
-            onClick={() => void handleSend()}
-          >
-            {t('write.chat.send')}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <textarea
+            data-testid="chat-input"
+            className="min-h-[40px] flex-1 resize-none rounded-md border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleInputKeyDown}
+            placeholder={t('write.chat.placeholder')}
+            rows={1}
+          />
+          {streaming ? (
+            <button
+              type="button"
+              data-testid="chat-interrupt"
+              aria-label={t('write.chat.stop')}
+              className="rounded-md bg-accent px-4 py-2 text-[13px] text-accent-ink hover:bg-accent-hover"
+              onClick={() => void handleInterrupt()}
+            >
+              <span className="mr-1 inline-block h-2 w-2 rounded-[2px] bg-current" aria-hidden="true" />
+              {t('write.chat.stop')}
+            </button>
+          ) : (
+            <button
+              type="button"
+              data-testid="chat-send"
+              disabled={!canSend}
+              className="rounded-md bg-accent px-4 py-2 text-[13px] text-accent-ink hover:bg-accent-hover disabled:opacity-40"
+              onClick={() => void handleSend()}
+            >
+              {t('write.chat.send')}
+            </button>
+          )}
+        </div>
       </div>
       {(expanded || isFull) && messages.length > 0 && (
         <div className="flex gap-2">

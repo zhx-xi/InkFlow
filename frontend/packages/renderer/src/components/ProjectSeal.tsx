@@ -1,5 +1,7 @@
 /** 项目印章（spec §4.2.1）：所有主题常驻，颜色跟随 accent，文字取书名关键字（暂按首字） */
+import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n/useI18n';
+import { useChapterStore } from '../stores/chapter';
 import type { Project } from '../stores/project';
 
 export interface ProjectSealProps {
@@ -8,10 +10,18 @@ export interface ProjectSealProps {
 
 export function ProjectSeal({ project }: ProjectSealProps) {
   const { t } = useI18n();
+  const navigate = useNavigate();
   if (!project) return null;
   const glyph = Array.from(project.name)[0] ?? '';
   return (
-    <div className="flex items-center gap-2.5 px-4 py-3">
+    <div
+      className="flex cursor-pointer items-center gap-2.5 px-4 py-3"
+      onClick={() => {
+        // #841 5a：清除当前章节 → 全局 chat 视图
+        useChapterStore.getState().setCurrentChapter(null);
+        navigate('/writing');
+      }}
+    >
       <span
         data-testid="project-seal"
         aria-label={project.name}
