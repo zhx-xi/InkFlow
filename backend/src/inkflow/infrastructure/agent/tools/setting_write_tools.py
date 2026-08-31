@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel
 
 from inkflow.domain.models.agent_tools import ToolSpec
+from inkflow.infrastructure.agent.tools import _tool_db_lock as _tool_db_lock_mod
 from inkflow.infrastructure.agent.tools.reader_tools import Tool
 
 
@@ -126,57 +127,58 @@ def build_setting_write_tools(deps: SettingWriteToolDeps) -> list[Tool]:
         goals: str = "",
         group_ids: list[uuid.UUID | str] | None = None,
     ) -> str:
-        # #748: 绑定到装配期项目（LLM 无需也不能自报 id，杜绝编造全量 UUID 孤儿数据）
-        bound_project_id = (
-            deps.expected_project_id if deps.expected_project_id is not None else project_id
-        )
-        _project_id: uuid.UUID | None = None
-        try:
-            _project_id = (
-                bound_project_id
-                if isinstance(bound_project_id, uuid.UUID)
-                else _coerce_uuid(bound_project_id)
+        async with _tool_db_lock_mod._tool_db_lock:
+            # #748: 绑定到装配期项目（LLM 无需也不能自报 id，杜绝编造全量 UUID 孤儿数据）
+            bound_project_id = (
+                deps.expected_project_id if deps.expected_project_id is not None else project_id
             )
-            group_ids_coerced = None
-            if group_ids:
-                group_ids_coerced = [_coerce_uuid(gid) for gid in group_ids]
-            character = await deps.character_service.create_character(  # type: ignore[attr-defined]  # 鸭子类型：character_service 按契约提供 create_character
-                project_id=_project_id,
-                name=name,
-                personality=personality,
-                background=background,
-                goals=goals,
-                group_ids=group_ids_coerced or None,
-                extra=None,
-            )
-            # 成功审计（约束①）；审计自身异常静默，不影响主返回
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="create_character_created",
-                    summary=f"角色创建 {name}",
-                    degraded=True,
+            _project_id: uuid.UUID | None = None
+            try:
+                _project_id = (
+                    bound_project_id
+                    if isinstance(bound_project_id, uuid.UUID)
+                    else _coerce_uuid(bound_project_id)
                 )
-            return json.dumps(
-                {
-                    "ok": True,
-                    "character_id": str(character.id),
-                    "name": name,
-                },
-                ensure_ascii=False,
-            )
-        except Exception as exc:
-            # 失败亦落审计（约束①）；审计自身异常静默
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
+                group_ids_coerced = None
+                if group_ids:
+                    group_ids_coerced = [_coerce_uuid(gid) for gid in group_ids]
+                character = await deps.character_service.create_character(  # type: ignore[attr-defined]  # 鸭子类型：character_service 按契约提供 create_character
                     project_id=_project_id,
-                    severity_summary="create_character_create_failed",
-                    summary=f"角色创建失败 {name}: {exc}",
-                    degraded=True,
+                    name=name,
+                    personality=personality,
+                    background=background,
+                    goals=goals,
+                    group_ids=group_ids_coerced or None,
+                    extra=None,
                 )
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+                # 成功审计（约束①）；审计自身异常静默，不影响主返回
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="create_character_created",
+                        summary=f"角色创建 {name}",
+                        degraded=True,
+                    )
+                return json.dumps(
+                    {
+                        "ok": True,
+                        "character_id": str(character.id),
+                        "name": name,
+                    },
+                    ensure_ascii=False,
+                )
+            except Exception as exc:
+                # 失败亦落审计（约束①）；审计自身异常静默
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="create_character_create_failed",
+                        summary=f"角色创建失败 {name}: {exc}",
+                        degraded=True,
+                    )
+                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
     async def _create_world_setting(
         project_id: uuid.UUID | str | None = None,
@@ -185,52 +187,53 @@ def build_setting_write_tools(deps: SettingWriteToolDeps) -> list[Tool]:
         content: str = "",
         parent_id: uuid.UUID | str | None = None,
     ) -> str:
-        bound_project_id = (
-            deps.expected_project_id if deps.expected_project_id is not None else project_id
-        )
-        _project_id: uuid.UUID | None = None
-        try:
-            _project_id = (
-                bound_project_id
-                if isinstance(bound_project_id, uuid.UUID)
-                else _coerce_uuid(bound_project_id)
+        async with _tool_db_lock_mod._tool_db_lock:
+            bound_project_id = (
+                deps.expected_project_id if deps.expected_project_id is not None else project_id
             )
-            parent_coerced = None
-            if parent_id is not None:
-                parent_coerced = _coerce_uuid(parent_id)
-            setting = await deps.world_service.create_setting(  # type: ignore[attr-defined]  # 鸭子类型：world_service 按契约提供 create_setting
-                project_id=_project_id,
-                name=name,
-                category=category,
-                content=content,
-                parent_id=parent_coerced or None,
-            )
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="create_world_setting_created",
-                    summary=f"世界观创建 {name}",
-                    degraded=True,
+            _project_id: uuid.UUID | None = None
+            try:
+                _project_id = (
+                    bound_project_id
+                    if isinstance(bound_project_id, uuid.UUID)
+                    else _coerce_uuid(bound_project_id)
                 )
-            return json.dumps(
-                {
-                    "ok": True,
-                    "setting_id": str(setting.id),
-                    "name": name,
-                },
-                ensure_ascii=False,
-            )
-        except Exception as exc:
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
+                parent_coerced = None
+                if parent_id is not None:
+                    parent_coerced = _coerce_uuid(parent_id)
+                setting = await deps.world_service.create_setting(  # type: ignore[attr-defined]  # 鸭子类型：world_service 按契约提供 create_setting
                     project_id=_project_id,
-                    severity_summary="create_world_setting_create_failed",
-                    summary=f"世界观创建失败 {name}: {exc}",
-                    degraded=True,
+                    name=name,
+                    category=category,
+                    content=content,
+                    parent_id=parent_coerced or None,
                 )
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="create_world_setting_created",
+                        summary=f"世界观创建 {name}",
+                        degraded=True,
+                    )
+                return json.dumps(
+                    {
+                        "ok": True,
+                        "setting_id": str(setting.id),
+                        "name": name,
+                    },
+                    ensure_ascii=False,
+                )
+            except Exception as exc:
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="create_world_setting_create_failed",
+                        summary=f"世界观创建失败 {name}: {exc}",
+                        degraded=True,
+                    )
+                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
     async def _create_outline(
         project_id: uuid.UUID | str | None = None,
@@ -240,53 +243,54 @@ def build_setting_write_tools(deps: SettingWriteToolDeps) -> list[Tool]:
         level: str = "chapter",
         parent_id: uuid.UUID | str | None = None,
     ) -> str:
-        bound_project_id = (
-            deps.expected_project_id if deps.expected_project_id is not None else project_id
-        )
-        _project_id: uuid.UUID | None = None
-        try:
-            _project_id = (
-                bound_project_id
-                if isinstance(bound_project_id, uuid.UUID)
-                else _coerce_uuid(bound_project_id)
+        async with _tool_db_lock_mod._tool_db_lock:
+            bound_project_id = (
+                deps.expected_project_id if deps.expected_project_id is not None else project_id
             )
-            parent_coerced = None
-            if parent_id is not None:
-                parent_coerced = _coerce_uuid(parent_id)
-            outline = await deps.outline_service.create_outline(  # type: ignore[attr-defined]  # 鸭子类型：outline_service 按契约提供 create_outline
-                project_id=_project_id,
-                name=name,
-                description=description,
-                sort_order=sort_order,
-                level=level,
-                parent_id=parent_coerced or None,
-            )
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="create_outline_created",
-                    summary=f"大纲创建 {name}",
-                    degraded=True,
+            _project_id: uuid.UUID | None = None
+            try:
+                _project_id = (
+                    bound_project_id
+                    if isinstance(bound_project_id, uuid.UUID)
+                    else _coerce_uuid(bound_project_id)
                 )
-            return json.dumps(
-                {
-                    "ok": True,
-                    "outline_id": str(outline.id),
-                    "name": name,
-                },
-                ensure_ascii=False,
-            )
-        except Exception as exc:
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
+                parent_coerced = None
+                if parent_id is not None:
+                    parent_coerced = _coerce_uuid(parent_id)
+                outline = await deps.outline_service.create_outline(  # type: ignore[attr-defined]  # 鸭子类型：outline_service 按契约提供 create_outline
                     project_id=_project_id,
-                    severity_summary="create_outline_create_failed",
-                    summary=f"大纲创建失败 {name}: {exc}",
-                    degraded=True,
+                    name=name,
+                    description=description,
+                    sort_order=sort_order,
+                    level=level,
+                    parent_id=parent_coerced or None,
                 )
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="create_outline_created",
+                        summary=f"大纲创建 {name}",
+                        degraded=True,
+                    )
+                return json.dumps(
+                    {
+                        "ok": True,
+                        "outline_id": str(outline.id),
+                        "name": name,
+                    },
+                    ensure_ascii=False,
+                )
+            except Exception as exc:
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="create_outline_create_failed",
+                        summary=f"大纲创建失败 {name}: {exc}",
+                        degraded=True,
+                    )
+                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
     return [
         Tool(spec=CREATE_CHARACTER_SPEC, func=_create_character),

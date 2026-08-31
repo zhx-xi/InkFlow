@@ -24,6 +24,7 @@ from inkflow.domain.models.agent_tools import ToolSpec
 from inkflow.domain.models.character import CharacterUpdate
 from inkflow.domain.models.outline import OutlineUpdate
 from inkflow.domain.models.world import WorldUpdate
+from inkflow.infrastructure.agent.tools import _tool_db_lock as _tool_db_lock_mod
 from inkflow.infrastructure.agent.tools.reader_tools import Tool
 
 T = TypeVar("T")
@@ -161,54 +162,55 @@ def build_setting_update_tools(deps: SettingUpdateToolDeps) -> list[Tool]:
         goals: str | None = None,
         group_ids: list[uuid.UUID | str] | None = None,
     ) -> str:
-        _project_id = _bind_project_id(deps.expected_project_id, project_id)
-        try:
-            update_fields: dict[str, Any] = {}
-            if name is not None:
-                update_fields["name"] = name
-            if personality is not None:
-                update_fields["personality"] = personality
-            if background is not None:
-                update_fields["background"] = background
-            if goals is not None:
-                update_fields["goals"] = goals
-            if group_ids is not None:
-                update_fields["group_ids"] = group_ids
-            character = _require_found(
-                await deps.character_service.update_character(  # type: ignore[attr-defined]  # 鸭子类型：character_service 按契约提供 update_character
-                    _coerce_id(character_id),
-                    CharacterUpdate(**update_fields),
-                ),
-                "角色不存在",
-            )
-            # 成功审计；审计自身异常静默，不影响主返回
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="update_character_updated",
-                    summary=f"角色更新 {name or ''}",
-                    degraded=True,
+        async with _tool_db_lock_mod._tool_db_lock:
+            _project_id = _bind_project_id(deps.expected_project_id, project_id)
+            try:
+                update_fields: dict[str, Any] = {}
+                if name is not None:
+                    update_fields["name"] = name
+                if personality is not None:
+                    update_fields["personality"] = personality
+                if background is not None:
+                    update_fields["background"] = background
+                if goals is not None:
+                    update_fields["goals"] = goals
+                if group_ids is not None:
+                    update_fields["group_ids"] = group_ids
+                character = _require_found(
+                    await deps.character_service.update_character(  # type: ignore[attr-defined]  # 鸭子类型：character_service 按契约提供 update_character
+                        _coerce_id(character_id),
+                        CharacterUpdate(**update_fields),
+                    ),
+                    "角色不存在",
                 )
-            return json.dumps(
-                {
-                    "ok": True,
-                    "character_id": str(character.id),
-                    "name": character.name or name or "",
-                },
-                ensure_ascii=False,
-            )
-        except Exception as exc:
-            # 失败亦落审计；审计自身异常静默
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="update_character_update_failed",
-                    summary=f"角色更新失败 {name or ''}: {exc}",
-                    degraded=True,
+                # 成功审计；审计自身异常静默，不影响主返回
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="update_character_updated",
+                        summary=f"角色更新 {name or ''}",
+                        degraded=True,
+                    )
+                return json.dumps(
+                    {
+                        "ok": True,
+                        "character_id": str(character.id),
+                        "name": character.name or name or "",
+                    },
+                    ensure_ascii=False,
                 )
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+            except Exception as exc:
+                # 失败亦落审计；审计自身异常静默
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="update_character_update_failed",
+                        summary=f"角色更新失败 {name or ''}: {exc}",
+                        degraded=True,
+                    )
+                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
     async def _update_world_setting(
         project_id: uuid.UUID | str | None = None,
@@ -218,50 +220,51 @@ def build_setting_update_tools(deps: SettingUpdateToolDeps) -> list[Tool]:
         content: str | None = None,
         parent_id: uuid.UUID | str | None = None,
     ) -> str:
-        _project_id = _bind_project_id(deps.expected_project_id, project_id)
-        try:
-            update_fields: dict[str, Any] = {}
-            if name is not None:
-                update_fields["name"] = name
-            if category is not None:
-                update_fields["category"] = category
-            if content is not None:
-                update_fields["content"] = content
-            if parent_id is not None:
-                update_fields["parent_id"] = parent_id
-            setting = _require_found(
-                await deps.world_service.update_setting(  # type: ignore[attr-defined]  # 鸭子类型：world_service 按契约提供 update_setting
-                    _coerce_id(setting_id),
-                    WorldUpdate(**update_fields),
-                ),
-                "设定条目不存在",
-            )
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="update_world_setting_updated",
-                    summary=f"世界观更新 {name or ''}",
-                    degraded=True,
+        async with _tool_db_lock_mod._tool_db_lock:
+            _project_id = _bind_project_id(deps.expected_project_id, project_id)
+            try:
+                update_fields: dict[str, Any] = {}
+                if name is not None:
+                    update_fields["name"] = name
+                if category is not None:
+                    update_fields["category"] = category
+                if content is not None:
+                    update_fields["content"] = content
+                if parent_id is not None:
+                    update_fields["parent_id"] = parent_id
+                setting = _require_found(
+                    await deps.world_service.update_setting(  # type: ignore[attr-defined]  # 鸭子类型：world_service 按契约提供 update_setting
+                        _coerce_id(setting_id),
+                        WorldUpdate(**update_fields),
+                    ),
+                    "设定条目不存在",
                 )
-            return json.dumps(
-                {
-                    "ok": True,
-                    "setting_id": str(setting.id),
-                    "name": setting.name or name or "",
-                },
-                ensure_ascii=False,
-            )
-        except Exception as exc:
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="update_world_setting_update_failed",
-                    summary=f"世界观更新失败 {name or ''}: {exc}",
-                    degraded=True,
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="update_world_setting_updated",
+                        summary=f"世界观更新 {name or ''}",
+                        degraded=True,
+                    )
+                return json.dumps(
+                    {
+                        "ok": True,
+                        "setting_id": str(setting.id),
+                        "name": setting.name or name or "",
+                    },
+                    ensure_ascii=False,
                 )
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+            except Exception as exc:
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="update_world_setting_update_failed",
+                        summary=f"世界观更新失败 {name or ''}: {exc}",
+                        degraded=True,
+                    )
+                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
     async def _update_outline(
         project_id: uuid.UUID | str | None = None,
@@ -273,54 +276,55 @@ def build_setting_update_tools(deps: SettingUpdateToolDeps) -> list[Tool]:
         parent_id: uuid.UUID | str | None = None,
         chapter_id: uuid.UUID | str | None = None,
     ) -> str:
-        _project_id = _bind_project_id(deps.expected_project_id, project_id)
-        try:
-            update_fields: dict[str, Any] = {}
-            if name is not None:
-                update_fields["name"] = name
-            if description is not None:
-                update_fields["description"] = description
-            if sort_order is not None:
-                update_fields["sort_order"] = sort_order
-            if level is not None:
-                update_fields["level"] = level
-            if parent_id is not None:
-                update_fields["parent_id"] = parent_id
-            if chapter_id is not None:
-                update_fields["chapter_id"] = chapter_id
-            outline = _require_found(
-                await deps.outline_service.update_outline(  # type: ignore[attr-defined]  # 鸭子类型：outline_service 按契约提供 update_outline
-                    _coerce_id(outline_id),
-                    OutlineUpdate(**update_fields),
-                ),
-                "大纲条目不存在",
-            )
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="update_outline_updated",
-                    summary=f"大纲更新 {name or ''}",
-                    degraded=True,
+        async with _tool_db_lock_mod._tool_db_lock:
+            _project_id = _bind_project_id(deps.expected_project_id, project_id)
+            try:
+                update_fields: dict[str, Any] = {}
+                if name is not None:
+                    update_fields["name"] = name
+                if description is not None:
+                    update_fields["description"] = description
+                if sort_order is not None:
+                    update_fields["sort_order"] = sort_order
+                if level is not None:
+                    update_fields["level"] = level
+                if parent_id is not None:
+                    update_fields["parent_id"] = parent_id
+                if chapter_id is not None:
+                    update_fields["chapter_id"] = chapter_id
+                outline = _require_found(
+                    await deps.outline_service.update_outline(  # type: ignore[attr-defined]  # 鸭子类型：outline_service 按契约提供 update_outline
+                        _coerce_id(outline_id),
+                        OutlineUpdate(**update_fields),
+                    ),
+                    "大纲条目不存在",
                 )
-            return json.dumps(
-                {
-                    "ok": True,
-                    "outline_id": str(outline.id),
-                    "name": outline.name or name or "",
-                },
-                ensure_ascii=False,
-            )
-        except Exception as exc:
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="update_outline_update_failed",
-                    summary=f"大纲更新失败 {name or ''}: {exc}",
-                    degraded=True,
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="update_outline_updated",
+                        summary=f"大纲更新 {name or ''}",
+                        degraded=True,
+                    )
+                return json.dumps(
+                    {
+                        "ok": True,
+                        "outline_id": str(outline.id),
+                        "name": outline.name or name or "",
+                    },
+                    ensure_ascii=False,
                 )
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+            except Exception as exc:
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="update_outline_update_failed",
+                        summary=f"大纲更新失败 {name or ''}: {exc}",
+                        degraded=True,
+                    )
+                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
     return [
         Tool(spec=UPDATE_CHARACTER_SPEC, func=_update_character),

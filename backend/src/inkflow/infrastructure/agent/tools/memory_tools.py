@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from inkflow.domain.models.agent_tools import ToolSpec
 from inkflow.domain.models.preference import PreferenceCategory
+from inkflow.infrastructure.agent.tools import _tool_db_lock as _tool_db_lock_mod
 from inkflow.infrastructure.agent.tools.reader_tools import (
     Tool,
     _fail,
@@ -138,16 +139,17 @@ def build_memory_tools(deps: MemoryToolDeps) -> list[Tool]:
         project_id: uuid.UUID | str | None = None,
         category: str | None = None,
     ) -> str:
-        _project_id = _bind_project_id(deps.expected_project_id, project_id)
-        try:
-            result = await deps.memory_service.list_preferences(  # type: ignore[attr-defined]  # 鸭子类型：memory_service 按契约提供 list_preferences
-                _project_id,
-                category=_coerce_category(category),
-            )
-            items = result[0] if isinstance(result, tuple) else result
-            return _ok(_serialize_data(items))
-        except Exception as exc:
-            return _fail(exc)
+        async with _tool_db_lock_mod._tool_db_lock:
+            _project_id = _bind_project_id(deps.expected_project_id, project_id)
+            try:
+                result = await deps.memory_service.list_preferences(  # type: ignore[attr-defined]  # 鸭子类型：memory_service 按契约提供 list_preferences
+                    _project_id,
+                    category=_coerce_category(category),
+                )
+                items = result[0] if isinstance(result, tuple) else result
+                return _ok(_serialize_data(items))
+            except Exception as exc:
+                return _fail(exc)
 
     async def _memory_add(
         project_id: uuid.UUID | str | None = None,
@@ -155,38 +157,39 @@ def build_memory_tools(deps: MemoryToolDeps) -> list[Tool]:
         pattern: str = "",
         note: str = "",
     ) -> str:
-        _project_id = _bind_project_id(deps.expected_project_id, project_id)
-        try:
-            pref = await deps.memory_service.create_preference(  # type: ignore[attr-defined]  # 鸭子类型：memory_service 按契约提供 create_preference
-                project_id=_project_id,
-                category=_coerce_category(category),
-                pattern=pattern,
-                value=note,
-            )
-            # 成功审计；审计自身异常静默，不影响主返回
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
+        async with _tool_db_lock_mod._tool_db_lock:
+            _project_id = _bind_project_id(deps.expected_project_id, project_id)
+            try:
+                pref = await deps.memory_service.create_preference(  # type: ignore[attr-defined]  # 鸭子类型：memory_service 按契约提供 create_preference
                     project_id=_project_id,
-                    severity_summary="memory_add_created",
-                    summary=f"记忆偏好添加 {category}",
-                    degraded=True,
+                    category=_coerce_category(category),
+                    pattern=pattern,
+                    value=note,
                 )
-            return json.dumps(
-                {"ok": True, "preference_id": str(pref.id)},
-                ensure_ascii=False,
-            )
-        except Exception as exc:
-            # 失败亦落审计；审计自身异常静默
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="memory_add_create_failed",
-                    summary=f"记忆偏好添加失败: {exc}",
-                    degraded=True,
+                # 成功审计；审计自身异常静默，不影响主返回
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="memory_add_created",
+                        summary=f"记忆偏好添加 {category}",
+                        degraded=True,
+                    )
+                return json.dumps(
+                    {"ok": True, "preference_id": str(pref.id)},
+                    ensure_ascii=False,
                 )
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+            except Exception as exc:
+                # 失败亦落审计；审计自身异常静默
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="memory_add_create_failed",
+                        summary=f"记忆偏好添加失败: {exc}",
+                        degraded=True,
+                    )
+                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
     async def _memory_update(
         project_id: uuid.UUID | str | None = None,
@@ -195,41 +198,42 @@ def build_memory_tools(deps: MemoryToolDeps) -> list[Tool]:
         pattern: str | None = None,
         note: str | None = None,
     ) -> str:
-        _project_id = _bind_project_id(deps.expected_project_id, project_id)
-        try:
-            update_fields: dict[str, Any] = {}
-            if category is not None:
-                update_fields["category"] = _coerce_category(category)
-            if pattern is not None:
-                update_fields["pattern"] = pattern
-            if note is not None:
-                update_fields["value"] = note
-            await deps.memory_service.update_preference(  # type: ignore[attr-defined]  # 鸭子类型：memory_service 按契约提供 update_preference
-                preference_id,
-                **update_fields,
-            )
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="memory_update_updated",
-                    summary=f"记忆偏好更新 {preference_id}",
-                    degraded=True,
+        async with _tool_db_lock_mod._tool_db_lock:
+            _project_id = _bind_project_id(deps.expected_project_id, project_id)
+            try:
+                update_fields: dict[str, Any] = {}
+                if category is not None:
+                    update_fields["category"] = _coerce_category(category)
+                if pattern is not None:
+                    update_fields["pattern"] = pattern
+                if note is not None:
+                    update_fields["value"] = note
+                await deps.memory_service.update_preference(  # type: ignore[attr-defined]  # 鸭子类型：memory_service 按契约提供 update_preference
+                    preference_id,
+                    **update_fields,
                 )
-            return json.dumps(
-                {"ok": True, "preference_id": str(preference_id)},
-                ensure_ascii=False,
-            )
-        except Exception as exc:
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="memory_update_update_failed",
-                    summary=f"记忆偏好更新失败 {preference_id}: {exc}",
-                    degraded=True,
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="memory_update_updated",
+                        summary=f"记忆偏好更新 {preference_id}",
+                        degraded=True,
+                    )
+                return json.dumps(
+                    {"ok": True, "preference_id": str(preference_id)},
+                    ensure_ascii=False,
                 )
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+            except Exception as exc:
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="memory_update_update_failed",
+                        summary=f"记忆偏好更新失败 {preference_id}: {exc}",
+                        degraded=True,
+                    )
+                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
     return [
         Tool(spec=MEMORY_LIST_SPEC, func=_memory_list),

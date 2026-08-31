@@ -25,6 +25,7 @@ from pydantic import BaseModel
 
 from inkflow.domain.models.agent_tools import ToolSpec
 from inkflow.domain.services._word_count import count_words
+from inkflow.infrastructure.agent.tools import _tool_db_lock as _tool_db_lock_mod
 from inkflow.infrastructure.agent.tools.reader_tools import Tool
 
 
@@ -83,67 +84,68 @@ def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool:
         content: str = "",
         summary: str | None = None,
     ) -> str:
-        # #718: 绑定到装配期上下文——deps.expected_* 注入时总是使用绑定值
-        # （LLM 无需也无需自报 id，杜绝编造全零/误报导致 {ok:False} 循环失败）；
-        # 未注入时回退 caller 传入值（MCP/F27 writer 兼容）。
-        bound_project_id = (
-            deps.expected_project_id if deps.expected_project_id is not None else project_id
-        )
-        bound_chapter_id = (
-            deps.expected_chapter_id if deps.expected_chapter_id is not None else chapter_id
-        )
-        try:
-            _project_id = (
-                bound_project_id
-                if isinstance(bound_project_id, uuid.UUID)
-                else uuid.UUID(str(bound_project_id))
+        async with _tool_db_lock_mod._tool_db_lock:
+            # #718: 绑定到装配期上下文——deps.expected_* 注入时总是使用绑定值
+            # （LLM 无需也无需自报 id，杜绝编造全零/误报导致 {ok:False} 循环失败）；
+            # 未注入时回退 caller 传入值（MCP/F27 writer 兼容）。
+            bound_project_id = (
+                deps.expected_project_id if deps.expected_project_id is not None else project_id
             )
-            _chapter_id = (
-                None
-                if bound_chapter_id is None
-                else (
-                    bound_chapter_id
-                    if isinstance(bound_chapter_id, uuid.UUID)
-                    else uuid.UUID(str(bound_chapter_id))
+            bound_chapter_id = (
+                deps.expected_chapter_id if deps.expected_chapter_id is not None else chapter_id
+            )
+            try:
+                _project_id = (
+                    bound_project_id
+                    if isinstance(bound_project_id, uuid.UUID)
+                    else uuid.UUID(str(bound_project_id))
                 )
-            )
-            draft = await deps.draft_service.create(  # type: ignore[attr-defined]  # 鸭子类型：draft_service 按契约提供 create
-                project_id=_project_id,
-                chapter_id=_chapter_id,
-                content=content,
-                summary=summary or "",
-                agent_run_id=None,
-            )
-            # 成功审计（约束③）；审计自身异常静默，不影响主返回
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:writer",
+                _chapter_id = (
+                    None
+                    if bound_chapter_id is None
+                    else (
+                        bound_chapter_id
+                        if isinstance(bound_chapter_id, uuid.UUID)
+                        else uuid.UUID(str(bound_chapter_id))
+                    )
+                )
+                draft = await deps.draft_service.create(  # type: ignore[attr-defined]  # 鸭子类型：draft_service 按契约提供 create
                     project_id=_project_id,
                     chapter_id=_chapter_id,
-                    severity_summary="draft_saved",
-                    summary=f"草稿保存 {count_words(content)} 字",
-                    degraded=True,
+                    content=content,
+                    summary=summary or "",
+                    agent_run_id=None,
                 )
-            return json.dumps(
-                {
-                    "ok": True,
-                    "draft_id": draft.id,
-                    "status": "draft",
-                    "word_count": count_words(content),
-                },
-                ensure_ascii=False,
-            )
-        except Exception as exc:
-            # 失败亦落审计（约束③）；审计自身异常静默
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:writer",
-                    project_id=_project_id,
-                    chapter_id=_chapter_id,
-                    severity_summary="draft_save_failed",
-                    summary=str(exc),
-                    degraded=True,
+                # 成功审计（约束③）；审计自身异常静默，不影响主返回
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:writer",
+                        project_id=_project_id,
+                        chapter_id=_chapter_id,
+                        severity_summary="draft_saved",
+                        summary=f"草稿保存 {count_words(content)} 字",
+                        degraded=True,
+                    )
+                return json.dumps(
+                    {
+                        "ok": True,
+                        "draft_id": draft.id,
+                        "status": "draft",
+                        "word_count": count_words(content),
+                    },
+                    ensure_ascii=False,
                 )
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+            except Exception as exc:
+                # 失败亦落审计（约束③）；审计自身异常静默
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:writer",
+                        project_id=_project_id,
+                        chapter_id=_chapter_id,
+                        severity_summary="draft_save_failed",
+                        summary=str(exc),
+                        degraded=True,
+                    )
+                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
     return Tool(spec=spec, func=_save_draft)

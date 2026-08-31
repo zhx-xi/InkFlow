@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from inkflow.domain.models.agent_tools import ToolSpec
 from inkflow.domain.services._word_count import count_words
+from inkflow.infrastructure.agent.tools import _tool_db_lock as _tool_db_lock_mod
 
 _PAGE_SIZE = 50
 
@@ -193,54 +194,58 @@ def build_reader_tools(
         group_id: uuid.UUID | None = None,
         **kwargs: object,
     ) -> str:
-        try:
-            if group_id is not None:
-                group_id = _coerce_uuid(group_id)
-            items = await _fetch_all_pages(
-                deps.character_service.list_characters,  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
-                bound_project_id,
-                search=search,
-                group_id=group_id,
-            )
-            return _ok(_serialize_data(items))
-        except Exception as exc:
-            return _fail(exc)
+        async with _tool_db_lock_mod._tool_db_lock:
+            try:
+                if group_id is not None:
+                    group_id = _coerce_uuid(group_id)
+                items = await _fetch_all_pages(
+                    deps.character_service.list_characters,  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
+                    bound_project_id,
+                    search=search,
+                    group_id=group_id,
+                )
+                return _ok(_serialize_data(items))
+            except Exception as exc:
+                return _fail(exc)
 
     async def _check_foreshadowing(status: str | None = None, **kwargs: object) -> str:
-        try:
-            items = await _fetch_all_pages(
-                deps.foreshadowing_service.list,  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
-                bound_project_id,
-                status=status,
-            )
-            return _ok(_serialize_data(items))
-        except Exception as exc:
-            return _fail(exc)
+        async with _tool_db_lock_mod._tool_db_lock:
+            try:
+                items = await _fetch_all_pages(
+                    deps.foreshadowing_service.list,  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
+                    bound_project_id,
+                    status=status,
+                )
+                return _ok(_serialize_data(items))
+            except Exception as exc:
+                return _fail(exc)
 
     async def _get_prior_summary(limit: int = 10, **kwargs: object) -> str:
-        try:
-            result = await deps.summary_service.list_recent(  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
-                bound_project_id, limit=limit
-            )
-            return _ok(_serialize_data(result))
-        except Exception as exc:
-            return _fail(exc)
+        async with _tool_db_lock_mod._tool_db_lock:
+            try:
+                result = await deps.summary_service.list_recent(  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
+                    bound_project_id, limit=limit
+                )
+                return _ok(_serialize_data(result))
+            except Exception as exc:
+                return _fail(exc)
 
     async def _audit_chapter(
         chapter_id: uuid.UUID,
         include_static: bool = True,
         **kwargs: object,
     ) -> str:
-        chapter_id = _coerce_uuid(chapter_id)
-        try:
-            result = await deps.chapter_audit_service.audit(  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
-                bound_project_id,
-                chapter_id,
-                include_static=include_static,
-            )
-            return _ok(_serialize_data(result))
-        except Exception as exc:
-            return _fail(exc)
+        async with _tool_db_lock_mod._tool_db_lock:
+            chapter_id = _coerce_uuid(chapter_id)
+            try:
+                result = await deps.chapter_audit_service.audit(  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
+                    bound_project_id,
+                    chapter_id,
+                    include_static=include_static,
+                )
+                return _ok(_serialize_data(result))
+            except Exception as exc:
+                return _fail(exc)
 
     async def _count_words(text: str, **kwargs: object) -> str:
         try:

@@ -25,6 +25,7 @@ from inkflow.domain.models.agent_tools import ToolSpec
 from inkflow.domain.models.foreshadowing import ForeshadowingCreate, ForeshadowingUpdate
 from inkflow.domain.models.map import WorldMapUpdate
 from inkflow.domain.models.timeline import TimelineEventUpdate
+from inkflow.infrastructure.agent.tools import _tool_db_lock as _tool_db_lock_mod
 from inkflow.infrastructure.agent.tools.reader_tools import (
     Tool,
     _fail,
@@ -240,18 +241,19 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
         root_location_id: uuid.UUID | str | None = None,
         top_level_only: bool = False,
     ) -> str:
-        _project_id = _bind_project_id(deps.expected_project_id, project_id)
-        try:
-            root = _coerce_uuid(root_location_id) if root_location_id is not None else None
-            items = await _fetch_all_pages(
-                deps.map_service.list_maps,  # type: ignore[attr-defined]  # 鸭子类型：map_service 按契约提供 list_maps
-                _project_id,
-                root_location_id=root,
-                top_level_only=top_level_only,
-            )
-            return _ok(_serialize_data(items))
-        except Exception as exc:
-            return _fail(exc)
+        async with _tool_db_lock_mod._tool_db_lock:
+            _project_id = _bind_project_id(deps.expected_project_id, project_id)
+            try:
+                root = _coerce_uuid(root_location_id) if root_location_id is not None else None
+                items = await _fetch_all_pages(
+                    deps.map_service.list_maps,  # type: ignore[attr-defined]  # 鸭子类型：map_service 按契约提供 list_maps
+                    _project_id,
+                    root_location_id=root,
+                    top_level_only=top_level_only,
+                )
+                return _ok(_serialize_data(items))
+            except Exception as exc:
+                return _fail(exc)
 
     async def _create_map(
         project_id: uuid.UUID | str | None = None,
@@ -260,45 +262,46 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
         root_location_id: uuid.UUID | str | None = None,
         parent_map_id: uuid.UUID | str | None = None,
     ) -> str:
-        _project_id = _bind_project_id(deps.expected_project_id, project_id)
-        try:
-            root = _coerce_uuid(root_location_id) if root_location_id is not None else None
-            parent = _coerce_uuid(parent_map_id) if parent_map_id is not None else None
-            m = await deps.map_service.create_map(  # type: ignore[attr-defined]  # 鸭子类型：map_service 按契约提供 create_map
-                project_id=_project_id,
-                name=name,
-                description=description,
-                root_location_id=root,
-                parent_map_id=parent,
-            )
-            # 成功审计；审计自身异常静默，不影响主返回
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
+        async with _tool_db_lock_mod._tool_db_lock:
+            _project_id = _bind_project_id(deps.expected_project_id, project_id)
+            try:
+                root = _coerce_uuid(root_location_id) if root_location_id is not None else None
+                parent = _coerce_uuid(parent_map_id) if parent_map_id is not None else None
+                m = await deps.map_service.create_map(  # type: ignore[attr-defined]  # 鸭子类型：map_service 按契约提供 create_map
                     project_id=_project_id,
-                    severity_summary="create_map_created",
-                    summary=f"地图创建 {name}",
-                    degraded=True,
+                    name=name,
+                    description=description,
+                    root_location_id=root,
+                    parent_map_id=parent,
                 )
-            return json.dumps(
-                {
-                    "ok": True,
-                    "map_id": str(m.id),
-                    "name": m.name or name,
-                },
-                ensure_ascii=False,
-            )
-        except Exception as exc:
-            # 失败亦落审计；审计自身异常静默
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="create_map_create_failed",
-                    summary=f"地图创建失败 {name}: {exc}",
-                    degraded=True,
+                # 成功审计；审计自身异常静默，不影响主返回
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="create_map_created",
+                        summary=f"地图创建 {name}",
+                        degraded=True,
+                    )
+                return json.dumps(
+                    {
+                        "ok": True,
+                        "map_id": str(m.id),
+                        "name": m.name or name,
+                    },
+                    ensure_ascii=False,
                 )
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+            except Exception as exc:
+                # 失败亦落审计；审计自身异常静默
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="create_map_create_failed",
+                        summary=f"地图创建失败 {name}: {exc}",
+                        degraded=True,
+                    )
+                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
     async def _update_map(
         project_id: uuid.UUID | str | None = None,
@@ -306,56 +309,58 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
         name: str | None = None,
         description: str | None = None,
     ) -> str:
-        _project_id = _bind_project_id(deps.expected_project_id, project_id)
-        try:
-            update_fields: dict[str, Any] = {}
-            if name is not None:
-                update_fields["name"] = name
-            if description is not None:
-                update_fields["description"] = description
-            _require_found(
-                await deps.map_service.update_map(  # type: ignore[attr-defined]  # 鸭子类型：map_service 按契约提供 update_map
-                    _coerce_id(map_id),
-                    WorldMapUpdate(**update_fields),
-                ),
-                "地图不存在",
-            )
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="update_map_updated",
-                    summary=f"地图更新 {map_id}",
-                    degraded=True,
+        async with _tool_db_lock_mod._tool_db_lock:
+            _project_id = _bind_project_id(deps.expected_project_id, project_id)
+            try:
+                update_fields: dict[str, Any] = {}
+                if name is not None:
+                    update_fields["name"] = name
+                if description is not None:
+                    update_fields["description"] = description
+                _require_found(
+                    await deps.map_service.update_map(  # type: ignore[attr-defined]  # 鸭子类型：map_service 按契约提供 update_map
+                        _coerce_id(map_id),
+                        WorldMapUpdate(**update_fields),
+                    ),
+                    "地图不存在",
                 )
-            return json.dumps({"ok": True, "map_id": str(map_id)}, ensure_ascii=False)
-        except Exception as exc:
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="update_map_update_failed",
-                    summary=f"地图更新失败 {map_id}: {exc}",
-                    degraded=True,
-                )
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="update_map_updated",
+                        summary=f"地图更新 {map_id}",
+                        degraded=True,
+                    )
+                return json.dumps({"ok": True, "map_id": str(map_id)}, ensure_ascii=False)
+            except Exception as exc:
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="update_map_update_failed",
+                        summary=f"地图更新失败 {map_id}: {exc}",
+                        degraded=True,
+                    )
+                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
     async def _list_timeline_events(
         project_id: uuid.UUID | str | None = None,
         search: str | None = None,
         sort_by: str = "narrative_position",
     ) -> str:
-        _project_id = _bind_project_id(deps.expected_project_id, project_id)
-        try:
-            items = await _fetch_all_pages(
-                deps.timeline_service.list_events,  # type: ignore[attr-defined]  # 鸭子类型：timeline_service 按契约提供 list_events
-                _project_id,
-                search=search,
-                sort_by=sort_by,
-            )
-            return _ok(_serialize_data(items))
-        except Exception as exc:
-            return _fail(exc)
+        async with _tool_db_lock_mod._tool_db_lock:
+            _project_id = _bind_project_id(deps.expected_project_id, project_id)
+            try:
+                items = await _fetch_all_pages(
+                    deps.timeline_service.list_events,  # type: ignore[attr-defined]  # 鸭子类型：timeline_service 按契约提供 list_events
+                    _project_id,
+                    search=search,
+                    sort_by=sort_by,
+                )
+                return _ok(_serialize_data(items))
+            except Exception as exc:
+                return _fail(exc)
 
     async def _create_timeline_event(
         project_id: uuid.UUID | str | None = None,
@@ -367,44 +372,45 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
         narrative_position: int | None = None,
         timeline_flag: str = "",
     ) -> str:
-        _project_id = _bind_project_id(deps.expected_project_id, project_id)
-        try:
-            evt = await deps.timeline_service.create_event(  # type: ignore[attr-defined]  # 鸭子类型：timeline_service 按契约提供 create_event
-                project_id=_project_id,
-                title=title,
-                description=description,
-                time_value=time_value,
-                time_unit=time_unit,
-                time_display=time_display,
-                narrative_position=narrative_position,
-                timeline_flag=timeline_flag,
-            )
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
+        async with _tool_db_lock_mod._tool_db_lock:
+            _project_id = _bind_project_id(deps.expected_project_id, project_id)
+            try:
+                evt = await deps.timeline_service.create_event(  # type: ignore[attr-defined]  # 鸭子类型：timeline_service 按契约提供 create_event
                     project_id=_project_id,
-                    severity_summary="create_timeline_event_created",
-                    summary=f"时间线事件创建 {title}",
-                    degraded=True,
+                    title=title,
+                    description=description,
+                    time_value=time_value,
+                    time_unit=time_unit,
+                    time_display=time_display,
+                    narrative_position=narrative_position,
+                    timeline_flag=timeline_flag,
                 )
-            return json.dumps(
-                {
-                    "ok": True,
-                    "event_id": str(evt.id),
-                    "title": evt.title or title,
-                },
-                ensure_ascii=False,
-            )
-        except Exception as exc:
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="create_timeline_event_create_failed",
-                    summary=f"时间线事件创建失败 {title}: {exc}",
-                    degraded=True,
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="create_timeline_event_created",
+                        summary=f"时间线事件创建 {title}",
+                        degraded=True,
+                    )
+                return json.dumps(
+                    {
+                        "ok": True,
+                        "event_id": str(evt.id),
+                        "title": evt.title or title,
+                    },
+                    ensure_ascii=False,
                 )
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+            except Exception as exc:
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="create_timeline_event_create_failed",
+                        summary=f"时间线事件创建失败 {title}: {exc}",
+                        degraded=True,
+                    )
+                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
     async def _update_timeline_event(
         project_id: uuid.UUID | str | None = None,
@@ -414,43 +420,44 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
         time_value: float | str | None = None,
         narrative_position: int | None = None,
     ) -> str:
-        _project_id = _bind_project_id(deps.expected_project_id, project_id)
-        try:
-            update_fields: dict[str, Any] = {}
-            if title is not None:
-                update_fields["title"] = title
-            if description is not None:
-                update_fields["description"] = description
-            if time_value is not None:
-                update_fields["time_value"] = time_value
-            if narrative_position is not None:
-                update_fields["narrative_position"] = narrative_position
-            _require_found(
-                await deps.timeline_service.update_event(  # type: ignore[attr-defined]  # 鸭子类型：timeline_service 按契约提供 update_event
-                    _coerce_id(event_id),
-                    TimelineEventUpdate(**update_fields),
-                ),
-                "时间线事件不存在",
-            )
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="update_timeline_event_updated",
-                    summary=f"时间线事件更新 {event_id}",
-                    degraded=True,
+        async with _tool_db_lock_mod._tool_db_lock:
+            _project_id = _bind_project_id(deps.expected_project_id, project_id)
+            try:
+                update_fields: dict[str, Any] = {}
+                if title is not None:
+                    update_fields["title"] = title
+                if description is not None:
+                    update_fields["description"] = description
+                if time_value is not None:
+                    update_fields["time_value"] = time_value
+                if narrative_position is not None:
+                    update_fields["narrative_position"] = narrative_position
+                _require_found(
+                    await deps.timeline_service.update_event(  # type: ignore[attr-defined]  # 鸭子类型：timeline_service 按契约提供 update_event
+                        _coerce_id(event_id),
+                        TimelineEventUpdate(**update_fields),
+                    ),
+                    "时间线事件不存在",
                 )
-            return json.dumps({"ok": True, "event_id": str(event_id)}, ensure_ascii=False)
-        except Exception as exc:
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="update_timeline_event_update_failed",
-                    summary=f"时间线事件更新失败 {event_id}: {exc}",
-                    degraded=True,
-                )
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="update_timeline_event_updated",
+                        summary=f"时间线事件更新 {event_id}",
+                        degraded=True,
+                    )
+                return json.dumps({"ok": True, "event_id": str(event_id)}, ensure_ascii=False)
+            except Exception as exc:
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="update_timeline_event_update_failed",
+                        summary=f"时间线事件更新失败 {event_id}: {exc}",
+                        degraded=True,
+                    )
+                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
     async def _create_foreshadowing(
         project_id: uuid.UUID | str | None = None,
@@ -460,42 +467,43 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
         location: str | None = None,
         event_id: uuid.UUID | str | None = None,
     ) -> str:
-        _project_id = _bind_project_id(deps.expected_project_id, project_id)
-        try:
-            create_fields: dict[str, Any] = {"project_id": _project_id, "title": title}
-            if description is not None:
-                create_fields["description"] = description
-            if priority is not None:
-                create_fields["priority"] = priority
-            if location is not None:
-                create_fields["location"] = location
-            if event_id is not None:
-                create_fields["event_id"] = event_id
-            fsh = await deps.foreshadowing_service.create(  # type: ignore[attr-defined]  # 鸭子类型：foreshadowing_service 按契约提供 create
-                ForeshadowingCreate(**create_fields)
-            )
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="create_foreshadowing_created",
-                    summary=f"伏笔创建 {title}",
-                    degraded=True,
+        async with _tool_db_lock_mod._tool_db_lock:
+            _project_id = _bind_project_id(deps.expected_project_id, project_id)
+            try:
+                create_fields: dict[str, Any] = {"project_id": _project_id, "title": title}
+                if description is not None:
+                    create_fields["description"] = description
+                if priority is not None:
+                    create_fields["priority"] = priority
+                if location is not None:
+                    create_fields["location"] = location
+                if event_id is not None:
+                    create_fields["event_id"] = event_id
+                fsh = await deps.foreshadowing_service.create(  # type: ignore[attr-defined]  # 鸭子类型：foreshadowing_service 按契约提供 create
+                    ForeshadowingCreate(**create_fields)
                 )
-            return json.dumps(
-                {"ok": True, "foreshadowing_id": str(fsh.id)},
-                ensure_ascii=False,
-            )
-        except Exception as exc:
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="create_foreshadowing_create_failed",
-                    summary=f"伏笔创建失败 {title}: {exc}",
-                    degraded=True,
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="create_foreshadowing_created",
+                        summary=f"伏笔创建 {title}",
+                        degraded=True,
+                    )
+                return json.dumps(
+                    {"ok": True, "foreshadowing_id": str(fsh.id)},
+                    ensure_ascii=False,
                 )
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+            except Exception as exc:
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="create_foreshadowing_create_failed",
+                        summary=f"伏笔创建失败 {title}: {exc}",
+                        degraded=True,
+                    )
+                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
     async def _update_foreshadowing(
         project_id: uuid.UUID | str | None = None,
@@ -506,48 +514,49 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
         location: str | None = None,
         event_id: uuid.UUID | str | None = None,
     ) -> str:
-        _project_id = _bind_project_id(deps.expected_project_id, project_id)
-        try:
-            update_fields: dict[str, Any] = {}
-            if title is not None:
-                update_fields["title"] = title
-            if description is not None:
-                update_fields["description"] = description
-            if priority is not None:
-                update_fields["priority"] = priority
-            if location is not None:
-                update_fields["location"] = location
-            if event_id is not None:
-                update_fields["event_id"] = event_id
-            _require_found(
-                await deps.foreshadowing_service.update(  # type: ignore[attr-defined]  # 鸭子类型：foreshadowing_service 按契约提供 update
-                    _coerce_id(foreshadowing_id),
-                    ForeshadowingUpdate(**update_fields),
-                ),
-                "伏笔不存在",
-            )
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="update_foreshadowing_updated",
-                    summary=f"伏笔更新 {foreshadowing_id}",
-                    degraded=True,
+        async with _tool_db_lock_mod._tool_db_lock:
+            _project_id = _bind_project_id(deps.expected_project_id, project_id)
+            try:
+                update_fields: dict[str, Any] = {}
+                if title is not None:
+                    update_fields["title"] = title
+                if description is not None:
+                    update_fields["description"] = description
+                if priority is not None:
+                    update_fields["priority"] = priority
+                if location is not None:
+                    update_fields["location"] = location
+                if event_id is not None:
+                    update_fields["event_id"] = event_id
+                _require_found(
+                    await deps.foreshadowing_service.update(  # type: ignore[attr-defined]  # 鸭子类型：foreshadowing_service 按契约提供 update
+                        _coerce_id(foreshadowing_id),
+                        ForeshadowingUpdate(**update_fields),
+                    ),
+                    "伏笔不存在",
                 )
-            return json.dumps(
-                {"ok": True, "foreshadowing_id": str(foreshadowing_id)},
-                ensure_ascii=False,
-            )
-        except Exception as exc:
-            with contextlib.suppress(Exception):
-                await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                    actor="agent:chat",
-                    project_id=_project_id,
-                    severity_summary="update_foreshadowing_update_failed",
-                    summary=f"伏笔更新失败 {foreshadowing_id}: {exc}",
-                    degraded=True,
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="update_foreshadowing_updated",
+                        summary=f"伏笔更新 {foreshadowing_id}",
+                        degraded=True,
+                    )
+                return json.dumps(
+                    {"ok": True, "foreshadowing_id": str(foreshadowing_id)},
+                    ensure_ascii=False,
                 )
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+            except Exception as exc:
+                with contextlib.suppress(Exception):
+                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                        actor="agent:chat",
+                        project_id=_project_id,
+                        severity_summary="update_foreshadowing_update_failed",
+                        summary=f"伏笔更新失败 {foreshadowing_id}: {exc}",
+                        degraded=True,
+                    )
+                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
     return [
         Tool(spec=LIST_MAPS_SPEC, func=_list_maps),

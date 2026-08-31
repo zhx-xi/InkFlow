@@ -181,6 +181,7 @@ def build_deep_agent(*, model: str, api_key: str, base_url: str,
 | excluded_tools 传入不存在的工具名 | 框架忽略或警告（以 0.7.5 实测为准） | 无（记日志） |
 | 模型不支持工具调用 | deepagents 工具循环行为（Spike 0 弱模型实测工具触发稳定 7/7；降级普通 chat 由 F27 语义承接） | 不中断 |
 | 工具执行抛异常 | 工具函数返回错误文本 → ToolMessage 回填 | LLM 决定重试/换策略（F27 循环语义） |
+| 同一请求 LLM 一次输出多个工具调用（deepagents 并行分发，设定库工具 #837） | 所有走 DB 的 agent 工具（读/写/删除/审计）按**模块级 `asyncio.Lock`**（单例，跨所有工具实例共享）串行执行，覆盖整个 await 链（含 `audit_service.record`）；同一 AsyncSession 不再被并行协程交错 | 无（#837：串行化后不出现 `cannot start a transaction within a transaction` / `database is locked` / `This transaction is closed`） |
 | 参数 schema 校验失败 | deepagents 框架层校验回填错误 | 不中断循环 |
 | 最终 AIMessage content 为空 | **F26 不处理**（无消费场景）；F27 重试护栏（§5.7 硬性前置） | F27 映射 terminated_by_guardrail |
 | 服务 404 语义（项目/章节不存在） | service 抛 NotFound → 工具返回错误文本 | 不中断循环 |
