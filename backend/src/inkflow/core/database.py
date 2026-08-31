@@ -1,7 +1,9 @@
 """SQLAlchemy async engine and session factory."""
 
 import numbers
+import re
 from collections.abc import AsyncGenerator, Callable
+from contextlib import suppress
 from typing import Any, TypeVar, overload
 
 from sqlalchemy import Connection, event, text
@@ -612,6 +614,121 @@ def ensure_character_drop_is_deleted(conn: Connection) -> None:
     )
 
 
+def _sql_top_level_segments(create_sql: str) -> list[str]:
+    """按顶层逗号拆分 CREATE TABLE 主体为列/约束定义段（括号嵌套感知）.
+
+    重建 characters 表需要从 sqlite_master.sql 的原 DDL 中剔除 group_id 列
+    及引用它的 FK；先按顶层逗号切分，再逐段判定是否引用 group_id。
+    """
+    start = create_sql.index("(")
+    end = create_sql.rindex(")")
+    body = create_sql[start + 1 : end]
+    segments: list[str] = []
+    depth = 0
+    current: list[str] = []
+    for ch in body:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        if ch == "," and depth == 0:
+            segments.append("".join(current).strip())
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        segments.append("".join(current).strip())
+    return [seg for seg in segments if seg]
+
+
+def _references_group_id(segment: str) -> bool:
+    """判定建表/索引段是否引用 group_id（列定义本身或 FK/UNIQUE 等约束）.
+
+    列定义以 ``group_id`` 开头（允许引号）；表级约束/索引用词边界匹配
+    ``group_id``，避免误伤 ``some_group_id`` 之类相似列名。
+    """
+    if re.match(r'^\s*"?group_id"?\s', segment):
+        return True
+    return re.search(r"\bgroup_id\b", segment) is not None
+
+
+def _foreign_keys_enabled(conn: Connection) -> bool:
+    """读取当前连接 ``PRAGMA foreign_keys`` 是否开启（供重建表时恢复）."""
+    row = conn.exec_driver_sql("PRAGMA foreign_keys").fetchone()
+    if row is None:
+        raise RuntimeError("无法读取 SQLite foreign_keys pragma")
+    return int(row[0]) == 1
+
+
+def _rebuild_characters_without_group_id(conn: Connection) -> None:
+    """#831：重建 characters 表以安全移除 group_id 列及引用它的 FK.
+
+    SQLite DROP COLUMN 拒绝删除被 FK 引用的列（旧 schema characters.group_id
+    有 ``FOREIGN KEY ... ON DELETE SET NULL``），且 FK 不存于 sqlite_master
+    索引记录，仅枚举索引无法解阻。本函数走官方重建表路径：
+    ① 从 sqlite_master.sql 取原 CREATE TABLE DDL，剔除 group_id 列定义与
+       引用 group_id 的 FK 等约束段；
+    ② 建临时表 ``_characters_new``（无 group_id），按其余全部列
+       INSERT ... SELECT 拷贝数据；
+    ③ DROP 旧表 → RENAME 为 characters → 重建原非 group_id 索引
+       （含 uq_characters_active_name 等既有结构）。
+
+    SQLite 的 ``PRAGMA foreign_keys`` 只能在无挂起事务时切换；本迁移经
+    conn.run_sync 在 engine.begin() 事务内运行（此前迁移链与回填 INSERT 均为
+    DML，事务已挂起）→ 重建前尝试关闭 FK，若无法关闭（pragma no-op）则抛错
+    而不是在 FK=ON 下 DROP 父表——否则 SQLite 会先隐式 DELETE 全部行并沿 FK
+    CASCADE 清空 character_relations / character_group_members（数据丢失）。
+    重建成功/失败后恢复 FK=ON（尽力而为，异常路径由外层事务回滚兜底）。
+    """
+    create_sql_row = conn.execute(
+        text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'characters'")
+    ).fetchone()
+    if create_sql_row is None:
+        raise RuntimeError("characters 表 DDL 缺失，无法安全重建以移除 group_id")
+    create_sql = create_sql_row[0]
+    if create_sql is None:
+        raise RuntimeError("characters 表 DDL 缺失，无法安全重建以移除 group_id")
+    keep_segments = [
+        seg for seg in _sql_top_level_segments(create_sql) if not _references_group_id(seg)
+    ]
+    col_rows = conn.execute(text("PRAGMA table_info(characters)")).fetchall()
+    keep_cols = [col[1] for col in col_rows if col[1] != "group_id"]
+    fk_was_on = _foreign_keys_enabled(conn)
+    if fk_was_on:
+        conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        if _foreign_keys_enabled(conn):
+            raise RuntimeError(
+                "无法关闭 foreign_keys（事务已挂起时 pragma 为 no-op），"
+                "重建 characters 会沿 FK CASCADE 清空关联表"
+            )
+    try:
+        conn.execute(text(f"CREATE TABLE _characters_new ({', '.join(keep_segments)})"))
+        col_list = ", ".join(keep_cols)
+        conn.execute(
+            text(f"INSERT INTO _characters_new ({col_list}) SELECT {col_list} FROM characters")
+        )
+        index_rows = conn.execute(
+            text(
+                "SELECT sql FROM sqlite_master "
+                "WHERE type = 'index' AND tbl_name = 'characters' "
+                "AND sql IS NOT NULL AND name NOT LIKE 'sqlite_autoindex%'"
+            )
+        ).fetchall()
+        conn.execute(text("DROP TABLE characters"))
+        conn.execute(text("ALTER TABLE _characters_new RENAME TO characters"))
+        for (index_sql,) in index_rows:
+            if not _references_group_id(index_sql):
+                conn.execute(text(index_sql))
+    except Exception:
+        if fk_was_on:
+            with suppress(Exception):
+                conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+        raise
+    if fk_was_on:
+        with suppress(Exception):
+            conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+
+
 def ensure_character_group_members_migration(conn: Connection) -> None:
     """#701：角色分组 N:M 关联表迁移（幂等，配合 conn.run_sync 调用）.
 
@@ -619,8 +736,8 @@ def ensure_character_group_members_migration(conn: Connection) -> None:
     ① CREATE TABLE IF NOT EXISTS character_group_members（复合主键 + 双 FK
        CASCADE，角色/分组硬删级联移除关联行）；
     ② 旧库 characters 表若仍含 group_id 列：先把存量分组归属 INSERT 到关联表，
-       再枚举并 DROP 依赖 group_id 的索引（sqlite_master），最后
-       ALTER TABLE characters DROP COLUMN group_id；
+       再走重建表路径移除列（见 _rebuild_characters_without_group_id：旧列被
+       FK 引用时 SQLite DROP COLUMN 会被拒止，#831）；
     ③ 全新库（create_all 已建关联表且 characters 无 group_id 列）→ no-op。
     """
     conn.execute(
@@ -638,24 +755,37 @@ def ensure_character_group_members_migration(conn: Connection) -> None:
     names = {row[1] for row in cols}
     if not names or "group_id" not in names:
         return  # 表不存在（全新环境）或列已移除 → no-op
-    # ① 存量分组归属回填到关联表
+    # ① 存量分组归属回填到关联表（必须先于移列生效；OR IGNORE 保证重建失败
+    #    重跑时不会因重复主键报错）
     conn.execute(
         text(
-            "INSERT INTO character_group_members(character_id, group_id) "
+            "INSERT OR IGNORE INTO character_group_members(character_id, group_id) "
             "SELECT id, group_id FROM characters WHERE group_id IS NOT NULL"
         )
     )
-    # ② 枚举并 DROP 依赖 group_id 的索引（SQLite DROP COLUMN 要求列不被索引引用）
-    index_rows = conn.execute(
-        text(
-            "SELECT name FROM sqlite_master "
-            "WHERE type = 'index' AND tbl_name = 'characters' AND sql LIKE '%group_id%'"
-        )
-    ).fetchall()
-    for (index_name,) in index_rows:
-        conn.execute(text(f'DROP INDEX IF EXISTS "{index_name}"'))
-    # ③ 移除旧列（新 schema 由 create_all 维护，无 group_id 列）
-    conn.execute(text("ALTER TABLE characters DROP COLUMN group_id"))
+    # ② 重建 characters 安全移除 group_id（旧列被 FK 引用，DROP COLUMN 被拒止）
+    _rebuild_characters_without_group_id(conn)
+
+
+async def run_character_group_members_migration() -> None:
+    """#831：在 FK=OFF（AUTOCOMMIT）独立连接上执行角色分组 N:M 迁移，安全重建 characters.
+
+    app lifespan 的主迁移链在 ``engine.begin()``（FK=ON）事务内运行——SQLite 的
+    ``PRAGMA foreign_keys`` 在同一事务内是 no-op（无法切换），且主事务 DDL 已持有
+    写锁，若在共享连接上重建 characters，``DROP TABLE characters`` 会沿 FK CASCADE
+    清空 ``character_relations`` 与回填后的 ``character_group_members``（数据丢失）。
+    故本函数在独立 AUTOCOMMIT 连接上：先关闭 FK（无事务时才生效）、执行
+    ``ensure_character_group_members_migration``（含重建表）、再恢复 FK=ON。
+    调用方须在其它写事务提交后调用（app lifespan 已保证），避免写锁冲突。
+    """
+    async with engine.connect() as conn:
+        conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
+        await conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        try:
+            await conn.run_sync(ensure_character_group_members_migration)
+        finally:
+            with suppress(Exception):
+                await conn.exec_driver_sql("PRAGMA foreign_keys=ON")
 
 
 def ensure_outline_drop_is_deleted(conn: Connection) -> None:

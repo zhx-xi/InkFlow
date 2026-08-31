@@ -61,7 +61,6 @@ from inkflow.core.database import (
     ensure_agent_executions_trace_column,
     ensure_agent_role_key_column,
     ensure_character_drop_is_deleted,
-    ensure_character_group_members_migration,
     ensure_characters_brief_column,
     ensure_chat_messages_conversation_id_column,
     ensure_chat_messages_is_deleted_column,
@@ -81,6 +80,7 @@ from inkflow.core.database import (
     ensure_world_drop_is_deleted,
     ensure_world_parent_id_column,
     ensure_world_root_unique_index,
+    run_character_group_members_migration,
 )
 from inkflow.core.log import setup_logging
 from inkflow.domain.ports.extraction_errors import RAGUnavailableError
@@ -119,7 +119,6 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_outline_volume_id_column)
         await conn.run_sync(ensure_world_drop_is_deleted)
         await conn.run_sync(ensure_character_drop_is_deleted)
-        await conn.run_sync(ensure_character_group_members_migration)
         await conn.run_sync(ensure_characters_brief_column)
         await conn.run_sync(ensure_outline_drop_is_deleted)
         await conn.run_sync(ensure_timeline_drop_is_deleted)
@@ -128,6 +127,13 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_chat_messages_conversation_id_column)
         await conn.run_sync(ensure_conversation_title_column)
         await conn.run_sync(ensure_conversations_delete_permission_column)
+    # #831：角色分组 N:M 迁移需重建 characters 表移除旧 group_id 列。旧列被 FK
+    # 引用时 SQLite DROP COLUMN 会拒止（#820 残留回归）；且在主迁移事务（FK=ON）
+    # 内无法通过 PRAGMA foreign_keys=OFF 切换（事务内 no-op），直接 DROP 会沿 FK
+    # CASCADE 清空 character_relations / 回填后的 character_group_members（数据丢失）。
+    # 故在独立 AUTOCOMMIT 连接上以 FK=OFF 执行（见 run_character_group_members_migration），
+    # 位于主迁移事务提交之后避免写锁冲突。
+    await run_character_group_members_migration()
     # #106 F1：启动后幂等 seed 内置 4 provider（ProviderConfigService 同名跳过，
     # 全新安装注册表为空 → seed 补全；重复启动不重复插入）
     async with async_session_factory() as session:
