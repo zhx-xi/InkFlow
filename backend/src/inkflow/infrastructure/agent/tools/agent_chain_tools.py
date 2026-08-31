@@ -61,6 +61,8 @@ AGENT_RUN_SPEC = ToolSpec(
     description="启动一次 agent 链管线执行",
     input_schema=AgentRunParams.model_json_schema(),
     group="project",
+    allow_custom_agent=False,  # 核心工具：统一列表不展示，自定义 agent 不可勾选
+    is_core=True,
 )
 
 AGENT_CALL_SPEC = ToolSpec(
@@ -68,6 +70,8 @@ AGENT_CALL_SPEC = ToolSpec(
     description="调用单个 agent 执行一次任务",
     input_schema=AgentCallParams.model_json_schema(),
     group="project",
+    allow_custom_agent=False,  # 核心工具：统一列表不展示，自定义 agent 不可勾选
+    is_core=True,
 )
 
 

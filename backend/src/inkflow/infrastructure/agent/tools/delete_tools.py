@@ -90,6 +90,8 @@ DELETE_CHARACTER_SPEC = ToolSpec(
     description="删除项目内角色设定（按会话删除授权执行，ask_once 需用户确认）",
     input_schema=DeleteCharacterParams.model_json_schema(),
     group="writing",
+    allow_custom_agent=False,  # 核心工具：统一列表不展示，自定义 agent 不可勾选
+    is_core=True,
 )
 
 DELETE_WORLD_SETTING_SPEC = ToolSpec(
@@ -97,6 +99,8 @@ DELETE_WORLD_SETTING_SPEC = ToolSpec(
     description="删除项目内世界观设定条目（按会话删除授权执行，ask_once 需用户确认）",
     input_schema=DeleteWorldSettingParams.model_json_schema(),
     group="writing",
+    allow_custom_agent=False,  # 核心工具：统一列表不展示，自定义 agent 不可勾选
+    is_core=True,
 )
 
 DELETE_OUTLINE_SPEC = ToolSpec(
@@ -104,6 +108,8 @@ DELETE_OUTLINE_SPEC = ToolSpec(
     description="删除项目内大纲条目（按会话删除授权执行，ask_once 需用户确认）",
     input_schema=DeleteOutlineParams.model_json_schema(),
     group="writing",
+    allow_custom_agent=False,  # 核心工具：统一列表不展示，自定义 agent 不可勾选
+    is_core=True,
 )
 
 DELETE_MAP_SPEC = ToolSpec(
@@ -111,6 +117,8 @@ DELETE_MAP_SPEC = ToolSpec(
     description="删除项目内地图（含关联 pin 清理，按会话删除授权执行）",
     input_schema=DeleteMapParams.model_json_schema(),
     group="writing",
+    allow_custom_agent=False,  # 核心工具：统一列表不展示，自定义 agent 不可勾选
+    is_core=True,
 )
 
 DELETE_TIMELINE_EVENT_SPEC = ToolSpec(
@@ -118,6 +126,8 @@ DELETE_TIMELINE_EVENT_SPEC = ToolSpec(
     description="删除项目内时间线事件（按会话删除授权执行，ask_once 需用户确认）",
     input_schema=DeleteTimelineEventParams.model_json_schema(),
     group="writing",
+    allow_custom_agent=False,  # 核心工具：统一列表不展示，自定义 agent 不可勾选
+    is_core=True,
 )
 
 DELETE_FORESHADOWING_SPEC = ToolSpec(
@@ -125,6 +135,8 @@ DELETE_FORESHADOWING_SPEC = ToolSpec(
     description="删除项目内伏笔（按会话删除授权执行，ask_once 需用户确认）",
     input_schema=DeleteForeshadowingParams.model_json_schema(),
     group="writing",
+    allow_custom_agent=False,  # 核心工具：统一列表不展示，自定义 agent 不可勾选
+    is_core=True,
 )
 
 MEMORY_REMOVE_SPEC = ToolSpec(
@@ -132,6 +144,8 @@ MEMORY_REMOVE_SPEC = ToolSpec(
     description="删除项目内记忆偏好（按会话删除授权执行，ask_once 需用户确认）",
     input_schema=MemoryRemoveParams.model_json_schema(),
     group="writing",
+    allow_custom_agent=False,  # 核心工具：统一列表不展示，自定义 agent 不可勾选
+    is_core=True,
 )
 
 

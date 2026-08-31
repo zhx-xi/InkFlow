@@ -34,6 +34,8 @@ export function AgentEditDialog({
   const { t } = useI18n();
   const tools = useAgentsStore((s) => s.tools);
   const skills = useAgentsStore((s) => s.skills);
+  // #838: 只渲染 allow_custom_agent=true 的工具 checkbox（is_core 核心工具自然不出现）
+  const availableTools = tools.filter((tool) => tool.allow_custom_agent === true);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -183,7 +185,7 @@ export function AgentEditDialog({
           <div className="flex flex-col gap-3 text-[13px]">
             <span>{t('set.agents.tools')}</span>
             {TOOL_GROUPS.map(({ group, labelKey }) => {
-              const groupTools = tools.filter((tool) => tool.group === group);
+              const groupTools = availableTools.filter((tool) => tool.group === group);
               if (groupTools.length === 0) return null;
               return (
                 <div

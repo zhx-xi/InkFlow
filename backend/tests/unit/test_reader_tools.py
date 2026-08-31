@@ -50,6 +50,35 @@ EXPECTED_TOOL_NAMES = [
     "count_words",
 ]
 
+EXPECTED_REGISTRY_NAMES = [
+    "search_characters",
+    "check_foreshadowing",
+    "get_prior_summary",
+    "audit_chapter",
+    "count_words",
+    "save_draft",
+    "create_character",
+    "create_world_setting",
+    "create_outline",
+    "update_character",
+    "update_world_setting",
+    "update_outline",
+    "list_maps",
+    "create_map",
+    "update_map",
+    "list_timeline_events",
+    "create_timeline_event",
+    "update_timeline_event",
+    "create_foreshadowing",
+    "update_foreshadowing",
+    "memory_list",
+    "memory_add",
+    "memory_update",
+    "generate",
+    "continue",
+    "revise",
+]
+
 # ── 辅助 ──────────────────────────────────────
 
 
@@ -112,13 +141,15 @@ class TestToolSpec:
 class TestToolRegistry:
     """TOOL_REGISTRY 静态注册表契约（infrastructure/agent/tools/__init__.py）."""
 
-    async def test_registry_has_five_specs(self):
-        """注册表长度 6（5 只读 + save_draft）."""
-        assert len(TOOL_REGISTRY) == 6
+    async def test_registry_has_twenty_six_specs(self):
+        """注册表长度 26（35 统一目录 - 9 核心工具）."""
+        assert len(TOOL_REGISTRY) == 26
+        # RED: 当前 6 → assert 6 == 26 FAILED
 
     async def test_registry_names_set(self):
-        """注册表工具名集合与契约一致."""
-        assert {spec.name for spec in TOOL_REGISTRY} == set(EXPECTED_TOOL_NAMES) | {"save_draft"}
+        """注册表工具名集合与契约一致（26 自定义 Agent 可见工具）."""
+        assert {spec.name for spec in TOOL_REGISTRY} == set(EXPECTED_REGISTRY_NAMES)
+        # RED: 当前 6 名集合 → 与 26 名集合不等 FAILED
 
     async def test_registry_spec_fields(self):
         """每项 name/description 非空 str，input_schema 为 dict."""

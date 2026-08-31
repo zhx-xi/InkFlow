@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import inkflow.api.deps as deps_module
 from inkflow.infrastructure.agent.pipeline_templates import _CHAT_SYSTEM_AGENT_PROMPT
+from inkflow.infrastructure.agent.tools import UnifiedToolDeps, build_tools_by_ids
 from inkflow.infrastructure.agent.tools.reader_tools import Tool
 
 if TYPE_CHECKING:
@@ -61,6 +62,8 @@ async def get_chat_agent_service(
     from inkflow.core.config import config
     from inkflow.domain.services.model_resolution import resolve_model
     from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
+    from inkflow.infrastructure.agent.tools.agent_chain_tools import AgentChainToolDeps
+    from inkflow.infrastructure.agent.tools.delete_tools import DeleteToolDeps
     from inkflow.infrastructure.agent.tools.memory_tools import MemoryToolDeps
     from inkflow.infrastructure.agent.tools.reader_tools import ReaderToolDeps
     from inkflow.infrastructure.agent.tools.save_draft_tool import SaveDraftToolDeps
@@ -118,14 +121,36 @@ async def get_chat_agent_service(
     delete_permission = getattr(conv, "delete_permission", "manual") or "manual"
 
     async def _run_single_agent(agent: object, input_text: str) -> str:
-        """单 agent 执行钩子（Q1=A 拍板）：按 agent 配置构建 deep agent 并执行一次，返回输出文本."""
+        """单 agent 执行钩子（Q1=A 拍板）：按 agent 配置构建 deep agent 并执行一次，返回输出文本.
+
+        #838 运行时物化：自定义 agent 的 tool_ids 白名单经 build_tools_by_ids
+        物化（复用外层已构造的各子 deps——闭包延迟绑定，调用期均已就绪；delete
+        子 deps 在 manual 授权下为 None，build_tools_by_ids 跳过该组——核心工具
+        本就不允许自定义 agent 勾选）；reader 工具绑定当前项目（#680 闭包绑定）。
+        """
         from langchain_core.messages import HumanMessage
 
+        agent_tool_ids = getattr(agent, "tool_ids", None) or []
+        unified_deps = UnifiedToolDeps(
+            reader=reader_deps,
+            save_draft=save_draft_deps,
+            setting_write=setting_write_deps,
+            setting_update=setting_update_deps,
+            world_rw=world_rw_deps,
+            memory=memory_deps,
+            writing=writing_deps,
+            delete=delete_deps,
+            agent_chain=agent_chain_deps,
+        )
         built_agent = deps_module.build_deep_agent(
             model=model,
             api_key=api_key,
             base_url=base_url,
-            tools=[],
+            tools=build_tools_by_ids(
+                agent_tool_ids,
+                unified_deps,
+                project_id=uuid.UUID(data.project_id),
+            ),
             system_prompt=getattr(agent, "system_prompt", "") or "",
             profile_key=None,
         )
@@ -170,94 +195,86 @@ async def get_chat_agent_service(
         items, _total = await cm_svc.list_messages(uuid.UUID(project_id), offset=0, limit=20)
         return list(items)
 
+    reader_deps = ReaderToolDeps(
+        character_service=deps_module.get_character_service(db),
+        foreshadowing_service=deps_module.get_foreshadowing_service(db),
+        summary_service=deps_module.get_summary_service(db),
+        chapter_audit_service=deps_module.get_chapter_audit_service(db),
+    )
     reader_tools = deps_module.build_reader_tools(
-        ReaderToolDeps(
-            character_service=deps_module.get_character_service(db),
-            foreshadowing_service=deps_module.get_foreshadowing_service(db),
-            summary_service=deps_module.get_summary_service(db),
-            chapter_audit_service=deps_module.get_chapter_audit_service(db),
-        ),
+        reader_deps,
         project_id=uuid.UUID(data.project_id),
     )
-    save_draft_tool = deps_module.build_save_draft_tool(
-        SaveDraftToolDeps(
-            draft_service=deps_module.get_draft_service(db),
-            audit_service=deps_module.get_audit_service(db),
-            expected_project_id=uuid.UUID(data.project_id),
-            expected_chapter_id=uuid.UUID(data.chapter_id) if data.chapter_id else None,
-        )
+    save_draft_deps = SaveDraftToolDeps(
+        draft_service=deps_module.get_draft_service(db),
+        audit_service=deps_module.get_audit_service(db),
+        expected_project_id=uuid.UUID(data.project_id),
+        expected_chapter_id=uuid.UUID(data.chapter_id) if data.chapter_id else None,
     )
-    setting_write_tools = deps_module.build_setting_write_tools(
-        SettingWriteToolDeps(
-            character_service=deps_module.get_character_service(db),
-            world_service=deps_module.get_world_service(db),
-            outline_service=deps_module.get_outline_service(db),
-            audit_service=deps_module.get_audit_service(db),
-            expected_project_id=uuid.UUID(data.project_id),
-        )
+    save_draft_tool = deps_module.build_save_draft_tool(save_draft_deps)
+    setting_write_deps = SettingWriteToolDeps(
+        character_service=deps_module.get_character_service(db),
+        world_service=deps_module.get_world_service(db),
+        outline_service=deps_module.get_outline_service(db),
+        audit_service=deps_module.get_audit_service(db),
+        expected_project_id=uuid.UUID(data.project_id),
     )
-    setting_update_tools = deps_module.build_setting_update_tools(
-        SettingUpdateToolDeps(
-            character_service=deps_module.get_character_service(db),
-            world_service=deps_module.get_world_service(db),
-            outline_service=deps_module.get_outline_service(db),
-            audit_service=deps_module.get_audit_service(db),
-            expected_project_id=uuid.UUID(data.project_id),
-        )
+    setting_write_tools = deps_module.build_setting_write_tools(setting_write_deps)
+    setting_update_deps = SettingUpdateToolDeps(
+        character_service=deps_module.get_character_service(db),
+        world_service=deps_module.get_world_service(db),
+        outline_service=deps_module.get_outline_service(db),
+        audit_service=deps_module.get_audit_service(db),
+        expected_project_id=uuid.UUID(data.project_id),
     )
-    world_rw_tools = deps_module.build_world_rw_tools(
-        WorldRwToolDeps(
-            map_service=deps_module.get_map_service(db),
-            timeline_service=deps_module.get_timeline_service(db),
-            foreshadowing_service=deps_module.get_foreshadowing_service(db),
-            audit_service=deps_module.get_audit_service(db),
-            expected_project_id=uuid.UUID(data.project_id),
-        )
+    setting_update_tools = deps_module.build_setting_update_tools(setting_update_deps)
+    world_rw_deps = WorldRwToolDeps(
+        map_service=deps_module.get_map_service(db),
+        timeline_service=deps_module.get_timeline_service(db),
+        foreshadowing_service=deps_module.get_foreshadowing_service(db),
+        audit_service=deps_module.get_audit_service(db),
+        expected_project_id=uuid.UUID(data.project_id),
     )
-    memory_tools = deps_module.build_memory_tools(
-        MemoryToolDeps(
-            memory_service=deps_module.get_memory_service(db),
-            audit_service=deps_module.get_audit_service(db),
-            expected_project_id=uuid.UUID(data.project_id),
-        )
+    world_rw_tools = deps_module.build_world_rw_tools(world_rw_deps)
+    memory_deps = MemoryToolDeps(
+        memory_service=deps_module.get_memory_service(db),
+        audit_service=deps_module.get_audit_service(db),
+        expected_project_id=uuid.UUID(data.project_id),
     )
-    writing_tools = deps_module.build_writing_tools(
-        WritingToolDeps(
-            writing_service=deps_module.get_writing_service(db),
-            audit_service=deps_module.get_audit_service(db),
-            expected_project_id=uuid.UUID(data.project_id),
-            expected_chapter_id=uuid.UUID(data.chapter_id) if data.chapter_id else None,
-        )
+    memory_tools = deps_module.build_memory_tools(memory_deps)
+    writing_deps = WritingToolDeps(
+        writing_service=deps_module.get_writing_service(db),
+        audit_service=deps_module.get_audit_service(db),
+        expected_project_id=uuid.UUID(data.project_id),
+        expected_chapter_id=uuid.UUID(data.chapter_id) if data.chapter_id else None,
     )
+    writing_tools = deps_module.build_writing_tools(writing_deps)
+    delete_deps: DeleteToolDeps | None = None
     delete_tools: list[Tool] = []
     if delete_permission != "manual":
         from inkflow.domain.models.agent_tools import ToolAuth
-        from inkflow.infrastructure.agent.tools.delete_tools import DeleteToolDeps
 
-        delete_tools = deps_module.build_delete_tools(
-            DeleteToolDeps(
-                character_service=deps_module.get_character_service(db),
-                world_service=deps_module.get_world_service(db),
-                outline_service=deps_module.get_outline_service(db),
-                map_service=deps_module.get_map_service(db),
-                timeline_service=deps_module.get_timeline_service(db),
-                foreshadowing_service=deps_module.get_foreshadowing_service(db),
-                memory_service=deps_module.get_memory_service(db),
-                audit_service=deps_module.get_audit_service(db),
-                auth=ToolAuth(delete_permission=delete_permission),
-                expected_project_id=uuid.UUID(data.project_id),
-            )
-        )
-    from inkflow.infrastructure.agent.tools.agent_chain_tools import AgentChainToolDeps
-
-    agent_chain_tools = deps_module.build_agent_chain_tools(
-        AgentChainToolDeps(
-            agent_service=deps_module.get_agent_service(db),
-            agent_entity_service=deps_module.get_agent_entity_service(db),
-            run_agent=_run_single_agent,
+        delete_deps = DeleteToolDeps(
+            character_service=deps_module.get_character_service(db),
+            world_service=deps_module.get_world_service(db),
+            outline_service=deps_module.get_outline_service(db),
+            map_service=deps_module.get_map_service(db),
+            timeline_service=deps_module.get_timeline_service(db),
+            foreshadowing_service=deps_module.get_foreshadowing_service(db),
+            memory_service=deps_module.get_memory_service(db),
+            audit_service=deps_module.get_audit_service(db),
+            auth=ToolAuth(delete_permission=delete_permission),
             expected_project_id=uuid.UUID(data.project_id),
         )
+        delete_tools = deps_module.build_delete_tools(delete_deps)
+
+    agent_chain_deps = AgentChainToolDeps(
+        agent_service=deps_module.get_agent_service(db),
+        agent_entity_service=deps_module.get_agent_entity_service(db),
+        run_agent=_run_single_agent,
+        expected_project_id=uuid.UUID(data.project_id),
     )
+    agent_chain_tools = deps_module.build_agent_chain_tools(agent_chain_deps)
     agent = deps_module.build_deep_agent(
         model=model,
         api_key=api_key,

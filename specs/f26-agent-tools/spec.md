@@ -322,6 +322,13 @@ def build_deep_agent(*, model: str, api_key: str, base_url: str,
 **依赖**: ✅ F26 agent-tools（ToolSpec/Tool 模型 + build_reader_tools）· ✅ #748 设定库写工具（build_setting_write_tools）· ✅ F32/F33（相关服务已合入）· ✅ ADR-043（已合入 main）
 **参考 ADR**: adr/ADR-043.md（工具面矩阵 + 删除授权模型 + 分阶段）
 **状态**: 待实现 🔲
+> **#838 统一工具目录与标记（2026-08-31 修订）**: 阶段①（读+写）与阶段②（删除 HITL）合入后，新增「统一工具目录」：
+> `ALL_TOOL_SPECS`（`infrastructure/agent/tools/registry.py`）聚合全部 9 组 35 个工具（reader/save_draft/setting_write/setting_update/world_rw/memory/writing/delete/agent_chain），
+> 每个 `ToolSpec` 加 `allow_custom_agent: bool = True`（能否被自定义 agent 勾选/调用）+ `is_core: bool = False`（系统内置核心工具，统一列表不展示/置灰）。
+> 标记规则（2026-08-31 用户拍板）：`agent_run`/`agent_call`（agent 链）+ 7 个删除类（`delete_*`/`memory_remove`）= `allow_custom_agent=False, is_core=True`；
+> `memory_*` 3 个 + `writing` 3 个（generate/continue/revise）暴露（保持默认暴露）；其余读写工具均默认暴露。
+> `TOOL_REGISTRY` 保留为兼容别名 = `[s for s in ALL_TOOL_SPECS if s.allow_custom_agent]`（26 个，供 `_validate_tool_ids`/内置 seed/CLI `tools list` 消费）；`GET /agents/tools` 返回全量 35 个带双标记。
+> 运行时物化（D7）：新增 `build_tools_by_ids(tool_ids, deps)` 按 tool_ids 白名单物化工具；chat 路径 `_run_single_agent`（deps_chat_agent.py:120）`tools=[]` 换物化结果。
 
 > **模块类型声明**: 本 spec 为 ADR-043 落地细化的**增量契约**（非新变体），沿用 F26「deepagents 集成 + 工具定义型」的既有工具装配模式（Tool/ToolSpec/动态 deps 工厂），不加新实体表、不加新业务端点——只扩工具注册面与装配点。编号 F51 依据 ADR-019 Feature 表下一个空位（F49/F50 已占，F51 未被占）。
 
@@ -346,7 +353,8 @@ def build_deep_agent(*, model: str, api_key: str, base_url: str,
 | agent 链 | agent_run / agent_call | 执行 | **新增** | agent_service.execute(PipelineExecuteRequest)（run）；call 语义见 §2.9 待拍板 |
 | agent 链 | 修改 / 删除配置 | — | **❌ 不给**（D5） | 不在本期 |
 
-> 🔒 删除授权工具（delete_* / memory_remove 等）一律**不注册、不实现**（阶段②，本批禁做）。
+> #838 更新（2026-08-31）：删除授权工具（delete_*/memory_remove 等 **7 个**）已入统一目录 `ALL_TOOL_SPECS`，但标记 `allow_custom_agent=False, is_core=True`——
+> ① 不出现在自定义 agent 工具选择列表；② `_validate_tool_ids` 拒绝（自定义 agent 不可勾选）；③ 仍由装配期 per-conversation 删除授权（ADR-043 §3）守卫挂载。
 > 工具命名已核对与既有 `_TOOL_SPECS`（reader/save_draft/setting_write）无冲突。
 
 ---

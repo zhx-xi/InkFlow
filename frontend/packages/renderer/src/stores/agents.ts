@@ -36,12 +36,17 @@ export interface AgentInput {
   temperature_override: number | null;
 }
 
-/** 工具目录项（GET /agents/tools；group ∈ writing|retrieval|audit|project） */
+/**
+ * 工具目录项（GET /agents/tools；group ∈ writing|retrieval|audit|project）。
+ * #838: allow_custom_agent=false = is_core 核心工具（自定义 agent 选择列表不渲染）。
+ */
 export interface ToolSpec {
   name: string;
   description: string;
   group: string;
   input_schema: unknown;
+  allow_custom_agent: boolean;
+  is_core: boolean;
 }
 
 /** 技能列表项（GET /skills；agent_ids 反查由后端计算） */
