@@ -133,6 +133,7 @@ class TestCharacterCRUDAPI:
                 "name": "林尘",
                 "personality": "坚韧隐忍",
                 "group_ids": [str(g1), str(g2)],
+                "extra": {"role_rank": "major"},
             },
         )
         assert response.status_code == 201
@@ -141,7 +142,7 @@ class TestCharacterCRUDAPI:
         assert data["personality"] == "坚韧隐忍"
         assert data["project_id"] == str(PID)
         svc.create_character.assert_awaited_once_with(
-            PID, "林尘", "坚韧隐忍", "", "", [g1, g2], extra={}
+            PID, "林尘", "坚韧隐忍", "", "", [g1, g2], extra={"role_rank": "major"}
         )
 
     @patch("inkflow.api.routers.characters.get_character_service")
@@ -150,7 +151,10 @@ class TestCharacterCRUDAPI:
         svc = _mock_svc(mock_get_svc)
         svc.create_character = AsyncMock(side_effect=CharacterNameConflictError())
 
-        response = client.post(f"/api/v1/projects/{PID}/characters", json={"name": "林尘"})
+        response = client.post(
+            f"/api/v1/projects/{PID}/characters",
+            json={"name": "林尘", "extra": {"role_rank": "major"}},
+        )
         assert response.status_code == 422
         assert response.json()["detail"] == "同名角色已存在（角色名在项目内必须唯一）"
 
@@ -162,7 +166,7 @@ class TestCharacterCRUDAPI:
 
         response = client.post(
             f"/api/v1/projects/{PID}/characters",
-            json={"name": "林尘", "group_ids": [str(uuid.uuid4())]},
+            json={"name": "林尘", "group_ids": [str(uuid.uuid4())], "extra": {"role_rank": "major"}},
         )
         assert response.status_code == 422
         assert response.json()["detail"] == "分组不存在于该项目"

@@ -90,6 +90,12 @@ interface LibraryItemDTO {
 ```
 
 - **角色等级存储**：`extra.role_rank`（string，五档枚举 key：`protagonist | major | minor | scene | walkon`）。旧数据无该键 = 未选等级（编辑时下拉显示占位）。
+
+**角色等级字段表（#833 收紧，修改履历）**：
+
+| 字段 | 存储 | 必填性 | 校验 | 修改履历 |
+|------|------|--------|------|---------|
+| role_rank | `extra.role_rank`（string，零加列） | 创建必带；修改若带则校验 | 五档枚举 `protagonist/major/minor/scene/walkon`；缺失或非法 → 422 | ★#833 新增：由「非必填/后端不校验」收紧为「后端必填 + 枚举校验」；AI 工具 `create_character` 补 role_rank 必填参数并透传 `extra['role_rank']`；CLI `character create --role-rank` |
 - **角色分组标签存储**：`extra.groups`（string[]，自由文本标签，去重保序）。旧数据无该键 = 无标签。
 - **world 树**：`parent_id` 由后端 F35 返回（list 端点 `model_dump(mode="json")` 已含）；前端本地建树（顶层 = parent_id 为 null/缺失），不做分页树。
 
@@ -136,8 +142,8 @@ interface TagEditorProps {
 | `backend/src/inkflow/api/routers/characters.py` | `CharacterCreateBody` 加 `extra: dict[str, Any] = Field(default_factory=dict)`；create 调用透传 `data.extra` |
 | `backend/src/inkflow/domain/services/character_service.py` | `create_character` 加 `extra: dict[str, Any] \| None = None` 参数 → `Character(extra=extra or {})`；`update_character` 已用 `model_copy(update=model_dump(exclude_unset=True))` → extra 自动生效（整体替换） |
 
-- 校验：extra 自由字典，**后端不校验 role_rank/groups 内容**（Agent/CLI 写入路径可绕过 GUI 必填；必填是 GUI 契约，D1 原文「用户/Agent 显式选择」指 Agent 写入自带值）。
-- 兼容：既有创建/更新测试契约不变（extra 缺省 = 空 dict / 不修改）。
+- 校验：extra 自由字典；但 **role_rank 由后端必填 + 枚举校验**（#833 收紧：创建/修改角色必须传 `extra.role_rank`，缺失或非法值 → 422；五档 `protagonist|major|minor|scene|walkon`）。groups 仍自由文本，后端不校验。[修改履历：原「后端不校验 role_rank」被 #833 判为不符并收紧]
+- 兼容：#833 变更后，**创建必须带 `extra.role_rank`**（缺省 → 422）；更新不传 `extra` = 不修改，传 `extra` 但缺 role_rank = 视为该字段未改（保留原值）、带非法 role_rank → 422。[修改履历：原「extra 缺省 = 空 dict」的创建兼容被 #833 收紧为「创建必带 role_rank」；既有创建测试契约已同步补充 role_rank]
 
 ### 2.5 复制请求 DTO 扩展（F37 极小扩展）
 
@@ -1376,6 +1382,7 @@ P5 追加：
 | M7 | 前端测试全绿（既有 + D 系列） | `pnpm --filter renderer test` 全绿 |
 | M8 | PR 合入 + CI 全绿（statusCheckRollup 对照）；PR body `Closes #284`（最后一批） | gh pr checks 轮询 + gh pr view |
 | M9 | issue #284 关闭（最后一批）；worktree 清理 + 状态标记 ✅ | gh issue view 284 |
+| M10 | 角色等级必填 + 枚举校验（#833）：创建/修改角色缺 `extra.role_rank` 或非法值 → 422；AI 工具 `create_character` 补 role_rank 必填参数并透传 `extra['role_rank']`；CLI `character create` 加 `--role-rank` | RED 契约全 FAIL 实证 + 后端测试全绿（`uv run pytest backend/tests/unit/test_character_role_rank.py` + 全量） |
 
 ---
 

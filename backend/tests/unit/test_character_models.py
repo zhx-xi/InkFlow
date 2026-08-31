@@ -64,8 +64,9 @@ class TestCharacterCreateValidation:
 
     def test_create_valid_and_strips_name(self):
         """合法创建：name 去空白，其余字段取默认值."""
-        char = CharacterCreate(project_id=PID, name="  林尘  ")
+        char = CharacterCreate(project_id=PID, name="  林尘  ", extra={"role_rank": "major"})
         assert char.name == "林尘"
+        assert char.extra == {"role_rank": "major"}
         assert char.personality == ""
         assert char.background == ""
         assert char.goals == ""
@@ -224,9 +225,9 @@ class TestCharacterExtraContract:
         assert create.model_dump()["extra"] == {"role_rank": "major", "groups": ["主角团"]}
 
     def test_create_extra_defaults_to_empty_dict(self):
-        """CharacterCreate 缺省 extra → 字段存在且为空 dict（向后兼容）."""
-        create = CharacterCreate(project_id=PID, name="林尘")
-        assert create.model_dump()["extra"] == {}
+        """#833：CharacterCreate 缺 role_rank → ValidationError（原「缺省 extra=空 dict」契约被收紧）."""
+        with pytest.raises(ValidationError):
+            CharacterCreate(project_id=PID, name="林尘")
 
     def test_update_accepts_extra_field(self):
         """CharacterUpdate 带 extra → 字段存在且进入 model_fields_set（exclude_unset 整体替换）."""
