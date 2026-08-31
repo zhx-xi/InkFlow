@@ -243,3 +243,48 @@ async def test_upgrade_helper_idempotent(tmp_path):
             assert members is not None and members[0] == 2
     finally:
         await engine.dispose()
+
+
+async def test_upgrade_helper_retry_after_partial_crash_self_heals(tmp_path):
+    """partial-crash 自愈（#856 WARN-1）：遗留 _characters_new 不阻塞重试，数据保全。
+
+    模拟此前重建在 CREATE _characters_new 与 RENAME 之间中断的残留：_characters_new 已建、
+    characters 仍含 group_id。重试时 _rebuild_* 先 DROP TABLE IF EXISTS _characters_new
+    （否则 CREATE 报 already exists 阻塞启动），再重建。断言：无报错、group_id 移除、
+    _characters_new 残留清理、原角色数据保全、关联表回填正确。
+    """
+    engine = _async_engine(tmp_path)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(_create_old_schema)
+            # 模拟崩溃残留：_characters_new 已建、RENAME 未发生
+            await conn.execute(
+                text(
+                    "CREATE TABLE _characters_new ("
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                    "project_id INTEGER NOT NULL, "
+                    "name TEXT NOT NULL)"
+                )
+            )
+            await conn.execute(
+                text("INSERT INTO _characters_new (id, project_id, name) VALUES (99, 9, 'stale')")
+            )
+
+        await _run_helper_via_app_path(engine)  # 重试自愈，不应抛 already exists
+        await _run_helper_via_app_path(engine)  # 幂等重跑
+
+        async with engine.connect() as conn:
+            cols = await conn.run_sync(lambda c: _columns(c, "characters"))
+            chars = (
+                await conn.execute(text("SELECT COUNT(*) FROM characters"))
+            ).fetchone()
+            members = (
+                await conn.execute(text("SELECT COUNT(*) FROM character_group_members"))
+            ).fetchone()
+            tables = await conn.run_sync(lambda c: _tables(c))
+            assert "group_id" not in cols
+            assert "_characters_new" not in tables  # 残留临时表已清理
+            assert chars is not None and chars[0] == 3  # 原 3 角色保全（不含 stale）
+            assert members is not None and members[0] == 2  # 分组归属回填
+    finally:
+        await engine.dispose()
