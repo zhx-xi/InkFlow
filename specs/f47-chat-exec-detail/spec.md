@@ -313,6 +313,7 @@ write.detail.unknown        // 未知
   - agent loop 结束 → `done` 帧
   - `LLMRequestError` / `RAGUnavailableError` → `error` 帧
 - **错误语义**：prompt 空白 → 422（复用既有 `ChatStreamRequest` 校验）；工具内部错误 → `error` 帧（不中断整体，工具信封 `{"ok": false}` 已含业务错误）。
+- **递归超限优雅降级**（#832）：工具循环/递归超限（`GraphRecursionError`，langgraph `recursion_limit` 达上限）→ **不裸抛**（不转 `error` 帧），`ChatAgentService` 自动优雅降级：在 `done` 终帧前发一条 `delta` 摘要帧（文案「已尝试 N 步，未完全成功，已返回部分结果：<部分产出>」，N = 已完成的 agent 步数），对话不失败，已流出的部分工具结果保留。护栏：`astream_events` config 显式传 `recursion_limit=60`（#839，高出默认 25）。HITL 中断确认（#766 的 interrupt 帧 + resume 骨架）仅适用于真实 `interrupt()` 暂停点（如删除授权）；递归超限是被 executor 抛出的异常、非可 resume 的暂停点，故走「自动优雅降级」而非 HITL 中断。
 
 ### 14.3 前端契约：ChatPanel 工具流式（MODIFY）
 

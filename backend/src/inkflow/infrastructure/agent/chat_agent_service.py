@@ -221,7 +221,16 @@ class ChatAgentService:
         except LLMRequestError:
             raise
         except GraphRecursionError:
-            # #839：工具循环达上限 → 优雅收束（已流出部分结果保留），不抛 error
+            # #832：工具循环/递归超限 → 自动优雅降级（不裸抛 GRAPH_RECURSION_LIMIT）。
+            # 整理已完成的 agent 步数与部分产出，先发「已尝试 N 步，未完全成功，已返回部分结果」
+            # 摘要 delta（前端 onDelta 渲染为 ai 文本），再落 done 终帧，对话不失败。
+            n = len(self._trace)
+            summary = f"\u5df2\u5c1d\u8bd5 {n} \u6b65\uff0c\u672a\u5b8c\u5168\u6210\u529f\uff0c\u5df2\u8fd4\u56de\u90e8\u5206\u7ed3\u679c"  # noqa: E501  # 摘要文案按 #832 契约整行保留 \uXXXX 转义（码点锁定），行宽 100 属预期超限
+            partial = self._final_content
+            if partial:
+                excerpt = partial if len(partial) <= 100 else partial[:100] + "\u2026"
+                summary += f"\uff1a{excerpt}"
+            yield ChatStreamEvent(type="delta", delta=summary)
             yield ChatStreamEvent(type="done", done=True)
         except Exception as exc:
             yield ChatStreamEvent(type="error", done=True, error=f"工具执行失败: {exc}")
