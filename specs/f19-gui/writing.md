@@ -144,3 +144,17 @@
 
 - N12：`/writing?conversation_id=<id>` → ChatPanel 加载该指定会话历史（非最新活跃线程/非空）；指定会话后不新建线程、不解析最新线程。
 - N13：session 点击（SessionBar/sessions 目录）跳转的 `conversation_id` 被 writing.tsx 消费并传给 ChatPanel 加载对应会话（含归档恢复场景）。
+
+## 6. #842 AI 回复中切页状态丢失（卸载中止后端 run + 断连终态落库）
+
+> AI 回复中转页 → 转回按钮复位未发送、AI 永不回复——卸载只调本地 abort 不调后端端点，断连 run 无终态落库。
+
+### 6.1 逻辑补充
+
+- ChatPanel **卸载清理补调后端 `abortChatRun(runIdRef.current)`**（不只本地 `abortRef.current?.()`）——后端 run 有终态（TERMINATED），不遗留 running；AI 消息不静默丢失。
+- 后端 `chat_stream.py` SSE 断连路径（`request.is_disconnected()`）提前 return 前，**补 run 终态落库**（TERMINATED，复用 `_end_run_terminated`）——断连不再让 `repo.create` 的 AgentRun 永久停留在 running。
+
+### 6.2 验收补充
+
+- N14：流式运行中卸载 → `abortChatRun(run_id)` 被调（后端 run 有终态）；转回 chat 页不误复位为未发送状态。
+- N15：SSE 断连（`is_disconnected=True`）→ run 落 TERMINATED 终态（`repo.save` 被调，status=terminated），不遗留 running。

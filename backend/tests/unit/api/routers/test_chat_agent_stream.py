@@ -425,9 +425,7 @@ class TestGetChatAgentService:
     @patch("inkflow.api.deps.get_outline_service")
     @patch("inkflow.api.deps.get_world_service")
     @patch("inkflow.core.config.config")
-    @patch(
-        "inkflow.infrastructure.llm.provider_config.get_provider_config"
-    )
+    @patch("inkflow.infrastructure.llm.provider_config.get_provider_config")
     @pytest.mark.asyncio
     async def test_assembles_full_tools(
         self,
@@ -452,8 +450,11 @@ class TestGetChatAgentService:
         from inkflow.infrastructure.llm.provider_config import LLMProviderConfig
 
         m_get_provider.return_value = LLMProviderConfig(
-            provider="deepseek", api_key=API_KEY, base_url=BASE_URL,
-            default_model=MODEL, models=[],
+            provider="deepseek",
+            api_key=API_KEY,
+            base_url=BASE_URL,
+            default_model=MODEL,
+            models=[],
         )
         data = ChatStreamRequest(project_id=PROJECT_ID, chapter_id=CHAPTER_ID, prompt="你好")
         m_rt.return_value = [_fake_tool(name) for name in EXPECTED_READER_NAMES]
@@ -522,9 +523,7 @@ class TestGetChatAgentService:
     @patch("inkflow.api.deps.get_outline_service")
     @patch("inkflow.api.deps.get_world_service")
     @patch("inkflow.core.config.config")
-    @patch(
-        "inkflow.infrastructure.llm.provider_config.get_provider_config"
-    )
+    @patch("inkflow.infrastructure.llm.provider_config.get_provider_config")
     @pytest.mark.asyncio
     async def test_assembles_without_chapter_id(
         self,
@@ -549,8 +548,11 @@ class TestGetChatAgentService:
         from inkflow.infrastructure.llm.provider_config import LLMProviderConfig
 
         m_get_provider.return_value = LLMProviderConfig(
-            provider="deepseek", api_key=API_KEY, base_url=BASE_URL,
-            default_model=MODEL, models=[],
+            provider="deepseek",
+            api_key=API_KEY,
+            base_url=BASE_URL,
+            default_model=MODEL,
+            models=[],
         )
         m_rt.return_value = [_fake_tool(name) for name in EXPECTED_READER_NAMES]
         m_sd.return_value = _fake_tool("save_draft")
@@ -648,13 +650,17 @@ class TestGetChatAgentServiceDbAndParseFallback:
         m_config.model_routing = {}
         data = ChatStreamRequest(project_id=PROJECT_ID, prompt="hello")
 
-        with patch(
-            "inkflow.infrastructure.llm.provider_config._BUILTIN_PROVIDERS",
-            {"openai": None, "deepseek": None, "zhipu": None, "ollama": None},
-        ), patch(
-            "inkflow.infrastructure.llm.provider_config._load_stored_key",
-            return_value=None,
-        ), pytest.raises(HTTPException) as exc_info:
+        with (
+            patch(
+                "inkflow.infrastructure.llm.provider_config._BUILTIN_PROVIDERS",
+                {"openai": None, "deepseek": None, "zhipu": None, "ollama": None},
+            ),
+            patch(
+                "inkflow.infrastructure.llm.provider_config._load_stored_key",
+                return_value=None,
+            ),
+            pytest.raises(HTTPException) as exc_info,
+        ):
             await _get_chat_agent_service()(data=data, db=MagicMock())
 
         assert exc_info.value.status_code == 422
@@ -746,8 +752,8 @@ class TestStreamChatAgentBranchCoverageGaps:
     """#645 stream_chat_agent 分支补测。"""
 
     @pytest.mark.asyncio
-    async def test_disconnected_returns_empty_body(self):
-        """is_disconnected=True（agent 流）→ 首帧前 return，body 为空（L214-215）。"""
+    async def test_disconnected_saves_terminal_run(self):
+        """#842 is_disconnected=True（agent 流）→ 落 TERMINATED 终态（不遗留 running）。"""
         svc, _ = _make_svc(events=[_llm_chunk_event("你")])
         request = MagicMock()
         request.is_disconnected = AsyncMock(return_value=True)
@@ -755,6 +761,7 @@ class TestStreamChatAgentBranchCoverageGaps:
         mock_repo.create = AsyncMock(
             return_value=SimpleNamespace(id="r1", created_at=datetime.now(UTC))
         )
+        mock_repo.save = AsyncMock(return_value=None)
         with patch("inkflow.api.deps.get_agent_run_repo", return_value=mock_repo):
             resp = await stream_chat_agent(
                 data=ChatStreamRequest(project_id=PROJECT_ID, prompt="hi"),
@@ -762,8 +769,13 @@ class TestStreamChatAgentBranchCoverageGaps:
                 svc=svc,
                 repo=mock_repo,
             )
-        frames = [frame async for frame in resp.body_iterator]
-        assert frames == []
+        # 消费 body_iterator（断连后生成器仍执行，触发 run 终态落库）
+        async for _frame in resp.body_iterator:
+            pass
+        # #842：断连不再让 run 遗留 running —— 落终态（failed/cancelled）
+        mock_repo.save.assert_awaited_once()
+        saved_run = _kwarg_or_positional(mock_repo.save.await_args, "run", 0)
+        assert saved_run.status == "terminated"
 
     @pytest.mark.asyncio
     async def test_llm_request_error_saves_failed_and_emits_error_frame(self):

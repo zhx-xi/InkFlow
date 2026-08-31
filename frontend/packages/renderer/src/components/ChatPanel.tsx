@@ -476,6 +476,7 @@ export function ChatPanel({
   // 卸载时中止在途流式请求（streamChat 返回的 abort）
   useEffect(() => {
     return () => {
+      if (runIdRef.current) void abortChatRun(runIdRef.current);
       abortRef.current?.();
     };
   }, []);

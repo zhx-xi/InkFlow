@@ -195,6 +195,18 @@ describe('ChatPanel chat-UX — 发送/中断按钮切换（#719）', () => {
   });
 });
 
+describe('ChatPanel chat-UX — 卸载中止后端 run（#842）', () => {
+  it('流式运行中卸载 → 调后端 abortChatRun(runIdRef)（不只调本地 abort）', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<ChatPanel {...OPTS} />);
+    await sendAndAwaitStream(user, '切页测试');
+    emitRunStart(0, 'run-unmount-001');
+    abortChatRunMock.mockClear();
+    unmount();
+    expect(abortChatRunMock).toHaveBeenCalledWith('run-unmount-001');
+  });
+});
+
 describe('ChatPanel chat-UX — 发送后自动滚动到底部（#726）', () => {
   it('新消息到达（处于底部）→ 滚动容器滚动到底部（scrollIntoView 被调用）', async () => {
     const scrollSpy = vi.fn();
