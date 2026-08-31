@@ -8,7 +8,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import { Compass, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auditChapter, confirmAudit, type AuditReportDto } from '../api/audit';
 import { createChatConversation, saveChatMessage } from '../api/chat';
 import { analyzeStyle, type StyleReportDto } from '../api/style';
@@ -57,6 +57,8 @@ function WritingEmptyState() {
 
 export function WritingPage() {
   const { t } = useI18n();
+  const [searchParams] = useSearchParams();
+  const urlConversationId = searchParams.get('conversation_id') ?? undefined;
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const projects = useProjectStore((s) => s.projects);
   const projectsLoading = useProjectStore((s) => s.loading);
@@ -385,6 +387,7 @@ export function WritingPage() {
                 variant="full"
                 projectId={effectiveProjectId}
                 streamSink={streamSinkRef}
+                conversationId={urlConversationId}
               />
             </div>
           ) : (
@@ -422,6 +425,7 @@ export function WritingPage() {
                   chapterId={currentChapterId ?? undefined}
                   chapterContent={content}
                   streamSink={streamSinkRef}
+                  conversationId={urlConversationId}
                 />
               ) : null}
             </>

@@ -130,3 +130,17 @@
 - N9：无章节进入写作页（有项目）→ 中栏渲染全局 chat 页（global-chat，无 resize handle），不渲染 EditorToolbar/ChapterEditor；右栏保持。
 - N10：章节选中 → 章节内 ChatPanel（inline，resize handle）完整保留。
 - N11：章节内对话/生成/续写均创建新会话，title=章节名；全局 chat 页对话 title=首条用户消息前 30 字；会话可改名。
+
+## 5. #840 会话点击贯通（conversationId prop）
+
+> 会话归档恢复后点击进入 chat 页历史不显示——`conversation_id` URL 参数此前全链路未消费（ChatPanel 恒取「最新活跃线程」）。完整契约见 f47 §17 + sessions §4。
+
+### 5.1 画面/逻辑补充
+
+- `ChatPanel` 新增 `conversationId?: string` prop：**提供时直接加载该指定会话历史**（跳过「最新活跃线程/新建线程」解析）；未提供时保持既有行为（解析最新活跃线程/新建）。prop 变化 → 重新加载对应会话。
+- `pages/writing.tsx` 用 `useSearchParams` 读取 `conversation_id`，并透传给全局 chat 页 ChatPanel（variant="full"）与章节内 ChatPanel；无参数时 undefined（既有行为不变）。
+
+### 5.2 验收补充
+
+- N12：`/writing?conversation_id=<id>` → ChatPanel 加载该指定会话历史（非最新活跃线程/非空）；指定会话后不新建线程、不解析最新线程。
+- N13：session 点击（SessionBar/sessions 目录）跳转的 `conversation_id` 被 writing.tsx 消费并传给 ChatPanel 加载对应会话（含归档恢复场景）。

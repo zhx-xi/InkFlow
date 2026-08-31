@@ -65,6 +65,15 @@ const executeMock = vi.mocked(executePipeline);
 const confirmMock = vi.mocked(confirmExecution);
 const createChatCovMock = vi.mocked(createChatConversation);
 const saveChatMsgMock = vi.mocked(saveChatMessage);
+/** #840：WritingPage 需要 Router 上下文（useSearchParams）；统一用 MemoryRouter 包裹渲染 */
+function renderWritingPage(initialEntries: string[] = ['/writing']) {
+  return render(
+    <MemoryRouter initialEntries={initialEntries}>
+      <WritingPage />
+    </MemoryRouter>
+  );
+}
+
 
 /** #642-1：每次 streamPipeline 调用的 body/callbacks 捕获（用例手动驱动 SSE 帧） */
 interface CapturedPipelineStream {
@@ -164,14 +173,14 @@ afterEach(() => {
 
 describe('写作页 — 三栏与项目树', () => {
   it('三栏渲染：project-tree / editor / context-panel 存在', () => {
-    render(<WritingPage />);
+    renderWritingPage();
     expect(screen.getByTestId('project-tree')).toBeInTheDocument();
     expect(screen.getByTestId('editor')).toBeInTheDocument();
     expect(screen.getByTestId('context-panel')).toBeInTheDocument();
   });
 
   it('项目树：卷/章节点 + 各章字数 + 当前章 data-current 标记', () => {
-    render(<WritingPage />);
+    renderWritingPage();
     const tree = screen.getByTestId('project-tree');
     expect(within(tree).getByTestId('tree-volume')).toHaveTextContent('第一卷 风起');
     const ch1 = within(tree).getByTestId('tree-chapter');
@@ -182,7 +191,7 @@ describe('写作页 — 三栏与项目树', () => {
   });
 
   it('编辑器渲染当前章正文（段落化纯文本）', () => {
-    render(<WritingPage />);
+    renderWritingPage();
     const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
     expect(editor.value).toContain('已有正文第一段。');
   });
@@ -190,7 +199,7 @@ describe('写作页 — 三栏与项目树', () => {
 
 describe('写作页 — 项目印章常驻（三主题）', () => {
   it.each(['paper', 'night', 'ink'] as const)('主题 %s 下印章均显示，文字取书名关键字', (theme) => {
-    render(<WritingPage />);
+    renderWritingPage();
     const seal = screen.getByTestId('project-seal');
     expect(seal).toHaveTextContent('青');
     act(() => {
@@ -202,7 +211,7 @@ describe('写作页 — 项目印章常驻（三主题）', () => {
 
 describe('写作页 — 右栏整栏收起/展开（#742 收起按钮整行 + #747 拖动方向）', () => {
   it('#765 收起按钮移到右栏左缘 + 显示「折叠」提示；拖动分隔线 hover 变鼠标（非方框）', () => {
-    render(<WritingPage />);
+    renderWritingPage();
     const rail = screen.getByTestId('right-rail');
     const toggle = within(rail).getByTestId('right-col-toggle');
     // #765：收起按钮位于右栏左缘（内容左对齐 + 可见「折叠」文案，非 w-full 整行居中图标）
@@ -218,7 +227,7 @@ describe('写作页 — 右栏整栏收起/展开（#742 收起按钮整行 + #7
   });
 
   it('#747 往左拖「right-col-drag」→ 右栏变宽、左编辑器变窄', () => {
-    render(<WritingPage />);
+    renderWritingPage();
     const rail = screen.getByTestId('right-rail');
     const startW = parseInt(rail.style.width, 10) || 240;
     const drag = screen.getByTestId('right-col-drag');
@@ -230,7 +239,7 @@ describe('写作页 — 右栏整栏收起/展开（#742 收起按钮整行 + #7
 
   it('点「»」→ 整栏收起（context/summary 面板全隐藏 + data-collapsed=true）；再点「«」→ 展开', async () => {
     const user = userEvent.setup();
-    render(<WritingPage />);
+    renderWritingPage();
     // 展开态：两面板均在（#764 无 drafts）
     expect(screen.getByTestId('rail-panel-context')).toBeInTheDocument();
     expect(screen.getByTestId('rail-panel-summary')).toBeInTheDocument();
@@ -251,7 +260,7 @@ describe('写作页 — 右栏整栏收起/展开（#742 收起按钮整行 + #7
 
 describe('写作页 — 工具栏与快捷键（Q2 拍板 C）', () => {
   it('工具栏渲染：撤销/重做/保存/续写/生成', () => {
-    render(<WritingPage />);
+    renderWritingPage();
     const toolbar = screen.getByTestId('editor-toolbar');
     expect(within(toolbar).getByRole('button', { name: '撤销' })).toBeInTheDocument();
     expect(within(toolbar).getByRole('button', { name: '重做' })).toBeInTheDocument();
@@ -263,7 +272,7 @@ describe('写作页 — 工具栏与快捷键（Q2 拍板 C）', () => {
   it('Ctrl+Z 撤销 / Ctrl+Y 重做：调用 document.execCommand', () => {
     const execMock = vi.fn(() => true);
     Object.defineProperty(document, 'execCommand', { value: execMock, configurable: true, writable: true });
-    render(<WritingPage />);
+    renderWritingPage();
     const editor = screen.getByTestId('chapter-editor');
     fireEvent.keyDown(editor, { key: 'z', ctrlKey: true });
     expect(execMock).toHaveBeenCalledWith('undo');
@@ -273,7 +282,7 @@ describe('写作页 — 工具栏与快捷键（Q2 拍板 C）', () => {
   });
 
   it('Ctrl+S 保存：PATCH /api/v1/chapters/{currentChapterId}，body 携带正文', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
     fireEvent.change(editor, { target: { value: '修改后的正文内容' } });
     fireEvent.keyDown(editor, { key: 's', ctrlKey: true });
@@ -286,7 +295,7 @@ describe('写作页 — 工具栏与快捷键（Q2 拍板 C）', () => {
   });
 
   it('Ctrl+Enter 续写：触发 streamPipeline（builtin:write_continue）', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.keyDown(screen.getByTestId('chapter-editor'), { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(streamPipelineMock).toHaveBeenCalledWith(
@@ -297,7 +306,7 @@ describe('写作页 — 工具栏与快捷键（Q2 拍板 C）', () => {
   });
 
   it('Ctrl+Shift+Enter 生成：触发 streamPipeline（builtin:write_auto）', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.keyDown(screen.getByTestId('chapter-editor'), { key: 'Enter', ctrlKey: true, shiftKey: true });
     await waitFor(() => {
       expect(streamPipelineMock).toHaveBeenCalledWith(
@@ -310,7 +319,7 @@ describe('写作页 — 工具栏与快捷键（Q2 拍板 C）', () => {
 
 describe('写作页 — 管线执行状态与成品落章（#298 §5.6 + #642-1 流式）', () => {
   it('「续写」按钮 → streamPipeline（builtin:write_continue）', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '续写' }));
     await waitFor(() => {
       expect(streamPipelineMock).toHaveBeenCalledWith(
@@ -321,7 +330,7 @@ describe('写作页 — 管线执行状态与成品落章（#298 §5.6 + #642-1 
   });
 
   it('「生成」按钮 → streamPipeline（builtin:write_auto）', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => {
       expect(streamPipelineMock).toHaveBeenCalledWith(
@@ -332,14 +341,14 @@ describe('写作页 — 管线执行状态与成品落章（#298 §5.6 + #642-1 
   });
 
   it('#763 执行中：页脚不再渲染 pipeline-status 进度条', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
     expect(screen.queryByTestId('pipeline-status')).not.toBeInTheDocument();
   });
 
   it('#763 成品落章：onDone(final_output) → 编辑器内容 = final_output（页脚无 pipeline-status）', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
     // 驱动 SSE done 帧（#642-1：final_output 落定）
@@ -352,7 +361,7 @@ describe('写作页 — 管线执行状态与成品落章（#298 §5.6 + #642-1 
   });
 
   it('失败：onError → 展示错误（不崩溃、不落章、不存 chat 消息）', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
     act(() => {
@@ -390,7 +399,7 @@ describe('写作页 — 空态（#98 §5.2.6）', () => {
 
   it('#770 场景A：有项目无章节 → 全局 chat 页（不渲染编辑器/工具栏）', async () => {
     useChapterStore.setState({ volumes: [], chapters: [], currentChapterId: null, content: '', loading: false, error: null });
-    render(<WritingPage />);
+    renderWritingPage();
     await waitFor(() => expect(useChapterStore.getState().loading).toBe(false));
     expect(screen.getByRole('button', { name: /新建章节/ })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId('global-chat')).toBeInTheDocument());
@@ -399,7 +408,7 @@ describe('写作页 — 空态（#98 §5.2.6）', () => {
   });
 
   it('回归：有章节时编辑器 placeholder 不含 idle 空态文案（#580 删除「AI 已就绪，开始创作」）', () => {
-    render(<WritingPage />);
+    renderWritingPage();
     const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
     // #540：AI 对话栏替代续写栏后，编辑器不再提示「点击续写或 Ctrl+Enter 开始 AI 续写」
     // #564：空态文案中性化——不再提示「在下方对话框与 AI 对话」（与底部 AI 对话栏并存易混淆）
@@ -416,7 +425,7 @@ describe('写作页 — 空态（#98 §5.2.6）', () => {
  */
 describe('写作页 — 执行详情页隐藏 ChatPanel（#565）', () => {
   it('view=detail 不渲染 ChatPanel（仅 editor 视图有）', () => {
-    render(<WritingPage />);
+    renderWritingPage();
     // editor 视图渲染 ChatPanel
     expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
     // 切到 detail 视图
@@ -442,7 +451,7 @@ describe('写作页 — 自动保存与工具栏/快捷键兜底分支（#105 �
 
   it('自动保存：编辑后 2s 防抖落盘（PATCH 携带最新正文）', async () => {
     vi.useFakeTimers();
-    render(<WritingPage />);
+    renderWritingPage();
     const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
     fireEvent.change(editor, { target: { value: '防抖自动保存的正文' } });
 
@@ -461,7 +470,7 @@ describe('写作页 — 自动保存与工具栏/快捷键兜底分支（#105 �
 
   it('自动保存防抖重置：2s 内再次编辑重置计时器（仅最后一次变更落盘）', async () => {
     vi.useFakeTimers();
-    render(<WritingPage />);
+    renderWritingPage();
     const editor = screen.getByTestId('chapter-editor') as HTMLTextAreaElement;
 
     fireEvent.change(editor, { target: { value: '第一版' } });
@@ -484,7 +493,7 @@ describe('写作页 — 自动保存与工具栏/快捷键兜底分支（#105 �
   it('快捷键兜底：Ctrl+未注册键（Ctrl+A）无副作用（不撤销/不保存/不触发管线）', () => {
     const execMock = vi.fn(() => true);
     Object.defineProperty(document, 'execCommand', { value: execMock, configurable: true, writable: true });
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.keyDown(screen.getByTestId('chapter-editor'), { key: 'a', ctrlKey: true });
     expect(execMock).not.toHaveBeenCalled();
     expect(patchCalls()).toHaveLength(0);
@@ -502,7 +511,7 @@ describe('写作页 — 自动保存与工具栏/快捷键兜底分支（#105 �
  */
 describe('写作页 — HITL 确认流（#343 + #642-1：流式 start 无 HITL 帧）', () => {
   it('#642-1 流式执行不出现 HITL 确认卡片（流式帧无 hitl 类型）', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
     // running 态：无确认卡片
@@ -515,7 +524,7 @@ describe('写作页 — HITL 确认流（#343 + #642-1：流式 start 无 HITL �
   });
 
   it('done 帧直达 success：不触发 confirmExecution（流式路径无 executionId）', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
     act(() => {
@@ -526,7 +535,7 @@ describe('写作页 — HITL 确认流（#343 + #642-1：流式 start 无 HITL �
   });
 
   it('onError 帧 → 生成失败展示；confirmExecution 不被调用', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
     act(() => {
@@ -555,7 +564,7 @@ describe('写作页 — HITL 确认流（#343 + #642-1：流式 start 无 HITL �
       loading: false,
       error: null,
     });
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
     expect(streamPipelineMock).toHaveBeenCalledWith(
@@ -571,14 +580,14 @@ describe('写作页 — HITL 确认流（#343 + #642-1：流式 start 无 HITL �
 
 describe('写作页 — 底部续写栏 AI 聊天框（#519 S6a：chat 移到 ChapterEditor 之后）', () => {
   it('渲染 chat-panel（聊天输入框 + 发送按钮；空输入发送禁用）', () => {
-    render(<WritingPage />);
+    renderWritingPage();
     expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
     expect(screen.getByTestId('chat-input')).toBeInTheDocument();
     expect(screen.getByTestId('chat-send')).toBeDisabled();
   });
 
   it('chat 位于编辑器底部续写栏：ChapterEditor 之后、PipelineStatus 之前', () => {
-    render(<WritingPage />);
+    renderWritingPage();
     const editor = screen.getByTestId('editor');
     const toolbar = screen.getByTestId('editor-toolbar');
     // #476 契约：chat-panel 必须渲染在 editor main 内（旧实现是 main 外的底部兄弟节点）
@@ -595,7 +604,7 @@ describe('写作页 — 底部续写栏 AI 聊天框（#519 S6a：chat 移到 Ch
 
 describe('写作页 — 视图切换（#379 F47 §4.2：正文编辑 ↔ AI 执行详情）', () => {
   it('默认 editor 视图：ChapterEditor 渲染、无 exec-detail', () => {
-    render(<WritingPage />);
+    renderWritingPage();
     expect(screen.getByTestId('chapter-editor')).toBeInTheDocument();
     expect(screen.queryByTestId('exec-detail')).not.toBeInTheDocument();
   });
@@ -626,7 +635,7 @@ describe('写作页 — 视图切换（#379 F47 §4.2：正文编辑 ↔ AI 执�
       return { items: [], total: 0, offset: 0, limit: 50 };
     });
     const user = userEvent.setup();
-    render(<WritingPage />);
+    renderWritingPage();
     // 未执行过管线 → detail 视图空态（exec-detail-empty）
     await user.click(screen.getByTestId('view-toggle'));
     expect(await screen.findByTestId('exec-detail-empty')).toBeInTheDocument();
@@ -660,7 +669,7 @@ describe('写作页 — 模型未配置前置校验（#474 P0）', () => {
 
   it('未配置模型 → 点「续写」按钮 → toast + 不发 streamPipeline', async () => {
     unreadyMock();
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '续写' }));
     // async 守卫（ensureModelReady → loadProviders）在微任务后写 toast → waitFor 消化
     await waitFor(() => {
@@ -672,7 +681,7 @@ describe('写作页 — 模型未配置前置校验（#474 P0）', () => {
 
   it('未配置模型 → 点「生成」按钮 → toast + 不发 streamPipeline', async () => {
     unreadyMock();
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => {
       expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
@@ -682,7 +691,7 @@ describe('写作页 — 模型未配置前置校验（#474 P0）', () => {
 
   it('未配置模型 → Ctrl+Enter 续写快捷键 → toast + 不发 streamPipeline', async () => {
     unreadyMock();
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.keyDown(screen.getByTestId('chapter-editor'), { key: 'Enter', ctrlKey: true });
     await waitFor(() => {
       expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
@@ -692,7 +701,7 @@ describe('写作页 — 模型未配置前置校验（#474 P0）', () => {
 
   it('未配置模型 → Ctrl+Shift+Enter 生成快捷键 → toast + 不发 streamPipeline', async () => {
     unreadyMock();
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.keyDown(screen.getByTestId('chapter-editor'), { key: 'Enter', ctrlKey: true, shiftKey: true });
     await waitFor(() => {
       expect(useToastStore.getState().toasts.some((t) => t.type === 'warn')).toBe(true);
@@ -701,7 +710,7 @@ describe('写作页 — 模型未配置前置校验（#474 P0）', () => {
   });
 
   it('已配置模型（默认播种）→ 点「生成」→ streamPipeline 正常（#642-1）', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => {
       expect(streamPipelineMock).toHaveBeenCalledWith(
@@ -715,7 +724,7 @@ describe('写作页 — 模型未配置前置校验（#474 P0）', () => {
 });
 describe('写作页 — 右栏两面板拖拽分隔 + 无草稿审批（#703 + #764）', () => {
   it('右栏 context/summary 面板 + 一个 row-resize 分隔条；无 rail-panel-drafts/rail-resize-handle-1', () => {
-    render(<WritingPage />);
+    renderWritingPage();
     const rail = screen.getByTestId('right-rail');
     expect(within(rail).getByTestId('rail-panel-context')).toBeInTheDocument();
     expect(within(rail).getByTestId('rail-panel-summary')).toBeInTheDocument();
@@ -728,7 +737,7 @@ describe('写作页 — 右栏两面板拖拽分隔 + 无草稿审批（#703 + #
   });
 
   it('拖拽分隔条调整上一面板高度（mousedown→mousemove）', () => {
-    render(<WritingPage />);
+    renderWritingPage();
     const sp0 = screen.getByTestId('rail-resize-handle-0');
     const context = screen.getByTestId('rail-panel-context');
     const before = parseInt(context.style.height, 10) || 0;
@@ -785,7 +794,7 @@ describe('写作页 — #724 项目无 model 回退全局默认（上下文注�
       return { items: [], total: 0, offset: 0, limit: 50 };
     });
 
-    render(<WritingPage />);
+    renderWritingPage();
 
     // #724：项目 config={}（无 model），但全局默认存在 → 上下文注入应回退它并渲染角色
     const charItem = await screen.findByTestId('context-character-0');
@@ -796,7 +805,7 @@ describe('写作页 — #724 项目无 model 回退全局默认（上下文注�
 
 describe('写作页 — 生成→新会话（#763：createChatConversation + 去页脚进度条）', () => {
   it('点击「生成」→ createChatConversation(projectId) 建会话，再触发 streamPipeline(write_auto)', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     // ⚠️ ChatPanel 挂载即建会话（#744 既有行为：无活跃线程 → createChatConversation）：
     // 先等挂载建会话完成并清零，锚定「生成路径」的新建会话调用（防假阳性）
     await waitFor(() => expect(createChatCovMock).toHaveBeenCalled());
@@ -807,7 +816,7 @@ describe('写作页 — 生成→新会话（#763：createChatConversation + 去
   });
 
   it('onDone(final_output) → saveChatMessage(ai, content=final_output, intent=content)', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
     act(() => { capturedStream?.callbacks.onDone({ done: true, final_output: '管线成品章节内容' }); });
@@ -816,7 +825,7 @@ describe('写作页 — 生成→新会话（#763：createChatConversation + 去
   });
 
   it('页脚无 pipeline-status（写作页不再内联「执行中 N%」进度条）', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
     expect(screen.queryByTestId('pipeline-status')).not.toBeInTheDocument();

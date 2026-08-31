@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { WritingPage } from './writing';
+import { MemoryRouter } from 'react-router-dom';
 import { createChatConversation, type ChatConversationDto } from '../api/chat';
 import { apiFetch } from '../api/client';
 import { streamPipeline, executePipeline, getExecutionStatus, confirmExecution } from '../api/pipeline';
@@ -149,9 +150,18 @@ afterEach(() => {
   capturedPipelineStream = null;
 });
 
+/** #840：WritingPage 需要 Router 上下文（useSearchParams）；统一用 MemoryRouter 包裹渲染 */
+function renderWritingPage(initialEntries: string[] = ['/writing']) {
+  return render(
+    <MemoryRouter initialEntries={initialEntries}>
+      <WritingPage />
+    </MemoryRouter>
+  );
+}
+
 describe('写作页 — AI 生成后管线输出与 chat 区分渲染（#681 翻转 #642-1）', () => {
   it('「生成」→ 调 streamPipeline → onDelta 渐进显示在「管线输出」区（非 chat-msg-ai）', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     // streamPipeline 被调用（体含 pipeline=builtin:write_auto）
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
@@ -170,7 +180,7 @@ describe('写作页 — AI 生成后管线输出与 chat 区分渲染（#681 翻
   });
 
   it('done → saveChatMessage 落管线产物到会话（#763 覆盖 #681）；仅落章时编辑器 = final_output', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
     act(() => { capturedPipelineStream?.callbacks.onDelta('\n<<<CONTENT>>>\n他握紧了剑。\n<<<END>>>'); });
@@ -192,7 +202,7 @@ describe('写作页 — AI 生成后管线输出与 chat 区分渲染（#681 翻
   });
 
   it('切 view（editor→detail→editor）后 chat 区无管线产物（管线输出不持久化到 chat 历史）', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(streamPipelineMock).toHaveBeenCalled());
     act(() => { capturedPipelineStream?.callbacks.onDelta('<<<CONTENT>>>\n他握紧了剑。\n<<<END>>>'); });
@@ -215,7 +225,7 @@ describe('写作页 — AI 生成后管线输出与 chat 区分渲染（#681 翻
  */
 describe('写作页 — 会话跟随章节 + 命名（#770 §17.4.3）', () => {
   it('章节内对话（ChatPanel 挂载建会话）→ createChatConversation 传 {project_id, title=章节名}', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     // ChatPanel 挂载即解析活动线程：fetchChatConversations 空 → createChatConversation 建新
     await waitFor(() => expect(createChatCovMock).toHaveBeenCalled());
     // #770：章节内建会话 title=章节名（当前实现只传 projectId → RED）
@@ -223,7 +233,7 @@ describe('写作页 — 会话跟随章节 + 命名（#770 §17.4.3）', () => {
   });
 
   it('章节内点「生成」→ startWithCheck 建会话同样传 title=章节名（#763 保持 + #770 补 title）', async () => {
-    render(<WritingPage />);
+    renderWritingPage();
     await waitFor(() => expect(createChatCovMock).toHaveBeenCalled());
     createChatCovMock.mockClear();
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
@@ -233,7 +243,7 @@ describe('写作页 — 会话跟随章节 + 命名（#770 §17.4.3）', () => {
 
   it('全局 chat（无章节）→ 建会话不传 title（首条消息前 30 字命名在 ChatPanel 层）', async () => {
     useChapterStore.setState({ currentChapterId: null, content: '' });
-    render(<WritingPage />);
+    renderWritingPage();
     // 全局 chat 页挂载即建会话（当前实现无全局分支 → ChatPanel 不挂载 → 永不调用 → RED）
     await waitFor(() => expect(createChatCovMock).toHaveBeenCalled());
     const [pid, opts] = createChatCovMock.mock.calls[0];
