@@ -274,19 +274,16 @@ class TestOutlineP3Service:
             await svc.create_outline(PID, "整体一", level="overall", chapter_id=uuid.uuid4())
 
     @pytest.mark.asyncio
-    async def test_ob8_service_orphan_chapter_creates_ok(self, mock_repo) -> None:
-        """OB8 service：孤立章（level="chapter", parent_id=None）→ 合法创建成功.
+    async def test_ob8_service_orphan_chapter_rejected(self, mock_repo) -> None:
+        """OB8 service：孤立章（level="chapter", parent_id=None）→ 422（#835 强制树形）.
 
-        RED 预期: create_outline 无 level/parent_id 参数 → TypeError（service 层失败形态）。
-        GREEN 必实现: chapter + parent 空 = 孤立章（合法，零层级约束）；返回 Outline
-        含 level="chapter"/parent_id=None。
+        RED 预期（迁移自「孤立章合法创建」）: 当前实现允许孤立章，pytest.raises 未触发
+        → 用例 FAIL（真 RED）。GREEN 必实现: chapter + parent 空 → OutlineHierarchyError
+        （章必须挂卷）；合法树（overall→volume→chapter）仍可创建。
         """
-        saved = _outline("孤立章", level="chapter")
-        mock_repo.add = AsyncMock(return_value=saved)
         svc = _make_service(mock_repo)
-        result = await svc.create_outline(PID, "孤立章", level="chapter", parent_id=None)
-        assert result.model_dump()["level"] == "chapter"
-        assert result.model_dump()["parent_id"] is None
+        with pytest.raises(OutlineHierarchyError):
+            await svc.create_outline(PID, "孤立章", level="chapter", parent_id=None)
 
     @pytest.mark.asyncio
     async def test_ob2b_service_invalid_level_raises_level_error(self, mock_repo) -> None:
@@ -305,17 +302,20 @@ class TestOutlineP3Service:
 
     @pytest.mark.asyncio
     async def test_ob9b_service_update_clears_parent_and_chapter(self, mock_repo) -> None:
-        """OB9b service：update 清除 parent_id/chapter_id 为 None（覆盖 L299/L302）."""
+        """OB9b service：update 清除 chapter 的 parent_id/chapter_id → 422（#835，孤立章非法）.
+
+        RED 预期（迁移）: 当前实现清除后放行 → pytest.raises 未触发 → 用例 FAIL（真 RED）。
+        GREEN 必实现: chapter + parent 清空 → OutlineHierarchyError（章必须挂卷）；
+        合法更新（仅改 level=overall/不 orphan）仍放行。
+        """
         existing = _outline(
             "章甲", level="chapter", parent_id=uuid.uuid4(), chapter_id=uuid.uuid4()
         )
         mock_repo.get = AsyncMock(return_value=existing)
-        mock_repo.update = AsyncMock(side_effect=lambda o: o)
         svc = _make_service(mock_repo)
         update = OutlineUpdate(parent_id="", chapter_id="")
-        result = await svc.update_outline(existing.id, update)
-        assert result.parent_id is None
-        assert result.chapter_id is None
+        with pytest.raises(OutlineHierarchyError):
+            await svc.update_outline(existing.id, update)
 
 
 class TestOutlineP3API:

@@ -62,8 +62,9 @@ class CreateOutlineParams(BaseModel):
     name: str
     description: str = ""
     sort_order: int = 0
-    level: str = "chapter"
-    parent_id: uuid.UUID | str | None = None
+    # #835：默认整本根；章必须挂卷，创建 chapter 须传 parent_id=volume 大纲 id
+    level: str = "overall"
+    parent_id: uuid.UUID | str | None = None  # 父大纲 id（volume/chapter 时必填）
 
 
 # ─── 工具 spec 静态常量（func 动态构建，镜像 save_draft_tool） ───
@@ -105,7 +106,7 @@ class SettingWriteToolDeps:
     world_service: object  # 有 create_setting(project_id, name, category="", content="",
     #   parent_id=None) -> WorldSetting(.id)
     outline_service: object  # 有 create_outline(project_id, name, description="",
-    #   sort_order=0, level="chapter", parent_id=None) -> Outline(.id)
+    #   sort_order=0, level="overall", parent_id=None) -> Outline(.id)
     audit_service: object  # 有 record(**kwargs)（AuditLogService 形态）
     expected_project_id: uuid.UUID | None = None
 
@@ -240,7 +241,8 @@ def build_setting_write_tools(deps: SettingWriteToolDeps) -> list[Tool]:
         name: str = "",
         description: str = "",
         sort_order: int = 0,
-        level: str = "chapter",
+        # #835：默认整本根；章必须挂卷，创建 chapter 须传 parent_id=volume 大纲 id
+        level: str = "overall",
         parent_id: uuid.UUID | str | None = None,
     ) -> str:
         async with _tool_db_lock_mod._tool_db_lock:

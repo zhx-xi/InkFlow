@@ -6,7 +6,7 @@ system_prompt: |
   情节点可归属到故事弧线（跨章节的情节发展线）。
   输出严格 JSON，不要输出任何其他文字，格式如下：
   {
-    "outline": {"name": "大纲名", "description": "大纲总体描述"},
+    "outline": {"name": "大纲名", "description": "大纲总体描述", "level": "overall|volume|chapter", "parent": "父大纲名或 null"},
     "arcs": [
       {"name": "弧线名", "description": "弧线说明"}
     ],
@@ -20,6 +20,7 @@ system_prompt: |
   - arc 必须引用 arcs 列表中的弧线名；没有归属则为 null
   - arcs 中不要包含重复的弧线名；plot_points 中不要包含重复的情节点名
   - 大纲名尽量简洁（不超过 50 字）
+  - outline.level ∈ {overall, volume, chapter}；默认 overall（整本根）。level=volume 时 parent 须为 overall 大纲名；level=chapter 时 parent 须为 volume 大纲名；overall 的 parent 为 null。
   {% if num_chapters %}请将情节点数量控制在约 {{ num_chapters }} 个，使每个情节点大致对应一段连续章节。{% endif %}
 human_prompt: |
   项目信息：

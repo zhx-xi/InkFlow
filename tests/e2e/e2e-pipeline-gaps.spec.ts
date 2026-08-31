@@ -289,12 +289,30 @@ async function presetOutline(
   description: string,
   chapterId?: string
 ): Promise<void> {
+  // #835 大纲强制树形：level=chapter 必须挂 volume 父（volume 挂 overall）。
+  // 关联章节时先建 overall→volume 父链，再把章挂到 volume 下。
+  let parentId: string | undefined;
+  if (chapterId) {
+    const overallRes = await kernelFetch(kernel, `/api/v1/projects/${projectId}/outlines`, {
+      method: 'POST',
+      body: { name: `${name}-整本`, level: 'overall' },
+    });
+    expect(overallRes.status).toBe(201);
+    const overallId = ((await overallRes.json()) as { id: string }).id;
+    const volRes = await kernelFetch(kernel, `/api/v1/projects/${projectId}/outlines`, {
+      method: 'POST',
+      body: { name: `${name}-卷一`, level: 'volume', parent_id: overallId },
+    });
+    expect(volRes.status).toBe(201);
+    parentId = ((await volRes.json()) as { id: string }).id;
+  }
   const res = await kernelFetch(kernel, `/api/v1/projects/${projectId}/outlines`, {
     method: 'POST',
     body: {
       name,
       description,
       level: chapterId ? 'chapter' : 'overall',
+      ...(parentId !== undefined ? { parent_id: parentId } : {}),
       ...(chapterId ? { chapter_id: chapterId } : {}),
     },
   });

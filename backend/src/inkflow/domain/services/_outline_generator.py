@@ -361,14 +361,18 @@ class OutlineGenerator:
         if not isinstance(raw_points, list):
             return _ParseOutcome(error="plot_points 字段必须是列表")
 
-        # 大纲级字段校验（失败 → 整体重试；name/description 可缺省回退）
+        # 大纲级字段校验（失败 → 整体重试；name/description 可缺省回退；
+        # level/parent 仅在 LLM 输出中存在时才传递，避免 None 覆盖默认 overall）
+        outline_fields: dict[str, Any] = {
+            "name": outline_data.get("name"),
+            "description": outline_data.get("description"),
+        }
+        if outline_data.get("level"):
+            outline_fields["level"] = outline_data["level"]
+        if outline_data.get("parent"):
+            outline_fields["parent"] = outline_data["parent"]
         try:
-            outline_level = GeneratedOutline.model_validate(
-                {
-                    "name": outline_data.get("name"),
-                    "description": outline_data.get("description"),
-                }
-            )
+            outline_level = GeneratedOutline.model_validate(outline_fields)
         except ValidationError as e:
             return _ParseOutcome(error=f"大纲 schema 校验失败: {_first_error(e)}")
 
@@ -392,6 +396,8 @@ class OutlineGenerator:
             generated=GeneratedOutline(
                 name=outline_level.name,
                 description=outline_level.description,
+                level=outline_level.level,
+                parent=outline_level.parent,
                 arcs=arcs,
                 plot_points=plot_points,
             ),
@@ -417,6 +423,17 @@ class OutlineGenerator:
         existing = await self._repo.get_by_name(pid_int, outline_name)
         if existing is not None:
             raise OutlineNameConflictError()
+        # #835 建链：level=volume/chapter 时按 parent 名解析父大纲
+        # （volume 挂 overall、chapter 挂 volume）
+        parent_id: uuid.UUID | None = None
+        if generated.parent:
+            found = await self._repo.get_by_name(pid_int, generated.parent.strip())
+            if found is not None:
+                parent_id = found.id
+            else:
+                out_warnings.append(
+                    f"生成大纲父引用「{generated.parent}」无法解析，已跳过挂接"
+                )
         now = _utcnow()
         outline = await self._repo.add(
             Outline(
@@ -424,6 +441,8 @@ class OutlineGenerator:
                 project_id=request.project_id,
                 name=outline_name,
                 description=generated.description or "",
+                level=generated.level,
+                parent_id=parent_id,
                 created_at=now,
                 updated_at=now,
             )

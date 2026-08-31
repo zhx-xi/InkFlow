@@ -502,10 +502,14 @@ class GeneratedOutline(BaseModel):
     """LLM 生成的结构化大纲（schema 校验用，§5.2 模板输出）.
 
     name/description 缺省时回退到请求参数（request.name / ""）。
+    level 缺省 overall（整本根）；parent 为父大纲名引用（level=volume/chapter 时用于建链；
+    overall 为根无需 parent）。
     """
 
     name: str | None = None
     description: str | None = None
+    level: str = "overall"  # #835：overall/volume/chapter，默认整本根
+    parent: str | None = None  # #835：父大纲名引用（落库时按名解析建链）
     arcs: list[GeneratedArc] = Field(default_factory=list)  # 可空
     plot_points: list[GeneratedPlotPoint] = Field(default_factory=list)  # 可空（空 → warning）
 
@@ -524,6 +528,12 @@ class GeneratedOutline(BaseModel):
         if v is None:
             return v
         return _validate_description(v, "大纲描述", 5000)
+
+    @field_validator("level")
+    @classmethod
+    def validate_level(cls, v: str) -> str:
+        """验证生成大纲层级：仅接受 overall/volume/chapter."""
+        return _validate_level(v)
 
 
 class OutlineGenerateRequest(BaseModel):

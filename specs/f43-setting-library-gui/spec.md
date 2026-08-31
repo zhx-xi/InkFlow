@@ -1,7 +1,8 @@
 # F43 设定库 GUI 升级（P0+P1+P2+P3+P4+P5 批次）— 功能规格
 > **端**: cross
 
-> **Spec 版本**: v1.4（2026-08-13）
+> **Spec 版本**: v1.5（2026-08-31）
+> **Spec 变更**: v1.5 — issue #835 大纲强制树形结构：决策点 2.A「孤立章合法」移除，`level=chapter` 必须挂 `level=volume` 父大纲（否则 422）；§2.8 数据模型/层级校验表 + §1.3 边界 + §9.7 OB8 + §12 D-20/D-21 + §14 Q7 同步修订；AI 生成器 GeneratedOutline 加 level/parent 建链。
 > **Spec 变更**: v1.4 — P5 批次（issue #284 **最后一批**）：删除后引用残留清理 job——真删语义（#211 已合）落地后，删除设定实体（角色/世界观/大纲/时间线事件/伏笔）**及写作章节**时显式清理引用残留（角色关系、地图 pin 关联、大纲父子/情节点、伏笔事件锚点、章节引用 6 处）；前端删除确认文案对齐真删（移除「30 天后彻底清除」）。P0-P4 交付物已全部合入（PR #301/#306/#311/#319）。**本批完成后 `Closes #284`**。
 > **阶段**: 0.8.0（issue #284 的 P5 最后一批；全部批次完成后关闭 issue）
 > **估算**: 2-3 人天（后端清理 ~1.5-2 + 前端文案对齐 ~0.5 + 测试）
@@ -53,8 +54,8 @@ P0（六分类 CRUD 闭环，PR #301）+ P1（角色等级/标签/世界观树/�
 - 地图创建仍复用 F36 端点（本批扩展 `bg_source` 参数支持简图）；**不新增绘图引擎**（形状是简单绝对定位 div，非 SVG 笔刷/图层）。
 - 角色等级筛选 chips（P1 §10 登记）仍归 P2+ 候选，本批不做。
 
-- **大纲三级 level 默认值（向后兼容）**：旧平铺大纲（含情节点）默认 `level=chapter`（孤立章，parent_id 空，渲染时降级为顶层）——情节点天然挂其下（零迁移，D8「章→情节点」严格成立）。用户之后可新建 overall/volume 把孤立章挂入层级。
-- **三级层级约束（严格）**：`overall` 无 parent；`volume` 只能 parent=`overall`；`chapter` 只能 parent=`volume`（或 parent 空 = 孤立章）。非法层级/跨项目/不存在 parent → 422。
+- **大纲三级 level 默认值（向后兼容）**：旧平铺大纲（含情节点）历史行为默认 `level=chapter`（孤立章，parent_id 空）——存量行保持可读（渲染降级顶层仅作数据库向后兼容）；**2026-08-31 起新建/更新强制树形**——`level=chapter` 必须挂 `level=volume` 父大纲，否则 422（决策点 2.A「孤立章合法」移除，情节点仍挂其下）。
+- **三级层级约束（严格）**：`overall` 无 parent；`volume` 只能 parent=`overall`；`chapter` 只能 parent=`volume`（parent 空 = 孤立章 → **2026-08-31 起 422**）。非法层级/跨项目/不存在 parent → 422。
 - **章关联约束（D9）**：仅 `level=chapter` 可关联写作章节（`chapter_id`）；关联章节须同项目且存在，跨项目/软删 → 422；`chapter_id` 可清除（置空）。「关联章节」按钮的**选择器后置**（D9 拍板）——本批仅渲染按钮 + 📎 徽标，章节选择器交互后置。
 - **情节点挂载**：情节点仍挂 `outline_id`（不关心 level，历史兼容）；新建情节点仅在 `level=chapter` 节点（前端渲染「＋情节点」按钮仅 chapter 层级）。
 - **时间线双序数据已就绪**：F12 已含 `time_value`（世界序）+ `narrative_position`（叙事序）+ `TimelineView` 双视图端点——本批仅前端消费双视图切换，零后端字段新增。
@@ -244,20 +245,21 @@ F11 `outlines` 现仅平铺（name/description/sort_order/extra），情节点�
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
-| `level` | str | NOT NULL, DEFAULT 'chapter' | 枚举 `overall`/`volume`/`chapter`（旧数据默认 chapter = 孤立章） |
-| `parent_id` | int \| NULL | 可空，自引用 FK→outlines.id（SET NULL），已索引 | 父大纲：volume→overall、chapter→volume；None = 顶层/孤立章 |
+| `level` | str | NOT NULL, DEFAULT 'chapter' | 枚举 `overall`/`volume`/`chapter`（旧数据默认 chapter = 孤立章；**新建/更新 chapter 必须挂 volume**） |
+| `parent_id` | int \| NULL | 可空，自引用 FK→outlines.id（SET NULL），已索引 | 父大纲：volume→overall、chapter→volume；None = 顶层（overall 根）——**chapter 无 parent 非法（422）** |
 | `chapter_id` | int \| NULL | 可空，FK→chapters.id（SET NULL），已索引 | 章关联实际写作章节（仅 level=chapter 可设） |
 
 **层级校验（严格，决策点 2.A）**：
 
-| 场景 | 校验 |
-|------|------|
-| level 非法（非 overall/volume/chapter） | 422（OutlineServiceError 子类） |
-| overall + parent_id 非空 | 422（overall 不允许挂父） |
-| volume + parent 非 overall（同项目） | 422（卷只能挂整体） |
-| chapter + parent 非 volume（同项目） | 422（章只能挂卷）；parent 空 = 孤立章（合法） |
-| chapter_id 非空且 level ≠ chapter | 422（仅章可关联章节） |
-| chapter_id 指向不存在/跨项目/软删章节 | 422 |
+| 场景 | 校验 | 修改履历 |
+|------|------|---------|
+| level 非法（非 overall/volume/chapter） | 422（OutlineServiceError 子类） | 新增 |
+| overall + parent_id 非空 | 422（overall 不允许挂父） | 新增 |
+| volume + parent 非 overall（同项目） | 422（卷只能挂整体） | 新增 |
+| chapter + parent 非 volume（同项目） | 422（章只能挂卷） | 新增 |
+| chapter + parent 空（孤立章） | **422（章必须挂卷，强制树形）** | 2026-08-31：新增需求强制树形（移除「孤立章合法」分支） |
+| chapter_id 非空且 level ≠ chapter | 422（仅章可关联章节） | 新增 |
+| chapter_id 指向不存在/跨项目/软删章节 | 422 | 新增 |
 
 **Outline 领域实体扩展**（`domain/models/outline.py`）：
 
@@ -969,7 +971,7 @@ P3+P4 追加：
 | E44 | chapter parent 非 volume（同项目） | 422 OutlineHierarchyError |
 | E45 | chapter_id 非空但 level ≠ chapter | 422 OutlineChapterRefError |
 | E46 | chapter_id 指向不存在/跨项目/软删章节 | 422 OutlineChapterRefError |
-| E47 | 孤立章（level=chapter 且 parent 空） | 渲染降级为顶层（合法，非错误） |
+| E47 | 孤立章（level=chapter 且 parent 空） | 新建/更新 → 422（决策点 2.A 强制树形）；**存量行**渲染降级为顶层（数据库向后兼容） |
 | E48 | chapter_id 清除（PATCH `""`） | 置 None，📎 徽标消失 → 「关联章节」按钮 |
 | E49 | 大纲三级树空 / 单层 / 深链 | 空 → 既有空态；单层无 toggle；深链直接渲染 |
 | E50 | 情节点拉取失败（网络） | chapter 展开显示「情节点加载失败」轻提示 + 重试 |
@@ -1197,7 +1199,7 @@ P5 追加（删除后引用残留清理 + 文案对齐）：
 | # | 用例 | 断言要点 |
 |---|------|---------|
 | O1 | 大纲三级树渲染 | 数据含 overall/volume/chapter → `outline-overall-*`/`outline-volume-*`/`outline-chapter-*` 层级渲染 |
-| O2 | 孤立章降级顶层 | level=chapter 且 parent 空 → 渲染为顶层节点 |
+| O2 | 孤立章处理 | 新建入口不提供（树强制）；存量 level=chapter 且 parent 空 → 渲染为顶层节点 |
 | O3 | 三级展开/收起 | 点 `outline-toggle-<id>` → 子节点显隐 |
 | O4 | 各层新增按钮 | overall 有 `outline-add-volume-*`；volume 有 `outline-add-chapter-*`；chapter 有 `outline-add-point-*` |
 | O5 | 章关联徽标（已关联） | chapter 有 chapter_id → `outline-chapter-ref-<id>` 显示 📎 + 章节标题 |
@@ -1231,7 +1233,7 @@ P5 追加（删除后引用残留清理 + 文案对齐）：
 | OB5 | service | create_outline level=chapter + parent 非 volume → OutlineHierarchyError |
 | OB6 | service | create_outline level=chapter + chapter_id 指向不存在章节 → OutlineChapterRefError |
 | OB7 | service | create_outline level=overall + chapter_id 非空 → OutlineChapterRefError |
-| OB8 | service | 孤立章（chapter + parent 空）合法创建 |
+| OB8 | service | 孤立章（chapter + parent 空）→ 422（章必须挂卷，2026-08-31 强制树形） |
 | OB9 | api | POST outlines 透传 level/parent_id/chapter_id；PATCH 透传 + `""` 清除 |
 | OB10 | repo | Outline ORM↔领域往返含 level/parent_id/chapter_id |
 | OB11 | database | ensure_outline_columns 迁移（旧表加列 + 幂等 + 表不存在 no-op） |
@@ -1346,8 +1348,8 @@ P0 表（D-1..D-6）+ P1 表（D-7..D-13）不变。P2 追加：
 | D-17 | 角色/事件关联校验 = MapService 可选注入 character_repo/timeline_repo（默认 None） | 向后兼容（既有 F36 测试构造不传→跳过校验）；deps 装配传真实 repo | 硬注入（破坏既有测试构造） |
 | D-18 | pin 独立叠加层 = 数据正交（pins 独立表，与 bg_source/shapes 无 FK） | D5 拍板「切换底图不影响标记」；前端只 PATCH bg_source，pins 零触碰 | pins 挂 bg_source 下（切换即失效，违反 D5） |
 | D-19 | 大纲三级 = `level` 字段标记（overall/volume/chapter）+ `parent_id` 自引用（非独立 volume/chapter 实体） | 单一 outlines 表加列即可；对齐决策文档 §4「level 字段标记」推荐；情节点挂 outline 不变 | 独立 volume/chapter 实体表（复用 F3 Volume/Chapter 会混淆写作侧语义，且迁移重） |
-| D-20 | 旧大纲 level 默认 `chapter`（孤立章） | 情节点天然挂其下（零迁移，D8「章→情节点」严格）；孤立章渲染降级顶层（同 P1 世界观树孤儿降级） | 默认 overall（情节点挂 overall 违反「章→情节点」结构） |
-| D-21 | 三级层级严格校验（overall 无父 / volume→overall / chapter→volume） | D8 明确三级；后端轻校验防脏数据；孤立章 parent 空合法 | 宽松（parent 只校验同项目存在）——层级错乱风险 |
+| D-20 | 旧大纲历史 level 默认 `chapter`（孤立章） | 情节点天然挂其下（零迁移）；存量孤立章渲染降级顶层（数据库向后兼容）；**2026-08-31 起新建 chapter 须挂 volume（决策点 2.A）** | 默认 overall（情节点挂 overall 违反「章→情节点」结构） |
+| D-21 | 三级层级严格校验（overall 无父 / volume→overall / chapter→volume） | D8 明确三级；后端轻校验防脏数据；**2026-08-31 起孤立章 parent 空非法（强制树形）** | 宽松（parent 只校验同项目存在）——层级错乱风险 |
 | D-22 | 章关联 = `chapter_id` FK→chapters（仅 level=chapter 可设）+ 选择器后置 | D9 拍板「选择器后置」；仅 chapter 可关联符合「章关联写作章节」语义；FK SET NULL 章节删除不破坏大纲 | 任意 level 可关联（语义模糊）；本批实现选择器（D9 拍板后置，不做） |
 | D-23 | 单事件检查 = 独立端点 `GET /timeline/events/{id}/check`（复用相邻对扫描） | RESTful 清晰；复用 check_consistency 分类逻辑（零新冲突类型）；前端行内按需调用 | 复用 check + `?event_id=` 参数（语义混在整体检查端点）；纯前端筛选（依赖整体 check 全量返回，开销大） |
 
@@ -1387,7 +1389,7 @@ P5 追加：
 - **Q4（✅ 已确认，决策文档 D7）**：面包屑四级（设定库/世界观/地图视图/{地图名}），逐级可回跳。正文 §5.9 已落实。
 - **Q5（✅ 已确认，用户拍板「P2 前后端混合」）**：P2 非纯前端——需后端扩展（pins type/ref_id、maps bg_source/extra、简图创建、迁移），任务书「前端为主」已修正为「前后端混合」。正文 §1.2/§2.7/§8 已落实。
 - **Q6（✅ 已确认，用户拍板 1.A）**：大纲三级 level 默认值 = `chapter`（旧大纲 → 孤立章，情节点零迁移）。正文 §1.3/§2.8/D-20 已落实。
-- **Q7（✅ 已确认，用户拍板 2.A）**：三级层级严格约束（overall 无父 / volume→overall / chapter→volume；孤立章 parent 空合法）。正文 §1.3/§2.8/D-21 已落实。
+- **Q7（✅ 已确认，用户拍板 2.A，2026-08-31 修订）**：三级层级严格约束（overall 无父 / volume→overall / chapter→volume；**孤立章 parent 空非法——章节必须挂卷**）。正文 §1.3/§2.8/D-21 已落实。
 - **Q8（✅ 已确认，用户拍板 3.A）**：单事件检查 = 独立端点 `GET /timeline/events/{id}/check`（复用相邻对扫描）。正文 §2.9/§3.7/D-23 已落实。
 - **Q9（✅ 已确认，用户拍板 1.A = 同步清理，2026-08-13）**：清理 job 形态 = 同步（删除方法内同一事务），非异步后台 job、无调度器。正文 §1.3/§2.10/§3.8/§5.18/D-24 已落实。
 - **Q10（✅ 已确认，用户拍板 2.B = 文案对齐真删，2026-08-13）**：`lib.delete.confirm` 由「后台逻辑删除，30 天后彻底清除」改为「点击确认后立即移除，不可恢复」。正文 §1.3/§5.18/§6/D-25 已落实。
