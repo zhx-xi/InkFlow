@@ -751,6 +751,19 @@ def ensure_foreshadowing_drop_is_deleted(conn) -> None: ... # foreshadowings
 
 这些函数在应用启动（`create_tables` 后）与 CLI `ensure_kernel` 路径按序调用，幂等、可重复执行。
 
+**角色分组 N:M 迁移（#701 + #831）**：`ensure_character_group_members_migration` 为旧库引入
+`character_group_members` 关联表（角色/分组 N:M），并**移除旧 schema `characters.group_id` 单列**。
+该列被 `FOREIGN KEY(group_id) REFERENCES character_groups(id) ON DELETE SET NULL` 引用，SQLite
+`ALTER TABLE ... DROP COLUMN` **禁止删除被 FK 引用的列**，且 FK 不存于 `sqlite_master` 索引记录，
+故必须在移除前**重建 characters 表**（新表无 group_id 列 + 无引用该列的 FK，拷贝其余列数据、
+DROP 旧表、RENAME、重建 `uq_characters_active_name` 等索引）。
+
+> ⚠️ **FK=ON 主事务内不可安全重建（#831）**：app lifespan 主迁移链在 `engine.begin()`（FK=ON）
+> 事务内运行——`PRAGMA foreign_keys=OFF` 在同一事务内是 no-op，且主事务 DDL 已持写锁；此时
+> `DROP TABLE characters` 会沿 FK CASCADE 清空 `character_relations` 与回填后的
+> `character_group_members`（数据丢失）。故本迁移由 `run_character_group_members_migration`
+> 在**独立 AUTOCOMMIT 连接 + FK=OFF** 上执行（主迁移事务提交后调用），规避 FK 拒止与级联清空。
+
 ---
 
 ## 9. 测试策略
