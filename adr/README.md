@@ -133,7 +133,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 | [ADR-017](test-ci/ADR-017.md) | CI 代码质量检查 — Reviewdog + Ruff 统一门禁 | ✅ 已接受 | 2026-07-31 |
 | [ADR-018](test-ci/ADR-018.md) | 测试分层与 CI Job 并行化 | ✅ 已接受 | 2026-07-31 |
 | [ADR-026](test-ci/ADR-026.md) | 真实 AI CI job — label 触发 + workflow_dispatch | ✅ 已接受 | 2026-08-04 |
-| [ADR-027](test-ci/ADR-027.md) | 测试覆盖率门禁 — 三层全覆盖 | ✅ 已接受 | 2026-08-06 |
+| [ADR-027](test-ci/ADR-027.md) | 测试覆盖率门禁 — 三层全覆盖（2026-09-01 修订：+后端函数覆盖标准定义） | ✅ 已接受 | 2026-08-06 |
 | [ADR-028](test-ci/ADR-028.md) | E2E 按页面域拆分 + 门禁口径 | ✅ 已接受 | 2026-08-06 |
 | [ADR-047](test-ci/ADR-047.md) | 确定性 fake LLM 测试服务器（fake OpenAI） | ✅ 已接受 | 2026-09-01 |
 
@@ -171,7 +171,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 - **CI 质量**: Reviewdog + Ruff 统一门禁（ADR-017 [test-ci/](test-ci/ADR-017.md)）
 - **CI 测试分层**: 三层目录 + 按功能链路并行 job（ADR-018 [test-ci/](test-ci/ADR-018.md)）
 - **CI 真实 AI**: label 触发 + workflow_dispatch 兜底（ADR-026 [test-ci/](test-ci/ADR-026.md)）
-- **CI 覆盖率门禁**: 后端 98.5% 行 / 95% 分支 + 前端 vitest thresholds（ADR-027 [test-ci/](test-ci/ADR-027.md)）
+- **CI 覆盖率门禁**: 后端 98.5% 行 / 95% 分支 + 前端 vitest thresholds（ADR-027 [test-ci/](test-ci/ADR-027.md)；2026-09-01 修订 +后端函数覆盖标准定义门禁）
 - **CI E2E**: 按页面域拆 6 job；AI 链路只测 UI 状态（ADR-028 [test-ci/](test-ci/ADR-028.md)）
 - **CI 确定性 fake LLM**: OpenAI 兼容 fake server + INKFLOW_LLM_BASE_URL + e2e_llm_mode 开关（ADR-047 [test-ci/](test-ci/ADR-047.md)）
 - **版本里程碑**: SemVer；1.0.0 = 本地完全可用；2.0.0 = 云端（ADR-019 [packaging/](packaging/ADR-019.md) v11；ADR-024 [architecture/](architecture/ADR-024.md)）
