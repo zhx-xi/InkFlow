@@ -17,7 +17,7 @@
 >
 > **依赖**: ✅ F10（world_settings + WorldRepositoryProtocol——pin 关联地点校验）· ✅ F35（#173 地点树：root_location_id 挂地点树 + ancestors/descendants 导航）· ✅ F1（项目 FK）
 >
-> **参考 ADR**: [ADR-019](../../adr/ADR-019.md)（版本里程碑）· [ADR-002](../../adr/ADR-002.md)（六边形分层）· [ADR-003](../../adr/ADR-003.md)（Repository）· [ADR-004](../../adr/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/ADR-012.md)（错误处理）
+> **参考 ADR**: [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-003](../../adr/database/ADR-003.md)（Repository）· [ADR-004](../../adr/database/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）
 >
 > **状态**: ✅ 已实现（PR #220，#174 2026-08-09）
 

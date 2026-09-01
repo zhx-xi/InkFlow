@@ -7,7 +7,7 @@
 **所属阶段**: 0.9.0（估算 5-8 人天；1.0.0 → 0.9.0 提前拍板 2026-08-12——1.0.0 定位改为「正式可用」不应再含大功能，MCP 提前实现、提前在实际使用中验证）
 **关联 Issues**: [#49](https://github.com/zhx-xi/InkFlow/issues/49)（本模块）
 **依赖**: ✅ F30（ensure_kernel + kernel.json 冷启动）· ✅ F38（`infrastructure/http/` 传输层 + 零 cli 依赖）· ✅ F26（ToolSpec 契约 + 工具注册表机制）· ✅ F7（JSON 信封/错误码契约）
-**参考 ADR**: [ADR-023](../../adr/ADR-023.md)（MCP 设计 v2）· [ADR-030](../../adr/ADR-030.md)（内核服务化 ④）· [ADR-022](../../adr/ADR-022.md)（skills 双轨）· [ADR-021](../../adr/ADR-021.md)（内核并发契约）· [ADR-019](../../adr/ADR-019.md)（版本里程碑）
+**参考 ADR**: [ADR-023](../../adr/mcp/ADR-023.md)（MCP 设计 v2）· [ADR-030](../../adr/kernel/ADR-030.md)（内核服务化 ④）· [ADR-022](../../adr/memory-skills/ADR-022.md)（skills 双轨）· [ADR-021](../../adr/kernel/ADR-021.md)（内核并发契约）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
 **状态**: ✅ 已实现（PR #400，2026-08-16）
 
 > **Spec 变更**（v1.0 → v1.1，2026-08-16）：待澄清 Q1-Q3 全部拍板（用户拍板 A/A/A）。① Q1 工具粒度 = **聚合 `manage_*`（action 枚举）15 工具**（细粒度 50+ 否决）；② Q2「与 F26 同源」落地 = **契约同源**（复用 ToolSpec + 信封语义，新建 `mcp/tools/` HTTP 工具工厂，非复用 F26 `build_reader_tools`）；③ Q3 write 流式 = **同步返回拼接结果**（走非流式端点 `/writing/generate|continue|revise`，不走 SSE 透传）。联动修订：§2.2/§2.3/§10/§12/待澄清节。
@@ -475,7 +475,7 @@ F20 被依赖:
 > **所属阶段**: 0.12.0（最后一个 feature 轨），Issue #563（Closes）＋收尾 #551
 > **关联 Issues**: #563（MCP 分发引导落地）/ #49（F20 MCP server，0.9.0 已交付）/ #551（自动写作链路收尾）
 > **依赖**: F20（mcp server 薄客户端已实现并随包分发）、ADR-022（skills 三通道分发，mcp-setup.md 演进预留）、ADR-023 v2（薄客户端经 HTTP）、ADR-030（本地内核服务化）
-> **参考 ADR**: [ADR-022](../../adr/ADR-022.md) · [ADR-023](../../adr/ADR-023.md) · [ADR-030](../../adr/ADR-030.md)
+> **参考 ADR**: [ADR-022](../../adr/memory-skills/ADR-022.md) · [ADR-023](../../adr/mcp/ADR-023.md) · [ADR-030](../../adr/kernel/ADR-030.md)
 > **状态**: 待实现 🔲
 
 > **Spec 变更**: v1.0 初始版（承接 #563 拍板，落地 MCP 分发引导的可发现性缺口）

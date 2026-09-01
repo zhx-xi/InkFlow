@@ -7,7 +7,7 @@
 **所属阶段**: 0.7.0（Agent 化升级第二批），估算 8-12 人天
 **关联 Issues**: #160（F27 Writer Agent 闭环）
 **依赖**: ✅ F26 agent-tools（deepagents 集成 + 5 只读工具，PR #236）· ✅ F5 LLM Provider · ✅ F4 Agent 管线 · ✅ #87 LangGraph 重构 · ✅ F34 单章审计 · ✅ F3 writing_service · ⏳ F28 agent-memory（F27 是事件源，反向依赖）
-**参考 ADR**: adr/ADR-034.md（护栏触发语义）、adr/ADR-035.md（编排引擎=deepagents 0.7.5）、adr/ADR-036.md（写工具形态）、adr/ADR-033.md（预算护栏数值——本 spec 定稿）、ADR-015（LangChain 隔离）、ADR-027（覆盖率门禁）
+**参考 ADR**: adr/agent/ADR-034.md（护栏触发语义）、adr/agent/ADR-035.md（编排引擎=deepagents 0.7.5）、adr/agent/ADR-036.md（写工具形态）、adr/agent/ADR-033.md（预算护栏数值——本 spec 定稿）、ADR-015（LangChain 隔离）、ADR-027（覆盖率门禁）
 **状态**: ✅ 已实现（PR #241，2026-08-10 合入；Q1-Q4 拍板 2026-08-10）
 
 > **模块类型声明**: 本模块为 Agent 化升级新增变体——「**自主循环闭环型**」（第 11 个模块变体，编号依据：AGENTS.md 模块类型谱系，F26=第 10 变体口径延续）。与 F26（deepagents 集成 + 工具定义型）不同：F27 是**首个有 LLM 自主控制流 + 写操作落库 + 用户确认流**的业务闭环，新增 1 张 agent_run 表 + 1 张 draft 表（Q4 拍板）。
@@ -25,7 +25,7 @@ F27 交付判据 B+C（升级路径 v1.1 §1）：**writer_node 升级为 ReAct 
 | `deterministic` | ✅ 默认 | 既有静态链（Architect→Writer→Auditor→Reviser，代码写死） | 无 | 直接写章节内容 | 现有语义不动 |
 | `agentic` | 显式开启 | LLM 自主（deepagents ReAct 循环） | 5 只读 + save_draft | **草稿**（用户确认后生效） | draft →（确认）→ final |
 
-- 双模式开关：`pipeline.mode: deterministic | agentic`，项目级配置 + CLI/请求覆盖（F13 同构，升级路径 v1.1 adr/ADR-031.md）。
+- 双模式开关：`pipeline.mode: deterministic | agentic`，项目级配置 + CLI/请求覆盖（F13 同构，升级路径 v1.1 adr/agent/ADR-031.md）。
 - **deterministic 零改动**：现有 `builtin:write_chapter` 静态链、writing API、CLI 默认路径全部不动（回归零破坏是本模块验收项 M4）。
 - agentic 只通过**新增装配点**接入：CLI `write next --mode agentic` 与 REST 扩展（§3/§4），内部路由到 agentic_writer 服务。
 
@@ -119,7 +119,7 @@ class Draft(BaseModel):
 ### 2.4 复用既有模型
 
 - `ChapterStatus`（domain/models/chapter.py）：确认流转终点 `draft → final`（既有枚举已有 DRAFT/FINAL，确认动作 = 内容写入 + status 置 FINAL，Q4 方案 B 时草稿态用 DRAFT）。
-- `ChapterUpdate`（既有）：确认时经 chapter_service.update_chapter 写内容与状态（**service 层，不碰 ORM**——adr/ADR-036.md 约束①）。
+- `ChapterUpdate`（既有）：确认时经 chapter_service.update_chapter 写内容与状态（**service 层，不碰 ORM**——adr/agent/ADR-036.md 约束①）。
 
 ---
 
@@ -135,7 +135,7 @@ class Draft(BaseModel):
 | POST | `/api/v1/agent/drafts/{draft_id}/confirm` | 确认草稿 → 写入正式章节 | 新增 |
 | GET | `/api/v1/agent/drafts?project_id=&status=` | 草稿列表（用户确认入口） | 新增 |
 
-> 约束：既有 `/api/v1/writing/generate` 等端点**零改动**（deterministic 默认路径不动）；agentic 用独立前缀 `/writing/agentic/` 隔离语义，避免误用既有端点（升级路径 adr/ADR-031.md：双模式并存）。
+> 约束：既有 `/api/v1/writing/generate` 等端点**零改动**（deterministic 默认路径不动）；agentic 用独立前缀 `/writing/agentic/` 隔离语义，避免误用既有端点（升级路径 adr/agent/ADR-031.md：双模式并存）。
 
 ### 3.2 请求/响应示例
 
@@ -176,7 +176,7 @@ POST /api/v1/agent/drafts/{draft_id}/confirm
 |------|------|-------------|
 | 项目/章节不存在 | 404 | 复用既有 `_NOT_FOUND_MESSAGES` 语义 |
 | LLM 调用失败 | 500 | `X-InkFlow-Error-Code: LLM_ERROR`（既有映射复用） |
-| guardrail 触发（max_steps/重复工具/空 content/token） | 200 + status=`terminated_by_guardrail` | **产物保留**（adr/ADR-034.md），不视为 HTTP 错误；客户端按 status 分支 |
+| guardrail 触发（max_steps/重复工具/空 content/token） | 200 + status=`terminated_by_guardrail` | **产物保留**（adr/agent/ADR-034.md），不视为 HTTP 错误；客户端按 status 分支 |
 | 草稿不存在 | 404 | 确认流错误面 |
 | 草稿状态非 draft（重复确认） | 409 | 幂等防护 |
 | 参数非法（max_steps 越界等） | 422 | Pydantic 校验 |
@@ -258,7 +258,7 @@ ToolSpec(
 )
 ```
 
-**工程约束（用户拍板，升级路径 v1.1 adr/ADR-036.md）**：
+**工程约束（用户拍板，升级路径 v1.1 adr/agent/ADR-036.md）**：
 
 | # | 约束 | 实现 |
 |---|------|------|
@@ -271,17 +271,17 @@ ToolSpec(
 
 ### 5.3 自主终止双保险
 
-**预算护栏数值（adr/ADR-033.md 定稿，Q2 拍板）**：默认值 = max_steps=12 / token_budget=32K / 同工具连续=3，**可在全局设置中更改**（F32 app_settings 扩展键，用户拍板 2026-08-10）。读取优先级：请求体显式字段（--max-steps/--token-budget）> 全局设置（agent_max_steps / agent_token_budget / agent_max_consecutive_tool）> 默认值。
+**预算护栏数值（adr/agent/ADR-033.md 定稿，Q2 拍板）**：默认值 = max_steps=12 / token_budget=32K / 同工具连续=3，**可在全局设置中更改**（F32 app_settings 扩展键，用户拍板 2026-08-10）。读取优先级：请求体显式字段（--max-steps/--token-budget）> 全局设置（agent_max_steps / agent_token_budget / agent_max_consecutive_tool）> 默认值。
 
 | 终止路径 | 判定 | 结果 |
 |----------|------|------|
-| LLM 自然终止 | 最终 AIMessage 含正文 content 且无 tool_calls | status=completed，terminated_by="llm"，产物=正文 → 自动 save_draft 落草稿（若 LLM 未显式调用 save_draft，服务层兜底保存——**产物保留语义，adr/ADR-034.md**） |
+| LLM 自然终止 | 最终 AIMessage 含正文 content 且无 tool_calls | status=completed，terminated_by="llm"，产物=正文 → 自动 save_draft 落草稿（若 LLM 未显式调用 save_draft，服务层兜底保存——**产物保留语义，adr/agent/ADR-034.md**） |
 | max_steps 超限 | 步骤数 ≥ max_steps（默认 12，设置可改） | status=terminated_by_guardrail，terminated_by="max_steps"，产物保留（已 save 的草稿不动） |
 | 同工具连续调用超限 | 同一工具连续调用 ≥ 上限（默认 3，设置可改） | status=terminated_by_guardrail，terminated_by="repeat_tool"，产物保留 |
 | 空 content | §5.4 重试后仍空 | status=terminated_by_guardrail，terminated_by="empty_content"，产物保留 |
 | token 超限 | 累计 token ≥ token_budget（默认 32K，设置可改） | status=terminated_by_guardrail，terminated_by="token_budget"，产物保留 |
 
-> 全部 guardrail 映射 adr/ADR-034.md：产物保留 + terminated_by_guardrail，**不视为 HTTP 错误**（200 + status 字段）；agentic 失败可回退 deterministic（用户自行决定，不自动回退）。
+> 全部 guardrail 映射 adr/agent/ADR-034.md：产物保留 + terminated_by_guardrail，**不视为 HTTP 错误**（200 + status 字段）；agentic 失败可回退 deterministic（用户自行决定，不自动回退）。
 
 ### 5.4 空 content 重试护栏（Spike ② 必做，F26 spec v1.1 §5.7 硬性前置）
 
@@ -332,7 +332,7 @@ save_draft / confirm / reject 三个写动作均落 audit_logs：
 ## 6. 组织规则
 
 - agentic 编排层放 `infrastructure/agent/agentic_writer.py`；领域服务 `domain/services/agentic_writer_service.py` 持编排契约（端口），实现细节不泄漏到 domain（ADR-015：deepagents/langchain 类型封闭在 infrastructure）。
-- 写工具放 `infrastructure/agent/tools/save_draft_tool.py`，经 draft_service + chapter_service + audit_log_service（调 service 不碰 ORM——adr/ADR-036.md 约束①，与 F26 工具层规则一致）。
+- 写工具放 `infrastructure/agent/tools/save_draft_tool.py`，经 draft_service + chapter_service + audit_log_service（调 service 不碰 ORM——adr/agent/ADR-036.md 约束①，与 F26 工具层规则一致）。
 - 新增 domain models：`domain/models/agent_run.py`、`domain/models/draft.py`（纯 Pydantic，零 infrastructure import）。
 - 新增 repo：`infrastructure/database/repositories/agent_run_repo.py`、`draft_repo.py`（异步 SQLAlchemy，镜像 ExecutionStore 模式）。
 - ORM：`infrastructure/database/models/agent_run.py`（含 agent_runs + drafts 两表；或分文件，以实现为准）。
@@ -349,7 +349,7 @@ save_draft / confirm / reject 三个写动作均落 audit_logs：
 | agentic 请求但项目/章节不存在 | 404（复用既有映射） | HTTP 错误 |
 | LLM 全程不调工具直接输出正文 | 正常完成（completed，terminated_by="llm"）；save_draft 兜底落草稿 | 无 |
 | LLM 调 save_draft 多次（多草稿） | 每次独立事务落库；最终以最后一次为准（或保留多版本，Q4 拍板） | 无（记录全部，决策轨迹可见） |
-| LLM 未调 save_draft 就自然终止 | 服务层兜底保存草稿（产物保留，adr/ADR-034.md） | 无（审计标注 "auto_saved"） |
+| LLM 未调 save_draft 就自然终止 | 服务层兜底保存草稿（产物保留，adr/agent/ADR-034.md） | 无（审计标注 "auto_saved"） |
 | 最终消息含 tool_calls 但无正文 | 不是空 content 场景，继续循环；达 max_steps → guardrail | 200 + terminated_by_guardrail |
 | 空 content 重试 1 次仍空 | terminated_by_guardrail("empty_content")，产物保留 | 200 + status 字段 |
 | 同一工具连续调用 ≥ 上限 | terminated_by_guardrail("repeat_tool") | 200 + status 字段 |
@@ -419,7 +419,7 @@ save_draft / confirm / reject 三个写动作均落 audit_logs：
 | checkpointer / 崩溃恢复 / 跨进程恢复 | 远期（F29 后评估） |
 | LangSmith tracing 接入 | 待定（F26 遗留点 5） |
 | agentic 模式在 GUI 的入口 | 未排期（GUI 在 F19 渲染层，CLI/API 先行——升级路径 v1.1 Stage 3 反思：GUI 体验优于 CLI，落地时以 GUI 为主，但 F27 范围仅 CLI/API） |
-| 自动回退 deterministic | 不自动（用户显式决定，升级路径 adr/ADR-034.md） |
+| 自动回退 deterministic | 不自动（用户显式决定，升级路径 adr/agent/ADR-034.md） |
 | MCP 工具暴露 | F20（同源复用工具定义） |
 | 独立 ToolRegistry Protocol | YAGNI（F26 否决延续） |
 
@@ -438,15 +438,15 @@ save_draft / confirm / reject 三个写动作均落 audit_logs：
 
 | 决策 | 方案 | 备选（否决理由） |
 |------|------|-----------------|
-| 编排引擎 | deepagents 0.7.5 复用（F26 已集成，adr/ADR-035.md） | LangGraph 手写循环（重复 deepagents 内建能力） |
-| 写工具形态 | save_draft 自定义工具（进程内调 service，adr/ADR-036.md） | MCP 写工具（跨进程开销，F20 再做） |
-| 草稿机制 | 草稿状态 + 用户确认后生效（adr/ADR-036.md ④） | agent 直接写正式章节（用户失控，F28 无事件源） |
-| 单工具单事务 | 每次 save_draft 独立事务（adr/ADR-036.md ②） | agent run 级大事务（长任务持锁风险） |
+| 编排引擎 | deepagents 0.7.5 复用（F26 已集成，adr/agent/ADR-035.md） | LangGraph 手写循环（重复 deepagents 内建能力） |
+| 写工具形态 | save_draft 自定义工具（进程内调 service，adr/agent/ADR-036.md） | MCP 写工具（跨进程开销，F20 再做） |
+| 草稿机制 | 草稿状态 + 用户确认后生效（adr/agent/ADR-036.md ④） | agent 直接写正式章节（用户失控，F28 无事件源） |
+| 单工具单事务 | 每次 save_draft 独立事务（adr/agent/ADR-036.md ②） | agent run 级大事务（长任务持锁风险） |
 | 审计 | 复用 F34 audit_logs（severity_summary 承载动作语义） | 新建 audit 表（跨模块零 MODIFY 纪律，F34 表结构可表达） |
 | 空 content 护栏 | 自动重试 1 次 + 仍空 → guardrail（Spike ② 实测 ~66% 空响应） | 不重试直接失败（弱模型主力场景，1 次重试成本低收益高） |
-| 终止语义 | 双保险：LLM 自然终止 + 三类 guardrail（max_steps/重复工具/空 content/token），产物保留（adr/ADR-034.md） | 硬失败丢弃产物（用户损失；guardrail 映射 FAILED 但产物可查） |
+| 终止语义 | 双保险：LLM 自然终止 + 三类 guardrail（max_steps/重复工具/空 content/token），产物保留（adr/agent/ADR-034.md） | 硬失败丢弃产物（用户损失；guardrail 映射 FAILED 但产物可查） |
 | steps 存储 | agent_run.steps JSON 快照 | 独立 steps 子表（YAGNI；AgentExecutionORM.stages JSON 先例） |
-| 双模式开关 | extra 键 + CLI/请求覆盖，默认 deterministic（F13 同构，adr/ADR-031.md） | 独立配置表（过重；extra 已有 F13 先例） |
+| 双模式开关 | extra 键 + CLI/请求覆盖，默认 deterministic（F13 同构，adr/agent/ADR-031.md） | 独立配置表（过重；extra 已有 F13 先例） |
 | agentic 端点 | 独立 /writing/agentic/generate | 扩展现有 /generate（deterministic 默认路径零改动纪律） |
 | 自动回退 | 不自动 | 自动回退 deterministic（掩盖 agentic 失败，用户不知情） |
 
@@ -471,9 +471,9 @@ save_draft / confirm / reject 三个写动作均落 audit_logs：
 - **Q1: save_draft 确认流形态** ✅ 已确认（用户拍板：选项 A，2026-08-10）
   - A. **CLI/API 显式确认**（**已拍板**）——agent 落草稿后，用户经 `inkflow agent draft confirm <id>` 或 REST confirm 端点确认；控制感在用户手里，产物可审阅再确认；与升级路径 v1.1 Stage 3 先例判断一致（HITL 在 CLI 体验差）
   - B. deepagents interrupt_on（HITL）——agent 循环中暂停等待用户输入；CLI 交互体验差、无 GUI 前置（F19 渲染层未排期），且 deepagents 0.7.5 interrupt 形态未 spike 验证
-  - C. 自动确认（草稿即生效）——违背用户拍板「用户确认后才转正式」（adr/ADR-036.md ④），否决
+  - C. 自动确认（草稿即生效）——违背用户拍板「用户确认后才转正式」（adr/agent/ADR-036.md ④），否决
   - 建议：A（估算 A=8-12 人天 / B=+2 人天且体验差）
-- **Q2: 预算护栏数值（adr/ADR-033.md 定稿）** ✅ 已确认（用户拍板：选项 A + 设置可改，2026-08-10）
+- **Q2: 预算护栏数值（adr/agent/ADR-033.md 定稿）** ✅ 已确认（用户拍板：选项 A + 设置可改，2026-08-10）
   - A. **max_steps=12 / token_budget=32K / 同工具连续=3 为默认值**（**已拍板**——升级路径 v1.1 §4 Stage 1 与 §7 风险节初值；Spike 0 实测 1 章正文约 3-6 步工具 + 1 步正文，12 步余量充分）
   - B. max_steps=8 / token_budget=16K / 同工具连续=3（更紧，省钱但弱模型重试后易触发 guardrail）
   - C. max_steps=20 / token_budget=64K / 同工具连续=5（更松，复杂章节容错高但 token 成本 3-8 倍风险↑）
@@ -508,7 +508,7 @@ save_draft / confirm / reject 三个写动作均落 audit_logs：
 **所属阶段**: 0.12.0（AI 全自动写作）
 **关联 Issues**: [#551](https://github.com/zhx-xi/InkFlow/issues/551)（本模块，Agent 全自动写作）· [#597](https://github.com/zhx-xi/InkFlow/issues/597)（Part of #551，前端面板：Chat 接入 deepagents 系统级 Agent + 工具流式 + 删书级编排入口，S3 实现轨）· 前置：✅ F44 长任务编排器 · ✅ F29 Supervisor · ✅ F27 writer-agent · ✅ F26 deepagents 集成层
 **依赖**: ✅ F44（书级运行骨架）· ✅ F29（supervisor 动态路由）· ✅ F27 agentic writer（deepagents harness）· ✅ F26（deepagents 工具链 harness.py build_deep_agent）· ✅ langgraph-checkpoint-sqlite（AsyncSqliteSaver，F44 阶段 4 已交付）· ⏳ 无新 Python 依赖
-**参考 ADR**: adr/ADR-035.md（编排引擎=Deep Agents harness 0.7.5）· ADR-006v2（Agent 编排 LangGraph StateGraph）· ADR-015（LangChain 隔离）· ADR-019（编号口径）· ADR-027（覆盖率门禁）
+**参考 ADR**: adr/agent/ADR-035.md（编排引擎=Deep Agents harness 0.7.5）· ADR-006v2（Agent 编排 LangGraph StateGraph）· ADR-015（LangChain 隔离）· ADR-019（编号口径）· ADR-027（覆盖率门禁）
 **状态**: ✍️ 起草中（本会话 Specify）
 
 > **模块类型声明**: 本模块为「**自主编排型**」变体（第 21 变体，接续 F29 自主编排型/F44 长任务编排型）——在既有 F44 书级运行骨架之上新增 **book-level agent 自主编排层**：书级 supervisor agent（LLM 决策 + Command(goto) 动态路由，F29 模式）替代**链式**（architect→writer→auditor→reviser 固定拓扑）与**确定性扇出**（F44 BookVolumePipeline Send fan-out 每章一次写），agent 自主决定「分章 → 写作 → 审校 → 修订 → 完成」序列；**章节级**自主循环（单章 agent 自主决定 write/audit/revise 直至满意）；配套 HITL 确认点（降级）+ 中断恢复 checkpoint（跨重启 resume）。**链式拓扑保留**（F42 static / F29 supervisor / F44 volume 既有模式零改动，仅新增 agentic 模式，向后兼容）。

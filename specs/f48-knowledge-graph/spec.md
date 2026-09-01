@@ -13,7 +13,7 @@
 >
 > **依赖**: ✅ F1（projects 表 + ProjectRepositoryProtocol）· ✅ F9（characters + character_relations，图谱合并来源 + 实体校验）· ✅ F10（world_settings 实体校验）· ✅ F11（outlines 实体校验）· ✅ F12（timeline_events 实体校验）· ✅ F13（foreshadowings 实体校验）· ✅ F36/F43 P2（maps + map_pins 实体校验）· ✅ F14（extractions/runs，原 rag tab 数据源——本模块改造其展示面；#479 定时提取挂靠 F14 提取服务）
 >
-> **参考 ADR**: [ADR-019](../../adr/ADR-019.md)（版本里程碑）· [ADR-002](../../adr/ADR-002.md)（六边形分层）· [ADR-003](../../adr/ADR-003.md)（Repository）· [ADR-004](../../adr/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/ADR-012.md)（错误处理）· [ADR-030](../../adr/ADR-030.md)（本地内核服务）
+> **参考 ADR**: [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-003](../../adr/database/ADR-003.md)（Repository）· [ADR-004](../../adr/database/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）· [ADR-030](../../adr/kernel/ADR-030.md)（本地内核服务）
 >
 > **状态**: ✅ 已实现（PR #502 图谱 + #511 定时提取，2026-08-19）
 

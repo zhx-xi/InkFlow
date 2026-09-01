@@ -5,7 +5,7 @@
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第三个模块，估算 3-4 人天）
 > **关联 Issues**: [#41](https://github.com/zhx-xi/InkFlow/issues/41)
 > **依赖**: F1 ✅, F5 ✅（前置）；F6 ✅（数据源集成点，见 §11 与待澄清 Q1）；F2（边界声明，非硬依赖，见 §11）
-> **参考 ADR**: [ADR-001](../../adr/ADR-001.md) (模块化单体), [ADR-002](../../adr/ADR-002.md) (六边形分层), [ADR-003](../../adr/ADR-003.md) (Repository), [ADR-004](../../adr/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/ADR-007v2.md) (包结构), [ADR-010](../../adr/ADR-010.md) (上下文分层), [ADR-012](../../adr/ADR-012.md) (错误处理), [ADR-014](../../adr/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/ADR-016.md) (loguru), [ADR-017](../../adr/ADR-017.md) (CI 门禁), [ADR-018](../../adr/ADR-018.md) (测试分层), [ADR-019](../../adr/ADR-019.md) (版本里程碑)
+> **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 > **状态**: ✅ 已实现（PR #58）
 
 >
@@ -1143,7 +1143,7 @@ F11 被依赖:
   F20 (MCP)             ⏳ — (Phase 3) manage_outline 工具基于本模块 API
 ```
 
-> ⚠️ **编号口径说明**: F6 spec §3.2 表格中 outline 数据源标注「（F10 落地后替换）」为 ADR-019 之前的旧编号（旧口径 F10=大纲）；按 [ADR-019](../../adr/ADR-019.md) 现行口径 **F11 = 大纲管理**、F10 = 世界观。本 spec 及后续 F 模块一律以 ADR-019 为准（与 F9/F10 spec §11 同一声明）。
+> ⚠️ **编号口径说明**: F6 spec §3.2 表格中 outline 数据源标注「（F10 落地后替换）」为 ADR-019 之前的旧编号（旧口径 F10=大纲）；按 [ADR-019](../../adr/packaging/ADR-019.md) 现行口径 **F11 = 大纲管理**、F10 = 世界观。本 spec 及后续 F 模块一律以 ADR-019 为准（与 F9/F10 spec §11 同一声明）。
 > **与 F9/F10 的 Q1 差异**: F9/F10 的 Character/WorldSettingSource 是**空实现**（替换 = 填充实现）；F11 的 outline 源是**已实现的 config 通道**（替换 = 迁移数据通道，影响面更大——涉及 `project.config.extra["outline"]` 既有数据），因此 F6 源改造归属更需要评审确认（Q1）。
 
 ---

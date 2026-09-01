@@ -380,7 +380,7 @@ ProjectConfig 使用 Pydantic 模型验证，通过 `model_dump(mode="json")` �
 
 ## 8. 文件结构
 
-遵循 ADR-007 包结构，F1 已实现的文件：
+遵循 ADR-007v2 包结构，F1 已实现的文件：
 
 ```text
 backend/src/inkflow/

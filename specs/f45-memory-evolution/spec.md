@@ -7,7 +7,7 @@
 **所属阶段**: 0.10.0（记忆系统 AI 总结演进，F45），估算 M1 4-6 人天 + M2 6-8 人天（合计 10-14 人天）
 **关联 Issues**: #339（M1 用户级偏好层 + 归属分层 + 跨项目聚合）· #340（M2 语义风格提取——difflib 锚点 → LLM 语义总结）
 **依赖**: ✅ F28 agent-memory（演进基线：project_preferences/memory_events/learner/memory_service/PreferenceSource，PR #242）· ✅ F6 context-service（注入端口 ContextSourceType/SOURCE_LAYER）· ✅ F16 style-service（LLM 模板管线样板 _style_llm_analyzer）· ✅ F32 settings-persistence（app_settings 分层对照）· ✅ #415（LLM 默认模型 deepseek/deepseek-v4-flash，配置唯一默认源）· ✅ F38（CLI 恒 HTTP）· ✅ F34（audit_logs）· ⏳ M2 依赖 M1（#339 → #340）
-**参考 ADR**: adr/ADR-037.md（记忆提取方式：规则化先行 + LLM 第二阶段）、adr/ADR-038.md（memory_learning 默认 false）、adr/ADR-031.md（双模式开关 extra 键）、ADR-027（覆盖率门禁）
+**参考 ADR**: adr/memory-skills/ADR-037.md（记忆提取方式：规则化先行 + LLM 第二阶段）、adr/memory-skills/ADR-038.md（memory_learning 默认 false）、adr/agent/ADR-031.md（双模式开关 extra 键）、ADR-027（覆盖率门禁）
 **状态**: ✅ 已实现（PR #442/#452）
 
 > **Spec 变更**: v1.0→v1.1（2026-08-17 用户拍板固化）：Q1=B（用户级偏好**惰性重算**——删除钩子零成本，查询/collect 时重算 + user-list 幽灵项目过滤，§5.1/§7/§13 联动）· Q2=B（注入前**惰性总结 + 后台异步刷新**——先用旧总结注入不等待 LLM，M2 硬依赖 F44 阶段4 后台任务基建，后台就位前降级同步总结过渡，§5.4/§11 联动）· Q3=A（用户级偏好注入过**显式设定冲突过滤**，§5.6 已覆盖，仅标 ✅）
@@ -44,7 +44,7 @@ F28 事件捕获（用户编辑/确认/拒绝草稿 → memory_events）
 ### 1.3 与既有模块的边界
 
 - **归属边界（M1 核心）**：偏好归属分两层——**项目级**（该项目 difflib 片段 N≥2 → 该项目风格偏好：称谓规则/结构习惯/文风，该项目内每次写作注入）+ **用户级**（多项目 difflib 片段聚合 → 用户通用风格：句长/冗余/叙述对话比例，所有项目注入）。LLM 总结时显式区分「项目特有设定」（留在项目级）与「用户通用风格」（升到用户级）——这是 LLM 语义能力才能做的事（设计定稿 §3.4）。
-- **开关边界**：沿用 F28 `memory_learning` 显式开启铁律（adr/ADR-038.md，默认 false）——false 时 M1/M2 全路径零行为（不捕获/不聚合/不总结/不注入）。
+- **开关边界**：沿用 F28 `memory_learning` 显式开启铁律（adr/memory-skills/ADR-038.md，默认 false）——false 时 M1/M2 全路径零行为（不捕获/不聚合/不总结/不注入）。
 - **注入边界**：抽象偏好仍经 F6 context 端口注入（扩展既有 PreferenceSource，不直接改 system prompt）。
 - **配置边界**：M2 的 LLM 语义总结遵循 #415 拍板——`config.py` 为唯一默认源（`llm_default_model` = deepseek/deepseek-v4-flash），**代码不写第二份默认值**，env 优先覆盖。
 - **明确不含**：向量化检索、偏好自动过期/置信度衰减、GUI 记忆面板（F19 渲染层接入时）、F29 supervisor 记忆消费、编排器长跑证据喂料（F44 咬合，见 §10）。
@@ -313,7 +313,7 @@ inkflow write next --project-id <UUID> --chapter-id <UUID> --outline <文本>
 
 ### 5.2 M1 开关与零行为
 
-沿用 F28 `memory_learning` 读取优先级（请求显式 > extra 键 > 默认 false，adr/ADR-038.md）：
+沿用 F28 `memory_learning` 读取优先级（请求显式 > extra 键 > 默认 false，adr/memory-skills/ADR-038.md）：
 
 - false（默认）→ `aggregate_user_candidates` 不调用、user_preferences 无写入、无用户级注入、无额外审计（零行为，F28 验收判据④同构扩展到 M1）。
 - **零行为可测（RED 契约）**：未开启 memory_learning 的项目编辑草稿 → user_preferences 表无新行、user-list 为空、注入不含用户级条目。
@@ -362,7 +362,7 @@ mock LLM 返回包含「证据集之外偏好」的输出（如证据全为「�
 
 | 层级 | 键/字段 | 默认 | 说明 |
 |------|---------|------|------|
-| 项目配置 | `project.config.extra["memory_learning"]` | false | 复用 F28（adr/ADR-038.md）——M2 总结/注入一并受控 |
+| 项目配置 | `project.config.extra["memory_learning"]` | false | 复用 F28（adr/memory-skills/ADR-038.md）——M2 总结/注入一并受控 |
 | LLM 模型 | `config.llm_default_model` | deepseek/deepseek-v4-flash | #415 拍板：配置文件唯一默认源，代码不写第二份默认值，env 优先 |
 
 > 不新增独立「语义总结开关」（YAGNI）：memory_learning=true 即开启 M1+M2 全链路（差异仅在注入形态——M2 阶段语义总结优先、字面偏好兜底，§5.6）。

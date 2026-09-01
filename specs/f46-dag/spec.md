@@ -7,7 +7,7 @@
 **所属阶段**: 0.9.0（多 Agent 能力里程碑，轨道 A Agent 编排：F42/#268/#269 ✅ → #161 F29 ✅ → **#270 F46**），估算 8-12 人天
 **关联 Issues**: #270（本模块，唯一真相来源）
 **依赖**: ✅ #269 agent_order 层级拓扑（PR #305，F42 §5.3.1 通用节点 + 多入口/终点引擎）· ✅ F42 配置驱动编排（已实现，#299/#305/#308/#309/#315/#314）· ✅ F29 supervisor 动态路由（PR #323，边界 §5.5）· ✅ F26 deepagents 集成层（PR #236）· ✅ F42 #295 自定义 Agent 数据面（RoleTemplate prompt/name + agent_roles 三态字段，agent_relations 引用面复用）· LangGraph 1.2.10（venv 已锁）
-**参考 ADR**: [adr/ADR-035.md](../adr/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5，原 ADR-E）、ADR-006v2（Agent 编排 LangGraph StateGraph）、ADR-015（LangChain 隔离）、ADR-019（编号口径）
+**参考 ADR**: [adr/agent/ADR-035.md](../../adr/agent/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5，原 ADR-E）、ADR-006v2（Agent 编排 LangGraph StateGraph）、ADR-015（LangChain 隔离）、ADR-019（编号口径）
 **状态**: ✅ 已实现（PR #412，2026-08-16）
 
 > **Spec 变更**（v1.0 → v1.1，2026-08-16，待澄清 Q1-Q3 拍板）：用户拍板「按照建议」——Q1=A 三类型全做（sequential + data + conditional）、Q2=A 确定性 gate（关键词匹配「通过/PASS」）、Q3=A 列表式编辑器 + 只读 DAG 预览。正文 §1.2.1/§2.1/§5.2/§5.3.2/§5.3.3 已按 A 方案起草（v1.0 即按建议默认落笔），本次修订仅留痕拍板结果（待澄清区标 ✅ 已确认），正文无实质改动。

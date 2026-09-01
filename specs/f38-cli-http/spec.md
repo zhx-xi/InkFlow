@@ -11,7 +11,7 @@
 >
 > **依赖**: ✅ F30（ensure_kernel + kernel.json 契约）· ✅ F33（CLI 独立产物，spawn 定位复用）· ✅ F7（CLI 全局约定：JSON 信封/退出码/错误码）
 >
-> **参考 ADR**: [ADR-030](../../adr/ADR-030.md)（② D1=A 恒经 HTTP）· [ADR-021](../../adr/ADR-021.md)（内核交付契约）· [ADR-019](../../adr/ADR-019.md)（版本里程碑）
+> **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（② D1=A 恒经 HTTP）· [ADR-021](../../adr/kernel/ADR-021.md)（内核交付契约）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
 >
 > **状态**: ✅ 已实现（PR #213，#169 2026-08-09）
 

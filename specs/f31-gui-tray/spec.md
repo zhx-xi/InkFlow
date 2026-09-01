@@ -9,7 +9,7 @@
 >
 > **依赖**: ✅ F30（kernel.json 契约 + ensure_kernel 语义，PR #171 41013fb）· ✅ F19 #78（Electron 壳：spawn/健康检查/崩溃拉起/回收）· ✅ F19 #106（自绘窗口按钮 IPC：window:close 通道）· ⏳ #152（设置持久化——**归口依赖，本模块用临时内存态，合入后切换**）
 >
-> **参考 ADR**: [ADR-030](../../adr/ADR-030.md)（③ GUI 托盘常驻：关闭→托盘、托盘退出=真退出、单实例、复用内核）· [ADR-021](../../adr/ADR-021.md)（内核进程化：INKFLOW_READY/端口文件/token）· [ADR-019](../../adr/ADR-019.md)（版本里程碑）
+> **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（③ GUI 托盘常驻：关闭→托盘、托盘退出=真退出、单实例、复用内核）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：INKFLOW_READY/端口文件/token）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
 >
 > **状态**: ✅ 已实现（PR #172，#167 2026-08-08）
 

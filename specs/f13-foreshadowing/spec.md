@@ -6,7 +6,7 @@
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第五个模块，估算 2-3 人天）
 > **关联 Issues**: [#43](https://github.com/zhx-xi/InkFlow/issues/43)
 > **依赖**: F1 ✅（前置）；F6 ✅（上下文注入契约，ForeshadowingSource 替换，见 §5/§11）；F12 ✅（硬依赖：event_id 事件锚点，timeline_events 表 + TimelineRepositoryProtocol 事件校验，**F12 须先合入 main**，见 §11）；F2（边界声明，非硬依赖，见 §11）；F5 — **不依赖**（F13 无 LLM，见 §1/§5）
-> **参考 ADR**: [ADR-001](../../adr/ADR-001.md) (模块化单体), [ADR-002](../../adr/ADR-002.md) (六边形分层), [ADR-003](../../adr/ADR-003.md) (Repository), [ADR-004](../../adr/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/ADR-007v2.md) (包结构), [ADR-010](../../adr/ADR-010.md) (上下文分层), [ADR-012](../../adr/ADR-012.md) (错误处理), [ADR-016](../../adr/ADR-016.md) (loguru), [ADR-017](../../adr/ADR-017.md) (CI 门禁), [ADR-018](../../adr/ADR-018.md) (测试分层), [ADR-019](../../adr/ADR-019.md) (版本里程碑)
+> **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 > **状态**: ✅ 已实现（PR #64）
 
 >
@@ -955,7 +955,7 @@ F13 被依赖:
                             索引内容来自本模块伏笔档案
 ```
 
-> ⚠️ **编号口径说明**: F6 spec §3.2/§10 与 `infrastructure/context/sources.py` 中 ForeshadowingSource 注释「F14 伏笔管理数据源」、`domain/models/context.py` 中「空实现 (F14 Phase 2)」均为 **ADR-019 之前的旧编号**（旧口径 F14=伏笔）；按 [ADR-019](../../adr/ADR-019.md) 现行口径 **F13 = 伏笔管理**、F14 = 统一提取。本 spec 及后续 F 模块一律以 ADR-019 为准（与 F9/F10/F12 spec §11 同一声明）。F13 实施时同步更新 sources.py 模块 docstring 中的旧编号注释。
+> ⚠️ **编号口径说明**: F6 spec §3.2/§10 与 `infrastructure/context/sources.py` 中 ForeshadowingSource 注释「F14 伏笔管理数据源」、`domain/models/context.py` 中「空实现 (F14 Phase 2)」均为 **ADR-019 之前的旧编号**（旧口径 F14=伏笔）；按 [ADR-019](../../adr/packaging/ADR-019.md) 现行口径 **F13 = 伏笔管理**、F14 = 统一提取。本 spec 及后续 F 模块一律以 ADR-019 为准（与 F9/F10/F12 spec §11 同一声明）。F13 实施时同步更新 sources.py 模块 docstring 中的旧编号注释。
 
 > 与 F9/F10/F11/F12 的依赖面差异：F11 依赖 F1+F5（生成需要 LLM）、F12 仅依赖 F1；**F13 依赖 F1+F6（数据源替换）+F12（事件锚点硬依赖）**——是创作工具链中首个「实体模块 + 自带上下文集成 + 跨模块实体引用」的组合依赖面。
 

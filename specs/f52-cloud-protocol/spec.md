@@ -2,11 +2,11 @@
 > **端**: backend
 
 > **Spec 版本**: 1.1 | **日期**: 2026-08-01 | **依据**: PRD v2.2 §6.5, Constitution P1-P6
-> **Spec 变更**: v1.1（2026-08-02）— UserProtocol/SyncProtocol 云端语义修订（多用户数据隔离 / 云存档·远程在线），MCP 云端传输后移（P2+）；依据 Issue #65 产品形态批量拍板 + [ADR-024](../../adr/ADR-024.md)（云架构拓扑）；**接口签名全部不变**
+> **Spec 变更**: v1.1（2026-08-02）— UserProtocol/SyncProtocol 云端语义修订（多用户数据隔离 / 云存档·远程在线），MCP 云端传输后移（P2+）；依据 Issue #65 产品形态批量拍板 + [ADR-024](../../adr/architecture/ADR-024.md)（云架构拓扑）；**接口签名全部不变**
 > **所属阶段**: Phase 1 补漏（Phase 1 Gate G4 拦截项 — 评审 `design/phase1-gate-review-2026-08-01.md` §3.1）
 > **关联 Issues**: [#34](https://github.com/zhx-xi/InkFlow/issues/34)（P0-11 云端接口 Protocol 定义）；[#65](https://github.com/zhx-xi/InkFlow/issues/65)（2026-08-02 产品形态批量拍板，v1.1 语义修订依据）
 > **依赖**: 无（纯接口定义，不依赖任何已实现模块）
-> **参考 ADR**: [ADR-001](../../adr/ADR-001.md)（模块化单体 + 接口隔离）, [ADR-002](../../adr/ADR-002.md)（六边形分层）, [ADR-024](../../adr/ADR-024.md)（云架构拓扑）
+> **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md)（模块化单体 + 接口隔离）, [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）, [ADR-024](../../adr/architecture/ADR-024.md)（云架构拓扑）
 > **状态**: ✅ 已实现（PR #37）
 
 ---

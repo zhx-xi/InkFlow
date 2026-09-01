@@ -8,7 +8,7 @@ DB 表，ADR-039 #522）：content 为完整 SKILL.md（frontmatter + markdown
 description 由后端解析 frontmatter 填充），SkillUpdate 全字段可选
 （exclude_unset 语义，同 F1/F13）。
 
-依据: specs/f39-multi-agent/spec.md §2.2 + adr/ADR-039.md。
+依据: specs/f39-multi-agent/spec.md §2.2 + adr/memory-skills/ADR-039.md。
 领域层保持纯净：仅依赖 Pydantic v2，不感知 ORM / 框架。
 """
 

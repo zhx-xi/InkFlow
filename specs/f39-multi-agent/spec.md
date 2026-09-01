@@ -7,7 +7,7 @@
 **所属阶段**: 0.9.0（多 Agent 能力一期），估算 10-15 人天（F39 后端 5-7 + F40 前端 2-3 + F41 前端 3-5，F40/F41 依赖 F39 可并行）
 **关联 Issues**: [#258](https://github.com/zhx-xi/InkFlow/issues/258)（F39 后端核心，W2 启动）· [#259](https://github.com/zhx-xi/InkFlow/issues/259)（F40 skill 上传绑定，W3，🔗#258）· [#260](https://github.com/zhx-xi/InkFlow/issues/260)（F41 自定义 Agent 编辑，W3，🔗#258）
 **依赖**: ✅ F26 工具注册表（已交付）· ✅ F27 agentic writer（已交付）· ✅ F19 AgentTemplate 实体模式（已交付）· ✅ #327 SQLite foreign_keys=ON（生产级联生效）
-**参考 ADR**: [ADR-015](../../adr/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/ADR-019.md)（编号口径）· [adr/ADR-035.md](../../adr/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5）· [ADR-022](../../adr/ADR-022.md)（skills 包分发型，与本 spec Skill 实体不同域，见 §1.3）
+**参考 ADR**: [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/packaging/ADR-019.md)（编号口径）· [adr/agent/ADR-035.md](../../adr/agent/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5）· [ADR-022](../../adr/memory-skills/ADR-022.md)（skills 包分发型，与本 spec Skill 实体不同域，见 §1.3）
 **状态**: ✅ 已实现（F39 后端 PR #403；F40 PR #408；F41 PR #407，2026-08-16）
 
 > **Spec 变更**（v1.1 → v1.2，2026-08-20，#522 skill 存储架构重构去表）：① Skill 存储从 SQLite 表改为文件系统真源 `data_dir/skills/<name>/SKILL.md`（ADR-039）——§2.2/§3/§8/§10/§12 同步；② seed 语义改为 `ensure_builtin_skills(skills_root)`（同步回补）+ `migrate_skills_from_db(session, skills_root)`（一次性迁移）+ `seed_builtin_agents`（skill_ids=目录名）；③ 内置 6 skill 出厂名改英文 slug（N2 合规，§5.3 表）。
