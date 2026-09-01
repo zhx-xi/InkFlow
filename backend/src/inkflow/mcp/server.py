@@ -33,7 +33,18 @@ async def call_tool_result(
     """tools/call handler 核心：查工具 → func(**arguments) → 信封 → isError。"""
     tool = next((t for t in tools if t.spec.name == name), None)
     if tool is None:
-        text = json.dumps({"ok": False, "error": f"未知工具: {name}"}, ensure_ascii=False)
+        names = sorted(t.spec.name for t in tools)
+        text = json.dumps(
+            {
+                "ok": False,
+                "error": {
+                    "code": "UNKNOWN_TOOL",
+                    "message": f"未知工具: {name}",
+                    "hint": f"可用工具: {', '.join(names)}（可经 tool_search 查询）",
+                },
+            },
+            ensure_ascii=False,
+        )
         return mt.CallToolResult(content=[mt.TextContent(type="text", text=text)], is_error=True)
     text = await tool.func(**(arguments or {}))
     try:

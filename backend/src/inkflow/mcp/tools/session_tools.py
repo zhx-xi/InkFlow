@@ -44,15 +44,23 @@ def _ok(data: object) -> str:
     return json.dumps({"ok": True, "data": data}, ensure_ascii=False)
 
 
-def _fail(exc: Exception) -> str:
-    """失败信封：{"ok": False, "error": "<异常消息>"}；str(exc) 为空时兜底异常类型（#634）。"""
-    message = str(exc) or f"{type(exc).__name__}: 内核调用失败"
-    return json.dumps({"ok": False, "error": message}, ensure_ascii=False)
+def _error(code: str, message: str, hint: str) -> str:
+    """结构化失败信封：error 为对象 {code, message, hint}（ADR-048 §4，LLM 自愈）。"""
+    return json.dumps(
+        {"ok": False, "error": {"code": code, "message": message, "hint": hint}},
+        ensure_ascii=False,
+    )
 
 
-def _fail_text(text: str) -> str:
-    """失败信封：显式错误文本（如 "NOT_FOUND: ..."）。"""
-    return json.dumps({"ok": False, "error": text}, ensure_ascii=False)
+def _hint_for(code: str) -> str:
+    """按错误码返回可修复提示（ADR-048 §4，LLM 自愈）。"""
+    hints = {
+        "NOT_FOUND": "请先经对应的 list 工具确认目标存在后再操作",
+        "VALIDATION_ERROR": "请补充/修正必填字段后重试",
+        "CONFIG_ERROR": "请重启内核重新获取 token 后重试",
+        "LLM_ERROR": "请检查 provider/API key 配置后重试",
+    }
+    return hints.get(code, "请检查参数与后端状态后重试")
 
 
 def _compact(mapping: dict[str, object]) -> dict[str, object]:
@@ -123,7 +131,11 @@ def build_manage_session_tool() -> MCPTool:
         try:
             params = ManageSessionParams.model_validate(kwargs)
         except ValidationError as exc:
-            return _fail(exc)
+            return _error(
+                "INVALID_ARGS",
+                str(exc),
+                "请检查 action 枚举与必填字段（可经 tool_search 查询合法值），修正后重试",
+            )
         try:
             from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
             from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
@@ -134,11 +146,15 @@ def build_manage_session_tool() -> MCPTool:
             return _ok(data)
         except HttpApiError as exc:
             code, message = map_http_error(exc.status_code, exc.detail, exc.code)
-            return _fail_text(f"{code}: {message}")
+            return _error(code, message, _hint_for(code))
         except KernelStartupError as exc:
-            return _fail_text(f"内核启动失败: {exc}")
+            return _error("KERNEL_ERROR", f"内核启动失败: {exc}", "请重新拉起内核再试")
         except Exception as exc:
-            return _fail(exc)
+            return _error(
+                "INTERNAL_ERROR",
+                str(exc) or f"{type(exc).__name__}: 内核调用失败",
+                "请携带完整上下文重试；若持续失败报告 API 层",
+            )
 
     return MCPTool(
         spec=ToolSpec(
@@ -157,7 +173,11 @@ def build_tool_search_tool() -> MCPTool:
         try:
             ToolSearchParams.model_validate(kwargs)
         except ValidationError as exc:
-            return _fail(exc)
+            return _error(
+                "INVALID_ARGS",
+                str(exc),
+                "请检查 action 枚举与必填字段（可经 tool_search 查询合法值），修正后重试",
+            )
         try:
             from inkflow.mcp.tools import MCP_TOOL_REGISTRY  # 延迟 import：避免包初始化循环
 
@@ -171,7 +191,11 @@ def build_tool_search_tool() -> MCPTool:
             ]
             return _ok(data)
         except Exception as exc:
-            return _fail(exc)
+            return _error(
+                "INTERNAL_ERROR",
+                str(exc) or f"{type(exc).__name__}: 内核调用失败",
+                "请携带完整上下文重试；若持续失败报告 API 层",
+            )
 
     return MCPTool(
         spec=ToolSpec(

@@ -76,7 +76,9 @@ class SQLiteProjectRepository:
         return _orm_to_domain(orm)
 
     async def get(self, project_id: int) -> Project | None:
-        """按 ID 查询项目（排除软删除记录）."""
+        """按 ID 查询项目（排除软删除记录）。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
+        if project_id < -2**63 or project_id >= 2**63:
+            return None
         stmt = select(ProjectORM).where(
             ProjectORM.id == project_id,
             ~ProjectORM.is_deleted,
