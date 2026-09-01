@@ -146,9 +146,9 @@
 | [ADR-002](../adr/architecture/ADR-002.md) | Clean/Hexagonal 风格分层 | ✅ 已接受 |
 | [ADR-003](../adr/database/ADR-003.md) | Repository 模式封装 SQLAlchemy | ✅ 已接受 |
 | [ADR-004](../adr/database/ADR-004.md) | Pydantic v2 作为统一数据契约 | ✅ 已接受 |
-| [ADR-005](../adr/llm/ADR-005v2.md) | LLM Provider — LiteLLM 统一对接 | ⛔ 已弃用（被 ADR-005v2 取代） |
+| [ADR-005(→v2)](../adr/llm/ADR-005v2.md) | LLM Provider — LiteLLM 统一对接 | ⛔ 已弃用（被 ADR-005v2 取代） |
 | [ADR-005v2](../adr/llm/ADR-005v2.md) | LLM Provider — LangChain ChatLiteLLM | ✅ 已接受 |
-| [ADR-006](../adr/agent/ADR-006v2.md) | Agent 编排 — 管道链模式 | ⛔ 已弃用（被 ADR-006v2 取代） |
+| [ADR-006(→v2)](../adr/agent/ADR-006v2.md) | Agent 编排 — 管道链模式 | ⛔ 已弃用（被 ADR-006v2 取代） |
 | [ADR-006v2](../adr/agent/ADR-006v2.md) | Agent 编排 — LangGraph StateGraph | ✅ 已接受 |
 | [ADR-007v2](../adr/architecture/ADR-007v2.md) | 项目包结构（infrastructure 按技术分目录） | ✅ 已接受 |
 | [ADR-008](../adr/service/ADR-008.md) | 配置管理 — Pydantic Settings 分层配置 | ✅ 已接受 |

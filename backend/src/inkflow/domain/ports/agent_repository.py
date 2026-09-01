@@ -5,7 +5,7 @@ AgentRepositoryProtocol 定义 Agent 的 CRUD 操作与 skill 反向查询
 （SQLite / mock / memory）实现此 Protocol。list /
 list_agents_by_skill 返回领域 Agent 对象列表（非 dict）。
 
-依据: specs/f39-multi-agent/spec.md §2.1 + §5.6 + adr/ADR-039.md
+依据: specs/f39-multi-agent/spec.md §2.1 + §5.6 + adr/memory-skills/ADR-039.md
 （#522：skill 引用 = 目录名，list_agents_by_skill 入参为 skill_name）。
 """
 
