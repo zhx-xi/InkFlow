@@ -165,3 +165,18 @@ def test_known_keys_with_decrypt_fail_still_redacts_by_regex():
     result = redact_secrets(SK_KEY, [])
     assert SK_KEY not in result
     assert "sk-****" in result
+
+
+def test_known_key_escaped_form_is_redacted():
+    """D：已存 key 以全 `\\uXXXX` 转义形态出现在 prompt → unescape 后 known_keys 整串替换。
+
+    评审发现（#875 只读评审）的残余缺口：known_keys replace 若先于 unescape，则
+    转义形态的 key 无法被 known_keys 命中（长串正则阈值外也漏）→ 泄漏。
+    修复方向：unescape 先于 known_keys（#632 的「known_keys 先于长串正则」仍保持）。
+    """
+    key = ("n" * 18)  # 18 位 <24（长串正则阈值外），非 sk-/Bearer 形态，仅 known_keys 能遮蔽
+    escaped = "".join("\\u" + format(ord(c), "04x") for c in key)  # 全转义形态
+    prompt = "token=" + escaped
+    result = redact_secrets(prompt, [key])
+    assert key not in result
+    assert "****" in result
