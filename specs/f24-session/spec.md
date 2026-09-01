@@ -11,7 +11,7 @@
 >
 > **依赖**: ✅ F1（项目实体，project_id 可空引用）· ⏳ F20（MCP Server，本模块是被依赖方）· ⏳ F3（写作会话上下文快照，Phase 2+ 联动）
 >
-> **参考 ADR**: [ADR-019](../../adr/ADR-019.md)（版本里程碑/编号口径）· [ADR-018](../../adr/ADR-018.md)（测试分层）· [ADR-004](../../adr/ADR-004.md)（领域+ORM 双模型）· [ADR-012](../../adr/ADR-012.md)（错误处理）
+> **参考 ADR**: [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑/编号口径）· [ADR-018](../../adr/test-ci/ADR-018.md)（测试分层）· [ADR-004](../../adr/database/ADR-004.md)（领域+ORM 双模型）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）
 >
 > **状态**: ✅ 已实现（PR #157，#51 2026-08-07）
 

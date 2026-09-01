@@ -86,7 +86,7 @@ uv run inkflow serve
 
 ![InkFlow 系统架构图](design/images/inkflow-architecture.png)
 
-**2.0.0 云端目标架构（云存档 + 异地写作，规划中，[ADR-024](adr/ADR-024.md)）**：
+**2.0.0 云端目标架构（云存档 + 异地写作，规划中，[ADR-024](adr/architecture/ADR-024.md)）**：
 
 ![InkFlow 2.0.0 云端目标架构图](design/images/inkflow-cloud-architecture-2.0.0.png)
 

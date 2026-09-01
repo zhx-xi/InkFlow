@@ -11,7 +11,7 @@
 >
 > **依赖**: ✅ F19（serve 命令 + INKFLOW_READY 交付契约 + `--port-file` 原子写入）· ✅ F1（config.data_dir = %APPDATA%\InkFlow）· ⏳ 无
 >
-> **参考 ADR**: [ADR-030](../../adr/ADR-030.md)（本地内核服务化：kernel.json + ensure_kernel）· [ADR-021](../../adr/ADR-021.md)（内核进程化：INKFLOW_READY/端口文件/token）· [ADR-019](../../adr/ADR-019.md)（版本里程碑）
+> **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（本地内核服务化：kernel.json + ensure_kernel）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：INKFLOW_READY/端口文件/token）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
 >
 > **状态**: ✅ 已实现（PR #171，#166 2026-08-08）
 

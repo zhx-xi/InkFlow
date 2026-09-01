@@ -11,7 +11,7 @@
 > **所属阶段**: 0.3.0 里程碑（Issue #69 拆分 3 子任务：#77 内核进程化 / #78 Electron 壳 / #79 React 渲染层；#98 UI 打磨为 M8 补做）
 > **关联 Issues**: [#69](https://github.com/zhx-xi/InkFlow/issues/69)（父）· [#77](https://github.com/zhx-xi/InkFlow/issues/77)（子任务 A，本章）· [#78](https://github.com/zhx-xi/InkFlow/issues/78)（子任务 B）· [#79](https://github.com/zhx-xi/InkFlow/issues/79)（子任务 C）· [#98](https://github.com/zhx-xi/InkFlow/issues/98)（子任务 D，本章）
 > **依赖**: 无（#77 可独立开发验证，不需要 GUI）；#78 依赖本章交付格式（端口文件/token 契约）；#79 依赖 #50 ✅（F23 SSE，PR #83）与 #78；#98 依赖 #79 ✅（渲染层已合入，本任务在其上纯前端打磨）
-> **参考 ADR**: [ADR-003](../../adr/ADR-003.md)（SQLite WAL 基础）、[ADR-004](../../adr/ADR-004.md)（Pydantic 契约）、[ADR-011](../../adr/ADR-011.md)（异步无阻塞）、[ADR-019](../../adr/ADR-019.md)（版本里程碑 v2）、[ADR-020](../../adr/ADR-020.md)（单机 GUI Electron）、[ADR-021](../../adr/ADR-021.md)（本地内核进程化）、[ADR-025](../../adr/ADR-025.md)（依赖锁定）
+> **参考 ADR**: [ADR-003](../../adr/database/ADR-003.md)（SQLite WAL 基础）、[ADR-004](../../adr/database/ADR-004.md)（Pydantic 契约）、[ADR-011](../../adr/architecture/ADR-011.md)（异步无阻塞）、[ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 v2）、[ADR-020](../../adr/gui/ADR-020.md)（单机 GUI Electron）、[ADR-021](../../adr/kernel/ADR-021.md)（本地内核进程化）、[ADR-025](../../adr/architecture/ADR-025.md)（依赖锁定）
 > **状态**: §2-§8 ✅ 已合入；§9 ✅ 已合入（#107）
 
 >

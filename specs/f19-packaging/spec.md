@@ -5,7 +5,7 @@
 > **所属阶段**: 0.4.0 里程碑（Issue #48，估算 4-6 人天；体积评审后追加 T0 瘦身与 B+ 装配，见 §3/§5）
 > **关联 Issues**: [#48](https://github.com/zhx-xi/InkFlow/issues/48)（本任务）· [#70](https://github.com/zhx-xi/InkFlow/issues/70)（F19-skills，并行无关）· [#137](https://github.com/zhx-xi/InkFlow/issues/137)（Tauri 2 体积优化专项，2.0.0，本 spec §10 不在范围）
 > **依赖**: #69 ✅（F19-GUI 已合入——内核进程化 #77 PR #85 / Electron 壳 #78 PR #95 / 渲染层 #79 PR #97 及其后子任务 #105/#106/#107）；#50 ✅（F23 SSE，PR #83）；#70 ⏳（skills 包，并行 worktree 无代码依赖）
-> **参考 ADR**: [ADR-013](../../adr/ADR-013.md)（RAG 首次落地）· [ADR-019](../../adr/ADR-019.md)（版本里程碑 v2：0.4.0 = 打包；skills 后移至 1.0.0，2026-08-06 拍板 #70）· [ADR-020](../../adr/ADR-020.md)（Electron 选型 + electron-builder 打包）· [ADR-021](../../adr/ADR-021.md)（内核进程化：resources/kernel/inkflow.exe 生命周期）· [ADR-025](../../adr/ADR-025.md)（依赖锁定 uv.lock/pnpm-lock）
+> **参考 ADR**: [ADR-013](../../adr/llm/ADR-013.md)（RAG 首次落地）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 v2：0.4.0 = 打包；skills 后移至 1.0.0，2026-08-06 拍板 #70）· [ADR-020](../../adr/gui/ADR-020.md)（Electron 选型 + electron-builder 打包）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：resources/kernel/inkflow.exe 生命周期）· [ADR-025](../../adr/architecture/ADR-025.md)（依赖锁定 uv.lock/pnpm-lock）
 > **状态**: ✅ 已实现（PR #144 交付 + PR #145 发布门禁，v0.4.0 2026-08-07 正式发布）
 
 >
@@ -555,7 +555,7 @@ git tag v0.4.0 && git push origin v0.4.0    # 触发 release.yml
 | `frontend/packages/electron/electron-builder.yml` | 启用 extraResources + zip target + compression maximum | §6.2 |
 | `frontend/pnpm-lock.yaml` | pnpm install 同步 | §6.1 |
 | `AGENTS.md` | 0.4.0 里程碑回写（收尾，Phase 8） | — |
-| `adr/ADR-020.md` | 追加 Tauri #137 专项引用（收尾） | — |
+| `adr/gui/ADR-020.md` | 追加 Tauri #137 专项引用（收尾） | — |
 
 ### 8.3 不修改（明确声明）
 

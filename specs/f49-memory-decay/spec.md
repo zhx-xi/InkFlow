@@ -7,7 +7,7 @@
 **所属阶段**: 0.12.0（长期记忆衰减，F49），估算 ① 3-5 人天 + ② 4-6 人天 + ③ 3-5 人天（合计 10-16 人天）
 **关联 Issues**: #617（① 后端·时间衰减 + 活跃时钟）· #618（② 后端·显式覆盖 + LLM 冲突判定）· #619（③ 前端 GUI + summary remove 端点）
 **依赖**: ✅ F28 agent-memory（project_preferences / user_preferences / memory_events / preference_learner / memory_service / PreferenceSource，PR #242）· ✅ F45 memory-evolution（M1 用户级偏好层 + M2 语义总结，semantic_summarizer / semantic_summaries，PR #442/#452）· ✅ F6 context-service（注入端口 ContextSourceType / PreferenceSource）· ✅ F32 settings-persistence（app_settings 分层对照）· ✅ #415（LLM 默认模型唯一默认源）· ✅ F38（CLI 恒 HTTP）· ✅ F34（audit_logs）· ⏳ ③ 依赖 ①②
-**参考 ADR**: adr/ADR-037.md（记忆提取：规则化先行 + LLM 第二阶段）、adr/ADR-038.md（memory_learning 默认 false）、adr/ADR-031.md（双模式开关 extra 键）、ADR-027（覆盖率门禁）
+**参考 ADR**: adr/memory-skills/ADR-037.md（记忆提取：规则化先行 + LLM 第二阶段）、adr/memory-skills/ADR-038.md（memory_learning 默认 false）、adr/agent/ADR-031.md（双模式开关 extra 键）、ADR-027（覆盖率门禁）
 **状态**: 待实现 🔲
 
 > **Spec 变更**: v1.1（2026-08-23 用户拍板固化）：Q1=A（活跃基准落 projects 表新列）/ Q2=B（memory_learning=false 仍可显式删除总结，越闸）/ Q3=A（list 全量 + injection 排除 superseded + LLM 判定失败降级审计）；§12 新增 D7-D9；§7/§3.4/§5.3 交叉引用更新。
@@ -36,7 +36,7 @@ F49 交付 F28/F45 长期记忆的**遗忘机制**：当前记忆只增量累积
 
 ### 1.2 与既有模块的边界
 
-- **开关边界**：沿用 `memory_learning` 显式开启铁律（adr/ADR-038.md，默认 false）——false 时时间衰减/显式覆盖/summary 删除全路径零行为（不算分/不判定/不注入）。
+- **开关边界**：沿用 `memory_learning` 显式开启铁律（adr/memory-skills/ADR-038.md，默认 false）——false 时时间衰减/显式覆盖/summary 删除全路径零行为（不算分/不判定/不注入）。
 - **衰减阈值边界**：score 低于阈值（默认 0.05）不再注入——**不物理删除**（count 证据保留），可查可恢复。
 - **注入边界**：随时间衰减的 score 与 LLM 判定的 `superseded` 都在注入读路径（`get_preferences_for_injection` / `get_user_preferences_for_injection`）生效，经既有 PreferenceSource 注入，不直接改 system prompt。
 - **配置边界**：`memory_decay_enabled` / `memory_decay_half_life` 落在 `project.config.extra`（与 `memory_learning` 同层，详见 §2.2）。

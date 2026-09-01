@@ -1,6 +1,6 @@
 # InkFlow 后端（Python 内核）
 
-InkFlow 的本地 AI 写作内核：领域逻辑 + LLM/Agent/RAG 基础设施 + CLI + REST API，以模块化单体 + Clean Architecture 组织（[ADR-001/002](adr/README.md)）。
+InkFlow 的本地 AI 写作内核：领域逻辑 + LLM/Agent/RAG 基础设施 + CLI + REST API，以模块化单体 + Clean Architecture 组织（[ADR-001/002](../adr/README.md)）。
 
 ## 目录结构
 

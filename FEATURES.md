@@ -27,7 +27,7 @@
 | F5 `llm_service` | LLM Provider 适配（OpenAI/DeepSeek/…，ChatOpenAI 兼容路由）；API Key AES-256-GCM 加密存储 | `inkflow llm list/set-key` | 配置侧（无 REST 端点） | [`specs/f5-llm-provider/`](specs/f5-llm-provider/spec.md) | ✅ PR #16 |
 | F6 `context_service` | 上下文管理：角色/世界观/伏笔/时间线注入 + 章节摘要（分层 Token 预算） | 经写作管道自动装配 | `/api/v1/context/assemble` · `/chapters/{id}/summary` | [`specs/f6-context/`](specs/f6-context/spec.md) | ✅ PR #27 |
 | F7 `cli_interface` | 全局 CLI 约定：JSON 信封 / 退出码 / 错误码（`--json` 全局选项） | 所有 `inkflow` 命令 | — | [`specs/f7-cli/`](specs/f7-cli/spec.md) | ✅ PR #28 |
-| F8 CI 治理 | 测试分层（unit / integration / CLI）+ CI 门禁（ruff + mypy + pytest + 覆盖率） | — | — | [ADR-018](adr/ADR-018.md)（无独立 spec） | ✅ PRs #24+#25 |
+| F8 CI 治理 | 测试分层（unit / integration / CLI）+ CI 门禁（ruff + mypy + pytest + 覆盖率） | — | — | [ADR-018](adr/test-ci/ADR-018.md)（无独立 spec） | ✅ PRs #24+#25 |
 | P0-11 云端 Protocol | 云端接口端口契约：Auth / Database / Storage / User / Sync / MCPTransport（Protocol 定义，实现留云端里程碑） | — | 端口定义（domain/ports/cloud/） | [`specs/f52-cloud-protocol/`](specs/f52-cloud-protocol/spec.md) | ✅ PR #37 |
 
 ### 1.2 创作工具链（0.2.0，F9-F16，8 模块全交付 ✅）
@@ -188,7 +188,7 @@
 | 云端总：云存档 + 异地写作 | **2.0.0** | 用户 API + Admin 后台 + GUI 远程模式（PostgreSQL + JWT + BYOK；无 CRDT，LWW + 修订历史） | P0-11 协议（已就绪） | [#71](https://github.com/zhx-xi/InkFlow/issues/71) | 🔜 已建 issue |
 
 > F17 空置（PRD §6.2 标题残留编号，不使用）。
-> 版本归属以 [ADR-019 v7](adr/ADR-019.md) 为准。
+> 版本归属以 [ADR-019 v7](adr/packaging/ADR-019.md) 为准。
 
 ---
 
@@ -227,7 +227,7 @@
 
 ## 五、功能清单维护纪律
 
-1. **feature 合入后**（无论实现/文档）：同步更新 ① 本文件对应行（✅ + PR 编号）② [AGENTS.md](AGENTS.md) 功能表 ③ [ADR-019](adr/ADR-019.md) 版本表 ④ spec 头部状态行 ⑤ [README.md](README.md) 里程碑表/功能列表——五项缺一即视为收尾不完整。
+1. **feature 合入后**（无论实现/文档）：同步更新 ① 本文件对应行（✅ + PR 编号）② [AGENTS.md](AGENTS.md) 功能表 ③ [ADR-019](adr/packaging/ADR-019.md) 版本表 ④ spec 头部状态行 ⑤ [README.md](README.md) 里程碑表/功能列表——五项缺一即视为收尾不完整。
 2. **新拆 issue**：本文件「规划中功能」表回填 issue 编号与依赖。
 3. **范围变更**：里程碑内容变更必须用户拍板后才更新本文件（先例：2026-08-02 打包提前提案被否决，维持 ADR-019 v2）。
 4. **实施前必读**：agent 开始任何 feature 前先读本文件（+ AGENTS.md + 对应 spec），确认边界、状态与依赖。
