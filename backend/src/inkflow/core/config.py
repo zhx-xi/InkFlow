@@ -158,6 +158,13 @@ class InkFlowConfig(BaseSettings):
     llm_request_timeout: int = 300
     """LLM API 请求超时（秒）。"""
 
+    # ---- 确定性 fake LLM（ADR-047 S0）：INKFLOW_LLM_BASE_URL 指向 fake server ----
+    llm_base_url: str = ""
+    """LLM API 基础地址（测试用 fake server）。为空 = 走各 provider 真实 base_url（ADR-005v2）。"""
+
+    e2e_llm_mode: Literal["fake", "real"] = "fake"
+    """E2E/黑盒测试 LLM 模式：fake（确定性，默认）/ real（真实模型，ADR-026）。"""
+
     # ---- LLM Provider API Keys（通过环境变量注入，不落盘） ----
     openai_api_key: str = ""
     deepseek_api_key: str = ""

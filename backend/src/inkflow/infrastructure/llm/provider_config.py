@@ -53,6 +53,9 @@ _BUILTIN_PROVIDERS: dict[str, str | None] = {
     "deepseek": config.deepseek_api_key or None,
     "zhipu": config.zhipu_api_key or None,
     "ollama": "ollama",  # Ollama 本地运行，无需真实 API Key
+    # 注（ADR-047 S0）："fake" 故意不在 _BUILTIN_PROVIDERS —— seed_builtin_providers
+    # 遍历本表把 fake 当 GUI 内建 provider 持久化（污染 provider_configs 表）。
+    # fake 的解析由 get_provider_config 顶部短接（provider == "fake"）完成，无需注册。
 }
 
 
@@ -168,6 +171,23 @@ def get_provider_config(provider: str, api_key: str | None = None) -> LLMProvide
     Raises:
         ValueError: Provider 的 API Key 未配置。
     """
+    # ADR-047 S0：fake provider 短接——INKFLOW_LLM_BASE_URL 指向 fake server。
+    # fake 无真实 API key，不查注册表（无 DB 依赖）；key 用占位符，避免 ValueError。
+    if provider == "fake":
+        if config.llm_base_url:
+            return LLMProviderConfig(
+                provider="fake",
+                api_key="placeholder-fake-key",
+                base_url=config.llm_base_url,
+                default_model="fake-model",
+                models=[],
+                max_retries=config.llm_max_retries,
+                timeout=config.llm_request_timeout,
+            )
+        raise ValueError(
+            "fake provider requires INKFLOW_LLM_BASE_URL to be set (ADR-047 S0)"
+        )
+
     resolved_key = (
         api_key if api_key is not None else os.environ.get(f"INKFLOW_{provider.upper()}_API_KEY")
     )

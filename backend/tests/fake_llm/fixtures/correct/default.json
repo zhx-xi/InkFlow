@@ -1,0 +1,1 @@
+{"kind": "correct", "status_code": 200, "content": "这是确定性 fake 响应", "finish_reason": "stop"}
