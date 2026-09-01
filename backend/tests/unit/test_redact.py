@@ -101,8 +101,67 @@ def test_b_known_key_dot_separated_no_tail_leak():
     整串替换必须先于长串正则兜底，保证已存密钥无论是否被部分命中都完整遮蔽。
     """
     key = ("a" * 32) + "." + ("b" * 16)  # <32hex>.<16char> 已存密钥形态
-    tail = ("b" * 16)
+    tail = "b" * 16
     prompt = "Authorization: " + key
     result = redact_secrets(prompt, [key])
     assert key not in result
     assert tail not in result
+
+
+# ── S3a 脱敏矩阵补测（非功能安全 C5②，ADR-047 口径） ──────────────────
+# 上述 A/B 契约只覆盖「裸 sk-/Bearer/>=24 连续串」与「known_keys 子串」。
+# S3a 补 4 类防御边界：JSON 转义 key / 大小写变体 / base64 blob / key 拆词。
+# 样例一律模块级拼接构造（源码不出连续敏感形态，防上层输出脱敏污染）。
+
+# JSON 转义 key：key 的字母以 \uXXXX 形态写在 JSON 字符串里（真实 LLM prompt
+# 常把 key 塞进 JSON；非 ASCII/控制字符会被 json.dumps 转义成 \uXXXX）。
+_JSON_ESC_A = "\\" + "u0041"  # \u0041 = 'A'
+JSON_ESC_KEY = "sk-" + _JSON_ESC_A + ("b" * 15)  # sk-\u0041bbbbbbbbbbbbbbb（A 被转义）
+# 大小写变体：SK-（首字母大写）——A 正则为小写 sk-，应不区分大小写遮蔽。
+SK_UPPER_KEY = "SK-" + ("c" * 16)
+# base64 形态：短 base64（<24，A 长串正则阈值外）但属已存 key → known_keys 遮蔽。
+B64_KEY = "d" * 20  # 20 位 <24，A 长串正则不命中；仅 known_keys 能遮蔽
+
+
+def test_json_escaped_key_is_redacted():
+    """C：JSON 字符串里的 key 若被 unicode 转义（\\uXXXX）破坏连续串 → 仍应遮蔽整个 key。
+
+    当前 A 正则 `sk-[A-Za-z0-9_-]{12,}` 要求 sk- 后紧跟 >=12 位连续字符，
+    `sk-\\u0041bbb...` 中 `\\u` 打断连续匹配 → 当前实现泄漏（RED）。
+    修复方向：先做 `\\uXXXX` unescape 归一化再匹配（安全：不破坏普通文本）。
+    """
+    result = redact_secrets(JSON_ESC_KEY, [])
+    assert JSON_ESC_KEY not in result
+    assert "sk-****" in result
+
+
+def test_uppercase_sk_variant_is_redacted():
+    """C：SK-（首字母大写）形态，不应因 A 正则为小写 sk- 而泄漏。
+
+    短 key（<24，A 长串正则阈值外）当前仅小写 sk- 能命中 → 大写泄漏（RED）。
+    修复方向：`[Ss][Kk]-` 不区分大小写匹配。
+    """
+    result = redact_secrets("Authorization: " + SK_UPPER_KEY, [])
+    assert SK_UPPER_KEY not in result
+    assert "****" in result
+
+
+def test_base64_short_key_redacted_via_known_keys():
+    """C：短 base64 key（<24，A 长串正则阈值外）被 known_keys 遮蔽（B 兜底）。
+
+    契约：known_keys 内 key 无论长度/形态都整串替换。
+    """
+    result = redact_secrets("token=" + B64_KEY, [B64_KEY])
+    assert B64_KEY not in result
+    assert "****" in result
+
+
+def test_known_keys_with_decrypt_fail_still_redacts_by_regex():
+    """C：load_known_keys 解密失败降级（ret_prompt 走 A 正则兜底）后仍不泄 key。
+
+    镜像 load_known_keys 跳过解密失败项 + redact_secrets(known_keys) 的 A 正则兜底：
+    即使 known_keys 为空（全失败），裸 sk- key 仍被遮蔽。
+    """
+    result = redact_secrets(SK_KEY, [])
+    assert SK_KEY not in result
+    assert "sk-****" in result
