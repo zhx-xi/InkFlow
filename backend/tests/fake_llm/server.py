@@ -15,12 +15,14 @@ from .routing import select_fixture
 
 def create_app() -> FastAPI:
     app = FastAPI()
-    # 错误计数：key = 场景名（model 后缀，如 "error-429" / "error-500"），供重试/退避测试
+    # 错误计数（供重试/退避测试）+ 收到的 prompt（供脱敏黑盒断言无 key）
     app.state.error_counts: dict[str, int] = {}
+    app.state.received_prompts: list[list[dict]] = []
 
     @app.post("/v1/chat/completions", response_model=None)
     async def chat_completions(request: Request) -> StreamingResponse | JSONResponse:
         payload = await request.json()
+        app.state.received_prompts.append(payload.get("messages", []))
         model = payload.get("model", "")
         stream = bool(payload.get("stream", False))
         fixture = select_fixture(model, payload)

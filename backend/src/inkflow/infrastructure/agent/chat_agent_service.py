@@ -20,6 +20,7 @@ from langgraph.errors import GraphRecursionError
 from inkflow.domain.models.agent_run import AgentStep, AgentToolCall
 from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.services.chat_service import ChatStreamEvent
+from inkflow.infrastructure.llm.redact import redact_step
 
 
 def _chunk_stream(text: str, size: int = 6) -> list[str]:
@@ -254,9 +255,10 @@ class ChatAgentService:
         """#615：消费 trace 收集器 → (steps, final_content, token_usage_total) 并清空。
 
         每次 stream_events 独立收集；端点流结束后调用一次，随后置空防止跨请求污染。
+        #872：落库前对每条 AgentStep 全量脱敏（redact_step），确保 steps 不携带可回显密钥。
         """
         steps, final_content, token_total = (
-            self._trace,
+            [redact_step(s) for s in self._trace],
             self._final_content,
             self._token_usage_total,
         )
