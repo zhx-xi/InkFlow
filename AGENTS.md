@@ -51,7 +51,7 @@
 | RAG | langchain-chroma + chromadb + sentence-transformers | 本地向量库 + BGE Embedding（ADR-013） |
 | Prompt 模板 | ChatPromptTemplate（langchain-core） | YAML 模板 + 变量验证（ADR-014） |
 | 加密/HTTP/日志 | cryptography（AES-256-GCM）+ httpx/httpx-sse + Loguru（ADR-016） | |
-| 测试 | pytest + pytest-asyncio + pytest-cov + pytest-rerunfailures | CI 覆盖率门槛：后端 98.5% 行 / 95% 分支（coverage-backend job，口径 ADR-027）、前端 vitest thresholds |
+| 测试 | pytest + pytest-asyncio + pytest-cov + pytest-rerunfailures | CI 覆盖率门槛：后端 98.5% 行 / 95% 分支（coverage-backend job，口径 ADR-027）、前端 vitest thresholds；函数覆盖（标准定义：每函数被调用≥1次）由 function-coverage job 门禁（ci_cd/check_func_coverage.py，ADR-027 修订） |
 | Lint | Ruff | 规则集见 backend/pyproject.toml；行宽 100 |
 | 类型检查 | mypy | 严格化配置见 backend/pyproject.toml；用 `python -m mypy` |
 | 构建 | hatchling | `[tool.hatch.build.targets.wheel]` |

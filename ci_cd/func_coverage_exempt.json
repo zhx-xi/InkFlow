@@ -1,0 +1,13 @@
+{
+  "categories": {
+    "abstract_protocol_bodies": "excluded in discover_functions (docstring only / Ellipsis / pass / raise NotImplementedError) - ADR-027 Protocol precedent",
+    "lambda": "lambda expressions are not ast.FunctionDef, so they are never counted",
+    "dunder": "covered by patterns below (__init__ / __repr__)",
+    "decorator_aliases": "add explicit qualnames when functools.wraps wrapper differs from the named function",
+    "pyinstaller_hooks": "add explicit qualnames for packaging-hook-only functions",
+    "llm_only": "add explicit qualnames for functions reachable only via a real LLM call (mock tests never touch them)"
+  },
+  "patterns": [".*__init__", ".*__repr__"],
+  "qualnames": [],
+  "body_ellipsis": true
+}

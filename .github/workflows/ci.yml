@@ -934,6 +934,67 @@ jobs:
           name: backend-coverage
           path: backend/coverage.xml
 
+  # ── Function coverage: 后端函数覆盖（标准定义：每函数被调用≥1次，#869 S1，ADR-027 修订）──
+  # 独立 job（不 --cov）：trace 插件用 sys.settrace，与 coverage 的 C tracer 同进程互斥；
+  # 单独跑全量测试收集 called-set（双 tests/ 目录不能同一进程，同 #685 分轨）→ 合并 → 门禁。
+  # 门禁 = A 规则「≥基线−Δ 且 0 新增未调用（豁免清单内除外）」；基线固化于 func_coverage_baseline.json。
+  function-coverage:
+    needs: [changes]
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          prune-cache: false
+          cache-dependency-glob: backend/uv.lock
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+      - name: Collect func-cov (unit)
+        env:
+          INKFLOW_FUNC_COV: "1"
+          INKFLOW_FUNC_COV_SRC: src
+          INKFLOW_FUNC_COV_REPORT: func_cov_unit.json
+          PYTHONPATH: ../ci_cd
+        run: uv run pytest tests/unit/ -q -p func_cov_plugin
+      - name: Collect func-cov (api)
+        env:
+          INKFLOW_FUNC_COV: "1"
+          INKFLOW_FUNC_COV_SRC: src
+          INKFLOW_FUNC_COV_REPORT: func_cov_api.json
+          PYTHONPATH: ../ci_cd
+        run: uv run pytest ../tests/api/ -q -p func_cov_plugin
+      - name: Collect func-cov (cli)
+        env:
+          INKFLOW_FUNC_COV: "1"
+          INKFLOW_FUNC_COV_SRC: src
+          INKFLOW_FUNC_COV_REPORT: func_cov_cli.json
+          PYTHONPATH: ../ci_cd
+        run: uv run pytest ../tests/cli/ -q -p func_cov_plugin
+      - name: Collect func-cov (integration)
+        env:
+          INKFLOW_FUNC_COV: "1"
+          INKFLOW_FUNC_COV_SRC: src
+          INKFLOW_FUNC_COV_REPORT: func_cov_integration.json
+          PYTHONPATH: ../ci_cd
+        run: uv run pytest ../tests/integration/ -q -p func_cov_plugin
+      - name: Merge called-sets
+        run: uv run python ../ci_cd/merge_func_cov_calls.py func_cov_unit.json func_cov_api.json func_cov_cli.json func_cov_integration.json func_cov_called.json
+      - name: Function-coverage gate
+        run: uv run python ../ci_cd/check_func_coverage.py src func_cov_called.json ../ci_cd/func_coverage_exempt.json ../ci_cd/func_coverage_baseline.json --delta 1.0
+
   # ── Coverage: 前端覆盖率报告收集（#685：threshold 已在 unit-frontend 自检，此 job 只收集 artifact）──
   coverage-frontend:
     # 第三批：needs unit-frontend（artifact 产出者）
