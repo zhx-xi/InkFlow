@@ -119,7 +119,7 @@ class TestErrorMapping:
         monkeypatch.setattr(http_mod, "InkFlowHTTPClient", FailingClient)
         env = _parse_envelope(await tool.func(action="list", search="x"))
         assert env["ok"] is False
-        assert "NOT_FOUND" in env["error"]
+        assert env["error"]["code"] == "NOT_FOUND"
 
     @pytest.mark.asyncio
     async def test_http_422_maps_validation(self, fake_env, monkeypatch):
@@ -134,7 +134,7 @@ class TestErrorMapping:
         monkeypatch.setattr(http_mod, "InkFlowHTTPClient", FailingClient)
         env = _parse_envelope(await tool.func(action="create", project_id="p1", title="t"))
         assert env["ok"] is False
-        assert "VALIDATION_ERROR" in env["error"]
+        assert env["error"]["code"] == "VALIDATION_ERROR"
 
     @pytest.mark.asyncio
     async def test_kernel_startup_error(self, fake_env, monkeypatch):
@@ -149,7 +149,7 @@ class TestErrorMapping:
         monkeypatch.setattr(kernel_mod, "ensure_kernel", _fail_ensure)
         env = _parse_envelope(await tool.func(action="list"))
         assert env["ok"] is False
-        assert "内核启动失败" in env["error"]
+        assert "内核启动失败" in env["error"]["message"]
 
     @pytest.mark.asyncio
     async def test_unexpected_exception(self, fake_env, monkeypatch):
@@ -163,7 +163,7 @@ class TestErrorMapping:
         monkeypatch.setattr(http_mod, "InkFlowHTTPClient", BoomClient)
         env = _parse_envelope(await tool.func(action="list"))
         assert env["ok"] is False
-        assert "boom" in env["error"]
+        assert "boom" in env["error"]["message"]
 
 
 # ── 覆盖率补测：每个工具工厂的错误分支（except 块）全覆盖 ────────────
@@ -236,7 +236,7 @@ class TestErrorMappingAllTools:
         monkeypatch.setattr(http_mod, "InkFlowHTTPClient", FailingClient)
         env = _parse_envelope(await tool.func(**args))
         assert env["ok"] is False
-        assert "NOT_FOUND" in env["error"]
+        assert env["error"]["code"] == "NOT_FOUND"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("name", list(_HTTP_FACTORIES))
@@ -264,7 +264,7 @@ class TestErrorMappingAllTools:
         monkeypatch.setattr(http_mod, "InkFlowHTTPClient", BoomClient)
         env = _parse_envelope(await tool.func(**args))
         assert env["ok"] is False
-        assert "boom" in env["error"]
+        assert "boom" in env["error"]["message"]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("name", list(_HTTP_FACTORIES))
@@ -281,7 +281,7 @@ class TestErrorMappingAllTools:
         monkeypatch.setattr(kernel_mod, "ensure_kernel", _fail_ensure)
         env = _parse_envelope(await tool.func(**args))
         assert env["ok"] is False
-        assert "内核启动失败" in env["error"]
+        assert "内核启动失败" in env["error"]["message"]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("name", list(_ALL_FACTORIES))
@@ -312,8 +312,8 @@ class TestMeaningfulErrorMessages:
         monkeypatch.setattr(http_mod, "InkFlowHTTPClient", FailingClient)
         env = _parse_envelope(await tool.func(action="list"))
         assert env["ok"] is False
-        assert env["error"] != "INTERNAL_ERROR: "
-        assert "内部错误" in env["error"]
+        assert env["error"]["message"] != "INTERNAL_ERROR: "
+        assert "内部错误" in env["error"]["message"]
 
     @pytest.mark.asyncio
     async def test_http_401_empty_detail_mentions_auth(self, fake_env, monkeypatch):
@@ -329,7 +329,7 @@ class TestMeaningfulErrorMessages:
         monkeypatch.setattr(http_mod, "InkFlowHTTPClient", FailingClient)
         env = _parse_envelope(await tool.func(action="list"))
         assert env["ok"] is False
-        assert "鉴权" in env["error"]
+        assert "鉴权" in env["error"]["message"]
 
     @pytest.mark.asyncio
     async def test_unexpected_exception_empty_message_fallback(self, fake_env, monkeypatch):
@@ -343,8 +343,8 @@ class TestMeaningfulErrorMessages:
         monkeypatch.setattr(http_mod, "InkFlowHTTPClient", BoomClient)
         env = _parse_envelope(await tool.func(action="list"))
         assert env["ok"] is False
-        assert env["error"].strip()
-        assert "RuntimeError" in env["error"]
+        assert env["error"]["message"].strip()
+        assert "RuntimeError" in env["error"]["message"]
 
     @pytest.mark.asyncio
     async def test_success_envelope_unchanged(self, fake_env):

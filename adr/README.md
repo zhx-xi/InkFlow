@@ -136,6 +136,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 | [ADR-027](test-ci/ADR-027.md) | 测试覆盖率门禁 — 三层全覆盖（2026-09-01 修订：+后端函数覆盖标准定义） | ✅ 已接受 | 2026-08-06 |
 | [ADR-028](test-ci/ADR-028.md) | E2E 按页面域拆分 + 门禁口径 | ✅ 已接受 | 2026-08-06 |
 | [ADR-047](test-ci/ADR-047.md) | 确定性 fake LLM 测试服务器（fake OpenAI） | ✅ 已接受 | 2026-09-01 |
+| [ADR-048](test-ci/ADR-048.md) | 黑盒 E2E 断言契约 — GUI / CLI / MCP 三面 + MCP 错误自愈 | ✅ 已接受 | 2026-09-02 |
 
 ### 打包与发布（packaging）
 
@@ -174,6 +175,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 - **CI 覆盖率门禁**: 后端 98.5% 行 / 95% 分支 + 前端 vitest thresholds（ADR-027 [test-ci/](test-ci/ADR-027.md)；2026-09-01 修订 +后端函数覆盖标准定义门禁）
 - **CI E2E**: 按页面域拆 6 job；AI 链路只测 UI 状态（ADR-028 [test-ci/](test-ci/ADR-028.md)）
 - **CI 确定性 fake LLM**: OpenAI 兼容 fake server + INKFLOW_LLM_BASE_URL + e2e_llm_mode 开关（ADR-047 [test-ci/](test-ci/ADR-047.md)）
+- **CI 黑盒三面契约**: GUI/CLI/MCP 黑盒断言（元素±/渲染/层级·信封/错误码/退出码·工具调用/错误自愈）+ E2E 不计覆盖（ADR-048 [test-ci/](test-ci/ADR-048.md)）
 - **版本里程碑**: SemVer；1.0.0 = 本地完全可用；2.0.0 = 云端（ADR-019 [packaging/](packaging/ADR-019.md) v11；ADR-024 [architecture/](architecture/ADR-024.md)）
 
 *来源：design/architecture-analysis-2026-07-30.md §三（2026-07-31 提取为独立目录）；2026-09-01 域归类重构（ADR 编号保持稳定，仅目录分组 + 折叠 005/006 + 补号 045/046）。*

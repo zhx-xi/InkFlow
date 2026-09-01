@@ -185,7 +185,7 @@ class TestCallTool:
         assert result.is_error is True
         env = json.loads(result.content[0].text)
         assert env["ok"] is False
-        assert "NOT_FOUND" in env["error"]
+        assert env["error"]["code"] == "NOT_FOUND"
 
     @pytest.mark.asyncio
     async def test_call_invalid_action_is_error(self, fake_env):
@@ -196,6 +196,66 @@ class TestCallTool:
             build_mcp_tools(), "manage_project", {"action": "frobnicate"}
         )
         assert result.is_error is True
+
+
+class TestMcpErrorSelfHeal:
+    """错误自愈契约（ADR-048 §4）：tools/call 失败 error 应为结构化对象
+    {code, message, hint}——LLM 可续用（不裸抛纯文本）。"""
+
+    @pytest.mark.asyncio
+    async def test_unknown_tool_returns_structured_error(self):
+        """未知工具 → error{code:UNKNOWN_TOOL, message, hint:可用工具清单}。"""
+        from inkflow.mcp.server import call_tool_result
+
+        result = await call_tool_result(build_mcp_tools(), "no_such_tool", {})
+        assert result.is_error is True
+        env = json.loads(result.content[0].text)
+        assert env["ok"] is False
+        err = env["error"]
+        # 🔴 error 必须是对象（当前为纯文本字符串 → 本断言 FAIL → RED）
+        assert isinstance(err, dict)
+        assert err["code"] == "UNKNOWN_TOOL"
+        assert err["message"]
+        assert err["hint"]
+        # hint 应指向可用工具（LLM 下一步能选对）——自愈核心
+        assert "manage_project" in err["hint"]
+
+    @pytest.mark.asyncio
+    async def test_invalid_action_returns_structured_error(self, fake_env):
+        """非法 action（参数错）→ error{code:INVALID_ARGS, message, hint}。"""
+        from inkflow.mcp.server import call_tool_result
+
+        result = await call_tool_result(
+            build_mcp_tools(), "manage_project", {"action": "frobnicate"}
+        )
+        assert result.is_error is True
+        env = json.loads(result.content[0].text)
+        err = env["error"]
+        assert isinstance(err, dict)
+        assert err["code"] == "INVALID_ARGS"
+        assert err["message"]
+        assert err["hint"]
+
+    @pytest.mark.asyncio
+    async def test_http_error_returns_structured_error(self, fake_env, monkeypatch):
+        """HTTP 404 → error{code:NOT_FOUND, message, hint}。"""
+        from inkflow.mcp.server import call_tool_result
+
+        class FailingClient(FakeClient):
+            async def get(self, path, *, params=None, json=None) -> dict:
+                from inkflow.infrastructure.http import HttpApiError
+
+                raise HttpApiError(status_code=404, detail="项目不存在")
+
+        monkeypatch.setattr(http_mod, "InkFlowHTTPClient", FailingClient)
+        result = await call_tool_result(build_mcp_tools(), "manage_project", {"action": "list"})
+        assert result.is_error is True
+        env = json.loads(result.content[0].text)
+        err = env["error"]
+        assert isinstance(err, dict)
+        assert err["code"] == "NOT_FOUND"
+        assert err["message"] == "项目不存在"
+        assert err["hint"]
 
 
 class TestBuildServer:

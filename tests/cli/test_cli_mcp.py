@@ -203,3 +203,59 @@ class TestColdStart:
         finally:
             if handle_pid:
                 _kill_kernel_tree(handle_pid)
+
+
+# ── 错误自愈契约（ADR-048 §4，S2）────────────────────────────────────────────
+# tools/call 失败 error 应为结构化对象 {code, message, hint}（LLM 可续用），
+# 不裸抛纯文本。当前实现 error 为字符串 → 本类用例在 RED 阶段 FAIL。
+# CI 沙箱无法拉起真实内核（同 module-scope 先例）→ skipif；本地黑盒验证。
+
+
+@pytest.mark.skipif(
+    _skip_ci(), reason="GitHub Actions 沙箱无法拉起真实内核（秒退）；本机 M4 验证"
+)
+class TestMcpStdioErrorSelfHeal:
+    """真实 stdio 轨：错误自愈契约（unknown tool / invalid args → 结构化 error）。"""
+
+    @pytest.mark.asyncio
+    async def test_unknown_tool_returns_structured_error(self, mcp_env):
+        """tools/call 未知工具 → error{code:UNKNOWN_TOOL, message, hint}（LLM 可续用）。"""
+        from mcp.client.session import ClientSession
+        from mcp.client.stdio import stdio_client
+
+        async with (
+            stdio_client(_server_params(mcp_env)) as (read_stream, write_stream),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            await session.initialize()
+            result = await session.call_tool("no_such_tool", {})
+            assert result.is_error is True
+            env = json.loads(result.content[0].text)
+            assert env["ok"] is False
+            err = env["error"]
+            # 🔴 error 必须是对象（当前为纯文本字符串 → 本断言 FAIL → RED）
+            assert isinstance(err, dict)
+            assert err["code"] == "UNKNOWN_TOOL"
+            assert err["message"]
+            assert err["hint"]
+            assert "manage_project" in err["hint"]
+
+    @pytest.mark.asyncio
+    async def test_invalid_action_returns_structured_error(self, mcp_env):
+        """tools/call 参数错（非法 action）→ error{code:INVALID_ARGS, message, hint}。"""
+        from mcp.client.session import ClientSession
+        from mcp.client.stdio import stdio_client
+
+        async with (
+            stdio_client(_server_params(mcp_env)) as (read_stream, write_stream),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            await session.initialize()
+            result = await session.call_tool("manage_project", {"action": "frobnicate"})
+            assert result.is_error is True
+            env = json.loads(result.content[0].text)
+            err = env["error"]
+            assert isinstance(err, dict)
+            assert err["code"] == "INVALID_ARGS"
+            assert err["message"]
+            assert err["hint"]
