@@ -19,6 +19,7 @@ import asyncio
 import json
 import shutil
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
@@ -202,6 +203,10 @@ class LangChainVectorStore:
                 # chroma stub 对 embeddings 类型过严（实际运行时接受 list[list[float]]）
                 embeddings=cast(Any, [embedding]),
             )
+            # #873: 写入后强制 count() 触发 WAL→段落盘，避免写后立即 query 读到未落盘
+            # hnsw 段（"Nothing found on disk"，上游 #4212/#7463）；本项目写入频率低，
+            # 成本可忽略（仍持有 self._lock，#468）。
+            collection.count()
 
     def _index_batch_sync(self, entities: list[IndexableEntity]) -> None:
         """同步批量索引: 按类型分组，每 collection 一次 upsert。"""
@@ -219,6 +224,9 @@ class LangChainVectorStore:
                     # chroma stub 对 embeddings 类型过严（实际运行时接受 list[list[float]]）
                     embeddings=cast(Any, embeddings),
                 )
+                # #873: 每组类型写入后强制 count() 触发 WAL→段落盘（同 _index_sync，
+                # 仍在 self._lock 内），消除写后立即查询的 hnsw 段读取竞态。
+                collection.count()
 
     def _retrieve_sync(
         self,
@@ -245,9 +253,10 @@ class LangChainVectorStore:
                         include=["documents", "metadatas", "distances"],
                     )
                 except chromadb.errors.InternalError as exc:
-                    # #823: chromadb hnsw 段读取失败（"Nothing found on disk"，#468 同族）——
-                    # 常为小批量写入未落盘（WAL-only）或残留空/旧 hnsw 段。一次自愈：
-                    # 强制 count() 触发 WAL→段落盘/载入后重试一次；仍失败则清晰上抛
+                    # #823/#873: chromadb hnsw 段读取失败（"Nothing found on disk"，
+                    # #468 同族）——常为小批量写入未落盘（WAL-only）或残留空/旧 hnsw 段。
+                    # 多级重试：每轮 count() 强制触发 WAL→段落盘/载入 + 短 sleep 后重查
+                    # （首查 + 2 次重试，max_attempts=3）；全部失败仍清晰上抛
                     # VectorStoreError（不吞空「内部错误（无详情）」），由服务层 retrieve
                     # 捕获后触发一次 reindex 重建重试（_extraction_rag.py）。
                     logger.warning(
@@ -257,15 +266,22 @@ class LangChainVectorStore:
                         project_id,
                         exc,
                     )
-                    try:
-                        collection.count()
-                        result = collection.query(
-                            query_embeddings=cast(Any, [query_embedding]),
-                            n_results=top_k,
-                            where={"project_id": project_id},
-                            include=["documents", "metadatas", "distances"],
-                        )
-                    except chromadb.errors.InternalError:
+                    max_attempts = 5  # 首查 + 4 次重试；慢磁盘下更高命中率（#873 B 兜底）
+                    for _ in range(max_attempts - 1):
+                        try:
+                            # count() 触发 WAL→段落盘；sleep 给落盘/载入留时间（慢磁盘兜底）
+                            collection.count()
+                            time.sleep(0.25)
+                            result = collection.query(
+                                query_embeddings=cast(Any, [query_embedding]),
+                                n_results=top_k,
+                                where={"project_id": project_id},
+                                include=["documents", "metadatas", "distances"],
+                            )
+                            break
+                        except chromadb.errors.InternalError:
+                            continue
+                    else:
                         raise VectorStoreError(
                             "向量检索失败：chromadb hnsw 段读取失败（"
                             f"{entity_type.value}），建议重建索引后重试"

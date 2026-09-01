@@ -678,3 +678,58 @@ async def test_retrieve_hnsw_internal_error_recovers_after_count_retry(
         results = await store.retrieve("苹果", project_id="p1")
     assert [r.entity_id for r in results] == ["c1"]
     assert call_count == 2  # 首败 → count() 落盘 → 重试成功
+
+
+# ══ #873: chromadb hnsw 段读取竞态根治（A 写入端落盘 + B 读取端多级重试）
+# 背景: test_index_batch_stores_all 在 CI 偶发「VectorStoreError: chromadb hnsw 段读取失败」，
+# 根因 = chromadb HNSW WAL-only（< sync_threshold 条不落盘），写后立即查询读未落盘段
+# （"Nothing found on disk"，#468/#823/#409 + 上游 #4212/#7463）。不用 --reruns 掩盖。
+# A: index/index_batch 写入后强制落盘（collection.count() 触发 WAL→段落盘）。
+# B: _retrieve_sync self-heal 从「count→query 1 次」增强为多级重试（≥2 次 count 落盘后重试）。
+# RED 形态: A 当前 _index_batch_sync 只 upsert 不落盘 → count 未被调用 → 断言 FAIL；
+#           B 当前只重试 1 次 → 前 2 次 query 抛 InternalError → 第 2 次重试仍抛 → 上抛 FAIL。
+
+
+async def test_index_batch_triggers_collection_persist(store: LangChainVectorStore) -> None:
+    """A（#873）：index_batch 写入后强制落盘——每个涉及 collection.count() 被调用（WAL→段落盘）。"""
+    entities = [
+        make_entity("c1", EntityType.CHARACTER, "p1", "苹果"),
+        make_entity("s1", EntityType.SETTING, "p1", "苹果"),
+    ]
+    # 预初始化涉及 collection（懒初始化完成，GREEN 后 count 触发落盘）
+    char_col = store._get_collection(EntityType.CHARACTER)
+    set_col = store._get_collection(EntityType.SETTING)
+    with (
+        patch.object(char_col, "count", wraps=char_col.count) as char_spy,
+        patch.object(set_col, "count", wraps=set_col.count) as set_spy,
+    ):
+        await store.index_batch(entities)
+        # 🔴 当前实现只 upsert 不落盘 → count 未被调用 → 本断言 FAIL → RED
+        assert char_spy.called and set_spy.called
+
+
+async def test_retrieve_hnsw_internal_error_retries_before_raising(
+    store: LangChainVectorStore,
+) -> None:
+    """B（#873）：hnsw 段读取失败（连续未落盘）→ 多级重试（≥2 次 count 落盘后重试）→ 命中。"""
+    await store.index(make_entity("c1", EntityType.CHARACTER, "p1", "苹果"))
+    collection = store._collections[EntityType.CHARACTER]
+    real_query = collection.query
+    call_count = 0
+
+    def _flaky(*args: object, **kwargs: object) -> dict[str, object]:
+        """前 2 次调用抛 hnsw InternalError（模拟连续未落盘），第 3 次走真实 query。"""
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 2:
+            raise chromadb.errors.InternalError(
+                "Error creating hnsw segment reader: Nothing found on disk"
+            )
+        return real_query(*args, **kwargs)
+
+    with patch.object(collection, "query", side_effect=_flaky):
+        results = await store.retrieve("苹果", project_id="p1")
+    assert [r.entity_id for r in results] == ["c1"]
+    # 🔴 当前实现只重试 1 次（首败→count→query），query 第 2 次仍抛 → 上抛 VectorStoreError →
+    # 本断言不达 → RED；GREEN（多级重试 ≥2 次）后 call_count >= 3
+    assert call_count >= 3
