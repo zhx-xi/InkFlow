@@ -11,7 +11,7 @@
 >
 > **依赖**: ✅ F10（world_settings 表 + WorldService + WorldRepositoryProtocol）· ✅ F1（项目 FK 校验）· ⏳ F24 语义（仅会话保留归档；本模块不沿用两级删除——见 §1.2）
 >
-> **参考 ADR**: [ADR-019](../../adr/ADR-019.md)（版本里程碑）· [ADR-002](../../adr/ADR-002.md)（六边形分层）· [ADR-003](../../adr/ADR-003.md)（Repository）· [ADR-004](../../adr/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/ADR-012.md)（错误处理）
+> **参考 ADR**: [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-003](../../adr/database/ADR-003.md)（Repository）· [ADR-004](../../adr/database/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）
 >
 > **状态**: ✅ 已实现（PR #215，#173 2026-08-09）
 

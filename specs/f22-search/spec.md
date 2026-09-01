@@ -9,7 +9,7 @@
 >
 > **关联 Issues**: [#54](https://github.com/zhx-xi/InkFlow/issues/54)；[#208](https://github.com/zhx-xi/InkFlow/issues/208)（F34 章节审计——AI 维护增强触发，非阻塞）
 > **依赖**: ✅ F1（项目校验）· ✅ F2（章节正文源）· ✅ F9（角色档案源）· ✅ F10（世界观条目源）· ✅ F11（大纲源）· ✅ F12（时间线源）· ✅ F13（伏笔源）· ✅ F16（jieba 分词依赖已锁定，直接复用）· ✅ F14（RAG VectorStoreProtocol + chromadb + BGE——semantic 模式复用，零新增依赖）· ✅ F19 #77（token 中间件）· ✅ F38（CLI 恒经 HTTP 已合入，本模块 CLI 从第一天走 HTTP）· ✅ SQLite FTS5（实测 3.50.4 已启用，零新依赖）· ⏳ #208 F34 章节审计（增强触发点，**非阻塞**，见 §5.3 注）
-> **参考 ADR**: [ADR-001](../../adr/ADR-001.md)（模块化单体）· [ADR-002](../../adr/ADR-002.md)（六边形分层）· [ADR-003](../../adr/ADR-003.md)（Repository）· [ADR-004](../../adr/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/ADR-012.md)（错误处理）· [ADR-013](../../adr/ADR-013.md)（RAG：向量检索边界声明，§5.8）· [ADR-018](../../adr/ADR-018.md)（测试分层）· [ADR-019](../../adr/ADR-019.md)（版本里程碑 + 模块编号口径）· [ADR-021](../../adr/ADR-021.md)（内核进程化：token 契约）· [ADR-025](../../adr/ADR-025.md)（依赖锁定：零新增依赖）· [ADR-027](../../adr/ADR-027.md)（覆盖率门禁）· [ADR-030](../../adr/ADR-030.md)（本地内核服务化：CLI 恒经 HTTP，§4）
+> **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md)（模块化单体）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-003](../../adr/database/ADR-003.md)（Repository）· [ADR-004](../../adr/database/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）· [ADR-013](../../adr/llm/ADR-013.md)（RAG：向量检索边界声明，§5.8）· [ADR-018](../../adr/test-ci/ADR-018.md)（测试分层）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 + 模块编号口径）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：token 契约）· [ADR-025](../../adr/architecture/ADR-025.md)（依赖锁定：零新增依赖）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）· [ADR-030](../../adr/kernel/ADR-030.md)（本地内核服务化：CLI 恒经 HTTP，§4）
 > **状态**: ✅ 已实现（PR #216，#54 2026-08-09）
 
 ---

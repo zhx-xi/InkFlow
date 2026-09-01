@@ -6,7 +6,7 @@
 > **所属阶段**: 0.3.0 里程碑（**提前**，原 0.5.0——GUI 写作流式渲染的依赖项，ADR-019 v2；估算 **3-4 人天**（Q1=C 联合 DTO +0.5、Q3 CLI 默认流式 +0.5-1；v1.0 的 2-3 已含基础））
 > **关联 Issues**: [#50](https://github.com/zhx-xi/InkFlow/issues/50)
 > **依赖**: F3 ✅（WritingService 三原语 + DTO）；F5 ✅（**LLMClientProtocol.chat_stream 已实现**——`AsyncGenerator[StreamEvent]` 逐 token，基础设施层 LangChain astream 就绪）；F1 ✅（项目校验）；F2 ✅（章节校验）；F19（GUI 消费方，**反向依赖**——F23 端点先行，GUI 侧待 F19 落地后消费）
-> **参考 ADR**: [ADR-001](../../adr/ADR-001.md) (模块化单体), [ADR-002](../../adr/ADR-002.md) (六边形分层), [ADR-012](../../adr/ADR-012.md) (错误处理), [ADR-015](../../adr/ADR-015.md) (LangChain 隔离), [ADR-018](../../adr/ADR-018.md) (测试分层), [ADR-019](../../adr/ADR-019.md) (版本里程碑 v2——F23 提前 0.3.0), [ADR-021](../../adr/ADR-021.md) (本地内核进程化——SSE 一条代码路径两用：GUI 与云端)
+> **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑 v2——F23 提前 0.3.0), [ADR-021](../../adr/kernel/ADR-021.md) (本地内核进程化——SSE 一条代码路径两用：GUI 与云端)
 > **状态**: ✅ 已实现（PR #83）
 
 >

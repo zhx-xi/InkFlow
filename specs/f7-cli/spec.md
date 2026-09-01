@@ -5,7 +5,7 @@
 > **所属阶段**: Phase 1 — 核心引擎
 > **关联 Issues**: [#7](https://github.com/zhx-xi/InkFlow/issues/7)
 > **依赖**: F1-F6 全部（对外统一入口）
-> **参考 ADR**: [ADR-007v2](../../adr/ADR-007v2.md) (包结构), [ADR-012](../../adr/ADR-012.md) (错误处理), [ADR-016](../../adr/ADR-016.md) (loguru 日志), [ADR-017](../../adr/ADR-017.md) (CI 门禁)
+> **参考 ADR**: [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-016](../../adr/service/ADR-016.md) (loguru 日志), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁)
 > **状态**: ✅ 已实现（PR #28）
 
 ---

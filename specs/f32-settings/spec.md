@@ -11,7 +11,7 @@
 >
 > **依赖**: ✅ F31 #167（settings:* IPC 三通道 + 托盘 + 关闭拦截状态机，PR #172）· ✅ F19 #105（设置页框架 + Agent 即改即存 + PATCH 直连模式）· ✅ F19 #106（ProviderConfig 注册表：设置类实体先例）· ✅ F19 #107（模板对话框显式保存语义）· ✅ F19 #78/#79（token 中间件 + 渲染层 + ensureApiReady）· ✅ F9（character_errors 通用错误类复用惯例）· ⏳ 无
 >
-> **参考 ADR**: [ADR-021](../../adr/ADR-021.md)（内核进程化：token 中间件 + 401 契约）· [ADR-027](../../adr/ADR-027.md)（覆盖率门禁：后端 98.5/95.0 + 前端 thresholds）· [ADR-030](../../adr/ADR-030.md)（④ 关闭行为持久化归口 #152）· [ADR-019](../../adr/ADR-019.md)（版本里程碑 + 模块编号口径）
+> **参考 ADR**: [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：token 中间件 + 401 契约）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁：后端 98.5/95.0 + 前端 thresholds）· [ADR-030](../../adr/kernel/ADR-030.md)（④ 关闭行为持久化归口 #152）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 + 模块编号口径）
 >
 > **状态**: ✅ 已实现（PR #176 + #197，#152 2026-08-08）
 

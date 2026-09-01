@@ -5,7 +5,7 @@
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第一个模块，估算 4-6 人天）
 > **关联 Issues**: [#39](https://github.com/zhx-xi/InkFlow/issues/39), [#593](https://github.com/zhx-xi/InkFlow/issues/593)（brief 字段）
 > **依赖**: F1 ✅, F2 ✅, F5 ✅（前置）；F6 ✅（数据源集成点，见 §11 与待澄清 Q1）
-> **参考 ADR**: [ADR-001](../../adr/ADR-001.md) (模块化单体), [ADR-002](../../adr/ADR-002.md) (六边形分层), [ADR-003](../../adr/ADR-003.md) (Repository), [ADR-004](../../adr/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/ADR-007v2.md) (包结构), [ADR-010](../../adr/ADR-010.md) (上下文分层), [ADR-012](../../adr/ADR-012.md) (错误处理), [ADR-014](../../adr/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/ADR-016.md) (loguru), [ADR-017](../../adr/ADR-017.md) (CI 门禁), [ADR-018](../../adr/ADR-018.md) (测试分层), [ADR-019](../../adr/ADR-019.md) (版本里程碑)
+> **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 > **状态**: ✅ 已实现（PR #56）
 
 > **Spec 变更（v1.1，2026-08-23，issue #593）**: `Character` 新增 **`brief`** 字段（一句话简介，≤500 字符，默认空串）——F6 上下文注入采用「名 + brief」轻量化（D5=A），未填 brief 时 F6 降级截 `personality`。新增于 §2.1 字段表 / §2.5 领域模型 / CharacterCreate / CharacterUpdate，DB 侧列由 `ensure_characters_brief_column` 幂等迁移补齐（§8）。
@@ -848,7 +848,7 @@ F9 被依赖:
   F20 (MCP)             ⏳ — (Phase 3) manage_character / manage_relation 工具基于本模块 API
 ```
 
-> ⚠️ **编号口径说明**: F6 spec §10 与 `infrastructure/context/sources.py` 注释中的「F8（角色）/F9（世界观）」为 ADR-019 之前的旧编号；按 [ADR-019](../../adr/ADR-019.md) 现行口径 **F9 = 角色管理**、F10 = 世界观、F14 = 统一提取。本 spec 及后续 F 模块一律以 ADR-019 为准。
+> ⚠️ **编号口径说明**: F6 spec §10 与 `infrastructure/context/sources.py` 注释中的「F8（角色）/F9（世界观）」为 ADR-019 之前的旧编号；按 [ADR-019](../../adr/packaging/ADR-019.md) 现行口径 **F9 = 角色管理**、F10 = 世界观、F14 = 统一提取。本 spec 及后续 F 模块一律以 ADR-019 为准。
 
 ---
 

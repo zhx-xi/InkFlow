@@ -8,7 +8,7 @@
 >
 > **关联 Issues**: [#208](https://github.com/zhx-xi/InkFlow/issues/208)（本模块）；[#54](https://github.com/zhx-xi/InkFlow/issues/54)（F22 全文搜索——本模块为 F22「AI 自动维护」的增强触发语义前置，**F22 不阻塞等待本模块**）；[#45](https://github.com/zhx-xi/InkFlow/issues/45)（F15 审计服务——静态档案一致性，与本模块互补）
 > **依赖**: ✅ F2（章节 + ChapterStatus 四态：REVIEW/FINAL 为「写完一章」天然钩子）· ✅ F5（LLM 管线，ChatOpenAI 既有）· ✅ F9（角色档案读取）· ✅ F10（世界观条目读取）· ✅ F15（静态一致性审计可委托，API 已存在）· ✅ F19（GUI 渲染层，确认流程 UI 接线）· ⏳ F22（#54，被依赖方，非前置）
-> **参考 ADR**: [ADR-001](../../adr/ADR-001.md)（模块化单体）· [ADR-002](../../adr/ADR-002.md)（六边形分层）· [ADR-012](../../adr/ADR-012.md)（错误处理）· [ADR-014](../../adr/ADR-014.md)（ChatPromptTemplate）· [ADR-015](../../adr/ADR-015.md)（LangChain 隔离）· [ADR-018](../../adr/ADR-018.md)（测试分层）· [ADR-019](../../adr/ADR-019.md)（版本里程碑 + 模块编号口径）· [ADR-027](../../adr/ADR-027.md)（覆盖率门禁）· [ADR-026](../../adr/ADR-026.md)（真实 AI CI：LLM 测试 Fake 注入 + label 触发验证）
+> **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md)（模块化单体）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）· [ADR-014](../../adr/llm/ADR-014.md)（ChatPromptTemplate）· [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-018](../../adr/test-ci/ADR-018.md)（测试分层）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 + 模块编号口径）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）· [ADR-026](../../adr/test-ci/ADR-026.md)（真实 AI CI：LLM 测试 Fake 注入 + label 触发验证）
 > **状态**: ✅ 已实现（PR #219，#208 2026-08-09）
 
 ---

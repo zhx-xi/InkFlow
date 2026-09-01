@@ -5,7 +5,7 @@
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑**第七个**模块，估算 3-5 人天）
 > **关联 Issues**: [#45](https://github.com/zhx-xi/InkFlow/issues/45)
 > **依赖**: F1 ✅（项目存在性校验）；F2 ✅（章节读取——事件 `source_chapter_id` 跨模块引用校验 + 提取缺口对照）；F9 ✅（角色/关系/分组档案读取）；F10 ✅（世界条目读取）；F12 ✅（事件档案读取 + **委托 `TimelineService.check_consistency`** 时间线维度）；F13 ✅（伏笔档案读取 + `event_id` 锚点校验）；F14 ✅（`extraction_runs` 状态读取）；F5 — **不依赖**（F15 无 LLM，见 §1/§5）
-> **参考 ADR**: [ADR-001](../../adr/ADR-001.md) (模块化单体), [ADR-002](../../adr/ADR-002.md) (六边形分层), [ADR-003](../../adr/ADR-003.md) (Repository), [ADR-004](../../adr/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/ADR-007v2.md) (包结构), [ADR-012](../../adr/ADR-012.md) (错误处理), [ADR-016](../../adr/ADR-016.md) (loguru), [ADR-017](../../adr/ADR-017.md) (CI 门禁), [ADR-018](../../adr/ADR-018.md) (测试分层), [ADR-019](../../adr/ADR-019.md) (版本里程碑)
+> **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 > **状态**: ✅ 已实现（PR #74）
 
 >

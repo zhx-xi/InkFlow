@@ -6,7 +6,7 @@
 > **所属阶段**: 0.5.0 Agent 集成（本地内核服务化三件套第 3 个模块：F30 #166 ✅ / F31 #167 ✅ / F33 #168 本任务，估算 2-3 人天）
 > **关联 Issues**: [#168](https://github.com/zhx-xi/InkFlow/issues/168)（本任务）· [#166](https://github.com/zhx-xi/InkFlow/issues/166)（F30 内核冷启动基建 ✅ PR #171）· [#167](https://github.com/zhx-xi/InkFlow/issues/167)（F31 GUI 托盘 ✅ PR #172）· [#169](https://github.com/zhx-xi/InkFlow/issues/169)（CLI 恒 HTTP，0.6.0，不在本任务范围）
 > **依赖**: ✅ 0.4.0 打包基建（f19-packaging，PR #144 + 发布门禁 #145：inkflow.spec / release.yml / electron-builder.yml / tag 版本注入机制）· ✅ #166（PR #171：kernel.json + ensure_kernel + 互斥 + stale 清理——CLI 产物含 serve 能力的依据）· ✅ #167（PR #172：GUI 托盘——里程碑并行，无代码依赖）· ✅ #152（F32 设置持久化，PR #176——无代码依赖）
-> **参考 ADR**: [ADR-030](../../adr/ADR-030.md)（⑤ CLI 独立发布产物）· [ADR-019](../../adr/ADR-019.md)（版本里程碑 v5：0.5.0 = Agent 集成，SemVer 对齐）· [ADR-021](../../adr/ADR-021.md)（本地内核进程化：INKFLOW_READY 交付契约）· [ADR-020](../../adr/ADR-020.md)（Electron 选型 + electron-builder 打包）
+> **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（⑤ CLI 独立发布产物）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 v5：0.5.0 = Agent 集成，SemVer 对齐）· [ADR-021](../../adr/kernel/ADR-021.md)（本地内核进程化：INKFLOW_READY 交付契约）· [ADR-020](../../adr/gui/ADR-020.md)（Electron 选型 + electron-builder 打包）
 > **状态**: ✅ 已实现（PR #181，2026-08-08）
 
 >

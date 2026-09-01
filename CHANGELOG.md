@@ -2,7 +2,7 @@
 
 所有重要变更记录于此文件，格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-> 版本口径以 [ADR-019 v11](adr/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
+> 版本口径以 [ADR-019 v11](adr/packaging/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
 
 ## [0.11.0] - 2026-08-22
 
@@ -112,9 +112,9 @@
 ## [0.7.0] - 2026-08-12
 
 ### 新增
-- **F26 Agent 工具基础设施（#90，PR #236）**：deepagents 0.7.5 harness 编排 + 5 只读领域工具（search_characters / check_foreshadowing / get_prior_summary / audit_chapter / count_words），静态注册表 + 工具工厂（adr/ADR-035.md v6）
-- **F27 Writer Agent 闭环（#160，PR #240/#241）**：ReAct 工具循环 + save_draft 草稿确认流（draft → confirm → 正式章节）+ 四重护栏（repeat_tool / max_steps / empty_content / token_budget）+ agent_run 决策轨迹全量快照（adr/ADR-034.md / adr/ADR-036.md）
-- **F28 记忆系统（#159，PR #242）**：diff 事件捕获 + N≥2 偏好学习 + protected 层注入写作上下文 + `inkflow memory list/remove/stats`（adr/ADR-037.md / adr/ADR-038.md）
+- **F26 Agent 工具基础设施（#90，PR #236）**：deepagents 0.7.5 harness 编排 + 5 只读领域工具（search_characters / check_foreshadowing / get_prior_summary / audit_chapter / count_words），静态注册表 + 工具工厂（adr/agent/ADR-035.md v6）
+- **F27 Writer Agent 闭环（#160，PR #240/#241）**：ReAct 工具循环 + save_draft 草稿确认流（draft → confirm → 正式章节）+ 四重护栏（repeat_tool / max_steps / empty_content / token_budget）+ agent_run 决策轨迹全量快照（adr/agent/ADR-034.md / adr/agent/ADR-036.md）
+- **F28 记忆系统（#159，PR #242）**：diff 事件捕获 + N≥2 偏好学习 + protected 层注入写作上下文 + `inkflow memory list/remove/stats`（adr/memory-skills/ADR-037.md / adr/memory-skills/ADR-038.md）
 - **数据目录设置（#266，PR #272）**：`config set data-dir` + GUI 设置页——`%APPDATA%\InkFlow\instance.env` 固定锚点持久化 INKFLOW_DATA_DIR，DB/向量库/chroma 整体迁移，三端一致（CLI config show = 设置 API = 实际目录）
 - **模型测试按钮（#267，PR #271）**：ProviderDialog 测试请求自包含 model（不依赖未保存的注册表状态），真实 key 一键验证连接
 - E2E 增强（#142 PR #238 写作页 / #143 PR #239 项目页+壳）

@@ -137,29 +137,29 @@
 
 ## 三、架构决策记录（ADR）
 
-> **2026-07-31 更新**: 全部 ADR 已提取为独立文件，见 [`adr/`](adr/README.md)（含索引）。
+> **2026-07-31 更新**: 全部 ADR 已提取为独立文件，见 [`adr/`](../adr/README.md)（含索引）。
 > 本目录不再维护内嵌副本，避免双份漂移。新增决策请直接在 `adr/` 创建 ADR-NNN.md 并在索引登记。
 
 | 编号 | 标题 | 状态 |
 |------|------|------|
-| [ADR-001](adr/ADR-001.md) | 模块化单体 + 严格接口隔离 | ✅ 已接受 |
-| [ADR-002](adr/ADR-002.md) | Clean/Hexagonal 风格分层 | ✅ 已接受 |
-| [ADR-003](adr/ADR-003.md) | Repository 模式封装 SQLAlchemy | ✅ 已接受 |
-| [ADR-004](adr/ADR-004.md) | Pydantic v2 作为统一数据契约 | ✅ 已接受 |
-| [ADR-005](adr/ADR-005.md) | LLM Provider — LiteLLM 统一对接 | ⛔ 已弃用（被 ADR-005v2 取代） |
-| [ADR-005v2](adr/ADR-005v2.md) | LLM Provider — LangChain ChatLiteLLM | ✅ 已接受 |
-| [ADR-006](adr/ADR-006.md) | Agent 编排 — 管道链模式 | ⛔ 已弃用（被 ADR-006v2 取代） |
-| [ADR-006v2](adr/ADR-006v2.md) | Agent 编排 — LangGraph StateGraph | ✅ 已接受 |
-| [ADR-007v2](adr/ADR-007v2.md) | 项目包结构（infrastructure 按技术分目录） | ✅ 已接受 |
-| [ADR-008](adr/ADR-008.md) | 配置管理 — Pydantic Settings 分层配置 | ✅ 已接受 |
-| [ADR-009](adr/ADR-009.md) | 依赖注入策略 | ✅ 已接受 |
-| [ADR-010](adr/ADR-010.md) | 上下文管理 — Token 预算 → RAG 增强 | ✅ 已接受 |
-| [ADR-011](adr/ADR-011.md) | 异步无阻塞架构 | ✅ 已接受 |
-| [ADR-012](adr/ADR-012.md) | 错误处理策略 | ✅ 已接受 |
-| [ADR-013](adr/ADR-013.md) | RAG 检索 — LangChain Chroma + 本地 Embedding | ✅ 已接受（Phase 2 实现） |
-| [ADR-014](adr/ADR-014.md) | Prompt 模板管理 — LangChain ChatPromptTemplate | ✅ 已接受 |
-| [ADR-015](adr/ADR-015.md) | 引入 LangChain 全家桶 — 决策理由与约束 | ✅ 已接受 |
-| [ADR-016](adr/ADR-016.md) | 日志方案 — loguru 结构化日志 | ✅ 已接受 |
+| [ADR-001](../adr/architecture/ADR-001.md) | 模块化单体 + 严格接口隔离 | ✅ 已接受 |
+| [ADR-002](../adr/architecture/ADR-002.md) | Clean/Hexagonal 风格分层 | ✅ 已接受 |
+| [ADR-003](../adr/database/ADR-003.md) | Repository 模式封装 SQLAlchemy | ✅ 已接受 |
+| [ADR-004](../adr/database/ADR-004.md) | Pydantic v2 作为统一数据契约 | ✅ 已接受 |
+| [ADR-005(→v2)](../adr/llm/ADR-005v2.md) | LLM Provider — LiteLLM 统一对接 | ⛔ 已弃用（被 ADR-005v2 取代） |
+| [ADR-005v2](../adr/llm/ADR-005v2.md) | LLM Provider — LangChain ChatLiteLLM | ✅ 已接受 |
+| [ADR-006(→v2)](../adr/agent/ADR-006v2.md) | Agent 编排 — 管道链模式 | ⛔ 已弃用（被 ADR-006v2 取代） |
+| [ADR-006v2](../adr/agent/ADR-006v2.md) | Agent 编排 — LangGraph StateGraph | ✅ 已接受 |
+| [ADR-007v2](../adr/architecture/ADR-007v2.md) | 项目包结构（infrastructure 按技术分目录） | ✅ 已接受 |
+| [ADR-008](../adr/service/ADR-008.md) | 配置管理 — Pydantic Settings 分层配置 | ✅ 已接受 |
+| [ADR-009](../adr/service/ADR-009.md) | 依赖注入策略 | ✅ 已接受 |
+| [ADR-010](../adr/llm/ADR-010.md) | 上下文管理 — Token 预算 → RAG 增强 | ✅ 已接受 |
+| [ADR-011](../adr/architecture/ADR-011.md) | 异步无阻塞架构 | ✅ 已接受 |
+| [ADR-012](../adr/architecture/ADR-012.md) | 错误处理策略 | ✅ 已接受 |
+| [ADR-013](../adr/llm/ADR-013.md) | RAG 检索 — LangChain Chroma + 本地 Embedding | ✅ 已接受（Phase 2 实现） |
+| [ADR-014](../adr/llm/ADR-014.md) | Prompt 模板管理 — LangChain ChatPromptTemplate | ✅ 已接受 |
+| [ADR-015](../adr/llm/ADR-015.md) | 引入 LangChain 全家桶 — 决策理由与约束 | ✅ 已接受 |
+| [ADR-016](../adr/service/ADR-016.md) | 日志方案 — loguru 结构化日志 | ✅ 已接受 |
 
 ---
 

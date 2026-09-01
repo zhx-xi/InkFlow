@@ -203,7 +203,7 @@ def count_words(content: str) -> int:
 
 ## 8. 文件结构
 
-遵循 ADR-007 包结构，新增/修改文件：
+遵循 ADR-007v2 包结构，新增/修改文件：
 
 ```
 backend/src/inkflow/

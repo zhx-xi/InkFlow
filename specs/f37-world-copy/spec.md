@@ -11,7 +11,7 @@
 >
 > **依赖**: ✅ F10（world_settings 表）· ✅ F35（#173 地点树：list_descendants 子树查询）· ✅ F36（#174 地图：maps/map_pins 表 + MapAssetStoreProtocol + list_by_root_locations）· ✅ F1（项目 FK）
 >
-> **参考 ADR**: [ADR-019](../../adr/ADR-019.md)（版本里程碑）· [ADR-002](../../adr/ADR-002.md)（六边形分层）· [ADR-012](../../adr/ADR-012.md)（错误处理）
+> **参考 ADR**: [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）
 >
 > **状态**: ✅ 已实现（PR #223，#175 2026-08-09）
 

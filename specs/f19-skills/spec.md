@@ -10,7 +10,7 @@
 >
 > **依赖**: ✅ ADR-022（skills 包形态决策）· ✅ F7 CLI 全局约定（`--json` 信封/退出码 0/1/2/130，f7-cli spec §5/§7）· ✅ f19-packaging（PyInstaller 打包链 + release.yml，0.4.0 已交付）· ✅ f33-cli-dist（CLI zip 产物，0.5.0 已交付）· ⚡ #251（CLI 域并行，无代码依赖，merge 错开——roadmap 2026-08-12 拍板）
 >
-> **参考 ADR**: [ADR-022](../../adr/ADR-022.md)（skills 包：源码单一真相 + 三通道分发）· [ADR-019](../../adr/ADR-019.md)（版本里程碑 v6：skills 后移至 1.0.0 后于 0.8.0 提前）· [ADR-021](../../adr/ADR-021.md)（本地内核进程化：CLI/skills/agent 共享同一内核）· [ADR-023](../../adr/ADR-023.md)（MCP Server：发布后补 mcp-setup.md）
+> **参考 ADR**: [ADR-022](../../adr/memory-skills/ADR-022.md)（skills 包：源码单一真相 + 三通道分发）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 v6：skills 后移至 1.0.0 后于 0.8.0 提前）· [ADR-021](../../adr/kernel/ADR-021.md)（本地内核进程化：CLI/skills/agent 共享同一内核）· [ADR-023](../../adr/mcp/ADR-023.md)（MCP Server：发布后补 mcp-setup.md）
 >
 > **状态**: ✅ 已实现（PR #304，2026-08-13）
 
@@ -286,7 +286,7 @@ inkflow skills remove <NAME> [--json]
 | `backend/src/inkflow/cli/app.py` | 注册 `skills` 子组（`app.add_typer(skills.app, name="skills")`） | §4.1 |
 | `AGENTS.md` | 0.8.0 里程碑回写 + F19 家族条目补 skills 子任务（收尾，Phase 8） | — |
 | `FEATURES.md` | skills 包功能登记（合入后五项同步） | — |
-| `adr/ADR-019.md` | 0.8.0 行补 skills 交付记录（合入后） | — |
+| `adr/packaging/ADR-019.md` | 0.8.0 行补 skills 交付记录（合入后） | — |
 
 ### 8.3 不修改（明确声明）
 
