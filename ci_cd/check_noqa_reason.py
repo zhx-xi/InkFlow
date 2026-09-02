@@ -33,17 +33,17 @@ def check(paths: list[str]) -> list[tuple[str, int, str]]:
         for f in files:
             if "__pycache__" in f.parts:
                 continue
-            for lineno, line in enumerate(
-                f.read_text(encoding="utf-8").splitlines(), start=1
-            ):
-                if (
-                    NOQA_RE.search(line) or IGNORE_RE.search(line)
-                ) and not REASON_RE.search(line):
+            for lineno, line in enumerate(f.read_text(encoding="utf-8").splitlines(), start=1):
+                if (NOQA_RE.search(line) or IGNORE_RE.search(line)) and not REASON_RE.search(line):
                     bad.append((str(f), lineno, line.strip()))
     return bad
 
 
 def main() -> int:
+    # Windows CI stdout 默认 cp1252：中文修复提示/违规行直写会抛 UnicodeEncodeError。
+    # sys.stdout.reconfigure(errors="replace") 官方兜底：任意编码不崩，非 ASCII 显示为 ?
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
     if len(sys.argv) < 2:
         print(__doc__)
         return 2

@@ -136,13 +136,14 @@ jobs:
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $ruffOutput = uv run ruff check src/ tests/unit/ ../tests/ --output-format=concise
+          $ruffOutput = uv run ruff check src/ tests/unit/ ../tests/ ../ci_cd/ --output-format=concise
           $ruffExit = $LASTEXITCODE
           if ($ruffOutput) {
             $fixed = $ruffOutput `
               -replace '^src/', 'backend/src/' `
               -replace '^tests/unit/', 'backend/tests/unit/' `
-              -replace '^\.\./tests/', 'tests/'
+              -replace '^\.\./tests/', 'tests/' `
+              -replace '^\.\./ci_cd/', 'ci_cd/'
             $fixed | reviewdog -efm='%f:%l:%c: %m' -reporter=github-pr-review -level=warning -name=ruff -tee
           }
           if ($ruffExit -ne 0) { exit $ruffExit }
@@ -161,6 +162,12 @@ jobs:
         shell: pwsh
         run: |
           uv run python ../ci_cd/check_noqa_reason.py src/ ../tests/ tests/unit/
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run ci_cd guard tests
+        shell: pwsh
+        run: |
+          uv run pytest ../ci_cd/tests/ -q --reruns 2 --reruns-delay 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   # ── Unit tests (fast, no DB, < 10s) ──
@@ -981,28 +988,31 @@ jobs:
           INKFLOW_FUNC_COV_SRC: src
           INKFLOW_FUNC_COV_REPORT: func_cov_unit.json
           PYTHONPATH: ../ci_cd
-        run: uv run pytest tests/unit/ -q -p func_cov_plugin
+        # --reruns 2：chromadb 1.5.9 Windows CI hnsw 偶发竞态（#409/#873 家族；S3f 收尾批
+        # 内 function-coverage 连续两次实锤——#884 首红 rerun 即绿、#885 dispatch run 同签名），
+        # 与 unit/api/cli/integration 四个常规 job 对齐。
+        run: uv run pytest tests/unit/ -q -p func_cov_plugin --reruns 2 --reruns-delay 1
       - name: Collect func-cov (api)
         env:
           INKFLOW_FUNC_COV: "1"
           INKFLOW_FUNC_COV_SRC: src
           INKFLOW_FUNC_COV_REPORT: func_cov_api.json
           PYTHONPATH: ../ci_cd
-        run: uv run pytest ../tests/api/ -q -p func_cov_plugin
+        run: uv run pytest ../tests/api/ -q -p func_cov_plugin --reruns 2 --reruns-delay 1
       - name: Collect func-cov (cli)
         env:
           INKFLOW_FUNC_COV: "1"
           INKFLOW_FUNC_COV_SRC: src
           INKFLOW_FUNC_COV_REPORT: func_cov_cli.json
           PYTHONPATH: ../ci_cd
-        run: uv run pytest ../tests/cli/ -q -p func_cov_plugin
+        run: uv run pytest ../tests/cli/ -q -p func_cov_plugin --reruns 2 --reruns-delay 1
       - name: Collect func-cov (integration)
         env:
           INKFLOW_FUNC_COV: "1"
           INKFLOW_FUNC_COV_SRC: src
           INKFLOW_FUNC_COV_REPORT: func_cov_integration.json
           PYTHONPATH: ../ci_cd
-        run: uv run pytest ../tests/integration/ -q -p func_cov_plugin
+        run: uv run pytest ../tests/integration/ -q -p func_cov_plugin --reruns 2 --reruns-delay 1
       - name: Merge called-sets
         run: uv run python ../ci_cd/merge_func_cov_calls.py func_cov_unit.json func_cov_api.json func_cov_cli.json func_cov_integration.json func_cov_called.json
       - name: Function-coverage gate
