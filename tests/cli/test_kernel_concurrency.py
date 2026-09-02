@@ -41,6 +41,37 @@ def _kill_kernel_tree(pid: int) -> None:
         )
 
 
+def _kill_kernel_by_statefile(state_file: Path) -> None:
+    """按 kernel.json 路径 sweep-kill：uv trampoline 链上内核 pid 常是最深层解释器，
+    `taskkill /PID` 只杀其子树，父链（launcher）残留 → 用命令行列匹配兜底全清。"""
+    sweep = f'--port-file {state_file}'
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        try:
+            import subprocess as sp
+
+            if os.name != "nt":
+                return
+            out = sp.run(
+                [
+                    "wmic",
+                    "process",
+                    "where",
+                    f"commandline like '%{sweep}%'",
+                    "get",
+                    "processid",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            for line in out.stdout.splitlines():
+                line = line.strip()
+                if line.isdigit():
+                    _kill_kernel_tree(int(line))
+        except Exception:
+            pass
+
+
 _ENSURE_KERNEL_SNIPPET = textwrap.dedent(
     """
     import asyncio, json, sys
@@ -123,6 +154,7 @@ class TestDualProcessEnsureKernelMutex:
         assert st.port == handles[0]["port"]
         assert not (data_dir / "kernel.json.tmp").exists()
         _kill_kernel_tree(pids[0])
+        _kill_kernel_by_statefile(state_file)
 
 
 @pytest.mark.skipif(_skip_ci(), reason="需真实内核/多进程；本机验证")
