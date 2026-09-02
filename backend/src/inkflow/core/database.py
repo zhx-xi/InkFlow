@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import suppress
 from typing import Any, TypeVar, overload
 
+from loguru import logger
 from sqlalchemy import Connection, event, text
 from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.engine import Dialect
@@ -245,6 +246,15 @@ def ensure_chat_messages_conversation_id_column(conn: Connection) -> None:
     (1) 为还有 NULL conversation_id 消息的项目各建一条 conversation，并链接
         （每项目取最早一条 conversation）；
     (2) UPDATE chat_messages SET conversation_id = 该项目最早 conversation.id。
+
+    ① 的 INSERT 列清单动态探测 conversations 表列（#869 S3d defect C）：≤0.11
+    库（#744 前）跳过中间版本直升 #766+ 时，conversations 由 create_all 以当前
+    ORM schema 新建，delete_permission/title 为 NOT NULL 且无 SQL DEFAULT（ORM
+    default 仅 Python 侧生效），固定三列 raw INSERT 撞 NOT NULL constraint 使启动
+    崩溃。因此按存在列补字面值：delete_permission → 'manual'、title → ''（与
+    ensure_conversations_delete_permission_column / ORM default 一致）；#766/#770
+    前旧表缺列 → 维持三列回填，后续 ensure_* 以 SQL DEFAULT 补上。列名取自固定
+    白名单（project_id/created_at/is_deleted/delete_permission/title），无用户输入。
     """
     cols = conn.execute(text("PRAGMA table_info(chat_messages)")).fetchall()
     names = {row[1] for row in cols}
@@ -254,11 +264,23 @@ def ensure_chat_messages_conversation_id_column(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE chat_messages ADD COLUMN conversation_id INTEGER"))
     # 回填：为还有 NULL conversation_id 消息的项目各建一条 conversation，并链接
     # （幂等，仅首次缺列时执行）
-    # ① 建 conversation
+    # ① 建 conversation：INSERT 列清单按 conversations 实际列动态拼装（#869 S3d
+    # defect C——create_all 新建表 delete_permission/title NOT NULL 且无 SQL DEFAULT，
+    # 固定三列 INSERT 撞 NOT NULL constraint；仅补存在列，白名单标识符无用户输入）
+    conv_cols = conn.execute(text("PRAGMA table_info(conversations)")).fetchall()
+    conv_names = {row[1] for row in conv_cols}
+    insert_columns = ["project_id", "created_at", "is_deleted"]
+    select_exprs = ["project_id", "CURRENT_TIMESTAMP", "0"]
+    if "delete_permission" in conv_names:
+        insert_columns.append("delete_permission")
+        select_exprs.append("'manual'")
+    if "title" in conv_names:
+        insert_columns.append("title")
+        select_exprs.append("''")
     conn.execute(
         text(
-            "INSERT INTO conversations (project_id, created_at, is_deleted) "
-            "SELECT DISTINCT project_id, CURRENT_TIMESTAMP, 0 FROM chat_messages "
+            f"INSERT INTO conversations ({', '.join(insert_columns)}) "
+            f"SELECT DISTINCT {', '.join(select_exprs)} FROM chat_messages "
             "WHERE conversation_id IS NULL"
         )
     )
@@ -527,11 +549,44 @@ def ensure_world_categories_kind_column(conn: Connection) -> None:
 
 
 def ensure_world_root_unique_index(conn: Connection) -> None:
-    """#849: 为既有库 world_settings 补根单例部分唯一索引（幂等，conn.run_sync 调用）."""
+    """#849/#869 S3d：为既有库 world_settings 补根单例部分唯一索引（幂等，conn.run_sync 调用）.
+
+    先降级存量多根再建索引：#849 之前（#211 真删后、根单例约束前）的旧库同项目可含
+    多个 parent_id IS NULL 顶层行（旧 category 多行语义），直接 CREATE UNIQUE INDEX
+    会撞 UNIQUE 约束（IntegrityError）使启动崩溃。每项目按 id 升序保留首行（最小 id）
+    为根，其余行 parent_id 挂首根——零行删除，数据保全（specs/f35-world-tree §2.1
+    rule 6，#834/#849）。降级完成后建索引，重跑无存量多根 → no-op 幂等。
+
+    调用点必须在 ensure_world_drop_is_deleted 之后：软删行（is_deleted=1）已物理清除、
+    is_deleted 列已 DROP，SELECT ... WHERE parent_id IS NULL 只命中活行；若在清理前
+    执行，软删根行仍计入根集，且降级可能把行挂到待删根下（#869 S3d）。
+    """
     cols = conn.execute(text("PRAGMA table_info(world_settings)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
         return  # 表不存在（全新环境）-> create_all 建新表自动含索引
+    # ① 存量多根降级：每项目首行（最小 id）留根，其余行 parent_id 挂首根。逐行
+    # 参数化 UPDATE——避免关联子查询的行集随自身 UPDATE 而漂移。
+    rows = conn.execute(
+        text(
+            "SELECT id, project_id FROM world_settings WHERE parent_id IS NULL "
+            "ORDER BY project_id, id"
+        )
+    ).fetchall()
+    first_root_ids: dict[int, int] = {}
+    demoted = 0
+    for row_id, project_id in rows:
+        first_root_id = first_root_ids.setdefault(project_id, row_id)
+        if row_id == first_root_id:
+            continue
+        conn.execute(
+            text("UPDATE world_settings SET parent_id = :first_root_id WHERE id = :row_id"),
+            {"first_root_id": first_root_id, "row_id": row_id},
+        )
+        demoted += 1
+    if demoted > 0:
+        logger.info("world_settings 存量多根降级: {} 行挂至各项目首根", demoted)
+    # ② 建根单例部分唯一索引
     conn.execute(
         text(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_world_settings_root_per_project "
