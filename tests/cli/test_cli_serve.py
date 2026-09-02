@@ -600,3 +600,125 @@ class TestServeDebugMode:
             result = cli_runner.invoke(app, ["--debug"])
         assert result.exit_code == 0
         assert set(_parse_ready(result.output)) == {"port", "token", "pid", "version"}
+
+
+class TestServeDebugEnvGroup:
+    """S3f-T1（#869，contract-s3f-t1.md §2.3）：serve debug 态与 config/env 联动（G2）。
+
+    G2 契约（serve.py GREEN 义务）：`is_debug` 判定为 True 时，在 `_run_server(...)`
+    之前 `config.debug = True` + `os.environ["INKFLOW_DEBUG"] = "1"`（reload 子进程 /
+    uvicorn import-string 首次 import app 时继承 debug 态——docs 门控按 config.debug
+    判定，不联动则 flag 态自动打开的 /docs 404 死链）。非 debug 路径不回写
+    （随机 token / info 级别 / 既有契约零破坏）。
+
+    config 单例陷阱：importlib 取 inkflow.core.config 真模块后
+    monkeypatch.setattr(cfg_mod.config, "debug", ...)（test_log.py:100 同款注释先例——
+    `import inkflow.core.config as cfg_mod` 会绑定到实例，非模块）。
+
+    RED 预期：G2 回写未实现 → 断言 config.debug / INKFLOW_DEBUG 回写的用例 FAIL；
+    debug 分支参数传递 / token 解析部分当前 PASS（is_debug 已含 config.debug）。
+    """
+
+    def test_debug_env_config_triggers_debug_branch(self, cli_runner, monkeypatch):
+        """【R-部分】config.debug=True（不传 --debug flag）→ debug 分支生效 + G2 env 回写。
+
+        _run_server 收到 debug=True（第 4 参/kwargs）+ token == INKFLOW_DEBUG_TOKEN
+        env 值——token/参数部分当前 PASS（is_debug 已含 config.debug）；
+        G2 联动新增断言 `os.environ["INKFLOW_DEBUG"] == "1"` 当前 FAIL（serve.py
+        不回写 env → docs 门控在 reload 子进程 / uvicorn import 时读到 False）。
+        """
+        import importlib
+
+        cfg_mod = importlib.import_module("inkflow.core.config")
+        monkeypatch.setattr(cfg_mod.config, "debug", True)
+        monkeypatch.setenv("INKFLOW_DEBUG_TOKEN", "s3f-t1-debug-token")
+        monkeypatch.delenv("INKFLOW_DEBUG", raising=False)
+        from inkflow.cli.commands.serve import app
+
+        with (
+            patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT) as mock_run,
+            patch("threading.Timer"),
+            patch("webbrowser.open"),
+        ):
+            result = cli_runner.invoke(app, [])
+        assert result.exit_code == 0
+        assert _param(mock_run.call_args, "debug", 3) is True
+        assert _parse_ready(result.output)["token"] == "s3f-t1-debug-token"
+        # G2 联动：is_debug 生效路径必须把 debug 态写回 env（reload/import 继承）
+        assert os.environ["INKFLOW_DEBUG"] == "1"
+
+    def test_debug_flag_propagates_to_config_and_env(self, cli_runner, monkeypatch):
+        """【R】传 --debug → 调用结束后 cfg_mod.config.debug is True 且 INKFLOW_DEBUG=1。
+
+        G2 核心契约：flag 必须写回 config 单例（进程内中间件运行时读取）+
+        进程 env（reload 子进程 / uvicorn import-string 继承）。当前 serve.py
+        只算 is_debug 不回写 → 两断言 FAIL（RED）。
+        """
+        import importlib
+
+        cfg_mod = importlib.import_module("inkflow.core.config")
+        monkeypatch.setattr(cfg_mod.config, "debug", False)  # 预清：防单例初始真值假绿
+        monkeypatch.delenv("INKFLOW_DEBUG", raising=False)
+        monkeypatch.delenv("INKFLOW_DEBUG_TOKEN", raising=False)
+        from inkflow.cli.commands.serve import app
+
+        with (
+            patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT),
+            patch("threading.Timer"),
+            patch("webbrowser.open"),
+        ):
+            result = cli_runner.invoke(app, ["--debug"])
+        assert result.exit_code == 0
+        assert cfg_mod.config.debug is True
+        assert os.environ["INKFLOW_DEBUG"] == "1"
+
+    def test_debug_env_sets_config_and_env(self, cli_runner, monkeypatch):
+        """【G】config.debug=True 起 serve（无 flag）→ 同上两断言（env 半边联动）。
+
+        config 半边为测试自设前提；env 半边（INKFLOW_DEBUG=1 回写）是 G2 契约
+        新增行为——RED 阶段 serve 不回写 env → env 断言 FAIL，GREEN 后全绿。
+        """
+        import importlib
+
+        cfg_mod = importlib.import_module("inkflow.core.config")
+        monkeypatch.setattr(cfg_mod.config, "debug", True)
+        monkeypatch.delenv("INKFLOW_DEBUG", raising=False)
+        monkeypatch.delenv("INKFLOW_DEBUG_TOKEN", raising=False)
+        from inkflow.cli.commands.serve import app
+
+        with (
+            patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT),
+            patch("threading.Timer"),
+            patch("webbrowser.open"),
+        ):
+            result = cli_runner.invoke(app, [])
+        assert result.exit_code == 0
+        assert cfg_mod.config.debug is True
+        assert os.environ["INKFLOW_DEBUG"] == "1"
+
+    def test_default_no_debug_side_effects(self, cli_runner, monkeypatch):
+        """【R】负向守护：默认（无 flag 无 env 且 config.debug=False）零副作用。
+
+        断言 config.debug 保持 False、INKFLOW_DEBUG 不被设置、threading.Timer
+        零注册（--open-browser=False 时 webbrowser 路径零 Timer）——守护 G2
+        回写只发生在 is_debug 分支，不泄漏到默认路径（contract §2.3 #4）。
+        """
+        import importlib
+
+        cfg_mod = importlib.import_module("inkflow.core.config")
+        monkeypatch.setattr(cfg_mod.config, "debug", False)
+        monkeypatch.delenv("INKFLOW_DEBUG", raising=False)
+        monkeypatch.delenv("INKFLOW_DEBUG_TOKEN", raising=False)
+        from inkflow.cli.commands.serve import app
+
+        with (
+            patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT),
+            patch("threading.Timer") as mock_timer,
+            patch("webbrowser.open") as mock_wb,
+        ):
+            result = cli_runner.invoke(app, [])
+        assert result.exit_code == 0
+        assert cfg_mod.config.debug is False
+        assert "INKFLOW_DEBUG" not in os.environ
+        mock_timer.assert_not_called()
+        mock_wb.assert_not_called()

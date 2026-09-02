@@ -52,6 +52,7 @@
 | RAG 向量检索 | Chroma 本地向量库 + BGE Embedding；`inkflow vector reindex/retrieve` | ADR-013，F14 落地 |
 | 依赖锁定 | Python `uv.lock` 全量锁定（181 包 + sha256）；前端 `pnpm-lock.yaml` 约定 | ADR-025 |
 | 日志与错误体系 | Loguru；统一错误码 + JSON 信封（CLI） | ADR-016 / ADR-012 |
+| Debug 模式可观测性（F51/S3f-T1） | 三层统一 `INKFLOW_DEBUG`：后端 `config.debug` + serve 联动 + GUI DevTools/docs 运行时门控（非 debug /docs /redoc 404） | ADR-044 · `specs/f51-debug-mode/` · S3f-T1 #869 |
 
 ### 1.4 GUI 桌面端 + SSE 流式（0.3.0，F19/F23 提前交付 ✅）
 

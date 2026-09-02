@@ -559,7 +559,7 @@ jobs:
         run: pnpm --filter inkflow-electron build
 
       - name: E2E shell (Playwright _electron launch/revive/recycle + tray)
-        run: pnpm --filter inkflow-electron test:e2e e2e-shell e2e-tray
+        run: pnpm --filter inkflow-electron test:e2e e2e-shell e2e-tray e2e-debug-triad
 
   e2e-frontend-projects:
     # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）

@@ -96,6 +96,14 @@ def serve(
 
     is_debug = config.debug or debug
 
+    # S3f-T1 G2（#869）：debug 态必须回写 config 单例 + 进程 env——uvicorn
+    # import-string 首次 import app / reload 子进程继承；docs 门控按 config.debug
+    # 每次请求运行时判定，不回写则 flag/env 态自动打开的 /docs 404 死链。
+    # 非 debug 路径不回写（随机 token / info 级别 / 既有契约零破坏）。
+    if is_debug:
+        config.debug = True
+        os.environ["INKFLOW_DEBUG"] = "1"
+
     # token 解析：显式指定原样使用；debug 缺省用可预测 token（INKFLOW_DEBUG_TOKEN
     # 可覆盖）；非 debug 缺省随机生成（每次启动不同）
     if token is not None:

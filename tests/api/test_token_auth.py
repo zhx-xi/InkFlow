@@ -42,6 +42,10 @@
 5. 校验范围（Q2 选项 B）：所有端点均需 token，【含 /health】；豁免仅
    /docs /redoc /openapi.json（静态文档，无数据面）。/api/v1/projects
    为代表性数据面端点。
+   S3f-T1 契约升级（#869，contract-s3f-t1.md §2.2）：/docs /redoc 的 token 豁免
+   语义仅 debug 态——docs 可达性由 docs_gate.py 按 config.debug 门控（非 debug
+   → 404），豁免在 debug 透传后才生效；/openapi.json 不受 docs 门控，豁免不变。
+   门控矩阵见 test_docs_gate.py。
 
 6. 无 token 模式（spec §2.3.1 补充行）：env `INKFLOW_SERVER_TOKEN`
    未设置时中间件直通（不校验任何请求）。token 校验是 `serve` 命令的
@@ -242,13 +246,31 @@ class TestTokenAuthRequired:
 class TestTokenAuthExemptions:
     """豁免仅 /docs /redoc /openapi.json（静态文档，无数据面）。"""
 
-    def test_docs_exempt_from_token(self, client, set_token_env):
-        """GET /docs 无 token → 200（Swagger UI 文档页）。"""
+    def test_docs_exempt_from_token(self, client, set_token_env, monkeypatch):
+        """GET /docs 无 token → 200（Swagger UI 文档页）。
+
+        S3f-T1 契约升级（contract-s3f-t1.md §2.2）：豁免语义仅 debug 态——
+        先置 config.debug=True（docs 门控 debug 态才透传），token 豁免在
+        透传后生效；非 debug /docs 404 见 test_docs_gate.py。
+        """
+        import importlib
+
+        cfg_mod = importlib.import_module("inkflow.core.config")
+        monkeypatch.setattr(cfg_mod.config, "debug", True)
         resp = client.get("/docs")
         assert resp.status_code == 200
 
-    def test_redoc_exempt_from_token(self, client, set_token_env):
-        """GET /redoc 无 token → 200（ReDoc 文档页）。"""
+    def test_redoc_exempt_from_token(self, client, set_token_env, monkeypatch):
+        """GET /redoc 无 token → 200（ReDoc 文档页）。
+
+        S3f-T1 契约升级（contract-s3f-t1.md §2.2）：豁免语义仅 debug 态——
+        先置 config.debug=True（docs 门控 debug 态才透传），token 豁免在
+        透传后生效；非 debug /redoc 404 见 test_docs_gate.py。
+        """
+        import importlib
+
+        cfg_mod = importlib.import_module("inkflow.core.config")
+        monkeypatch.setattr(cfg_mod.config, "debug", True)
         resp = client.get("/redoc")
         assert resp.status_code == 200
 

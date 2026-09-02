@@ -135,3 +135,76 @@ def test_setup_logging_debug_forces_console_debug(monkeypatch, tmp_path):
 
     handlers = list(logger._core.handlers.values())
     assert handlers[0].levelno == 10  # loguru DEBUG = 10
+
+
+# ---- S3f-T1（#869，contract-s3f-t1.md §2.4）：frozen + APPDATA 端到端组合链 ----
+def test_resolve_log_dir_frozen_appdata_chain(monkeypatch, tmp_path):
+    """S3f-T1-端到端：frozen + APPDATA + 空 instance.env 锚点 → 真重建 InkFlowConfig()
+    实例 data_dir == <APPDATA>/InkFlow → resolve_log_dir == <APPDATA>/InkFlow/logs。
+
+    contract §2.4 #1：frozen 分支已实现（§1.4 无实现改动），本用例补「frozen +
+    APPDATA → %APPDATA%/InkFlow/logs」端到端组合链——逐段真走 config 解析
+    （env INKFLOW_DATA_DIR 清空 + instance.env 锚点指向不存在路径 + sys.frozen=True +
+    APPDATA=tmp_path），非 setattr data_dir 捷径。resolve_log_dir 读 log 模块级
+    config 绑定（log.py `from inkflow.core.config import config`）→ 须 patch
+    log_module.config 为重建实例（端到端语义）。
+    """
+    import importlib
+
+    from inkflow.core.config import InkFlowConfig
+
+    cfg_mod = importlib.import_module("inkflow.core.config")
+    # instance.env 锚点指向不存在路径（复用 test_config_instance_env _patch_anchor 手法）
+    monkeypatch.setattr(
+        cfg_mod,
+        "get_instance_env_path",
+        lambda: tmp_path / "InkFlow" / "instance.env",
+        raising=False,
+    )
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.delenv("INKFLOW_DATA_DIR", raising=False)
+    monkeypatch.delenv("INKFLOW_DEBUG", raising=False)
+
+    rebuilt = InkFlowConfig()  # 端到端链：真重建实例（走 _default_data_dir 解析）
+    monkeypatch.setattr(log_module, "config", rebuilt)
+
+    assert rebuilt.data_dir == tmp_path / "InkFlow"
+    assert log_module.resolve_log_dir() == tmp_path / "InkFlow" / "logs"
+
+
+def test_setup_logging_frozen_writes_under_appdata_logs(monkeypatch, tmp_path):
+    """S3f-T1-端到端写盘：同上前提 + setup_logging()（不传 log_dir）→ 日志落在
+    <APPDATA>/InkFlow/logs 且文件内容含该条（contract §2.4 #2）。
+
+    frozen 分支 resolve_log_dir → config.data_dir/logs；log_module.config patch 为
+    重建实例后，setup_logging 的文件 sink 才落到 tmp_path 下（防写真实 backend/logs）。
+    """
+    import importlib
+
+    from inkflow.core.config import InkFlowConfig
+
+    cfg_mod = importlib.import_module("inkflow.core.config")
+    monkeypatch.setattr(
+        cfg_mod,
+        "get_instance_env_path",
+        lambda: tmp_path / "InkFlow" / "instance.env",
+        raising=False,
+    )
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.delenv("INKFLOW_DATA_DIR", raising=False)
+    monkeypatch.delenv("INKFLOW_DEBUG", raising=False)
+
+    rebuilt = InkFlowConfig()
+    monkeypatch.setattr(log_module, "config", rebuilt)
+
+    marker = "s3f-t1-frozen-appdata-chain"
+    log_module.setup_logging()
+    logger.info(marker)
+
+    log_dir = tmp_path / "InkFlow" / "logs"
+    files = list(log_dir.glob("inkflow_*.log"))
+    assert files, f"frozen+APPDATA 组合链下日志未落在 {log_dir}"
+    contents = "\n".join(p.read_text(encoding="utf-8") for p in files)
+    assert marker in contents, f"日志文件内容缺少 marker（{files}）"
