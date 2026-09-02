@@ -333,6 +333,20 @@ async def stream_chat_agent(
             if cancel.is_set():
                 yield await _end_run_terminated(repo, svc, run, data)
                 return
+        except asyncio.CancelledError:
+            # #842：await LLM 期间被取消（客户端断连/任务取消）→ 收集 trace 并落
+            # TERMINATED 终态（repo.save）后 re-raise，绝不遗留 running；保存终态失败
+            # 仅跳过 done 终帧，不得反向打断 CancelledError 传播。
+            if run is not None:
+                try:
+                    done_frame = await _end_run_terminated(repo, svc, run, data)
+                except Exception:
+                    # 保存终态失败不阻断取消传播
+                    pass
+                else:
+                    # 正常路径 yield done 终帧回传 run_id（前端据此关闭流）
+                    yield done_frame
+            raise
         except LLMRequestError:
             if run is not None:
                 await _save_failed_run(repo, svc, run, data)
