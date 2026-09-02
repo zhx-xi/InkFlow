@@ -101,6 +101,10 @@ function GeneralPanel() {
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const saveHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // #880：卸载标记——fire-and-forget PATCH 的 then 回调可能在卸载后才 resolve，
+  // 届时无条件 setState / 排「已保存」隐藏 timer 会在 jsdom teardown 后触发
+  // （CI unit-frontend unhandled error 根因）。回调经本 ref 判卸载后跳过组件级反馈。
+  const unmountedRef = useRef(false);
 
   const FONTS: Array<{ value: FontKey; labelKey: string }> = [
     { value: 'serif', labelKey: 'set.font.serif' },
@@ -152,14 +156,18 @@ function GeneralPanel() {
     const markSaved = () => {
       valueRef.current = String(n);
       dirtyRef.current = false;
-      setDirty(false);
-      pushToast('ok', t('toast.saved'));
-      setSaveState('saved');
-      if (saveHideTimerRef.current) clearTimeout(saveHideTimerRef.current);
-      saveHideTimerRef.current = setTimeout(() => setSaveState('idle'), SAVE_INDICATOR_HIDE_MS);
+      // #880：卸载后到达的成功回调——业务合并（上方 ref/store）与全局 toast 保留，
+      // 跳过组件级 setDirty/setSaveState 与 2s 隐藏 timer（teardown 后触发 = unhandled error）
+      if (!unmountedRef.current) {
+        setDirty(false);
+        pushToast('ok', t('toast.saved'));
+        setSaveState('saved');
+        if (saveHideTimerRef.current) clearTimeout(saveHideTimerRef.current);
+        saveHideTimerRef.current = setTimeout(() => setSaveState('idle'), SAVE_INDICATOR_HIDE_MS);
+      }
     };
     const markFailed = () => {
-      setSaveState('idle');
+      if (!unmountedRef.current) setSaveState('idle'); // #880：卸载后无指示器可复位
       pushToast('err', t('toast.saveFailed'));
     };
     const project = useProjectStore
@@ -193,6 +201,7 @@ function GeneralPanel() {
   const runImmediateSave = (action: () => Promise<boolean>) => {
     setSaveState('saving');
     void action().then((ok) => {
+      if (unmountedRef.current) return; // #880：setter 在卸载后 resolve → 跳过组件反馈与隐藏 timer
       if (ok) {
         setSaveState('saved');
         if (saveHideTimerRef.current) clearTimeout(saveHideTimerRef.current);
@@ -274,6 +283,7 @@ function GeneralPanel() {
 
   // 卸载守卫（缺陷 #1 修复）：跳页/切分类时若 dirty → flush（fire-and-forget）
   useEffect(() => () => {
+    unmountedRef.current = true; // #880：置位卸载标记——此后到达的 then 回调跳过组件级 setState/timer
     // #189：清理防抖 / 保存指示计时器（防卸载后 timer 回调 setState）
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     if (saveHideTimerRef.current) clearTimeout(saveHideTimerRef.current);
