@@ -136,13 +136,14 @@ jobs:
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $ruffOutput = uv run ruff check src/ tests/unit/ ../tests/ --output-format=concise
+          $ruffOutput = uv run ruff check src/ tests/unit/ ../tests/ ../ci_cd/ --output-format=concise
           $ruffExit = $LASTEXITCODE
           if ($ruffOutput) {
             $fixed = $ruffOutput `
               -replace '^src/', 'backend/src/' `
               -replace '^tests/unit/', 'backend/tests/unit/' `
-              -replace '^\.\./tests/', 'tests/'
+              -replace '^\.\./tests/', 'tests/' `
+              -replace '^\.\./ci_cd/', 'ci_cd/'
             $fixed | reviewdog -efm='%f:%l:%c: %m' -reporter=github-pr-review -level=warning -name=ruff -tee
           }
           if ($ruffExit -ne 0) { exit $ruffExit }
@@ -161,6 +162,12 @@ jobs:
         shell: pwsh
         run: |
           uv run python ../ci_cd/check_noqa_reason.py src/ ../tests/ tests/unit/
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run ci_cd guard tests
+        shell: pwsh
+        run: |
+          uv run pytest ../ci_cd/tests/ -q --reruns 2 --reruns-delay 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   # ── Unit tests (fast, no DB, < 10s) ──
