@@ -1,9 +1,6 @@
 /**
  * 底部 AI 聊天框（spec §4.1，#541 流式版）：streamChat SSE 驱动
- * - 发送 → streamChat({project_id, prompt, chapter_id?, chapter_context?}, callbacks)
- * - 流式渐进：onDelta 逐字追加当前 ai 消息；onDone → parseChatReply 解析意图（#477 保留）
- * - onError → 错误文案（write.chat.failed），不插入正文；并发保护：流式 in-flight 时再次发送不触发第二次 streamChat；done/error 后可继续
- * - abort 清理：卸载时调用 streamChat 返回的 abort；hermes 风格：user 靠右 / ai 靠左 + 角色标签 + space-y-3 空行
+ * - 发送 → streamChat({project_id, prompt, chapter_id?, chapter_context?}, callbacks) 流式渐进：onDelta 逐字追加当前 ai 消息；onDone → parseChatReply 解析意图（#477 保留） onError → 错误文案（write.chat.failed），不插入正文；并发保护：流式 in-flight 时再次发送不触发第二次 streamChat；done/error 后可继续 abort 清理：卸载时调用 streamChat 返回的 abort；hermes 风格：user 靠右 / ai 靠左 + 角色标签 + space-y-3 空行
  */
 import {
   useCallback,
@@ -631,6 +628,7 @@ export function ChatPanel({
         <div
           data-testid="chat-messages"
           data-height={String(height)}
+          aria-live="polite"
           ref={messagesRef}
           className={
             isFull
@@ -816,6 +814,7 @@ export function ChatPanel({
       {(expanded || isFull) && pipelineOutputEntries.length > 0 && (
         <div
           data-testid="pipeline-output-area"
+          aria-live="polite"
           className="max-h-[240px] space-y-2 overflow-y-auto text-[13px]"
         >
           {pipelineOutputEntries.map((entry) => (

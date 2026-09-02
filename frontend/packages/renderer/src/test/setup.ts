@@ -28,15 +28,18 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 }
 
 // Radix Select trigger 的 pointerdown 依赖 Pointer Capture API（jsdom 未实现），最小 mock 防面板无法打开
-if (typeof Element.prototype.hasPointerCapture !== 'function') {
-  Element.prototype.hasPointerCapture = () => false;
-}
-if (typeof Element.prototype.setPointerCapture !== 'function') {
-  Element.prototype.setPointerCapture = () => {};
-}
-if (typeof Element.prototype.releasePointerCapture !== 'function') {
-  Element.prototype.releasePointerCapture = () => {};
-}
-if (typeof Element.prototype.scrollIntoView !== 'function') {
-  Element.prototype.scrollIntoView = () => {};
+// 仅 jsdom 环境有 Element；node env 集成测试（F1 SSE 黑盒）跳过
+if (typeof Element !== 'undefined') {
+  if (typeof Element.prototype.hasPointerCapture !== 'function') {
+    Element.prototype.hasPointerCapture = () => false;
+  }
+  if (typeof Element.prototype.setPointerCapture !== 'function') {
+    Element.prototype.setPointerCapture = () => {};
+  }
+  if (typeof Element.prototype.releasePointerCapture !== 'function') {
+    Element.prototype.releasePointerCapture = () => {};
+  }
+  if (typeof Element.prototype.scrollIntoView !== 'function') {
+    Element.prototype.scrollIntoView = () => {};
+  }
 }

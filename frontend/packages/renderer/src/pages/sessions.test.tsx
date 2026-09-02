@@ -49,7 +49,7 @@
  *   同步返回同数据）→ /writing?chapter_id=<章ID>；匹配不到 → /writing?conversation_id=<会话ID>。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within, waitFor, act } from '@testing-library/react';
+import { render, screen, within, waitFor, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { SessionsPage } from './sessions';
@@ -691,8 +691,9 @@ describe('会话页 — #770 改名入口（PATCH /chat/conversations/{id}）', 
     await screen.findAllByTestId('session-directory-card');
     await user.click(screen.getByTestId('chat-conv-rename-conv-1'));
     const input = screen.getByTestId('chat-conv-rename-input-conv-1');
-    await user.clear(input);
-    await user.type(input, `${'长'.repeat(201)}{Enter}`);
+    // 长字符串用 fireEvent.change（同步、单次）替代 per-key user.type（逐键慢，full-suite 下 >5s 超时）
+    fireEvent.change(input, { target: { value: '长'.repeat(201) } });
+    fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => {
       expect(useToastStore.getState().toasts.some((t) => t.type === 'err')).toBe(true);
     });
@@ -752,5 +753,60 @@ describe('会话页 — #770 点击导航（title 匹配章节 → chapter_id；
     await user.click(screen.getByTestId('session-title-conv-conv-1'));
     const probe = await screen.findByTestId('location-probe');
     expect(probe).toHaveTextContent('/writing?conversation_id=conv-1');
+  });
+});
+
+describe('会话页 — F6 页内三态（加载/错误/重试，S3e）', () => {
+  it('加载中（三类数据全部 pending）→ 渲染加载骨架（区别于空态）', async () => {
+    // 三类数据挂起：sessions/planner 永不 resolve；chat 对话 pending
+    fetchSessionsMock.mockReturnValue(new Promise(() => {}));
+    fetchPlannerSessionsMock.mockReturnValue(new Promise(() => {}));
+    apiFetchMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      if (path === '/api/v1/projects' && method === 'GET') {
+        return { items: makeProjects(), total: 2, offset: 0, limit: 50 };
+      }
+      return new Promise(() => {}); // chat conversations pending
+    });
+
+    renderSessionsPage();
+    // 锚定「加载骨架」元素（S3e 补齐）；当前实现把加载与空态合并 → RED
+    expect(await screen.findByTestId('sessions-loading')).toBeInTheDocument();
+    // 加载中不应同时显示空态文案
+    expect(screen.queryByTestId('sessions-empty')).not.toBeInTheDocument();
+  });
+
+  it('加载失败（任一数据源 reject）→ 错误态 + 重试按钮；点击重试成功渲染目录', async () => {
+    const user = userEvent.setup();
+    // 首次失败，重试成功。sessions 返回 1 条，planner/conversations 空
+    fetchSessionsMock
+      .mockRejectedValueOnce(new Error('加载失败，请重试'))
+      .mockResolvedValue({
+        items: [makeSession({ id: 'ex-retry-p1', project_id: 'p1', title: '重试后的会话', status: 'active' })],
+        total: 1,
+        offset: 0,
+        limit: 50,
+      });
+    fetchPlannerSessionsMock
+      .mockRejectedValueOnce(new Error('加载失败，请重试'))
+      .mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
+    apiFetchMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      if (path === '/api/v1/projects' && method === 'GET') {
+        return { items: makeProjects(), total: 2, offset: 0, limit: 50 };
+      }
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+
+    renderSessionsPage();
+    const error = await screen.findByTestId('sessions-error');
+    expect(error).toBeInTheDocument();
+    const retry = screen.getByTestId('sessions-retry');
+    expect(retry).toHaveTextContent('重试');
+
+    await user.click(retry);
+    // 重试成功 → 目录卡片出现（sessions 返回 1 条）
+    const card = await screen.findByTestId('session-directory-card');
+    expect(card).toHaveTextContent('重试后的会话');
   });
 });

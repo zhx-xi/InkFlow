@@ -92,6 +92,9 @@ export function SessionsPage() {
   const [plannerLoaded, setPlannerLoaded] = useState(false);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [conversationsLoaded, setConversationsLoaded] = useState(false);
+  // S3e F6：页内错误态（任一顶部数据源失败）+ 重试计数器（retry 触发三路 effect 重新拉取）
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const projectDefaulted = useRef(false);
   // 三类数据全部落定后才渲染目录卡片（避免异步竞态导致部分卡片闪现）
   const allLoaded = plannerLoaded && sessionsLoaded && conversationsLoaded;
@@ -113,27 +116,34 @@ export function SessionsPage() {
   useEffect(() => {
     void fetchPlannerSessions()
       .then((res) => setPlannerItems(res.items))
-      .catch((err) => pushToast('err', errorMessage(err)))
+      .catch((err) => {
+        pushToast('err', errorMessage(err));
+        setLoadError(true);
+      })
       .finally(() => setPlannerLoaded(true));
-  }, [pushToast]);
+  }, [pushToast, reloadKey]);
 
   // 执行会话：一次拉取含已归档全量，chips 切换纯本地过滤不重拉
   useEffect(() => {
     void fetchSessions({ includeDeleted: true })
       .then((res) => setSessions(res.items))
-      .catch((err) => pushToast('err', errorMessage(err)))
+      .catch((err) => {
+        pushToast('err', errorMessage(err));
+        setLoadError(true);
+      })
       .finally(() => setSessionsLoaded(true));
-  }, [pushToast]);
+  }, [pushToast, reloadKey]);
 
   // #547/#581：AI 对话聚合列表（含已归档全量，失败静默）
   useEffect(() => {
     void fetchChatConversations({ includeDeleted: true })
       .then((res) => setConversations(res.items))
       .catch(() => {
-        // 契约：加载失败静默，不打扰页面主体
+        // S3e F6：任一数据源失败 → 页内错误态（重试按钮可整页重拉）
+        setLoadError(true);
       })
       .finally(() => setConversationsLoaded(true));
-  }, []);
+  }, [reloadKey]);
 
   /** 统一目录：三类会话按 currentProjectId 合并 → filter/search 过滤 → updated_at 倒序 */
   const directoryItems = useMemo(() => {
@@ -301,6 +311,15 @@ export function SessionsPage() {
     navigate(match ? `/writing?chapter_id=${match.id}` : `/writing?conversation_id=${conv.conversation_id}`);
   };
 
+  /** S3e F6：整页重试——清错误 + 复位三路 loaded 标记 + reloadKey 递增触发三路重新拉取 */
+  const handleRetry = (): void => {
+    setLoadError(false);
+    setPlannerLoaded(false);
+    setSessionsLoaded(false);
+    setConversationsLoaded(false);
+    setReloadKey((k) => k + 1);
+  };
+
   return (
     <div data-testid="sessions-page" className="mx-auto max-w-[1080px] px-12 py-10">
       <h1 className="font-serif text-[26px] font-semibold">{t('sessions.title')}</h1>
@@ -351,7 +370,31 @@ export function SessionsPage() {
 
       {/* 统一目录：AI 对话 + 访谈 + 执行 合并展示 */}
       <div data-testid="session-directory" className="mt-6">
-        {!allLoaded || directoryItems.length === 0 ? (
+        {loadError ? (
+          <div
+            data-testid="sessions-error"
+            role="alert"
+            className="rounded-lg border border-err/30 bg-surface p-6 text-sm text-err"
+          >
+            <p>{t('lib.loadFailed')}</p>
+            <button
+              type="button"
+              data-testid="sessions-retry"
+              className="mt-4 rounded-md border border-line bg-surface px-4 py-1.5 text-[13px] text-ink-2 transition duration-180 hover:bg-surface-3 hover:text-ink"
+              onClick={handleRetry}
+            >
+              {t('lib.retry')}
+            </button>
+          </div>
+        ) : !allLoaded ? (
+          <div
+            data-testid="sessions-loading"
+            role="status"
+            className="rounded-lg border border-dashed border-line bg-surface px-6 py-12 text-center text-[13px] text-ink-2"
+          >
+            {t('common.loading')}
+          </div>
+        ) : directoryItems.length === 0 ? (
           <div
             data-testid="sessions-empty"
             className="rounded-lg border border-dashed border-line bg-surface px-6 py-12 text-center text-[13px] text-ink-2"

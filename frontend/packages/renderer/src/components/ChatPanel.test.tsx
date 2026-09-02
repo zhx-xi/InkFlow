@@ -877,3 +877,18 @@ describe('ChatPanel — 系统级 Agent 工具流式（#597）', () => {
     emitDone(0);
   });
 });
+
+describe('ChatPanel — F3 流式增量输出声名 aria-live（S3e，RED：当前无 aria-live）', () => {
+  it('流式 AI 消息容器必须声明 aria-live="polite"（读屏器播报增量）', async () => {
+    const user = userEvent.setup();
+    render(<ChatPanel {...OPTS} />);
+    await sendAndAwaitStream(user, '帮我写一段打斗场景');
+    emitDelta(0, '第一段增量');
+    emitDelta(0, '第二段增量');
+
+    const aiMsg = await screen.findByTestId('chat-msg-ai-0');
+    // RED：当前容器无 aria-live → closest('[aria-live]') 为 null → 断言失败
+    expect(aiMsg.closest('[aria-live="polite"]')).not.toBeNull();
+    expect(aiMsg).toHaveTextContent('第一段增量');
+  });
+});
