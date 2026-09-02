@@ -255,3 +255,67 @@ def test_debug_env_wins_over_instance_env(monkeypatch, tmp_path) -> None:
     settings = InkFlowConfig()
 
     assert settings.debug is True
+
+
+# ---- S3f-T1（#869，contract-s3f-t1.md §2.5）：config.json 优先级链补全 ----
+def test_debug_config_json_true_when_no_env_no_instance_env(monkeypatch, tmp_path) -> None:
+    """S3f-T1-优先级：env 未设 + instance.env 文件存在但无 INKFLOW_DEBUG 键 +
+    config.json debug=true → debug is True。
+
+    test_config_frozen.py:138 已测「锚点不存在」近似；本用例链语义不同：锚点文件
+    存在（含无关键）但未命中 INKFLOW_DEBUG → 继续降级 config.json（config.py:253
+    `if "INKFLOW_DEBUG" in ie` 键存在性判定——instance.env 文件存在≠含键）。
+    """
+    anchor = tmp_path / "appdata" / "InkFlow" / "instance.env"
+    _patch_anchor(monkeypatch, anchor)
+    monkeypatch.delenv("INKFLOW_DEBUG", raising=False)
+    anchor.parent.mkdir(parents=True, exist_ok=True)
+    anchor.write_text("SOME_UNRELATED_KEY=1\n", encoding="utf-8")
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "config.json").write_text('{"debug": true}', encoding="utf-8")
+
+    settings = InkFlowConfig(data_dir=data_dir)
+
+    assert settings.debug is True
+
+
+def test_debug_env_zero_beats_config_json_true(monkeypatch, tmp_path) -> None:
+    """S3f-T1-D8（扩到 config.json）：env INKFLOW_DEBUG=0 + config.json debug=true
+    → debug is False。
+
+    env 显式设置即入 model_fields_set → 跳过 instance.env/config.json 降级链
+    （D8 判据：显式关 > 任何低优先级真值源）。
+    """
+    _patch_anchor(monkeypatch, tmp_path / "appdata" / "InkFlow" / "instance.env")
+    monkeypatch.setenv("INKFLOW_DEBUG", "0")
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "config.json").write_text('{"debug": true}', encoding="utf-8")
+
+    settings = InkFlowConfig(data_dir=data_dir)
+
+    assert settings.debug is False
+
+
+def test_debug_instance_env_zero_beats_config_json_true(monkeypatch, tmp_path) -> None:
+    """S3f-T1-守护：instance.env INKFLOW_DEBUG=0 + config.json debug=true → False。
+
+    instance.env 命中即终止，不进 config.json——config.py:253 `ie["INKFLOW_DEBUG"] == "1"`
+    现实现已满足（契约标【G】守护）。
+    """
+    anchor = tmp_path / "appdata" / "InkFlow" / "instance.env"
+    _patch_anchor(monkeypatch, anchor)
+    monkeypatch.delenv("INKFLOW_DEBUG", raising=False)
+    anchor.parent.mkdir(parents=True, exist_ok=True)
+    anchor.write_text("INKFLOW_DEBUG=0\n", encoding="utf-8")
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "config.json").write_text('{"debug": true}', encoding="utf-8")
+
+    settings = InkFlowConfig(data_dir=data_dir)
+
+    assert settings.debug is False

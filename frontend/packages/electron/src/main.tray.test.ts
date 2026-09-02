@@ -592,3 +592,144 @@ describe('dev 钩子门控（F51 debug-mode：打包版 + INKFLOW_DEBUG 也暴�
     expect((globalThis as { __trayActions?: unknown }).__trayActions).toBeUndefined();
   });
 });
+
+// ══ S3f-T1 F4 可观测性：INKFLOW_DEBUG 显式值门控（contract-s3f-t1 §2.6，G3 env=0）═══════
+// 契约（GREEN 由 Codex 实现，contract §1.3 G3）：
+//   isDebugMode env 判定改：env 显式设置（非 undefined 且非空串）时按
+//   ['1','true','on']（trim+lowercase）判 true，其余（'0'/'false'/其他）判 false，
+//   且【不再读 instance.env / config.json】（显式关 > instance.env=1，D8）；
+//   INKFLOW_DEBUG=''（空串）→ 按未设置，继续走 instance.env / config.json 链。
+// RED 基线（main.ts:128 `if (process.env.INKFLOW_DEBUG) return true`）：'0'/'false' 均 truthy
+//   → 判 debug → 打包版钩子暴露 → 下方负向断言失败 = 有效 RED（G3 主语义）。
+// instance.env 文件驱动：main.ts isDebugMode 经 app.getPath('appData')/InkFlow/instance.env +
+//   node:fs existsSync/readFileSync（本文件未 mock node:fs）→ 测试注入 app.getPath 指向
+//   mkdtemp 临时目录 + 真实写入 instance.env（纯 ASCII），免 vi.mock('node:fs') 接线。
+describe('INKFLOW_DEBUG 显式值门控（S3f-T1 §2.6：env=0 > instance.env=1；空串=未设置）', () => {
+  beforeEach(() => {
+    // READY 触发后 startHealthCheck 会打真实 /health —— stub fetch 杜绝真实网络（window-controls 先例）
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true })));
+  });
+
+  /** 清理跨 freshInstance 残留的 globalThis 测试钩子（默认 dev 实例启动期已写入） */
+  const clearHookGlobals = (): void => {
+    delete (globalThis as { __kernelInfo?: unknown }).__kernelInfo;
+    delete (globalThis as { __trayInfo?: unknown }).__trayInfo;
+    delete (globalThis as { __trayActions?: unknown }).__trayActions;
+  };
+
+  /** 注入 app.getPath('appData') → tmp 目录（main.ts isDebugMode 读 instance.env 的锚点） */
+  const stubAppDataPath = (dir: string): void => {
+    (appMock as unknown as { getPath?: (name: string) => string }).getPath = vi.fn(
+      () => dir
+    );
+  };
+
+  /** 移除 getPath 注入（electronMock.app 是模块级单例，避免污染后续用例） */
+  const unstubAppDataPath = (): void => {
+    delete (appMock as unknown as { getPath?: (name: string) => string }).getPath;
+  };
+
+  /**
+   * 建临时 appData 目录；instanceEnvBody 提供时写入 InkFlow/instance.env（真实 node:fs——
+   * main.ts 未 mock node:fs，existsSync/readFileSync 直读真实文件；内容纯 ASCII）。
+   */
+  const makeAppDataDir = async (
+    instanceEnvBody?: string
+  ): Promise<{ dir: string; cleanup: () => void }> => {
+    const nodeOs = await import('node:os');
+    const nodeFs = await import('node:fs');
+    const dir = nodeFs.mkdtempSync(path.join(nodeOs.tmpdir(), 'inkflow-tray-debug-'));
+    if (instanceEnvBody !== undefined) {
+      nodeFs.mkdirSync(path.join(dir, 'InkFlow'), { recursive: true });
+      nodeFs.writeFileSync(path.join(dir, 'InkFlow', 'instance.env'), instanceEnvBody, 'utf8');
+    }
+    return {
+      dir,
+      cleanup: () => {
+        try {
+          nodeFs.rmSync(dir, { recursive: true, force: true });
+        } catch {
+          // Windows 偶发句柄占用：临时目录清理失败不阻塞断言
+        }
+      },
+    };
+  };
+
+  /** 打包版 boot 到内核 READY（发射 INKFLOW_READY → updateKernelInfoHook 路径执行） */
+  const bootPackagedToReady = async (): Promise<void> => {
+    await freshInstance();
+    await flushMicrotasks(); // whenReady 续体（createTray / exposeTrayDevHooks）跑完
+    fakeChild.stdout.emit(
+      'data',
+      Buffer.from('INKFLOW_READY {"port":1,"token":"t","pid":4242,"version":"0.1.0"}\n')
+    );
+    await flushMicrotasks(); // updateKernelInfoHook 执行（debug 时会写 __kernelInfo）
+  };
+
+  it('【R】打包版 + INKFLOW_DEBUG=0（显式关）→ 不暴露任何测试钩子（G3：现实现把 0 当 true → FAIL）', async () => {
+    // 纯 env 语义：无 instance.env / config.json 参与（GREEN 后在 env 分支即终止）
+    clearHookGlobals();
+    vi.stubEnv('INKFLOW_DEBUG', '0');
+    appMock.isPackaged = true;
+    try {
+      await bootPackagedToReady();
+      expect((globalThis as { __trayInfo?: unknown }).__trayInfo).toBeUndefined();
+      expect((globalThis as { __trayActions?: unknown }).__trayActions).toBeUndefined();
+      expect((globalThis as { __kernelInfo?: unknown }).__kernelInfo).toBeUndefined();
+    } finally {
+      appMock.isPackaged = false;
+    }
+  });
+
+  it('【R】打包版 + INKFLOW_DEBUG=false（显式关，1.3 显式值表）→ 不暴露任何测试钩子（现实现 truthy → FAIL）', async () => {
+    clearHookGlobals();
+    vi.stubEnv('INKFLOW_DEBUG', 'false');
+    appMock.isPackaged = true;
+    try {
+      await bootPackagedToReady();
+      expect((globalThis as { __trayInfo?: unknown }).__trayInfo).toBeUndefined();
+      expect((globalThis as { __trayActions?: unknown }).__trayActions).toBeUndefined();
+      expect((globalThis as { __kernelInfo?: unknown }).__kernelInfo).toBeUndefined();
+    } finally {
+      appMock.isPackaged = false;
+    }
+  });
+
+  it('【G】打包版 + INKFLOW_DEBUG=""（空串 = 按未设置）+ instance.env 不存在 → 不暴露（守卫）', async () => {
+    const appData = await makeAppDataDir(); // instance.env 不存在 → 链回退 false
+    try {
+      clearHookGlobals();
+      stubAppDataPath(appData.dir);
+      vi.stubEnv('INKFLOW_DEBUG', '');
+      appMock.isPackaged = true;
+      await bootPackagedToReady();
+      expect((globalThis as { __trayInfo?: unknown }).__trayInfo).toBeUndefined();
+      expect((globalThis as { __trayActions?: unknown }).__trayActions).toBeUndefined();
+      expect((globalThis as { __kernelInfo?: unknown }).__kernelInfo).toBeUndefined();
+    } finally {
+      appMock.isPackaged = false;
+      unstubAppDataPath();
+      appData.cleanup();
+    }
+  });
+
+  it('【R】打包版 + INKFLOW_DEBUG=0 + instance.env INKFLOW_DEBUG=1 → 不暴露（env 显式关 > instance.env，D8）', async () => {
+    // 契约主场景：instance.env=1 存在也不得翻盘——GREEN 后 env 分支终止不再读 instance.env；
+    // RED 现实现 '0' truthy 判 debug → 暴露 → FAIL
+    const appData = await makeAppDataDir('INKFLOW_DEBUG=1\n');
+    try {
+      clearHookGlobals();
+      stubAppDataPath(appData.dir);
+      vi.stubEnv('INKFLOW_DEBUG', '0');
+      appMock.isPackaged = true;
+      await bootPackagedToReady();
+      expect((globalThis as { __trayInfo?: unknown }).__trayInfo).toBeUndefined();
+      expect((globalThis as { __trayActions?: unknown }).__trayActions).toBeUndefined();
+      expect((globalThis as { __kernelInfo?: unknown }).__kernelInfo).toBeUndefined();
+    } finally {
+      appMock.isPackaged = false;
+      unstubAppDataPath();
+      appData.cleanup();
+    }
+  });
+});

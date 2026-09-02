@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 import inkflow
 from inkflow.api.deps import get_provider_config_service
+from inkflow.api.middleware.docs_gate import DocsGateMiddleware
 from inkflow.api.middleware.token_auth import TokenAuthMiddleware
 from inkflow.api.routers import (
     agent,
@@ -227,6 +228,11 @@ app.add_middleware(
 
 # ---- Token 鉴权（纯 ASGI，spec §2.3.1；注册在 CORS 之后：CORS 外层、token 内层） ----
 app.add_middleware(TokenAuthMiddleware)
+
+# ---- Docs 门控（S3f-T1 G1 #869，纯 ASGI；注册在 token_auth 之后 = 外层：
+#       后注册者先执行——非 debug /docs /redoc 404 先于 token 401；debug 透传后
+#       token 豁免语义不变） ----
+app.add_middleware(DocsGateMiddleware)
 
 
 # ---- 全局异常处理：RAG 向量库不可用（#341，覆盖端点构造期与前置刷新冒泡）----

@@ -4,6 +4,11 @@
 
 > 版本口径以 [ADR-019 v11](adr/packaging/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
 
+## [Unreleased]
+
+### 修复
+- **可观测性黑盒补强（S3f-T1，#869）**：/docs /redoc 由 `DocsGateMiddleware` 按 `config.debug` 运行时门控（非 debug 404，默认关闭）；`serve --debug` / `INKFLOW_DEBUG=1` 双路径回写 config+env 保三层一致；GUI 壳 `INKFLOW_DEBUG` 改显式值表（`'0'` 显式关 > instance.env=1，D8）
+
 ## [0.11.0] - 2026-08-22
 
 ### 新增

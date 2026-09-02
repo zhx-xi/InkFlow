@@ -117,16 +117,19 @@ function parseInstanceEnv(content: string): Record<string, string> {
 
 /**
  * F51 debug-mode 统一开关：INKFLOW_DEBUG 贯穿三层（D6/D7 三层对称）。
- * 触发源优先级（D1）：进程 env INKFLOW_DEBUG > instance.env INKFLOW_DEBUG > config.json debug。
- * - env INKFLOW_DEBUG truthy（非空串）→ true（最高优先）；
- * - instance.env（%APPDATA%/InkFlow/instance.env）含 INKFLOW_DEBUG=1 → true；
- * - config.json（data_dir = instance.env INKFLOW_DATA_DIR 优先、缺省 %APPDATA%/InkFlow）
- *   含 "debug": true → true。
- * app.getPath 不可用（测试 mock）→ try/catch 返回基于 env 的结果。
+ * 优先级（D1）：env > instance.env > config.json。
+ * - env 显式设置（非空串）：'1'/'true'/'on'（trim+lowercase）→ true；'0' 等 → false 且
+ *   不再读文件（显式关 > instance.env=1，D8 壳侧镜像，S3f-T1 G3）；空串=未设置（f51 §7）。
+ * - instance.env 含 INKFLOW_DEBUG=1 → true；config.json "debug": true → true
+ *   （data_dir = instance.env INKFLOW_DATA_DIR 优先、缺省 %APPDATA%/InkFlow）。
+ * app.getPath 不可用（测试 mock）→ try/catch 返回 env 显式判定结果。
  */
 function isDebugMode(): boolean {
-  if (process.env.INKFLOW_DEBUG) {
-    return true;
+  const envDebug = process.env.INKFLOW_DEBUG;
+  if (envDebug !== undefined && envDebug !== '') {
+    // env 显式设置：'1'/'true'/'on'（不区分大小写）→ true；'0'/'false'/'off'/其他 → false，
+    // 且【不再读 instance.env / config.json】（显式关 > instance.env=1，D8）
+    return ['1', 'true', 'on'].includes(envDebug.trim().toLowerCase());
   }
   try {
     const appData = app.getPath('appData');
@@ -148,8 +151,14 @@ function isDebugMode(): boolean {
       }
     }
   } catch {
-    // app.getPath 不可用（测试 mock）/ 文件读取解析失败 → 回退为基于 env 的结果
-    return Boolean(process.env.INKFLOW_DEBUG);
+    // getPath 不可用（测试 mock）/ 文件解析失败 → 回退 env 显式判定（等价顶部
+    // 分支；重读 env 规避 TS 控制流把 envDebug 收窄为 never 的编译错误）
+    const catchEnvDebug = process.env.INKFLOW_DEBUG;
+    return (
+      catchEnvDebug !== undefined &&
+      catchEnvDebug !== '' &&
+      ['1', 'true', 'on'].includes(catchEnvDebug.trim().toLowerCase())
+    );
   }
   return false;
 }

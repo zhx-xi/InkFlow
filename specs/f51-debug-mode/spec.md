@@ -184,6 +184,12 @@ def resolve_log_dir() -> Path:
 
 > ⚠️ 安全权衡（§12）：固定 token + 自动 DevTools + verbose 仅 debug 生效，文档标注「勿在生产开启」。renderer 用 INKFLOW_READY 交付的 token，与固定值不冲突（见 §3）。
 
+**S3f-T1 实现补注（2026-09-03，#869）**：/docs /redoc 可达性由 api 层中间件
+`backend/src/inkflow/api/middleware/docs_gate.py`（DocsGateMiddleware）按 `config.debug`
+每次请求运行时门控——非 debug 模式 404（默认关闭，spec 原文「debug 时默认打开」歧义消除：
+打开由 debug 态驱动，非 FastAPI 恒注册）；`serve --debug` / `INKFLOW_DEBUG=1` 双路径均
+在 `_run_server` 前回写 `config.debug=True` + 进程 env，三层一致。
+
 ### 5.5 vs 既有 `INKFLOW_KERNEL_CMD` 逃生口
 
 | | `INKFLOW_KERNEL_CMD` | `INKFLOW_DEBUG` |
@@ -210,6 +216,7 @@ def resolve_log_dir() -> Path:
 | 非 debug 模式启动 | 行为零变化（随机 token / 不自动 /docs / info 级别 / 无 DevTools 钩子） |
 | debug 时 `--token` 显式传入 | 尊重显式 token，不覆盖 |
 | debug 时 `--open-browser`/自动 /docs | **用 `actual_port`**（`--port 0` 下不用请求端口 `port`，否则 `:0` 死链）——见 §5.4 |
+| 非 debug 模式 /docs /redoc | 404（S3f-T1 G1：DocsGateMiddleware 按 `config.debug` 运行时门控，默认关闭） |
 
 ## 8. 文件结构
 
