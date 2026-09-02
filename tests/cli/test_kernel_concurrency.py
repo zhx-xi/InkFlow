@@ -43,33 +43,22 @@ def _kill_kernel_tree(pid: int) -> None:
 
 def _kill_kernel_by_statefile(state_file: Path) -> None:
     """按 kernel.json 路径 sweep-kill：uv trampoline 链上内核 pid 常是最深层解释器，
-    `taskkill /PID` 只杀其子树，父链（launcher）残留 → 用命令行列匹配兜底全清。"""
-    sweep = f'--port-file {state_file}'
+    `taskkill /PID` 只杀其子树，父链（launcher）残留 → 用 CommandLine 匹配 state_file
+    全清（PowerShell Get-CimInstance 比已弃用的 wmic 可靠）。"""
+    if os.name != "nt":
+        return
     with contextlib.suppress(OSError, subprocess.SubprocessError):
-        try:
-            import subprocess as sp
-
-            if os.name != "nt":
-                return
-            out = sp.run(
-                [
-                    "wmic",
-                    "process",
-                    "where",
-                    f"commandline like '%{sweep}%'",
-                    "get",
-                    "processid",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-            for line in out.stdout.splitlines():
-                line = line.strip()
-                if line.isdigit():
-                    _kill_kernel_tree(int(line))
-        except Exception:
-            pass
+        ps_cmd = (
+            "Get-CimInstance Win32_Process -Filter \"Name like '%python%'\" | "
+            "Where-Object { $_.CommandLine -match [regex]::Escape('"
+            + str(state_file)
+            + "') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+        )
+        subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_cmd],
+            capture_output=True,
+            timeout=15,
+        )
 
 
 _ENSURE_KERNEL_SNIPPET = textwrap.dedent(
