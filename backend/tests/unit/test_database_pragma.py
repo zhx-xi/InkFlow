@@ -173,6 +173,39 @@ def test_apply_sqlite_pragma_on_memory_db_no_raise():
         conn.close()
 
 
+def test_apply_sqlite_pragma_sets_busy_timeout_before_wal():
+    """根因契约（S3b M2）：busy_timeout 必须先于 journal_mode=WAL 设置。
+
+    两个连接首次并发打开同一文件库时，``PRAGMA journal_mode=WAL`` 需要独占锁
+    过渡（从非 WAL 转 WAL）；若 ``busy_timeout`` 在其后才设置，过渡不受超时保护，
+    重试方会立即抛 ``sqlite3.OperationalError: database is locked``（双进程冷启动
+    竞态）。契约：busy_timeout PRAGMA 的执行顺序必须先于 journal_mode=WAL。
+
+    用 Fake cursor 捕获 execute 调用序列断言顺序——确定性（不依赖真实文件锁时序），
+    当前实现 WAL 在前 → 本测试 FAIL（RED）；GREEN 调整顺序后 PASS。
+    """
+    calls: list[str] = []
+
+    class _FakeCursor:
+        def execute(self, sql) -> None:
+            calls.append(sql)
+
+        def close(self) -> None:
+            pass
+
+    class _FakeConn:
+        def cursor(self) -> _FakeCursor:
+            return _FakeCursor()
+
+    apply_sqlite_pragma(_FakeConn())
+    wal_idx = next(i for i, s in enumerate(calls) if "journal_mode" in s)
+    busy_idx = next(i for i, s in enumerate(calls) if "busy_timeout" in s)
+    assert busy_idx < wal_idx, (
+        "busy_timeout 必须先于 journal_mode=WAL 设置，否则并发 WAL 转换竞态"
+        "不受超时保护 → database is locked"
+    )
+
+
 # ── Phase 3 覆盖率补齐（#104）：connect 事件委托 + create/drop_tables ──
 
 

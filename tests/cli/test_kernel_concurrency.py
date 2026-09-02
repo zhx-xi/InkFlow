@@ -131,27 +131,40 @@ class TestConcurrentSqliteWrite:
 
     _WRITE_SNIPPET = textwrap.dedent(
         """
-        import asyncio, sys
+        import sys
         from pathlib import Path
         from inkflow.core.database import apply_sqlite_pragma
-        from inkflow.core.config import config
-        db = Path(sys.argv[1])
         import sqlite3
-        def write_once():
-            conn = sqlite3.connect(str(db))
-            apply_sqlite_pragma(conn)  # WAL + busy_timeout + FK
-            conn.execute("CREATE TABLE IF NOT EXISTS t(id INTEGER PRIMARY KEY, v TEXT)")
+        db = Path(sys.argv[1])
+        conn = sqlite3.connect(str(db))
+        try:
+            apply_sqlite_pragma(conn)  # busy_timeout 前置（WAL 已由父侧预初始化，无转换竞态）
             for i in range(50):
                 conn.execute("INSERT INTO t(v) VALUES ('x%d')" % i)
             conn.commit()
+        finally:
             conn.close()
-        write_once()
         print("OK")
         """
     )
 
+    def _init_db(self, db: Path) -> None:
+        """父侧预初始化 DB：建表 + 置 WAL——消除并发 WAL 转换竞态，专注并发写入。"""
+        import sqlite3
+
+        from inkflow.core.database import apply_sqlite_pragma
+
+        conn = sqlite3.connect(str(db))
+        try:
+            apply_sqlite_pragma(conn)
+            conn.execute("CREATE TABLE IF NOT EXISTS t(id INTEGER PRIMARY KEY, v TEXT)")
+            conn.commit()
+        finally:
+            conn.close()
+
     def test_two_processes_concurrent_writes_no_locked(self, tmp_path) -> None:
         db = tmp_path / "concurrent.db"
+        self._init_db(db)
         venv_python = sys.executable
         env = os.environ.copy()
         env["INKFLOW_DATA_DIR"] = str(tmp_path / "cfg")
