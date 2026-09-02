@@ -10,7 +10,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', '../../../tests/e2e/e2e-llm.config.test.ts'],
+    include: ['src/**/*.test.ts', '../../../tests/e2e/e2e-llm.config.test.ts', '../../../tests/e2e/e2e-isolation.test.ts', '../../../tests/e2e/e2e-seed.test.ts'],
     // 覆盖率（#104 Phase 1）：electron 壳 20 用例纳入统计
     coverage: {
       provider: 'v8',

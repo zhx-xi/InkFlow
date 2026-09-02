@@ -155,3 +155,117 @@ class TestScriptedTimeoutAndSignature:
         )
         assert resp.status_code == 200
         assert resp.json()["choices"][0]["message"]["content"]
+
+
+class TestEmbeddings:
+    """S3f-T3 §1.2 POST /v1/embeddings：OpenAI 兼容形状 / 确定性 / 维度恒定 / 记录。
+
+    契约裁定（§1.2 错误分支）：input=[] 空数组 → 200 data==[]（OpenAI 空输入空输出，
+    非 400），与「缺 input → 400」并存。RED 期 server.py 无此端点 → 404/405。
+    """
+
+    MODEL = "e2e-embed-test"
+
+    def _post_embeddings(self, client: TestClient, input_value) -> Response:
+        payload = {"model": self.MODEL, "input": input_value}
+        return client.post("/v1/embeddings", json=payload)
+
+    def test_list_shape_ordered_index_and_float_embeddings(self, client: TestClient) -> None:
+        """形状：object=list、data 顺序对应 input、index 递增、embedding 为 float 列表。"""
+        resp = self._post_embeddings(client, ["你好", "world"])
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["object"] == "list"
+        assert body["model"] == self.MODEL
+        assert len(body["data"]) == 2
+        for i, item in enumerate(body["data"]):
+            assert item["object"] == "embedding"
+            assert item["index"] == i
+            assert isinstance(item["embedding"], list)
+            assert all(isinstance(x, float) for x in item["embedding"])
+
+    def test_deterministic_same_input_vectors_equal(self, client: TestClient) -> None:
+        """确定性：同 input 两次请求 → 向量逐元素相等。"""
+        inputs = ["你好", "world"]
+        first = self._post_embeddings(client, inputs).json()["data"]
+        second = self._post_embeddings(client, inputs).json()["data"]
+        assert [item["embedding"] for item in first] == [item["embedding"] for item in second]
+
+    def test_different_input_vectors_differ(self, client: TestClient) -> None:
+        """确定性反例：不同 input → 向量不等。"""
+        base = self._post_embeddings(client, ["你好"]).json()["data"]
+        other = self._post_embeddings(client, ["world"]).json()["data"]
+        assert base[0]["embedding"] != other[0]["embedding"]
+
+    def test_default_dim_constant_8(self) -> None:
+        """维度恒定：默认 create_app() → 所有向量 len==8。"""
+        app8 = TestClient(create_app())
+        data = self._post_embeddings(app8, ["你好", "world"]).json()["data"]
+        assert {len(item["embedding"]) for item in data} == {8}
+
+    def test_custom_dim_4_applies(self) -> None:
+        """维度恒定：create_app(dim=4) → 所有向量 len==4（自定义 app 生效）。"""
+        app4 = TestClient(create_app(dim=4))
+        data = self._post_embeddings(app4, ["你好", "world", "第三个"]).json()["data"]
+        assert {len(item["embedding"]) for item in data} == {4}
+
+    def test_string_input_single_embedding(self, client: TestClient) -> None:
+        """input 为字符串（非数组）：200 且 data 长度 1。"""
+        resp = self._post_embeddings(client, "单串")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert len(data) == 1
+        assert data[0]["index"] == 0
+
+    def test_missing_input_returns_400_openai_error_shape(self, client: TestClient) -> None:
+        """错误：body 缺 input → 400 + {"error": {"message": ...}} 形状。"""
+        resp = client.post("/v1/embeddings", json={"model": self.MODEL})
+        assert resp.status_code == 400
+        body = resp.json()
+        assert "error" in body
+        assert "message" in body["error"]
+
+    def test_empty_input_list_returns_empty_data(self, client: TestClient) -> None:
+        """契约裁定（§1.2）：input=[] → 200 data==[]（OpenAI 空输入空输出）。"""
+        resp = self._post_embeddings(client, [])
+        assert resp.status_code == 200
+        assert resp.json()["data"] == []
+
+    def test_embedding_requests_recorded_with_model(self, client: TestClient, server_app) -> None:
+        """记录：app.state.embedding_requests 随请求增长，含 model 字段。"""
+        self._post_embeddings(client, ["你好"])
+        self._post_embeddings(client, "world")
+        records = server_app.state.embedding_requests
+        assert len(records) == 2
+        assert [record["model"] for record in records] == [self.MODEL, self.MODEL]
+
+    # ── S3f-T3 黑盒修正（reindex probe 实证）：langchain OpenAIEmbeddings len-safe
+    # 路径实际发送 token 数组（list[list[int]] / list[int]），非原文。真实 OpenAI
+    # /v1/embeddings 契约 input: string | list[int] | list[list[int]]（三种全支持）。
+    # 只收 str 列表 = 真实内核 RAG 链 400 → probe_embedding_dimension 失败 → reindex 500。
+
+    def test_token_batch_input_supported(self, client: TestClient) -> None:
+        """input=list[list[int]]（len-safe 批量 token）→ 200，data 一一对应且向量互异。"""
+        resp = self._post_embeddings(client, [[1, 2, 3], [4, 5]])
+        assert resp.status_code == 200, f"token 批量应 200，实际 {resp.status_code}"
+        data = resp.json()["data"]
+        assert len(data) == 2
+        assert data[0]["embedding"] != data[1]["embedding"]
+
+    def test_single_token_list_input(self, client: TestClient) -> None:
+        """input=list[int]（单条 token 序列）→ 200 且 data 长度 1（OpenAI 规范第三形态）。"""
+        resp = self._post_embeddings(client, [7, 8, 9])
+        assert resp.status_code == 200
+        assert len(resp.json()["data"]) == 1
+
+    def test_token_input_deterministic(self, client: TestClient) -> None:
+        """token 数组确定性：同 tokens 两次请求向量逐元素相等（reindex 幂等基础）。"""
+        first = self._post_embeddings(client, [[1, 2, 3]]).json()["data"][0]["embedding"]
+        second = self._post_embeddings(client, [[1, 2, 3]]).json()["data"][0]["embedding"]
+        assert first == second
+
+    def test_mixed_token_and_text_batch(self, client: TestClient) -> None:
+        """混合批量 [[1,2], "文本"] → 200 data 长度 2（宽容对齐 OpenAI 宽松形态）。"""
+        resp = self._post_embeddings(client, [[1, 2], "文本"])
+        assert resp.status_code == 200
+        assert len(resp.json()["data"]) == 2
