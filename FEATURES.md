@@ -53,6 +53,8 @@
 | 依赖锁定 | Python `uv.lock` 全量锁定（181 包 + sha256）；前端 `pnpm-lock.yaml` 约定 | ADR-025 |
 | 日志与错误体系 | Loguru；统一错误码 + JSON 信封（CLI） | ADR-016 / ADR-012 |
 | Debug 模式可观测性（F51/S3f-T1） | 三层统一 `INKFLOW_DEBUG`：后端 `config.debug` + serve 联动 + GUI DevTools/docs 运行时门控（非 debug /docs /redoc 404） | ADR-044 · `specs/f51-debug-mode/` · S3f-T1 #869 |
+| 发布产物门禁（S3f-T2） | `ci_cd/verify_release_artifacts.py`：CLI zip 结构 + exe 版本==tag（PEP440）+ GUI win-unpacked 结构；release.yml 集成（rc 门禁 P1-P5 自动化）+ 真实冻结产物黑盒 e2e-packaged | ADR-047 §S3f · #869 |
+| 旧档向后兼容（S3f-T4） | 旧版 SQLite 存档升级读取保障：lifespan 补列（`ensure_project_columns`）+ 脏 JSON 行 LenientJSON 回退 + 导出 roundtrip 字节确定 + 数据目录复制=备份恢复 | ADR-048 §S3f · #869 |
 
 ### 1.4 GUI 桌面端 + SSE 流式（0.3.0，F19/F23 提前交付 ✅）
 

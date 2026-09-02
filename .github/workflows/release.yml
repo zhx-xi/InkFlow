@@ -88,8 +88,9 @@ jobs:
           New-Item -ItemType Directory -Force -Path $smoke | Out-Null
           Expand-Archive -Path "dist/InkFlow-cli-$version-x64.zip" -DestinationPath $smoke -Force
           $exe = Join-Path $smoke 'inkflow/inkflow.exe'
-          & $exe --version | Out-Host
-          if ($LASTEXITCODE -ne 0) { throw 'CLI version check failed' }
+          # #869 S3f-T2（rc 门禁 P1-P5 脚本化）：CLI zip 结构 + dist-info 单份 + exe 版本 == tag 一体断言
+          uv run --no-project python "$env:GITHUB_WORKSPACE/ci_cd/verify_release_artifacts.py" --cli-zip "dist/InkFlow-cli-$version-x64.zip" --version $version
+          if ($LASTEXITCODE -ne 0) { throw 'CLI artifact verification failed (structure/version)' }
           $env:APPDATA = $smoke
           $log = Join-Path $smoke 'kernel.log'
           $kj = Join-Path $smoke 'kernel.json'
@@ -304,6 +305,21 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item -Force "$env:GITHUB_WORKSPACE/cli-zip/InkFlow-cli-*.zip" packages/electron/dist/
+
+      # #869 S3f-T2（rc 门禁 P1-P5 脚本化）：GUI win-unpacked 产物结构门禁
+      # win-unpacked = electron-builder 默认产出（directories.output: dist）；
+      # 只验证存在性/结构、不启动 GUI——NSIS 静默装验证留 release 后 rc 流程。
+      # package-electron 无 python/uv 运行时 → 补 setup-python（脚本标准库 only）
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Verify GUI artifacts structure
+        shell: pwsh
+        run: |
+          python "$env:GITHUB_WORKSPACE/ci_cd/verify_release_artifacts.py" --gui-dir packages/electron/dist/win-unpacked
+          if ($LASTEXITCODE -ne 0) { throw 'GUI artifact verification failed (structure)' }
 
       - name: Create GitHub Release
         shell: pwsh

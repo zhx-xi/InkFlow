@@ -50,6 +50,8 @@ pr-body-*.md
 
 # F19 打包分发（#48）：本地组装的内核目录（release.yml 构建期组装，勿入库）
 frontend/packages/kernel/
+# #869 S3f-T2：electron-builder --dir 本地复现链组装的 skills 暂存目录（构建期产物，勿入库）
+frontend/packages/skills/
 frontend/packages/electron/dist/
 frontend/packages/electron/renderer-dist/
 
