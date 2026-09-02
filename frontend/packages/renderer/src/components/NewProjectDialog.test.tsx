@@ -318,7 +318,10 @@ describe('新建项目对话框 — 书名长度校验（spec N2）', () => {
     renderHarness();
     await user.click(screen.getByTestId('open-trigger'));
     const nameInput = within(screen.getByRole('dialog')).getByLabelText('书名');
-    await user.type(nameInput, 'x'.repeat(101));
+    // #878 治本：user.type 逐键 dispatch 101 次（受控重渲染）在 CI 慢机贴 5s testTimeout
+    // → 改 paste（单 input 事件，语义仍为"输入 101 字"，断言不变）
+    await user.click(nameInput);
+    await user.paste('x'.repeat(101));
     await user.click(screen.getByRole('button', { name: '创建' }));
     expect(screen.getByText('书名不能超过 100 字')).toBeInTheDocument();
     expect(apiFetchMock).not.toHaveBeenCalledWith('/api/v1/projects', expect.objectContaining({ method: 'POST' }));
