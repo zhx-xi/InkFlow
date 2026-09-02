@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "gen:api": "openapi-typescript ../../../ci_cd/openapi_snapshot.json -o src/api/schema/openapi.d.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },
@@ -44,6 +45,7 @@
     "eslint-plugin-react-refresh": "^0.4.0",
     "globals": "^15.0.0",
     "jsdom": "^25.0.0",
+    "openapi-typescript": "^7.13.0",
     "tailwindcss": "^4.0.0",
     "typescript": "~5.7.0",
     "typescript-eslint": "^8.0.0",

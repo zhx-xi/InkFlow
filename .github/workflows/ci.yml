@@ -435,6 +435,16 @@ jobs:
       - name: Lint (ESLint, renderer)
         run: pnpm --filter renderer lint
 
+      # S3c 契约门禁 C1（Issue #869）：API 类型漂移检测——后端 schema 变更后未重跑
+      # pnpm gen:api 并提交 openapi.d.ts 即红（生成物必须与快照端点集合一致）
+      - name: API types drift check (regenerate openapi.d.ts)
+        working-directory: frontend/packages/renderer
+        run: pnpm run gen:api
+
+      - name: openapi.d.ts 漂移 = schema 变了未重生成，跑 pnpm gen:api 并提交
+        working-directory: ${{ github.workspace }}
+        run: git diff --exit-code -- frontend/packages/renderer/src/api/schema/openapi.d.ts
+
       - name: Type check (renderer)
         run: pnpm --filter renderer typecheck
 

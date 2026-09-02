@@ -24,9 +24,10 @@
  * #547 消息 CRUD 客户端（「chat 消息 CRUD 客户端」describe 锁定，GREEN 追加实现）：
  * - fetchChatMessages(conversationId, offset?, limit?) → GET /api/v1/chat/messages?conversation_id=&offset=&limit=
  * - saveChatMessage({project_id, conversation_id, role, content, intent?}) → POST /api/v1/chat/messages（body 逐字含 conversation_id；intent 缺省不携带）
- * - fetchChatConversations({includeDeleted?, projectId?}) → GET /api/v1/chat/conversations（project_id 可选 query）
+ * - fetchChatConversations({includeDeleted?}) → GET /api/v1/chat/conversations（仅 include_deleted query）
  * #744 契约翻转：fetchChatMessages 收 conversationId；saveChatMessage body 含 conversation_id；
- * fetchChatConversations 支持 projectId 过滤；新增 createChatConversation(projectId) → POST /api/v1/chat/conversations。
+ * #S3c 契约对齐：fetchChatConversations 不再发 project_id（后端 GET /chat/conversations 未声明该
+ * query，传了被静默忽略 → 项目过滤由调用方本地完成 #825）；新增 createChatConversation(projectId) → POST /api/v1/chat/conversations。
  * 均走 apiFetch（token 头 / 错误映射复用）；新用例用动态 import 引用，避免 RED 期缺导出
  * 把既有 streamChat 用例一起拖挂。
  */
@@ -499,7 +500,7 @@ describe('chat 消息 CRUD 客户端（#547）', () => {
     expect(JSON.parse(String(init?.body))).toEqual({ project_id: 'p1', conversation_id: 'conv-1', role: 'ai', content: '正文', intent: 'content' });
   });
 
-  it('fetchChatConversations：GET {baseURL}/api/v1/chat/conversations?project_id=p1（#744 按项目取线程）→ {items,total}', async () => {
+  it('fetchChatConversations：GET {baseURL}/api/v1/chat/conversations（#S3c 翻转：projectId 仅本地过滤，不再发 project_id query——后端未声明该参数）→ {items,total}', async () => {
     const { fetchChatConversations } = await import('./chat');
     const payload = {
       items: [
@@ -512,7 +513,9 @@ describe('chat 消息 CRUD 客户端（#547）', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe(`${BASE}/api/v1/chat/conversations?project_id=p1`);
+    // #S3c（原 #744 契约）：后端 GET /chat/conversations 仅声明 include_deleted；
+    // 传 projectId 不发 query（过滤由调用方本地完成），避免静默无效参数。
+    expect(url).toBe(`${BASE}/api/v1/chat/conversations`);
     expect(init?.method ?? 'GET').toBe('GET');
     expect(res).toEqual(payload);
   });
