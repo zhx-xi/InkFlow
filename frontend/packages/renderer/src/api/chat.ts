@@ -212,15 +212,20 @@ export async function saveChatMessage(body: {
   return apiFetch('/api/v1/chat/messages', { method: 'POST', body: payload });
 }
 
-/** 会话页聚合列表（#581）：includeDeleted=true 时含已归档全量，镜像 api/sessions.ts fetchSessions */
+/** 会话页聚合列表（#581）：includeDeleted=true 时含已归档全量，镜像 api/sessions.ts fetchSessions
+ *
+ * #S3c（Issue #869）：后端 GET /api/v1/chat/conversations（chat_messages.py）仅声明
+ * include_deleted query，未声明 project_id——此前误发 project_id 会被后端静默忽略
+ * （契约门禁 C1/M2 RED 锚点即锁定此无效 query）；项目过滤已由调用方本地完成
+ * （ChatPanel.tsx #825 / SessionBar.tsx），故本函数不再拼 project_id query。
+ */
 export async function fetchChatConversations(params?: {
   includeDeleted?: boolean;
-  /** #744：可选按项目过滤 query */
+  /** @deprecated #S3c：后端未声明 project_id query；参数仅为签名兼容保留，过滤由调用方本地完成 */
   projectId?: string;
 }): Promise<{ items: ChatConversationDto[]; total: number }> {
   const qs = new URLSearchParams();
   if (params?.includeDeleted) qs.set('include_deleted', 'true');
-  if (params?.projectId) qs.set('project_id', params.projectId);
   const suffix = qs.toString() ? `?${qs.toString()}` : '';
   return apiFetch(`/api/v1/chat/conversations${suffix}`);
 }
