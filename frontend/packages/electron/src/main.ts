@@ -190,11 +190,10 @@ function updateTrayInfoHook(): void {
 }
 
 /**
- * kernel.json 状态文件路径（spec f31 §5.4）。
+ * kernel.json 状态文件路径（spec f31 §5.4；S3f-T3 G4：dev 感知 INKFLOW_DATA_DIR，与 Python
+ * config.data_dir 对齐 = per-test E2E 隔离；无 env 时旧行为零破坏）。
  * - 打包：%APPDATA%\InkFlow\kernel.json（与 Python frozen 侧 config.data_dir 一致）
- * - dev：backend/data/kernel.json（与 Python dev 侧 data_dir=./data 对齐——项目惯例
- *   CLI/内核从 backend 目录启动（inkflow-workflow），ensure_kernel 写 backend/data；
- *   GUI 复用必须读同一文件，否则 CLI 拉起的常驻内核 GUI 发现不了（F30 dev 相对路径坑）
+ * - dev：INKFLOW_DATA_DIR 非空 → <data_dir>/kernel.json；否则 backend/data/kernel.json（CLI/内核 dev data_dir=./data 对齐，GUI 复用必须读同一文件——F30 相对路径坑）
  * 测试 mock 无 app.getPath → 返回 null（跳过双向闭环，确定性回落 spawnKernel）。
  */
 function resolveKernelStatePath(): string | null {
@@ -202,6 +201,8 @@ function resolveKernelStatePath(): string | null {
     if (app.isPackaged) {
       return path.join(app.getPath('appData'), 'InkFlow', 'kernel.json');
     }
+    const dataDir = process.env.INKFLOW_DATA_DIR;
+    if (dataDir) return path.join(dataDir, 'kernel.json');
     return path.join(REPO_ROOT, 'backend', 'data', 'kernel.json');
   } catch {
     return null;

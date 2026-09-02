@@ -127,11 +127,9 @@ async def create_tables() -> None:
 
 
 def ensure_provider_builtin_key_column(conn: Connection) -> None:
-    """#126 A1：为既有库 provider_configs 表补充 builtin_key 列（幂等，配合 conn.run_sync 调用）.
-
-    项目无 alembic 基建（create_all 管理 schema）；SQLite ALTER TABLE ADD COLUMN 幂等，
-    先查 PRAGMA table_info 确认列缺失才执行。表不存在（全新环境）→ no-op 不抛错，
-    等 create_all 建新表（自动含 builtin_key 列）。迁移后内置行 key 由 seed 回填。
+    """#126 A1：为既有库 provider_configs 补 builtin_key 列（幂等，配合 conn.run_sync 调用）.
+    PRAGMA 检缺列才 ALTER；表不存在（全新环境）→ no-op，等 create_all 建新表；
+    迁移后内置行 key 由 seed 回填。
     """
     cols = conn.execute(text("PRAGMA table_info(provider_configs)")).fetchall()
     names = {row[1] for row in cols}
@@ -143,11 +141,8 @@ def ensure_provider_builtin_key_column(conn: Connection) -> None:
 
 
 def ensure_agent_executions_hitl_payload_column(conn: Connection) -> None:
-    """#161 补充：为既有库 agent_executions 表补 hitl_payload 列（幂等，配合 conn.run_sync 调用）.
-
-    项目无 alembic 基建（create_all 管理 schema）；SQLite ALTER TABLE ADD COLUMN 幂等，
-    先查 PRAGMA table_info 确认列缺失才执行。表不存在（全新环境）→ no-op 不抛错，
-    等 create_all 建新表（自动含 hitl_payload 列）。
+    """#161：为既有库 agent_executions 补 hitl_payload 列（幂等，配合 conn.run_sync 调用）.
+    PRAGMA 检缺列才 ALTER；表不存在（全新环境）→ no-op，等 create_all 建新表。
     """
     cols = conn.execute(text("PRAGMA table_info(agent_executions)")).fetchall()
     names = {row[1] for row in cols}
@@ -158,11 +153,8 @@ def ensure_agent_executions_hitl_payload_column(conn: Connection) -> None:
 
 
 def ensure_agent_executions_relations_column(conn: Connection) -> None:
-    """F46 #270 补充：为既有库 agent_executions 表补 relations 列（幂等，配合 conn.run_sync 调用）。
-
-    项目无 alembic 基建（create_all 管理 schema）；SQLite ALTER TABLE ADD COLUMN 幂等，
-    先查 PRAGMA table_info 确认列缺失才执行。表不存在（全新环境）→ no-op 不抛错，
-    等 create_all 建新表（自动含 relations 列）。
+    """F46 #270：为既有库 agent_executions 补 relations 列（幂等，配合 conn.run_sync 调用）。
+    PRAGMA 检缺列才 ALTER；表不存在（全新环境）→ no-op，等 create_all 建新表。
     """
     cols = conn.execute(text("PRAGMA table_info(agent_executions)")).fetchall()
     names = {row[1] for row in cols}
@@ -173,11 +165,8 @@ def ensure_agent_executions_relations_column(conn: Connection) -> None:
 
 
 def ensure_agent_executions_trace_column(conn: Connection) -> None:
-    """F47 #379 补充：为存量库 agent_executions 表补 trace 列（幂等，配合 conn.run_sync 调用）。
-
-    项目无 alembic 基础（create_all 管理 schema）；SQLite ALTER TABLE ADD COLUMN 幂等，
-    先查 PRAGMA table_info 确认列缺失才执行。表不存在（全新环境）→ no-op 不抛错，
-    等 create_all 建新表（自动含 trace 列）。
+    """F47 #379：为存量库 agent_executions 补 trace 列（幂等，配合 conn.run_sync 调用）。
+    PRAGMA 检缺列才 ALTER；表不存在（全新环境）→ no-op，等 create_all 建新表。
     """
     cols = conn.execute(text("PRAGMA table_info(agent_executions)")).fetchall()
     names = {row[1] for row in cols}
@@ -188,11 +177,9 @@ def ensure_agent_executions_trace_column(conn: Connection) -> None:
 
 
 def ensure_agent_executions_thread_id_column(conn: Connection) -> None:
-    """F44 阶段 4（#338）：为存量库 agent_executions 表补 thread_id 列（幂等）。
-
-    镜像 ensure_agent_executions_trace_column 形态：先查 PRAGMA table_info 确认
-    列缺失才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，
-    等 create_all 建新表（ORM 已含 thread_id 列）。
+    """F44 阶段 4（#338）：为存量库 agent_executions 补 thread_id 列（幂等）.
+    镜像 ensure_agent_executions_trace_column：PRAGMA 检缺列才 ALTER；表不存在
+    （全新环境）→ no-op，等 create_all 建新表（ORM 已含该列）。
     """
     cols = conn.execute(text("PRAGMA table_info(agent_executions)")).fetchall()
     names = {row[1] for row in cols}
@@ -203,11 +190,9 @@ def ensure_agent_executions_thread_id_column(conn: Connection) -> None:
 
 
 def ensure_agent_role_key_column(conn: Connection) -> None:
-    """F42 v1.5 #484：为存量库 agents 表补 role_key 列（幂等，配合 conn.run_sync 调用）。
-
-    镜像 ensure_agent_executions_trace_column 形态：先查 PRAGMA table_info 确认
-    列缺失才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，
-    等 create_all 建新表（ORM 已含 role_key 列）。存量行 role_key 值由
+    """F42 v1.5 #484：为存量库 agents 补 role_key 列（幂等，配合 conn.run_sync 调用）.
+    镜像 ensure_agent_executions_trace_column：PRAGMA 检缺列才 ALTER；表不存在
+    → no-op，等 create_all 建新表（ORM 已含该列）。存量行 role_key 由
     seed_builtin_agents 升级钩子回填（spec §5.7.1 seed 升级钩子）。
     """
     cols = conn.execute(text("PRAGMA table_info(agents)")).fetchall()
@@ -219,11 +204,9 @@ def ensure_agent_role_key_column(conn: Connection) -> None:
 
 
 def ensure_chat_messages_is_deleted_column(conn: Connection) -> None:
-    """#566：为既有库 chat_messages 表补 is_deleted 列（幂等，配合 conn.run_sync 调用）。
-
-    镜像 ensure_agent_role_key_column 形态：先查 PRAGMA table_info 确认列缺失
-    才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，
-    等 create_all 建新表（ORM 已含 is_deleted 列）。
+    """#566：为既有库 chat_messages 补 is_deleted 列（幂等，配合 conn.run_sync 调用）.
+    镜像 ensure_agent_role_key_column：PRAGMA 检缺列才 ALTER；表不存在
+    （全新环境）→ no-op，等 create_all 建新表（ORM 已含该列）。
     """
     cols = conn.execute(text("PRAGMA table_info(chat_messages)")).fetchall()
     names = {row[1] for row in cols}
@@ -296,12 +279,9 @@ def ensure_chat_messages_conversation_id_column(conn: Connection) -> None:
 
 
 def ensure_conversations_delete_permission_column(conn: Connection) -> None:
-    """#766 阶段②：为存量库 conversations 表补 delete_permission 列（幂等，conn.run_sync 调用）.
-
-    镜像 ensure_characters_brief_column 幂等模式：先查 PRAGMA table_info 确认列缺失
-    才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，等
-    create_all 建新表（ORM 已含 delete_permission 列）。默认 manual（删除不可用，
-    AI 不注册删除工具，spec f26 §6.2）。
+    """#766 阶段②：为存量库 conversations 补 delete_permission 列（幂等，conn.run_sync 调用）.
+    镜像 ensure_characters_brief_column：PRAGMA 检缺列才 ALTER；表不存在 → no-op，
+    等 create_all 建新表（ORM 已含该列）。默认 manual（spec f26 §6.2）.
     """
     cols = conn.execute(text("PRAGMA table_info(conversations)")).fetchall()
     names = {row[1] for row in cols}
@@ -317,11 +297,9 @@ def ensure_conversations_delete_permission_column(conn: Connection) -> None:
 
 
 def ensure_conversation_title_column(conn: Connection) -> None:
-    """#770：为既有库 conversations 表补 title 列（幂等，配合 conn.run_sync 调用）。
-
-    镜像 ensure_chat_messages_is_deleted_column 形态：先查 PRAGMA table_info 确认
-    列缺失才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，
-    等 create_all 建新表（自动含 title 列）。
+    """#770：为既有库 conversations 补 title 列（幂等，配合 conn.run_sync 调用）.
+    镜像 ensure_chat_messages_is_deleted_column：PRAGMA 检缺列才 ALTER；表不存在
+    （全新环境）→ no-op，等 create_all 建新表（自动含 title 列）。
     """
     cols = conn.execute(text("PRAGMA table_info(conversations)")).fetchall()
     names = {row[1] for row in cols}
@@ -362,10 +340,8 @@ def ensure_world_parent_id_column(conn: Connection) -> None:
 
 def ensure_map_columns(conn: Connection) -> None:
     """F43 P2：为既有库 maps/map_pins 补 bg_source/extra/type/ref_id 列（幂等）.
-
-    沿用 ensure_world_parent_id_column 模式：先查 PRAGMA table_info 确认列缺失
-    才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，等
-    create_all 建新表（ORM 已含新列）。spec §2.7.3。
+    沿用 ensure_world_parent_id_column：PRAGMA 检缺列才 ALTER；表不存在
+    → no-op，等 create_all 建新表（ORM 已含新列）。spec §2.7.3。
     """
     map_cols = conn.execute(text("PRAGMA table_info(maps)")).fetchall()
     map_names = {row[1] for row in map_cols}
@@ -388,12 +364,10 @@ def ensure_map_columns(conn: Connection) -> None:
 
 
 def ensure_outline_columns(conn: Connection) -> None:
-    """F43 P3：为既有库 outlines 表补 level/parent_id/chapter_id 列（幂等）.
-
-    沿用 ensure_map_columns 幂等模式：先查 PRAGMA table_info 确认列缺失
-    才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，
-    等 create_all 建新表（ORM 已含三列）。spec §2.8 迁移（接线点在
-    create_tables() 后，与 ensure_map_columns 同点）。
+    """F43 P3：为既有库 outlines 补 level/parent_id/chapter_id 列（幂等）.
+    沿用 ensure_map_columns：PRAGMA 检缺列才 ALTER；表不存在 → no-op，等
+    create_all 建新表（ORM 已含三列）。spec §2.8 迁移，接线在 create_tables()
+    后（与 ensure_map_columns 同点）。
     """
     cols = conn.execute(text("PRAGMA table_info(outlines)")).fetchall()
     names = {row[1] for row in cols}
@@ -408,11 +382,9 @@ def ensure_outline_columns(conn: Connection) -> None:
 
 
 def ensure_characters_brief_column(conn: Connection) -> None:
-    """#593 F6 D5-a1：为既有库 characters 表补 brief 列（幂等，配合 conn.run_sync 调用）.
-
-    镜像 ensure_outline_columns 幂等模式：先查 PRAGMA table_info 确认列缺失
-    才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，
-    等 create_all 建新表（ORM 已含 brief 列）。
+    """#593 F6 D5-a1：为既有库 characters 补 brief 列（幂等，配合 conn.run_sync 调用）.
+    镜像 ensure_outline_columns：PRAGMA 检缺列才 ALTER；表不存在（全新环境）
+    → no-op，等 create_all 建新表（ORM 已含 brief 列）。
     """
     cols = conn.execute(text("PRAGMA table_info(characters)")).fetchall()
     names = {row[1] for row in cols}
@@ -420,6 +392,34 @@ def ensure_characters_brief_column(conn: Connection) -> None:
         return  # 表不存在（全新环境）→ create_all 建新表（自动含 brief 列）
     if "brief" not in names:
         conn.execute(text("ALTER TABLE characters ADD COLUMN brief TEXT NOT NULL DEFAULT ''"))
+
+
+def ensure_project_columns(conn: Connection) -> None:
+    """S3f-T4 #869：为存量库 projects 补缺列（幂等，镜像 ensure_outline_columns）.
+
+    v0.11 projects 仅 id+name，旧 ensure 链只补 active_watermark → ORM SELECT 崩
+    no such column。PRAGMA 检缺列才 ALTER；表不存在（全新环境）→ no-op，等
+    create_all 建新表。⚠️ #858：NOT NULL 补列必须带 SQL DEFAULT（存量行自动
+    回填），禁 INSERT...SELECT 绕 Python default；时间列用常量 epoch 兜底
+    （SQLite ADD COLUMN 禁非恒定默认 CURRENT_TIMESTAMP，#869 实测）。
+    is_deleted 索引：ensure 族补列先例不建，新库由 create_all 建。
+    """
+    cols = conn.execute(text("PRAGMA table_info(projects)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return  # 表不存在（全新环境）→ create_all 建新表（自动含全部列）
+    additions = (
+        ("tags", "JSON NOT NULL DEFAULT '[]'"),
+        ("language", "TEXT NOT NULL DEFAULT 'zh-CN'"),
+        ("target_words", "INTEGER NOT NULL DEFAULT 0"),
+        ("config", "JSON NOT NULL DEFAULT '{}'"),
+        ("is_deleted", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("created_at", "TEXT NOT NULL DEFAULT '1970-01-01 00:00:00'"),
+        ("updated_at", "TEXT NOT NULL DEFAULT '1970-01-01 00:00:00'"),
+    )
+    for column, definition in additions:
+        if column not in names:
+            conn.execute(text(f"ALTER TABLE projects ADD COLUMN {column} {definition}"))
 
 
 def ensure_project_watermark_column(conn: Connection) -> None:
