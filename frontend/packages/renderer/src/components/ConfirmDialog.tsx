@@ -3,9 +3,18 @@
  * 关闭路径 = 取消按钮 / Esc / 父级确认成功后 onOpenChange(false)；
  * 遮罩点击不关闭（#195 拍板，与 TemplateDialog 旧确认框不同）。
  */
-import { useEffect } from 'react';
-import type { ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import { useI18n } from '../i18n/useI18n';
+
+/** S3e F3：框内可聚焦元素（初始焦点 + Tab 焦点陷阱共用；过滤 disabled / aria-hidden 元素） */
+function getDialogFocusables(dialog: HTMLElement): HTMLElement[] {
+  return Array.from(
+    dialog.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((el) => el.getAttribute('aria-hidden') !== 'true');
+}
 
 export interface ConfirmDialogProps {
   open: boolean;
@@ -29,6 +38,7 @@ export function ConfirmDialog({
   onOpenChange,
 }: ConfirmDialogProps) {
   const { t } = useI18n();
+  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   // Esc 关闭（document 级监听覆盖框内任意焦点；尊重 Radix Select 等已 preventDefault 的 Escape）
   useEffect(() => {
@@ -40,17 +50,50 @@ export function ConfirmDialog({
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [open, onOpenChange]);
 
+  // S3e F3：打开后初始焦点落入框内（首个可聚焦控件；无控件则聚焦对话框容器本身）
+  useEffect(() => {
+    if (!open) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusables = getDialogFocusables(dialog);
+    (focusables[0] ?? dialog).focus();
+  }, [open]);
+
+  /** S3e F3：Tab 焦点陷阱——焦点在首/尾元素（或逃出框内）时回绕，不逃出对话框 */
+  const handleDialogKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Tab') return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusables = getDialogFocusables(dialog);
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    if (e.shiftKey) {
+      if (active === first || !dialog.contains(active)) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else if (active === last || !dialog.contains(active)) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
   if (!open) return null;
 
   return (
     <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         data-testid={`${testidPrefix}-dialog`}
+        tabIndex={-1}
         className="w-[420px] rounded-lg border border-line bg-surface p-6 shadow-card"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleDialogKeyDown}
       >
         <h2 className="font-serif text-[18px] font-semibold">{title}</h2>
         <div className="mt-3 space-y-1.5 text-[13px] text-ink-2">{message}</div>

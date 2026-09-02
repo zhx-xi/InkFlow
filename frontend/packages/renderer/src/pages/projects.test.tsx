@@ -570,3 +570,30 @@ describe('项目页 — 导出入口', () => {
     expect(within(dialog).getByTestId('export-filename-input')).toHaveValue('青云志.txt');
   });
 });
+
+describe('项目页 — F6 错误态重试闭环（S3e）', () => {
+  it('错误态显示错误文案 + 重试按钮；点击重试重新拉取并成功渲染卡片', async () => {
+    const user = userEvent.setup();
+    // 首次失败（挂载 loadProjects），重试成功（默认 mock 返回青云志）
+    apiFetchMock.mockRejectedValueOnce(new Error('加载失败，请重试'));
+    renderProjectsPage();
+    await screen.findByText(/加载失败，请重试/);
+
+    const retry = screen.getByTestId('projects-retry');
+    expect(retry).toBeInTheDocument();
+    expect(retry).toHaveTextContent('重试');
+    await user.click(retry);
+
+    const cards = await screen.findAllByTestId('project-card');
+    expect(cards.length).toBeGreaterThan(0);
+    expect(within(cards[0]).getByText('青云志')).toBeInTheDocument();
+  });
+
+  it('错误态不渲染空态/骨架/卡片（与加载空态区分）', async () => {
+    apiFetchMock.mockRejectedValue(new Error('内核未就绪'));
+    renderProjectsPage();
+    await screen.findByText(/内核未就绪/);
+    expect(screen.queryByTestId('projects-empty')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('project-card')).not.toBeInTheDocument();
+  });
+});

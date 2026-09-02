@@ -1,6 +1,7 @@
 /** 新建项目对话框（spec §4.2.2）：书名必填 1-100 / tags 多选 + 自定义新增（#595 D7=A）/ 语言 / 目标字数默认 800000
  * #189：目标字数初始值读全局 default_words（方案 A 闭环）；#195：清空可重输 + 遮罩点击不关闭 */
 import { useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { errorMessage, fetchSettings } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
@@ -8,6 +9,15 @@ import { useProjectStore } from '../stores/project';
 import { useTagsStore } from '../stores/tags';
 import { useTemplatesStore } from '../stores/templates';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+
+/** S3e F3：框内可聚焦元素（初始焦点 + Tab 焦点陷阱共用；过滤 disabled / aria-hidden 元素） */
+function getDialogFocusables(dialog: HTMLElement): HTMLElement[] {
+  return Array.from(
+    dialog.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((el) => el.getAttribute('aria-hidden') !== 'true');
+}
 
 const LANGUAGES = ['zh-CN', 'en'];
 
@@ -17,6 +27,7 @@ export interface NewProjectDialogProps {
 
 export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
   const { t } = useI18n();
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
   const createProject = useProjectStore((s) => s.createProject);
   const templates = useTemplatesStore((s) => s.templates);
@@ -86,6 +97,35 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [onClose, submitting]);
 
+  // S3e F3：打开（挂载）后初始焦点落入框内（书名输入为首个可聚焦控件）
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusables = getDialogFocusables(dialog);
+    (focusables[0] ?? dialog).focus();
+  }, []);
+
+  /** S3e F3：Tab 焦点陷阱——焦点在首/尾元素（或逃出框内）时回绕，不逃出对话框 */
+  const handleDialogKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Tab') return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusables = getDialogFocusables(dialog);
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    if (e.shiftKey) {
+      if (active === first || !dialog.contains(active)) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else if (active === last || !dialog.contains(active)) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
   const handleCreate = async () => {
     if (submitting) return;
     const trimmed = name.trim();
@@ -129,11 +169,14 @@ export function NewProjectDialog({ onClose }: NewProjectDialogProps) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={t('dlg.newTitle')}
+        tabIndex={-1}
         className="w-[420px] rounded-lg border border-line bg-surface p-6 shadow-card"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleDialogKeyDown}
       >
         <h2 className="font-serif text-[18px] font-semibold">{t('dlg.newTitle')}</h2>
         <div className="mt-4 space-y-3">

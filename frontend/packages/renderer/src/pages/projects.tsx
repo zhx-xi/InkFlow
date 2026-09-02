@@ -160,7 +160,18 @@ export function ProjectsPage() {
         </button>
       </div>
       {error ? (
-        <div className="rounded-lg border border-err/30 bg-surface p-6 text-sm text-err">{error}</div>
+        <div className="rounded-lg border border-err/30 bg-surface p-6 text-sm text-err">
+          <p>{error}</p>
+          {/* S3e F6：错误态重试闭环——点击重新拉取项目列表（loadProjects 清 error 并置 loading） */}
+          <button
+            type="button"
+            data-testid="projects-retry"
+            className="mt-4 rounded-md border border-line bg-surface px-4 py-1.5 text-[13px] text-ink-2 transition duration-180 hover:bg-surface-3 hover:text-ink"
+            onClick={() => void loadProjects()}
+          >
+            {t('lib.retry')}
+          </button>
+        </div>
       ) : loading && projects.length === 0 ? (
         <div
           role="status"
