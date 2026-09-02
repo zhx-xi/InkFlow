@@ -76,6 +76,7 @@ from inkflow.core.database import (
     ensure_provider_builtin_key_column,
     ensure_timeline_drop_is_deleted,
     ensure_user_preference_superseded_column,
+    ensure_world_categories,
     ensure_world_categories_kind_column,
     ensure_world_drop_is_deleted,
     ensure_world_parent_id_column,
@@ -112,12 +113,13 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_preference_superseded_column)
         await conn.run_sync(ensure_user_preference_superseded_column)
         await conn.run_sync(ensure_world_parent_id_column)
-        await conn.run_sync(ensure_world_root_unique_index)
         await conn.run_sync(ensure_world_categories_kind_column)
+        await conn.run_sync(ensure_world_categories)
         await conn.run_sync(ensure_map_columns)
         await conn.run_sync(ensure_outline_columns)
         await conn.run_sync(ensure_outline_volume_id_column)
         await conn.run_sync(ensure_world_drop_is_deleted)
+        await conn.run_sync(ensure_world_root_unique_index)
         await conn.run_sync(ensure_character_drop_is_deleted)
         await conn.run_sync(ensure_characters_brief_column)
         await conn.run_sync(ensure_outline_drop_is_deleted)
