@@ -66,7 +66,9 @@ app_module = importlib.import_module("inkflow.api.app")
 _BACKEND_TESTS_DIR = Path(__file__).resolve().parents[2] / "backend" / "tests"
 if str(_BACKEND_TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_TESTS_DIR))
-from unit.test_rag_vector_consistency_journey import BagEmbeddings  # noqa: E402
+from unit.test_rag_vector_consistency_journey import (  # noqa: E402  # 须上方 sys.path 注入后才能 import（必要顺序，见上注释）
+    BagEmbeddings,
+)
 
 EMBED_MODEL = "m1"
 EMBED_DIM = 128
