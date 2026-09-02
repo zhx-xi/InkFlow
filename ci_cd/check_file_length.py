@@ -5,6 +5,9 @@
 
 覆盖范围：.py / .ts / .tsx（#281 前端护栏扩展，2026-08-13）。
 自动排除 node_modules / dist / .venv / __pycache__ 等构建与依赖目录。
+自动排除 *.d.ts 声明文件（#869 S3c）：工具生成物/环境声明（如 openapi-typescript
+生成的 openapi.d.ts），行数由 schema 规模决定、不可拆分，与本护栏约束的
+「手写实现码规模」不同口径——与 _SKIP_DIRS 同性质，非 ALLOWLIST 贴线豁免。
 
 存量豁免（ALLOWLIST）：已清零（#307 拆分功能文件后归零）。
 ⚠️ 规则固化（#281 T4）：不再新增 ALLOWLIST 豁免——超限文件优先拆分，
@@ -36,6 +39,9 @@ def check_file_length(max_lines: int, paths: list[str]) -> list[tuple[str, int]]
             continue
         for f in files:
             if _SKIP_DIRS.intersection(f.parts):
+                continue
+            # *.d.ts 生成物/环境声明不参与行数护栏（#869 S3c，见模块 docstring）
+            if f.suffix == ".ts" and f.name.endswith(".d.ts"):
                 continue
             rel = str(f).replace("\\", "/")
             # 归一化: 移除 ../ 前缀和 backend/ 前缀，匹配 ALLOWLIST
