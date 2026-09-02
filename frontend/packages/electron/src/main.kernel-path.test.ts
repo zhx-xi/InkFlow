@@ -371,6 +371,10 @@ describe('resolveKernelStatePath 三态（S3f-T3 §1.1 G4：kernel.json 路径�
       const token = 'r2-legacy-repo-token';
       // 注入 appData → tmp：防实现回归误入打包路径（dev 正常不调 getPath，isDebugMode 走 catch）
       stubAppDataPath(appDataDir);
+      // 父侧修复（CI 全绿本地红根因）：fresh runner 无 backend/data 目录 →
+      // writeKernelStateFile 父目录缺失降级 → kernel.json 不存在（本机常存故绿）。
+      // 用例前提=「repo 旧路径可写」，显式建父目录对齐 CI/本地状态。
+      fs.mkdirSync(path.dirname(REPO_STATE_FILE), { recursive: true });
       const beforeBytes = fs.existsSync(REPO_STATE_FILE)
         ? fs.readFileSync(REPO_STATE_FILE, 'utf-8')
         : null;
