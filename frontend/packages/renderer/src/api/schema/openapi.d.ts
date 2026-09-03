@@ -1366,6 +1366,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/i18n/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Messages
+         * @description 按 lng 返回 messages 域本地化目录（msgid→template）。
+         *     lng 缺省 resolve_locale(None)（zh 默认）；F7 信封 {ok, data}；不支持回退 zh。
+         */
+        get: operations["get_messages_api_v1_i18n_messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/index/rebuild": {
         parameters: {
             query?: never;
@@ -1476,6 +1497,30 @@ export interface paths {
         get: operations["extract_status_api_v1_knowledge_extract_status_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Query Logs
+         * @description 日志页查询 → F7 信封 {ok, data:{items,total,offset,limit}}。
+         */
+        get: operations["query_logs_api_v1_logs_get"];
+        put?: never;
+        /**
+         * Ingest Log
+         * @description 前端桥接上报：脱敏 params → 构建 StructuredLogRecord → 落 store → {ok: true}。
+         */
+        post: operations["ingest_log_api_v1_logs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4388,6 +4433,42 @@ export interface components {
          * @enum {string}
          */
         LogLevel: "info" | "warning" | "error";
+        /** LogRecordInput */
+        LogRecordInput: {
+            /** Caller Name */
+            caller_name: string;
+            /**
+             * Caller Type
+             * @enum {string}
+             */
+            caller_type: "api" | "agent" | "llm" | "tool" | "cli" | "mcp" | "frontend";
+            /**
+             * Correlation Id
+             * @default
+             */
+            correlation_id: string;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /** Entity Id */
+            entity_id?: string | null;
+            /** Error Code */
+            error_code?: string | null;
+            /** Event */
+            event: string;
+            /**
+             * Level
+             * @default INFO
+             */
+            level: string;
+            /** Message Key */
+            message_key: string;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /** Project Id */
+            project_id?: number | null;
+        };
         /**
          * MapPinCreate
          * @description 创建 pin 请求 DTO.
@@ -8668,6 +8749,39 @@ export interface operations {
             };
         };
     };
+    get_messages_api_v1_i18n_messages_get: {
+        parameters: {
+            query?: {
+                lng?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     rebuild_endpoint_api_v1_index_rebuild_post: {
         parameters: {
             query?: never;
@@ -8880,6 +8994,82 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    query_logs_api_v1_logs_get: {
+        parameters: {
+            query?: {
+                level?: string | null;
+                caller_type?: string | null;
+                project_id?: number | null;
+                from?: string | null;
+                to?: string | null;
+                q?: string | null;
+                correlation_id?: string | null;
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ingest_log_api_v1_logs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LogRecordInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
