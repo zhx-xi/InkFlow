@@ -654,6 +654,65 @@ class TestGenerateAPI:
         assert response.status_code == 500
         assert response.json()["detail"] == "大纲生成失败: LLM 输出无法解析，请重试"
 
+    @patch("inkflow.api.routers.outlines.get_outline_service")
+    def test_generate_append_to_existing_outline(self, mock_get_svc: MagicMock) -> None:
+        """追加模式：target_outline_id 由 str 强转为 UUID 并透传（#668）。"""
+        svc = _mock_svc(mock_get_svc)
+        target = _outline("既有大纲")
+        result = OutlineGenerationResult(
+            saved=True,
+            outline=target,
+            plot_points=[_point("新增情节点", outline_id=target.id, position=4)],
+            arcs=[],
+            warnings=[],
+            model="deepseek/deepseek-chat",
+        )
+        svc.generate = AsyncMock(return_value=result)
+
+        response = client.post(
+            "/api/v1/outlines/generate",
+            json={
+                "project_id": str(PID),
+                "name": "既有大纲",
+                "target_outline_id": str(target.id),
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        # point_count = 本次新增数（非全量；追加大纲既有点不计入）
+        assert data["point_count"] == 1
+        assert data["plot_points"][0]["position"] == 4
+        assert data["outline"]["name"] == "既有大纲"
+        req = svc.generate.await_args.args[0]
+        assert req.target_outline_id == target.id
+
+    @patch("inkflow.api.routers.outlines.get_outline_service")
+    def test_generate_append_target_not_found_404(self, mock_get_svc: MagicMock) -> None:
+        """追加目标大纲不存在返回 404「大纲不存在」."""
+        svc = _mock_svc(mock_get_svc)
+        svc.generate = AsyncMock(side_effect=OutlineNotFoundError())
+
+        response = client.post(
+            "/api/v1/outlines/generate",
+            json={"project_id": str(PID), "target_outline_id": str(uuid.uuid4())},
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"] == "大纲不存在"
+
+    @patch("inkflow.api.routers.outlines.get_outline_service")
+    def test_generate_without_target_defaults_none(self, mock_get_svc: MagicMock) -> None:
+        """守护：请求无 target_outline_id 字段 → 默认 None，照常生成（#668 向后兼容）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.generate = AsyncMock(return_value=_generation_result(saved=True))
+
+        response = client.post(
+            "/api/v1/outlines/generate",
+            json={"project_id": str(PID), "name": "第一卷大纲"},
+        )
+        assert response.status_code == 200
+        req = svc.generate.await_args.args[0]
+        assert req.target_outline_id is None
+
 
 class TestOutlineCoverageGaps:
     """F11 覆盖率补齐：异常映射分支 / None 防御 / 聚合过滤分支 / validator 直接调用."""

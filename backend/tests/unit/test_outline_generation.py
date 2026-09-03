@@ -626,3 +626,239 @@ class TestExtractJsonFragment:
         """字符串字面量内的转义引号不提前闭合字符串（escaped 状态机分支）。"""
         text = '{"msg": "他说 \\"你好\\""}'
         assert _extract_json_fragment(text) == text
+
+
+class TestAppendMode:
+    """契约 #668 §4.1 G1-G9 — generator 追加轨：target_outline_id 指定时，AI 情节点
+    追加为既有大纲子节点（position 自 next_position 起），不新建大纲/不覆盖/不删除既有。
+    """
+
+    def _configure_append(self, mock_repo, target) -> None:
+        """装配追加模式共享仓储场景：目标大纲存在；既有 3 点 → 下一 position=4。"""
+        mock_repo.get = AsyncMock(return_value=target)
+        mock_repo.next_position = AsyncMock(return_value=4)
+        mock_repo.update_point = AsyncMock()
+        mock_repo.hard_delete_point = AsyncMock()
+
+    def _request(self, target_outline_id, save=True) -> OutlineGenerateRequest:
+        """构造追加模式请求（RED 期 target_outline_id 被 pydantic 静默忽略，勿访问字段）。"""
+        return OutlineGenerateRequest(
+            project_id=PID,
+            save=save,
+            target_outline_id=target_outline_id,
+        )
+
+    async def test_g1_appends_new_points_to_target(self, generator, mock_llm, mock_repo) -> None:
+        """G1【R】追加模式 → 新点 position 4..6 挂目标大纲；不新建大纲、跳同名检查。"""
+        target = _outline("既有大纲")
+        self._configure_append(mock_repo, target)
+        mock_llm.chat.return_value = _ok_response(
+            _payload(
+                plot_points=[
+                    {"name": "追加点一"},
+                    {"name": "追加点二"},
+                    {"name": "追加点三"},
+                ]
+            )
+        )
+        result = await generator.generate(
+            self._request(target_outline_id=target.id),
+            project_info="项目名：雾都谜案",
+            default_model=DEFAULT_MODEL,
+        )
+        assert [p.position for p in result.plot_points] == [4, 5, 6]  # 单次 next_position 批量偏移
+        assert all(p.outline_id == target.id for p in result.plot_points)  # 子节点挂目标大纲
+        assert mock_repo.add.await_count == 0  # 不新建大纲
+        assert mock_repo.get_by_name.await_count == 0  # 跳过同名检查
+        assert result.outline.id == target.id  # 返回既有目标大纲
+        assert result.saved is True
+        assert mock_repo.add_point.await_count == 3  # 恰为本次新增 3 条
+
+    async def test_g2_never_touches_existing_points(self, generator, mock_llm, mock_repo) -> None:
+        """G2【R】既有情节点零改动：update/hard_delete 零调用；plot_points 恰为新增 3 条。"""
+        target = _outline("既有大纲")
+        self._configure_append(mock_repo, target)
+        mock_llm.chat.return_value = _ok_response(
+            _payload(
+                plot_points=[
+                    {"name": "追加点一"},
+                    {"name": "追加点二"},
+                    {"name": "追加点三"},
+                ]
+            )
+        )
+        result = await generator.generate(
+            self._request(target_outline_id=target.id),
+            project_info="项目名：雾都谜案",
+            default_model=DEFAULT_MODEL,
+        )
+        assert mock_repo.get.await_count == 1  # 追加分支须先经 repo.get 解析目标
+        mock_repo.update_point.assert_not_awaited()  # 不修改既有情节点
+        mock_repo.hard_delete_point.assert_not_awaited()  # 不删除既有情节点
+        assert len(result.plot_points) == 3  # 仅本次新增，不含既有 3 点
+
+    async def test_g3_preserves_llm_order_single_next_position(
+        self, generator, mock_llm, mock_repo
+    ) -> None:
+        """G3【R】落库序 = LLM 输出序（position 升序一致）；next_position 仅单次查询（D3）。"""
+        target = _outline("既有大纲")
+        self._configure_append(mock_repo, target)
+        mock_llm.chat.return_value = _ok_response(
+            _payload(
+                plot_points=[
+                    {"name": "节点甲"},
+                    {"name": "节点乙"},
+                    {"name": "节点丙"},
+                ]
+            )
+        )
+        result = await generator.generate(
+            self._request(target_outline_id=target.id),
+            project_info="项目名：雾都谜案",
+            default_model=DEFAULT_MODEL,
+        )
+        assert mock_repo.next_position.await_count == 1  # 单次查询 + 批量偏移（D3）
+        assert mock_repo.next_position.await_args.args[0] == target.id.int  # 按目标大纲查询
+        assert [p.name for p in result.plot_points] == ["节点甲", "节点乙", "节点丙"]
+        assert [p.position for p in result.plot_points] == [4, 5, 6]
+        assert [c.args[0].name for c in mock_repo.add_point.await_args_list] == [
+            "节点甲",
+            "节点乙",
+            "节点丙",
+        ]
+
+    async def test_g4_reuses_existing_arc_by_name(self, generator, mock_llm, mock_repo) -> None:
+        """G4【R】追加模式弧线语义同 §5.4：同名「主线」已在库 → 复用，新点挂既有 arc_id。"""
+        target = _outline("既有大纲")
+        self._configure_append(mock_repo, target)
+        existing_arc = _arc(name="主线", description="旧说明")
+        mock_repo.get_arc_by_name = AsyncMock(return_value=existing_arc)
+        mock_llm.chat.return_value = _ok_response(
+            _payload(
+                arcs=[{"name": "主线", "description": "新说明"}],
+                plot_points=[
+                    {"name": "追加点一", "arc": "主线"},
+                    {"name": "追加点二", "arc": "主线"},
+                ],
+            )
+        )
+        result = await generator.generate(
+            self._request(target_outline_id=target.id),
+            project_info="项目名：雾都谜案",
+            default_model=DEFAULT_MODEL,
+        )
+        assert mock_repo.add_arc.await_count == 0  # 同名复用，不新建
+        assert result.arcs == [existing_arc]  # 复用实例原样返回
+        assert all(p.arc_id == existing_arc.id for p in result.plot_points)
+        assert result.outline.id == target.id  # 追加到既有目标大纲（不新建锚点）
+        assert all(p.outline_id == target.id for p in result.plot_points)
+
+    async def test_g5_save_false_with_target_is_pure_preview(
+        self, generator, mock_llm, mock_repo
+    ) -> None:
+        """G5【R】save=False + target → 纯预览零落库；不校验目标存在性（D2）。"""
+        target = _outline("既有大纲")
+        mock_repo.get = AsyncMock(return_value=None)  # 目标缺失也不应被探测
+        mock_repo.next_position = AsyncMock()
+        mock_llm.chat.return_value = _ok_response(
+            _payload(
+                outline={"name": "预览大纲", "description": "预览描述"},
+                arcs=[{"name": "主线"}],
+                plot_points=[{"name": "开篇命案", "arc": "主线"}],
+            )
+        )
+        result = await generator.generate(
+            self._request(target_outline_id=target.id, save=False),
+            project_info="项目名：雾都谜案",
+            default_model=DEFAULT_MODEL,
+        )
+        assert result.saved is False
+        assert result.preview is not None
+        assert result.preview.name == "预览大纲"
+        for method in (
+            mock_repo.get,
+            mock_repo.add,
+            mock_repo.get_arc_by_name,
+            mock_repo.add_arc,
+            mock_repo.add_point,
+            mock_repo.next_position,
+        ):
+            method.assert_not_awaited()  # 预览分支零落库、零校验
+
+    async def test_g6_missing_target_raises_not_found(self, generator, mock_llm, mock_repo) -> None:
+        """G6【R】目标大纲不存在（repo.get → None）→ OutlineNotFoundError（统一 404，D1）。"""
+        from inkflow.domain.ports.outline_errors import OutlineNotFoundError
+
+        target_id = _outline("既有大纲").id
+        mock_repo.get = AsyncMock(return_value=None)
+        mock_llm.chat.return_value = _ok_response(_payload(plot_points=[{"name": "开篇命案"}]))
+        with pytest.raises(OutlineNotFoundError):
+            await generator.generate(
+                self._request(target_outline_id=target_id),
+                project_info="项目名：雾都谜案",
+                default_model=DEFAULT_MODEL,
+            )
+        assert mock_repo.get.await_count == 1  # 解析目标发生在任何落库之前
+        assert mock_repo.add.await_count == 0  # 失败即零写入
+        assert mock_repo.add_point.await_count == 0
+
+    async def test_g7_cross_project_target_raises_not_found(
+        self, generator, mock_llm, mock_repo
+    ) -> None:
+        """G7【R】目标属他项目 → 与不存在统一 OutlineNotFoundError（不新增异常类，D1）。"""
+        from inkflow.domain.ports.outline_errors import OutlineNotFoundError
+
+        other = _outline("既有大纲").model_copy(update={"project_id": uuid.uuid4()})
+        mock_repo.get = AsyncMock(return_value=other)
+        mock_llm.chat.return_value = _ok_response(_payload(plot_points=[{"name": "开篇命案"}]))
+        with pytest.raises(OutlineNotFoundError):
+            await generator.generate(
+                self._request(target_outline_id=other.id),
+                project_info="项目名：雾都谜案",
+                default_model=DEFAULT_MODEL,
+            )
+        assert mock_repo.get.await_count == 1  # 按目标 id 解析一次
+        assert mock_repo.add.await_count == 0
+        assert mock_repo.add_point.await_count == 0
+
+    async def test_g8_no_target_keeps_new_outline_semantics(
+        self, generator, mock_llm, mock_repo
+    ) -> None:
+        """G8【G】守护回归：无 target_outline_id + save=true → 既有「生成即新建」语义零变化。"""
+        mock_repo.next_position = AsyncMock()
+        mock_llm.chat.return_value = _ok_response(
+            _payload(
+                plot_points=[
+                    {"name": "节点甲"},
+                    {"name": "节点乙"},
+                    {"name": "节点丙"},
+                ]
+            )
+        )
+        result = await generator.generate(
+            OutlineGenerateRequest(project_id=PID),
+            project_info="项目名：雾都谜案",
+            default_model=DEFAULT_MODEL,
+        )
+        assert mock_repo.add.await_count == 1  # 仍新建大纲
+        assert result.saved is True
+        assert [p.position for p in result.plot_points] == [1, 2, 3]  # position 自 1 起
+        assert mock_repo.get_by_name.await_count == 1  # 仍做同名冲突检查
+        assert mock_repo.next_position.await_count == 0  # 新建分支不查 next_position
+
+    async def test_g9_append_empty_points_returns_target_with_warning(
+        self, generator, mock_llm, mock_repo
+    ) -> None:
+        """G9【R】追加模式空情节点 → 零 add_point + warning「未生成情节点」，目标大纲照常返回。"""
+        target = _outline("既有大纲")
+        self._configure_append(mock_repo, target)
+        mock_llm.chat.return_value = _ok_response(_payload(plot_points=[]))
+        result = await generator.generate(
+            self._request(target_outline_id=target.id),
+            project_info="项目名：雾都谜案",
+            default_model=DEFAULT_MODEL,
+        )
+        assert mock_repo.add.await_count == 0  # 追加分支不新建大纲
+        assert result.outline == target  # 返回既有目标大纲实体
+        assert mock_repo.add_point.await_count == 0  # 无新点落库
+        assert any("未生成情节点" in w for w in result.warnings)  # warning 文案保留

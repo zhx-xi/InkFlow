@@ -4,7 +4,9 @@
 实现为 F10 `_world_extractor.py` 的镜像，仅替换领域实体（Outline /
 PlotPoint / StoryArc ↔ WorldSetting）与模板名（outline_generate ↔
 world_extract），并按 §5.6 调整落库语义: 生成即新建（大纲同名 → 422，
-不合并/不覆盖）+ 弧线按名复用 + save 两态（默认落库 / 仅预览不落库）。
+不合并/不覆盖）+ 弧线按名复用 + save 两态（默认落库 / 仅预览不落库）；
+#668 追加模式: target_outline_id 指定时新情节点追加到既有大纲末尾
+（不新建大纲/不覆盖既有，position 自 max+1 批量递增）。
 遵循 ADR-015: 领域层零 LangChain import，LLM / 模板 / 仓储均通过
 Protocol 注入（LLMClientProtocol / PromptTemplateProtocol /
 OutlineRepositoryProtocol），测试中注入 Mock。
@@ -58,6 +60,7 @@ from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
 from inkflow.domain.ports.outline_errors import (
     OutlineGenerationError,
     OutlineNameConflictError,
+    OutlineNotFoundError,
 )
 from inkflow.domain.ports.outline_repository import OutlineRepositoryProtocol
 from inkflow.domain.ports.prompt_template import PromptTemplateProtocol
@@ -244,7 +247,7 @@ class OutlineGenerator:
 
         Args:
             request: 生成请求（project_id / name? / prompt? /
-                num_chapters? / save / model?）.
+                num_chapters? / save / model? / target_outline_id?）.
             project_info: 项目基本信息纯文本（项目名/类型/目标字数/
                 写作风格/extra，由调用方 OutlineService 组装；MVP 不查
                 F9/F10 档案，§5.1 要点 3）.
@@ -258,6 +261,7 @@ class OutlineGenerator:
             LLMRequestError: LLM 调用失败（透传，不消耗解析重试）.
             OutlineGenerationError: 3 次尝试（1 原始 + 2 修复）均无法解析.
             OutlineNameConflictError: 同名活动大纲已存在（save=True）.
+            OutlineNotFoundError: 追加目标大纲不存在或属于其他项目（save=True）.
         """
         model = request.model or default_model
 
@@ -404,7 +408,7 @@ class OutlineGenerator:
             warnings=warnings,
         )
 
-    # ── 落库（§5.4 生成即新建 + 弧线复用）───────────────────────
+    # ── 落库（§5.4 生成即新建 + 弧线复用；#668 追加模式）─────────
 
     async def _persist(
         self,
@@ -414,7 +418,15 @@ class OutlineGenerator:
         warnings: list[str],
         model: str,
     ) -> OutlineGenerationResult:
-        """落库: 大纲新建（同名 422）/ 弧线按名复用 / 情节点顺序落库。"""
+        """落库: 大纲新建（同名 422）或追加既有大纲（#668）/ 弧线按名复用 / 情节点落库。"""
+        if request.target_outline_id is not None:
+            return await self._persist_append(
+                request=request,
+                generated=generated,
+                warnings=warnings,
+                model=model,
+            )
+
         out_warnings = list(warnings)
         pid_int = _to_int_id(request.project_id)
 
@@ -431,9 +443,7 @@ class OutlineGenerator:
             if found is not None:
                 parent_id = found.id
             else:
-                out_warnings.append(
-                    f"生成大纲父引用「{generated.parent}」无法解析，已跳过挂接"
-                )
+                out_warnings.append(f"生成大纲父引用「{generated.parent}」无法解析，已跳过挂接")
         now = _utcnow()
         outline = await self._repo.add(
             Outline(
@@ -449,63 +459,24 @@ class OutlineGenerator:
         )
 
         # 弧线: 按 (project_id, name) 匹配活动弧线 → 存在=复用 / 不存在=创建
-        arcs: list[StoryArc] = []
-        arc_by_name: dict[str, StoryArc] = {}
-        for ga in generated.arcs:
-            existing_arc = await self._repo.get_arc_by_name(pid_int, ga.name)
-            if existing_arc is not None:
-                arc_by_name[ga.name] = existing_arc
-                arcs.append(existing_arc)
-                continue
-            new_arc = await self._repo.add_arc(
-                StoryArc(
-                    id=uuid.uuid4(),
-                    project_id=request.project_id,
-                    name=ga.name,
-                    description=ga.description or "",
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-            arc_by_name[ga.name] = new_arc
-            arcs.append(new_arc)
+        arcs, arc_by_name = await self._resolve_arcs(
+            pid_int=pid_int,
+            project_id=request.project_id,
+            generated_arcs=generated.arcs,
+            created_at=now,
+        )
 
         # 情节点: 按输出顺序分配 position（1,2,3...）；arc 名解析为 arc_id
-        plot_points: list[PlotPoint] = []
-        for index, gp in enumerate(generated.plot_points, start=1):
-            arc_id = None
-            if gp.arc:
-                arc_name = gp.arc.strip()
-                if arc_name:
-                    arc = arc_by_name.get(arc_name)
-                    if arc is None:
-                        arc = await self._repo.get_arc_by_name(pid_int, arc_name)
-                    if arc is not None:
-                        arc_by_name[arc_name] = arc
-                        arc_id = arc.id
-                    else:
-                        out_warnings.append(
-                            f"情节点 {gp.name} 的弧线 {arc_name} 无法解析已跳过关联"
-                        )
-            plot_points.append(
-                await self._repo.add_point(
-                    PlotPoint(
-                        id=uuid.uuid4(),
-                        outline_id=outline.id,
-                        project_id=request.project_id,
-                        name=gp.name,
-                        type=gp.type or "",
-                        description=gp.description or "",
-                        position=index,
-                        arc_id=arc_id,
-                        created_at=now,
-                        updated_at=now,
-                    )
-                )
-            )
-
-        if not generated.plot_points:
-            out_warnings.append("未生成情节点")
+        plot_points = await self._persist_plot_points(
+            generated_points=generated.plot_points,
+            pid_int=pid_int,
+            outline_id=outline.id,
+            project_id=request.project_id,
+            arc_by_name=arc_by_name,
+            start=1,
+            created_at=now,
+            out_warnings=out_warnings,
+        )
 
         for w in out_warnings:
             logger.warning("大纲生成警告: %s", w)
@@ -519,3 +490,177 @@ class OutlineGenerator:
             warnings=out_warnings,
             model=model,
         )
+
+    async def _persist_append(
+        self,
+        *,
+        request: OutlineGenerateRequest,
+        generated: GeneratedOutline,
+        warnings: list[str],
+        model: str,
+    ) -> OutlineGenerationResult:
+        """追加模式（#668 §5.4）: 新情节点挂到目标大纲末尾，不新建/不覆盖/不删除。
+
+        步骤: 解析目标（不存在/跨项目 → OutlineNotFoundError，统一 404）→
+        跳过大纲同名检查与 repo.add → 弧线按名复用/新建（项目级实体，不受
+        「不修改大纲」限制）→ 单次 next_position 后批量分配 position →
+        generated.name/level/parent 忽略不回写（D5）。
+        """
+        out_warnings = list(warnings)
+        pid_int = _to_int_id(request.project_id)
+        target_outline_id = request.target_outline_id
+        assert target_outline_id is not None  # 追加分支守卫已收窄（mypy）
+        target = await self._repo.get(_to_int_id(target_outline_id))
+        if target is None or target.project_id != request.project_id:
+            raise OutlineNotFoundError()
+
+        now = _utcnow()
+
+        # 弧线: 与新建分支同一代码路径（§5.4 同名复用 / 否则新建）
+        arcs, arc_by_name = await self._resolve_arcs(
+            pid_int=pid_int,
+            project_id=request.project_id,
+            generated_arcs=generated.arcs,
+            created_at=now,
+        )
+
+        # 情节点: 单次 next_position 取起点后批量递增（D3 O(1) 查询）；
+        # 既有情节点零改动（不调用 update_point / hard_delete_point）
+        start = await self._repo.next_position(_to_int_id(target.id))
+        plot_points = await self._persist_plot_points(
+            generated_points=generated.plot_points,
+            pid_int=pid_int,
+            outline_id=target.id,
+            project_id=request.project_id,
+            arc_by_name=arc_by_name,
+            start=start,
+            created_at=now,
+            out_warnings=out_warnings,
+        )
+
+        for w in out_warnings:
+            logger.warning("大纲生成警告: %s", w)
+
+        return OutlineGenerationResult(
+            saved=True,
+            outline=target,
+            plot_points=plot_points,
+            arcs=arcs,
+            preview=None,
+            warnings=out_warnings,
+            model=model,
+        )
+
+    async def _resolve_arcs(
+        self,
+        *,
+        pid_int: int,
+        project_id: uuid.UUID,
+        generated_arcs: list[GeneratedArc],
+        created_at: datetime,
+    ) -> tuple[list[StoryArc], dict[str, StoryArc]]:
+        """弧线解析（§5.4，新建/追加共用）: 按 (project_id, name) 同名复用 / 否则新建.
+
+        Args:
+            pid_int: 项目仓储层主键（int）.
+            project_id: 项目领域 UUID（新弧线归属）.
+            generated_arcs: LLM 生成的弧线列表（已通过 schema 校验）.
+            created_at: 本批新弧线统一创建时间（与同批大纲/情节点一致）.
+
+        Returns:
+            (落库/复用后的弧线列表, 名称→弧线索引字典，供情节点 arc 引用解析).
+        """
+        arcs: list[StoryArc] = []
+        arc_by_name: dict[str, StoryArc] = {}
+        for ga in generated_arcs:
+            existing_arc = await self._repo.get_arc_by_name(pid_int, ga.name)
+            if existing_arc is not None:
+                arc_by_name[ga.name] = existing_arc
+                arcs.append(existing_arc)
+                continue
+            new_arc = await self._repo.add_arc(
+                StoryArc(
+                    id=uuid.uuid4(),
+                    project_id=project_id,
+                    name=ga.name,
+                    description=ga.description or "",
+                    created_at=created_at,
+                    updated_at=created_at,
+                )
+            )
+            arc_by_name[ga.name] = new_arc
+            arcs.append(new_arc)
+        return arcs, arc_by_name
+
+    async def _resolve_point_arc(
+        self,
+        *,
+        gp: GeneratedPlotPoint,
+        pid_int: int,
+        arc_by_name: dict[str, StoryArc],
+        out_warnings: list[str],
+    ) -> uuid.UUID | None:
+        """把情节点的 arc 名解析为 arc_id（§5.4，新建/追加共用）.
+
+        arc 纯空白 = 未指定 → 不尝试解析；输出弧线列表或库中同名弧线命中 →
+        关联；无法解析 → 跳过关联 + warning，情节点本身照常落库。
+        """
+        if not gp.arc:
+            return None
+        arc_name = gp.arc.strip()
+        if not arc_name:
+            return None
+        arc = arc_by_name.get(arc_name)
+        if arc is None:
+            arc = await self._repo.get_arc_by_name(pid_int, arc_name)
+        if arc is not None:
+            arc_by_name[arc_name] = arc
+            return arc.id
+        out_warnings.append(f"情节点 {gp.name} 的弧线 {arc_name} 无法解析已跳过关联")
+        return None
+
+    async def _persist_plot_points(
+        self,
+        *,
+        generated_points: list[GeneratedPlotPoint],
+        pid_int: int,
+        outline_id: uuid.UUID,
+        project_id: uuid.UUID,
+        arc_by_name: dict[str, StoryArc],
+        start: int,
+        created_at: datetime,
+        out_warnings: list[str],
+    ) -> list[PlotPoint]:
+        """情节点落库（§5.4，新建/追加共用）: 按 LLM 输出顺序自 start 批量分配 position.
+
+        第 i 条合法情节点 position = start + i - 1（新建 start=1；追加 start 取自
+        单次 next_position，D3）。arc 名解析失败 → 跳过关联 + warning。
+        """
+        plot_points: list[PlotPoint] = []
+        for index, gp in enumerate(generated_points, start=1):
+            arc_id = await self._resolve_point_arc(
+                gp=gp,
+                pid_int=pid_int,
+                arc_by_name=arc_by_name,
+                out_warnings=out_warnings,
+            )
+            plot_points.append(
+                await self._repo.add_point(
+                    PlotPoint(
+                        id=uuid.uuid4(),
+                        outline_id=outline_id,
+                        project_id=project_id,
+                        name=gp.name,
+                        type=gp.type or "",
+                        description=gp.description or "",
+                        position=start + index - 1,
+                        arc_id=arc_id,
+                        created_at=created_at,
+                        updated_at=created_at,
+                    )
+                )
+            )
+
+        if not generated_points:
+            out_warnings.append("未生成情节点")
+        return plot_points
