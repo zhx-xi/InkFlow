@@ -135,6 +135,13 @@ class MockExecutionStore:
     async def get_execution(self, execution_id: str) -> FakeExecution | None:
         return self.executions.get(execution_id)
 
+    async def update_status(self, execution_id: str, status: str, hitl_payload=None) -> None:
+        execution = self.executions.get(execution_id)
+        if execution is not None:
+            execution.status = status
+            if hitl_payload is not None:
+                execution.hitl_payload = hitl_payload
+
     async def update_stages(
         self,
         execution_id: str,
@@ -506,13 +513,11 @@ class TestRunPipelineFailures:
 
 class TestMergeRoleConfigsSentinel:
     """F42 #268 三态模型选择执行层（spec §5.1 + §13 M1）：agent_* sentinel → 跟随项目
-    model（#367）；None/缺键 → 方案 B 回退项目 model（#373）；裸名 → warning 回退；
-    合规 provider/model → 覆盖模板角色模型。"""
+    model（#367）；None/缺键 → 回退项目 model；裸名 → warning 回退；合规 provider 覆盖。"""
 
     async def test_sentinel_falls_back_to_project_model(self):
         """agent_writer="__default__" + model="deepseek/deepseek-v4-flash" → writer stage
-        model 回退项目 model（#367：sentinel=跟随默认 → 跟随项目配置的 model，
-        非模板 openai/gpt-4o；v1.0 缺陷：不覆盖 → 无 openai key → 重试耗尽）。"""
+        model 回退项目 model（#367；v1.0 缺陷：不覆盖 → 无 key 重试耗尽）。"""
         project = _make_project(
             config=ProjectConfig(
                 model="deepseek/deepseek-v4-flash",
@@ -607,8 +612,7 @@ class TestMergeRoleConfigsSentinel:
 
     async def test_none_roles_fall_back_to_project_model(self):
         """#373（方案 B）：四角色 None/缺键（GUI 默认形态——前端不发 agent_* 键
-        → ProjectConfig 默认 None）→ 各 stage model 回退项目 model（内置模板
-        openai/gpt-4o 仅兜底；v1.0 缺陷：None 不覆盖 → 无 key 重试耗尽）。"""
+        → ProjectConfig 默认 None）→ 各 stage model 回退项目 model。"""
         project = _make_project(config=ProjectConfig(model="deepseek/deepseek-v4-flash"))
         pipeline = MockPipeline()
         service, pipeline, _, _, _ = _build_service(project=project, pipeline=pipeline)
@@ -629,7 +633,6 @@ class TestExecuteAgentOrder:
     """F42 #269 执行拓扑装配（spec §5.3.1 F3 定稿：启用集合 → _apply_agent_order →
     _merge_role_configs → _run_pipeline）：配置驱动模式下 pipeline 收到的 stages
     按 agent_order 重排；null 角色摘除。
-
     RED 形态（两阶段）：ProjectConfig.agent_order 字段不存在（extra='ignore' 静默
     丢弃）→ 首断言 `"agent_order" in config.model_dump()` AssertionError；
     GREEN 后字段存在 → 首断言过，后续顺序断言驱动 execute 接线。
@@ -834,8 +837,7 @@ class FakeTemplateRepo:
 class TestExecuteCustomRole:
     """F42 #295 execute 自定义角色装配（spec §5.3.4 数据面集成 + §13 M6）：
     agent_roles + agent_order 引用自定义角色 + template_id 模板 roles 定义 prompt →
-    pipeline.executed_stages 含自定义角色 stage（prompt/name/model 装配正确）。
-    RED：首断言 `"agent_roles" in config.model_dump()` AssertionError。"""
+    pipeline.executed_stages 含自定义角色 stage。RED：首断言 agent_roles。"""
 
     async def test_execute_custom_role_via_template_roles(self):
         """agent_roles + agent_order + template_id 模板 roles → 自定义角色经装配执行。"""
