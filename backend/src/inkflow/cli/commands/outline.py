@@ -32,6 +32,7 @@ from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(name="outline", help="大纲管理", no_args_is_help=True)
 
@@ -85,6 +86,7 @@ def _run(cli_ctx: CliContext, coro_fn):
 
 
 @app.command("create")
+@instrument(caller_type="cli")
 def create_outline_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -131,6 +133,7 @@ def create_outline_cmd(
 
 
 @app.command("list")
+@instrument(caller_type="cli")
 def list_outlines_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -180,6 +183,7 @@ def list_outlines_cmd(
 
 
 @app.command("get")
+@instrument(caller_type="cli")
 def get_outline_cmd(
     ctx: typer.Context,
     outline_id: str = typer.Option(..., "--id", "-i", help="大纲 ID (UUID)"),
@@ -212,6 +216,7 @@ def get_outline_cmd(
 
 
 @app.command("update")
+@instrument(caller_type="cli")
 def update_outline_cmd(
     ctx: typer.Context,
     outline_id: str = typer.Option(..., "--id", "-i", help="大纲 ID (UUID)"),
@@ -249,6 +254,7 @@ def update_outline_cmd(
 
 
 @app.command("delete")
+@instrument(caller_type="cli")
 def delete_outline_cmd(
     ctx: typer.Context,
     outline_id: str = typer.Option(..., "--id", "-i", help="大纲 ID (UUID)"),
@@ -283,6 +289,7 @@ def delete_outline_cmd(
 
 
 @app.command("generate")
+@instrument(caller_type="cli")
 def generate_outline_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -353,6 +360,7 @@ def generate_outline_cmd(
 
 
 @point_app.command("list")
+@instrument(caller_type="cli")
 def list_points_cmd(
     ctx: typer.Context,
     outline_id: str = typer.Option(..., "--outline-id", help="大纲 ID (UUID)"),
@@ -376,6 +384,7 @@ def list_points_cmd(
 
 
 @point_app.command("create")
+@instrument(caller_type="cli")
 def create_point_cmd(
     ctx: typer.Context,
     outline_id: str = typer.Option(..., "--outline-id", help="大纲 ID (UUID)"),
@@ -416,6 +425,7 @@ def create_point_cmd(
 
 
 @point_app.command("update")
+@instrument(caller_type="cli")
 def update_point_cmd(
     ctx: typer.Context,
     point_id: str = typer.Option(..., "--id", "-i", help="情节点 ID (UUID)"),
@@ -458,6 +468,7 @@ def update_point_cmd(
 
 
 @point_app.command("delete")
+@instrument(caller_type="cli")
 def delete_point_cmd(
     ctx: typer.Context,
     point_id: str = typer.Option(..., "--id", "-i", help="情节点 ID (UUID)"),
@@ -487,6 +498,7 @@ def delete_point_cmd(
 
 
 @point_app.command("get")
+@instrument(caller_type="cli")
 def get_point_cmd(
     ctx: typer.Context,
     point_id: str = typer.Option(..., "--id", "-i", help="情节点 ID (UUID)"),
@@ -517,6 +529,7 @@ def get_point_cmd(
 
 
 @arc_app.command("list")
+@instrument(caller_type="cli")
 def list_arcs_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -540,6 +553,7 @@ def list_arcs_cmd(
 
 
 @arc_app.command("create")
+@instrument(caller_type="cli")
 def create_arc_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -567,6 +581,7 @@ def create_arc_cmd(
 
 
 @arc_app.command("update")
+@instrument(caller_type="cli")
 def update_arc_cmd(
     ctx: typer.Context,
     arc_id: str = typer.Option(..., "--id", "-i", help="弧线 ID (UUID)"),
@@ -596,6 +611,7 @@ def update_arc_cmd(
 
 
 @arc_app.command("delete")
+@instrument(caller_type="cli")
 def delete_arc_cmd(
     ctx: typer.Context,
     arc_id: str = typer.Option(..., "--id", "-i", help="弧线 ID (UUID)"),
@@ -625,6 +641,7 @@ def delete_arc_cmd(
 
 
 @arc_app.command("get")
+@instrument(caller_type="cli")
 def get_arc_cmd(
     ctx: typer.Context,
     arc_id: str = typer.Option(..., "--id", "-i", help="弧线 ID (UUID)"),

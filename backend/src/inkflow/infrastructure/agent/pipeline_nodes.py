@@ -23,6 +23,7 @@ from inkflow.domain.ports.agent_pipeline import (
     StageStatus,
 )
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
+from inkflow.logging import instrument
 
 
 class PipelineState(TypedDict):
@@ -88,6 +89,7 @@ def _build_messages(
     ]
 
 
+@instrument(caller_type="agent")
 async def _call_llm_node(state: PipelineState, stage_id: str, upstream_keys: list[str]) -> dict:
     """通用节点逻辑：重试调用 LLM 并记录阶段状态。
 
@@ -141,6 +143,7 @@ async def _call_llm_node(state: PipelineState, stage_id: str, upstream_keys: lis
     return result
 
 
+@instrument(caller_type="agent")
 async def generic_node(state: PipelineState, stage_id: str) -> dict:
     """通用节点：任意 stage.id 执行，upstream_keys 从 stage.input_from 推导（v1.2）。
 
@@ -151,21 +154,25 @@ async def generic_node(state: PipelineState, stage_id: str) -> dict:
     return await _call_llm_node(state, stage_id, stage.input_from)
 
 
+@instrument(caller_type="agent")
 async def architect_node(state: PipelineState) -> dict:
     """兼容别名（v1.2 泛化）：architect 角色经通用节点执行，upstream 由 input_from 推导。"""
     return await generic_node(state, "architect")
 
 
+@instrument(caller_type="agent")
 async def writer_node(state: PipelineState) -> dict:
     """兼容别名（v1.2 泛化）：writer 角色经通用节点执行，upstream 由 input_from 推导。"""
     return await generic_node(state, "writer")
 
 
+@instrument(caller_type="agent")
 async def auditor_node(state: PipelineState) -> dict:
     """兼容别名（v1.2 泛化）：auditor 角色经通用节点执行，upstream 由 input_from 推导。"""
     return await generic_node(state, "auditor")
 
 
+@instrument(caller_type="agent")
 async def reviser_node(state: PipelineState) -> dict:
     """兼容别名（v1.2 泛化）：reviser 角色经通用节点执行，upstream 由 input_from 推导。"""
     return await generic_node(state, "reviser")

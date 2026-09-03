@@ -43,6 +43,7 @@ from inkflow.domain.ports.style_errors import (
     StyleValidationError,
 )
 from inkflow.domain.services.style_service import StyleService
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["风格检测"])
 
@@ -118,6 +119,7 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
 
 
 @router.post("/projects/{project_id}/style/analyze")
+@instrument(caller_type="api")
 async def analyze_style(
     request: StyleAnalyzeRequest,
     project_id: str,

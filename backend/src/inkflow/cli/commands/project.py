@@ -11,6 +11,7 @@ from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(name="project", help="项目/书籍管理", no_args_is_help=True)
 
@@ -47,6 +48,7 @@ def _run(cli_ctx: CliContext, coro_fn):
 
 
 @app.command()
+@instrument(caller_type="cli")
 def create(
     ctx: typer.Context,
     name: str = typer.Option(..., "--name", "-n", help="项目名称"),
@@ -84,6 +86,7 @@ def create(
 
 
 @app.command()
+@instrument(caller_type="cli")
 def list(
     ctx: typer.Context,
     search: str | None = typer.Option(None, "--search", "-s", help="按名称搜索"),
@@ -126,6 +129,7 @@ def list(
 
 
 @app.command()
+@instrument(caller_type="cli")
 def get(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--id", "-i", help="项目 ID（int 或 UUID）"),
@@ -158,6 +162,7 @@ def get(
 
 
 @app.command()
+@instrument(caller_type="cli")
 def delete(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--id", "-i", help="项目 ID（int 或 UUID）"),
@@ -192,6 +197,7 @@ def delete(
 
 
 @app.command()
+@instrument(caller_type="cli")
 def restore(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--id", "-i", help="项目 ID（int 或 UUID）"),
@@ -239,6 +245,7 @@ def _parse_config_value(raw: str):
 
 
 @app.command("update")
+@instrument(caller_type="cli")
 def update(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--id", "-i", help="项目 ID（int 或 UUID）"),

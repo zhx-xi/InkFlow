@@ -37,6 +37,7 @@ from inkflow.domain.models.output import ExportFormat
 from inkflow.domain.services._export_filename import suggest_filename
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(
     name="export",
@@ -106,6 +107,7 @@ def _resolve_output_path(output: str | None, filename: str) -> Path:
 
 
 @app.command("export")
+@instrument(caller_type="cli")
 def export_cmd(
     ctx: typer.Context,
     project: str = typer.Argument(..., help="项目名称或 ID"),

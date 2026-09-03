@@ -32,6 +32,7 @@ from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(
     name="search",
@@ -128,6 +129,7 @@ def _print_rebuild_human(data: dict) -> None:
 
 
 @app.command()
+@instrument(caller_type="cli")
 def search_cmd(
     ctx: typer.Context,
     query: str | None = typer.Argument(None, help="查询词（1-100 字符；--rebuild 模式不适用）"),

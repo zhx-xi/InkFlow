@@ -51,6 +51,7 @@ from inkflow.domain.ports.world_errors import (
 )
 from inkflow.domain.services.copy_service import WorldCopyService
 from inkflow.domain.services.world_service import WorldService
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["世界观"])
 
@@ -154,6 +155,7 @@ class WorldCategoryUpdateBody(BaseModel):
 
 
 @router.post("/world-settings/extract")
+@instrument(caller_type="api")
 async def extract_world_settings(
     request: WorldExtractRequest,
     db: AsyncSession = Depends(get_db),
@@ -165,6 +167,7 @@ async def extract_world_settings(
 
 
 @router.post("/projects/{target_project_id}/world-settings/copy")
+@instrument(caller_type="api")
 async def copy_world_settings(
     target_project_id: str,
     request: WorldCopyRequest,
@@ -190,6 +193,7 @@ async def copy_world_settings(
 
 
 @router.post("/projects/{project_id}/world-settings", status_code=201)
+@instrument(caller_type="api")
 async def create_world_setting(
     project_id: str,
     data: WorldSettingCreateBody,
@@ -227,6 +231,7 @@ async def create_world_setting(
 
 
 @router.get("/projects/{project_id}/world-settings")
+@instrument(caller_type="api")
 async def list_world_settings(
     project_id: str,
     search: str | None = Query(None),
@@ -267,6 +272,7 @@ async def list_world_settings(
 
 
 @router.get("/projects/{project_id}/world-settings/categories")
+@instrument(caller_type="api")
 async def list_world_categories(
     project_id: str,
     db: AsyncSession = Depends(get_db),
@@ -280,6 +286,7 @@ async def list_world_categories(
 
 
 @router.get("/world-settings/{setting_id}")
+@instrument(caller_type="api")
 async def get_world_setting(
     setting_id: str,
     db: AsyncSession = Depends(get_db),
@@ -294,6 +301,7 @@ async def get_world_setting(
 
 
 @router.get("/world-settings/{setting_id}/ancestors")
+@instrument(caller_type="api")
 async def get_world_setting_ancestors(
     setting_id: str,
     db: AsyncSession = Depends(get_db),
@@ -308,6 +316,7 @@ async def get_world_setting_ancestors(
 
 
 @router.get("/world-settings/{setting_id}/descendants")
+@instrument(caller_type="api")
 async def get_world_setting_descendants(
     setting_id: str,
     db: AsyncSession = Depends(get_db),
@@ -322,6 +331,7 @@ async def get_world_setting_descendants(
 
 
 @router.patch("/world-settings/{setting_id}")
+@instrument(caller_type="api")
 async def update_world_setting(
     setting_id: str,
     data: WorldUpdate,
@@ -337,6 +347,7 @@ async def update_world_setting(
 
 
 @router.delete("/world-settings/{setting_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_world_setting(
     setting_id: str,
     cascade: bool = Query(False),
@@ -365,6 +376,7 @@ async def delete_world_setting(
 
 
 @router.post("/projects/{project_id}/world-categories", status_code=201)
+@instrument(caller_type="api")
 async def create_world_category(
     project_id: str,
     data: WorldCategoryCreateBody,
@@ -378,6 +390,7 @@ async def create_world_category(
 
 
 @router.get("/projects/{project_id}/world-categories")
+@instrument(caller_type="api")
 async def list_project_world_categories(
     project_id: str,
     db: AsyncSession = Depends(get_db),
@@ -391,6 +404,7 @@ async def list_project_world_categories(
 
 
 @router.patch("/world-categories/{category_id}")
+@instrument(caller_type="api")
 async def rename_world_category(
     category_id: str,
     data: WorldCategoryUpdateBody,
@@ -406,6 +420,7 @@ async def rename_world_category(
 
 
 @router.delete("/world-categories/{category_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_world_category(
     category_id: str,
     db: AsyncSession = Depends(get_db),

@@ -38,6 +38,7 @@ from inkflow.domain.ports.provider_config_errors import (
 )
 from inkflow.domain.services.provider_config_service import ProviderConfigService
 from inkflow.infrastructure.llm.key_manager import APIKeyManager
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/provider-configs", tags=["ProviderConfigs"])
 
@@ -129,6 +130,7 @@ def _to_response(pc: ProviderConfig, key_manager: APIKeyManager) -> dict:
 
 
 @router.get("")
+@instrument(caller_type="api")
 async def list_provider_configs(
     db: AsyncSession = Depends(get_db),
 ):
@@ -143,6 +145,7 @@ async def list_provider_configs(
 
 
 @router.post("", status_code=201)
+@instrument(caller_type="api")
 async def create_provider_config(
     data: ProviderConfigCreate,
     db: AsyncSession = Depends(get_db),
@@ -154,6 +157,7 @@ async def create_provider_config(
 
 
 @router.post("/models")
+@instrument(caller_type="api")
 async def discover_models(data: ModelDiscoveryRequest) -> dict:
     """模型发现代理 — GET {base_url}/models → 归一化模型 ID 列表（Issue #483）.
 
@@ -191,6 +195,7 @@ async def discover_models(data: ModelDiscoveryRequest) -> dict:
 
 
 @router.get("/{provider_config_id}")
+@instrument(caller_type="api")
 async def get_provider_config(
     provider_config_id: str,
     db: AsyncSession = Depends(get_db),
@@ -203,6 +208,7 @@ async def get_provider_config(
 
 
 @router.patch("/{provider_config_id}")
+@instrument(caller_type="api")
 async def update_provider_config(
     provider_config_id: str,
     data: ProviderConfigUpdate,
@@ -216,6 +222,7 @@ async def update_provider_config(
 
 
 @router.delete("/{provider_config_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_provider_config(
     provider_config_id: str,
     db: AsyncSession = Depends(get_db),

@@ -19,6 +19,7 @@ from inkflow.domain.services.memory_service import (
     MemoryService,
     PreferenceNotFoundError,
 )
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/agent", tags=["AgentMemory"])
 
@@ -70,6 +71,7 @@ class PreferenceUpdate(BaseModel):
 
 
 @router.get("/preferences")
+@instrument(caller_type="api")
 async def list_preferences(
     project_id: uuid.UUID = Query(...),
     category: str | None = Query(None),
@@ -82,6 +84,7 @@ async def list_preferences(
 
 
 @router.delete("/preferences/{preference_id}")
+@instrument(caller_type="api")
 async def remove_preference(
     preference_id: str,
     svc: MemoryService = Depends(get_memory_service),
@@ -95,6 +98,7 @@ async def remove_preference(
 
 
 @router.get("/user-preferences")
+@instrument(caller_type="api")
 async def list_user_preferences(
     category: str | None = Query(None),
     svc: MemoryService = Depends(get_memory_service),
@@ -106,6 +110,7 @@ async def list_user_preferences(
 
 
 @router.delete("/user-preferences/{preference_id}")
+@instrument(caller_type="api")
 async def remove_user_preference(
     preference_id: str,
     svc: MemoryService = Depends(get_memory_service),
@@ -119,6 +124,7 @@ async def remove_user_preference(
 
 
 @router.post("/preferences", status_code=201)
+@instrument(caller_type="api")
 async def create_preference(
     body: ProjectPreferenceCreate,
     svc: MemoryService = Depends(get_memory_service),
@@ -129,6 +135,7 @@ async def create_preference(
 
 
 @router.post("/user-preferences", status_code=201)
+@instrument(caller_type="api")
 async def create_user_preference(
     body: UserPreferenceCreate,
     svc: MemoryService = Depends(get_memory_service),
@@ -139,6 +146,7 @@ async def create_user_preference(
 
 
 @router.patch("/preferences/{preference_id}")
+@instrument(caller_type="api")
 async def update_preference(
     preference_id: str,
     body: PreferenceUpdate,
@@ -153,6 +161,7 @@ async def update_preference(
 
 
 @router.patch("/user-preferences/{preference_id}")
+@instrument(caller_type="api")
 async def update_user_preference(
     preference_id: str,
     body: PreferenceUpdate,
@@ -169,6 +178,7 @@ async def update_user_preference(
 
 
 @router.get("/memory/stats")
+@instrument(caller_type="api")
 async def memory_stats(
     project_id: uuid.UUID = Query(...),
     svc: MemoryService = Depends(get_memory_service),
@@ -178,6 +188,7 @@ async def memory_stats(
 
 
 @router.get("/memory/summaries")
+@instrument(caller_type="api")
 async def memory_summaries(
     project_id: uuid.UUID = Query(...),
     svc: MemoryService = Depends(get_memory_service),
@@ -187,6 +198,7 @@ async def memory_summaries(
 
 
 @router.post("/memory/summarize")
+@instrument(caller_type="api")
 async def memory_summarize(
     project_id: uuid.UUID = Query(...),
     force: bool = Query(False, description="忽略锚点哈希强制重新总结（CLI --force）"),
@@ -200,6 +212,7 @@ async def memory_summarize(
 
 
 @router.delete("/memory/summaries")
+@instrument(caller_type="api")
 async def remove_memory_summaries(
     project_id: uuid.UUID = Query(...),
     svc: MemoryService = Depends(get_memory_service),

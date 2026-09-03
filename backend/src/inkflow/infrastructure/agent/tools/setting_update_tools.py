@@ -26,6 +26,7 @@ from inkflow.domain.models.outline import OutlineUpdate
 from inkflow.domain.models.world import WorldUpdate
 from inkflow.infrastructure.agent.tools import _tool_db_lock as _tool_db_lock_mod
 from inkflow.infrastructure.agent.tools.reader_tools import Tool
+from inkflow.logging import instrument
 
 T = TypeVar("T")
 
@@ -153,6 +154,7 @@ def build_setting_update_tools(deps: SettingUpdateToolDeps) -> list[Tool]:
         三个可执行 Tool；func 成功/失败均返回 JSON 信封且不抛异常。
     """
 
+    @instrument(caller_type="tool")
     async def _update_character(
         project_id: uuid.UUID | str | None = None,
         character_id: uuid.UUID | str = "",
@@ -212,6 +214,7 @@ def build_setting_update_tools(deps: SettingUpdateToolDeps) -> list[Tool]:
                     )
                 return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
+    @instrument(caller_type="tool")
     async def _update_world_setting(
         project_id: uuid.UUID | str | None = None,
         setting_id: uuid.UUID | str = "",
@@ -266,6 +269,7 @@ def build_setting_update_tools(deps: SettingUpdateToolDeps) -> list[Tool]:
                     )
                 return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
+    @instrument(caller_type="tool")
     async def _update_outline(
         project_id: uuid.UUID | str | None = None,
         outline_id: uuid.UUID | str = "",

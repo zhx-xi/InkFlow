@@ -36,6 +36,7 @@ from inkflow.domain.services.agentic_writer_service import (
     AgenticWriterService,
 )
 from inkflow.domain.services.writing_service import WritingService, _NotFoundError
+from inkflow.logging import instrument
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,7 @@ def _map_agentic_service_error(exc: Exception) -> HTTPException:
 
 
 @router.post("/generate")
+@instrument(caller_type="api")
 async def generate_chapter(
     data: WritingRequest,
     svc: WritingService = Depends(get_writing_service),
@@ -105,6 +107,7 @@ async def generate_chapter(
 
 
 @router.post("/continue")
+@instrument(caller_type="api")
 async def continue_writing(
     data: ContinueWritingRequest,
     svc: WritingService = Depends(get_writing_service),
@@ -118,6 +121,7 @@ async def continue_writing(
 
 
 @router.post("/revise")
+@instrument(caller_type="api")
 async def revise_content(
     data: RevisionRequest,
     svc: WritingService = Depends(get_writing_service),
@@ -131,6 +135,7 @@ async def revise_content(
 
 
 @router.post("/agentic/generate")
+@instrument(caller_type="api")
 async def agentic_generate(
     data: AgenticWriteRequest,
     svc: AgenticWriterService = Depends(get_agentic_writer_service),
@@ -204,6 +209,7 @@ async def _event_generator(
 
 
 @router.post("/stream")
+@instrument(caller_type="api")
 async def stream_write(
     data: StreamWritingRequest,
     request: Request,

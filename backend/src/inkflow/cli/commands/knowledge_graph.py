@@ -29,6 +29,7 @@ from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(name="knowledge", help="知识图谱管理", no_args_is_help=True)
 relation_app = typer.Typer(name="relation", help="关系管理", no_args_is_help=True)
@@ -78,6 +79,7 @@ def _run(cli_ctx: CliContext, coro_fn):
 
 
 @app.command("graph")
+@instrument(caller_type="cli")
 def graph_cmd(
     ctx: typer.Context,
     project_id: str = typer.Argument(..., help="项目 ID (UUID)"),
@@ -109,6 +111,7 @@ def graph_cmd(
 
 
 @app.command("extract")
+@instrument(caller_type="cli")
 def extract_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project", help="项目 ID (UUID)"),
@@ -143,6 +146,7 @@ def extract_cmd(
 
 
 @relation_app.command("list")
+@instrument(caller_type="cli")
 def list_relations_cmd(
     ctx: typer.Context,
     project_id: str = typer.Argument(..., help="项目 ID (UUID)"),
@@ -182,6 +186,7 @@ def list_relations_cmd(
 
 
 @relation_app.command("add")
+@instrument(caller_type="cli")
 def add_relation_cmd(
     ctx: typer.Context,
     project_id: str = typer.Argument(..., help="项目 ID (UUID)"),
@@ -227,6 +232,7 @@ def add_relation_cmd(
 
 
 @relation_app.command("get")
+@instrument(caller_type="cli")
 def get_relation_cmd(
     ctx: typer.Context,
     relation_id: str = typer.Argument(..., help="关系 ID (UUID)"),
@@ -254,6 +260,7 @@ def get_relation_cmd(
 
 
 @relation_app.command("update")
+@instrument(caller_type="cli")
 def update_relation_cmd(
     ctx: typer.Context,
     relation_id: str = typer.Argument(..., help="关系 ID (UUID)"),
@@ -300,6 +307,7 @@ def update_relation_cmd(
 
 
 @relation_app.command("delete")
+@instrument(caller_type="cli")
 def delete_relation_cmd(
     ctx: typer.Context,
     relation_id: str = typer.Argument(..., help="关系 ID (UUID)"),

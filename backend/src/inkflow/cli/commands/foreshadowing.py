@@ -38,6 +38,7 @@ from inkflow.domain.models.foreshadowing import (
 )
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(name="foreshadowing", help="伏笔管理", no_args_is_help=True)
 
@@ -100,6 +101,7 @@ def _item_label(foreshadowing: dict) -> str:
 
 
 @app.command("create")
+@instrument(caller_type="cli")
 def create_foreshadowing_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -157,6 +159,7 @@ def create_foreshadowing_cmd(
 
 
 @app.command("list")
+@instrument(caller_type="cli")
 def list_foreshadowings_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -216,6 +219,7 @@ def list_foreshadowings_cmd(
 
 
 @app.command("get")
+@instrument(caller_type="cli")
 def get_foreshadowing_cmd(
     ctx: typer.Context,
     foreshadowing_id: str = typer.Option(..., "--id", "-i", help="伏笔 ID (UUID)"),
@@ -252,6 +256,7 @@ def get_foreshadowing_cmd(
 
 
 @app.command("update")
+@instrument(caller_type="cli")
 def update_foreshadowing_cmd(
     ctx: typer.Context,
     foreshadowing_id: str = typer.Option(..., "--id", "-i", help="伏笔 ID (UUID)"),
@@ -307,6 +312,7 @@ def update_foreshadowing_cmd(
 
 
 @app.command("delete")
+@instrument(caller_type="cli")
 def delete_foreshadowing_cmd(
     ctx: typer.Context,
     foreshadowing_id: str = typer.Option(..., "--id", "-i", help="伏笔 ID (UUID)"),
@@ -342,6 +348,7 @@ def delete_foreshadowing_cmd(
 
 
 @app.command("resolve")
+@instrument(caller_type="cli")
 def resolve_foreshadowing_cmd(
     ctx: typer.Context,
     foreshadowing_id: str = typer.Option(..., "--id", "-i", help="伏笔 ID (UUID)"),
@@ -369,6 +376,7 @@ def resolve_foreshadowing_cmd(
 
 
 @app.command("reopen")
+@instrument(caller_type="cli")
 def reopen_foreshadowing_cmd(
     ctx: typer.Context,
     foreshadowing_id: str = typer.Option(..., "--id", "-i", help="伏笔 ID (UUID)"),

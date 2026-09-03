@@ -39,6 +39,7 @@ from inkflow.domain.ports.chapter_audit_errors import NoPendingAuditError
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.ports.extraction_errors import ChapterNotFoundError
 from inkflow.domain.services.chapter_audit_service import ChapterAuditService
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["章节审计"])
 
@@ -99,6 +100,7 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
 
 
 @router.post("/projects/{project_id}/chapters/{chapter_id}/audit")
+@instrument(caller_type="api")
 async def trigger_audit(
     request: AuditTriggerRequest,
     project_id: str,
@@ -118,6 +120,7 @@ async def trigger_audit(
 
 
 @router.post("/projects/{project_id}/chapters/{chapter_id}/audit/confirm")
+@instrument(caller_type="api")
 async def confirm_audit(
     request: AuditConfirmRequest,
     project_id: str,
@@ -140,6 +143,7 @@ async def confirm_audit(
 
 
 @router.get("/projects/{project_id}/audit-logs")
+@instrument(caller_type="api")
 async def list_audit_logs(
     project_id: str,
     limit: int = Query(20, ge=1, le=100),

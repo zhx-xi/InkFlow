@@ -43,6 +43,7 @@ from inkflow.domain.ports.timeline_errors import (
     TimelineServiceError,
 )
 from inkflow.domain.services.timeline_service import TimelineService
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["时间线"])
 
@@ -135,6 +136,7 @@ class TimelineEventCreateBody(BaseModel):
 
 
 @router.post("/projects/{project_id}/timeline/events", status_code=201)
+@instrument(caller_type="api")
 async def create_timeline_event(
     project_id: str,
     data: TimelineEventCreateBody,
@@ -159,6 +161,7 @@ async def create_timeline_event(
 
 
 @router.get("/projects/{project_id}/timeline/events")
+@instrument(caller_type="api")
 async def list_timeline_events(
     project_id: str,
     search: str | None = Query(None),
@@ -190,6 +193,7 @@ async def list_timeline_events(
 
 
 @router.get("/projects/{project_id}/timeline")
+@instrument(caller_type="api")
 async def get_timeline_view(
     project_id: str,
     db: AsyncSession = Depends(get_db),
@@ -204,6 +208,7 @@ async def get_timeline_view(
 
 
 @router.get("/projects/{project_id}/timeline/check")
+@instrument(caller_type="api")
 async def check_timeline_consistency(
     project_id: str,
     include_flashbacks: bool = Query(True),
@@ -219,6 +224,7 @@ async def check_timeline_consistency(
 
 
 @router.get("/timeline/events/{event_id}/check")
+@instrument(caller_type="api")
 async def check_timeline_event(
     event_id: str,
     db: AsyncSession = Depends(get_db),
@@ -236,6 +242,7 @@ async def check_timeline_event(
 
 
 @router.get("/timeline/events/{event_id}")
+@instrument(caller_type="api")
 async def get_timeline_event(
     event_id: str,
     db: AsyncSession = Depends(get_db),
@@ -250,6 +257,7 @@ async def get_timeline_event(
 
 
 @router.patch("/timeline/events/{event_id}")
+@instrument(caller_type="api")
 async def update_timeline_event(
     event_id: str,
     data: TimelineEventUpdate,
@@ -265,6 +273,7 @@ async def update_timeline_event(
 
 
 @router.delete("/timeline/events/{event_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_timeline_event(
     event_id: str,
     db: AsyncSession = Depends(get_db),

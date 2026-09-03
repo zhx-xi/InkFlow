@@ -47,6 +47,7 @@ from inkflow.domain.ports.character_errors import (
 )
 from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.services.character_service import CharacterService
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["角色"])
 
@@ -167,6 +168,7 @@ class CharacterRelationUpdateBody(BaseModel):
 
 
 @router.post("/characters/extract")
+@instrument(caller_type="api")
 async def extract_characters(
     request: CharacterExtractRequest,
     db: AsyncSession = Depends(get_db),
@@ -181,6 +183,7 @@ async def extract_characters(
 
 
 @router.post("/projects/{project_id}/characters", status_code=201)
+@instrument(caller_type="api")
 async def create_character(
     project_id: str,
     data: CharacterCreateBody,
@@ -204,6 +207,7 @@ async def create_character(
 
 
 @router.get("/projects/{project_id}/characters")
+@instrument(caller_type="api")
 async def list_characters(
     project_id: str,
     search: str | None = Query(None),
@@ -245,6 +249,7 @@ async def list_characters(
 
 
 @router.get("/characters/{character_id}")
+@instrument(caller_type="api")
 async def get_character(
     character_id: str,
     db: AsyncSession = Depends(get_db),
@@ -279,6 +284,7 @@ async def get_character(
 
 
 @router.patch("/characters/{character_id}")
+@instrument(caller_type="api")
 async def update_character(
     character_id: str,
     data: CharacterUpdate,
@@ -294,6 +300,7 @@ async def update_character(
 
 
 @router.delete("/characters/{character_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_character(
     character_id: str,
     db: AsyncSession = Depends(get_db),
@@ -310,6 +317,7 @@ async def delete_character(
 
 
 @router.get("/characters/{character_id}/relations")
+@instrument(caller_type="api")
 async def list_character_relations(
     character_id: str,
     db: AsyncSession = Depends(get_db),
@@ -330,6 +338,7 @@ async def list_character_relations(
 
 
 @router.post("/characters/{character_id}/relations", status_code=201)
+@instrument(caller_type="api")
 async def create_relation(
     character_id: str,
     data: CharacterRelationCreate,
@@ -345,6 +354,7 @@ async def create_relation(
 
 
 @router.patch("/characters/{character_id}/relations/{relation_id}")
+@instrument(caller_type="api")
 async def update_relation(
     character_id: str,
     relation_id: str,
@@ -369,6 +379,7 @@ async def update_relation(
 
 
 @router.delete("/characters/{character_id}/relations/{relation_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_relation(
     character_id: str,
     relation_id: str,
@@ -387,6 +398,7 @@ async def delete_relation(
 
 
 @router.post("/projects/{project_id}/character-groups", status_code=201)
+@instrument(caller_type="api")
 async def create_character_group(
     project_id: str,
     data: CharacterGroupCreateBody,
@@ -400,6 +412,7 @@ async def create_character_group(
 
 
 @router.get("/projects/{project_id}/character-groups")
+@instrument(caller_type="api")
 async def list_character_groups(
     project_id: str,
     db: AsyncSession = Depends(get_db),
@@ -420,6 +433,7 @@ async def list_character_groups(
 
 
 @router.get("/character-groups/{group_id}")
+@instrument(caller_type="api")
 async def get_character_group(
     group_id: str,
     db: AsyncSession = Depends(get_db),
@@ -437,6 +451,7 @@ async def get_character_group(
 
 
 @router.patch("/character-groups/{group_id}")
+@instrument(caller_type="api")
 async def update_character_group(
     group_id: str,
     data: CharacterGroupUpdateBody,
@@ -459,6 +474,7 @@ async def update_character_group(
 
 
 @router.delete("/character-groups/{group_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_character_group(
     group_id: str,
     db: AsyncSession = Depends(get_db),

@@ -23,6 +23,7 @@ from inkflow.core.database import (
 )
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.services.index_rebuild_service import IndexRebuildService
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/index", tags=["Index"])
 
@@ -51,6 +52,7 @@ def _resolve_project_ids(raw: list[str] | None) -> list[uuid.UUID] | None:
 
 
 @router.post("/rebuild", status_code=202)
+@instrument(caller_type="api")
 async def rebuild_endpoint(body: RebuildRequest) -> dict:
     """启动统一异步索引重建（202 异步语义）：预校验失败立即 404/409/422.
 
@@ -75,6 +77,7 @@ async def rebuild_endpoint(body: RebuildRequest) -> dict:
 
 
 @router.get("/rebuild/status")
+@instrument(caller_type="api")
 async def status_endpoint(task_id: str) -> dict:
     """查询索引重建任务进度（200 DTO）；task_id 未注册 → 404."""
     status = await (await _get_svc()).get_status(task_id)

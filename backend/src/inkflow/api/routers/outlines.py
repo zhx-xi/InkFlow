@@ -58,6 +58,7 @@ from inkflow.domain.ports.outline_errors import (
     StoryArcNotFoundError,
 )
 from inkflow.domain.services.outline_service import OutlineService
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["大纲"])
 
@@ -132,6 +133,7 @@ async def _points_of_arc(
 
 
 @router.post("/outlines/generate")
+@instrument(caller_type="api")
 async def generate_outline(
     request: OutlineGenerateRequest,
     db: AsyncSession = Depends(get_db),
@@ -180,6 +182,7 @@ class OutlineCreateBody(BaseModel):
 
 
 @router.post("/projects/{project_id}/outlines", status_code=201)
+@instrument(caller_type="api")
 async def create_outline(
     project_id: str,
     data: OutlineCreateBody,
@@ -209,6 +212,7 @@ async def create_outline(
 
 
 @router.get("/projects/{project_id}/outlines")
+@instrument(caller_type="api")
 async def list_outlines(
     project_id: str,
     search: str | None = Query(None),
@@ -241,6 +245,7 @@ async def list_outlines(
 
 
 @router.get("/outlines/by-volume/{volume_id}")
+@instrument(caller_type="api")
 async def get_outline_by_volume(volume_id: str, db: AsyncSession = Depends(get_db)):
     """解析当前卷 -> 关联卷纲（level=volume）；无关联 -> 404."""
     vid = _parse_id(volume_id, detail="卷不存在")
@@ -252,6 +257,7 @@ async def get_outline_by_volume(volume_id: str, db: AsyncSession = Depends(get_d
 
 
 @router.get("/outlines/{outline_id}")
+@instrument(caller_type="api")
 async def get_outline(
     outline_id: str,
     db: AsyncSession = Depends(get_db),
@@ -269,6 +275,7 @@ async def get_outline(
 
 
 @router.patch("/outlines/{outline_id}")
+@instrument(caller_type="api")
 async def update_outline(
     outline_id: str,
     data: OutlineUpdate,
@@ -284,6 +291,7 @@ async def update_outline(
 
 
 @router.delete("/outlines/{outline_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_outline(
     outline_id: str,
     db: AsyncSession = Depends(get_db),
@@ -336,6 +344,7 @@ class PlotPointCreateBody(BaseModel):
 
 
 @router.post("/outlines/{outline_id}/plot-points", status_code=201)
+@instrument(caller_type="api")
 async def create_point(
     outline_id: str,
     data: PlotPointCreateBody,
@@ -358,6 +367,7 @@ async def create_point(
 
 
 @router.get("/outlines/{outline_id}/plot-points")
+@instrument(caller_type="api")
 async def list_points(
     outline_id: str,
     db: AsyncSession = Depends(get_db),
@@ -371,6 +381,7 @@ async def list_points(
 
 
 @router.get("/plot-points/{point_id}")
+@instrument(caller_type="api")
 async def get_point(
     point_id: str,
     db: AsyncSession = Depends(get_db),
@@ -385,6 +396,7 @@ async def get_point(
 
 
 @router.patch("/plot-points/{point_id}")
+@instrument(caller_type="api")
 async def update_point(
     point_id: str,
     data: PlotPointUpdate,
@@ -400,6 +412,7 @@ async def update_point(
 
 
 @router.delete("/plot-points/{point_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_point(
     point_id: str,
     db: AsyncSession = Depends(get_db),
@@ -435,6 +448,7 @@ class StoryArcCreateBody(BaseModel):
 
 
 @router.post("/projects/{project_id}/story-arcs", status_code=201)
+@instrument(caller_type="api")
 async def create_arc(
     project_id: str,
     data: StoryArcCreateBody,
@@ -448,6 +462,7 @@ async def create_arc(
 
 
 @router.get("/projects/{project_id}/story-arcs")
+@instrument(caller_type="api")
 async def list_arcs(
     project_id: str,
     db: AsyncSession = Depends(get_db),
@@ -471,6 +486,7 @@ async def list_arcs(
 
 
 @router.get("/story-arcs/{arc_id}")
+@instrument(caller_type="api")
 async def get_arc(
     arc_id: str,
     db: AsyncSession = Depends(get_db),
@@ -487,6 +503,7 @@ async def get_arc(
 
 
 @router.patch("/story-arcs/{arc_id}")
+@instrument(caller_type="api")
 async def update_arc(
     arc_id: str,
     data: StoryArcUpdate,
@@ -502,6 +519,7 @@ async def update_arc(
 
 
 @router.delete("/story-arcs/{arc_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_arc(
     arc_id: str,
     db: AsyncSession = Depends(get_db),

@@ -21,6 +21,7 @@ from inkflow.domain.models.agent_run import AgentStep, AgentToolCall
 from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.services.chat_service import ChatStreamEvent
 from inkflow.infrastructure.llm.redact import redact_step
+from inkflow.logging import instrument
 
 
 def _chunk_stream(text: str, size: int = 6) -> list[str]:
@@ -88,6 +89,7 @@ class ChatAgentService:
         # #766 阶段③/#821：HITL resume 与 stream_events 共用 thread_id（装配期注入，空时 uuid 兜底）
         self._thread_id: str = thread_id
 
+    @instrument(caller_type="agent")
     async def stream_events(
         self,
         prompt: str,
@@ -237,6 +239,7 @@ class ChatAgentService:
             yield ChatStreamEvent(type="error", done=True, error=f"工具执行失败: {exc}")
             yield ChatStreamEvent(type="done", done=True)
 
+    @instrument(caller_type="agent")
     async def resume(self, *, conversation_id: str, approved: bool) -> dict:
         """#766 阶段③：HITL 中断续跑——给 agent invoke Command(resume={"approved": approved})。
 

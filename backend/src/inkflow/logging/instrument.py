@@ -11,8 +11,12 @@ import inspect
 import time
 import traceback
 from collections.abc import Callable
+from typing import Any, ParamSpec, TypeVar, overload
 
 from inkflow.logging.schema import CallerType, log_structured
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 def _log_start(caller_type: CallerType, caller_name: str, evt: str, key: str) -> None:
@@ -61,12 +65,65 @@ def _log_failed(
     )
 
 
+def _log_expected(
+    caller_type: CallerType,
+    caller_name: str,
+    evt: str,
+    key: str,
+    start: float,
+    status_code: int,
+) -> None:
+    """记录预期 HTTPException（status_code < 500）：WARN + E_HTTP_<status>，不带 stack。"""
+    log_structured(
+        level="WARN",
+        caller_type=caller_type,
+        caller_name=caller_name,
+        event=evt,
+        message_key=key,
+        message=f"{evt} failed",
+        duration_ms=(time.perf_counter() - start) * 1000,
+        error_code=f"E_HTTP_{status_code}",
+    )
+
+
+def _log_stream_broken(
+    caller_type: CallerType,
+    caller_name: str,
+    evt: str,
+    key: str,
+    start: float,
+) -> None:
+    """记录 async 生成器流中断：WARN + X_STREAM_BROKEN（流级失败，非函数级崩溃）。"""
+    log_structured(
+        level="WARN",
+        caller_type=caller_type,
+        caller_name=caller_name,
+        event=evt,
+        message_key=key,
+        message=f"{evt} stream broken",
+        duration_ms=(time.perf_counter() - start) * 1000,
+        error_code="X_STREAM_BROKEN",
+    )
+
+
+@overload
+def instrument(fn: Callable[_P, _R]) -> Callable[_P, _R]: ...
+
+
+@overload
 def instrument(
-    fn: Callable[..., object] | None = None,
     *,
     caller_type: CallerType = "api",
     event: str | None = None,
-) -> Callable[..., object]:
+) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]: ...
+
+
+def instrument(
+    fn: Callable[..., Any] | None = None,
+    *,
+    caller_type: CallerType = "api",
+    event: str | None = None,
+) -> Callable[..., Any]:
     """装饰器：支持 @instrument 与 @instrument(caller_type=...) 两种形态。
 
     入口/成功出口打 DEBUG（出口带 duration_ms），未捕获异常打 ERROR
@@ -74,7 +131,7 @@ def instrument(
     caller_name 从 func.__qualname__ 推导；event 默认 func.__name__。
     """
 
-    def decorator(func: Callable[..., object]) -> Callable[..., object]:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         evt = event or func.__name__
         qualname = func.__qualname__
         key = f"log.call.{evt}"
@@ -82,27 +139,51 @@ def instrument(
         if inspect.iscoroutinefunction(func):
 
             @functools.wraps(func)
-            async def async_wrapper(*args: object, **kwargs: object) -> object:
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 _log_start(caller_type, qualname, evt, key)
                 start = time.perf_counter()
                 try:
                     result = await func(*args, **kwargs)
-                except Exception:
-                    _log_failed(caller_type, qualname, evt, key, start)
+                except Exception as exc:
+                    status = getattr(exc, "status_code", None)
+                    if isinstance(status, int) and status < 500:
+                        _log_expected(caller_type, qualname, evt, key, start, status)
+                    else:
+                        _log_failed(caller_type, qualname, evt, key, start)
                     raise
                 _log_done(caller_type, qualname, evt, key, start)
                 return result
 
             return async_wrapper
 
+        if inspect.isasyncgenfunction(func):
+
+            @functools.wraps(func)
+            async def asyncgen_wrapper(*args: Any, **kwargs: Any) -> Any:
+                _log_start(caller_type, qualname, evt, key)
+                start = time.perf_counter()
+                try:
+                    async for item in func(*args, **kwargs):
+                        yield item
+                except Exception:
+                    _log_stream_broken(caller_type, qualname, evt, key, start)
+                    raise
+                _log_done(caller_type, qualname, evt, key, start)
+
+            return asyncgen_wrapper
+
         @functools.wraps(func)
-        def sync_wrapper(*args: object, **kwargs: object) -> object:
+        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             _log_start(caller_type, qualname, evt, key)
             start = time.perf_counter()
             try:
                 result = func(*args, **kwargs)
-            except Exception:
-                _log_failed(caller_type, qualname, evt, key, start)
+            except Exception as exc:
+                status = getattr(exc, "status_code", None)
+                if isinstance(status, int) and status < 500:
+                    _log_expected(caller_type, qualname, evt, key, start, status)
+                else:
+                    _log_failed(caller_type, qualname, evt, key, start)
                 raise
             _log_done(caller_type, qualname, evt, key, start)
             return result

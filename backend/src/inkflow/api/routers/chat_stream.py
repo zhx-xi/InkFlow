@@ -24,6 +24,7 @@ from inkflow.infrastructure.database.repositories.agent_run_repo import (
 )
 from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 from inkflow.infrastructure.llm.redact import load_known_keys, redact_secrets
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/chat", tags=["AI 对话"])
 
@@ -219,6 +220,7 @@ async def _end_run_terminated(
 
 
 @router.post("/stream")
+@instrument(caller_type="api")
 async def stream_chat(
     data: ChatStreamRequest,
     request: Request,
@@ -251,6 +253,7 @@ async def stream_chat(
 
 
 @router.post("/agent/stream")
+@instrument(caller_type="api")
 async def stream_chat_agent(
     data: ChatStreamRequest,
     request: Request,
@@ -375,6 +378,7 @@ async def stream_chat_agent(
 
 
 @router.post("/agent/stream/{run_id}/abort")
+@instrument(caller_type="api")
 async def abort_chat_run_route(run_id: str) -> dict:
     """#719：中断指定 in-flight chat run（404 = 无此运行中 run）。"""
     ok = abort_chat_run(run_id)

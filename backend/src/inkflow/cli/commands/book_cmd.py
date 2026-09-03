@@ -19,6 +19,7 @@ from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(name="book", help="书级编排管理", no_args_is_help=True)
 plan_app = typer.Typer(name="plan", help="访谈式 Planner", no_args_is_help=True)
@@ -83,6 +84,7 @@ def _parse_limits(raw: str | None) -> dict[str, int] | None:
 
 
 @plan_app.command("start")
+@instrument(caller_type="cli")
 def plan_start(
     ctx: typer.Context,
     one_liner: str = typer.Argument(..., help="一句话故事构思"),
@@ -106,6 +108,7 @@ def plan_start(
 
 
 @plan_app.command("respond")
+@instrument(caller_type="cli")
 def plan_respond(
     ctx: typer.Context,
     session_id: str = typer.Argument(..., help="访谈会话 ID"),
@@ -141,6 +144,7 @@ def plan_respond(
 
 
 @plan_app.command("auto")
+@instrument(caller_type="cli")
 def plan_auto(
     ctx: typer.Context,
     one_liner: str = typer.Argument(..., help="一句话故事构思"),
@@ -175,6 +179,7 @@ def plan_auto(
 
 
 @plan_app.command("show")
+@instrument(caller_type="cli")
 def plan_show(
     ctx: typer.Context,
     session_id: str = typer.Argument(..., help="访谈会话 ID"),
@@ -211,6 +216,7 @@ def plan_show(
 
 
 @plan_app.command("confirm")
+@instrument(caller_type="cli")
 def plan_confirm(
     ctx: typer.Context,
     session_id: str = typer.Argument(..., help="访谈会话 ID"),
@@ -245,6 +251,7 @@ def plan_confirm(
 
 
 @plan_app.command("run")
+@instrument(caller_type="cli")
 def plan_run(
     ctx: typer.Context,
     plan_id: str = typer.Argument(..., help="WritingPlan ID"),
@@ -271,6 +278,7 @@ def plan_run(
 
 
 @app.command("run")
+@instrument(caller_type="cli")
 def book_run(
     ctx: typer.Context,
     plan_id: str = typer.Argument(..., help="WritingPlan ID"),
@@ -303,6 +311,7 @@ def book_run(
 
 
 @app.command("status")
+@instrument(caller_type="cli")
 def book_status(
     ctx: typer.Context,
     run_id: str = typer.Argument(..., help="书级运行 ID"),
@@ -334,6 +343,7 @@ def book_status(
 
 
 @app.command("confirm")
+@instrument(caller_type="cli")
 def book_confirm(
     ctx: typer.Context,
     run_id: str = typer.Argument(..., help="书级运行 ID"),
@@ -373,6 +383,7 @@ _REDIRECT_LABELS: dict[str, str] = {
 
 
 @app.command("intervene")
+@instrument(caller_type="cli")
 def book_intervene(
     ctx: typer.Context,
     run_id: str = typer.Argument(..., help="书级运行 ID"),
@@ -425,6 +436,7 @@ def book_intervene(
 
 
 @app.command("summary")
+@instrument(caller_type="cli")
 def book_summary(
     ctx: typer.Context,
     run_id: str = typer.Argument(..., help="书级运行 ID"),

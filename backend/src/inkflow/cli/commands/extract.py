@@ -36,6 +36,7 @@ from inkflow.domain.models.extraction import (
 )
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(name="extract", help="统一提取入口（6 种类型）", no_args_is_help=True)
 
@@ -112,6 +113,7 @@ def _status_line(run: dict) -> str:
 
 
 @app.command("run")
+@instrument(caller_type="cli")
 def extract_run_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -202,6 +204,7 @@ def extract_run_cmd(
 
 
 @app.command("status")
+@instrument(caller_type="cli")
 def extract_status_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),

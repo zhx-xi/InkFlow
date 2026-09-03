@@ -48,6 +48,7 @@ from inkflow.infrastructure.database.repositories.agent_template_repo import (
 from inkflow.infrastructure.database.repositories.project_repo import (
     SQLiteProjectRepository,
 )
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/agent-templates", tags=["AgentTemplates"])
 
@@ -140,6 +141,7 @@ def _to_response(template: AgentTemplate, *, used_by: list[dict] | None = None) 
 
 
 @router.get("")
+@instrument(caller_type="api")
 async def list_agent_templates(
     db: AsyncSession = Depends(get_db),
 ):
@@ -156,6 +158,7 @@ async def list_agent_templates(
 
 
 @router.post("", status_code=201)
+@instrument(caller_type="api")
 async def create_agent_template(
     data: AgentTemplateCreate,
     db: AsyncSession = Depends(get_db),
@@ -167,6 +170,7 @@ async def create_agent_template(
 
 
 @router.get("/default")
+@instrument(caller_type="api")
 async def get_default_template(
     db: AsyncSession = Depends(get_db),
 ):
@@ -178,6 +182,7 @@ async def get_default_template(
 
 
 @router.patch("/default")
+@instrument(caller_type="api")
 async def set_default_template(
     data: SetDefaultRequest,
     db: AsyncSession = Depends(get_db),
@@ -190,6 +195,7 @@ async def set_default_template(
 
 
 @router.get("/{template_id}")
+@instrument(caller_type="api")
 async def get_agent_template(
     template_id: str,
     db: AsyncSession = Depends(get_db),
@@ -204,6 +210,7 @@ async def get_agent_template(
 
 
 @router.patch("/{template_id}")
+@instrument(caller_type="api")
 async def update_agent_template(
     template_id: str,
     data: AgentTemplateUpdate,
@@ -217,6 +224,7 @@ async def update_agent_template(
 
 
 @router.delete("/{template_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_agent_template(
     template_id: str,
     db: AsyncSession = Depends(get_db),
@@ -228,6 +236,7 @@ async def delete_agent_template(
 
 
 @router.post("/{template_id}/duplicate", status_code=201)
+@instrument(caller_type="api")
 async def duplicate_agent_template(
     template_id: str,
     db: AsyncSession = Depends(get_db),

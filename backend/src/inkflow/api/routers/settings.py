@@ -30,6 +30,7 @@ from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
 from inkflow.domain.services.settings_service import SettingsService
 from inkflow.infrastructure.llm.key_manager import APIKeyManager
 from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+from inkflow.logging import instrument
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +157,7 @@ async def _resolve_probe_model(provider: str, db: AsyncSession) -> str:
 
 
 @router.post("/llm-keys", status_code=201)
+@instrument(caller_type="api")
 async def store_llm_key(data: LLMKeyStoreRequest) -> dict:
     """加密存储 Provider API Key — 201 + {provider, status: saved}（镜像 CLI set-key JSON 输出）。
 
@@ -171,6 +173,7 @@ async def store_llm_key(data: LLMKeyStoreRequest) -> dict:
 
 
 @router.post("/llm/test")
+@instrument(caller_type="api")
 async def test_llm_connection(
     data: LLMTestRequest,
     db: AsyncSession = Depends(get_db),
@@ -204,6 +207,7 @@ async def test_llm_connection(
 
 
 @router.get("", response_model=AppSettings)
+@instrument(caller_type="api")
 async def get_settings(
     service: SettingsService = Depends(get_settings_service),
 ) -> AppSettings:
@@ -212,6 +216,7 @@ async def get_settings(
 
 
 @router.patch("", response_model=AppSettings)
+@instrument(caller_type="api")
 async def patch_settings(
     updates: AppSettingsUpdate,
     service: SettingsService = Depends(get_settings_service),
@@ -232,6 +237,7 @@ async def patch_settings(
 
 
 @router.get("/data-dir")
+@instrument(caller_type="api")
 async def get_data_dir() -> dict:
     """当前生效数据目录 + instance.env 固定锚点（#266 方案 A）。"""
     return {
@@ -241,6 +247,7 @@ async def get_data_dir() -> dict:
 
 
 @router.put("/data-dir")
+@instrument(caller_type="api")
 async def put_data_dir(update: DataDirUpdate) -> dict:
     """持久化数据目录到 instance.env（重启后生效；旧数据不迁移）。"""
     try:

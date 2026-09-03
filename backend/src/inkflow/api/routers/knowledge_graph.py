@@ -53,6 +53,7 @@ from inkflow.domain.services.knowledge_graph_service import KnowledgeGraphServic
 from inkflow.domain.services.relation_extraction_service import RelationExtractionService
 from inkflow.domain.services.settings_service import SettingsService
 from inkflow.infrastructure.scheduler.kg_extract_scheduler import KnowledgeExtractScheduler
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["知识图谱"])
 
@@ -89,6 +90,7 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
 
 
 @router.post("/projects/{project_id}/knowledge-relations", status_code=201)
+@instrument(caller_type="api")
 async def create_relation(
     project_id: str,
     data: KnowledgeRelationCreate,
@@ -104,6 +106,7 @@ async def create_relation(
 
 
 @router.get("/projects/{project_id}/knowledge-relations")
+@instrument(caller_type="api")
 async def list_relations(
     project_id: str,
     source_type: str | None = Query(None),
@@ -139,6 +142,7 @@ async def list_relations(
 
 
 @router.get("/projects/{project_id}/knowledge-graph")
+@instrument(caller_type="api")
 async def get_graph(
     project_id: str,
     db: AsyncSession = Depends(get_db),
@@ -151,6 +155,7 @@ async def get_graph(
 
 
 @router.get("/knowledge-relations/{relation_id}")
+@instrument(caller_type="api")
 async def get_relation(
     relation_id: str,
     db: AsyncSession = Depends(get_db),
@@ -163,6 +168,7 @@ async def get_relation(
 
 
 @router.patch("/knowledge-relations/{relation_id}")
+@instrument(caller_type="api")
 async def update_relation(
     relation_id: str,
     data: KnowledgeRelationUpdate,
@@ -178,6 +184,7 @@ async def update_relation(
 
 
 @router.delete("/knowledge-relations/{relation_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_relation(
     relation_id: str,
     db: AsyncSession = Depends(get_db),
@@ -202,6 +209,7 @@ class KnowledgeExtractRequest(BaseModel):
 
 
 @router.post("/knowledge/extract")
+@instrument(caller_type="api")
 async def extract_knowledge(
     data: KnowledgeExtractRequest,
     svc: RelationExtractionService = Depends(get_relation_extraction_service),
@@ -236,6 +244,7 @@ async def extract_knowledge(
 
 
 @router.get("/knowledge/extract/status")
+@instrument(caller_type="api")
 async def extract_status(
     scheduler: KnowledgeExtractScheduler = Depends(get_kg_extract_scheduler),
 ):

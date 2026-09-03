@@ -21,6 +21,7 @@ from inkflow.domain.models.project import (
 from inkflow.infrastructure.database.repositories.project_repo import (
     SQLiteProjectRepository,
 )
+from inkflow.logging import log_structured
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +215,17 @@ class ProjectService:
             created_at=_utcnow(),
             updated_at=_utcnow(),
         )
-        return await self._repo.add(project)
+        created = await self._repo.add(project)
+        log_structured(
+            level="INFO",
+            caller_type="api",
+            caller_name="project_service.create_project",
+            event="create_project",
+            message_key="log.event.create_project",
+            message=f"创建项目：{name}",
+            params={"name": name},
+        )
+        return created
 
     async def get(self, project_id: int | uuid.UUID) -> Project | None:
         """根据主键获取项目（排除软删除记录）.
@@ -274,7 +285,17 @@ class ProjectService:
         # F46 #270：agent_relations API 层语义校验（死角色引用/自身环/conditional 唯一后继）
         # → ValueError 由 router 转 422
         _validate_agent_relations_config(updated.config)
-        return await self._repo.update(updated)
+        persisted = await self._repo.update(updated)
+        log_structured(
+            level="INFO",
+            caller_type="api",
+            caller_name="project_service.update",
+            event="update_project",
+            message_key="log.event.update_project",
+            message=f"更新项目：{updated.name}",
+            params={"name": updated.name},
+        )
+        return persisted
 
     async def soft_delete(self, project_id: int | uuid.UUID) -> bool:
         """软删除项目（标记 is_deleted=True）.
@@ -285,7 +306,18 @@ class ProjectService:
         Returns:
             True 表示成功删除一条记录，False 表示未找到记录.
         """
-        return await self._repo.soft_delete(_to_int_id(project_id))
+        ok = await self._repo.soft_delete(_to_int_id(project_id))
+        if ok:
+            log_structured(
+                level="INFO",
+                caller_type="api",
+                caller_name="project_service.soft_delete",
+                event="delete_project",
+                message_key="log.event.delete_project",
+                message=f"删除项目：{_to_int_id(project_id)}",
+                params={"project_id": _to_int_id(project_id)},
+            )
+        return ok
 
     async def restore(self, project_id: int | uuid.UUID) -> Project | None:
         """恢复软删除的项目（设置 is_deleted=False）.

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from inkflow.api.deps import get_db, get_project_service
 from inkflow.domain.models.project import ProjectConfig, ProjectCreate, ProjectUpdate
 from inkflow.domain.services.project_service import ProjectService
+from inkflow.logging import instrument
 
 
 def _parse_project_id(project_id: str) -> uuid.UUID:
@@ -35,6 +36,7 @@ router = APIRouter(prefix="/api/v1/projects", tags=["项目"])
 
 
 @router.post("", status_code=201)
+@instrument(caller_type="api")
 async def create_project(
     data: ProjectCreate,
     db: AsyncSession = Depends(get_db),
@@ -55,6 +57,7 @@ async def create_project(
 
 
 @router.get("")
+@instrument(caller_type="api")
 async def list_projects(
     search: str | None = Query(None),
     sort_by: str = Query("updated_at"),
@@ -81,6 +84,7 @@ async def list_projects(
 
 
 @router.get("/{project_id}")
+@instrument(caller_type="api")
 async def get_project(
     project_id: str,
     db: AsyncSession = Depends(get_db),
@@ -95,6 +99,7 @@ async def get_project(
 
 
 @router.patch("/{project_id}")
+@instrument(caller_type="api")
 async def update_project(
     project_id: str,
     data: ProjectUpdate,
@@ -114,6 +119,7 @@ async def update_project(
 
 
 @router.delete("/{project_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_project(
     project_id: str,
     force: bool = Query(False),
@@ -131,6 +137,7 @@ async def delete_project(
 
 
 @router.post("/{project_id}/restore")
+@instrument(caller_type="api")
 async def restore_project(
     project_id: str,
     db: AsyncSession = Depends(get_db),

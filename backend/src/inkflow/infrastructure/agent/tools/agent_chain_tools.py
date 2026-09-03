@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from inkflow.domain.models.agent_pipeline import PipelineExecuteRequest
 from inkflow.domain.models.agent_tools import ToolSpec
 from inkflow.infrastructure.agent.tools.reader_tools import Tool
+from inkflow.logging import instrument
 
 
 def _coerce_uuid(value: object) -> uuid.UUID:
@@ -99,6 +100,7 @@ def build_agent_chain_tools(deps: AgentChainToolDeps) -> list[Tool]:
         两个可执行 Tool；func 成功/失败均返回 JSON 信封且不抛异常。
     """
 
+    @instrument(caller_type="tool")
     async def _agent_run(
         pipeline: str = "builtin:write_chapter",
         chapter_id: uuid.UUID | str | None = None,
@@ -134,6 +136,7 @@ def build_agent_chain_tools(deps: AgentChainToolDeps) -> list[Tool]:
         except Exception as exc:
             return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
+    @instrument(caller_type="tool")
     async def _agent_call(agent_id: str, input: str) -> str:
         try:
             agent = await deps.agent_entity_service.get(agent_id)  # type: ignore[attr-defined]  # 鸭子类型：agent_entity_service 按契约提供 get

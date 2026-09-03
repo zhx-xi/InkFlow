@@ -46,6 +46,7 @@ from inkflow.domain.ports.foreshadowing_errors import (
     ProjectNotFoundError,
 )
 from inkflow.domain.services.foreshadowing_service import ForeshadowingService
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["伏笔"])
 
@@ -116,6 +117,7 @@ class ForeshadowingCreateBody(BaseModel):
 
 
 @router.post("/projects/{project_id}/foreshadowings", status_code=201)
+@instrument(caller_type="api")
 async def create_foreshadowing(
     project_id: str,
     data: ForeshadowingCreateBody,
@@ -140,6 +142,7 @@ async def create_foreshadowing(
 
 
 @router.get("/projects/{project_id}/foreshadowings")
+@instrument(caller_type="api")
 async def list_foreshadowings(
     project_id: str,
     search: str | None = Query(None),
@@ -176,6 +179,7 @@ async def list_foreshadowings(
 
 
 @router.get("/foreshadowings/{foreshadowing_id}")
+@instrument(caller_type="api")
 async def get_foreshadowing(
     foreshadowing_id: str,
     db: AsyncSession = Depends(get_db),
@@ -190,6 +194,7 @@ async def get_foreshadowing(
 
 
 @router.patch("/foreshadowings/{foreshadowing_id}")
+@instrument(caller_type="api")
 async def update_foreshadowing(
     foreshadowing_id: str,
     data: ForeshadowingUpdate,
@@ -208,6 +213,7 @@ async def update_foreshadowing(
 
 
 @router.delete("/foreshadowings/{foreshadowing_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_foreshadowing(
     foreshadowing_id: str,
     db: AsyncSession = Depends(get_db),
@@ -221,6 +227,7 @@ async def delete_foreshadowing(
 
 
 @router.post("/foreshadowings/{foreshadowing_id}/resolve")
+@instrument(caller_type="api")
 async def resolve_foreshadowing(
     foreshadowing_id: str,
     db: AsyncSession = Depends(get_db),
@@ -235,6 +242,7 @@ async def resolve_foreshadowing(
 
 
 @router.post("/foreshadowings/{foreshadowing_id}/reopen")
+@instrument(caller_type="api")
 async def reopen_foreshadowing(
     foreshadowing_id: str,
     db: AsyncSession = Depends(get_db),

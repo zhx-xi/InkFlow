@@ -30,6 +30,7 @@ from inkflow.cli.output import print_error, print_result
 from inkflow.domain.models.timeline import TimelineEventUpdate
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(name="timeline", help="时间线管理", no_args_is_help=True)
 
@@ -84,6 +85,7 @@ def _time_label(event: dict) -> str:
 
 
 @app.command("create")
+@instrument(caller_type="cli")
 def create_event_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -140,6 +142,7 @@ def create_event_cmd(
 
 
 @app.command("list")
+@instrument(caller_type="cli")
 def list_events_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -186,6 +189,7 @@ def list_events_cmd(
 
 
 @app.command("view")
+@instrument(caller_type="cli")
 def view_timeline_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -223,6 +227,7 @@ def view_timeline_cmd(
 
 
 @app.command("check")
+@instrument(caller_type="cli")
 def check_consistency_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -275,6 +280,7 @@ def check_consistency_cmd(
 
 
 @app.command("get")
+@instrument(caller_type="cli")
 def get_event_cmd(
     ctx: typer.Context,
     event_id: str = typer.Option(..., "--id", "-i", help="事件 ID (UUID)"),
@@ -311,6 +317,7 @@ def get_event_cmd(
 
 
 @app.command("update")
+@instrument(caller_type="cli")
 def update_event_cmd(
     ctx: typer.Context,
     event_id: str = typer.Option(..., "--id", "-i", help="事件 ID (UUID)"),
@@ -379,6 +386,7 @@ def update_event_cmd(
 
 
 @app.command("delete")
+@instrument(caller_type="cli")
 def delete_event_cmd(
     ctx: typer.Context,
     event_id: str = typer.Option(..., "--id", "-i", help="事件 ID (UUID)"),

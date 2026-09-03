@@ -22,6 +22,7 @@ from inkflow.domain.services.draft_service import (
 from inkflow.infrastructure.database.repositories.agent_run_repo import (
     SQLiteAgentRunRepository,
 )
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/agent", tags=["AgentRuns"])
 
@@ -42,6 +43,7 @@ def _dump(obj: BaseModel | dict) -> dict:
 
 
 @router.get("/runs")
+@instrument(caller_type="api")
 async def list_runs(
     project_id: uuid.UUID = Query(...),
     limit: int = Query(20, ge=1, le=100),
@@ -53,6 +55,7 @@ async def list_runs(
 
 
 @router.get("/runs/{run_id}")
+@instrument(caller_type="api")
 async def get_run(
     run_id: str,
     repo: SQLiteAgentRunRepository = Depends(get_agent_run_repo),
@@ -65,6 +68,7 @@ async def get_run(
 
 
 @router.get("/drafts")
+@instrument(caller_type="api")
 async def list_drafts(
     project_id: uuid.UUID = Query(...),
     status: str | None = Query(None),
@@ -83,6 +87,7 @@ class ConfirmRequest(BaseModel):
 
 
 @router.post("/drafts/{draft_id}/confirm")
+@instrument(caller_type="api")
 async def confirm_draft(
     draft_id: str,
     body: ConfirmRequest | None = None,
@@ -106,6 +111,7 @@ async def confirm_draft(
 
 
 @router.post("/drafts/{draft_id}/reject")
+@instrument(caller_type="api")
 async def reject_draft(
     draft_id: str,
     svc: DraftService = Depends(get_draft_service),
@@ -127,6 +133,7 @@ class DraftUpdateRequest(BaseModel):
 
 
 @router.patch("/drafts/{draft_id}")
+@instrument(caller_type="api")
 async def update_draft(
     draft_id: str,
     body: DraftUpdateRequest,
@@ -155,6 +162,7 @@ class PruneOrphansRequest(BaseModel):
 
 
 @router.post("/drafts/prune-orphans")
+@instrument(caller_type="api")
 async def prune_orphan_drafts(
     body: PruneOrphansRequest | None = None,
     svc: DraftService = Depends(get_draft_service),

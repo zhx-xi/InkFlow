@@ -29,6 +29,7 @@ from inkflow.infrastructure.agent.tools.save_draft_tool import (
     SaveDraftToolDeps,
     build_save_draft_tool,
 )
+from inkflow.logging import instrument
 
 
 @dataclass
@@ -83,6 +84,7 @@ class DeepAgentInvokeAdapter:
     def __init__(self, inner: object) -> None:
         self._inner = inner
 
+    @instrument(caller_type="agent")
     async def invoke(self, messages: list, config: dict | None = None) -> dict:
         # #821：显式 config 原样透传；缺失时自动补 thread_id（InMemorySaver 兜底）
         if config is None:
@@ -94,6 +96,7 @@ class DeepAgentInvokeAdapter:
         return cast(dict, result)
 
 
+@instrument(caller_type="agent")
 def build_agentic_writer(
     *,
     model: str,

@@ -31,6 +31,7 @@ from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(name="character", help="角色管理", no_args_is_help=True)
 
@@ -82,6 +83,7 @@ def _run(cli_ctx: CliContext, coro_fn):
 
 
 @app.command("create")
+@instrument(caller_type="cli")
 def create_character(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -130,6 +132,7 @@ def create_character(
 
 
 @app.command("list")
+@instrument(caller_type="cli")
 def list_characters(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -182,6 +185,7 @@ def list_characters(
 
 
 @app.command("get")
+@instrument(caller_type="cli")
 def get_character(
     ctx: typer.Context,
     character_id: str = typer.Option(..., "--id", "-i", help="角色 ID (UUID)"),
@@ -219,6 +223,7 @@ def get_character(
 
 
 @app.command("update")
+@instrument(caller_type="cli")
 def update_character(
     ctx: typer.Context,
     character_id: str = typer.Option(..., "--id", "-i", help="角色 ID (UUID)"),
@@ -266,6 +271,7 @@ def update_character(
 
 
 @app.command("delete")
+@instrument(caller_type="cli")
 def delete_character(
     ctx: typer.Context,
     character_id: str = typer.Option(..., "--id", "-i", help="角色 ID (UUID)"),
@@ -300,6 +306,7 @@ def delete_character(
 
 
 @app.command("relate")
+@instrument(caller_type="cli")
 def relate_characters(
     ctx: typer.Context,
     character_id: str = typer.Option(..., "--id", "-i", help="起点角色 ID (UUID)"),
@@ -338,6 +345,7 @@ def relate_characters(
 
 
 @app.command("unrelate")
+@instrument(caller_type="cli")
 def unrelate_characters(
     ctx: typer.Context,
     character_id: str = typer.Option(..., "--id", "-i", help="角色 ID (UUID)"),
@@ -374,6 +382,7 @@ def unrelate_characters(
 
 
 @app.command("relations")
+@instrument(caller_type="cli")
 def list_relations(
     ctx: typer.Context,
     character_id: str = typer.Option(..., "--id", "-i", help="角色 ID (UUID)"),
@@ -409,6 +418,7 @@ def list_relations(
 
 
 @app.command("extract")
+@instrument(caller_type="cli")
 def extract_characters(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -466,6 +476,7 @@ def extract_characters(
 
 
 @group_app.command("create")
+@instrument(caller_type="cli")
 def create_group_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -493,6 +504,7 @@ def create_group_cmd(
 
 
 @group_app.command("list")
+@instrument(caller_type="cli")
 def list_groups_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -516,6 +528,7 @@ def list_groups_cmd(
 
 
 @group_app.command("get")
+@instrument(caller_type="cli")
 def get_group_cmd(
     ctx: typer.Context,
     group_id: str = typer.Option(..., "--id", "-i", help="分组 ID (UUID)"),
@@ -542,6 +555,7 @@ def get_group_cmd(
 
 
 @group_app.command("update")
+@instrument(caller_type="cli")
 def update_group_cmd(
     ctx: typer.Context,
     group_id: str = typer.Option(..., "--id", "-i", help="分组 ID (UUID)"),
@@ -571,6 +585,7 @@ def update_group_cmd(
 
 
 @group_app.command("delete")
+@instrument(caller_type="cli")
 def delete_group_cmd(
     ctx: typer.Context,
     group_id: str = typer.Option(..., "--id", "-i", help="分组 ID (UUID)"),

@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from inkflow.domain.models.agent_tools import ToolSpec
 from inkflow.domain.services._word_count import count_words
 from inkflow.infrastructure.agent.tools import _tool_db_lock as _tool_db_lock_mod
+from inkflow.logging import instrument
 
 _PAGE_SIZE = 50
 
@@ -189,6 +190,7 @@ def build_reader_tools(
     """
     bound_project_id = _coerce_uuid(project_id) if project_id is not None else None
 
+    @instrument(caller_type="tool")
     async def _search_characters(
         search: str | None = None,
         group_id: uuid.UUID | None = None,
@@ -208,6 +210,7 @@ def build_reader_tools(
             except Exception as exc:
                 return _fail(exc)
 
+    @instrument(caller_type="tool")
     async def _check_foreshadowing(status: str | None = None, **kwargs: object) -> str:
         async with _tool_db_lock_mod._tool_db_lock:
             try:
@@ -220,6 +223,7 @@ def build_reader_tools(
             except Exception as exc:
                 return _fail(exc)
 
+    @instrument(caller_type="tool")
     async def _get_prior_summary(limit: int = 10, **kwargs: object) -> str:
         async with _tool_db_lock_mod._tool_db_lock:
             try:
@@ -230,6 +234,7 @@ def build_reader_tools(
             except Exception as exc:
                 return _fail(exc)
 
+    @instrument(caller_type="tool")
     async def _audit_chapter(
         chapter_id: uuid.UUID,
         include_static: bool = True,
@@ -247,6 +252,7 @@ def build_reader_tools(
             except Exception as exc:
                 return _fail(exc)
 
+    @instrument(caller_type="tool")
     async def _count_words(text: str, **kwargs: object) -> str:
         try:
             return _ok(count_words(text))

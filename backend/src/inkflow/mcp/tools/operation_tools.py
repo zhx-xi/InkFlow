@@ -12,6 +12,7 @@ from typing import Protocol
 from pydantic import ValidationError
 
 from inkflow.domain.models.agent_tools import ToolSpec
+from inkflow.logging import instrument
 from inkflow.mcp.tools import MCPTool
 from inkflow.mcp.tools.schemas import (
     AuditParams,
@@ -186,6 +187,7 @@ async def _route_search(client: _HTTPClient, params: SearchParams) -> object:
 def build_write_tool() -> MCPTool:
     """写作：续写下一章 / 续写指定章 / 按指令修订（同步返回拼接结果）。"""
 
+    @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
         try:
             params = WriteParams.model_validate(kwargs)
@@ -228,6 +230,7 @@ def build_write_tool() -> MCPTool:
 def build_audit_tool() -> MCPTool:
     """审计：项目级四维审计 / 单章一致性审计。"""
 
+    @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
         try:
             params = AuditParams.model_validate(kwargs)
@@ -270,6 +273,7 @@ def build_audit_tool() -> MCPTool:
 def build_extract_tool() -> MCPTool:
     """提取：从文本提取设定实体 / 向量重索引 / 语义检索。"""
 
+    @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
         try:
             params = ExtractParams.model_validate(kwargs)
@@ -312,6 +316,7 @@ def build_extract_tool() -> MCPTool:
 def build_export_tool() -> MCPTool:
     """导出：项目导出为 EPUB/Markdown/TXT/DOCX（原始文本返回）。"""
 
+    @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
         try:
             params = ExportParams.model_validate(kwargs)
@@ -354,6 +359,7 @@ def build_export_tool() -> MCPTool:
 def build_search_tool() -> MCPTool:
     """搜索：跨内容类型全文搜索（关键词 + 语义）。"""
 
+    @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
         try:
             params = SearchParams.model_validate(kwargs)

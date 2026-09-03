@@ -32,6 +32,7 @@ from inkflow.domain.ports.agent_pipeline import (
 from inkflow.domain.services.agent_service_stream import AgentServiceStreamMixin
 from inkflow.domain.services.model_resolution import resolve_model
 from inkflow.infrastructure.agent.supervisor_pipeline import HITLInterrupt
+from inkflow.logging import log_structured
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +70,29 @@ def _apply_agent_order(
 
     # 防御校验：长度上限（槽位 0-9）/ 跨层重复（执行层防御，存储层已拦的损坏数据）
     if len(agent_order) > 10:
-        logger.warning("agent_order 超过 10 层（槽位编号 0-9），回退默认拓扑")
+        log_structured(
+            level="WARN",
+            caller_type="agent",
+            caller_name="agent_service._apply_agent_order",
+            event="agent_order_guardrail",
+            message_key="log.check.agent_order_guardrail",
+            message="agent_order 超过 10 层，回退默认拓扑",
+            params={"self_healed": True, "depth": len(agent_order)},
+            error_code="E_AGENT_ORDER_TOO_DEEP",
+        )
         return stages
     flattened = [role for layer in agent_order for role in layer]
     if len(flattened) != len(set(flattened)):
-        logger.warning("agent_order 存在跨层重复角色，回退默认拓扑")
+        log_structured(
+            level="WARN",
+            caller_type="agent",
+            caller_name="agent_service._apply_agent_order",
+            event="agent_order_guardrail",
+            message_key="log.check.agent_order_guardrail",
+            message="agent_order 存在跨层重复角色，回退默认拓扑",
+            params={"self_healed": True},
+            error_code="E_AGENT_ORDER_DUPLICATE",
+        )
         return stages
 
     # 缺启用角色校验（C1）：启用角色（去 agent_ 前缀）必须全部出现在 order 展开集
@@ -81,7 +100,16 @@ def _apply_agent_order(
     enabled_stage_ids = {role.removeprefix("agent_") for role in enabled_roles}
     missing = enabled_stage_ids - order_roles
     if missing:
-        logger.warning("agent_order 缺少启用角色: %s，回退默认拓扑", ", ".join(sorted(missing)))
+        log_structured(
+            level="WARN",
+            caller_type="agent",
+            caller_name="agent_service._apply_agent_order",
+            event="agent_order_guardrail",
+            message_key="log.check.agent_order_guardrail",
+            message="agent_order 缺少启用角色，回退默认拓扑",
+            params={"self_healed": True, "missing": sorted(missing)},
+            error_code="E_AGENT_ORDER_MISSING_ROLE",
+        )
         return stages
 
     # 跳过过滤（Q2+B1）：配置驱动模式下 null 角色从 order 摘除；空层保留（不影响前序全层集合）
@@ -147,9 +175,15 @@ def _apply_agent_order(
     # 终点角色校验（C2 成品身份）：终点为 architect/auditor（非内容产出）→ 回退默认拓扑
     terminal_ids = non_empty_layers[-1]
     if any(sid in ("architect", "auditor") for sid in terminal_ids):
-        logger.warning(
-            "agent_order 终点角色 %s 非内容产出（成品身份 C2），回退默认拓扑",
-            sorted(terminal_ids),
+        log_structured(
+            level="WARN",
+            caller_type="agent",
+            caller_name="agent_service._apply_agent_order",
+            event="agent_order_guardrail",
+            message_key="log.check.agent_order_guardrail",
+            message="agent_order 终点角色非内容产出，回退默认拓扑",
+            params={"self_healed": True, "terminal": sorted(terminal_ids)},
+            error_code="E_AGENT_ORDER_TERMINAL_ROLE",
         )
         return stages
 

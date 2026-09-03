@@ -32,6 +32,7 @@ from inkflow.cli.output import print_error, print_result
 from inkflow.domain.ports.vector_store import EntityType
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(name="vector", help="RAG 向量索引与检索", no_args_is_help=True)
 
@@ -121,6 +122,7 @@ def _status_label(data: dict) -> str:
 
 
 @app.command("status")
+@instrument(caller_type="cli")
 def vector_status_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -148,6 +150,7 @@ def vector_status_cmd(
 
 
 @app.command("reindex")
+@instrument(caller_type="cli")
 def vector_reindex_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -194,6 +197,7 @@ def vector_reindex_cmd(
 
 
 @app.command("retrieve")
+@instrument(caller_type="cli")
 def vector_retrieve_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),

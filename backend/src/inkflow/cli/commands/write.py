@@ -14,6 +14,7 @@ from inkflow.domain.models.agent_run import AgenticWriteRequest
 from inkflow.domain.models.writing import WritingMode, WritingRequest
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(help="AI 写作命令", no_args_is_help=True)
 
@@ -136,6 +137,7 @@ def _echo_agentic_result(cli_ctx: CliContext, result: dict) -> None:
 
 
 @app.command("next")
+@instrument(caller_type="cli")
 def next(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID"),
@@ -233,6 +235,7 @@ def next(
 
 
 @app.command("continue")
+@instrument(caller_type="cli")
 def continue_(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID"),
@@ -277,6 +280,7 @@ def continue_(
 
 
 @app.command("revise")
+@instrument(caller_type="cli")
 def revise(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID"),

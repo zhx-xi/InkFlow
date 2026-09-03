@@ -28,6 +28,7 @@ from inkflow.infrastructure.agent.tools.reader_tools import (
     _ok,
     _serialize_data,
 )
+from inkflow.logging import instrument
 
 
 def _coerce_uuid(value: object) -> uuid.UUID:
@@ -135,6 +136,7 @@ def build_memory_tools(deps: MemoryToolDeps) -> list[Tool]:
         三个可执行 Tool；func 成功/失败均返回 JSON 信封且不抛异常。
     """
 
+    @instrument(caller_type="tool")
     async def _memory_list(
         project_id: uuid.UUID | str | None = None,
         category: str | None = None,
@@ -151,6 +153,7 @@ def build_memory_tools(deps: MemoryToolDeps) -> list[Tool]:
             except Exception as exc:
                 return _fail(exc)
 
+    @instrument(caller_type="tool")
     async def _memory_add(
         project_id: uuid.UUID | str | None = None,
         category: str = "",
@@ -191,6 +194,7 @@ def build_memory_tools(deps: MemoryToolDeps) -> list[Tool]:
                     )
                 return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
+    @instrument(caller_type="tool")
     async def _memory_update(
         project_id: uuid.UUID | str | None = None,
         preference_id: str = "",

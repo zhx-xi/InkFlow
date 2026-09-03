@@ -49,6 +49,7 @@ from inkflow.domain.ports.session_errors import (
     SessionTransitionError,
 )
 from inkflow.domain.services.session_service import SessionService
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["会话"])
 
@@ -106,6 +107,7 @@ def _dump(model: BaseModel) -> dict[str, Any]:
 
 
 @router.post("/sessions", status_code=201)
+@instrument(caller_type="api")
 async def create_session(
     data: SessionCreate,
     db: AsyncSession = Depends(get_db),
@@ -117,6 +119,7 @@ async def create_session(
 
 
 @router.get("/sessions")
+@instrument(caller_type="api")
 async def list_sessions(
     session_type: SessionType | None = Query(None),
     status: SessionStatus | None = Query(None),
@@ -153,6 +156,7 @@ async def list_sessions(
 
 
 @router.get("/sessions/{session_id}")
+@instrument(caller_type="api")
 async def get_session(
     session_id: str,
     db: AsyncSession = Depends(get_db),
@@ -167,6 +171,7 @@ async def get_session(
 
 
 @router.patch("/sessions/{session_id}")
+@instrument(caller_type="api")
 async def update_session(
     session_id: str,
     data: SessionUpdate,
@@ -185,6 +190,7 @@ async def update_session(
 
 
 @router.post("/sessions/{session_id}/pause")
+@instrument(caller_type="api")
 async def pause_session(
     session_id: str,
     db: AsyncSession = Depends(get_db),
@@ -197,6 +203,7 @@ async def pause_session(
 
 
 @router.post("/sessions/{session_id}/resume")
+@instrument(caller_type="api")
 async def resume_session(
     session_id: str,
     db: AsyncSession = Depends(get_db),
@@ -209,6 +216,7 @@ async def resume_session(
 
 
 @router.post("/sessions/{session_id}/complete")
+@instrument(caller_type="api")
 async def complete_session(
     session_id: str,
     data: SessionComplete,
@@ -222,6 +230,7 @@ async def complete_session(
 
 
 @router.post("/sessions/{session_id}/fail")
+@instrument(caller_type="api")
 async def fail_session(
     session_id: str,
     data: SessionFail,
@@ -238,6 +247,7 @@ async def fail_session(
 
 
 @router.post("/sessions/{session_id}/logs", status_code=201)
+@instrument(caller_type="api")
 async def add_session_log(
     session_id: str,
     data: SessionLogCreate,
@@ -251,6 +261,7 @@ async def add_session_log(
 
 
 @router.get("/sessions/{session_id}/logs")
+@instrument(caller_type="api")
 async def list_session_logs(
     session_id: str,
     offset: int = Query(0, ge=0),
@@ -273,6 +284,7 @@ async def list_session_logs(
 
 
 @router.delete("/sessions/{session_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_session(
     session_id: str,
     force: bool = Query(False),
@@ -287,6 +299,7 @@ async def delete_session(
 
 
 @router.post("/sessions/{session_id}/restore")
+@instrument(caller_type="api")
 async def restore_session(
     session_id: str,
     db: AsyncSession = Depends(get_db),

@@ -12,6 +12,7 @@ import typer
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_result
 from inkflow.infrastructure.kernel import state
+from inkflow.logging import instrument
 
 app = typer.Typer(
     name="kernel",
@@ -26,6 +27,7 @@ def _main() -> None:
 
 
 @app.command()
+@instrument(caller_type="cli")
 def status(ctx: typer.Context) -> None:
     """输出内核运行状态（运行中 PID/端口/版本 或 未运行）。"""
     cli_ctx: CliContext = ctx.obj

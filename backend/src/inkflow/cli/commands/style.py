@@ -36,6 +36,7 @@ from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(
     name="style",
@@ -166,6 +167,7 @@ def _print_human(report: dict) -> None:
 
 
 @app.command("analyze")
+@instrument(caller_type="cli")
 def style_analyze_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
