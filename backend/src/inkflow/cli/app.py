@@ -2,16 +2,81 @@
 
 from __future__ import annotations
 
+import sys
+
 import typer
 
 from inkflow import __version__
 from inkflow.cli.context import CliContext
+
+_JSON_GLOBAL_HINT = "--json 是全局选项，请放在子命令前（如 inkflow --json config show）"
+
+
+def _has_misplaced_json(args: list[str]) -> bool:
+    """True if a --json token appears AFTER the command word(s) (non-option tokens)."""
+    seen_non_option = False
+    for arg in args:
+        if arg == "--json":
+            if seen_non_option:
+                return True
+        elif not arg.startswith("-"):
+            seen_non_option = True
+    return False
+
+
+class _JsonHintGroup(typer.main.TyperGroup):
+    """#865: when --json is misplaced after a subcommand, show a friendly hint.
+
+    Only fires when the resolved leaf command does NOT declare its own `--json`
+    option (so `agent status --json`, `book plan start X --json`, ... keep working).
+    """
+
+    def _leaf_declares_json(self, args: list[str]) -> bool:
+        """Walk the command tree to the deepest command named by non-option tokens.
+
+        Return True if that leaf command (or group) declares its own `--json` param.
+        """
+        node: object = self
+        for arg in args:
+            if arg.startswith("-"):
+                continue
+            sub = getattr(node, "commands", {}).get(arg)
+            if sub is None:
+                break
+            node = sub
+        for param in getattr(node, "params", []):
+            if "--json" in (getattr(param, "opts", None) or []):
+                return True
+        return False
+
+    def main(
+        self,
+        args=None,
+        prog_name=None,
+        complete_var=None,
+        standalone_mode=True,
+        windows_expand_args=True,
+        **extra,
+    ):
+        scan_args = list(args) if args is not None else list(sys.argv[1:])
+        if _has_misplaced_json(scan_args) and not self._leaf_declares_json(scan_args):
+            if standalone_mode:
+                typer.echo(f"❌ {_JSON_GLOBAL_HINT}", err=True)
+                raise SystemExit(2)
+            import click
+
+            raise click.UsageError(_JSON_GLOBAL_HINT)
+        return super().main(
+            args, prog_name, complete_var, standalone_mode, windows_expand_args, **extra
+        )
+
 
 app = typer.Typer(
     name="inkflow",
     help="InkFlow — AI 辅助小说创作工具",
     no_args_is_help=True,
     rich_markup_mode="rich",
+    cls=_JsonHintGroup,
 )
 
 
