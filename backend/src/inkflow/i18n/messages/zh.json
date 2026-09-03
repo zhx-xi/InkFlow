@@ -1,0 +1,7 @@
+{
+  "log.event.create_chapter": "创建章节：{title}",
+  "log.event.update_project": "更新项目：{name}",
+  "log.event.delete_project": "删除项目：{name}",
+  "api.error.project_not_found": "项目不存在：{project_id}",
+  "api.error.validation_failed": "请求参数校验失败"
+}

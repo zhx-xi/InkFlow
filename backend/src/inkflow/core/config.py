@@ -126,6 +126,9 @@ class InkFlowConfig(BaseSettings):
     log_level: str = "INFO"
     """日志级别：DEBUG / INFO / WARNING / ERROR。"""
 
+    lang: str = "zh"
+    """默认语言（i18n resolve_locale 的 config.lang 层；INKFLOW_LANG env 可覆盖）。"""
+
     server_host: str = "127.0.0.1"
     """serve 默认监听地址."""
 

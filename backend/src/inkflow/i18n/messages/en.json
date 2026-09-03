@@ -1,0 +1,7 @@
+{
+  "log.event.create_chapter": "Created chapter: {title}",
+  "log.event.update_project": "Updated project: {name}",
+  "log.event.delete_project": "Deleted project: {name}",
+  "api.error.project_not_found": "Project not found: {project_id}",
+  "api.error.validation_failed": "Request validation failed"
+}

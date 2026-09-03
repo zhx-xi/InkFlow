@@ -27,8 +27,10 @@ from inkflow.api.routers import (
     export,
     extractions,
     foreshadowings,
+    i18n,
     index,
     knowledge_graph,
+    logs,
     maps,
     mcp,
     memory,
@@ -275,7 +277,9 @@ app.include_router(extractions.router)
 app.include_router(sessions.router)
 app.include_router(chat_messages.router)
 app.include_router(settings.router)
+app.include_router(logs.router)
 app.include_router(index.router)
+app.include_router(i18n.router)
 app.include_router(search.router)
 
 
