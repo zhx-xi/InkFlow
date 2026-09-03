@@ -118,6 +118,18 @@ class TestResolveLocalePriority:
         monkeypatch.setattr(resolver_mod, "_os_locale", lambda: None)
         assert resolve_locale("fr") == "zh"
 
+    def test_os_fallback_uses_real_os_locale(self, monkeypatch):
+        """config.lang 为空时走真实 OS locale（不 monkeypatch _os_locale）。
+
+        契约：真实 _os_locale 返回 None 或 str，且 resolve_locale 归一化到 'zh'/'en'。
+        守护用例：防函数覆盖门禁把 _os_locale 判为「未调用」（所有 OS 层测试若都
+        monkeypatch 它，真实函数永不执行）。
+        """
+        cfg = _config_mod()
+        monkeypatch.setattr(cfg.config, "lang", "", raising=False)
+        result = resolve_locale(None)
+        assert result in ("zh", "en")
+
 
 # ── t()：插值 ──
 
