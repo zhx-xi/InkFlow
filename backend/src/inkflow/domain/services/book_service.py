@@ -167,16 +167,14 @@ class BookService(BookRunMixin):
         )
         if plan is None:
             raise ValueError("计划不存在")
-        project_extra: dict[str, Any] | None = None
-        if self._project_config_getter is not None:
-            config: object | None = await self._project_config_getter(plan.project_id)
-            project_extra = getattr(config, "extra", None)
-        merged = merge_book_limits(limits, project_extra)
-        validate_at_least_one_hard_limit(merged)
-        # 生效上限写回 plan.limits（M5：book status 显示真实配置；不覆盖 tokens_* 运行计数）
-        for _field in ("max_chapters", "max_agent_calls", "max_tokens", "max_sessions"):
-            plan.limits[_field] = getattr(merged, _field)
+        merged = await self._resolve_merged_limits(plan, limits)
         chapters = await self._find_chapters(plan)
+        # #863：以活 outline 树为唯一权威，修剪快照中的悬空引用（硬删残留），优雅跳过不抛异常
+        live_outline_ids = {str(c.id) for c in chapters}
+        plan.progress = {oid: st for oid, st in plan.progress.items() if oid in live_outline_ids}
+        plan.execution_refs = {
+            oid: ref for oid, ref in plan.execution_refs.items() if oid in live_outline_ids
+        }
         for chapter in chapters:
             if await self._check_content_written(plan, chapter):
                 raise ChapterAlreadyWrittenError("该章已有内容，拒绝重跑")
