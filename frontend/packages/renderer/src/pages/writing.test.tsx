@@ -172,12 +172,17 @@ afterEach(() => {
 });
 
 describe('写作页 — 三栏与项目树', () => {
+  // #898 测试健壮性：本用例是**同步**测试（无 await），纯粹 mount 全量写作页
+  // （ProjectTree+ChapterEditor+ChatPanel+ContextPanel+ChapterSummaryPanel+StatusBar+4 对话框）。
+  // 头部路径冷启动 + CI windows runner 高负载下，首个全量 mount 实测可到 6585ms，紧贴 vitest 默认 5000ms。
+  // 非代码回归（#895 backend-only 零 renderer 文件；#893 仅 dict spread + fire-and-forget logger），
+  // 映射 #665 时序敏感断言显式 timeout 先例：给该用例显式 testTimeout 消除 CI 高负载假失败。
   it('三栏渲染：project-tree / editor / context-panel 存在', () => {
     renderWritingPage();
     expect(screen.getByTestId('project-tree')).toBeInTheDocument();
     expect(screen.getByTestId('editor')).toBeInTheDocument();
     expect(screen.getByTestId('context-panel')).toBeInTheDocument();
-  });
+  }, 15000);
 
   it('项目树：卷/章节点 + 各章字数 + 当前章 data-current 标记', () => {
     renderWritingPage();
