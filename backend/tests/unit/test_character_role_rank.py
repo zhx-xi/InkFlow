@@ -86,9 +86,14 @@ class TestCharacterCreateRoleRank:
             CharacterCreate(project_id=PID, name="林尘")
 
     def test_create_invalid_role_rank_raises(self) -> None:
-        """role_rank 非法值（hacker，非五档）→ ValidationError（当前 FAIL：任意字符串放行）."""
-        with pytest.raises(ValidationError):
+        """role_rank 非法值（hacker，非五档）→ ValidationError，消息为「角色等级非法」而非「必填」.
+
+        #859 回归：已提供但非法的值不应复用「必填」文案。当前 FAIL：旧实现报「角色等级必填」.
+        """
+        with pytest.raises(ValidationError) as exc_info:
             CharacterCreate(project_id=PID, name="林尘", extra={"role_rank": "hacker"})
+        msgs = [e["msg"] for e in exc_info.value.errors()]
+        assert any("角色等级非法" in m for m in msgs), f"应报「角色等级非法」，实际 {msgs}"
 
     def test_create_extra_without_role_rank_raises(self) -> None:
         """extra 存在但缺 role_rank 键 → ValidationError（当前 FAIL）."""
@@ -109,9 +114,11 @@ class TestCharacterUpdateRoleRank:
     """CharacterUpdate 修改角色等级：带非法值 → 校验错误；带合法值 → 允许并回读一致."""
 
     def test_update_invalid_role_rank_raises(self) -> None:
-        """修改角色等级为非法值（hacker）→ ValidationError（当前 FAIL：任意字符串放行）."""
-        with pytest.raises(ValidationError):
+        """修改角色等级为非法值（hacker）→ ValidationError，消息为「角色等级非法」."""
+        with pytest.raises(ValidationError) as exc_info:
             CharacterUpdate(extra={"role_rank": "hacker"})
+        msgs = [e["msg"] for e in exc_info.value.errors()]
+        assert any("角色等级非法" in m for m in msgs), f"应报「角色等级非法」，实际 {msgs}"
 
     def test_update_valid_role_rank_allowed_and_roundtrip(self) -> None:
         """修改角色等级为合法值 → 允许且回读一致（happy-path 对照）."""
@@ -190,21 +197,28 @@ class TestCharacterApiRoleRank:
         )
 
     def test_api_create_missing_role_rank_422(self) -> None:
-        """POST body 缺 extra.role_rank → 422（当前 FAIL：旧实现 body 不校验 → 201）."""
+        """POST body 缺 extra.role_rank → 422 «角色等级必填»（语义锁定：缺失 → 必填）. """
         with _patch_get_service():
             response = client.post(
                 f"/api/v1/projects/{PID}/characters", json={"name": "林尘"}
             )
         assert response.status_code == 422
+        msgs = [d["msg"] for d in response.json()["detail"]]
+        assert any("角色等级必填" in m for m in msgs), f"缺失应报「必填」，实际 {msgs}"
 
     def test_api_create_invalid_role_rank_422(self) -> None:
-        """POST body extra.role_rank 非法值 → 422（当前 FAIL）. """
+        """POST body extra.role_rank 非法值 → 422 «角色等级非法» 而非「必填」.
+
+        #859 回归：已提供但非法的值不应复用「必填」文案。当前 FAIL：旧实现报「角色等级必填」.
+        """
         with _patch_get_service():
             response = client.post(
                 f"/api/v1/projects/{PID}/characters",
                 json={"name": "林尘", "extra": {"role_rank": "hacker"}},
             )
         assert response.status_code == 422
+        msgs = [d["msg"] for d in response.json()["detail"]]
+        assert any("角色等级非法" in m for m in msgs), f"非法应报「角色等级非法」，实际 {msgs}"
 
     def test_api_create_valid_role_rank_201(self) -> None:
         """POST body 带合法 extra.role_rank → 201（happy-path 对照）. """
