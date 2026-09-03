@@ -21,9 +21,9 @@
 - 前端：**无统一 logger**，散落 `console.log/warn/error`（theme.ts 等）。
 - i18n：前端已有 `frontend/packages/renderer/src/i18n/`（en.ts + extract-keys + 各域 ux.ts，`t(key,params)` 实时切换 + `header-lang-select` + localStorage `inkflow.ui`）；**后端无 i18n**（无 babel/gettext 依赖，仅 stdlib gettext；无 locale 目录）。
 - LLM/工具/agent 提示词：`backend/src/inkflow/infrastructure/llm/templates/*.yaml` 硬编码中文，无 per-locale。
-- 埋点广度：后端可埋点函数 ≈ **409**（API 路由端点 + agent 编排 + LLM 调用 + 工具 + CLI 命令 + MCP 工具，regex 实测）。
+- 埋点广度：后端可埋点函数 ≈ **416**（统计口径 regex 实测：API 路由端点 **~220** + agent 编排 ~40 + LLM 调用 ~16 + 工具 ~80 + CLI 命令 ~30 + MCP 工具 ~30 + 前端页面操作）。
 
-**1.3 边界声明**：本模块不新增业务实体；只加**日志埋点 + i18n 基础设施 + 前端桥接**。#496（日志页显示）消费本 spec 产出的结构化日志；#887 为日志埋点细节引用。前端 UI 文案全量 i18n 已有（前端已 i18n），本 spec 只加日志消息键 + 后端对齐。
+**1.3 边界声明**：本模块不新增业务实体；只加**日志埋点 + i18n 基础设施 + 前端桥接**。#496（日志页显示）消费本 spec 产出的结构化日志；#887 为日志埋点细节引用。前端 UI 文案全量 i18n 已有（前端已 i18n），本 spec 只加日志消息键 + 后端对齐。**GUI 日志口径**：包括渲染层页面操作 + **Electron 主进程**日志（均经前端 logger 上报 `/api/v1/logs` 聚合进后端 loguru 同一流）。
 
 ---
 
@@ -54,6 +54,7 @@ message_key(msgid) / params(dict) / trace_id / correlation_id / span_id /
 project_id / entity_id / duration_ms / error_code / stack?(仅ERROR)
 ```
 - `caller_type` 枚举：`api`(路由端点)、`agent`(编排)、`llm`(LLM 调用)、`tool`(工具调用)、`cli`(CLI 命令)、`mcp`(MCP 工具)、`frontend`(前端页面操作)。
+- **字段必填**：`timestamp/level/logger/caller_type/caller_name/event/message_key/params/correlation_id`（`stack` 仅 ERROR 必填）；**可选**：`trace_id/span_id/project_id/entity_id/duration_ms/error_code`。`params` 含脱敏后参数摘要（不泄 key）。
 - `message_key` = i18n msgid（语言中立）；日志页用 `t(message_key, params)` 渲染 → **实时切换**。
 - `correlation_id`：一次操作/对话/pipeline 贯穿前后端（前端生成 uuid → 请求头 `X-Correlation-Id` → 后端沿用；后端内部 `trace_id`/`span_id` 补充）。
 
@@ -64,7 +65,7 @@ project_id / entity_id / duration_ms / error_code / stack?(仅ERROR)
 ### 3.1 新增端点
 | 端点 | 方法 | 说明 |
 |------|------|------|
-| `/api/v1/logs` | GET | 日志页查询：`?level=&caller_type=&project_id=&from=&to=&correlation_id=&page=`，返回 `{items,total}`（结构化 JSON 列表，供 #496） |
+| `/api/v1/logs` | GET | 日志页查询：`?level=&caller_type=&project_id=&from=&to=&q=(关键字过滤，供#496搜索)&correlation_id=&page=`，返回 `{items,total}`（结构化 JSON 列表） |
 | `/api/v1/logs` | POST | 前端桥接上报：前端 logger 上报结构化 log 记录，聚合进 loguru 同一流 |
 | `/api/v1/i18n/messages` | GET | 日志页/prompt 前端取本地化消息目录：`?lng=` 返回对应 locale 的 msgid→text |
 
@@ -84,7 +85,7 @@ project_id / entity_id / duration_ms / error_code / stack?(仅ERROR)
 
 | 埋点对象 | DEBUG | INFO | WARN | ERROR |
 |---------|-------|------|------|-------|
-| API 路由端点（~130） | 入口调试 | 写操作数据变化 | 校验失败(422) | 未捕获异常 |
+| API 路由端点（~220） | 入口调试 | 写操作数据变化 | 校验失败(422) | 未捕获异常 |
 | agent 编排（~40） | 每步/工具选择 | 状态转换/产出 | 重试/降级/护栏触达 | 编排崩溃 |
 | LLM 调用（~16） | 请求/响应摘要 | 完成 | 超时重试成功 | 未捕获/认证失败 |
 | 工具调用（~80） | 工具名/参数摘要 | 落库成功 | 失败自愈 | 未捕获 |
@@ -102,7 +103,7 @@ project_id / entity_id / duration_ms / error_code / stack?(仅ERROR)
 - **语义域**：messages/functions/prompts/skills（格式随品种：JSON/YAML/markdown）。
 - `resolve_locale()`：per-call 解析（勿缓存 boot 单例）→ **准实时切换**（下次请求/生成/读取即新语言），无需重启；前端 UI 已实时。
 - **提示词全译**：`i18n/prompts/{zh,en}/<name>.yaml`（原 `infrastructure/llm/templates/*.yaml` 迁入）；工具 description 走 `i18n/functions/{zh,en}.json`；skill 走 `i18n/skills/{zh,en}/<name>.md`。
-- **抽取/校验**：后端消息键与前端 `extract-keys.ts` 对齐；`i18n.contract.test`（前端已有）扩展到后端各域键对称性 + 用户 override 键必须存在于打包默认（防孤儿键）。
+- **抽取/校验**：后端消息键与前端 `i18n.contract.test.ts` 对齐（该文件为 zh/en key 对称 + t() 载体，真实存在；`extract-keys.ts` 是 AI 提取域文案字典，**非键抽取工具**）；扩展到后端各域键对称性 + 用户 override 键必须存在于打包默认（防孤儿键）。
 - **prompt per-project 定制**：本期不做（scope 克制），`resolve_locale` 先按"项目 language → 用户覆盖 → 打包默认 → zh"；per-project 定制作后续扩展。
 
 ---
@@ -122,6 +123,7 @@ project_id / entity_id / duration_ms / error_code / stack?(仅ERROR)
 - `backend/src/inkflow/core/log.py`（扩展结构化 sink + correlation/脱敏绑定）
 - `backend/src/inkflow/core/config.py`（`lang`、`log_level` 扩展；`INKFLOW_LANG` env）
 - `backend/src/inkflow/infrastructure/llm/templates/*.yaml`（迁入 i18n/prompts/{zh,en}/）
+- `backend/src/inkflow/infrastructure/llm/prompt_manager.py`（模板加载器改 **per-locale 路径解析**：`LangChainPromptManager` 硬编码默认目录 `templates`，须改为按 `resolve_locale` 从 `i18n/prompts/{zh,en}/` 加载，M5 落地依赖此）
 - `backend/src/inkflow/api/app.py`（挂载 logs/i18n router + lifespan i18n 目录校验）
 - `frontend/packages/renderer/src/api/client.ts`（bridge：logger 上报 + correlation 头）
 - `.github/workflows/ci.yml`（日志/i18n 契约 job + 覆盖口径）
@@ -186,8 +188,8 @@ project_id / entity_id / duration_ms / error_code / stack?(仅ERROR)
 |---|------|------|
 | M1 | 后端 `logging` 结构化 schema（caller_type/correlation_id/message_key/params）+ 脱敏契约通过 | `backend/tests/unit/test_logging_schema.py` |
 | M2 | `/api/v1/logs` GET/POST + `/api/v1/i18n/messages` 契约通过 | `tests/api/test_logs_api.py` / `test_i18n_api.py` |
-| M3 | i18n resolver（优先级 + t 插值 + 缺键回退）+ zh/en 键对称（含后端各域 + 前端 log.ts）通过 | `backend/tests/unit/test_i18n_resolver.py` + 前端 `i18n.contract.test` |
-| M4 | 后端 ~409 函数埋点 + 前端 logger/bridge implemented；DEBUG 默认关、INFO 数据变化可见 | `backend/tests/unit`（DEBUG 关闭断言）+ 前端 `logger.test` |
+| M3 | i18n resolver（优先级 + t 插值 + 缺键回退）+ zh/en 键对称（含后端各域 + 前端 log.ts）通过 | `backend/tests/unit/test_i18n_resolver.py` + 前端 `i18n.contract.test.ts` |
+| M4 | 后端所有 API 路由端点 + agent/LLM/工具/CLI/MCP 埋点（**可断言**：任一端点 handler 触发 DEBUG 入口日志；DEBUG 关闭时无 DEBUG 记录）+ 前端 logger/bridge；INFO 数据变化可见 | `backend/tests/unit/test_logging_instrumentation.py` + 前端 `logger.test.ts` + DEBUG 关闭断言（`backend/tests/unit/test_logging_schema.py`） |
 | M5 | 提示词/工具/skill 全译（zh/en）+ per-call 准实时切换生效 | `backend/tests/unit/test_i18n_prompts.py` |
 | M6 | 零回归（backend 全测 + 前端 vitest/tsc/lint + ruff/mypy） | CI |
 
