@@ -512,3 +512,58 @@ class TestCoverageGapStage4b:
             await svc.resume_run(str(plan.id))
 
         repo.update_writing_plan.assert_not_awaited()
+
+
+# ── #863 批 coverage 补测：resume_run 非 completed 分支 + checkpoint 读取失败兜底 ──
+
+
+@pytest.mark.asyncio
+class TestCoverageGapDanglingRef863:
+    async def test_resume_run_interrupt_resume_non_completed_skips_finalize(self):
+        """resume_run interrupt 轨：resume 返回 status="running"（非 completed）→
+        跳过 _sync_and_finalize 收尾派生（覆盖 completed 判定的 False 侧），
+        plan.status 原样 running 落库。"""
+        payload = {"question": "确认继续下一卷？", "volume_index": 1, "total_volumes": 2}
+        repo, plan = _plan_repo(status="paused", thread_id="t-gap-running")
+        pipeline = AsyncMock()
+        pipeline.get_checkpoint_state.return_value = {
+            "__interrupt__": [SimpleNamespace(value=payload)]
+        }
+        pipeline.resume.return_value = {"run_id": str(plan.id), "status": "running"}
+        svc = _service(repo=repo, volume_pipeline=pipeline)
+
+        result = await svc.resume_run(str(plan.id))
+
+        assert result["status"] == "running"
+        assert plan.status == "running"
+        repo.update_writing_plan.assert_awaited()
+
+    async def test_resume_run_no_interrupt_execute_non_completed_skips_finalize(self):
+        """resume_run 无 interrupt 轨：execute 返回 status="running"（非 completed）→
+        跳过 _sync_and_finalize 收尾派生（覆盖该路径 completed 判定的 False 侧）。"""
+        repo, plan = _plan_repo(status="paused", thread_id="t-gap-exec-run")
+        pipeline = AsyncMock()
+        pipeline.get_checkpoint_state.return_value = None
+        pipeline.execute.return_value = {"run_id": str(plan.id), "status": "running"}
+        svc = _service(repo=repo, volume_pipeline=pipeline)
+
+        result = await svc.resume_run(str(plan.id))
+
+        assert result["status"] == "running"
+        assert plan.status == "running"
+        pipeline.resume.assert_not_awaited()
+
+    async def test_write_book_volume_checkpoint_read_failure_degrades_completed(self):
+        """_sync_and_finalize 兜底：get_checkpoint_state 抛异常（DB 锁/读失败）→
+        吞异常记 warning，收尾维持 completed 不崩（覆盖 mixin except 分支）。"""
+        repo, plan = _plan_repo(status="running")
+        pipeline = AsyncMock()
+        pipeline.execute.return_value = {"run_id": str(plan.id), "status": "completed"}
+        pipeline.get_checkpoint_state.side_effect = Exception("checkpoint db locked")
+        svc = _service(repo=repo, volume_pipeline=pipeline)
+
+        result = await svc.write_book_volume(plan.id)
+
+        assert result["status"] == "completed"
+        assert plan.status == "completed"
+        pipeline.get_checkpoint_state.assert_awaited()
