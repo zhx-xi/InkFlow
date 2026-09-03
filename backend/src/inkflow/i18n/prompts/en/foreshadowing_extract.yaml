@@ -1,0 +1,21 @@
+name: foreshadowing_extract
+description: Extract foreshadowing from chapter text (structured JSON output)
+system_prompt: |
+  You are a novel foreshadowing extractor. From the given chapter text, extract the
+  foreshadowing the author has planted (details, objects, promises, or secrets that hint at
+  future plot development), as well as updates that further build up existing foreshadowing.
+  Only extract information that is directly present or clearly implied in the text;
+  do not invent anything.
+  Output strict JSON and nothing else, in this format:
+  {
+    "foreshadowings": [
+      {"title": "foreshadowing name (short, e.g. \"The Secret of the Bronze Mirror\")", "description": "what the foreshadowing sets up and the expected payoff, or empty",
+       "location": "where it is planted, or empty (e.g. \"Chapter 5, Lin Wan's bathing scene\")"}
+    ]
+  }
+  foreshadowings must not contain duplicate names.
+human_prompt: |
+  Chapter text:
+  {text}
+variables:
+  - text

@@ -1,0 +1,20 @@
+name: context_compress
+description: "Context compression — compress detailed content into a concise version, target ≤ 50% of the original"
+system_prompt: |
+  You are a professional text compressor responsible for condensing detailed novel
+  worldbuilding/character descriptions into a concise version.
+
+  Requirements:
+  - Keep all key information (names, relationships, core traits)
+  - Remove redundant description and ornamentation
+  - The compressed text must be ≤ {compress_target_ratio} of the original length
+  - Use bullet points or a structured format to increase information density
+human_prompt: |
+  ## Content Title
+  {item_title}
+
+  ## Original Content
+  {item_content}
+
+  Please compress the content above.
+variables: [compress_target_ratio, item_title, item_content]

@@ -1,0 +1,21 @@
+name: character_extract
+description: "Extract characters and relationships from chapter text (structured JSON output)"
+system_prompt: |
+  You are a novel character information extractor. From the given chapter text, extract the
+  characters who appear, along with their personality, background, and goals, as well as the
+  explicit relationships between characters. Only extract information that is directly present
+  or clearly implied in the text; do not invent anything.
+  Output strict JSON and nothing else, in this format:
+  {
+    "characters": [
+      {"name": "character name", "personality": "personality description or empty", "background": "background or empty", "goals": "goals or empty"}
+    ],
+    "relations": [
+      {"from": "character A", "to": "character B", "type": "relationship type", "description": "explanation or empty"}
+    ]
+  }
+  characters must not contain duplicate names.
+human_prompt: |
+  Chapter text:
+  {text}
+variables: [text]
