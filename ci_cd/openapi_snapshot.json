@@ -2754,7 +2754,7 @@
         "type": "object"
       },
       "OutlineUpdate": {
-        "description": "更新大纲请求 DTO — 所有字段可选（exclude_unset 语义，同 F1）.\n\nname/description/sort_order: None 表示不修改；只有传入的字段会被更新，\n未传入的字段保持不变。\nlevel: None 表示不修改；传入合法层级则更新。\nparent_id/chapter_id: None 表示不修改；\"\" 表示清除（置 None，对齐\nPlotPointUpdate.arc_id 先例）。",
+        "description": "更新大纲请求 DTO — 所有字段可选（exclude_unset 语义，同 F1）.\n\nname/description/sort_order: None 表示不修改；只有传入的字段会被更新，\n未传入的字段保持不变。\nlevel: None 表示不修改；传入合法层级则更新。\nparent_id/chapter_id/volume_id 三态（#862 修复后的契约）:\n- 未传入 = 不修改（默认 None 且不在 model_fields_set）;\n- 合法 UUID 对象或 UUID 字符串 = 设置（字符串经 mode=\"before\" 校验器强转\n  uuid.UUID）;\n- \"\" / 纯空白字符串 = 清除（保留 \"\" 哨兵，由 service 层转 None）; 显式 null 同清除;\n- 其它非空字符串（非 UUID）= ValueError → 422（绝不静默清除）。",
         "properties": {
           "chapter_id": {
             "anyOf": [

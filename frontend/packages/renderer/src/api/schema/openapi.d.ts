@@ -4595,8 +4595,12 @@ export interface components {
          *     name/description/sort_order: None 表示不修改；只有传入的字段会被更新，
          *     未传入的字段保持不变。
          *     level: None 表示不修改；传入合法层级则更新。
-         *     parent_id/chapter_id: None 表示不修改；"" 表示清除（置 None，对齐
-         *     PlotPointUpdate.arc_id 先例）。
+         *     parent_id/chapter_id/volume_id 三态（#862 修复后的契约）:
+         *     - 未传入 = 不修改（默认 None 且不在 model_fields_set）;
+         *     - 合法 UUID 对象或 UUID 字符串 = 设置（字符串经 mode="before" 校验器强转
+         *       uuid.UUID）;
+         *     - "" / 纯空白字符串 = 清除（保留 "" 哨兵，由 service 层转 None）; 显式 null 同清除;
+         *     - 其它非空字符串（非 UUID）= ValueError → 422（绝不静默清除）。
          */
         OutlineUpdate: {
             /** Chapter Id */

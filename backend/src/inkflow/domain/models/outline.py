@@ -96,6 +96,33 @@ def _validate_level(v: str) -> str:
     return v
 
 
+def _normalize_ref_field(v: Any, field: str) -> Any:
+    """引用字段三态归一器（OutlineUpdate.parent_id/chapter_id/volume_id）.
+
+    Args:
+        v: 原始输入（HTTP JSON 字符串 / uuid.UUID / None）.
+        field: 字段中文名（用于错误消息）.
+
+    Returns:
+        None（显式 null / 默认）; ""（空白字符串 → 清除哨兵，service 层转 None）;
+        uuid.UUID（UUID 对象直通；合法 UUID 字符串强转，修复 #862）.
+
+    Raises:
+        ValueError: 非空且非 UUID 的字符串，或 str/UUID/None 之外的类型（→ 422）.
+    """
+    if v is None or isinstance(v, uuid.UUID):
+        return v
+    if isinstance(v, str):
+        stripped = v.strip()
+        if not stripped:
+            return ""
+        try:
+            return uuid.UUID(stripped)
+        except ValueError:
+            raise ValueError(f"{field}必须是合法 UUID 字符串，空字符串表示清除") from None
+    raise ValueError(f"{field}必须是 UUID 字符串、uuid.UUID 或 null")
+
+
 class Outline(BaseModel):
     """大纲领域实体 — 对应 outlines 表.
 
@@ -244,8 +271,12 @@ class OutlineUpdate(BaseModel):
     name/description/sort_order: None 表示不修改；只有传入的字段会被更新，
     未传入的字段保持不变。
     level: None 表示不修改；传入合法层级则更新。
-    parent_id/chapter_id: None 表示不修改；"" 表示清除（置 None，对齐
-    PlotPointUpdate.arc_id 先例）。
+    parent_id/chapter_id/volume_id 三态（#862 修复后的契约）:
+    - 未传入 = 不修改（默认 None 且不在 model_fields_set）;
+    - 合法 UUID 对象或 UUID 字符串 = 设置（字符串经 mode="before" 校验器强转
+      uuid.UUID）;
+    - "" / 纯空白字符串 = 清除（保留 "" 哨兵，由 service 层转 None）; 显式 null 同清除;
+    - 其它非空字符串（非 UUID）= ValueError → 422（绝不静默清除）。
     """
 
     name: str | None = None
@@ -255,6 +286,24 @@ class OutlineUpdate(BaseModel):
     parent_id: uuid.UUID | str | None = None  # str "" = 清除父大纲
     chapter_id: uuid.UUID | str | None = None  # str "" = 清除章关联
     volume_id: uuid.UUID | str | None = None  # str "" = 清除卷关联
+
+    @field_validator("parent_id", mode="before")
+    @classmethod
+    def validate_parent_id(cls, v: Any) -> Any:
+        """父大纲引用归一：UUID 直通/字符串强转，"" 保留清除哨兵，垃圾串报错."""
+        return _normalize_ref_field(v, "父大纲")
+
+    @field_validator("chapter_id", mode="before")
+    @classmethod
+    def validate_chapter_id(cls, v: Any) -> Any:
+        """章关联引用归一：UUID 直通/字符串强转，"" 保留清除哨兵，垃圾串报错."""
+        return _normalize_ref_field(v, "章关联")
+
+    @field_validator("volume_id", mode="before")
+    @classmethod
+    def validate_volume_id(cls, v: Any) -> Any:
+        """卷关联引用归一：UUID 直通/字符串强转，"" 保留清除哨兵，垃圾串报错."""
+        return _normalize_ref_field(v, "卷关联")
 
     @field_validator("name")
     @classmethod
