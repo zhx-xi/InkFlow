@@ -162,3 +162,20 @@ class TestRootApp:
         # 这里验证 --json 选项能被解析
         result = cli_runner.invoke(app, ["--json", "--help"])
         assert result.exit_code == 0
+
+    def test_misplaced_json_config_show_hint(self, cli_runner):
+        """config show --json（--json 误放子命令后）→ 报错提示放命令前（#865）."""
+        from inkflow.cli.app import app
+
+        result = cli_runner.invoke(app, ["config", "show", "--json"])
+        assert result.exit_code == 2
+        # 契约：错误消息提示 --json 是全局选项、请放在子命令前
+        assert "请放在子命令前" in result.output
+
+    def test_misplaced_json_llm_list_hint(self, cli_runner):
+        """llm list --json（--json 误放子命令后）→ 报错提示放命令前（#865）."""
+        from inkflow.cli.app import app
+
+        result = cli_runner.invoke(app, ["llm", "list", "--json"])
+        assert result.exit_code == 2
+        assert "请放在子命令前" in result.output
