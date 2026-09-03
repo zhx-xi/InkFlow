@@ -11,11 +11,13 @@ from fastapi import APIRouter
 from pydantic import BaseModel, field_validator
 
 from inkflow.core.config import config, save_config_json
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/config", tags=["Config"])
 
 
 @router.get("")
+@instrument(caller_type="api")
 async def get_config() -> dict:
     """读取全局配置（#526）— CLI config show 同款键。"""
     return {
@@ -45,6 +47,7 @@ class ConfigUpdate(BaseModel):
 
 
 @router.patch("")
+@instrument(caller_type="api")
 async def patch_config(data: ConfigUpdate) -> dict:
     """保存全局默认模型（#526）— config.json 持久化 + 内存单例立即生效。"""
     config.llm_default_model = data.llm_default_model

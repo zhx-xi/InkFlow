@@ -26,6 +26,7 @@ from inkflow.domain.services.chapter_service import (
     VolumeMoveError,
     VolumeNotEmptyError,
 )
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["章节"])
 
@@ -50,6 +51,7 @@ def _svc(db: AsyncSession) -> ChapterService:
 
 
 @router.post("/projects/{project_id}/volumes", status_code=201)
+@instrument(caller_type="api")
 async def create_volume(project_id: str, data: VolumeCreate, db: AsyncSession = Depends(get_db)):
     svc = _svc(db)
     pid = _parse_id(project_id, detail="项目不存在")
@@ -58,6 +60,7 @@ async def create_volume(project_id: str, data: VolumeCreate, db: AsyncSession = 
 
 
 @router.get("/projects/{project_id}/volumes")
+@instrument(caller_type="api")
 async def list_volumes(project_id: str, db: AsyncSession = Depends(get_db)):
     svc = _svc(db)
     pid = _parse_id(project_id, detail="项目不存在")
@@ -66,6 +69,7 @@ async def list_volumes(project_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/volumes/{volume_id}")
+@instrument(caller_type="api")
 async def get_volume(volume_id: str, db: AsyncSession = Depends(get_db)):
     svc = _svc(db)
     vid = _parse_id(volume_id, detail="卷不存在")
@@ -76,6 +80,7 @@ async def get_volume(volume_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/volumes/{volume_id}")
+@instrument(caller_type="api")
 async def update_volume(volume_id: str, data: VolumeUpdate, db: AsyncSession = Depends(get_db)):
     svc = _svc(db)
     vid = _parse_id(volume_id, detail="卷不存在")
@@ -86,6 +91,7 @@ async def update_volume(volume_id: str, data: VolumeUpdate, db: AsyncSession = D
 
 
 @router.delete("/volumes/{volume_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_volume(
     volume_id: str,
     delete_chapters: bool = Query(False),
@@ -109,6 +115,7 @@ async def delete_volume(
 
 
 @router.post("/projects/{project_id}/chapters", status_code=201)
+@instrument(caller_type="api")
 async def create_chapter(project_id: str, data: ChapterCreate, db: AsyncSession = Depends(get_db)):
     svc = _svc(db)
     pid = _parse_id(project_id, detail="项目不存在")
@@ -123,6 +130,7 @@ async def create_chapter(project_id: str, data: ChapterCreate, db: AsyncSession 
 
 
 @router.get("/projects/{project_id}/chapters")
+@instrument(caller_type="api")
 async def list_chapters(
     project_id: str,
     volume_id: str | None = Query(None),
@@ -144,6 +152,7 @@ async def list_chapters(
 
 
 @router.get("/chapters/{chapter_id}")
+@instrument(caller_type="api")
 async def get_chapter(chapter_id: str, db: AsyncSession = Depends(get_db)):
     svc = _svc(db)
     cid = _parse_id(chapter_id, detail="章节不存在")
@@ -154,6 +163,7 @@ async def get_chapter(chapter_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/chapters/{chapter_id}")
+@instrument(caller_type="api")
 async def update_chapter(chapter_id: str, data: ChapterUpdate, db: AsyncSession = Depends(get_db)):
     svc = _svc(db)
     cid = _parse_id(chapter_id, detail="章节不存在")
@@ -164,6 +174,7 @@ async def update_chapter(chapter_id: str, data: ChapterUpdate, db: AsyncSession 
 
 
 @router.delete("/chapters/{chapter_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_chapter(chapter_id: str, db: AsyncSession = Depends(get_db)):
     svc = _svc(db)
     cid = _parse_id(chapter_id, detail="章节不存在")
@@ -173,6 +184,7 @@ async def delete_chapter(chapter_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/chapters/{chapter_id}/move")
+@instrument(caller_type="api")
 async def move_chapter(
     chapter_id: str,
     target_volume_id: str | None = Query(None),

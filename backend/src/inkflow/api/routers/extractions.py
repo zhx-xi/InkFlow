@@ -69,6 +69,7 @@ from inkflow.domain.ports.timeline_errors import TimelineExtractionError
 from inkflow.domain.ports.vector_store import EntityType
 from inkflow.domain.ports.world_errors import WorldExtractionError
 from inkflow.domain.services.extraction_service import ExtractionService
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["提取"])
 
@@ -181,6 +182,7 @@ class EmbeddingModelRequest(BaseModel):
 
 
 @router.put("/vector/embedding-model")
+@instrument(caller_type="api")
 async def set_embedding_model(
     data: EmbeddingModelRequest,
     db: AsyncSession = Depends(get_db),
@@ -200,6 +202,7 @@ async def set_embedding_model(
 
 
 @router.post("/extract")
+@instrument(caller_type="api")
 async def extract(
     request: ExtractionRequest,
     db: AsyncSession = Depends(get_db),
@@ -219,6 +222,7 @@ async def extract(
 
 
 @router.get("/projects/{project_id}/extractions/runs")
+@instrument(caller_type="api")
 async def list_extraction_runs(
     project_id: str,
     type: ExtractionType | None = Query(None),
@@ -239,6 +243,7 @@ async def list_extraction_runs(
 
 
 @router.post("/projects/{project_id}/vector/reindex")
+@instrument(caller_type="api")
 async def reindex_project(
     project_id: str,
     data: ReindexBody | None = None,
@@ -259,6 +264,7 @@ async def reindex_project(
 
 
 @router.get("/projects/{project_id}/vector/status")
+@instrument(caller_type="api")
 async def vector_status(
     project_id: str,
     db: AsyncSession = Depends(get_db),
@@ -274,6 +280,7 @@ async def vector_status(
 
 
 @router.post("/projects/{project_id}/vector/retrieve")
+@instrument(caller_type="api")
 async def retrieve_entities(
     project_id: str,
     data: RetrieveBody,

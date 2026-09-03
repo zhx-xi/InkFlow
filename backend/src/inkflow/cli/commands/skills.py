@@ -12,6 +12,7 @@ from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.cli.skills_parser import SkillValidationError, parse_skill_metadata
 from inkflow.core.config import config
+from inkflow.logging import instrument
 
 app = typer.Typer(name="skills", help="用户自定义 skills 导入与管理", no_args_is_help=True)
 
@@ -44,6 +45,7 @@ def _count_files(directory: Path) -> int:
 
 
 @app.command("install")
+@instrument(caller_type="cli")
 def install(
     ctx: typer.Context,
     source: str | None = typer.Argument(
@@ -122,6 +124,7 @@ def install(
 
 
 @app.command("list")
+@instrument(caller_type="cli")
 def list_skills(ctx: typer.Context) -> None:
     """列出已导入 skills（name/description/路径/校验状态）。"""
     cli_ctx: CliContext = ctx.obj
@@ -158,6 +161,7 @@ def list_skills(ctx: typer.Context) -> None:
 
 
 @app.command("verify")
+@instrument(caller_type="cli")
 def verify_skills(
     ctx: typer.Context,
     name: str | None = typer.Option(None, "--name", help="只校验指定 skill"),
@@ -205,6 +209,7 @@ def verify_skills(
 
 
 @app.command("remove")
+@instrument(caller_type="cli")
 def remove_skill(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="skill 名称"),

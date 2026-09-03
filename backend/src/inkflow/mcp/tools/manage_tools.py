@@ -13,6 +13,7 @@ from typing import Protocol
 from pydantic import ValidationError
 
 from inkflow.domain.models.agent_tools import ToolSpec
+from inkflow.logging import instrument
 from inkflow.mcp.tools import MCPTool
 from inkflow.mcp.tools.schemas import (
     ManageChapterParams,
@@ -388,6 +389,7 @@ async def _route_foreshadowing(client: _HTTPClient, params: ManageForeshadowingP
 def build_manage_project_tool() -> MCPTool:
     """项目管理：创建/列出/查看/更新/删除/恢复项目。"""
 
+    @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
         try:
             params = ManageProjectParams.model_validate(kwargs)
@@ -430,6 +432,7 @@ def build_manage_project_tool() -> MCPTool:
 def build_manage_chapter_tool() -> MCPTool:
     """章节与卷管理：创建/列出/查看/更新/删除/移动章节。"""
 
+    @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
         try:
             params = ManageChapterParams.model_validate(kwargs)
@@ -472,6 +475,7 @@ def build_manage_chapter_tool() -> MCPTool:
 def build_manage_character_tool() -> MCPTool:
     """角色管理：创建/列出/查看/更新/删除/恢复角色档案。"""
 
+    @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
         try:
             params = ManageCharacterParams.model_validate(kwargs)
@@ -514,6 +518,7 @@ def build_manage_character_tool() -> MCPTool:
 def build_manage_relation_tool() -> MCPTool:
     """角色关系管理：创建/列出/查看/更新/删除角色间关系。"""
 
+    @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
         try:
             params = ManageRelationParams.model_validate(kwargs)
@@ -556,6 +561,7 @@ def build_manage_relation_tool() -> MCPTool:
 def build_manage_timeline_tool() -> MCPTool:
     """时间线管理：创建/列出/查看/更新/删除时间线事件 + 一致性检查。"""
 
+    @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
         try:
             params = ManageTimelineParams.model_validate(kwargs)
@@ -598,6 +604,7 @@ def build_manage_timeline_tool() -> MCPTool:
 def build_manage_world_tool() -> MCPTool:
     """世界观管理：创建/列出/查看/更新/删除/恢复世界观设定。"""
 
+    @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
         try:
             params = ManageWorldParams.model_validate(kwargs)
@@ -640,6 +647,7 @@ def build_manage_world_tool() -> MCPTool:
 def build_manage_outline_tool() -> MCPTool:
     """大纲管理：创建/列出/查看/更新/删除大纲 + AI 生成。"""
 
+    @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
         try:
             params = ManageOutlineParams.model_validate(kwargs)
@@ -682,6 +690,7 @@ def build_manage_outline_tool() -> MCPTool:
 def build_manage_foreshadowing_tool() -> MCPTool:
     """伏笔管理：创建/列出/查看/更新/删除伏笔 + 回收/重开。"""
 
+    @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
         try:
             params = ManageForeshadowingParams.model_validate(kwargs)

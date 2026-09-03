@@ -35,6 +35,7 @@ from inkflow.domain.ports.agent_pipeline import (
 )
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
 from inkflow.infrastructure.agent.pipeline_nodes import PipelineState, generic_node
+from inkflow.logging import instrument
 
 
 class SupervisorState(TypedDict):
@@ -209,6 +210,7 @@ def _guard_triggered(state: SupervisorState, config: SupervisorExecuteConfig, ro
     return role not in state["stages"]
 
 
+@instrument(caller_type="agent")
 async def _supervisor_node(
     state: SupervisorState,
     supervisor_config: SupervisorExecuteConfig,
@@ -247,6 +249,7 @@ async def _supervisor_node(
     return Command(update={"route_history": [role]}, goto=role)
 
 
+@instrument(caller_type="agent")
 async def _hitl_node(
     state: SupervisorState, supervisor_config: SupervisorExecuteConfig
 ) -> Command[Any]:
@@ -268,6 +271,7 @@ async def _hitl_node(
     return Command(update={"route_history": ["__fallback__"]}, goto="fallback")
 
 
+@instrument(caller_type="agent")
 async def _bootstrap_node(
     state: SupervisorState, llm_client: LLMClientProtocol
 ) -> dict[str, object]:
@@ -279,6 +283,7 @@ async def _bootstrap_node(
     return {"llm_client": llm_client}
 
 
+@instrument(caller_type="agent")
 async def _role_node(state: SupervisorState, role_id: str) -> dict[str, object]:
     """角色执行节点：包装 generic_node（复用重试/失败语义）+ 更新 steps/consecutive 计数。"""
     result: dict[str, object] = await generic_node(cast(PipelineState, state), role_id)
@@ -293,6 +298,7 @@ async def _role_node(state: SupervisorState, role_id: str) -> dict[str, object]:
     return result
 
 
+@instrument(caller_type="agent")
 async def _fallback_node(state: SupervisorState) -> dict[str, object]:
     """deterministic 回退：固定链执行剩余未完成角色（architect→writer→auditor→reviser）。"""
     executed = {
@@ -338,6 +344,7 @@ class SupervisorPipeline(AgentPipelineProtocol):
         """F47 #379：收集 supervisor 路由决策 trace 条目（供 _to_result 合并返回）。"""
         self._trace.append(entry)
 
+    @instrument(caller_type="agent")
     def validate(self, stages: Sequence[PipelineStage]) -> list[str]:
         """角色池合法性校验：非空 / 无重复 id（spec §7 空池拒绝）。"""
         errors: list[str] = []
@@ -369,6 +376,7 @@ class SupervisorPipeline(AgentPipelineProtocol):
         g.add_edge("fallback", END)
         return g.compile(checkpointer=self._checkpointer)
 
+    @instrument(caller_type="agent")
     async def execute(
         self,
         stages: Sequence[PipelineStage],
@@ -416,6 +424,7 @@ class SupervisorPipeline(AgentPipelineProtocol):
             raise HITLInterrupt(interrupts[0].value)
         return self._to_result(self._stages, cast(SupervisorState, final_dict))
 
+    @instrument(caller_type="agent")
     async def resume(self, interrupt_obj: HITLInterrupt, *, approved: bool) -> PipelineResult:
         """HITL confirm 后从 checkpointer 恢复（approved=False → 走 fallback 固定链）。
 

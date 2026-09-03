@@ -27,6 +27,7 @@ from inkflow.domain.models.agent_tools import ToolSpec
 from inkflow.domain.services._word_count import count_words
 from inkflow.infrastructure.agent.tools import _tool_db_lock as _tool_db_lock_mod
 from inkflow.infrastructure.agent.tools.reader_tools import Tool
+from inkflow.logging import instrument
 
 
 class SaveDraftParams(BaseModel):
@@ -78,6 +79,7 @@ def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool:
     """
     spec = SAVE_DRAFT_SPEC  # 复用静态常量（与 TOOL_REGISTRY 同源，行为不变）
 
+    @instrument(caller_type="tool")
     async def _save_draft(
         project_id: uuid.UUID | str | None = None,
         chapter_id: uuid.UUID | str | None = None,

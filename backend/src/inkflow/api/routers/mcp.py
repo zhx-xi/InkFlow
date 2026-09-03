@@ -7,12 +7,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from inkflow.logging import instrument
 from inkflow.mcp.info import build_mcp_info
 
 router = APIRouter(prefix="/api/v1/mcp", tags=["MCP"])
 
 
 @router.get("/info")
+@instrument(caller_type="api")
 async def get_mcp_info() -> dict:
     """MCP 自发现信息（spec f50 §3.2）— client_path + version + config_template。"""
     return build_mcp_info()

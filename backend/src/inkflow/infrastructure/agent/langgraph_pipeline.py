@@ -32,6 +32,7 @@ from inkflow.domain.ports.agent_pipeline import (
 from inkflow.domain.ports.llm_client import LLMClientProtocol
 from inkflow.infrastructure.agent import pipeline_nodes
 from inkflow.infrastructure.agent.pipeline_nodes import PipelineState
+from inkflow.logging import instrument
 
 
 def _chunk_stream(text: str, size: int = 6) -> list[str]:
@@ -45,6 +46,7 @@ class LangGraphAgentPipeline:
     def __init__(self, llm_client: LLMClientProtocol) -> None:
         self._llm = llm_client
 
+    @instrument(caller_type="agent")
     def validate(self, stages: Sequence[PipelineStage]) -> list[str]:
         """验证管线定义合法性：空图 / 重复 id / 入口 / 终点 / 非法引用 / 环。"""
         errors: list[str] = []
@@ -96,6 +98,7 @@ class LangGraphAgentPipeline:
             return ["管线存在循环依赖"]
         return []
 
+    @instrument(caller_type="agent")
     async def execute(
         self,
         stages: Sequence[PipelineStage],
@@ -224,6 +227,7 @@ class LangGraphAgentPipeline:
             },
         )
 
+    @instrument(caller_type="agent")
     async def stream(
         self,
         stages: Sequence[PipelineStage],

@@ -42,6 +42,7 @@ from inkflow.domain.ports.map_errors import (
 )
 from inkflow.domain.ports.world_errors import ProjectNotFoundError
 from inkflow.domain.services.map_service import MapService
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["地图"])
 
@@ -90,6 +91,7 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
 
 
 @router.post("/projects/{project_id}/maps", status_code=201)
+@instrument(caller_type="api")
 async def create_map(
     project_id: str,
     file: UploadFile | None = File(None),
@@ -134,6 +136,7 @@ async def create_map(
 
 
 @router.get("/projects/{project_id}/maps")
+@instrument(caller_type="api")
 async def list_maps(
     project_id: str,
     root_location_id: str | None = Query(None),
@@ -160,6 +163,7 @@ async def list_maps(
 
 
 @router.get("/maps/{map_id}")
+@instrument(caller_type="api")
 async def get_map(
     map_id: str,
     db: AsyncSession = Depends(get_db),
@@ -174,6 +178,7 @@ async def get_map(
 
 
 @router.get("/maps/{map_id}/image")
+@instrument(caller_type="api")
 async def get_map_image(
     map_id: str,
     db: AsyncSession = Depends(get_db),
@@ -190,6 +195,7 @@ async def get_map_image(
 
 
 @router.get("/maps/{map_id}/children")
+@instrument(caller_type="api")
 async def get_map_children(
     map_id: str,
     db: AsyncSession = Depends(get_db),
@@ -202,6 +208,7 @@ async def get_map_children(
 
 
 @router.patch("/maps/{map_id}")
+@instrument(caller_type="api")
 async def update_map(
     map_id: str,
     data: WorldMapUpdate,
@@ -217,6 +224,7 @@ async def update_map(
 
 
 @router.put("/maps/{map_id}/image")
+@instrument(caller_type="api")
 async def replace_map_image(
     map_id: str,
     file: UploadFile = File(...),
@@ -233,6 +241,7 @@ async def replace_map_image(
 
 
 @router.delete("/maps/{map_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_map(
     map_id: str,
     cascade: bool = Query(False),
@@ -255,6 +264,7 @@ async def delete_map(
 
 
 @router.post("/maps/{map_id}/pins", status_code=201)
+@instrument(caller_type="api")
 async def add_pin(
     map_id: str,
     data: MapPinCreate,
@@ -277,6 +287,7 @@ async def add_pin(
 
 
 @router.get("/maps/{map_id}/pins")
+@instrument(caller_type="api")
 async def list_pins(
     map_id: str,
     location_id: str | None = Query(None),
@@ -294,6 +305,7 @@ async def list_pins(
 
 
 @router.patch("/map-pins/{pin_id}")
+@instrument(caller_type="api")
 async def update_pin(
     pin_id: str,
     data: MapPinUpdate,
@@ -309,6 +321,7 @@ async def update_pin(
 
 
 @router.delete("/map-pins/{pin_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_pin(
     pin_id: str,
     db: AsyncSession = Depends(get_db),

@@ -12,6 +12,7 @@ from inkflow.cli.output import print_error, print_result
 from inkflow.domain.models.chapter import ChapterStatus
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 chapter_app = typer.Typer(name="chapter", help="章节管理", no_args_is_help=True)
 volume_app = typer.Typer(name="volume", help="卷管理", no_args_is_help=True)
@@ -38,6 +39,7 @@ def _run(cli_ctx: CliContext, coro_fn):
 
 
 @volume_app.command("create")
+@instrument(caller_type="cli")
 def create_vol(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", "-p"),
@@ -64,6 +66,7 @@ def create_vol(
 
 
 @volume_app.command("list")
+@instrument(caller_type="cli")
 def list_vol(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", "-p"),
@@ -82,6 +85,7 @@ def list_vol(
 
 
 @volume_app.command("delete")
+@instrument(caller_type="cli")
 def delete_vol(
     ctx: typer.Context,
     volume_id: str = typer.Option(..., "--id", "-i"),
@@ -103,6 +107,7 @@ def delete_vol(
 
 
 @volume_app.command("update")
+@instrument(caller_type="cli")
 def update_vol(
     ctx: typer.Context,
     volume_id: str = typer.Option(..., "--id", "-i"),
@@ -134,6 +139,7 @@ def update_vol(
 
 
 @chapter_app.command("create")
+@instrument(caller_type="cli")
 def create_ch(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", "-p"),
@@ -165,6 +171,7 @@ def create_ch(
 
 
 @chapter_app.command("list")
+@instrument(caller_type="cli")
 def list_ch(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", "-p"),
@@ -195,6 +202,7 @@ def list_ch(
 
 
 @chapter_app.command()
+@instrument(caller_type="cli")
 def get(
     ctx: typer.Context,
     chapter_id: str = typer.Option(..., "--id", "-i"),
@@ -213,6 +221,7 @@ def get(
 
 
 @chapter_app.command()
+@instrument(caller_type="cli")
 def update(
     ctx: typer.Context,
     chapter_id: str = typer.Option(..., "--id", "-i"),
@@ -241,6 +250,7 @@ def update(
 
 
 @chapter_app.command()
+@instrument(caller_type="cli")
 def move(
     ctx: typer.Context,
     chapter_id: str = typer.Option(..., "--id", "-i"),
@@ -263,6 +273,7 @@ def move(
 
 
 @chapter_app.command("delete")
+@instrument(caller_type="cli")
 def delete_ch(
     ctx: typer.Context,
     chapter_id: str = typer.Option(..., "--id", "-i"),
@@ -290,6 +301,7 @@ summary_app = typer.Typer(name="summary", help="章节摘要管理", no_args_is_
 
 
 @summary_app.command("get")
+@instrument(caller_type="cli")
 def get_summary(
     ctx: typer.Context,
     chapter_id: str = typer.Option(..., "--id", "-i"),
@@ -311,6 +323,7 @@ def get_summary(
 
 
 @summary_app.command("refresh")
+@instrument(caller_type="cli")
 def refresh_summary(
     ctx: typer.Context,
     chapter_id: str = typer.Option(..., "--id", "-i"),

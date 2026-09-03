@@ -22,6 +22,7 @@ from inkflow.cli.output import print_error, print_result
 from inkflow.domain.models.agent_pipeline import PipelineExecuteRequest, RoleOverride
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(name="agent", help="Agent 管线管理", no_args_is_help=True)
 
@@ -60,6 +61,7 @@ def _run_ctx(cli_ctx: CliContext, coro_fn):
 
 
 @app.command("list")
+@instrument(caller_type="cli")
 def agent_list(
     ctx: typer.Context,
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
@@ -90,6 +92,7 @@ def agent_list(
 
 
 @app.command("show")
+@instrument(caller_type="cli")
 def agent_show(
     ctx: typer.Context,
     agent_id: str = typer.Option(..., "--id", help="Agent ID"),
@@ -122,6 +125,7 @@ def agent_show(
 
 
 @app.command("run")
+@instrument(caller_type="cli")
 def run_pipeline(
     project_id: str = typer.Option(..., "--project-id", help="项目 ID（UUID）"),
     chapter_id: str | None = typer.Option(None, "--chapter-id", help="章节 ID"),
@@ -188,6 +192,7 @@ def run_pipeline(
 
 
 @app.command("status")
+@instrument(caller_type="cli")
 def check_status(
     run_id: str = typer.Option(..., "--run-id", help="执行 ID"),
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
@@ -232,6 +237,7 @@ def _load_pipeline_config(file: str) -> dict:
 
 
 @app.command("validate")
+@instrument(caller_type="cli")
 def validate_pipeline_config(
     ctx: typer.Context,
     file: str = typer.Option(..., "--file", "-f", help="管线 YAML 文件路径"),
@@ -266,6 +272,7 @@ template_app = typer.Typer(name="template", help="Agent 模板管理", no_args_i
 
 
 @template_app.command("pipelines")
+@instrument(caller_type="cli")
 def template_pipelines(
     ctx: typer.Context,
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
@@ -295,6 +302,7 @@ def template_pipelines(
 
 
 @template_app.command("list")
+@instrument(caller_type="cli")
 def template_list(ctx: typer.Context) -> None:
     """列出 Agent 模板"""
     cli_ctx: CliContext = ctx.obj
@@ -318,6 +326,7 @@ def template_list(ctx: typer.Context) -> None:
 
 
 @template_app.command("get")
+@instrument(caller_type="cli")
 def template_get(
     ctx: typer.Context,
     template_id: str = typer.Option(..., "--id", help="模板 ID"),
@@ -336,6 +345,7 @@ def template_get(
 
 
 @template_app.command("create")
+@instrument(caller_type="cli")
 def template_create(
     ctx: typer.Context,
     name: str = typer.Option(..., "--name", help="模板名称"),
@@ -373,6 +383,7 @@ def template_create(
 
 
 @template_app.command("update")
+@instrument(caller_type="cli")
 def template_update(
     ctx: typer.Context,
     template_id: str = typer.Option(..., "--id", help="模板 ID"),
@@ -416,6 +427,7 @@ def template_update(
 
 
 @template_app.command("delete")
+@instrument(caller_type="cli")
 def template_delete(
     ctx: typer.Context,
     template_id: str = typer.Option(..., "--id", help="模板 ID"),
@@ -440,6 +452,7 @@ def template_delete(
 
 
 @template_app.command("duplicate")
+@instrument(caller_type="cli")
 def template_duplicate(
     ctx: typer.Context,
     template_id: str = typer.Option(..., "--id", help="模板 ID"),
@@ -458,6 +471,7 @@ def template_duplicate(
 
 
 @template_app.command("set-default")
+@instrument(caller_type="cli")
 def template_set_default(
     ctx: typer.Context,
     template_id: str = typer.Option(..., "--id", help="模板 ID"),
@@ -476,6 +490,7 @@ def template_set_default(
 
 
 @template_app.command("get-default")
+@instrument(caller_type="cli")
 def template_get_default(ctx: typer.Context) -> None:
     """查看默认模板"""
     cli_ctx: CliContext = ctx.obj
@@ -504,6 +519,7 @@ app.add_typer(tools_app)
 
 
 @tools_app.command("list")
+@instrument(caller_type="cli")
 def tools_list_cmd(
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
 ) -> None:
@@ -564,6 +580,7 @@ app.add_typer(template_app)
 
 
 @runs_app.command("list")
+@instrument(caller_type="cli")
 def runs_list(
     project_id: str = typer.Option(..., "--project-id", help="项目 ID（UUID）"),
     limit: int = typer.Option(20, "--limit", help="条数上限"),
@@ -595,6 +612,7 @@ def runs_list(
 
 
 @runs_app.command("show")
+@instrument(caller_type="cli")
 def runs_show(
     run_id: str = typer.Argument(..., help="运行记录 ID"),
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
@@ -622,6 +640,7 @@ def runs_show(
 
 
 @draft_app.command("list")
+@instrument(caller_type="cli")
 def draft_list(
     project_id: str = typer.Option(..., "--project-id", help="项目 ID（UUID）"),
     status: str | None = typer.Option(None, "--status", help="过滤: draft|confirmed|rejected"),
@@ -651,6 +670,7 @@ def draft_list(
 
 
 @draft_app.command("confirm")
+@instrument(caller_type="cli")
 def draft_confirm(
     draft_id: str = typer.Argument(..., help="草稿 ID"),
     chapter_id: str | None = typer.Option(None, "--chapter-id", help="目标章节 ID（草稿未绑定）"),
@@ -678,6 +698,7 @@ def draft_confirm(
 
 
 @draft_app.command("reject")
+@instrument(caller_type="cli")
 def draft_reject(
     draft_id: str = typer.Argument(..., help="草稿 ID"),
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
@@ -700,6 +721,7 @@ def draft_reject(
 
 
 @draft_app.command("prune-orphans")
+@instrument(caller_type="cli")
 def draft_prune_orphans(
     dry_run: bool = typer.Option(False, "--dry-run", help="只统计不删除（预览）"),
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),

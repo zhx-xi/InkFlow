@@ -12,6 +12,7 @@ from typing import Protocol
 from pydantic import ValidationError
 
 from inkflow.domain.models.agent_tools import ToolSpec
+from inkflow.logging import instrument
 from inkflow.mcp.tools import MCPTool
 from inkflow.mcp.tools.schemas import ManageSessionParams, ToolSearchParams
 
@@ -127,6 +128,7 @@ async def _route_session(client: _HTTPClient, params: ManageSessionParams) -> ob
 def build_manage_session_tool() -> MCPTool:
     """会话管理：创建/列出/查看/暂停/恢复/完成/失败 agent 会话。"""
 
+    @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
         try:
             params = ManageSessionParams.model_validate(kwargs)
@@ -169,6 +171,7 @@ def build_manage_session_tool() -> MCPTool:
 def build_tool_search_tool() -> MCPTool:
     """工具发现：列出当前 MCP 工具面（渐进式发现入口，本地装配）。"""
 
+    @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
         try:
             ToolSearchParams.model_validate(kwargs)

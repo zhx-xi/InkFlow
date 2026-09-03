@@ -1,7 +1,11 @@
 {
+  "log.check.agent_order_guardrail": "Agent 管线护栏触发（已回退默认拓扑）",
   "log.event.create_chapter": "创建章节：{title}",
+  "log.event.create_project": "创建项目：{name}",
+  "log.event.delete_project": "删除项目：{project_id}",
+  "log.event.llm_request": "LLM 请求：{model}（{count} 条消息）",
+  "log.event.llm_response": "LLM 响应：{model}（{length} 字符）",
   "log.event.update_project": "更新项目：{name}",
-  "log.event.delete_project": "删除项目：{name}",
   "api.error.project_not_found": "项目不存在：{project_id}",
   "api.error.validation_failed": "请求参数校验失败"
 }

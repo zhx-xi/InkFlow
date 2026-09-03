@@ -26,6 +26,7 @@ from inkflow.domain.models.writing import (
     WritingRequest,
 )
 from inkflow.infrastructure.agent.tools.reader_tools import Tool
+from inkflow.logging import instrument
 
 
 def _coerce_uuid(value: object) -> uuid.UUID:
@@ -126,6 +127,7 @@ def build_writing_tools(deps: WritingToolDeps) -> list[Tool]:
         三个可执行 Tool；func 成功/失败均返回 JSON 信封且不抛异常。
     """
 
+    @instrument(caller_type="tool")
     async def _generate(
         project_id: uuid.UUID | str | None = None,
         chapter_id: uuid.UUID | str | None = None,
@@ -189,6 +191,7 @@ def build_writing_tools(deps: WritingToolDeps) -> list[Tool]:
                 )
             return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
+    @instrument(caller_type="tool")
     async def _continue_writing(
         project_id: uuid.UUID | str | None = None,
         chapter_id: uuid.UUID | str | None = None,
@@ -248,6 +251,7 @@ def build_writing_tools(deps: WritingToolDeps) -> list[Tool]:
                 )
             return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
+    @instrument(caller_type="tool")
     async def _revise(
         project_id: uuid.UUID | str | None = None,
         chapter_id: uuid.UUID | str | None = None,

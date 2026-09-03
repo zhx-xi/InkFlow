@@ -19,6 +19,7 @@ from inkflow.infrastructure.llm.provider_config import (
     get_provider_config,
     parse_model_string,
 )
+from inkflow.logging import instrument, log_structured
 
 
 class LangChainLLMClient:
@@ -44,6 +45,7 @@ class LangChainLLMClient:
 
     # ── Public API ──
 
+    @instrument(caller_type="llm")
     async def chat(
         self,
         messages: list[ChatMessage],
@@ -61,6 +63,7 @@ class LangChainLLMClient:
             messages, model=model, temperature=temperature, max_tokens=max_tokens
         )
 
+    @instrument(caller_type="llm")
     async def _chat_async(
         self,
         messages: list[ChatMessage],
@@ -89,6 +92,15 @@ class LangChainLLMClient:
         )
 
         langchain_messages = self._to_langchain_messages(messages)
+        log_structured(
+            level="DEBUG",
+            caller_type="llm",
+            caller_name="langchain_client.chat",
+            event="llm_request",
+            message_key="log.event.llm_request",
+            message=f"LLM 请求：{model_str}（{len(messages)} 条消息）",
+            params={"model": model_str, "count": len(messages)},
+        )
         try:
             response: AIMessage = await chat_model.ainvoke(langchain_messages)
         except Exception as e:
@@ -99,8 +111,19 @@ class LangChainLLMClient:
                 retries_exhausted=True,
             ) from e
 
-        return self._to_chat_response(response)
+        result = self._to_chat_response(response)
+        log_structured(
+            level="DEBUG",
+            caller_type="llm",
+            caller_name="langchain_client.chat",
+            event="llm_response",
+            message_key="log.event.llm_response",
+            message=f"LLM 响应：{result.model}（{len(result.content)} 字符）",
+            params={"model": result.model, "length": len(result.content)},
+        )
+        return result
 
+    @instrument(caller_type="llm")
     async def chat_stream(
         self,
         messages: list[ChatMessage],
@@ -141,6 +164,7 @@ class LangChainLLMClient:
         # Final event
         yield StreamEvent(content="", is_final=True)
 
+    @instrument(caller_type="llm")
     async def count_tokens(
         self,
         messages: list[ChatMessage],

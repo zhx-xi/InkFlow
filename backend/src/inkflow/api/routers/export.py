@@ -35,6 +35,7 @@ from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.services import _txt_exporter
 from inkflow.domain.services._export_filename import suggest_filename
 from inkflow.domain.services.output_service import ExportService
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["导出"])
 
@@ -75,6 +76,7 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
 
 
 @router.get("/projects/{project_id}/export")
+@instrument(caller_type="api")
 async def export_project(
     project_id: str,
     format: Literal["txt"] = "txt",

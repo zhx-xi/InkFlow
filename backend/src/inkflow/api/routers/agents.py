@@ -39,6 +39,7 @@ from inkflow.infrastructure.agent.tools import ALL_TOOL_SPECS
 from inkflow.infrastructure.database.repositories.agent_repo import (
     SQLiteAgentRepository,
 )
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/agents", tags=["Agents"])
 
@@ -103,6 +104,7 @@ def _to_response(agent: Agent) -> dict:
 
 
 @router.get("")
+@instrument(caller_type="api")
 async def list_agents(
     db: AsyncSession = Depends(get_db),
 ):
@@ -113,6 +115,7 @@ async def list_agents(
 
 
 @router.get("/tools")
+@instrument(caller_type="api")
 async def list_tool_catalog():
     """工具目录（spec §2.3/§5.1 + #838）— ALL_TOOL_SPECS 35 工具按目录原序 + 双标记.
 
@@ -139,6 +142,7 @@ async def list_tool_catalog():
 
 
 @router.post("", status_code=201)
+@instrument(caller_type="api")
 async def create_agent(
     data: AgentCreate,
     db: AsyncSession = Depends(get_db),
@@ -150,6 +154,7 @@ async def create_agent(
 
 
 @router.post("/{agent_id}/duplicate", status_code=201)
+@instrument(caller_type="api")
 async def duplicate_agent(
     agent_id: str,
     db: AsyncSession = Depends(get_db),
@@ -162,6 +167,7 @@ async def duplicate_agent(
 
 
 @router.get("/{agent_id}")
+@instrument(caller_type="api")
 async def get_agent(
     agent_id: str,
     db: AsyncSession = Depends(get_db),
@@ -174,6 +180,7 @@ async def get_agent(
 
 
 @router.patch("/{agent_id}")
+@instrument(caller_type="api")
 async def update_agent(
     agent_id: str,
     data: AgentUpdate,
@@ -187,6 +194,7 @@ async def update_agent(
 
 
 @router.delete("/{agent_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_agent(
     agent_id: str,
     db: AsyncSession = Depends(get_db),

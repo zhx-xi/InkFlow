@@ -8,6 +8,8 @@ from typing import Any
 
 import typer
 
+from inkflow.logging import instrument
+
 app = typer.Typer(name="serve", help="启动 Web 服务", no_args_is_help=True)
 
 # 模块级运行状态：非 reload 时 uvicorn 在后台线程中运行，serve 主线程输出
@@ -73,6 +75,7 @@ def _write_port_file(path: Path, payload: dict) -> None:
 
 
 @app.command()
+@instrument(caller_type="cli")
 def serve(
     host: str = typer.Option("127.0.0.1", "--host", "-H", help="监听地址"),
     port: int = typer.Option(8000, "--port", "-p", help="监听端口（0 = 系统动态分配）"),

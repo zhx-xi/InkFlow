@@ -16,6 +16,7 @@ import typer
 
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(name="memory", help="Agent 记忆管理", no_args_is_help=True)
 
@@ -56,6 +57,7 @@ def _run(coro_fn):
 
 
 @app.command("list")
+@instrument(caller_type="cli")
 def memory_list(
     project_id: str = typer.Option(..., "--project-id", help="项目 ID（UUID）"),
     category: str | None = typer.Option(
@@ -92,6 +94,7 @@ def memory_list(
 
 
 @app.command("remove")
+@instrument(caller_type="cli")
 def memory_remove(
     preference_id: str = typer.Argument(..., help="偏好 ID"),
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
@@ -114,6 +117,7 @@ def memory_remove(
 
 
 @app.command("stats")
+@instrument(caller_type="cli")
 def memory_stats(
     project_id: str = typer.Option(..., "--project-id", help="项目 ID（UUID）"),
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
@@ -157,6 +161,7 @@ def memory_stats(
 
 
 @app.command("user-list")
+@instrument(caller_type="cli")
 def memory_user_list(
     category: str | None = typer.Option(
         None,
@@ -192,6 +197,7 @@ def memory_user_list(
 
 
 @app.command("user-remove")
+@instrument(caller_type="cli")
 def memory_user_remove(
     preference_id: str = typer.Argument(..., help="用户级偏好 ID"),
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
@@ -213,6 +219,7 @@ def memory_user_remove(
     typer.echo("✅ 已删除用户级偏好（所有项目生成立即停止注入）")
 
 @app.command("summarize")
+@instrument(caller_type="cli")
 def memory_summarize(
     project_id: str = typer.Option(..., "--project-id", help="项目 ID（UUID）"),
     force: bool = typer.Option(False, "--force", help="忽略锚点哈希强制重新总结"),

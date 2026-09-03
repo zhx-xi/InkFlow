@@ -39,6 +39,7 @@ from langgraph.types import Command, interrupt
 from inkflow.domain.models.agent_book import AgenticBookConfig
 from inkflow.domain.models.writing_plan import BookLimits, WritingPlan
 from inkflow.domain.ports.llm_client import ChatMessage
+from inkflow.logging import instrument
 
 _R = TypeVar("_R")
 
@@ -296,6 +297,7 @@ async def _decide_next_action(
     return ("", "", "")
 
 
+@instrument(caller_type="agent")
 async def _supervisor_node(
     state: BookAgenticState, pipeline: BookAgenticPipeline
 ) -> Command[Any]:
@@ -322,6 +324,7 @@ async def _supervisor_node(
     return Command(update={"route_history": [op], "target_outline_id": oid}, goto=op)
 
 
+@instrument(caller_type="agent")
 async def _bootstrap_node(
     state: BookAgenticState, pipeline: BookAgenticPipeline
 ) -> Command[Any]:
@@ -335,6 +338,7 @@ async def _bootstrap_node(
     return Command(update=update, goto=goto)
 
 
+@instrument(caller_type="agent")
 async def _hitl_node(
     state: BookAgenticState, pipeline: BookAgenticPipeline
 ) -> Command[Any]:
@@ -360,6 +364,7 @@ async def _hitl_node(
     return Command(goto="book_supervisor")
 
 
+@instrument(caller_type="agent")
 async def _write_chapter(
     state: BookAgenticState, pipeline: BookAgenticPipeline
 ) -> dict[str, object]:
@@ -390,6 +395,7 @@ async def _write_chapter(
     }
 
 
+@instrument(caller_type="agent")
 async def _audit_chapter(
     state: BookAgenticState, pipeline: BookAgenticPipeline
 ) -> dict[str, object]:
@@ -409,6 +415,7 @@ async def _audit_chapter(
     return {**update, **extra}
 
 
+@instrument(caller_type="agent")
 async def _revise_chapter(
     state: BookAgenticState, pipeline: BookAgenticPipeline
 ) -> dict[str, object]:
@@ -433,6 +440,7 @@ async def _revise_chapter(
     return {**update, "chapter_ops": _bump_chapter_ops(state, oid), "results": {oid: execution_id}}
 
 
+@instrument(caller_type="agent")
 async def _mark_done(
     state: BookAgenticState, pipeline: BookAgenticPipeline
 ) -> Command[Any]:
@@ -452,11 +460,13 @@ async def _mark_done(
     return Command(update=update, goto=goto)
 
 
+@instrument(caller_type="agent")
 async def _finish_book(state: BookAgenticState) -> Command[Any]:
     """finish_book：finished=True → END（status=completed）."""
     return Command(update={"finished": True, "status": "completed"}, goto=END)
 
 
+@instrument(caller_type="agent")
 async def _fallback_node(
     state: BookAgenticState, pipeline: BookAgenticPipeline
 ) -> dict[str, object]:
@@ -555,6 +565,7 @@ class BookAgenticPipeline:
         async with AsyncSqliteSaver.from_conn_string(str(self._checkpoint_path)) as saver:
             return await fn(self._build_graph(saver))
 
+    @instrument(caller_type="agent")
     async def execute(
         self,
         plan: WritingPlan,
@@ -616,6 +627,7 @@ class BookAgenticPipeline:
 
         return await self._run_with_checkpointer(_run, thread_id=self._thread_id)
 
+    @instrument(caller_type="agent")
     async def resume(
         self,
         interrupt_obj: BookAgenticHITLInterrupt,
@@ -663,6 +675,7 @@ class BookAgenticPipeline:
 
         return await self._run_with_checkpointer(_run, thread_id=self._thread_id)
 
+    @instrument(caller_type="agent")
     async def get_checkpoint_state(self, run_id: str) -> dict | None:
         """查询图状态（BookAgenticState 键）；无 checkpoint → None."""
 
@@ -677,6 +690,7 @@ class BookAgenticPipeline:
 
         return await self._run_with_checkpointer(_read, thread_id=run_id)
 
+    @instrument(caller_type="agent")
     async def _delegate_write(
         self, chapter: dict, *, audit_issues: list[str] | None = None
     ) -> str:
@@ -730,6 +744,7 @@ class BookAgenticPipeline:
             brief += "\n【审校意见（修订必改）】" + "；".join(audit_issues)
         return brief
 
+    @instrument(caller_type="agent")
     async def _delegate_audit(self, chapter: dict) -> dict:
         """审校委托：audit_callable 注入优先，否则 llm_client.chat（非决策调用）."""
         messages = [

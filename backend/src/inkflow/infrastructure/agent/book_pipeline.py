@@ -39,6 +39,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Send, interrupt
 
 from inkflow.domain.models.writing_plan import BookLimits, WritingPlan
+from inkflow.logging import instrument
 
 _R = TypeVar("_R")
 
@@ -107,11 +108,13 @@ def _parse_supervisor_decision(content: str) -> str:
     return "abort" if data.get("action") == "abort" else "continue"
 
 
+@instrument(caller_type="agent")
 async def _bootstrap_node(state: VolumeState, llm_client: object) -> dict[str, object]:
     """启动节点：将 llm_client 写入 UntrackedValue 通道（不参与 checkpointer 序列化，镜像 F29）。"""
     return {"llm_client": llm_client}
 
 
+@instrument(caller_type="agent")
 async def _volume_fan_out(state: VolumeState) -> Command[Any]:
     """卷扇出：Command(goto=[Send("write_chapter", {"chapter": ch}) ...])——Spike ① 形态。
 
@@ -122,6 +125,7 @@ async def _volume_fan_out(state: VolumeState) -> Command[Any]:
     return Command(goto=[Send("write_chapter", {"chapter": ch}) for ch in state["chapters"]])
 
 
+@instrument(caller_type="agent")
 async def _write_chapter(state: VolumeState, pipeline: BookVolumePipeline) -> dict[str, object]:
     """章执行节点（Send 并行分支，节点内无 interrupt——Spike ④ 硬约束）。
 
@@ -145,6 +149,7 @@ async def _write_chapter(state: VolumeState, pipeline: BookVolumePipeline) -> di
     return {"results": {outline_id: "failed"}, "failed": [outline_id], "steps": attempts}
 
 
+@instrument(caller_type="agent")
 async def _join(state: VolumeState, pipeline: BookVolumePipeline) -> Command[Any]:
     """map-reduce 回收节点：判定顺序 = ① 护栏 ② 卷级失败 ③ 最后一卷/卷边界。"""
     if state.get("steps", 0) >= pipeline._limits.max_agent_calls:
@@ -162,6 +167,7 @@ async def _join(state: VolumeState, pipeline: BookVolumePipeline) -> Command[Any
     return Command(goto="volume_boundary")
 
 
+@instrument(caller_type="agent")
 async def _volume_boundary(state: VolumeState, pipeline: BookVolumePipeline) -> Command[Any]:
     """卷边界 HITL 串行点（唯一允许 interrupt 的位置之一，Spike ③）：resume approved
     → 下一卷 / END；approved=False → 中止。"""
@@ -183,6 +189,7 @@ async def _volume_boundary(state: VolumeState, pipeline: BookVolumePipeline) -> 
     return Command(update={"finished": True, "status": "aborted"}, goto=END)
 
 
+@instrument(caller_type="agent")
 async def _volume_failure(state: VolumeState, pipeline: BookVolumePipeline) -> Command[Any]:
     """卷级失败 HITL（§12 D9）：resume decision 分支 continue / abort / supervisor。"""
     failed = [
@@ -263,6 +270,7 @@ class BookVolumePipeline:
         async with AsyncSqliteSaver.from_conn_string(str(self._checkpoint_path)) as saver:
             return await fn(self._build_graph(saver))
 
+    @instrument(caller_type="agent")
     async def execute(
         self,
         plan: WritingPlan,
@@ -322,6 +330,7 @@ class BookVolumePipeline:
 
         return await self._run_with_checkpointer(_run, thread_id=self._thread_id)
 
+    @instrument(caller_type="agent")
     async def resume(
         self,
         interrupt_obj: VolumeHITLInterrupt,
@@ -370,6 +379,7 @@ class BookVolumePipeline:
 
         return await self._run_with_checkpointer(_run, thread_id=self._thread_id)
 
+    @instrument(caller_type="agent")
     async def get_checkpoint_state(self, run_id: str) -> dict | None:
         """查询图状态（VolumeState 键）；无 checkpoint → None。
 
@@ -401,6 +411,7 @@ class BookVolumePipeline:
             goto="volume_fan_out",
         )
 
+    @instrument(caller_type="agent")
     async def _delegate_chapter(self, chapter: dict) -> str:
         """委托契约核心（镜像 BookService._delegate_chapter）：章 brief → writer_factory
         → agent.invoke → draft_service.create 回收 → 返回 execution_id。"""
@@ -446,6 +457,7 @@ class BookVolumePipeline:
             "【风格/偏好注入】遵循项目写作风格与用户偏好（偏好优先于通用文风）。"
         )
 
+    @instrument(caller_type="agent")
     async def _delegate_supervisor(self, failed: list[str]) -> str:
         """授权主 agent 补救（F29 supervisor 决策通道）：llm_client.chat → 解析
         {action: continue|abort}（解析失败默认 continue）。"""

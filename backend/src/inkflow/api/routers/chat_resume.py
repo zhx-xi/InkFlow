@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import inkflow.api.deps as deps_module
 from inkflow.api.deps import get_chat_agent_service, get_conversation_service
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/chat", tags=["AI 对话"])
 
@@ -31,6 +32,7 @@ def _parse_conversation_id(raw: str) -> uuid.UUID:
 
 
 @router.post("/resume")
+@instrument(caller_type="api")
 async def resume_chat(
     data: ChatResumeRequest,
     db: AsyncSession = Depends(deps_module.get_db),

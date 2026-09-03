@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from inkflow.api.deps import get_audit_service, get_db
 from inkflow.domain.ports.audit_errors import ProjectNotFoundError
 from inkflow.domain.services.audit_service import AuditService
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["审计"])
 
@@ -72,6 +73,7 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
 
 
 @router.get("/projects/{project_id}/audit")
+@instrument(caller_type="api")
 async def audit_project(
     project_id: str,
     db: AsyncSession = Depends(get_db),

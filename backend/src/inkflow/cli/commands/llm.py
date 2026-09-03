@@ -14,6 +14,7 @@ from inkflow.core.config import config
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 from inkflow.infrastructure.llm.key_manager import APIKeyManager
+from inkflow.logging import instrument
 
 app = typer.Typer(name="llm", help="LLM Provider 配置", no_args_is_help=True)
 
@@ -51,6 +52,7 @@ provider_app = typer.Typer(name="provider", help="Provider 注册表管理", no_
 
 
 @provider_app.command("list")
+@instrument(caller_type="cli")
 def provider_list(ctx: typer.Context) -> None:
     """列出 Provider 注册表"""
     cli_ctx: CliContext = ctx.obj
@@ -77,6 +79,7 @@ def provider_list(ctx: typer.Context) -> None:
 
 
 @provider_app.command("get")
+@instrument(caller_type="cli")
 def provider_get(
     ctx: typer.Context,
     provider_id: str = typer.Option(..., "--id", help="Provider ID"),
@@ -95,6 +98,7 @@ def provider_get(
 
 
 @provider_app.command("create")
+@instrument(caller_type="cli")
 def provider_create(
     ctx: typer.Context,
     name: str = typer.Option(..., "--name", help="Provider 名称"),
@@ -135,6 +139,7 @@ def provider_create(
 
 
 @provider_app.command("update")
+@instrument(caller_type="cli")
 def provider_update(
     ctx: typer.Context,
     provider_id: str = typer.Option(..., "--id", help="Provider ID"),
@@ -175,6 +180,7 @@ def provider_update(
 
 
 @provider_app.command("delete")
+@instrument(caller_type="cli")
 def provider_delete(
     ctx: typer.Context,
     provider_id: str = typer.Option(..., "--id", help="Provider ID"),
@@ -202,6 +208,7 @@ def provider_delete(
 
 
 @provider_app.command("models")
+@instrument(caller_type="cli")
 def provider_models(
     ctx: typer.Context,
     provider_id: str = typer.Option(..., "--id", help="Provider ID"),
@@ -248,6 +255,7 @@ def provider_models(
 
 
 @app.command("test")
+@instrument(caller_type="cli")
 def test_llm(
     ctx: typer.Context,
     provider: str = typer.Option(..., "--provider"),
@@ -282,6 +290,7 @@ key_app = typer.Typer(name="key", help="API Key 本地文件管理", no_args_is_
 
 
 @key_app.command("remove")
+@instrument(caller_type="cli")
 def key_remove(
     ctx: typer.Context,
     provider: str = typer.Option(..., "--provider"),
@@ -300,6 +309,7 @@ def key_remove(
 
 
 @app.command("list")
+@instrument(caller_type="cli")
 def list_providers(ctx: typer.Context) -> None:
     """列出已配置的 LLM Provider."""
     cli_ctx: CliContext = ctx.obj
@@ -327,6 +337,7 @@ def list_providers(ctx: typer.Context) -> None:
 
 
 @app.command("set-key")
+@instrument(caller_type="cli")
 def set_key(
     ctx: typer.Context,
     provider: str = typer.Option(..., "--provider", help="Provider 名称"),

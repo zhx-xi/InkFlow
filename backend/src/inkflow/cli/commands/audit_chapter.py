@@ -31,6 +31,7 @@ from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(
     name="chapter",
@@ -191,6 +192,7 @@ def _print_human_history(data: dict) -> None:
 
 
 @app.command("chapter")
+@instrument(caller_type="cli")
 def chapter_audit_cmd(
     ctx: typer.Context,
     chapter: str | None = typer.Argument(None, help="章节名称或 ID（--history 模式下可省略）"),

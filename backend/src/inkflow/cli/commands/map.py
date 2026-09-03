@@ -31,6 +31,7 @@ from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(name="map", help="地图管理", no_args_is_help=True)
 pin_app = typer.Typer(name="pin", help="地图 pin 管理", no_args_is_help=True)
@@ -91,6 +92,7 @@ def _read_image(cli_ctx: CliContext, image_path: str) -> tuple[str, bytes]:
 
 
 @app.command("create")
+@instrument(caller_type="cli")
 def create_map_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -133,6 +135,7 @@ def create_map_cmd(
 
 
 @app.command("list")
+@instrument(caller_type="cli")
 def list_maps_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -169,6 +172,7 @@ def list_maps_cmd(
 
 
 @app.command("get")
+@instrument(caller_type="cli")
 def get_map_cmd(
     ctx: typer.Context,
     map_id: str = typer.Argument(..., help="地图 ID (UUID)"),
@@ -205,6 +209,7 @@ def get_map_cmd(
 
 
 @app.command("update")
+@instrument(caller_type="cli")
 def update_map_cmd(
     ctx: typer.Context,
     map_id: str = typer.Argument(..., help="地图 ID (UUID)"),
@@ -244,6 +249,7 @@ def update_map_cmd(
 
 
 @app.command("image")
+@instrument(caller_type="cli")
 def image_map_cmd(
     ctx: typer.Context,
     map_id: str = typer.Argument(..., help="地图 ID (UUID)"),
@@ -278,6 +284,7 @@ def image_map_cmd(
 
 
 @app.command("delete")
+@instrument(caller_type="cli")
 def delete_map_cmd(
     ctx: typer.Context,
     map_id: str = typer.Argument(..., help="地图 ID (UUID)"),
@@ -319,6 +326,7 @@ def delete_map_cmd(
 
 
 @app.command("children")
+@instrument(caller_type="cli")
 def children_map_cmd(
     ctx: typer.Context,
     map_id: str = typer.Argument(..., help="地图 ID (UUID)"),
@@ -349,6 +357,7 @@ def children_map_cmd(
 
 
 @pin_app.command("add")
+@instrument(caller_type="cli")
 def add_pin_cmd(
     ctx: typer.Context,
     map_id: str = typer.Argument(..., help="地图 ID (UUID)"),
@@ -383,6 +392,7 @@ def add_pin_cmd(
 
 
 @pin_app.command("list")
+@instrument(caller_type="cli")
 def list_pins_cmd(
     ctx: typer.Context,
     map_id: str = typer.Argument(..., help="地图 ID (UUID)"),
@@ -413,6 +423,7 @@ def list_pins_cmd(
 
 
 @pin_app.command("update")
+@instrument(caller_type="cli")
 def update_pin_cmd(
     ctx: typer.Context,
     pin_id: str = typer.Argument(..., help="pin ID (UUID)"),
@@ -455,6 +466,7 @@ def update_pin_cmd(
 
 
 @pin_app.command("delete")
+@instrument(caller_type="cli")
 def delete_pin_cmd(
     ctx: typer.Context,
     pin_id: str = typer.Argument(..., help="pin ID (UUID)"),

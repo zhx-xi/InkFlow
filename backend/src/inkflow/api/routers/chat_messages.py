@@ -16,6 +16,7 @@ from inkflow.domain.services.chat_message_service import ChatMessageService
 from inkflow.infrastructure.database.repositories.chat_message_repo import (
     SQLiteChatMessageRepository,
 )
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/chat", tags=["AI 对话"])
 
@@ -64,6 +65,7 @@ def _conversation_to_json(conv: Conversation | dict) -> dict:
 
 
 @router.post("/messages", status_code=201)
+@instrument(caller_type="api")
 async def post_message(
     data: ChatMessagePostRequest,
     db: AsyncSession = Depends(get_db),
@@ -85,6 +87,7 @@ async def post_message(
 
 
 @router.get("/messages")
+@instrument(caller_type="api")
 async def list_messages(
     conversation_id: uuid.UUID = Query(...),
     offset: int = Query(0, ge=0),
@@ -105,6 +108,7 @@ async def list_messages(
 
 
 @router.get("/conversations")
+@instrument(caller_type="api")
 async def list_conversations(
     include_deleted: bool = Query(False),
     db: AsyncSession = Depends(get_db),
@@ -119,6 +123,7 @@ async def list_conversations(
 
 
 @router.post("/conversations", status_code=201)
+@instrument(caller_type="api")
 async def create_conversation(
     data: ConversationCreate,
     db: AsyncSession = Depends(get_db),
@@ -135,6 +140,7 @@ async def create_conversation(
 
 
 @router.delete("/messages/{message_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_message(
     message_id: str,
     force: bool = Query(False),
@@ -152,6 +158,7 @@ async def delete_message(
 
 
 @router.post("/messages/{message_id}/restore")
+@instrument(caller_type="api")
 async def restore_message(
     message_id: str,
     db: AsyncSession = Depends(get_db),
@@ -169,6 +176,7 @@ async def restore_message(
 
 
 @router.delete("/conversations/{conversation_id}", status_code=204)
+@instrument(caller_type="api")
 async def delete_conversation(
     conversation_id: str,
     force: bool = Query(False),
@@ -186,6 +194,7 @@ async def delete_conversation(
 
 
 @router.patch("/conversations/{conversation_id}")
+@instrument(caller_type="api")
 async def patch_conversation(
     conversation_id: str,
     data: ConversationPatchRequest,
@@ -222,6 +231,7 @@ async def patch_conversation(
 
 
 @router.post("/conversations/{conversation_id}/restore")
+@instrument(caller_type="api")
 async def restore_conversation(
     conversation_id: str,
     db: AsyncSession = Depends(get_db),

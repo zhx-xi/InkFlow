@@ -11,6 +11,7 @@ from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(name="context", help="上下文管理", no_args_is_help=True)
 
@@ -38,6 +39,7 @@ def _run(cli_ctx: CliContext, coro_fn):
 
 
 @app.command("assemble")
+@instrument(caller_type="cli")
 def assemble(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", "-p"),

@@ -31,6 +31,7 @@ from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(name="world", help="世界观管理", no_args_is_help=True)
 
@@ -80,6 +81,7 @@ def _run(cli_ctx: CliContext, coro_fn):
 
 
 @app.command("create")
+@instrument(caller_type="cli")
 def create_setting_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -119,6 +121,7 @@ def create_setting_cmd(
 
 
 @app.command("list")
+@instrument(caller_type="cli")
 def list_settings_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -170,6 +173,7 @@ def list_settings_cmd(
 
 
 @app.command("categories")
+@instrument(caller_type="cli")
 def list_categories_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
@@ -202,6 +206,7 @@ def list_categories_cmd(
 
 
 @app.command("get")
+@instrument(caller_type="cli")
 def get_setting_cmd(
     ctx: typer.Context,
     setting_id: str = typer.Option(..., "--id", "-i", help="条目 ID (UUID)"),
@@ -234,6 +239,7 @@ def get_setting_cmd(
 
 
 @app.command("ancestors")
+@instrument(caller_type="cli")
 def ancestors_cmd(
     ctx: typer.Context,
     setting_id: str = typer.Argument(..., help="条目 ID (UUID)"),
@@ -264,6 +270,7 @@ def ancestors_cmd(
 
 
 @app.command("descendants")
+@instrument(caller_type="cli")
 def descendants_cmd(
     ctx: typer.Context,
     setting_id: str = typer.Argument(..., help="条目 ID (UUID)"),
@@ -297,6 +304,7 @@ def descendants_cmd(
 
 
 @app.command("copy")
+@instrument(caller_type="cli")
 def copy_world_cmd(
     ctx: typer.Context,
     source_project_id: str = typer.Argument(..., help="源项目 ID (UUID)"),
@@ -338,6 +346,7 @@ def copy_world_cmd(
 
 
 @app.command("update")
+@instrument(caller_type="cli")
 def update_setting_cmd(
     ctx: typer.Context,
     setting_id: str = typer.Option(..., "--id", "-i", help="条目 ID (UUID)"),
@@ -380,6 +389,7 @@ def update_setting_cmd(
 
 
 @app.command("delete")
+@instrument(caller_type="cli")
 def delete_setting_cmd(
     ctx: typer.Context,
     setting_id: str = typer.Option(..., "--id", "-i", help="条目 ID (UUID)"),
@@ -427,6 +437,7 @@ def delete_setting_cmd(
 
 
 @app.command("extract")
+@instrument(caller_type="cli")
 def extract_settings_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),

@@ -22,6 +22,7 @@ import typer
 from inkflow.cli.context import CliContext
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(name="skill", help="Skill 管理", no_args_is_help=True)
 
@@ -60,6 +61,7 @@ def _run_ctx(cli_ctx: CliContext, coro_fn, *, json_output: bool):
 
 
 @app.command("list")
+@instrument(caller_type="cli")
 def skill_list(
     ctx: typer.Context,
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),

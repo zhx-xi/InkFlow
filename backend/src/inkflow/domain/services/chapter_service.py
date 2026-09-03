@@ -15,6 +15,7 @@ from inkflow.domain.models.chapter import (
 from inkflow.infrastructure.database.repositories.chapter_repo import (
     SQLiteChapterRepository,
 )
+from inkflow.logging import log_structured
 
 
 class VolumeNotEmptyError(Exception):
@@ -139,7 +140,17 @@ class ChapterService:
             created_at=_utcnow(),
             updated_at=_utcnow(),
         )
-        return await self._repo.add_chapter(ch)
+        created = await self._repo.add_chapter(ch)
+        log_structured(
+            level="INFO",
+            caller_type="api",
+            caller_name="chapter_service.create_chapter",
+            event="create_chapter",
+            message_key="log.event.create_chapter",
+            message=f"创建章节：{title}",
+            params={"title": title},
+        )
+        return created
 
     async def get_chapter(self, chapter_id: int | uuid.UUID) -> Chapter | None:
         return await self._repo.get_chapter(_to_int(chapter_id))

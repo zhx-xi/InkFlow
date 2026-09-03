@@ -18,6 +18,7 @@ from inkflow.infrastructure.agent.book_agentic_pipeline import BookAgenticPipeli
 from inkflow.infrastructure.agent.book_pipeline import BookVolumePipeline
 from inkflow.infrastructure.agent.execution_store import ExecutionStore
 from inkflow.infrastructure.background.tasks import spawn_background_task
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/agent/books", tags=["Books"])
 
@@ -336,6 +337,7 @@ def _parse_id(id_str: str, detail: str = "会话不存在") -> uuid.UUID:
 
 
 @router.post("/planner", status_code=201)
+@instrument(caller_type="api")
 async def start_planner(
     data: PlannerStartRequest,
     svc: PlannerService = Depends(get_planner_service),
@@ -362,6 +364,7 @@ async def start_planner(
 
 
 @router.get("/planner")
+@instrument(caller_type="api")
 async def list_planner_sessions(
     project_id: str | None = Query(None),
     status: str | None = Query(None),
@@ -384,6 +387,7 @@ async def list_planner_sessions(
 
 
 @router.post("/planner/{session_id}/respond")
+@instrument(caller_type="api")
 async def respond_planner(
     session_id: str,
     data: PlannerRespondRequest,
@@ -417,6 +421,7 @@ async def respond_planner(
 
 
 @router.get("/planner/{session_id}")
+@instrument(caller_type="api")
 async def get_planner_session(
     session_id: str,
     svc: PlannerService = Depends(get_planner_service),
@@ -429,6 +434,7 @@ async def get_planner_session(
 
 
 @router.post("/runs", status_code=202)
+@instrument(caller_type="api")
 async def start_run(
     data: BookRunRequest,
     svc: BookService = Depends(get_book_service),
@@ -480,6 +486,7 @@ async def _run_book(
 
 
 @router.post("/runs/{run_id}/confirm")
+@instrument(caller_type="api")
 async def confirm_run(
     run_id: str,
     data: ConfirmRunRequest,
@@ -498,6 +505,7 @@ async def confirm_run(
 
 
 @router.get("/runs/{run_id}")
+@instrument(caller_type="api")
 async def get_run_status(
     run_id: str,
     svc: BookService = Depends(get_book_service),
@@ -510,6 +518,7 @@ async def get_run_status(
 
 
 @router.post("/runs/{run_id}/intervene")
+@instrument(caller_type="api")
 async def intervene_run(
     run_id: str,
     data: InterveneRequest,
@@ -528,6 +537,7 @@ async def intervene_run(
 
 
 @router.get("/runs/{run_id}/summary")
+@instrument(caller_type="api")
 async def get_run_summary(
     run_id: str,
     svc: BookService = Depends(get_book_service),

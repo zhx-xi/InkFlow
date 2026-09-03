@@ -28,6 +28,7 @@ from inkflow.api.deps import (
 from inkflow.core.config import config as app_config
 from inkflow.domain.models.context import ContextRequest
 from inkflow.domain.ports.context_errors import ContextBudgetExceededError
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/context", tags=["上下文管理"])
 
@@ -36,6 +37,7 @@ router = APIRouter(prefix="/api/v1/context", tags=["上下文管理"])
 
 
 @router.post("/assemble")
+@instrument(caller_type="api")
 async def assemble_context(
     request: ContextRequest,
     db: AsyncSession = Depends(get_db),
@@ -58,6 +60,7 @@ async def assemble_context(
 
 
 @router.get("/chapters/{chapter_id}/summary")
+@instrument(caller_type="api")
 async def get_chapter_summary(
     chapter_id: str,
     db: AsyncSession = Depends(get_db),
@@ -89,6 +92,7 @@ async def get_chapter_summary(
 
 
 @router.post("/chapters/{chapter_id}/summary/refresh")
+@instrument(caller_type="api")
 async def refresh_chapter_summary(
     chapter_id: str,
     db: AsyncSession = Depends(get_db),

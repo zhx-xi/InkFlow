@@ -15,11 +15,13 @@ from inkflow.core.config import (
     config,
     save_config_json,
 )
+from inkflow.logging import instrument
 
 app = typer.Typer(name="config", help="系统配置管理", no_args_is_help=True)
 
 
 @app.command("show")
+@instrument(caller_type="cli")
 def show_config(ctx: typer.Context) -> None:
     """展示当前配置."""
     cli_ctx: CliContext = ctx.obj
@@ -36,6 +38,7 @@ def show_config(ctx: typer.Context) -> None:
 
 
 @app.command("set")
+@instrument(caller_type="cli")
 def set_config(
     ctx: typer.Context,
     key: str = typer.Argument(..., help="配置 key"),

@@ -159,4 +159,7 @@ def log_structured(
         exclude={"timestamp", "level", "logger"},
         exclude_none=True,
     )
-    logger.bind(**bound).log(level, message)
+    # loguru 内建警告级别名是 "WARNING"（无 "WARN"）：仅在 .log 前映射；
+    # StructuredLogRecord.level 仍按 spec 存原始 "WARN"。
+    loguru_level = "WARNING" if level == "WARN" else level
+    logger.bind(**bound).log(loguru_level, message)

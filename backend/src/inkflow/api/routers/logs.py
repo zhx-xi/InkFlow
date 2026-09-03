@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from inkflow.core.config import config
-from inkflow.logging import StructuredLogRecord, StructuredLogStore, mask_fields
+from inkflow.logging import StructuredLogRecord, StructuredLogStore, instrument, mask_fields
 
 router = APIRouter(prefix="/api/v1/logs", tags=["Logs"])
 
@@ -45,6 +45,7 @@ class LogRecordInput(BaseModel):
 
 
 @router.get("")
+@instrument(caller_type="api")
 async def query_logs(
     level: str | None = None,
     caller_type: str | None = None,
@@ -76,6 +77,7 @@ async def query_logs(
 
 
 @router.post("")
+@instrument(caller_type="api")
 async def ingest_log(
     record: LogRecordInput,
     store: StructuredLogStore = Depends(get_log_store),

@@ -48,6 +48,7 @@ from inkflow.domain.models.search import (
 )
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.services.search_service import SearchService
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/search", tags=["Search"])
 
@@ -124,6 +125,7 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
 
 
 @router.get("")
+@instrument(caller_type="api")
 async def search_endpoint(
     q: str = Query(..., min_length=1, max_length=100),
     project_id: str | None = None,
@@ -156,6 +158,7 @@ async def search_endpoint(
 
 
 @router.post("/rebuild")
+@instrument(caller_type="api")
 async def rebuild_endpoint(
     project_id: str | None = None,
     project_ids: str | None = None,

@@ -41,6 +41,7 @@ from inkflow.domain.services.skill_service import SkillService
 from inkflow.infrastructure.database.repositories.agent_repo import (
     SQLiteAgentRepository,
 )
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/skills", tags=["Skills"])
 
@@ -121,6 +122,7 @@ def _to_response(skill: Skill, *, agent_ids: list[dict] | None = None) -> dict:
 
 
 @router.get("")
+@instrument(caller_type="api")
 async def list_skills(
     db: AsyncSession = Depends(get_db),
 ):
@@ -135,6 +137,7 @@ async def list_skills(
 
 
 @router.post("", status_code=201)
+@instrument(caller_type="api")
 async def create_skill(
     data: SkillCreate,
     db: AsyncSession = Depends(get_db),
@@ -147,6 +150,7 @@ async def create_skill(
 
 
 @router.post("/upload-zip", status_code=201)
+@instrument(caller_type="api")
 async def upload_skill_zip(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -190,6 +194,7 @@ async def upload_skill_zip(
 
 
 @router.post("/upload-url", status_code=201)
+@instrument(caller_type="api")
 async def upload_skill_url(
     data: SkillUploadUrlRequest,
     db: AsyncSession = Depends(get_db),
@@ -220,6 +225,7 @@ async def upload_skill_url(
 
 
 @router.post("/{skill_name}/duplicate", status_code=201)
+@instrument(caller_type="api")
 async def duplicate_skill(
     skill_name: str,
     db: AsyncSession = Depends(get_db),
@@ -232,6 +238,7 @@ async def duplicate_skill(
 
 
 @router.get("/{skill_name}")
+@instrument(caller_type="api")
 async def get_skill(
     skill_name: str,
     db: AsyncSession = Depends(get_db),
@@ -244,6 +251,7 @@ async def get_skill(
 
 
 @router.patch("/{skill_name}")
+@instrument(caller_type="api")
 async def update_skill(
     skill_name: str,
     data: SkillUpdate,
@@ -258,6 +266,7 @@ async def update_skill(
 
 
 @router.delete("/{skill_name}", status_code=204)
+@instrument(caller_type="api")
 async def delete_skill(
     skill_name: str,
     db: AsyncSession = Depends(get_db),

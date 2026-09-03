@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from inkflow.domain.models.agent_tools import ToolSpec
 from inkflow.infrastructure.agent.tools import _tool_db_lock as _tool_db_lock_mod
 from inkflow.infrastructure.agent.tools.reader_tools import Tool
+from inkflow.logging import instrument
 
 
 def _coerce_uuid(value: object) -> uuid.UUID:
@@ -126,6 +127,7 @@ def build_setting_write_tools(deps: SettingWriteToolDeps) -> list[Tool]:
     Returns:
         三个可执行 Tool；func 成功/失败均返回 JSON 信封且不抛异常。
     """
+    @instrument(caller_type="tool")
     async def _create_character(
         project_id: uuid.UUID | str | None = None,
         name: str = "",
@@ -188,6 +190,7 @@ def build_setting_write_tools(deps: SettingWriteToolDeps) -> list[Tool]:
                     )
                 return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
+    @instrument(caller_type="tool")
     async def _create_world_setting(
         project_id: uuid.UUID | str | None = None,
         name: str = "",
@@ -244,6 +247,7 @@ def build_setting_write_tools(deps: SettingWriteToolDeps) -> list[Tool]:
                     )
                 return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
+    @instrument(caller_type="tool")
     async def _create_outline(
         project_id: uuid.UUID | str | None = None,
         name: str = "",

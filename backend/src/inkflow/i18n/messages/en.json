@@ -1,7 +1,11 @@
 {
+  "log.check.agent_order_guardrail": "Agent pipeline guardrail hit (fallback to default topology)",
   "log.event.create_chapter": "Created chapter: {title}",
+  "log.event.create_project": "Created project: {name}",
+  "log.event.delete_project": "Deleted project: {project_id}",
+  "log.event.llm_request": "LLM request: {model} ({count} messages)",
+  "log.event.llm_response": "LLM response: {model} ({length} chars)",
   "log.event.update_project": "Updated project: {name}",
-  "log.event.delete_project": "Deleted project: {name}",
   "api.error.project_not_found": "Project not found: {project_id}",
   "api.error.validation_failed": "Request validation failed"
 }

@@ -47,6 +47,7 @@ from inkflow.domain.models.session import (
 )
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+from inkflow.logging import instrument
 
 app = typer.Typer(name="session", help="会话管理", no_args_is_help=True)
 
@@ -165,6 +166,7 @@ def _resolve_context(context_json: str | None, context_file: str | None) -> dict
 
 
 @app.command("create")
+@instrument(caller_type="cli")
 def create_session_cmd(
     ctx: typer.Context,
     session_type: str = typer.Option(..., "--type", help="会话类型 (writing / task)"),
@@ -214,6 +216,7 @@ def create_session_cmd(
 
 
 @app.command("list")
+@instrument(caller_type="cli")
 def list_sessions_cmd(
     ctx: typer.Context,
     session_type: str | None = typer.Option(None, "--type", help="会话类型过滤 (writing / task)"),
@@ -279,6 +282,7 @@ def list_sessions_cmd(
 
 
 @app.command("get")
+@instrument(caller_type="cli")
 def get_session_cmd(
     ctx: typer.Context,
     session_id: str = typer.Option(..., "--id", "-i", help="会话 ID (UUID)"),
@@ -315,6 +319,7 @@ def get_session_cmd(
 
 
 @app.command("update")
+@instrument(caller_type="cli")
 def update_session_cmd(
     ctx: typer.Context,
     session_id: str = typer.Option(..., "--id", "-i", help="会话 ID (UUID)"),
@@ -360,6 +365,7 @@ def update_session_cmd(
 
 
 @app.command("pause")
+@instrument(caller_type="cli")
 def pause_session_cmd(
     ctx: typer.Context,
     session_id: str = typer.Option(..., "--id", "-i", help="会话 ID (UUID)"),
@@ -382,6 +388,7 @@ def pause_session_cmd(
 
 
 @app.command("resume")
+@instrument(caller_type="cli")
 def resume_session_cmd(
     ctx: typer.Context,
     session_id: str = typer.Option(..., "--id", "-i", help="会话 ID (UUID)"),
@@ -404,6 +411,7 @@ def resume_session_cmd(
 
 
 @app.command("complete")
+@instrument(caller_type="cli")
 def complete_session_cmd(
     ctx: typer.Context,
     session_id: str = typer.Option(..., "--id", "-i", help="会话 ID (UUID)"),
@@ -432,6 +440,7 @@ def complete_session_cmd(
 
 
 @app.command("fail")
+@instrument(caller_type="cli")
 def fail_session_cmd(
     ctx: typer.Context,
     session_id: str = typer.Option(..., "--id", "-i", help="会话 ID (UUID)"),
@@ -464,6 +473,7 @@ def fail_session_cmd(
 
 
 @app.command("logs")
+@instrument(caller_type="cli")
 def list_logs_cmd(
     ctx: typer.Context,
     session_id: str = typer.Option(..., "--id", "-i", help="会话 ID (UUID)"),
@@ -511,6 +521,7 @@ def list_logs_cmd(
 
 
 @log_app.command("add")
+@instrument(caller_type="cli")
 def add_log_cmd(
     ctx: typer.Context,
     session_id: str = typer.Option(..., "--id", "-i", help="会话 ID (UUID)"),
@@ -547,6 +558,7 @@ def add_log_cmd(
 
 
 @app.command("delete")
+@instrument(caller_type="cli")
 def delete_session_cmd(
     ctx: typer.Context,
     session_id: str = typer.Option(..., "--id", "-i", help="会话 ID (UUID)"),
@@ -574,6 +586,7 @@ def delete_session_cmd(
 
 
 @app.command("restore")
+@instrument(caller_type="cli")
 def restore_session_cmd(
     ctx: typer.Context,
     session_id: str = typer.Option(..., "--id", "-i", help="会话 ID (UUID)"),

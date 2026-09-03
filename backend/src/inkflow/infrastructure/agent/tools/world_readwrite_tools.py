@@ -33,6 +33,7 @@ from inkflow.infrastructure.agent.tools.reader_tools import (
     _ok,
     _serialize_data,
 )
+from inkflow.logging import instrument
 
 T = TypeVar("T")
 
@@ -236,6 +237,7 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
         八个可执行 Tool；func 成功/失败均返回 JSON 信封且不抛异常。
     """
 
+    @instrument(caller_type="tool")
     async def _list_maps(
         project_id: uuid.UUID | str | None = None,
         root_location_id: uuid.UUID | str | None = None,
@@ -255,6 +257,7 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
             except Exception as exc:
                 return _fail(exc)
 
+    @instrument(caller_type="tool")
     async def _create_map(
         project_id: uuid.UUID | str | None = None,
         name: str = "",
@@ -303,6 +306,7 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
                     )
                 return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
+    @instrument(caller_type="tool")
     async def _update_map(
         project_id: uuid.UUID | str | None = None,
         map_id: uuid.UUID | str = "",
@@ -344,6 +348,7 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
                     )
                 return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
+    @instrument(caller_type="tool")
     async def _list_timeline_events(
         project_id: uuid.UUID | str | None = None,
         search: str | None = None,
@@ -362,6 +367,7 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
             except Exception as exc:
                 return _fail(exc)
 
+    @instrument(caller_type="tool")
     async def _create_timeline_event(
         project_id: uuid.UUID | str | None = None,
         title: str = "",
@@ -412,6 +418,7 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
                     )
                 return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
+    @instrument(caller_type="tool")
     async def _update_timeline_event(
         project_id: uuid.UUID | str | None = None,
         event_id: uuid.UUID | str = "",
@@ -459,6 +466,7 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
                     )
                 return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
+    @instrument(caller_type="tool")
     async def _create_foreshadowing(
         project_id: uuid.UUID | str | None = None,
         title: str = "",
@@ -505,6 +513,7 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
                     )
                 return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
+    @instrument(caller_type="tool")
     async def _update_foreshadowing(
         project_id: uuid.UUID | str | None = None,
         foreshadowing_id: uuid.UUID | str = "",

@@ -17,6 +17,7 @@ from inkflow.domain.services.agent_service import AgentService, AgentServiceErro
 from inkflow.infrastructure.agent.langgraph_pipeline import LangGraphAgentPipeline
 from inkflow.infrastructure.agent.supervisor_pipeline import SupervisorPipeline
 from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/agent", tags=["Agent"])
 
@@ -100,6 +101,7 @@ def _encode_pipeline_error(message: str) -> str:
 
 
 @router.post("/pipelines/stream")
+@instrument(caller_type="api")
 async def stream_pipeline(
     data: PipelineExecuteRequest,
     request: Request,
@@ -132,6 +134,7 @@ async def stream_pipeline(
 
 
 @router.post("/pipelines/execute", status_code=202)
+@instrument(caller_type="api")
 async def execute_pipeline(
     data: PipelineExecuteRequest,
     db: AsyncSession = Depends(get_db),
@@ -151,6 +154,7 @@ async def execute_pipeline(
 
 
 @router.get("/pipelines/executions/{execution_id}")
+@instrument(caller_type="api")
 async def get_execution_status(
     execution_id: str,
     db: AsyncSession = Depends(get_db),
@@ -164,6 +168,7 @@ async def get_execution_status(
 
 
 @router.post("/pipelines/executions/{execution_id}/confirm")
+@instrument(caller_type="api")
 async def confirm_execution(
     execution_id: str,
     data: ConfirmRequest,
@@ -181,6 +186,7 @@ async def confirm_execution(
 
 
 @router.get("/pipelines/executions")
+@instrument(caller_type="api")
 async def list_executions(
     project_id: str = Query(...),
     limit: int = Query(20, ge=1, le=100),
@@ -192,6 +198,7 @@ async def list_executions(
 
 
 @router.post("/pipelines/validate")
+@instrument(caller_type="api")
 async def validate_pipeline(
     config: PipelineConfig,
     db: AsyncSession = Depends(get_db),
@@ -202,6 +209,7 @@ async def validate_pipeline(
 
 
 @router.get("/pipelines/templates")
+@instrument(caller_type="api")
 async def list_templates(db: AsyncSession = Depends(get_db)):
     """列出内置管线模板。"""
     svc = _svc(db)
