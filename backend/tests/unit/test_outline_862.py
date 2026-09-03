@@ -40,6 +40,7 @@ from datetime import datetime
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from pydantic import ValidationError
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -48,7 +49,7 @@ from inkflow.api.routers.outlines import router
 from inkflow.core.database import Base
 from inkflow.domain.models.outline import Outline, OutlineUpdate
 from inkflow.domain.services.outline_service import OutlineService
-from inkflow.infrastructure.database.models.chapter import ChapterORM
+from inkflow.infrastructure.database.models.chapter import ChapterORM, VolumeORM
 from inkflow.infrastructure.database.models.project import ProjectORM
 from inkflow.infrastructure.database.repositories.outline_repo import SQLiteOutlineRepository
 
@@ -256,3 +257,66 @@ class TestOutline862HttpLink:
             resp2 = await client.get(url)
             assert resp2.status_code == 200
             assert resp2.json()["parent_id"] == str(volume.id)
+
+
+def test_garbage_string_rejected_not_silently_cleared() -> None:
+    """垃圾非空字符串（非 UUID）→ ValidationError，消息含「合法 UUID」（L121-122 分支）。"""
+    for field, label, value in (
+        ("chapter_id", "章关联", "not-a-uuid"),
+        ("parent_id", "父大纲", "  x  "),  # strip 后仍非空非 UUID
+        ("volume_id", "卷关联", "not-a-uuid"),
+    ):
+        with pytest.raises(ValidationError) as excinfo:
+            OutlineUpdate(**{field: value})
+        msg = str(excinfo.value)
+        assert label in msg
+        assert "合法 UUID" in msg
+
+
+def test_illegal_type_rejected() -> None:
+    """非 str/UUID/None 类型（int）→ ValidationError，消息含「UUID」（L123）。"""
+    with pytest.raises(ValidationError) as excinfo:
+        OutlineUpdate(chapter_id=123)
+    msg = str(excinfo.value)
+    assert "章关联" in msg
+    assert "UUID" in msg
+
+
+def test_whitespace_clear_sentinel_preserved() -> None:
+    """纯空白字符串保留 "" 清除哨兵、不抛错（清除态由 service 层转 None）。"""
+    assert OutlineUpdate(chapter_id="   ").chapter_id == ""
+    assert OutlineUpdate(parent_id=" \t ").parent_id == ""
+    assert OutlineUpdate(volume_id="  ").volume_id == ""
+
+
+@pytest.mark.integration
+class TestOutline862ServiceVolumeLink:
+    """卷级大纲 volume_id：UUID 对象设置落库读回 → "" 清除读回 None（service L340-342 分支）。"""
+
+    async def test_update_outline_volume_id_set_then_cleared(self, db_session) -> None:
+        pid, volume, _, _ = await _seed_tree(db_session)
+        # 卷关联列 FK → volumes.id（FK 开启）：先落真实 VolumeORM 行（卷行必须存在），
+        # chapter_repo 未注入 → get_volume 存在性校验跳过
+        volume_orm = VolumeORM(project_id=pid.int, title="写作卷实体")
+        db_session.add(volume_orm)
+        await db_session.commit()
+        await db_session.refresh(volume_orm)
+        volume_uuid = uuid.UUID(int=volume_orm.id)
+        repo = SQLiteOutlineRepository(db_session)
+        svc = OutlineService(repository=repo)
+
+        # 设置步：UUID 对象 → isinstance 判定 True → 走「设置」分支（不清除）
+        result = await svc.update_outline(volume.id, OutlineUpdate(volume_id=volume_uuid))
+        assert result is not None
+        assert result.volume_id == volume_uuid
+        got = await repo.get(volume.id.int)
+        assert got is not None
+        assert got.volume_id == volume_uuid
+
+        # 清除步："" 哨兵 → 非 uuid.UUID → updates["volume_id"] = None（覆盖 L340-342）
+        result2 = await svc.update_outline(volume.id, OutlineUpdate(volume_id=""))
+        assert result2 is not None
+        assert result2.volume_id is None
+        got2 = await repo.get(volume.id.int)
+        assert got2 is not None
+        assert got2.volume_id is None
