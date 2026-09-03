@@ -11,28 +11,42 @@ import yaml
 
 from inkflow.domain.ports.llm_errors import TemplateNotFoundError, TemplateRenderError
 from inkflow.domain.ports.prompt_template import PromptTemplate, RenderedPrompt
+from inkflow.i18n.resolver import resolve_locale
 
 
 class LangChainPromptManager:
     """YAML Prompt 模板管理器。
 
     Args:
-        templates_dir: YAML 模板存储目录路径。None 时使用包内默认模板目录。
+        templates_dir: YAML 模板存储目录路径（扁平模式，locale 无关）。
+            None 时使用包内 per-locale 模板根 ``inkflow/i18n/prompts/<locale>/``，
+            locale 由 ``resolve_locale()`` 每次调用实时解析。
     """
 
     def __init__(self, templates_dir: str | Path | None = None) -> None:
+        self._prompts_root: Path | None
+        self._templates_dir: Path | None
         if templates_dir is None:
-            import inkflow.infrastructure.llm as llm_pkg
+            import inkflow.i18n as i18n_pkg
 
-            templates_dir = Path(llm_pkg.__file__).parent / "templates"
-        self._templates_dir = Path(templates_dir)
-        self._templates_dir.mkdir(parents=True, exist_ok=True)
+            self._prompts_root = Path(i18n_pkg.__file__).resolve().parent / "prompts"
+            self._templates_dir = None
+        else:
+            self._prompts_root = None
+            self._templates_dir = Path(templates_dir)
+            self._templates_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Public API ──
 
-    def load(self, template_name: str) -> PromptTemplate:
-        """从 YAML 文件加载 Prompt 模板。"""
-        path = self._template_path(template_name)
+    def load(self, template_name: str, locale: str | None = None) -> PromptTemplate:
+        """从 YAML 文件加载 Prompt 模板。
+
+        扁平模式（构造时显式传 templates_dir）：locale 被忽略，读
+        ``<templates_dir>/<name>.yaml``。per-locale 模式：按
+        ``resolve_locale(locale)`` 读 ``i18n/prompts/<locale>/<name>.yaml``；
+        目标 locale 文件缺失时回退 ``zh``，仍缺失则抛 TemplateNotFoundError。
+        """
+        path = self._template_path(template_name, locale)
         if not path.exists():
             raise TemplateNotFoundError(template_name)
 
@@ -81,12 +95,16 @@ class LangChainPromptManager:
 
         return RenderedPrompt(messages=messages, token_estimate=token_estimate)
 
-    def list_templates(self) -> list[str]:
-        """列出所有可用模板名称（不含扩展名）。"""
-        names: list[str] = []
-        for path in self._templates_dir.glob("*.yaml"):
-            names.append(path.stem)
-        return sorted(names)
+    def list_templates(self, locale: str | None = None) -> list[str]:
+        """列出可用模板名称（不含扩展名）。
+
+        扁平模式列出 ``templates_dir/*.yaml``；per-locale 模式列出
+        ``prompts/<resolve_locale(locale)>/*.yaml``。
+        """
+        base = self._resolve_dir(locale)
+        if base is None or not base.is_dir():
+            return []
+        return sorted(path.stem for path in base.glob("*.yaml"))
 
     def validate(
         self,
@@ -98,8 +116,27 @@ class LangChainPromptManager:
 
     # ── Private helpers ──
 
-    def _template_path(self, name: str) -> Path:
-        return self._templates_dir / f"{name}.yaml"
+    def _resolve_dir(self, locale: str | None) -> Path | None:
+        """返回当前模式下的模板目录（per-locale 时按 locale 解析）。"""
+        if self._templates_dir is not None:
+            return self._templates_dir
+        assert self._prompts_root is not None
+        return self._prompts_root / resolve_locale(locale)
+
+    def _template_path(self, name: str, locale: str | None = None) -> Path:
+        """定位模板文件；per-locale 模式下目标文件缺失时回退 zh。"""
+        base = self._resolve_dir(locale)
+        if self._templates_dir is not None:
+            assert base is not None
+            return base / f"{name}.yaml"
+        assert base is not None
+        path = base / f"{name}.yaml"
+        if not path.exists() and resolve_locale(locale) != "zh":
+            assert self._prompts_root is not None
+            fallback = self._prompts_root / "zh" / f"{name}.yaml"
+            if fallback.exists():
+                return fallback
+        return path
 
     @staticmethod
     def _format(template_str: str, variables: dict[str, str]) -> str:

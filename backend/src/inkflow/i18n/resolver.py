@@ -61,16 +61,35 @@ def resolve_locale(lang: str | None = None) -> str:
     return "zh"
 
 
+def user_i18n_root() -> Path:
+    """返回用户 i18n 覆盖根目录（%APPDATA%/InkFlow/i18n，无 APPDATA 时用 home）。
+
+    覆盖文件布局：<root>/<domain>/<locale>.override.json。测试可 monkeypatch
+    本函数（返回 None 表示无覆盖层）。
+    """
+    base = os.environ.get("APPDATA") or Path.home()
+    return Path(base) / "InkFlow" / "i18n"
+
+
 def load_messages(domain: str, locale: str) -> dict[str, str]:
-    """读取 ``inkflow/i18n/<domain>/<locale>.json``，返回 msgid -> 模板 dict。
+    """读取消息目录并合并用户覆盖层，返回 msgid -> 模板 dict。
 
     locale 必须是归一化值（'zh'/'en'）；文件缺失返回 {}。
-    路径基于本模块 ``__file__.parent``（即 ``inkflow/i18n/``）定位。
+    打包默认：``inkflow/i18n/<domain>/<locale>.json``（基于本模块 ``__file__.parent``
+    定位）；用户覆盖：``user_i18n_root()/<domain>/<locale>.override.json`` 键级
+    merge（覆盖层优先）。孤儿键（不在打包默认中）记 logger.warning。
     """
     path = Path(__file__).resolve().parent / domain / f"{locale}.json"
-    if not path.is_file():
-        return {}
-    return dict(json.loads(path.read_text(encoding="utf-8")))
+    defaults = dict(json.loads(path.read_text(encoding="utf-8"))) if path.is_file() else {}
+    overrides: dict[str, str] = {}
+    root = user_i18n_root()
+    if root is not None:
+        override_path = Path(root) / domain / f"{locale}.override.json"
+        if override_path.is_file():
+            overrides = dict(json.loads(override_path.read_text(encoding="utf-8")))
+    for orphan in sorted(set(overrides) - set(defaults)):
+        logger.warning("orphan i18n override key: {}:{}.{}", domain, locale, orphan)
+    return {**defaults, **overrides}
 
 
 def _interpolate(template: str, params: dict | None) -> str:
