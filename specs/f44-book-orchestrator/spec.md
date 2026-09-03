@@ -1,7 +1,7 @@
 # F44: 长任务编排器（long-task-orchestrator）功能规格
 > **端**: cross
 
-**Spec 版本**: 1.2（#475 访谈 LLM 动态提问 + 对话式 UI + 会话落库，2026-08-19）
+**Spec 版本**: 1.3（#897 完成态判据收紧 + 失败原因可见，2026-09-03；v1.2 #475 访谈 LLM 动态提问）
 **日期**: 2026-08-17
 **依据**: 设计定稿 `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §2 全文（唯一真相）+ Issue #335（阶段 1）/ #336（阶段 2）/ #337（阶段 3）/ #338（阶段 4）+ Spike 验证报告 `docs/f44-orchestrator-spike-2026-08-17.md`（M1 门禁，workspace docs）+ 已合入源码核查（F27/F42/F29/F39/F6）+ Issue #475（访谈 LLM 动态提问，D1 拍板 2026-08-19）+ #486（会话/记忆 UI，D9，下游消费方）
 **所属阶段**: 0.10.0（长任务编排器，F44 四阶段），估算 24-39 人天（#335 阶段 1：5-8 / #336 阶段 2：4-6 / #337 阶段 3：7-11 / #338 阶段 4：8-10 + GUI 已含，part-time 8-10 周；v1.1 较 v1.0 的 16-26 人天增加 Q1=C GUI +8-12 与 Q2=C 项目级上限 +0.5-1）；v1.2 #475 访谈 LLM 动态提问为 0.10.1 增量（估算 5-8 人天，拆 2 PR：后端提问引擎 + 前端对话式 UI，S3 实现轨）
@@ -461,6 +461,30 @@ Spike ③ 实测：卷内全部章并行写完 → 卷边界 interrupt 暂停（
 - **回归摘要面板**：`GET /runs/{run_id}/summary` 渲染（到哪了/接下来/已耗一页说清 + 结构化运行日志回放/导出按钮，镜像 CLI `--export`）
 - **观察流三层密度切换**：表演（trace 全文）/仪表（章状态+计数）/无声（仅进度树）三档切换 → `density` 查询参数（§3.4 GUI 对接注）
 - **克制原则（ui-design-taste）**：安静纸张感（暖白背景非纯白）、动效 ≤200ms 仅状态变化、SSE 流式是唯一「动态感」来源、写作页核心区域信息密度最低档（面板可折叠/默认收起）
+
+### 5.5 v1.3 增量：完成态判据收紧 + 失败原因可见（#897）
+
+> 背景：#860（PR #896）修复「key 缺失静默空值」路径后，**凭据存在但无效**（key 吊销 / provider 故障 / ollama daemon 未运行）时残留同形态假绿——`resolve_llm_credentials` 只验「有没有 key」不验「能不能用」，装配成功后章委托运行期抛错 → 全章 `progress=failed`、`tokens_used=0`、顶层 `status=completed`。book run 为 fire-and-forget 后台任务，用户只能靠轮询 status 发现，status 又不含失败原因，定位成本极高。
+
+**完成态判据（三轨统一）**：一切「欲设 completed」的收尾点（`write_book` 章循环结束 / `write_book_volume` execute 正常返回 / `confirm_run`、`resume_run` result.status=completed / `write_book_agentic` result.status=completed）改为按**章级事实**派生：
+
+| 章级事实 | run 终态 |
+|---|---|
+| failed 章 > 0 且 done 章 == 0 | `failed` |
+| failed 章 > 0 且 done 章 > 0 | `degraded`（新增终态：部分成功） |
+| failed 章 == 0 | `completed` |
+
+`aborted` / `waiting_hitl` 既有语义不变（护栏中止/ HITL 暂停不重新派生）。无章快路径（`prepare_run` 无目标章）不派生，维持 completed。
+
+**章级事实权威源（按轨）**：静态轨 = `plan.progress`（服务层自持）；volume/agentic 轨 = 收尾时 `volume_pipeline/agentic_pipeline.get_checkpoint_state(thread_id)["results"]`（`{outline_id: execution_id | "failed"}`）同步回 `plan.progress` 后派生；pipeline 鸭子无 `get_checkpoint_state`（阶段 3 旧测试形态）→ 跳过派生维持原状态（防御分支，向后兼容守护）。收尾读取必须是 resume/execute 动作完成后的**重读（fresh read）**：`confirm_run` / `resume_run` 动作前的那次读取仅用于 `__interrupt__` 判定，**不得复用为事实源**——动作前快照不含续跑段章事实，复用即 #897 假绿残留（独立评审 MAJOR 发现，v1.3 澄清）。resume_run 单测的 checkpoint 读取次数契约相应放宽为「至少一次含动作后重读」。
+
+**失败原因可见（验收 2 落定）**：`WritingPlan` 新增顶层字段 `progress_reason: str | None`（ORM String(2000) nullable + `ensure_writing_plan_progress_reason_column` 幂等迁移，镜像 `hitl_payload` 先例）。收尾派生为 failed/degraded 时写入摘要（≤2000 截断）：静态轨 = 每章「outline_id: 异常类名: 消息」行（委托失败即时采集，单前缀不重复）；volume/agentic 轨 = failed 章列表 + 「凭据无效或运行时错误，详见章执行日志」提示。`GET /runs/{run_id}` 与 `GET /runs/{run_id}/summary` 响应新增顶层键 `progress_reason`，**仅 `failed`/`degraded` 态透出**（其余状态按状态门控返回 null，中间态不显示陈旧值）；`mark_failed`（整单异常兜底，无章级原因语义）清空该字段——防跨态泄漏（v1.3 澄清）。
+
+**同类异常短路剩余章（裁定：不做）**：原因可见后用户可经 `intervene redirect` 处置；「连续 N 章同型异常即中止」有误伤风险（provider 瞬时抖动 + 章级重试已兜），且后台任务强杀语义未定。留待真实使用反馈再起。
+
+**GUI/CLI**：CLI `book status` 与 GUI `runStatus` 徽标为字符串透传，`degraded`/`failed` 自动呈现（轮询停止条件为非 running/pending，无需改）；degraded 专属样式随后续 GUI 批次评估（issue 裁定「API 字段先行，最小可不做」）。
+
+**契约翻转**：`test_write_book_chapter_failure_marks_failed_continues`（部分失败旧期望 completed）按本节翻转为 `degraded`——先对齐 spec 再动（本节即对齐依据）。
 
 ## 6. 组织规则
 

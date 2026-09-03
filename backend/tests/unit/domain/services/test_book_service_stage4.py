@@ -700,7 +700,9 @@ class TestResumeRun:
 
         result = await svc.resume_run(str(plan.id))
 
-        pipeline.get_checkpoint_state.assert_awaited_once_with("t-restart-1")
+        # #897 §5.5 v1.3 澄清：收尾需动作后 fresh 重读（次数放宽为含重读），
+        # 首次调用参数断言不变
+        pipeline.get_checkpoint_state.assert_any_await("t-restart-1")
         pipeline.resume.assert_awaited_once()
         call = pipeline.resume.await_args
         assert isinstance(call.args[0], VolumeHITLInterrupt)
@@ -757,7 +759,8 @@ class TestResumeRun:
 
         result = await svc.resume_run(str(plan.id))
 
-        pipeline.get_checkpoint_state.assert_awaited_once_with("t-restart-2")
+        # #897 §5.5 v1.3 澄清：收尾需动作后 fresh 重读（次数放宽为含重读）
+        pipeline.get_checkpoint_state.assert_any_await("t-restart-2")
         pipeline.execute.assert_awaited_once()
         call = pipeline.execute.await_args
         assert call.args[0] is plan

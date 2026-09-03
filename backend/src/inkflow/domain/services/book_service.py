@@ -156,7 +156,7 @@ class BookService(BookRunMixin):
             limits: 请求显式上限；None = 回退项目级 extra / 默认常量.
 
         Returns:
-            {"run_id": str(plan.id), "status": "completed"}.
+            {"run_id": str(plan.id), "status": "completed" | "failed" | "degraded"}.
 
         Raises:
             ValueError: 计划不存在；或上限全无（「至少一道有限护栏」不变量）.
@@ -186,6 +186,7 @@ class BookService(BookRunMixin):
                 plan
             )
             return {"run_id": str(plan.id), "status": "completed"}
+        failure_reasons: dict[str, str] = {}
         for chapter in chapters:
             done_count = sum(1 for v in plan.progress.values() if v == "done")
             if (
@@ -193,28 +194,26 @@ class BookService(BookRunMixin):
                 or len(plan.execution_refs) >= merged.max_agent_calls
             ):
                 plan.progress[str(chapter.id)] = "skipped"
-                await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
-                    plan
-                )
+                await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
                 continue
             plan.progress[str(chapter.id)] = "in_progress"
-            await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
-                plan
-            )
+            await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
             try:
                 execution_id = await self._delegate_chapter(plan, chapter, merged)
                 plan.progress[str(chapter.id)] = "done"
                 plan.execution_refs[str(chapter.id)] = execution_id
-            except Exception:
+            except Exception as exc:
                 plan.progress[str(chapter.id)] = "failed"
-            await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
-                plan
-            )
-        plan.status = "completed"
-        await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
-            plan
+                failure_reasons[str(chapter.id)] = f"{type(exc).__name__}: {exc}"
+            await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
+        plan.status = self._derive_run_status(plan.progress)
+        plan.progress_reason = (
+            self._static_track_reason([f"{oid}: {msg}" for oid, msg in failure_reasons.items()])
+            if plan.status in {"failed", "degraded"}
+            else None
         )
-        return {"run_id": str(plan.id), "status": "completed"}
+        await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
+        return {"run_id": str(plan.id), "status": plan.status}
 
     async def write_book_volume(
         self, plan_id: uuid.UUID, limits: BookLimits | None = None
@@ -235,7 +234,8 @@ class BookService(BookRunMixin):
             limits: 请求显式上限；None = 回退项目级 extra / 默认常量.
 
         Returns:
-            {"run_id": str(plan.id), "status": "waiting_hitl" | "completed"}.
+            {"run_id": str(plan.id), "status": "waiting_hitl" | "completed" | "failed" |
+            "degraded"}.
 
         Raises:
             ValueError: 计划不存在 / 上限全无 / volume_pipeline 未配置.
@@ -269,22 +269,22 @@ class BookService(BookRunMixin):
             )
         # 函数体 import：domain 层不形成对 infrastructure 的模块级依赖（ADR-002/015）
         from inkflow.infrastructure.agent.book_pipeline import VolumeHITLInterrupt
-
         try:
             await self._call_pipeline_execute(plan, volumes, merged, thread_id=thread_id)
         except VolumeHITLInterrupt as exc:
             # 卷边界/卷失败中断：waiting_hitl + payload + thread_id 落库（中断不传播）
             plan.status = "waiting_hitl"
             plan.hitl_payload = exc.payload
-            await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
-                plan
-            )
+            await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
             return {"run_id": str(plan.id), "status": "waiting_hitl"}
-        plan.status = "completed"
-        await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
-            plan
+        plan.status = await self._sync_and_finalize(
+            plan,
+            self._volume_pipeline,
+            thread_id=thread_id,
+            fallback_reason="凭据无效或运行时错误，详见章执行日志",
         )
-        return {"run_id": str(plan.id), "status": "completed"}
+        await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
+        return {"run_id": str(plan.id), "status": plan.status}
 
     async def confirm_run(self, run_id: str, *, approved: bool, decision: str = "") -> dict:
         """卷级 HITL 确认（阶段 3，#337）：waiting_hitl → pipeline.resume 继续 / 再次暂停.
@@ -327,18 +327,22 @@ class BookService(BookRunMixin):
         except VolumeHITLInterrupt as exc:
             # 下一卷边界：更新 payload + 落库，保持 waiting_hitl
             plan.hitl_payload = exc.payload
-            await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
-                plan
-            )
+            await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
             return {
                 "run_id": str(plan.id),
                 "status": "waiting_hitl",
                 "hitl_payload": exc.payload,
             }
         plan.status = str(result.get("status", "completed"))
-        await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
-            plan
-        )
+        if plan.status == "completed":
+            plan.status = await self._sync_and_finalize(
+                plan,
+                self._volume_pipeline,
+                thread_id=thread_id,
+                fallback_reason="凭据无效或运行时错误，详见章执行日志",
+            )
+            result["status"] = plan.status
+        await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
         # execution_store 状态同步（书级运行执行记录 id 固定 = str(plan.id)，阶段 4）
         if self._execution_store is not None:
             await self._execution_store.update_status(  # type: ignore[attr-defined]  # 鸭子类型：execution_store 按 ExecutionStore 契约提供 update_status
@@ -353,19 +357,20 @@ class BookService(BookRunMixin):
             run_id: 书级运行 id（= WritingPlan.id 字符串）.
 
         Returns:
-            {run_id, status, progress, counters}；
-            counters = {max_chapters, max_agent_calls, max_tokens, tokens_used,
-            tokens_warning, agent_calls, chapters_written}.
+            {run_id, status, progress, progress_reason, waiting_hitl, hitl_payload,
+            counters}；progress_reason 仅 failed/degraded 透出（键恒在）.
         """
         plan = await self._repo.get_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 get_writing_plan
             run_id
         )
         if plan is None:
             return None
+        reason = plan.progress_reason if plan.status in {"failed", "degraded"} else None
         return {
             "run_id": run_id,
             "status": plan.status,
             "progress": plan.progress,
+            "progress_reason": reason,
             "waiting_hitl": plan.status == "waiting_hitl",
             "hitl_payload": plan.hitl_payload if plan.status == "waiting_hitl" else None,
             "counters": self._build_counters(plan),
@@ -496,7 +501,7 @@ class BookService(BookRunMixin):
 
         Returns:
             resume/execute 结果 {"run_id", "status": running | waiting_hitl |
-            completed | aborted} 或 {"run_id", "status": "waiting_hitl"}.
+            completed | failed | degraded} 或 {"run_id", "status": "waiting_hitl"}.
 
         Raises:
             ValueError: 运行不存在 / 运行未处于可暂停状态 / volume_pipeline 未配置.
@@ -516,7 +521,6 @@ class BookService(BookRunMixin):
         )
         # 函数体 import：domain 层不形成对 infrastructure 的模块级依赖（ADR-002/015）
         from inkflow.infrastructure.agent.book_pipeline import VolumeHITLInterrupt
-
         if state is not None and state.get("__interrupt__"):
             # pending interrupt：由 checkpoint __interrupt__ 值重建 VolumeHITLInterrupt 续跑
             interrupt_obj = VolumeHITLInterrupt(state["__interrupt__"][0].value)
@@ -532,9 +536,16 @@ class BookService(BookRunMixin):
                 )
                 return {"run_id": str(plan.id), "status": "waiting_hitl"}
             plan.status = str(result.get("status", "completed"))
-            await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
-                plan
-            )
+            if plan.status == "completed":
+                # fresh 重读：动作前快照仅供中断判定，收尾以动作后 checkpoint 为事实源（#897）
+                plan.status = await self._sync_and_finalize(
+                    plan,
+                    self._volume_pipeline,
+                    thread_id=thread_id,
+                    fallback_reason="凭据无效或运行时错误，详见章执行日志",
+                )
+                result["status"] = plan.status  # #897：派生态回写 result
+            await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
             return cast(dict, result)
         # 无 interrupt（cancel 停在普通 superstep）：重新拆卷 + 同 thread_id 续跑
         volumes = await self._find_volumes(plan)
@@ -544,14 +555,18 @@ class BookService(BookRunMixin):
         except VolumeHITLInterrupt as exc:
             plan.status = "waiting_hitl"
             plan.hitl_payload = exc.payload
-            await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
-                plan
-            )
+            await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
             return {"run_id": str(plan.id), "status": "waiting_hitl"}
         plan.status = str(result.get("status", "completed"))
-        await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
-            plan
-        )
+        if plan.status == "completed":
+            plan.status = await self._sync_and_finalize(
+                plan,
+                self._volume_pipeline,
+                thread_id=thread_id,
+                fallback_reason="凭据无效或运行时错误，详见章执行日志",
+            )
+            result["status"] = plan.status
+        await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
         return cast(dict, result)
 
     async def get_summary(self, run_id: str) -> dict[str, Any] | None:
@@ -598,10 +613,12 @@ class BookService(BookRunMixin):
                 next_dict = {"finished": True}
         else:
             next_dict = {"finished": True}
+        reason = plan.progress_reason if plan.status in {"failed", "degraded"} else None
         return {
             "run_id": run_id,
             "status": plan.status,
             "progress": plan.progress,
+            "progress_reason": reason,
             "counters": self._build_counters(plan),
             "steps": steps,
             "next": next_dict,

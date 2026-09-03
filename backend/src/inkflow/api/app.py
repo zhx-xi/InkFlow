@@ -85,6 +85,7 @@ from inkflow.core.database import (
     ensure_world_drop_is_deleted,
     ensure_world_parent_id_column,
     ensure_world_root_unique_index,
+    ensure_writing_plan_progress_reason_column,
     run_character_group_members_migration,
 )
 from inkflow.core.log import setup_logging
@@ -134,6 +135,7 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_chat_messages_conversation_id_column)
         await conn.run_sync(ensure_conversation_title_column)
         await conn.run_sync(ensure_conversations_delete_permission_column)
+        await conn.run_sync(ensure_writing_plan_progress_reason_column)
     # #831：角色分组 N:M 迁移需重建 characters 表移除旧 group_id 列。旧列被 FK
     # 引用时 SQLite DROP COLUMN 会拒止（#820 残留回归）；且在主迁移事务（FK=ON）
     # 内无法通过 PRAGMA foreign_keys=OFF 切换（事务内 no-op），直接 DROP 会沿 FK

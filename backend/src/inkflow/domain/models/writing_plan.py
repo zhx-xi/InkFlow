@@ -47,7 +47,7 @@ class WritingPlan(BaseModel):
         id: 计划 UUID.
         project_id: 所属项目 UUID.
         title: 书名/计划名（planner 访谈产出，或用户一句话标题）.
-        status: 计划状态（drafting/auto/ready/running/completed/aborted）.
+        status: 计划状态（drafting/auto/ready/running/completed/failed/degraded/aborted）.
         root_outline_id: 书级大纲（level=overall）UUID - 结构树锚点.
         start_type: 起点模式（#544）：new / continue / branch.
         source_outline_id: 起点源大纲（continue/branch 用；new 为 None）.
@@ -58,6 +58,7 @@ class WritingPlan(BaseModel):
         execution_refs: 章执行引用 {outline_id: execution_id}.
         thread_id: LangGraph checkpoint thread_id（阶段 4 落库）.
         hitl_payload: 卷级 HITL 暂停 payload（waiting_hitl 时非空，§3/§13.3 M8）.
+        progress_reason: 章级失败原因摘要（#897：failed/degraded 时非空，其余为 None）.
         created_at / updated_at: 时间戳.
     """
 
@@ -77,6 +78,7 @@ class WritingPlan(BaseModel):
     execution_refs: dict[str, str] = Field(default_factory=dict)  # outline_id -> execution_id
     thread_id: str | None = None
     hitl_payload: dict[str, Any] | None = None  # 卷级 HITL 暂停 payload（waiting_hitl 时非空）
+    progress_reason: str | None = None  # 章级失败原因摘要（#897，failed/degraded 时非空）
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 
