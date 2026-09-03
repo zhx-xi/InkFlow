@@ -818,7 +818,7 @@ class BookService(BookRunMixin):
                 {"role": "user", "content": f"请撰写章节《{chapter.name}》：{chapter.description}"},
             ]
         )
-        tokens = result.get("usage", {}).get("total_tokens", 0)
+        tokens = _extract_usage_tokens(result)
         plan.limits["tokens_used"] = plan.limits.get("tokens_used", 0) + tokens
         if plan.limits["tokens_used"] > limits.max_tokens:
             plan.limits["tokens_warning"] = True
@@ -857,3 +857,27 @@ def _extract_final_content(result: dict[str, Any]) -> str:
     if content is None:
         return ""
     return str(content)
+
+
+def _extract_usage_tokens(result: dict[str, Any]) -> int:
+    """Extract cumulative total_tokens from an agent.invoke result.
+
+    Primary source (real deepagents 0.7.5 graph result): per-AIMessage
+    usage_metadata dicts ({'total_tokens': N, ...}) — sum over ALL messages
+    (a ReAct loop makes multiple LLM calls; top-level result has NO usage key).
+    Fallback (legacy/service-level contract, older fakes): top-level
+    result["usage"]["total_tokens"] when present and non-zero.
+    """
+    messages = result.get("messages") or []
+    total = 0
+    for msg in messages:
+        usage = getattr(msg, "usage_metadata", None)
+        if usage is None and isinstance(msg, dict):
+            usage = msg.get("usage_metadata")
+        if isinstance(usage, dict):
+            total += int(usage.get("total_tokens") or 0)
+    if total == 0:
+        usage = result.get("usage")
+        if isinstance(usage, dict):
+            total = int(usage.get("total_tokens") or 0)
+    return total

@@ -14,6 +14,7 @@ _writer_factory 和 _draft_service 均非 None（static 路径可用）。修复
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import patch
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -34,8 +35,18 @@ def db_session():
 
 
 def _get_book_service():
+    """装配缝契约测试：凭据解析按 #860 同源契约经 resolve_llm_credentials 打桩注入。
+
+    本文件锁的是「writer_factory/draft_service 装配完整」（#464/#466），与凭据值无关；
+    #860 修复后 _build_book_service 复用 resolve_llm_credentials（keyless CI 下抛 422），
+    故桩住该缝返回固定凭据（契约 fixture 适配，断言零改动，#821 先例）。
+    """
     session_factory = db_session()
-    return books.get_book_service(db=session_factory())
+    with patch(
+        "inkflow.api._llm_resolver.resolve_llm_credentials",
+        return_value=("deepseek/deepseek-chat", "test-assembly-key", "https://example.test/v1"),
+    ):
+        return books.get_book_service(db=session_factory())
 
 
 def test_book_service_own_writer_factory_injected():
