@@ -45,7 +45,7 @@ from inkflow.domain.models.outline import Outline
 from inkflow.domain.models.writing_plan import WritingPlan
 
 MODEL = "deepseek/deepseek-v4-flash"
-API_KEY = "test-k…lver"
+API_KEY = "test-cred-from-resolver"
 BASE_URL = "https://example.test/v1"
 CHAPTER_TOKENS = 1_200
 
