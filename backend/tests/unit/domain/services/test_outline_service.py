@@ -574,6 +574,104 @@ class TestGenerate:
         with pytest.raises(OutlineServiceError):
             await no_project_repo.generate(OutlineGenerateRequest(project_id=PID))
 
+    async def test_generate_with_target_outline_id_passes_through(
+        self, service, mock_repo, mock_project_repo, mock_generator
+    ) -> None:
+        """S1 透传: 请求含 target_outline_id → service 原样透传 generator（不吞不换）."""
+        project = Project(
+            id=PID,
+            name="测试项目",
+            config=ProjectConfig(model=DEFAULT_MODEL),
+            created_at=TS,
+            updated_at=TS,
+        )
+        mock_project_repo.get = AsyncMock(return_value=project)
+        target = _outline(name="既有大纲")
+        mock_repo.get = AsyncMock(return_value=target)  # 预检（D6①）需同项目目标
+        result = OutlineGenerationResult(saved=True, model=DEFAULT_MODEL)
+        mock_generator.generate = AsyncMock(return_value=result)
+
+        request = OutlineGenerateRequest(
+            project_id=PID, name="第一卷大纲", target_outline_id=target.id
+        )
+        outcome = await service.generate(request)
+
+        assert outcome == result
+        mock_project_repo.get.assert_awaited_once_with(PID.int)
+        mock_generator.generate.assert_awaited_once()
+        call = mock_generator.generate.await_args
+        assert call.args[0] == request  # request 按位置传参
+        assert call.args[0].target_outline_id == target.id  # target 原样透传
+
+    async def test_generate_generator_outline_not_found_propagates(
+        self, service, mock_repo, mock_project_repo, mock_generator
+    ) -> None:
+        """S2 守护: generator 抛 OutlineNotFoundError → service 同样抛出（异常确自 generator）."""
+        project = Project(
+            id=PID,
+            name="测试项目",
+            config=ProjectConfig(model=DEFAULT_MODEL),
+            created_at=TS,
+            updated_at=TS,
+        )
+        mock_project_repo.get = AsyncMock(return_value=project)
+        target = _outline(name="既有大纲")
+        mock_repo.get = AsyncMock(return_value=target)  # 预检（D6①）放行
+        mock_generator.generate = AsyncMock(side_effect=OutlineNotFoundError())
+
+        request = OutlineGenerateRequest(
+            project_id=PID, name="第一卷大纲", target_outline_id=target.id
+        )
+        with pytest.raises(OutlineNotFoundError):
+            await service.generate(request)
+        mock_generator.generate.assert_awaited_once()  # 异常确来自 generator 而非预检
+
+    async def test_generate_target_missing_precheck_fails_fast(
+        self, service, mock_repo, mock_project_repo, mock_generator
+    ) -> None:
+        """S3 预检快速失败: save=true + target 目标不存在 → LLM 调用前抛 OutlineNotFoundError."""
+        project = Project(
+            id=PID,
+            name="测试项目",
+            config=ProjectConfig(model=DEFAULT_MODEL),
+            created_at=TS,
+            updated_at=TS,
+        )
+        mock_project_repo.get = AsyncMock(return_value=project)
+        mock_repo.get = AsyncMock(return_value=None)  # 目标大纲不存在
+        request = OutlineGenerateRequest(
+            project_id=PID, name="第一卷大纲", target_outline_id=uuid.uuid4()
+        )
+        with pytest.raises(OutlineNotFoundError):
+            await service.generate(request)
+        mock_generator.generate.assert_not_awaited()  # LLM 调用前快速失败（D6①）
+
+    async def test_generate_preview_skips_target_precheck(
+        self, service, mock_repo, mock_project_repo, mock_generator
+    ) -> None:
+        """S4 预览不预检: save=false + target 目标不存在 → 照常委托 generator（零抛错，D2）."""
+        project = Project(
+            id=PID,
+            name="测试项目",
+            config=ProjectConfig(model=DEFAULT_MODEL),
+            created_at=TS,
+            updated_at=TS,
+        )
+        mock_project_repo.get = AsyncMock(return_value=project)
+        target = _outline(name="既有大纲")
+        mock_repo.get = AsyncMock(return_value=None)  # 目标不存在也不得触发预检
+        result = OutlineGenerationResult(saved=False, model=DEFAULT_MODEL)
+        mock_generator.generate = AsyncMock(return_value=result)
+
+        request = OutlineGenerateRequest(
+            project_id=PID, name="第一卷大纲", target_outline_id=target.id, save=False
+        )
+        outcome = await service.generate(request)
+
+        assert outcome == result
+        mock_generator.generate.assert_awaited_once()
+        mock_repo.get.assert_not_awaited()  # 预览路径零目标校验（D6 双层均跳过）
+
 
 # ── Phase 3 覆盖率补齐（#104）──────────────────────────────────
 

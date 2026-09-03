@@ -4567,6 +4567,8 @@ export interface components {
          *         num_chapters: 可选规划章节数提示（1-100）.
          *         save: True=自动落库；False=仅返回预览（不创建任何实体）.
          *         model: 覆盖项目默认模型（格式 provider/model_name）.
+         *         target_outline_id: 追加目标大纲 UUID（情节点追加至其末尾 max+1，不新建/不覆盖）；
+         *             None=生成即新建.
          */
         OutlineGenerateRequest: {
             /** Model */
@@ -4587,6 +4589,8 @@ export interface components {
              * @default true
              */
             save: boolean;
+            /** Target Outline Id */
+            target_outline_id?: string | null;
         };
         /**
          * OutlineUpdate

@@ -581,13 +581,16 @@ class OutlineService:
 
         Args:
             request: 生成请求（project_id / name? / prompt? /
-                num_chapters? / save / model?）.
+                num_chapters? / save / model? / target_outline_id?）.
 
         Returns:
             落库后的生成报告（save=True）或预览结构（save=False）.
 
         Raises:
             ProjectNotFoundError: 项目不存在（router 转 404「项目不存在」）.
+            OutlineNotFoundError: 追加目标大纲不存在或属于其他项目
+                （save=True + target_outline_id 时入口预检，LLM 调用前快速失败；
+                router 转 404「大纲不存在」）.
             OutlineServiceError: 生成器/项目仓储未注入（配置错误）.
             OutlineGenerationError: 生成管线解析失败（透传，router 转 500）.
             LLMRequestError: LLM 调用失败（透传，router 转 500）.
@@ -599,6 +602,12 @@ class OutlineService:
         project = await self._project_repo.get(_to_int_id(request.project_id))
         if project is None:
             raise ProjectNotFoundError()
+        if request.save and request.target_outline_id is not None:
+            # D6① 追加入口预检：save=true + target → LLM 调用前快速失败，不浪费 token。
+            # 跨项目与不存在统一 OutlineNotFoundError（router 转 404）；save=false 纯预览不校验。
+            target = await self._repo.get(_to_int_id(request.target_outline_id))
+            if target is None or target.project_id != request.project_id:
+                raise OutlineNotFoundError()
         logger.info(
             "大纲生成: project=%s model=%s",
             request.project_id,
@@ -607,8 +616,5 @@ class OutlineService:
         return await self._generator.generate(
             request,
             project_info=_build_project_info(project),
-            default_model=resolve_model(
-                None, project.config.model, self._llm_default_model
-            )
-            or "",
+            default_model=resolve_model(None, project.config.model, self._llm_default_model) or "",
         )

@@ -2690,7 +2690,7 @@
         "type": "object"
       },
       "OutlineGenerateRequest": {
-        "description": "AI 生成大纲请求.\n\nAttributes:\n    project_id: 所属项目 UUID，必填.\n    name: 目标大纲名；缺省「未命名大纲」（撞名 → 422）.\n    prompt: 可选创作约束/设定摘要（自由文本，≤ 20000；None/空 = 无约束）.\n    num_chapters: 可选规划章节数提示（1-100）.\n    save: True=自动落库；False=仅返回预览（不创建任何实体）.\n    model: 覆盖项目默认模型（格式 provider/model_name）.",
+        "description": "AI 生成大纲请求.\n\nAttributes:\n    project_id: 所属项目 UUID，必填.\n    name: 目标大纲名；缺省「未命名大纲」（撞名 → 422）.\n    prompt: 可选创作约束/设定摘要（自由文本，≤ 20000；None/空 = 无约束）.\n    num_chapters: 可选规划章节数提示（1-100）.\n    save: True=自动落库；False=仅返回预览（不创建任何实体）.\n    model: 覆盖项目默认模型（格式 provider/model_name）.\n    target_outline_id: 追加目标大纲 UUID（情节点追加至其末尾 max+1，不新建/不覆盖）；\n        None=生成即新建.",
         "properties": {
           "model": {
             "anyOf": [
@@ -2745,6 +2745,18 @@
             "default": true,
             "title": "Save",
             "type": "boolean"
+          },
+          "target_outline_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Outline Id"
           }
         },
         "required": [

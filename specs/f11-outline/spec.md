@@ -354,6 +354,7 @@ class OutlineGenerateRequest(BaseModel):
     num_chapters: int | None = None  # 可选规划章节数提示（1-100）
     save: bool = True          # True=自动落库；False=仅返回预览（不创建任何实体）
     model: str | None = None   # 覆盖项目默认模型（格式 provider/model_name）
+    target_outline_id: uuid.UUID | None = None  # #668：追加目标大纲（§5.4 追加模式）；None=生成即新建
 
 
 class OutlineGenerationResult(BaseModel):
@@ -582,6 +583,7 @@ POST /api/v1/outlines/generate
 }
 ```
 > save=false 仅「试生成看效果」，不创建任何实体；确认保存需 save=true 重新生成或手动创建（「预览 → 确认 → 落库」闭环归 0.2.x，见 §10）。
+> **#668 追加**：请求体可带 `target_outline_id`（UUID）——save=true 时生成的情节点**追加**到该既有大纲末尾（position 从 max+1 起，不新建大纲、不覆盖既有点，详见 §5.4 追加模式）；save=false 时该字段仅透传预览，不校验目标。
 
 ### 3.5 错误响应格式（沿用 F1/F2/F9/F10/ADR-012）
 
@@ -819,6 +821,17 @@ variables:
 | name 非法（空/超长）、type/description 超长 | 该条**跳过**（不影响其余落库） | `warnings` |
 
 **幂等性说明（与提取模式的关键差异）**: 提取模式承诺「同文本二次提取 → 空 diff」；**生成模式不承诺幂等**——LLM 每次输出内容不同，重复生成会创建新大纲（同名则 422）。落库唯一性由大纲名唯一约束兜底，弧线复用保证组织维度不重复。
+
+**追加模式（#668，`target_outline_id` 非空且 `save=true`）**：
+
+| 情况 | 行为 | 计入 |
+|------|------|------|
+| 目标大纲存在且属于请求项目 | **不新建大纲**（跳同名检查、不回写大纲字段，generated.name/level/parent 忽略）；新生成情节点作为 target 的子级追加：单次 `next_position()` 取起点，按输出顺序批量递增（max+1, max+2, ...）；既有情节点零改动（无更新/删除）；弧线仍按上表「按名复用/新建」 | `outline`=target 实例，`plot_points`=**仅本次新增**（`point_count`=新增数） |
+| 目标不存在或跨项目 | `OutlineNotFoundError` → 404「大纲不存在」（service 入口预检 + generator 落库前权威校验双层；LLM 调用前快速失败不耗 token） | 报错 |
+| `target_outline_id` + `save=false` | 纯预览：不校验目标、零落库、不落库分支不触达（语义 = 既有预览） | `preview` |
+
+> 追加 ≠ 覆盖：既有情节点的顺序/内容/归属保持不变，追加只增不改不删（替换/覆盖语义另行跟踪，#669）。
+> 并发追加竞态（两请求同取 next_position）不处理——单用户本地工具，2.0 云域议题。
 
 ### 5.5 生成输入约束
 
