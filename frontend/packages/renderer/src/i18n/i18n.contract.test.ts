@@ -18,6 +18,7 @@ import { chatDeleteUxEn, chatDeleteUxZh } from './chat-delete-ux';
 import { chatUxEn, chatUxZh } from './chat-ux';
 import { en } from './en';
 import { extractEn, extractZh } from './extract-keys';
+import { logEn, logZh } from './log';
 import { roleEnhanceEn, roleEnhanceZh } from './role-enhance';
 import { sessionUxEn, sessionUxZh } from './session-ux';
 import { sessionsUxEn, sessionsUxZh } from './sessions-ux';
@@ -39,6 +40,7 @@ const comboZh: Dict = {
   ...sessionsUxZh,
   ...writingUxZh,
   ...sessionUxZh,
+  ...logZh,
 } as Dict;
 const comboEn: Dict = {
   ...en,
@@ -50,6 +52,7 @@ const comboEn: Dict = {
   ...sessionsUxEn,
   ...writingUxEn,
   ...sessionUxEn,
+  ...logEn,
 } as Dict;
 
 describe('F2 i18n 契约：key 对称', () => {
@@ -160,5 +163,43 @@ describe('F2 i18n 契约：插值健壮性（不崩 + 行为确定）', () => {
     // zh/en key 一致由对称测试保证；此处采样互译验证「切语言」而非「同文案」
     expect(comboEn['write.stream.done']).not.toBe(comboZh['write.stream.done']);
     expect(comboEn['pj.empty.title']).not.toBe(comboZh['pj.empty.title']);
+  });
+});
+
+/**
+ * F57 #888-S3：日志页 msgid（log.event.*）与后端 messages 键对齐。
+ * 契约：specs/f57-logging-i18n/spec.md §2.1（前端 i18n/log.ts 与后端 messages 键对齐，
+ * 同一 msgid）+ 后端 backend/src/inkflow/i18n/messages/{zh,en}.json 已定义的 log.event.* 键。
+ * 这组消息键由前端 logger 上报 message_key 引用，日志页用 t(key, params) 渲染 → 键必须存在。
+ */
+describe('F57 i18n 契约：log 域键对称 + 后端 messages 对齐', () => {
+  it('logZh/logEn key 集合完全一致（0 漂移 → 防 en 漏 key 静默回退中文）', () => {
+    const zhKeys = Object.keys(logZh).sort();
+    const enKeys = Object.keys(logEn).sort();
+    expect(zhKeys).toEqual(enKeys);
+  });
+
+  it('log 字典有实际内容（防空字典假绿）', () => {
+    expect(Object.keys(logZh).length).toBeGreaterThan(0);
+  });
+
+  it('log.event.* 键与后端 messages 的 log.event.* 键对齐（同一 msgid 命名空间）', () => {
+    // 后端 messages zh.json（S1 已落盘，2026-09-03）定义的 log.event.* 键——前端 log.ts 必须包含同 msgid。
+    const backendLogKeys = [
+      'log.event.create_chapter',
+      'log.event.update_project',
+      'log.event.delete_project',
+    ];
+    for (const k of backendLogKeys) {
+      expect(k in logZh, `${k} 应在前端 logZh 字典（与后端 messages 对齐）`).toBe(true);
+      expect(k in logEn, `${k} 应在前端 logEn 字典（与后端 messages 对齐）`).toBe(true);
+    }
+  });
+
+  it('log 键全部以 log.event. / api.error. 前缀命名（日志 msgid 命名空间），不留散键', () => {
+    const keys = [...Object.keys(logZh), ...Object.keys(logEn)];
+    for (const k of keys) {
+      expect(k).toMatch(/^(log\.event\.|api\.error\.)/);
+    }
   });
 });

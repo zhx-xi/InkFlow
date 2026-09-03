@@ -2,6 +2,7 @@ import { useThemeStore } from '../stores/theme';
 import { en } from './en';
 import { roleEnhanceEn, roleEnhanceZh } from './role-enhance';
 import { extractEn, extractZh } from './extract-keys';
+import { logEn, logZh } from './log';
 import { worldCatKindEn, worldCatKindZh } from './world-cat-kind';
 import { chatDeleteUxEn, chatDeleteUxZh } from './chat-delete-ux';
 import { chatUxEn, chatUxZh } from './chat-ux';
@@ -12,8 +13,8 @@ import { zh } from './zh';
 
 type Dict = Record<string, string>;
 const dicts: Record<'zh' | 'en', Dict> = {
-  zh: { ...zh, ...roleEnhanceZh, ...extractZh, ...worldCatKindZh, ...chatUxZh, ...chatDeleteUxZh, ...sessionsUxZh, ...writingUxZh, ...sessionUxZh } as Dict,
-  en: { ...en, ...roleEnhanceEn, ...extractEn, ...worldCatKindEn, ...chatUxEn, ...chatDeleteUxEn, ...sessionsUxEn, ...writingUxEn, ...sessionUxEn },
+  zh: { ...zh, ...roleEnhanceZh, ...extractZh, ...worldCatKindZh, ...chatUxZh, ...chatDeleteUxZh, ...sessionsUxZh, ...writingUxZh, ...sessionUxZh, ...logZh } as Dict,
+  en: { ...en, ...roleEnhanceEn, ...extractEn, ...worldCatKindEn, ...chatUxEn, ...chatDeleteUxEn, ...sessionsUxEn, ...writingUxEn, ...sessionUxEn, ...logEn },
 };
 
 /** 简单占位替换: t('write.stream.done', { words: 342, model: 'x', valid: '通过' }) */
