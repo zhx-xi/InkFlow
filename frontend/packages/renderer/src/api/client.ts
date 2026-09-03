@@ -147,6 +147,8 @@ export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promis
   const { baseURL, token } = getApiConfig();
   const headers = new Headers(init.headers);
   if (token) headers.set('X-InkFlow-Token', token);
+  const correlationId = getCorrelationId();
+  if (correlationId) headers.set('X-Correlation-Id', correlationId);
   if (init.body !== undefined && !(init.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
@@ -234,4 +236,55 @@ export interface McpInfo {
 /** F50（#563）：GET /api/v1/mcp/info——MCP 客户端路径 + 版本 + 三宿主配置模板 */
 export async function fetchMcpInfo(): Promise<McpInfo> {
   return apiFetch<McpInfo>('/api/v1/mcp/info');
+}
+
+/** F57 #888-S3：前端结构化日志记录（与后端 LogRecordInput 对齐；timestamp 由后端忽略） */
+export interface FrontendLogRecord {
+  level: 'debug' | 'info' | 'warn' | 'error';
+  caller_type: 'frontend';
+  caller_name: string;
+  event: string;
+  message_key: string;
+  params: Record<string, unknown>;
+  correlation_id: string;
+  timestamp: string;
+}
+
+/** 页面/操作级关联 ID（模块状态；apiFetch 附加 X-Correlation-Id 头用） */
+let currentCorrelationId = '';
+
+export function setCorrelationId(id: string): void {
+  currentCorrelationId = id ?? '';
+}
+
+export function getCorrelationId(): string {
+  return currentCorrelationId;
+}
+
+/**
+ * F57 #888-S3 前端日志上报 bridge（非阻塞）：POST /api/v1/logs。
+ * - 显式 headers：X-InkFlow-Token（有 token 时）+ X-Correlation-Id = record.correlation_id + Content-Type json；
+ * - 成功 → resolve 响应体（{ok:true}）；HTTP 非 2xx / 网络错误 → console.warn 兜底 + resolve undefined（不抛，非阻塞）。
+ * 注意：X-Correlation-Id 必须用 record.correlation_id（每条记录各自的关联 ID），不是全局 getCorrelationId()。
+ */
+export async function reportLog(record: FrontendLogRecord): Promise<{ ok: boolean } | undefined> {
+  try {
+    const { baseURL, token } = getApiConfig();
+    const headers = new Headers({ 'Content-Type': 'application/json' });
+    if (token) headers.set('X-InkFlow-Token', token);
+    if (record.correlation_id) headers.set('X-Correlation-Id', record.correlation_id);
+    const res = await fetch(`${baseURL}/api/v1/logs`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(record),
+    });
+    if (!res.ok) {
+      console.warn('[logger] report failed (non-blocking):', res.status);
+      return undefined;
+    }
+    return (await res.json()) as { ok: boolean };
+  } catch (err) {
+    console.warn('[logger] report failed (non-blocking):', err);
+    return undefined;
+  }
 }

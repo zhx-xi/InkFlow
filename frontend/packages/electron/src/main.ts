@@ -32,6 +32,7 @@ import {
   writeKernelStateFile,
   type KernelInfo,
 } from './kernel';
+import { createMainLogger, setMainLogEndpoint } from './logger';
 
 /** 仓库根：out/ 位于 frontend/packages/electron/out，向上 4 级 */
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
@@ -92,6 +93,7 @@ let kernelStatePath: string | null = null;
 let trayInfoWindowVisible = true;
 /** 已注册的 DevTools 快捷键集合（幂等去重，spec §5.2.9） */
 const registeredDevToolsAccelerators = new Set<string>();
+const mainLogger = createMainLogger('electron.main');
 
 /** 解析 instance.env 文本 → KEY=VALUE 映射（解析规则与 backend load_instance_env
  * 对齐：空行 / # 注释 / 无 = 行跳过；KEY/VALUE strip；空值键跳过）。 */
@@ -222,6 +224,7 @@ function sendReadyToRenderer(): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('inkflow:ready', payload);
   }
+  setMainLogEndpoint('http://127.0.0.1:' + kernelInfo.port, kernelInfo.token);
 }
 
 function clearMonitorTimers(): void {
@@ -329,11 +332,8 @@ function onKernelFailure(): void {
   if (failedChild) {
     killProcessTree(failedChild);
   }
-
   consecutiveFailures += 1;
-  console.error(
-    `[kernel] failure ${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}`
-  );
+  mainLogger.warn('kernel_failure', 'log.event.kernel_failure', { attempt: consecutiveFailures, max: MAX_CONSECUTIVE_FAILURES });
 
   if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
     void showStartupErrorDialog();
@@ -463,7 +463,7 @@ function spawnKernel(): void {
   });
 
   child.on('error', (err) => {
-    console.error('[kernel] spawn error:', err);
+    mainLogger.error('kernel_spawn_error', 'log.event.kernel_spawn_error', { error: String(err) });
     if (kernelProcess !== child) {
       return;
     }
@@ -473,7 +473,7 @@ function spawnKernel(): void {
   });
 
   child.on('exit', (code, signal) => {
-    console.error(`[kernel] exited code=${code} signal=${signal}`);
+    mainLogger.error('kernel_exit', 'log.event.kernel_exit', { code, signal });
     if (kernelProcess !== child) {
       return;
     }
