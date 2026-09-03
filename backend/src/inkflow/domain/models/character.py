@@ -108,8 +108,6 @@ def _validate_role_rank(extra: dict | None, *, required: bool) -> None:
     try:
         RoleRank(extra["role_rank"])
     except ValueError as exc:
-        if required:
-            raise ValueError("角色等级必填") from exc
         raise ValueError("角色等级非法") from exc
 
 
