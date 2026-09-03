@@ -93,7 +93,21 @@ project_id / entity_id / duration_ms / error_code / stack?(仅ERROR)
 | MCP 工具（~30） | 工具调用 | 成功 | 参数错/结果异常(LLM 可续用) | 未捕获 |
 | 前端页面操作 | 页面加载/导航 | 用户操作/数据变更 | 可恢复 UI/API 错 | 未捕获/白屏 |
 
-> DEBUG 默认关（`config.debug`/`INKFLOW_DEBUG` env）；INFO 默认可见（数据变化）。DEBUG 只埋上下文中的 409 函数入口/步骤，**非每个内联 helper**（降噪）。
+> DEBUG 默认关（`config.debug`/`INKFLOW_DEBUG` env）；INFO 默认可见（数据变化）。DEBUG 只埋上下文中的 **~416** 函数入口/步骤，**非每个内联 helper**（降噪）。
+
+### 4.1 实现方式：混合（装饰器 + 显式调用）
+**分工**：
+| 层 | 方式 | 覆盖对象 | 产出 |
+|----|------|---------|------|
+| **结构层** | `@instrument`（装饰器，`functools.wraps` + async 感知） | API 路由端点 / agent 编排方法 / 工具调用函数（~200+） | 函数入口/出口/耗时 + 未捕获异常（DEBUG，`caller_name` 从 `__qualname__` 自动推导；ERROR 自动带 stack） |
+| **语义层** | 显式 `logger.debug/info/warn/error`（关键 checkpoint，~100 处） | INFO 数据变化（create/update/delete/restore 成功 + 前端用户操作/数据变更）· WARN 校验失败/重试自愈/降级/护栏触达（`error_code`+上下文+标已自愈）· ERROR 捕获后补业务上下文 · DEBUG 步骤级（LLM 请求/响应摘要、agent 工具选择） | `message_key`+`params`（语义键 `log.event.*`/`log.check.*`） |
+
+**设计要点（装饰器）**：
+1. `functools.wraps` 保签名/元数据（否则 FastAPI/Typer/MCP 路由注册、`__name__` 坏）。
+2. async 感知：`inspect.iscoroutinefunction` 分派（FastAPI/Typer/MCP 全 async）。
+3. 日志后**原样 re-raise** 异常（不吞，只记录后抛）。
+4. 与路由装饰器顺序：`@router.get(...)` 外层，`@instrument` 内层（实测 FastAPI 可注册）。
+5. **两族 message_key**：装饰器自动 `log.call.*`（函数级）+ 显式 `log.event.*`/`log.check.*`（语义级），不冲突。
 
 ---
 
