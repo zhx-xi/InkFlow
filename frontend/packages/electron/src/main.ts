@@ -153,8 +153,7 @@ function isDebugMode(): boolean {
       }
     }
   } catch {
-    // getPath 不可用（测试 mock）/ 文件解析失败 → 回退 env 显式判定（等价顶部
-    // 分支；重读 env 规避 TS 控制流把 envDebug 收窄为 never 的编译错误）
+    // getPath 不可用（测试 mock）/ 文件解析失败 → 回退 env 显式判定（等价顶部分支；重读 env 规避 TS 控制流把 envDebug 收窄为 never 的编译错误）
     const catchEnvDebug = process.env.INKFLOW_DEBUG;
     return (
       catchEnvDebug !== undefined &&
@@ -225,6 +224,7 @@ function sendReadyToRenderer(): void {
     mainWindow.webContents.send('inkflow:ready', payload);
   }
   setMainLogEndpoint('http://127.0.0.1:' + kernelInfo.port, kernelInfo.token);
+  mainLogger.info('kernel_ready', 'log.event.kernel_ready', { port: kernelInfo.port, pid: kernelInfo.pid });
 }
 
 function clearMonitorTimers(): void {

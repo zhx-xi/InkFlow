@@ -341,6 +341,15 @@ describe('内核启动/失败/退出路径（boot 全量执行）', () => {
     vi.restoreAllMocks();
   });
 
+  // #892 kernel_ready 上报：READY 路径的 fetch 分两类——/health 健康检查 与 /api/v1/logs
+  // 日志上报。计数断言统一按 URL 过滤：新增上报 fetch 不翻红既有健康检查计数（保语义不绑实现）。
+  const fetchCallsTo = (mock: Mock, urlPart: string): unknown[][] =>
+    mock.mock.calls.filter((c) => String(c[0]).includes(urlPart));
+  /** /health 健康检查 fetch 次数（不含 /api/v1/logs 日志上报） */
+  const healthFetchCount = (mock: Mock): number => fetchCallsTo(mock, '/health').length;
+  /** /api/v1/logs 日志上报调用（kernel_ready 等主进程事件上报，body 为 MainLogRecord JSON） */
+  const logReportCalls = (mock: Mock): unknown[][] => fetchCallsTo(mock, '/api/v1/logs');
+
   // ── 组 A：READY 路径（第一个实例，无重启 → 单一 readline）──
 
   it('INKFLOW_READY 行 → kernelInfo/__kernelInfo 钩子/inkflow:ready 推送/健康检查启动', async () => {
@@ -380,17 +389,93 @@ describe('内核启动/失败/退出路径（boot 全量执行）', () => {
   });
 
   it('第二次 INKFLOW_READY → startHealthCheck 重入（重建 interval）', async () => {
-    const before = fetchMock.mock.calls.length;
+    // #892：READY 路径新增 /api/v1/logs 上报 fetch 后全局计数会翻红 → 按 /health 过滤。
+    // 语义不变：两次 READY 各触发 1 次健康检查（不统计健康检查之外的 fetch）。
+    const before = healthFetchCount(fetchMock);
     emitReady(51234, 'a');
     await Promise.resolve();
     emitReady(59999, 'b');
     await Promise.resolve();
-    expect(fetchMock.mock.calls.length).toBe(before + 2);
+    expect(healthFetchCount(fetchMock)).toBe(before + 2);
     expect((globalThis as { __kernelInfo?: unknown }).__kernelInfo).toEqual({
       pid: 4242,
       port: 59999,
       token: 'b',
     });
+  });
+
+  // ── 组 A2：kernel_ready 成功态上报（#892，新实例）──
+  //
+  // 契约（用户批准方案 B）：READY 成功 → sendReadyToRenderer 设置上报端点后经 mainLogger 上报
+  // info 级 record（event=kernel_ready / message_key=log.event.kernel_ready / params={port,pid}）；
+  // pending/failed/spawn 前不上报成功态。断言锚定 fetch 调用（/api/v1/logs），不绑 console 文本。
+  // RED 现状：main.ts 成功态仅 console.log → 正向/重复用例 FAIL；负向为守护用例（防 GREEN 过度上报）。
+
+  it('INKFLOW_READY 成功态 → 上报 kernel_ready（POST /api/v1/logs，端点随本次 READY 设置后即上报）', async () => {
+    vi.useFakeTimers();
+    await freshInstance();
+    emitReady(51234, 't0k3n');
+    await vi.advanceTimersByTimeAsync(0);
+    const logCalls = logReportCalls(fetchMock);
+    expect(logCalls).toHaveLength(1); // RED 锚点：现实现成功态不上报 → 0 条
+    const [url, init] = logCalls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('http://127.0.0.1:51234/api/v1/logs');
+    expect(init.method).toBe('POST');
+    const headers = init.headers as Headers;
+    expect(headers.get('X-InkFlow-Token')).toBe('t0k3n'); // 端点 token 透传
+    const body = JSON.parse(String(init.body)) as {
+      level: string;
+      caller_type: string;
+      caller_name: string;
+      event: string;
+      message_key: string;
+      params: { port: number; pid: number };
+      correlation_id: string;
+      timestamp: string;
+    };
+    expect(body).toMatchObject({
+      level: 'info',
+      caller_type: 'frontend',
+      caller_name: 'electron.main',
+      event: 'kernel_ready',
+      message_key: 'log.event.kernel_ready',
+      // pid 取 kernelInfo.pid（mock child.pid=4242，优先于 READY 行内 pid:7）
+      params: { port: 51234, pid: 4242 },
+    });
+    expect(body.correlation_id.length).toBeGreaterThan(0);
+    expect(headers.get('X-Correlation-Id')).toBe(body.correlation_id); // 请求头与记录关联 id 一致
+    expect(Number.isNaN(Date.parse(body.timestamp))).toBe(false);
+  });
+
+  it('READY 之前（boot 仅 spawn）→ 不上报成功态（/api/v1/logs 零调用；守护用例）', async () => {
+    vi.useFakeTimers();
+    await freshInstance();
+    await vi.advanceTimersByTimeAsync(0);
+    // 健康检查在 READY 后才启动 → 无 READY 即无任何上报 fetch（pending 不触发成功态）
+    expect(logReportCalls(fetchMock)).toHaveLength(0);
+  });
+
+  it('重复 INKFLOW_READY（换端口）→ 每次成功态各上报一条，port 跟随新值', async () => {
+    vi.useFakeTimers();
+    await freshInstance();
+    emitReady(51234, 'a');
+    await vi.advanceTimersByTimeAsync(0);
+    emitReady(59999, 'b');
+    await vi.advanceTimersByTimeAsync(0);
+    const logCalls = logReportCalls(fetchMock);
+    expect(logCalls).toHaveLength(2); // RED 锚点：现实现 0 条
+    expect(logCalls.map((c) => String(c[0]))).toEqual([
+      'http://127.0.0.1:51234/api/v1/logs',
+      'http://127.0.0.1:59999/api/v1/logs',
+    ]);
+    for (const [i, call] of logCalls.entries()) {
+      const body = JSON.parse(String((call[1] as RequestInit).body)) as {
+        level: string;
+        params: { port: number };
+      };
+      expect(body.level).toBe('info');
+      expect(body.params.port).toBe(i === 0 ? 51234 : 59999);
+    }
   });
 
   // ── 组 B：spawn error（新实例，fail 1→2 精确）──
@@ -491,10 +576,10 @@ describe('内核启动/失败/退出路径（boot 全量执行）', () => {
     await vi.advanceTimersByTimeAsync(0); // 立即检查挂起（healthInFlight=true）
     emitReady(59999, 'b'); // 内核换代 → 新 checkHealthOnce 被 in-flight 挡掉（不发起 fetch）
     await vi.advanceTimersByTimeAsync(2_000); // tick 同样被挡
-    expect(holdingFetch).toHaveBeenCalledTimes(1);
+    expect(healthFetchCount(holdingFetch)).toBe(1); // #892：/health 过滤，容忍 kernel_ready 上报 fetch
     resolveFetch({ ok: true }); // 旧请求返回 → kernelInfo !== info → 结果作废
     await vi.advanceTimersByTimeAsync(0);
-    expect(holdingFetch).toHaveBeenCalledTimes(1);
+    expect(healthFetchCount(holdingFetch)).toBe(1);
   });
 
   it('健康检查 fetch 抛异常 → catch 分支累计失败计数，3 次后触发失败处理（不崩溃）', async () => {
@@ -506,7 +591,7 @@ describe('内核启动/失败/退出路径（boot 全量执行）', () => {
     const spawnBefore = kernelSpawnCount();
     emitReady(51234, 'a');
     await vi.advanceTimersByTimeAsync(0); // 立即检查 → 失败 1（reject → catch → ok=false）
-    expect(failingFetch).toHaveBeenCalled();
+    expect(healthFetchCount(failingFetch)).toBe(1); // #892：/health 过滤，容忍 kernel_ready 上报 fetch
     // ⚠️ 补强（#524）：reject 路径与组 D 的 ok:false 路径共享同一 onKernelFailure——
     // 连续 3 次失败 → kill + 退避重启（删 catch / catch 静默吞掉此处变红）
     await vi.advanceTimersByTimeAsync(2_000); // tick 1 → 失败 2
