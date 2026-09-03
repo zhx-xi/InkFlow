@@ -80,17 +80,13 @@ engine = create_async_engine(
 def apply_sqlite_pragma(dbapi_connection) -> None:
     """Apply SQLite PRAGMAs on a new DBAPI connection (spec §2.4).
 
-    - ``PRAGMA busy_timeout=<config.db_busy_timeout_ms>``: 多进程写并发锁等待
-      超时，数值在**调用时**从 config 单例读取（默认 5000）。
-    - ``PRAGMA journal_mode=WAL``: WAL 日志模式（文件级持久，跨连接生效）
-    - ``PRAGMA foreign_keys=ON``: 启用 SQLite 外键约束（#327），使 ORM 声明的
-      ``ForeignKey(..., ondelete=...)``（CASCADE/SET NULL）真正生效，
-      project 硬删时子实体级联清理。
-
-    PRAGMA 不支持 ``?`` 参数占位，busy_timeout 为 config int，f-string 拼接安全。
-    busy_timeout 必须先于 journal_mode=WAL 设置：双进程首次并发打开同一文件库时，
-    WAL 转换需独占锁过渡，若 busy_timeout 未生效，重试方会立即抛 database is locked。
-    cursor 用完即 close。对同一连接重复调用幂等；内存库 WAL 不生效但不抛错。
+    - busy_timeout=<config.db_busy_timeout_ms>（调用时读 config，默认 5000）：
+      多进程写并发锁等待；**必须先于 journal_mode=WAL**——双进程首次并发打开同一
+      文件库时 WAL 转换需独占锁，否则重试方立即抛 database is locked。
+    - journal_mode=WAL（文件级持久）；foreign_keys=ON（#327，使 ORM 声明的
+      ondelete=CASCADE/SET NULL 生效，project 硬删级联清理）。
+    PRAGMA 不支持 ``?`` 占位，busy_timeout 为 config int，f-string 拼接安全。
+    cursor 用完即 close；重复调用幂等；内存库 WAL 不生效但不抛错。
     """
     cursor = dbapi_connection.cursor()
     try:
@@ -221,23 +217,18 @@ def ensure_chat_messages_is_deleted_column(conn: Connection) -> None:
 def ensure_chat_messages_conversation_id_column(conn: Connection) -> None:
     """#744：为存量库 chat_messages 补 conversation_id 列 + 回填（幂等）。
 
-    镜像 ensure_chat_messages_is_deleted_column 形态：先查 PRAGMA table_info 确认
-    列缺失才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，等
-    create_all 建新表（自动含 conversation_id 列 + conversations 表）。
-
-    回填（幂等，仅首次缺列时执行）：
-    (1) 为还有 NULL conversation_id 消息的项目各建一条 conversation，并链接
-        （每项目取最早一条 conversation）；
-    (2) UPDATE chat_messages SET conversation_id = 该项目最早 conversation.id。
-
-    ① 的 INSERT 列清单动态探测 conversations 表列（#869 S3d defect C）：≤0.11
-    库（#744 前）跳过中间版本直升 #766+ 时，conversations 由 create_all 以当前
-    ORM schema 新建，delete_permission/title 为 NOT NULL 且无 SQL DEFAULT（ORM
-    default 仅 Python 侧生效），固定三列 raw INSERT 撞 NOT NULL constraint 使启动
-    崩溃。因此按存在列补字面值：delete_permission → 'manual'、title → ''（与
-    ensure_conversations_delete_permission_column / ORM default 一致）；#766/#770
-    前旧表缺列 → 维持三列回填，后续 ensure_* 以 SQL DEFAULT 补上。列名取自固定
-    白名单（project_id/created_at/is_deleted/delete_permission/title），无用户输入。
+    镜像 ensure_chat_messages_is_deleted_column：PRAGMA 确认缺列才 ALTER；表不存在
+    （全新环境）→ no-op，等 create_all 建新表（自动含列 + conversations 表）。
+    回填（仅首次缺列时执行）：(1) 每项目建一条 conversation 并链接（取最早一条）；
+    (2) UPDATE 挂接 NULL conversation_id。
+    ① 的 INSERT 列清单动态探测 conversations 表列（#869 S3d defect C）：≤0.11 库
+    （#744 前）跳中间版本直升 #766+ 时，conversations 由 create_all 以当前 ORM
+    schema 新建，delete_permission/title NOT NULL 且无 SQL DEFAULT（ORM default 仅
+    Python 侧生效），固定三列 raw INSERT 撞 constraint 使启动崩溃。
+    按存在列补字面值（delete_permission→'manual'、title→''，与
+    ensure_conversations_delete_permission_column / ORM default 一致）；
+    #766/#770 前旧表缺列 → 维持三列回填，后续 ensure_* 以 SQL DEFAULT 补上。列名取自
+    固定白名单（project_id/created_at/is_deleted/delete_permission/title），无用户输入。
     """
     cols = conn.execute(text("PRAGMA table_info(chat_messages)")).fetchall()
     names = {row[1] for row in cols}
@@ -245,11 +236,8 @@ def ensure_chat_messages_conversation_id_column(conn: Connection) -> None:
         return  # 表不存在（全新环境）→ create_all 建新表（自动含 conversation_id 列）
     if "conversation_id" not in names:
         conn.execute(text("ALTER TABLE chat_messages ADD COLUMN conversation_id INTEGER"))
-    # 回填：为还有 NULL conversation_id 消息的项目各建一条 conversation，并链接
-    # （幂等，仅首次缺列时执行）
-    # ① 建 conversation：INSERT 列清单按 conversations 实际列动态拼装（#869 S3d
-    # defect C——create_all 新建表 delete_permission/title NOT NULL 且无 SQL DEFAULT，
-    # 固定三列 INSERT 撞 NOT NULL constraint；仅补存在列，白名单标识符无用户输入）
+    # ① 建 conversation：INSERT 列清单按 conversations 实际列动态拼装（#869 defect C，
+    # 仅补存在列，白名单标识符无用户输入）
     conv_cols = conn.execute(text("PRAGMA table_info(conversations)")).fetchall()
     conv_names = {row[1] for row in conv_cols}
     insert_columns = ["project_id", "created_at", "is_deleted"]
@@ -309,6 +297,18 @@ def ensure_conversation_title_column(conn: Connection) -> None:
         conn.execute(
             text("ALTER TABLE conversations ADD COLUMN title VARCHAR(200) NOT NULL DEFAULT ''")
         )
+
+
+def ensure_writing_plan_progress_reason_column(conn: Connection) -> None:
+    """#897：为存量库 writing_plans 补 progress_reason 列（幂等，conn.run_sync 调用）.
+    PRAGMA 检缺列才 ALTER；表不存在 → no-op，等 create_all 建新表（ORM 已含列）。
+    """
+    cols = conn.execute(text("PRAGMA table_info(writing_plans)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return  # 表不存在（全新环境）→ create_all 建新表（自动含 progress_reason 列）
+    if "progress_reason" not in names:
+        conn.execute(text("ALTER TABLE writing_plans ADD COLUMN progress_reason VARCHAR(2000)"))
 
 
 def ensure_world_parent_id_column(conn: Connection) -> None:

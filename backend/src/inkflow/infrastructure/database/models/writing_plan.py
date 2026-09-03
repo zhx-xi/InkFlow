@@ -106,6 +106,13 @@ class WritingPlanORM(Base):
     )
     """卷级 HITL 暂停 payload（JSON 列，waiting_hitl 时非空；可空）."""
 
+    progress_reason: Mapped[str | None] = mapped_column(
+        String(2000),
+        nullable=True,
+        default=None,
+    )
+    """章级失败原因摘要（String(2000) 可空；#897 failed/degraded 时非空）."""
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -14,9 +14,12 @@ BookService(BookRunMixin) 后 prepare_run/mark_failed 仍为实例方法，既�
 from __future__ import annotations
 
 import uuid
+from typing import Any
+
+from loguru import logger
 
 from inkflow.domain.models.agent_book import AgenticBookConfig
-from inkflow.domain.models.writing_plan import BookLimits
+from inkflow.domain.models.writing_plan import BookLimits, WritingPlan
 
 
 class BookRunMixin:
@@ -123,10 +126,101 @@ class BookRunMixin:
         if plan is None:
             raise ValueError("运行不存在")
         plan.status = "failed"
+        plan.progress_reason = None  # 整单异常兜底无章级原因语义：清空陈旧值（防跨态泄漏）
         await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供
             plan
         )
         return {"run_id": run_id, "status": "failed"}
+
+    @staticmethod
+    def _derive_run_status(progress: dict[str, str]) -> str:
+        """按章级事实派生 run 终态（spec §5.5 表，#897）：无 failed → completed；
+        failed>0 且 done==0 → failed；其余（部分成功）→ degraded。"""
+        failed_count = sum(1 for value in progress.values() if value == "failed")
+        done_count = sum(1 for value in progress.values() if value == "done")
+        if failed_count == 0:
+            return "completed"
+        if done_count == 0:
+            return "failed"
+        return "degraded"
+
+    @staticmethod
+    def _chapter_facts_from_state(state: object) -> dict[str, str] | None:
+        """pipeline checkpoint state → 章级事实 {outline_id: 状态词|execution_id}.
+
+        volume/agentic checkpoint 两轨权威源均为 state["results"]（execution 事实）；
+        state["progress"] 仅作旧形态回退；非 dict / 空 → None（旧鸭子无
+        get_checkpoint_state 或 AsyncMock 自动属性 → 跳过派生维持原态）。
+        """
+        if not isinstance(state, dict):
+            return None
+        results = state.get("results")
+        facts: dict[Any, Any] | None
+        if isinstance(results, dict):
+            facts = results
+        else:
+            progress = state.get("progress")
+            facts = progress if isinstance(progress, dict) else None
+        return dict(facts) if facts else None
+
+    @staticmethod
+    def _static_track_reason(lines: list[str]) -> str:
+        """失败原因行列表 → 摘要：换行拼接后截断至 String(2000) 上限."""
+        return "\n".join(lines)[:2000]
+
+    def _finalize_from_state(self, plan: WritingPlan, state: object, fallback_reason: str) -> str:
+        """#897 收尾派生核心：checkpoint 章事实同步回 plan 后按 §5.5 表重判终态.
+
+        facts 缺失（旧形态 checkpoint / 非 dict）→ 返回 completed 不碰 plan；
+        facts 非空 → 同步 plan.progress/execution_refs（补 volume 轨长期不回写章
+        进度的掩蔽），failed/degraded 时以 failed 章列表 + fallback_reason 提示写
+        progress_reason。token 记账不动（#860 约束：volume 轨 checkpoint 无逐章
+        usage 数据，记账归后续 issue，勿在此伪造）。
+        """
+        facts = self._chapter_facts_from_state(state)
+        if facts is None:
+            return "completed"
+        for oid, ref in facts.items():
+            if ref == "failed":
+                plan.progress[oid] = "failed"
+            else:
+                plan.progress[oid] = "done"
+                if ref not in {"done", "in_progress"}:
+                    plan.execution_refs[oid] = ref
+        status = self._derive_run_status(plan.progress)
+        if status in {"failed", "degraded"}:
+            failed_ids = [oid for oid, value in plan.progress.items() if value == "failed"]
+            plan.progress_reason = self._static_track_reason(
+                [f"{oid} {fallback_reason}" for oid in failed_ids]
+            )
+        else:
+            plan.progress_reason = None
+        return status
+
+    async def _sync_and_finalize(
+        self,
+        plan: WritingPlan,
+        pipeline: object,
+        *,
+        thread_id: str,
+        fallback_reason: str,
+    ) -> str:
+        """读取 pipeline checkpoint 后统一收尾派生（#897 收尾入口）.
+
+        旧鸭子（无 get_checkpoint_state）/ 读 checkpoint 抛异常 / 返回非 dict →
+        跳过派生返回 completed（阶段 3/4 既有 mock 向后兼容守护）。
+        """
+        getter = getattr(pipeline, "get_checkpoint_state", None)
+        if getter is None:
+            return "completed"
+        try:
+            state = await getter(thread_id)
+        except Exception as exc:
+            state = None  # fresh mock/DB 无 checkpoint → 按旧语义维持 completed
+            logger.warning(
+                "#897 checkpoint 读取失败，跳过收尾派生（thread_id=%s）: %s", thread_id, exc
+            )
+        return self._finalize_from_state(plan, state, fallback_reason)
 
     async def write_book_agentic(
         self,
@@ -148,7 +242,8 @@ class BookRunMixin:
             config: agentic 模式配置（AgenticBookConfig）；None = 默认配置.
 
         Returns:
-            {"run_id": str(plan.id), "status": plan.status}.
+            {"run_id": str(plan.id), "status": plan.status（执行后完成态重派生为
+            completed | failed | degraded）}.
 
         Raises:
             ValueError: 计划不存在；或 agentic_pipeline 未配置（防静默降级）.
@@ -174,6 +269,15 @@ class BookRunMixin:
         )
         plan.status = str(result.get("status", "completed"))
         plan.thread_id = result.get("thread_id", str(plan.id))
+        if plan.status == "completed":
+            # #897：pipeline 报告 completed 也按 checkpoint 章事实重派生（_fallback_node
+            # 硬编码 completed 时全章 failed 不再假绿）
+            plan.status = await self._sync_and_finalize(
+                plan,
+                self._agentic_pipeline,  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供
+                thread_id=plan.thread_id or str(plan.id),
+                fallback_reason="凭据无效或运行时错误，详见章执行日志",
+            )
         await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供
             plan
         )

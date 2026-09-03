@@ -588,6 +588,10 @@ async def test_write_book_chapter_failure_marks_failed_continues():
     failed 落库 + 第 3 章仍 done（§5.2 状态机 failed 分支，章级只报告不中断）。
 
     阶段 1 只委托 1 章 → 第 2 章无 failed 进度 → AssertionError → RED。
+
+    #897 契约翻转（spec §5.5 v1.3，先对齐 spec 再动）：部分失败（done>0 且
+    failed>0）顶层终态从旧「无条件 completed」改为 degraded——章级失败不再被
+    顶层状态掩蔽；「继续下一章」的章级语义不变。
     """
     repo = AsyncMock()
     plan = _plan(root_outline_id=uuid.uuid4())
@@ -610,7 +614,8 @@ async def test_write_book_chapter_failure_marks_failed_continues():
 
     result = await svc.write_book(plan.id)
 
-    assert result["status"] == "completed"
+    assert result["status"] == "degraded"
+    assert plan.status == "degraded"
     assert plan.progress.get(str(chapters[0].id)) == "done"
     assert plan.progress.get(str(chapters[1].id)) == "failed"
     assert plan.progress.get(str(chapters[2].id)) == "done"
