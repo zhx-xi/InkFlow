@@ -223,6 +223,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
     # 委托按传入 system_prompt/expected ids 构造真实 deepagents 写作 agent（读/审计/
     # save_draft 工具），draft_service 供委托回收获草稿——修复 #464 book run 章全 failed
     # （零 token/execution_id=null）静默失败。
+    from inkflow.api._llm_resolver import resolve_llm_credentials
     from inkflow.api.deps import (
         get_chapter_audit_service,
         get_chapter_service,
@@ -244,10 +245,6 @@ def _build_book_service(db: AsyncSession) -> BookService:
     from inkflow.infrastructure.database.repositories.draft_repo import (
         SQLiteDraftRepository,
     )
-    from inkflow.infrastructure.llm.provider_config import (
-        get_provider_config,
-        parse_model_string,
-    )
 
     draft_service = DraftService(
         draft_repo=SQLiteDraftRepository(db),
@@ -263,16 +260,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
         draft_service=draft_service,
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
     )
-    model = config.llm_default_model
-    api_key = ""
-    base_url = ""
-    try:
-        provider, _ = parse_model_string(model)
-        provider_cfg = get_provider_config(provider)
-        api_key = provider_cfg.api_key
-        base_url = provider_cfg.base_url or ""
-    except ValueError:
-        pass
+    model, api_key, base_url = resolve_llm_credentials(config.llm_default_model)
 
     async def _writer_factory(
         *,
