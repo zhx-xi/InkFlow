@@ -190,5 +190,126 @@ class TestDebugDefaultOff:
         assert records == [], "DEBUG 默认关：INFO sink 不应捕获 DEBUG 记录"
 
 
+class TestExpectedHttpErrorNotUncaught:
+    """预期 HTTPException（4xx 业务流）≠ 未捕获异常：不得标 ERROR X_UNCAUGHT。
+
+    spec §4 矩阵：API 行「校验失败(422)→WARN」「未捕获异常→ERROR」。
+    契约：instrument 包装的函数抛 fastapi.HTTPException（带 status_code<500）
+    → 记 WARN（error_code=f"E_HTTP_{status}"）后原样 re-raise；
+    status_code>=500 → 仍 ERROR X_UNCAUGHT re-raise。
+    实现判据用鸭子类型 getattr(exc, "status_code", None)（logging 不引 fastapi 依赖）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_4xx_warns_not_error_and_reraises(self):
+        from fastapi import HTTPException
+
+        from inkflow.logging import instrument
+
+        @instrument(caller_type="api")
+        async def get_missing():
+            raise HTTPException(status_code=404, detail="not found")
+
+        records, sid = _capture_records("WARNING")
+        try:
+            with pytest.raises(HTTPException):
+                await get_missing()
+        finally:
+            logger.remove(sid)
+        errs = [r for r in records if r["level"].name == "ERROR"]
+        assert not errs, f"预期 4xx 不应产生 ERROR 记录：{[r['message'] for r in errs]}"
+        warns = [r for r in records if r["level"].name == "WARNING"]
+        assert warns, "4xx 应记 WARN（校验/资源缺失属自愈可恢复）"
+        rec = warns[0]
+        assert rec["extra"]["error_code"] == "E_HTTP_404"
+        assert rec["extra"]["message_key"] == "log.call.get_missing"
+
+    @pytest.mark.asyncio
+    async def test_5xx_still_error_uncaught(self):
+        from fastapi import HTTPException
+
+        from inkflow.logging import instrument
+
+        @instrument(caller_type="api")
+        async def broken():
+            raise HTTPException(status_code=503, detail="down")
+
+        records, sid = _capture_records("ERROR")
+        try:
+            with pytest.raises(HTTPException):
+                await broken()
+        finally:
+            logger.remove(sid)
+        errs = [r for r in records if r["level"].name == "ERROR"]
+        assert errs, "5xx 属服务端故障，仍应 ERROR"
+        assert errs[0]["extra"]["error_code"] == "X_UNCAUGHT"
+
+
+class TestAsyncGenSemantics:
+    """@instrument async-generator 分支（spec §4.1 设计要点 2/3）。
+
+    真 asyncgen（chat_stream/stream_events/stream 等）：入口 DEBUG started 即时；
+    completed（duration_ms）**仅在全量消费后**发出；流中途异常记 WARN
+    （error_code="X_STREAM_BROKEN"，流级失败非函数级崩溃）后原样 re-raise。
+    当前 sync 路径实现下，created 即 completed、流中异常逃逸 wrapper（RED 预期失败）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_completed_only_after_full_iteration(self):
+        from inkflow.logging import instrument
+
+        @instrument(caller_type="llm")
+        async def stream():
+            yield "a"
+            yield "b"
+
+        records, sid = _capture_records("DEBUG")
+        try:
+            agen = stream()
+            exits_at_create = [
+                r
+                for r in records
+                if r["level"].name == "DEBUG"
+                and r["extra"].get("event") == "stream"
+                and r["extra"].get("duration_ms") is not None
+            ]
+            assert not exits_at_create, "生成器刚创建未消费：不应已发 completed（流未结束）"
+            chunks = [c async for c in agen]
+        finally:
+            logger.remove(sid)
+        assert chunks == ["a", "b"]
+        _find(records, "DEBUG", "stream")  # started 存在
+        exits = [
+            r
+            for r in records
+            if r["level"].name == "DEBUG"
+            and r["extra"].get("event") == "stream"
+            and r["extra"].get("duration_ms") is not None
+        ]
+        assert exits, "全量消费后应发 completed（带 duration_ms）"
+
+    @pytest.mark.asyncio
+    async def test_midstream_error_logged_and_reraised(self):
+        from inkflow.logging import instrument
+
+        @instrument(caller_type="llm")
+        async def flaky_stream():
+            yield "ok"
+            raise RuntimeError("stream broke")
+
+        records, sid = _capture_records("WARNING")
+        try:
+            with pytest.raises(RuntimeError, match="stream broke"):
+                async for _ in flaky_stream():
+                    pass
+        finally:
+            logger.remove(sid)
+        errs = [r for r in records if r["level"].name == "ERROR"]
+        assert not errs, "流级失败不应标函数级 ERROR X_UNCAUGHT"
+        warns = [r for r in records if r["level"].name == "WARNING"]
+        assert warns, "流中途异常应被 instrument 记 WARN 后 re-raise"
+        assert warns[0]["extra"]["error_code"] == "X_STREAM_BROKEN"
+
+
 if __name__ == "__main__":
     unittest.main()

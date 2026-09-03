@@ -65,6 +65,47 @@ def _log_failed(
     )
 
 
+def _log_expected(
+    caller_type: CallerType,
+    caller_name: str,
+    evt: str,
+    key: str,
+    start: float,
+    status_code: int,
+) -> None:
+    """记录预期 HTTPException（status_code < 500）：WARN + E_HTTP_<status>，不带 stack。"""
+    log_structured(
+        level="WARN",
+        caller_type=caller_type,
+        caller_name=caller_name,
+        event=evt,
+        message_key=key,
+        message=f"{evt} failed",
+        duration_ms=(time.perf_counter() - start) * 1000,
+        error_code=f"E_HTTP_{status_code}",
+    )
+
+
+def _log_stream_broken(
+    caller_type: CallerType,
+    caller_name: str,
+    evt: str,
+    key: str,
+    start: float,
+) -> None:
+    """记录 async 生成器流中断：WARN + X_STREAM_BROKEN（流级失败，非函数级崩溃）。"""
+    log_structured(
+        level="WARN",
+        caller_type=caller_type,
+        caller_name=caller_name,
+        event=evt,
+        message_key=key,
+        message=f"{evt} stream broken",
+        duration_ms=(time.perf_counter() - start) * 1000,
+        error_code="X_STREAM_BROKEN",
+    )
+
+
 @overload
 def instrument(fn: Callable[_P, _R]) -> Callable[_P, _R]: ...
 
@@ -103,13 +144,33 @@ def instrument(
                 start = time.perf_counter()
                 try:
                     result = await func(*args, **kwargs)
-                except Exception:
-                    _log_failed(caller_type, qualname, evt, key, start)
+                except Exception as exc:
+                    status = getattr(exc, "status_code", None)
+                    if isinstance(status, int) and status < 500:
+                        _log_expected(caller_type, qualname, evt, key, start, status)
+                    else:
+                        _log_failed(caller_type, qualname, evt, key, start)
                     raise
                 _log_done(caller_type, qualname, evt, key, start)
                 return result
 
             return async_wrapper
+
+        if inspect.isasyncgenfunction(func):
+
+            @functools.wraps(func)
+            async def asyncgen_wrapper(*args: Any, **kwargs: Any) -> Any:
+                _log_start(caller_type, qualname, evt, key)
+                start = time.perf_counter()
+                try:
+                    async for item in func(*args, **kwargs):
+                        yield item
+                except Exception:
+                    _log_stream_broken(caller_type, qualname, evt, key, start)
+                    raise
+                _log_done(caller_type, qualname, evt, key, start)
+
+            return asyncgen_wrapper
 
         @functools.wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -117,8 +178,12 @@ def instrument(
             start = time.perf_counter()
             try:
                 result = func(*args, **kwargs)
-            except Exception:
-                _log_failed(caller_type, qualname, evt, key, start)
+            except Exception as exc:
+                status = getattr(exc, "status_code", None)
+                if isinstance(status, int) and status < 500:
+                    _log_expected(caller_type, qualname, evt, key, start, status)
+                else:
+                    _log_failed(caller_type, qualname, evt, key, start)
                 raise
             _log_done(caller_type, qualname, evt, key, start)
             return result
