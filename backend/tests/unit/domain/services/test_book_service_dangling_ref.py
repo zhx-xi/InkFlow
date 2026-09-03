@@ -105,12 +105,14 @@ def _svc(plan: WritingPlan, live: list[Outline], *, repo: AsyncMock | None = Non
 @pytest.mark.asyncio
 async def test_write_book_prunes_dangling_outline_ref():
     """outline O1 已删（悬空），progress/execution_refs 引用它；live 树只有 O2。
-    write_book 聚合进度须优雅跳过悬空 O1（修剪幽灵条目），只保留当前树节点 O2。"""
+    write_book 聚合进度须优雅跳过悬空 O1（修剪幽灵条目），只保留当前树节点 O2。
+    O2 在修剪时即持有合法引用（execution_refs 混合悬空+合法 → 修剪保合法删悬空；
+    progress in_progress 不触发「已完成」安全阀，O2 照常派发并覆写引用）。"""
     o1 = _outline(uuid.uuid4(), "第一章(已删除)")
     o2 = _outline(uuid.uuid4(), "第一章(重建)")
     plan = _plan(
         progress={str(o1.id): "done", str(o2.id): "in_progress"},
-        execution_refs={str(o1.id): "exec-1"},
+        execution_refs={str(o1.id): "exec-1", str(o2.id): "exec-old"},
         root_outline_id=o2.id,
     )
     svc = _svc(plan, [o2])
@@ -121,8 +123,9 @@ async def test_write_book_prunes_dangling_outline_ref():
     # 悬空 O1 被优雅跳过（不再残留于进度）
     assert str(o1.id) not in plan.progress
     assert str(o1.id) not in plan.execution_refs
-    # 当前树节点 O2 正常派发
+    # 当前树节点 O2 正常派发（合法引用保留并被新执行覆写）
     assert plan.progress.get(str(o2.id)) == "done"
+    assert plan.execution_refs == {str(o2.id): "draft-1"}
 
 
 @pytest.mark.asyncio
