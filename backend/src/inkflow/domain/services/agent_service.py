@@ -714,6 +714,8 @@ class AgentService(AgentServiceStreamMixin):
     ) -> None:
         """后台执行管线，更新 stages/relations 快照到 ExecutionStore。"""
         pipeline = pipeline or self._pipeline
+        # #861：后台任务启动即置 running（此前仅在末尾写终态，慢管线全程 pending 被误判为卡死）
+        await self._store.update_status(execution_id=execution_id, status="running")
         await self._inject_context(context, continue_context=continue_context)
         try:
             if supervisor_config is not None:
