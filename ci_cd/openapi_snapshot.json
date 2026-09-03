@@ -2690,8 +2690,13 @@
         "type": "object"
       },
       "OutlineGenerateRequest": {
-        "description": "AI 生成大纲请求.\n\nAttributes:\n    project_id: 所属项目 UUID，必填.\n    name: 目标大纲名；缺省「未命名大纲」（撞名 → 422）.\n    prompt: 可选创作约束/设定摘要（自由文本，≤ 20000；None/空 = 无约束）.\n    num_chapters: 可选规划章节数提示（1-100）.\n    save: True=自动落库；False=仅返回预览（不创建任何实体）.\n    model: 覆盖项目默认模型（格式 provider/model_name）.",
+        "description": "AI 生成大纲请求.\n\nAttributes:\n    project_id: 所属项目 UUID，必填.\n    name: 目标大纲名；缺省「未命名大纲」（撞名 → 422）.\n    prompt: 可选创作约束/设定摘要（自由文本，≤ 20000；None/空 = 无约束）.\n    num_chapters: 可选规划章节数提示（1-100）.\n    save: True=自动落库；False=仅返回预览（不创建任何实体）.\n    model: 覆盖项目默认模型（格式 provider/model_name）.\n    target_outline_id: 覆盖目标大纲（仅 mode=\"replace\" 有效；缺省 None）.\n    mode: 生成模式；\"new\"=生成即新建（现行为），\"replace\"=覆盖目标大纲\n        全部情节点（#669，需用户确认后应用）.",
         "properties": {
+          "mode": {
+            "default": "new",
+            "title": "Mode",
+            "type": "string"
+          },
           "model": {
             "anyOf": [
               {
@@ -2745,6 +2750,18 @@
             "default": true,
             "title": "Save",
             "type": "boolean"
+          },
+          "target_outline_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Outline Id"
           }
         },
         "required": [
@@ -3861,6 +3878,20 @@
           }
         },
         "title": "ReindexBody",
+        "type": "object"
+      },
+      "ReplaceConfirmBody": {
+        "description": "覆盖确认请求体（#669 §5）— approved: True 应用 / False 取消.",
+        "properties": {
+          "approved": {
+            "title": "Approved",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "approved"
+        ],
+        "title": "ReplaceConfirmBody",
         "type": "object"
       },
       "RetrieveBody": {
@@ -10788,6 +10819,57 @@
           }
         },
         "summary": "Create Point",
+        "tags": [
+          "大纲"
+        ]
+      }
+    },
+    "/api/v1/outlines/{outline_id}/replace-confirm": {
+      "post": {
+        "description": "确认/取消 AI 覆盖大纲（#669 §5）：approved=true 应用 pending 替换，false 取消.",
+        "operationId": "confirm_replace_outline_api_v1_outlines__outline_id__replace_confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "outline_id",
+            "required": true,
+            "schema": {
+              "title": "Outline Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceConfirmBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Replace Outline",
         "tags": [
           "大纲"
         ]

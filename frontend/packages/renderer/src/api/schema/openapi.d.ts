@@ -1759,6 +1759,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/outlines/{outline_id}/replace-confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Replace Outline
+         * @description 确认/取消 AI 覆盖大纲（#669 §5）：approved=true 应用 pending 替换，false 取消.
+         */
+        post: operations["confirm_replace_outline_api_v1_outlines__outline_id__replace_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/plot-points/{point_id}": {
         parameters: {
             query?: never;
@@ -4567,8 +4587,16 @@ export interface components {
          *         num_chapters: 可选规划章节数提示（1-100）.
          *         save: True=自动落库；False=仅返回预览（不创建任何实体）.
          *         model: 覆盖项目默认模型（格式 provider/model_name）.
+         *         target_outline_id: 覆盖目标大纲（仅 mode="replace" 有效；缺省 None）.
+         *         mode: 生成模式；"new"=生成即新建（现行为），"replace"=覆盖目标大纲
+         *             全部情节点（#669，需用户确认后应用）.
          */
         OutlineGenerateRequest: {
+            /**
+             * Mode
+             * @default new
+             */
+            mode: string;
             /** Model */
             model?: string | null;
             /** Name */
@@ -4587,6 +4615,8 @@ export interface components {
              * @default true
              */
             save: boolean;
+            /** Target Outline Id */
+            target_outline_id?: string | null;
         };
         /**
          * OutlineUpdate
@@ -5091,6 +5121,14 @@ export interface components {
         ReindexBody: {
             /** Entity Types */
             entity_types?: components["schemas"]["inkflow__domain__ports__vector_store__EntityType"][] | null;
+        };
+        /**
+         * ReplaceConfirmBody
+         * @description 覆盖确认请求体（#669 §5）— approved: True 应用 / False 取消.
+         */
+        ReplaceConfirmBody: {
+            /** Approved */
+            approved: boolean;
         };
         /**
          * RetrieveBody
@@ -9634,6 +9672,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_replace_outline_api_v1_outlines__outline_id__replace_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                outline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceConfirmBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

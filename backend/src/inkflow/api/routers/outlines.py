@@ -1,10 +1,12 @@
-"""F11 大纲管理 REST API — 16 个端点：大纲/情节点/弧线 CRUD + AI 生成.
+"""F11 大纲管理 REST API — 17 个端点：大纲/情节点/弧线 CRUD + AI 生成 + 覆盖确认.
 
 端点风格沿用 F2/F9/F10（spec §3.1）：创建/列表嵌套项目或大纲路径
 （/projects/{project_id}/outlines、/outlines/{outline_id}/plot-points），
 详情/更新/删除扁平（/outlines/...、/plot-points/...、/story-arcs/...）。
 AI 生成为 POST /outlines/generate，注册在 /outlines/{outline_id} 系列
-之前避免路径歧义（同 F9 characters.py / F10 world_settings.py 做法）。
+之前避免路径歧义（同 F9 characters.py / F10 world_settings.py 做法）；
+#669 覆盖确认为 POST /outlines/{outline_id}/replace-confirm（POST 带子路径
+无歧义，注册在 /outlines/{outline_id} 系列旁）。
 
 各端点通过 `Depends(get_db)` 注入数据库 session，再调用模块级
 `_get_svc(db)` 获取 OutlineService —— 单元测试通过
@@ -302,6 +304,37 @@ async def delete_outline(
     ok = await _run_service(svc.delete_outline(oid))
     if not ok:
         raise HTTPException(status_code=404, detail="大纲不存在")
+
+
+# ── AI 覆盖确认（#669，POST 子路径无歧义）─────────────────────
+
+
+class ReplaceConfirmBody(BaseModel):
+    """覆盖确认请求体（#669 §5）— approved: True 应用 / False 取消."""
+
+    approved: bool
+
+
+@router.post("/outlines/{outline_id}/replace-confirm")
+@instrument(caller_type="api")
+async def confirm_replace_outline(
+    outline_id: str,
+    body: ReplaceConfirmBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """确认/取消 AI 覆盖大纲（#669 §5）：approved=true 应用 pending 替换，false 取消."""
+    oid = _parse_id(outline_id, detail="大纲不存在")
+    svc = _get_svc(db)
+    result = await _run_service(svc.confirm_replace(oid, approved=body.approved))
+    return {
+        "replaced": result["replaced"],
+        "cancelled": result["cancelled"],
+        "outline": result["outline"].model_dump(mode="json"),
+        "plot_points": [p.model_dump(mode="json") for p in result["plot_points"]],
+        "arcs": [a.model_dump(mode="json") for a in result["arcs"]],
+        "warnings": result["warnings"],
+        "model": result["model"],
+    }
 
 
 # ── PlotPoint ────────────────────────────────────────────────

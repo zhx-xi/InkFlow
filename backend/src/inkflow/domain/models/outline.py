@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def _validate_name(v: str, field: str = "名称", max_len: int = 50) -> str:
@@ -595,6 +595,9 @@ class OutlineGenerateRequest(BaseModel):
         num_chapters: 可选规划章节数提示（1-100）.
         save: True=自动落库；False=仅返回预览（不创建任何实体）.
         model: 覆盖项目默认模型（格式 provider/model_name）.
+        target_outline_id: 覆盖目标大纲（仅 mode="replace" 有效；缺省 None）.
+        mode: 生成模式；"new"=生成即新建（现行为），"replace"=覆盖目标大纲
+            全部情节点（#669，需用户确认后应用）.
     """
 
     project_id: uuid.UUID
@@ -603,6 +606,8 @@ class OutlineGenerateRequest(BaseModel):
     num_chapters: int | None = None
     save: bool = True
     model: str | None = None
+    target_outline_id: uuid.UUID | None = None  # 覆盖目标大纲（仅 mode="replace" 有效）
+    mode: str = "new"  # "new"=生成即新建（现行为）/ "replace"=覆盖目标大纲情节点
 
     @field_validator("name")
     @classmethod
@@ -634,12 +639,32 @@ class OutlineGenerateRequest(BaseModel):
             raise ValueError("章节数不能超过 100")
         return v
 
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        """验证生成模式：仅接受 new/replace（#669）."""
+        if v not in {"new", "replace"}:
+            raise ValueError("生成模式只能为 new/replace")
+        return v
+
+    @model_validator(mode="after")
+    def validate_mode_target(self) -> OutlineGenerateRequest:
+        """交叉校验 mode/target_outline_id（#669）：replace 必须指定目标大纲；
+        new 模式不允许携带目标大纲."""
+        if self.mode == "replace" and self.target_outline_id is None:
+            raise ValueError("覆盖模式必须指定目标大纲")
+        if self.mode == "new" and self.target_outline_id is not None:
+            raise ValueError("目标大纲仅在覆盖模式下有效")
+        return self
+
 
 class OutlineGenerationResult(BaseModel):
     """大纲生成结果.
 
     save=True: outline/plot_points/arcs 为落库后的实体（含新 id）.
     save=False: preview 为生成的原始结构（未落库，无 id），outline 为 None.
+    requires_confirmation: replace 模式（save=True）暂存待确认 = True（#669）.
+    target_outline_id: 覆盖模式回显目标大纲（缺省 None）.
     """
 
     saved: bool
@@ -649,3 +674,5 @@ class OutlineGenerationResult(BaseModel):
     preview: GeneratedOutline | None = None  # 仅 save=False 时非空
     warnings: list[str] = Field(default_factory=list)
     model: str
+    requires_confirmation: bool = False  # replace 模式暂存待确认 = True（#669）
+    target_outline_id: uuid.UUID | None = None  # 覆盖模式回显目标大纲

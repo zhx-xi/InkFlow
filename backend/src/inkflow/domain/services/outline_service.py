@@ -13,6 +13,9 @@
 - AI 生成入口（§5.1 步骤 ①）: 校验项目存在并组装 project_info（项目名/
   类型/目标字数/写作风格/extra 纯文本），以 project.config.model 作为
   默认模型，再委托 OutlineGenerator 执行管线（②-⑦）
+- #669 replace 确认: generate 前置校验目标大纲存在且同项目（LLM 前拦截）；
+  confirm_replace 两段式应用/取消覆盖（快照旧点 → 物理删旧点 → 落新点 /
+  仅清 pending），extra["replace_pending"]/["replace_snapshot"] 承载版本化
 
 依赖全部通过构造函数注入（ADR-015，测试注入 Mock）:
 - repository: OutlineRepositoryProtocol（B1 已实现）
@@ -30,9 +33,11 @@ import json
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from inkflow.core.config import config
 from inkflow.domain.models.outline import (
+    GeneratedOutline,
     Outline,
     OutlineGenerateRequest,
     OutlineGenerationResult,
@@ -52,7 +57,9 @@ from inkflow.domain.ports.outline_errors import (
     OutlineLevelError,
     OutlineNameConflictError,
     OutlineNotFoundError,
+    OutlineReplaceError,
     OutlineServiceError,
+    OutlineTargetProjectError,
     OutlineVolumeRefError,
     ProjectNotFoundError,
 )
@@ -599,6 +606,16 @@ class OutlineService:
         project = await self._project_repo.get(_to_int_id(request.project_id))
         if project is None:
             raise ProjectNotFoundError()
+        # #669 replace 前置校验：目标大纲存在且属于同一项目（LLM 调用前快速失败）。
+        # save=False 纯预览跳过——零写入场景无须校验目标（连 pending 都不写）
+        if request.mode == "replace" and request.save:
+            target_id = request.target_outline_id
+            assert target_id is not None  # §1.1 model_validator 保证 replace 必有目标大纲
+            target = await self._repo.get(_to_int_id(target_id))
+            if target is None:
+                raise OutlineNotFoundError()
+            if target.project_id != request.project_id:
+                raise OutlineTargetProjectError()
         logger.info(
             "大纲生成: project=%s model=%s",
             request.project_id,
@@ -607,8 +624,162 @@ class OutlineService:
         return await self._generator.generate(
             request,
             project_info=_build_project_info(project),
-            default_model=resolve_model(
-                None, project.config.model, self._llm_default_model
-            )
-            or "",
+            default_model=resolve_model(None, project.config.model, self._llm_default_model) or "",
         )
+
+    async def confirm_replace(
+        self, outline_id: int | uuid.UUID, *, approved: bool
+    ) -> dict[str, Any]:
+        """覆盖确认（#669）：approved=True 应用 pending；False 取消.
+
+        两段式替换的第二步（第一步 generate replace 暂存由
+        generator._stage_replace 完成）。应用 = 快照旧点 → 逐点物理删旧点 →
+        落新点（弧线按名复用/新建，镜像 generator._persist 第⑥步语义）→
+        移除 replace_pending 并写 replace_snapshot；取消 = 仅清 pending +
+        repo.update，原内容分毫不动。幂等保护：应用/取消后 pending 已移除，
+        再次 confirm（任何 approved）→ OutlineReplaceError（422）。
+
+        Args:
+            outline_id: 目标大纲主键（支持 int 或 UUID）.
+            approved: True = 应用 pending 覆盖；False = 取消覆盖（只清 pending）.
+
+        Returns:
+            应用: {"replaced": True, "cancelled": False, "outline": <更新后
+            Outline>, "plot_points": [PlotPoint,...], "arcs": [StoryArc,...],
+            "warnings": [str,...], "model": str}.
+            取消: {"replaced": False, "cancelled": True, "outline": <Outline>,
+            "plot_points": [], "arcs": [], "warnings": [], "model": str}.
+
+        Raises:
+            OutlineNotFoundError: 大纲不存在（router 转 404）.
+            OutlineReplaceError: 大纲无待确认的覆盖操作（pending 缺失/已应用）.
+        """
+        oid = _to_int_id(outline_id)
+        outline = await self._repo.get(oid)
+        if outline is None:
+            raise OutlineNotFoundError()
+        pending = outline.extra.get("replace_pending")
+        if not isinstance(pending, dict):
+            raise OutlineReplaceError()
+        model = str(pending.get("model", ""))
+        if not approved:
+            # 取消：只清 pending + 更新，禁删点/落点（原内容分毫不动）
+            outline.extra.pop("replace_pending", None)
+            updated = await self._repo.update(outline)
+            logger.info("大纲覆盖已取消: outline_id=%s", outline_id)
+            return {
+                "replaced": False,
+                "cancelled": True,
+                "outline": updated,
+                "plot_points": [],
+                "arcs": [],
+                "warnings": [],
+                "model": model,
+            }
+
+        # 应用：快照旧点 → 逐点物理删除 → 落新点（position 1..N）→ 清 pending
+        old_points = await self._repo.list_points(oid)
+        outline.extra["replace_snapshot"] = {
+            "replaced_at": _utcnow().isoformat(),
+            "model": model,
+            "plot_points": [p.model_dump(mode="json") for p in old_points],
+        }
+        for point in old_points:
+            await self._repo.hard_delete_point(_to_int_id(point.id))
+        generated = GeneratedOutline.model_validate(pending["generated"])
+        arcs, plot_points, warnings = await self._materialize_replace_points(
+            outline=outline,
+            generated=generated,
+        )
+        outline.extra.pop("replace_pending", None)
+        updated = await self._repo.update(outline)
+        for w in warnings:
+            logger.warning("大纲覆盖警告: %s", w)
+        logger.info("大纲覆盖已应用: outline_id=%s", outline_id)
+        return {
+            "replaced": True,
+            "cancelled": False,
+            "outline": updated,
+            "plot_points": plot_points,
+            "arcs": arcs,
+            "warnings": warnings,
+            "model": model,
+        }
+
+    async def _materialize_replace_points(
+        self,
+        *,
+        outline: Outline,
+        generated: GeneratedOutline,
+    ) -> tuple[list[StoryArc], list[PlotPoint], list[str]]:
+        """落新情节点与弧线（#669，镜像 generator._persist 第⑥步语义）.
+
+        弧线按 (project_id, name) 匹配：命中=复用 / 未命中=add_arc 新建；
+        情节点按输出顺序分配 position（1,2,3...），arc 名解析为 arc_id，
+        无法解析 → 跳过关联 + warning；空情节点 → warning「未生成情节点」。
+
+        Args:
+            outline: 目标大纲（覆盖写入 outline_id/project_id）.
+            generated: 待应用的生成大纲（pending["generated"] 校验产物）.
+
+        Returns:
+            (arcs, plot_points, warnings) 三元组——弧线/情节点为落库实体.
+        """
+        warnings: list[str] = []
+        pid_int = _to_int_id(outline.project_id)
+        now = _utcnow()
+        arcs: list[StoryArc] = []
+        arc_by_name: dict[str, StoryArc] = {}
+        for ga in generated.arcs:
+            existing = await self._repo.get_arc_by_name(pid_int, ga.name)
+            if existing is not None:
+                arc_by_name[ga.name] = existing
+                arcs.append(existing)
+                continue
+            new_arc = await self._repo.add_arc(
+                StoryArc(
+                    id=uuid.uuid4(),
+                    project_id=outline.project_id,
+                    name=ga.name,
+                    description=ga.description or "",
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            arc_by_name[ga.name] = new_arc
+            arcs.append(new_arc)
+
+        plot_points: list[PlotPoint] = []
+        for index, gp in enumerate(generated.plot_points, start=1):
+            arc_id: uuid.UUID | None = None
+            if gp.arc:
+                arc_name = gp.arc.strip()
+                if arc_name:
+                    arc = arc_by_name.get(arc_name)
+                    if arc is None:
+                        arc = await self._repo.get_arc_by_name(pid_int, arc_name)
+                    if arc is not None:
+                        arc_by_name[arc_name] = arc
+                        arc_id = arc.id
+                    else:
+                        warnings.append(f"情节点 {gp.name} 的弧线 {arc_name} 无法解析已跳过关联")
+            plot_points.append(
+                await self._repo.add_point(
+                    PlotPoint(
+                        id=uuid.uuid4(),
+                        outline_id=outline.id,
+                        project_id=outline.project_id,
+                        name=gp.name,
+                        type=gp.type or "",
+                        description=gp.description or "",
+                        position=index,
+                        arc_id=arc_id,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+            )
+
+        if not generated.plot_points:
+            warnings.append("未生成情节点")
+        return arcs, plot_points, warnings
