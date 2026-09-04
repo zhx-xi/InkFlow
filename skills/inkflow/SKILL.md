@@ -17,43 +17,46 @@ InkFlow 是一个本地 AI 辅助小说创作工具（单机应用）。本 skil
 
 ## 安装后如何用（三步起步）
 
-1. **探活**：`inkflow --version` 确认 CLI 可用；`inkflow --help` 查看全部命令组（23 组）
+1. **探活**：`inkflow --version` 确认 CLI 可用；`inkflow --help` 查看全部命令组（26 组）
 2. **发现**：`inkflow project list --json` 列出用户现有项目（拿真实 UUID——不要猜测 UUID，seed 惯例下第一个项目是 `00000000-0000-0000-0000-000000000001`，但请以 list 返回为准）
 3. **走查**（旅程 C：agent 辅助写作闭环）：
    - `inkflow project list --json` → 选择项目 UUID
    - `inkflow chapter list --project-id <uuid> --json` → 发现章节
-   - `inkflow write generate --project-id <uuid> --chapter-id <cid> --json` → 生成章节
-   - `inkflow audit chapter --project <uuid> --json` → 触发审计
-   - 结果写回：`inkflow write continue --project-id <uuid> --chapter-id <cid> --text "..." --json`
+   - `inkflow write next --project-id <uuid> --chapter-id <cid> --outline "<本章大纲>" --json` → 生成章节
+   - `inkflow audit chapter chapter <chapter> --project <uuid> --json` → 触发审计
+   - 结果写回：`inkflow write continue --project-id <uuid> --chapter-id <cid> --json`（续写读章节库内容，可 `--context` 补充）
 
 ## 核心执行纪律（每次操作前必读）
 
 1. **`--json` 位置**：根级 `--json` 必须放在子命令**前**（`inkflow --json project list`）；子命令内的 `--json` 按各命令 help。
 2. **信封**：成功 `{"ok": true, "data": ...}`；失败 `{"ok": false, "error": {"code", "message"}}`；退出码 0（成功）/ 1（业务错误）/ 2（用法错误）/ 130（Ctrl+C）。
-3. **项目 ID 语义**：`character/world/outline/timeline/foreshadowing/chapter/volume/write` 组用 `--project-id` 且只收 **UUID 字符串**；`export`/`audit chapter --project`/`search --project` 接受名称或 UUID。
+3. **项目 ID 语义**：`character/world/outline/timeline/foreshadowing/chapter/volume/write` 组用 `--project-id` 且只收 **UUID 字符串**；`export`/`audit chapter chapter --project`/`search --project` 接受名称或 UUID。
 4. **数据目录**：打包版数据在 `%APPDATA%\InkFlow`（Windows）；开发版为运行目录下 `data`。首次命令自动拉起本地内核（`ensure_kernel`），无需手动启动。
 5. **只读优先**：对用户数据的修改性操作（删除/覆盖）前先 list 确认目标，删除类命令注意 `--force` 语义（无 `--force` 会交互确认，`--json` 下必须显式 `--force`）。
 
-## 命令面总览（23 组）
+## 命令面总览（26 组）
 
 | 组 | 用途 | 参考文件 |
 |---|---|---|
 | `project` | 项目创建/列表/删除 | `projects.md` |
 | `chapter` / `volume` | 章节与卷管理 | `chapters.md` |
-| `write` | AI 生成/续写/修订（SSE 流式） | `writing.md` |
-| `audit` | 章节审计/评审 | `audit.md` |
+| `write` | AI 续写/修订/下一章（SSE 流式） | `writing.md` |
+| `book` | 长线批量写作（plan/run/status/confirm/intervene/summary） | `cli-commands.md` §3 |
+| `audit` | 章节审计/一致性检查 | `audit.md` |
 | `character` / `world` / `outline` / `timeline` / `foreshadowing` / `map` | 资料库 | `library-*.md` |
-| `vector` | RAG 向量库 | `library-rag.md` |
-| `extract` | 统一提取（角色/世界观/大纲） | `extract.md` |
+| `knowledge` | 知识图谱（实体关系） | `library-*.md` |
+| `vector` | RAG 向量库（status/reindex/retrieve） | `library-rag.md` |
+| `extract` | 统一提取（run/status，7 类型） | `extract.md` |
 | `export` | 书籍导出 | `cli-commands.md` §6 |
 | `style` | 文风管理 | `cli-commands.md` §6 |
 | `agent` / `session` / `memory` | Agent 链/会话/项目记忆 | `agent.md` / `memory.md` |
-| `models` / `config` / `llm` | Provider/模型/配置 | `models.md` / `system.md` |
-| `template`（agent 模板） | 模板管理 | `templates.md` |
+| `context` | 上下文装配预览 | `cli-commands.md` §7 |
+| `skills` / `skill` | 技能包文件导入（复数）/ F39 实体域（单数） | `cli-commands.md` §7 |
+| `llm` / `config` | Provider 注册表/key/配置 | `models.md` / `system.md` |
 | `search` | 全文搜索 | `system.md` |
 | `kernel` / `serve` | 内核生命周期 | `kernel.md` / `system.md` |
 
-> 全量 23 组命令签名与示例见 `cli-commands.md`；JSON 信封契约见 `json-contracts.md`。
+> 全量 26 组命令签名与示例见 `cli-commands.md`；JSON 信封契约见 `json-contracts.md`。
 
 ## 文件索引
 
@@ -73,10 +76,10 @@ InkFlow 是一个本地 AI 辅助小说创作工具（单机应用）。本 skil
 
 ## 常见工作流
 
-- **创建项目并写作**：`project create --name <N> --genre <G>` → 取 UUID → `write generate` 生成首章 → `chapter list` 确认
-- **资料库维护**：`character create --project-id <uuid> --name <N>` 等资料库命令批量录入 → `world`/`outline` 同步
-- **批量提取**：`extract characters --project-id <uuid> --chapter-id <cid>` 从章节提取设定
-- **导出**：`export book --project-id <uuid> --format md` 导出全书
+- **创建项目并写作**：`project create --name <N> --tags <T>` → 取 UUID → `write next --outline "<大纲>"` 生成首章 → `chapter list` 确认
+- **资料库维护**：`character create --project-id <uuid> --name <N> --role-rank <R>` 等资料库命令批量录入 → `world`/`outline` 同步
+- **批量提取**：`extract run --project-id <uuid> --type character --chapters <ids>` 从章节提取设定
+- **导出**：`export export <project>` 导出全书（CLI 固定 TXT）
 
 ## 版本
 

@@ -79,9 +79,9 @@ InkFlow CLI 的 `--json` 输出是 agent 与内核之间的**稳定执行契约*
 
 > chapter id 为整数；`--status` 不传 = 全量返回。
 
-### write generate（SSE 流式）
+### write next（SSE 流式）
 
-`write generate` 以 **SSE 流**输出（`text/event-stream`），非单次 JSON：
+`write next`（deterministic 模式）底层走 **SSE 流**端点（`text/event-stream`），CLI 聚合后输出最终信封（writing.md）；原始帧协议：
 
 ```text
 data: {"event": "chunk", "content": "夜色渐深，"}
