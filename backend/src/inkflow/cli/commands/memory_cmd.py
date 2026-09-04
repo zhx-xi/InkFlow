@@ -14,7 +14,12 @@ import sys
 
 import typer
 
-from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.http import (
+    LLM_TASK_TIMEOUT,
+    HttpApiError,
+    InkFlowHTTPClient,
+    map_http_error,
+)
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 from inkflow.logging import instrument
 
@@ -240,6 +245,7 @@ def memory_summarize(
             return await client.post(
                 "/agent/memory/summarize",
                 params={"project_id": project_id, "force": force},
+                timeout=LLM_TASK_TIMEOUT,
             )
 
     data = _run(_impl)

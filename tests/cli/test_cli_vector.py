@@ -167,7 +167,9 @@ class TestVectorReindex:
             "chapter_chunk",
         ]
         fake_http_client.post.assert_awaited_once_with(
-            f"/projects/{PID}/vector/reindex", json={"entity_types": None}
+            f"/projects/{PID}/vector/reindex",
+            json={"entity_types": None},
+            timeout=300.0,  # #926 迁移：embedding 全量重建 per-request timeout
         )
 
     def test_reindex_multiple_types(self, cli_runner, fake_http_client):
@@ -195,6 +197,7 @@ class TestVectorReindex:
         fake_http_client.post.assert_awaited_once_with(
             f"/projects/{PID}/vector/reindex",
             json={"entity_types": ["character", "setting"]},
+            timeout=300.0,  # #926 迁移：embedding 全量重建 per-request timeout
         )
 
     def test_reindex_human(self, cli_runner, fake_http_client):
@@ -577,7 +580,9 @@ class TestVectorStaleWarning:
         assert "索引可能过期" in result.output
         assert "✅ 索引完成" in result.output
         fake_http_client.post.assert_awaited_once_with(
-            f"/projects/{PID}/vector/reindex", json={"entity_types": None}
+            f"/projects/{PID}/vector/reindex",
+            json={"entity_types": None},
+            timeout=300.0,  # #926 迁移：embedding 全量重建 per-request timeout
         )
 
     def test_reindex_fresh_no_warning(self, cli_runner, fake_http_client):

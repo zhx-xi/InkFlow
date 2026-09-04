@@ -34,7 +34,12 @@ from inkflow.domain.models.extraction import (
     ExtractionStatus,
     ExtractionType,
 )
-from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.http import (
+    LLM_TASK_TIMEOUT,
+    HttpApiError,
+    InkFlowHTTPClient,
+    map_http_error,
+)
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 from inkflow.logging import instrument
 
@@ -189,7 +194,11 @@ def extract_run_cmd(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
-            return await client.post("/extract", json=request.model_dump(mode="json"))
+            return await client.post(
+                "/extract",
+                json=request.model_dump(mode="json"),
+                timeout=LLM_TASK_TIMEOUT,
+            )
 
     result = _run(cli_ctx, _impl)
     if cli_ctx.json_output:

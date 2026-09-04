@@ -17,7 +17,12 @@ import typer
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
-from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.http import (
+    LLM_TASK_TIMEOUT,
+    HttpApiError,
+    InkFlowHTTPClient,
+    map_http_error,
+)
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 from inkflow.logging import instrument
 
@@ -101,6 +106,7 @@ def plan_start(
             return await client.post(
                 "/agent/books/planner",
                 json={"project_id": project_id, "one_liner": one_liner},
+                timeout=LLM_TASK_TIMEOUT,
             )
 
     data = _run_ctx(cli_ctx, _impl)
@@ -125,6 +131,7 @@ def plan_respond(
             return await client.post(
                 f"/agent/books/planner/{session_id}/respond",
                 json={"answers": {"answer": answer}, "auto": False},
+                timeout=LLM_TASK_TIMEOUT,
             )
 
     data = _run_ctx(cli_ctx, _impl)
@@ -161,11 +168,13 @@ def plan_auto(
             started = await client.post(
                 "/agent/books/planner",
                 json={"project_id": project_id, "one_liner": one_liner},
+                timeout=LLM_TASK_TIMEOUT,
             )
             session_id = started["session_id"]
             return await client.post(
                 f"/agent/books/planner/{session_id}/respond",
                 json={"answers": {}, "auto": True},
+                timeout=LLM_TASK_TIMEOUT,
             )
 
     data = _run_ctx(cli_ctx, _impl)

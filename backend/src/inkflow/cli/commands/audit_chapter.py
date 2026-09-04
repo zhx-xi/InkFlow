@@ -29,7 +29,12 @@ import typer
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
-from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.http import (
+    LLM_TASK_TIMEOUT,
+    HttpApiError,
+    InkFlowHTTPClient,
+    map_http_error,
+)
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 from inkflow.logging import instrument
 
@@ -238,6 +243,7 @@ def chapter_audit_cmd(
             return await client.post(
                 f"/projects/{pid}/chapters/{cid}/audit",
                 json={"include_static": include_static},
+                timeout=LLM_TASK_TIMEOUT,
             )
 
     data = _run(cli_ctx, _impl)

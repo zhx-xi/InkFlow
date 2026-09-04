@@ -71,7 +71,8 @@ class _FakeHTTPClient:
     async def post(self, path, *, json=None):
         raise AssertionError(f"unexpected POST {path}")
 
-    async def stream_sse(self, path, *, json=None):
+    async def stream_sse(self, path, *, json=None, timeout=None):
+        # #926 迁移：实现侧流式调用新增 per-request timeout，fake 签名跟上
         assert path == "/writing/stream", path
         assert json is not None and json.get("mode") in (
             "generate",

@@ -27,7 +27,12 @@ from pydantic import ValidationError
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
-from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.http import (
+    LLM_TASK_TIMEOUT,
+    HttpApiError,
+    InkFlowHTTPClient,
+    map_http_error,
+)
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 from inkflow.logging import instrument
 
@@ -130,7 +135,9 @@ def extract_cmd(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
-            return await client.post("/knowledge/extract", json=body)
+            return await client.post(
+                "/knowledge/extract", json=body, timeout=LLM_TASK_TIMEOUT
+            )
 
     data = _run(cli_ctx, _impl)
     if cli_ctx.json_output:

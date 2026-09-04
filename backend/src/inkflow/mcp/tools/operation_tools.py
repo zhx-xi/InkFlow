@@ -78,6 +78,7 @@ def _hint_for(code: str) -> str:
         "VALIDATION_ERROR": "请补充/修正必填字段后重试",
         "CONFIG_ERROR": "请重启内核重新获取 token 后重试",
         "LLM_ERROR": "请检查 provider/API key 配置后重试",
+        "TIMEOUT": "服务端任务可能仍在进行，请先用对应 list/get 工具查询结果再决定是否重试",
     }
     return hints.get(code, "请检查参数与后端状态后重试")
 
@@ -87,7 +88,9 @@ def _compact(mapping: dict[str, object]) -> dict[str, object]:
     return {key: value for key, value in mapping.items() if value is not None}
 
 
-async def _route_write(client: _HTTPClient, params: WriteParams) -> object:
+async def _route_write(
+    client: _HTTPClient, params: WriteParams, timeout: float | None
+) -> object:
     """write action 路由：非流式端点同步返回（Q3=A，spec §2.2 映射表）。"""
     if params.action == "generate":
         return await client.post(
@@ -102,6 +105,7 @@ async def _route_write(client: _HTTPClient, params: WriteParams) -> object:
                     "target_words": params.target_words,
                 }
             ),
+            timeout=timeout,
         )
     if params.action == "continue":
         return await client.post(
@@ -116,6 +120,7 @@ async def _route_write(client: _HTTPClient, params: WriteParams) -> object:
                     "style_hint": params.style_hint,
                 }
             ),
+            timeout=timeout,
         )
     # revise：feedback 优先；instruction 仅校验用，不转发到端点
     return await client.post(
@@ -128,30 +133,38 @@ async def _route_write(client: _HTTPClient, params: WriteParams) -> object:
                 "feedback": params.feedback,
             }
         ),
+        timeout=timeout,
     )
 
 
-async def _route_audit(client: _HTTPClient, params: AuditParams) -> object:
+async def _route_audit(
+    client: _HTTPClient, params: AuditParams, timeout: float | None
+) -> object:
     """audit action 路由：项目级四维审计 / 单章一致性审计。"""
     if params.action == "project":
         return await client.get(f"/projects/{params.project_id}/audit")
     return await client.post(
         f"/projects/{params.project_id}/chapters/{params.chapter_id}/audit",
         json=_compact({"include_static": params.include_static}),
+        timeout=timeout,
     )
 
 
-async def _route_extract(client: _HTTPClient, params: ExtractParams) -> object:
+async def _route_extract(
+    client: _HTTPClient, params: ExtractParams, timeout: float | None
+) -> object:
     """extract action 路由：文本提取 / 向量重索引 / 语义检索。"""
     if params.action == "extract":
         return await client.post(
             "/extract",
             json=_compact({"content": params.content, "project_id": params.project_id}),
+            timeout=timeout,
         )
     if params.action == "reindex":
         return await client.post(
             f"/projects/{params.project_id}/vector/reindex",
             json=_compact({"entity_types": params.entity_types}),
+            timeout=timeout,
         )
     return await client.post(
         f"/projects/{params.project_id}/vector/retrieve",
@@ -198,12 +211,17 @@ def build_write_tool() -> MCPTool:
                 "请检查 action 枚举与必填字段（可经 tool_search 查询合法值），修正后重试",
             )
         try:
-            from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+            from inkflow.infrastructure.http import (
+                LLM_TASK_TIMEOUT,
+                HttpApiError,
+                InkFlowHTTPClient,
+                map_http_error,
+            )
             from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 
             handle = await ensure_kernel()
             async with InkFlowHTTPClient(handle) as client:
-                data = await _route_write(client, params)
+                data = await _route_write(client, params, LLM_TASK_TIMEOUT)
             return _ok(_serialize_data(data))
         except HttpApiError as exc:
             code, message = map_http_error(exc.status_code, exc.detail, exc.code)
@@ -241,12 +259,17 @@ def build_audit_tool() -> MCPTool:
                 "请检查 action 枚举与必填字段（可经 tool_search 查询合法值），修正后重试",
             )
         try:
-            from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+            from inkflow.infrastructure.http import (
+                LLM_TASK_TIMEOUT,
+                HttpApiError,
+                InkFlowHTTPClient,
+                map_http_error,
+            )
             from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 
             handle = await ensure_kernel()
             async with InkFlowHTTPClient(handle) as client:
-                data = await _route_audit(client, params)
+                data = await _route_audit(client, params, LLM_TASK_TIMEOUT)
             return _ok(_serialize_data(data))
         except HttpApiError as exc:
             code, message = map_http_error(exc.status_code, exc.detail, exc.code)
@@ -284,12 +307,17 @@ def build_extract_tool() -> MCPTool:
                 "请检查 action 枚举与必填字段（可经 tool_search 查询合法值），修正后重试",
             )
         try:
-            from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+            from inkflow.infrastructure.http import (
+                LLM_TASK_TIMEOUT,
+                HttpApiError,
+                InkFlowHTTPClient,
+                map_http_error,
+            )
             from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 
             handle = await ensure_kernel()
             async with InkFlowHTTPClient(handle) as client:
-                data = await _route_extract(client, params)
+                data = await _route_extract(client, params, LLM_TASK_TIMEOUT)
             return _ok(_serialize_data(data))
         except HttpApiError as exc:
             code, message = map_http_error(exc.status_code, exc.detail, exc.code)

@@ -299,10 +299,22 @@ inkflow write next --project-id ... --outline ...
 | 404 | `NOT_FOUND` | detail 文本透传 | 项目/章节/实体不存在 |
 | 422 | `VALIDATION_ERROR` | detail 文本透传（FastAPI 校验） | 参数非法/枚举错误/缺失字段 |
 | 401 | `CONFIG_ERROR` | detail 文本透传 | token 失效（内核重启后旧 token 场景，罕见——ensure_kernel 已校验） |
+| 传输层超时（header_code=`TIMEOUT`，#926） | `TIMEOUT` | 超时文案（per-request 值，缺省 30s） | httpx 超时（connect/read/write/pool）统一转 TIMEOUT，不再误归 DB_ERROR/INTERNAL_ERROR 空消息 |
 | 500 + `X-InkFlow-Error-Code: LLM_ERROR` | `LLM_ERROR` | detail 文本透传 | write 流式/非流式 LLM 失败（writing.py 响应头） |
 | 500（无响应头） | `INTERNAL_ERROR`（**新增**） | detail 文本透传 | 其余内部错误（DB/未知异常） |
 | 连接失败/超时 | `KERNEL_ERROR`（**新增**） | 明确文案 + 日志指引 | 内核不可达（§5.1 单次重试后仍失败） |
 | ensure_kernel 失败 | `KERNEL_ERROR`（**新增**） | KernelStartupError 文案 + `%TEMP%\inkflow-kernel.log` 指引 | 冷启动超时/秒退/spawn 失败 |
+
+**LLM 长任务 per-request timeout + TIMEOUT 错误码（#926）**：LLM 长任务端点（outline
+generate / extract / summarize / analyze / writing 流式等 21 处 CLI 调用点 + 7 处 MCP
+调用点 + 3 处 stream_sse）统一加 `timeout=LLM_TASK_TIMEOUT`（`infrastructure/http/__init__.py`
+共享常量 `300.0`，对齐 #274 write `_AGENTIC_TIMEOUT`）；纯 CRUD/GET 调用保持客户端默认
+30s。传输层 `InkFlowHTTPClient` 捕获 `httpx.TimeoutException` → `HttpApiError(status_code=0,
+code="TIMEOUT", detail=超时文案)`；`map_http_error` 识别 `header_code == "TIMEOUT"` →
+`("TIMEOUT", detail or "请求超时")`。非流式文案 = `请求超时（{timeout:g}s）：服务端任务可能
+仍在进行，请稍后用 list/get 查询结果，勿直接重试`；流式（stream_sse）前缀 =
+`流式响应空闲超时（{timeout:g}s）：生成可能仍在进行，…`；流中断（非超时）语义保持
+STREAM_INTERRUPTED 不变。
 
 > **F7 错误码表扩展说明**：`INTERNAL_ERROR`/`KERNEL_ERROR` 为 HTTP 化**新增**错误码（F7 原表：NOT_FOUND/VALIDATION_ERROR/LLM_ERROR/CONTEXT_BUDGET_EXCEEDED/CONFIG_ERROR/DB_ERROR）。**DB_ERROR 在恒 HTTP 后不再由 CLI 产生**（DB 访问全部在内核侧，CLI 只见 500）——F7 表保留 DB_ERROR 行（向后兼容文档），标注「恒 HTTP 后由 INTERNAL_ERROR 替代」。CONTEXT_BUDGET_EXCEEDED 同理（write 命令经 HTTP 后由内核校验，500 兜底）。
 
