@@ -234,7 +234,7 @@ class TestPlotPoint908Service:
         _, point, arc = await _seed_point_with_arc(db_session)
         repo = SQLiteOutlineRepository(db_session)
         svc = OutlineService(repository=repo)
-        assert point.arc_id == arc.id  # type: ignore[union-attr]
+        assert point.arc_id == arc.id
 
         result = await svc.update_point(point.id, PlotPointUpdate(arc_id=""))
         assert result is not None
