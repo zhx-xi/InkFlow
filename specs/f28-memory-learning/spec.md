@@ -190,7 +190,7 @@ GET /api/v1/agent/memory/stats?project_id=uuid
        "agentic": {"chapters": 5, "direct_confirms": 2, "avg_diff_chars": 320,
                    "modify_rate": 0.6, "regenerate_rate": 0.2},
        "learned_preferences": 3,
-       "baseline_ref": "docs/agent-baseline-2026-08-10.md"}
+       "baseline_ref": "design/agent-baseline-2026-08-10.md"}
 ```
 
 ### 3.3 异常映射表
@@ -219,7 +219,7 @@ inkflow memory remove <preference_id> [--json]
 
 inkflow memory stats --project-id <UUID> [--json]
    人类模式: 修改率/重新生成率 + 基线对照提示
-   输出: 「agentic 修改率 60%（基线 N/A——F27 基线随使用积累，见 docs/agent-baseline-2026-08-10.md）」
+   输出: 「agentic 修改率 60%（基线 N/A——F27 基线随使用积累，见 design/agent-baseline-2026-08-10.md）」
 ```
 
 > 恒 HTTP 纪律（F38）：`memory` 命令全部经 ensure_kernel() + InkFlowHTTPClient 调内核 REST API，镜像 F27 `agent draft/runs` 子命令模式（agent_cmd.py `_run`/`_print_json_envelope` 同构）。
@@ -348,7 +348,7 @@ class PreferenceSource:
 
 - **数据源**：memory_events（draft_edited.diff_chars + draft_confirmed/draft_rejected 计数）+ drafts 表（status 分布）。
 - **指标**：修改率 = 非直接确认章节数 / agentic 章节总数；平均修改 diff = Σ|diff_chars| / 编辑事件数；重新生成率 = rejected 数 / 章节总数。
-- **对照**：`inkflow memory stats` 输出与 `docs/agent-baseline-2026-08-10.md` 基线的对比字段（baseline_ref 引用）；**基线数据现实**：F27 基线表 N=5/模式为「待填」（随使用积累，F27 spec §14 Q3 拍板）——F28 验收语义 = stats 命令输出可用 + 对照机制就绪 + 后续数据积累后数值可比；若基线仍无数据，stats 输出标注「基线 N/A」。
+- **对照**：`inkflow memory stats` 输出与 `design/agent-baseline-2026-08-10.md` 基线的对比字段（baseline_ref 引用）；**基线数据现实**：F27 基线表 N=5/模式为「待填」（随使用积累，F27 spec §14 Q3 拍板）——F28 验收语义 = stats 命令输出可用 + 对照机制就绪 + 后续数据积累后数值可比；若基线仍无数据，stats 输出标注「基线 N/A」。
 - **口径**：只统计 agentic 模式（deterministic 无草稿流，基线报告同口径）。
 
 ---
@@ -544,7 +544,7 @@ class PreferenceSource:
 |------|------|------|------|------|------|
 | inkflow memory list --project-id [--category] [--json] | — | 偏好列表 | 每行「[addressing] 称呼主角为林晚 (confidence 0.67, ×2)」/ --json 信封 | 退出码 1（内核启动失败/HTTP 错误） | 恒经 HTTP（F38，ensure_kernel + InkFlowHTTPClient） |
 | inkflow memory remove &lt;preference_id&gt; [--json] | 偏好存在 | 删除 | 「✅ 已删除偏好（下次生成立即停止注入）」 | 404 → 退出码 1 | — |
-| inkflow memory stats --project-id [--json] | — | 修改率/重新生成率 + 基线对照 | 「agentic 修改率 60%（基线 N/A——F27 基线随使用积累，见 docs/agent-baseline-2026-08-10.md）」 | 退出码 1 | 只统计 agentic 模式 |
+| inkflow memory stats --project-id [--json] | — | 修改率/重新生成率 + 基线对照 | 「agentic 修改率 60%（基线 N/A——F27 基线随使用积累，见 design/agent-baseline-2026-08-10.md）」 | 退出码 1 | 只统计 agentic 模式 |
 | inkflow write next --mode agentic [--memory-learning|--no-memory-learning] | 项目/章节存在 | 生成 + 偏好学习开关覆盖 | 本轮学习到新偏好时人类模式追加「🤖 AI 已记住：称呼主角为林晚（下次生成将遵循）」；--json 信封 data 追加 learned 数组 | 退出码 1 | 请求显式 &gt; extra 键 &gt; 默认 false（F13 同构） |
 
 ### 15.3 验收锚点

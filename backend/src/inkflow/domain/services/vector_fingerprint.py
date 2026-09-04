@@ -12,7 +12,7 @@
 超时判定必须显式携带 indexed_at——仅 (status, now) 无法区分进行中 / 过期，
 两用例断言冲突（见测试 docstring）。
 
-依据: docs/qa-rag-consistency-report.md §2.1/§2.3/§3.3; Issue #276 范围 2。
+依据: design/qa-rag-consistency-report.md §2.1/§2.3/§3.3; Issue #276 范围 2。
 领域层保持纯净：仅依赖 Pydantic v2 与标准库，不感知 ORM / 框架。
 """
 

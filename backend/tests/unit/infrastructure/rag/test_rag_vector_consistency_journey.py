@@ -18,7 +18,7 @@ D5 切片参数变更：FIXED 档 chunk_size 200→1000（块数收缩）→ rei
   失败（章节仓储抛错）→ commit-last 语义：指纹停留 reindexing 非 fresh →
   修复重跑恢复 fresh。
 
-依据: specs/f14-extraction/spec.md §5.6/§9; docs/qa-rag-consistency-report.md
+依据: specs/f14-extraction/spec.md §5.6/§9; design/qa-rag-consistency-report.md
 契约 17-20（本协议 mock 版的服务级真实延伸）; issue #276/#277/#869。
 """
 

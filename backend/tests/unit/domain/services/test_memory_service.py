@@ -53,7 +53,7 @@ inkflow.domain.models.preference / memory_event 同缺但不顶层 import——�
            #   "direct_confirms": int, "avg_diff_chars": int,
            #   "modify_rate": float, "regenerate_rate": float},
            #  "learned_preferences": int,
-           #  "baseline_ref": "docs/agent-baseline-2026-08-10.md"}
+           #  "baseline_ref": "design/agent-baseline-2026-08-10.md"}
            # chapters = confirmed+rejected 事件数；direct_confirms = confirmed 数
            # modify_rate = (chapters-direct_confirms)/chapters（chapters=0→0.0）
            # avg_diff_chars = Σ|diff_chars| / edited 事件数（0 事件→0）
@@ -521,7 +521,7 @@ async def test_stats_math() -> None:
     assert agentic["avg_diff_chars"] == 4  # (|5|+|-3|)/2
     assert agentic["regenerate_rate"] == pytest.approx(1 / 3)  # 1/3
     assert stats["learned_preferences"] == 3
-    assert stats["baseline_ref"] == "docs/agent-baseline-2026-08-10.md"
+    assert stats["baseline_ref"] == "design/agent-baseline-2026-08-10.md"
 
 
 async def test_stats_empty_project_zero_guards() -> None:

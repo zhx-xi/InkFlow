@@ -5,7 +5,7 @@ VectorFingerprint 是 embedding 配置 + chunking 配置的规范化快照:
 - 字段声明序固定，保证序列化幂等（fingerprint_to_json 直接依赖声明序）;
 - status 状态机: fresh / stale / unknown / reindexing（unknown 视同 stale）.
 
-依据: docs/qa-rag-consistency-report.md §2.1（指纹内容与幂等性）/
+依据: design/qa-rag-consistency-report.md §2.1（指纹内容与幂等性）/
 §2.3（状态机与超时阈值）/ §3.3（schema_version 前向检查）; Issue #276 范围 2。
 领域层保持纯净：仅依赖 Pydantic v2 与标准库，不感知 ORM / 框架。
 """

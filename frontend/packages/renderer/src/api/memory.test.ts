@@ -340,7 +340,7 @@ describe('记忆统计 — stats', () => {
         regenerate_rate: 0.2,
       },
       learned_preferences: 3,
-      baseline_ref: 'docs/agent-baseline-2026-08-10.md',
+      baseline_ref: 'design/agent-baseline-2026-08-10.md',
       user_preferences: { count: 5, projects: 2 },
     });
     const result = await fetchMemoryStats(PID);
