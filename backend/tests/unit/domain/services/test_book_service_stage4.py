@@ -69,7 +69,8 @@ domain/services/book_service.py（阶段 3 基座 + 阶段 4 扩展），只写�
 
 5. 【get_summary(run_id) → dict | None · 用例 27-30】plan 查无 → None（API 404）；
    steps = [{index, outline_id, status, execution_id}] 从 progress/execution_refs
-   派生（不含章名——渲染层补充）；counters = get_status 同构 7 键；返回 {run_id,
+   派生（不含章名——渲染层补充）；counters = get_status 同构 9 键（#902 §1.5）；
+   返回 {run_id,
    status, progress, counters, steps, next}；next：有 get_checkpoint_state →
    {volume_index, total_volumes, finished, status}；checkpoint None /
    volume_pipeline None → {"finished": True}（防御分支）。
@@ -787,9 +788,13 @@ class TestGetSummary:
         assert result is None
 
     async def test_get_summary_full_shape(self):
-        """全量形态：{run_id, status, progress, counters(7 键同构), steps(
+        """全量形态：{run_id, status, progress, counters(9 键同构), steps(
         [{index, outline_id, status, execution_id}] 派生), next(checkpoint 状态)}；
-        get_checkpoint_state 用 plan.thread_id。RED：get_summary 缺失先行。"""
+        get_checkpoint_state 用 plan.thread_id。RED：get_summary 缺失先行。
+
+        #902 契约升级（§1.5）：counters 精确集迁移 9 键（+ prompt_tokens/
+        completion_tokens）→ 迁移后转 RED（当前实现 7 键 → set 不匹配）。
+        """
         oid1, oid2 = str(uuid.uuid4()), str(uuid.uuid4())
         repo, plan = _plan_repo(
             status="waiting_hitl",
@@ -800,6 +805,8 @@ class TestGetSummary:
                 "max_tokens": 200_000,
                 "tokens_used": 12_345,
                 "tokens_warning": True,
+                "prompt_tokens": 7_407,
+                "completion_tokens": 4_938,
             },
             progress={oid1: "done", oid2: "in_progress"},
             execution_refs={oid1: "exec-1"},
@@ -827,10 +834,14 @@ class TestGetSummary:
             "tokens_warning",
             "agent_calls",
             "chapters_written",
+            "prompt_tokens",
+            "completion_tokens",
         }
         assert result["counters"]["agent_calls"] == 1
         assert result["counters"]["chapters_written"] == 1
         assert result["counters"]["tokens_used"] == 12_345
+        assert result["counters"]["prompt_tokens"] == 7_407
+        assert result["counters"]["completion_tokens"] == 4_938
         assert result["steps"] == [
             {"index": 0, "outline_id": oid1, "status": "done", "execution_id": "exec-1"},
             {"index": 1, "outline_id": oid2, "status": "in_progress", "execution_id": None},

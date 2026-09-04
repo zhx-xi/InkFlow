@@ -39,6 +39,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Send, interrupt
 
 from inkflow.domain.models.writing_plan import BookLimits, WritingPlan
+from inkflow.domain.services.usage_accounting import chat_response_usage, result_usage
 from inkflow.logging import instrument
 
 _R = TypeVar("_R")
@@ -58,6 +59,7 @@ class VolumeState(TypedDict):
     total_volumes: int
     retries: int
     steps: Annotated[int, operator.add]
+    usage: Annotated[list[dict], operator.add]
     finished: bool
     status: NotRequired[str]
     llm_client: Annotated[object, UntrackedValue(object)]
@@ -137,15 +139,21 @@ async def _write_chapter(state: VolumeState, pipeline: BookVolumePipeline) -> di
     chapter: dict = cast(dict[str, Any], state)["chapter"]
     outline_id = str(chapter["outline_id"])
     attempts = 0
+    usage_events: list[dict] = []
     for _ in range(1 + pipeline._retry_limit):
         attempts += 1
         try:
-            execution_id = await pipeline._delegate_chapter(chapter)
+            execution_id, event = await pipeline._delegate_chapter(chapter)
         except Exception:
             # 任一步异常 → 重试整章（循环再次调用 writer_factory）
             continue
         else:
-            return {"results": {outline_id: execution_id}, "steps": attempts}
+            usage_events.append(event)
+            return {
+                "results": {outline_id: execution_id},
+                "steps": attempts,
+                "usage": usage_events,
+            }
     return {"results": {outline_id: "failed"}, "failed": [outline_id], "steps": attempts}
 
 
@@ -201,7 +209,14 @@ async def _volume_failure(state: VolumeState, pipeline: BookVolumePipeline) -> C
     action = str(decision.get("decision", ""))
     if action == "supervisor":
         # 授权主 agent 补救：llm_client.chat（消息含 failed 章列表）→ 解析 action
-        action = await pipeline._delegate_supervisor(failed)
+        action, supervisor_event = await pipeline._delegate_supervisor(failed)
+        if action == "abort":
+            return Command(
+                update={"finished": True, "status": "aborted", "usage": [supervisor_event]},
+                goto=END,
+            )
+        # "continue"：跳过 failed 卷，继续下一卷 / END（supervisor chat 已发生 → 计费）
+        return pipeline._goto_next_volume_with_usage(state, supervisor_event)
     if action == "abort":
         return Command(update={"finished": True, "status": "aborted"}, goto=END)
     # "continue"（含解析失败默认）→ 跳过 failed 卷，继续下一卷 / END
@@ -308,6 +323,7 @@ class BookVolumePipeline:
                 "total_volumes": len(volumes),
                 "retries": 0,
                 "steps": 0,
+                "usage": [],
                 "finished": False,
             },
         )
@@ -411,10 +427,32 @@ class BookVolumePipeline:
             goto="volume_fan_out",
         )
 
+    def _goto_next_volume_with_usage(self, state: VolumeState, event: dict) -> Command[Any]:
+        """#902：supervisor 补救（chat 已发生）后推进下一卷，usage 事件并入 update.
+
+        镜像 _goto_next_volume，仅增 "usage": [event]（checkpoint 持久化不丢不重）。
+        """
+        next_index = state["volume_index"] + 1
+        if next_index >= state["total_volumes"]:
+            return Command(update={"finished": True, "usage": [event]}, goto=END)
+        return Command(
+            update={
+                "chapters": state["volumes"][next_index]["chapters"],
+                "volume_index": next_index,
+                "usage": [event],
+            },
+            goto="volume_fan_out",
+        )
+
     @instrument(caller_type="agent")
-    async def _delegate_chapter(self, chapter: dict) -> str:
+    async def _delegate_chapter(self, chapter: dict) -> tuple[str, dict]:
         """委托契约核心（镜像 BookService._delegate_chapter）：章 brief → writer_factory
-        → agent.invoke → draft_service.create 回收 → 返回 execution_id。"""
+        → agent.invoke → draft_service.create 回收 → (execution_id, usage 事件)。
+
+        #902：usage 事件只来自真实 LLM 调用结果（invoke 结果 messages usage_metadata /
+        顶层 usage）；双源皆缺 → 全零事件（无伪计费）。事件 source="write"，
+        chapter=str(outline_id)。
+        """
         plan = self._plan
         if plan is None:
             raise ValueError("plan 未装配")
@@ -435,6 +473,7 @@ class BookVolumePipeline:
                 },
             ]
         )
+        prompt_tokens, completion_tokens, total_tokens = result_usage(result)
         content = _extract_final_content(result)
         draft = await self._draft_service.create(  # type: ignore[union-attr]  # 鸭子类型：draft_service 按 F27 契约提供 async create
             project_id=plan.project_id,
@@ -442,7 +481,17 @@ class BookVolumePipeline:
             content=content,
             summary="书级委托保存",
         )
-        return str(getattr(draft, "id", ""))
+        execution_id = str(getattr(draft, "id", ""))
+        return (
+            execution_id,
+            {
+                "source": "write",
+                "chapter": str(chapter["outline_id"]),
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            },
+        )
 
     @staticmethod
     def _build_chapter_brief(plan: WritingPlan, chapter: dict) -> str:
@@ -458,9 +507,13 @@ class BookVolumePipeline:
         )
 
     @instrument(caller_type="agent")
-    async def _delegate_supervisor(self, failed: list[str]) -> str:
+    async def _delegate_supervisor(self, failed: list[str]) -> tuple[str, dict]:
         """授权主 agent 补救（F29 supervisor 决策通道）：llm_client.chat → 解析
-        {action: continue|abort}（解析失败默认 continue）。"""
+        {action: continue|abort}（解析失败默认 continue）→ (action, usage 事件)。
+
+        #902：事件 source="supervisor"、chapter=""，取自 llm.chat 响应真实 usage
+        （token_usage 主源 / usage_metadata 回退）；双源皆缺 → 全零事件。
+        """
         messages = [
             {
                 "role": "system",
@@ -478,5 +531,15 @@ class BookVolumePipeline:
         response = await self._llm.chat(  # type: ignore[attr-defined]  # 鸭子类型：llm_client 按 F29 契约提供 async chat(messages)
             messages
         )
+        prompt_tokens, completion_tokens, total_tokens = chat_response_usage(response)
         content = str(getattr(response, "content", ""))
-        return _parse_supervisor_decision(content)
+        return (
+            _parse_supervisor_decision(content),
+            {
+                "source": "supervisor",
+                "chapter": "",
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            },
+        )

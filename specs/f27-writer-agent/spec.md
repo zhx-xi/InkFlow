@@ -542,7 +542,7 @@ save_draft / confirm / reject 三个写动作均落 audit_logs：
 - **不含** 既有链路改造：F42 static / F29 supervisor / F44 volume 三种既有模式**零改动**，本模块新增 `mode="agentic"`（默认 static 向后兼容）
 - **不含** 章内断点（同一章写作中断点恢复）——checkpoint 粒度 = 章边界（F44 阶段 4 语义）
 - **不含** 并行章执行（Send fan-out 属确定性卷编排；本模块 agentic 自主编排默认**串行推进**，并行归远期 #270 DAG）
-- **不含** 跨章一致性/冲突解决引擎、token 精确核算、双面板精致化
+- **不含** 跨章一致性/冲突解决引擎、token 精确核算（注：agentic 轨**真实用量采集**已由 #902 补齐——usage 事件通道 + `plan.limits` 求和覆盖同步 + counters 9 键，契约见 `specs/f44-book-orchestrator/spec.md` §5.6；「精确核算」= 按模型计价/cache token 仍范围外）、双面板精致化
 - **不含** MCP 表现层
 
 ---

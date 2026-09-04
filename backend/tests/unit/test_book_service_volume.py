@@ -551,11 +551,14 @@ async def test_get_status_waiting_hitl_extended_keys():
 
 
 async def test_get_status_counters_keys_unchanged():
-    """get_status 扩展向后兼容：counters 既有 7 键
+    """get_status 扩展向后兼容：counters 键集 = 9 键
     （max_chapters/max_agent_calls/max_tokens/tokens_used/tokens_warning/
-    agent_calls/chapters_written）不变——阶段 3 扩展只增顶层
-    waiting_hitl/hitl_payload，不动 counters。
-    （守护用例 RED 期 PASS 刻意：阶段 2 get_status 已返回 7 键）"""
+    agent_calls/chapters_written + prompt_tokens/completion_tokens）。
+
+    #902 契约升级（§1.5）：_build_counters 在既有 7 键基础上新增
+    prompt_tokens/completion_tokens（plan.limits.get 预置）→ 精确集迁移 9 键。
+    迁移后本用例转 RED（当前实现仍 7 键 → set 不匹配 → FAILED，修复锚）。
+    """
     repo = AsyncMock()
     plan = _plan(
         limits={
@@ -564,6 +567,8 @@ async def test_get_status_counters_keys_unchanged():
             "max_tokens": 200_000,
             "tokens_used": 12_345,
             "tokens_warning": True,
+            "prompt_tokens": 7_407,
+            "completion_tokens": 4_938,
         },
         progress={"c1": "done"},
         execution_refs={"c1": "exec-1"},
@@ -575,7 +580,8 @@ async def test_get_status_counters_keys_unchanged():
     status = await svc.get_status(str(plan.id))
 
     assert status is not None
-    assert set(status["counters"].keys()) == {
+    counters = status["counters"]
+    assert set(counters.keys()) == {
         "max_chapters",
         "max_agent_calls",
         "max_tokens",
@@ -583,7 +589,11 @@ async def test_get_status_counters_keys_unchanged():
         "tokens_warning",
         "agent_calls",
         "chapters_written",
+        "prompt_tokens",
+        "completion_tokens",
     }
+    assert counters["prompt_tokens"] == 7_407
+    assert counters["completion_tokens"] == 4_938
 # ════ F44 阶段3 coverage-gap 补测（规则 1j，2026-08-17：代码已存在直接通过）════
 # CI coverage-backend TOTAL 98% < 98.5%（book_service.py 93% miss）——补防御分支。
 

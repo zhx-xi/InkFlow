@@ -174,8 +174,9 @@ class BookRunMixin:
         facts 缺失（旧形态 checkpoint / 非 dict）→ 返回 completed 不碰 plan；
         facts 非空 → 同步 plan.progress/execution_refs（补 volume 轨长期不回写章
         进度的掩蔽），failed/degraded 时以 failed 章列表 + fallback_reason 提示写
-        progress_reason。token 记账不动（#860 约束：volume 轨 checkpoint 无逐章
-        usage 数据，记账归后续 issue，勿在此伪造）。
+        progress_reason。usage 同步在 progress 同步后执行（#902：checkpoint usage
+        事件通道全量覆盖派生 tokens_used/prompt_tokens/completion_tokens；无 usage
+        键/空列表 → 三键不写——#897/#860 旧 checkpoint 向后兼容）。
         """
         facts = self._chapter_facts_from_state(state)
         if facts is None:
@@ -195,7 +196,49 @@ class BookRunMixin:
             )
         else:
             plan.progress_reason = None
+        self._overwrite_usage_from_events(plan, state)
         return status
+
+    @staticmethod
+    def _overwrite_usage_from_events(plan: WritingPlan, state: object) -> None:
+        """#902 收尾 usage 覆盖派生：state["usage"] 事件列表求和 → 覆盖写三键 + 告警.
+
+        覆盖语义 = 幂等（checkpoint 为权威全量源：同 state 收尾两次不重复计费，跨
+        HITL resume 后一次覆盖吞并前一次值）；无 usage 键 / 非 list / 空列表 → 不碰
+        三键（旧 checkpoint 向后兼容守护）。
+        """
+        if not isinstance(state, dict):
+            return
+        events = state.get("usage")
+        if not isinstance(events, list) or not events:
+            return
+        total = sum(int(e.get("total_tokens", 0)) for e in events if isinstance(e, dict))
+        prompt = sum(int(e.get("prompt_tokens", 0)) for e in events if isinstance(e, dict))
+        completion = sum(int(e.get("completion_tokens", 0)) for e in events if isinstance(e, dict))
+        plan.limits["tokens_used"] = total
+        plan.limits["prompt_tokens"] = prompt
+        plan.limits["completion_tokens"] = completion
+        plan.limits["tokens_warning"] = total > int(plan.limits.get("max_tokens", 200_000))
+
+    async def _sync_usage_from_state(
+        self, plan: WritingPlan, pipeline: object, *, thread_id: str
+    ) -> None:
+        """#902 waiting_hitl 落点 usage 同步：读 checkpoint 后同 _finalize 覆盖派生.
+
+        旧鸭子无 get_checkpoint_state / await 抛异常 / 返回非 dict / 无 usage 键或空
+        → 静默跳过（向后兼容守护，不抛）。收尾点（_sync_and_finalize）经
+        _finalize_from_state 内联同步，零额外 checkpoint 读。
+        """
+        getter = getattr(pipeline, "get_checkpoint_state", None)
+        if getter is None:
+            return
+        try:
+            state = await getter(thread_id)
+        except Exception as exc:
+            logger.warning("#902 checkpoint usage 同步失败（thread_id=%s）: %s", thread_id, exc)
+            return
+        if isinstance(state, dict):
+            self._overwrite_usage_from_events(plan, state)
 
     async def _sync_and_finalize(
         self,

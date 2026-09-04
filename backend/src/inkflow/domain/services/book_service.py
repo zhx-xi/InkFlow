@@ -40,6 +40,7 @@ from inkflow.domain.models.writing_plan import (
     validate_at_least_one_hard_limit,
 )
 from inkflow.domain.services.book_run_mixin import BookRunMixin
+from inkflow.domain.services.usage_accounting import extract_total_tokens, result_usage
 
 
 class ChapterAlreadyWrittenError(Exception):
@@ -267,10 +268,12 @@ class BookService(BookRunMixin):
             )
         # 函数体 import：domain 层不形成对 infrastructure 的模块级依赖（ADR-002/015）
         from inkflow.infrastructure.agent.book_pipeline import VolumeHITLInterrupt
+
         try:
             await self._call_pipeline_execute(plan, volumes, merged, thread_id=thread_id)
         except VolumeHITLInterrupt as exc:
-            # 卷边界/卷失败中断：waiting_hitl + payload + thread_id 落库（中断不传播）
+            # 卷边界/卷失败中断：waiting_hitl 落库（中断不传播）；#902：同步 usage
+            await self._sync_usage_from_state(plan, self._volume_pipeline, thread_id=thread_id)
             plan.status = "waiting_hitl"
             plan.hitl_payload = exc.payload
             await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
@@ -323,7 +326,8 @@ class BookService(BookRunMixin):
                 interrupt_obj, approved=approved, decision=decision, thread_id=thread_id
             )
         except VolumeHITLInterrupt as exc:
-            # 下一卷边界：更新 payload + 落库，保持 waiting_hitl
+            # 下一卷边界：#902 同步 usage（覆盖语义）后保持 waiting_hitl
+            await self._sync_usage_from_state(plan, self._volume_pipeline, thread_id=thread_id)
             plan.hitl_payload = exc.payload
             await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
             return {
@@ -519,6 +523,7 @@ class BookService(BookRunMixin):
         )
         # 函数体 import：domain 层不形成对 infrastructure 的模块级依赖（ADR-002/015）
         from inkflow.infrastructure.agent.book_pipeline import VolumeHITLInterrupt
+
         if state is not None and state.get("__interrupt__"):
             # pending interrupt：由 checkpoint __interrupt__ 值重建 VolumeHITLInterrupt 续跑
             interrupt_obj = VolumeHITLInterrupt(state["__interrupt__"][0].value)
@@ -527,6 +532,8 @@ class BookService(BookRunMixin):
                     interrupt_obj, approved=True, thread_id=thread_id
                 )
             except VolumeHITLInterrupt as exc:
+                # #902：waiting_hitl 落库前同步 usage（跨重启计数 = 全量覆盖）
+                await self._sync_usage_from_state(plan, self._volume_pipeline, thread_id=thread_id)
                 plan.status = "waiting_hitl"
                 plan.hitl_payload = exc.payload
                 await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
@@ -551,6 +558,8 @@ class BookService(BookRunMixin):
         try:
             result = await self._call_pipeline_execute(plan, volumes, merged, thread_id=thread_id)
         except VolumeHITLInterrupt as exc:
+            # #902：普通 superstep 续跑再中断 → 落库前同步 usage
+            await self._sync_usage_from_state(plan, self._volume_pipeline, thread_id=thread_id)
             plan.status = "waiting_hitl"
             plan.hitl_payload = exc.payload
             await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
@@ -714,7 +723,8 @@ class BookService(BookRunMixin):
 
     @staticmethod
     def _build_counters(plan: WritingPlan) -> dict[str, Any]:
-        """书级运行计数器（get_status / get_summary 同构 7 键，缺省与阶段 1 常量一致）."""
+        """书级运行计数器（get_status / get_summary 同构 9 键，缺省与阶段 1 常量一致）.
+        #902 §1.5：7 键基础上新增 prompt_tokens/completion_tokens（read plan.limits）."""
         return {
             "max_chapters": plan.limits.get("max_chapters", 1),
             "max_agent_calls": plan.limits.get("max_agent_calls", 1),
@@ -723,6 +733,8 @@ class BookService(BookRunMixin):
             "tokens_warning": plan.limits.get("tokens_warning", False),
             "agent_calls": len(plan.execution_refs),
             "chapters_written": sum(1 for v in plan.progress.values() if v == "done"),
+            "prompt_tokens": plan.limits.get("prompt_tokens", 0),
+            "completion_tokens": plan.limits.get("completion_tokens", 0),
         }
 
     @staticmethod
@@ -833,8 +845,12 @@ class BookService(BookRunMixin):
                 {"role": "user", "content": f"请撰写章节《{chapter.name}》：{chapter.description}"},
             ]
         )
-        tokens = _extract_usage_tokens(result)
-        plan.limits["tokens_used"] = plan.limits.get("tokens_used", 0) + tokens
+        prompt_tokens, completion_tokens, total = result_usage(result)
+        plan.limits["tokens_used"] = plan.limits.get("tokens_used", 0) + total
+        plan.limits["prompt_tokens"] = plan.limits.get("prompt_tokens", 0) + prompt_tokens
+        plan.limits["completion_tokens"] = (
+            plan.limits.get("completion_tokens", 0) + completion_tokens
+        )
         if plan.limits["tokens_used"] > limits.max_tokens:
             plan.limits["tokens_warning"] = True
         content = _extract_final_content(result)
@@ -875,24 +891,7 @@ def _extract_final_content(result: dict[str, Any]) -> str:
 
 
 def _extract_usage_tokens(result: dict[str, Any]) -> int:
-    """Extract cumulative total_tokens from an agent.invoke result.
-
-    Primary source (real deepagents 0.7.5 graph result): per-AIMessage
-    usage_metadata dicts ({'total_tokens': N, ...}) — sum over ALL messages
-    (a ReAct loop makes multiple LLM calls; top-level result has NO usage key).
-    Fallback (legacy/service-level contract, older fakes): top-level
-    result["usage"]["total_tokens"] when present and non-zero.
+    """总 token 提取（#902 迁移 re-export：#860 helper 迁入 usage_accounting）.
+    守护既有测试 import 语义不变（extract_total_tokens 实现，本函数仅作兼容别名）。
     """
-    messages = result.get("messages") or []
-    total = 0
-    for msg in messages:
-        usage = getattr(msg, "usage_metadata", None)
-        if usage is None and isinstance(msg, dict):
-            usage = msg.get("usage_metadata")
-        if isinstance(usage, dict):
-            total += int(usage.get("total_tokens") or 0)
-    if total == 0:
-        usage = result.get("usage")
-        if isinstance(usage, dict):
-            total = int(usage.get("total_tokens") or 0)
-    return total
+    return extract_total_tokens(result)
