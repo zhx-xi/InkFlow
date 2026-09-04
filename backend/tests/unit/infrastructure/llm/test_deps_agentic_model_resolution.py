@@ -31,7 +31,6 @@ from fastapi import HTTPException
 
 from inkflow.api.deps import get_agentic_writer_service
 from inkflow.domain.models.agent_run import AgenticWriteRequest
-from inkflow.domain.services.agentic_writer_service import AgenticWriterService
 
 # Note: import the deps/service chain at module top so pipeline_templates
 # module-level BUILTIN_TEMPLATES construction reads the REAL config singleton
@@ -99,7 +98,7 @@ class TestEmptyDefaultModelFallbackToRegistry:
     @patch("inkflow.api.deps.get_character_service")
     @patch("inkflow.infrastructure.llm.provider_config.get_provider_config")
     @patch("inkflow.core.config.config")
-    def test_empty_default_falls_back_to_provider_with_key(
+    def test_empty_default_raises_422_without_registry_scan(
         self,
         m_config,
         m_get_provider,
@@ -114,36 +113,27 @@ class TestEmptyDefaultModelFallbackToRegistry:
         m_build_sysprompt,
         m_writer,
     ) -> None:
-        """config.llm_default_model="" + provider "deepseek" has key ->
-        build_agentic_writer receives NON-empty api_key (resolved from registry)."""
+        """#929 迁移（原 #758 D3=A 回退契约废止）：空默认 → 422，零扫描回退。
+
+        mock 一切 get_provider_config 调用抛 ValueError → 旧实现扫描全败 422 /
+        新实现 fail-fast 422。#929 反转锚：调用计数 == 0（回退循环已删除）。
+        """
         m_config.llm_default_model = ""
         m_config.model_routing = {}
-
-        from inkflow.infrastructure.llm.provider_config import LLMProviderConfig
-
-        m_get_provider.return_value = LLMProviderConfig(
-            provider="deepseek",
-            api_key="test-api-key-value",
-            base_url="https://api.deepseek.com/v1",
-            default_model="deepseek/deepseek-v4-flash",
-            models=["deepseek-v4-flash"],
-        )
+        m_get_provider.side_effect = ValueError("API key not configured for provider")
 
         _default_mocks(m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_chapter, m_memory)
 
-        svc = get_agentic_writer_service(db=MagicMock())
+        with pytest.raises(HTTPException) as exc_info:
+            get_agentic_writer_service(db=MagicMock())
 
-        svc_cls = AgenticWriterService
-        assert isinstance(svc, svc_cls)
-
-        # invoke the (lazy) agent factory to actually call build_agentic_writer
-        svc._agent_factory(_build_request())
-
-        # KEY assertion: api_key must be NON-empty (resolved from provider config)
-        api_key = _kwarg_or_positional(m_writer.call_args, "api_key", 1, None)
-        assert api_key, "api_key must be non-empty when a provider with key exists"
-        model = _kwarg_or_positional(m_writer.call_args, "model", 0, None)
-        assert model, "model must be non-empty when resolved from provider config"
+        assert exc_info.value.status_code == 422
+        assert "默认模型" in exc_info.value.detail or "model" in exc_info.value.detail.lower()
+        assert m_get_provider.call_count == 0, (
+            "#929: 空默认绝不再遍历注册表回退（embedding 误装配缺陷通道已删除）"
+        )
+        # build_agentic_writer must NOT be called with empty api_key (no 500 path)
+        assert m_writer.call_count == 0
 
     @patch("inkflow.infrastructure.agent.agentic_writer.build_agentic_writer")
     @patch(
@@ -221,10 +211,12 @@ class TestResolveModelPriority:
     @patch("inkflow.api.deps.get_summary_service")
     @patch("inkflow.api.deps.get_foreshadowing_service")
     @patch("inkflow.api.deps.get_character_service")
+    @patch("inkflow.infrastructure.llm.provider_config.get_provider_config")
     @patch("inkflow.domain.services.model_resolution.resolve_model")
     def test_resolve_model_is_called(
         self,
         m_resolve,
+        m_get_provider,
         m_char,
         m_foresh,
         m_sum,
@@ -237,11 +229,26 @@ class TestResolveModelPriority:
         m_writer,
     ) -> None:
         """resolve_model must be called by get_agentic_writer_service (consistency
-        with the other services that already use it)."""
+        with the other services that already use it).
+
+        #929 迁移：resolver 不再吞 provider 错误，须 mock provider 装配使走通。
+        """
         m_resolve.return_value = "deepseek/deepseek-v4-flash"
         m_resolve.side_effect = None
+        from inkflow.infrastructure.llm.provider_config import LLMProviderConfig
+
+        m_get_provider.return_value = LLMProviderConfig(
+            provider="deepseek",
+            api_key="test-key",
+            base_url="https://api.deepseek.com/v1",
+            default_model="deepseek/deepseek-v4-flash",
+            models=["deepseek-v4-flash"],
+        )
         _default_mocks(m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_chapter, m_memory)
 
-        get_agentic_writer_service(db=MagicMock())
+        svc = get_agentic_writer_service(db=MagicMock())
         # constructing the service must consult resolve_model
         assert m_resolve.call_count >= 1
+        # #929 func-cov（#496 线程盲区）：lazy 工厂同线程直调，触达 _build_agent
+        svc._agent_factory(_build_request())
+        assert m_writer.called, "lazy 工厂被调后必须触达 build_agentic_writer（_build_agent 覆盖）"

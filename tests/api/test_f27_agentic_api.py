@@ -264,8 +264,13 @@ async def test_agentic_generate_404(overrides):
     assert resp.json()["detail"] == "章节不存在"
 
 
-async def test_agentic_generate_422_invalid_max_steps():
-    """max_steps 越界（0）→ 422（Pydantic 校验，不触达服务）。"""
+async def test_agentic_generate_422_invalid_max_steps(overrides):
+    """max_steps 越界（0）→ 422（Pydantic 校验，不触达服务）。
+
+    #929 迁移：补 overrides 替身——旧实现下依赖解析恰好成功（keyless 回退捡
+    provider），#929 fail-fast 后 keyless 依赖解析必 422（str detail），本用例
+    锚的是「参数校验 422」形态（list detail），与 docstring「不触达服务」自洽。
+    """
     async with _client() as client:
         payload = _generate_payload()
         payload["max_steps"] = 0

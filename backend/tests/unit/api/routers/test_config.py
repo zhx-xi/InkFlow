@@ -69,15 +69,18 @@ def test_llm_default_model_defaults_empty(tmp_path, monkeypatch) -> None:
     assert cfg.llm_default_model == ""
 
 
-def test_model_routing_writing_revision_defaults_to_deepseek_v4_flash(
-    tmp_path, monkeypatch
-) -> None:
-    """model_routing.writing/revision 默认 = deepseek/deepseek-v4-flash
-    （#415 G1；现值 openai/gpt-4o → FAIL）。"""
+def test_model_routing_provider_keys_deepseek_defaults_v4_flash(tmp_path, monkeypatch) -> None:
+    """#929 迁移：model_routing 改 provider 键 → ProviderDefault{model 裸名, type}。
+
+    原 task 键（writing/revision=deepseek/deepseek-v4-flash）随 R2 键错位缺陷修复
+    废止；#415 拍板值保留在 provider 键下（裸名，消费侧拼 provider/model）。
+    """
     monkeypatch.delenv("INKFLOW_MODEL_ROUTING", raising=False)
     cfg = InkFlowConfig(_env_file=None, data_dir=tmp_path)
-    assert cfg.model_routing["writing"] == "deepseek/deepseek-v4-flash"
-    assert cfg.model_routing["revision"] == "deepseek/deepseek-v4-flash"
+    assert {"openai", "deepseek", "zhipu"} <= set(cfg.model_routing)
+    deepseek = cfg.model_routing["deepseek"]
+    assert deepseek.model == "deepseek-v4-flash"
+    assert deepseek.type == "chat"
 
 
 def test_llm_default_model_env_override_wins(tmp_path, monkeypatch) -> None:

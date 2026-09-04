@@ -147,6 +147,14 @@ def _await_registry_entry(provider: str) -> ProviderConfig | None:
     return result[0]
 
 
+def _builtin_default_model(provider: str) -> str:
+    """内置路由默认（chat 型才可为 chat 消费）→ LiteLLM 格式 provider/model；无 → ""。"""
+    entry = config.model_routing.get(provider)
+    if entry is None or entry.type != "chat":
+        return ""
+    return f"{provider}/{entry.model}"
+
+
 def get_provider_config(provider: str, api_key: str | None = None) -> LLMProviderConfig:
     """获取指定 Provider 的配置。
 
@@ -210,8 +218,10 @@ def get_provider_config(provider: str, api_key: str | None = None) -> LLMProvide
 
     if registry_entry is not None:
         base_url = registry_entry.base_url
-        default_model = registry_entry.default_model or config.model_routing.get(
-            provider, config.llm_default_model
+        default_model = (
+            registry_entry.default_model
+            or _builtin_default_model(provider)
+            or config.llm_default_model
         )
         # #106 F6：注册表 models 传播（前端模型表展示）；getattr 兼容无 models
         # 属性的鸭子类型替身（test_provider_config_resolution.py 契约）
@@ -219,7 +229,7 @@ def get_provider_config(provider: str, api_key: str | None = None) -> LLMProvide
         models = [m.id for m in registry_models] if registry_models else []
     else:
         base_url = _PROVIDER_BASE_URLS.get(provider)
-        default_model = config.model_routing.get(provider, config.llm_default_model)
+        default_model = _builtin_default_model(provider) or config.llm_default_model
         models = []
 
     return LLMProviderConfig(

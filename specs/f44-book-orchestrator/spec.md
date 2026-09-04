@@ -1,7 +1,7 @@
 # F44: 长任务编排器（long-task-orchestrator）功能规格
 > **端**: cross
 
-**Spec 版本**: 1.5（#902 卷轨/agentic 轨 token 用量采集，2026-09-04；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
+**Spec 版本**: 1.6（#929 写作凭据项目感知 + per-delegate 解析，2026-09-05；v1.5 #902 卷轨/agentic 轨 token 用量采集；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
 **日期**: 2026-08-17
 **依据**: 设计定稿 `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §2 全文（唯一真相）+ Issue #335（阶段 1）/ #336（阶段 2）/ #337（阶段 3）/ #338（阶段 4）+ Spike 验证报告 `docs/f44-orchestrator-spike-2026-08-17.md`（M1 门禁，workspace docs）+ 已合入源码核查（F27/F42/F29/F39/F6）+ Issue #475（访谈 LLM 动态提问，D1 拍板 2026-08-19）+ #486（会话/记忆 UI，D9，下游消费方）
 **所属阶段**: 0.10.0（长任务编排器，F44 四阶段），估算 24-39 人天（#335 阶段 1：5-8 / #336 阶段 2：4-6 / #337 阶段 3：7-11 / #338 阶段 4：8-10 + GUI 已含，part-time 8-10 周；v1.1 较 v1.0 的 16-26 人天增加 Q1=C GUI +8-12 与 Q2=C 项目级上限 +0.5-1）；v1.2 #475 访谈 LLM 动态提问为 0.10.1 增量（估算 5-8 人天，拆 2 PR：后端提问引擎 + 前端对话式 UI，S3 实现轨）
@@ -522,6 +522,19 @@ Spike ③ 实测：卷内全部章并行写完 → 卷边界 interrupt 暂停（
 **counters 扩展**：`_build_counters` 7 键 → **9 键**（新增 `prompt_tokens`/`completion_tokens`，读 `plan.limits.get(key, 0)`）；API/GUI 透传零破坏（dict passthrough）。static 轨 `_delegate_chapter` 同步分列累计三值（原仅 total）。
 
 **验证锚点**：三轨各跑一本书（卷轨含跨卷 HITL resume + 跨重启 resume_run），`counters.tokens_used > 0` ≈ 真实用量、无重复计费、`tokens_warning` 三轨一致可触发。
+
+### 5.7 v1.6 增量：写作凭据「项目感知 + per-delegate」解析（#929）
+
+> 背景：rc2 旅程实测（#929，P0）「开始写作」主路径全章 failed、tokens=0。终裁探针实证的根因链中 book 轨独占一环（R3）：`_build_book_service` **装配期一次性** `resolve_llm_credentials(config.llm_default_model)` 并闭包捕获——项目 `config.model` 已配置（#735 agent>项目>全局 链）从未参与解析；全局默认为空时旧 resolver 遍历注册表取 `models[0]`（不筛 type）把 zhipu `embedding-3` 装成 chat 模型 → 运行期 400（R1 全局面，见 ADR-049）。
+
+**凭据解析下沉到委托时机（R3 修复）**：
+- `_build_book_service` 装配期**零解析**（删除顶层 resolve 与闭包捕获）；
+- `_writer_factory` **每次委托**读目标项目配置（`_project_config_getter(expected_project_id)`，getter 不可用/项目不存在 → project_model=None 降级）→ `resolve_llm_credentials(config.llm_default_model, project_model=…)`——多项目并发 run 各章天然使用所属项目模型；
+- `POST /runs`（`start_run`）入口**无条件预检**：同链解析（plan 缺失 → project_model=None 继续），无解 → **422 先于 404/状态变更**（fail-fast 零残留，保 #860 契约 3「422 不启动后台」语义）。
+
+**422 语义升级（承接 #860）**：#860 验「有没有 key」；#860 之后 #929 实证还须验「装配的是不是可用 chat 模型」与「模型从哪来」——预检 + per-delegate 双点使凭据错误在入口可见（progress_reason 通道沿用 §5.5，运行期异常兜底不变）。
+
+**测试锚**：`tests/unit/api/routers/test_book_run_929.py`（R1-R4 + G1：装配期零解析 / 委托收到 project_model kw / 真实 getter 透传项目模型 / 预检先于 prepare）。
 
 ## 6. 组织规则
 

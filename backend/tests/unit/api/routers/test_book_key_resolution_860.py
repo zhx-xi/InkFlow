@@ -145,29 +145,37 @@ def _reset_singletons() -> None:
 # ── 契约 1：key 解析与 write next 同源 ─────────────────────────────
 
 
-def test_build_book_service_uses_resolve_llm_credentials():
-    """#860 核心：_build_book_service 必须经 resolve_llm_credentials 解析凭据。
+@pytest.mark.asyncio
+async def test_build_book_service_uses_resolve_llm_credentials():
+    """#860 核心迁移（#929 R3）：委托时经 resolve_llm_credentials（装配期延迟）。
 
-    RED 形态：当前代码直接 get_provider_config + except ValueError: pass，
-    resolve 从未被调用 → resolve.called False → 断言失败。
+    原契约锁「装配期调用 + 位置参数=全局默认」；#929 后装配期零解析（闭包捕获 =
+    项目模型永远不参与），同源性移至委托时机：_writer_factory 必须经 resolve，
+    且 args[0] 恒 = config.llm_default_model（#735 链中 project_model 以 kw 传入）。
     """
     from inkflow.core.config import config
 
-    session_factory = db_session()
+    session_factory = await adb_session()
     _reset_singletons()
     with (
         patch(RESOLVE_TARGET, return_value=(MODEL, API_KEY, BASE_URL)) as resolve,
         patch(BUILDER_TARGET, return_value=_fake_agent()),
     ):
-        books._build_book_service(session_factory())
+        svc = books._build_book_service(session_factory())
+        assert not resolve.called, "#929: 装配期不再解析凭据（延迟到委托/预检）"
+        await svc._writer_factory(
+            system_prompt="brief",
+            expected_project_id=uuid.uuid4(),
+            expected_chapter_id=None,
+        )
 
     assert resolve.called, (
-        "#860: _build_book_service 必须复用 resolve_llm_credentials"
+        "#860: _writer_factory 委托必须复用 resolve_llm_credentials"
         "（与 write next 同源），不得裸调 get_provider_config + 吞 ValueError"
     )
-    assert resolve.call_args.args == (config.llm_default_model,), (
-        "resolve_llm_credentials 调用参数必须 = config.llm_default_model"
-        "（与 deps.get_agentic_writer_service L278 同源同参）"
+    assert resolve.call_args.args[0] == config.llm_default_model, (
+        "resolve_llm_credentials 首参必须 = config.llm_default_model"
+        "（与 deps.get_agentic_writer_service 同源同参；#929 扩展 project_model kw）"
     )
 
 
@@ -216,7 +224,8 @@ def test_start_run_fails_fast_when_no_key_configured():
     session_factory = db_session()
     _reset_singletons()
 
-    def _raise_no_key(_default: str) -> tuple[str, str, str]:
+    def _raise_no_key(_default: str, **_kw) -> tuple[str, str, str]:
+        # #929：resolve 签名扩展 project_model kw（预检项目感知），本桩忽略
         raise HTTPException(
             status_code=422,
             detail="未配置默认模型，请在设置中配置 LLM Provider 和默认模型",

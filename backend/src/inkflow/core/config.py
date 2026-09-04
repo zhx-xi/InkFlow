@@ -10,6 +10,8 @@ from loguru import logger
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from inkflow.domain.models.provider_config import ProviderDefault
+
 
 def get_instance_env_path() -> Path:
     """instance.env 固定锚点（不随 data_dir 变）：%APPDATA%/InkFlow/instance.env。"""
@@ -175,14 +177,13 @@ class InkFlowConfig(BaseSettings):
     """智谱（Zhipu）GLM API Key，通过环境变量 INKFLOW_ZHIPU_API_KEY 注入。"""
     anthropic_api_key: str = ""
 
-    # ---- 模型路由（task → model，可在项目级配置覆盖） ----
-    model_routing: dict[str, str] = {
-        "writing": "deepseek/deepseek-v4-flash",
-        "audit": "deepseek/deepseek-chat",
-        "outline": "deepseek/deepseek-chat",
-        "revision": "deepseek/deepseek-v4-flash",
+    # ---- 模型路由（#929：provider 为键 → 内置默认模型值对象；可在项目级配置覆盖） ----
+    model_routing: dict[str, ProviderDefault] = {
+        "openai": ProviderDefault(model="gpt-4o", type="chat"),
+        "deepseek": ProviderDefault(model="deepseek-v4-flash", type="chat"),
+        "zhipu": ProviderDefault(model="glm-4.5", type="chat"),
     }
-    """不同 Agent 角色的默认模型映射。"""
+    """Provider 内置默认模型路由（模型名不带 provider/ 前缀，消费侧拼 LiteLLM 格式）。"""
 
     # ---- LangSmith 追踪（调试用） ----
     langsmith_api_key: str = ""

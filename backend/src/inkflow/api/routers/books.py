@@ -260,7 +260,6 @@ def _build_book_service(db: AsyncSession) -> BookService:
         draft_service=draft_service,
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
     )
-    model, api_key, base_url = resolve_llm_credentials(config.llm_default_model)
 
     async def _writer_factory(
         *,
@@ -268,7 +267,21 @@ def _build_book_service(db: AsyncSession) -> BookService:
         expected_project_id: uuid.UUID | None,
         expected_chapter_id: uuid.UUID | None,
     ) -> object:
-        """构造真实 F27 writer agent（镜像 deps.py _build_agent：deepagents ReAct 链）。"""
+        """构造真实 F27 writer agent（镜像 deps.py _build_agent：deepagents ReAct 链）。
+
+        #929 R3 per-delegate 解析：每次委托读项目配置模型（_project_config_getter
+        兄弟闭包）传入 resolve（#735 agent>项目>全局 链在 book 轨生效），不做装配期
+        闭包捕获——装配期只有全局模型可用（#738 假象来源）。
+        """
+        cfg = (
+            await _project_config_getter(expected_project_id)
+            if expected_project_id is not None
+            else None
+        )
+        model, api_key, base_url = resolve_llm_credentials(
+            config.llm_default_model,
+            project_model=getattr(cfg, "model", None),
+        )
         return build_agentic_writer(
             model=model,
             api_key=api_key,
@@ -430,6 +443,29 @@ async def start_run(
     """启动书级运行（202 异步语义）：prepare_run 预校验（错误立即 404/409/422）→
     返回 {run_id, status}；status=running 时后台 asyncio task fire-and-forget
     执行（#456 F44 阶段4 后台任务）。"""
+    from inkflow.api._llm_resolver import resolve_llm_credentials
+    from inkflow.core.config import config
+
+    # #929 §5b：入口无条件预检（在 prepare_run 改状态之前）——项目感知解析凭据，
+    # 保 #860「无凭据 → POST /runs 422 优先于 404」语义；plan 查询异常/None →
+    # project_model=None 继续预检，404 判定仍归 prepare_run（拒绝零残留）。
+    # 仅真实 BookService 路径执行：dependency_overrides 注入 mock 替身的 API
+    # 测试形态由替身 prepare_run 契约自管（预检假 422 会误伤 202/403 用例）。
+    if isinstance(svc, BookService):
+        try:
+            plan = await svc._repo.get_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 get_writing_plan
+                data.writing_plan_id
+            )
+        except Exception:
+            plan = None
+        cfg = None
+        if plan is not None and svc._project_config_getter is not None:
+            cfg = await svc._project_config_getter(plan.project_id)
+        resolve_llm_credentials(
+            config.llm_default_model,
+            project_model=getattr(cfg, "model", None),
+        )
+
     limits = BookLimits(**data.limits) if data.limits is not None else None
     agentic_config = AgenticBookConfig(**data.config) if data.config is not None else None
     try:

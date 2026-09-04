@@ -181,9 +181,9 @@ class TestRegistryPriority:
         registry_hit.get_by_name.assert_awaited_once_with("openai")
 
     def test_registry_miss_falls_back_to_builtin(self, registry_miss):
-        """注册表未命中 → 回退内置硬编码（_PROVIDER_BASE_URLS + config 路由，
-        兼容既有调用）。"""
+        """注册表未命中 → 回退内置（#929 迁移：provider 键路由 → provider/model 拼接）。"""
         cfg = get_provider_config("deepseek", api_key="k")
         assert cfg.base_url == "https://api.deepseek.com/v1"
-        assert cfg.default_model == config.model_routing.get("deepseek", config.llm_default_model)
+        entry = config.model_routing["deepseek"]
+        assert cfg.default_model == f"deepseek/{entry.model}"
         registry_miss.get_by_name.assert_awaited_once_with("deepseek")

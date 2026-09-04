@@ -192,7 +192,19 @@ class LangChainVectorStore:
         return {**entity.metadata, "project_id": entity.project_id}
 
     def _index_sync(self, entity: IndexableEntity) -> None:
-        """同步索引单个实体（upsert，同 id 覆盖）。"""
+        """同步索引单个实体（upsert，同 id 覆盖）。
+
+        #929 空串守卫：空白 content → warning + no-op（不写 chroma；reindex 差集
+        口径一致——该 id 不在库）。
+        """
+        if not entity.content or not entity.content.strip():
+            logger.warning(
+                "向量索引跳过空白 content 实体: id={} type={} project_id={}",
+                entity.id,
+                entity.entity_type.value,
+                entity.project_id,
+            )
+            return
         embedding = self._embeddings.embed_documents([entity.content])[0]
         with self._lock:
             collection = self._get_collection(entity.entity_type)
@@ -209,18 +221,35 @@ class LangChainVectorStore:
             collection.count()
 
     def _index_batch_sync(self, entities: list[IndexableEntity]) -> None:
-        """同步批量索引: 按类型分组，每 collection 一次 upsert。"""
+        """同步批量索引: 按类型分组，每 collection 一次 upsert。
+
+        #929 空串守卫：分组内过滤空白 content（逐条 warning），过滤后组空 → continue；
+        embed_documents 入参恒不含空白串（zhipu 400 家族路径）。
+        """
         by_type: dict[EntityType, list[IndexableEntity]] = {}
         for entity in entities:
             by_type.setdefault(entity.entity_type, []).append(entity)
         for entity_type, group in by_type.items():
-            embeddings = self._embeddings.embed_documents([e.content for e in group])
+            valid: list[IndexableEntity] = []
+            for entity in group:
+                if not entity.content or not entity.content.strip():
+                    logger.warning(
+                        "向量批量索引跳过空白 content 实体: id={} type={} project_id={}",
+                        entity.id,
+                        entity.entity_type.value,
+                        entity.project_id,
+                    )
+                    continue
+                valid.append(entity)
+            if not valid:
+                continue
+            embeddings = self._embeddings.embed_documents([e.content for e in valid])
             with self._lock:
                 collection = self._get_collection(entity_type)
                 collection.upsert(
-                    ids=[e.id for e in group],
-                    documents=[e.content for e in group],
-                    metadatas=[self._to_chroma_metadata(e) for e in group],
+                    ids=[e.id for e in valid],
+                    documents=[e.content for e in valid],
+                    metadatas=[self._to_chroma_metadata(e) for e in valid],
                     # chroma stub 对 embeddings 类型过严（实际运行时接受 list[list[float]]）
                     embeddings=cast(Any, embeddings),
                 )
@@ -237,7 +266,18 @@ class LangChainVectorStore:
         top_k: int,
         min_score: float,
     ) -> list[RetrievedEntity]:
-        """同步检索: 每类型查对应 collection（where project_id），去重合并排序截断。"""
+        """同步检索: 每类型查对应 collection（where project_id），去重合并排序截断。
+
+        #929 空串守卫：空白 query → warning（含 project_id）+ 确定性降级空结果
+        （不调 embed_query、不打 chroma，锁外）。
+        """
+        if not query or not query.strip():
+            logger.warning(
+                "向量检索跳过空白 query: project_id={} top_k={}",
+                project_id,
+                top_k,
+            )
+            return []
         types = list(entity_types) if entity_types else list(EntityType)
         query_embedding = self._embeddings.embed_query(query)
         with self._lock:

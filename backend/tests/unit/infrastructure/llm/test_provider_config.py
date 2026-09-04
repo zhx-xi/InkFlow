@@ -9,25 +9,32 @@ from inkflow.infrastructure.llm.provider_config import (
     _BUILTIN_PROVIDERS,
     LLMProviderConfig,
     get_provider_config,
-    parse_model_string,
 )
 
 
 class TestModelRoutingAuditFix:
-    """契约 2（P2-1）：audit 路由不再指向已移除的 anthropic provider。"""
+    """契约 2（P2-1）迁移（#929）：audit task 键废止 → provider 键值对象。
 
-    def test_audit_routing_points_to_deepseek(self):
-        """audit 任务应精确路由到 deepseek/deepseek-chat。"""
-        assert config.model_routing["audit"] == "deepseek/deepseek-chat"
+    原「audit 指向 deepseek/deepseek-chat」由 provider 级 deepseek 默认承接；
+    anthropic 不注册语义保留（deepseek/zhipu/openai 键在、anthropic 不在）。
+    """
 
-    def test_audit_routing_provider_is_registered(self):
-        """audit 路由的 provider 前缀必须存在于内建注册表（ADR-005v2）。"""
-        provider, _ = parse_model_string(config.model_routing["audit"])
-        assert provider in _BUILTIN_PROVIDERS
-        # 显式传 api_key 验证该 provider 可解析出完整配置（不依赖环境变量）
-        cfg = get_provider_config(provider, api_key="test-key")
-        assert isinstance(cfg, LLMProviderConfig)
-        assert cfg.provider == provider
+    def test_deepseek_routing_points_to_registered_chat_model(self):
+        """deepseek provider 内置默认 = v4-flash（chat 型，#415 值保留）。"""
+        entry = config.model_routing["deepseek"]
+        assert entry.model == "deepseek-v4-flash"
+        assert entry.type == "chat"
+
+    def test_routing_provider_is_registered(self):
+        """路由键必须是内建 provider（ADR-005v2；anthropic 不在——P2-1 语义保留）。"""
+        assert "anthropic" not in config.model_routing
+        assert "anthropic" not in _BUILTIN_PROVIDERS
+        for provider in config.model_routing:
+            assert provider in _BUILTIN_PROVIDERS
+            # 显式传 api_key 验证该 provider 可解析出完整配置（不依赖环境变量）
+            cfg = get_provider_config(provider, api_key="test-key")
+            assert isinstance(cfg, LLMProviderConfig)
+            assert cfg.provider == provider
 
 
 class TestZhipuProviderRegistration:
