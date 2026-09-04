@@ -12,6 +12,9 @@
  *   新增/编辑/删除成功后强制刷新该章情节点（fetchedRef 移除 key 再拉取）。
  * - 故事弧：大纲 tab 下方独立面板（outline-arcs）+ 创建/编辑/删除（真删 + ConfirmDialog）；
  *   弧列表按 projectId 拉取，CRUD 成功后本地回写（新弧/更新/移除即时可见）。
+ * - #928 章节关联：编辑先 GET /story-arcs/{id}（成员 points → chips）+ 章级候选池（GET 各章情节点），
+ *   勾选/移除本地即时反映；保存按变更集批量 PATCH plot-points（移除 {arc_id:''} / 添加 {arc_id:弧}，
+ *   新建先 POST 拿 id 再 PATCH），成功后回写 point_count 徽标并刷新受影响章缓存。
  * - AI 生成：library-ai-generate → outline-generate-dialog；POST /outlines/generate { save: true }，
  *   进行中 outline-generate-loading 反馈、完成 toast ok + onOutlineGenerated（父级插入树顶部）、失败 err toast。
  */
@@ -28,6 +31,7 @@ import {
   ChapterLinkDialog,
   GenerateOutlineDialog,
   PlotPointDialog,
+  type ArcSaveValues,
   type PlotPointDTO,
   type PlotPointFormValues,
   type StoryArcDTO,
@@ -327,8 +331,12 @@ export function OutlineTree({
   const [pointDialog, setPointDialog] = useState<{ outlineId: string | number; editing: PlotPointDTO | null } | null>(null);
   const [pointSaving, setPointSaving] = useState(false);
   const [pendingPointDelete, setPendingPointDelete] = useState<PlotPointDTO | null>(null);
-  // #649：故事弧创建/编辑/删除
-  const [arcDialog, setArcDialog] = useState<{ editing: StoryArcDTO | null } | null>(null);
+  // #649/#928：故事弧创建/编辑/删除（members = GET 详情成员 chips；candidates = 章级候选池）
+  const [arcDialog, setArcDialog] = useState<{
+    editing: StoryArcDTO | null;
+    members: PlotPointDTO[];
+    candidates: PlotPointDTO[];
+  } | null>(null);
   const [arcSaving, setArcSaving] = useState(false);
   const [pendingArcDelete, setPendingArcDelete] = useState<StoryArcDTO | null>(null);
   // #649：AI 生成
@@ -382,6 +390,35 @@ export function OutlineTree({
       cancelled = true;
     };
   }, [projectId]);
+
+  // #928：候选池 = 全部章级大纲的情节点（对话框打开时拉取，不依赖树展开态；单大纲失败跳过）
+  const loadChapterCandidates = useCallback(async () => {
+    const chapterIds = outlines
+      .filter((o) => normalizeLevel(o.level) === 'chapter')
+      .map((o) => o.id);
+    const groups = await Promise.all(
+      chapterIds.map(async (oid) => {
+        try {
+          const data = await apiFetch<{ items?: PlotPointDTO[] }>(`/api/v1/outlines/${oid}/plot-points`);
+          return data.items ?? [];
+        } catch {
+          return [];
+        }
+      }),
+    );
+    const seen = new Set<string>();
+    const merged: PlotPointDTO[] = [];
+    for (const points of groups) {
+      for (const point of points) {
+        const key = String(point.id);
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(point);
+        }
+      }
+    }
+    return merged;
+  }, [outlines]);
 
   const toggleCollapsed = (id: string | number) => {
     setCollapsed((prev) => {
@@ -467,13 +504,37 @@ export function OutlineTree({
     }
   };
 
-  // #649：故事弧保存——创建 POST /projects/{pid}/story-arcs；编辑 PATCH 仅变化字段；成功本地回写
-  const handleArcSave = async (values: { name: string; description: string }) => {
+  // #928：编辑模式打开前拉弧线详情（成员 points）→ 再渲染对话框（chips 需成员已就绪）
+  const handleOpenArcEdit = async (arc: StoryArcDTO) => {
     if (!projectId) return;
+    let members: PlotPointDTO[] = [];
+    try {
+      const detail = await apiFetch<{ points?: PlotPointDTO[] }>(`/api/v1/story-arcs/${arc.id}`);
+      members = detail.points ?? [];
+    } catch (err) {
+      useToastStore.getState().pushToast('err', errorMessage(err));
+    }
+    const candidates = await loadChapterCandidates();
+    setArcDialog({ editing: arc, members, candidates });
+  };
+
+  // #928：新建模式无详情可拉 → 空成员 + 章级候选池
+  const handleOpenArcCreate = async () => {
+    if (!projectId) return;
+    const candidates = await loadChapterCandidates();
+    setArcDialog({ editing: null, members: [], candidates });
+  };
+
+  // #649+#928：故事弧保存——基础字段（编辑 PATCH 仅变化字段 / 新建 POST）后按变更集批量挂/清弧：
+  // 移除 = PATCH plot-points { arc_id: '' }（#862）；添加 = PATCH { arc_id: 目标弧 }（新建须先 POST 拿 id）
+  const handleArcSave = async (values: ArcSaveValues) => {
+    if (!projectId || !arcDialog) return;
+    const { editing, members, candidates } = arcDialog;
     setArcSaving(true);
     try {
-      if (arcDialog?.editing) {
-        const arc = arcDialog.editing;
+      let targetId: string | null = editing ? String(editing.id) : null;
+      if (editing) {
+        const arc = editing;
         const body: Record<string, unknown> = {};
         if (values.name !== (arc.name ?? '')) body.name = values.name;
         if (values.description !== (arc.description ?? '')) body.description = values.description;
@@ -493,10 +554,48 @@ export function OutlineTree({
           method: 'POST',
           body,
         });
+        targetId = String(created.id);
         // 幂等追加（dev 下 React 可能双次应用 updater；按 id 去重防重复行）
         setStoryArcs((prev) =>
-          prev.some((a) => String(a.id) === String(created.id)) ? prev : [...prev, created],
+          prev.some((a) => String(a.id) === targetId) ? prev : [...prev, created],
         );
+      }
+      for (const pointId of values.removePointIds) {
+        await apiFetch(`/api/v1/plot-points/${pointId}`, { method: 'PATCH', body: { arc_id: '' } });
+      }
+      if (targetId !== null) {
+        for (const pointId of values.addPointIds) {
+          await apiFetch(`/api/v1/plot-points/${pointId}`, { method: 'PATCH', body: { arc_id: targetId } });
+        }
+      }
+      // #928：本地一致性——point_count 徽标按真实成员数回写 + 受影响章情节点缓存失效重拉
+      const associationChanged = values.addPointIds.length > 0 || values.removePointIds.length > 0;
+      if (associationChanged) {
+        const arcKey = editing ? String(editing.id) : targetId;
+        const nextCount = Math.max(
+          0,
+          (editing ? members.length : 0) - values.removePointIds.length + values.addPointIds.length,
+        );
+        setStoryArcs((prev) =>
+          prev.map((a) =>
+            String(a.id) === arcKey ? { ...a, point_count: nextCount } : a,
+          ),
+        );
+        const changed = new Set([...values.addPointIds, ...values.removePointIds]);
+        const outlineIds = new Set<string>();
+        for (const point of [...members, ...candidates]) {
+          if (
+            point.outline_id !== null &&
+            point.outline_id !== undefined &&
+            changed.has(String(point.id))
+          ) {
+            outlineIds.add(String(point.outline_id));
+          }
+        }
+        for (const outlineId of outlineIds) {
+          fetchedRef.current.delete(outlineId);
+          void fetchPlotPoints(outlineId);
+        }
       }
       setArcDialog(null);
     } catch (err) {
@@ -647,7 +746,7 @@ export function OutlineTree({
                 type="button"
                 data-testid="outline-arc-create"
                 className="rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => setArcDialog({ editing: null })}
+                onClick={() => void handleOpenArcCreate()}
               >
                 {t('lib.arcs.create')}
               </button>
@@ -677,7 +776,7 @@ export function OutlineTree({
                         data-testid={`outline-arc-edit-${arc.id}`}
                         aria-label={`${t('lib.edit')} ${arc.name ?? ''}`}
                         className="rounded p-1.5 text-ink-3 transition duration-150 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => setArcDialog({ editing: arc })}
+                        onClick={() => void handleOpenArcEdit(arc)}
                       >
                         <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
@@ -728,6 +827,8 @@ export function OutlineTree({
       {arcDialog && (
         <ArcDialog
           editing={arcDialog.editing}
+          members={arcDialog.members}
+          candidates={arcDialog.candidates}
           saving={arcSaving}
           onSave={handleArcSave}
           onCancel={() => setArcDialog(null)}

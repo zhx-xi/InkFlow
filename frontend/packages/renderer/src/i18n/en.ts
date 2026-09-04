@@ -185,6 +185,12 @@ export const en: Record<string, string> = {
   'lib.arcs.cancel': 'Cancel',
   'lib.arcs.deleteTitle': 'Delete Story Arc',
   'lib.arcs.deleteConfirm': 'Confirm delete story arc "{name}"?',
+  // #928: story-arc chapter linking (multi-select + tags)
+  'lib.arcs.chapters': 'Linked chapters',
+  'lib.arcs.addChapter': '+ Add chapters',
+  'lib.arcs.chaptersEmpty': 'No linked chapters',
+  'lib.arcs.removeChapter': 'Remove chapter "{name}"',
+  'lib.arcs.noCandidates': 'No plot points available to link',
   'lib.aiGenerate': 'AI Generate Outline',
   'lib.generate.title': 'Generate Outline',
   'lib.generate.name': 'Outline name (optional)',

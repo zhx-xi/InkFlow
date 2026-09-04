@@ -1,11 +1,11 @@
 /**
- * F43 #649/#676/#677 大纲子项对话框集合（自 OutlineTree.tsx 拆分，满足 monster-file ≤900 行护栏）：
+ * F43 #649/#676/#677/#928 大纲子项对话框集合（自 OutlineTree.tsx 拆分，满足 monster-file ≤900 行护栏）：
  * 情节点创建/编辑、故事弧创建/编辑、AI 生成大纲、章节关联选择器；
  * 仅被 OutlineTree.tsx 使用，不依赖 OutlineItemDTO（ChapterLinkDialog 走 titles/onPick 契约）。
  */
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
 
 /** 情节点 DTO（spec §2.8：GET /outlines/{id}/plot-points；arc_id/outline_id 供编辑/删除刷新） */
@@ -25,6 +25,14 @@ export interface StoryArcDTO {
   name?: string;
   description?: string;
   point_count?: number;
+}
+
+/** #928 故事弧保存值：基础字段 + 章节关联变更集（add/remove 只含差异，父级负责 PATCH plot-points） */
+export interface ArcSaveValues {
+  name: string;
+  description: string;
+  addPointIds: string[];
+  removePointIds: string[];
 }
 
 export const INPUT_CLS =
@@ -135,23 +143,51 @@ export function PlotPointDialog({ editing, arcs, saving, onSave, onCancel }: {
   );
 }
 
-/** 故事弧创建/编辑对话框（#649：名称必填 gate；编辑模式预填现值） */
-export function ArcDialog({ editing, saving, onSave, onCancel }: {
+/** 故事弧创建/编辑对话框（#649：名称必填 gate；编辑模式预填现值）+ #928 章节关联（多选 + 标签） */
+export function ArcDialog({ editing, saving, members, candidates, onSave, onCancel }: {
   editing: StoryArcDTO | null;
   saving: boolean;
-  onSave: (values: { name: string; description: string }) => Promise<void> | void;
+  /** #928：弧线当前成员情节点（编辑模式 = GET /story-arcs/{id} 返回的 points；新建 = []） */
+  members: PlotPointDTO[];
+  /** #928：章级大纲情节点候选池（outline-arc-add-chapter 面板数据源） */
+  candidates: PlotPointDTO[];
+  onSave: (values: ArcSaveValues) => Promise<void> | void;
   onCancel: () => void;
 }) {
   const { t } = useI18n();
   const [name, setName] = useState(editing?.name ?? '');
   const [description, setDescription] = useState(editing?.description ?? '');
+  // #928：章节标签本地态（初始 = 弧线成员；移除/勾选即时反映，保存时与初始成员差集 = 变更集）
+  const [memberPoints, setMemberPoints] = useState<PlotPointDTO[]>(members);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const title = editing ? t('lib.arcs.editTitle') : t('lib.arcs.createTitle');
   const canSave = name.trim() !== '' && !saving;
+  const memberIds = new Set(memberPoints.map((p) => String(p.id)));
+  const initialIds = new Set(members.map((p) => String(p.id)));
+
+  const toggleMember = (point: PlotPointDTO) => {
+    setMemberPoints((prev) => {
+      const key = String(point.id);
+      return prev.some((p) => String(p.id) === key)
+        ? prev.filter((p) => String(p.id) !== key)
+        : [...prev, point];
+    });
+  };
+
+  const handleSave = () => {
+    void onSave({
+      name: name.trim(),
+      description: description.trim(),
+      addPointIds: memberPoints.filter((p) => !initialIds.has(String(p.id))).map((p) => String(p.id)),
+      removePointIds: members.filter((p) => !memberIds.has(String(p.id))).map((p) => String(p.id)),
+    });
+  };
+
   return (
     <DialogShell
       title={title}
       testid="outline-arc-dialog"
-      width="w-[460px]"
+      width="w-[480px]"
       footer={
         <>
           <button type="button" data-testid="outline-arc-cancel" className={BTN_SECONDARY} onClick={onCancel}>
@@ -162,7 +198,7 @@ export function ArcDialog({ editing, saving, onSave, onCancel }: {
             data-testid="outline-arc-save"
             disabled={!canSave}
             className={BTN_PRIMARY}
-            onClick={() => void onSave({ name: name.trim(), description: description.trim() })}
+            onClick={handleSave}
           >
             {saving ? t('lib.saving') : t('lib.arcs.save')}
           </button>
@@ -175,6 +211,82 @@ export function ArcDialog({ editing, saving, onSave, onCancel }: {
       <Field label={t('lib.arcs.desc')}>
         <textarea data-testid="outline-arc-desc" aria-label={t('lib.arcs.desc')} rows={3} className={INPUT_CLS} value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
+      {/* #928：关联章节区——区块标题/空态/成员 chips + 候选多选面板（标签移除即时本地生效） */}
+      <div data-testid="outline-arc-chapters" className="space-y-1.5 text-[13px]">
+        <div className="flex items-center justify-between">
+          <span className="font-medium">{t('lib.arcs.chapters')}</span>
+          <button
+            type="button"
+            data-testid="outline-arc-add-chapter"
+            className="rounded-md border border-line px-2.5 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setPickerOpen(true)}
+          >
+            {t('lib.arcs.addChapter')}
+          </button>
+        </div>
+        {memberPoints.length === 0 ? (
+          <div
+            data-testid="outline-arc-chapters-empty"
+            className="rounded-md border border-dashed border-line bg-surface-2/50 px-3 py-2 text-[12px] text-ink-3"
+          >
+            {t('lib.arcs.chaptersEmpty')}
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {memberPoints.map((point) => (
+              <span
+                key={String(point.id)}
+                data-testid={`outline-arc-chip-${point.id}`}
+                className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-3/80 py-0.5 pl-2.5 pr-1 text-[12px] text-ink"
+              >
+                <span className="max-w-[180px] truncate">{point.name ?? String(point.id)}</span>
+                <button
+                  type="button"
+                  data-testid={`outline-arc-chip-remove-${point.id}`}
+                  aria-label={t('lib.arcs.removeChapter', { name: point.name ?? '' })}
+                  className="rounded-full p-0.5 text-ink-3 transition duration-150 hover:bg-surface-3 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => toggleMember(point)}
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        {pickerOpen && (
+          <div className="max-h-[240px] space-y-0.5 overflow-y-auto rounded-md border border-line bg-surface-2/50 p-1.5">
+            {candidates.length === 0 ? (
+              <div className="px-2 py-3 text-center text-[12px] text-ink-3">{t('lib.arcs.noCandidates')}</div>
+            ) : (
+              candidates.map((point) => {
+                const key = String(point.id);
+                const checked = memberIds.has(key);
+                return (
+                  <label
+                    key={key}
+                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-[12px] text-ink transition duration-150 hover:bg-surface-3/80"
+                  >
+                    <input
+                      type="checkbox"
+                      data-testid={`outline-arc-option-${point.id}`}
+                      aria-label={point.name ?? String(point.id)}
+                      checked={checked}
+                      onChange={() => toggleMember(point)}
+                      className="h-3.5 w-3.5 shrink-0 accent-accent"
+                    />
+                    <span className="min-w-0 flex-1 truncate">{point.name ?? String(point.id)}</span>
+                    {point.type ? (
+                      <span className="shrink-0 rounded-full bg-surface-3 px-1.5 py-0.5 text-[10px] text-ink-2">
+                        {point.type}
+                      </span>
+                    ) : null}
+                  </label>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
     </DialogShell>
   );
 }
