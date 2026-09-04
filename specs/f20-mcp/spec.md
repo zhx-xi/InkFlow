@@ -82,11 +82,11 @@ F20 的 MCP 工具沿用同一 `ToolSpec` 结构（`name`/`description`/`input_s
 |--------|-------------|--------------------------|------------------------------|
 | `manage_project` | create / list / get / update / delete / restore | name, genre, language, target_words, search, id, force, permanent | POST/GET `/projects` · GET/PATCH/DELETE `/projects/{id}` · POST `/projects/{id}/restore` |
 | `manage_chapter` | create / list / get / update / delete / move | project_id, volume_id, title, content, status, id, to_volume | POST `/projects/{pid}/volumes` · POST/GET `/projects/{pid}/chapters` · GET/PATCH/DELETE `/chapters/{cid}` · POST `/chapters/{cid}/move` |
-| `manage_character` | create / list / get / update / delete / restore | project_id, name, search, group_id, id | POST/GET `/projects/{pid}/characters` · GET/PATCH/DELETE `/characters/{id}` · POST `/characters/{id}/restore` · character-groups 端点 |
+| `manage_character` | create / list / get / update / delete / restore | project_id, name, search, group_id, id, extra, brief | POST/GET `/projects/{pid}/characters` · GET/PATCH/DELETE `/characters/{id}` · POST `/characters/{id}/restore` · character-groups 端点 |
 | `manage_relation` | create / list / get / update / delete | project_id, source_id, target_id, relation_type, id | relations 三端点（`/characters/{id}/relations` 等，F9） |
 | `manage_timeline` | create / list / get / update / delete / check | project_id, event fields, id | POST/GET `/projects/{pid}/timeline/events` · GET `/projects/{pid}/timeline` · GET `/projects/{pid}/timeline/check` · GET/PATCH/DELETE `/timeline/events/{id}` |
 | `manage_world` | create / list / get / update / delete / restore | project_id, category, name, id | POST/GET `/projects/{pid}/world-settings` · GET `/projects/{pid}/world-settings/categories` · GET/PATCH/DELETE `/world-settings/{id}` · POST `/world-settings/{id}/restore` |
-| `manage_outline` | create / list / get / update / delete / generate | project_id, chapter_id, level, title, id | POST/GET `/projects/{pid}/outlines` · GET/PATCH/DELETE `/outlines/{id}` · plot-points / story-arcs 端点 · POST `/outlines/generate` |
+| `manage_outline` | create / list / get / update / delete / generate | project_id, name, description, sort_order, level, parent_id, volume_id, chapter_id, search, force, prompt, num_chapters | POST/GET `/projects/{pid}/outlines` · GET/PATCH/DELETE `/outlines/{id}` · plot-points / story-arcs 端点 · POST `/outlines/generate` |
 | `manage_foreshadowing` | create / list / get / update / delete / resolve / reopen | project_id, content, status, id | POST/GET `/projects/{pid}/foreshadowings` · GET/PATCH/DELETE `/foreshadowings/{id}` · POST `/foreshadowings/{id}/resolve/reopen` |
 | `write` | generate / continue / revise | project_id, chapter_id, instruction, target_words | POST `/writing/generate\|continue\|revise`（非流式，Q3 已拍板 A：同步返回拼接结果，不走 SSE 透传） |
 | `audit` | project / chapter | project_id, chapter_id, include_static | GET `/projects/{pid}/audit`（F15）· POST `/projects/{pid}/chapter-audit`（F34） |
@@ -177,7 +177,7 @@ F20 的 MCP 工具沿用同一 `ToolSpec` 结构（`name`/`description`/`input_s
 | 9 | `write` | 写作：续写下一章 / 续写指定章 / 按指令修订 |
 | 10 | `audit` | 审计：项目级四维审计 / 单章一致性审计 |
 | 11 | `extract` | 提取：从文本提取设定实体 / 向量重索引 / 语义检索 |
-| 12 | `export` | 导出：项目导出为 EPUB/Markdown/TXT/DOCX |
+| 12 | `export` | 导出：项目导出为 TXT（HTTP 面当前仅支持 txt，其余格式请走 GUI/CLI） |
 | 13 | `search` | 搜索：跨内容类型全文搜索（关键词 + 语义） |
 | 14 | `manage_session` | 会话管理：创建/列出/查看/暂停/恢复/完成/失败 agent 会话 |
 | 15 | `tool_search` | 工具发现：列出当前 MCP 工具面（渐进式发现入口） |

@@ -53,7 +53,9 @@ class ManageCharacterParams(BaseModel):
     personality: str | None = None
     background: str | None = None
     goals: str | None = None
+    brief: str | None = None
     group_id: str | None = None
+    extra: dict | None = None
     search: str | None = None
     force: bool | None = None
 
@@ -110,6 +112,10 @@ class ManageOutlineParams(BaseModel):
     name: str | None = None
     description: str | None = None
     sort_order: int | None = None
+    level: str | None = None
+    parent_id: str | None = None
+    volume_id: str | None = None
+    chapter_id: str | None = None
     search: str | None = None
     force: bool | None = None
     prompt: str | None = None
