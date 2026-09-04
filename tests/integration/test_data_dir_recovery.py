@@ -62,11 +62,14 @@ from inkflow.infrastructure.rag.langchain_vector_store import LangChainVectorSto
 app_module = importlib.import_module("inkflow.api.app")
 
 # BagEmbeddings 镜像先例 import（backend/tests 不入 pytest sys.path：显式插入后按模块 import，
-# 不重写该确定性向量类——任务约束「直接 import 复用勿重写」）
-_BACKEND_TESTS_DIR = Path(__file__).resolve().parents[2] / "backend" / "tests"
-if str(_BACKEND_TESTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_BACKEND_TESTS_DIR))
-from unit.test_rag_vector_consistency_journey import (  # noqa: E402  # 须上方 sys.path 注入后才能 import（必要顺序，见上注释）
+# 不重写该确定性向量类——任务约束「直接 import 复用勿重写」）。
+# #636 测试目录拆分：journey 文件已移至 unit/infrastructure/rag/，注入路径随迁。
+_JOURNEY_DIR = (
+    Path(__file__).resolve().parents[2] / "backend" / "tests" / "unit" / "infrastructure" / "rag"
+)
+if str(_JOURNEY_DIR) not in sys.path:
+    sys.path.insert(0, str(_JOURNEY_DIR))
+from test_rag_vector_consistency_journey import (  # noqa: E402  # 须上方 sys.path 注入后才能 import（必要顺序，见上注释）
     BagEmbeddings,
 )
 

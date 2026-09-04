@@ -62,118 +62,118 @@
 | POST | `/api/v1/agent/pipelines/validate` | ✅ | tests/api/test_agent_api.py |
 | GET | `/api/v1/agent/pipelines/templates` | ✅ | tests/api/test_agent_api.py |
 
-### characters（16 端点）— `backend/tests/unit/test_character_api.py`
+### characters（16 端点）— `backend/tests/unit/api/routers/test_character_api.py`
 
 | 方法 | 端点 | 覆盖 | 测试文件 |
 |---|---|---|---|
-| POST | `/api/v1/characters/extract` | ✅ | backend/tests/unit/test_character_api.py |
-| POST | `/api/v1/projects/{project_id}/characters` | ✅ | backend/tests/unit/test_character_api.py |
-| GET | `/api/v1/projects/{project_id}/characters` | ✅ | backend/tests/unit/test_character_api.py |
-| GET | `/api/v1/characters/{character_id}` | ✅ | backend/tests/unit/test_character_api.py |
-| PATCH | `/api/v1/characters/{character_id}` | ✅ | backend/tests/unit/test_character_api.py |
-| DELETE | `/api/v1/characters/{character_id}` | ✅ | backend/tests/unit/test_character_api.py |
-| POST | `/api/v1/characters/{character_id}/restore` | ✅ | backend/tests/unit/test_character_api.py |
-| GET | `/api/v1/characters/{character_id}/relations` | ✅ | backend/tests/unit/test_character_api.py |
-| POST | `/api/v1/characters/{character_id}/relations` | ✅ | backend/tests/unit/test_character_api.py |
-| PATCH | `/api/v1/characters/{character_id}/relations/{relation_id}` | ✅ | backend/tests/unit/test_character_api.py |
-| DELETE | `/api/v1/characters/{character_id}/relations/{relation_id}` | ✅ | backend/tests/unit/test_character_api.py |
-| POST | `/api/v1/projects/{project_id}/character-groups` | ✅ | backend/tests/unit/test_character_api.py |
-| GET | `/api/v1/projects/{project_id}/character-groups` | ✅ | backend/tests/unit/test_character_api.py |
-| GET | `/api/v1/character-groups/{group_id}` | ✅ | backend/tests/unit/test_character_api.py |
-| PATCH | `/api/v1/character-groups/{group_id}` | ✅ | backend/tests/unit/test_character_api.py |
-| DELETE | `/api/v1/character-groups/{group_id}` | ✅ | backend/tests/unit/test_character_api.py |
+| POST | `/api/v1/characters/extract` | ✅ | backend/tests/unit/api/routers/test_character_api.py |
+| POST | `/api/v1/projects/{project_id}/characters` | ✅ | backend/tests/unit/api/routers/test_character_api.py |
+| GET | `/api/v1/projects/{project_id}/characters` | ✅ | backend/tests/unit/api/routers/test_character_api.py |
+| GET | `/api/v1/characters/{character_id}` | ✅ | backend/tests/unit/api/routers/test_character_api.py |
+| PATCH | `/api/v1/characters/{character_id}` | ✅ | backend/tests/unit/api/routers/test_character_api.py |
+| DELETE | `/api/v1/characters/{character_id}` | ✅ | backend/tests/unit/api/routers/test_character_api.py |
+| POST | `/api/v1/characters/{character_id}/restore` | ✅ | backend/tests/unit/api/routers/test_character_api.py |
+| GET | `/api/v1/characters/{character_id}/relations` | ✅ | backend/tests/unit/api/routers/test_character_api.py |
+| POST | `/api/v1/characters/{character_id}/relations` | ✅ | backend/tests/unit/api/routers/test_character_api.py |
+| PATCH | `/api/v1/characters/{character_id}/relations/{relation_id}` | ✅ | backend/tests/unit/api/routers/test_character_api.py |
+| DELETE | `/api/v1/characters/{character_id}/relations/{relation_id}` | ✅ | backend/tests/unit/api/routers/test_character_api.py |
+| POST | `/api/v1/projects/{project_id}/character-groups` | ✅ | backend/tests/unit/api/routers/test_character_api.py |
+| GET | `/api/v1/projects/{project_id}/character-groups` | ✅ | backend/tests/unit/api/routers/test_character_api.py |
+| GET | `/api/v1/character-groups/{group_id}` | ✅ | backend/tests/unit/api/routers/test_character_api.py |
+| PATCH | `/api/v1/character-groups/{group_id}` | ✅ | backend/tests/unit/api/routers/test_character_api.py |
+| DELETE | `/api/v1/character-groups/{group_id}` | ✅ | backend/tests/unit/api/routers/test_character_api.py |
 
-### world_settings（8 端点）— `backend/tests/unit/test_world_api.py`
-
-| 方法 | 端点 | 覆盖 | 测试文件 |
-|---|---|---|---|
-| POST | `/api/v1/world-settings/extract` | ✅ | backend/tests/unit/test_world_api.py |
-| POST | `/api/v1/projects/{project_id}/world-settings` | ✅ | backend/tests/unit/test_world_api.py |
-| GET | `/api/v1/projects/{project_id}/world-settings` | ✅ | backend/tests/unit/test_world_api.py |
-| GET | `/api/v1/projects/{project_id}/world-settings/categories` | ✅ | backend/tests/unit/test_world_api.py |
-| GET | `/api/v1/world-settings/{setting_id}` | ✅ | backend/tests/unit/test_world_api.py |
-| PATCH | `/api/v1/world-settings/{setting_id}` | ✅ | backend/tests/unit/test_world_api.py |
-| DELETE | `/api/v1/world-settings/{setting_id}` | ✅ | backend/tests/unit/test_world_api.py |
-| POST | `/api/v1/world-settings/{setting_id}/restore` | ✅ | backend/tests/unit/test_world_api.py |
-
-### outlines（19 端点）— `backend/tests/unit/test_outline_api.py`
+### world_settings（8 端点）— `backend/tests/unit/api/routers/test_world_api.py`
 
 | 方法 | 端点 | 覆盖 | 测试文件 |
 |---|---|---|---|
-| POST | `/api/v1/outlines/generate` | ✅ | backend/tests/unit/test_outline_api.py |
-| POST | `/api/v1/projects/{project_id}/outlines` | ✅ | backend/tests/unit/test_outline_api.py |
-| GET | `/api/v1/projects/{project_id}/outlines` | ✅ | backend/tests/unit/test_outline_api.py |
-| GET | `/api/v1/outlines/{outline_id}` | ✅ | backend/tests/unit/test_outline_api.py |
-| PATCH | `/api/v1/outlines/{outline_id}` | ✅ | backend/tests/unit/test_outline_api.py |
-| DELETE | `/api/v1/outlines/{outline_id}` | ✅ | backend/tests/unit/test_outline_api.py |
-| POST | `/api/v1/outlines/{outline_id}/restore` | ✅ | backend/tests/unit/test_outline_api.py |
-| POST | `/api/v1/outlines/{outline_id}/plot-points` | ✅ | backend/tests/unit/test_outline_api.py |
-| GET | `/api/v1/outlines/{outline_id}/plot-points` | ✅ | backend/tests/unit/test_outline_api.py |
-| GET | `/api/v1/plot-points/{point_id}` | ✅ | backend/tests/unit/test_outline_api.py |
-| PATCH | `/api/v1/plot-points/{point_id}` | ✅ | backend/tests/unit/test_outline_api.py |
-| DELETE | `/api/v1/plot-points/{point_id}` | ✅ | backend/tests/unit/test_outline_api.py |
-| POST | `/api/v1/plot-points/{point_id}/restore` | ✅ | backend/tests/unit/test_outline_api.py |
-| POST | `/api/v1/projects/{project_id}/story-arcs` | ✅ | backend/tests/unit/test_outline_api.py |
-| GET | `/api/v1/projects/{project_id}/story-arcs` | ✅ | backend/tests/unit/test_outline_api.py |
-| GET | `/api/v1/story-arcs/{arc_id}` | ✅ | backend/tests/unit/test_outline_api.py |
-| PATCH | `/api/v1/story-arcs/{arc_id}` | ✅ | backend/tests/unit/test_outline_api.py |
-| DELETE | `/api/v1/story-arcs/{arc_id}` | ✅ | backend/tests/unit/test_outline_api.py |
-| POST | `/api/v1/story-arcs/{arc_id}/restore` | ✅ | backend/tests/unit/test_outline_api.py |
+| POST | `/api/v1/world-settings/extract` | ✅ | backend/tests/unit/api/routers/test_world_api.py |
+| POST | `/api/v1/projects/{project_id}/world-settings` | ✅ | backend/tests/unit/api/routers/test_world_api.py |
+| GET | `/api/v1/projects/{project_id}/world-settings` | ✅ | backend/tests/unit/api/routers/test_world_api.py |
+| GET | `/api/v1/projects/{project_id}/world-settings/categories` | ✅ | backend/tests/unit/api/routers/test_world_api.py |
+| GET | `/api/v1/world-settings/{setting_id}` | ✅ | backend/tests/unit/api/routers/test_world_api.py |
+| PATCH | `/api/v1/world-settings/{setting_id}` | ✅ | backend/tests/unit/api/routers/test_world_api.py |
+| DELETE | `/api/v1/world-settings/{setting_id}` | ✅ | backend/tests/unit/api/routers/test_world_api.py |
+| POST | `/api/v1/world-settings/{setting_id}/restore` | ✅ | backend/tests/unit/api/routers/test_world_api.py |
 
-### timeline（8 端点）— `backend/tests/unit/test_timeline_api.py`
+### outlines（19 端点）— `backend/tests/unit/api/routers/test_outline_api.py`
 
 | 方法 | 端点 | 覆盖 | 测试文件 |
 |---|---|---|---|
-| POST | `/api/v1/projects/{project_id}/timeline/events` | ✅ | backend/tests/unit/test_timeline_api.py |
-| GET | `/api/v1/projects/{project_id}/timeline/events` | ✅ | backend/tests/unit/test_timeline_api.py |
-| GET | `/api/v1/projects/{project_id}/timeline` | ✅ | backend/tests/unit/test_timeline_api.py |
-| GET | `/api/v1/projects/{project_id}/timeline/check` | ✅ | backend/tests/unit/test_timeline_api.py |
-| GET | `/api/v1/timeline/events/{event_id}` | ✅ | backend/tests/unit/test_timeline_api.py |
-| PATCH | `/api/v1/timeline/events/{event_id}` | ✅ | backend/tests/unit/test_timeline_api.py |
-| DELETE | `/api/v1/timeline/events/{event_id}` | ✅ | backend/tests/unit/test_timeline_api.py |
-| POST | `/api/v1/timeline/events/{event_id}/restore` | ✅ | backend/tests/unit/test_timeline_api.py |
+| POST | `/api/v1/outlines/generate` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| POST | `/api/v1/projects/{project_id}/outlines` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| GET | `/api/v1/projects/{project_id}/outlines` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| GET | `/api/v1/outlines/{outline_id}` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| PATCH | `/api/v1/outlines/{outline_id}` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| DELETE | `/api/v1/outlines/{outline_id}` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| POST | `/api/v1/outlines/{outline_id}/restore` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| POST | `/api/v1/outlines/{outline_id}/plot-points` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| GET | `/api/v1/outlines/{outline_id}/plot-points` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| GET | `/api/v1/plot-points/{point_id}` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| PATCH | `/api/v1/plot-points/{point_id}` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| DELETE | `/api/v1/plot-points/{point_id}` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| POST | `/api/v1/plot-points/{point_id}/restore` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| POST | `/api/v1/projects/{project_id}/story-arcs` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| GET | `/api/v1/projects/{project_id}/story-arcs` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| GET | `/api/v1/story-arcs/{arc_id}` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| PATCH | `/api/v1/story-arcs/{arc_id}` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| DELETE | `/api/v1/story-arcs/{arc_id}` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
+| POST | `/api/v1/story-arcs/{arc_id}/restore` | ✅ | backend/tests/unit/api/routers/test_outline_api.py |
 
-### foreshadowings（8 端点）— `backend/tests/unit/test_foreshadowing_api.py`
-
-| 方法 | 端点 | 覆盖 | 测试文件 |
-|---|---|---|---|
-| POST | `/api/v1/projects/{project_id}/foreshadowings` | ✅ | backend/tests/unit/test_foreshadowing_api.py |
-| GET | `/api/v1/projects/{project_id}/foreshadowings` | ✅ | backend/tests/unit/test_foreshadowing_api.py |
-| GET | `/api/v1/foreshadowings/{foreshadowing_id}` | ✅ | backend/tests/unit/test_foreshadowing_api.py |
-| PATCH | `/api/v1/foreshadowings/{foreshadowing_id}` | ✅ | backend/tests/unit/test_foreshadowing_api.py |
-| DELETE | `/api/v1/foreshadowings/{foreshadowing_id}` | ✅ | backend/tests/unit/test_foreshadowing_api.py |
-| POST | `/api/v1/foreshadowings/{foreshadowing_id}/restore` | ✅ | backend/tests/unit/test_foreshadowing_api.py |
-| POST | `/api/v1/foreshadowings/{foreshadowing_id}/resolve` | ✅ | backend/tests/unit/test_foreshadowing_api.py |
-| POST | `/api/v1/foreshadowings/{foreshadowing_id}/reopen` | ✅ | backend/tests/unit/test_foreshadowing_api.py |
-
-### extractions（4 端点）— `backend/tests/unit/test_extractions_api.py`
+### timeline（8 端点）— `backend/tests/unit/api/routers/test_timeline_api.py`
 
 | 方法 | 端点 | 覆盖 | 测试文件 |
 |---|---|---|---|
-| POST | `/api/v1/extract` | ✅ | backend/tests/unit/test_extractions_api.py |
-| GET | `/api/v1/projects/{project_id}/extractions/runs` | ✅ | backend/tests/unit/test_extractions_api.py |
-| POST | `/api/v1/projects/{project_id}/vector/reindex` | ✅ | backend/tests/unit/test_extractions_api.py |
-| POST | `/api/v1/projects/{project_id}/vector/retrieve` | ✅ | backend/tests/unit/test_extractions_api.py |
+| POST | `/api/v1/projects/{project_id}/timeline/events` | ✅ | backend/tests/unit/api/routers/test_timeline_api.py |
+| GET | `/api/v1/projects/{project_id}/timeline/events` | ✅ | backend/tests/unit/api/routers/test_timeline_api.py |
+| GET | `/api/v1/projects/{project_id}/timeline` | ✅ | backend/tests/unit/api/routers/test_timeline_api.py |
+| GET | `/api/v1/projects/{project_id}/timeline/check` | ✅ | backend/tests/unit/api/routers/test_timeline_api.py |
+| GET | `/api/v1/timeline/events/{event_id}` | ✅ | backend/tests/unit/api/routers/test_timeline_api.py |
+| PATCH | `/api/v1/timeline/events/{event_id}` | ✅ | backend/tests/unit/api/routers/test_timeline_api.py |
+| DELETE | `/api/v1/timeline/events/{event_id}` | ✅ | backend/tests/unit/api/routers/test_timeline_api.py |
+| POST | `/api/v1/timeline/events/{event_id}/restore` | ✅ | backend/tests/unit/api/routers/test_timeline_api.py |
 
-### audit（1 端点）— `backend/tests/unit/test_audit_api.py`
-
-| 方法 | 端点 | 覆盖 | 测试文件 |
-|---|---|---|---|
-| GET | `/api/v1/projects/{project_id}/audit` | ✅ | backend/tests/unit/test_audit_api.py |
-
-### style（1 端点）— `backend/tests/unit/test_style_api.py`
+### foreshadowings（8 端点）— `backend/tests/unit/api/routers/test_foreshadowing_api.py`
 
 | 方法 | 端点 | 覆盖 | 测试文件 |
 |---|---|---|---|
-| POST | `/api/v1/projects/{project_id}/style/analyze` | ✅ | backend/tests/unit/test_style_api.py |
+| POST | `/api/v1/projects/{project_id}/foreshadowings` | ✅ | backend/tests/unit/api/routers/test_foreshadowing_api.py |
+| GET | `/api/v1/projects/{project_id}/foreshadowings` | ✅ | backend/tests/unit/api/routers/test_foreshadowing_api.py |
+| GET | `/api/v1/foreshadowings/{foreshadowing_id}` | ✅ | backend/tests/unit/api/routers/test_foreshadowing_api.py |
+| PATCH | `/api/v1/foreshadowings/{foreshadowing_id}` | ✅ | backend/tests/unit/api/routers/test_foreshadowing_api.py |
+| DELETE | `/api/v1/foreshadowings/{foreshadowing_id}` | ✅ | backend/tests/unit/api/routers/test_foreshadowing_api.py |
+| POST | `/api/v1/foreshadowings/{foreshadowing_id}/restore` | ✅ | backend/tests/unit/api/routers/test_foreshadowing_api.py |
+| POST | `/api/v1/foreshadowings/{foreshadowing_id}/resolve` | ✅ | backend/tests/unit/api/routers/test_foreshadowing_api.py |
+| POST | `/api/v1/foreshadowings/{foreshadowing_id}/reopen` | ✅ | backend/tests/unit/api/routers/test_foreshadowing_api.py |
 
-### context（3 端点）— `backend/tests/unit/test_context_api.py`
+### extractions（4 端点）— `backend/tests/unit/api/routers/test_extractions_api.py`
 
 | 方法 | 端点 | 覆盖 | 测试文件 |
 |---|---|---|---|
-| POST | `/api/v1/context/assemble` | ✅ | backend/tests/unit/test_context_api.py |
-| GET | `/api/v1/context/chapters/{chapter_id}/summary` | ✅ | backend/tests/unit/test_context_api.py |
-| POST | `/api/v1/context/chapters/{chapter_id}/summary/refresh` | ✅ | backend/tests/unit/test_context_api.py |
+| POST | `/api/v1/extract` | ✅ | backend/tests/unit/api/routers/test_extractions_api.py |
+| GET | `/api/v1/projects/{project_id}/extractions/runs` | ✅ | backend/tests/unit/api/routers/test_extractions_api.py |
+| POST | `/api/v1/projects/{project_id}/vector/reindex` | ✅ | backend/tests/unit/api/routers/test_extractions_api.py |
+| POST | `/api/v1/projects/{project_id}/vector/retrieve` | ✅ | backend/tests/unit/api/routers/test_extractions_api.py |
+
+### audit（1 端点）— `backend/tests/unit/api/routers/test_audit_api.py`
+
+| 方法 | 端点 | 覆盖 | 测试文件 |
+|---|---|---|---|
+| GET | `/api/v1/projects/{project_id}/audit` | ✅ | backend/tests/unit/api/routers/test_audit_api.py |
+
+### style（1 端点）— `backend/tests/unit/api/routers/test_style_api.py`
+
+| 方法 | 端点 | 覆盖 | 测试文件 |
+|---|---|---|---|
+| POST | `/api/v1/projects/{project_id}/style/analyze` | ✅ | backend/tests/unit/api/routers/test_style_api.py |
+
+### context（3 端点）— `backend/tests/unit/api/routers/test_context_api.py`
+
+| 方法 | 端点 | 覆盖 | 测试文件 |
+|---|---|---|---|
+| POST | `/api/v1/context/assemble` | ✅ | backend/tests/unit/api/routers/test_context_api.py |
+| GET | `/api/v1/context/chapters/{chapter_id}/summary` | ✅ | backend/tests/unit/api/routers/test_context_api.py |
+| POST | `/api/v1/context/chapters/{chapter_id}/summary/refresh` | ✅ | backend/tests/unit/api/routers/test_context_api.py |
 
 ### settings（2 端点）— `tests/api/test_settings_api.py`
 

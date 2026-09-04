@@ -14,7 +14,7 @@ from loguru import logger
 from inkflow.core import log as log_module
 
 # 测试文件 backend/tests/unit/test_log.py → parents[2] = backend 根目录
-_BACKEND_ROOT = Path(__file__).resolve().parents[2]
+_BACKEND_ROOT = Path(__file__).resolve().parents[3]
 _EXPECTED_LOG_DIR = _BACKEND_ROOT / "logs"
 
 
