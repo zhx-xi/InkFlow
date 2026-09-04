@@ -39,6 +39,7 @@ from langgraph.types import Command, interrupt
 from inkflow.domain.models.agent_book import AgenticBookConfig
 from inkflow.domain.models.writing_plan import BookLimits, WritingPlan
 from inkflow.domain.ports.llm_client import ChatMessage
+from inkflow.domain.services.usage_accounting import chat_response_usage, result_usage
 from inkflow.logging import instrument
 
 _R = TypeVar("_R")
@@ -56,6 +57,7 @@ class BookAgenticState(TypedDict):
     results: Annotated[dict[str, str], operator.or_]
     audit_results: Annotated[dict[str, dict], operator.or_]
     route_history: Annotated[list[str], lambda a, b: a + b]
+    usage: Annotated[list[dict], operator.add]
     steps: int
     consecutive: int
     last_op: str
@@ -241,7 +243,7 @@ def _build_decision_messages(
     state: BookAgenticState, config: AgenticBookConfig, attempt: int
 ) -> list[ChatMessage]:
     """组装决策消息：system（操作池+各章状态+书进度+路由历史+护栏，含「决策」字样——RED 契约）
-    + user（结构化 JSON 要求；重试时重申路由历史）. """
+    + user（结构化 JSON 要求；重试时重申路由历史）."""
     system_prompt = config.supervisor_prompt or _DEFAULT_SUPERVISOR_PROMPT
     chapter_lines = "\n".join(
         f"- {ch.get('name', '')}（outline_id={ch.get('outline_id')}，状态="
@@ -281,53 +283,90 @@ def _build_decision_messages(
 
 async def _decide_next_action(
     state: BookAgenticState, pipeline: BookAgenticPipeline
-) -> tuple[str, str, str]:
-    """LLM 决策循环：chat → 解析；空 content / 解析失败 / 异常 → 重试至多 3 次 → ("", "", "")."""
+) -> tuple[str, str, str, list[dict]]:
+    """LLM 决策循环：chat → 解析；空 content / 解析失败 / 异常 → 重试至多 3 次 → ("", "", "").
+
+    #902：每次成功 chat（content 解析 OK）→ 产出 usage 事件（source="decision"，
+    chapter=target outline_id 或 ""）；失败/异常 attempt 无 response → 零事件（防伪计费）。
+    """
     llm = state["llm_client"]
     config = pipeline._config
+    events: list[dict] = []
     for attempt in range(_MAX_DECISION_ATTEMPTS):
         messages = _build_decision_messages(state, config, attempt)
         try:
             response = await llm.chat(messages)  # type: ignore[attr-defined]  # 鸭子类型：llm_client 提供 async chat(messages)
         except Exception:
             continue
-        parsed = _parse_decision(str(getattr(response, "content", "")))
+        content = str(getattr(response, "content", ""))
+        parsed = _parse_decision(content)
         if parsed is not None:
-            return parsed
-    return ("", "", "")
+            prompt_tokens, completion_tokens, total_tokens = chat_response_usage(response)
+            events.append(
+                {
+                    "source": "decision",
+                    "chapter": parsed[2],
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": total_tokens,
+                }
+            )
+            return (parsed[0], parsed[1], parsed[2], events)
+    return ("", "", "", events)
 
 
 @instrument(caller_type="agent")
-async def _supervisor_node(
-    state: BookAgenticState, pipeline: BookAgenticPipeline
-) -> Command[Any]:
-    """LLM 决策下一个 book-level 操作 → Command(goto)；护栏在决策后强制（F29 模式）."""
+async def _supervisor_node(state: BookAgenticState, pipeline: BookAgenticPipeline) -> Command[Any]:
+    """LLM 决策下一个 book-level 操作 → Command(goto)；护栏在决策后强制（F29 模式）.
+
+    #902：决策 chat 的 usage 事件并入本节点 Command update（decision 事件每成功
+    response 恰一，跨 checkpoint 持久化）。
+    """
     config = pipeline._config
-    action, op, oid = await _decide_next_action(state, pipeline)
+    action, op, oid, decision_events = await _decide_next_action(state, pipeline)
     if action == "":
         # 决策重试耗尽 / 异常：fallback_on_error=false → 直接中止；默认 → 确定性兜底
         if not config.fallback_on_error:
-            return Command(update={"finished": True, "status": "aborted"}, goto=END)
-        return Command(update={"route_history": ["__fallback__"]}, goto="fallback")
+            return Command(
+                update={"finished": True, "status": "aborted", "usage": decision_events},
+                goto=END,
+            )
+        return Command(
+            update={"route_history": ["__fallback__"], "usage": decision_events}, goto="fallback"
+        )
     if action == "finish":
         goto = "hitl" if "finish" in config.hitl_points else "finish_book"
-        return Command(update={"route_history": ["finish_book"]}, goto=goto)
+        return Command(
+            update={"route_history": ["finish_book"], "usage": decision_events}, goto=goto
+        )
     if action == "fallback":
-        return Command(update={"route_history": ["__fallback__"]}, goto="fallback")
+        return Command(
+            update={"route_history": ["__fallback__"], "usage": decision_events}, goto="fallback"
+        )
     # action == "goto"
     guarded = _guarded_route(state, config, op, oid)
     if guarded is None:
         if not config.fallback_on_error:
-            return Command(update={"finished": True, "status": "aborted"}, goto=END)
-        return Command(update={"route_history": ["__fallback__"]}, goto="fallback")
+            return Command(
+                update={"finished": True, "status": "aborted", "usage": decision_events},
+                goto=END,
+            )
+        return Command(
+            update={"route_history": ["__fallback__"], "usage": decision_events}, goto="fallback"
+        )
     op, oid = guarded
-    return Command(update={"route_history": [op], "target_outline_id": oid}, goto=op)
+    return Command(
+        update={
+            "route_history": [op],
+            "target_outline_id": oid,
+            "usage": decision_events,
+        },
+        goto=op,
+    )
 
 
 @instrument(caller_type="agent")
-async def _bootstrap_node(
-    state: BookAgenticState, pipeline: BookAgenticPipeline
-) -> Command[Any]:
+async def _bootstrap_node(state: BookAgenticState, pipeline: BookAgenticPipeline) -> Command[Any]:
     """启动节点：注入 llm_client（UntrackedValue）；hitl_points 含 book_start → 先走 hitl.
 
     恒返回 Command(goto=...)：bootstrap 无静态出边（Spike ② 教训——Command 与静态边
@@ -339,9 +378,7 @@ async def _bootstrap_node(
 
 
 @instrument(caller_type="agent")
-async def _hitl_node(
-    state: BookAgenticState, pipeline: BookAgenticPipeline
-) -> Command[Any]:
+async def _hitl_node(state: BookAgenticState, pipeline: BookAgenticPipeline) -> Command[Any]:
     """HITL 确认节点：仅 interrupt（无其他副作用，F44 R4）；resume 后按 pending 路由.
 
     pending = route_history 尾部（finish_book）或 book_start（启动中断）；chapter_done
@@ -371,6 +408,7 @@ async def _write_chapter(
     """write_chapter：writer_factory → agent.invoke → draft_service.create → 落盘增量.
 
     失败重试 retry_limit 次 → 标记 failed（supervisor 后续决策跳过/重写/兜底）。
+    #902：成功委托产 write usage 事件；失败路径零事件（防伪计费）。
     """
     oid = state.get("target_outline_id", "")
     chapter = _find_chapter(state["chapters"], oid)
@@ -378,9 +416,10 @@ async def _write_chapter(
     if chapter is None:
         return {**update, "results": {oid: "failed"}, "progress": {oid: "failed"}}
     execution_id: str | None = None
+    event: dict | None = None
     for _ in range(1 + pipeline._retry_limit):
         try:
-            execution_id = await pipeline._delegate_write(chapter)
+            execution_id, event = await pipeline._delegate_write(chapter)
         except Exception:
             continue
         else:
@@ -392,6 +431,7 @@ async def _write_chapter(
         "chapter_ops": _bump_chapter_ops(state, oid),
         "results": {oid: execution_id},
         "progress": {oid: "in_progress"},
+        "usage": [event] if event is not None else [],
     }
 
 
@@ -399,17 +439,24 @@ async def _write_chapter(
 async def _audit_chapter(
     state: BookAgenticState, pipeline: BookAgenticPipeline
 ) -> dict[str, object]:
-    """audit_chapter：audit_callable（注入）或 llm_client.chat（非决策调用）→ audit_results."""
+    """audit_chapter：audit_callable（注入）或 llm_client.chat（非决策调用）→ audit_results.
+
+    #902：成功审校 chat → audit usage 事件（source="audit"）；异常 → 零事件。
+    """
     oid = state.get("target_outline_id", "")
     chapter = _find_chapter(state["chapters"], oid)
     update = _counter_update(state, "audit_chapter")
     audit: dict = {"score": 0, "issues": []}
+    event: dict | None = None
     if chapter is not None:
         try:
-            audit = await pipeline._delegate_audit(chapter)
+            audit, event = await pipeline._delegate_audit(chapter)
         except Exception:
             audit = {"score": 0, "issues": []}
-    extra: dict[str, object] = {"audit_results": {oid: audit}}
+    extra: dict[str, object] = {
+        "audit_results": {oid: audit},
+        "usage": [event] if event is not None else [],
+    }
     if chapter is not None:
         extra["chapter_ops"] = _bump_chapter_ops(state, oid)
     return {**update, **extra}
@@ -419,7 +466,10 @@ async def _audit_chapter(
 async def _revise_chapter(
     state: BookAgenticState, pipeline: BookAgenticPipeline
 ) -> dict[str, object]:
-    """revise_chapter：按 audit 意见改写 → draft_service.create 重新落盘 → 更新 results."""
+    """revise_chapter：按 audit 意见改写 → draft_service.create 重新落盘 → 更新 results.
+
+    #902：revise 内 write 委托成功 → write usage 事件（chapter=目标 outline_id）。
+    """
     oid = state.get("target_outline_id", "")
     chapter = _find_chapter(state["chapters"], oid)
     update = _counter_update(state, "revise_chapter")
@@ -428,22 +478,26 @@ async def _revise_chapter(
     audit = state.get("audit_results", {}).get(oid, {})
     audit_issues = [str(i) for i in audit.get("issues", [])] if isinstance(audit, dict) else []
     execution_id: str | None = None
+    event: dict | None = None
     for _ in range(1 + pipeline._retry_limit):
         try:
-            execution_id = await pipeline._delegate_write(chapter, audit_issues=audit_issues)
+            execution_id, event = await pipeline._delegate_write(chapter, audit_issues=audit_issues)
         except Exception:
             continue
         else:
             break
     if execution_id is None:
         return {**update, "results": {oid: "failed"}, "progress": {oid: "failed"}}
-    return {**update, "chapter_ops": _bump_chapter_ops(state, oid), "results": {oid: execution_id}}
+    return {
+        **update,
+        "chapter_ops": _bump_chapter_ops(state, oid),
+        "results": {oid: execution_id},
+        "usage": [event] if event is not None else [],
+    }
 
 
 @instrument(caller_type="agent")
-async def _mark_done(
-    state: BookAgenticState, pipeline: BookAgenticPipeline
-) -> Command[Any]:
+async def _mark_done(state: BookAgenticState, pipeline: BookAgenticPipeline) -> Command[Any]:
     """mark_done：progress=done + execution_refs 落库；chapter_done 命中 → goto hitl.
 
     恒返回 Command(goto=...)：mark_done 无静态出边（避免 Command + 静态边 fan-out）。
@@ -470,17 +524,22 @@ async def _finish_book(state: BookAgenticState) -> Command[Any]:
 async def _fallback_node(
     state: BookAgenticState, pipeline: BookAgenticPipeline
 ) -> dict[str, object]:
-    """fallback：剩余未 done 章一次 write 完成（确定性兜底，R10）；静态边 → END."""
+    """fallback：剩余未 done 章一次 write 完成（确定性兜底，R10）；静态边 → END.
+
+    #902：fallback 内 write 委托成功 → write usage 事件（每成功章恰一）。
+    """
     progress = dict(state.get("progress", {}))
     results: dict[str, str] = {}
+    usage_events: list[dict] = []
     for chapter in state["chapters"]:
         oid = str(chapter["outline_id"])
         if progress.get(oid) == "done":
             continue
         execution_id: str | None = None
+        event: dict | None = None
         for _ in range(1 + pipeline._retry_limit):
             try:
-                execution_id = await pipeline._delegate_write(chapter)
+                execution_id, event = await pipeline._delegate_write(chapter)
             except Exception:
                 continue
             else:
@@ -491,9 +550,17 @@ async def _fallback_node(
         else:
             progress[oid] = "done"
             results[oid] = execution_id
+            if event is not None:
+                usage_events.append(event)
             if pipeline._plan is not None:
                 pipeline._plan.execution_refs[oid] = execution_id
-    return {"progress": progress, "results": results, "finished": True, "status": "completed"}
+    return {
+        "progress": progress,
+        "results": results,
+        "usage": usage_events,
+        "finished": True,
+        "status": "completed",
+    }
 
 
 class BookAgenticPipeline:
@@ -602,6 +669,7 @@ class BookAgenticPipeline:
                 "results": {},
                 "audit_results": {},
                 "route_history": [],
+                "usage": [],
                 "steps": 0,
                 "consecutive": 0,
                 "last_op": "",
@@ -646,9 +714,7 @@ class BookAgenticPipeline:
         async def _run(
             app: CompiledStateGraph[BookAgenticState, Any, Any, Any],
         ) -> dict[str, str]:
-            snapshot = await app.aget_state(
-                config={"configurable": {"thread_id": self._thread_id}}
-            )
+            snapshot = await app.aget_state(config={"configurable": {"thread_id": self._thread_id}})
             values: dict = snapshot.values
             if values.get("plan"):
                 self._plan = _restore_plan(values["plan"])
@@ -682,9 +748,7 @@ class BookAgenticPipeline:
         async def _read(
             app: CompiledStateGraph[BookAgenticState, Any, Any, Any],
         ) -> dict | None:
-            snapshot = await app.aget_state(
-                config={"configurable": {"thread_id": run_id}}
-            )
+            snapshot = await app.aget_state(config={"configurable": {"thread_id": run_id}})
             values: dict = snapshot.values
             return values if values else None
 
@@ -693,9 +757,13 @@ class BookAgenticPipeline:
     @instrument(caller_type="agent")
     async def _delegate_write(
         self, chapter: dict, *, audit_issues: list[str] | None = None
-    ) -> str:
+    ) -> tuple[str, dict]:
         """委托章写作（镜像 F44 _delegate_chapter）：章 brief → writer_factory →
-        agent.invoke → draft_service.create 回收 → 返回 execution_id."""
+        agent.invoke → draft_service.create 回收 → (execution_id, usage 事件).
+
+        #902：usage 事件只来自真实 invoke 结果（messages usage_metadata / 顶层 usage），
+        双源皆缺 → 全零事件（无伪计费）；source="write"、chapter=str(outline_id)。
+        """
         plan = self._plan
         if plan is None:
             raise ValueError("plan 未装配")
@@ -719,6 +787,7 @@ class BookAgenticPipeline:
             ],
             config={"configurable": {"thread_id": self._thread_id}},
         )
+        prompt_tokens, completion_tokens, total_tokens = result_usage(result)
         content = _extract_final_content(result)
         draft = await self._draft_service.create(  # type: ignore[attr-defined]  # 鸭子类型：draft_service 按 F27 契约提供 async create
             project_id=plan.project_id,
@@ -726,7 +795,17 @@ class BookAgenticPipeline:
             content=content,
             summary="书级 agent 编排保存",
         )
-        return str(getattr(draft, "id", ""))
+        execution_id = str(getattr(draft, "id", ""))
+        return (
+            execution_id,
+            {
+                "source": "write",
+                "chapter": str(chapter["outline_id"]),
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            },
+        )
 
     @staticmethod
     def _build_chapter_brief(plan: WritingPlan, chapter: dict, audit_issues: list[str]) -> str:
@@ -745,8 +824,12 @@ class BookAgenticPipeline:
         return brief
 
     @instrument(caller_type="agent")
-    async def _delegate_audit(self, chapter: dict) -> dict:
-        """审校委托：audit_callable 注入优先，否则 llm_client.chat（非决策调用）."""
+    async def _delegate_audit(self, chapter: dict) -> tuple[dict, dict]:
+        """审校委托：audit_callable 注入优先，否则 llm_client.chat（非决策调用）.
+
+        #902：返回 (audit, usage 事件)——事件 source="audit"、chapter=str(outline_id)，
+        取自底层 chat 响应（audit_callable 鸭子 async chat(messages) 同 llm.chat 形态）。
+        """
         messages = [
             ChatMessage(
                 role="system",
@@ -764,4 +847,14 @@ class BookAgenticPipeline:
             response = await self._audit_callable(messages)
         else:
             response = await self._llm.chat(messages)  # type: ignore[attr-defined]  # 鸭子类型：llm_client 按 F29 契约提供 async chat(messages)
-        return _parse_audit(str(getattr(response, "content", "")))
+        prompt_tokens, completion_tokens, total_tokens = chat_response_usage(response)
+        return (
+            _parse_audit(str(getattr(response, "content", ""))),
+            {
+                "source": "audit",
+                "chapter": str(chapter["outline_id"]),
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            },
+        )

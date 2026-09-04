@@ -736,6 +736,9 @@ async def test_get_status_counters_stage2_keys():
     （plan.limits 预置；§2.4 计数器 + 阶段 2 放开配置）。
 
     阶段 1 counters 只有 4 键 → KeyError → RED。
+
+    #902 契约升级（§1.5）：counters 新增 prompt_tokens/completion_tokens
+    （plan.limits 预置透传）→ 补新键期望（当前实现 7 键 → KeyError → RED）。
     """
     repo = AsyncMock()
     plan = _plan(
@@ -745,6 +748,8 @@ async def test_get_status_counters_stage2_keys():
             "max_tokens": 200_000,
             "tokens_used": 12_345,
             "tokens_warning": True,
+            "prompt_tokens": 7_407,
+            "completion_tokens": 4_938,
         },
         progress={"c1": "done"},
         execution_refs={"c1": "exec-1"},
@@ -760,6 +765,8 @@ async def test_get_status_counters_stage2_keys():
     assert counters["max_tokens"] == 200_000
     assert counters["tokens_used"] == 12_345
     assert counters["tokens_warning"] is True
+    assert counters["prompt_tokens"] == 7_407
+    assert counters["completion_tokens"] == 4_938
 
 
 @pytest.mark.asyncio

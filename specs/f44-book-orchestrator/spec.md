@@ -1,7 +1,7 @@
 # F44: 长任务编排器（long-task-orchestrator）功能规格
 > **端**: cross
 
-**Spec 版本**: 1.4（#903 GUI 状态档位色 + progress_reason 渲染，2026-09-04；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
+**Spec 版本**: 1.5（#902 卷轨/agentic 轨 token 用量采集，2026-09-04；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
 **日期**: 2026-08-17
 **依据**: 设计定稿 `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §2 全文（唯一真相）+ Issue #335（阶段 1）/ #336（阶段 2）/ #337（阶段 3）/ #338（阶段 4）+ Spike 验证报告 `docs/f44-orchestrator-spike-2026-08-17.md`（M1 门禁，workspace docs）+ 已合入源码核查（F27/F42/F29/F39/F6）+ Issue #475（访谈 LLM 动态提问，D1 拍板 2026-08-19）+ #486（会话/记忆 UI，D9，下游消费方）
 **所属阶段**: 0.10.0（长任务编排器，F44 四阶段），估算 24-39 人天（#335 阶段 1：5-8 / #336 阶段 2：4-6 / #337 阶段 3：7-11 / #338 阶段 4：8-10 + GUI 已含，part-time 8-10 周；v1.1 较 v1.0 的 16-26 人天增加 Q1=C GUI +8-12 与 Q2=C 项目级上限 +0.5-1）；v1.2 #475 访谈 LLM 动态提问为 0.10.1 增量（估算 5-8 人天，拆 2 PR：后端提问引擎 + 前端对话式 UI，S3 实现轨）
@@ -43,7 +43,7 @@ F44 合并覆盖 **#335-#338 四阶段**，作为「一句话→全书」长任�
 
 - **不含** F45 记忆演进（#339/#340，独立里程碑，M2 依赖本模块阶段 4 之后的长跑证据）
 - **不含** deepagents `task` 工具嵌套委派（F26 已禁用）：阶段 3 委派形态 = LangGraph Send API 并行 fan-out（设计 §2.3-3 硬约束），包装 F27 writer-agent，**不是** deepagents subagent 工具
-- **不含** 章内断点、幂等键框架、唯一索引冲突框架、token 精确核算、双面板精致化、三级 agent（设计 §2.5 苦工清单「先能用再修」）；访谈分批状态机已于 v1.2 由 LLM 动态提问取代（§5.1，确定性分批仅保留为 LLM 失败降级兜底，§7 场景 15）；GUI 仅含基础面板交互（§5 各阶段 GUI 小节），品牌动画/视觉打磨等精致化仍按 ui-design-taste 克制原则留范围外（§10）
+- **不含** 章内断点、幂等键框架、唯一索引冲突框架、token 精确核算（v1.5 注：卷轨/agentic 轨**真实用量采集**已由 #902 补齐——见 §5.6；「精确核算」指按模型计价/cache token 等仍范围外）、双面板精致化、三级 agent（设计 §2.5 苦工清单「先能用再修」）；访谈分批状态机已于 v1.2 由 LLM 动态提问取代（§5.1，确定性分批仅保留为 LLM 失败降级兜底，§7 场景 15）；GUI 仅含基础面板交互（§5 各阶段 GUI 小节），品牌动画/视觉打磨等精致化仍按 ui-design-taste 克制原则留范围外（§10）
 - **不含** MCP 表现层（F20 薄客户端经 HTTP，本模块端点经既有 HTTP 通道天然可用，不新增 MCP 工具）
 
 ---
@@ -510,6 +510,18 @@ Spike ③ 实测：卷内全部章并行写完 → 卷边界 interrupt 暂停（
 ```
 
 **契约翻转**：`test_write_book_chapter_failure_marks_failed_continues`（部分失败旧期望 completed）按本节翻转为 `degraded`——先对齐 spec 再动（本节即对齐依据）。
+
+### 5.6 v1.5 增量：卷轨/agentic 轨 token 用量采集（#902）
+
+> 背景：#897（PR #901）修复期间明确搁置项——卷轨/agentic 轨委托成功后丢弃 `usage_metadata`（`_delegate_chapter`/`_delegate_write` 只取正文落 Draft），checkpoint state 无逐章 usage 通道，服务层收尾「token 记账不动」→ `counters.tokens_used` 对两轨恒 0、`max_tokens` 软护栏对两轨失效（仅 `max_agent_calls`/`max_chapters` 在守）。**禁止用估算常数替代真实 usage**（#901 曾以「每章固定 100」伪计费凑数被父侧审查删除，本机制定红线）。
+
+**usage 事件通道（图内，volume/agentic 两轨对称）**：`VolumeState`/`BookAgenticState` 新增 `usage: Annotated[list[dict], operator.add]`（reducer 只增通道，对齐 §6 R5；checkpoint 持久化 → 跨 HITL resume/跨重启续跑不丢不重，LangGraph 已完成节点不重放）。事件 schema：`{"source": "write"|"audit"|"decision"|"supervisor", "chapter": "<outline_id 或 ''>", "prompt_tokens": int, "completion_tokens": int, "total_tokens": int}`——**每成功 LLM 调用恰一事件，取自真实响应载体**（agent.invoke 结果 messages 的 `usage_metadata`（input/output/total 键族 + prompt/completion 别名回退，顶层 `result["usage"]` legacy 回退）/ llm.chat 响应的 `token_usage`（`usage_metadata` 回退））；失败/异常/解析失败 attempt、非 LLM 路径（continue/abort 分支、mark_done）**零事件**（防伪计费）。采集面全覆盖：write 委托（含 revise/fallback 内 write）、audit 委托、agentic supervisor 决策 chat（可解析响应才计）、volume 卷级失败 `decision="supervisor"` 补救 chat。
+
+**服务层同步（`plan.limits`，两轨）**：提取 helper 收敛 `domain/services/usage_accounting.py`（纯函数：`result_usage`/`chat_response_usage` 三元组 + `extract_total_tokens` 总视图；book_service re-export `_extract_usage_tokens` 兼容）。`_finalize_from_state`（facts 非 None 分支）与 waiting_hitl 落库点（`write_book_volume`/`confirm_run`/`resume_run` 的 `except VolumeHITLInterrupt` → `_sync_usage_from_state` 读 checkpoint）将事件列表**求和覆盖**写 `plan.limits["tokens_used"/"prompt_tokens"/"completion_tokens"]`（覆盖=幂等：收尾链后一次覆盖吞并前次值，绝不翻倍）。软护栏语义不变：`total > max_tokens → tokens_warning=True` 仅告警不终止；硬护栏零变化。旧 checkpoint 无 usage 键/空列表 → 三键不写（向后兼容守护）；计数在 waiting_hitl 窗口经落库点同步，GUI/CLI 可见。
+
+**counters 扩展**：`_build_counters` 7 键 → **9 键**（新增 `prompt_tokens`/`completion_tokens`，读 `plan.limits.get(key, 0)`）；API/GUI 透传零破坏（dict passthrough）。static 轨 `_delegate_chapter` 同步分列累计三值（原仅 total）。
+
+**验证锚点**：三轨各跑一本书（卷轨含跨卷 HITL resume + 跨重启 resume_run），`counters.tokens_used > 0` ≈ 真实用量、无重复计费、`tokens_warning` 三轨一致可触发。
 
 ## 6. 组织规则
 

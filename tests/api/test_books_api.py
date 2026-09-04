@@ -588,6 +588,8 @@ async def test_runs_status_multi_chapter_progress(client, override_services):
     守护形态（RED 期 PASS 刻意）：阶段 1 路由器为 dict 透传（get_status 原样出）——
     本用例锁定阶段 2「progress 3 章状态 + counters 含 max_tokens/tokens_used/
     tokens_warning」返回体契约（防 GREEN 漏键/丢进度）。
+    #902（§1.5）：counters 补 prompt_tokens/completion_tokens 新键期望
+    （路由器透传不丢新键——契约升级守护）。
     """
     _, book = override_services
     run_id = str(uuid.uuid4())
@@ -603,6 +605,8 @@ async def test_runs_status_multi_chapter_progress(client, override_services):
             "max_tokens": 200_000,
             "tokens_used": 12_000,
             "tokens_warning": False,
+            "prompt_tokens": 7_200,
+            "completion_tokens": 4_800,
         },
     }
 
@@ -617,6 +621,8 @@ async def test_runs_status_multi_chapter_progress(client, override_services):
     assert counters["max_tokens"] == 200_000
     assert counters["tokens_used"] == 12_000
     assert counters["tokens_warning"] is False
+    assert counters["prompt_tokens"] == 7_200
+    assert counters["completion_tokens"] == 4_800
 
 
 @pytest.mark.asyncio
@@ -626,6 +632,8 @@ async def test_runs_status_counters_new_keys(client, override_services):
 
     守护形态（RED 期 PASS 刻意）：dict 透传直出——本用例锁定阶段 2「token 软护栏」
     计数三键齐备（防 GREEN 只加硬护栏键、漏软护栏三键）。
+    #902（§1.5）：counters 补 prompt_tokens/completion_tokens 新键期望
+    （零用量默认 0 透传——契约升级守护）。
     """
     _, book = override_services
     run_id = str(uuid.uuid4())
@@ -641,6 +649,8 @@ async def test_runs_status_counters_new_keys(client, override_services):
             "max_tokens": 200_000,
             "tokens_used": 0,
             "tokens_warning": False,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
         },
     }
 
@@ -651,6 +661,8 @@ async def test_runs_status_counters_new_keys(client, override_services):
     assert counters["max_tokens"] == 200_000
     assert counters["tokens_used"] == 0
     assert counters["tokens_warning"] is False
+    assert counters["prompt_tokens"] == 0
+    assert counters["completion_tokens"] == 0
 
 
 @pytest.mark.asyncio
