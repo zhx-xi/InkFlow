@@ -52,6 +52,34 @@ def _error_logs(records: list) -> list[str]:
 class TestNoFallbackFailFast:
     """契约②：删除注册表遍历回退——无解 → 422 + 诊断日志，且不扫描任何 provider。"""
 
+    def test_r0_empty_string_key_never_escapes_failfast(self) -> None:
+        """【评审 MAJOR-1】空串 api_key（get_provider_config 仅 None 抛错的穿透面）
+        → resolver 层守卫 422，绝不带空 key 返回（旧 #821「绝不为空」语义保留）。
+        """
+        from unittest.mock import patch
+
+        from inkflow.api._llm_resolver import resolve_llm_credentials
+        from inkflow.infrastructure.llm.provider_config import LLMProviderConfig
+
+        empty_key = LLMProviderConfig(
+            provider="deepseek",
+            api_key="",  # env INKFLOW_DEEPSEEK_API_KEY="" 形态（非 None 可穿透）
+            base_url="https://api.deepseek.com/v1",
+            default_model=MODEL,
+            models=[],
+        )
+        with (
+            patch(
+                "inkflow.infrastructure.llm.provider_config.get_provider_config",
+                return_value=empty_key,
+            ),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            resolve_llm_credentials(MODEL)
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail == RESOLVE_422_DETAIL
+
     def test_r1_empty_everything_422_without_scanning(self) -> None:
         """【R】project/global 全空 → 422 + 日志含「LLM 模型解析失败」。
 
