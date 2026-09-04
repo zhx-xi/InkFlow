@@ -72,12 +72,14 @@ const projectP1 = {
 const outlineRoot = { id: 'o1', name: '主线规划 v1', level: 'overall', parent_id: null, chapter_id: null, point_count: 0 };
 const outlineVol = { id: 'v1', name: '第一卷·宗门试炼', level: 'volume', parent_id: 'o1', chapter_id: null, point_count: 2 };
 const outlineChap = { id: 'c1', name: '第一章·废柴觉醒', level: 'chapter', parent_id: 'v1', chapter_id: null, point_count: 2 };
+const outlineChap2 = { id: 'c2', name: '第二章·宗门大比', level: 'chapter', parent_id: 'v1', chapter_id: null, point_count: 1 };
 
-function makePoint(id: string, name: string, type = '', position = 1, arc_id: string | null = null) {
-  return { id, outline_id: 'c1', project_id: 'p1', name, type, description: '', position, arc_id };
+function makePoint(id: string, name: string, type = '', position = 1, arc_id: string | null = null, outline_id = 'c1') {
+  return { id, outline_id, project_id: 'p1', name, type, description: '', position, arc_id };
 }
 const pointA = makePoint('p1', '主角登场', '开篇', 1);
-const pointB = makePoint('p2', '金手指觉醒', '转折', 2);
+const pointB = makePoint('p2', '金手指觉醒', '转折', 2, 'a1'); // #928：弧 a1 的真实成员（outline_id 默认 c1）
+const pointC = makePoint('p3', '一鸣惊人', '高潮', 1, null, 'c2'); // #928：挂 c2 章的独立情节点
 
 const arc1 = { id: 'a1', project_id: 'p1', name: '主角成长线', description: '', point_count: 3 };
 const arc2 = { id: 'a2', project_id: 'p1', name: '反派线', description: '', point_count: 1 };
@@ -91,8 +93,8 @@ interface State {
 
 function makeState(): State {
   return {
-    outlines: [outlineRoot, outlineVol, outlineChap],
-    points: [pointA, pointB],
+    outlines: [outlineRoot, outlineVol, outlineChap, outlineChap2],
+    points: [pointA, pointB, pointC],
     arcs: [arc1, arc2],
   };
 }
@@ -123,75 +125,91 @@ beforeEach(() => {
   useToastStore.setState({ toasts: [] });
 });
 
+/** 状态化 mock：读端点 + CRUD 写入 state；生成端点可注入 deferred 控制进行中态 */
+function mockOutlineApi(state: State, opts?: { generate?: () => Promise<unknown> }) {
+  apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+    if (path === '/api/v1/projects') {
+      return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+    }
+    if (path === '/api/v1/projects/p1/outlines' && (!init?.method || init.method === 'GET')) {
+      return { items: state.outlines, total: state.outlines.length, offset: 0, limit: 50 };
+    }
+    if (path === '/api/v1/projects/p1/chapters') return { items: [], total: 0, offset: 0, limit: 50 };
+    if (path === '/api/v1/projects/p1/maps') return { items: [], total: 0, offset: 0, limit: 50 };
+    if (path === '/api/v1/projects/p1/story-arcs' && (!init?.method || init.method === 'GET')) {
+      return { items: state.arcs, total: state.arcs.length, offset: 0, limit: 50 };
+    }
+    // 情节点列表
+    const pointsPath = path.match(/^\/api\/v1\/outlines\/([^/]+)\/plot-points$/);
+    if (pointsPath && (!init?.method || init.method === 'GET')) {
+      const pts = state.points.filter((p) => String(p.outline_id) === pointsPath[1]);
+      return { items: pts, total: pts.length, offset: 0, limit: 50 };
+    }
+    const pointPost = path.match(/^\/api\/v1\/outlines\/([^/]+)\/plot-points$/);
+    if (pointPost && init?.method === 'POST') {
+      const body = init.body as Record<string, unknown>;
+      const created = { id: `p${state.points.length + 1}`, outline_id: pointPost[1], project_id: 'p1', type: '', description: '', position: state.points.length + 1, arc_id: null, ...body };
+      state.points.push(created);
+      return created;
+    }
+    const pointPatched = path.match(/^\/api\/v1\/plot-points\/([^/]+)$/);
+    if (pointPatched && init?.method === 'PATCH') {
+      const idx = state.points.findIndex((p) => String(p.id) === pointPatched[1]);
+      if (idx >= 0) { state.points[idx] = { ...state.points[idx], ...(init.body as Record<string, unknown>) }; return state.points[idx]; }
+    }
+    if (pointPatched && init?.method === 'DELETE') {
+      state.points = state.points.filter((p) => String(p.id) !== pointPatched[1]);
+      return undefined;
+    }
+    // 故事弧 CRUD
+    const arcPost = /^\/api\/v1\/projects\/p1\/story-arcs$/.test(path);
+    if (arcPost && init?.method === 'POST') {
+      const body = init.body as Record<string, unknown>;
+      const created = { id: `a${state.arcs.length + 1}`, project_id: 'p1', description: '', point_count: 0, ...body };
+      state.arcs.push(created);
+      return created;
+    }
+    const arcPatched = path.match(/^\/api\/v1\/story-arcs\/([^/]+)$/);
+    // #928：GET 弧详情 → { ...arc, points: [...] }（按 arc_id 过滤 + 映射 outline_name），
+    //   与下方 PATCH/DELETE 分支互不冲突（此分支只响应 GET/无 method）
+    if (arcPatched && (!init?.method || init.method === 'GET')) {
+      const idx = state.arcs.findIndex((a) => String(a.id) === arcPatched[1]);
+      if (idx >= 0) {
+        const arc = state.arcs[idx];
+        const points = state.points
+          .filter((p) => String(p.arc_id) === arcPatched[1])
+          .map((p) => {
+            const outline = state.outlines.find((o) => String(o.id) === String(p.outline_id));
+            return { ...p, outline_name: outline ? String(outline.name) : '' };
+          });
+        return { ...arc, points };
+      }
+    }
+    if (arcPatched && init?.method === 'PATCH') {
+      const idx = state.arcs.findIndex((a) => String(a.id) === arcPatched[1]);
+      if (idx >= 0) { state.arcs[idx] = { ...state.arcs[idx], ...(init.body as Record<string, unknown>) }; return state.arcs[idx]; }
+    }
+    if (arcPatched && init?.method === 'DELETE') {
+      state.arcs = state.arcs.filter((a) => String(a.id) !== arcPatched[1]);
+      return undefined;
+    }
+    // AI 生成
+    if (path === '/api/v1/outlines/generate' && init?.method === 'POST') {
+      if (opts?.generate) return opts.generate();
+      const body = init.body as Record<string, unknown>;
+      const name = typeof body.name === 'string' ? body.name : '未命名大纲';
+      const created = { id: 'o2', name, project_id: 'p1', description: '', level: 'overall', parent_id: null, chapter_id: null, point_count: 0 };
+      state.outlines.unshift(created);
+      return { saved: true, outline: created, plot_points: [], arcs: [], warnings: [], model: 'test' };
+    }
+    return { items: [], total: 0, offset: 0, limit: 50 };
+  });
+  act(() => {
+    useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
+  });
+}
+
 describe('#649 大纲子项写操作（情节节点/故事弧 CRUD + AI 生成）', () => {
-  /** 状态化 mock：读端点 + CRUD 写入 state；生成端点可注入 deferred 控制进行中态 */
-  function mockOutlineApi(state: State, opts?: { generate?: () => Promise<unknown> }) {
-    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
-      if (path === '/api/v1/projects') {
-        return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      }
-      if (path === '/api/v1/projects/p1/outlines' && (!init?.method || init.method === 'GET')) {
-        return { items: state.outlines, total: state.outlines.length, offset: 0, limit: 50 };
-      }
-      if (path === '/api/v1/projects/p1/chapters') return { items: [], total: 0, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/maps') return { items: [], total: 0, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/story-arcs' && (!init?.method || init.method === 'GET')) {
-        return { items: state.arcs, total: state.arcs.length, offset: 0, limit: 50 };
-      }
-      // 情节点列表
-      const pointsPath = path.match(/^\/api\/v1\/outlines\/([^/]+)\/plot-points$/);
-      if (pointsPath && (!init?.method || init.method === 'GET')) {
-        const pts = state.points.filter((p) => String(p.outline_id) === pointsPath[1]);
-        return { items: pts, total: pts.length, offset: 0, limit: 50 };
-      }
-      const pointPost = path.match(/^\/api\/v1\/outlines\/([^/]+)\/plot-points$/);
-      if (pointPost && init?.method === 'POST') {
-        const body = init.body as Record<string, unknown>;
-        const created = { id: `p${state.points.length + 1}`, outline_id: pointPost[1], project_id: 'p1', type: '', description: '', position: state.points.length + 1, arc_id: null, ...body };
-        state.points.push(created);
-        return created;
-      }
-      const pointPatched = path.match(/^\/api\/v1\/plot-points\/([^/]+)$/);
-      if (pointPatched && init?.method === 'PATCH') {
-        const idx = state.points.findIndex((p) => String(p.id) === pointPatched[1]);
-        if (idx >= 0) { state.points[idx] = { ...state.points[idx], ...(init.body as Record<string, unknown>) }; return state.points[idx]; }
-      }
-      if (pointPatched && init?.method === 'DELETE') {
-        state.points = state.points.filter((p) => String(p.id) !== pointPatched[1]);
-        return undefined;
-      }
-      // 故事弧 CRUD
-      const arcPost = /^\/api\/v1\/projects\/p1\/story-arcs$/.test(path);
-      if (arcPost && init?.method === 'POST') {
-        const body = init.body as Record<string, unknown>;
-        const created = { id: `a${state.arcs.length + 1}`, project_id: 'p1', description: '', point_count: 0, ...body };
-        state.arcs.push(created);
-        return created;
-      }
-      const arcPatched = path.match(/^\/api\/v1\/story-arcs\/([^/]+)$/);
-      if (arcPatched && init?.method === 'PATCH') {
-        const idx = state.arcs.findIndex((a) => String(a.id) === arcPatched[1]);
-        if (idx >= 0) { state.arcs[idx] = { ...state.arcs[idx], ...(init.body as Record<string, unknown>) }; return state.arcs[idx]; }
-      }
-      if (arcPatched && init?.method === 'DELETE') {
-        state.arcs = state.arcs.filter((a) => String(a.id) !== arcPatched[1]);
-        return undefined;
-      }
-      // AI 生成
-      if (path === '/api/v1/outlines/generate' && init?.method === 'POST') {
-        if (opts?.generate) return opts.generate();
-        const body = init.body as Record<string, unknown>;
-        const name = typeof body.name === 'string' ? body.name : '未命名大纲';
-        const created = { id: 'o2', name, project_id: 'p1', description: '', level: 'overall', parent_id: null, chapter_id: null, point_count: 0 };
-        state.outlines.unshift(created);
-        return { saved: true, outline: created, plot_points: [], arcs: [], warnings: [], model: 'test' };
-      }
-      return { items: [], total: 0, offset: 0, limit: 50 };
-    });
-    act(() => {
-      useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
-    });
-  }
 
   it('T1 情节节点创建：章行「＋情节点」→ 对话框 → 保存 → POST /outlines/c1/plot-points → 新点出现', async () => {
     const state = makeState();
@@ -411,5 +429,164 @@ describe('#649 大纲子项写操作（情节节点/故事弧 CRUD + AI 生成�
     await waitFor(() => {
       expect(useToastStore.getState().toasts.some((t) => t.type === 'err')).toBe(true);
     });
+  });
+});
+
+describe('#928 ArcDialog 章节关联（多选+标签）', () => {
+  it('N1 打开既有弧展示关联标签：outline-arc-chapters + chip-p2 + GET /story-arcs/a1', async () => {
+    const state = makeState();
+    mockOutlineApi(state);
+    renderLibrary();
+    const user = userEvent.setup();
+    await enterOutlineTab(user);
+    // 锚定既有对话框（当前实现存在 → 通过；RED 锚点在下方新元素）
+    const arcs = await screen.findByTestId('outline-arcs');
+    await user.click(within(arcs).getByTestId('outline-arc-edit-a1'));
+    const dialog = await screen.findByTestId('outline-arc-dialog');
+    // RED：outline-arc-chapters 缺失 → element-missing（GREEN 后展示弧成员 chips）
+    const chapters = within(dialog).getByTestId('outline-arc-chapters');
+    // i18n：关联区标题文案含「章节」（t('lib.arcs.chapters') 新 key 中文值）
+    expect(chapters.textContent).toMatch(/章节/);
+    // a1 的真实成员 p2「金手指觉醒」以 chip 呈现
+    const chipP2 = within(chapters).getByTestId('outline-arc-chip-p2');
+    expect(chipP2.textContent).toContain('金手指觉醒');
+    // 打开弧详情须以 GET（无 PATCH/DELETE）拉取 /api/v1/story-arcs/a1
+    await waitFor(() => {
+      const getArc = apiFetchMock.mock.calls.find(
+        (c) => c[0] === '/api/v1/story-arcs/a1' && (!c[1]?.method || c[1].method === 'GET'),
+      );
+      expect(getArc).toBeTruthy();
+    });
+  });
+
+  it('N2 移除标签保存 → PATCH /plot-points/p2 {arc_id:""} 清除归属，且不发 /story-arcs/a1 PATCH', async () => {
+    const state = makeState();
+    mockOutlineApi(state);
+    renderLibrary();
+    const user = userEvent.setup();
+    await enterOutlineTab(user);
+    const arcs = await screen.findByTestId('outline-arcs');
+    await user.click(within(arcs).getByTestId('outline-arc-edit-a1'));
+    const dialog = await screen.findByTestId('outline-arc-dialog');
+    // RED：chip 移除按钮不存在 → element-missing（GREEN 后点它移除标签）
+    await user.click(within(dialog).getByTestId('outline-arc-chip-remove-p2'));
+    // 保存前本地态：chip p2 消失
+    expect(within(dialog).queryByTestId('outline-arc-chip-p2')).not.toBeInTheDocument();
+    await user.click(within(dialog).getByTestId('outline-arc-save'));
+    // 批量契约：PATCH /plot-points/p2 严格 body { arc_id: '' }（#862 清除归属）
+    await waitFor(() => {
+      const patchPoint = apiFetchMock.mock.calls.find(
+        (c) => c[0] === '/api/v1/plot-points/p2' && c[1]?.method === 'PATCH',
+      );
+      expect(patchPoint).toBeTruthy();
+      expect(patchPoint![1]!.body).toEqual({ arc_id: '' });
+    });
+    // name/description 未变 → 不发 /api/v1/story-arcs/a1 的 PATCH
+    expect(
+      apiFetchMock.mock.calls.some((c) => c[0] === '/api/v1/story-arcs/a1' && c[1]?.method === 'PATCH'),
+    ).toBe(false);
+    await waitFor(() => {
+      expect(screen.queryByTestId('outline-arc-dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  it('N3 空弧多选添加两个点保存 → 两条 PATCH 批量挂弧（p1/p3 → {arc_id:"a2"}）', async () => {
+    const state = makeState();
+    mockOutlineApi(state);
+    renderLibrary();
+    const user = userEvent.setup();
+    await enterOutlineTab(user);
+    const arcs = await screen.findByTestId('outline-arcs');
+    await user.click(within(arcs).getByTestId('outline-arc-edit-a2'));
+    const dialog = await screen.findByTestId('outline-arc-dialog');
+    // RED：空弧关联区为空态 → outline-arc-chapters-empty 缺失 → element-missing
+    expect(within(dialog).getByTestId('outline-arc-chapters-empty')).toBeInTheDocument();
+    // 展开多选（GREEN 后 outline-arc-add-chapter 存在）
+    await user.click(within(dialog).getByTestId('outline-arc-add-chapter'));
+    // 勾选 p1 与 p3（GREEN：option testid 挂可点击 checkbox 上，checked 可断言）
+    await user.click(within(dialog).getByTestId('outline-arc-option-p1'));
+    await user.click(within(dialog).getByTestId('outline-arc-option-p3'));
+    // 勾选后 p1 以 chip 呈现
+    expect(within(dialog).getByTestId('outline-arc-chip-p1')).toBeInTheDocument();
+    await user.click(within(dialog).getByTestId('outline-arc-save'));
+    await waitFor(() => {
+      const patchP1 = apiFetchMock.mock.calls.find(
+        (c) => c[0] === '/api/v1/plot-points/p1' && c[1]?.method === 'PATCH',
+      );
+      expect(patchP1).toBeTruthy();
+      expect(patchP1![1]!.body).toEqual({ arc_id: 'a2' });
+    });
+    await waitFor(() => {
+      const patchP3 = apiFetchMock.mock.calls.find(
+        (c) => c[0] === '/api/v1/plot-points/p3' && c[1]?.method === 'PATCH',
+      );
+      expect(patchP3).toBeTruthy();
+      expect(patchP3![1]!.body).toEqual({ arc_id: 'a2' });
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('outline-arc-dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  it('N4 新建弧多选保存 → 先 POST /projects/p1/story-arcs 再 PATCH /plot-points/p1 {arc_id:"a3"}', async () => {
+    const state = makeState();
+    mockOutlineApi(state);
+    renderLibrary();
+    const user = userEvent.setup();
+    await enterOutlineTab(user);
+    const arcs = await screen.findByTestId('outline-arcs');
+    await user.click(within(arcs).getByTestId('outline-arc-create'));
+    const dialog = await screen.findByTestId('outline-arc-dialog');
+    await user.type(within(dialog).getByTestId('outline-arc-name'), '权谋线B');
+    // RED：新建弧对话框亦无多选 → outline-arc-add-chapter 缺失 → element-missing
+    await user.click(within(dialog).getByTestId('outline-arc-add-chapter'));
+    await user.click(within(dialog).getByTestId('outline-arc-option-p1'));
+    await user.click(within(dialog).getByTestId('outline-arc-save'));
+    // 先建弧再挂点：POST 索引 < PATCH 索引；新弧 created id = a{arcs.length+1} = a3
+    await waitFor(() => {
+      const postIdx = apiFetchMock.mock.calls.findIndex(
+        (c) => c[0] === '/api/v1/projects/p1/story-arcs' && c[1]?.method === 'POST',
+      );
+      expect(postIdx).toBeGreaterThanOrEqual(0);
+      const patchIdx = apiFetchMock.mock.calls.findIndex(
+        (c) => c[0] === '/api/v1/plot-points/p1' && c[1]?.method === 'PATCH',
+      );
+      expect(patchIdx).toBeGreaterThanOrEqual(0);
+      expect(postIdx).toBeLessThan(patchIdx);
+      const body = apiFetchMock.mock.calls[patchIdx][1]!.body as Record<string, unknown>;
+      expect(body).toEqual({ arc_id: 'a3' });
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('outline-arc-dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  it('N5 守护：无关联变更直接保存 → 零 plot-point PATCH、零 story-arc PATCH', async () => {
+    const state = makeState();
+    mockOutlineApi(state);
+    renderLibrary();
+    const user = userEvent.setup();
+    await enterOutlineTab(user);
+    const arcs = await screen.findByTestId('outline-arcs');
+    await user.click(within(arcs).getByTestId('outline-arc-edit-a1'));
+    const dialog = await screen.findByTestId('outline-arc-dialog');
+    // ⚠️ RED 时此用例 FAIL（outline-arc-chapters 缺失）；GREEN 后该断言通过，成为「无变更→零 PATCH」守护
+    await within(dialog).findByTestId('outline-arc-chapters');
+    // 不改任何东西直接保存
+    await user.click(within(dialog).getByTestId('outline-arc-save'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('outline-arc-dialog')).not.toBeInTheDocument();
+    });
+    // 零 plot-point PATCH、零 story-arc PATCH
+    expect(
+      apiFetchMock.mock.calls.some(
+        (c) => /^\/api\/v1\/plot-points\//.test(c[0]) && c[1]?.method === 'PATCH',
+      ),
+    ).toBe(false);
+    expect(
+      apiFetchMock.mock.calls.some(
+        (c) => /^\/api\/v1\/story-arcs\//.test(c[0]) && c[1]?.method === 'PATCH',
+      ),
+    ).toBe(false);
   });
 });

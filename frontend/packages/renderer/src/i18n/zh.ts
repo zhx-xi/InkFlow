@@ -183,6 +183,12 @@ export const zh = {
   'lib.arcs.cancel': '取消',
   'lib.arcs.deleteTitle': '删除故事弧',
   'lib.arcs.deleteConfirm': '确认删除故事弧「{name}」？',
+  // #928：故事弧章节关联（多选 + 标签）
+  'lib.arcs.chapters': '关联章节',
+  'lib.arcs.addChapter': '＋添加章节',
+  'lib.arcs.chaptersEmpty': '暂无关联章节',
+  'lib.arcs.removeChapter': '移除章节「{name}」',
+  'lib.arcs.noCandidates': '没有可关联的情节点',
   'lib.aiGenerate': 'AI 生成大纲',
   'lib.generate.title': 'AI 生成大纲',
   'lib.generate.name': '大纲名称（可选）',
