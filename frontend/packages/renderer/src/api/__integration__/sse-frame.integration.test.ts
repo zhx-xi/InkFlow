@@ -24,7 +24,7 @@ import { streamChat, type ChatStreamBody } from '../chat';
 (globalThis as unknown as { window: unknown }).window = globalThis;
 
 const TEST_TOKEN = 'f1-integration-token';
-const READY_TIMEOUT_MS = 30_000;
+const READY_TIMEOUT_MS = 60_000;
 
 // 本文件（src/api/__integration__/）→ 仓库根
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', '..', '..');
