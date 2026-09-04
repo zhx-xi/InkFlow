@@ -63,10 +63,15 @@ class TestResolveLLMCredentialsReturnsKey:
 
 
 class TestResolveLLMCredentialsFallsBackOnMissingKey:
-    """契约 2: named model provider key 不可用 → 回退有 key 的 provider 或 422，绝不为空。"""
+    """契约 2 迁移（#929 拍板②取代 #821 回退语义）：named provider 无 key → 422 fail-fast。
 
-    def test_named_model_key_unavailable_falls_back_to_keyed_provider(self):
-        """deepseek key 缺失（打包版路径）→ 回退到 ollama（有 key/provider）。"""
+    原契约（#821）：deepseek key 缺失 → 回退其他有 key provider（遍历注册表）。
+    #929 实证该回退是缺陷通道（models[0] 不筛 type → embedding-3 被装配为 chat →
+    zhipu 400 1213）。拍板：删除最终 fallback——绝不静默换 provider，显式 422 + 日志。
+    """
+
+    def test_named_model_key_unavailable_raises_422_without_scanning(self):
+        """deepseek key 缺失 → 422（不回退 ollama——扫描即缺陷路径）。"""
         from inkflow.api._llm_resolver import resolve_llm_credentials
 
         def _side_effect(provider):
@@ -80,11 +85,12 @@ class TestResolveLLMCredentialsFallsBackOnMissingKey:
                 "inkflow.infrastructure.llm.provider_config.get_provider_config",
                 side_effect=_side_effect,
             ),
+            pytest.raises(HTTPException) as exc_info,
         ):
-            _, api_key, _ = resolve_llm_credentials(MODEL)
+            resolve_llm_credentials(MODEL)
 
-        # 绝不返回空 api_key：回退到 ollama 或抛错，不能静默空 key
-        assert api_key, "resolve_llm_credentials must not return an empty api_key"
+        assert exc_info.value.status_code == 422
+        assert "未配置默认模型" in exc_info.value.detail
 
     def test_no_key_anywhere_raises_422(self):
         """全部 provider 无 key → 必须抛 422，绝不返回空 api_key 传进 ChatOpenAI。"""

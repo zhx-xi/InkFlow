@@ -80,7 +80,11 @@ def _default_mocks(m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_rt, 
 
 
 class TestEmptyDefaultModelFallbackToRegistry:
-    """#738: config.llm_default_model="" + provider with key -> resolve from registry."""
+    """#738 契约迁移（#929 拍板②）：空默认 → 422 fail-fast，不再回退注册表。
+
+    原契约（D3=A）：空默认 → 回退首个有 key provider。#929 实证该回退 = 缺陷通道
+    （models[0] 不筛 type → embedding-3 装配为 chat → zhipu 400 1213）。
+    """
 
     @patch("inkflow.api.deps.build_deep_agent")
     @patch("inkflow.api.deps.build_save_draft_tool")
@@ -91,12 +95,10 @@ class TestEmptyDefaultModelFallbackToRegistry:
     @patch("inkflow.api.deps.get_summary_service")
     @patch("inkflow.api.deps.get_foreshadowing_service")
     @patch("inkflow.api.deps.get_character_service")
-    @patch(
-        "inkflow.infrastructure.llm.provider_config.get_provider_config"
-    )
+    @patch("inkflow.infrastructure.llm.provider_config.get_provider_config")
     @patch("inkflow.core.config.config")
     @pytest.mark.asyncio
-    async def test_empty_default_falls_back_to_provider_with_key(
+    async def test_empty_default_raises_422_without_registry_scan(
         self,
         m_config,
         m_get_provider,
@@ -110,34 +112,31 @@ class TestEmptyDefaultModelFallbackToRegistry:
         m_sd,
         m_da,
     ) -> None:
-        """config.llm_default_model="" + provider "deepseek" has key ->
-        build_deep_agent receives NON-empty api_key (resolved from registry).
+        """config.llm_default_model="" → HTTPException(422)，绝不扫描注册表。
+
+        mock 让一切 get_provider_config 调用抛 ValueError（两面 CI/dev 行为一致：
+        旧实现扫描 _BUILTIN_PROVIDERS 全败 → 422；新实现直接 422）。
+        #929 反转锚：get_provider_config 调用计数 == 0——旧回退循环必然扫描 ≥1 次，
+        新实现（删除最终 fallback）零扫描直接 422。
         """
         m_config.llm_default_model = ""
         m_config.model_routing = {}
 
-        from inkflow.infrastructure.llm.provider_config import LLMProviderConfig
-
-        m_get_provider.return_value = LLMProviderConfig(
-            provider="deepseek",
-            api_key="test-api-key-value",
-            base_url="https://api.deepseek.com/v1",
-            default_model="deepseek/deepseek-v4-flash",
-            models=["deepseek-v4-flash"],
-        )
+        m_get_provider.side_effect = ValueError("API key not configured for provider")
 
         _default_mocks(m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_rt, m_sd)
         data = ChatStreamRequest(project_id=PROJECT_ID, prompt="hello")
 
-        svc = await _get_chat_agent_service()(data=data, db=MagicMock())
+        with pytest.raises(HTTPException) as exc_info:
+            await _get_chat_agent_service()(data=data, db=MagicMock())
 
-        chat_agent_cls = _get_chat_agent_service_cls()
-        assert isinstance(svc, chat_agent_cls)
-        # KEY assertion: api_key must be NON-empty (resolved from provider config)
-        api_key = _kwarg_or_positional(m_da.call_args, "api_key", 1, None)
-        assert api_key, "api_key must be non-empty when a provider with key exists"
-        model = _kwarg_or_positional(m_da.call_args, "model", 0, None)
-        assert model, "model must be non-empty when resolved from provider config"
+        assert exc_info.value.status_code == 422
+        assert "默认模型" in exc_info.value.detail or "model" in exc_info.value.detail.lower()
+        assert m_get_provider.call_count == 0, (
+            "#929: 空默认绝不再遍历注册表回退（models[0] 不筛 type → embedding 误装配"
+            "的缺陷通道已删除；fail-fast 应零扫描）"
+        )
+        assert m_da.call_count == 0, "422 后不得构建 agent（无 500 Missing credentials 路径）"
 
     @patch("inkflow.api.deps.build_deep_agent")
     @patch("inkflow.api.deps.build_save_draft_tool")
@@ -148,9 +147,7 @@ class TestEmptyDefaultModelFallbackToRegistry:
     @patch("inkflow.api.deps.get_summary_service")
     @patch("inkflow.api.deps.get_foreshadowing_service")
     @patch("inkflow.api.deps.get_character_service")
-    @patch(
-        "inkflow.infrastructure.llm.provider_config._await_registry_entry"
-    )
+    @patch("inkflow.infrastructure.llm.provider_config._await_registry_entry")
     @patch(
         "inkflow.infrastructure.llm.provider_config.get_provider_config",
         side_effect=ValueError("API key not configured for provider"),
@@ -178,16 +175,18 @@ class TestEmptyDefaultModelFallbackToRegistry:
         m_config.model_routing = {}
         m_await_registry.return_value = None
         data = ChatStreamRequest(project_id=PROJECT_ID, prompt="hello")
-        _default_mocks(
-            m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_rt, m_sd
-        )
-        with patch(
-            "inkflow.infrastructure.llm.provider_config._BUILTIN_PROVIDERS",
-            {"openai": None, "deepseek": None, "zhipu": None, "ollama": None},
-        ), patch(
-            "inkflow.infrastructure.llm.provider_config._load_stored_key",
-            return_value=None,
-        ), pytest.raises(HTTPException) as exc_info:
+        _default_mocks(m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_rt, m_sd)
+        with (
+            patch(
+                "inkflow.infrastructure.llm.provider_config._BUILTIN_PROVIDERS",
+                {"openai": None, "deepseek": None, "zhipu": None, "ollama": None},
+            ),
+            patch(
+                "inkflow.infrastructure.llm.provider_config._load_stored_key",
+                return_value=None,
+            ),
+            pytest.raises(HTTPException) as exc_info,
+        ):
             await _get_chat_agent_service()(data=data, db=MagicMock())
 
         assert exc_info.value.status_code == 422
@@ -208,13 +207,13 @@ class TestResolveModelPriority:
     @patch("inkflow.api.deps.get_summary_service")
     @patch("inkflow.api.deps.get_foreshadowing_service")
     @patch("inkflow.api.deps.get_character_service")
-    @patch(
-        "inkflow.domain.services.model_resolution.resolve_model"
-    )
+    @patch("inkflow.infrastructure.llm.provider_config.get_provider_config")
+    @patch("inkflow.domain.services.model_resolution.resolve_model")
     @pytest.mark.asyncio
     async def test_resolve_model_is_called(
         self,
         m_resolve,
+        m_get_provider,
         m_char,
         m_foresh,
         m_sum,
@@ -226,11 +225,22 @@ class TestResolveModelPriority:
         m_da,
     ) -> None:
         """resolve_model must be called by get_chat_agent_service (consistency
-        with 8 other services that already use it)."""
+        with 8 other services that already use it).
+
+        #929 迁移：resolver 不再吞 provider 错误，本用例锚 resolve_model 一致性，
+        须 mock provider 装配（provider 有 key 形态）使装配走通。
+        """
         m_resolve.return_value = "deepseek/deepseek-v4-flash"
-        _default_mocks(
-            m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_rt, m_sd
+        from inkflow.infrastructure.llm.provider_config import LLMProviderConfig
+
+        m_get_provider.return_value = LLMProviderConfig(
+            provider="deepseek",
+            api_key="test-key",
+            base_url="https://api.deepseek.com/v1",
+            default_model="deepseek/deepseek-v4-flash",
+            models=["deepseek-v4-flash"],
         )
+        _default_mocks(m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_rt, m_sd)
         data = ChatStreamRequest(project_id=PROJECT_ID, prompt="hello")
 
         await _get_chat_agent_service()(data=data, db=MagicMock())

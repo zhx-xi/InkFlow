@@ -57,10 +57,8 @@ async def get_chat_agent_service(
     """
     import uuid
 
-    from fastapi import HTTPException
-
+    from inkflow.api._llm_resolver import resolve_llm_credentials
     from inkflow.core.config import config
-    from inkflow.domain.services.model_resolution import resolve_model
     from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
     from inkflow.infrastructure.agent.tools.agent_chain_tools import AgentChainToolDeps
     from inkflow.infrastructure.agent.tools.delete_tools import DeleteToolDeps
@@ -71,45 +69,11 @@ async def get_chat_agent_service(
     from inkflow.infrastructure.agent.tools.setting_write_tools import SettingWriteToolDeps
     from inkflow.infrastructure.agent.tools.world_readwrite_tools import WorldRwToolDeps
     from inkflow.infrastructure.agent.tools.writing_tools import WritingToolDeps
-    from inkflow.infrastructure.llm.provider_config import (
-        _BUILTIN_PROVIDERS,
-        get_provider_config,
-        parse_model_string,
-    )
 
-    # 模型/密钥/base_url 同源装配（F5 provider_config）：resolve_model 统一解析链
-    # （#735 agent > project > global）；空默认模型时回退到首个有 key 且含 chat 模型的
-    # provider（#738，避免空 key 构造 ChatOpenAI → Missing credentials 500）
-    model = resolve_model(None, None, config.llm_default_model) or ""
-    api_key = ""
-    base_url = ""
-    if model:
-        try:
-            provider, _ = parse_model_string(model)
-            provider_cfg = get_provider_config(provider)
-            api_key = provider_cfg.api_key
-            base_url = provider_cfg.base_url or ""
-        except ValueError:
-            pass
-    else:
-        for provider in _BUILTIN_PROVIDERS:
-            try:
-                provider_cfg = get_provider_config(provider)
-            except ValueError:
-                continue
-            fallback_model = provider_cfg.default_model
-            if not fallback_model and provider_cfg.models:
-                fallback_model = provider_cfg.models[0]
-            if fallback_model:
-                model = fallback_model
-                api_key = provider_cfg.api_key
-                base_url = provider_cfg.base_url or ""
-                break
-        if not api_key:
-            raise HTTPException(
-                status_code=422,
-                detail="未配置默认模型，请在设置中配置 LLM Provider 和默认模型",
-            )
+    # 模型/密钥/base_url 同源装配（#929 §3）：统一走 resolve_llm_credentials——
+    # 空默认/named provider 无 key → fail-fast 422 + 诊断日志，绝不遍历注册表
+    # 取 models[0]（embedding 误装配为 chat 的缺陷通道，#929 R1/#738 回退废止）。
+    model, api_key, base_url = resolve_llm_credentials(config.llm_default_model)
 
     # #766 阶段② 装配守卫：读 conversation.delete_permission 决定是否挂载删除工具
     # （manual=不注册；ask_once/auto=注册，func 内部按授权分支 interrupt 或直接执行）。

@@ -18,13 +18,6 @@ from inkflow.logging import instrument
 
 app = typer.Typer(name="llm", help="LLM Provider 配置", no_args_is_help=True)
 
-_PROVIDER_MODELS = {
-    "openai": "gpt-4o",
-    "deepseek": "deepseek-v4-flash",
-    "zhipu": "glm-4.5",
-    "anthropic": "claude-3-haiku-20240307",
-}
-
 
 def _get_key_manager() -> APIKeyManager:
     return APIKeyManager(
@@ -317,7 +310,10 @@ def list_providers(ctx: typer.Context) -> None:
     providers = km.list_providers()
     result = []
     for p in providers:
-        default_model = _PROVIDER_MODELS.get(p, "unknown")
+        # #929/§1：单一默认源 = config.model_routing（provider 键值对象）；
+        # 缺键显示 "unknown" 语义保留（#415 原则）。
+        entry = config.model_routing.get(p)
+        default_model = entry.model if entry is not None else "unknown"
         try:
             key = km.load(p)
             key_status = "configured"

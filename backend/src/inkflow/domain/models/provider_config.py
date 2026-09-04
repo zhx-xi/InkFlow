@@ -54,6 +54,18 @@ class ProviderModel(BaseModel):
         return _validate_model_id(v)
 
 
+class ProviderDefault(BaseModel):
+    """model_routing 值对象：provider 内置默认模型（模型名不带 provider/ 前缀）。
+
+    Attributes:
+        model: 裸模型名（如 "deepseek-v4-flash"），消费侧拼 LiteLLM 格式 provider/model.
+        type: 模型类型（chat / embedding）——embedding 型永不可作为 chat 消费默认（#929 R1）.
+    """
+
+    model: str
+    type: Literal["chat", "embedding"] = "chat"
+
+
 class ProviderConfig(BaseModel):
     """Provider 注册表实体（§8.2① 字段全集）.
 
