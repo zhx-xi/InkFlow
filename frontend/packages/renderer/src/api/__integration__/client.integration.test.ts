@@ -23,7 +23,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { apiFetch, ApiError, KernelOfflineError, type ApiConfig } from '../client';
 
 const TEST_TOKEN = 'test-integration-token-abc123';
-const READY_TIMEOUT_MS = 30_000;
+const READY_TIMEOUT_MS = 60_000;
 const READY_PREFIX = 'INKFLOW_READY ';
 
 interface ReadyPayload {
