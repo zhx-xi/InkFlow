@@ -24,7 +24,11 @@ OutlineRepositoryProtocol），测试中注入 Mock。
    情节点按输出顺序分配 position（1,2,3...），arc 名解析为 arc_id，
    无法解析 → 跳过关联 + warning；空情节点 → warning「未生成情节点」
    save=False → 仅返回 preview（GeneratedOutline），不落库、不做同名检查
-⑦ 返回 OutlineGenerationResult
+  ⑦ 返回 OutlineGenerationResult
+
+#669 replace 模式（save=True）: 不走 ⑥ 新建——改为把生成结果暂存进目标大纲
+   extra["replace_pending"]（零情节点写入），返回 requires_confirmation=True
+   待 OutlineService.confirm_replace 确认后物理替换（用户确认后覆盖语义）。
 
 num_chapters 处理: F5 PromptManager 的渲染是 str.replace（见
 infrastructure/llm/prompt_manager.py `_format`），不支持 Jinja2 条件段 —
@@ -325,6 +329,14 @@ class OutlineGenerator:
                 warnings=outcome.warnings,
                 model=model,
             )
+        if request.mode == "replace":
+            # #669: replace 模式 = 覆盖目标大纲全部情节点，先暂存待确认（零写入）
+            return await self._stage_replace(
+                request=request,
+                generated=generated,
+                warnings=outcome.warnings,
+                model=model,
+            )
         return await self._persist(
             request=request,
             generated=generated,
@@ -489,6 +501,105 @@ class OutlineGenerator:
             preview=None,
             warnings=out_warnings,
             model=model,
+        )
+
+    # ── 覆盖暂存（#669 mode=replace + save=True）──────────────────
+
+    async def materialize_generated(
+        self,
+        *,
+        generated: GeneratedOutline,
+        project_id: uuid.UUID,
+        outline_id: uuid.UUID,
+    ) -> tuple[list[StoryArc], list[PlotPoint], list[str]]:
+        """覆盖应用物化（#669）：复用 §5.4 共用段落库弧线/情节点.
+
+        供 OutlineService.confirm_replace（用户确认后）调用：弧线按名复用/
+        新建（_resolve_arcs），情节点自 1 批量分配 position（_persist_plot_points
+        start=1，整体替换从头计数）；arc 名无法解析 → 跳过关联 + warning，
+        空情节点 → warning「未生成情节点」——与新建/追加分支同一代码路径。
+
+        Args:
+            generated: 待物化的生成结构（pending["generated"] 校验产物）.
+            project_id: 目标大纲所属项目 UUID.
+            outline_id: 目标大纲 UUID（情节点挂接）.
+
+        Returns:
+            (arcs, plot_points, warnings) 三元组——均为落库后实体.
+        """
+        pid_int = _to_int_id(project_id)
+        now = _utcnow()
+        warnings: list[str] = []
+        arcs, arc_by_name = await self._resolve_arcs(
+            pid_int=pid_int,
+            project_id=project_id,
+            generated_arcs=generated.arcs,
+            created_at=now,
+        )
+        plot_points = await self._persist_plot_points(
+            generated_points=generated.plot_points,
+            pid_int=pid_int,
+            outline_id=outline_id,
+            project_id=project_id,
+            arc_by_name=arc_by_name,
+            start=1,
+            created_at=now,
+            out_warnings=warnings,
+        )
+        return arcs, plot_points, warnings
+
+    async def _stage_replace(
+        self,
+        *,
+        request: OutlineGenerateRequest,
+        generated: GeneratedOutline,
+        warnings: list[str],
+        model: str,
+    ) -> OutlineGenerationResult:
+        """覆盖模式暂存：生成结果写入目标大纲 extra["replace_pending"]，零情节点写入.
+
+        确认前原内容始终保留（#669 决策点 ①-④）：本方法只允许 repo.update
+        （写 extra），禁调 repo.add / add_point / add_arc / hard_delete_point；
+        待 OutlineService.confirm_replace（用户确认）后物理替换。
+
+        Args:
+            request: 生成请求（mode="replace"，target_outline_id 由 §1.1
+                model_validator 保证非 None）.
+            generated: 解析后的生成大纲（含 arcs/plot_points）.
+            warnings: 解析期条目级警告（跳过非法条目等）.
+            model: 本次生成使用的模型.
+
+        Returns:
+            OutlineGenerationResult(saved=False, outline=None, plot_points=[],
+            arcs=[], preview=generated, requires_confirmation=True,
+            target_outline_id=目标大纲 id).
+
+        Raises:
+            OutlineNotFoundError: 目标大纲不存在（service 层已前置校验，此处防御）.
+        """
+        target_id = request.target_outline_id
+        assert target_id is not None  # §1.1 model_validator 保证 replace 必有目标大纲
+        outline = await self._repo.get(_to_int_id(target_id))
+        if outline is None:
+            raise OutlineNotFoundError()
+        extra = dict(outline.extra)
+        extra["replace_pending"] = {
+            "generated": generated.model_dump(mode="json"),
+            "model": model,
+            "staged_at": _utcnow().isoformat(),
+        }
+        await self._repo.update(outline.model_copy(update={"extra": extra}))
+        logger.info("大纲覆盖暂存: outline_id=%s（待用户确认）", target_id)
+        return OutlineGenerationResult(
+            saved=False,
+            outline=None,
+            plot_points=[],
+            arcs=[],
+            preview=generated,
+            warnings=warnings,
+            model=model,
+            requires_confirmation=True,
+            target_outline_id=request.target_outline_id,
         )
 
     async def _persist_append(

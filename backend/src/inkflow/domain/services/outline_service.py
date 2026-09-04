@@ -13,6 +13,9 @@
 - AI 生成入口（§5.1 步骤 ①）: 校验项目存在并组装 project_info（项目名/
   类型/目标字数/写作风格/extra 纯文本），以 project.config.model 作为
   默认模型，再委托 OutlineGenerator 执行管线（②-⑦）
+- #669 replace 确认: generate 前置校验目标大纲存在且同项目（LLM 前拦截）；
+  confirm_replace 两段式应用/取消覆盖（快照旧点 → 物理删旧点 → 落新点 /
+  仅清 pending），extra["replace_pending"]/["replace_snapshot"] 承载版本化
 
 依赖全部通过构造函数注入（ADR-015，测试注入 Mock）:
 - repository: OutlineRepositoryProtocol（B1 已实现）
@@ -30,9 +33,11 @@ import json
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from inkflow.core.config import config
 from inkflow.domain.models.outline import (
+    GeneratedOutline,
     Outline,
     OutlineGenerateRequest,
     OutlineGenerationResult,
@@ -52,7 +57,9 @@ from inkflow.domain.ports.outline_errors import (
     OutlineLevelError,
     OutlineNameConflictError,
     OutlineNotFoundError,
+    OutlineReplaceError,
     OutlineServiceError,
+    OutlineTargetProjectError,
     OutlineVolumeRefError,
     ProjectNotFoundError,
 )
@@ -602,8 +609,19 @@ class OutlineService:
         project = await self._project_repo.get(_to_int_id(request.project_id))
         if project is None:
             raise ProjectNotFoundError()
-        if request.save and request.target_outline_id is not None:
-            # D6① 追加入口预检：save=true + target → LLM 调用前快速失败，不浪费 token。
+        # #669 replace 前置校验：目标大纲存在且属于同一项目（LLM 调用前快速失败；
+        # 跨项目 422 与 #668 追加统一 404 语义区分）。save=False 纯预览跳过——
+        # 零写入场景无须校验目标（连 pending 都不写）。
+        if request.mode == "replace" and request.save:
+            target_id = request.target_outline_id
+            assert target_id is not None  # §1.1 model_validator 保证 replace 必有目标大纲
+            target = await self._repo.get(_to_int_id(target_id))
+            if target is None:
+                raise OutlineNotFoundError()
+            if target.project_id != request.project_id:
+                raise OutlineTargetProjectError()
+        elif request.save and request.target_outline_id is not None:
+            # D6① 追加入口预检（#668）：save=true + target → LLM 调用前快速失败，不浪费 token。
             # 跨项目与不存在统一 OutlineNotFoundError（router 转 404）；save=false 纯预览不校验。
             target = await self._repo.get(_to_int_id(request.target_outline_id))
             if target is None or target.project_id != request.project_id:
@@ -617,4 +635,117 @@ class OutlineService:
             request,
             project_info=_build_project_info(project),
             default_model=resolve_model(None, project.config.model, self._llm_default_model) or "",
+        )
+
+    async def confirm_replace(
+        self, outline_id: int | uuid.UUID, *, approved: bool
+    ) -> dict[str, Any]:
+        """覆盖确认（#669）：approved=True 应用 pending；False 取消.
+
+        两段式替换的第二步（第一步 generate replace 暂存由
+        generator._stage_replace 完成）。应用 = 快照旧点 → 逐点物理删旧点 →
+        落新点（弧线按名复用/新建，镜像 generator._persist 第⑥步语义）→
+        移除 replace_pending 并写 replace_snapshot；取消 = 仅清 pending +
+        repo.update，原内容分毫不动。幂等保护：应用/取消后 pending 已移除，
+        再次 confirm（任何 approved）→ OutlineReplaceError（422）。
+
+        Args:
+            outline_id: 目标大纲主键（支持 int 或 UUID）.
+            approved: True = 应用 pending 覆盖；False = 取消覆盖（只清 pending）.
+
+        Returns:
+            应用: {"replaced": True, "cancelled": False, "outline": <更新后
+            Outline>, "plot_points": [PlotPoint,...], "arcs": [StoryArc,...],
+            "warnings": [str,...], "model": str}.
+            取消: {"replaced": False, "cancelled": True, "outline": <Outline>,
+            "plot_points": [], "arcs": [], "warnings": [], "model": str}.
+
+        Raises:
+            OutlineNotFoundError: 大纲不存在（router 转 404）.
+            OutlineReplaceError: 大纲无待确认的覆盖操作（pending 缺失/已应用）.
+            OutlineServiceError: 生成器未注入（配置错误，两态均前置拒绝——
+                杜绝应用路径删旧点后物化才失败的半程破坏）。
+        """
+        if self._generator is None:
+            raise OutlineServiceError("大纲生成器未配置")
+        oid = _to_int_id(outline_id)
+        outline = await self._repo.get(oid)
+        if outline is None:
+            raise OutlineNotFoundError()
+        pending = outline.extra.get("replace_pending")
+        if not isinstance(pending, dict):
+            raise OutlineReplaceError()
+        model = str(pending.get("model", ""))
+        if not approved:
+            # 取消：只清 pending + 更新，禁删点/落点（原内容分毫不动）
+            outline.extra.pop("replace_pending", None)
+            updated = await self._repo.update(outline)
+            logger.info("大纲覆盖已取消: outline_id=%s", outline_id)
+            return {
+                "replaced": False,
+                "cancelled": True,
+                "outline": updated,
+                "plot_points": [],
+                "arcs": [],
+                "warnings": [],
+                "model": model,
+            }
+
+        # 应用：快照旧点 → 逐点物理删除 → 落新点（position 1..N）→ 清 pending
+        old_points = await self._repo.list_points(oid)
+        outline.extra["replace_snapshot"] = {
+            "replaced_at": _utcnow().isoformat(),
+            "model": model,
+            "plot_points": [p.model_dump(mode="json") for p in old_points],
+        }
+        for point in old_points:
+            await self._repo.hard_delete_point(_to_int_id(point.id))
+        generated = GeneratedOutline.model_validate(pending["generated"])
+        arcs, plot_points, warnings = await self._materialize_replace_points(
+            outline=outline,
+            generated=generated,
+        )
+        outline.extra.pop("replace_pending", None)
+        updated = await self._repo.update(outline)
+        for w in warnings:
+            logger.warning("大纲覆盖警告: %s", w)
+        logger.info("大纲覆盖已应用: outline_id=%s", outline_id)
+        return {
+            "replaced": True,
+            "cancelled": False,
+            "outline": updated,
+            "plot_points": plot_points,
+            "arcs": arcs,
+            "warnings": warnings,
+            "model": model,
+        }
+
+    async def _materialize_replace_points(
+        self,
+        *,
+        outline: Outline,
+        generated: GeneratedOutline,
+    ) -> tuple[list[StoryArc], list[PlotPoint], list[str]]:
+        """落新情节点与弧线（#669，委托 generator 复用 §5.4 共用段）.
+
+        弧线按 (project_id, name) 匹配：命中=复用 / 未命中=add_arc 新建；
+        情节点按输出顺序分配 position（1,2,3...），arc 名解析为 arc_id，
+        无法解析 → 跳过关联 + warning；空情节点 → warning「未生成情节点」。
+        与新建/追加落库同一代码路径（rebase #911 后收敛，消除镜像重复）。
+
+        Args:
+            outline: 目标大纲（覆盖写入 outline_id/project_id）.
+            generated: 待应用的生成大纲（pending["generated"] 校验产物）.
+
+        Returns:
+            (arcs, plot_points, warnings) 三元组——弧线/情节点为落库实体.
+
+        Raises:
+            OutlineServiceError: 生成器未注入（入口守卫已拒绝，此处 mypy 收窄断言）.
+        """
+        assert self._generator is not None  # confirm_replace 入口已守卫（收窄）
+        return await self._generator.materialize_generated(
+            generated=generated,
+            project_id=outline.project_id,
+            outline_id=outline.id,
         )

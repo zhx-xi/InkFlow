@@ -118,3 +118,17 @@ class OutlineVolumeRefError(OutlineServiceError):
 
     def __init__(self, message: str = "卷关联约束违反") -> None:
         super().__init__(message)
+
+
+class OutlineReplaceError(OutlineServiceError):
+    """大纲无待确认的覆盖操作（confirm 时 pending 缺失/已应用）— 422."""
+
+    def __init__(self, message: str = "大纲无待确认的覆盖操作") -> None:
+        super().__init__(message)
+
+
+class OutlineTargetProjectError(OutlineServiceError):
+    """覆盖目标大纲不属于该项目 — 422."""
+
+    def __init__(self, message: str = "目标大纲不属于该项目") -> None:
+        super().__init__(message)

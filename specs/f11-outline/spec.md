@@ -1275,3 +1275,44 @@ F11 被依赖:
 
 - **restore 端点缺失**：spec §3.1/§4.1 声明的 `POST /outlines/{outline_id}/restore`、`POST /plot-points/{point_id}/restore`、`POST /story-arcs/{arc_id}/restore` 及 CLI `outline restore` 在实现中缺失（routers/outlines.py 无 restore 路由；services 无 restore 方法；CLI 无 restore 命令）——恢复能力未落地，且 §3.1 表头「18 个」与枚举 19 端点不符（次要）。
 - **实现侧新增端点**：`GET /outlines/by-volume/{volume_id}` 为 spec §3.1 未声明端点（疑 F56 卷-大纲关联功能）——实现路由 17 条 vs spec 枚举 19 端点，构成不同。
+
+---
+
+## 15. 增量（#669）：AI 生成覆盖当前大纲（替换语义，用户确认后覆盖）
+
+> 拍板（2026-09-03）：覆盖=**写前用户确认，确认后替换**（非追加；#668 追加语义另轨）。
+> 权威实现契约：RED 契约测试 `backend/tests/unit/test_outline_replace.py` + `backend/tests/unit/api/routers/test_outline_replace_api.py`（本节为其 spec 化摘要）。
+
+### 15.1 请求扩展（OutlineGenerateRequest，§2.6）
+
+| 字段 | 类型/默认 | 语义 |
+|------|-----------|------|
+| `mode` | `str = "new"` | `"new"`=生成即新建/追加（§5.4 现行为）；`"replace"`=覆盖目标大纲情节点 |
+| `target_outline_id` | `uuid.UUID \| None = None` | 目标大纲（#668 追加 / #669 覆盖共享；缺省 None=生成即新建） |
+
+校验（422）：mode ∉ {new, replace} → 「生成模式只能为 new/replace」；replace 缺 target → 「覆盖模式必须指定目标大纲」。`target_outline_id` 为 #668/#669 共享字段：new+target = 追加语义（#911 已合入，合法态不校验），replace+target = 覆盖语义。
+
+### 15.2 两段式确认流（HITL，复用 #343 确认语义，非其 checkpointer 机制）
+
+```
+POST /outlines/generate (mode=replace)
+  → 前置校验目标（不存在 404「大纲不存在」；跨项目 422「目标大纲不属于该项目」；LLM 调用前拦截）
+  → 跑 §5.1 管线 ②-⑤（复用 LLM 解析/修复重试/围栏提取，零变化）
+  → 生成结果暂存 outline.extra["replace_pending"]（零情节点写入）
+  → 200 OutlineGenerationResult{saved=false, requires_confirmation=true, target_outline_id, preview}
+用户 GUI 二次确认
+  → POST /outlines/{outline_id}/replace-confirm {approved: true|false}
+```
+
+- **approved=true（覆盖）**：旧情节点整批 JSON 快照 → `extra["replace_snapshot"]`（可恢复依据）→ 物理删除旧点 → 新点 position 1..N 落库（弧线按 §5.4 名复用/创建；arc 名不可解析→跳过关联+warning；空情节点→warning「未生成情节点」）→ pop pending → 200 `{replaced:true, cancelled:false, outline, plot_points, arcs, warnings, model}`
+- **approved=false（取消）**：仅 pop pending，原内容分毫不动 → 200 `{replaced:false, cancelled:true, ...}`
+- **幂等**：pending 已 pop 后再 confirm → 422「大纲无待确认的覆盖操作」（`OutlineReplaceError`）
+- `save=false` + replace → 纯预览，连 pending 都不写（requires_confirmation=false）
+
+### 15.3 拍板四决策点落点（issue #669）
+
+① 替换范围=目标大纲全部情节点整体替换；② 旧点物理删 + extra 快照备份（无软删字段，最小 schema）；③ 弧线项目级实体不删，新点按名复用；④ 版本化经 extra `replace_pending`/`replace_snapshot` 预留字段承载，不建表不加列。
+
+### 15.4 测试锚点（RED 契约）
+
+`backend/tests/unit/test_outline_replace.py`（A1-A14 领域/服务/管线）+ `backend/tests/unit/api/routers/test_outline_replace_api.py`（B1-B7 HTTP）；既有 §9 用例（new 模式）零回归（mode 默认值=现行为）。
