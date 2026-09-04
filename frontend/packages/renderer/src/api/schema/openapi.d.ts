@@ -4587,8 +4587,9 @@ export interface components {
          *         num_chapters: 可选规划章节数提示（1-100）.
          *         save: True=自动落库；False=仅返回预览（不创建任何实体）.
          *         model: 覆盖项目默认模型（格式 provider/model_name）.
-         *         target_outline_id: 覆盖目标大纲（仅 mode="replace" 有效；缺省 None）.
-         *         mode: 生成模式；"new"=生成即新建（现行为），"replace"=覆盖目标大纲
+         *         target_outline_id: 目标大纲 UUID（mode="new"+save=true=追加至其末尾 max+1，#668；
+         *             mode="replace"=覆盖其全部情节点，#669 需用户确认；缺省 None=生成即新建）.
+         *         mode: 生成模式；"new"=生成即新建/追加（现行为），"replace"=覆盖目标大纲
          *             全部情节点（#669，需用户确认后应用）.
          */
         OutlineGenerateRequest: {

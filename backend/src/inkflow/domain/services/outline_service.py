@@ -588,13 +588,16 @@ class OutlineService:
 
         Args:
             request: 生成请求（project_id / name? / prompt? /
-                num_chapters? / save / model?）.
+                num_chapters? / save / model? / target_outline_id?）.
 
         Returns:
             落库后的生成报告（save=True）或预览结构（save=False）.
 
         Raises:
             ProjectNotFoundError: 项目不存在（router 转 404「项目不存在」）.
+            OutlineNotFoundError: 追加目标大纲不存在或属于其他项目
+                （save=True + target_outline_id 时入口预检，LLM 调用前快速失败；
+                router 转 404「大纲不存在」）.
             OutlineServiceError: 生成器/项目仓储未注入（配置错误）.
             OutlineGenerationError: 生成管线解析失败（透传，router 转 500）.
             LLMRequestError: LLM 调用失败（透传，router 转 500）.
@@ -606,8 +609,9 @@ class OutlineService:
         project = await self._project_repo.get(_to_int_id(request.project_id))
         if project is None:
             raise ProjectNotFoundError()
-        # #669 replace 前置校验：目标大纲存在且属于同一项目（LLM 调用前快速失败）。
-        # save=False 纯预览跳过——零写入场景无须校验目标（连 pending 都不写）
+        # #669 replace 前置校验：目标大纲存在且属于同一项目（LLM 调用前快速失败；
+        # 跨项目 422 与 #668 追加统一 404 语义区分）。save=False 纯预览跳过——
+        # 零写入场景无须校验目标（连 pending 都不写）。
         if request.mode == "replace" and request.save:
             target_id = request.target_outline_id
             assert target_id is not None  # §1.1 model_validator 保证 replace 必有目标大纲
@@ -616,6 +620,12 @@ class OutlineService:
                 raise OutlineNotFoundError()
             if target.project_id != request.project_id:
                 raise OutlineTargetProjectError()
+        elif request.save and request.target_outline_id is not None:
+            # D6① 追加入口预检（#668）：save=true + target → LLM 调用前快速失败，不浪费 token。
+            # 跨项目与不存在统一 OutlineNotFoundError（router 转 404）；save=false 纯预览不校验。
+            target = await self._repo.get(_to_int_id(request.target_outline_id))
+            if target is None or target.project_id != request.project_id:
+                raise OutlineNotFoundError()
         logger.info(
             "大纲生成: project=%s model=%s",
             request.project_id,
@@ -653,7 +663,11 @@ class OutlineService:
         Raises:
             OutlineNotFoundError: 大纲不存在（router 转 404）.
             OutlineReplaceError: 大纲无待确认的覆盖操作（pending 缺失/已应用）.
+            OutlineServiceError: 生成器未注入（配置错误，两态均前置拒绝——
+                杜绝应用路径删旧点后物化才失败的半程破坏）。
         """
+        if self._generator is None:
+            raise OutlineServiceError("大纲生成器未配置")
         oid = _to_int_id(outline_id)
         outline = await self._repo.get(oid)
         if outline is None:
@@ -712,11 +726,12 @@ class OutlineService:
         outline: Outline,
         generated: GeneratedOutline,
     ) -> tuple[list[StoryArc], list[PlotPoint], list[str]]:
-        """落新情节点与弧线（#669，镜像 generator._persist 第⑥步语义）.
+        """落新情节点与弧线（#669，委托 generator 复用 §5.4 共用段）.
 
         弧线按 (project_id, name) 匹配：命中=复用 / 未命中=add_arc 新建；
         情节点按输出顺序分配 position（1,2,3...），arc 名解析为 arc_id，
         无法解析 → 跳过关联 + warning；空情节点 → warning「未生成情节点」。
+        与新建/追加落库同一代码路径（rebase #911 后收敛，消除镜像重复）。
 
         Args:
             outline: 目标大纲（覆盖写入 outline_id/project_id）.
@@ -724,62 +739,13 @@ class OutlineService:
 
         Returns:
             (arcs, plot_points, warnings) 三元组——弧线/情节点为落库实体.
+
+        Raises:
+            OutlineServiceError: 生成器未注入（入口守卫已拒绝，此处 mypy 收窄断言）.
         """
-        warnings: list[str] = []
-        pid_int = _to_int_id(outline.project_id)
-        now = _utcnow()
-        arcs: list[StoryArc] = []
-        arc_by_name: dict[str, StoryArc] = {}
-        for ga in generated.arcs:
-            existing = await self._repo.get_arc_by_name(pid_int, ga.name)
-            if existing is not None:
-                arc_by_name[ga.name] = existing
-                arcs.append(existing)
-                continue
-            new_arc = await self._repo.add_arc(
-                StoryArc(
-                    id=uuid.uuid4(),
-                    project_id=outline.project_id,
-                    name=ga.name,
-                    description=ga.description or "",
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-            arc_by_name[ga.name] = new_arc
-            arcs.append(new_arc)
-
-        plot_points: list[PlotPoint] = []
-        for index, gp in enumerate(generated.plot_points, start=1):
-            arc_id: uuid.UUID | None = None
-            if gp.arc:
-                arc_name = gp.arc.strip()
-                if arc_name:
-                    arc = arc_by_name.get(arc_name)
-                    if arc is None:
-                        arc = await self._repo.get_arc_by_name(pid_int, arc_name)
-                    if arc is not None:
-                        arc_by_name[arc_name] = arc
-                        arc_id = arc.id
-                    else:
-                        warnings.append(f"情节点 {gp.name} 的弧线 {arc_name} 无法解析已跳过关联")
-            plot_points.append(
-                await self._repo.add_point(
-                    PlotPoint(
-                        id=uuid.uuid4(),
-                        outline_id=outline.id,
-                        project_id=outline.project_id,
-                        name=gp.name,
-                        type=gp.type or "",
-                        description=gp.description or "",
-                        position=index,
-                        arc_id=arc_id,
-                        created_at=now,
-                        updated_at=now,
-                    )
-                )
-            )
-
-        if not generated.plot_points:
-            warnings.append("未生成情节点")
-        return arcs, plot_points, warnings
+        assert self._generator is not None  # confirm_replace 入口已守卫（收窄）
+        return await self._generator.materialize_generated(
+            generated=generated,
+            project_id=outline.project_id,
+            outline_id=outline.id,
+        )

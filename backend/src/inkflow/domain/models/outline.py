@@ -595,8 +595,9 @@ class OutlineGenerateRequest(BaseModel):
         num_chapters: 可选规划章节数提示（1-100）.
         save: True=自动落库；False=仅返回预览（不创建任何实体）.
         model: 覆盖项目默认模型（格式 provider/model_name）.
-        target_outline_id: 覆盖目标大纲（仅 mode="replace" 有效；缺省 None）.
-        mode: 生成模式；"new"=生成即新建（现行为），"replace"=覆盖目标大纲
+        target_outline_id: 目标大纲 UUID（mode="new"+save=true=追加至其末尾 max+1，#668；
+            mode="replace"=覆盖其全部情节点，#669 需用户确认；缺省 None=生成即新建）.
+        mode: 生成模式；"new"=生成即新建/追加（现行为），"replace"=覆盖目标大纲
             全部情节点（#669，需用户确认后应用）.
     """
 
@@ -606,8 +607,8 @@ class OutlineGenerateRequest(BaseModel):
     num_chapters: int | None = None
     save: bool = True
     model: str | None = None
-    target_outline_id: uuid.UUID | None = None  # 覆盖目标大纲（仅 mode="replace" 有效）
-    mode: str = "new"  # "new"=生成即新建（现行为）/ "replace"=覆盖目标大纲情节点
+    target_outline_id: uuid.UUID | None = None  # 目标大纲（#668 追加 / #669 覆盖；缺省 None=新建）
+    mode: str = "new"  # "new"=生成即新建/追加（现行为）/ "replace"=覆盖目标大纲情节点（#669）
 
     @field_validator("name")
     @classmethod
@@ -649,12 +650,12 @@ class OutlineGenerateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_mode_target(self) -> OutlineGenerateRequest:
-        """交叉校验 mode/target_outline_id（#669）：replace 必须指定目标大纲；
-        new 模式不允许携带目标大纲."""
+        """交叉校验 mode/target_outline_id（#669）：replace 必须指定目标大纲。
+
+        new 模式携带 target_outline_id 合法（#668 追加语义）。
+        """
         if self.mode == "replace" and self.target_outline_id is None:
             raise ValueError("覆盖模式必须指定目标大纲")
-        if self.mode == "new" and self.target_outline_id is not None:
-            raise ValueError("目标大纲仅在覆盖模式下有效")
         return self
 
 

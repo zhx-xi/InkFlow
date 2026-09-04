@@ -39,7 +39,7 @@ from inkflow.domain.models.outline import (
 )
 from inkflow.domain.models.project import Project, ProjectConfig
 from inkflow.domain.ports.llm_client import ChatResponse, LLMClientProtocol
-from inkflow.domain.ports.outline_errors import OutlineNotFoundError
+from inkflow.domain.ports.outline_errors import OutlineNotFoundError, OutlineServiceError
 from inkflow.domain.ports.outline_repository import OutlineRepositoryProtocol
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.prompt_template import (
@@ -279,15 +279,18 @@ class TestOutlineGenerateRequestReplaceValidation:
     def test_a1_replace_mode_cross_field_validation_red(self) -> None:
         """A1【R】mode 交叉校验：
         replace 缺 target_outline_id → 「覆盖模式必须指定目标大纲」;
-        new 带 target_outline_id → 「目标大纲仅在覆盖模式下有效」;
-        mode 非法 → 「生成模式只能为 new/replace」。
-        （RED 期字段不存在，pydantic 忽略未知字段 → 三条均 DID NOT RAISE。）"""
+        mode 非法 → 「生成模式只能为 new/replace」;
+        new 带 target_outline_id = #668 追加合法态（rebase 拍板：字段双模共享，
+        不校验——原「目标大纲仅在覆盖模式下有效」条款撤销）。
+        （RED 期字段不存在，pydantic 忽略未知字段 → 前两条均 DID NOT RAISE。）"""
         with pytest.raises(ValidationError, match="覆盖模式必须指定目标大纲"):
             OutlineGenerateRequest(project_id=PID, mode="replace")
-        with pytest.raises(ValidationError, match="目标大纲仅在覆盖模式下有效"):
-            OutlineGenerateRequest(project_id=PID, mode="new", target_outline_id=TARGET_ID)
         with pytest.raises(ValidationError, match="生成模式只能为 new/replace"):
             OutlineGenerateRequest(project_id=PID, mode="append")
+        # 追加语义合法（#911 已合入）：new + target 不抛
+        ok = OutlineGenerateRequest(project_id=PID, target_outline_id=TARGET_ID)
+        assert ok.mode == "new"
+        assert ok.target_outline_id == TARGET_ID
 
     def test_a2_dto_defaults_backward_compatible_guard(self) -> None:
         """A2【G】默认值向后兼容护栏：request 默认 mode=="new" 且 target_outline_id
@@ -672,3 +675,19 @@ class TestConfirmReplaceBranchCoverage:
                 project_info="项目名：测试项目",
                 default_model=DEFAULT_MODEL,
             )
+
+
+class TestConfirmReplaceGeneratorGuard:
+    """A18【G｜supp】补测：物化委托依赖生成器——未注入 → OutlineServiceError（配置错误）。"""
+
+    async def test_a18_confirm_without_generator_raises(self, mock_repo) -> None:
+        """A18 confirm 应用期生成器未注入 → OutlineServiceError「大纲生成器未配置」，
+        且零情节点破坏（hard_delete_point/add_point 未调用——物化前失败）。"""
+        outline, old1, old2 = _staged_outline()
+        mock_repo.get = AsyncMock(return_value=outline)
+        mock_repo.list_points = AsyncMock(return_value=[old1, old2])
+        svc = OutlineService(repository=mock_repo)  # generator 缺省 None
+        with pytest.raises(OutlineServiceError, match="大纲生成器未配置"):
+            await svc.confirm_replace(TARGET_ID, approved=True)
+        mock_repo.hard_delete_point.assert_not_awaited()
+        mock_repo.add_point.assert_not_awaited()
