@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 import inkflow
 from inkflow.api.deps import get_provider_config_service
+from inkflow.api.middleware.correlation import CorrelationIdMiddleware
 from inkflow.api.middleware.docs_gate import DocsGateMiddleware
 from inkflow.api.middleware.token_auth import TokenAuthMiddleware
 from inkflow.api.routers import (
@@ -239,6 +240,10 @@ app.add_middleware(TokenAuthMiddleware)
 #       后注册者先执行——非 debug /docs /redoc 404 先于 token 401；debug 透传后
 #       token 豁免语义不变） ----
 app.add_middleware(DocsGateMiddleware)
+
+# ---- X-Correlation-Id 沿用（B4 #496，纯 ASGI；注册在 DocsGate 之后 = 最外层：
+#       请求最早进入即设置 contextvar，覆盖整个请求生命周期的埋点链路） ----
+app.add_middleware(CorrelationIdMiddleware)
 
 
 # ---- 全局异常处理：RAG 向量库不可用（#341，覆盖端点构造期与前置刷新冒泡）----

@@ -90,12 +90,28 @@ class TestMessageKeyCatalog:
         assert not mismatched, f"zh/en 占位符不一致：{mismatched}"
 
     def test_registered_log_keys_used_in_src(self) -> None:
-        """目录中 log.event.*/log.check.* 键必须至少被 src 引用一处（防死词条）。"""
+        """目录中 log.event.*/log.check.* 键必须至少被 src 引用一处（防死词条）。
+
+        #496 契约升级：kernel_* 五键的引用方是 **Electron 主进程**（frontend/packages/
+        electron/src/main.ts 经 createMainLogger 上报，#892 交付），不在 backend src 的
+        AST 扫描面内——日志页消费这些键（GET /i18n/messages 渲染）。列入跨端豁免，
+        防误判死词条；豁免清单外的新键仍受本测试守护。
+        """
         keys = set(_collect_semantic_keys())
+        # 跨端引用豁免（消费者 = Electron 主进程 main.ts，非 backend src）
+        cross_surface = {
+            "log.event.kernel_ready",
+            "log.event.kernel_failure",
+            "log.event.kernel_exit",
+            "log.event.kernel_spawn_error",
+            "log.event.kernel_crash",
+        }
         zh = _load_catalog("zh")
         dead = sorted(
             k
             for k in zh
-            if (k.startswith("log.event.") or k.startswith("log.check.")) and k not in keys
+            if (k.startswith("log.event.") or k.startswith("log.check."))
+            and k not in keys
+            and k not in cross_surface
         )
         assert not dead, f"目录有但 src 未引用的死键：{dead}"

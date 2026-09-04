@@ -16,6 +16,7 @@ import {
   ListTree,
   PenLine,
   Search,
+  ScrollText,
   Settings,
   Sparkles,
   Users,
@@ -70,6 +71,7 @@ const SESSION_ITEMS: NavItemDef[] = [
 const SYSTEM_ITEMS: NavItemDef[] = [
   { key: 'agent', href: '/settings?cat=agent', labelKey: 'nav.agent', icon: Bot },
   { key: 'memory', href: '/memory', labelKey: 'nav.memory', icon: Brain },
+  { key: 'logs', href: '/logs', labelKey: 'nav.logs', icon: ScrollText },
   { key: 'settings', href: '/settings', labelKey: 'nav.settings', icon: Settings },
 ];
 

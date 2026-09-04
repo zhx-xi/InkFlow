@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from inkflow.logging.correlation import (
+    get_request_correlation_id,
+    reset_request_correlation_id,
+    set_request_correlation_id,
+)
 from inkflow.logging.instrument import instrument
 from inkflow.logging.schema import (
     StructuredLogRecord,
@@ -15,7 +20,10 @@ __all__ = [
     "StructuredLogRecord",
     "StructuredLogStore",
     "bind_correlation",
+    "get_request_correlation_id",
     "instrument",
     "log_structured",
     "mask_fields",
+    "reset_request_correlation_id",
+    "set_request_correlation_id",
 ]

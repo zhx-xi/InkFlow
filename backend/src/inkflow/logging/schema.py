@@ -12,6 +12,8 @@ from typing import Literal, cast
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from inkflow.logging.correlation import get_request_correlation_id
+
 CALLER_TYPES: tuple[str, ...] = ("api", "agent", "llm", "tool", "cli", "mcp", "frontend")
 
 #: caller_type 枚举类型（spec §2.2）
@@ -135,7 +137,8 @@ def log_structured(
     """构建 StructuredLogRecord → 脱敏 params → logger.bind(extra).log(level, message)。
 
     extra = model_dump 去掉 timestamp/level/logger 且剔除值为 None 的可选字段；
-    correlation_id 缺省时落空串（模型必填，装饰器链路可不传）。
+    correlation_id 解析链：显式参数 > contextvar（请求头沿用）> 空串
+    （B4 #496；无 contextvar 时缺省空串语义与现状逐字一致，零翻转）。
     """
     masked_params = cast(dict, mask_fields(params or {}))
     record = StructuredLogRecord(
@@ -146,7 +149,9 @@ def log_structured(
         event=event,
         message_key=message_key,
         params=masked_params,
-        correlation_id=correlation_id if correlation_id is not None else "",
+        correlation_id=(
+            correlation_id if correlation_id is not None else get_request_correlation_id()
+        ),
         trace_id=trace_id,
         span_id=span_id,
         project_id=project_id,

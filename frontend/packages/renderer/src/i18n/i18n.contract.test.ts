@@ -20,6 +20,9 @@ import { chatUxEn, chatUxZh } from './chat-ux';
 import { en } from './en';
 import { extractEn, extractZh } from './extract-keys';
 import { logEn, logZh } from './log';
+// #496（contract-496 §4.2）：logs-ux 域（日志页 UI 文案）并入 combo —— RED 期该模块不存在，
+// 本文件收集期 module-not-found（预期【R】），GREEN 新建 logs-ux.ts（导出 logsUxZh/logsUxEn）即愈
+import { logsUxEn, logsUxZh } from './logs-ux';
 import { roleEnhanceEn, roleEnhanceZh } from './role-enhance';
 import { sessionUxEn, sessionUxZh } from './session-ux';
 import { sessionsUxEn, sessionsUxZh } from './sessions-ux';
@@ -43,6 +46,8 @@ const comboZh: Dict = {
   ...sessionUxZh,
   ...logZh,
   ...bookZh,
+  // #496 §4.2：logs-ux 域（GREEN 建文件即愈）
+  ...logsUxZh,
 } as Dict;
 const comboEn: Dict = {
   ...en,
@@ -56,6 +61,8 @@ const comboEn: Dict = {
   ...sessionUxEn,
   ...logEn,
   ...bookEn,
+  // #496 §4.2：logs-ux 域（GREEN 建文件即愈）
+  ...logsUxEn,
 } as Dict;
 
 describe('F2 i18n 契约：key 对称', () => {
@@ -188,10 +195,16 @@ describe('F57 i18n 契约：log 域键对称 + 后端 messages 对齐', () => {
 
   it('log.event.* 键与后端 messages 的 log.event.* 键对齐（同一 msgid 命名空间）', () => {
     // 后端 messages zh.json（S1 已落盘，2026-09-03）定义的 log.event.* 键——前端 log.ts 必须包含同 msgid。
+    // #496（contract-496 §4.1）：追加 kernel_* 5 键（内核生命周期事件，electron 主进程上报链路 #892 已就绪）——【R】扩 5 键
     const backendLogKeys = [
       'log.event.create_chapter',
       'log.event.update_project',
       'log.event.delete_project',
+      'log.event.kernel_ready',
+      'log.event.kernel_failure',
+      'log.event.kernel_exit',
+      'log.event.kernel_spawn_error',
+      'log.event.kernel_crash',
     ];
     for (const k of backendLogKeys) {
       expect(k in logZh, `${k} 应在前端 logZh 字典（与后端 messages 对齐）`).toBe(true);

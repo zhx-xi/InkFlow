@@ -9047,7 +9047,7 @@ export interface operations {
             query?: {
                 level?: string | null;
                 caller_type?: string | null;
-                project_id?: number | null;
+                project_id?: string | null;
                 from?: string | null;
                 to?: string | null;
                 q?: string | null;
