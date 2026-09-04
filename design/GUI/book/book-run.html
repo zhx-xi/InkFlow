@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="paper">
+<head>
+<meta charset="utf-8" />
+<title>InkFlow 书级运行面板 — #903 状态徽标档位色 + progress_reason 简图原型</title>
+<style>
+/* ═══════════ 设计 Token（对齐 frontend/packages/renderer/src/theme/tokens.css） ═══════════ */
+:root{
+  --radius-s:4px; --radius-m:6px; --radius-l:8px;
+  --font-ui:"PingFang SC","Microsoft YaHei","Noto Sans SC","Segoe UI",sans-serif;
+  --font-serif:"Noto Serif SC","Source Han Serif SC","SimSun","宋体",Georgia,serif;
+  --dur:180ms; --ease:cubic-bezier(0.16,1,0.3,1);
+}
+[data-theme="paper"]{
+  --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F3F1EC; --surface-3:#EBE8E1;
+  --ink:#2A2A28; --ink-2:#6B6A66; --ink-3:#A4A29B; --line:#E5E2DA;
+  --accent:#3B5B7C; --accent-ink:#FFFFFF; --accent-hover:#325370; --accent-weak:rgba(59,91,124,.10);
+  --ring:rgba(59,91,124,.38); --ok:#4A7C59; --warn:#B07A2E; --err:#B04A3A;
+  --shadow:0 1px 2px rgba(42,42,40,.05),0 4px 16px rgba(42,42,40,.05);
+}
+[data-theme="night"]{
+  --bg:#1A1A18; --surface:#22221F; --surface-2:#282823; --surface-3:#4A493F;
+  --ink:#E8E6E1; --ink-2:#9B988F; --ink-3:#6E6B63; --line:#42413A;
+  --accent:#C9A24B; --accent-ink:#1A1A18; --accent-hover:#B8923F; --accent-weak:rgba(201,162,75,.13);
+  --ring:rgba(201,162,75,.45); --ok:#8FAE8E; --warn:#C9A24B; --err:#C97B63;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.25);
+}
+[data-theme="ink"]{
+  --bg:#F3EEE2; --surface:#FAF6EC; --surface-2:#EFE9DA; --surface-3:#C9BFA4;
+  --ink:#2B2A26; --ink-2:#6E6A5E; --ink-3:#A49F90; --line:#CBC0A4;
+  --accent:#A6402E; --accent-ink:#FAF6EC; --accent-hover:#96382A; --accent-weak:rgba(166,64,46,.09);
+  --ring:rgba(166,64,46,.38); --ok:#5A7A58; --warn:#9A7B3C; --err:#A6402E;
+  --shadow:0 1px 2px rgba(43,42,38,.06),0 4px 16px rgba(43,42,38,.06);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-ui);font-size:13px;line-height:1.5}
+button{font-family:inherit;cursor:pointer}
+.stage{max-width:720px;margin:32px auto;padding:0 16px}
+.caption{font-size:11px;color:var(--ink-3);margin:0 0 8px}
+
+/* ═══════════ BookRunPanel 卡（对齐 components/BookRunPanel.tsx） ═══════════ */
+.book-run-panel{border:1px solid var(--line);border-radius:var(--radius-m);background:var(--surface-2);padding:12px}
+.row-status{display:flex;align-items:center;gap:8px}
+.lbl{font-size:12px;color:var(--ink-3)}
+/* 状态徽标：#903 档位色（completed=ok 绿 / failed=err 红 / degraded=warn 橙 / 其他=中性） */
+.run-status{border-radius:var(--radius-s);padding:2px 6px;font-size:12px;background:var(--surface-3);color:var(--ink)}
+body[data-state="completed"] .run-status{background:color-mix(in srgb,var(--ok) 10%,transparent);color:var(--ok)}
+body[data-state="failed"] .run-status{background:color-mix(in srgb,var(--err) 10%,transparent);color:var(--err)}
+body[data-state="degraded"] .run-status,body[data-state="degraded-expanded"] .run-status{background:color-mix(in srgb,var(--warn) 10%,transparent);color:var(--warn)}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.tbtn{border:1px solid var(--line);border-radius:var(--radius-m);background:none;color:var(--ink-2);font-size:12px;padding:2px 8px}
+.tbtn:hover{background:var(--surface-3)}
+.tbtn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:var(--accent-weak)}
+
+/* progress_reason 块（#903 新增；仅 failed/degraded 且非空渲染，克制警示条） */
+.run-progress-reason{border:1px solid var(--line);border-radius:var(--radius-m);background:var(--surface);padding:6px 8px;font-size:12px;color:var(--ink-2)}
+.run-progress-reason .r-label{display:block;color:var(--err);font-weight:500;margin-bottom:2px}
+body[data-state="degraded"] .run-progress-reason .r-label,body[data-state="degraded-expanded"] .run-progress-reason .r-label{color:var(--warn)}
+.run-progress-reason .r-text{white-space:pre-wrap;word-break:break-all}
+body[data-state="degraded"] .run-progress-reason .r-text,
+body[data-state="failed"] .run-progress-reason .r-text{
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.r-toggle{border:none;background:none;color:var(--accent);font-size:12px;padding:2px 0 0}
+body[data-state="failed"] .r-text{display:block;overflow:visible}
+
+/* 计数 + 进度条 */
+.counters{font-size:13px;color:var(--ink-2);display:flex;flex-direction:column;gap:2px}
+.bar{font-size:13px;color:var(--ink-2)}
+.bar-track{height:6px;width:100%;border-radius:999px;background:var(--surface-3);overflow:hidden;margin-top:4px}
+.bar-fill{height:100%;border-radius:999px;background:color-mix(in srgb,var(--accent) 70%,transparent)}
+/* trace 行徽标（五态，既有 badge-* 语义先例） */
+.trace{display:flex;flex-direction:column;gap:4px}
+.trace-row{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--radius-m);background:var(--surface);padding:6px 8px}
+.badge{border-radius:var(--radius-s);padding:2px 6px;font-size:12px;color:var(--ink-2)}
+.badge-done{background:color-mix(in srgb,var(--ok) 10%,transparent);color:var(--ok)}
+.badge-failed{background:color-mix(in srgb,var(--err) 10%,transparent);color:var(--err)}
+.badge-pending{background:var(--surface-3);color:var(--ink-3)}
+
+/* demo-bar */
+.demo-bar{position:fixed;right:16px;bottom:16px;display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:var(--radius-l);background:var(--surface);box-shadow:var(--shadow);padding:8px 12px;font-size:12px;color:var(--ink-2)}
+.demo-bar select{font:inherit;border:1px solid var(--line);border-radius:var(--radius-m);background:var(--surface);color:var(--ink);padding:2px 6px}
+/* 状态机：body[data-state] 驱动视图 */
+body[data-state="completed"] .run-progress-reason,
+body[data-state="running"] .run-progress-reason{display:none}
+body[data-state="degraded"] .r-toggle::after{content:"展开"}
+body[data-state="degraded-expanded"] .r-toggle::after{content:"收起"}
+body[data-state="degraded-expanded"] .run-progress-reason .r-text{display:block;-webkit-line-clamp:unset;overflow:visible}
+</style>
+</head>
+<body data-state="degraded">
+<div class="stage">
+  <p class="caption">#903 增量：运行状态徽标按档位着色（completed 绿 / failed 红 / degraded 橙），degraded/failed 且 progress_reason 非空时渲染「失败原因」块（&gt;200 字 3 行截断 + 展开/收起）。</p>
+  <div class="book-run-panel" data-testid="book-run-panel">
+    <div class="row-status">
+      <span class="lbl">运行状态</span>
+      <span class="run-status" data-testid="run-status">degraded</span>
+    </div>
+    <div class="toolbar">
+      <button class="tbtn">表演</button><button class="tbtn" aria-pressed="true">仪表</button><button class="tbtn">无声</button><button class="tbtn">回归摘要</button>
+    </div>
+    <div class="run-progress-reason" data-testid="run-progress-reason">
+      <span class="r-label" data-testid="run-progress-reason-label">失败原因</span>
+      <p class="r-text" data-testid="run-progress-reason-text">o-ch12: RuntimeError: LLM provider 调用失败（credential invalid, retried 3 times）
+o-ch13: ConnectionError: ollama daemon 未响应（127.0.0.1:11434 refused）
+o-ch14: RuntimeError: 上下文超限，章纲超 12k tokens 无法装配
+o-ch15: ConnectionError: 网络抖动导致流式中断</p>
+      <button class="r-toggle" data-testid="run-progress-reason-toggle"></button>
+    </div>
+    <div class="counters">
+      <span>已写章节: 12 / 15</span>
+      <span>Agent 调用: 34 / 60</span>
+      <span>Token 用量: 182340 / 400000</span>
+    </div>
+    <div class="bar">已写章节: 12 / 15
+      <div class="bar-track"><div class="bar-fill" style="width:80%"></div></div>
+    </div>
+    <div class="trace">
+      <div class="trace-row"><span class="badge badge-done">已完成</span> 第十二章·论剑</div>
+      <div class="trace-row"><span class="badge badge-failed">失败</span> 第十三章·夜袭</div>
+      <div class="trace-row"><span class="badge badge-pending">待写</span> 第十五章·归山</div>
+    </div>
+  </div>
+</div>
+<div class="demo-bar">
+  <label>状态 <select id="stateSel">
+    <option value="running">running（中性）</option>
+    <option value="completed">completed（绿）</option>
+    <option value="failed">failed（红·已展开）</option>
+    <option value="degraded">degraded（橙·截断）</option>
+    <option value="degraded-expanded">degraded（橙·展开）</option>
+  </select></label>
+  <label>主题 <select id="themeSel">
+    <option value="paper">素笺</option><option value="night">夜墨</option><option value="ink">古砚</option>
+  </select></label>
+</div>
+<script>
+const STATES=["running","completed","failed","degraded","degraded-expanded"];
+function setState(s){document.body.dataset.state=s;
+  document.querySelector('.run-status').textContent = s.startsWith('degraded')?'degraded':(s==='completed'?'completed':(s==='failed'?'failed':'running'));
+}
+function setTheme(th){document.documentElement.dataset.theme=th;document.body.dataset.theme=th;}
+document.getElementById('stateSel').addEventListener('change',e=>setState(e.target.value));
+document.getElementById('themeSel').addEventListener('change',e=>setTheme(e.target.value));
+const init=location.hash.replace('#','');
+if(STATES.includes(init)){setState(init);document.getElementById('stateSel').value=init;}
+window.addEventListener('hashchange',()=>{const s=location.hash.replace('#','');if(STATES.includes(s)){setState(s);document.getElementById('stateSel').value=s;}});
+</script>
+</body>
+</html>

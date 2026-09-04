@@ -127,6 +127,8 @@ export interface RunStatusResponse {
   /** F44 阶段3 #337：HITL 暂停标志 + 确认载荷（可选，向后兼容） */
   waiting_hitl?: boolean;
   hitl_payload?: HitlPayload | null;
+  /** #903/#897 后端门控透出：仅 failed/degraded 非空，其余状态恒 null */
+  progress_reason?: string | null;
 }
 
 /** F44 阶段3 #337：卷级 HITL 确认载荷（卷边界 / 卷失败两种形态） */

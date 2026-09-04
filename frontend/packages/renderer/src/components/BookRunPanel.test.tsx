@@ -54,6 +54,28 @@
  * i18n key（GREEN 补 zh.ts/en.ts）：book.run.pause / book.run.resume / book.run.density.performance /
  * book.run.density.dashboard / book.run.density.silent / book.run.summary / book.diff.close
  * （断言锚 testid，不锚具体文案——缺 key 时 t() 返回 key 本身，避免 RED 期误判）
+ *
+ * ⚠️ #903（P2）运行状态徽标三档语义类 + progress_reason 渲染增量——GREEN 必须追加：
+ *
+ * - run-status 徽标档位语义类（书级运行终态三档，先例 ExecutionTraceRow badge-<status> 哲学；
+ *   类前缀 run-badge-* 与章级 badge-* 区分；低饱和主题 token ok/warn/err 配色由 GREEN 决定，
+ *   测试只钉语义类不钉色值）：
+ *   completed → run-badge-completed；failed → run-badge-failed；degraded → run-badge-degraded
+ *   互斥：任一状态只含自己的档位类、不含另两档；unmapped 状态（running 等）三档皆不含（中性兜底）
+ *   徽标文本保持 runStatus 原文透传（completed/failed/degraded 原文，非 i18n 文案）
+ * - progress_reason 渲染（store 新增 progressReason: string | null，loadRunStatus 透传
+ *   res.progress_reason ?? null；显示条件 = (runStatus==='failed'||runStatus==='degraded')
+ *   && progressReason 非空，两条件缺一不渲染——防渲染 "null"/空盒）：
+ *   testid：run-progress-reason（块容器）/ run-progress-reason-label（标签元素）/
+ *   run-progress-reason-text（理由文本节点容器，line-clamp-3 挂载于此）/
+ *   run-progress-reason-toggle（长文展开/收起按钮，仅 >200 字符时渲染）
+ *   长文语义（先例 memory-summary-expand #803）：>200 字符折叠（line-clamp-3）+ 渲染 toggle；
+ *   点击 toggle 展开（移除 line-clamp-3）→ 再点收起（恢复）；短文（<=200）不渲染 toggle
+ * - 轮询：degraded 为终态（#901 后端新终态）→ 与 completed 同族停止轮询
+ *
+ * i18n key（GREEN 补 zh.ts/en.ts）：book.run.reason（zh 失败原因 / en Failure reason）/
+ * book.run.reason.expand（zh 展开 / en Expand）/ book.run.reason.collapse（zh 收起 / en Collapse）
+ * （断言锚 testid，不锚具体文案——缺 key 时 t() 返回 key 本身，避免 RED 期误判）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
@@ -493,5 +515,255 @@ describe('BookRunPanel — 阶段4 干预工具栏 + 密度切换 + 摘要面板
       clickSpy.mockRestore();
       createElementSpy.mockRestore();
     }
+  });
+});
+
+describe('BookRunPanel — #903 状态徽标档位色 + progress_reason 渲染', () => {
+  const progressDoneFailed = { 'o-c1': 'done', 'o-c2': 'failed' };
+  const progressInFlight = { 'o-c1': 'in_progress' };
+  const counters1 = { max_chapters: 1, max_agent_calls: 1, agent_calls: 1, chapters_written: 1 };
+  const degradedReason = 'outline o-c2: RuntimeError: 章节生成失败';
+
+  describe('档位徽标类（run-badge-* 三档互斥，视觉类先例 badge-<status> 只钉语义类不钉色值）', () => {
+    it.each([
+      ['completed', 'run-badge-completed', 'run-badge-failed', 'run-badge-degraded'],
+      ['failed', 'run-badge-failed', 'run-badge-completed', 'run-badge-degraded'],
+      ['degraded', 'run-badge-degraded', 'run-badge-completed', 'run-badge-failed'],
+    ])('status=%s → 徽标含 %s 且不含另两档（互斥）+ 文本原文透传', async (status, own, otherA, otherB) => {
+      apiFetchMock.mockResolvedValue({
+        run_id: 'wp-1',
+        status,
+        progress: progressDoneFailed,
+        counters: counters1,
+      });
+      useBookStore.setState({
+        runId: 'wp-1',
+        runStatus: status,
+        progress: progressDoneFailed,
+        counters: null,
+      });
+      render(<BookRunPanel />);
+      const el = await screen.findByTestId('run-status');
+      expect(el).toHaveClass(own);
+      expect(el).not.toHaveClass(otherA);
+      expect(el).not.toHaveClass(otherB);
+      expect(el).toHaveTextContent(status);
+    });
+
+    it('status=running（无档位映射）→ 三档语义类皆不含（中性兜底，确认型）', async () => {
+      apiFetchMock.mockResolvedValue({
+        run_id: 'wp-1',
+        status: 'running',
+        progress: progressInFlight,
+        counters: counters1,
+      });
+      useBookStore.setState({
+        runId: 'wp-1',
+        runStatus: 'running',
+        progress: progressInFlight,
+        counters: null,
+      });
+      render(<BookRunPanel />);
+      const el = await screen.findByTestId('run-status');
+      expect(el).not.toHaveClass('run-badge-completed');
+      expect(el).not.toHaveClass('run-badge-failed');
+      expect(el).not.toHaveClass('run-badge-degraded');
+    });
+  });
+
+  describe('progress_reason 渲染（显示条件 = failed/degraded && 非空，两条件缺一不渲染）', () => {
+    it('degraded + progress_reason 非空 → run-progress-reason 块 + 标签 + 理由文本渲染', async () => {
+      apiFetchMock.mockResolvedValue({
+        run_id: 'wp-1',
+        status: 'degraded',
+        progress: progressDoneFailed,
+        counters: counters1,
+        progress_reason: degradedReason,
+      });
+      // RED 期播种合法：Zustand 合并未知键（BookState 尚无 progressReason，GREEN 后生效）
+      useBookStore.setState({
+        runId: 'wp-1',
+        runStatus: 'degraded',
+        progressReason: degradedReason,
+        progress: progressDoneFailed,
+        counters: null,
+      });
+      render(<BookRunPanel />);
+      const block = await screen.findByTestId('run-progress-reason');
+      expect(screen.getByTestId('run-progress-reason-label')).toBeInTheDocument();
+      expect(screen.getByTestId('run-progress-reason-text')).toHaveTextContent(degradedReason);
+      expect(block).toHaveTextContent(degradedReason);
+    });
+
+    it('failed + progress_reason 非空 → 同契约渲染块（两种终态同一显示契约）', async () => {
+      apiFetchMock.mockResolvedValue({
+        run_id: 'wp-1',
+        status: 'failed',
+        progress: progressDoneFailed,
+        counters: counters1,
+        progress_reason: 'RuntimeError: 章节生成失败',
+      });
+      useBookStore.setState({
+        runId: 'wp-1',
+        runStatus: 'failed',
+        progressReason: 'RuntimeError: 章节生成失败',
+        progress: progressDoneFailed,
+        counters: null,
+      });
+      render(<BookRunPanel />);
+      expect(await screen.findByTestId('run-progress-reason')).toBeInTheDocument();
+    });
+
+    it('completed + progress_reason null → 不渲染（终态无理由，守护）', async () => {
+      apiFetchMock.mockResolvedValue({
+        run_id: 'wp-1',
+        status: 'completed',
+        progress: { 'o-c1': 'done' },
+        counters: counters1,
+        progress_reason: null,
+      });
+      useBookStore.setState({
+        runId: 'wp-1',
+        runStatus: 'completed',
+        progressReason: null,
+        progress: { 'o-c1': 'done' },
+        counters: null,
+      });
+      render(<BookRunPanel />);
+      await screen.findByTestId('run-status');
+      expect(screen.queryByTestId('run-progress-reason')).not.toBeInTheDocument();
+    });
+
+    it('degraded 但 progress_reason null（状态门控空值）→ 块不得出现（防渲染 "null"/空盒，守护）', async () => {
+      apiFetchMock.mockResolvedValue({
+        run_id: 'wp-1',
+        status: 'degraded',
+        progress: progressDoneFailed,
+        counters: counters1,
+        progress_reason: null,
+      });
+      useBookStore.setState({
+        runId: 'wp-1',
+        runStatus: 'degraded',
+        progressReason: null,
+        progress: progressDoneFailed,
+        counters: null,
+      });
+      render(<BookRunPanel />);
+      await screen.findByTestId('run-status');
+      expect(screen.queryByTestId('run-progress-reason')).not.toBeInTheDocument();
+    });
+
+    it('running → 块不出现（非终态无理由，守护）', async () => {
+      apiFetchMock.mockResolvedValue({
+        run_id: 'wp-1',
+        status: 'running',
+        progress: progressInFlight,
+        counters: counters1,
+        progress_reason: null,
+      });
+      useBookStore.setState({
+        runId: 'wp-1',
+        runStatus: 'running',
+        progressReason: null,
+        progress: progressInFlight,
+        counters: null,
+      });
+      render(<BookRunPanel />);
+      await screen.findByTestId('run-status');
+      expect(screen.queryByTestId('run-progress-reason')).not.toBeInTheDocument();
+    });
+
+    it('长理由（>200 字符）→ 折叠 line-clamp-3 + run-progress-reason-toggle；点击展开 → 再点收起', async () => {
+      const user = userEvent.setup();
+      const longReason = `章节生成失败（o-c2）：${'E'.repeat(250)}`;
+      apiFetchMock.mockResolvedValue({
+        run_id: 'wp-1',
+        status: 'degraded',
+        progress: progressDoneFailed,
+        counters: counters1,
+        progress_reason: longReason,
+      });
+      useBookStore.setState({
+        runId: 'wp-1',
+        runStatus: 'degraded',
+        progressReason: longReason,
+        progress: progressDoneFailed,
+        counters: null,
+      });
+      render(<BookRunPanel />);
+      await screen.findByTestId('run-progress-reason');
+      const textEl = screen.getByTestId('run-progress-reason-text');
+      // 初始折叠：line-clamp-3 挂载于 run-progress-reason-text + toggle 渲染
+      expect(textEl.className).toContain('line-clamp-3');
+      const toggle = screen.getByTestId('run-progress-reason-toggle');
+      await user.click(toggle);
+      expect(textEl.className).not.toContain('line-clamp-3');
+      await user.click(toggle);
+      expect(textEl.className).toContain('line-clamp-3');
+    });
+
+    it('短理由（<=200）→ 不渲染 run-progress-reason-toggle（无需折叠）', async () => {
+      apiFetchMock.mockResolvedValue({
+        run_id: 'wp-1',
+        status: 'degraded',
+        progress: progressDoneFailed,
+        counters: counters1,
+        progress_reason: degradedReason,
+      });
+      useBookStore.setState({
+        runId: 'wp-1',
+        runStatus: 'degraded',
+        progressReason: degradedReason,
+        progress: progressDoneFailed,
+        counters: null,
+      });
+      render(<BookRunPanel />);
+      await screen.findByTestId('run-progress-reason');
+      expect(screen.queryByTestId('run-progress-reason-toggle')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('degraded 终态轮询停止（#901 新终态，确认型）', () => {
+    it('running → 轮询返回 degraded → 停止（再推进 2s 仍只拉 2 次）', async () => {
+      // setup.ts 全局包装：无参 useFakeTimers() 默认 shouldAdvanceTime=true
+      vi.useFakeTimers();
+      try {
+        apiFetchMock
+          .mockResolvedValueOnce({
+            run_id: 'wp-1',
+            status: 'running',
+            progress: {},
+            counters: counters1,
+          })
+          .mockResolvedValueOnce({
+            run_id: 'wp-1',
+            status: 'degraded',
+            progress: progressDoneFailed,
+            counters: counters1,
+            progress_reason: null,
+          });
+        useBookStore.setState({
+          runId: 'wp-1',
+          runStatus: 'running',
+          progress: {},
+          counters: null,
+        });
+        render(<BookRunPanel />);
+        // 首次加载 + 推进 1s → 第二次轮询（degraded）
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1000);
+        });
+        expect(apiFetchMock).toHaveBeenCalledTimes(2);
+        expect(await screen.findByTestId('run-status')).toHaveTextContent('degraded');
+        // 再推进 2s → 不再轮询（degraded 为终态，同族 completed）
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2000);
+        });
+        expect(apiFetchMock).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });

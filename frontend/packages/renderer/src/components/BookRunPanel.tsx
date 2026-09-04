@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useI18n } from '../i18n/useI18n';
+import { cn } from '../lib/cn';
 import { startPolling } from '../lib/polling';
 import { useBookStore } from '../stores/book';
 import type { InterveneDiff } from '../api/books';
@@ -20,11 +21,23 @@ function renderDiffText(diff: InterveneDiff): string {
   return diff.after ?? diff.before ?? '';
 }
 
+/** #903：书级运行终态三档语义钩子（先例 ExecutionTraceRow badge-<status>；测试只钉语义类不锁色值） */
+const RUN_BADGE_CLASSES: Record<string, string> = {
+  completed: 'run-badge-completed bg-ok/10 text-ok',
+  failed: 'run-badge-failed bg-err/10 text-err',
+  degraded: 'run-badge-degraded bg-warn/10 text-warn',
+};
+
+/** #903：终态失败原因折叠阈值（先例 memory EXPAND_THRESHOLD = 200） */
+const REASON_EXPAND_THRESHOLD = 200;
+
 export function BookRunPanel() {
   const { t } = useI18n();
   const [showSummary, setShowSummary] = useState(false);
+  const [reasonExpanded, setReasonExpanded] = useState(false);
   const runId = useBookStore((s) => s.runId);
   const runStatus = useBookStore((s) => s.runStatus);
+  const progressReason = useBookStore((s) => s.progressReason);
   const progress = useBookStore((s) => s.progress);
   const counters = useBookStore((s) => s.counters);
   const progressStats = useBookStore((s) => s.progressStats);
@@ -36,6 +49,11 @@ export function BookRunPanel() {
   const clearInterveneDiff = useBookStore((s) => s.clearInterveneDiff);
 
   const showTokens = counters?.max_tokens !== undefined && counters.tokens_used !== undefined;
+  const showReason =
+    (runStatus === 'failed' || runStatus === 'degraded') &&
+    progressReason !== null &&
+    progressReason.length > 0;
+  const reasonLong = progressReason !== null && progressReason.length > REASON_EXPAND_THRESHOLD;
   const barPercent =
     progressStats.total > 0 ? Math.min(100, Math.round((progressStats.done / progressStats.total) * 100)) : 0;
 
@@ -61,11 +79,40 @@ export function BookRunPanel() {
             <span className="text-[12px] text-ink-3">{t('book.run.status')}</span>
             <span
               data-testid="run-status"
-              className="rounded bg-surface-3 px-1.5 py-0.5 text-[12px] text-ink"
+              className={cn(
+                'rounded px-1.5 py-0.5 text-[12px]',
+                RUN_BADGE_CLASSES[runStatus ?? ''] ?? 'bg-surface-3 text-ink',
+              )}
             >
               {runStatus ?? '–'}
             </span>
           </div>
+          {showReason && progressReason !== null && (
+            <div
+              data-testid="run-progress-reason"
+              className="rounded border border-warn/30 bg-warn/10 px-2 py-1 text-[12px] text-ink-2"
+            >
+              <span data-testid="run-progress-reason-label" className="font-medium text-warn">
+                {t('book.run.reason')}
+              </span>
+              <p
+                data-testid="run-progress-reason-text"
+                className={cn('mt-0.5 leading-relaxed', !reasonExpanded && reasonLong && 'line-clamp-3')}
+              >
+                {progressReason}
+              </p>
+              {reasonLong && (
+                <button
+                  type="button"
+                  data-testid="run-progress-reason-toggle"
+                  className="mt-1 text-accent hover:underline"
+                  onClick={() => setReasonExpanded((v) => !v)}
+                >
+                  {reasonExpanded ? t('book.run.reason.collapse') : t('book.run.reason.expand')}
+                </button>
+              )}
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-1.5">
             {runStatus === 'running' && (
               <button
