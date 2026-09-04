@@ -34,7 +34,12 @@ from pydantic import ValidationError
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
-from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.http import (
+    LLM_TASK_TIMEOUT,
+    HttpApiError,
+    InkFlowHTTPClient,
+    map_http_error,
+)
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 from inkflow.logging import instrument
 
@@ -223,6 +228,7 @@ def style_analyze_cmd(
                     "chapter_ids": [str(c) for c in chapter_ids] if chapter_ids else None,
                     "llm_analysis": llm_analysis,
                 },
+                timeout=LLM_TASK_TIMEOUT,
             )
 
     report = _run(cli_ctx, _impl)

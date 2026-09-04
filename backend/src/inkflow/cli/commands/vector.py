@@ -30,7 +30,12 @@ from pydantic import ValidationError
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.domain.ports.vector_store import EntityType
-from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.http import (
+    LLM_TASK_TIMEOUT,
+    HttpApiError,
+    InkFlowHTTPClient,
+    map_http_error,
+)
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 from inkflow.logging import instrument
 
@@ -181,6 +186,7 @@ def vector_reindex_cmd(
             return await client.post(
                 f"/projects/{pid}/vector/reindex",
                 json={"entity_types": ([t.value for t in entity_types] if entity_types else None)},
+                timeout=LLM_TASK_TIMEOUT,
             )
 
     result = _run(cli_ctx, _impl)

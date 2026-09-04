@@ -217,6 +217,7 @@ class TestStyleAnalyze:
                 "chapter_ids": ["7a4f2c91-0000-4000-8000-000000000011"],
                 "llm_analysis": None,
             },
+            timeout=300.0,  # #926 迁移：LLM 长任务 per-request timeout
         )
 
     @pytest.mark.parametrize(
@@ -290,6 +291,7 @@ class TestStyleAnalyze:
                 "chapter_ids": None,
                 "llm_analysis": None,
             },
+            timeout=300.0,  # #926 迁移：LLM 长任务 per-request timeout
         )
 
     def test_analyze_llm_analysis_true_passthrough(self, cli_runner, fake_http_client):
@@ -304,6 +306,7 @@ class TestStyleAnalyze:
         fake_http_client.post.assert_awaited_once_with(
             f"/projects/{PID}/style/analyze",
             json={"text": TEXT, "chapter_ids": None, "llm_analysis": True},
+            timeout=300.0,  # #926 迁移：LLM 长任务 per-request timeout
         )
 
     def test_analyze_no_llm_analysis_false_passthrough(
@@ -320,6 +323,7 @@ class TestStyleAnalyze:
         fake_http_client.post.assert_awaited_once_with(
             f"/projects/{PID}/style/analyze",
             json={"text": TEXT, "chapter_ids": None, "llm_analysis": False},
+            timeout=300.0,  # #926 迁移：LLM 长任务 per-request timeout
         )
 
     def test_analyze_missing_source_exit_2(self, cli_runner, fake_http_client):

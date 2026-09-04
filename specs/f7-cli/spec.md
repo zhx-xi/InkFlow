@@ -262,6 +262,7 @@ inkflow --install-completion powershell    # 写入 $PROFILE
 | 上下文预算超限（F6） | `CONTEXT_BUDGET_EXCEEDED` | 上下文预算超限: protected 层需要 20000 tokens, 预算 15360 |
 | 配置非法 | `CONFIG_ERROR` | 未知配置项: foo.bar |
 | 数据库错误 | `DB_ERROR` | 数据库操作失败（不泄漏堆栈，loguru 记录详情） |
+| 请求超时（#926） | `TIMEOUT` | 请求超时（300s）：服务端任务可能仍在进行，请稍后用 list/get 查询结果，勿直接重试 |
 
 **二次确认**（project delete 等）: 非 `--json` 且无 `--force` 时交互确认（沿用 F1 spec §4.2）；`--json` 模式下二次确认**跳过**（脚本化场景不可交互），等效 `--force` 语义但仅在明确传入 `--force` 时执行删除 —— 即 `--json` + 无 `--force` 时删除操作报错 `VALIDATION_ERROR: 删除需 --force 或交互确认`。
 

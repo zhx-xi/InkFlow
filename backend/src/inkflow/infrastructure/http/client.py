@@ -61,6 +61,7 @@ class InkFlowHTTPClient:
     """内核 HTTP 客户端：base_url + X-InkFlow-Token 请求头 + 请求/SSE 流式方法。"""
 
     def __init__(self, handle: KernelHandle, timeout: float = 30.0) -> None:
+        self._default_timeout = timeout
         self._client = httpx.AsyncClient(
             base_url=f"http://127.0.0.1:{handle.port}/api/v1",
             headers={"X-InkFlow-Token": handle.token},
@@ -78,23 +79,68 @@ class InkFlowHTTPClient:
     ) -> None:
         await self._client.aclose()
 
-    async def get(self, path, *, params=None, json=None) -> dict:
-        return await self._request("GET", path, params=params, json=json)
+    async def get(
+        self, path, *, params=None, json=None, timeout: float | None = None
+    ) -> dict:
+        return await self._request(
+            "GET", path, params=params, json=json, timeout=timeout
+        )
 
     async def post(self, path, *, params=None, json=None, timeout=None) -> dict:
         return await self._request("POST", path, params=params, json=json, timeout=timeout)
 
-    async def patch(self, path, *, params=None, json=None) -> dict:
-        return await self._request("PATCH", path, params=params, json=json)
+    async def patch(
+        self, path, *, params=None, json=None, timeout: float | None = None
+    ) -> dict:
+        return await self._request(
+            "PATCH", path, params=params, json=json, timeout=timeout
+        )
 
-    async def delete(self, path, *, params=None, json=None) -> dict:
-        return await self._request("DELETE", path, params=params, json=json)
+    async def delete(
+        self, path, *, params=None, json=None, timeout: float | None = None
+    ) -> dict:
+        return await self._request(
+            "DELETE", path, params=params, json=json, timeout=timeout
+        )
+
+    def _timeout_message(self, timeout: float, *, stream: bool = False) -> str:
+        """生成传输层超时文案（#926 D3：per-request 值或缺省客户端默认值）。
+
+        流式（stream=True）用「流式响应空闲超时」前缀（SSE 帧间隙读超时语义），
+        非流式用「请求超时」前缀；后缀提示服务端任务可能仍在进行、勿直接重试。
+        """
+        suffix = "服务端任务可能仍在进行，请稍后用 list/get 查询结果，勿直接重试"
+        if stream:
+            stream_suffix = "生成可能仍在进行，请稍后用 list/get 查询结果，勿直接重试"
+            return f"流式响应空闲超时（{timeout:g}s）：{stream_suffix}"
+        return f"请求超时（{timeout:g}s）：{suffix}"
+
+    async def _send(self, method, path, **kwargs) -> httpx.Response:
+        """发送请求并读取响应，整块捕获 httpx 超时并转 HttpApiError(TIMEOUT)。
+
+        #926 根因：httpx 计时器覆盖 transport 完成后的读/写阶段，connect/read/
+        write/pool 四类 TimeoutException 子类都从这里的 await 抛出——统一转
+        TIMEOUT 错误码（D1），避免 CLI/MCP 的 except Exception 兜底误归
+        DB_ERROR/INTERNAL_ERROR 空消息。非超时异常（如 ConnectError）原样传播。
+        """
+        try:
+            return await self._client.request(method, path, **kwargs)
+        except httpx.TimeoutException as exc:
+            t = kwargs.get("timeout")
+            effective_timeout = (
+                self._default_timeout if t is None else float(t)
+            )
+            raise HttpApiError(
+                status_code=0,
+                detail=self._timeout_message(effective_timeout),
+                code="TIMEOUT",
+            ) from exc
 
     async def _request(self, method, path, *, params=None, json=None, timeout=None) -> dict:
         kwargs: dict = {"params": _filter_none_params(params), "json": json}
         if timeout is not None:
             kwargs["timeout"] = timeout
-        response = await self._client.request(method, path, **kwargs)
+        response = await self._send(method, path, **kwargs)
         if not 200 <= response.status_code < 300:
             raise HttpApiError(
                 status_code=response.status_code,
@@ -108,7 +154,9 @@ class InkFlowHTTPClient:
             # provider/agent-template/project delete 均 204，空 body 解析必炸）
             return {}
 
-    async def get_raw(self, path, *, params=None) -> str:
+    async def get_raw(
+        self, path, *, params=None, timeout: float | None = None
+    ) -> str:
         """GET 请求并返回原始响应文本（F21 导出下载，非 JSON 信封）。
 
         与 _request 的区别: _request 强制 response.json() 解析，无法处理
@@ -124,7 +172,10 @@ class InkFlowHTTPClient:
         Raises:
             HttpApiError: 非 2xx（与 _request 同规则: detail 提取 + X-InkFlow-Error-Code 头）.
         """
-        response = await self._client.get(path, params=_filter_none_params(params))
+        kwargs: dict = {"params": _filter_none_params(params)}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        response = await self._send("GET", path, **kwargs)
         if not 200 <= response.status_code < 300:
             raise HttpApiError(
                 status_code=response.status_code,
@@ -151,7 +202,9 @@ class InkFlowHTTPClient:
 
     async def get_bytes(self, path, *, params=None) -> bytes:
         """GET 原始字节（F36 地图图片下载；非 JSON 响应）."""
-        response = await self._client.request("GET", path, params=_filter_none_params(params))
+        response = await self._send(
+            "GET", path, params=_filter_none_params(params)
+        )
         if not 200 <= response.status_code < 300:
             raise HttpApiError(
                 status_code=response.status_code,
@@ -163,7 +216,7 @@ class InkFlowHTTPClient:
     async def _request_file(self, method, path, *, data, filename, content, params) -> dict:
         """multipart 请求（错误处理同 _request）."""
         files = {"file": (filename, content)}
-        response = await self._client.request(
+        response = await self._send(
             method, path, params=_filter_none_params(params), data=data, files=files
         )
         if not 200 <= response.status_code < 300:
@@ -179,26 +232,47 @@ class InkFlowHTTPClient:
             # provider/agent-template/project delete 均 204，空 body 解析必炸）
             return {}
 
-    async def stream_sse(self, path, *, json=None) -> AsyncGenerator[dict, None]:
+    async def stream_sse(
+        self, path, *, json=None, timeout: float | None = None
+    ) -> AsyncGenerator[dict, None]:
         """POST + SSE 流式消费：`data: {json}` 帧逐行解析并 yield 原样 dict。
 
-        空行与其它无前缀行跳过；流开始前非 2xx 抛 HttpApiError；流中断抛 HttpApiError。
+        timeout = per-request 超时（#926：LLM 长任务流式需 300s 覆盖）；缺省取
+        客户端默认 30.0。空行与其它无前缀行跳过；流开始前非 2xx 抛
+        HttpApiError；流中断抛 HttpApiError；帧间隙读超时转 HttpApiError(TIMEOUT)。
         """
-        async with self._client.stream("POST", path, json=json) as response:
-            if not 200 <= response.status_code < 300:
-                raise HttpApiError(
-                    status_code=response.status_code,
-                    detail=_extract_detail(response),
-                    code=response.headers.get("X-InkFlow-Error-Code"),
-                )
-            try:
-                async for line in response.aiter_lines():
-                    if not line.startswith(_SSE_DATA_PREFIX):
-                        continue
-                    yield jsonlib.loads(line.removeprefix(_SSE_DATA_PREFIX))
-            except httpx.HTTPError as exc:
-                raise HttpApiError(
-                    status_code=0,
-                    detail=str(exc),
-                    code="STREAM_INTERRUPTED",
-                ) from exc
+        kwargs: dict = {"json": json}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        effective_timeout = self._default_timeout if timeout is None else float(timeout)
+        try:
+            async with self._client.stream("POST", path, **kwargs) as response:
+                if not 200 <= response.status_code < 300:
+                    raise HttpApiError(
+                        status_code=response.status_code,
+                        detail=_extract_detail(response),
+                        code=response.headers.get("X-InkFlow-Error-Code"),
+                    )
+                try:
+                    async for line in response.aiter_lines():
+                        if not line.startswith(_SSE_DATA_PREFIX):
+                            continue
+                        yield jsonlib.loads(line.removeprefix(_SSE_DATA_PREFIX))
+                except httpx.TimeoutException as exc:
+                    raise HttpApiError(
+                        status_code=0,
+                        detail=self._timeout_message(effective_timeout, stream=True),
+                        code="TIMEOUT",
+                    ) from exc
+                except httpx.HTTPError as exc:
+                    raise HttpApiError(
+                        status_code=0,
+                        detail=str(exc),
+                        code="STREAM_INTERRUPTED",
+                    ) from exc
+        except httpx.TimeoutException as exc:
+            raise HttpApiError(
+                status_code=0,
+                detail=self._timeout_message(effective_timeout, stream=True),
+                code="TIMEOUT",
+            ) from exc

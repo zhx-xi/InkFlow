@@ -12,7 +12,12 @@ from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.domain.models.agent_run import AgenticWriteRequest
 from inkflow.domain.models.writing import WritingMode, WritingRequest
-from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.http import (
+    LLM_TASK_TIMEOUT,
+    HttpApiError,
+    InkFlowHTTPClient,
+    map_http_error,
+)
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 from inkflow.logging import instrument
 
@@ -202,7 +207,9 @@ def next(
                 results.append(
                     await _collect_stream(
                         cli_ctx,
-                        client.stream_sse("/writing/stream", json=body),
+                        client.stream_sse(
+                            "/writing/stream", json=body, timeout=LLM_TASK_TIMEOUT
+                        ),
                         WritingMode.GENERATE.value,
                     )
                 )
@@ -263,7 +270,9 @@ def continue_(
             }
             return await _collect_stream(
                 cli_ctx,
-                client.stream_sse("/writing/stream", json=body),
+                client.stream_sse(
+                    "/writing/stream", json=body, timeout=LLM_TASK_TIMEOUT
+                ),
                 WritingMode.CONTINUE.value,
             )
 
@@ -309,7 +318,9 @@ def revise(
                 body["target_range"] = range_
             return await _collect_stream(
                 cli_ctx,
-                client.stream_sse("/writing/stream", json=body),
+                client.stream_sse(
+                    "/writing/stream", json=body, timeout=LLM_TASK_TIMEOUT
+                ),
                 WritingMode.REVISE.value,
             )
 

@@ -82,6 +82,7 @@ def _hint_for(code: str) -> str:
         "VALIDATION_ERROR": "请补充/修正必填字段后重试",
         "CONFIG_ERROR": "请重启内核重新获取 token 后重试",
         "LLM_ERROR": "请检查 provider/API key 配置后重试",
+        "TIMEOUT": "服务端任务可能仍在进行，请先用对应 list/get 工具查询结果再决定是否重试",
     }
     return hints.get(code, "请检查参数与后端状态后重试")
 
@@ -299,7 +300,9 @@ async def _route_world(client: _HTTPClient, params: ManageWorldParams) -> object
     return await client.post(f"/world-settings/{params.id}/restore")
 
 
-async def _route_outline(client: _HTTPClient, params: ManageOutlineParams) -> object:
+async def _route_outline(
+    client: _HTTPClient, params: ManageOutlineParams, timeout: float | None
+) -> object:
     """manage_outline action 路由（spec §2.2 映射表）。"""
     if params.action == "create":
         return await client.post(
@@ -341,6 +344,7 @@ async def _route_outline(client: _HTTPClient, params: ManageOutlineParams) -> ob
                 "num_chapters": params.num_chapters,
             }
         ),
+        timeout=timeout,
     )
 
 
@@ -658,12 +662,17 @@ def build_manage_outline_tool() -> MCPTool:
                 "请检查 action 枚举与必填字段（可经 tool_search 查询合法值），修正后重试",
             )
         try:
-            from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+            from inkflow.infrastructure.http import (
+                LLM_TASK_TIMEOUT,
+                HttpApiError,
+                InkFlowHTTPClient,
+                map_http_error,
+            )
             from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 
             handle = await ensure_kernel()
             async with InkFlowHTTPClient(handle) as client:
-                data = await _route_outline(client, params)
+                data = await _route_outline(client, params, LLM_TASK_TIMEOUT)
             return _ok(_serialize_data(data))
         except HttpApiError as exc:
             code, message = map_http_error(exc.status_code, exc.detail, exc.code)

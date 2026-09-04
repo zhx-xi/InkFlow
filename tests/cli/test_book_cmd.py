@@ -177,6 +177,7 @@ def test_plan_start_human(fake_http_client):
     fake_http_client.post.assert_awaited_once_with(
         "/agent/books/planner",
         json={"project_id": "proj-1", "one_liner": "写一本关于时间旅者的悬疑小说"},
+        timeout=300.0,  # #926 迁移：LLM 长任务 per-request timeout
     )
 
 
@@ -209,6 +210,7 @@ def test_plan_respond(fake_http_client):
     fake_http_client.post.assert_awaited_once_with(
         "/agent/books/planner/sess-1/respond",
         json={"answers": {"answer": "悬疑为主，加入时间悖论"}, "auto": False},
+        timeout=300.0,  # #926 迁移：LLM 长任务 per-request timeout
     )
 
 

@@ -29,7 +29,12 @@ from pydantic import ValidationError
 
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
-from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.http import (
+    LLM_TASK_TIMEOUT,
+    HttpApiError,
+    InkFlowHTTPClient,
+    map_http_error,
+)
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 from inkflow.logging import instrument
 
@@ -451,6 +456,7 @@ def extract_characters(
                     "text": extract_text,
                     "model": model,
                 },
+                timeout=LLM_TASK_TIMEOUT,
             )
 
     result = _run(cli_ctx, _impl)
