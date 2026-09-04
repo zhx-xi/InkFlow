@@ -180,3 +180,18 @@ describe('AppNav — 会话入口分组（#762：会话迁出设定库，入独�
     expect(screen.getByTestId('nav-group-system')).not.toContainElement(screen.getByTestId('nav-item-sessions'));
   });
 });
+
+/**
+ * #496 统一日志页导航入口（contract-496 §6.4，RED 追加用例）。
+ * 【R】GREEN 在 AppNav SYSTEM_ITEMS 追加 { key:'logs', href:'/logs', labelKey:'nav.logs', icon:ScrollText }
+ * （nav.logs='日志' 入 logs-ux.ts §4.2）。
+ * RED：当前导航无日志项 → getByTestId('nav-item-logs') element-missing FAIL。
+ */
+describe('AppNav — 日志入口（#496）', () => {
+  it('【R】nav-item-logs 存在且 href=/logs、文案「日志」（zh 态）', () => {
+    renderNav();
+    const logsItem = screen.getByTestId('nav-item-logs');
+    expect(logsItem).toHaveAttribute('href', '/logs');
+    expect(logsItem).toHaveTextContent('日志');
+  });
+});

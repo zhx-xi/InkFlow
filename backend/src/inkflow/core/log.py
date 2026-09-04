@@ -1,11 +1,45 @@
 """结构化日志配置 — 基于 loguru。"""
 
+from __future__ import annotations
+
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from inkflow.core.config import config
+from inkflow.logging.schema import StructuredLogRecord
+from inkflow.logging.store import StructuredLogStore
+
+if TYPE_CHECKING:
+    from loguru import Message  # 仅类型注解用（运行时 loguru 0.7.3 未导出 Message）
+
+
+def _norm_sink_level(name: str) -> str:
+    """loguru 级别名归一："WARNING" → "WARN"（与 store/前端查询口径对齐），其余原样。"""
+    return "WARN" if name == "WARNING" else name
+
+
+def _structured_sink(message: Message) -> None:
+    """结构化 sink：loguru record → StructuredLogRecord → 落 StructuredLogStore。
+
+    setup_logging 追加的第三类 sink（B1 #496）：仅接收带 caller_type 的 bind
+    记录（filter 把关）；store 目录 per-call 从 config.data_dir 取（测试
+    monkeypatch config.data_dir 即隔离，勿启动期固化）。整体 try/except：
+    日志故障静默，绝不上抛业务（contract-496 §1）。
+    """
+    try:
+        record = message.record
+        rec = StructuredLogRecord(
+            level=_norm_sink_level(record["level"].name),
+            logger=record["name"] or "inkflow",  # record["name"] 类型为 str | None；运行时恒非空
+            timestamp=record["time"],
+            **record["extra"],
+        )
+        StructuredLogStore(config.data_dir / "logs" / "structured").append(rec)
+    except Exception:
+        pass
 
 
 def resolve_log_dir() -> Path:
@@ -49,4 +83,13 @@ def setup_logging(log_dir: Path | None = None) -> None:
         rotation="1 day",
         retention="30 days",
         compression="gz",
+    )
+    # 第三类 sink：结构化记录（log_structured / @instrument 埋点）落 store
+    # （B1 #496）；level 与 console 同级切分（debug=False 默认关 DEBUG），
+    # filter 只收带 caller_type 的 bind 记录。注册在文件 sink 之后 →
+    # handlers[0] 仍为 stderr（既有测试守护，顺序不变）。
+    logger.add(
+        _structured_sink,
+        level="DEBUG" if config.debug else config.log_level,
+        filter=lambda record: "caller_type" in record["extra"],
     )

@@ -32,6 +32,16 @@ def _record_matches_q(rec: dict, q: str) -> bool:
     return q.lower() in json.dumps(rec, ensure_ascii=False).lower()
 
 
+def _csv_match(actual: object, expected: str) -> bool:
+    """actual（str）大写后 ∈ expected 按逗号拆分（strip 各段）的大写集合 → True。
+
+    B2 #496 多值过滤：单值（无逗号）向后兼容等值比较；非 str actual 恒 False。
+    """
+    if not isinstance(actual, str):
+        return False
+    return actual.upper() in {part.strip().upper() for part in expected.split(",")}
+
+
 class StructuredLogStore:
     """结构化日志 JSON 行存储：POST /logs 写、GET /logs 读（按 data_dir/logs/structured 隔离）。"""
 
@@ -62,13 +72,9 @@ class StructuredLogStore:
     ) -> tuple[list[dict], int]:
         """读全部 inkflow_structured_*.log 行，过滤后按 timestamp 降序 + 分页。
 
-        level / caller_type 大小写不敏感；解析失败的行跳过；
+        level / caller_type 支持逗号分隔多值（大小写不敏感，单值向后兼容）；解析失败的行跳过；
         返回 (items, total)，items 为 JSON-safe record dict（含脱敏后 params）。
         """
-
-        def _text_eq(left: object, right: str) -> bool:
-            return isinstance(left, str) and left.upper() == right.upper()
-
         from_norm = _normalize_ts(from_ts) if from_ts is not None else None
         to_norm = _normalize_ts(to_ts) if to_ts is not None else None
         rows: list[tuple[datetime, dict]] = []
@@ -89,9 +95,9 @@ class StructuredLogStore:
 
         matched: list[tuple[datetime, dict]] = []
         for ts, rec in rows:
-            if level is not None and not _text_eq(rec.get("level"), level):
+            if level is not None and not _csv_match(rec.get("level"), level):
                 continue
-            if caller_type is not None and not _text_eq(rec.get("caller_type"), caller_type):
+            if caller_type is not None and not _csv_match(rec.get("caller_type"), caller_type):
                 continue
             if project_id is not None and rec.get("project_id") != project_id:
                 continue

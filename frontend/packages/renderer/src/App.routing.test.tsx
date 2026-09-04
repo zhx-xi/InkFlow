@@ -105,6 +105,14 @@ beforeEach(() => {
     // #486：会话/记忆页挂载请求（sessions 页拉含归档会话列表 + 访谈会话；memory 页拉总结/偏好）
     if (path.startsWith('/api/v1/sessions')) return { items: [], total: 0, offset: 0, limit: 50 };
     if (path.startsWith('/api/v1/agent/books/planner')) return { items: [], total: 0, offset: 0, limit: 50 };
+    // #496：日志页挂载请求（logs 页 fetchLogs/fetchLogMessages 的 F7 信封兜底；仅 GET 分支，
+    // reportLog 走原生 fetch 不经 apiFetch，POST /api/v1/logs 不受影响）
+    if (path.startsWith('/api/v1/logs') && (!init?.method || init.method === 'GET')) {
+      return { ok: true, data: { items: [], total: 0, offset: 0, limit: 50 } };
+    }
+    if (path.startsWith('/api/v1/i18n/messages') && (!init?.method || init.method === 'GET')) {
+      return { ok: true, data: {} };
+    }
     if (path.startsWith('/api/v1/agent/memory/summaries')) {
           return { project_id: 'p1', project: null, user: null };
         }
@@ -269,5 +277,18 @@ describe('App 路由集成（HashRouter 四页 + 侧边导航）', () => {
       window.location.hash = '#/memory';
       render(<App />);
       expect(await screen.findByTestId('memory-page')).toBeInTheDocument();
+  });
+
+  /**
+   * #496 统一日志页路由（contract-496 §6.4，RED 追加用例）。
+   * 【R】GREEN 在 App.tsx 注册 /logs 路由（LogsPage，TITLE_BY_PATH['/logs']='logs.title'）。
+   * RED：/logs 路由未注册 → * fallback 重定向项目页 → findByTestId('logs-page') 超时 FAIL。
+   * 挂载请求经 beforeEach apiFetch mock 兜底（GET /api/v1/logs → {ok:true,data:{...}}、
+   * GET /api/v1/i18n/messages → {ok:true,data:{}}）。
+   */
+  it('#496 日志页路由存在：直接访问 #/logs → 渲染 logs-page', async () => {
+      window.location.hash = '#/logs';
+      render(<App />);
+      expect(await screen.findByTestId('logs-page')).toBeInTheDocument();
   });
 });

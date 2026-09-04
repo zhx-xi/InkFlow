@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 from typing import Literal, cast
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from inkflow.core.config import config
@@ -30,6 +31,34 @@ def _parse_query_ts(value: str | None) -> datetime | None:
     return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
 
 
+def _resolve_project_id(value: str | None) -> int | None:
+    """解析 project_id 查询参数（B3 #496）：None→None；纯数字→int；合法 UUID→.int；非法→422。
+
+    Args:
+        value: FastAPI 查询参数原始串（None = 未提供，不过滤）。
+
+    Returns:
+        仓储层 int 主键（UUID 取 uuid.UUID(value).int，与 F1 `_to_int_id` 口径一致）。
+
+    Raises:
+        HTTPException: 非数字非 UUID → 422 detail 逐字
+            「project_id 须为整数或合法 UUID」。须在 query_logs 函数体内调用
+            （@instrument 才能捕获端点内异常产生 WARN E_HTTP_422 埋点——
+            contract-496 §2 实现约束；走 Depends 抛错则 B4 回查落空）。
+    """
+    if value is None:
+        return None
+    if value.isdigit():
+        return int(value)
+    try:
+        return uuid.UUID(value).int
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="project_id 须为整数或合法 UUID",
+        ) from exc
+
+
 class LogRecordInput(BaseModel):
     level: str = "INFO"
     caller_type: Literal["api", "agent", "llm", "tool", "cli", "mcp", "frontend"]
@@ -49,7 +78,7 @@ class LogRecordInput(BaseModel):
 async def query_logs(
     level: str | None = None,
     caller_type: str | None = None,
-    project_id: int | None = None,
+    project_id: str | None = None,
     from_: str | None = Query(default=None, alias="from"),
     to: str | None = None,
     q: str | None = None,
@@ -59,10 +88,15 @@ async def query_logs(
     store: StructuredLogStore = Depends(get_log_store),
 ) -> dict:
     """日志页查询 → F7 信封 {ok, data:{items,total,offset,limit}}。"""
+    # 直调面（test_logs_i18n_direct 既有形态）直接传 int 主键原样透传；
+    # HTTP 面经 FastAPI 恒为 str/None → 走 _resolve_project_id 归一（UUID→int）。
+    resolved_project_id = (
+        _resolve_project_id(project_id) if isinstance(project_id, str) else project_id
+    )
     items, total = store.query(
         level=level,
         caller_type=caller_type,
-        project_id=project_id,
+        project_id=resolved_project_id,
         from_ts=_parse_query_ts(from_),
         to_ts=_parse_query_ts(to),
         q=q,
