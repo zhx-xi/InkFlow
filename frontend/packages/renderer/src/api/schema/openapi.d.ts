@@ -4824,6 +4824,7 @@ export interface components {
          * @description 更新情节点请求 DTO.
          *
          *     arc_id: None 表示不修改；"" 表示清除弧线归属（置为不挂弧线）.
+         *     合法 UUID 对象或 UUID 字符串 = 设置（字符串经 mode="before" 校验器强转 uuid.UUID）.
          *     只有传入的字段会被更新，未传入的字段保持不变.
          */
         PlotPointUpdate: {

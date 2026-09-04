@@ -401,7 +401,9 @@ class SQLiteOutlineRepository:
         return _arc_orm_to_domain(orm)
 
     async def get_arc(self, arc_id: int) -> StoryArc | None:
-        """按主键查询故事弧线."""
+        """按主键查询故事弧线。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
+        if arc_id < -2**63 or arc_id >= 2**63:
+            return None
         stmt = select(StoryArcORM).where(StoryArcORM.id == arc_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()

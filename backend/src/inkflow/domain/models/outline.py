@@ -390,6 +390,7 @@ class PlotPointUpdate(BaseModel):
     """更新情节点请求 DTO.
 
     arc_id: None 表示不修改；"" 表示清除弧线归属（置为不挂弧线）.
+    合法 UUID 对象或 UUID 字符串 = 设置（字符串经 mode="before" 校验器强转 uuid.UUID）.
     只有传入的字段会被更新，未传入的字段保持不变.
     """
 
@@ -398,6 +399,12 @@ class PlotPointUpdate(BaseModel):
     description: str | None = None
     position: int | None = None
     arc_id: uuid.UUID | str | None = None  # str "" = 清除弧线
+
+    @field_validator("arc_id", mode="before")
+    @classmethod
+    def _norm_arc_id(cls, v: Any) -> Any:
+        """arc_id 三态归一（#908）：合法 UUID 串强转；空白串保留 "" 清除哨兵；垃圾串 422."""
+        return _normalize_ref_field(v, "弧线关联")
 
     @field_validator("name")
     @classmethod
