@@ -147,7 +147,7 @@
 | #231 | CLI chapter list 不传 --status 报 422 → 空参数过滤（帮助信息与行为一致） | PR #233 | ✅ |
 | #232 | 项目页点击项目卡片不跳转写作面板（多项目无法切换） | PR #235 | ✅ |
 
-**0.7.0 交付实证**：10/10 issues 全关（milestone #10，2026-08-11）· Agent 化主线 F26→F27→F28（deepagents 0.7.5 harness）· agentic 写作闭环（save_draft + 确认流 + 修改率基线 docs/agent-baseline-2026-08-10.md）· v0.7.0-rc1 预发布（2026-08-11）。
+**0.7.0 交付实证**：10/10 issues 全关（milestone #10，2026-08-11）· Agent 化主线 F26→F27→F28（deepagents 0.7.5 harness）· agentic 写作闭环（save_draft + 确认流 + 修改率基线 design/agent-baseline-2026-08-10.md）· v0.7.0-rc1 预发布（2026-08-11）。
 
 ### 1.10 编排完全体 + Supervisor + 设定库 + RAG + skills + CLI（0.8.0，2026-08-13 18/18 issues 全关 ✅）
 

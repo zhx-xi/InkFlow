@@ -699,7 +699,7 @@ class MemoryService(MemorySupersedeMixin):
                 "regenerate_rate": regenerate_rate,
             },
             "learned_preferences": learned_preferences,
-            "baseline_ref": "docs/agent-baseline-2026-08-10.md",
+            "baseline_ref": "design/agent-baseline-2026-08-10.md",
         }
         if self._user_preference_repo is not None:
             user_items, _user_total = await self._user_preference_repo.list_all()  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 list_all

@@ -23,7 +23,7 @@ RED 形态: status 端点未注册 → 全部 status 用例 404 断言 FAIL；
 reindex 端点已注册（既有）但未接 refresh/collections_recreated → 相应
 断言 FAIL；既有 retrieve 用例（本文件无既有）不受影响。
 
-依据: docs/qa-rag-consistency-report.md §2.3/§2.4/§3.1/§4.2；Issue #276 范围 3/4。
+依据: design/qa-rag-consistency-report.md §2.3/§2.4/§3.1/§4.2；Issue #276 范围 3/4。
 """
 
 from __future__ import annotations

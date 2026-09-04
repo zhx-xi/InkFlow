@@ -138,7 +138,7 @@ beforeEach(() => {
       regenerate_rate: 0.2,
     },
     learned_preferences: 3,
-    baseline_ref: 'docs/agent-baseline-2026-08-10.md',
+    baseline_ref: 'design/agent-baseline-2026-08-10.md',
     user_preferences: { count: 5, projects: 2 },
   };
 
@@ -209,7 +209,7 @@ describe('记忆页 — 统计概览（#658）', () => {
         regenerate_rate: 0,
       },
       learned_preferences: 0,
-      baseline_ref: 'docs/agent-baseline-2026-08-10.md',
+      baseline_ref: 'design/agent-baseline-2026-08-10.md',
       user_preferences: null,
     };
     // 无总结 → 总数 0（与 total=learned+user+总结数 的契约一致）

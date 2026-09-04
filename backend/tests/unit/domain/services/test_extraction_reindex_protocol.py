@@ -19,7 +19,7 @@ unexpected keyword argument，签名未扩展）；store 无 probe/delete_stale/
 recreate/write_fingerprint → AttributeError；ReindexResult 无
 collections_recreated → 断言 KeyError。全部为契约缺口类 RED。
 
-依据: docs/qa-rag-consistency-report.md §3.1/§4.2 契约 17-20；Issue #276 范围 4。
+依据: design/qa-rag-consistency-report.md §3.1/§4.2 契约 17-20；Issue #276 范围 4。
 """
 
 from __future__ import annotations

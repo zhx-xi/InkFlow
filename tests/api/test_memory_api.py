@@ -16,7 +16,7 @@
   → 200 {"preference_id": str, "deleted": true} / 404（PreferenceNotFoundError）
 - GET /api/v1/agent/memory/stats?project_id=UUID → 200 {"project_id": str,
   "agentic": {...}, "learned_preferences": int,
-  "baseline_ref": "docs/agent-baseline-2026-08-10.md"}
+  "baseline_ref": "design/agent-baseline-2026-08-10.md"}
 
 混合轨（规则 1c）: memory router（inkflow.api.routers.memory）整模块不存在——
 顶部只 import 确定存在的符号（app/get_draft_service/Draft/DraftNotFoundError
@@ -138,7 +138,7 @@ def _stats_payload(**overrides) -> dict:
             "regenerate_rate": 0.2,
         },
         "learned_preferences": 3,
-        "baseline_ref": "docs/agent-baseline-2026-08-10.md",
+        "baseline_ref": "design/agent-baseline-2026-08-10.md",
     }
     stats.update(overrides)
     return stats
@@ -416,7 +416,7 @@ class TestMemoryStatsEndpoint:
             "regenerate_rate": 0.2,
         }
         assert data["learned_preferences"] == 3
-        assert data["baseline_ref"] == "docs/agent-baseline-2026-08-10.md"
+        assert data["baseline_ref"] == "design/agent-baseline-2026-08-10.md"
         assert memory_svc.stats.await_args.kwargs["project_id"] == PROJECT_ID
 
 

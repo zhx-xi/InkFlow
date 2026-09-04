@@ -12,7 +12,7 @@ HTTP 契约（父侧定稿，实现者以本文件为准）:
   → 200: {"preference_id": "<id>", "deleted": true}
 - memory stats → GET /agent/memory/stats（params: project_id）
   → 200: {"project_id", "agentic": {...}, "learned_preferences",
-          "baseline_ref": "docs/agent-baseline-2026-08-10.md"}
+          "baseline_ref": "design/agent-baseline-2026-08-10.md"}
 - 信封: --json → {"ok": true, "data": <API 响应原样>}（镜像 agent_cmd.
   _print_json_envelope）
 - 错误: HttpApiError → stderr「❌ {detail}」+ 退出码 1；KernelStartupError →
@@ -100,7 +100,7 @@ def _stats_payload(**overrides) -> dict:
             "regenerate_rate": 0.2,
         },
         "learned_preferences": 3,
-        "baseline_ref": "docs/agent-baseline-2026-08-10.md",
+        "baseline_ref": "design/agent-baseline-2026-08-10.md",
     }
     stats.update(overrides)
     return stats
@@ -221,7 +221,7 @@ class TestMemoryStats:
         assert call.kwargs["params"]["project_id"] == PROJECT_ID
         assert "修改率" in result.stdout
         assert "重新生成率" in result.stdout
-        assert "docs/agent-baseline-2026-08-10.md" in result.stdout
+        assert "design/agent-baseline-2026-08-10.md" in result.stdout
 
     def test_stats_json(self, fake_http_client):
         """stats --json: stdout 信封 == API 响应原样。"""

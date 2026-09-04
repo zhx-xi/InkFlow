@@ -318,7 +318,7 @@ save_draft / confirm / reject 三个写动作均落 audit_logs：
 - **测量对象**：agentic vs deterministic 各生成 N 章（N 值 Q3 拍板，建议 N=5/模式）。
 - **测量方式**：对每章记录（① 生成后用户是否直接确认（0 修改）② 确认前手动修改字数 diff ③ 是否 reject 重新生成）。
 - **数据源**：drafts 表 status/confirmed_at + 确认时内容对比（草稿 vs 确认后写入内容——confirm 时计算 diff 字数落 draft 表 audit 字段）+ audit_logs。
-- **指标输出**：基线报告（`docs/agent-baseline-YYYY-MM-DD.md`）——每模式 N 章的修改率均值/重新生成率，F28 验收判据「修改率下降」的对照值。
+- **指标输出**：基线报告（`design/agent-baseline-YYYY-MM-DD.md`）——每模式 N 章的修改率均值/重新生成率，F28 验收判据「修改率下降」的对照值。
 - **F27 只建测量**，不做统计 UI/命令（F28 交付 `inkflow memory stats` 类命令时并入）；基线报告生成可由手工脚本或 QA 执行。
 
 ### 5.7 决策轨迹暴露
@@ -461,7 +461,7 @@ save_draft / confirm / reject 三个写动作均落 audit_logs：
 - **M5 CLI 全绿**: `tests/cli/test_cli_write_agentic.py test_cli_agent_draft.py test_cli_agent_run.py`（**已登记 ci.yml integration-cli-backend**）— 信封/人类模式/退出码
 - **M6 API 全绿**: agentic/generate + runs + drafts 端点契约（404/409/422 映射 + 双形态 200）
 - **M7 真实模型冒烟（手工）**: 有 key 时 `write next --mode agentic` 真实运行 1 章 ≥ 2000 字、正文命中检索角色名/伏笔（升级路径验收判据②）
-- **M8 修改率基线**: agentic vs deterministic 各 N 章（Q3 拍板值），产出基线报告 `docs/agent-baseline-YYYY-MM-DD.md`（修改率均值/重新生成率，F28 对照值）
+- **M8 修改率基线**: agentic vs deterministic 各 N 章（Q3 拍板值），产出基线报告 `design/agent-baseline-YYYY-MM-DD.md`（修改率均值/重新生成率，F28 对照值）
 - **M9 决策轨迹可查**: `inkflow agent run show <run_id> --json` 输出完整 steps（工具调用序列 + 结果 + token），`--json` 信封字段契约测试覆盖
 
 ---
@@ -480,7 +480,7 @@ save_draft / confirm / reject 三个写动作均落 audit_logs：
   - **用户补充（已并入正文）**：默认值可在**设置中更改**——新增 F32 app_settings 扩展键 agent_max_steps / agent_token_budget / agent_max_consecutive_tool；读取优先级 = 请求体显式 > 全局设置 > 默认值（§5.3/§6/§8）
   - 建议：A
 - **Q3: 修改率基线 N 值** ✅ 已确认（用户拍板：选项 A，N=5/模式，2026-08-10）
-  - 背景：F27 交付「修改率基线」测量——agentic vs deterministic 各生成 N 章，记录每章 ① 是否直接确认（0 修改）② 确认前手动修改字数 diff ③ 是否 reject 重新生成；产出基线报告 `docs/agent-baseline-YYYY-MM-DD.md`（修改率均值/重新生成率），作为 F28 验收判据「修改率下降」的对照值（§5.6）
+  - 背景：F27 交付「修改率基线」测量——agentic vs deterministic 各生成 N 章，记录每章 ① 是否直接确认（0 修改）② 确认前手动修改字数 diff ③ 是否 reject 重新生成；产出基线报告 `design/agent-baseline-YYYY-MM-DD.md`（修改率均值/重新生成率），作为 F28 验收判据「修改率下降」的对照值（§5.6）
   - A. **N=5/模式**（**已拍板**——统计意义初步、成本可控：agentic 每章 8-32K token，5 章 ≤160K token 量级；基线测量随开发自然积累，不强制一次性跑完）
   - B. N=3/模式（最少成本，统计噪声大——一章好一章差即 ±30% 波动）
   - C. N=10/模式（更稳，成本 ×2）
@@ -906,4 +906,4 @@ async def book_supervisor_node(state: BookAgenticState, config: AgenticBookConfi
 - A4：agentic/generate 404/409/422 映射 + 双形态 200；draft confirm 409 幂等（M6）
 - A5：CLI write next --mode agentic + draft/run 子命令信封/人类模式/退出码 0/1/2（M5）
 - A6：书级自主编排 completed + 章节落盘非空 + HITL interrupt/resume + 跨 restart 续跑（附录 M3/M4/M5）
-- A7：修改率基线报告 docs/agent-baseline-YYYY-MM-DD.md 产出（M8）
+- A7：修改率基线报告 design/agent-baseline-YYYY-MM-DD.md 产出（M8）

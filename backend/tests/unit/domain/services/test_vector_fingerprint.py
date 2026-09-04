@@ -47,7 +47,7 @@ ModuleNotFoundError，exit 2）：
     显式携带 indexed_at（原签名仅 (status, now) 无法区分进行中/过期，
     两用例断言冲突）
 
-设计依据: docs/qa-rag-consistency-report.md §2.1（指纹内容与幂等性）/
+设计依据: design/qa-rag-consistency-report.md §2.1（指纹内容与幂等性）/
 §2.3（状态机与超时阈值）/ §3.3（schema_version 前向检查）;
 Issue #276 范围 2。
 """
