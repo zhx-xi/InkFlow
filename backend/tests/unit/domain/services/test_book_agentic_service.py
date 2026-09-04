@@ -282,23 +282,36 @@ class Test708BookRunMixinCoverageGaps:
             await svc.write_book_agentic(plan.id, _limits(max_chapters=5, max_agent_calls=50))
 
     async def test_write_book_agentic_loops_all_chapters(self) -> None:
-        """多章节全未写 → 循环回边 + 退出（170->169 / 170->171）并委托 pipeline。"""
+        """多章节全未写 → 循环回边 + 退出（170->169 / 170->171）并委托 pipeline。
+
+        #915 夹具迁移：SimpleNamespace → 真实 Outline——write_book_agentic 现已在
+        execute 前做 `_outline_to_chapter_dict` 转换（需 name/description 属性，
+        旧鸭子缺字段即 AttributeError）；prepare_run 分支无转换不受影响不动。
+        """
+        from inkflow.domain.models.outline import Outline
+
         plan = _plan(status="ready")
         pipeline = AsyncMock()
         pipeline.execute.return_value = {"run_id": str(plan.id), "status": "completed"}
         svc = _make_service(agentic_pipeline=pipeline)
         svc._repo.get_writing_plan.return_value = plan
-        svc._outline_repo.list.return_value = (
-            [
-                SimpleNamespace(
-                    id=uuid.uuid4(), level="chapter", sort_order=0, chapter_id=uuid.uuid4()
-                ),
-                SimpleNamespace(
-                    id=uuid.uuid4(), level="chapter", sort_order=1, chapter_id=uuid.uuid4()
-                ),
-            ],
-            2,
-        )
+        chapters = [
+            Outline(
+                id=uuid.uuid4(),
+                project_id=plan.project_id,
+                name=f"第{i + 1}章",
+                description="切片",
+                sort_order=i,
+                level="chapter",
+                parent_id=plan.root_outline_id,
+                chapter_id=uuid.uuid4(),
+                extra={},
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+            for i in range(2)
+        ]
+        svc._outline_repo.list.return_value = (chapters, 2)
 
         result = await svc.write_book_agentic(plan.id, _limits(max_chapters=5, max_agent_calls=50))
 

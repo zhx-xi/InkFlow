@@ -234,6 +234,8 @@ class BookRunMixin:
         章节点 = _find_chapters（level=chapter，sort_order 升序）；「内容已写」安全阀
         先于一切执行（任一章命中 → ChapterAlreadyWrittenError，pipeline 零调用）；
         thread_id = str(plan.id)（书级运行 ↔ 图 checkpoint 一一映射，F44 阶段 4 语义），
+        安全阀（Outline 形态）通过后、execute 前统一转章 dict（_outline_to_chapter_dict，
+        镜像卷轨 #337 装配契约，#915：pipeline 消费 ChapterDict 而非 Outline 领域对象），
         execute 返回后按 result.status 写回 plan.status + thread_id 落库。
 
         Args:
@@ -249,8 +251,11 @@ class BookRunMixin:
             ValueError: 计划不存在；或 agentic_pipeline 未配置（防静默降级）.
             ChapterAlreadyWrittenError: 任一目标章已有内容或执行已完成.
         """
-        # 函数体 import：避免与 book_service 模块级循环依赖（错误类定义于彼）
-        from inkflow.domain.services.book_service import ChapterAlreadyWrittenError
+        # 函数体 import：避免与 book_service 模块级循环依赖（错误类/章转换函数均定义于彼）
+        from inkflow.domain.services.book_service import (
+            ChapterAlreadyWrittenError,
+            _outline_to_chapter_dict,
+        )
 
         plan = await self._repo.get_writing_plan(  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供
             plan_id
@@ -264,6 +269,9 @@ class BookRunMixin:
         for chapter in chapters:
             if await self._check_content_written(plan, chapter):  # type: ignore[attr-defined]  # 混入类：方法由 BookService 提供
                 raise ChapterAlreadyWrittenError("该章已有内容，拒绝重跑")
+        # #915：execute 前统一转章 dict（镜像卷轨 _outline_to_chapter_dict 装配契约，
+        # pipeline 消费 ChapterDict——outline_id/chapter_id/name/...，而非 Outline 对象）
+        chapters = [_outline_to_chapter_dict(c) for c in chapters]
         result = await self._agentic_pipeline.execute(  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供；鸭子类型：agentic_pipeline 按 BookAgenticPipeline 契约提供 execute
             plan, chapters, merged, config=config, thread_id=str(plan.id)
         )
