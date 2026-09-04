@@ -13,6 +13,8 @@ handler 都在 baseline_uncalled 里，新增的不在）。
 契约映射（源自 api/routers/logs.py + api/routers/i18n.py + logging/store.py）：
 - ``logs.get_log_store()`` -> StructuredLogStore
 - ``logs._parse_query_ts(s)`` -> datetime | None（ISO 解析 / None / 非法值）
+- ``logs._resolve_project_id(s)`` -> int | None（B3 #496：None / 纯数字 / UUID.int /
+  非法 HTTPException 422 契约文案）
 - ``logs.query_logs(...)`` -> {"ok": True, "data": {items,total,offset,limit}}
 - ``logs.ingest_log(LogRecordInput, store)`` -> {"ok": True} 且 store.append 被调用（params 脱敏）
 - ``i18n.get_messages(lng)`` -> {"ok": True, "data": {msgid: template}}
@@ -22,11 +24,13 @@ handler 都在 baseline_uncalled 里，新增的不在）。
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from fastapi import HTTPException
 
 from inkflow.api.routers import i18n, logs
 from inkflow.logging import StructuredLogRecord, StructuredLogStore
@@ -53,6 +57,26 @@ class TestParseQueryTs:
 
     def test_invalid_returns_none(self):
         assert logs._parse_query_ts("not-a-date") is None
+
+
+class TestResolveProjectIdDirect:
+    """B3（#496）：_resolve_project_id 同线程直调（func-cov 盲区补偿）。"""
+
+    def test_none_returns_none(self):
+        assert logs._resolve_project_id(None) is None
+
+    def test_digit_string_to_int(self):
+        assert logs._resolve_project_id("123") == 123
+
+    def test_uuid_string_to_int(self):
+        u = uuid.UUID(int=42)
+        assert logs._resolve_project_id(str(u)) == 42
+
+    def test_invalid_raises_422_contract_detail(self):
+        with pytest.raises(HTTPException) as ei:
+            logs._resolve_project_id("not-an-id")
+        assert ei.value.status_code == 422
+        assert ei.value.detail == "project_id 须为整数或合法 UUID"
 
 
 class TestQueryLogsDirect:
