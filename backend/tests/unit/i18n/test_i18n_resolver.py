@@ -45,7 +45,7 @@ from loguru import logger
 from inkflow.i18n.resolver import resolve_locale, t
 
 # 测试文件 backend/tests/unit/test_i18n_resolver.py → parents[2] = backend 根目录
-_MESSAGES_DIR = Path(__file__).resolve().parents[2] / "src" / "inkflow" / "i18n" / "messages"
+_MESSAGES_DIR = Path(__file__).resolve().parents[3] / "src" / "inkflow" / "i18n" / "messages"
 
 
 def _config_mod():

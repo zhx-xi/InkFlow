@@ -70,7 +70,7 @@ from inkflow.domain.ports.prompt_template import PromptTemplate
 from inkflow.i18n.resolver import load_messages, t
 
 # test 文件 backend/tests/unit/test_i18n_s4_domains.py → parents[2] = backend 根
-_BACKEND = Path(__file__).resolve().parents[2]
+_BACKEND = Path(__file__).resolve().parents[3]
 _I18N_SRC = _BACKEND / "src" / "inkflow" / "i18n"
 _OLD_TEMPLATES = _BACKEND / "src" / "inkflow" / "infrastructure" / "llm" / "templates"
 
