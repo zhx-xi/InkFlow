@@ -1,7 +1,7 @@
 # F44: 长任务编排器（long-task-orchestrator）功能规格
 > **端**: cross
 
-**Spec 版本**: 1.3（#897 完成态判据收紧 + 失败原因可见，2026-09-03；v1.2 #475 访谈 LLM 动态提问）
+**Spec 版本**: 1.4（#903 GUI 状态档位色 + progress_reason 渲染，2026-09-04；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
 **日期**: 2026-08-17
 **依据**: 设计定稿 `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §2 全文（唯一真相）+ Issue #335（阶段 1）/ #336（阶段 2）/ #337（阶段 3）/ #338（阶段 4）+ Spike 验证报告 `docs/f44-orchestrator-spike-2026-08-17.md`（M1 门禁，workspace docs）+ 已合入源码核查（F27/F42/F29/F39/F6）+ Issue #475（访谈 LLM 动态提问，D1 拍板 2026-08-19）+ #486（会话/记忆 UI，D9，下游消费方）
 **所属阶段**: 0.10.0（长任务编排器，F44 四阶段），估算 24-39 人天（#335 阶段 1：5-8 / #336 阶段 2：4-6 / #337 阶段 3：7-11 / #338 阶段 4：8-10 + GUI 已含，part-time 8-10 周；v1.1 较 v1.0 的 16-26 人天增加 Q1=C GUI +8-12 与 Q2=C 项目级上限 +0.5-1）；v1.2 #475 访谈 LLM 动态提问为 0.10.1 增量（估算 5-8 人天，拆 2 PR：后端提问引擎 + 前端对话式 UI，S3 实现轨）
@@ -482,7 +482,32 @@ Spike ③ 实测：卷内全部章并行写完 → 卷边界 interrupt 暂停（
 
 **同类异常短路剩余章（裁定：不做）**：原因可见后用户可经 `intervene redirect` 处置；「连续 N 章同型异常即中止」有误伤风险（provider 瞬时抖动 + 章级重试已兜），且后台任务强杀语义未定。留待真实使用反馈再起。
 
-**GUI/CLI**：CLI `book status` 与 GUI `runStatus` 徽标为字符串透传，`degraded`/`failed` 自动呈现（轮询停止条件为非 running/pending，无需改）；degraded 专属样式随后续 GUI 批次评估（issue 裁定「API 字段先行，最小可不做」）。
+**GUI/CLI**：CLI `book status` 与 GUI `runStatus` 徽标为字符串透传，`degraded`/`failed` 自动呈现（轮询停止条件为非 running/pending，无需改）。~~degraded 专属样式随后续 GUI 批次评估~~（**v1.4 #903 已落地，见下**）。
+
+**GUI 状态档位色 + 失败原因可见（v1.4，#903）**：`BookRunPanel` 运行状态徽标由「固定灰底字符串透传」升级为**语义档位色**——文本仍原文透传（`completed`/`failed`/`degraded`/…），徽标按状态映射低饱和语义类（对齐 `ui-design-taste` 克制原则，色源 = 主题 token `ok`/`warn`/`err`，随三主题切换）：
+
+| runStatus | 徽标语义类 | 色档 |
+|---|---|---|
+| `completed` | `run-badge-completed` | 绿（ok/10 底 · ok 字） |
+| `failed` | `run-badge-failed` | 红（err/10 底 · err 字） |
+| `degraded` | `run-badge-degraded` | 橙黄（warn/10 底 · warn 字，部分成功警示档） |
+| 其余（running/pending/paused/waiting_hitl/aborted） | 无 `run-badge-*` 钩子 | 中性（surface-3 底 · ink 字），维持现状 |
+
+`progress_reason` 渲染：前端 `RunStatusResponse` 类型 + `book` store 新增 `progressReason: string \| null`（`loadRunStatus` 透传 `res.progress_reason ?? null`，`reset` 清零）；面板在 `(runStatus 为 failed/degraded) 且 progressReason 非空` 时渲染「失败原因」块（`run-progress-reason`：标签 `book.run.reason` + 理由文本，含 outline_id 定位锚点；后端已按状态门控，前端双保险）；理由 >200 字符默认 `line-clamp-3` 三行截断 + 展开/收起按钮（镜像记忆页 `SummaryCard` 先例）。i18n：`book.run.reason` / `book.run.reason.expand` / `book.run.reason.collapse`（zh/en 对称）。契约：`BookRunPanel.test.tsx`（#903 describe，档位三档互斥 + 渲染条件守护 + 轮询 degraded 即停确认）+ `stores/book.test.ts`（progressReason 透传/reset）。简图原型 + 高保真：`design/GUI/book/book-run.html` 与 `book-run-<state>.png`（五档：running/completed/failed/degraded/degraded-expanded）。
+
+```text
+┌ 书级运行面板（BookRunPanel）──────────────────────────────┐
+│ 运行状态  [ degraded ]        ← 橙黄档位徽标（文本透传） │
+│ ⚠ 失败原因                                  ← 仅警示档  │
+│   o-ch12: RuntimeError: LLM provider 调用失败（…）       │
+│   o-ch13: ConnectionError: ollama daemon 未响应（…）     │
+│   o-ch14: RuntimeError: 上下文超限，章纲超 12k tokens …  │
+│   ▸ 展开                                                │
+│ [表演][仪表][无声][回归摘要]                             │
+│ 已写章节: 12 / 15 · Agent 调用: 34/60 · Token 182k/400k │
+│ ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░ 80%  [trace 行徽标 badge-* 五态]  │
+└──────────────────────────────────────────────────────────┘
+```
 
 **契约翻转**：`test_write_book_chapter_failure_marks_failed_continues`（部分失败旧期望 completed）按本节翻转为 `degraded`——先对齐 spec 再动（本节即对齐依据）。
 

@@ -58,6 +58,8 @@ interface BookState {
   writingPlan: WritingPlanDto | null;
   runId: string | null;
   runStatus: string | null;
+  /** #903：终态失败/降级原因（服务端门控：仅 failed/degraded 非 null） */
+  progressReason: string | null;
   progress: Record<string, string>;
   counters: RunStatusCounters | null;
   progressStats: ProgressStats;
@@ -143,6 +145,7 @@ export const useBookStore = create<BookState>((set, get) => ({
   writingPlan: null,
   runId: null,
   runStatus: null,
+  progressReason: null,
   progress: {},
   counters: null,
   progressStats: { total: 0, done: 0, inProgress: 0, failed: 0, skipped: 0, pending: 0 },
@@ -335,6 +338,7 @@ export const useBookStore = create<BookState>((set, get) => ({
         progressStats: deriveProgressStats(res.progress),
         waitingHitl: res.waiting_hitl === true,
         hitlPayload: res.hitl_payload ?? null,
+        progressReason: res.progress_reason ?? null,
       });
     } catch (err) {
       // 失败仅记 error，不覆盖已有 runId/runStatus（轮询由面板按状态决定继续/停止）
@@ -414,6 +418,7 @@ export const useBookStore = create<BookState>((set, get) => ({
       writingPlan: null,
       runId: null,
       runStatus: null,
+      progressReason: null,
       progress: {},
       counters: null,
       progressStats: { total: 0, done: 0, inProgress: 0, failed: 0, skipped: 0, pending: 0 },

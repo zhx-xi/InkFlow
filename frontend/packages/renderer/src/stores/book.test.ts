@@ -80,6 +80,13 @@
  * //   失败 → error = errorMessage(err) + return false（intervening 请求期间 true，结束后 false）
  * // - loadSummary 成功 → summary=res + summaryLoading=false；失败 → error + summary 保持
  * // - reset 清空 5 新字段（density 归 'dashboard' / interveneDiff=null / intervening=false / summary=null / summaryLoading=false）
+ *
+ * ⚠️ #903（P2）progress_reason 透传增量——GREEN 必须追加：
+ *
+ * // state 新增（初始值）：
+ * //   progressReason: string | null（null）；loadRunStatus 成功透传：progressReason = res.progress_reason ?? null
+ * //   （键恒在，服务端门控：仅 status failed/degraded 时非 null；completed/running 等恒 null）
+ * // reset 清空 progressReason 归 null（#903 用例本体在 stores/book-reason.test.ts，护栏拆分）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act } from '@testing-library/react';

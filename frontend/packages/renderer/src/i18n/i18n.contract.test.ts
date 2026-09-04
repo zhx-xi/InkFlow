@@ -14,6 +14,7 @@
 import { renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import { bookEn, bookZh } from './book';
 import { chatDeleteUxEn, chatDeleteUxZh } from './chat-delete-ux';
 import { chatUxEn, chatUxZh } from './chat-ux';
 import { en } from './en';
@@ -41,6 +42,7 @@ const comboZh: Dict = {
   ...writingUxZh,
   ...sessionUxZh,
   ...logZh,
+  ...bookZh,
 } as Dict;
 const comboEn: Dict = {
   ...en,
@@ -53,6 +55,7 @@ const comboEn: Dict = {
   ...writingUxEn,
   ...sessionUxEn,
   ...logEn,
+  ...bookEn,
 } as Dict;
 
 describe('F2 i18n 契约：key 对称', () => {
