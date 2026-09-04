@@ -82,9 +82,9 @@ tests when reviewing changes).
 
 > chapter id is an integer; omitting `--status` returns everything.
 
-### write generate (SSE streaming)
+### write next (SSE streaming)
 
-`write generate` outputs an **SSE stream** (`text/event-stream`), not a single JSON:
+`write next` (deterministic mode) hits an **SSE stream** endpoint (`text/event-stream`); the CLI aggregates the stream into a final envelope (see writing.md). Raw frame protocol:
 
 ```text
 data: {"event": "chunk", "content": "夜色渐深，"}

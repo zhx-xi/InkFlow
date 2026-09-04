@@ -1,21 +1,23 @@
 # Agent Template Management (templates.md) ★ version-sensitive
 
 Agent usage: Agent template CRUD + default template setting. GUI counterpart:
-`/settings?cat=templates` (TemplatesPanel: Agent template CRUD + default template). **CLI gap**
-(#251 P1, direct HTTP before 0.8.0). Note: these are **Agent templates** (#107: main model +
+`/settings?cat=templates` (TemplatesPanel: Agent template CRUD + default template). The CLI
+covers it fully (#251 P1, shipped in 0.8.0). Note: these are **Agent templates** (#107: main model +
 four role rows = model/temperature/enabled toggle + default temperature/default word count),
 **not chapter templates**.
 
-## Current CLI capability (read-only built-ins)
+## CLI capability (full DB agent-template CRUD)
 
 | Command | Purpose |
 |---|---|
-| `agent template` | List **built-in pipeline templates** (`GET /agent/pipelines/templates`) — **unrelated** to the DB agent_template table |
+| `agent template list/get/create/update/delete/duplicate` | DB agent-template CRUD (create/update take `--roles-json` four-key JSON; delete `--force`) |
+| `agent template set-default/get-default` | Default-template set/query |
+| `agent template pipelines` | List **built-in pipeline templates** (`GET /agent/pipelines/templates`) — **unrelated** to the DB agent_template table |
 
-⚠️ `agent template` ≠ template management: it lists the pipelines' built-in templates (YAML
-definitions), not the Agent templates users create in the GUI.
+⚠️ Only the `pipelines` subcommand lists built-in pipeline templates (YAML definitions); the
+other subcommands operate on the DB Agent templates users create in the GUI.
 
-## Direct HTTP fallback (before 0.8.0)
+## Direct HTTP (spare)
 
 ```powershell
 # get port/token (kernel.json location in kernel.md: packaged build %APPDATA%\InkFlow\kernel.json)

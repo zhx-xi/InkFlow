@@ -6,9 +6,9 @@ agent 使用：向量索引重建/检索 + 统一 AI 提取记录。GUI 对应�
 
 | 命令 | 必选参数 | 可选/易错 | 说明 |
 |---|---|---|---|
-| `vector reindex` | `--project-id` | `--entity-types`(可重复) | 重建向量索引（GUI 无此入口） |
-| `vector retrieve` | `--project-id` `--query` | `--entity-types` `--top-k`(10) `--min-score`(0.0) | 向量检索 |
-| `extract run` | `--project-id` `--type`(character/setting/outline/timeline/foreshadowing/style) | `--text`/`--text-file`/`--chapters` **三选一互斥** `--prompt` `--num-chapters` `--save/--no-save` `--auto-extract` `--model` `--index` `--force` | 统一 AI 提取（6 类型） |
+| `vector reindex` | `--project-id` | `--type`(可重复：character/setting/foreshadowing/timeline_event/chapter_chunk；缺省全部) | 重建向量索引（GUI 无此入口） |
+| `vector retrieve` | `--project-id` `--query` | `--type` `--top-k`(10) `--min-score`(0.0) | 向量检索 |
+| `extract run` | `--project-id` `--type`(character/setting/outline/timeline/foreshadowing/style/knowledge_relation) | `--text`/`--text-file`/`--chapters` **三选一互斥** `--prompt` `--num-chapters` `--save/--no-save` `--auto-extract` `--model` `--index` `--force` | 统一 AI 提取（7 类型） |
 | `extract status` | `--project-id` | `--type` 过滤 | 最近提取记录（GUI 的 extractions/runs 对应） |
 
 ## 易错点

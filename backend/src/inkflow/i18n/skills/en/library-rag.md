@@ -8,9 +8,9 @@ the GUI CTA jumps to /writing).
 
 | Command | Required params | Optional/error-prone | Purpose |
 |---|---|---|---|
-| `vector reindex` | `--project-id` | `--entity-types`(repeatable) | Rebuild the vector index (no GUI entry) |
-| `vector retrieve` | `--project-id` `--query` | `--entity-types` `--top-k`(10) `--min-score`(0.0) | Vector retrieval |
-| `extract run` | `--project-id` `--type`(character/setting/outline/timeline/foreshadowing/style) | `--text`/`--text-file`/`--chapters` **pick exactly one** `--prompt` `--num-chapters` `--save/--no-save` `--auto-extract` `--model` `--index` `--force` | Unified AI extraction (6 types) |
+| `vector reindex` | `--project-id` | `--type`(repeatable: character/setting/foreshadowing/timeline_event/chapter_chunk; default all) | Rebuild the vector index (no GUI entry) |
+| `vector retrieve` | `--project-id` `--query` | `--type` `--top-k`(10) `--min-score`(0.0) | Vector retrieval |
+| `extract run` | `--project-id` `--type`(character/setting/outline/timeline/foreshadowing/style/knowledge_relation) | `--text`/`--text-file`/`--chapters` **pick exactly one** `--prompt` `--num-chapters` `--save/--no-save` `--auto-extract` `--model` `--index` `--force` | Unified AI extraction (7 types) |
 | `extract status` | `--project-id` | `--type` filter | Recent extraction records (maps to the GUI extractions/runs) |
 
 ## Error-prone points

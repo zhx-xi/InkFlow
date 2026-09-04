@@ -8,22 +8,22 @@ list page + the top project picker in `/writing` + the agent panel on the settin
 
 | Command | Required params | Optional/error-prone | Purpose |
 |---|---|---|---|
-| `project create` | `--name` | `--genre`(default "其他") `--language`(zh-CN) `--target-words` | Create a project |
+| `project create` | `--name` | `--tags`(repeatable) `--language`(zh-CN) `--target-words` | Create a project (tag-based since #595) |
 | `project list` | — | `--search` `--sort`(name\|updated_at\|created_at) | Fixed limit=50; **the main way to get real project UUIDs** |
-| `project get` | `--id` | — | ⚠️ **broken defect**: declared as int while the API only accepts UUIDs — `--id 1` → NOT_FOUND, a UUID → "not a valid int" (recorded 2026-08-11; #251 to fix) |
-| `project delete` | `--id` | `--force` `--permanent` | Same breakage; interactive confirm without `--force` (under `--json` pass `--force` first) |
-| `project restore` | `--id` | — | Same breakage |
+| `project get` | `--id` | — | Fetch by UUID (`--id <uuid>`; fixed under #251) |
+| `project delete` | `--id` | `--force` `--permanent` | Interactive confirm without `--force` (under `--json` pass `--force` first); `--permanent` hard-deletes |
+| `project restore` | `--id` | — | Restore a soft-deleted project |
+| `project update` | `--id` | `--name` `--tags` `--language` `--target-words` `--config k=v` `--config-json <json>` | Update project fields/config (#251 P1 shipped) |
 
 ## Error-prone points
 
 - **`project create/list` return UUIDs** (`id: 00000000-0000-0000-0000-000000000001` shape; seed
-  convention: first project = ...0001); but `get/delete/restore --id` are declared as int and
-  **currently unusable** (int → API 404, UUID → Typer rejects) — for details/deletion use
-  `--json project list` + direct HTTP (`DELETE /api/v1/projects/{uuid}` etc.)
+  convention: first project = ...0001); `get/delete/restore/update --id` accept UUIDs (the loop is
+  closed since the #251 fix — no HTTP workaround needed)
 - Downstream `chapter/character/...` need the project UUID: take the `id` field straight from
   `project create/list --json`
 
-## Project config (★ version-sensitive: CLI gap before 0.8.0, direct HTTP fallback)
+## Project config (CLI-editable since 0.8.0; HTTP fallback kept as a spare)
 
 The GUI's project-level config (settings page agent panel: AgentChainCard four-role toggles +
 default model; default word count on the writing page) goes through `PATCH /api/v1/projects/{id}`

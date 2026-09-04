@@ -1,16 +1,18 @@
 # Agent 模板管理（templates.md）★版本敏感
 
-agent 使用：Agent 模板 CRUD + 默认模板设置。GUI 对应：`/settings?cat=templates`（TemplatesPanel：Agent 模板 CRUD + 默认模板）。**CLI 缺口**（#251 P1，0.8.0 前 HTTP 直调）。注意：模板是 **Agent 模板**（#107：主模型 + 四角色行=模型/温度/启用开关 + 默认温度/默认字数），**不是章节模板**。
+agent 使用：Agent 模板 CRUD + 默认模板设置。GUI 对应：`/settings?cat=templates`（TemplatesPanel：Agent 模板 CRUD + 默认模板）。CLI 已全覆盖（#251 P1，0.8.0 补全）。注意：模板是 **Agent 模板**（#107：主模型 + 四角色行=模型/温度/启用开关 + 默认温度/默认字数），**不是章节模板**。
 
-## 当前 CLI 能力（只读内置）
+## CLI 能力（DB Agent 模板全量 CRUD）
 
 | 命令 | 说明 |
 |---|---|
-| `agent template` | 列**内置 pipeline 模板**（`GET /agent/pipelines/templates`）——与 DB 的 agent_template 表**无关** |
+| `agent template list/get/create/update/delete/duplicate` | DB Agent 模板 CRUD（create/update 用 `--roles-json` 四键 JSON；delete `--force`） |
+| `agent template set-default/get-default` | 默认模板设置/查询 |
+| `agent template pipelines` | 列**内置 pipeline 模板**（`GET /agent/pipelines/templates`）——与 DB 的 agent_template 表**无关** |
 
-⚠️ `agent template` ≠ 模板管理：它列的是管线内置模板（YAML 定义），不是用户在 GUI 创建的 Agent 模板。
+⚠️ 仅 `pipelines` 子命令列管线内置模板（YAML 定义）；其余子命令操作用户在 GUI 创建的 DB Agent 模板。
 
-## HTTP 直调兜底（0.8.0 前）
+## HTTP 直调（备用）
 
 ```powershell
 # 拿 port/token（kernel.json 位置见 kernel.md：打包版 %APPDATA%\InkFlow\kernel.json）
