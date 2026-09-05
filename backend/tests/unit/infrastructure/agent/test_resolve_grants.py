@@ -85,7 +85,6 @@ class TestGrantsFromToolIdsStrict:
     def test_strict_accepts_valid_exposed_tools(self):  # 【R】
         """允许的暴露工具（count_words / create_character）→ 不抛并返回合并 grants。"""
         from inkflow.domain.models.agent_grants import GrantEntry, ToolDomain, ToolOp
-
         from inkflow.infrastructure.agent.tools.registry import grants_from_tool_ids
 
         grants = grants_from_tool_ids(["count_words"], strict=True)
@@ -101,7 +100,6 @@ class TestGrantsFromToolIdsLenient:
     def test_ignores_unknown_and_logs_warning(self, caplog):  # 【R】
         """未识别名忽略 + 发出含未识别名的 WARNING 诊断（spec §5.2 不阻塞）。"""
         from inkflow.domain.models.agent_grants import GrantEntry, ToolDomain, ToolOp
-
         from inkflow.infrastructure.agent.tools.registry import grants_from_tool_ids
 
         with caplog.at_level(logging.WARNING):
@@ -115,7 +113,6 @@ class TestGrantsFromToolIdsLenient:
     def test_lenient_strict_equal_on_valid_input(self):  # 【R】
         """合法输入下 strict 与 lenient 结果一致（无未识别名时行为无 diff）。"""
         from inkflow.domain.models.agent_grants import GrantEntry, ToolDomain, ToolOp
-
         from inkflow.infrastructure.agent.tools.registry import grants_from_tool_ids
 
         strict = grants_from_tool_ids(["count_words"], strict=True)

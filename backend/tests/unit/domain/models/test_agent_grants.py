@@ -30,10 +30,10 @@ RED 预期形态（当前实现）
 from __future__ import annotations
 
 import pytest
-from inkflow.domain.models.agent_grants import GrantEntry, ToolDomain, ToolOp
 from pydantic import ValidationError
 
 from inkflow.domain.models.agent import Agent, AgentCreate, AgentUpdate
+from inkflow.domain.models.agent_grants import GrantEntry, ToolDomain, ToolOp
 
 # ── TestToolDomain ──────────────────────────────────
 

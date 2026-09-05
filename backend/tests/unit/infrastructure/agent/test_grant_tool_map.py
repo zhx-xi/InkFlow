@@ -133,7 +133,6 @@ class TestGrantToolMapInvariants:
     def test_keys_are_domain_op_pairs(self):  # 【R】
         """所有键 ∈ ToolDomain × ToolOp（二元组，域与操作均属枚举）。"""
         from inkflow.domain.models.agent_grants import ToolDomain, ToolOp
-
         from inkflow.infrastructure.agent.tools.registry import GRANT_TOOL_MAP
 
         for key in GRANT_TOOL_MAP:
@@ -181,7 +180,6 @@ class TestToolNameToCell:
     def test_inverse_maps_write_domain_cells(self):  # 【R】
         """代表性反查: create_outline -> outline·write；search_characters -> character·read。"""
         from inkflow.domain.models.agent_grants import ToolDomain, ToolOp
-
         from inkflow.infrastructure.agent.tools.registry import TOOL_NAME_TO_CELL
 
         assert TOOL_NAME_TO_CELL["create_outline"] == (ToolDomain.OUTLINE, ToolOp.WRITE)
@@ -197,7 +195,6 @@ class TestExpandGrants:
     def test_expand_preserves_order_and_dedups(self):  # 【R】
         """按映射插入序拼接、去重保序（重复授予同格不重复）。"""
         from inkflow.domain.models.agent_grants import GrantEntry, ToolDomain, ToolOp
-
         from inkflow.infrastructure.agent.tools.registry import expand_grants
 
         grants = [
@@ -213,7 +210,6 @@ class TestExpandGrants:
     def test_expand_empty_ops_contributes_nothing(self):  # 【R】
         """空 ops GrantEntry 不贡献任何工具名（空格子容忍）。"""
         from inkflow.domain.models.agent_grants import GrantEntry, ToolDomain, ToolOp
-
         from inkflow.infrastructure.agent.tools.registry import expand_grants
 
         grants = [

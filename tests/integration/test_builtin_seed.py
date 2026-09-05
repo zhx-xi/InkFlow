@@ -632,7 +632,6 @@ class TestBuiltinGrants:
 
         （静态断言，不经 DB）."""
         from inkflow.domain.models.agent_grants import GrantEntry  # 【R】
-
         from inkflow.domain.services.agent_entity_service import BUILTIN_AGENT_SPECS
 
         assert len(BUILTIN_AGENT_SPECS) == 6

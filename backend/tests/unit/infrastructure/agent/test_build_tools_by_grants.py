@@ -63,7 +63,6 @@ class TestBuildToolsByGrants:
     def test_materializes_writing_read(self):  # 【R】
         """授予 (writing, read) → 恰 {get_prior_summary, audit_chapter, count_words}。"""
         from inkflow.domain.models.agent_grants import GrantEntry, ToolDomain, ToolOp
-
         from inkflow.infrastructure.agent.tools.registry import build_tools_by_grants
 
         grants = [GrantEntry(domain=ToolDomain.WRITING, ops=[ToolOp.READ])]
@@ -75,7 +74,6 @@ class TestBuildToolsByGrants:
         """只授予 character·read → search_characters 在列，
         create_character 不在列（scope 未授予）。"""
         from inkflow.domain.models.agent_grants import GrantEntry, ToolDomain, ToolOp
-
         from inkflow.infrastructure.agent.tools.registry import build_tools_by_grants
 
         grants = [GrantEntry(domain=ToolDomain.CHARACTER, ops=[ToolOp.READ])]
@@ -93,7 +91,6 @@ class TestBuildToolsByGrants:
     def test_none_sub_deps_group_skipped(self):  # 【R】
         """某子 deps=None → 该组工具跳过（delete deps None + 授予 outline·delete → []）。"""
         from inkflow.domain.models.agent_grants import GrantEntry, ToolDomain, ToolOp
-
         from inkflow.infrastructure.agent.tools.registry import build_tools_by_grants
 
         grants = [GrantEntry(domain=ToolDomain.OUTLINE, ops=[ToolOp.DELETE])]
