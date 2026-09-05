@@ -6,6 +6,9 @@
  *   随主题 + 背景变体（data-theme / data-bg）自然联动；
  * - 必须 [-webkit-app-region:no-drag]，否则点击会被顶栏 drag 区域吞掉；
  * - 无 INKFLOW_API（浏览器 dev）时可选链吞掉调用，按钮 no-op 但可见。
+ * - tabIndex=-1：自绘窗口控制按钮移出键盘 tab 序列——原生 button 可被 Enter/Space 键盘激活，
+ *   焦点偶然落在关闭按钮上时用户 Enter（如聊天发送）会误触发 close → 窗口销毁
+ *   （quit 模式连带内核回收）；鼠标点击不受影响（#487）。
  */
 import { useEffect, useState } from 'react';
 import { Copy, Minus, Square, X } from 'lucide-react';
@@ -38,6 +41,7 @@ export function WindowControls() {
     <div className="flex h-full items-stretch">
       <button
         type="button"
+        tabIndex={-1}
         data-testid="header-wc-min"
         aria-label="Minimize"
         className={cn(BASE_BUTTON_CLASS, 'hover:bg-surface-3 hover:text-ink')}
@@ -47,6 +51,7 @@ export function WindowControls() {
       </button>
       <button
         type="button"
+        tabIndex={-1}
         data-testid="header-wc-max"
         aria-label={isMaximized ? 'Restore' : 'Maximize'}
         className={cn(BASE_BUTTON_CLASS, 'hover:bg-surface-3 hover:text-ink')}
@@ -60,6 +65,7 @@ export function WindowControls() {
       </button>
       <button
         type="button"
+        tabIndex={-1}
         data-testid="header-wc-close"
         aria-label="Close"
         className={cn(

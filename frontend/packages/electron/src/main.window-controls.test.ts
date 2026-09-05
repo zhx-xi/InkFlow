@@ -851,3 +851,34 @@ describe('mainWindow 为 null 容错（?. 短路，依赖声明顺序）', () =>
     expect(win.isMaximized).not.toHaveBeenCalled();
   });
 });
+
+/** #487 写入页聊天框回车偶发关闭 GUI + 内核：window:close IPC 处理器只关闭窗口，绝不直接触发进程退出/内核停止。 */
+describe('#487 window:close 处理器仅关闭窗口（内核落幕守卫，守护用例）', () => {
+  it('dispatch window:close → win.close() 一次，不直接调 app.exit / stopKernel（内核停止仅走 window-all-closed 链）', async () => {
+    vi.useFakeTimers();
+    // 新实例：mainWindow 已设置（createMainWindow 在 boot 赋值），closeHandler 取最新注册记录
+    await freshInstance();
+    // 冲刷 whenReady boot 微任务，确保新实例 registerWindowControlsHandlers + createMainWindow 已执行
+    await vi.advanceTimersByTimeAsync(0);
+    const onMock = vi.mocked(ipcMain.on);
+    // 取「最新」一次 window:close 注册（resetModules 不清空 mock 调用记录 → 必须取最后一条）
+    const closeRegistrations = onMock.mock.calls.filter((c) => c[0] === 'window:close');
+    const handler = closeRegistrations[closeRegistrations.length - 1]?.[1] as unknown as IpcHandler;
+    expect(handler).toBeDefined();
+    win.close.mockClear();
+    vi.mocked(app.exit).mockClear();
+    fakeChild.kill.mockClear();
+    win.webContents.send.mockClear();
+
+    handler(null);
+
+    // 契约：处理器唯一副作用仅是 mainWindow.close()
+    expect(win.close).toHaveBeenCalledTimes(1);
+    // 内核/进程退出绝不由 IPC 处理器直接触发（stopKernel 仅由 window-all-closed → shutdown 链完成）
+    expect(vi.mocked(app.exit)).not.toHaveBeenCalled();
+    expect(fakeChild.kill).toHaveBeenCalledTimes(0);
+    // 无额外窗口关闭 IPC 推送（防处理器偷偷向 renderer 发关闭信号）
+    expect(win.webContents.send).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+});

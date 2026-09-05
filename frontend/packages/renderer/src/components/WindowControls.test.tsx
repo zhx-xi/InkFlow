@@ -156,3 +156,51 @@ describe('WindowControls — 最大化订阅 / api-ready 补订 / cleanup（#98/
     expect(wc.unsubscribe).toHaveBeenCalledTimes(1);
   });
 });
+
+/** #487 写入页聊天框回车偶发关闭 GUI + 内核：窗口控制按钮的键盘激活契约。 */
+describe('WindowControls — #487 键盘激活契约（tabIndex=-1 移出 Tab 序）', () => {
+  // RED：现实现三个按钮为 native <button> 默认可聚焦（无 tabindex → tabIndex=0），Tab 可聚焦、
+  // 聚焦后按 Enter 经 native 键盘激活触发 onClick → windowControls.close() → IPC window:close →
+  // 主进程 close() → window-all-closed → 关内核。GREEN：三个按钮 tabIndex=-1 移出 Tab 序。
+  it('min 按钮 tabIndex=-1（不可 Tab 聚焦，Enter 不触发 minimize）', () => {
+    render(<WindowControls />);
+    const min = screen.getByTestId('header-wc-min');
+    expect(min).toHaveAttribute('tabindex', '-1');
+    expect(min.tabIndex).toBe(-1);
+  });
+
+  it('max 按钮 tabIndex=-1（不可 Tab 聚焦，Enter 不触发 toggleMaximize）', () => {
+    render(<WindowControls />);
+    const max = screen.getByTestId('header-wc-max');
+    expect(max).toHaveAttribute('tabindex', '-1');
+    expect(max.tabIndex).toBe(-1);
+  });
+
+  it('close 按钮 tabIndex=-1（不可 Tab 聚焦，Enter 不触发 windowControls.close —— 核心契约）', () => {
+    render(<WindowControls />);
+    const close = screen.getByTestId('header-wc-close');
+    expect(close).toHaveAttribute('tabindex', '-1');
+    expect(close.tabIndex).toBe(-1);
+  });
+
+  it('全部按钮 tabIndex=-1 → userEvent.tab() 跳过窗口控制按钮，焦点落到后置元素（#487 键盘激活锁）', async () => {
+    const user = userEvent.setup();
+    render(
+      <div>
+        <button type="button" data-testid="before">
+          before
+        </button>
+        <WindowControls />
+        <button type="button" data-testid="after">
+          after
+        </button>
+      </div>,
+    );
+    const close = screen.getByTestId('header-wc-close');
+    await user.tab();
+    expect(screen.getByTestId('before')).toHaveFocus();
+    await user.tab(); // 三个 wc 按钮 tabIndex=-1 → 跳过 → after
+    expect(close).not.toHaveFocus();
+    expect(screen.getByTestId('after')).toHaveFocus();
+  });
+});
