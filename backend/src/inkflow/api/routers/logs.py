@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from inkflow.core.config import config
 from inkflow.logging import StructuredLogRecord, StructuredLogStore, instrument, mask_fields
+from inkflow.logging.trace import get_trace_context, new_span_id
 
 router = APIRouter(prefix="/api/v1/logs", tags=["Logs"])
 
@@ -120,6 +121,7 @@ async def ingest_log(
     store: StructuredLogStore = Depends(get_log_store),
 ) -> dict:
     """前端桥接上报：脱敏 params → 构建 StructuredLogRecord → 落 store → {ok: true}。"""
+    trace_ctx = get_trace_context()
     rec = StructuredLogRecord(
         level=record.level.upper() if record.level else "INFO",
         logger="inkflow",
@@ -129,9 +131,21 @@ async def ingest_log(
         message_key=record.message_key,
         params=cast(dict, mask_fields(record.params or {})),
         correlation_id=record.correlation_id,
-        trace_id=record.trace_id,
-        span_id=record.span_id,
-        parent_span_id=record.parent_span_id,
+        trace_id=(
+            record.trace_id
+            if record.trace_id is not None
+            else (trace_ctx.trace_id if trace_ctx is not None else None)
+        ),
+        span_id=(
+            record.span_id
+            if record.span_id is not None
+            else (new_span_id() if trace_ctx is not None else None)
+        ),
+        parent_span_id=(
+            record.parent_span_id
+            if record.parent_span_id is not None
+            else (trace_ctx.span_id if trace_ctx is not None else None)
+        ),
         project_id=record.project_id,
         entity_id=record.entity_id,
         duration_ms=record.duration_ms,
