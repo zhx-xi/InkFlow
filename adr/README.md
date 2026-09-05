@@ -71,7 +71,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 | [ADR-015](llm/ADR-015.md) | 引入 LangChain 全家桶 — 决策理由与约束 | ✅ 已接受 | 2026-07-31 |
 | [ADR-042](llm/ADR-042.md) | LangSmith 可观测性追踪接入 | ✅ 已接受 | 2026-08-24 |
 | [ADR-049](llm/ADR-049.md) | LLM 模型装配 fail-fast 化 — 删除静默回退 + provider 键内置路由 + 诊断日志 | ✅ 已接受 | 2026-09-05 |
-| [ADR-051](llm/ADR-051.md) | LLM 出口统一 LiteLLM — ChatLiteLLM 替换 ChatOpenAI + 思考模式七档 | 🟡 提议中（docs PR 评审） | 2026-09-06 |
+| [ADR-051](llm/ADR-051.md) | LLM 出口统一 LiteLLM — ChatLiteLLM 替换 ChatOpenAI + 思考模式七档 | ✅ 已接受 | 2026-09-06 |
 
 ### Agent（agent）
 
