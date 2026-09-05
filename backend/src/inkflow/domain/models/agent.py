@@ -16,6 +16,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from inkflow.domain.models.agent_grants import GrantEntry
+
 
 def _validate_name(v: str) -> str:
     """共享的 Agent 名称校验：去空白后非空（§2.1 契约仅「非空白」）。"""
@@ -34,6 +36,7 @@ class Agent(BaseModel):
         description: 描述.
         icon: 图标（emoji 字符或图标键；空串 = 默认图标）.
         system_prompt: system prompt（内置 Agent 只读；自定义 Agent 可编辑）.
+        grants: F58 授权矩阵（domain × ops；空 = 无授权/存量按 tool_ids 推断）.
         tool_ids: 能力白名单，工具目录 name 列表.
         skill_ids: 能力白名单，skill 目录名列表（#522 文件系统真源引用）.
         model_override: 模型覆盖（provider/model 格式，None = 跟随默认）.
@@ -51,6 +54,7 @@ class Agent(BaseModel):
     description: str = ""
     icon: str = ""
     system_prompt: str = ""
+    grants: list[GrantEntry] = Field(default_factory=list)
     tool_ids: list[str] = Field(default_factory=list)
     skill_ids: list[str] = Field(default_factory=list)
     model_override: str | None = None
@@ -81,6 +85,7 @@ class AgentCreate(BaseModel):
     description: str = ""
     icon: str = ""
     system_prompt: str = ""
+    grants: list[GrantEntry] | None = None
     tool_ids: list[str] = Field(default_factory=list)
     skill_ids: list[str] = Field(default_factory=list)
     model_override: str | None = None
@@ -105,6 +110,7 @@ class AgentUpdate(BaseModel):
     description: str | None = None
     icon: str | None = None
     system_prompt: str | None = None
+    grants: list[GrantEntry] | None = None
     tool_ids: list[str] | None = None
     skill_ids: list[str] | None = None
     model_override: str | None = None

@@ -143,7 +143,7 @@ def ensure_agent_executions_hitl_payload_column(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(agent_executions)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）→ create_all 建新表（自动含 hitl_payload 列）
+        return
     if "hitl_payload" not in names:
         conn.execute(text("ALTER TABLE agent_executions ADD COLUMN hitl_payload TEXT"))
 
@@ -155,7 +155,7 @@ def ensure_agent_executions_relations_column(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(agent_executions)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）→ create_all 建新表（自动含 relations 列）
+        return
     if "relations" not in names:
         conn.execute(text("ALTER TABLE agent_executions ADD COLUMN relations TEXT"))
 
@@ -167,7 +167,7 @@ def ensure_agent_executions_trace_column(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(agent_executions)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）→ create_all 建新表（自动含 trace 列）
+        return
     if "trace" not in names:
         conn.execute(text("ALTER TABLE agent_executions ADD COLUMN trace TEXT"))
 
@@ -180,7 +180,7 @@ def ensure_agent_executions_thread_id_column(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(agent_executions)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）→ create_all 建新表（自动含 thread_id 列）
+        return
     if "thread_id" not in names:
         conn.execute(text("ALTER TABLE agent_executions ADD COLUMN thread_id TEXT"))
 
@@ -194,9 +194,19 @@ def ensure_agent_role_key_column(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(agents)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）→ create_all 建新表（自动含 role_key 列）
+        return
     if "role_key" not in names:
         conn.execute(text("ALTER TABLE agents ADD COLUMN role_key VARCHAR(100)"))
+
+
+def ensure_agents_grants_column(conn: Connection) -> None:
+    """F58 #954：为存量库 agents 补 grants JSON 列（幂等，镜像 role_key 先例）."""
+    cols = conn.execute(text("PRAGMA table_info(agents)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return  # 表不存在（全新环境）→ create_all 建新表（自动含 grants 列）
+    if "grants" not in names:
+        conn.execute(text("ALTER TABLE agents ADD COLUMN grants JSON"))
 
 
 def ensure_chat_messages_is_deleted_column(conn: Connection) -> None:
@@ -207,7 +217,7 @@ def ensure_chat_messages_is_deleted_column(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(chat_messages)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）→ create_all 建新表（自动含 is_deleted 列）
+        return
     if "is_deleted" not in names:
         conn.execute(
             text("ALTER TABLE chat_messages ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT 0")
@@ -217,23 +227,14 @@ def ensure_chat_messages_is_deleted_column(conn: Connection) -> None:
 def ensure_chat_messages_conversation_id_column(conn: Connection) -> None:
     """#744：为存量库 chat_messages 补 conversation_id 列 + 回填（幂等）。
 
-    镜像 ensure_chat_messages_is_deleted_column：PRAGMA 确认缺列才 ALTER；表不存在
-    （全新环境）→ no-op，等 create_all 建新表（自动含列 + conversations 表）。
-    回填（仅首次缺列时执行）：(1) 每项目建一条 conversation 并链接（取最早一条）；
-    (2) UPDATE 挂接 NULL conversation_id。
-    ① 的 INSERT 列清单动态探测 conversations 表列（#869 S3d defect C）：≤0.11 库
-    （#744 前）跳中间版本直升 #766+ 时，conversations 由 create_all 以当前 ORM
-    schema 新建，delete_permission/title NOT NULL 且无 SQL DEFAULT（ORM default 仅
-    Python 侧生效），固定三列 raw INSERT 撞 constraint 使启动崩溃。
-    按存在列补字面值（delete_permission→'manual'、title→''，与
-    ensure_conversations_delete_permission_column / ORM default 一致）；
-    #766/#770 前旧表缺列 → 维持三列回填，后续 ensure_* 以 SQL DEFAULT 补上。列名取自
-    固定白名单（project_id/created_at/is_deleted/delete_permission/title），无用户输入。
+    镜像 ensure_chat_messages_is_deleted_column：缺列才 ALTER；回填每项目建一条
+    conversation 并链接。INSERT 列清单按 conversations 实际列动态拼装（#869
+    S3d defect C）并按存在列补字面值；列名固定白名单，无用户输入。
     """
     cols = conn.execute(text("PRAGMA table_info(chat_messages)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）→ create_all 建新表（自动含 conversation_id 列）
+        return
     if "conversation_id" not in names:
         conn.execute(text("ALTER TABLE chat_messages ADD COLUMN conversation_id INTEGER"))
     # ① 建 conversation：INSERT 列清单按 conversations 实际列动态拼装（#869 defect C，
@@ -274,7 +275,7 @@ def ensure_conversations_delete_permission_column(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(conversations)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）→ create_all 建新表（自动含 delete_permission 列）
+        return
     if "delete_permission" not in names:
         conn.execute(
             text(
@@ -292,7 +293,7 @@ def ensure_conversation_title_column(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(conversations)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）→ create_all 建新表（自动含 title 列）
+        return
     if "title" not in names:
         conn.execute(
             text("ALTER TABLE conversations ADD COLUMN title VARCHAR(200) NOT NULL DEFAULT ''")
@@ -306,7 +307,7 @@ def ensure_writing_plan_progress_reason_column(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(writing_plans)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）→ create_all 建新表（自动含 progress_reason 列）
+        return
     if "progress_reason" not in names:
         conn.execute(text("ALTER TABLE writing_plans ADD COLUMN progress_reason VARCHAR(2000)"))
 
@@ -322,7 +323,7 @@ def ensure_world_parent_id_column(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(world_settings)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）→ create_all 建新表（自动含列+新索引）
+        return
     if "parent_id" not in names:
         conn.execute(text("ALTER TABLE world_settings ADD COLUMN parent_id INTEGER"))
     if "is_deleted" not in names:
@@ -372,7 +373,7 @@ def ensure_outline_columns(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(outlines)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）→ create_all 建新表（自动含三列）
+        return
     if "level" not in names:
         conn.execute(text("ALTER TABLE outlines ADD COLUMN level VARCHAR(16) DEFAULT 'chapter'"))
     if "parent_id" not in names:
@@ -389,7 +390,7 @@ def ensure_characters_brief_column(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(characters)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）→ create_all 建新表（自动含 brief 列）
+        return
     if "brief" not in names:
         conn.execute(text("ALTER TABLE characters ADD COLUMN brief TEXT NOT NULL DEFAULT ''"))
 
@@ -407,7 +408,7 @@ def ensure_project_columns(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(projects)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）→ create_all 建新表（自动含全部列）
+        return
     additions = (
         ("tags", "JSON NOT NULL DEFAULT '[]'"),
         ("language", "TEXT NOT NULL DEFAULT 'zh-CN'"),
@@ -432,7 +433,7 @@ def ensure_project_watermark_column(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(projects)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）→ create_all 建新表（自动含 active_watermark 列）
+        return
     if "active_watermark" not in names:
         conn.execute(
             text("ALTER TABLE projects ADD COLUMN active_watermark FLOAT NOT NULL DEFAULT 0.0")
@@ -445,7 +446,7 @@ def ensure_preference_superseded_column(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(project_preferences)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）→ create_all 建新表（自动含列）
+        return
     if "superseded_by" not in names:
         conn.execute(
             text(
@@ -501,7 +502,7 @@ def ensure_world_drop_is_deleted(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(world_settings)")).fetchall()
     names = {row[1] for row in cols}
     if not names or "is_deleted" not in names:
-        return  # 表不存在（全新环境）或列已移除 → no-op
+        return
     # ① 清存量软删
     conn.execute(text("DELETE FROM world_settings WHERE is_deleted = 1"))
     # ② 删依赖 is_deleted 的索引（partial unique + 单列索引，按 sqlite_master 枚举）
@@ -539,7 +540,7 @@ def ensure_world_categories_kind_column(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(world_categories)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # table missing (fresh env) -> create_all builds it with the column
+        return
     if "kind" not in names:
         conn.execute(
             text(
@@ -564,7 +565,7 @@ def ensure_world_root_unique_index(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(world_settings)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
-        return  # 表不存在（全新环境）-> create_all 建新表自动含索引
+        return
     # ① 存量多根降级：每项目首行（最小 id）留根，其余行 parent_id 挂首根。逐行
     # 参数化 UPDATE——避免关联子查询的行集随自身 UPDATE 而漂移。
     rows = conn.execute(
@@ -621,7 +622,7 @@ def _migrate_drop_is_deleted(
     cols = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
     names = {row[1] for row in cols}
     if not names or "is_deleted" not in names:
-        return  # 表不存在（全新环境）或列已移除 → no-op
+        return
     # ① 清存量软删
     conn.execute(text(f"DELETE FROM {table} WHERE is_deleted = 1"))
     # ② 删依赖 is_deleted 的索引（partial unique + 单列索引，按 sqlite_master 枚举）
@@ -814,7 +815,7 @@ def ensure_character_group_members_migration(conn: Connection) -> None:
     cols = conn.execute(text("PRAGMA table_info(characters)")).fetchall()
     names = {row[1] for row in cols}
     if not names or "group_id" not in names:
-        return  # 表不存在（全新环境）或列已移除 → no-op
+        return
     # ① 存量分组归属回填到关联表（必须先于移列生效；OR IGNORE 保证重建失败
     #    重跑时不会因重复主键报错）
     conn.execute(

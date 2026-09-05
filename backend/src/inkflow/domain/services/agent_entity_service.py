@@ -1,4 +1,4 @@
-"""Agent 实体业务服务 — 自定义 Agent CRUD + 同名查重 + tool/skill 白名单校验.
+"""Agent 实体业务服务 — 自定义 Agent CRUD + 同名查重 + grants/tool/skill 授权校验.
 
 职责（spec §2.1/§3.3/§5.6/§7 + ADR-039 #522）:
 - CRUD 编排：委托 AgentRepositoryProtocol
@@ -34,15 +34,17 @@ from typing import TypedDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.agent import Agent, AgentCreate, AgentUpdate
+from inkflow.domain.models.agent_grants import GrantEntry, ToolDomain, ToolOp
 from inkflow.domain.ports.agent_errors import (
     AgentBuiltinError,
     AgentNameConflictError,
     AgentNotFoundError,
+    GrantValidationError,
     SkillReferenceError,
     ToolReferenceError,
 )
 from inkflow.domain.ports.agent_repository import AgentRepositoryProtocol
-from inkflow.infrastructure.agent.tools import ALL_TOOL_SPECS
+from inkflow.infrastructure.agent.tools import ALL_TOOL_SPECS, grants_from_tool_ids
 from inkflow.infrastructure.database.repositories.agent_repo import (
     SQLiteAgentRepository,
 )
@@ -60,6 +62,7 @@ class _BuiltinAgentSpec(TypedDict):
     description: str
     icon: str
     system_prompt: str
+    grants: list[GrantEntry]
     tool_ids: list[str]
     skill_name: str
     role_key: str | None
@@ -76,6 +79,11 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
             "用 check_foreshadowing 检查伏笔埋设与回收，保证规划与既有设定一致。\n"
             "输出规范：输出结构化章节规划，包含章节目标、场景清单、关键事件、伏笔操作与衔接要点，不直接撰写正文。\n"
         ),
+        "grants": [
+            GrantEntry(domain=ToolDomain.CHARACTER, ops=[ToolOp.READ]),
+            GrantEntry(domain=ToolDomain.FORESHADOWING, ops=[ToolOp.READ]),
+            GrantEntry(domain=ToolDomain.WRITING, ops=[ToolOp.READ]),
+        ],
         "tool_ids": ["search_characters", "check_foreshadowing", "get_prior_summary"],
         "skill_name": "architecture-methodology",
         "role_key": "architect",
@@ -90,6 +98,11 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
             "用 check_foreshadowing 确认伏笔衔接，完成后用 save_draft 保存草稿。\n"
             "输出规范：输出可直接阅读的正文初稿，覆盖大纲关键事件，保存草稿后向用户报告完成情况。\n"
         ),
+        "grants": [
+            GrantEntry(domain=ToolDomain.CHARACTER, ops=[ToolOp.READ]),
+            GrantEntry(domain=ToolDomain.FORESHADOWING, ops=[ToolOp.READ]),
+            GrantEntry(domain=ToolDomain.WRITING, ops=[ToolOp.READ, ToolOp.WRITE]),
+        ],
         "tool_ids": [
             "search_characters",
             "check_foreshadowing",
@@ -109,6 +122,10 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
             "用 search_characters 复核角色档案与世界观设定的冲突点。\n"
             "输出规范：输出结构化 findings，逐条标注问题类型、位置、证据与修改建议，不改写正文。\n"
         ),
+        "grants": [
+            GrantEntry(domain=ToolDomain.WRITING, ops=[ToolOp.READ]),
+            GrantEntry(domain=ToolDomain.CHARACTER, ops=[ToolOp.READ]),
+        ],
         "tool_ids": ["audit_chapter", "count_words", "search_characters"],
         "skill_name": "audit-methodology",
         "role_key": "auditor",
@@ -124,6 +141,9 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
             "完成后用 save_draft 保存草稿。\n"
             "输出规范：输出修订后的正文草稿与改动清单，说明每处修改对应的 finding，供用户确认。\n"
         ),
+        "grants": [
+            GrantEntry(domain=ToolDomain.WRITING, ops=[ToolOp.READ, ToolOp.WRITE]),
+        ],
         "tool_ids": ["get_prior_summary", "count_words", "save_draft"],
         "skill_name": "revision-methodology",
         "role_key": "reviser",
@@ -138,6 +158,10 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
             "用 check_foreshadowing 检查伏笔走向是否越过世界观边界。\n"
             "输出规范：输出世界观一致性问题清单，逐条给出矛盾点、世界观依据与修正建议，不直接改写档案或正文。\n"
         ),
+        "grants": [
+            GrantEntry(domain=ToolDomain.CHARACTER, ops=[ToolOp.READ]),
+            GrantEntry(domain=ToolDomain.FORESHADOWING, ops=[ToolOp.READ]),
+        ],
         "tool_ids": ["search_characters", "check_foreshadowing"],
         "skill_name": "worldview-methodology",
         "role_key": "worldview",
@@ -151,6 +175,9 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
             "工具使用：润色前获取前文摘要以保持文风一致；完成后用 count_words 统计字数。\n"
             "输出规范：输出润色后的正文与改动摘要，明确说明修改仅限文笔层面，不涉及情节调整。\n"
         ),
+        "grants": [
+            GrantEntry(domain=ToolDomain.WRITING, ops=[ToolOp.READ]),
+        ],
         "tool_ids": ["count_words", "get_prior_summary"],
         "skill_name": "polishing-methodology",
         "role_key": "polisher",
@@ -183,6 +210,19 @@ def _validate_tool_ids(tool_ids: list[str]) -> None:
             raise ToolReferenceError()
 
 
+def _validate_grants(grants: list[GrantEntry]) -> None:
+    """grants 服务侧防御：同一 domain 重复条目 → GrantValidationError（422）.
+
+    枚举/结构合法性已由 Pydantic 前置保证（GrantEntry）；本函数拦截
+    seed/duplicate 等服务内直构路径的重复域条目。
+    """
+    seen: set[ToolDomain] = set()
+    for entry in grants:
+        if entry.domain in seen:
+            raise GrantValidationError()
+        seen.add(entry.domain)
+
+
 class AgentEntityService:
     """Agent 实体业务服务 — CRUD + 同名查重 + tool/skill 白名单校验.
 
@@ -201,7 +241,7 @@ class AgentEntityService:
         self._skills_root = skills_root
 
     async def create(self, data: AgentCreate) -> Agent:
-        """创建自定义 Agent（同名冲突 → 422；tool/skill 白名单校验）.
+        """创建自定义 Agent（同名冲突 → 422；grants/tool/skill 授权校验）.
 
         查重未命中 → 白名单全过 → 构造实体（id=None、builtin=False、时间戳
         填充为 now(UTC)、role_key 自动分配）→ 委托 repo.add。
@@ -209,7 +249,15 @@ class AgentEntityService:
         existing = await self._agent_repo.get_by_name(data.name)
         if existing is not None:
             raise AgentNameConflictError()
-        _validate_tool_ids(data.tool_ids)
+        if "grants" in data.model_fields_set and "tool_ids" in data.model_fields_set:
+            raise GrantValidationError("grants 与 tool_ids 不能同时传入（tool_ids 已弃用）")
+        if data.grants is not None:
+            _validate_grants(data.grants)
+            grants = list(data.grants)
+            tool_ids: list[str] = []
+        else:
+            grants = grants_from_tool_ids(data.tool_ids, strict=True)
+            tool_ids = list(data.tool_ids)
         await self._validate_skill_ids(data.skill_ids)
         # v1.5 #484（spec §5.7.2）：role_key = name slug 化 base，冲突追加数字后缀
         existing_keys = {a.role_key for a in await self._agent_repo.list() if a.role_key}
@@ -226,7 +274,8 @@ class AgentEntityService:
             description=data.description,
             icon=data.icon,
             system_prompt=data.system_prompt,
-            tool_ids=list(data.tool_ids),
+            grants=grants,
+            tool_ids=tool_ids,
             skill_ids=list(data.skill_ids),
             model_override=data.model_override,
             temperature_override=data.temperature_override,
@@ -250,17 +299,21 @@ class AgentEntityService:
         return await self._agent_repo.list()
 
     async def update(self, agent_id: int, data: AgentUpdate) -> Agent:
-        """部分更新 Agent（exclude_unset 浅合并，同 F1/F13）.
+        """部分更新 Agent（exclude_unset 浅合并，同 F1/F13；grants 授权双写）.
 
         None 值 = 不修改（与未传入等价，合并前剔除）；仅 name 变更时查重
-        （命中其他 id → 422）；tool_ids/skill_ids 白名单校验仅针对本次传入
-        字段；updated_at 刷新为 now(UTC)，created_at 保留。
+        （命中其他 id → 422）；grants/tool_ids/skill_ids 校验仅针对本次传入
+        字段；grants 提供 → tool_ids 清 []，tool_ids 提供 → strict 推断 grants
+        两列同写；updated_at 刷新为 now(UTC)，created_at 保留。
         """
         existing = await self._agent_repo.get(agent_id)
         if existing is None:
             raise AgentNotFoundError()
         if existing.builtin:
             raise AgentBuiltinError()
+        both_grant_fields = {"grants", "tool_ids"} <= set(data.model_fields_set)
+        if both_grant_fields and (data.grants is not None or data.tool_ids is not None):
+            raise GrantValidationError("grants 与 tool_ids 不能同时传入（tool_ids 已弃用）")
         updates = {
             k: getattr(data, k) for k in data.model_fields_set if getattr(data, k) is not None
         }
@@ -268,8 +321,11 @@ class AgentEntityService:
             dup = await self._agent_repo.get_by_name(updates["name"])
             if dup is not None and dup.id != existing.id:
                 raise AgentNameConflictError()
-        if "tool_ids" in updates:
-            _validate_tool_ids(updates["tool_ids"])
+        if "grants" in updates:
+            _validate_grants(updates["grants"])
+            updates["tool_ids"] = []
+        elif "tool_ids" in updates:
+            updates["grants"] = grants_from_tool_ids(updates["tool_ids"], strict=True)
         if "skill_ids" in updates:
             await self._validate_skill_ids(updates["skill_ids"])
         merged = existing.model_copy(update=updates)
@@ -367,6 +423,7 @@ async def seed_builtin_agents(session: AsyncSession) -> int:
                 description=spec["description"],
                 icon=spec["icon"],
                 system_prompt=spec["system_prompt"],
+                grants=list(spec["grants"]),
                 tool_ids=list(spec["tool_ids"]),
                 skill_ids=[spec["skill_name"]],
                 builtin=True,

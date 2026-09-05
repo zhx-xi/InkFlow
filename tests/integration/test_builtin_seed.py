@@ -558,3 +558,93 @@ class TestSeedAgents:
 
         rows = (await db_session.execute(select(AgentORM))).scalars().all()
         assert len(rows) == 6
+
+
+# ── #954 F58 grants 数据面 — 内置 Agent grants 出厂字面值契约（RED-3，contract §3/§9）──────
+#
+# 依据：contract-954 §3 表格逐字（内置 6 Agent grants 出厂字面值 = §2.3 反查推断）+ §9 RED-3。
+# spec §5.1（tool_ids 列保留不删，双写）——本段【G】守护 tool_ids 旧集合
+
+# 不变，【R】聚焦 grants。
+#
+# RED 预期形态（当前 AgentORM 无 grants 列 / BUILTIN_AGENT_SPECS 无 grants 键 /
+# GrantEntry 不存在）：
+# - seed 反查：agent.grants → AttributeError（无列）→ FAILED。
+# - 静态断言：GrantEntry 于函数体内 import → ImportError FAILED；且 spec 无 'grants' 键
+#   → "grants" in spec AssertionError FAILED。
+#
+# 【G】= WHITELIST_MAP tool_ids 旧集合断言零改动；【R】= 本段全部新用例。
+
+
+GRANTS_WHITELIST_MAP = {
+    "架构师": {"character": {"read"}, "foreshadowing": {"read"}, "writing": {"read"}},
+    "写手": {"character": {"read"}, "foreshadowing": {"read"}, "writing": {"read", "write"}},
+    "审校员": {"writing": {"read"}, "character": {"read"}},
+    "修订师": {"writing": {"read", "write"}},
+    "世界观顾问": {"character": {"read"}, "foreshadowing": {"read"}},
+    "润色师": {"writing": {"read"}},
+}
+"""内置 6 Agent 出厂 grants 字面值（contract-954 §3 表格逐字；
+
+比较形态 {domain: set(ops)} 防序脆弱）。"""
+
+
+def _grants_to_map(grants) -> dict:
+    """grants 归一为 {domain: set(ops)}（接受 GrantEntry 对象或 dict，防序/形态脆弱）."""
+    out = {}
+    for entry in grants or []:
+        if isinstance(entry, dict):
+            dom = entry["domain"]
+            ops = entry.get("ops") or []
+        else:
+            dom = entry.domain
+            ops = entry.ops or []
+        out[str(dom)] = {str(op) for op in ops}
+    return out
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestBuiltinGrants:
+    """内置 Agent grants 出厂字面值契约（contract-954 §3 逐字；双写【G】tool_ids 不变）."""
+
+    async def test_seed_grants_match_literal(self, db_session):
+        """seed 后每个内置 agent.grants 归一 == GRANTS_WHITELIST_MAP[name]；
+
+        tool_ids 旧集合不变（双写）."""
+        assert await seed_builtin_agents(db_session) == 6
+
+        from inkflow.infrastructure.database.models import AgentORM
+
+        rows = (await db_session.execute(select(AgentORM))).scalars().all()
+        by_name = {a.name: a for a in rows}
+        assert set(by_name) == set(BUILTIN_AGENT_NAMES)
+        for name, (tool_ids, _slug) in WHITELIST_MAP.items():
+            agent = by_name[name]
+            assert (
+                _grants_to_map(agent.grants) == GRANTS_WHITELIST_MAP[name]
+            ), f"{name} grants 与出厂字面值不符: {agent.grants}"
+            # 双写契约【G】：tool_ids 旧集合不变（spec §5.1 tool_ids 保留列）
+            assert set(agent.tool_ids) == tool_ids, f"{name} tool_ids 集合被破坏: {agent.tool_ids}"
+
+    async def test_builtin_agent_specs_have_grants(self):
+        """BUILTIN_AGENT_SPECS 每项含 'grants' 键且归一值 == GRANTS_WHITELIST_MAP
+
+        （静态断言，不经 DB）."""
+        from inkflow.domain.models.agent_grants import GrantEntry  # 【R】
+
+        from inkflow.domain.services.agent_entity_service import BUILTIN_AGENT_SPECS
+
+        assert len(BUILTIN_AGENT_SPECS) == 6
+        by_name = {s["name"]: s for s in BUILTIN_AGENT_SPECS}
+        assert set(by_name) == set(GRANTS_WHITELIST_MAP)
+        for name, grants_map in GRANTS_WHITELIST_MAP.items():
+            spec = by_name[name]
+            assert "grants" in spec, f"{name} BUILTIN_AGENT_SPECS 缺 grants 键"
+            assert isinstance(spec["grants"], list), f"{name} grants 必须为 list[GrantEntry]"
+            assert all(isinstance(g, GrantEntry) for g in spec["grants"]), (
+
+                f"{name} grants 元素必须为 GrantEntry"
+
+            )
+            assert _grants_to_map(spec["grants"]) == grants_map, f"{name} spec grants 与字面值不符"

@@ -49,6 +49,13 @@ class ToolReferenceError(AgentServiceError):
         super().__init__(message)
 
 
+class GrantValidationError(AgentServiceError):
+    """grants 非法（domain/ops 取值非法或重复）— 422."""
+
+    def __init__(self, message: str = "grants 非法（domain/ops 取值非法或重复）") -> None:
+        super().__init__(message)
+
+
 class SkillReferenceError(AgentServiceError):
     """skill_ids 含不存在的 Skill — 422."""
 

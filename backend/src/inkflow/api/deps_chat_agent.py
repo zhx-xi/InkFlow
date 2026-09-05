@@ -24,7 +24,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import inkflow.api.deps as deps_module
 from inkflow.infrastructure.agent.pipeline_templates import _CHAT_SYSTEM_AGENT_PROMPT
-from inkflow.infrastructure.agent.tools import UnifiedToolDeps, build_tools_by_ids
+from inkflow.infrastructure.agent.tools import (
+    UnifiedToolDeps,
+    build_tools_by_grants,
+    resolve_grants,
+)
 from inkflow.infrastructure.agent.tools.reader_tools import Tool
 
 if TYPE_CHECKING:
@@ -87,14 +91,14 @@ async def get_chat_agent_service(
     async def _run_single_agent(agent: object, input_text: str) -> str:
         """单 agent 执行钩子（Q1=A 拍板）：按 agent 配置构建 deep agent 并执行一次，返回输出文本.
 
-        #838 运行时物化：自定义 agent 的 tool_ids 白名单经 build_tools_by_ids
-        物化（复用外层已构造的各子 deps——闭包延迟绑定，调用期均已就绪；delete
-        子 deps 在 manual 授权下为 None，build_tools_by_ids 跳过该组——核心工具
-        本就不允许自定义 agent 勾选）；reader 工具绑定当前项目（#680 闭包绑定）。
+        #954 F58 运行时物化：agent 授权统一经 resolve_grants 读取（grants 优先，
+        存量 tool_ids-only 行宽松反查）→ build_tools_by_grants 展开（复用外层
+        已构造的各子 deps——闭包延迟绑定，调用期均已就绪；delete 子 deps 在
+        manual 授权下为 None，build_tools_by_grants 跳过该组）；reader 工具
+        绑定当前项目（#680 闭包绑定）。
         """
         from langchain_core.messages import HumanMessage
 
-        agent_tool_ids = getattr(agent, "tool_ids", None) or []
         unified_deps = UnifiedToolDeps(
             reader=reader_deps,
             save_draft=save_draft_deps,
@@ -110,8 +114,8 @@ async def get_chat_agent_service(
             model=model,
             api_key=api_key,
             base_url=base_url,
-            tools=build_tools_by_ids(
-                agent_tool_ids,
+            tools=build_tools_by_grants(
+                resolve_grants(agent),
                 unified_deps,
                 project_id=uuid.UUID(data.project_id),
             ),
