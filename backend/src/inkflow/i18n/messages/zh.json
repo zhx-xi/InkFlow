@@ -3,6 +3,7 @@
   "log.event.create_chapter": "创建章节：{title}",
   "log.event.create_project": "创建项目：{name}",
   "log.event.delete_project": "删除项目：{project_id}",
+  "log.event.mcp_tool_call": "MCP 工具调用：{tool}",
   "log.event.llm_request": "LLM 请求：{model}（{count} 条消息）",
   "log.event.llm_response": "LLM 响应：{model}（{length} 字符）",
   "log.event.update_project": "更新项目：{name}",
