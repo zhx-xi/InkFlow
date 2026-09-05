@@ -134,21 +134,21 @@ class FakeToolClient:
 
     async def get(self, path: str, *, params: object = None, json: object = None) -> dict:
         self.calls.append(("GET", path))
-        return self.response  # type: ignore[return-value]
+        return self.response  # type: ignore[return-value]  # 鸭子 fake：response 预置为 object 但方法契约返回 dict
 
     async def post(
         self, path: str, *, params: object = None, json: object = None, timeout: object = None
     ) -> dict:
         self.calls.append(("POST", path))
-        return self.response  # type: ignore[return-value]
+        return self.response  # type: ignore[return-value]  # 鸭子 fake：response 预置为 object 但方法契约返回 dict
 
     async def patch(self, path: str, *, params: object = None, json: object = None) -> dict:
         self.calls.append(("PATCH", path))
-        return self.response  # type: ignore[return-value]
+        return self.response  # type: ignore[return-value]  # 鸭子 fake：response 预置为 object 但方法契约返回 dict
 
     async def delete(self, path: str, *, params: object = None, json: object = None) -> dict:
         self.calls.append(("DELETE", path))
-        return self.response  # type: ignore[return-value]
+        return self.response  # type: ignore[return-value]  # 鸭子 fake：response 预置为 object 但方法契约返回 dict
 
     async def get_raw(self, path: str, *, params: object = None) -> str:
         self.calls.append(("GET_RAW", path))
