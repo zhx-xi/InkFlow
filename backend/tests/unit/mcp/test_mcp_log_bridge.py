@@ -88,8 +88,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from inkflow.mcp.log_bridge import get_forwarder, mcp_log_sink  # RED: 模块不存在
 
+from inkflow.mcp.log_bridge import get_forwarder, mcp_log_sink  # RED: 模块不存在
 from inkflow.mcp.server import call_tool_result
 from inkflow.mcp.tools import build_mcp_tools
 
