@@ -102,6 +102,7 @@ from typing import ClassVar
 from unittest.mock import AsyncMock
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from inkflow.cli.log_bridge import get_cli_forwarder  # RED: 模块不存在
@@ -231,6 +232,22 @@ class TestGenericForwarder:
             assert client.timeout.read == 5.0
         finally:
             client.close()
+
+    def test_default_factory_reads_module_attr(self, monkeypatch):
+        """契约 1.1：client_factory=None → attach 时运行时读本模块 _make_client。"""
+        made: list[tuple[int, str]] = []
+        monkeypatch.setattr(
+            bridge_mod, "_make_client", lambda port, token: made.append((port, token))
+        )
+        fwd = LogForwarder()  # 不注入工厂
+        fwd.attach(9, "tok-b")
+        assert made == [(9, "tok-b")]
+
+    def test_sink_ignores_unstructured_records(self):
+        """契约 1.3：无 caller_type 的记录不进缓冲（sink 级过滤，双保险）。"""
+        fwd = LogForwarder(client_factory=lambda port, token: FakeLogClient())
+        fwd.sink(SimpleNamespace(record={"extra": {}}))
+        assert list(fwd.pending) == []
 
 
 # ---------------------------------------------------------------------------
@@ -402,6 +419,86 @@ class TestBridgeLifecycle:
         result = cli_runner.invoke(root_app, ["project", "list"])
         assert result.exit_code == 0  # 转发失败对 CLI 语义零影响
         assert list(fake_cli_env.forwarder.pending) == []  # 尽力而为即弃
+
+    def test_nested_cli_log_sink_single_install(self, fake_cli_env, monkeypatch, cli_runner):
+        """契约 3c：嵌套进入不叠加 patch——内层退出后外层会话完好，外层次退出才还原。"""
+        from typer.core import TyperCommand
+
+        _patch_kernel(monkeypatch, project_mod)
+        monkeypatch.setattr(project_mod, "InkFlowHTTPClient", FakeToolClient)
+        with cli_bridge_mod.cli_log_sink():
+            outer_patched = "invoke" in TyperCommand.__dict__
+            assert outer_patched
+            with cli_bridge_mod.cli_log_sink():
+                pass
+            assert "invoke" in TyperCommand.__dict__  # 内层退出未拆外层（depth 守卫）
+            cli_runner.invoke(root_app, ["project", "list"])
+            assert fake_cli_env.client.posts  # 会话仍正常转发
+        assert "invoke" not in TyperCommand.__dict__  # 最外层退出才还原
+
+    def test_restore_invoke_respects_preexisting_own_attribute(self, fake_cli_env, monkeypatch):
+        """契约 3b 还原纪律：进入前已有自有 invoke（第三方 patch）→ 退出回填原函数。"""
+        from typer.core import TyperCommand
+
+        sentinel = TyperCommand.invoke
+
+        def third_party(self, ctx):  # 模拟第三方类属性 patch
+            return sentinel(self, ctx)
+
+        TyperCommand.invoke = third_party
+        try:
+            with cli_bridge_mod.cli_log_sink():
+                assert TyperCommand.invoke is not third_party
+            assert TyperCommand.invoke is third_party  # 回填进入前的自有属性
+        finally:
+            del TyperCommand.invoke
+
+    def test_emit_checkpoint_exit_zero_is_info(self, fake_cli_env):
+        """契约 4：typer.Exit(code=0) 显式成功 → INFO 无 error_code。"""
+        ctx = SimpleNamespace(
+            info_name="list",
+            parent=SimpleNamespace(info_name="inkflow", parent=None),
+            params={},
+        )
+        with bridge_mod.log_sink(get_cli_forwarder()):
+            get_cli_forwarder().attach(1, _FAKE_TOKEN)  # flush 需 client（工厂=fixture fake）
+            cli_bridge_mod._emit_checkpoint(
+                ctx, outcome=typer.Exit(0), duration_ms=1.5
+            )
+        get_cli_forwarder().flush()
+        body = _last_body(fake_cli_env.client)
+        assert body["level"] == "INFO"
+        assert body["event"] == "list"
+        assert body["params"]["group"] == ""
+        assert body.get("error_code") is None
+
+    def test_emit_checkpoint_bare_exception_is_warn_with_code(self, fake_cli_env):
+        """契约 4：非 typer.Exit 异常直抛 → WARN + X_CLI_ERROR。"""
+        ctx = SimpleNamespace(
+            info_name="run",
+            parent=SimpleNamespace(info_name="inkflow", parent=None),
+            params={},
+        )
+        with bridge_mod.log_sink(get_cli_forwarder()):
+            get_cli_forwarder().attach(1, _FAKE_TOKEN)  # flush 需 client（工厂=fixture fake）
+            cli_bridge_mod._emit_checkpoint(
+                ctx, outcome=RuntimeError("crash-942"), duration_ms=2.0
+            )
+        get_cli_forwarder().flush()
+        body = _last_body(fake_cli_env.client)
+        assert body["level"] == "WARN"
+        assert body["error_code"] == "X_CLI_ERROR"
+        assert body["caller_type"] == "cli"
+
+    def test_ctx_below_root_defensive_shapes(self):
+        """契约 4 边界：ctx None / 全链无名 → 空链（不抛，checkpoint event 退化为空）。"""
+        assert cli_bridge_mod._ctx_below_root(None) == []
+        no_name = SimpleNamespace(info_name=None, parent=None)
+        assert cli_bridge_mod._ctx_below_root(no_name) == []
+        one = SimpleNamespace(
+            info_name="list", parent=SimpleNamespace(info_name="inkflow", parent=None)
+        )
+        assert cli_bridge_mod._ctx_below_root(one) == ["list"]
 
     def test_subapp_direct_runner_forwards_nothing(self, fake_cli_env, monkeypatch):
         """隔离性：绕过根 app（子 app 直接 CliRunner）→ 零 patch 零转发。"""
