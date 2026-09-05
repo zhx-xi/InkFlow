@@ -1,7 +1,8 @@
 # F59 思考模式（Reasoning Effort）+ LLM 出口统一 LiteLLM
 
-> **Spec 版本**: v1.1
+> **Spec 版本**: v1.2
 > **Spec 变更**: v1.1（2026-09-06）：待澄清 Q1/Q2/Q3 拍板并融入原节（Q1=A 软降级+WARNING 确认 §5.5/§3.3；Q2=B 前端 localStorage per-project §3.4/§12 D8；Q3=设定页控件文案直写「Agent思考强度设定」§3.4/§12 D9）；§12 D5 去「待澄清」挂账。
+> **Spec 变更**: v1.2（2026-09-06）：评审修订——① 能力面端点纠正为 `GET /api/v1/provider-configs`（§3.1/§5.4/§8.2 宿主文件补 provider_configs.py）；② 项目配置路由纠正为 `PATCH /projects/{project_id}`（§3.1）；③ 设置更新纠正为 PATCH（§3.1/§3.4）；④ legacy `/stream` 不新增字段（前端仅消费 agent 轨、legacy 帧编码无 reasoning 帧，§3.1/§10 登记）；⑤ zhipu→zai 前缀口径实证保留（§5.1）；⑥ 能力探测装配机制表述回正（§5.4）；⑦ 后端 i18n 文件列入 MODIFY（§8.2）；⑧ AGENTS.md §2 技术栈行纳入同步面（§8.2/M6）。
 > **日期**: 2026-09-06
 > **依据**: 用户需求（chat 页每轮可选思考档位 + 写作链/全自动设定页配置）+ 三轮实证调查（/models 探测、provider 专项包、LiteLLM SDK 源码核验）
 > **模块类型**: 跨端（backend LLM 基建 + API + GUI），含既有模块（F5 LLM Provider / F23 SSE / F32 设置 / F47 chat 执行细节）增量——无新业务实体
@@ -109,15 +110,15 @@ ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "
 
 | 端点 | 变更 | 修改履历 |
 |------|------|---------|
-| `POST /api/v1/chat/agent/stream` | 请求体 `ChatStreamRequest` 新增可选 `reasoning_effort`（非法值 422） | 新增 |
-| `POST /api/v1/chat/stream`（legacy） | 同上（与 agent 轨对称，SSE 帧已含 reasoning 类型） | 新增 |
-| `PATCH /api/v1/projects/{id}/config` | 接受 `reasoning_effort` 字段（pydantic Literal 校验，非法 422） | 新增 |
+| `POST /api/v1/chat/agent/stream` | 请求体 `ChatStreamRequest` 新增可选 `reasoning_effort`（非法值 422）——**chat 面唯一入口**（前端仅消费 agent 轨，`api/chat.ts:62`） | 新增 |
+| `PATCH /api/v1/projects/{project_id}` | body `ProjectUpdate` 接受 `reasoning_effort` 字段（pydantic Literal 校验，非法 422；config 嵌套面同 patch） | 新增 |
 | `GET /api/v1/projects/{id}` | 响应 config 回显 `reasoning_effort` | 新增 |
-| `PUT /api/v1/settings` / `GET /api/v1/settings` | 全局默认：新增 `default.reasoning_effort` 白名单键 | 新增 |
-| `GET /api/v1/settings/providers`（models 列表面） | 响应 models[] 条目新增 `supports_reasoning: bool`（读取时探测填充，见 §5.4） | 新增 |
+| `PATCH /api/v1/settings`（`settings.py:218`） | 全局默认：新增 `default.reasoning_effort` 白名单键 | 新增 |
+| `GET /api/v1/settings` | 回显 `default.reasoning_effort` | 新增 |
+| `GET /api/v1/provider-configs`（models 列表面，`provider_configs.py:132`） | 响应 models[] 条目新增 `supports_reasoning: bool`（读取时探测填充，见 §5.4） | 新增 |
 | 写作链端点（`/writing/*`、agentic、book） | **不新增请求字段**：档位恒从项目>全局解析 | — |
 
-SSE 帧协议不变：`reasoning` 帧（#727 契约）在开了思考的模型上自然多产出；未开思考无该帧。
+SSE 帧协议不变：`reasoning` 帧（#727 契约）在开了思考的模型上自然多产出；未开思考无该帧。legacy `POST /api/v1/chat/stream` **不接入**（其 `_encode_legacy_frame` 帧型仅 delta/done/error、不产 reasoning 帧，且无前端消费方——登记 §10）。
 
 ### 3.2 请求示例
 
@@ -147,7 +148,7 @@ run_started → reasoning(多次) → delta(多次) → tool 帧(如有) → don
 |------|------|------|
 | 思考级别选择器（7 档下拉/分段） | chat 输入框底部，模型选择器旁（参考 Hermes） | 默认「跟随模型默认」；仅作用于**下一轮发送**；档位记忆=前端 localStorage per-project（跨刷新保持，不落后端库，Q2 拍板 ✅）；当前模型 `supports_reasoning=false` → 控件整体禁用 + tooltip |
 | 「Agent思考强度设定」下拉（7 档） | 项目设定页 AI 配置区（模型字段下方） | 控件标签即「Agent思考强度设定」（英文 "Agent Thinking Intensity"，Q3 拍板 ✅），不加两行说明文案；保存走 PATCH config |
-| 全局默认思考级别 | 设置页 LLM 区（默认模型下方） | 走 PUT settings；`default.reasoning_effort` |
+| 全局默认思考级别 | 设置页 LLM 区（默认模型下方） | 走 PATCH settings（`settings.py:218`）；`default.reasoning_effort` |
 | 能力徽标 | 设置页 provider 模型列表 | `supports_reasoning` 真值显示「支持思考」徽标，假值不显示；手动覆盖项显示「手动」角标 |
 
 ---
@@ -179,9 +180,11 @@ run_started → reasoning(多次) → delta(多次) → tool 帧(如有) → don
 兼容形态——**fake server 兼容性列为迁移批第一 RED 项**（S0 全链路 E2E 必须过）。
 
 **provider 名口径**：InkFlow 注册表 provider（`deepseek`/`zhipu`/`openai`/`ollama`/自定义）
-→ litellm provider 前缀需一张**一次性口径映射**（`zhipu→zai`；其余同名）放
-`provider_config.py`（这是唯一保留的「表」，10 行以内，替代的是全量方言表）。
-自定义注册 provider（`fake`、OpenAI 兼容第三方）litellm 走 `openai/` 前缀 + `api_base`。
+→ litellm provider 前缀需一张**一次性口径映射**（`zhipu→zai`，实证 litellm 1.99.0
+`provider_list` 含 `zai` 不含 `zhipu`；其余同名，deepseek/dashscope 原生；`ollama` 原生）放
+`provider_config.py`。⚠️ 此表是 **provider 名称前缀口径**（非参数方言表——方言仍零映射，
+与 ADR-051「不维护映射表」不冲突，ADR 所指为参数翻译）。自定义注册 provider（`fake`、
+OpenAI 兼容第三方）litellm 走 `openai/` 前缀 + `api_base`。
 
 ### 5.2 思考参数注入
 
@@ -206,9 +209,11 @@ embedding、风格分析单次调用（`_style_llm_analyzer`）等不注入 reas
   → 结果返回 GUI（不落库持久化；持久化仅手动覆盖值）
 ```
 
-- 探测为纯本地 dict 查表（毫秒级），在 `GET /settings/providers` 响应装配时逐条计算。
-- 探测逻辑封装 `infrastructure/llm/capability_probe.py`（新文件，≈30 行），
-  domain 层经端口暴露给 settings 路由。
+- 探测为纯本地 dict 查表（毫秒级），在 `GET /api/v1/provider-configs` 响应装配点
+  （`api/routers/provider_configs.py::_to_response`）逐条计算。
+- 探测逻辑封装 `infrastructure/llm/capability_probe.py`（新文件，≈30 行），经
+  `api/deps.py` 装配注入路由（与既有 infra 接线同风格）；返回值仅 bool，不泄漏
+  litellm 类型（§5.6 依赖方向成立）。
 
 ### 5.5 超出能力时的降级规则
 
@@ -285,12 +290,14 @@ litellm import 集中在 infrastructure（ADR-002 分层不破）。
 | `domain/models/project.py` | ProjectConfig.reasoning_effort | 功能批 |
 | `core/config.py` | llm_reasoning_effort + 白名单键 `default.reasoning_effort` | 功能批 |
 | `domain/services/model_resolution.py` | 增 `resolve_reasoning_effort`（同形态纯函数） | 功能批 |
-| `api/routers/chat_stream.py` | ChatStreamRequest 字段 + 两轨 handler 解析传参 | 功能批 |
-| `api/routers/settings.py`、`projects.py`（含 config PATCH 面） | 字段透传 | 功能批 |
+| `api/routers/chat_stream.py` | ChatStreamRequest 字段 + agent 轨 handler 解析传参（legacy `/stream` 不接入 §10） | 功能批 |
+| `api/routers/settings.py`、`api/routers/project.py`（PATCH 面 + `domain/models/project.py::ProjectUpdate`） | 字段透传（含 Pydantic 校验） | 功能批 |
+| `api/routers/provider_configs.py` | `_to_response` 装配点接 capability_probe，models[] 回显 `supports_reasoning` | 功能批 |
 | `infrastructure/agent/{supervisor_pipeline,langgraph_pipeline}.py` + `domain/services/agent_service.py` | 管线角色装配注入项目级档位 | 功能批 |
-| renderer：`ChatPanel`（输入区）+ settings 页 + projects 设定页 + i18n（zh/en）+ store | §3.4 | GUI 批 |
+| renderer：`ChatPanel`（输入区）+ settings 页 + projects 设定页 + store | §3.4 | GUI 批 |
+| `backend/src/inkflow/i18n/messages/zh.json`、`en.json`（及 renderer 对应用语表） | 后端：422 文案 + 降级 WARNING `message_key`；GUI：档位七档名/控件标签/tooltip 全量双语 | 功能批 / GUI 批 |
 | `specs/f5-llm-provider/spec.md`、`specs/f4-pipeline-engine/spec.md` | ChatOpenAI 表述 → ChatLiteLLM（融入原节 + 修改履历列） | 收尾 docs |
-| `AGENTS.md` §1 功能表/§3/§8、`adr/llm/ADR-005v2.md` 标弃用、`adr/README.md` 索引 | 治理同步（ADR 索引已随本 docs PR；AGENTS.md 随实现 PR） | 收尾 |
+| `AGENTS.md` **§2 技术栈行（LLM Provider → litellm/ChatLiteLLM，ADR-051）**/§1 功能表/§3/§8、`adr/llm/ADR-005v2.md` 标弃用（已随本 docs PR）、`adr/README.md` 索引（已随本 docs PR） | 治理同步（AGENTS.md 随实现 PR） | 收尾 |
 | `ci.yml` | 无新 job；测试树登记核对（新测试文件在 backend/tests/unit 与 tests/api 既有 glob 内） | 功能批 |
 
 **不修改**：SSE 帧协议（chat_stream.py 帧编码函数零改动）、会话/AgentRun schema、
@@ -340,6 +347,7 @@ reasoning 已覆盖）。
 | 会话消息表持久化 reasoning_content（重放含思考过程） | 现 AgentRun trace 已存（#615/#740）；会话级重放增强挂 #599 统一执行视图后续 |
 | CLI `--reasoning-effort` 显式参数（write/chat 命令） | CLI 面走 F38 命令族增量，待需求（#251 CLI 缺口同轨） |
 | 风格分析/记忆提取等单次调用接入思考档位 | 分析判断场景收益待验证，先保持 default 不注入 |
+| legacy `POST /api/v1/chat/stream`（非 agent 轨）接入思考档位 | `_encode_legacy_frame` 帧型仅 delta/done/error 不产 reasoning 帧（`chat_stream.py:74-86`），且前端仅消费 agent 轨（`chat.ts:62`）——加字段成死参数；如未来 legacy 轨复活再评估 |
 | thinking_budget / budget_tokens 类「按 token 限预算」参数 | 与七档正交（Qwen 特有），v1 不做预算粒度 |
 
 ---
@@ -391,7 +399,7 @@ reasoning 已覆盖）。
 | M3 chat 闭环 | GUI 选择器出现且默认「跟随模型默认」；选 high 发送 → fake 注入 reasoning_content → 流式思考区块渲染；不支持模型（能力 false）控件置灰 | Playwright + Vitest（UI 必须出现断言） |
 | M4 写作链/全自动闭环 | 设定页保存档位 → PATCH 回显；管线装配日志断言 kwargs 含档位；agentic AgentRun trace steps 含 reasoning（#740 路径） | tests/api + e2e-ai-backend 真实抽测（deepseek high） |
 | M5 真实模型实证 | e2e-ai-backend：deepseek 思考帧非空 + 多轮回传 + dashscope enable_thinking 透传 + zhipu glm-4.5 软降级日志，四项各有 PASS 记录 | e2e-ai-*（本地开关模式） |
-| M6 治理 | f5/f4-pipeline spec 修订融合（修改履历列）+ AGENTS.md 四处同步 + ADR-051 状态✅ + 设计双件套（chat/设定页 ASCII 线框 + design/GUI HTML/PNG） | docs 收尾 PR 审查 |
+| M6 治理 | f5/f4-pipeline spec 修订融合（修改履历列）+ AGENTS.md 同步（**§2 技术栈行** + §1 功能表/§3/§8）+ ADR-051 状态✅ + 设计双件套（chat/设定页 ASCII 线框 + design/GUI HTML/PNG） | docs 收尾 PR 审查 |
 
 验收命令基线：`cd backend; uv run pytest tests/unit/ -q`、`uv run pytest ../tests/api/ -q`、
 前端 `pnpm vitest run`；真实 AI 项手动开 `e2e-ai-backend`（用户本地 key）。
