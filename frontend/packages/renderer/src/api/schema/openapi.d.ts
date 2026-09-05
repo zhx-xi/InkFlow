@@ -4486,8 +4486,14 @@ export interface components {
             params?: {
                 [key: string]: unknown;
             };
+            /** Parent Span Id */
+            parent_span_id?: string | null;
             /** Project Id */
             project_id?: number | null;
+            /** Span Id */
+            span_id?: string | null;
+            /** Trace Id */
+            trace_id?: string | null;
         };
         /**
          * MapPinCreate

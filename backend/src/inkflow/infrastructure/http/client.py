@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json as jsonlib
+import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from types import TracebackType
@@ -15,6 +16,7 @@ from typing import cast
 import httpx
 
 from inkflow.infrastructure.kernel.bootstrap import KernelHandle
+from inkflow.logging.trace import get_trace_context, make_traceparent, new_span_id, new_trace_id
 
 _SSE_DATA_PREFIX = "data: "
 
@@ -62,9 +64,16 @@ class InkFlowHTTPClient:
 
     def __init__(self, handle: KernelHandle, timeout: float = 30.0) -> None:
         self._default_timeout = timeout
+        # #931：实例级 correlation（一次 CLI 命令/会话一条操作链，批量轮询共享）；
+        # 懒根 trace（同一 client 生命周期内 trace_id 恒定，每请求新 span）。
+        self._correlation_id = str(uuid.uuid4())
+        self._root_trace_id: str | None = None
         self._client = httpx.AsyncClient(
             base_url=f"http://127.0.0.1:{handle.port}/api/v1",
-            headers={"X-InkFlow-Token": handle.token},
+            headers={
+                "X-InkFlow-Token": handle.token,
+                "X-Correlation-Id": self._correlation_id,
+            },
             timeout=timeout,
         )
 
@@ -79,29 +88,17 @@ class InkFlowHTTPClient:
     ) -> None:
         await self._client.aclose()
 
-    async def get(
-        self, path, *, params=None, json=None, timeout: float | None = None
-    ) -> dict:
-        return await self._request(
-            "GET", path, params=params, json=json, timeout=timeout
-        )
+    async def get(self, path, *, params=None, json=None, timeout: float | None = None) -> dict:
+        return await self._request("GET", path, params=params, json=json, timeout=timeout)
 
     async def post(self, path, *, params=None, json=None, timeout=None) -> dict:
         return await self._request("POST", path, params=params, json=json, timeout=timeout)
 
-    async def patch(
-        self, path, *, params=None, json=None, timeout: float | None = None
-    ) -> dict:
-        return await self._request(
-            "PATCH", path, params=params, json=json, timeout=timeout
-        )
+    async def patch(self, path, *, params=None, json=None, timeout: float | None = None) -> dict:
+        return await self._request("PATCH", path, params=params, json=json, timeout=timeout)
 
-    async def delete(
-        self, path, *, params=None, json=None, timeout: float | None = None
-    ) -> dict:
-        return await self._request(
-            "DELETE", path, params=params, json=json, timeout=timeout
-        )
+    async def delete(self, path, *, params=None, json=None, timeout: float | None = None) -> dict:
+        return await self._request("DELETE", path, params=params, json=json, timeout=timeout)
 
     def _timeout_message(self, timeout: float, *, stream: bool = False) -> str:
         """生成传输层超时文案（#926 D3：per-request 值或缺省客户端默认值）。
@@ -115,6 +112,22 @@ class InkFlowHTTPClient:
             return f"流式响应空闲超时（{timeout:g}s）：{stream_suffix}"
         return f"请求超时（{timeout:g}s）：{suffix}"
 
+    def _request_traceparent(self) -> str:
+        """当前请求的 traceparent：外层 trace ctx → 复用其 trace/span（内核据此建子
+        span，trace 贯穿 CLI→内核）；无外层 → 实例级懒根 + 每请求新 span。"""
+        outer = get_trace_context()
+        if outer is not None:
+            return make_traceparent(outer)
+        if self._root_trace_id is None:
+            self._root_trace_id = new_trace_id()
+        return f"00-{self._root_trace_id}-{new_span_id()}-01"
+
+    def _trace_headers(self, headers: dict | None) -> dict[str, str]:
+        """合并注入 traceparent 头：调用方显式 headers 优先（httpx 层同语义）。"""
+        merged = dict(headers or {})
+        merged.setdefault("traceparent", self._request_traceparent())
+        return merged
+
     async def _send(self, method, path, **kwargs) -> httpx.Response:
         """发送请求并读取响应，整块捕获 httpx 超时并转 HttpApiError(TIMEOUT)。
 
@@ -124,12 +137,15 @@ class InkFlowHTTPClient:
         DB_ERROR/INTERNAL_ERROR 空消息。非超时异常（如 ConnectError）原样传播。
         """
         try:
-            return await self._client.request(method, path, **kwargs)
+            return await self._client.request(
+                method,
+                path,
+                headers=self._trace_headers(kwargs.pop("headers", None)),
+                **kwargs,
+            )
         except httpx.TimeoutException as exc:
             t = kwargs.get("timeout")
-            effective_timeout = (
-                self._default_timeout if t is None else float(t)
-            )
+            effective_timeout = self._default_timeout if t is None else float(t)
             raise HttpApiError(
                 status_code=0,
                 detail=self._timeout_message(effective_timeout),
@@ -154,9 +170,7 @@ class InkFlowHTTPClient:
             # provider/agent-template/project delete 均 204，空 body 解析必炸）
             return {}
 
-    async def get_raw(
-        self, path, *, params=None, timeout: float | None = None
-    ) -> str:
+    async def get_raw(self, path, *, params=None, timeout: float | None = None) -> str:
         """GET 请求并返回原始响应文本（F21 导出下载，非 JSON 信封）。
 
         与 _request 的区别: _request 强制 response.json() 解析，无法处理
@@ -202,9 +216,7 @@ class InkFlowHTTPClient:
 
     async def get_bytes(self, path, *, params=None) -> bytes:
         """GET 原始字节（F36 地图图片下载；非 JSON 响应）."""
-        response = await self._send(
-            "GET", path, params=_filter_none_params(params)
-        )
+        response = await self._send("GET", path, params=_filter_none_params(params))
         if not 200 <= response.status_code < 300:
             raise HttpApiError(
                 status_code=response.status_code,
@@ -246,7 +258,12 @@ class InkFlowHTTPClient:
             kwargs["timeout"] = timeout
         effective_timeout = self._default_timeout if timeout is None else float(timeout)
         try:
-            async with self._client.stream("POST", path, **kwargs) as response:
+            async with self._client.stream(
+                "POST",
+                path,
+                headers=self._trace_headers(kwargs.pop("headers", None)),
+                **kwargs,
+            ) as response:
                 if not 200 <= response.status_code < 300:
                     raise HttpApiError(
                         status_code=response.status_code,

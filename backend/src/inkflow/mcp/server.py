@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 import time
+import uuid
 from typing import Any
 
 import anyio
@@ -13,6 +14,19 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
 from inkflow.logging import log_structured
+from inkflow.logging.correlation import (
+    get_request_correlation_id,
+    reset_request_correlation_id,
+    set_request_correlation_id,
+)
+from inkflow.logging.trace import (
+    TraceContext,
+    get_trace_context,
+    new_span_id,
+    new_trace_id,
+    reset_trace_context,
+    set_trace_context,
+)
 from inkflow.mcp.log_bridge import get_forwarder, is_bridge_active, mcp_log_sink
 from inkflow.mcp.tools import MCPTool, build_mcp_tools
 
@@ -70,6 +84,22 @@ def _emit_tool_audit(
         )
 
 
+#: #931 MCP 进程级根 trace（模块单例懒生成一次：stdio 会话内所有调用共享 trace_id）
+_process_root: TraceContext | None = None
+
+
+def _get_process_root() -> TraceContext:
+    """返回进程级根 TraceContext（首次访问时懒生成；一次会话一条链）。"""
+    global _process_root
+    if _process_root is None:
+        _process_root = TraceContext(
+            trace_id=new_trace_id(),
+            span_id=new_span_id(),
+            parent_span_id="",
+        )
+    return _process_root
+
+
 async def call_tool_result(
     tools: list[MCPTool], name: str, arguments: dict[str, Any] | None
 ) -> mt.CallToolResult:
@@ -78,22 +108,44 @@ async def call_tool_result(
     #924：已知/未知工具均在返回前发一条审计 checkpoint（经 mcp_log_sink →
     POST /logs）；审计/转发故障对信封零影响，finally 尽力 flush（未 attach 时
     无 client → flush 为廉价 no-op，不触发任何网络/内核拉起）。
+    #931：每次调用起点建立调用级 trace（外层 ctx → 子 span；无外层 → 进程根的
+    子 span），correlation 空时兜底 uuid4——审计 checkpoint 与后续内核 HTTP 请求
+    同 trace 串链。finally 复位两个 contextvar（Token 顺序）。
     """
     args = arguments or {}
     started = time.perf_counter()
     text = ""
     ok = False
     error_code: str | None = None
+    outer = get_trace_context()
+    if outer is not None:
+        call_ctx = TraceContext(
+            trace_id=outer.trace_id,
+            span_id=new_span_id(),
+            parent_span_id=outer.span_id,
+        )
+    else:
+        root = _get_process_root()
+        call_ctx = TraceContext(
+            trace_id=root.trace_id,
+            span_id=new_span_id(),
+            parent_span_id=root.span_id,
+        )
+    trace_token = set_trace_context(call_ctx)
+    corr_token = None
+    if not get_request_correlation_id():
+        corr_token = set_request_correlation_id(str(uuid.uuid4()))
     try:
+        # #931/#924：stdio 会话面惰性 attach（forwarder 尚无 client 时）——审计
+        # checkpoint 须在返回前 POST /logs，而已知工具未必经 ensure_kernel（纯本地
+        # 工具面），故在调用起点统一兜底；失败静默，对信封零影响（未知工具分支同语义）。
+        if get_forwarder().client is None and is_bridge_active():
+            from inkflow.infrastructure.kernel import ensure_kernel
+
+            with contextlib.suppress(Exception):
+                await ensure_kernel()
         tool = next((t for t in tools if t.spec.name == name), None)
         if tool is None:
-            # #924：未知工具同样留痕——stdio 会话面惰性 attach（复用 mcp_log_sink
-            # 已包装的 ensure_kernel；非 stdio 直调面零探测，attach 失败不改信封）。
-            if get_forwarder().client is None and is_bridge_active():
-                from inkflow.infrastructure.kernel import ensure_kernel
-
-                with contextlib.suppress(Exception):
-                    await ensure_kernel()
             names = sorted(t.spec.name for t in tools)
             text = json.dumps(
                 {
@@ -137,6 +189,9 @@ async def call_tool_result(
         return result
     finally:
         # 缓冲记录在 tools/call 返回前推送（集成测试紧跟轮询）；失败静默
+        reset_trace_context(trace_token)
+        if corr_token is not None:
+            reset_request_correlation_id(corr_token)
         await anyio.to_thread.run_sync(get_forwarder().flush)
 
 
