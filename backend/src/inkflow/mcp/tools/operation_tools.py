@@ -342,7 +342,7 @@ def build_extract_tool() -> MCPTool:
 
 
 def build_export_tool() -> MCPTool:
-    """导出：项目导出为 EPUB/Markdown/TXT/DOCX（原始文本返回）。"""
+    """导出：项目导出为 TXT（HTTP 面当前仅支持 txt，其余格式请走 GUI/CLI）。"""
 
     @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
@@ -353,6 +353,12 @@ def build_export_tool() -> MCPTool:
                 "INVALID_ARGS",
                 str(exc),
                 "请检查 action 枚举与必填字段（可经 tool_search 查询合法值），修正后重试",
+            )
+        if params.format is not None and params.format != "txt":
+            return _error(
+                "INVALID_ARGS",
+                f"HTTP 面导出仅支持 txt 格式，收到: {params.format}",
+                "请将 format 设为 txt；其余格式请走 GUI/CLI",
             )
         try:
             from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
@@ -377,7 +383,7 @@ def build_export_tool() -> MCPTool:
     return MCPTool(
         spec=ToolSpec(
             name="export",
-            description="导出：项目导出为 EPUB/Markdown/TXT/DOCX",
+            description="导出：项目导出为 TXT（HTTP 面当前仅支持 txt，其余格式请走 GUI/CLI）",
             input_schema=ExportParams.model_json_schema(),
         ),
         func=_impl,

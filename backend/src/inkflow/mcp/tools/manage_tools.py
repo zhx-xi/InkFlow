@@ -174,7 +174,9 @@ async def _route_character(client: _HTTPClient, params: ManageCharacterParams) -
                     "personality": params.personality,
                     "background": params.background,
                     "goals": params.goals,
+                    "brief": params.brief,
                     "group_id": params.group_id,
+                    "extra": params.extra,
                 }
             ),
         )
@@ -194,7 +196,9 @@ async def _route_character(client: _HTTPClient, params: ManageCharacterParams) -
                     "personality": params.personality,
                     "background": params.background,
                     "goals": params.goals,
+                    "brief": params.brief,
                     "group_id": params.group_id,
+                    "extra": params.extra,
                 }
             ),
         )
@@ -312,6 +316,10 @@ async def _route_outline(
                     "name": params.name,
                     "description": params.description,
                     "sort_order": params.sort_order,
+                    "level": params.level,
+                    "parent_id": params.parent_id,
+                    "volume_id": params.volume_id,
+                    "chapter_id": params.chapter_id,
                 }
             ),
         )
@@ -329,6 +337,10 @@ async def _route_outline(
                     "name": params.name,
                     "description": params.description,
                     "sort_order": params.sort_order,
+                    "level": params.level,
+                    "parent_id": params.parent_id,
+                    "volume_id": params.volume_id,
+                    "chapter_id": params.chapter_id,
                 }
             ),
         )
