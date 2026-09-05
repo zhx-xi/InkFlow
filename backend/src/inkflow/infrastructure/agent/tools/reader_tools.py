@@ -196,7 +196,7 @@ def build_reader_tools(
         group_id: uuid.UUID | None = None,
         **kwargs: object,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             try:
                 if group_id is not None:
                     group_id = _coerce_uuid(group_id)
@@ -212,7 +212,7 @@ def build_reader_tools(
 
     @instrument(caller_type="tool")
     async def _check_foreshadowing(status: str | None = None, **kwargs: object) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             try:
                 items = await _fetch_all_pages(
                     deps.foreshadowing_service.list,  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
@@ -225,7 +225,7 @@ def build_reader_tools(
 
     @instrument(caller_type="tool")
     async def _get_prior_summary(limit: int = 10, **kwargs: object) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             try:
                 result = await deps.summary_service.list_recent(  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
                     bound_project_id, limit=limit
@@ -240,7 +240,7 @@ def build_reader_tools(
         include_static: bool = True,
         **kwargs: object,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             chapter_id = _coerce_uuid(chapter_id)
             try:
                 result = await deps.chapter_audit_service.audit(  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service

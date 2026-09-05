@@ -254,7 +254,7 @@ def build_delete_tools(deps: DeleteToolDeps) -> list[Tool]:
             project_id: uuid.UUID | str | None = None,
             **kwargs: object,
         ) -> str:
-            async with _tool_db_lock_mod._tool_db_lock:
+            async with _tool_db_lock_mod.get_tool_db_lock():
                 # #766: 绑定到装配期项目（LLM 无需也不能自报 id，审计绑定用）
                 bound_project_id = (
                     deps.expected_project_id if deps.expected_project_id is not None else project_id

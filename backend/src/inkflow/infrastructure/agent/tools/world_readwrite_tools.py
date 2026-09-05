@@ -243,7 +243,7 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
         root_location_id: uuid.UUID | str | None = None,
         top_level_only: bool = False,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             _project_id = _bind_project_id(deps.expected_project_id, project_id)
             try:
                 root = _coerce_uuid(root_location_id) if root_location_id is not None else None
@@ -265,7 +265,7 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
         root_location_id: uuid.UUID | str | None = None,
         parent_map_id: uuid.UUID | str | None = None,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             _project_id = _bind_project_id(deps.expected_project_id, project_id)
             try:
                 root = _coerce_uuid(root_location_id) if root_location_id is not None else None
@@ -313,7 +313,7 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
         name: str | None = None,
         description: str | None = None,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             _project_id = _bind_project_id(deps.expected_project_id, project_id)
             try:
                 update_fields: dict[str, Any] = {}
@@ -354,7 +354,7 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
         search: str | None = None,
         sort_by: str = "narrative_position",
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             _project_id = _bind_project_id(deps.expected_project_id, project_id)
             try:
                 items = await _fetch_all_pages(
@@ -378,7 +378,7 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
         narrative_position: int | None = None,
         timeline_flag: str = "",
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             _project_id = _bind_project_id(deps.expected_project_id, project_id)
             try:
                 evt = await deps.timeline_service.create_event(  # type: ignore[attr-defined]  # 鸭子类型：timeline_service 按契约提供 create_event
@@ -427,7 +427,7 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
         time_value: float | str | None = None,
         narrative_position: int | None = None,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             _project_id = _bind_project_id(deps.expected_project_id, project_id)
             try:
                 update_fields: dict[str, Any] = {}
@@ -475,7 +475,7 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
         location: str | None = None,
         event_id: uuid.UUID | str | None = None,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             _project_id = _bind_project_id(deps.expected_project_id, project_id)
             try:
                 create_fields: dict[str, Any] = {"project_id": _project_id, "title": title}
@@ -523,7 +523,7 @@ def build_world_rw_tools(deps: WorldRwToolDeps) -> list[Tool]:
         location: str | None = None,
         event_id: uuid.UUID | str | None = None,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             _project_id = _bind_project_id(deps.expected_project_id, project_id)
             try:
                 update_fields: dict[str, Any] = {}

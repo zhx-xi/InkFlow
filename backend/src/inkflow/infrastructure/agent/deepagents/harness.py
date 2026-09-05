@@ -39,7 +39,12 @@ def _map_tools(tools: list[Tool]) -> list[StructuredTool]:
     """将领域 Tool 映射为 deepagents 可消费的 StructuredTool（name/description 透传）.
 
     func + coroutine 双给：deepagents ToolNode sync 路径走 func（asyncio.run 桥接），
-    async 路径走 coroutine——coroutine-only 会抛 NotImplementedError（M5 实测缺陷）。
+    async 路径走 coroutine——coroutine-only + sync invoke 抛 NotImplementedError
+    （M5 探针实测仍成立，结论未过时：func 必须保留，不能只给 coroutine）。
+    #953 C1：adapter（agentic_writer.DeepAgentInvokeAdapter）async 优先后，真实链路
+    await graph.ainvoke → ToolNode async 路径 → coroutine 在宿主事件循环执行；
+    sync invoke 兜底（CLI/MCP/MagicMock 鸭子回退）仍走 func sync 桥，本函数双给
+    结构与 _make_sync_wrapper 行为保持不变（兜底路径）。
     """
     mapped: list[StructuredTool] = []
     for tool in tools:

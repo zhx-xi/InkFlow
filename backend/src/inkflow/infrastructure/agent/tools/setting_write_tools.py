@@ -137,7 +137,7 @@ def build_setting_write_tools(deps: SettingWriteToolDeps) -> list[Tool]:
         goals: str = "",
         group_ids: list[uuid.UUID | str] | None = None,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             # #748: 绑定到装配期项目（LLM 无需也不能自报 id，杜绝编造全量 UUID 孤儿数据）
             bound_project_id = (
                 deps.expected_project_id if deps.expected_project_id is not None else project_id
@@ -198,7 +198,7 @@ def build_setting_write_tools(deps: SettingWriteToolDeps) -> list[Tool]:
         content: str = "",
         parent_id: uuid.UUID | str | None = None,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             bound_project_id = (
                 deps.expected_project_id if deps.expected_project_id is not None else project_id
             )
@@ -257,7 +257,7 @@ def build_setting_write_tools(deps: SettingWriteToolDeps) -> list[Tool]:
         level: str = "overall",
         parent_id: uuid.UUID | str | None = None,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             bound_project_id = (
                 deps.expected_project_id if deps.expected_project_id is not None else project_id
             )
