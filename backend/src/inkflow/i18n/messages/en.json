@@ -3,6 +3,7 @@
   "log.event.create_chapter": "Created chapter: {title}",
   "log.event.create_project": "Created project: {name}",
   "log.event.delete_project": "Deleted project: {project_id}",
+  "log.event.mcp_tool_call": "MCP tool call: {tool}",
   "log.event.llm_request": "LLM request: {model} ({count} messages)",
   "log.event.llm_response": "LLM response: {model} ({length} chars)",
   "log.event.update_project": "Updated project: {name}",
