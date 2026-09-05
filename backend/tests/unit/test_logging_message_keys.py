@@ -115,3 +115,16 @@ class TestMessageKeyCatalog:
             and k not in cross_surface
         )
         assert not dead, f"目录有但 src 未引用的死键：{dead}"
+
+    def test_log_call_generic_entry_registered(self) -> None:
+        """#930：目录含 log.call.generic 通用回退词条（zh/en），前端卡片防裸 key。
+
+        log.call.* 由 @instrument 动态拼接（200+ 端点），逐函数登记不现实；目录提供
+        一个通用词条，前端在精确词条缺失时回退它（spec §2.2 字段约定 + issue #930）。
+        """
+        zh, en = _load_catalog("zh"), _load_catalog("en")
+        assert "log.call.generic" in zh, "zh.json 缺 log.call.generic"
+        assert "log.call.generic" in en, "en.json 缺 log.call.generic"
+        assert "{caller_name}" in zh["log.call.generic"]
+        assert "{caller_name}" in en["log.call.generic"]
+        assert zh["log.call.generic"] != en["log.call.generic"]

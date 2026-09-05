@@ -30,6 +30,7 @@ export const logsUxZh: Record<string, string> = {
   'logs.caller.kernel': '内核',
   'logs.caller.gui': 'GUI',
   'logs.caller.ai': 'AI',
+  'logs.stack.details': '详情',
 };
 
 export const logsUxEn: Record<string, string> = {
@@ -63,4 +64,5 @@ export const logsUxEn: Record<string, string> = {
   'logs.caller.kernel': 'Kernel',
   'logs.caller.gui': 'GUI',
   'logs.caller.ai': 'AI',
+  'logs.stack.details': 'Details',
 };

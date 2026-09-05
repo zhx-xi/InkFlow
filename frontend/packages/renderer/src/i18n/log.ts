@@ -14,6 +14,7 @@ export const logZh: Record<string, string> = {
   'log.event.kernel_exit': '内核进程退出：code {code} signal {signal}',
   'log.event.kernel_spawn_error': '内核启动失败：{error}',
   'log.event.kernel_crash': '内核崩溃：{code}',
+  'log.call.generic': '调用 {caller_name}',
 };
 
 export const logEn: Record<string, string> = {
@@ -31,4 +32,5 @@ export const logEn: Record<string, string> = {
   'log.event.kernel_exit': 'Kernel process exited: code {code} signal {signal}',
   'log.event.kernel_spawn_error': 'Kernel spawn failed: {error}',
   'log.event.kernel_crash': 'Kernel crashed: {code}',
+  'log.call.generic': 'Call: {caller_name}',
 };
