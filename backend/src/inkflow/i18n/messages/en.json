@@ -1,5 +1,6 @@
 {
   "log.check.agent_order_guardrail": "Agent pipeline guardrail hit (fallback to default topology)",
+  "log.event.cli_command": "CLI command: {command}",
   "log.event.create_chapter": "Created chapter: {title}",
   "log.event.create_project": "Created project: {name}",
   "log.event.delete_project": "Deleted project: {project_id}",
