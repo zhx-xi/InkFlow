@@ -31,8 +31,19 @@ specs/f57-logging-i18n/spec.md §4.1（装饰器设计要点：functools.wraps /
 RED 阶段预期：`inkflow.logging` 包未创建 → import 即失败（整文件收集失败，门禁 M4）。
 GREEN 阶段：实现 logging/instrument.py 后全绿。
 
-F53 红线：instrument 不泄漏参数中的敏感值（本批不 dump params 摘要——防泄 key）。
-════════════════════════════════════════════════════════════════════
+F53 红线：instrument 不泄漏参数中的敏感值（params 摘要仅含标量 + mask_fields 脱敏，
+敏感键名（key/token/secret/password/...）值恒为 "****"）。
+
+#930 契约扩展（TestInstrumentFailureParams）：失败/预期失败/流中断路径必须填 params
+摘要（F57 spec §字段约定「params 含脱敏后参数摘要」）：
+- 从调用签名绑定实参提取**标量**（str/int/float/bool）入参；None/复杂对象/dict 跳过；
+- 名为 content/text/prompt/body/draft/markdown/html/code 的大文本字段排除；
+- str 值截断 ≤100 字符（超出以 "…" 结尾）；实参摘要最多 8 键（按签名顺序）；
+- _log_expected 额外 http_status（int）+ detail（str(exc.detail) 截断）；
+- _log_failed 额外 error_type（type name）+ error（str(exc) 截断）；
+- 全部经 mask_fields 脱敏。
+RED 预期：当前 _log_failed/_log_expected/_log_stream_broken 不填 params → 断言 FAIL。
+════════════════════════════════════════════════════════════════════════
 """
 
 from __future__ import annotations
@@ -225,3 +236,150 @@ class TestInstrumentWithArgs:
             logger.remove(sid)
         entry = _find(records, "DEBUG", "custom.event")
         assert entry["extra"]["message_key"] == "log.call.custom.event"
+
+
+# ── #930 失败/预期失败/流断路径 params 摘要 ──
+
+
+class TestInstrumentFailureParams:
+    """契约：_log_failed/_log_expected/_log_stream_broken 填脱敏后的入参摘要。
+
+    F57 spec §字段约定：params 含脱敏后参数摘要（不泄 key）。当前实现不填 → RED。
+    """
+
+    def test_http_expected_warn_params_has_scalar_args_and_http_info(self):
+        from fastapi import HTTPException
+
+        @instrument(caller_type="api")
+        def get_summary(project_id: int, chapter_name: str):
+            raise HTTPException(status_code=404, detail="章节不存在")
+
+        records, sid = _capture_records("WARNING")
+        try:
+            with pytest.raises(HTTPException):
+                get_summary(project_id=7, chapter_name="第三章")
+        finally:
+            logger.remove(sid)
+        warn = _find(records, "WARNING", "get_summary")
+        params = warn["extra"]["params"]
+        assert params.get("project_id") == 7
+        assert params.get("chapter_name") == "第三章"
+        assert params.get("http_status") == 404
+        assert params.get("detail") == "章节不存在"
+        assert warn["extra"]["error_code"] == "E_HTTP_404"
+
+    async def test_http_expected_warn_params_from_positional_args(self):
+        from fastapi import HTTPException
+
+        @instrument(caller_type="api")
+        async def get_summary(project_id: int, q: str):
+            raise HTTPException(status_code=404, detail="nf")
+
+        records, sid = _capture_records("WARNING")
+        try:
+            with pytest.raises(HTTPException):
+                await get_summary(7, "蜀山")
+        finally:
+            logger.remove(sid)
+        params = _find(records, "WARNING", "get_summary")["extra"]["params"]
+        assert params.get("project_id") == 7
+        assert params.get("q") == "蜀山"
+
+    def test_uncaught_error_params_has_error_info(self):
+        @instrument(caller_type="api")
+        def broken(project_id: int):
+            raise ValueError("boom")
+
+        records, sid = _capture_records("ERROR")
+        try:
+            with pytest.raises(ValueError):
+                broken(project_id=3)
+        finally:
+            logger.remove(sid)
+        err = _find(records, "ERROR", "broken")
+        params = err["extra"]["params"]
+        assert params.get("project_id") == 3
+        assert params.get("error_type") == "ValueError"
+        assert "boom" in params.get("error", "")
+        assert err["extra"]["error_code"] == "X_UNCAUGHT"
+
+    async def test_stream_broken_warn_params_has_args(self):
+        @instrument(caller_type="llm")
+        async def flaky_stream(model: str):
+            yield "a"
+            raise RuntimeError("broke")
+
+        records, sid = _capture_records("WARNING")
+        try:
+            with pytest.raises(RuntimeError):
+                async for _ in flaky_stream(model="gpt-x"):
+                    pass
+        finally:
+            logger.remove(sid)
+        warn = _find(records, "WARNING", "flaky_stream")
+        params = warn["extra"]["params"]
+        assert params.get("model") == "gpt-x"
+        assert warn["extra"]["error_code"] == "X_STREAM_BROKEN"
+
+    def test_params_sensitive_masked_bigtext_excluded(self):
+        @instrument(caller_type="api")
+        def create(name: str, api_key: str, content: str):
+            raise RuntimeError("x")
+
+        records, sid = _capture_records("ERROR")
+        try:
+            with pytest.raises(RuntimeError):
+                create(name=" proj ", api_key="sk-secret", content="a" * 500)
+        finally:
+            logger.remove(sid)
+        params = _find(records, "ERROR", "create")["extra"]["params"]
+        assert params.get("api_key") == "****"  # F53：敏感键名值脱敏
+        assert params.get("name") == " proj "
+        assert "content" not in params  # 大文本字段排除
+
+    def test_params_str_truncated_100_and_max_8_keys(self):
+        @instrument(caller_type="api")
+        def many(a: str, b1: int, b2: int, b3: int, b4: int, b5: int, b6: int, b7: int, b8: int):
+            raise RuntimeError("x")
+
+        records, sid = _capture_records("ERROR")
+        try:
+            with pytest.raises(RuntimeError):
+                many(a="长" * 200, b1=1, b2=2, b3=3, b4=4, b5=5, b6=6, b7=7, b8=8)
+        finally:
+            logger.remove(sid)
+        params = _find(records, "ERROR", "many")["extra"]["params"]
+        assert params["a"].endswith("…")
+        assert len(params["a"]) == 101  # 100 字符 + 省略号
+        arg_keys = [k for k in params if k.startswith("b")]
+        assert len(arg_keys) <= 7  # 实参摘要（不含 error_type/error）≤ 8 键
+
+
+class TestInstrumentPydanticBody:
+    """#930：Pydantic 请求体（generate_outline 同名 422 场景）提取资源标识标量字段。"""
+
+    def test_pydantic_body_scalar_fields_extracted(self):
+        from fastapi import HTTPException
+        from pydantic import BaseModel
+
+        class OutlineCreate(BaseModel):
+            name: str
+            description: str = "d" * 300
+            num_chapters: int = 3
+
+        @instrument(caller_type="api")
+        def generate_outline(body: OutlineCreate):
+            raise HTTPException(status_code=422, detail="同名项目已存在")
+
+        records, sid = _capture_records("WARNING")
+        try:
+            with pytest.raises(HTTPException):
+                generate_outline(body=OutlineCreate(name="同名的项目"))
+        finally:
+            logger.remove(sid)
+        params = _find(records, "WARNING", "generate_outline")["extra"]["params"]
+        assert params.get("name") == "同名的项目"
+        assert params.get("http_status") == 422
+        assert "detail" in params
+        assert "body" not in params  # 模型对象本身不入 params
+        assert "description" not in params  # 大文本字段排除

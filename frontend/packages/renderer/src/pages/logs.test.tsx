@@ -44,8 +44,9 @@
  * 本地 t(message_key), params)——远端目录命中 → 远端模板插值；远端缺键 → 本地 t()
  * 插值；lang=en → en 文案。用例 29-32 以 zh 逐字文案断言（§4.2）。
  *
- * RED 预期：./logs 模块不存在 → 收集期 module-not-found（类 1 契约缺口，
- * GREEN 建文件即愈）。
+ * #930 卡片可读性契约（log.call 词条回退 / duration 三档格式化 / params 摘要行 /
+ * stack 展开）已逐字搬移至兄弟文件 logs-card-readable-930.test.tsx（900 行护栏，
+ * #478 先例）；本文件仅保留 L~660 既有 duration 断言的 #930 升级（1234 → 1.2s）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -642,8 +643,8 @@ describe('日志页 — 行渲染与 message 三层回退（§6.3）', () => {
     expect(within(row).getByTestId('log-timestamp')).toHaveTextContent('2026-09-04');
     expect(within(row).getByTestId('log-caller-type')).toBeInTheDocument();
     expect(within(row).getByTestId('log-caller-name')).toHaveTextContent('OutlineAgent');
-    // 可选片段：字段存在即渲染
-    expect(within(row).getByTestId('log-duration')).toHaveTextContent('1234');
+    // 可选片段：字段存在即渲染；#930 时长格式化（1234ms < 60s → 1.2s）
+    expect(within(row).getByTestId('log-duration')).toHaveTextContent('1.2s');
     expect(within(row).getByTestId('log-error-code')).toHaveTextContent('E502');
     expect(within(row).getByTestId('log-correlation')).toHaveTextContent('c-42');
   });

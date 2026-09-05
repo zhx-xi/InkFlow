@@ -88,6 +88,13 @@ function formatTimestamp(iso: string): string {
   return parsed.toISOString().slice(0, 19).replace('T', ' ');
 }
 
+/** 时长格式化：#930 卡片可读性 —— <1s 两位小数 ms、<60s 一位小数 s、≥60s m+s */
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms.toFixed(2)}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`;
+}
+
 function levelBadgeCls(level: string): string {
   if (level === 'ERROR') return 'bg-err/10 text-err';
   if (level === 'WARN') return 'bg-warn/10 text-warn';
@@ -118,6 +125,13 @@ function LogRow({
   message: string;
   callerLabel: string;
 }) {
+  const { t } = useI18n();
+  const [stackOpen, setStackOpen] = useState(false);
+  const hasStack = record.level === 'ERROR' && Boolean(record.stack);
+  const showParams =
+    (record.level === 'WARN' || record.level === 'ERROR') &&
+    record.params != null &&
+    Object.keys(record.params).length > 0;
   return (
     <li data-testid="log-row" className="rounded-lg border border-line bg-surface p-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -130,10 +144,41 @@ function LogRow({
       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-3">
         <span data-testid="log-caller-type">{callerLabel}</span>
         <span data-testid="log-caller-name">{record.caller_name}</span>
-        {record.duration_ms != null && <span data-testid="log-duration">{record.duration_ms}ms</span>}
+        {record.duration_ms != null && (
+          <span data-testid="log-duration">{formatDuration(record.duration_ms)}</span>
+        )}
         {record.error_code && <span data-testid="log-error-code">{record.error_code}</span>}
         {record.correlation_id && <span data-testid="log-correlation">{record.correlation_id}</span>}
       </div>
+      {showParams && (
+        <div className="mt-1.5 text-[12px] text-ink-3">
+          <span data-testid="log-params">
+            {Object.entries(record.params)
+              .map(([k, v]) => `${k}=${String(v)}`)
+              .join(' · ')}
+          </span>
+        </div>
+      )}
+      {hasStack && (
+        <div className="mt-2">
+          <button
+            type="button"
+            data-testid="log-stack-toggle"
+            onClick={() => setStackOpen((open) => !open)}
+            className="rounded border border-line bg-surface px-2 py-0.5 text-[12px] text-ink-2 transition-colors hover:bg-surface-3 hover:text-ink"
+          >
+            {t('logs.stack.details')}
+          </button>
+          {stackOpen && (
+            <pre
+              data-testid="log-stack"
+              className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-all rounded border border-line bg-surface-2 p-3 text-[11px] leading-relaxed text-ink-2"
+            >
+              {record.stack}
+            </pre>
+          )}
+        </div>
+      )}
     </li>
   );
 }
@@ -215,10 +260,32 @@ export function LogsPage() {
   const handleRefresh = () => {
     setQuery((prev) => ({ ...prev }));
   };
-  /** 行 message = interpolate(远端目录[message_key] ?? 本地 t(message_key), params) */
+  /**
+   * 行 message 四级回退 + 插值上下文合并：
+   * 远端目录精确词条 → 本地字典 → log.call.* 通用词条 → 裸 key（现状保留）。
+   * 插值上下文 = { caller_name, event, ...params }（params 同名键覆盖）。
+   */
   const renderMessage = (rec: LogRecordDto): string => {
-    const template = remoteDir[rec.message_key] ?? t(rec.message_key);
-    return interpolateTemplate(template, rec.params);
+    const remoteTemplate = remoteDir[rec.message_key];
+    let template: string;
+    if (remoteTemplate !== undefined) {
+      template = remoteTemplate;
+    } else {
+      const local = t(rec.message_key);
+      if (local !== rec.message_key) {
+        template = local;
+      } else if (rec.message_key.startsWith('log.call.')) {
+        template = t('log.call.generic');
+      } else {
+        template = rec.message_key;
+      }
+    }
+    const ctx: Record<string, unknown> = {
+      caller_name: rec.caller_name,
+      event: rec.event,
+      ...(rec.params ?? {}),
+    };
+    return interpolateTemplate(template, ctx);
   };
 
   const total = data?.total ?? 0;

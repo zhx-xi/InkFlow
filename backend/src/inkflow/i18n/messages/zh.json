@@ -1,5 +1,6 @@
 {
   "log.check.agent_order_guardrail": "Agent 管线护栏触发（已回退默认拓扑）",
+  "log.call.generic": "调用 {caller_name}",
   "log.event.cli_command": "CLI 命令：{command}",
   "log.event.create_chapter": "创建章节：{title}",
   "log.event.create_project": "创建项目：{name}",

@@ -212,10 +212,17 @@ describe('F57 i18n 契约：log 域键对称 + 后端 messages 对齐', () => {
     }
   });
 
-  it('log 键全部以 log.event. / api.error. 前缀命名（日志 msgid 命名空间），不留散键', () => {
+  it('log 键全部以 log.event. / log.call. / api.error. 前缀命名（日志 msgid 命名空间），不留散键', () => {
+    // #930：放开 log.call. 前缀——log.call.* 通用回退词条（log.call.generic）入字典。
     const keys = [...Object.keys(logZh), ...Object.keys(logEn)];
     for (const k of keys) {
-      expect(k).toMatch(/^(log\.event\.|api\.error\.)/);
+      expect(k).toMatch(/^(log\.event\.|log\.call\.|api\.error\.)/);
     }
+  });
+
+  it('#930：log.call.generic 通用回退词条存在（zh/en），渲染卡片标题防裸 key', () => {
+    expect(logZh['log.call.generic']).toContain('{caller_name}');
+    expect(logEn['log.call.generic']).toContain('{caller_name}');
+    expect(logZh['log.call.generic']).not.toBe(logEn['log.call.generic']);
   });
 });
