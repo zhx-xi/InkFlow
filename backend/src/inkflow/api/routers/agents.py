@@ -1,4 +1,4 @@
-"""Agent 实体 REST API — 列表/工具目录/新建/详情/更新/删除（spec §3）.
+"""Agent 实体 REST API — 列表/工具目录/新建/详情/更新/删除（spec §3 / F58 grants §3.1）.
 
 端点前缀 /api/v1/agents（复数，F39 Agent 实体域；与 F4 编排管线单数
 /api/v1/agent 不同域不冲突）。镜像 agent_templates.py 三层惯例：
@@ -35,7 +35,12 @@ from inkflow.domain.services.agent_entity_service import (
     BUILTIN_AGENT_SPECS,
     AgentEntityService,
 )
-from inkflow.infrastructure.agent.tools import ALL_TOOL_SPECS
+from inkflow.infrastructure.agent.tools import (
+    ALL_TOOL_SPECS,
+    TOOL_NAME_TO_CELL,
+    expand_grants,
+    resolve_grants,
+)
 from inkflow.infrastructure.database.repositories.agent_repo import (
     SQLiteAgentRepository,
 )
@@ -92,14 +97,19 @@ def _role_key_of(agent: Agent) -> str | None:
 
 
 def _to_response(agent: Agent) -> dict:
-    """Agent 实体 → 响应字典（12 字段全集 + role_key 透出，id 原样 int）.
+    """Agent 实体 → 响应字典（12 字段全集 + role_key + grants + resolved_tool_names）.
 
     role_key（#473 R1 + v1.5 #484）：实体 role_key 非空优先（Agent 真源）；
     存量内置未补值前按 name 反查 BUILTIN_AGENT_SPECS 保底；其余 → None
     （前端 AgentChainCard 按 role_key 派生内置角色行，不再 hardcode 名称/图标/描述）。
+    grants（F58 #954）：回显 resolve 后的授权矩阵（存量 tool_ids-only 行同样
+    可见推断矩阵）；resolved_tool_names = grants 展开的工具名清单（扩权语义）。
     """
     resp = agent.model_dump(mode="json")
     resp["role_key"] = _role_key_of(agent)
+    grants = resolve_grants(agent)
+    resp["grants"] = [g.model_dump(mode="json") for g in grants]
+    resp["resolved_tool_names"] = expand_grants(grants)
     return resp
 
 
@@ -117,17 +127,21 @@ async def list_agents(
 @router.get("/tools")
 @instrument(caller_type="api")
 async def list_tool_catalog():
-    """工具目录（spec §2.3/§5.1 + #838）— ALL_TOOL_SPECS 35 工具按目录原序 + 双标记.
+    """工具目录（spec §2.3/§5.1 + #838/#954 F58 §3.2）— 26 自定义工具 + domain/op.
 
-    #838: 返回全量 35（9 组全集，含 9 核心工具），每项带
-    allow_custom_agent/is_core 标记；核心工具 allow_custom_agent=False、
-    is_core=True（自定义 agent 选择列表过滤依据，26 个暴露工具 = TOOL_REGISTRY）。
+    #954 F58 §3.2：目录收敛为 26 自定义工具（is_core=True 的 9 核心工具不进
+    目录），每项带 allow_custom_agent/is_core 标记 + domain/op 授权格值
+    （来自 TOOL_NAME_TO_CELL，ALL_TOOL_SPECS 原序）。
 
     路由顺序硬契约：本端点必须声明在 /{agent_id} 之前，否则 "tools" 被
     _parse_id 吞掉 → 404「Agent 不存在」（API 测试契约 #3）。
     """
-    return {
-        "items": [
+    items = []
+    for spec in ALL_TOOL_SPECS:
+        if spec.is_core:
+            continue
+        domain, op = TOOL_NAME_TO_CELL[spec.name]
+        items.append(
             {
                 "name": spec.name,
                 "description": spec.description,
@@ -135,10 +149,11 @@ async def list_tool_catalog():
                 "input_schema": spec.input_schema,
                 "allow_custom_agent": spec.allow_custom_agent,
                 "is_core": spec.is_core,
+                "domain": domain.value,
+                "op": op.value,
             }
-            for spec in ALL_TOOL_SPECS
-        ]
-    }
+        )
+    return {"items": items}
 
 
 @router.post("", status_code=201)

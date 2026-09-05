@@ -6,8 +6,9 @@ AgentExecutionORM）。
 
 设计约定（spec §2.1）:
 - DB 主键为 int 自增；name 唯一（Agent 名称唯一）
-- tool_ids / skill_ids 存 LenientJSON 列表列（fallback=[]，容错空串/损坏
-  JSON，见 #261），转换函数在 repo 层
+- tool_ids / skill_ids / grants 存 LenientJSON 列表列（fallback=[]，容错空串/
+  损坏 JSON，见 #261）；grants 列 nullable=True（存量行 NULL → repo 转 []），
+  转换函数在 repo 层
 - builtin 只读保护在 service 层，ORM 仅存储
 - 本文件为纯 ORM 映射，不包含任何领域转换函数（转换在 repo 层）
 """
@@ -73,6 +74,13 @@ class AgentORM(Base):
         default=list,
     )
     """能力白名单：工具目录 name 列表（JSON 列）."""
+
+    grants: Mapped[list | None] = mapped_column(
+        LenientJSON(fallback=[]),
+        nullable=True,
+        default=None,
+    )
+    """F58 授权矩阵（domain/ops JSON 列表；NULL = 存量行按 tool_ids 推断）."""
 
     skill_ids: Mapped[list] = mapped_column(
         LenientJSON(fallback=[]),

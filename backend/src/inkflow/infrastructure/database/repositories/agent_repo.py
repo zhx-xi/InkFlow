@@ -30,6 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.agent import Agent, AgentUpdate
+from inkflow.domain.models.agent_grants import GrantEntry
 from inkflow.infrastructure.database.models.agent_entity import AgentORM
 
 
@@ -39,13 +40,14 @@ def _utcnow() -> datetime:
 
 
 def _orm_to_domain(orm: AgentORM) -> Agent:
-    """Agent ORM 行 → 领域实体（tool_ids/skill_ids 透传 list）."""
+    """Agent ORM 行 → 领域实体（JSON 列还原；grants NULL/损坏 → []）."""
     return Agent(
         id=orm.id,
         name=orm.name,
         description=orm.description,
         icon=orm.icon,
         system_prompt=orm.system_prompt,
+        grants=[GrantEntry.model_validate(g) for g in (orm.grants or [])],
         tool_ids=list(orm.tool_ids or []),
         skill_ids=list(orm.skill_ids or []),
         model_override=orm.model_override,
@@ -58,12 +60,13 @@ def _orm_to_domain(orm: AgentORM) -> Agent:
 
 
 def _domain_to_orm(domain: Agent) -> AgentORM:
-    """Agent 领域实体 → ORM 行（id 由 DB 自增分配，时间戳由 ORM default 填充）."""
+    """Agent 领域实体 → ORM 行（grants JSON 序列化；id/时间戳由 ORM 分配）."""
     return AgentORM(
         name=domain.name,
         description=domain.description,
         icon=domain.icon,
         system_prompt=domain.system_prompt,
+        grants=[g.model_dump(mode="json") for g in domain.grants],
         tool_ids=list(domain.tool_ids),
         skill_ids=list(domain.skill_ids),
         model_override=domain.model_override,

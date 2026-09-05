@@ -353,3 +353,77 @@ class TestAgentConversionFunctions:
         assert orm.builtin is True
         assert orm.created_at is None
         assert orm.updated_at is None
+
+
+# ── #954 F58 grants 数据面 — Agent 实体 grants 字段持久化契约（RED-3，contract §6/§9）─────────
+#
+# 依据：specs/f58-agent-tool-scope/spec.md §5（迁移契约，存量资产保护）+ contract-954 §6
+# （repo 转换：_orm_to_domain → [GrantEntry.model_validate(g) for g in (orm.grants or [])]；
+# _domain_to_orm → [g.model_dump(mode="json") for g in domain.grants]）+ §9 RED-3。
+#
+# RED 预期形态（当前 Agent 实体无 grants 字段 / AgentORM 无 grants 列 / GrantEntry 不存在）：
+# - roundtrip：GrantEntry 于函数体内 import → ImportError FAILED（且 Agent(grants=...) 忽略
+#   未知字段 → 读回 got.grants AttributeError FAILED）。
+# - grants NULL：raw INSERT 不带列 → _orm_to_domain → Agent 无 grants 属性 → AttributeError。
+# - 损坏 JSON：UPDATE agents SET grants='{bad' → 无 grants 列 →
+#   sqlite OperationalError（RED 失败）。
+#
+# 【G】= 零；本段全部【R】。既有用例（TestAgentRepository / TestAgentConversionFunctions）不动。
+
+
+class TestGrantsPersistence:
+    """grants 字段持久化契约（spec §5 迁移 + contract-954 §6 repo 转换）."""
+
+    async def test_grants_roundtrip(self, db_session):
+        """domain 实体 grants=[GrantEntry(...)] → ORM JSON list[dict] → 读回等值.
+
+        经真实 in-memory SQLite（镜像本文件既有 db_session fixture 形态）。
+        """
+        from inkflow.domain.models.agent_grants import GrantEntry  # 【R】
+
+        repo = SQLiteAgentRepository(db_session)
+        saved = await repo.add(
+            _agent("grants-agent", grants=[GrantEntry(domain="writing", ops=["read"])])
+        )
+        got = await repo.get(saved.id)
+        assert got is not None
+        assert got.grants == [GrantEntry(domain="writing", ops=["read"])]
+
+    async def test_grants_null_returns_empty(self, db_session):
+        """grants 列 NULL（raw INSERT 不带列，存量行）→ _orm_to_domain → grants == [].
+
+        存量行迁移前无 grants 值（spec §5.3：不迁移读取期推断，免回填）。
+        """
+        repo = SQLiteAgentRepository(db_session)
+        # raw INSERT 不带 grants 列（存量行：grants 为 NULL）——契约：_orm_to_domain → []
+        from sqlalchemy import text
+
+        await db_session.execute(
+            text(
+                "INSERT INTO agents (name, description, icon, system_prompt, tool_ids, "
+                "skill_ids, builtin, created_at, updated_at) VALUES "
+                "('no-grants', '', '', '', '[]', '[]', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+        )
+        await db_session.commit()
+        saved = await repo.get_by_name("no-grants")
+        assert saved is not None
+        assert saved.grants == []
+
+    async def test_corrupted_grants_json_falls_back(self, db_session):
+        """损坏 JSON 字符串（UPDATE grants='{bad'）→ LenientJSON fallback → grants == [].
+
+        防脏数据崩启动（#261 LenientJSON 容错语义，GREEN 后 grants 列存在）。
+        注：RED 期无 grants 列 → UPDATE 抛 sqlite OperationalError，属预期 RED 失败。
+        """
+        repo = SQLiteAgentRepository(db_session)
+        saved = await repo.add(_agent("脏数据"))
+        from sqlalchemy import text
+
+        await db_session.execute(
+            text("UPDATE agents SET grants = '{bad' WHERE id = :id"), {"id": saved.id}
+        )
+        await db_session.commit()
+        got = await repo.get(saved.id)
+        assert got is not None
+        assert got.grants == []

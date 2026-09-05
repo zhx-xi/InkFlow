@@ -741,11 +741,11 @@ export interface paths {
         };
         /**
          * List Tool Catalog
-         * @description 工具目录（spec §2.3/§5.1 + #838）— ALL_TOOL_SPECS 35 工具按目录原序 + 双标记.
+         * @description 工具目录（spec §2.3/§5.1 + #838/#954 F58 §3.2）— 26 自定义工具 + domain/op.
          *
-         *     #838: 返回全量 35（9 组全集，含 9 核心工具），每项带
-         *     allow_custom_agent/is_core 标记；核心工具 allow_custom_agent=False、
-         *     is_core=True（自定义 agent 选择列表过滤依据，26 个暴露工具 = TOOL_REGISTRY）。
+         *     #954 F58 §3.2：目录收敛为 26 自定义工具（is_core=True 的 9 核心工具不进
+         *     目录），每项带 allow_custom_agent/is_core 标记 + domain/op 授权格值
+         *     （来自 TOOL_NAME_TO_CELL，ALL_TOOL_SPECS 原序）。
          *
          *     路由顺序硬契约：本端点必须声明在 /{agent_id} 之前，否则 "tools" 被
          *     _parse_id 吞掉 → 404「Agent 不存在」（API 测试契约 #3）。
@@ -3396,6 +3396,8 @@ export interface components {
              * @default
              */
             description: string;
+            /** Grants */
+            grants?: components["schemas"]["GrantEntry"][] | null;
             /**
              * Icon
              * @default
@@ -3532,6 +3534,8 @@ export interface components {
         AgentUpdate: {
             /** Description */
             description?: string | null;
+            /** Grants */
+            grants?: components["schemas"]["GrantEntry"][] | null;
             /** Icon */
             icon?: string | null;
             /** Model Override */
@@ -4335,6 +4339,15 @@ export interface components {
             priority?: number | null;
             /** Title */
             title?: string | null;
+        };
+        /**
+         * GrantEntry
+         * @description 单域授权条目：domain + ops 列表（空列表 = 该域无授权）.
+         */
+        GrantEntry: {
+            domain: components["schemas"]["ToolDomain"];
+            /** Ops */
+            ops?: components["schemas"]["ToolOp"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -5673,6 +5686,18 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /**
+         * ToolDomain
+         * @description 工具授权域（spec §2.1 逐字，枚举序即声明序）.
+         * @enum {string}
+         */
+        ToolDomain: "outline" | "character" | "world" | "timeline" | "foreshadowing" | "memory" | "writing" | "agent_chain";
+        /**
+         * ToolOp
+         * @description 授权操作（spec §2.1 逐字，枚举序 read < write < delete）.
+         * @enum {string}
+         */
+        ToolOp: "read" | "write" | "delete";
         /**
          * UserPreferenceCreate
          * @description 手动创建用户级偏好请求体（#521）.
