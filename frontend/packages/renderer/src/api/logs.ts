@@ -33,6 +33,7 @@ export interface LogsQueryParams {
   to?: string;
   q?: string;
   correlation_id?: string;
+  trace_id?: string;
   page?: number;
   limit?: number;
 }
@@ -64,6 +65,7 @@ export async function fetchLogs(params: LogsQueryParams): Promise<LogsResponseDt
   if (params.to) qs.set('to', params.to);
   if (params.q) qs.set('q', params.q);
   if (params.correlation_id) qs.set('correlation_id', params.correlation_id);
+  if (params.trace_id) qs.set('trace_id', params.trace_id);
   if (params.page !== undefined && params.page > 0) qs.set('page', String(params.page));
   if (params.limit !== undefined) qs.set('limit', String(params.limit));
   const query = qs.toString();

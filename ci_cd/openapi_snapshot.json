@@ -9858,7 +9858,7 @@
     },
     "/api/v1/logs": {
       "get": {
-        "description": "日志页查询 → F7 信封 {ok, data:{items,total,offset,limit}}。",
+        "description": "日志页查询 → F7 信封 {ok, data:{items,total,offset,limit}}。\n\n#932：limit 允许 [1, 200]（链视图以 limit=200 拉全链）；trace_id 等值过滤\n透传 store.query（与 correlation_id 同形态）。",
         "operationId": "query_logs_api_v1_logs_get",
         "parameters": [
           {
@@ -9975,6 +9975,22 @@
           },
           {
             "in": "query",
+            "name": "trace_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Trace Id"
+            }
+          },
+          {
+            "in": "query",
             "name": "page",
             "required": false,
             "schema": {
@@ -9989,6 +10005,8 @@
             "required": false,
             "schema": {
               "default": 50,
+              "maximum": 200,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }

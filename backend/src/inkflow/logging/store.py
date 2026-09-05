@@ -67,12 +67,14 @@ class StructuredLogStore:
         to_ts: datetime | None = None,
         q: str | None = None,
         correlation_id: str | None = None,
+        trace_id: str | None = None,
         page: int = 0,
         limit: int = 50,
     ) -> tuple[list[dict], int]:
         """读全部 inkflow_structured_*.log 行，过滤后按 timestamp 降序 + 分页。
 
         level / caller_type 支持逗号分隔多值（大小写不敏感，单值向后兼容）；解析失败的行跳过；
+        correlation_id / trace_id 等值过滤（#932：trace_id 镜像 correlation_id 口径）；
         返回 (items, total)，items 为 JSON-safe record dict（含脱敏后 params）。
         """
         from_norm = _normalize_ts(from_ts) if from_ts is not None else None
@@ -102,6 +104,8 @@ class StructuredLogStore:
             if project_id is not None and rec.get("project_id") != project_id:
                 continue
             if correlation_id is not None and rec.get("correlation_id") != correlation_id:
+                continue
+            if trace_id is not None and rec.get("trace_id") != trace_id:
                 continue
             if from_norm is not None and ts < from_norm:
                 continue

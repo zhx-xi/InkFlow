@@ -212,3 +212,61 @@ class TestLogsAuth:
         resp = client.get("/api/v1/logs", headers={TOKEN_HEADER: TEST_TOKEN})
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
+# #932: GET /logs limit upper bound (Query ge=1 le=200) + trace_id filter
+# RED contract tests appended on top of the existing suite (TDD red phase).
+
+
+class TestLogsQueryLimitCeil:
+    """#932: limit must be declared as Query(default=50, ge=1, le=200)."""
+
+    def test_limit_200_accepted(self, client):
+        # Boundary: 200 is inside the allowed [1, 200] window (may already pass).
+        resp = client.get("/api/v1/logs", params={"limit": 200})
+        assert resp.status_code == 200
+        assert resp.json()["data"]["limit"] == 200
+
+    def test_limit_201_rejected_422(self, client):
+        # limit=201 exceeds le=200 -> FastAPI Query validation => 422.
+        resp = client.get("/api/v1/logs", params={"limit": 201})
+        assert resp.status_code == 422
+
+    def test_limit_zero_rejected_422(self, client):
+        # limit=0 violates ge=1 -> 422.
+        resp = client.get("/api/v1/logs", params={"limit": 0})
+        assert resp.status_code == 422
+
+    def test_limit_negative_rejected_422(self, client):
+        # limit=-1 violates ge=1 -> 422.
+        resp = client.get("/api/v1/logs", params={"limit": -1})
+        assert resp.status_code == 422
+
+    def test_default_limit_50_guard(self, client):
+        # Guard test (allowed to pass already): no limit -> default stays 50.
+        resp = client.get("/api/v1/logs")
+        assert resp.status_code == 200
+        assert resp.json()["data"]["limit"] == 50
+
+
+class TestLogsTraceFilter:
+    """#932: trace_id query filter (trace data available since #931)."""
+
+    def _post(self, client, event, trace_id):
+        body = {**_VALID_BODY, "event": event, "trace_id": trace_id}
+        assert client.post("/api/v1/logs", json=body).status_code == 200
+
+    def test_trace_id_filters_items(self, client):
+        self._post(client, "trace_a_evt", "t-red-a")
+        self._post(client, "trace_b_evt", "t-red-b")
+        resp = client.get("/api/v1/logs", params={"trace_id": "t-red-a"})
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total"] >= 1
+        # All items must belong to the requested trace; no t-red-b leak.
+        assert {item["trace_id"] for item in data["items"]} == {"t-red-a"}
+
+    def test_trace_id_nonexistent_returns_empty(self, client):
+        self._post(client, "trace_a_evt", "t-red-a")
+        resp = client.get("/api/v1/logs", params={"trace_id": "nonexistent-xyz"})
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total"] == 0
