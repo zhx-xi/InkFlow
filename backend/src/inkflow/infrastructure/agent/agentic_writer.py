@@ -18,6 +18,7 @@ base 前 skill 后）。skill_lookup 由装配层经 AgenticWriterDeps.skill_loo
 
 from __future__ import annotations
 
+import inspect
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -78,8 +79,13 @@ def build_writer_agent_system_prompt(
 class DeepAgentInvokeAdapter:
     """deepagents 0.7.5 invoke 形态适配——服务层契约传裸消息列表，
     真实 graph 需要 {"messages": [...]} dict（真实冒烟 2026-08-10 实测
-    InvalidUpdateError: Expected dict）；graph.invoke 为同步方法（返回 dict
-    非 coroutine，冒烟第二轮实测 TypeError await）。"""
+    InvalidUpdateError: Expected dict）。
+
+    #953：async 优先——真实 CompiledStateGraph.ainvoke 是协程函数 → await 在宿主
+    事件循环执行（工具 coroutine 由 ToolNode async 路径在宿主循环运行）；sync
+    graph.invoke 兜底保留（MagicMock 鸭子 / 无 async 能力实现，同步调用线程视角
+    不变）。旧注释"graph.invoke 为同步方法（TypeError await）"作废：那是 sync
+    返回 dict 时 await 的 TypeError，与本 adapter 的 async 化不冲突。"""
 
     def __init__(self, inner: object) -> None:
         self._inner = inner
@@ -87,10 +93,19 @@ class DeepAgentInvokeAdapter:
     @instrument(caller_type="agent")
     async def invoke(self, messages: list, config: dict | None = None) -> dict:
         # #821：显式 config 原样透传；缺失时自动补 thread_id（InMemorySaver 兜底）
+        # ——以下两分支共用该兜底逻辑
         if config is None:
             config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-        # deepagents 输入 {"messages": [...]}；graph.invoke 同步返回（含 "messages" 键）
-        result = self._inner.invoke({"messages": messages}, config=config)  # type: ignore[attr-defined]  # 鸭子类型：deepagents CompiledStateGraph
+        # #953：async 优先——真实 CompiledStateGraph.ainvoke 是协程函数 → await 在
+        # 宿主循环执行（sync graph.invoke 走 ToolNode sync 桥 → worker 新循环跑工具
+        # 协程，跨循环 acquire 模块锁抛 bound to a different event loop，book run 崩溃）
+        ainvoke = getattr(self._inner, "ainvoke", None)
+        if ainvoke is not None and inspect.iscoroutinefunction(ainvoke):
+            result = await ainvoke({"messages": messages}, config=config)
+        else:
+            # 既有同步分支原样保留：MagicMock 鸭子（.ainvoke 为 MagicMock 属性非协程
+            # 函数）/无 async 能力实现回退；deepagents 输入 {"messages": [...]}
+            result = self._inner.invoke({"messages": messages}, config=config)  # type: ignore[attr-defined]  # 鸭子类型：deepagents CompiledStateGraph
         if isinstance(result, Awaitable):
             return cast(dict, await result)
         return cast(dict, result)

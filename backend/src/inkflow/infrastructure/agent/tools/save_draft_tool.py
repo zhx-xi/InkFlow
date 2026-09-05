@@ -86,7 +86,7 @@ def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool:
         content: str = "",
         summary: str | None = None,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             # #718: 绑定到装配期上下文——deps.expected_* 注入时总是使用绑定值
             # （LLM 无需也无需自报 id，杜绝编造全零/误报导致 {ok:False} 循环失败）；
             # 未注入时回退 caller 传入值（MCP/F27 writer 兼容）。

@@ -141,7 +141,7 @@ def build_memory_tools(deps: MemoryToolDeps) -> list[Tool]:
         project_id: uuid.UUID | str | None = None,
         category: str | None = None,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             _project_id = _bind_project_id(deps.expected_project_id, project_id)
             try:
                 result = await deps.memory_service.list_preferences(  # type: ignore[attr-defined]  # 鸭子类型：memory_service 按契约提供 list_preferences
@@ -160,7 +160,7 @@ def build_memory_tools(deps: MemoryToolDeps) -> list[Tool]:
         pattern: str = "",
         note: str = "",
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             _project_id = _bind_project_id(deps.expected_project_id, project_id)
             try:
                 pref = await deps.memory_service.create_preference(  # type: ignore[attr-defined]  # 鸭子类型：memory_service 按契约提供 create_preference
@@ -202,7 +202,7 @@ def build_memory_tools(deps: MemoryToolDeps) -> list[Tool]:
         pattern: str | None = None,
         note: str | None = None,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             _project_id = _bind_project_id(deps.expected_project_id, project_id)
             try:
                 update_fields: dict[str, Any] = {}

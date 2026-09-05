@@ -164,7 +164,7 @@ def build_setting_update_tools(deps: SettingUpdateToolDeps) -> list[Tool]:
         goals: str | None = None,
         group_ids: list[uuid.UUID | str] | None = None,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             _project_id = _bind_project_id(deps.expected_project_id, project_id)
             try:
                 update_fields: dict[str, Any] = {}
@@ -223,7 +223,7 @@ def build_setting_update_tools(deps: SettingUpdateToolDeps) -> list[Tool]:
         content: str | None = None,
         parent_id: uuid.UUID | str | None = None,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             _project_id = _bind_project_id(deps.expected_project_id, project_id)
             try:
                 update_fields: dict[str, Any] = {}
@@ -280,7 +280,7 @@ def build_setting_update_tools(deps: SettingUpdateToolDeps) -> list[Tool]:
         parent_id: uuid.UUID | str | None = None,
         chapter_id: uuid.UUID | str | None = None,
     ) -> str:
-        async with _tool_db_lock_mod._tool_db_lock:
+        async with _tool_db_lock_mod.get_tool_db_lock():
             _project_id = _bind_project_id(deps.expected_project_id, project_id)
             try:
                 update_fields: dict[str, Any] = {}
