@@ -412,6 +412,24 @@ class TestDispatcherAudit:
         assert capsys.readouterr().out == ""
 
 
+class TestMakeClientFactory:
+    """真实工厂（不 monkeypatch）：F20 §6.3 端点/头/超时契约。"""
+
+    def test_builds_httpx_client_contract(self):
+        import httpx
+
+        from inkflow.mcp.log_bridge import _make_client
+
+        client = _make_client(8123, _FAKE_TOKEN)
+        try:
+            assert isinstance(client, httpx.Client)
+            assert str(client.base_url) == "http://127.0.0.1:8123/api/v1/"  # httpx 补尾斜杠
+            assert client.headers["X-InkFlow-Token"] == _FAKE_TOKEN
+            assert client.timeout.read == 5.0
+        finally:
+            client.close()
+
+
 class TestI18nCatalog:
     """契约 §4：message_key 登记 zh/en 打包目录（test_logging_message_keys 同族前哨）。"""
 
