@@ -114,6 +114,7 @@
 | F54 执行链路可重放 | [`f54-trace-replay/spec.md`](f54-trace-replay/spec.md) | 后端 | llm | 📝 草案（#615） |
 | F55 统一执行视图 | [`f55-unified-exec-view/spec.md`](f55-unified-exec-view/spec.md) | 跨端 | api+gui | 📝 草案（#599） |
 | F52 云端 Protocol（P0-11 更名） | [`f52-cloud-protocol/spec.md`](f52-cloud-protocol/spec.md) | 后端 | cloud | ✅ 已实现（PR #37） |
+| F58 Chat Agent 层级化工具矩阵 + Scope 授权 | [`f58-agent-tool-scope/spec.md`](f58-agent-tool-scope/spec.md) | 跨端 | agent | 📝 草案（ADR-050，0.13.0） |
 
 ### 卷概念统一（0.12.0，P0）
 
