@@ -158,7 +158,9 @@ class TestMcpLogBridgeIntegration:
         assert item["error_code"] == "UNKNOWN_TOOL"
 
     @pytest.mark.asyncio
-    async def test_write_operation_auditable_with_project(self, bridge_env: SimpleNamespace) -> None:
+    async def test_write_operation_auditable_with_project(
+        self, bridge_env: SimpleNamespace
+    ) -> None:
         """审计闭环（M3）：建项目 → 记录带 project_id 可过滤回查。"""
         created = await _mcp_call(
             bridge_env,

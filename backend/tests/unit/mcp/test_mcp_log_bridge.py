@@ -13,9 +13,11 @@ GREEN 实现契约（模块 inkflow.mcp.log_bridge，CREATE）
    - ``pending: collections.deque[dict]``（有界 maxlen=200，满则丢最旧，静默）；
    - ``client: httpx.Client | None``（attach 产物）。
    方法：
-   - ``attach(port: int, token: str) -> None``：端点未变 → 复用既有 client；
-     变化 → 关闭旧 client（best-effort suppress）→ ``_make_client(port, token)``
-     重建。token 仅存于 client 请求头，绝不进 pending/body（F20 §6.3/§271）。
+   - ``attach(port: int, token: str) -> None``：端点未变且 client 非 None →
+     复用既有 client；否则 → 关闭旧 client（best-effort suppress）→
+     ``_make_client(port, token)`` 重建并记录端点。token 仅存于 client 请求头，
+     绝不进 pending/body（F20 §6.3/§271）。
+   - ``reset() -> None``：清 pending、关闭并置空 client 与端点（测试隔离缝）。
    - ``sink(message) -> None``：loguru sink 回调。record["extra"] 无
      caller_type → 忽略；有 → 构建 LogRecordInput 形状 body dict 入 pending。
      level 归一：loguru "WARNING" → "WARN"（对齐 core/log._norm_sink_level）。
@@ -79,16 +81,15 @@ inkflow.mcp.log_bridge 不存在 → 本文件顶部 import 收集期 ModuleNotF
 
 from __future__ import annotations
 
-import asyncio
 import importlib
 import json
 import re
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Protocol
 
 import pytest
 from inkflow.mcp.log_bridge import get_forwarder, mcp_log_sink  # RED: 模块不存在
+
 from inkflow.mcp.server import call_tool_result
 from inkflow.mcp.tools import build_mcp_tools
 
@@ -100,10 +101,6 @@ bridge_mod = importlib.import_module("inkflow.mcp.log_bridge")
 _FAKE_TOKEN = "sekret-924"  # 🔴 永不泄漏断言锚（F20 §271）
 _MESSAGES_DIR = Path(__file__).resolve().parents[3] / "src" / "inkflow" / "i18n" / "messages"
 _PLACEHOLDER = re.compile(r"\{(\w+)[^}]*\}")
-
-
-class _Poster(Protocol):
-    def post(self, path: str, *, json: dict | None = None, timeout: float | None = None) -> object: ...
 
 
 class FakeLogClient:
@@ -139,7 +136,9 @@ class FakeToolClient:
         self.calls.append(("GET", path))
         return self.response  # type: ignore[return-value]
 
-    async def post(self, path: str, *, params: object = None, json: object = None, timeout: object = None) -> dict:
+    async def post(
+        self, path: str, *, params: object = None, json: object = None, timeout: object = None
+    ) -> dict:
         self.calls.append(("POST", path))
         return self.response  # type: ignore[return-value]
 
@@ -175,15 +174,9 @@ def fake_log(monkeypatch):
     client = FakeLogClient()
     monkeypatch.setattr(bridge_mod, "_make_client", lambda port, token: client)
     fwd = get_forwarder()
-    fwd.pending.clear()
-    old = fwd.client
-    fwd.client = None
-    if old is not None:
-        try:
-            old.close()
-        except Exception:
-            pass
-    return SimpleNamespace(client=client, forwarder=fwd)
+    fwd.reset()
+    yield SimpleNamespace(client=client, forwarder=fwd)
+    fwd.reset()
 
 
 def _last_body(client: FakeLogClient) -> dict:
@@ -197,7 +190,6 @@ class TestSinkBuffering:
     """契约 §3a：sink 只收 INFO+ 且带 caller_type 的结构化记录。"""
 
     def test_info_record_buffered(self, fake_log):
-        from loguru import logger
 
         from inkflow.logging import log_structured
 
@@ -219,12 +211,9 @@ class TestSinkBuffering:
         assert body["message_key"] == "log.event.mcp_tool_call"
         assert body["params"] == {"tool": "manage_project"}
         assert "correlation_id" in body
-        logger.remove()
-        logger.add(__import__("sys").stderr, level="DEBUG")
 
     def test_debug_not_buffered(self, fake_log):
         """DEBUG start/done 不桥接（口径与内核 api 面 INFO+ 一致）。"""
-        from loguru import logger
 
         from inkflow.logging import log_structured
 
@@ -238,11 +227,8 @@ class TestSinkBuffering:
                 message="started",
             )
             assert list(fake_log.forwarder.pending) == []
-        logger.remove()
-        logger.add(__import__("sys").stderr, level="DEBUG")
 
     def test_warning_normalized(self, fake_log):
-        from loguru import logger
 
         from inkflow.logging import log_structured
 
@@ -257,8 +243,6 @@ class TestSinkBuffering:
             )
             body = dict(fake_log.forwarder.pending[0])
         assert body["level"] == "WARN"
-        logger.remove()
-        logger.add(__import__("sys").stderr, level="DEBUG")
 
     def test_plain_logger_not_buffered(self, fake_log):
         """无 caller_type 的普通日志不进桥接面。"""
@@ -267,8 +251,6 @@ class TestSinkBuffering:
         with mcp_log_sink():
             logger.info("not structured")
             assert list(fake_log.forwarder.pending) == []
-        logger.remove()
-        logger.add(__import__("sys").stderr, level="DEBUG")
 
 
 class TestFlushDelivery:
@@ -308,7 +290,7 @@ class TestFlushDelivery:
 
     def test_flush_posts_survive_client_error(self, fake_log, monkeypatch):
         class Boom(FakeLogClient):
-            def post(self, path, *, json=None, timeout=None):  # noqa: ANN001, ANN201
+            def post(self, path, *, json=None, timeout=None):
                 raise RuntimeError("kernel gone")
 
         boom = Boom()
