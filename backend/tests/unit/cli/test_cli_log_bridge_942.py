@@ -113,7 +113,7 @@ project_mod = importlib.import_module("inkflow.cli.commands.project")
 chapter_mod = importlib.import_module("inkflow.cli.commands.chapter")
 http_mod = importlib.import_module("inkflow.infrastructure.http")
 
-from inkflow.cli.app import app as root_app  # noqa: E402
+from inkflow.cli.app import app as root_app  # noqa: E402  # 常量须在模块导入后（依赖 RED 模块就位）
 
 _FAKE_TOKEN = "sekret-942"  # 🔴 永不泄漏断言锚（F20 §271）
 _UUID_P = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
@@ -180,7 +180,7 @@ def _patch_kernel(monkeypatch, *mods: object) -> AsyncMock:
     )
     for mod in mods:
         assert hasattr(mod, "ensure_kernel")
-        monkeypatch.setattr(mod, "ensure_kernel", fake)  # type: ignore[arg-type]
+        monkeypatch.setattr(mod, "ensure_kernel", fake)  # type: ignore[arg-type]  # AsyncMock 替函数，签名不同构
     return fake
 
 
@@ -204,7 +204,7 @@ class TestGenericForwarder:
 
         def factory(port: int, token: str) -> FakeLogClient:
             made.append((port, token))
-            return FakeLogClient()  # type: ignore[return-value]
+            return FakeLogClient()  # type: ignore[return-value]  # 假客户端鸭子类型替 httpx.Client
 
         fwd = LogForwarder(client_factory=factory)
         fwd.attach(7, "tok-a")
@@ -393,7 +393,7 @@ class TestBridgeLifecycle:
 
     def test_flush_survives_transport_error(self, fake_cli_env, monkeypatch, cli_runner):
         class Boom(FakeLogClient):
-            def post(self, path, *, json=None, timeout=None):  # type: ignore[no-untyped-def]
+            def post(self, path, *, json=None, timeout=None):  # type: ignore[no-untyped-def]  # 覆写父类签名只测抛异常
                 raise RuntimeError("kernel gone")
 
         monkeypatch.setattr(cli_bridge_mod, "_make_client", lambda port, token: Boom())
