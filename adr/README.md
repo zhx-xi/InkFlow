@@ -86,6 +86,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 | [ADR-036](agent/ADR-036.md) | 写工具形态 — save_draft（草稿 + 确认 + 三约束） | ✅ 已接受 | 2026-08-12 |
 | [ADR-043](agent/ADR-043.md) | AI 工具面全量注册 + 删除交互授权模型 | ✅ 已接受 | 2026-08-28 |
 | [ADR-050](agent/ADR-050.md) | Chat Agent 工具面分层演进 — 层级化工具矩阵 + 域×CRUD Scope（分阶段方案 D，F58） | ✅ 已接受 | 2026-09-06 |
+| [ADR-052](agent/ADR-052.md) | Agent 工具 DB 锁 per-loop 发放 + writer adapter async 优先 — #953 死锁修复（修订 #837 锁形态） | ✅ 已接受 | 2026-09-06 |
 
 ### 记忆与 Skills（memory-skills）
 
