@@ -147,7 +147,7 @@ let rootTraceId = '';
 
 /** #931：32 位小写 hex trace id（crypto.getRandomValues；W3C 全零为无效值） */
 export function newTraceId(): string {
-  let id = '';
+  let id: string;
   do {
     const bytes = new Uint8Array(16);
     crypto.getRandomValues(bytes);
