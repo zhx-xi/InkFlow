@@ -1513,6 +1513,9 @@ export interface paths {
         /**
          * Query Logs
          * @description 日志页查询 → F7 信封 {ok, data:{items,total,offset,limit}}。
+         *
+         *     #932：limit 允许 [1, 200]（链视图以 limit=200 拉全链）；trace_id 等值过滤
+         *     透传 store.query（与 correlation_id 同形态）。
          */
         get: operations["query_logs_api_v1_logs_get"];
         put?: never;
@@ -9058,6 +9061,7 @@ export interface operations {
                 to?: string | null;
                 q?: string | null;
                 correlation_id?: string | null;
+                trace_id?: string | null;
                 page?: number;
                 limit?: number;
             };

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Literal, cast
+from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -87,11 +87,16 @@ async def query_logs(
     to: str | None = None,
     q: str | None = None,
     correlation_id: str | None = None,
+    trace_id: str | None = None,
     page: int = 0,
-    limit: int = 50,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
     store: StructuredLogStore = Depends(get_log_store),
 ) -> dict:
-    """日志页查询 → F7 信封 {ok, data:{items,total,offset,limit}}。"""
+    """日志页查询 → F7 信封 {ok, data:{items,total,offset,limit}}。
+
+    #932：limit 允许 [1, 200]（链视图以 limit=200 拉全链）；trace_id 等值过滤
+    透传 store.query（与 correlation_id 同形态）。
+    """
     # 直调面（test_logs_i18n_direct 既有形态）直接传 int 主键原样透传；
     # HTTP 面经 FastAPI 恒为 str/None → 走 _resolve_project_id 归一（UUID→int）。
     resolved_project_id = (
@@ -105,6 +110,7 @@ async def query_logs(
         to_ts=_parse_query_ts(to),
         q=q,
         correlation_id=correlation_id,
+        trace_id=trace_id,
         page=page,
         limit=limit,
     )
