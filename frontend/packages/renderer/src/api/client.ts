@@ -142,6 +142,38 @@ interface ApiFetchInit extends Omit<RequestInit, 'body'> {
   body?: any;
 }
 
+/** #931 根 trace（模块级懒生成：一次 GUI 会话一条根 trace，应用生命周期内恒定） */
+let rootTraceId = '';
+
+/** #931：32 位小写 hex trace id（crypto.getRandomValues；W3C 全零为无效值） */
+export function newTraceId(): string {
+  let id = '';
+  do {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    id = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  } while (/^0+$/.test(id));
+  return id;
+}
+
+/** #931：每请求随机 span（16 位小写 hex） */
+function newSpanId(): string {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** #931：导出会话根 trace id（测试与排障用；首次访问时懒生成） */
+export function getTraceId(): string {
+  if (!rootTraceId) rootTraceId = newTraceId();
+  return rootTraceId;
+}
+
+/** #931：W3C traceparent 头（根 trace + 本请求新 span，flags=01 采样） */
+function makeTraceparent(): string {
+  return `00-${getTraceId()}-${newSpanId()}-01`;
+}
+
 /** fetch 封装：baseURL 拼接 + X-InkFlow-Token 头 + 错误映射（404/422/500 → ApiError） */
 export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promise<T> {
   const { baseURL, token } = getApiConfig();
@@ -149,6 +181,7 @@ export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promis
   if (token) headers.set('X-InkFlow-Token', token);
   const correlationId = getCorrelationId();
   if (correlationId) headers.set('X-Correlation-Id', correlationId);
+  headers.set('traceparent', makeTraceparent());
   if (init.body !== undefined && !(init.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
@@ -273,6 +306,7 @@ export async function reportLog(record: FrontendLogRecord): Promise<{ ok: boolea
     const headers = new Headers({ 'Content-Type': 'application/json' });
     if (token) headers.set('X-InkFlow-Token', token);
     if (record.correlation_id) headers.set('X-Correlation-Id', record.correlation_id);
+    headers.set('traceparent', makeTraceparent());
     const res = await fetch(`${baseURL}/api/v1/logs`, {
       method: 'POST',
       headers,

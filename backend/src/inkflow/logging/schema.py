@@ -13,6 +13,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from inkflow.logging.correlation import get_request_correlation_id
+from inkflow.logging.trace import get_trace_context
 
 CALLER_TYPES: tuple[str, ...] = ("api", "agent", "llm", "tool", "cli", "mcp", "frontend")
 
@@ -109,6 +110,7 @@ class StructuredLogRecord(BaseModel):
     correlation_id: str
     trace_id: str | None = None
     span_id: str | None = None
+    parent_span_id: str | None = None
     project_id: int | None = None
     entity_id: str | None = None
     duration_ms: float | None = None
@@ -128,6 +130,7 @@ def log_structured(
     correlation_id: str | None = None,
     trace_id: str | None = None,
     span_id: str | None = None,
+    parent_span_id: str | None = None,
     project_id: int | None = None,
     entity_id: str | None = None,
     duration_ms: float | None = None,
@@ -139,8 +142,12 @@ def log_structured(
     extra = model_dump 去掉 timestamp/level/logger 且剔除值为 None 的可选字段；
     correlation_id 解析链：显式参数 > contextvar（请求头沿用）> 空串
     （B4 #496；无 contextvar 时缺省空串语义与现状逐字一致，零翻转）。
+    trace_id/span_id/parent_span_id 解析链：显式参数 > contextvar
+    （logging.trace，#931）> None（exclude_none 剔除——无 trace 上下文时
+    不注入空串假值，#888 零回归）。
     """
     masked_params = cast(dict, mask_fields(params or {}))
+    trace_ctx = get_trace_context()
     record = StructuredLogRecord(
         level=level,
         logger="inkflow",
@@ -152,8 +159,21 @@ def log_structured(
         correlation_id=(
             correlation_id if correlation_id is not None else get_request_correlation_id()
         ),
-        trace_id=trace_id,
-        span_id=span_id,
+        trace_id=(
+            trace_id
+            if trace_id is not None
+            else (trace_ctx.trace_id if trace_ctx is not None else None)
+        ),
+        span_id=(
+            span_id
+            if span_id is not None
+            else (trace_ctx.span_id if trace_ctx is not None else None)
+        ),
+        parent_span_id=(
+            parent_span_id
+            if parent_span_id is not None
+            else (trace_ctx.parent_span_id if trace_ctx is not None else None)
+        ),
         project_id=project_id,
         entity_id=entity_id,
         duration_ms=duration_ms,

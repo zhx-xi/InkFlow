@@ -19,6 +19,10 @@ from inkflow.infrastructure.agent.book_pipeline import BookVolumePipeline
 from inkflow.infrastructure.agent.execution_store import ExecutionStore
 from inkflow.infrastructure.background.tasks import spawn_background_task
 from inkflow.logging import instrument
+from inkflow.logging.correlation import (
+    reset_request_correlation_id,
+    set_request_correlation_id,
+)
 
 router = APIRouter(prefix="/api/v1/agent/books", tags=["Books"])
 
@@ -514,16 +518,23 @@ async def _run_book(
 ) -> None:
     """后台执行体（fire-and-forget）：write_book/write_book_volume/write_book_agentic
     全量执行；未预期异常 → mark_failed 落库（状态映射 running → failed）。"""
+    # #931 根因 5：agent/book 长任务非 HTTP 请求上下文——任务体起点锚定运行级
+    # correlation（一次 run 一条链，覆盖 HTTP 请求级值）；trace contextvar 沿用
+    # 请求继承的根（create_task 拷贝 context，asyncio 天然传播）。finally 复位。
+    corr_token = set_request_correlation_id(str(plan_id))
     try:
-        if mode == "agentic":
-            await svc.write_book_agentic(plan_id, limits, config)
-        elif mode == "volume":
-            await svc.write_book_volume(plan_id, limits)
-        else:
-            await svc.write_book(plan_id, limits)
-    except Exception:
-        with contextlib.suppress(Exception):
-            await svc.mark_failed(str(plan_id))
+        try:
+            if mode == "agentic":
+                await svc.write_book_agentic(plan_id, limits, config)
+            elif mode == "volume":
+                await svc.write_book_volume(plan_id, limits)
+            else:
+                await svc.write_book(plan_id, limits)
+        except Exception:
+            with contextlib.suppress(Exception):
+                await svc.mark_failed(str(plan_id))
+    finally:
+        reset_request_correlation_id(corr_token)
 
 
 @router.post("/runs/{run_id}/confirm")

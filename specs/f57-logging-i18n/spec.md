@@ -50,13 +50,15 @@ backend/src/inkflow/i18n/                    # 打包默认层（PyInstaller 冻
 ```
 timestamp(ISO8601) / level(DEBUG|INFO|WARN|ERROR) / logger(module名) /
 caller_type(api|agent|llm|tool|cli|mcp|frontend) / caller_name / event /
-message_key(msgid) / params(dict) / trace_id / correlation_id / span_id /
+message_key(msgid) / params(dict) / trace_id / span_id / parent_span_id /
+correlation_id /
 project_id / entity_id / duration_ms / error_code / stack?(仅ERROR)
 ```
 - `caller_type` 枚举：`api`(路由端点)、`agent`(编排)、`llm`(LLM 调用)、`tool`(工具调用)、`cli`(CLI 命令)、`mcp`(MCP 工具)、`frontend`(前端页面操作)。
-- **字段必填**：`timestamp/level/logger/caller_type/caller_name/event/message_key/params/correlation_id`（`stack` 仅 ERROR 必填）；**可选**：`trace_id/span_id/project_id/entity_id/duration_ms/error_code`。`params` 含脱敏后参数摘要（不泄 key）。
+- **字段必填**：`timestamp/level/logger/caller_type/caller_name/event/message_key/params/correlation_id`（`stack` 仅 ERROR 必填）；**可选**：`trace_id/span_id/parent_span_id/project_id/entity_id/duration_ms/error_code`。`params` 含脱敏后参数摘要（不泄 key）。
 - `message_key` = i18n msgid（语言中立）；日志页用 `t(message_key, params)` 渲染 → **实时切换**。
-- `correlation_id`：一次操作/对话/pipeline 贯穿前后端（前端生成 uuid → 请求头 `X-Correlation-Id` → 后端沿用；后端内部 `trace_id`/`span_id` 补充）。
+- `trace_id`/`span_id`/`parent_span_id`：OpenTelemetry/W3C 语义——入口面（GUI/CLI/MCP）生成根 trace；W3C `traceparent` 请求头格式 `00-<trace-id 32hex>-<span-id 16hex>-<flags 2hex>`，中间件解析/兜底生成（缺失或非法 → 新根）；每条日志携带三字段（OTel 父子链，2.0 cloud 前置）。
+- `correlation_id`：保留为操作级 uuid 兜底（一次操作/对话/pipeline 贯穿前后端，前端生成 uuid → 请求头 `X-Correlation-Id` → 后端沿用）。
 
 ---
 

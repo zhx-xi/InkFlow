@@ -76,7 +76,15 @@ class McpLogForwarder:
                 "params": extra.get("params", {}),
                 "correlation_id": extra.get("correlation_id", ""),
             }
-            for key in ("project_id", "entity_id", "duration_ms", "error_code"):
+            for key in (
+                "project_id",
+                "entity_id",
+                "duration_ms",
+                "error_code",
+                "trace_id",
+                "span_id",
+                "parent_span_id",
+            ):
                 if key in extra:
                     body[key] = extra[key]
             self.pending.append(body)

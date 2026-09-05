@@ -67,6 +67,9 @@ class LogRecordInput(BaseModel):
     message_key: str
     params: dict = Field(default_factory=dict)
     correlation_id: str = ""
+    trace_id: str | None = None
+    span_id: str | None = None
+    parent_span_id: str | None = None
     project_id: int | None = None
     entity_id: str | None = None
     duration_ms: float | None = None
@@ -126,6 +129,9 @@ async def ingest_log(
         message_key=record.message_key,
         params=cast(dict, mask_fields(record.params or {})),
         correlation_id=record.correlation_id,
+        trace_id=record.trace_id,
+        span_id=record.span_id,
+        parent_span_id=record.parent_span_id,
         project_id=record.project_id,
         entity_id=record.entity_id,
         duration_ms=record.duration_ms,
