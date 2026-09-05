@@ -1,7 +1,7 @@
 # F44: 长任务编排器（long-task-orchestrator）功能规格
 > **端**: cross
 
-**Spec 版本**: 1.6（#929 写作凭据项目感知 + per-delegate 解析，2026-09-05；v1.5 #902 卷轨/agentic 轨 token 用量采集；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
+**Spec 版本**: 1.7（#927 planner 产物质量：兜底题中性化 + 标题短化 + 主角 role_rank + limits 访谈提取，2026-09-05；v1.6 #929 写作凭据项目感知 + per-delegate 解析；v1.5 #902 卷轨/agentic 轨 token 用量采集；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
 **日期**: 2026-08-17
 **依据**: 设计定稿 `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §2 全文（唯一真相）+ Issue #335（阶段 1）/ #336（阶段 2）/ #337（阶段 3）/ #338（阶段 4）+ Spike 验证报告 `docs/f44-orchestrator-spike-2026-08-17.md`（M1 门禁，workspace docs）+ 已合入源码核查（F27/F42/F29/F39/F6）+ Issue #475（访谈 LLM 动态提问，D1 拍板 2026-08-19）+ #486（会话/记忆 UI，D9，下游消费方）
 **所属阶段**: 0.10.0（长任务编排器，F44 四阶段），估算 24-39 人天（#335 阶段 1：5-8 / #336 阶段 2：4-6 / #337 阶段 3：7-11 / #338 阶段 4：8-10 + GUI 已含，part-time 8-10 周；v1.1 较 v1.0 的 16-26 人天增加 Q1=C GUI +8-12 与 Q2=C 项目级上限 +0.5-1）；v1.2 #475 访谈 LLM 动态提问为 0.10.1 增量（估算 5-8 人天，拆 2 PR：后端提问引擎 + 前端对话式 UI，S3 实现轨）
@@ -337,6 +337,7 @@ inkflow book summary <run_id> [--export <file.json>]                      # 回�
 - 大纲/主角 = **必须对话确认**（通用必答项服务端强约束，见后端契约）；配角/细节 = 显式授权后自定（`authorized` 字段，「完成度授权」）
 - 「全部你决定」= 拒访谈 → 完全自主生成 = 跑 F42 `write_auto`（委托契约见下），WritingPlan 仍创建（状态=auto）
 - 访谈会话载体 = `PlannerSession`（§2.2，v1.2 扩展 confirmed_items/conflicts/confirming）；完成后创建 `WritingPlan`（§2.1）+ planner 产出**直接写 outline/character 实体**（§2.1 决策论证表）
+- **产物质量护栏**（#927，v1.7）：① LLM 失败降级的兜底题材题**中性化**——题面保留「题材」必答关键词但不得自带任何具体题材预设（如「悬疑」），避免与 one_liner 语境脱节；② `WritingPlan.title` = one_liner 前 **30 字**短标题（对齐会话自动命名 30 字先例，≤30 字保持原文），outline name = 短标题 +「（书级大纲）」、完整 one_liner 进 description；③ planner 建主角经装配闭包构造 `CharacterCreate` DTO（#833 role_rank 必填校验不旁路），缺省补 `extra.role_rank=protagonist`；④ `_complete` 落库 limits **从访谈 answers/confirmed_items 文本提取**章数（见下「上限」）
 
 **LLM 动态提问引擎**（PR-1 后端契约，S3 实现轨，v1.2 #475）：
 
@@ -350,7 +351,7 @@ inkflow book summary <run_id> [--export <file.json>]                      # 回�
   服务端强约束：通用必答项（题材/篇幅/主题）未确认时必须出现在 questions 中——LLM 输出校验
                 （缺失必答项 → 该轮拒绝/补问，防 LLM 漏问）；校验失败重试 1 次
   失败降级：LLM 调用失败/超时 → 重试 1 次 → 仍失败 → 回退 ROUND1/ROUND2 确定性常量
-            （v1.1 兜底保留，§7 场景 15），访谈不阻塞
+            （v1.1 兜底保留，§7 场景 15），访谈不阻塞；兜底题面不得自带题材预设（#927）
   落库：confirmed_items/conflicts/confirming 全量写 PlannerSession（§2.2 字段）；
         GET /planner/{session_id} 返回快照供用户审计（D1 需求 5 + #486）
 ```
@@ -364,7 +365,7 @@ inkflow book summary <run_id> [--export <file.json>]                      # 回�
 → Draft 落库（status=draft） → 章级只报告（约束 8：不 interrupt）
 ```
 
-**上限**：写死 `max_chapters=1/max_agent_calls=1`（#335「上限写死但计数器立起来」）——计数器字段/校验逻辑先存在，阶段 2 放开配置。
+**上限**：写死 `max_chapters=1/max_agent_calls=1`（#335「上限写死但计数器立起来」）——计数器字段/校验逻辑先存在，阶段 2 放开配置。**v1.7 #927 修订**：`_complete` 访谈完成路径改为**从访谈输入提取**——扫描 answers + confirmed_items 文本中「N 章」阿拉伯数字声明（先剔除「第N章」章序引用防误抽，多处命中取最大）→ `max_chapters=n / max_agent_calls=2n`（卷轨拆章+逐章委托余量）；无声明保持 STAGE1 保守兜底 1/1（auto/`_run_auto` 路径无访谈输入，仍写死 STAGE1）。`POST /runs` 请求体显式 limits 仍按 §2.4 优先级链覆盖落库值。
 
 **对话式 UI**（PR-2 前端契约，S3 实现轨，v1.2 #475）：
 

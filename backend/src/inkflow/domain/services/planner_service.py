@@ -34,6 +34,7 @@ from inkflow.domain.models.outline import Outline
 from inkflow.domain.models.planner_session import PlannerSession
 from inkflow.domain.models.writing_plan import STAGE1_LIMITS, WritingPlan
 from inkflow.domain.services._outline_generator import _extract_json_fragment
+from inkflow.domain.services._planner_limits import extract_limits_from_interview
 
 
 def _utcnow() -> datetime:
@@ -44,8 +45,8 @@ def _utcnow() -> datetime:
 ROUND1_QUESTIONS: list[dict[str, str]] = [
     {
         "id": "q1",
-        "text": "题材：您悬疑为主，还是悬疑+科幻混合？",
-        "template": "悬疑为主，但加入 ___ 元素",
+        "text": "题材：您的故事偏向哪种题材？",
+        "template": "以 ___ 为主",
         "kind": "general",
     },
     {
@@ -375,7 +376,7 @@ class PlannerService:
         plan = WritingPlan(
             id=uuid.uuid4(),
             project_id=project_id,
-            title=one_liner,
+            title=one_liner.strip()[:30],
             status="auto",
             start_type=session.start_type,
             limits={
@@ -404,7 +405,7 @@ class PlannerService:
         plan = WritingPlan(
             id=uuid.uuid4(),
             project_id=session.project_id,
-            title=session.one_liner,
+            title=session.one_liner.strip()[:30],
             status="auto",
             start_type=session.start_type,
             limits={
@@ -431,18 +432,16 @@ class PlannerService:
     async def _complete(self, session: PlannerSession) -> PlannerRespondResult:
         """完成路径：创建 WritingPlan(status=ready) + planner 产出落库 + 会话关联."""
         now = _utcnow()
+        limits = extract_limits_from_interview(session.answers, session.confirmed_items)
         plan = WritingPlan(
             id=uuid.uuid4(),
             project_id=session.project_id,
-            title=session.one_liner,
+            title=session.one_liner.strip()[:30],
             status="ready",
             start_type=session.start_type,
             source_outline_id=session.source_outline_id,
             copied_outline_id=session.copied_outline_id,
-            limits={
-                "max_chapters": STAGE1_LIMITS.max_chapters,
-                "max_agent_calls": STAGE1_LIMITS.max_agent_calls,
-            },
+            limits=limits,
             created_at=now,
             updated_at=now,
         )
@@ -462,6 +461,7 @@ class PlannerService:
             character = await self._character_service(  # type: ignore[operator]  # 鸭子类型：character_service 为可调用，产出 character 实体（含 id）
                 project_id=session.project_id,
                 name=self._protagonist_name(session),
+                extra={"role_rank": "protagonist"},
             )
             char_id = getattr(character, "id", None)
             if char_id is not None:
@@ -512,8 +512,8 @@ class PlannerService:
 
     @staticmethod
     def _outline_name(session: PlannerSession) -> str:
-        """整体大纲名称：含书名（一句话标题）与题材标记."""
-        title = session.one_liner.strip() or "未命名书"
+        """整体大纲名称：书名取一句话前 30 字短标题 + 题材标记（#927）."""
+        title = (session.one_liner.strip() or "未命名书")[:30]
         return f"{title}（书级大纲）"
 
     @staticmethod
@@ -659,6 +659,7 @@ class PlannerService:
         system = (
             "你是小说访谈规划师。根据一句话构思、项目设定摘要与会话历史，"
             "生成下一轮访谈问题（每轮最多 5 问），并提取已确定项、标记冲突。\n"
+            "问题必须围绕一句话构思针对性提出，与用户已明确的内容不相矛盾。\n"
             f"一句话构思：{session.one_liner}\n"
             f"项目设定摘要：{ctx}\n"
             f"会话历史：{hist}"

@@ -138,9 +138,26 @@ def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
             level=level,
         )
 
-    async def _character_service(project_id: uuid.UUID, name: str) -> object:
-        """访谈完成路径：planner 产出直接落库主角角色，返回含 id 的实体。"""
-        return await character_svc.create_character(project_id=project_id, name=name)
+    async def _character_service(
+        project_id: uuid.UUID,
+        name: str,
+        extra: dict | None = None,
+    ) -> object:
+        """访谈完成路径：planner 产出直接落库主角角色，返回含 id 的实体.
+
+        #927/#833：经 CharacterCreate DTO 强校验 role_rank——缺省/缺失补
+        protagonist（planner 产出恒为主角），非法 role_rank 抛错不静默落库.
+        """
+        from inkflow.domain.models.character import CharacterCreate
+
+        if extra is None or "role_rank" not in extra:
+            extra = {**(extra or {}), "role_rank": "protagonist"}
+        create = CharacterCreate(project_id=project_id, name=name, extra=extra)
+        return await character_svc.create_character(
+            project_id=create.project_id,
+            name=create.name,
+            extra=create.extra,
+        )
 
     return PlannerService(
         repo=SQLiteBookRepository(db),
