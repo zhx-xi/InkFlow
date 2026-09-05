@@ -379,17 +379,18 @@ export function ChatPanel({
     if (!prompt || streamingRef.current) return;
     // #476：折叠态发送 → 自动展开，保证消息可见
     setExpanded(true);
-    // #474 P0：模型未配置前置校验（trim 非空后、streamChat 前）
-    if (!(await ensureModelReady())) {
-      useToastStore.getState().pushToast('warn', t('common.modelNotConfigured'));
-      return;
-    }
+    // #474 P0：模型未配置前置校验（trim 非空后、streamChat 前）；#487：loadProviders 拒绝 → err toast
+    try {
+      if (!(await ensureModelReady())) {
+        useToastStore.getState().pushToast('warn', t('common.modelNotConfigured'));
+        return;
+      }
+    } catch (err) { useToastStore.getState().pushToast('err', errorMessage(err)); return; }
     streamingRef.current = true;
     setStreaming(true);
     setMessages((prev) => [...prev, { kind: 'user', seq: userSeqRef.current++, text: prompt }]);
     // #745：本轮提交消息渲染后强制滚底
     pendingScrollRef.current = true;
-    // #547：用户消息落库（fire-and-forget，不 await 不阻塞发送）
     // #547/#744：用户消息落库（fire-and-forget，不 await 不阻塞发送；线程异常缺失时先新建）
     let cid = conversationIdRef.current;
     if (!cid) {
