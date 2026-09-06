@@ -17,6 +17,7 @@ from inkflow.api._chat_auth import (  # 集中 re-export 保持 deps 命名空�
     get_conversation_service,
 )
 from inkflow.api.deps_chat_agent import _make_draft_volume_lookup, get_chat_agent_service
+from inkflow.api.deps_draft import make_outline_bindder
 from inkflow.core.database import async_session_factory, get_session
 from inkflow.domain.models.agent_run import AgenticWriteRequest
 from inkflow.domain.models.vector_fingerprint import CHUNKER_VERSION
@@ -222,9 +223,12 @@ def get_draft_service(
     db: AsyncSession = Depends(get_db),
 ) -> DraftService:
     """获取 DraftService 实例（草稿列表/确认/拒绝/编辑；F28 接入 diff 事件）."""
+    chapter_svc = get_chapter_service(db)
     return DraftService(
         draft_repo=SQLiteDraftRepository(db),
-        chapter_service=get_chapter_service(db),
+        chapter_service=chapter_svc,
+        chapter_creator=chapter_svc.create_chapter,
+        outline_bindder=make_outline_bindder(db),
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
         memory_service=get_memory_service(db),
     )
@@ -241,8 +245,7 @@ def get_agentic_writer_service(
         build_agentic_writer,
         build_writer_agent_system_prompt,
     )
-    # 循环依赖注意：不重复调 get_draft_service(db)（直接 Python 调用无 FastAPI
-    # 依赖缓存）——草稿服务在同一函数内联构建，deps 与 service 共享同源实例
+    # 循环依赖注意：直接 Python 调用无 FastAPI 依赖缓存——内联构建共享同源实例
     draft_service = DraftService(
         draft_repo=SQLiteDraftRepository(db),
         chapter_service=get_chapter_service(db),
@@ -277,8 +280,7 @@ def get_agentic_writer_service(
             expected_project_id=request.project_id,
             expected_chapter_id=request.chapter_id,
         )
-    # 模型/密钥/base_url 同源装配：#758 空默认模型回退到首个有 key 且含 chat 模型的
-    # provider（镜像 chat 路径 #738），避免空 key 构造 ChatOpenAI → Missing credentials 500
+    # 模型/密钥/base_url 同源装配（#758 空默认回退首个 chat provider，镜像 #738，防空 key 500）
     model, api_key, base_url = resolve_llm_credentials(config.llm_default_model)
     return AgenticWriterService(
         agent_factory=_build_agent,

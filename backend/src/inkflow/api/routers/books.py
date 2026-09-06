@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_db
+from inkflow.api.deps_draft import make_outline_bindder
 from inkflow.domain.models.agent_book import AgenticBookConfig
 from inkflow.domain.models.writing_plan import BookLimits
 from inkflow.domain.services.book_service import BookService, ChapterAlreadyWrittenError
@@ -246,19 +247,6 @@ def _build_book_service(db: AsyncSession) -> BookService:
         except Exception:
             return None
 
-    async def _outline_bindder(chapter_outline_id: str, chapter_uuid_str: str) -> None:
-        """#976 D4：自动建章后回填 outlines.chapter_id（str uuid → int 主键）."""
-        from inkflow.infrastructure.database.models.outline import OutlineORM
-
-        outline_row_id = uuid.UUID(chapter_outline_id).int
-        chapter_row_id = uuid.UUID(chapter_uuid_str).int
-        if outline_row_id > 2**63 - 1 or chapter_row_id > 2**63 - 1:
-            return  # uuid4 随机值溢出 SQLite INTEGER：int↔UUID 惯例下无对应行
-        outline_row = await db.get(OutlineORM, outline_row_id)
-        if outline_row is not None:
-            outline_row.chapter_id = chapter_row_id
-            await db.commit()
-
     async def _volume_lookup(
         project_id: uuid.UUID, outline_or_chapter_id: uuid.UUID | None
     ) -> str | None:
@@ -315,7 +303,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
         draft_repo=SQLiteDraftRepository(db),
         chapter_service=chapter_svc,
         chapter_creator=chapter_svc.create_chapter,
-        outline_bindder=_outline_bindder,
+        outline_bindder=make_outline_bindder(db),
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
         memory_service=get_memory_service(db),
     )
