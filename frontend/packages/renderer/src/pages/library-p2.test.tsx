@@ -396,7 +396,8 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
     await waitFor(() => {
       expect(useToastStore.getState().toasts.some((t) => t.type === 'ok')).toBe(true);
     });
-    expect(await screen.findByText('苏云舟')).toBeInTheDocument();
+    // #979 迁移：画布 pin 渲染 label 后全局 findByText('苏云舟') 双命中（画布 + 列表），收窄到列表作用域
+    expect(await within(screen.getByTestId('map-pin-list')).findByText('苏云舟')).toBeInTheDocument();
   });
 
   it('M9 一图多标记：3 个 pin → 画布 map-pin 3 个 + 列表 3 行 + 类型筛选 chips 四档', async () => {
