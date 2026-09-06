@@ -146,6 +146,8 @@ export function MapWorkbench({
     defaultY: number;
   }>({ open: false, editing: null, defaultX: 0, defaultY: 0 });
   const [pendingDeletePin, setPendingDeletePin] = useState<MapPinDTO | null>(null);
+  // #979：当前选中 pin id（画布 pin / 列表行互斥高亮，切换地图时重置）
+  const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
   const [createDialog, setCreateDialog] = useState<{
     open: boolean;
     rootLocationId: string | number | null;
@@ -173,8 +175,10 @@ export function MapWorkbench({
   useEffect(() => {
     if (!activeMapId) {
       setPins([]);
+      setSelectedPinId(null);
       return;
     }
+    setSelectedPinId(null); // #979：切换地图时重置 pin 选中态
     let cancelled = false;
     void apiFetch<PinListResponse>(`/api/v1/maps/${activeMapId}/pins`)
       .then((data) => {
@@ -190,6 +194,13 @@ export function MapWorkbench({
       cancelled = true;
     };
   }, [activeMapId]);
+
+  // #979：选中 pin 行滚动定位（测试环境已桩 no-op；实现从简）
+  useEffect(() => {
+    if (!selectedPinId) return;
+    const rowEl = document.querySelector(`[data-testid="map-pin-row-${selectedPinId}"]`);
+    rowEl?.scrollIntoView({ block: 'nearest' });
+  }, [selectedPinId]);
 
   // 关联实体候选（worldItems 本地已加载；characters/timeline 按需拉取）
   const refOptions = useMemo<PinRefOption[]>(
@@ -649,6 +660,8 @@ export function MapWorkbench({
               <MapCanvas
                 map={activeMap}
                 pins={pins}
+                selectedPinId={selectedPinId}
+                onSelectPin={(pin) => setSelectedPinId(String(pin.id))}
                 onAddPin={openNewPin}
                 onChangeBg={(bg) => void handleChangeBg(bg)}
                 onAddShape={(type) => void handleAddShape(type)}
@@ -690,7 +703,10 @@ export function MapWorkbench({
                       return (
                         <li
                           key={String(pin.id)}
+                          data-testid={`map-pin-row-${pin.id}`}
+                          data-selected={selectedPinId === String(pin.id) ? 'true' : undefined}
                           className="group flex items-center gap-2 px-3 py-2 text-[13px] text-ink"
+                          onClick={() => setSelectedPinId(String(pin.id))}
                         >
                           <span className="shrink-0 rounded-full bg-surface-3 px-2 py-0.5 text-[11px] text-ink-2">
                             {t(`lib.pinType.${pinType}`)}
@@ -703,7 +719,10 @@ export function MapWorkbench({
                               data-testid={`map-pin-edit-${pin.id}`}
                               aria-label={`${t('lib.edit')} ${pin.label}`}
                               className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                              onClick={() => openEditPin(pin)}
+                              onClick={(e) => {
+                                e.stopPropagation(); // #979：行内编辑防冒泡覆盖选中态
+                                openEditPin(pin);
+                              }}
                             >
                               <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
@@ -712,7 +731,10 @@ export function MapWorkbench({
                               data-testid={`map-pin-del-${pin.id}`}
                               aria-label={`${t('lib.delete')} ${pin.label}`}
                               className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                              onClick={() => setPendingDeletePin(pin)}
+                              onClick={(e) => {
+                                e.stopPropagation(); // #979：行内删除防冒泡覆盖选中态
+                                setPendingDeletePin(pin);
+                              }}
                             >
                               <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
