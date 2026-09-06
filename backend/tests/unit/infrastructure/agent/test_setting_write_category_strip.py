@@ -34,7 +34,6 @@ def _make_tool_deps() -> SettingWriteToolDeps:
     return SettingWriteToolDeps(
         character_service=MagicMock(),
         world_service=MagicMock(),
-        outline_service=MagicMock(),
         audit_service=audit,
         expected_project_id=PID,
     )

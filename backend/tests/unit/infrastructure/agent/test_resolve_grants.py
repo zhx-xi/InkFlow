@@ -1,5 +1,9 @@
 """F58 grants 授权数据面 — grants_from_tool_ids 反查 / resolve_grants
-统一读取单元契约（contract-954 §2.3/§2.4 / §7 语义）。
+统一读取单元契约（contract-954 §2.3/§2.4 / contract-955 §3 迁移 / §7 语义）。
+
+#955 迁移（RED-B）: create_outline 反查格不变（别名）；expand 结果含新写工具
+（create_overall_outline 等 7 名），旧名 create_outline/update_outline 不在展开结果
+（展开自映射表值）。
 
 被测模块（GREEN 全在 `inkflow.infrastructure.agent.tools.registry`，本批新建）:
     from inkflow.infrastructure.agent.tools.registry import (
@@ -20,8 +24,9 @@ GREEN 新符号（grants_from_tool_ids/resolve_grants/expand_grants/GrantEntry/T
    - strict=True（API 写路径）: 目录外名或核心名（agent_run/agent_call 或
      allow_custom_agent=False，如 delete_* / memory_remove）→ ToolReferenceError。
    - strict=False（存量读取路径）: 未识别名 → 忽略 + logging.warning(含未识别名, 不阻塞)。
-   - 代表性反查: count_words→writing·[read]；create_outline→outline·[write]
-     且 resolve 后展开含 update_outline（扩权映射 spec §5.2）；
+   - 代表性反查: count_words→writing·[read]；create_outline（别名）→outline·[write]
+     且 resolve 后展开含 create_overall_outline 等新写工具（旧名 create_outline 不在
+     展开结果——展开自映射表值，见 #955 迁移）;
      search_characters+create_character→character·[read,write] 同域合并。
 2. resolve_grants(agent)（鸭子 getattr，镜像 deps_chat_agent 形态）:
    - agent.grants 非空 → 原样返回；
@@ -135,14 +140,16 @@ class TestGrantsFromToolIdsReverse:
         ]
 
     def test_create_outline_maps_to_outline_write_and_expands(self):  # 【R】
-        """create_outline -> outline·[write]；展开后含 update_outline（spec §5.2 扩权映射）。"""
+        """create_outline（别名）-> outline·[write]；展开自映射表值，旧名不在展开结果。"""
         from inkflow.infrastructure.agent.tools.registry import expand_grants, grants_from_tool_ids
 
         grants = grants_from_tool_ids(["create_outline"], strict=False)
         assert grants == [_grant(domain_value="outline", ops_values=["write"])]
         expanded = expand_grants(grants)
-        assert "create_outline" in expanded
-        assert "update_outline" in expanded  # 扩权: 授权 outline·write 含全部新写工具
+        # #955 迁移: 展开自映射表值（不含旧名 create_outline/update_outline），含 7 新写工具
+        assert "create_overall_outline" in expanded
+        assert "update_chapter_outline" in expanded
+        assert "create_outline" not in expanded  # 旧名不在展开结果——展开自映射表值
 
     def test_search_and_create_character_merge_same_domain(self):  # 【R】
         """search_characters + create_character -> character·[read, write]

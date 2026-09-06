@@ -1,5 +1,9 @@
 """F39/#838 统一工具目录 + allow_custom_agent 标记 + build_tools_by_ids 运行时物化 — 契约测试.
 
+#955 迁移（RED-B，2026-09-06）: 本文件从 9 组 35 工具契约迁移至 10 组 44 工具
+（−create_outline/update_outline + 10 新大纲工具 + delete_plot_point 核心），
+TOOL_REGISTRY 26→34，核心集 9→10。
+
 被测模块（GREEN 实现，RED 阶段顶部 import 或属性访问失败 → 收集期 ERROR）:
     from inkflow.domain.models.agent_tools import ToolSpec
     from inkflow.infrastructure.agent.tools import (
@@ -8,40 +12,42 @@
     from inkflow.domain.services.agent_entity_service import _validate_tool_ids
     from inkflow.domain.ports.agent_errors import ToolReferenceError
 
-契约内容（父侧定稿 #838, 2026-08-31 用户拍板）
---------------------------------------------
+契约内容（父侧定稿 #838, 2026-08-31 用户拍板 + #955 迁移）
+------------------------------------------------------
 1. ToolSpec 加标记: `allow_custom_agent: bool = True` + `is_core: bool = False`
    （dataclass 字段带默认值；既有构造处无需逐个传）。
 
-2. ALL_TOOL_SPECS（统一目录）= 全部 9 组 35 个工具（reader/save_draft/
-   setting_write/setting_update/world_rw/memory/writing/delete/agent_chain），
+2. ALL_TOOL_SPECS（统一目录）= 全部 10 组 44 个工具（reader/save_draft/
+   setting_write/setting_update/outline/world_rw/memory/writing/delete/agent_chain），
    无遗漏、无重复 name。
+   #955 迁移: −create_outline/update_outline + 10 新大纲工具 + delete_plot_point；count 35→44。
 
 3. 标记规则:
-   - `agent_run`/`agent_call`（agent 链）+ 7 个删除类（delete_character /
-     delete_world_setting / delete_outline / delete_map / delete_timeline_event /
-     delete_foreshadowing / memory_remove）= `allow_custom_agent=False, is_core=True`
+   - `agent_run`/`agent_call`（agent 链）+ 8 个删除类（delete_character /
+     delete_world_setting / delete_outline / delete_plot_point / delete_map /
+     delete_timeline_event / delete_foreshadowing / memory_remove）=
+     `allow_custom_agent=False, is_core=True`（#955 迁移: 核心集 9→10，+delete_plot_point）
    - `memory_*`（memory_list / memory_add / memory_update）+ `writing`（generate /
      continue / revise）暴露 = `allow_custom_agent=True, is_core=False`（默认值）
    - 其余读写工具均默认暴露（allow_custom_agent=True, is_core=False）
+   - #955: 10 新大纲非核心工具均默认暴露（allow_custom_agent=True, is_core=False）
 
-4. TOOL_REGISTRY = `[s for s in ALL_TOOL_SPECS if s.allow_custom_agent]`（26 个）——
+4. TOOL_REGISTRY = `[s for s in ALL_TOOL_SPECS if s.allow_custom_agent]`（34 个）——
    供 `_validate_tool_ids`/内置 seed/CLI tools list 消费（兼容别名）。
+   #955 迁移: 26→34。
 
 5. `_validate_tool_ids` 拒绝 `allow_custom_agent=False` 工具（自定义 agent 不可勾选
    目录内核心工具；目录外名亦拒绝——均为 ToolReferenceError）。
 
-6. `build_tools_by_ids(tool_ids, deps)` 按 tool_ids 白名单物化工具（调 9 组 build
+6. `build_tools_by_ids(tool_ids, deps)` 按 tool_ids 白名单物化工具（调 10 组 build
    后按 spec.name 过滤拼接；未知名忽略）。
 
-RED 预期（当前实现形态）
-------------------------
-- ToolSpec 无 allow_custom_agent/is_core: 访问 → AttributeError；构造传 → TypeError。
-- `inkflow.infrastructure.agent.tools` 无 ALL_TOOL_SPECS/build_tools_by_ids/
-  UnifiedToolDeps → ImportError（收集期 ERROR）。
-- `_validate_tool_ids` 仅按 TOOL_REGISTRY(6) 白名单判: delete_*/agent_run 不在目录内
-  → 语义偶合拒绝（非 allow_custom_agent 标记拒绝，但行为恰好 True）。
-- 预期形态: 收集期 1-2 个 ERROR（模块缺失）→ 全部 FAILED/ERROR。
+RED 预期（当前实现形态，migrate 后因新契约未实现而整体 FAILED）
+--------------------------------------------------------------
+- UnifiedToolDeps 无 `outline` 字段: `_make_unified_deps` 传 outline= → TypeError FAILED。
+- ALL_TOOL_SPECS 现为 35（缺 10 新大纲 + delete_plot_point）: len==44 → AssertionError FAILED。
+- CORE_NAMES 集缺 delete_plot_point，TOOL_REGISTRY 现为 26: ==34 → AssertionError FAILED。
+- 预期形态: 目标用例 FAILED（TypeError/AssertionError 混合），无收集 ERROR。
 """
 from __future__ import annotations
 
@@ -61,7 +67,8 @@ from inkflow.infrastructure.agent.tools import (
 
 # ── 契约常量 ──────────────────────────────────────
 
-# 9 组 35 工具全集（按组，未锁定组内顺序）
+# 10 组 44 工具全集（按组，未锁定组内顺序）
+# #955 迁移: 35→44（−create_outline/update_outline + 10 新大纲工具 + delete_plot_point）
 EXPECTED_ALL_NAMES = {
     "search_characters",
     "check_foreshadowing",
@@ -71,10 +78,19 @@ EXPECTED_ALL_NAMES = {
     "save_draft",
     "create_character",
     "create_world_setting",
-    "create_outline",
     "update_character",
     "update_world_setting",
-    "update_outline",
+    # outline 10（#955 新）
+    "list_outlines",
+    "get_outline",
+    "list_plot_points",
+    "create_overall_outline",
+    "create_volume_outline",
+    "create_chapter_outline",
+    "update_volume_outline",
+    "update_chapter_outline",
+    "create_plot_point",
+    "update_plot_point",
     "list_maps",
     "create_map",
     "update_map",
@@ -92,6 +108,7 @@ EXPECTED_ALL_NAMES = {
     "delete_character",
     "delete_world_setting",
     "delete_outline",
+    "delete_plot_point",  # #955 新增核心删除
     "delete_map",
     "delete_timeline_event",
     "delete_foreshadowing",
@@ -101,12 +118,14 @@ EXPECTED_ALL_NAMES = {
 }
 
 # allow_custom_agent=False / is_core=True（系统内置核心，自定义 agent 不可勾选）
+# #955 迁移: 9→10（+delete_plot_point）
 CORE_NAMES = {
     "agent_run",
     "agent_call",
     "delete_character",
     "delete_world_setting",
     "delete_outline",
+    "delete_plot_point",  # #955 新增
     "delete_map",
     "delete_timeline_event",
     "delete_foreshadowing",
@@ -133,12 +152,16 @@ def _spec_by_name(name: str) -> ToolSpec:
 
 
 def _make_unified_deps() -> UnifiedToolDeps:
-    """构造 UnifiedToolDeps（全 MagicMock；构建工具不需要真实 service）。"""
+    """构造 UnifiedToolDeps（全 MagicMock；构建工具不需要真实 service）。
+
+    #955 迁移: UnifiedToolDeps 新增必填 `outline` 字段（置于 setting_update 之后、world_rw 之前）。
+    """
     return UnifiedToolDeps(
         reader=MagicMock(),
         save_draft=MagicMock(),
         setting_write=MagicMock(),
         setting_update=MagicMock(),
+        outline=MagicMock(),  # #955 迁移: +outline 字段
         world_rw=MagicMock(),
         memory=MagicMock(),
         writing=MagicMock(),
@@ -151,11 +174,11 @@ def _make_unified_deps() -> UnifiedToolDeps:
 
 
 class TestUnifiedCatalog:
-    """ALL_TOOL_SPECS 统一目录（#838：全部 9 组 35 工具，无遗漏无重复）。"""
+    """ALL_TOOL_SPECS 统一目录（#838：全部 10 组 44 工具，无遗漏无重复）。"""
 
-    def test_all_tool_specs_len_is_35(self):
-        """统一目录 = 35 工具（9 组全量）。"""
-        assert len(ALL_TOOL_SPECS) == 35
+    def test_all_tool_specs_len_is_44(self):
+        """统一目录 = 44 工具（10 组全量，#955 迁移 35→44）。"""
+        assert len(ALL_TOOL_SPECS) == 44
 
     def test_all_tool_specs_contains_new_tools(self):
         """目录含此前未注册的新工具（create_*/update_*/generate 等）。"""
@@ -184,7 +207,7 @@ class TestAllowCustomAgent:
         """TOOL_REGISTRY（兼容别名）= allow_custom_agent=True 子集，不含 agent_run/删除类。"""
         registry_names = {spec.name for spec in TOOL_REGISTRY}
         assert CORE_NAMES.isdisjoint(registry_names)
-        assert len(TOOL_REGISTRY) == 26
+        assert len(TOOL_REGISTRY) == 34  # #955 迁移: 26→34
 
     def test_core_tools_marked_not_allowed(self):
         """核心工具标记 allow_custom_agent=False / is_core=True。"""
@@ -251,7 +274,7 @@ class TestValidateToolIds:
 
 
 class TestBuildToolsByIds:
-    """build_tools_by_ids 按 tool_ids 白名单物化工具（调 9 组 build 后按 spec.name 过滤）。"""
+    """build_tools_by_ids 按 tool_ids 白名单物化工具（调 10 组 build 后按 spec.name 过滤）。"""
 
     def test_materializes_by_tool_ids(self):
         """只物化 tool_ids 命中的工具（含跨组工具）。"""

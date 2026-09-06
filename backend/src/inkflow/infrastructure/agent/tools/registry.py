@@ -1,22 +1,24 @@
-"""#838/#954 统一工具目录 — ALL_TOOL_SPECS / TOOL_REGISTRY / UnifiedToolDeps / grants 授权物化.
+"""#838/#954/#955 统一工具目录 — ALL_TOOL_SPECS / TOOL_REGISTRY / UnifiedToolDeps / grants 授权物化.
 
-本模块聚合 9 组 35 个工具 spec（reader/save_draft/setting_write/setting_update/
-world_rw/memory/writing/delete/agent_chain）为统一目录，供 API 工具目录
+本模块聚合 10 组 44 个工具 spec（reader/save_draft/setting_write/setting_update/
+outline/world_rw/memory/writing/delete/agent_chain）为统一目录，供 API 工具目录
 （GET /agents/tools）、`_validate_tool_ids` 白名单校验与 chat 路径运行时物化
 （deps_chat_agent._run_single_agent）消费。
 
 标记规则（#838 用户拍板）:
-- 核心工具 9 个（agent_run/agent_call + 7 个删除类）: allow_custom_agent=False,
+- 核心工具 10 个（agent_run/agent_call + 8 个删除类）: allow_custom_agent=False,
   is_core=True —— 不进 TOOL_REGISTRY，自定义 agent 不可勾选/调用。
-- 其余 26 个默认暴露（allow_custom_agent=True, is_core=False）。
+- 其余 34 个默认暴露（allow_custom_agent=True, is_core=False）。
 
-TOOL_REGISTRY 保留为兼容别名 = allow_custom_agent 过滤子集（26 个），供
+TOOL_REGISTRY 保留为兼容别名 = allow_custom_agent 过滤子集（34 个），供
 `_validate_tool_ids`/内置 seed/CLI `tools list` 等既有消费方（目录外名仍拒绝）。
 
-GRANT_TOOL_MAP（F58 #954）为 (ToolDomain, ToolOp) → 工具名的唯一真相源：
+GRANT_TOOL_MAP（F58 #954/#955）为 (ToolDomain, ToolOp) → 工具名的唯一真相源：
 expand_grants 按映射插入序展开授权；grants_from_tool_ids 兼作旧 tool_ids 的
 反查迁移入口；resolve_grants 统一读取（grants 优先 / tool_ids 回退）。
-build_tools_by_ids/build_tools_by_grants 均调 9 组 build 后按 spec.name 过滤
+退役别名（LEGACY_RENAMED_TOOL_NAMES：create_outline/update_outline）保留在
+TOOL_NAME_TO_CELL 中，供存量 tool_ids-only 行宽松反查（目录内已下线）。
+build_tools_by_ids/build_tools_by_grants 均调 10 组 build 后按 spec.name 过滤
 拼接（未知名忽略，防御）；None 子 deps 跳过该组 build（delete 子 deps 在
 conversation 删除授权为 manual 时为 None——核心工具本就不允许自定义 agent 勾选）。
 """
@@ -41,6 +43,7 @@ from inkflow.infrastructure.agent.tools.delete_tools import (
     DELETE_FORESHADOWING_SPEC,
     DELETE_MAP_SPEC,
     DELETE_OUTLINE_SPEC,
+    DELETE_PLOT_POINT_SPEC,
     DELETE_TIMELINE_EVENT_SPEC,
     DELETE_WORLD_SETTING_SPEC,
     MEMORY_REMOVE_SPEC,
@@ -53,6 +56,20 @@ from inkflow.infrastructure.agent.tools.memory_tools import (
     MEMORY_UPDATE_SPEC,
     MemoryToolDeps,
     build_memory_tools,
+)
+from inkflow.infrastructure.agent.tools.outline_tools import (
+    CREATE_CHAPTER_OUTLINE_SPEC,
+    CREATE_OVERALL_OUTLINE_SPEC,
+    CREATE_PLOT_POINT_SPEC,
+    CREATE_VOLUME_OUTLINE_SPEC,
+    GET_OUTLINE_SPEC,
+    LIST_OUTLINES_SPEC,
+    LIST_PLOT_POINTS_SPEC,
+    UPDATE_CHAPTER_OUTLINE_SPEC,
+    UPDATE_PLOT_POINT_SPEC,
+    UPDATE_VOLUME_OUTLINE_SPEC,
+    OutlineToolDeps,
+    build_outline_tools,
 )
 from inkflow.infrastructure.agent.tools.reader_tools import (
     _TOOL_SPECS,
@@ -67,14 +84,12 @@ from inkflow.infrastructure.agent.tools.save_draft_tool import (
 )
 from inkflow.infrastructure.agent.tools.setting_update_tools import (
     UPDATE_CHARACTER_SPEC,
-    UPDATE_OUTLINE_SPEC,
     UPDATE_WORLD_SETTING_SPEC,
     SettingUpdateToolDeps,
     build_setting_update_tools,
 )
 from inkflow.infrastructure.agent.tools.setting_write_tools import (
     CREATE_CHARACTER_SPEC,
-    CREATE_OUTLINE_SPEC,
     CREATE_WORLD_SETTING_SPEC,
     SettingWriteToolDeps,
     build_setting_write_tools,
@@ -101,8 +116,8 @@ from inkflow.infrastructure.agent.tools.writing_tools import (
 
 logger = logging.getLogger(__name__)
 
-# ── 统一工具目录（顺序契约：#838 建议序 = reader 5 → save_draft → 设定写 3 →
-#    设定改 3 → 世界读写 8 → 记忆 3 → 写作 3 → 删除 7 → agent 链 2） ──
+# ── 统一工具目录（顺序契约：#838/#955 建议序 = reader 5 → save_draft → 设定写 2 →
+#    设定改 2 → outline 10 → 世界读写 8 → 记忆 3 → 写作 3 → 删除 8 → agent 链 2） ──
 
 
 ALL_TOOL_SPECS: list[ToolSpec] = [
@@ -110,10 +125,18 @@ ALL_TOOL_SPECS: list[ToolSpec] = [
     SAVE_DRAFT_SPEC,
     CREATE_CHARACTER_SPEC,
     CREATE_WORLD_SETTING_SPEC,
-    CREATE_OUTLINE_SPEC,
     UPDATE_CHARACTER_SPEC,
     UPDATE_WORLD_SETTING_SPEC,
-    UPDATE_OUTLINE_SPEC,
+    LIST_OUTLINES_SPEC,
+    GET_OUTLINE_SPEC,
+    LIST_PLOT_POINTS_SPEC,
+    CREATE_OVERALL_OUTLINE_SPEC,
+    CREATE_VOLUME_OUTLINE_SPEC,
+    CREATE_CHAPTER_OUTLINE_SPEC,
+    UPDATE_VOLUME_OUTLINE_SPEC,
+    UPDATE_CHAPTER_OUTLINE_SPEC,
+    CREATE_PLOT_POINT_SPEC,
+    UPDATE_PLOT_POINT_SPEC,
     LIST_MAPS_SPEC,
     CREATE_MAP_SPEC,
     UPDATE_MAP_SPEC,
@@ -131,6 +154,7 @@ ALL_TOOL_SPECS: list[ToolSpec] = [
     DELETE_CHARACTER_SPEC,
     DELETE_WORLD_SETTING_SPEC,
     DELETE_OUTLINE_SPEC,
+    DELETE_PLOT_POINT_SPEC,
     DELETE_MAP_SPEC,
     DELETE_TIMELINE_EVENT_SPEC,
     DELETE_FORESHADOWING_SPEC,
@@ -140,12 +164,25 @@ ALL_TOOL_SPECS: list[ToolSpec] = [
 ]
 
 TOOL_REGISTRY: list[ToolSpec] = [s for s in ALL_TOOL_SPECS if s.allow_custom_agent]
-"""兼容别名：自定义 agent 可见工具（26 个，= ALL_TOOL_SPECS 过滤 allow_custom_agent）."""
+"""兼容别名：自定义 agent 可见工具（34 个，= ALL_TOOL_SPECS 过滤 allow_custom_agent）."""
 
 
 GRANT_TOOL_MAP: dict[tuple[ToolDomain, ToolOp], list[str]] = {
-    (ToolDomain.OUTLINE, ToolOp.WRITE): ["create_outline", "update_outline"],
-    (ToolDomain.OUTLINE, ToolOp.DELETE): ["delete_outline"],
+    (ToolDomain.OUTLINE, ToolOp.READ): [
+        "list_outlines",
+        "get_outline",
+        "list_plot_points",
+    ],
+    (ToolDomain.OUTLINE, ToolOp.WRITE): [
+        "create_overall_outline",
+        "create_volume_outline",
+        "create_chapter_outline",
+        "update_volume_outline",
+        "update_chapter_outline",
+        "create_plot_point",
+        "update_plot_point",
+    ],
+    (ToolDomain.OUTLINE, ToolOp.DELETE): ["delete_outline", "delete_plot_point"],
     (ToolDomain.CHARACTER, ToolOp.READ): ["search_characters"],
     (ToolDomain.CHARACTER, ToolOp.WRITE): ["create_character", "update_character"],
     (ToolDomain.CHARACTER, ToolOp.DELETE): ["delete_character"],
@@ -179,13 +216,21 @@ GRANT_TOOL_MAP: dict[tuple[ToolDomain, ToolOp], list[str]] = {
     ],
     (ToolDomain.WRITING, ToolOp.WRITE): ["save_draft", "generate", "continue", "revise"],
 }
-"""F58 授权格映射（spec §2.1 逐字；插入序 = 展开序，空格子键不入表）."""
+"""F58 授权格映射（spec §2.1 逐字 + #955 大纲三格置前；插入序 = 展开序）."""
+
+
+LEGACY_RENAMED_TOOL_NAMES: dict[str, tuple[ToolDomain, ToolOp]] = {
+    "create_outline": (ToolDomain.OUTLINE, ToolOp.WRITE),
+    "update_outline": (ToolDomain.OUTLINE, ToolOp.WRITE),
+}
+"""退役工具别名（#955：旧 create/update_outline 下线，存量 tool_ids 按别名格命中）."""
 
 
 TOOL_NAME_TO_CELL: dict[str, tuple[ToolDomain, ToolOp]] = {
-    name: cell for cell, names in GRANT_TOOL_MAP.items() for name in names
+    **{name: cell for cell, names in GRANT_TOOL_MAP.items() for name in names},
+    **LEGACY_RENAMED_TOOL_NAMES,
 }
-"""工具名 → 所属 (domain, op) 格（grants_from_tool_ids 反查迁移索引）."""
+"""工具名 → 所属 (domain, op) 格（44 键 = 42 目录名逆 + 2 退役别名）."""
 
 
 def expand_grants(grants: list[GrantEntry]) -> list[str]:
@@ -209,6 +254,11 @@ def grants_from_tool_ids(tool_ids: list[str], *, strict: bool) -> list[GrantEntr
     for tool_id in tool_ids:
         cell = TOOL_NAME_TO_CELL.get(tool_id)
         spec = specs.get(tool_id)
+        # 退役别名分支（#955）：目录外但 ∈ LEGACY 的名按别名格命中（strict/lenient 一致）
+        if spec is None and tool_id in LEGACY_RENAMED_TOOL_NAMES:
+            legacy_cell = LEGACY_RENAMED_TOOL_NAMES[tool_id]
+            domain_ops.setdefault(legacy_cell[0], set()).add(legacy_cell[1])
+            continue
         if cell is None or spec is None or (strict and not spec.allow_custom_agent):
             if strict:
                 raise ToolReferenceError()
@@ -239,12 +289,13 @@ def resolve_grants(agent: object) -> list[GrantEntry]:
 
 @dataclass
 class UnifiedToolDeps:
-    """统一工具目录聚合依赖（9 组子 deps；None 子 deps = build_tools_by_ids 跳过该组）."""
+    """统一工具目录聚合依赖（10 组子 deps；None 子 deps = build_tools_by_ids 跳过该组）."""
 
     reader: ReaderToolDeps | None
     save_draft: SaveDraftToolDeps | None
     setting_write: SettingWriteToolDeps | None
     setting_update: SettingUpdateToolDeps | None
+    outline: OutlineToolDeps | None
     world_rw: WorldRwToolDeps | None
     memory: MemoryToolDeps | None
     writing: WritingToolDeps | None
@@ -256,7 +307,7 @@ def _build_all_tools(
     deps: UnifiedToolDeps,
     project_id: uuid.UUID | str | None,
 ) -> list[Tool]:
-    """调 9 组 build 物化全量工具（None 子 deps 跳过该组，同旧）."""
+    """调 10 组 build 物化全量工具（None 子 deps 跳过该组，同旧）."""
     all_tools: list[Tool] = []
     if deps.reader is not None:
         all_tools.extend(build_reader_tools(deps.reader, project_id=project_id))
@@ -266,6 +317,8 @@ def _build_all_tools(
         all_tools.extend(build_setting_write_tools(deps.setting_write))
     if deps.setting_update is not None:
         all_tools.extend(build_setting_update_tools(deps.setting_update))
+    if deps.outline is not None:
+        all_tools.extend(build_outline_tools(deps.outline))
     if deps.world_rw is not None:
         all_tools.extend(build_world_rw_tools(deps.world_rw))
     if deps.memory is not None:
@@ -288,7 +341,7 @@ def build_tools_by_ids(
 
     Args:
         tool_ids: 自定义 agent 的工具白名单（调用方已过 _validate_tool_ids）。
-        deps: 9 组子 deps 聚合；None 子 deps 跳过该组 build。
+        deps: 10 组子 deps 聚合；None 子 deps 跳过该组 build。
         project_id: #680 装配期项目 ID，透传 build_reader_tools（闭包绑定；默认 None）。
 
     Returns:
@@ -309,7 +362,7 @@ def build_tools_by_grants(
 ) -> list[Tool]:
     """按 grants 授权矩阵物化工具（F58 新路径，扩权语义只在本函数生效）.
 
-    expand_grants → 9 组 build（None 子 deps 跳过该组）→ 按名过滤拼接；
+    expand_grants → 10 组 build（None 子 deps 跳过该组）→ 按名过滤拼接；
     未知名防御忽略；grants 为空 → []。
     """
     expanded = expand_grants(grants)

@@ -1,9 +1,10 @@
 """#748 设定库写入工具 RED 契约测试 — build_setting_write_tools 注册 + 执行信封.
 
 背景（#748 实锤）: chat agent 只注册 [readers, save_draft]，AI 调用 create_character /
-create_world_setting / create_outline 等设定库写入工具时工具不存在 → 卡 running。
+create_world_setting 等设定库写入工具时工具不存在 → 卡 running。
 本文件锁定契约:
-1. build_setting_write_tools(deps) 返回 [create_character, create_world_setting, create_outline]。
+1. build_setting_write_tools(deps) 返回 [create_character, create_world_setting]。
+   （create_outline 已退役入 outline_tools，#955 §4。）
 2. 每个 func 执行成功返回 {"ok": True, "<entity>_id": "<id>", ...} 信封（不抛出）。
 3. 每个 func 执行失败（service 抛异常）返回 {"ok": False, "error": "<msg>"} 信封（不抛出）。
 4. expected_project_id 绑定：装配期注入后，func 总是使用绑定值（LLM 不自报项目 ID）。
@@ -34,22 +35,20 @@ def _make_deps() -> SettingWriteToolDeps:
     return SettingWriteToolDeps(
         character_service=MagicMock(),
         world_service=MagicMock(),
-        outline_service=MagicMock(),
         audit_service=audit,
         expected_project_id=PROJECT_ID,
     )
 
 
 class TestBuildSettingWriteTools:
-    """build_setting_write_tools 注册三个设定库写入工具。"""
+    """build_setting_write_tools 注册两个设定库写入工具。"""
 
-    def test_registers_three_tools(self) -> None:
-        """工具面：create_character / create_world_setting / create_outline。"""
+    def test_registers_two_tools(self) -> None:
+        """工具面：create_character / create_world_setting（create_outline 已退役）。"""
         tools = build_setting_write_tools(_make_deps())
         assert [t.spec.name for t in tools] == [
             "create_character",
             "create_world_setting",
-            "create_outline",
         ]
 
     @pytest.mark.asyncio
@@ -87,18 +86,6 @@ class TestBuildSettingWriteTools:
         result = json.loads(await tools["create_world_setting"].func(name="天元大陆"))
         assert result["ok"] is True
         assert result["setting_id"] == "world-1"
-
-    @pytest.mark.asyncio
-    async def test_create_outline_success_envelope(self) -> None:
-        """create_outline 成功 → {"ok": True, "outline_id": "<id>"}。"""
-        deps = _make_deps()
-        deps.outline_service.create_outline = AsyncMock(
-            return_value=SimpleNamespace(id="outline-1")
-        )
-        tools = {t.spec.name: t for t in build_setting_write_tools(deps)}
-        result = json.loads(await tools["create_outline"].func(name="第一卷大纲"))
-        assert result["ok"] is True
-        assert result["outline_id"] == "outline-1"
 
     @pytest.mark.asyncio
     async def test_expected_project_id_binding(self) -> None:

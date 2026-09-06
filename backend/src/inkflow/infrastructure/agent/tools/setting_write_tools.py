@@ -1,5 +1,5 @@
-"""#748 设定库写入工具——chat agent 三写工具（create_character / create_world_setting /
-create_outline），输出统一 JSON 信封.
+"""#748 设定库写入工具——chat agent 两写工具（create_character / create_world_setting），
+输出统一 JSON 信封.
 
 背景（#748 实锤）：chat agent 只注册 [readers, save_draft]，AI 调用设定库写入工具时
 工具不存在 → 卡 running。本模块补齐写工具，形态镜像 F27 save_draft_tool.py：
@@ -59,17 +59,6 @@ class CreateWorldSettingParams(BaseModel):
     parent_id: uuid.UUID | str | None = None
 
 
-class CreateOutlineParams(BaseModel):
-    """create_outline 工具参数。"""
-
-    name: str
-    description: str = ""
-    sort_order: int = 0
-    # #835：默认整本根；章必须挂卷，创建 chapter 须传 parent_id=volume 大纲 id
-    level: str = "overall"
-    parent_id: uuid.UUID | str | None = None  # 父大纲 id（volume/chapter 时必填）
-
-
 # ─── 工具 spec 静态常量（func 动态构建，镜像 save_draft_tool） ───
 
 
@@ -91,13 +80,6 @@ CREATE_WORLD_SETTING_SPEC = ToolSpec(
     group="writing",
 )
 
-CREATE_OUTLINE_SPEC = ToolSpec(
-    name="create_outline",
-    description="创建项目内大纲条目并写入设定库，返回新大纲 id；同名活动大纲会失败。",
-    input_schema=CreateOutlineParams.model_json_schema(),
-    group="writing",
-)
-
 
 @dataclass
 class SettingWriteToolDeps:
@@ -112,21 +94,20 @@ class SettingWriteToolDeps:
     #   background="", goals="", group_ids=None, extra=None) -> Character(.id)
     world_service: object  # 有 create_setting(project_id, name, category="", content="",
     #   parent_id=None) -> WorldSetting(.id)
-    outline_service: object  # 有 create_outline(project_id, name, description="",
-    #   sort_order=0, level="overall", parent_id=None) -> Outline(.id)
     audit_service: object  # 有 record(**kwargs)（AuditLogService 形态）
     expected_project_id: uuid.UUID | None = None
 
 
 def build_setting_write_tools(deps: SettingWriteToolDeps) -> list[Tool]:
-    """构建设定库写入工具（顺序固定：create_character → create_world_setting → create_outline）。
+    """构建设定库写入工具（顺序固定：create_character → create_world_setting）。
 
     Args:
-        deps: 工具依赖（character/world/outline + audit service 实例）。
+        deps: 工具依赖（character/world + audit service 实例）。
 
     Returns:
-        三个可执行 Tool；func 成功/失败均返回 JSON 信封且不抛异常。
+        两个可执行 Tool；func 成功/失败均返回 JSON 信封且不抛异常。
     """
+
     @instrument(caller_type="tool")
     async def _create_character(
         project_id: uuid.UUID | str | None = None,
@@ -247,67 +228,7 @@ def build_setting_write_tools(deps: SettingWriteToolDeps) -> list[Tool]:
                     )
                 return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
-    @instrument(caller_type="tool")
-    async def _create_outline(
-        project_id: uuid.UUID | str | None = None,
-        name: str = "",
-        description: str = "",
-        sort_order: int = 0,
-        # #835：默认整本根；章必须挂卷，创建 chapter 须传 parent_id=volume 大纲 id
-        level: str = "overall",
-        parent_id: uuid.UUID | str | None = None,
-    ) -> str:
-        async with _tool_db_lock_mod.get_tool_db_lock():
-            bound_project_id = (
-                deps.expected_project_id if deps.expected_project_id is not None else project_id
-            )
-            _project_id: uuid.UUID | None = None
-            try:
-                _project_id = (
-                    bound_project_id
-                    if isinstance(bound_project_id, uuid.UUID)
-                    else _coerce_uuid(bound_project_id)
-                )
-                parent_coerced = None
-                if parent_id is not None:
-                    parent_coerced = _coerce_uuid(parent_id)
-                outline = await deps.outline_service.create_outline(  # type: ignore[attr-defined]  # 鸭子类型：outline_service 按契约提供 create_outline
-                    project_id=_project_id,
-                    name=name,
-                    description=description,
-                    sort_order=sort_order,
-                    level=level,
-                    parent_id=parent_coerced or None,
-                )
-                with contextlib.suppress(Exception):
-                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                        actor="agent:chat",
-                        project_id=_project_id,
-                        severity_summary="create_outline_created",
-                        summary=f"大纲创建 {name}",
-                        degraded=True,
-                    )
-                return json.dumps(
-                    {
-                        "ok": True,
-                        "outline_id": str(outline.id),
-                        "name": name,
-                    },
-                    ensure_ascii=False,
-                )
-            except Exception as exc:
-                with contextlib.suppress(Exception):
-                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                        actor="agent:chat",
-                        project_id=_project_id,
-                        severity_summary="create_outline_create_failed",
-                        summary=f"大纲创建失败 {name}: {exc}",
-                        degraded=True,
-                    )
-                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
-
     return [
         Tool(spec=CREATE_CHARACTER_SPEC, func=_create_character),
         Tool(spec=CREATE_WORLD_SETTING_SPEC, func=_create_world_setting),
-        Tool(spec=CREATE_OUTLINE_SPEC, func=_create_outline),
     ]

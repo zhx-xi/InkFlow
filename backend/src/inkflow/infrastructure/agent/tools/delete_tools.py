@@ -1,5 +1,6 @@
-"""#766 阶段② 删除工具——7 工具（delete_character / delete_world_setting / delete_outline /
-delete_map / delete_timeline_event / delete_foreshadowing / memory_remove），统一 JSON 信封.
+"""#766 阶段② 删除工具——8 工具（delete_character / delete_world_setting / delete_outline /
+delete_plot_point / delete_map / delete_timeline_event / delete_foreshadowing /
+memory_remove），统一 JSON 信封.
 
 镜像 setting_write_tools.py 形态：
 - 动态 deps 构建（不进静态 TOOL_REGISTRY，由装配守卫按 per-conversation 授权挂载）
@@ -59,6 +60,12 @@ class DeleteOutlineParams(BaseModel):
     outline_id: uuid.UUID
 
 
+class DeletePlotPointParams(BaseModel):
+    """delete_plot_point 工具参数。"""
+
+    plot_point_id: uuid.UUID
+
+
 class DeleteMapParams(BaseModel):
     """delete_map 工具参数。"""
 
@@ -108,6 +115,15 @@ DELETE_OUTLINE_SPEC = ToolSpec(
     name="delete_outline",
     description="删除项目内大纲条目（按会话删除授权执行，ask_once 需用户确认）",
     input_schema=DeleteOutlineParams.model_json_schema(),
+    group="writing",
+    allow_custom_agent=False,  # 核心工具：统一列表不展示，自定义 agent 不可勾选
+    is_core=True,
+)
+
+DELETE_PLOT_POINT_SPEC = ToolSpec(
+    name="delete_plot_point",
+    description="删除项目内情节点（按会话删除授权执行，ask_once 需用户确认）",
+    input_schema=DeletePlotPointParams.model_json_schema(),
     group="writing",
     allow_custom_agent=False,  # 核心工具：统一列表不展示，自定义 agent 不可勾选
     is_core=True,
@@ -200,6 +216,15 @@ _DELETE_TOOL_TABLE: list[tuple[str, str, str, str, str, bool, ToolSpec]] = [
         False,
         DELETE_OUTLINE_SPEC,
     ),
+    (
+        "delete_plot_point",
+        "outline_service",
+        "delete_point",
+        "plot_point_id",
+        "情节点",
+        False,
+        DELETE_PLOT_POINT_SPEC,
+    ),
     ("delete_map", "map_service", "delete_map", "map_id", "地图", False, DELETE_MAP_SPEC),
     (
         "delete_timeline_event",
@@ -232,13 +257,13 @@ _DELETE_TOOL_TABLE: list[tuple[str, str, str, str, str, bool, ToolSpec]] = [
 
 
 def build_delete_tools(deps: DeleteToolDeps) -> list[Tool]:
-    """构建删除工具（顺序固定：delete_character → memory_remove）。
+    """构建删除工具（顺序固定 = _DELETE_TOOL_TABLE 表序）。
 
     Args:
-        deps: 工具依赖（7 删除 service + audit + per-conversation 授权状态 + 绑定项目）。
+        deps: 工具依赖（8 删除 service + audit + per-conversation 授权状态 + 绑定项目）。
 
     Returns:
-        七个可执行 Tool；func 成功/失败均返回 JSON 信封且不抛异常。
+        八个可执行 Tool；func 成功/失败均返回 JSON 信封且不抛异常。
     """
 
     def _build_func(
@@ -308,9 +333,7 @@ def build_delete_tools(deps: DeleteToolDeps) -> list[Tool]:
                     # 鸭子类型：删除方法按契约返回 bool（memory 返回实体，False 兜底）
                     result: bool = await method(entity_value)
                     if result is False:
-                        return json.dumps(
-                            {"ok": False, "error": "记录不存在"}, ensure_ascii=False
-                        )
+                        return json.dumps({"ok": False, "error": "记录不存在"}, ensure_ascii=False)
                     # 成功审计；审计自身异常静默，不影响主返回
                     with contextlib.suppress(Exception):
                         await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
@@ -320,9 +343,7 @@ def build_delete_tools(deps: DeleteToolDeps) -> list[Tool]:
                             summary=f"{entity_label}删除 {entity_id}",
                             degraded=True,
                         )
-                    return json.dumps(
-                        {"ok": True, entity_key: str(entity_id)}, ensure_ascii=False
-                    )
+                    return json.dumps({"ok": True, entity_key: str(entity_id)}, ensure_ascii=False)
                 except Exception as exc:
                     # 失败亦落审计；审计自身异常静默
                     with contextlib.suppress(Exception):
@@ -337,6 +358,4 @@ def build_delete_tools(deps: DeleteToolDeps) -> list[Tool]:
 
         return _delete
 
-    return [
-        Tool(spec=row[6], func=_build_func(*row[:6])) for row in _DELETE_TOOL_TABLE
-    ]
+    return [Tool(spec=row[6], func=_build_func(*row[:6])) for row in _DELETE_TOOL_TABLE]

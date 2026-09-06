@@ -67,6 +67,7 @@ async def get_chat_agent_service(
     from inkflow.infrastructure.agent.tools.agent_chain_tools import AgentChainToolDeps
     from inkflow.infrastructure.agent.tools.delete_tools import DeleteToolDeps
     from inkflow.infrastructure.agent.tools.memory_tools import MemoryToolDeps
+    from inkflow.infrastructure.agent.tools.outline_tools import OutlineToolDeps
     from inkflow.infrastructure.agent.tools.reader_tools import ReaderToolDeps
     from inkflow.infrastructure.agent.tools.save_draft_tool import SaveDraftToolDeps
     from inkflow.infrastructure.agent.tools.setting_update_tools import SettingUpdateToolDeps
@@ -104,6 +105,7 @@ async def get_chat_agent_service(
             save_draft=save_draft_deps,
             setting_write=setting_write_deps,
             setting_update=setting_update_deps,
+            outline=outline_deps,
             world_rw=world_rw_deps,
             memory=memory_deps,
             writing=writing_deps,
@@ -183,7 +185,6 @@ async def get_chat_agent_service(
     setting_write_deps = SettingWriteToolDeps(
         character_service=deps_module.get_character_service(db),
         world_service=deps_module.get_world_service(db),
-        outline_service=deps_module.get_outline_service(db),
         audit_service=deps_module.get_audit_service(db),
         expected_project_id=uuid.UUID(data.project_id),
     )
@@ -191,11 +192,17 @@ async def get_chat_agent_service(
     setting_update_deps = SettingUpdateToolDeps(
         character_service=deps_module.get_character_service(db),
         world_service=deps_module.get_world_service(db),
-        outline_service=deps_module.get_outline_service(db),
         audit_service=deps_module.get_audit_service(db),
         expected_project_id=uuid.UUID(data.project_id),
     )
     setting_update_tools = deps_module.build_setting_update_tools(setting_update_deps)
+    outline_deps = OutlineToolDeps(
+        outline_service=deps_module.get_outline_service(db),
+        chapter_service=deps_module.get_chapter_service(db),
+        audit_service=deps_module.get_audit_service(db),
+        expected_project_id=uuid.UUID(data.project_id),
+    )
+    outline_tools = deps_module.build_outline_tools(outline_deps)
     world_rw_deps = WorldRwToolDeps(
         map_service=deps_module.get_map_service(db),
         timeline_service=deps_module.get_timeline_service(db),
@@ -252,6 +259,7 @@ async def get_chat_agent_service(
             save_draft_tool,
             *setting_write_tools,
             *setting_update_tools,
+            *outline_tools,
             *world_rw_tools,
             *memory_tools,
             *writing_tools,
