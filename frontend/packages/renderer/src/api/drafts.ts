@@ -22,11 +22,17 @@ export interface DraftDto {
   summary: string;
   created_at: string;
   confirmed_at: string | null;
+  /** #976 卷归组（drafts.volume_id 列，UUID 字符串；未归组草稿缺省/为 null） */
+  volume_id?: string | null;
 }
 
-/** 项目草稿列表（GET /api/v1/agent/drafts?project_id=<projectId>） */
-export async function listDrafts(projectId: string): Promise<{ items: DraftDto[]; total: number }> {
+/** 项目草稿列表（GET /api/v1/agent/drafts?project_id=<projectId>[&status=<status>]；status 缺省时 URL 与既有逐字一致） */
+export async function listDrafts(
+  projectId: string,
+  status?: string,
+): Promise<{ items: DraftDto[]; total: number }> {
   const qs = new URLSearchParams({ project_id: projectId });
+  if (status !== undefined) qs.set('status', status);
   return apiFetch<{ items: DraftDto[]; total: number }>(`/api/v1/agent/drafts?${qs.toString()}`);
 }
 

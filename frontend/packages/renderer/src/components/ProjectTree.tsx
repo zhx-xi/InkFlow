@@ -2,7 +2,7 @@
 import { useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { Check, Pencil, Trash2, X } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
-import type { ChapterMeta, Volume } from '../stores/chapter';
+import type { ChapterMeta, DraftTreeNode, Volume } from '../stores/chapter';
 import { useChapterStore } from '../stores/chapter';
 import { useProjectStore } from '../stores/project';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -28,6 +28,9 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
   const currentChapterId = useChapterStore((s) => s.currentChapterId);
   const selectChapter = useChapterStore((s) => s.selectChapter);
   const createChapter = useChapterStore((s) => s.createChapter);
+  // #976 草稿常显：树轨草稿 + 审批弹层入口（双击 → store 全局态，写作页消费）
+  const pendingDrafts = useChapterStore((s) => s.pendingDrafts);
+  const requestApproval = useChapterStore((s) => s.requestApproval);
   const createVolume = useChapterStore((s) => s.createVolume);
   const patchVolume = useChapterStore((s) => s.patchVolume);
   const deleteVolume = useChapterStore((s) => s.deleteVolume);
@@ -70,6 +73,26 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
     window.addEventListener('mouseup', onUp);
   };
 
+  const renderDraft = (d: DraftTreeNode) => (
+    <div
+      key={d.id}
+      data-testid={`draft-${d.draftId}`}
+      title={t('write.drafts.openApprove')}
+      className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-surface-3"
+      onDoubleClick={() => requestApproval(d.draftId)}
+    >
+      <span className="min-w-0 flex-1 truncate text-left text-[12px] text-ink-2" title={d.summary}>
+        {d.summary}
+      </span>
+      <span
+        data-testid={`draft-badge-${d.draftId}`}
+        className="shrink-0 rounded border border-accent/30 bg-accent-weak px-1.5 py-0.5 text-[10px] text-accent"
+      >
+        {t('write.drafts.pendingBadge')}
+      </span>
+    </div>
+  );
+
   const renderChapter = (ch: ChapterMeta) => {
     const isCurrent = ch.id === currentChapterId;
     const isEditing = editingChapterId === ch.id;
@@ -98,6 +121,7 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
             }}
           />
         ) : (
+          // #980-2a D11：长标题悬浮 title 兜底（truncate 裁切后仍可读全文）
           <button
             type="button"
             draggable
@@ -107,11 +131,15 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
             }}
             onClick={() => void selectChapter(ch.id)}
             className={`min-w-0 flex-1 truncate text-left ${isCurrent ? 'text-ink' : 'text-ink-2'}`}
+            title={ch.title}
           >
             <span className="truncate">{ch.title}</span>
           </button>
         )}
-        <span className="shrink-0 text-[11px] text-ink-3">{ch.word_count.toLocaleString()}</span>
+        {/* #980-2a D11：字数 ml-auto 置右（非 shrink-0），hover 操作钮出现时 -mr-14 让位 */}
+        <span className="ml-auto text-[11px] text-ink-3 transition-all group-hover:-mr-14">
+          {ch.word_count.toLocaleString()}
+        </span>
         {!isEditing && (
           <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-180 group-hover:opacity-100 focus-within:opacity-100">
             <button
@@ -146,6 +174,7 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
   };
 
   const ungrouped = chapters.filter((c) => c.volume_id === null);
+  const ungroupedDrafts = pendingDrafts.filter((d) => d.volume_id === null);
 
   const handleCreate = async () => {
     if (!currentProjectId) return;
@@ -252,6 +281,10 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
               {chapters
                 .filter((c) => c.volume_id === v.id)
                 .map(renderChapter)}
+              {/* #976：草稿节点渲染在卷容器内章之后 */}
+              {pendingDrafts
+                .filter((d) => d.volume_id === v.id)
+                .map(renderDraft)}
             </div>
           </div>
         ))}
@@ -266,7 +299,13 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
             if (cid) void moveChapter(cid, null);
           }}
         >
-          {ungrouped.length > 0 && <div className="space-y-0.5">{ungrouped.map(renderChapter)}</div>}
+          {(ungrouped.length > 0 || ungroupedDrafts.length > 0) && (
+            <div className="space-y-0.5">
+              {ungrouped.map(renderChapter)}
+              {/* #976：无卷草稿渲染在 ungrouped 容器末尾 */}
+              {ungroupedDrafts.map(renderDraft)}
+            </div>
+          )}
         </div>
       </div>
       <div data-testid="tree-actions" className="flex flex-col gap-2 border-t border-line p-2">

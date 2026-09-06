@@ -360,7 +360,8 @@ describe('chapter store — #976 草稿常显（loadPendingDrafts / confirmDraft
 
   it('【R】confirmDraft action：POST confirm → 成功后 loadChapterTree 重拉（volume 与 chapter 请求再发）', async () => {
     useChapterStore.setState({ treeProjectId: 'p1' });
-    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+    // #976 GREEN 父侧直修：RED 遗留未用参数（noUnusedParameters），零断言改动
+    apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/agent/drafts/d1/confirm') return { draft_id: 'd1', status: 'confirmed', chapter_id: null };
       if (path === '/api/v1/projects/p1/volumes') return { items: volumes };
       if (path === '/api/v1/projects/p1/chapters') return { items: chapters, total: 2, offset: 0, limit: 50 };
