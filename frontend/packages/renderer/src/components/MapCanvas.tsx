@@ -16,6 +16,10 @@ export interface MapCanvasProps {
   map: WorldMapDTO;
   /** pin 列表（独立叠加层，切换底图不重拉） */
   pins: MapPinDTO[];
+  /** #979：当前选中 pin id（互斥单选，供画布/列表行高亮） */
+  selectedPinId?: string | null;
+  /** #979：点击画布 pin → 选中回调（组件内 stopPropagation 防触发画布加 pin） */
+  onSelectPin?: (pin: MapPinDTO) => void;
   /** 点击画布 → 百分比坐标 → 打开 PinDialog */
   onAddPin: (x: number, y: number) => void;
   /** 切底图 → PATCH bg_source */
@@ -79,6 +83,8 @@ function extractShapes(map: WorldMapDTO): MapShape[] {
 export function MapCanvas({
   map,
   pins,
+  selectedPinId,
+  onSelectPin,
   onAddPin,
   onChangeBg,
   onAddShape,
@@ -382,7 +388,7 @@ export function MapCanvas({
                     type="button"
                     data-testid={`map-shape-del-${shape.id}`}
                     aria-label={`${t('lib.delete')} ${shape.label}`}
-                    className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full border border-line bg-surface text-[12px] text-err shadow-card transition duration-150 hover:bg-err/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="absolute right-1 top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-line bg-surface text-[12px] text-err shadow-card transition duration-150 hover:bg-err/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -396,22 +402,22 @@ export function MapCanvas({
                   <>
                     <div
                       data-testid={`map-shape-resize-${shape.id}-nw`}
-                      className="absolute left-0 top-0 h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize rounded-sm border border-line bg-surface shadow-card"
+                      className="absolute left-0 top-0 h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize rounded-sm border border-line bg-surface shadow-card"
                       onMouseDown={(e) => startResize(e, shape, 'nw')}
                     />
                     <div
                       data-testid={`map-shape-resize-${shape.id}-ne`}
-                      className="absolute right-0 top-0 h-3 w-3 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize rounded-sm border border-line bg-surface shadow-card"
+                      className="absolute right-0 top-0 h-4 w-4 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize rounded-sm border border-line bg-surface shadow-card"
                       onMouseDown={(e) => startResize(e, shape, 'ne')}
                     />
                     <div
                       data-testid={`map-shape-resize-${shape.id}-sw`}
-                      className="absolute bottom-0 left-0 h-3 w-3 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize rounded-sm border border-line bg-surface shadow-card"
+                      className="absolute bottom-0 left-0 h-4 w-4 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize rounded-sm border border-line bg-surface shadow-card"
                       onMouseDown={(e) => startResize(e, shape, 'sw')}
                     />
                     <div
                       data-testid={`map-shape-resize-${shape.id}-se`}
-                      className="absolute bottom-0 right-0 h-3 w-3 translate-x-1/2 translate-y-1/2 cursor-nwse-resize rounded-sm border border-line bg-surface shadow-card"
+                      className="absolute bottom-0 right-0 h-4 w-4 translate-x-1/2 translate-y-1/2 cursor-nwse-resize rounded-sm border border-line bg-surface shadow-card"
                       onMouseDown={(e) => startResize(e, shape, 'se')}
                     />
                   </>
@@ -452,11 +458,17 @@ export function MapCanvas({
             <div
               key={String(pin.id)}
               data-testid={`map-pin-${pin.id}`}
-              className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 text-[16px]"
+              data-selected={selectedPinId === String(pin.id) ? 'true' : undefined}
+              className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 flex cursor-pointer items-center gap-1 text-[16px]"
               style={{ left: `${pin.x}%`, top: `${pin.y}%` }}
               title={pin.label}
+              onClick={(e) => {
+                e.stopPropagation(); // #979：pin 点击防冒泡触发画布加 pin（同 shape 层先例）
+                onSelectPin?.(pin);
+              }}
             >
-              {PIN_ICONS[pinType] ?? PIN_ICONS.other}
+              <span aria-hidden="true">{PIN_ICONS[pinType] ?? PIN_ICONS.other}</span>
+              <span className="max-w-[140px] truncate text-[12px]">{pin.label}</span>
             </div>
           );
         })}

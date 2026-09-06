@@ -124,7 +124,8 @@ describe('地图工作台修复契约（#973 快照刷新 / #978 删除钮重叠
     maps: Array<Record<string, unknown>>,
     pinsByMap: Record<string, Array<Record<string, unknown>>> = {},
   ) {
-    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    apiFetchMock.mockImplementation(async (path: string, _init?: { method?: string; body?: unknown }) => {
       if (path === '/api/v1/projects') {
         return { items: [projectP1], total: 1, offset: 0, limit: 50 };
       }
