@@ -115,13 +115,16 @@ def _make_service(
     outline_service: AsyncMock | None = None,
     character_service: AsyncMock | None = None,
     llm_client: AsyncMock | None = None,
+    llm_default_model: str = "test/model",
 ) -> PlannerService:
+    # #977 迁移：透传 llm_default_model（默认非空），供 GREEN 后 model 解析链取全局默认。
     return PlannerService(
         repo=repo,
         write_auto=AsyncMock(return_value=None),
         outline_service=outline_service or AsyncMock(return_value=_outline_dummy()),
         character_service=character_service or AsyncMock(return_value=_char_dummy()),
         llm_client=llm_client,
+        llm_default_model=llm_default_model,
     )
 
 

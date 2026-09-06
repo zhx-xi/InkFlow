@@ -319,3 +319,93 @@ def test_debug_instance_env_zero_beats_config_json_true(monkeypatch, tmp_path) -
     settings = InkFlowConfig(data_dir=data_dir)
 
     assert settings.debug is False
+
+
+# ---- #977 RED-3 轨：instance.env 全键并入 pydantic 源（settings_customise_sources）----
+def test_instance_env_llm_default_model_enters_config(monkeypatch, tmp_path) -> None:
+    """#977-RED-3 【R】全键生效：instance.env 含 INKFLOW_LLM_DEFAULT_MODEL 且进程 env 同名键删除
+    → InkFlowConfig().llm_default_model == instance.env 的值。
+
+    契约节：contract-977.md §3 不变式（新键示例）+ §4 RED-3 第 1 条。
+    现实现 load_instance_env() 仅被 _default_data_dir 与 debug validator 消费，其余 INKFLOW_* 键
+    全无效 → llm_default_model 仍为默认 "" → 本用例 FAIL（GREEN 义务：settings_customise_sources
+    把 instance.env 全键并入 pydantic 源，优先级 init > env > instance.env > dotenv > secrets）。
+    隔离：构造显式传 data_dir=tmp（_derive_paths 会 mkdir），依赖仅 instance.env 目标键。
+    """
+    anchor = tmp_path / "appdata" / "InkFlow" / "instance.env"
+    _patch_anchor(monkeypatch, anchor)
+    monkeypatch.delenv("INKFLOW_LLM_DEFAULT_MODEL", raising=False)
+    monkeypatch.delenv("INKFLOW_DATA_DIR", raising=False)
+    anchor.parent.mkdir(parents=True, exist_ok=True)
+    anchor.write_text("INKFLOW_LLM_DEFAULT_MODEL=deepseek/deepseek-v4-flash", encoding="utf-8")
+
+    settings = InkFlowConfig(data_dir=tmp_path / "data")
+
+    assert settings.llm_default_model == "deepseek/deepseek-v4-flash"
+
+
+def test_process_env_beats_instance_env(monkeypatch, tmp_path) -> None:
+    """#977-RED-3 【R】D1 优先级镜像：进程 env INKFLOW_LLM_DEFAULT_MODEL=A + instance.env 同键 B
+    → 取 A（D1：进程 env > instance.env）。
+
+    契约节：contract-977.md §3 不变式（同键进程 env 非空 → env 值胜）+ §4 RED-3 第 2 条。
+    现状进程 env 本就被 pydantic env 源消费（env_prefix=INKFLOW_），故本用例现即 PASS——它守护
+    修复后 env 仍须胜过 instance.env（防 lambda 源插错序）。断言不弱化，仍取 A。
+    隔离：构造显式传 data_dir=tmp。
+    """
+    anchor = tmp_path / "appdata" / "InkFlow" / "instance.env"
+    _patch_anchor(monkeypatch, anchor)
+    monkeypatch.setenv("INKFLOW_LLM_DEFAULT_MODEL", "A")
+    monkeypatch.delenv("INKFLOW_DATA_DIR", raising=False)
+    anchor.parent.mkdir(parents=True, exist_ok=True)
+    anchor.write_text("INKFLOW_LLM_DEFAULT_MODEL=B", encoding="utf-8")
+
+    settings = InkFlowConfig(data_dir=tmp_path / "data")
+
+    assert settings.llm_default_model == "A"
+
+
+def test_instance_env_arbitrary_key(monkeypatch, tmp_path) -> None:
+    """#977-RED-3 【R】全键语义证明（不止 model）：instance.env 含 INKFLOW_LLM_TEMPERATURE=0.3
+    → InkFlowConfig().llm_temperature == 0.3。
+
+    契约节：contract-977.md §3（任意 INKFLOW_* 字段写 instance.env 即入启动源）+ §4 RED-3 第 3 条。
+    现实现 llm_temperature 不读 instance.env → 仍为默认 0.7 → 本用例 FAIL。
+    隔离：构造显式传 data_dir=tmp。
+    """
+    anchor = tmp_path / "appdata" / "InkFlow" / "instance.env"
+    _patch_anchor(monkeypatch, anchor)
+    monkeypatch.delenv("INKFLOW_LLM_TEMPERATURE", raising=False)
+    monkeypatch.delenv("INKFLOW_DATA_DIR", raising=False)
+    anchor.parent.mkdir(parents=True, exist_ok=True)
+    anchor.write_text("INKFLOW_LLM_TEMPERATURE=0.3", encoding="utf-8")
+
+    settings = InkFlowConfig(data_dir=tmp_path / "data")
+
+    assert settings.llm_temperature == 0.3
+
+
+def test_instance_env_debug_d8_and_data_dir_guard(monkeypatch, tmp_path) -> None:
+    """#977-RED-3 【G】回归护栏：instance.env INKFLOW_DEBUG=1 + 进程 env INKFLOW_DEBUG='0'
+    → debug False（D8 显式关优先，迁移到 settings_customise_sources 后仍绿）；同时 instance.env
+    含 INKFLOW_DATA_DIR → data_dir 生效（既有行为零翻转）。
+
+    契约节：contract-977.md §3 不变式红线（data_dir / debug D8 语义不变）+ §4 RED-3 【G】。
+    现实现即满足 → 本用例现 PASS（守护迁移不破坏 D8 与 data_dir 键链）。隔离：data_dir 走
+    instance.env INKFLOW_DATA_DIR（真测该键），非构造参数——故必须不含 constructor data_dir。
+    """
+    anchor = tmp_path / "appdata" / "InkFlow" / "instance.env"
+    _patch_anchor(monkeypatch, anchor)
+    monkeypatch.setenv("INKFLOW_DEBUG", "0")
+    monkeypatch.delenv("INKFLOW_DATA_DIR", raising=False)
+    anchor.parent.mkdir(parents=True, exist_ok=True)
+    anchor.write_text(
+        "INKFLOW_DEBUG=1\n"
+        f"INKFLOW_DATA_DIR={(tmp_path / 'data').as_posix()}\n",
+        encoding="utf-8",
+    )
+
+    settings = InkFlowConfig()
+
+    assert settings.debug is False
+    assert settings.data_dir == tmp_path / "data"
