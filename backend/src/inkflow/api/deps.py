@@ -16,7 +16,7 @@ from inkflow.api._chat_auth import (  # 集中 re-export 保持 deps 命名空�
     get_agent_service,
     get_conversation_service,
 )
-from inkflow.api.deps_chat_agent import get_chat_agent_service
+from inkflow.api.deps_chat_agent import _make_draft_volume_lookup, get_chat_agent_service
 from inkflow.core.database import async_session_factory, get_session
 from inkflow.domain.models.agent_run import AgenticWriteRequest
 from inkflow.domain.models.vector_fingerprint import CHUNKER_VERSION
@@ -257,6 +257,8 @@ def get_agentic_writer_service(
         chapter_audit_service=get_chapter_audit_service(db),
         draft_service=draft_service,
         audit_service=audit_service,
+        # #976 D3（2026-09-06 拍板扩展）：agentic 轨按章 id 反查卷（同 chat 语义）
+        volume_lookup=_make_draft_volume_lookup(db),
     )
     prompt_manager = LangChainPromptManager()
     def _build_agent(request: AgenticWriteRequest) -> object:

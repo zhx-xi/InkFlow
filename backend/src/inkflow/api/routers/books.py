@@ -326,6 +326,10 @@ def _build_book_service(db: AsyncSession) -> BookService:
         chapter_audit_service=get_chapter_audit_service(db),
         draft_service=draft_service,
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
+        # #976 D3：writer 轨工具草稿卷解析——_volume_lookup 同时兼容 outline id 与
+        # 章 id（工具收到 expected_chapter_id=outline.chapter_id 可为 None → 未分组，
+        # 与委托兜底按 volume_outline_id 语义一致）
+        volume_lookup=_volume_lookup,
     )
 
     async def _writer_factory(

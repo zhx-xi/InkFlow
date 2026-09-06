@@ -356,3 +356,44 @@ async def test_deep_agent_invoke_adapter_sync_result() -> None:
     kwargs = inner.invoke.call_args.kwargs
     assert kwargs.get("config") is not None
     assert kwargs["config"]["configurable"]["thread_id"]
+
+
+async def test_build_agentic_writer_forwards_volume_lookup_to_save_draft_tool() -> None:
+    """#976 D3（2026-09-06 拍板扩展）: AgenticWriterDeps.volume_lookup 透传 →
+    SaveDraftToolDeps.volume_lookup 为同一对象（writer 轨工具草稿同样归卷组）。
+
+    RED: AgenticWriterDeps 尚无 volume_lookup 字段 → 构造 TypeError（FAILED）。
+    """
+    from inkflow.infrastructure.agent.agentic_writer import (
+        AgenticWriterDeps,
+        build_agentic_writer,
+    )
+
+    sentinel = object()  # 哨兵直测透传（非真实闭包；dataclass 鸭子不校验类型）
+    deps = AgenticWriterDeps(
+        character_service=AsyncMock(),
+        foreshadowing_service=AsyncMock(),
+        summary_service=AsyncMock(),
+        chapter_audit_service=AsyncMock(),
+        draft_service=AsyncMock(),
+        audit_service=AsyncMock(),
+        volume_lookup=sentinel,
+    )
+    with (
+        patch(
+            "inkflow.infrastructure.agent.agentic_writer.build_deep_agent",
+            return_value=MagicMock(),
+        ),
+        patch("inkflow.infrastructure.agent.agentic_writer.build_save_draft_tool") as m_sd,
+    ):
+        build_agentic_writer(
+            model="zhipu/glm-4.5",
+            api_key="k",
+            base_url="http://x",
+            deps=deps,
+            system_prompt="SP",
+        )
+
+    args, kwargs = m_sd.call_args
+    save_deps = kwargs["deps"] if "deps" in kwargs else args[0]
+    assert save_deps.volume_lookup is sentinel

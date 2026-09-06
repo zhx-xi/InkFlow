@@ -710,3 +710,106 @@ class TestGetChatAgentServiceDbAndParseFallback:
 
 # ── TestStreamChatAgentPersistsRun: #615 端点落 run ──
 
+
+# ── TestChatDraftVolumeGroup976: #976 D3 chat 轨草稿卷归组 ──
+
+
+class TestChatDraftVolumeGroup976:
+    """#976 D3（2026-09-06 拍板扩展）— chat 轨 save_draft 草稿同样按章归卷.
+
+    - 装配后 SaveDraftToolDeps.volume_lookup 已注入（RED：当前缺注入 → is None FAIL）；
+    - 闭包直测用真实 in-memory SQLite seed（镜像 test_f27_infra_gaps db_session
+      形态：小值行 id + int↔uuid.UUID(int=X) 惯例，防随机 uuid4 溢出 INTEGER）。
+    """
+
+    @patch("inkflow.api.deps.build_deep_agent")
+    @patch("inkflow.api.deps.build_save_draft_tool")
+    @patch("inkflow.api.deps.build_setting_write_tools")
+    @patch("inkflow.api.deps.build_reader_tools")
+    @patch("inkflow.api.deps.get_chapter_audit_service")
+    @patch("inkflow.api.deps.get_audit_service")
+    @patch("inkflow.api.deps.get_draft_service")
+    @patch("inkflow.api.deps.get_summary_service")
+    @patch("inkflow.api.deps.get_foreshadowing_service")
+    @patch("inkflow.api.deps.get_character_service")
+    @patch("inkflow.api.deps.get_outline_service")
+    @patch("inkflow.api.deps.get_world_service")
+    @patch("inkflow.core.config.config")
+    @patch("inkflow.infrastructure.llm.provider_config.get_provider_config")
+    @pytest.mark.asyncio
+    async def test_assembles_volume_lookup_into_save_draft_deps(
+        self,
+        m_get_provider,
+        m_config,
+        m_world,
+        m_outline,
+        m_char,
+        m_foresh,
+        m_sum,
+        m_draft,
+        m_audit,
+        m_audit_ch,
+        m_rt,
+        m_sw,
+        m_sd,
+        m_da,
+    ) -> None:
+        """镜像 test_assembles_full_tools patch 矩阵：装配后 save_deps.volume_lookup 已注入。"""
+        m_config.llm_default_model = MODEL
+        m_config.model_routing = {}
+        from inkflow.infrastructure.llm.provider_config import LLMProviderConfig
+
+        m_get_provider.return_value = LLMProviderConfig(
+            provider="deepseek",
+            api_key=API_KEY,
+            base_url=BASE_URL,
+            default_model=MODEL,
+            models=[],
+        )
+        m_rt.return_value = [_fake_tool(name) for name in EXPECTED_READER_NAMES]
+        m_sd.return_value = _fake_tool("save_draft")
+        m_sw.return_value = [_fake_tool(name) for name in EXPECTED_SETTING_WRITE_NAMES]
+        data = ChatStreamRequest(project_id=PROJECT_ID, chapter_id=CHAPTER_ID, prompt="你好")
+
+        await _get_chat_agent_service()(data=data, db=MagicMock())
+
+        save_deps = _kwarg_or_positional(m_sd.call_args, "deps", 0)
+        assert isinstance(save_deps, SaveDraftToolDeps)
+        assert save_deps.volume_lookup is not None  # RED：当前未注入 → None FAIL
+
+    @pytest.mark.asyncio
+    async def test_volume_lookup_closure_maps_chapter_to_volume_uuid(self) -> None:
+        """闭包直测（真实 seed）：章带卷 → str(uuid.UUID(int=卷行 id))；章无卷/章不存在/
+        chapter_id=None → None 静默（卷解析绝不许崩工具路径）。"""
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+        from inkflow.api.deps_chat_agent import (  # RED：工厂尚不存在 → ImportError FAILED
+            _make_draft_volume_lookup,
+        )
+        from inkflow.core.database import Base
+        from inkflow.infrastructure.database.models.chapter import ChapterORM, VolumeORM
+        from inkflow.infrastructure.database.models.project import ProjectORM
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        db = factory()
+        try:
+            # 小值行 id（int↔uuid.UUID(int=X) 惯例）：项目 7、卷 41、章 51/52
+            db.add(ProjectORM(id=7, name="测试项目"))
+            db.add(VolumeORM(id=41, project_id=7, title="第一卷"))
+            db.add(ChapterORM(id=51, project_id=7, volume_id=41, title="带卷章"))
+            db.add(ChapterORM(id=52, project_id=7, title="无卷章"))
+            await db.commit()
+
+            lookup = _make_draft_volume_lookup(db)
+            pid = uuid.UUID(int=7)
+            assert await lookup(pid, uuid.UUID(int=51)) == str(uuid.UUID(int=41))
+            assert await lookup(pid, uuid.UUID(int=52)) is None  # 章无卷
+            assert await lookup(pid, uuid.UUID(int=999)) is None  # 章不存在
+            assert await lookup(pid, None) is None  # chapter_id=None
+        finally:
+            await db.close()
+            await engine.dispose()
+

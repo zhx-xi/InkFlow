@@ -16,7 +16,8 @@ chat_stream.py 与单测仍从 inkflow.api.deps 导入（命名空间不变）�
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+import uuid
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from fastapi import Depends
@@ -41,6 +42,41 @@ async def _get_db() -> AsyncGenerator[AsyncSession, None]:
 
     async for session in get_db():
         yield session
+
+
+def _make_draft_volume_lookup(
+    db: AsyncSession,
+) -> Callable[[uuid.UUID, uuid.UUID | None], Awaitable[str | None]]:
+    """#976 D3：草稿卷解析闭包工厂（chat/agentic 装配轨共享，2026-09-06 拍板扩展）.
+
+    按 chapter_id 反查 ChapterService.get_chapter(chapter_id).volume_id →
+    str(uuid.UUID(int=卷行 id))（int↔UUID 惯例，与前端 Volume.id 一致）；
+    chapter_id None / 章不存在 / 章无卷 / 任意异常 → None 静默
+    （卷解析绝不许崩工具路径）。project_id 保留为签名形状参数（工具调用恒传二参）。
+    """
+    import uuid
+
+    from inkflow.domain.services.chapter_service import ChapterService
+
+    chapter_svc = ChapterService(db)
+
+    async def _lookup(
+        project_id: uuid.UUID, chapter_id: uuid.UUID | None
+    ) -> str | None:
+        if chapter_id is None:
+            return None
+        try:
+            chapter = await chapter_svc.get_chapter(chapter_id)
+            if chapter is None or chapter.volume_id is None:
+                return None
+            volume_id = chapter.volume_id
+            if isinstance(volume_id, int):
+                return str(uuid.UUID(int=volume_id))
+            return str(volume_id)
+        except Exception:
+            return None
+
+    return _lookup
 
 
 async def get_chat_agent_service(
@@ -181,6 +217,8 @@ async def get_chat_agent_service(
         audit_service=deps_module.get_audit_service(db),
         expected_project_id=uuid.UUID(data.project_id),
         expected_chapter_id=uuid.UUID(data.chapter_id) if data.chapter_id else None,
+        # #976 D3（2026-09-06 拍板扩展）：chat 轨草稿同样按章归卷组
+        volume_lookup=_make_draft_volume_lookup(db),
     )
     save_draft_tool = deps_module.build_save_draft_tool(save_draft_deps)
     setting_write_deps = SettingWriteToolDeps(

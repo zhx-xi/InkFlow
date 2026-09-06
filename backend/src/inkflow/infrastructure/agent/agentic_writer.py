@@ -56,6 +56,9 @@ class AgenticWriterDeps:
     skill_lookup: Callable[[str], object | None] | None = None
     """skill 查表函数（F39 M3 + #522）：按 skill 目录名取 Skill 鸭子对象
     （含 name/content），None = 未注入（仅 skill_ids 非 None 时读取）。"""
+    volume_lookup: Callable[[uuid.UUID, uuid.UUID | None], Awaitable[str | None]] | None = None
+    """#976 D3：草稿卷解析闭包（project_id, chapter_id → 卷 UUID 字符串），
+    透传给 save_draft 工具；None = 未注入（草稿 volume_id=None，不归卷）。"""
 
 
 def build_writer_agent_system_prompt(
@@ -179,6 +182,7 @@ def build_agentic_writer(
                     audit_service=deps.audit_service,
                     expected_project_id=expected_project_id,
                     expected_chapter_id=expected_chapter_id,
+                    volume_lookup=deps.volume_lookup,
                 )
             )
         )
