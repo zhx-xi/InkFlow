@@ -256,6 +256,7 @@ export function AgentEditDialog({
                       >
                         <input
                           type="checkbox"
+                          aria-label={`${tScope(`agent.scope.domain.${domain}`)} ${tScope(`agent.scope.${op}`)}`}
                           className="h-3.5 w-3.5 accent-accent"
                           disabled={!enabled}
                           checked={checked}

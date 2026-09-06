@@ -264,6 +264,10 @@ describe('AgentEditDialog — scope 矩阵（#957 F58，【R】）', () => {
     expect(within(matrix).getByTestId('agent-scope-head-read')).toBeInTheDocument();
     expect(within(matrix).getByTestId('agent-scope-head-write')).toBeInTheDocument();
     expect(within(matrix).getByTestId('agent-scope-head-delete')).toBeInTheDocument();
+    // #957 评审 MINOR-1 回归锁：格子 checkbox 无障碍名 = 「域名 操作」（a11y 不回归旧工具文本标签）
+    expect(
+      within(within(matrix).getByTestId('agent-scope-cell-character-read')).getByRole('checkbox'),
+    ).toHaveAccessibleName('角色 读');
     // 删除列头说明（tooltip 文案逐字 §4.1）
     expect(within(dlg).getByTestId('agent-scope-delete-help')).toHaveAttribute(
       'title',
