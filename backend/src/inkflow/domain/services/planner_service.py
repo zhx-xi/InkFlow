@@ -28,13 +28,16 @@ import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
+from loguru import logger
 from pydantic import BaseModel, Field
 
+from inkflow.core.config import config
 from inkflow.domain.models.outline import Outline
 from inkflow.domain.models.planner_session import PlannerSession
 from inkflow.domain.models.writing_plan import STAGE1_LIMITS, WritingPlan
 from inkflow.domain.services._outline_generator import _extract_json_fragment
 from inkflow.domain.services._planner_limits import extract_limits_from_interview
+from inkflow.domain.services.model_resolution import resolve_model
 
 
 def _utcnow() -> datetime:
@@ -155,6 +158,9 @@ class PlannerService:
             None = 不渲染模板、直接构建最小 prompt.
         outline_repo: 鸭子对象（async get(id) / list(project_id, offset, limit)
             -> (items, total)）；None = 分支起点不可用（#544）.
+        project_repo: 鸭子对象（async get(int) -> Project | None）；None = 未装配时
+            视为无项目模型，回退全局默认（#977）.
+        llm_default_model: 全局默认模型（#977）——项目 config.model 为 None 时回退该值.
     """
 
     def __init__(
@@ -168,6 +174,8 @@ class PlannerService:
         project_context_getter: Callable[[uuid.UUID], Awaitable[str]] | None = None,
         prompt_manager: object | None = None,
         outline_repo: object | None = None,
+        project_repo: object | None = None,  # 新增：#520 形态鸭子 .get(int)->Project|None
+        llm_default_model: str = config.llm_default_model,  # 新增：镜像 character_service.py:94
     ) -> None:
         self._repo = repo
         self._write_auto = write_auto
@@ -177,6 +185,8 @@ class PlannerService:
         self._project_context_getter = project_context_getter
         self._prompt_manager = prompt_manager
         self._outline_repo = outline_repo
+        self._project_repo = project_repo
+        self._llm_default_model = llm_default_model
         self._last_llm_confirmed_items: list[dict] = []
         """最近一轮 _generate_questions 提取的 confirmed_items（副作用暂存）."""
         self._last_llm_conflicts: list[dict] = []
@@ -592,11 +602,26 @@ class PlannerService:
         llm_client = self._llm_client
         if llm_client is None:
             return None
+        project_model: str | None = None
+        if self._project_repo is not None:
+            try:
+                project: object | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：#520 形态
+                    session.project_id.int
+                )
+                if project is not None:
+                    project_model = project.config.model  # type: ignore[attr-defined]  # 鸭子类型：Project 领域对象
+            except Exception:
+                project_model = None
+        model = resolve_model(None, project_model, self._llm_default_model)
+        if not model:
+            logger.warning("未配置默认模型，访谈使用模板题库: project={}", session.project_id)
+            return None
         messages = await self._build_prompt_messages(session)
         for attempt in range(_LLM_RETRIES + 1):
             try:
                 response: object = await llm_client.chat(  # type: ignore[attr-defined]  # 鸭子类型：llm_client 按 LLMClientProtocol 提供 chat
                     list(messages),
+                    model=model,
                     temperature=_LLM_TEMPERATURE,
                 )
             except Exception:

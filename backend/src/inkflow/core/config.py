@@ -1,14 +1,24 @@
-"""InkFlow 全局配置 — 基于 Pydantic Settings，支持环境变量覆盖。"""
+"""InkFlow 全局配置 — 基于 Pydantic Settings，支持环境变量覆盖。
+
+全键生效（#977）：所有 INKFLOW_* 字段均可由 instance.env 提供，
+优先级 进程 env > instance.env > .env（锚点见 get_instance_env_path）。
+"""
 
 import json as _json
 import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
 from loguru import logger
 from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    EnvSettingsSource,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 from inkflow.domain.models.provider_config import ProviderDefault
 
@@ -23,6 +33,8 @@ def load_instance_env() -> dict[str, str]:
     """读 instance.env → KEY=VALUE dict。
 
     文件缺失 → {}；空行/# 注释/无 = 行跳过；VALUE 空串的键跳过。
+    全键生效（#977）：所有 INKFLOW_* 字段均可由 instance.env 提供，
+    优先级 进程 env > instance.env > .env。
     """
     path = get_instance_env_path()
     if not path.exists():
@@ -103,6 +115,21 @@ def save_config_json(data_dir: Path, updates: dict) -> None:
     )
 
 
+class _InstanceEnvSettingsSource(EnvSettingsSource):
+    """instance.env 全键源（#977）：读固定锚点文件，镜像进程 env 的字段匹配。
+
+    键值解析零加工：load_instance_env() 已 strip + 跳空值，类型转换交给
+    pydantic 字段验证（复杂字段 JSON 解码语义与进程 env 源一致）。
+    """
+
+    def _load_env_vars(self) -> Mapping[str, str | None]:
+        """读 instance.env 键值 dict；case_sensitive=False 时 key 小写以命中 env 名。"""
+        data = load_instance_env()
+        if self.case_sensitive:
+            return data
+        return {key.lower(): value for key, value in data.items()}
+
+
 class InkFlowConfig(BaseSettings):
     """应用全局配置，可通过环境变量 `INKFLOW_*` 覆盖。"""
 
@@ -112,6 +139,30 @@ class InkFlowConfig(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """配置源优先级：init > 进程 env > instance.env > .env > secrets。
+
+        instance.env 全键生效（#977）：不止 DATA_DIR/debug 特判，任意 INKFLOW_* 字段
+        （含 llm_default_model）写 instance.env 即入启动源。D1/D8 优先级镜像 F51：
+        进程 env 显式值 > instance.env。空值键由 load_instance_env 跳过（:40），
+        不遮挡低优先级源。
+        """
+        return (
+            init_settings,
+            env_settings,
+            _InstanceEnvSettingsSource(settings_cls),
+            dotenv_settings,
+            file_secret_settings,
+        )
 
     # ---- 数据库 ----
     database_url: str = "sqlite+aiosqlite:///./inkflow.db"
