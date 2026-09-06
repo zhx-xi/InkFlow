@@ -400,3 +400,24 @@ class TestRegistryGroupSkipping:
             "create_plot_point",
             "update_plot_point",
         ]
+
+    def test_outline_deps_none_group_skipped(self) -> None:
+        """outline 子 deps=None → 该组跳过（registry 320->322 False，镜像 #954 delete=None）。"""
+        from inkflow.domain.models.agent_grants import GrantEntry, ToolDomain, ToolOp
+
+        deps = UnifiedToolDeps(
+            reader=None,
+            save_draft=None,
+            setting_write=None,
+            setting_update=None,
+            outline=None,
+            world_rw=None,
+            memory=None,
+            writing=None,
+            delete=None,
+            agent_chain=None,
+        )
+        grants = [
+            GrantEntry(domain=ToolDomain.OUTLINE, ops=[ToolOp.READ, ToolOp.WRITE]),
+        ]
+        assert build_tools_by_grants(grants, deps) == []
