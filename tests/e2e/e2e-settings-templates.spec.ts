@@ -29,9 +29,10 @@
  * template-confirm-cancel
  *
  * ⚠️ 被引用删除的风险确认文案（tpl.confirm.deleteReferenced）依赖模板列表项 used_by
- * （前端契约：列表即完整实体，见 stores/templates.ts）；当前后端列表端点不含 used_by、
- * 仅详情端点含——若用例 4/5 的「正在被 1 个项目使用」断言失败，根因在此（后端列表补
- * used_by 或前端补拉详情），非测试写法问题。
+ * （前端契约：列表即完整实体，见 stores/templates.ts）；后端列表/详情端点均含 used_by
+ * （agent_templates.py，#985 修正：旧注释「列表端点不含」已过时）。若用例 4/5 断言仍
+ * 失败，先查 referenceProjectToTemplate 的 fail-fast 诊断（PATCH 状态/详情 used_by）
+ * 定位「引用未构造」还是「前端读不到」。
  */
 import path from 'node:path';
 import {
@@ -164,10 +165,27 @@ async function referenceProjectToTemplate(
   };
   const project = projects.items.find((p) => p.name === projectName);
   expect(project).toBeTruthy();
-  await fetchKernel(kernel, `/api/v1/projects/${project!.id}`, {
-    method: 'PATCH',
-    body: { config: { ...project!.config, template_id: String(templateId) } },
-  });
+  // #985 诊断：PATCH 状态硬校验（原 fetchKernel 吞状态码 → 构造失败静默 → 用例 4/5
+  // used_by 空假象，无法区分「引用未构造」与「前端读不到」两候选根因）
+  const patchRes = await fetch(
+    `http://127.0.0.1:${kernel.port}/api/v1/projects/${project!.id}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'X-InkFlow-Token': kernel.token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        config: { ...project!.config, template_id: String(templateId) },
+      }),
+    },
+  );
+  expect(patchRes.status).toBe(200);
+  // 内核数据面确认：详情端点 used_by 已含该项目（引用确实落库）
+  const detail = (await fetchKernel(kernel, `/api/v1/agent-templates/${templateId}`)) as {
+    used_by?: Array<{ name: string }>;
+  };
+  expect((detail.used_by ?? []).map((u) => u.name)).toContain(projectName);
 }
 
 test.describe.configure({ timeout: 120_000 });

@@ -227,13 +227,20 @@ test('设置→Agent：创建自定义 Agent 勾选 scope 矩阵（角色·读/�
     await expect(card).toBeVisible();
 
     // 内核硬断言（保存异步落库 → poll，timeout 30s）：grants + resolved 集合 == 契约 §5-T2
-    // resolved 集合：search_characters(character·read) + create/update_character(character·write) + memory_list(memory·read)
+    // resolved 集合：search_characters/get_character(character·read) + create/update_character(character·write) + memory_list(memory·read)
     // 真实映射源：backend/.../agent/tools/registry.py GRANT_TOOL_MAP
+    // #985 迁移：#972 给 (CHARACTER, READ) 格加入 get_character → 清单 +1
     await expect
       .poll(async () => scopeSnapshotOf(kernel, name), { timeout: 30_000 })
       .toEqual({
         grants: { character: ['read', 'write'], memory: ['read'] },
-        resolved: ['create_character', 'memory_list', 'search_characters', 'update_character'],
+        resolved: [
+          'create_character',
+          'get_character',
+          'memory_list',
+          'search_characters',
+          'update_character',
+        ],
       });
   } finally {
     await app.close();
@@ -282,8 +289,9 @@ test('设置→Agent：编辑重开 scope 矩阵回显（三格 checked）→ �
     await editDialog.getByTestId('agent-dialog-save').click();
     await expect(editDialog).not.toBeVisible();
 
-    // 内核硬断言：grants 更新（新增 world·write）+ resolved 集合扩至 8 工具
+    // 内核硬断言：grants 更新（新增 world·write）+ resolved 集合扩至 9 工具
     // （world·write → create_world_setting/update_world_setting/create_map/update_map，registry GRANT_TOOL_MAP）
+    // #985 迁移：#972 (CHARACTER, READ) 格 +get_character → 8→9
     await expect
       .poll(async () => scopeSnapshotOf(kernel, name), { timeout: 30_000 })
       .toEqual({
@@ -292,6 +300,7 @@ test('设置→Agent：编辑重开 scope 矩阵回显（三格 checked）→ �
           'create_character',
           'create_map',
           'create_world_setting',
+          'get_character',
           'memory_list',
           'search_characters',
           'update_character',
