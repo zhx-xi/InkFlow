@@ -37,6 +37,22 @@ const mocks = vi.hoisted(() => ({
     // #723 章节行操作：重命名（patchChapter）/ 删除（deleteChapter）
     patchChapter: vi.fn(),
     deleteChapter: vi.fn(),
+    // #976 草稿常显：双轨树 pendingDrafts + 审批弹层 approvalRequest 及其 actions
+    // （GREEN 新增 fields/actions；RED 期组件未读，mock 声明防 undefined 崩溃）
+    pendingDrafts: [] as Array<{
+      kind: 'draft';
+      id: string;
+      draftId: string;
+      summary: string;
+      content: string;
+      volume_id: string | null;
+      created_at: string;
+    }>,
+    approvalRequest: null as string | null,
+    requestApproval: vi.fn(),
+    clearApprovalRequest: vi.fn(),
+    confirmDraft: vi.fn(),
+    rejectDraft: vi.fn(),
   },
   projectState: {
     projects: [] as Project[],
@@ -84,6 +100,12 @@ beforeEach(() => {
   mocks.chapterState.volumes = [];
   mocks.chapterState.chapters = [];
   mocks.chapterState.currentChapterId = null;
+  mocks.chapterState.pendingDrafts = [];
+  mocks.chapterState.approvalRequest = null;
+  mocks.chapterState.requestApproval.mockReset();
+  mocks.chapterState.clearApprovalRequest.mockReset();
+  mocks.chapterState.confirmDraft.mockReset();
+  mocks.chapterState.rejectDraft.mockReset();
   mocks.projectState.projects = [];
   mocks.projectState.currentProjectId = null;
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
@@ -406,5 +428,80 @@ describe('ProjectTree — #723 章节行编辑/删除按钮（RED 契约）', ()
     fireEvent.change(input, { target: { value: '改后标题' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(mocks.chapterState.patchChapter).toHaveBeenCalledWith('c1', '改后标题'));
+  });
+});
+describe('ProjectTree — #976 草稿常显（双轨树）+ #980-2a 树布局（RED 契约）', () => {
+  const draftRow = {
+    kind: 'draft' as const,
+    id: 'draft-d1',
+    draftId: 'd1',
+    summary: '第3章 渡口夜雾',
+    content: 'AI 生成的章节草稿正文',
+    volume_id: 'v1',
+    created_at: '2026-08-25T10:00:00Z',
+  };
+  const orphanDraft = {
+    ...draftRow,
+    id: 'draft-d2',
+    draftId: 'd2',
+    summary: '第4章 山中客栈',
+    volume_id: null,
+  };
+
+  it('【R】卷内草稿：pendingDrafts 含 volume_id=v1 → draft-d1 渲染且位于 tree-volume 卷容器内', () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    mocks.chapterState.pendingDrafts = [draftRow, orphanDraft];
+    renderTree();
+    const node = screen.getByTestId('draft-d1');
+    expect(node).toBeInTheDocument();
+    const vol = screen.getAllByTestId('tree-volume')[0];
+    expect(within(vol).getByTestId('draft-d1')).toBeInTheDocument();
+  });
+
+  it('【R】无卷草稿：volume_id=null → 渲染在 tree-ungrouped 容器内', () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    mocks.chapterState.pendingDrafts = [orphanDraft];
+    renderTree();
+    expect(within(screen.getByTestId('tree-ungrouped')).getByTestId('draft-d2')).toBeInTheDocument();
+  });
+
+  it('【R】草稿 badge 文案 = write.drafts.pendingBadge（zh 草稿/未审批）', () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    mocks.chapterState.pendingDrafts = [draftRow, orphanDraft];
+    renderTree();
+    expect(screen.getByTestId('draft-badge-d1')).toHaveTextContent('草稿/未审批');
+    expect(screen.getByTestId('draft-badge-d2')).toHaveTextContent('草稿/未审批');
+  });
+
+  it('【R】双击草稿节点 → store.requestApproval(draftId)', () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    mocks.chapterState.pendingDrafts = [draftRow];
+    renderTree();
+    fireEvent.doubleClick(screen.getByTestId('draft-d1'));
+    expect(mocks.chapterState.requestApproval).toHaveBeenCalledWith('d1');
+  });
+
+  it('【R-布局】章节行字数 span：含 ml-auto 且不含 shrink-0（#980-2a D11）', () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    mocks.chapterState.currentChapterId = 'c1';
+    renderTree();
+    const span = document.querySelector('[data-testid="tree-chapter"] .ml-auto') as HTMLElement | null;
+    expect(span).toBeTruthy();
+    expect(span!.className).not.toContain('shrink-0');
+  });
+
+  it('【R-布局】章节标题 button：className 含 flex-1 且 title=ch.title（#980-2a）', () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    mocks.chapterState.currentChapterId = 'c1';
+    renderTree();
+    const titleBtn = screen.getByTestId('tree-chapter').querySelector('button') as HTMLButtonElement;
+    expect(titleBtn.className).toContain('flex-1');
+    expect(titleBtn.getAttribute('title')).toBe('第1章 初见');
   });
 });

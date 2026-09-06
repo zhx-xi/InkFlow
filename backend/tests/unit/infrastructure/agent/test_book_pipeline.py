@@ -613,3 +613,68 @@ class TestCoverageGapPipeline2:
 
         assert _parse_supervisor_decision("```json\n{action: continue}```") == "continue"
         assert _parse_supervisor_decision('```json\n{"action": }```') == "continue"
+
+class TestDraftGuard975:
+    """#975 唯一草稿守卫（book_pipeline 轨）：agent 已 save_draft -> 服务层兜底 create 跳过。
+
+    契约来源: .hermes/plans/contract-975-976-980-writing-pane.md §1.2/§1.3 B975-1/B975-2。
+    与 agentic 轨参考形态 _history_has_tool_call（agentic_writer_service.py:215,281）语义一致；
+    GREEN 实现使用 usage_accounting.draft_fallback_needed + _extract_saved_draft_id。
+
+    【R】B975-1: invoke 结果消息历史含 save_draft tool_call + 工具结果 JSON -> create 不再调用
+        （await_count==0），execute completed 且 results[outline_id] == 工具消息 draft_id。
+    【G】B975-2: 无任何 save_draft tool_call -> create 恰 1 次、summary=="书级委托保存"
+        （回归守护，配既有 fake 形态）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_b975_1_skips_fallback_when_agent_saved(self) -> None:
+        """【R】端到端 execute：历史含 save_draft 调用 -> 兜底跳过，results 回退工具 draft_id。"""
+        from inkflow.domain.models.writing_plan import BookLimits
+
+        chapters = [_chapter(name="第一章", sort_order=0)]
+        outline_id = str(chapters[0]["outline_id"])
+        deps = _make_deps()
+        # 覆盖 fake agent invoke 返回的 dict 消息历史（键名 type/tool_calls/content，镜像契约 §1.1）
+        deps["agent"].invoke.return_value = {
+            "messages": [
+                {"type": "system", "content": "sys"},
+                {
+                    "type": "ai",
+                    "content": "",
+                    "tool_calls": [
+                        {"name": "save_draft", "id": "tc1", "args": {"content": "正文内容"}}
+                    ],
+                },
+                {
+                    "type": "tool",
+                    "content": '{"ok": true, "draft_id": "saved-d-1", "status": "draft", '
+                               '"word_count": 12}',
+                },
+                {"type": "ai", "content": "草稿已保存（draft_id: saved-d-1）"},
+            ],
+            "usage": {"total_tokens": 100},
+        }
+        pipeline = _pipeline(deps)
+        result = await pipeline.execute(_plan(), [_volume(chapters)], BookLimits())
+        assert result["status"] == "completed"
+        # 守卫：agent 已显式 save_draft -> 服务层不再兜底建草稿（RED：await_count==1 != 0）
+        assert deps["draft_service"].create.await_count == 0
+        # 执行 id 回退 agent 已存草稿 id（RED：当前 str(draft.id)=="draft-1" != "saved-d-1"）
+        state = await pipeline.get_checkpoint_state(result["run_id"])
+        assert state is not None
+        assert state["results"][outline_id] == "saved-d-1"
+
+    @pytest.mark.asyncio
+    async def test_b975_2_fallback_create_when_no_tool_call(self) -> None:
+        """【G】无 save_draft 调用 -> 照常兜底 create 恰 1 次、summary=="书级委托保存"。"""
+        from inkflow.domain.models.writing_plan import BookLimits
+
+        chapters = [_chapter(name="第一章", sort_order=0)]
+        deps = _make_deps()  # 默认 fake：无 tool_calls（SimpleNamespace content="正文"）
+        pipeline = _pipeline(deps)
+        result = await pipeline.execute(_plan(), [_volume(chapters)], BookLimits())
+        assert result["status"] == "completed"
+        assert deps["draft_service"].create.await_count == 1
+        create_kwargs = deps["draft_service"].create.await_args.kwargs
+        assert create_kwargs["summary"] == "书级委托保存"

@@ -330,3 +330,35 @@ class TestAgentDraftExecution:
         result = _draft_result("prune-orphans")
         assert result.exit_code == 0
         assert result.stdout == ""
+
+    # ── #976: draft confirm --title（D10 增可选标题透传 body） ──
+
+    @pytest.mark.agent
+    def test_draft_confirm_with_title(self, fake_http_client):
+        """【R】draft confirm --title X → POST body 含 title.
+
+        当前 draft_confirm 无 --title 选项 → typer exit 2（No such option）→ exit_code
+        断言 FAILED（RED）。
+        """
+        fake_http_client.post.return_value = {
+            "draft_id": DRAFT_ID,
+            "status": "confirmed",
+            "chapter_id": CHAPTER_ID,
+        }
+        result = _draft_result("confirm", DRAFT_ID, "--title", "自定义标题")
+        assert result.exit_code == 0
+        body = fake_http_client.post.await_args.kwargs["json"]
+        assert body["title"] == "自定义标题"
+
+    @pytest.mark.agent
+    def test_draft_confirm_without_title_no_title_key(self, fake_http_client):
+        """【G】draft confirm 不带 --title → body 无 title 键（既有断言零改动兼容）。"""
+        fake_http_client.post.return_value = {
+            "draft_id": DRAFT_ID,
+            "status": "confirmed",
+            "chapter_id": CHAPTER_ID,
+        }
+        result = _draft_result("confirm", DRAFT_ID)
+        assert result.exit_code == 0
+        body = fake_http_client.post.await_args.kwargs["json"]
+        assert "title" not in body

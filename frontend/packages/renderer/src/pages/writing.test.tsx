@@ -836,3 +836,60 @@ describe('写作页 — 生成→新会话（#763：createChatConversation + 去
     expect(screen.queryByTestId('pipeline-status')).not.toBeInTheDocument();
   });
 });
+
+/**
+ * #976 草稿常显：顶栏 writing-topbar + drafts-approval-button（计数）+ 审批弹层 + 双轨树草稿节点。
+ * 契约：pendingCount = useChapterStore.pendingDrafts.length；按钮文案 t('write.drafts.pending', {count})；
+ * 点击打开 DraftApprovalDrawer（listDrafts 请求发出）；树内渲染 draft-{id} 节点 + badge。
+ * ⚠️ 只扩展 apiFetchMock 分发器（drafts 路由），不改既有断言值。
+ */
+describe('写作页 — #976 草稿常显（顶栏 + 审批弹层 + 双轨树，RED 契约）', () => {
+  const draftItems = [
+    { id: 'd1', project_id: 'p1', chapter_id: null, agent_run_id: 'r1', content: 'AI 生成的章节草稿正文', status: 'draft', summary: '第3章 渡口夜雾', created_at: '2026-08-25T10:00:00Z', confirmed_at: null, volume_id: 'v1' },
+    { id: 'd2', project_id: 'p1', chapter_id: null, agent_run_id: 'r2', content: '第二份草稿正文', status: 'draft', summary: '第4章 山中客栈', created_at: '2026-08-25T11:00:00Z', confirmed_at: null, volume_id: null },
+  ];
+
+  /** 分发器：默认 beforeEach 兜底已含 drafts path 空路由；此处按需注入草稿 items */
+  function mockDraftsRoute(items = draftItems) {
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/provider-configs') return { items: [READY_PROVIDER], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/volumes') return { items: seedVolumes };
+      if (path === '/api/v1/projects/p1/chapters') return { items: seedChapters, total: 2, offset: 0, limit: 50 };
+      if (path.startsWith('/api/v1/agent/drafts')) return { items, total: items.length };
+      if (path.startsWith('/api/v1/chapters/') && init?.method === 'PATCH') return { ok: true };
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+  }
+
+  it('【R】顶栏 writing-topbar 存在 + drafts-approval-button 文案含「草稿 (0)」（无草稿）', () => {
+    renderWritingPage();
+    expect(screen.getByTestId('writing-topbar')).toBeInTheDocument();
+    expect(screen.getByTestId('drafts-approval-button')).toHaveTextContent('草稿 (0)');
+  });
+
+  it('【R】drafts-approval-button 文案含「草稿 (2)」（seed 2 草稿）', async () => {
+    mockDraftsRoute(draftItems);
+    renderWritingPage();
+    const btn = screen.getByTestId('drafts-approval-button');
+    await waitFor(() => expect(btn).toHaveTextContent('草稿 (2)'));
+  });
+
+  it('【R】点 drafts-approval-button → drafts-drawer 打开 + listDrafts 请求发出', async () => {
+    mockDraftsRoute(draftItems);
+    renderWritingPage();
+    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects/p1/volumes'));
+    apiFetchMock.mockClear();
+    fireEvent.click(screen.getByTestId('drafts-approval-button'));
+    expect(await screen.findByTestId('drafts-drawer')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(apiFetchMock.mock.calls.some((c) => String(c[0]).startsWith('/api/v1/agent/drafts'))).toBe(true);
+    });
+  });
+
+  it('【R】树内渲染 draft 节点（store pendingDrafts）+ badge', async () => {
+    mockDraftsRoute(draftItems);
+    renderWritingPage();
+    expect(await screen.findByTestId('draft-d1')).toBeInTheDocument();
+    expect(screen.getByTestId('draft-badge-d1')).toHaveTextContent('草稿/未审批');
+  });
+});

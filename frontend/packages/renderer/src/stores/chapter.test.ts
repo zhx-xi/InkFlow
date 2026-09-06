@@ -295,3 +295,84 @@ describe('chapter store — #723 章节删除与重命名（GREEN 必须提供�
     expect(useChapterStore.getState().chapters.find((c) => c.id === 'c1')?.title).toBe('重命名后');
   });
 });
+
+/**
+ * #976 草稿常显：store 新增 pendingDrafts + loadPendingDrafts / confirmDraft / rejectDraft（RED 契约）。
+ * 契约：GET /api/v1/agent/drafts?project_id=<pid>&status=draft → 映射 DraftTreeNode（id=`draft-${id}`）；
+ * loadChapterTree 末尾级联 await loadPendingDrafts；confirm/reject 成功后 loadChapterTree 重拉。
+ */
+describe('chapter store — #976 草稿常显（loadPendingDrafts / confirmDraft / rejectDraft RED 契约）', () => {
+  const draftDto = {
+    id: 'd1',
+    project_id: 'p1',
+    chapter_id: null,
+    agent_run_id: 'r1',
+    content: 'AI 生成的章节草稿正文',
+    status: 'draft',
+    summary: '第3章 渡口夜雾',
+    created_at: '2026-08-25T10:00:00Z',
+    confirmed_at: null,
+    volume_id: 'v1',
+  };
+  const expectedDraftNode = {
+    kind: 'draft',
+    id: 'draft-d1',
+    draftId: 'd1',
+    summary: '第3章 渡口夜雾',
+    content: 'AI 生成的章节草稿正文',
+    volume_id: 'v1',
+    created_at: '2026-08-25T10:00:00Z',
+  };
+
+  it('【R】暴露 loadPendingDrafts / confirmDraft / rejectDraft actions', () => {
+    const s = useChapterStore.getState();
+    expect(typeof s.loadPendingDrafts).toBe('function');
+    expect(typeof s.confirmDraft).toBe('function');
+    expect(typeof s.rejectDraft).toBe('function');
+  });
+
+  it('【R】loadPendingDrafts：GET /agent/drafts?project_id=p1&status=draft → pendingDrafts 映射正确', async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/agent/drafts?project_id=p1&status=draft') return { items: [draftDto], total: 1 };
+      throw new Error(`unexpected path: ${path}`);
+    });
+    await act(async () => {
+      await useChapterStore.getState().loadPendingDrafts('p1');
+    });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/drafts?project_id=p1&status=draft');
+    expect(useChapterStore.getState().pendingDrafts).toEqual([expectedDraftNode]);
+  });
+
+  it('【R】loadChapterTree 级联：树与草稿同窗加载（pendingDrafts 已填充）', async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects/p1/volumes') return { items: volumes };
+      if (path === '/api/v1/projects/p1/chapters') return { items: chapters, total: 2, offset: 0, limit: 50 };
+      if (path === '/api/v1/agent/drafts?project_id=p1&status=draft') return { items: [draftDto], total: 1 };
+      throw new Error(`unexpected path: ${path}`);
+    });
+    await act(async () => {
+      await useChapterStore.getState().loadChapterTree('p1');
+    });
+    const s = useChapterStore.getState();
+    expect(s.volumes).toEqual(volumes);
+    expect(s.pendingDrafts).toEqual([expectedDraftNode]);
+  });
+
+  it('【R】confirmDraft action：POST confirm → 成功后 loadChapterTree 重拉（volume 与 chapter 请求再发）', async () => {
+    useChapterStore.setState({ treeProjectId: 'p1' });
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/agent/drafts/d1/confirm') return { draft_id: 'd1', status: 'confirmed', chapter_id: null };
+      if (path === '/api/v1/projects/p1/volumes') return { items: volumes };
+      if (path === '/api/v1/projects/p1/chapters') return { items: chapters, total: 2, offset: 0, limit: 50 };
+      if (path === '/api/v1/agent/drafts?project_id=p1&status=draft') return { items: [], total: 0 };
+      throw new Error(`unexpected path: ${path}`);
+    });
+    await act(async () => {
+      await useChapterStore.getState().confirmDraft('d1');
+    });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/drafts/d1/confirm', { method: 'POST', body: {} });
+    // 确认成功后 loadChapterTree 再拉卷/章（树 + 草稿双刷新）
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects/p1/volumes');
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects/p1/chapters');
+  });
+});
