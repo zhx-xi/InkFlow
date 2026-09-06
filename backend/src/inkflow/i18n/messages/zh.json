@@ -15,5 +15,13 @@
   "log.event.kernel_ready": "内核就绪：端口 {port}（pid {pid}）",
   "log.event.kernel_spawn_error": "内核启动失败：{error}",
   "api.error.project_not_found": "项目不存在：{project_id}",
-  "api.error.validation_failed": "请求参数校验失败"
+  "api.error.validation_failed": "请求参数校验失败",
+  "agent.scope.domain.outline": "大纲",
+  "agent.scope.domain.character": "角色",
+  "agent.scope.domain.world": "世界观",
+  "agent.scope.domain.timeline": "时间线",
+  "agent.scope.domain.foreshadowing": "伏笔",
+  "agent.scope.domain.memory": "记忆",
+  "agent.scope.domain.writing": "写作",
+  "agent.scope.domain.agent_chain": "Agent 链"
 }

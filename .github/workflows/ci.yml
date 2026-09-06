@@ -858,7 +858,7 @@ jobs:
       - name: E2E settings (Playwright _electron settings page)
         # --retries=1（#450）：该 job 在 Windows runner 环境不稳定（Electron+真实内核时序 + GH Actions 429 限流），
         # 失败用例自动重跑 1 次吸收环境抖动；真实功能缺陷重跑仍失败不受掩盖
-        run: pnpm --filter inkflow-electron test:e2e e2e-settings e2e-settings-templates e2e-settings-agents e2e-settings-skills --retries=1
+        run: pnpm --filter inkflow-electron test:e2e e2e-settings e2e-settings-templates e2e-settings-agents e2e-settings-agents-scope e2e-settings-skills --retries=1
 
   # #496（contract-496 §7）：日志页 E2E——镜像 e2e-frontend-models 整段（needs/if/PYTHONUTF8/build/test 命令）
   e2e-frontend-logs:

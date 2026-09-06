@@ -1,59 +1,14 @@
 /**
- * ⚠️ 契约文件（Issue #260 F41 Agent 创建/编辑弹窗，spec §5.5 / §8.3 / §13 M8）
+ * ⚠️ 契约文件（#957 F58 GUI scope 勾选矩阵 + #260 F41 Agent 创建/编辑弹窗）
  *
- * GREEN 新建 src/components/AgentEditDialog.tsx，必须匹配：
+ * GREEN 必须匹配：
+ * - 非工具契约（保留迁移，【G】）：dialog/标题/名称必填/取消/ESC/skill 搜索/skill 勾选/模型/温度。
+ * - 工具区块【R】：函数分组 checkbox（agent-tool-group-* / agent-tool-*）替换为 scope 矩阵：
+ *   - 行 = 固定 8 域常量序 DOMAINS = ['outline','character','world','timeline','foreshadowing','memory','writing','agent_chain']
+ *   - 列 = read/write/delete；testid 契约见 contract-957 §2。
+ *   - 保存 payload：grants 按 DOMAINS 行序展开，ops 按 read→write→delete，不含 ops 为空的域；不含 tool_ids 键。
  *
- * 组件契约（受控弹窗，纯表单——不做 API 调用，保存走回调；镜像 TemplateDialog 先例）：
- * - props：{ open: boolean; onOpenChange(open: boolean): void;
- *   editing?: AgentEntity | null; onCreate(input: AgentInput): void;
- *   onUpdate(input: AgentInput): void }
- *   AgentEntity / AgentInput 结构同 stores/agents 契约（GREEN 类型可来自 store 或组件内定义）
- * - open=true → role=dialog + data-testid="agent-dialog"；标题：editing 空 →「新建 Agent」，
- *   editing 有值 →「编辑 Agent」；open=false → 不渲染
- * - 表单字段：
- *   * 名称：label「名称」+ data-testid="agent-name-input"，必填
- *     —— 空 → 内联错误（set.agents.nameRequired「名称不能为空」）+ 不提交（onCreate/onUpdate 不调用）
- *   * 描述：label「描述」+ data-testid="agent-desc-input"
- *   * 图标：label「图标」+ data-testid="agent-icon-input"
- *   * System Prompt：label「System Prompt」+ data-testid="agent-prompt-input"（textarea）
- *   * 函数分组 checkbox（D2 拍板：分组勾选，多选白名单）：
- *     - 按工具目录 group 聚合渲染四组，组容器 data-testid="agent-tool-group-<group>"
- *       （writing→写作 / retrieval→检索 / audit→审计 / project→项目）
- *     - 每组内每个工具一个 label 容器（内含 checkbox 控件 + 工具 name + description 文本）：
- *       data-testid="agent-tool-<name>"（testid 落在 label 容器上；点击容器 = 切换勾选）
- *     - project 组为空（本期无项目域工具）→ 组容器可省略不渲染（负向 queryByTestId 不断言）
- *   * skill 绑定（可搜索列表）：搜索输入 data-testid="agent-skill-search"
- *     （输入过滤 skills 列表）+ 每 skill 一个 label 容器（内含 checkbox 控件 + name 文本）：
- *     data-testid="agent-skill-<id>"（testid 落在 label 容器上；容器文本含 skill name）；
- *     列表空 → 提示（set.agents.noSkills「暂无可用技能」）
- *   * 模型覆盖：label「模型覆盖」+ data-testid="agent-model-input"
- *     （placeholder set.agents.modelPlaceholder「provider/model，留空跟随默认」）
- *   * 温度覆盖：label「温度覆盖」+ data-testid="agent-temp-input"（number，0-2）
- * - 按钮：保存（data-testid="agent-dialog-save"）取消（data-testid="agent-dialog-cancel"）
- * - 关闭：取消 → onOpenChange(false)；ESC → onOpenChange(false)
- * - 数据源：useAgentsStore.skills / .tools 订阅（父级 AgentList 挂载已 loadSkills/loadToolCatalog，
- *   本组件不发起 API 调用）
- *
- * 创建模式初始值（契约）：名称/描述/图标/prompt 空；工具全不勾选；skill 全不勾选；
- * 模型覆盖空；温度覆盖空
- * 编辑模式初始值（契约）：editing 全字段回填（名称/描述/图标/prompt/已勾选工具/
- * 已勾选 skill/模型覆盖/温度覆盖）
- *
- * 保存 payload（onCreate/onUpdate 参数 = 完整 AgentInput）：
- * - tool_ids = 勾选工具 name 列表；skill_ids = 勾选 skill id 字符串化列表（String(id)，后端 str 契约）
- * - model_override = 输入文本 trim 后或 null；temperature_override = 数字或 null（空 → null）
- *
- * 新增 i18n key（GREEN 补 zh.ts / en.ts；复用 ag.save「保存」/ dlg.cancel「取消」）：
- * set.agents.newAgent='新建 Agent' set.agents.editAgent='编辑 Agent'
- * set.agents.name='名称' set.agents.description='描述' set.agents.icon='图标'
- * set.agents.prompt='System Prompt' set.agents.nameRequired='名称不能为空'
- * set.agents.funcGroup.writing='写作' set.agents.funcGroup.retrieval='检索'
- * set.agents.funcGroup.audit='审计' set.agents.funcGroup.project='项目'
- * set.agents.skillsTitle='技能' set.agents.searchSkills='搜索技能…' set.agents.noSkills='暂无可用技能'
- * set.agents.modelOverride='模型覆盖' set.agents.tempOverride='温度覆盖'
- * set.agents.modelPlaceholder='provider/model，留空跟随默认'
- *
- * RED 预期：./AgentEditDialog 模块不存在 → module-not-found（类 1 契约缺口）
+ * RED 预期：agent-scope-* / agent-tool-group-* 守护 —— 矩阵未实现 → 元素不存在；旧 tool-group 存在 → 守护 FAIL。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
@@ -69,6 +24,22 @@ vi.mock('../api/client', async (importOriginal) => {
 
 const apiFetchMock = vi.mocked(apiFetch);
 
+/** 契约 §1：grant 条目（domain × ops） */
+type ToolDomain =
+  | 'outline'
+  | 'character'
+  | 'world'
+  | 'timeline'
+  | 'foreshadowing'
+  | 'memory'
+  | 'writing'
+  | 'agent_chain';
+type ToolOp = 'read' | 'write' | 'delete';
+interface GrantEntry {
+  domain: ToolDomain;
+  ops: ToolOp[];
+}
+
 /** 契约结构（与 stores/agents 契约一致；GREEN 类型可来自 store 或组件内定义） */
 interface AgentEntity {
   id: number;
@@ -83,6 +54,9 @@ interface AgentEntity {
   builtin: boolean;
   created_at: string | null;
   updated_at: string | null;
+  /** #957 F58：后端 _to_response 恒有（resolve 后，含旧 tool_ids 反查） */
+  grants?: GrantEntry[];
+  resolved_tool_names?: string[];
 }
 
 const EDITING_AGENT: AgentEntity = {
@@ -100,16 +74,41 @@ const EDITING_AGENT: AgentEntity = {
   updated_at: '2026-08-16T01:00:00Z',
 };
 
+/** ④ 编辑回显（grants 乱序入）：writing 域 write+read */
+const SCOPE_EDITING_AGENT: AgentEntity = {
+  ...EDITING_AGENT,
+  grants: [{ domain: 'writing', ops: ['write', 'read'] }],
+  resolved_tool_names: ['count_words', 'save_draft'],
+};
+
+/** ⑤ 旧数据：tool_ids 有值、grants 缺失（旧鸭子 fixture）——前端零推断 */
+const LEGACY_AGENT: AgentEntity = {
+  ...EDITING_AGENT,
+  tool_ids: ['count_words'],
+  grants: undefined,
+  resolved_tool_names: undefined,
+};
+
 const TOOL_ITEMS = [
-  { name: 'save_draft', description: '保存章节草稿（agent 唯一写面）', group: 'writing', input_schema: {}, allow_custom_agent: true, is_core: false },
-  { name: 'search_characters', description: '搜索项目内角色档案', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false },
-  { name: 'check_foreshadowing', description: '列出未回收伏笔', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false },
-  { name: 'get_prior_summary', description: '获取前文摘要', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false },
-  { name: 'audit_chapter', description: '单章一致性审计', group: 'audit', input_schema: {}, allow_custom_agent: true, is_core: false },
-  { name: 'count_words', description: '中英文混合字数统计', group: 'audit', input_schema: {}, allow_custom_agent: true, is_core: false },
-  // #838: is_core 工具（allow_custom_agent=false）——不允许自定义 agent 勾选
-  { name: 'delete_character', description: '删除角色', group: 'writing', input_schema: {}, allow_custom_agent: false, is_core: true },
-  { name: 'agent_run', description: '启动 agent 链', group: 'project', input_schema: {}, allow_custom_agent: false, is_core: true },
+  // writing 域
+  { name: 'save_draft', description: '保存章节草稿（agent 唯一写面）', group: 'writing', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'writing', op: 'write' },
+  { name: 'generate', description: '续写', group: 'writing', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'writing', op: 'write' },
+  { name: 'continue', description: '续写', group: 'writing', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'writing', op: 'write' },
+  { name: 'revise', description: '修订', group: 'writing', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'writing', op: 'write' },
+  { name: 'get_prior_summary', description: '获取前文摘要', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'writing', op: 'read' },
+  { name: 'audit_chapter', description: '单章一致性审计', group: 'audit', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'writing', op: 'read' },
+  { name: 'count_words', description: '中英文混合字数统计', group: 'audit', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'writing', op: 'read' },
+  // character 域
+  { name: 'search_characters', description: '搜索项目内角色档案', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'character', op: 'read' },
+  { name: 'create_character', description: '创建角色', group: 'writing', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'character', op: 'write' },
+  { name: 'update_character', description: '更新角色', group: 'writing', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'character', op: 'write' },
+  // world 域
+  { name: 'list_maps', description: '列出场景地图', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'world', op: 'read' },
+  { name: 'create_world_setting', description: '创建世界观', group: 'writing', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'world', op: 'write' },
+  // outline / foreshadowing / memory
+  { name: 'create_outline', description: '创建大纲', group: 'writing', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'outline', op: 'write' },
+  { name: 'check_foreshadowing', description: '列出未回收伏笔', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'foreshadowing', op: 'read' },
+  { name: 'memory_list', description: '记忆列表', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'memory', op: 'read' },
 ];
 
 const SKILL_ITEMS = [
@@ -132,8 +131,8 @@ beforeEach(() => {
   seedStore();
 });
 
-describe('AgentEditDialog — 创建模式', () => {
-  it('渲染：dialog + 标题「新建 Agent」+ 全字段 + 四函数组 + skill 列表 + 模型/温度', () => {
+describe('AgentEditDialog — 创建模式（非工具契约迁移【G】）', () => {
+  it('渲染：dialog + 标题「新建 Agent」+ 全字段 + skill 列表 + 模型/温度', () => {
     render(
       <AgentEditDialog
         open
@@ -148,12 +147,6 @@ describe('AgentEditDialog — 创建模式', () => {
     expect(within(dlg).getByTestId('agent-desc-input')).toBeInTheDocument();
     expect(within(dlg).getByTestId('agent-icon-input')).toBeInTheDocument();
     expect(within(dlg).getByTestId('agent-prompt-input')).toBeInTheDocument();
-    // 函数分组（D2）：写作/检索/审计三组渲染（project 组本期空）
-    expect(within(dlg).getByTestId('agent-tool-group-writing')).toBeInTheDocument();
-    expect(within(dlg).getByTestId('agent-tool-group-retrieval')).toBeInTheDocument();
-    expect(within(dlg).getByTestId('agent-tool-group-audit')).toBeInTheDocument();
-    expect(within(dlg).getByTestId('agent-tool-save_draft')).toBeInTheDocument();
-    expect(within(dlg).getByTestId('agent-tool-count_words')).toBeInTheDocument();
     // skill 绑定：2 skill checkbox（label 容器含 name 文本）
     expect(within(dlg).getByTestId('agent-skill-1')).toBeInTheDocument();
     expect(within(dlg).getByTestId('agent-skill-1')).toHaveTextContent('outline-planning');
@@ -161,20 +154,6 @@ describe('AgentEditDialog — 创建模式', () => {
     expect(within(dlg).getByTestId('agent-skill-3')).toHaveTextContent('web-research');
     expect(within(dlg).getByTestId('agent-model-input')).toBeInTheDocument();
     expect(within(dlg).getByTestId('agent-temp-input')).toBeInTheDocument();
-  });
-
-  it('函数分组 checkbox：工具 description 可见（勾选 UI 说明）', () => {
-    render(
-      <AgentEditDialog
-        open
-        onOpenChange={() => undefined}
-        onCreate={() => undefined}
-        onUpdate={() => undefined}
-      />,
-    );
-    const dlg = screen.getByTestId('agent-dialog');
-    const writingGroup = within(dlg).getByTestId('agent-tool-group-writing');
-    expect(writingGroup).toHaveTextContent('保存章节草稿（agent 唯一写面）');
   });
 
   it('skill 绑定：搜索输入过滤列表', async () => {
@@ -191,40 +170,6 @@ describe('AgentEditDialog — 创建模式', () => {
     await user.type(within(dlg).getByTestId('agent-skill-search'), 'web');
     expect(within(dlg).queryByTestId('agent-skill-1')).not.toBeInTheDocument();
     expect(within(dlg).getByTestId('agent-skill-3')).toBeInTheDocument();
-  });
-
-  it('创建保存：勾选工具 + 绑 skill + 填模型/温度 → onCreate(完整 AgentInput)', async () => {
-    const user = userEvent.setup();
-    const onCreate = vi.fn();
-    render(
-      <AgentEditDialog
-        open
-        onOpenChange={() => undefined}
-        onCreate={onCreate}
-        onUpdate={() => undefined}
-      />,
-    );
-    const dlg = screen.getByTestId('agent-dialog');
-    await user.type(within(dlg).getByTestId('agent-name-input'), '润色师');
-    await user.type(within(dlg).getByTestId('agent-desc-input'), '专注润色');
-    await user.type(within(dlg).getByTestId('agent-icon-input'), '✨');
-    await user.type(within(dlg).getByTestId('agent-prompt-input'), '你是润色师。');
-    await user.click(within(dlg).getByTestId('agent-tool-count_words'));
-    await user.click(within(dlg).getByTestId('agent-tool-save_draft'));
-    await user.click(within(dlg).getByTestId('agent-skill-3'));
-    await user.type(within(dlg).getByTestId('agent-model-input'), 'zhipu/glm-4.5');
-    await user.type(within(dlg).getByTestId('agent-temp-input'), '0.6');
-    await user.click(within(dlg).getByTestId('agent-dialog-save'));
-    expect(onCreate).toHaveBeenCalledWith({
-      name: '润色师',
-      description: '专注润色',
-      icon: '✨',
-      system_prompt: '你是润色师。',
-      tool_ids: ['count_words', 'save_draft'],
-      skill_ids: ['3'],
-      model_override: 'zhipu/glm-4.5',
-      temperature_override: 0.6,
-    });
   });
 
   it('名称必填：空名称 → 内联错误 + 不提交', async () => {
@@ -258,10 +203,25 @@ describe('AgentEditDialog — 创建模式', () => {
     await user.click(screen.getByTestId('agent-dialog-cancel'));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it('ESC → onOpenChange(false)', async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    render(
+      <AgentEditDialog
+        open
+        onOpenChange={onOpenChange}
+        onCreate={() => undefined}
+        onUpdate={() => undefined}
+      />,
+    );
+    await user.keyboard('{Escape}');
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
 });
 
-describe('AgentEditDialog — 编辑模式', () => {
-  it('预填：editing 全字段回填（名称/prompt/已勾选工具/skill/模型/温度）+ 标题「编辑 Agent」', () => {
+describe('AgentEditDialog — 编辑模式（非工具契约迁移【G】）', () => {
+  it('预填（非工具字段）：名称/prompt/skill/模型回填 + 标题「编辑 Agent」', () => {
     render(
       <AgentEditDialog
         open
@@ -275,71 +235,166 @@ describe('AgentEditDialog — 编辑模式', () => {
     expect(dlg).toHaveTextContent('编辑 Agent');
     expect(within(dlg).getByTestId('agent-name-input')).toHaveValue('我的润色师');
     expect(within(dlg).getByTestId('agent-prompt-input')).toHaveValue('你是润色师，负责润色文笔。');
-    expect(within(dlg).getByTestId('agent-tool-count_words')).toBeChecked();
-    expect(within(dlg).getByTestId('agent-tool-save_draft')).toBeChecked();
-    expect(within(dlg).getByTestId('agent-tool-search_characters')).not.toBeChecked();
     expect(within(dlg).getByTestId('agent-skill-3')).toBeChecked();
     expect(within(dlg).getByTestId('agent-model-input')).toHaveValue('zhipu/glm-4.5');
   });
+});
 
-  it('编辑保存：改名称 + 取消一个工具 → onUpdate(完整 AgentInput)', async () => {
+describe('AgentEditDialog — scope 矩阵（#957 F58，【R】）', () => {
+  const DOMAINS = ['outline', 'character', 'world', 'timeline', 'foreshadowing', 'memory', 'writing', 'agent_chain'];
+  const OPS = ['read', 'write', 'delete'];
+
+  it('① 渲染：agent-scope-matrix + 8 域行 + 24 格 + 三列头 + 删除列头 tooltip', () => {
+    render(
+      <AgentEditDialog
+        open
+        onOpenChange={() => undefined}
+        onCreate={() => undefined}
+        onUpdate={() => undefined}
+      />,
+    );
+    const dlg = screen.getByTestId('agent-dialog');
+    const matrix = within(dlg).getByTestId('agent-scope-matrix');
+    DOMAINS.forEach((d) => {
+      expect(within(matrix).getByTestId(`agent-scope-row-${d}`)).toBeInTheDocument();
+      OPS.forEach((op) => {
+        expect(within(matrix).getByTestId(`agent-scope-cell-${d}-${op}`)).toBeInTheDocument();
+      });
+    });
+    expect(within(matrix).getByTestId('agent-scope-head-read')).toBeInTheDocument();
+    expect(within(matrix).getByTestId('agent-scope-head-write')).toBeInTheDocument();
+    expect(within(matrix).getByTestId('agent-scope-head-delete')).toBeInTheDocument();
+    // #957 评审 MINOR-1 回归锁：格子 checkbox 无障碍名 = 「域名 操作」（a11y 不回归旧工具文本标签）
+    expect(
+      within(within(matrix).getByTestId('agent-scope-cell-character-read')).getByRole('checkbox'),
+    ).toHaveAccessibleName('角色 读');
+    // 删除列头说明（tooltip 文案逐字 §4.1）
+    expect(within(dlg).getByTestId('agent-scope-delete-help')).toHaveAttribute(
+      'title',
+      '暴露删除工具；每次删除仍需会话确认（双闸，ADR-043）',
+    );
+  });
+
+  it('② 可用格 disabled 映射：outline-read / agent_chain 三格 / writing-delete disabled；character-read 可用', () => {
+    render(
+      <AgentEditDialog
+        open
+        onOpenChange={() => undefined}
+        onCreate={() => undefined}
+        onUpdate={() => undefined}
+      />,
+    );
+    const dlg = screen.getByTestId('agent-dialog');
+    // 无工具格 disabled
+    expect(within(dlg).getByTestId('agent-scope-cell-outline-read').querySelector('input')).toBeDisabled();
+    OPS.forEach((op) => {
+      expect(within(dlg).getByTestId(`agent-scope-cell-agent_chain-${op}`).querySelector('input')).toBeDisabled();
+    });
+    expect(within(dlg).getByTestId('agent-scope-cell-writing-delete').querySelector('input')).toBeDisabled();
+    // 有工具格可用
+    expect(within(dlg).getByTestId('agent-scope-cell-character-read').querySelector('input')).not.toBeDisabled();
+  });
+
+  it('③ 勾选保存：勾 character-read/write + world-read → onCreate grants 行序+ops 序，无 tool_ids 键', async () => {
+    const user = userEvent.setup();
+    const onCreate = vi.fn();
+    render(
+      <AgentEditDialog
+        open
+        onOpenChange={() => undefined}
+        onCreate={onCreate}
+        onUpdate={() => undefined}
+      />,
+    );
+    const dlg = screen.getByTestId('agent-dialog');
+    await user.type(within(dlg).getByTestId('agent-name-input'), '润色师');
+    await user.click(within(dlg).getByTestId('agent-scope-cell-character-read'));
+    await user.click(within(dlg).getByTestId('agent-scope-cell-character-write'));
+    await user.click(within(dlg).getByTestId('agent-scope-cell-world-read'));
+    await user.click(within(dlg).getByTestId('agent-dialog-save'));
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        grants: [
+          { domain: 'character', ops: ['read', 'write'] },
+          { domain: 'world', ops: ['read'] },
+        ],
+      }),
+    );
+    // 契约 §2：payload 不含 tool_ids 键
+    expect(onCreate.mock.calls[0][0]).not.toHaveProperty('tool_ids');
+  });
+
+  it('④ 编辑回显：editing.grants 乱序入 → writing-read/write checked、delete unchecked', () => {
+    render(
+      <AgentEditDialog
+        open
+        editing={SCOPE_EDITING_AGENT}
+        onOpenChange={() => undefined}
+        onCreate={() => undefined}
+        onUpdate={() => undefined}
+      />,
+    );
+    const dlg = screen.getByTestId('agent-dialog');
+    expect(within(dlg).getByTestId('agent-scope-cell-writing-read').querySelector('input')).toBeChecked();
+    expect(within(dlg).getByTestId('agent-scope-cell-writing-write').querySelector('input')).toBeChecked();
+    expect(within(dlg).getByTestId('agent-scope-cell-writing-delete').querySelector('input')).not.toBeChecked();
+  });
+
+  it('⑤ 旧数据：editing.tool_ids 有值且 grants 缺失 → 全格 unchecked 不崩（前端零推断）', () => {
+    render(
+      <AgentEditDialog
+        open
+        editing={LEGACY_AGENT}
+        onOpenChange={() => undefined}
+        onCreate={() => undefined}
+        onUpdate={() => undefined}
+      />,
+    );
+    const dlg = screen.getByTestId('agent-dialog');
+    // 弹窗正常渲染（不崩）
+    expect(within(dlg).getByTestId('agent-name-input')).toBeInTheDocument();
+    // 即便 tool_ids=['count_words']，grants 缺失 → 矩阵不推断勾选（前端零推断逻辑）
+    expect(within(dlg).getByTestId('agent-scope-matrix')).toBeInTheDocument();
+    expect(within(dlg).getByTestId('agent-scope-cell-writing-read').querySelector('input')).not.toBeChecked();
+  });
+
+  it('⑥ 守护：旧函数分组/工具 checkbox testid 不再存在', () => {
+    render(
+      <AgentEditDialog
+        open
+        onOpenChange={() => undefined}
+        onCreate={() => undefined}
+        onUpdate={() => undefined}
+      />,
+    );
+    const dlg = screen.getByTestId('agent-dialog');
+    expect(within(dlg).queryByTestId('agent-tool-group-writing')).toBeNull();
+    expect(within(dlg).queryByTestId('agent-tool-save_draft')).toBeNull();
+    expect(within(dlg).queryByTestId('agent-tool-count_words')).toBeNull();
+    expect(within(dlg).queryByTestId('agent-tool-group-retrieval')).toBeNull();
+  });
+
+  it('编辑保存：取消 writing-read 后 onUpdate grants（无 tool_ids 键）', async () => {
     const user = userEvent.setup();
     const onUpdate = vi.fn();
     render(
       <AgentEditDialog
         open
-        editing={EDITING_AGENT}
+        editing={SCOPE_EDITING_AGENT}
         onOpenChange={() => undefined}
         onCreate={() => undefined}
         onUpdate={onUpdate}
       />,
     );
     const dlg = screen.getByTestId('agent-dialog');
-    const nameInput = within(dlg).getByTestId('agent-name-input');
-    await user.clear(nameInput);
-    await user.type(nameInput, '润色师 v2');
-    await user.click(within(dlg).getByTestId('agent-tool-save_draft'));
+    // editing.grants=[{writing:['write','read']}] → 取消 read → grants=[{writing:['write']}]
+    await user.click(within(dlg).getByTestId('agent-scope-cell-writing-read'));
     await user.click(within(dlg).getByTestId('agent-dialog-save'));
-    expect(onUpdate).toHaveBeenCalledWith({
-      name: '润色师 v2',
-      description: '专注文笔润色的自定义角色',
-      icon: '✨',
-      system_prompt: '你是润色师，负责润色文笔。',
-      tool_ids: ['count_words'],
-      skill_ids: ['3'],
-      model_override: 'zhipu/glm-4.5',
-      temperature_override: 0.6,
-    });
-  });
-});
-
-describe('AgentEditDialog — allow_custom_agent 过滤（#838）', () => {
-  it('工具选择只渲染 allow_custom_agent=true 的工具 checkbox（守护：非核心工具仍在）', () => {
-    render(
-      <AgentEditDialog
-        open
-        onOpenChange={() => undefined}
-        onCreate={() => undefined}
-        onUpdate={() => undefined}
-      />,
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        grants: [{ domain: 'writing', ops: ['write'] }],
+      }),
     );
-    const dlg = screen.getByTestId('agent-dialog');
-    // allow_custom_agent=true（is_core=false）→ 正常渲染
-    expect(within(dlg).getByTestId('agent-tool-save_draft')).toBeInTheDocument();
-  });
-
-  it('is_core 工具（allow_custom_agent=false）不渲染为可勾选 checkbox（#838）', () => {
-    render(
-      <AgentEditDialog
-        open
-        onOpenChange={() => undefined}
-        onCreate={() => undefined}
-        onUpdate={() => undefined}
-      />,
-    );
-    const dlg = screen.getByTestId('agent-dialog');
-    // delete_character（writing 组）与 agent_run（project 组）是 is_core=true / allow_custom_agent=false → 必须不渲染
-    expect(within(dlg).queryByTestId('agent-tool-delete_character')).not.toBeInTheDocument();
-    expect(within(dlg).queryByTestId('agent-tool-agent_run')).not.toBeInTheDocument();
+    expect(onUpdate.mock.calls[0][0]).not.toHaveProperty('tool_ids');
   });
 });

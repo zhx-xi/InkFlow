@@ -57,7 +57,8 @@
 | Agent 编辑/保存 | 自定义卡片「编辑」按钮 | 打开 AgentEditDialog（回显）→ 保存 → create/update | 弹窗内保存中 | ok toast「已保存」+ 关闭 | err toast + 保持打开 | 名称必填（nameError 内联）；内置 Agent 无编辑/删除按钮 |
 | Agent 删除 | 自定义卡片「删除」按钮（err 色描边） | ConfirmDialog 确认（含名称） | DELETE + 列表重 GET | ok toast「已删除」 | err toast（store error） | 内置 Agent 只读不可删 |
 | Agent 详情/复制 | 内置卡片「详情」「复制」按钮 | 详情 → 弹窗（icon/名称/描述/prompt pre/工具/技能 chips）；复制 → copyAgent | — | 详情展示 / ok toast「已复制」 | 复制失败 err toast | 详情弹窗 ✕ 关闭；复制生成新实体入列表 |
-| AgentEditDialog 表单 | 名称/描述/图标/prompt textarea/工具 checkbox 分组/技能搜索+勾选/模型覆盖/温度覆盖 | 填写 → 保存 | — | 保存成功（见上） | 名称空 → 内联错误 | 技能搜索过滤 + 勾选；model/temperature override 可留空（null） |
+| AgentEditDialog 表单 | 名称/描述/图标/prompt textarea/**scope 矩阵**（F58 #957：行=8 功能域 大纲/角色/世界观/时间线/伏笔/记忆/写作/Agent 链，列=读/写/删三 checkbox；该域该操作无可用工具 → 格子渲染但 disabled；删除列头带 tooltip「暴露删除工具；每次删除仍需会话确认（双闸，ADR-043）」）/技能搜索+勾选/模型覆盖/温度覆盖 | 填写 + 勾矩阵格 → 保存 | — | 保存成功（见上）；提交 grants（域行序 × read/write/delete 序，空 ops 域剔除；不再提交 tool_ids） | 名称空 → 内联错误 | 编辑回显 = API 响应 grants（后端已对旧 tool_ids 数据 resolve 推断，前端零推断逻辑）；技能搜索过滤 + 勾选；model/temperature override 可留空（null） |
+| Agent 详情弹窗（内置） | 工具区块 = scope 矩阵只读回显（8×3，data-checked）+「共 N 个工具」计数（resolved_tool_names 长度） | 点「查看工具清单」 | — | 展开工具名逐行清单（默认折叠防噪声）；再点收起 | — | grants 全空 → 「未授权任何工具域」；域名走 F57 双层词条（远端 messages 目录优先，前端本地回退） |
 | 模板新建 | 「新建模板」按钮（template-add-btn） | 打开 TemplateDialog（空表单） | — | — | — | 挂载 loadTemplates |
 | 模板编辑 | 卡片「编辑」按钮 | 打开 TemplateDialog（回显 editing） | — | — | — | 被引用（used_by>0）→ 先弹风险确认框，确认后才保存 |
 | 模板设为默认 | 卡片「设为默认」按钮 | setDefault → PATCH /agent-templates/default | — | 默认徽标迁移到该卡片 | err toast | 默认状态经 store 本地同步（is_default 唯一） |
@@ -71,6 +72,6 @@
 - N1：Agent 链四内置角色（+ 进链扩展角色/自定义角色）开关三态语义正确：关闭/跟随默认/指定模型徽标各自展示；开关即改即存且并发 PATCH 守卫不丢最后一次切换
 - N2：上移/下移边界正确（首层上移、末层下移禁用）；移动自动启用未启用角色；空层压缩
 - N3：添加角色 → 角色池（真源派生）→ 入链生效；依赖入口展开/收起 AgentRelationEditor
-- N4：Agent 列表：内置只读（详情/复制）、自定义编辑/删除（删除有确认框）；AgentEditDialog 名称必填 + 工具/技能多选 + model/temp override
+- N4：Agent 列表：内置只读（详情/复制）、自定义编辑/删除（删除有确认框）；AgentEditDialog 名称必填 + 技能多选 + model/temp override；**工具授权 = F58 scope 矩阵（#957）**：8 域 × 读/写/删勾选，无工具格 disabled，删除列头 tooltip；保存提交 grants（不再提交 tool_ids），编辑回显 API resolve 后的 grants（旧 tool_ids 数据打开即见推断矩阵，前端零推断）；详情弹窗矩阵回显 +「共 N 个工具」计数，工具名清单默认折叠可展开
 - N5：模板 CRUD + 设为默认徽标迁移；被引用模板保存/删除 → 风险确认框（列项目名），确认/取消两分支均符合上表
 - N6：TemplateDialog 角色行模型下拉 + 温度滑杆 0~1.5（step 0.1）+ 启用开关；名称必填校验

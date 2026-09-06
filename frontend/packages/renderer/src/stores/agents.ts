@@ -6,6 +6,26 @@
 import { create } from 'zustand';
 import { apiFetch, errorMessage } from '../api/client';
 
+/** 工具域（8 值枚举序，spec §2.1；后端 GRANT_TOOL_MAP 域） */
+export type ToolDomain =
+  | 'outline'
+  | 'character'
+  | 'world'
+  | 'timeline'
+  | 'foreshadowing'
+  | 'memory'
+  | 'writing'
+  | 'agent_chain';
+
+/** 域内操作序：read → write → delete（保存 payload ops 序） */
+export type ToolOp = 'read' | 'write' | 'delete';
+
+/** 授权条目：domain × ops（grants 提交/回显唯一数据面） */
+export interface GrantEntry {
+  domain: ToolDomain;
+  ops: ToolOp[];
+}
+
 /** Agent 实体（对齐后端 13 字段，model_dump(mode=json)） */
 export interface AgentEntity {
   id: number;
@@ -20,6 +40,12 @@ export interface AgentEntity {
   builtin: boolean;
   /** #473 R1：内置链角色键映射（architect/writer/auditor/reviser）；非链内置/自定义为 null */
   role_key?: string | null;
+  /**
+   * #957 F58：后端 _to_response 恒有（resolve 后，含旧 tool_ids 反查）；
+   * 声明可选以兼容旧数据与既有测试 fixture，组件内一律以 `?? []` 兜底。
+   */
+  grants?: GrantEntry[];
+  resolved_tool_names?: string[];
   created_at: string | null;
   updated_at: string | null;
 }
@@ -30,7 +56,8 @@ export interface AgentInput {
   description: string;
   icon: string;
   system_prompt: string;
-  tool_ids: string[];
+  /** #957 F58：唯一授权提交面；全不勾 = []（后端清除 tool_ids） */
+  grants: GrantEntry[];
   skill_ids: string[];
   model_override: string | null;
   temperature_override: number | null;
@@ -47,6 +74,12 @@ export interface ToolSpec {
   input_schema: unknown;
   allow_custom_agent: boolean;
   is_core: boolean;
+  /**
+   * #957 F58：catalog 每项已带 domain/op（is_core 不进目录）；
+   * 运行值属于 ToolDomain/ToolOp 枚举，类型放宽为 string 兼容测试 fixture 的字面量收窄。
+   */
+  domain: string;
+  op: string;
 }
 
 /** 技能列表项（GET /skills；agent_ids 反查由后端计算） */
