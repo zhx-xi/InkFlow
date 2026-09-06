@@ -5932,11 +5932,18 @@ export interface components {
         };
         /**
          * ConfirmRequest
-         * @description draft confirm 请求体 — chapter_id 可选（草稿未绑定时指定）.
+         * @description draft confirm 请求体 — chapter_id/source_outline_id/title 均可选.
+         *
+         *     #976 D4：source_outline_id 供自动建章后回填 outlines.chapter_id；title 供
+         *     自动建章标题（显式优先于 summary 派生）；两者缺省 None（既有 body 兼容）。
          */
         inkflow__api__routers__agent_runs__ConfirmRequest: {
             /** Chapter Id */
             chapter_id?: string | null;
+            /** Source Outline Id */
+            source_outline_id?: string | null;
+            /** Title */
+            title?: string | null;
         };
         /**
          * EntityType

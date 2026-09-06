@@ -287,3 +287,55 @@ class TestDraftRepository:
         assert count == 1
         _, total = await repo.list(project_id=ZERO_PROJECT_ID)
         assert total == 1
+
+
+class TestDraftVolume976:
+    """#976 草稿常显：drafts.volume_id 列透传契约（真 SQLite 轨）.
+
+    RED 预期（对照当前实现）:
+    - create 尚不接受 volume_id 形参（draft_repo.create 无该 kwarg）→ TypeError FAILED（【R】）
+    - Draft 领域模型无 volume_id 字段（extra=ignore 静默丢弃）→ 读回 .volume_id AttributeError
+      FAILED（【R】；即便 create 不传 volume_id，_orm_to_domain 也不回填该字段）
+    GREEN 必实现:
+    - Draft 域模型 / DraftORM 增 volume_id（String(36) 可空）
+    - create(..., volume_id=uuid.UUID | None = None) + _orm_to_domain 透传
+    """
+
+    @pytest.mark.integration
+    async def test_create_with_volume_id_roundtrip(self, db_session, project):
+        """【R】create 传 volume_id=uuid.UUID(int=7) → 读回 .volume_id 相等."""
+        repo = SQLiteDraftRepository(db_session)
+
+        vol_id = uuid.UUID(int=7)
+        draft = await repo.create(
+            project_id=PROJECT_ID,
+            chapter_id=None,
+            content=CONTENT,
+            summary="卷绑定草稿",
+            volume_id=vol_id,
+        )
+
+        assert draft.volume_id == vol_id
+        # 读回（持久化验证）
+        fetched = await repo.get(draft.id)
+        assert fetched is not None
+        assert fetched.volume_id == vol_id
+
+    @pytest.mark.integration
+    async def test_create_without_volume_id_defaults_none(self, db_session, project):
+        """【R】create 不传 volume_id → .volume_id is None.
+
+        当前 Draft 无 volume_id 字段（extra=ignore）→ 访问 .volume_id AttributeError（RED）。
+        """
+        repo = SQLiteDraftRepository(db_session)
+
+        draft = await repo.create(
+            project_id=PROJECT_ID,
+            chapter_id=None,
+            content=CONTENT,
+        )
+
+        assert draft.volume_id is None
+        fetched = await repo.get(draft.id)
+        assert fetched is not None
+        assert fetched.volume_id is None

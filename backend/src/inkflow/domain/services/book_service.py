@@ -40,7 +40,12 @@ from inkflow.domain.models.writing_plan import (
     validate_at_least_one_hard_limit,
 )
 from inkflow.domain.services.book_run_mixin import BookRunMixin
-from inkflow.domain.services.usage_accounting import extract_total_tokens, result_usage
+from inkflow.domain.services.usage_accounting import (
+    _extract_saved_draft_id,
+    draft_fallback_needed,
+    extract_total_tokens,
+    result_usage,
+)
 
 
 class ChapterAlreadyWrittenError(Exception):
@@ -50,19 +55,17 @@ class ChapterAlreadyWrittenError(Exception):
     """
 
 
-def _outline_to_chapter_dict(o: Outline) -> ChapterDict:
-    """Outline 章节点 → 卷级编排图章 dict（契约 §3.5 形态：pipeline 消费字典非领域对象）。
-
-    卷级编排图（BookVolumePipeline）按 dict 契约消费章数据（outline_id/chapter_id/name/
-    description/sort_order）——装配缺口实证（2026-08-17 真实冒烟：mock 轨全绿但真实链路
-    传 Outline 对象致 _write_chapter 下标访问 TypeError），拆章层统一转换。
-    """
+def _outline_to_chapter_dict(
+    o: Outline, *, volume_outline_id: uuid.UUID | None = None
+) -> ChapterDict:
+    """Outline 章节点 → 卷级编排图章 dict（#976 D5：携带卷 outline 节点 id）."""
     return {
         "outline_id": o.id,
         "chapter_id": o.chapter_id,
         "name": o.name,
         "description": o.description,
         "sort_order": o.sort_order,
+        "volume_outline_id": volume_outline_id,
     }
 
 
@@ -74,6 +77,7 @@ class ChapterDict(TypedDict):
     name: str
     description: str
     sort_order: int
+    volume_outline_id: uuid.UUID | None  # #976 D5：所属卷 outline 节点 id（None = 无卷轨）
 
 
 class VolumeGroup(TypedDict):
@@ -128,6 +132,7 @@ class BookService(BookRunMixin):
         execution_store: object | None = None,  # 新增：执行记录仓储（ExecutionStore 鸭子类型）
         outline_updater: Callable[[uuid.UUID, str], Awaitable[object | None]] | None = None,
         agentic_pipeline: object | None = None,  # 新增：book-level 自主编排引擎（鸭子类型）
+        volume_lookup: Callable[..., Awaitable[str | None]] | None = None,
     ) -> None:
         self._repo = repo
         self._writer_factory = writer_factory
@@ -140,6 +145,7 @@ class BookService(BookRunMixin):
         self._execution_store = execution_store
         self._outline_updater = outline_updater
         self._agentic_pipeline = agentic_pipeline
+        self._volume_lookup = volume_lookup
 
     async def write_book(
         self, plan_id: uuid.UUID, limits: BookLimits | None = None
@@ -645,11 +651,8 @@ class BookService(BookRunMixin):
         return sorted(chapters, key=lambda o: (o.sort_order, str(o.id)))
 
     async def _find_volumes(self, plan: WritingPlan) -> list[VolumeGroup]:
-        """卷 planner 拆章（阶段 3，#337）：outline 表取 level=volume 节点 + 其下 level=chapter
-        子节点（parent_id=volume.id，sort_order 升序）→ 按卷分组；无卷节点 → 整本书作为一卷
-        （volume_id = plan.root_outline_id，章节 = 全部 level=chapter 按 sort_order 升序）.
-        无 outline_repo → 空列表（镜像 _find_chapters 防御分支）.
-        """
+        """卷 planner 拆章：level=volume 节点 + 其下 chapter 子节点按卷分组
+        （volume_outline_id 透传卷节点 id）；无卷节点 → 整本书一卷（root）."""
         if self._outline_repo is None:
             return []
         outlines_raw, _ = await self._outline_repo.list(  # type: ignore[attr-defined]  # 鸭子类型：outline_repo 按 OutlineRepositoryProtocol 提供 list
@@ -665,7 +668,7 @@ class BookService(BookRunMixin):
                 {
                     "volume_id": volume.id,
                     "chapters": [
-                        _outline_to_chapter_dict(o)
+                        _outline_to_chapter_dict(o, volume_outline_id=volume.id)
                         for o in sorted(
                             (
                                 o
@@ -690,9 +693,7 @@ class BookService(BookRunMixin):
         ]
 
     async def _find_outline_node(self, plan: WritingPlan, target: str) -> Outline | None:
-        """按 outline_id 查大纲节点（干预目标判定 + edit before 来源）.
-        无 outline_repo / 目标非合法 UUID / 节点不存在 → None.
-        """
+        """按 outline_id 查大纲节点（无 outline_repo/非法 UUID/缺失 → None）."""
         if self._outline_repo is None:
             return None
         outlines_raw, _ = await self._outline_repo.list(  # type: ignore[attr-defined]  # 鸭子类型：outline_repo 按 OutlineRepositoryProtocol 提供 list
@@ -708,9 +709,7 @@ class BookService(BookRunMixin):
     async def _resolve_merged_limits(
         self, plan: WritingPlan, limits: BookLimits | None
     ) -> BookLimits:
-        """上限解析链（阶段 2 §2.4/D11 Q2=C，write_book_volume/resume_run 复用）：
-        请求显式 > 项目级 ProjectConfig.extra > 默认常量；validate + 生效上限写回
-        plan.limits（不覆盖 tokens_* 运行计数）."""
+        """上限解析链：请求显式 > 项目级 extra > 默认常量；写回 plan.limits."""
         project_extra: dict[str, Any] | None = None
         if self._project_config_getter is not None:
             config: object | None = await self._project_config_getter(plan.project_id)
@@ -739,9 +738,7 @@ class BookService(BookRunMixin):
 
     @staticmethod
     def _pipeline_accepts_thread_id(method: Callable[..., Any]) -> bool:
-        """thread_id 兼容判定：阶段 4 契约要求 execute/resume 透传 thread_id（书级运行
-        ↔ checkpoint 一一映射），但阶段 3 旧形态鸭子（测试 mock 无该参数）需回退位置
-        调用——按签名探测；AsyncMock 等无签名对象按新契约透传."""
+        """thread_id 兼容判定：execute/resume 签名含 thread_id 则透传（旧鸭子回退）."""
         try:
             sig = inspect.signature(method)
         except (TypeError, ValueError):
@@ -791,10 +788,7 @@ class BookService(BookRunMixin):
         )
 
     async def _check_content_written(self, plan: WritingPlan, chapter: Outline) -> bool:
-        """「内容已写」安全闸判定（§5.2/D8）：执行已完成 或 该章已有内容 → True.
-        执行已完成 = execution_refs[outline_id] 存在且 progress==done；
-        内容已写 = content_checker(chapter.chapter_id) 返回 True（未装配则跳过）.
-        """
+        """「内容已写」安全闸判定：执行已完成或 content_checker 命中 → True."""
         if str(chapter.id) in plan.execution_refs and plan.progress.get(str(chapter.id)) == "done":
             return True
         if self._content_checker is not None and chapter.chapter_id is not None:
@@ -802,11 +796,7 @@ class BookService(BookRunMixin):
         return False
 
     async def _check_chapter_written(self, plan: WritingPlan, chapter: ChapterDict) -> bool:
-        """「内容已写」安全闸（dict 形态，卷级编排用）——镜像 _check_content_written 语义。
-
-        volumes[].chapters 为章 dict（_outline_to_chapter_dict 产物）；content_checker 消费
-        领域 chapter_id（uuid）——从 dict 提取，语义与 Outline 形态一致。
-        """
+        """「内容已写」安全闸（dict 形态，卷级编排用）——镜像 _check_content_written."""
         outline_id = str(chapter["outline_id"])
         if outline_id in plan.execution_refs and plan.progress.get(outline_id) == "done":
             return True
@@ -854,13 +844,26 @@ class BookService(BookRunMixin):
         if plan.limits["tokens_used"] > limits.max_tokens:
             plan.limits["tokens_warning"] = True
         content = _extract_final_content(result)
-        draft = await self._draft_service.create(  # type: ignore[union-attr]  # 鸭子类型：draft_service 按 F27 契约提供 async create
-            project_id=plan.project_id,
-            chapter_id=chapter.chapter_id,
-            content=content,
-            summary="书级委托保存",
-        )
-        return str(getattr(draft, "id", ""))
+        if draft_fallback_needed(result):
+            # #975 守卫：agent 未显式 save_draft → 兜底建草稿（#976 D3 卷透传）
+            volume_id: uuid.UUID | None = None
+            if self._volume_lookup is not None:
+                key = chapter.chapter_id or chapter.parent_id
+                raw = await self._volume_lookup(plan.project_id, key)
+                try:
+                    volume_id = uuid.UUID(str(raw))
+                except (TypeError, ValueError):
+                    volume_id = None
+            draft = await self._draft_service.create(  # type: ignore[union-attr]  # 鸭子类型：draft_service 按 F27 契约提供 async create
+                project_id=plan.project_id,
+                chapter_id=chapter.chapter_id,
+                content=content,
+                summary="书级委托保存",
+                volume_id=volume_id,
+            )
+            return str(getattr(draft, "id", ""))
+        # agent 已 save_draft：不兜底新建，执行 id 回退工具消息 draft_id（可 ""）
+        return _extract_saved_draft_id(result)
 
     @staticmethod
     def _build_chapter_brief(plan: WritingPlan, chapter: Outline) -> str:

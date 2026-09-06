@@ -19,6 +19,7 @@ from __future__ import annotations
 import contextlib
 import json
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from pydantic import BaseModel
@@ -66,6 +67,8 @@ class SaveDraftToolDeps:
     audit_service: object  # 有 record(**kwargs)（AuditLogService 形态）
     expected_project_id: uuid.UUID | None = None
     expected_chapter_id: uuid.UUID | None = None
+    volume_lookup: Callable[[uuid.UUID, uuid.UUID | None], Awaitable[str | None]] | None = None
+    """#976：卷解析闭包（project_id, chapter_id → 卷 UUID 字符串；None = 不归卷）."""
 
 
 def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool:
@@ -111,12 +114,25 @@ def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool:
                         else uuid.UUID(str(bound_chapter_id))
                     )
                 )
+                volume_id: uuid.UUID | None = None
+                if deps.volume_lookup is not None:
+                    volume_raw = await deps.volume_lookup(_project_id, _chapter_id)
+                    if volume_raw is not None:
+                        try:
+                            volume_id = (
+                                volume_raw
+                                if isinstance(volume_raw, uuid.UUID)
+                                else uuid.UUID(str(volume_raw))
+                            )
+                        except (TypeError, ValueError):
+                            volume_id = None
                 draft = await deps.draft_service.create(  # type: ignore[attr-defined]  # 鸭子类型：draft_service 按契约提供 create
                     project_id=_project_id,
                     chapter_id=_chapter_id,
                     content=content,
                     summary=summary or "",
                     agent_run_id=None,
+                    volume_id=volume_id,
                 )
                 # 成功审计（约束③）；审计自身异常静默，不影响主返回
                 with contextlib.suppress(Exception):

@@ -7,7 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
-import { Compass, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Compass, FileText, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auditChapter, confirmAudit, type AuditReportDto } from '../api/audit';
 import { createChatConversation, saveChatMessage } from '../api/chat';
@@ -20,6 +20,7 @@ import { ChapterEditor } from '../components/ChapterEditor';
 import { ChatPanel } from '../components/ChatPanel';
 import { ChapterSummaryPanel } from '../components/ChapterSummaryPanel';
 import { ContextPanel } from '../components/ContextPanel';
+import { DraftApprovalDrawer } from '../components/DraftApprovalDrawer';
 import { EditorToolbar } from '../components/EditorToolbar';
 import { ExecutionDetailPanel } from '../components/ExecutionDetailPanel';
 import { AIExtractDialog } from '../components/extract/AIExtractDialog';
@@ -70,6 +71,10 @@ export function WritingPage() {
   const content = useChapterStore((s) => s.content);
   const chapters = useChapterStore((s) => s.chapters);
   const chaptersLoading = useChapterStore((s) => s.loading);
+  // #976 草稿常显：pendingDrafts 供顶栏计数 + 树双击 approvalRequest 供弹层开合
+  const pendingDrafts = useChapterStore((s) => s.pendingDrafts);
+  const approvalRequest = useChapterStore((s) => s.approvalRequest);
+  const clearApprovalRequest = useChapterStore((s) => s.clearApprovalRequest);
 
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? projects[0];
   const effectiveProjectId = currentProjectId ?? currentProject?.id ?? '';
@@ -199,6 +204,13 @@ export function WritingPage() {
   const [styleError, setStyleError] = useState<string | null>(null);
   // #652：AI 提取弹窗开关
   const [extractOpen, setExtractOpen] = useState(false);
+  // #976：草稿审批弹层开关（树双击草稿走 approvalRequest 全局态，不经本组件）
+  const [draftsOpen, setDraftsOpen] = useState(false);
+
+  const closeDraftsDrawer = useCallback(() => {
+    setDraftsOpen(false);
+    clearApprovalRequest();
+  }, [clearApprovalRequest]);
 
   const handleAudit = useCallback(async () => {
     if (!effectiveProjectId || !currentChapterId) return;
@@ -351,6 +363,25 @@ export function WritingPage() {
 
   return (
     <div className="flex h-full flex-col">
+      {/* #976 草稿常显顶栏：审批入口常驻（计数 = store pendingDrafts；>0 时圆点高亮） */}
+      <div
+        data-testid="writing-topbar"
+        className="flex h-9 shrink-0 items-center justify-end gap-2 border-b border-line bg-surface-2 px-2"
+      >
+        <button
+          type="button"
+          data-testid="drafts-approval-button"
+          aria-label={t('write.drafts.openApprove')}
+          onClick={() => setDraftsOpen(true)}
+          className="flex items-center gap-1.5 rounded px-2 py-1 text-[12px] text-ink-2 transition duration-150 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+        >
+          <FileText className="h-4 w-4" aria-hidden="true" />
+          <span>{t('write.drafts.pending', { count: pendingDrafts.length })}</span>
+          {pendingDrafts.length > 0 && (
+            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-accent" />
+          )}
+        </button>
+      </div>
       <div className="flex min-h-0 flex-1">
         <aside
           data-testid="project-tree"
@@ -531,6 +562,11 @@ export function WritingPage() {
         projectId={effectiveProjectId}
         defaultChapterId={currentChapterId ?? undefined}
         defaultText={content}
+      />
+      {/* #976 草稿审批弹层：open = 顶栏按钮 || 树双击草稿（approvalRequest）；关时清请求态 */}
+      <DraftApprovalDrawer
+        open={draftsOpen || approvalRequest !== null}
+        onClose={closeDraftsDrawer}
       />
       <StatusBar model={model} wordCount={displayWords} savedAt={savedAt} />
     </div>

@@ -366,3 +366,189 @@ async def test_final_content_empty_history() -> None:
     )
 
     assert result == ""
+
+
+# ── #976: confirm 自动建章（chapter_creator / outline_bindder 注入） ──────────
+
+
+def _make_draft_976(
+    *,
+    chapter_id=None,
+    summary="测试",
+    content="草稿正文。",
+    volume_id=None,
+    status="draft",
+    confirmed_at=None,
+):
+    """构造带 volume_id 的 Draft（#976 卷绑定草稿）.
+
+    当前 Draft 无 volume_id 字段（extra=ignore 静默丢弃），GREEN 后透传。
+    """
+    from inkflow.domain.models.draft import Draft, DraftStatus
+
+    return Draft(
+        id=DRAFT_ID,
+        project_id=PROJECT_ID,
+        chapter_id=chapter_id,
+        content=content,
+        status=DraftStatus(status),
+        summary=summary,
+        created_at=_utcnow(),
+        confirmed_at=confirmed_at,
+        volume_id=volume_id,
+    )
+
+
+def _make_chapter_creator_976(*, new_id=uuid.UUID(int=42), volume_id=None):
+    """构造 chapter_creator mock（create_chapter 返回 Chapter 域对象，鸭子签名）."""
+    from inkflow.domain.models.chapter import Chapter, ChapterStatus
+
+    creator = AsyncMock()
+    creator.create_chapter.return_value = Chapter(
+        id=new_id,
+        project_id=PROJECT_ID,
+        volume_id=volume_id,
+        title="自动建章",
+        content="",
+        status=ChapterStatus.DRAFT,
+        created_at=_utcnow(),
+        updated_at=_utcnow(),
+    )
+    return creator
+
+
+async def test_draft_confirm_auto_create_chapter():
+    """【R】confirm 无目标 + chapter_creator 注入 → create_chapter + update_chapter(FINAL) +
+    repo.update_chapter_binding。"""
+    from inkflow.domain.models.chapter import ChapterStatus
+    from inkflow.domain.models.draft import DraftStatus
+
+    summary = "这是草稿摘要标题"  # 8 字
+    vol_id = uuid.UUID(int=5)
+    creator = _make_chapter_creator_976(volume_id=vol_id)
+    binder = AsyncMock()
+    svc, deps = _make_draft_service(chapter_creator=creator, outline_bindder=binder)
+    deps["repo"].get.return_value = _make_draft_976(
+        chapter_id=None, summary=summary, volume_id=vol_id
+    )
+    deps["repo"].update_status.return_value = _make_draft_976(
+        chapter_id=uuid.UUID(int=42), summary=summary, status="confirmed", confirmed_at=_utcnow()
+    )
+
+    confirmed = await svc.confirm(DRAFT_ID)
+
+    assert confirmed.status == DraftStatus.CONFIRMED
+    # chapter_creator.create_chapter(project_id, title, volume_id, content)
+    call = creator.create_chapter.await_args
+    assert call.args[0] == PROJECT_ID
+    assert call.args[1] == summary  # 标题 = summary[:30]（8 字未截断）
+    assert call.kwargs["volume_id"] == vol_id  # 草稿 volume_id 透传
+    assert call.kwargs["content"] == ""
+    # chapter_service.update_chapter(target, ChapterUpdate(content, FINAL))
+    deps["chapter"].update_chapter.assert_awaited_once()
+    dto = deps["chapter"].update_chapter.await_args.args[1]
+    assert dto.status == ChapterStatus.FINAL
+    # repo.update_chapter_binding(draft_id, new_chapter_id)
+    deps["repo"].update_chapter_binding.assert_awaited_once_with(DRAFT_ID, uuid.UUID(int=42))
+
+
+async def test_draft_confirm_auto_create_title_from_content_when_summary_empty():
+    """【R】summary 空串 → create_chapter 标题取 content.strip()[:30]."""
+    content = "  第一章草稿正文内容。够长足够验证标题。  "
+    creator = _make_chapter_creator_976()
+    svc, deps = _make_draft_service(chapter_creator=creator, outline_bindder=AsyncMock())
+    deps["repo"].get.return_value = _make_draft_976(
+        chapter_id=None, summary="", content=content
+    )
+    deps["repo"].update_status.return_value = _make_draft_976(
+        status="confirmed", confirmed_at=_utcnow()
+    )
+
+    await svc.confirm(DRAFT_ID)
+
+    assert creator.create_chapter.await_args.args[1] == content.strip()[:30]
+
+
+async def test_draft_confirm_auto_create_title_truncated_to_30():
+    """【R】超长 summary（40 字）→ create_chapter 标题 == 前 30 字符."""
+    long_summary = "超" * 40
+    creator = _make_chapter_creator_976()
+    svc, deps = _make_draft_service(chapter_creator=creator, outline_bindder=AsyncMock())
+    deps["repo"].get.return_value = _make_draft_976(
+        chapter_id=None, summary=long_summary
+    )
+    deps["repo"].update_status.return_value = _make_draft_976(
+        status="confirmed", confirmed_at=_utcnow()
+    )
+
+    await svc.confirm(DRAFT_ID)
+
+    assert creator.create_chapter.await_args.args[1] == long_summary[:30]
+
+
+async def test_draft_confirm_auto_create_explicit_title_precedence():
+    """【R】显式 title 参数优先于 summary 派生 → create_chapter 标题 == 自定义."""
+    creator = _make_chapter_creator_976()
+    svc, deps = _make_draft_service(chapter_creator=creator, outline_bindder=AsyncMock())
+    deps["repo"].get.return_value = _make_draft_976(chapter_id=None, summary="摘要")
+    deps["repo"].update_status.return_value = _make_draft_976(
+        status="confirmed", confirmed_at=_utcnow()
+    )
+
+    await svc.confirm(DRAFT_ID, title="自定义标题")
+
+    assert creator.create_chapter.await_args.args[1] == "自定义标题"
+
+
+async def test_draft_confirm_auto_create_outline_bindder_called():
+    """【R】source_outline_id 传值 → outline_bindder await 一次
+    （str(outline_id), str(new_chapter_id)）。"""
+    outline_id = uuid.UUID(int=51)
+    binder = AsyncMock()
+    creator = _make_chapter_creator_976()
+    svc, deps = _make_draft_service(chapter_creator=creator, outline_bindder=binder)
+    deps["repo"].get.return_value = _make_draft_976(chapter_id=None, summary="摘要")
+    deps["repo"].update_status.return_value = _make_draft_976(
+        status="confirmed", confirmed_at=_utcnow()
+    )
+
+    await svc.confirm(DRAFT_ID, source_outline_id=outline_id)
+
+    binder.assert_awaited_once()
+    assert binder.await_args.args == (str(outline_id), str(uuid.UUID(int=42)))
+
+
+async def test_draft_confirm_no_target_no_creator_raises():
+    """【G】chapter_creator 未注入（默认）且无目标 → 旧 DraftStateError（409 兼容）."""
+    from inkflow.domain.services.draft_service import DraftStateError
+
+    svc, deps = _make_draft_service()  # 不注入 chapter_creator
+    deps["repo"].get.return_value = _make_draft_976(chapter_id=None)
+
+    with pytest.raises(DraftStateError):
+        await svc.confirm(DRAFT_ID)
+
+
+async def test_draft_confirm_bound_chapter_does_not_auto_create():
+    """【G】草稿带 volume_id 且 target 已有 chapter_id（绑定章）→ 正常 update_chapter，不建章.
+
+    当前 Draft 无 volume_id（extra=ignore 静默丢弃），构造传 volume_id 不报错（实测）。
+    因 chapter_creator 注入现 TypeError（RED 侧），本守护用例不注入 creator，锚定「绑定章
+    → update_chapter 路径」而非自动建章路径（_make_draft_service 已注入默认 chapter_service）。
+    """
+    from inkflow.domain.models.chapter import ChapterStatus
+
+    svc, deps = _make_draft_service()
+    deps["repo"].get.return_value = _make_draft_976(
+        chapter_id=CHAPTER_ID, volume_id=uuid.UUID(int=5)
+    )
+    deps["repo"].update_status.return_value = _make_draft_976(
+        chapter_id=CHAPTER_ID, status="confirmed", confirmed_at=_utcnow()
+    )
+
+    confirmed = await svc.confirm(DRAFT_ID)
+
+    assert confirmed.chapter_id == CHAPTER_ID
+    deps["chapter"].update_chapter.assert_awaited_once()
+    dto = deps["chapter"].update_chapter.await_args.args[1]
+    assert dto.status == ChapterStatus.FINAL

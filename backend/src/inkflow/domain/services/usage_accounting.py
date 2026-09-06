@@ -16,6 +16,7 @@ test_usage_accounting_902.py（RED 契约）。
 
 from __future__ import annotations
 
+import json
 from typing import Any, cast
 
 
@@ -143,3 +144,68 @@ def extract_total_tokens(result: dict) -> int:
         if isinstance(usage, dict):
             total = _usage_total_tokens(usage)
     return total
+
+
+def _message_kind(message: object) -> str:
+    """消息 type/role 读取（dict 双键 + 对象 .type 双形态，None 防御）."""
+    if isinstance(message, dict):
+        kind = message.get("type") or message.get("role")
+        return str(kind) if kind is not None else ""
+    return str(getattr(message, "type", "") or "")
+
+
+def _message_content(message: object) -> object:
+    """消息 content 读取（dict/对象双形态，缺失 → None）."""
+    content = getattr(message, "content", None)
+    if content is None and isinstance(message, dict):
+        content = message.get("content")
+    return content
+
+
+def draft_fallback_needed(result: dict[str, Any]) -> bool:
+    """#975 守卫：agent 是否已显式 save_draft（False = 不需要服务层兜底建草稿）.
+
+    镜像 agentic_writer_service._history_has_tool_call 语义：遍历 result["messages"]
+    的 AI 消息（dict type=="ai" / 对象 .type=="ai"），任一 tool_calls 含
+    name=="save_draft" → False；无消息历史/非 dict 输入 → True（需兜底）。
+    纯 domain 函数，零框架依赖（dict/对象双形态 getattr 读取）。
+    """
+    if not isinstance(result, dict):
+        return True
+    messages = result.get("messages") or []
+    for message in messages:
+        if _message_kind(message) != "ai":
+            continue
+        tool_calls = getattr(message, "tool_calls", None)
+        if tool_calls is None and isinstance(message, dict):
+            tool_calls = message.get("tool_calls")
+        for call in tool_calls or []:
+            name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
+            if name == "save_draft":
+                return False
+    return True
+
+
+def _extract_saved_draft_id(result: dict[str, Any]) -> str:
+    """#975：从消息历史反向提取 agent save_draft 工具结果的 draft_id（私有）.
+
+    简化裁定（GREEN 可执行形态）：反向扫 messages，找 type=="tool"/role=="tool"
+    的消息中 content 可 json.loads 且 ok==True 且含 draft_id 键 → 返回该 draft_id
+    字符串；否则 ""（提取失败不新建草稿的语义由 draft_fallback_needed 守卫保证）。
+    """
+    if not isinstance(result, dict):
+        return ""
+    messages = result.get("messages") or []
+    for message in reversed(messages):
+        if _message_kind(message) != "tool":
+            continue
+        content = _message_content(message)
+        if not isinstance(content, str):
+            continue
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict) and data.get("ok") is True and "draft_id" in data:
+            return str(data["draft_id"])
+    return ""

@@ -81,9 +81,15 @@ async def list_drafts(
 
 
 class ConfirmRequest(BaseModel):
-    """draft confirm 请求体 — chapter_id 可选（草稿未绑定时指定）."""
+    """draft confirm 请求体 — chapter_id/source_outline_id/title 均可选.
+
+    #976 D4：source_outline_id 供自动建章后回填 outlines.chapter_id；title 供
+    自动建章标题（显式优先于 summary 派生）；两者缺省 None（既有 body 兼容）。
+    """
 
     chapter_id: uuid.UUID | None = None
+    source_outline_id: uuid.UUID | None = None
+    title: str | None = None
 
 
 @router.post("/drafts/{draft_id}/confirm")
@@ -98,6 +104,8 @@ async def confirm_draft(
         draft = await svc.confirm(
             draft_id,
             chapter_id=body.chapter_id if body else None,
+            source_outline_id=body.source_outline_id if body else None,
+            title=body.title if body else None,
         )
     except DraftNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -14,6 +14,17 @@ export interface ChapterMeta {
   word_count: number;
 }
 
+/** #976 草稿双轨树节点（kind='draft'：不进 ChapterMeta/字数统计，仅树轨渲染） */
+export interface DraftTreeNode {
+  kind: 'draft';
+  id: string;
+  draftId: string;
+  summary: string;
+  content: string;
+  volume_id: string | null;
+  created_at: string;
+}
+
 /** 章节详情（含正文，selectChapter 拉取） */
 export interface Chapter extends ChapterMeta {
   project_id: string;
@@ -29,6 +40,7 @@ interface ChapterListResponse {
 
 import { create } from 'zustand';
 import { apiFetch, errorMessage } from '../api/client';
+import type { DraftDto } from '../api/drafts';
 
 interface ChapterState {
   volumes: Volume[];
@@ -40,6 +52,10 @@ interface ChapterState {
   content: string;
   loading: boolean;
   error: string | null;
+  /** #976：项目待审批草稿（status=draft；树 = chapters + pendingDrafts 合流） */
+  pendingDrafts: DraftTreeNode[];
+  /** #976：审批弹层请求（树双击草稿置 draftId；null = 未请求） */
+  approvalRequest: string | null;
 
   setTree: (volumes: Volume[], chapters: ChapterMeta[]) => void;
   setCurrentChapter: (id: string | null) => void;
@@ -48,6 +64,15 @@ interface ChapterState {
   setError: (error: string | null) => void;
 
   loadChapterTree: (projectId: string) => Promise<void>;
+  /** #976：拉取项目待审批草稿（失败静默，不阻断卷章树、不污染 error） */
+  loadPendingDrafts: (projectId: string) => Promise<void>;
+  /** #976：确认草稿（成功 → 同项目树+草稿双刷新） */
+  confirmDraft: (draftId: string) => Promise<void>;
+  /** #976：驳回草稿（成功 → 同项目树+草稿双刷新） */
+  rejectDraft: (draftId: string) => Promise<void>;
+  /** #976：请求审批草稿（跨组件入口，zustand 全局态承载） */
+  requestApproval: (draftId: string) => void;
+  clearApprovalRequest: () => void;
   selectChapter: (chapterId: string) => Promise<void>;
   saveContent: () => Promise<void>;
   createChapter: (projectId: string, title: string, volumeId?: string) => Promise<ChapterMeta>;
@@ -70,6 +95,8 @@ export const useChapterStore = create<ChapterState>((set, get) => ({
   content: '',
   loading: false,
   error: null,
+  pendingDrafts: [],
+  approvalRequest: null,
 
   setTree: (volumes, chapters) => set({ volumes, chapters }),
   setCurrentChapter: (id) => set({ currentChapterId: id }),
@@ -92,12 +119,50 @@ export const useChapterStore = create<ChapterState>((set, get) => ({
         chapters: chapterData.items,
         treeProjectId: projectId,
         ...(sameProject ? {} : { currentChapterId: null, content: '' }),
-        loading: false,
       });
+      // #976：草稿轨与树同窗加载（loading 保持 true 直至草稿也拉完；草稿失败静默）
+      await get().loadPendingDrafts(projectId);
+      set({ loading: false });
     } catch (err) {
       set({ error: errorMessage(err), loading: false });
     }
   },
+
+  loadPendingDrafts: async (projectId) => {
+    try {
+      const data = await apiFetch<{ items: DraftDto[] }>(
+        `/api/v1/agent/drafts?project_id=${encodeURIComponent(projectId)}&status=draft`,
+      );
+      set({
+        pendingDrafts: data.items.map((d) => ({
+          kind: 'draft',
+          id: `draft-${d.id}`,
+          draftId: d.id,
+          summary: d.summary,
+          content: d.content,
+          volume_id: d.volume_id ?? null,
+          created_at: d.created_at,
+        })),
+      });
+    } catch {
+      // #976：树轨草稿失败静默（不阻断卷章树；审批弹层自带错误态）
+    }
+  },
+
+  confirmDraft: async (draftId) => {
+    await apiFetch(`/api/v1/agent/drafts/${draftId}/confirm`, { method: 'POST', body: {} });
+    const treeProjectId = get().treeProjectId;
+    if (treeProjectId) await get().loadChapterTree(treeProjectId);
+  },
+
+  rejectDraft: async (draftId) => {
+    await apiFetch(`/api/v1/agent/drafts/${draftId}/reject`, { method: 'POST' });
+    const treeProjectId = get().treeProjectId;
+    if (treeProjectId) await get().loadChapterTree(treeProjectId);
+  },
+
+  requestApproval: (draftId) => set({ approvalRequest: draftId }),
+  clearApprovalRequest: () => set({ approvalRequest: null }),
 
   selectChapter: async (chapterId) => {
     set({ loading: true, error: null });

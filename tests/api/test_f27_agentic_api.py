@@ -384,6 +384,44 @@ async def test_drafts_reject(overrides):
     assert resp.json()["status"] == "rejected"
 
 
+# ── #976: confirm 增 source_outline_id / title（ConfirmRequest 扩展契约） ──
+
+
+async def test_drafts_confirm_with_source_outline_and_title(overrides):
+    """【R】confirm body 含 source_outline_id+title → 200 + svc.confirm 收到 kwargs.
+
+    当前 ConfirmRequest 仅 chapter_id（extra=ignore 吞掉未知键），router 只传
+    chapter_id → await_args.kwargs 无 source_outline_id/title → KeyError（RED）。
+    """
+    draft_svc = overrides["draft"]
+    outline_id = "54c2a0e1-1111-4222-8333-444455556666"
+    async with _client() as client:
+        resp = await client.post(
+            f"/api/v1/agent/drafts/{DRAFT_ID}/confirm",
+            json={"source_outline_id": outline_id, "title": "T"},
+        )
+    assert resp.status_code == 200
+    kwargs = draft_svc.confirm.await_args.kwargs
+    assert kwargs["source_outline_id"] == uuid.UUID(outline_id)
+    assert kwargs["title"] == "T"
+
+
+async def test_drafts_confirm_existing_body_shape_compat(overrides):
+    """【G】既有 body 形态（无新键）→ svc.confirm 兼容调用
+    （chapter_id/source_outline_id/title 缺省 None）。"""
+    draft_svc = overrides["draft"]
+    async with _client() as client:
+        resp = await client.post(
+            f"/api/v1/agent/drafts/{DRAFT_ID}/confirm",
+            json={},
+        )
+    assert resp.status_code == 200
+    kwargs = draft_svc.confirm.await_args.kwargs
+    assert kwargs.get("chapter_id") is None
+    assert kwargs.get("source_outline_id") is None
+    assert kwargs.get("title") is None
+
+
 # ── #275: 孤儿草稿清理端点（prune-orphans） ──
 
 

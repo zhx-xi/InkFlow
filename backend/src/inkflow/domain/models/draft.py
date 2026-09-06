@@ -52,6 +52,7 @@ class Draft(BaseModel):
     id: str
     project_id: uuid.UUID
     chapter_id: uuid.UUID | None = None
+    volume_id: uuid.UUID | None = None  # #976: 所属写作卷 UUID（None = 未归卷）
     agent_run_id: str | None = None
     content: str
     status: DraftStatus = DraftStatus.DRAFT

@@ -828,3 +828,69 @@ async def test_extract_final_content_variants():
     assert _extract_final_content({"messages": [{"content": "正文A"}]}) == "正文A"
     # 无 content → ""
     assert _extract_final_content({"messages": [{"role": "user"}]}) == ""
+
+@pytest.mark.asyncio
+async def test_delegate_chapter_skips_fallback_when_agent_saved_975():
+    """【R】#975 守卫（book_service 轨）：agent 含 save_draft tool_call -> 兜底 create 跳过。
+
+    契约来源: .hermes/plans/contract-975-976-980-writing-pane.md §1.3 B975-3。
+    GREEN 实现使用 usage_accounting.draft_fallback_needed + _extract_saved_draft_id；
+    RED 期当前无条件 create -> await_count==1 != 0 且返回值 str(draft.id)=="draft-1"。
+    """
+    repo = AsyncMock()
+    plan = _plan()
+    chapter = _outline(description="主角在时间旅途中发现悖论")
+    outline_repo = AsyncMock()
+    outline_repo.list.return_value = ([chapter], 1)
+    deps = _make_deps(repo=repo, outline_repo=outline_repo)
+    # 覆盖 fake agent invoke 返回：含 save_draft tool_call + 工具结果 + 回执消息的 dict 历史
+    deps["writer_factory"].return_value.invoke.return_value = {
+        "messages": [
+            {"type": "system", "content": "sys"},
+            {
+                "type": "ai",
+                "content": "",
+                "tool_calls": [
+                    {"name": "save_draft", "id": "tc1", "args": {"content": "正文内容"}}
+                ],
+            },
+            {
+                "type": "tool",
+                "content": '{"ok": true, "draft_id": "saved-d-1", "status": "draft", '
+                           '"word_count": 12}',
+            },
+            {"type": "ai", "content": "草稿已保存（draft_id: saved-d-1）"},
+        ],
+        "usage": {"total_tokens": 100},
+    }
+    svc = BookService(**deps)
+
+    execution_id = await svc._delegate_chapter(plan, chapter, STAGE1_LIMITS)
+
+    # 守卫：agent 已显式 save_draft -> 不再兜底建草稿（RED：await_count==1 != 0）
+    assert deps["draft_service"].create.await_count == 0
+    # 执行 id 回退 agent 工具消息 draft_id（RED：当前 "draft-1" != "saved-d-1"）
+    assert execution_id == "saved-d-1"
+
+
+@pytest.mark.asyncio
+async def test_delegate_chapter_create_when_no_tool_call_975():
+    """【G】#975 守护：无 save_draft tool_call -> 照常兜底 create 恰 1 次、summary=="书级委托保存"。
+
+    镜像既有 test_delegate_chapter_save_draft_recycle（默认 fake messages 为
+    SimpleNamespace(content=..., tool_calls=[]) 无 tool_calls），但显式锁定 summary kwarg。
+    """
+    repo = AsyncMock()
+    plan = _plan()
+    chapter = _outline(description="主角在时间旅途中发现悖论")
+    outline_repo = AsyncMock()
+    outline_repo.list.return_value = ([chapter], 1)
+    deps = _make_deps(repo=repo, outline_repo=outline_repo)
+    svc = BookService(**deps)
+
+    execution_id = await svc._delegate_chapter(plan, chapter, STAGE1_LIMITS)
+
+    assert deps["draft_service"].create.await_count == 1
+    create_kwargs = deps["draft_service"].create.await_args.kwargs
+    assert create_kwargs["summary"] == "书级委托保存"
+    assert execution_id

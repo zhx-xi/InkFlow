@@ -158,6 +158,13 @@ class DraftORM(Base):
     )
     """目标章节 UUID 字符串（可选，None = 确认时指定；无 FK——镜像先例）."""
 
+    volume_id: Mapped[str | None] = mapped_column(
+        String(36),
+        nullable=True,
+        index=True,
+    )
+    """所属写作卷 UUID 字符串（#976；可空无 FK——镜像 chapter_id 列形态）."""
+
     agent_run_id: Mapped[str | None] = mapped_column(
         String(36),
         nullable=True,

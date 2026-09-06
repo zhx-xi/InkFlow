@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_db
+from inkflow.api.deps_draft import make_outline_bindder
 from inkflow.domain.models.agent_book import AgenticBookConfig
 from inkflow.domain.models.writing_plan import BookLimits
 from inkflow.domain.services.book_service import BookService, ChapterAlreadyWrittenError
@@ -246,6 +247,30 @@ def _build_book_service(db: AsyncSession) -> BookService:
         except Exception:
             return None
 
+    async def _volume_lookup(
+        project_id: uuid.UUID, outline_or_chapter_id: uuid.UUID | None
+    ) -> str | None:
+        """#976 D3/D5：outline/章 id → 写作卷 UUID 字符串（无映射 → None）."""
+        if outline_or_chapter_id is None:
+            return None
+        from inkflow.infrastructure.database.models.chapter import ChapterORM
+        from inkflow.infrastructure.database.models.outline import OutlineORM
+
+        row_id = (
+            outline_or_chapter_id.int
+            if isinstance(outline_or_chapter_id, uuid.UUID)
+            else uuid.UUID(str(outline_or_chapter_id)).int
+        )
+        if row_id > 2**63 - 1:
+            return None  # uuid4 随机值溢出 SQLite INTEGER 主键：int↔UUID 惯例下无对应行
+        outline_row = await db.get(OutlineORM, row_id)
+        if outline_row is not None and outline_row.volume_id is not None:
+            return str(uuid.UUID(int=outline_row.volume_id))
+        chapter_row = await db.get(ChapterORM, row_id)
+        if chapter_row is not None and chapter_row.volume_id is not None:
+            return str(uuid.UUID(int=chapter_row.volume_id))
+        return None
+
     # F27 真实装配（镜像 deps.py get_agentic_writer_service）：writer_factory 每次
     # 委托按传入 system_prompt/expected ids 构造真实 deepagents 写作 agent（读/审计/
     # save_draft 工具），draft_service 供委托回收获草稿——修复 #464 book run 章全 failed
@@ -273,9 +298,12 @@ def _build_book_service(db: AsyncSession) -> BookService:
         SQLiteDraftRepository,
     )
 
+    chapter_svc = get_chapter_service(db)
     draft_service = DraftService(
         draft_repo=SQLiteDraftRepository(db),
-        chapter_service=get_chapter_service(db),
+        chapter_service=chapter_svc,
+        chapter_creator=chapter_svc.create_chapter,
+        outline_bindder=make_outline_bindder(db),
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
         memory_service=get_memory_service(db),
     )
@@ -286,6 +314,10 @@ def _build_book_service(db: AsyncSession) -> BookService:
         chapter_audit_service=get_chapter_audit_service(db),
         draft_service=draft_service,
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
+        # #976 D3：writer 轨工具草稿卷解析——_volume_lookup 同时兼容 outline id 与
+        # 章 id（工具收到 expected_chapter_id=outline.chapter_id 可为 None → 未分组，
+        # 与委托兜底按 volume_outline_id 语义一致）
+        volume_lookup=_volume_lookup,
     )
 
     async def _writer_factory(
@@ -326,6 +358,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
             LangChainLLMClient(),
             writer_factory=_writer_factory,
             draft_service=draft_service,
+            volume_lookup=_volume_lookup,
         )
 
     if _book_agentic_pipeline is None:
@@ -348,6 +381,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
         writer_factory=_writer_factory,
         draft_service=draft_service,
         agentic_pipeline=_book_agentic_pipeline,
+        volume_lookup=_volume_lookup,
     )
 
 
