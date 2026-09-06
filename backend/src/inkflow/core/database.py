@@ -396,15 +396,8 @@ def ensure_characters_brief_column(conn: Connection) -> None:
 
 
 def ensure_project_columns(conn: Connection) -> None:
-    """S3f-T4 #869：为存量库 projects 补缺列（幂等，镜像 ensure_outline_columns）.
-
-    v0.11 projects 仅 id+name，旧 ensure 链只补 active_watermark → ORM SELECT 崩
-    no such column。PRAGMA 检缺列才 ALTER；表不存在（全新环境）→ no-op，等
-    create_all 建新表。⚠️ #858：NOT NULL 补列必须带 SQL DEFAULT（存量行自动
-    回填），禁 INSERT...SELECT 绕 Python default；时间列用常量 epoch 兜底
-    （SQLite ADD COLUMN 禁非恒定默认 CURRENT_TIMESTAMP，#869 实测）。
-    is_deleted 索引：ensure 族补列先例不建，新库由 create_all 建。
-    """
+    """S3f-T4 #869：为存量库 projects 表补缺列（幂等，镜像 ensure_outline_columns）.
+    表不存在 → no-op；NOT NULL 补列必须带 SQL DEFAULT（#858/#869，详见注释）。"""
     cols = conn.execute(text("PRAGMA table_info(projects)")).fetchall()
     names = {row[1] for row in cols}
     if not names:
@@ -487,18 +480,17 @@ def ensure_outline_volume_id_column(conn: Connection) -> None:
     )
 
 
+def ensure_drafts_volume_id_column(conn: Connection) -> None:
+    """#976：为既有库 drafts 补 volume_id 列（幂等，表不存在 no-op）."""
+    cols = conn.execute(text("PRAGMA table_info(drafts)")).fetchall()
+    names = {row[1] for row in cols}
+    if names and "volume_id" not in names:
+        conn.execute(text("ALTER TABLE drafts ADD COLUMN volume_id VARCHAR(36)"))
+
+
 def ensure_world_drop_is_deleted(conn: Connection) -> None:
-    """#211 v1.1：world_settings 软删语义 → 真删迁移（幂等，spec §8.3）.
-
-    步骤（load-bearing 顺序，SQLite DROP COLUMN 不能删除被索引/partial WHERE
-    引用的列）：
-    ① DELETE 存量软删记录（is_deleted=1 物理清除）；
-    ② DROP 依赖 is_deleted 的索引（partial unique + is_deleted 单列索引）；
-    ③ CREATE 全唯一索引 uq_world_settings_active_name_parent（无 WHERE 条件）；
-    ④ ALTER TABLE world_settings DROP COLUMN is_deleted。
-
-    表不存在或列已不存在（全新环境/已迁移）→ no-op。
-    """
+    """#211 v1.1：world_settings 软删 → 真删迁移（幂等，spec §8.3）.
+    步骤顺序见代码注释；表不存在/列已不存在 → no-op."""
     cols = conn.execute(text("PRAGMA table_info(world_settings)")).fetchall()
     names = {row[1] for row in cols}
     if not names or "is_deleted" not in names:

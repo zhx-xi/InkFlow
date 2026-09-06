@@ -39,7 +39,12 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Send, interrupt
 
 from inkflow.domain.models.writing_plan import BookLimits, WritingPlan
-from inkflow.domain.services.usage_accounting import chat_response_usage, result_usage
+from inkflow.domain.services.usage_accounting import (
+    _extract_saved_draft_id,
+    chat_response_usage,
+    draft_fallback_needed,
+    result_usage,
+)
 from inkflow.logging import instrument
 
 _R = TypeVar("_R")
@@ -235,6 +240,8 @@ class BookVolumePipeline:
         retry_limit: int = 2,
         checkpointer: InMemorySaver | None = None,
         checkpoint_path: str | Path | None = None,
+        volume_lookup: Callable[[uuid.UUID, uuid.UUID | None], Awaitable[str | None]]
+        | None = None,
     ) -> None:
         """构造：llm_client 仅 UntrackedValue 通道传递（镜像 F29 bootstrap 节点），
         不参与执行决策；只在卷级失败 decision="supervisor" 补救时调用 chat。
@@ -245,6 +252,7 @@ class BookVolumePipeline:
         self._writer_factory = writer_factory
         self._draft_service = draft_service
         self._retry_limit = retry_limit
+        self._volume_lookup = volume_lookup
         if checkpointer is None and checkpoint_path is None:
             checkpointer = InMemorySaver()
         self._checkpointer = checkpointer
@@ -475,13 +483,19 @@ class BookVolumePipeline:
         )
         prompt_tokens, completion_tokens, total_tokens = result_usage(result)
         content = _extract_final_content(result)
-        draft = await self._draft_service.create(  # type: ignore[union-attr]  # 鸭子类型：draft_service 按 F27 契约提供 async create
-            project_id=plan.project_id,
-            chapter_id=chapter["chapter_id"],
-            content=content,
-            summary="书级委托保存",
-        )
-        execution_id = str(getattr(draft, "id", ""))
+        if draft_fallback_needed(result):
+            # #975 守卫：agent 未显式 save_draft → 服务层兜底建草稿（#976 D3 卷透传）
+            draft = await self._draft_service.create(  # type: ignore[union-attr]  # 鸭子类型：draft_service 按 F27 契约提供 async create
+                project_id=plan.project_id,
+                chapter_id=chapter["chapter_id"],
+                content=content,
+                summary="书级委托保存",
+                volume_id=await self._resolve_draft_volume(plan, chapter),
+            )
+            execution_id = str(getattr(draft, "id", ""))
+        else:
+            # agent 已 save_draft：不回退建草稿，执行 id 取工具消息 draft_id（可 ""）
+            execution_id = _extract_saved_draft_id(result)
         return (
             execution_id,
             {
@@ -492,6 +506,29 @@ class BookVolumePipeline:
                 "total_tokens": total_tokens,
             },
         )
+
+    async def _resolve_draft_volume(
+        self, plan: WritingPlan, chapter: dict
+    ) -> uuid.UUID | None:
+        """#976 D3/D5：委托落草稿卷解析（volume_lookup 未装配/无映射 → None）.
+
+        查表键：章 dict 的 volume_outline_id（卷 outline 节点 id）优先，回退
+        outline_id（chapter dict 恒含）；返回 str(uuid.UUID(int=vid)) → UUID。
+        """
+        if self._volume_lookup is None:
+            return None
+        lookup_id = chapter.get("volume_outline_id") or chapter["outline_id"]
+        volume_raw = await self._volume_lookup(plan.project_id, lookup_id)
+        if volume_raw is None:
+            return None
+        try:
+            return (
+                volume_raw
+                if isinstance(volume_raw, uuid.UUID)
+                else uuid.UUID(str(volume_raw))
+            )
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _build_chapter_brief(plan: WritingPlan, chapter: dict) -> str:

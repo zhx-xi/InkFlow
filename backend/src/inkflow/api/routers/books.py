@@ -246,6 +246,43 @@ def _build_book_service(db: AsyncSession) -> BookService:
         except Exception:
             return None
 
+    async def _outline_bindder(chapter_outline_id: str, chapter_uuid_str: str) -> None:
+        """#976 D4：自动建章后回填 outlines.chapter_id（str uuid → int 主键）."""
+        from inkflow.infrastructure.database.models.outline import OutlineORM
+
+        outline_row_id = uuid.UUID(chapter_outline_id).int
+        chapter_row_id = uuid.UUID(chapter_uuid_str).int
+        if outline_row_id > 2**63 - 1 or chapter_row_id > 2**63 - 1:
+            return  # uuid4 随机值溢出 SQLite INTEGER：int↔UUID 惯例下无对应行
+        outline_row = await db.get(OutlineORM, outline_row_id)
+        if outline_row is not None:
+            outline_row.chapter_id = chapter_row_id
+            await db.commit()
+
+    async def _volume_lookup(
+        project_id: uuid.UUID, outline_or_chapter_id: uuid.UUID | None
+    ) -> str | None:
+        """#976 D3/D5：outline/章 id → 写作卷 UUID 字符串（无映射 → None）."""
+        if outline_or_chapter_id is None:
+            return None
+        from inkflow.infrastructure.database.models.chapter import ChapterORM
+        from inkflow.infrastructure.database.models.outline import OutlineORM
+
+        row_id = (
+            outline_or_chapter_id.int
+            if isinstance(outline_or_chapter_id, uuid.UUID)
+            else uuid.UUID(str(outline_or_chapter_id)).int
+        )
+        if row_id > 2**63 - 1:
+            return None  # uuid4 随机值溢出 SQLite INTEGER 主键：int↔UUID 惯例下无对应行
+        outline_row = await db.get(OutlineORM, row_id)
+        if outline_row is not None and outline_row.volume_id is not None:
+            return str(uuid.UUID(int=outline_row.volume_id))
+        chapter_row = await db.get(ChapterORM, row_id)
+        if chapter_row is not None and chapter_row.volume_id is not None:
+            return str(uuid.UUID(int=chapter_row.volume_id))
+        return None
+
     # F27 真实装配（镜像 deps.py get_agentic_writer_service）：writer_factory 每次
     # 委托按传入 system_prompt/expected ids 构造真实 deepagents 写作 agent（读/审计/
     # save_draft 工具），draft_service 供委托回收获草稿——修复 #464 book run 章全 failed
@@ -273,9 +310,12 @@ def _build_book_service(db: AsyncSession) -> BookService:
         SQLiteDraftRepository,
     )
 
+    chapter_svc = get_chapter_service(db)
     draft_service = DraftService(
         draft_repo=SQLiteDraftRepository(db),
-        chapter_service=get_chapter_service(db),
+        chapter_service=chapter_svc,
+        chapter_creator=chapter_svc.create_chapter,
+        outline_bindder=_outline_bindder,
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
         memory_service=get_memory_service(db),
     )
@@ -326,6 +366,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
             LangChainLLMClient(),
             writer_factory=_writer_factory,
             draft_service=draft_service,
+            volume_lookup=_volume_lookup,
         )
 
     if _book_agentic_pipeline is None:
@@ -348,6 +389,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
         writer_factory=_writer_factory,
         draft_service=draft_service,
         agentic_pipeline=_book_agentic_pipeline,
+        volume_lookup=_volume_lookup,
     )
 
 

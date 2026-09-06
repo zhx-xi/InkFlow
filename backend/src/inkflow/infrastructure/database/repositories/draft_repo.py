@@ -38,6 +38,7 @@ def _orm_to_domain(orm: DraftORM) -> Draft:
         id=orm.id,
         project_id=uuid.UUID(orm.project_id),
         chapter_id=uuid.UUID(orm.chapter_id) if orm.chapter_id is not None else None,
+        volume_id=uuid.UUID(orm.volume_id) if orm.volume_id is not None else None,
         agent_run_id=orm.agent_run_id,
         content=orm.content,
         status=DraftStatus(orm.status),
@@ -62,6 +63,7 @@ class SQLiteDraftRepository:
         content: str,
         summary: str = "",
         agent_run_id: str | None = None,
+        volume_id: uuid.UUID | None = None,
     ) -> Draft:
         """创建草稿（status=DRAFT），单次 commit（单工具单事务，ADR-F 约束②）.
 
@@ -71,6 +73,7 @@ class SQLiteDraftRepository:
             content: 草稿正文.
             summary: 草稿摘要（默认空）.
             agent_run_id: 产生该草稿的 run id（可空）.
+            volume_id: 所属写作卷 UUID（#976，None = 未归卷）.
 
         Returns:
             已落库的 Draft（id 为 uuid4 字符串，created_at 为 ORM default
@@ -82,8 +85,29 @@ class SQLiteDraftRepository:
             content=content,
             summary=summary,
             agent_run_id=agent_run_id,
+            volume_id=str(volume_id) if volume_id is not None else None,
         )
         self._session.add(orm)
+        await self._session.commit()
+        await self._session.refresh(orm)
+        return _orm_to_domain(orm)
+
+    async def update_chapter_binding(
+        self, draft_id: str, chapter_id: uuid.UUID
+    ) -> Draft | None:
+        """回填草稿的目标章节绑定（#976 D4 confirm 自动建章后落库）.
+
+        Args:
+            draft_id: 草稿 id（uuid4 字符串）.
+            chapter_id: 新确认目标章节 UUID.
+
+        Returns:
+            绑定后的 Draft；draft_id 不存在 → None.
+        """
+        orm = await self._session.get(DraftORM, draft_id)
+        if orm is None:
+            return None
+        orm.chapter_id = str(chapter_id)
         await self._session.commit()
         await self._session.refresh(orm)
         return _orm_to_domain(orm)

@@ -674,6 +674,7 @@ def draft_list(
 def draft_confirm(
     draft_id: str = typer.Argument(..., help="草稿 ID"),
     chapter_id: str | None = typer.Option(None, "--chapter-id", help="目标章节 ID（草稿未绑定）"),
+    title: str | None = typer.Option(None, "--title", help="自动建章标题（#976 D10 可选）"),
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
 ) -> None:
     """确认草稿 → 写入正式章节"""
@@ -685,6 +686,8 @@ def draft_confirm(
             body: dict[str, object] = {}
             if chapter_id:
                 body["chapter_id"] = chapter_id
+            if title:
+                body["title"] = title
             return await client.post(f"/agent/drafts/{draft_id}/confirm", json=body)
 
     data = _run(_impl)
