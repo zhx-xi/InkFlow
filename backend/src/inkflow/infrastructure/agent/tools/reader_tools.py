@@ -1,5 +1,7 @@
-"""F26 只读 Agent 工具 — 5 个领域只读工具（search_characters / check_foreshadowing /
-get_prior_summary / audit_chapter / count_words），输出统一 JSON 信封.
+"""F26/F58 只读 Agent 工具 — 领域只读工具（search_characters / get_character /
+check_foreshadowing / list_foreshadowing / get_foreshadowing /
+list_world_settings / get_world_setting / get_prior_summary / audit_chapter /
+count_words；world_service 未注入时剔除世界观检索 2 个），输出统一 JSON 信封.
 
 #680: 检索工具 schema 移除 project_id——装配期闭包绑定（仿 save_draft_tool
 expected_project_id 先例），LLM 无需自报项目 ID（防编造全零 UUID 孤儿数据）。
@@ -14,6 +16,7 @@ import json
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import TypeVar
 
 from pydantic import BaseModel
 
@@ -23,6 +26,8 @@ from inkflow.infrastructure.agent.tools import _tool_db_lock as _tool_db_lock_mo
 from inkflow.logging import instrument
 
 _PAGE_SIZE = 50
+_WORLD_TOOL_NAMES = frozenset({"list_world_settings", "get_world_setting"})
+"""依赖 world_service 的工具名——world_service=None 时 build 不物化这两个工具."""
 
 
 # ── 参数模型（用于生成 ToolSpec.input_schema） ──
@@ -60,6 +65,38 @@ class CountWordsParams(BaseModel):
     text: str
 
 
+class GetCharacterParams(BaseModel):
+    """get_character 工具参数."""
+
+    character_id: uuid.UUID
+
+
+class ListForeshadowingParams(BaseModel):
+    """list_foreshadowing 工具参数."""
+
+    search: str | None = None
+    status: str | None = None
+
+
+class GetForeshadowingParams(BaseModel):
+    """get_foreshadowing 工具参数."""
+
+    foreshadowing_id: uuid.UUID
+
+
+class ListWorldSettingsParams(BaseModel):
+    """list_world_settings 工具参数."""
+
+    search: str | None = None
+    category: str | None = None
+
+
+class GetWorldSettingParams(BaseModel):
+    """get_world_setting 工具参数."""
+
+    setting_id: uuid.UUID
+
+
 # ── 工具数据契约 ──
 
 
@@ -75,10 +112,11 @@ class Tool:
 class ReaderToolDeps:
     """工具工厂依赖 — service 实例注入（鸭子类型）."""
 
-    character_service: object  # 有 list_characters(project_id, search=None, group_id=None, ...)
-    foreshadowing_service: object  # 有 list(project_id, search=None, status=None, ...)
+    character_service: object  # 有 list_characters(project_id, ...) / get_character(character_id)
+    foreshadowing_service: object  # 有 list(project_id, ...) / get(foreshadowing_id)
     summary_service: object  # 有 list_recent(project_id, limit=10)
     chapter_audit_service: object  # 有 audit(project_id, chapter_id, *, include_static=True)
+    world_service: object | None = None  # 有 list_settings/get_setting（WorldService 形态）
 
 
 # ── 序列化与信封 ──
@@ -111,6 +149,16 @@ def _ok(data: object) -> str:
 def _fail(exc: Exception) -> str:
     """失败信封: {"ok": False, "error": "<异常消息>"}."""
     return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+
+T = TypeVar("T")
+
+
+def _require_found(value: T, message: str) -> T:
+    """service 返回 None（实体不存在）→ 抛 ValueError 走 _fail 信封."""
+    if value is None:
+        raise ValueError(message)
+    return value
 
 
 async def _fetch_all_pages(
@@ -147,9 +195,39 @@ _TOOL_SPECS: list[ToolSpec] = [
         group="retrieval",
     ),
     ToolSpec(
+        name="get_character",
+        description="按角色 ID 获取角色档案详情（性格/背景/目标/关系摘要）",
+        input_schema=GetCharacterParams.model_json_schema(),
+        group="retrieval",
+    ),
+    ToolSpec(
         name="check_foreshadowing",
         description="列出项目中未回收的伏笔（内容/状态/埋设位置）",
         input_schema=CheckForeshadowingParams.model_json_schema(),
+        group="retrieval",
+    ),
+    ToolSpec(
+        name="list_foreshadowing",
+        description="列出项目内全部伏笔（全状态视角，可按关键字/状态过滤）",
+        input_schema=ListForeshadowingParams.model_json_schema(),
+        group="retrieval",
+    ),
+    ToolSpec(
+        name="get_foreshadowing",
+        description="按伏笔 ID 获取单条伏笔详情（内容/状态/埋设位置/回收时间）",
+        input_schema=GetForeshadowingParams.model_json_schema(),
+        group="retrieval",
+    ),
+    ToolSpec(
+        name="list_world_settings",
+        description="列出项目内世界观设定条目（可按名称关键字/类别过滤）",
+        input_schema=ListWorldSettingsParams.model_json_schema(),
+        group="retrieval",
+    ),
+    ToolSpec(
+        name="get_world_setting",
+        description="按条目 ID 获取单个世界观设定条目详情",
+        input_schema=GetWorldSettingParams.model_json_schema(),
         group="retrieval",
     ),
     ToolSpec(
@@ -178,15 +256,16 @@ def build_reader_tools(
     project_id: uuid.UUID | str | None = None,
     include: list[str] | None = None,
 ) -> list[Tool]:
-    """构建只读工具（顺序固定：search_characters → count_words），func 闭包绑定 service.
+    """构建只读工具（顺序固定 = _TOOL_SPECS 目录序；world_service=None 时剔除世界观 2 个）.
 
     Args:
         deps: 工具依赖（service 实例注入）.
         project_id: 装配期项目 ID（可为 None）——#680 闭包绑定：检索工具自动作用于
             当前项目，func 调用不再接收 project_id 参数；None 时向 service 传 None，
             异常走 _fail 信封（防御性）.
-        include: 白名单工具名列表；None = 全量 5 只读（向后兼容）；传入
-            [names] = 只返回白名单命中项（按 _TOOL_SPECS 目录原序，未知名忽略）.
+        include: 白名单工具名列表；None = 全量只读（world_service 注入时 10 个，
+            未注入剔除世界观 2 个 → 8 个）；传入 [names] = 只返回白名单命中项
+            （按 _TOOL_SPECS 目录原序，未知名忽略）.
     """
     bound_project_id = _coerce_uuid(project_id) if project_id is not None else None
 
@@ -211,6 +290,17 @@ def build_reader_tools(
                 return _fail(exc)
 
     @instrument(caller_type="tool")
+    async def _get_character(character_id: uuid.UUID, **kwargs: object) -> str:
+        async with _tool_db_lock_mod.get_tool_db_lock():
+            try:
+                character = await deps.character_service.get_character(  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
+                    _coerce_uuid(character_id)
+                )
+                return _ok(_serialize_data(_require_found(character, "角色不存在")))
+            except Exception as exc:
+                return _fail(exc)
+
+    @instrument(caller_type="tool")
     async def _check_foreshadowing(status: str | None = None, **kwargs: object) -> str:
         async with _tool_db_lock_mod.get_tool_db_lock():
             try:
@@ -220,6 +310,64 @@ def build_reader_tools(
                     status=status,
                 )
                 return _ok(_serialize_data(items))
+            except Exception as exc:
+                return _fail(exc)
+
+    @instrument(caller_type="tool")
+    async def _list_foreshadowing(
+        search: str | None = None,
+        status: str | None = None,
+        **kwargs: object,
+    ) -> str:
+        async with _tool_db_lock_mod.get_tool_db_lock():
+            try:
+                items = await _fetch_all_pages(
+                    deps.foreshadowing_service.list,  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
+                    bound_project_id,
+                    search=search,
+                    status=status,
+                )
+                return _ok(_serialize_data(items))
+            except Exception as exc:
+                return _fail(exc)
+
+    @instrument(caller_type="tool")
+    async def _get_foreshadowing(foreshadowing_id: uuid.UUID, **kwargs: object) -> str:
+        async with _tool_db_lock_mod.get_tool_db_lock():
+            try:
+                foreshadowing = await deps.foreshadowing_service.get(  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object，运行时注入真实 service
+                    _coerce_uuid(foreshadowing_id)
+                )
+                return _ok(_serialize_data(_require_found(foreshadowing, "伏笔不存在")))
+            except Exception as exc:
+                return _fail(exc)
+
+    @instrument(caller_type="tool")
+    async def _list_world_settings(
+        search: str | None = None,
+        category: str | None = None,
+        **kwargs: object,
+    ) -> str:
+        async with _tool_db_lock_mod.get_tool_db_lock():
+            try:
+                items = await _fetch_all_pages(
+                    deps.world_service.list_settings,  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object|None，world 工具仅在注入时物化
+                    bound_project_id,
+                    search=search,
+                    category=category,
+                )
+                return _ok(_serialize_data(items))
+            except Exception as exc:
+                return _fail(exc)
+
+    @instrument(caller_type="tool")
+    async def _get_world_setting(setting_id: uuid.UUID, **kwargs: object) -> str:
+        async with _tool_db_lock_mod.get_tool_db_lock():
+            try:
+                setting = await deps.world_service.get_setting(  # type: ignore[attr-defined]  # 鸭子类型：字段按契约声明为 object|None，world 工具仅在注入时物化
+                    _coerce_uuid(setting_id)
+                )
+                return _ok(_serialize_data(_require_found(setting, "世界观条目不存在")))
             except Exception as exc:
                 return _fail(exc)
 
@@ -261,10 +409,20 @@ def build_reader_tools(
 
     funcs: dict[str, Callable[..., Awaitable[str]]] = {
         "search_characters": _search_characters,
+        "get_character": _get_character,
         "check_foreshadowing": _check_foreshadowing,
+        "list_foreshadowing": _list_foreshadowing,
+        "get_foreshadowing": _get_foreshadowing,
+        "list_world_settings": _list_world_settings,
+        "get_world_setting": _get_world_setting,
         "get_prior_summary": _get_prior_summary,
         "audit_chapter": _audit_chapter,
         "count_words": _count_words,
     }
-    specs = [spec for spec in _TOOL_SPECS if include is None or spec.name in include]
+    specs = [
+        spec
+        for spec in _TOOL_SPECS
+        if (deps.world_service is not None or spec.name not in _WORLD_TOOL_NAMES)
+        and (include is None or spec.name in include)
+    ]
     return [Tool(spec=spec, func=funcs[spec.name]) for spec in specs]

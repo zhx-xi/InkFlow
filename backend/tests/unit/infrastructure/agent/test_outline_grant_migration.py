@@ -125,17 +125,17 @@ class TestLegacyAliasReverse:
             grants_from_tool_ids(["no_such_alias"], strict=True)
 
 
-# ── 2. TOOL_NAME_TO_CELL 44 键 ──────────────────────
+# ── 2. TOOL_NAME_TO_CELL 49 键（#956 迁移: 44→49 = 47 目录名逆 + 2 别名） ──
 
 
 class TestNameToCell44Keys:
-    """TOOL_NAME_TO_CELL 44 键 = 42 目录名 + 2 别名；union == 42 名。"""
+    """TOOL_NAME_TO_CELL 49 键 = 47 目录名 + 2 别名；union == 47 名（#956 基线）."""
 
     def test_name_to_cell_has_44_keys(self):  # 【R】
-        """逆索引 44 键（= 42 目录名 + 2 别名）。"""
+        """逆索引 49 键（= 47 目录名 + 2 别名，#956 +5 读工具迁移）。"""
         from inkflow.infrastructure.agent.tools.registry import TOOL_NAME_TO_CELL
 
-        assert len(TOOL_NAME_TO_CELL) == 44
+        assert len(TOOL_NAME_TO_CELL) == 49
 
     def test_alias_cells_exact(self):  # 【R】
         """逐别名格值断言：create_outline/update_outline -> (OUTLINE, WRITE)。"""
@@ -146,14 +146,14 @@ class TestNameToCell44Keys:
         assert TOOL_NAME_TO_CELL["update_outline"] == (ToolDomain.OUTLINE, ToolOp.WRITE)
 
     def test_union_is_42_catalog_minus_agent_chain(self):  # 【R】
-        """union(GRANT_TOOL_MAP) == {ALL_TOOL_SPECS} − {agent_run, agent_call} = 42 名。"""
+        """union(GRANT_TOOL_MAP) == {ALL_TOOL_SPECS} − {agent_run, agent_call} = 47 名。"""
         from inkflow.infrastructure.agent.tools import ALL_TOOL_SPECS
         from inkflow.infrastructure.agent.tools.registry import GRANT_TOOL_MAP
 
         mapped = {name for cell in GRANT_TOOL_MAP.values() for name in cell}
         expected = {s.name for s in ALL_TOOL_SPECS} - {"agent_run", "agent_call"}
         assert mapped == expected
-        assert len(mapped) == 42
+        assert len(mapped) == 47
 
 
 # ── 3. GRANT_TOOL_MAP 大纲三格 / expand ─────────────

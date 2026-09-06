@@ -23,7 +23,7 @@ mock 数据 + 内置 BUILTIN_SKILL_NAMES 英文 slug 守卫用例）:
            profile_key=None, expected_project_id=None, expected_chapter_id=None,
        )
 
-   - tool_ids=None → 全量 5 只读 + save_draft（现 F27 行为）
+   - tool_ids=None → writer 轨显式锁旧 5 只读 + save_draft（#956 §4）
    - tool_ids=[...] → build_reader_tools(include=tool_ids) 只返回白名单命中项；
      save_draft 仅当 "save_draft" in tool_ids 时追加
    - skill_ids=None → 不拼 skill，system_prompt 原样传给 build_deep_agent
@@ -33,8 +33,7 @@ mock 数据 + 内置 BUILTIN_SKILL_NAMES 英文 slug 守卫用例）:
 
 2. build_reader_tools 签名扩展:
        def build_reader_tools(deps, include: list[str] | None = None)
-   - include=None → 5 只读全量（顺序不变: search_characters →
-     check_foreshadowing → get_prior_summary → audit_chapter → count_words）
+   - include=None → 8 只读全量（deps 无 world_service，§1.3 序去 world 2）
    - include=[names] → 只返回白名单命中项（按目录原序，非入参顺序）；
      未知名不命中（跳过）
 
@@ -99,6 +98,18 @@ BASE_PROMPT = "你是章节写手，负责按大纲撰写正文。"
 EXPECTED_READER_NAMES = [
     "search_characters",
     "check_foreshadowing",
+    "get_prior_summary",
+    "audit_chapter",
+    "count_words",
+]
+
+# #956 §1.3：deps 无 world_service（4 字段）时 include=None 全量 = §1.3 序去 world 2 的 8 名
+READER_NAMES_NO_WORLD = [
+    "search_characters",
+    "get_character",
+    "check_foreshadowing",
+    "list_foreshadowing",
+    "get_foreshadowing",
     "get_prior_summary",
     "audit_chapter",
     "count_words",
@@ -176,10 +187,10 @@ class TestBuildReaderToolsInclude:
     """build_reader_tools 白名单 include 参数契约（spec §5.2）."""
 
     def test_include_none_full_tools(self):
-        """include 缺省（None）→ 5 只读全量，目录原序（向后兼容守护）."""
+        """include 缺省（None）→ 8 只读全量（deps 无 world_service），§1.3 去 world 2 序."""
         tools = build_reader_tools(_make_reader_deps())
-        assert len(tools) == 5
-        assert [tool.spec.name for tool in tools] == EXPECTED_READER_NAMES
+        assert len(tools) == 8
+        assert [tool.spec.name for tool in tools] == READER_NAMES_NO_WORLD
 
     def test_include_subset_filters_by_catalog_order(self):
         """include 白名单子集 → 只返回命中项，按目录原序（非入参顺序）."""
@@ -235,8 +246,8 @@ class TestBuildAgenticWriterToolWhitelist:
         )
 
         assert m_rt.call_count == 1
-        # tool_ids=None → include 语义 None（现实现不传 include，helper 回退默认）
-        assert _kwarg_or_positional(m_rt.call_args, "include", 1, None) is None
+        # #956 §4：writer 轨 tool_ids=None → 显式锁旧 5（include=_WRITER_READER_NAMES 兜底）
+        assert _kwarg_or_positional(m_rt.call_args, "include", 1, None) == EXPECTED_READER_NAMES
         assert m_sd.call_count == 1
         assert m_da.call_count == 1
         tools = _kwarg_or_positional(m_da.call_args, "tools", 3, None)

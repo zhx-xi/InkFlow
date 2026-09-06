@@ -67,11 +67,17 @@ from inkflow.infrastructure.agent.tools import (
 
 # ── 契约常量 ──────────────────────────────────────
 
-# 10 组 44 工具全集（按组，未锁定组内顺序）
+# 10 组 49 工具全集（按组，未锁定组内顺序）
 # #955 迁移: 35→44（−create_outline/update_outline + 10 新大纲工具 + delete_plot_point）
+# #956 迁移: 44→49（+5 读缺口补齐工具）
 EXPECTED_ALL_NAMES = {
     "search_characters",
+    "get_character",
     "check_foreshadowing",
+    "list_foreshadowing",
+    "get_foreshadowing",
+    "list_world_settings",
+    "get_world_setting",
     "get_prior_summary",
     "audit_chapter",
     "count_words",
@@ -176,9 +182,9 @@ def _make_unified_deps() -> UnifiedToolDeps:
 class TestUnifiedCatalog:
     """ALL_TOOL_SPECS 统一目录（#838：全部 10 组 44 工具，无遗漏无重复）。"""
 
-    def test_all_tool_specs_len_is_44(self):
-        """统一目录 = 44 工具（10 组全量，#955 迁移 35→44）。"""
-        assert len(ALL_TOOL_SPECS) == 44
+    def test_all_tool_specs_len_is_49(self):
+        """统一目录 = 49 工具（10 组全量，#955 35→44 + #956 44→49）。"""
+        assert len(ALL_TOOL_SPECS) == 49
 
     def test_all_tool_specs_contains_new_tools(self):
         """目录含此前未注册的新工具（create_*/update_*/generate 等）。"""
@@ -207,7 +213,7 @@ class TestAllowCustomAgent:
         """TOOL_REGISTRY（兼容别名）= allow_custom_agent=True 子集，不含 agent_run/删除类。"""
         registry_names = {spec.name for spec in TOOL_REGISTRY}
         assert CORE_NAMES.isdisjoint(registry_names)
-        assert len(TOOL_REGISTRY) == 34  # #955 迁移: 26→34
+        assert len(TOOL_REGISTRY) == 39  # #955 迁移: 26→34；#956 迁移: 34→39
 
     def test_core_tools_marked_not_allowed(self):
         """核心工具标记 allow_custom_agent=False / is_core=True。"""
