@@ -1,4 +1,4 @@
-"""#838/#954/#955/#956 统一工具目录 — ALL_TOOL_SPECS / TOOL_REGISTRY / UnifiedToolDeps / grants 授权物化.
+"""#838/#954/#955/#956 统一工具目录 — ALL_TOOL_SPECS / TOOL_REGISTRY / grants 授权物化.
 
 本模块聚合 10 组 49 个工具 spec（reader/save_draft/setting_write/setting_update/
 outline/world_rw/memory/writing/delete/agent_chain）为统一目录，供 API 工具目录
