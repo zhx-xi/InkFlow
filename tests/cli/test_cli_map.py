@@ -664,3 +664,133 @@ class TestMapGuard:
         """
         result = cli_runner.invoke(app, ["nosuch"], obj=CliContext(json_output=True))
         assert result.exit_code == 2
+
+
+class TestMapCreateParentMap:
+    """#974: map create --parent-map 透传 body parent_map_id（HTTP 面已支持）."""
+
+    def test_create_parent_map_adds_key(self, cli_runner, fake_http_client, tmp_path):
+        """create --parent-map <uuid> → post_file data 含 parent_map_id=str(uuid).
+
+        RED 预期: 现 CLI 无 --parent-map 旗标 → exit 2（No such option）→ FAIL。
+        """
+        img = tmp_path / "child.png"
+        img.write_bytes(PNG_MAGIC + b"\x00" * 8)
+        parent = uuid.uuid4()
+        fake_http_client.post_file.return_value = _make_map(name="子图")
+        result = cli_runner.invoke(
+            app,
+            [
+                "create",
+                "--project-id",
+                str(PID),
+                "--name",
+                "子图",
+                "--image",
+                str(img),
+                "--parent-map",
+                str(parent),
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        call = fake_http_client.post_file.await_args
+        assert call.kwargs["data"]["parent_map_id"] == str(parent)
+
+    def test_create_without_parent_map_omits_key(
+        self, cli_runner, fake_http_client, tmp_path
+    ):
+        """【G 守护】create 缺省 → data 不含 parent_map_id 键（None=根图）.
+
+        RED 预期: 现实现已通过 → 保持绿（回归护栏）。
+        """
+        img = tmp_path / "root.png"
+        img.write_bytes(PNG_MAGIC + b"\x00" * 8)
+        fake_http_client.post_file.return_value = _make_map()
+        result = cli_runner.invoke(
+            app,
+            [
+                "create",
+                "--project-id",
+                str(PID),
+                "--name",
+                "根图",
+                "--image",
+                str(img),
+            ],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        call = fake_http_client.post_file.await_args
+        assert "parent_map_id" not in call.kwargs["data"]
+
+
+class TestMapUpdateParentMap:
+    """#974: map update --parent-map/--clear-parent（PATCH exclude_unset 语义，null=改回根图）."""
+
+    def test_update_parent_map_sets_key(self, cli_runner, fake_http_client):
+        """update --parent-map <uuid> → body parent_map_id=str(uuid).
+
+        RED 预期: 现 CLI 无 --parent-map 旗标 → exit 2 → FAIL。
+        """
+        mid = uuid.uuid4()
+        parent = uuid.uuid4()
+        fake_http_client.patch.return_value = _make_map()
+        result = cli_runner.invoke(
+            app,
+            ["update", str(mid), "--parent-map", str(parent)],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        call = fake_http_client.patch.await_args
+        assert call.args[0] == f"/maps/{mid}"
+        assert call.kwargs["json"]["parent_map_id"] == str(parent)
+
+    def test_update_clear_parent_sets_null(self, cli_runner, fake_http_client):
+        """update --clear-parent → body 含 parent_map_id=None（显式 null=改回根图）.
+
+        RED 预期: 现 CLI 无 --clear-parent 旗标 → exit 2 → FAIL。
+        """
+        mid = uuid.uuid4()
+        fake_http_client.patch.return_value = _make_map()
+        result = cli_runner.invoke(
+            app,
+            ["update", str(mid), "--clear-parent"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        body = fake_http_client.patch.await_args.kwargs["json"]
+        assert "parent_map_id" in body
+        assert body["parent_map_id"] is None
+
+    def test_update_default_omits_parent_key(self, cli_runner, fake_http_client):
+        """【G 守护】update 仅 --name → body 不含 parent_map_id（exclude_unset=不修改）.
+
+        RED 预期: 现实现已通过 → 保持绿（回归护栏）。
+        """
+        mid = uuid.uuid4()
+        fake_http_client.patch.return_value = _make_map(name="改名")
+        result = cli_runner.invoke(
+            app,
+            ["update", str(mid), "--name", "改名"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        assert "parent_map_id" not in fake_http_client.patch.await_args.kwargs["json"]
+
+    def test_update_parent_map_and_clear_conflict(self, cli_runner, fake_http_client):
+        """--parent-map 与 --clear-parent 同传 → VALIDATION_ERROR（exit 1）+ 不发请求.
+
+        RED 预期: 现 CLI 报 exit 2（No such option）≠ exit 1 信封 → FAIL。
+        """
+        mid = uuid.uuid4()
+        result = cli_runner.invoke(
+            app,
+            ["update", str(mid), "--parent-map", str(uuid.uuid4()), "--clear-parent"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["ok"] is False
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        fake_http_client.patch.assert_not_awaited()
