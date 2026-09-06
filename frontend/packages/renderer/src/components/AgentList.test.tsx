@@ -89,6 +89,9 @@ interface AgentEntity {
   builtin: boolean;
   created_at: string | null;
   updated_at: string | null;
+  /** #957 F58：后端 _to_response 恒有（resolve 后，含旧 tool_ids 反查） */
+  grants?: Array<{ domain: 'outline' | 'character' | 'world' | 'timeline' | 'foreshadowing' | 'memory' | 'writing' | 'agent_chain'; ops: Array<'read' | 'write' | 'delete'> }>;
+  resolved_tool_names?: string[];
 }
 interface ToolSpec {
   name: string;
@@ -99,6 +102,9 @@ interface ToolSpec {
   allow_custom_agent: boolean;
   /** #838: 核心工具标记（后端工具目录 is_core） */
   is_core: boolean;
+  /** #957 F58：catalog 每项已带 domain/op（is_core 不进目录） */
+  domain: 'outline' | 'character' | 'world' | 'timeline' | 'foreshadowing' | 'memory' | 'writing' | 'agent_chain';
+  op: 'read' | 'write' | 'delete';
 }
 interface SkillSummary {
   id: number;
@@ -115,6 +121,12 @@ const BUILTIN_AGENT: AgentEntity = {
   icon: '🏗️',
   system_prompt: '你是架构师，负责章节结构与大纲规划。',
   tool_ids: ['search_characters', 'check_foreshadowing', 'get_prior_summary'],
+  grants: [
+    { domain: 'character', ops: ['read'] },
+    { domain: 'foreshadowing', ops: ['read'] },
+    { domain: 'writing', ops: ['read'] },
+  ],
+  resolved_tool_names: ['search_characters', 'check_foreshadowing', 'get_prior_summary'],
   skill_ids: ['1'],
   model_override: null,
   temperature_override: null,
@@ -130,6 +142,8 @@ const CUSTOM_AGENT: AgentEntity = {
   icon: '✨',
   system_prompt: '你是润色师，负责润色文笔。',
   tool_ids: ['count_words', 'save_draft'],
+  grants: [{ domain: 'writing', ops: ['read', 'write'] }],
+  resolved_tool_names: ['count_words', 'save_draft'],
   skill_ids: ['3'],
   model_override: 'zhipu/glm-4.5',
   temperature_override: 0.6,
@@ -139,12 +153,12 @@ const CUSTOM_AGENT: AgentEntity = {
 };
 
 const TOOL_ITEMS: ToolSpec[] = [
-  { name: 'save_draft', description: '保存章节草稿（agent 唯一写面）', group: 'writing', input_schema: {}, allow_custom_agent: true, is_core: false },
-  { name: 'search_characters', description: '搜索项目内角色档案', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false },
-  { name: 'check_foreshadowing', description: '列出未回收伏笔', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false },
-  { name: 'get_prior_summary', description: '获取前文摘要', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false },
-  { name: 'audit_chapter', description: '单章一致性审计', group: 'audit', input_schema: {}, allow_custom_agent: true, is_core: false },
-  { name: 'count_words', description: '中英文混合字数统计', group: 'audit', input_schema: {}, allow_custom_agent: true, is_core: false },
+  { name: 'save_draft', description: '保存章节草稿（agent 唯一写面）', group: 'writing', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'writing', op: 'write' },
+  { name: 'search_characters', description: '搜索项目内角色档案', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'character', op: 'read' },
+  { name: 'check_foreshadowing', description: '列出未回收伏笔', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'foreshadowing', op: 'read' },
+  { name: 'get_prior_summary', description: '获取前文摘要', group: 'retrieval', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'writing', op: 'read' },
+  { name: 'audit_chapter', description: '单章一致性审计', group: 'audit', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'writing', op: 'read' },
+  { name: 'count_words', description: '中英文混合字数统计', group: 'audit', input_schema: {}, allow_custom_agent: true, is_core: false, domain: 'writing', op: 'read' },
 ];
 
 const SKILL_ITEMS: SkillSummary[] = [
@@ -289,9 +303,10 @@ describe('AgentList — 内置详情 + 复制（#485）', () => {
     const dlg = await screen.findByTestId('agent-detail-dialog');
     expect(dlg.getAttribute('role') === 'dialog' || dlg.getAttribute('aria-modal') === 'true').toBe(true);
     expect(screen.getByTestId('agent-detail-prompt').textContent).toContain(BUILTIN_AGENT.system_prompt);
-    expect(screen.getByTestId('agent-detail-tool-search_characters')).toBeInTheDocument();
-    expect(screen.getByTestId('agent-detail-tool-check_foreshadowing')).toBeInTheDocument();
-    expect(screen.getByTestId('agent-detail-tool-get_prior_summary')).toBeInTheDocument();
+    // #957 父侧迁移（⑨ 族：契约 §3 工具区块 = scope 矩阵，旧 agent-detail-tool-* chips 废止）
+    expect(screen.getByTestId('agent-scope-detail')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-detail-resolved-count')).toBeInTheDocument();
+    expect(screen.queryByTestId('agent-detail-tool-search_characters')).not.toBeInTheDocument();
     expect(screen.getByTestId('agent-detail-skill-1')).toBeInTheDocument();
     // 详情弹层零新请求（数据来自 store agents 本地渲染）——等挂载 GET 全部落定后再比对
     await waitFor(() => {
@@ -344,5 +359,75 @@ describe('AgentList — 内置详情 + 复制（#485）', () => {
     await waitFor(() => {
       expect(useToastStore.getState().toasts.some((t) => t.message.includes('保存失败'))).toBe(true);
     });
+  });
+});
+
+describe('AgentList — scope 详情矩阵（#957 F58，【R】）', () => {
+  /** RESOLVED 源 vs tool_ids 源分歧 fixture：证明卡片 chips 数据源 = resolved_tool_names（非 tool_ids） */
+  const SCOPE_AGENT: AgentEntity = {
+    ...BUILTIN_AGENT,
+    id: 5,
+    name: 'scope-agent',
+    tool_ids: ['legacy_deprecated_tool'],
+    grants: [{ domain: 'character', ops: ['read'] }],
+    resolved_tool_names: ['search_characters'],
+  };
+
+  function mockScope(agents: AgentEntity[]) {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/agents') return { items: agents, total: agents.length };
+      if (path === '/api/v1/agents/tools') return { items: TOOL_ITEMS };
+      if (path === '/api/v1/skills') return { items: SKILL_ITEMS, total: 2 };
+      return { ok: true };
+    });
+  }
+
+  it('卡片工具 chips 数据源 = resolved_tool_names（tool_ids 已被后端分辨率替代）', async () => {
+    mockScope([SCOPE_AGENT]);
+    render(<AgentList />);
+    await screen.findByTestId('agent-card-5');
+    // tool_ids=['legacy_deprecated_tool'] 但 resolved=['search_characters'] → chips 显示 resolved 名
+    expect(screen.getByTestId('agent-tool-chip-search_characters')).toBeInTheDocument();
+    expect(screen.queryByTestId('agent-tool-chip-legacy_deprecated_tool')).not.toBeInTheDocument();
+  });
+
+  it('详情弹窗只读矩阵回显：character-read checked + resolved 计数 + 默认折叠 + 展开显工具行', async () => {
+    const user = userEvent.setup();
+    mockScope([SCOPE_AGENT]);
+    render(<AgentList />);
+    await screen.findByTestId('agent-card-5');
+    await user.click(screen.getByTestId('agent-detail-5'));
+    await screen.findByTestId('agent-detail-dialog');
+    const matrix = screen.getByTestId('agent-scope-detail');
+    // 8 域 × 3 列全渲染；character-read 有授权 → checked
+    expect(within(matrix).getByTestId('agent-detail-scope-character-read').getAttribute('data-checked')).toBe('true');
+    expect(within(matrix).getByTestId('agent-detail-scope-character-write').getAttribute('data-checked')).toBe('false');
+    // resolved 计数可见（resolved 数 = 1）
+    expect(screen.getByTestId('agent-detail-resolved-count')).toHaveTextContent('1');
+    // 默认折叠：工具清单行不渲染
+    expect(screen.queryByTestId('agent-detail-resolved-tool-search_characters')).not.toBeInTheDocument();
+    // 展开开关 → 每工具一行
+    await user.click(screen.getByTestId('agent-detail-resolved-toggle'));
+    expect(screen.getByTestId('agent-detail-resolved-tool-search_characters')).toBeInTheDocument();
+  });
+
+  it('grants 全空 → agent-scope-empty + resolved 计数 0 仍渲染', async () => {
+    const user = userEvent.setup();
+    const EMPTY_AGENT: AgentEntity = {
+      ...BUILTIN_AGENT,
+      id: 6,
+      name: 'empty-scope',
+      tool_ids: [],
+      grants: [],
+      resolved_tool_names: [],
+    };
+    mockScope([EMPTY_AGENT]);
+    render(<AgentList />);
+    await screen.findByTestId('agent-card-6');
+    await user.click(screen.getByTestId('agent-detail-6'));
+    await screen.findByTestId('agent-detail-dialog');
+    expect(screen.getByTestId('agent-scope-empty')).toBeInTheDocument();
+    // resolved 计数区块仍渲染 0
+    expect(screen.getByTestId('agent-detail-resolved-count')).toHaveTextContent('0');
   });
 });

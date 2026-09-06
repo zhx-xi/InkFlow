@@ -27,6 +27,7 @@ import { roleEnhanceEn, roleEnhanceZh } from './role-enhance';
 import { sessionUxEn, sessionUxZh } from './session-ux';
 import { sessionsUxEn, sessionsUxZh } from './sessions-ux';
 import { useI18n } from './useI18n';
+import { useThemeStore } from '../stores/theme';
 import { worldCatKindEn, worldCatKindZh } from './world-cat-kind';
 import { writingUxEn, writingUxZh } from './writing-ux';
 import { zh } from './zh';
@@ -224,5 +225,97 @@ describe('F57 i18n 契约：log 域键对称 + 后端 messages 对齐', () => {
     expect(logZh['log.call.generic']).toContain('{caller_name}');
     expect(logEn['log.call.generic']).toContain('{caller_name}');
     expect(logZh['log.call.generic']).not.toBe(logEn['log.call.generic']);
+  });
+});
+
+/**
+ * F58 #957 §4.1：agent.scope 域词条守护。
+ * 断言用 useI18n()（t() 缺键回退 key 本身）——GREEN 在 useI18n.ts 合并 agentScopeUxZh/En 后转绿。
+ * 不 import agent-scope-ux（GREEN 创建），避免文件级 collection error 波及既有关键对称 [G] 用例。
+ */
+describe('F58 i18n 契约：agent.scope 域词条（#957 §4.1）', () => {
+  const SCOPE_KEYS = [
+    'agent.scope.read',
+    'agent.scope.write',
+    'agent.scope.delete',
+    'agent.scope.delete.tooltip',
+    'agent.scope.resolvedCount',
+    'agent.scope.showTools',
+    'agent.scope.hideTools',
+    'agent.scope.noGrants',
+    'agent.scope.domain.outline',
+    'agent.scope.domain.character',
+    'agent.scope.domain.world',
+    'agent.scope.domain.timeline',
+    'agent.scope.domain.foreshadowing',
+    'agent.scope.domain.memory',
+    'agent.scope.domain.writing',
+    'agent.scope.domain.agent_chain',
+  ];
+
+  it('§4.1 全 16 键在 zh/en 均有词条（t() 不回退 key 本身）', () => {
+    useThemeStore.setState({ lang: 'zh' });
+    const zh = renderHook(() => useI18n()).result.current;
+    for (const k of SCOPE_KEYS) {
+      expect(zh.t(k), `${k} 缺中文词条`).not.toBe(k);
+    }
+    useThemeStore.setState({ lang: 'en' });
+    const en = renderHook(() => useI18n()).result.current;
+    for (const k of SCOPE_KEYS) {
+      expect(en.t(k), `${k} 缺英文词条`).not.toBe(k);
+    }
+  });
+
+  it('zh/en 键集对称（16 键两侧均翻译，0 漂移）', () => {
+    useThemeStore.setState({ lang: 'zh' });
+    const zh = renderHook(() => useI18n()).result.current;
+    useThemeStore.setState({ lang: 'en' });
+    const en = renderHook(() => useI18n()).result.current;
+    for (const k of SCOPE_KEYS) {
+      expect(zh.t(k)).not.toBe(k);
+      expect(en.t(k)).not.toBe(k);
+    }
+  });
+
+  it('resolvedCount 两侧均含 {n} 占位符（插值可替换）', () => {
+    useThemeStore.setState({ lang: 'zh' });
+    const zh = renderHook(() => useI18n()).result.current;
+    expect(zh.t('agent.scope.resolvedCount', { n: 7 })).toContain('7');
+    useThemeStore.setState({ lang: 'en' });
+    const en = renderHook(() => useI18n()).result.current;
+    expect(en.t('agent.scope.resolvedCount', { n: 7 })).toContain('7');
+  });
+
+  it('域行标签 agent.scope.domain.* 8 键逐字 zh/en（码点级）', () => {
+    const DOMAIN_VALUES_ZH: Record<string, string> = {
+      outline: '大纲',
+      character: '角色',
+      world: '世界观',
+      timeline: '时间线',
+      foreshadowing: '伏笔',
+      memory: '记忆',
+      writing: '写作',
+      agent_chain: 'Agent 链',
+    };
+    const DOMAIN_VALUES_EN: Record<string, string> = {
+      outline: 'Outline',
+      character: 'Characters',
+      world: 'World Building',
+      timeline: 'Timeline',
+      foreshadowing: 'Foreshadowing',
+      memory: 'Memory',
+      writing: 'Writing',
+      agent_chain: 'Agent Chain',
+    };
+    useThemeStore.setState({ lang: 'zh' });
+    const zh = renderHook(() => useI18n()).result.current;
+    for (const [d, v] of Object.entries(DOMAIN_VALUES_ZH)) {
+      expect(zh.t(`agent.scope.domain.${d}`)).toBe(v);
+    }
+    useThemeStore.setState({ lang: 'en' });
+    const en = renderHook(() => useI18n()).result.current;
+    for (const [d, v] of Object.entries(DOMAIN_VALUES_EN)) {
+      expect(en.t(`agent.scope.domain.${d}`)).toBe(v);
+    }
   });
 });

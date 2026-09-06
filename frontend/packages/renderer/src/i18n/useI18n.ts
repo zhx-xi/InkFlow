@@ -9,14 +9,15 @@ import { chatDeleteUxEn, chatDeleteUxZh } from './chat-delete-ux';
 import { chatUxEn, chatUxZh } from './chat-ux';
 import { sessionsUxEn, sessionsUxZh } from './sessions-ux';
 import { writingUxEn, writingUxZh } from './writing-ux';
+import { agentScopeUxEn, agentScopeUxZh } from './agent-scope-ux';
 import { sessionUxEn, sessionUxZh } from './session-ux';
 import { logsUxEn, logsUxZh } from './logs-ux';
 import { zh } from './zh';
 
 type Dict = Record<string, string>;
 const dicts: Record<'zh' | 'en', Dict> = {
-  zh: { ...zh, ...roleEnhanceZh, ...extractZh, ...worldCatKindZh, ...chatUxZh, ...chatDeleteUxZh, ...sessionsUxZh, ...writingUxZh, ...sessionUxZh, ...logZh, ...bookZh, ...logsUxZh } as Dict,
-  en: { ...en, ...roleEnhanceEn, ...extractEn, ...worldCatKindEn, ...chatUxEn, ...chatDeleteUxEn, ...sessionsUxEn, ...writingUxEn, ...sessionUxEn, ...logEn, ...bookEn, ...logsUxEn },
+  zh: { ...zh, ...roleEnhanceZh, ...extractZh, ...worldCatKindZh, ...chatUxZh, ...chatDeleteUxZh, ...sessionsUxZh, ...writingUxZh, ...agentScopeUxZh, ...sessionUxZh, ...logZh, ...bookZh, ...logsUxZh } as Dict,
+  en: { ...en, ...roleEnhanceEn, ...extractEn, ...worldCatKindEn, ...chatUxEn, ...chatDeleteUxEn, ...sessionsUxEn, ...writingUxEn, ...agentScopeUxEn, ...sessionUxEn, ...logEn, ...bookEn, ...logsUxEn },
 };
 
 /** 简单占位替换: t('write.stream.done', { words: 342, model: 'x', valid: '通过' }) */
@@ -43,4 +44,19 @@ export function useI18n() {
       return interpolate(template, params);
     },
   };
+}
+
+/**
+ * #957 F58 §4.3：非 React 取词（stores/i18n useTScope 本地回退用）。
+ * 与 useI18n().t 同语义（当前 lang 由 useThemeStore.getState() 读取，含 zh 回退链），
+ * 可在组件渲染之外直接调用。
+ */
+export function tStatic(key: string, params?: Record<string, string | number>): string {
+  const lang = useThemeStore.getState().lang;
+  const dict = lang === 'en' ? dicts.en : dicts.zh;
+  const template = dict[key];
+  if (template === undefined) {
+    return interpolate(zh[key as keyof typeof zh] ?? bookZh[key as keyof typeof bookZh] ?? key, params);
+  }
+  return interpolate(template, params);
 }

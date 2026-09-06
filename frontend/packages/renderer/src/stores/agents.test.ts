@@ -66,13 +66,16 @@ interface AgentEntity {
   role_key: string | null;
   created_at: string | null;
   updated_at: string | null;
+  /** #957 F58：后端 _to_response 恒有（resolve 后，含旧 tool_ids 反查） */
+  grants?: Array<{ domain: 'outline' | 'character' | 'world' | 'timeline' | 'foreshadowing' | 'memory' | 'writing' | 'agent_chain'; ops: Array<'read' | 'write' | 'delete'> }>;
+  resolved_tool_names?: string[];
 }
 interface AgentInput {
   name: string;
   description: string;
   icon: string;
   system_prompt: string;
-  tool_ids: string[];
+  grants: Array<{ domain: 'outline' | 'character' | 'world' | 'timeline' | 'foreshadowing' | 'memory' | 'writing' | 'agent_chain'; ops: Array<'read' | 'write' | 'delete'> }>;
   skill_ids: string[];
   model_override: string | null;
   temperature_override: number | null;
@@ -115,7 +118,7 @@ const CUSTOM_INPUT: AgentInput = {
   description: '专注文笔润色的自定义角色',
   icon: '✨',
   system_prompt: '你是润色师，负责润色文笔。',
-  tool_ids: ['count_words', 'save_draft'],
+  grants: [{ domain: 'writing', ops: ['read', 'write'] }],
   skill_ids: ['3'],
   model_override: 'zhipu/glm-4.5',
   temperature_override: 0.6,
@@ -202,11 +205,11 @@ describe('useAgentsStore — CRUD', () => {
 
   it('updateAgent: PATCH /api/v1/agents/{id} body=patch → agents 替换 + return', async () => {
     useAgentsStore.setState({ agents: [CUSTOM_AGENT] });
-    apiFetchMock.mockResolvedValue({ ...CUSTOM_AGENT, name: '润色师 v2', tool_ids: ['count_words'] });
-    const updated = await useAgentsStore.getState().updateAgent(2, { name: '润色师 v2', tool_ids: ['count_words'] });
+    apiFetchMock.mockResolvedValue({ ...CUSTOM_AGENT, name: '润色师 v2', grants: [{ domain: 'writing', ops: ['write'] }] });
+    const updated = await useAgentsStore.getState().updateAgent(2, { name: '润色师 v2', grants: [{ domain: 'writing', ops: ['write'] }] });
     expect(apiFetchMock).toHaveBeenCalledWith(
       '/api/v1/agents/2',
-      expect.objectContaining({ method: 'PATCH', body: { name: '润色师 v2', tool_ids: ['count_words'] } }),
+      expect.objectContaining({ method: 'PATCH', body: { name: '润色师 v2', grants: [{ domain: 'writing', ops: ['write'] }] } }),
     );
     expect(updated.name).toBe('润色师 v2');
     expect(useAgentsStore.getState().agents[0].name).toBe('润色师 v2');
@@ -259,5 +262,53 @@ describe('useAgentsStore — copyAgent（#485 内置 Agent 复制）', () => {
     await expect(storeWithCopy().copyAgent(1)).rejects.toThrow('duplicate failed');
     expect(useAgentsStore.getState().error).not.toBeNull();
     expect(useAgentsStore.getState().agents).toHaveLength(1);
+  });
+});
+
+describe('useAgentsStore — #957 F58 grants 数据面（透传/解析）', () => {
+  const GRANTED_AGENT: AgentEntity = {
+    ...CUSTOM_AGENT,
+    grants: [
+      { domain: 'character', ops: ['read', 'write'] },
+      { domain: 'memory', ops: ['read'] },
+    ],
+    resolved_tool_names: ['search_characters', 'create_character', 'update_character', 'memory_list'],
+  };
+
+  it('createAgent 透传 grants 到 POST body（不含 tool_ids 键）', async () => {
+    apiFetchMock.mockResolvedValue({ ...GRANTED_AGENT, id: 9 });
+    const input: AgentInput = {
+      ...CUSTOM_INPUT,
+      grants: [{ domain: 'character', ops: ['read'] }],
+    };
+    const created = await useAgentsStore.getState().createAgent(input);
+    const postCall = apiFetchMock.mock.calls.find((c) => c[0] === '/api/v1/agents');
+    expect(postCall).toBeDefined();
+    expect(postCall?.[1]).toEqual(
+      expect.objectContaining({ method: 'POST', body: expect.objectContaining({ grants: [{ domain: 'character', ops: ['read'] }] }) }),
+    );
+    expect(postCall?.[1]?.body).not.toHaveProperty('tool_ids');
+    expect(created.id).toBe(9);
+  });
+
+  it('updateAgent 透传 grants 到 PATCH body（不含 tool_ids 键）', async () => {
+    useAgentsStore.setState({ agents: [GRANTED_AGENT] });
+    apiFetchMock.mockResolvedValue({ ...GRANTED_AGENT, name: 'scope-update', grants: [{ domain: 'memory', ops: ['read'] }] });
+    const updated = await useAgentsStore.getState().updateAgent(2, {
+      name: 'scope-update',
+      grants: [{ domain: 'memory', ops: ['read'] }],
+    });
+    const patchCall = apiFetchMock.mock.calls.find((c) => c[0] === '/api/v1/agents/2');
+    expect(patchCall?.[1]?.body).toEqual(expect.objectContaining({ grants: [{ domain: 'memory', ops: ['read'] }] }));
+    expect(patchCall?.[1]?.body).not.toHaveProperty('tool_ids');
+    expect(updated.name).toBe('scope-update');
+  });
+
+  it('loadAgents 解析 grants/resolved_tool_names 到 store（后端 _to_response 恒有）', async () => {
+    apiFetchMock.mockResolvedValue({ items: [GRANTED_AGENT], total: 1 });
+    await useAgentsStore.getState().loadAgents();
+    const stored = useAgentsStore.getState().agents[0];
+    expect(stored.grants).toEqual(GRANTED_AGENT.grants);
+    expect(stored.resolved_tool_names).toEqual(GRANTED_AGENT.resolved_tool_names);
   });
 });

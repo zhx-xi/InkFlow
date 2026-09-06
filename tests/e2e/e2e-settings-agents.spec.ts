@@ -22,12 +22,13 @@
  *   label 容器含 name 文本）：
  *   dialog.locator('[data-testid^="agent-skill-"]').filter({ hasText: 'writing-methodology' })
  *
- * testid 契约（#260 F41）：agent-list / agent-new-btn / agent-card-<id> /
+ * testid 契约（#260 F41 + #957 F58 矩阵）：agent-list / agent-new-btn / agent-card-<id> /
  * agent-builtin-badge-<id> / agent-edit-<id>（仅自定义）/ agent-del-<id>（仅自定义）/
- * agent-tool-chip-<toolName> / agent-skill-chip-<skillName>（#522 skill_ids = 目录名）；
+ * agent-tool-chip-<toolName>（chips 源 = resolved_tool_names）/ agent-skill-chip-<skillName>（#522 skill_ids = 目录名）；
  * agent-dialog（role=dialog）/
  * agent-name-input / agent-desc-input / agent-icon-input / agent-prompt-input /
- * agent-tool-group-<group> / agent-tool-<toolName> / agent-skill-search /
+ * agent-scope-matrix / agent-scope-row-<domain> / agent-scope-cell-<domain>-<op> /
+ * agent-skill-search /
  * agent-skill-<skillName> / agent-model-input / agent-temp-input /
  * agent-dialog-save / agent-dialog-cancel；agent-delete-dialog / agent-delete-ok /
  * agent-delete-cancel
@@ -157,10 +158,9 @@ test('Agent 管理：创建自定义 Agent 全流程（新建 → 填表 + 勾�
     await window.getByTestId('agent-icon-input').fill('✨');
     await window.getByTestId('agent-prompt-input').fill('你是 E2E 润色师。');
 
-    // 函数分组（D2）：写作组存在 + 勾选 save_draft；检索组存在不勾选
-    await expect(dialog.getByTestId('agent-tool-group-writing')).toBeVisible();
-    await dialog.getByTestId('agent-tool-save_draft').click();
-    await dialog.getByTestId('agent-tool-group-retrieval').click(); // 展开无副作用，仅确认组存在
+    // #957 F58 scope 矩阵：save_draft ∈ writing·write → 勾该格；矩阵容器存在即确认渲染
+    await expect(dialog.getByTestId('agent-scope-matrix')).toBeVisible();
+    await dialog.getByTestId('agent-scope-cell-writing-write').click();
 
     // skill 绑定：搜索 writing-methodology（#522 内置目录名）→ 过滤 → 勾选 label 容器
     await dialog.getByTestId('agent-skill-search').fill('writing-methodology');
@@ -207,7 +207,7 @@ test('Agent 管理：编辑自定义 Agent（名称回显 → 改名 + 取消一
     const createDialog = window.getByTestId('agent-dialog');
     await expect(createDialog).toBeVisible();
     await window.getByTestId('agent-name-input').fill(name);
-    await createDialog.getByTestId('agent-tool-save_draft').click();
+    await createDialog.getByTestId('agent-scope-cell-writing-write').click(); // #957：勾 写作·写（save_draft 所在格）
     await createDialog.getByTestId('agent-dialog-save').click();
     await expect(createDialog).not.toBeVisible();
 
@@ -221,10 +221,10 @@ test('Agent 管理：编辑自定义 Agent（名称回显 → 改名 + 取消一
     await expect(editDialog).toBeVisible();
     await expect(window.getByTestId('agent-name-input')).toHaveValue(name);
 
-    // 改名 + 取消 save_draft 函数
+    // 改名 + 取消 写作·写（save_draft 所在格，#957 矩阵）
     const newName = `${name}-改`;
     await window.getByTestId('agent-name-input').fill(newName);
-    await editDialog.getByTestId('agent-tool-save_draft').click();
+    await editDialog.getByTestId('agent-scope-cell-writing-write').click();
     await editDialog.getByTestId('agent-dialog-save').click();
     await expect(editDialog).not.toBeVisible();
 
