@@ -216,7 +216,8 @@ export function LibraryPage() {
     })();
   }, [loadProjects]);
 
-  // F43 P2：挂载/项目切换时拉取地图列表（世界观点亮徽标的数据源；失败静默空列表）
+  // F43 P2：挂载/项目切换时拉取地图列表（世界观点亮徽标的数据源；失败置空 + err toast）
+  // #973：依赖补入 reloadKey/workbenchActive —— 进工作台重拉（外部建图立即可见）+ 保存后遗漏面补齐
   useEffect(() => {
     if (!currentProjectId) {
       setMaps([]);
@@ -225,15 +226,32 @@ export function LibraryPage() {
     let cancelled = false;
     void apiFetch<{ items?: WorldMapDTO[] }>(`/api/v1/projects/${currentProjectId}/maps`)
       .then((data) => {
-        if (!cancelled) setMaps(data.items ?? []);
+        if (cancelled) return;
+        const fetched = data.items ?? [];
+        // #973 × #761：重拉以服务端为准，但保留本会话已经 onMapsChanged 回传的本地图
+        // （如刚创建/改名后快照暂未含该图，退出/重进不得抹掉）；仅合并同项目防切项目残留
+        setMaps((prev) => {
+          const ownPrev = prev.filter(
+            (m) => String(m.project_id) === String(currentProjectId),
+          );
+          const merged = [...fetched];
+          for (const m of ownPrev) {
+            if (!merged.some((x) => String(x.id) === String(m.id))) merged.push(m);
+          }
+          return merged;
+        });
       })
-      .catch(() => {
-        if (!cancelled) setMaps([]);
+      .catch((err) => {
+        if (!cancelled) {
+          setMaps([]);
+          // #973：失败不再静默置空，推送 err toast（同 MapWorkbench.refreshPins 先例）
+          useToastStore.getState().pushToast('err', errorMessage(err));
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [currentProjectId]);
+  }, [currentProjectId, reloadKey, workbenchActive]);
 
   // F43 P3：章节标题映射（章关联徽标）
   useEffect(() => {
