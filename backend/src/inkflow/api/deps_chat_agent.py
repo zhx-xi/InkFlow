@@ -170,6 +170,7 @@ async def get_chat_agent_service(
         foreshadowing_service=deps_module.get_foreshadowing_service(db),
         summary_service=deps_module.get_summary_service(db),
         chapter_audit_service=deps_module.get_chapter_audit_service(db),
+        world_service=deps_module.get_world_service(db),
     )
     reader_tools = deps_module.build_reader_tools(
         reader_deps,

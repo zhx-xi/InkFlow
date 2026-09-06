@@ -1,6 +1,11 @@
 {
   "tool.search_characters": "搜索项目内角色档案（名称/简介/性格/关系摘要），支持按名称搜索与分组过滤",
+  "tool.get_character": "按角色 ID 获取角色档案详情（性格/背景/目标/关系摘要）",
   "tool.check_foreshadowing": "列出项目中未回收的伏笔（内容/状态/埋设位置）",
+  "tool.list_foreshadowing": "列出项目内全部伏笔（全状态视角，可按关键字/状态过滤）",
+  "tool.get_foreshadowing": "按伏笔 ID 获取单条伏笔详情（内容/状态/埋设位置/回收时间）",
+  "tool.list_world_settings": "列出项目内世界观设定条目（可按名称关键字/类别过滤）",
+  "tool.get_world_setting": "按条目 ID 获取单个世界观设定条目详情",
   "tool.get_prior_summary": "获取项目前文摘要（最近 N 章，与写作时上下文注入同源数据）",
   "tool.audit_chapter": "对单个章节执行一致性审计（字数 + LLM 漂移 + 静态一致性），返回 findings",
   "tool.count_words": "统计中英文混合文本字数（去除 Markdown 语法）",

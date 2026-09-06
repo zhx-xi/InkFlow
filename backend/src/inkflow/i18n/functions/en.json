@@ -1,6 +1,11 @@
 {
   "tool.search_characters": "Search character profiles in the project (name/brief/personality/relationship summary); supports searching by name and filtering by group",
+  "tool.get_character": "Get a character profile by id (personality/background/goals/relationship summary)",
   "tool.check_foreshadowing": "List unresolved foreshadowing in the project (content/status/planted location)",
+  "tool.list_foreshadowing": "List all foreshadowings in the project (all-status view, filterable by keyword/status)",
+  "tool.get_foreshadowing": "Get one foreshadowing by id (content/status/planted location/resolved time)",
+  "tool.list_world_settings": "List worldbuilding entries in the project (filterable by name keyword/category)",
+  "tool.get_world_setting": "Get one worldbuilding entry by id",
   "tool.get_prior_summary": "Get the project's prior-text summary (last N chapters; same source data as the context injected when writing)",
   "tool.audit_chapter": "Run a consistency audit on a single chapter (word count + LLM drift + static consistency) and return findings",
   "tool.count_words": "Count the word count of mixed Chinese/English text (Markdown syntax stripped)",

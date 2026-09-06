@@ -32,6 +32,16 @@ from inkflow.infrastructure.agent.tools.save_draft_tool import (
 )
 from inkflow.logging import instrument
 
+_WRITER_READER_NAMES = [
+    "search_characters",
+    "check_foreshadowing",
+    "get_prior_summary",
+    "audit_chapter",
+    "count_words",
+]
+"""writer 轨只读工具白名单（#956 §4）：tool_ids=None 时显式锁旧 5 只读，
+防 §1.3 reader 目录扩权（10/8）把新检索工具静默带入写作轨。"""
+
 
 @dataclass
 class AgenticWriterDeps:
@@ -133,8 +143,9 @@ def build_agentic_writer(
         base_url: OpenAI 兼容 base_url（可空）.
         deps: 装配依赖（5 只读 service + draft/audit service）.
         system_prompt: writer_agent 系统提示（build_writer_agent_system_prompt 产物）.
-        tool_ids: 工具白名单（工具目录 name 列表）；None = 全量 5 只读 +
-            save_draft（F27 现行为，向后兼容）；[names] = 只 build 白名单命中项，
+        tool_ids: 工具白名单（工具目录 name 列表）；None = 旧 5 只读
+            （_WRITER_READER_NAMES 显式锁定，含 save_draft，F27 现行为向后兼容）；
+            [names] = 只 build 白名单命中项，
             save_draft 仅当白名单含 "save_draft" 时追加.
         skill_ids: skill 白名单（skill 目录名列表，#522）；None = 不拼 skill
             （F27 现行为）；[names] = 按白名单顺序把命中 skill content 追加
@@ -155,7 +166,11 @@ def build_agentic_writer(
         summary_service=deps.summary_service,
         chapter_audit_service=deps.chapter_audit_service,
     )
-    tools = build_reader_tools(reader_deps, include=tool_ids)
+    # #956 §4：writer 轨 tool_ids=None → include 显式兜底旧 5（reader 目录扩权不波及）
+    tools = build_reader_tools(
+        reader_deps,
+        include=tool_ids if tool_ids is not None else _WRITER_READER_NAMES,
+    )
     if tool_ids is None or "save_draft" in tool_ids:
         tools.append(
             build_save_draft_tool(

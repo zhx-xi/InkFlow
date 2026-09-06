@@ -1,6 +1,6 @@
-"""#838/#954/#955 统一工具目录 — ALL_TOOL_SPECS / TOOL_REGISTRY / UnifiedToolDeps / grants 授权物化.
+"""#838/#954/#955/#956 统一工具目录 — ALL_TOOL_SPECS / TOOL_REGISTRY / UnifiedToolDeps / grants 授权物化.
 
-本模块聚合 10 组 44 个工具 spec（reader/save_draft/setting_write/setting_update/
+本模块聚合 10 组 49 个工具 spec（reader/save_draft/setting_write/setting_update/
 outline/world_rw/memory/writing/delete/agent_chain）为统一目录，供 API 工具目录
 （GET /agents/tools）、`_validate_tool_ids` 白名单校验与 chat 路径运行时物化
 （deps_chat_agent._run_single_agent）消费。
@@ -8,9 +8,9 @@ outline/world_rw/memory/writing/delete/agent_chain）为统一目录，供 API �
 标记规则（#838 用户拍板）:
 - 核心工具 10 个（agent_run/agent_call + 8 个删除类）: allow_custom_agent=False,
   is_core=True —— 不进 TOOL_REGISTRY，自定义 agent 不可勾选/调用。
-- 其余 34 个默认暴露（allow_custom_agent=True, is_core=False）。
+- 其余 39 个默认暴露（allow_custom_agent=True, is_core=False）。
 
-TOOL_REGISTRY 保留为兼容别名 = allow_custom_agent 过滤子集（34 个），供
+TOOL_REGISTRY 保留为兼容别名 = allow_custom_agent 过滤子集（39 个），供
 `_validate_tool_ids`/内置 seed/CLI `tools list` 等既有消费方（目录外名仍拒绝）。
 
 GRANT_TOOL_MAP（F58 #954/#955）为 (ToolDomain, ToolOp) → 工具名的唯一真相源：
@@ -116,7 +116,7 @@ from inkflow.infrastructure.agent.tools.writing_tools import (
 
 logger = logging.getLogger(__name__)
 
-# ── 统一工具目录（顺序契约：#838/#955 建议序 = reader 5 → save_draft → 设定写 2 →
+# ── 统一工具目录（顺序契约：#838/#955 建议序 = reader 10 → save_draft → 设定写 2 →
 #    设定改 2 → outline 10 → 世界读写 8 → 记忆 3 → 写作 3 → 删除 8 → agent 链 2） ──
 
 
@@ -164,7 +164,7 @@ ALL_TOOL_SPECS: list[ToolSpec] = [
 ]
 
 TOOL_REGISTRY: list[ToolSpec] = [s for s in ALL_TOOL_SPECS if s.allow_custom_agent]
-"""兼容别名：自定义 agent 可见工具（34 个，= ALL_TOOL_SPECS 过滤 allow_custom_agent）."""
+"""兼容别名：自定义 agent 可见工具（39 个，= ALL_TOOL_SPECS 过滤 allow_custom_agent）."""
 
 
 GRANT_TOOL_MAP: dict[tuple[ToolDomain, ToolOp], list[str]] = {
@@ -183,10 +183,10 @@ GRANT_TOOL_MAP: dict[tuple[ToolDomain, ToolOp], list[str]] = {
         "update_plot_point",
     ],
     (ToolDomain.OUTLINE, ToolOp.DELETE): ["delete_outline", "delete_plot_point"],
-    (ToolDomain.CHARACTER, ToolOp.READ): ["search_characters"],
+    (ToolDomain.CHARACTER, ToolOp.READ): ["search_characters", "get_character"],
     (ToolDomain.CHARACTER, ToolOp.WRITE): ["create_character", "update_character"],
     (ToolDomain.CHARACTER, ToolOp.DELETE): ["delete_character"],
-    (ToolDomain.WORLD, ToolOp.READ): ["list_maps"],
+    (ToolDomain.WORLD, ToolOp.READ): ["list_maps", "list_world_settings", "get_world_setting"],
     (ToolDomain.WORLD, ToolOp.WRITE): [
         "create_world_setting",
         "update_world_setting",
@@ -200,7 +200,11 @@ GRANT_TOOL_MAP: dict[tuple[ToolDomain, ToolOp], list[str]] = {
         "update_timeline_event",
     ],
     (ToolDomain.TIMELINE, ToolOp.DELETE): ["delete_timeline_event"],
-    (ToolDomain.FORESHADOWING, ToolOp.READ): ["check_foreshadowing"],
+    (ToolDomain.FORESHADOWING, ToolOp.READ): [
+        "check_foreshadowing",
+        "list_foreshadowing",
+        "get_foreshadowing",
+    ],
     (ToolDomain.FORESHADOWING, ToolOp.WRITE): [
         "create_foreshadowing",
         "update_foreshadowing",
@@ -230,7 +234,7 @@ TOOL_NAME_TO_CELL: dict[str, tuple[ToolDomain, ToolOp]] = {
     **{name: cell for cell, names in GRANT_TOOL_MAP.items() for name in names},
     **LEGACY_RENAMED_TOOL_NAMES,
 }
-"""工具名 → 所属 (domain, op) 格（44 键 = 42 目录名逆 + 2 退役别名）."""
+"""工具名 → 所属 (domain, op) 格（49 键 = 47 目录名逆 + 2 退役别名）."""
 
 
 def expand_grants(grants: list[GrantEntry]) -> list[str]:
