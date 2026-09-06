@@ -87,7 +87,7 @@ def _read_image(cli_ctx: CliContext, image_path: str) -> tuple[str, bytes]:
 
 
 # ---------------------------------------------------------------------------
-# create  —  inkflow map create --project-id <uuid> --name <str> --image <path>
+# create  —  inkflow map create --project-id <uuid> --name <str> --image <path> [--parent-map]
 # ---------------------------------------------------------------------------
 
 
@@ -101,6 +101,9 @@ def create_map_cmd(
     root_location: str | None = typer.Option(
         None, "--root-location", help="父地点 ID (UUID)；缺省 = 全局图"
     ),
+    parent_map: str | None = typer.Option(
+        None, "--parent-map", help="父地图 ID (UUID)；缺省 = 根图"
+    ),
     description: str = typer.Option("", "--description", help="地图描述"),
 ) -> None:
     """创建地图（上传本地图片建图，spec §4）"""
@@ -112,6 +115,8 @@ def create_map_cmd(
         data: dict[str, Any] = {"name": name, "description": description}
         if root_location is not None:
             data["root_location_id"] = root_location
+        if parent_map is not None:
+            data["parent_map_id"] = parent_map
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
@@ -204,7 +209,8 @@ def get_map_cmd(
 
 
 # ---------------------------------------------------------------------------
-# update  —  inkflow map update <map_id> [--name] [--description] [--root-location]
+# update  —  inkflow map update <map_id> [--name] [--description]
+#       [--root-location] [--parent-map] [--clear-parent]
 # ---------------------------------------------------------------------------
 
 
@@ -218,10 +224,20 @@ def update_map_cmd(
     root_location: str | None = typer.Option(
         None, "--root-location", help="新父地点 ID (UUID)；none = 改全局图"
     ),
+    parent_map: str | None = typer.Option(
+        None, "--parent-map", help="新父地图 ID (UUID)；改挂为其子图"
+    ),
+    clear_parent: bool = typer.Option(False, "--clear-parent", help="改回根图（body 显式 null）"),
 ) -> None:
-    """更新地图（仅更新传入字段；--root-location none → 显式 null = 改全局图）"""
+    """更新地图（仅更新传入字段；--parent-map = 改挂父图，--clear-parent = 显式 null 改回根图）"""
     cli_ctx: CliContext = ctx.obj
     sid = _parse_uuid(cli_ctx, map_id, "地图不存在")
+    if parent_map is not None and clear_parent:
+        print_error(
+            cli_ctx,
+            "VALIDATION_ERROR",
+            "--parent-map 与 --clear-parent 互斥；改回根图请用 --clear-parent",
+        )
 
     async def _impl() -> dict:
         body: dict[str, Any] = {}
@@ -231,6 +247,10 @@ def update_map_cmd(
             body["description"] = description
         if root_location is not None:
             body["root_location_id"] = None if root_location == "none" else root_location
+        if parent_map is not None:
+            body["parent_map_id"] = parent_map
+        elif clear_parent:
+            body["parent_map_id"] = None
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
