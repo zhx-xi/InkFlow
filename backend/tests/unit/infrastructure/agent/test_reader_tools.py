@@ -42,9 +42,29 @@ pytestmark = pytest.mark.asyncio  # 实测 mode=Mode.AUTO；显式 mark 兼容 S
 PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 CHAPTER_ID = uuid.UUID("87654321-4321-8765-4321-876543218765")
 GROUP_ID = uuid.UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+CHARACTER_ID = uuid.UUID("22222222-2222-4222-8222-222222222222")
+FORESHADOWING_ID = uuid.UUID("33333333-3333-4333-8333-333333333333")
+SETTING_ID = uuid.UUID("44444444-4444-4444-8444-444444444444")
 EXPECTED_TOOL_NAMES = [
     "search_characters",
+    "get_character",
     "check_foreshadowing",
+    "list_foreshadowing",
+    "get_foreshadowing",
+    "list_world_settings",
+    "get_world_setting",
+    "get_prior_summary",
+    "audit_chapter",
+    "count_words",
+]
+
+# world_service=None（默认 4 字段 deps）时不物化 list_world_settings/get_world_setting.
+EXPECTED_TOOL_NAMES_NO_WORLD = [
+    "search_characters",
+    "get_character",
+    "check_foreshadowing",
+    "list_foreshadowing",
+    "get_foreshadowing",
     "get_prior_summary",
     "audit_chapter",
     "count_words",
@@ -53,7 +73,12 @@ EXPECTED_TOOL_NAMES = [
 EXPECTED_REGISTRY_NAMES = [
     # #955 迁移：34 自定义工具目录（create_outline/update_outline 退役，outline 10 插位）
     "search_characters",
+    "get_character",
     "check_foreshadowing",
+    "list_foreshadowing",
+    "get_foreshadowing",
+    "list_world_settings",
+    "get_world_setting",
     "get_prior_summary",
     "audit_chapter",
     "count_words",
@@ -98,6 +123,20 @@ def _make_deps(**overrides) -> ReaderToolDeps:
         foreshadowing_service=AsyncMock(),
         summary_service=AsyncMock(),
         chapter_audit_service=AsyncMock(),
+    )
+    for key, value in overrides.items():
+        setattr(deps, key, value)
+    return deps
+
+
+def _make_world_deps(**overrides) -> ReaderToolDeps:
+    """构造含 world_service 的 ReaderToolDeps（直接传参——RED 期字段缺失 → TypeError）."""
+    deps = ReaderToolDeps(
+        character_service=AsyncMock(),
+        foreshadowing_service=AsyncMock(),
+        summary_service=AsyncMock(),
+        chapter_audit_service=AsyncMock(),
+        world_service=AsyncMock(),
     )
     for key, value in overrides.items():
         setattr(deps, key, value)
@@ -150,12 +189,12 @@ class TestToolSpec:
 class TestToolRegistry:
     """TOOL_REGISTRY 静态注册表契约（infrastructure/agent/tools/__init__.py）."""
 
-    async def test_registry_has_twenty_six_specs(self):
-        """注册表长度 34（#955 迁移：44 统一目录 - 10 核心工具）."""
-        assert len(TOOL_REGISTRY) == 34
+    async def test_registry_has_thirty_nine_specs(self):
+        """注册表长度 39（#955 44 + #956 5 = 49 统一目录 - 10 核心工具）."""
+        assert len(TOOL_REGISTRY) == 39
 
     async def test_registry_names_set(self):
-        """注册表工具名集合与契约一致（34 自定义 Agent 可见工具，#955）."""
+        """注册表工具名集合与契约一致（39 自定义 Agent 可见工具，#955+#956）."""
         assert {spec.name for spec in TOOL_REGISTRY} == set(EXPECTED_REGISTRY_NAMES)
 
     async def test_registry_spec_fields(self):
@@ -395,16 +434,23 @@ class TestToolEnvelope:
 
 
 class TestBuildReaderTools:
-    """build_reader_tools 工厂契约（5 个 Tool，顺序固定）."""
+    """build_reader_tools 工厂契约（默认 4 字段 deps → 8 工具；world 注入 → 10 工具）.【M1】"""
 
-    async def test_returns_five_tools(self):
-        """返回 5 个 Tool."""
+    async def test_returns_eight_tools_default_deps(self):
+        """默认 deps（world_service=None）→ 8 个 Tool（§1.3 去 world 2 序）.【M1】"""
         tools = build_reader_tools(_make_deps(), project_id=PROJECT_ID)
-        assert len(tools) == 5
+        assert len(tools) == 8
+        assert [tool.spec.name for tool in tools] == EXPECTED_TOOL_NAMES_NO_WORLD
+
+    async def test_returns_ten_tools_with_world_deps(self):
+        """world_service 注入 → 10 个 Tool（§1.3 全序）.【M1】"""
+        tools = build_reader_tools(_make_world_deps(), project_id=PROJECT_ID)
+        assert len(tools) == 10
+        assert [tool.spec.name for tool in tools] == EXPECTED_TOOL_NAMES
 
     async def test_tool_order_fixed(self):
-        """Tool 顺序固定：search_characters → count_words."""
-        tools = build_reader_tools(_make_deps(), project_id=PROJECT_ID)
+        """Tool 顺序固定：§1.3 全 10 序（world 注入）.【M1】"""
+        tools = build_reader_tools(_make_world_deps(), project_id=PROJECT_ID)
         assert [tool.spec.name for tool in tools] == EXPECTED_TOOL_NAMES
 
     async def test_tool_spec_and_func_callable(self):
@@ -534,3 +580,286 @@ class TestAssemblyProjectIdNormalization:
         assert payload["ok"] is True
         call = svc.audit.await_args
         assert _kwarg_or_positional(call, "project_id", 0) == PROJECT_ID
+
+
+# ── §7 F58 读缺口新契约（全部 【R】= GREEN 前必 FAIL） ──
+
+
+class TestGetCharacter:
+    """get_character 工具（按角色 ID 读取角色档案，性格/背景/目标/关系摘要）.【R】"""
+
+    async def test_registered_and_schema_requires_character_id(self):
+        """注册存在 + character_id 必填且 schema 无 project_id.【R】"""
+        spec = _tool(_make_deps(), "get_character").spec
+        properties = spec.input_schema.get("properties", {})
+        assert "character_id" in properties
+        assert "project_id" not in properties
+        assert "character_id" in spec.input_schema.get("required", [])
+
+    async def test_func_calls_service_with_normalized_uuid(self):
+        """func 调用形状：get_character(args[0]) 收到规范化 uuid（str 入参 #275）.【R】"""
+        from datetime import UTC, datetime
+
+        from inkflow.domain.models.character import Character
+
+        now = datetime.now(UTC)
+        svc = AsyncMock()
+        svc.get_character.return_value = Character(
+            id=CHARACTER_ID,
+            project_id=PROJECT_ID,
+            name="林晚",
+            personality="冷静",
+            created_at=now,
+            updated_at=now,
+        )
+        tool = _tool(_make_deps(character_service=svc), "get_character")
+        payload = json.loads(await tool.func(str(CHARACTER_ID)))
+        assert payload["ok"] is True
+        call = svc.get_character.await_args
+        assert _kwarg_or_positional(call, "character_id", 0) == CHARACTER_ID
+
+    async def test_success_envelope_serializes_character(self):
+        """命中 → ok:true + data 为序列化角色（pydantic model_dump 分支）.【R】"""
+        from datetime import UTC, datetime
+
+        from inkflow.domain.models.character import Character
+
+        now = datetime.now(UTC)
+        svc = AsyncMock()
+        svc.get_character.return_value = Character(
+            id=CHARACTER_ID,
+            project_id=PROJECT_ID,
+            name="林晚",
+            personality="冷静",
+            created_at=now,
+            updated_at=now,
+        )
+        tool = _tool(_make_deps(character_service=svc), "get_character")
+        payload = json.loads(await tool.func(str(CHARACTER_ID)))
+        assert payload["ok"] is True
+        assert payload["data"]["name"] == "林晚"
+        assert payload["data"]["personality"] == "冷静"
+
+    async def test_none_returns_not_found_envelope(self):
+        """get_character 返回 None → ok:false + 「角色不存在」.【R】"""
+        svc = AsyncMock()
+        svc.get_character.return_value = None
+        tool = _tool(_make_deps(character_service=svc), "get_character")
+        payload = json.loads(await tool.func(str(CHARACTER_ID)))
+        assert payload["ok"] is False
+        assert "角色不存在" in payload["error"]
+
+
+class TestListForeshadowing:
+    """list_foreshadowing 工具（分页取全 + search/status 过滤，全状态视角）.【R】"""
+
+    async def test_pagination_fetches_all_pages(self):
+        """50 条 + 空两页取全：两次调用 offset=0/50（裸列表兼容形态）.【R】"""
+        svc = AsyncMock()
+        page1 = [{"id": i, "title": f"伏笔{i}", "status": "active"} for i in range(50)]
+        svc.list.side_effect = [page1, []]
+        tool = _tool(_make_deps(foreshadowing_service=svc), "list_foreshadowing")
+        payload = json.loads(await tool.func())
+        assert payload["ok"] is True
+        assert len(payload["data"]) == 50
+        assert payload["data"][0]["title"] == "伏笔0"
+        assert svc.list.await_count == 2
+        offsets = [_kwarg_or_positional(call, "offset", 5, 0) for call in svc.list.call_args_list]
+        assert offsets == [0, 50]
+
+    async def test_search_status_passthrough_and_default_all(self):
+        """search/status 透传；不传 status = None（全状态视角）.【R】"""
+        svc = AsyncMock()
+        svc.list.return_value = []
+        tool = _tool(_make_deps(foreshadowing_service=svc), "list_foreshadowing")
+        await tool.func(search="伏笔A", status="active")
+        call = svc.list.await_args
+        assert _kwarg_or_positional(call, "search", 1) == "伏笔A"
+        assert _kwarg_or_positional(call, "status", 2) == "active"
+        await tool.func()
+        assert _kwarg_or_positional(svc.list.await_args, "status", 2) is None
+
+    async def test_error_envelope(self):
+        """list 抛 RuntimeError → ok:false + error 含消息.【R】"""
+        svc = AsyncMock()
+        svc.list.side_effect = RuntimeError("fs db down")
+        tool = _tool(_make_deps(foreshadowing_service=svc), "list_foreshadowing")
+        payload = json.loads(await tool.func())
+        assert payload["ok"] is False
+        assert "fs db down" in payload["error"]
+
+
+class TestGetForeshadowing:
+    """get_foreshadowing 工具（按伏笔 ID 读取单条伏笔详情）.【R】"""
+
+    async def test_func_calls_service_with_uuid(self):
+        """get(foreshadowing_id) 位置参数收到规范化 uuid.【R】"""
+        svc = AsyncMock()
+        svc.get.return_value = None
+        tool = _tool(_make_deps(foreshadowing_service=svc), "get_foreshadowing")
+        await tool.func(str(FORESHADOWING_ID))
+        call = svc.get.await_args
+        assert _kwarg_or_positional(call, "foreshadowing_id", 0) == FORESHADOWING_ID
+
+    async def test_success_envelope(self):
+        """命中 → ok:true + 序列化伏笔.【R】"""
+        from datetime import UTC, datetime
+
+        from inkflow.domain.models.foreshadowing import Foreshadowing
+
+        now = datetime.now(UTC)
+        svc = AsyncMock()
+        svc.get.return_value = Foreshadowing(
+            id=FORESHADOWING_ID,
+            project_id=PROJECT_ID,
+            title="林晚的身世",
+            created_at=now,
+            updated_at=now,
+        )
+        tool = _tool(_make_deps(foreshadowing_service=svc), "get_foreshadowing")
+        payload = json.loads(await tool.func(str(FORESHADOWING_ID)))
+        assert payload["ok"] is True
+        assert payload["data"]["title"] == "林晚的身世"
+
+    async def test_none_returns_not_found_envelope(self):
+        """get 返回 None → ok:false + 「伏笔不存在」.【R】"""
+        svc = AsyncMock()
+        svc.get.return_value = None
+        tool = _tool(_make_deps(foreshadowing_service=svc), "get_foreshadowing")
+        payload = json.loads(await tool.func(str(FORESHADOWING_ID)))
+        assert payload["ok"] is False
+        assert "伏笔不存在" in payload["error"]
+
+
+class TestListWorldSettings:
+    """list_world_settings 工具（分页取全 + search/category 过滤）.【R】"""
+
+    async def test_deps_accepts_world_service_and_tool_registered(self):
+        """ReaderToolDeps(world_service=...) 构造成立且 list_world_settings 注册.【R】"""
+        deps = ReaderToolDeps(
+            character_service=AsyncMock(),
+            foreshadowing_service=AsyncMock(),
+            summary_service=AsyncMock(),
+            chapter_audit_service=AsyncMock(),
+            world_service=AsyncMock(),
+        )
+        tool = _tool(deps, "list_world_settings")
+        assert tool.spec.name == "list_world_settings"
+
+    async def test_pagination_fetches_all_pages(self):
+        """50 条 + 空两页取全（tuple[list,int] 真实形态）：offset=[0,50].【R】"""
+        svc = AsyncMock()
+        page1 = [{"id": i, "name": f"条目{i}", "category": "geo"} for i in range(50)]
+        svc.list_settings.side_effect = [(page1, 50), ([], 0)]
+        tool = _tool(_make_world_deps(world_service=svc), "list_world_settings")
+        payload = json.loads(await tool.func())
+        assert payload["ok"] is True
+        assert len(payload["data"]) == 50
+        assert payload["data"][0]["name"] == "条目0"
+        assert svc.list_settings.await_count == 2
+        offsets = [
+            _kwarg_or_positional(call, "offset", 5, 0) for call in svc.list_settings.call_args_list
+        ]
+        assert offsets == [0, 50]
+
+    async def test_search_and_category_passthrough(self):
+        """search/category 透传：service 收到相同值.【R】"""
+        svc = AsyncMock()
+        svc.list_settings.return_value = ([], 0)
+        tool = _tool(_make_world_deps(world_service=svc), "list_world_settings")
+        await tool.func(search="魔法", category="geo")
+        call = svc.list_settings.await_args
+        assert _kwarg_or_positional(call, "search", 1) == "魔法"
+        assert _kwarg_or_positional(call, "category", 2) == "geo"
+
+    async def test_error_envelope(self):
+        """list_settings 抛 RuntimeError → ok:false + error 含消息.【R】"""
+        svc = AsyncMock()
+        svc.list_settings.side_effect = RuntimeError("world db down")
+        tool = _tool(_make_world_deps(world_service=svc), "list_world_settings")
+        payload = json.loads(await tool.func())
+        assert payload["ok"] is False
+        assert "world db down" in payload["error"]
+
+
+class TestGetWorldSetting:
+    """get_world_setting 工具（按条目 ID 读取单个世界观条目）.【R】"""
+
+    async def test_func_calls_service_with_uuid(self):
+        """get_setting(setting_id) 位置参数收到规范化 uuid.【R】"""
+        svc = AsyncMock()
+        svc.get_setting.return_value = None
+        tool = _tool(_make_world_deps(world_service=svc), "get_world_setting")
+        await tool.func(str(SETTING_ID))
+        call = svc.get_setting.await_args
+        assert _kwarg_or_positional(call, "setting_id", 0) == SETTING_ID
+
+    async def test_success_envelope(self):
+        """命中 → ok:true + 序列化条目.【R】"""
+        from datetime import UTC, datetime
+
+        from inkflow.domain.models.world import WorldSetting
+
+        now = datetime.now(UTC)
+        svc = AsyncMock()
+        svc.get_setting.return_value = WorldSetting(
+            id=SETTING_ID,
+            project_id=PROJECT_ID,
+            name="魔法体系",
+            category="魔法体系",
+            created_at=now,
+            updated_at=now,
+        )
+        tool = _tool(_make_world_deps(world_service=svc), "get_world_setting")
+        payload = json.loads(await tool.func(str(SETTING_ID)))
+        assert payload["ok"] is True
+        assert payload["data"]["name"] == "魔法体系"
+
+    async def test_none_returns_not_found_envelope(self):
+        """get_setting 返回 None → ok:false + 「世界观条目不存在」.【R】"""
+        svc = AsyncMock()
+        svc.get_setting.return_value = None
+        tool = _tool(_make_world_deps(world_service=svc), "get_world_setting")
+        payload = json.loads(await tool.func(str(SETTING_ID)))
+        assert payload["ok"] is False
+        assert "世界观条目不存在" in payload["error"]
+
+
+class TestReaderToolSurface:
+    """build_reader_tools 工具面契约（world 依赖驱动全量/部分物化 + include 过滤）.【R】"""
+
+    async def test_default_deps_builds_eight_tools_in_order(self):
+        """默认 4 字段 deps include=None → 8 工具（§1.3 去 world 2 序）.【R】"""
+        tools = build_reader_tools(_make_deps(), project_id=PROJECT_ID)
+        names = [tool.spec.name for tool in tools]
+        assert names == EXPECTED_TOOL_NAMES_NO_WORLD
+        assert len(tools) == 8
+
+    async def test_world_deps_builds_ten_tools_in_order(self):
+        """5 字段 deps（world_service 注入）→ 10 工具全序.【R】"""
+        tools = build_reader_tools(_make_world_deps(), project_id=PROJECT_ID)
+        names = [tool.spec.name for tool in tools]
+        assert names == EXPECTED_TOOL_NAMES
+        assert len(tools) == 10
+
+    async def test_include_filters_by_catalog_order(self):
+        """include=[\"search_characters\",\"get_character\"] → 目录序过滤 2 名.【R】"""
+        tools = build_reader_tools(
+            _make_deps(),
+            project_id=PROJECT_ID,
+            include=["search_characters", "get_character"],
+        )
+        names = [tool.spec.name for tool in tools]
+        assert names == ["search_characters", "get_character"]
+
+
+class TestWorldToolsNotBuiltWithoutDeps:
+    """world_service=None 时不物化世界域工具（§1.1）.【R】"""
+
+    async def test_world_tools_absent_without_world_deps(self):
+        """world_service=None → 名集不含 list_world_settings/get_world_setting，含其余 8.【R】"""
+        tools = build_reader_tools(_make_deps(), project_id=PROJECT_ID)
+        names = {tool.spec.name for tool in tools}
+        assert "list_world_settings" not in names
+        assert "get_world_setting" not in names
+        assert names == set(EXPECTED_TOOL_NAMES_NO_WORLD)

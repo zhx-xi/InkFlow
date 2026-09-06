@@ -1,9 +1,9 @@
 """#955 F58 §3 契约升级 — GET /api/v1/agents/tools 工具目录
-（34 自定义工具 + domain/op + 路由顺序硬契约）。
+（39 自定义工具 + domain/op + 路由顺序硬契约，#956 迁移）。
 
 自 tests/api/test_agents_api.py 拆出（#838 统一 35 工具目录契约，2026-08-31）。
 #955 F58 §3 契约升级（F58 spec 取代 #854/#838 平铺目录契约）：
-- 目录从全量 44 工具收敛为 34 自定义工具（is_core=True 的 10 核心工具不进目录：
+- 目录从全量 49 工具收敛为 39 自定义工具（is_core=True 的 10 核心工具不进目录：
   agent_run/agent_call + 8 个 delete/memory_remove）。
 - 每项 6 键 → 8 键：新增 `domain` / `op` 两键（GRANT_TOOL_MAP 格值，
   contract-955 §3 GRANT_TOOL_MAP + §4 catalog 升级）。
@@ -32,7 +32,12 @@ TOOL_GROUPS = ("writing", "retrieval", "audit", "project")
 
 ALL_TOOL_NAMES = [
     "search_characters",
+    "get_character",
     "check_foreshadowing",
+    "list_foreshadowing",
+    "get_foreshadowing",
+    "list_world_settings",
+    "get_world_setting",
     "get_prior_summary",
     "audit_chapter",
     "count_words",
@@ -76,8 +81,8 @@ ALL_TOOL_NAMES = [
     "agent_run",
     "agent_call",
 ]
-"""ALL_TOOL_SPECS 全量 44 工具全集（10 组，含 10 核心工具，仅作全集参考；
-catalog 端点按 #955 F58 §3 只返回 34 自定义工具）。"""
+"""ALL_TOOL_SPECS 全量 49 工具全集（10 组，含 10 核心工具，仅作全集参考；
+catalog 端点按 #955/#956 F58 §3 只返回 39 自定义工具）。"""
 
 CORE_TOOL_NAMES = {
     "agent_run",
@@ -95,15 +100,20 @@ CORE_TOOL_NAMES = {
 #955 F58 §3：这 10 个工具**不在** catalog 响应 items 中。"""
 
 EXPECTED_TOOL_NAMES = set(ALL_TOOL_NAMES)
-"""ALL_TOOL_SPECS 全量 44 名字全集（含核心）。"""
+"""ALL_TOOL_SPECS 全量 49 名字全集（含核心）。"""
 
 CUSTOM_TOOL_NAMES = EXPECTED_TOOL_NAMES - CORE_TOOL_NAMES
-"""#955 F58 §3 自定义 Agent 可见工具（allow_custom_agent=True，is_core=False，
-= catalog 响应 items 全集，34 个，= TOOL_REGISTRY）。"""
+"""#955/#956 F58 §3 自定义 Agent 可见工具（allow_custom_agent=True，is_core=False，
+= catalog 响应 items 全集，39 个，= TOOL_REGISTRY）。"""
 
 EXPECTED_DOMAIN_OP = {
     "search_characters": ("character", "read"),
+    "get_character": ("character", "read"),
     "check_foreshadowing": ("foreshadowing", "read"),
+    "list_foreshadowing": ("foreshadowing", "read"),
+    "get_foreshadowing": ("foreshadowing", "read"),
+    "list_world_settings": ("world", "read"),
+    "get_world_setting": ("world", "read"),
     "get_prior_summary": ("writing", "read"),
     "audit_chapter": ("writing", "read"),
     "count_words": ("writing", "read"),
@@ -137,7 +147,7 @@ EXPECTED_DOMAIN_OP = {
     "continue": ("writing", "write"),
     "revise": ("writing", "write"),
 }
-"""#955 F58 §3 每工具 (domain, op) 格值表——34 自定义工具逐字来自
+"""#955/#956 F58 §3 每工具 (domain, op) 格值表——39 自定义工具逐字来自
 contract-955 §3 GRANT_TOOL_MAP（值 = TOOL_NAME_TO_CELL 反查）。"""
 
 
@@ -168,11 +178,11 @@ def _assert_tool_entry(tool: dict) -> None:
 
 
 def _assert_tool_catalog(items: list) -> None:
-    """工具目录整体契约（#955 F58 §3）：34 自定义工具全集 + 每项 8 键 +
+    """工具目录整体契约（#955/#956 F58 §3）：39 自定义工具全集 + 每项 8 键 +
     核心 10 工具不出现在 items + 每工具 domain/op == GRANT_TOOL_MAP 格值。"""
     assert isinstance(items, list)
     names = [t["name"] for t in items]
-    assert len(items) == 34, f"工具目录应含 34 自定义工具: {len(items)}"
+    assert len(items) == 39, f"工具目录应含 39 自定义工具: {len(items)}"
     assert set(names) == CUSTOM_TOOL_NAMES, f"工具目录名字全集不符: {names}"
     by_name = {t["name"]: t for t in items}
     for tool in items:
@@ -180,7 +190,7 @@ def _assert_tool_catalog(items: list) -> None:
     # #955 F58 §3：核心 10 工具不进目录（is_core 过滤），断言反转为「不出现在 items」
     for n in CORE_TOOL_NAMES:
         assert n not in names, f"核心工具 {n} 不应出现在目录（#955 F58 is_core 过滤）"
-    # #955 F58 §3：34 自定义工具 allow_custom_agent=True / is_core=False，
+    # #955/#956 F58 §3：39 自定义工具 allow_custom_agent=True / is_core=False，
     # domain/op == contract §3 GRANT_TOOL_MAP 格值
     for n in CUSTOM_TOOL_NAMES:
         assert by_name[n]["allow_custom_agent"] is True, f"{n} 应 allow_custom_agent=True"
@@ -190,7 +200,7 @@ def _assert_tool_catalog(items: list) -> None:
             f"{n} domain 应为 {domain}: {by_name[n]['domain']}"
         )
         assert by_name[n]["op"] == op, f"{n} op 应为 {op}: {by_name[n]['op']}"
-    assert len(CUSTOM_TOOL_NAMES) == 34, "自定义 Agent 可见工具应为 34"
+    assert len(CUSTOM_TOOL_NAMES) == 39, "自定义 Agent 可见工具应为 39"
     save_draft = by_name["save_draft"]
     assert save_draft["group"] == "writing"
     assert save_draft["allow_custom_agent"] is True
@@ -237,10 +247,10 @@ class TestToolCatalog:
         assert isinstance(body, dict)
         assert "items" in body
 
-    async def test_tools_catalog_34_custom_tools_with_domain_op(
+    async def test_tools_catalog_39_custom_tools_with_domain_op(
         self, client, db_session, override_get_db
     ):
-        """【R】#955 F58 §3：34 自定义工具全集 + 每项 8 键（+domain/op）+
+        """【R】#955/#956 F58 §3：39 自定义工具全集 + 每项 8 键（+domain/op）+
         核心 10 工具不在 items + 每工具 domain/op == GRANT_TOOL_MAP 格值。"""
         resp = await client.get(ENDPOINT_TOOLS)
         assert resp.status_code == 200

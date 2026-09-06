@@ -71,9 +71,16 @@ EXPECTED_READER_NAMES = [
 ]
 
 # #955 迁移: 26→34（−create_outline/update_outline + 10 新大纲工具）
+# #956 迁移: 34→39（reader 组内 +get_character/list_foreshadowing/get_foreshadowing/
+#             list_world_settings/get_world_setting，§1.3 邻居序）
 EXPECTED_CATALOG_NAMES = [
     "search_characters",
+    "get_character",
     "check_foreshadowing",
+    "list_foreshadowing",
+    "get_foreshadowing",
+    "list_world_settings",
+    "get_world_setting",
     "get_prior_summary",
     "audit_chapter",
     "count_words",
@@ -112,7 +119,12 @@ EXPECTED_CATALOG_NAMES = [
 #（outline 读 3=retrieval、写 7=writing；world_rw 8 / memory 3 / writing 3 不变）
 EXPECTED_GROUPS = {
     "search_characters": "retrieval",
+    "get_character": "retrieval",
     "check_foreshadowing": "retrieval",
+    "list_foreshadowing": "retrieval",
+    "get_foreshadowing": "retrieval",
+    "list_world_settings": "retrieval",
+    "get_world_setting": "retrieval",
     "get_prior_summary": "retrieval",
     "audit_chapter": "audit",
     "count_words": "audit",
@@ -201,22 +213,20 @@ class TestToolSpecGroup:
 
 
 class TestToolRegistryCatalog:
-    """TOOL_REGISTRY 完整 34 自定义工具目录契约（#838：ALL_TOOL_SPECS 过滤 allow_custom_agent）."""
+    """TOOL_REGISTRY 完整 39 自定义工具目录契约（#838：ALL_TOOL_SPECS 过滤 allow_custom_agent）."""
 
-    def test_registry_has_thirty_four_specs(self):
-        """注册表长度 34（44 统一目录 - 10 核心工具，#955 迁移 26→34）."""
-        assert len(TOOL_REGISTRY) == 34
-        # RED: 当前 26 → assert 26 == 34 FAILED
+    def test_registry_has_thirty_nine_specs(self):
+        """注册表长度 39（49 统一目录 - 10 核心工具，#955 34 + #956 +5）."""
+        assert len(TOOL_REGISTRY) == 39
 
     def test_registry_names_fixed_order(self):
-        """目录顺序固定：34 自定义工具按 ALL_TOOL_SPECS 过滤序
-        （读者 5 → save_draft → 设定写 2 → 设定改 2 → outline 10
+        """目录顺序固定：39 自定义工具按 ALL_TOOL_SPECS 过滤序
+        （读者 10 → save_draft → 设定写 2 → 设定改 2 → outline 10
         → 世界读写 8 → 记忆 3 → 写作 3）."""
         assert [spec.name for spec in TOOL_REGISTRY] == EXPECTED_CATALOG_NAMES
-        # RED: 实际 26 项 → 列表不等 FAILED
 
     def test_revise_is_last(self):
-        """revise 是注册表最后一项（34 自定义工具排序契约）."""
+        """revise 是注册表最后一项（39 自定义工具排序契约）."""
         assert TOOL_REGISTRY[-1].name == "revise"
         # RED: 实际末项 save_draft → 断言 FAILED
 
@@ -235,7 +245,7 @@ class TestToolRegistryCatalog:
 
 
 class TestToolGroupMapping:
-    """34 工具分组映射契约（#838：retrieval×9 / audit×2 / writing×23）. """
+    """39 工具分组映射契约（#838：retrieval×14 / audit×2 / writing×23）. """
 
     def test_group_mapping(self):
         """每工具 group 与契约表一致."""

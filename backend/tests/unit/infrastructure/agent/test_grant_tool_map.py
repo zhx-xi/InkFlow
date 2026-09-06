@@ -52,31 +52,33 @@ from collections import Counter
 
 from inkflow.infrastructure.agent.tools import ALL_TOOL_SPECS
 
-# 44 全集 − {agent_run, agent_call} = 42 名（8 删除核心 + 34 非核心）
-# #955 迁移: 33→42
+# 49 全集 − {agent_run, agent_call} = 47 名（8 删除核心 + 39 非核心）
+# #955 迁移: 33→42；#956 迁移: 42→47（+get_character/list/get_foreshadowing/list/get_world_setting）
 EXPECTED_MAPPED_NAMES = {
     "list_outlines", "get_outline", "list_plot_points",
     "create_overall_outline", "create_volume_outline", "create_chapter_outline",
     "update_volume_outline", "update_chapter_outline", "create_plot_point",
     "update_plot_point",
     "delete_outline", "delete_plot_point",
-    "search_characters", "create_character", "update_character", "delete_character",
-    "list_maps", "create_world_setting", "update_world_setting", "create_map",
-    "update_map", "delete_world_setting", "delete_map",
+    "search_characters", "get_character", "create_character", "update_character",
+    "delete_character",
+    "list_maps", "list_world_settings", "get_world_setting", "create_world_setting",
+    "update_world_setting", "create_map", "update_map", "delete_world_setting", "delete_map",
     "list_timeline_events", "create_timeline_event", "update_timeline_event",
     "delete_timeline_event",
-    "check_foreshadowing", "create_foreshadowing", "update_foreshadowing",
+    "check_foreshadowing", "list_foreshadowing", "get_foreshadowing",
+    "create_foreshadowing", "update_foreshadowing",
     "delete_foreshadowing",
     "memory_list", "memory_add", "memory_update", "memory_remove",
     "get_prior_summary", "audit_chapter", "count_words", "save_draft",
     "generate", "continue", "revise",
 }
 
-# 34 非核心（allow_custom_agent=True）名，供「恰一次」断言（含在 ALL_TOOL_SPECS 中）
+# 39 非核心（allow_custom_agent=True）名，供「恰一次」断言（含在 ALL_TOOL_SPECS 中）
 
 
 def _all_spec_names() -> set[str]:
-    """从既有 ALL_TOOL_SPECS 派生 44 工具名（GREEN 后仍稳定）。"""
+    """从既有 ALL_TOOL_SPECS 派生 49 工具名（GREEN 后仍稳定）。"""
     return {s.name for s in ALL_TOOL_SPECS}
 
 
@@ -86,7 +88,7 @@ def _mapped_names(map_impl) -> list[str]:
 
 
 def _non_core_names() -> set[str]:
-    """34 非核心（allow_custom_agent=True）工具名集合。"""
+    """39 非核心（allow_custom_agent=True）工具名集合。"""
     return {s.name for s in ALL_TOOL_SPECS if s.allow_custom_agent}
 
 
@@ -97,28 +99,28 @@ class TestGrantToolMapInvariants:
     """GRANT_TOOL_MAP 完整性三式（contract-954 §2.1 RED 锁死）。"""
 
     def test_union_equals_catalog_minus_agent_chain(self):  # 【R】
-        """union(values) == ALL_TOOL_SPECS 44 名 − {agent_run, agent_call} = 42 名。"""
+        """union(values) == ALL_TOOL_SPECS 49 名 − {agent_run, agent_call} = 47 名。"""
         from inkflow.infrastructure.agent.tools.registry import GRANT_TOOL_MAP
 
         mapped = set(_mapped_names(GRANT_TOOL_MAP))
         assert mapped == _all_spec_names() - {"agent_run", "agent_call"}
-        assert len(mapped) == 42
+        assert len(mapped) == 47
 
-    def test_union_count_is_42_distinct(self):  # 【R】
-        """展开扁平化后恰 42 项且无重复（每工具恰属一格）。"""
+    def test_union_count_is_47_distinct(self):  # 【R】
+        """展开扁平化后恰 47 项且无重复（每工具恰属一格，#956 42→47）。"""
         from inkflow.infrastructure.agent.tools.registry import GRANT_TOOL_MAP
 
         names = _mapped_names(GRANT_TOOL_MAP)
-        assert len(names) == 42
+        assert len(names) == 47
         assert len(names) == len(set(names))
 
     def test_all_non_core_names_mapped_exactly_once(self):  # 【R】
-        """34 非核心名全部出现在映射且恰一次。"""
+        """39 非核心名全部出现在映射且恰一次（#956 34→39）。"""
         from inkflow.infrastructure.agent.tools.registry import GRANT_TOOL_MAP
 
         counter = Counter(_mapped_names(GRANT_TOOL_MAP))
         non_core = _non_core_names()
-        assert len(non_core) == 34
+        assert len(non_core) == 39
         for name in non_core:
             assert counter[name] == 1
 
@@ -183,11 +185,11 @@ class TestToolNameToCell:
             for name in names:
                 assert TOOL_NAME_TO_CELL[name] == (domain, op)
 
-    def test_inverse_has_44_entries(self):  # 【R】
-        """逆索引恰 44 键（= 42 目录名 + 2 别名，#955 迁移 33→44）。"""
+    def test_inverse_has_49_entries(self):  # 【R】
+        """逆索引恰 49 键（= 47 目录名 + 2 别名，#956 迁移 44→49）。"""
         from inkflow.infrastructure.agent.tools.registry import TOOL_NAME_TO_CELL
 
-        assert len(TOOL_NAME_TO_CELL) == 44
+        assert len(TOOL_NAME_TO_CELL) == 49
 
     def test_inverse_no_agent_run_call(self):  # 【R】
         """逆索引不含核心链工具。"""

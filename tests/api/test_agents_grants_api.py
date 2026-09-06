@@ -228,7 +228,7 @@ class TestGetAgentGrantsLegacy:
             {"domain": "writing", "ops": ["read"]},
         ]
         assert data["resolved_tool_names"] == (
-            ["search_characters", *WRITING_READ_TOOLS]
+            ["search_characters", "get_character", *WRITING_READ_TOOLS]
         )
 
 

@@ -12,10 +12,10 @@ Typer），本文件全部用例以 `runner.invoke(app, ["agent", "tools", ...])
   同 config/llm 组先例
 - ToolSpec 字段: name / description / input_schema（dict）
 - 人类输出（无 --json）：每个工具一行 `name: description` 或等价形态，
-  本文件只断言 34 个工具名出现在 stdout，不锁精确格式
+  本文件只断言 39 个工具名出现在 stdout，不锁精确格式
 - --json 输出信封: {"ok": true, "data": {"items": [ToolSpec...]}}，
   items 每项含 name/description/input_schema 三键
-- 工具名顺序固定（34 个，= TOOL_REGISTRY 过滤序）:
+- 工具名顺序固定（39 个，= TOOL_REGISTRY 过滤序）:
   见 TOOL_NAMES（reader 5 → save_draft → 设定写 2 → 设定改 2 → outline 10 →
   世界读写 8 → 记忆 3 → 写作 3）
 - 运行错误（TOOL_REGISTRY import 失败）→ stderr + exit 1（mock 场景下难以触发，
@@ -47,10 +47,15 @@ from inkflow.cli.commands import agent_cmd
 
 runner = CliRunner()
 
-# 工具名顺序固定契约（父侧定稿，GREEN 按此顺序输出 = TOOL_REGISTRY 过滤序 34）
+# 工具名顺序固定契约（父侧定稿，GREEN 按此顺序输出 = TOOL_REGISTRY 过滤序 39）
 TOOL_NAMES = [
     "search_characters",
+    "get_character",
     "check_foreshadowing",
+    "list_foreshadowing",
+    "get_foreshadowing",
+    "list_world_settings",
+    "get_world_setting",
     "get_prior_summary",
     "audit_chapter",
     "count_words",
@@ -98,7 +103,7 @@ class TestAgentToolsCLI:
 
     @pytest.mark.agent
     def test_tools_list_json(self):
-        """--json：exit 0；信封 ok=True；items 34 项且顺序固定；每项含三键。"""
+        """--json：exit 0；信封 ok=True；items 39 项且顺序固定；每项含三键。"""
         result = runner.invoke(app, ["agent", "tools", "list", "--json"])
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
@@ -117,14 +122,14 @@ class TestAgentToolsCLI:
         result = runner.invoke(app, ["agent", "tools", "list", "--json"])
         assert result.exit_code == 0
         items = json.loads(result.stdout)["data"]["items"]
-        assert len(items) == 34
+        assert len(items) == 39
         for item in items:
             assert isinstance(item["description"], str)
             assert item["description"].strip() != ""
 
     @pytest.mark.agent
     def test_tools_list_human(self):
-        """无 --json：34 个工具名均出现在 stdout（不锁精确格式）。"""
+        """无 --json：39 个工具名均出现在 stdout（不锁精确格式）。"""
         result = runner.invoke(app, ["agent", "tools", "list"])
         assert result.exit_code == 0
         stdout = self._strip_ansi(result.stdout)
