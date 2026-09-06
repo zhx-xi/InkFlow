@@ -63,8 +63,22 @@ def test_save_config_json_merges_existing(tmp_path) -> None:
 
 
 def test_llm_default_model_defaults_empty(tmp_path, monkeypatch) -> None:
-    """默认生成模型为空（#735 D1；移除内置 deepseek/deepseek-v4-flash 硬编码）。"""
+    """默认生成模型为空（#735 D1；移除内置 deepseek/deepseek-v4-flash 硬编码）。
+
+    #977 隔离补强：instance.env 全键生效后，本机 %APPDATA%/InkFlow/instance.env
+    可能含 INKFLOW_LLM_DEFAULT_MODEL → 锚点须 patch 到不存在路径（镜像
+    test_log.py:158 手法），否则真默认断言被本地实例文件污染。断言语义不变。
+    """
+    import importlib
+
     monkeypatch.delenv("INKFLOW_LLM_DEFAULT_MODEL", raising=False)
+    cfg_mod = importlib.import_module("inkflow.core.config")
+    monkeypatch.setattr(
+        cfg_mod,
+        "get_instance_env_path",
+        lambda: tmp_path / "no-instance-env" / "instance.env",
+        raising=False,
+    )
     cfg = InkFlowConfig(_env_file=None, data_dir=tmp_path)
     assert cfg.llm_default_model == ""
 

@@ -45,12 +45,22 @@ from inkflow.api.app import app
 from inkflow.api.routers.books import get_planner_service
 from inkflow.domain.models.planner_session import PlannerSession
 from inkflow.domain.models.writing_plan import WritingPlan
-from inkflow.domain.services.planner_service import PlannerRespondResult
+from inkflow.domain.services.planner_service import (
+    ROUND1_QUESTIONS,
+    PlannerRespondResult,
+)
+from inkflow.infrastructure.database.models.project import ProjectORM
 
 BASE = "/api/v1/agent/books"
 
 SAMPLE_SESSION_ID = uuid.uuid4()
 SAMPLE_PROJECT_ID = uuid.uuid4()
+
+# #977 §0/§4 RED-2 迁移前提：真实装配用例须 seed 项目行（config.model 非空）→ 修复后
+# project_repo.get 命中 → resolve_model 走项目模型 → chat 仍被调。id 用小值
+# uuid.UUID(int=1)（SQLite projects.id 为 INTEGER 主键，随机 uuid4 超出 int64 →
+# repo.get 超范围守卫 return None，见 project_repo.py:78-81）。
+SEED_PROJECT_ID = uuid.UUID(int=1)
 
 _CONFIRMED = [
     {"key": "题材", "value": "悬疑 + 时间悖论科幻", "source": "user"},
@@ -139,6 +149,27 @@ def _respond_result_v12(
     )
 
 
+async def _seed_project(db_session, *, model: str | None) -> uuid.UUID:
+    """Seed 单行项目行（#977 RED-2 迁移前提）。
+
+    ProjectORM.config 为 LenientJSON 列：{"model": <模型>} round-trip 至领域
+    ProjectConfig.model（_orm_to_domain project_repo.py:37）。created_at/updated_at
+    显式给值（nullable=False 坑，contract §4 警示）。返回 domain 项目 id
+    （uuid.UUID(int=orm.id)）。
+    """
+    orm = ProjectORM(
+        id=SEED_PROJECT_ID.int,
+        name="seed-project-977",
+        config={"model": model},
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(orm)
+    await db_session.commit()
+    await db_session.refresh(orm)
+    return SEED_PROJECT_ID
+
+
 # ── POST /planner：v1.2 响应字段 ───────────────────────────────────
 
 
@@ -191,9 +222,7 @@ async def test_planner_respond_response_has_v12_fields(client, override_planner)
 
 @pytest.mark.asyncio
 @pytest.mark.api
-async def test_planner_respond_confirm_true_passed_to_service(
-    client, override_planner
-):
+async def test_planner_respond_confirm_true_passed_to_service(client, override_planner):
     """末尾总体确认：respond body {confirm: true} → svc.respond 收到 confirm=True。"""
     planner = override_planner
     plan = WritingPlan(
@@ -205,9 +234,7 @@ async def test_planner_respond_confirm_true_passed_to_service(
         progress={},
         execution_refs={},
     )
-    planner.respond.return_value = _respond_result_v12(
-        completed=True, confirming=True, plan=plan
-    )
+    planner.respond.return_value = _respond_result_v12(completed=True, confirming=True, plan=plan)
 
     resp = await client.post(
         f"{BASE}/planner/{SAMPLE_SESSION_ID}/respond",
@@ -216,9 +243,7 @@ async def test_planner_respond_confirm_true_passed_to_service(
 
     assert resp.status_code == 200
     assert resp.json()["completed"] is True
-    planner.respond.assert_awaited_once_with(
-        SAMPLE_SESSION_ID, {}, auto=False, confirm=True
-    )
+    planner.respond.assert_awaited_once_with(SAMPLE_SESSION_ID, {}, auto=False, confirm=True)
 
 
 @pytest.mark.asyncio
@@ -267,14 +292,20 @@ async def test_planner_get_response_has_v12_fields(client, override_planner):
 @pytest.mark.asyncio
 @pytest.mark.api
 async def test_get_planner_service_llm_start_real_assembly(db_session):
-    """真实装配 + mock LLM：start 走 _project_context_getter（空库 → ""）+
-    模板渲染路径（540-554 真实 PromptManager）。"""
+    """真实装配 + mock LLM：start 走 _project_context_getter（seed 项目 → 设定摘要）+
+    模板渲染路径（540-554 真实 PromptManager）。
+
+    #977 迁移（§0/§4 RED-2）：seed 项目行（config.model 非空），start 用 seed 项目
+    id → 修复后 project_repo.get 命中 → resolve_model 走项目模型 → chat 仍被调
+    （保持原 `chat.assert_awaited_once` 绿，锁「真实装配回调 + 模板渲染」语义不变）。
+    """
     import json as _json
     from unittest.mock import AsyncMock
 
     from inkflow.api.routers.books import get_planner_service
     from inkflow.domain.ports.llm_client import ChatResponse
 
+    await _seed_project(db_session, model="deepseek/deepseek-v4-flash")
     svc = get_planner_service(db_session)
     assert svc is not None
     svc._llm_client = AsyncMock()
@@ -309,7 +340,7 @@ async def test_get_planner_service_llm_start_real_assembly(db_session):
         model="test",
     )
 
-    session = await svc.start(uuid.uuid4(), "写一本关于时间旅者的悬疑小说")
+    session = await svc.start(SEED_PROJECT_ID, "写一本关于时间旅者的悬疑小说")
 
     assert session.status == "drafting"
     assert len(session.asked_questions) == 3
@@ -320,7 +351,12 @@ async def test_get_planner_service_llm_start_real_assembly(db_session):
 @pytest.mark.asyncio
 @pytest.mark.api
 async def test_get_planner_service_context_getter_exception(db_session, monkeypatch):
-    """_project_context_getter 异常 → 返回空串（books.py except 分支）。"""
+    """_project_context_getter 异常 → 返回空串（books.py except 分支）。
+
+    #977 迁移（§0/§4 RED-2）：seed 项目行（config.model 非空）+ start 用 seed 项目
+    id → 修复后 project_repo.get 命中 → resolve_model 走项目模型 → chat 仍被调
+    （保持 `chat.await_count == 2` 锁「必答项缺失 → 重试 1 次」语义不变）。
+    """
     import json as _json
     from unittest.mock import AsyncMock
 
@@ -335,6 +371,7 @@ async def test_get_planner_service_context_getter_exception(db_session, monkeypa
         _boom,
     )
 
+    await _seed_project(db_session, model="deepseek/deepseek-v4-flash")
     svc = get_planner_service(db_session)
     svc._llm_client = AsyncMock()
     svc._llm_client.chat.return_value = ChatResponse(
@@ -356,7 +393,7 @@ async def test_get_planner_service_context_getter_exception(db_session, monkeypa
         model="test",
     )
 
-    session = await svc.start(uuid.uuid4(), "写一本关于时间旅者的悬疑小说")
+    session = await svc.start(SEED_PROJECT_ID, "写一本关于时间旅者的悬疑小说")
 
     assert session.status == "drafting"
     # LLM 返回 1 问缺必答项 → 重试 1 次 → 仍缺 → 服务端补问 → 题材/篇幅/主题 齐备
@@ -370,6 +407,8 @@ async def test_get_planner_service_real_assembly_complete(db_session):
     """真实装配 + mock LLM：完整访谈 → confirm → 装配闭包 _outline_service/
     _character_service 真实落库（books.py 125/134 行覆盖）。
 
+    #977 迁移（§0/§4 RED-2）：seed 项目行（config.model 非空）→ 修复后
+    project_repo.get(seed) 命中 → resolve 项目模型 → chat 仍被调（完整访谈链不破）。
     注：project_id 用小值 uuid.UUID(int=1)（outline/character 表 project_id
     为 SQLite INTEGER，uuid4 128 位溢出，F48 已知坑）。
     """
@@ -379,6 +418,7 @@ async def test_get_planner_service_real_assembly_complete(db_session):
     from inkflow.api.routers.books import get_planner_service
     from inkflow.domain.ports.llm_client import ChatResponse
 
+    await _seed_project(db_session, model="deepseek/deepseek-v4-flash")
     svc = get_planner_service(db_session)
     llm = AsyncMock()
     llm.chat.side_effect = [
@@ -430,7 +470,7 @@ async def test_get_planner_service_real_assembly_complete(db_session):
     ]
     svc._llm_client = llm
 
-    session = await svc.start(uuid.UUID(int=1), "写一本关于时间旅者的悬疑小说")
+    session = await svc.start(SEED_PROJECT_ID, "写一本关于时间旅者的悬疑小说")
     r1 = await svc.respond(
         session.id,
         {"q1": "悬疑为主", "q2": "约 10 万字", "q3": "主题是自我救赎"},
@@ -468,3 +508,114 @@ async def test_get_book_service_real_assembly_callbacks(db_session):
     if outline_repo is not None:
         outlines, total = await outline_repo.list(uuid.UUID(int=1))
         assert outlines == [] and total == 0
+
+
+# ── #977 RED-2 轨：真实装配 model 全链 + 空链 WARN 模板 ─────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_get_planner_service_real_assembly_passes_project_model(db_session):
+    """【R】#977 真实装配全链锁 model 传递：books 装配 → PlannerService →
+    LLM client chat 收到项目模型。
+
+    契约节 #977 §0-①/§2/§4 RED-2a：get_planner_service 修复后注入
+    project_repo=SQLiteProjectRepository(db) + llm_default_model=config.llm_default_model；
+    seed 项目 config.model 非空 → resolve_model(None, 项目模型, 全局默认) = 项目模型
+    → chat(model=项目模型)。
+    RED：planner_service.py:598 chat 现无 model= 关键字 → await_args.kwargs 缺
+    "model" 键 → KeyError（断言 kwargs 缺失）。
+    """
+    import json as _json
+    from unittest.mock import AsyncMock
+
+    from inkflow.api.routers.books import get_planner_service
+    from inkflow.domain.ports.llm_client import ChatResponse
+
+    await _seed_project(db_session, model="deepseek/deepseek-v4-flash")
+    svc = get_planner_service(db_session)
+    assert svc is not None
+    svc._llm_client = AsyncMock()
+    svc._llm_client.chat.return_value = ChatResponse(
+        content=_json.dumps(
+            {
+                "questions": [
+                    {
+                        "id": "q1",
+                        "text": "题材：悬疑为主还是悬疑+科幻混合？",
+                        "template": "悬疑为主，但加入 ___ 元素",
+                        "kind": "general",
+                    },
+                    {
+                        "id": "q2",
+                        "text": "篇幅：预计多少字？",
+                        "template": "约 ___ 字",
+                        "kind": "general",
+                    },
+                    {
+                        "id": "q3",
+                        "text": "主题：能否一句话描述主题？",
+                        "template": "主题是 ___",
+                        "kind": "general",
+                    },
+                ],
+                "confirmed_items": [],
+                "conflicts": [],
+            },
+            ensure_ascii=False,
+        ),
+        model="test",
+    )
+
+    session = await svc.start(SEED_PROJECT_ID, "写一本关于时间旅者的悬疑小说")
+
+    assert session.status == "drafting"
+    assert svc._llm_client.chat.await_args.kwargs["model"] == "deepseek/deepseek-v4-flash"
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_get_planner_service_empty_chain_warns_template(db_session, monkeypatch):
+    """【R】#977 两级皆空 → 不调 chat + 一次 WARN + 模板兜底（零 ERROR）。
+
+    契约节 #977 §0-①/§4 RED-2b：seed 项目 config.model=None + 全局默认空
+    （monkeypatch config.llm_default_model=""）→ resolve_model(None, None, "")
+    → None → 一次 loguru WARNING「未配置默认模型，访谈使用模板题库」+ 不调 chat
+    + return None → ROUND1 模板兜底。
+    RED：planner_service.py 现无 model 解析/无 WARN → chat 被调（assert_not_awaited
+    失败）+ sink 捕获 0 条 WARN（len==1 失败）。
+    """
+    from unittest.mock import AsyncMock
+
+    from loguru import logger
+
+    from inkflow.api.routers.books import get_planner_service
+    from inkflow.core.config import config
+    from inkflow.domain.ports.llm_client import ChatResponse
+
+    await _seed_project(db_session, model=None)
+    monkeypatch.setattr(config, "llm_default_model", "", raising=False)
+
+    svc = get_planner_service(db_session)
+    assert svc is not None
+    svc._llm_client = AsyncMock()
+    svc._llm_client.chat.return_value = ChatResponse(content="{}", model="test")
+
+    records: list = []
+    sink_id = logger.add(lambda m: records.append(m), level="WARNING", format="{message}")
+    try:
+        session = await svc.start(SEED_PROJECT_ID, "写一本关于时间旅者的悬疑小说")
+    finally:
+        logger.remove(sink_id)
+
+    assert session.status == "drafting"
+    # 两级皆空 → 不调 chat → ROUND1 模板 3 题兜底（asked_questions 保持默认模板）
+    assert len(session.asked_questions) == 3
+    assert session.asked_questions == ROUND1_QUESTIONS
+    svc._llm_client.chat.assert_not_awaited()
+
+    warnings = [r for r in records if r.record["level"].name == "WARNING"]
+    errors = [r for r in records if r.record["level"].name == "ERROR"]
+    assert len(warnings) == 1
+    assert "未配置默认模型，访谈使用模板题库" in warnings[0].record["message"]
+    assert errors == []

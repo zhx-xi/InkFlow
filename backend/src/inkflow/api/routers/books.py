@@ -75,6 +75,7 @@ class InterveneRequest(BaseModel):
 
 def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
     """获取 PlannerService 实例（repo + write_auto/outline/character/LLM 提问装配，#460/#475）。"""
+    from inkflow.core.config import config
     from inkflow.domain.services.character_service import CharacterService
     from inkflow.domain.services.outline_service import OutlineService
     from inkflow.domain.services.planner_service import PlannerService
@@ -82,6 +83,9 @@ def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
         SQLiteCharacterRepository,
     )
     from inkflow.infrastructure.database.repositories.outline_repo import SQLiteOutlineRepository
+    from inkflow.infrastructure.database.repositories.project_repo import (
+        SQLiteProjectRepository,
+    )
     from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
     from inkflow.infrastructure.llm.prompt_manager import LangChainPromptManager
     from inkflow.infrastructure.repositories.book_repository import SQLiteBookRepository
@@ -172,6 +176,8 @@ def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
         project_context_getter=_project_context_getter,
         prompt_manager=LangChainPromptManager(),
         outline_repo=SQLiteOutlineRepository(db),
+        project_repo=SQLiteProjectRepository(db),
+        llm_default_model=config.llm_default_model,
     )
 
 

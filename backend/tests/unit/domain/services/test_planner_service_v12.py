@@ -153,8 +153,12 @@ def _make_service(
     llm_client: AsyncMock | None = None,
     project_context_getter: AsyncMock | None = None,
     prompt_manager: AsyncMock | None = None,
+    llm_default_model: str = "test/model",
 ) -> PlannerService:
-    """v1.2 装配：默认注入 llm_client（None 时走确定性兜底）。"""
+    """v1.2 装配：默认注入 llm_client（None 时走确定性兜底）。
+
+    #977 迁移：透传 llm_default_model（默认非空），供 GREEN 后 model 解析链取全局默认。
+    """
     return PlannerService(
         repo=repo,
         write_auto=AsyncMock(return_value=None),
@@ -164,6 +168,7 @@ def _make_service(
         project_context_getter=project_context_getter
         or AsyncMock(return_value="设定摘要：时间旅者，悬疑基调"),
         prompt_manager=prompt_manager,
+        llm_default_model=llm_default_model,
     )
 
 
@@ -725,6 +730,7 @@ async def test_start_llm_without_context_getter():
         llm_client=llm,
         project_context_getter=None,  # 未装配
         prompt_manager=None,
+        llm_default_model="test/model",  # #977 迁移：直构 LLM 用例透传全局默认
     )
 
     session = await svc.start(_pid(), "写一本关于时间旅者的悬疑小说")
