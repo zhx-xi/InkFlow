@@ -65,6 +65,7 @@ from inkflow.infrastructure.agent.tools.agent_chain_tools import (
 )
 from inkflow.infrastructure.agent.tools.delete_tools import build_delete_tools
 from inkflow.infrastructure.agent.tools.memory_tools import build_memory_tools
+from inkflow.infrastructure.agent.tools.outline_tools import build_outline_tools
 from inkflow.infrastructure.agent.tools.reader_tools import build_reader_tools
 from inkflow.infrastructure.agent.tools.save_draft_tool import build_save_draft_tool
 from inkflow.infrastructure.agent.tools.setting_update_tools import build_setting_update_tools
@@ -143,6 +144,7 @@ __all__ = [
     "build_deep_agent",
     "build_delete_tools",
     "build_memory_tools",
+    "build_outline_tools",
     "build_reader_tools",
     "build_save_draft_tool",
     "build_setting_update_tools",

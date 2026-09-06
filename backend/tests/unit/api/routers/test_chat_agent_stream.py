@@ -91,12 +91,22 @@ EXPECTED_READER_NAMES = [
 EXPECTED_SETTING_WRITE_NAMES = [
     "create_character",
     "create_world_setting",
-    "create_outline",
 ]
 EXPECTED_SETTING_UPDATE_NAMES = [
     "update_character",
     "update_world_setting",
-    "update_outline",
+]
+EXPECTED_OUTLINE_NAMES = [
+    "list_outlines",
+    "get_outline",
+    "list_plot_points",
+    "create_overall_outline",
+    "create_volume_outline",
+    "create_chapter_outline",
+    "update_volume_outline",
+    "update_chapter_outline",
+    "create_plot_point",
+    "update_plot_point",
 ]
 EXPECTED_WORLD_RW_NAMES = [
     "list_maps",
@@ -472,7 +482,8 @@ class TestGetChatAgentService:
         m_sd,
         m_da,
     ) -> None:
-        """全量工具面：5 只读 + save_draft + 3 设定库写入 → build_deep_agent。"""
+        """全量工具面：5 只读 + save_draft + 2 设定库写入 + 2 设定库更新 + 10 outline
+        + 世界读写 + 记忆 + 写作 + agent 链 → build_deep_agent。"""
         m_config.llm_default_model = MODEL
         m_config.model_routing = {}
         from inkflow.infrastructure.llm.provider_config import LLMProviderConfig
@@ -505,17 +516,17 @@ class TestGetChatAgentService:
         assert save_deps.audit_service is m_audit.return_value
         assert save_deps.expected_project_id == uuid.UUID(PROJECT_ID)
         assert save_deps.expected_chapter_id == uuid.UUID(CHAPTER_ID)
-        # setting write deps：character/world/outline service + expected_project_id
+        # setting write deps：character/world service + expected_project_id（outline 已退役）
         setting_deps = _kwarg_or_positional(m_sw.call_args, "deps", 0)
         from inkflow.infrastructure.agent.tools.setting_write_tools import SettingWriteToolDeps
 
         assert isinstance(setting_deps, SettingWriteToolDeps)
         assert setting_deps.character_service is m_char.return_value
         assert setting_deps.world_service is m_world.return_value
-        assert setting_deps.outline_service is m_outline.return_value
         assert setting_deps.audit_service is m_audit.return_value
         assert setting_deps.expected_project_id == uuid.UUID(PROJECT_ID)
-        # build_deep_agent：全量工具（5 只读 + save_draft + 3 设定库写入）、profile_key=None
+        # build_deep_agent：全量工具（5 只读 + save_draft + 2 设定库写入 + 2 设定库更新
+        # + 10 outline + 世界读写 + 记忆 + 写作 + agent 链）、profile_key=None
         assert m_da.call_count == 1
         tools = _kwarg_or_positional(m_da.call_args, "tools", 3, None)
         assert [tool.spec.name for tool in tools] == [
@@ -523,6 +534,7 @@ class TestGetChatAgentService:
             "save_draft",
             *EXPECTED_SETTING_WRITE_NAMES,
             *EXPECTED_SETTING_UPDATE_NAMES,
+            *EXPECTED_OUTLINE_NAMES,
             *EXPECTED_WORLD_RW_NAMES,
             *EXPECTED_MEMORY_NAMES,
             *EXPECTED_WRITING_NAMES,
@@ -600,6 +612,7 @@ class TestGetChatAgentService:
             "save_draft",
             *EXPECTED_SETTING_WRITE_NAMES,
             *EXPECTED_SETTING_UPDATE_NAMES,
+            *EXPECTED_OUTLINE_NAMES,
             *EXPECTED_WORLD_RW_NAMES,
             *EXPECTED_MEMORY_NAMES,
             *EXPECTED_WRITING_NAMES,

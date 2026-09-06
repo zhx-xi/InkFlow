@@ -1,4 +1,7 @@
-"""F39 M2 工具目录契约测试 — ToolSpec.group 分组扩展 + 完整 6 工具目录（spec §2.3/§5.1）.
+"""F39 M2 工具目录契约测试 — ToolSpec.group 分组扩展 + 完整 34 工具目录（spec §2.3/§5.1）.
+
+#955 迁移（RED-B）: 本文件从 26 自定义工具目录迁移至 34（−create_outline/update_outline
++ 10 新大纲工具），outline 读 3 属 retrieval、写 7 属 writing。
 
 被测模块（全部已存在，本批为 MODIFY 追加段契约——顶部 import 可解析，
 无收集期失败；RED 形态为用例体内 AttributeError/TypeError/断言失败混合）:
@@ -17,46 +20,34 @@
            name: str                 # 工具名（snake_case，稳定 id）
            description: str          # 用途描述（LLM 调用决策 + UI 勾选说明）
            input_schema: dict        # JSON Schema（Pydantic model_json_schema() 产物）
-           group: str = "project"    # 新增：分组键（writing/retrieval/audit/project）
+           group: str = "project"    # 分组键（writing/retrieval/audit/project）
 
 2. 分组键与 UI 标签映射: writing→写作 / retrieval→检索 / audit→审计 / project→项目。
    project 组本期为空（预留未来项目域工具）。
 
-3. TOOL_REGISTRY 升级为完整 6 工具目录（infrastructure/agent/tools/__init__.py
-   MODIFY），顺序固定——先 5 只读（_TOOL_SPECS 原序）后 save_draft:
-
+3. TOOL_REGISTRY 升级为完整 34 工具目录（infrastructure/agent/tools/__init__.py
+   MODIFY），顺序固定——按 ALL_TOOL_SPECS 过滤 allow_custom_agent 序:
        search_characters   retrieval    搜索项目内角色档案（既有）
        check_foreshadowing retrieval    列出未回收伏笔（既有）
        get_prior_summary   retrieval    获取前文摘要（既有）
        audit_chapter       audit        单章一致性审计（既有）
        count_words         audit        中英文混合字数统计（既有）
-       save_draft          writing      保存章节草稿（agent 唯一写面，新增静态化）
+       save_draft          writing      保存章节草稿（既有）
+       # #955: 设定写/设定改 各−1（−create_outline/update_outline）+ 新 outline 10
+       #       + 世界读写 8 + 记忆 3 + 写作 3 = 34 项
 
 4. save_draft ToolSpec 静态化入 TOOL_REGISTRY（name/description/input_schema/group
    常量），其 func 仍由 build_save_draft_tool 动态构建（依赖 draft_service /
    audit_service 注入）——动态构建的 Tool.spec 与静态常量同源（group 亦为
    "writing"，dataclass 值相等）。
 
-RED 预期（当前实现形态）
-------------------------
-- ToolSpec 无 group 字段: 访问 .group → AttributeError（dataclass 无该属性）；
-  构造传 group= → TypeError（unexpected keyword argument）；dataclasses.fields
-  缺 group → 断言 FAILED。均为用例体内异常/断言失败（FAILED），非收集 ERROR。
-- TOOL_REGISTRY 仅 5 只读: len==6 / 顺序含 save_draft / save_draft 静态 spec
-  断言 → AssertionError FAILED。
-- 守护用例（既有 5 工具名在注册表、注册表项均为 ToolSpec、动态 func 可调用）
+RED 预期（当前实现形态，migrate 后因新目录未实现而部分 FAILED）
+----------------------------------------------------------
+- TOOL_REGISTRY 仅 26 项: len==34 / 顺序含新大纲工具 / TEST_GROUPS 集不等 → FAILED。
+- 守护用例（既有 5 读工具名在注册表、注册表项均为 ToolSpec、动态 func 可调用）
   RED 阶段即 PASS（刻意，防父侧误判）。
-- 预期总结形态: 目标用例 FAILED（AttributeError/TypeError/AssertionError 混合），
-  无 ERRORS；部分守护用例 PASSED。
-
-GREEN 适配预警（冲突清单，交付报告同步）
-----------------------------------------
-- tests/unit/test_reader_tools.py::TestToolRegistry::test_registry_has_five_specs
-  （assert len(TOOL_REGISTRY) == 5）与 test_registry_names_set（== 5 名集合）在
-  GREEN 后 TOOL_REGISTRY=6 时翻红——GREEN 任务书须含这两处适配（len 5→6、
-  集合补 save_draft），本文件不修改既有测试文件。
+- 预期总结形态: 目标用例 FAILED（AssertionError），无收集 ERROR；守护用例 PASSED。
 """
-
 from __future__ import annotations
 
 from dataclasses import fields
@@ -79,6 +70,7 @@ EXPECTED_READER_NAMES = [
     "count_words",
 ]
 
+# #955 迁移: 26→34（−create_outline/update_outline + 10 新大纲工具）
 EXPECTED_CATALOG_NAMES = [
     "search_characters",
     "check_foreshadowing",
@@ -88,10 +80,18 @@ EXPECTED_CATALOG_NAMES = [
     "save_draft",
     "create_character",
     "create_world_setting",
-    "create_outline",
     "update_character",
     "update_world_setting",
-    "update_outline",
+    "list_outlines",
+    "get_outline",
+    "list_plot_points",
+    "create_overall_outline",
+    "create_volume_outline",
+    "create_chapter_outline",
+    "update_volume_outline",
+    "update_chapter_outline",
+    "create_plot_point",
+    "update_plot_point",
     "list_maps",
     "create_map",
     "update_map",
@@ -108,6 +108,8 @@ EXPECTED_CATALOG_NAMES = [
     "revise",
 ]
 
+# #955 迁移: −create_outline/update_outline + 10 新大纲工具
+#（outline 读 3=retrieval、写 7=writing；world_rw 8 / memory 3 / writing 3 不变）
 EXPECTED_GROUPS = {
     "search_characters": "retrieval",
     "check_foreshadowing": "retrieval",
@@ -117,10 +119,18 @@ EXPECTED_GROUPS = {
     "save_draft": "writing",
     "create_character": "writing",
     "create_world_setting": "writing",
-    "create_outline": "writing",
     "update_character": "writing",
     "update_world_setting": "writing",
-    "update_outline": "writing",
+    "list_outlines": "retrieval",
+    "get_outline": "retrieval",
+    "list_plot_points": "retrieval",
+    "create_overall_outline": "writing",
+    "create_volume_outline": "writing",
+    "create_chapter_outline": "writing",
+    "update_volume_outline": "writing",
+    "update_chapter_outline": "writing",
+    "create_plot_point": "writing",
+    "update_plot_point": "writing",
     "list_maps": "retrieval",
     "create_map": "writing",
     "update_map": "writing",
@@ -191,21 +201,22 @@ class TestToolSpecGroup:
 
 
 class TestToolRegistryCatalog:
-    """TOOL_REGISTRY 完整 26 自定义工具目录契约（#838：ALL_TOOL_SPECS 过滤 allow_custom_agent）."""
+    """TOOL_REGISTRY 完整 34 自定义工具目录契约（#838：ALL_TOOL_SPECS 过滤 allow_custom_agent）."""
 
-    def test_registry_has_twenty_six_specs(self):
-        """注册表长度 26（35 统一目录 - 9 核心工具）."""
-        assert len(TOOL_REGISTRY) == 26
-        # RED: 当前 6 → assert 6 == 26 FAILED
+    def test_registry_has_thirty_four_specs(self):
+        """注册表长度 34（44 统一目录 - 10 核心工具，#955 迁移 26→34）."""
+        assert len(TOOL_REGISTRY) == 34
+        # RED: 当前 26 → assert 26 == 34 FAILED
 
     def test_registry_names_fixed_order(self):
-        """目录顺序固定：26 自定义工具按 ALL_TOOL_SPECS 过滤序
-        （读者 5 → save_draft → 设定写 3 → 设定改 3 → 世界读写 8 → 记忆 3 → 写作 3）."""
+        """目录顺序固定：34 自定义工具按 ALL_TOOL_SPECS 过滤序
+        （读者 5 → save_draft → 设定写 2 → 设定改 2 → outline 10
+        → 世界读写 8 → 记忆 3 → 写作 3）."""
         assert [spec.name for spec in TOOL_REGISTRY] == EXPECTED_CATALOG_NAMES
-        # RED: 实际 6 项 → 列表不等 FAILED
+        # RED: 实际 26 项 → 列表不等 FAILED
 
     def test_revise_is_last(self):
-        """revise 是注册表最后一项（26 自定义工具排序契约）."""
+        """revise 是注册表最后一项（34 自定义工具排序契约）."""
         assert TOOL_REGISTRY[-1].name == "revise"
         # RED: 实际末项 save_draft → 断言 FAILED
 
@@ -224,13 +235,13 @@ class TestToolRegistryCatalog:
 
 
 class TestToolGroupMapping:
-    """26 工具分组映射契约（#838：retrieval×6 / audit×2 / writing×18）."""
+    """34 工具分组映射契约（#838：retrieval×9 / audit×2 / writing×23）. """
 
     def test_group_mapping(self):
         """每工具 group 与契约表一致."""
         by_name = {spec.name: spec for spec in TOOL_REGISTRY}
         assert set(by_name) == set(EXPECTED_GROUPS)
-        # RED: 缺 save_draft → 集合不等 FAILED
+        # RED: TOOL_REGISTRY=26 → 集合不等 FAILED
         for name, group in EXPECTED_GROUPS.items():
             assert by_name[name].group == group
             # RED: 即便集合相等，.group → AttributeError FAILED

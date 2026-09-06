@@ -12,12 +12,12 @@ Typer），本文件全部用例以 `runner.invoke(app, ["agent", "tools", ...])
   同 config/llm 组先例
 - ToolSpec 字段: name / description / input_schema（dict）
 - 人类输出（无 --json）：每个工具一行 `name: description` 或等价形态，
-  本文件只断言 5 个工具名出现在 stdout，不锁精确格式
+  本文件只断言 34 个工具名出现在 stdout，不锁精确格式
 - --json 输出信封: {"ok": true, "data": {"items": [ToolSpec...]}}，
   items 每项含 name/description/input_schema 三键
-- 工具名顺序固定（5 个）:
-  search_characters, check_foreshadowing, get_prior_summary,
-  audit_chapter, count_words
+- 工具名顺序固定（34 个，= TOOL_REGISTRY 过滤序）:
+  见 TOOL_NAMES（reader 5 → save_draft → 设定写 2 → 设定改 2 → outline 10 →
+  世界读写 8 → 记忆 3 → 写作 3）
 - 运行错误（TOOL_REGISTRY import 失败）→ stderr + exit 1（mock 场景下难以触发，
   本文件不测，参数错误面由未知命令 exit 2 覆盖）
 ════════════════════════════════════════════════════════════════════
@@ -47,7 +47,7 @@ from inkflow.cli.commands import agent_cmd
 
 runner = CliRunner()
 
-# 工具名顺序固定契约（父侧定稿，GREEN 按此顺序输出）
+# 工具名顺序固定契约（父侧定稿，GREEN 按此顺序输出 = TOOL_REGISTRY 过滤序 34）
 TOOL_NAMES = [
     "search_characters",
     "check_foreshadowing",
@@ -57,10 +57,18 @@ TOOL_NAMES = [
     "save_draft",
     "create_character",
     "create_world_setting",
-    "create_outline",
     "update_character",
     "update_world_setting",
-    "update_outline",
+    "list_outlines",
+    "get_outline",
+    "list_plot_points",
+    "create_overall_outline",
+    "create_volume_outline",
+    "create_chapter_outline",
+    "update_volume_outline",
+    "update_chapter_outline",
+    "create_plot_point",
+    "update_plot_point",
     "list_maps",
     "create_map",
     "update_map",
@@ -90,7 +98,7 @@ class TestAgentToolsCLI:
 
     @pytest.mark.agent
     def test_tools_list_json(self):
-        """--json：exit 0；信封 ok=True；items 26 项且顺序固定；每项含三键。"""
+        """--json：exit 0；信封 ok=True；items 34 项且顺序固定；每项含三键。"""
         result = runner.invoke(app, ["agent", "tools", "list", "--json"])
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
@@ -109,14 +117,14 @@ class TestAgentToolsCLI:
         result = runner.invoke(app, ["agent", "tools", "list", "--json"])
         assert result.exit_code == 0
         items = json.loads(result.stdout)["data"]["items"]
-        assert len(items) == 26
+        assert len(items) == 34
         for item in items:
             assert isinstance(item["description"], str)
             assert item["description"].strip() != ""
 
     @pytest.mark.agent
     def test_tools_list_human(self):
-        """无 --json：26 个工具名均出现在 stdout（不锁精确格式）。"""
+        """无 --json：34 个工具名均出现在 stdout（不锁精确格式）。"""
         result = runner.invoke(app, ["agent", "tools", "list"])
         assert result.exit_code == 0
         stdout = self._strip_ansi(result.stdout)

@@ -66,7 +66,6 @@ def _make_tool_deps() -> SettingWriteToolDeps:
     deps = SettingWriteToolDeps(
         character_service=AsyncMock(),
         world_service=AsyncMock(),
-        outline_service=AsyncMock(),
         audit_service=AsyncMock(),
         expected_project_id=PID,
     )

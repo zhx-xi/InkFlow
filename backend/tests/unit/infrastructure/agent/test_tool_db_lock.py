@@ -126,7 +126,6 @@ def _monitor_char_deps(monitor: ConcurrencyMonitor) -> SettingWriteToolDeps:
     deps = SettingWriteToolDeps(
         character_service=MagicMock(),
         world_service=MagicMock(),
-        outline_service=MagicMock(),
         audit_service=_DummyAudit(),
         expected_project_id=PROJECT_ID,
     )
@@ -170,7 +169,6 @@ class TestConcurrentSettingWriteNoDbError:
             deps = SettingWriteToolDeps(
                 character_service=char_svc,
                 world_service=MagicMock(),
-                outline_service=MagicMock(),
                 audit_service=_DummyAudit(),
                 expected_project_id=PROJECT_ID,
             )

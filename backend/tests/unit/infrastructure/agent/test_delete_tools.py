@@ -1,10 +1,14 @@
 """#766 阶段② 删除工具 RED 契约测试 — build_delete_tools 注册 + 执行信封.
 
+#955 迁移（RED-B）: 删除表 +delete_plot_point 行（`outline_service.delete_point`，
+实体 id = plot_point_id），工具数 7→8。core 标记（is_core=True）由本批 registry
+测试与 test_outline_grant_migration.py 覆盖。
+
 依据 specs/f26-agent-tools/spec.md §6.1/§6.2 + ADR-043 §2-§3。镜像 test_writing_tools 形态。
 锁定契约:
-1. build_delete_tools(deps) 返回 7 个删除工具（顺序固定）:
-   delete_character / delete_world_setting / delete_outline / delete_map /
-   delete_timeline_event / delete_foreshadowing / memory_remove。
+1. build_delete_tools(deps) 返回 8 个删除工具（顺序固定）:
+   delete_character / delete_world_setting / delete_outline / delete_plot_point /
+   delete_map / delete_timeline_event / delete_foreshadowing / memory_remove。
 2. 成功 {"ok": True, "<entity>_id": "<id>"}；失败 {"ok": False, "error": "..."}。
 3. 成功/失败均落审计（audit_service.record，actor="agent:chat"），审计异常静默。
 4. service 返回 False（记录不存在）→ 失败信封（防假成功）。
@@ -17,12 +21,13 @@
 - character_service.delete_character(character_id)
 - world_service.delete_setting(setting_id)
 - outline_service.delete_outline(outline_id)
+- outline_service.delete_point(plot_point_id)   # #955 新
 - map_service.delete_map(map_id)
 - timeline_service.delete_event(event_id)
 - foreshadowing_service.delete(foreshadowing_id)
 - memory_service.remove_preference(preference_id)
 
-RED 形态: delete_tools.py / ToolAuth 不存在 → 收集期 ModuleNotFoundError/ImportError。
+RED 形态: delete_plot_point 未注册/`_DELETE_TOOL_TABLE` 缺该行 → 计数 7≠8 FAILED。
 """
 
 from __future__ import annotations
@@ -42,10 +47,12 @@ from inkflow.infrastructure.agent.tools.delete_tools import (
 PROJECT_ID = uuid.UUID("550e8400-e29b-41d4-a716-446655440000")
 
 # (工具名, deps 服务字段, service 方法名, 实体 id 参数名)
+# #955 迁移: delete_outline 行后插 delete_plot_point 行（并行 `_DELETE_TOOL_TABLE` 位置）
 DELETE_TOOL_CASES = [
     ("delete_character", "character_service", "delete_character", "character_id"),
     ("delete_world_setting", "world_service", "delete_setting", "setting_id"),
     ("delete_outline", "outline_service", "delete_outline", "outline_id"),
+    ("delete_plot_point", "outline_service", "delete_point", "plot_point_id"),  # #955 新
     ("delete_map", "map_service", "delete_map", "map_id"),
     ("delete_timeline_event", "timeline_service", "delete_event", "event_id"),
     ("delete_foreshadowing", "foreshadowing_service", "delete", "foreshadowing_id"),
@@ -84,9 +91,9 @@ def _mock_service(deps: DeleteToolDeps, tool_name: str, return_value: object = T
 
 
 class TestBuildDeleteTools:
-    """build_delete_tools 注册 7 个删除工具（顺序固定）。"""
+    """build_delete_tools 注册 8 个删除工具（顺序固定，#955 迁移 7→8）。"""
 
-    def test_registers_seven_tools(self) -> None:
+    def test_registers_eight_tools(self) -> None:
         tools = build_delete_tools(_make_deps())
         assert [t.spec.name for t in tools] == EXPECTED_NAMES
 
@@ -102,7 +109,7 @@ class TestBuildDeleteTools:
 
 
 class TestDeleteToolSuccessEnvelope:
-    """7 工具正例：service 删除成功 → ok=True 信封 + 审计。"""
+    """8 工具正例：service 删除成功 → ok=True 信封 + 审计。"""
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("tool_name,svc_field,method_name,entity_key", DELETE_TOOL_CASES)
@@ -121,7 +128,7 @@ class TestDeleteToolSuccessEnvelope:
 
 
 class TestDeleteToolFailureEnvelope:
-    """7 工具反例：service 抛异常 → ok=False 错误信封。"""
+    """8 工具反例：service 抛异常 → ok=False 错误信封。"""
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("tool_name,svc_field,method_name,entity_key", DELETE_TOOL_CASES)

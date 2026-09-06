@@ -2,7 +2,8 @@
 
 依据 specs/f26-agent-tools/spec.md §2.1-2.3。镜像 test_chat_setting_write_tools 形态。
 锁定契约:
-1. build_setting_update_tools(deps) 返回 [update_character, update_world_setting, update_outline]。
+1. build_setting_update_tools(deps) 返回 [update_character, update_world_setting]。
+   （update_outline 已退役入 outline_tools，#955 §4。）
 2. 每个 func 成功返回 {"ok": True, "<entity>_id": "<id>", ...} 信封（不抛出）。
 3. 每个 func 失败（service 抛异常）返回 {"ok": False, "error": "<msg>"} 信封（不抛出）。
 4. expected_project_id 绑定：装配期注入后，func 恒用绑定值（LLM 不自报项目 ID）。
@@ -33,22 +34,20 @@ def _make_deps() -> SettingUpdateToolDeps:
     return SettingUpdateToolDeps(
         character_service=MagicMock(),
         world_service=MagicMock(),
-        outline_service=MagicMock(),
         audit_service=audit,
         expected_project_id=PROJECT_ID,
     )
 
 
 class TestBuildSettingUpdateTools:
-    """build_setting_update_tools 注册三个设定库更新工具。"""
+    """build_setting_update_tools 注册两个设定库更新工具。"""
 
-    def test_registers_three_tools(self) -> None:
-        """工具面：update_character / update_world_setting / update_outline。"""
+    def test_registers_two_tools(self) -> None:
+        """工具面：update_character / update_world_setting（update_outline 已退役）。"""
         tools = build_setting_update_tools(_make_deps())
         assert [t.spec.name for t in tools] == [
             "update_character",
             "update_world_setting",
-            "update_outline",
         ]
 
     def test_tool_specs_have_input_schema(self) -> None:
@@ -101,20 +100,6 @@ class TestBuildSettingUpdateTools:
         assert result["setting_id"] == "world-1"
 
     @pytest.mark.asyncio
-    async def test_update_outline_success_envelope(self) -> None:
-        """update_outline 成功 → {"ok": True, "outline_id": "<id>"}。"""
-        deps = _make_deps()
-        deps.outline_service.update_outline = AsyncMock(
-            return_value=SimpleNamespace(id="outline-1", name="第一卷大纲")
-        )
-        tools = {t.spec.name: t for t in build_setting_update_tools(deps)}
-        result = json.loads(
-            await tools["update_outline"].func(outline_id="outline-1", name="第一卷大纲")
-        )
-        assert result["ok"] is True
-        assert result["outline_id"] == "outline-1"
-
-    @pytest.mark.asyncio
     async def test_update_world_setting_failure_envelope(self) -> None:
         """update_world_setting 失败 → {"ok": False, "error": "..."}。"""
         deps = _make_deps()
@@ -129,21 +114,7 @@ class TestBuildSettingUpdateTools:
         assert "世界观条目不存在" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_update_outline_failure_envelope(self) -> None:
-        """update_outline 失败 → {"ok": False, "error": "..."}。"""
-        deps = _make_deps()
-        deps.outline_service.update_outline = AsyncMock(
-            side_effect=ValueError("大纲不存在")
-        )
-        tools = {t.spec.name: t for t in build_setting_update_tools(deps)}
-        result = json.loads(
-            await tools["update_outline"].func(outline_id="outline-1", name="第一卷大纲")
-        )
-        assert result["ok"] is False
-        assert "大纲不存在" in result["error"]
-
-    @pytest.mark.asyncio
-    async def test_update_character_world_outline_partial_fields(self) -> None:
+    async def test_update_character_partial_fields(self) -> None:
         """部分字段更新：只传 name 时其它字段不修改（DTO exclude_unset 语义）。"""
         deps = _make_deps()
         deps.character_service.update_character = AsyncMock(

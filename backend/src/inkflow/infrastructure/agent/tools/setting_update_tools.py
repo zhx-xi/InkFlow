@@ -1,5 +1,5 @@
-"""F51 设定库更新工具——chat agent 三更新工具（update_character / update_world_setting /
-update_outline），输出统一 JSON 信封.
+"""F51 设定库更新工具——chat agent 两更新工具（update_character / update_world_setting），
+输出统一 JSON 信封.
 
 镜像 #748 setting_write_tools 形态：
 - 动态 deps 构建（不进静态 TOOL_REGISTRY）
@@ -22,7 +22,6 @@ from pydantic import BaseModel
 
 from inkflow.domain.models.agent_tools import ToolSpec
 from inkflow.domain.models.character import CharacterUpdate
-from inkflow.domain.models.outline import OutlineUpdate
 from inkflow.domain.models.world import WorldUpdate
 from inkflow.infrastructure.agent.tools import _tool_db_lock as _tool_db_lock_mod
 from inkflow.infrastructure.agent.tools.reader_tools import Tool
@@ -83,18 +82,6 @@ class UpdateWorldSettingParams(BaseModel):
     parent_id: uuid.UUID | str | None = None
 
 
-class UpdateOutlineParams(BaseModel):
-    """update_outline 工具参数（部分更新）。"""
-
-    outline_id: uuid.UUID | str
-    name: str | None = None
-    description: str | None = None
-    sort_order: int | None = None
-    level: str | None = None
-    parent_id: uuid.UUID | str | None = None
-    chapter_id: uuid.UUID | str | None = None
-
-
 # ─── 工具 spec 静态常量（func 动态构建，镜像 setting_write_tools） ───
 
 
@@ -112,13 +99,6 @@ UPDATE_WORLD_SETTING_SPEC = ToolSpec(
     group="writing",
 )
 
-UPDATE_OUTLINE_SPEC = ToolSpec(
-    name="update_outline",
-    description="更新项目内大纲条目（部分更新）",
-    input_schema=UpdateOutlineParams.model_json_schema(),
-    group="writing",
-)
-
 
 @dataclass
 class SettingUpdateToolDeps:
@@ -131,7 +111,6 @@ class SettingUpdateToolDeps:
 
     character_service: object  # 有 update_character(character_id, CharacterUpdate) -> Character
     world_service: object  # 有 update_setting(setting_id, WorldUpdate) -> WorldSetting(.id)
-    outline_service: object  # 有 update_outline(outline_id, OutlineUpdate) -> Outline(.id)
     audit_service: object  # 有 record(**kwargs)（AuditLogService 形态）
     expected_project_id: uuid.UUID | None = None
 
@@ -145,13 +124,13 @@ def _bind_project_id(expected: uuid.UUID | None, project_id: object) -> uuid.UUI
 
 
 def build_setting_update_tools(deps: SettingUpdateToolDeps) -> list[Tool]:
-    """构建设定库更新工具（顺序固定：update_character → update_world_setting → update_outline）。
+    """构建设定库更新工具（顺序固定：update_character → update_world_setting）。
 
     Args:
-        deps: 工具依赖（character/world/outline + audit service 实例）。
+        deps: 工具依赖（character/world + audit service 实例）。
 
     Returns:
-        三个可执行 Tool；func 成功/失败均返回 JSON 信封且不抛异常。
+        两个可执行 Tool；func 成功/失败均返回 JSON 信封且不抛异常。
     """
 
     @instrument(caller_type="tool")
@@ -269,69 +248,7 @@ def build_setting_update_tools(deps: SettingUpdateToolDeps) -> list[Tool]:
                     )
                 return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
-    @instrument(caller_type="tool")
-    async def _update_outline(
-        project_id: uuid.UUID | str | None = None,
-        outline_id: uuid.UUID | str = "",
-        name: str | None = None,
-        description: str | None = None,
-        sort_order: int | None = None,
-        level: str | None = None,
-        parent_id: uuid.UUID | str | None = None,
-        chapter_id: uuid.UUID | str | None = None,
-    ) -> str:
-        async with _tool_db_lock_mod.get_tool_db_lock():
-            _project_id = _bind_project_id(deps.expected_project_id, project_id)
-            try:
-                update_fields: dict[str, Any] = {}
-                if name is not None:
-                    update_fields["name"] = name
-                if description is not None:
-                    update_fields["description"] = description
-                if sort_order is not None:
-                    update_fields["sort_order"] = sort_order
-                if level is not None:
-                    update_fields["level"] = level
-                if parent_id is not None:
-                    update_fields["parent_id"] = parent_id
-                if chapter_id is not None:
-                    update_fields["chapter_id"] = chapter_id
-                outline = _require_found(
-                    await deps.outline_service.update_outline(  # type: ignore[attr-defined]  # 鸭子类型：outline_service 按契约提供 update_outline
-                        _coerce_id(outline_id),
-                        OutlineUpdate(**update_fields),
-                    ),
-                    "大纲条目不存在",
-                )
-                with contextlib.suppress(Exception):
-                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                        actor="agent:chat",
-                        project_id=_project_id,
-                        severity_summary="update_outline_updated",
-                        summary=f"大纲更新 {name or ''}",
-                        degraded=True,
-                    )
-                return json.dumps(
-                    {
-                        "ok": True,
-                        "outline_id": str(outline.id),
-                        "name": outline.name or name or "",
-                    },
-                    ensure_ascii=False,
-                )
-            except Exception as exc:
-                with contextlib.suppress(Exception):
-                    await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
-                        actor="agent:chat",
-                        project_id=_project_id,
-                        severity_summary="update_outline_update_failed",
-                        summary=f"大纲更新失败 {name or ''}: {exc}",
-                        degraded=True,
-                    )
-                return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
-
     return [
         Tool(spec=UPDATE_CHARACTER_SPEC, func=_update_character),
         Tool(spec=UPDATE_WORLD_SETTING_SPEC, func=_update_world_setting),
-        Tool(spec=UPDATE_OUTLINE_SPEC, func=_update_outline),
     ]
