@@ -222,9 +222,7 @@ async def test_planner_respond_response_has_v12_fields(client, override_planner)
 
 @pytest.mark.asyncio
 @pytest.mark.api
-async def test_planner_respond_confirm_true_passed_to_service(
-    client, override_planner
-):
+async def test_planner_respond_confirm_true_passed_to_service(client, override_planner):
     """末尾总体确认：respond body {confirm: true} → svc.respond 收到 confirm=True。"""
     planner = override_planner
     plan = WritingPlan(
@@ -236,9 +234,7 @@ async def test_planner_respond_confirm_true_passed_to_service(
         progress={},
         execution_refs={},
     )
-    planner.respond.return_value = _respond_result_v12(
-        completed=True, confirming=True, plan=plan
-    )
+    planner.respond.return_value = _respond_result_v12(completed=True, confirming=True, plan=plan)
 
     resp = await client.post(
         f"{BASE}/planner/{SAMPLE_SESSION_ID}/respond",
@@ -247,9 +243,7 @@ async def test_planner_respond_confirm_true_passed_to_service(
 
     assert resp.status_code == 200
     assert resp.json()["completed"] is True
-    planner.respond.assert_awaited_once_with(
-        SAMPLE_SESSION_ID, {}, auto=False, confirm=True
-    )
+    planner.respond.assert_awaited_once_with(SAMPLE_SESSION_ID, {}, auto=False, confirm=True)
 
 
 @pytest.mark.asyncio
@@ -576,9 +570,7 @@ async def test_get_planner_service_real_assembly_passes_project_model(db_session
     session = await svc.start(SEED_PROJECT_ID, "写一本关于时间旅者的悬疑小说")
 
     assert session.status == "drafting"
-    assert (
-        svc._llm_client.chat.await_args.kwargs["model"] == "deepseek/deepseek-v4-flash"
-    )
+    assert svc._llm_client.chat.await_args.kwargs["model"] == "deepseek/deepseek-v4-flash"
 
 
 @pytest.mark.asyncio
@@ -610,9 +602,7 @@ async def test_get_planner_service_empty_chain_warns_template(db_session, monkey
     svc._llm_client.chat.return_value = ChatResponse(content="{}", model="test")
 
     records: list = []
-    sink_id = logger.add(
-        lambda m: records.append(m), level="WARNING", format="{message}"
-    )
+    sink_id = logger.add(lambda m: records.append(m), level="WARNING", format="{message}")
     try:
         session = await svc.start(SEED_PROJECT_ID, "写一本关于时间旅者的悬疑小说")
     finally:

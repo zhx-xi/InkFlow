@@ -11,6 +11,8 @@
 - **发布产物门禁脚本化（S3f-T2，#869）**：新增 `ci_cd/verify_release_artifacts.py`——CLI zip 结构（inkflow/inkflow.exe、_internal、inkflow-mcp、skills、dist-info 单份）+ exe 版本==tag（PEP440 规范化）+ GUI win-unpacked 结构（InkFlow.exe、resources/kernel、mcp、skills）一体断言，release.yml CLI 冒烟与打包 job 并入（rc 门禁 P1-P5 手工步骤自动化）；配套真实冻结产物黑盒 e2e-packaged.spec.ts（win-unpacked 启动闭环/kernel.json 通道/DevTools 门控负向/打包 debug 三层联动/中文空格安装目录变体，本地验证）。打包版 kernel.json 落点契约实证：Electron appData 走 Windows Known Folder API 不随 APPDATA env 漂移（数据目录 INKFLOW_DATA_DIR 正常隔离）。
 - **旧库升级后项目读取崩溃（S3f-T4，#869）**：v0.11 旧存档 projects 表缺 tags/language/target_words/config/is_deleted/created_at/updated_at 列——lifespan 迁移链（ensure_project_columns）现补齐（ALTER 带 DEFAULT，存量行自动回填），修复升级后 ORM SELECT 报 `no such column: projects.tags` 致项目列表 500；脏 JSON 行（空串/损坏/截断）经 LenientJSON 端到回退 + 导出 roundtrip/数据目录复制恢复回归锁定。
 - **可观测性黑盒补强（S3f-T1，#869）**：/docs /redoc 由 `DocsGateMiddleware` 按 `config.debug` 运行时门控（非 debug 404，默认关闭）；`serve --debug` / `INKFLOW_DEBUG=1` 双路径回写 config+env 保三层一致；GUI 壳 `INKFLOW_DEBUG` 改显式值表（`'0'` 显式关 > instance.env=1，D8）
+- **planner 访谈空默认模型静默回退（#977）**：PlannerService 装配 `project_repo` + `llm_default_model` 后经 `resolve_model` 显式解析（项目 config.model > 全局默认）再调 LLM，chat 显式带 `model=`；两级皆空只记一次 WARNING 并走模板题库兜底，消除空默认模型时多轮 24 条 ERROR traceback 静默降级。
+- **instance.env 全键生效（#977）**：任意 `INKFLOW_*` 字段（含 `llm_default_model` / `llm_temperature`）写入 `%APPDATA%\InkFlow\instance.env` 即入 pydantic 配置源，优先级 进程 env > instance.env > .env（D1/D8 与 data_dir 语义不变）。
 
 ## [0.11.0] - 2026-08-22
 

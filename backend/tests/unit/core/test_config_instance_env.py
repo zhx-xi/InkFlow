@@ -400,8 +400,7 @@ def test_instance_env_debug_d8_and_data_dir_guard(monkeypatch, tmp_path) -> None
     monkeypatch.delenv("INKFLOW_DATA_DIR", raising=False)
     anchor.parent.mkdir(parents=True, exist_ok=True)
     anchor.write_text(
-        "INKFLOW_DEBUG=1\n"
-        f"INKFLOW_DATA_DIR={(tmp_path / 'data').as_posix()}\n",
+        f"INKFLOW_DEBUG=1\nINKFLOW_DATA_DIR={(tmp_path / 'data').as_posix()}\n",
         encoding="utf-8",
     )
 

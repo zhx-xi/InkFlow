@@ -188,9 +188,7 @@ async def test_manual_prompt_directs_questions_at_one_liner():
     call = llm.chat.await_args
     assert call is not None
     messages = call.args[0]
-    system = "\n".join(
-        str(m.get("content", "")) for m in messages if m.get("role") == "system"
-    )
+    system = "\n".join(str(m.get("content", "")) for m in messages if m.get("role") == "system")
     assert "一句话构思" in system  # 既有：one_liner 注入
     assert "不相矛盾" in system, "prompt 缺少「针对一句话构思、不相矛盾」出题指令（#927）"
 

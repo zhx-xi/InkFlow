@@ -31,9 +31,7 @@ def _patch_anchor(monkeypatch, anchor: Path) -> None:
     load_instance_env 命中锚点；防本机真实 %APPDATA%/InkFlow/instance.env 注入。
     """
     module = importlib.import_module("inkflow.core.config")
-    monkeypatch.setattr(
-        module, "get_instance_env_path", lambda: anchor, raising=False
-    )
+    monkeypatch.setattr(module, "get_instance_env_path", lambda: anchor, raising=False)
 
 
 @pytest.mark.asyncio
@@ -52,9 +50,7 @@ async def test_get_config_reflects_instance_env_default_model(monkeypatch, tmp_p
     anchor = tmp_path / "appdata" / "InkFlow" / "instance.env"
     _patch_anchor(monkeypatch, anchor)
     anchor.parent.mkdir(parents=True, exist_ok=True)
-    anchor.write_text(
-        "INKFLOW_LLM_DEFAULT_MODEL=deepseek/deepseek-v4-flash\n", encoding="utf-8"
-    )
+    anchor.write_text("INKFLOW_LLM_DEFAULT_MODEL=deepseek/deepseek-v4-flash\n", encoding="utf-8")
     # 隔离：delenv 同名（conftest.py setdefault 注入，防进程 env 误判）+ delenv token
     # 免鉴权中间件阻塞；instance.env 仅放 model 键（不触发 debug/config.json 降级分支）。
     monkeypatch.delenv("INKFLOW_LLM_DEFAULT_MODEL", raising=False)
