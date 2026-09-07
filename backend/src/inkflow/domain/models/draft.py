@@ -39,6 +39,7 @@ class Draft(BaseModel):
         id: 草稿 UUID 字符串（uuid4）.
         project_id: 所属项目 UUID.
         chapter_id: 目标章节 UUID（None = 确认时指定）.
+        source_outline_id: 来源大纲章节点 UUID（None = 未记录/chat 轨）.
         agent_run_id: 产生该草稿的 run id（兜底保存回填，可空）.
         content: 草稿正文.
         status: 草稿状态（默认 draft）.
@@ -53,6 +54,7 @@ class Draft(BaseModel):
     project_id: uuid.UUID
     chapter_id: uuid.UUID | None = None
     volume_id: uuid.UUID | None = None  # #976: 所属写作卷 UUID（None = 未归卷）
+    source_outline_id: uuid.UUID | None = None  # #988: 来源大纲章节点 UUID（None = 无来源）
     agent_run_id: str | None = None
     content: str
     status: DraftStatus = DraftStatus.DRAFT

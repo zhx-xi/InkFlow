@@ -115,6 +115,9 @@ async def confirm_draft(
         "draft_id": draft.id,
         "status": draft.status.value,
         "chapter_id": str(draft.chapter_id) if draft.chapter_id else None,
+        "source_outline_id": (
+            str(draft.source_outline_id) if draft.source_outline_id else None
+        ),
     }
 
 

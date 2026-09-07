@@ -488,6 +488,14 @@ def ensure_drafts_volume_id_column(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE drafts ADD COLUMN volume_id VARCHAR(36)"))
 
 
+def ensure_drafts_source_outline_id_column(conn: Connection) -> None:
+    """#988：为既有库 drafts 补 source_outline_id 列（幂等，表不存在 no-op）."""
+    cols = conn.execute(text("PRAGMA table_info(drafts)")).fetchall()
+    names = {row[1] for row in cols}
+    if names and "source_outline_id" not in names:
+        conn.execute(text("ALTER TABLE drafts ADD COLUMN source_outline_id VARCHAR(36)"))
+
+
 def ensure_world_drop_is_deleted(conn: Connection) -> None:
     """#211 v1.1：world_settings 软删 → 真删迁移（幂等，spec §8.3）.
     步骤顺序见代码注释；表不存在/列已不存在 → no-op."""

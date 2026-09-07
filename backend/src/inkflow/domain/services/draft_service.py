@@ -79,6 +79,7 @@ class DraftService:
         summary: str = "",
         agent_run_id: str | None = None,
         volume_id: uuid.UUID | None = None,
+        source_outline_id: uuid.UUID | None = None,
     ) -> Draft:
         """创建草稿（status=DRAFT），单次 commit = 单工具单事务（ADR-F 约束②），写操作落审计.
 
@@ -89,6 +90,7 @@ class DraftService:
             summary: 草稿摘要（默认空）.
             agent_run_id: 产生该草稿的 run id（可空）.
             volume_id: 所属写作卷 UUID（#976，None = 未归卷）.
+            source_outline_id: 来源大纲章节点 UUID（#988，None = 无来源/chat 轨）.
 
         Returns:
             已落库的 Draft（id 为 uuid4 字符串）.
@@ -107,6 +109,7 @@ class DraftService:
             summary=summary,
             agent_run_id=agent_run_id,
             volume_id=volume_id,
+            source_outline_id=source_outline_id,
         )
         if self._audit_service is not None:
             await self._audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
@@ -164,7 +167,8 @@ class DraftService:
             draft_id: 草稿 id（uuid4 字符串）.
             chapter_id: 目标章节 UUID（草稿未绑定时指定；两者皆无 → DraftStateError）.
             source_outline_id: 来源大纲章节点 UUID（D4：自动建章后回填
-                outlines.chapter_id；仅注入 outline_bindder 且草稿未绑定时生效）.
+                outlines.chapter_id；显式参数优先，否则草稿自取记录值；
+                仅注入 outline_bindder 且草稿未绑定时生效）.
             title: 自动建章标题（D4：显式优先于 summary/content 派生）.
 
         Returns:
@@ -226,13 +230,17 @@ class DraftService:
         )
         if confirmed is None:
             raise DraftNotFoundError("草稿不存在")  # 竞态防御：确认前被删除
+        # D4 生效来源：#988 显式参数优先，否则回填草稿创建时记录值（自取闭环）
+        effective_source: uuid.UUID | None = (
+            source_outline_id if source_outline_id is not None else draft.source_outline_id
+        )
         if (
             self._outline_bindder is not None
-            and source_outline_id is not None
+            and effective_source is not None
             and new_chapter_id is not None
         ):
-            # D4：自动建章后回填 outlines.chapter_id（仅调用方显式传 source_outline_id）
-            await self._outline_bindder(str(source_outline_id), str(new_chapter_id))
+            # D4：自动建章后回填 outlines.chapter_id（显式 > 草稿自取 > 不触发）
+            await self._outline_bindder(str(effective_source), str(new_chapter_id))
         if self._audit_service is not None:
             await self._audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
                 actor="agent:writer",

@@ -2,7 +2,8 @@
  * 草稿审批 API 封装（Issue #653）：项目 AI 草稿的列表/确认/驳回/编辑/清理孤儿。
  *
  * - listDrafts: 项目草稿列表（GET /api/v1/agent/drafts?project_id=<id>）
- * - confirmDraft: 确认草稿（POST /api/v1/agent/drafts/{id}/confirm）
+ * - confirmDraft: 确认草稿（POST /api/v1/agent/drafts/{id}/confirm；
+ *   #988 options 签名 {chapterId?, sourceOutlineId?, title?}，仅装配出现的键）
  * - rejectDraft: 驳回草稿（POST /api/v1/agent/drafts/{id}/reject，无 body）
  * - updateDraft: 编辑草稿正文（PATCH /api/v1/agent/drafts/{id}）
  * - pruneOrphans: 清理孤儿草稿（POST /api/v1/agent/drafts/prune-orphans）
@@ -24,6 +25,8 @@ export interface DraftDto {
   confirmed_at: string | null;
   /** #976 卷归组（drafts.volume_id 列，UUID 字符串；未归组草稿缺省/为 null） */
   volume_id?: string | null;
+  /** #988 来源大纲章节点（drafts.source_outline_id 列；未记录草稿缺省/为 null） */
+  source_outline_id?: string | null;
 }
 
 /** 项目草稿列表（GET /api/v1/agent/drafts?project_id=<projectId>[&status=<status>]；status 缺省时 URL 与既有逐字一致） */
@@ -36,14 +39,18 @@ export async function listDrafts(
   return apiFetch<{ items: DraftDto[]; total: number }>(`/api/v1/agent/drafts?${qs.toString()}`);
 }
 
-/** 确认草稿（POST /api/v1/agent/drafts/{draftId}/confirm；无 chapterId 时 body 为空对象） */
+/** 确认草稿（POST /api/v1/agent/drafts/{draftId}/confirm；options 缺省时 body 为空对象） */
 export async function confirmDraft(
   draftId: string,
-  chapterId?: string,
+  options?: { chapterId?: string; sourceOutlineId?: string; title?: string },
 ): Promise<{ draft_id: string; status: string; chapter_id: string | null }> {
+  const body: Record<string, string> = {};
+  if (options?.chapterId !== undefined) body.chapter_id = options.chapterId;
+  if (options?.sourceOutlineId !== undefined) body.source_outline_id = options.sourceOutlineId;
+  if (options?.title !== undefined) body.title = options.title;
   return apiFetch<{ draft_id: string; status: string; chapter_id: string | null }>(
     `/api/v1/agent/drafts/${draftId}/confirm`,
-    { method: 'POST', body: chapterId ? { chapter_id: chapterId } : {} },
+    { method: 'POST', body },
   );
 }
 

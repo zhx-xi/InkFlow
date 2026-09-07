@@ -794,6 +794,7 @@ class BookAgenticPipeline:
             chapter_id=chapter["chapter_id"],
             content=content,
             summary="书级 agent 编排保存",
+            source_outline_id=chapter["outline_id"],
         )
         execution_id = str(getattr(draft, "id", ""))
         return (

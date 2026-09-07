@@ -3,16 +3,20 @@
  * - open 变化 → listDrafts(projectId, 'draft') 载入待审批草稿；
  * - 行内确认钮 → confirmDraft API → 成功 toast + onClose + 树/草稿双轨重拉；
  *   失败 → 框内 drafts-drawer-error 透传错误文案（409 等）；
- * - Esc / 遮罩点击 = onClose。
+ * - Esc / 遮罩点击 = onClose；
+ * - #988 确认面来源锚定：draft.source_outline_id 已记录 → 直接回传；
+ *   未记录且未绑章 → 反查项目 outline 树（唯一精确 > 唯一包含，
+ *   无命中/多义不上传）；已绑章 → options={}（均不拉树或仅反查兜底）。
  */
 import { useEffect, useState, type JSX } from 'react';
 import { Check, X } from 'lucide-react';
 import { confirmDraft, listDrafts, type DraftDto } from '../api/drafts';
-import { errorMessage } from '../api/client';
+import { apiFetch, errorMessage } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import { useChapterStore } from '../stores/chapter';
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
+import type { OutlineItemDTO } from './OutlineTree';
 
 export interface DraftApprovalDrawerProps {
   open: boolean;
@@ -21,6 +25,45 @@ export interface DraftApprovalDrawerProps {
 
 /** 正文超过 60 字符 → 收起态截断 + 「展开看全文/收起」切换（镜像 DraftApprovalPanel #749） */
 const PREVIEW_LIMIT = 60;
+
+/** #988 反查分页大小（GET /api/v1/projects/{pid}/outlines?limit=100&offset=N） */
+const OUTLINE_PAGE_LIMIT = 100;
+/** #988 反查最大页数（防止异常全量树拖垮确认流） */
+const OUTLINE_MAX_PAGES = 5;
+
+/**
+ * #988 确认面来源章节点反查：分页拉取项目 outline 树（至多 5 页），在
+ * level=chapter 节点中按「唯一精确（name === summary）> 唯一包含
+ * （summary 包含 name）」解析来源锚；无命中/多义/拉取失败 → undefined
+ * （不上传，后端 D4 自然不触发，零误绑）。
+ */
+async function resolveSourceOutlineId(
+  projectId: string,
+  summary: string,
+): Promise<string | undefined> {
+  const chapters: OutlineItemDTO[] = [];
+  for (let page = 0; page < OUTLINE_MAX_PAGES; page += 1) {
+    try {
+      const offset = page * OUTLINE_PAGE_LIMIT;
+      const data = await apiFetch<{ items?: OutlineItemDTO[]; total?: number }>(
+        `/api/v1/projects/${projectId}/outlines?limit=${OUTLINE_PAGE_LIMIT}&offset=${offset}`,
+      );
+      const pageItems = data?.items ?? [];
+      chapters.push(...pageItems.filter((node) => node.level === 'chapter'));
+      if (pageItems.length < OUTLINE_PAGE_LIMIT) break;
+      if (typeof data.total === 'number' && offset + pageItems.length >= data.total) break;
+    } catch {
+      break; // 反查失败视为无命中：来源锚上传非强制，不回退既有确认流
+    }
+  }
+  const exact = chapters.filter((node) => node.name === summary);
+  if (exact.length === 1) return String(exact[0].id);
+  const contained = chapters.filter(
+    (node) => typeof node.name === 'string' && node.name.length > 0 && summary.includes(node.name),
+  );
+  if (contained.length === 1) return String(contained[0].id);
+  return undefined;
+}
 
 export function DraftApprovalDrawer({ open, onClose }: DraftApprovalDrawerProps): JSX.Element | null {
   const { t } = useI18n();
@@ -72,7 +115,15 @@ export function DraftApprovalDrawer({ open, onClose }: DraftApprovalDrawerProps)
     setError(null);
     setConfirmingId(draft.id);
     try {
-      await confirmDraft(draft.id);
+      // #988 三级来源锚定：已记录直传 > 未记录+未绑章反查 > 已绑章零动作
+      const options: { sourceOutlineId?: string } = {};
+      if (draft.source_outline_id) {
+        options.sourceOutlineId = draft.source_outline_id;
+      } else if (draft.chapter_id == null && projectId) {
+        const outlineId = await resolveSourceOutlineId(projectId, draft.summary);
+        if (outlineId !== undefined) options.sourceOutlineId = outlineId;
+      }
+      await confirmDraft(draft.id, options);
       useToastStore.getState().pushToast('ok', t('write.drafts.confirmDone'));
       // 确认可能自动建章/改绑 → 卷章树 + 草稿双轨重拉（store 内部链式 loadPendingDrafts）
       if (projectId) void useChapterStore.getState().loadChapterTree(projectId);

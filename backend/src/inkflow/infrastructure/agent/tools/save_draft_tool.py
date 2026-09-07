@@ -133,6 +133,7 @@ def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool:
                     summary=summary or "",
                     agent_run_id=None,
                     volume_id=volume_id,
+                    source_outline_id=None,  # chat 轨无 outline 装配上下文，确认面反查兜底（#988）
                 )
                 # 成功审计（约束③）；审计自身异常静默，不影响主返回
                 with contextlib.suppress(Exception):

@@ -39,6 +39,9 @@ def _orm_to_domain(orm: DraftORM) -> Draft:
         project_id=uuid.UUID(orm.project_id),
         chapter_id=uuid.UUID(orm.chapter_id) if orm.chapter_id is not None else None,
         volume_id=uuid.UUID(orm.volume_id) if orm.volume_id is not None else None,
+        source_outline_id=(
+            uuid.UUID(orm.source_outline_id) if orm.source_outline_id is not None else None
+        ),
         agent_run_id=orm.agent_run_id,
         content=orm.content,
         status=DraftStatus(orm.status),
@@ -64,6 +67,7 @@ class SQLiteDraftRepository:
         summary: str = "",
         agent_run_id: str | None = None,
         volume_id: uuid.UUID | None = None,
+        source_outline_id: uuid.UUID | None = None,
     ) -> Draft:
         """创建草稿（status=DRAFT），单次 commit（单工具单事务，ADR-F 约束②）.
 
@@ -74,6 +78,7 @@ class SQLiteDraftRepository:
             summary: 草稿摘要（默认空）.
             agent_run_id: 产生该草稿的 run id（可空）.
             volume_id: 所属写作卷 UUID（#976，None = 未归卷）.
+            source_outline_id: 来源大纲章节点 UUID（#988，None = 未记录）.
 
         Returns:
             已落库的 Draft（id 为 uuid4 字符串，created_at 为 ORM default
@@ -86,6 +91,9 @@ class SQLiteDraftRepository:
             summary=summary,
             agent_run_id=agent_run_id,
             volume_id=str(volume_id) if volume_id is not None else None,
+            source_outline_id=(
+                str(source_outline_id) if source_outline_id is not None else None
+            ),
         )
         self._session.add(orm)
         await self._session.commit()
