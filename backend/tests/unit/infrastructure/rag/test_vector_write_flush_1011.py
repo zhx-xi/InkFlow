@@ -162,7 +162,8 @@ async def test_ensure_hnsw_flushed_non_internal_error_not_propagated(
             raise ValueError("connection metadata exploded")
 
     with store._lock:  # 调用方持锁契约（#468）
-        store._ensure_hnsw_flushed(_BoomCollection())  # type: ignore[arg-type]
+        # 鸭子类型 fake collection（仅需 .name/.count/.query），arg-type 为预期抑制
+        store._ensure_hnsw_flushed(_BoomCollection())  # type: ignore[arg-type]  # fake collection 满足鸭子协议
         # m2 GREEN：不得抛；异常传播即 FAIL（pytest 自动判）
 
 

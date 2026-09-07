@@ -141,7 +141,8 @@ async def test_flush_self_check_wait_budget_capped(
 
     store._probe_embedding = [0.1] * 384
     with store._lock:  # 调用方持锁契约（#468）
-        store._ensure_hnsw_flushed(_NeverReadyCollection())  # type: ignore[arg-type]
+        # 鸭子类型 fake collection（仅需 .name/.count/.query），arg-type 为预期抑制
+        store._ensure_hnsw_flushed(_NeverReadyCollection())  # type: ignore[arg-type]  # fake collection 满足鸭子协议
 
     assert sleeps, "段持续未就绪却零等待（契约前提：预算内必须等待）"
     assert all(s <= 1.0 + 1e-9 for s in sleeps), (
