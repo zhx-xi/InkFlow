@@ -660,6 +660,82 @@ describe('设置页 — 模板分类（#107 RED 契约）', () => {
         ),
       ).toBe(false);
     });
+
+    // ── #989 修复契约（RED）：删除/编辑确认入口先重拉最新 used_by，读最新引用数据 ──
+    // 现状缺陷：mount 一次性快照 → 外部改引用后确认框走无引用分支（漏列项目/直存不确认）。
+    // GREEN：①删除 onClick=await loadTemplates()→fresh setPendingDelete（对话框延迟出现的
+    // 引用分支）②handleUpdate 判风险前 await loadTemplates()→fresh used_by 非空弹影响确认。
+    // 既有「点击→同步 getByTestId(confirm)」用例因 GET mock 数据源不变语义不受影响；
+    // 时序上确认框由「同步出现」变「重拉后出现」，既有断言如红按 #989 迁移 findByTestId。
+    describe('#989 模板快照竞态修复', () => {
+      /** 状态化 GET：第 1 次（mount）stale（tpl1 无引用），第 2 次起 fresh（引用青云志） */
+      function mockStaleThenFresh(): () => number {
+        let getList = 0;
+        const base = {
+          id: 1, name: '经典玄幻', description: '标准玄幻创作模板', main_model: 'm',
+          default_temperature: 0.7,
+          roles: {
+            architect: { model: null, temperature: null, enabled: true },
+            writer: { model: null, temperature: null, enabled: true },
+            auditor: { model: null, temperature: null, enabled: true },
+            reviser: { model: null, temperature: null, enabled: true },
+          },
+          default_words: 3000, is_default: true,
+          created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
+        };
+        apiFetchMock.mockImplementation(
+          async (path: string, init?: { method?: string; body?: unknown }) => {
+            void init?.body;
+            if (path === '/api/v1/agent-templates' && !init?.method) {
+              getList++;
+              const usedBy = getList <= 1 ? [] : [{ id: 'p1', name: '青云志' }];
+              return {
+                items: [
+                  { ...base, used_by: usedBy },
+                  { ...base, id: 2, name: '悬疑推理', is_default: false, used_by: [] },
+                ],
+                total: 2, offset: 0, limit: 50,
+              };
+            }
+            if (path === '/api/v1/agent-templates/1' && init?.method === 'PATCH') {
+              return { ...base, used_by: [{ id: 'p1', name: '青云志' }] };
+            }
+            return { ok: true };
+          },
+        );
+        return () => getList;
+      }
+
+      it('删除入口重拉：点删除 → 二次 GET 发生 + 确认框按最新引用显示「正在被 1 个项目使用」', async () => {
+        const getCallCount = mockStaleThenFresh();
+        const user = await openTemplatesPanel();
+        // stale 快照：卡片无 usedby 徽标（前置自证确为旧数据）
+        const card1 = await screen.findByTestId('template-card-1');
+        expect(within(card1).queryByTestId('template-usedby-1')).not.toBeInTheDocument();
+        await user.click(within(card1).getByTestId('template-delete-1'));
+        // 【R】现状：删除不触发重拉 → 计数停在 1；GREEN 后 >=2
+        await waitFor(() => expect(getCallCount()).toBeGreaterThanOrEqual(2));
+        // 【R】现状：pendingDelete=stale（used_by 空）→ 确认框走通用文案分支，无引用句
+        const confirm = await screen.findByTestId('template-confirm-dialog');
+        expect(confirm).toHaveTextContent('该模板正在被 1 个项目使用（青云志）');
+      });
+
+      it('编辑保存入口重拉：stale 无引用 + 服务端已有引用 → 保存前重拉并弹影响确认（勿直存）', async () => {
+        const getCallCount = mockStaleThenFresh();
+        const user = await openTemplatesPanel();
+        await user.click(
+          within(await screen.findByTestId('template-card-1')).getByTestId('template-edit-1'),
+        );
+        const dlg = await screen.findByTestId('template-dialog');
+        await user.clear(within(dlg).getByTestId('template-name-input'));
+        await user.type(within(dlg).getByTestId('template-name-input'), '经典玄幻改');
+        await user.click(within(dlg).getByTestId('template-save'));
+        // 【R】现状：editing.used_by=[] → handleUpdate 直存不弹确认；GREEN 先重拉判 fresh 引用
+        const confirm = await screen.findByTestId('template-confirm-dialog');
+        expect(getCallCount()).toBeGreaterThanOrEqual(2);
+        expect(confirm).toHaveTextContent('青云志');
+      });
+    });
   });
 });
 
