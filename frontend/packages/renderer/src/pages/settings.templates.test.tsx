@@ -578,7 +578,10 @@ describe('设置页 — 模板分类（#107 RED 契约）', () => {
       const dlg = await screen.findByTestId('template-dialog');
       await user.clear(within(dlg).getByTestId('template-name-input'));
       await user.type(within(dlg).getByTestId('template-name-input'), '悬疑推理改');
-      // PATCH /api/v1/agent-templates/2 返回更新后实体（mockTemplateList 仅处理 /1 的 PATCH）
+      // #989 迁移：保存前 handleUpdate 先 await loadTemplates() 重拉 → once 队首补一条
+      // GET 列表响应（否则被 GET 消费的是 PATCH 实体，data.items=undefined 毒化 store）；
+      // 第二条 once = PATCH /api/v1/agent-templates/2 更新后实体（mockTemplateList 仅处理 /1）
+      apiFetchMock.mockResolvedValueOnce({ items: TEMPLATES, total: 2, offset: 0, limit: 50 });
       apiFetchMock.mockResolvedValueOnce({ ...TEMPLATES[1], name: '悬疑推理改' });
       await user.click(within(dlg).getByTestId('template-save'));
 
