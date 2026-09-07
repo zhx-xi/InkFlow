@@ -1,7 +1,7 @@
 """InkFlow 全局配置 — 基于 Pydantic Settings，支持环境变量覆盖。
 
-全键生效（#977）：所有 INKFLOW_* 字段均可由 instance.env 提供，
-优先级 进程 env > instance.env > .env（锚点见 get_instance_env_path）。
+全键生效（#977/#987）：所有 INKFLOW_* 字段均可由 instance.env / config.json 提供，
+优先级链 init > 进程 env > instance.env > .env > config.json > secrets（#987）。
 """
 
 import json as _json
@@ -80,22 +80,26 @@ def _default_data_dir() -> Path:
 
 
 def load_config_json(data_dir: Path) -> dict:
-    """从 {data_dir}/config.json 加载配置.
+    """从 {data_dir}/config.json 加载配置（#987：顶层非 dict 视为空）.
 
     Args:
         data_dir: 数据目录路径.
 
     Returns:
-        配置 dict，文件不存在时返回空 dict.
+        配置 dict；文件不存在或顶层非 dict（如 JSON 列表）时返回空 dict.
     """
     config_file = data_dir / "config.json"
     if not config_file.exists():
         return {}
     try:
-        return dict(_json.loads(config_file.read_text(encoding="utf-8")))
+        data = _json.loads(config_file.read_text(encoding="utf-8"))
     except (_json.JSONDecodeError, OSError):
         logger.warning("config.json 解析失败，使用默认值")
         return {}
+    if not isinstance(data, dict):
+        logger.warning("config.json 顶层非对象，使用默认值")
+        return {}
+    return data
 
 
 def save_config_json(data_dir: Path, updates: dict) -> None:
@@ -130,6 +134,53 @@ class _InstanceEnvSettingsSource(EnvSettingsSource):
         return {key.lower(): value for key, value in data.items()}
 
 
+class ConfigJsonSettingsSource(EnvSettingsSource):
+    """config.json 应用内配置面启动源（#987 方案 A）：读 {data_dir}/config.json
+    已知字段键，镜像 #977 _InstanceEnvSettingsSource 形态。
+
+    data_dir 定位序（防鸡生蛋环，config.json 的 data_dir 键不作启动字段——
+    data-dir 唯一通道仍是 instance.env，#266 语义）：
+    init 构造参数 > 进程 env INKFLOW_DATA_DIR > _default_data_dir()。
+    """
+
+    def __init__(self, settings_cls: type[BaseSettings], init_data: dict) -> None:
+        # init_data 先于 super().__init__ 设置（其内部会调 _load_env_vars）
+        self._init_data = init_data
+        super().__init__(settings_cls)
+
+    def _resolve_data_dir(self) -> Path:
+        """按 init 构造参数 > 进程 env > 默认链定位 config.json 所在数据目录。"""
+        dd = self._init_data.get("data_dir")
+        if dd:
+            return Path(dd)
+        env_dd = os.environ.get("INKFLOW_DATA_DIR")
+        if env_dd:
+            return Path(env_dd)
+        return _default_data_dir()
+
+    def _load_env_vars(self) -> Mapping[str, str | None]:
+        """读 config.json 已知字段键值 dict；case_sensitive=False 时 key 小写以命中 env 名。"""
+        raw = load_config_json(self._resolve_data_dir())
+        # 已知字段键过滤（data_dir 剔除防定位环）；空串/None 值跳过（镜像
+        # load_instance_env 空值语义，不遮挡默认值）
+        fields = {f.lower() for f in self.settings_cls.model_fields}
+        fields.discard("data_dir")
+        out: dict[str, str] = {}
+        for key, value in raw.items():
+            lk = key.lower()
+            if lk not in fields or value is None or value == "":
+                continue
+            if isinstance(value, bool):
+                sval = "true" if value else "false"
+            elif isinstance(value, (dict, list)):
+                sval = _json.dumps(value)
+            else:
+                sval = str(value)
+            # case_sensitive=False：字段匹配名为小写 env 名（含 env_prefix）
+            out[f"{self.env_prefix}{lk}".lower()] = sval
+        return out
+
+
 class InkFlowConfig(BaseSettings):
     """应用全局配置，可通过环境变量 `INKFLOW_*` 覆盖。"""
 
@@ -149,18 +200,20 @@ class InkFlowConfig(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        """配置源优先级：init > 进程 env > instance.env > .env > secrets。
+        """配置源优先级链：init > 进程 env > instance.env > .env > config.json > secrets（#987）。
 
         instance.env 全键生效（#977）：不止 DATA_DIR/debug 特判，任意 INKFLOW_* 字段
-        （含 llm_default_model）写 instance.env 即入启动源。D1/D8 优先级镜像 F51：
-        进程 env 显式值 > instance.env。空值键由 load_instance_env 跳过（:40），
-        不遮挡低优先级源。
+        （含 llm_default_model）写 instance.env 即入启动源。config.json 为应用内
+        GUI/CLI 配置面最低文件源（#987 方案 A），位于 .env 之后、secrets 之前。
+        D1/D8 优先级镜像 F51：进程 env 显式值 > instance.env。空值键由
+        load_instance_env / ConfigJsonSettingsSource 跳过，不遮挡低优先级源。
         """
         return (
             init_settings,
             env_settings,
             _InstanceEnvSettingsSource(settings_cls),
             dotenv_settings,
+            ConfigJsonSettingsSource(settings_cls, dict(init_settings() or {})),
             file_secret_settings,
         )
 
