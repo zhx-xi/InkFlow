@@ -649,6 +649,7 @@ copy(source, target, root=None, self_only=False):
 
 - **入口**：世界观 tab 从「树列表」升级为「地图工作台」——左侧世界观树保留（P1 树渲染），右侧新增画布 + pin 列表。
 - **地图节点识别**：世界观树节点若 `root_location_id` 挂有地图（前端拉 `GET /projects/{pid}/maps` 建 `location_id → map` 映射），渲染 🗺 图标 + pin 数徽标（`data-testid="world-map-badge-<id>"`）。
+- **maps 拉取时机（#973）**：拉取 effect 依赖 `[currentProjectId, reloadKey, workbenchActive]`——挂载/项目切换、reloadKey 变化（与同页其他列表对齐）、进入/退出工作台（`setWorkbenchActive` 两处入口）均重拉，外部界面（CLI/HTTP/MCP/agent）建图对已挂载 GUI 可见；失败置空 + `pushToast('err', errorMessage(err))`（勿静默）。
 - **切换画布**：点击地图节点 → `setActiveMapId` → 画布渲染该地图的底图 + pins。
 - **无地图的节点**：仍显示为普通树节点（可编辑/删除/复制），不触发画布切换。
 
@@ -683,9 +684,9 @@ copy(source, target, root=None, self_only=False):
 - 添加：点 ＋方框/＋椭圆 → push `{type:'rect'|'ellipse', x:35, y:35, w:24, h:16, label:'新区域'}`；＋文字 → `{type:'text', x:45, y:45, label:'新文字'}`。
 - 拖拽：mousedown → 计算偏移 → mousemove 更新 x/y（百分比）→ mouseup 提交 `PATCH /maps/{id} extra:{shapes}`。
 - 选中：点击形状 → `selectedShape` 高亮（`.selected` dashed outline）+ 显示删除按钮 `shape-del`。
-- 删除：点 × → 移除该 shape → 提交 PATCH。
+- 删除：点 × → 移除该 shape → 提交 PATCH。删除钮锚位 = 形状框内右上（`right-1 top-1 z-10`，#978：原框外 `-right-2 -top-2` 与 NE 把手热区重合）；四角 resize 把手 `h-4 w-4`（#978 自 12px 扩大，钮与把手仅 ~4px 微重叠且 z-10 归钮）。
 - shapes 持久化：**任何增删/拖拽结束 → `PATCH /maps/{id}` body `{extra: {shapes: [...]}}`（整体替换）**。
-- testid：形状 `map-shape-<id>` / 删除 `map-shape-del-<id>`。
+- testid：形状 `map-shape-<id>` / 删除 `map-shape-del-<id>` / resize 把手 `map-shape-resize-<id>-<nw|ne|sw|se>`。
 
 ### 5.12 一图多标记（D6，P2 新增）
 
@@ -718,6 +719,8 @@ copy(source, target, root=None, self_only=False):
 
 - pin 绝对定位（`left/top` 百分比），`data-testid="map-pin-<id>"`。
 - pin 头图标按类型：`location`=点/`role`=人/`event`=事/`other`=·（原型 §5 图标语义）。
+- #979：图标右侧渲染 `pin.label`（`text-[12px] truncate max-w-[140px]`，对齐原型「圆点+文字」）；容器 `pointer-events-auto` + `onClick` stopPropagation（复用形状层防冒泡先例）→ 选中该 pin（`data-selected="true"`，互斥单选），**不再**冒泡触发画布加 pin；画布空白点击加 pin 逻辑不变。
+- #979 双向联动：`MapWorkbench` 持 `selectedPinId`；列表行 `map-pin-row-<id>`（点击行 = 选中，滚动定位 `scrollIntoView({block:'nearest'})`；选中行 `data-selected="true"`）。
 
 ### 5.13 后端 service 扩展（P2，F36 service 增量）
 
@@ -1183,6 +1186,14 @@ P5 追加（删除后引用残留清理 + 文案对齐）：
 | M11 | pin 列表删除 → DELETE + 列表刷新 | 点 `map-pin-del-<id>` → ConfirmDialog → DELETE `/map-pins/{id}` → 行消失 |
 | M12 | 简图 shapes：添加方框/椭圆/文字 | 点 `map-shape-add-rect` → `map-shape-*` 出现；shapes PATCH body `extra.shapes` |
 | M13 | 简图 shapes 删除 | 点 `map-shape-del-<id>` → shape 消失 + PATCH |
+
+**rc4 缺陷修复契约（0.13.0，library-map-workbench-fixes.test.tsx，#973/#978/#979）**：
+
+| # | 用例 | 断言要点 |
+|---|------|---------|
+| K1-K3 | #973 maps 快照刷新 | 进工作台重拉 maps（外部建图可见）；拉取失败 pushToast err（勿静默）；reloadKey 纳入依赖（分类保存重拉） |
+| S1 | #978 删除钮重叠 | 删除钮锚位 = 形内右上（`right-1 top-1 z-10`，旧 `-right-2 -top-2` 退役）+ 四角把手 `h-4 w-4`；删除功能回归（jsdom 无盒模型 → className 锚位组合断言） |
+| P1-P3 | #979 pin 标签/点击 | 画布 pin 可见 label + `pointer-events-auto`；点 pin stopPropagation（不新增 pin，画布空白点击加 pin 保持）；选中双向联动（画布/列表行 `data-selected` + `map-pin-row-<id>`） |
 
 **后端 RED 契约（test_map_p2.py，B 系列）**：
 
