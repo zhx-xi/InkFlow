@@ -739,12 +739,10 @@ async def _build_store() -> VectorStoreProtocol:
             secret_key=config.secret_key,
             storage_dir=config.data_dir / "keys",
         ).load(provider)
-        # #428 语义平移：embedding 面统一 openai/ 前缀 + api_base（实证 zai/ 在
-        # litellm 1.99 embedding 端点 unmapped；注册表 embedding 全走 OpenAI 兼容
-        # 端点，wire 裸 id 由 litellm openai/ 路径自动剥前缀）
+        # #428 平移：统一 openai/ 前缀 + api_base（zai/ unmapped；wire 裸 id 自动剥；key 明文 str）
         embeddings = LiteLLMEmbeddings(
             model=f"openai/{model_id.split('/', 1)[-1]}",
-            api_key=key,  # APIKeyManager.load 返回明文 str；LiteLLMEmbeddings 拒 SecretStr
+            api_key=key,
             api_base=base_url or None,
         )
         return LangChainVectorStore(
