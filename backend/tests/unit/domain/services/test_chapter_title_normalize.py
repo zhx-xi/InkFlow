@@ -118,6 +118,19 @@ class TestOutputSeparator:
         """仅有前缀 → 无尾空格。"""
         assert normalize_chapter_title("第3章") == "第3章"
 
+    @pytest.mark.parametrize(
+        ("title", "fmt", "expected"),
+        [
+            # #999 回归（test_create_chapter_success 实锤）：前缀后无空白 → 不插空格
+            ("第一章·定稿", None, "第一章·定稿"),
+            ("第一章·定稿", "arabic", "第1章·定稿"),
+            ("第1章·定稿", "chinese", "第一章·定稿"),
+        ],
+    )
+    def test_flush_remainder_no_space_inserted(self, title, fmt, expected):
+        """最小干预：剩余文本紧贴前缀（无空白）→ 保持无分隔，不凭空插空格。"""
+        assert normalize_chapter_title(title, fmt=fmt) == expected
+
     def test_fmt_none_separator_only(self):
         """fmt=None：去重+分隔归一但序号形态不变。"""
         assert normalize_chapter_title("第一章 风", fmt=None) == "第一章 风"

@@ -36,6 +36,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from inkflow.core.config import config
+from inkflow.domain.models.chapter import normalize_chapter_title
 from inkflow.domain.models.outline import (
     GeneratedOutline,
     Outline,
@@ -239,6 +240,12 @@ class OutlineService:
             OutlineChapterRefError: chapter_id 约束违反.
         """
         pid_int = _to_int_id(project_id)
+        if level == "chapter" and self._project_repo is not None:
+            # #999 契约 §3：章级大纲按项目已选格式归一后再走重名检查/落库
+            # （项目不存在/读配置失败 → 保持 DTO 产物不阻断）
+            project: Project | None = await self._project_repo.get(pid_int)
+            if project is not None:
+                name = normalize_chapter_title(name, project.config.chapter_title_format)
         existing = await self._repo.get_by_name(pid_int, name)
         if existing is not None:
             raise OutlineNameConflictError()

@@ -11,9 +11,18 @@ from inkflow.domain.models.chapter import (
     ChapterUpdate,
     Volume,
     VolumeUpdate,
+    normalize_chapter_title,
 )
+from inkflow.domain.models.outline import Outline
+from inkflow.domain.models.project import Project
 from inkflow.infrastructure.database.repositories.chapter_repo import (
     SQLiteChapterRepository,
+)
+from inkflow.infrastructure.database.repositories.outline_repo import (
+    SQLiteOutlineRepository,
+)
+from inkflow.infrastructure.database.repositories.project_repo import (
+    SQLiteProjectRepository,
 )
 from inkflow.logging import log_structured
 
@@ -47,8 +56,10 @@ def _to_int(val: int | uuid.UUID) -> int:
 class ChapterService:
     """章节业务服务."""
 
-    def __init__(self, db_session) -> None:
+    def __init__(self, db_session, outline_repo=None, project_repo=None) -> None:
         self._repo = SQLiteChapterRepository(db_session)
+        self._outline_repo = outline_repo or SQLiteOutlineRepository(db_session)
+        self._project_repo = project_repo or SQLiteProjectRepository(db_session)
 
     # ---- Volume ----
 
@@ -184,6 +195,82 @@ class ChapterService:
 
     async def delete_chapter(self, chapter_id: int | uuid.UUID) -> bool:
         return await self._repo.delete_chapter(_to_int(chapter_id))
+
+    async def normalize_all_titles(
+        self, project_id: int | uuid.UUID, fmt: str
+    ) -> dict[str, int] | None:
+        """全书章节/章级大纲标题批量归一（#999 契约 §4）.
+
+        流程：项目校验（不存在 → None，router 转 404）→ 章实体分页取快照
+        归一（变化才 update 计数）→ chapter 级大纲同步归一（归一后撞
+        uq_outlines_active_name 活动大纲重名 → 跳过不计数）→ 最后把
+        project.config.chapter_title_format 持久化为 fmt。
+
+        Args:
+            project_id: 项目主键（int 或 UUID）.
+            fmt: 目标序号格式（arabic / chinese）.
+
+        Returns:
+            项目不存在返回 None；否则 {"chapters_replaced": int,
+            "outlines_replaced": int}（幂等：第二次同 fmt 调用两计数全 0）.
+        """
+        pid = _to_uuid(project_id)
+        pid_int = pid.int
+        if fmt not in ("arabic", "chinese"):
+            raise ValueError(f"不支持的章节标题格式: {fmt}")
+        project: Project | None = await self._project_repo.get(pid_int)
+        if project is None:
+            return None
+
+        chapters_replaced = 0
+        offset = 0
+        while True:
+            chapter_page: tuple[list[Chapter], int] = await self._repo.list_chapters(
+                pid_int, None, None, offset, 50
+            )
+            chapters, chapter_total = chapter_page
+            for ch in chapters:
+                normalized = normalize_chapter_title(ch.title, fmt)
+                if normalized == ch.title:
+                    continue
+                updated_chapter = ch.model_copy(update={"title": normalized})
+                await self._repo.update_chapter(updated_chapter)
+                chapters_replaced += 1
+            offset += len(chapters)
+            if offset >= chapter_total or not chapters:
+                break
+
+        outlines_replaced = 0
+        outline_snapshot: list[Outline] = []
+        offset = 0
+        while True:
+            outline_page: tuple[list[Outline], int] = await self._outline_repo.list(
+                pid_int, offset=offset, limit=50
+            )
+            outline_items, outline_total = outline_page
+            outline_snapshot.extend(outline_items)
+            offset += len(outline_items)
+            if offset >= outline_total or not outline_items:
+                break
+        for outline in outline_snapshot:
+            if outline.level != "chapter":
+                continue
+            name: str = outline.name
+            normalized = normalize_chapter_title(name, fmt)
+            if normalized == name:
+                continue
+            existing_outline = await self._outline_repo.get_by_name(pid_int, normalized)
+            if existing_outline is not None and existing_outline.id != outline.id:
+                # 归一后与既有活动大纲重名（uq_outlines_active_name）→ 跳过防 IntegrityError
+                continue
+            updated_outline = outline.model_copy(update={"name": normalized})
+            await self._outline_repo.update(updated_outline)
+            outlines_replaced += 1
+
+        config = project.config.model_copy(update={"chapter_title_format": fmt})
+        updated_project = project.model_copy(update={"config": config})
+        await self._project_repo.update(updated_project)
+        return {"chapters_replaced": chapters_replaced, "outlines_replaced": outlines_replaced}
 
     async def move_chapter(
         self,

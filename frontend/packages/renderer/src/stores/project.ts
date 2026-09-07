@@ -46,6 +46,8 @@ export interface ProjectConfig {
   supervisor?: { hitl_roles?: string[] } | null;
   /** #598：项目级「是否全自动」开关（D9-a1，与 supervisor 同层；默认 false=AI 自动化默认关闭） */
   auto_write_enabled?: boolean;
+  /** #999：全书章节标题序号格式（arabic=第N章 / chinese=第X章；缺省=arabic，零迁移） */
+  chapter_title_format?: 'arabic' | 'chinese';
 }
 
 export interface NewProjectInput {

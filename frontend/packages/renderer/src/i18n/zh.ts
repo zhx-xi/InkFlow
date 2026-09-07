@@ -449,6 +449,12 @@ export const zh = {
   'm.fetchModelsFailed': '获取模型失败: {reason}',
   // 写作页
   'write.newChapter': '新建章节',
+  // #999：章节标题格式冲突弹窗（ProjectTree）
+  'tree.formatDialog.title': '章节标题格式冲突',
+  'tree.formatDialog.message':
+    '当前输入包含中文序号前缀「第X章」，与本书目前的阿拉伯序号格式「第N章」不一致。请选择全书统一的标题格式：',
+  'tree.formatDialog.arabic': '阿拉伯序号（第N章）',
+  'tree.formatDialog.chinese': '中文序号（第X章）',
   'write.empty.title': '选择或新建项目开始写作',
   'write.empty.back': '返回项目页',
   'write.empty.noChapter': '还没有章节，点击左侧「新建章节」创建',

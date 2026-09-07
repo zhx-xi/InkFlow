@@ -215,6 +215,10 @@ class OutlineCreate(BaseModel):
     @classmethod
     def validate_name(cls, v: str) -> str:
         return _validate_name(v, "大纲名", 50)
+    # #999：model_validator(mode="after") 在 level=chapter（默认）时对 name 做
+    # normalize_chapter_title(name, fmt=None) 双前缀去重（不改序号格式）；
+    # OutlineUpdate 同理（name 在场且 level 为空或 chapter 时）。服务层
+    # OutlineService.create_outline 落库前再按项目 config.chapter_title_format 全归一。
 
     @field_validator("description")
     @classmethod

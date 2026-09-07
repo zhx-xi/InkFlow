@@ -1926,6 +1926,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/chapters/normalize-titles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Normalize Chapter Titles
+         * @description 全书章节/章级大纲标题批量归一（#999 契约 §4）.
+         *
+         *     项目不存在 → 404（detail「项目不存在」）；格式非法在 body 校验层 422；
+         *     成功后回写 project.config.chapter_title_format 并返回实际替换计数。
+         */
+        post: operations["normalize_chapter_titles_api_v1_projects__project_id__chapters_normalize_titles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/chapters/{chapter_id}/audit": {
         parameters: {
             query?: never;
@@ -4570,6 +4593,14 @@ export interface components {
             provider?: string | null;
         };
         /**
+         * NormalizeTitlesRequest
+         * @description #999 批量归一化请求体：format 必填，仅 arabic/chinese.
+         */
+        NormalizeTitlesRequest: {
+            /** Format */
+            format: string;
+        };
+        /**
          * OutlineCreateBody
          * @description 创建大纲请求体 — project_id 取自路径参数，不在 body（spec §3.2）。
          */
@@ -4907,6 +4938,8 @@ export interface components {
          *         role_reviser_temperature: 修订角色独立温度（None = 跟随默认）.
          *         template_id: 引用的 AgentTemplate id（str 存储于 config JSON；
          *             None = 未引用，回退默认装配，spec §9.2）.
+         *         chapter_title_format: 章节标题序号格式（'arabic'=第N章 /
+         *             'chinese'=第X章；#999 契约 §3，零迁移默认 arabic）.
          *         writing_style: 写作风格描述.
          *         supervisor: 项目级 Supervisor/HITL 配置（None = 未启用，零迁移）.
          *         extra: 扩展配置字典.
@@ -4938,6 +4971,11 @@ export interface components {
              * @default false
              */
             auto_write_enabled: boolean;
+            /**
+             * Chapter Title Format
+             * @default arabic
+             */
+            chapter_title_format: string;
             /**
              * Default Words
              * @description 新章节默认字数
@@ -10147,6 +10185,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    normalize_chapter_titles_api_v1_projects__project_id__chapters_normalize_titles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NormalizeTitlesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -65,6 +65,11 @@ class ChapterStatus(StrEnum):
 - 每次 status 变更时自动追加 `StatusHistoryEntry` 到 `status_history`
 - 按 `order_index` 升序排列（卷内排序）
 - 支持按 `volume_id` 筛选、按 `status` 筛选、分页
+- **#999 标题双编号归一化**：`ChapterCreate/ChapterUpdate.validate_title` 落库前经
+  `normalize_chapter_title(title, fmt=None)`（domain/models/chapter.py 纯函数）做**双前缀去重 +
+  分隔归一**（`第1章 第一章 风雨` → `第1章 风雨`，保留第一个前缀，序号形态不改）；无序号纯名
+  （`一叶落`）保持原样不强加前缀。全书统一格式转换走批量端点（见 §3）。
+
 
 ### 2.4 StatusHistoryEntry（状态变更记录）
 
@@ -98,6 +103,13 @@ class ChapterStatus(StrEnum):
 | PATCH | `/api/v1/chapters/{chapter_id}` | 更新章节 | `{title?, volume_id?, content?, status?, order_index?}` | 200 + Chapter |
 | DELETE | `/api/v1/chapters/{chapter_id}` | 硬删除 | — | 204 |
 | POST | `/api/v1/chapters/{chapter_id}/move?target_volume_id=` | 跨卷移动 | — | 200 + Chapter |
+| POST | `/api/v1/projects/{project_id}/chapters/normalize-titles` | **#999** 全书标题批量归一 | `{format: "arabic"\|"chinese"}` | 200 + `{format, chapters_replaced, outlines_replaced}` |
+
+**#999 批量归一化端点语义**（`ChapterService.normalize_all_titles`）：对项目全部章节 title 与
+全部 `level=chapter` 大纲节点 name 按目标格式逐条映射（`第3章`↔`第三章`，无序号纯名不动，
+归一后撞 `uq_outlines_active_name` 重名的条目跳过防 IntegrityError）；成功后将
+`project.config.chapter_title_format` 持久化为所选格式（此后该项目生成/拆章路径按已选格式归一）。
+幂等：同 format 重复调用两计数为 0。项目不存在 → 404「项目不存在」；format 非法/缺失 → 422。
 
 ### 3.3 错误响应格式
 

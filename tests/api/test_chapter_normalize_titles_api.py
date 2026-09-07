@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import AsyncGenerator
 
 import pytest
@@ -116,7 +117,9 @@ async def test_normalize_titles_persists_config(client, sample_project):
     )
     assert resp.status_code == 200
 
-    proj = (await client.get(f"/api/v1/projects/{pid}")).json()
+    # project router 的 _parse_project_id 仅收 UUID 字符串（无 int 回退，异于 chapter router），
+    # 父侧修正：GET 用 uuid.UUID(int=pid) 形态（契约意图不变——回读 config 持久化值）
+    proj = (await client.get(f"/api/v1/projects/{uuid.UUID(int=pid)}")).json()
     assert proj["config"]["chapter_title_format"] == "chinese"
 
 
