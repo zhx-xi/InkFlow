@@ -83,14 +83,18 @@ function makeIsolation(prefix = 'inkflow-e2e-debug-'): { dir: string; cleanup: (
  * 基础 env：继承本进程 env（含 INKFLOW_KERNEL_CMD），剥除会干扰 debug 判定的显式键
  * ——INKFLOW_DEBUG（用例各自注入目标值）/ INKFLOW_DEBUG_TOKEN（serve debug token 可覆盖
  * 环境键，剥除后回落契约常量 'inkflow-debug-token'，断言确定性）。
+ * 统一注入 INKFLOW_DEBUG_NO_BROWSER=1（F51 v1.1 #949 逃生门）：debug 态 serve 不再自动弹
+ * 系统浏览器打开 /docs（弹窗零断言贡献，纯本地噪音）；/docs 可达性由 docsStatus fetch
+ * 断言（HTTP 门控与浏览器无关），三层联动语义不受影响。
  */
 function baseEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined && k !== 'INKFLOW_DEBUG' && k !== 'INKFLOW_DEBUG_TOKEN') {
+    if (v !== undefined && k !== 'INKFLOW_DEBUG' && k !== 'INKFLOW_DEBUG_TOKEN' && k !== 'INKFLOW_DEBUG_NO_BROWSER') {
       env[k] = v;
     }
   }
+  env.INKFLOW_DEBUG_NO_BROWSER = '1';
   return env;
 }
 

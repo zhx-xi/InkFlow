@@ -1,11 +1,12 @@
 # F51: 打包产物 Debug 模式（debug-mode）— 功能规格
 
-> **Spec 版本**: 1.0 | **日期**: 2026-08-27 | **依据**: 用户需求（打包产物难测试），Constitution P1-P6, ADR-008/016/020/021/030
-> **所属阶段**: 0.13.0 里程碑（Issue #713/#714/#715，估算 4-7 人天）
-> **关联 Issues**: [#713](https://github.com/zhx-xi/InkFlow/issues/713)（后端 debug 开关 + 详细日志）· [#714](https://github.com/zhx-xi/InkFlow/issues/714)（Electron GUI DevTools + dev 钩子）· [#715](https://github.com/zhx-xi/InkFlow/issues/715)（serve 可直达端点）
+> **Spec 版本**: 1.1 | **日期**: 2026-09-08 | **依据**: 用户需求（打包产物难测试），Constitution P1-P6, ADR-008/016/020/021/030
+> **Spec 变更**: v1.1（#949）——§5.4 补 `INKFLOW_DEBUG_NO_BROWSER` 逃生门开关（debug 自动打开 /docs 可关，默认行为不变）+ §7 边界表补行 + §12 D10 决策记录。
+> **所属阶段**: 0.13.0 里程碑（Issue #713/#714/#715，估算 4-7 人天）；v1.1 逃生门增量挂 0.14.0（#949）
+> **关联 Issues**: [#713](https://github.com/zhx-xi/InkFlow/issues/713)（后端 debug 开关 + 详细日志）· [#714](https://github.com/zhx-xi/InkFlow/issues/714)（Electron GUI DevTools + dev 钩子）· [#715](https://github.com/zhx-xi/InkFlow/issues/715)（serve 可直达端点）· [#949](https://github.com/zhx-xi/InkFlow/issues/949)（v1.1 逃生门：debug 自动打开 /docs 可关）
 > **依赖**: 无硬前置（三条均为新增能力；#715 复用 #713 的 `INKFLOW_DEBUG` 语义，建议同批排期）
 > **参考 ADR**: [ADR-044](../../adr/packaging/ADR-044.md)（打包产物 Debug 模式总决策）· [ADR-008](../../adr/service/ADR-008.md)（pydantic settings 配置）· [ADR-016](../../adr/service/ADR-016.md)（loguru 日志）· [ADR-020](../../adr/gui/ADR-020.md)（Electron 壳）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化）· [ADR-030](../../adr/kernel/ADR-030.md)（本地内核服务化）
-> **状态**: 待实现 🔲
+> **状态**: v1.0 已实现（0.13.0，#713/#714/#715）；v1.1 逃生门增量实现中（#949，挂 0.14.0）
 
 ---
 
@@ -120,7 +121,7 @@ inkflow serve --port 0 --debug
 | 参数 | 类型 | 默认 | 说明 |
 |------|------|------|------|
 | `--debug` | bool | False | 等价 `INKFLOW_DEBUG=1`；显式 flag 优先级低于 env（D1） |
-| `--open-browser` | bool | False | **既有**参数；debug 时默认打开 `/docs`（见 §5.4） |
+| `--open-browser` | bool | False | **既有**参数；debug 时默认打开 `/docs`（见 §5.4）；不受 v1.1 `INKFLOW_DEBUG_NO_BROWSER` 逃生门影响（见 §5.4 边界 2） |
 | `--token` | str | None | **既有**参数；debug 且未显式传时用可预测 token（见 §5.4） |
 
 > F7 全局 CLI 约定（`--json` 信封 / 退出码 0/1/2）不变——debug 不新增命令组、不改信封。
@@ -181,6 +182,10 @@ def resolve_log_dir() -> Path:
   - **🔴 端口 bug（2026-08-31 技术审查补，不修则 M4 必失败）**：既有 `--open-browser` 用**请求端口** `port` 拼 URL（serve.py:95），`--port 0`（GUI 必走路径）时 = `http://127.0.0.1:0/docs` **死链**——debug 复用 `open_browser` 语义会继承此 bug。**必须**：自动打开 `/docs` 用 **`actual_port`**（`_run_server` 返回的实际监听端口），且安排在 `_run_server` 返回之后（顺带 `typer.echo` 的 `{port}` 展示也用 `actual_port`，修既有 `:0` 展示瑕疵）。
 - **uvicorn**：`log_level="debug"`。
 - **端口**：仍 `--port 0` 动态，经端口文件 / `INKFLOW_READY` / 日志可查。
+- **🔴 逃生门开关 `INKFLOW_DEBUG_NO_BROWSER`（v1.1，#949）**：debug 态自动打开 `/docs` 会污染本地 e2e（`INKFLOW_DEBUG=1` 真实拉起内核的用例每例弹一次浏览器，纯副作用、零断言贡献）。新增**进程 env 逃生门**：`INKFLOW_DEBUG_NO_BROWSER` 为真值（`1`/`true`/`on`，trim+lowercase，判据对齐 `INKFLOW_DEBUG`）时，debug 分支**跳过** `threading.Timer(1.5, webbrowser.open(docs_url))` 注册（serve.py `_run_server` 返回后那段）。语义边界（三条，均须契约锁定）：
+  1. **默认行为零破坏**：不设该 env（用户手动 `serve --debug`）仍自动弹 `/docs`（D2 拍板不变）；开关**只关弹窗**，不影响 debug 其余三层行为（token / `config.debug`+env 回写 / docs 门控 / uvicorn 级别 / DevTools 联动全部不变）。
+  2. **不越界**：`--open-browser`（非 debug 显式参数）不受该开关影响，照常注册 Timer 打开——逃生门管的是「debug 默认自动开」，不是用户显式要求开浏览器。
+  3. **仅进程 env**：与 `INKFLOW_DEBUG_TOKEN` 同级读法（`os.environ` 直读），不进 pydantic `InkFlowConfig` 字段、不走 instance.env/config.json 三层传播——它是启动面逃生门，不是产品配置。e2e（`baseEnv()` / `launchPackaged()`）统一注入该 env 消除弹窗。
 
 > ⚠️ 安全权衡（§12）：固定 token + 自动 DevTools + verbose 仅 debug 生效，文档标注「勿在生产开启」。renderer 用 INKFLOW_READY 交付的 token，与固定值不冲突（见 §3）。
 
@@ -215,6 +220,8 @@ def resolve_log_dir() -> Path:
 | **GUI 复用既有内核（tryReuseKernel）** | GUI `tryReuseKernel` 复用先前**无 debug**启动的常驻内核（如 CLI 拉起）时，GUI 开了 DevTools 但内核无 debug token//docs，三层不一致——**边界登记**：复用路径不强制重启内核，debug 一致性靠「复用对象本身是否 debug 启动」决定（实现期若需三层一致，可要求复用前检查内核 debug 标记或强制重启） |
 | 非 debug 模式启动 | 行为零变化（随机 token / 不自动 /docs / info 级别 / 无 DevTools 钩子） |
 | debug 时 `--token` 显式传入 | 尊重显式 token，不覆盖 |
+| debug 时 `INKFLOW_DEBUG_NO_BROWSER=1`（v1.1，#949） | **仅跳过** debug 分支自动打开 `/docs` 的 Timer 注册；token/docs 门控/日志级别/`--open-browser` 显式路径全部不变。`0`/空串/未设 = 不跳过（默认仍弹）；`1`/`true`/`on`（trim+lowercase）= 跳过 |
+| 非 debug 时 `INKFLOW_DEBUG_NO_BROWSER=1` | 无效果（debug 分支本身不执行）；`--open-browser` 显式打开不受影响（逃生门不越界） |
 | debug 时 `--open-browser`/自动 /docs | **用 `actual_port`**（`--port 0` 下不用请求端口 `port`，否则 `:0` 死链）——见 §5.4 |
 | 非 debug 模式 /docs /redoc | 404（S3f-T1 G1：DocsGateMiddleware 按 `config.debug` 运行时门控，默认关闭） |
 
@@ -235,7 +242,7 @@ def resolve_log_dir() -> Path:
 |------|------|-----|
 | `backend/src/inkflow/core/config.py` | `InkFlowConfig` 加 `debug: bool = False`；instance.env / config.json 并入优先级判定 | §2 |
 | `backend/src/inkflow/core/log.py` | `resolve_log_dir()` frozen 分支 → `config.data_dir / "logs"`；`setup_logging()` debug 时 console level=DEBUG | §5.2 |
-| `backend/src/inkflow/cli/commands/serve.py` | `--debug` flag + debug 分支（token /docs / uvicorn log_level） | §5.4 |
+| `backend/src/inkflow/cli/commands/serve.py` | `--debug` flag + debug 分支（token /docs / uvicorn log_level）；v1.1（#949）：`INKFLOW_DEBUG_NO_BROWSER` 逃生门（§5.4） | §5.4 |
 | `frontend/packages/electron/src/main.ts` | `isDebugMode()`；`setupAppMenu(isPackaged, isDebug)`；auto-open DevTools；dev 钩子门控改 `!isPackaged \|\| isDebug` | §5.3 |
 | `frontend/packages/electron/src/kernel.ts` | 无核心改动（`INKFLOW_KERNEL_CMD` 分支保留）；如新增 debug 辅助读取可扩展 | §5.5 |
 | `adr/README.md` | 索引登记 ADR-044 | — |
@@ -269,6 +276,7 @@ def resolve_log_dir() -> Path:
 3. **GUI DevTools**：打包版 + debug → F12 / Ctrl+Shift+I 开 DevTools；`__kernelInfo`/`__trayInfo`/`__trayActions` 暴露。
 4. **serve 可直达**：debug 起内核 → 可访问 `/docs`；已知 token + `X-InkFlow-Token` header curl 成功；uvicorn debug 日志。
 5. **非 debug 回归**：随机 token / 不自动 /docs / info 级别 / 无 DevTools 钩子。
+6. **逃生门开关（v1.1，#949）**：`INKFLOW_DEBUG_NO_BROWSER=1` + debug 态 → Timer 零注册 / webbrowser 不调用，其余 debug 行为不变；未设 → 仍注册（默认防回退）；`--open-browser`（非 debug）+ 设开关 → 照常打开（不越界）。
 
 ### 9.3 覆盖率
 
@@ -317,6 +325,7 @@ def resolve_log_dir() -> Path:
 | D7 | **config.json 触发源三层对称（2026-08-31 技术审查补）** | `isDebugMode()` 增加 config.json 读取（data_dir 定位 = instance.env `INKFLOW_DATA_DIR` 优先、缺省 `%APPDATA%/InkFlow/config.json`），使 config.json 也贯穿三层（方案 A，见 §5.1） | 补 D6「单开关贯穿三层」在 config.json 触发时的缺口 | 方案 B（config.json 仅内核层，GUI 不开）——三层不一致，否决 |
 | D8 | **env=0 优先级判据（2026-08-31 技术审查补）** | 用 `model_fields_set` 判定「env 是否显式设置」，env 显式 `0` 不被 instance.env/config.json 覆盖 | 防「`if not debug` 误判 env=0 为未设」→ 错误覆盖 | 朴素 `if not self.debug`（判据缺失，TDD 易实现错） |
 | D9 | **auto-open /docs 端口（2026-08-31 技术审查补）** | 自动打开 `/docs` 用 `actual_port` 且 `_run_server` 返回后；`typer.echo` 的 `{port}` 展示也用 `actual_port` | `--port 0` 下请求端口 = `:0` 死链，必须用实际监听端口 | 复用既有 `open_browser` 的请求端口 `port`（`--port 0` 下 M4 必失败） |
+| D10 | **debug 弹窗逃生门（v1.1，#949）** | 新增进程 env `INKFLOW_DEBUG_NO_BROWSER=1/true/on`，为真时 debug 分支跳过 `threading.Timer(1.5, webbrowser.open(/docs))` 注册；默认（未设）行为不变；`--open-browser` 显式路径不受影响 | e2e 真实拉起内核的用例（e2e-debug-triad / e2e-packaged）每例弹一次浏览器，纯副作用零断言贡献；用户手动 debug 仍默认弹（D2 不变）；只关弹窗不破三层联动断言（token//docs 200/DevTools 均不依赖真实浏览器窗口） | ①e2e 关 debug（破坏 debug-triad 用例语义）；②新增 `--no-browser` CLI flag（GUI 壳 spawn 不透传 flag，env 继承才是三层统一通道）；③进 pydantic 配置源 instance.env/config.json（启动面逃生门非产品配置，过度设计） |
 
 ## 13. 验收标准
 
@@ -328,6 +337,7 @@ def resolve_log_dir() -> Path:
 | M4 | debug 起内核可达 `/docs`（**用 actual_port** + 已知 token + `X-InkFlow-Token` header curl 成功）；uvicorn debug 日志（#715） | `tests/cli/test_cli_serve.py` debug 分支（token //docs actual_port / `uvicorn.Config` log_level）、`INKFLOW_READY` 四字段不破 | 单元 + 手动 |
 | M5 | 非 debug 回归：随机 token / 不自动 /docs / info 级别 / 无 DevTools 钩子 | 契约测试（`test_serve_default_token_is_random_per_start`、`main.menu.test.ts` 生产零注册）+ **新增「缺省不注册 Timer / 不自动 /docs」负向用例** | 单元 + 手动 |
 | M6 | 既有测试全绿（backend unit/api/cli + frontend main.menu/tray，见 §9.1 既有测试破坏清单）+ coverage 门槛 98.5/95.0 不变 | ci.yml PR 全绿 | CI |
+| M7 | v1.1 逃生门（#949）：`INKFLOW_DEBUG_NO_BROWSER=1/true/on` → debug 分支零 Timer 注册；未设 → 默认仍自动弹；`--open-browser` 显式路径不受影响；e2e（debug-triad / packaged）注入开关后零弹窗且三层断言全绿 | `tests/cli/test_cli_serve.py` 三态契约 + e2e 实测零弹窗 | 单元 + e2e |
 
 > 完成标准映射：M1-M2 = #713（后端）；M3 = #714（GUI）；M4 = #715（serve）；M5-M6 = 回归 + 质量门禁。
 

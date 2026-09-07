@@ -4,6 +4,11 @@
 
 > 版本口径以 [ADR-019 v12](adr/packaging/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
 
+## [Unreleased]
+
+### 变更
+- **serve debug 自动弹 /docs 逃生门（#949）**：新增进程 env `INKFLOW_DEBUG_NO_BROWSER`（`1`/`true`/`on`，trim+lowercase，判据对齐 `INKFLOW_DEBUG`），为真时 debug 分支跳过自动打开 `/docs` 的 `threading.Timer` 注册（e2e 真实拉起内核的用例每例弹一次浏览器，纯副作用零断言贡献）。默认行为不变（未设仍自动弹，F51 D2 拍板）；`--open-browser` 显式路径不受影响；token / docs 门控 / 日志级别 / DevTools 联动全部不变。e2e（e2e-debug-triad `baseEnv()` / e2e-packaged `launchPackaged()`）统一注入该 env 消除测试弹窗。
+
 ## [0.13.0] - 2026-09-08
 
 ### 新增

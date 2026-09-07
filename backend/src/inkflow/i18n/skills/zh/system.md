@@ -6,8 +6,9 @@ agent 使用：serve / kernel / search / config / llm——内核与系统级操
 
 | 命令 | 参数 | 说明 |
 |---|---|---|
-| `serve` | `--host`(127.0.0.1) `--port`(8000；**0 = 动态随机**) `--port-file` `--token`(缺省随机) `--open-browser` `--reload` | 前台直启内核；就绪 = stdout `INKFLOW_READY {"port","token","pid","version"}`；**不写 kernel.json**（诊断场景直接解析 INKFLOW_READY 行）；`--reload` 模式无交付契约 |
+| `serve` | `--host`(127.0.0.1) `--port`(8000；**0 = 动态随机**) `--port-file` `--token`(缺省随机) `--open-browser` `--reload` `--debug` | 前台直启内核；就绪 = stdout `INKFLOW_READY {"port","token","pid","version"}`；**不写 kernel.json**（诊断场景直接解析 INKFLOW_READY 行）；`--reload` 模式无交付契约 |
 
+- **debug 环境变量（F51）**：`INKFLOW_DEBUG=1`（等价 `--debug`，可预测 token `INKFLOW_DEBUG_TOKEN` 缺省 `inkflow-debug-token`，/docs 放行）；`INKFLOW_DEBUG_NO_BROWSER=1/true/on`（#949 逃生门）= debug 态**不**自动弹浏览器打开 /docs（默认仍弹；`--open-browser` 显式路径不受影响；e2e 注入该键消噪）
 - **500 诊断唯一可靠 stderr 来源**：`serve --port 0 --port-file <f>` + `-RedirectStandardError <err.log>`（GUI 拉起的内核无 stderr 捕获）
 - 场景：排查内核 500 / 确认 API 路径（openapi）/ 观察请求日志
 
