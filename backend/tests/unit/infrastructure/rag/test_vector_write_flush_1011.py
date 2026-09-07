@@ -179,12 +179,14 @@ async def test_ensure_hnsw_flushed_real_invocation(tmp_path):
 
     # 路径 1：无探针向量 → 静默 return（禁抛异常打断写路径）
     store._probe_embedding = None
-    store._ensure_hnsw_flushed(collection)  # 不抛即通过（防御分支）
+    with store._lock:  # 调用方持锁契约（#468）
+        store._ensure_hnsw_flushed(collection)  # 不抛即通过（防御分支）
 
     # 路径 2：写入后真实自检 → 立即返回（快盘首轮成功）
     await store.index(make_entity("c1", EntityType.CHARACTER, "p1", "苹果"))
     assert store._probe_embedding is not None  # 写路径已暂存探针
-    store._ensure_hnsw_flushed(collection)
+    with store._lock:  # 调用方持锁契约（#468）
+        store._ensure_hnsw_flushed(collection)
     # 自检通过后立读必命中（与既有守护同源行为）
     results = await store.retrieve("苹果", project_id="p1", min_score=0.01)
     assert [r.entity_id for r in results] == ["c1"]

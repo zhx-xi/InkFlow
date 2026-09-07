@@ -38,6 +38,16 @@ from inkflow.domain.ports.vector_store import (
 # chromadb 元数据值类型（含 bool，bool 是 int 子类，运行时兼容领域契约）
 _Metadata = dict[str, str | int | float | bool]
 
+# #873 读侧多级重试步长原口径 0.25s；#1011 评审 M2 进一步引入调用级共享预算，
+# 单次 retrieve 全类型累计 sleep ≤1.5s——自愈链 retrieve1(≤1.5) + reindex +
+# retrieve2(≤1.5) 守住 30s 客户端口径（infrastructure/http/client.py:65）。
+_RETRIEVE_RETRY_STEP_S = 0.25
+_RETRIEVE_RETRY_BUDGET_S = 1.5
+# #1011 评审 m1：写侧落盘自检固定小步长 + 轮数封顶（预算 = 轮数 × 步长，不依赖
+# 墙钟），单条 sleep ≤1s、每类型累计 ≤4s，reindex 5 类型不再额外叠加 77s。
+_FLUSH_PROBE_MAX_ROUNDS = 8
+_FLUSH_PROBE_STEP_S = 0.5
+
 
 class LangChainVectorStore:
     """VectorStoreProtocol 实现 — LangChain Chroma + 本地 Embedding（ADR-013）。
@@ -203,37 +213,47 @@ class LangChainVectorStore:
         注意：调用方必须已持有 self._lock（#468），此处不重复加锁（Lock 不可
         重入，与 _get_collection 同款纪律）。
         """
-        probe = self._probe_embedding
-        if probe is None:
-            logger.warning(
-                "向量写后落盘自检缺探针向量（无写入），跳过: collection={}",
-                collection.name,
-            )
-            return
-        last_error: Exception | None = None
-        for attempt in range(5):
-            try:
-                # count() 触发 WAL→段落盘；query 验证 hnsw 段已可读（与读侧同判据）
-                collection.count()
-                collection.query(
-                    query_embeddings=cast(Any, [probe]),
-                    n_results=1,
-                    include=["distances"],
+        try:
+            probe = self._probe_embedding
+            if probe is None:
+                logger.warning(
+                    "向量写后落盘自检缺探针向量（无写入），跳过: collection={}",
+                    collection.name,
                 )
-            except chromadb.errors.InternalError as exc:
-                # #1011: hnsw 段尚未就绪 → 有界指数退避（0.5/1/2/4/8s，总预算
-                # ≈15s）；写入已成功，预算耗尽仅 warning 不上抛——读侧 #873 多级
-                # 重试 + 服务层 #823 自愈仍是双保险，禁把写路径变硬失败。
-                last_error = exc
-                time.sleep(0.5 * (2**attempt))
-            else:
                 return
-        logger.warning(
-            "hnsw 段落盘自检超预算（写入已成功，读侧 #873/#823 兜底仍生效）: "
-            "collection={} last_err={}",
-            collection.name,
-            last_error,
-        )
+            last_error: Exception | None = None
+            for _ in range(_FLUSH_PROBE_MAX_ROUNDS):
+                try:
+                    # count() 触发 WAL→段落盘；query 验证 hnsw 段已可读（与读侧同判据）
+                    collection.count()
+                    collection.query(
+                        query_embeddings=cast(Any, [probe]),
+                        n_results=1,
+                        include=["distances"],
+                    )
+                except chromadb.errors.InternalError as exc:
+                    # #1011 评审 m1: hnsw 段尚未就绪 → 固定 0.5s 小步长有界等待
+                    # （8 轮累计 ≤4s/类型，单条 ≤1s）；写入已成功，预算耗尽仅
+                    # warning 不上抛——读侧 #873 多级重试 + 服务层 #823 自愈
+                    # 仍是双保险，禁把写路径变硬失败。非 InternalError 由外层兜底。
+                    last_error = exc
+                    time.sleep(_FLUSH_PROBE_STEP_S)
+                else:
+                    return
+            logger.warning(
+                "hnsw 段落盘自检超预算（写入已成功，读侧 #873/#823 兜底仍生效）: "
+                "collection={} last_err={}",
+                collection.name,
+                last_error,
+            )
+        except Exception as exc:
+            # #1011 评审 m2: 自检遇非 InternalError（连接/元数据异常等）只能降级，
+            # 不得把已成功的 upsert 变硬失败（与 docstring 语义一致）。
+            logger.warning(
+                "hnsw 落盘自检异常降级（写入已成功，禁硬失败）: collection={} err={!r}",
+                collection.name,
+                exc,
+            )
 
     def _index_sync(self, entity: IndexableEntity) -> None:
         """同步索引单个实体（upsert，同 id 覆盖）。
@@ -334,6 +354,10 @@ class LangChainVectorStore:
         types = list(entity_types) if entity_types else list(EntityType)
         query_embedding = self._embeddings.embed_query(query)
         with self._lock:
+            # #1011 评审 M2: 调用级 sleep 预算——跨类型共享同一变量，全类型合计
+            # ≤1.5s（预算即记账，非墙钟 deadline：RED 测试把 time.sleep patch 成
+            # 记账器，monotonic 永不推进会失效）。
+            retry_budget_s = _RETRIEVE_RETRY_BUDGET_S
             merged: list[RetrievedEntity] = []
             for entity_type in types:
                 collection = self._get_collection(entity_type)
@@ -347,12 +371,12 @@ class LangChainVectorStore:
                     )
                 except chromadb.errors.InternalError as exc:
                     # #823/#873/#1011: chromadb hnsw 段读取失败（"Nothing found on
-                    # disk"，#468 同族）——常为小批量写入未落盘（WAL-only）或残留空/
-                    # 旧 hnsw 段。多级重试：每轮 count() 强制触发 WAL→段落盘/载入 +
-                    # sleep 后重查（首查 + 6 次重试，#1011 B 兜底；总窗口 ≈3s）；
-                    # 全部失败仍清晰上抛 VectorStoreError（不吞空「内部错误（无
-                    # 详情）」），由服务层 retrieve 捕获后触发一次 reindex 重建重试
-                    # （_extraction_rag.py，#823 自愈双保险）。
+                    # disk"，#468 同族）——常为小批量写入未落盘（WAL-only）或残留
+                    # 空/旧 hnsw 段。多级重试语义不变（首查失败触发重试链、失败上抛
+                    # VectorStoreError 由服务层 #823 自愈）；#1011 评审 M2 把步长
+                    # 恢复 #873 原口径 0.25s，并在调用级共享 1.5s 预算——单次
+                    # retrieve 全类型累计 sleep ≤1.5s，自愈链 retrieve1(≤1.5) +
+                    # reindex + retrieve2(≤1.5) 守住 30s 客户端口径。
                     logger.warning(
                         "chromadb hnsw 段读取失败，强制落盘后重试: "
                         "entity_type={} project_id={} err={}",
@@ -360,12 +384,19 @@ class LangChainVectorStore:
                         project_id,
                         exc,
                     )
-                    max_attempts = 7  # 首查 + 6 次重试；慢磁盘下更高命中率（#1011 B 兜底）
+                    max_attempts = 7  # 首查 + 6 次重试；循环上界，预算是真封顶（取先到）
                     for _ in range(max_attempts - 1):
+                        if retry_budget_s < _RETRIEVE_RETRY_STEP_S:
+                            # 预算耗尽：放弃本类型剩余重试，维持 else 既有上抛语义
+                            raise VectorStoreError(
+                                "向量检索失败：chromadb hnsw 段读取失败（"
+                                f"{entity_type.value}），建议重建索引后重试"
+                            ) from exc
+                        retry_budget_s -= _RETRIEVE_RETRY_STEP_S
                         try:
-                            # count() 触发 WAL→段落盘；sleep 给落盘/载入留时间（慢磁盘兜底）
+                            # count() 触发 WAL→段落盘；0.25s 给落盘/载入留时间（#873）
                             collection.count()
-                            time.sleep(0.5)
+                            time.sleep(_RETRIEVE_RETRY_STEP_S)
                             result = collection.query(
                                 query_embeddings=cast(Any, [query_embedding]),
                                 n_results=top_k,

@@ -51,6 +51,18 @@ class InterceptHandler(logging.Handler):
         logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 
+# #1011 评审 M1：root logger 提到 INFO（inkflow.* 服务层 INFO 要落文件 sink）后，
+# httpx/httpcore/chromadb/sqlalchemy 的 INFO 若经拦截桥放行，会淹没文件 sink、稀释
+# 本 Issue 要浮现的服务层 WARNING。故对已知噪声三方 logger 设 WARNING 级别上限；
+# config.debug=True 时跳过（调试态放行三方 INFO 是预期）。
+_THIRD_PARTY_WARN_LOGGERS: tuple[str, ...] = (
+    "httpx",
+    "httpcore",
+    "chromadb",
+    "sqlalchemy.engine",
+)
+
+
 def _norm_sink_level(name: str) -> str:
     """loguru 级别名归一："WARNING" → "WARN"（与 store/前端查询口径对齐），其余原样。"""
     return "WARN" if name == "WARNING" else name
@@ -140,3 +152,8 @@ def setup_logging(log_dir: Path | None = None) -> None:
     # 与 stderr sink 同口径：debug 强制 DEBUG，否则按 config.log_level，控制三方
     # std 噪声（否则第三方 std DEBUG 会经桥灌满文件 sink）。
     std_root.setLevel(logging.DEBUG if config.debug else config.log_level)
+    # #1011 评审 M1：三方 INFO 封顶只在非调试态生效；setLevel 天然幂等，重复
+    # setup_logging 每次重新 set WARNING 即保持结果一致，不会把已封级别升回去。
+    if not config.debug:
+        for name in _THIRD_PARTY_WARN_LOGGERS:
+            logging.getLogger(name).setLevel(logging.WARNING)
