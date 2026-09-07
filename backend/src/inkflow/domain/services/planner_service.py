@@ -138,6 +138,14 @@ class PlannerRespondResult(BaseModel):
     writing_plan: WritingPlan | None = None
 
 
+def _short_protagonist_name(value: str) -> str:
+    """主角名短名化：#995 首顿号/逗号分段，段空回退原值，>50 字符 [:20] 截断."""
+    segment = value.split("、", 1)[0].split("，", 1)[0].strip()
+    if not segment:
+        segment = value.strip()
+    return segment[:20] if len(segment) > 50 else segment
+
+
 class PlannerService:
     """访谈式 Planner 服务（v1.2 #475 支持 LLM 动态提问）.
 
@@ -533,13 +541,13 @@ class PlannerService:
             if "主角" in str(item.get("key", "")):
                 value = str(item.get("value", "")).strip()
                 if value:
-                    return value
+                    return _short_protagonist_name(value)
         q3 = session.answers.get("q3", "")
         marker = "主角是"
         if marker in q3:
             rest = q3.split(marker, 1)[1].strip()
             if rest:
-                return rest
+                return _short_protagonist_name(rest)
         return "主角"
 
     async def _respond_llm(
@@ -685,6 +693,7 @@ class PlannerService:
             "你是小说访谈规划师。根据一句话构思、项目设定摘要与会话历史，"
             "生成下一轮访谈问题（每轮最多 5 问），并提取已确定项、标记冲突。\n"
             "问题必须围绕一句话构思针对性提出，与用户已明确的内容不相矛盾。\n"
+            "提取已确定项时，「主角」键 value 只填主角姓名（纯人名），勿填生平/身份/背景长句。\n"
             f"一句话构思：{session.one_liner}\n"
             f"项目设定摘要：{ctx}\n"
             f"会话历史：{hist}"
