@@ -52,6 +52,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 |------|------|------|------|
 | [ADR-003](database/ADR-003.md) | Repository 模式封装 SQLAlchemy | ✅ 已接受 | 2026-07-30 |
 | [ADR-004](database/ADR-004.md) | Pydantic v2 作为统一数据契约 | ✅ 已接受 | 2026-07-30 |
+| [ADR-054](database/ADR-054.md) | SQLite schema 迁移 — 引入 Alembic（混合方案 C：骨架 + 版本权威 + ensure_* 平移复用） | ✅ 已接受 | 2026-09-08 |
 
 ### service 层（service）
 
@@ -163,6 +164,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 
 - **架构风格**: 模块化单体（ADR-001 [architecture/](architecture/ADR-001.md)）+ 六边形分层（ADR-002）+ 异步无阻塞（ADR-011）
 - **数据访问**: Repository 模式（ADR-003 [database/](database/ADR-003.md)），SQLite + AsyncSQLAlchemy
+- **schema 迁移**: Alembic 骨架 + 版本权威（ADR-054 [database/](database/ADR-054.md)）；现有 ensure_* 平移复用为 migration body，lifespan 程序化 `command.upgrade`，CI `alembic check` drift 门禁；生产移除 create_all（0 新增依赖）
 - **数据契约**: Pydantic v2 全栈（ADR-004 [database/](database/ADR-004.md)）
 - **LLM**: LiteLLM 统一出口 `ChatLiteLLM`/`LitellmEmbeddings` + 思考模式七档（ADR-051 [llm/](llm/ADR-051.md)，取代 ADR-005v2 [llm/](llm/ADR-005v2.md) 的 ChatOpenAI 路线）；模型装配 fail-fast——删除注册表静默回退，`project>global` 无解即 422+诊断日志，model_routing=provider 键内置默认（ADR-049 [llm/](llm/ADR-049.md)）
 - **Agent 编排**: LangGraph StateGraph → deepagents 0.7.5 harness（ADR-006v2 / ADR-035 [agent/](agent/ADR-035.md)）
