@@ -859,7 +859,7 @@ class BookService(BookRunMixin):
                 chapter_id=chapter.chapter_id,
                 content=content,
                 summary="书级委托保存",
-                volume_id=volume_id,
+                volume_id=volume_id, source_outline_id=chapter.id,
             )
             return str(getattr(draft, "id", ""))
         # agent 已 save_draft：不兜底新建，执行 id 回退工具消息 draft_id（可 ""）

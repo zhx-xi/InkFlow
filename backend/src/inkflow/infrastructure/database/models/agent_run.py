@@ -165,6 +165,13 @@ class DraftORM(Base):
     )
     """所属写作卷 UUID 字符串（#976；可空无 FK——镜像 chapter_id 列形态）."""
 
+    source_outline_id: Mapped[str | None] = mapped_column(
+        String(36),
+        nullable=True,
+        index=True,
+    )
+    """来源大纲章节点 UUID 字符串（#988；可空无 FK——镜像 volume_id 列形态）."""
+
     agent_run_id: Mapped[str | None] = mapped_column(
         String(36),
         nullable=True,

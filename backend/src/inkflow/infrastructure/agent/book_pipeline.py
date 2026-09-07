@@ -491,6 +491,7 @@ class BookVolumePipeline:
                 content=content,
                 summary="书级委托保存",
                 volume_id=await self._resolve_draft_volume(plan, chapter),
+                source_outline_id=chapter["outline_id"],
             )
             execution_id = str(getattr(draft, "id", ""))
         else:
