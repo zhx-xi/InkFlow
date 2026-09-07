@@ -1,7 +1,9 @@
-"""deepagents 装配层 — ChatOpenAI 实例直传 create_deep_agent（custom base_url 多 Provider）.
+"""deepagents 装配层 — ChatLiteLLM 实例直传 create_deep_agent（litellm 多 Provider，
+ADR-051，取代 ADR-005v2）.
 
-模型名剥离（zhipu/glm-4.5 → glm-4.5）后构造 ChatOpenAI，领域 Tool 映射为
-StructuredTool，默认文件系统工具与 subagent（task 工具）禁用。
+模型名经 provider_config.litellm_model_name 口径校准（zhipu/glm-4.5 → zai/glm-4.5，
+不剥离前缀）后构造 ChatLiteLLM，领域 Tool 映射为 StructuredTool，默认文件系统
+工具与 subagent（task 工具）禁用。
 """
 
 from __future__ import annotations
@@ -13,26 +15,24 @@ from typing import Any, TypeAlias, cast
 
 from deepagents import create_deep_agent
 from langchain_core.tools import StructuredTool
-from langchain_openai import ChatOpenAI
+from langchain_litellm import ChatLiteLLM
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from inkflow.infrastructure.agent.deepagents.profiles import ensure_profile
 from inkflow.infrastructure.agent.tools import Tool
-from inkflow.infrastructure.llm.provider_config import parse_model_string
+from inkflow.infrastructure.llm.provider_config import litellm_model_name
 
 # deepagents 0.7.5 的 create_deep_agent 返回 CompiledStateGraph；任务契约将该返回值
 # 类型记作 Agent，此处以 TypeAlias 对齐（--follow-imports=skip 下解析为 Any，语义仍清晰）
 Agent: TypeAlias = CompiledStateGraph
 
 
-def _strip_model_prefix(model: str) -> str:
-    """剥离 registry 前缀（zhipu/glm-4.5 → glm-4.5）；无前缀原样使用（防御）."""
-    try:
-        _, model_name = parse_model_string(model)
-    except ValueError:
-        return model
-    return str(model_name)
+def _litellm_model_name(model: str, base_url: str) -> str:
+    """registry/全名 → litellm 模型名（zhipu/glm-4.5 → zai/glm-4.5，ADR-051 口径
+    校准）；base_url 透传（ollama 带 http(s) base_url → openai/ 兼容形态，
+    #962）；无前缀裸名（parse ValueError 防御路径）→ 原样返回。"""
+    return litellm_model_name(model, base_url)
 
 
 def _map_tools(tools: list[Tool]) -> list[StructuredTool]:
@@ -105,23 +105,25 @@ def build_deep_agent(
     system_prompt: str,
     profile_key: str | None = None,
 ) -> Agent:
-    """构建 deepagents 编排 Agent（ChatOpenAI 直传，多 Provider 兼容）.
+    """构建 deepagents 编排 Agent（ChatLiteLLM 直传，多 Provider 兼容，ADR-051）.
 
-    profile_key 缺省时确保 "openai:<模型名>" HarnessProfile 已注册（禁用默认 FS 工具
-    与 subagent）；显式传入则原样使用、不抛错。
+    profile_key 缺省时确保 "litellm:<口径映射后模型全名>" HarnessProfile 已注册
+    （deepagents 对预构建 ChatLiteLLM 实例按 ls_provider='litellm' + model 全名
+    解析 profile，键不命中则默认 FS 工具禁用静默失效——安全面）；显式传入则原样
+    使用、不抛错。
     """
-    model_name = _strip_model_prefix(model)
+    mapped_model = _litellm_model_name(model, base_url)
     chat_kwargs: dict[str, object] = {
-        "model": model_name,
+        "model": mapped_model,
         "temperature": 0.2,
     }
     if api_key:
-        chat_kwargs["openai_api_key"] = api_key
+        chat_kwargs["api_key"] = api_key
     if base_url:
-        chat_kwargs["openai_api_base"] = base_url
-    chat = ChatOpenAI(**chat_kwargs)  # type: ignore[arg-type]  # chat_kwargs 为动态 dict[str, object]，无法静态匹配 ChatOpenAI 构造参数（langchain-openai pydantic 签名，openai_api_* 为运行时别名）
+        chat_kwargs["api_base"] = base_url
+    chat = ChatLiteLLM(**chat_kwargs)  # type: ignore[arg-type]  # chat_kwargs 为动态 dict[str, object]，无法静态匹配 ChatLiteLLM pydantic 构造参数
     if profile_key is None:
-        ensure_profile(model_name)
+        ensure_profile(mapped_model)
     return create_deep_agent(
         model=chat,
         tools=_map_tools(tools),

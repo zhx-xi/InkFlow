@@ -195,7 +195,7 @@ class TestStreamChatAgentPersistsRun:
             events=[
                 {
                     "event": "on_chat_model_end",
-                    "name": "ChatOpenAI",
+                    "name": "ChatLiteLLM",
                     "run_id": "llm_1",
                     "data": {"output": output},
                 },

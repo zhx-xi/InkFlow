@@ -37,7 +37,6 @@ from inkflow.domain.ports.llm_client import ChatMessage
 from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.infrastructure.llm.provider_config import LLMProviderConfig
 
-
 # ── A. provider→litellm 前缀口径映射 ─────────────────────────────────
 
 
@@ -78,19 +77,13 @@ class TestLitellmProviderPrefix:
         （实证 chat/completions 路径，fake/兼容服务端点契约统一）。"""
         from inkflow.infrastructure.llm.provider_config import litellm_provider_prefix
 
-        assert (
-            litellm_provider_prefix("ollama", base_url="http://192.168.1.5:11434/v1")
-            == "openai"
-        )
+        assert litellm_provider_prefix("ollama", base_url="http://192.168.1.5:11434/v1") == "openai"
 
     def test_fake_provider_uses_openai(self) -> None:
         """fake（ADR-047 测试缝）走 openai/ 前缀 + api_base（spec §5.1 fake 段）。"""
         from inkflow.infrastructure.llm.provider_config import litellm_provider_prefix
 
-        assert (
-            litellm_provider_prefix("fake", base_url="http://127.0.0.1:5999/v1")
-            == "openai"
-        )
+        assert litellm_provider_prefix("fake", base_url="http://127.0.0.1:5999/v1") == "openai"
 
     def test_custom_openai_compatible_provider_uses_openai(self) -> None:
         """自定义 OpenAI 兼容第三方（不在 litellm provider_list）→ openai/ + api_base
@@ -98,8 +91,7 @@ class TestLitellmProviderPrefix:
         from inkflow.infrastructure.llm.provider_config import litellm_provider_prefix
 
         assert (
-            litellm_provider_prefix("myproxy", base_url="https://gw.corp.internal/v1")
-            == "openai"
+            litellm_provider_prefix("myproxy", base_url="https://gw.corp.internal/v1") == "openai"
         )
 
 
@@ -128,15 +120,13 @@ class TestGetChatModelLitellm:
     无 num_retries）。"""
 
     def _call(self, client_cls, provider_cfg, **kw):
-        with patch(
-            "inkflow.infrastructure.llm.langchain_client.ChatLiteLLM"
-        ) as mock_cls:
+        with patch("inkflow.infrastructure.llm.langchain_client.ChatLiteLLM") as mock_cls:
             mock_cls.return_value = MagicMock(name="chat-model-instance")
             model = client_cls()._get_chat_model(provider_cfg, **kw)
         return mock_cls, model
 
     def test_returns_chatlitellm_instance(self) -> None:
-        """构造对象 = ChatLiteLLM 返回值（非 ChatOpenAI 轨）。"""
+        """构造对象 = ChatLiteLLM 返回值（litellm 轨，非 langchain-openai 旧轨）。"""
         from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 
         mock_cls, model = self._call(LangChainLLMClient, _provider_cfg())
@@ -223,6 +213,37 @@ class TestGetChatModelLitellm:
         cfg = _provider_cfg(default_model="zhipu/glm-4.5")
         mock_cls, _ = self._call(LangChainLLMClient, cfg)
         assert mock_cls.call_args[1]["model"] == "zai/glm-4.5"
+
+    def test_ollama_registry_base_url_routes_openai_compat(self) -> None:
+        """🔴 #962 GREEN 评审补锁：ollama 带注册表 http base_url（内置
+        http://localhost:11434/v1 = OpenAI 兼容端点，旧 langchain-openai 轨语义）→
+        模型名必须经 base_url 口径走 openai/ 前缀。litellm ollama_chat
+        get_complete_url 对 api_base 无条件追加 /api/chat（实证源码），叠上
+        /v1 得 /v1/api/chat → 404 本地模型回归。前缀口径必须消费 base_url，
+        不得只看 provider 名。"""
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        cfg = _provider_cfg(
+            provider="ollama",
+            api_key="ollama",
+            base_url="http://localhost:11434/v1",
+            default_model="qwen2.5",
+        )
+        mock_cls, _ = self._call(LangChainLLMClient, cfg)
+        assert mock_cls.call_args[1]["model"] == "openai/qwen2.5"
+        assert mock_cls.call_args[1]["api_base"] == "http://localhost:11434/v1"
+
+    def test_ollama_without_base_url_uses_native_chat(self) -> None:
+        """ollama 无 base_url（防御形态）→ ollama_chat/ 原生（litellm 默认
+        localhost:11434/api/chat，可用）；api_base 不出现。"""
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        cfg = _provider_cfg(
+            provider="ollama", api_key="ollama", base_url=None, default_model="qwen2.5"
+        )
+        mock_cls, _ = self._call(LangChainLLMClient, cfg)
+        assert mock_cls.call_args[1]["model"] == "ollama_chat/qwen2.5"
+        assert "api_base" not in mock_cls.call_args[1]
 
 
 class TestHarnessProfileSafetyRegression:

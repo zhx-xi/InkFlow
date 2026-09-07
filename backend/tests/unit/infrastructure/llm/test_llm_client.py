@@ -1,4 +1,4 @@
-"""LangChainLLMClient 单元测试 — Mock ChatOpenAI，不发起真实 LLM 调用。"""
+"""LangChainLLMClient 单元测试 — Mock ChatLiteLLM（ADR-051），不发起真实 LLM 调用。"""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ class TestLangChainLLMClient:
 
     @pytest.fixture
     def mock_chat_model(self):
-        """Mock ChatOpenAI，返回预设 AIMessage。"""
+        """Mock ChatLiteLLM，返回预设 AIMessage。"""
         mock = AsyncMock()
         mock.ainvoke.return_value = AIMessage(
             content="你好！有什么可以帮助你的？",
@@ -74,7 +74,7 @@ class TestLangChainLLMClient:
 
     @pytest.mark.asyncio
     async def test_chat_passes_temperature(self, mock_chat_model, chat_messages):
-        """chat() 应将 temperature 传递给 ChatOpenAI。"""
+        """chat() 应将 temperature 传递给 ChatLiteLLM。"""
         from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 
         client = LangChainLLMClient(temperature=0.5)
@@ -155,14 +155,14 @@ class TestLangChainLLMClient:
         with pytest.raises(ValueError, match="messages cannot be empty"):
             await client.chat([])
 
-    # ── Issue #86 契约 1（P0）：ChatOpenAI 超时参数名 timeout → request_timeout ──
+    # ── Issue #86 契约 1（P0）：ChatLiteLLM 超时参数名 timeout → request_timeout ──
 
     def test_get_chat_model_uses_request_timeout(self):
         """_get_chat_model 应传 request_timeout（langchain-openai 1.4.1 无 timeout 字段）。"""
         from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 
         provider_cfg = _fake_provider_config()
-        with patch("inkflow.infrastructure.llm.langchain_client.ChatOpenAI") as mock_chat:
+        with patch("inkflow.infrastructure.llm.langchain_client.ChatLiteLLM") as mock_chat:
             LangChainLLMClient()._get_chat_model(provider_cfg)
 
         mock_chat.assert_called_once()
@@ -359,7 +359,7 @@ class TestLangChainLLMClientErrorMapping:
         assert fake_tiktoken.encoding_for_model.call_args[0][0] == "no-slash-model"
 
     def test_get_chat_model_full_kwargs(self):
-        """_get_chat_model 携带 api_key/base_url/max_tokens → 全部写入 ChatOpenAI kwargs。"""
+        """_get_chat_model 携带 api_key/base_url/max_tokens → 全部写入 ChatLiteLLM kwargs。"""
         from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 
         provider_cfg = LLMProviderConfig(
@@ -370,13 +370,14 @@ class TestLangChainLLMClientErrorMapping:
             max_retries=3,
             timeout=30,
         )
-        with patch("inkflow.infrastructure.llm.langchain_client.ChatOpenAI") as mock_chat:
+        with patch("inkflow.infrastructure.llm.langchain_client.ChatLiteLLM") as mock_chat:
             LangChainLLMClient()._get_chat_model(
                 provider_cfg, model_name="deepseek-chat", temperature=0.7, max_tokens=100
             )
         kwargs = mock_chat.call_args[1]
-        assert kwargs["openai_api_key"] == "ds-key"
-        assert kwargs["openai_api_base"] == "https://api.deepseek.com/v1"
+        assert kwargs["model"] == "deepseek/deepseek-chat"
+        assert kwargs["api_key"] == "ds-key"
+        assert kwargs["api_base"] == "https://api.deepseek.com/v1"
         assert kwargs["max_tokens"] == 100
         assert kwargs["temperature"] == 0.7
         assert kwargs["request_timeout"] == float(30)
@@ -387,14 +388,14 @@ class TestLangChainLLMClientErrorMapping:
 
         provider_cfg = LLMProviderConfig(
             provider="ollama",
-            api_key="",  # 空字符串为假值 → 不写 openai_api_key
+            api_key="",  # 空字符串为假值 → 不写 api_key
             default_model="qwen2.5",
         )
-        with patch("inkflow.infrastructure.llm.langchain_client.ChatOpenAI") as mock_chat:
+        with patch("inkflow.infrastructure.llm.langchain_client.ChatLiteLLM") as mock_chat:
             LangChainLLMClient()._get_chat_model(provider_cfg)
         kwargs = mock_chat.call_args[1]
-        assert "openai_api_key" not in kwargs
-        assert "openai_api_base" not in kwargs
+        assert "api_key" not in kwargs
+        assert "api_base" not in kwargs
         assert "max_tokens" not in kwargs
 
     # ── #344 管线节点 LLM 装配契约（真实 LLM 链路修复）──
@@ -417,7 +418,7 @@ class TestLangChainLLMClientErrorMapping:
             return_value=fake_key,
         ):
             client = LangChainLLMClient()
-            with patch("inkflow.infrastructure.llm.langchain_client.ChatOpenAI") as mock_chat:
+            with patch("inkflow.infrastructure.llm.langchain_client.ChatLiteLLM") as mock_chat:
                 mock_chat.return_value.ainvoke = AsyncMock(
                     return_value=MagicMock(content="ok", response_metadata={})
                 )
@@ -430,9 +431,9 @@ class TestLangChainLLMClientErrorMapping:
                     )
                 )
         kwargs = mock_chat.call_args[1]
-        assert kwargs["openai_api_key"] == fake_key
-        assert kwargs["openai_api_base"] == "https://open.bigmodel.cn/api/paas/v4/"
-        assert kwargs["model"] == "glm-4.5"
+        assert kwargs["api_key"] == fake_key
+        assert kwargs["api_base"] == "https://open.bigmodel.cn/api/paas/v4/"
+        assert kwargs["model"] == "zai/glm-4.5"
 
     def test_pipeline_llm_client_timeout_allows_slow_models(self):
         """#344: 管线节点 LLM 请求超时须大于慢模型真实延迟（zhipu 33-112s 实测）.
@@ -440,7 +441,7 @@ class TestLangChainLLMClientErrorMapping:
         根因实证（2026-08-14 真实 LLM）：glm-4.5 单次调用 33.7s（简单）/
         112.3s（architect 完整 prompt），request_timeout=120 处极限边缘，
         慢网络下必然超时 → 4 次重试 × 120s = 8 分钟 → 「architect 重试耗尽」。
-        契约：LangChainLLMClient 构造的 ChatOpenAI request_timeout >= 300。
+        契约：LangChainLLMClient 构造的 ChatLiteLLM request_timeout >= 300。
         """
         from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 
@@ -452,7 +453,7 @@ class TestLangChainLLMClientErrorMapping:
         )
 
         provider_cfg = _fake_provider_config()
-        with patch("inkflow.infrastructure.llm.langchain_client.ChatOpenAI") as mock_chat:
+        with patch("inkflow.infrastructure.llm.langchain_client.ChatLiteLLM") as mock_chat:
             LangChainLLMClient()._get_chat_model(provider_cfg)
         kwargs = mock_chat.call_args[1]
         assert (

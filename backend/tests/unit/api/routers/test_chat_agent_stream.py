@@ -275,7 +275,7 @@ class TestChatAgentStreamEvents:
         events = [
             {
                 "event": "on_chat_model_end",
-                "name": "ChatOpenAI",
+                "name": "ChatLiteLLM",
                 "run_id": "llm_1",
                 "data": {"output": output},
             }
@@ -386,7 +386,7 @@ class TestChatAgentStreamEvents:
         events = [
             {
                 "event": "on_chat_model_end",
-                "name": "ChatOpenAI",
+                "name": "ChatLiteLLM",
                 "run_id": "llm_1",
                 "data": {"output": output},
             },
@@ -812,4 +812,3 @@ class TestChatDraftVolumeGroup976:
         finally:
             await db.close()
             await engine.dispose()
-

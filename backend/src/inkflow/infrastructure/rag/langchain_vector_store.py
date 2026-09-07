@@ -5,7 +5,7 @@
   对齐 ``config.vector_store_collections``）
 - 项目隔离 = ``metadata.project_id`` 过滤（所有查询 always 带
   ``where={"project_id": project_id}``，Protocol 强制）
-- embeddings 由构造注入（生产 ``OpenAIEmbeddings``——API embedding，模型来自
+- embeddings 由构造注入（生产 ``LiteLLMEmbeddings``（ADR-051）——API embedding，模型来自
   ProviderConfig 注册表 type="embedding" 条目，spec f19 §5.4；测试
   ``FakeEmbeddings``）——懒加载
 - chromadb 同步 API 全部用 ``asyncio.to_thread`` 包装（不阻塞事件循环）
@@ -54,7 +54,7 @@ class LangChainVectorStore:
 
     - 每 EntityType 一个 collection（collection 名 = f"inkflow_{entity_type.value}"）
     - 项目隔离 = metadata.project_id 过滤（查询 always 带 project_id）
-    - embeddings 由构造注入（生产 OpenAIEmbeddings——API embedding，模型来自
+    - embeddings 由构造注入（生产 LiteLLMEmbeddings（ADR-051）——API embedding，模型来自
       ProviderConfig 注册表 type="embedding" 条目；测试 FakeEmbeddings）——懒加载
     - chromadb 同步 API 用 asyncio.to_thread 包装（不阻塞事件循环）
     - chromadb 操作全程持有 threading.Lock 串行化（PersistentClient 非线程安全，#468）

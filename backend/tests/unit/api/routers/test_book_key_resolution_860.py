@@ -3,7 +3,7 @@
 缺陷背景（0.12.1rc5 实证，issue #860 P0）：books.py `_build_book_service` 取 key 用
 `get_provider_config(provider)` 裸调用 + `except ValueError: pass`（L266-275）→ 全局默认
 模型为空或 named provider 无 key 时 `api_key=""` 静默继续 → `build_agentic_writer` 构造
-`ChatOpenAI` 缺凭据（harness.py L113 `if api_key:` 短路 → L117 构造抛 OpenAIError）→
+litellm 客户端缺凭据（harness.py `if api_key:` 短路 → 构造抛 Missing credentials）→
 `book_service.write_book` 章循环 `except Exception: progress=failed`（L204-209）→ 30 章全
 failed、tokens_used=0、顶层 status=completed（假绿）。
 
@@ -187,7 +187,7 @@ async def test_writer_factory_passes_nonempty_credentials():
     """writer_factory 构造 agent 时 model/api_key/base_url 必须为 resolve 返回值。
 
     RED 形态：当前代码 api_key=""/model="" 传给 build_agentic_writer →
-    harness.py:113 `if api_key:` False → ChatOpenAI Missing credentials → 章全 failed。
+    harness.py `if api_key:` False → litellm 客户端 Missing credentials → 章全 failed。
     断言非空凭据透传即锁死该路径。
     """
     session_factory = await adb_session()

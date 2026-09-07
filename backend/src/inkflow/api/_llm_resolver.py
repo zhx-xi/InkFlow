@@ -57,7 +57,8 @@ def resolve_llm_credentials(
             detail="未配置默认模型，请在设置中配置 LLM Provider 和默认模型",
         ) from exc
     # 评审 MAJOR-1（#935）：空串 key 可穿透 get_provider_config（仅 None 抛错）——
-    # 旧「绝不带空 key 装配」守卫（#821 意图）必须保留，否则 ChatOpenAI 500 复活。
+    # 旧「绝不带空 key 装配」守卫（#821 意图）必须保留，否则 LLM 客户端缺凭据
+    # 500 复活（ADR-051 litellm 轨同语义）。
     if not provider_cfg.api_key:
         logger.error(
             "LLM 模型解析失败（api_key 为空）: model={} provider={}",

@@ -2,10 +2,10 @@
 
 缺陷背景（rc2 实证，issue #929）：全局默认模型为空时 `resolve_llm_credentials`
 遍历 provider 注册表取 `models[0]`（不筛 type）→ zhipu 的 embedding-3
-（type=embedding）被装配为 chat 模型 → ChatOpenAI 打 chat completions →
+（type=embedding）被装配为 chat 模型 → litellm chat 客户端打 chat completions →
 zhipu 400 1213「未正常接收到prompt参数」→ book run 全章 failed、tokens=0。
 探针实证（.hermes/tmp_repro_c.py，忠实快照 rc2 keys+DB）：
-CHAT PROBE(ChatOpenAI model=embedding-3) = BadRequestError 400 1213（同款）。
+CHAT PROBE(litellm chat 客户端 model=embedding-3) = BadRequestError 400 1213（同款）。
 
 用户拍板（2026-09-05，契约 .hermes/plans/contract-929.md）：
 ① model_routing 改 provider 键 → ProviderDefault{model(裸名), type} 值对象；

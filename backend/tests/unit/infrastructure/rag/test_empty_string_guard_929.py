@@ -9,7 +9,7 @@ embed_query(query)`（query 空白直打）。
 用户拍板（A 确定性降级）：空白输入 → **跳过 embed + 降级语义**（retrieve → []，
 index → 该实体 no-op 跳过 + warning），**绝不阻断调用方**（reindex 继续、生成继续）。
 
-探针实证（.hermes/tmp_repro_c.py）：OpenAIEmbeddings(embed_query("")) → zhipu
+探针实证（.hermes/tmp_repro_c.py）：litellm embedding 客户端 embed_query("") → zhipu
 BadRequestError 400 1213（同款指纹）；非空 → 成功 dim 2048。
 
 【R】= 当前必 FAIL；【G】= 回归守护。

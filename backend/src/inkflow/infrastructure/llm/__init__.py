@@ -1,7 +1,7 @@
 """LLM 基础设施层 — LangChain 实现。
 
 组件：
-    LangChainLLMClient      — ChatOpenAI 适配器（通过 base_url 支持多 Provider）
+    LangChainLLMClient      — ChatLiteLLM 适配器（经 litellm 支持多 Provider，ADR-051）
     LangChainPromptManager  — YAML 模板 + 变量渲染
     APIKeyManager           — AES-256-GCM API Key 加密管理
 """

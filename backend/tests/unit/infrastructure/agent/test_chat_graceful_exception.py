@@ -51,7 +51,7 @@ def _model_end_event(run_id: str, output: object) -> dict:
     """astream_events v2：on_chat_model_end（完整 AIMessage）→ AgentStep 收集源。"""
     return {
         "event": "on_chat_model_end",
-        "name": "ChatOpenAI",
+        "name": "ChatLiteLLM",
         "run_id": run_id,
         "data": {"output": output},
     }
