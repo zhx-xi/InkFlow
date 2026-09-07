@@ -23,10 +23,12 @@ export function ChapterEditor({ onEditorKeyDown, onContentChange }: ChapterEdito
           {currentChapter ? `${currentChapter.word_count.toLocaleString()} ${t('sb.words')}` : ''}
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* #998：外层只留布局语义（min-h-0 flex-1），滚动统一交给 textarea 原生，
+          避免双滚动条（旧 overflow-y-auto 在 h-full textarea 下永不溢出，只渲染死滚动条） */}
+      <div className="min-h-0 flex-1">
         <textarea
           data-testid="chapter-editor"
-          className="h-full w-full resize-none bg-transparent px-8 py-6 text-[16px] leading-[1.85] text-ink outline-none [text-indent:2em]"
+          className="h-full w-full resize-none overflow-y-auto bg-transparent px-8 py-6 text-[16px] leading-[1.85] text-ink outline-none [text-indent:2em]"
           value={content}
           onChange={(e) => onContentChange(e.target.value)}
           placeholder={currentChapter ? '' : t('write.empty.noChapter')}
