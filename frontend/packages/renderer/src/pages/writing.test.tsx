@@ -727,15 +727,13 @@ describe('写作页 — 模型未配置前置校验（#474 P0）', () => {
     expect(executeMock).not.toHaveBeenCalled();
   });
 });
-describe('写作页 — 右栏两面板拖拽分隔 + 无草稿审批（#703 + #764）', () => {
-  it('右栏 context/summary 面板 + 一个 row-resize 分隔条；无 rail-panel-drafts/rail-resize-handle-1', () => {
+describe('写作页 — 右栏两面板拖拽分隔（#703 + #764）', () => {
+  it('右栏 context/summary 面板 + 一个 row-resize 分隔条', () => {
     renderWritingPage();
     const rail = screen.getByTestId('right-rail');
     expect(within(rail).getByTestId('rail-panel-context')).toBeInTheDocument();
     expect(within(rail).getByTestId('rail-panel-summary')).toBeInTheDocument();
-    // #764：草稿审批右栏移除 → 无 drafts 面板、无其分隔条
-    expect(within(rail).queryByTestId('rail-panel-drafts')).not.toBeInTheDocument();
-    expect(within(rail).queryByTestId('rail-resize-handle-1')).not.toBeInTheDocument();
+    // #764：草稿审批已移至弹层（DraftApprovalDrawer），右栏仅两个面板 → 只有一个分隔条
     const sp0 = within(rail).getByTestId('rail-resize-handle-0');
     expect(sp0).toBeInTheDocument();
     expect(sp0.className).toMatch(/row-resize/);
