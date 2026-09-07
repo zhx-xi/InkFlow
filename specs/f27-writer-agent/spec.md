@@ -269,6 +269,46 @@ ToolSpec(
 
 **工具返回**：成功 → `{"ok": true, "draft_id": "uuid", "status": "draft", "word_count": N}`；失败 → `{"ok": false, "error": "..."}`（is_error 语义，循环不中断）。
 
+**装配期锚点绑定 + 同章幂等（#996/#997 增量，2026-09-07）**：
+
+chat 系统提示词 #718 起 LLM 不再自报 id，#988「确认面反查」从未实现（注释与实现漂移）→ book 轨 agent 自调 save_draft 草稿 `source_outline_id/volume_id` 恒 NULL，D4 回填链失效（#996）。修复=锚点沿装配链下传，与委托兜底路径（已带 `source_outline_id`）统一：
+
+| 依赖 | 注入方 | 语义 |
+|------|--------|------|
+| `SaveDraftToolDeps.expected_source_outline_id` | book 轨三委托点经 `writer_factory(expected_source_outline_id=…)` → `build_agentic_writer` 透传（卷/agentic 轨=`chapter["outline_id"]`，静态轨=`outline.id`）；chat 轨=None | 落稿 `drafts.source_outline_id`（D4 confirm 回填 `outlines.chapter_id` 的锚点；确认面「草稿自取」由此有值） |
+| `SaveDraftToolDeps.expected_volume_outline_id` | 同上链（卷 outline 节点 id：`volume_outline_id` / `parent_id`）；chat 轨=None | book 轨 `expected_chapter_id` 恒 None → `volume_lookup` 回退键：章节点 outline_id 的 `volume_id` 列恒 NULL，须以**卷 outline 节点 id** 反查（对齐兜底路径 `_resolve_draft_volume` 查表键优先级） |
+| 工具 volume 解析键优先级 | — | `bound_chapter_id`（chat 轨实体章）→ `expected_volume_outline_id` → `expected_source_outline_id`（兜底，与委托路径同语义） |
+
+**同章幂等（#997，拍板 D2=方案①）**：agent 对同章重写（不满意再调一次 save_draft）不得多稿并存。工具在 create 前按归组键（`bound_chapter_id` / `expected_source_outline_id` 至少其一）经 `draft_service.find_pending(project_id, chapter_id=…, source_outline_id=…)` 查**同项目同章 status='draft' 未确认稿**：
+
+- 命中 → `draft_service.replace_content(draft_id, content, summary)` 覆盖正文（summary 非空才覆盖），返回 `{"ok": true, "draft_id": "<同 id>", "status": "draft", "word_count": N, "overwritten": true}`——**同 draft_id 不新增行**；
+- 无命中/无归组键 → 既有 create 路径不变（chat 轨无锚点零回归）；
+- 幂等**只放工具层**：`DraftService.create` 不动——API 手动建稿同章多稿语义合法；
+- 覆盖走 `replace_content`（repo `update_content` 带 `status='draft'` 守卫）而非 `update()`——后者是 F28 用户手编 + memory diff 学习语义，agent 覆盖 ≠ 用户编辑；
+- 鸭子兼容：`find_pending` 返回值非 `Draft` 实例（旧 AsyncMock 自动 mock）视为未命中 → create，既有 #718/#976 契约零翻转。
+
+**DraftService/仓储增量（D2 拍板：API create 端点不幂等）**：幂等收敛在**工具层**，`DraftService.create` 签名与行为不变（API 手动建稿、委托兜底语义合法保留多稿可能）。服务层新增两方法供工具调用：
+
+```python
+# domain/services/draft_service.py（新增）
+async def find_pending(self, project_id, *, chapter_id=None, source_outline_id=None) -> Draft | None: ...
+    # 归组键（chapter_id/source_outline_id）至少其一非 None；命中=该项目 status='draft'
+    # 且（同章绑定 OR 来源 outline 节点一致）最新稿（created_at desc first），无 → None。
+    # 两键皆 None → 返回 None（chat 轨无锚点调用防御，永不覆盖陌生稿）。
+async def replace_content(self, draft_id, content, summary=None) -> Draft: ...
+    # agent 覆盖专用：空 content → ValueError；草稿不存在 → DraftNotFoundError；
+    # 非 DRAFT → DraftStateError；summary=None 保留原值；零 memory diff（不走 update()/F28）。
+```
+
+```python
+# infrastructure/database/repositories/draft_repo.py（新增）
+async def find_pending(self, project_id, *, chapter_id=None, source_outline_id=None) -> Draft | None: ...
+    # WHERE project_id=? AND status='draft' AND (chapter_id=? OR source_outline_id=?) ——
+    # 入参非 None 的键取 OR；ORDER BY created_at DESC LIMIT 1。
+# update_content(draft_id, content, summary=None)：加 AND status='draft' 守卫
+# （confirmed/rejected 行不可静默改正文 → None）；summary 非 None 时同行覆盖（单 commit）。
+```
+
 ### 5.3 自主终止双保险
 
 **预算护栏数值（adr/agent/ADR-033.md 定稿，Q2 拍板）**：默认值 = max_steps=12 / token_budget=32K / 同工具连续=3，**可在全局设置中更改**（F32 app_settings 扩展键，用户拍板 2026-08-10）。读取优先级：请求体显式字段（--max-steps/--token-budget）> 全局设置（agent_max_steps / agent_token_budget / agent_max_consecutive_tool）> 默认值。

@@ -8,6 +8,8 @@ DraftService 是 Agentic 写作闭环的草稿保存区服务：
 - update: F28 编辑流——确认前手动修改正文（update_content 落库），
   经可选注入的 memory_service 捕获 diff 事件（memory_learning 开启时），
   last_learned 透传本次编辑是否触发新偏好落库
+- find_pending/replace_content: #997 同章幂等支撑——按归组键查同项目同章
+  未确认稿（chat 轨无锚点 → None）；agent 覆盖专用（不走 F28 memory diff）
 
 仅依赖 domain/models 与注入的 repo/service（鸭子类型，不感知 ORM/框架），
 domain/ 零框架 import 门禁天然满足（ADR-002/015）。
@@ -318,6 +320,77 @@ class DraftService:
                 agent_run_id=draft.agent_run_id,
             )
             self.last_learned = bool(getattr(self._memory_service, "last_learned", False))
+        return updated
+
+    async def find_pending(
+        self,
+        project_id: uuid.UUID,
+        *,
+        chapter_id: uuid.UUID | None = None,
+        source_outline_id: uuid.UUID | None = None,
+    ) -> Draft | None:
+        """按归组键查同项目同章未确认稿（#997：save_draft 幂等覆盖前置查询）.
+
+        两键皆 None → 直接返回 None（chat 轨无锚点调用防御，不查 repo）；
+        否则透传 repo.find_pending（命中 = 该项目 status='draft' 且同章绑定
+        OR 来源 outline 节点一致的最新稿，created_at desc first）.
+
+        Args:
+            project_id: 所属项目 UUID.
+            chapter_id: 同章绑定 UUID（chat 轨实体章，可空）.
+            source_outline_id: 来源大纲章节点 UUID（book 轨锚点，可空）.
+
+        Returns:
+            最新未确认 Draft；无命中或两键皆 None → None.
+        """
+        if chapter_id is None and source_outline_id is None:
+            return None
+        found: Draft | None = await self._repo.find_pending(  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按契约提供 find_pending
+            project_id=project_id,
+            chapter_id=chapter_id,
+            source_outline_id=source_outline_id,
+        )
+        return found
+
+    async def replace_content(
+        self,
+        draft_id: str,
+        content: str,
+        summary: str | None = None,
+    ) -> Draft:
+        """agent 覆盖草稿正文专用（#997；零 memory diff，不走 update()/F28）.
+
+        覆盖前校验草稿存在且仍为 DRAFT（confirmed/rejected 不可静默改正文）；
+        summary 非 None 时同行覆盖，None 保留原值。不写审计——调用方工具已落审计。
+
+        Args:
+            draft_id: 草稿 id（uuid4 字符串）.
+            content: 新正文.
+            summary: 新摘要（None = 保留原值）.
+
+        Returns:
+            覆盖后的 Draft.
+
+        Raises:
+            ValueError: content strip 后为空.
+            DraftNotFoundError: 草稿不存在（或覆盖前被并发删除）.
+            DraftStateError: 草稿状态非 DRAFT（不可覆盖）.
+        """
+        if not content.strip():
+            raise ValueError("草稿内容不能为空")
+        draft = await self._repo.get(draft_id)  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按契约提供 get
+        if draft is None:
+            raise DraftNotFoundError("草稿不存在")
+        if draft.status != DraftStatus.DRAFT:
+            message = "草稿已确认" if draft.status is DraftStatus.CONFIRMED else "草稿已拒绝"
+            raise DraftStateError(message)
+        updated: Draft | None = await self._repo.update_content(  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按契约提供 update_content
+            draft_id,
+            content,
+            summary=summary,
+        )
+        if updated is None:
+            raise DraftNotFoundError("草稿不存在")  # 竞态防御：覆盖前状态已迁走/被删除
         return updated
 
     async def prune_orphans(self, *, dry_run: bool = False) -> int:

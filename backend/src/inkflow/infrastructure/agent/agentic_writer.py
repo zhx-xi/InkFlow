@@ -137,6 +137,8 @@ def build_agentic_writer(
     profile_key: str | None = None,
     expected_project_id: uuid.UUID | None = None,
     expected_chapter_id: uuid.UUID | None = None,
+    expected_source_outline_id: uuid.UUID | None = None,
+    expected_volume_outline_id: uuid.UUID | None = None,
 ):
     """组装 agent：白名单过滤工具 + skill 拼接 → build_deep_agent（deepagents ReAct 循环）.
 
@@ -158,6 +160,10 @@ def build_agentic_writer(
             （每次 run 由装配层注入请求真实值，工具参数不符 → 拒绝）.
         expected_chapter_id: #275 期望章节上下文——save_draft 工具防御用
             （每次 run 由装配层注入请求真实值，工具参数不符 → 拒绝）.
+        expected_source_outline_id: #996 来源大纲章节点锚点——透传给 save_draft
+            工具（create 落库 drafts.source_outline_id；chat 轨 None）.
+        expected_volume_outline_id: #996 卷 outline 节点锚点——透传给 save_draft
+            工具（volume_lookup 回退键；chat 轨 None）.
 
     Returns:
         DeepAgentInvokeAdapter（包装 deepagents CompiledStateGraph，服务层
@@ -182,6 +188,8 @@ def build_agentic_writer(
                     audit_service=deps.audit_service,
                     expected_project_id=expected_project_id,
                     expected_chapter_id=expected_chapter_id,
+                    expected_source_outline_id=expected_source_outline_id,
+                    expected_volume_outline_id=expected_volume_outline_id,
                     volume_lookup=deps.volume_lookup,
                 )
             )

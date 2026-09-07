@@ -11,7 +11,10 @@ foreshadowing_repo.py / agent_template_repo.py）。
   offset/limit 分页，返回 (页内容, 该项目全量 total)
 - update_status: 状态机迁移 draft → confirmed/rejected（confirmed 回填
   confirmed_at）；不存在 → None
-- update_content: 确认前用户手动修改正文落库；不存在 → None
+- find_pending: 按归组键（chapter_id/source_outline_id 至少其一）查同项目
+  status='draft' 最新稿（created_at desc）；两键皆 None → None（防御不发 SQL）
+- update_content: 覆盖草稿正文 + summary（status='draft' 守卫；
+  confirmed/rejected → None 不改正文；summary=None 保留原值）
 - 领域 UUID ↔ uuid4 字符串转换在仓储层（project_id/chapter_id 列存
   str(uuid)，与 AgentExecutionORM 先例一致）
 
@@ -25,7 +28,7 @@ import builtins
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.draft import Draft, DraftStatus
@@ -154,6 +157,48 @@ class SQLiteDraftRepository:
         result = await self._session.execute(base)
         return [_orm_to_domain(o) for o in result.scalars().all()], total
 
+    async def find_pending(
+        self,
+        project_id: uuid.UUID,
+        *,
+        chapter_id: uuid.UUID | None = None,
+        source_outline_id: uuid.UUID | None = None,
+    ) -> Draft | None:
+        """按归组键查同项目同章未确认草稿（#997：status='draft' 最新稿）.
+
+        两键皆 None → 直接返回 None（chat 轨无锚点调用防御，不发 SQL）；
+        否则对非 None 键构造 OR 条件（一键时等价单条件 AND），
+        ORDER BY created_at DESC LIMIT 1。
+
+        Args:
+            project_id: 所属项目 UUID.
+            chapter_id: 同章绑定 UUID（chat 轨实体章，可空）.
+            source_outline_id: 来源大纲章节点 UUID（book 轨锚点，可空）.
+
+        Returns:
+            最新未确认 Draft；无命中或两键皆 None → None.
+        """
+        if chapter_id is None and source_outline_id is None:
+            return None
+        key_conditions = []
+        if chapter_id is not None:
+            key_conditions.append(DraftORM.chapter_id == str(chapter_id))
+        if source_outline_id is not None:
+            key_conditions.append(DraftORM.source_outline_id == str(source_outline_id))
+        stmt = (
+            select(DraftORM)
+            .where(
+                DraftORM.project_id == str(project_id),
+                DraftORM.status == DraftStatus.DRAFT.value,
+                or_(*key_conditions),
+            )
+            .order_by(DraftORM.created_at.desc())
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
+        return _orm_to_domain(orm) if orm else None
+
     async def update_status(
         self,
         draft_id: str,
@@ -179,20 +224,31 @@ class SQLiteDraftRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def update_content(self, draft_id: str, content: str) -> Draft | None:
-        """修改草稿正文（确认前用户手动修改落库）.
+    async def update_content(
+        self,
+        draft_id: str,
+        content: str,
+        summary: str | None = None,
+    ) -> Draft | None:
+        """覆盖草稿正文（#997：status='draft' 守卫；summary 非 None 同行覆盖）.
 
         Args:
             draft_id: 草稿 id（uuid4 字符串）.
             content: 新正文.
+            summary: 新摘要（None = 保留原值）.
 
         Returns:
-            更新后的 Draft；draft_id 不存在 → None.
+            更新后的 Draft；draft_id 不存在或状态非 draft（confirmed/rejected）
+            → None（守卫不改正文）.
         """
         orm = await self._session.get(DraftORM, draft_id)
         if orm is None:
             return None
+        if orm.status != DraftStatus.DRAFT.value:
+            return None
         orm.content = content
+        if summary is not None:
+            orm.summary = summary
         await self._session.commit()
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
