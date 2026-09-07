@@ -239,7 +239,7 @@ class TestEmbeddings:
         assert len(records) == 2
         assert [record["model"] for record in records] == [self.MODEL, self.MODEL]
 
-    # ── S3f-T3 黑盒修正（reindex probe 实证）：langchain OpenAIEmbeddings len-safe
+    # ── S3f-T3 黑盒修正（reindex probe 实证）：litellm embedding client len-safe
     # 路径实际发送 token 数组（list[list[int]] / list[int]），非原文。真实 OpenAI
     # /v1/embeddings 契约 input: string | list[int] | list[list[int]]（三种全支持）。
     # 只收 str 列表 = 真实内核 RAG 链 400 → probe_embedding_dimension 失败 → reindex 500。

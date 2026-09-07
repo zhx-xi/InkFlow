@@ -1,6 +1,7 @@
 """LangChain LLM 客户端 — 实现 LLMClientProtocol。
 
-基于 langchain_openai.ChatOpenAI，通过 custom base_url 支持 OpenAI 兼容 API。
+基于 langchain_litellm.ChatLiteLLM（ADR-051，取代 ADR-005v2），通过 api_base
+支持多 Provider / OpenAI 兼容 API。
 领域层通过 LLMClientProtocol 调用，不感知 LangChain。
 """
 
@@ -9,7 +10,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
+from langchain_litellm import ChatLiteLLM
 
 from inkflow.core.config import config
 from inkflow.domain.ports.llm_client import ChatMessage, ChatResponse, StreamEvent, TokenUsage
@@ -17,15 +18,17 @@ from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.infrastructure.llm.provider_config import (
     LLMProviderConfig,
     get_provider_config,
+    litellm_model_name,
     parse_model_string,
 )
 from inkflow.logging import instrument, log_structured
 
 
 class LangChainLLMClient:
-    """LangChain ChatOpenAI 适配器 — 通过 base_url 支持多 Provider。
+    """LangChain ChatLiteLLM 适配器 — 经 litellm 前缀口径 + api_base 支持多 Provider
+    （ADR-051，取代 ADR-005v2）。
 
-    测试时可注入 Mock ChatOpenAI，不发起真实 HTTP 请求。
+    测试时可注入 Mock ChatLiteLLM，不发起真实 HTTP 请求。
     """
 
     def __init__(
@@ -152,7 +155,7 @@ class LangChainLLMClient:
         try:
             async for chunk in chat_model.astream(langchain_messages):
                 content_raw = chunk.content if hasattr(chunk, "content") else str(chunk)
-                content = content_raw if isinstance(content_raw, str) else str(content_raw)
+                content = _content_text(content_raw)
                 yield StreamEvent(content=content, is_final=False)
         except Exception as e:
             raise LLMRequestError(
@@ -206,26 +209,35 @@ class LangChainLLMClient:
         model_name: str = "",
         temperature: float | None = None,
         max_tokens: int | None = None,
-    ) -> ChatOpenAI:
-        """创建 ChatOpenAI 实例（通过 base_url 支持多 Provider）。"""
+    ) -> ChatLiteLLM:
+        """创建 ChatLiteLLM 实例（经 litellm 前缀口径 + api_base 支持多 Provider，
+        ADR-051）。
+
+        model 收 provider 全名（现状 parse_model_string 拆开传裸名的形态回退为不拆，
+        spec f59 §5.1 ⚠️ 行）；api_key/api_base 为 ChatLiteLLM 原生字段名；
+        max_retries/request_timeout 直传 litellm 顶层参数——禁 num_retries（实证
+        tenacity × openai SDK 双层叠加重试是缺陷，只许单层）。
+        """
         model = model_name or provider_cfg.default_model
+        if model and "/" not in model:
+            model = f"{provider_cfg.provider}/{model}"
         temp = temperature if temperature is not None else self._temperature
+        base_url = self._openai_api_base or provider_cfg.base_url
 
         chat_kwargs: dict[str, object] = {
-            "model": model,
+            "model": litellm_model_name(model, base_url),
             "temperature": temp,
             "max_retries": provider_cfg.max_retries,
             "request_timeout": float(provider_cfg.timeout),
         }
         if provider_cfg.api_key:
-            chat_kwargs["openai_api_key"] = provider_cfg.api_key
-        base_url = self._openai_api_base or provider_cfg.base_url
+            chat_kwargs["api_key"] = provider_cfg.api_key
         if base_url:
-            chat_kwargs["openai_api_base"] = base_url
+            chat_kwargs["api_base"] = base_url
         if max_tokens is not None:
             chat_kwargs["max_tokens"] = max_tokens
 
-        return ChatOpenAI(**chat_kwargs)  # type: ignore[arg-type]  # chat_kwargs 为动态 dict[str, object]，无法静态匹配 ChatOpenAI 构造参数
+        return ChatLiteLLM(**chat_kwargs)  # type: ignore[arg-type]  # chat_kwargs 为动态 dict[str, object]，无法静态匹配 ChatLiteLLM 构造参数
 
     @staticmethod
     def _to_langchain_messages(messages: list[ChatMessage]) -> list:
@@ -256,10 +268,44 @@ class LangChainLLMClient:
                 total_tokens=tu.get("total_tokens", 0),
             )
         return ChatResponse(
-            content=response.content
-            if isinstance(response.content, str)
-            else str(response.content),
+            content=_content_text(response.content),
             model=metadata.get("model_name", "unknown"),
             token_usage=usage,
             finish_reason=metadata.get("finish_reason", "stop"),
         )
+
+
+def _text_block_text(block: dict[str, object]) -> str:
+    """提取 type=="text" 内容块的文本：text 键优先，缺失回退 content 键（OpenAI
+    兼容形态，不得静默丢成空串）；非 str 值经 str()；两键均缺 → ""（不把
+    None repr 进正文）。"""
+    value = block.get("text")
+    if value is None:
+        value = block.get("content")
+    if value is None:
+        return ""
+    return value if isinstance(value, str) else str(value)
+
+
+def _content_text(content: object) -> str:
+    """提取 LLM 响应/流块的纯文本内容（chat 与 stream 共用，#962 实证）。
+
+    ChatLiteLLM 把 reasoning 内容规范进 content=[thinking, text, ...] 块列表，
+    写作链/流式消费面必须只取 type=="text" 块拼接，防思考过程泄漏进正文；
+    纯 str 原样透传。
+
+    防御兜底（#962 评审）：text 块优先 text 键、回退 content 键；未包 list 的
+    裸 dict 按单个 content-part 解析（type=="text" 时取键值，防 str() repr
+    泄漏进正文）；其余形态按旧轨 str() 兜底。
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict) and content.get("type") == "text":
+        return _text_block_text(content)
+    if isinstance(content, list):
+        return "".join(
+            _text_block_text(block)
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+    return str(content)

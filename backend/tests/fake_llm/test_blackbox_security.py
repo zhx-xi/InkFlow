@@ -91,7 +91,7 @@ class TestRetryCount:
     async def test_max_retries_count(self, fake_llm, monkeypatch) -> None:
         """error-500 场景：LLM 客户端应重试，server 命中次数 == llm_max_retries+1 总尝试。
 
-        契约：虚假 error-500 时 ChatOpenAI(max_retries=N) 的 wire 请求次数 = N+1
+        契约：虚假 error-500 时 ChatLiteLLM(max_retries=N) 的 wire 请求次数 = N+1
         （首次 + N 次重试）。这钉住「max_retries 真正到达 LLM 层」的事实。
         """
         monkeypatch.setattr(config, "llm_base_url", fake_llm.base_url)

@@ -6,8 +6,8 @@
 契约（RED 先行，Codex GREEN 按此实现）:
 - E1 未配置 embedding 模型 → get_vector_store() 抛 RAGUnavailableError
   （消息含「未配置 embedding 模型」）
-- E2 配置 embedding 模型 → 构造 OpenAIEmbeddings（model/base_url/api_key 透传，
-  api_key 来自 APIKeyManager.load(provider.name) 返回值）
+- E2 配置 embedding 模型 → 构造 LiteLLMEmbeddings（model/api_base/api_key 透传，
+  api_key 来自 APIKeyManager.load(provider.name) 返回值，ADR-051）
 - E3 已配置 → get_vector_store() 正常返回 store（懒加载单例：两次调用同一对象）
 - E4 仅有 chat 类型模型（无 embedding）不被消费 → 仍抛 RAGUnavailableError
 
@@ -17,8 +17,8 @@
 - APIKeyManager.load（key_manager 模块，实例方法）——mock 返回值即 api_key
 - LangChainVectorStore（langchain_vector_store 模块）——patch 构造避免真实
   chroma 持久化 I/O（test_api_deps.py 同款先例）
-- OpenAIEmbeddings 不 mock：装配层只构造对象、不发网络请求（spec §5.3 无
-  网络约束），断言真实实例属性（model / openai_api_base / openai_api_key）
+- LiteLLMEmbeddings 不 mock：装配层只构造对象、不发网络请求（spec §5.3 无
+  网络约束），断言真实实例属性（model / api_base / api_key）
 
 测试形态: async def + pytest-asyncio（pyproject asyncio_mode="auto"，
 tests/unit/ 既有 async 测试同款），直接 await 装配函数断言。
@@ -29,7 +29,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from langchain_openai import OpenAIEmbeddings
+from langchain_litellm import LiteLLMEmbeddings
 
 from inkflow.api import deps
 from inkflow.core.config import config
@@ -194,8 +194,8 @@ async def test_get_vector_store_bge_fallback_removed_raises_unconfigured(
     assert deps._vector_store is None
 
 
-async def test_get_vector_store_constructs_openai_embeddings() -> None:
-    """E2: 配置 embedding 模型 → OpenAIEmbeddings 收到 model/base_url。
+async def test_get_vector_store_constructs_litellm_embeddings() -> None:
+    """E2: 配置 embedding 模型 → LiteLLMEmbeddings 收到 model/api_base。
 
     api_key 来自 APIKeyManager.load(provider.name)（spec §5.4 选型规则）。
     """
@@ -222,22 +222,22 @@ async def test_get_vector_store_constructs_openai_embeddings() -> None:
     assert store is fake_store
     mock_load.assert_called_once_with("openai")
 
-    # Assert: OpenAIEmbeddings 构造参数透传（真实实例属性，非内部状态）
+    # Assert: LiteLLMEmbeddings 构造参数透传（真实实例属性，非内部状态）
     call = mock_vs.call_args
     embeddings = call.kwargs.get("embeddings") or call.args[1]
-    assert isinstance(embeddings, OpenAIEmbeddings)
-    assert embeddings.model == "text-embedding-3-small"
-    assert embeddings.openai_api_base == "https://api.test.example/v1"
-    assert embeddings.openai_api_key.get_secret_value() == "sk-test-123"
+    assert isinstance(embeddings, LiteLLMEmbeddings)
+    # 前缀口径：注册 provider 名经 A 映射（openai→openai）+ '/' + 模型 id 全名
+    assert embeddings.model == "openai/text-embedding-3-small"
+    assert embeddings.api_base == "https://api.test.example/v1"
+    assert embeddings.api_key == "sk-test-123"
 
 
-async def test_get_vector_store_strips_provider_prefix_from_model_id() -> None:
-    """#428 复发（rc6 实证）：装配 embedding 模型 id 带 provider 前缀（如
-    zhipu/embedding-3）时 _build_store 原样传给 OpenAIEmbeddings → zhipu API
-    400「模型不存在」（code 1211，严格拒绝前缀）；裸 id（embedding-2）正常。
-
-    _build_store 必须剥掉 provider/ 前缀再构造 OpenAIEmbeddings（与 chat
-    路径对齐）。"""
+async def test_get_vector_store_maps_embedding_id_to_openai_compat() -> None:
+    """#428 迁移形态（ADR-051）：装配 embedding 模型 id 带 provider 前缀（如
+    zhipu/embedding-3）→ _build_store 统一构造
+    LiteLLMEmbeddings(model="openai/<裸 id>", api_base=...)（实证 zai/ 在
+    litellm 1.99 embedding 端点 unmapped；注册表 embedding 全走 OpenAI 兼容端点，
+    #428 wire 裸 id 契约由 litellm openai/ 剥前缀自动保留）。"""
     # Arrange: embedding 模型 id 带 provider 前缀
     provider = ProviderConfig(
         name="zhipu",
@@ -262,14 +262,15 @@ async def test_get_vector_store_strips_provider_prefix_from_model_id() -> None:
     ):
         store = await deps.get_vector_store()
 
-    # Assert: store 正常返回；OpenAIEmbeddings 收到**裸 id**（剥离 provider/ 前缀）
+    # Assert: store 正常返回；LiteLLMEmbeddings 收到 openai/ 前缀 + 裸 id 尾段
     assert store is fake_store
     call = mock_vs.call_args
     embeddings = call.kwargs.get("embeddings") or call.args[1]
-    assert isinstance(embeddings, OpenAIEmbeddings)
+    assert isinstance(embeddings, LiteLLMEmbeddings)
     assert (
-        embeddings.model == "embedding-3"
-    ), f"OpenAIEmbeddings.model 应为裸 id 'embedding-3'（#428），实际 {embeddings.model!r}"
+        embeddings.model == "openai/embedding-3"
+    ), f"LiteLLMEmbeddings.model 应为 'openai/embedding-3'（#428），实际 {embeddings.model!r}"
+    assert embeddings.api_base == "https://open.bigmodel.cn/api/paas/v4/"
 
 
 # ── E3: 懒加载单例 ───────────────────────────────────────────────

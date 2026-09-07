@@ -143,7 +143,7 @@ def build_agentic_writer(
     """组装 agent：白名单过滤工具 + skill 拼接 → build_deep_agent（deepagents ReAct 循环）.
 
     Args:
-        model: LLM 模型标识（registry 前缀剥离在 build_deep_agent 内）.
+        model: LLM 模型标识（registry 前缀校准在 build_deep_agent 内：zhipu/glm-4.5 → zai/glm-4.5）.
         api_key: LLM API Key（可空）.
         base_url: OpenAI 兼容 base_url（可空）.
         deps: 装配依赖（5 只读 service + draft/audit service）.

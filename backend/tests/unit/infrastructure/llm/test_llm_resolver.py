@@ -2,13 +2,13 @@
 
 打包版缺陷（#821）: named model 的 provider key 在 frozen 下 _load_stored_key 返回
 None → get_provider_config 抛 ValueError → resolve_llm_credentials 静默返回
-（model, "", ""）→ harness.py:113 `if api_key:` 为 False → ChatOpenAI 未注入
-openai_api_key → "Missing credentials"。dev 各路径全对，打包版运行时差异。
+（model, "", ""）→ harness.py `if api_key:` 为 False → litellm 客户端未注入
+api_key → "Missing credentials"。dev 各路径全对，打包版运行时差异。
 
 本文件锁定契约（决策已拍板）:
 1. key 已配置时返回非空 api_key（防回归锁定）。
 2. named model 的 provider key 不可用时，必须回退到有 key 的 provider 或抛
-   HTTPException(422)，绝不返回空 api_key 传进 ChatOpenAI。
+   HTTPException(422)，绝不返回空 api_key 传进 litellm 客户端。
 
 patch 注入点: resolve_llm_credentials 在函数体内惰性
 `from inkflow.domain.services.model_resolution import resolve_model` 和
@@ -93,7 +93,7 @@ class TestResolveLLMCredentialsFallsBackOnMissingKey:
         assert "未配置默认模型" in exc_info.value.detail
 
     def test_no_key_anywhere_raises_422(self):
-        """全部 provider 无 key → 必须抛 422，绝不返回空 api_key 传进 ChatOpenAI。"""
+        """全部 provider 无 key → 必须抛 422，绝不返回空 api_key 传进 litellm 客户端。"""
         from inkflow.api._llm_resolver import resolve_llm_credentials
 
         def _side_effect(provider):

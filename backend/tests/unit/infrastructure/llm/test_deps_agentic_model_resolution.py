@@ -15,7 +15,7 @@ RED expectation (current code):
 - Current deps.py get_agentic_writer_service does NOT call resolve_model and
   does NOT fall back to the registry. When config.llm_default_model="", it goes
   through parse_model_string("") -> ValueError -> except: pass -> api_key=""
-  -> build_agentic_writer(api_key="") -> ChatOpenAI -> Missing credentials -> 500.
+  -> build_agentic_writer(api_key="") -> litellm 客户端 Missing credentials -> 500.
 - So: test 1 FAILS (api_key is empty, not non-empty).
 - test 2 FAILS (no HTTPException raised; returns a service with empty api_key).
 - test 3 FAILS (resolve_model not called).

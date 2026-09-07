@@ -60,7 +60,7 @@ class TestProviderConfigFakeBranch:
         assert isinstance(cfg, LLMProviderConfig)
         assert cfg.provider == "fake"
         assert cfg.base_url == "http://127.0.0.1:9999/v1"
-        assert cfg.api_key  # 占位 key 非空（fake 无真实 key，避免 ChatOpenAI 拿到空串）
+        assert cfg.api_key  # 占位 key 非空（fake 无真实 key，避免 ChatLiteLLM 拿到空串）
         assert cfg.default_model  # 默认模型非空，避免 parse 失败
 
     def test_fake_without_base_url_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -71,20 +71,20 @@ class TestProviderConfigFakeBranch:
 
 
 class TestLangChainClientFakeBaseUrl:
-    """LangChainLLMClient 经 fake provider 应把 openai_api_base 指向 fake server。"""
+    """LangChainLLMClient 经 fake provider 应把 api_base 指向 fake server。"""
 
     def test_client_uses_fake_base_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(pc.config, "llm_base_url", "http://127.0.0.1:9999/v1")
-        # 真实装配路径：get_provider_config("fake") → provider_cfg.base_url → ChatOpenAI
+        # 真实装配路径：get_provider_config("fake") → provider_cfg.base_url → ChatLiteLLM
         provider_cfg = pc.get_provider_config("fake")
-        with patch.object(lc, "ChatOpenAI") as mock_chat:
+        with patch.object(lc, "ChatLiteLLM") as mock_chat:
             LangChainLLMClient()._get_chat_model(provider_cfg, model_name="fake-model")
         kwargs = mock_chat.call_args[1]
-        assert kwargs["openai_api_base"] == "http://127.0.0.1:9999/v1"
-        assert kwargs["openai_api_key"]  # 占位 key 传递到 ChatOpenAI
+        assert kwargs["api_base"] == "http://127.0.0.1:9999/v1"
+        assert kwargs["api_key"]  # 占位 key 传递到 ChatLiteLLM
 
     def test_chat_async_uses_fake_base_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """chat()（async）走 fake provider → ChatOpenAI openai_api_base 指向 fake。"""
+        """chat()（async）走 fake provider → ChatLiteLLM api_base 指向 fake。"""
         import asyncio
         from unittest.mock import AsyncMock, MagicMock
 
@@ -93,12 +93,12 @@ class TestLangChainClientFakeBaseUrl:
         monkeypatch.setattr(pc.config, "llm_base_url", "http://127.0.0.1:9999/v1")
         mock_model = AsyncMock()
         mock_model.ainvoke.return_value = MagicMock(content="ok", response_metadata={})
-        with patch.object(lc, "ChatOpenAI") as mock_chat:
+        with patch.object(lc, "ChatLiteLLM") as mock_chat:
             mock_chat.return_value = mock_model
             client = LangChainLLMClient()
             asyncio.run(
                 client.chat([ChatMessage(role="user", content="hi")], model="fake/fake-model")
             )
         kwargs = mock_chat.call_args[1]
-        assert kwargs["openai_api_base"] == "http://127.0.0.1:9999/v1"
-        assert kwargs["openai_api_key"]
+        assert kwargs["api_base"] == "http://127.0.0.1:9999/v1"
+        assert kwargs["api_key"]

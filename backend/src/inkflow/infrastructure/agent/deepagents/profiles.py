@@ -1,4 +1,4 @@
-"""deepagents HarnessProfile 注册表 — key 格式必须 openai:<model_name>（Spike ③ 实测）."""
+"""deepagents HarnessProfile 注册表 — key 格式必须 litellm:<model_name>（ADR-051 实证）."""
 
 from __future__ import annotations
 
@@ -18,13 +18,16 @@ DEFAULT_EXCLUDED_TOOLS: frozenset[str] = frozenset(
 
 
 def ensure_profile(model_name: str) -> str:
-    """确保 HarnessProfile 已注册。key 格式必须 openai:<model_name>（Spike ③ 实测）.
+    """确保 HarnessProfile 已注册。key 格式必须 litellm:<model_name>（ADR-051 实证：
+    deepagents 对预构建 ChatLiteLLM 实例按 ls_provider='litellm'（langchain_litellm
+    硬编码）+ identifier=model 全名解析——调用方传入的必须是**已口径映射**的完整
+    litellm 模型名，如 zai/glm-4.5）。
 
     已注册 → 直接返回 key；未注册 → 注册默认 profile 后返回 key。
     默认 profile 禁用全部默认文件系统工具，并关闭默认 general-purpose subagent
     （配合不传 subagents，task 工具随之移除）。
     """
-    key = f"openai:{model_name}"
+    key = f"litellm:{model_name}"
     if key in HARNESS_PROFILES:
         return key
     profile = HarnessProfile(

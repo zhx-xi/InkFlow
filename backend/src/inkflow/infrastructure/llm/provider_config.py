@@ -45,9 +45,10 @@ _PROVIDER_BASE_URLS: dict[str, str] = {
 }
 
 # 内建 Provider 注册表 — 从 config 对象读取 API Key
-# 注（ADR-005v2 更新，2026-08-01）：实现走 langchain_openai.ChatOpenAI + base_url，
-# 仅支持 OpenAI 兼容端点。anthropic 已从注册表移除——其原生 API 非 OpenAI 兼容，
-# 需独立 SDK 适配（config.anthropic_api_key 字段保留供未来实现）。
+# 注（ADR-051 取代 ADR-005v2，2026-09-06）：实现走 langchain_litellm
+# ChatLiteLLM/LiteLLMEmbeddings + api_base，仅支持 OpenAI 兼容端点。anthropic
+# 已从注册表移除——其原生 API 非 OpenAI 兼容，需独立 SDK 适配
+# （config.anthropic_api_key 字段保留供未来实现）。
 _BUILTIN_PROVIDERS: dict[str, str | None] = {
     "openai": config.openai_api_key or None,
     "deepseek": config.deepseek_api_key or None,
@@ -192,9 +193,7 @@ def get_provider_config(provider: str, api_key: str | None = None) -> LLMProvide
                 max_retries=config.llm_max_retries,
                 timeout=config.llm_request_timeout,
             )
-        raise ValueError(
-            "fake provider requires INKFLOW_LLM_BASE_URL to be set (ADR-047 S0)"
-        )
+        raise ValueError("fake provider requires INKFLOW_LLM_BASE_URL to be set (ADR-047 S0)")
 
     resolved_key = (
         api_key if api_key is not None else os.environ.get(f"INKFLOW_{provider.upper()}_API_KEY")
@@ -262,3 +261,64 @@ def parse_model_string(model: str) -> tuple[str, str]:
         )
     provider, model_name = model.split("/", 1)
     return provider, model_name
+
+
+# Provider 注册表名 → litellm 模型名前缀的一次性口径校准表（spec f59 §5.1）。
+# 此表是 provider 名称前缀口径（非参数方言表——方言翻译全部交给 litellm，
+# 与 ADR-051「零方言映射」不冲突）。实证 litellm 1.99.0 provider_list：
+# zai 在、zhipu 不在；deepseek/dashscope/openai 原生同名。
+_LITELLM_PREFIX_MAP: dict[str, str] = {
+    "zhipu": "zai",  # litellm 1.99 provider_list: zai yes, zhipu no
+    "deepseek": "deepseek",
+    "dashscope": "dashscope",
+    "openai": "openai",
+}
+
+# litellm 原生前缀——已经是原生形态的首段直接透传（幂等防线：zai/glm-4.5
+# 不得被当作未知自定义 provider 二次映射成 openai/glm-4.5）。
+# 新增原生 litellm provider 到注册表时，本 frozenset 必须同步，否则其模型
+# 会被静默重路由为 openai/ 前缀（#962 nit-2）。
+_LITELLM_NATIVE_PREFIXES: frozenset[str] = frozenset(
+    {"zai", "ollama_chat", "openai", "deepseek", "dashscope"}
+)
+
+
+def litellm_provider_prefix(provider: str, base_url: str | None = None) -> str:
+    """provider 注册表名 → litellm 模型名前缀。
+
+    - mapped names: 表查找（zhipu→zai 等，litellm 1.99 provider_list 实证）
+    - ollama: 本地默认（无 http base_url）→ "ollama_chat"（原生 /api/generate
+      形态与注册表 OpenAI 兼容语义不符）；带 http(s) base_url → "openai"
+      （OpenAI-compat 端点走 /v1/chat/completions）
+    - everything else（fake、自定义 OpenAI 兼容注册 provider）→ "openai"
+    """
+    if provider in _LITELLM_PREFIX_MAP:
+        return _LITELLM_PREFIX_MAP[provider]
+    if provider == "ollama":
+        if base_url and base_url.startswith(("http://", "https://")):
+            return "openai"
+        return "ollama_chat"
+    # fake / 自定义 OpenAI 兼容 provider
+    return "openai"
+
+
+def litellm_model_name(model: str, base_url: str | None = None) -> str:
+    """registry/全名模型串 → litellm 模型名前缀校准后的全名（ADR-051）。
+
+    - "provider/rest"（parse_model_string 拆分）：输出
+      f"{litellm_provider_prefix(provider)}/{rest}"；rest 保留自身斜杠
+      （如 "meta-llama/Llama-3" 不动）；base_url 透传给前缀口径（ollama
+      带 http(s) base_url → "openai" chat-completions 形态，无 → 原生
+      "ollama_chat"，#962 注册表 OpenAI 兼容端点回归）
+    - 无前缀裸名（parse ValueError）→ 原样返回（防御）
+    - 幂等防线：首段已是 litellm 原生前缀（zai/ollama_chat/openai/...）→ 原样透传
+      （注册表 default_model 可能已带 "zhipu/" 前缀 → 映射一次成 zai/glm-4.5，
+      绝不再叠成 zai/zhipu/glm-4.5，#428 wire 裸名契约的装配侧防线）
+    """
+    try:
+        provider, rest = parse_model_string(model)
+    except ValueError:
+        return model
+    if provider in _LITELLM_NATIVE_PREFIXES:
+        return model
+    return f"{litellm_provider_prefix(provider, base_url)}/{rest}"

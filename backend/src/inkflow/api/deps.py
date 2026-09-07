@@ -7,7 +7,6 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from fastapi import Depends
-from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # #766 chat agent 装配守卫辅助——从 _chat_auth 迁入（防超 900 行）
@@ -723,7 +722,7 @@ async def _resolve_embedding_spec() -> tuple[str, str, str]:
 
 
 async def _build_store() -> VectorStoreProtocol:
-    """按当前配置装配新向量存储（不赋值全局单例，供 get/refresh 复用）； API embedding（OpenAIEmbeddings），失败 → RAGUnavai..."""  # noqa: E501  # 中文 docstring 长描述
+    """按当前配置装配新向量存储（不赋值全局单例，供 get/refresh 复用）； API embedding（LiteLLMEmbeddings，ADR-051），失败 → RAGUnavai..."""  # noqa: E501  # 中文 docstring 长描述
     provider, model_id, base_url = await _resolve_embedding_spec()
     from langchain_core.embeddings import Embeddings
 
@@ -733,17 +732,18 @@ async def _build_store() -> VectorStoreProtocol:
         LangChainVectorStore,
     )
     try:
-        # 显式类型注解：OpenAIEmbeddings 赋值——保留 Embeddings Protocol 契约
+        # 显式类型注解：LiteLLMEmbeddings 赋值——保留 Embeddings Protocol 契约
         embeddings: Embeddings
-        from langchain_openai import OpenAIEmbeddings
+        from langchain_litellm import LiteLLMEmbeddings
         key = APIKeyManager(
             secret_key=config.secret_key,
             storage_dir=config.data_dir / "keys",
         ).load(provider)
-        embeddings = OpenAIEmbeddings(
-            model=model_id.split("/", 1)[-1],  # #428: 剥 provider/ 前缀（zhipu 拒前缀 400）
-            api_key=SecretStr(key),
-            base_url=base_url or None,
+        # #428 平移：统一 openai/ 前缀 + api_base（zai/ unmapped；wire 裸 id 自动剥；key 明文 str）
+        embeddings = LiteLLMEmbeddings(
+            model=f"openai/{model_id.split('/', 1)[-1]}",
+            api_key=key,
+            api_base=base_url or None,
         )
         return LangChainVectorStore(
             persist_dir=config.vector_store_dir,

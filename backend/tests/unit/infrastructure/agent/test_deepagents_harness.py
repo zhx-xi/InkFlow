@@ -7,28 +7,30 @@
    - HARNESS_PROFILES: dict[str, HarnessProfile]  # 模块级注册表；
      HarnessProfile 为 deepagents 类型（测试不 import deepagents 库，断言 key 存在即可）
    - ensure_profile(model_name: str) -> str：
-     确保 HarnessProfile 已注册。注册 key 格式必须是 openai:<model_name>
-     （Spike ③ 实测：ChatOpenAI 实例解析 provider='openai'；anthropic: 前缀
-     不匹配会静默用默认 profile）。已注册 → 直接返回 key；未注册 → 注册默认
-     profile 后返回 key。
+     确保 HarnessProfile 已注册。注册 key 格式必须是 litellm:<model_name>
+     （ADR-051 实证：ChatLiteLLM 实例解析 provider='litellm'（langchain_litellm
+     硬编码）、identifier=model 全名；旧 openai:<裸名> 键迁移后必不命中，默认
+     FS 工具禁用静默失效）。调用方传入的 model_name 必须是已口径映射的完整
+     litellm 模型名（如 zai/glm-4.5）。已注册 → 直接返回 key；未注册 → 注册
+     默认 profile 后返回 key。
 
 2. harness.py（infrastructure/agent/deepagents/harness.py 新建）：
    def build_deep_agent(*, model: str, api_key: str, base_url: str,
                         tools: list[Tool], system_prompt: str,
                         profile_key: str | None = None) -> Agent:
-   - model 可能带 registry 前缀（zhipu/glm-4.5）→ 内部 parse_model_string 剥离
-     成 glm-4.5；无前缀（parse_model_string 抛 ValueError）→ 原样使用（防御）
-   - ChatOpenAI 构造（镜像既有 _get_chat_model 模式；from-import 绑定 harness
-     模块命名空间，测试 patch 目标即 harness.ChatOpenAI）：
-     ChatOpenAI(model=<剥离后模型名>, openai_api_base=base_url,
-                openai_api_key=api_key, temperature=0.2)
+   - model 可能带 registry 前缀（zhipu/glm-4.5）→ 内部 litellm_model_name 口径
+     映射成 zai/glm-4.5（不剥离前缀）；无前缀（parse ValueError）→ 原样使用（防御）
+   - ChatLiteLLM 构造（镜像既有 _get_chat_model 模式；from-import 绑定 harness
+     模块命名空间，测试 patch 目标即 harness.ChatLiteLLM）：
+     ChatLiteLLM(model=<口径映射后全名>, api_base=base_url,
+                 api_key=api_key, temperature=0.2)
    - create_deep_agent 调用：
-     create_deep_agent(model=<ChatOpenAI 实例>, tools=<映射后工具>,
+     create_deep_agent(model=<ChatLiteLLM 实例>, tools=<映射后工具>,
                        system_prompt=system_prompt)
      **不传 excluded_tools kwarg**——0.7.5 真实签名无该参数（Codex GREEN 实测
      TypeError: unexpected keyword argument）；排除语义由 HarnessProfile
      excluded_tools 字段承载（ensure_profile 注册的默认 profile 含 8 项 FS
-     工具排除集 + subagent disabled，create_deep_agent 内部按 openai:<model>
+     工具排除集 + subagent disabled，create_deep_agent 内部按 litellm:<model>
      命中该 profile）。测试锁「不传非法 kwarg」+ profile 层排除集断言。
    - 工具映射：Tool.spec.name → 工具名、Tool.spec.description → 描述
      （deepagents @tool 或 BaseTool 形态均可，测试不锁具体类）
@@ -41,9 +43,9 @@
    __init__.py 导出，也不做 hasattr 守卫断言）。
 
 4. profile_key 缺省语义：build_deep_agent 不传 profile_key 时注册表必须出现
-   openai:<剥离后模型名>（联动断言见 TestProfiles 第 3 个用例）；显式传入则
-   原样使用、只断言不抛错。内部是 ensure_profile(model_name) 还是
-   ensure_profile(f"openai:{model_name}") 不锁——两种形态下观测 key 一致。
+   litellm:<口径映射后模型全名>（zhipu/glm-4.5 → litellm:zai/glm-4.5，联动断言
+   见 TestProfiles 第 3 个用例）；显式传入则原样使用、只断言不抛错。内部以
+   ensure_profile(mapped_model) 直接用映射后全名注册（键 = litellm:<全名>）。
 
 5. ToolSpec/Tool 惰性 import（GREEN 前两模块均不存在，属 F26 M2 工具集契约）：
    - from inkflow.domain.models.agent_tools import ToolSpec
@@ -56,8 +58,8 @@
 
 6. model 断言形态：call.kwargs["model"] is mock_chat_cls.return_value（同一性
    断言）——实测 isinstance(x, <MagicMock 实例>) 抛 TypeError: isinstance()
-   arg 2 must be a type，不能用 isinstance 断言「ChatOpenAI 实例」；同一性断言
-   等价（证明 ChatOpenAI(...) 构造结果被透传）且 GREEN 零风险。
+   arg 2 must be a type，不能用 isinstance 断言「ChatLiteLLM 实例」；同一性断言
+   等价（证明 ChatLiteLLM(...) 构造结果被透传）且 GREEN 零风险。
 
 7. 空 tools 列表（[]）为合法输入：装配层只做映射，空集直接透传。
 
@@ -109,9 +111,9 @@ def _make_tools(count):
 
 @pytest.fixture
 def harness_patches():
-    """patch deepagents.harness 模块命名空间：ChatOpenAI + create_deep_agent。"""
+    """patch deepagents.harness 模块命名空间：ChatLiteLLM + create_deep_agent。"""
     with (
-        mock.patch("inkflow.infrastructure.agent.deepagents.harness.ChatOpenAI") as chat_cls,
+        mock.patch("inkflow.infrastructure.agent.deepagents.harness.ChatLiteLLM") as chat_cls,
         mock.patch(
             "inkflow.infrastructure.agent.deepagents.harness.create_deep_agent",
             return_value=AGENT_SENTINEL,
@@ -142,8 +144,8 @@ class TestBuildDeepAgent:
         # HarnessProfile（TestExcludedTools 锁 profile 层），此处锁「不传非法 kwarg」
         assert "excluded_tools" not in call.kwargs
 
-    def test_chat_openai_stripped_model(self, harness_patches):
-        """前缀剥离：zhipu/glm-4.5 → ChatOpenAI(model='glm-4.5', temperature=0.2)。"""
+    def test_chat_litellm_mapped_model(self, harness_patches):
+        """前缀口径映射：zhipu/glm-4.5 → ChatLiteLLM(model='zai/glm-4.5', ...)。"""
         chat_cls, _ = harness_patches
         build_deep_agent(
             model="zhipu/glm-4.5",
@@ -153,22 +155,22 @@ class TestBuildDeepAgent:
             system_prompt="你是一个助手",
         )
         chat_cls.assert_called_once_with(
-            model="glm-4.5",
-            openai_api_base="https://x/v1",
-            openai_api_key="sk-test",
+            model="zai/glm-4.5",
+            api_key="sk-test",
+            api_base="https://x/v1",
             temperature=0.2,
         )
 
     def test_model_without_prefix_unchanged(self, harness_patches):
-        """无 registry 前缀（parse_model_string 抛 ValueError）→ 模型名原样使用（防御）。"""
+        """无 registry 前缀（parse ValueError）→ 模型名原样使用（防御）。"""
         chat_cls, _ = harness_patches
         build_deep_agent(
             model="glm-4.5", api_key="sk-test", base_url="https://x/v1", tools=[], system_prompt="p"
         )
         chat_cls.assert_called_once_with(
             model="glm-4.5",
-            openai_api_base="https://x/v1",
-            openai_api_key="sk-test",
+            api_key="sk-test",
+            api_base="https://x/v1",
             temperature=0.2,
         )
 
@@ -182,7 +184,7 @@ class TestBuildDeepAgent:
         create.assert_called_once()
 
     def test_empty_api_key_and_base_url_omitted(self, harness_patches):
-        """api_key/base_url 为空 → 不传 openai_api_key/openai_api_base（空串分支）。"""
+        """api_key/base_url 为空 → 不传 api_key/api_base（空串分支）。"""
         chat_cls, _ = harness_patches
         build_deep_agent(
             model="glm-4.5", api_key="", base_url="", tools=[], system_prompt="p"
@@ -202,7 +204,7 @@ class TestBuildDeepAgent:
 
 
 class TestProfiles:
-    """HARNESS_PROFILES 注册表 + ensure_profile 契约（注册 key = openai:<model>）。"""
+    """HARNESS_PROFILES 注册表 + ensure_profile 契约（注册 key = litellm:<model 全名>）。"""
 
     @pytest.fixture(autouse=True)
     def _clean_registry(self):
@@ -210,22 +212,23 @@ class TestProfiles:
         HARNESS_PROFILES.clear()
         yield
 
-    def test_ensure_profile_returns_openai_key_and_registers(self):
-        """key 格式 openai:<model>；调用后注册表含该 key（Spike ③ 实测格式）。"""
-        key = ensure_profile("glm-4.5")
-        assert key == "openai:glm-4.5"
-        assert "openai:glm-4.5" in HARNESS_PROFILES
+    def test_ensure_profile_returns_litellm_key_and_registers(self):
+        """key 格式 litellm:<model 全名>；调用后注册表含该 key（ADR-051 实证格式）。"""
+        key = ensure_profile("zai/glm-4.5")
+        assert key == "litellm:zai/glm-4.5"
+        assert "litellm:zai/glm-4.5" in HARNESS_PROFILES
 
     def test_ensure_profile_idempotent(self):
         """幂等：两次调用返回同一 key，注册表长度不变（不重复注册）。"""
-        first = ensure_profile("glm-4.5")
-        second = ensure_profile("glm-4.5")
+        first = ensure_profile("zai/glm-4.5")
+        second = ensure_profile("zai/glm-4.5")
         assert first == second
-        assert first == "openai:glm-4.5"
+        assert first == "litellm:zai/glm-4.5"
         assert len(HARNESS_PROFILES) == 1
 
     def test_build_deep_agent_registers_default_profile(self, harness_patches):
-        """联动：缺省 profile_key → 注册表出现 openai:<剥离后模型名>（glm-4.5）。"""
+        """联动：缺省 profile_key → 注册表出现 litellm:<口径映射后全名>
+        （zhipu/glm-4.5 → litellm:zai/glm-4.5）。"""
         build_deep_agent(
             model="zhipu/glm-4.5",
             api_key="sk-test",
@@ -233,7 +236,7 @@ class TestProfiles:
             tools=[],
             system_prompt="p",
         )
-        assert "openai:glm-4.5" in HARNESS_PROFILES
+        assert "litellm:zai/glm-4.5" in HARNESS_PROFILES
 
     def test_explicit_profile_key_no_error(self, harness_patches):
         """显式 profile_key → 原样使用、不抛错、装配成功（不断言内部注册路径）。"""
@@ -244,7 +247,7 @@ class TestProfiles:
             base_url="https://x/v1",
             tools=[],
             system_prompt="p",
-            profile_key="openai:custom",
+            profile_key="litellm:custom",
         )
         assert result is AGENT_SENTINEL
         create.assert_called_once()
@@ -339,8 +342,8 @@ class TestExcludedTools:
 
     def test_profile_excludes_read_file(self):
         """read_file 必须在默认排除集（Spike ③ 实测 read_file 为默认 FS 工具之一）。"""
-        ensure_profile("glm-4.5")
-        profile = HARNESS_PROFILES["openai:glm-4.5"]
+        ensure_profile("zai/glm-4.5")
+        profile = HARNESS_PROFILES["litellm:zai/glm-4.5"]
         assert "read_file" in profile.excluded_tools
 
     def test_profile_excludes_all_fs_tools(self):
@@ -355,7 +358,7 @@ class TestExcludedTools:
 
     def test_profile_disables_subagent(self):
         """F26 禁用 subagent：默认 profile 关闭 general-purpose subagent（task 工具随之移除）。"""
-        ensure_profile("glm-4.5")
-        profile = HARNESS_PROFILES["openai:glm-4.5"]
+        ensure_profile("zai/glm-4.5")
+        profile = HARNESS_PROFILES["litellm:zai/glm-4.5"]
         assert profile.general_purpose_subagent is not None
         assert profile.general_purpose_subagent.enabled is False
