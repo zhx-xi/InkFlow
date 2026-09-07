@@ -180,7 +180,7 @@ inkflow config set <key> <value> [--json]
 | `server.host` | serve 默认 host | `127.0.0.1` |
 | `server.port` | serve 默认 port | `8000` |
 
-**持久化**: `{data_dir}/config.json`；优先级 `环境变量 > config.json > 内置默认值`（config set 写入 config.json）。`config show` 同时展示三层来源与生效值。
+**持久化**: `{data_dir}/config.json`；优先级 `init > 进程 env > instance.env > .env > config.json > 内置默认值`（config set 写入 config.json；#987 起 config.json 为 pydantic 启动源，重启后保持）。`config show` 同时展示三层来源与生效值。
 
 ---
 
@@ -414,7 +414,7 @@ F7 被依赖:
 | chapter create/list/get/update/delete/move | 委托 F2 | 参数透传 → ChapterService | 人类可读 / 信封 | 404 → NOT_FOUND；422 → VALIDATION_ERROR（退出码 1） | — |
 | write next/continue/revise | 委托 F3 + F6 | 写作；--show-context 附上下文 | 每章 {chapter_id, title, word_count} / 章节全文；--json 含正文 + context 字段 | LLM 失败 → LLM_ERROR（退出码 1） | next --count 默认 1；revise 用 --instruction |
 | llm list / set-key | 委托 F5 | Provider 列表 / API Key 设置 | list 输出掩码 sk-****abc；set-key 成功 | — | set-key 无 --key → getpass 交互输入不回显；传 --key → WARNING（shell history 泄露风险）；Key 密文落盘，明文不落盘不输出 |
-| config show / set | — | 配置查看/设置 | show 展示三层来源与生效值；set 合法 key 写入 config.json | set 白名单外 key → 退出码 2；set 非法值（temperature=3.0）→ 退出码 1 | key 白名单 6 项；优先级 环境变量 > config.json > 内置默认 |
+| config show / set | — | 配置查看/设置 | show 展示三层来源与生效值；set 合法 key 写入 config.json | set 白名单外 key → 退出码 2；set 非法值（temperature=3.0）→ 退出码 1 | key 白名单 6 项；优先级 init > 进程 env > instance.env > .env > config.json > 内置默认（#987 读回） |
 
 ### 14.3 错误分类与退出码状态流
 

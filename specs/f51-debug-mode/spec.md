@@ -22,7 +22,7 @@
 | GUI 壳 | 打包版无 DevTools、无 dev 钩子（`main.ts` isPackaged 门控） | debug 模式注册 DevTools + 暴露诊断钩子 |
 | serve 后端 | 动态端口 + 随机 token + 无 /docs，不可直达 | debug 可预测 token + 自动 /docs + uvicorn debug |
 
-**统一开关**：`INKFLOW_DEBUG=1`（进程 env / instance.env / config.json），一个开关贯穿三层。（#977 注：instance.env 自 0.13.x 起**全键生效**——任意 `INKFLOW_*` 字段写 instance.env 即入内核配置源，优先级 进程 env > instance.env > .env/config.json；本 spec 的 D1/D8 debug 优先级语义不变。）
+**统一开关**：`INKFLOW_DEBUG=1`（进程 env / instance.env / config.json），一个开关贯穿三层。（#977 注：instance.env 自 0.13.x 起**全键生效**——任意 `INKFLOW_*` 字段写 instance.env 即入内核配置源，优先级 进程 env > instance.env > .env/config.json；本 spec 的 D1/D8 debug 优先级语义不变。#987 注：config.json 自 0.14.0 起同样**全键并入启动源**（`ConfigJsonSettingsSource`，链位 .env 之后 secrets 之前），debug 键的 `model_validator` 特判保留为双保险——D1/D8 三连护栏零翻转。）
 
 ### 1.2 关键事实（现状盘点，2026-08-27 源码核实）
 

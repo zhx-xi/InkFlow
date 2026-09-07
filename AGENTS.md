@@ -46,7 +46,7 @@
 | CLI | Typer + Rich | `inkflow` 命令入口 |
 | ORM | SQLAlchemy 2.0 (async) + aiosqlite | SQLite 本地（schema 由 create_all + 轻量幂等迁移管理，Alembic 未启用） |
 | 数据验证 | Pydantic v2 + pydantic-settings | `model_config = {"from_attributes": True}` |
-| 配置 | pydantic-settings（env_prefix `INKFLOW_`） | instance.env 全键生效（#977，不止 DATA_DIR/debug）；优先级 进程 env > instance.env > .env/config.json |
+| 配置 | pydantic-settings（env_prefix `INKFLOW_`） | 三通道分工（#987）：进程 env = 临时覆盖最高文件外源；instance.env = 实例级 env 镜像文件（#977 全键生效，data-dir 唯一通道）；config.json = GUI/CLI 应用内配置面（设置页/`config set` 落盘，重启后保持）。优先级 init > 进程 env > instance.env > .env > config.json > secrets |
 | LLM Provider | langchain-core + langchain-community + langchain-openai | ChatOpenAI（custom base_url 兼容多 Provider，ADR-005v2） |
 | Agent 编排 | langgraph + deepagents harness | StateGraph：Phase 1 顺序链，Phase 2 自定义 DAG；Agent 化编排见 ADR-035/036 |
 | RAG | langchain-chroma + chromadb + sentence-transformers | 本地向量库 + BGE Embedding（ADR-013） |
