@@ -6,8 +6,9 @@ Agent usage: serve / kernel / search / config / llm — kernel and system-level 
 
 | Command | Params | Purpose |
 |---|---|---|
-| `serve` | `--host`(127.0.0.1) `--port`(8000; **0 = dynamic random**) `--port-file` `--token`(random by default) `--open-browser` `--reload` | Start the kernel in the foreground; readiness = stdout `INKFLOW_READY {"port","token","pid","version"}`; **does not write kernel.json** (in diagnostic scenarios parse the INKFLOW_READY line directly); `--reload` mode has no delivery contract |
+| `serve` | `--host`(127.0.0.1) `--port`(8000; **0 = dynamic random**) `--port-file` `--token`(random by default) `--open-browser` `--reload` `--debug` | Start the kernel in the foreground; readiness = stdout `INKFLOW_READY {"port","token","pid","version"}`; **does not write kernel.json** (in diagnostic scenarios parse the INKFLOW_READY line directly); `--reload` mode has no delivery contract |
 
+- **Debug env vars (F51)**: `INKFLOW_DEBUG=1` (equivalent to `--debug`; predictable token via `INKFLOW_DEBUG_TOKEN`, default `inkflow-debug-token`; /docs unlocked); `INKFLOW_DEBUG_NO_BROWSER=1/true/on` (#949 escape hatch) = debug mode does **not** auto-open a browser on /docs (default still opens; explicit `--open-browser` is unaffected; e2e injects this key to suppress popups)
 - **The only reliable stderr source for 500 diagnostics**:
   `serve --port 0 --port-file <f>` + `-RedirectStandardError <err.log>` (a GUI-started kernel has
   no stderr capture)
