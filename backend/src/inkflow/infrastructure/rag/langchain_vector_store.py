@@ -73,6 +73,8 @@ class LangChainVectorStore:
         self._client: chromadb.ClientAPI | None = None
         self._collections: dict[EntityType, chromadb.Collection] = {}
         self._meta_collection: chromadb.Collection | None = None
+        # #1011: 写后落盘自检探针向量暂存（写路径填充，_ensure_hnsw_flushed 消费）
+        self._probe_embedding: list[float] | None = None
         self.embedding_dimension: int | None = None
         """当前 embeddings 实测维度缓存（probe_embedding_dimension 懒填充）。"""
 
@@ -191,6 +193,48 @@ class LangChainVectorStore:
         """附加 project_id 到实体 metadata（检索过滤键，spec §5.6）。"""
         return {**entity.metadata, "project_id": entity.project_id}
 
+    def _ensure_hnsw_flushed(self, collection: chromadb.Collection) -> None:
+        """#1011 写后 hnsw 段落盘自检（签名单参，被 RED spy 契约锁定）。
+
+        chroma 1.x 本地模式无 flush API，WAL→段落盘由后台线程完成；count() 仅
+        触发不等待。探针 query 与读侧同判据（"Nothing found on disk"），预算内
+        等到 hnsw 段可读后才返回，快盘首轮即过（开销 = 一次 query）。
+
+        注意：调用方必须已持有 self._lock（#468），此处不重复加锁（Lock 不可
+        重入，与 _get_collection 同款纪律）。
+        """
+        probe = self._probe_embedding
+        if probe is None:
+            logger.warning(
+                "向量写后落盘自检缺探针向量（无写入），跳过: collection={}",
+                collection.name,
+            )
+            return
+        last_error: Exception | None = None
+        for attempt in range(5):
+            try:
+                # count() 触发 WAL→段落盘；query 验证 hnsw 段已可读（与读侧同判据）
+                collection.count()
+                collection.query(
+                    query_embeddings=cast(Any, [probe]),
+                    n_results=1,
+                    include=["distances"],
+                )
+            except chromadb.errors.InternalError as exc:
+                # #1011: hnsw 段尚未就绪 → 有界指数退避（0.5/1/2/4/8s，总预算
+                # ≈15s）；写入已成功，预算耗尽仅 warning 不上抛——读侧 #873 多级
+                # 重试 + 服务层 #823 自愈仍是双保险，禁把写路径变硬失败。
+                last_error = exc
+                time.sleep(0.5 * (2**attempt))
+            else:
+                return
+        logger.warning(
+            "hnsw 段落盘自检超预算（写入已成功，读侧 #873/#823 兜底仍生效）: "
+            "collection={} last_err={}",
+            collection.name,
+            last_error,
+        )
+
     def _index_sync(self, entity: IndexableEntity) -> None:
         """同步索引单个实体（upsert，同 id 覆盖）。
 
@@ -208,6 +252,8 @@ class LangChainVectorStore:
         embedding = self._embeddings.embed_documents([entity.content])[0]
         with self._lock:
             collection = self._get_collection(entity.entity_type)
+            # #1011: 写后落盘自检探针暂存（upsert 前填充，_ensure_hnsw_flushed 消费）
+            self._probe_embedding = embedding
             collection.upsert(
                 ids=[entity.id],
                 documents=[entity.content],
@@ -219,6 +265,9 @@ class LangChainVectorStore:
             # hnsw 段（"Nothing found on disk"，上游 #4212/#7463）；本项目写入频率低，
             # 成本可忽略（仍持有 self._lock，#468）。
             collection.count()
+            # #1011: 写侧落盘自检——count() 仅触发不等待，探针 query 等到 hnsw 段
+            # 就绪后再返回（仍在 self._lock 内，#468）。
+            self._ensure_hnsw_flushed(collection)
 
     def _index_batch_sync(self, entities: list[IndexableEntity]) -> None:
         """同步批量索引: 按类型分组，每 collection 一次 upsert。
@@ -246,6 +295,8 @@ class LangChainVectorStore:
             embeddings = self._embeddings.embed_documents([e.content for e in valid])
             with self._lock:
                 collection = self._get_collection(entity_type)
+                # #1011: 每组取最后一条真实向量作探针（upsert 前填充；同组同维度）
+                self._probe_embedding = embeddings[-1]
                 collection.upsert(
                     ids=[e.id for e in valid],
                     documents=[e.content for e in valid],
@@ -256,6 +307,8 @@ class LangChainVectorStore:
                 # #873: 每组类型写入后强制 count() 触发 WAL→段落盘（同 _index_sync，
                 # 仍在 self._lock 内），消除写后立即查询的 hnsw 段读取竞态。
                 collection.count()
+                # #1011: 写侧落盘自检（同上，仍在 self._lock 内，#468）。
+                self._ensure_hnsw_flushed(collection)
 
     def _retrieve_sync(
         self,
@@ -293,12 +346,13 @@ class LangChainVectorStore:
                         include=["documents", "metadatas", "distances"],
                     )
                 except chromadb.errors.InternalError as exc:
-                    # #823/#873: chromadb hnsw 段读取失败（"Nothing found on disk"，
-                    # #468 同族）——常为小批量写入未落盘（WAL-only）或残留空/旧 hnsw 段。
-                    # 多级重试：每轮 count() 强制触发 WAL→段落盘/载入 + 短 sleep 后重查
-                    # （首查 + 2 次重试，max_attempts=3）；全部失败仍清晰上抛
-                    # VectorStoreError（不吞空「内部错误（无详情）」），由服务层 retrieve
-                    # 捕获后触发一次 reindex 重建重试（_extraction_rag.py）。
+                    # #823/#873/#1011: chromadb hnsw 段读取失败（"Nothing found on
+                    # disk"，#468 同族）——常为小批量写入未落盘（WAL-only）或残留空/
+                    # 旧 hnsw 段。多级重试：每轮 count() 强制触发 WAL→段落盘/载入 +
+                    # sleep 后重查（首查 + 6 次重试，#1011 B 兜底；总窗口 ≈3s）；
+                    # 全部失败仍清晰上抛 VectorStoreError（不吞空「内部错误（无
+                    # 详情）」），由服务层 retrieve 捕获后触发一次 reindex 重建重试
+                    # （_extraction_rag.py，#823 自愈双保险）。
                     logger.warning(
                         "chromadb hnsw 段读取失败，强制落盘后重试: "
                         "entity_type={} project_id={} err={}",
@@ -306,12 +360,12 @@ class LangChainVectorStore:
                         project_id,
                         exc,
                     )
-                    max_attempts = 5  # 首查 + 4 次重试；慢磁盘下更高命中率（#873 B 兜底）
+                    max_attempts = 7  # 首查 + 6 次重试；慢磁盘下更高命中率（#1011 B 兜底）
                     for _ in range(max_attempts - 1):
                         try:
                             # count() 触发 WAL→段落盘；sleep 给落盘/载入留时间（慢磁盘兜底）
                             collection.count()
-                            time.sleep(0.25)
+                            time.sleep(0.5)
                             result = collection.query(
                                 query_embeddings=cast(Any, [query_embedding]),
                                 n_results=top_k,
