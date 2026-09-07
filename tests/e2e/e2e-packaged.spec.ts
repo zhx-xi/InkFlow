@@ -87,11 +87,15 @@ async function launchPackaged(appDataDir: string, extraEnv: Record<string, strin
   // 陈旧 kernel.json 先删：waitForKernelFile 读到必是本次 launch 新写（原子 rename 契约）
   try { fs.rmSync(KERNEL_STATE_FILE, { force: true }); } catch { /* 不存在=常态 */ }
   const env = Object.fromEntries(
-    Object.entries(process.env).filter(([k, v]) => v !== undefined && k !== 'INKFLOW_DEBUG' && k !== 'INKFLOW_DEBUG_TOKEN')
+    Object.entries(process.env).filter(
+      ([k, v]) => v !== undefined && k !== 'INKFLOW_DEBUG' && k !== 'INKFLOW_DEBUG_TOKEN' && k !== 'INKFLOW_DEBUG_NO_BROWSER'
+    )
   ) as Record<string, string>;
+  // 统一注入 INKFLOW_DEBUG_NO_BROWSER=1（F51 v1.1 #949 逃生门，与 baseEnv 同规）：
+  // debug 用例不再自动弹系统浏览器（零断言贡献噪音）；/docs 200 由 docsStatus fetch 断言。
   return electron.launch({
     executablePath: PACKAGED_EXE,
-    env: { ...env, APPDATA: appDataDir, INKFLOW_DATA_DIR: path.join(appDataDir, 'data'), ...extraEnv },
+    env: { ...env, APPDATA: appDataDir, INKFLOW_DATA_DIR: path.join(appDataDir, 'data'), INKFLOW_DEBUG_NO_BROWSER: '1', ...extraEnv },
   });
 }
 
