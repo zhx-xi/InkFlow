@@ -400,7 +400,9 @@ BookPlannerPanel 固定表单 → 对话式消息流（ChatPanel #379 先例）�
 
 **「内容已写」安全阀**（设计 §2.3-1，最高优先级）：`create_execution` 前查该章已有内容（`Chapter.content` 非空 / `Draft` 存在）/执行已完成（`execution_refs[outline_id]` 存在且 status=done）→ **拒绝重跑**（409，§3.5）——一行 WHERE 拆掉「重复内容 + 双倍费用」。
 
-**章级幂等写**：每章一次 save_draft（同一章执行不重复写；重复调用被安全阀拦截在前）。
+**章级幂等写**：每章一次 save_draft（同一章执行不重复写；重复调用被安全阀拦截在前）。**v1.7 #997 修订**：安全阀只拦「重复**执行**」，拦不住单次 agent run 内 LLM 自主多次 save_draft（rc5 实测 10 章 12 稿）→ 幂等下沉工具层：book 轨装配链把章锚点（`expected_source_outline_id`=outline 章节点 id，`expected_volume_outline_id`=卷 outline 节点 id）传给 save_draft 工具，工具按「同项目 + 同章（bound_chapter_id/source_outline_id）」查未确认稿，存在 → 覆盖内容返回同 draft_id，不存在 → create（契约见 F27 spec §5.2「装配期锚点绑定 + 同章幂等」）。
+
+**锚点传递（#996）**：委托兜底路径 `draft_service.create(source_outline_id=chapter["outline_id"], …)` 与 agent 自调 save_draft 路径**必须同锚点**（同族路径统一拍板先例）——writer_factory 增 `expected_source_outline_id`/`expected_volume_outline_id` 形参，`book_pipeline._delegate_chapter`、`book_service._delegate_chapter`、`book_agentic_pipeline._delegate_write` 三委托点装配时传入（`books.py _writer_factory` → `build_agentic_writer` 透传）。目标：book run 终态 `drafts.source_outline_id` 非空 → confirm 自动建章后 D4 回填 `outlines.chapter_id` 生效（#994 链路对 book 轨打通）。
 
 **GUI 交互设计**（Q1=C 拍板，v1.1）：
 - **章级进度状态 UI**：`WritingPlan.progress` 渲染（pending/in_progress/done/failed/skipped 状态徽标 + 章进度条/进度树），`GET /runs/{run_id}` 轮询驱动（镜像 `ChatPanel` 1s 轮询模式）；观察流密度=仪表（每章状态 + 计数器）

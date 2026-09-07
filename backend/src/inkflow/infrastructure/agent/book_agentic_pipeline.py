@@ -776,6 +776,8 @@ class BookAgenticPipeline:
             system_prompt=system_prompt,
             expected_project_id=plan.project_id,
             expected_chapter_id=chapter["chapter_id"],
+            expected_source_outline_id=chapter["outline_id"],
+            expected_volume_outline_id=chapter.get("volume_outline_id"),
         )
         result = await agent.invoke(  # type: ignore[attr-defined]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages, config)
             [

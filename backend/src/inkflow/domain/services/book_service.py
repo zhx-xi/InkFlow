@@ -811,15 +811,10 @@ class BookService(BookRunMixin):
         """委托契约核心：章 brief → writer_factory → agent.invoke → save_draft 回收.
 
         Args:
-            plan: 书级计划（提供 project_id / character_ids）.
-            chapter: 目标章 outline 节点.
-            limits: 合并后的书级上限.
-
+            plan: 书级计划（project_id / character_ids）; chapter: 章 outline 节点;
+                limits: 合并后的书级上限.
         Returns:
-            execution_id（Draft.id 字符串）.
-
-        Raises:
-            ValueError: writer_factory 未装配.
+            execution_id（Draft.id 字符串）; writer_factory 未装配 → ValueError.
         """
         if self._writer_factory is None:
             raise ValueError("writer_factory 未装配")
@@ -828,6 +823,8 @@ class BookService(BookRunMixin):
             system_prompt=system_prompt,
             expected_project_id=plan.project_id,
             expected_chapter_id=chapter.chapter_id,
+            expected_source_outline_id=chapter.id,
+            expected_volume_outline_id=chapter.parent_id,
         )
         result = await agent.invoke(  # type: ignore[attr-defined]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages)
             [

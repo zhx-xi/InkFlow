@@ -12,11 +12,17 @@
 - 约束③：成功/失败均落审计（audit_service.record，actor="agent:writer"）；
   审计调用自身异常静默（不影响主返回）
 - word_count 复用 domain/services/_word_count.count_words（纯函数）
+
+#996/#997: 装配期锚点绑定 + 同章幂等——expected_source_outline_id /
+expected_volume_outline_id 由 book 轨委托链注入（create 落库 source_outline_id，
+volume 反查兜底键）；create 前按归组键查同项目同章未确认稿，命中 →
+replace_content 覆盖正文并返回同 draft_id（不新增行），未命中走既有 create。
 """
 
 from __future__ import annotations
 
 import contextlib
+import inspect
 import json
 import uuid
 from collections.abc import Awaitable, Callable
@@ -25,6 +31,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel
 
 from inkflow.domain.models.agent_tools import ToolSpec
+from inkflow.domain.models.draft import Draft
 from inkflow.domain.services._word_count import count_words
 from inkflow.infrastructure.agent.tools import _tool_db_lock as _tool_db_lock_mod
 from inkflow.infrastructure.agent.tools.reader_tools import Tool
@@ -60,6 +67,10 @@ class SaveDraftToolDeps:
     expected_project_id/expected_chapter_id: #718 绑定上下文——每次 run 由装配层注入
     请求真实值；工具总是使用绑定值（LLM 无法编造全零 UUID 落孤儿数据），未注入时
     回退 caller 传入值（MCP/F27 writer 兼容）。
+    expected_source_outline_id/expected_volume_outline_id: #996 装配期锚点——book 轨
+    三委托点经 writer_factory 下传（章 outline 节点 id / 卷 outline 节点 id），
+    create 落库 drafts.source_outline_id 并作 volume_lookup 回退键；chat 轨 None
+    （无 outline 装配上下文，确认面自动建章）。
     """
 
     draft_service: object  # 有 create(*, project_id, chapter_id, content,
@@ -67,6 +78,10 @@ class SaveDraftToolDeps:
     audit_service: object  # 有 record(**kwargs)（AuditLogService 形态）
     expected_project_id: uuid.UUID | None = None
     expected_chapter_id: uuid.UUID | None = None
+    expected_source_outline_id: uuid.UUID | None = None
+    """#996：来源大纲章节点锚点（book 轨注入；create source_outline_id 落库值）."""
+    expected_volume_outline_id: uuid.UUID | None = None
+    """#996：卷 outline 节点锚点（volume_lookup 查表回退键；实体章优先于它）."""
     volume_lookup: Callable[[uuid.UUID, uuid.UUID | None], Awaitable[str | None]] | None = None
     """#976：卷解析闭包（project_id, chapter_id → 卷 UUID 字符串；None = 不归卷）."""
 
@@ -114,9 +129,68 @@ def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool:
                         else uuid.UUID(str(bound_chapter_id))
                     )
                 )
+                # #997：归组键（bound_chapter_id 转出的 _chapter_id /
+                # expected_source_outline_id 至少其一）→ create 前查同项目同章
+                # status='draft' 未确认稿；命中 → 覆盖正文返回同 draft_id（不新增行）。
+                # 鸭子兼容：find_pending 返回值非 Draft 实例（裸 AsyncMock）视为未命中。
+                group_key = (
+                    deps.expected_source_outline_id is not None or _chapter_id is not None
+                )
+                if group_key:
+                    # 鸭子兼容：draft_service 未注入异步 find_pending（旧 mock 只有
+                    # create）→ 跳过幂等查询走既有 create 路径（零回归）
+                    pending_fn = getattr(deps.draft_service, "find_pending", None)
+                    pending_value = (
+                        pending_fn(
+                            _project_id,
+                            chapter_id=_chapter_id,
+                            source_outline_id=deps.expected_source_outline_id,
+                        )
+                        if pending_fn is not None
+                        else None
+                    )
+                    existing: object | None = (
+                        await pending_value if inspect.isawaitable(pending_value) else None
+                    )
+                    if isinstance(existing, Draft):
+                        await deps.draft_service.replace_content(  # type: ignore[attr-defined]  # 鸭子类型：draft_service 按契约提供 replace_content
+                            existing.id,
+                            content,
+                            summary if summary else None,
+                        )
+                        # 成功审计（约束③）；审计自身异常静默，不影响主返回
+                        with contextlib.suppress(Exception):
+                            await deps.audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
+                                actor="agent:writer",
+                                project_id=_project_id,
+                                chapter_id=_chapter_id,
+                                severity_summary="draft_saved",
+                                summary=f"草稿覆盖 {count_words(content)} 字",
+                                degraded=True,
+                            )
+                        return json.dumps(
+                            {
+                                "ok": True,
+                                "draft_id": existing.id,
+                                "status": "draft",
+                                "word_count": count_words(content),
+                                "overwritten": True,
+                            },
+                            ensure_ascii=False,
+                        )
                 volume_id: uuid.UUID | None = None
                 if deps.volume_lookup is not None:
-                    volume_raw = await deps.volume_lookup(_project_id, _chapter_id)
+                    # #996 工具 volume 解析键优先级：bound_chapter_id（实体章）→
+                    # expected_volume_outline_id → expected_source_outline_id（兜底）
+                    lookup_key = (
+                        _chapter_id
+                        if _chapter_id is not None
+                        else (
+                            deps.expected_volume_outline_id
+                            or deps.expected_source_outline_id
+                        )
+                    )
+                    volume_raw = await deps.volume_lookup(_project_id, lookup_key)
                     if volume_raw is not None:
                         try:
                             volume_id = (
@@ -133,7 +207,9 @@ def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool:
                     summary=summary or "",
                     agent_run_id=None,
                     volume_id=volume_id,
-                    source_outline_id=None,  # chat 轨无 outline 装配上下文，确认面反查兜底（#988）
+                    # #996：book 轨装配传入（落库锚点，D4 confirm 回填生效）；
+                    # chat 轨 None → 确认面自动建章（无 outline 锚，确认面不反查）
+                    source_outline_id=deps.expected_source_outline_id,
                 )
                 # 成功审计（约束③）；审计自身异常静默，不影响主返回
                 with contextlib.suppress(Exception):

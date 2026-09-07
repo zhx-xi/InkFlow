@@ -325,6 +325,8 @@ def _build_book_service(db: AsyncSession) -> BookService:
         system_prompt: str,
         expected_project_id: uuid.UUID | None,
         expected_chapter_id: uuid.UUID | None,
+        expected_source_outline_id: uuid.UUID | None = None,
+        expected_volume_outline_id: uuid.UUID | None = None,
     ) -> object:
         """构造真实 F27 writer agent（镜像 deps.py _build_agent：deepagents ReAct 链）。
 
@@ -349,6 +351,8 @@ def _build_book_service(db: AsyncSession) -> BookService:
             system_prompt=system_prompt,
             expected_project_id=expected_project_id,
             expected_chapter_id=expected_chapter_id,
+            expected_source_outline_id=expected_source_outline_id,
+            expected_volume_outline_id=expected_volume_outline_id,
         )
 
     if _book_volume_pipeline is None:
