@@ -37,6 +37,8 @@ const mocks = vi.hoisted(() => ({
     // #723 章节行操作：重命名（patchChapter）/ 删除（deleteChapter）
     patchChapter: vi.fn(),
     deleteChapter: vi.fn(),
+    // #999 章节标题双编号归一化：全书统一批量归一化 POST 端点（GREEN 新增 action）
+    normalizeChapterTitles: vi.fn(),
     // #976 草稿常显：双轨树 pendingDrafts + 审批弹层 approvalRequest 及其 actions
     // （GREEN 新增 fields/actions；RED 期组件未读，mock 声明防 undefined 崩溃）
     pendingDrafts: [] as Array<{
@@ -57,6 +59,8 @@ const mocks = vi.hoisted(() => ({
   projectState: {
     projects: [] as Project[],
     currentProjectId: null as string | null,
+    // #999 弹窗选定 A/B 后组件调 useProjectStore.loadProjects() 刷新 config（GREEN 需读 config 字段）
+    loadProjects: vi.fn(),
   },
 }));
 
@@ -96,6 +100,8 @@ beforeEach(() => {
   mocks.chapterState.deleteVolume.mockReset();
   mocks.chapterState.patchChapter.mockReset();
   mocks.chapterState.deleteChapter.mockReset();
+  mocks.chapterState.normalizeChapterTitles.mockReset();
+  mocks.chapterState.normalizeChapterTitles.mockResolvedValue({ chapters_replaced: 0, outlines_replaced: 0 });
   mocks.chapterState.createChapter.mockResolvedValue({ id: 'c4', title: '新章节', volume_id: null, order_index: 3, word_count: 0 });
   mocks.chapterState.volumes = [];
   mocks.chapterState.chapters = [];
@@ -108,6 +114,8 @@ beforeEach(() => {
   mocks.chapterState.rejectDraft.mockReset();
   mocks.projectState.projects = [];
   mocks.projectState.currentProjectId = null;
+  mocks.projectState.loadProjects.mockReset();
+  mocks.projectState.loadProjects.mockResolvedValue(undefined);
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
 });
 
@@ -503,5 +511,109 @@ describe('ProjectTree — #976 草稿常显（双轨树）+ #980-2a 树布局（
     const titleBtn = screen.getByTestId('tree-chapter').querySelector('button') as HTMLButtonElement;
     expect(titleBtn.className).toContain('flex-1');
     expect(titleBtn.getAttribute('title')).toBe('第1章 初见');
+  });
+});
+describe('ProjectTree — #999 章节标题双编号归一化（RED-3 契约）', () => {
+  // ⚠️ GREEN 须在 stores/project.ts ProjectConfig 新增 chapter_title_format?: 'arabic' | 'chinese'。
+  // RED 期该字段未入接口 → 下列 config 字面量在 tsc 下报 excess-property 错 = 预期 RED。
+  const projectArabic: Project = { ...project, config: { chapter_title_format: 'arabic' as const } };
+  const projectChinese: Project = { ...project, config: { chapter_title_format: 'chinese' as const } };
+
+  it('【R-新建】中文序号章提交 → 先弹冲突框（createChapter 未直接调）→ 选 arabic → normalizeChapterTitles(p1,arabic) → createChapter(原始标题) → 树/config 刷新、弹窗关闭', async () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    mocks.projectState.projects = [projectArabic];
+    mocks.projectState.currentProjectId = 'p1';
+    renderTree();
+
+    openCreator();
+    fireEvent.change(inputEl(), { target: { value: '第一章 新章' } });
+    fireEvent.keyDown(inputEl(), { key: 'Enter' });
+
+    // 冲突检测：未先创建/未直接提交（#999 契约：先弹窗再提交）
+    expect(mocks.chapterState.createChapter).not.toHaveBeenCalled();
+    const dialog = await screen.findByTestId('chapter-format-dialog');
+    expect(dialog).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('chapter-format-arabic'));
+    await waitFor(() => expect(mocks.chapterState.normalizeChapterTitles).toHaveBeenCalledWith('p1', 'arabic'));
+    // 归一化在后端做，createChapter 仍携带用户原始标题
+    await waitFor(() => expect(mocks.chapterState.createChapter).toHaveBeenCalledWith('p1', '第一章 新章'));
+    // 树 + config 刷新
+    await waitFor(() => expect(mocks.projectState.loadProjects).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByTestId('chapter-format-dialog')).not.toBeInTheDocument());
+  });
+
+  it('【R-编辑】行内编辑为中文序号 → Enter → 弹窗 → 选 chinese → normalizeChapterTitles(p1,chinese) → patchChapter(id, 中文标题)', async () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    mocks.chapterState.patchChapter.mockResolvedValue({ id: 'c1', title: '第一章 初见', volume_id: 'v1', order_index: 0, word_count: 2347 });
+    mocks.projectState.projects = [projectArabic];
+    mocks.projectState.currentProjectId = 'p1';
+    renderTree();
+
+    fireEvent.click(screen.getByTestId('chapter-edit-c1'));
+    const input = screen.getByTestId('chapter-edit-input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '第一章 初见' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    // 冲突检测：未先 patch（先弹窗再提交）
+    expect(mocks.chapterState.patchChapter).not.toHaveBeenCalled();
+    const dialog = await screen.findByTestId('chapter-format-dialog');
+    expect(dialog).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('chapter-format-chinese'));
+    await waitFor(() => expect(mocks.chapterState.normalizeChapterTitles).toHaveBeenCalledWith('p1', 'chinese'));
+    await waitFor(() => expect(mocks.chapterState.patchChapter).toHaveBeenCalledWith('c1', '第一章 初见'));
+    await waitFor(() => expect(screen.queryByTestId('chapter-format-dialog')).not.toBeInTheDocument());
+  });
+
+  it('【R-直通】项目 config.chapter_title_format=chinese 时输入中文序号 → 不弹窗，直接 createChapter（GREEN 须守住该负向路径）', async () => {
+    mocks.projectState.projects = [projectChinese];
+    mocks.projectState.currentProjectId = 'p1';
+    renderTree();
+
+    openCreator();
+    fireEvent.change(inputEl(), { target: { value: '第一章 新章' } });
+    fireEvent.keyDown(inputEl(), { key: 'Enter' });
+
+    await waitFor(() => expect(mocks.chapterState.createChapter).toHaveBeenCalledWith('p1', '第一章 新章'));
+    expect(screen.queryByTestId('chapter-format-dialog')).not.toBeInTheDocument();
+    expect(mocks.chapterState.normalizeChapterTitles).not.toHaveBeenCalled();
+  });
+
+  it('【R-取消】弹窗点 cancel → 不调 normalizeChapterTitles、不调 createChapter，弹窗关闭', async () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    mocks.projectState.projects = [projectArabic];
+    mocks.projectState.currentProjectId = 'p1';
+    renderTree();
+
+    openCreator();
+    fireEvent.change(inputEl(), { target: { value: '第一章 新章' } });
+    fireEvent.keyDown(inputEl(), { key: 'Enter' });
+
+    expect(mocks.chapterState.createChapter).not.toHaveBeenCalled();
+    const dialog = await screen.findByTestId('chapter-format-dialog');
+    expect(dialog).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('chapter-format-cancel'));
+    await waitFor(() => expect(screen.queryByTestId('chapter-format-dialog')).not.toBeInTheDocument());
+    expect(mocks.chapterState.normalizeChapterTitles).not.toHaveBeenCalled();
+    expect(mocks.chapterState.createChapter).not.toHaveBeenCalled();
+  });
+
+  it('【R-直通】无中文序号纯名（一叶落）→ 不弹窗，直接 createChapter（GREEN 须守住该负向路径）', async () => {
+    mocks.projectState.projects = [projectArabic];
+    mocks.projectState.currentProjectId = 'p1';
+    renderTree();
+
+    openCreator();
+    fireEvent.change(inputEl(), { target: { value: '一叶落' } });
+    fireEvent.keyDown(inputEl(), { key: 'Enter' });
+
+    await waitFor(() => expect(mocks.chapterState.createChapter).toHaveBeenCalledWith('p1', '一叶落'));
+    expect(screen.queryByTestId('chapter-format-dialog')).not.toBeInTheDocument();
+    expect(mocks.chapterState.normalizeChapterTitles).not.toHaveBeenCalled();
   });
 });

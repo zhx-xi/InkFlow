@@ -754,3 +754,103 @@ class TestCoverageGaps:
 
         assert "项目名: 测试项目" in info
         assert "扩展配置" not in info
+
+
+class TestCreateOutlineConfigNormalization:
+    """§3（#999）：OutlineService.create_outline 落库前按项目 config.chapter_title_format 归一。
+
+    - level=chapter 且注入 project_repo（返回 config.chapter_title_format='chinese'）→
+      传给 repo.add 的 name 为中文序号（'第3章 风'→'第三章 风'）。
+    - level=volume → 不归一（保持现行为）。
+    - project_repo=None → 不炸、不归一（向后兼容）。
+
+    注: ProjectConfig 当前无 chapter_title_format 字段（GREEN 新增），构造时额外键被
+    Pydantic v2 默认忽略；GREEN 下该字段存在并被服务读取，故测试对 GREEN 生效。
+    """
+
+    @pytest.fixture
+    def chinese_project(self) -> Project:
+        return Project(
+            id=PID,
+            name="测试项目",
+            config=ProjectConfig(chapter_title_format="chinese"),
+            created_at=TS,
+            updated_at=TS,
+        )
+
+    @staticmethod
+    def _volume_parent() -> Outline:
+        return Outline(
+            id=uuid.uuid4(),
+            project_id=PID,
+            name="第一卷",
+            level="volume",
+            created_at=TS,
+            updated_at=TS,
+        )
+
+    @staticmethod
+    def _overall_parent() -> Outline:
+        return Outline(
+            id=uuid.uuid4(),
+            project_id=PID,
+            name="全书",
+            level="overall",
+            created_at=TS,
+            updated_at=TS,
+        )
+
+    async def test_create_outline_chapter_normalized_by_config(
+        self, service, mock_repo, mock_project_repo, chinese_project
+    ) -> None:
+        """project config=chinese → level=chapter 的 name 落库前归一为 '第三章 风'。"""
+        parent = self._volume_parent()
+        mock_project_repo.get = AsyncMock(return_value=chinese_project)
+        mock_repo.get = AsyncMock(
+            side_effect=lambda oid: parent if oid == parent.id.int else None
+        )
+        mock_repo.get_by_name = AsyncMock(return_value=None)
+        mock_repo.add = AsyncMock(side_effect=lambda o: o)
+
+        created = await service.create_outline(
+            project_id=PID, name="第3章 风", level="chapter", parent_id=parent.id
+        )
+        added = mock_repo.add.await_args.args[0]
+        assert added.name == "第三章 风"
+        assert created.name == "第三章 风"
+
+    async def test_create_outline_volume_not_normalized(
+        self, service, mock_repo, mock_project_repo, chinese_project
+    ) -> None:
+        """level=volume → 不按 project config 归一（名称原样落库）。"""
+        parent = self._overall_parent()
+        mock_project_repo.get = AsyncMock(return_value=chinese_project)
+        mock_repo.get = AsyncMock(
+            side_effect=lambda oid: parent if oid == parent.id.int else None
+        )
+        mock_repo.get_by_name = AsyncMock(return_value=None)
+        mock_repo.add = AsyncMock(side_effect=lambda o: o)
+
+        created = await service.create_outline(
+            project_id=PID, name="第3章 风", level="volume", parent_id=parent.id
+        )
+        added = mock_repo.add.await_args.args[0]
+        assert added.name == "第3章 风"
+        assert created.name == "第3章 风"
+
+    async def test_create_outline_project_repo_none_no_crash(self, mock_repo) -> None:
+        """project_repo=None → 向后兼容：不炸、名称原样落库（保持现行为）。"""
+        svc = OutlineService(repository=mock_repo, generator=None, project_repo=None)
+        parent = self._overall_parent()
+        mock_repo.get = AsyncMock(
+            side_effect=lambda oid: parent if oid == parent.id.int else None
+        )
+        mock_repo.get_by_name = AsyncMock(return_value=None)
+        mock_repo.add = AsyncMock(side_effect=lambda o: o)
+
+        created = await svc.create_outline(
+            project_id=PID, name="第3章 风", level="volume", parent_id=parent.id
+        )
+        added = mock_repo.add.await_args.args[0]
+        assert added.name == "第3章 风"
+        assert created.name == "第3章 风"

@@ -186,3 +186,43 @@ class TestProjectConfigJsonRoundtrip:
         update = ProjectUpdate(config=ProjectConfig(role_writer_temperature=1.3, template_id="4"))
         assert update.config.template_id == "4"
         assert update.config.role_writer_temperature == 1.3
+
+
+class TestProjectConfigChapterTitleFormat:
+    """#999 ProjectConfig.chapter_title_format 新字段（契约 §3，零迁移）。
+
+    默认 'arabic'；显式 'chinese' 可过；'weird' / '' → ValueError；
+    model_dump / 旧 dict 无键 → 默认 'arabic'。复用 config JSON 列，零迁移。
+    """
+
+    def test_chapter_title_format_default_arabic(self):
+        """默认值 chapter_title_format == 'arabic'。"""
+        config = ProjectConfig()
+        assert config.chapter_title_format == "arabic"
+
+    def test_chapter_title_format_chinese_accepted(self):
+        """显式 'chinese' 可通过并保留。"""
+        config = ProjectConfig(chapter_title_format="chinese")
+        assert config.chapter_title_format == "chinese"
+
+    def test_chapter_title_format_weird_raises(self):
+        """'weird' 非合法值 → ValueError（router 层 422 兜底）。"""
+        with pytest.raises(ValueError):
+            ProjectConfig(chapter_title_format="weird")
+
+    def test_chapter_title_format_empty_raises(self):
+        """'' 非合法值 → ValueError。"""
+        with pytest.raises(ValueError):
+            ProjectConfig(chapter_title_format="")
+
+    def test_chapter_title_format_in_model_dump(self):
+        """model_dump 包含 chapter_title_format 键（config JSON 落库路径）。"""
+        dumped = ProjectConfig().model_dump()
+        assert dumped["chapter_title_format"] == "arabic"
+
+    def test_old_dict_without_key_defaults_arabic(self):
+        """旧 config dict 无键 → model_validate 默认 'arabic'（零迁移）。"""
+        config = ProjectConfig.model_validate({"temperature": 0.5})
+        assert config.chapter_title_format == "arabic"
+        dumped = config.model_dump()
+        assert dumped["chapter_title_format"] == "arabic"
