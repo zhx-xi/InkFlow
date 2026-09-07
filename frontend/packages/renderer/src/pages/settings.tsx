@@ -501,9 +501,14 @@ function TemplatesPanel() {
 
   const handleUpdate = async (input: AgentTemplateInput) => {
     if (!editing) return;
+    // #989：判风险前重拉最新模板，避免用 mount 旧快照（used_by 可能已过期）
+    await loadTemplates();
+    const fresh =
+      useTemplatesStore.getState().templates.find((item) => item.id === editing.id) ??
+      editing;
     // 被引用模板保存 → 风险确认（spec §9.5）；无引用 → 直接保存
-    if ((editing.used_by?.length ?? 0) > 0) {
-      setPendingSave({ id: editing.id, input, template: editing });
+    if ((fresh.used_by?.length ?? 0) > 0) {
+      setPendingSave({ id: editing.id, input, template: fresh });
       return;
     }
     try {
@@ -631,7 +636,14 @@ function TemplatesPanel() {
                   data-testid={`template-delete-${tpl.id}`}
                   aria-label={`${t('tpl.delete')} ${tpl.name}`}
                   className="rounded border border-line px-2.5 py-1 text-[12px] text-ink-2 transition duration-180 hover:bg-surface-3 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => setPendingDelete(tpl)}
+                  onClick={async () => {
+                    // #989：删除确认前重拉最新模板，used_by 以 fresh 为准
+                    await loadTemplates();
+                    const fresh = useTemplatesStore
+                      .getState()
+                      .templates.find((item) => item.id === tpl.id);
+                    setPendingDelete(fresh ?? tpl);
+                  }}
                 >
                   {t('tpl.delete')}
                 </button>
