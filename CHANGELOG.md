@@ -9,6 +9,9 @@
 ### 变更
 - **serve debug 自动弹 /docs 逃生门（#949）**：新增进程 env `INKFLOW_DEBUG_NO_BROWSER`（`1`/`true`/`on`，trim+lowercase，判据对齐 `INKFLOW_DEBUG`），为真时 debug 分支跳过自动打开 `/docs` 的 `threading.Timer` 注册（e2e 真实拉起内核的用例每例弹一次浏览器，纯副作用零断言贡献）。默认行为不变（未设仍自动弹，F51 D2 拍板）；`--open-browser` 显式路径不受影响；token / docs 门控 / 日志级别 / DevTools 联动全部不变。e2e（e2e-debug-triad `baseEnv()` / e2e-packaged `launchPackaged()`）统一注入该 env 消除测试弹窗。
 
+### 修复
+- **config.json 全局配置只写不读（#987）**：`config.json` 并入 pydantic 启动源（方案 A，`ConfigJsonSettingsSource` 镜像 #977 instance.env 源形态），优先级链 init > 进程 env > instance.env > .env > config.json > secrets——GUI 设置页/`config set`/#735 D2 自动配置三路写入的全局默认模型等键内核重启后不再静默丢失。debug 键 F51 D1/D8 语义零翻转。
+
 ## [0.13.0] - 2026-09-08
 
 ### 新增
