@@ -21,7 +21,7 @@
 | 模块 | 核心能力 | CLI 入口 | REST API 前缀 | Spec / 依据 | 状态 |
 |------|---------|---------|--------------|------------|------|
 | F1 `project_service` | 项目/书籍管理：CRUD + 软删除 + 回收站 | `inkflow project create/list/get/delete/restore` | `/api/v1/projects` | [`specs/f1-project/`](specs/f1-project/spec.md) | ✅ PR #8 |
-| F2 `chapter_service` | 卷/章节管理：层级结构、章节移动、状态流转 | `inkflow volume create/list/delete` · `inkflow chapter create/list/get/update/delete` | `/api/v1/projects/{id}/volumes` · `/chapters` | [`specs/f2-chapter/`](specs/f2-chapter/spec.md) | ✅ PR #9 |
+| F2 `chapter_service` | 卷/章节管理：层级结构、章节移动、状态流转、标题双编号归一化（#999） | `inkflow volume create/list/delete` · `inkflow chapter create/list/get/update/delete` | `/api/v1/projects/{id}/volumes` · `/chapters` · `/chapters/normalize-titles`（#999） | [`specs/f2-chapter/`](specs/f2-chapter/spec.md) | ✅ PR #9 |
 | F3 `writing_service` | AI 写作管道：生成 → 续写 → 修订 | `inkflow write next/continue/revise` | `/api/v1/write/generate|continue|revise` | [`specs/f3-writing/`](specs/f3-writing/spec.md) | ✅ PR #21 |
 | F4 `agent_service` | Agent 编排：架构师/写手/审阅/修订角色链（LangGraph StateGraph） | `inkflow agent run/status/validate/template` | `/api/v1/pipelines/*` | [`specs/f4-pipeline-engine/`](specs/f4-pipeline-engine/spec.md) | ✅ PR #22 |
 | F5 `llm_service` | LLM Provider 适配（OpenAI/DeepSeek/…，ChatOpenAI 兼容路由）；API Key AES-256-GCM 加密存储 | `inkflow llm list/set-key` | 配置侧（无 REST 端点） | [`specs/f5-llm-provider/`](specs/f5-llm-provider/spec.md) | ✅ PR #16 |

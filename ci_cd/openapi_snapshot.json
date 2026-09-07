@@ -2705,6 +2705,20 @@
         "title": "ModelDiscoveryRequest",
         "type": "object"
       },
+      "NormalizeTitlesRequest": {
+        "description": "#999 批量归一化请求体：format 必填，仅 arabic/chinese.",
+        "properties": {
+          "format": {
+            "title": "Format",
+            "type": "string"
+          }
+        },
+        "required": [
+          "format"
+        ],
+        "title": "NormalizeTitlesRequest",
+        "type": "object"
+      },
       "OutlineCreateBody": {
         "description": "创建大纲请求体 — project_id 取自路径参数，不在 body（spec §3.2）。",
         "properties": {
@@ -3345,7 +3359,7 @@
         "type": "object"
       },
       "ProjectConfig": {
-        "description": "项目 AI 写作配置，可序列化为 JSON 进行导入/导出.\n\nAttributes:\n    model: 默认 AI 模型名称（None=未配置，装配时回退全局默认）.\n    agent_architect: 架构师 Agent 模型（None=关闭；字符串=指定模型；\"__default__\"=跟随默认）.\n    agent_writer: 写手 Agent 模型（None=关闭；字符串=指定模型；\"__default__\"=跟随默认）.\n    agent_auditor: 审阅 Agent 模型（None=关闭；字符串=指定模型；\"__default__\"=跟随默认）.\n    agent_reviser: 修订 Agent 模型（None=关闭；字符串=指定模型；\"__default__\"=跟随默认）.\n    agent_worldview: 世界观顾问 Agent 模型（v1.5 #484；None=关闭；字符串=指定模型；\n        \"__default__\"=跟随默认）.\n    agent_polisher: 润色师 Agent 模型（v1.5 #484；None=关闭；字符串=指定模型；\n        \"__default__\"=跟随默认）.\n    agent_roles: 自定义角色三态字段（key 带 agent_ 前缀，value 三态语义\n        与 agent_* 完全一致；spec §5.3.4 数据面）.\n    temperature: 生成温度 (0.0 - 2.0).\n    role_architect_temperature: 架构师角色独立温度（None = 跟随默认）.\n    role_writer_temperature: 写手角色独立温度（None = 跟随默认）.\n    role_auditor_temperature: 审阅角色独立温度（None = 跟随默认）.\n    role_reviser_temperature: 修订角色独立温度（None = 跟随默认）.\n    template_id: 引用的 AgentTemplate id（str 存储于 config JSON；\n        None = 未引用，回退默认装配，spec §9.2）.\n    writing_style: 写作风格描述.\n    supervisor: 项目级 Supervisor/HITL 配置（None = 未启用，零迁移）.\n    extra: 扩展配置字典.",
+        "description": "项目 AI 写作配置，可序列化为 JSON 进行导入/导出.\n\nAttributes:\n    model: 默认 AI 模型名称（None=未配置，装配时回退全局默认）.\n    agent_architect: 架构师 Agent 模型（None=关闭；字符串=指定模型；\"__default__\"=跟随默认）.\n    agent_writer: 写手 Agent 模型（None=关闭；字符串=指定模型；\"__default__\"=跟随默认）.\n    agent_auditor: 审阅 Agent 模型（None=关闭；字符串=指定模型；\"__default__\"=跟随默认）.\n    agent_reviser: 修订 Agent 模型（None=关闭；字符串=指定模型；\"__default__\"=跟随默认）.\n    agent_worldview: 世界观顾问 Agent 模型（v1.5 #484；None=关闭；字符串=指定模型；\n        \"__default__\"=跟随默认）.\n    agent_polisher: 润色师 Agent 模型（v1.5 #484；None=关闭；字符串=指定模型；\n        \"__default__\"=跟随默认）.\n    agent_roles: 自定义角色三态字段（key 带 agent_ 前缀，value 三态语义\n        与 agent_* 完全一致；spec §5.3.4 数据面）.\n    temperature: 生成温度 (0.0 - 2.0).\n    role_architect_temperature: 架构师角色独立温度（None = 跟随默认）.\n    role_writer_temperature: 写手角色独立温度（None = 跟随默认）.\n    role_auditor_temperature: 审阅角色独立温度（None = 跟随默认）.\n    role_reviser_temperature: 修订角色独立温度（None = 跟随默认）.\n    template_id: 引用的 AgentTemplate id（str 存储于 config JSON；\n        None = 未引用，回退默认装配，spec §9.2）.\n    chapter_title_format: 章节标题序号格式（'arabic'=第N章 /\n        'chinese'=第X章；#999 契约 §3，零迁移默认 arabic）.\n    writing_style: 写作风格描述.\n    supervisor: 项目级 Supervisor/HITL 配置（None = 未启用，零迁移）.\n    extra: 扩展配置字典.",
         "properties": {
           "agent_architect": {
             "anyOf": [
@@ -3449,6 +3463,11 @@
             "description": "项目级「是否全自动」开关（#598 D9-a1）：True=允许全自动写书（mode=agentic）；False=禁止（默认，AI 自动化默认关闭，首次触发弹授权框）。与 supervisor 同层。",
             "title": "Auto Write Enabled",
             "type": "boolean"
+          },
+          "chapter_title_format": {
+            "default": "arabic",
+            "title": "Chapter Title Format",
+            "type": "string"
           },
           "default_words": {
             "default": 800000,
@@ -11652,6 +11671,57 @@
           }
         },
         "summary": "Create Chapter",
+        "tags": [
+          "章节"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/chapters/normalize-titles": {
+      "post": {
+        "description": "全书章节/章级大纲标题批量归一（#999 契约 §4）.\n\n项目不存在 → 404（detail「项目不存在」）；格式非法在 body 校验层 422；\n成功后回写 project.config.chapter_title_format 并返回实际替换计数。",
+        "operationId": "normalize_chapter_titles_api_v1_projects__project_id__chapters_normalize_titles_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NormalizeTitlesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Normalize Chapter Titles",
         "tags": [
           "章节"
         ]

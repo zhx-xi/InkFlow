@@ -71,6 +71,7 @@
 | agent_relations | list[AgentRelation] | DEFAULT []; 显式边（F42 v1.4 §1.2） | 角色间关联关系 |
 | supervisor | SupervisorProjectConfig? | None=未启用（F29/#598） | 项目级 Supervisor/HITL |
 | auto_write_enabled | bool | DEFAULT False；项目级全自动开关（#598 D9-a1） | 全自动写书开关 |
+| chapter_title_format | str | DEFAULT "arabic"；仅 "arabic"/"chinese"（#999 零迁移） | 全书章节标题序号统一格式 |
 | extra | dict[str, Any] | DEFAULT {} | 扩展配置字典（未来兼容） |
 
 > **字段来源注**：ProjectConfig 为 F1 领域模型，但 `agent_worldview/agent_polisher/agent_roles/agent_order/agent_relations/supervisor/auto_write_enabled` 的详细语义由 **F42（agent-chain）/ F29（supervisor）/ F44（book-orchestrator）+ #598** 定义并消费——本表只列字段与三态口径，不重复展开（避免双份真相，见 split-spec-revision §6）。

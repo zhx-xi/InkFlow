@@ -11,6 +11,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_chapter_service, get_db
@@ -29,6 +30,20 @@ from inkflow.domain.services.chapter_service import (
 from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["章节"])
+
+
+class NormalizeTitlesRequest(BaseModel):
+    """#999 批量归一化请求体：format 必填，仅 arabic/chinese."""
+
+    format: str
+
+    @field_validator("format")
+    @classmethod
+    def validate_format(cls, v: str) -> str:
+        """非法 format（如 weird/''）→ ValueError → FastAPI 422 兜底."""
+        if v not in ("arabic", "chinese"):
+            raise ValueError("format 仅支持 arabic/chinese")
+        return v
 
 
 def _parse_id(id_str: str, detail: str = "资源不存在") -> uuid.UUID:
@@ -197,3 +212,27 @@ async def move_chapter(
     if ch is None:
         raise HTTPException(status_code=404, detail="章节不存在")
     return ch.model_dump(mode="json")
+
+
+@router.post("/projects/{project_id}/chapters/normalize-titles")
+@instrument(caller_type="api")
+async def normalize_chapter_titles(
+    project_id: str,
+    data: NormalizeTitlesRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """全书章节/章级大纲标题批量归一（#999 契约 §4）.
+
+    项目不存在 → 404（detail「项目不存在」）；格式非法在 body 校验层 422；
+    成功后回写 project.config.chapter_title_format 并返回实际替换计数。
+    """
+    svc = _svc(db)
+    pid = _parse_id(project_id, detail="项目不存在")
+    result = await svc.normalize_all_titles(pid, data.format)
+    if result is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return {
+        "format": data.format,
+        "chapters_replaced": result["chapters_replaced"],
+        "outlines_replaced": result["outlines_replaced"],
+    }

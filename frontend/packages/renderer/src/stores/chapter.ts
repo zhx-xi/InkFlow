@@ -38,6 +38,13 @@ interface ChapterListResponse {
   limit: number;
 }
 
+/** #999 批量归一化响应（POST /projects/{id}/chapters/normalize-titles） */
+export interface NormalizeTitlesResult {
+  format: string;
+  chapters_replaced: number;
+  outlines_replaced: number;
+}
+
 import { create } from 'zustand';
 import { apiFetch, errorMessage } from '../api/client';
 import type { DraftDto } from '../api/drafts';
@@ -79,6 +86,8 @@ interface ChapterState {
   moveChapter: (chapterId: string, targetVolumeId: string | null) => Promise<ChapterMeta>;
   patchChapter: (chapterId: string, title: string) => Promise<ChapterMeta>;
   deleteChapter: (chapterId: string) => Promise<void>;
+  /** #999：全书章节标题批量归一化（POST 成功 → 内部 loadChapterTree 刷新树） */
+  normalizeChapterTitles: (projectId: string, format: 'arabic' | 'chinese') => Promise<NormalizeTitlesResult>;
   createVolume: (projectId: string, title: string) => Promise<Volume>;
   patchVolume: (volumeId: string, title: string) => Promise<Volume>;
   deleteVolume: (
@@ -208,6 +217,19 @@ export const useChapterStore = create<ChapterState>((set, get) => ({
     });
     set((s) => ({ chapters: s.chapters.map((c) => (c.id === patched.id ? patched : c)) }));
     return patched;
+  },
+
+  // #999：全书标题批量归一化（body {format}）→ 成功后内部 loadChapterTree 双刷新（卷 + 章）
+  normalizeChapterTitles: async (projectId, format) => {
+    const result = await apiFetch<NormalizeTitlesResult>(
+      `/api/v1/projects/${projectId}/chapters/normalize-titles`,
+      {
+        method: 'POST',
+        body: { format },
+      },
+    );
+    await get().loadChapterTree(projectId);
+    return result;
   },
 
   deleteChapter: async (chapterId) => {

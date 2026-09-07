@@ -449,6 +449,12 @@ export const en: Record<string, string> = {
   'm.fetchingModels': 'Fetching…',
   'm.fetchModelsFailed': 'Failed to fetch models: {reason}',
   'write.newChapter': 'New chapter',
+  // #999: chapter-title format conflict dialog (ProjectTree)
+  'tree.formatDialog.title': 'Chapter Numbering Conflict',
+  'tree.formatDialog.message':
+    'This title uses Chinese numbering (“Chapter X”), which conflicts with this book’s current Arabic-number format (“Chapter N”). Pick the format to normalize all chapter titles:',
+  'tree.formatDialog.arabic': 'Arabic numerals (Chapter N)',
+  'tree.formatDialog.chinese': 'Chinese numerals (Chapter X)',
   'write.empty.title': 'Select or create a project to start writing',
   'write.empty.back': 'Back to projects',
   'write.empty.noChapter': 'No chapters yet. Click "New chapter" on the left to create one.',

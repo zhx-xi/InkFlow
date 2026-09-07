@@ -2,9 +2,11 @@
 import { useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { Check, Pencil, Trash2, X } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
+import { hasChineseNumberingPrefix } from '../lib/chapterTitleFormat';
 import type { ChapterMeta, DraftTreeNode, Volume } from '../stores/chapter';
 import { useChapterStore } from '../stores/chapter';
 import { useProjectStore } from '../stores/project';
+import { ChapterFormatDialog } from './ChapterFormatDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ProjectSeal } from './ProjectSeal';
 import { VolumeDeleteDialog } from './VolumeDeleteDialog';
@@ -20,6 +22,11 @@ export interface ProjectTreeProps {
   /** 拖拽调宽回调（仅传入时生效） */
   onResizeWidth?: (w: number) => void;
 }
+
+/** #999：弹窗暂存的待提交动作（create=新建章节 / patch=章节重命名） */
+type PendingChapterCommit =
+  | { kind: 'create'; title: string; volumeId: string | null }
+  | { kind: 'patch'; chapter: ChapterMeta; title: string };
 
 export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
   const { t } = useI18n();
@@ -37,8 +44,10 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
   const moveChapter = useChapterStore((s) => s.moveChapter);
   const patchChapter = useChapterStore((s) => s.patchChapter);
   const deleteChapter = useChapterStore((s) => s.deleteChapter);
+  const normalizeChapterTitles = useChapterStore((s) => s.normalizeChapterTitles);
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const projects = useProjectStore((s) => s.projects);
+  const loadProjects = useProjectStore((s) => s.loadProjects);
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? projects[0];
   const [creating, setCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -52,6 +61,9 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
   const [deleteChapterTarget, setDeleteChapterTarget] = useState<ChapterMeta | null>(null);
   const [newVolumeId, setNewVolumeId] = useState<string | null>(null); // 新建章节目标卷（null=未分组）
   const [dragOverVolumeId, setDragOverVolumeId] = useState<string | null>(null); // 拖拽经过的卷高亮
+  // #999：格式冲突弹窗 + 暂存待提交动作（取消 → 丢弃 pending）
+  const [formatDialogOpen, setFormatDialogOpen] = useState(false);
+  const [pendingCommit, setPendingCommit] = useState<PendingChapterCommit | null>(null);
   // #702：col-resize 拖拽起点（clientX + 起点宽度），mouseup 清空
   const dragStartRef = useRef<{ startX: number; startW: number } | null>(null);
 
@@ -179,6 +191,16 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
   const handleCreate = async () => {
     if (!currentProjectId) return;
     const title = newTitle.trim() || '新章节';
+    // #999：中文序号标题 × 项目格式非 chinese → 先弹冲突框（暂存动作，不直接提交）
+    if (
+      currentProject &&
+      currentProject.config?.chapter_title_format !== 'chinese' &&
+      hasChineseNumberingPrefix(title)
+    ) {
+      setPendingCommit({ kind: 'create', title, volumeId: newVolumeId });
+      setFormatDialogOpen(true);
+      return;
+    }
     if (newVolumeId) {
       await createChapter(currentProjectId, title, newVolumeId);
     } else {
@@ -206,10 +228,53 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
 
   const handlePatchChapter = async (ch: ChapterMeta) => {
     const title = editChapterTitle.trim();
+    // #999：冲突检测同 handleCreate——弹窗确认前不落库、不退出编辑态
+    if (
+      currentProject &&
+      currentProject.config?.chapter_title_format !== 'chinese' &&
+      hasChineseNumberingPrefix(title)
+    ) {
+      setPendingCommit({ kind: 'patch', chapter: ch, title });
+      setFormatDialogOpen(true);
+      return;
+    }
     setEditingChapterId(null);
     setEditChapterTitle('');
     if (title === '' || title === ch.title) return;
     await patchChapter(ch.id, title);
+  };
+
+  /** #999：弹窗选定格式 → 全书归一化 → 执行暂存动作 → 刷新 config → 关弹窗 */
+  const handleFormatSelect = async (format: 'arabic' | 'chinese') => {
+    const pid = currentProjectId;
+    const commit = pendingCommit;
+    if (!pid || !commit) return;
+    await normalizeChapterTitles(pid, format);
+    if (commit.kind === 'create') {
+      if (commit.volumeId) {
+        await createChapter(pid, commit.title, commit.volumeId);
+      } else {
+        await createChapter(pid, commit.title);
+      }
+      setNewTitle('');
+      setNewVolumeId(null);
+      setCreating(false);
+    } else {
+      await patchChapter(commit.chapter.id, commit.title);
+      setEditingChapterId(null);
+      setEditChapterTitle('');
+    }
+    await loadProjects();
+    setFormatDialogOpen(false);
+    setPendingCommit(null);
+  };
+
+  /** #999：取消/Esc → 丢弃 pending 关弹窗（受控：不自关 state） */
+  const handleFormatDialogChange = (open: boolean) => {
+    if (!open) {
+      setPendingCommit(null);
+      setFormatDialogOpen(false);
+    }
   };
 
   return (
@@ -449,6 +514,12 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
           }}
         />
       )}
+      <ChapterFormatDialog
+        open={formatDialogOpen}
+        onOpenChange={handleFormatDialogChange}
+        onSelectArabic={() => void handleFormatSelect('arabic')}
+        onSelectChinese={() => void handleFormatSelect('chinese')}
+      />
       <div
         data-testid="tree-resize-handle"
         className="absolute inset-y-0 right-0 z-10 w-1 cursor-col-resize select-none"

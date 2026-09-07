@@ -377,3 +377,47 @@ describe('chapter store — #976 草稿常显（loadPendingDrafts / confirmDraft
     expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects/p1/chapters');
   });
 });
+
+/**
+ * #999 章节标题双编号归一化：store 新增 normalizeChapterTitles(projectId, format)（RED 契约）。
+ * 契约（§5）：apiFetch POST /api/v1/projects/{projectId}/chapters/normalize-titles，body { format }；
+ * 成功后内部 loadChapterTree——组件层只需再调 create/patch。
+ * ⚠️ GREEN 须在 stores/chapter.ts ChapterState 新增该 action（tsc 下报 Property 不存在 = 预期 RED）。
+ */
+describe('chapter store — #999 normalizeChapterTitles（RED 契约）', () => {
+  it('【R】暴露 normalizeChapterTitles action', () => {
+    const s = useChapterStore.getState();
+    expect(typeof s.normalizeChapterTitles).toBe('function');
+  });
+
+  it('【R】normalizeChapterTitles：POST 批量端点（body {format}）→ resolve 计数对象 → 内部 loadChapterTree 再拉卷/章', async () => {
+    useChapterStore.setState({ treeProjectId: 'p1', volumes: [], chapters: [], pendingDrafts: [] });
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects/p1/chapters/normalize-titles') {
+        return { format: 'arabic', chapters_replaced: 2, outlines_replaced: 1 };
+      }
+      if (path === '/api/v1/projects/p1/volumes') return { items: volumes };
+      if (path === '/api/v1/projects/p1/chapters') return { items: chapters, total: 2, offset: 0, limit: 50 };
+      if (path === '/api/v1/agent/drafts?project_id=p1&status=draft') return { items: [], total: 0 };
+      throw new Error(`unexpected path: ${path}`);
+    });
+
+    let res: unknown;
+    await act(async () => {
+      res = await useChapterStore.getState().normalizeChapterTitles('p1', 'arabic');
+    });
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects/p1/chapters/normalize-titles', {
+      method: 'POST',
+      body: { format: 'arabic' },
+    });
+    // resolve 值 = 批量端点响应（含两计数 + format）
+    expect(res).toEqual({ format: 'arabic', chapters_replaced: 2, outlines_replaced: 1 });
+    // 成功后内部 loadChapterTree：卷 + 章再拉（树刷新）
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects/p1/volumes');
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects/p1/chapters');
+    const s = useChapterStore.getState();
+    expect(s.volumes).toEqual(volumes);
+    expect(s.chapters).toEqual(chapters);
+  });
+});

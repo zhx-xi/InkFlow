@@ -174,3 +174,53 @@ class TestWordCount:
         from inkflow.domain.services._word_count import count_words
 
         assert count_words("[点击](url)这里") == 4
+
+
+class TestChapterDtoNormalizationGate:
+    """#999 DTO 落库闸口（契约 §2）：validate_title 借道 normalize 去重/分隔归一。
+
+    只去重 + 分隔归一，不改变序号格式（fmt=None）；空/超长既有语义零破坏
+    （既有用例已覆盖，不重复）。VolumeCreate 卷标题不做归一（卷无「第N章」语义）。
+    """
+
+    def test_create_title_dedup_normalized(self):
+        """ChapterCreate title：双前缀去重但序号形态保持（fmt=None）。"""
+        from inkflow.domain.models.chapter import ChapterCreate
+
+        c = ChapterCreate(title="第1章 第一章 风雨")
+        assert c.title == "第1章 风雨"
+
+    def test_create_title_strip_then_normalize(self):
+        """先 strip 再归一：首尾空白去除后做去重。"""
+        from inkflow.domain.models.chapter import ChapterCreate
+
+        c = ChapterCreate(title="  第1章 第一章 风雨  ")
+        assert c.title == "第1章 风雨"
+
+    def test_create_title_mixed_dedupe_keeps_first(self):
+        """保留第一个前缀序号，删除后续前缀。"""
+        from inkflow.domain.models.chapter import ChapterCreate
+
+        c = ChapterCreate(title="第一章第3章 风雨")
+        assert c.title == "第一章 风雨"
+
+    def test_update_title_dedup_normalized(self):
+        """ChapterUpdate title：去重但序号形态保持（fmt=None）。"""
+        from inkflow.domain.models.chapter import ChapterUpdate
+
+        u = ChapterUpdate(title="第1章 第一章 风雨")
+        assert u.title == "第1章 风雨"
+
+    def test_update_title_keeps_chinese_form(self):
+        """fmt=None 去重不改变保留前缀序号形态。"""
+        from inkflow.domain.models.chapter import ChapterUpdate
+
+        u = ChapterUpdate(title="第一章 风")
+        assert u.title == "第一章 风"
+
+    def test_volume_title_not_normalized(self):
+        """VolumeCreate 卷标题不归一卷（无「第N章」语义）——只 strip 原样保存。"""
+        from inkflow.domain.models.chapter import VolumeCreate
+
+        v = VolumeCreate(title="  第1卷 第一卷 x  ")
+        assert v.title == "第1卷 第一卷 x"

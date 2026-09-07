@@ -19,6 +19,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from inkflow.domain.models.chapter import normalize_chapter_title
+
 
 def _validate_name(v: str, field: str = "名称", max_len: int = 50) -> str:
     """共享的名称校验：去空白后非空且不超过 max_len 字符.
@@ -264,6 +266,13 @@ class OutlineCreate(BaseModel):
         """验证大纲层级：仅接受 overall/volume/chapter."""
         return _validate_level(v)
 
+    @model_validator(mode="after")
+    def normalize_chapter_name(self) -> OutlineCreate:
+        """#999 契约 §2：level=chapter（默认）名称 fmt=None 去重（不改序号格式）."""
+        if self.level == "chapter":
+            self.name = normalize_chapter_title(self.name, fmt=None)
+        return self
+
 
 class OutlineUpdate(BaseModel):
     """更新大纲请求 DTO — 所有字段可选（exclude_unset 语义，同 F1）.
@@ -338,6 +347,17 @@ class OutlineUpdate(BaseModel):
         if v is None:
             return v
         return _validate_level(v)
+
+    @model_validator(mode="after")
+    def normalize_chapter_name(self) -> OutlineUpdate:
+        """#999 契约 §2：name 在场时 fmt=None 去重（不改格式）.
+
+        无 level 在场（不修改层级）或 level=chapter 时按章语义去重；
+        显式 level=volume/overall 的名称不做章归一（卷语义，RED 断言为准）。
+        """
+        if self.name is not None and (self.level is None or self.level == "chapter"):
+            self.name = normalize_chapter_title(self.name, fmt=None)
+        return self
 
 
 class PlotPointCreate(BaseModel):

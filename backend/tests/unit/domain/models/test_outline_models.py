@@ -102,6 +102,16 @@ class TestOutlineCreateValidation:
         outline = OutlineCreate(project_id=PID, name="第一卷大纲", sort_order=0)
         assert outline.sort_order == 0
 
+    def test_create_chapter_level_dedup_normalizes(self):
+        """#999 契约 §2：level=chapter（默认）双前缀 → fmt=None 去重，序号形态保持."""
+        outline = OutlineCreate(project_id=PID, name="第1章 第一章 风雨")
+        assert outline.name == "第1章 风雨"
+
+    def test_create_volume_level_not_normalized(self):
+        """#999 契约 §2：level=volume 名称不做章归一（卷语义）."""
+        outline = OutlineCreate(project_id=PID, name="第1卷 第一卷 x", level="volume")
+        assert outline.name == "第1卷 第一卷 x"
+
 
 class TestOutlineUpdate:
     """OutlineUpdate 部分更新语义测试（exclude_unset，同 F1）."""
@@ -130,6 +140,16 @@ class TestOutlineUpdate:
         """负的 sort_order 应抛出 ValidationError。"""
         with pytest.raises(ValidationError, match="排序权重不能为负数"):
             OutlineUpdate(sort_order=-1)
+
+    def test_update_name_dedup_regardless_of_level(self):
+        """#999 契约 §2：Update DTO 无 level 在场时按最小语义 fmt=None 去重（不改格式）."""
+        update = OutlineUpdate(name="第1章 第一章 风雨")
+        assert update.name == "第1章 风雨"
+
+    def test_update_name_volume_kept(self):
+        """#999：无章前缀的普通名不受影响（含卷语义名）."""
+        update = OutlineUpdate(name="第1卷 第一卷 x")
+        assert update.name == "第1卷 第一卷 x"
 
 
 class TestPlotPointModel:

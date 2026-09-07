@@ -102,6 +102,8 @@ class ProjectConfig(BaseModel):
         role_reviser_temperature: 修订角色独立温度（None = 跟随默认）.
         template_id: 引用的 AgentTemplate id（str 存储于 config JSON；
             None = 未引用，回退默认装配，spec §9.2）.
+        chapter_title_format: 章节标题序号格式（'arabic'=第N章 /
+            'chinese'=第X章；#999 契约 §3，零迁移默认 arabic）.
         writing_style: 写作风格描述.
         supervisor: 项目级 Supervisor/HITL 配置（None = 未启用，零迁移）.
         extra: 扩展配置字典.
@@ -133,6 +135,8 @@ class ProjectConfig(BaseModel):
     role_auditor_temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     role_reviser_temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     template_id: str | None = None
+    chapter_title_format: str = "arabic"
+    """章节标题序号格式（#999 契约 §3）：'arabic'=第N章 / 'chinese'=第X章。"""
     writing_style: str = ""
     default_words: int = Field(default=800000, ge=1000, le=10_000_000, description="新章节默认字数")
     extra: dict[str, Any] = Field(default_factory=dict)
@@ -280,6 +284,14 @@ class ProjectConfig(BaseModel):
                 raise ValueError("memory_decay_half_life 必须为整数")
             if not (1 <= hl <= 365):
                 raise ValueError("memory_decay_half_life 必须在 1-365 天范围内")
+        return v
+
+    @field_validator("chapter_title_format")
+    @classmethod
+    def validate_chapter_title_format(cls, v: str) -> str:
+        """章节标题序号格式仅支持 arabic/chinese（#999 契约 §3，router 层 422 兜底）."""
+        if v not in ("arabic", "chinese"):
+            raise ValueError("章节标题格式仅支持 arabic/chinese")
         return v
 
 
