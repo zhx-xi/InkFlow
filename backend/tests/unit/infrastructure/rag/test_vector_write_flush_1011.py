@@ -135,3 +135,27 @@ async def test_index_batch_then_retrieve_immediately_returns(store):
     await store.index_batch([make_entity("c1", EntityType.CHARACTER, "p1", "苹果")])
     results = await store.retrieve("苹果", project_id="p1", min_score=0.01)
     assert [r.entity_id for r in results] == ["c1"]
+
+
+async def test_ensure_hnsw_flushed_real_invocation(tmp_path):
+    """#1011 + func-cov：真实（非 spy）_ensure_hnsw_flushed 全执行路径覆盖。
+
+    1. 探针缺失（_probe_embedding=None）→ 防御 WARNING 静默返回（不上抛）；
+    2. index_batch 写后持锁直调（快盘上首轮探针 query 即成功）——真实函数体被执行，
+       锁死 func-cov「new uncalled」误判面（RED spy 用例替换了真实现，真函数从未跑）。
+    """
+    store = LangChainVectorStore(persist_dir=tmp_path / "chroma", embeddings=FakeEmbeddings())
+    with store._lock:  # _get_collection 契约：调用方须持锁（#468，单线程测试亦守纪律）
+        collection = store._get_collection(EntityType.CHARACTER)
+
+    # 路径 1：无探针向量 → 静默 return（禁抛异常打断写路径）
+    store._probe_embedding = None
+    store._ensure_hnsw_flushed(collection)  # 不抛即通过（防御分支）
+
+    # 路径 2：写入后真实自检 → 立即返回（快盘首轮成功）
+    await store.index(make_entity("c1", EntityType.CHARACTER, "p1", "苹果"))
+    assert store._probe_embedding is not None  # 写路径已暂存探针
+    store._ensure_hnsw_flushed(collection)
+    # 自检通过后立读必命中（与既有守护同源行为）
+    results = await store.retrieve("苹果", project_id="p1", min_score=0.01)
+    assert [r.entity_id for r in results] == ["c1"]
