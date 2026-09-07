@@ -322,6 +322,26 @@ class TestChatResponseContentNormalisation:
         )
         assert LangChainLLMClient._to_chat_response(msg).content == "普通回答"
 
+    def test_to_chat_response_text_block_content_key_fallback(self) -> None:
+        """评审 nit-1（#962）：text 块内容键防御回退——litellm 规范用 text 键，
+        但 OpenAI 兼容形态的 content 键不得被静默丢成空串。"""
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        msg = AIMessage(
+            content=[{"type": "text", "content": "gamma"}],
+            response_metadata={"model_name": "m", "finish_reason": "stop"},
+        )
+        assert LangChainLLMClient._to_chat_response(msg).content == "gamma"
+
+    def test_content_text_single_dict_block_not_repr(self) -> None:
+        """评审 nit-1（#962）：单 dict（未包 list）按 content-part 解析，
+        不得 str() repr 泄漏进正文（AIMessage 类型层拒单 dict，防御点在
+        _content_text 模块函数本体——stream 块/未来形态兜底）。"""
+        from inkflow.infrastructure.llm.langchain_client import _content_text
+
+        assert _content_text({"type": "text", "text": "x"}) == "x"
+        assert _content_text({"type": "text", "content": "y"}) == "y"
+
 
 # ── D. harness.build_deep_agent → ChatLiteLLM ────────────────────────
 

@@ -276,6 +276,8 @@ _LITELLM_PREFIX_MAP: dict[str, str] = {
 
 # litellm 原生前缀——已经是原生形态的首段直接透传（幂等防线：zai/glm-4.5
 # 不得被当作未知自定义 provider 二次映射成 openai/glm-4.5）。
+# 新增原生 litellm provider 到注册表时，本 frozenset 必须同步，否则其模型
+# 会被静默重路由为 openai/ 前缀（#962 nit-2）。
 _LITELLM_NATIVE_PREFIXES: frozenset[str] = frozenset(
     {"zai", "ollama_chat", "openai", "deepseek", "dashscope"}
 )
