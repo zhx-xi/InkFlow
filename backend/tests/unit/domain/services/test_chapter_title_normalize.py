@@ -177,3 +177,28 @@ class TestNonConvertible:
         """fmt 不在 {'arabic', 'chinese', None} → ValueError（router 层 422 兜底）。"""
         with pytest.raises(ValueError):
             normalize_chapter_title("第1章 x", fmt=fmt)
+
+
+class TestCnEdgeCases:
+    """契约 §1 中文解析边缘：〇零/千位/进位补零（#999 coverage 补测，黑盒公开函数）。"""
+
+    @pytest.mark.parametrize(
+        ("title", "fmt", "expected"),
+        [
+            # 〇/零 = 0 → 出 1..9999 界 → 去重/分隔但序号形态保持
+            ("第〇章 x", "arabic", "第〇章 x"),
+            ("第零章 x", "arabic", "第零章 x"),
+            # 千位解析：一千零二十三 → 1023（百位空缺，_cn_to_int 千分支）
+            ("第一千零二十三章", "arabic", "第1023章"),
+            # 反向补零：1023 → 一千零二十三（value<100 补零）
+            ("第1023章", "chinese", "第一千零二十三章"),
+            # 2008 → 二千零八（十位空缺补零）
+            ("第2008章", "chinese", "二千零八".join(["第", "章"])),
+            # 305 → 三百零五（个位前补零对照）
+            ("第305章", "chinese", "三百零五".join(["第", "章"])),
+            ("第三百零五章", "arabic", "第305章"),
+        ],
+    )
+    def test_cn_thousand_and_zero_fill(self, title, fmt, expected):
+        """千位解析与反向补零（契约 §1 一千..九千九百九十九 + 〇零=0 越界保持）。"""
+        assert normalize_chapter_title(title, fmt=fmt) == expected

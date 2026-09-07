@@ -80,6 +80,28 @@ async def test_normalize_chapter_titles_project_not_found_404():
     svc.normalize_all_titles.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_normalize_chapter_titles_service_none_404():
+    """service 返回 None（项目存在性二查失败）→ handler 转 404「项目不存在」。
+
+    契约 §4：UUID 合法但项目行不存在时，_parse_id 放行、service None → 404。
+    """
+    with patch("inkflow.api.routers.chapter.get_chapter_service") as mock_get_svc:
+        svc = MagicMock()
+        svc.normalize_all_titles = AsyncMock(return_value=None)
+        mock_get_svc.return_value = svc
+
+        with pytest.raises(HTTPException) as ei:
+            await chapter_router.normalize_chapter_titles(
+                project_id=str(PID),
+                data=_body("chinese"),
+                db=MagicMock(),
+            )
+
+    assert ei.value.status_code == 404
+    assert ei.value.detail == "项目不存在"
+
+
 def test_normalize_chapter_titles_invalid_format_422():
     """非法 format → body 模型构造抛 Pydantic ValidationError（router 层 422 兜住）。"""
     with pytest.raises(ValidationError):
