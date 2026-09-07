@@ -722,3 +722,119 @@ class TestServeDebugEnvGroup:
         assert "INKFLOW_DEBUG" not in os.environ
         mock_timer.assert_not_called()
         mock_wb.assert_not_called()
+
+
+class TestServeDebugNoBrowser:
+    """F51 v1.1（#949）：INKFLOW_DEBUG_NO_BROWSER 逃生门——关 debug 自动弹 /docs，默认行为不变。
+
+    GREEN 实现契约（spec §5.4 边界三则 / D10，serve.py 必须满足）：
+    - 真值判定运行时直读进程 env（os.environ.get，与 INKFLOW_DEBUG_TOKEN 同级读法；
+      不进 pydantic InkFlowConfig / instance.env / config.json）：值 trim+lowercase 后
+      属于 {'1','true','on'} 视为开（对齐 INKFLOW_DEBUG 既有判据），其余一律视为关。
+    - 开 + debug 态（is_debug=True）→ 跳过 _run_server 返回后的
+      threading.Timer(1.5, webbrowser.open(docs_url)) 注册（Timer 零调用）。
+    - 未设 / '0' / '' / 'false' 等非真值 → 仍注册（默认行为防回退，D2 拍板不变）。
+    - 不越界：非 debug 的 --open-browser 显式路径不受该开关影响（照常注册 Timer）。
+    - 只关弹窗：token 解析、config.debug/env 回写、_run_server(debug=True) 装配缝、
+      INKFLOW_READY 交付等 debug 契约全部不变。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clean_debug_env(self, monkeypatch):
+        """预清 debug 态污染：config.debug 单例 + INKFLOW_DEBUG / INKFLOW_DEBUG_TOKEN env
+        （serve --debug 路径会回写；本类用例基线 = 非 debug 态 + 无 token env）。"""
+        import importlib
+
+        cfg_mod = importlib.import_module("inkflow.core.config")
+        monkeypatch.setattr(cfg_mod.config, "debug", False)
+        monkeypatch.delenv("INKFLOW_DEBUG", raising=False)
+        monkeypatch.delenv("INKFLOW_DEBUG_TOKEN", raising=False)
+
+    def test_debug_no_browser_skips_timer(self, cli_runner, monkeypatch):
+        """【R 核心】INKFLOW_DEBUG_NO_BROWSER=1 + --debug → Timer 零注册、webbrowser 不调用；
+        其余 debug 契约不变（token 固定默认串 / _run_server 收 debug=True / READY 行）。"""
+        monkeypatch.setenv("INKFLOW_DEBUG_NO_BROWSER", "1")
+        from inkflow.cli.commands.serve import app
+
+        with (
+            patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT) as mock_run,
+            patch("threading.Timer") as mock_timer,
+            patch("webbrowser.open") as mock_wb,
+        ):
+            result = cli_runner.invoke(app, ["--debug"])
+        assert result.exit_code == 0
+        # 逃生门：debug 自动打开 /docs 的 Timer 不得注册，浏览器不得打开
+        mock_timer.assert_not_called()
+        mock_wb.assert_not_called()
+        # 只关弹窗：其余 debug 行为零破坏（token 固定串 / 装配缝 debug=True / READY 交付）
+        ready = _parse_ready(result.output)
+        assert ready["token"] == "inkflow-debug-token"
+        assert ready["port"] == FAKE_PORT
+        assert _param(mock_run.call_args, "debug", 3) is True
+
+    @pytest.mark.parametrize("raw", ["1", "true", "on", " TRUE ", "On"])
+    def test_debug_no_browser_truthy_variants_skip(self, cli_runner, monkeypatch, raw):
+        """【R】真值判据 = trim+lowercase 后属于 {'1','true','on'}（对齐 INKFLOW_DEBUG）。"""
+        monkeypatch.setenv("INKFLOW_DEBUG_NO_BROWSER", raw)
+        from inkflow.cli.commands.serve import app
+
+        with (
+            patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT),
+            patch("threading.Timer") as mock_timer,
+            patch("webbrowser.open"),
+        ):
+            result = cli_runner.invoke(app, ["--debug"])
+        assert result.exit_code == 0
+        mock_timer.assert_not_called()
+
+    @pytest.mark.parametrize("raw", ["0", "", "false", "yes"])
+    def test_debug_no_browser_non_truthy_keeps_timer(self, cli_runner, monkeypatch, raw):
+        """【护栏 PASS】非真值（0/空串/false/yes——仅三值判开）+ --debug → 仍注册 Timer
+        并触发打开 /docs（actual_port URL）——默认行为防回退（D2 拍板不变）。"""
+        monkeypatch.setenv("INKFLOW_DEBUG_NO_BROWSER", raw)
+        from inkflow.cli.commands.serve import app
+
+        with (
+            patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT),
+            patch("threading.Timer") as mock_timer,
+            patch("webbrowser.open") as mock_wb,
+        ):
+            result = cli_runner.invoke(app, ["--debug", "--port", "0"])
+            assert result.exit_code == 0
+            mock_timer.assert_called_once()
+            assert mock_timer.call_args.args[0] == 1.5
+            # Timer 回调须在 patch 上下文内触发（TestServeOpenBrowser 同款契约注释）
+            mock_timer.call_args.args[1]()
+            mock_wb.assert_called_once_with(f"http://127.0.0.1:{FAKE_PORT}/docs")
+
+    def test_debug_no_browser_unset_keeps_timer(self, cli_runner, monkeypatch):
+        """【护栏 PASS】未设该 env（用户手动 serve --debug）→ 默认仍自动弹 /docs。"""
+        monkeypatch.delenv("INKFLOW_DEBUG_NO_BROWSER", raising=False)
+        from inkflow.cli.commands.serve import app
+
+        with (
+            patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT),
+            patch("threading.Timer") as mock_timer,
+            patch("webbrowser.open"),
+        ):
+            result = cli_runner.invoke(app, ["--debug"])
+        assert result.exit_code == 0
+        mock_timer.assert_called_once()
+
+    def test_open_browser_not_affected_by_no_browser_switch(self, cli_runner, monkeypatch):
+        """【护栏 PASS】不越界：非 debug 的 --open-browser 显式路径 + 开关 → 照常注册
+        Timer 打开 /docs（请求端口语义，与既有 test_serve_open_browser 一致）。"""
+        monkeypatch.setenv("INKFLOW_DEBUG_NO_BROWSER", "1")
+        from inkflow.cli.commands.serve import app
+
+        with (
+            patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT),
+            patch("threading.Timer") as mock_timer,
+            patch("webbrowser.open") as mock_wb,
+        ):
+            result = cli_runner.invoke(app, ["--open-browser"])
+            assert result.exit_code == 0
+            mock_timer.assert_called_once()
+            assert mock_timer.call_args.args[0] == 1.5
+            mock_timer.call_args.args[1]()
+            mock_wb.assert_called_once_with("http://127.0.0.1:8000/docs")

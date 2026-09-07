@@ -131,7 +131,12 @@ def serve(
         actual_port = _run_server(host, port, reload)
 
     # F51 debug 默认自动打开 /docs（_run_server 返回后，用实际监听端口防 :0 死链）
-    if is_debug:
+    # F51 v1.1 (#949): debug auto-open /docs escape hatch - INKFLOW_DEBUG_NO_BROWSER=1/true/on
+    # skips the Timer registration (e2e / headless usage); default unset = still opens.
+    no_browser = (
+        os.environ.get("INKFLOW_DEBUG_NO_BROWSER", "").strip().lower() in {"1", "true", "on"}
+    )
+    if is_debug and not no_browser:
         docs_url = f"http://{host}:{actual_port}/docs"
         threading.Timer(1.5, lambda: webbrowser.open(docs_url)).start()
 
