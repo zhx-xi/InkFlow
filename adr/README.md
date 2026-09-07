@@ -44,6 +44,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 | [ADR-024](architecture/ADR-024.md) | 云架构拓扑 — 双前缀单体 + owner_id 隔离 | ✅ 已接受 | 2026-08-02 |
 | [ADR-025](architecture/ADR-025.md) | 依赖锁定策略 — uv + uv.lock + pnpm-lock.yaml | ✅ 已接受 | 2026-08-02 |
 | [ADR-029](architecture/ADR-029.md) | F25 daemon 移除 — 伪需求判定 + 意图已覆盖 | ✅ 已接受 | 2026-08-07 |
+| [ADR-053](architecture/ADR-053.md) | 数据面变更统一推送 — 领域事件源 + SSE 广播 + GUI 订阅失效 | ✅ 已接受 | 2026-09-07 |
 
 ### 数据库（database）
 
