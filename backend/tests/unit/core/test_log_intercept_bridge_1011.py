@@ -116,3 +116,40 @@ def test_bridge_handler_idempotent(tmp_path):
     assert (
         len(added) == 1
     ), f"std 桥 handler 应恰好 1 个（防重复 setup_logging 叠加/漏装），实际新增 {len(added)}"
+
+
+# ── 契约 4（PR #1023 评审 M1）：三方库 INFO 不得淹没文件 sink，inkflow 自身信号保留 ──
+
+
+def test_third_party_info_not_flooded(tmp_path):
+    """M1：桥 + root INFO 后，已知噪声三方 logger（httpx/chromadb/sqlalchemy）的 INFO
+    不应进入文件 sink（稀释 #1011 要浮现的服务层 WARNING 信号）；而 inkflow.* 自身
+    WARNING 必须保留。GREEN 义务：setup_logging 对 _THIRD_PARTY_WARN_LOGGERS 设
+    WARNING 级别上限（config.debug=True 时不降——调试态放行三方 INFO 是预期）。
+
+    RED（main@ 无三方级别封顶）：httpx INFO 经桥落文件 → 断言 FAIL。
+    """
+    noise = "三方噪声 TESTMARK-1011-info"
+    keep = "服务层哨兵 TESTMARK-1011-warn"
+    log_module.setup_logging(log_dir=tmp_path)
+    logging.getLogger("httpx").info(noise)
+    logging.getLogger("chromadb.telemetry").info(noise + "-chroma")
+    logging.getLogger("sqlalchemy.engine").info(noise + "-sa")
+    logging.getLogger("inkflow.domain.services._extraction_rag").warning(keep)
+
+    contents = "\n".join(p.read_text(encoding="utf-8") for p in _log_files(tmp_path))
+    assert keep in contents, "inkflow 自身 WARNING 必须经桥保留（#1011 观测闭环）"
+    assert noise not in contents, (
+        "三方 INFO 不得淹没文件 sink（M1 修复义务：httpx/chromadb/sqlalchemy 设 WARNING 上限）"
+    )
+
+
+def test_third_party_cap_survives_repeat_setup(tmp_path):
+    """M1 幂等补充：重复 setup_logging 后三方封顶仍生效（不叠加、不丢级别）。"""
+    noise = "三方噪声2 TESTMARK-1011-info2"
+    log_module.setup_logging(log_dir=tmp_path)
+    log_module.setup_logging(log_dir=tmp_path)
+    logging.getLogger("httpx").info(noise)
+
+    contents = "\n".join(p.read_text(encoding="utf-8") for p in _log_files(tmp_path))
+    assert noise not in contents, f"重复 setup 后三方 INFO 封顶丢失（M1）：{contents[:150]}"

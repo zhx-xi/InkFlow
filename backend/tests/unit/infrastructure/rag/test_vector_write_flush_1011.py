@@ -137,6 +137,35 @@ async def test_index_batch_then_retrieve_immediately_returns(store):
     assert [r.entity_id for r in results] == ["c1"]
 
 
+async def test_ensure_hnsw_flushed_non_internal_error_not_propagated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """m2（PR #1023 评审）：探针 query 抛非 InternalError（连接/元数据异常）不得
+    传播出写路径——upsert 已成功时自检只能降级（warning），禁硬失败。
+
+    GREEN 义务：_ensure_hnsw_flushed 最外层 except Exception 兜底 → logger.warning
+    + return，不上抛。RED（main@a966f47 仅捕 InternalError）：ValueError 传播 →
+    本用例 FAIL。
+    """
+    store = LangChainVectorStore(persist_dir=tmp_path / "chroma", embeddings=FakeEmbeddings())
+    await store.index(make_entity("c1", EntityType.CHARACTER, "p1", "苹果"))
+
+    class _BoomCollection:
+        """count 正常、query 抛非 InternalError（模拟 chroma 连接/元数据异常）。"""
+
+        name = "inkflow_character"
+
+        def count(self) -> int:
+            return 1
+
+        def query(self, **kwargs: object) -> dict:
+            raise ValueError("connection metadata exploded")
+
+    with store._lock:  # 调用方持锁契约（#468）
+        store._ensure_hnsw_flushed(_BoomCollection())  # type: ignore[arg-type]
+        # m2 GREEN：不得抛；异常传播即 FAIL（pytest 自动判）
+
+
 async def test_ensure_hnsw_flushed_real_invocation(tmp_path):
     """#1011 + func-cov：真实（非 spy）_ensure_hnsw_flushed 全执行路径覆盖。
 
