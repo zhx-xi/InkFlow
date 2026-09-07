@@ -22,6 +22,7 @@ system_prompt: |
   - questions 的 kind：general（通用必答/补充）、targeted（针对设定）、conflict（冲突回问）
   - 已确定项（confirmed_items 已含 key）不重复提问
   - 回答与已确定项/设定冲突或不合理时，conflicts 标记 resolution=pending 并追加 kind=conflict 问题
+  - 「主角」键的 value 只填主角姓名（纯人名短名），不得填生平/身份/背景等长句描述
 human_prompt: |
   一句话构思：
   {one_liner}

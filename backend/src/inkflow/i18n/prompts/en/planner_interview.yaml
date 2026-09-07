@@ -26,6 +26,8 @@ system_prompt: |
   - Do not re-ask items already confirmed (already present as a confirmed_items key)
   - When an answer conflicts with a confirmed item or a setting, or is unreasonable, mark it
     in conflicts with resolution=pending and append a kind=conflict question
+  - The value of the "主角" (protagonist) key must be ONLY the protagonist name (pure short name),
+    not a long biography/identity/background description
 human_prompt: |
   One-line idea:
   {one_liner}
