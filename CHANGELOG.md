@@ -2,9 +2,15 @@
 
 所有重要变更记录于此文件，格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-> 版本口径以 [ADR-019 v11](adr/packaging/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
+> 版本口径以 [ADR-019 v12](adr/packaging/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
 
-## [Unreleased]
+## [0.13.0] - 2026-09-08
+
+### 新增
+- **F58 Chat Agent 层级化工具矩阵 + 域×CRUD Scope 授权（#954-#957，PR #969/#970/#971/#972）**：`ToolDomain(8 域)×ToolOp(read/write/delete)` 授权数据面（grants 模型 + GRANT_TOOL_MAP + tool_ids 迁移，含 resolved_tool_names 派生）；大纲域按层拆写工具（create_overall/volume/chapter_outline + 父级名解析三态 + 情节点 CRUD + list/get_outlines）；其他域读缺口补齐（get_character / list+get_world_setting / list+get_foreshadowing）；GUI AgentEditDialog 工具勾选改 8 域×CRUD 权限矩阵（i18n + 旧数据回显）。F58 Phase 2（A2 动态重绑定）归 0.14.0。
+- **F44 写章链路根治（#975/#976/#996/#997/#994，PR #988/#1004/#994）**：唯一草稿守卫（draft_fallback_needed 仅当 agent 未显式 save_draft 才兜底）+ 草稿树常显审批（DraftApprovalDrawer 弹层 + 章节树「草稿/未审批」badge，按卷分组/未分组）；save_draft 锚点传递（source_outline_id/volume_id 注入）+ 同章幂等覆盖（同稿 update 返回同 draft_id）+ 草稿确认回填大纲章节点绑定（outlines.chapter_id）。
+- **planner 产物质量（#927/#995，PR #940/#1009）**：访谈 LLM 动态提问 + 产物质量（兜底题中性化/标题短化/主角 role_rank/limits 提取）+ 主角名短名化（LLM 提取为主 + 首顿号/逗号分段与 [:20] 截断兜底）。
+- **章节标题双编号归一化（#999，PR #1010）**：normalize_chapter_title 纯函数（中文↔阿拉伯数字互转含十/百）+ 批量端点 `POST /projects/{pid}/chapters/normalize-titles` + GUI 冲突弹窗 + 格式持久化（chapter_title_format）。
 
 ### 修复
 - **CLI/MCP LLM 长任务 30s 超时假失败（#926）**：outline generate / extract / summarize 等 21 处 LLM 长任务调用加 per-request timeout=300s（#274 同族推广）；传输层 httpx 超时统一转 TIMEOUT 错误码（不再误归 DB_ERROR/INTERNAL_ERROR 空消息），超时提示「服务端任务可能仍在进行，请查询后勿直接重试」。
