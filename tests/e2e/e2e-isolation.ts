@@ -100,8 +100,10 @@ export async function waitForProcessExit(
 
 /**
  * 确保进程退出，never throws（#1033：spec 清理前等内核释放 inkflow.db/chroma 句柄）。
- * 先等 timeoutMs（默认 10s）；仍存活则 kill（默认 process.kill(pid)，仅吞 ESRCH），
- * 再等 graceMs（默认 2s）后返回。
+ * 先等 timeoutMs（默认 10s）；仍存活则 best-effort kill（默认 process.kill(pid)），
+ * 吞掉 kill 的一切错误——ESRCH 表示已退出、EPERM 表示无法发信号、其余同理——随后
+ * 仍等 graceMs（默认 2s）再返回。kill 仅是尽力而为的加速手段，句柄仍被占用的响亮
+ * 失败闸门是后续 rmDirWithRetry（耗尽后抛最后一次错误），而不是本次 kill。
  */
 export async function ensureProcessExited(
   pid: number,
@@ -121,9 +123,7 @@ export async function ensureProcessExited(
   try {
     kill(pid);
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ESRCH') {
-      throw err;
-    }
+    void err;  // best-effort: swallow all kill errors (ESRCH / EPERM / others)
   }
   await sleep(graceMs);
 }

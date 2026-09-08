@@ -169,4 +169,23 @@ describe('waitForProcessExit / ensureProcessExited（#1033：注入探活，无�
     ).resolves.toBeUndefined();
     expect(kill).toHaveBeenCalledTimes(1);
   });
+
+  it('ensureProcessExited：kill 抛 EPERM 也不抛（best-effort，仍等 graceMs）', async () => {
+    const kill = vi.fn(() => {
+      throw { code: 'EPERM' };
+    });
+    const isAlive = vi.fn(() => true);
+    const sleep = vi.fn(async () => undefined);
+    await expect(
+      ensureProcessExited(4245, {
+        timeoutMs: 200,
+        graceMs: 0,
+        isAlive,
+        kill,
+        sleep,
+      })
+    ).resolves.toBeUndefined();
+    expect(kill).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
 });
