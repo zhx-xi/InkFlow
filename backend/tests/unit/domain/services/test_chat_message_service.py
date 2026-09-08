@@ -231,6 +231,43 @@ class TestListMessagesByConversation:
         fake_repo.list_by_conversation.assert_awaited_once_with(CID, 0, 50)
 
 
+class TestListMessagesIncludeDeleted:
+    """#1015 list_messages_by_conversation include_deleted 透传（归档会话只读数据源）。
+
+    宽松读取 include_deleted 实参：关键字优先，回退位置参数 index=3；
+    缺省路径 None/False 皆合法（既有三位置参契约 assert_awaited_once_with(
+    CID, 5, 20) 不回归 → GREEN 仅 True 时追加传参，或恒传 False）。
+    """
+
+    @staticmethod
+    def _value_of(call) -> bool | None:
+        if "include_deleted" in call.kwargs:
+            return bool(call.kwargs["include_deleted"])
+        if len(call.args) > 3:
+            return bool(call.args[3])
+        return None
+
+    async def test_true_forwards_include_deleted_to_repo(self, service, fake_repo):
+        items = [_message()]
+        fake_repo.list_by_conversation = AsyncMock(return_value=(items, 1))
+        result, total = await service.list_messages_by_conversation(
+            CID, offset=0, limit=50, include_deleted=True
+        )
+        assert result == items
+        assert total == 1
+        call = fake_repo.list_by_conversation.await_args
+        assert call is not None
+        assert self._value_of(call) is True
+
+    async def test_default_does_not_leak_true(self, service, fake_repo):
+        """缺省调用 → repo 不得收到 True（归档消息绝不默认泄漏）。"""
+        fake_repo.list_by_conversation = AsyncMock(return_value=([], 0))
+        await service.list_messages_by_conversation(CID)
+        call = fake_repo.list_by_conversation.await_args
+        assert call is not None
+        assert self._value_of(call) in (None, False)
+
+
 class TestListMessagesByProject:
     """list_messages — 项目级读（#748 agent 聊天历史），透传 repo.list_by_project。"""
 

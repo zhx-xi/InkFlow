@@ -571,3 +571,41 @@ describe('chat 消息 CRUD 客户端（#547）', () => {
     expect(res).toEqual({ ok: true });
   });
 });
+
+/** #1015 归档会话只读加载：fetchChatMessages 第 4 参 opts.includeDeleted wire 契约 */
+describe('fetchChatMessages — include_deleted 可选参数（#1015）', () => {
+  /** apiFetch 走全局 fetch（res.json 解析）：stub 固定 JSON 响应（镜像 #547 段） */
+  function stubJsonFetch(response: unknown, status = 200) {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => response,
+    } as unknown as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('opts.includeDeleted=true → GET /api/v1/chat/messages?...&include_deleted=true', async () => {
+    const { fetchChatMessages } = await import('./chat');
+    const fetchMock = stubJsonFetch({ items: [], total: 0, offset: 0, limit: 50 });
+    await fetchChatMessages('conv-1', 0, 50, { includeDeleted: true });
+
+    const [url] = fetchMock.mock.calls[0];
+    const parsed = new URL(String(url));
+    expect(parsed.pathname).toBe('/api/v1/chat/messages');
+    expect(parsed.searchParams.get('conversation_id')).toBe('conv-1');
+    expect(parsed.searchParams.get('include_deleted')).toBe('true');
+  });
+
+  it('缺省 / includeDeleted=false → 请求不携带 include_deleted 参数（既有 wire 不变，护栏）', async () => {
+    const { fetchChatMessages } = await import('./chat');
+    const fetchMock = stubJsonFetch({ items: [], total: 0, offset: 0, limit: 50 });
+    await fetchChatMessages('conv-1');
+    let parsed = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(parsed.searchParams.has('include_deleted')).toBe(false);
+
+    await fetchChatMessages('conv-2', 0, 20, { includeDeleted: false });
+    parsed = new URL(String(fetchMock.mock.calls[1][0]));
+    expect(parsed.searchParams.has('include_deleted')).toBe(false);
+  });
+});

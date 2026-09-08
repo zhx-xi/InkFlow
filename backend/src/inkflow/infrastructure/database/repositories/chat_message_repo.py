@@ -131,13 +131,20 @@ class SQLiteChatMessageRepository:
         return _conv_to_domain(row) if row else None
 
     async def list_by_conversation(
-        self, conversation_id: uuid.UUID, offset: int = 0, limit: int = 50
+        self,
+        conversation_id: uuid.UUID,
+        offset: int = 0,
+        limit: int = 50,
+        include_deleted: bool = False,
     ) -> tuple[list[ChatMessage], int]:
         """线程消息列表（按时间升序，分页；不含已归档消息）。"""
         cid = conversation_id.int
+        conditions = [ChatMessageORM.conversation_id == cid]
+        if not include_deleted:
+            conditions.append(~ChatMessageORM.is_deleted)
         stmt = (
             select(ChatMessageORM)
-            .where(ChatMessageORM.conversation_id == cid, ~ChatMessageORM.is_deleted)
+            .where(*conditions)
             .order_by(ChatMessageORM.created_at.asc(), ChatMessageORM.id.asc())
             .offset(offset)
             .limit(limit)
@@ -145,10 +152,7 @@ class SQLiteChatMessageRepository:
         rows = (await self._db.execute(stmt)).scalars().all()
         total = (
             await self._db.execute(
-                select(func.count()).select_from(ChatMessageORM).where(
-                    ChatMessageORM.conversation_id == cid,
-                    ~ChatMessageORM.is_deleted,
-                )
+                select(func.count()).select_from(ChatMessageORM).where(*conditions)
             )
         ).scalar_one()
         return [_orm_to_domain(r) for r in rows], int(total)

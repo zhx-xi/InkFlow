@@ -8993,7 +8993,7 @@
     },
     "/api/v1/chat/messages": {
       "get": {
-        "description": "线程 chat 消息列表（升序，分页）。",
+        "description": "线程 chat 消息列表（升序，分页）。\n\ninclude_deleted=true 时含已归档消息（#1015 归档会话只读详情）。",
         "operationId": "list_messages_api_v1_chat_messages_get",
         "parameters": [
           {
@@ -9027,6 +9027,16 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_deleted",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Deleted",
+              "type": "boolean"
             }
           }
         ],

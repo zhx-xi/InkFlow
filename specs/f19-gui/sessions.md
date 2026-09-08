@@ -134,3 +134,40 @@
 ### 5.2 验收补充
 
 - N10：左侧导航「会话」按钮显示「会话详情」、跳 /sessions；SessionBar 分组标题与会话页 header 显示「会话列表」。zh/en 两端一致。
+
+## 6. #1015 三类卡点击查看详情（详情弹层 + 归档只读贯通）
+
+> 现象：访谈「已完成」卡与执行会话卡标题为裸 `<span>`，点击无响应；归档 AI 对话跳 `/writing?conversation_id=` 后因消息随线程级联软删而显示空对话、且输入区仍可编辑。三类卡「点击→详情」交互面不对称（仅 #770 给 AI 对话实现）。
+> 用户拍板：决策点 1 = A（只读详情弹层，非独立路由页）。
+
+### 6.1 详情弹层（访谈卡 + 执行会话卡）
+
+- 访谈卡标题 `session-title-<planner.id>`、执行会话卡标题 `session-title-<session.id>` 由 `<span>` 改为 `<button>`（testid 不变，沿用 #770 AI 对话卡 `session-title-conv-<id>` button 先例）。点击 → 打开统一只读详情弹层 `SessionDetailDialog`。
+- 弹层结构（模态，镜像 session-delete-dialog 的 fixed 遮罩 + z-50 形态）：
+  - `session-detail-dialog`（role=dialog aria-modal）、`session-detail-title`（卡标题）、`session-detail-close`（关闭）。
+  - 访谈（variant=pl）：懒加载 `GET /api/v1/agent/books/planner/{id}`（api/books.ts getPlannerSession 既有）→ 问答轮次列表 `session-detail-qa-<q.id>`（asked_questions × answers 逐对，未答显示占位）+ 确认项列表 `session-detail-confirmed-<key>`（key: value (source)）+ 写作计划行 `session-detail-writing-plan`（writing_plan_id 非空 → 「已生成写作计划」徽标 + plan id 文本；GUI 无独立 plan 查看页、后端无 GET writing-plans 端点，v1 不做导航）。
+  - 执行（variant=ex）：session 元信息（状态/类型/项目/起止时间/result 摘要）+ 履历日志时间线，懒加载 `GET /api/v1/sessions/{id}/logs`（api/sessions.ts 新增 fetchSessionLogs）→ `session-detail-log-<seq>` 逐条（level + message + created_at）。归档会话（is_deleted=true）日志仍可见（后端 list_logs 不因归档过滤，履历保留契约）。
+  - 数据加载中 `session-detail-loading`；加载失败 err 文案（不崩溃，可关闭）。
+  - 归档态（is_deleted=true）：弹层底部渲染恢复按钮 `session-detail-restore`（复用 handleRestore / handleRestoreConversation 语义：成功本地置 is_deleted=false + ok toast，失败 err toast）；内容始终只读。
+- 访谈卡状态不限（drafting/completed/declined 均可点开）；执行卡活动/归档均可点开。
+
+### 6.2 归档 AI 对话只读加载（/writing?conversation_id=）
+
+- 后端 `GET /api/v1/chat/messages` 新增 `include_deleted: bool = Query(False)`，透传 repo/service：True 时返回含已归档消息（归档线程级联软删其消息，chat_message_repo.archive_conversation 行为）。默认 False 保持既有「不含已归档」语义不变。
+- 前端 ChatPanel 消费 URL `conversationId`（#840）时：以 `fetchChatConversations({ includeDeleted: true })` 本地按 conversation_id 查 meta（既有端点能力，无新 GET）→ `is_deleted=true` 判定归档会话：
+  - 顶部渲染「已归档」提示横幅 `chat-archived-banner` + 恢复按钮 `chat-archived-restore`（POST restore 成功后本地刷新、横幅消失、解除只读）。
+  - 历史加载改传 `fetchChatMessages(cid, 0, 50, { includeDeleted: true })`（仅归档会话时传，活动会话请求不带该参数）。
+  - 只读模式：不渲染输入框 `chat-input` 与发送按钮 `chat-send`（归档=可看不可续聊；恢复后可聊）。
+
+### 6.3 验收补充
+
+- N11：点击访谈卡标题 → `session-detail-dialog` 出现，含问答轮次（session-detail-qa-*）与确认项（session-detail-confirmed-*），数据源 = planner GET 端点懒加载；关闭返回。
+- N12：点击执行会话卡标题（活动态）→ 弹层含元信息 + 履历日志时间线（session-detail-log-*），数据源 = GET /sessions/{id}/logs 懒加载。
+- N13：点击归档执行会话卡标题 → 弹层只读 + `session-detail-restore` 出现；点击恢复 → restore API 调用 + ok toast。
+- N14：点击归档 AI 对话卡标题 → `/writing?conversation_id=<id>` 页 ChatPanel 渲染 `chat-archived-banner` + `chat-archived-restore`；消息历史请求带 include_deleted=true 且渲染归档消息；无 `chat-input`/`chat-send`（只读）。
+- N15：活动 AI 对话行为不回归——消息请求不带 include_deleted 参数、输入/发送区正常渲染（护栏）。
+- N16：弹层/横幅加载失败显示 err 文案不崩溃（mock reject）。
+
+### 6.4 数据源裁定留痕
+
+- issue 建议执行会话详情消费 `GET /agent/runs/{id}`（F27 轨迹）——源码实证 F24 sessions 与 F27 agent_runs 两表无关联（sessions.id=int PK→UUID(int=id)；agent_runs.id=uuid4 字符串；无外键/无映射字段，#379 同族），以其为详情源必 404。裁定：v1 执行会话详情 = 既有 sessions 详情 + logs 端点（元信息+履历），agentic 轨迹贯通另立 issue。

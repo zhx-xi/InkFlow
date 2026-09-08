@@ -207,6 +207,42 @@ class TestListByConversation:
         assert items == []
         assert total == 0
 
+    async def test_include_deleted_true_returns_archived_messages(self, db_session):
+        """#1015：include_deleted=True → 含级联软删消息（归档会话只读详情数据源）。
+
+        归档线程 conversation + 其消息级联软删（archive_conversation 行为），
+        默认路径 total==0（回归锁定），True 路径全量返回。
+        """
+        repo = SQLiteChatMessageRepository(db_session)
+        await repo.add(_make_message(content="第一条"))
+        await repo.add(_make_message(content="第二条", role="ai"))
+        await repo.archive_conversation(CONV_ID)
+
+        # 默认：级联软删后不可见（既有语义回归锁定）
+        items, total = await repo.list_by_conversation(CONV_ID)
+        assert total == 0
+        assert items == []
+
+        # include_deleted=True：归档消息全量返回（升序不变）
+        items, total = await repo.list_by_conversation(CONV_ID, include_deleted=True)
+        assert total == 2
+        assert [m.content for m in items] == ["第一条", "第二条"]
+
+    async def test_include_deleted_default_excludes_archived_message(self, db_session):
+        """#1015 护栏：单消息归档（非线程级）时缺省仍排除、True 含。"""
+        repo = SQLiteChatMessageRepository(db_session)
+        m1 = await repo.add(_make_message(content="活动"))
+        await repo.add(_make_message(content="待归档"))
+        await repo.archive_message(m1.id.int)
+        # archive_message 归档的是 m1（第一条）；第二条保持活动
+        items, total = await repo.list_by_conversation(CONV_ID)
+        assert total == 1
+        assert [m.content for m in items] == ["待归档"]
+
+        items, total = await repo.list_by_conversation(CONV_ID, include_deleted=True)
+        assert total == 2
+        assert [m.content for m in items] == ["活动", "待归档"]
+
 
 class TestListConversations:
     """list_conversations — 按 conversation 分组（多线程/project）+ project_name join + 降序。"""

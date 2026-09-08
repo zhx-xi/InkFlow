@@ -6,6 +6,10 @@ export const sessionsUxZh: Record<string, string> = {
   'sessions.badge.execution': '执行',
   // #770 会话页架构：会话 title 空回退文案
   'sessions.chat.titleEmpty': '未命名会话',
+  // #1015 会话详情弹层 + 归档 AI 对话只读横幅
+  'sessions.detail.loadFailed': '详情加载失败',
+  'sessions.detail.unanswered': '（未回答）',
+  'write.chat.archivedBanner': '该会话已归档，仅供查看',
 };
 
 export const sessionsUxEn: Record<string, string> = {
@@ -15,4 +19,8 @@ export const sessionsUxEn: Record<string, string> = {
   'sessions.badge.execution': 'Execution',
   // #770 session page architecture: empty title fallback
   'sessions.chat.titleEmpty': 'Untitled session',
+  // #1015 session detail dialog + archived AI chat read-only banner
+  'sessions.detail.loadFailed': 'Failed to load details',
+  'sessions.detail.unanswered': '(unanswered)',
+  'write.chat.archivedBanner': 'This conversation is archived (read-only)',
 };

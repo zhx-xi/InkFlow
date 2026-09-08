@@ -255,3 +255,47 @@ describe('fetchPlannerSessions — 访谈会话列表', () => {
     expect(result.items[0].writing_plan_id).toBeNull();
   });
 });
+
+/** #1015 会话详情弹层：履历日志懒加载（动态 import 防缺导出把既有 #486 用例拖挂收集期） */
+describe('fetchSessionLogs — 会话履历日志列表（#1015）', () => {
+  it('GET /api/v1/sessions/{id}/logs（offset/limit 缺省不携带）→ {items,total,offset,limit}', async () => {
+    const { fetchSessionLogs } = await import('./sessions');
+    const payload = {
+      items: [
+        {
+          id: 'log-1',
+          session_id: SID,
+          seq: 1,
+          level: 'info',
+          message: '开始生成第三章',
+          payload: {},
+          created_at: '2026-08-10T08:01:00Z',
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 200,
+    };
+    mockFetchOnce(payload);
+    const res = await fetchSessionLogs(SID);
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(init?.method).toBe('GET');
+    const parsed = new URL(String(url));
+    expect(parsed.pathname).toBe(`/api/v1/sessions/${SID}/logs`);
+    // 缺省不携带 offset/limit（后端默认 0/50）
+    expect(parsed.searchParams.has('offset')).toBe(false);
+    expect(parsed.searchParams.has('limit')).toBe(false);
+    expect(res).toEqual(payload);
+  });
+
+  it('显式 offset/limit → 拼入 query', async () => {
+    const { fetchSessionLogs } = await import('./sessions');
+    mockFetchOnce({ items: [], total: 0, offset: 5, limit: 20 });
+    await fetchSessionLogs(SID, { offset: 5, limit: 20 });
+
+    const parsed = new URL(String(vi.mocked(fetch).mock.calls[0][0]));
+    expect(parsed.searchParams.get('offset')).toBe('5');
+    expect(parsed.searchParams.get('limit')).toBe('20');
+  });
+});

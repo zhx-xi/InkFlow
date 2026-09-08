@@ -95,9 +95,19 @@ class ChatMessageService:
         return items, total
 
     async def list_messages_by_conversation(
-        self, conversation_id: uuid.UUID, offset: int = 0, limit: int = 50
+        self,
+        conversation_id: uuid.UUID,
+        offset: int = 0,
+        limit: int = 50,
+        include_deleted: bool = False,
     ) -> tuple[list[ChatMessage], int]:
         """线程消息列表（位置透传 repo.list_by_conversation）。"""
+        if include_deleted:
+            # #1015 条件转发：True 时显式透传 include_deleted=True
+            items, total = await self._repo.list_by_conversation(  # type: ignore[attr-defined]  # 鸭子类型：repo 提供 list_by_conversation
+                conversation_id, offset, limit, include_deleted=True
+            )
+            return items, total
         items, total = await self._repo.list_by_conversation(  # type: ignore[attr-defined]  # 鸭子类型：repo 提供 list_by_conversation
             conversation_id, offset, limit
         )

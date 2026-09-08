@@ -26,19 +26,22 @@ export interface SessionDto {
   updated_at: string;
 }
 
+/** #1015：会话履历日志条目（镜像 SessionViewDto.last_log 内联结构） */
+export interface SessionLogDto {
+  id: string;
+  session_id: string;
+  seq: number;
+  level: string;
+  message: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
 /** 会话列表项视图（session + 履历聚合，对齐后端 SessionView） */
 export interface SessionViewDto {
   session: SessionDto;
   log_count: number;
-  last_log: {
-    id: string;
-    session_id: string;
-    seq: number;
-    level: string;
-    message: string;
-    payload: Record<string, unknown>;
-    created_at: string;
-  } | null;
+  last_log: SessionLogDto | null;
 }
 
 /** 会话列表响应（GET /api/v1/sessions） */
@@ -61,6 +64,14 @@ export interface FetchSessionsParams {
 /** 访谈会话列表响应（GET /api/v1/agent/books/planner） */
 export interface PlannerSessionListResponse {
   items: PlannerSessionDto[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+/** #1015：履历日志列表响应（GET /api/v1/sessions/{id}/logs） */
+export interface SessionLogListResponse {
+  items: SessionLogDto[];
   total: number;
   offset: number;
   limit: number;
@@ -105,6 +116,19 @@ export async function fetchPlannerSessions(params?: {
   if (params?.limit !== undefined) qs.set('limit', String(params.limit));
   if (params?.offset !== undefined) qs.set('offset', String(params.offset));
   return apiFetch<PlannerSessionListResponse>(`/api/v1/agent/books/planner?${qs.toString()}`, {
+    method: 'GET',
+  });
+}
+
+/** #1015：会话履历日志列表（懒加载；可选参数缺省不携带，风格镜像 fetchSessions） */
+export async function fetchSessionLogs(
+  sessionId: string,
+  params?: { offset?: number; limit?: number },
+): Promise<SessionLogListResponse> {
+  const qs = new URLSearchParams();
+  if (params?.offset !== undefined) qs.set('offset', String(params.offset));
+  if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+  return apiFetch<SessionLogListResponse>(`/api/v1/sessions/${sessionId}/logs?${qs.toString()}`, {
     method: 'GET',
   });
 }

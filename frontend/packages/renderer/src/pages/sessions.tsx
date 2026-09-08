@@ -26,6 +26,10 @@ import {
   type ChatConversationDto,
 } from '../api/chat';
 import { errorMessage } from '../api/client';
+import {
+  SessionDetailDialog,
+  type SessionDetailTarget,
+} from '../components/SessionDetailDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
 import { useChapterStore } from '../stores/chapter';
@@ -89,6 +93,8 @@ export function SessionsPage() {
   const [filter, setFilter] = useState<SessionFilter>('all');
   const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  // #1015：会话详情弹层（ex 执行卡 / pl 访谈卡）
+  const [detailTarget, setDetailTarget] = useState<SessionDetailTarget | null>(null);
   const [plannerLoaded, setPlannerLoaded] = useState(false);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [conversationsLoaded, setConversationsLoaded] = useState(false);
@@ -440,9 +446,14 @@ export function SessionsPage() {
                         </span>
                       )}
                       <h3 className="ml-auto font-serif text-[15px] font-semibold text-ink">
-                        <span data-testid={`session-title-${item.view.session.id}`}>
+                        <button
+                          type="button"
+                          data-testid={`session-title-${item.view.session.id}`}
+                          className="text-left hover:text-accent"
+                          onClick={() => setDetailTarget({ kind: 'ex', view: item.view })}
+                        >
                           {item.view.session.title}
-                        </span>
+                        </button>
                       </h3>
                     </div>
                     <div className="mt-3 flex gap-2">
@@ -500,9 +511,14 @@ export function SessionsPage() {
                       </span>
                     </div>
                     <h3 className="mt-2 font-serif text-[15px] font-semibold text-ink">
-                      <span data-testid={`session-title-${item.planner.id}`}>
+                      <button
+                        type="button"
+                        data-testid={`session-title-${item.planner.id}`}
+                        className="text-left hover:text-accent"
+                        onClick={() => setDetailTarget({ kind: 'pl', planner: item.planner })}
+                      >
                         {item.planner.one_liner}
-                      </span>
+                      </button>
                     </h3>
                     {item.planner.writing_plan_id ? (
                       <span
@@ -671,6 +687,14 @@ export function SessionsPage() {
             </div>
           </div>
         </div>
+      )}
+      {/* #1015：会话详情弹层（执行卡 / 访谈卡；关闭复位 target） */}
+      {detailTarget && (
+        <SessionDetailDialog
+          target={detailTarget}
+          onClose={() => setDetailTarget(null)}
+          onRestoreSession={(id) => void handleRestore(id)}
+        />
       )}
     </div>
   );

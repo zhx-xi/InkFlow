@@ -1092,6 +1092,8 @@ export interface paths {
         /**
          * List Messages
          * @description 线程 chat 消息列表（升序，分页）。
+         *
+         *     include_deleted=true 时含已归档消息（#1015 归档会话只读详情）。
          */
         get: operations["list_messages_api_v1_chat_messages_get"];
         put?: never;
@@ -8347,6 +8349,7 @@ export interface operations {
                 conversation_id: string;
                 offset?: number;
                 limit?: number;
+                include_deleted?: boolean;
             };
             header?: never;
             path?: never;
