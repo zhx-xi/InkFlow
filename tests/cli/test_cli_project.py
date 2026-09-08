@@ -321,20 +321,35 @@ def test_serve_smoke(tmp_path):
 
         threading.Thread(target=_read_stdout, daemon=True).start()
 
-        # 1) 轮询 INKFLOW_READY 交付行（~6s 超时），解析 token（§2.7 M1 契约）
+        # 1) 轮询 INKFLOW_READY 交付行（#1031：预算 6s → 30s），解析 token（§2.7 M1 契约）
+        #    #1031 实测口径（2026-09-08，本机 py3.13 worktree venv）：serve 冷启动
+        #    5.10s 出启动横幅、9.57s uvicorn application startup complete、9.58s 才
+        #    输出 INKFLOW_READY——固定 6s 预算必然误红（主仓未改代码同款失败）。
+        #    同时监控子进程提前退出：崩溃立即失败，不空等整个预算。
         ready_line: str | None = None
-        deadline = time.monotonic() + 6.0
+        exited_early = False
+        deadline = time.monotonic() + 30.0
         while time.monotonic() < deadline:
             try:
                 line = ready_queue.get(timeout=0.3)
             except queue.Empty:
+                if proc.poll() is not None:
+                    exited_early = True
+                    break
                 continue
             if line.startswith("INKFLOW_READY "):
                 ready_line = line
                 break
-        assert (
-            ready_line is not None
-        ), "server did not emit INKFLOW_READY within 6 seconds"
+        if ready_line is None:
+            tail: list[str] = []
+            while not ready_queue.empty() and len(tail) < 20:
+                tail.append(ready_queue.get_nowait())
+            reason = (
+                f"server exited before emitting INKFLOW_READY (returncode={proc.poll()})"
+                if exited_early
+                else "server did not emit INKFLOW_READY within 30 seconds"
+            )
+            raise AssertionError(f"{reason}; output tail:\n{''.join(tail)[-1000:]}")
         ready = json.loads(ready_line[len("INKFLOW_READY ") :].strip())
         assert {"port", "token", "pid", "version"} <= set(ready)
         assert ready["port"] == 18765
