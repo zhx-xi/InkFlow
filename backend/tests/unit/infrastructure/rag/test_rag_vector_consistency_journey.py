@@ -32,6 +32,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import chromadb
 import pytest
+from chromadb.config import Settings
 from langchain_core.embeddings import Embeddings
 
 from inkflow.domain.models.vector_fingerprint import VectorFingerprint
@@ -137,8 +138,15 @@ def store_dir() -> pathlib.Path:
 
 
 def _raw_collection_vectors(db_dir: pathlib.Path, ids: list[str]) -> dict[str, list[float]]:
-    """PersistentClient 直读 CHAPTER_CHUNK collection 的原始向量（独立实例验证持久化）。"""
-    client = chromadb.PersistentClient(path=str(db_dir))
+    """PersistentClient 直读 CHAPTER_CHUNK collection 的原始向量（独立实例验证持久化）。
+
+    #946: settings 必须与生产一致——chromadb SharedSystemClient 按目录进程级缓存
+    system，同目录二次创建 settings 不一致 → ValueError。
+    """
+    client = chromadb.PersistentClient(
+        path=str(db_dir),
+        settings=Settings(anonymized_telemetry=False),
+    )
     col = client.get_collection("inkflow_chapter_chunk")
     got = col.get(ids=ids, include=["embeddings"])
     embeddings = got["embeddings"]
