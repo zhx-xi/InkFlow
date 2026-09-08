@@ -154,3 +154,48 @@ class TestStreamThinkingBlockNormalization:
         # 流不裸断：仍以 done 终帧收尾
         assert frames[-1].done is True
         assert frames[-1].type == "done"
+
+
+class TestTextContentDefensive:
+    """契约 5（#964）：`_text_content` 防御性分支——真实模型输出形状差异（覆盖率门禁补测）。"""
+
+    @pytest.mark.asyncio
+    async def test_plain_str_item_inside_list_is_kept(self) -> None:
+        """list 中的裸 str 项必须保留（langchain 合并 chunk 后的实际形态之一）。"""
+        output = SimpleNamespace(
+            content=["纯文本段", THINKING_BLOCK, TEXT_BLOCK],
+            additional_kwargs={"reasoning_content": "思考A"},
+            tool_calls=[],
+        )
+        svc = _make_svc(_ReasoningEndAgent(output))
+        frames = await _drain(svc)
+
+        delta_frames = [ev for ev in frames if ev.type == "delta"]
+        assert "".join(f.delta for f in delta_frames) == "纯文本段正文内容"
+        assert "纯文本段" in "".join(f.delta for f in delta_frames)
+
+    @pytest.mark.asyncio
+    async def test_text_block_without_text_key_is_ignored(self) -> None:
+        """{"type":"text"} 但缺 text 键 → 忽略该块，不产出非 str delta、不崩溃。"""
+        output = SimpleNamespace(
+            content=[{"type": "text"}],
+            additional_kwargs={},
+            tool_calls=[],
+        )
+        svc = _make_svc(_ReasoningEndAgent(output))
+        frames = await _drain(svc)
+
+        delta_frames = [ev for ev in frames if ev.type == "delta"]
+        assert all(isinstance(f.delta, str) for f in delta_frames)
+        assert "".join(f.delta for f in delta_frames) == ""
+
+    @pytest.mark.asyncio
+    async def test_non_str_non_list_content_yields_no_delta(self) -> None:
+        """content=None（无正文形态）→ 无 delta 帧、不崩溃、无 reasoning 帧，仍以 done 收尾。"""
+        output = SimpleNamespace(content=None, additional_kwargs={}, tool_calls=[])
+        svc = _make_svc(_ReasoningEndAgent(output))
+        frames = await _drain(svc)
+
+        assert [ev for ev in frames if ev.type == "delta"] == []
+        assert not any(ev.type == "reasoning" for ev in frames)
+        assert frames[-1].type == "done"
